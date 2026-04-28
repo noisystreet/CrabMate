@@ -9,6 +9,7 @@ use wasm_bindgen::JsCast;
 
 use crate::api::{
     client_llm_storage_has_api_key, fetch_web_ui_config, load_client_llm_text_fields_from_storage,
+    load_execution_mode_from_storage,
 };
 use crate::app_prefs::{
     AGENT_ROLE_KEY, BG_DECOR_KEY, SIDEBAR_RAIL_COLLAPSED_KEY, STATUS_BAR_VISIBLE_KEY,
@@ -236,6 +237,7 @@ pub fn wire_settings_modal_llm_drafts_on_open(
     executor_llm_api_key_draft: RwSignal<String>,
     executor_llm_has_saved_key: RwSignal<bool>,
     executor_llm_settings_feedback: RwSignal<Option<String>>,
+    execution_mode_draft: RwSignal<String>,
 ) {
     Effect::new(move |_| {
         if !settings_modal.get() && !settings_page.get() {
@@ -289,6 +291,20 @@ pub fn wire_settings_modal_llm_drafts_on_open(
         executor_llm_api_key_draft.set(String::new());
         executor_llm_has_saved_key.set(crate::api::executor_llm_storage_has_api_key());
         executor_llm_settings_feedback.set(None);
+        let mode = load_execution_mode_from_storage();
+        if mode == "rolling_planning" || mode == "hierarchical" {
+            execution_mode_draft.set(mode);
+        } else {
+            let server_mode = sd
+                .as_ref()
+                .map(|d| d.planner_executor_mode.trim().to_string())
+                .unwrap_or_default();
+            if server_mode == "hierarchical" {
+                execution_mode_draft.set("hierarchical".to_string());
+            } else {
+                execution_mode_draft.set("rolling_planning".to_string());
+            }
+        }
     });
 }
 

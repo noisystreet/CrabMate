@@ -19,7 +19,8 @@ use super::conflict::conversation_conflict_api_error;
 use super::parse::{
     ensure_bearer_api_key_for_chat, normalize_agent_role, normalize_approval_session_id,
     normalize_chat_image_urls, normalize_client_conversation_id, parse_client_llm_override,
-    parse_executor_llm_override, parse_optional_chat_temperature, parse_seed_override_from_body,
+    parse_execution_mode_override, parse_executor_llm_override, parse_optional_chat_temperature,
+    parse_seed_override_from_body,
 };
 use crate::agent_memory::load_memory_snippet;
 use crate::agent_role_turn::maybe_apply_mid_session_agent_role_switch;
@@ -527,6 +528,16 @@ pub(crate) async fn chat_handler(
             }),
         )
     })?;
+    let execution_mode_override =
+        parse_execution_mode_override(body.execution_mode).map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_EXECUTION_MODE",
+                    message: e,
+                }),
+            )
+        })?;
     ensure_bearer_api_key_for_chat(&state, &llm_override).await?;
     if let Some(reply) = run_web_builtin_command(&state, user_trim).await {
         return Ok(Json(ChatResponseBody {
@@ -613,6 +624,7 @@ pub(crate) async fn chat_handler(
             seed_override,
             llm_override,
             executor_llm_override,
+            execution_mode_override,
             reply_tx,
         })
         .map_err(|e| {
@@ -965,6 +977,16 @@ pub(crate) async fn chat_stream_handler(
             }),
         )
     })?;
+    let execution_mode_override =
+        parse_execution_mode_override(body.execution_mode).map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_EXECUTION_MODE",
+                    message: e,
+                }),
+            )
+        })?;
     ensure_bearer_api_key_for_chat(&state, &llm_override).await?;
     if let Some(reply) = run_web_builtin_command(&state, user_trim).await {
         let stream =
@@ -1143,6 +1165,7 @@ pub(crate) async fn chat_stream_handler(
             seed_override,
             llm_override,
             executor_llm_override,
+            execution_mode_override,
             stream_event_tx: tx,
             web_approval_session,
         })

@@ -53,6 +53,8 @@ pub struct StatusData {
     pub executor_model: String,
     #[serde(default)]
     pub executor_api_base: String,
+    #[serde(default)]
+    pub planner_executor_mode: String,
 }
 
 fn default_markdown_render_true() -> bool {

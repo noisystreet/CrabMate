@@ -155,6 +155,24 @@ pub(super) fn parse_executor_llm_override(
     }))
 }
 
+pub(super) fn parse_execution_mode_override(
+    raw: Option<String>,
+) -> Result<Option<chat_job_queue::WebExecutionModeOverride>, String> {
+    let Some(s) = raw.as_deref().map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+    match s {
+        "rolling_planning" => Ok(Some(
+            chat_job_queue::WebExecutionModeOverride::RollingPlanning,
+        )),
+        "hierarchical" => Ok(Some(chat_job_queue::WebExecutionModeOverride::Hierarchical)),
+        _ => Err(format!(
+            "execution_mode 非法: {:?}（支持 rolling_planning、hierarchical）",
+            s
+        )),
+    }
+}
+
 fn effective_llm_api_key_for_web_chat(
     state: &AppState,
     ov: &Option<chat_job_queue::WebChatLlmOverride>,

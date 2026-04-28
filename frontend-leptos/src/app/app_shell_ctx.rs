@@ -89,6 +89,7 @@ pub struct AppShellCtx {
     pub executor_llm_api_key_draft: RwSignal<String>,
     pub executor_llm_has_saved_key: RwSignal<bool>,
     pub executor_llm_settings_feedback: RwSignal<Option<String>>,
+    pub execution_mode_draft: RwSignal<String>,
     pub changelist_modal_loading: RwSignal<bool>,
     pub changelist_modal_err: RwSignal<Option<String>>,
     pub changelist_modal_rev: RwSignal<u64>,

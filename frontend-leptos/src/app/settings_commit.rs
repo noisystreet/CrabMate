@@ -5,7 +5,8 @@ use leptos::prelude::*;
 use crate::api::{
     clear_client_llm_api_key_storage, clear_executor_llm_api_key_storage,
     client_llm_storage_has_api_key, executor_llm_storage_has_api_key,
-    persist_client_llm_to_storage, persist_executor_llm_to_storage,
+    persist_client_llm_to_storage, persist_execution_mode_to_storage,
+    persist_executor_llm_to_storage,
 };
 use crate::i18n::{Locale, store_locale_slug};
 
@@ -42,6 +43,7 @@ pub fn commit_all_settings(
     executor_base: &str,
     executor_model: &str,
     executor_api_key_draft: &str,
+    execution_mode: &str,
     clear_client_llm_key: bool,
     clear_executor_llm_key: bool,
     llm_api_key_draft: RwSignal<String>,
@@ -81,6 +83,7 @@ pub fn commit_all_settings(
         Some(executor_api_key_draft)
     };
     persist_executor_llm_to_storage(executor_base, executor_model, executor_key_upd, ui_locale)?;
+    persist_execution_mode_to_storage(execution_mode, ui_locale)?;
 
     locale.set(appearance_locale);
     store_locale_slug(appearance_locale.storage_slug());

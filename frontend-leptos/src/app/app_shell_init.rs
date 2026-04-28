@@ -77,6 +77,7 @@ pub fn init_app_shell() -> AppShellInit {
         app_signals.llm_settings.executor_llm_api_key_draft,
         app_signals.llm_settings.executor_llm_has_saved_key,
         app_signals.llm_settings.executor_llm_settings_feedback,
+        app_signals.llm_settings.execution_mode_draft,
     );
     let shell_escape = ShellEscapeSignals {
         session_context_menu: app_signals.sidebar.session_context_menu,
@@ -242,6 +243,7 @@ pub fn init_app_shell() -> AppShellInit {
         executor_llm_api_key_draft: app_signals.llm_settings.executor_llm_api_key_draft,
         executor_llm_has_saved_key: app_signals.llm_settings.executor_llm_has_saved_key,
         executor_llm_settings_feedback: app_signals.llm_settings.executor_llm_settings_feedback,
+        execution_mode_draft: app_signals.llm_settings.execution_mode_draft,
         changelist_modal_loading: app_signals.modal.changelist_modal_loading,
         changelist_modal_err: app_signals.modal.changelist_modal_err,
         changelist_modal_rev: app_signals.modal.changelist_modal_rev,

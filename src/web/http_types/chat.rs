@@ -34,6 +34,9 @@ pub(crate) struct ChatRequestBody {
     /// 可选：浏览器侧覆盖执行阶段 LLM 网关 `api_base` / `model` / `api_key`。
     #[serde(default)]
     pub(crate) executor_llm: Option<ExecutorLlmBody>,
+    /// 可选：执行模式覆盖（`rolling_planning` / `hierarchical`），仅作用于本回合。
+    #[serde(default)]
+    pub(crate) execution_mode: Option<String>,
     /// 断线重连：挂接到进行中的 `job_id`；`after_seq` 与请求头 **`Last-Event-ID`** 取较大值后从环形缓冲重放。
     #[serde(default)]
     pub(crate) stream_resume: Option<StreamResumeBody>,

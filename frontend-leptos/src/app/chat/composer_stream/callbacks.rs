@@ -1108,17 +1108,12 @@ pub(super) fn build_chat_stream_callbacks(
                 );
                 return;
             }
-            let loc = stream_ctx.locale.get_untracked();
-            let normalized_title = match info.kind.as_str() {
-                "tool_step_started" => {
-                    i18n::timeline_tool_step_started_title(loc, info.title.trim())
-                }
-                "tool_step_finished" => {
-                    i18n::timeline_tool_step_finished_title(loc, info.title.trim())
-                }
-                _ => info.title.trim().to_string(),
-            };
-            let mut body = normalized_title;
+            // 工具开始/结束事件已由工具卡片（is_tool=true）承载；
+            // 这里不再重复落盘时间线旁注，避免“步骤气泡 + 工具卡片”双重重复。
+            if info.kind == "tool_step_started" || info.kind == "tool_step_finished" {
+                return;
+            }
+            let mut body = info.title.trim().to_string();
             if let Some(detail) = info.detail.as_deref().map(str::trim)
                 && !detail.is_empty()
             {

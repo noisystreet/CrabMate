@@ -548,6 +548,14 @@ pub fn build_openapi_spec() -> Value {
                         "api_key": { "type": "string", "description": "浏览器侧覆盖，勿记录到服务端日志" }
                     }
                 },
+                "ExecutorLlmBody": {
+                    "type": "object",
+                    "properties": {
+                        "api_base": { "type": "string" },
+                        "model": { "type": "string" },
+                        "api_key": { "type": "string", "description": "浏览器侧覆盖，勿记录到服务端日志" }
+                    }
+                },
                 "WebUiConfigResponse": {
                     "type": "object",
                     "required": ["markdown_render", "apply_assistant_display_filters"],
@@ -577,6 +585,11 @@ pub fn build_openapi_spec() -> Value {
                         "seed": { "type": "integer", "format": "int64" },
                         "seed_policy": { "type": "string", "description": "如 omit / none" },
                         "client_llm": { "$ref": "#/components/schemas/ClientLlmBody" },
+                        "executor_llm": { "$ref": "#/components/schemas/ExecutorLlmBody" },
+                        "execution_mode": {
+                            "type": "string",
+                            "description": "可选；本回合执行模式覆盖：rolling_planning 或 hierarchical"
+                        },
                         "client_sse_protocol": {
                             "type": "integer",
                             "format": "int32",

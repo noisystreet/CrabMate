@@ -128,6 +128,7 @@ pub fn SettingsPageView(
     executor_llm_api_key_draft: RwSignal<String>,
     executor_llm_has_saved_key: RwSignal<bool>,
     executor_llm_settings_feedback: RwSignal<Option<String>>,
+    execution_mode_draft: RwSignal<String>,
     client_llm_storage_tick: RwSignal<u64>,
 ) -> impl IntoView {
     let active_section =
@@ -147,6 +148,7 @@ pub fn SettingsPageView(
         llm_api_base_preset_select.get_untracked(),
         llm_model_draft.get_untracked(),
         llm_temperature_draft.get_untracked(),
+        execution_mode_draft.get_untracked(),
         llm_has_saved_key.get_untracked(),
     ));
     let baseline_executor = StoredValue::new((
@@ -202,6 +204,7 @@ pub fn SettingsPageView(
                 llm_api_base_preset_select.get_untracked(),
                 llm_model_draft.get_untracked(),
                 llm_temperature_draft.get_untracked(),
+                execution_mode_draft.get_untracked(),
                 llm_has_saved_key.get_untracked(),
             );
         });
@@ -245,11 +248,12 @@ pub fn SettingsPageView(
         {
             return true;
         }
-        let (bb, bp, bm, bt, bh) = baseline_llm.get_value();
+        let (bb, bp, bm, bt, be, bh) = baseline_llm.get_value();
         if llm_api_base_draft.get() != bb
             || llm_api_base_preset_select.get() != bp
             || llm_model_draft.get() != bm
             || llm_temperature_draft.get() != bt
+            || execution_mode_draft.get() != be
             || llm_has_saved_key.get() != bh
         {
             return true;
@@ -271,11 +275,12 @@ pub fn SettingsPageView(
         appearance_theme.set(bt);
         appearance_bg_decor.set(bbd);
 
-        let (bb, bp, bm, bt, bh) = baseline_llm.get_value();
+        let (bb, bp, bm, bt, be, bh) = baseline_llm.get_value();
         llm_api_base_draft.set(bb);
         llm_api_base_preset_select.set(bp);
         llm_model_draft.set(bm);
         llm_temperature_draft.set(bt);
+        execution_mode_draft.set(be);
         llm_has_saved_key.set(bh);
         llm_api_key_draft.set(String::new());
 
@@ -317,6 +322,7 @@ pub fn SettingsPageView(
             executor_llm_api_base_draft.get().as_str(),
             executor_llm_model_draft.get().as_str(),
             executor_llm_api_key_draft.get().as_str(),
+            execution_mode_draft.get().as_str(),
             clear_client_key_intent.get(),
             clear_executor_key_intent.get(),
             llm_api_key_draft,
@@ -339,6 +345,7 @@ pub fn SettingsPageView(
                         llm_api_base_preset_select.get_untracked(),
                         llm_model_draft.get_untracked(),
                         llm_temperature_draft.get_untracked(),
+                        execution_mode_draft.get_untracked(),
                         llm_has_saved_key.get_untracked(),
                     );
                 });
@@ -623,6 +630,27 @@ pub fn SettingsPageView(
                                     />
                                     <p class="settings-field-nested-hint">
                                         {move || i18n::settings_temperature_hint(appearance_locale.get())}
+                                    </p>
+                                </div>
+                                <div class="settings-field">
+                                    <label class="settings-field-label" for="settings-execution-mode">
+                                        {move || i18n::settings_label_execution_mode(appearance_locale.get())}
+                                    </label>
+                                    <select
+                                        id="settings-execution-mode"
+                                        class="settings-select"
+                                        prop:value=move || execution_mode_draft.get()
+                                        on:change=move |ev| execution_mode_draft.set(event_target_value(&ev))
+                                    >
+                                        <option value="rolling_planning">
+                                            {move || i18n::settings_execution_mode_rolling(appearance_locale.get())}
+                                        </option>
+                                        <option value="hierarchical">
+                                            {move || i18n::settings_execution_mode_hierarchical(appearance_locale.get())}
+                                        </option>
+                                    </select>
+                                    <p class="settings-field-nested-hint">
+                                        {move || i18n::settings_execution_mode_hint(appearance_locale.get())}
                                     </p>
                                 </div>
                                 <div class="settings-field">

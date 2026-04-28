@@ -265,6 +265,7 @@ pub struct LLMSettingsSignals {
     pub executor_llm_api_key_draft: RwSignal<String>,
     pub executor_llm_has_saved_key: RwSignal<bool>,
     pub executor_llm_settings_feedback: RwSignal<Option<String>>,
+    pub execution_mode_draft: RwSignal<String>,
     pub client_llm_storage_tick: RwSignal<u64>,
     pub selected_agent_role: RwSignal<Option<String>>,
 }
@@ -285,6 +286,7 @@ impl LLMSettingsSignals {
             executor_llm_api_key_draft: RwSignal::new(String::new()),
             executor_llm_has_saved_key: RwSignal::new(false),
             executor_llm_settings_feedback: RwSignal::new(None),
+            execution_mode_draft: RwSignal::new("rolling_planning".to_string()),
             client_llm_storage_tick: RwSignal::new(0),
             selected_agent_role: RwSignal::new(
                 local_storage()

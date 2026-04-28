@@ -122,6 +122,7 @@ pub fn App() -> impl IntoView {
                 executor_llm_api_key_draft=app_signals.llm_settings.executor_llm_api_key_draft
                 executor_llm_has_saved_key=app_signals.llm_settings.executor_llm_has_saved_key
                 executor_llm_settings_feedback=app_signals.llm_settings.executor_llm_settings_feedback
+                execution_mode_draft=app_signals.llm_settings.execution_mode_draft
                 client_llm_storage_tick=app_signals.llm_settings.client_llm_storage_tick
             />
         </div>

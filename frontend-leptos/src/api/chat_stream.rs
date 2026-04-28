@@ -17,7 +17,7 @@ use crate::sse_dispatch::{
 use super::browser::{auth_headers, window};
 use super::client_llm_storage::{
     chat_temperature_override_from_storage, client_llm_json_for_chat_body,
-    executor_llm_json_for_chat_body,
+    execution_mode_for_chat_body, executor_llm_json_for_chat_body,
 };
 
 pub type OnToolCallFn = std::rc::Rc<
@@ -132,6 +132,9 @@ pub async fn send_chat_stream(
         }
         if let Some(temp) = chat_temperature_override_from_storage() {
             body["temperature"] = serde_json::json!(temp);
+        }
+        if let Some(mode) = execution_mode_for_chat_body() {
+            body["execution_mode"] = serde_json::json!(mode);
         }
         let init = RequestInit::new();
         init.set_method("POST");

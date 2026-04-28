@@ -50,12 +50,20 @@ pub struct WebChatLlmOverride {
     pub api_key: Option<String>,
 }
 
+/// Web 会话设置中的执行模式覆盖（仅作用于当前任务）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WebExecutionModeOverride {
+    RollingPlanning,
+    Hierarchical,
+}
+
 fn resolve_web_llm_for_job(
     deps: &WebChatQueueDeps,
     cfg_snap: Arc<AgentConfig>,
     ov: Option<&WebChatLlmOverride>,
+    execution_mode_override: Option<WebExecutionModeOverride>,
 ) -> (Arc<AgentConfig>, String) {
-    match ov {
+    let (mut cfg, key) = match ov {
         None => (cfg_snap, deps.api_key.clone()),
         Some(o) => {
             let mut c = (*cfg_snap).clone();
@@ -72,7 +80,22 @@ fn resolve_web_llm_for_job(
             }
             (Arc::new(c), key)
         }
+    };
+    if let Some(mode) = execution_mode_override {
+        let mut c = (*cfg).clone();
+        match mode {
+            WebExecutionModeOverride::RollingPlanning => {
+                c.planner_executor_mode = crate::config::PlannerExecutorMode::SingleAgent;
+                c.staged_plan_execution = true;
+            }
+            WebExecutionModeOverride::Hierarchical => {
+                c.planner_executor_mode = crate::config::PlannerExecutorMode::Hierarchical;
+                c.staged_plan_execution = false;
+            }
+        }
+        cfg = Arc::new(c);
     }
+    (cfg, key)
 }
 
 /// 从 `executor_llm_override` 提取 executor 阶段专用的覆盖配置。
@@ -172,6 +195,8 @@ pub struct JsonSubmitParams {
     pub llm_override: Option<WebChatLlmOverride>,
     /// 可选：本任务覆盖执行阶段 `api_base` / `model` / `api_key`。
     pub executor_llm_override: Option<WebChatLlmOverride>,
+    /// 可选：本任务覆盖执行模式（rolling_planning / hierarchical）。
+    pub execution_mode_override: Option<WebExecutionModeOverride>,
     pub reply_tx: oneshot::Sender<Result<Vec<Message>, String>>,
 }
 
@@ -193,6 +218,8 @@ pub struct StreamSubmitParams {
     pub llm_override: Option<WebChatLlmOverride>,
     /// 可选：本任务覆盖执行阶段 `api_base` / `model` / `api_key`。
     pub executor_llm_override: Option<WebChatLlmOverride>,
+    /// 可选：本任务覆盖执行模式（rolling_planning / hierarchical）。
+    pub execution_mode_override: Option<WebExecutionModeOverride>,
     /// HTTP SSE 层：每条为 **`(Last-Event-ID 序号, data 负载)`**（与 hub 环形缓冲一致）。
     pub stream_event_tx: mpsc::Sender<(u64, String)>,
     pub web_approval_session: Option<WebApprovalSession>,
@@ -243,6 +270,7 @@ enum QueuedChatJob {
         seed_override: LlmSeedOverride,
         llm_override: Option<WebChatLlmOverride>,
         executor_llm_override: Option<WebChatLlmOverride>,
+        execution_mode_override: Option<WebExecutionModeOverride>,
         stream_event_tx: mpsc::Sender<(u64, String)>,
         web_approval_session: Option<WebApprovalSession>,
     },
@@ -261,6 +289,7 @@ enum QueuedChatJob {
         seed_override: LlmSeedOverride,
         llm_override: Option<WebChatLlmOverride>,
         executor_llm_override: Option<WebChatLlmOverride>,
+        execution_mode_override: Option<WebExecutionModeOverride>,
         reply_tx: oneshot::Sender<Result<Vec<Message>, String>>,
     },
 }
@@ -415,6 +444,7 @@ impl ChatJobQueue {
             seed_override,
             llm_override,
             executor_llm_override,
+            execution_mode_override,
             stream_event_tx,
             web_approval_session,
         } = p;
@@ -433,6 +463,7 @@ impl ChatJobQueue {
             seed_override,
             llm_override,
             executor_llm_override,
+            execution_mode_override,
             stream_event_tx,
             web_approval_session,
         };
@@ -460,6 +491,7 @@ impl ChatJobQueue {
             seed_override,
             llm_override,
             executor_llm_override,
+            execution_mode_override,
             reply_tx,
         } = p;
         let job = QueuedChatJob::Json {
@@ -477,6 +509,7 @@ impl ChatJobQueue {
             seed_override,
             llm_override,
             executor_llm_override,
+            execution_mode_override,
             reply_tx,
         };
         self.inner
@@ -782,6 +815,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             seed_override,
             llm_override,
             executor_llm_override,
+            execution_mode_override,
             stream_event_tx,
             web_approval_session,
         } => {
@@ -864,6 +898,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 queue_deps.as_ref(),
                 cfg_snap.clone(),
                 llm_override.as_ref(),
+                execution_mode_override,
             );
             let turn_allow = turn_allow_for_web_or_cli_job(
                 &cfg_turn,
@@ -1060,6 +1095,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             seed_override,
             llm_override,
             executor_llm_override,
+            execution_mode_override,
             reply_tx,
         } => {
             info!(
@@ -1086,6 +1122,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 queue_deps.as_ref(),
                 cfg_snap.clone(),
                 llm_override.as_ref(),
+                execution_mode_override,
             );
             let turn_allow = turn_allow_for_web_or_cli_job(
                 &cfg_turn,

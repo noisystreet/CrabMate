@@ -32,6 +32,7 @@ pub fn settings_modal_view(ctx: AppShellCtx) -> impl IntoView {
         executor_llm_api_key_draft,
         executor_llm_has_saved_key,
         executor_llm_settings_feedback,
+        execution_mode_draft,
         client_llm_storage_tick,
         ..
     } = ctx;
@@ -52,6 +53,7 @@ pub fn settings_modal_view(ctx: AppShellCtx) -> impl IntoView {
         llm_api_base_preset_select.get_untracked(),
         llm_model_draft.get_untracked(),
         llm_temperature_draft.get_untracked(),
+        execution_mode_draft.get_untracked(),
         llm_has_saved_key.get_untracked(),
     ));
     let baseline_executor = StoredValue::new((
@@ -107,6 +109,7 @@ pub fn settings_modal_view(ctx: AppShellCtx) -> impl IntoView {
                     llm_api_base_preset_select.get_untracked(),
                     llm_model_draft.get_untracked(),
                     llm_temperature_draft.get_untracked(),
+                    execution_mode_draft.get_untracked(),
                     llm_has_saved_key.get_untracked(),
                 );
             });
@@ -132,11 +135,12 @@ pub fn settings_modal_view(ctx: AppShellCtx) -> impl IntoView {
             appearance_theme.set(bt);
             appearance_bg_decor.set(bbd);
 
-            let (bb, bp, bm, bt, bh) = baseline_llm.get_value();
+            let (bb, bp, bm, bt, be, bh) = baseline_llm.get_value();
             llm_api_base_draft.set(bb);
             llm_api_base_preset_select.set(bp);
             llm_model_draft.set(bm);
             llm_temperature_draft.set(bt);
+            execution_mode_draft.set(be);
             llm_has_saved_key.set(bh);
             llm_api_key_draft.set(String::new());
 
@@ -207,11 +211,12 @@ pub fn settings_modal_view(ctx: AppShellCtx) -> impl IntoView {
         {
             return true;
         }
-        let (bb, bp, bm, bt, bh) = baseline_llm.get_value();
+        let (bb, bp, bm, bt, be, bh) = baseline_llm.get_value();
         if llm_api_base_draft.get() != bb
             || llm_api_base_preset_select.get() != bp
             || llm_model_draft.get() != bm
             || llm_temperature_draft.get() != bt
+            || execution_mode_draft.get() != be
             || llm_has_saved_key.get() != bh
         {
             return true;
@@ -259,6 +264,7 @@ pub fn settings_modal_view(ctx: AppShellCtx) -> impl IntoView {
             executor_llm_api_base_draft.get().as_str(),
             executor_llm_model_draft.get().as_str(),
             executor_llm_api_key_draft.get().as_str(),
+            execution_mode_draft.get().as_str(),
             clear_client_key_intent.get(),
             clear_executor_key_intent.get(),
             llm_api_key_draft,
@@ -281,6 +287,7 @@ pub fn settings_modal_view(ctx: AppShellCtx) -> impl IntoView {
                         llm_api_base_preset_select.get_untracked(),
                         llm_model_draft.get_untracked(),
                         llm_temperature_draft.get_untracked(),
+                        execution_mode_draft.get_untracked(),
                         llm_has_saved_key.get_untracked(),
                     );
                 });
