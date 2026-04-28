@@ -1,0 +1,159 @@
+use super::super::artifact_resolver::ArtifactResolver;
+use super::super::artifact_store::ArtifactStore;
+use super::super::task::{Artifact, ArtifactKind, SubGoal, TaskStatus};
+use super::{OperatorAgent, OperatorConfig};
+
+#[tokio::test]
+async fn test_execute() {
+    let config = OperatorConfig::default();
+    let operator = OperatorAgent::new(config);
+    let goal = SubGoal::new("test", "测试目标").with_tools(vec!["read_file".to_string()]);
+
+    let result = operator.execute(&goal).await.unwrap();
+    assert!(matches!(result.status, TaskStatus::Completed));
+}
+
+#[test]
+fn test_get_tools_for_capabilities() {
+    let tools = ["read_file".to_string(), "run_command".to_string()];
+    assert!(tools.contains(&"read_file".to_string()));
+    assert!(tools.contains(&"run_command".to_string()));
+}
+
+#[test]
+fn test_is_tool_allowed() {
+    let config = OperatorConfig {
+        max_iterations: 10,
+        allowed_tools: vec!["read_file".to_string()],
+        tools_defs: vec![],
+        sse_out: None,
+        artifact_store: None,
+        build_state: None,
+        enable_compile_error_recovery: true,
+        compile_error_max_retries: 3,
+        attempted_configs: Vec::new(),
+        enable_dynamic_decomposition: true,
+        dynamic_decomposition_threshold: 40,
+    };
+    let operator = OperatorAgent::new(config);
+
+    assert!(operator.is_tool_allowed("read_file"));
+    assert!(!operator.is_tool_allowed("write_file"));
+}
+
+#[test]
+fn test_inject_artifact_paths_into_tool_call() {
+    let mut store = ArtifactStore::new();
+    store.put(
+        Artifact::new(
+            "1",
+            "main.cpp",
+            ArtifactKind::BuildArtifact(
+                crate::agent::hierarchy::task::BuildArtifactKind::SourceFile,
+            ),
+            "goal_1",
+        )
+        .with_path("/workspace/src/main.cpp"),
+    );
+
+    let resolver = ArtifactResolver::new(&store, None);
+
+    let config = OperatorConfig::default();
+    let operator = OperatorAgent::new(config);
+
+    let tool_call = crate::types::ToolCall {
+        id: "test-1".to_string(),
+        typ: "function".to_string(),
+        function: crate::types::FunctionCall {
+            name: "run_command".to_string(),
+            arguments: r#"{"command": "g++", "args": ["{artifact:main.cpp}", "-o", "main"]}"#
+                .to_string(),
+        },
+    };
+
+    let injected = operator.inject_artifact_paths_into_tool_call(&tool_call, &resolver);
+
+    assert!(
+        injected
+            .function
+            .arguments
+            .contains("/workspace/src/main.cpp")
+    );
+    assert!(!injected.function.arguments.contains("{artifact:main.cpp}"));
+}
+
+#[test]
+fn test_inject_ref_placeholder_into_tool_call() {
+    let mut store = ArtifactStore::new();
+    store.put(
+        Artifact::new(
+            "a1",
+            "out",
+            ArtifactKind::BuildArtifact(
+                crate::agent::hierarchy::task::BuildArtifactKind::Executable,
+            ),
+            "goal_1",
+        )
+        .with_path("build/prog"),
+    );
+    let resolver = ArtifactResolver::new(&store, None);
+    let operator = OperatorAgent::new(OperatorConfig::default());
+    let tool_call = crate::types::ToolCall {
+        id: "r1".to_string(),
+        typ: "function".to_string(),
+        function: crate::types::FunctionCall {
+            name: "read_file".to_string(),
+            arguments: r#"{"path": "{ref:goal_1:a1}"}"#.to_string(),
+        },
+    };
+    let injected = operator.inject_artifact_paths_into_tool_call(&tool_call, &resolver);
+    assert!(injected.function.arguments.contains("build/prog"));
+    assert!(!injected.function.arguments.contains("{ref:goal_1:a1}"));
+}
+
+#[test]
+fn test_inject_paths_into_value_nested() {
+    let mut store = ArtifactStore::new();
+    store.put(
+        Artifact::new(
+            "2",
+            "test.cpp",
+            ArtifactKind::BuildArtifact(
+                crate::agent::hierarchy::task::BuildArtifactKind::SourceFile,
+            ),
+            "goal_2",
+        )
+        .with_path("/home/user/test.cpp"),
+    );
+
+    let resolver = ArtifactResolver::new(&store, None);
+
+    let mut value = serde_json::json!({
+        "source": "{artifact:test.cpp}",
+        "options": {
+            "input": "{artifact:test.cpp}"
+        }
+    });
+
+    let modified = OperatorAgent::inject_paths_into_value(&mut value, &resolver);
+
+    assert!(modified);
+    assert_eq!(value["source"], "/home/user/test.cpp");
+    assert_eq!(value["options"]["input"], "/home/user/test.cpp");
+}
+
+#[test]
+fn test_convergence_goal_detection() {
+    let goal = SubGoal::new("g1", "修复编译报错直到 cargo check 通过");
+    assert!(super::compile::is_convergence_compile_fix_goal(&goal));
+    let goal = SubGoal::new("g2", "编写 README 文档");
+    assert!(!super::compile::is_convergence_compile_fix_goal(&goal));
+}
+
+#[test]
+fn test_parse_compile_error_metrics() {
+    let out = "error[E0425]: cannot find value `x`\nwarning: unused variable\nsrc/main.rs:3:5: error: expected `;`";
+    let m = super::compile::parse_compile_error_metrics(out).expect("metrics");
+    assert_eq!(m.error_count, 2);
+    assert!(m.first_error_signature.contains("error"));
+}
