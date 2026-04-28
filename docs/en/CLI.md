@@ -60,6 +60,8 @@ Without a subcommand, legacy flags `--serve`, `--query`, `--benchmark`, `--dry-r
 
 ## Benchmark (`bench`)
 
+Planning for benchmark features and testing: **`docs/BENCHMARK_PLANNING.md`** (kept separate from general CLI product notes).
+
 | Option | Description |
 |--------|-------------|
 | `--benchmark <TYPE>` | `swe_bench`, `gaia`, `human_eval`, `generic` |
