@@ -613,7 +613,7 @@ impl RouterOutput {
 ### 4.3 Manager Agent 执行（修订版）
 
 ```rust
-// src/agent/hierarchy/manager.rs
+// src/agent/hierarchy/manager/（实现拆分为多文件；以下为示意伪代码）
 
 /// Manager Agent 主循环
 pub async fn run_manager(
