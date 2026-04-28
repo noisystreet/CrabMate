@@ -168,7 +168,7 @@ flowchart TB
 | 规划 JSON | `src/agent/plan_artifact.rs` |
 | 分阶段执行 | `src/agent/agent_turn/staged.rs`、`sub_agent_policy` |
 | **步级验收闸门** | `src/agent/step_verifier.rs` |
-| PER / 重写 | `src/agent/per_coord.rs`、`src/agent/reflection/plan_rewrite.rs` |
+| PER / 重写 | `src/agent/per_coord/`（含 `final_plan_gate.rs`）、`src/agent/reflection/plan_rewrite.rs` |
 | 工作流反思 | `src/agent/workflow_reflection_controller.rs` |
 | 侧向规划检查 | `src/agent/per_plan_semantic_check.rs` |
 | DAG 执行 | `src/agent/workflow/`、`src/agent/workflow_tool_dispatch.rs` |

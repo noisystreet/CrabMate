@@ -33,11 +33,12 @@ use super::messages::push_assistant_merging_trailing_empty_placeholder;
 use super::outer_loop::run_agent_outer_loop;
 use super::params::RunLoopParams;
 use super::reflect::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
+use super::staged_orchestrator;
 use super::staged_sse::{
     emit_chat_ui_separator_sse, next_staged_plan_id, send_staged_plan_finished,
-    send_staged_plan_notice, send_staged_plan_started, send_staged_plan_step_finished,
-    send_staged_plan_step_started, staged_plan_nl_followup_user_body,
-    staged_plan_phase_instruction_default, staged_plan_queue_summary_text,
+    send_staged_plan_notice, send_staged_plan_step_finished, send_staged_plan_step_started,
+    staged_plan_nl_followup_user_body, staged_plan_phase_instruction_default,
+    staged_plan_queue_summary_text,
 };
 
 /// 若最后一条为带「规划教练」标记的临时 user，则弹出（取消或解析失败时避免孤立上下文）。
@@ -1075,19 +1076,11 @@ where
         make_step_user_message: &make_step_user_message,
     };
 
-    send_staged_plan_started(patch_ctx.p.out, &plan_id, n).await;
-
-    let plan_for_notice = AgentReplyPlanV1 {
-        plan_type: "agent_reply_plan".to_string(),
-        version: 1,
-        steps: plan_steps.clone(),
-        no_task: false,
-    };
-    send_staged_plan_notice(
+    staged_orchestrator::enter_steps_executing(
         patch_ctx.p.out,
+        plan_id.as_str(),
         echo_terminal_staged,
-        true,
-        staged_plan_queue_summary_text(&plan_for_notice, 0),
+        plan_steps.as_slice(),
     )
     .await;
 

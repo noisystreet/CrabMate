@@ -1,6 +1,10 @@
 //! 规划–执行–反思（PER）协调：**工作流反思**状态机（`prepare_workflow_execute` / `append_tool_result_and_reflection`）与 **`PerCoordinator` 回合状态**（规划需求来源、重写计数、`after_final_assistant` 分支）。
 //! 终答规划 JSON 的**静态校验**、重写 user 文案组装、历史里 `workflow_validate` 扫描与侧向校验**摘要**在 [`super::reflection::plan_rewrite`]；侧向 **LLM** 调用在 [`super::per_plan_semantic_check`]。
 //! Web 与 CLI 的 `run_agent_turn` 共用此层。
+//!
+//! 终答规划门控（`after_final_assistant` 决策树）见 [`final_plan_gate`]。
+
+mod final_plan_gate;
 
 use crate::config::AgentConfig;
 use crate::types::Message;
@@ -44,7 +48,7 @@ impl FinalPlanRequirementMode {
 
 /// 标识 plan 需求的来源，使工作流反思与终答反思的交互点可审计。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PlanRequirementSource {
+pub(crate) enum PlanRequirementSource {
     /// 无需求
     None,
     /// 来自 `FinalPlanRequirementMode::Always` 配置
@@ -180,7 +184,7 @@ impl PerCoordinator {
         self.layer_count_cache_at_message_len = 0;
     }
 
-    fn workflow_validate_layer_need(&mut self, messages: &[Message]) -> Option<usize> {
+    pub(super) fn workflow_validate_layer_need(&mut self, messages: &[Message]) -> Option<usize> {
         let len = messages.len();
         if len != self.layer_count_cache_at_message_len {
             let n = plan_rewrite::last_workflow_validate_layer_count(messages);
@@ -211,203 +215,7 @@ impl PerCoordinator {
         cfg: &AgentConfig,
         workspace_is_set: bool,
     ) -> AfterFinalAssistant {
-        let require_plan = match self.final_plan_policy {
-            FinalPlanRequirementMode::Never => false,
-            FinalPlanRequirementMode::WorkflowReflection => {
-                self.plan_requirement_source == PlanRequirementSource::WorkflowReflection
-            }
-            FinalPlanRequirementMode::Always => true,
-        };
-
-        log::info!(
-            target: "crabmate::per",
-            "after_final_assistant enter policy={:?} require_plan={} plan_requirement_source={:?} reflection_stage_round={} plan_rewrite_attempts={} plan_rewrite_max={}",
-            self.final_plan_policy,
-            require_plan,
-            self.plan_requirement_source,
-            self.reflection.stage_round(),
-            self.plan_rewrite_attempts,
-            self.plan_rewrite_max_attempts
-        );
-
-        if !require_plan {
-            log::info!(
-                target: "crabmate::per",
-                "after_final_assistant outcome=stop_no_requirement"
-            );
-            return AfterFinalAssistant::StopTurn;
-        }
-
-        let apply_layer_semantics = match self.final_plan_policy {
-            FinalPlanRequirementMode::Never => false,
-            FinalPlanRequirementMode::WorkflowReflection => {
-                self.plan_requirement_source == PlanRequirementSource::WorkflowReflection
-            }
-            FinalPlanRequirementMode::Always => true,
-        };
-        let layer_need = self.workflow_validate_layer_need(messages);
-        let validate_only_binding_ids =
-            plan_rewrite::last_workflow_validate_binding_plan_node_ids(messages);
-
-        let content = crate::types::message_content_as_str(&msg.content).unwrap_or("");
-        if let Ok(plan) = plan_artifact::parse_agent_reply_plan_v1(content) {
-            let layers_ok = match layer_need {
-                Some(n) if n > 0 && apply_layer_semantics => plan.steps.len() >= n,
-                _ => true,
-            };
-            let wf_ids = plan_rewrite::last_workflow_tool_node_ids(messages);
-            let workflow_subset_ok = match wf_ids.as_ref() {
-                Some(ids) => {
-                    plan_artifact::validate_plan_workflow_node_ids_subset(&plan, ids).is_ok()
-                }
-                None => true,
-            };
-            let workflow_cover_ok = if self.final_plan_require_strict_workflow_node_coverage {
-                match wf_ids.as_ref() {
-                    Some(ids) => {
-                        plan_artifact::validate_plan_covers_all_workflow_node_ids(&plan, ids)
-                            .is_ok()
-                    }
-                    None => true,
-                }
-            } else {
-                true
-            };
-            let workflow_ids_ok = workflow_subset_ok && workflow_cover_ok;
-            let validate_only_binding_ok = if apply_layer_semantics {
-                match validate_only_binding_ids.as_ref() {
-                    Some(ids) if !ids.is_empty() => {
-                        plan_artifact::validate_plan_binds_workflow_validate_nodes(&plan, ids)
-                            .is_ok()
-                    }
-                    _ => true,
-                }
-            } else {
-                true
-            };
-            if layers_ok && workflow_ids_ok && validate_only_binding_ok {
-                let digest = plan_rewrite::summarize_messages_for_final_plan_semantic_check(
-                    messages,
-                    cfg,
-                    workspace_is_set,
-                    self.final_plan_semantic_check_max_non_readonly_tools,
-                );
-                let want_llm = self.final_plan_semantic_check_enabled
-                    && matches!(
-                        self.final_plan_policy,
-                        FinalPlanRequirementMode::WorkflowReflection
-                    )
-                    && self.plan_requirement_source == PlanRequirementSource::WorkflowReflection
-                    && digest.is_some();
-                if want_llm {
-                    log::info!(
-                        target: "crabmate::per",
-                        "after_final_assistant outcome=pending_plan_consistency_llm plan_steps={} layer_need={:?}",
-                        plan.steps.len(),
-                        layer_need
-                    );
-                    return AfterFinalAssistant::StopTurnPendingPlanConsistencyLlm {
-                        plan,
-                        tool_digest: digest,
-                    };
-                }
-                log::info!(
-                    target: "crabmate::per",
-                    "after_final_assistant outcome=stop_plan_ok plan_steps={} layer_need={:?}",
-                    plan.steps.len(),
-                    layer_need
-                );
-                return AfterFinalAssistant::StopTurn;
-            }
-            log::info!(
-                target: "crabmate::per",
-                "after_final_assistant outcome=plan_schema_ok_semantics_fail plan_steps={} layer_need={:?} workflow_node_ids_ok={} validate_only_binding_ok={}",
-                plan.steps.len(),
-                layer_need,
-                workflow_ids_ok,
-                validate_only_binding_ok
-            );
-        }
-
-        if self.plan_rewrite_attempts >= self.plan_rewrite_max_attempts {
-            let reason = plan_rewrite::classify_exhausted_reason(
-                msg,
-                messages,
-                layer_need,
-                apply_layer_semantics,
-                self.final_plan_require_strict_workflow_node_coverage,
-            );
-            log::warn!(
-                target: "crabmate::per",
-                "after_final_assistant outcome=plan_rewrite_exhausted layer_need={:?} reason={:?}",
-                layer_need,
-                reason
-            );
-            return AfterFinalAssistant::StopTurnPlanRewriteExhausted { reason };
-        }
-        self.plan_rewrite_attempts += 1;
-        let validate_only_bind_ids = validate_only_binding_ids.as_ref().filter(|v| !v.is_empty());
-        let bind_suffix = validate_only_bind_ids
-            .map(|ids| plan_rewrite::validate_only_plan_binding_rewrite_suffix(ids.as_slice()))
-            .unwrap_or_default();
-        let rewrite_text = match (
-            layer_need.filter(|&n| n > 0 && apply_layer_semantics),
-            plan_rewrite::last_workflow_tool_node_ids(messages),
-        ) {
-            (Some(n), Some(ids)) if !ids.is_empty() => {
-                let strict = if self.final_plan_require_strict_workflow_node_coverage {
-                    format!(
-                        "\n- 若**任一步**填写了 `workflow_node_id`，则须覆盖下列**全部**节点 id（每 id 至少一步）：{}。",
-                        ids.join(", ")
-                    )
-                } else {
-                    String::new()
-                };
-                format!(
-                    "{}\n\n补充：\n- 最近一次 `workflow_validate_only` 结果为 **{n}** 个执行层（`spec.layer_count`）。你的 `agent_reply_plan.steps` 条数须 **不少于 {n}**，且每条 `description` 应能对应到具体层或节点意图。\n- 若步骤中填写了 `workflow_node_id`，其值须为下列 **workflow 节点 id** 之一的子集（与 `nodes[].id` 对齐）：{}。{}",
-                    plan_rewrite::plan_rewrite_user_text_base(),
-                    ids.join(", "),
-                    strict
-                )
-            }
-            (Some(n), _) => format!(
-                "{}\n\n补充：最近一次 `workflow_validate_only` 结果为 **{n}** 个执行层（`spec.layer_count`）。你的 `agent_reply_plan.steps` 条数须 **不少于 {n}**，且每条 `description` 应能对应到具体层或节点意图。",
-                plan_rewrite::plan_rewrite_user_text_base()
-            ),
-            (None, Some(ids)) if !ids.is_empty() => {
-                let strict = if self.final_plan_require_strict_workflow_node_coverage {
-                    format!(
-                        "\n- 若**任一步**填写了 `workflow_node_id`，则须覆盖下列**全部**节点 id（每 id 至少一步）：{}。",
-                        ids.join(", ")
-                    )
-                } else {
-                    String::new()
-                };
-                format!(
-                    "{}\n\n补充：若步骤中填写了 `workflow_node_id`，其值须为下列 **workflow 节点 id** 之一的子集（与最近一次 `workflow_execute` 工具结果中 `nodes[].id` 对齐）：{}。{}",
-                    plan_rewrite::plan_rewrite_user_text_base(),
-                    ids.join(", "),
-                    strict
-                )
-            }
-            (None, _) => plan_rewrite::plan_rewrite_user_text_base(),
-        };
-        let rewrite_text = format!("{rewrite_text}{bind_suffix}");
-        log::info!(
-            target: "crabmate::per",
-            "after_final_assistant outcome=request_plan_rewrite attempt={} layer_need={:?}",
-            self.plan_rewrite_attempts,
-            layer_need
-        );
-        AfterFinalAssistant::RequestPlanRewrite(Message {
-            role: "user".to_string(),
-            content: Some(rewrite_text.into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        })
+        final_plan_gate::after_final_assistant(self, msg, messages, cfg, workspace_is_set)
     }
 
     /// 对一次 `workflow_execute` 的 arguments 做反思决策、补丁与「要求最终带规划」标记更新。
