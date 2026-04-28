@@ -79,6 +79,18 @@ pub struct ManagerAgent {
 }
 
 impl ManagerAgent {
+    /// 初次分解与重规划共用的「分解硬性规则」第 1～10 条（单源维护，避免两处 prompt 漂移）。
+    const DECOMPOSITION_RULES_1_TO_10: &'static str = r#"1. 子目标必须**单一职责**，禁止跨步执行。
+2. 每个子目标只允许执行其描述中的动作，禁止提前执行后续步骤。
+3. 产物命名必须全程一致；一旦确定名称（如可执行文件名），后续不得改名或混用。
+4. `depends_on` 必须准确，后续步骤不得绕过依赖。
+5. 每个子目标必须给出可验证的 I/O 与验收目标，且与本步职责严格匹配。
+6. 若某步是“创建文件”，描述中只允许文件创建/内容核验，不得包含配置、编译或运行动作。
+7. 若某步是“配置构建”，描述中只允许配置动作，不得包含编译或运行动作。
+8. 若某步是“编译”，描述中只允许编译与产物核验，不得运行程序。
+9. 若某步是“运行验证”，描述中只允许运行与输出核验。
+10. 若任务涉及 C++ + CMake，默认采用稳定链路：检查目录 → 写 `main.cpp` → 写 `CMakeLists.txt` → `cmake -S . -B build` → `cmake --build build` → 运行产物；且可执行文件名需在 `CMakeLists.txt` 与后续子目标中保持一致（与 `add_executable` 目标名一致，勿随意改名）。"#;
+
     /// Manager 分解/重规划输出的强约束 schema（提示词用）。
     fn manager_output_schema_contract() -> &'static str {
         r#"{
@@ -582,16 +594,7 @@ impl ManagerAgent {
 原始任务：{}
 
 ## 分解硬性规则（必须遵守）
-1. 子目标必须**单一职责**，禁止跨步执行。
-2. 每个子目标只允许执行其描述中的动作，禁止提前执行后续步骤。
-3. 产物命名必须全程一致；一旦确定名称（如可执行文件名），后续不得改名或混用。
-4. `depends_on` 必须准确，后续步骤不得绕过依赖。
-5. 每个子目标必须给出可验证的 I/O 与验收目标，且与本步职责严格匹配。
-6. 若某步是“创建文件”，描述中只允许文件创建/内容核验，不得包含配置、编译或运行动作。
-7. 若某步是“配置构建”，描述中只允许配置动作，不得包含编译或运行动作。
-8. 若某步是“编译”，描述中只允许编译与产物核验，不得运行程序。
-9. 若某步是“运行验证”，描述中只允许运行与输出核验。
-10. 若任务涉及 C++ + CMake，默认采用稳定链路：检查目录 → 写 `main.cpp` → 写 `CMakeLists.txt` → `cmake -S . -B build` → `cmake --build build` → 运行产物；且可执行文件名需在 `CMakeLists.txt` 与后续子目标中保持一致（与 `add_executable` 目标名一致，勿随意改名）。
+{}
 
 ## 工作目录上下文
 {}
@@ -672,6 +675,7 @@ impl ManagerAgent {
 - 尽量复用已有的 artifacts，避免重复创建相同的文件
 "#,
             original_task,
+            Self::DECOMPOSITION_RULES_1_TO_10,
             workspace_context,
             artifacts_summary,
             failures_summary,
@@ -753,16 +757,7 @@ impl ManagerAgent {
 {}
 
 ## 分解硬性规则（必须遵守）
-1. 子目标必须**单一职责**，禁止跨步执行。
-2. 每个子目标只允许执行其描述中的动作，禁止提前执行后续步骤。
-3. 产物命名必须全程一致；一旦确定名称（如可执行文件名），后续不得改名或混用。
-4. `depends_on` 必须准确，后续步骤不得绕过依赖。
-5. 每个子目标必须给出可验证的 I/O 与验收目标，且与本步职责严格匹配。
-6. 若某步是“创建文件”，描述中只允许文件创建/内容核验，不得包含配置、编译或运行动作。
-7. 若某步是“配置构建”，描述中只允许配置动作，不得包含编译或运行动作。
-8. 若某步是“编译”，描述中只允许编译与产物核验，不得运行程序。
-9. 若某步是“运行验证”，描述中只允许运行与输出核验。
-10. 若任务涉及 C++ + CMake，默认采用稳定链路：检查目录 → 写 `main.cpp` → 写 `CMakeLists.txt` → `cmake -S . -B build` → `cmake --build build` → 运行产物；且可执行文件名需在 `CMakeLists.txt` 与后续子目标中保持一致（与 `add_executable` 目标名一致，勿随意改名）。
+{}
 
 ## 子目标 I/O 契约（必须显式写清，便于层间传产物与注入裁剪）
 - 对**每个**子目标在 `description` 开头用 2～4 行写清：本步**输入/依赖**、本步**预期输出**（路径或行为）；若依赖前序子目标，须写进 `depends_on`。
@@ -824,6 +819,7 @@ impl ManagerAgent {
 "#,
             task,
             task_type_guidance,
+            Self::DECOMPOSITION_RULES_1_TO_10,
             workspace_context,
             tools_description,
             Self::manager_tool_invariants(),
