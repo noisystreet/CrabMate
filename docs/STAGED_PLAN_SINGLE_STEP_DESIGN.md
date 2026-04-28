@@ -5,11 +5,25 @@
 
 ---
 
+## 0. 与产品目标的对齐：「单智能体 + 工具循环」
+
+仓库内**「单智能体 + 工具循环」**的既有实现，主要指 **`planner_executor_mode = single_agent`** 且 **`staged_plan_execution = false`** 时的 **`run_agent_outer_loop`**：同一对话链路、由模型在循环中反复选择工具直至终答。
+
+**本设计所服务的演进目标**是：在仍使用 **分阶段规划**（`staged_plan_execution = true`）与 **`agent_reply_plan` v1** 的前提下，让**运行时形态**更接近上述模式——
+
+- **单智能体**：不引入 hierarchical 的 Manager/Operator 多角色编排；主对话仍为**单一助手主体**与既有 P/R/E 外环（与现 `staged` 路径一致）。
+- **工具循环**：每一步子目标内的执行仍是 **工具调用循环**；规划轮退化为**高频、短视界**的「下一步意图/约束」注入，而不是一次吞吐很长 `steps[]` 的静态队列。
+
+因此：**「Planner 每轮仅 1 条 `steps`」是实现手段**；**「逼近单智能体 + 工具循环」是行为层面的目标表述**。下文技术条款均从属于该对齐关系。
+
+---
+
 ## 1. 背景与动机
 
 - **现状**：`staged_plan_execution = true` 时，无工具规划轮可产出 **`agent_reply_plan` v1**，`steps` 常为**多条**；执行器按 `steps` 顺序逐次进入外层循环（每步仍含 P/R/E 与工具调用）。
-- **目标**：在**保留**「规划轮 JSON + 分步执行 + SSE 时间线」的前提下，约束 **Planner 每轮输出的 `steps` 长度上限为 1**（`no_task` 时仍为空），使整体更接近 **滚动视界（rolling horizon）**：每完成一步（或等价语义），下一轮用户任务推进时再走规划轮，产出**下一步**。
-- **非目标**：不替代 **`planner_executor_mode = hierarchical`**；不替代 **`staged_plan_execution = false`** 下的纯 **`run_agent_outer_loop`**（已是单智能体循环）。
+- **目标**：在**保留**「规划轮 JSON + 分步执行 + SSE 时间线」的前提下，约束 **Planner 每轮输出的 `steps` 长度上限为 1**（`no_task` 时仍为空），使整体更接近 **滚动视界（rolling horizon）**：每完成一步（或等价语义），在同一用户任务下**再次**进入无工具规划轮，产出**下一步**——从而在节奏上贴近 **「观察环境 → 再决定下一步」** 的 ReAct 式单智能体循环，而非「首轮即排定长队列再依次清空」。
+- **非目标**：不替代 **`planner_executor_mode = hierarchical`**。  
+  **`staged_plan_execution = false`** 下的 **`run_agent_outer_loop`** **已是**单智能体 + 工具循环；本设计**不是**重复实现该路径，而是让 **staged 路径在启用时**通过单步 + 步后 replan **向该形态收敛**（仍保留结构化规划与相关 SSE/审计能力）。
 
 ---
 
