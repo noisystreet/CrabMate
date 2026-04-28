@@ -2,7 +2,7 @@
 
 # 测试与质量检查
 
-本文汇总在仓库根目录（或注明子目录）执行的**自动化测试与常用检查命令**，覆盖 Rust 后端、Leptos 前端、浏览器 E2E 与依赖审计。更细的模块与协议说明见 [`DEVELOPMENT.md`](DEVELOPMENT.md)。
+本文汇总在仓库根目录（或注明子目录）执行的**自动化测试与常用检查命令**，覆盖 Rust 后端、Leptos 前端、浏览器 E2E 与依赖审计。更细的模块与协议说明见 [`DEVELOPMENT.md`](DEVELOPMENT.md)。**`crabmate bench` 测评子系统的功能规划与专用测试策略**见 [`BENCHMARK_PLANNING.md`](BENCHMARK_PLANNING.md)（与本文通用测试清单分离）。
 
 ## 前置条件
 

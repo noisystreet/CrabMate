@@ -2,7 +2,7 @@
 
 # Testing and quality checks
 
-This page lists **automated tests and common checks** for the CrabMate repo (run from the repository root unless noted). For module layout and protocols, see [`DEVELOPMENT.md`](DEVELOPMENT.md).
+This page lists **automated tests and common checks** for the CrabMate repo (run from the repository root unless noted). For module layout and protocols, see [`DEVELOPMENT.md`](DEVELOPMENT.md). For **`crabmate bench`** roadmap and benchmark-specific testing strategy, see [`BENCHMARK_PLANNING.md`](../BENCHMARK_PLANNING.md) (kept separate from this general checklist).
 
 ## Prerequisites
 

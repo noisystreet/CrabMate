@@ -45,6 +45,7 @@ It ships **function calling**, workspace commands and file tools, plus a **Web U
 
 | Document | Contents | 中文 |
 | --- | --- | --- |
+| [docs/BENCHMARK_PLANNING.md](docs/BENCHMARK_PLANNING.md) | Benchmark `bench` roadmap, open-source benchmark hooks, testing strategy (separate from general product docs) | [zh](docs/BENCHMARK_PLANNING.md) |
 | [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md) | Architecture, module index, protocols | [zh](docs/DEVELOPMENT.md) |
 | [docs/en/TESTING.md](docs/en/TESTING.md) | Test commands: Rust, Leptos, E2E, pre-commit, audits | [zh](docs/TESTING.md) |
 | [docs/en/TOOLS.md](docs/en/TOOLS.md) | Built-in tools and JSON examples | [zh](docs/TOOLS.md) |

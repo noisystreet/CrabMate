@@ -60,6 +60,8 @@
 
 ## Benchmark（`bench`）
 
+评测能力规划、各 benchmark 对接与测试策略见 **`docs/BENCHMARK_PLANNING.md`**（与通用 CLI 说明分离）。
+
 | 选项 | 说明 |
 |------|------|
 | `--benchmark <TYPE>` | `swe_bench`、`gaia`、`human_eval`、`generic` |
