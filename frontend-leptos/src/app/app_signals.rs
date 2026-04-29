@@ -16,7 +16,7 @@ use leptos_dom::helpers::WindowListenerHandle;
 
 use crate::api::{StatusData, TasksData, WorkspaceData};
 use crate::app_prefs::{
-    AGENT_ROLE_KEY, BG_DECOR_KEY, DEFAULT_SIDE_WIDTH, SIDEBAR_RAIL_COLLAPSED_KEY,
+    BG_DECOR_KEY, CM_ROLE_KEY, DEFAULT_SIDE_WIDTH, SIDEBAR_RAIL_COLLAPSED_KEY,
     STATUS_BAR_VISIBLE_KEY, SidePanelView, THEME_KEY, WORKSPACE_WIDTH_KEY, load_bool_key,
     load_f64_key, load_side_panel_view, local_storage,
 };
@@ -290,7 +290,7 @@ impl LLMSettingsSignals {
             client_llm_storage_tick: RwSignal::new(0),
             selected_agent_role: RwSignal::new(
                 local_storage()
-                    .and_then(|s| s.get_item(AGENT_ROLE_KEY).ok().flatten())
+                    .and_then(|s| s.get_item(CM_ROLE_KEY).ok().flatten())
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty()),
             ),

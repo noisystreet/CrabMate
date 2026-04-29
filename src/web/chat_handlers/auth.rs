@@ -1,4 +1,4 @@
-//! Web API 鉴权中间件（`AGENT_WEB_API_BEARER_TOKEN` / `web_api_bearer_token`）。
+//! Web API 鉴权中间件（`CM_WEB_API_BEARER_TOKEN` / `web_api_bearer_token`）。
 //!
 //! 受保护路径接受 **`Authorization: Bearer <token>`** 或 **`X-API-Key: <token>`**（与配置中的同一密钥比对）；二者满足其一即可。
 

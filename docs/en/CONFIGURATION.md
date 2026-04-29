@@ -14,7 +14,7 @@ Default settings are merged from seven embedded TOML fragments under **`config/`
 - **Web API auth layer**: If **`serve`** started with non-empty **`web_api_bearer_token`**, the auth middleware is mounted for the process lifetime; clients send **`Authorization: Bearer <same secret>`** or **`X-API-Key: <same secret>`** (either). Hot reload **does not** add/remove the layer—switching between “no token” and “token” requires **`serve` restart**. Hot reload still updates the secret string used inside handlers when the layer exists.
 - **Secrets in memory**: **`web_api_bearer_token`** and **`web_search_api_key`** are **secrecy `SecretString`** in [`AgentConfig`](DEVELOPMENT.md); **`Debug` / structured logs** avoid plaintext; use **`ExposeSecret::expose_secret()`** (re-exported from `config`). **`API_KEY`** is not part of `AgentConfig`.
 
-## Environment variables (`AGENT_*`)
+## Environment variables (`CM_*`)
 
 Common keys below; **full names and defaults** live in **`config/default_config.toml`**, **`config/session.toml`**, **`config/context_inject.toml`**, **`config/tools.toml`**, **`config/sandbox.toml`**, **`config/planning.toml`**, **`config/memory.toml`**. **`API_KEY`** is env-only (see “Model & API”); secret behavior under “Hot reload” above.
 
@@ -23,40 +23,40 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | Variable | Description |
 | --- | --- |
 | `API_KEY` | Cloud / OpenAI-compatible Bearer; with `llm_http_auth_mode=bearer` (default) sent as `Authorization` on `chat/completions` / `models`. **Not in TOML**; after change, re-export and **`/config reload`** or restart. With `none` (e.g. Ollama), omit. |
-| `AGENT_API_BASE` | Overrides `api_base`. |
-| `AGENT_MODEL` | Overrides `model`. |
-| `AGENT_LLM_HTTP_AUTH_MODE` | `bearer` (needs **`API_KEY`**) or `none` (no `Authorization` on `chat/completions` / `models`). |
-| `AGENT_LLM_REASONING_SPLIT` | Overrides `llm_reasoning_split`. If unset in TOML/env: **MiniMax** gateways (by `model` / `api_base`) default to **on**; others default **off** (see § MiniMax). |
-| `AGENT_LLM_BIGMODEL_THINKING` | If true, Zhipu **`thinking: { "type": "enabled" }`** (GLM-5; see § GLM). |
-| `AGENT_LLM_KIMI_THINKING_DISABLED` | If true, **`thinking: { "type": "disabled" }`** for Moonshot **kimi-k2.5** (see § Kimi). |
-| `AGENT_SYSTEM_PROMPT` | Inline system prompt; clears inherited `system_prompt_file` unless `AGENT_SYSTEM_PROMPT_FILE` is set (see § System prompt). |
-| `AGENT_SYSTEM_PROMPT_FILE` | Path to system prompt file. |
-| `AGENT_DEFAULT_AGENT_ROLE` | Default **role id** when Web `agent_role` / CLI `--agent-role` is omitted (must exist in the role table; see § Multi-role). |
+| `CM_API_BASE` | Overrides `api_base`. |
+| `CM_MODEL` | Overrides `model`. |
+| `CM_LLM_HTTP_AUTH_MODE` | `bearer` (needs **`API_KEY`**) or `none` (no `Authorization` on `chat/completions` / `models`). |
+| `CM_LLM_REASONING_SPLIT` | Overrides `llm_reasoning_split`. If unset in TOML/env: **MiniMax** gateways (by `model` / `api_base`) default to **on**; others default **off** (see § MiniMax). |
+| `CM_LLM_BIGMODEL_THINKING` | If true, Zhipu **`thinking: { "type": "enabled" }`** (GLM-5; see § GLM). |
+| `CM_LLM_KIMI_THINKING_DISABLED` | If true, **`thinking: { "type": "disabled" }`** for Moonshot **kimi-k2.5** (see § Kimi). |
+| `CM_SYSTEM_PROMPT` | Inline system prompt; clears inherited `system_prompt_file` unless `CM_SYSTEM_PROMPT_FILE` is set (see § System prompt). |
+| `CM_SYSTEM_PROMPT_FILE` | Path to system prompt file. |
+| `CM_DEFAULT_CM_ROLE` | Default **role id** when Web `agent_role` / CLI `--agent-role` is omitted (must exist in the role table; see § Multi-role). |
 
 ### Sampling
 
 | Variable | Description |
 | --- | --- |
-| `AGENT_TEMPERATURE` | Overrides `temperature`. |
-| `AGENT_LLM_SEED` | Overrides `llm_seed`. |
+| `CM_TEMPERATURE` | Overrides `temperature`. |
+| `CM_LLM_SEED` | Overrides `llm_seed`. |
 
 ### Web server
 
 | Variable | Description |
 | --- | --- |
-| `AGENT_HTTP_HOST` | Bind address when `--host` omitted. |
-| `AGENT_WEB_API_BEARER_TOKEN` | Shared secret for protected Web APIs; send **`Authorization: Bearer …`** or **`X-API-Key: …`** (same value, pick one). |
-| `AGENT_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK` | Allow unauthenticated non-loopback bind (**high risk**). |
+| `CM_HTTP_HOST` | Bind address when `--host` omitted. |
+| `CM_WEB_API_BEARER_TOKEN` | Shared secret for protected Web APIs; send **`Authorization: Bearer …`** or **`X-API-Key: …`** (same value, pick one). |
+| `CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK` | Allow unauthenticated non-loopback bind (**high risk**). |
 
 ### Workspace & Cursor-style rules
 
 | Variable | Description |
 | --- | --- |
-| `AGENT_WORKSPACE_ALLOWED_ROOTS` | Comma-separated; same as `[agent] workspace_allowed_roots`. |
-| `AGENT_CURSOR_RULES_ENABLED` | Enable rule file injection (default **true**; set `0`/`false` to disable). |
-| `AGENT_CURSOR_RULES_DIR` | Directory of `*.mdc`. |
-| `AGENT_CURSOR_RULES_INCLUDE_AGENTS_MD` | Append `AGENTS.md`. |
-| `AGENT_CURSOR_RULES_MAX_CHARS` | Max injected chars. |
+| `CM_WORKSPACE_ALLOWED_ROOTS` | Comma-separated; same as `[agent] workspace_allowed_roots`. |
+| `CM_CURSOR_RULES_ENABLED` | Enable rule file injection (default **true**; set `0`/`false` to disable). |
+| `CM_CURSOR_RULES_DIR` | Directory of `*.mdc`. |
+| `CM_CURSOR_RULES_INCLUDE_AGENTS_MD` | Append `AGENTS.md`. |
+| `CM_CURSOR_RULES_MAX_CHARS` | Max injected chars. |
 
 **Path safety (matches implementation)**: `workspace_allowed_roots` and per-request revalidation catch `..` escapes and symlinks that already point outside roots **at check time**. On **Unix**, **`read_file`** (`resolve_for_read_open`) and Web workspace list/read/write/delete go through **`src/workspace_fs.rs`**: on Linux, **`openat2` + `RESOLVE_IN_ROOT`** opens paths relative to an already-open workspace-root fd, narrowing the race between policy checks and `open`; symlinks inside the tree may still be followed, but resolution cannot escape the root. **Residual risk**: checks still depend on `canonicalize` at check time; non-Linux paths and code that does not use `workspace_fs` may still be TOCTOU-prone; **`create_dir_all`** + opens are not fully atomic. This is **not** a kernel sandbox; use **Web auth** on open networks. See **`src/path_workspace.rs`**.
 
@@ -64,100 +64,100 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 
 | Variable | Description |
 | --- | --- |
-| `AGENT_FINAL_PLAN_REQUIREMENT` | `never` / `workflow_reflection` / `always`. |
-| `AGENT_PLAN_REWRITE_MAX_ATTEMPTS` | Max plan rewrite rounds. |
-| `AGENT_PLANNER_EXECUTOR_MODE` | `single_agent` / `logical_dual_agent`. |
-| `AGENT_STAGED_PLAN_EXECUTION` | Enable staged planning. |
-| `AGENT_STAGED_PLAN_PHASE_INSTRUCTION` | Planner phase instruction text. |
-| `AGENT_STAGED_PLAN_ALLOW_NO_TASK` | Legacy; **no effect** (`no_task` rules come from embedded schema in the default planner system). |
-| `AGENT_STAGED_PLAN_FEEDBACK_MODE` | `fail_fast` / `patch_planner`. |
-| `AGENT_STAGED_PLAN_PATCH_MAX_ATTEMPTS` | Max patch-planner rounds. |
-| `AGENT_STAGED_PLAN_ENSEMBLE_COUNT` | Logical multi-planner count (1–3, default 1). |
-| `AGENT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM` | Print no-tools planner stream to stdout in CLI/`chat` (default `true`; see § Staged planning). |
-| `AGENT_STAGED_PLAN_OPTIMIZER_ROUND` | Enable post-plan optimizer round (default `true`). |
-| `AGENT_STAGED_PLAN_TWO_PHASE_NL_DISPLAY` | When `true`, suppress user-visible streaming for finalized no-tools plan JSON, then run a follow-up no-tools round for natural-language-only output (default `false`; see § Staged planning). |
+| `CM_FINAL_PLAN_REQUIREMENT` | `never` / `workflow_reflection` / `always`. |
+| `CM_PLAN_REWRITE_MAX_ATTEMPTS` | Max plan rewrite rounds. |
+| `CM_PLANNER_EXECUTOR_MODE` | `single_agent` / `logical_dual_agent`. |
+| `CM_STAGED_PLAN_EXECUTION` | Enable staged planning. |
+| `CM_STAGED_PLAN_PHASE_INSTRUCTION` | Planner phase instruction text. |
+| `CM_STAGED_PLAN_ALLOW_NO_TASK` | Legacy; **no effect** (`no_task` rules come from embedded schema in the default planner system). |
+| `CM_STAGED_PLAN_FEEDBACK_MODE` | `fail_fast` / `patch_planner`. |
+| `CM_STAGED_PLAN_PATCH_MAX_ATTEMPTS` | Max patch-planner rounds. |
+| `CM_STAGED_PLAN_ENSEMBLE_COUNT` | Logical multi-planner count (1–3, default 1). |
+| `CM_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM` | Print no-tools planner stream to stdout in CLI/`chat` (default `true`; see § Staged planning). |
+| `CM_STAGED_PLAN_OPTIMIZER_ROUND` | Enable post-plan optimizer round (default `true`). |
+| `CM_STAGED_PLAN_TWO_PHASE_NL_DISPLAY` | When `true`, suppress user-visible streaming for finalized no-tools plan JSON, then run a follow-up no-tools round for natural-language-only output (default `false`; see § Staged planning). |
 
 ### Queue, parallelism, cache
 
 | Variable | Description |
 | --- | --- |
-| `AGENT_HEALTH_LLM_MODELS_PROBE` | When `1`/`true`, **`GET /health`** runs a **GET …/models** check (list endpoint only, no completion cost). Default off. |
-| `AGENT_HEALTH_LLM_MODELS_PROBE_CACHE_SECS` | Cache probe results in-process (**5–86400**, default **120**) to limit upstream traffic from frequent health polls. |
-| `AGENT_CHAT_QUEUE_MAX_CONCURRENT` | Max concurrent chat jobs. |
-| `AGENT_CHAT_QUEUE_MAX_PENDING` | Max queued chat jobs. |
-| `AGENT_PARALLEL_READONLY_TOOLS_MAX` | Max parallel readonly tools per round. |
-| `AGENT_READ_FILE_TURN_CACHE_MAX_ENTRIES` | Per-turn `read_file` cache; `0` off; cleared on writes / workspace change. |
-| `AGENT_TEST_RESULT_CACHE_ENABLED` | In-process test output LRU. |
-| `AGENT_TEST_RESULT_CACHE_MAX_ENTRIES` | LRU size. Reuses truncated output for `cargo_test`, `rust_test_one`, `npm_run` (`script=test`), `run_command` `cargo`+`test` without `--nocapture` / `--test-threads`; first line **`[CrabMate test output cache hit]`**; not across restarts. |
+| `CM_HEALTH_LLM_MODELS_PROBE` | When `1`/`true`, **`GET /health`** runs a **GET …/models** check (list endpoint only, no completion cost). Default off. |
+| `CM_HEALTH_LLM_MODELS_PROBE_CACHE_SECS` | Cache probe results in-process (**5–86400**, default **120**) to limit upstream traffic from frequent health polls. |
+| `CM_CHAT_QUEUE_MAX_CONCURRENT` | Max concurrent chat jobs. |
+| `CM_CHAT_QUEUE_MAX_PENDING` | Max queued chat jobs. |
+| `CM_PARALLEL_READONLY_TOOLS_MAX` | Max parallel readonly tools per round. |
+| `CM_READ_FILE_TURN_CACHE_MAX_ENTRIES` | Per-turn `read_file` cache; `0` off; cleared on writes / workspace change. |
+| `CM_TEST_RESULT_CACHE_ENABLED` | In-process test output LRU. |
+| `CM_TEST_RESULT_CACHE_MAX_ENTRIES` | LRU size. Reuses truncated output for `cargo_test`, `rust_test_one`, `npm_run` (`script=test`), `run_command` `cargo`+`test` without `--nocapture` / `--test-threads`; first line **`[CrabMate test output cache hit]`**; not across restarts. |
 
 ### Session workspace changelist
 
 | Variable | Description |
 | --- | --- |
-| `AGENT_SESSION_WORKSPACE_CHANGELIST_ENABLED` | Inject `crabmate_workspace_changelist` user message. |
-| `AGENT_SESSION_WORKSPACE_CHANGELIST_MAX_CHARS` | Max injected chars. Accumulates writes + unified diff per `long_term_memory_scope_id` (Web: `conversation_id`; CLI default `__default__`); not in session SQLite (stripped on save). **`workflow_execute` node tools** excluded. |
+| `CM_SESSION_WORKSPACE_CHANGELIST_ENABLED` | Inject `crabmate_workspace_changelist` user message. |
+| `CM_SESSION_WORKSPACE_CHANGELIST_MAX_CHARS` | Max injected chars. Accumulates writes + unified diff per `long_term_memory_scope_id` (Web: `conversation_id`; CLI default `__default__`); not in session SQLite (stripped on save). **`workflow_execute` node tools** excluded. |
 
 ### Allowlist, MCP, conversation store
 
 | Variable | Description |
 | --- | --- |
-| `AGENT_ALLOWED_COMMANDS` | Comma-separated `run_command` allowlist. Embedded defaults also include **`docker`**, **`podman`**, **`mvn`**, **`gradle`** (JVM/container built-ins and manual `run_command`); full list **`config/tools.toml`**. |
-| `AGENT_MCP_ENABLED` | Enable MCP. |
-| `AGENT_MCP_COMMAND` | MCP stdio launch command. |
-| `AGENT_MCP_TOOL_TIMEOUT_SECS` | MCP tool timeout; one stdio session per fingerprint; **`crabmate mcp list`** needs no `API_KEY`; **`mcp list --probe`** spawns subprocess. |
-| `AGENT_CODEBASE_SEMANTIC_SEARCH_ENABLED` | Register **`codebase_semantic_search`** (`false` removes from tool list). |
-| `AGENT_CODEBASE_SEMANTIC_INDEX_SQLITE_PATH` | Relative semantic index SQLite path; default **`.crabmate/codebase_semantic.sqlite`**. |
-| `AGENT_CODEBASE_SEMANTIC_MAX_FILE_BYTES` | Max bytes per indexed file. |
-| `AGENT_CODEBASE_SEMANTIC_CHUNK_MAX_CHARS` | Max chars per chunk. |
-| `AGENT_CODEBASE_SEMANTIC_TOP_K` | Default Top-K. |
-| `AGENT_CODEBASE_SEMANTIC_REBUILD_MAX_FILES` | Max files **re-embedded** per **`rebuild_index`** (large-repo guard; unchanged files are skipped in incremental mode). |
-| `AGENT_CODEBASE_SEMANTIC_REBUILD_INCREMENTAL` | Workspace-wide **`rebuild_index`** defaults to **incremental** (**`mtime` + `size` + SHA256**); **`false`** clears chunk + file-catalog rows then full re-embed. Subtree **`path`** still replaces that prefix only. |
-| `AGENT_CODEBASE_SEMANTIC_QUERY_MAX_CHUNKS` | Max vector chunks scanned per **`query`** (default **50000**; **0** = unlimited). |
-| `AGENT_CODEBASE_SEMANTIC_HYBRID_ALPHA` | Default **`retrieve_mode: hybrid`** vector weight **α** (0–1): **α×cosine + (1-α)×fts_norm** (SQLite **FTS5** BM25 normalized). |
-| `AGENT_CODEBASE_SEMANTIC_FTS_TOP_N` | Max FTS rows for hybrid / **`fts_only`** (BM25); **1–10000**, default **400**. |
-| `AGENT_CODEBASE_SEMANTIC_HYBRID_SEMANTIC_POOL` | Hybrid: vector candidate pool size (≥ **`top_k`**); **1–10000**, default **256**. |
-| `AGENT_CONVERSATION_STORE_SQLITE_PATH` | Conversation SQLite path. |
+| `CM_ALLOWED_COMMANDS` | Comma-separated `run_command` allowlist. Embedded defaults also include **`docker`**, **`podman`**, **`mvn`**, **`gradle`** (JVM/container built-ins and manual `run_command`); full list **`config/tools.toml`**. |
+| `CM_MCP_ENABLED` | Enable MCP. |
+| `CM_MCP_COMMAND` | MCP stdio launch command. |
+| `CM_MCP_TOOL_TIMEOUT_SECS` | MCP tool timeout; one stdio session per fingerprint; **`crabmate mcp list`** needs no `API_KEY`; **`mcp list --probe`** spawns subprocess. |
+| `CM_CODEBASE_SEMANTIC_SEARCH_ENABLED` | Register **`codebase_semantic_search`** (`false` removes from tool list). |
+| `CM_CODEBASE_SEMANTIC_INDEX_SQLITE_PATH` | Relative semantic index SQLite path; default **`.crabmate/codebase_semantic.sqlite`**. |
+| `CM_CODEBASE_SEMANTIC_MAX_FILE_BYTES` | Max bytes per indexed file. |
+| `CM_CODEBASE_SEMANTIC_CHUNK_MAX_CHARS` | Max chars per chunk. |
+| `CM_CODEBASE_SEMANTIC_TOP_K` | Default Top-K. |
+| `CM_CODEBASE_SEMANTIC_REBUILD_MAX_FILES` | Max files **re-embedded** per **`rebuild_index`** (large-repo guard; unchanged files are skipped in incremental mode). |
+| `CM_CODEBASE_SEMANTIC_REBUILD_INCREMENTAL` | Workspace-wide **`rebuild_index`** defaults to **incremental** (**`mtime` + `size` + SHA256**); **`false`** clears chunk + file-catalog rows then full re-embed. Subtree **`path`** still replaces that prefix only. |
+| `CM_CODEBASE_SEMANTIC_QUERY_MAX_CHUNKS` | Max vector chunks scanned per **`query`** (default **50000**; **0** = unlimited). |
+| `CM_CODEBASE_SEMANTIC_HYBRID_ALPHA` | Default **`retrieve_mode: hybrid`** vector weight **α** (0–1): **α×cosine + (1-α)×fts_norm** (SQLite **FTS5** BM25 normalized). |
+| `CM_CODEBASE_SEMANTIC_FTS_TOP_N` | Max FTS rows for hybrid / **`fts_only`** (BM25); **1–10000**, default **400**. |
+| `CM_CODEBASE_SEMANTIC_HYBRID_SEMANTIC_POOL` | Hybrid: vector candidate pool size (≥ **`top_k`**); **1–10000**, default **256**. |
+| `CM_CONVERSATION_STORE_SQLITE_PATH` | Conversation SQLite path. |
 
 ### First-turn injection
 
 | Variable | Description |
 | --- | --- |
-| `AGENT_MEMORY_FILE_ENABLED` | Workspace memo file injection. |
-| `AGENT_MEMORY_FILE` | Memo path. |
-| `AGENT_MEMORY_FILE_MAX_CHARS` | Memo max chars. |
-| `AGENT_LIVING_DOCS_INJECT_ENABLED` | Prepend a short summary from **`.crabmate/living_docs/`** (`SUMMARY.md`, `map.md`, …) to the first-turn merged `user` block. |
-| `AGENT_LIVING_DOCS_RELATIVE_DIR` | Living-docs directory relative to workspace root (default `.crabmate/living_docs`). |
-| `AGENT_LIVING_DOCS_INJECT_MAX_CHARS` | Total char budget for living-docs injection; `0` disables. |
-| `AGENT_LIVING_DOCS_FILE_MAX_EACH_CHARS` | Per-file read budget under that directory. |
-| `AGENT_PROJECT_PROFILE_INJECT_ENABLED` | Project profile injection. |
-| `AGENT_PROJECT_PROFILE_INJECT_MAX_CHARS` | Profile max chars. |
-| `AGENT_PROJECT_DEPENDENCY_BRIEF_INJECT_ENABLED` | Dependency brief (merged with profile/memo). |
-| `AGENT_PROJECT_DEPENDENCY_BRIEF_INJECT_MAX_CHARS` | From `cargo metadata` edges + Mermaid + **workspace root or `frontend/`** `package.json` name excerpts (common npm subfolder layout; unrelated to CrabMate’s bundled `frontend-leptos`); `0` disables segment. |
+| `CM_MEMORY_FILE_ENABLED` | Workspace memo file injection. |
+| `CM_MEMORY_FILE` | Memo path. |
+| `CM_MEMORY_FILE_MAX_CHARS` | Memo max chars. |
+| `CM_LIVING_DOCS_INJECT_ENABLED` | Prepend a short summary from **`.crabmate/living_docs/`** (`SUMMARY.md`, `map.md`, …) to the first-turn merged `user` block. |
+| `CM_LIVING_DOCS_RELATIVE_DIR` | Living-docs directory relative to workspace root (default `.crabmate/living_docs`). |
+| `CM_LIVING_DOCS_INJECT_MAX_CHARS` | Total char budget for living-docs injection; `0` disables. |
+| `CM_LIVING_DOCS_FILE_MAX_EACH_CHARS` | Per-file read budget under that directory. |
+| `CM_PROJECT_PROFILE_INJECT_ENABLED` | Project profile injection. |
+| `CM_PROJECT_PROFILE_INJECT_MAX_CHARS` | Profile max chars. |
+| `CM_PROJECT_DEPENDENCY_BRIEF_INJECT_ENABLED` | Dependency brief (merged with profile/memo). |
+| `CM_PROJECT_DEPENDENCY_BRIEF_INJECT_MAX_CHARS` | From `cargo metadata` edges + Mermaid + **workspace root or `frontend/`** `package.json` name excerpts (common npm subfolder layout; unrelated to CrabMate’s bundled `frontend-leptos`); `0` disables segment. |
 
 ### Tool explain card
 
 | Variable | Description |
 | --- | --- |
-| `AGENT_TOOL_CALL_EXPLAIN_ENABLED` | Require `crabmate_explain_why` on mutating tools. |
-| `AGENT_TOOL_CALL_EXPLAIN_MIN_CHARS` | Min explain length. |
-| `AGENT_TOOL_CALL_EXPLAIN_MAX_CHARS` | Max explain length. |
+| `CM_TOOL_CALL_EXPLAIN_ENABLED` | Require `crabmate_explain_why` on mutating tools. |
+| `CM_TOOL_CALL_EXPLAIN_MIN_CHARS` | Min explain length. |
+| `CM_TOOL_CALL_EXPLAIN_MAX_CHARS` | Max explain length. |
 
 ### Long-term memory
 
 | Variable | Description |
 | --- | --- |
-| `AGENT_LONG_TERM_MEMORY_ENABLED` | Enable long-term memory. |
-| `AGENT_LONG_TERM_MEMORY_SCOPE_MODE` | Scope mode. |
-| `AGENT_LONG_TERM_MEMORY_VECTOR_BACKEND` | Default `fastembed` or `disabled`. |
-| `AGENT_LONG_TERM_MEMORY_STORE_SQLITE_PATH` | SQLite for vectors/metadata. |
-| `AGENT_LONG_TERM_MEMORY_TOP_K` | Retrieval Top-K. |
-| `AGENT_LONG_TERM_MEMORY_MAX_CHARS_PER_CHUNK` | Max chars per chunk. |
-| `AGENT_LONG_TERM_MEMORY_MIN_CHARS_TO_INDEX` | Min chars to index. |
-| `AGENT_LONG_TERM_MEMORY_ASYNC_INDEX` | Async indexing. |
-| `AGENT_LONG_TERM_MEMORY_AUTO_INDEX_TURNS` | After each turn, auto-index last user/assistant pair; `false` keeps only explicit **`long_term_remember`** writes. |
-| `AGENT_LONG_TERM_MEMORY_DEFAULT_TTL_SECS` | Default TTL seconds for **auto**-indexed rows; `0` = no expiry (still capped by **`max_entries`**). Explicit **`long_term_remember`** can set `ttl_secs` per call. |
-| `AGENT_LONG_TERM_MEMORY_MAX_ENTRIES` | Max entries. |
-| `AGENT_LONG_TERM_MEMORY_INJECT_MAX_CHARS` | Max chars injected into model context. |
+| `CM_LONG_TERM_MEMORY_ENABLED` | Enable long-term memory. |
+| `CM_LONG_TERM_MEMORY_SCOPE_MODE` | Scope mode. |
+| `CM_LONG_TERM_MEMORY_VECTOR_BACKEND` | Default `fastembed` or `disabled`. |
+| `CM_LONG_TERM_MEMORY_STORE_SQLITE_PATH` | SQLite for vectors/metadata. |
+| `CM_LONG_TERM_MEMORY_TOP_K` | Retrieval Top-K. |
+| `CM_LONG_TERM_MEMORY_MAX_CHARS_PER_CHUNK` | Max chars per chunk. |
+| `CM_LONG_TERM_MEMORY_MIN_CHARS_TO_INDEX` | Min chars to index. |
+| `CM_LONG_TERM_MEMORY_ASYNC_INDEX` | Async indexing. |
+| `CM_LONG_TERM_MEMORY_AUTO_INDEX_TURNS` | After each turn, auto-index last user/assistant pair; `false` keeps only explicit **`long_term_remember`** writes. |
+| `CM_LONG_TERM_MEMORY_DEFAULT_TTL_SECS` | Default TTL seconds for **auto**-indexed rows; `0` = no expiry (still capped by **`max_entries`**). Explicit **`long_term_remember`** can set `ttl_secs` per call. |
+| `CM_LONG_TERM_MEMORY_MAX_ENTRIES` | Max entries. |
+| `CM_LONG_TERM_MEMORY_INJECT_MAX_CHARS` | Max chars injected into model context. |
 
 Expired rows are purged on read/write. Built-in tools **`long_term_remember`**, **`long_term_forget`**, **`long_term_memory_list`** are registered when **`long_term_memory_enabled`** (do not store secrets).
 
@@ -167,19 +167,19 @@ With Web `conversation_store_sqlite_path`, session and memory may share one SQLi
 
 | Variable | Description |
 | --- | --- |
-| `AGENT_WEB_SEARCH_PROVIDER` | Provider id. |
-| `AGENT_WEB_SEARCH_API_KEY` | Search API key. |
-| `AGENT_WEB_SEARCH_TIMEOUT_SECS` | Timeout seconds. |
-| `AGENT_WEB_SEARCH_MAX_RESULTS` | Max results. |
-| `AGENT_HTTP_FETCH_ALLOWED_PREFIXES` | Allowed URL prefixes. |
-| `AGENT_HTTP_FETCH_TIMEOUT_SECS` | Fetch timeout. |
-| `AGENT_HTTP_FETCH_MAX_RESPONSE_BYTES` | Max response bytes. |
+| `CM_WEB_SEARCH_PROVIDER` | Provider id. |
+| `CM_WEB_SEARCH_API_KEY` | Search API key. |
+| `CM_WEB_SEARCH_TIMEOUT_SECS` | Timeout seconds. |
+| `CM_WEB_SEARCH_MAX_RESULTS` | Max results. |
+| `CM_HTTP_FETCH_ALLOWED_PREFIXES` | Allowed URL prefixes. |
+| `CM_HTTP_FETCH_TIMEOUT_SECS` | Fetch timeout. |
+| `CM_HTTP_FETCH_MAX_RESPONSE_BYTES` | Max response bytes. |
 
 **Outer `tokio::time::timeout` around `spawn_blocking`**: besides **`http_fetch_timeout_secs`** (client read timeout), the async path wraps blocking work. Defaults align with **`command_timeout_secs`** and **`http_fetch_timeout_secs`**. Override with TOML **`[tool_registry]`** keys **`http_fetch_wall_timeout_secs`** / **`http_request_wall_timeout_secs`** (see commented examples at the end of **`config/tools.toml`**).
 
 ### `tool_registry` policy (`tools.toml` / main config)
 
-Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`config.toml`** (merged like other fragments) maps into **`AgentConfig`** and is updated on hot reload. **No `AGENT_*` aliases**—use TOML.
+Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`config.toml`** (merged like other fragments) maps into **`AgentConfig`** and is updated on hot reload. **No `CM_*` aliases**—use TOML.
 
 | Key | Purpose |
 | --- | --- |
@@ -198,25 +198,25 @@ Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`confi
 
 | Variable | Description |
 | --- | --- |
-| `AGENT_MAX_MESSAGE_HISTORY` | Max messages kept. |
-| `AGENT_TOOL_MESSAGE_MAX_CHARS` | Compress `role: tool` before model if longer. |
-| `AGENT_TOOL_RESULT_ENVELOPE_V1` | `crabmate_tool` envelope v1. |
-| `AGENT_SSE_TOOL_CALL_INCLUDE_ARGUMENTS` | When truthy, SSE **`tool_call`** includes redacted, length-capped **`arguments`** in addition to **`arguments_preview`** (default off; reduces accidental exposure in the browser). |
-| `AGENT_TOOL_STATS_ENABLED` | When truthy, enable in-process tool-outcome stats and append a short hint to the **new** conversation’s first `system` (see below). |
-| `AGENT_TOOL_STATS_WINDOW_EVENTS` | Sliding-window event cap (16–65536); mirrors TOML `agent_tool_stats_window_events`. |
-| `AGENT_TOOL_STATS_MIN_SAMPLES` | Min total calls per tool in the window before it appears in the hint (1–10000). |
-| `AGENT_TOOL_STATS_MAX_CHARS` | Max Unicode scalars for the appendix (64–32768; truncated if longer). |
-| `AGENT_TOOL_STATS_WARN_BELOW_SUCCESS_RATIO` | Hint if success rate is below this (0.0–1.0) and `min_samples` is met; failures always qualify. |
-| `AGENT_MATERIALIZE_DEEPSEEK_DSML_TOOL_CALLS` | Materialize DeepSeek DSML tool calls. |
-| `AGENT_THINKING_AVOID_ECHO_SYSTEM_PROMPT` | Append the thinking-discipline appendix to the first `system` message; defaults to on. |
-| `AGENT_THINKING_AVOID_ECHO_APPENDIX` | Inline appendix body (non-empty clears the file path; if **`…_FILE`** is set afterward, **file wins**). |
-| `AGENT_THINKING_AVOID_ECHO_APPENDIX_FILE` | Path to appendix Markdown (same resolution as **`system_prompt_file`**). |
-| `AGENT_CONTEXT_CHAR_BUDGET` | Character budget trim. |
-| `AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM` | Min messages after system post-summary. |
-| `AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS` | Trigger summary when over char threshold. |
-| `AGENT_CONTEXT_SUMMARY_TAIL_MESSAGES` | Tail messages kept after summary. |
-| `AGENT_CONTEXT_SUMMARY_MAX_TOKENS` | Summary request max_tokens. |
-| `AGENT_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS` | Summary transcript max chars. |
+| `CM_MAX_MESSAGE_HISTORY` | Max messages kept. |
+| `CM_TOOL_MESSAGE_MAX_CHARS` | Compress `role: tool` before model if longer. |
+| `CM_TOOL_RESULT_ENVELOPE_V1` | `crabmate_tool` envelope v1. |
+| `CM_SSE_TOOL_CALL_INCLUDE_ARGUMENTS` | When truthy, SSE **`tool_call`** includes redacted, length-capped **`arguments`** in addition to **`arguments_preview`** (default off; reduces accidental exposure in the browser). |
+| `CM_TOOL_STATS_ENABLED` | When truthy, enable in-process tool-outcome stats and append a short hint to the **new** conversation’s first `system` (see below). |
+| `CM_TOOL_STATS_WINDOW_EVENTS` | Sliding-window event cap (16–65536); mirrors TOML `agent_tool_stats_window_events`. |
+| `CM_TOOL_STATS_MIN_SAMPLES` | Min total calls per tool in the window before it appears in the hint (1–10000). |
+| `CM_TOOL_STATS_MAX_CHARS` | Max Unicode scalars for the appendix (64–32768; truncated if longer). |
+| `CM_TOOL_STATS_WARN_BELOW_SUCCESS_RATIO` | Hint if success rate is below this (0.0–1.0) and `min_samples` is met; failures always qualify. |
+| `CM_MATERIALIZE_DEEPSEEK_DSML_TOOL_CALLS` | Materialize DeepSeek DSML tool calls. |
+| `CM_THINKING_AVOID_ECHO_SYSTEM_PROMPT` | Append the thinking-discipline appendix to the first `system` message; defaults to on. |
+| `CM_THINKING_AVOID_ECHO_APPENDIX` | Inline appendix body (non-empty clears the file path; if **`…_FILE`** is set afterward, **file wins**). |
+| `CM_THINKING_AVOID_ECHO_APPENDIX_FILE` | Path to appendix Markdown (same resolution as **`system_prompt_file`**). |
+| `CM_CONTEXT_CHAR_BUDGET` | Character budget trim. |
+| `CM_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM` | Min messages after system post-summary. |
+| `CM_CONTEXT_SUMMARY_TRIGGER_CHARS` | Trigger summary when over char threshold. |
+| `CM_CONTEXT_SUMMARY_TAIL_MESSAGES` | Tail messages kept after summary. |
+| `CM_CONTEXT_SUMMARY_MAX_TOKENS` | Summary request max_tokens. |
+| `CM_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS` | Summary transcript max chars. |
 
 **`[agent]` TOML keys (tool stats)**: `agent_tool_stats_enabled`, `agent_tool_stats_window_events`, `agent_tool_stats_min_samples`, `agent_tool_stats_max_chars`, `agent_tool_stats_warn_below_success_ratio`. Stats are **per-process**, **global** (not bucketed by `conversation_id`); **no** tool args or full outputs stored. Web attaches the stats appendix only for **new** chats (no stored seed). CLI `chat` / `repl` and `workspace_session::initial_workspace_messages` attach on fresh first-`system` paths; sessions loaded from disk keep base system alignment **without** the stats appendix.
 
@@ -224,25 +224,25 @@ Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`confi
 
 | Variable | Description |
 | --- | --- |
-| `AGENT_TUI_LOAD_SESSION_ON_START` | Load session from disk on start. |
-| `AGENT_TUI_SESSION_MAX_MESSAGES` | Max messages in session file. |
-| `AGENT_REPL_INITIAL_WORKSPACE_MESSAGES_ENABLED` | If `true`, background `initial_workspace_messages` (profile, deps); default `false`. TOML: `[agent] repl_initial_workspace_messages_enabled`. |
-| `AGENT_CLI_WAIT_SPINNER` | If truthy, show indicatif spinner on stderr before first stream chunk in CLI/`chat` (needs TTY stderr, not **`NO_COLOR`**). |
+| `CM_TUI_LOAD_SESSION_ON_START` | Load session from disk on start. |
+| `CM_TUI_SESSION_MAX_MESSAGES` | Max messages in session file. |
+| `CM_REPL_INITIAL_WORKSPACE_MESSAGES_ENABLED` | If `true`, background `initial_workspace_messages` (profile, deps); default `false`. TOML: `[agent] repl_initial_workspace_messages_enabled`. |
+| `CM_CLI_WAIT_SPINNER` | If truthy, show indicatif spinner on stderr before first stream chunk in CLI/`chat` (needs TTY stderr, not **`NO_COLOR`**). |
 
 ### Docker tool sandbox
 
 | Variable | Description |
 | --- | --- |
-| `AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE` | `none` \| `docker`. |
-| `AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE` | Required image in `docker` mode. |
-| `AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK` | Empty = no network; `bridge` for outbound tools. |
-| `AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_TIMEOUT_SECS` | Per-container wait cap. |
-| `AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_USER` | Docker `Config.user`; `current`/`host` semantics in § SyncDefault Docker below. |
+| `CM_SYNC_DEFAULT_TOOL_SANDBOX_MODE` | `none` \| `docker`. |
+| `CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE` | Required image in `docker` mode. |
+| `CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK` | Empty = no network; `bridge` for outbound tools. |
+| `CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_TIMEOUT_SECS` | Per-container wait cap. |
+| `CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_USER` | Docker `Config.user`; `current`/`host` semantics in § SyncDefault Docker below. |
 
-You may also use **`DOCKER_HOST`** (non-`AGENT_`) like the `docker` CLI / bollard.
+You may also use **`DOCKER_HOST`** (non-`CM_`) like the `docker` CLI / bollard.
 
 ```bash
-export AGENT_MODEL=deepseek-reasoner
+export CM_MODEL=deepseek-reasoner
 cargo run
 ```
 
@@ -277,7 +277,7 @@ llm_http_auth_mode = "bearer"
 
 ### Less system-prompt echo in thinking/reasoning
 
-Default **`thinking_avoid_echo_system_prompt = true`** (**`[agent]`**, embedded default in **`config/default_config.toml`**, same section as **`system_prompt_file`**). Appendix text defaults from **`thinking_avoid_echo_appendix_file`** (shipped **`config/prompts/thinking_avoid_echo_appendix.md`** — edit on disk without rebuilding); optional **`thinking_avoid_echo_appendix`** inline string. **Precedence**: non-empty **`thinking_avoid_echo_appendix_file`** is read from disk **before** inline; if neither is set, a compile-time embedded default is used. **`tool_stats::augment_system_prompt`** appends the resolved body to the **first `system`** of **new** Web/CLI chats. **Soft** hint only. Disable with **`thinking_avoid_echo_system_prompt = false`** or **`AGENT_THINKING_AVOID_ECHO_SYSTEM_PROMPT=0`**.
+Default **`thinking_avoid_echo_system_prompt = true`** (**`[agent]`**, embedded default in **`config/default_config.toml`**, same section as **`system_prompt_file`**). Appendix text defaults from **`thinking_avoid_echo_appendix_file`** (shipped **`config/prompts/thinking_avoid_echo_appendix.md`** — edit on disk without rebuilding); optional **`thinking_avoid_echo_appendix`** inline string. **Precedence**: non-empty **`thinking_avoid_echo_appendix_file`** is read from disk **before** inline; if neither is set, a compile-time embedded default is used. **`tool_stats::augment_system_prompt`** appends the resolved body to the **first `system`** of **new** Web/CLI chats. **Soft** hint only. Disable with **`thinking_avoid_echo_system_prompt = false`** or **`CM_THINKING_AVOID_ECHO_SYSTEM_PROMPT=0`**.
 
 ## Zhipu GLM (OpenAI-compatible)
 
@@ -285,7 +285,7 @@ Default **`thinking_avoid_echo_system_prompt = true`** (**`[agent]`**, embedded 
 
 Minimal vendor-style request: **`model`**, **`messages`**, **`stream: true`** without **`thinking`**. CrabMate with **`llm_bigmodel_thinking = false`** omits **`thinking`**; Web/CLI streaming uses **`stream: true`**.
 
-Optional deep thinking: **`llm_bigmodel_thinking = true`** (**`AGENT_LLM_BIGMODEL_THINKING=1`**) → **`thinking: { "type": "enabled" }`** per [GLM-5 docs](https://docs.bigmodel.cn/cn/guide/models/text/glm-5).
+Optional deep thinking: **`llm_bigmodel_thinking = true`** (**`CM_LLM_BIGMODEL_THINKING=1`**) → **`thinking: { "type": "enabled" }`** per [GLM-5 docs](https://docs.bigmodel.cn/cn/guide/models/text/glm-5).
 
 ## Moonshot Kimi (OpenAI-compatible)
 
@@ -329,9 +329,9 @@ When the model ends a turn **without** `tool_calls`, whether an embeddable **`ag
 
 With `workflow_validate_only` results, **`spec.layer_count`** constrains step count. Optional **`workflow_node_id`** must be a subset of **`nodes[].id`** from the latest **`workflow_execute`** result.
 
-**Strict node coverage (`final_plan_require_strict_workflow_node_coverage`, default `false`, `AGENT_FINAL_PLAN_REQUIRE_STRICT_WORKFLOW_NODE_COVERAGE`)**: when `true`, if **any** step sets `workflow_node_id`, the plan must reference **every** `nodes[].id` from the latest workflow tool result at least once. If no step sets `workflow_node_id`, this rule does not apply.
+**Strict node coverage (`final_plan_require_strict_workflow_node_coverage`, default `false`, `CM_FINAL_PLAN_REQUIRE_STRICT_WORKFLOW_NODE_COVERAGE`)**: when `true`, if **any** step sets `workflow_node_id`, the plan must reference **every** `nodes[].id` from the latest workflow tool result at least once. If no step sets `workflow_node_id`, this rule does not apply.
 
-**Optional semantic side-check LLM (default off)**: **`final_plan_semantic_check_enabled`** (`AGENT_FINAL_PLAN_SEMANTIC_CHECK_ENABLED`, default `false`) with **`final_plan_requirement = workflow_reflection`**: after static checks pass, if a tool digest can be built from history, one extra no-tools `chat/completions` asks whether the plan contradicts recent tool output. The side model should reply with JSON: `{"consistent":true}` or `{"consistent":false,"violation_codes":["…"],"rationale":"…"}` (legacy one-line **`CONSISTENT` / `INCONSISTENT`** still accepted). On inconsistent, the rewrite user message includes a fenced JSON block **`crabmate_plan_semantic_feedback` v1** with **`violation_codes`** (and optional **`rationale`**) before the usual plan-rewrite instructions; this counts against **`plan_rewrite_max_attempts`**. **`final_plan_semantic_check_max_non_readonly_tools`** (`AGENT_FINAL_PLAN_SEMANTIC_CHECK_MAX_NON_READONLY_TOOLS`, default `0`, range 0–32) caps extra non-readonly tool lines in the digest; at `0`, high-risk builtin names (e.g. `run_command`, `workflow_execute`) and readonly tools may still appear. **`final_plan_semantic_check_max_tokens`** (`AGENT_FINAL_PLAN_SEMANTIC_CHECK_MAX_TOKENS`, default `256`, clamp 32–1024) sets side-call `max_tokens`. Parse/API failures **fail open** (treat as consistent).
+**Optional semantic side-check LLM (default off)**: **`final_plan_semantic_check_enabled`** (`CM_FINAL_PLAN_SEMANTIC_CHECK_ENABLED`, default `false`) with **`final_plan_requirement = workflow_reflection`**: after static checks pass, if a tool digest can be built from history, one extra no-tools `chat/completions` asks whether the plan contradicts recent tool output. The side model should reply with JSON: `{"consistent":true}` or `{"consistent":false,"violation_codes":["…"],"rationale":"…"}` (legacy one-line **`CONSISTENT` / `INCONSISTENT`** still accepted). On inconsistent, the rewrite user message includes a fenced JSON block **`crabmate_plan_semantic_feedback` v1** with **`violation_codes`** (and optional **`rationale`**) before the usual plan-rewrite instructions; this counts against **`plan_rewrite_max_attempts`**. **`final_plan_semantic_check_max_non_readonly_tools`** (`CM_FINAL_PLAN_SEMANTIC_CHECK_MAX_NON_READONLY_TOOLS`, default `0`, range 0–32) caps extra non-readonly tool lines in the digest; at `0`, high-risk builtin names (e.g. `run_command`, `workflow_execute`) and readonly tools may still appear. **`final_plan_semantic_check_max_tokens`** (`CM_FINAL_PLAN_SEMANTIC_CHECK_MAX_TOKENS`, default `256`, clamp 32–1024) sets side-call `max_tokens`. Parse/API failures **fail open** (treat as consistent).
 
 ## Plan rewrite (`plan_rewrite_max_attempts`)
 
@@ -349,17 +349,17 @@ With **`planner_executor_mode = single_agent`**, each user message runs a no-too
 
 **`staged_plan_feedback_mode`**: Default **`fail_fast`**; **`patch_planner`** injects feedback and reruns planner without tools, merging patched **`steps`** (capped by **`staged_plan_patch_max_attempts`**).
 
-**`staged_plan_cli_show_planner_stream`** (default `true`, **`AGENT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM`**)**: For CLI/`chat` with **`out: None`**, whether no-tools planner (and patch planner) streams to stdout. **`false`** hides planner raw output but keeps notices and execution steps; Web SSE unchanged.
+**`staged_plan_cli_show_planner_stream`** (default `true`, **`CM_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM`**)**: For CLI/`chat` with **`out: None`**, whether no-tools planner (and patch planner) streams to stdout. **`false`** hides planner raw output but keeps notices and execution steps; Web SSE unchanged.
 
 **`staged_plan_optimizer_round`** (default `true`): After first plan with ≥2 steps, optional no-tools round to merge read-only probes and parallelize per **`parallel_readonly_tools`** rules.
 
-**`staged_plan_optimizer_requires_parallel_tools`** (default `true`, **`AGENT_STAGED_PLAN_OPTIMIZER_REQUIRES_PARALLEL_TOOLS`**)**: When `true`, skip the optimizer round if this turn’s tool list has **no** built-in names eligible for same-turn parallel readonly batching (the optimizer prompt centers on that CSV). When `false`, keep the legacy behavior: run the optimizer whenever step count and **`staged_plan_optimizer_round`** allow it.
+**`staged_plan_optimizer_requires_parallel_tools`** (default `true`, **`CM_STAGED_PLAN_OPTIMIZER_REQUIRES_PARALLEL_TOOLS`**)**: When `true`, skip the optimizer round if this turn’s tool list has **no** built-in names eligible for same-turn parallel readonly batching (the optimizer prompt centers on that CSV). When `false`, keep the legacy behavior: run the optimizer whenever step count and **`staged_plan_optimizer_round`** allow it.
 
-**`staged_plan_ensemble_count`** (default `1`, clamp 1–3, **`AGENT_STAGED_PLAN_ENSEMBLE_COUNT`**)**: **`1`** off. **`2`/`3`**: extra serial no-tools “planner B/C” rounds (aux assistants **not** in history), then merge round—**significantly more API cost**.
+**`staged_plan_ensemble_count`** (default `1`, clamp 1–3, **`CM_STAGED_PLAN_ENSEMBLE_COUNT`**)**: **`1`** off. **`2`/`3`**: extra serial no-tools “planner B/C” rounds (aux assistants **not** in history), then merge round—**significantly more API cost**.
 
-**`staged_plan_skip_ensemble_on_casual_prompt`** (default `true`, **`AGENT_STAGED_PLAN_SKIP_ENSEMBLE_ON_CASUAL_PROMPT`**)**: When **`staged_plan_ensemble_count` > 1**, skip ensemble + merge if the **current user message** (heuristic: very short or common small-talk) looks casual—saves planner API calls. Set `false` to always run ensemble when configured.
+**`staged_plan_skip_ensemble_on_casual_prompt`** (default `true`, **`CM_STAGED_PLAN_SKIP_ENSEMBLE_ON_CASUAL_PROMPT`**)**: When **`staged_plan_ensemble_count` > 1**, skip ensemble + merge if the **current user message** (heuristic: very short or common small-talk) looks casual—saves planner API calls. Set `false` to always run ensemble when configured.
 
-**Two-phase display (`staged_plan_two_phase_nl_display`, default `false`, `AGENT_STAGED_PLAN_TWO_PHASE_NL_DISPLAY`)**: When `true`, after a parsed **`agent_reply_plan` v1** is merged into history (including optional ensemble/merge + optimizer; **`no_task`** path also runs this before the regular loop), **no-tools planner-class rounds** call **`complete_chat_retrying`** with **no user-visible streaming** of the plan JSON (`out: None` and suppressed `render_to_terminal`, combined with **`staged_plan_cli_show_planner_stream`** for CLI). A bridging **user** (`staged_plan_nl_followup_user_body`: text states **system bridge, not a user question**, and instructs the model to answer only the **earlier real user message** plus the finalized plan; same display-hidden first line as staged step injections; **not** shown in chat) is appended, then another **no-tools** completion streams **natural language only**. History keeps JSON assistant + bridge user + NL assistant. There is **no** vendor **`response_format: json_object`** enforcement; the first round still relies on fence/body parsing. **`patch_planner`** replans mid-run **do not** automatically trigger this NL follow-up (only the initial finalize path does).
+**Two-phase display (`staged_plan_two_phase_nl_display`, default `false`, `CM_STAGED_PLAN_TWO_PHASE_NL_DISPLAY`)**: When `true`, after a parsed **`agent_reply_plan` v1** is merged into history (including optional ensemble/merge + optimizer; **`no_task`** path also runs this before the regular loop), **no-tools planner-class rounds** call **`complete_chat_retrying`** with **no user-visible streaming** of the plan JSON (`out: None` and suppressed `render_to_terminal`, combined with **`staged_plan_cli_show_planner_stream`** for CLI). A bridging **user** (`staged_plan_nl_followup_user_body`: text states **system bridge, not a user question**, and instructs the model to answer only the **earlier real user message** plus the finalized plan; same display-hidden first line as staged step injections; **not** shown in chat) is appended, then another **no-tools** completion streams **natural language only**. History keeps JSON assistant + bridge user + NL assistant. There is **no** vendor **`response_format: json_object`** enforcement; the first round still relies on fence/body parsing. **`patch_planner`** replans mid-run **do not** automatically trigger this NL follow-up (only the initial finalize path does).
 
 ## SyncDefault Docker sandbox (`sync_default_tool_sandbox_mode`)
 
@@ -396,7 +396,7 @@ sync_default_tool_sandbox_docker_image = "your-registry/crabmate-tools:dev"
 # sync_default_tool_sandbox_docker_user = "current"
 ```
 
-Env: `AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE`, `AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE`, etc.
+Env: `CM_SYNC_DEFAULT_TOOL_SANDBOX_MODE`, `CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE`, etc.
 
 ### Network
 
@@ -418,10 +418,10 @@ Env: `AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE`, `AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DO
 
 - **Default**: **`system_prompt_file = "config/prompts/default_system_prompt.md`** (read at runtime; edit without rebuild).
 - **Relative path resolution**: process **cwd** → each overlay **config file directory** (later wins, e.g. `.agent_demo.toml` before `config.toml`) → **`run_command_working_dir`**. **Absolute** paths tried as-is.
-- **Overrides**: Inline **`system_prompt`** without **`system_prompt_file`** in a layer **drops** inherited file for that layer. Env: **`AGENT_SYSTEM_PROMPT`** clears merged file; **`AGENT_SYSTEM_PROMPT_FILE`** wins if both set.
+- **Overrides**: Inline **`system_prompt`** without **`system_prompt_file`** in a layer **drops** inherited file for that layer. Env: **`CM_SYSTEM_PROMPT`** clears merged file; **`CM_SYSTEM_PROMPT_FILE`** wins if both set.
 - **finalize**: Read file if **`system_prompt_file`** set; else non-empty inline; else error.
 - **Shipped default body** (`config/prompts/default_system_prompt.md`): **instruction precedence** (safety → explicit user instructions → verifiable facts → this prompt and role → Cursor-like rules), **no dev-tool fishing** on clearly non-code questions, **no workspace edits** unless the user clearly authorizes changes, tool discipline, and Chinese explanatory prose where applicable. If the merged rules appendix shows a **truncation notice**, do not assume unseen rules. Fully custom: replace the file or `system_prompt_file`.
-- **Embedded defaults** (`config/default_config.toml`): **`thinking_avoid_echo_system_prompt = true`** with **`thinking_avoid_echo_appendix_file = "config/prompts/thinking_avoid_echo_appendix.md"`** (override via inline **`thinking_avoid_echo_appendix`** or **`AGENT_THINKING_AVOID_ECHO_APPENDIX*`**); see § *Reduce system-prompt echo in thinking chains* above.
+- **Embedded defaults** (`config/default_config.toml`): **`thinking_avoid_echo_system_prompt = true`** with **`thinking_avoid_echo_appendix_file = "config/prompts/thinking_avoid_echo_appendix.md"`** (override via inline **`thinking_avoid_echo_appendix`** or **`CM_THINKING_AVOID_ECHO_APPENDIX*`**); see § *Reduce system-prompt echo in thinking chains* above.
 
 ## Multi-role (agent_roles)
 
@@ -430,7 +430,7 @@ Besides the global `system_prompt`, you can define **named ids** with their own 
 - **Sources** (later overlays win for the same id):  
   1. **`[[agent_roles]]`** rows in the main config: **`id`**, plus **`system_prompt`** and/or **`system_prompt_file`**. Empty inline **`system_prompt`** means **inherit** the global merged system.  
   2. **`config/agent_roles.toml`** when not using **`--config`**; with **`--config path/to/foo.toml`**, read **`path/to/agent_roles.toml`** next to it. Shape: **`[agent_roles]`**, optional **`default_role`**, **`[agent_roles.roles.<id>]`** (see `config/agent_roles.toml`).
-- **Default role**: **`[agent] default_agent_role`**, or **`agent_roles.toml` `[agent_roles] default_role`**, or **`AGENT_DEFAULT_AGENT_ROLE`**. Must reference a defined id; if unset, omitting `agent_role` uses the global **`system_prompt`**.
+- **Default role**: **`[agent] default_agent_role`**, or **`agent_roles.toml` `[agent_roles] default_role`**, or **`CM_DEFAULT_CM_ROLE`**. Must reference a defined id; if unset, omitting `agent_role` uses the global **`system_prompt`**.
 - **Optional `allowed_tools` (multi-role workbench)**: On **`[[agent_roles]]`** rows or **`[agent_roles.roles.<id>]`**, you may set a string array **`allowed_tools`**. When non-empty, that role may call **only** those built-in tool names; include the literal **`mcp`** to allow all **`mcp__*`** MCP proxy tools. Omit or use an empty list for **no restriction** (legacy behavior). The effective named id for tool policy follows **`agent_role` request → persisted `active_agent_role` → `default_agent_role_id`**, aligned with the first `system` message role.
 - **Web**: optional JSON **`agent_role`** on **`POST /chat`** / **`POST /chat/stream`**. **New session** (no stored history for **`conversation_id`**): same as before, seeds first-turn `system`. **Existing session**: if **`agent_role`** differs from persisted **`active_agent_role`**, the server **refreshes only the first `system`** and updates the stored role, **keeping** the rest of the transcript; omitting **`agent_role`** keeps the last persisted role. With **`allowed_tools`**, each turn filters tools sent to the model and rejects disallowed execution.
 - **CLI**: global **`--agent-role <id>`** for **`repl`** / **`chat`**. Mutually exclusive with **`chat --system-prompt-file`**. For **`chat`** without **`--messages-json-file`**, applies to the first-turn system (including **`--message-file`** first line); **`allowed_tools`** apply the same way as Web.

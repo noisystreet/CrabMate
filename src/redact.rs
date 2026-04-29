@@ -5,7 +5,7 @@
 //!
 //! 发往模型的 **`ChatRequest` JSON** 预览：由 `llm::api::stream_chat` 输出（长度上限见 [`CHAT_REQUEST_JSON_LOG_MAX_CHARS`]）。
 //! - 设置 **`RUST_LOG=crabmate=debug`**（或更宽 `debug`）时走 **`debug!`**，预览上限为 [`CHAT_REQUEST_JSON_LOG_MAX_CHARS`]；
-//! - 仅 **`--log` 文件**且默认 **info** 时：设环境变量 **`AGENT_LOG_CHAT_REQUEST_JSON=1`** 则走 **`info!`**，预览上限为 [`CHAT_REQUEST_JSON_LOG_INFO_CHARS`]（短于 debug，避免 **`chat_turn`** 上下文下一行过长）；否则不打印。
+//! - 仅 **`--log` 文件**且默认 **info** 时：设环境变量 **`CM_LOG_CHAT_REQUEST_JSON=1`** 则走 **`info!`**，预览上限为 [`CHAT_REQUEST_JSON_LOG_INFO_CHARS`]（短于 debug，避免 **`chat_turn`** 上下文下一行过长）；否则不打印。
 //!
 //! 对话/助手消息预览用于 `log::debug!`：默认仅开启 `RUST_LOG=debug` 时输出，且始终截断。
 
@@ -22,7 +22,7 @@ pub const HTTP_BODY_PREVIEW_LOG_CHARS: usize = 256;
 /// 仅用于排障；完整 tools 定义可能很长，超出部分见 `…(truncated)`。
 pub const CHAT_REQUEST_JSON_LOG_MAX_CHARS: usize = 12_288;
 
-/// 在未开 **`RUST_LOG=…debug`** 但开启 **`AGENT_LOG_CHAT_REQUEST_JSON`** 时，**INFO** 级别 `chat 请求体 JSON` 预览上限（避免嵌在 **`chat_turn`** 上下文下一行过长；需要更长预览请用 **`RUST_LOG=crabmate=debug`**）。
+/// 在未开 **`RUST_LOG=…debug`** 但开启 **`CM_LOG_CHAT_REQUEST_JSON`** 时，**INFO** 级别 `chat 请求体 JSON` 预览上限（避免嵌在 **`chat_turn`** 上下文下一行过长；需要更长预览请用 **`RUST_LOG=crabmate=debug`**）。
 pub const CHAT_REQUEST_JSON_LOG_INFO_CHARS: usize = 768;
 
 /// 从供应商 JSON 里取出 `error.message` 后，写入**用户可见** `Err` 的最大长度（不含 HTTP 状态前缀）。

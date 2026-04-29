@@ -10,7 +10,7 @@ use crabmate::{
 };
 use std::sync::Mutex;
 
-/// `parse_args` 会读 `AGENT_HTTP_HOST`；契约用例假定默认 `127.0.0.1`，故串行并临时清理。
+/// `parse_args` 会读 `CM_HTTP_HOST`；契约用例假定默认 `127.0.0.1`，故串行并临时清理。
 static CLI_CONTRACT_LOCK: Mutex<()> = Mutex::new(());
 
 fn with_isolated_agent_http_host<F, R>(f: F) -> R
@@ -20,17 +20,17 @@ where
     let _g = CLI_CONTRACT_LOCK
         .lock()
         .expect("cli_contract tests must run serialized");
-    let prev = std::env::var("AGENT_HTTP_HOST").ok();
+    let prev = std::env::var("CM_HTTP_HOST").ok();
     // SAFETY: `set_var`/`remove_var` are unsafe in Rust 2024; we hold `CLI_CONTRACT_LOCK` so no
-    // concurrent tests in this crate read `AGENT_HTTP_HOST` during `f()`.
+    // concurrent tests in this crate read `CM_HTTP_HOST` during `f()`.
     unsafe {
-        std::env::remove_var("AGENT_HTTP_HOST");
+        std::env::remove_var("CM_HTTP_HOST");
     }
     let out = f();
     unsafe {
         match prev {
-            Some(v) => std::env::set_var("AGENT_HTTP_HOST", v),
-            None => std::env::remove_var("AGENT_HTTP_HOST"),
+            Some(v) => std::env::set_var("CM_HTTP_HOST", v),
+            None => std::env::remove_var("CM_HTTP_HOST"),
         }
     }
     out

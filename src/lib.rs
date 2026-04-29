@@ -1,7 +1,7 @@
 //! CrabMate 库：OpenAI 兼容多供应商 LLM、Agent 主循环、HTTP 服务、工具与工作流。
 //! 二进制入口见 `src/main.rs` 的 [`run`] 包装。
 //!
-//! 日志由 **`tracing`** + **`tracing-subscriber`** 处理，**`tracing-log`** 桥接既有 `log::` 调用；`RUST_LOG` 优先。未设置时：`--serve` 默认 **info**；其它 CLI 模式默认 **warn**（不输出 info）；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**。设 **`AGENT_LOG_JSON=1`** 时输出 JSON 行（便于 `jq` / 日志平台）。
+//! 日志由 **`tracing`** + **`tracing-subscriber`** 处理，**`tracing-log`** 桥接既有 `log::` 调用；`RUST_LOG` 优先。未设置时：`--serve` 默认 **info**；其它 CLI 模式默认 **warn**（不输出 info）；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**。设 **`CM_LOG_JSON=1`** 时输出 JSON 行（便于 `jq` / 日志平台）。
 
 // `web/openapi.rs` 中 `serde_json::json!` 体量较大，默认递归深度不足会无法编译。
 #![recursion_limit = "512"]
@@ -820,7 +820,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
-                    "已启用 web_api_require_bearer（或 AGENT_WEB_API_REQUIRE_BEARER），但未配置非空的 web_api_bearer_token / AGENT_WEB_API_BEARER_TOKEN；请设置共享密钥后再启动 serve，或在配置中关闭 web_api_require_bearer。",
+                    "已启用 web_api_require_bearer（或 CM_WEB_API_REQUIRE_BEARER），但未配置非空的 web_api_bearer_token / CM_WEB_API_BEARER_TOKEN；请设置共享密钥后再启动 serve，或在配置中关闭 web_api_require_bearer。",
                 )
                 .into());
             }
@@ -859,7 +859,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         if !bind_ip.is_loopback() && !auth_enabled && !allow_insec {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
-                "当前监听地址为非 loopback（如 0.0.0.0），但未配置 web_api_bearer_token；请设置 [agent].web_api_bearer_token / AGENT_WEB_API_BEARER_TOKEN，或显式设置 allow_insecure_no_auth_for_non_loopback=true（不安全）",
+                "当前监听地址为非 loopback（如 0.0.0.0），但未配置 web_api_bearer_token；请设置 [agent].web_api_bearer_token / CM_WEB_API_BEARER_TOKEN，或显式设置 allow_insecure_no_auth_for_non_loopback=true（不安全）",
             )
             .into());
         }
@@ -874,7 +874,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         if bind_ip.is_loopback() && !auth_enabled {
             eprintln!(
-                "  提示: 未配置 web_api_bearer_token，/chat、/workspace、/upload 等受保护 API 可被本机任意进程调用；生产或共享机器建议设置 AGENT_WEB_API_BEARER_TOKEN（及浏览器 localStorage「API」同源键 crabmate-api-bearer-token），或启用 web_api_require_bearer 强制非空密钥。"
+                "  提示: 未配置 web_api_bearer_token，/chat、/workspace、/upload 等受保护 API 可被本机任意进程调用；生产或共享机器建议设置 CM_WEB_API_BEARER_TOKEN（及浏览器 localStorage「API」同源键 crabmate-api-bearer-token），或启用 web_api_require_bearer 强制非空密钥。"
             );
         }
         if bind_ip.is_unspecified() && auth_enabled {

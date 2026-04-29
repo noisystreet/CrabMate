@@ -98,7 +98,7 @@ fn default_env_filter(quiet_cli_default: bool, log_file: Option<&Path>) -> Strin
 ///
 /// 与历史 `init_logging` 行为对齐：**`RUST_LOG`** 优先；未设置时按 `quiet_cli_default` / `--log` 给默认过滤器；默认均带 **`tokei=error`**。
 ///
-/// 设 **`AGENT_LOG_JSON=1`**（或 **`true`** / **`yes`** / **`on`**）时，日志行为 **JSON 行**（便于 `jq` / 日志平台）；否则为紧凑人类可读格式（含 span 字段上下文）。
+/// 设 **`CM_LOG_JSON=1`**（或 **`true`** / **`yes`** / **`on`**）时，日志行为 **JSON 行**（便于 `jq` / 日志平台）；否则为紧凑人类可读格式（含 span 字段上下文）。
 pub fn init_tracing_subscriber(log_file: Option<&Path>, quiet_cli_default: bool) -> io::Result<()> {
     let result = LOGGING_INIT.get_or_init(|| {
         let filter_str = default_env_filter(quiet_cli_default, log_file);
@@ -108,7 +108,7 @@ pub fn init_tracing_subscriber(log_file: Option<&Path>, quiet_cli_default: bool)
             EnvFilter::new(&filter_str)
         };
 
-        let json_logs = std::env::var("AGENT_LOG_JSON")
+        let json_logs = std::env::var("CM_LOG_JSON")
             .ok()
             .as_deref()
             .and_then(agent_log_json_truthy)

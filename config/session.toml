@@ -1,5 +1,5 @@
 # CLI 会话相关嵌入默认（`tui_session.json` 恢复、消息条数上限、`repl_initial_workspace_messages_enabled` 等）。
-# 与 `config/default_config.toml` 在 `load_config` 中顺序合并（本文件在主默认之后、**`config/context_inject.toml`** 之前），再被 config.toml / .agent_demo.toml 与 AGENT_TUI_* / AGENT_REPL_* 覆盖。
+# 与 `config/default_config.toml` 在 `load_config` 中顺序合并（本文件在主默认之后、**`config/context_inject.toml`** 之前），再被 config.toml / .agent_demo.toml 与 CM_TUI_* / CM_REPL_* 覆盖。
 
 [agent]
 

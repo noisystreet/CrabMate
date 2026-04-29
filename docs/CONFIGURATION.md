@@ -4,7 +4,7 @@
 
 默认配置由仓库 **`config/default_config.toml`**、**`config/session.toml`**、**`config/context_inject.toml`**、**`config/tools.toml`**、**`config/sandbox.toml`**、**`config/planning.toml`**、**`config/memory.toml`** 七段嵌入（各段主体为 **`[agent]`** 扁平键；**`config/tools.toml`** 还可选 **`[tool_registry]`** 表，见下文「`tool_registry` 策略」；**`session`** 为 CLI 会话相关 **`tui_*`** 与 **`repl_initial_workspace_messages_enabled`**；**`context_inject`** 为首轮 **`living_docs_*`**、**`agent_memory_file_*`**、**`project_profile_inject_*`**、**`project_dependency_brief_inject_*`**；**`tools`** 的 **`[agent]`** 含 **`run_command`** 白名单/超时/工作目录、**`tool_message_*`** / **`tool_result_envelope_v1`**、**`read_file_turn_cache_*`**、**`test_result_cache_*`**、**`session_workspace_changelist_*`**、**`codebase_semantic_*`**（**`codebase_semantic_search`** 与写后失效 **`codebase_semantic_invalidate_on_workspace_change`**）、天气/搜索/**`http_fetch_*`**、**`tool_call_explain_*`**、**`mcp_*`** 等；**`sandbox`** 为 **SyncDefault Docker 沙盒** **`sync_default_tool_sandbox_*`**；**`planning`** 为规划 / 反思 / 编排；**`memory`** 为 **`long_term_memory_*`**）。`load_config` 按 **主默认 → session → context_inject → tools → sandbox → planning → memory** 顺序合并，再被 **`config.toml`** 或 **`.agent_demo.toml`** 覆盖，最后由环境变量覆盖。示例片段见 **`config.toml.example`**。
 
-**未知键与越界数值**：用户 **`config.toml`** / **`agent_roles.toml`** 中 **`[agent]`**、**`[tool_registry]`**、**`[[agent_roles]]`** 等已声明表内若出现**未在 CrabMate 中定义的键**，TOML 解析会失败（serde **拒绝未知字段**），避免拼写错误被静默忽略。对 **`finalize` 中有上下限的数值项**（如 **`temperature`**、**`max_message_history`**、**`chat_queue_max_concurrent`** 等），若在 TOML 或 **`AGENT_*`** 中写出**超出允许范围**的值，启动（及热重载路径上的 **`load_config`**）会返回明确错误，而**不再**仅做静默截断（`clamp`）；详见源码 **`src/config/validate.rs`** 与 **`finalize`** 中的默认值说明。
+**未知键与越界数值**：用户 **`config.toml`** / **`agent_roles.toml`** 中 **`[agent]`**、**`[tool_registry]`**、**`[[agent_roles]]`** 等已声明表内若出现**未在 CrabMate 中定义的键**，TOML 解析会失败（serde **拒绝未知字段**），避免拼写错误被静默忽略。对 **`finalize` 中有上下限的数值项**（如 **`temperature`**、**`max_message_history`**、**`chat_queue_max_concurrent`** 等），若在 TOML 或 **`CM_*`** 中写出**超出允许范围**的值，启动（及热重载路径上的 **`load_config`**）会返回明确错误，而**不再**仅做静默截断（`clamp`）；详见源码 **`src/config/validate.rs`** 与 **`finalize`** 中的默认值说明。
 
 ## 配置热重载（无需重启 `repl` / `serve` 主进程）
 
@@ -16,7 +16,7 @@
 - **Web API 鉴权层**：若启动 **`serve`** 时 **`web_api_bearer_token` 非空**，Axum 会在该进程生命周期内挂上鉴权中间件；请求须带 **`Authorization: Bearer <同一密钥>`** 或 **`X-API-Key: <同一密钥>`**（二选一，与 Dify / Open WebUI 等常见网关习惯对齐）。**`web_api_require_bearer`**（默认 `false`）为 **`true`** 时，**未配置非空密钥则 `serve` 拒绝启动**（含仅监听 `127.0.0.1`），便于强制关闭匿名调用 **`/chat*`** 等。热重载**不会**拆除或新增中间件——**从「无 token」变为「有 token」**或反向时，须**重启 `serve`**。热重载仍会更改 handler 内读取的密钥字符串，用于已挂层时的校验。
 - **敏感字段内存表示**：**`web_api_bearer_token`** 与 **`web_search_api_key`** 在 [`AgentConfig`](DEVELOPMENT.md) 内为 **secrecy `SecretString`**，**`Debug` / 结构化日志默认不打印明文**；源码中通过 **`ExposeSecret::expose_secret()`** 取用（`config` crate 再导出 **`ExposeSecret`**）。**`API_KEY`** 仍为仅环境变量，未并入 `AgentConfig`。
 
-## 环境变量（`AGENT_*`）
+## 环境变量（`CM_*`）
 
 以下为常用项；**完整键名与默认值以 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml`、`config/sandbox.toml`、`config/planning.toml`、`config/memory.toml` 为准**。**`API_KEY`** 仅环境变量，见下节「模型与 API」表格；热重载与密钥行为见上文「配置热重载」。
 
@@ -25,54 +25,54 @@
 | 环境变量 | 说明 |
 | --- | --- |
 | `API_KEY` | 云厂商 / OpenAI 兼容后端的 Bearer token；`llm_http_auth_mode=bearer`（默认）时用于发往 `chat/completions` 等。**不写 TOML**。**`serve` / `repl` / `chat` 可在未设置时启动**；对话前须有关密钥：**Web** 的 **`client_llm.api_key`**、本环境变量、或 **REPL `/api-key`**。**`models` / `probe` 子命令**在 bearer 下仍要求此处非空。`llm_http_auth_mode=none`（如本地 Ollama）时可不设。 |
-| `AGENT_API_BASE` | 覆盖 `api_base`。 |
-| `AGENT_MODEL` | 覆盖 `model`。 |
-| `AGENT_LLM_HTTP_AUTH_MODE` | `bearer`（默认，需 **`API_KEY`**）或 `none`（不向 `chat/completions` / `models` 发 `Authorization`，本地 Ollama 等可不设 **`API_KEY`**）。 |
-| `AGENT_LLM_REASONING_SPLIT` | 覆盖 `llm_reasoning_split`。未在 TOML/环境变量设置时：**MiniMax 网关**（`model` 或 `api_base` 可识别为 MiniMax）**默认为开**（`true`），其它网关默认为关；见下文「MiniMax」。 |
-| `AGENT_LLM_BIGMODEL_THINKING` | 为真时在请求体中带智谱 **`thinking: { "type": "enabled" }`**（GLM-5 深度思考；见下文「智谱 GLM」）。 |
-| `AGENT_LLM_KIMI_THINKING_DISABLED` | 为真时在请求体中带 **`thinking: { "type": "disabled" }`**（关闭 Moonshot **kimi-k2.5** 默认思考；见下文「Moonshot（Kimi）」）。 |
-| `AGENT_SYSTEM_PROMPT` | 内联系统提示；会清除继承的 `system_prompt_file`（若再设 `AGENT_SYSTEM_PROMPT_FILE` 则以文件为准，见「系统提示词」）。 |
-| `AGENT_SYSTEM_PROMPT_FILE` | 系统提示词文件路径。 |
-| `AGENT_DEFAULT_AGENT_ROLE` | 未传 Web `agent_role` / CLI `--agent-role` 时使用的**默认角色 id**（须已在角色表中定义；见下文「多角色」）。 |
+| `CM_API_BASE` | 覆盖 `api_base`。 |
+| `CM_MODEL` | 覆盖 `model`。 |
+| `CM_LLM_HTTP_AUTH_MODE` | `bearer`（默认，需 **`API_KEY`**）或 `none`（不向 `chat/completions` / `models` 发 `Authorization`，本地 Ollama 等可不设 **`API_KEY`**）。 |
+| `CM_LLM_REASONING_SPLIT` | 覆盖 `llm_reasoning_split`。未在 TOML/环境变量设置时：**MiniMax 网关**（`model` 或 `api_base` 可识别为 MiniMax）**默认为开**（`true`），其它网关默认为关；见下文「MiniMax」。 |
+| `CM_LLM_BIGMODEL_THINKING` | 为真时在请求体中带智谱 **`thinking: { "type": "enabled" }`**（GLM-5 深度思考；见下文「智谱 GLM」）。 |
+| `CM_LLM_KIMI_THINKING_DISABLED` | 为真时在请求体中带 **`thinking: { "type": "disabled" }`**（关闭 Moonshot **kimi-k2.5** 默认思考；见下文「Moonshot（Kimi）」）。 |
+| `CM_SYSTEM_PROMPT` | 内联系统提示；会清除继承的 `system_prompt_file`（若再设 `CM_SYSTEM_PROMPT_FILE` 则以文件为准，见「系统提示词」）。 |
+| `CM_SYSTEM_PROMPT_FILE` | 系统提示词文件路径。 |
+| `CM_DEFAULT_CM_ROLE` | 未传 Web `agent_role` / CLI `--agent-role` 时使用的**默认角色 id**（须已在角色表中定义；见下文「多角色」）。 |
 
 ### 采样与随机性
 
 | 环境变量 | 说明 |
 | --- | --- |
-| `AGENT_TEMPERATURE` | 覆盖 `temperature`。 |
-| `AGENT_LLM_SEED` | 覆盖 `llm_seed`。 |
+| `CM_TEMPERATURE` | 覆盖 `temperature`。 |
+| `CM_LLM_SEED` | 覆盖 `llm_seed`。 |
 
 ### Web 服务
 
 | 环境变量 | 说明 |
 | --- | --- |
-| `AGENT_HTTP_HOST` | 未传 `--host` 时作为绑定地址。 |
-| `AGENT_WEB_API_BEARER_TOKEN` | 受保护 Web API 的共享密钥；请求头 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**（值相同，任选其一）。 |
-| `AGENT_WEB_API_REQUIRE_BEARER` | 为真时 **`serve` 启动**必须已配置非空的 **`AGENT_WEB_API_BEARER_TOKEN`**（或 TOML **`web_api_bearer_token`**），否则拒绝启动；等价 **`[agent] web_api_require_bearer`**。 |
-| `AGENT_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK` | 非回环监听时是否允许无鉴权启动（高风险，仅可信环境）。 |
-| `AGENT_WEB_DISABLE_MARKDOWN` | 设为 **`1`** / **`true`** / **`yes`** / **`on`** 时，CSR 通过 **`GET /web-ui`** 获知并**关闭**聊天气泡与变更集模态的 Markdown 渲染（纯文本 HTML 转义，便于调试）；**无**对应 TOML 字段，**须重启 `serve`** 生效。其它调试手段见 **`docs/DEBUG.md`**。 |
-| `AGENT_WEB_RAW_ASSISTANT_OUTPUT` | 设为真值时，CSR 通过 **`GET /web-ui`** 获知 **`apply_assistant_display_filters: false`**，助手消息按存储**原文**展示与导出（不剥 `agent_reply_plan`、不拆内联思维链标记等）；**同时**允许分阶段规划的无工具规划轮向 Web **流式下发**原文。**未**设置时（默认）：该规划轮若解析为 **`no_task: true`** 则**整轮**不下发至浏览器 SSE，否则**仅**不下发信封 `assistant_answer_phase` 之前的流式增量（与 CSR 过滤语义对齐）。**无** TOML 字段，**须重启 `serve`**。与上项独立；详见 **`docs/DEBUG.md`** §1。 |
+| `CM_HTTP_HOST` | 未传 `--host` 时作为绑定地址。 |
+| `CM_WEB_API_BEARER_TOKEN` | 受保护 Web API 的共享密钥；请求头 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**（值相同，任选其一）。 |
+| `CM_WEB_API_REQUIRE_BEARER` | 为真时 **`serve` 启动**必须已配置非空的 **`CM_WEB_API_BEARER_TOKEN`**（或 TOML **`web_api_bearer_token`**），否则拒绝启动；等价 **`[agent] web_api_require_bearer`**。 |
+| `CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK` | 非回环监听时是否允许无鉴权启动（高风险，仅可信环境）。 |
+| `CM_WEB_DISABLE_MARKDOWN` | 设为 **`1`** / **`true`** / **`yes`** / **`on`** 时，CSR 通过 **`GET /web-ui`** 获知并**关闭**聊天气泡与变更集模态的 Markdown 渲染（纯文本 HTML 转义，便于调试）；**无**对应 TOML 字段，**须重启 `serve`** 生效。其它调试手段见 **`docs/DEBUG.md`**。 |
+| `CM_WEB_RAW_ASSISTANT_OUTPUT` | 设为真值时，CSR 通过 **`GET /web-ui`** 获知 **`apply_assistant_display_filters: false`**，助手消息按存储**原文**展示与导出（不剥 `agent_reply_plan`、不拆内联思维链标记等）；**同时**允许分阶段规划的无工具规划轮向 Web **流式下发**原文。**未**设置时（默认）：该规划轮若解析为 **`no_task: true`** 则**整轮**不下发至浏览器 SSE，否则**仅**不下发信封 `assistant_answer_phase` 之前的流式增量（与 CSR 过滤语义对齐）。**无** TOML 字段，**须重启 `serve`**。与上项独立；详见 **`docs/DEBUG.md`** §1。 |
 
 ### 日志与 tracing
 
 | 环境变量 | 说明 |
 | --- | --- |
 | `RUST_LOG` | 标准 **`tracing-subscriber` `EnvFilter`** 语法；未设置时由 CLI 入口按子命令给默认过滤器（与历史 **`env_logger`** 默认一致），见 **`docs/DEBUG.md`**。 |
-| `AGENT_LOG_JSON` | 为 **`1`** / **`true`** / **`yes`** / **`on`** 时，进程日志输出 **JSON 行**（便于 `jq` 与日志平台）；默认人类可读紧凑格式。**须重启进程**生效。 |
+| `CM_LOG_JSON` | 为 **`1`** / **`true`** / **`yes`** / **`on`** 时，进程日志输出 **JSON 行**（便于 `jq` 与日志平台）；默认人类可读紧凑格式。**须重启进程**生效。 |
 
 ### 工作区与 Cursor 式规则
 
 | 环境变量 | 说明 |
 | --- | --- |
-| `AGENT_WORKSPACE_ALLOWED_ROOTS` | 逗号分隔，等价 `[agent] workspace_allowed_roots`。 |
-| `AGENT_CURSOR_RULES_ENABLED` | 是否启用规则注入（默认 **true**；设为 `0`/`false` 等可关闭）。 |
-| `AGENT_CURSOR_RULES_DIR` | 规则目录（`*.mdc`）。 |
-| `AGENT_CURSOR_RULES_INCLUDE_AGENTS_MD` | 是否并入 `AGENTS.md`。 |
-| `AGENT_CURSOR_RULES_MAX_CHARS` | 注入长度上限。 |
-| `AGENT_SKILLS_ENABLED` | 是否启用 skills 注入（默认 `true`，读取 `skills_dir/*.md`）。 |
-| `AGENT_SKILLS_DIR` | skills 目录（默认 `.crabmate/skills`）。相对路径在 Web 对话中按**当前已选工作区根**解析（未选工作区时退回进程当前目录）。 |
-| `AGENT_SKILLS_MAX_CHARS` | skills 注入长度上限。 |
-| `AGENT_SKILLS_TOP_K` | 每轮按当前用户输入选取并注入的 skills 数量上限（Top-K，默认 `3`）。 |
+| `CM_WORKSPACE_ALLOWED_ROOTS` | 逗号分隔，等价 `[agent] workspace_allowed_roots`。 |
+| `CM_CURSOR_RULES_ENABLED` | 是否启用规则注入（默认 **true**；设为 `0`/`false` 等可关闭）。 |
+| `CM_CURSOR_RULES_DIR` | 规则目录（`*.mdc`）。 |
+| `CM_CURSOR_RULES_INCLUDE_AGENTS_MD` | 是否并入 `AGENTS.md`。 |
+| `CM_CURSOR_RULES_MAX_CHARS` | 注入长度上限。 |
+| `CM_SKILLS_ENABLED` | 是否启用 skills 注入（默认 `true`，读取 `skills_dir/*.md`）。 |
+| `CM_SKILLS_DIR` | skills 目录（默认 `.crabmate/skills`）。相对路径在 Web 对话中按**当前已选工作区根**解析（未选工作区时退回进程当前目录）。 |
+| `CM_SKILLS_MAX_CHARS` | skills 注入长度上限。 |
+| `CM_SKILLS_TOP_K` | 每轮按当前用户输入选取并注入的 skills 数量上限（Top-K，默认 `3`）。 |
 
 **Web 工作区**：**`serve`** 启动后，在侧栏通过 **`POST /workspace`** 选择目录之前，服务端不把 **`run_command_working_dir`**（默认常为 `"."`）视为「已选工作区」：不注入依赖工作区根的首轮上下文，**`@路径`** 引用会返回 **`WORKSPACE_NOT_SET`**，**SyncDefault** 类内置工具亦不可用；对话任务入队时进程内工作目录仍会规范为 **`run_command_working_dir`**，**`GET /health`** 对该目录做可选依赖探测。显式将工作区设为与 **`run_command_working_dir`** 等价的目录后，行为与旧版「默认 cwd 即工作区」一致。
 
@@ -82,27 +82,27 @@
 
 | 环境变量 | 说明 |
 | --- | --- |
-| `AGENT_FINAL_PLAN_REQUIREMENT` | `never` / `workflow_reflection` / `always`。 |
-| `AGENT_PLAN_REWRITE_MAX_ATTEMPTS` | 规划重写上限。 |
-| `AGENT_PLANNER_EXECUTOR_MODE` | `single_agent` / `logical_dual_agent`；`hierarchical` 见 TOML **`[agent] planner_executor_mode`**（与分层入口一致，见 `docs/DEVELOPMENT.md`）。 |
-| `AGENT_INTENT_L2_ENABLED` | 是否启用 L2 无工具语义意图分类（**额外** `chat` 一次；失败回退 L1，**默认开**）。同义 TOML 键 **`intent_l2_enabled`**；设为 `false` 可关。 |
-| `AGENT_INTENT_L2_MIN_CONFIDENCE` | L2 覆盖 L1 的最低 `confidence`（0.0–1.0，默认 0.7）。TOML：`intent_l2_min_confidence`。 |
-| `AGENT_INTENT_L2_MAX_TOKENS` | L2 分类请求的 `max_tokens`（32–1024，默认 220）。TOML：`intent_l2_max_tokens`。 |
-| `AGENT_INTENT_L0_ROUTING_BOOST_ENABLED` | 是否按 L0 特征（路径/错误/cargo 等）对 L1 的模糊句做**保守**提级（默认开）。TOML：`intent_l0_routing_boost_enabled`。 |
-| `AGENT_INTENT_EXECUTE_LOW_THRESHOLD` | 首轮规则路由「确认后执行」低阈值（0.0–1.0，默认 0.2）。TOML：`intent_execute_low_threshold`。 |
-| `AGENT_INTENT_EXECUTE_HIGH_THRESHOLD` | 首轮「直接执行」高阈值，且**不小于**低阈值（默认 0.45）。TOML：`intent_execute_high_threshold`。 |
-| `AGENT_INTENT_NON_HIER_EXECUTE_LOW_THRESHOLD` | **非分层**（`planner_executor_mode != hierarchical`）意图路由「确认后执行」低阈值；省略时回退 `AGENT_INTENT_EXECUTE_LOW_THRESHOLD`。TOML：`intent_non_hier_execute_low_threshold`。 |
-| `AGENT_INTENT_NON_HIER_EXECUTE_HIGH_THRESHOLD` | **非分层**（`planner_executor_mode != hierarchical`）意图路由「直接执行」高阈值，且不小于 non-hier low；省略时回退 `AGENT_INTENT_EXECUTE_HIGH_THRESHOLD`。TOML：`intent_non_hier_execute_high_threshold`。 |
-| `AGENT_INTENT_MODE_BIAS_ENABLED` | 分层 `runner` 是否按 `primary_intent` 轻量偏置执行模式（默认开）。TOML：`intent_mode_bias_enabled`。 |
-| `AGENT_STAGED_PLAN_EXECUTION` | 是否启用分阶段规划。 |
-| `AGENT_STAGED_PLAN_PHASE_INSTRUCTION` | 规划相说明/指令。 |
-| `AGENT_STAGED_PLAN_ALLOW_NO_TASK` | 兼容旧变量，**已无效果**（`no_task` 约定见默认规划轮内嵌 schema）。 |
-| `AGENT_STAGED_PLAN_FEEDBACK_MODE` | `fail_fast` / `patch_planner`。 |
-| `AGENT_STAGED_PLAN_PATCH_MAX_ATTEMPTS` | `patch_planner` 补丁轮上限。 |
-| `AGENT_STAGED_PLAN_ENSEMBLE_COUNT` | 逻辑多规划员份数（1–3，默认 1）。 |
-| `AGENT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM` | CLI / `chat` 无工具规划轮是否向 stdout 打印模型流（默认 `true`；见下文「分阶段规划」）。 |
-| `AGENT_STAGED_PLAN_OPTIMIZER_ROUND` | 是否启用规划步骤优化轮（默认 `true`）。 |
-| `AGENT_STAGED_PLAN_TWO_PHASE_NL_DISPLAY` | 为 `true` 时：无工具规划 JSON **定稿**后不向用户侧流式输出该 JSON，再追加一轮仅自然语言的补全请求（默认 `false`；见下文「分阶段规划」）。 |
+| `CM_FINAL_PLAN_REQUIREMENT` | `never` / `workflow_reflection` / `always`。 |
+| `CM_PLAN_REWRITE_MAX_ATTEMPTS` | 规划重写上限。 |
+| `CM_PLANNER_EXECUTOR_MODE` | `single_agent` / `logical_dual_agent`；`hierarchical` 见 TOML **`[agent] planner_executor_mode`**（与分层入口一致，见 `docs/DEVELOPMENT.md`）。 |
+| `CM_INTENT_L2_ENABLED` | 是否启用 L2 无工具语义意图分类（**额外** `chat` 一次；失败回退 L1，**默认开**）。同义 TOML 键 **`intent_l2_enabled`**；设为 `false` 可关。 |
+| `CM_INTENT_L2_MIN_CONFIDENCE` | L2 覆盖 L1 的最低 `confidence`（0.0–1.0，默认 0.7）。TOML：`intent_l2_min_confidence`。 |
+| `CM_INTENT_L2_MAX_TOKENS` | L2 分类请求的 `max_tokens`（32–1024，默认 220）。TOML：`intent_l2_max_tokens`。 |
+| `CM_INTENT_L0_ROUTING_BOOST_ENABLED` | 是否按 L0 特征（路径/错误/cargo 等）对 L1 的模糊句做**保守**提级（默认开）。TOML：`intent_l0_routing_boost_enabled`。 |
+| `CM_INTENT_EXECUTE_LOW_THRESHOLD` | 首轮规则路由「确认后执行」低阈值（0.0–1.0，默认 0.2）。TOML：`intent_execute_low_threshold`。 |
+| `CM_INTENT_EXECUTE_HIGH_THRESHOLD` | 首轮「直接执行」高阈值，且**不小于**低阈值（默认 0.45）。TOML：`intent_execute_high_threshold`。 |
+| `CM_INTENT_NON_HIER_EXECUTE_LOW_THRESHOLD` | **非分层**（`planner_executor_mode != hierarchical`）意图路由「确认后执行」低阈值；省略时回退 `CM_INTENT_EXECUTE_LOW_THRESHOLD`。TOML：`intent_non_hier_execute_low_threshold`。 |
+| `CM_INTENT_NON_HIER_EXECUTE_HIGH_THRESHOLD` | **非分层**（`planner_executor_mode != hierarchical`）意图路由「直接执行」高阈值，且不小于 non-hier low；省略时回退 `CM_INTENT_EXECUTE_HIGH_THRESHOLD`。TOML：`intent_non_hier_execute_high_threshold`。 |
+| `CM_INTENT_MODE_BIAS_ENABLED` | 分层 `runner` 是否按 `primary_intent` 轻量偏置执行模式（默认开）。TOML：`intent_mode_bias_enabled`。 |
+| `CM_STAGED_PLAN_EXECUTION` | 是否启用分阶段规划。 |
+| `CM_STAGED_PLAN_PHASE_INSTRUCTION` | 规划相说明/指令。 |
+| `CM_STAGED_PLAN_ALLOW_NO_TASK` | 兼容旧变量，**已无效果**（`no_task` 约定见默认规划轮内嵌 schema）。 |
+| `CM_STAGED_PLAN_FEEDBACK_MODE` | `fail_fast` / `patch_planner`。 |
+| `CM_STAGED_PLAN_PATCH_MAX_ATTEMPTS` | `patch_planner` 补丁轮上限。 |
+| `CM_STAGED_PLAN_ENSEMBLE_COUNT` | 逻辑多规划员份数（1–3，默认 1）。 |
+| `CM_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM` | CLI / `chat` 无工具规划轮是否向 stdout 打印模型流（默认 `true`；见下文「分阶段规划」）。 |
+| `CM_STAGED_PLAN_OPTIMIZER_ROUND` | 是否启用规划步骤优化轮（默认 `true`）。 |
+| `CM_STAGED_PLAN_TWO_PHASE_NL_DISPLAY` | 为 `true` 时：无工具规划 JSON **定稿**后不向用户侧流式输出该 JSON，再追加一轮仅自然语言的补全请求（默认 `false`；见下文「分阶段规划」）。 |
 
 **分层模式（`planner_executor_mode = hierarchical`）与 DeepSeek**：当 **`api_base` 主机名含 `deepseek`**（如官方 `https://api.deepseek.com/v1`）时：（1）分层 **Manager** / **动态分解器** 的无工具请求会自动附带 **`response_format: {"type":"json_object"}`**（[JSON Output](https://api-docs.deepseek.com/zh-cn/guides/json_mode)），请合理设置 **`max_tokens`**；（2）[思考模式](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode)下，**仅当**某轮助手 **发起了 `tool_calls`** 时，后续请求才必须完整回传该条助手 **`reasoning_content`**（否则 HTTP 400）；未工具调用的轮次思维链可不拼进上下文。分层 **Operator** 按轮次保存助手消息（含思维链），出站 **`messages`** 在相同 **`api_base`** 判定下**仅对含 `tool_calls` 的助手**保留 `reasoning_content`。其它 API 基址不自动启用上述行为。
 
@@ -119,49 +119,49 @@
 | 环境变量 | 说明 |
 | --- | --- |
 | `CRABMATE_WORKFLOW_CHROME_TRACE_DIR` | 设为非空目录时，每次 **`workflow_execute` DAG 实际执行结束**后，将本次 **`trace`** 写成 Chrome **Trace Event Format** JSON（`workflow-{run_id}-{unix_ms}.json`），可用 `chrome://tracing` 或 [Perfetto UI](https://ui.perfetto.dev/) 打开。文件内含 **`displayTimeUnit: us`**（`ts`/`dur` 为微秒，时间轴相对首条 trace 事件）。**`trace`** 含 **`node_run_start` / `node_run_end`**（整节点墙钟，含审批与重试）、**`node_attempt_*`**、失败补偿时的 **`compensation_phase_*`**；节点事件带 **`tool_name`**、**`phase`**（`main` / `compensation`）。成功写入时结果 JSON 另含 **`chrome_trace_path`**（生成文件路径）。写入失败仅打日志，不影响工具返回。**若同时设置 `CRABMATE_REQUEST_CHROME_TRACE_DIR`**：工作流事件**并入**对应回合的 **`turn-*.json`**，**不再**生成独立 `workflow-*.json`，且 **`chrome_trace_path` 为 null**。 |
-| `AGENT_WORKFLOW_CHROME_TRACE_DIR` | 与上一项同义（`AGENT_*` 别名）。 |
+| `CM_WORKFLOW_CHROME_TRACE_DIR` | 与上一项同义（`CM_*` 别名）。 |
 
 ### 队列、并行与缓存
 
 | 环境变量 | 说明 |
 | --- | --- |
-| `AGENT_HEALTH_LLM_MODELS_PROBE` | 为 `1`/`true` 时 **`GET /health`** 附带对当前 **`api_base`** 的 **GET …/models** 连通性检查（列表接口，无 chat 计费）；默认关闭。 |
-| `AGENT_HEALTH_LLM_MODELS_PROBE_CACHE_SECS` | 上述探测结果在进程内缓存秒数（**5–86400**，默认 **120**），减轻高频健康检查对上游的请求。 |
-| `AGENT_CHAT_QUEUE_MAX_CONCURRENT` | 对话队列最大并发。 |
-| `AGENT_CHAT_QUEUE_MAX_PENDING` | 对话队列最大排队。 |
-| `AGENT_PARALLEL_READONLY_TOOLS_MAX` | 同轮只读工具并行上限。 |
-| `AGENT_READ_FILE_TURN_CACHE_MAX_ENTRIES` | 单轮 `read_file` 缓存条目；`0` 关闭；写类工具或工作区变更后整表清空。 |
-| `AGENT_TEST_RESULT_CACHE_ENABLED` | 测试输出进程内 LRU 是否启用。 |
-| `AGENT_TEST_RESULT_CACHE_MAX_ENTRIES` | LRU 容量。对 `cargo_test`、`rust_test_one`、`npm_run`（`script` 为 `test`）、以及 `run_command` 的 `cargo`+`test`（参数**不得**含 `--nocapture` / `--test-threads`）按指纹复用上次截断输出，首行标注 **`[CrabMate 测试输出缓存命中]`**；不跨重启；指纹不含 `RUST_TEST_THREADS` 等——依赖环境一致性时请关闭。 |
+| `CM_HEALTH_LLM_MODELS_PROBE` | 为 `1`/`true` 时 **`GET /health`** 附带对当前 **`api_base`** 的 **GET …/models** 连通性检查（列表接口，无 chat 计费）；默认关闭。 |
+| `CM_HEALTH_LLM_MODELS_PROBE_CACHE_SECS` | 上述探测结果在进程内缓存秒数（**5–86400**，默认 **120**），减轻高频健康检查对上游的请求。 |
+| `CM_CHAT_QUEUE_MAX_CONCURRENT` | 对话队列最大并发。 |
+| `CM_CHAT_QUEUE_MAX_PENDING` | 对话队列最大排队。 |
+| `CM_PARALLEL_READONLY_TOOLS_MAX` | 同轮只读工具并行上限。 |
+| `CM_READ_FILE_TURN_CACHE_MAX_ENTRIES` | 单轮 `read_file` 缓存条目；`0` 关闭；写类工具或工作区变更后整表清空。 |
+| `CM_TEST_RESULT_CACHE_ENABLED` | 测试输出进程内 LRU 是否启用。 |
+| `CM_TEST_RESULT_CACHE_MAX_ENTRIES` | LRU 容量。对 `cargo_test`、`rust_test_one`、`npm_run`（`script` 为 `test`）、以及 `run_command` 的 `cargo`+`test`（参数**不得**含 `--nocapture` / `--test-threads`）按指纹复用上次截断输出，首行标注 **`[CrabMate 测试输出缓存命中]`**；不跨重启；指纹不含 `RUST_TEST_THREADS` 等——依赖环境一致性时请关闭。 |
 
 ### 会话工作区变更集
 
 | 环境变量 | 说明 |
 | --- | --- |
-| `AGENT_SESSION_WORKSPACE_CHANGELIST_ENABLED` | 是否注入 `crabmate_workspace_changelist` user 条。 |
-| `AGENT_SESSION_WORKSPACE_CHANGELIST_MAX_CHARS` | 注入正文上限。默认按 `long_term_memory_scope_id`（Web 为 `conversation_id`；CLI 无记忆时为 `__default__`）累积写路径与 unified diff；不写入会话 SQLite（保存前剥离）。**`workflow_execute` 节点内工具**不汇入此表。 |
+| `CM_SESSION_WORKSPACE_CHANGELIST_ENABLED` | 是否注入 `crabmate_workspace_changelist` user 条。 |
+| `CM_SESSION_WORKSPACE_CHANGELIST_MAX_CHARS` | 注入正文上限。默认按 `long_term_memory_scope_id`（Web 为 `conversation_id`；CLI 无记忆时为 `__default__`）累积写路径与 unified diff；不写入会话 SQLite（保存前剥离）。**`workflow_execute` 节点内工具**不汇入此表。 |
 
 ### 命令白名单、MCP、会话存储
 
 | 环境变量 | 说明 |
 | --- | --- |
-| `AGENT_ALLOWED_COMMANDS` | `run_command` 白名单，逗号分隔。嵌入默认另含 **`docker`**、**`podman`**、**`mvn`**、**`gradle`**（供内置 JVM/容器工具与手动 `run_command`）；完整列表见 **`config/tools.toml`**。 |
-| `AGENT_MCP_ENABLED` | 是否启用 MCP。 |
-| `AGENT_MCP_COMMAND` | MCP stdio 启动命令。 |
-| `AGENT_MCP_TOOL_TIMEOUT_SECS` | MCP 工具超时（秒）。同一进程按指纹复用 stdio；**`crabmate mcp list`** 不要求 `API_KEY`；**`mcp list --probe`** 会启动子进程。 |
-| `AGENT_CODEBASE_SEMANTIC_SEARCH_ENABLED` | 是否为模型注册 **`codebase_semantic_search`** 工具（`false` 时从当轮工具列表移除）。 |
-| `AGENT_CODEBASE_SEMANTIC_INVALIDATE_ON_WORKSPACE_CHANGE` | 写工具成功或本轮 **`workspace_changed`** 后是否删除语义索引中相关行（`false` 关闭；`run_command` 等仍整表清空以防漏删）。 |
-| `AGENT_CODEBASE_SEMANTIC_INDEX_SQLITE_PATH` | 相对工作区的语义索引 SQLite 路径；空则默认 **`.crabmate/codebase_semantic.sqlite`**（须仍在工作区内）。 |
-| `AGENT_CODEBASE_SEMANTIC_MAX_FILE_BYTES` | 参与索引的单文件最大字节数。 |
-| `AGENT_CODEBASE_SEMANTIC_CHUNK_MAX_CHARS` | 嵌入分块最大字符数。 |
-| `AGENT_CODEBASE_SEMANTIC_TOP_K` | 检索默认 Top-K（工具参数可覆盖）。 |
-| `AGENT_CODEBASE_SEMANTIC_QUERY_MAX_CHUNKS` | 单次 **`query`** 最多扫描多少个向量块（默认 **50000**；**0** 表示不限制，大索引慎用）；工具参数 **`query_max_chunks`** 可覆盖。 |
-| `AGENT_CODEBASE_SEMANTIC_REBUILD_MAX_FILES` | **`rebuild_index`** 时最多**重新嵌入**的文件数（防超大仓；未改文件在增量模式下不计入）。 |
-| `AGENT_CODEBASE_SEMANTIC_REBUILD_INCREMENTAL` | 整库 **`rebuild_index`** 是否默认**增量**（按 **`mtime`+`size`+内容 SHA256** 跳过未改文件）；**`false`** 则每次清空向量块与文件目录表后全量重嵌入。子目录 **`path`** 仍为子树全量替换。 |
-| `AGENT_CODEBASE_SEMANTIC_HYBRID_ALPHA` | **`codebase_semantic_search`** 默认 **`retrieve_mode: hybrid`** 时向量余弦权重 **α**（0～1）；综合分 **α×cosine + (1-α)×fts_norm**（FTS 为 SQLite **FTS5** BM25 归一化分）。 |
-| `AGENT_CODEBASE_SEMANTIC_FTS_TOP_N` | hybrid / **`fts_only`** 时全文分支最多取多少条（BM25）；**1～10000**，默认 **400**。 |
-| `AGENT_CODEBASE_SEMANTIC_HYBRID_SEMANTIC_POOL` | hybrid 时向量扫描保留的候选块数（≥ **`top_k`**），再与 FTS 并集重排；**1～10000**，默认 **256**。 |
-| `AGENT_CONVERSATION_STORE_SQLITE_PATH` | 会话 SQLite 路径。 |
+| `CM_ALLOWED_COMMANDS` | `run_command` 白名单，逗号分隔。嵌入默认另含 **`docker`**、**`podman`**、**`mvn`**、**`gradle`**（供内置 JVM/容器工具与手动 `run_command`）；完整列表见 **`config/tools.toml`**。 |
+| `CM_MCP_ENABLED` | 是否启用 MCP。 |
+| `CM_MCP_COMMAND` | MCP stdio 启动命令。 |
+| `CM_MCP_TOOL_TIMEOUT_SECS` | MCP 工具超时（秒）。同一进程按指纹复用 stdio；**`crabmate mcp list`** 不要求 `API_KEY`；**`mcp list --probe`** 会启动子进程。 |
+| `CM_CODEBASE_SEMANTIC_SEARCH_ENABLED` | 是否为模型注册 **`codebase_semantic_search`** 工具（`false` 时从当轮工具列表移除）。 |
+| `CM_CODEBASE_SEMANTIC_INVALIDATE_ON_WORKSPACE_CHANGE` | 写工具成功或本轮 **`workspace_changed`** 后是否删除语义索引中相关行（`false` 关闭；`run_command` 等仍整表清空以防漏删）。 |
+| `CM_CODEBASE_SEMANTIC_INDEX_SQLITE_PATH` | 相对工作区的语义索引 SQLite 路径；空则默认 **`.crabmate/codebase_semantic.sqlite`**（须仍在工作区内）。 |
+| `CM_CODEBASE_SEMANTIC_MAX_FILE_BYTES` | 参与索引的单文件最大字节数。 |
+| `CM_CODEBASE_SEMANTIC_CHUNK_MAX_CHARS` | 嵌入分块最大字符数。 |
+| `CM_CODEBASE_SEMANTIC_TOP_K` | 检索默认 Top-K（工具参数可覆盖）。 |
+| `CM_CODEBASE_SEMANTIC_QUERY_MAX_CHUNKS` | 单次 **`query`** 最多扫描多少个向量块（默认 **50000**；**0** 表示不限制，大索引慎用）；工具参数 **`query_max_chunks`** 可覆盖。 |
+| `CM_CODEBASE_SEMANTIC_REBUILD_MAX_FILES` | **`rebuild_index`** 时最多**重新嵌入**的文件数（防超大仓；未改文件在增量模式下不计入）。 |
+| `CM_CODEBASE_SEMANTIC_REBUILD_INCREMENTAL` | 整库 **`rebuild_index`** 是否默认**增量**（按 **`mtime`+`size`+内容 SHA256** 跳过未改文件）；**`false`** 则每次清空向量块与文件目录表后全量重嵌入。子目录 **`path`** 仍为子树全量替换。 |
+| `CM_CODEBASE_SEMANTIC_HYBRID_ALPHA` | **`codebase_semantic_search`** 默认 **`retrieve_mode: hybrid`** 时向量余弦权重 **α**（0～1）；综合分 **α×cosine + (1-α)×fts_norm**（FTS 为 SQLite **FTS5** BM25 归一化分）。 |
+| `CM_CODEBASE_SEMANTIC_FTS_TOP_N` | hybrid / **`fts_only`** 时全文分支最多取多少条（BM25）；**1～10000**，默认 **400**。 |
+| `CM_CODEBASE_SEMANTIC_HYBRID_SEMANTIC_POOL` | hybrid 时向量扫描保留的候选块数（≥ **`top_k`**），再与 FTS 并集重排；**1～10000**，默认 **256**。 |
+| `CM_CONVERSATION_STORE_SQLITE_PATH` | 会话 SQLite 路径。 |
 
 #### 动态工具（工作区 `plugins/*.json`）
 
@@ -190,42 +190,42 @@
 
 | 环境变量 | 说明 |
 | --- | --- |
-| `AGENT_MEMORY_FILE_ENABLED` | 工作区备忘文件注入。 |
-| `AGENT_MEMORY_FILE` | 备忘文件路径。 |
-| `AGENT_MEMORY_FILE_MAX_CHARS` | 备忘最大字符。 |
-| `AGENT_LIVING_DOCS_INJECT_ENABLED` | 是否在首轮合并 `user` 条最前注入 **`.crabmate/living_docs/`** 摘要（`SUMMARY.md`、`map.md`、`pitfalls.md`、`build.md` 等；详见 `living_docs_relative_dir`）。 |
-| `AGENT_LIVING_DOCS_RELATIVE_DIR` | 活文档目录（相对工作区根），默认 `.crabmate/living_docs`。 |
-| `AGENT_LIVING_DOCS_INJECT_MAX_CHARS` | 活文档注入总字符上限；`0` 关闭。 |
-| `AGENT_LIVING_DOCS_FILE_MAX_EACH_CHARS` | 每个活文档文件读入时的字符上限。 |
-| `AGENT_PROJECT_PROFILE_INJECT_ENABLED` | 项目画像注入。 |
-| `AGENT_PROJECT_PROFILE_INJECT_MAX_CHARS` | 画像最大字符。 |
-| `AGENT_PROJECT_DEPENDENCY_BRIEF_INJECT_ENABLED` | 依赖结构摘要（与画像/备忘合并为一条 `user`）。 |
-| `AGENT_PROJECT_DEPENDENCY_BRIEF_INJECT_MAX_CHARS` | 由 `cargo metadata`（workspace resolve 边 + Mermaid）与**工作区根或 `frontend/` 子目录**（常见 npm 子项目路径，与 CrabMate 自带 `frontend-leptos` 无必然关系）的 `package.json` 依赖名节选组成；不含版本与 lockfile 全文；`0` 关闭该段。 |
+| `CM_MEMORY_FILE_ENABLED` | 工作区备忘文件注入。 |
+| `CM_MEMORY_FILE` | 备忘文件路径。 |
+| `CM_MEMORY_FILE_MAX_CHARS` | 备忘最大字符。 |
+| `CM_LIVING_DOCS_INJECT_ENABLED` | 是否在首轮合并 `user` 条最前注入 **`.crabmate/living_docs/`** 摘要（`SUMMARY.md`、`map.md`、`pitfalls.md`、`build.md` 等；详见 `living_docs_relative_dir`）。 |
+| `CM_LIVING_DOCS_RELATIVE_DIR` | 活文档目录（相对工作区根），默认 `.crabmate/living_docs`。 |
+| `CM_LIVING_DOCS_INJECT_MAX_CHARS` | 活文档注入总字符上限；`0` 关闭。 |
+| `CM_LIVING_DOCS_FILE_MAX_EACH_CHARS` | 每个活文档文件读入时的字符上限。 |
+| `CM_PROJECT_PROFILE_INJECT_ENABLED` | 项目画像注入。 |
+| `CM_PROJECT_PROFILE_INJECT_MAX_CHARS` | 画像最大字符。 |
+| `CM_PROJECT_DEPENDENCY_BRIEF_INJECT_ENABLED` | 依赖结构摘要（与画像/备忘合并为一条 `user`）。 |
+| `CM_PROJECT_DEPENDENCY_BRIEF_INJECT_MAX_CHARS` | 由 `cargo metadata`（workspace resolve 边 + Mermaid）与**工作区根或 `frontend/` 子目录**（常见 npm 子项目路径，与 CrabMate 自带 `frontend-leptos` 无必然关系）的 `package.json` 依赖名节选组成；不含版本与 lockfile 全文；`0` 关闭该段。 |
 
 ### 工具解释卡
 
 | 环境变量 | 说明 |
 | --- | --- |
-| `AGENT_TOOL_CALL_EXPLAIN_ENABLED` | 非只读工具是否要求 `crabmate_explain_why`。 |
-| `AGENT_TOOL_CALL_EXPLAIN_MIN_CHARS` | 解释最短长度。 |
-| `AGENT_TOOL_CALL_EXPLAIN_MAX_CHARS` | 解释最长长度。 |
+| `CM_TOOL_CALL_EXPLAIN_ENABLED` | 非只读工具是否要求 `crabmate_explain_why`。 |
+| `CM_TOOL_CALL_EXPLAIN_MIN_CHARS` | 解释最短长度。 |
+| `CM_TOOL_CALL_EXPLAIN_MAX_CHARS` | 解释最长长度。 |
 
 ### 长期记忆
 
 | 环境变量 | 说明 |
 | --- | --- |
-| `AGENT_LONG_TERM_MEMORY_ENABLED` | 是否启用长期记忆。 |
-| `AGENT_LONG_TERM_MEMORY_SCOPE_MODE` | 作用域模式。 |
-| `AGENT_LONG_TERM_MEMORY_VECTOR_BACKEND` | 默认 `fastembed`，可 `disabled`。 |
-| `AGENT_LONG_TERM_MEMORY_STORE_SQLITE_PATH` | 记忆向量/元数据 SQLite。 |
-| `AGENT_LONG_TERM_MEMORY_TOP_K` | 检索 Top-K。 |
-| `AGENT_LONG_TERM_MEMORY_MAX_CHARS_PER_CHUNK` | 分块最大字符。 |
-| `AGENT_LONG_TERM_MEMORY_MIN_CHARS_TO_INDEX` | 索引最小字符阈值。 |
-| `AGENT_LONG_TERM_MEMORY_ASYNC_INDEX` | 是否异步索引。 |
-| `AGENT_LONG_TERM_MEMORY_AUTO_INDEX_TURNS` | 回合结束是否自动把 user/assistant 终答写入记忆；`false` 时仅 **`long_term_remember`** 等显式路径写入。 |
-| `AGENT_LONG_TERM_MEMORY_DEFAULT_TTL_SECS` | **自动**索引条目的默认存活秒数；`0` 永不过期（仍受 `max_entries` 淘汰）。显式 **`long_term_remember`** 可用参数 `ttl_secs` 单独指定。 |
-| `AGENT_LONG_TERM_MEMORY_MAX_ENTRIES` | 条目上限。 |
-| `AGENT_LONG_TERM_MEMORY_INJECT_MAX_CHARS` | 注入模型上下文的最大字符。 |
+| `CM_LONG_TERM_MEMORY_ENABLED` | 是否启用长期记忆。 |
+| `CM_LONG_TERM_MEMORY_SCOPE_MODE` | 作用域模式。 |
+| `CM_LONG_TERM_MEMORY_VECTOR_BACKEND` | 默认 `fastembed`，可 `disabled`。 |
+| `CM_LONG_TERM_MEMORY_STORE_SQLITE_PATH` | 记忆向量/元数据 SQLite。 |
+| `CM_LONG_TERM_MEMORY_TOP_K` | 检索 Top-K。 |
+| `CM_LONG_TERM_MEMORY_MAX_CHARS_PER_CHUNK` | 分块最大字符。 |
+| `CM_LONG_TERM_MEMORY_MIN_CHARS_TO_INDEX` | 索引最小字符阈值。 |
+| `CM_LONG_TERM_MEMORY_ASYNC_INDEX` | 是否异步索引。 |
+| `CM_LONG_TERM_MEMORY_AUTO_INDEX_TURNS` | 回合结束是否自动把 user/assistant 终答写入记忆；`false` 时仅 **`long_term_remember`** 等显式路径写入。 |
+| `CM_LONG_TERM_MEMORY_DEFAULT_TTL_SECS` | **自动**索引条目的默认存活秒数；`0` 永不过期（仍受 `max_entries` 淘汰）。显式 **`long_term_remember`** 可用参数 `ttl_secs` 单独指定。 |
+| `CM_LONG_TERM_MEMORY_MAX_ENTRIES` | 条目上限。 |
+| `CM_LONG_TERM_MEMORY_INJECT_MAX_CHARS` | 注入模型上下文的最大字符。 |
 
 过期行在读取/写入前清理；**`long_term_forget`** / **`long_term_memory_list`** 为内置工具（`long_term_memory_enabled=true` 时注册），用于显式删除与浏览条目（勿写入密钥）。
 
@@ -235,19 +235,19 @@ Web 已配置 `conversation_store_sqlite_path` 时会话库与长期记忆可共
 
 | 环境变量 | 说明 |
 | --- | --- |
-| `AGENT_WEB_SEARCH_PROVIDER` | 搜索供应商。 |
-| `AGENT_WEB_SEARCH_API_KEY` | 搜索 API 密钥。 |
-| `AGENT_WEB_SEARCH_TIMEOUT_SECS` | 超时（秒）。 |
-| `AGENT_WEB_SEARCH_MAX_RESULTS` | 最大结果数。 |
-| `AGENT_HTTP_FETCH_ALLOWED_PREFIXES` | 允许 URL 前缀。 |
-| `AGENT_HTTP_FETCH_TIMEOUT_SECS` | 抓取超时（秒）。 |
-| `AGENT_HTTP_FETCH_MAX_RESPONSE_BYTES` | 响应体截断上限。 |
+| `CM_WEB_SEARCH_PROVIDER` | 搜索供应商。 |
+| `CM_WEB_SEARCH_API_KEY` | 搜索 API 密钥。 |
+| `CM_WEB_SEARCH_TIMEOUT_SECS` | 超时（秒）。 |
+| `CM_WEB_SEARCH_MAX_RESULTS` | 最大结果数。 |
+| `CM_HTTP_FETCH_ALLOWED_PREFIXES` | 允许 URL 前缀。 |
+| `CM_HTTP_FETCH_TIMEOUT_SECS` | 抓取超时（秒）。 |
+| `CM_HTTP_FETCH_MAX_RESPONSE_BYTES` | 响应体截断上限。 |
 
 **`http_fetch` / `http_request` 外圈超时**：除 **`http_fetch_timeout_secs`**（`reqwest` 读超时）外，异步路径在 **`spawn_blocking`** 外包一层 **`tokio::time::timeout`**；默认与 **`command_timeout_secs`**、**`http_fetch_timeout_secs`** 取较大者。可在 TOML **`[tool_registry]`** 中设 **`http_fetch_wall_timeout_secs`** / **`http_request_wall_timeout_secs`** 单独收紧或放宽（见 **`config/tools.toml` 文件末尾注释**）。
 
 ### `tool_registry` 策略（`tools.toml` / 主配置）
 
-在 **`config/tools.toml`** 或与嵌入顺序一致的用户 **`config.toml`** 中增加可选表 **`[tool_registry]`**，与 **`[agent]`** 一并解析并合并进 **`AgentConfig`**（热重载随 **`apply_hot_reload_config_subset`** 更新）。用于运维统一调参，**无对应 `AGENT_*` 环境变量**（须写 TOML）。
+在 **`config/tools.toml`** 或与嵌入顺序一致的用户 **`config.toml`** 中增加可选表 **`[tool_registry]`**，与 **`[agent]`** 一并解析并合并进 **`AgentConfig`**（热重载随 **`apply_hot_reload_config_subset`** 更新）。用于运维统一调参，**无对应 `CM_*` 环境变量**（须写 TOML）。
 
 | 键 | 说明 |
 | --- | --- |
@@ -266,52 +266,52 @@ Web 已配置 `conversation_store_sqlite_path` 时会话库与长期记忆可共
 
 | 环境变量 | 说明 |
 | --- | --- |
-| `AGENT_MAX_MESSAGE_HISTORY` | 保留消息条数上限。 |
-| `AGENT_TOOL_MESSAGE_MAX_CHARS` | 单条 `role: tool` 发往模型前压缩阈值。 |
-| `AGENT_TOOL_RESULT_ENVELOPE_V1` | `crabmate_tool` 信封 v1。 |
-| `AGENT_SSE_TOOL_CALL_INCLUDE_ARGUMENTS` | 为 `true`/`1`/`yes`/`on` 时，SSE **`tool_call`** 在 **`arguments_preview`** 外另含脱敏截断后的 **`arguments`**（默认关，防浏览器泄露）。 |
-| `AGENT_THINKING_TRACE_ENABLED` | 设为 `false`/`0`/`no`/`off` 时**关闭** `POST /chat/stream` 的 **`thinking_trace`** SSE；**省略时默认开启**（不从 **`[agent]`** TOML 读入该开关）。 |
-| `AGENT_TOOL_STATS_ENABLED` | 为 `true`/`1`/`yes`/`on` 时启用进程内工具调用统计，并在**新会话**首条 `system` 末尾附加短提示（见下）。 |
-| `AGENT_TOOL_STATS_WINDOW_EVENTS` | 滑动窗口保留的调用事件条数（16–65536；与 TOML `agent_tool_stats_window_events` 一致）。 |
-| `AGENT_TOOL_STATS_MIN_SAMPLES` | 某工具在窗口内总次数 ≥ 该值才参与提示（1–10000）。 |
-| `AGENT_TOOL_STATS_MAX_CHARS` | 附录 Markdown 最大字符数（64–32768，超出截断）。 |
-| `AGENT_TOOL_STATS_WARN_BELOW_SUCCESS_RATIO` | 成功率低于该阈值（0.0–1.0）且满足 `min_samples` 时提示；有失败时也会提示。 |
-| `AGENT_MATERIALIZE_DEEPSEEK_DSML_TOOL_CALLS` | DeepSeek DSML 工具调用物化。 |
-| `AGENT_THINKING_AVOID_ECHO_SYSTEM_PROMPT` | 是否在首条 `system` 末尾附思考纪律附录；默认等价 `true`。 |
-| `AGENT_THINKING_AVOID_ECHO_APPENDIX` | 附录内联正文（非空则清除文件路径；若再设 `…_FILE` 则**文件优先**）。 |
-| `AGENT_THINKING_AVOID_ECHO_APPENDIX_FILE` | 附录 Markdown 文件路径（与 `system_prompt_file` 相同解析规则）。 |
-| `AGENT_CONTEXT_CHAR_BUDGET` | 上下文字符预算。 |
-| `AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM` | 摘要后至少保留条数。 |
-| `AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS` | 触发摘要的字符阈值。 |
-| `AGENT_CONTEXT_SUMMARY_TAIL_MESSAGES` | 摘要保留尾部消息数。 |
-| `AGENT_CONTEXT_SUMMARY_MAX_TOKENS` | 摘要请求 max_tokens。 |
-| `AGENT_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS` | 摘要转写最大字符。 |
+| `CM_MAX_MESSAGE_HISTORY` | 保留消息条数上限。 |
+| `CM_TOOL_MESSAGE_MAX_CHARS` | 单条 `role: tool` 发往模型前压缩阈值。 |
+| `CM_TOOL_RESULT_ENVELOPE_V1` | `crabmate_tool` 信封 v1。 |
+| `CM_SSE_TOOL_CALL_INCLUDE_ARGUMENTS` | 为 `true`/`1`/`yes`/`on` 时，SSE **`tool_call`** 在 **`arguments_preview`** 外另含脱敏截断后的 **`arguments`**（默认关，防浏览器泄露）。 |
+| `CM_THINKING_TRACE_ENABLED` | 设为 `false`/`0`/`no`/`off` 时**关闭** `POST /chat/stream` 的 **`thinking_trace`** SSE；**省略时默认开启**（不从 **`[agent]`** TOML 读入该开关）。 |
+| `CM_TOOL_STATS_ENABLED` | 为 `true`/`1`/`yes`/`on` 时启用进程内工具调用统计，并在**新会话**首条 `system` 末尾附加短提示（见下）。 |
+| `CM_TOOL_STATS_WINDOW_EVENTS` | 滑动窗口保留的调用事件条数（16–65536；与 TOML `agent_tool_stats_window_events` 一致）。 |
+| `CM_TOOL_STATS_MIN_SAMPLES` | 某工具在窗口内总次数 ≥ 该值才参与提示（1–10000）。 |
+| `CM_TOOL_STATS_MAX_CHARS` | 附录 Markdown 最大字符数（64–32768，超出截断）。 |
+| `CM_TOOL_STATS_WARN_BELOW_SUCCESS_RATIO` | 成功率低于该阈值（0.0–1.0）且满足 `min_samples` 时提示；有失败时也会提示。 |
+| `CM_MATERIALIZE_DEEPSEEK_DSML_TOOL_CALLS` | DeepSeek DSML 工具调用物化。 |
+| `CM_THINKING_AVOID_ECHO_SYSTEM_PROMPT` | 是否在首条 `system` 末尾附思考纪律附录；默认等价 `true`。 |
+| `CM_THINKING_AVOID_ECHO_APPENDIX` | 附录内联正文（非空则清除文件路径；若再设 `…_FILE` 则**文件优先**）。 |
+| `CM_THINKING_AVOID_ECHO_APPENDIX_FILE` | 附录 Markdown 文件路径（与 `system_prompt_file` 相同解析规则）。 |
+| `CM_CONTEXT_CHAR_BUDGET` | 上下文字符预算。 |
+| `CM_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM` | 摘要后至少保留条数。 |
+| `CM_CONTEXT_SUMMARY_TRIGGER_CHARS` | 触发摘要的字符阈值。 |
+| `CM_CONTEXT_SUMMARY_TAIL_MESSAGES` | 摘要保留尾部消息数。 |
+| `CM_CONTEXT_SUMMARY_MAX_TOKENS` | 摘要请求 max_tokens。 |
+| `CM_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS` | 摘要转写最大字符。 |
 
-**`[agent]` 对应 TOML 键（工具统计）**（可写入 `config.toml` / `.agent_demo.toml` 等）：`agent_tool_stats_enabled`、`agent_tool_stats_window_events`、`agent_tool_stats_min_samples`、`agent_tool_stats_max_chars`、`agent_tool_stats_warn_below_success_ratio`。**`thinking_trace`** 调试 SSE **不由 `[agent]` 配置**：运行时默认开启，仅 **`AGENT_THINKING_TRACE_ENABLED`** 可关闭（见上表）。统计为**单进程内存**、**全局**（不按 `conversation_id` 分桶）；**不**记录工具参数与完整输出。Web 侧**仅**在新建会话（无已存 `conversation_id` 种子）时拼入；CLI **`chat` / `repl`** 与 **`workspace_session::initial_workspace_messages`** 在「新起一轮首条 system」路径拼入，从磁盘恢复的会话仍以基底 system 对齐且不附加该段。
+**`[agent]` 对应 TOML 键（工具统计）**（可写入 `config.toml` / `.agent_demo.toml` 等）：`agent_tool_stats_enabled`、`agent_tool_stats_window_events`、`agent_tool_stats_min_samples`、`agent_tool_stats_max_chars`、`agent_tool_stats_warn_below_success_ratio`。**`thinking_trace`** 调试 SSE **不由 `[agent]` 配置**：运行时默认开启，仅 **`CM_THINKING_TRACE_ENABLED`** 可关闭（见上表）。统计为**单进程内存**、**全局**（不按 `conversation_id` 分桶）；**不**记录工具参数与完整输出。Web 侧**仅**在新建会话（无已存 `conversation_id` 种子）时拼入；CLI **`chat` / `repl`** 与 **`workspace_session::initial_workspace_messages`** 在「新起一轮首条 system」路径拼入，从磁盘恢复的会话仍以基底 system 对齐且不附加该段。
 
 ### CLI
 
 | 环境变量 | 说明 |
 | --- | --- |
-| `AGENT_TUI_LOAD_SESSION_ON_START` | 启动时是否从磁盘恢复会话。 |
-| `AGENT_TUI_SESSION_MAX_MESSAGES` | 会话文件最大消息数。 |
-| `AGENT_REPL_INITIAL_WORKSPACE_MESSAGES_ENABLED` | `true` 时后台构建 `initial_workspace_messages`（画像、依赖摘要，并尊重 `tui_load_session_on_start`）；默认 `false`。TOML：`[agent] repl_initial_workspace_messages_enabled`。 |
-| `AGENT_CLI_WAIT_SPINNER` | 非空且非 `0`/`false` 时，交互式 CLI 与 **`chat`** 纯文本流式在首包前于 stderr 显示 indicatif spinner；**`NO_COLOR`** 或 stderr 非 TTY 时不启用。 |
+| `CM_TUI_LOAD_SESSION_ON_START` | 启动时是否从磁盘恢复会话。 |
+| `CM_TUI_SESSION_MAX_MESSAGES` | 会话文件最大消息数。 |
+| `CM_REPL_INITIAL_WORKSPACE_MESSAGES_ENABLED` | `true` 时后台构建 `initial_workspace_messages`（画像、依赖摘要，并尊重 `tui_load_session_on_start`）；默认 `false`。TOML：`[agent] repl_initial_workspace_messages_enabled`。 |
+| `CM_CLI_WAIT_SPINNER` | 非空且非 `0`/`false` 时，交互式 CLI 与 **`chat`** 纯文本流式在首包前于 stderr 显示 indicatif spinner；**`NO_COLOR`** 或 stderr 非 TTY 时不启用。 |
 
 ### Docker 工具沙盒
 
 | 环境变量 | 说明 |
 | --- | --- |
-| `AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE` | `none` \| `docker`。 |
-| `AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE` | `docker` 模式镜像（必填）。 |
-| `AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK` | 空为 `none` 网络；如 `bridge` 以使出网工具可用。 |
-| `AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_TIMEOUT_SECS` | 单次容器等待上限（秒）。 |
-| `AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_USER` | Docker `Config.user`；`current`/`host` 等语义见下文「SyncDefault 工具 Docker 沙盒」。 |
+| `CM_SYNC_DEFAULT_TOOL_SANDBOX_MODE` | `none` \| `docker`。 |
+| `CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE` | `docker` 模式镜像（必填）。 |
+| `CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK` | 空为 `none` 网络；如 `bridge` 以使出网工具可用。 |
+| `CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_TIMEOUT_SECS` | 单次容器等待上限（秒）。 |
+| `CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_USER` | Docker `Config.user`；`current`/`host` 等语义见下文「SyncDefault 工具 Docker 沙盒」。 |
 
-连接 Docker 守护进程时亦可使用非 `AGENT_` 的 **`DOCKER_HOST`**（与 `docker` CLI / bollard 一致）。
+连接 Docker 守护进程时亦可使用非 `CM_` 的 **`DOCKER_HOST`**（与 `docker` CLI / bollard 一致）。
 
 ```bash
-export AGENT_MODEL=deepseek-reasoner
+export CM_MODEL=deepseek-reasoner
 cargo run
 ```
 
@@ -345,11 +345,11 @@ llm_http_auth_mode = "bearer"
 # llm_reasoning_split = false   # 若不需要 reasoning_split，可显式关闭
 ```
 
-环境变量 **`API_KEY`** 填平台发放的密钥（与 DeepSeek 等一致，走 **`Authorization: Bearer`**）。**`llm_reasoning_split`** 为 **`true`**（含未写配置时 MiniMax 的默认值）时，请求体会包含 **`reasoning_split: true`**（与文档中 `extra_body={"reasoning_split": True}` 一致）；供应商若在流式 **`delta`** 中返回 **`reasoning_details`**（常见为带 **`text`** 的 JSON 数组），CrabMate 会将其**增量合并**进内部的 **`reasoning_content`** 流与终态消息，终端/Web 仍按现有「思考 / 正文」路径展示。非 MiniMax 网关未写该键时默认为 **`false`**；MiniMax 下不需要分离思维链时请显式 **`llm_reasoning_split = false`** 或 **`AGENT_LLM_REASONING_SPLIT=0`**。
+环境变量 **`API_KEY`** 填平台发放的密钥（与 DeepSeek 等一致，走 **`Authorization: Bearer`**）。**`llm_reasoning_split`** 为 **`true`**（含未写配置时 MiniMax 的默认值）时，请求体会包含 **`reasoning_split: true`**（与文档中 `extra_body={"reasoning_split": True}` 一致）；供应商若在流式 **`delta`** 中返回 **`reasoning_details`**（常见为带 **`text`** 的 JSON 数组），CrabMate 会将其**增量合并**进内部的 **`reasoning_content`** 流与终态消息，终端/Web 仍按现有「思考 / 正文」路径展示。非 MiniMax 网关未写该键时默认为 **`false`**；MiniMax 下不需要分离思维链时请显式 **`llm_reasoning_split = false`** 或 **`CM_LLM_REASONING_SPLIT=0`**。
 
 ### 思维链中减少复述系统提示
 
-默认 **`thinking_avoid_echo_system_prompt = true`**（**`[agent]`** 键，嵌入默认见 **`config/default_config.toml`**，与 **`system_prompt_file`** 同节）：附录正文默认来自 **`thinking_avoid_echo_appendix_file`**（仓库内 **`config/prompts/thinking_avoid_echo_appendix.md`**，可**直接改该 Markdown** 无需重编）；亦可 **`thinking_avoid_echo_appendix`** 内联多行字符串。**优先级**：配置了非空 **`thinking_avoid_echo_appendix_file`** 时**读盘优先**于内联；均未配置时用编译嵌入的默认正文。经 **`tool_stats::augment_system_prompt`** 拼到新会话首条 **`system`** 末尾。仅为**软性约束**。关闭开关：**`thinking_avoid_echo_system_prompt = false`** 或 **`AGENT_THINKING_AVOID_ECHO_SYSTEM_PROMPT=0`**。仍复述时可再收紧自有 **`system_prompt`** 或换模型。
+默认 **`thinking_avoid_echo_system_prompt = true`**（**`[agent]`** 键，嵌入默认见 **`config/default_config.toml`**，与 **`system_prompt_file`** 同节）：附录正文默认来自 **`thinking_avoid_echo_appendix_file`**（仓库内 **`config/prompts/thinking_avoid_echo_appendix.md`**，可**直接改该 Markdown** 无需重编）；亦可 **`thinking_avoid_echo_appendix`** 内联多行字符串。**优先级**：配置了非空 **`thinking_avoid_echo_appendix_file`** 时**读盘优先**于内联；均未配置时用编译嵌入的默认正文。经 **`tool_stats::augment_system_prompt`** 拼到新会话首条 **`system`** 末尾。仅为**软性约束**。关闭开关：**`thinking_avoid_echo_system_prompt = false`** 或 **`CM_THINKING_AVOID_ECHO_SYSTEM_PROMPT=0`**。仍复述时可再收紧自有 **`system_prompt`** 或换模型。
 
 ## 智谱 GLM（OpenAI 兼容）
 
@@ -374,7 +374,7 @@ curl --location 'https://open.bigmodel.cn/api/paas/v4/chat/completions' \
 
 ### 可选：GLM-5 深度思考（`thinking`）
 
-文档中的 **深度思考** 为 **`thinking: { "type": "enabled" }`**（见 [GLM-5 调用示例](https://docs.bigmodel.cn/cn/guide/models/text/glm-5)）。需要时设 **`llm_bigmodel_thinking = true`**（或 **`AGENT_LLM_BIGMODEL_THINKING=1`**）。流式下思维链可走 **`delta.reasoning_content`**，与现有解析路径一致。
+文档中的 **深度思考** 为 **`thinking: { "type": "enabled" }`**（见 [GLM-5 调用示例](https://docs.bigmodel.cn/cn/guide/models/text/glm-5)）。需要时设 **`llm_bigmodel_thinking = true`**（或 **`CM_LLM_BIGMODEL_THINKING=1`**）。流式下思维链可走 **`delta.reasoning_content`**，与现有解析路径一致。
 
 ### 配置示例
 
@@ -408,7 +408,7 @@ Moonshot 在 **`https://api.moonshot.cn`** 提供与 OpenAI SDK 兼容的 HTTP A
 
 **`max_tokens` 与 `max_completion_tokens`**：Kimi 文档将 **`max_tokens`** 标为可选且**已废弃**，推荐使用 **`max_completion_tokens`** 表示**完成段**上限。CrabMate 当前仍序列化 OpenAI 常见字段 **`max_tokens`**（来自 **`[agent] max_tokens`**），多数兼容网关会接受；若遇 **`invalid_request_error`** 与长度相关，请核对文档中的 **`max_completion_tokens`** 语义并适当调低 **`max_tokens`** 或关注后续版本是否增加该字段。
 
-**`thinking`（仅 kimi-k2.5）**：文档说明可选 **`thinking`**，取值 **`{"type": "enabled"}`** 或 **`{"type": "disabled"}`**，**服务端默认接近 enabled**。不写入请求体时由 Kimi 默认行为决定。若需**显式关闭** k2.5 思考模式，在 CrabMate 中设 **`llm_kimi_thinking_disabled = true`**（或 **`AGENT_LLM_KIMI_THINKING_DISABLED=1`**）；实现上**仅当**当前 **`model`** 为 **`kimi-k2.5` / `kimi-k2.5-…`** 时才会在 JSON 中带 **`thinking: { "type": "disabled" }`**，避免误发给其它网关。若同时开启 **`llm_bigmodel_thinking`** 且 **`model`** 为 k2.5 系列，**以 Kimi `disabled` 优先**（先写 Kimi 关闭）。
+**`thinking`（仅 kimi-k2.5）**：文档说明可选 **`thinking`**，取值 **`{"type": "enabled"}`** 或 **`{"type": "disabled"}`**，**服务端默认接近 enabled**。不写入请求体时由 Kimi 默认行为决定。若需**显式关闭** k2.5 思考模式，在 CrabMate 中设 **`llm_kimi_thinking_disabled = true`**（或 **`CM_LLM_KIMI_THINKING_DISABLED=1`**）；实现上**仅当**当前 **`model`** 为 **`kimi-k2.5` / `kimi-k2.5-…`** 时才会在 JSON 中带 **`thinking: { "type": "disabled" }`**，避免误发给其它网关。若同时开启 **`llm_bigmodel_thinking`** 且 **`model`** 为 k2.5 系列，**以 Kimi `disabled` 优先**（先写 Kimi 关闭）。
 
 **多轮与工具调用**：在 **kimi-k2.5** 且**未**关闭思考（默认）时，接口会校验历史里带 **`tool_calls`** 的 assistant 消息必须带 **`reasoning_content`**，否则会报类似 **`thinking is enabled but reasoning_content is missing in assistant tool call message`**。CrabMate 对此类消息在出站时**保留**会话中的 **`reasoning_content`**（若上游当时未返回则补空串），其它 assistant 条仍按惯例剥离思维链以省 token。关闭思考后按 Kimi 行为一般不再强制该字段。
 
@@ -446,9 +446,9 @@ model = "deepseek-reasoner"
 
 若存在 `workflow_validate_only` 结果，服务端还会按 `spec.layer_count` 约束规划步骤条数。若规划步骤填写了可选字段 `workflow_node_id`，其值须属于该次（或最近一次）`workflow_execute` 工具结果中 `nodes[].id`。
 
-**严格节点覆盖（`final_plan_require_strict_workflow_node_coverage`，默认 `false`，环境变量 `AGENT_FINAL_PLAN_REQUIRE_STRICT_WORKFLOW_NODE_COVERAGE`）**：为 `true` 时，若**任一步**填写了 `workflow_node_id`，则 `steps` 中出现的 `workflow_node_id` 须覆盖该次工具结果中的**全部** `nodes[].id`（每 id 至少一步）。未填任何 `workflow_node_id` 时不额外强制。
+**严格节点覆盖（`final_plan_require_strict_workflow_node_coverage`，默认 `false`，环境变量 `CM_FINAL_PLAN_REQUIRE_STRICT_WORKFLOW_NODE_COVERAGE`）**：为 `true` 时，若**任一步**填写了 `workflow_node_id`，则 `steps` 中出现的 `workflow_node_id` 须覆盖该次工具结果中的**全部** `nodes[].id`（每 id 至少一步）。未填任何 `workflow_node_id` 时不额外强制。
 
-**终答规划侧向 LLM（默认关闭）**：**`final_plan_semantic_check_enabled`**（`AGENT_FINAL_PLAN_SEMANTIC_CHECK_ENABLED`，默认 `false`）在 **`final_plan_requirement = workflow_reflection`** 且本轮已要求终答含规划时，静态规则通过后若可自历史构造工具摘要，则再发**一次**无工具短请求，请模型判断规划与最近工具结果是否明显矛盾。侧向模型**优先**只输出 JSON：`{"consistent":true}` 或 `{"consistent":false,"violation_codes":["…"],"rationale":"…"}`；仍**兼容**旧式单行 `CONSISTENT` / `INCONSISTENT`。判定不一致时追加重写 user：正文含 **`crabmate_plan_semantic_feedback` v1** 的 `json` 围栏（`violation_codes`、`rationale` 可选），再接规划 JSON 重写说明（计入 `plan_rewrite_max_attempts`）。**`final_plan_semantic_check_max_non_readonly_tools`**（`AGENT_FINAL_PLAN_SEMANTIC_CHECK_MAX_NON_READONLY_TOOLS`，默认 `0`，合法 0–32）：摘要中额外收录的非只读工具条数上限；`0` 时仍收录内置高风险名（如 `run_command`、`workflow_execute` 等）与只读工具。**`final_plan_semantic_check_max_tokens`**（`AGENT_FINAL_PLAN_SEMANTIC_CHECK_MAX_TOKENS`，默认 `256`，合法 32–1024）：侧向请求的 `max_tokens`。API 失败或无法解析模型答复时**视为一致**（fail-open），避免阻断主循环。
+**终答规划侧向 LLM（默认关闭）**：**`final_plan_semantic_check_enabled`**（`CM_FINAL_PLAN_SEMANTIC_CHECK_ENABLED`，默认 `false`）在 **`final_plan_requirement = workflow_reflection`** 且本轮已要求终答含规划时，静态规则通过后若可自历史构造工具摘要，则再发**一次**无工具短请求，请模型判断规划与最近工具结果是否明显矛盾。侧向模型**优先**只输出 JSON：`{"consistent":true}` 或 `{"consistent":false,"violation_codes":["…"],"rationale":"…"}`；仍**兼容**旧式单行 `CONSISTENT` / `INCONSISTENT`。判定不一致时追加重写 user：正文含 **`crabmate_plan_semantic_feedback` v1** 的 `json` 围栏（`violation_codes`、`rationale` 可选），再接规划 JSON 重写说明（计入 `plan_rewrite_max_attempts`）。**`final_plan_semantic_check_max_non_readonly_tools`**（`CM_FINAL_PLAN_SEMANTIC_CHECK_MAX_NON_READONLY_TOOLS`，默认 `0`，合法 0–32）：摘要中额外收录的非只读工具条数上限；`0` 时仍收录内置高风险名（如 `run_command`、`workflow_execute` 等）与只读工具。**`final_plan_semantic_check_max_tokens`**（`CM_FINAL_PLAN_SEMANTIC_CHECK_MAX_TOKENS`，默认 `256`，合法 32–1024）：侧向请求的 `max_tokens`。API 失败或无法解析模型答复时**视为一致**（fail-open），避免阻断主循环。
 
 ## 规划重写（`plan_rewrite_max_attempts`）
 
@@ -466,17 +466,17 @@ model = "deepseek-reasoner"
 
 **步级反馈（`staged_plan_feedback_mode`）**：默认 `fail_fast`（某步子循环 `Err` 或步内存在失败工具结果时，整轮计划按失败结束）。设为 `patch_planner` 时，会向规划器注入简短反馈并无工具重跑规划轮，将补丁 `steps` 与「当前步及之后」合并后继续执行（受 `staged_plan_patch_max_attempts` 限制，多耗 API）。
 
-**CLI 规划轮终端输出（`staged_plan_cli_show_planner_stream`，默认 `true`，环境变量 `AGENT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM`）**：仅影响 **CLI / `chat` 等 `out: None` 路径** 下，**无工具规划轮**与 **`patch_planner` 补丁规划轮**是否向 stdout 流式或整段打印模型原文（`Agent:` 前缀及正文）。设为 `false` 时这些轮次不在终端打印模型输出，仍保留 `staged_plan_notice` 队列摘要、分步注入 user 转录与后续执行步的助手输出；Web SSE 路径不受影响。
+**CLI 规划轮终端输出（`staged_plan_cli_show_planner_stream`，默认 `true`，环境变量 `CM_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM`）**：仅影响 **CLI / `chat` 等 `out: None` 路径** 下，**无工具规划轮**与 **`patch_planner` 补丁规划轮**是否向 stdout 流式或整段打印模型原文（`Agent:` 前缀及正文）。设为 `false` 时这些轮次不在终端打印模型输出，仍保留 `staged_plan_notice` 队列摘要、分步注入 user 转录与后续执行步的助手输出；Web SSE 路径不受影响。
 
-**规划步骤优化轮（`staged_plan_optimizer_round`，默认 `true`，环境变量 `AGENT_STAGED_PLAN_OPTIMIZER_ROUND`）**：在首轮 `agent_reply_plan` v1 解析成功且 `steps` 不少于 2 时，再追加一轮无工具请求，请模型合并**无数据依赖**的只读探查步，并提示在同一执行步内对「可同轮并行批处理」的内建工具（与执行层 `parallel_readonly_tools` 判定一致，不限于 `read_file`）发起多次调用。解析失败或用户取消优化轮时沿用首轮规划；成功则追加优化轮 assistant 并采用新 `steps`（多一次 API）。
+**规划步骤优化轮（`staged_plan_optimizer_round`，默认 `true`，环境变量 `CM_STAGED_PLAN_OPTIMIZER_ROUND`）**：在首轮 `agent_reply_plan` v1 解析成功且 `steps` 不少于 2 时，再追加一轮无工具请求，请模型合并**无数据依赖**的只读探查步，并提示在同一执行步内对「可同轮并行批处理」的内建工具（与执行层 `parallel_readonly_tools` 判定一致，不限于 `read_file`）发起多次调用。解析失败或用户取消优化轮时沿用首轮规划；成功则追加优化轮 assistant 并采用新 `steps`（多一次 API）。
 
-**优化轮门控（`staged_plan_optimizer_requires_parallel_tools`，默认 `true`，环境变量 `AGENT_STAGED_PLAN_OPTIMIZER_REQUIRES_PARALLEL_TOOLS`）**：为 `true` 时，仅当本会话 `tools_defs` 中经服务端判定**至少有一个**可同轮并行批处理的内建工具名时，才在 `steps.len() >= 2` 且开启优化轮时发起上述优化请求；若 CSV 为空则跳过该轮以省 API（优化提示主要围绕并行工具列表）。设为 `false` 可恢复旧行为：只要步数与 `staged_plan_optimizer_round` 满足即始终调用优化轮。
+**优化轮门控（`staged_plan_optimizer_requires_parallel_tools`，默认 `true`，环境变量 `CM_STAGED_PLAN_OPTIMIZER_REQUIRES_PARALLEL_TOOLS`）**：为 `true` 时，仅当本会话 `tools_defs` 中经服务端判定**至少有一个**可同轮并行批处理的内建工具名时，才在 `steps.len() >= 2` 且开启优化轮时发起上述优化请求；若 CSV 为空则跳过该轮以省 API（优化提示主要围绕并行工具列表）。设为 `false` 可恢复旧行为：只要步数与 `staged_plan_optimizer_round` 满足即始终调用优化轮。
 
-**逻辑多规划员与合并（`staged_plan_ensemble_count`，默认 `1`，环境变量 `AGENT_STAGED_PLAN_ENSEMBLE_COUNT`，合法值钳制为 1–3）**：`1` 表示关闭。为 `2` 或 `3` 时，在首轮规划写入历史后，再**串行**发起 1 或 2 次无工具「独立规划员」请求（通过服务端注入的 user 正文区分角色；**辅助规划员的 assistant 不写入会话历史**，仅合并轮的 user+assistant 会保留），最后追加一轮「合并多份草案」的无工具请求，产出单一 `steps` 后再进入上述步骤优化轮（若启用）。仍为**同一进程、同一模型与密钥**；不保证质量更优，且 **API 次数与费用明显增加**（例如 `3` + 优化轮 ≈ 首轮外再多 3 次规划类调用）。某辅助轮解析失败时停止追加规划员；若最终有效草案不足 2 份则不跑合并轮。
+**逻辑多规划员与合并（`staged_plan_ensemble_count`，默认 `1`，环境变量 `CM_STAGED_PLAN_ENSEMBLE_COUNT`，合法值钳制为 1–3）**：`1` 表示关闭。为 `2` 或 `3` 时，在首轮规划写入历史后，再**串行**发起 1 或 2 次无工具「独立规划员」请求（通过服务端注入的 user 正文区分角色；**辅助规划员的 assistant 不写入会话历史**，仅合并轮的 user+assistant 会保留），最后追加一轮「合并多份草案」的无工具请求，产出单一 `steps` 后再进入上述步骤优化轮（若启用）。仍为**同一进程、同一模型与密钥**；不保证质量更优，且 **API 次数与费用明显增加**（例如 `3` + 优化轮 ≈ 首轮外再多 3 次规划类调用）。某辅助轮解析失败时停止追加规划员；若最终有效草案不足 2 份则不跑合并轮。
 
-**Ensemble 门控（`staged_plan_skip_ensemble_on_casual_prompt`，默认 `true`，环境变量 `AGENT_STAGED_PLAN_SKIP_ENSEMBLE_ON_CASUAL_PROMPT`）**：在 `staged_plan_ensemble_count > 1` 时，若从消息历史回溯到的**本轮用户正文**经简单启发式判定为寒暄或极短输入，则跳过逻辑多规划员与合并轮，直接沿用首轮规划（省多次规划 API）。设为 `false` 则始终按 `staged_plan_ensemble_count` 跑满（在解析成功的前提下）。
+**Ensemble 门控（`staged_plan_skip_ensemble_on_casual_prompt`，默认 `true`，环境变量 `CM_STAGED_PLAN_SKIP_ENSEMBLE_ON_CASUAL_PROMPT`）**：在 `staged_plan_ensemble_count > 1` 时，若从消息历史回溯到的**本轮用户正文**经简单启发式判定为寒暄或极短输入，则跳过逻辑多规划员与合并轮，直接沿用首轮规划（省多次规划 API）。设为 `false` 则始终按 `staged_plan_ensemble_count` 跑满（在解析成功的前提下）。
 
-**两轮展示（`staged_plan_two_phase_nl_display`，默认 `false`，环境变量 `AGENT_STAGED_PLAN_TWO_PHASE_NL_DISPLAY`）**：为 `true` 时，在 `agent_reply_plan` v1 **已解析并入史**之后（含可选的逻辑多规划员与合并轮、步骤优化轮；`no_task` 路径在转入常规循环前亦同），对**上述无工具规划类轮次**在调用 `complete_chat_retrying` 时**不向用户侧流式输出**规划 JSON（`out: None` 且抑制 `render_to_terminal`，与 `staged_plan_cli_show_planner_stream` 相与后再决定是否打印终端）。随后追加一条桥接 **user**（`staged_sse::staged_plan_nl_followup_user_body`：正文标明**系统桥接、非用户提问**，要求模型只回应**更早的真实用户消息**并结合已定规划；首行与分步注入同类的展示层隐藏前缀，聊天区**不**展示整段），再发起一轮**无工具**补全：模型应答作为**用户可见**自然语言流式/整段下发；会话历史中保留 JSON 助手条 + 桥接 user + NL 助手条。**未**使用供应商 `response_format: json_object` 等 API 级强约束，首轮 JSON 仍依赖围栏/正文解析。**`patch_planner`** 在步内成功后再次产出的规划 JSON **不**自动触发上述 NL 补全轮（与首轮定稿路径区分）。
+**两轮展示（`staged_plan_two_phase_nl_display`，默认 `false`，环境变量 `CM_STAGED_PLAN_TWO_PHASE_NL_DISPLAY`）**：为 `true` 时，在 `agent_reply_plan` v1 **已解析并入史**之后（含可选的逻辑多规划员与合并轮、步骤优化轮；`no_task` 路径在转入常规循环前亦同），对**上述无工具规划类轮次**在调用 `complete_chat_retrying` 时**不向用户侧流式输出**规划 JSON（`out: None` 且抑制 `render_to_terminal`，与 `staged_plan_cli_show_planner_stream` 相与后再决定是否打印终端）。随后追加一条桥接 **user**（`staged_sse::staged_plan_nl_followup_user_body`：正文标明**系统桥接、非用户提问**，要求模型只回应**更早的真实用户消息**并结合已定规划；首行与分步注入同类的展示层隐藏前缀，聊天区**不**展示整段），再发起一轮**无工具**补全：模型应答作为**用户可见**自然语言流式/整段下发；会话历史中保留 JSON 助手条 + 桥接 user + NL 助手条。**未**使用供应商 `response_format: json_object` 等 API 级强约束，首轮 JSON 仍依赖围栏/正文解析。**`patch_planner`** 在步内成功后再次产出的规划 JSON **不**自动触发上述 NL 补全轮（与首轮定稿路径区分）。
 
 ## SyncDefault 工具 Docker 沙盒（`sync_default_tool_sandbox_mode`）
 
@@ -523,7 +523,7 @@ sync_default_tool_sandbox_docker_image = "your-registry/crabmate-tools:dev"
 # sync_default_tool_sandbox_docker_user = "current"   # Unix 默认等效：当前 euid:egid
 ```
 
-或使用环境变量（覆盖 TOML）：`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE=docker`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE=...` 等。
+或使用环境变量（覆盖 TOML）：`CM_SYNC_DEFAULT_TOOL_SANDBOX_MODE=docker`、`CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE=...` 等。
 
 ### 网络
 
@@ -541,18 +541,18 @@ sync_default_tool_sandbox_docker_image = "your-registry/crabmate-tools:dev"
 - **沙盒边界**：宿主仍负责 **命令白名单、HTTP 前缀、Web/CLI 审批**；Docker 隔离的是**执行环境**，不替代策略配置。
 - **性能**：每次工具调用起停容器，延迟与 Docker 开销高于 `none` 模式。
 
-环境变量：`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_TIMEOUT_SECS`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_USER`。
+环境变量：`CM_SYNC_DEFAULT_TOOL_SANDBOX_MODE`、`CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE`、`CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK`、`CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_TIMEOUT_SECS`、`CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_USER`。
 
 ## 系统提示词
 
 - **默认**：嵌入的 **`config/default_config.toml`** 使用 **`system_prompt_file = "config/prompts/default_system_prompt.md"`**，运行时读盘，**修改该 Markdown 无需重新编译**。
 - **相对路径解析顺序**：进程**当前工作目录** → 各层**覆盖配置文件所在目录**（后加载的优先，如 `.agent_demo.toml` 先于 `config.toml`）→ **`run_command_working_dir`**（已规范化的工作区根）。**绝对路径**仅尝试该路径。
-- **覆盖与优先级**：若某层 TOML **只写**内联 **`system_prompt`**、**不写**该层的 `system_prompt_file`，则会**取消**继承自更早层的 `system_prompt_file`，改为使用内联。环境变量阶段：**`AGENT_SYSTEM_PROMPT`** 会清除已合并的 `system_prompt_file`；随后若存在 **`AGENT_SYSTEM_PROMPT_FILE`** 则再设为文件路径（两者同时设置时以文件为准）。
+- **覆盖与优先级**：若某层 TOML **只写**内联 **`system_prompt`**、**不写**该层的 `system_prompt_file`，则会**取消**继承自更早层的 `system_prompt_file`，改为使用内联。环境变量阶段：**`CM_SYSTEM_PROMPT`** 会清除已合并的 `system_prompt_file`；随后若存在 **`CM_SYSTEM_PROMPT_FILE`** 则再设为文件路径（两者同时设置时以文件为准）。
 - **finalize 阶段**：若仍存在 `system_prompt_file` 则读文件；否则使用非空内联；二者皆无则报错。
 
 仓库内默认正文含**指令优先级**（安全 → 用户当轮明确指令 → 可核对事实 → 本提示与角色 → Cursor 式规则）、**非代码问题勿强行使用开发工具**、**用户未授权则默认不擅自改代码**、工具与任务拆分等约定（例如**同一工作区路径在未被修改前不要重复 `read_file`**），并约定用户以中文为主时助手**解释性文字用简体中文、减少中英夹杂**（代码与专有名词等除外）。若规则合并段出现**截断提示**，不得假定未见条文。完全自定义时可改 `config/prompts/default_system_prompt.md` 或换用自有路径。
 
-嵌入默认 **`config/default_config.toml`** 中 **`thinking_avoid_echo_system_prompt = true`** 且 **`thinking_avoid_echo_appendix_file = "config/prompts/thinking_avoid_echo_appendix.md"`**（可用 **`thinking_avoid_echo_appendix`** 内联或 **`AGENT_THINKING_AVOID_ECHO_APPENDIX*`** 覆盖）；与上文「思维链中减少复述系统提示」一致。
+嵌入默认 **`config/default_config.toml`** 中 **`thinking_avoid_echo_system_prompt = true`** 且 **`thinking_avoid_echo_appendix_file = "config/prompts/thinking_avoid_echo_appendix.md"`**（可用 **`thinking_avoid_echo_appendix`** 内联或 **`CM_THINKING_AVOID_ECHO_APPENDIX*`** 覆盖）；与上文「思维链中减少复述系统提示」一致。
 
 ## 多角色（agent_roles）
 
@@ -561,7 +561,7 @@ sync_default_tool_sandbox_docker_image = "your-registry/crabmate-tools:dev"
 - **定义方式（二选一或混用，后加载覆盖同 id 字段）**  
   1. 主配置文件中的 **`[[agent_roles]]`** 表数组：每行含 **`id`**，以及 **`system_prompt`** 和/或 **`system_prompt_file`**（其一即可；`system_prompt` 为空字符串表示**沿用**全局合并后的 `system_prompt`）。  
   2. 仓库根 **`config/agent_roles.toml`**（未使用 **`--config`** 时）；若使用 **`crabmate --config path/to/foo.toml`**，则读取 **`path/to/agent_roles.toml`**（与主配置**同目录**）。文件形态为 **`[agent_roles]`** + **`default_role`** + **`[agent_roles.roles.<id>]`** 子表（见 `config/agent_roles.toml` 注释示例）。
-- **默认角色**：`[agent]` 中 **`default_agent_role`**，或 `agent_roles.toml` 的 **`[agent_roles] default_role`**，或环境变量 **`AGENT_DEFAULT_AGENT_ROLE`**。须指向已定义的角色 id；未配置默认时，未显式选角则使用全局 **`system_prompt`**。
+- **默认角色**：`[agent]` 中 **`default_agent_role`**，或 `agent_roles.toml` 的 **`[agent_roles] default_role`**，或环境变量 **`CM_DEFAULT_CM_ROLE`**。须指向已定义的角色 id；未配置默认时，未显式选角则使用全局 **`system_prompt`**。
 - **可选 `allowed_tools`（多角色工作台）**：在 **`[[agent_roles]]`** 行或 **`[agent_roles.roles.<id>]`** 下可写字符串数组 **`allowed_tools`**。非空时：本角色**仅允许**列表中的内置工具名；列表中含字面量 **`mcp`** 时允许所有 **`mcp__*`** MCP 代理工具。省略或空数组表示**不限制**（与历史行为一致）。工具白名单按 **请求 `agent_role` → 会话持久化 `active_agent_role` → `default_agent_role_id`** 解析命名 id，与首条 `system` 所用角色对齐。
 - **Web**：`POST /chat`、`POST /chat/stream` 可选 JSON 字段 **`agent_role`**（与 `conversation_id` 同类字符集，最长 64）。**新会话**（服务端尚无该 `conversation_id` 历史）：与历史相同，用于首轮 `system`。**已有会话**：若与 SQLite/内存中持久化的 **`active_agent_role`** 不同，则**仅刷新首条 `system`** 并更新持久化角色，**保留**后续对话；省略 `agent_role` 则沿用上次持久化角色。启用 **`allowed_tools`** 时，每轮按上条规则裁剪送进模型的工具列表并在执行层拒绝越权调用。
 - **CLI**：全局 **`--agent-role <id>`**（`repl` / `chat` 等）。与 **`--system-prompt-file`** 互斥。`chat` 在**未**使用 **`--messages-json-file`** 时，该 id 用于构造首条 system（含 **`--message-file`** 首轮）；**`allowed_tools`** 与 Web 同源，按该 id（及配置默认角色）裁剪工具。
@@ -575,7 +575,7 @@ sync_default_tool_sandbox_docker_image = "your-registry/crabmate-tools:dev"
 
 ## 上下文窗口
 
-请求前会压缩 `messages`：条数上限、`context_char_budget`、可选 LLM 摘要等。其中 **`tool_message_max_chars`**（`AGENT_TOOL_MESSAGE_MAX_CHARS`）：单条 `role: tool` 在**发往模型前**若超长则压缩；启用 **`tool_result_envelope_v1`** 时对 `crabmate_tool.output` 采用**首尾采样**并附带 `output_truncated` 等字段（见 **`docs/DEVELOPMENT.md`**）。详见 `config/tools.toml`。
+请求前会压缩 `messages`：条数上限、`context_char_budget`、可选 LLM 摘要等。其中 **`tool_message_max_chars`**（`CM_TOOL_MESSAGE_MAX_CHARS`）：单条 `role: tool` 在**发往模型前**若超长则压缩；启用 **`tool_result_envelope_v1`** 时对 `crabmate_tool.output` 采用**首尾采样**并附带 `output_truncated` 等字段（见 **`docs/DEVELOPMENT.md`**）。详见 `config/tools.toml`。
 
 ## Web 对话队列（`chat_queue_*`）
 

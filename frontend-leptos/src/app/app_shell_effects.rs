@@ -12,9 +12,9 @@ use crate::api::{
     load_execution_mode_from_storage,
 };
 use crate::app_prefs::{
-    AGENT_ROLE_KEY, BG_DECOR_KEY, SIDEBAR_RAIL_COLLAPSED_KEY, STATUS_BAR_VISIBLE_KEY,
-    SidePanelView, TASKS_VISIBLE_KEY, THEME_KEY, WORKSPACE_VISIBLE_KEY, WORKSPACE_WIDTH_KEY,
-    local_storage, store_bool_key, store_f64_key, store_side_panel_view,
+    BG_DECOR_KEY, CM_ROLE_KEY, SIDEBAR_RAIL_COLLAPSED_KEY, STATUS_BAR_VISIBLE_KEY, SidePanelView,
+    TASKS_VISIBLE_KEY, THEME_KEY, WORKSPACE_VISIBLE_KEY, WORKSPACE_WIDTH_KEY, local_storage,
+    store_bool_key, store_f64_key, store_side_panel_view,
 };
 use crate::i18n::{self, Locale};
 use crate::session_ops::SessionContextAnchor;
@@ -137,10 +137,10 @@ pub fn wire_persist_agent_role(selected_agent_role: RwSignal<Option<String>>) {
                 .filter(|s| !s.is_empty())
             {
                 Some(role) => {
-                    let _ = st.set_item(AGENT_ROLE_KEY, role);
+                    let _ = st.set_item(CM_ROLE_KEY, role);
                 }
                 None => {
-                    let _ = st.remove_item(AGENT_ROLE_KEY);
+                    let _ = st.remove_item(CM_ROLE_KEY);
                 }
             }
         }

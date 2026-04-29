@@ -6,7 +6,7 @@
 
 - **`docs/DEVELOPMENT.md`**（**`run_agent_turn_common`**、P/R/E、`planner_executor_mode`、**`staged_plan_*` / `final_plan_*`**）
 - **`docs/PLAN_EXECUTE_VERIFY_ARCHITECTURE.md`**（结构化 P-E-V 与 `plan_rewrite` 正交关系）
-- **`docs/HIERARCHICAL_MULTI_AGENT_ARCHITECTURE.md`**（分层模式与 Manager 反思）
+- **`docs/HIERARCHICAL_MULTI_CM_ARCHITECTURE.md`**（分层模式与 Manager 反思）
 - **`docs/design/agent_state_management.md`**（更广义的会话/产物状态，与本设计正交）
 - 源码：`src/agent/agent_turn/mod.rs`（P/E/R 定义）、`src/agent/per_coord/`（`mod.rs`、`final_plan_gate.rs`）、`src/agent/agent_turn/staged.rs`、`src/agent/agent_turn/staged_orchestrator.rs`、`src/agent/workflow_reflection_controller.rs`
 

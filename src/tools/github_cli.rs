@@ -77,7 +77,7 @@ fn gh_allowed(allowed: &[String]) -> Result<(), String> {
     if allowed.iter().any(|c| c == "gh") {
         Ok(())
     } else {
-        Err("错误：当前配置 allowed_commands 未包含 gh（可在 config/tools.toml 或 AGENT_ALLOWED_COMMANDS 中加入）".to_string())
+        Err("错误：当前配置 allowed_commands 未包含 gh（可在 config/tools.toml 或 CM_ALLOWED_COMMANDS 中加入）".to_string())
     }
 }
 

@@ -61,7 +61,7 @@ pub(crate) struct ConfigBuilder {
     pub(crate) tool_message_max_chars: Option<u64>,
     pub(crate) tool_result_envelope_v1: Option<bool>,
     pub(crate) sse_tool_call_include_arguments: Option<bool>,
-    /// 仅环境变量 `AGENT_THINKING_TRACE_ENABLED` 写入；**不**从 `[agent]` TOML 合并。
+    /// 仅环境变量 `CM_THINKING_TRACE_ENABLED` 写入；**不**从 `[agent]` TOML 合并。
     pub(crate) agent_thinking_trace_enabled: Option<bool>,
     pub(crate) agent_tool_stats_enabled: Option<bool>,
     pub(crate) agent_tool_stats_window_events: Option<u64>,
@@ -171,7 +171,7 @@ pub(crate) struct ConfigBuilder {
     pub(crate) tool_registry_sub_agent_patch_write_extra_tools: Option<Vec<String>>,
     pub(crate) tool_registry_sub_agent_test_runner_extra_tools: Option<Vec<String>>,
     pub(crate) tool_registry_sub_agent_review_readonly_deny_tools: Option<Vec<String>>,
-    /// Web/CLI 未指定 `agent_role` 时使用的默认角色 id（须存在于角色表；与 `agent_roles.toml` / `AGENT_DEFAULT_AGENT_ROLE` 一致）
+    /// Web/CLI 未指定 `agent_role` 时使用的默认角色 id（须存在于角色表；与 `agent_roles.toml` / `CM_DEFAULT_CM_ROLE` 一致）
     pub(crate) default_agent_role_id: Option<String>,
     /// `id -> 未合并条目`；在 [`finalize`] 中与全局 cursor rules 设置一并落成 `AgentConfig.agent_roles`。
     pub(crate) agent_role_entries: HashMap<String, agent_roles::AgentRoleEntryBuilder>,

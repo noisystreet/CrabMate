@@ -1,6 +1,6 @@
 //! CLI 在 **`plain_terminal_stream`** 下等待模型首包（reasoning/content delta）时，可选在 **stderr** 显示 spinner + 已等待时间（**indicatif**）。
 //!
-//! 与 stdout 上的 **`Agent:`** 流式正文分离，避免与 `crossterm` 行编辑冲突。启用条件：**`AGENT_CLI_WAIT_SPINNER`** 为真、**stderr 为 TTY**、未设 **`NO_COLOR`**。
+//! 与 stdout 上的 **`Agent:`** 流式正文分离，避免与 `crossterm` 行编辑冲突。启用条件：**`CM_CLI_WAIT_SPINNER`** 为真、**stderr 为 TTY**、未设 **`NO_COLOR`**。
 
 use std::io::{self, IsTerminal};
 use std::sync::Mutex;
@@ -22,7 +22,7 @@ fn env_truthy(name: &str) -> bool {
 pub(crate) fn cli_wait_spinner_wanted() -> bool {
     std::env::var_os("NO_COLOR").is_none()
         && io::stderr().is_terminal()
-        && env_truthy("AGENT_CLI_WAIT_SPINNER")
+        && env_truthy("CM_CLI_WAIT_SPINNER")
 }
 
 /// 在写出首个 plain 助手片段前调用，清除等待行，避免压在 **`Agent:`** 之上。

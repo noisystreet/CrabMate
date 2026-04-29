@@ -59,7 +59,7 @@ pub fn run(args_json: &str, ctx: &ToolContext<'_>) -> String {
         .clamp(1, 20);
 
     if ctx.web_search_api_key.trim().is_empty() {
-        return "错误：未配置联网搜索 API Key。请在配置中设置 web_search_api_key，或设置环境变量 AGENT_WEB_SEARCH_API_KEY；并设置 web_search_provider 为 brave 或 tavily（参见 README）。".to_string();
+        return "错误：未配置联网搜索 API Key。请在配置中设置 web_search_api_key，或设置环境变量 CM_WEB_SEARCH_API_KEY；并设置 web_search_provider 为 brave 或 tavily（参见 README）。".to_string();
     }
 
     let client = match reqwest::blocking::Client::builder()

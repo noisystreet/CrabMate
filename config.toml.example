@@ -1,6 +1,6 @@
 # Agent Demo 配置示例（覆盖嵌入默认：config/default_config.toml + config/session.toml + config/context_inject.toml + config/tools.toml + config/sandbox.toml + config/planning.toml + config/memory.toml）
 # 复制为 config.toml 或 .agent_demo.toml 后按需修改
-# 环境变量 AGENT_* 会覆盖对应项（如 AGENT_REFLECTION_DEFAULT_MAX_ROUNDS）
+# 环境变量 CM_* 会覆盖对应项（如 CM_REFLECTION_DEFAULT_MAX_ROUNDS）
 
 [agent]
 # api_base = "https://api.deepseek.com/v1"
@@ -12,7 +12,7 @@
 # llm_reasoning_split = false
 # 智谱 GLM：api_base = "https://open.bigmodel.cn/api/paas/v4" ，model = "glm-5" ，API_KEY（Bearer）；与官方最小 cURL（model + messages + stream）一致时可不写 llm_bigmodel_thinking（默认 false）；深度思考见 docs/CONFIGURATION.md「智谱 GLM」
 # llm_bigmodel_thinking = false
-# Moonshot Kimi：api_base = "https://api.moonshot.cn/v1" ，model 如 kimi-k2.5 ；可选 llm_kimi_thinking_disabled（仅 k2.5）；AGENT_LLM_KIMI_THINKING_DISABLED
+# Moonshot Kimi：api_base = "https://api.moonshot.cn/v1" ，model 如 kimi-k2.5 ；可选 llm_kimi_thinking_disabled（仅 k2.5）；CM_LLM_KIMI_THINKING_DISABLED
 # llm_kimi_thinking_disabled = false
 # max_message_history = 24
 # tui_load_session_on_start = false
@@ -25,29 +25,29 @@
 # system_prompt_file = "config/prompts/code_system.md"
 # tool_message_max_chars = 32768
 # tool_result_envelope_v1 = true
-# SSE `tool_call` 是否额外下发脱敏后的 `arguments`（默认 false）；AGENT_SSE_TOOL_CALL_INCLUDE_ARGUMENTS
+# SSE `tool_call` 是否额外下发脱敏后的 `arguments`（默认 false）；CM_SSE_TOOL_CALL_INCLUDE_ARGUMENTS
 # sse_tool_call_include_arguments = false
-# 进程内工具统计 → 新会话 system 附录（默认关）：agent_tool_stats_enabled = true ；AGENT_TOOL_STATS_* 见 docs/CONFIGURATION.md
+# 进程内工具统计 → 新会话 system 附录（默认关）：agent_tool_stats_enabled = true ；CM_TOOL_STATS_* 见 docs/CONFIGURATION.md
 # agent_tool_stats_enabled = false
 # 整请求 Chrome Trace：export CRABMATE_REQUEST_CHROME_TRACE_DIR=/tmp/crabmate-turns（见 docs/CONFIGURATION.md）
 # 工作流 Chrome Trace：export CRABMATE_WORKFLOW_CHROME_TRACE_DIR=/tmp/crabmate-traces
-# 或 AGENT_WORKFLOW_CHROME_TRACE_DIR；与上项同时设则工作流事件并入 turn-*.json
+# 或 CM_WORKFLOW_CHROME_TRACE_DIR；与上项同时设则工作流事件并入 turn-*.json
 # materialize_deepseek_dsml_tool_calls = true
 # 首条 system 末附思考纪律附录（默认 true）；正文默认文件 config/prompts/thinking_avoid_echo_appendix.md（与 system_prompt_file 同规则解析）
 # thinking_avoid_echo_appendix_file = "config/prompts/thinking_avoid_echo_appendix.md"
 # thinking_avoid_echo_appendix = """多行内联…"""   # 有非空文件路径时读盘优先于内联
-# thinking_avoid_echo_system_prompt = false   # AGENT_THINKING_AVOID_ECHO_SYSTEM_PROMPT=0
-# AGENT_THINKING_AVOID_ECHO_APPENDIX / AGENT_THINKING_AVOID_ECHO_APPENDIX_FILE
+# thinking_avoid_echo_system_prompt = false   # CM_THINKING_AVOID_ECHO_SYSTEM_PROMPT=0
+# CM_THINKING_AVOID_ECHO_APPENDIX / CM_THINKING_AVOID_ECHO_APPENDIX_FILE
 # context_char_budget = 200000
 # parallel_readonly_tools_max = 4
-# read_file_turn_cache_max_entries = 64   # 0 关闭单轮 read_file 缓存；AGENT_READ_FILE_TURN_CACHE_MAX_ENTRIES
-# test_result_cache_enabled = true   # cargo_test / npm run test / run_command cargo test 进程内输出 LRU；AGENT_TEST_RESULT_CACHE_ENABLED
-# test_result_cache_max_entries = 32   # LRU 条数 1–512；AGENT_TEST_RESULT_CACHE_MAX_ENTRIES
-# session_workspace_changelist_enabled = true   # 本会话工具写入路径 + diff 摘要注入模型上下文；AGENT_SESSION_WORKSPACE_CHANGELIST_ENABLED
-# session_workspace_changelist_max_chars = 12000   # 0 用默认 12000；AGENT_SESSION_WORKSPACE_CHANGELIST_MAX_CHARS
+# read_file_turn_cache_max_entries = 64   # 0 关闭单轮 read_file 缓存；CM_READ_FILE_TURN_CACHE_MAX_ENTRIES
+# test_result_cache_enabled = true   # cargo_test / npm run test / run_command cargo test 进程内输出 LRU；CM_TEST_RESULT_CACHE_ENABLED
+# test_result_cache_max_entries = 32   # LRU 条数 1–512；CM_TEST_RESULT_CACHE_MAX_ENTRIES
+# session_workspace_changelist_enabled = true   # 本会话工具写入路径 + diff 摘要注入模型上下文；CM_SESSION_WORKSPACE_CHANGELIST_ENABLED
+# session_workspace_changelist_max_chars = 12000   # 0 用默认 12000；CM_SESSION_WORKSPACE_CHANGELIST_MAX_CHARS
 # context_summary_trigger_chars = 0
-# health_llm_models_probe = false   # true：/health 附带 GET …/models 连通性（无 completion）；AGENT_HEALTH_LLM_MODELS_PROBE
-# health_llm_models_probe_cache_secs = 120   # 5–86400；AGENT_HEALTH_LLM_MODELS_PROBE_CACHE_SECS
+# health_llm_models_probe = false   # true：/health 附带 GET …/models 连通性（无 completion）；CM_HEALTH_LLM_MODELS_PROBE
+# health_llm_models_probe_cache_secs = 120   # 5–86400；CM_HEALTH_LLM_MODELS_PROBE_CACHE_SECS
 # chat_queue_max_concurrent = 2
 # chat_queue_max_pending = 32
 # conversation_store_sqlite_path = ".crabmate/conversations.db"
@@ -79,7 +79,7 @@
 # command_timeout_secs = 10
 # command_max_output_len = 8192
 # allowed_commands：逗号分隔命令名，覆盖默认白名单（完整列表见 config/tools.toml；含 stat/grep/diff/git/gh/cargo、文本与压缩只读工具等）
-# AGENT_ALLOWED_COMMANDS=ls,pwd,git,grep
+# CM_ALLOWED_COMMANDS=ls,pwd,git,grep
 # run_command_working_dir = "."
 # 受保护 Web API 共享密钥：Authorization: Bearer … 或 X-API-Key: …（值相同）
 # web_api_bearer_token = "YOUR_STRONG_RANDOM_TOKEN"
@@ -101,7 +101,7 @@
 # mcp_command = "npx -y @modelcontextprotocol/server-filesystem /path/to/sandbox"
 # mcp_tool_timeout_secs = 60   # 默认与 command_timeout_secs 相同
 
-# 代码语义检索工具 codebase_semantic_search（本地向量索引；AGENT_CODEBASE_SEMANTIC_*）
+# 代码语义检索工具 codebase_semantic_search（本地向量索引；CM_CODEBASE_SEMANTIC_*）
 # codebase_semantic_search_enabled = true
 # codebase_semantic_invalidate_on_workspace_change = true
 # codebase_semantic_index_sqlite_path = ".crabmate/codebase_semantic.sqlite"
@@ -118,20 +118,20 @@
 # http_fetch_allowed_prefixes = ["https://doc.rust-lang.org/"]
 # http_fetch_timeout_secs = 30
 # http_fetch_max_response_bytes = 524288
-# 工具注册表策略（可选 `[tool_registry]`，与 `[agent]` 同文件；无 AGENT_* 别名）：HTTP spawn_blocking 外圈超时、并行墙钟覆盖、并行拒绝/内联/写副作用名单等，见 config/tools.toml 末尾注释与 docs/CONFIGURATION.md「tool_registry 策略」
+# 工具注册表策略（可选 `[tool_registry]`，与 `[agent]` 同文件；无 CM_* 别名）：HTTP spawn_blocking 外圈超时、并行墙钟覆盖、并行拒绝/内联/写副作用名单等，见 config/tools.toml 末尾注释与 docs/CONFIGURATION.md「tool_registry 策略」
 # [tool_registry]
 # http_fetch_wall_timeout_secs = 120
-# 分阶段 steps[].executor_kind 子代理：在默认补丁/测试名之外额外允许的工具名；review_readonly 步内显式拒绝（无 AGENT_*，见 docs/CONFIGURATION.md）
+# 分阶段 steps[].executor_kind 子代理：在默认补丁/测试名之外额外允许的工具名；review_readonly 步内显式拒绝（无 CM_*，见 docs/CONFIGURATION.md）
 sub_agent_patch_write_extra_tools = ["run_command"]
 sub_agent_test_runner_extra_tools = ["custom_test_runner"]
 sub_agent_review_readonly_deny_tools = ["risky_readonly_tool"]
 # reflection_default_max_rounds = 5
 # final_plan_requirement = "workflow_reflection"  # never | workflow_reflection | always（实验性，每轮终答均校验）
 # plan_rewrite_max_attempts = 2
-# final_plan_require_strict_workflow_node_coverage = false  # 任一步填 workflow_node_id 时须覆盖全部 nodes[].id；AGENT_FINAL_PLAN_REQUIRE_STRICT_WORKFLOW_NODE_COVERAGE
-# final_plan_semantic_check_enabled = false  # workflow_reflection 下可选侧向 LLM；AGENT_FINAL_PLAN_SEMANTIC_CHECK_ENABLED
-# final_plan_semantic_check_max_non_readonly_tools = 0  # 摘要中非只读工具条数上限；AGENT_FINAL_PLAN_SEMANTIC_CHECK_MAX_NON_READONLY_TOOLS
-# final_plan_semantic_check_max_tokens = 256  # 侧向请求 max_tokens；AGENT_FINAL_PLAN_SEMANTIC_CHECK_MAX_TOKENS
+# final_plan_require_strict_workflow_node_coverage = false  # 任一步填 workflow_node_id 时须覆盖全部 nodes[].id；CM_FINAL_PLAN_REQUIRE_STRICT_WORKFLOW_NODE_COVERAGE
+# final_plan_semantic_check_enabled = false  # workflow_reflection 下可选侧向 LLM；CM_FINAL_PLAN_SEMANTIC_CHECK_ENABLED
+# final_plan_semantic_check_max_non_readonly_tools = 0  # 摘要中非只读工具条数上限；CM_FINAL_PLAN_SEMANTIC_CHECK_MAX_NON_READONLY_TOOLS
+# final_plan_semantic_check_max_tokens = 256  # 侧向请求 max_tokens；CM_FINAL_PLAN_SEMANTIC_CHECK_MAX_TOKENS
 # planner_executor_mode = "single_agent"  # single_agent | logical_dual_agent（阶段1：同进程逻辑双agent）
 # intent_mode_bias_enabled = true   # 是否启用基于 primary/secondary intent 的执行模式偏置
 # intent_l2_enabled = false   # 默认 true；设为 false 可关闭 L2（省一次无工具意图分类 chat，失败仍无 L2）
@@ -143,20 +143,20 @@ sub_agent_review_readonly_deny_tools = ["risky_readonly_tool"]
 # staged_plan_execution = false   # true：先无工具产出 agent_reply_plan，再按步执行
 # staged_plan_allow_no_task = true   # 兼容旧键，已无效果；no_task 约定见内置 schema（plan_artifact::PLAN_V1_SCHEMA_RULES）
 # staged_plan_phase_instruction = """……"""  # 可选；空则用内置规划轮说明
-# staged_plan_feedback_mode = "fail_fast"   # fail_fast | patch_planner；AGENT_STAGED_PLAN_FEEDBACK_MODE
-# staged_plan_patch_max_attempts = 2        # patch_planner 下每步最多补丁规划轮次数；AGENT_STAGED_PLAN_PATCH_MAX_ATTEMPTS
-# staged_plan_cli_show_planner_stream = true   # CLI 是否打印规划轮模型 stdout；false=仅队列/分步转录；AGENT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM
-# staged_plan_optimizer_round = true   # 首轮规划后再跑无工具优化轮；false 关闭；AGENT_STAGED_PLAN_OPTIMIZER_ROUND
-# staged_plan_optimizer_requires_parallel_tools = true   # 无「可同轮并行批处理」内建工具时跳过优化轮；false=始终尝试；AGENT_STAGED_PLAN_OPTIMIZER_REQUIRES_PARALLEL_TOOLS
-# staged_plan_ensemble_count = 1     # 1–3；>1 时首轮后再跑独立规划并合并；AGENT_STAGED_PLAN_ENSEMBLE_COUNT
-# staged_plan_skip_ensemble_on_casual_prompt = true   # 寒暄/极短用户输入时跳过 ensemble；false=不跳过；AGENT_STAGED_PLAN_SKIP_ENSEMBLE_ON_CASUAL_PROMPT
-# staged_plan_two_phase_nl_display = false   # true：JSON 定稿后不向用户流式输出，再追加一轮 NL；桥接 user 在源码中标明「非用户提问」；AGENT_STAGED_PLAN_TWO_PHASE_NL_DISPLAY
+# staged_plan_feedback_mode = "fail_fast"   # fail_fast | patch_planner；CM_STAGED_PLAN_FEEDBACK_MODE
+# staged_plan_patch_max_attempts = 2        # patch_planner 下每步最多补丁规划轮次数；CM_STAGED_PLAN_PATCH_MAX_ATTEMPTS
+# staged_plan_cli_show_planner_stream = true   # CLI 是否打印规划轮模型 stdout；false=仅队列/分步转录；CM_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM
+# staged_plan_optimizer_round = true   # 首轮规划后再跑无工具优化轮；false 关闭；CM_STAGED_PLAN_OPTIMIZER_ROUND
+# staged_plan_optimizer_requires_parallel_tools = true   # 无「可同轮并行批处理」内建工具时跳过优化轮；false=始终尝试；CM_STAGED_PLAN_OPTIMIZER_REQUIRES_PARALLEL_TOOLS
+# staged_plan_ensemble_count = 1     # 1–3；>1 时首轮后再跑独立规划并合并；CM_STAGED_PLAN_ENSEMBLE_COUNT
+# staged_plan_skip_ensemble_on_casual_prompt = true   # 寒暄/极短用户输入时跳过 ensemble；false=不跳过；CM_STAGED_PLAN_SKIP_ENSEMBLE_ON_CASUAL_PROMPT
+# staged_plan_two_phase_nl_display = false   # true：JSON 定稿后不向用户流式输出，再追加一轮 NL；桥接 user 在源码中标明「非用户提问」；CM_STAGED_PLAN_TWO_PHASE_NL_DISPLAY
 # Docker 工具沙盒：嵌入默认注释示例见 config/sandbox.toml；完整说明见 docs/CONFIGURATION.md「SyncDefault 工具 Docker 沙盒」
-# sync_default_tool_sandbox_mode = "none"   # none | docker；AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE
-# sync_default_tool_sandbox_docker_image = ""   # docker 模式必填：自建镜像名；AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE
-# sync_default_tool_sandbox_docker_network = ""   # 空=无出网；需 web_search/http 等设 bridge；AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK
-# sync_default_tool_sandbox_docker_timeout_secs = 600   # AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_TIMEOUT_SECS
-# sync_default_tool_sandbox_docker_user = "current"   # current | image | uid[:gid]；AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_USER
+# sync_default_tool_sandbox_mode = "none"   # none | docker；CM_SYNC_DEFAULT_TOOL_SANDBOX_MODE
+# sync_default_tool_sandbox_docker_image = ""   # docker 模式必填：自建镜像名；CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE
+# sync_default_tool_sandbox_docker_network = ""   # 空=无出网；需 web_search/http 等设 bridge；CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK
+# sync_default_tool_sandbox_docker_timeout_secs = 600   # CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_TIMEOUT_SECS
+# sync_default_tool_sandbox_docker_user = "current"   # current | image | uid[:gid]；CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_USER
 # cursor_rules_enabled = false    # 默认 true：自动拼接 cursor_rules_dir/*.mdc 到 system_prompt；设为 false 可关闭
 # cursor_rules_dir = ".cursor/rules"
 # cursor_rules_include_agents_md = true

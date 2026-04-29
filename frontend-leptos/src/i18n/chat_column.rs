@@ -285,10 +285,10 @@ pub fn debug_console_region_aria(l: Locale) -> &'static str {
 pub fn debug_console_empty_hint(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => {
-            "发起流式对话后，推理增量与工具上下文摘要会出现在此（若服务端用 `AGENT_THINKING_TRACE_ENABLED=0` 关闭则不会有事件）。"
+            "发起流式对话后，推理增量与工具上下文摘要会出现在此（若服务端用 `CM_THINKING_TRACE_ENABLED=0` 关闭则不会有事件）。"
         }
         Locale::En => {
-            "After a streamed reply, reasoning deltas and tool context summaries appear here (unless the server disabled traces with `AGENT_THINKING_TRACE_ENABLED=0`)."
+            "After a streamed reply, reasoning deltas and tool context summaries appear here (unless the server disabled traces with `CM_THINKING_TRACE_ENABLED=0`)."
         }
     }
 }
