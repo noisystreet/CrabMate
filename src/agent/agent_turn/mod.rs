@@ -5,7 +5,7 @@
 //!
 //! 被 crate 根 [`crate::run_agent_turn`]（Web/CLI）与 Axum handler 共用。
 //!
-//! 子模块：`messages`（助手合并/分隔线）、`staged_sse`（分阶段 SSE）、`params`（`RunLoopParams`）、`plan_call`（P）、`reflect`（R）、
+//! 子模块：`intent`（回合起点意图门控）、`messages`（助手合并/分隔线）、`staged_sse`（分阶段 SSE）、`params`（`RunLoopParams`）、`plan_call`（P）、`reflect`（R）、
 //! `execute_tools`（E）、`outer_loop`（默认主循环）、`staged`（分阶段与逻辑双 agent）。
 //!
 //! **与 `llm` 的边界**：本目录内对模型的调用须经 **`llm::complete_chat_retrying`**（见 **`docs/DEVELOPMENT.md`**「`agent_turn` 与 `llm`：唯一入口与禁止事项」）；**禁止**直接调用 **`llm::api::stream_chat`**。
@@ -25,8 +25,7 @@ mod agent_llm_call;
 mod errors;
 mod execute_tools;
 mod hierarchy;
-mod intent_at_turn_start;
-mod intent_user;
+mod intent;
 mod messages;
 mod outer_loop;
 mod params;
@@ -44,6 +43,7 @@ pub(crate) use errors::{AgentTurnSubPhase, RunAgentTurnError};
 pub(crate) use execute_tools::{
     ExecuteToolsBatchOutcome, WebExecuteCtx, per_execute_tools_web, sse_sender_closed,
 };
+pub(crate) use intent::{intent_at_turn_start, intent_user};
 #[allow(unused_imports)]
 pub(crate) use messages::push_assistant_merging_trailing_empty_placeholder;
 pub(crate) use params::RunLoopParams;
