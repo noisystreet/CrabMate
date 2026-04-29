@@ -98,15 +98,22 @@ pub fn strip_deepseek_dsml_for_display(s: &str) -> String {
     }
     let mut out = s.to_string();
 
+    /// 编译期固定的 DSML 块正则；若失败说明模式字符串损坏，应在 CI 暴露。
     static ORDERED: LazyLock<Vec<Regex>> = LazyLock::new(|| {
-        vec![
-            Regex::new(r"(?s)<｜DSML｜parameter\b[^>]*>.*?</｜DSML｜parameter>").unwrap(),
-            Regex::new(r"(?s)<｜DSML｜invoke\b[^>]*>.*?</｜DSML｜invoke>").unwrap(),
-            Regex::new(r"(?s)<｜DSML｜function_calls\b[^>]*>.*?</｜DSML｜function_calls>").unwrap(),
-            Regex::new(r"(?s)<\|DSML\|parameter\b[^>]*>.*?</\|DSML\|parameter>").unwrap(),
-            Regex::new(r"(?s)<\|DSML\|invoke\b[^>]*>.*?</\|DSML\|invoke>").unwrap(),
-            Regex::new(r"(?s)<\|DSML\|function_calls\b[^>]*>.*?</\|DSML\|function_calls>").unwrap(),
-        ]
+        const PATTERNS: &[&str] = &[
+            r"(?s)<｜DSML｜parameter\b[^>]*>.*?</｜DSML｜parameter>",
+            r"(?s)<｜DSML｜invoke\b[^>]*>.*?</｜DSML｜invoke>",
+            r"(?s)<｜DSML｜function_calls\b[^>]*>.*?</｜DSML｜function_calls>",
+            r"(?s)<\|DSML\|parameter\b[^>]*>.*?</\|DSML\|parameter>",
+            r"(?s)<\|DSML\|invoke\b[^>]*>.*?</\|DSML\|invoke>",
+            r"(?s)<\|DSML\|function_calls\b[^>]*>.*?</\|DSML\|function_calls>",
+        ];
+        PATTERNS
+            .iter()
+            .map(|p| {
+                Regex::new(p).expect("strip_deepseek_dsml: static DSML block regex must compile")
+            })
+            .collect()
     });
     for re in ORDERED.iter() {
         loop {
@@ -122,14 +129,22 @@ pub fn strip_deepseek_dsml_for_display(s: &str) -> String {
     out = strip_dsml_named_blocks_ascii(&out);
 
     // 未闭合或单行残留的开闭标签
-    static ORPHAN_OPEN_FW: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"<｜DSML｜[^>\n]{0,300}>").unwrap());
-    static ORPHAN_CLOSE_FW: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"</｜DSML｜[^>\n]{1,80}>").unwrap());
-    static ORPHAN_OPEN_ASCII: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"<\|DSML\|[^>\n]{0,300}>").unwrap());
-    static ORPHAN_CLOSE_ASCII: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"</\|DSML\|[^>\n]{1,80}>").unwrap());
+    static ORPHAN_OPEN_FW: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"<｜DSML｜[^>\n]{0,300}>")
+            .expect("strip_deepseek_dsml: orphan fullwidth open-tag regex must compile")
+    });
+    static ORPHAN_CLOSE_FW: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"</｜DSML｜[^>\n]{1,80}>")
+            .expect("strip_deepseek_dsml: orphan fullwidth close-tag regex must compile")
+    });
+    static ORPHAN_OPEN_ASCII: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"<\|DSML\|[^>\n]{0,300}>")
+            .expect("strip_deepseek_dsml: orphan ASCII open-tag regex must compile")
+    });
+    static ORPHAN_CLOSE_ASCII: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"</\|DSML\|[^>\n]{1,80}>")
+            .expect("strip_deepseek_dsml: orphan ASCII close-tag regex must compile")
+    });
     out = ORPHAN_OPEN_FW.replace_all(&out, "").to_string();
     out = ORPHAN_CLOSE_FW.replace_all(&out, "").to_string();
     out = ORPHAN_OPEN_ASCII.replace_all(&out, "").to_string();
@@ -146,14 +161,22 @@ fn normalize_deepseek_dsml_brackets(s: &str) -> String {
 
 /// 模型常在 `<`、`|`、`DSML` 之间插空格（如 `< | DSML | invoke`），会导致整段正则匹配失败。
 fn normalize_deepseek_dsml_tag_spacing(s: &str) -> String {
-    static LOOSE_OPEN: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"<\s*\|\s*DSML\s*\|").unwrap());
-    static LOOSE_SHUT: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"</\s*\|\s*DSML\s*\|").unwrap());
-    static COMPRESS_AFTER_OPEN: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"<\|DSML\|\s+").unwrap());
-    static COMPRESS_AFTER_SHUT: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"</\|DSML\|\s+").unwrap());
+    static LOOSE_OPEN: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"<\s*\|\s*DSML\s*\|")
+            .expect("normalize_dsml_spacing: loose open-tag regex must compile")
+    });
+    static LOOSE_SHUT: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"</\s*\|\s*DSML\s*\|")
+            .expect("normalize_dsml_spacing: loose close-prefix regex must compile")
+    });
+    static COMPRESS_AFTER_OPEN: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"<\|DSML\|\s+")
+            .expect("normalize_dsml_spacing: compress-after-open regex must compile")
+    });
+    static COMPRESS_AFTER_SHUT: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"</\|DSML\|\s+")
+            .expect("normalize_dsml_spacing: compress-after-shut regex must compile")
+    });
     let t = LOOSE_OPEN.replace_all(s, "<|DSML|");
     // 仅合并 `</` 与 `|DSML|` 之间的空白，**不要**在替换串末尾加 `>`，否则会把 `</|DSML|invoke>` 破坏成 `</|DSML|>invoke>`。
     let t = LOOSE_SHUT.replace_all(&t, "</|DSML|");
@@ -162,8 +185,10 @@ fn normalize_deepseek_dsml_tag_spacing(s: &str) -> String {
 }
 
 /// 仅从开标签（到第一个 `>` 为止）解析 `name="…"` / `name='…'`。
-static DSML_NAME_ATTR: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"(?is)name\s*=\s*["']([^"']+)["']"#).unwrap());
+static DSML_NAME_ATTR: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?is)name\s*=\s*["']([^"']+)["']"#)
+        .expect("DSML name= attribute regex (static pattern) must compile")
+});
 
 fn extract_dsml_name_from_open_tag(open_through_gt: &str) -> Option<String> {
     DSML_NAME_ATTR
@@ -381,8 +406,9 @@ fn try_unwrap_embedded_step_json(t: &str) -> Option<String> {
     None
 }
 
-static RE_ORDERED_LINE_PREFIX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\s*\d+[.)]\s+").unwrap());
+static RE_ORDERED_LINE_PREFIX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^\s*\d+[.)]\s+").expect("ordered list line prefix regex (static) must compile")
+});
 
 /// 行首尾的空白、BOM、零宽字符（模型/API 偶发夹带）；`str::trim()` 不会去掉 U+200B。
 fn trim_assistant_prose_line(s: &str) -> String {
@@ -499,7 +525,7 @@ fn flatten_bullet_lines_to_prose(s: &str) -> String {
         return String::new();
     }
     if lines.len() == 1 {
-        return lines.into_iter().next().unwrap();
+        return lines.into_iter().next().unwrap_or_default();
     }
     let all_bullets = lines.iter().all(|l| {
         l.starts_with("- ")
