@@ -724,10 +724,7 @@ async fn emit_stream_ended_once(
         return;
     }
     let end_line = crate::sse::encode_message(crate::sse::SsePayload::StreamEnded {
-        ended: crate::sse::StreamEndedBody {
-            job_id,
-            reason: reason.to_string(),
-        },
+        ended: crate::sse::StreamEndedBody { job_id, reason },
     });
     let _ = crate::sse::send_string_logged(sse_tx, end_line, log_context).await;
     *stream_ended_sent = true;

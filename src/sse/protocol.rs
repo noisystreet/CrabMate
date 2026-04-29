@@ -4,7 +4,7 @@
 //!
 //! **完整契约**（版本、`error`/`code` 与 `tool_result.error_code` 枚举、双端对齐清单）见仓库 **`docs/SSE_PROTOCOL.md`**（与 `frontend-leptos/src/sse_dispatch.rs` 对齐）。
 
-pub use crabmate_sse_protocol::SSE_PROTOCOL_VERSION;
+pub use crabmate_sse_protocol::{SSE_PROTOCOL_VERSION, StreamEndReason};
 
 /// 服务端为每条 `/chat/stream` SSE 事件分配的 **`id:`**（`Last-Event-ID`）环形缓冲容量（仅内存；进程重启后不可恢复）。
 pub const SSE_RESUME_RING_CAP: usize = 512;
@@ -292,7 +292,7 @@ pub struct SseCapabilitiesBody {
 pub struct StreamEndedBody {
     pub job_id: u64,
     /// `completed` | `cancelled` | `conflict` | `fallback` | `no_output` | `gone`
-    pub reason: String,
+    pub reason: StreamEndReason,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -343,6 +343,8 @@ pub fn encode_message(payload: SsePayload) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crabmate_sse_protocol::StreamEndReason;
+    use proptest::prelude::*;
 
     #[test]
     fn roundtrip_clarification_questionnaire() {
@@ -589,6 +591,80 @@ mod tests {
                 assert_eq!(finished.status, "ok");
             }
             _ => panic!("expected staged_plan_finished payload"),
+        }
+    }
+
+    fn arb_short_text() -> impl Strategy<Value = String> {
+        // Keep payloads compact so CI stays fast and outputs readable.
+        "[a-zA-Z0-9_\\- ]{0,32}".prop_map(|s| s.trim().to_string())
+    }
+
+    proptest! {
+        #[test]
+        fn prop_tool_running_roundtrip_and_version(tool_running in any::<bool>()) {
+            let encoded = encode_message(SsePayload::ToolRunning { tool_running });
+            let parsed: SseMessage = serde_json::from_str(&encoded).unwrap();
+            prop_assert_eq!(parsed.v, SSE_PROTOCOL_VERSION);
+            match parsed.payload {
+                SsePayload::ToolRunning { tool_running: got } => prop_assert_eq!(got, tool_running),
+                other => prop_assert!(false, "unexpected payload: {:?}", other),
+            }
+        }
+
+        #[test]
+        fn prop_error_payload_roundtrip(
+            error in arb_short_text(),
+            code in proptest::option::of(arb_short_text()),
+            reason_code in proptest::option::of(arb_short_text()),
+            turn_id in proptest::option::of(any::<u64>()),
+            sub_phase in proptest::option::of(arb_short_text()),
+        ) {
+            let payload = SsePayload::Error(SseErrorBody {
+                error,
+                code,
+                reason_code,
+                turn_id,
+                sub_phase,
+            });
+            let encoded = encode_message(payload.clone());
+            let parsed: SseMessage = serde_json::from_str(&encoded).unwrap();
+            prop_assert_eq!(parsed.v, SSE_PROTOCOL_VERSION);
+            match (payload, parsed.payload) {
+                (SsePayload::Error(expect), SsePayload::Error(got)) => {
+                    prop_assert_eq!(got.error, expect.error);
+                    prop_assert_eq!(got.code, expect.code);
+                    prop_assert_eq!(got.reason_code, expect.reason_code);
+                    prop_assert_eq!(got.turn_id, expect.turn_id);
+                    prop_assert_eq!(got.sub_phase, expect.sub_phase);
+                }
+                (_, other) => prop_assert!(false, "unexpected payload: {:?}", other),
+            }
+        }
+
+        #[test]
+        fn prop_stream_ended_reason_is_parsable(job_id in any::<u64>(), reason_idx in 0usize..6usize) {
+            let reason = match reason_idx {
+                0 => StreamEndReason::Completed,
+                1 => StreamEndReason::Cancelled,
+                2 => StreamEndReason::Conflict,
+                3 => StreamEndReason::Fallback,
+                4 => StreamEndReason::NoOutput,
+                _ => StreamEndReason::Gone,
+            };
+            let encoded = encode_message(SsePayload::StreamEnded {
+                ended: StreamEndedBody {
+                    job_id,
+                    reason,
+                },
+            });
+            let parsed: SseMessage = serde_json::from_str(&encoded).unwrap();
+            match parsed.payload {
+                SsePayload::StreamEnded { ended } => {
+                    prop_assert_eq!(ended.job_id, job_id);
+                    prop_assert_eq!(ended.reason, reason);
+                }
+                other => prop_assert!(false, "unexpected payload: {:?}", other),
+            }
         }
     }
 }

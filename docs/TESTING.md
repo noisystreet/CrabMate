@@ -57,6 +57,27 @@ cargo test -p crabmate-sse-protocol golden_sse_control
 cargo test tool_result_envelope_golden
 ```
 
+### SSE 协议一键回归脚本
+
+仓库提供脚本：
+
+```bash
+./scripts/check-sse-protocol.sh
+```
+
+该脚本会串行执行：
+
+- `cargo test -p crabmate sse::protocol::tests`
+- `cargo test -p crabmate-sse-protocol control_classify`
+
+如需代理拉取依赖，可先设置：
+
+```bash
+export http_proxy=http://localhost:8118
+export https_proxy=http://localhost:8118
+./scripts/check-sse-protocol.sh
+```
+
 改动 **SSE 控制面**分支顺序时，须同步金样并跑 `golden_sse_control`（见 [`SSE_PROTOCOL.md`](SSE_PROTOCOL.md)）。**合并/发版前**若改动跨 crate 或公共 API，建议全量 **`cargo test`**（与 [`.cursor/rules/rust-clippy-and-tests.mdc`](../.cursor/rules/rust-clippy-and-tests.mdc) 一致）。
 
 ### 可选：nightly 测试

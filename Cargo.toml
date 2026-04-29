@@ -139,3 +139,4 @@ path = "src/bin/crabmate_gen_man.rs"
 
 [dev-dependencies]
 serde_json = "1"
+proptest = "1"

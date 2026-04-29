@@ -155,12 +155,9 @@ pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
                 return AgentLineKind::Ignore;
             }
             super::protocol::SsePayload::StreamEnded { ended } => {
-                let reason = ended
-                    .reason
-                    .parse::<StreamEndReason>()
-                    .ok()
-                    .unwrap_or(StreamEndReason::Gone);
-                return AgentLineKind::StreamEnded { reason };
+                return AgentLineKind::StreamEnded {
+                    reason: ended.reason,
+                };
             }
         }
     }
