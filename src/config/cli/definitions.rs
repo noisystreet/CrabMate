@@ -445,7 +445,7 @@ pub struct ParsedCliArgs {
     pub agent_role_cli: Option<String>,
     pub chat_cli: ChatCliArgs,
     pub serve_port: Option<u16>,
-    /// `serve` 时使用；来自 `serve --host`、`AGENT_HTTP_HOST` 或默认 `127.0.0.1`。
+    /// `serve` 时使用；来自 `serve --host`、`CM_HTTP_HOST` 或默认 `127.0.0.1`。
     pub http_bind_host: String,
     pub workspace_cli: Option<String>,
     pub no_tools: bool,

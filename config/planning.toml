@@ -1,5 +1,5 @@
 # 规划 / 反思 / 编排模式嵌入默认（reflection、终答规划、planner/executor、分阶段规划等）。
-# 与 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml`、`config/sandbox.toml` 在 `load_config` 中顺序合并（本文件在其后，再后为 **`config/memory.toml`**），再被 config.toml / .agent_demo.toml 与 AGENT_* 覆盖。
+# 与 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml`、`config/sandbox.toml` 在 `load_config` 中顺序合并（本文件在其后，再后为 **`config/memory.toml`**），再被 config.toml / .agent_demo.toml 与 CM_* 覆盖。
 
 [agent]
 
@@ -22,7 +22,7 @@ staged_plan_optimizer_requires_parallel_tools = true
 staged_plan_ensemble_count = 1
 staged_plan_skip_ensemble_on_casual_prompt = true
 # 默认关：与 finalize 缺省及文档一致；若开 true，桥接 user 已标明「非用户提问」，避免模型把续问句误当用户原话。
-staged_plan_two_phase_nl_display = false   # AGENT_STAGED_PLAN_TWO_PHASE_NL_DISPLAY
+staged_plan_two_phase_nl_display = false   # CM_STAGED_PLAN_TWO_PHASE_NL_DISPLAY
 
 # 分层模式意图管线（L0 + L1 规则 + L2 无工具 LLM，默认开启；见 CONFIGURATION/DEVELOPMENT）
 # intent_l2_enabled = true

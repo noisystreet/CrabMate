@@ -1,4 +1,4 @@
-//! Web 分阶段「无工具规划轮」SSE 门控：与 `AGENT_WEB_RAW_ASSISTANT_OUTPUT` 对齐。
+//! Web 分阶段「无工具规划轮」SSE 门控：与 `CM_WEB_RAW_ASSISTANT_OUTPUT` 对齐。
 //!
 //! - 规划 JSON（合并 `reasoning_content` + 正文）解析为 `no_task: true` 时：不向浏览器下发规划轮正文（SSE 缓冲清空）。
 //! - 否则：丢弃 CrabMate 信封前出现的纯文本增量（`reasoning_*`），保留信封与 `assistant_answer_phase` 之后的正文增量。

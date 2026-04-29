@@ -51,7 +51,7 @@ It ships **function calling**, workspace commands and file tools, plus a **Web U
 | [docs/en/TESTING.md](docs/en/TESTING.md) | Test commands: Rust, Leptos, E2E, pre-commit, audits | [zh](docs/TESTING.md) |
 | [docs/en/TOOLS.md](docs/en/TOOLS.md) | Built-in tools and JSON examples | [zh](docs/TOOLS.md) |
 | [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md) | `/chat/stream` control-plane JSON | [zh](docs/SSE_PROTOCOL.md) |
-| [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md) | Env vars, `AGENT_*`, planning/context | [zh](docs/CONFIGURATION.md) |
+| [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md) | Env vars, `CM_*`, planning/context | [zh](docs/CONFIGURATION.md) |
 | [docs/en/CLI.md](docs/en/CLI.md) | Subcommands, HTTP routes, `.deb` | [zh](docs/CLI.md) |
 | [docs/en/CLI_CONTRACT.md](docs/en/CLI_CONTRACT.md) | `chat` exit codes, `--output json`, SSE cross-ref | [zh](docs/CLI_CONTRACT.md) |
 | [docs/en/TODOLIST.md](docs/en/TODOLIST.md) | Open work P0–P5 + by-module | [zh](docs/TODOLIST.md) |
@@ -71,7 +71,7 @@ It ships **function calling**, workspace commands and file tools, plus a **Web U
 | **Moonshot Kimi** | `api_base`: `https://api.moonshot.cn/v1`; `model` e.g. `kimi-k2.5`. Temperature coercion, `llm_kimi_thinking_disabled`, etc.: [CONFIGURATION](docs/en/CONFIGURATION.md), [Kimi API](https://platform.moonshot.cn/docs/api/chat). |
 | **Local Ollama** | `llm_http_auth_mode = "none"`; `api_base` e.g. `http://127.0.0.1:11434/v1`; `API_KEY` optional. |
 
-Local checks: **`crabmate doctor`** (no `API_KEY`), **`probe`** / **`models`**. Full **`AGENT_*`** and hot reload: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md). **Vendor capabilities are defined by each provider’s API docs.**
+Local checks: **`crabmate doctor`** (no `API_KEY`), **`probe`** / **`models`**. Full **`CM_*`** and hot reload: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md). **Vendor capabilities are defined by each provider’s API docs.**
 
 ## Environment and quick start
 
@@ -79,10 +79,10 @@ Local checks: **`crabmate doctor`** (no `API_KEY`), **`probe`** / **`models`**. 
 
 - **Docker dev image** (optional): root [Dockerfile](Dockerfile) (Ubuntu 24.04, Rust + trunk, etc.). `docker build -t crabmate-dev .` then `docker run --rm -it -v "$(pwd)":/workspace -w /workspace crabmate-dev`; UID/GID via `--build-arg DEV_UID` / `DEV_GID`. **No** pre-commit / Node inside.
 
-- **Environment**: **`API_KEY`** when using bearer (`serve` / `repl` / `chat` can start first; set the key in Web Settings or REPL **`/api-key set`** before chatting); **`models` / `probe`** usually still need `API_KEY` in the environment under bearer. **`AGENT_API_BASE`** / **`AGENT_MODEL`** override config. Staged planning: optional **`AGENT_STAGED_PLAN_TWO_PHASE_NL_DISPLAY`** (or TOML **`staged_plan_two_phase_nl_display`**) suppresses user-visible streaming of finalized plan JSON and adds a natural-language-only follow-up round (default off). Full table: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md#staged-planning-staged_plan_execution).
+- **Environment**: **`API_KEY`** when using bearer (`serve` / `repl` / `chat` can start first; set the key in Web Settings or REPL **`/api-key set`** before chatting); **`models` / `probe`** usually still need `API_KEY` in the environment under bearer. **`CM_API_BASE`** / **`CM_MODEL`** override config. Staged planning: optional **`CM_STAGED_PLAN_TWO_PHASE_NL_DISPLAY`** (or TOML **`staged_plan_two_phase_nl_display`**) suppresses user-visible streaming of finalized plan JSON and adds a natural-language-only follow-up round (default off). Full table: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md#staged-planning-staged_plan_execution).
 
 ```bash
-# Optional: export AGENT_API_BASE=… AGENT_MODEL=… API_KEY=… (or Web Settings / REPL /api-key set)
+# Optional: export CM_API_BASE=… CM_MODEL=… API_KEY=… (or Web Settings / REPL /api-key set)
 cargo build
 ./target/debug/crabmate repl    # or crabmate repl when on PATH
 cd frontend-leptos && trunk build && cd ..

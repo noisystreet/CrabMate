@@ -94,7 +94,7 @@ fn staged_planner_sse_fully_suppressed(cfg: &crate::config::AgentConfig) -> bool
 
 /// 无工具规划轮 `complete_chat_retrying`：
 /// - **两阶段 NL**：`out: None`（整段抑制）；
-/// - **Web + 未** `AGENT_WEB_RAW_ASSISTANT_OUTPUT`：经 [`super::planner_sse_gate::PlannerSseGate`] — 解析（正文+思维链）为 `no_task` 则整轮不落 SSE，且不将本条 assistant 写入会话；否则仅落 `assistant_answer_phase` 之后的正文增量；
+/// - **Web + 未** `CM_WEB_RAW_ASSISTANT_OUTPUT`：经 [`super::planner_sse_gate::PlannerSseGate`] — 解析（正文+思维链）为 `no_task` 则整轮不落 SSE，且不将本条 assistant 写入会话；否则仅落 `assistant_answer_phase` 之后的正文增量；
 /// - **RAW** 或 **非 Web**：`out: p.out`（整段原样下发）。
 async fn complete_planner_no_tools_chat_retrying(
     p: &RunLoopParams<'_>,

@@ -80,7 +80,7 @@ fn build_parsed_cli_args(
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .or_else(|| {
-                std::env::var("AGENT_HTTP_HOST")
+                std::env::var("CM_HTTP_HOST")
                     .ok()
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty())

@@ -1,6 +1,6 @@
 //! 统一工具执行结果：用于工作流等编排场景的结构化状态判断。
 //!
-//! ## 写入对话历史的 `role: tool` 信封（可选，见配置项 **`tool_result_envelope_v1`** / **`AGENT_TOOL_RESULT_ENVELOPE_V1`**）
+//! ## 写入对话历史的 `role: tool` 信封（可选，见配置项 **`tool_result_envelope_v1`** / **`CM_TOOL_RESULT_ENVELOPE_V1`**）
 //!
 //! 顶层键 **`crabmate_tool`**，内含 `v`（**载荷版本**，当前为 **1**；与 SSE 整条控制面的 **`SseMessage.v`** 不同）、`name`、`summary`（与 SSE / `summarize_tool_call` 同源）、
 //! `ok`、`exit_code`、`error_code`、`output`（工具原始返回正文，供模型阅读或再解析）。

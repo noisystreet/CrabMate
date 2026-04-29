@@ -2,7 +2,7 @@
 
 **状态**：设计稿（迭代中）  
 **受众**：维护者、架构设计者、核心贡献者  
-**关联文档**：`HIERARCHICAL_MULTI_AGENT_ARCHITECTURE.md`, `PLAN_EXECUTE_VERIFY_ARCHITECTURE.md`, `memory_todo.md`
+**关联文档**：`HIERARCHICAL_MULTI_CM_ARCHITECTURE.md`, `PLAN_EXECUTE_VERIFY_ARCHITECTURE.md`, `memory_todo.md`
 
 ---
 
@@ -671,4 +671,4 @@ let sub_goals = vec![
 - [OpenAI Swarm](https://github.com/openai/swarm)
 - [LangGraph Memory](https://langchain-ai.github.io/langgraph/agents/memory/)
 - [AutoGPT Architecture](https://github.com/Significant-Gravitas/AutoGPT)
-- [CrabMate Hierarchical Architecture](./HIERARCHICAL_MULTI_AGENT_ARCHITECTURE.md)
+- [CrabMate Hierarchical Architecture](./HIERARCHICAL_MULTI_CM_ARCHITECTURE.md)

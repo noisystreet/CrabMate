@@ -29,7 +29,7 @@
 
 - **CLI**：**`crabmate repl`** / **`chat`** / **`serve`**（与 Web 共用 Agent/工具）。详 **[CLI](#cli)**、[docs/CLI.md](docs/CLI.md)。
 
-- **Web UI**：类 DeepSeek 布局；助手 **Markdown**；侧栏会话（会话项或列表空白处**右键**：**管理会话…**、收藏/取消收藏、置顶/取消置顶；列表按 **置顶 → 收藏 → 最近活动时间** 排序；导出、筛选、搜索；**桌面端**品牌行右侧可**收起/展开**左侧会话栏，偏好写入浏览器 **`localStorage`**）、工作区树与变更预览、任务与上下文状态、重试/分支；**须在侧栏「工作区」显式选择或提交目录后**，内置工具与 **`@相对路径`** 文件引用才针对该根生效（启动时不再把进程当前目录当作已选工作区；**`run_command_working_dir`** 仍用于进程合法工作目录与健康检查等，与「已选 Web 工作区」分离）。**刷新/重载**后，若会话已绑定服务端 **`conversation_id`**（`localStorage` 持久化）且配置了 **`conversation_store_sqlite_path`**，前端会 **`GET /conversation/messages`** 拉取服务端消息与 **`revision`**，与分支截断等逻辑对齐。聊天列顶部可展开 **「规划 / 工具时间线」**，汇总 **`staged_plan_step_*`** 旁注与工具摘要卡片并**一键跳转到对应气泡**（失败步骤/工具以危险色高亮）。**调试台**：右侧工具栏 **「视图」** 菜单中选 **「调试台」**，在与工作区/任务相同的右列窗格内查看 **`thinking_trace`** SSE（推理增量、`answer_phase`、工具执行前后上下文摘要等）；仅当环境变量 **`AGENT_THINKING_TRACE_ENABLED=0`** 时服务端关闭下发。聊天框可写 **`@相对路径`** 引用工作区文件（发送时由服务端按 **`read_file`** 规则展开），或在工作区树中**双击文件**插入 **`@路径`**；输入区可 **附加图片**（先 `POST /upload`，再在 `POST /chat/stream` 中带 `image_urls` 组装 OpenAI 兼容多模态 `user` 消息；**须使用支持视觉的模型**）。**澄清问卷**：模型可调用内置工具 **`present_clarification_questionnaire`**，Web 在 SSE 收到 **`clarification_questionnaire`** 后弹出表单，提交时随 **`POST /chat`** / **`POST /chat/stream`** 附带 JSON **`clarify_questionnaire_answers`**（`questionnaire_id` + `answers` 对象）；详见 [docs/SSE_PROTOCOL.md](docs/SSE_PROTOCOL.md) 与 [docs/TOOLS.md](docs/TOOLS.md)。**多角色**等见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)。
+- **Web UI**：类 DeepSeek 布局；助手 **Markdown**；侧栏会话（会话项或列表空白处**右键**：**管理会话…**、收藏/取消收藏、置顶/取消置顶；列表按 **置顶 → 收藏 → 最近活动时间** 排序；导出、筛选、搜索；**桌面端**品牌行右侧可**收起/展开**左侧会话栏，偏好写入浏览器 **`localStorage`**）、工作区树与变更预览、任务与上下文状态、重试/分支；**须在侧栏「工作区」显式选择或提交目录后**，内置工具与 **`@相对路径`** 文件引用才针对该根生效（启动时不再把进程当前目录当作已选工作区；**`run_command_working_dir`** 仍用于进程合法工作目录与健康检查等，与「已选 Web 工作区」分离）。**刷新/重载**后，若会话已绑定服务端 **`conversation_id`**（`localStorage` 持久化）且配置了 **`conversation_store_sqlite_path`**，前端会 **`GET /conversation/messages`** 拉取服务端消息与 **`revision`**，与分支截断等逻辑对齐。聊天列顶部可展开 **「规划 / 工具时间线」**，汇总 **`staged_plan_step_*`** 旁注与工具摘要卡片并**一键跳转到对应气泡**（失败步骤/工具以危险色高亮）。**调试台**：右侧工具栏 **「视图」** 菜单中选 **「调试台」**，在与工作区/任务相同的右列窗格内查看 **`thinking_trace`** SSE（推理增量、`answer_phase`、工具执行前后上下文摘要等）；仅当环境变量 **`CM_THINKING_TRACE_ENABLED=0`** 时服务端关闭下发。聊天框可写 **`@相对路径`** 引用工作区文件（发送时由服务端按 **`read_file`** 规则展开），或在工作区树中**双击文件**插入 **`@路径`**；输入区可 **附加图片**（先 `POST /upload`，再在 `POST /chat/stream` 中带 `image_urls` 组装 OpenAI 兼容多模态 `user` 消息；**须使用支持视觉的模型**）。**澄清问卷**：模型可调用内置工具 **`present_clarification_questionnaire`**，Web 在 SSE 收到 **`clarification_questionnaire`** 后弹出表单，提交时随 **`POST /chat`** / **`POST /chat/stream`** 附带 JSON **`clarify_questionnaire_answers`**（`questionnaire_id` + `answers` 对象）；详见 [docs/SSE_PROTOCOL.md](docs/SSE_PROTOCOL.md) 与 [docs/TOOLS.md](docs/TOOLS.md)。**多角色**等见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)。
 
 - **项目画像**：侧栏摘要与可选首轮注入；模型可用 **`repo_overview_sweep`**（[docs/TOOLS.md](docs/TOOLS.md)）。
 
@@ -55,8 +55,8 @@
 | [docs/TESTING.md](docs/TESTING.md) | 前后端测试、E2E、pre-commit、依赖审计命令汇总 | [en](docs/en/TESTING.md) |
 | [docs/TOOLS.md](docs/TOOLS.md) | 内置工具说明与调用示例 | [en](docs/en/TOOLS.md) |
 | [docs/SSE_PROTOCOL.md](docs/SSE_PROTOCOL.md) | `/chat/stream` 控制面 JSON | [en](docs/en/SSE_PROTOCOL.md) |
-| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | 环境变量、`AGENT_*`、规划/上下文等配置详解 | [en](docs/en/CONFIGURATION.md) |
-| [docs/DEBUG.md](docs/DEBUG.md) | 调试与排障：`AGENT_WEB_DISABLE_MARKDOWN`、`RUST_LOG`、`doctor`、SSE 对齐等 | [en](docs/en/DEBUG.md) |
+| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | 环境变量、`CM_*`、规划/上下文等配置详解 | [en](docs/en/CONFIGURATION.md) |
+| [docs/DEBUG.md](docs/DEBUG.md) | 调试与排障：`CM_WEB_DISABLE_MARKDOWN`、`RUST_LOG`、`doctor`、SSE 对齐等 | [en](docs/en/DEBUG.md) |
 | [docs/CLI.md](docs/CLI.md) | 子命令、选项、HTTP 路由、打包 deb | [en](docs/en/CLI.md) |
 | [docs/CLI_CONTRACT.md](docs/CLI_CONTRACT.md) | `chat` 退出码、`--output json` 行协议、与 SSE 错误码交叉引用 | [en](docs/en/CLI_CONTRACT.md) |
 | [docs/TODOLIST.md](docs/TODOLIST.md) | 未完成待办：全局 P0–P5 + 按模块分章（完成后从清单删除） | [en](docs/en/TODOLIST.md) |
@@ -76,7 +76,7 @@
 | **Moonshot Kimi** | `api_base`：`https://api.moonshot.cn/v1`；`model` 如 `kimi-k2.5`。temperature 钳制、`llm_kimi_thinking_disabled` 等见 [CONFIGURATION](docs/CONFIGURATION.md)、[Kimi API](https://platform.moonshot.cn/docs/api/chat)。 |
 | **本地 Ollama 等** | `llm_http_auth_mode = "none"`，`api_base` 如 `http://127.0.0.1:11434/v1`；可不设 `API_KEY`。 |
 
-本机诊断：**`crabmate doctor`**（无需 `API_KEY`）、**`probe`** / **`models`**。完整 **`AGENT_*`** 与热重载见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)。**厂商能力以供应商 API 文档为准**。
+本机诊断：**`crabmate doctor`**（无需 `API_KEY`）、**`probe`** / **`models`**。完整 **`CM_*`** 与热重载见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)。**厂商能力以供应商 API 文档为准**。
 
 ## 环境与快速开始
 
@@ -84,10 +84,10 @@
 
 - **Docker 开发环境**（可选）：仓库 [Dockerfile](Dockerfile)（Ubuntu 24.04，Rust + trunk 等）。`docker build -t crabmate-dev .` 后 `docker run --rm -it -v "$(pwd)":/workspace -w /workspace crabmate-dev`；UID/GID 可用 `--build-arg DEV_UID` / `DEV_GID`。**未**预装 pre-commit / Node。
 
-- **环境变量**：**`API_KEY`**（bearer 时；`serve` / `repl` / `chat` 可先启动，对话前在 Web「设置」或 REPL **`/api-key set`**）；**`models` / `probe`** 在 bearer 下通常仍需环境变量里的 Key。**`AGENT_API_BASE`** / **`AGENT_MODEL`** 覆盖配置。skills 注入可用 **`AGENT_SKILLS_TOP_K`** 控制每轮按用户输入选取的 Top-K 数量（默认 3）。分阶段规划可选 **`AGENT_STAGED_PLAN_TWO_PHASE_NL_DISPLAY`**（或 TOML **`staged_plan_two_phase_nl_display`**）：首轮 JSON 定稿不向用户侧流式输出，再追加一轮自然语言（默认关闭）；Web 侧可按 SSE **`staged_plan_step_*`** 在聊天区插入浅色「时间线」系统旁注（含可选 **`executor_kind`**，**不**进入模型上下文）。完整表见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md#分阶段规划staged_plan_execution)。
+- **环境变量**：**`API_KEY`**（bearer 时；`serve` / `repl` / `chat` 可先启动，对话前在 Web「设置」或 REPL **`/api-key set`**）；**`models` / `probe`** 在 bearer 下通常仍需环境变量里的 Key。**`CM_API_BASE`** / **`CM_MODEL`** 覆盖配置。skills 注入可用 **`CM_SKILLS_TOP_K`** 控制每轮按用户输入选取的 Top-K 数量（默认 3）。分阶段规划可选 **`CM_STAGED_PLAN_TWO_PHASE_NL_DISPLAY`**（或 TOML **`staged_plan_two_phase_nl_display`**）：首轮 JSON 定稿不向用户侧流式输出，再追加一轮自然语言（默认关闭）；Web 侧可按 SSE **`staged_plan_step_*`** 在聊天区插入浅色「时间线」系统旁注（含可选 **`executor_kind`**，**不**进入模型上下文）。完整表见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md#分阶段规划staged_plan_execution)。
 
 ```bash
-# 可选：export AGENT_API_BASE=… AGENT_MODEL=… API_KEY=…（或 Web「设置」/ REPL /api-key set）
+# 可选：export CM_API_BASE=… CM_MODEL=… API_KEY=…（或 Web「设置」/ REPL /api-key set）
 cargo build
 ./target/debug/crabmate repl    # 安装到 PATH 后可直接 crabmate repl
 cd frontend-leptos && trunk build && cd ..
@@ -103,7 +103,7 @@ cd frontend-leptos && trunk build && cd ..
 
 **前端**：`cd frontend-leptos && trunk build`（开发；**`--release`** 用于发布），再 **`crabmate serve`**。界面语言在「设置」；详 `frontend-leptos/README.md`、`docs/DEVELOPMENT.md`。
 
-**配置**：默认 `config/*.toml`（编译嵌入）+ 可选根目录 **`config.toml`**；**`system_prompt_file`** 指向 `config/prompts/default_system_prompt.md`（改后不必重编）。默认在首条 `system` 末附思考纪律附录（**`config/prompts/thinking_avoid_echo_appendix.md`** 等，见 [CONFIGURATION](docs/CONFIGURATION.md)）。意图增强可用 `[agent] intent_mode_bias_enabled`（默认 true）控制“意图到执行模式”的偏置；`intent_execute_low_threshold` / `intent_execute_high_threshold` 控制全局执行意图阈值，`intent_non_hier_execute_low_threshold` / `intent_non_hier_execute_high_threshold` 可单独覆盖**非分层**路径阈值；`[agent] intent_l2_enabled` 默认 **true**（L2 语义分类，额外一次无工具 `chat`；失败自动回退 L1，受 `intent_l2_min_confidence` 控制覆盖阈值）；若需节省调用可设为 **false**。**非** `Hierarchical` 时可选 `intent_at_turn_start_enabled`（`AGENT_INTENT_AT_TURN_START_ENABLED`）在进主循环前做一轮 L0/L1/可选 L2 门控；分层模式内建同一套管线。高级项同页。**release / deb / man** 见 **[源码编译与打包](#源码编译与打包)**。
+**配置**：默认 `config/*.toml`（编译嵌入）+ 可选根目录 **`config.toml`**；**`system_prompt_file`** 指向 `config/prompts/default_system_prompt.md`（改后不必重编）。默认在首条 `system` 末附思考纪律附录（**`config/prompts/thinking_avoid_echo_appendix.md`** 等，见 [CONFIGURATION](docs/CONFIGURATION.md)）。意图增强可用 `[agent] intent_mode_bias_enabled`（默认 true）控制“意图到执行模式”的偏置；`intent_execute_low_threshold` / `intent_execute_high_threshold` 控制全局执行意图阈值，`intent_non_hier_execute_low_threshold` / `intent_non_hier_execute_high_threshold` 可单独覆盖**非分层**路径阈值；`[agent] intent_l2_enabled` 默认 **true**（L2 语义分类，额外一次无工具 `chat`；失败自动回退 L1，受 `intent_l2_min_confidence` 控制覆盖阈值）；若需节省调用可设为 **false**。**非** `Hierarchical` 时可选 `intent_at_turn_start_enabled`（`CM_INTENT_AT_TURN_START_ENABLED`）在进主循环前做一轮 L0/L1/可选 L2 门控；分层模式内建同一套管线。高级项同页。**release / deb / man** 见 **[源码编译与打包](#源码编译与打包)**。
 
 **切换模型 / 网关**（DeepSeek、MiniMax、Ollama 等）：见上文 **[「后端模型支持」](#后端模型支持)**。
 
@@ -121,8 +121,8 @@ cd frontend-leptos && trunk build && cd ..
 ## 部署与安全
 
 - **监听**：默认 **`127.0.0.1`**；`0.0.0.0` 须 **`web_api_bearer_token`** 或显式不安全开关（见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)）。
-- **Web API 密钥**：与 **`web_api_bearer_token`** 一致；请求头 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**（二选一）。前端可读 **`localStorage["crabmate-api-bearer-token"]`**（同时发送上述两头来兼容脚本/网关习惯）。未配置密钥时 **`/chat*`、`/workspace*`** 等可被能访问该地址的客户端匿名调用；生产或共享环境建议配置密钥，或设 **`web_api_require_bearer`** / **`AGENT_WEB_API_REQUIRE_BEARER`** 强制非空密钥后才允许启动 **`serve`**。
-- **调试与排障**：环境变量、日志、`doctor`、HTTP 探针、SSE 对齐等见 **[docs/DEBUG.md](docs/DEBUG.md)**（含 **`AGENT_WEB_DISABLE_MARKDOWN`**、**`AGENT_WEB_RAW_ASSISTANT_OUTPUT`** 与 **`GET /web-ui`**）；变量说明亦在 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)「Web 服务」。可选 **`CM_REPLAY_DUMP_DIR`** 在对话执行期间**即时追加** `turn-replay-events.jsonl`（动作级事件流），详见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)「整请求 Chrome Trace」表。
+- **Web API 密钥**：与 **`web_api_bearer_token`** 一致；请求头 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**（二选一）。前端可读 **`localStorage["crabmate-api-bearer-token"]`**（同时发送上述两头来兼容脚本/网关习惯）。未配置密钥时 **`/chat*`、`/workspace*`** 等可被能访问该地址的客户端匿名调用；生产或共享环境建议配置密钥，或设 **`web_api_require_bearer`** / **`CM_WEB_API_REQUIRE_BEARER`** 强制非空密钥后才允许启动 **`serve`**。
+- **调试与排障**：环境变量、日志、`doctor`、HTTP 探针、SSE 对齐等见 **[docs/DEBUG.md](docs/DEBUG.md)**（含 **`CM_WEB_DISABLE_MARKDOWN`**、**`CM_WEB_RAW_ASSISTANT_OUTPUT`** 与 **`GET /web-ui`**）；变量说明亦在 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)「Web 服务」。可选 **`CM_REPLAY_DUMP_DIR`** 在对话执行期间**即时追加** `turn-replay-events.jsonl`（动作级事件流），详见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)「整请求 Chrome Trace」表。
 - **Web「设置」**：界面语言 / 主题 / 背景与本机 **`client_llm`**（`api_base` / `model` / `temperature` / 密钥）等修改后，需点击 **「保存全部」** 才写入浏览器 **`localStorage`** 并随请求生效；`api_base` 可从常用供应商预设中选择或手写，`temperature` 支持 `0~2`（留空使用服务端默认），详 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)「Web 对话队列」。
 - **工作区**：须在允许根内；Unix 上尽力用 **`openat2`** 等收窄路径风险，**非**绝对沙箱。见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)、[`src/path_workspace.rs`](src/path_workspace.rs)。
 - **其它**：**`web_search_api_key`** 与主 **`API_KEY`** 分离；可选 **SyncDefault Docker 沙盒**见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)。维护者另见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)、[.cursor/rules/security-sensitive-surface.mdc](.cursor/rules/security-sensitive-surface.mdc)。

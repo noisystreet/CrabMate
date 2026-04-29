@@ -241,10 +241,10 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
 }
 
 /// 与 `GET /web-ui` 对应；**无** TOML 字段，仅读进程环境变量。
-const AGENT_WEB_DISABLE_MARKDOWN: &str = "AGENT_WEB_DISABLE_MARKDOWN";
+const CM_WEB_DISABLE_MARKDOWN: &str = "CM_WEB_DISABLE_MARKDOWN";
 
 fn web_disable_markdown_env() -> bool {
-    match std::env::var(AGENT_WEB_DISABLE_MARKDOWN) {
+    match std::env::var(CM_WEB_DISABLE_MARKDOWN) {
         Ok(s) => {
             let t = s.trim().to_ascii_lowercase();
             matches!(t.as_str(), "1" | "true" | "yes" | "on")

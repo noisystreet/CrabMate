@@ -11,7 +11,7 @@
 //! 7. 嵌入 **`config/memory.toml`**
 //! 8. 用户 **`config.toml`** 或 **`.agent_demo.toml`**（或 **`--config`** 指定单文件；存在则不再探测另一默认名）
 //! 9. 可选 **`agent_roles.toml`**（与主配置同目录，或仓库 **`config/agent_roles.toml`**）
-//! 10. **`AGENT_*` 环境变量**（在 `config/env_overrides.rs` 的 `apply_env_overrides` 中应用，本模块不负责）
+//! 10. **`CM_*` 环境变量**（在 `config/env_overrides.rs` 的 `apply_env_overrides` 中应用，本模块不负责）
 
 use std::path::{Path, PathBuf};
 

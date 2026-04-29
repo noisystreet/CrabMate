@@ -159,32 +159,32 @@ pub(super) struct AgentSection {
     /// `fail_fast`（默认）或 `patch_planner`
     pub(super) staged_plan_feedback_mode: Option<String>,
     pub(super) staged_plan_patch_max_attempts: Option<u64>,
-    /// CLI 是否在无工具规划轮向 stdout 打印模型原文；默认 true。`AGENT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM`
+    /// CLI 是否在无工具规划轮向 stdout 打印模型原文；默认 true。`CM_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM`
     pub(super) staged_plan_cli_show_planner_stream: Option<bool>,
-    /// 首轮规划后是否再跑无工具优化轮；默认 true。`AGENT_STAGED_PLAN_OPTIMIZER_ROUND`
+    /// 首轮规划后是否再跑无工具优化轮；默认 true。`CM_STAGED_PLAN_OPTIMIZER_ROUND`
     pub(super) staged_plan_optimizer_round: Option<bool>,
-    /// 无并行批处理内建工具时是否跳过优化轮；默认 true。`AGENT_STAGED_PLAN_OPTIMIZER_REQUIRES_PARALLEL_TOOLS`
+    /// 无并行批处理内建工具时是否跳过优化轮；默认 true。`CM_STAGED_PLAN_OPTIMIZER_REQUIRES_PARALLEL_TOOLS`
     pub(super) staged_plan_optimizer_requires_parallel_tools: Option<bool>,
-    /// 逻辑多规划员份数上限（1–3）。`AGENT_STAGED_PLAN_ENSEMBLE_COUNT`
+    /// 逻辑多规划员份数上限（1–3）。`CM_STAGED_PLAN_ENSEMBLE_COUNT`
     pub(super) staged_plan_ensemble_count: Option<u64>,
-    /// 寒暄/极短用户输入时是否跳过 ensemble；默认 true。`AGENT_STAGED_PLAN_SKIP_ENSEMBLE_ON_CASUAL_PROMPT`
+    /// 寒暄/极短用户输入时是否跳过 ensemble；默认 true。`CM_STAGED_PLAN_SKIP_ENSEMBLE_ON_CASUAL_PROMPT`
     pub(super) staged_plan_skip_ensemble_on_casual_prompt: Option<bool>,
-    /// 分阶段规划：先 JSON（对用户不可见流）再 NL 补全。`AGENT_STAGED_PLAN_TWO_PHASE_NL_DISPLAY`
+    /// 分阶段规划：先 JSON（对用户不可见流）再 NL 补全。`CM_STAGED_PLAN_TWO_PHASE_NL_DISPLAY`
     pub(super) staged_plan_two_phase_nl_display: Option<bool>,
-    /// `none` | `docker`；`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE`
+    /// `none` | `docker`；`CM_SYNC_DEFAULT_TOOL_SANDBOX_MODE`
     pub(super) sync_default_tool_sandbox_mode: Option<String>,
-    /// Docker 沙盒镜像。`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE`
+    /// Docker 沙盒镜像。`CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE`
     pub(super) sync_default_tool_sandbox_docker_image: Option<String>,
-    /// Docker 网络；空=none。`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK`
+    /// Docker 网络；空=none。`CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK`
     pub(super) sync_default_tool_sandbox_docker_network: Option<String>,
-    /// `docker run` 超时秒。`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_TIMEOUT_SECS`
+    /// `docker run` 超时秒。`CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_TIMEOUT_SECS`
     pub(super) sync_default_tool_sandbox_docker_timeout_secs: Option<u64>,
-    /// 容器 `user`：`current`（默认）、`image`、或 `uid[:gid]`。`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_USER`
+    /// 容器 `user`：`current`（默认）、`image`、或 `uid[:gid]`。`CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_USER`
     pub(super) sync_default_tool_sandbox_docker_user: Option<String>,
     /// Web 工作区可选根目录；省略或空则仅允许 `run_command_working_dir` 及其子目录
     pub(super) workspace_allowed_roots: Option<Vec<String>>,
     pub(super) web_api_bearer_token: Option<String>,
-    /// `AGENT_WEB_API_REQUIRE_BEARER`；为 true 时未配置 `web_api_bearer_token` 则 `serve` 拒绝启动。
+    /// `CM_WEB_API_REQUIRE_BEARER`；为 true 时未配置 `web_api_bearer_token` 则 `serve` 拒绝启动。
     pub(super) web_api_require_bearer: Option<bool>,
     pub(super) allow_insecure_no_auth_for_non_loopback: Option<bool>,
     pub(super) conversation_store_sqlite_path: Option<String>,

@@ -2,7 +2,7 @@
 
 **状态**：设计稿（待实现）  
 **受众**：核心维护者、Agent 编排模块贡献者  
-**关联文档**：`docs/PLAN_EXECUTE_VERIFY_ARCHITECTURE.md`、`docs/HIERARCHICAL_MULTI_AGENT_ARCHITECTURE.md`、`docs/design/agent_state_management.md`
+**关联文档**：`docs/PLAN_EXECUTE_VERIFY_ARCHITECTURE.md`、`docs/HIERARCHICAL_MULTI_CM_ARCHITECTURE.md`、`docs/design/agent_state_management.md`
 
 ---
 

@@ -10,10 +10,10 @@ use crate::types::ChatRequest;
 
 use super::super::call_error::LlmCallError;
 
-/// 在未开启 `RUST_LOG=…debug` 时，仍可用 **`AGENT_LOG_CHAT_REQUEST_JSON=1`** 在 **info** 级别打印请求体预览（与 `--log` 默认 `info` 配套）。
+/// 在未开启 `RUST_LOG=…debug` 时，仍可用 **`CM_LOG_CHAT_REQUEST_JSON=1`** 在 **info** 级别打印请求体预览（与 `--log` 默认 `info` 配套）。
 fn should_log_chat_request_json_preview() -> bool {
     log::log_enabled!(log::Level::Debug)
-        || std::env::var_os("AGENT_LOG_CHAT_REQUEST_JSON").is_some_and(|v| {
+        || std::env::var_os("CM_LOG_CHAT_REQUEST_JSON").is_some_and(|v| {
             let s = v.to_string_lossy();
             let s = s.trim();
             !s.is_empty() && s != "0" && !s.eq_ignore_ascii_case("false")

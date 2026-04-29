@@ -750,7 +750,7 @@ impl super::types::OperatorAgent {
                             state
                                 .observations
                                 .push(format!("Final: {}", super::text::truncate_output(&text)));
-                            // 仅在未开启 AGENT_WEB_RAW_ASSISTANT_OUTPUT 时剥离思维链标签
+                            // 仅在未开启 CM_WEB_RAW_ASSISTANT_OUTPUT 时剥离思维链标签
                             let mut output =
                                 if crate::web::web_ui_env::web_raw_assistant_output_env() {
                                     text.clone()

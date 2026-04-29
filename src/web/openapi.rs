@@ -12,7 +12,7 @@ pub fn build_openapi_spec() -> Value {
             "version": version,
             "description": concat!(
                 "CrabMate `serve` 模式的 HTTP 契约摘要。\n\n",
-                "- **鉴权**：若进程配置了 `AGENT_WEB_API_BEARER_TOKEN`（或等价 TOML `web_api_bearer_token`），下列标记为需鉴权的路径须在请求头携带 **`Authorization: Bearer <token>`** 或 **`X-API-Key: <token>`**（与配置值为**同一密钥**，二选一即可）。未配置密钥时这些路径可匿名访问；可设 **`web_api_require_bearer=true`**（或 **`AGENT_WEB_API_REQUIRE_BEARER`**）强制 `serve` 启动前必须配置密钥。\n",
+                "- **鉴权**：若进程配置了 `CM_WEB_API_BEARER_TOKEN`（或等价 TOML `web_api_bearer_token`），下列标记为需鉴权的路径须在请求头携带 **`Authorization: Bearer <token>`** 或 **`X-API-Key: <token>`**（与配置值为**同一密钥**，二选一即可）。未配置密钥时这些路径可匿名访问；可设 **`web_api_require_bearer=true`**（或 **`CM_WEB_API_REQUIRE_BEARER`**）强制 `serve` 启动前必须配置密钥。\n",
                 "- **SSE**：`POST /chat/stream` 返回 `text/event-stream`；控制面 JSON 与错误码见仓库 `docs/SSE_PROTOCOL.md`，本 OpenAPI 仅作入口说明。\n",
                 "- **上传**：`POST /upload` 使用 `multipart/form-data`。"
             )
@@ -65,7 +65,7 @@ pub fn build_openapi_spec() -> Value {
             "/web-ui": {
                 "get": {
                     "tags": ["system"],
-                    "summary": "CSR 展示开关（Markdown、助手展示过滤；受 AGENT_WEB_* 环境变量影响）",
+                    "summary": "CSR 展示开关（Markdown、助手展示过滤；受 CM_WEB_* 环境变量影响）",
                     "responses": {
                         "200": {
                             "description": "Web UI 配置 JSON",
@@ -530,7 +530,7 @@ pub fn build_openapi_spec() -> Value {
                 "bearerAuth": {
                     "type": "http",
                     "scheme": "bearer",
-                    "description": "与 `[agent].web_api_bearer_token` / `AGENT_WEB_API_BEARER_TOKEN` 一致；未启用服务端密钥时可为空。"
+                    "description": "与 `[agent].web_api_bearer_token` / `CM_WEB_API_BEARER_TOKEN` 一致；未启用服务端密钥时可为空。"
                 },
                 "apiKeyAuth": {
                     "type": "apiKey",
@@ -562,11 +562,11 @@ pub fn build_openapi_spec() -> Value {
                     "properties": {
                         "markdown_render": {
                             "type": "boolean",
-                            "description": "为 false 时 CSR 跳过聊天气泡 Markdown（纯文本 HTML 转义）；由环境变量 AGENT_WEB_DISABLE_MARKDOWN 控制"
+                            "description": "为 false 时 CSR 跳过聊天气泡 Markdown（纯文本 HTML 转义）；由环境变量 CM_WEB_DISABLE_MARKDOWN 控制"
                         },
                         "apply_assistant_display_filters": {
                             "type": "boolean",
-                            "description": "为 false 时不对助手消息做展示过滤（agent_reply_plan 剥离、内联思维链拆分等），且分阶段无工具规划轮可向浏览器 SSE 流式下发原文；为 true（默认）时对该轮做门控：解析自正文+思维链的规划 JSON 为 no_task 则整轮 SSE 不下发且不写入会话 assistant 列表，否则仅不下发 assistant_answer_phase 信封之前的流式增量。由环境变量 AGENT_WEB_RAW_ASSISTANT_OUTPUT 控制"
+                            "description": "为 false 时不对助手消息做展示过滤（agent_reply_plan 剥离、内联思维链拆分等），且分阶段无工具规划轮可向浏览器 SSE 流式下发原文；为 true（默认）时对该轮做门控：解析自正文+思维链的规划 JSON 为 no_task 则整轮 SSE 不下发且不写入会话 assistant 列表，否则仅不下发 assistant_answer_phase 信封之前的流式增量。由环境变量 CM_WEB_RAW_ASSISTANT_OUTPUT 控制"
                         }
                     }
                 },

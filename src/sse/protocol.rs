@@ -108,7 +108,7 @@ pub enum SsePayload {
         #[serde(rename = "timeline_log")]
         log: TimelineLogBody,
     },
-    /// 思维过程调试：结构化 trace（默认下发；`AGENT_THINKING_TRACE_ENABLED=0` 关闭；不进模型上下文）。
+    /// 思维过程调试：结构化 trace（默认下发；`CM_THINKING_TRACE_ENABLED=0` 关闭；不进模型上下文）。
     ThinkingTrace {
         #[serde(rename = "thinking_trace")]
         trace: ThinkingTraceBody,

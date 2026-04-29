@@ -133,10 +133,10 @@ pub(super) fn finalize(
 ) -> Result<AgentConfig, String> {
     validate::validate_builder_numeric_ranges(&b)?;
     if b.api_base.is_empty() {
-        return Err("配置错误：未设置 api_base（请在 config/default_config.toml、config.toml、.agent_demo.toml 或环境变量 AGENT_API_BASE 中设置）".to_string());
+        return Err("配置错误：未设置 api_base（请在 config/default_config.toml、config.toml、.agent_demo.toml 或环境变量 CM_API_BASE 中设置）".to_string());
     }
     if b.model.is_empty() {
-        return Err("配置错误：未设置 model（请在 config/default_config.toml、config.toml、.agent_demo.toml 或环境变量 AGENT_MODEL 中设置）".to_string());
+        return Err("配置错误：未设置 model（请在 config/default_config.toml、config.toml、.agent_demo.toml 或环境变量 CM_MODEL 中设置）".to_string());
     }
     let max_message_history = b.max_message_history.unwrap_or(32).clamp(1, 1024) as usize;
     let tui_load_session_on_start = b.tui_load_session_on_start.unwrap_or(false);
@@ -247,7 +247,7 @@ pub(super) fn finalize(
 
     let run_command_working_dir = b
         .run_command_working_dir
-        .ok_or("配置错误：未设置 run_command_working_dir（请在 config/tools.toml、config.toml、.agent_demo.toml 或环境变量 AGENT_RUN_COMMAND_WORKING_DIR 中设置）")?;
+        .ok_or("配置错误：未设置 run_command_working_dir（请在 config/tools.toml、config.toml、.agent_demo.toml 或环境变量 CM_RUN_COMMAND_WORKING_DIR 中设置）")?;
     let run_command_working_dir = std::path::Path::new(&run_command_working_dir);
     let run_command_working_dir = match run_command_working_dir.canonicalize() {
         Ok(p) => p,
@@ -281,7 +281,7 @@ pub(super) fn finalize(
         b.system_prompt
     } else {
         return Err(
-            "配置错误：未设置 system_prompt_file 或内联 system_prompt（请在 config/default_config.toml、config.toml、环境变量 AGENT_SYSTEM_PROMPT / AGENT_SYSTEM_PROMPT_FILE 中配置）".to_string(),
+            "配置错误：未设置 system_prompt_file 或内联 system_prompt（请在 config/default_config.toml、config.toml、环境变量 CM_SYSTEM_PROMPT / CM_SYSTEM_PROMPT_FILE 中配置）".to_string(),
         );
     };
     if system_prompt.trim().is_empty() {
@@ -364,7 +364,7 @@ pub(super) fn finalize(
         .clamp(1024, 1_048_576) as usize;
     let tool_result_envelope_v1 = b.tool_result_envelope_v1.unwrap_or(true);
     let sse_tool_call_include_arguments = b.sse_tool_call_include_arguments.unwrap_or(true);
-    // 默认开启；仅 `AGENT_THINKING_TRACE_ENABLED` 可关闭（不从 `[agent]` TOML 读入）。
+    // 默认开启；仅 `CM_THINKING_TRACE_ENABLED` 可关闭（不从 `[agent]` TOML 读入）。
     let agent_thinking_trace_enabled = b.agent_thinking_trace_enabled.unwrap_or(true);
     let agent_tool_stats_enabled = b.agent_tool_stats_enabled.unwrap_or(false);
     let agent_tool_stats_window_events = b

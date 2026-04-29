@@ -961,11 +961,11 @@ fallback_to_single = false
 
 | 变量 | 说明 | 默认值 |
 |------|------|-------|
-| `AGENT_HIERARCHY_ENABLED` | 启用分层架构 | `false` |
-| `AGENT_MULTI_AGENT_ENABLED` | 启用多 Agent | `false` |
-| `AGENT_MAX_PARALLEL_AGENTS` | 最大并行 Agent 数 | `4` |
-| `AGENT_MAX_SUB_GOALS` | 最大子目标数 | `20` |
-| `AGENT_FALLBACK_ENABLED` | 启用降级 | `true` |
+| `CM_HIERARCHY_ENABLED` | 启用分层架构 | `false` |
+| `CM_MULTI_CM_ENABLED` | 启用多 Agent | `false` |
+| `CM_MAX_PARALLEL_AGENTS` | 最大并行 Agent 数 | `4` |
+| `CM_MAX_SUB_GOALS` | 最大子目标数 | `20` |
+| `CM_FALLBACK_ENABLED` | 启用降级 | `true` |
 
 ### 6.3 模式选择
 

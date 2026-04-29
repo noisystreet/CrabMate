@@ -10,7 +10,7 @@ fn err_out_of_range(
     max: impl std::fmt::Display,
 ) -> String {
     format!(
-        "配置错误：{key}={v} 超出允许范围 [{min}, {max}]（请修正 TOML 或对应 AGENT_* 环境变量；不再静默截断）"
+        "配置错误：{key}={v} 超出允许范围 [{min}, {max}]（请修正 TOML 或对应 CM_* 环境变量；不再静默截断）"
     )
 }
 
@@ -40,7 +40,7 @@ fn check_f64_inclusive(key: &str, v: Option<f64>, min: f64, max: f64) -> Result<
     };
     if !n.is_finite() {
         return Err(format!(
-            "配置错误：{key}={n} 不是有限浮点数（请修正 TOML 或 AGENT_TEMPERATURE）"
+            "配置错误：{key}={n} 不是有限浮点数（请修正 TOML 或 CM_TEMPERATURE）"
         ));
     }
     if n < min || n > max {

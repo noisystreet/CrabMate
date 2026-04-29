@@ -1,4 +1,4 @@
-# CrabMate 嵌入默认配置（可被 config.toml / .agent_demo.toml 及 AGENT_* 环境变量覆盖）
+# CrabMate 嵌入默认配置（可被 config.toml / .agent_demo.toml 及 CM_* 环境变量覆盖）
 # 以下为 [agent] 扁平键；按功能分节编排，便于检索（解析器不依赖注释顺序）。
 
 [agent]
@@ -13,10 +13,10 @@ max_tokens = 2048
 # 注意：一些模型只支持设置固定的温度，如kimi-k2.5系列模型。
 temperature = 0.7
 
-# 智谱 GLM（OpenAI 兼容）：api_base = "https://open.bigmodel.cn/api/paas/v4" ，model = "glm-5" ；与官方最小 cURL（仅 model/messages/stream）一致时保持 llm_bigmodel_thinking = false（默认）；深度思考见 GLM-5 文档 thinking 字段时用 llm_bigmodel_thinking = true ；AGENT_LLM_BIGMODEL_THINKING
+# 智谱 GLM（OpenAI 兼容）：api_base = "https://open.bigmodel.cn/api/paas/v4" ，model = "glm-5" ；与官方最小 cURL（仅 model/messages/stream）一致时保持 llm_bigmodel_thinking = false（默认）；深度思考见 GLM-5 文档 thinking 字段时用 llm_bigmodel_thinking = true ；CM_LLM_BIGMODEL_THINKING
 # llm_bigmodel_thinking = false
 
-# Moonshot Kimi：api_base = "https://api.moonshot.cn/v1" ，model 如 kimi-k2.5；文档见 platform.moonshot.cn Chat API；仅在 model 为 kimi-k2.5 系列时生效：关闭默认思考 llm_kimi_thinking_disabled = true ；AGENT_LLM_KIMI_THINKING_DISABLED
+# Moonshot Kimi：api_base = "https://api.moonshot.cn/v1" ，model 如 kimi-k2.5；文档见 platform.moonshot.cn Chat API；仅在 model 为 kimi-k2.5 系列时生效：关闭默认思考 llm_kimi_thinking_disabled = true ；CM_LLM_KIMI_THINKING_DISABLED
 # llm_kimi_thinking_disabled = false
 
 # 可选：写入 chat/completions 的整数 seed；省略则请求 JSON 不带该字段
@@ -47,9 +47,9 @@ context_summary_transcript_max_chars = 120000
 # 默认见 **`config/session.toml`**
 
 # 5. Web 对话队列（并发上限；单轮只读工具并行与 read_file 缓存见 **`config/tools.toml`**）
-# GET /health 可选：对当前 api_base 发 GET …/models（列表接口，无 chat 计费；默认关）。AGENT_HEALTH_LLM_MODELS_PROBE
+# GET /health 可选：对当前 api_base 发 GET …/models（列表接口，无 chat 计费；默认关）。CM_HEALTH_LLM_MODELS_PROBE
 health_llm_models_probe = false
-# 开启时探测结果进程内缓存秒数（5–86400），降低 kube 等高频 /health 对上游压力。AGENT_HEALTH_LLM_MODELS_PROBE_CACHE_SECS
+# 开启时探测结果进程内缓存秒数（5–86400），降低 kube 等高频 /health 对上游压力。CM_HEALTH_LLM_MODELS_PROBE_CACHE_SECS
 health_llm_models_probe_cache_secs = 120
 
 chat_queue_max_concurrent = 2
@@ -69,18 +69,18 @@ skills_dir = ".crabmate/skills"
 skills_max_chars = 32000
 skills_top_k = 3
 # 系统提示词：默认正文在 **`config/prompts/default_system_prompt.md`**（改文件无需重编二进制）。相对路径依次尝试：进程当前目录、各覆盖配置文件所在目录（后加载的优先）、run_command_working_dir。
-# 覆盖：内联 system_prompt（低于文件）或改 system_prompt_file；环境变量 AGENT_SYSTEM_PROMPT、AGENT_SYSTEM_PROMPT_FILE（后者可为绝对路径）。
+# 覆盖：内联 system_prompt（低于文件）或改 system_prompt_file；环境变量 CM_SYSTEM_PROMPT、CM_SYSTEM_PROMPT_FILE（后者可为绝对路径）。
 system_prompt_file = "config/prompts/default_system_prompt.md"
-# 新会话首条 system 末附「思考纪律」附录（减轻模型在 thinking 中复述系统提示）；软性约束。AGENT_THINKING_AVOID_ECHO_SYSTEM_PROMPT
+# 新会话首条 system 末附「思考纪律」附录（减轻模型在 thinking 中复述系统提示）；软性约束。CM_THINKING_AVOID_ECHO_SYSTEM_PROMPT
 thinking_avoid_echo_system_prompt = true
-# 附录正文默认文件（与 system_prompt_file 相同路径解析）；亦可 thinking_avoid_echo_appendix 内联。AGENT_THINKING_AVOID_ECHO_APPENDIX_FILE
+# 附录正文默认文件（与 system_prompt_file 相同路径解析）；亦可 thinking_avoid_echo_appendix 内联。CM_THINKING_AVOID_ECHO_APPENDIX_FILE
 thinking_avoid_echo_appendix_file = "config/prompts/thinking_avoid_echo_appendix.md"
 
 # 8. Web 服务安全与会话持久（可选，默认注释）
 # conversation_store_sqlite_path = ".crabmate/conversations.db"
 # 受保护 API（/chat*、/workspace* 等）：非空时要求 Authorization: Bearer <本值> 或 X-API-Key: <本值>（二选一）
 # web_api_bearer_token = ""
-# 为 true 时 serve 启动前必须配置非空的 web_api_bearer_token（含仅监听 127.0.0.1）。AGENT_WEB_API_REQUIRE_BEARER
+# 为 true 时 serve 启动前必须配置非空的 web_api_bearer_token（含仅监听 127.0.0.1）。CM_WEB_API_REQUIRE_BEARER
 # web_api_require_bearer = false
 # allow_insecure_no_auth_for_non_loopback = false
 # workspace_allowed_roots = []
@@ -91,5 +91,5 @@ thinking_avoid_echo_appendix_file = "config/prompts/thinking_avoid_echo_appendix
 # 10. 长期记忆（可选）
 # 默认见 **`config/memory.toml`**
 
-# 覆盖 system_prompt：内联优先级低于 system_prompt_file；可用环境变量 AGENT_SYSTEM_PROMPT / AGENT_SYSTEM_PROMPT_FILE
+# 覆盖 system_prompt：内联优先级低于 system_prompt_file；可用环境变量 CM_SYSTEM_PROMPT / CM_SYSTEM_PROMPT_FILE
 # system_prompt = """……"""
