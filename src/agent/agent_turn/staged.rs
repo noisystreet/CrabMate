@@ -24,16 +24,11 @@ use crate::types::{
 };
 
 use super::agent_llm_call::AgentLlmCall;
-use super::errors::{
-    AgentTurnSubPhase, RunAgentTurnError, TurnAbortReason, sse_plan_rewrite_exhausted_body,
-};
-use super::execute_tools::{
-    ExecuteToolsBatchOutcome, WebExecuteCtx, per_execute_tools_web, sse_sender_closed,
-};
+use super::errors::{AgentTurnSubPhase, RunAgentTurnError};
+use super::execute_tools::sse_sender_closed;
 use super::messages::push_assistant_merging_trailing_empty_placeholder;
 use super::outer_loop::run_agent_outer_loop;
 use super::params::RunLoopParams;
-use super::reflect::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
 use super::staged_orchestrator;
 use super::staged_sse::{
     emit_chat_ui_separator_sse, next_staged_plan_id, send_staged_plan_finished,
@@ -41,6 +36,38 @@ use super::staged_sse::{
     staged_plan_nl_followup_user_body, staged_plan_phase_instruction_default,
     staged_plan_queue_summary_text,
 };
+
+fn staged_planner_tool_call_reject_user_body(tool_call_count: usize) -> String {
+    format!(
+        "### 规划轮约束提醒（code=PLANNER_TOOL_CALL_REJECTED）\n\
+         你在无工具规划轮中输出了 {tool_call_count} 条 tool_calls，但本轮严格禁止工具调用。\n\
+         请立即重写并仅输出一段可解析的 `agent_reply_plan` v1 JSON（可用 ```json 围栏），不要包含 tool_calls、DSML 或任何函数调用片段。"
+    )
+}
+
+async fn emit_staged_planner_tool_call_rejected_timeline(
+    out: Option<&mpsc::Sender<String>>,
+    count: usize,
+) {
+    let Some(tx) = out else {
+        return;
+    };
+    let detail = format!(
+        "code=PLANNER_TOOL_CALL_REJECTED; rejected_tool_calls={count}; action=planner_rewrite_once"
+    );
+    let _ = crate::sse::send_string_logged(
+        tx,
+        encode_message(SsePayload::TimelineLog {
+            log: crate::sse::TimelineLogBody {
+                kind: "planner_tool_call_rejected".to_string(),
+                title: "规划轮工具调用已拒绝".to_string(),
+                detail: Some(detail),
+            },
+        }),
+        "staged::planner_tool_call_rejected_timeline",
+    )
+    .await;
+}
 
 /// 若最后一条为带「规划教练」标记的临时 user，则弹出（取消或解析失败时避免孤立上下文）。
 fn pop_last_staged_planner_coach_user_if_present(messages: &mut Vec<Message>) {
@@ -702,8 +729,6 @@ struct StagedPlanPatchPlannerCtx<'p, 'a, F> {
     p: &'p mut RunLoopParams<'a>,
     per_coord: &'p mut PerCoordinator,
     labels: &'p StagedPlanRunLabels,
-    /// 子循环与规划轮内工具执行的 CLI 转录开关（与外层 `render_to_terminal` 一致）。
-    render_to_terminal: bool,
     /// 仅用于补丁轮 `complete_chat_retrying`：CLI 可单独关闭规划模型 stdout。
     planner_render_to_terminal: bool,
     make_step_user_message: &'p F,
@@ -723,7 +748,6 @@ where
         p,
         per_coord,
         labels,
-        render_to_terminal,
         planner_render_to_terminal,
         make_step_user_message,
     } = ctx;
@@ -760,85 +784,13 @@ where
     push_assistant_merging_trailing_empty_placeholder(p.messages, msg.clone());
 
     if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
-        match per_reflect_after_assistant(p, per_coord, &finish_reason, &msg).await {
-            ReflectOnAssistantOutcome::ProceedToExecuteTools => {
-                let tool_calls =
-                    msg.tool_calls
-                        .as_ref()
-                        .ok_or_else(|| RunAgentTurnError::Other {
-                            phase: AgentTurnSubPhase::Executor,
-                            message: "无 tool_calls".to_string(),
-                        })?;
-                let echo_terminal_transcript = *render_to_terminal && p.out.is_none();
-                let exec_outcome = per_execute_tools_web(
-                    tool_calls,
-                    per_coord,
-                    p.messages,
-                    WebExecuteCtx {
-                        cfg: p.cfg,
-                        effective_working_dir: p.effective_working_dir,
-                        workspace_is_set: p.workspace_is_set,
-                        read_file_turn_cache: p.read_file_turn_cache.clone(),
-                        out: p.out,
-                        web_tool_ctx: p.web_tool_ctx,
-                        cli_tool_ctx: p.cli_tool_ctx,
-                        echo_terminal_transcript,
-                        mcp_session: p.mcp_session.as_ref(),
-                        workspace_changelist: p.workspace_changelist.as_ref(),
-                        request_chrome_trace: p.request_chrome_trace.clone(),
-                        step_executor_constraint: None,
-                        tools_defs_full: p.tools_defs,
-                        turn_allow: p.turn_allowed_tool_names.as_ref().map(|a| a.as_ref()),
-                        long_term_memory: p.long_term_memory.clone(),
-                        long_term_memory_scope_id: p.long_term_memory_scope_id.clone(),
-                        tracing_chat_turn: p.tracing_chat_turn.clone(),
-                    },
-                )
-                .await;
-                if matches!(exec_outcome, ExecuteToolsBatchOutcome::AbortedSse) {
-                    return Err(RunAgentTurnError::TurnAborted {
-                        phase: AgentTurnSubPhase::Executor,
-                        reason: TurnAbortReason::SseDisconnected,
-                    });
-                }
-                if let Some(f) = p.per_flight.as_ref() {
-                    f.sync_from_per_coord(per_coord);
-                }
-            }
-            ReflectOnAssistantOutcome::StopTurn => {
-                if let Some(f) = p.per_flight.as_ref() {
-                    f.sync_from_per_coord(per_coord);
-                }
-                return Ok(None);
-            }
-            ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite => {
-                if let Some(f) = p.per_flight.as_ref() {
-                    f.sync_from_per_coord(per_coord);
-                    f.awaiting_plan_rewrite_model.store(true, Ordering::Relaxed);
-                }
-                run_agent_outer_loop(p, per_coord).await?;
-                if let Some(f) = p.per_flight.as_ref() {
-                    f.sync_from_per_coord(per_coord);
-                }
-            }
-            ReflectOnAssistantOutcome::PlanRewriteExhausted { reason } => {
-                if let Some(f) = p.per_flight.as_ref() {
-                    f.sync_from_per_coord(per_coord);
-                }
-                if let Some(tx) = p.out {
-                    let _ = crate::sse::send_string_logged(
-                        tx,
-                        encode_message(SsePayload::Error(sse_plan_rewrite_exhausted_body(
-                            p.tracing_chat_turn.as_ref(),
-                            reason.as_str(),
-                        ))),
-                        "staged::patch_plan_rewrite_exhausted",
-                    )
-                    .await;
-                }
-                return Ok(None);
-            }
-        }
+        let rejected = msg.tool_calls.as_ref().map(|c| c.len()).unwrap_or(0);
+        emit_staged_planner_tool_call_rejected_timeline(p.out, rejected).await;
+        warn!(
+            target: "crabmate",
+            "分阶段规划补丁轮：检测到 {} 条 tool_calls，严格无工具模式下拒绝并等待下次补丁重试",
+            rejected
+        );
         return Ok(None);
     }
 
@@ -892,8 +844,43 @@ where
 {
     let planner_render_to_terminal =
         render_to_terminal && (p.out.is_some() || p.cfg.staged_plan_cli_show_planner_stream);
-    let (mut msg, finish_reason) =
-        complete_planner_no_tools_chat_retrying(p, &req, planner_render_to_terminal).await?;
+    let (mut msg, finish_reason) = {
+        let (mut first_msg, first_finish) =
+            complete_planner_no_tools_chat_retrying(p, &req, planner_render_to_terminal).await?;
+        if first_finish != USER_CANCELLED_FINISH_REASON {
+            let first_raw_count = first_msg.tool_calls.as_ref().map(|c| c.len()).unwrap_or(0);
+            first_msg.tool_calls = None;
+            crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
+                &mut first_msg,
+                p.cfg.materialize_deepseek_dsml_tool_calls,
+            );
+            let first_dsml_count = first_msg.tool_calls.as_ref().map(|c| c.len()).unwrap_or(0);
+            let first_total = first_raw_count.saturating_add(first_dsml_count);
+            if first_total > 0 {
+                warn!(
+                    target: "crabmate",
+                    "分阶段规划轮：检测到 {} 条 tool_calls，严格无工具模式触发一次轻量重写",
+                    first_total
+                );
+                emit_staged_planner_tool_call_rejected_timeline(p.out, first_total).await;
+                p.messages.push(make_step_user_message(
+                    staged_planner_tool_call_reject_user_body(first_total),
+                ));
+                let retry_req = prepare_staged_planner_no_tools_request(
+                    p,
+                    per_coord,
+                    labels.build_planner_messages,
+                )
+                .await?;
+                complete_planner_no_tools_chat_retrying(p, &retry_req, planner_render_to_terminal)
+                    .await?
+            } else {
+                (first_msg, first_finish)
+            }
+        } else {
+            (first_msg, first_finish)
+        }
+    };
 
     debug!(
         target: "crabmate",
@@ -907,15 +894,12 @@ where
         return Ok(StagedPlanRunOutcome::Finished);
     }
 
-    // 规划轮请求为 `tools: []` + `tool_choice: none`，但部分网关仍返回**原生** `tool_calls`（含函数名）。
-    // `materialize_deepseek_dsml_tool_calls_in_message` 在「已有可用原生 tool_calls」时会直接 return，
-    // 导致正文里的 DeepSeek DSML **永不物化**；若此前再按原生判错，CLI（`out: None`）会静默 `return Ok`。
-    // 与无工具约束一致：规划轮**忽略**原生 tool_calls，只从正文（及 reasoning）物化 DSML。
-    if let Some(tc) = msg.tool_calls.as_ref().filter(|c| !c.is_empty()) {
-        debug!(
+    let raw_tool_calls = msg.tool_calls.as_ref().map(|c| c.len()).unwrap_or(0);
+    if raw_tool_calls > 0 {
+        warn!(
             target: "crabmate",
-            "分阶段规划轮：丢弃 API 返回的 {} 条原生 tool_calls，改从正文 DSML 物化",
-            tc.len()
+            "分阶段规划轮重写后仍返回 {} 条原生 tool_calls，严格无工具模式下将其忽略",
+            raw_tool_calls
         );
     }
     msg.tool_calls = None;
@@ -923,90 +907,16 @@ where
         &mut msg,
         p.cfg.materialize_deepseek_dsml_tool_calls,
     );
-
-    // 规划轮若未产出可解析 JSON，但正文里写了 DSML 工具调用：物化后应先执行工具，再进入常规循环（否则历史中只有未执行的 XML）。
-    if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
-        push_assistant_merging_trailing_empty_placeholder(p.messages, msg.clone());
-        match per_reflect_after_assistant(p, per_coord, &finish_reason, &msg).await {
-            ReflectOnAssistantOutcome::ProceedToExecuteTools => {
-                let tool_calls =
-                    msg.tool_calls
-                        .as_ref()
-                        .ok_or_else(|| RunAgentTurnError::Other {
-                            phase: AgentTurnSubPhase::Executor,
-                            message: "无 tool_calls".to_string(),
-                        })?;
-                let echo_terminal_transcript = render_to_terminal && p.out.is_none();
-                let exec_outcome = per_execute_tools_web(
-                    tool_calls,
-                    per_coord,
-                    p.messages,
-                    WebExecuteCtx {
-                        cfg: p.cfg,
-                        effective_working_dir: p.effective_working_dir,
-                        workspace_is_set: p.workspace_is_set,
-                        read_file_turn_cache: p.read_file_turn_cache.clone(),
-                        out: p.out,
-                        web_tool_ctx: p.web_tool_ctx,
-                        cli_tool_ctx: p.cli_tool_ctx,
-                        echo_terminal_transcript,
-                        mcp_session: p.mcp_session.as_ref(),
-                        workspace_changelist: p.workspace_changelist.as_ref(),
-                        request_chrome_trace: p.request_chrome_trace.clone(),
-                        step_executor_constraint: None,
-                        tools_defs_full: p.tools_defs,
-                        turn_allow: p.turn_allowed_tool_names.as_ref().map(|a| a.as_ref()),
-                        long_term_memory: p.long_term_memory.clone(),
-                        long_term_memory_scope_id: p.long_term_memory_scope_id.clone(),
-                        tracing_chat_turn: p.tracing_chat_turn.clone(),
-                    },
-                )
-                .await;
-                if matches!(exec_outcome, ExecuteToolsBatchOutcome::AbortedSse) {
-                    return Err(RunAgentTurnError::TurnAborted {
-                        phase: AgentTurnSubPhase::Executor,
-                        reason: TurnAbortReason::SseDisconnected,
-                    });
-                }
-                if let Some(f) = p.per_flight.as_ref() {
-                    f.sync_from_per_coord(per_coord);
-                }
-            }
-            ReflectOnAssistantOutcome::StopTurn => {
-                if let Some(f) = p.per_flight.as_ref() {
-                    f.sync_from_per_coord(per_coord);
-                }
-                return Ok(StagedPlanRunOutcome::Finished);
-            }
-            ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite => {
-                if let Some(f) = p.per_flight.as_ref() {
-                    f.sync_from_per_coord(per_coord);
-                    f.awaiting_plan_rewrite_model.store(true, Ordering::Relaxed);
-                }
-                run_agent_outer_loop(p, per_coord).await?;
-                return Ok(StagedPlanRunOutcome::Finished);
-            }
-            ReflectOnAssistantOutcome::PlanRewriteExhausted { reason } => {
-                if let Some(f) = p.per_flight.as_ref() {
-                    f.sync_from_per_coord(per_coord);
-                }
-                if let Some(tx) = p.out {
-                    let _ = crate::sse::send_string_logged(
-                        tx,
-                        encode_message(SsePayload::Error(sse_plan_rewrite_exhausted_body(
-                            p.tracing_chat_turn.as_ref(),
-                            reason.as_str(),
-                        ))),
-                        "staged::plan_rewrite_exhausted",
-                    )
-                    .await;
-                }
-                return Ok(StagedPlanRunOutcome::Finished);
-            }
-        }
-        run_agent_outer_loop(p, per_coord).await?;
-        return Ok(StagedPlanRunOutcome::Finished);
+    let dsml_tool_calls = msg.tool_calls.as_ref().map(|c| c.len()).unwrap_or(0);
+    if dsml_tool_calls > 0 {
+        emit_staged_planner_tool_call_rejected_timeline(p.out, dsml_tool_calls).await;
+        warn!(
+            target: "crabmate",
+            "分阶段规划轮重写后仍检测到 {} 条 DSML tool_calls；严格无工具模式下将其忽略",
+            dsml_tool_calls
+        );
     }
+    msg.tool_calls = None;
 
     let merged_for_log =
         crate::agent::plan_artifact::assistant_merged_text_for_plan_artifact_parse(&msg);
@@ -1182,7 +1092,6 @@ where
         p,
         per_coord,
         labels: &labels,
-        render_to_terminal,
         planner_render_to_terminal,
         make_step_user_message: &make_step_user_message,
     };
