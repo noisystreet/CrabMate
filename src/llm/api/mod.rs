@@ -18,6 +18,7 @@ use crate::types::{
     ChatRequest, FunctionCall, Message, MessageContent, ToolCall, USER_CANCELLED_FINISH_REASON,
     message_content_byte_len_for_estimate,
 };
+use crabmate_sse_protocol::StreamEndReason;
 
 use super::call_error::LlmCallError;
 use error_handler::{
@@ -90,6 +91,28 @@ fn append_stream_diagnostic_event(stream_ended: &str, msg: &Message) {
             "delta_chars": answer_text.chars().count(),
         })),
     );
+}
+
+fn stream_end_reason_from_finish_and_message(
+    finish_reason: &str,
+    msg: &Message,
+) -> StreamEndReason {
+    if finish_reason == USER_CANCELLED_FINISH_REASON {
+        return StreamEndReason::Cancelled;
+    }
+    let has_content = crate::types::message_content_as_str(&msg.content)
+        .map(str::trim)
+        .is_some_and(|s| !s.is_empty());
+    let has_reasoning = msg
+        .reasoning_content
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|s| !s.is_empty());
+    if has_content || has_reasoning {
+        StreamEndReason::Completed
+    } else {
+        StreamEndReason::NoOutput
+    }
 }
 
 async fn non_stream_chat_response(
@@ -189,7 +212,13 @@ async fn non_stream_chat_response(
         msg.tool_calls.as_ref().map(|t| t.len()).unwrap_or(0),
         redact::assistant_message_preview_for_log(&msg)
     );
-    append_stream_diagnostic_event("completed", &msg);
+    let terminal_end_reason = stream_end_reason_from_finish_and_message(&finish_reason, &msg);
+    append_stream_diagnostic_event(terminal_end_reason.as_str(), &msg);
+    if render_to_terminal && out.is_none() {
+        let _ = crate::runtime::terminal_cli_transcript::print_stream_end_reason_terminal(
+            terminal_end_reason,
+        );
+    }
     Ok((msg, finish_reason))
 }
 
@@ -246,14 +275,13 @@ async fn streaming_chat_response(
         msg.tool_calls.as_ref().map(|t| t.len()).unwrap_or(0),
         redact::assistant_message_preview_for_log(&msg)
     );
-    append_stream_diagnostic_event(
-        if finish == USER_CANCELLED_FINISH_REASON {
-            "cancelled"
-        } else {
-            "completed"
-        },
-        &msg,
-    );
+    let terminal_end_reason = stream_end_reason_from_finish_and_message(&finish, &msg);
+    append_stream_diagnostic_event(terminal_end_reason.as_str(), &msg);
+    if render_to_terminal && out.is_none() {
+        let _ = crate::runtime::terminal_cli_transcript::print_stream_end_reason_terminal(
+            terminal_end_reason,
+        );
+    }
     Ok((msg, finish))
 }
 

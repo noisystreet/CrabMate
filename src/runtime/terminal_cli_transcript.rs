@@ -3,6 +3,8 @@
 
 use log::debug;
 
+use crabmate_sse_protocol::StreamEndReason;
+
 use crate::redact;
 use crate::runtime::cli_repl_ui::{
     CLI_REPL_HELP_CMD_FG, CLI_REPL_HELP_DESC_FG, CLI_REPL_HELP_TITLE_FG, cli_repl_stdout_use_color,
@@ -17,6 +19,29 @@ use std::io::{self, Write};
 
 use super::latex_unicode::latex_math_to_unicode;
 use super::message_display::{tool_content_for_display_full, user_message_for_chat_display};
+
+/// CLI 回合收尾提示：统一展示终止原因（同源于 `StreamEndReason`），便于与 Web/TUI 对齐排障。
+pub(crate) fn print_stream_end_reason_terminal(reason: StreamEndReason) -> io::Result<()> {
+    let mut w = io::stdout();
+    let color = cli_repl_stdout_use_color();
+    if color {
+        queue!(
+            w,
+            SetAttribute(Attribute::Bold),
+            SetForegroundColor(CLI_REPL_HELP_TITLE_FG)
+        )?;
+    }
+    writeln!(
+        w,
+        "\n── 回合结束：{} ({}) ──",
+        reason.label_zh_hans(),
+        reason.as_str()
+    )?;
+    if color {
+        queue!(w, SetAttribute(Attribute::Reset), ResetColor)?;
+    }
+    w.flush()
+}
 
 /// 若 `detail` 以「与工具名同义的动词短语 + `:`」开头（工具名 `snake_case` 视作空格分词），则只去掉该动词短语，**保留冒号**与后续内容（如 `create file: x` → `: x`），避免 `### 工具 · create_file create file: x` 的重复。
 ///
