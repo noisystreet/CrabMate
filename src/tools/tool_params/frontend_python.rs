@@ -11,7 +11,6 @@ pub(in crate::tools) fn params_frontend_lint() -> serde_json::Value {
     })
 }
 
-#[allow(dead_code)] // 供后续注册独立 Python 工具或聚合参数时复用
 pub(in crate::tools) fn params_ruff_check() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
@@ -26,7 +25,6 @@ pub(in crate::tools) fn params_ruff_check() -> serde_json::Value {
     })
 }
 
-#[allow(dead_code)]
 pub(in crate::tools) fn params_pytest_run() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
@@ -42,7 +40,6 @@ pub(in crate::tools) fn params_pytest_run() -> serde_json::Value {
     })
 }
 
-#[allow(dead_code)]
 pub(in crate::tools) fn params_mypy_check() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
