@@ -13,7 +13,7 @@ use crate::config::SharedAgentConfig;
 use crate::conversation_store::{
     self, CONVERSATION_STORE_MAX_ENTRIES, CONVERSATION_STORE_TTL_SECS, SaveConversationOutcome,
 };
-use crate::long_term_memory::LongTermMemoryRuntime;
+use crate::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::types::{CommandApprovalDecision, Message};
 
 use super::http_types::tasks::TasksData;

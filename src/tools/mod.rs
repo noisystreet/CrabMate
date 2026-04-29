@@ -79,10 +79,10 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::config::{AgentConfig, ExposeSecret};
-use crate::path_workspace::{validate_effective_workspace_base, validate_workspace_set_path};
 use crate::tool_result::{ToolError, ToolResult};
 use crate::types::{FunctionDef, Tool};
-use crate::workspace_changelist::WorkspaceChangelist;
+use crate::workspace::changelist::WorkspaceChangelist;
+use crate::workspace::path::{validate_effective_workspace_base, validate_workspace_set_path};
 
 /// 工具顶层分类（用于 `build_tools_filtered`、文档与后续按场景裁剪工具列表）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,7 +97,8 @@ pub struct ToolContext<'a> {
     /// 主 Agent / `tool_context_for*` 路径填充；工作流节点等自建上下文可为 `None`（部分工具将报错）。
     pub cfg: Option<&'a AgentConfig>,
     /// 代码语义检索参数；主 Agent 路径由 `tool_context_for*` 从 [`AgentConfig`] 填充，其它路径为 `None` 时该工具不可用。
-    pub codebase_semantic: Option<crate::codebase_semantic_index::CodebaseSemanticToolParams>,
+    pub codebase_semantic:
+        Option<crate::memory::codebase_semantic_index::CodebaseSemanticToolParams>,
     pub command_max_output_len: usize,
     pub weather_timeout_secs: u64,
     pub allowed_commands: &'a [String],
@@ -119,13 +120,14 @@ pub struct ToolContext<'a> {
     pub test_result_cache_enabled: bool,
     pub test_result_cache_max_entries: usize,
     /// 长期记忆运行时与会话作用域（供 `long_term_*` 工具）；缺省为 `None`。
-    pub long_term_memory: Option<std::sync::Arc<crate::long_term_memory::LongTermMemoryRuntime>>,
+    pub long_term_memory:
+        Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
     pub long_term_memory_scope_id: Option<String>,
 }
 
 /// 由 [`AgentConfig`] 与当前工作目录、命令白名单构造工具上下文（供 `run_tool` 使用）。
 /// 与内置文件工具相同的路径规则：将相对路径解析为工作区内绝对路径（供变更集等跨模块只读）。
-pub use crate::path_workspace::WorkspacePathError;
+pub use crate::workspace::path::WorkspacePathError;
 
 pub fn resolve_workspace_path_for_read(
     working_dir: &std::path::Path,
@@ -134,7 +136,7 @@ pub fn resolve_workspace_path_for_read(
     file::resolve_for_read(working_dir, rel)
 }
 
-/// REPL **`/workspace`** / **`/cd`**：相对路径走 [`resolve_workspace_path_for_read`]（与 `read_file` 等一致：**禁止**以 `/` 开头的绝对路径）；绝对路径走 [`crate::path_workspace::validate_workspace_set_path`]（与 Web **`POST /workspace`** 一致：`workspace_allowed_roots` + 敏感目录黑名单）。
+/// REPL **`/workspace`** / **`/cd`**：相对路径走 [`resolve_workspace_path_for_read`]（与 `read_file` 等一致：**禁止**以 `/` 开头的绝对路径）；绝对路径走 [`crate::workspace::path::validate_workspace_set_path`]（与 Web **`POST /workspace`** 一致：`workspace_allowed_roots` + 敏感目录黑名单）。
 pub fn resolve_repl_workspace_switch_path(
     cfg: &AgentConfig,
     current_work_dir: &Path,
@@ -178,7 +180,9 @@ pub fn tool_context_for<'a>(
     ToolContext {
         cfg: Some(cfg),
         codebase_semantic: Some(
-            crate::codebase_semantic_index::CodebaseSemanticToolParams::from_agent_config(cfg),
+            crate::memory::codebase_semantic_index::CodebaseSemanticToolParams::from_agent_config(
+                cfg,
+            ),
         ),
         command_max_output_len: cfg.command_max_output_len,
         weather_timeout_secs: cfg.weather_timeout_secs,
@@ -208,7 +212,9 @@ pub fn tool_context_for_with_read_cache_and_memory<'a>(
     working_dir: &'a std::path::Path,
     read_file_turn_cache: Option<&'a crate::read_file_turn_cache::ReadFileTurnCache>,
     workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
-    long_term_memory: Option<std::sync::Arc<crate::long_term_memory::LongTermMemoryRuntime>>,
+    long_term_memory: Option<
+        std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>,
+    >,
     long_term_memory_scope_id: Option<String>,
 ) -> ToolContext<'a> {
     ToolContext {
@@ -822,7 +828,12 @@ fn runner_codebase_semantic_search(args: &str, ctx: &ToolContext<'_>) -> String 
         return "错误：当前执行环境未注入代码语义检索配置，无法使用 codebase_semantic_search（如部分工作流节点路径）"
             .to_string();
     };
-    crate::codebase_semantic_index::run_tool(args, ctx.working_dir, p, ctx.command_max_output_len)
+    crate::memory::codebase_semantic_index::run_tool(
+        args,
+        ctx.working_dir,
+        p,
+        ctx.command_max_output_len,
+    )
 }
 
 fn runner_markdown_check_links(args: &str, ctx: &ToolContext<'_>) -> String {

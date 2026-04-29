@@ -13,12 +13,12 @@ static PARALLEL_READONLY_TOOL_BATCH_SEQ: AtomicU64 = AtomicU64::new(1);
 use crate::agent::per_coord::PerCoordinator;
 use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crate::config::AgentConfig;
-use crate::long_term_memory::LongTermMemoryRuntime;
+use crate::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::sse::{SsePayload, encode_message};
 use crate::tool_registry;
 use crate::tool_result::ToolEnvelopeContext;
 use crate::types::{Message, Tool, ToolCall};
-use crate::workspace_changelist::WorkspaceChangelist;
+use crate::workspace::changelist::WorkspaceChangelist;
 
 mod emit;
 mod parallel_readonly;

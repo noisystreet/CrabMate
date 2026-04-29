@@ -8,8 +8,10 @@
 //! - 禁止 `..` 路径穿越
 //! - 必须落在工作区根目录下
 
-use crate::path_workspace::{absolutize_relative_under_root, ensure_existing_ancestor_within_root};
-use crate::workspace_changelist::WorkspaceChangelist;
+use crate::workspace::changelist::WorkspaceChangelist;
+use crate::workspace::path::{
+    absolutize_relative_under_root, ensure_existing_ancestor_within_root,
+};
 use std::path::Path;
 use std::sync::Arc;
 

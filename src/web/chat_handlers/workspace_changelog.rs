@@ -8,7 +8,7 @@ use axum::extract::{Query, State};
 use super::super::app_state::AppState;
 use super::parse::normalize_client_conversation_id;
 use crate::web::http_types::workspace::{WorkspaceChangelogQuery, WorkspaceChangelogResponse};
-use crate::workspace_changelist;
+use crate::workspace::changelist;
 
 pub(crate) async fn workspace_changelog_handler(
     State(state): State<Arc<AppState>>,
@@ -42,7 +42,7 @@ pub(crate) async fn workspace_changelog_handler(
     }
     let max_chars = cfg.session_workspace_changelist_max_chars;
     drop(cfg);
-    let cl = workspace_changelist::changelist_for_scope(scope);
+    let cl = changelist::changelist_for_scope(scope);
     let (rev, body) = cl.snapshot_markdown(max_chars);
     Json(WorkspaceChangelogResponse {
         revision: rev,

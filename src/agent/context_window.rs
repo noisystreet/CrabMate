@@ -195,11 +195,11 @@ pub async fn prepare_messages_for_model(
     cfg: &AgentConfig,
     messages: &mut Vec<Message>,
     per_coord_layer_cache: Option<&mut PerCoordinator>,
-    workspace_changelist: Option<&crate::workspace_changelist::WorkspaceChangelist>,
+    workspace_changelist: Option<&crate::workspace::changelist::WorkspaceChangelist>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     prepare_messages_before_model_call_sync(messages, cfg);
     maybe_summarize_with_llm(llm_backend, client, api_key, cfg, messages).await?;
-    crate::workspace_changelist::sync_changelist_user_message(
+    crate::workspace::changelist::sync_changelist_user_message(
         messages,
         workspace_changelist,
         cfg.session_workspace_changelist_enabled,

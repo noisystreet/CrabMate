@@ -8,7 +8,7 @@ use std::path::Path;
 use log::debug;
 
 use crate::config::{AgentConfig, SharedAgentConfig};
-use crate::project_profile::build_first_turn_user_context_markdown;
+use crate::context_bootstrap::project_profile::build_first_turn_user_context_markdown;
 use crate::types::Message;
 
 /// 项目画像 / `cargo metadata` 等重扫描是否应放到阻塞线程（与 Web `build_messages_for_turn`、CLI `prepend_cli_first_turn_injection` 对齐）。

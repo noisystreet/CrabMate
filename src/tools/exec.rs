@@ -1,6 +1,6 @@
 //! `run_command` 工作区脚本/可执行文件自动审批辅助模块。
 
-use crate::path_workspace::{
+use crate::workspace::path::{
     WorkspacePathError, absolutize_relative_under_root, canonical_workspace_root,
     ensure_existing_ancestor_within_root,
 };

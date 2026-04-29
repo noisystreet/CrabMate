@@ -9,9 +9,9 @@
 //!
 //! 在**信任工作区**的典型开发场景下，本模块在访问前对路径做 `canonicalize` 与 `starts_with` 检查，可拒绝在**检查时刻**已指向根外的符号链接等情形。
 //!
-//! **已落地缓解**（见 [`crate::workspace_fs`]）：在 **Unix** 上，`read_file` 等经 **`resolve_for_read_open`** 在已打开的工作区根 fd 上使用 **`openat2` + `RESOLVE_IN_ROOT`（Linux）** 或单次 `File::open`（其它 Unix）打开目标，将「策略校验 ↔ 业务打开」之间的窗口收窄；**Web** 工作区列表/读文件/写文件/删文件在 Unix 上同样经该模块做目录或文件打开。工作区内 symlink 仍可被跟随，但解析不得越过该根。
+//! **已落地缓解**（见 [`crate::workspace::fs`]）：在 **Unix** 上，`read_file` 等经 **`resolve_for_read_open`** 在已打开的工作区根 fd 上使用 **`openat2` + `RESOLVE_IN_ROOT`（Linux）** 或单次 `File::open`（其它 Unix）打开目标，将「策略校验 ↔ 业务打开」之间的窗口收窄；**Web** 工作区列表/读文件/写文件/删文件在 Unix 上同样经该模块做目录或文件打开。工作区内 symlink 仍可被跟随，但解析不得越过该根。
 //!
-//! **残余风险**：策略校验仍依赖校验时刻的 `canonicalize`；**非 Linux** 或未走 `workspace_fs` 的路径（例如部分工具仍直接 `File::open(已解析路径)`、写路径上 `create_dir_all` 与按路径写入的组合）仍可能存在竞态。**不要**将当前实现等同于内核级「不可逃逸」保证；多租户或不可信工作区须与 **HTTP 鉴权**等一并评估。进一步可在写路径贯通 **`mkdirat` / `openat2`**、末级 **`O_NOFOLLOW`** 等。
+//! **残余风险**：策略校验仍依赖校验时刻的 `canonicalize`；**非 Linux** 或未走 [`crate::workspace::fs`] 的路径（例如部分工具仍直接 `File::open(已解析路径)`、写路径上 `create_dir_all` 与按路径写入的组合）仍可能存在竞态。**不要**将当前实现等同于内核级「不可逃逸」保证；多租户或不可信工作区须与 **HTTP 鉴权**等一并评估。进一步可在写路径贯通 **`mkdirat` / `openat2`**、末级 **`O_NOFOLLOW`** 等。
 //!
 //! 用户可见说明见 **`README.md`**、**`docs/CONFIGURATION.md`**（工作区）。工具侧解析与打开入口见 **`src/tools/file/path.rs`**。
 

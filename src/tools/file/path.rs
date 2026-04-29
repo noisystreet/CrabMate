@@ -1,17 +1,17 @@
 //! 工作区路径解析与校验（`file` 工具子模块）。
 //!
-//! 边界语义与 [`crate::path_workspace`] 一致。读路径优先经 [`resolve_for_read_open`]：Linux 上在已打开的工作区根 fd 上使用 **`openat2` + `RESOLVE_IN_ROOT`** 打开，将解析约束在根内并避免「校验后再次按路径 `open`」的窗口。其余局限见 [`crate::path_workspace`] 与 [`crate::workspace_fs`]。
+//! 边界语义与 [`crate::workspace::path`] 一致。读路径优先经 [`resolve_for_read_open`]：Linux 上在已打开的工作区根 fd 上使用 **`openat2` + `RESOLVE_IN_ROOT`** 打开，将解析约束在根内并避免「校验后再次按路径 `open`」的窗口。其余局限见 [`crate::workspace::path`] 与 [`crate::workspace::fs`]。
 #![allow(clippy::manual_string_new)]
 
 use std::path::{Path, PathBuf};
 
-use crate::path_workspace::{
+use crate::workspace::fs::OpenedWorkspaceFile;
+use crate::workspace::path::{
     WorkspacePathError, absolutize_relative_under_root, ensure_canonical_within_root,
     ensure_existing_ancestor_within_root,
 };
-use crate::workspace_fs::OpenedWorkspaceFile;
 
-pub(crate) use crate::path_workspace::canonical_workspace_root;
+pub(crate) use crate::workspace::path::canonical_workspace_root;
 
 /// 将 [`WorkspacePathError`] 格式化为工具返回给模型的前缀文案（与历史 `错误：…` 一致）。
 #[must_use]
@@ -85,7 +85,7 @@ pub(crate) fn resolve_for_read_open(
         .canonicalize()
         .map_err(WorkspacePathError::PathResolveFailed)?;
     ensure_canonical_within_root(&canonical, &base_canonical)?;
-    crate::workspace_fs::open_existing_file_under_root(&base_canonical, &canonical).map_err(|e| {
+    crate::workspace::fs::open_existing_file_under_root(&base_canonical, &canonical).map_err(|e| {
         WorkspacePathError::PathResolveFailed(std::io::Error::new(
             e.kind(),
             format!("open under workspace root: {e}"),

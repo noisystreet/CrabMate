@@ -3,7 +3,7 @@
 use crate::agent_role_turn::apply_agent_role_switch_to_messages;
 use crate::config::cli::{SaveSessionCli, SaveSessionFormat};
 use crate::config::{AgentConfig, LlmHttpAuthMode, SharedAgentConfig};
-use crate::conversation_turn_bootstrap::{
+use crate::context_bootstrap::conversation_turn_bootstrap::{
     augmented_system_for_new_conversation_lenient, compose_new_conversation_messages,
     first_turn_project_context_user_message_sync,
 };
@@ -50,7 +50,7 @@ pub(crate) async fn prepend_cli_first_turn_injection(
     work_dir: &Path,
     messages: &mut Vec<Message>,
 ) {
-    crate::conversation_turn_bootstrap::prepend_first_turn_project_context_between_system_and_user(
+    crate::context_bootstrap::conversation_turn_bootstrap::prepend_first_turn_project_context_between_system_and_user(
         cfg_holder, work_dir, messages,
     )
     .await;
@@ -66,7 +66,9 @@ pub(crate) async fn repl_rebuild_bootstrap_messages(
     let system_prompt_fb = system_prompt.clone();
     let cfg = cfg.clone();
     let wd = work_dir.to_path_buf();
-    if crate::conversation_turn_bootstrap::project_scan_needs_spawn_blocking(&cfg) {
+    if crate::context_bootstrap::conversation_turn_bootstrap::project_scan_needs_spawn_blocking(
+        &cfg,
+    ) {
         match tokio::task::spawn_blocking(move || {
             let ctx = first_turn_project_context_user_message_sync(wd.as_path(), &cfg, None);
             compose_new_conversation_messages(&system_prompt, ctx, None)

@@ -21,7 +21,7 @@ use crate::agent_role_turn::{
     filter_tools_for_agent_role, persisted_agent_role_after_turn, turn_allow_for_web_or_cli_job,
 };
 use crate::config::{AgentConfig, LlmHttpAuthMode, SharedAgentConfig};
-use crate::long_term_memory::LongTermMemoryRuntime;
+use crate::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::sse::SseStreamHub;
 use crate::text_util::truncate_chars_with_ellipsis;
 use crate::types::{
@@ -642,8 +642,8 @@ async fn post_turn_web_prepare_and_save(
         ltm.clone()
             .spawn_index_turn(Arc::clone(cfg_snap), scope, to_index);
     }
-    crate::long_term_memory::strip_long_term_memory_injections(messages);
-    crate::workspace_changelist::strip_workspace_changelist_injections(messages);
+    crate::memory::long_term_memory::strip_long_term_memory_injections(messages);
+    crate::workspace::changelist::strip_workspace_changelist_injections(messages);
     let mut active_save =
         persisted_agent_role_after_turn(persisted_active_agent_role, request_agent_role);
     if active_save.is_none()

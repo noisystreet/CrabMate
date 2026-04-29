@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::config::AgentConfig;
-use crate::conversation_turn_bootstrap::augmented_system_for_new_conversation_lenient;
+use crate::context_bootstrap::conversation_turn_bootstrap::augmented_system_for_new_conversation_lenient;
 use crate::types::{Message, ToolCall};
 
 /// 本回合生效的角色 id：`request` 非空时优先，否则沿用 `persisted_active`（Web 会话存储 / REPL 内存）。

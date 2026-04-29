@@ -5,14 +5,14 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use crate::workspace_changelist::WorkspaceChangelist;
+use crate::workspace::changelist::WorkspaceChangelist;
 
 use tokio::sync::mpsc;
 
 use super::errors::AgentTurnSubPhase;
 use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crate::config::AgentConfig;
-use crate::long_term_memory::LongTermMemoryRuntime;
+use crate::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::tool_registry;
 use crate::types::{LlmSeedOverride, Message};
 

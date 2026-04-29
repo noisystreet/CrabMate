@@ -61,7 +61,7 @@ pub(crate) async fn run_agent_turn_for_cli(
 fn cli_long_term_memory_handles(
     cfg: &Arc<AgentConfig>,
 ) -> (
-    Option<std::sync::Arc<crate::long_term_memory::LongTermMemoryRuntime>>,
+    Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
     Option<String>,
 ) {
     if !cfg.long_term_memory_enabled {
@@ -74,7 +74,7 @@ fn cli_long_term_memory_handles(
     } else {
         std::path::PathBuf::from(path)
     };
-    match crate::long_term_memory::cli_runtime_lazy(&p) {
+    match crate::memory::long_term_memory::cli_runtime_lazy(&p) {
         Ok(r) => (Some(r), Some("cli".to_string())),
         Err(e) => {
             log::warn!(

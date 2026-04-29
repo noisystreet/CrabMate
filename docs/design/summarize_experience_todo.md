@@ -46,7 +46,7 @@
 - 在 SQLite 存储层增加 `confidence TEXT` 列
 - 检索时可按置信度过滤或排序
 
-**关联文件**：`src/long_term_memory_store.rs`、`src/tools/long_term_memory_tools.rs`、`src/tools/tool_params/diagnostics.rs`
+**关联文件**：`src/memory/long_term_memory_store.rs`、`src/tools/long_term_memory_tools.rs`、`src/tools/tool_params/diagnostics.rs`
 
 ---
 
@@ -60,7 +60,7 @@
 - 检索注入时，过滤已被替代的经验（除非显式要求展示冲突历史）
 - API：`summarize_experience` 增加可选参数 `supersedes_memory_id: Option<i64>`
 
-**关联文件**：`src/long_term_memory_store.rs`、`src/long_term_memory.rs`
+**关联文件**：`src/memory/long_term_memory_store.rs`、`src/memory/long_term_memory.rs`
 
 ---
 
@@ -73,7 +73,7 @@
 - 鼓励模型在记录涉及版本相关踩坑时标注
 - 未来可支持基于当前项目依赖版本过滤经验（与 `Cargo.lock` / `package.json` 比对）
 
-**关联文件**：`src/tools/tool_params/diagnostics.rs`、`src/long_term_memory_store.rs`
+**关联文件**：`src/tools/tool_params/diagnostics.rs`、`src/memory/long_term_memory_store.rs`
 
 ---
 
@@ -114,7 +114,7 @@
 - 支持将经验写入项目级 scope（如 `project:{project_name}`），使同一项目的多个会话共享检索
 - 需要新增 `long_term_memory_join_scope` 工具或配置项，允许模型将当前会话经验提升为项目级
 
-**关联文件**：`src/long_term_memory.rs`、`src/tools/long_term_memory_tools.rs`
+**关联文件**：`src/memory/long_term_memory.rs`、`src/tools/long_term_memory_tools.rs`
 
 ---
 
@@ -126,7 +126,7 @@
 - 在 `prepare_messages` 注入的经验文本前增加标记：`[经验1/共N条]`、`[注意：以下经验仅供参考，请根据当前上下文判断适用性]`
 - 或在注入的数据结构中增加 `conflicts_with: Vec<i64>` 字段，供模型识别冲突经验
 
-**关联文件**：`src/long_term_memory.rs`
+**关联文件**：`src/memory/long_term_memory.rs`
 
 ---
 
@@ -140,7 +140,7 @@
 - 新增工具 `long_term_memory_stats`：返回各经验的命中频率、最后使用时间等统计信息
 - 用户可根据统计信息决定清理低命中经验
 
-**关联文件**：`src/long_term_memory_store.rs`、`src/long_term_memory.rs`
+**关联文件**：`src/memory/long_term_memory_store.rs`、`src/memory/long_term_memory.rs`
 
 ---
 
@@ -170,7 +170,7 @@
 - 检索注入时，同一 chain 的经验可选择性展开（全部展开 / 仅头尾 / 仅最终 insight）
 - 新增工具 `start_experience_chain(experience, problem_description)` 创建链；`append_experience(chain_id, experience, role)` 追加节点
 
-**关联文件**：`src/long_term_memory_store.rs`、`src/long_term_memory.rs`、`src/tools/long_term_memory_tools.rs`
+**关联文件**：`src/memory/long_term_memory_store.rs`、`src/memory/long_term_memory.rs`、`src/tools/long_term_memory_tools.rs`
 
 ---
 
@@ -185,7 +185,7 @@
 - 系统根据建议自动执行（缩短 TTL、写入替代关系）或交由用户确认
 - 可在 `AgentConfig` 中配置 `auto_review_on_session_start: bool`（默认开启）
 
-**关联文件**：`src/long_term_memory.rs`、`src/tools/long_term_memory_tools.rs`
+**关联文件**：`src/memory/long_term_memory.rs`、`src/tools/long_term_memory_tools.rs`
 
 ---
 
@@ -200,7 +200,7 @@
 - `prepare_messages` 注入时按置信度排序：high 经验优先、full budget；low 经验只给一句话摘要或低于 budget 阈值时跳过
 - 低置信度经验默认设置短 TTL，自动淘汰
 
-**关联文件**：`src/long_term_memory_store.rs`、`src/long_term_memory.rs`、`src/tools/long_term_memory_tools.rs`、`src/tools/tool_params/diagnostics.rs`
+**关联文件**：`src/memory/long_term_memory_store.rs`、`src/memory/long_term_memory.rs`、`src/tools/long_term_memory_tools.rs`、`src/tools/tool_params/diagnostics.rs`
 
 ---
 
@@ -217,7 +217,7 @@
 - 用户可通过 `workspace_style_list` 查看当前工作区的风格规范
 - 与普通经验分离：workspace style 永不自动淘汰（除非显式删除）
 
-**关联文件**：`src/long_term_memory.rs`、`src/tools/long_term_memory_tools.rs`
+**关联文件**：`src/memory/long_term_memory.rs`、`src/tools/long_term_memory_tools.rs`
 
 ---
 
@@ -232,7 +232,7 @@
 - 通过 `AgentConfig` 配置 `proactive_hint_enabled: bool` 和 `proactive_hint_max_per_turn: usize`
 - 注意：此功能为"附加建议"，不影响工具执行结果本身
 
-**关联文件**：`src/tool_registry/execute.rs`、`src/long_term_memory.rs`
+**关联文件**：`src/tool_registry/execute.rs`、`src/memory/long_term_memory.rs`
 
 ---
 
@@ -281,7 +281,7 @@
 - 依赖 `ToolHitRateTracker` 积累的成功率数据
 - 轻量实现：不走 LLM，用规则 + 历史命中率排序即可
 
-**关联文件**：`src/long_term_memory.rs`、`src/tool_registry/execute.rs`、`src/config/types.rs`
+**关联文件**：`src/memory/long_term_memory.rs`、`src/tool_registry/execute.rs`、`src/config/types.rs`
 
 ---
 
@@ -299,7 +299,7 @@
 - 新会话的 `prepare_messages` 自动注入该摘要（作为 system prompt 的一部分，而非普通工具注入）
 - 用户可随时 `regenerate_project_digest` 手动刷新
 
-**关联文件**：`src/long_term_memory.rs`、`src/tools/long_term_memory_tools.rs`
+**关联文件**：`src/memory/long_term_memory.rs`、`src/tools/long_term_memory_tools.rs`
 
 ---
 
@@ -313,7 +313,7 @@
 - 废弃经验在检索时默认不展示，但可通过 `long_term_memory_list(include_deprecated: true)` 查看历史
 - 自动触发：当 `prepare_messages` 检索时发现已注入经验与当前工具结果矛盾（如执行 `cargo build` 失败，提示旧经验可能过时），主动提示模型调用 `deprecate_experience`
 
-**关联文件**：`src/long_term_memory_store.rs`、`src/long_term_memory.rs`
+**关联文件**：`src/memory/long_term_memory_store.rs`、`src/memory/long_term_memory.rs`
 
 ---
 

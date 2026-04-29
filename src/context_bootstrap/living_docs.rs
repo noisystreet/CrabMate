@@ -1,11 +1,11 @@
 //! 工作区 `.crabmate/living_docs/` 下的「活文档」：首轮上下文注入短摘要，完整正文由模型用 `read_file` 展开。
 //!
-//! 路径均经 [`crate::path_workspace::absolutize_relative_under_root`] 解析，不越出工作区根。
+//! 路径均经 [`crate::workspace::path::absolutize_relative_under_root`] 解析，不越出工作区根。
 
 use std::fs;
 use std::path::Path;
 
-use crate::path_workspace::absolutize_relative_under_root;
+use crate::workspace::path::absolutize_relative_under_root;
 
 const DEFAULT_REL_DIR: &str = ".crabmate/living_docs";
 const SUMMARY_FILE: &str = "SUMMARY.md";

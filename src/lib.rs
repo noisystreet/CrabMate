@@ -8,33 +8,25 @@
 
 pub mod agent;
 mod agent_errors;
-mod agent_memory;
 /// Web/CLI 多角色工作台：中途切换 system、按角色裁剪工具列表。
 mod agent_role_turn;
 /// 工作区内 `cargo metadata` 子进程参数单一真源（工具与首轮注入等共用）。
 mod cargo_metadata;
 mod chat_job_queue;
 mod clarification_questionnaire;
-/// 工作区代码语义索引与 `codebase_semantic_search` 工具（SQLite + fastembed）。
-mod codebase_semantic_index;
-mod codebase_semantic_invalidation;
 mod config;
+/// Web `/chat*` 与 CLI 首轮 living docs / 项目画像 / 依赖摘要与会话 bootstrap。
+mod context_bootstrap;
 /// Web `conversation_id` 持久化（可选 SQLite）与 `SaveConversationOutcome`。
 mod conversation_store;
-/// Web `/chat*` 与 CLI 首轮项目画像 / 依赖摘要注入的共用拼装。
-mod conversation_turn_bootstrap;
 mod dynamic_tools;
 mod health;
 mod http_client;
-mod living_docs;
 mod llm;
-mod long_term_memory;
-mod long_term_memory_store;
 mod mcp;
+/// 长期记忆、备忘片段、代码语义索引（SQLite + fastembed）。
+mod memory;
 mod observability;
-mod path_workspace;
-mod project_dependency_brief;
-mod project_profile;
 mod read_file_turn_cache;
 mod redact;
 mod request_chrome_trace;
@@ -55,8 +47,8 @@ mod types;
 mod user_message_file_refs;
 mod web;
 mod web_static_dir;
-mod workspace_changelist;
-mod workspace_fs;
+/// 工作区路径、根内打开（Unix `openat2`）与会话变更集。
+mod workspace;
 
 pub use config::cli::{
     ChatCliArgs, ExtraCliCommand, ParsedCliArgs, SaveSessionFormat, ToolReplayCli,
@@ -137,7 +129,8 @@ pub struct RunAgentTurnParams<'a> {
     pub executor_api_key: Option<String>,
     pub seed_override: types::LlmSeedOverride,
     /// 长期记忆（可选）；与 `long_term_memory_scope_id` 配对使用。
-    pub long_term_memory: Option<std::sync::Arc<long_term_memory::LongTermMemoryRuntime>>,
+    pub long_term_memory:
+        Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
     /// 记忆作用域（如 Web `conversation_id` 或 CLI `cli`）。
     pub long_term_memory_scope_id: Option<String>,
     /// 单轮 `run_agent_turn` 内 `read_file` 结果缓存；`None` 时由 `run_agent_turn` 按配置创建或关闭。
@@ -169,7 +162,9 @@ impl<'a> RunAgentTurnParams<'a> {
         executor_api_base: Option<String>,
         executor_api_key: Option<String>,
         seed_override: types::LlmSeedOverride,
-        long_term_memory: Option<std::sync::Arc<long_term_memory::LongTermMemoryRuntime>>,
+        long_term_memory: Option<
+            std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>,
+        >,
         job_id: u64,
         conversation_id: &str,
         out: &'a mpsc::Sender<String>,
@@ -225,7 +220,9 @@ impl<'a> RunAgentTurnParams<'a> {
         executor_api_base: Option<String>,
         executor_api_key: Option<String>,
         seed_override: types::LlmSeedOverride,
-        long_term_memory: Option<std::sync::Arc<long_term_memory::LongTermMemoryRuntime>>,
+        long_term_memory: Option<
+            std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>,
+        >,
         job_id: u64,
         conversation_id: &str,
         turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
@@ -273,7 +270,9 @@ impl<'a> RunAgentTurnParams<'a> {
         effective_working_dir: &'a std::path::Path,
         no_stream: bool,
         cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
-        long_term_memory: Option<std::sync::Arc<long_term_memory::LongTermMemoryRuntime>>,
+        long_term_memory: Option<
+            std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>,
+        >,
         long_term_memory_scope_id: Option<String>,
         turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
     ) -> Self {
@@ -419,7 +418,7 @@ pub async fn run_agent_turn<'a>(
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .unwrap_or("__default__");
-        Some(crate::workspace_changelist::changelist_for_scope(scope))
+        Some(crate::workspace::changelist::changelist_for_scope(scope))
     } else {
         None
     };
@@ -752,7 +751,9 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let long_term_memory = if ltm_enabled {
             match &conversation_backing {
                 web::ConversationBacking::Sqlite(conn) => Some(
-                    long_term_memory::LongTermMemoryRuntime::new_shared_sqlite(Arc::clone(conn)),
+                    crate::memory::long_term_memory::LongTermMemoryRuntime::new_shared_sqlite(
+                        Arc::clone(conn),
+                    ),
                 ),
                 web::ConversationBacking::Memory(_) => {
                     let p = ltm_store_path.trim();
@@ -763,8 +764,9 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                         );
                         None
                     } else {
-                        match long_term_memory::LongTermMemoryRuntime::open(std::path::Path::new(p))
-                        {
+                        match crate::memory::long_term_memory::LongTermMemoryRuntime::open(
+                            std::path::Path::new(p),
+                        ) {
                             Ok(r) => Some(r),
                             Err(e) => {
                                 log::warn!(

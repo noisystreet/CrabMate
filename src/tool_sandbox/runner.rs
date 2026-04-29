@@ -5,8 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::codebase_semantic_index::CodebaseSemanticToolParams;
 use crate::config::{AgentConfig, ExposeSecret, WebSearchProvider};
+use crate::memory::codebase_semantic_index::CodebaseSemanticToolParams;
 use crate::tools::http_fetch;
 use crate::tools::{ToolContext, run_tool};
 

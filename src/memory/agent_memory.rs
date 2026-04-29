@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use crate::path_workspace::absolutize_relative_under_root;
+use crate::workspace::path::absolutize_relative_under_root;
 
 /// 读取 `rel_path`（相对工作区根）的 UTF-8 文本；不存在或越界返回 `None`。超长按 `max_chars` 截断（字符边界安全）。
 pub fn load_memory_snippet(

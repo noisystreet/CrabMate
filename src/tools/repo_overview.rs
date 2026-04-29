@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use crate::project_profile;
+use crate::context_bootstrap::project_profile;
 
 use super::ToolContext;
 use super::file::{canonical_workspace_root, glob_files, list_tree, read_file};
@@ -185,7 +185,7 @@ pub fn repo_overview_sweep(
 
     let mut section = 1usize;
 
-    // --- 项目画像（与 `crate::project_profile` / GET /workspace/profile 同源逻辑）---
+    // --- 项目画像（与 `crate::context_bootstrap::project_profile` / GET /workspace/profile 同源逻辑）---
     if include_project_profile && project_profile_max_chars > 0 {
         out.push_str(&format!("## {section}) 项目画像（自动生成，只读扫描）\n\n"));
         out.push_str(&project_profile::build_project_profile_markdown(
