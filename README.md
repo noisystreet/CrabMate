@@ -50,6 +50,7 @@
 | [docs/BENCHMARK_PLANNING.md](docs/BENCHMARK_PLANNING.md) | `crabmate bench` 能力规划、开源 benchmark 对接与测试策略（与通用功能文档分离） | — |
 | [docs/STAGED_PLAN_SINGLE_STEP_DESIGN.md](docs/STAGED_PLAN_SINGLE_STEP_DESIGN.md) | 分阶段规划单步化设计稿：Planner 每轮 1 条 `steps` + 步后 replan，向「单智能体 + 工具循环」收敛（未实现） | — |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 架构、模块索引、协议与扩展点 | [en](docs/en/DEVELOPMENT.md) |
+| [docs/FORMAL_VERIFICATION_PLAN.md](docs/FORMAL_VERIFICATION_PLAN.md) | 形式化验证方案设计：SSE 不变量、属性测试、模型检查分阶段落地 | — |
 | [docs/frontend-leptos/ARCHITECTURE.md](docs/frontend-leptos/ARCHITECTURE.md) | Web 前端目标架构与分阶段重构（Leptos / WASM） | — |
 | [docs/TESTING.md](docs/TESTING.md) | 前后端测试、E2E、pre-commit、依赖审计命令汇总 | [en](docs/en/TESTING.md) |
 | [docs/TOOLS.md](docs/TOOLS.md) | 内置工具说明与调用示例 | [en](docs/en/TOOLS.md) |
