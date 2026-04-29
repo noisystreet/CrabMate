@@ -741,6 +741,16 @@ pub(super) fn finalize(
         .clamp(0.0, 1.0) as f32;
     let intent_execute_high_threshold =
         intent_execute_high_threshold.max(intent_execute_low_threshold);
+    let intent_non_hier_execute_low_threshold = b
+        .intent_non_hier_execute_low_threshold
+        .unwrap_or(intent_execute_low_threshold as f64)
+        .clamp(0.0, 1.0) as f32;
+    let intent_non_hier_execute_high_threshold = b
+        .intent_non_hier_execute_high_threshold
+        .unwrap_or(intent_execute_high_threshold as f64)
+        .clamp(0.0, 1.0) as f32;
+    let intent_non_hier_execute_high_threshold =
+        intent_non_hier_execute_high_threshold.max(intent_non_hier_execute_low_threshold);
     let intent_mode_bias_enabled = b.intent_mode_bias_enabled.unwrap_or(true);
     let intent_l2_enabled = b.intent_l2_enabled.unwrap_or(true);
     let intent_l2_min_confidence = b.intent_l2_min_confidence.unwrap_or(0.7).clamp(0.0, 1.0) as f32;
@@ -908,6 +918,8 @@ pub(super) fn finalize(
         intent_l2_max_tokens,
         intent_execute_low_threshold,
         intent_execute_high_threshold,
+        intent_non_hier_execute_low_threshold,
+        intent_non_hier_execute_high_threshold,
         intent_at_turn_start_enabled,
         intent_l0_routing_boost_enabled,
     })

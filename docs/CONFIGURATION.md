@@ -91,6 +91,8 @@
 | `AGENT_INTENT_L0_ROUTING_BOOST_ENABLED` | 是否按 L0 特征（路径/错误/cargo 等）对 L1 的模糊句做**保守**提级（默认开）。TOML：`intent_l0_routing_boost_enabled`。 |
 | `AGENT_INTENT_EXECUTE_LOW_THRESHOLD` | 首轮规则路由「确认后执行」低阈值（0.0–1.0，默认 0.2）。TOML：`intent_execute_low_threshold`。 |
 | `AGENT_INTENT_EXECUTE_HIGH_THRESHOLD` | 首轮「直接执行」高阈值，且**不小于**低阈值（默认 0.45）。TOML：`intent_execute_high_threshold`。 |
+| `AGENT_INTENT_NON_HIER_EXECUTE_LOW_THRESHOLD` | **非分层**（`planner_executor_mode != hierarchical`）意图路由「确认后执行」低阈值；省略时回退 `AGENT_INTENT_EXECUTE_LOW_THRESHOLD`。TOML：`intent_non_hier_execute_low_threshold`。 |
+| `AGENT_INTENT_NON_HIER_EXECUTE_HIGH_THRESHOLD` | **非分层**（`planner_executor_mode != hierarchical`）意图路由「直接执行」高阈值，且不小于 non-hier low；省略时回退 `AGENT_INTENT_EXECUTE_HIGH_THRESHOLD`。TOML：`intent_non_hier_execute_high_threshold`。 |
 | `AGENT_INTENT_MODE_BIAS_ENABLED` | 分层 `runner` 是否按 `primary_intent` 轻量偏置执行模式（默认开）。TOML：`intent_mode_bias_enabled`。 |
 | `AGENT_STAGED_PLAN_EXECUTION` | 是否启用分阶段规划。 |
 | `AGENT_STAGED_PLAN_PHASE_INSTRUCTION` | 规划相说明/指令。 |
@@ -160,6 +162,29 @@
 | `AGENT_CODEBASE_SEMANTIC_FTS_TOP_N` | hybrid / **`fts_only`** 时全文分支最多取多少条（BM25）；**1～10000**，默认 **400**。 |
 | `AGENT_CODEBASE_SEMANTIC_HYBRID_SEMANTIC_POOL` | hybrid 时向量扫描保留的候选块数（≥ **`top_k`**），再与 FTS 并集重排；**1～10000**，默认 **256**。 |
 | `AGENT_CONVERSATION_STORE_SQLITE_PATH` | 会话 SQLite 路径。 |
+
+#### 动态工具（工作区 `plugins/*.json`）
+
+- 无需额外开关：每轮 `run_agent_turn` 会扫描当前工作区 `plugins` 目录下的 `*.json`，动态注册工具。
+- 工具名必须以 **`dyn__`** 开头，避免与内置/MCP 工具冲突。
+- 运行时字段最小示例：
+  ```json
+  {
+    "name": "dyn__echo_args",
+    "description": "将入参 JSON 透传给脚本",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" }
+      },
+      "required": ["text"]
+    },
+    "command": "python3",
+    "args": ["scripts/echo_args.py"],
+    "pass_args_json": true
+  }
+  ```
+- 安全约束与内置命令工具一致：`command` 必须命中 **`allowed_commands`** 白名单；执行目录固定当前工作区；动态工具默认按“未知副作用”处理，不参与只读并行批。
 
 ### 首轮注入（备忘、画像、依赖摘要）
 

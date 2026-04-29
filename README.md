@@ -41,7 +41,7 @@
 
 - **会话与导出**：Web 可选 SQLite 持久化、导出 JSON/MD（JSON 顶层与 CLI **`save-session`** 同形，含 **`schema`** / **`schema_version`** 与 **`version`**，见 [docs/CLI.md](docs/CLI.md) **`save-session`**）；CLI **`save-session`** / **`tool-replay`** 等。工作区变更注入、长期记忆等见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)。
 
-- **可选**：进程内工具统计（**`agent_tool_stats_enabled`**）；**MCP stdio 客户端**（**`mcp_enabled`** + **`mcp_command`**，`crabmate mcp list`）；**MCP stdio 服务端**（**`crabmate mcp serve`**，将内置工具暴露给外部 MCP 客户端，无传输鉴权）。见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)、[docs/CLI.md](docs/CLI.md)。
+- **可选**：进程内工具统计（**`agent_tool_stats_enabled`**）；工作区 **`plugins/*.json`** 动态工具（名称前缀 **`dyn__`**，运行时加载）；**MCP stdio 客户端**（**`mcp_enabled`** + **`mcp_command`**，`crabmate mcp list`）；**MCP stdio 服务端**（**`crabmate mcp serve`**，将内置工具暴露给外部 MCP 客户端，无传输鉴权）。见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)、[docs/CLI.md](docs/CLI.md)。
 
 ## 文档索引
 
@@ -102,7 +102,7 @@ cd frontend-leptos && trunk build && cd ..
 
 **前端**：`cd frontend-leptos && trunk build`（开发；**`--release`** 用于发布），再 **`crabmate serve`**。界面语言在「设置」；详 `frontend-leptos/README.md`、`docs/DEVELOPMENT.md`。
 
-**配置**：默认 `config/*.toml`（编译嵌入）+ 可选根目录 **`config.toml`**；**`system_prompt_file`** 指向 `config/prompts/default_system_prompt.md`（改后不必重编）。默认在首条 `system` 末附思考纪律附录（**`config/prompts/thinking_avoid_echo_appendix.md`** 等，见 [CONFIGURATION](docs/CONFIGURATION.md)）。意图增强可用 `[agent] intent_mode_bias_enabled`（默认 true）控制“意图到执行模式”的偏置，`intent_execute_low_threshold` / `intent_execute_high_threshold` 控制首轮执行意图阈值；`[agent] intent_l2_enabled` 默认 **true**（L2 语义分类，额外一次无工具 `chat`；失败自动回退 L1，受 `intent_l2_min_confidence` 控制覆盖阈值）；若需节省调用可设为 **false**。**非** `Hierarchical` 时可选 `intent_at_turn_start_enabled`（`AGENT_INTENT_AT_TURN_START_ENABLED`）在进主循环前做一轮 L0/L1/可选 L2 门控；分层模式内建同一套管线。高级项同页。**release / deb / man** 见 **[源码编译与打包](#源码编译与打包)**。
+**配置**：默认 `config/*.toml`（编译嵌入）+ 可选根目录 **`config.toml`**；**`system_prompt_file`** 指向 `config/prompts/default_system_prompt.md`（改后不必重编）。默认在首条 `system` 末附思考纪律附录（**`config/prompts/thinking_avoid_echo_appendix.md`** 等，见 [CONFIGURATION](docs/CONFIGURATION.md)）。意图增强可用 `[agent] intent_mode_bias_enabled`（默认 true）控制“意图到执行模式”的偏置；`intent_execute_low_threshold` / `intent_execute_high_threshold` 控制全局执行意图阈值，`intent_non_hier_execute_low_threshold` / `intent_non_hier_execute_high_threshold` 可单独覆盖**非分层**路径阈值；`[agent] intent_l2_enabled` 默认 **true**（L2 语义分类，额外一次无工具 `chat`；失败自动回退 L1，受 `intent_l2_min_confidence` 控制覆盖阈值）；若需节省调用可设为 **false**。**非** `Hierarchical` 时可选 `intent_at_turn_start_enabled`（`AGENT_INTENT_AT_TURN_START_ENABLED`）在进主循环前做一轮 L0/L1/可选 L2 门控；分层模式内建同一套管线。高级项同页。**release / deb / man** 见 **[源码编译与打包](#源码编译与打包)**。
 
 **切换模型 / 网关**（DeepSeek、MiniMax、Ollama 等）：见上文 **[「后端模型支持」](#后端模型支持)**。
 

@@ -81,8 +81,8 @@ fn should_enter_staged_planning(messages: &[Message], cfg: &crate::config::Agent
         recent_user_messages,
         in_clarification_flow,
         thresholds: ExecuteIntentThresholds {
-            low: cfg.intent_execute_low_threshold,
-            high: cfg.intent_execute_high_threshold,
+            low: cfg.intent_non_hier_execute_low_threshold,
+            high: cfg.intent_non_hier_execute_high_threshold,
         },
         l2_min_confidence: cfg.intent_l2_min_confidence,
         has_recent_tool_failure,

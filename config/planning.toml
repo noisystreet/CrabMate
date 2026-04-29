@@ -28,3 +28,6 @@ staged_plan_two_phase_nl_display = false   # AGENT_STAGED_PLAN_TWO_PHASE_NL_DISP
 # intent_l2_enabled = true
 # intent_l2_min_confidence = 0.7
 # intent_l0_routing_boost_enabled = true
+# 非分层（planner_executor_mode != hierarchical）可单独覆盖执行阈值；省略时回退 intent_execute_*。
+# intent_non_hier_execute_low_threshold = 0.2
+# intent_non_hier_execute_high_threshold = 0.45

@@ -152,6 +152,8 @@ pub(crate) struct ConfigBuilder {
     pub(crate) codebase_semantic_hybrid_semantic_pool: Option<u64>,
     pub(crate) intent_execute_low_threshold: Option<f64>,
     pub(crate) intent_execute_high_threshold: Option<f64>,
+    pub(crate) intent_non_hier_execute_low_threshold: Option<f64>,
+    pub(crate) intent_non_hier_execute_high_threshold: Option<f64>,
     pub(crate) intent_mode_bias_enabled: Option<bool>,
     pub(crate) intent_l2_enabled: Option<bool>,
     pub(crate) intent_l2_min_confidence: Option<f64>,
@@ -599,6 +601,12 @@ impl ConfigBuilder {
         self.intent_execute_high_threshold = agent
             .intent_execute_high_threshold
             .or(self.intent_execute_high_threshold);
+        self.intent_non_hier_execute_low_threshold = agent
+            .intent_non_hier_execute_low_threshold
+            .or(self.intent_non_hier_execute_low_threshold);
+        self.intent_non_hier_execute_high_threshold = agent
+            .intent_non_hier_execute_high_threshold
+            .or(self.intent_non_hier_execute_high_threshold);
         self.intent_mode_bias_enabled = agent
             .intent_mode_bias_enabled
             .or(self.intent_mode_bias_enabled);

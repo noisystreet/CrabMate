@@ -257,6 +257,16 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.intent_execute_high_threshold = Some(f);
     }
+    if let Ok(v) = std::env::var("AGENT_INTENT_NON_HIER_EXECUTE_LOW_THRESHOLD")
+        && let Ok(f) = v.trim().parse::<f64>()
+    {
+        b.intent_non_hier_execute_low_threshold = Some(f);
+    }
+    if let Ok(v) = std::env::var("AGENT_INTENT_NON_HIER_EXECUTE_HIGH_THRESHOLD")
+        && let Ok(f) = v.trim().parse::<f64>()
+    {
+        b.intent_non_hier_execute_high_threshold = Some(f);
+    }
     if let Ok(v) = std::env::var("AGENT_INTENT_MODE_BIAS_ENABLED")
         && let Some(val) = parse_bool_like(&v)
     {

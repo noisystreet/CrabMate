@@ -48,7 +48,17 @@ pub(crate) async fn run_intent_at_turn_start_if_configured(
     if task.trim().is_empty() {
         return Ok(true);
     }
-    let out = run_intent_l0_l1_l2_gate(p, &task, in_clarification_flow, "intent_at_turn").await?;
+    let out = run_intent_l0_l1_l2_gate(
+        p,
+        &task,
+        in_clarification_flow,
+        ExecuteIntentThresholds {
+            low: p.cfg.intent_non_hier_execute_low_threshold,
+            high: p.cfg.intent_non_hier_execute_high_threshold,
+        },
+        "intent_at_turn",
+    )
+    .await?;
     Ok(matches!(out, IntentGateResult::ProceedExecute { .. }))
 }
 
@@ -59,7 +69,17 @@ pub(crate) async fn run_intent_for_hierarchical(
     task: &str,
 ) -> Result<IntentGateResult, super::errors::RunAgentTurnError> {
     let in_clarification_flow = intent_user::recently_waiting_execute_confirmation(p.messages);
-    run_intent_l0_l1_l2_gate(p, task, in_clarification_flow, "hierarchical::intent").await
+    run_intent_l0_l1_l2_gate(
+        p,
+        task,
+        in_clarification_flow,
+        ExecuteIntentThresholds {
+            low: p.cfg.intent_execute_low_threshold,
+            high: p.cfg.intent_execute_high_threshold,
+        },
+        "hierarchical::intent",
+    )
+    .await
 }
 
 fn format_intent_title(assessment: &crate::agent::intent_pipeline::IntentDecision) -> String {
@@ -181,6 +201,7 @@ async fn run_intent_l0_l1_l2_gate(
     p: &mut RunLoopParams<'_>,
     task: &str,
     in_clarification_flow: bool,
+    thresholds: ExecuteIntentThresholds,
     sse_log_tag: &'static str,
 ) -> Result<IntentGateResult, super::errors::RunAgentTurnError> {
     let has_recent_tool_failure =
@@ -190,10 +211,7 @@ async fn run_intent_l0_l1_l2_gate(
     let intent_ctx = IntentContext {
         recent_user_messages,
         in_clarification_flow,
-        thresholds: ExecuteIntentThresholds {
-            low: p.cfg.intent_execute_low_threshold,
-            high: p.cfg.intent_execute_high_threshold,
-        },
+        thresholds,
         l2_min_confidence: p.cfg.intent_l2_min_confidence,
         has_recent_tool_failure,
         l0_routing_boost_enabled: p.cfg.intent_l0_routing_boost_enabled,

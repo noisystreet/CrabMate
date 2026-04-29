@@ -235,6 +235,10 @@ pub(super) struct AgentSection {
     pub(super) intent_execute_low_threshold: Option<f64>,
     /// 首轮意图路由：执行意图高阈值（0.0..=1.0，建议 >= low）。
     pub(super) intent_execute_high_threshold: Option<f64>,
+    /// 非分层（`planner_executor_mode != hierarchical`）意图路由低阈值；省略则回退 `intent_execute_low_threshold`。
+    pub(super) intent_non_hier_execute_low_threshold: Option<f64>,
+    /// 非分层（`planner_executor_mode != hierarchical`）意图路由高阈值；省略则回退 `intent_execute_high_threshold`。
+    pub(super) intent_non_hier_execute_high_threshold: Option<f64>,
     /// 是否启用基于 intent 标签的执行模式偏置（默认 true）。
     pub(super) intent_mode_bias_enabled: Option<bool>,
     /// 是否启用 L2 语义意图分类（默认 false）。
