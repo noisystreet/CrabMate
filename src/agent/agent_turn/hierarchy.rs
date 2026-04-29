@@ -709,7 +709,7 @@ fn truncate_string(s: &str, max_len: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::super::intent_user;
+    use super::super::intent;
     use crate::agent::intent_pipeline::{IntentAction, IntentDecision};
     use crate::agent::intent_router::IntentKind;
     use crate::types::Message;
@@ -724,7 +724,7 @@ mod tests {
             ),
             Message::user_only("直接开始执行".to_string()),
         ];
-        let task = intent_user::extract_effective_user_task(&messages, true);
+        let task = intent::intent_user::extract_effective_user_task(&messages, true);
         assert_eq!(task, "编写一个简单c++程序并执行");
     }
 
@@ -735,7 +735,7 @@ mod tests {
             Message::assistant_only("好的".to_string()),
             Message::user_only("编写一个简单c++程序并执行".to_string()),
         ];
-        let task = intent_user::extract_effective_user_task(&messages, false);
+        let task = intent::intent_user::extract_effective_user_task(&messages, false);
         assert_eq!(task, "编写一个简单c++程序并执行");
     }
 

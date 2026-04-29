@@ -13,8 +13,8 @@ use crate::agent::intent_router::{
 use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crate::sse;
 
+use super::super::params::RunLoopParams;
 use super::intent_user;
-use super::params::RunLoopParams;
 
 const RECENT_USER_FOR_MERGE: usize = 4;
 const MSG_TAIL_FOR_TOOL: usize = 32;
@@ -39,7 +39,7 @@ pub(crate) enum IntentGateResult {
 /// `false` 表示本回合已写入助手终答，调用方应 `return Ok(())`。
 pub(crate) async fn run_intent_at_turn_start_if_configured(
     p: &mut RunLoopParams<'_>,
-) -> Result<bool, super::errors::RunAgentTurnError> {
+) -> Result<bool, super::super::errors::RunAgentTurnError> {
     if !p.cfg.intent_at_turn_start_enabled {
         return Ok(true);
     }
@@ -67,7 +67,7 @@ pub(crate) async fn run_intent_at_turn_start_if_configured(
 pub(crate) async fn run_intent_for_hierarchical(
     p: &mut RunLoopParams<'_>,
     task: &str,
-) -> Result<IntentGateResult, super::errors::RunAgentTurnError> {
+) -> Result<IntentGateResult, super::super::errors::RunAgentTurnError> {
     let in_clarification_flow = intent_user::recently_waiting_execute_confirmation(p.messages);
     run_intent_l0_l1_l2_gate(
         p,
@@ -175,7 +175,7 @@ async fn emit_intent_timeline(
 async fn apply_non_execute_and_finish(
     p: &mut RunLoopParams<'_>,
     reply: &str,
-) -> Result<bool, super::errors::RunAgentTurnError> {
+) -> Result<bool, super::super::errors::RunAgentTurnError> {
     p.messages
         .push(crate::types::Message::assistant_only(reply.to_string()));
     if let Some(out) = p.out {
@@ -203,7 +203,7 @@ async fn run_intent_l0_l1_l2_gate(
     in_clarification_flow: bool,
     thresholds: ExecuteIntentThresholds,
     sse_log_tag: &'static str,
-) -> Result<IntentGateResult, super::errors::RunAgentTurnError> {
+) -> Result<IntentGateResult, super::super::errors::RunAgentTurnError> {
     let has_recent_tool_failure =
         intent_l0::messages_have_recent_tool_failure(p.messages, MSG_TAIL_FOR_TOOL);
     let recent_user_messages =

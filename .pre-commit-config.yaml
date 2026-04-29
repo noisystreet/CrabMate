@@ -38,7 +38,7 @@ repos:
         stages: [commit]
       - id: intent-regression-golden
         name: intent regression golden
-        entry: bash -c 'staged=$(git diff --cached --name-only | grep -E "^(fixtures/intent_regression.jsonl|src/agent/intent_regression_golden.rs|src/agent/intent_pipeline.rs|src/agent/intent_router.rs|src/agent/intent_l0.rs|src/agent/intent_l2_classifier.rs|src/agent/agent_turn/intent_at_turn_start.rs|src/agent/agent_turn/mod.rs|src/agent/hierarchy/runner.rs)$" | wc -l); if [ "$staged" -gt 0 ]; then cargo test golden_intent_regression -p crabmate; else exit 0; fi'
+        entry: bash -c 'staged=$(git diff --cached --name-only | grep -E "^(fixtures/intent_regression.jsonl|src/agent/intent_regression_golden.rs|src/agent/intent_pipeline.rs|src/agent/intent_router.rs|src/agent/intent_l0.rs|src/agent/intent_l2_classifier.rs|src/agent/agent_turn/intent/at_turn_start.rs|src/agent/agent_turn/mod.rs|src/agent/hierarchy/runner.rs)$" | wc -l); if [ "$staged" -gt 0 ]; then cargo test golden_intent_regression -p crabmate; else exit 0; fi'
         language: system
         pass_filenames: false
         always_run: true
