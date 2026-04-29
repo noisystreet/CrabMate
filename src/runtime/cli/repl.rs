@@ -313,7 +313,7 @@ pub async fn run_repl(
                     if let Some(first) = messages.first_mut()
                         && first.role == "system"
                     {
-                        let base_system = crate::conversation_turn_bootstrap::augmented_system_for_new_conversation_lenient(
+                        let base_system = crate::context_bootstrap::conversation_turn_bootstrap::augmented_system_for_new_conversation_lenient(
                             &g,
                             agent_role_owned.as_deref(),
                         );

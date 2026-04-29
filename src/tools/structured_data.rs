@@ -9,7 +9,7 @@ use serde_json::Value as JsonValue;
 
 use super::ToolContext;
 use super::file;
-use crate::workspace_changelist::record_file_state_after_write;
+use crate::workspace::changelist::record_file_state_after_write;
 
 const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
 const DEFAULT_DIFF_MAX_LINES: usize = 200;

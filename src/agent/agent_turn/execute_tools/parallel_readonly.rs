@@ -183,7 +183,7 @@ pub(super) async fn execute_tools_parallel(
                         tokio::task::spawn_blocking(move || {
                             let _g = span_http.enter();
                             let (mem_rt, mem_scope) =
-                                crate::long_term_memory::tool_context_memory_extras(
+                                crate::memory::long_term_memory::tool_context_memory_extras(
                                     cfg.as_ref(),
                                     ltm.clone(),
                                     ltm_scope.as_deref(),

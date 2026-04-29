@@ -22,16 +22,16 @@ use super::parse::{
     parse_execution_mode_override, parse_executor_llm_override, parse_optional_chat_temperature,
     parse_seed_override_from_body,
 };
-use crate::agent_memory::load_memory_snippet;
 use crate::agent_role_turn::maybe_apply_mid_session_agent_role_switch;
 use crate::chat_job_queue;
 use crate::clarification_questionnaire::{
     merge_user_text_with_clarification_answers, normalize_clarify_questionnaire_answers_raw,
 };
-use crate::conversation_store::SaveConversationOutcome;
-use crate::conversation_turn_bootstrap::{
+use crate::context_bootstrap::conversation_turn_bootstrap::{
     compose_new_conversation_messages, first_turn_project_context_user_message_for_web,
 };
+use crate::conversation_store::SaveConversationOutcome;
+use crate::memory::agent_memory::load_memory_snippet;
 use crate::redact;
 use crate::types::{
     CommandApprovalDecision, Message, filter_messages_for_web_client_snapshot,

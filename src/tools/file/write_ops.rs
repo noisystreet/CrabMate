@@ -10,7 +10,7 @@ use super::path::{
     tool_user_error_from_workspace_path,
 };
 use crate::tools::ToolContext;
-use crate::workspace_changelist::record_file_state_after_write;
+use crate::workspace::changelist::record_file_state_after_write;
 
 /// 工具正文首行统一 `路径：…`，便于 Web 紧凑条与模型扫读（与 `run_command` 的 `命令：` 同理）。
 #[inline]

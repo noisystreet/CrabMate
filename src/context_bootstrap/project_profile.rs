@@ -356,7 +356,7 @@ pub fn build_first_turn_user_context_markdown(
     }
     let memory_snippet = memory_preloaded.or_else(|| {
         if cfg.agent_memory_file_enabled {
-            crate::agent_memory::load_memory_snippet(
+            crate::memory::agent_memory::load_memory_snippet(
                 workspace_root,
                 cfg.agent_memory_file.as_str(),
                 cfg.agent_memory_file_max_chars,
@@ -366,7 +366,7 @@ pub fn build_first_turn_user_context_markdown(
         }
     });
     let living_snippet = if cfg.living_docs_inject_enabled && cfg.living_docs_inject_max_chars > 0 {
-        crate::living_docs::load_living_docs_snippet(
+        crate::context_bootstrap::living_docs::load_living_docs_snippet(
             workspace_root,
             cfg.living_docs_relative_dir.as_str(),
             cfg.living_docs_inject_max_chars,
@@ -388,7 +388,7 @@ pub fn build_first_turn_user_context_markdown(
         String::new()
     };
     let dep_md = if want_dep {
-        crate::project_dependency_brief::build_project_dependency_brief_markdown(
+        crate::context_bootstrap::project_dependency_brief::build_project_dependency_brief_markdown(
             workspace_root,
             cfg.project_dependency_brief_inject_max_chars,
         )

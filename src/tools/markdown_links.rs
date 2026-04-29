@@ -2,7 +2,7 @@
 //!
 //! 路径与 `file` 工具一致：扫描根须为工作区相对路径，禁止 `..` 与绝对路径；解析目标时做词法归一化并限制在工作区根之下。
 
-use crate::path_workspace::canonical_workspace_root;
+use crate::workspace::path::canonical_workspace_root;
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;

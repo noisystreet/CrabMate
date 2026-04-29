@@ -10,10 +10,6 @@ use log::error;
 use serde_json;
 
 use crate::AppState;
-use crate::path_workspace::{
-    WorkspacePathError, resolve_web_workspace_read_path, resolve_web_workspace_write_path,
-    validate_effective_workspace_base, validate_workspace_set_path,
-};
 use crate::text_encoding::{decode_bytes_strict, parse_text_encoding_name};
 use crate::web::http_types::workspace::{
     WorkspaceEntry, WorkspaceFileDeleteResponse, WorkspaceFileQuery, WorkspaceFileReadResponse,
@@ -22,9 +18,13 @@ use crate::web::http_types::workspace::{
     WorkspaceSearchResponse, WorkspaceSetBody,
 };
 #[cfg(unix)]
-use crate::workspace_fs::{
+use crate::workspace::fs::{
     open_directory_under_root, open_existing_file_under_root, open_file_write_under_root,
     unlink_file_under_root,
+};
+use crate::workspace::path::{
+    WorkspacePathError, resolve_web_workspace_read_path, resolve_web_workspace_write_path,
+    validate_effective_workspace_base, validate_workspace_set_path,
 };
 #[cfg(unix)]
 use libc;
@@ -645,7 +645,10 @@ pub async fn workspace_profile_handler(
     };
     let max_chars = state.cfg.read().await.project_profile_inject_max_chars;
     let md_result = tokio::task::spawn_blocking(move || {
-        crate::project_profile::build_project_profile_markdown(&base_canonical, max_chars)
+        crate::context_bootstrap::project_profile::build_project_profile_markdown(
+            &base_canonical,
+            max_chars,
+        )
     })
     .await;
     match md_result {

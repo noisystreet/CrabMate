@@ -52,11 +52,11 @@ pub struct DispatchToolParams<'a> {
     pub read_file_turn_cache:
         Option<std::sync::Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
     pub workspace_changelist:
-        Option<std::sync::Arc<crate::workspace_changelist::WorkspaceChangelist>>,
+        Option<std::sync::Arc<crate::workspace::changelist::WorkspaceChangelist>>,
     pub mcp_session: Option<&'a Arc<Mutex<crate::mcp::McpClientSession>>>,
     /// 多角色工具白名单；`None` 不限制。
     pub turn_allow: Option<&'a HashSet<String>>,
-    pub long_term_memory: Option<Arc<crate::long_term_memory::LongTermMemoryRuntime>>,
+    pub long_term_memory: Option<Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
     pub long_term_memory_scope_id: Option<String>,
 }
 
@@ -341,11 +341,12 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
             }
 
             if sync_default_runs_inline(cfg.as_ref(), name) {
-                let (mem_rt, mem_scope) = crate::long_term_memory::tool_context_memory_extras(
-                    cfg.as_ref(),
-                    long_term_memory.clone(),
-                    long_term_memory_scope_id.as_deref(),
-                );
+                let (mem_rt, mem_scope) =
+                    crate::memory::long_term_memory::tool_context_memory_extras(
+                        cfg.as_ref(),
+                        long_term_memory.clone(),
+                        long_term_memory_scope_id.as_deref(),
+                    );
                 let ctx = tools::tool_context_for_with_read_cache_and_memory(
                     cfg.as_ref(),
                     cfg.allowed_commands.as_ref(),
@@ -367,11 +368,12 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
             let ltm_scope2 = long_term_memory_scope_id.clone();
             let wall_secs = parallel_tool_wall_timeout_secs(cfg.as_ref(), name);
             let handle = tokio::task::spawn_blocking(move || {
-                let (mem_rt, mem_scope) = crate::long_term_memory::tool_context_memory_extras(
-                    cfg2.as_ref(),
-                    ltm2,
-                    ltm_scope2.as_deref(),
-                );
+                let (mem_rt, mem_scope) =
+                    crate::memory::long_term_memory::tool_context_memory_extras(
+                        cfg2.as_ref(),
+                        ltm2,
+                        ltm_scope2.as_deref(),
+                    );
                 let ctx = tools::tool_context_for_with_read_cache_and_memory(
                     cfg2.as_ref(),
                     cfg2.allowed_commands.as_ref(),

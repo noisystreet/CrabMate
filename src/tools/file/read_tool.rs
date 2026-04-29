@@ -5,12 +5,12 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, ErrorKind, Seek, SeekFrom};
 use std::path::Path;
 
-use crate::path_workspace::WorkspacePathError;
 use crate::text_encoding::{
     DecodedFileNote, ResolvedTextEncoding, SNIFF_MAX_BYTES, TextEncodingName, count_decoded_lines,
     for_each_decoded_line_from_file_with_head, open_file_and_read_head,
     open_file_and_read_head_from, parse_text_encoding_name, resolve_text_encoding,
 };
+use crate::workspace::path::WorkspacePathError;
 
 use super::path::{
     path_for_tool_display, resolve_for_read_open, tool_user_error_from_workspace_path,

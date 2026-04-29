@@ -10,7 +10,7 @@ use super::path::{
     tool_user_error_from_workspace_path,
 };
 use crate::tools::ToolContext;
-use crate::workspace_changelist::record_file_state_after_write;
+use crate::workspace::changelist::record_file_state_after_write;
 
 pub fn delete_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
     let v = match crate::tools::parse_args_json(args_json) {

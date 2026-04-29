@@ -4,10 +4,10 @@ use std::path::Path;
 
 use rusqlite::params;
 
-use crate::codebase_semantic_index::{
+use crate::config::AgentConfig;
+use crate::memory::codebase_semantic_index::{
     CODEBASE_SEMANTIC_FILES_TABLE, index_path_for_workspace, open_codebase_semantic_db,
 };
-use crate::config::AgentConfig;
 use crate::tool_result::parse_legacy_output;
 use crate::tools::canonical_workspace_root;
 

@@ -262,7 +262,7 @@ fn verify_tool_execution_inner(
     // 4. 检查文件是否存在
     if let Some(ref file_path) = acceptance.expect_file_exists {
         let resolved =
-            crate::path_workspace::absolutize_relative_under_root(workspace_root, file_path);
+            crate::workspace::path::absolutize_relative_under_root(workspace_root, file_path);
         match resolved {
             Ok(p) if p.exists() => {
                 // file exists, ok
