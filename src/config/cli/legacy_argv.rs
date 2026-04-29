@@ -16,6 +16,7 @@ fn is_known_subcommand(s: &str) -> bool {
             | "save-session"
             | "export-session"
             | "tool-replay"
+            | "plugin"
     )
 }
 

@@ -23,6 +23,7 @@ mod config;
 mod conversation_store;
 /// Web `/chat*` 与 CLI 首轮项目画像 / 依赖摘要注入的共用拼装。
 mod conversation_turn_bootstrap;
+mod dynamic_tools;
 mod health;
 mod http_client;
 mod living_docs;
@@ -424,6 +425,10 @@ pub async fn run_agent_turn<'a>(
     };
 
     let mut tools_for_turn: Vec<types::Tool> = tools.to_vec();
+    tools_for_turn = mcp::merge_tool_lists(
+        tools_for_turn,
+        dynamic_tools::load_dynamic_tools(effective_working_dir),
+    );
     let mcp_session = match mcp::try_open_session_and_tools(cfg.as_ref()).await {
         Some((sess, extra)) => {
             tools_for_turn = mcp::merge_tool_lists(tools_for_turn, extra);
@@ -585,6 +590,9 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         extra_cli,
         save_session,
         tool_replay,
+        plugin_init,
+        plugin_validate,
+        plugin_list,
     } = parse_args()?;
 
     // 非 Web `--serve` 的 CLI 默认不输出 info（仅 warn+），除非设置 RUST_LOG 或 `--log` 文件（见 `init_tracing_subscriber`）
@@ -620,6 +628,22 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(tr) = tool_replay {
         let cfg = config::load_config_for_cli(config_path.as_deref())?;
         crate::runtime::cli::run_tool_replay_command(&cfg, &workspace_cli, tr)?;
+        return Ok(());
+    }
+
+    if let Some(pi) = plugin_init {
+        let cfg = config::load_config_for_cli(config_path.as_deref())?;
+        crate::runtime::cli::run_plugin_init_command(&cfg, &workspace_cli, pi)?;
+        return Ok(());
+    }
+    if let Some(pv) = plugin_validate {
+        let cfg = config::load_config_for_cli(config_path.as_deref())?;
+        crate::runtime::cli::run_plugin_validate_command(&cfg, &workspace_cli, pv)?;
+        return Ok(());
+    }
+    if let Some(pl) = plugin_list {
+        let cfg = config::load_config_for_cli(config_path.as_deref())?;
+        crate::runtime::cli::run_plugin_list_command(&cfg, &workspace_cli, pl)?;
         return Ok(());
     }
 

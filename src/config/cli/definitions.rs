@@ -195,6 +195,71 @@ pub struct McpServeCmd {
     pub no_tools: bool,
 }
 
+/// 动态工具模板与校验
+#[derive(Parser, Debug, Clone)]
+pub struct PluginCmd {
+    #[command(subcommand)]
+    pub sub: PluginSubCmd,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum PluginSubCmd {
+    /// 生成 `plugins/*.json` 动态工具模板（名称须以 `dyn__` 开头）
+    Init(PluginInitCmd),
+    /// 列出工作区 `plugins/*.json` 及校验状态
+    List(PluginListCmd),
+    /// 校验工作区 `plugins/*.json` 动态工具定义
+    Validate(PluginValidateCmd),
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct PluginInitCmd {
+    /// 工具名（必须 `dyn__` 前缀）
+    #[arg(long, value_name = "NAME")]
+    pub name: String,
+    /// 工具描述
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// 执行命令（须在 allowed_commands 白名单）
+    #[arg(long, value_name = "CMD")]
+    pub command: Option<String>,
+    /// 固定命令参数（可重复）
+    #[arg(long = "arg", value_name = "ARG")]
+    pub args: Vec<String>,
+    /// 是否在命令尾部追加原始 args_json
+    #[arg(long, default_value_t = true)]
+    pub pass_args_json: bool,
+    /// 输出文件（默认 `plugins/<name-without-prefix>.json`）
+    #[arg(long, value_name = "FILE")]
+    pub output: Option<String>,
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct PluginValidateCmd {
+    /// 仅校验指定文件（默认扫描整个 `plugins/*.json`）
+    #[arg(long, value_name = "FILE")]
+    pub file: Option<String>,
+    /// 以 JSON 输出结果（便于 CI 机器读取）
+    #[arg(long)]
+    pub json: bool,
+    /// 以 JSONL 输出结果（每行一个对象，便于管道处理）
+    #[arg(long)]
+    pub jsonl: bool,
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct PluginListCmd {
+    /// 仅列出指定文件（默认扫描整个 `plugins/*.json`）
+    #[arg(long, value_name = "FILE")]
+    pub file: Option<String>,
+    /// 以 JSON 输出结果（便于 CI 机器读取）
+    #[arg(long)]
+    pub json: bool,
+    /// 以 JSONL 输出结果（每行一个对象，便于管道处理）
+    #[arg(long)]
+    pub jsonl: bool,
+}
+
 /// 配置检查（不发起对话）
 #[derive(Parser, Debug, Clone, Default)]
 pub struct ConfigCmd {
@@ -335,6 +400,8 @@ pub enum Commands {
     ToolReplay(ToolReplayCmd),
     /// MCP stdio 客户端运维：列出本进程内已缓存会话（**不要**求 API_KEY）
     Mcp(McpCmd),
+    /// 动态工具模板与校验（工作区 `plugins/*.json`）
+    Plugin(PluginCmd),
 }
 
 #[derive(Parser, Debug)]
@@ -392,4 +459,37 @@ pub struct ParsedCliArgs {
     pub save_session: Option<SaveSessionCli>,
     /// `Some` 时执行工具重放子命令后退出（不要求 API_KEY）
     pub tool_replay: Option<ToolReplayCli>,
+    /// `Some` 时执行动态工具模板生成后退出（不要求 API_KEY）
+    pub plugin_init: Option<PluginInitCli>,
+    /// `Some` 时执行动态工具校验后退出（不要求 API_KEY）
+    pub plugin_validate: Option<PluginValidateCli>,
+    /// `Some` 时执行动态工具列表后退出（不要求 API_KEY）
+    pub plugin_list: Option<PluginListCli>,
+}
+
+/// `plugin init` 解析结果（供 `runtime::cli` 执行）
+#[derive(Debug, Clone)]
+pub struct PluginInitCli {
+    pub name: String,
+    pub description: Option<String>,
+    pub command: Option<String>,
+    pub args: Vec<String>,
+    pub pass_args_json: bool,
+    pub output: Option<String>,
+}
+
+/// `plugin validate` 解析结果（供 `runtime::cli` 执行）
+#[derive(Debug, Clone)]
+pub struct PluginValidateCli {
+    pub file: Option<String>,
+    pub json: bool,
+    pub jsonl: bool,
+}
+
+/// `plugin list` 解析结果（供 `runtime::cli` 执行）
+#[derive(Debug, Clone)]
+pub struct PluginListCli {
+    pub file: Option<String>,
+    pub json: bool,
+    pub jsonl: bool,
 }

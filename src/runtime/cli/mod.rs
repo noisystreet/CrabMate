@@ -7,7 +7,10 @@ mod repl_extras;
 pub(crate) mod repl_parse;
 
 pub use chat::run_chat_invocation;
-pub use commands::{run_save_session_command, run_tool_replay_command};
+pub use commands::{
+    run_plugin_init_command, run_plugin_list_command, run_plugin_validate_command,
+    run_save_session_command, run_tool_replay_command,
+};
 pub use repl::run_repl;
 
 /// REPL `/export`、`/save-session` 与 `save-session` 子命令共用的导出格式。

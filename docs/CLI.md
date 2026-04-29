@@ -27,11 +27,14 @@
 | `save-session` | 从会话文件导出 JSON/Markdown 到工作区 **`.crabmate/exports/`**（与 Web 导出同形；**不要**求 `API_KEY`）。`--format json|markdown|both`（默认 `both`），`--session-file` 可选。兼容别名 **`export-session`**。 |
 | `tool-replay` | 从会话 JSON 提取**工具调用时间线**为 fixture，或按 fixture **重放工具**（与对话相同走 `run_tool`，**不调用大模型**；**不要**求 `API_KEY`）。见下文「工具重放 fixture」。 |
 | `mcp list` | 只读列出**本进程**内与当前 `mcp_enabled` + `mcp_command` 指纹一致的已缓存 MCP stdio 会话及合并后的 OpenAI 工具名（**不要**求 `API_KEY`）。若尚未在本进程跑过对话，可先 **`mcp list --probe`** 尝试连接一次（会启动配置中的 MCP 子进程，与正常对话路径相同）。 |
+| `plugin init` | 生成工作区 **`plugins/*.json`** 动态工具模板（名称需 `dyn__` 前缀）；输出文件路径默认 `plugins/<name-without-prefix>.json`。 |
+| `plugin list` | 列出动态工具文件、工具名、command 与校验状态（OK/FAIL）；`--json` 输出结构化结果，`--jsonl` 按行输出便于管道处理。 |
+| `plugin validate` | 校验动态工具定义（默认扫描 `plugins/*.json`，或 `--file` 指定单文件）；会检查 JSON 结构与 `command` 是否在 `allowed_commands` 白名单；`--json` 输出结构化结果，`--jsonl` 按行输出便于管道处理。 |
 | `mcp serve` | 在 **stdin/stdout** 上运行 **MCP server**，将 CrabMate **内置工具**暴露给外部客户端（`tools/list` / `tools/call` → **`tools::run_tool`**；**不要**求 `API_KEY`）。工作目录与全局 **`--workspace`** / 配置 **`run_command_working_dir`** 一致。协议 JSON-RPC 走 **stdout**；启动提示与日志请用 **stderr**，避免污染 MCP 流。**`--no-tools`**：不向客户端列出工具（调用未知名仍走 `run_tool` 并得「未知工具」）。**无传输层鉴权**：仅用于本机可信父进程集成；能力面与 `run_command` 白名单、工作区路径策略及（若启用）**`tool_call_explain_enabled`** 一致。 |
 
 ## 日志级别
 
-未设置 `RUST_LOG` 时：`serve` 默认 **info**；`repl` / `chat` / `bench` / `config` / `mcp` / `save-session`（及别名 `export-session`）/ `tool-replay` 默认 **warn**。可用 `RUST_LOG` 或 `--log <FILE>`。
+未设置 `RUST_LOG` 时：`serve` 默认 **info**；`repl` / `chat` / `bench` / `config` / `mcp` / `save-session`（及别名 `export-session`）/ `tool-replay` / `plugin` 默认 **warn**。可用 `RUST_LOG` 或 `--log <FILE>`。
 
 ## 消息管道调试日志
 
@@ -39,7 +42,7 @@
 
 ## 兼容旧用法
 
-未写子命令时仍可用 `--serve`、`--query`、`--benchmark`、`--dry-run` 等，内部映射为对应子命令。若参数中**任意位置**出现显式子命令名（如 `serve` / `doctor` / `save-session` / `export-session` / `tool-replay`），则整段 argv 不再插入默认 `repl`（与 `tests/fixtures/cli/legacy_normalize.json` 契约一致）。
+未写子命令时仍可用 `--serve`、`--query`、`--benchmark`、`--dry-run` 等，内部映射为对应子命令。若参数中**任意位置**出现显式子命令名（如 `serve` / `doctor` / `save-session` / `export-session` / `tool-replay` / `plugin`），则整段 argv 不再插入默认 `repl`（与 `tests/fixtures/cli/legacy_normalize.json` 契约一致）。
 
 ## 常用选项（兼容写法）
 

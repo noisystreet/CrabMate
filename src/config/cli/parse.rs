@@ -2,7 +2,8 @@
 
 use super::definitions::{
     BenchmarkCliArgs, ChatCliArgs, Commands, ExtraCliCommand, GlobalOpts, McpSubCmd, ParsedCliArgs,
-    RootCli, SaveSessionCli, ToolReplayCli, ToolReplaySubCmd,
+    PluginInitCli, PluginListCli, PluginSubCmd, PluginValidateCli, RootCli, SaveSessionCli,
+    ToolReplayCli, ToolReplaySubCmd,
 };
 use super::legacy_argv::normalize_legacy_argv;
 use clap::Parser;
@@ -104,6 +105,9 @@ fn build_parsed_cli_args(
             extra_cli: ExtraCliCommand::None,
             save_session: None,
             tool_replay: None,
+            plugin_init: None,
+            plugin_validate: None,
+            plugin_list: None,
         },
         Some(Commands::Serve(s)) => {
             let port = s.port.or(s.port_positional).or(Some(8080));
@@ -123,6 +127,9 @@ fn build_parsed_cli_args(
                 extra_cli: ExtraCliCommand::None,
                 save_session: None,
                 tool_replay: None,
+                plugin_init: None,
+                plugin_validate: None,
+                plugin_list: None,
             }
         }
         Some(Commands::Repl(r)) => ParsedCliArgs {
@@ -141,6 +148,9 @@ fn build_parsed_cli_args(
             extra_cli: ExtraCliCommand::None,
             save_session: None,
             tool_replay: None,
+            plugin_init: None,
+            plugin_validate: None,
+            plugin_list: None,
         },
         Some(Commands::Chat(c)) => {
             let inline_user_text = if c.user_prompt_file.is_some() {
@@ -180,6 +190,9 @@ fn build_parsed_cli_args(
                 extra_cli: ExtraCliCommand::None,
                 save_session: None,
                 tool_replay: None,
+                plugin_init: None,
+                plugin_validate: None,
+                plugin_list: None,
             }
         }
         Some(Commands::Bench(b)) => ParsedCliArgs {
@@ -206,6 +219,9 @@ fn build_parsed_cli_args(
             extra_cli: ExtraCliCommand::None,
             save_session: None,
             tool_replay: None,
+            plugin_init: None,
+            plugin_validate: None,
+            plugin_list: None,
         },
         // `config` 子命令恒走配置检查并退出，与是否写 `--dry-run` 无关（`--dry-run` 保留为显式别名）。
         Some(Commands::Config(_c)) => ParsedCliArgs {
@@ -224,6 +240,9 @@ fn build_parsed_cli_args(
             extra_cli: ExtraCliCommand::None,
             save_session: None,
             tool_replay: None,
+            plugin_init: None,
+            plugin_validate: None,
+            plugin_list: None,
         },
         Some(Commands::Doctor) => ParsedCliArgs {
             config_path: config,
@@ -241,6 +260,9 @@ fn build_parsed_cli_args(
             extra_cli: ExtraCliCommand::Doctor,
             save_session: None,
             tool_replay: None,
+            plugin_init: None,
+            plugin_validate: None,
+            plugin_list: None,
         },
         Some(Commands::Models) => ParsedCliArgs {
             config_path: config,
@@ -258,6 +280,9 @@ fn build_parsed_cli_args(
             extra_cli: ExtraCliCommand::Models,
             save_session: None,
             tool_replay: None,
+            plugin_init: None,
+            plugin_validate: None,
+            plugin_list: None,
         },
         Some(Commands::Probe) => ParsedCliArgs {
             config_path: config,
@@ -275,6 +300,9 @@ fn build_parsed_cli_args(
             extra_cli: ExtraCliCommand::Probe,
             save_session: None,
             tool_replay: None,
+            plugin_init: None,
+            plugin_validate: None,
+            plugin_list: None,
         },
         Some(Commands::SaveSession(e)) => ParsedCliArgs {
             config_path: config,
@@ -295,6 +323,9 @@ fn build_parsed_cli_args(
                 session_file: e.session_file,
             }),
             tool_replay: None,
+            plugin_init: None,
+            plugin_validate: None,
+            plugin_list: None,
         },
         Some(Commands::ToolReplay(tr)) => {
             let tr_cli = match tr.sub {
@@ -324,6 +355,9 @@ fn build_parsed_cli_args(
                 extra_cli: ExtraCliCommand::None,
                 save_session: None,
                 tool_replay: Some(tr_cli),
+                plugin_init: None,
+                plugin_validate: None,
+                plugin_list: None,
             }
         }
         Some(Commands::Mcp(m)) => {
@@ -352,6 +386,63 @@ fn build_parsed_cli_args(
                 extra_cli,
                 save_session: None,
                 tool_replay: None,
+                plugin_init: None,
+                plugin_validate: None,
+                plugin_list: None,
+            }
+        }
+        Some(Commands::Plugin(p)) => {
+            let (plugin_init, plugin_validate, plugin_list) = match p.sub {
+                PluginSubCmd::Init(i) => (
+                    Some(PluginInitCli {
+                        name: i.name,
+                        description: i.description,
+                        command: i.command,
+                        args: i.args,
+                        pass_args_json: i.pass_args_json,
+                        output: i.output,
+                    }),
+                    None,
+                    None,
+                ),
+                PluginSubCmd::List(l) => (
+                    None,
+                    None,
+                    Some(PluginListCli {
+                        file: l.file,
+                        json: l.json,
+                        jsonl: l.jsonl,
+                    }),
+                ),
+                PluginSubCmd::Validate(v) => (
+                    None,
+                    Some(PluginValidateCli {
+                        file: v.file,
+                        json: v.json,
+                        jsonl: v.jsonl,
+                    }),
+                    None,
+                ),
+            };
+            ParsedCliArgs {
+                config_path: config,
+                agent_role_cli: agent_role_cli.clone(),
+                chat_cli: ChatCliArgs::default(),
+                serve_port: None,
+                http_bind_host: http_bind_host(None),
+                workspace_cli: workspace,
+                no_tools,
+                no_web: false,
+                dry_run: false,
+                no_stream: false,
+                log_file: log_path,
+                bench_args: BenchmarkCliArgs::default(),
+                extra_cli: ExtraCliCommand::None,
+                save_session: None,
+                tool_replay: None,
+                plugin_init,
+                plugin_validate,
+                plugin_list,
             }
         }
     })

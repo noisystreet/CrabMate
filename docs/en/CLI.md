@@ -27,11 +27,14 @@ Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as 
 | `save-session` | Export JSON/Markdown from session file to workspace **`.crabmate/exports/`** (same shape as Web; **no** `API_KEY`). `--format json|markdown|both` (default `both`), optional `--session-file`. Alias **`export-session`**. |
 | `tool-replay` | Extract **tool-call timeline** from session JSON as fixture, or **replay tools** from fixture via `run_tool` (**no** LLM; **no** `API_KEY`). See “Tool replay fixture” below. |
 | `mcp list` | Read-only list of in-process MCP stdio sessions matching current `mcp_enabled` + `mcp_command` fingerprint and merged OpenAI tool names (**no** `API_KEY`). If no chat has run yet, **`mcp list --probe`** tries one connection (starts configured MCP child, same as normal chat). |
+| `plugin init` | Generate a dynamic tool template under workspace **`plugins/*.json`** (name must use `dyn__` prefix); default output path is `plugins/<name-without-prefix>.json`. |
+| `plugin list` | List dynamic tool files, tool names, commands, and validation status (OK/FAIL); use `--json` for structured output, or `--jsonl` for line-oriented pipelines. |
+| `plugin validate` | Validate dynamic tool definitions (scan `plugins/*.json` by default, or a single file via `--file`); checks JSON shape and whether `command` is in `allowed_commands`; use `--json` for structured output, or `--jsonl` for line-oriented pipelines. |
 | `mcp serve` | Run an **MCP server** on **stdin/stdout**, exposing CrabMate **built-in** tools (`tools/list` / `tools/call` → **`tools::run_tool`**; **no** `API_KEY`). Working directory follows global **`--workspace`** / config **`run_command_working_dir`**. JSON-RPC uses **stdout**; use **stderr** for human messages. **`--no-tools`**: advertise an empty tool list (unknown names still hit `run_tool` and return “unknown tool”). **No transport auth**: trusted local integration only; same capability surface as `run_command` allowlist, workspace path rules, and optional **`tool_call_explain_enabled`**. |
 
 ## Log levels
 
-Without `RUST_LOG`: `serve` defaults to **info**; `repl` / `chat` / `bench` / `config` / `mcp` / `save-session` (and alias `export-session`) / `tool-replay` default to **warn**. Use `RUST_LOG` or `--log <FILE>`.
+Without `RUST_LOG`: `serve` defaults to **info**; `repl` / `chat` / `bench` / `config` / `mcp` / `save-session` (and alias `export-session`) / `tool-replay` / `plugin` default to **warn**. Use `RUST_LOG` or `--log <FILE>`.
 
 ## Message pipeline debug logs
 
@@ -39,7 +42,7 @@ With `RUST_LOG=crabmate=debug`, each model call prints **`message_pipeline sessi
 
 ## Legacy usage
 
-Without a subcommand, legacy flags `--serve`, `--query`, `--benchmark`, `--dry-run`, etc. still map internally. If argv **anywhere** contains an explicit subcommand name (`serve`, `doctor`, `save-session`, `export-session`, `tool-replay`, …), the default `repl` is **not** inserted (see `tests/fixtures/cli/legacy_normalize.json`).
+Without a subcommand, legacy flags `--serve`, `--query`, `--benchmark`, `--dry-run`, etc. still map internally. If argv **anywhere** contains an explicit subcommand name (`serve`, `doctor`, `save-session`, `export-session`, `tool-replay`, `plugin`, …), the default `repl` is **not** inserted (see `tests/fixtures/cli/legacy_normalize.json`).
 
 ## Common options (compat)
 

@@ -6,8 +6,8 @@ mod legacy_argv;
 pub(crate) mod parse;
 
 pub use definitions::{
-    ChatCliArgs, ExtraCliCommand, ParsedCliArgs, SaveSessionCli, SaveSessionFormat, ToolReplayCli,
-    root_clap_command_for_man_page,
+    ChatCliArgs, ExtraCliCommand, ParsedCliArgs, PluginInitCli, PluginListCli, PluginValidateCli,
+    SaveSessionCli, SaveSessionFormat, ToolReplayCli, root_clap_command_for_man_page,
 };
 pub use legacy_argv::normalize_legacy_argv;
 pub use parse::{parse_args, parse_args_from_argv};

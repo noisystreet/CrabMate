@@ -152,6 +152,46 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
     if !crate::agent_role_turn::tool_allowed_for_turn(name, turn_allow) {
         return (crate::agent_role_turn::turn_tool_denied_message(name), None);
     }
+    if crate::dynamic_tools::is_dynamic_tool_name(name) {
+        if !workspace_is_set {
+            return (
+                web_tool_err_workspace_not_set("执行动态工具").to_string(),
+                None,
+            );
+        }
+        let def = match crate::dynamic_tools::resolve_runtime_def(effective_working_dir, name) {
+            Ok(Some(d)) => d,
+            Ok(None) => return (format!("未知工具：{}", name), None),
+            Err(e) => return (format!("错误：动态工具加载失败：{}", e), None),
+        };
+        let args_owned = args.to_string();
+        let wd = effective_working_dir.to_path_buf();
+        let cfg2 = Arc::clone(cfg);
+        let wall_secs = cfg.command_timeout_secs.max(1);
+        let handle = tokio::task::spawn_blocking(move || {
+            crate::dynamic_tools::run_dynamic_tool(
+                &def,
+                &args_owned,
+                wd.as_path(),
+                cfg2.command_max_output_len,
+                cfg2.allowed_commands.as_ref(),
+            )
+        });
+        let out = match tokio::time::timeout(Duration::from_secs(wall_secs), handle).await {
+            Ok(Ok(s)) => s,
+            Ok(Err(e)) => {
+                error!(
+                    target: "crabmate",
+                    "动态工具执行异常 tool={} error={:?}",
+                    name,
+                    e
+                );
+                format!("动态工具执行异常：{:?}", e)
+            }
+            Err(_) => format!("动态工具执行超时（{} 秒）", wall_secs),
+        };
+        return (out, None);
+    }
     if crate::mcp::is_mcp_proxy_tool(name) {
         let Some(remote) = crate::mcp::try_mcp_tool_name(cfg.as_ref(), name) else {
             return (

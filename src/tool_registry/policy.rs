@@ -121,6 +121,10 @@ pub fn is_readonly_tool(cfg: &AgentConfig, name: &str) -> bool {
         // 外部 MCP 工具语义未知，禁止与内建只读工具并行同批执行。
         return false;
     }
+    if crate::dynamic_tools::is_dynamic_tool_name(name) {
+        // 动态工具语义不可静态证明，默认按写副作用处理。
+        return false;
+    }
     let writes = match &cfg.tool_registry_write_effect_tools {
         None => builtin_write_effect_tools(),
         Some(arc) => arc.as_ref(),
