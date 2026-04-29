@@ -42,6 +42,9 @@ pub(super) fn classify_run_command_failure_family_from_result(
     if result.contains("当前目录缺少 Cargo.toml") {
         return Some("cargo_manifest_missing");
     }
+    if result.contains("No tests were found") {
+        return Some("ctest_no_tests_found");
+    }
     None
 }
 
@@ -125,6 +128,34 @@ pub(super) fn run_command_cargo_workdir_preflight_error(
     )
 }
 
+pub(super) fn run_command_ctest_preflight_error(
+    tool_name: &str,
+    tool_args_json: &str,
+) -> Option<String> {
+    if tool_name != "run_command" {
+        return None;
+    }
+    let (command, args) = parse_run_command_payload(tool_args_json)?;
+    if command != "ctest" {
+        return None;
+    }
+    if args.iter().any(|a| a == "--test-dir") {
+        return None;
+    }
+    let mut iter = args.iter().peekable();
+    while let Some(arg) = iter.next() {
+        if arg == "-C"
+            && let Some(cfg) = iter.peek()
+            && (cfg.as_str() == "build" || cfg.contains('/'))
+        {
+            return Some(
+                "错误：检测到 `ctest -C build` 用法疑似错误；`-C` 是配置名（如 Debug/Release），不是构建目录。请改为 `ctest --test-dir build --output-on-failure`（或先 `cd build` 再运行 `ctest --output-on-failure`）。".to_string(),
+            );
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -170,5 +201,16 @@ mod tests {
             ),
             Some("cargo_manifest_missing")
         );
+        assert_eq!(
+            classify_run_command_failure_family_from_result("No tests were found!!!"),
+            Some("ctest_no_tests_found")
+        );
+    }
+
+    #[test]
+    fn ctest_preflight_rejects_dash_c_build_misuse() {
+        let args_json = r#"{"command":"ctest","args":["-C","build","-N"]}"#;
+        let got = super::run_command_ctest_preflight_error("run_command", args_json);
+        assert!(got.is_some());
     }
 }

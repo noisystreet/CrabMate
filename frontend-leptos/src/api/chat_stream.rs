@@ -267,6 +267,12 @@ pub async fn send_chat_stream(
                 &cbs,
                 loc,
             )?;
+            if saw_stream_ended {
+                // 控制面已给出终止帧时，不再依赖底层连接何时 close；
+                // 这样可避免个别网关/代理尾部挂起导致前端一直显示“模型生成中”。
+                stream_finished_normally = true;
+                break;
+            }
         }
         if !raw.is_empty() {
             buffer.push_str(&String::from_utf8_lossy(&raw));
@@ -279,6 +285,9 @@ pub async fn send_chat_stream(
             &cbs,
             loc,
         )?;
+        if saw_stream_ended {
+            stream_finished_normally = true;
+        }
         if stream_finished_normally {
             if !saw_stream_ended {
                 // 某些后端/网络尾部场景可能未显式下发 `stream_ended`，前端按正常完结补齐。

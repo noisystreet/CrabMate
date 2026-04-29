@@ -747,8 +747,14 @@ async fn stream_job_has_final_response_timeline_eventually(
 }
 
 fn last_assistant_text_for_fallback(messages: &[Message]) -> Option<String> {
+    let range_start = messages
+        .iter()
+        .rposition(|m| m.role == "user")
+        .map(|idx| idx.saturating_add(1))
+        .unwrap_or(0);
     messages
         .iter()
+        .skip(range_start)
         .rev()
         .find(|m| m.role == "assistant")
         .and_then(|m| message_content_as_str(&m.content))
@@ -769,9 +775,9 @@ async fn emit_missing_final_response_fallback_if_needed(
     let Some(final_text) = last_assistant_text_for_fallback(messages) else {
         return;
     };
-    warn!(
+    debug!(
         target: "crabmate",
-        "stream fallback: missing final_response timeline, emit synthesized terminal frame job_id={}",
+        "stream compatibility fallback: missing final_response timeline, emit synthesized terminal frame job_id={}",
         job_id
     );
     let timeline = crate::sse::encode_message(crate::sse::SsePayload::TimelineLog {
@@ -1354,5 +1360,27 @@ mod tests {
         emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages).await;
         let no_more = timeout(Duration::from_millis(120), rx.recv()).await;
         assert!(no_more.is_err(), "同一 job 的 fallback 不应重复发");
+    }
+
+    #[tokio::test]
+    async fn fallback_skips_when_turn_has_no_new_assistant() {
+        let hub = SseStreamHub::new();
+        let job_id = 45_u64;
+        hub.register_job(job_id);
+        let (tx, mut rx) = mpsc::channel::<String>(8);
+        let messages = vec![
+            Message::system_only("sys"),
+            Message::user_only("上一轮提问"),
+            Message::assistant_only("上一轮回答"),
+            Message::user_only("本轮提问"),
+        ];
+
+        emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages).await;
+
+        let no_frame = timeout(Duration::from_millis(120), rx.recv()).await;
+        assert!(
+            no_frame.is_err(),
+            "本轮无 assistant 输出时不应复用上一轮回答做 fallback"
+        );
     }
 }

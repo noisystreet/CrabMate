@@ -13,7 +13,7 @@ use crate::tool_result::{ToolEnvelopeContext, parse_legacy_output};
 use super::run_command_guard::{
     classify_run_command_failure_family_from_invocation,
     classify_run_command_failure_family_from_result, parse_run_command_payload,
-    run_command_cargo_workdir_preflight_error,
+    run_command_cargo_workdir_preflight_error, run_command_ctest_preflight_error,
 };
 use super::{
     ExecuteToolsBatchOutcome, ExecuteToolsCommonCtx, abort_tool_batch_if_sse_closed,
@@ -95,6 +95,44 @@ pub(super) async fn execute_tools_serial(
                 name.as_str(),
                 args.as_str(),
                 "cargo_manifest_missing".to_string(),
+            );
+            let env = ToolEnvelopeContext {
+                tool_call_id: id.as_str(),
+                execution_mode: "serial",
+                parallel_batch_id: None,
+            };
+            emit_tool_result_sse_and_append(
+                messages,
+                per_coord,
+                super::EmitToolResultParams {
+                    cfg,
+                    out,
+                    echo_terminal_transcript,
+                    terminal_tool_display_max_chars,
+                    tool_result_envelope_v1,
+                    name: name.as_str(),
+                    args: args.as_str(),
+                    id: id.as_str(),
+                    result: preflight_error,
+                    reflection_inject: None,
+                    envelope_ctx: Some(env),
+                },
+            )
+            .await;
+            continue;
+        }
+        if let Some(preflight_error) =
+            run_command_ctest_preflight_error(name.as_str(), args.as_str())
+        {
+            per_coord.mark_tool_failure_signature(
+                name.as_str(),
+                args.as_str(),
+                "ctest_dash_c_build_misuse".to_string(),
+            );
+            per_coord.mark_tool_failure_family(
+                name.as_str(),
+                "ctest_dash_c_build_misuse",
+                "ctest_dash_c_build_misuse".to_string(),
             );
             let env = ToolEnvelopeContext {
                 tool_call_id: id.as_str(),

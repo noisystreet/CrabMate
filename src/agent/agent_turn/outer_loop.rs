@@ -20,13 +20,26 @@ use super::plan_call::{PerPlanCallModelParams, per_plan_call_model_retrying};
 use super::reflect::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
 use super::sub_agent_policy::filter_tool_defs_for_executor_kind;
 
+const MAX_OUTER_LOOP_ITERATIONS_SAFETY: u32 = 40;
+
 pub(crate) async fn run_agent_outer_loop(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
 ) -> Result<(), RunAgentTurnError> {
     let start_time = std::time::Instant::now();
     let mut is_first_iteration = true;
+    let mut iteration_count: u32 = 0;
     'outer: loop {
+        iteration_count = iteration_count.saturating_add(1);
+        if iteration_count > MAX_OUTER_LOOP_ITERATIONS_SAFETY {
+            return Err(RunAgentTurnError::Other {
+                phase: AgentTurnSubPhase::Planner,
+                message: format!(
+                    "达到外层循环安全上限（{} 轮），已中止以避免重复工具调用死循环",
+                    MAX_OUTER_LOOP_ITERATIONS_SAFETY
+                ),
+            });
+        }
         if p.cfg.max_turn_duration_seconds > 0
             && start_time.elapsed().as_secs() > p.cfg.max_turn_duration_seconds
         {

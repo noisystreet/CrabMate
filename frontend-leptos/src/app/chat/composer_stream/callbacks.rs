@@ -943,6 +943,10 @@ pub(super) fn build_chat_stream_callbacks(
             if reason == "completed" || reason == "cancelled" {
                 stream_ctx.chat.stream_job_id.set(None);
                 stream_ctx.chat.stream_last_event_seq.set(0);
+                // 保险收尾：某些连接尾部场景可能导致 `on_done` 延后或缺失，
+                // 看到明确终止帧时先回落 busy，避免状态栏长期停在“模型生成中”。
+                stream_ctx.shell.status_busy.set(false);
+                *stream_ctx.shell.abort_cell.lock().unwrap() = None;
             }
         })
     };
@@ -1030,6 +1034,9 @@ pub(super) fn build_chat_stream_callbacks(
             );
             if info.kind == "final_response" {
                 saw_final_response_timeline.set(true);
+                // 兜底收尾：若连接尾部异常导致 `stream_ended`/`on_done` 延后，
+                // 收到终答时间线即可先解除“模型生成中”状态。
+                stream_ctx.shell.status_busy.set(false);
                 let final_text = build_final_response_text(&info.title, info.detail.as_deref());
                 if !final_text.is_empty() {
                     remove_loading_assistant_placeholder(&stream_ctx);
