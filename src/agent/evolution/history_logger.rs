@@ -72,9 +72,21 @@ impl DecisionHistoryLogger {
         }
     }
 
+    fn lock_records(&self) -> std::sync::MutexGuard<'_, Vec<DecisionRecord>> {
+        self.records
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn lock_rewrite_count(&self) -> std::sync::MutexGuard<'_, usize> {
+        self.rewrite_count
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     /// 记录一次工具执行
     pub fn log_tool_call(&self, tool_name: &str, tool_args: &str, success: bool, duration_ms: u64) {
-        let rewrite_count = *self.rewrite_count.lock().unwrap();
+        let rewrite_count = *self.lock_rewrite_count();
         let record = DecisionRecord::from_tool_result(
             tool_name,
             tool_args,
@@ -82,30 +94,28 @@ impl DecisionHistoryLogger {
             duration_ms,
             rewrite_count,
         );
-        self.records.lock().unwrap().push(record);
+        self.lock_records().push(record);
     }
 
     /// 反思重写后调用此方法增加计数
     pub fn increment_rewrite_count(&self) {
-        let mut count = self.rewrite_count.lock().unwrap();
+        let mut count = self.lock_rewrite_count();
         *count += 1;
     }
 
     /// 获取当前会话的所有记录
     pub fn get_records(&self) -> Vec<DecisionRecord> {
-        self.records.lock().unwrap().clone()
+        self.lock_records().clone()
     }
 
     /// 获取当前重写次数
     pub fn get_rewrite_count(&self) -> usize {
-        *self.rewrite_count.lock().unwrap()
+        *self.lock_rewrite_count()
     }
 
     /// 导出所有记录为嵌入文本（供长期记忆索引）
     pub fn export_for_embedding(&self) -> Vec<String> {
-        self.records
-            .lock()
-            .unwrap()
+        self.lock_records()
             .iter()
             .map(DecisionRecord::to_embedding_text)
             .collect()
@@ -113,8 +123,8 @@ impl DecisionHistoryLogger {
 
     /// 重置会话记录
     pub fn reset(&self) {
-        self.records.lock().unwrap().clear();
-        *self.rewrite_count.lock().unwrap() = 0;
+        self.lock_records().clear();
+        *self.lock_rewrite_count() = 0;
     }
 }
 
