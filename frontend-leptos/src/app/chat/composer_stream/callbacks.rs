@@ -4,6 +4,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::rc::Rc;
 
+use crabmate_sse_protocol::StreamEndReason;
 use leptos::prelude::*;
 
 use crate::api::{ChatStreamCallbacks, OnToolCallFn};
@@ -558,7 +559,9 @@ fn should_show_missing_final_summary_hint(
     has_hierarchical_or_tool: bool,
     saw_final_response_timeline: bool,
 ) -> bool {
-    end_reason.is_some_and(|r| r.eq_ignore_ascii_case("completed"))
+    end_reason
+        .and_then(|s| s.parse::<StreamEndReason>().ok())
+        .is_some_and(|r| r == StreamEndReason::Completed)
         && (in_answer_phase || diag_chars > 0)
         && has_hierarchical_or_tool
         && !saw_final_response_timeline
@@ -637,7 +640,8 @@ pub(super) fn build_chat_stream_callbacks(
                             let end_reason = stream_end_reason.borrow();
                             let completed_with_visible_delta = end_reason
                                 .as_deref()
-                                .is_some_and(|r| r.eq_ignore_ascii_case("completed"))
+                                .and_then(|s| s.parse::<StreamEndReason>().ok())
+                                .is_some_and(|r| r == StreamEndReason::Completed)
                                 && in_answer_phase.get()
                                 && diag_chars > 0;
                             if completed_with_visible_delta {
@@ -940,7 +944,17 @@ pub(super) fn build_chat_stream_callbacks(
         let stream_end_reason = Rc::clone(&stream_end_reason);
         Rc::new(move |reason: String| {
             *stream_end_reason.borrow_mut() = Some(reason.clone());
-            if reason == "completed" || reason == "cancelled" {
+            if matches!(
+                reason.parse::<StreamEndReason>().ok(),
+                Some(
+                    StreamEndReason::Completed
+                        | StreamEndReason::Cancelled
+                        | StreamEndReason::Conflict
+                        | StreamEndReason::Fallback
+                        | StreamEndReason::NoOutput
+                        | StreamEndReason::Gone
+                )
+            ) {
                 stream_ctx.chat.stream_job_id.set(None);
                 stream_ctx.chat.stream_last_event_seq.set(0);
                 // 保险收尾：某些连接尾部场景可能导致 `on_done` 延后或缺失，

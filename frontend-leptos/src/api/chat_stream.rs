@@ -6,7 +6,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response};
 
-use crabmate_sse_protocol::SSE_PROTOCOL_VERSION;
+use crabmate_sse_protocol::{SSE_PROTOCOL_VERSION, StreamEndReason};
 
 use crate::i18n::Locale;
 use crate::sse_dispatch::{
@@ -35,7 +35,7 @@ pub struct ChatStreamCallbacks {
     pub on_conversation_id: std::rc::Rc<dyn Fn(String)>,
     /// SSE `conversation_saved.revision`，供 `POST /chat/branch`。
     pub on_conversation_revision: std::rc::Rc<dyn Fn(u64)>,
-    /// 收到 `stream_ended` 控制面时调用（`reason` 如 `completed` / `cancelled`）。
+    /// 收到 `stream_ended` 控制面时调用（如 `completed` / `cancelled` / `conflict` 等）。
     pub on_stream_ended: std::rc::Rc<dyn Fn(String)>,
     /// 响应头 **`x-stream-job-id`**（新流首包；用于断线重连）。
     pub on_stream_job_id: std::rc::Rc<dyn Fn(u64)>,
@@ -291,7 +291,7 @@ pub async fn send_chat_stream(
         if stream_finished_normally {
             if !saw_stream_ended {
                 // 某些后端/网络尾部场景可能未显式下发 `stream_ended`，前端按正常完结补齐。
-                (cbs.on_stream_ended)("completed".to_string());
+                (cbs.on_stream_ended)(StreamEndReason::Completed.to_string());
             }
             (cbs.on_done)();
             return Ok(());

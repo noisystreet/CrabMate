@@ -61,7 +61,7 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `chat_ui_separator` | UI separator; `true` short, `false` long | `onChatUiSeparator` |
 | `conversation_saved` | Session persisted; `revision` for branching/conflict | `onConversationSaved` |
 | `sse_capabilities` | First frame: `supported_sse_v`, `resume_ring_cap`, `job_id` (matches `x-stream-job-id`) | Official Web: compare to local **`SSE_PROTOCOL_VERSION`**; if match, **swallow**; else **`onError`** and stop. Integrations can persist `job_id` for resume |
-| `stream_ended` | End of stream; `job_id`, `reason` (`completed` / `cancelled`) | Web: **swallow**; clients may stop auto-reconnect |
+| `stream_ended` | End of stream; `job_id`, `reason` (`completed` / `cancelled` / `conflict` / `fallback` / `no_output` / `gone`) | Web: **swallow**; clients may stop auto-reconnect |
 | `timeline_log` | Timeline annotation; **not** in model context | `onTimelineLog` |
 
 ### `tool_result` common fields

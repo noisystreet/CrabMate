@@ -3,6 +3,8 @@
 //! Web 前端在 `frontend-leptos/src/api.rs` 的 `sendChatStream` 中做等价解析；此处为 **Rust 侧** 单一实现，供后续终端 UI 等与 Web 语义对齐复用。
 #![allow(dead_code)]
 
+use crabmate_sse_protocol::StreamEndReason;
+
 /// 与 `protocol` 模块对齐的 SSE 控制行；无法识别则视为模型流式正文。
 #[derive(Debug)]
 pub enum AgentLineKind {
@@ -38,6 +40,9 @@ pub enum AgentLineKind {
         text: String,
         clear_before: bool,
     },
+    StreamEnded {
+        reason: StreamEndReason,
+    },
     /// 已识别为协议行但无需刷新 UI（如 workspace_changed:false）
     Ignore,
     Plain,
@@ -57,6 +62,7 @@ impl AgentLineKind {
             AgentLineKind::ToolResult { .. } => "tool_result",
             AgentLineKind::StreamError { .. } => "stream_error",
             AgentLineKind::StagedPlanNotice { .. } => "staged_plan_notice",
+            AgentLineKind::StreamEnded { .. } => "stream_ended",
             AgentLineKind::Ignore => "ignore",
             AgentLineKind::Plain => "plain",
         }
@@ -145,9 +151,16 @@ pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
             | super::protocol::SsePayload::TimelineLog { .. }
             | super::protocol::SsePayload::ThinkingTrace { .. }
             | super::protocol::SsePayload::SseCapabilities { .. }
-            | super::protocol::SsePayload::StreamEnded { .. }
             | super::protocol::SsePayload::ClarificationQuestionnaire { .. } => {
                 return AgentLineKind::Ignore;
+            }
+            super::protocol::SsePayload::StreamEnded { ended } => {
+                let reason = ended
+                    .reason
+                    .parse::<StreamEndReason>()
+                    .ok()
+                    .unwrap_or(StreamEndReason::Gone);
+                return AgentLineKind::StreamEnded { reason };
             }
         }
     }
@@ -338,5 +351,16 @@ mod tests {
             classify_agent_sse_line(line),
             AgentLineKind::Ignore
         ));
+    }
+
+    #[test]
+    fn parse_stream_ended_reason() {
+        let line = r#"{"v":1,"stream_ended":{"job_id":1,"reason":"fallback"}}"#;
+        match classify_agent_sse_line(line) {
+            AgentLineKind::StreamEnded { reason } => {
+                assert_eq!(reason, StreamEndReason::Fallback);
+            }
+            other => panic!("unexpected kind: {:?}", other),
+        }
     }
 }

@@ -13,6 +13,8 @@ use log::{debug, error, info, warn};
 use tokio::sync::{Semaphore, mpsc, oneshot};
 use tokio::time::{Duration, sleep};
 
+use crabmate_sse_protocol::StreamEndReason;
+
 use crate::AppState;
 use crate::agent_errors::is_user_cancelled_run_agent_error;
 use crate::agent_role_turn::{
@@ -711,6 +713,26 @@ async fn emit_stream_cancelled_terminal(sse_tx: &mpsc::Sender<String>, job_id: u
     }
 }
 
+async fn emit_stream_ended_once(
+    sse_tx: &mpsc::Sender<String>,
+    job_id: u64,
+    reason: StreamEndReason,
+    stream_ended_sent: &mut bool,
+    log_context: &'static str,
+) {
+    if *stream_ended_sent {
+        return;
+    }
+    let end_line = crate::sse::encode_message(crate::sse::SsePayload::StreamEnded {
+        ended: crate::sse::StreamEndedBody {
+            job_id,
+            reason: reason.to_string(),
+        },
+    });
+    let _ = crate::sse::send_string_logged(sse_tx, end_line, log_context).await;
+    *stream_ended_sent = true;
+}
+
 fn sse_payload_has_final_response_timeline(payload: &str) -> bool {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(payload) else {
         return false;
@@ -763,17 +785,39 @@ fn last_assistant_text_for_fallback(messages: &[Message]) -> Option<String> {
         .map(String::from)
 }
 
+fn current_turn_has_visible_assistant_output(messages: &[Message]) -> bool {
+    let range_start = messages
+        .iter()
+        .rposition(|m| m.role == "user")
+        .map(|idx| idx.saturating_add(1))
+        .unwrap_or(0);
+    messages.iter().skip(range_start).any(|m| {
+        if m.role != "assistant" {
+            return false;
+        }
+        let text_visible = message_content_as_str(&m.content)
+            .map(str::trim)
+            .is_some_and(|s| !s.is_empty());
+        let reasoning_visible = m
+            .reasoning_content
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|s| !s.is_empty());
+        text_visible || reasoning_visible
+    })
+}
+
 async fn emit_missing_final_response_fallback_if_needed(
     hub: &SseStreamHub,
     sse_tx: &mpsc::Sender<String>,
     job_id: u64,
     messages: &[Message],
-) {
+) -> bool {
     if stream_job_has_final_response_timeline_eventually(hub, job_id).await {
-        return;
+        return false;
     }
     let Some(final_text) = last_assistant_text_for_fallback(messages) else {
-        return;
+        return false;
     };
     debug!(
         target: "crabmate",
@@ -802,6 +846,7 @@ async fn emit_missing_final_response_fallback_if_needed(
         "chat_job_queue::stream answer_phase_fallback",
     )
     .await;
+    true
 }
 
 async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
@@ -967,19 +1012,21 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 app.approval_sessions.write().await.remove(session_id);
             }
             let cancelled_by_signal = cancel.load(Ordering::SeqCst);
-            let (ok, cancelled, err) = match r {
+            let mut stream_ended_sent = false;
+            let (ok, cancelled, err, stream_end_reason) = match r {
                 Ok(()) if cancelled_by_signal => {
                     info!(target: "crabmate", "chat stream 任务已取消 job_id={}", job_id);
-                    (false, true, None)
+                    (false, true, None, StreamEndReason::Cancelled)
                 }
                 Ok(()) => {
-                    emit_missing_final_response_fallback_if_needed(
+                    let fallback_emitted = emit_missing_final_response_fallback_if_needed(
                         queue_deps.sse_stream_hub.as_ref(),
                         &sse_tx,
                         job_id,
                         &messages,
                     )
                     .await;
+                    let has_visible_output = current_turn_has_visible_assistant_output(&messages);
                     match post_turn_web_prepare_and_save(
                         app.as_ref(),
                         &cfg_snap,
@@ -992,6 +1039,13 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     .await
                     {
                         crate::SaveConversationOutcome::Saved => {
+                            let end_reason = if fallback_emitted {
+                                StreamEndReason::Fallback
+                            } else if has_visible_output {
+                                StreamEndReason::Completed
+                            } else {
+                                StreamEndReason::NoOutput
+                            };
                             if let Some(new_rev) = app
                                 .load_conversation_seed(&conversation_id)
                                 .await
@@ -1011,7 +1065,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                                 )
                                 .await;
                             }
-                            (true, false, None)
+                            (true, false, None, end_reason)
                         }
                         crate::SaveConversationOutcome::Conflict => {
                             let err_line = crate::conversation_conflict_sse_line();
@@ -1021,7 +1075,12 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                                 "chat_job_queue::stream conversation_conflict",
                             )
                             .await;
-                            (false, false, Some("conversation_conflict".to_string()))
+                            (
+                                false,
+                                false,
+                                Some("conversation_conflict".to_string()),
+                                StreamEndReason::Conflict,
+                            )
                         }
                     }
                 }
@@ -1034,7 +1093,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                             job_id,
                             e_text
                         );
-                        (false, true, None)
+                        (false, true, None, StreamEndReason::Cancelled)
                     } else if crate::agent::plan_artifact::is_staged_plan_invalid_run_agent_turn_error(
                         &e_text,
                     ) {
@@ -1044,7 +1103,12 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                             job_id,
                             e_text
                         );
-                        (false, false, Some("staged_plan_invalid".to_string()))
+                        (
+                            false,
+                            false,
+                            Some("staged_plan_invalid".to_string()),
+                            StreamEndReason::Fallback,
+                        )
                     } else {
                         error!(
                             target: "crabmate",
@@ -1062,26 +1126,28 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                             "chat_job_queue::stream agent_turn_error",
                         )
                         .await;
-                        (false, false, e.short_detail_for_job_log())
+                        (
+                            false,
+                            false,
+                            e.short_detail_for_job_log(),
+                            StreamEndReason::NoOutput,
+                        )
                     }
                 }
             };
             if cancelled {
                 emit_stream_cancelled_terminal(&sse_tx, job_id).await;
             }
-            let end_reason = if cancelled { "cancelled" } else { "completed" };
-            let end_line = crate::sse::encode_message(crate::sse::SsePayload::StreamEnded {
-                ended: crate::sse::StreamEndedBody {
+            if !stream_ended_sent {
+                emit_stream_ended_once(
+                    &sse_tx,
                     job_id,
-                    reason: end_reason.to_string(),
-                },
-            });
-            let _ = crate::sse::send_string_logged(
-                &sse_tx,
-                end_line,
-                "chat_job_queue::stream stream_ended",
-            )
-            .await;
+                    stream_end_reason,
+                    &mut stream_ended_sent,
+                    "chat_job_queue::stream stream_ended",
+                )
+                .await;
+            }
             drop(sse_tx);
             queue_deps.sse_stream_hub.remove_job(job_id);
             JobOutcome::Stream { ok, cancelled, err }
@@ -1382,5 +1448,40 @@ mod tests {
             no_frame.is_err(),
             "本轮无 assistant 输出时不应复用上一轮回答做 fallback"
         );
+    }
+
+    #[tokio::test]
+    async fn stream_ended_emits_before_followup_saved_event() {
+        let (tx, mut rx) = mpsc::channel::<String>(8);
+        let mut sent = false;
+        emit_stream_ended_once(
+            &tx,
+            99,
+            StreamEndReason::Completed,
+            &mut sent,
+            "chat_job_queue::tests stream_ended_first",
+        )
+        .await;
+        let saved = crate::sse::encode_message(crate::sse::SsePayload::ConversationSaved {
+            saved: crate::sse::ConversationSavedBody { revision: 7 },
+        });
+        let _ = crate::sse::send_string_logged(
+            &tx,
+            saved,
+            "chat_job_queue::tests conversation_saved_after_end",
+        )
+        .await;
+
+        let first = timeout(Duration::from_millis(200), rx.recv())
+            .await
+            .expect("recv first")
+            .expect("first payload");
+        let second = timeout(Duration::from_millis(200), rx.recv())
+            .await
+            .expect("recv second")
+            .expect("second payload");
+
+        assert!(first.contains("\"stream_ended\""));
+        assert!(second.contains("\"conversation_saved\""));
     }
 }

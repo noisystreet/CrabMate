@@ -291,7 +291,7 @@ pub struct SseCapabilitiesBody {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StreamEndedBody {
     pub job_id: u64,
-    /// `completed` | `cancelled` | `gone`（任务已从内存 hub 移除）
+    /// `completed` | `cancelled` | `conflict` | `fallback` | `no_output` | `gone`
     pub reason: String,
 }
 

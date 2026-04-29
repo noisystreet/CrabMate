@@ -1,4 +1,5 @@
 use super::Locale;
+use crabmate_sse_protocol::StreamEndReason;
 
 // --- 流式 / 停止 ---
 
@@ -29,7 +30,14 @@ pub fn stream_empty_reply_diag_line(
     answer_phase: bool,
     delta_chars: usize,
 ) -> String {
-    let reason = stream_end_reason.unwrap_or("unknown");
+    let reason = stream_end_reason
+        .and_then(|s| s.parse::<StreamEndReason>().ok())
+        .map(|r| stream_end_reason_label(l, r))
+        .unwrap_or_else(|| {
+            stream_end_reason
+                .map(str::to_string)
+                .unwrap_or_else(|| "unknown".to_string())
+        });
     match l {
         Locale::ZhHans => format!(
             "诊断：stream_ended={reason}, answer_phase={answer_phase}, delta_chars={delta_chars}"
@@ -37,6 +45,13 @@ pub fn stream_empty_reply_diag_line(
         Locale::En => format!(
             "Diagnostic: stream_ended={reason}, answer_phase={answer_phase}, delta_chars={delta_chars}"
         ),
+    }
+}
+
+pub fn stream_end_reason_label(l: Locale, reason: StreamEndReason) -> String {
+    match l {
+        Locale::ZhHans => reason.label_zh_hans().to_string(),
+        Locale::En => reason.label_en().to_string(),
     }
 }
 
