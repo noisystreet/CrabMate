@@ -17,6 +17,8 @@ pub mod message_pipeline;
 pub mod per_coord;
 mod per_plan_semantic_check;
 pub mod plan_artifact;
+#[cfg(test)]
+mod plan_artifact_golden;
 mod plan_ensemble;
 mod plan_optimizer;
 /// 终答后规划重写控制器（从 `per_coord` 迁出）：策略模式、语义校验开关、重写次数管理。
@@ -26,6 +28,8 @@ pub mod reflection;
 pub mod step_verifier;
 pub mod workflow;
 pub mod workflow_reflection_controller;
+#[cfg(test)]
+mod workflow_reflection_golden;
 /// `workflow_execute` 与 PER 协调的接合点（从 `tool_registry` 拆出以降低 `tool_registry → agent` 耦合）。
 pub mod workflow_tool_dispatch;
 pub mod workspace_snapshot;
