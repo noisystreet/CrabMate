@@ -16,7 +16,7 @@ This document describes **control-plane JSON** sent by the CrabMate server on SS
 
 - **Route**: **`POST /chat/stream`**; response **`text/event-stream`**. (Ops **`POST /config/reload`** is JSON, not SSE—see **CONFIGURATION.md** § hot reload.)
 - **Event `id:`**: Each logical block has monotonic **`id:`** (`u64`, in-process hub). Reconnect with header **`Last-Event-ID`** and JSON **`stream_resume`**: `{ "job_id": <u64>, "after_seq": <u64> }` (omit `after_seq` → 0). Server uses **`max(Last-Event-ID, after_seq)`**, replays from the ring buffer, then subscribes to live broadcast. **In-process only**: after the job ends or the process restarts, reconnect returns **HTTP 410** with **`STREAM_JOB_GONE`**. New streams also expose **`x-stream-job-id`** (same as first-frame `sse_capabilities.caps.job_id`).
-- **Event blocks**: Separated by **blank line `\n\n`**; each block may contain multiple **`data: `** lines. The frontend **joins** same-block `data:` lines with `\n`, then `trim()`, before parsing (see `sendChatStream`).
+- **Event blocks**: Separated by **blank line `\n\n`**; each block may contain multiple **`data: `** lines. The frontend **joins** same-block `data:` lines with `\n` and preserves leading spaces/newlines for dispatch (only `[DONE]` sentinel checks use `trim`), so whitespace-only deltas are not dropped (see `sendChatStream` and `join_sse_data_lines`).
 - **Text delta**: If the joined string is **not** valid control JSON, or parses as **`plain`**, it is treated as assistant content for `onDelta`.
 - **Stream end**: Literal **`[DONE]`** may appear (OpenAI-style); frontend ignores it as content. See also **`stream_ended`**.
 
@@ -61,7 +61,7 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `chat_ui_separator` | UI separator; `true` short, `false` long | `onChatUiSeparator` |
 | `conversation_saved` | Session persisted; `revision` for branching/conflict | `onConversationSaved` |
 | `sse_capabilities` | First frame: `supported_sse_v`, `resume_ring_cap`, `job_id` (matches `x-stream-job-id`) | Official Web: compare to local **`SSE_PROTOCOL_VERSION`**; if match, **swallow**; else **`onError`** and stop. Integrations can persist `job_id` for resume |
-| `stream_ended` | End of stream; `job_id`, `reason` (`completed` / `cancelled` / `conflict` / `fallback` / `no_output` / `gone`) | Web: **swallow**; clients may stop auto-reconnect |
+| `stream_ended` | End of stream; `job_id`, `reason` (`completed` / `cancelled` / `conflict` / `fallback` / `no_output` / `gone`) | Web: **extract and swallow independently first** (not gated by other control branches); clients may stop auto-reconnect |
 | `timeline_log` | Timeline annotation; **not** in model context | `onTimelineLog` |
 
 ### `tool_result` common fields
@@ -195,9 +195,10 @@ Queue full, auth failures, etc. return **HTTP 4xx/5xx + JSON** (e.g. `code: "QUE
 When changing any of:
 
 1. **`crates/crabmate-sse-protocol`**: **`SSE_PROTOCOL_VERSION`**; `src/sse/protocol.rs`: `SsePayload`, `SseErrorBody`, `ToolResultBody` (version from the crate, re-exported in `protocol`)
-2. `frontend-leptos/src/sse_dispatch.rs` and `frontend-leptos/src/api.rs`: classification order and **`client_sse_protocol`** in the request body
-3. `src/sse/line.rs`: `classify_agent_sse_line`
-4. New `encode_message(SsePayload::…)` call sites
+2. **`crates/crabmate-sse-protocol`**: `sse_frame.rs` (`parse_sse_event_id` / `join_sse_data_lines` / `is_sse_done_sentinel` / `extract_stream_ended_reason`) and `control_extract.rs` (`extract_*`) whenever frontend consumption semantics change
+3. `frontend-leptos/src/sse_dispatch.rs` and `frontend-leptos/src/api.rs`: classification order and **`client_sse_protocol`** in the request body
+4. `src/sse/line.rs`: `classify_agent_sse_line`
+5. New `encode_message(SsePayload::…)` call sites
 
 …keep Rust, Leptos, and this doc aligned.
 

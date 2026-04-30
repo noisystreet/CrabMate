@@ -16,7 +16,7 @@
 
 - 路由：**`POST /chat/stream`**；响应为 **`text/event-stream`**。（运维向 **`POST /config/reload`** 为 JSON、非 SSE，见 **`docs/CONFIGURATION.md`**「配置热重载」。）
 - **事件序号 `id:`**：服务端为每个逻辑事件块设置 **`id:`**（单调递增 `u64`，与进程内 `SseStreamHub` 一致）。断线重连时客户端可带请求头 **`Last-Event-ID`**，并在 JSON 体使用 **`stream_resume`**：`{ "job_id": <u64>, "after_seq": <u64> }`（省略 `after_seq` 视为 0）；服务端取 **`max(Last-Event-ID, after_seq)`** 后从环形缓冲重放，再订阅实时广播。**仅单进程内存**：任务结束或进程重启后重连返回 **HTTP 410**，`code` **`STREAM_JOB_GONE`**。新流响应头另含 **`x-stream-job-id`**（与首帧 `sse_capabilities.caps.job_id` 一致）。
-- 事件块：以 **空行 `\n\n`** 分隔；块内可有若干 **`data: `** 行。前端将同一块内多行 `data:` **去掉前缀后按 `\n` 拼接**，再 `trim()` 得到一条待解析字符串（见 `sendChatStream`）。
+- 事件块：以 **空行 `\n\n`** 分隔；块内可有若干 **`data: `** 行。前端将同一块内多行 `data:` **去掉前缀后按 `\n` 拼接**，并**保留前导空格/换行**后直接进入分发（仅在判断 `[DONE]` 哨兵时做 `trim`），避免把“仅空格增量”吞掉导致单词粘连（见 `sendChatStream` 与 `join_sse_data_lines`）。
 - **正文 delta**：拼接后的字符串若 **不是** 控制面 JSON（解析失败），或解析后判定为 **`plain`**，则作为助手正文片段交给 `onDelta`。
 - **流结束**：可能收到字面量 **`[DONE]`**（与 OpenAI 兼容习惯一致），前端忽略，不当作正文。另见控制面 **`stream_ended`**。
 
@@ -61,7 +61,7 @@
 | `chat_ui_separator` | 聊天区分隔线；`true` 短、`false` 长 | `onChatUiSeparator` |
 | `conversation_saved` | 本会话已成功落库；`revision`（`u64`）供 `POST /chat/branch` 与冲突检测 | Leptos：`sse_dispatch` 解析后更新内存中的 `revision`；`onConversationSaved` |
 | `sse_capabilities` | 首帧能力：`supported_sse_v`、`resume_ring_cap`、`job_id`（与 `x-stream-job-id` 一致） | 官方 Web：与本地 **`SSE_PROTOCOL_VERSION`** 校验；匹配则**吞掉**（不当下文）；不匹配则 **`onError`** 并停止。集成方可据此保存 `job_id` 做重连 |
-| `stream_ended` | 流结束；`job_id`、`reason`（`completed` / `cancelled` / `conflict` / `fallback` / `no_output` / `gone`） | Web：**吞掉**；客户端可据此停止自动重连 |
+| `stream_ended` | 流结束；`job_id`、`reason`（`completed` / `cancelled` / `conflict` / `fallback` / `no_output` / `gone`） | Web：**先独立提取并吞掉**（不依赖其它控制面分支命中）；客户端可据此停止自动重连 |
 | `timeline_log` | 时间线旁注（如审批结果）；**不**进入模型上下文 | `onTimelineLog` |
 
 ### `tool_result` 常用字段
@@ -195,9 +195,10 @@
 变更以下任一时，须同步另一方及本文档：
 
 1. **`crates/crabmate-sse-protocol`**：`SSE_PROTOCOL_VERSION`；`src/sse/protocol.rs`：`SsePayload`、`SseErrorBody`、`ToolResultBody`（版本常量由 crate 提供并在 `protocol` 再导出）
-2. `frontend-leptos/src/sse_dispatch.rs` 与 `frontend-leptos/src/api.rs`：控制面分类与分发分支顺序、请求体中的 **`client_sse_protocol`**
-3. `src/sse/line.rs`：`classify_agent_sse_line`（与前端分支语义一致）
-4. 新增 `encode_message(SsePayload::…)` 的调用点
+2. **`crates/crabmate-sse-protocol`**：`sse_frame.rs`（`parse_sse_event_id` / `join_sse_data_lines` / `is_sse_done_sentinel` / `extract_stream_ended_reason`）与 `control_extract.rs`（`extract_*` 家族）在前端消费语义变更时同步
+3. `frontend-leptos/src/sse_dispatch.rs` 与 `frontend-leptos/src/api.rs`：控制面分类与分发分支顺序、请求体中的 **`client_sse_protocol`**
+4. `src/sse/line.rs`：`classify_agent_sse_line`（与前端分支语义一致）
+5. 新增 `encode_message(SsePayload::…)` 的调用点
 
 ## 契约测试（控制面分类）
 
