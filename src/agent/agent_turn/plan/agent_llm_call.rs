@@ -6,7 +6,7 @@ use crate::llm::{
 };
 use crate::types::ChatRequest;
 
-use super::params::RunLoopParams;
+use crate::agent::agent_turn::params::RunLoopParams;
 
 /// 绑定一轮 `run_agent_turn` 的传输层与 Chrome trace，便于只改 `out` / `render_to_terminal` 等再调模型。
 pub(crate) struct AgentLlmCall<'p> {

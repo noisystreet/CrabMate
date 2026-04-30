@@ -89,7 +89,7 @@ This section records **maintainer rules** (aligned with `src/llm/mod.rs`): **one
 | **`llm::complete_chat_retrying`** | **Only** supported way to perform a `chat/completions` round with **`CompleteChatRetryingParams`** (prefer **`CompleteChatRetryingParams::new`** + **`LlmRetryingTransportOpts`** for `out` / streaming / cancel flags). Internally **`ChatCompletionsBackend::stream_chat`** → default **`llm::api::stream_chat`**. **Exponential backoff** applies only when **`LlmCallError`** is **`retryable`** (e.g. **408/429/5xx** and some transport errors; **401/400** fail fast). **DSML materialization** runs **after** a successful return from **`complete_chat_retrying`**, not inside `stream_chat`. |
 | **`llm::tool_chat_request` / `llm::no_tools_chat_request`** (and similar) | **Request builders** for **`ChatRequest`** (`tools`, `tool_choice`, sampling); they **do not** perform HTTP. **`agent`** fills `messages` then calls **`complete_chat_retrying`**. |
 
-**`agent` paths that call `complete_chat_retrying`** (keep this pattern when adding calls): **`agent/context_window.rs`** (**`LlmRetryingTransportOpts::headless_no_stream`**), **`agent/agent_turn/plan_call.rs`** (main-loop **P**), **`agent/agent_turn/staged.rs`** (**`AgentLlmCall`** + **`RunLoopParams::llm_transport_opts`**, planner rounds may override `out` / `render_to_terminal`), **`agent/per_plan_semantic_check.rs`** (side LLM for final-plan consistency). Other modules (e.g. **`per_coord`**, **`outer_loop`**) reach the model **through** these paths—do not open a parallel HTTP stack.
+**`agent` paths that call `complete_chat_retrying`** (keep this pattern when adding calls): **`agent/context_window.rs`** (**`LlmRetryingTransportOpts::headless_no_stream`**), **`agent/agent_turn/plan/plan_call.rs`** (main-loop **P**), **`agent/agent_turn/staged.rs`** (**`AgentLlmCall`** + **`RunLoopParams::llm_transport_opts`**, planner rounds may override `out` / `render_to_terminal`), **`agent/per_plan_semantic_check.rs`** (side LLM for final-plan consistency). Other modules (e.g. **`per_coord`**, **`outer_loop`**) reach the model **through** these paths—do not open a parallel HTTP stack.
 
 #### Anti-patterns (do not do)
 
@@ -99,11 +99,11 @@ This section records **maintainer rules** (aligned with `src/llm/mod.rs`): **one
 
 #### P/R/E mapping (read-only mental model)
 
-- **P**: one **`complete_chat_retrying`** (usually **`per_plan_call_model_retrying`** → **`plan_call`**).
+- **P**: one **`complete_chat_retrying`** (usually **`per_plan_call_model_retrying`** → **`plan::plan_call`**).
 - **R**: **`per_reflect_after_assistant`**; **`StopTurnPendingPlanConsistencyLlm`** → **`per_plan_semantic_check::evaluate_plan_consistency_with_recent_tools_llm`** → another **`complete_chat_retrying`** (no tools).
 - **E**: **`per_execute_tools_*`**, not **`llm`**.
 
-**`llm::LlmRetryingTransportOpts`** and **`CompleteChatRetryingParams::new`** dedupe boilerplate; **`agent_turn::agent_llm_call::AgentLlmCall`** wraps **`request_chrome_trace`** and **`complete_chat_retrying`** when **`RunLoopParams`** is in scope—it must still **delegate to `complete_chat_retrying`** (single HTTP entrypoint).
+**`llm::LlmRetryingTransportOpts`** and **`CompleteChatRetryingParams::new`** dedupe boilerplate; **`agent_turn::plan::AgentLlmCall`** wraps **`request_chrome_trace`** and **`complete_chat_retrying`** when **`RunLoopParams`** is in scope—it must still **delegate to `complete_chat_retrying`** (single HTTP entrypoint).
 
 #### Error and observability layering (`llm` → `agent_turn` → SSE)
 
@@ -136,7 +136,7 @@ This section records **maintainer rules** (aligned with `src/llm/mod.rs`): **one
 
 | Path | Responsibility (summary) |
 |------|---------------------------|
-| `agent/` | **`agent_turn/`**: main loop; **`errors`** (**`RunAgentTurnError`**, **`AgentTurnSubPhase`**), **`agent_llm_call`** (**`AgentLlmCall`**), **`intent`** (turn-start gate: **`intent/user`**, **`intent/at_turn_start`**; crate paths unchanged **`agent_turn::intent_user`** / **`agent_turn::intent_at_turn_start`**), **`params`** (**`RunLoopParams::llm_transport_opts`**); **`message_pipeline`**, **`context_window`**, **`reflection/plan_rewrite`** (final-plan rewrite text + workflow history scans + semantic-check digest; no `complete_chat_retrying`), **`per_coord`**, **`per_plan_semantic_check`**, **`plan_artifact`**, **`workflow/`**, staged planning, tool execution (**E**), reflection (**R**), planner (**P**). |
+| `agent/` | **`agent_turn/`**: main loop; **`errors`** (**`RunAgentTurnError`**, **`AgentTurnSubPhase`**), **`plan`** (**P**: **`plan/plan_call`**, **`plan/agent_llm_call`**, **`plan/planner_sse_gate`**; symbols like **`per_plan_call_model_retrying`** still re-exported at **`agent_turn`**, **`AgentLlmCall`**, **`PlannerSseGate`**), **`intent`** (turn-start gate: **`intent/user`**, **`intent/at_turn_start`**; crate paths unchanged **`agent_turn::intent_user`** / **`agent_turn::intent_at_turn_start`**), **`params`** (**`RunLoopParams::llm_transport_opts`**); **`message_pipeline`**, **`context_window`**, **`reflection/plan_rewrite`** (final-plan rewrite text + workflow history scans + semantic-check digest; no `complete_chat_retrying`), **`per_coord`**, **`per_plan_semantic_check`**, **`plan_artifact`**, **`workflow/`**, staged planning, tool execution (**E**), reflection (**R**), planner (**P**). |
 | `chat_job_queue.rs` | Bounded queue for `/chat` + `/chat/stream`; **`per_active_jobs`** for `/status`. |
 | `workspace/` | **Directory** (top-level `mod workspace`): path policy, Unix open-under-root, session changelist; see **`workspace/path.rs`**, **`workspace/fs.rs`**, **`workspace/changelist.rs`**. Use `crate::workspace::{path, fs, changelist}`. |
 | `context_bootstrap/` | **Directory** (top-level `mod context_bootstrap`): first-turn living docs, project profile, dependency brief, **`conversation_turn_bootstrap`**. |

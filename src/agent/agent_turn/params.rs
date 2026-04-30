@@ -82,7 +82,7 @@ pub(crate) struct RunLoopParams<'a> {
 }
 
 impl RunLoopParams<'_> {
-    /// 当前回合的 SSE/终端/流式/取消开关，供 [`crate::llm::CompleteChatRetryingParams::new`] 与 [`super::agent_llm_call::AgentLlmCall`] 复用。
+    /// 当前回合的 SSE/终端/流式/取消开关，供 [`crate::llm::CompleteChatRetryingParams::new`] 与 [`super::plan::AgentLlmCall`] 复用。
     #[inline]
     pub(crate) fn llm_transport_opts(&self) -> crate::llm::LlmRetryingTransportOpts<'_> {
         crate::llm::LlmRetryingTransportOpts {
