@@ -1001,6 +1001,23 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     )
                     .await;
                     let has_visible_output = current_turn_has_visible_assistant_output(&messages);
+                    let end_reason = if fallback_emitted {
+                        StreamEndReason::Fallback
+                    } else if has_visible_output {
+                        StreamEndReason::Completed
+                    } else {
+                        StreamEndReason::NoOutput
+                    };
+                    // 先发 stream_ended 解除前端 busy，再做可能耗时的落盘/revision 同步，
+                    // 避免后处理阶段卡住导致 Web 长时间停在“模型生成中”。
+                    emit_stream_ended_once(
+                        &sse_tx,
+                        job_id,
+                        end_reason,
+                        &mut stream_ended_sent,
+                        "chat_job_queue::stream stream_ended_early",
+                    )
+                    .await;
                     match post_turn_web_prepare_and_save(
                         app.as_ref(),
                         &cfg_snap,
@@ -1013,13 +1030,6 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     .await
                     {
                         crate::SaveConversationOutcome::Saved => {
-                            let end_reason = if fallback_emitted {
-                                StreamEndReason::Fallback
-                            } else if has_visible_output {
-                                StreamEndReason::Completed
-                            } else {
-                                StreamEndReason::NoOutput
-                            };
                             if let Some(new_rev) = app
                                 .load_conversation_seed(&conversation_id)
                                 .await
