@@ -159,6 +159,138 @@ mod dedup_tool_calls_tests {
     }
 }
 
+mod hierarchy_runner_params_tests {
+    use std::path::Path;
+    use std::sync::Arc;
+
+    use tokio::sync::{Mutex, mpsc};
+
+    use crate::agent::agent_turn::RunLoopParams;
+    use crate::tool_registry::WebToolRuntime;
+    use crate::types::{CommandApprovalDecision, LlmSeedOverride, Message};
+
+    #[test]
+    fn maps_fields_without_web_tool_ctx() {
+        let cfg = Arc::new(crate::config::load_config(None).expect("embed default"));
+        let client = reqwest::Client::new();
+        let mut messages = vec![Message::user_only("hi")];
+        let p = RunLoopParams {
+            llm_backend: &crate::llm::OPENAI_COMPAT_BACKEND,
+            client: &client,
+            api_key: "test-key",
+            cfg: &cfg,
+            tools_defs: &[],
+            messages: &mut messages,
+            out: None,
+            effective_working_dir: Path::new("sub/ws"),
+            workspace_is_set: true,
+            no_stream: true,
+            cancel: None,
+            render_to_terminal: false,
+            plain_terminal_stream: false,
+            web_tool_ctx: None,
+            cli_tool_ctx: None,
+            per_flight: None,
+            temperature_override: None,
+            model_override: None,
+            use_executor_model: false,
+            executor_model_override: None,
+            executor_api_base: None,
+            executor_api_key: None,
+            seed_override: LlmSeedOverride::FromConfig,
+            long_term_memory: None,
+            long_term_memory_scope_id: None,
+            mcp_session: None,
+            read_file_turn_cache: None,
+            workspace_changelist: None,
+            staged_plan_optimizer_round: false,
+            staged_plan_optimizer_requires_parallel_tools: true,
+            staged_plan_ensemble_count: 1,
+            staged_plan_skip_ensemble_on_casual_prompt: true,
+            request_chrome_trace: None,
+            step_executor_constraint: None,
+            turn_allowed_tool_names: None,
+            tracing_chat_turn: None,
+            sub_phase: crate::agent::agent_turn::AgentTurnSubPhase::Planner,
+            intent_turn_gate_hint: None,
+        };
+        let h = p.hierarchy_runner_params(
+            "my task",
+            Some("execute.run".into()),
+            vec!["a".into(), "b".into()],
+        );
+        assert_eq!(h.task, "my task");
+        assert!(std::ptr::eq(h.cfg, cfg.as_ref()));
+        assert_eq!(h.api_key, "test-key");
+        assert_eq!(h.working_dir, Path::new("sub/ws").to_path_buf());
+        assert!(h.sse_out.is_none());
+        assert!(h.tool_approval_out.is_none());
+        assert!(h.tool_approval_rx.is_none());
+        assert_eq!(h.primary_intent.as_deref(), Some("execute.run"));
+        assert_eq!(h.secondary_intents, vec!["a", "b"]);
+        assert_eq!(h.intent_mode_bias_enabled, cfg.intent_mode_bias_enabled);
+    }
+
+    #[test]
+    fn clones_web_approval_channels_when_web_tool_ctx_present() {
+        let cfg = Arc::new(crate::config::load_config(None).expect("embed default"));
+        let client = reqwest::Client::new();
+        let mut messages = vec![Message::user_only("hi")];
+        let (out_tx, _out_rx) = mpsc::channel::<String>(4);
+        let (_approval_tx, approval_rx) = mpsc::channel::<CommandApprovalDecision>(4);
+        let web = WebToolRuntime {
+            out_tx: out_tx.clone(),
+            approval_rx_shared: Arc::new(Mutex::new(approval_rx)),
+            approval_request_guard: Arc::new(Mutex::new(())),
+            persistent_allowlist_shared: Arc::new(Mutex::new(Default::default())),
+        };
+        let p = RunLoopParams {
+            llm_backend: &crate::llm::OPENAI_COMPAT_BACKEND,
+            client: &client,
+            api_key: "",
+            cfg: &cfg,
+            tools_defs: &[],
+            messages: &mut messages,
+            out: Some(&out_tx),
+            effective_working_dir: Path::new("."),
+            workspace_is_set: false,
+            no_stream: true,
+            cancel: None,
+            render_to_terminal: false,
+            plain_terminal_stream: false,
+            web_tool_ctx: Some(&web),
+            cli_tool_ctx: None,
+            per_flight: None,
+            temperature_override: None,
+            model_override: None,
+            use_executor_model: false,
+            executor_model_override: None,
+            executor_api_base: None,
+            executor_api_key: None,
+            seed_override: LlmSeedOverride::FromConfig,
+            long_term_memory: None,
+            long_term_memory_scope_id: None,
+            mcp_session: None,
+            read_file_turn_cache: None,
+            workspace_changelist: None,
+            staged_plan_optimizer_round: false,
+            staged_plan_optimizer_requires_parallel_tools: true,
+            staged_plan_ensemble_count: 1,
+            staged_plan_skip_ensemble_on_casual_prompt: true,
+            request_chrome_trace: None,
+            step_executor_constraint: None,
+            turn_allowed_tool_names: None,
+            tracing_chat_turn: None,
+            sub_phase: crate::agent::agent_turn::AgentTurnSubPhase::Planner,
+            intent_turn_gate_hint: None,
+        };
+        let h = p.hierarchy_runner_params("t", None, vec![]);
+        assert!(h.tool_approval_out.is_some());
+        assert!(h.tool_approval_rx.is_some());
+        assert!(h.sse_out.is_some());
+    }
+}
+
 mod per_reflect_tests {
     use std::path::Path;
     use std::sync::Arc;

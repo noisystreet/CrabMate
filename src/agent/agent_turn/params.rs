@@ -10,6 +10,7 @@ use crate::workspace::changelist::WorkspaceChangelist;
 use tokio::sync::mpsc;
 
 use super::errors::AgentTurnSubPhase;
+use crate::agent::hierarchy::HierarchyRunnerParams;
 use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crate::config::AgentConfig;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
@@ -82,6 +83,38 @@ pub(crate) struct RunLoopParams<'a> {
 }
 
 impl RunLoopParams<'_> {
+    /// 装配 [`HierarchyRunnerParams`]：与 `hierarchy::run_hierarchical_agent` 内 Web 审批通道（`out_tx` / `approval_rx_shared`）提取逻辑一致，避免分层入口与其它调用点漂移。
+    pub(crate) fn hierarchy_runner_params<'b>(
+        &'b self,
+        task: &'b str,
+        primary_intent: Option<String>,
+        secondary_intents: Vec<String>,
+    ) -> HierarchyRunnerParams<'b> {
+        let (tool_approval_out, tool_approval_rx) = if let Some(web_ctx) = self.web_tool_ctx {
+            (
+                Some(web_ctx.out_tx.clone()),
+                Some(web_ctx.approval_rx_shared.clone()),
+            )
+        } else {
+            (None, None)
+        };
+        HierarchyRunnerParams {
+            task,
+            cfg: self.cfg.as_ref(),
+            llm_backend: self.llm_backend,
+            client: Arc::new(self.client.clone()),
+            api_key: self.api_key.to_string(),
+            working_dir: self.effective_working_dir.to_path_buf(),
+            sse_out: self.out.cloned(),
+            tools_defs: self.tools_defs,
+            tool_approval_out,
+            tool_approval_rx,
+            primary_intent,
+            secondary_intents,
+            intent_mode_bias_enabled: self.cfg.intent_mode_bias_enabled,
+        }
+    }
+
     /// 当前回合的 SSE/终端/流式/取消开关，供 [`crate::llm::CompleteChatRetryingParams::new`] 与 [`super::plan::AgentLlmCall`] 复用。
     #[inline]
     pub(crate) fn llm_transport_opts(&self) -> crate::llm::LlmRetryingTransportOpts<'_> {
