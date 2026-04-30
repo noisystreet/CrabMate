@@ -1,5 +1,5 @@
 //! 分阶段规划首轮：`agent_reply_plan` v1 解析结果与 `no_task` 写入历史的纯路由。
-//! 与 `run_staged_plan_with_prepared_request` 对齐；**不**发起 LLM。
+//! 与 `run_staged_plan_with_prepared_request` 对齐；与 **`planner_round_fsm`**（ensemble / 优化轮）正交；**不**发起 LLM。
 
 use crate::agent::plan_artifact::PlanArtifactError;
 
@@ -17,7 +17,9 @@ pub(crate) fn staged_planner_parse_route(
     err: &PlanArtifactError,
     entered_from_step_execution_round: bool,
 ) -> StagedPlannerParseRoute {
-    if matches!(err, PlanArtifactError::NotFound) && entered_from_step_execution_round {
+    if matches!(err, PlanArtifactError::NotFound)
+        && entered_implies_finish_on_plan_not_found(entered_from_step_execution_round)
+    {
         StagedPlannerParseRoute::QuietFinishOnPlanNotFound
     } else {
         StagedPlannerParseRoute::DegradeToOuterLoop
@@ -32,6 +34,14 @@ pub(crate) fn omit_no_task_planner_from_history(
     plan_no_task: bool,
 ) -> bool {
     web_out_active && !web_raw_assistant_output && plan_no_task
+}
+
+/// 与「步执行后重入的无工具规划轮」标记对齐：`true` 时 `NotFound` 走静默收敛（见 [`staged_planner_parse_route`]）。
+#[inline]
+pub(crate) fn entered_implies_finish_on_plan_not_found(
+    entered_from_step_execution_round: bool,
+) -> bool {
+    entered_from_step_execution_round
 }
 
 #[cfg(test)]
@@ -54,6 +64,10 @@ mod tests {
     fn non_not_found_always_degrades() {
         assert_eq!(
             staged_planner_parse_route(&PlanArtifactError::WrongType("x".into()), true),
+            StagedPlannerParseRoute::DegradeToOuterLoop
+        );
+        assert_eq!(
+            staged_planner_parse_route(&PlanArtifactError::EmptySteps, true),
             StagedPlannerParseRoute::DegradeToOuterLoop
         );
     }

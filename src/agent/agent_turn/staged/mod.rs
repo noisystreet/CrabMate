@@ -1544,27 +1544,38 @@ pub(super) async fn run_logical_dual_agent_then_execute_steps(
 mod staged_not_found_convergence_tests {
     use crate::agent::plan_artifact::PlanArtifactError;
 
-    use super::planner_parse_fsm::{StagedPlannerParseRoute, staged_planner_parse_route};
+    use super::planner_parse_fsm::{
+        StagedPlannerParseRoute, entered_implies_finish_on_plan_not_found,
+        staged_planner_parse_route,
+    };
 
     #[test]
     fn not_found_does_not_finish_for_plain_qa_round() {
+        assert!(
+            !entered_implies_finish_on_plan_not_found(false),
+            "普通问答轮（未进入步后重规划）遇到 NotFound 不应直接收敛结束"
+        );
         assert!(
             !matches!(
                 staged_planner_parse_route(&PlanArtifactError::NotFound, false),
                 StagedPlannerParseRoute::QuietFinishOnPlanNotFound
             ),
-            "普通问答轮（未进入步后重规划）遇到 NotFound 不应直接收敛结束"
+            "路由应与 entered 标记一致"
         );
     }
 
     #[test]
     fn not_found_finishes_only_after_step_execution_reentry() {
         assert!(
+            entered_implies_finish_on_plan_not_found(true),
+            "仅在同 turn 的步后重规划轮，NotFound 才应触发收敛结束"
+        );
+        assert!(
             matches!(
                 staged_planner_parse_route(&PlanArtifactError::NotFound, true),
                 StagedPlannerParseRoute::QuietFinishOnPlanNotFound
             ),
-            "仅在同 turn 的步后重规划轮，NotFound 才应触发收敛结束"
+            "路由应与 entered 标记一致"
         );
     }
 }
