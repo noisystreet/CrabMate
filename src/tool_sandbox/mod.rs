@@ -8,11 +8,17 @@
 //! - 镜像须含工具依赖；宿主 `crabmate` 与容器须**同 CPU 架构**（或改在镜像内安装 crabmate）。
 
 mod backend;
+#[cfg(feature = "docker_sandbox")]
 mod docker_bollard;
+#[cfg(not(feature = "docker_sandbox"))]
+mod docker_stub;
 mod runner;
 
 pub use backend::{SandboxRunRequest, SyncDefaultSandboxBackend};
+#[cfg(feature = "docker_sandbox")]
 pub use docker_bollard::BollardSandboxBackend;
+#[cfg(not(feature = "docker_sandbox"))]
+pub use docker_stub::BollardSandboxBackend;
 pub use runner::{
     SandboxToolRunnerConfig, ToolInvocationLine, tool_runner_internal_main,
     write_runner_config_json, write_runner_config_json_with_allowed_commands,
@@ -25,7 +31,7 @@ use crate::config::{AgentConfig, SyncDefaultToolSandboxMode};
 
 use self::runner::write_runner_config_json as write_runner_cfg_default;
 
-/// 进程内默认后端（Docker Engine API，[bollard](https://docs.rs/bollard)）。
+/// 进程内默认后端（Docker Engine API，[bollard](https://docs.rs/bollard)；未启用 **`docker_sandbox`** feature 时为占位实现）。
 ///
 /// 若需替换实现（单测或其它运行时），可改为 `OnceLock<Arc<dyn SyncDefaultSandboxBackend>>` 并在启动时注入。
 static SANDBOX_BACKEND: std::sync::LazyLock<std::sync::Arc<dyn SyncDefaultSandboxBackend>> =

@@ -469,6 +469,13 @@ pub(super) fn finalize(
         Some(s) => types::SyncDefaultToolSandboxMode::parse(s)?,
         None => types::SyncDefaultToolSandboxMode::default(),
     };
+    #[cfg(not(feature = "docker_sandbox"))]
+    if sync_default_tool_sandbox_mode == types::SyncDefaultToolSandboxMode::Docker {
+        return Err(
+            "配置错误：当前二进制未启用 `docker_sandbox` Cargo feature，不支持 sync_default_tool_sandbox_mode=docker；请改为 none 或使用带 docker_sandbox 的构建"
+                .to_string(),
+        );
+    }
     let sync_default_tool_sandbox_docker_image =
         b.sync_default_tool_sandbox_docker_image.unwrap_or_default();
     let sync_default_tool_sandbox_docker_network = b

@@ -1,63 +1,90 @@
 //! `crabmate mcp` 子命令：客户端缓存列表与 **stdio MCP server**。
 
-use std::path::PathBuf;
-
+#[cfg(not(feature = "mcp"))]
 use crate::config::AgentConfig;
-use crate::runtime::cli::cli_effective_work_dir;
 
-/// 执行 `mcp list`（`probe` 为 true 时按配置尝试建立/刷新进程内 MCP 缓存）。
-///
-/// `repl_context`：来自 REPL **`/mcp`** 时为 true，无缓存时的提示语指向 **`/mcp probe`** 与「输入用户消息跑一轮」。
-pub async fn run_mcp_list(cfg: &AgentConfig, probe: bool, repl_context: bool) {
-    if probe {
-        let _ = crate::mcp::try_open_session_and_tools(cfg).await;
-    }
-    let st = crate::mcp::cached_mcp_status(cfg).await;
-    if !cfg.mcp_enabled {
-        println!("MCP：配置中未启用 (mcp_enabled=false)。本进程无 MCP 会话缓存。");
-        return;
-    }
-    if cfg.mcp_command.trim().is_empty() {
-        println!("MCP：已启用但 mcp_command 为空，无法建立 stdio 会话。");
-        return;
-    }
-    if !st.fingerprint_matches_config {
+#[cfg(feature = "mcp")]
+mod full {
+    use std::path::PathBuf;
+
+    use crate::config::AgentConfig;
+    use crate::runtime::cli::cli_effective_work_dir;
+
+    /// 执行 `mcp list`（`probe` 为 true 时按配置尝试建立/刷新进程内 MCP 缓存）。
+    ///
+    /// `repl_context`：来自 REPL **`/mcp`** 时为 true，无缓存时的提示语指向 **`/mcp probe`** 与「输入用户消息跑一轮」。
+    pub async fn run_mcp_list(cfg: &AgentConfig, probe: bool, repl_context: bool) {
         if probe {
-            println!(
-                "MCP：已尝试按配置连接，但未在进程内留下可用会话（见日志 target=crabmate）。\
-                 常见原因：子进程启动失败、握手失败或 tools/list 为空。"
-            );
-        } else if repl_context {
-            println!(
-                "MCP：本进程内尚无与当前配置匹配的已缓存 stdio 会话。\
-                 可先输入任意用户消息跑一轮以建立连接，或执行 **/mcp probe** 立即尝试连接（会启动 mcp_command 子进程）。"
-            );
-        } else {
-            println!(
-                "MCP：本进程内尚无与当前配置匹配的已缓存 stdio 会话。\
-                 请先在本进程中执行至少一轮对话（`repl` / `chat` / Web `/chat`），\
-                 或使用 `crabmate mcp list --probe` 尝试立即连接一次。"
-            );
+            let _ = crate::mcp::try_open_session_and_tools(cfg).await;
         }
-        return;
+        let st = crate::mcp::cached_mcp_status(cfg).await;
+        if !cfg.mcp_enabled {
+            println!("MCP：配置中未启用 (mcp_enabled=false)。本进程无 MCP 会话缓存。");
+            return;
+        }
+        if cfg.mcp_command.trim().is_empty() {
+            println!("MCP：已启用但 mcp_command 为空，无法建立 stdio 会话。");
+            return;
+        }
+        if !st.fingerprint_matches_config {
+            if probe {
+                println!(
+                    "MCP：已尝试按配置连接，但未在进程内留下可用会话（见日志 target=crabmate）。\
+                     常见原因：子进程启动失败、握手失败或 tools/list 为空。"
+                );
+            } else if repl_context {
+                println!(
+                    "MCP：本进程内尚无与当前配置匹配的已缓存 stdio 会话。\
+                     可先输入任意用户消息跑一轮以建立连接，或执行 **/mcp probe** 立即尝试连接（会启动 mcp_command 子进程）。"
+                );
+            } else {
+                println!(
+                    "MCP：本进程内尚无与当前配置匹配的已缓存 stdio 会话。\
+                     请先在本进程中执行至少一轮对话（`repl` / `chat` / Web `/chat`），\
+                     或使用 `crabmate mcp list --probe` 尝试立即连接一次。"
+                );
+            }
+            return;
+        }
+        let slug = st.slug.as_deref().unwrap_or("?");
+        println!("MCP：本进程内已缓存 stdio 会话（slug={slug}）");
+        println!(
+            "合并后的 OpenAI 工具名（{} 个）：",
+            st.openai_tool_names.len()
+        );
+        for name in &st.openai_tool_names {
+            println!("  {name}");
+        }
     }
-    let slug = st.slug.as_deref().unwrap_or("?");
-    println!("MCP：本进程内已缓存 stdio 会话（slug={slug}）");
-    println!(
-        "合并后的 OpenAI 工具名（{} 个）：",
-        st.openai_tool_names.len()
-    );
-    for name in &st.openai_tool_names {
-        println!("  {name}");
+
+    /// `crabmate mcp serve`：在 stdin/stdout 上运行 MCP server（**不要**求 `API_KEY`）。
+    pub async fn run_mcp_serve(
+        cfg: &AgentConfig,
+        workspace_cli: &Option<String>,
+        no_tools: bool,
+    ) -> Result<(), String> {
+        let workspace: PathBuf =
+            cli_effective_work_dir(workspace_cli, &cfg.run_command_working_dir);
+        crate::mcp::server::run_stdio_mcp_server(cfg.clone(), workspace, no_tools).await
     }
 }
 
-/// `crabmate mcp serve`：在 stdin/stdout 上运行 MCP server（**不要**求 `API_KEY`）。
+#[cfg(feature = "mcp")]
+pub use full::{run_mcp_list, run_mcp_serve};
+
+#[cfg(not(feature = "mcp"))]
+pub async fn run_mcp_list(_cfg: &AgentConfig, _probe: bool, _repl_context: bool) {
+    println!(
+        "本 crabmate 二进制未启用 `mcp` Cargo feature，不支持 MCP 列表/探测。请使用默认构建或 `cargo build --features mcp`。"
+    );
+}
+
+#[cfg(not(feature = "mcp"))]
+#[allow(dead_code)]
 pub async fn run_mcp_serve(
-    cfg: &AgentConfig,
-    workspace_cli: &Option<String>,
-    no_tools: bool,
+    _cfg: &AgentConfig,
+    _workspace_cli: &Option<String>,
+    _no_tools: bool,
 ) -> Result<(), String> {
-    let workspace: PathBuf = cli_effective_work_dir(workspace_cli, &cfg.run_command_working_dir);
-    crate::mcp::server::run_stdio_mcp_server(cfg.clone(), workspace, no_tools).await
+    Err("本 crabmate 二进制未启用 `mcp` Cargo feature，不支持 `mcp serve`".to_string())
 }
