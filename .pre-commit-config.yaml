@@ -21,35 +21,63 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
-        stages: [commit]
+        stages: [pre-commit]
       - id: lizard-rust
         name: lizard complexity (Rust CCN)
         entry: bash -c 'LIZARD_CCN=50 bash scripts/lizard-rust.sh'
         language: system
         pass_filenames: false
         always_run: true
-        stages: [commit]
+        stages: [pre-commit]
       - id: frontend-wasm-check
         name: frontend wasm check
         entry: bash -c 'staged=$(git diff --cached --name-only -- "frontend-leptos/" | wc -l); if [ "$staged" -gt 0 ]; then cd frontend-leptos && cargo check --target wasm32-unknown-unknown; else exit 0; fi'
         language: system
         pass_filenames: false
         always_run: true
-        stages: [commit]
+        stages: [pre-commit]
       - id: sse-control-golden
         name: SSE control golden (Rust mirror)
         entry: bash -c 'staged=$(git diff --cached --name-only | grep -E "^(fixtures/sse_control_golden.jsonl|crates/crabmate-sse-protocol/control_classify.rs|frontend-leptos/src/sse_dispatch.rs)$" | wc -l); if [ "$staged" -gt 0 ]; then cargo test golden_sse_control --workspace; else exit 0; fi'
         language: system
         pass_filenames: false
         always_run: true
-        stages: [commit]
+        stages: [pre-commit]
       - id: intent-regression-golden
         name: intent regression golden
         entry: bash -c 'staged=$(git diff --cached --name-only | grep -E "^(fixtures/intent_regression.jsonl|src/agent/intent_regression_golden.rs|src/agent/intent_pipeline.rs|src/agent/intent_router.rs|src/agent/intent_l0.rs|src/agent/intent_l2_classifier.rs|src/agent/agent_turn/intent/at_turn_start.rs|src/agent/agent_turn/mod.rs|src/agent/hierarchy/runner.rs)$" | wc -l); if [ "$staged" -gt 0 ]; then cargo test golden_intent_regression -p crabmate; else exit 0; fi'
         language: system
         pass_filenames: false
         always_run: true
-        stages: [commit]
+        stages: [pre-commit]
+      - id: cargo-test-lib
+        name: cargo test (workspace lib)
+        entry: bash -c 'staged=$(git diff --cached --name-only -- "*.rs" | wc -l); if [ "$staged" -gt 0 ]; then cargo test --workspace --lib; else exit 0; fi'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+      - id: taplo-format
+        name: taplo format (check)
+        entry: >-
+          bash -c 'if command -v taplo >/dev/null 2>&1; then taplo format --check .; else echo "taplo 未安装，跳过"; fi'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+      - id: taplo-lint
+        name: taplo lint
+        entry: >-
+          bash -c 'if command -v taplo >/dev/null 2>&1; then taplo lint .; else echo "taplo 未安装，跳过"; fi'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.35.5
+    hooks:
+      - id: typos
 
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v4.4.0
