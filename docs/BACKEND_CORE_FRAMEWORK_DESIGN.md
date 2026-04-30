@@ -24,7 +24,10 @@
 | 单一 `crabmate` 包聚合 Web、CLI、TUI、重依赖（如 fastembed、bollard） | 嵌入方难以只链接「核心子集」；编译时间与二进制体积不易裁剪。 |
 | 缺少按能力的 **Cargo features**（如 `core-only` / `no-web` / `no-tui` / 可选 memory） | 无法在产品与库两种用法之间做依赖隔离。 |
 
-**结论**：要做「框架」，通常需要 **workspace 内多 crate** 或 **强 feature 分层**（例如 `crabmate-core` + `crabmate-server` + `crabmate-cli`），把 HTTP/TUI/可选子系统变为可选依赖。
+**已落地（第一步）**：根 `Cargo.toml` 提供可选特性 **`mcp`**（`rmcp`：MCP 客户端/stdio server）与 **`docker_sandbox`**（`bollard`：Docker 沙盒）；**默认** `default = ["mcp", "docker_sandbox"]` 与历史行为一致。关闭示例：`cargo build --no-default-features`（二者皆关）或 `--no-default-features --features mcp`（仅关 Docker）。**`fastembed`** 仍为必选依赖（长期记忆与 `codebase_semantic_search` 深度耦合）；后续可再拆 `fastembed` feature。
+
+**结论**：要做「框架」，通常仍需要 **workspace 内多 crate** 或进一步 **feature**（如 Web/TUI/fastembed），把 HTTP/TUI/可选子系统变为可选依赖。
+
 
 ### 3.2 对外 API 形态
 
@@ -59,7 +62,7 @@
 
 ## 4. 演进方向（建议优先级，供路线图参考）
 
-1. **依赖分层**：用 Cargo features 或拆出 `*-core`，使「无 Axum / 无 TUI / 无 fastembed」的构建路径成立。
+1. **依赖分层**：用 Cargo features 或拆出 `*-core`，使「无 Axum / 无 TUI / 无 fastembed」的构建路径成立。（**进展**：已可选 **`mcp`** / **`docker_sandbox`**；`fastembed` 与 Web/TUI 仍待分层。）
 2. **稳定表面**：收敛公开类型与函数，明确 `RunAgentTurnParams` 的继任者或适配层；错误类型与取消语义文档化。
 3. **跨语言边界**：二选一或并存——**子进程 + 明确定义的 RPC/HTTP API**（实现成本与运维清晰）vs **PyO3/FFI**（集成紧、ABI 与 async 成本高）。
 4. **上下文注入**：减少隐式全局，将配置、工作区、HTTP 客户端、工具后端纳入可构造对象。
