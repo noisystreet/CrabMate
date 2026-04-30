@@ -57,6 +57,7 @@ mod security_tools;
 mod source_analysis_tools;
 mod spell_astgrep_tools;
 mod structured_data;
+pub(crate) mod structured_preview;
 mod symbol;
 mod table_text;
 mod test_result_cache;

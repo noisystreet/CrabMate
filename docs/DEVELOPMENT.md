@@ -270,7 +270,8 @@ flowchart TB
 | `error_playbook.rs` | `error_output_playbook`：对已脱敏错误输出做启发式归类，并给出经 `allowed_commands` 过滤的 `run_command` 建议字符串（不执行）；`playbook_run_commands`：同上启发式后依次执行建议命令（内部 `command::run`） |
 | `dev_tag.rs` | Development 子域标签：`tags_for_tool_name`、`suggest_dev_tags_for_workspace`（供 `build_tools_with_options` 过滤）；标签含 `general`/`rust`/`frontend`/`python`/`cpp`/`vcs`/`quality`/`go`/`security`/`shell`/`docker` |
 | `exec.rs` | `run_executable`；**`run_command_invocation_targets_workspace_script_or_executable`**（工作区相对路径脚本/可执行：`run_command` 白名单外免检入参） |
-| `file/` | 工作区文件工具目录：`mod.rs` 再导出各 `pub fn`；`path`（`resolve_for_read`/`resolve_for_write` 等）、`write_ops`、**`read_tool`**（`read_file` / **`read_file_try`**；成功路径在正文前加一行 **`crabmate_tool_output` v1**）、`directory`、`tree_glob`、`inspect`、`extract`、`mutate`、`perm`、`symlink`、`display_fmt`；单元测试 `tests.rs` |
+| `structured_preview.rs` | **`structured_preview_for_tool_sse`**：从 `read_file` / `read_dir` / `list_tree` 等工具输出首行提取 **`crabmate_tool_output`** JSON，供 SSE **`tool_result.structured_preview`** |
+| `file/` | 工作区文件工具目录：`mod.rs` 再导出各 `pub fn`；`path`（`resolve_for_read`/`resolve_for_write` 等）、`write_ops`、**`read_tool`**（`read_file` / **`read_file_try`**；成功路径在正文前加一行 **`crabmate_tool_output` v1**）、`directory`（**`read_dir`** 成功路径同样首行 **`crabmate_tool_output`**）、`tree_glob`（**`list_tree`** 成功路径首行 **`crabmate_tool_output`**）、`inspect`、`extract`、`mutate`、`perm`、`symlink`、`display_fmt`；单元测试 `tests.rs` |
 | `format.rs` / `lint.rs` | 格式化（Rust/Python/C++/Go/Shell/JS·TS/Markdown/YAML/XML/SQL + `prettier`）与 lint 聚合 |
 | `frontend_tools.rs` | 前端 npm 脚本类 |
 | `git.rs` | Git 只读查询（status/diff/log/blame 等）与受控写入（stage/commit/checkout/push/merge/rebase/stash/tag/reset/cherry-pick/revert 等） |

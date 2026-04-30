@@ -624,6 +624,7 @@ mod tests {
             exit_code: Some(0),
             error_code: None,
             failure_category: None,
+            structured_preview: None,
         }
     }
 

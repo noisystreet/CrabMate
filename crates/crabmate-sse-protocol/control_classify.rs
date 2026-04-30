@@ -94,7 +94,8 @@ pub fn classify_sse_control_outcome(v: &Value) -> &'static str {
     }
 
     if let Some(Value::Object(tr)) = obj.get("tool_result")
-        && tr.get("output").is_some()
+        && (tr.get("output").is_some()
+            || tr.get("structured_preview").is_some_and(|v| !v.is_null()))
     {
         return "handled";
     }

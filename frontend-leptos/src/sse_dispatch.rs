@@ -64,6 +64,8 @@ pub struct ToolResultInfo {
     pub error_code: Option<String>,
     /// 与 Rust `tool_error::ToolFailureCategory` 蛇形字符串同源（`invalid_input` 等）。
     pub failure_category: Option<String>,
+    /// 可选：与 `read_file` / `read_dir` / `list_tree` 工具输出首行 **`crabmate_tool_output`** 同源（SSE 侧复制），便于 UI 表格化。
+    pub structured_preview: Option<Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -411,7 +413,8 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
     }
 
     if let Some(Value::Object(tr)) = obj.get("tool_result")
-        && tr.get("output").is_some()
+        && (tr.get("output").is_some()
+            || tr.get("structured_preview").is_some_and(|v| !v.is_null()))
     {
         let info = ToolResultInfo {
             name: tr
@@ -450,6 +453,7 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
                 .get("failure_category")
                 .and_then(|x| x.as_str())
                 .map(String::from),
+            structured_preview: tr.get("structured_preview").cloned(),
         };
         if let Some(f) = cbs.on_tool_result.as_mut() {
             f(info);

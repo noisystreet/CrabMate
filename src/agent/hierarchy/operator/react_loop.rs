@@ -362,6 +362,7 @@ impl super::types::OperatorAgent {
                                     parallel_batch_id: None,
                                     stdout: None,
                                     stderr: None,
+                                    structured_preview: None,
                                 },
                             });
                         let _ = crate::sse::send_string_logged(
