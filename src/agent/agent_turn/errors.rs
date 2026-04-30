@@ -186,7 +186,10 @@ impl RunAgentTurnError {
         }
     }
 
-    /// `POST /chat` 等 JSON 错误体；**`reason_code`** 为截断后的内部摘要（若有），供排障与细粒度分支。
+    /// `POST /chat` 等 JSON 错误体。
+    ///
+    /// **HTTP 与 SSE 分流**：SSE 仍可在多种 `code` 下带 **`reason_code`**（见 [`Self::sse_error_payload`]）；
+    /// JSON **`ApiError.reason_code`** 仅对 **`INTERNAL_ERROR`** 附带截断内部摘要，避免预算类/取消类路径向客户端泄露编排细节。
     pub(crate) fn http_api_error(&self) -> ApiError {
         if let Self::Llm {
             kind: LlmCompleteError::Transport(_),
@@ -195,10 +198,22 @@ impl RunAgentTurnError {
         {
             return ApiError::new(self.public_error_code(), self.public_user_message());
         }
-        ApiError::with_reason(
+        let code = self.public_error_code();
+        let message = self.public_user_message();
+        if code == "INTERNAL_ERROR" {
+            ApiError::with_reason(code, message, self.internal_reason_for_logs())
+        } else {
+            ApiError::new(code, message)
+        }
+    }
+
+    /// 单行键值摘要，供 **`tracing`** 与队列 worker 统一拼接（**勿**记录密钥）。
+    pub fn diag_log_kv(&self) -> String {
+        format!(
+            "public_code={} sub_phase={} detail={}",
             self.public_error_code(),
-            self.public_user_message(),
-            self.internal_reason_for_logs(),
+            self.sub_phase().as_str(),
+            self.internal_reason_for_logs()
         )
     }
 
@@ -421,6 +436,56 @@ mod tests {
         assert_eq!(e.suggested_http_status(), StatusCode::UNPROCESSABLE_ENTITY);
         let api = e.http_api_error();
         assert_eq!(api.code, "STEP_RETRY_EXHAUSTED");
-        assert!(api.reason_code.is_some());
+        assert!(
+            api.reason_code.is_none(),
+            "HTTP JSON omits reason_code for non-INTERNAL_ERROR"
+        );
+        let sse = e.sse_error_payload(None);
+        assert!(
+            sse.reason_code
+                .as_deref()
+                .is_some_and(|s| s.contains("step"))
+        );
+    }
+
+    #[test]
+    fn http_internal_error_includes_reason_other_llm() {
+        let e = RunAgentTurnError::Llm {
+            phase: AgentTurnSubPhase::Planner,
+            kind: LlmCompleteError::Other(Box::new(std::io::Error::other("parse blew up"))),
+        };
+        let api = e.http_api_error();
+        assert_eq!(api.code, "INTERNAL_ERROR");
+        assert!(
+            api.reason_code
+                .as_deref()
+                .is_some_and(|s| s.contains("parse"))
+        );
+    }
+
+    #[test]
+    fn http_llm_transport_omits_reason() {
+        let e = RunAgentTurnError::Llm {
+            phase: AgentTurnSubPhase::Executor,
+            kind: LlmCompleteError::Transport(crate::llm::LlmCallError::from_http_api(
+                503,
+                "upstream".into(),
+            )),
+        };
+        let api = e.http_api_error();
+        assert_eq!(api.code, "LLM_REQUEST_FAILED");
+        assert!(api.reason_code.is_none());
+    }
+
+    #[test]
+    fn diag_log_kv_contains_stable_keys() {
+        let e = RunAgentTurnError::Other {
+            phase: AgentTurnSubPhase::Reflect,
+            message: "x".into(),
+        };
+        let s = e.diag_log_kv();
+        assert!(s.contains("public_code=INTERNAL_ERROR"));
+        assert!(s.contains("sub_phase=reflect"));
+        assert!(s.contains("detail="));
     }
 }

@@ -109,7 +109,7 @@ This section records **maintainer rules** (aligned with `src/llm/mod.rs`): **one
 
 - **`llm::complete_chat_retrying`** surfaces **`llm::LlmCompleteError`**: wraps **`LlmCallError`** (**`retryable`**, **`http_status`**, redacted **`user_message`**), cancellation, and other **`Other`** cases—**without** orchestration text like “plan step N failed”.
 - **`agent_turn`** maps those failures (and orchestration early stops) to **`RunAgentTurnError`** (**`agent_turn::errors`**), tracking **`sub_phase`** (**`planner` / `executor` / `reflect`**, aligned with P/R/E). Web uses **`TracingChatTurn::job_id`** as **`turn_id`** (same as **`x-stream-job-id`**).
-- **`chat_job_queue`** encodes **`RunAgentTurnError`** into SSE **`SsePayload::Error`** (**`code`**, optional **`turn_id` / `sub_phase`**); see **`docs/en/SSE_PROTOCOL.md`** (e.g. **`LLM_RATE_LIMIT`**, **`turn_aborted`**).
+- **`chat_job_queue`** encodes **`RunAgentTurnError`** into SSE **`SsePayload::Error`** (**`code`**, optional **`turn_id` / `sub_phase` / `reason_code`**); see **`docs/en/SSE_PROTOCOL.md`**. JSON **`POST /chat`** uses **`RunAgentTurnError::http_api_error`** (**`ApiError.reason_code`** only for **`INTERNAL_ERROR`**); worker/handler logs use **`RunAgentTurnError::diag_log_kv()`**.
 
 ### Web streaming flow (summary)
 

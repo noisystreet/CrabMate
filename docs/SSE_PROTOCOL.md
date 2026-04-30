@@ -140,8 +140,8 @@
 | `INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS` | 400 | 澄清问卷作答体非法（见 `clarification_questionnaire`） |
 | `LLM_RATE_LIMIT` | 429 | **`POST /chat`** 模型限流/配额类（与 SSE 同源码） |
 | `LLM_REQUEST_FAILED` | 502 等 | **`POST /chat`** 模型 HTTP/传输失败（与上游状态对齐时可能为其它 5xx） |
-| `STEP_RETRY_EXHAUSTED` / `REPLAN_EXHAUSTED` / `TIME_LIMIT_EXHAUSTED` / `TOKEN_LIMIT_EXHAUSTED` | 422 | 编排预算类失败（**`message`** 为通用用户文案；**`reason_code`** 为内部摘要） |
-| `INTERNAL_ERROR` | 500 | 其它编排失败（**`message`** 为通用用户文案；**`reason_code`** 为内部摘要） |
+| `STEP_RETRY_EXHAUSTED` / `REPLAN_EXHAUSTED` / `TIME_LIMIT_EXHAUSTED` / `TOKEN_LIMIT_EXHAUSTED` | 422 | 编排预算类失败（**`message`** 为通用用户文案；**`reason_code`** 省略） |
+| `INTERNAL_ERROR` | 500 | 其它编排失败（**`message`** 为通用用户文案；**`reason_code`** 为截断内部摘要，**仅**此类码在 JSON 中带该字段） |
 | `STREAM_CANCELLED` | 499 | 用户/协作取消（非标准状态码，与 SSE 同源码；部分客户端可能按 4xx 处理） |
 
 **客户端仅日志/文案用（非服务端下发的 SSE `code`）**：官方 Leptos 在 **`sse_capabilities`** 与本地版本不一致时，`onError` 字符串中含 **`SSE_SERVER_TOO_NEW`** 或 **`SSE_SERVER_TOO_OLD`**。

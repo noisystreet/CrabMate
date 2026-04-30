@@ -140,8 +140,8 @@ Approximate category of the **last** failed final answer when the rewrite budget
 | `INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS` | 400 | Invalid **`clarify_questionnaire_answers`** payload; see `clarification_questionnaire` |
 | `LLM_RATE_LIMIT` | 429 | **`POST /chat`** rate limit / quota (same mapping as SSE) |
 | `LLM_REQUEST_FAILED` | 502, etc. | **`POST /chat`** model HTTP/transport (status may mirror upstream when available) |
-| `STEP_RETRY_EXHAUSTED` / `REPLAN_EXHAUSTED` / `TIME_LIMIT_EXHAUSTED` / `TOKEN_LIMIT_EXHAUSTED` | 422 | Orchestration budget failures (**`message`** generic; **`reason_code`** internal summary) |
-| `INTERNAL_ERROR` | 500 | Other orchestration failures (**`message`** generic; **`reason_code`** internal summary) |
+| `STEP_RETRY_EXHAUSTED` / `REPLAN_EXHAUSTED` / `TIME_LIMIT_EXHAUSTED` / `TOKEN_LIMIT_EXHAUSTED` | 422 | Orchestration budget failures (**`message`** generic; **`reason_code`** omitted) |
+| `INTERNAL_ERROR` | 500 | Other orchestration failures (**`message`** generic; **`reason_code`** is a truncated internal summary **only** for this `code` in JSON) |
 | `STREAM_CANCELLED` | 499 | User/cooperative cancel (non-standard; same mapping as SSE; some clients treat as 4xx) |
 
 **Client-only hints** (in `onError` text from official Leptos when **`sse_capabilities`** disagrees): **`SSE_SERVER_TOO_NEW`**, **`SSE_SERVER_TOO_OLD`**.

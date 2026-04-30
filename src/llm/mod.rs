@@ -16,6 +16,9 @@ mod complete_error;
 mod openai_models;
 pub mod vendor;
 
+// 供库外/其它 crate 模块以 `crate::llm::LlmCallError` 使用；本文件内无直接引用。
+#[allow(unused_imports)]
+pub use call_error::LlmCallError;
 pub use chat_params::{CompleteChatRetryingParams, LlmRetryingTransportOpts, StreamChatParams};
 pub use complete_error::LlmCompleteError;
 pub use openai_models::fetch_models_report;

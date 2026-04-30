@@ -32,7 +32,7 @@ Control-plane JSON with **`error` + non-empty `code`** signals stream-level fail
 
 **`INTERNAL_ERROR`** and related codes may appear on **SSE** and on **`POST /chat` JSON** from the same `RunAgentTurnError` mapping; `chat` subprocesses still use `classify_model_error_message` on error strings.
 
-**HTTP JSON (not SSE `data:`)**: on **`POST /chat`** failures, **`ApiError`** includes **`code`**, **`message`** (user-facing), and optional **`reason_code`** (internal summary, same semantics as SSE **`reason_code`**). Handshake-stage codes remain defined by **`web/chat_handlers`** and OpenAPI; SSE protocol version codes: **[`docs/en/SSE_PROTOCOL.md`](SSE_PROTOCOL.md)**.
+**HTTP JSON (not SSE `data:`)**: on **`POST /chat`** failures, **`ApiError`** includes **`code`** and **`message`** (user-facing). Optional **`reason_code`** is present **only when `code` is `INTERNAL_ERROR`** (truncated internal summary). **SSE** may still attach **`reason_code`** under multiple stream `code` values (see **`docs/en/SSE_PROTOCOL.md`**). Handshake-stage codes remain defined by **`web/chat_handlers`** and OpenAPI; SSE protocol version codes: **[`docs/en/SSE_PROTOCOL.md`](SSE_PROTOCOL.md)**.
 
 ## `chat --output json` one JSON line per turn (stable shape)
 
