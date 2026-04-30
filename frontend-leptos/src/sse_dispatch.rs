@@ -4,7 +4,10 @@
 //! [`classify_sse_control_outcome`](crabmate_sse_protocol::classify_sse_control_outcome) 及
 //! **`fixtures/sse_control_golden.jsonl`** 一致（见该 crate 的 `control_classify`）。
 
-use crabmate_sse_protocol::{SSE_PROTOCOL_VERSION, key_present_non_null};
+use crabmate_sse_protocol::{
+    SSE_PROTOCOL_VERSION, classify_sse_control_outcome, extract_error_stop, extract_timeline_log,
+    extract_tool_call, extract_tool_result, key_present_non_null,
+};
 use serde_json::Value;
 
 use crate::i18n::Locale;
@@ -186,28 +189,12 @@ fn handle_error_stop(
     obj: &serde_json::Map<String, Value>,
     cbs: &mut SseCallbacks<'_>,
 ) -> Option<SseDispatch> {
-    let Some(e) = obj.get("error") else {
+    let Some(err) = extract_error_stop(obj) else {
         return None;
     };
-    if e.is_null() {
-        return None;
-    }
-    let Some(Value::String(code_raw)) = obj.get("code") else {
-        return None;
-    };
-    let code = code_raw.trim();
-    if code.is_empty() {
-        return None;
-    }
-    let msg = obj.get("error").and_then(|x| x.as_str()).unwrap_or("error");
-    let reason = obj
-        .get("reason_code")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let line = match reason {
-        Some(r) => format!("{msg} ({code}, reason_code={r})"),
-        None => format!("{msg} ({code})"),
+    let line = match err.reason_code {
+        Some(r) => format!("{} ({}, reason_code={r})", err.message, err.code),
+        None => format!("{} ({})", err.message, err.code),
     };
     (cbs.on_error)(line);
     Some(SseDispatch::Stop)
@@ -337,44 +324,17 @@ fn handle_tool_call(
     obj: &serde_json::Map<String, Value>,
     cbs: &mut SseCallbacks<'_>,
 ) -> Option<SseDispatch> {
-    let Some(Value::Object(tc)) = obj.get("tool_call") else {
+    let Some(tc) = extract_tool_call(obj) else {
         return None;
     };
-    let summary = tc.get("summary").and_then(|x| x.as_str()).unwrap_or("");
-    let preview = tc
-        .get("arguments_preview")
-        .and_then(|x| x.as_str())
-        .filter(|s| !s.is_empty());
-    let args_full = tc
-        .get("arguments")
-        .and_then(|x| x.as_str())
-        .filter(|s| !s.is_empty());
-    if summary.is_empty() && preview.is_none() && args_full.is_none() {
-        return None;
-    }
-    let name = tc
-        .get("name")
-        .and_then(|x| x.as_str())
-        .unwrap_or("")
-        .to_string();
-    let goal_id = tc
-        .get("goal_id")
-        .and_then(|x| x.as_str())
-        .filter(|s| !s.is_empty())
-        .map(String::from);
-    let tool_call_id = tc
-        .get("tool_call_id")
-        .and_then(|x| x.as_str())
-        .filter(|s| !s.is_empty())
-        .map(String::from);
     if let Some(f) = cbs.on_tool_call.as_mut() {
         f(
-            name,
-            summary.to_string(),
-            preview.map(String::from),
-            args_full.map(String::from),
-            goal_id,
-            tool_call_id,
+            tc.name,
+            tc.summary,
+            tc.arguments_preview,
+            tc.arguments,
+            tc.goal_id,
+            tc.tool_call_id,
         );
     }
     Some(SseDispatch::Handled)
@@ -384,50 +344,21 @@ fn handle_tool_result(
     obj: &serde_json::Map<String, Value>,
     cbs: &mut SseCallbacks<'_>,
 ) -> Option<SseDispatch> {
-    let Some(Value::Object(tr)) = obj.get("tool_result") else {
+    let Some(parsed) = extract_tool_result(obj) else {
         return None;
     };
-    if !(tr.get("output").is_some() || tr.get("structured_preview").is_some_and(|v| !v.is_null())) {
-        return None;
-    }
     let info = ToolResultInfo {
-        name: tr
-            .get("name")
-            .and_then(|x| x.as_str())
-            .unwrap_or("")
-            .to_string(),
-        goal_id: tr
-            .get("goal_id")
-            .and_then(|x| x.as_str())
-            .filter(|s| !s.is_empty())
-            .map(String::from),
-        tool_call_id: tr
-            .get("tool_call_id")
-            .and_then(|x| x.as_str())
-            .filter(|s| !s.is_empty())
-            .map(String::from),
-        result_version: tr
-            .get("result_version")
-            .and_then(|x| x.as_u64())
-            .map(|u| u as u32)
-            .unwrap_or(1),
-        summary: tr.get("summary").and_then(|x| x.as_str()).map(String::from),
-        output: tr
-            .get("output")
-            .and_then(|x| x.as_str())
-            .unwrap_or("")
-            .to_string(),
-        ok: tr.get("ok").and_then(|x| x.as_bool()),
-        exit_code: tr.get("exit_code").and_then(|x| x.as_i64()),
-        error_code: tr
-            .get("error_code")
-            .and_then(|x| x.as_str())
-            .map(String::from),
-        failure_category: tr
-            .get("failure_category")
-            .and_then(|x| x.as_str())
-            .map(String::from),
-        structured_preview: tr.get("structured_preview").cloned(),
+        name: parsed.name,
+        goal_id: parsed.goal_id,
+        tool_call_id: parsed.tool_call_id,
+        result_version: parsed.result_version,
+        summary: parsed.summary,
+        output: parsed.output,
+        ok: parsed.ok,
+        exit_code: parsed.exit_code,
+        error_code: parsed.error_code,
+        failure_category: parsed.failure_category,
+        structured_preview: parsed.structured_preview,
     };
     if let Some(f) = cbs.on_tool_result.as_mut() {
         f(info);
@@ -439,31 +370,14 @@ fn handle_timeline_log(
     obj: &serde_json::Map<String, Value>,
     cbs: &mut SseCallbacks<'_>,
 ) -> Option<SseDispatch> {
-    let Some(Value::Object(tl)) = obj.get("timeline_log") else {
+    let Some(log) = extract_timeline_log(obj) else {
         return None;
     };
-    let kind = tl
-        .get("kind")
-        .and_then(|x| x.as_str())
-        .unwrap_or("")
-        .to_string();
-    let title = tl
-        .get("title")
-        .and_then(|x| x.as_str())
-        .unwrap_or("")
-        .to_string();
-    let detail = tl
-        .get("detail")
-        .and_then(|x| x.as_str())
-        .filter(|s| !s.is_empty())
-        .map(String::from);
-    if (!kind.is_empty() || !title.is_empty())
-        && let Some(f) = cbs.on_timeline_log.as_mut()
-    {
+    if let Some(f) = cbs.on_timeline_log.as_mut() {
         f(TimelineLogInfo {
-            kind,
-            title,
-            detail,
+            kind: log.kind,
+            title: log.title,
+            detail: log.detail,
         });
     }
     Some(SseDispatch::Handled)
@@ -511,6 +425,9 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
     let Some(obj) = v.as_object() else {
         return SseDispatch::Plain;
     };
+    if classify_sse_control_outcome(&v) == "plain" {
+        return SseDispatch::Plain;
+    }
 
     if let Some(d) = handle_error_stop(obj, cbs) {
         return d;

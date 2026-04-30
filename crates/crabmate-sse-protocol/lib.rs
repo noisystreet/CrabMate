@@ -4,9 +4,18 @@
 //! - **[`classify_sse_control_outcome`]**：与 Leptos **`frontend-leptos/src/sse_dispatch.rs`** 同序；金样 **`fixtures/sse_control_golden.jsonl`**。
 
 mod control_classify;
+mod control_extract;
+mod sse_frame;
 mod stream_end_reason;
 
 pub use control_classify::{classify_sse_control_outcome, key_present_non_null};
+pub use control_extract::{
+    SseErrorStop, SseTimelineLog, SseToolCall, SseToolResult, extract_error_stop,
+    extract_timeline_log, extract_tool_call, extract_tool_result,
+};
+pub use sse_frame::{
+    extract_stream_ended_reason, is_sse_done_sentinel, join_sse_data_lines, parse_sse_event_id,
+};
 pub use stream_end_reason::StreamEndReason;
 
 /// 当前控制面版本：信封顶层 **`v`**，以及首帧 **`sse_capabilities.supported_sse_v`**。

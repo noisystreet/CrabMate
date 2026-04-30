@@ -1,12 +1,14 @@
 //! `/chat/stream`：`fetch` + SSE 帧解析与 `sse_dispatch` 桥接。
 
-use serde_json::Value;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response};
 
-use crabmate_sse_protocol::{SSE_PROTOCOL_VERSION, StreamEndReason};
+use crabmate_sse_protocol::{
+    SSE_PROTOCOL_VERSION, StreamEndReason, extract_stream_ended_reason, is_sse_done_sentinel,
+    join_sse_data_lines, parse_sse_event_id,
+};
 
 use crate::i18n::Locale;
 use crate::sse_dispatch::{
@@ -338,18 +340,6 @@ fn flush_sse_tail(
     Ok(())
 }
 
-fn parse_sse_event_id_block(block: &str) -> Option<u64> {
-    for line in block.lines() {
-        let t = line.trim_start();
-        let rest = t.strip_prefix("id:")?;
-        let s = rest.trim();
-        if let Ok(n) = s.parse::<u64>() {
-            return Some(n);
-        }
-    }
-    None
-}
-
 fn handle_sse_block(
     block: &str,
     last_event_id: &mut u64,
@@ -357,32 +347,20 @@ fn handle_sse_block(
     cbs: &ChatStreamCallbacks,
     loc: Locale,
 ) -> Result<(), String> {
-    if let Some(id) = parse_sse_event_id_block(block) {
+    if let Some(id) = parse_sse_event_id(block) {
         *last_event_id = id;
         (cbs.on_last_sse_event_id)(id);
     }
-    let data_lines: Vec<&str> = block.lines().filter(|l| l.starts_with("data: ")).collect();
-    if data_lines.is_empty() {
+    let Some(data) = join_sse_data_lines(block) else {
         return Ok(());
-    }
-    // 勿对 payload `trim_start`：`data: ` 后的内容（含单独空格）必须原样保留，否则词间空格增量会变成空串。
-    let data = data_lines
-        .iter()
-        .map(|l| &l[6..])
-        .collect::<Vec<_>>()
-        .join("\n");
+    };
     // 勿对 `data` 全文 `trim`：模型/代理可能把词间空格单独打成一段 SSE，trim 会导致单词粘在一起。
-    if data.is_empty() || data.trim() == "[DONE]" {
+    if data.is_empty() || is_sse_done_sentinel(&data) {
         return Ok(());
     }
-    if let Ok(v) = serde_json::from_str::<Value>(&data)
-        && let Some(obj) = v.as_object()
-        && key_present_non_null_sse(obj, "stream_ended")
-        && let Some(Value::Object(ended)) = obj.get("stream_ended")
-        && let Some(Value::String(reason)) = ended.get("reason")
-    {
+    if let Some(reason) = extract_stream_ended_reason(&data) {
         *saw_stream_ended = true;
-        (cbs.on_stream_ended)(reason.clone());
+        (cbs.on_stream_ended)(reason);
     }
 
     let mut stop = false;
@@ -447,13 +425,6 @@ fn handle_sse_block(
             (cbs.on_delta)(data);
             Ok(())
         }
-    }
-}
-
-fn key_present_non_null_sse(obj: &serde_json::Map<String, Value>, key: &str) -> bool {
-    match obj.get(key) {
-        None | Some(Value::Null) => false,
-        Some(_) => true,
     }
 }
 
