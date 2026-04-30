@@ -11,7 +11,7 @@
 
 use log::debug;
 
-use crate::agent::per_coord::PerCoordinator;
+use crate::agent::per_coord::{PerCoordinator, PerCoordinatorInit};
 use crate::agent::{
     intent_l0,
     intent_pipeline::{IntentAction, IntentContext, assess_and_route},
@@ -117,18 +117,7 @@ pub(crate) async fn run_agent_turn_common(
     );
     insert_separator_after_last_user_for_turn(p.messages);
 
-    let mut per_coord = PerCoordinator::new(crate::agent::per_coord::PerCoordinatorInit {
-        reflection_default_max_rounds: p.cfg.reflection_default_max_rounds,
-        final_plan_policy: p.cfg.final_plan_requirement,
-        plan_rewrite_max_attempts: p.cfg.plan_rewrite_max_attempts,
-        final_plan_require_strict_workflow_node_coverage: p
-            .cfg
-            .final_plan_require_strict_workflow_node_coverage,
-        final_plan_semantic_check_enabled: p.cfg.final_plan_semantic_check_enabled,
-        final_plan_semantic_check_max_non_readonly_tools: p
-            .cfg
-            .final_plan_semantic_check_max_non_readonly_tools,
-    });
+    let mut per_coord = PerCoordinator::new(PerCoordinatorInit::from_agent_config(p.cfg.as_ref()));
 
     if p.cfg.planner_executor_mode == PlannerExecutorMode::Hierarchical {
         // 意图门控在 `hierarchy::run_hierarchical_agent` 内通过 `run_intent_for_hierarchical` 执行（与 L0/合并文本一致），勿在此重复。

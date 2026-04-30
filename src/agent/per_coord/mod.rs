@@ -59,7 +59,7 @@ pub(crate) enum PlanRequirementSource {
 }
 
 /// 构造 `PerCoordinator` 的运行期参数（嵌入默认 + 热重载后由 `AgentConfig` 填充）。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PerCoordinatorInit {
     pub reflection_default_max_rounds: usize,
     pub final_plan_policy: FinalPlanRequirementMode,
@@ -70,6 +70,22 @@ pub struct PerCoordinatorInit {
     pub final_plan_semantic_check_enabled: bool,
     /// 语义校验摘要中最多收录的**非只读**工具条数（0 表示不收录写类工具正文）。
     pub final_plan_semantic_check_max_non_readonly_tools: usize,
+}
+
+impl PerCoordinatorInit {
+    /// 与 [`AgentConfig`] 中 PER 协调相关字段对齐；供默认外循环与分层「话语型」回落路径共用，避免两处分叉漂移。
+    pub fn from_agent_config(cfg: &AgentConfig) -> Self {
+        Self {
+            reflection_default_max_rounds: cfg.reflection_default_max_rounds,
+            final_plan_policy: cfg.final_plan_requirement,
+            plan_rewrite_max_attempts: cfg.plan_rewrite_max_attempts,
+            final_plan_require_strict_workflow_node_coverage: cfg
+                .final_plan_require_strict_workflow_node_coverage,
+            final_plan_semantic_check_enabled: cfg.final_plan_semantic_check_enabled,
+            final_plan_semantic_check_max_non_readonly_tools: cfg
+                .final_plan_semantic_check_max_non_readonly_tools,
+        }
+    }
 }
 
 /// 模型返回最终文本（非 tool_calls）后，由协调层决定是结束本轮还是要求重写。
@@ -408,6 +424,30 @@ mod tests {
 
     fn test_cfg() -> AgentConfig {
         crate::config::load_config(None).expect("embed default config")
+    }
+
+    #[test]
+    fn per_coordinator_init_from_agent_config_matches_cfg_fields() {
+        let cfg = test_cfg();
+        let i = PerCoordinatorInit::from_agent_config(&cfg);
+        assert_eq!(
+            i.reflection_default_max_rounds,
+            cfg.reflection_default_max_rounds
+        );
+        assert_eq!(i.final_plan_policy, cfg.final_plan_requirement);
+        assert_eq!(i.plan_rewrite_max_attempts, cfg.plan_rewrite_max_attempts);
+        assert_eq!(
+            i.final_plan_require_strict_workflow_node_coverage,
+            cfg.final_plan_require_strict_workflow_node_coverage
+        );
+        assert_eq!(
+            i.final_plan_semantic_check_enabled,
+            cfg.final_plan_semantic_check_enabled
+        );
+        assert_eq!(
+            i.final_plan_semantic_check_max_non_readonly_tools,
+            cfg.final_plan_semantic_check_max_non_readonly_tools
+        );
     }
 
     fn pc(policy: FinalPlanRequirementMode, plan_rewrite_max: usize) -> PerCoordinator {
