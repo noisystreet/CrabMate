@@ -26,16 +26,17 @@ impl<'p> AgentLlmCall<'p> {
         req: &ChatRequest,
     ) -> Result<(crate::types::Message, String), LlmCompleteError> {
         let cc = CompleteChatRetryingParams::new(
-            self.p.llm_backend,
-            self.p.client,
-            self.p.api_key,
-            self.p.cfg.as_ref(),
+            self.p.ctx.llm_backend,
+            self.p.ctx.client,
+            self.p.ctx.api_key,
+            self.p.ctx.cfg.as_ref(),
             transport,
-            self.p.request_chrome_trace.clone(),
+            self.p.ctx.request_chrome_trace.clone(),
             self.p
+                .turn
                 .model_override
                 .as_deref()
-                .or(self.p.cfg.planner_model.as_deref()),
+                .or(self.p.ctx.cfg.planner_model.as_deref()),
         );
         complete_chat_retrying(&cc, req).await
     }

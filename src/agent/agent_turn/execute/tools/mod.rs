@@ -73,7 +73,7 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
     /// 整请求 Chrome trace；与 `workflow_execute` 合并写 `turn-*.json`。
     pub request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
-    /// 分阶段规划当前步子代理约束；与 `RunLoopParams::step_executor_constraint` 同步。
+    /// 分阶段规划当前步子代理约束；与 `RunLoopTurnState::step_executor_constraint` 同步。
     pub step_executor_constraint: Option<PlanStepExecutorKind>,
     /// 本会话完整工具定义（未按步收窄）；用于子代理越权提示中的允许工具名列表。
     pub tools_defs_full: &'a [Tool],

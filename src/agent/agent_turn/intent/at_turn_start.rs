@@ -40,11 +40,11 @@ pub(crate) enum IntentGateResult {
 pub(crate) async fn run_intent_at_turn_start_if_configured(
     p: &mut RunLoopParams<'_>,
 ) -> Result<bool, super::super::errors::RunAgentTurnError> {
-    if !p.cfg.intent_at_turn_start_enabled {
+    if !p.ctx.cfg.intent_at_turn_start_enabled {
         return Ok(true);
     }
-    let in_clarification_flow = intent_user::recently_waiting_execute_confirmation(p.messages);
-    let task = intent_user::extract_effective_user_task(p.messages, in_clarification_flow);
+    let in_clarification_flow = intent_user::recently_waiting_execute_confirmation(p.turn.messages);
+    let task = intent_user::extract_effective_user_task(p.turn.messages, in_clarification_flow);
     if task.trim().is_empty() {
         return Ok(true);
     }
@@ -53,8 +53,8 @@ pub(crate) async fn run_intent_at_turn_start_if_configured(
         &task,
         in_clarification_flow,
         ExecuteIntentThresholds {
-            low: p.cfg.intent_non_hier_execute_low_threshold,
-            high: p.cfg.intent_non_hier_execute_high_threshold,
+            low: p.ctx.cfg.intent_non_hier_execute_low_threshold,
+            high: p.ctx.cfg.intent_non_hier_execute_high_threshold,
         },
         "intent_at_turn",
     )
@@ -68,14 +68,14 @@ pub(crate) async fn run_intent_for_hierarchical(
     p: &mut RunLoopParams<'_>,
     task: &str,
 ) -> Result<IntentGateResult, super::super::errors::RunAgentTurnError> {
-    let in_clarification_flow = intent_user::recently_waiting_execute_confirmation(p.messages);
+    let in_clarification_flow = intent_user::recently_waiting_execute_confirmation(p.turn.messages);
     run_intent_l0_l1_l2_gate(
         p,
         task,
         in_clarification_flow,
         ExecuteIntentThresholds {
-            low: p.cfg.intent_execute_low_threshold,
-            high: p.cfg.intent_execute_high_threshold,
+            low: p.ctx.cfg.intent_execute_low_threshold,
+            high: p.ctx.cfg.intent_execute_high_threshold,
         },
         "hierarchical::intent",
     )
@@ -176,9 +176,10 @@ async fn apply_non_execute_and_finish(
     p: &mut RunLoopParams<'_>,
     reply: &str,
 ) -> Result<bool, super::super::errors::RunAgentTurnError> {
-    p.messages
+    p.turn
+        .messages
         .push(crate::types::Message::assistant_only(reply.to_string()));
-    if let Some(out) = p.out {
+    if let Some(out) = p.ctx.out {
         let phase = sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
             assistant_answer_phase: true,
         });
@@ -205,26 +206,26 @@ async fn run_intent_l0_l1_l2_gate(
     sse_log_tag: &'static str,
 ) -> Result<IntentGateResult, super::super::errors::RunAgentTurnError> {
     let has_recent_tool_failure =
-        intent_l0::messages_have_recent_tool_failure(p.messages, MSG_TAIL_FOR_TOOL);
+        intent_l0::messages_have_recent_tool_failure(p.turn.messages, MSG_TAIL_FOR_TOOL);
     let recent_user_messages =
-        intent_user::collect_recent_user_messages(p.messages, RECENT_USER_FOR_MERGE);
+        intent_user::collect_recent_user_messages(p.turn.messages, RECENT_USER_FOR_MERGE);
     let intent_ctx = IntentContext {
         recent_user_messages,
         in_clarification_flow,
         thresholds,
-        l2_min_confidence: p.cfg.intent_l2_min_confidence,
+        l2_min_confidence: p.ctx.cfg.intent_l2_min_confidence,
         has_recent_tool_failure,
-        l0_routing_boost_enabled: p.cfg.intent_l0_routing_boost_enabled,
+        l0_routing_boost_enabled: p.ctx.cfg.intent_l0_routing_boost_enabled,
     };
     let (routing_for_l1, _, _) = prepare_intent_routing(task, &intent_ctx);
-    let l2_candidate = if p.cfg.intent_l2_enabled {
+    let l2_candidate = if p.ctx.cfg.intent_l2_enabled {
         classify_intent_l2_with_llm(
             &routing_for_l1,
             task,
-            p.cfg.as_ref(),
-            p.llm_backend,
-            p.client,
-            p.api_key,
+            p.ctx.cfg.as_ref(),
+            p.ctx.llm_backend,
+            p.ctx.client,
+            p.ctx.api_key,
         )
         .await
     } else {
@@ -249,7 +250,7 @@ async fn run_intent_l0_l1_l2_gate(
         &assessment.action,
         merge_meta.used_merged_continuation,
     );
-    emit_intent_timeline(p.out, sse_log_tag, &assessment, &merge_meta).await;
+    emit_intent_timeline(p.ctx.out, sse_log_tag, &assessment, &merge_meta).await;
 
     if matches!(assessment.action, IntentAction::Execute) {
         return Ok(IntentGateResult::ProceedExecute { assessment });
@@ -259,8 +260,8 @@ async fn run_intent_l0_l1_l2_gate(
         && qa_readonly_style_primary(&assessment.primary_intent)
         && matches!(&assessment.action, IntentAction::DirectReply(_))
     {
-        p.step_executor_constraint = Some(PlanStepExecutorKind::ReviewReadonly);
-        p.intent_turn_gate_hint = Some(GATE_HINT_READONLY_ZH.to_string());
+        p.turn.step_executor_constraint = Some(PlanStepExecutorKind::ReviewReadonly);
+        p.turn.intent_turn_gate_hint = Some(GATE_HINT_READONLY_ZH.to_string());
         return Ok(IntentGateResult::ProceedExecute { assessment });
     }
 
@@ -272,11 +273,11 @@ async fn run_intent_l0_l1_l2_gate(
 
     match &assessment.action {
         IntentAction::ClarifyThenExecute(_) => {
-            p.intent_turn_gate_hint = Some(GATE_HINT_CLARIFY_ZH.to_string());
+            p.turn.intent_turn_gate_hint = Some(GATE_HINT_CLARIFY_ZH.to_string());
             return Ok(IntentGateResult::ProceedExecute { assessment });
         }
         IntentAction::ConfirmThenExecute(_) => {
-            p.intent_turn_gate_hint = Some(GATE_HINT_CONFIRM_ZH.to_string());
+            p.turn.intent_turn_gate_hint = Some(GATE_HINT_CONFIRM_ZH.to_string());
             return Ok(IntentGateResult::ProceedExecute { assessment });
         }
         _ => {}

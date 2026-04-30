@@ -39,7 +39,9 @@ pub(crate) use execute_tools::{
 pub(crate) use intent::{intent_at_turn_start, intent_user};
 #[allow(unused_imports)]
 pub(crate) use messages::push_assistant_merging_trailing_empty_placeholder;
+pub(crate) use params::RunLoopCtx;
 pub(crate) use params::RunLoopParams;
+pub(crate) use params::RunLoopTurnState;
 #[allow(unused_imports)]
 pub(crate) use plan::{
     AgentLlmCall, PerPlanCallModelParams, PlannerSseGate, per_plan_call_model_retrying,
@@ -56,23 +58,24 @@ mod tests;
 pub(crate) async fn run_agent_turn_common(
     p: &mut RunLoopParams<'_>,
 ) -> Result<(), RunAgentTurnError> {
-    if let Some(ctx) = p.cli_tool_ctx {
+    if let Some(ctx) = p.ctx.cli_tool_ctx {
         ctx.reset_command_stats();
     }
     debug!(
         target: "crabmate",
         "run_agent_turn 开始 message_count={} last_user_preview={} staged_plan={} planner_executor_mode={} work_dir={}",
-        p.messages.len(),
-        crate::redact::last_user_message_preview_for_log(p.messages),
-        p.cfg.staged_plan_execution,
-        p.cfg.planner_executor_mode.as_str(),
-        p.effective_working_dir.display()
+        p.turn.messages.len(),
+        crate::redact::last_user_message_preview_for_log(p.turn.messages),
+        p.ctx.cfg.staged_plan_execution,
+        p.ctx.cfg.planner_executor_mode.as_str(),
+        p.ctx.effective_working_dir.display()
     );
-    insert_separator_after_last_user_for_turn(p.messages);
+    insert_separator_after_last_user_for_turn(p.turn.messages);
 
-    let mut per_coord = PerCoordinator::new(PerCoordinatorInit::from_agent_config(p.cfg.as_ref()));
+    let mut per_coord =
+        PerCoordinator::new(PerCoordinatorInit::from_agent_config(p.ctx.cfg.as_ref()));
 
-    if p.cfg.planner_executor_mode == PlannerExecutorMode::Hierarchical {
+    if p.ctx.cfg.planner_executor_mode == PlannerExecutorMode::Hierarchical {
         // 意图门控在 `hierarchy::run_hierarchical_agent` 内通过 `run_intent_for_hierarchical` 执行（与 L0/合并文本一致），勿在此重复。
         run_dispatch::dispatch_hierarchical_turn(p).await
     } else {

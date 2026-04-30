@@ -30,19 +30,19 @@ pub(crate) async fn per_reflect_after_assistant(
     finish_reason: &str,
     msg: &Message,
 ) -> ReflectOnAssistantOutcome {
-    p.sub_phase = crate::agent::agent_turn::AgentTurnSubPhase::Reflect;
+    p.turn.sub_phase = crate::agent::agent_turn::AgentTurnSubPhase::Reflect;
     if finish_reason == "tool_calls" || msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
         return ReflectOnAssistantOutcome::ProceedToExecuteTools;
     }
     match per_coord.after_final_assistant(
         msg,
-        p.messages.as_slice(),
-        p.cfg.as_ref(),
-        p.workspace_is_set,
+        p.turn.messages.as_slice(),
+        p.ctx.cfg.as_ref(),
+        p.ctx.workspace_is_set,
     ) {
         AfterFinalAssistant::StopTurn => ReflectOnAssistantOutcome::StopTurn,
         AfterFinalAssistant::RequestPlanRewrite(m) => {
-            p.messages.push(m);
+            p.turn.messages.push(m);
             ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite
         }
         AfterFinalAssistant::StopTurnPlanRewriteExhausted { reason } => {
@@ -52,19 +52,19 @@ pub(crate) async fn per_reflect_after_assistant(
             let plan_json = per_plan_semantic_check::agent_reply_plan_json_compact(&plan);
             let outcome = per_plan_semantic_check::evaluate_plan_consistency_with_recent_tools_llm(
                 PlanSemanticLlmCtx {
-                    llm_backend: p.llm_backend,
-                    client: p.client,
-                    api_key: p.api_key,
-                    cfg: p.cfg.as_ref(),
-                    out: p.out,
-                    no_stream: p.no_stream,
-                    cancel: p.cancel,
-                    plain_terminal_stream: p.plain_terminal_stream,
-                    request_chrome_trace: p.request_chrome_trace.clone(),
-                    temperature_override: p.temperature_override,
-                    model_override: p.model_override.clone(),
-                    seed_override: p.seed_override,
-                    max_tokens: p.cfg.final_plan_semantic_check_max_tokens,
+                    llm_backend: p.ctx.llm_backend,
+                    client: p.ctx.client,
+                    api_key: p.ctx.api_key,
+                    cfg: p.ctx.cfg.as_ref(),
+                    out: p.ctx.out,
+                    no_stream: p.ctx.no_stream,
+                    cancel: p.ctx.cancel,
+                    plain_terminal_stream: p.ctx.plain_terminal_stream,
+                    request_chrome_trace: p.ctx.request_chrome_trace.clone(),
+                    temperature_override: p.turn.temperature_override,
+                    model_override: p.turn.model_override.clone(),
+                    seed_override: p.turn.seed_override,
+                    max_tokens: p.ctx.cfg.final_plan_semantic_check_max_tokens,
                 },
                 plan_json.as_str(),
                 tool_digest.as_deref(),
@@ -81,7 +81,7 @@ pub(crate) async fn per_reflect_after_assistant(
             } else {
                 per_coord.increment_plan_rewrite_attempts();
                 let rationale = outcome.rationale.as_deref();
-                p.messages.push(
+                p.turn.messages.push(
                     PerCoordinator::plan_semantic_mismatch_rewrite_message_with_feedback(
                         outcome.violation_codes.as_slice(),
                         rationale,
