@@ -58,7 +58,7 @@ impl GoalVerifier {
     /// 检查顺序：
     /// 1. 执行结果状态
     /// 2. 目标级硬门槛（编写运行程序 / 运行可执行体证据）
-    /// 3. [`GoalAcceptance`] 字段：文件 / 合并输出 / 退出码（经 [`crate::agent::acceptance`]）
+    /// 3. [`GoalAcceptance`] 字段：文件 / stdout·stderr / 合并输出 / JSON path / HTTP / 退出码（经 [`crate::agent::acceptance`]）
     /// 4. `expect_command_success` 二次验证命令
     pub fn verify(&self, goal: &SubGoal, result: &TaskResult) -> VerificationResult {
         // 首先检查执行结果状态
@@ -136,8 +136,17 @@ impl GoalVerifier {
             let error = result.error.as_deref().unwrap_or("");
             let combined = format!("{output} {error}");
             let exit_parsed = GoalVerifier::extract_exit_code(&combined);
+            let tool_for_http = result
+                .tools_invoked
+                .last()
+                .map(|s| s.as_str())
+                .filter(|n| {
+                    let l = n.to_lowercase();
+                    l.contains("http") || l.contains("fetch")
+                })
+                .unwrap_or("");
             let ev = AcceptanceEvidence {
-                tool_name: "",
+                tool_name: tool_for_http,
                 tool_output: combined.as_str(),
                 stdout: output,
                 stderr: error,
@@ -492,6 +501,7 @@ fn verify_program_build_and_run_evidence(result: &TaskResult) -> Result<(), Stri
 
 #[cfg(test)]
 mod tests {
+    use super::super::task::GoalAcceptance;
     use super::*;
 
     #[test]
@@ -614,6 +624,46 @@ mod tests {
             "运行 cmake --build build 编译生成可执行文件，不执行程序",
         );
         assert!(!is_run_executable_subgoal(&goal));
+    }
+
+    #[test]
+    fn goal_acceptance_expect_http_status_merge_output_without_http_tool_name() {
+        let verifier = GoalVerifier::new(std::env::temp_dir());
+        let mut goal = SubGoal::new("g", "verify http json");
+        goal.acceptance = Some(GoalAcceptance {
+            expect_http_status: Some(200),
+            ..Default::default()
+        });
+        let result = TaskResult {
+            task_id: "g".to_string(),
+            status: TaskStatus::Completed,
+            output: Some(r#"{"status": 200, "body": "ok"}"#.to_string()),
+            error: None,
+            artifacts: vec![],
+            duration_ms: 0,
+            tools_invoked: vec![],
+        };
+        assert!(verifier.verify(&goal, &result).is_pass());
+    }
+
+    #[test]
+    fn goal_acceptance_expect_stdout_contains_is_case_sensitive() {
+        let verifier = GoalVerifier::new(std::env::temp_dir());
+        let mut goal = SubGoal::new("g", "case");
+        goal.acceptance = Some(GoalAcceptance {
+            expect_stdout_contains: Some("Ok".to_string()),
+            ..Default::default()
+        });
+        let result = TaskResult {
+            task_id: "g".to_string(),
+            status: TaskStatus::Completed,
+            output: Some("ok".to_string()),
+            error: None,
+            artifacts: vec![],
+            duration_ms: 0,
+            tools_invoked: vec![],
+        };
+        assert!(verifier.verify(&goal, &result).is_fail());
     }
 
     #[test]

@@ -48,6 +48,10 @@ pub fn sanitize_reflection_acceptance(
 
     if a.expect_file_exists.is_empty()
         && a.expect_output_contains.is_empty()
+        && a.expect_stdout_contains.is_none()
+        && a.expect_stderr_contains.is_none()
+        && a.expect_json_path_equals.is_none()
+        && a.expect_http_status.is_none()
         && a.expect_command_success.is_none()
         && a.expect_exit_code.is_none()
     {
@@ -220,6 +224,7 @@ mod tests {
             expect_command_success: Some("rm -rf /".to_string()),
             expect_output_contains: vec![],
             expect_exit_code: None,
+            ..Default::default()
         });
         let (out, dropped) = sanitize_reflection_acceptance(acc, std::path::Path::new("/tmp/ws"));
         assert!(dropped);

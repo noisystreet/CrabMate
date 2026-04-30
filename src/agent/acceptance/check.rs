@@ -257,7 +257,10 @@ pub fn verify_against_spec(spec: &AcceptanceSpec, ev: &AcceptanceEvidence<'_>) -
 
     if let Some(expected_status) = spec.expect_http_status {
         let tool_name_lower = ev.tool_name.to_lowercase();
-        if tool_name_lower.contains("http") || tool_name_lower.contains("fetch") {
+        let allow_http_probe = tool_name_lower.contains("http")
+            || tool_name_lower.contains("fetch")
+            || ev.tool_name.is_empty();
+        if allow_http_probe {
             if let Some(actual_status) = extract_http_status(ev.tool_name, ev.tool_output) {
                 if actual_status != expected_status {
                     return VerifyOutcome::Fail {
