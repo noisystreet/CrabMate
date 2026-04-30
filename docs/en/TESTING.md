@@ -2,7 +2,7 @@
 
 # Testing and quality checks
 
-This page lists **automated tests and common checks** for the CrabMate repo (run from the repository root unless noted). For module layout and protocols, see [`DEVELOPMENT.md`](DEVELOPMENT.md). For **`crabmate bench`** roadmap and benchmark-specific testing strategy, see [`BENCHMARK_PLANNING.md`](../BENCHMARK_PLANNING.md) (kept separate from this general checklist).
+This page lists **automated tests and common checks** for the CrabMate repo (run from the repository root unless noted). For module layout and protocols, see [`DEVELOPMENT.md`](DEVELOPMENT.md). For **`crabmate bench`** roadmap and benchmark-specific testing strategy, see [`BENCHMARK_PLANNING.md`](../BENCHMARK_PLANNING.md) (kept separate from this general checklist). **HumanEval scoring script smoke** (no LLM): `python3 scripts/humaneval_score_benchmark_results.py --tasks fixtures/benchmark/humaneval_tiny_tasks.jsonl --results fixtures/benchmark/humaneval_tiny_results.jsonl --output /tmp/tiny_scores.jsonl` (executes the tiny completion; see `BENCHMARK_PLANNING.md` §5.3).
 
 ## Prerequisites
 

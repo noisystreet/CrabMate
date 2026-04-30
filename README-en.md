@@ -27,7 +27,7 @@ It ships **function calling**, workspace commands and file tools, plus a **Web U
 
 - **Built-in tools** (**function calling**): workspace files, **`run_command`** (allowlist), HTTP/search, **`codebase_semantic_search`** (SQLite **FTS5** + local embeddings, hybrid by default), formatting, dependency graphs and coverage, container helpers; stacks include **Rust / Python / JS·TS / Go / JVM / C·C++** and **GitHub `gh_*`**. Full list and JSON examples: [docs/en/TOOLS.md](docs/en/TOOLS.md).
 
-- **CLI**: **`crabmate repl`** / **`chat`** / **`serve`** (same agent/tools as the Web UI). Details: **[CLI](#cli)** and [docs/en/CLI.md](docs/en/CLI.md).
+- **CLI**: **`crabmate repl`** / **`chat`** / **`serve`** (same agent/tools as the Web UI). Details: **[CLI](#cli)** and [docs/en/CLI.md](docs/en/CLI.md). **`bench`** batch evaluation; HumanEval official JSONL conversion and **`benchmark_results.jsonl`** scoring scripts: [docs/BENCHMARK_PLANNING.md](docs/BENCHMARK_PLANNING.md) §5 and **`scripts/humaneval_*.py`** (scoring executes model-generated code—use an isolated environment).
 
 - **Web UI**: DeepSeek-style layout; assistant replies as **Markdown**; sidebar sessions (right-click a session or empty list area for **Manage sessions…**, starring, pinning, export; filter & search), workspace tree and change preview, tasks and context status, multi-select / retry / branch on messages; **multi-role** and more in [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
 

@@ -68,12 +68,20 @@
 | 选项 | 说明 |
 |------|------|
 | `--benchmark <TYPE>` | `swe_bench`、`gaia`、`human_eval`、`generic` |
-| `--batch <FILE>` | 输入 JSONL |
+| `--batch <FILE>` | 输入 JSONL（`human_eval` 时每条须含 `humaneval_test`、`entry_point`，见 **`docs/BENCHMARK_PLANNING.md`** §5） |
 | `--batch-output <FILE>` | 默认 `benchmark_results.jsonl` |
 | `--task-timeout <SECS>` | `0` 不限制 |
 | `--max-tool-rounds <N>` | `0` 不限制 |
 | `--resume` | 跳过已有 `instance_id` |
 | `--bench-system-prompt <FILE>` | 覆盖 system |
+
+HumanEval 官方数据转换与判分（Python 3，**执行模型生成代码**，须自行隔离环境）：
+
+```bash
+python3 scripts/humaneval_official_to_crabmate_jsonl.py --input HumanEval.jsonl --output tasks.jsonl
+cargo run -- bench --benchmark human_eval --batch tasks.jsonl --batch-output results.jsonl
+python3 scripts/humaneval_score_benchmark_results.py --tasks tasks.jsonl --results results.jsonl
+```
 
 ## 示例
 
