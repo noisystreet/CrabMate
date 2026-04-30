@@ -1,0 +1,1 @@
+{"instance_id":"tiny/add","task_id":"tiny/add","prompt":"def add(a, b):\n    \"\"\"Add two numbers.\"\"\"\n","entry_point":"add","humaneval_test":"def check(candidate):\n    assert candidate(2, 3) == 5\n"}

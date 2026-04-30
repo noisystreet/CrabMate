@@ -78,6 +78,13 @@ pub struct BenchmarkTask {
     /// 函数入口点（可选，adapter 中通过 prompt 传递）
     #[serde(default)]
     pub entry_point: Option<String>,
+    /// HumanEval 官方 `test` 字段（单元测试源码），供外挂 Python 判分；`bench` 运行时忽略。
+    #[serde(
+        default,
+        rename = "humaneval_test",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub humaneval_test: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -193,5 +200,14 @@ mod parse_tests {
         assert!(parse_task_jsonl_line("   ").unwrap().is_none());
         assert!(parse_task_jsonl_line("# comment").unwrap().is_none());
         assert!(parse_task_jsonl_line(" # leading").unwrap().is_none());
+    }
+
+    #[test]
+    fn humaneval_task_roundtrip_jsonl() {
+        let line = r#"{"instance_id":"t0","prompt":"def f():\n    \"\"\"x\"\"\"\n","task_id":"HumanEval/0","entry_point":"f","humaneval_test":"def check(x):\n    pass\n"}"#;
+        let t = parse_task_jsonl_line(line).unwrap().expect("task");
+        assert_eq!(t.instance_id, "t0");
+        assert_eq!(t.entry_point.as_deref(), Some("f"));
+        assert!(t.humaneval_test.as_deref().unwrap().contains("check"));
     }
 }

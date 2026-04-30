@@ -30,8 +30,8 @@
 
 1. **HumanEval（推荐先做）**  
    - 优势：无 `git clone`、任务轻；适配器见 `adapter.rs::HumanEvalAdapter`。  
-   - 缺口：**官方 `check` 判分**未集成；`task_id` / `entry_point` / `test` 在 `BenchmarkTask` 中可选存在，但适配器当前仅强校验 `prompt`。  
-   - 规划项：见下文 §5。
+   - **判分**：`bench` 仍不内置官方分数；外挂 **`scripts/humaneval_score_benchmark_results.py`**（§5.3）与任务字段 **`humaneval_test`** / **`entry_point`** 对齐 HumanEval `check`。  
+   - 细节与字段：见下文 §5。
 
 2. **generic**  
    - 用于冒烟与 CI（最小 JSONL + 可选 mock/跳 LLM 策略若未来引入）。  
@@ -53,7 +53,7 @@
 
 ### 4.2 不调用 LLM 的契约测试（推荐新增）
 
-- **JSONL → `BenchmarkTask`**：用最小 fixture（1～2 行）断言反序列化与各 `validate_task` 行为；仓库内示例见 **`fixtures/benchmark/tasks_smoke.jsonl`**，单测覆盖见 **`types::parse_task_jsonl_line`** 与 **`adapter` 模块 `#[cfg(test)]`**。  
+- **JSONL → `BenchmarkTask`**：用最小 fixture（1～2 行）断言反序列化与各 `validate_task` 行为；仓库内示例见 **`fixtures/benchmark/tasks_smoke.jsonl`**（通用 + HumanEval 契约），另有 **`fixtures/benchmark/humaneval_tiny_*.jsonl`** 供判分脚本冒烟；单测覆盖见 **`types::parse_task_jsonl_line`** 与 **`adapter` 模块 `#[cfg(test)]`**。  
 - **adapter 纯函数**：`build_user_prompt` / `system_prompt_suffix` 对固定 `BenchmarkTask` 的快照或包含断言（避免与 `run_agent_turn` 耦合）。
 
 ### 4.3 集成 / 端到端（可选、成本高）
@@ -68,15 +68,50 @@
 
 ---
 
-## 5. HumanEval 专项清单（待办）
+## 5. HumanEval 专项
 
-- [ ] **数据转换**：官方 JSONL → 本仓库 `BenchmarkTask` JSONL（`instance_id`、`prompt` 必填；建议携带 `entry_point` 与 `test` 供判分侧使用，即使当前 serde 忽略多余字段也可写入同一文件供外挂脚本读取——或扩展 `BenchmarkResult` 透传引用 id）。  
-- [ ] **判分**：二选一或并存——  
-  - **外挂**：`benchmark_results.jsonl` + 原始任务表 → Python 调用官方 `check`；  
-  - **内置**（可选）：子命令或 `bench --evaluate-human-eval` 读取 `test` 执行 `check`。  
-- [ ] **适配器**：`validate_task` 是否要求 `entry_point`；`extract_code_completion` 与「仅函数体」提示的一致性（避免重复 `def` 导致官方 `check` 失败）。  
-- [ ] **基线**：记录 pass@k 与模型/配置版本到 **`docs/BENCHMARK_RESULTS.md`**（可选新建，与本文档区分：本文档=规划，该文件=基线记录）。  
-- [ ] **文档**：在 **`docs/CLI.md`** 保留简短命令示例；HumanEval JSONL 完整示例与本节清单以本文档为准。
+### 5.1 任务 JSONL 字段（`--benchmark human_eval`）
+
+每行一个 **`BenchmarkTask`** 对象，**必填**：
+
+| 字段 | 说明 |
+|------|------|
+| `instance_id` | 稳定主键；建议与官方 `task_id` 相同（如 `HumanEval/0`） |
+| `prompt` | 官方 HumanEval 的 `prompt`（发给模型的函数桩 + docstring） |
+| `entry_point` | 官方 `entry_point`（判分脚本 `check(<entry_point>)` 需要） |
+| `humaneval_test` | 官方 JSONL 的 **`test`** 字段（单元测试源码）；**不**随 `bench` 发给模型，仅供外挂判分 |
+
+可选：`task_id`（与官方一致时便于对照论文）。
+
+### 5.2 官方数据 → CrabMate JSONL
+
+仓库脚本（**仅需 Python 3 标准库**）：
+
+```bash
+python3 scripts/humaneval_official_to_crabmate_jsonl.py \
+  --input /path/to/HumanEval.jsonl \
+  --output humaneval_crabmate_tasks.jsonl
+```
+
+### 5.3 `bench` 之后：外挂判分（`benchmark_results.jsonl`）
+
+使用 **OpenAI HumanEval 同源**的 `check_correctness`（`scripts/vendor/human_eval_openai/execution.py`，MIT；见该目录 **`README.md`**）。**会执行模型生成的 Python**，勿对不可信结果裸跑在生产机。
+
+```bash
+cargo run -- bench --benchmark human_eval --batch humaneval_crabmate_tasks.jsonl --batch-output results.jsonl
+python3 scripts/humaneval_score_benchmark_results.py \
+  --tasks humaneval_crabmate_tasks.jsonl \
+  --results results.jsonl \
+  --output results_humaneval_scores.jsonl
+```
+
+默认写出汇总 JSON 到 stdout，逐条判分写入 `--output`。冒烟夹具：`fixtures/benchmark/humaneval_tiny_*.jsonl`（可用上列命令本地验证判分链路）。
+
+### 5.4 仍待跟进
+
+- [ ] **基线**：记录 pass@k 与模型/配置版本到 **`docs/BENCHMARK_RESULTS.md`**（可选新建）。  
+- [ ] **内置判分**（可选）：`bench --evaluate-human-eval` 等，与本文 §5.3 外挂并存时须更新 CLI 与本文。  
+- [ ] **抽取一致性**：`extract_code_completion` 与「仅函数体」提示对齐，避免重复 `def` 导致官方 `check` 失败（见 `artifact.rs`）。
 
 ---
 
@@ -106,6 +141,9 @@
 | `src/runtime/benchmark/artifact.rs` | 从模型输出抽取 patch / 答案 / 代码 |
 | `src/runtime/benchmark/metrics.rs` | 单任务与批次指标 |
 | `src/lib.rs` | `bench_args` 分派与 `run_batch` 调用 |
+| `scripts/humaneval_official_to_crabmate_jsonl.py` | 官方 HumanEval JSONL → CrabMate 任务 JSONL |
+| `scripts/humaneval_score_benchmark_results.py` | `benchmark_results.jsonl` + 任务表 → 外挂 `check_correctness` 判分 |
+| `scripts/vendor/human_eval_openai/execution.py` | 上游 HumanEval `execution.py`（vendored MIT） |
 
 ---
 

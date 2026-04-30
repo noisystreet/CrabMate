@@ -1,0 +1,1 @@
+{"instance_id":"tiny/add","benchmark":"human_eval","status":"success","raw_reply":null,"model_patch":null,"final_answer":null,"completion":"    return a + b\n","metrics":{"wall_time_secs":0.1,"tool_calls_count":0,"agent_rounds":1},"model_name_or_path":"stub","error":null}

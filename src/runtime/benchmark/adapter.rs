@@ -245,6 +245,24 @@ impl BenchmarkAdapter for HumanEvalAdapter {
         if task.prompt.is_empty() {
             return Err(format!("{}: 缺少 prompt 字段", task.instance_id));
         }
+        if task.entry_point.as_deref().unwrap_or("").trim().is_empty() {
+            return Err(format!(
+                "{}: HumanEval 需要 entry_point（供外挂判分与自检）",
+                task.instance_id
+            ));
+        }
+        if task
+            .humaneval_test
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .is_empty()
+        {
+            return Err(format!(
+                "{}: HumanEval 需要 humaneval_test（官方 JSONL 的 test 字段）",
+                task.instance_id
+            ));
+        }
         Ok(())
     }
 
@@ -430,6 +448,38 @@ mod contract_tests {
     }
 
     #[test]
+    fn humaneval_requires_entry_point_and_test() {
+        let ad = HumanEvalAdapter;
+        let base = BenchmarkTask {
+            instance_id: "x".into(),
+            prompt: "def f(): pass".into(),
+            repo: None,
+            base_commit: None,
+            problem_statement: None,
+            hints_text: None,
+            file_attachments: vec![],
+            task_id: None,
+            entry_point: None,
+            humaneval_test: None,
+        };
+        assert!(ad.validate_task(&base).is_err());
+
+        let no_test = BenchmarkTask {
+            entry_point: Some("f".into()),
+            humaneval_test: None,
+            ..base.clone()
+        };
+        assert!(ad.validate_task(&no_test).is_err());
+
+        let ok = BenchmarkTask {
+            entry_point: Some("f".into()),
+            humaneval_test: Some("def check(candidate):\n    pass\n".into()),
+            ..base
+        };
+        assert!(ad.validate_task(&ok).is_ok());
+    }
+
+    #[test]
     fn swe_bench_validate_and_prompt() {
         let adapter = SweBenchAdapter;
         let missing_repo = BenchmarkTask {
@@ -442,6 +492,7 @@ mod contract_tests {
             file_attachments: vec![],
             task_id: None,
             entry_point: None,
+            humaneval_test: None,
         };
         assert!(adapter.validate_task(&missing_repo).is_err());
 
@@ -455,6 +506,7 @@ mod contract_tests {
             file_attachments: vec![],
             task_id: None,
             entry_point: None,
+            humaneval_test: None,
         };
         assert!(adapter.validate_task(&ok).is_ok());
         let p = adapter.build_user_prompt(&ok);
@@ -476,6 +528,7 @@ mod contract_tests {
             file_attachments: vec![],
             task_id: None,
             entry_point: None,
+            humaneval_test: None,
         };
         assert!(adapter.validate_task(&bad).is_err());
 
@@ -489,6 +542,7 @@ mod contract_tests {
             file_attachments: vec!["data/x.txt".into()],
             task_id: None,
             entry_point: None,
+            humaneval_test: None,
         };
         assert!(adapter.validate_task(&task).is_ok());
         let u = adapter.build_user_prompt(&task);

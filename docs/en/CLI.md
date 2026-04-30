@@ -68,12 +68,20 @@ Planning for benchmark features and testing: **`docs/BENCHMARK_PLANNING.md`** (k
 | Option | Description |
 |--------|-------------|
 | `--benchmark <TYPE>` | `swe_bench`, `gaia`, `human_eval`, `generic` |
-| `--batch <FILE>` | Input JSONL |
+| `--batch <FILE>` | Input JSONL (`human_eval` rows need `humaneval_test` and `entry_point`; see **`docs/BENCHMARK_PLANNING.md`** §5) |
 | `--batch-output <FILE>` | Default `benchmark_results.jsonl` |
 | `--task-timeout <SECS>` | `0` = no limit |
 | `--max-tool-rounds <N>` | `0` = no limit |
 | `--resume` | Skip existing `instance_id` |
 | `--bench-system-prompt <FILE>` | Override system |
+
+HumanEval: convert the official JSONL, run `bench`, then score with Python 3 (**executes model-generated code** — sandbox if needed):
+
+```bash
+python3 scripts/humaneval_official_to_crabmate_jsonl.py --input HumanEval.jsonl --output tasks.jsonl
+cargo run -- bench --benchmark human_eval --batch tasks.jsonl --batch-output results.jsonl
+python3 scripts/humaneval_score_benchmark_results.py --tasks tasks.jsonl --results results.jsonl
+```
 
 ## Examples
 

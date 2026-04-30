@@ -1,3 +1,3 @@
 # Smoke JSONL for benchmark contract tests (see src/runtime/benchmark/adapter.rs).
 {"instance_id":"smoke_generic","prompt":"Say hi in one word.","ignored_extra_key":true}
-{"instance_id":"smoke_humaneval","prompt":"def add(a, b):\n    \"\"\"Add two numbers.\"\"\"","task_id":"HumanEval/0","entry_point":"add"}
+{"instance_id":"smoke_humaneval","prompt":"def add(a, b):\n    \"\"\"Add two numbers.\"\"\"","task_id":"HumanEval/0","entry_point":"add","humaneval_test":"def check(candidate):\n    assert candidate(2, 3) == 5\n"}
