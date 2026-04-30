@@ -3,7 +3,7 @@
 //! 当 `planner_executor_mode = Hierarchical` 时使用此模块执行任务分解和子目标执行。
 
 use crate::agent::hierarchy::task::{ArtifactKind, BuildArtifactKind, TaskResult};
-use crate::agent::hierarchy::{self, HierarchyRunnerParams, HierarchyRunnerResult};
+use crate::agent::hierarchy::{self, HierarchyRunnerResult};
 use crate::agent::intent_router::{
     IntentKind, intent_reply_delegates_to_main_model, qa_readonly_style_primary,
 };
@@ -120,32 +120,11 @@ pub(crate) async fn run_hierarchical_agent(
         truncate_string(&task, 100)
     );
 
-    // 构建运行参数
-    // 从 web_tool_ctx 中提取审批上下文（如果存在）
-    let (tool_approval_out, tool_approval_rx) = if let Some(web_ctx) = p.web_tool_ctx {
-        (
-            Some(web_ctx.out_tx.clone()),
-            Some(web_ctx.approval_rx_shared.clone()),
-        )
-    } else {
-        (None, None)
-    };
-
-    let params = HierarchyRunnerParams {
-        task: &task,
-        cfg: p.cfg.as_ref(),
-        llm_backend: p.llm_backend,
-        client: std::sync::Arc::new(p.client.clone()),
-        api_key: p.api_key.to_string(),
-        working_dir: p.effective_working_dir.to_path_buf(),
-        sse_out: p.out.cloned(),
-        tools_defs: p.tools_defs,
-        tool_approval_out,
-        tool_approval_rx,
-        primary_intent: Some(assessment.primary_intent.clone()),
-        secondary_intents: assessment.secondary_intents.clone(),
-        intent_mode_bias_enabled: p.cfg.intent_mode_bias_enabled,
-    };
+    let params = p.hierarchy_runner_params(
+        &task,
+        Some(assessment.primary_intent.clone()),
+        assessment.secondary_intents.clone(),
+    );
 
     // 运行分层 Agent：失败时也输出总结性终答，避免主气泡无收尾
     let result = match hierarchy::runner::run_hierarchical(params).await {
