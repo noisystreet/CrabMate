@@ -8,12 +8,12 @@ alwaysApply: false
 
 ## 新增或重命名工具时（按顺序核对）
 
-1. **`src/tools/tool_specs_registry/specs/*.inc.rs`**：在合适分片的数组中加入 **`ToolSpec`**（`name`、`description`、`category`（**`ToolCategory`**）、`parameters`、`runner`、`summary`（**`ToolSummaryKind`**））。新分片时同步 **`tool_specs_registry/mod.rs`** 的 **`include!`**、`extend_from_slice` 与 **`cap`**。详细顺序见 **`docs/DEVELOPMENT.md`**「扩展内置工具的推荐顺序」。
+1. **`src/tools/tool_specs_registry/specs/*.inc.rs`**：在合适分片的数组中加入 **`ToolSpec`**（`name`、`description`、`category`（**`ToolCategory`**）、`parameters`、`runner`、`summary`（**`ToolSummaryKind`**））。新分片时同步 **`tool_specs_registry/mod.rs`** 的 **`include!`**、`extend_from_slice` 与 **`cap`**。详细顺序见 **`docs/开发文档.md`**「扩展内置工具的推荐顺序」。
 2. **`src/tools/mod.rs`**：`mod` 子模块（若有新文件）；新增 `runner_*` 薄封装函数。工具入参 JSON 优先用 **`parse_args_json`**（`parse_args.rs`）而非各处手写 **`serde_json::from_str(args_json)`**。
 3. **`src/tools/tool_summary_args.rs`** + **`tool_summary.rs`**（`Dynamic` 摘要）：在 `tool_summary_args` 中为该工具新增 `Deserialize` 结构体并实现 `ToolSummaryLine`，再在 `tool_summary.rs` 增加 `summary_xxx` 薄封装调用 `summarize_from_value::<…>`。
 4. **JSON Schema**：`tool_params` 中的 `parameters` 与运行时解析一致；`runner_*` 中对 `args` 的校验与错误信息对用户可读。
 5. **白名单 / 审批**：若工具会执行命令、访问网络或写盘，确认与 **`run_command` 白名单**、**`http_fetch` 前缀**、TUI **`CommandApproval`** 等策略一致，不扩大未意图的攻击面。
-6. **文档**：更新 **`docs/DEVELOPMENT.md`** 中 **`src/tools/` 子文件**表（若增删 `mod xxx`）；用户可见能力同步 **`README.md`** 与 **`docs/TOOLS.md`**（工具详述与示例，见 **`.cursor/rules/todolist-and-documentation.mdc`**）。
+6. **文档**：更新 **`docs/开发文档.md`** 中 **`src/tools/` 子文件**表（若增删 `mod xxx`）；用户可见能力同步 **`README.md`** 与 **`docs/工具说明.md`**（工具详述与示例，见 **`.cursor/rules/todolist-and-documentation.mdc`**）。
 7. **架构索引**：若动到 `tools/mod.rs` 的模块列表，遵守 **`.cursor/rules/architecture-docs-sync.mdc`**。
 
 ## 仅改实现时

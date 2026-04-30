@@ -1,6 +1,6 @@
 //! 工作区代码语义索引：SQLite 存文本块 + fastembed 向量 + **FTS5** 全文索引（`content=` 外挂块表），
 //! 供 `codebase_semantic_search` 工具使用。查询默认 **hybrid**：BM25（全文）与余弦（向量）加权融合。
-//! 与长期记忆分库；`workspace_root` 为规范路径字符串，用于多工作区隔离（见 `docs/CODEBASE_INDEX_PLAN.md`）。
+//! 与长期记忆分库；`workspace_root` 为规范路径字符串，用于多工作区隔离（见 `docs/代码库索引方案.md`）。
 
 #![cfg_attr(
     not(feature = "fastembed"),

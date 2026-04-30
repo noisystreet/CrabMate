@@ -5,7 +5,7 @@ alwaysApply: true
 
 # TODOLIST 与功能文档
 
-## `docs/TODOLIST.md`
+## `docs/待办清单.md`
 
 - 文件含 **全局优先级（P0–P5，跨模块）** 与 **按源码模块分章**（`agent/`、`llm/`、`tools/` 等）；规则相同。
 - **不要**用 `- [x]` 长期保留已完成项。
@@ -16,11 +16,11 @@ alwaysApply: true
 
 - 合并 **用户可见** 的能力（CLI 选项、API、配置项、TUI/Web 行为、工具等）时，同步更新文档：
   - **`README.md`**：功能概览、常用命令、配置示例、安全提示等面向使用者的部分。
-  - **`docs/DEVELOPMENT.md`**：模块职责、协议、架构扩展点等面向维护者的部分。
-  - **`docs/TOOLS.md`**：内置工具的能力说明与 Function Calling 参数示例（增删改工具时同步）。
+  - **`docs/开发文档.md`**：模块职责、协议、架构扩展点等面向维护者的部分。
+  - **`docs/工具说明.md`**：内置工具的能力说明与 Function Calling 参数示例（增删改工具时同步）。
 - 若变更仅内部重构且无行为变化，可只更新 `DEVELOPMENT.md` 或代码注释，不必硬改 `README.md`。
 
 ## Rust：默认配置、环境变量与 HTTP 路由
 
-- 修改 **`config/default_config.toml`**、**`config/session.toml`**、**`config/context_inject.toml`**、**`config/tools.toml`**、**`config/sandbox.toml`**、**`config/planning.toml`**、**`config/memory.toml`**、**`config.toml.example`**，或在 **`src/`** 中变更 **axum 路由/handler**（路径、方法、请求/响应体、新接口）、或 **新增/改名/废弃** 通过 `std::env::var` 等读取的 **`CM_*` 等环境变量** 时：必须同步 **README.md**（使用者：如何配置、默认值、变量名）与 **docs/DEVELOPMENT.md**（维护者：键含义、模块边界、扩展点）。
+- 修改 **`config/default_config.toml`**、**`config/session.toml`**、**`config/context_inject.toml`**、**`config/tools.toml`**、**`config/sandbox.toml`**、**`config/planning.toml`**、**`config/memory.toml`**、**`config.toml.example`**，或在 **`src/`** 中变更 **axum 路由/handler**（路径、方法、请求/响应体、新接口）、或 **新增/改名/废弃** 通过 `std::env::var` 等读取的 **`CM_*` 等环境变量** 时：必须同步 **README.md**（使用者：如何配置、默认值、变量名）与 **docs/开发文档.md**（维护者：键含义、模块边界、扩展点）。
 - 仅内部实现重构且对外配置形状与 HTTP 契约不变时，可只改注释或 `DEVELOPMENT.md`。

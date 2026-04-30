@@ -98,7 +98,7 @@ impl ChatCliArgs {
         ]),
 ))]
 #[command(
-    after_long_help = "进程退出码与 `--output json` 稳定 JSON 行（`crabmate_chat_cli_result` v=1）见仓库 **docs/CLI_CONTRACT.md**；SSE 流错误码（如 INTERNAL_ERROR）见 **docs/SSE_PROTOCOL.md**。"
+    after_long_help = "进程退出码与 `--output json` 稳定 JSON 行（`crabmate_chat_cli_result` v=1）见仓库 **docs/命令行契约.md**；SSE 流错误码（如 INTERNAL_ERROR）见 **docs/SSE协议.md**。"
 )]
 pub struct ChatCmd {
     /// 直接在参数中给出用户消息
@@ -125,7 +125,7 @@ pub struct ChatCmd {
     #[arg(long = "message-file", value_name = "FILE")]
     pub message_file: Option<String>,
 
-    /// plain（默认）或 json：每轮结束后 stdout 一行 JSON（`type=crabmate_chat_cli_result`，见 docs/CLI_CONTRACT.md）
+    /// plain（默认）或 json：每轮结束后 stdout 一行 JSON（`type=crabmate_chat_cli_result`，见 docs/命令行契约.md）
     #[arg(long, value_name = "MODE")]
     pub output: Option<String>,
 
@@ -409,7 +409,7 @@ pub enum Commands {
     name = "crabmate",
     version,
     about = "基于 OpenAI 兼容 chat/completions 的 Rust AI Agent（DeepSeek / MiniMax / Ollama 等），支持工具调用、Web 界面与 CLI",
-    after_long_help = "CLI 退出码、`chat --output json` 行协议与 SSE 错误码交叉引用：**docs/CLI_CONTRACT.md**、**docs/SSE_PROTOCOL.md**。子命令详情：**docs/CLI.md**。"
+    after_long_help = "CLI 退出码、`chat --output json` 行协议与 SSE 错误码交叉引用：**docs/命令行契约.md**、**docs/SSE协议.md**。子命令详情：**docs/命令行与路由.md**。"
 )]
 pub struct RootCli {
     #[command(flatten)]

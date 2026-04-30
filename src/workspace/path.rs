@@ -13,7 +13,7 @@
 //!
 //! **残余风险**：策略校验仍依赖校验时刻的 `canonicalize`；**非 Linux** 或未走 [`crate::workspace::fs`] 的路径（例如部分工具仍直接 `File::open(已解析路径)`、写路径上 `create_dir_all` 与按路径写入的组合）仍可能存在竞态。**不要**将当前实现等同于内核级「不可逃逸」保证；多租户或不可信工作区须与 **HTTP 鉴权**等一并评估。进一步可在写路径贯通 **`mkdirat` / `openat2`**、末级 **`O_NOFOLLOW`** 等。
 //!
-//! 用户可见说明见 **`README.md`**、**`docs/CONFIGURATION.md`**（工作区）。工具侧解析与打开入口见 **`src/tools/file/path.rs`**。
+//! 用户可见说明见 **`README.md`**、**`docs/配置说明.md`**（工作区）。工具侧解析与打开入口见 **`src/tools/file/path.rs`**。
 
 use path_absolutize::Absolutize;
 use std::path::{Path, PathBuf};

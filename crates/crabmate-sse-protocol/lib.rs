@@ -1,6 +1,6 @@
 //! CrabMate **`POST /chat/stream`** 控制面 JSON 的**协议版本**常量与 **`stop`/`handled`/`plain`** 分类。
 //!
-//! - **`SSE_PROTOCOL_VERSION`**：与 `docs/SSE_PROTOCOL.md` 中的 **`v`** / `sse_capabilities.supported_sse_v` 一致。
+//! - **`SSE_PROTOCOL_VERSION`**：与 `docs/SSE协议.md` 中的 **`v`** / `sse_capabilities.supported_sse_v` 一致。
 //! - **[`classify_sse_control_outcome`]**：与 Leptos **`frontend-leptos/src/sse_dispatch.rs`** 同序；金样 **`fixtures/sse_control_golden.jsonl`**。
 
 mod control_classify;
@@ -29,11 +29,11 @@ mod tests {
     use super::SSE_PROTOCOL_VERSION;
     use std::path::PathBuf;
 
-    /// 文档中的「当前版本」须与本常量一致（bump 版本时同步改 `docs/SSE_PROTOCOL.md` / `docs/en/SSE_PROTOCOL.md`）。
+    /// 文档中的「当前版本」须与本常量一致（bump 版本时同步改 `docs/SSE协议.md` / `docs/en/SSE_PROTOCOL.md`）。
     #[test]
     fn sse_protocol_md_lists_current_version() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let zh = root.join("../../docs/SSE_PROTOCOL.md");
+        let zh = root.join("../../docs/SSE协议.md");
         let en = root.join("../../docs/en/SSE_PROTOCOL.md");
         let zh_s =
             std::fs::read_to_string(&zh).unwrap_or_else(|e| panic!("read {}: {e}", zh.display()));

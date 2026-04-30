@@ -4,7 +4,7 @@
 # Vendored from https://github.com/openai/human-eval/blob/master/human_eval/execution.py
 # for offline `check_correctness` used by `scripts/humaneval_score_benchmark_results.py`.
 # Do not modify behavior without syncing with upstream and re-documenting in
-# `docs/BENCHMARK_PLANNING.md`.
+# `docs/基准测试规划.md`.
 
 import contextlib
 import faulthandler

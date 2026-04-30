@@ -30,4 +30,4 @@ alwaysApply: true
 
 ## 与文档的关系
 
-若复用关系导致**模块边界或调用链**变化，按 **`.cursor/rules/architecture-docs-sync.mdc`** 更新 **`docs/DEVELOPMENT.md`**；若用户可见行为变化，按 **`.cursor/rules/todolist-and-documentation.mdc`** 更新 **`README.md`** 等。
+若复用关系导致**模块边界或调用链**变化，按 **`.cursor/rules/architecture-docs-sync.mdc`** 更新 **`docs/开发文档.md`**；若用户可见行为变化，按 **`.cursor/rules/todolist-and-documentation.mdc`** 更新 **`README.md`** 等。

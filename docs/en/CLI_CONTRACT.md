@@ -1,4 +1,4 @@
-**Languages / 语言:** [中文](../CLI_CONTRACT.md) · English (this page)
+**Languages / 语言:** [中文](../命令行契约.md) · English (this page)
 
 # CLI contract (exit codes, JSON, `chat` output)
 

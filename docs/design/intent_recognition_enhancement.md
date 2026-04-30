@@ -2,7 +2,7 @@
 
 **状态**：设计稿（可分阶段落地）  
 **受众**：维护者、Agent 架构贡献者、质量与运营同学  
-**关联**：`src/agent/intent_router.rs`、`src/agent/hierarchy/router.rs`、`docs/DEVELOPMENT.md`
+**关联**：`src/agent/intent_router.rs`、`src/agent/hierarchy/router.rs`、`docs/开发文档.md`
 
 ---
 

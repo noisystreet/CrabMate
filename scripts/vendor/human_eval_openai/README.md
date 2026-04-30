@@ -11,4 +11,4 @@ so scoring works **without** installing the `human-eval` PyPI package.
 sandbox when scoring untrusted completions. See the disclaimer at the top of `execution.py`.
 
 When updating from upstream, replace `execution.py`, refresh this note, and run the scoring
-script smoke test documented in `docs/BENCHMARK_PLANNING.md`.
+script smoke test documented in `docs/基准测试规划.md`.

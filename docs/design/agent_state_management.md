@@ -2,7 +2,7 @@
 
 **状态**：设计稿（迭代中）  
 **受众**：维护者、架构设计者、核心贡献者  
-**关联文档**：`HIERARCHICAL_MULTI_CM_ARCHITECTURE.md`, `PLAN_EXECUTE_VERIFY_ARCHITECTURE.md`, `memory_todo.md`
+**关联文档**：`HIERARCHICAL_MULTI_CM_ARCHITECTURE.md`, `规划执行验证架构.md`, `memory_todo.md`
 
 ---
 

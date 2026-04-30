@@ -21,9 +21,9 @@
 
 ## 架构与文档
 
-- **模块索引**：读 `README.md`、`docs/DEVELOPMENT.md` 等了解技术栈与调用链
+- **模块索引**：读 `README.md`、`docs/开发文档.md` 等了解技术栈与调用链
 - **协议一致**：修改 SSE/HTTP 协议时同步前后端与文档（见 `api-sse-chat-protocol.mdc`）
-- **架构同步**：模块增删时更新 `docs/DEVELOPMENT.md`
+- **架构同步**：模块增删时更新 `docs/开发文档.md`
 
 ## 安全与合规
 

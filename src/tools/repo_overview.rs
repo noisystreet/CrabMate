@@ -32,9 +32,9 @@ pub(crate) fn default_health_sweep_doc_paths() -> Vec<String> {
     vec![
         "README.md".to_string(),
         "AGENTS.md".to_string(),
-        "docs/DEVELOPMENT.md".to_string(),
-        "docs/CONFIGURATION.md".to_string(),
-        "docs/CLI.md".to_string(),
+        "docs/开发文档.md".to_string(),
+        "docs/配置说明.md".to_string(),
+        "docs/命令行与路由.md".to_string(),
     ]
 }
 

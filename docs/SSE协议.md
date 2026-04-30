@@ -14,7 +14,7 @@
 
 ## 传输与分帧
 
-- 路由：**`POST /chat/stream`**；响应为 **`text/event-stream`**。（运维向 **`POST /config/reload`** 为 JSON、非 SSE，见 **`docs/CONFIGURATION.md`**「配置热重载」。）
+- 路由：**`POST /chat/stream`**；响应为 **`text/event-stream`**。（运维向 **`POST /config/reload`** 为 JSON、非 SSE，见 **`docs/配置说明.md`**「配置热重载」。）
 - **事件序号 `id:`**：服务端为每个逻辑事件块设置 **`id:`**（单调递增 `u64`，与进程内 `SseStreamHub` 一致）。断线重连时客户端可带请求头 **`Last-Event-ID`**，并在 JSON 体使用 **`stream_resume`**：`{ "job_id": <u64>, "after_seq": <u64> }`（省略 `after_seq` 视为 0）；服务端取 **`max(Last-Event-ID, after_seq)`** 后从环形缓冲重放，再订阅实时广播。**仅单进程内存**：任务结束或进程重启后重连返回 **HTTP 410**，`code` **`STREAM_JOB_GONE`**。新流响应头另含 **`x-stream-job-id`**（与首帧 `sse_capabilities.caps.job_id` 一致）。
 - 事件块：以 **空行 `\n\n`** 分隔；块内可有若干 **`data: `** 行。前端将同一块内多行 `data:` **去掉前缀后按 `\n` 拼接**，并**保留前导空格/换行**后直接进入分发（仅在判断 `[DONE]` 哨兵时做 `trim`），避免把“仅空格增量”吞掉导致单词粘连（见 `sendChatStream` 与 `join_sse_data_lines`）。
 - **正文 delta**：拼接后的字符串若 **不是** 控制面 JSON（解析失败），或解析后判定为 **`plain`**，则作为助手正文片段交给 `onDelta`。
@@ -188,7 +188,7 @@
 
 ## 与 `POST /chat` HTTP 错误的区别
 
-队列满、鉴权失败等可能返回 **HTTP 4xx/5xx + JSON**（如 `code: "QUEUE_FULL"`），**不**经 SSE `data:`。完整 **`ApiError.code`** 表维护在 **`docs/CLI_CONTRACT.md`**（HTTP 契约）；**本文件**以 SSE 控制面与 **`client_sse_protocol`** 相关 HTTP 码为主，并与上文流错误表互补。
+队列满、鉴权失败等可能返回 **HTTP 4xx/5xx + JSON**（如 `code: "QUEUE_FULL"`），**不**经 SSE `data:`。完整 **`ApiError.code`** 表维护在 **`docs/命令行契约.md`**（HTTP 契约）；**本文件**以 SSE 控制面与 **`client_sse_protocol`** 相关 HTTP 码为主，并与上文流错误表互补。
 
 ## 双端对齐检查清单
 

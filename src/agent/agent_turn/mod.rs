@@ -7,7 +7,7 @@
 //!
 //! 子模块：`intent`、`plan`（P）、`reflect`（R）、`execute`（E，实现见 **`execute/tools`**）、`messages`、`staged_sse`（实现见 **`staged/sse`**）、`params`、`outer_loop`、`staged`（含 **`staged/orchestrator`**、**`staged/patch_planner`**）。
 //!
-//! **与 `llm` 的边界**：本目录内对模型的调用须经 **`llm::complete_chat_retrying`**（见 **`docs/DEVELOPMENT.md`**「`agent_turn` 与 `llm`：唯一入口与禁止事项」）；**禁止**直接调用 **`llm::api::stream_chat`**。
+//! **与 `llm` 的边界**：本目录内对模型的调用须经 **`llm::complete_chat_retrying`**（见 **`docs/开发文档.md`**「`agent_turn` 与 `llm`：唯一入口与禁止事项」）；**禁止**直接调用 **`llm::api::stream_chat`**。
 //!
 //! **编排接线**：回合模式分发（分层 / 逻辑双代理 / 分阶段 / 单 Agent）见 **`run_dispatch`**，主文件仅保留入口日志、分隔线、`PerCoordinator` 构造与分支调用。
 

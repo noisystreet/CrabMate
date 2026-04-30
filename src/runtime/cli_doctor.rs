@@ -188,7 +188,7 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
         n_prefix
     );
     println!(
-        "  退出码与 JSON 行协议摘要：**docs/CLI_CONTRACT.md**；SSE 流错误码：**docs/SSE_PROTOCOL.md**。"
+        "  退出码与 JSON 行协议摘要：**docs/命令行契约.md**；SSE 流错误码：**docs/SSE协议.md**。"
     );
 }
 

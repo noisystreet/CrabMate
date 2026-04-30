@@ -127,7 +127,7 @@ pub(in crate::tools) fn params_repo_overview_sweep() -> serde_json::Value {
             "doc_paths": {
                 "type": "array",
                 "items": { "type": "string" },
-                "description": "可选：要预览的文档相对路径列表；默认 README.md、AGENTS.md、docs/DEVELOPMENT.md、docs/CONFIGURATION.md、docs/CLI.md（存在则读，不存在则跳过）"
+                "description": "可选：要预览的文档相对路径列表；默认 README.md、AGENTS.md、docs/开发文档.md、docs/配置说明.md、docs/命令行与路由.md（存在则读，不存在则跳过）"
             },
             "source_roots": {
                 "type": "array",

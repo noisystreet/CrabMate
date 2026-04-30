@@ -752,7 +752,7 @@ pub struct ChatRequest {
     /// MiniMax OpenAI 兼容扩展：为 `true` 时流式/非流式可将思维链与正文分离（`delta.reasoning_details` / `message.reasoning_details`）。
     #[serde(skip_serializing_if = "Option::is_none", rename = "reasoning_split")]
     pub reasoning_split: Option<bool>,
-    /// 供应商扩展：**`thinking`**（如智谱 GLM-5 深度思考、Moonshot **kimi-k2.5** 开关）；由 **`llm_bigmodel_thinking`** / **`llm_kimi_thinking_disabled`** 等配置拼装（见 `docs/CONFIGURATION.md`）。
+    /// 供应商扩展：**`thinking`**（如智谱 GLM-5 深度思考、Moonshot **kimi-k2.5** 开关）；由 **`llm_bigmodel_thinking`** / **`llm_kimi_thinking_disabled`** 等配置拼装（见 `docs/配置说明.md`）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking: Option<serde_json::Value>,
     /// OpenAI 兼容 **`response_format`**（如 DeepSeek [JSON Output](https://api-docs.deepseek.com/zh-cn/guides/json_mode) 的 `{"type":"json_object"}`）；`None` 则省略。
@@ -836,7 +836,7 @@ pub const USER_CANCELLED_FINISH_REASON: &str = "user_cancelled";
 /// 用户取消时协作路径使用的错误消息（与 `llm::LlmCompleteError::Cancelled` / `RunAgentTurnError` 识别一致）。
 pub const LLM_CANCELLED_ERROR: &str = "已取消";
 
-/// `/chat/stream` 任务被取消且 SSE 仍可投递时，控制面 `SsePayload::Error` 的 **`code`**（与 `docs/SSE_PROTOCOL.md` 一致）。
+/// `/chat/stream` 任务被取消且 SSE 仍可投递时，控制面 `SsePayload::Error` 的 **`code`**（与 `docs/SSE协议.md` 一致）。
 pub const SSE_STREAM_CANCELLED_CODE: &str = "STREAM_CANCELLED";
 
 #[cfg(test)]

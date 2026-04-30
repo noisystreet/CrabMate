@@ -1,8 +1,8 @@
-**Languages / 语言:** [中文](../CLI.md) · English (this page)
+**Languages / 语言:** [中文](../命令行与路由.md) · English (this page)
 
 # CLI and subcommands
 
-Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as `--help`). Root and **`chat --help`** footers cross-reference **`docs/CLI_CONTRACT.md`** and **`docs/SSE_PROTOCOL.md`**. **Global options** go **before** the subcommand: `--config`, `--workspace`, `--agent-role`, `--no-tools`, `--log`.
+Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as `--help`). Root and **`chat --help`** footers cross-reference **`docs/命令行契约.md`** and **`docs/SSE协议.md`**. **Global options** go **before** the subcommand: `--config`, `--workspace`, `--agent-role`, `--no-tools`, `--log`.
 
 **Script contract** (exit codes, `chat --output json` line JSON `type`/`v`, etc.): [`CLI_CONTRACT.md`](CLI_CONTRACT.md).
 
@@ -38,7 +38,7 @@ Without `RUST_LOG`: `serve` defaults to **info**; `repl` / `chat` / `bench` / `c
 
 ## Message pipeline debug logs
 
-With `RUST_LOG=crabmate=debug`, each model call prints **`message_pipeline session_sync`** summary; finer: `RUST_LOG=crabmate::message_pipeline=trace`. See **`docs/DEVELOPMENT.md`** § Architecture → **Context pipeline (observability)** and `GET /status` counters; implementation in `src/agent/message_pipeline.rs`.
+With `RUST_LOG=crabmate=debug`, each model call prints **`message_pipeline session_sync`** summary; finer: `RUST_LOG=crabmate::message_pipeline=trace`. See **`docs/开发文档.md`** § Architecture → **Context pipeline (observability)** and `GET /status` counters; implementation in `src/agent/message_pipeline.rs`.
 
 ## Legacy usage
 
@@ -63,12 +63,12 @@ Without a subcommand, legacy flags `--serve`, `--query`, `--benchmark`, `--dry-r
 
 ## Benchmark (`bench`)
 
-Planning for benchmark features and testing: **`docs/BENCHMARK_PLANNING.md`** (kept separate from general CLI product notes).
+Planning for benchmark features and testing: **`docs/基准测试规划.md`** (kept separate from general CLI product notes).
 
 | Option | Description |
 |--------|-------------|
 | `--benchmark <TYPE>` | `swe_bench`, `gaia`, `human_eval`, `generic` |
-| `--batch <FILE>` | Input JSONL (`human_eval` rows need `humaneval_test` and `entry_point`; see **`docs/BENCHMARK_PLANNING.md`** §5) |
+| `--batch <FILE>` | Input JSONL (`human_eval` rows need `humaneval_test` and `entry_point`; see **`docs/基准测试规划.md`** §5) |
 | `--batch-output <FILE>` | Default `benchmark_results.jsonl` |
 | `--task-timeout <SECS>` | `0` = no limit |
 | `--max-tool-rounds <N>` | `0` = no limit |
@@ -134,11 +134,11 @@ Exactly one of `--query`, `--stdin`, `--user-prompt-file`. `--system-prompt-file
 
 **Startup banner**: Interactive CLI prints sections—**model** (truncated `api_base`, `llm_http_auth`, `temperature`, `llm_seed`, current **`--no-stream`**), **workspace & tools**, **slash commands**, **key config** (`max_tokens`, `max_message_history`, API timeouts/retries, `run_command` timeout/output caps, staged planning, optional session restore/MCP/long-term memory, etc.). Styling matches **`cli_repl_ui`** `/help`; **`NO_COLOR`** or non-TTY disables ANSI. **`/config`** reprints a **key config summary** anytime (same family as banner, **no** secrets).
 
-**Optional**: **`CM_CLI_WAIT_SPINNER=1`** shows stderr spinner and elapsed time while waiting for the **first** streaming chunk (or full body with **`--no-stream`**); default off; needs stderr TTY and no **`NO_COLOR`**. See **`docs/CONFIGURATION.md`**.
+**Optional**: **`CM_CLI_WAIT_SPINNER=1`** shows stderr spinner and elapsed time while waiting for the **first** streaming chunk (or full body with **`--no-stream`**); default off; needs stderr TTY and no **`NO_COLOR`**. See **`docs/配置说明.md`**.
 
-**Staged planning (terminal)**: To hide **no-tools planner** model text in interactive CLI, set **`staged_plan_cli_show_planner_stream = false`** or **`CM_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM=0`** (step queue summary and execution steps still apply; see **`docs/CONFIGURATION.md`**). By default there is an extra no-tools **optimizer** round after first **`agent_reply_plan`**; disable with **`staged_plan_optimizer_round = false`** or **`CM_STAGED_PLAN_OPTIMIZER_ROUND=0`**.
+**Staged planning (terminal)**: To hide **no-tools planner** model text in interactive CLI, set **`staged_plan_cli_show_planner_stream = false`** or **`CM_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM=0`** (step queue summary and execution steps still apply; see **`docs/配置说明.md`**). By default there is an extra no-tools **optimizer** round after first **`agent_reply_plan`**; disable with **`staged_plan_optimizer_round = false`** or **`CM_STAGED_PLAN_OPTIMIZER_ROUND=0`**.
 
-**SyncDefault Docker (CLI + `chat`)**: Optionally run **SyncDefault** and some tools inside **Docker** after host approval/allowlist (**`sync_default_tool_sandbox_mode = docker`**, image, `user`, etc.; Unix often uses **effective uid:gid** for workspace ownership). Full notes in **`docs/CONFIGURATION.md`** § SyncDefault Docker sandbox.
+**SyncDefault Docker (CLI + `chat`)**: Optionally run **SyncDefault** and some tools inside **Docker** after host approval/allowlist (**`sync_default_tool_sandbox_mode = docker`**, image, `user`, etc.; Unix often uses **effective uid:gid** for workspace ownership). Full notes in **`docs/配置说明.md`** § SyncDefault Docker sandbox.
 
 **Feedback style**: Success/error lines start with **✓** / **✗**; with **`NO_COLOR`** or non-TTY use **`[ok]` / `[err]`** (ASCII).
 
@@ -148,7 +148,7 @@ Slash commands: **`/help`**, **`/clear`**, **`/model`**, **`/api-key`** (**`stat
 
 **`/mcp`**: Read-only MCP stdio cache and merged tool names (same as **`crabmate mcp list`**); **`/mcp probe`** or **`/mcp list probe`** tries one connection (starts **`mcp_command`**). **`/version`**: `crabmate` version and **`OS`/`ARCH`** (no secrets).
 
-**`/config reload`**: Re-merge TOML from **`config.toml`** / **`.agent_demo.toml`** (or **`--config`**) with current env into memory **`AgentConfig`**—**`api_base`**, model, timeouts, allowlists, MCP, **re-read `system_prompt_file`**, etc.; **does not** reopen session SQLite or rebuild shared **`reqwest::Client`**; **does not** re-read env **`API_KEY`** (REPL **`/api-key`** memory is **not** cleared). Web keys still come from **`client_llm.api_key`** or process **`API_KEY`** at startup. Web equivalent: **`POST /config/reload`**. If Bearer middleware was enabled at startup, toggling token still needs **`serve` restart**. See **`docs/CONFIGURATION.md`** § Hot reload.
+**`/config reload`**: Re-merge TOML from **`config.toml`** / **`.agent_demo.toml`** (or **`--config`**) with current env into memory **`AgentConfig`**—**`api_base`**, model, timeouts, allowlists, MCP, **re-read `system_prompt_file`**, etc.; **does not** reopen session SQLite or rebuild shared **`reqwest::Client`**; **does not** re-read env **`API_KEY`** (REPL **`/api-key`** memory is **not** cleared). Web keys still come from **`client_llm.api_key`** or process **`API_KEY`** at startup. Web equivalent: **`POST /config/reload`**. If Bearer middleware was enabled at startup, toggling token still needs **`serve` restart**. See **`docs/配置说明.md`** § Hot reload.
 
 **Tool stdout**: After each tool in interactive CLI / **`chat`** (no SSE), prints **`### Tool · …`** title and body. **`read_file`**, **`read_dir`**, and **`list_tree`** print a **terminal summary** (headers + first N lines of content; lines may be truncated) and note that the full output is in history; other tools print the body (truncated if over limit). Full tool results stay in history for the model. On **failure** (non-zero `run_command`, `错误：` / error-prefix style messages, etc.), terminal may print a **self-heal hint · diagnostic command bundle**: one JSON line for the model to call **`playbook_run_commands`** (same heuristics as **`error_output_playbook`**, but **executes** allowlisted `run_command`; **sanitize** `error_text` first). Commands are **not** auto-run.
 
@@ -166,7 +166,7 @@ If the command is not allowlisted: when **stdin** and **stderr** are TTY, **stde
 
 | Capability | Web (`serve`) | CLI |
 |------------|---------------|-----|
-| **Session persistence** | Optional SQLite (`conversation_store_sqlite_path`) + `conversation_id`, multi-session, survives restart (TTL/limits; see `docs/DEVELOPMENT.md`). | **Partial**: interactive CLI optional load/save **`.crabmate/tui_session.json`** (`tui_load_session_on_start` / `tui_session_max_messages`), **single** chain file, **not** Web’s per-`conversation_id` DB. `chat` does not persist across invocations by default; use `--messages-json-file`, etc. **`repl_initial_workspace_messages_enabled`** (default false; see `docs/CONFIGURATION.md`): when true, CLI builds **`initial_workspace_messages`** in background (profile, deps, disk restore); when false, startup is one `system` only—no tokei / `cargo metadata` on boot. |
+| **Session persistence** | Optional SQLite (`conversation_store_sqlite_path`) + `conversation_id`, multi-session, survives restart (TTL/limits; see `docs/开发文档.md`). | **Partial**: interactive CLI optional load/save **`.crabmate/tui_session.json`** (`tui_load_session_on_start` / `tui_session_max_messages`), **single** chain file, **not** Web’s per-`conversation_id` DB. `chat` does not persist across invocations by default; use `--messages-json-file`, etc. **`repl_initial_workspace_messages_enabled`** (default false; see `docs/配置说明.md`): when true, CLI builds **`initial_workspace_messages`** in background (profile, deps, disk restore); when false, startup is one `system` only—no tokei / `cargo metadata` on boot. |
 | **Human approval** | Non-whitelist `run_command`, **`http_fetch` / `http_request`** without `http_fetch_allowed_prefixes` match: SSE control plane + **`POST /chat/approval`** (non-stream `/chat` without approval session may reject). | **`run_command`**: see above (TTY menu / pipe). **`http_fetch` / `http_request`**: same approval; permanent key for **`http_request:<METHOD>:<URL>`** vs **`http_fetch:`**. |
 | **Export chat** | Frontend export JSON/Markdown (shape aligned with `.crabmate/tui_session.json`; see `README.md`). | **`save-session`** (alias **`export-session`**) from disk session → **`.crabmate/exports/`**; interactive **`/save-session`** same; **`/export`** exports **in-memory** messages. `chat --output json` is **not** full session export. |
 
@@ -186,9 +186,9 @@ Static assets are served from `frontend-leptos/dist`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/openapi.json` | OpenAPI 3.0 spec (`application/json`); aligns with routes below; SSE line semantics in **`docs/SSE_PROTOCOL.md`** |
+| GET | `/openapi.json` | OpenAPI 3.0 spec (`application/json`); aligns with routes below; SSE line semantics in **`docs/SSE协议.md`** |
 | GET | `/` | Frontend |
-| POST | `/config/reload` | Hot-reload in-memory `AgentConfig` (not SQLite path); body `{}` ok; see **`docs/CONFIGURATION.md`** |
+| POST | `/config/reload` | Hot-reload in-memory `AgentConfig` (not SQLite path); body `{}` ok; see **`docs/配置说明.md`** |
 | POST | `/chat` | JSON chat; optional `conversation_id`, `agent_role` (new server-side session only), `temperature`, `seed`, `seed_policy` |
 | POST | `/chat/stream` | SSE; each event has **`id:`**; headers **`x-conversation-id`**, **`x-stream-job-id`**; optional JSON **`stream_resume`** (`job_id`, `after_seq`) and **`Last-Event-ID`** for reconnect; **410** `STREAM_JOB_GONE` if the job is gone; optional `approval_session_id`, `agent_role` (same) |
 | POST | `/chat/approval` | Approval: `approval_session_id`, `decision` |
@@ -202,7 +202,7 @@ Static assets are served from `frontend-leptos/dist`.
 | GET | `/workspace/file` | Read file in workspace (`path` required; optional **`encoding`**, same as `read_file`, default UTF-8 strict; 1 MiB cap) |
 | GET | `/health` | Health |
 
-SSE control-plane fields: **`docs/SSE_PROTOCOL.md`**.
+SSE control-plane fields: **`docs/SSE协议.md`**.
 
 ## One-shot packaging (tar.gz + optional .deb)
 

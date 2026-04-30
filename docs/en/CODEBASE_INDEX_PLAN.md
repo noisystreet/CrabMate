@@ -1,4 +1,4 @@
-**Languages / 语言:** [中文](../CODEBASE_INDEX_PLAN.md) · English (this page)
+**Languages / 语言:** [中文](../代码库索引方案.md) · English (this page)
 
 # Workspace-wide code index and incremental cache — product plan
 

@@ -1,4 +1,4 @@
-**Languages / 语言:** [中文](../TODOLIST.md) · English (this page)
+**Languages / 语言:** [中文](../待办清单.md) · English (this page)
 
 # Backlog and improvement list
 
@@ -38,7 +38,7 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 Directional backlog distilled from comparisons with ecosystems such as AutoGen, CrewAI, LangGraph, and Open Interpreter; may overlap other chapters—remove items when done per repo rules.
 
-- [ ] **Multi-agent collaboration**: Multiple role instances, message routing, and supervisory orchestration; document how this coexists with today’s single `agent_turn` loop, sessions, and quotas (`docs/DEVELOPMENT.md`).
+- [ ] **Multi-agent collaboration**: Multiple role instances, message routing, and supervisory orchestration; document how this coexists with today’s single `agent_turn` loop, sessions, and quotas (`docs/开发文档.md`).
 - [ ] **Plan–execute–verify loop**: Explicit sub-task decomposition, result validation, reflection/retry, reducing reliance on one-shot model improvisation; align with `plan_artifact` / staged planning and clarify verification + auto-replan boundaries.
 - [ ] **Interactive code execution / controlled REPL**: Beyond `run_command` allowlists and sandbox policy, consider interpreted execution, session-scoped dependency install, and output checks (Open Interpreter–style); align security with `tool_approval` and Docker sandbox docs.
 - [ ] **Workflow productization**: On top of `workflow_execute` (DAG), add first-class UX—state-machine-friendly config, conditional/loop expressiveness, run visualization, troubleshooting—while documenting “chat turn (linear) vs workflow” in user-facing docs.
@@ -53,7 +53,7 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 
 **Summary**: `agent_turn` main loop; `context_window` trim/summarize; `reflection/plan_rewrite` final-plan rewrite helpers; `per_coord` / `plan_artifact` / `workflow_reflection_controller`; `workflow` DAG execution.
 
-(Items mirror the Chinese [TODOLIST.md](../TODOLIST.md): planner/executor phases, PER plug-in, long-term memory external vector DB, TTL/dedup, compliance APIs; large-repo index ops per [CODEBASE_INDEX_PLAN.md](CODEBASE_INDEX_PLAN.md). **agent_turn vs llm** entrypoint rules: **`docs/en/DEVELOPMENT.md`**.)
+(Items mirror the Chinese [TODOLIST.md](../待办清单.md): planner/executor phases, PER plug-in, long-term memory external vector DB, TTL/dedup, compliance APIs; large-repo index ops per [CODEBASE_INDEX_PLAN.md](CODEBASE_INDEX_PLAN.md). **agent_turn vs llm** entrypoint rules: **`docs/en/DEVELOPMENT.md`**.)
 
 ---
 

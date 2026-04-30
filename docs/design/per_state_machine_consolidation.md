@@ -4,8 +4,8 @@
 **语言**：中文。  
 **关联文档**：
 
-- **`docs/DEVELOPMENT.md`**（**`run_agent_turn_common`**、P/R/E、`planner_executor_mode`、**`staged_plan_*` / `final_plan_*`**）
-- **`docs/PLAN_EXECUTE_VERIFY_ARCHITECTURE.md`**（结构化 P-E-V 与 `plan_rewrite` 正交关系）
+- **`docs/开发文档.md`**（**`run_agent_turn_common`**、P/R/E、`planner_executor_mode`、**`staged_plan_*` / `final_plan_*`**）
+- **`docs/规划执行验证架构.md`**（结构化 P-E-V 与 `plan_rewrite` 正交关系）
 - **`docs/HIERARCHICAL_MULTI_CM_ARCHITECTURE.md`**（分层模式与 Manager 反思）
 - **`docs/design/agent_state_management.md`**（更广义的会话/产物状态，与本设计正交）
 - 源码：`src/agent/agent_turn/mod.rs`（P/E/R 定义）、`src/agent/per_coord/`（`mod.rs`、`final_plan_gate.rs`）、`src/agent/agent_turn/staged/mod.rs`、`src/agent/agent_turn/staged/orchestrator.rs`、`src/agent/workflow_reflection_controller.rs`
@@ -51,7 +51,7 @@
 | **状态要少** | 状态机只表达**编排**；`messages` 长度、工具摘要等放入只读 **Context**，避免状态爆炸。 |
 | **事件要显式** | 「收到终答」「解析失败」「重写次数 +1」「语义 LLM 完成」等应是具名事件，不是隐式在函数尾部继续跑。 |
 | **效果与 IO 分离** | 转移函数尽量产出 **数据效果**（追加哪条 `Message`、要发的 SSE 种类）；真实 `complete_chat_retrying` / 写 `messages` 保留在 `agent_turn`  driver。 |
-| **与 `plan_rewrite` 正交** | 形式与绑定类失败继续走现有 **`plan_rewrite` / `PlanRewriteExhaustedReason`** 语义，不另造一套码（见 `PLAN_EXECUTE_VERIFY_ARCHITECTURE.md`）。 |
+| **与 `plan_rewrite` 正交** | 形式与绑定类失败继续走现有 **`plan_rewrite` / `PlanRewriteExhaustedReason`** 语义，不另造一套码（见 `规划执行验证架构.md`）。 |
 | **可测** | 纯表驱动或纯函数可单测；需要 `messages` 的用 fixture 向量。 |
 
 ---

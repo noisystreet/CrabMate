@@ -1,4 +1,4 @@
-**Languages / 语言:** [中文](../CONFIGURATION.md) · English (this page)
+**Languages / 语言:** [中文](../配置说明.md) · English (this page)
 
 # Configuration
 

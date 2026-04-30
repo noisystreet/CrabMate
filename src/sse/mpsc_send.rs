@@ -1,6 +1,6 @@
 //! Web SSE 桥接用 `tokio::sync::mpsc::Sender<String>`：发送失败时打 **debug**，便于排查客户端断连、receiver 提前 drop。
 //!
-//! 流式对话路径在提供 **`cancel`** 时应用 [`send_string_logged_cooperative_cancel`]：发送失败则置位 **`AtomicBool`**，使 [`crate::llm::api::stream_chat`] 尽快结束上游读取；队列侧在任务取消且通道仍可投递时补发 **`STREAM_CANCELLED`**（见 **`docs/SSE_PROTOCOL.md`**）。
+//! 流式对话路径在提供 **`cancel`** 时应用 [`send_string_logged_cooperative_cancel`]：发送失败则置位 **`AtomicBool`**，使 [`crate::llm::api::stream_chat`] 尽快结束上游读取；队列侧在任务取消且通道仍可投递时补发 **`STREAM_CANCELLED`**（见 **`docs/SSE协议.md`**）。
 
 use log::{debug, info};
 use std::sync::atomic::{AtomicBool, Ordering};

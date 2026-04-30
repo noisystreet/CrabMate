@@ -1,7 +1,7 @@
 //! Web `/chat` / `/chat/stream` 的**进程内任务队列**：有界排队 + 并发上限，避免高并发时无界 `tokio::spawn`。
 //!
 //! - **多副本 / 跨进程重放**：需外部消息代理（Redis、SQS 等）与持久化；本模块仅单进程协调。
-//! - **可观测**：`job_id` 写入日志；`/status` 暴露运行中任务数与近期任务摘要。流取消时 **`Receiver` drop** 打 **info**；取消且 SSE 仍可投递时补发 **`STREAM_CANCELLED`**（见 **`docs/SSE_PROTOCOL.md`**）。
+//! - **可观测**：`job_id` 写入日志；`/status` 暴露运行中任务数与近期任务摘要。流取消时 **`Receiver` drop** 打 **info**；取消且 SSE 仍可投递时补发 **`STREAM_CANCELLED`**（见 **`docs/SSE协议.md`**）。
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;

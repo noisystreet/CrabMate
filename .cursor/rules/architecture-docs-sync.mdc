@@ -1,11 +1,11 @@
 ---
-description: 调整架构或 src 模块组织时同步更新 docs/DEVELOPMENT.md 架构与模块索引
+description: 调整架构或 src 模块组织时同步更新 docs/开发文档.md 架构与模块索引
 alwaysApply: true
 ---
 
 # 架构与模块文档同步
 
-变更**架构**或 **`src/` 代码模块组织**时，必须审阅并更新 **`docs/DEVELOPMENT.md`**：
+变更**架构**或 **`src/` 代码模块组织**时，必须审阅并更新 **`docs/开发文档.md`**：
 
 - **「架构设计」**：分层描述、Web 数据流概要、**Mermaid 图**中的节点与连线是否与当前调用链一致。
 - **「`src/` 代码模块索引」**：顶层模块**表格**（路径、职责摘要）与 **`lib.rs` 的 `mod` 列表**一致。

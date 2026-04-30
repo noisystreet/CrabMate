@@ -27,7 +27,7 @@ It ships **function calling**, workspace commands and file tools, plus a **Web U
 
 - **Built-in tools** (**function calling**): workspace files, **`run_command`** (allowlist), HTTP/search, **`codebase_semantic_search`** (SQLite **FTS5** + local embeddings, hybrid by default), formatting, dependency graphs and coverage, container helpers; stacks include **Rust / Python / JS·TS / Go / JVM / C·C++** and **GitHub `gh_*`**. Full list and JSON examples: [docs/en/TOOLS.md](docs/en/TOOLS.md).
 
-- **CLI**: **`crabmate repl`** / **`chat`** / **`serve`** (same agent/tools as the Web UI). Details: **[CLI](#cli)** and [docs/en/CLI.md](docs/en/CLI.md). **`bench`** batch evaluation; HumanEval official JSONL conversion and **`benchmark_results.jsonl`** scoring scripts: [docs/BENCHMARK_PLANNING.md](docs/BENCHMARK_PLANNING.md) §5 and **`scripts/humaneval_*.py`** (scoring executes model-generated code—use an isolated environment).
+- **CLI**: **`crabmate repl`** / **`chat`** / **`serve`** (same agent/tools as the Web UI). Details: **[CLI](#cli)** and [docs/en/CLI.md](docs/en/CLI.md). **`bench`** batch evaluation; HumanEval official JSONL conversion and **`benchmark_results.jsonl`** scoring scripts: [docs/基准测试规划.md](docs/基准测试规划.md) §5 and **`scripts/humaneval_*.py`** (scoring executes model-generated code—use an isolated environment).
 
 - **Web UI**: DeepSeek-style layout; assistant replies as **Markdown**; sidebar sessions (right-click a session or empty list area for **Manage sessions…**, starring, pinning, export; filter & search), workspace tree and change preview, tasks and context status, multi-select / retry / branch on messages; **multi-role** and more in [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
 
@@ -45,17 +45,22 @@ It ships **function calling**, workspace commands and file tools, plus a **Web U
 
 | Document | Contents | 中文 |
 | --- | --- | --- |
-| [docs/BENCHMARK_PLANNING.md](docs/BENCHMARK_PLANNING.md) | Benchmark `bench` roadmap, open-source benchmark hooks, testing strategy (separate from general product docs) | [zh](docs/BENCHMARK_PLANNING.md) |
-| [docs/STAGED_PLAN_SINGLE_STEP_DESIGN.md](docs/STAGED_PLAN_SINGLE_STEP_DESIGN.md) | Staged plan single-step design: one planner `step` per round + replan toward single-agent tool loop (not implemented) | [zh](docs/STAGED_PLAN_SINGLE_STEP_DESIGN.md) |
-| [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md) | Architecture, module index, protocols | [zh](docs/DEVELOPMENT.md) |
-| [docs/en/TESTING.md](docs/en/TESTING.md) | Test commands: Rust, Leptos, E2E, pre-commit, audits | [zh](docs/TESTING.md) |
-| [docs/en/TOOLS.md](docs/en/TOOLS.md) | Built-in tools and JSON examples | [zh](docs/TOOLS.md) |
-| [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md) | `/chat/stream` control-plane JSON | [zh](docs/SSE_PROTOCOL.md) |
-| [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md) | Env vars, `CM_*`, planning/context | [zh](docs/CONFIGURATION.md) |
-| [docs/en/CLI.md](docs/en/CLI.md) | Subcommands, HTTP routes, `.deb` | [zh](docs/CLI.md) |
-| [docs/en/CLI_CONTRACT.md](docs/en/CLI_CONTRACT.md) | `chat` exit codes, `--output json`, SSE cross-ref | [zh](docs/CLI_CONTRACT.md) |
-| [docs/en/TODOLIST.md](docs/en/TODOLIST.md) | Open work P0–P5 + by-module | [zh](docs/TODOLIST.md) |
-| [docs/en/CODEBASE_INDEX_PLAN.md](docs/en/CODEBASE_INDEX_PLAN.md) | Unified codebase index + incremental cache | [zh](docs/CODEBASE_INDEX_PLAN.md) |
+| [docs/基准测试规划.md](docs/基准测试规划.md) | Benchmark `bench` roadmap, open-source benchmark hooks, testing strategy (separate from general product docs) | [zh](docs/基准测试规划.md) |
+| [docs/分阶段规划单步设计.md](docs/分阶段规划单步设计.md) | Staged plan single-step design: one planner `step` per round + replan toward single-agent tool loop (not implemented) | [zh](docs/分阶段规划单步设计.md) |
+| [docs/中英文文档对照.md](docs/中英文文档对照.md) | Chinese-to-English docs mapping table for paired documents | [zh](docs/中英文文档对照.md) |
+| [docs/en/BACKEND_CORE_FRAMEWORK_DESIGN.md](docs/en/BACKEND_CORE_FRAMEWORK_DESIGN.md) | Backend core frameworkization and cross-language embedding gap analysis | [zh](docs/后端核心框架设计.md) |
+| [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md) | Architecture, module index, protocols | [zh](docs/开发文档.md) |
+| [docs/en/FORMAL_VERIFICATION_PLAN.md](docs/en/FORMAL_VERIFICATION_PLAN.md) | Formal verification rollout plan for SSE/state invariants | [zh](docs/形式化验证计划.md) |
+| [docs/en/TESTING.md](docs/en/TESTING.md) | Test commands: Rust, Leptos, E2E, pre-commit, audits | [zh](docs/测试指南.md) |
+| [docs/en/TOOLS.md](docs/en/TOOLS.md) | Built-in tools and JSON examples | [zh](docs/工具说明.md) |
+| [docs/en/WORKFLOW_ORCHESTRATION_ARCHITECTURE.md](docs/en/WORKFLOW_ORCHESTRATION_ARCHITECTURE.md) | Workflow orchestration extension design (FSM/conditions/bounded loops) | [zh](docs/工作流编排架构.md) |
+| [docs/en/PLAN_EXECUTE_VERIFY_ARCHITECTURE.md](docs/en/PLAN_EXECUTE_VERIFY_ARCHITECTURE.md) | Structured plan-execute-verify architecture and verifier gate design | [zh](docs/规划执行验证架构.md) |
+| [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md) | `/chat/stream` control-plane JSON | [zh](docs/SSE协议.md) |
+| [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md) | Env vars, `CM_*`, planning/context | [zh](docs/配置说明.md) |
+| [docs/en/CLI.md](docs/en/CLI.md) | Subcommands, HTTP routes, `.deb` | [zh](docs/命令行与路由.md) |
+| [docs/en/CLI_CONTRACT.md](docs/en/CLI_CONTRACT.md) | `chat` exit codes, `--output json`, SSE cross-ref | [zh](docs/命令行契约.md) |
+| [docs/en/TODOLIST.md](docs/en/TODOLIST.md) | Open work P0–P5 + by-module | [zh](docs/待办清单.md) |
+| [docs/en/CODEBASE_INDEX_PLAN.md](docs/en/CODEBASE_INDEX_PLAN.md) | Unified codebase index + incremental cache | [zh](docs/代码库索引方案.md) |
 
 **Maintenance**: user-visible changes should stay in sync with README and related docs; see [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md) § TODOLIST and documentation conventions.
 

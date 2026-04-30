@@ -1,4 +1,4 @@
-//! `TimelineLog`（`kind: final_response`）与紧随的 **`AssistantAnswerPhase`**：Web 主气泡与时间线契约的共用收尾帧（见 **`docs/SSE_PROTOCOL.md`**）。
+//! `TimelineLog`（`kind: final_response`）与紧随的 **`AssistantAnswerPhase`**：Web 主气泡与时间线契约的共用收尾帧（见 **`docs/SSE协议.md`**）。
 
 use tokio::sync::mpsc::Sender;
 

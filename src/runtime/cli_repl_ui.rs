@@ -602,7 +602,7 @@ impl CliReplStyle {
 
         self.write_banner_note_line(
             &mut out,
-            "    不含 API_KEY / web_api_bearer_token 等密钥；逐项说明见 docs/CONFIGURATION.md",
+            "    不含 API_KEY / web_api_bearer_token 等密钥；逐项说明见 docs/配置说明.md",
         )?;
         writeln!(out)?;
         out.flush()

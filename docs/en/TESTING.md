@@ -1,8 +1,8 @@
-**Languages / 语言:** English (this page) · [中文](../TESTING.md)
+**Languages / 语言:** English (this page) · [中文](../测试指南.md)
 
 # Testing and quality checks
 
-This page lists **automated tests and common checks** for the CrabMate repo (run from the repository root unless noted). For module layout and protocols, see [`DEVELOPMENT.md`](DEVELOPMENT.md). For **`crabmate bench`** roadmap and benchmark-specific testing strategy, see [`BENCHMARK_PLANNING.md`](../BENCHMARK_PLANNING.md) (kept separate from this general checklist). **HumanEval scoring script smoke** (no LLM): `python3 scripts/humaneval_score_benchmark_results.py --tasks fixtures/benchmark/humaneval_tiny_tasks.jsonl --results fixtures/benchmark/humaneval_tiny_results.jsonl --output /tmp/tiny_scores.jsonl` (executes the tiny completion; see `BENCHMARK_PLANNING.md` §5.3).
+This page lists **automated tests and common checks** for the CrabMate repo (run from the repository root unless noted). For module layout and protocols, see [`DEVELOPMENT.md`](DEVELOPMENT.md). For **`crabmate bench`** roadmap and benchmark-specific testing strategy, see [`基准测试规划.md`](../基准测试规划.md) (kept separate from this general checklist). **HumanEval scoring script smoke** (no LLM): `python3 scripts/humaneval_score_benchmark_results.py --tasks fixtures/benchmark/humaneval_tiny_tasks.jsonl --results fixtures/benchmark/humaneval_tiny_results.jsonl --output /tmp/tiny_scores.jsonl` (executes the tiny completion; see `基准测试规划.md` §5.3).
 
 ## Prerequisites
 
@@ -59,7 +59,7 @@ cargo test -p crabmate-sse-protocol golden_sse_control
 cargo test tool_result_envelope_golden
 ```
 
-If you change SSE **control-plane** branch ordering, update the golden fixture and run `golden_sse_control` (see [`SSE_PROTOCOL.md`](../SSE_PROTOCOL.md)). For cross-crate or public API changes before merge/release, prefer full **`cargo test`** (see [`.cursor/rules/rust-clippy-and-tests.mdc`](../../.cursor/rules/rust-clippy-and-tests.mdc)).
+If you change SSE **control-plane** branch ordering, update the golden fixture and run `golden_sse_control` (see [`SSE_PROTOCOL.md`](../SSE协议.md)). For cross-crate or public API changes before merge/release, prefer full **`cargo test`** (see [`.cursor/rules/rust-clippy-and-tests.mdc`](../../.cursor/rules/rust-clippy-and-tests.mdc)).
 
 ### Optional: nightly
 
@@ -151,5 +151,5 @@ Policy file: root **`deny.toml`**. These checks are **not** in pre-commit to avo
 ## See also
 
 - Architecture and E2E detail: [`DEVELOPMENT.md`](DEVELOPMENT.md) (§ `frontend-leptos`, E2E)
-- SSE contract and goldens: [`SSE_PROTOCOL.md`](../SSE_PROTOCOL.md)
-- Debugging: [`DEBUG.md`](../DEBUG.md)
+- SSE contract and goldens: [`SSE_PROTOCOL.md`](../SSE协议.md)
+- Debugging: [`DEBUG.md`](../调试指南.md)

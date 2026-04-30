@@ -9,4 +9,4 @@
 - **`pitfalls.md`**：常见坑与排障要点。
 - **`build.md`**：常用构建与测试命令（勿写密钥）。
 
-细节见 **`docs/CONFIGURATION.md`**「首轮注入」与 **`docs/DEVELOPMENT.md`** 中 **`living_docs.rs`**。
+细节见 **`docs/配置说明.md`**「首轮注入」与 **`docs/开发文档.md`** 中 **`living_docs.rs`**。

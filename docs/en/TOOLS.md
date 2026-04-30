@@ -1,4 +1,4 @@
-**Languages / 语言:** [中文](../TOOLS.md) · English (this page)
+**Languages / 语言:** [中文](../工具说明.md) · English (this page)
 
 # CrabMate built-in tools reference
 
@@ -46,7 +46,7 @@ This document describes built-in tools, common function-calling JSON examples, a
   - `text_diff`: Line unified diff for two UTF-8 strings or two workspace files (not Git); complements `structured_diff`.
   - `changelog_draft`: **git log** → Markdown changelog draft (no repo write); by date, `flat`, or adjacent **tag** ranges (`tag_ranges`).
   - `license_notice`: **cargo metadata** → Markdown **crate → license** table (placeholders if missing); **not legal advice**.
-  - `repo_overview_sweep`: Read-only **rollup**: optional **project profile** (same as sidebar / `GET /workspace/profile` / first-turn inject: `Cargo.toml` / workspace, `package.json`, top dirs, tokei, optional `cargo metadata --no-deps`; `include_project_profile`, `project_profile_max_chars`, default on, 6000 cap); doc previews (default `README.md`, `AGENTS.md`, `docs/DEVELOPMENT.md`, …); `list_tree` on `src` (`source_roots`); globs for manifests/CI; ends with an **outline for conclusions**. **No LLM inside**—the model writes analysis from this output. Options: `doc_paths`, `doc_preview_max_lines`, `list_tree_*`, `build_globs`, ….
+  - `repo_overview_sweep`: Read-only **rollup**: optional **project profile** (same as sidebar / `GET /workspace/profile` / first-turn inject: `Cargo.toml` / workspace, `package.json`, top dirs, tokei, optional `cargo metadata --no-deps`; `include_project_profile`, `project_profile_max_chars`, default on, 6000 cap); doc previews (default `README.md`, `AGENTS.md`, `docs/开发文档.md`, …); `list_tree` on `src` (`source_roots`); globs for manifests/CI; ends with an **outline for conclusions**. **No LLM inside**—the model writes analysis from this output. Options: `doc_paths`, `doc_preview_max_lines`, `list_tree_*`, `build_globs`, ….
   - `docs_health_sweep`: Doc previews + `typos_check` + `codespell_check` + `markdown_check_links`. Missing CLIs → **skipped** steps. **External links**: only if **`md_allowed_external_prefixes`** non-empty does `markdown_check_links` use the **built-in HTTP client** for HEAD; **not** `http_fetch`/`http_request`, **not** `http_fetch_allowed_prefixes`, **no** Web/CLI approval. Empty prefix → count only, no network. Options: `fail_fast`, `summary_only`, `spell_paths`, per-step toggles, ….
   - `hash_file`: Read-only **SHA-256 / SHA-512 / BLAKE3** (streaming); optional `max_bytes` prefix hash.
   - `diagnostic_summary`: Redacted diagnostics—Rust toolchain (`rustc`/`cargo`/`rustup`/`bc`), workspace `target/`, common `Cargo.toml` / `frontend` paths, whether key env vars **are set** (**never values**; no length for secrets). Optional `extra_env_vars` (safe uppercase names).

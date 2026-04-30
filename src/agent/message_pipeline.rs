@@ -16,7 +16,7 @@
 //! 5. **`drop_orphan_tool_messages`**
 //! 6. **`merge_consecutive_assistants_in_place`**
 //!
-//! 新增步骤须同步更新 [`MessagePipelineStage`]、本列表、以及 `docs/DEVELOPMENT.md` 中上下文策略描述。
+//! 新增步骤须同步更新 [`MessagePipelineStage`]、本列表、以及 `docs/开发文档.md` 中上下文策略描述。
 //!
 //! ## 可观测性
 //!

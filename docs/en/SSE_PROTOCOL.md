@@ -1,4 +1,4 @@
-**Languages / 语言:** [中文](../SSE_PROTOCOL.md) · English (this page)
+**Languages / 语言:** [中文](../SSE协议.md) · English (this page)
 
 # Agent SSE control-plane protocol (`/chat/stream`)
 
@@ -188,7 +188,7 @@ New **`error_code`** values may map to **`unknown`** or fall through the `_faile
 
 ## vs `POST /chat` HTTP errors
 
-Queue full, auth failures, etc. return **HTTP 4xx/5xx + JSON** (e.g. `code: "QUEUE_FULL"`), **not** SSE `data:` lines. The full **`ApiError.code`** table lives in **`docs/CLI_CONTRACT.md`**; **this doc** focuses on SSE control-plane and **`client_sse_protocol`**-related HTTP codes, complementing the stream error table above.
+Queue full, auth failures, etc. return **HTTP 4xx/5xx + JSON** (e.g. `code: "QUEUE_FULL"`), **not** SSE `data:` lines. The full **`ApiError.code`** table lives in **`docs/命令行契约.md`**; **this doc** focuses on SSE control-plane and **`client_sse_protocol`**-related HTTP codes, complementing the stream error table above.
 
 ## Dual-end checklist
 

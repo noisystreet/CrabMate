@@ -1,4 +1,4 @@
-//! `GET /openapi.json`：OpenAPI 3.0 机器可读契约（与 `server.rs` 路由对齐；**不**替代 `docs/SSE_PROTOCOL.md` 对 SSE 行级语义的说明）。
+//! `GET /openapi.json`：OpenAPI 3.0 机器可读契约（与 `server.rs` 路由对齐；**不**替代 `docs/SSE协议.md` 对 SSE 行级语义的说明）。
 
 use serde_json::{Value, json};
 
@@ -13,7 +13,7 @@ pub fn build_openapi_spec() -> Value {
             "description": concat!(
                 "CrabMate `serve` 模式的 HTTP 契约摘要。\n\n",
                 "- **鉴权**：若进程配置了 `CM_WEB_API_BEARER_TOKEN`（或等价 TOML `web_api_bearer_token`），下列标记为需鉴权的路径须在请求头携带 **`Authorization: Bearer <token>`** 或 **`X-API-Key: <token>`**（与配置值为**同一密钥**，二选一即可）。未配置密钥时这些路径可匿名访问；可设 **`web_api_require_bearer=true`**（或 **`CM_WEB_API_REQUIRE_BEARER`**）强制 `serve` 启动前必须配置密钥。\n",
-                "- **SSE**：`POST /chat/stream` 返回 `text/event-stream`；控制面 JSON 与错误码见仓库 `docs/SSE_PROTOCOL.md`，本 OpenAPI 仅作入口说明。\n",
+                "- **SSE**：`POST /chat/stream` 返回 `text/event-stream`；控制面 JSON 与错误码见仓库 `docs/SSE协议.md`，本 OpenAPI 仅作入口说明。\n",
                 "- **上传**：`POST /upload` 使用 `multipart/form-data`。"
             )
         },
@@ -109,7 +109,7 @@ pub fn build_openapi_spec() -> Value {
                 "post": {
                     "tags": ["chat"],
                     "summary": "SSE 流式对话",
-                    "description": "响应 `Content-Type: text/event-stream`；成功时响应头可含 `x-conversation-id`。事件载荷见 `docs/SSE_PROTOCOL.md`。",
+                    "description": "响应 `Content-Type: text/event-stream`；成功时响应头可含 `x-conversation-id`。事件载荷见 `docs/SSE协议.md`。",
                     "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                     "requestBody": {
                         "required": true,
@@ -578,7 +578,7 @@ pub fn build_openapi_spec() -> Value {
                         "conversation_id": { "type": "string" },
                         "agent_role": {
                             "type": "string",
-                            "description": "Named role id; new session seeds first system; existing session refreshes first system if changed. See docs/CONFIGURATION.md § multi-role."
+                            "description": "Named role id; new session seeds first system; existing session refreshes first system if changed. See docs/配置说明.md § multi-role."
                         },
                         "approval_session_id": { "type": "string" },
                         "temperature": { "type": "number", "format": "double" },
@@ -593,7 +593,7 @@ pub fn build_openapi_spec() -> Value {
                         "client_sse_protocol": {
                             "type": "integer",
                             "format": "int32",
-                            "description": "可选；客户端 SSE 控制面版本，须 ≤ 服务端。大于服务端时 400（SSE_CLIENT_TOO_NEW）。见 docs/SSE_PROTOCOL.md"
+                            "description": "可选；客户端 SSE 控制面版本，须 ≤ 服务端。大于服务端时 400（SSE_CLIENT_TOO_NEW）。见 docs/SSE协议.md"
                         },
                         "image_urls": {
                             "type": "array",
@@ -821,7 +821,7 @@ pub fn build_openapi_spec() -> Value {
                         "reason_code": {
                             "type": "string",
                             "nullable": true,
-                            "description": "When present: truncated internal detail for `INTERNAL_ERROR` on `POST /chat` JSON only; SSE may use `reason_code` more broadly (see docs/SSE_PROTOCOL.md)"
+                            "description": "When present: truncated internal detail for `INTERNAL_ERROR` on `POST /chat` JSON only; SSE may use `reason_code` more broadly (see docs/SSE协议.md)"
                         }
                     }
                 }
