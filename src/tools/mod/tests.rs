@@ -417,7 +417,10 @@ fn test_build_tools_names() {
     assert!(names.contains(&"read_file"));
     assert!(names.contains(&"read_dir"));
     assert!(names.contains(&"glob_files"));
+    #[cfg(feature = "fastembed")]
     assert!(names.contains(&"codebase_semantic_search"));
+    #[cfg(not(feature = "fastembed"))]
+    assert!(!names.contains(&"codebase_semantic_search"));
     assert!(names.contains(&"list_tree"));
     assert!(names.contains(&"file_exists"));
     assert!(names.contains(&"read_binary_meta"));

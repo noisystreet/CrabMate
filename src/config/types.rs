@@ -275,15 +275,29 @@ impl LongTermMemoryScopeMode {
 }
 
 /// 长期记忆向量检索后端（`qdrant` / `pgvector` 在 `finalize` 仍会报错直至接入外部服务）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LongTermMemoryVectorBackend {
     /// 不使用向量索引（按时间取最近片段；检索侧与 `fastembed` 失败时的降级路径一致）。
     Disabled,
-    /// 本地 CPU 嵌入（fastembed-rs / ONNX）；**配置缺省向量后端时**与长期记忆默认启用一致。
-    #[default]
+    /// 本地 CPU 嵌入（fastembed-rs / ONNX）；**配置缺省向量后端时**与长期记忆默认启用一致（需 **`fastembed`** Cargo feature）。
     Fastembed,
     Qdrant,
     Pgvector,
+}
+
+// 缺省后端随 `fastembed` feature 变化；不能仅用 `#[derive(Default)]` + 单变体 `#[default]`。
+#[allow(clippy::derivable_impls)]
+impl Default for LongTermMemoryVectorBackend {
+    fn default() -> Self {
+        #[cfg(feature = "fastembed")]
+        {
+            Self::Fastembed
+        }
+        #[cfg(not(feature = "fastembed"))]
+        {
+            Self::Disabled
+        }
+    }
 }
 
 impl LongTermMemoryVectorBackend {
@@ -695,11 +709,21 @@ mod long_term_memory_parse_tests {
         assert!(LongTermMemoryScopeMode::parse("tenant").is_err());
     }
 
+    #[cfg(feature = "fastembed")]
     #[test]
     fn vector_backend_default_is_fastembed() {
         assert_eq!(
             LongTermMemoryVectorBackend::default(),
             LongTermMemoryVectorBackend::Fastembed
+        );
+    }
+
+    #[cfg(not(feature = "fastembed"))]
+    #[test]
+    fn vector_backend_default_is_disabled_without_fastembed() {
+        assert_eq!(
+            LongTermMemoryVectorBackend::default(),
+            LongTermMemoryVectorBackend::Disabled
         );
     }
 

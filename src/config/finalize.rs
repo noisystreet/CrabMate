@@ -554,6 +554,15 @@ pub(super) fn finalize(
         Some(s) => LongTermMemoryVectorBackend::parse(s)?,
         None => LongTermMemoryVectorBackend::default(),
     };
+    #[cfg(not(feature = "fastembed"))]
+    let long_term_memory_vector_backend = if long_term_memory_enabled
+        && long_term_memory_vector_backend == LongTermMemoryVectorBackend::Fastembed
+    {
+        // 默认合并配置常为 fastembed；无 ONNX 依赖构建时降级为 disabled，避免 `load_config` 在单测与嵌入场景中大面积失败。
+        LongTermMemoryVectorBackend::Disabled
+    } else {
+        long_term_memory_vector_backend
+    };
     if long_term_memory_enabled {
         match long_term_memory_vector_backend {
             LongTermMemoryVectorBackend::Qdrant | LongTermMemoryVectorBackend::Pgvector => {
@@ -598,7 +607,10 @@ pub(super) fn finalize(
         .unwrap_or(command_timeout_secs)
         .max(1);
 
+    #[cfg(feature = "fastembed")]
     let codebase_semantic_search_enabled = b.codebase_semantic_search_enabled.unwrap_or(true);
+    #[cfg(not(feature = "fastembed"))]
+    let codebase_semantic_search_enabled = false;
     let codebase_semantic_invalidate_on_workspace_change = b
         .codebase_semantic_invalidate_on_workspace_change
         .unwrap_or(true);
