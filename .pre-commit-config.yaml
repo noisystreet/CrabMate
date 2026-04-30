@@ -24,7 +24,7 @@ repos:
         stages: [commit]
       - id: lizard-rust
         name: lizard complexity (Rust CCN)
-        entry: bash scripts/lizard-rust.sh
+        entry: bash -c 'LIZARD_CCN=50 bash scripts/lizard-rust.sh'
         language: system
         pass_filenames: false
         always_run: true

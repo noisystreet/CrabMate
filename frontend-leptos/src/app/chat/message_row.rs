@@ -350,6 +350,138 @@ fn build_non_assistant_message_body(
 }
 
 #[allow(clippy::too_many_arguments)]
+fn build_message_actions_bar(
+    show_msg_action_bar: bool,
+    is_user_plain: bool,
+    err: bool,
+    msg_idx: usize,
+    user_retry_id: String,
+    user_branch_id: String,
+    mid_retry: String,
+    row_actions: MessageRowActionSignals,
+    retry_assistant_target: RwSignal<Option<String>>,
+    status_busy: RwSignal<bool>,
+    locale: RwSignal<Locale>,
+) -> AnyView {
+    if !show_msg_action_bar {
+        return ().into_any();
+    }
+
+    view! {
+        <div class="msg-actions msg-actions-below" role="group" prop:aria-label=move || i18n::msg_actions_group_aria(locale.get())>
+            {is_user_plain.then(|| {
+                let idx = msg_idx;
+                let uid_r = user_retry_id.clone();
+                let uid_b = user_branch_id.clone();
+                view! {
+                    <button
+                        type="button"
+                        class="btn btn-muted btn-sm msg-action-btn msg-action-icon-btn"
+                        prop:title=move || i18n::msg_regen_title(locale.get())
+                        prop:aria-label=move || i18n::msg_regen_aria(locale.get())
+                        prop:disabled=move || status_busy.get()
+                        on:click=move |_| {
+                            if status_busy.get() {
+                                return;
+                            }
+                            row_actions.spawn_regenerate_from_user_line(
+                                idx,
+                                uid_r.clone(),
+                            );
+                        }
+                    >
+                        <svg
+                            class="msg-action-icon"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            xmlns="http://www.w3.org/2000/svg"
+                            aria-hidden="true"
+                        >
+                            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                            <path d="M21 3v5h-5" />
+                            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                            <path d="M8 16H3v5" />
+                        </svg>
+                    </button>
+                    <button
+                        type="button"
+                        class="btn btn-muted btn-sm msg-action-btn msg-action-icon-btn"
+                        prop:title=move || i18n::msg_branch_title(locale.get())
+                        prop:aria-label=move || i18n::msg_branch_aria(locale.get())
+                        prop:disabled=move || status_busy.get()
+                        on:click=move |_| {
+                            if status_busy.get() {
+                                return;
+                            }
+                            row_actions.spawn_branch_at_user_line(
+                                idx,
+                                uid_b.clone(),
+                            );
+                        }
+                    >
+                        <svg
+                            class="msg-action-icon"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            xmlns="http://www.w3.org/2000/svg"
+                            aria-hidden="true"
+                        >
+                            <line x1="6" y1="3" x2="6" y2="15" fill="none" />
+                            <circle cx="6" cy="3" r="2" fill="none" />
+                            <path d="M6 15v-1a4 4 0 0 1 4-4h4a4 4 0 0 0 4-4V5" fill="none" />
+                            <circle cx="18" cy="5" r="2" fill="none" />
+                            <circle cx="18" cy="19" r="2" fill="none" />
+                            <path d="M18 7v12" fill="none" />
+                        </svg>
+                    </button>
+                }
+            })}
+            {err.then(move || {
+                let mid = mid_retry.clone();
+                view! {
+                    <button
+                        type="button"
+                        class="btn btn-secondary btn-sm msg-action-icon-btn"
+                        prop:title=move || i18n::msg_retry_title(locale.get())
+                        prop:aria-label=move || i18n::msg_retry_aria(locale.get())
+                        prop:disabled=move || status_busy.get()
+                        on:click=move |_| {
+                            retry_assistant_target.set(Some(mid.clone()));
+                        }
+                    >
+                        <svg
+                            class="msg-action-icon"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            xmlns="http://www.w3.org/2000/svg"
+                            aria-hidden="true"
+                        >
+                            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                            <path d="M21 3v5h-5" />
+                            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                            <path d="M8 16H3v5" />
+                        </svg>
+                    </button>
+                }
+            })}
+        </div>
+    }
+    .into_any()
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn chat_message_row(
     msg_idx: usize,
     m: StoredMessage,
@@ -697,128 +829,19 @@ pub(crate) fn chat_message_row(
                         </pre>
                     </div>
                 </Show>
-                {show_msg_action_bar.then(|| {
-                    view! {
-                        <div class="msg-actions msg-actions-below" role="group" prop:aria-label=move || i18n::msg_actions_group_aria(locale.get())>
-                            {is_user_plain.then(|| {
-                                let idx = msg_idx;
-                                let uid_r = user_retry_id.clone();
-                                let uid_b = user_branch_id.clone();
-                                view! {
-                                    <button
-                                        type="button"
-                                        class="btn btn-muted btn-sm msg-action-btn msg-action-icon-btn"
-                                        prop:title=move || i18n::msg_regen_title(locale.get())
-                                        prop:aria-label=move || i18n::msg_regen_aria(locale.get())
-                                        prop:disabled=move || status_busy.get()
-                                        on:click=move |_| {
-                                            if status_busy.get() {
-                                                return;
-                                            }
-                                            row_actions.spawn_regenerate_from_user_line(
-                                                idx,
-                                                uid_r.clone(),
-                                            );
-                                        }
-                                    >
-                                        <svg
-                                            class="msg-action-icon"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            stroke-width="2"
-                                            stroke-linecap="round"
-                                            stroke-linejoin="round"
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            aria-hidden="true"
-                                        >
-                                            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-                                            <path d="M21 3v5h-5" />
-                                            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-                                            <path d="M8 16H3v5" />
-                                        </svg>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        class="btn btn-muted btn-sm msg-action-btn msg-action-icon-btn"
-                                        prop:title=move || i18n::msg_branch_title(locale.get())
-                                        prop:aria-label=move || i18n::msg_branch_aria(locale.get())
-                                        prop:disabled=move || status_busy.get()
-                                        on:click=move |_| {
-                                            if status_busy.get() {
-                                                return;
-                                            }
-                                            row_actions.spawn_branch_at_user_line(
-                                                idx,
-                                                uid_b.clone(),
-                                            );
-                                        }
-                                    >
-                                        <svg
-                                            class="msg-action-icon"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            stroke-width="2"
-                                            stroke-linecap="round"
-                                            stroke-linejoin="round"
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            aria-hidden="true"
-                                        >
-                                            <line
-                                                x1="6"
-                                                y1="3"
-                                                x2="6"
-                                                y2="15"
-                                                fill="none"
-                                            />
-                                            <circle cx="6" cy="3" r="2" fill="none" />
-                                            <path
-                                                d="M6 15v-1a4 4 0 0 1 4-4h4a4 4 0 0 0 4-4V5"
-                                                fill="none"
-                                            />
-                                            <circle cx="18" cy="5" r="2" fill="none" />
-                                            <circle cx="18" cy="19" r="2" fill="none" />
-                                            <path d="M18 7v12" fill="none" />
-                                        </svg>
-                                    </button>
-                                }
-                            })}
-                            {err.then(move || {
-                                let mid = mid_retry.clone();
-                                view! {
-                                    <button
-                                        type="button"
-                                        class="btn btn-secondary btn-sm msg-action-icon-btn"
-                                        prop:title=move || i18n::msg_retry_title(locale.get())
-                                        prop:aria-label=move || i18n::msg_retry_aria(locale.get())
-                                        prop:disabled=move || status_busy.get()
-                                        on:click=move |_| {
-                                            retry_assistant_target.set(Some(mid.clone()));
-                                        }
-                                    >
-                                        <svg
-                                            class="msg-action-icon"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            stroke-width="2"
-                                            stroke-linecap="round"
-                                            stroke-linejoin="round"
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            aria-hidden="true"
-                                        >
-                                            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-                                            <path d="M21 3v5h-5" />
-                                            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-                                            <path d="M8 16H3v5" />
-                                        </svg>
-                                    </button>
-                                }
-                            })}
-                        </div>
-                    }
-                })}
+                {build_message_actions_bar(
+                    show_msg_action_bar,
+                    is_user_plain,
+                    err,
+                    msg_idx,
+                    user_retry_id.clone(),
+                    user_branch_id.clone(),
+                    mid_retry.clone(),
+                    row_actions,
+                    retry_assistant_target,
+                    status_busy,
+                    locale,
+                )}
             </div>
         </div>
     }

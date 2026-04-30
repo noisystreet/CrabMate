@@ -1,6 +1,7 @@
 //! 中部聊天列：消息列表、输入框、查找入口。
 
 use std::sync::Arc;
+use std::sync::Mutex;
 
 use gloo_timers::future::TimeoutFuture;
 use leptos::prelude::{StoredValue, *};
@@ -19,6 +20,424 @@ use crate::app::scroll_guard::MessagesScrollFromEffectGuard;
 use crate::app_prefs::AUTO_SCROLL_RESUME_GAP_PX;
 use crate::i18n;
 use crate::session_ops::messages_scroller_has_non_collapsed_selection;
+
+#[allow(clippy::too_many_arguments)]
+#[component]
+fn ChatMessagesPane(
+    locale: RwSignal<crate::i18n::Locale>,
+    messages_scroller: NodeRef<leptos::html::Div>,
+    auto_scroll_chat: RwSignal<bool>,
+    messages_scroll_from_effect: RwSignal<bool>,
+    last_messages_scroll_top: RwSignal<i32>,
+    timeline_panel_expanded: RwSignal<bool>,
+    sessions: RwSignal<Vec<crate::storage::ChatSession>>,
+    active_id: RwSignal<String>,
+    collapsed_long_assistant_ids: RwSignal<Vec<String>>,
+    collapsed_tool_run_heads: RwSignal<std::collections::HashSet<String>>,
+    chat_find_query: RwSignal<String>,
+    chat_find_match_ids: RwSignal<Vec<String>>,
+    chat_find_cursor: RwSignal<usize>,
+    status_busy: RwSignal<bool>,
+    session_sync: RwSignal<crate::session_sync::SessionSyncState>,
+    regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
+    retry_assistant_target: RwSignal<Option<String>>,
+    status_err: RwSignal<Option<String>>,
+    markdown_render: RwSignal<bool>,
+    apply_assistant_display_filters: RwSignal<bool>,
+) -> impl IntoView {
+    view! {
+        <div
+            class="messages"
+            node_ref=messages_scroller
+            on:wheel=move |ev: web_sys::WheelEvent| {
+                if ev.delta_y() < 0.0 {
+                    auto_scroll_chat.set(false);
+                }
+            }
+            on:scroll=move |ev: web_sys::Event| {
+                if let Some(t) = ev.target()
+                    && let Ok(el) = t.dyn_into::<web_sys::HtmlElement>()
+                {
+                    let top = el.scroll_top();
+                    let prev_top = last_messages_scroll_top.get_untracked();
+                    last_messages_scroll_top.set(top);
+                    if messages_scroll_from_effect.get_untracked() {
+                        return;
+                    }
+                    let gap = el.scroll_height() - top - el.client_height();
+                    if gap > AUTO_SCROLL_RESUME_GAP_PX {
+                        auto_scroll_chat.set(false);
+                    } else if !auto_scroll_chat.get_untracked() && top >= prev_top {
+                        auto_scroll_chat.set(true);
+                    }
+                }
+            }
+        >
+            <div class="chat-thread">
+                {timeline_panel_view(
+                    locale,
+                    sessions,
+                    active_id,
+                    timeline_panel_expanded,
+                    auto_scroll_chat,
+                )}
+                <div class="messages-inner">
+                    {move || {
+                        let id = active_id.get();
+                        sessions.with(|list| {
+                            let msgs = list
+                                .iter()
+                                .find(|s| s.id == id)
+                                .map(|s| s.messages.clone())
+                                .unwrap_or_default();
+                            if msgs.is_empty() {
+                                view! {
+                                    <div class="messages-empty" role="status">
+                                        <div class="messages-empty-card">
+                                            <p class="messages-empty-title">
+                                                {move || i18n::chat_empty_title(locale.get())}
+                                            </p>
+                                            <p class="messages-empty-lead">
+                                                {move || i18n::chat_empty_lead(locale.get())}
+                                            </p>
+                                            <ul class="messages-empty-tips">
+                                                <li>{move || i18n::chat_empty_tip1(locale.get())}</li>
+                                                <li>{move || i18n::chat_empty_tip2(locale.get())}</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                }
+                                .into_any()
+                            } else {
+                                chunk_messages(&msgs)
+                                    .into_iter()
+                                    .map(|chunk| match chunk {
+                                        ChatChunk::Single { idx, msg } => chat_message_row(
+                                            idx,
+                                            msg,
+                                            sessions,
+                                            active_id,
+                                            collapsed_long_assistant_ids,
+                                            chat_find_query,
+                                            chat_find_match_ids,
+                                            chat_find_cursor,
+                                            auto_scroll_chat,
+                                            status_busy,
+                                            session_sync,
+                                            regen_stream_after_truncate,
+                                            retry_assistant_target,
+                                            status_err,
+                                            locale,
+                                            markdown_render,
+                                            apply_assistant_display_filters,
+                                        )
+                                        .into_any(),
+                                        ChatChunk::ToolGroup { head_id, items } => {
+                                            tool_run_group_view(
+                                                head_id,
+                                                items,
+                                                collapsed_tool_run_heads,
+                                                chat_find_query,
+                                                chat_find_match_ids,
+                                                sessions,
+                                                active_id,
+                                                collapsed_long_assistant_ids,
+                                                chat_find_cursor,
+                                                status_busy,
+                                                session_sync,
+                                                regen_stream_after_truncate,
+                                                retry_assistant_target,
+                                                status_err,
+                                                auto_scroll_chat,
+                                                locale,
+                                                markdown_render,
+                                                apply_assistant_display_filters,
+                                            )
+                                            .into_any()
+                                        }
+                                    })
+                                    .collect_view()
+                                    .into_any()
+                            }
+                        })
+                    }}
+                </div>
+            </div>
+        </div>
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+#[component]
+fn ChatComposerPane(
+    locale: RwSignal<crate::i18n::Locale>,
+    pending_images: RwSignal<Vec<String>>,
+    pending_clarification: RwSignal<Option<crate::clarification_form::PendingClarificationForm>>,
+    status_busy: RwSignal<bool>,
+    status_err: RwSignal<Option<String>>,
+    run_send_message: Arc<dyn Fn() + Send + Sync>,
+    run_send_clarify_sv: StoredValue<Arc<dyn Fn() + Send + Sync>>,
+    trigger_stop: Arc<dyn Fn() + Send + Sync>,
+    initialized: RwSignal<bool>,
+    composer_input_ref: NodeRef<leptos::html::Textarea>,
+    composer_buf_ta: Arc<Mutex<String>>,
+    composer_mirror_html: RwSignal<String>,
+    composer_mirror_scroll_top: RwSignal<f64>,
+) -> impl IntoView {
+    view! {
+        <div class="composer composer-ds">
+            <div class="composer-inner-ds">
+                <input
+                    type="file"
+                    class="composer-file-input-hidden"
+                    id="composer-image-input"
+                    accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+                    multiple
+                    on:change=move |ev: web_sys::Event| {
+                        let Some(t) = ev.target() else {
+                            return;
+                        };
+                        let Ok(input) = t.dyn_into::<web_sys::HtmlInputElement>() else {
+                            return;
+                        };
+                        let files = input.files();
+                        let Some(list) = files else {
+                            return;
+                        };
+                        let n = list.length();
+                        if n == 0 {
+                            return;
+                        }
+                        let form = web_sys::FormData::new().expect("FormData");
+                        for i in 0..n {
+                            if let Some(f) = list.item(i) {
+                                let name = f.name();
+                                let _ = form.append_with_blob_and_filename("file", &f, &name);
+                            }
+                        }
+                        spawn_local(async move {
+                            match upload_files_multipart(&form, locale.get_untracked()).await {
+                                Ok(urls) => {
+                                    pending_images.update(|v| {
+                                        for u in urls {
+                                            if v.len() >= 6 {
+                                                break;
+                                            }
+                                            if !v.contains(&u) {
+                                                v.push(u);
+                                            }
+                                        }
+                                    });
+                                }
+                                Err(e) => {
+                                    status_err.set(Some(e));
+                                }
+                            }
+                        });
+                        input.set_value("");
+                    }
+                />
+                <div class="composer-pending-images" data-testid="composer-pending-images">
+                    {move || {
+                        let imgs = pending_images.get();
+                        if imgs.is_empty() {
+                            return view! { <span></span> }.into_any();
+                        }
+                        imgs.iter()
+                            .map(|url| {
+                                let u = url.clone();
+                                let u_rm = url.clone();
+                                view! {
+                                    <div class="composer-pending-img-wrap">
+                                        <img class="composer-pending-img" src=u alt="" />
+                                        <button
+                                            type="button"
+                                            class="composer-pending-img-remove"
+                                            prop:aria-label=move || i18n::composer_remove_image_aria(locale.get())
+                                            on:click=move |_| pending_images.update(|v| v.retain(|x| x != &u_rm))
+                                        >"×"</button>
+                                    </div>
+                                }
+                                .into_any()
+                            })
+                            .collect_view()
+                            .into_any()
+                    }}
+                </div>
+                <Show when=move || pending_clarification.get().is_some()>
+                    <div class="composer-clarification-panel" data-testid="composer-clarification-panel">
+                        {move || {
+                            let Some(form) = pending_clarification.get() else {
+                                return view! { <span></span> }.into_any();
+                            };
+                            let intro = form.intro.clone();
+                            let loc = locale.get();
+                            let n = form.fields.len();
+                            let pc = pending_clarification;
+                            if form.values.len() != n {
+                                pc.update(|opt| {
+                                    if let Some(fm) = opt.as_mut() {
+                                        fm.values.resize(n, String::new());
+                                    }
+                                });
+                            }
+                            view! {
+                                <div class="composer-clarification-title">
+                                    {i18n::clarification_panel_title(loc)}
+                                </div>
+                                <p class="composer-clarification-intro">{intro}</p>
+                                <div class="composer-clarification-fields">
+                                    {form
+                                        .fields
+                                        .iter()
+                                        .enumerate()
+                                        .map(|(i, f)| {
+                                            let label = f.label.clone();
+                                            let hint = f.hint.clone();
+                                            let req = f.required;
+                                            let idx = i;
+                                            let pc2 = pc;
+                                            view! {
+                                                <label class="composer-clarification-field">
+                                                    <span class="composer-clarification-label">
+                                                        {label.clone()}
+                                                        {if req {
+                                                            i18n::clarification_required_suffix(loc).to_string()
+                                                        } else {
+                                                            String::new()
+                                                        }}
+                                                    </span>
+                                                    {match &hint {
+                                                        Some(h) => view! {
+                                                            <span class="composer-clarification-hint">{h.clone()}</span>
+                                                        }
+                                                        .into_any(),
+                                                        None => view! { <span></span> }.into_any(),
+                                                    }}
+                                                    <input
+                                                        type="text"
+                                                        class="composer-clarification-input"
+                                                        prop:value=move || {
+                                                            pc2.with(|opt| {
+                                                                opt.as_ref()
+                                                                    .and_then(|fm| fm.values.get(idx))
+                                                                    .cloned()
+                                                                    .unwrap_or_default()
+                                                            })
+                                                        }
+                                                        on:input=move |ev| {
+                                                            let t = event_target_value(&ev);
+                                                            pc2.update(|opt| {
+                                                                if let Some(fm) = opt.as_mut()
+                                                                    && fm.values.len() > idx
+                                                                {
+                                                                    fm.values[idx] = t;
+                                                                }
+                                                            });
+                                                        }
+                                                    />
+                                                </label>
+                                            }
+                                            .into_any()
+                                        })
+                                        .collect_view()}
+                                </div>
+                                <div class="composer-clarification-actions">
+                                    <button
+                                        type="button"
+                                        class="btn btn-muted btn-sm"
+                                        prop:disabled=move || status_busy.get()
+                                        on:click=move |_| pending_clarification.set(None)
+                                    >
+                                        {move || i18n::clarification_dismiss(locale.get())}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn btn-primary btn-sm"
+                                        prop:disabled=move || status_busy.get()
+                                        on:click=move |_| run_send_clarify_sv.get_value()()
+                                    >
+                                        {move || i18n::clarification_submit(locale.get())}
+                                    </button>
+                                </div>
+                            }
+                            .into_any()
+                        }}
+                    </div>
+                </Show>
+                <div class="composer-input-row">
+                    <ComposerInputStack
+                        composer_input_ref=composer_input_ref
+                        composer_buf_ta=composer_buf_ta
+                        composer_mirror_html=composer_mirror_html
+                        composer_mirror_scroll_top=composer_mirror_scroll_top
+                        run_send_message=run_send_message.clone()
+                        locale=locale
+                    />
+                    <div class="composer-bar-actions">
+                        <label
+                            class="btn btn-muted btn-sm composer-attach-label"
+                            for="composer-image-input"
+                            prop:title=move || i18n::composer_attach_image_aria(locale.get())
+                            prop:aria-label=move || i18n::composer_attach_image_aria(locale.get())
+                        >
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                class="composer-attach-icon"
+                                aria-hidden="true"
+                            >
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                <circle cx="8.5" cy="8.5" r="1.5" />
+                                <path d="m21 15-3.5-3.5a2 2 0 0 0-2.83 0L6 21" />
+                            </svg>
+                        </label>
+                        <button
+                            type="button"
+                            class="btn btn-muted btn-sm"
+                            prop:disabled=move || !status_busy.get()
+                            on:click={
+                                let t = Arc::clone(&trigger_stop);
+                                move |_| t()
+                            }
+                        >{move || i18n::composer_stop(locale.get())}</button>
+                        <button
+                            type="button"
+                            class="btn btn-primary btn-send-icon"
+                            data-testid="chat-send-button"
+                            prop:disabled=move || status_busy.get() || !initialized.get()
+                            on:click={
+                                let r = Arc::clone(&run_send_message);
+                                move |_| r()
+                            }
+                            prop:title=move || i18n::composer_send_aria(locale.get())
+                            prop:aria-label=move || i18n::composer_send_aria(locale.get())
+                        >
+                            <svg
+                                class="btn-send-icon-svg"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                xmlns="http://www.w3.org/2000/svg"
+                                aria-hidden="true"
+                            >
+                                <path d="M22 2 11 13" />
+                                <path d="M22 2 15 22 11 13 2 9 22 2Z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}
 
 pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
     let ChatColumnShell {
@@ -131,383 +550,43 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
                         });
                     }
                 >
-                    <div
-                        class="messages"
-                        node_ref=messages_scroller
-                        on:wheel=move |ev: web_sys::WheelEvent| {
-                            // 用户上滚查看历史时，立即关闭自动跟底，避免流式期间被强行拉回底部。
-                            if ev.delta_y() < 0.0 {
-                                auto_scroll_chat.set(false);
-                            }
-                        }
-                        on:scroll=move |ev: web_sys::Event| {
-                            if let Some(t) = ev.target() {
-                                if let Ok(el) = t.dyn_into::<web_sys::HtmlElement>() {
-                                    let top = el.scroll_top();
-                                    let prev_top = last_messages_scroll_top.get_untracked();
-                                    last_messages_scroll_top.set(top);
-                                    if messages_scroll_from_effect.get_untracked() {
-                                        return;
-                                    }
-                                    let gap = el.scroll_height()
-                                        - top
-                                        - el.client_height();
-                                    if gap > AUTO_SCROLL_RESUME_GAP_PX {
-                                        auto_scroll_chat.set(false);
-                                    } else if !auto_scroll_chat.get_untracked() && top >= prev_top {
-                                        // 仅在向下滚且回到底部附近时恢复自动跟底。
-                                        auto_scroll_chat.set(true);
-                                    }
-                                }
-                            }
-                        }
-                    >
-                        <div class="chat-thread">
-                        {timeline_panel_view(
-                            locale,
-                            sessions,
-                            active_id,
-                            timeline_panel_expanded,
-                            auto_scroll_chat,
-                        )}
-                        <div class="messages-inner">
-                            {move || {
-                                let id = active_id.get();
-                                sessions.with(|list| {
-                                    let msgs = list
-                                        .iter()
-                                        .find(|s| s.id == id)
-                                        .map(|s| s.messages.clone())
-                                        .unwrap_or_default();
-                                    if msgs.is_empty() {
-                                        view! {
-                                            <div class="messages-empty" role="status">
-                                                <div class="messages-empty-card">
-                                                    <p class="messages-empty-title">
-                                                        {move || i18n::chat_empty_title(locale.get())}
-                                                    </p>
-                                                    <p class="messages-empty-lead">
-                                                        {move || i18n::chat_empty_lead(locale.get())}
-                                                    </p>
-                                                    <ul class="messages-empty-tips">
-                                                        <li>{move || i18n::chat_empty_tip1(locale.get())}</li>
-                                                        <li>{move || i18n::chat_empty_tip2(locale.get())}</li>
-                                                    </ul>
-                                                </div>
-                                            </div>
-                                        }
-                                        .into_any()
-                                    } else {
-                                        chunk_messages(&msgs)
-                                            .into_iter()
-                                            .map(|chunk| match chunk {
-                                                ChatChunk::Single { idx, msg } => chat_message_row(
-                                                    idx,
-                                                    msg,
-                                                    sessions,
-                                                    active_id,
-                                                    collapsed_long_assistant_ids,
-                                                    chat_find_query,
-                                                    chat_find_match_ids,
-                                                    chat_find_cursor,
-                                                    auto_scroll_chat,
-                                                    status_busy,
-                                                    session_sync,
-                                                    regen_stream_after_truncate,
-                                                    retry_assistant_target,
-                                                    status_err,
-                                                    locale,
-                                                    markdown_render,
-                                                    apply_assistant_display_filters,
-                                                )
-                                                .into_any(),
-                                                ChatChunk::ToolGroup { head_id, items } => {
-                                                    tool_run_group_view(
-                                                        head_id,
-                                                        items,
-                                                        collapsed_tool_run_heads,
-                                                        chat_find_query,
-                                                        chat_find_match_ids,
-                                                        sessions,
-                                                        active_id,
-                                                        collapsed_long_assistant_ids,
-                                                        chat_find_cursor,
-                                                        status_busy,
-                                                        session_sync,
-                                                        regen_stream_after_truncate,
-                                                        retry_assistant_target,
-                                                        status_err,
-                                                        auto_scroll_chat,
-                                                        locale,
-                                                        markdown_render,
-                                                        apply_assistant_display_filters,
-                                                    )
-                                                    .into_any()
-                                                }
-                                            })
-                                            .collect_view()
-                                            .into_any()
-                                    }
-                                })
-                            }}
-                        </div>
-                        </div>
-                    </div>
-                    <div class="composer composer-ds">
-                        <div class="composer-inner-ds">
-                        <input
-                            type="file"
-                            class="composer-file-input-hidden"
-                            id="composer-image-input"
-                            accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
-                            multiple
-                            on:change=move |ev: web_sys::Event| {
-                                let Some(t) = ev.target() else {
-                                    return;
-                                };
-                                let Ok(input) = t.dyn_into::<web_sys::HtmlInputElement>() else {
-                                    return;
-                                };
-                                let files = input.files();
-                                let Some(list) = files else {
-                                    return;
-                                };
-                                let n = list.length();
-                                if n == 0 {
-                                    return;
-                                }
-                                let form = web_sys::FormData::new().expect("FormData");
-                                    for i in 0..n {
-                                    if let Some(f) = list.item(i) {
-                                        let name = f.name();
-                                        let _ = form.append_with_blob_and_filename("file", &f, &name);
-                                    }
-                                }
-                                spawn_local(async move {
-                                    match upload_files_multipart(&form, locale.get_untracked()).await {
-                                        Ok(urls) => {
-                                            pending_images.update(|v| {
-                                                for u in urls {
-                                                    if v.len() >= 6 {
-                                                        break;
-                                                    }
-                                                    if !v.contains(&u) {
-                                                        v.push(u);
-                                                    }
-                                                }
-                                            });
-                                        }
-                                        Err(e) => {
-                                            status_err.set(Some(e));
-                                        }
-                                    }
-                                });
-                                input.set_value("");
-                            }
-                        />
-                        <div class="composer-pending-images" data-testid="composer-pending-images">
-                            {move || {
-                                let imgs = pending_images.get();
-                                if imgs.is_empty() {
-                                    return view! { <span></span> }.into_any();
-                                }
-                                imgs.iter()
-                                    .map(|url| {
-                                        let u = url.clone();
-                                        let u_rm = url.clone();
-                                        view! {
-                                            <div class="composer-pending-img-wrap">
-                                                <img class="composer-pending-img" src=u alt="" />
-                                                <button
-                                                    type="button"
-                                                    class="composer-pending-img-remove"
-                                                    prop:aria-label=move || i18n::composer_remove_image_aria(locale.get())
-                                                    on:click=move |_| {
-                                                        pending_images.update(|v| v.retain(|x| x != &u_rm));
-                                                    }
-                                                >"×"</button>
-                                            </div>
-                                        }
-                                        .into_any()
-                                    })
-                                    .collect_view()
-                                    .into_any()
-                            }}
-                        </div>
-                        <Show when=move || pending_clarification.get().is_some()>
-                            <div class="composer-clarification-panel" data-testid="composer-clarification-panel">
-                                {move || {
-                                    let Some(form) = pending_clarification.get() else {
-                                        return view! { <span></span> }.into_any();
-                                    };
-                                    let intro = form.intro.clone();
-                                    let loc = locale.get();
-                                    let n = form.fields.len();
-                                    let pc = pending_clarification;
-                                    if form.values.len() != n {
-                                        pc.update(|opt| {
-                                            if let Some(fm) = opt.as_mut() {
-                                                fm.values.resize(n, String::new());
-                                            }
-                                        });
-                                    }
-                                    view! {
-                                        <div class="composer-clarification-title">
-                                            {i18n::clarification_panel_title(loc)}
-                                        </div>
-                                        <p class="composer-clarification-intro">{intro}</p>
-                                        <div class="composer-clarification-fields">
-                                            {form
-                                                .fields
-                                                .iter()
-                                                .enumerate()
-                                                .map(|(i, f)| {
-                                                    let label = f.label.clone();
-                                                    let hint = f.hint.clone();
-                                                    let req = f.required;
-                                                    let idx = i;
-                                                    let pc2 = pc;
-                                                    view! {
-                                                        <label class="composer-clarification-field">
-                                                            <span class="composer-clarification-label">
-                                                                {label.clone()}
-                                                                {if req {
-                                                                    i18n::clarification_required_suffix(loc).to_string()
-                                                                } else {
-                                                                    String::new()
-                                                                }}
-                                                            </span>
-                                                            {match &hint {
-                                                                Some(h) => view! {
-                                                                    <span class="composer-clarification-hint">{h.clone()}</span>
-                                                                }
-                                                                .into_any(),
-                                                                None => view! { <span></span> }.into_any(),
-                                                            }}
-                                                            <input
-                                                                type="text"
-                                                                class="composer-clarification-input"
-                                                                prop:value=move || {
-                                                                    pc2.with(|opt| {
-                                                                        opt.as_ref()
-                                                                            .and_then(|fm| fm.values.get(idx))
-                                                                            .cloned()
-                                                                            .unwrap_or_default()
-                                                                    })
-                                                                }
-                                                                on:input=move |ev| {
-                                                                    let t = event_target_value(&ev);
-                                                                    pc2.update(|opt| {
-                                                                        if let Some(fm) = opt.as_mut()
-                                                                            && fm.values.len() > idx
-                                                                        {
-                                                                            fm.values[idx] = t;
-                                                                        }
-                                                                    });
-                                                                }
-                                                            />
-                                                        </label>
-                                                    }
-                                                    .into_any()
-                                                })
-                                                .collect_view()}
-                                        </div>
-                                        <div class="composer-clarification-actions">
-                                            <button
-                                                type="button"
-                                                class="btn btn-muted btn-sm"
-                                                prop:disabled=move || status_busy.get()
-                                                on:click=move |_| pending_clarification.set(None)
-                                            >
-                                                {move || i18n::clarification_dismiss(locale.get())}
-                                            </button>
-                                            <button
-                                                type="button"
-                                                class="btn btn-primary btn-sm"
-                                                prop:disabled=move || status_busy.get()
-                                                on:click=move |_| {
-                                                    run_send_clarify_sv.get_value()();
-                                                }
-                                            >
-                                                {move || i18n::clarification_submit(locale.get())}
-                                            </button>
-                                        </div>
-                                    }
-                                    .into_any()
-                                }}
-                            </div>
-                        </Show>
-                        <div class="composer-input-row">
-                        <ComposerInputStack
-                            composer_input_ref=composer_input_ref
-                            composer_buf_ta=composer_buf_ta
-                            composer_mirror_html=composer_mirror_html
-                            composer_mirror_scroll_top=composer_mirror_scroll_top
-                            run_send_message=run_send_message.clone()
-                            locale=locale
-                        />
-                        <div class="composer-bar-actions">
-                            <label
-                                class="btn btn-muted btn-sm composer-attach-label"
-                                for="composer-image-input"
-                                prop:title=move || i18n::composer_attach_image_aria(locale.get())
-                                prop:aria-label=move || i18n::composer_attach_image_aria(locale.get())
-                            >
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    class="composer-attach-icon"
-                                    aria-hidden="true"
-                                >
-                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                                    <circle cx="8.5" cy="8.5" r="1.5" />
-                                    <path d="m21 15-3.5-3.5a2 2 0 0 0-2.83 0L6 21" />
-                                </svg>
-                            </label>
-                            <button
-                                type="button"
-                                class="btn btn-muted btn-sm"
-                                prop:disabled=move || !status_busy.get()
-                                on:click={
-                                    let t = Arc::clone(&trigger_stop);
-                                    move |_| t()
-                                }
-                            >{move || i18n::composer_stop(locale.get())}</button>
-                            <button
-                                type="button"
-                                class="btn btn-primary btn-send-icon"
-                                data-testid="chat-send-button"
-                                prop:disabled=move || status_busy.get() || !initialized.get()
-                                on:click={
-                                    let r = Arc::clone(&run_send_message);
-                                    move |_| r()
-                                }
-                                prop:title=move || i18n::composer_send_aria(locale.get())
-                                prop:aria-label=move || i18n::composer_send_aria(locale.get())
-                            >
-                                <svg
-                                    class="btn-send-icon-svg"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    aria-hidden="true"
-                                >
-                                    <path d="M22 2 11 13" />
-                                    <path d="M22 2 15 22 11 13 2 9 22 2Z" />
-                                </svg>
-                            </button>
-                        </div>
-                        </div>
-                        </div>
-                    </div>
+                    <ChatMessagesPane
+                        locale=locale
+                        messages_scroller=messages_scroller
+                        auto_scroll_chat=auto_scroll_chat
+                        messages_scroll_from_effect=messages_scroll_from_effect
+                        last_messages_scroll_top=last_messages_scroll_top
+                        timeline_panel_expanded=timeline_panel_expanded
+                        sessions=sessions
+                        active_id=active_id
+                        collapsed_long_assistant_ids=collapsed_long_assistant_ids
+                        collapsed_tool_run_heads=collapsed_tool_run_heads
+                        chat_find_query=chat_find_query
+                        chat_find_match_ids=chat_find_match_ids
+                        chat_find_cursor=chat_find_cursor
+                        status_busy=status_busy
+                        session_sync=session_sync
+                        regen_stream_after_truncate=regen_stream_after_truncate
+                        retry_assistant_target=retry_assistant_target
+                        status_err=status_err
+                        markdown_render=markdown_render
+                        apply_assistant_display_filters=apply_assistant_display_filters
+                    />
+                    <ChatComposerPane
+                        locale=locale
+                        pending_images=pending_images
+                        pending_clarification=pending_clarification
+                        status_busy=status_busy
+                        status_err=status_err
+                        run_send_message=run_send_message.clone()
+                        run_send_clarify_sv=run_send_clarify_sv
+                        trigger_stop=trigger_stop
+                        initialized=initialized
+                        composer_input_ref=composer_input_ref
+                        composer_buf_ta=composer_buf_ta
+                        composer_mirror_html=composer_mirror_html
+                        composer_mirror_scroll_top=composer_mirror_scroll_top
+                    />
                 </div>
     }
 }

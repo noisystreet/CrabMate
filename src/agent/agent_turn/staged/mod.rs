@@ -706,6 +706,38 @@ fn staged_step_tool_messages_all_ok(messages: &[Message], step_user_index: usize
     true
 }
 
+fn compute_transition_trigger(
+    step: &PlanStepV1,
+    run_failed_or_verify_failed: bool,
+    step_verify_failed_reason: &Option<String>,
+    transition_counters: &mut HashMap<String, u32>,
+) -> Option<(String, String)> {
+    let transitions = step.transitions.as_ref()?;
+    let target = if run_failed_or_verify_failed {
+        transitions
+            .iter()
+            .find(|t| t.condition == "on_verify_fail" || t.condition == "always")
+    } else {
+        transitions
+            .iter()
+            .find(|t| t.condition == "on_verify_success" || t.condition == "always")
+    }?;
+    let key = format!("{}->{}", step.id, target.target_step_id);
+    let count = transition_counters.entry(key).or_insert(0);
+    if *count >= target.max_loops.unwrap_or(3) {
+        return None;
+    }
+    *count += 1;
+    let reason = if run_failed_or_verify_failed {
+        step_verify_failed_reason
+            .clone()
+            .unwrap_or_else(|| "执行错误".to_string())
+    } else {
+        "执行成功".to_string()
+    };
+    Some((target.target_step_id.clone(), reason))
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_staged_plan_steps_loop<F>(
     plan_id: String,
@@ -835,42 +867,12 @@ where
             }
         }
 
-        let mut transition_triggered = None;
-        if run_step.is_err() || step_verify_failed_reason.is_some() {
-            #[allow(clippy::collapsible_if)]
-            if let Some(ref transitions) = step.transitions {
-                if let Some(t) = transitions
-                    .iter()
-                    .find(|t| t.condition == "on_verify_fail" || t.condition == "always")
-                {
-                    let key = format!("{}->{}", step.id, t.target_step_id);
-                    let count = transition_counters.entry(key).or_insert(0);
-                    if *count < t.max_loops.unwrap_or(3) {
-                        *count += 1;
-                        let r = step_verify_failed_reason
-                            .clone()
-                            .unwrap_or_else(|| "执行错误".to_string());
-                        transition_triggered = Some((t.target_step_id.clone(), r));
-                    }
-                }
-            }
-        } else {
-            #[allow(clippy::collapsible_if)]
-            if let Some(ref transitions) = step.transitions {
-                if let Some(t) = transitions
-                    .iter()
-                    .find(|t| t.condition == "on_verify_success" || t.condition == "always")
-                {
-                    let key = format!("{}->{}", step.id, t.target_step_id);
-                    let count = transition_counters.entry(key).or_insert(0);
-                    if *count < t.max_loops.unwrap_or(3) {
-                        *count += 1;
-                        transition_triggered =
-                            Some((t.target_step_id.clone(), "执行成功".to_string()));
-                    }
-                }
-            }
-        }
+        let transition_triggered = compute_transition_trigger(
+            &step,
+            run_step.is_err() || step_verify_failed_reason.is_some(),
+            &step_verify_failed_reason,
+            &mut transition_counters,
+        );
 
         if let Some((target_id, reason)) = transition_triggered {
             let target_idx_opt = original_steps.iter().position(|s| s.id == target_id);

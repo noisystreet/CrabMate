@@ -182,6 +182,327 @@ fn parse_staged_plan_step_finished(
     })
 }
 
+fn handle_error_stop(
+    obj: &serde_json::Map<String, Value>,
+    cbs: &mut SseCallbacks<'_>,
+) -> Option<SseDispatch> {
+    let Some(e) = obj.get("error") else {
+        return None;
+    };
+    if e.is_null() {
+        return None;
+    }
+    let Some(Value::String(code_raw)) = obj.get("code") else {
+        return None;
+    };
+    let code = code_raw.trim();
+    if code.is_empty() {
+        return None;
+    }
+    let msg = obj.get("error").and_then(|x| x.as_str()).unwrap_or("error");
+    let reason = obj
+        .get("reason_code")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let line = match reason {
+        Some(r) => format!("{msg} ({code}, reason_code={r})"),
+        None => format!("{msg} ({code})"),
+    };
+    (cbs.on_error)(line);
+    Some(SseDispatch::Stop)
+}
+
+fn handle_clarification_questionnaire(
+    obj: &serde_json::Map<String, Value>,
+    cbs: &mut SseCallbacks<'_>,
+) -> Option<SseDispatch> {
+    if !key_present_non_null(obj, "clarification_questionnaire") {
+        return None;
+    }
+    if let Some(Value::Object(inner)) = obj.get("clarification_questionnaire")
+        && let Some(qid) = inner
+            .get("questionnaire_id")
+            .and_then(|x| x.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+        && let Some(intro) = inner
+            .get("intro")
+            .and_then(|x| x.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+        && let Some(Value::Array(qarr)) = inner.get("questions")
+    {
+        let mut fields: Vec<ClarificationFormField> = Vec::new();
+        for q in qarr {
+            let Some(qo) = q.as_object() else {
+                continue;
+            };
+            let id = qo
+                .get("id")
+                .and_then(|x| x.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(String::from);
+            let label = qo
+                .get("label")
+                .and_then(|x| x.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(String::from);
+            let (Some(id), Some(label)) = (id, label) else {
+                continue;
+            };
+            let hint = qo
+                .get("hint")
+                .and_then(|x| x.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(String::from);
+            let required = qo
+                .get("required")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false);
+            fields.push(ClarificationFormField {
+                id,
+                label,
+                hint,
+                required,
+            });
+        }
+        if !fields.is_empty()
+            && let Some(f) = cbs.on_clarification_questionnaire.as_mut()
+        {
+            f(ClarificationQuestionnaireInfo {
+                questionnaire_id: qid,
+                intro,
+                fields,
+            });
+        }
+    }
+    Some(SseDispatch::Handled)
+}
+
+fn handle_thinking_trace(
+    obj: &serde_json::Map<String, Value>,
+    cbs: &mut SseCallbacks<'_>,
+) -> Option<SseDispatch> {
+    let Some(Value::Object(tt)) = obj.get("thinking_trace") else {
+        return None;
+    };
+    let op = tt
+        .get("op")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .unwrap_or("");
+    if op.is_empty() {
+        return None;
+    }
+    if let Some(f) = cbs.on_thinking_trace.as_mut() {
+        f(ThinkingTraceInfo {
+            op: op.to_string(),
+            node_id: tt
+                .get("node_id")
+                .and_then(|x| x.as_str())
+                .filter(|s| !s.is_empty())
+                .map(String::from),
+            parent_id: tt
+                .get("parent_id")
+                .and_then(|x| x.as_str())
+                .filter(|s| !s.is_empty())
+                .map(String::from),
+            title: tt
+                .get("title")
+                .and_then(|x| x.as_str())
+                .filter(|s| !s.is_empty())
+                .map(String::from),
+            chunk: tt
+                .get("chunk")
+                .and_then(|x| x.as_str())
+                .filter(|s| !s.is_empty())
+                .map(String::from),
+            context_snapshot: tt
+                .get("context_snapshot")
+                .and_then(|x| x.as_str())
+                .filter(|s| !s.is_empty())
+                .map(String::from),
+        });
+    }
+    Some(SseDispatch::Handled)
+}
+
+fn handle_tool_call(
+    obj: &serde_json::Map<String, Value>,
+    cbs: &mut SseCallbacks<'_>,
+) -> Option<SseDispatch> {
+    let Some(Value::Object(tc)) = obj.get("tool_call") else {
+        return None;
+    };
+    let summary = tc.get("summary").and_then(|x| x.as_str()).unwrap_or("");
+    let preview = tc
+        .get("arguments_preview")
+        .and_then(|x| x.as_str())
+        .filter(|s| !s.is_empty());
+    let args_full = tc
+        .get("arguments")
+        .and_then(|x| x.as_str())
+        .filter(|s| !s.is_empty());
+    if summary.is_empty() && preview.is_none() && args_full.is_none() {
+        return None;
+    }
+    let name = tc
+        .get("name")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
+    let goal_id = tc
+        .get("goal_id")
+        .and_then(|x| x.as_str())
+        .filter(|s| !s.is_empty())
+        .map(String::from);
+    let tool_call_id = tc
+        .get("tool_call_id")
+        .and_then(|x| x.as_str())
+        .filter(|s| !s.is_empty())
+        .map(String::from);
+    if let Some(f) = cbs.on_tool_call.as_mut() {
+        f(
+            name,
+            summary.to_string(),
+            preview.map(String::from),
+            args_full.map(String::from),
+            goal_id,
+            tool_call_id,
+        );
+    }
+    Some(SseDispatch::Handled)
+}
+
+fn handle_tool_result(
+    obj: &serde_json::Map<String, Value>,
+    cbs: &mut SseCallbacks<'_>,
+) -> Option<SseDispatch> {
+    let Some(Value::Object(tr)) = obj.get("tool_result") else {
+        return None;
+    };
+    if !(tr.get("output").is_some() || tr.get("structured_preview").is_some_and(|v| !v.is_null())) {
+        return None;
+    }
+    let info = ToolResultInfo {
+        name: tr
+            .get("name")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+        goal_id: tr
+            .get("goal_id")
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from),
+        tool_call_id: tr
+            .get("tool_call_id")
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from),
+        result_version: tr
+            .get("result_version")
+            .and_then(|x| x.as_u64())
+            .map(|u| u as u32)
+            .unwrap_or(1),
+        summary: tr.get("summary").and_then(|x| x.as_str()).map(String::from),
+        output: tr
+            .get("output")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+        ok: tr.get("ok").and_then(|x| x.as_bool()),
+        exit_code: tr.get("exit_code").and_then(|x| x.as_i64()),
+        error_code: tr
+            .get("error_code")
+            .and_then(|x| x.as_str())
+            .map(String::from),
+        failure_category: tr
+            .get("failure_category")
+            .and_then(|x| x.as_str())
+            .map(String::from),
+        structured_preview: tr.get("structured_preview").cloned(),
+    };
+    if let Some(f) = cbs.on_tool_result.as_mut() {
+        f(info);
+    }
+    Some(SseDispatch::Handled)
+}
+
+fn handle_timeline_log(
+    obj: &serde_json::Map<String, Value>,
+    cbs: &mut SseCallbacks<'_>,
+) -> Option<SseDispatch> {
+    let Some(Value::Object(tl)) = obj.get("timeline_log") else {
+        return None;
+    };
+    let kind = tl
+        .get("kind")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
+    let title = tl
+        .get("title")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
+    let detail = tl
+        .get("detail")
+        .and_then(|x| x.as_str())
+        .filter(|s| !s.is_empty())
+        .map(String::from);
+    if (!kind.is_empty() || !title.is_empty())
+        && let Some(f) = cbs.on_timeline_log.as_mut()
+    {
+        f(TimelineLogInfo {
+            kind,
+            title,
+            detail,
+        });
+    }
+    Some(SseDispatch::Handled)
+}
+
+fn handle_sse_capabilities(
+    obj: &serde_json::Map<String, Value>,
+    cbs: &mut SseCallbacks<'_>,
+) -> Option<SseDispatch> {
+    if !key_present_non_null(obj, "sse_capabilities") {
+        return None;
+    }
+    if let Some(Value::Object(caps)) = obj.get("sse_capabilities")
+        && let Some(sv_raw) = caps.get("supported_sse_v")
+    {
+        let sv = sv_raw
+            .as_u64()
+            .and_then(|n| u8::try_from(n).ok())
+            .or_else(|| sv_raw.as_i64().and_then(|n| u8::try_from(n).ok()));
+        if let Some(sv) = sv
+            && sv != SSE_PROTOCOL_VERSION
+        {
+            let hint = if sv > SSE_PROTOCOL_VERSION {
+                "SSE_SERVER_TOO_NEW"
+            } else {
+                "SSE_SERVER_TOO_OLD"
+            };
+            (cbs.on_error)(crate::i18n::sse_protocol_version_mismatch(
+                cbs.user_locale,
+                sv,
+                SSE_PROTOCOL_VERSION,
+                hint,
+            ));
+            return Some(SseDispatch::Stop);
+        }
+    }
+    Some(SseDispatch::Handled)
+}
+
 /// 解析 `data:` 行内容（已去掉 `data: ` 前缀）；非 JSON 或解析失败时返回 `Plain`。
 pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) -> SseDispatch {
     let Ok(v) = serde_json::from_str::<Value>(data) else {
@@ -191,24 +512,8 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
         return SseDispatch::Plain;
     };
 
-    if let Some(e) = obj.get("error")
-        && !e.is_null()
-        && let Some(Value::String(code)) = obj.get("code")
-        && !code.trim().is_empty()
-    {
-        let msg = obj.get("error").and_then(|x| x.as_str()).unwrap_or("error");
-        let code = code.trim();
-        let reason = obj
-            .get("reason_code")
-            .and_then(|x| x.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty());
-        let line = match reason {
-            Some(r) => format!("{msg} ({code}, reason_code={r})"),
-            None => format!("{msg} ({code})"),
-        };
-        (cbs.on_error)(line);
-        return SseDispatch::Stop;
+    if let Some(d) = handle_error_stop(obj, cbs) {
+        return d;
     }
 
     if obj.get("plan_required") == Some(&Value::Bool(true)) {
@@ -245,111 +550,12 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
         return SseDispatch::Handled;
     }
 
-    if key_present_non_null(obj, "clarification_questionnaire") {
-        if let Some(Value::Object(inner)) = obj.get("clarification_questionnaire")
-            && let Some(qid) = inner
-                .get("questionnaire_id")
-                .and_then(|x| x.as_str())
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(String::from)
-            && let Some(intro) = inner
-                .get("intro")
-                .and_then(|x| x.as_str())
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(String::from)
-            && let Some(Value::Array(qarr)) = inner.get("questions")
-        {
-            let mut fields: Vec<ClarificationFormField> = Vec::new();
-            for q in qarr {
-                let Some(qo) = q.as_object() else {
-                    continue;
-                };
-                let id = qo
-                    .get("id")
-                    .and_then(|x| x.as_str())
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .map(String::from);
-                let label = qo
-                    .get("label")
-                    .and_then(|x| x.as_str())
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .map(String::from);
-                let (Some(id), Some(label)) = (id, label) else {
-                    continue;
-                };
-                let hint = qo
-                    .get("hint")
-                    .and_then(|x| x.as_str())
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .map(String::from);
-                let required = qo
-                    .get("required")
-                    .and_then(|x| x.as_bool())
-                    .unwrap_or(false);
-                fields.push(ClarificationFormField {
-                    id,
-                    label,
-                    hint,
-                    required,
-                });
-            }
-            if !fields.is_empty()
-                && let Some(f) = cbs.on_clarification_questionnaire.as_mut()
-            {
-                f(ClarificationQuestionnaireInfo {
-                    questionnaire_id: qid,
-                    intro,
-                    fields,
-                });
-            }
-        }
-        return SseDispatch::Handled;
+    if let Some(d) = handle_clarification_questionnaire(obj, cbs) {
+        return d;
     }
 
-    if let Some(Value::Object(tt)) = obj.get("thinking_trace") {
-        let op = tt
-            .get("op")
-            .and_then(|x| x.as_str())
-            .map(str::trim)
-            .unwrap_or("");
-        if !op.is_empty() {
-            if let Some(f) = cbs.on_thinking_trace.as_mut() {
-                f(ThinkingTraceInfo {
-                    op: op.to_string(),
-                    node_id: tt
-                        .get("node_id")
-                        .and_then(|x| x.as_str())
-                        .filter(|s| !s.is_empty())
-                        .map(String::from),
-                    parent_id: tt
-                        .get("parent_id")
-                        .and_then(|x| x.as_str())
-                        .filter(|s| !s.is_empty())
-                        .map(String::from),
-                    title: tt
-                        .get("title")
-                        .and_then(|x| x.as_str())
-                        .filter(|s| !s.is_empty())
-                        .map(String::from),
-                    chunk: tt
-                        .get("chunk")
-                        .and_then(|x| x.as_str())
-                        .filter(|s| !s.is_empty())
-                        .map(String::from),
-                    context_snapshot: tt
-                        .get("context_snapshot")
-                        .and_then(|x| x.as_str())
-                        .filter(|s| !s.is_empty())
-                        .map(String::from),
-                });
-            }
-            return SseDispatch::Handled;
-        }
+    if let Some(d) = handle_thinking_trace(obj, cbs) {
+        return d;
     }
 
     if obj.get("workspace_changed") == Some(&Value::Bool(true)) {
@@ -359,44 +565,8 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
         return SseDispatch::Handled;
     }
 
-    if let Some(Value::Object(tc)) = obj.get("tool_call") {
-        let summary = tc.get("summary").and_then(|x| x.as_str()).unwrap_or("");
-        let preview = tc
-            .get("arguments_preview")
-            .and_then(|x| x.as_str())
-            .filter(|s| !s.is_empty());
-        let args_full = tc
-            .get("arguments")
-            .and_then(|x| x.as_str())
-            .filter(|s| !s.is_empty());
-        if !summary.is_empty() || preview.is_some() || args_full.is_some() {
-            let name = tc
-                .get("name")
-                .and_then(|x| x.as_str())
-                .unwrap_or("")
-                .to_string();
-            let goal_id = tc
-                .get("goal_id")
-                .and_then(|x| x.as_str())
-                .filter(|s| !s.is_empty())
-                .map(String::from);
-            let tool_call_id = tc
-                .get("tool_call_id")
-                .and_then(|x| x.as_str())
-                .filter(|s| !s.is_empty())
-                .map(String::from);
-            if let Some(f) = cbs.on_tool_call.as_mut() {
-                f(
-                    name,
-                    summary.to_string(),
-                    preview.map(String::from),
-                    args_full.map(String::from),
-                    goal_id,
-                    tool_call_id,
-                );
-            }
-            return SseDispatch::Handled;
-        }
+    if let Some(d) = handle_tool_call(obj, cbs) {
+        return d;
     }
 
     if let Some(Value::Bool(b)) = obj.get("parsing_tool_calls") {
@@ -412,53 +582,8 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
         return SseDispatch::Handled;
     }
 
-    if let Some(Value::Object(tr)) = obj.get("tool_result")
-        && (tr.get("output").is_some()
-            || tr.get("structured_preview").is_some_and(|v| !v.is_null()))
-    {
-        let info = ToolResultInfo {
-            name: tr
-                .get("name")
-                .and_then(|x| x.as_str())
-                .unwrap_or("")
-                .to_string(),
-            goal_id: tr
-                .get("goal_id")
-                .and_then(|x| x.as_str())
-                .filter(|s| !s.is_empty())
-                .map(String::from),
-            tool_call_id: tr
-                .get("tool_call_id")
-                .and_then(|x| x.as_str())
-                .filter(|s| !s.is_empty())
-                .map(String::from),
-            result_version: tr
-                .get("result_version")
-                .and_then(|x| x.as_u64())
-                .map(|u| u as u32)
-                .unwrap_or(1),
-            summary: tr.get("summary").and_then(|x| x.as_str()).map(String::from),
-            output: tr
-                .get("output")
-                .and_then(|x| x.as_str())
-                .unwrap_or("")
-                .to_string(),
-            ok: tr.get("ok").and_then(|x| x.as_bool()),
-            exit_code: tr.get("exit_code").and_then(|x| x.as_i64()),
-            error_code: tr
-                .get("error_code")
-                .and_then(|x| x.as_str())
-                .map(String::from),
-            failure_category: tr
-                .get("failure_category")
-                .and_then(|x| x.as_str())
-                .map(String::from),
-            structured_preview: tr.get("structured_preview").cloned(),
-        };
-        if let Some(f) = cbs.on_tool_result.as_mut() {
-            f(info);
-        }
-        return SseDispatch::Handled;
+    if let Some(d) = handle_tool_result(obj, cbs) {
+        return d;
     }
 
     if key_present_non_null(obj, "command_approval_request") {
@@ -505,60 +630,12 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
         return SseDispatch::Handled;
     }
 
-    if let Some(Value::Object(tl)) = obj.get("timeline_log") {
-        let kind = tl
-            .get("kind")
-            .and_then(|x| x.as_str())
-            .unwrap_or("")
-            .to_string();
-        let title = tl
-            .get("title")
-            .and_then(|x| x.as_str())
-            .unwrap_or("")
-            .to_string();
-        let detail = tl
-            .get("detail")
-            .and_then(|x| x.as_str())
-            .filter(|s| !s.is_empty())
-            .map(String::from);
-        if !kind.is_empty() || !title.is_empty() {
-            if let Some(f) = cbs.on_timeline_log.as_mut() {
-                f(TimelineLogInfo {
-                    kind,
-                    title,
-                    detail,
-                });
-            }
-        }
-        return SseDispatch::Handled;
+    if let Some(d) = handle_timeline_log(obj, cbs) {
+        return d;
     }
 
-    if key_present_non_null(obj, "sse_capabilities") {
-        if let Some(Value::Object(caps)) = obj.get("sse_capabilities")
-            && let Some(sv_raw) = caps.get("supported_sse_v")
-        {
-            let sv = sv_raw
-                .as_u64()
-                .and_then(|n| u8::try_from(n).ok())
-                .or_else(|| sv_raw.as_i64().and_then(|n| u8::try_from(n).ok()));
-            if let Some(sv) = sv {
-                if sv != SSE_PROTOCOL_VERSION {
-                    let hint = if sv > SSE_PROTOCOL_VERSION {
-                        "SSE_SERVER_TOO_NEW"
-                    } else {
-                        "SSE_SERVER_TOO_OLD"
-                    };
-                    (cbs.on_error)(crate::i18n::sse_protocol_version_mismatch(
-                        cbs.user_locale,
-                        sv,
-                        SSE_PROTOCOL_VERSION,
-                        hint,
-                    ));
-                    return SseDispatch::Stop;
-                }
-            }
-        }
-        return SseDispatch::Handled;
+    if let Some(d) = handle_sse_capabilities(obj, cbs) {
+        return d;
     }
     if key_present_non_null(obj, "stream_ended") {
         return SseDispatch::Handled;

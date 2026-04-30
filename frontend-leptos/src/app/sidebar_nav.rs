@@ -66,6 +66,262 @@ fn rail_context_menu_target_is_session_row_or_hit(ev: &web_sys::MouseEvent) -> b
         || el.closest(".nav-search-hit").ok().flatten().is_some()
 }
 
+#[allow(clippy::too_many_arguments)]
+#[component]
+fn SessionContextMenuLayer(
+    locale: RwSignal<crate::i18n::Locale>,
+    session_context_menu: RwSignal<Option<SessionContextAnchor>>,
+    session_modal: RwSignal<bool>,
+    mobile_nav_open: RwSignal<bool>,
+    sessions: RwSignal<Vec<ChatSession>>,
+    active_id: RwSignal<String>,
+    draft: RwSignal<String>,
+    session_sync: RwSignal<SessionSyncState>,
+    apply_assistant_display_filters: RwSignal<bool>,
+) -> impl IntoView {
+    view! {
+        <Show when=move || session_context_menu.get().is_some()>
+            <div class="session-ctx-layer">
+                <div
+                    class="session-ctx-backdrop"
+                    aria-hidden="true"
+                    on:click=move |_| session_context_menu.set(None)
+                ></div>
+                <div
+                    class="session-ctx-menu"
+                    role="menu"
+                    on:click=|ev: leptos::ev::MouseEvent| ev.stop_propagation()
+                    style=move || {
+                        session_context_menu
+                            .get()
+                            .map(|a| format!("left:{}px;top:{}px;", a.x, a.y))
+                            .unwrap_or_default()
+                    }
+                >
+                    <button
+                        type="button"
+                        class="session-ctx-item"
+                        role="menuitem"
+                        on:click=move |_| {
+                            session_context_menu.set(None);
+                            session_modal.set(true);
+                            mobile_nav_open.set(false);
+                        }
+                    >
+                        {move || i18n::nav_manage_sessions(locale.get())}
+                    </button>
+                    <button
+                        type="button"
+                        class="session-ctx-item"
+                        role="menuitem"
+                        on:click=move |_| {
+                            let Some(a) = session_context_menu.get() else {
+                                return;
+                            };
+                            let id = a.session_id.clone();
+                            let starred = sessions.with(|list| {
+                                list.iter()
+                                    .find(|s| s.id == id)
+                                    .map(|s| s.starred)
+                                    .unwrap_or(false)
+                            });
+                            session_context_menu.set(None);
+                            set_session_starred(sessions, &id, !starred);
+                        }
+                    >
+                        {move || {
+                            let _ = sessions.get();
+                            let loc = locale.get();
+                            let Some(a) = session_context_menu.get() else {
+                                return i18n::ctx_star_session(loc).to_string();
+                            };
+                            let starred = sessions.with(|list| {
+                                list.iter()
+                                    .find(|s| s.id == a.session_id)
+                                    .map(|s| s.starred)
+                                    .unwrap_or(false)
+                            });
+                            if starred {
+                                i18n::ctx_unstar_session(loc).to_string()
+                            } else {
+                                i18n::ctx_star_session(loc).to_string()
+                            }
+                        }}
+                    </button>
+                    <button
+                        type="button"
+                        class="session-ctx-item"
+                        role="menuitem"
+                        on:click=move |_| {
+                            let Some(a) = session_context_menu.get() else {
+                                return;
+                            };
+                            let id = a.session_id.clone();
+                            let pinned = sessions.with(|list| {
+                                list.iter()
+                                    .find(|s| s.id == id)
+                                    .map(|s| s.pinned)
+                                    .unwrap_or(false)
+                            });
+                            session_context_menu.set(None);
+                            set_session_pinned(sessions, &id, !pinned);
+                        }
+                    >
+                        {move || {
+                            let _ = sessions.get();
+                            let loc = locale.get();
+                            let Some(a) = session_context_menu.get() else {
+                                return i18n::ctx_pin_session(loc).to_string();
+                            };
+                            let pinned = sessions.with(|list| {
+                                list.iter()
+                                    .find(|s| s.id == a.session_id)
+                                    .map(|s| s.pinned)
+                                    .unwrap_or(false)
+                            });
+                            if pinned {
+                                i18n::ctx_unpin_session(loc).to_string()
+                            } else {
+                                i18n::ctx_pin_session(loc).to_string()
+                            }
+                        }}
+                    </button>
+                    <button
+                        type="button"
+                        class="session-ctx-item"
+                        role="menuitem"
+                        on:click=move |_| {
+                            let Some(a) = session_context_menu.get() else {
+                                return;
+                            };
+                            let id = a.session_id;
+                            session_context_menu.set(None);
+                            export_session_json_for_id(
+                                sessions,
+                                &id,
+                                locale.get_untracked(),
+                                apply_assistant_display_filters.get_untracked(),
+                            );
+                        }
+                    >
+                        {move || i18n::ctx_export_json(locale.get())}
+                    </button>
+                    <button
+                        type="button"
+                        class="session-ctx-item"
+                        role="menuitem"
+                        on:click=move |_| {
+                            let Some(a) = session_context_menu.get() else {
+                                return;
+                            };
+                            let id = a.session_id;
+                            session_context_menu.set(None);
+                            export_session_markdown_for_id(
+                                sessions,
+                                &id,
+                                locale.get_untracked(),
+                                apply_assistant_display_filters.get_untracked(),
+                            );
+                        }
+                    >
+                        {move || i18n::ctx_export_md(locale.get())}
+                    </button>
+                    <button
+                        type="button"
+                        class="session-ctx-item session-ctx-item-danger"
+                        role="menuitem"
+                        on:click=move |_| {
+                            let Some(a) = session_context_menu.get() else {
+                                return;
+                            };
+                            let id = a.session_id;
+                            session_context_menu.set(None);
+                            delete_session_after_confirm(
+                                sessions,
+                                active_id,
+                                draft,
+                                session_sync,
+                                &id,
+                                locale.get_untracked(),
+                            );
+                        }
+                    >
+                        {move || i18n::ctx_delete_session(locale.get())}
+                    </button>
+                </div>
+            </div>
+        </Show>
+    }
+}
+
+#[component]
+fn RailContextMenuLayer(
+    locale: RwSignal<crate::i18n::Locale>,
+    sidebar_rail_ctx_menu: RwSignal<Option<(f64, f64)>>,
+    session_modal: RwSignal<bool>,
+    mobile_nav_open: RwSignal<bool>,
+    sidebar_search_panel_open: RwSignal<bool>,
+    chat_find_panel_open: RwSignal<bool>,
+) -> impl IntoView {
+    view! {
+        <Show when=move || sidebar_rail_ctx_menu.get().is_some()>
+            <div class="session-ctx-layer">
+                <div
+                    class="session-ctx-backdrop"
+                    aria-hidden="true"
+                    on:click=move |_| sidebar_rail_ctx_menu.set(None)
+                ></div>
+                <div
+                    class="session-ctx-menu"
+                    role="menu"
+                    on:click=|ev: leptos::ev::MouseEvent| ev.stop_propagation()
+                    style=move || {
+                        sidebar_rail_ctx_menu
+                            .get()
+                            .map(|(x, y)| format!("left:{}px;top:{}px;", x, y))
+                            .unwrap_or_default()
+                    }
+                >
+                    <button
+                        type="button"
+                        class="session-ctx-item"
+                        role="menuitem"
+                        on:click=move |_| {
+                            sidebar_rail_ctx_menu.set(None);
+                            session_modal.set(true);
+                            mobile_nav_open.set(false);
+                        }
+                    >
+                        {move || i18n::nav_manage_sessions(locale.get())}
+                    </button>
+                    <button
+                        type="button"
+                        class="session-ctx-item"
+                        role="menuitem"
+                        on:click=move |_| {
+                            sidebar_rail_ctx_menu.set(None);
+                            sidebar_search_panel_open.set(true);
+                        }
+                    >
+                        {move || i18n::nav_rail_ctx_filter_and_search(locale.get())}
+                    </button>
+                    <button
+                        type="button"
+                        class="session-ctx-item"
+                        role="menuitem"
+                        on:click=move |_| {
+                            sidebar_rail_ctx_menu.set(None);
+                            chat_find_panel_open.set(true);
+                        }
+                    >
+                        {move || i18n::nav_rail_ctx_find_in_chat(locale.get())}
+                    </button>
+                </div>
+            </div>
+        </Show>
+    }
+}
+
 pub fn sidebar_nav_view(ctx: AppShellCtx) -> impl IntoView {
     let AppShellCtx {
         locale,
@@ -395,240 +651,26 @@ pub fn sidebar_nav_view(ctx: AppShellCtx) -> impl IntoView {
             </div>
         </aside>
 
-        <Show when=move || session_context_menu.get().is_some()>
-            <div class="session-ctx-layer">
-            <div
-                class="session-ctx-backdrop"
-                aria-hidden="true"
-                on:click=move |_| session_context_menu.set(None)
-            ></div>
-            <div
-                class="session-ctx-menu"
-                role="menu"
-                on:click=|ev: leptos::ev::MouseEvent| ev.stop_propagation()
-                style=move || {
-                    session_context_menu
-                        .get()
-                        .map(|a| format!("left:{}px;top:{}px;", a.x, a.y))
-                        .unwrap_or_default()
-                }
-            >
-                <button
-                    type="button"
-                    class="session-ctx-item"
-                    role="menuitem"
-                    on:click=move |_| {
-                        session_context_menu.set(None);
-                        session_modal.set(true);
-                        mobile_nav_open.set(false);
-                    }
-                >
-                    {move || i18n::nav_manage_sessions(locale.get())}
-                </button>
-                <button
-                    type="button"
-                    class="session-ctx-item"
-                    role="menuitem"
-                    on:click=move |_| {
-                        let anchor = session_context_menu.get();
-                        let Some(a) = anchor else {
-                            return;
-                        };
-                        let id = a.session_id.clone();
-                        let starred = sessions.with(|list| {
-                            list.iter()
-                                .find(|s| s.id == id)
-                                .map(|s| s.starred)
-                                .unwrap_or(false)
-                        });
-                        session_context_menu.set(None);
-                        set_session_starred(sessions, &id, !starred);
-                    }
-                >
-                    {move || {
-                        let _ = sessions.get();
-                        let loc = locale.get();
-                        let anchor = session_context_menu.get();
-                        let Some(a) = anchor else {
-                            return i18n::ctx_star_session(loc).to_string();
-                        };
-                        let starred = sessions.with(|list| {
-                            list.iter()
-                                .find(|s| s.id == a.session_id)
-                                .map(|s| s.starred)
-                                .unwrap_or(false)
-                        });
-                        if starred {
-                            i18n::ctx_unstar_session(loc).to_string()
-                        } else {
-                            i18n::ctx_star_session(loc).to_string()
-                        }
-                    }}
-                </button>
-                <button
-                    type="button"
-                    class="session-ctx-item"
-                    role="menuitem"
-                    on:click=move |_| {
-                        let anchor = session_context_menu.get();
-                        let Some(a) = anchor else {
-                            return;
-                        };
-                        let id = a.session_id.clone();
-                        let pinned = sessions.with(|list| {
-                            list.iter()
-                                .find(|s| s.id == id)
-                                .map(|s| s.pinned)
-                                .unwrap_or(false)
-                        });
-                        session_context_menu.set(None);
-                        set_session_pinned(sessions, &id, !pinned);
-                    }
-                >
-                    {move || {
-                        let _ = sessions.get();
-                        let loc = locale.get();
-                        let anchor = session_context_menu.get();
-                        let Some(a) = anchor else {
-                            return i18n::ctx_pin_session(loc).to_string();
-                        };
-                        let pinned = sessions.with(|list| {
-                            list.iter()
-                                .find(|s| s.id == a.session_id)
-                                .map(|s| s.pinned)
-                                .unwrap_or(false)
-                        });
-                        if pinned {
-                            i18n::ctx_unpin_session(loc).to_string()
-                        } else {
-                            i18n::ctx_pin_session(loc).to_string()
-                        }
-                    }}
-                </button>
-                <button
-                    type="button"
-                    class="session-ctx-item"
-                    role="menuitem"
-                    on:click=move |_| {
-                        let anchor = session_context_menu.get();
-                        let Some(a) = anchor else {
-                            return;
-                        };
-                        let id = a.session_id;
-                        session_context_menu.set(None);
-                        export_session_json_for_id(
-                            sessions,
-                            &id,
-                            locale.get_untracked(),
-                            apply_assistant_display_filters.get_untracked(),
-                        );
-                    }
-                >
-                    {move || i18n::ctx_export_json(locale.get())}
-                </button>
-                <button
-                    type="button"
-                    class="session-ctx-item"
-                    role="menuitem"
-                    on:click=move |_| {
-                        let anchor = session_context_menu.get();
-                        let Some(a) = anchor else {
-                            return;
-                        };
-                        let id = a.session_id;
-                        session_context_menu.set(None);
-                        export_session_markdown_for_id(
-                            sessions,
-                            &id,
-                            locale.get_untracked(),
-                            apply_assistant_display_filters.get_untracked(),
-                        );
-                    }
-                >
-                    {move || i18n::ctx_export_md(locale.get())}
-                </button>
-                <button
-                    type="button"
-                    class="session-ctx-item session-ctx-item-danger"
-                    role="menuitem"
-                    on:click=move |_| {
-                        let anchor = session_context_menu.get();
-                        let Some(a) = anchor else {
-                            return;
-                        };
-                        let id = a.session_id;
-                        session_context_menu.set(None);
-                        delete_session_after_confirm(
-                            sessions,
-                            active_id,
-                            draft,
-                            session_sync,
-                            &id,
-                            locale.get_untracked(),
-                        );
-                    }
-                >
-                    {move || i18n::ctx_delete_session(locale.get())}
-                </button>
-            </div>
-            </div>
-        </Show>
+        <SessionContextMenuLayer
+            locale=locale
+            session_context_menu=session_context_menu
+            session_modal=session_modal
+            mobile_nav_open=mobile_nav_open
+            sessions=sessions
+            active_id=active_id
+            draft=draft
+            session_sync=session_sync
+            apply_assistant_display_filters=apply_assistant_display_filters
+        />
 
-        <Show when=move || sidebar_rail_ctx_menu.get().is_some()>
-            <div class="session-ctx-layer">
-            <div
-                class="session-ctx-backdrop"
-                aria-hidden="true"
-                on:click=move |_| sidebar_rail_ctx_menu.set(None)
-            ></div>
-            <div
-                class="session-ctx-menu"
-                role="menu"
-                on:click=|ev: leptos::ev::MouseEvent| ev.stop_propagation()
-                style=move || {
-                    sidebar_rail_ctx_menu
-                        .get()
-                        .map(|(x, y)| format!("left:{}px;top:{}px;", x, y))
-                        .unwrap_or_default()
-                }
-            >
-                <button
-                    type="button"
-                    class="session-ctx-item"
-                    role="menuitem"
-                    on:click=move |_| {
-                        sidebar_rail_ctx_menu.set(None);
-                        session_modal.set(true);
-                        mobile_nav_open.set(false);
-                    }
-                >
-                    {move || i18n::nav_manage_sessions(locale.get())}
-                </button>
-                <button
-                    type="button"
-                    class="session-ctx-item"
-                    role="menuitem"
-                    on:click=move |_| {
-                        sidebar_rail_ctx_menu.set(None);
-                        sidebar_search_panel_open.set(true);
-                    }
-                >
-                    {move || i18n::nav_rail_ctx_filter_and_search(locale.get())}
-                </button>
-                <button
-                    type="button"
-                    class="session-ctx-item"
-                    role="menuitem"
-                    on:click=move |_| {
-                        sidebar_rail_ctx_menu.set(None);
-                        chat_find_panel_open.set(true);
-                    }
-                >
-                    {move || i18n::nav_rail_ctx_find_in_chat(locale.get())}
-                </button>
-            </div>
-            </div>
-        </Show>
+        <RailContextMenuLayer
+            locale=locale
+            sidebar_rail_ctx_menu=sidebar_rail_ctx_menu
+            session_modal=session_modal
+            mobile_nav_open=mobile_nav_open
+            sidebar_search_panel_open=sidebar_search_panel_open
+            chat_find_panel_open=chat_find_panel_open
+        />
 
         <Show when=move || mobile_nav_open.get()>
             <div

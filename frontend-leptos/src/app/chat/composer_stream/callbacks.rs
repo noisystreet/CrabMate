@@ -567,6 +567,176 @@ fn should_show_missing_final_summary_hint(
         && !saw_final_response_timeline
 }
 
+fn make_on_tool_result(stream_ctx: Rc<ChatStreamCallbackCtx>) -> Rc<dyn Fn(ToolResultInfo)> {
+    Rc::new(move |info: ToolResultInfo| {
+        let loc = stream_ctx.locale.get_untracked();
+        let result_text = tool_card_text(&info, loc);
+        let compact = tool_card_compact_text(&info, loc);
+        let t = to_single_line(&compact, 180);
+        let detail = result_text.clone();
+
+        let id = make_message_id();
+        let aid = stream_ctx.active_session_id.as_str();
+        let tl_ok = info.ok.unwrap_or(true);
+        let state = timeline_state_tool(&id, tl_ok);
+        let pending_queue = Rc::clone(&stream_ctx.pending_tool_message_ids);
+        let mut updated_existing = false;
+        stream_ctx.chat.sessions.update(|list| {
+            if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
+                let tid = info
+                    .tool_call_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty());
+                let idx_by_tid = tid.and_then(|tid| {
+                    s.messages.iter().position(|m| {
+                        m.is_tool
+                            && m.tool_call_id.as_deref() == Some(tid)
+                            && m.state.as_deref() == Some("loading")
+                    })
+                });
+                let idx_by_fifo = idx_by_tid.is_none().then(|| {
+                    take_pending_tool_message_id(&pending_queue)
+                        .and_then(|pid| s.messages.iter().position(|m| m.id == pid))
+                });
+                let idx_opt = idx_by_tid.or(idx_by_fifo.flatten());
+                if let Some(idx) = idx_opt {
+                    let m = &mut s.messages[idx];
+                    m.text = t.clone();
+                    m.reasoning_text = detail.clone();
+                    m.state = Some(state.clone());
+                    m.is_tool = true;
+                    if m.tool_call_id.is_none() {
+                        m.tool_call_id = info.tool_call_id.clone().filter(|x| !x.trim().is_empty());
+                    }
+                    if let Some(tn) = non_empty_trimmed_tool_name(&info.name) {
+                        m.tool_name = Some(tn);
+                    }
+                    updated_existing = true;
+                }
+                if !updated_existing {
+                    let msg = StoredMessage {
+                        id: id.clone(),
+                        role: "system".to_string(),
+                        text: t.clone(),
+                        reasoning_text: detail.clone(),
+                        image_urls: vec![],
+                        state: Some(state.clone()),
+                        is_tool: true,
+                        tool_call_id: info.tool_call_id.clone().filter(|x| !x.trim().is_empty()),
+                        tool_name: non_empty_trimmed_tool_name(&info.name),
+                        created_at: message_created_ms(),
+                    };
+                    if let Some(goal_id) = info.goal_id.as_deref() {
+                        let marker = format!("hierarchical-subgoal:{goal_id}");
+                        if let Some(idx) = s
+                            .messages
+                            .iter()
+                            .rposition(|m| m.state.as_deref() == Some(marker.as_str()))
+                        {
+                            s.messages.insert(idx + 1, msg);
+                        } else {
+                            s.messages.push(msg);
+                        }
+                    } else {
+                        s.messages.push(msg);
+                    }
+                }
+            }
+        });
+        ensure_streaming_assistant_tail_last(&stream_ctx);
+    })
+}
+
+fn make_on_timeline_log(
+    stream_ctx: Rc<ChatStreamCallbackCtx>,
+    answer_delta_chars: Rc<Cell<usize>>,
+    current_subgoal_marker: Rc<RefCell<Option<String>>>,
+    saw_final_response_timeline: Rc<Cell<bool>>,
+) -> Rc<dyn Fn(TimelineLogInfo)> {
+    Rc::new(move |info: TimelineLogInfo| {
+        web_sys::console::log_1(&format!("[TL] kind={} title={}", info.kind, info.title).into());
+        if info.kind == "final_response" {
+            saw_final_response_timeline.set(true);
+            stream_ctx.shell.status_busy.set(false);
+            let final_text = build_final_response_text(&info.title, info.detail.as_deref());
+            if !final_text.is_empty() {
+                remove_loading_assistant_placeholder(&stream_ctx);
+                if !has_same_assistant_timeline_bubble(&stream_ctx, &final_text) {
+                    push_assistant_timeline_bubble(&stream_ctx, final_text.clone(), None);
+                    answer_delta_chars.set(
+                        answer_delta_chars
+                            .get()
+                            .saturating_add(final_text.chars().count()),
+                    );
+                }
+            }
+            return;
+        }
+        if info.kind == "intent_analysis" {
+            let intent_text =
+                build_intent_analysis_main_bubble_text(&info.title, info.detail.as_deref());
+            if intent_text.is_empty() {
+                return;
+            }
+            push_assistant_timeline_bubble(&stream_ctx, intent_text.clone(), None);
+            answer_delta_chars.set(
+                answer_delta_chars
+                    .get()
+                    .saturating_add(intent_text.chars().count()),
+            );
+            return;
+        }
+        if info.kind == "hierarchical_plan" {
+            let plan_text =
+                build_hierarchical_plan_main_bubble_text(&info.title, info.detail.as_deref());
+            if plan_text.is_empty() {
+                return;
+            }
+            push_assistant_timeline_bubble(&stream_ctx, plan_text.clone(), None);
+            answer_delta_chars.set(
+                answer_delta_chars
+                    .get()
+                    .saturating_add(plan_text.chars().count()),
+            );
+            return;
+        }
+        if info.kind == "hierarchical_subgoal" || info.kind == "hierarchical_subgoal_started" {
+            let text =
+                build_hierarchical_subgoal_main_bubble_text(&info.title, info.detail.as_deref());
+            if text.is_empty() {
+                return;
+            }
+            *current_subgoal_marker.borrow_mut() = extract_subgoal_marker_from_title(&info.title);
+            upsert_hierarchical_subgoal_bubble(&stream_ctx, text.clone(), &info.title);
+            answer_delta_chars.set(
+                answer_delta_chars
+                    .get()
+                    .saturating_add(text.chars().count()),
+            );
+            return;
+        }
+        if info.kind == "tool_step_started" || info.kind == "tool_step_finished" {
+            return;
+        }
+        let mut body = info.title.trim().to_string();
+        if let Some(detail) = info.detail.as_deref().map(str::trim)
+            && !detail.is_empty()
+        {
+            body.push('\n');
+            body.push_str(detail);
+        }
+        if body.is_empty() {
+            return;
+        }
+        push_assistant_timeline_bubble(
+            &stream_ctx,
+            staged_timeline_system_message_body(&body),
+            None,
+        );
+    })
+}
+
 /// 由 [`super::make_attach_chat_stream`](super::make_attach_chat_stream) 调用；集中所有 `on_*` 闭包，降低 `mod.rs` 维护面。
 pub(super) fn build_chat_stream_callbacks(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
@@ -809,91 +979,7 @@ pub(super) fn build_chat_stream_callbacks(
         })
     };
 
-    let on_tool_result: Rc<dyn Fn(ToolResultInfo)> = {
-        let stream_ctx = Rc::clone(&stream_ctx);
-        Rc::new(move |info: ToolResultInfo| {
-            let loc = stream_ctx.locale.get_untracked();
-            let result_text = tool_card_text(&info, loc);
-            let compact = tool_card_compact_text(&info, loc);
-            let t = to_single_line(&compact, 180);
-            let detail = result_text.clone();
-
-            let id = make_message_id();
-            let aid = stream_ctx.active_session_id.as_str();
-            let tl_ok = info.ok.unwrap_or(true);
-            let state = timeline_state_tool(&id, tl_ok);
-            let pending_queue = Rc::clone(&stream_ctx.pending_tool_message_ids);
-            let mut updated_existing = false;
-            stream_ctx.chat.sessions.update(|list| {
-                if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-                    let tid = info
-                        .tool_call_id
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty());
-                    let idx_by_tid = tid.and_then(|tid| {
-                        s.messages.iter().position(|m| {
-                            m.is_tool
-                                && m.tool_call_id.as_deref() == Some(tid)
-                                && m.state.as_deref() == Some("loading")
-                        })
-                    });
-                    let idx_by_fifo = idx_by_tid.is_none().then(|| {
-                        take_pending_tool_message_id(&pending_queue)
-                            .and_then(|pid| s.messages.iter().position(|m| m.id == pid))
-                    });
-                    let idx_opt = idx_by_tid.or(idx_by_fifo.flatten());
-                    if let Some(idx) = idx_opt {
-                        let m = &mut s.messages[idx];
-                        m.text = t.clone();
-                        m.reasoning_text = detail.clone();
-                        m.state = Some(state.clone());
-                        m.is_tool = true;
-                        if m.tool_call_id.is_none() {
-                            m.tool_call_id =
-                                info.tool_call_id.clone().filter(|x| !x.trim().is_empty());
-                        }
-                        if let Some(tn) = non_empty_trimmed_tool_name(&info.name) {
-                            m.tool_name = Some(tn);
-                        }
-                        updated_existing = true;
-                    }
-                    if !updated_existing {
-                        let msg = StoredMessage {
-                            id: id.clone(),
-                            role: "system".to_string(),
-                            text: t.clone(),
-                            reasoning_text: detail.clone(),
-                            image_urls: vec![],
-                            state: Some(state.clone()),
-                            is_tool: true,
-                            tool_call_id: info
-                                .tool_call_id
-                                .clone()
-                                .filter(|x| !x.trim().is_empty()),
-                            tool_name: non_empty_trimmed_tool_name(&info.name),
-                            created_at: message_created_ms(),
-                        };
-                        if let Some(goal_id) = info.goal_id.as_deref() {
-                            let marker = format!("hierarchical-subgoal:{goal_id}");
-                            if let Some(idx) = s
-                                .messages
-                                .iter()
-                                .rposition(|m| m.state.as_deref() == Some(marker.as_str()))
-                            {
-                                s.messages.insert(idx + 1, msg);
-                            } else {
-                                s.messages.push(msg);
-                            }
-                        } else {
-                            s.messages.push(msg);
-                        }
-                    }
-                }
-            });
-            ensure_streaming_assistant_tail_last(&stream_ctx);
-        })
-    };
+    let on_tool_result = make_on_tool_result(Rc::clone(&stream_ctx));
 
     let on_approval: Rc<dyn Fn(CommandApprovalRequest)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
@@ -1036,121 +1122,12 @@ pub(super) fn build_chat_stream_callbacks(
         })
     };
 
-    // Manager 规划 / 分层执行旁注：作为 system 时间线消息落盘，按时间顺序与工具卡片交替展示。
-    let on_timeline_log: Rc<dyn Fn(TimelineLogInfo)> = {
-        let stream_ctx = Rc::clone(&stream_ctx);
-        let answer_delta_chars = Rc::clone(&answer_delta_chars);
-        let current_subgoal_marker = Rc::clone(&current_subgoal_marker);
-        let saw_final_response_timeline = Rc::clone(&saw_final_response_timeline);
-        Rc::new(move |info: TimelineLogInfo| {
-            web_sys::console::log_1(
-                &format!("[TL] kind={} title={}", info.kind, info.title).into(),
-            );
-            if info.kind == "final_response" {
-                saw_final_response_timeline.set(true);
-                // 兜底收尾：若连接尾部异常导致 `stream_ended`/`on_done` 延后，
-                // 收到终答时间线即可先解除“模型生成中”状态。
-                stream_ctx.shell.status_busy.set(false);
-                let final_text = build_final_response_text(&info.title, info.detail.as_deref());
-                if !final_text.is_empty() {
-                    remove_loading_assistant_placeholder(&stream_ctx);
-                    if !has_same_assistant_timeline_bubble(&stream_ctx, &final_text) {
-                        push_assistant_timeline_bubble(&stream_ctx, final_text.clone(), None);
-                        answer_delta_chars.set(
-                            answer_delta_chars
-                                .get()
-                                .saturating_add(final_text.chars().count()),
-                        );
-                    }
-                }
-                return;
-            }
-            if info.kind == "intent_analysis" {
-                let intent_text =
-                    build_intent_analysis_main_bubble_text(&info.title, info.detail.as_deref());
-                if intent_text.is_empty() {
-                    return;
-                }
-                push_assistant_timeline_bubble(&stream_ctx, intent_text.clone(), None);
-                answer_delta_chars.set(
-                    answer_delta_chars
-                        .get()
-                        .saturating_add(intent_text.chars().count()),
-                );
-                return;
-            }
-            if info.kind == "hierarchical_plan" {
-                let plan_text =
-                    build_hierarchical_plan_main_bubble_text(&info.title, info.detail.as_deref());
-                if plan_text.is_empty() {
-                    return;
-                }
-                push_assistant_timeline_bubble(&stream_ctx, plan_text.clone(), None);
-                answer_delta_chars.set(
-                    answer_delta_chars
-                        .get()
-                        .saturating_add(plan_text.chars().count()),
-                );
-                return;
-            }
-            if info.kind == "hierarchical_subgoal" {
-                let text = build_hierarchical_subgoal_main_bubble_text(
-                    &info.title,
-                    info.detail.as_deref(),
-                );
-                if text.is_empty() {
-                    return;
-                }
-                *current_subgoal_marker.borrow_mut() =
-                    extract_subgoal_marker_from_title(&info.title);
-                upsert_hierarchical_subgoal_bubble(&stream_ctx, text.clone(), &info.title);
-                answer_delta_chars.set(
-                    answer_delta_chars
-                        .get()
-                        .saturating_add(text.chars().count()),
-                );
-                return;
-            }
-            if info.kind == "hierarchical_subgoal_started" {
-                let text = build_hierarchical_subgoal_main_bubble_text(
-                    &info.title,
-                    info.detail.as_deref(),
-                );
-                if text.is_empty() {
-                    return;
-                }
-                *current_subgoal_marker.borrow_mut() =
-                    extract_subgoal_marker_from_title(&info.title);
-                upsert_hierarchical_subgoal_bubble(&stream_ctx, text.clone(), &info.title);
-                answer_delta_chars.set(
-                    answer_delta_chars
-                        .get()
-                        .saturating_add(text.chars().count()),
-                );
-                return;
-            }
-            // 工具开始/结束事件已由工具卡片（is_tool=true）承载；
-            // 这里不再重复落盘时间线旁注，避免“步骤气泡 + 工具卡片”双重重复。
-            if info.kind == "tool_step_started" || info.kind == "tool_step_finished" {
-                return;
-            }
-            let mut body = info.title.trim().to_string();
-            if let Some(detail) = info.detail.as_deref().map(str::trim)
-                && !detail.is_empty()
-            {
-                body.push('\n');
-                body.push_str(detail);
-            }
-            if body.is_empty() {
-                return;
-            }
-            push_assistant_timeline_bubble(
-                &stream_ctx,
-                staged_timeline_system_message_body(&body),
-                None,
-            );
-        })
-    };
+    let on_timeline_log = make_on_timeline_log(
+        Rc::clone(&stream_ctx),
+        Rc::clone(&answer_delta_chars),
+        Rc::clone(&current_subgoal_marker),
+        Rc::clone(&saw_final_response_timeline),
+    );
 
     let on_staged_step_finished: Rc<dyn Fn(StagedPlanStepEndInfo)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
