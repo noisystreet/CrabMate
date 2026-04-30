@@ -24,14 +24,15 @@ Control-plane JSON with **`error` + non-empty `code`** signals stream-level fail
 
 | `code` | Summary |
 |--------|---------|
-| `INTERNAL_ERROR` | Queue or unexpected internal error |
+| `INTERNAL_ERROR` | Queue or other orchestration failure (**`error`** generic user text; **`reason_code`** truncated internal summary) |
+| `STEP_RETRY_EXHAUSTED` / `REPLAN_EXHAUSTED` / `TIME_LIMIT_EXHAUSTED` / `TOKEN_LIMIT_EXHAUSTED` | Orchestration budget failures (same shape) |
 | `CONVERSATION_CONFLICT` | Conversation revision conflict |
 | `plan_rewrite_exhausted` | Final plan rewrite budget exhausted (optional `reason_code`; see `docs/en/SSE_PROTOCOL.md`) |
 | `SSE_ENCODE` | Control JSON serialization failure (fallback) |
 
-**`INTERNAL_ERROR`** appears only on **SSE**; it is **not** mapped to the numeric `chat` exit codes above; `chat` failures still use `classify_model_error_message` on error strings.
+**`INTERNAL_ERROR`** and related codes may appear on **SSE** and on **`POST /chat` JSON** from the same `RunAgentTurnError` mapping; `chat` subprocesses still use `classify_model_error_message` on error strings.
 
-**HTTP JSON (not SSE `data:`)**: full **`ApiError.code`** set for **`POST /chat`** / **`POST /chat/stream`** is defined by **`web/chat_handlers`** and OpenAPI; SSE version-related codes are summarized in **[`docs/en/SSE_PROTOCOL.md`](SSE_PROTOCOL.md)** (`SSE_CLIENT_TOO_NEW`, `INVALID_SSE_CLIENT_PROTOCOL`, `STREAM_JOB_GONE`, etc.).
+**HTTP JSON (not SSE `data:`)**: on **`POST /chat`** failures, **`ApiError`** includes **`code`**, **`message`** (user-facing), and optional **`reason_code`** (internal summary, same semantics as SSE **`reason_code`**). Handshake-stage codes remain defined by **`web/chat_handlers`** and OpenAPI; SSE protocol version codes: **[`docs/en/SSE_PROTOCOL.md`](SSE_PROTOCOL.md)**.
 
 ## `chat --output json` one JSON line per turn (stable shape)
 

@@ -154,6 +154,7 @@ pub(crate) async fn upload_handler(
             Json(ApiError {
                 code: "MULTIPART_ERROR",
                 message: format!("上传解析失败：{}", e),
+                reason_code: None,
             }),
         )
     })? {
@@ -163,6 +164,7 @@ pub(crate) async fn upload_handler(
                 Json(ApiError {
                     code: "UPLOAD_TOO_MANY_FILES",
                     message: "上传文件数量过多".to_string(),
+                    reason_code: None,
                 }),
             ));
         }
@@ -188,6 +190,7 @@ pub(crate) async fn upload_handler(
                 Json(ApiError {
                     code: "UPLOAD_UNSUPPORTED_TYPE",
                     message: "不支持的文件类型（仅支持常见图片/音频/视频）".to_string(),
+                    reason_code: None,
                 }),
             ));
         }
@@ -221,6 +224,7 @@ pub(crate) async fn upload_handler(
                 Json(ApiError {
                     code: "UPLOAD_WRITE_ERROR",
                     message: format!("无法写入上传文件：{}", e),
+                    reason_code: None,
                 }),
             )
         })?;
@@ -237,6 +241,7 @@ pub(crate) async fn upload_handler(
                         Json(ApiError {
                             code: "UPLOAD_READ_ERROR",
                             message: format!("读取上传内容失败：{}", e),
+                            reason_code: None,
                         }),
                     ));
                 }
@@ -254,6 +259,7 @@ pub(crate) async fn upload_handler(
                     Json(ApiError {
                         code: "UPLOAD_FILE_TOO_LARGE",
                         message: "单个文件过大".to_string(),
+                        reason_code: None,
                     }),
                 ));
             }
@@ -264,6 +270,7 @@ pub(crate) async fn upload_handler(
                     Json(ApiError {
                         code: "UPLOAD_TOO_LARGE",
                         message: "上传内容过大".to_string(),
+                        reason_code: None,
                     }),
                 ));
             }
@@ -273,6 +280,7 @@ pub(crate) async fn upload_handler(
                     Json(ApiError {
                         code: "UPLOAD_WRITE_ERROR",
                         message: format!("写入上传内容失败：{}", e),
+                        reason_code: None,
                     }),
                 )
             })?;

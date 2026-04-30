@@ -24,6 +24,7 @@ pub(crate) async fn config_reload_handler(
             Json(ApiError {
                 code: "CONFIG_RELOAD_FAILED",
                 message: e,
+                reason_code: None,
             }),
         )),
     }

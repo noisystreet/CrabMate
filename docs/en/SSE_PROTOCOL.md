@@ -97,7 +97,11 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `code` | Source | Meaning |
 |--------|--------|---------|
 | `CONVERSATION_CONFLICT` | `web/chat_handlers/conflict`, `chat_job_queue` | Session revision / save conflict |
-| `INTERNAL_ERROR` | `chat_job_queue` | `run_agent_turn` failure (non-cancel), user-facing fallback text; **`reason_code`** may carry a truncated internal summary |
+| `INTERNAL_ERROR` | `chat_job_queue` | Other orchestration failures (**`error`** is a generic user message; **`reason_code`** is a truncated internal summary, unlike the `plan_rewrite_exhausted` sub-code table) |
+| `STEP_RETRY_EXHAUSTED` | `agent_turn` | Step-level retry budget exhausted (**`error`** generic; **`reason_code`** internal summary) |
+| `REPLAN_EXHAUSTED` | `agent_turn` | Global replan budget exhausted (same shape) |
+| `TIME_LIMIT_EXHAUSTED` | `agent_turn` | Wall-clock time limit (same shape) |
+| `TOKEN_LIMIT_EXHAUSTED` | `agent_turn` | Token budget exhausted (same shape) |
 | `LLM_REQUEST_FAILED` | `chat_job_queue` (mapped from `agent_turn`) | Model HTTP/transport failure (**`error`** is the redacted gateway message; prefer **`LLM_RATE_LIMIT`** for **429** / quota heuristics) |
 | `LLM_RATE_LIMIT` | `chat_job_queue` (mapped from `agent_turn`) | Rate limit / quota class (**HTTP 429** or heuristic aligned with `agent_errors::is_quota_or_rate_limit_llm_message`) |
 | `turn_aborted` | `chat_job_queue` (mapped from `agent_turn`) | Orchestration early stop (e.g. SSE receiver closed while the turn continues); **`error`** is user-facing |
@@ -105,7 +109,7 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `plan_rewrite_exhausted` | `agent_turn/outer_loop`, `agent_turn/staged` | Final plan rewrite budget exhausted |
 | `SSE_ENCODE` | `sse/protocol` | `encode_message` serialization fallback |
 
-**Optional `reason_code`**: sibling string sub-code for client branching under the same top-level `code` (currently used for `plan_rewrite_exhausted`); older clients may ignore it.
+**Optional `reason_code`**: sibling string sub-code for client branching under the same top-level `code`; **`plan_rewrite_exhausted`** uses the semantic table below; **`INTERNAL_ERROR`** / **`STEP_RETRY_EXHAUSTED`**, etc. use a **truncated internal summary** for triage (older clients may ignore it).
 
 **Optional `turn_id`**: matches **`x-stream-job-id`** and **`sse_capabilities.job_id`** (`u64`); omitted on non-Web paths or legacy frames.
 
@@ -132,8 +136,13 @@ Approximate category of the **last** failed final answer when the rewrite budget
 | `STREAM_JOB_GONE` | 410 | **`stream_resume`** job not in hub |
 | `SSE_CLIENT_TOO_NEW` | 400 | **`client_sse_protocol`** greater than server **`SSE_PROTOCOL_VERSION`** |
 | `INVALID_SSE_CLIENT_PROTOCOL` | 400 | **`client_sse_protocol == 0`** |
-| `INVALID_AT_FILE_REF` | 400 | User message contains an invalid **`@…`** file reference (e.g. absolute path or **`/`**-prefixed “pseudo-relative”); must be relative to the workspace root, same rules as **`read_file`** |
-| `INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS` | 400 | Invalid **`clarify_questionnaire_answers`** payload (`questionnaire_id` / `answers` keys and size limits); see `clarification_questionnaire` module |
+| `INVALID_AT_FILE_REF` | 400 | User message contains an invalid **`@…`** file reference; same rules as **`read_file`** |
+| `INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS` | 400 | Invalid **`clarify_questionnaire_answers`** payload; see `clarification_questionnaire` |
+| `LLM_RATE_LIMIT` | 429 | **`POST /chat`** rate limit / quota (same mapping as SSE) |
+| `LLM_REQUEST_FAILED` | 502, etc. | **`POST /chat`** model HTTP/transport (status may mirror upstream when available) |
+| `STEP_RETRY_EXHAUSTED` / `REPLAN_EXHAUSTED` / `TIME_LIMIT_EXHAUSTED` / `TOKEN_LIMIT_EXHAUSTED` | 422 | Orchestration budget failures (**`message`** generic; **`reason_code`** internal summary) |
+| `INTERNAL_ERROR` | 500 | Other orchestration failures (**`message`** generic; **`reason_code`** internal summary) |
+| `STREAM_CANCELLED` | 499 | User/cooperative cancel (non-standard; same mapping as SSE; some clients treat as 4xx) |
 
 **Client-only hints** (in `onError` text from official Leptos when **`sse_capabilities`** disagrees): **`SSE_SERVER_TOO_NEW`**, **`SSE_SERVER_TOO_OLD`**.
 

@@ -315,6 +315,7 @@ fn reject_if_client_sse_protocol_invalid(
             Json(ApiError {
                 code: "INVALID_SSE_CLIENT_PROTOCOL",
                 message: "client_sse_protocol 非法（须为 1～255）".to_string(),
+                reason_code: None,
             }),
         ));
     }
@@ -325,6 +326,7 @@ fn reject_if_client_sse_protocol_invalid(
                 code: "SSE_CLIENT_TOO_NEW",
                 message: "客户端声明的 SSE 协议版本高于服务端，请升级服务器或更换匹配的前端构建"
                     .to_string(),
+                reason_code: None,
             }),
         ));
     }
@@ -456,6 +458,7 @@ pub(crate) async fn chat_handler(
             Json(ApiError {
                 code: "INVALID_IMAGE_URLS",
                 message: e,
+                reason_code: None,
             }),
         )
     })?;
@@ -467,6 +470,7 @@ pub(crate) async fn chat_handler(
                 Json(ApiError {
                     code: "INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS",
                     message: e,
+                    reason_code: None,
                 }),
             )
         })?
@@ -481,6 +485,7 @@ pub(crate) async fn chat_handler(
                 code: "EMPTY_MESSAGE",
                 message: "提问内容不能为空（若仅发图须至少附带一张图片；澄清问卷作答可单独提交）"
                     .to_string(),
+                reason_code: None,
             }),
         ));
     }
@@ -492,6 +497,7 @@ pub(crate) async fn chat_handler(
                 Json(ApiError {
                     code: "INVALID_CONVERSATION_ID",
                     message: e,
+                    reason_code: None,
                 }),
             )
         })?
@@ -502,6 +508,7 @@ pub(crate) async fn chat_handler(
             Json(ApiError {
                 code: "INVALID_AGENT_ROLE",
                 message: e,
+                reason_code: None,
             }),
         )
     })?;
@@ -511,6 +518,7 @@ pub(crate) async fn chat_handler(
             Json(ApiError {
                 code: "INVALID_TEMPERATURE",
                 message: e,
+                reason_code: None,
             }),
         )
     })?;
@@ -521,6 +529,7 @@ pub(crate) async fn chat_handler(
                 Json(ApiError {
                     code: "INVALID_SEED",
                     message: e,
+                    reason_code: None,
                 }),
             )
         })?;
@@ -530,6 +539,7 @@ pub(crate) async fn chat_handler(
             Json(ApiError {
                 code: "INVALID_CLIENT_LLM",
                 message: e,
+                reason_code: None,
             }),
         )
     })?;
@@ -539,6 +549,7 @@ pub(crate) async fn chat_handler(
             Json(ApiError {
                 code: "INVALID_EXECUTOR_LLM",
                 message: e,
+                reason_code: None,
             }),
         )
     })?;
@@ -549,6 +560,7 @@ pub(crate) async fn chat_handler(
                 Json(ApiError {
                     code: "INVALID_EXECUTION_MODE",
                     message: e,
+                    reason_code: None,
                 }),
             )
         })?;
@@ -569,6 +581,7 @@ pub(crate) async fn chat_handler(
                 code: "WORKSPACE_NOT_SET",
                 message: "未设置工作区：无法在消息中使用 `@` 引用工作区内文件。请先在侧栏工作区面板选择或提交目录。"
                     .to_string(),
+                reason_code: None,
             }),
         ));
     }
@@ -582,6 +595,7 @@ pub(crate) async fn chat_handler(
                     Json(ApiError {
                         code: "INVALID_AT_FILE_REF",
                         message: e,
+                        reason_code: None,
                     }),
                 )
             })?
@@ -601,6 +615,7 @@ pub(crate) async fn chat_handler(
             Json(ApiError {
                 code: "INVALID_AGENT_ROLE",
                 message: e,
+                reason_code: None,
             }),
         )
     })?;
@@ -650,6 +665,7 @@ pub(crate) async fn chat_handler(
                         "对话任务队列已满（最多等待 {} 个），请稍后重试",
                         e.max_pending
                     ),
+                    reason_code: None,
                 }),
             )
         })?;
@@ -661,26 +677,27 @@ pub(crate) async fn chat_handler(
                 Json(ApiError {
                     code: "INTERNAL_ERROR",
                     message: "对话任务被取消或内部错误".to_string(),
+                    reason_code: None,
                 }),
             )
         })?
-        .map_err(|e| {
-            if e.trim() == "CONVERSATION_CONFLICT" {
-                return conversation_conflict_api_error();
+        .map_err(|e| match e {
+            chat_job_queue::ChatJsonJobFailure::ConversationConflict => {
+                conversation_conflict_api_error()
             }
-            error!(
-                target: "crabmate",
-                "chat_handler 队列任务失败 job_id={} error={}",
-                job_id,
-                e
-            );
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError {
-                    code: "INTERNAL_ERROR",
-                    message: "对话失败，请稍后重试".to_string(),
-                }),
-            )
+            chat_job_queue::ChatJsonJobFailure::Agent(err) => {
+                error!(
+                    target: "crabmate",
+                    "chat_handler 队列任务失败 job_id={} public_code={} sub_phase={} reason={}",
+                    job_id,
+                    err.public_error_code(),
+                    err.sub_phase().as_str(),
+                    err.internal_reason_for_logs(),
+                );
+                let status = err.suggested_http_status();
+                let body = err.http_api_error();
+                (status, Json(body))
+            }
         })?;
     let reply = messages
         .last()
@@ -707,6 +724,7 @@ pub(crate) async fn chat_approval_handler(
         Json(ApiError {
             code: "INVALID_APPROVAL_SESSION_ID",
             message: "approval_session_id 非法或为空".to_string(),
+            reason_code: None,
         }),
     ))?;
     let decision = match body.decision.trim().to_ascii_lowercase().as_str() {
@@ -719,6 +737,7 @@ pub(crate) async fn chat_approval_handler(
                 Json(ApiError {
                     code: "INVALID_APPROVAL_DECISION",
                     message: "decision 仅支持 deny / allow_once / allow_always".to_string(),
+                    reason_code: None,
                 }),
             ));
         }
@@ -732,6 +751,7 @@ pub(crate) async fn chat_approval_handler(
         Json(ApiError {
             code: "APPROVAL_SESSION_NOT_FOUND",
             message: "审批会话不存在或已结束".to_string(),
+            reason_code: None,
         }),
     ))?;
     if tx.send(decision).await.is_err() {
@@ -746,6 +766,7 @@ pub(crate) async fn chat_approval_handler(
             Json(ApiError {
                 code: "APPROVAL_SESSION_CLOSED",
                 message: "审批会话已关闭".to_string(),
+                reason_code: None,
             }),
         ));
     }
@@ -764,6 +785,7 @@ pub(crate) async fn chat_branch_handler(
                 Json(ApiError {
                     code: "INVALID_CONVERSATION_ID",
                     message: msg,
+                    reason_code: None,
                 }),
             )
         })?;
@@ -773,6 +795,7 @@ pub(crate) async fn chat_branch_handler(
             Json(ApiError {
                 code: "INVALID_CONVERSATION_ID",
                 message: "conversation_id 不能为空".to_string(),
+                reason_code: None,
             }),
         ));
     };
@@ -784,6 +807,7 @@ pub(crate) async fn chat_branch_handler(
             Json(ApiError {
                 code: "CONVERSATION_NOT_FOUND",
                 message: "会话不存在或已过期".to_string(),
+                reason_code: None,
             }),
         ));
     };
@@ -793,6 +817,7 @@ pub(crate) async fn chat_branch_handler(
             Json(ApiError {
                 code: "CONVERSATION_REVISION_UNKNOWN",
                 message: "无法分支：缺少 revision 信息".to_string(),
+                reason_code: None,
             }),
         ));
     };
@@ -802,6 +827,7 @@ pub(crate) async fn chat_branch_handler(
             Json(ApiError {
                 code: "CONVERSATION_CONFLICT",
                 message: "revision 不匹配，请刷新后重试".to_string(),
+                reason_code: None,
             }),
         ));
     }
@@ -820,6 +846,7 @@ pub(crate) async fn chat_branch_handler(
                 Json(ApiError {
                     code: "CONVERSATION_CONFLICT",
                     message: "会话已被其他请求更新或 revision 不匹配".to_string(),
+                    reason_code: None,
                 }),
             ));
         }
@@ -847,6 +874,7 @@ pub(crate) async fn conversation_messages_handler(
                 Json(ApiError {
                     code: "INVALID_CONVERSATION_ID",
                     message: msg,
+                    reason_code: None,
                 }),
             )
         })?;
@@ -856,6 +884,7 @@ pub(crate) async fn conversation_messages_handler(
             Json(ApiError {
                 code: "INVALID_CONVERSATION_ID",
                 message: "conversation_id 不能为空".to_string(),
+                reason_code: None,
             }),
         ));
     };
@@ -865,6 +894,7 @@ pub(crate) async fn conversation_messages_handler(
             Json(ApiError {
                 code: "CONVERSATION_NOT_FOUND",
                 message: "会话不存在或已过期".to_string(),
+                reason_code: None,
             }),
         ));
     };
@@ -874,6 +904,7 @@ pub(crate) async fn conversation_messages_handler(
             Json(ApiError {
                 code: "CONVERSATION_NOT_FOUND",
                 message: "会话不存在或已过期".to_string(),
+                reason_code: None,
             }),
         ));
     };
@@ -905,6 +936,7 @@ pub(crate) async fn chat_stream_handler(
             Json(ApiError {
                 code: "INVALID_IMAGE_URLS",
                 message: e,
+                reason_code: None,
             }),
         )
     })?;
@@ -916,6 +948,7 @@ pub(crate) async fn chat_stream_handler(
                 Json(ApiError {
                     code: "INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS",
                     message: e,
+                    reason_code: None,
                 }),
             )
         })?
@@ -930,6 +963,7 @@ pub(crate) async fn chat_stream_handler(
                 code: "EMPTY_MESSAGE",
                 message: "提问内容不能为空（若仅发图须至少附带一张图片；澄清问卷作答可单独提交）"
                     .to_string(),
+                reason_code: None,
             }),
         ));
     }
@@ -941,6 +975,7 @@ pub(crate) async fn chat_stream_handler(
                 Json(ApiError {
                     code: "INVALID_CONVERSATION_ID",
                     message: e,
+                    reason_code: None,
                 }),
             )
         })?
@@ -951,6 +986,7 @@ pub(crate) async fn chat_stream_handler(
             Json(ApiError {
                 code: "INVALID_AGENT_ROLE",
                 message: e,
+                reason_code: None,
             }),
         )
     })?;
@@ -960,6 +996,7 @@ pub(crate) async fn chat_stream_handler(
             Json(ApiError {
                 code: "INVALID_TEMPERATURE",
                 message: e,
+                reason_code: None,
             }),
         )
     })?;
@@ -970,6 +1007,7 @@ pub(crate) async fn chat_stream_handler(
                 Json(ApiError {
                     code: "INVALID_SEED",
                     message: e,
+                    reason_code: None,
                 }),
             )
         })?;
@@ -979,6 +1017,7 @@ pub(crate) async fn chat_stream_handler(
             Json(ApiError {
                 code: "INVALID_CLIENT_LLM",
                 message: e,
+                reason_code: None,
             }),
         )
     })?;
@@ -988,6 +1027,7 @@ pub(crate) async fn chat_stream_handler(
             Json(ApiError {
                 code: "INVALID_EXECUTOR_LLM",
                 message: e,
+                reason_code: None,
             }),
         )
     })?;
@@ -998,6 +1038,7 @@ pub(crate) async fn chat_stream_handler(
                 Json(ApiError {
                     code: "INVALID_EXECUTION_MODE",
                     message: e,
+                    reason_code: None,
                 }),
             )
         })?;
@@ -1022,6 +1063,7 @@ pub(crate) async fn chat_stream_handler(
                 Json(ApiError {
                     code: "STREAM_JOB_GONE",
                     message: "流式任务已结束或不在本进程内存中，无法重连".to_string(),
+                    reason_code: None,
                 }),
             ));
         }
@@ -1034,6 +1076,7 @@ pub(crate) async fn chat_stream_handler(
                 Json(ApiError {
                     code: "STREAM_JOB_GONE",
                     message: "流式任务已结束或不在本进程内存中，无法重连".to_string(),
+                    reason_code: None,
                 }),
             ));
         };
@@ -1087,6 +1130,7 @@ pub(crate) async fn chat_stream_handler(
                 code: "WORKSPACE_NOT_SET",
                 message: "未设置工作区：无法在消息中使用 `@` 引用工作区内文件。请先在侧栏工作区面板选择或提交目录。"
                     .to_string(),
+                reason_code: None,
             }),
         ));
     }
@@ -1100,6 +1144,7 @@ pub(crate) async fn chat_stream_handler(
                     Json(ApiError {
                         code: "INVALID_AT_FILE_REF",
                         message: e,
+                        reason_code: None,
                     }),
                 )
             })?
@@ -1119,6 +1164,7 @@ pub(crate) async fn chat_stream_handler(
             Json(ApiError {
                 code: "INVALID_AGENT_ROLE",
                 message: e,
+                reason_code: None,
             }),
         )
     })?;
@@ -1135,6 +1181,7 @@ pub(crate) async fn chat_stream_handler(
             Json(ApiError {
                 code: "INVALID_APPROVAL_SESSION_ID",
                 message: "approval_session_id 非法或为空".to_string(),
+                reason_code: None,
             }),
         ))?),
         None => None,
@@ -1195,6 +1242,7 @@ pub(crate) async fn chat_stream_handler(
                     "对话任务队列已满（最多等待 {} 个），请稍后重试",
                     e.max_pending
                 ),
+                reason_code: None,
             }),
         ));
     }

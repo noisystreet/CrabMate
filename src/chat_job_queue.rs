@@ -23,7 +23,6 @@ use crate::agent_role_turn::{
 use crate::config::{AgentConfig, LlmHttpAuthMode, SharedAgentConfig};
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::sse::SseStreamHub;
-use crate::text_util::truncate_chars_with_ellipsis;
 use crate::types::{
     CommandApprovalDecision, LlmSeedOverride, Message, Tool, message_content_as_str,
 };
@@ -176,6 +175,13 @@ pub struct ChatQueueFull {
     pub max_pending: usize,
 }
 
+/// `POST /chat` 队列 worker 向 oneshot 返回的失败（与会话 revision 冲突区分）。
+#[derive(Debug)]
+pub enum ChatJsonJobFailure {
+    ConversationConflict,
+    Agent(crate::agent::agent_turn::RunAgentTurnError),
+}
+
 /// [`ChatJobQueue::try_submit_json`] 的入参（与 [`StreamSubmitParams`] 对称，不含 SSE / 审批）。
 pub struct JsonSubmitParams {
     pub job_id: u64,
@@ -199,7 +205,7 @@ pub struct JsonSubmitParams {
     pub executor_llm_override: Option<WebChatLlmOverride>,
     /// 可选：本任务覆盖执行模式（rolling_planning / hierarchical）。
     pub execution_mode_override: Option<WebExecutionModeOverride>,
-    pub reply_tx: oneshot::Sender<Result<Vec<Message>, String>>,
+    pub reply_tx: oneshot::Sender<Result<Vec<Message>, ChatJsonJobFailure>>,
 }
 
 /// [`ChatJobQueue::try_submit_stream`] 的入参（避免长参数列表）。
@@ -292,7 +298,7 @@ enum QueuedChatJob {
         llm_override: Option<WebChatLlmOverride>,
         executor_llm_override: Option<WebChatLlmOverride>,
         execution_mode_override: Option<WebExecutionModeOverride>,
-        reply_tx: oneshot::Sender<Result<Vec<Message>, String>>,
+        reply_tx: oneshot::Sender<Result<Vec<Message>, ChatJsonJobFailure>>,
     },
 }
 
@@ -664,20 +670,6 @@ async fn post_turn_web_prepare_and_save(
         expected_revision,
     )
     .await
-}
-
-fn web_json_job_error_short_detail(
-    e_text: &str,
-    cancelled: bool,
-    staged_invalid: bool,
-) -> Option<String> {
-    if cancelled {
-        None
-    } else if staged_invalid {
-        Some("staged_plan_invalid".to_string())
-    } else {
-        Some(truncate_chars_with_ellipsis(e_text, 120))
-    }
 }
 
 /// 流任务被取消且 **mpsc 仍有接收端** 时补发一条带 `code: STREAM_CANCELLED` 的控制面，便于前端与代理统一收尾（接收端已 drop 时仅 debug，避免误报）。
@@ -1109,9 +1101,11 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     } else {
                         error!(
                             target: "crabmate",
-                            "chat stream 任务失败 job_id={} error={}",
+                            "chat stream 任务失败 job_id={} err_kind=agent_turn public_code={} sub_phase={} reason={}",
                             job_id,
-                            e_text
+                            e.public_error_code(),
+                            e.sub_phase().as_str(),
+                            e.internal_reason_for_logs(),
                         );
                         let err_body = e.sse_error_payload(Some(job_id));
                         let err_line = crate::sse::encode_message(crate::sse::SsePayload::Error(
@@ -1271,7 +1265,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                         }
                         crate::SaveConversationOutcome::Conflict => {
                             if reply_tx
-                                .send(Err("CONVERSATION_CONFLICT".to_string()))
+                                .send(Err(ChatJsonJobFailure::ConversationConflict))
                                 .is_err()
                             {
                                 debug!(
@@ -1285,37 +1279,42 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     }
                 }
                 Err(e) => {
-                    let e_text = e.to_string();
-                    let cancelled =
-                        e.is_user_flow_cancelled() || is_user_cancelled_run_agent_error(&e_text);
+                    let cancelled = e.is_user_flow_cancelled()
+                        || is_user_cancelled_run_agent_error(&e.to_string());
                     let staged_invalid =
                         crate::agent::plan_artifact::is_staged_plan_invalid_run_agent_turn_error(
-                            &e_text,
+                            &e.to_string(),
                         );
                     if cancelled {
                         info!(
                             target: "crabmate",
-                            "chat json 任务已取消 job_id={} reason={}",
+                            "chat json 任务已取消 job_id={} err_kind=cancelled public_code={} sub_phase={} reason={}",
                             job_id,
-                            e_text
+                            e.public_error_code(),
+                            e.sub_phase().as_str(),
+                            e.internal_reason_for_logs(),
                         );
                     } else if staged_invalid {
                         warn!(
                             target: "crabmate",
-                            "chat json 任务结束（分阶段规划解析失败） job_id={} detail={}",
+                            "chat json 任务结束（分阶段规划解析失败） job_id={} err_kind=staged_plan_invalid public_code={} sub_phase={} reason={}",
                             job_id,
-                            e_text
+                            e.public_error_code(),
+                            e.sub_phase().as_str(),
+                            e.internal_reason_for_logs(),
                         );
                     } else {
                         error!(
                             target: "crabmate",
-                            "chat json 任务失败 job_id={} error={}",
+                            "chat json 任务失败 job_id={} err_kind=agent_turn public_code={} sub_phase={} reason={}",
                             job_id,
-                            e_text
+                            e.public_error_code(),
+                            e.sub_phase().as_str(),
+                            e.internal_reason_for_logs(),
                         );
                     }
-                    let prev = web_json_job_error_short_detail(&e_text, cancelled, staged_invalid);
-                    if reply_tx.send(Err(e_text)).is_err() {
+                    let prev = e.short_detail_for_job_log();
+                    if reply_tx.send(Err(ChatJsonJobFailure::Agent(e))).is_err() {
                         debug!(
                             target: "crabmate::sse_mpsc",
                             "chat json oneshot reply failed (Err): job_id={} receiver dropped",

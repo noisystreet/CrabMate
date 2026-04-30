@@ -166,6 +166,31 @@ pub(crate) struct ApiError {
     pub code: &'static str,
     /// 面向用户展示的友好错误信息
     pub message: String,
+    /// 与 `code` 配套的细分子码（如 `INTERNAL_ERROR` 时的截断内部摘要）；旧客户端可忽略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<String>,
+}
+
+impl ApiError {
+    pub(crate) fn new(code: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+            reason_code: None,
+        }
+    }
+
+    pub(crate) fn with_reason(
+        code: &'static str,
+        message: impl Into<String>,
+        reason_code: impl Into<String>,
+    ) -> Self {
+        Self {
+            code,
+            message: message.into(),
+            reason_code: Some(reason_code.into()),
+        }
+    }
 }
 
 #[derive(serde::Serialize)]
