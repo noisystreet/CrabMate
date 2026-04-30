@@ -173,6 +173,182 @@ fn is_running_subgoal_phase(loc: Locale, phase: Option<&str>) -> bool {
     subgoal_phase_key(phase).is_some()
 }
 
+fn render_highlighted_message_text(
+    msg: &StoredMessage,
+    loc: Locale,
+    apply_filters: bool,
+    query: &str,
+) -> AnyView {
+    let disp = message_text_for_display_ex(msg, loc, apply_filters);
+    let segs = split_for_find_highlight(&disp, query);
+    segs.into_iter()
+        .map(|(s, hl)| {
+            if hl {
+                view! { <mark class="msg-find-inline">{s}</mark> }.into_any()
+            } else {
+                view! { {s} }.into_any()
+            }
+        })
+        .collect_view()
+        .into_any()
+}
+
+fn subgoal_exec_banner_icon_view(icon_key: &str) -> AnyView {
+    match icon_key {
+        "diagnose" => view! {
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="7"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+        }
+        .into_any(),
+        "fix" => view! {
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14.7 6.3a4 4 0 0 0-5.6 5.6L3 18v3h3l6.1-6.1a4 4 0 0 0 5.6-5.6l-2.4 2.4-3.2-3.2 2.6-2.2z"></path>
+            </svg>
+        }
+        .into_any(),
+        "verify" => view! {
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 6 9 17l-5-5"></path>
+            </svg>
+        }
+        .into_any(),
+        "escalate" => view! {
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 19V5"></path>
+                <path d="m5 12 7-7 7 7"></path>
+            </svg>
+        }
+        .into_any(),
+        _ => view! {
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="9"></circle>
+                <path d="M12 7v5l3 2"></path>
+            </svg>
+        }
+        .into_any(),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_non_assistant_message_body(
+    m_for_body: StoredMessage,
+    is_tool_bubble: bool,
+    tool_detail_text: Option<String>,
+    tool_detail_open: RwSignal<bool>,
+    locale: RwSignal<Locale>,
+    chat_find_query: RwSignal<String>,
+    apply_assistant_display_filters: RwSignal<bool>,
+    jump_uid: Option<String>,
+    auto_scroll_chat: RwSignal<bool>,
+) -> AnyView {
+    if is_tool_bubble {
+        let detail_for_btn = tool_detail_text;
+        let tool_emoji = tool_bubble_emoji(&m_for_body);
+        return view! {
+            <div class="msg-tool-compact">
+                <Show when=move || detail_for_btn.as_deref().is_some_and(|s| !s.trim().is_empty())>
+                    <button
+                        type="button"
+                        class="msg-tool-drawer-btn msg-tool-drawer-icon-btn"
+                        prop:title=move || {
+                            if tool_detail_open.get() {
+                                i18n::msg_tool_detail_collapse_title(locale.get())
+                            } else {
+                                i18n::msg_tool_detail_expand_title(locale.get())
+                            }
+                        }
+                        prop:aria-label=move || {
+                            if tool_detail_open.get() {
+                                i18n::msg_tool_detail_collapse_title(locale.get())
+                            } else {
+                                i18n::msg_tool_detail_expand_title(locale.get())
+                            }
+                        }
+                        on:click=move |_| {
+                            tool_detail_open.update(|v| *v = !*v);
+                        }
+                    >
+                        <svg
+                            class=move || {
+                                if tool_detail_open.get() {
+                                    "msg-tool-drawer-icon is-open"
+                                } else {
+                                    "msg-tool-drawer-icon"
+                                }
+                            }
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                        >
+                            <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                    </button>
+                </Show>
+                <span class="msg-tool-emoji" aria-hidden="true">{tool_emoji}</span>
+                <span class="msg-body msg-tool-summary">
+                    {move || {
+                        let apply = apply_assistant_display_filters.get();
+                        let loc = locale.get();
+                        let q = normalize_search_query(&chat_find_query.get());
+                        render_highlighted_message_text(&m_for_body, loc, apply, &q)
+                    }}
+                </span>
+            </div>
+        }
+        .into_any();
+    }
+
+    if let Some(uid) = jump_uid {
+        let uid_click = uid.clone();
+        let uid_key = uid.clone();
+        return view! {
+            <span
+                class="msg-body msg-tool-body-jump"
+                role="link"
+                tabindex="0"
+                prop:title=move || i18n::msg_jump_user_title(locale.get())
+                prop:aria-label=move || i18n::msg_jump_user_aria(locale.get())
+                on:click=move |_| {
+                    spawn_scroll_to_linked_user_message(&uid_click, auto_scroll_chat);
+                }
+                on:keydown=move |ev: web_sys::KeyboardEvent| {
+                    let k = ev.key();
+                    if k == "Enter" || k == " " {
+                        ev.prevent_default();
+                        spawn_scroll_to_linked_user_message(&uid_key, auto_scroll_chat);
+                    }
+                }
+            >
+                {move || {
+                    let apply = apply_assistant_display_filters.get();
+                    let loc = locale.get();
+                    let q = normalize_search_query(&chat_find_query.get());
+                    render_highlighted_message_text(&m_for_body, loc, apply, &q)
+                }}
+            </span>
+        }
+        .into_any();
+    }
+
+    view! {
+        <span class="msg-body">
+            {move || {
+                let apply = apply_assistant_display_filters.get();
+                let loc = locale.get();
+                let q = normalize_search_query(&chat_find_query.get());
+                render_highlighted_message_text(&m_for_body, loc, apply, &q)
+            }}
+        </span>
+    }
+    .into_any()
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn chat_message_row(
     msg_idx: usize,
@@ -302,147 +478,17 @@ pub(crate) fn chat_message_row(
         )
         .into_any()
     } else {
-        let m_for_body = m.clone();
-        let asc = auto_scroll_chat;
-        // 工具气泡不需要跳转到用户消息的功能，只显示纯文本
-        let body_inner = if is_tool_bubble {
-            let detail_for_btn = tool_detail_text.clone();
-            let tool_emoji = tool_bubble_emoji(&m_for_body);
-            view! {
-                <div class="msg-tool-compact">
-                    <Show when=move || detail_for_btn.as_deref().is_some_and(|s| !s.trim().is_empty())>
-                        <button
-                            type="button"
-                            class="msg-tool-drawer-btn msg-tool-drawer-icon-btn"
-                            prop:title=move || {
-                                if tool_detail_open.get() {
-                                    i18n::msg_tool_detail_collapse_title(locale.get())
-                                } else {
-                                    i18n::msg_tool_detail_expand_title(locale.get())
-                                }
-                            }
-                            prop:aria-label=move || {
-                                if tool_detail_open.get() {
-                                    i18n::msg_tool_detail_collapse_title(locale.get())
-                                } else {
-                                    i18n::msg_tool_detail_expand_title(locale.get())
-                                }
-                            }
-                            on:click=move |_| {
-                                tool_detail_open.update(|v| *v = !*v);
-                            }
-                        >
-                            <svg
-                                class=move || {
-                                    if tool_detail_open.get() {
-                                        "msg-tool-drawer-icon is-open"
-                                    } else {
-                                        "msg-tool-drawer-icon"
-                                    }
-                                }
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                aria-hidden="true"
-                            >
-                                <polyline points="6 9 12 15 18 9" />
-                            </svg>
-                        </button>
-                    </Show>
-                    <span class="msg-tool-emoji" aria-hidden="true">{tool_emoji}</span>
-                    <span class="msg-body msg-tool-summary">
-                        {move || {
-                            let apply = apply_assistant_display_filters.get();
-                            let loc = locale.get();
-                            let q = normalize_search_query(&chat_find_query.get());
-                            let disp =
-                                message_text_for_display_ex(&m_for_body, loc, apply);
-                            let segs = split_for_find_highlight(&disp, &q);
-                            segs
-                                .into_iter()
-                                .map(|(s, hl)| {
-                                    if hl {
-                                        view! { <mark class="msg-find-inline">{s}</mark> }.into_any()
-                                    } else {
-                                        view! { {s} }.into_any()
-                                    }
-                                })
-                                .collect_view()
-                        }}
-                    </span>
-                </div>
-            }
-            .into_any()
-        } else if let Some(uid) = jump_uid {
-            let uid_click = uid.clone();
-            let uid_key = uid.clone();
-            view! {
-                <span
-                    class="msg-body msg-tool-body-jump"
-                    role="link"
-                    tabindex="0"
-                    prop:title=move || i18n::msg_jump_user_title(locale.get())
-                    prop:aria-label=move || i18n::msg_jump_user_aria(locale.get())
-                    on:click=move |_| {
-                        spawn_scroll_to_linked_user_message(&uid_click, asc);
-                    }
-                    on:keydown=move |ev: web_sys::KeyboardEvent| {
-                        let k = ev.key();
-                        if k == "Enter" || k == " " {
-                            ev.prevent_default();
-                            spawn_scroll_to_linked_user_message(&uid_key, asc);
-                        }
-                    }
-                >
-                    {move || {
-                        let apply = apply_assistant_display_filters.get();
-                        let loc = locale.get();
-                        let q = normalize_search_query(&chat_find_query.get());
-                        let disp =
-                            message_text_for_display_ex(&m_for_body, loc, apply);
-                        let segs = split_for_find_highlight(&disp, &q);
-                        segs
-                            .into_iter()
-                            .map(|(s, hl)| {
-                                if hl {
-                                    view! { <mark class="msg-find-inline">{s}</mark> }.into_any()
-                                } else {
-                                    view! { {s} }.into_any()
-                                }
-                            })
-                            .collect_view()
-                    }}
-                </span>
-            }
-            .into_any()
-        } else {
-            view! {
-                <span class="msg-body">
-                    {move || {
-                        let apply = apply_assistant_display_filters.get();
-                        let loc = locale.get();
-                        let q = normalize_search_query(&chat_find_query.get());
-                        let disp =
-                            message_text_for_display_ex(&m_for_body, loc, apply);
-                        let segs = split_for_find_highlight(&disp, &q);
-                        segs
-                            .into_iter()
-                            .map(|(s, hl)| {
-                                if hl {
-                                    view! { <mark class="msg-find-inline">{s}</mark> }.into_any()
-                                } else {
-                                    view! { {s} }.into_any()
-                                }
-                            })
-                            .collect_view()
-                    }}
-                </span>
-            }
-            .into_any()
-        };
+        let body_inner = build_non_assistant_message_body(
+            m.clone(),
+            is_tool_bubble,
+            tool_detail_text.clone(),
+            tool_detail_open,
+            locale,
+            chat_find_query,
+            apply_assistant_display_filters,
+            jump_uid,
+            auto_scroll_chat,
+        );
         if is_user_plain && !m.image_urls.is_empty() {
             let imgs: Vec<String> = m.image_urls.clone();
             view! {
@@ -613,36 +659,7 @@ pub(crate) fn chat_message_row(
                         view! {
                             <div class=banner_class>
                                 <span class="msg-subgoal-exec-banner-icon" aria-hidden="true">
-                                    {match icon_key.as_str() {
-                                        "diagnose" => view! {
-                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                                <circle cx="11" cy="11" r="7"></circle>
-                                                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                                            </svg>
-                                        }.into_any(),
-                                        "fix" => view! {
-                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                                <path d="M14.7 6.3a4 4 0 0 0-5.6 5.6L3 18v3h3l6.1-6.1a4 4 0 0 0 5.6-5.6l-2.4 2.4-3.2-3.2 2.6-2.2z"></path>
-                                            </svg>
-                                        }.into_any(),
-                                        "verify" => view! {
-                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                                                <path d="M20 6 9 17l-5-5"></path>
-                                            </svg>
-                                        }.into_any(),
-                                        "escalate" => view! {
-                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                                                <path d="M12 19V5"></path>
-                                                <path d="m5 12 7-7 7 7"></path>
-                                            </svg>
-                                        }.into_any(),
-                                        _ => view! {
-                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                                                <circle cx="12" cy="12" r="9"></circle>
-                                                <path d="M12 7v5l3 2"></path>
-                                            </svg>
-                                        }.into_any(),
-                                    }}
+                                    {subgoal_exec_banner_icon_view(icon_key.as_str())}
                                 </span>
                                 <span class="msg-subgoal-exec-banner-text" prop:title=banner.clone()>{banner.clone()}</span>
                             </div>
