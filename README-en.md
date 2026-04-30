@@ -46,6 +46,7 @@ It ships **function calling**, workspace commands and file tools, plus a **Web U
 | Document | Contents | 中文 |
 | --- | --- | --- |
 | [docs/基准测试规划.md](docs/基准测试规划.md) | Benchmark `bench` roadmap, open-source benchmark hooks, testing strategy (separate from general product docs) | [zh](docs/基准测试规划.md) |
+| [benchmark/README.md](benchmark/README.md) | Quick benchmark runbook (HumanEval convert/run/score and smoke checks) | [zh](benchmark/README.md) |
 | [docs/分阶段规划单步设计.md](docs/分阶段规划单步设计.md) | Staged plan single-step design: one planner `step` per round + replan toward single-agent tool loop (not implemented) | [zh](docs/分阶段规划单步设计.md) |
 | [docs/中英文文档对照.md](docs/中英文文档对照.md) | Chinese-to-English docs mapping table for paired documents | [zh](docs/中英文文档对照.md) |
 | [docs/en/BACKEND_CORE_FRAMEWORK_DESIGN.md](docs/en/BACKEND_CORE_FRAMEWORK_DESIGN.md) | Backend core frameworkization and cross-language embedding gap analysis | [zh](docs/后端核心框架设计.md) |
