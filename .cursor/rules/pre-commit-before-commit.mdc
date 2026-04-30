@@ -21,6 +21,7 @@ alwaysApply: true
    ```bash
    cargo fmt --all
    cargo clippy --all-targets --all-features -- -D warnings
+   bash scripts/lizard-rust.sh
    ```
    若改动 **`src/`** 或共享契约，另按 **`.cursor/rules/rust-clippy-and-tests.mdc`** 决定是否跑 **`cargo test`**（全量或增量）。
    若 `pre-commit` 已配置但首次未装钩子，可提示用户执行：`pip install pre-commit && pre-commit install`（或 `uv tool install pre-commit` 等）。
@@ -33,5 +34,5 @@ alwaysApply: true
 
 ## 与本仓库的对应关系
 
-- 钩子定义见仓库根目录 **`.pre-commit-config.yaml`**（含 **`cargo fmt`**、**`cargo clippy -D warnings`**、**`commit-msg`：Conventional Commits** 等）；新增语言/工具时同步更新该文件与本规则中的说明（若有必要）。
+- 钩子定义见仓库根目录 **`.pre-commit-config.yaml`**（含 **`cargo fmt`**、**`cargo clippy -D warnings`**、**`lizard-rust`**（脚本 **`scripts/lizard-rust.sh`**）、**`commit-msg`：Conventional Commits** 等）；新增语言/工具时同步更新该文件与本规则中的说明（若有必要）。
 - 安装后须能拦截非法提交说明：若 `git commit` 未触发说明校验，执行 **`pre-commit install --hook-type commit-msg`**（或重新 **`pre-commit install`**）。

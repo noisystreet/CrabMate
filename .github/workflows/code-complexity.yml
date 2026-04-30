@@ -1,0 +1,23 @@
+# 圈复杂度扫描（lizard + Rust），与 scripts/lizard-rust.sh / pre-commit 对齐。
+name: code-complexity
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lizard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install lizard
+        run: pip install lizard
+
+      - name: Run lizard (Rust, CCN threshold from repo script)
+        run: bash scripts/lizard-rust.sh
