@@ -7,7 +7,7 @@ use crate::agent::hierarchy::{self, HierarchyRunnerParams, HierarchyRunnerResult
 use crate::agent::intent_router::{
     IntentKind, intent_reply_delegates_to_main_model, qa_readonly_style_primary,
 };
-use crate::agent::per_coord::PerCoordinator;
+use crate::agent::per_coord::{PerCoordinator, PerCoordinatorInit};
 use crate::sse;
 use std::collections::HashMap;
 
@@ -109,18 +109,8 @@ pub(crate) async fn run_hierarchical_agent(
             assessment.primary_intent,
             action_tag
         );
-        let mut per_coord = PerCoordinator::new(crate::agent::per_coord::PerCoordinatorInit {
-            reflection_default_max_rounds: p.cfg.reflection_default_max_rounds,
-            final_plan_policy: p.cfg.final_plan_requirement,
-            plan_rewrite_max_attempts: p.cfg.plan_rewrite_max_attempts,
-            final_plan_require_strict_workflow_node_coverage: p
-                .cfg
-                .final_plan_require_strict_workflow_node_coverage,
-            final_plan_semantic_check_enabled: p.cfg.final_plan_semantic_check_enabled,
-            final_plan_semantic_check_max_non_readonly_tools: p
-                .cfg
-                .final_plan_semantic_check_max_non_readonly_tools,
-        });
+        let mut per_coord =
+            PerCoordinator::new(PerCoordinatorInit::from_agent_config(p.cfg.as_ref()));
         return run_agent_outer_loop(p, &mut per_coord).await;
     }
 
