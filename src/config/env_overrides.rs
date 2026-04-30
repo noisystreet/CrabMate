@@ -5,6 +5,21 @@ use super::source::parse_bool_like;
 
 /// 从 `CM_*` 环境变量覆盖 `ConfigBuilder` 字段。
 pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
+    apply_env_overrides_part_1(b);
+    apply_env_overrides_part_2(b);
+    apply_env_overrides_part_3(b);
+    apply_env_overrides_part_4(b);
+    apply_env_overrides_part_5(b);
+    apply_env_overrides_part_6(b);
+    apply_env_overrides_part_7(b);
+    apply_env_overrides_part_8(b);
+    apply_env_overrides_part_9(b);
+    apply_env_overrides_part_10(b);
+    apply_env_overrides_part_11(b);
+    apply_env_overrides_part_12(b);
+}
+
+fn apply_env_overrides_part_1(b: &mut ConfigBuilder) {
     if let Ok(a) = std::env::var("CM_API_BASE") {
         let a = a.trim().to_string();
         if !a.is_empty() {
@@ -81,6 +96,9 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
             b.run_command_working_dir = Some(v);
         }
     }
+}
+
+fn apply_env_overrides_part_2(b: &mut ConfigBuilder) {
     if let Ok(s) = std::env::var("CM_WORKSPACE_ALLOWED_ROOTS") {
         let list: Vec<String> = s
             .split(',')
@@ -150,6 +168,9 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     if let Ok(k) = std::env::var("CM_WEB_SEARCH_API_KEY") {
         b.web_search_api_key = Some(k);
     }
+}
+
+fn apply_env_overrides_part_3(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_WEB_SEARCH_TIMEOUT_SECS")
         && let Ok(n) = v.trim().parse::<u64>()
     {
@@ -222,6 +243,9 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
             b.planner_executor_mode_str = Some(s);
         }
     }
+}
+
+fn apply_env_overrides_part_4(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_INTENT_AT_TURN_START_ENABLED")
         && let Some(val) = parse_bool_like(&v)
     {
@@ -291,6 +315,9 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
             b.default_agent_role_id = Some(s);
         }
     }
+}
+
+fn apply_env_overrides_part_5(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_CURSOR_RULES_ENABLED")
         && let Some(val) = parse_bool_like(&v)
     {
@@ -358,6 +385,9 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.agent_tool_stats_enabled = Some(val);
     }
+}
+
+fn apply_env_overrides_part_6(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_TOOL_STATS_WINDOW_EVENTS")
         && let Ok(n) = v.trim().parse::<u64>()
     {
@@ -427,6 +457,9 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.context_summary_max_tokens = Some(n);
     }
+}
+
+fn apply_env_overrides_part_7(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS")
         && let Ok(n) = v.trim().parse::<u64>()
     {
@@ -492,6 +525,9 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.staged_plan_allow_no_task = Some(val);
     }
+}
+
+fn apply_env_overrides_part_8(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_STAGED_PLAN_PHASE_INSTRUCTION") {
         b.staged_plan_phase_instruction = Some(v);
     }
@@ -556,6 +592,9 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.sync_default_tool_sandbox_docker_timeout_secs = Some(n);
     }
+}
+
+fn apply_env_overrides_part_9(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_USER") {
         let v = v.trim().to_string();
         if !v.is_empty() {
@@ -623,6 +662,9 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.project_profile_inject_enabled = Some(val);
     }
+}
+
+fn apply_env_overrides_part_10(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_PROJECT_PROFILE_INJECT_MAX_CHARS")
         && let Ok(n) = v.trim().parse::<u64>()
     {
@@ -691,6 +733,9 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.long_term_memory_top_k = Some(n);
     }
+}
+
+fn apply_env_overrides_part_11(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_LONG_TERM_MEMORY_MAX_CHARS_PER_CHUNK")
         && let Ok(n) = v.trim().parse::<u64>()
     {
@@ -758,6 +803,9 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.codebase_semantic_chunk_max_chars = Some(n);
     }
+}
+
+fn apply_env_overrides_part_12(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_CODEBASE_SEMANTIC_TOP_K")
         && let Ok(n) = v.trim().parse::<u64>()
     {
