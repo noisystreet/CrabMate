@@ -33,6 +33,7 @@ use super::plan::agent_llm_call::AgentLlmCall;
 
 mod orchestrator;
 mod patch_planner;
+mod planner_round_fsm;
 mod sse;
 mod turn_fsm;
 
@@ -42,6 +43,10 @@ use sse as staged_sse;
 use patch_planner::{
     StagedPlanPatchPlannerCtx, run_staged_plan_patch_planner_round,
     staged_plan_step_failure_feedback_user_body,
+};
+use planner_round_fsm::{
+    StagedPlanEnsembleRoute, StagedPlanOptimizerRoute, staged_plan_ensemble_route,
+    staged_plan_optimizer_route,
 };
 use staged_sse::{
     emit_chat_ui_separator_sse, next_staged_plan_id, send_staged_plan_finished,
@@ -1352,20 +1357,36 @@ where
     let validate_only_binding_active =
         plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.turn.messages)
             .is_some_and(|ids| !ids.is_empty());
-    let skip_ensemble_for_casual = p.ctx.staged_plan_ensemble_count > 1
-        && p.ctx.staged_plan_skip_ensemble_on_casual_prompt
-        && plan_optimizer::staged_plan_trigger_user_content(p.turn.messages)
-            .is_some_and(plan_optimizer::staged_plan_user_prompt_looks_like_casual_or_trivial);
-    let skip_ensemble_for_validate_only_binding =
-        p.ctx.staged_plan_ensemble_count > 1 && validate_only_binding_active;
-    if skip_ensemble_for_validate_only_binding {
-        debug!(
-            target: "crabmate",
-            "分阶段规划·逻辑多规划员：检测到 workflow_validate_only 节点绑定上下文，跳过 ensemble 以保持逐步绑定稳定"
-        );
+    let trigger_user = plan_optimizer::staged_plan_trigger_user_content(p.turn.messages);
+    let ensemble_route = staged_plan_ensemble_route(
+        p.ctx.staged_plan_ensemble_count,
+        p.ctx.staged_plan_skip_ensemble_on_casual_prompt,
+        validate_only_binding_active,
+        trigger_user,
+    );
+    match ensemble_route {
+        StagedPlanEnsembleRoute::SkipValidateOnlyBinding => {
+            debug!(
+                target: "crabmate",
+                "分阶段规划·逻辑多规划员：检测到 workflow_validate_only 节点绑定上下文，跳过 ensemble 以保持逐步绑定稳定"
+            );
+        }
+        StagedPlanEnsembleRoute::SkipCasualHeuristic => {
+            debug!(
+                target: "crabmate",
+                "分阶段规划·逻辑多规划员：用户输入偏短/寒暄启发式，跳过 ensemble（staged_plan_ensemble_count={}）以省 API",
+                p.ctx.staged_plan_ensemble_count
+            );
+        }
+        StagedPlanEnsembleRoute::SkipNotConfigured | StagedPlanEnsembleRoute::Run => {}
     }
 
-    if !skip_ensemble_for_validate_only_binding {
+    if !matches!(
+        ensemble_route,
+        StagedPlanEnsembleRoute::SkipValidateOnlyBinding
+    ) {
+        let skip_ensemble_for_casual =
+            matches!(ensemble_route, StagedPlanEnsembleRoute::SkipCasualHeuristic);
         maybe_run_staged_plan_ensemble_then_merge(
             p,
             per_coord,
@@ -1378,26 +1399,33 @@ where
         .await?;
     }
 
-    let want_optimizer = plan.steps.len() >= 2 && p.ctx.staged_plan_optimizer_round;
-    let skip_optimizer_validate_only_binding = want_optimizer && validate_only_binding_active;
-    if skip_optimizer_validate_only_binding {
-        debug!(
-            target: "crabmate",
-            "分阶段规划优化轮：检测到 workflow_validate_only 节点绑定上下文，跳过优化轮以避免破坏绑定约束"
-        );
+    let optimizer_route = staged_plan_optimizer_route(
+        plan.steps.len(),
+        p.ctx.staged_plan_optimizer_round,
+        validate_only_binding_active,
+        p.ctx.staged_plan_optimizer_requires_parallel_tools,
+        parallel_csv.as_str(),
+    );
+    match optimizer_route {
+        StagedPlanOptimizerRoute::SkipValidateOnlyBinding => {
+            debug!(
+                target: "crabmate",
+                "分阶段规划优化轮：检测到 workflow_validate_only 节点绑定上下文，跳过优化轮以避免破坏绑定约束"
+            );
+        }
+        StagedPlanOptimizerRoute::SkipNoParallelTools => {
+            debug!(
+                target: "crabmate",
+                "分阶段规划优化轮：本会话无可同轮并行批处理的内建工具，跳过优化轮以省 API（步数={}）",
+                plan.steps.len()
+            );
+        }
+        StagedPlanOptimizerRoute::SkipStepsLt2
+        | StagedPlanOptimizerRoute::SkipOptimizerRoundDisabled
+        | StagedPlanOptimizerRoute::Run => {}
     }
-    let skip_optimizer_no_parallel_tools = want_optimizer
-        && p.ctx.staged_plan_optimizer_requires_parallel_tools
-        && parallel_csv.trim().is_empty();
-    if skip_optimizer_no_parallel_tools {
-        debug!(
-            target: "crabmate",
-            "分阶段规划优化轮：本会话无可同轮并行批处理的内建工具，跳过优化轮以省 API（步数={}）",
-            plan.steps.len()
-        );
-    }
-    if want_optimizer && !skip_optimizer_no_parallel_tools && !skip_optimizer_validate_only_binding
-    {
+
+    if matches!(optimizer_route, StagedPlanOptimizerRoute::Run) {
         let opt_body =
             plan_optimizer::staged_plan_optimizer_user_body(&plan, parallel_csv.as_str());
         p.turn.messages.push(make_step_user_message(opt_body));
