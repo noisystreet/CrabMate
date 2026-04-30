@@ -34,6 +34,7 @@ use super::plan::agent_llm_call::AgentLlmCall;
 mod orchestrator;
 mod patch_planner;
 mod sse;
+mod turn_fsm;
 
 use orchestrator as staged_orchestrator;
 use sse as staged_sse;
@@ -47,6 +48,11 @@ use staged_sse::{
     send_staged_plan_notice, send_staged_plan_step_finished, send_staged_plan_step_started,
     staged_plan_nl_followup_user_body, staged_plan_phase_instruction_default,
     staged_plan_queue_summary_text,
+};
+use turn_fsm::{
+    StagedTurnAdvance, StagedTurnPhase, StagedTurnSubCallOutcome,
+    advance_staged_turn_after_sub_call, entered_flag_for_next_planner_call,
+    next_rewrite_attempts_after_advance,
 };
 
 fn staged_planner_tool_call_reject_user_body(tool_call_count: usize) -> String {
@@ -448,8 +454,8 @@ pub(super) async fn run_staged_plan_then_execute_steps(
 
     let mut rewrite_attempts = 0;
     let max_rewrites = p.ctx.cfg.full_plan_rewrite_max_attempts;
+    let mut phase = StagedTurnPhase::PreStepExecutionRound;
     let mut staged_rounds = 0usize;
-    let mut entered_from_step_execution_round = false;
     const STAGED_SINGLE_STEP_MAX_ROUNDS: usize = 64;
     let snapshot =
         crate::agent::workspace_snapshot::WorkspaceSnapshot::take(p.ctx.effective_working_dir);
@@ -468,6 +474,7 @@ pub(super) async fn run_staged_plan_then_execute_steps(
         let req =
             prepare_staged_planner_no_tools_request(p, per_coord, labels.build_planner_messages)
                 .await?;
+        let entered_from_step_execution_round = entered_flag_for_next_planner_call(phase);
         let res = run_staged_plan_with_prepared_request(
             p,
             per_coord,
@@ -488,49 +495,43 @@ pub(super) async fn run_staged_plan_then_execute_steps(
         )
         .await;
 
-        match res {
-            Ok(StagedPlanRunOutcome::ContinuePlanning) => {
-                entered_from_step_execution_round = true;
-                debug!(
-                    target: "crabmate",
-                    "分阶段单步：本轮执行完成，进入下一轮无工具规划（round={}）",
-                    staged_rounds
-                );
-                continue;
-            }
-            Ok(StagedPlanRunOutcome::Finished) => return Ok(()),
-            Err(RunAgentTurnError::StepRetryExhausted { phase, message }) => {
-                if let Some(ref snap) = snapshot {
-                    if let Err(e) = snap.restore() {
-                        tracing::warn!(target: "crabmate", "工作区快照回滚失败: {}", e);
-                    } else {
-                        tracing::info!(target: "crabmate", "全局重规划触发，工作区已回滚到快照状态");
-                    }
-                }
+        let event = match res {
+            Ok(o) => StagedTurnSubCallOutcome::Ok(o),
+            Err(e) => StagedTurnSubCallOutcome::Err(e),
+        };
+        let advance =
+            advance_staged_turn_after_sub_call(phase, rewrite_attempts, max_rewrites, event);
+        rewrite_attempts = next_rewrite_attempts_after_advance(rewrite_attempts, &advance);
 
-                if rewrite_attempts >= max_rewrites {
-                    return Err(RunAgentTurnError::ReplanExhausted {
-                        phase,
-                        message: format!(
-                            "全局重规划耗尽上限 ({} 次)。最后失败原因: {}",
-                            max_rewrites, message
-                        ),
-                    });
+        match advance {
+            StagedTurnAdvance::Continue {
+                phase: next_phase,
+                push_feedback_user,
+            } => {
+                phase = next_phase;
+                if let Some(u) = push_feedback_user {
+                    if let Some(ref snap) = snapshot {
+                        if let Err(e) = snap.restore() {
+                            tracing::warn!(target: "crabmate", "工作区快照回滚失败: {}", e);
+                        } else {
+                            tracing::info!(target: "crabmate", "全局重规划触发，工作区已回滚到快照状态");
+                        }
+                    }
+                    p.turn.messages.push(u);
+                } else if matches!(phase, StagedTurnPhase::AfterStepExecutionRound) {
+                    debug!(
+                        target: "crabmate",
+                        "分阶段单步：本轮执行完成，进入下一轮无工具规划（round={}）",
+                        staged_rounds
+                    );
                 }
-                rewrite_attempts += 1;
-                entered_from_step_execution_round = false;
-                let fb = format!(
-                    "### 全局重规划要求\n\
-                     由于前面的步骤执行多次修复后仍然彻底失败，失败原因摘要如下：\n\
-                     {}\n\n\
-                     请你结合上述失败经验，抛弃之前的旧计划，重新思考并给出一份**全新的**分阶段规划（agent_reply_plan v1）。\n\
-                     我们将从新计划的第一步重新开始执行。",
-                    message
-                );
-                p.turn.messages.push(Message::user_only(fb));
                 continue;
             }
-            Err(other) => return Err(other),
+            StagedTurnAdvance::Finished => return Ok(()),
+            StagedTurnAdvance::ReplanExhausted { phase: ph, message } => {
+                return Err(RunAgentTurnError::ReplanExhausted { phase: ph, message });
+            }
+            StagedTurnAdvance::Propagate(e) => return Err(e),
         }
     }
 }
@@ -1480,8 +1481,8 @@ pub(super) async fn run_logical_dual_agent_then_execute_steps(
 
     let mut rewrite_attempts = 0;
     let max_rewrites = p.ctx.cfg.full_plan_rewrite_max_attempts;
+    let mut phase = StagedTurnPhase::PreStepExecutionRound;
     let mut staged_rounds = 0usize;
-    let mut entered_from_step_execution_round = false;
     const STAGED_SINGLE_STEP_MAX_ROUNDS: usize = 64;
     let snapshot =
         crate::agent::workspace_snapshot::WorkspaceSnapshot::take(p.ctx.effective_working_dir);
@@ -1500,6 +1501,7 @@ pub(super) async fn run_logical_dual_agent_then_execute_steps(
         let req =
             prepare_staged_planner_no_tools_request(p, per_coord, labels.build_planner_messages)
                 .await?;
+        let entered_from_step_execution_round = entered_flag_for_next_planner_call(phase);
         let res = run_staged_plan_with_prepared_request(
             p,
             per_coord,
@@ -1512,49 +1514,43 @@ pub(super) async fn run_logical_dual_agent_then_execute_steps(
         )
         .await;
 
-        match res {
-            Ok(StagedPlanRunOutcome::ContinuePlanning) => {
-                entered_from_step_execution_round = true;
-                debug!(
-                    target: "crabmate",
-                    "逻辑双Agent分阶段单步：本轮执行完成，进入下一轮无工具规划（round={}）",
-                    staged_rounds
-                );
-                continue;
-            }
-            Ok(StagedPlanRunOutcome::Finished) => return Ok(()),
-            Err(RunAgentTurnError::StepRetryExhausted { phase, message }) => {
-                if let Some(ref snap) = snapshot {
-                    if let Err(e) = snap.restore() {
-                        tracing::warn!(target: "crabmate", "逻辑双Agent快照回滚失败: {}", e);
-                    } else {
-                        tracing::info!(target: "crabmate", "全局重规划触发，工作区已回滚到快照状态");
-                    }
-                }
+        let event = match res {
+            Ok(o) => StagedTurnSubCallOutcome::Ok(o),
+            Err(e) => StagedTurnSubCallOutcome::Err(e),
+        };
+        let advance =
+            advance_staged_turn_after_sub_call(phase, rewrite_attempts, max_rewrites, event);
+        rewrite_attempts = next_rewrite_attempts_after_advance(rewrite_attempts, &advance);
 
-                if rewrite_attempts >= max_rewrites {
-                    return Err(RunAgentTurnError::ReplanExhausted {
-                        phase,
-                        message: format!(
-                            "全局重规划耗尽上限 ({} 次)。最后失败原因: {}",
-                            max_rewrites, message
-                        ),
-                    });
+        match advance {
+            StagedTurnAdvance::Continue {
+                phase: next_phase,
+                push_feedback_user,
+            } => {
+                phase = next_phase;
+                if let Some(u) = push_feedback_user {
+                    if let Some(ref snap) = snapshot {
+                        if let Err(e) = snap.restore() {
+                            tracing::warn!(target: "crabmate", "逻辑双Agent快照回滚失败: {}", e);
+                        } else {
+                            tracing::info!(target: "crabmate", "全局重规划触发，工作区已回滚到快照状态");
+                        }
+                    }
+                    p.turn.messages.push(u);
+                } else if matches!(phase, StagedTurnPhase::AfterStepExecutionRound) {
+                    debug!(
+                        target: "crabmate",
+                        "逻辑双Agent分阶段单步：本轮执行完成，进入下一轮无工具规划（round={}）",
+                        staged_rounds
+                    );
                 }
-                rewrite_attempts += 1;
-                entered_from_step_execution_round = false;
-                let fb = format!(
-                    "### 全局重规划要求\n\
-                     由于前面的步骤执行多次修复后仍然彻底失败，失败原因摘要如下：\n\
-                     {}\n\n\
-                     请你结合上述失败经验，抛弃之前的旧计划，重新思考并给出一份**全新的**分阶段规划（agent_reply_plan v1）。\n\
-                     我们将从新计划的第一步重新开始执行。",
-                    message
-                );
-                p.turn.messages.push(Message::user_only(fb));
                 continue;
             }
-            Err(other) => return Err(other),
+            StagedTurnAdvance::Finished => return Ok(()),
+            StagedTurnAdvance::ReplanExhausted { phase: ph, message } => {
+                return Err(RunAgentTurnError::ReplanExhausted { phase: ph, message });
+            }
+            StagedTurnAdvance::Propagate(e) => return Err(e),
         }
     }
 }
@@ -1576,6 +1572,148 @@ mod staged_not_found_convergence_tests {
         assert!(
             should_finish_when_plan_not_found(true),
             "仅在同 turn 的步后重规划轮，NotFound 才应触发收敛结束"
+        );
+    }
+}
+
+/// `prepare_messages_for_model` 与规划轮请求拼装组合的回归护栏（不经真实 HTTP）。
+#[cfg(test)]
+mod staged_plan_prepare_fixture_tests {
+    use std::sync::Arc;
+
+    use crate::agent::context_window::prepare_messages_for_model;
+    use crate::agent::per_coord::{PerCoordinator, PerCoordinatorInit};
+    use crate::llm::OPENAI_COMPAT_BACKEND;
+    use crate::types::{LlmSeedOverride, Message, message_content_as_str};
+
+    use super::super::errors::AgentTurnSubPhase;
+    use super::super::params::{RunLoopCtx, RunLoopParams, RunLoopTurnState};
+    use super::staged_sse::staged_plan_phase_instruction_default;
+    use super::{build_single_agent_planner_messages, prepare_staged_planner_no_tools_request};
+
+    #[tokio::test]
+    async fn prepare_then_build_planner_messages_ends_with_plan_system() {
+        let cfg = Arc::new(crate::config::load_config(None).expect("embed default"));
+        let client = reqwest::Client::new();
+        let mut messages = vec![
+            Message::user_only("请在本仓库执行一次 cargo check 并汇报结果"),
+            Message::assistant_only(
+                r#"```json
+{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"运行 cargo check"}]}
+```"#,
+            ),
+        ];
+        let mut per = PerCoordinator::new(PerCoordinatorInit::from_agent_config(cfg.as_ref()));
+        prepare_messages_for_model(
+            &OPENAI_COMPAT_BACKEND,
+            &client,
+            "",
+            cfg.as_ref(),
+            &mut messages,
+            Some(&mut per),
+            None,
+        )
+        .await
+        .expect("prepare_messages_for_model");
+
+        let plan_sys = staged_plan_phase_instruction_default();
+        let preserve_kimi = crate::llm::llm_vendor_adapter(cfg.as_ref())
+            .preserve_assistant_tool_call_reasoning(cfg.as_ref());
+        let preserve_deepseek = crate::llm::vendor::deepseek_json_output_eligible(cfg.as_ref());
+        let built = build_single_agent_planner_messages(
+            messages.as_slice(),
+            plan_sys.clone(),
+            preserve_kimi,
+            preserve_deepseek,
+        );
+        let last = built.last().expect("non-empty planner messages");
+        assert_eq!(last.role, "system");
+        let body = message_content_as_str(&last.content).unwrap_or("");
+        assert!(
+            body.contains("agent_reply_plan"),
+            "规划 system 应包含 schema 约定片段"
+        );
+        assert!(
+            body.len() >= plan_sys.len().saturating_sub(40),
+            "system 正文应接近完整规划轮指令"
+        );
+    }
+
+    #[tokio::test]
+    async fn prepare_staged_planner_no_tools_request_fixture_roundtrip() {
+        let cfg = Arc::new(crate::config::load_config(None).expect("embed default"));
+        let client = reqwest::Client::new();
+        let mut messages = vec![Message::user_only("fixture：分阶段规划请求拼装")];
+        let mut per = PerCoordinator::new(PerCoordinatorInit::from_agent_config(cfg.as_ref()));
+
+        let mut p = RunLoopParams {
+            ctx: RunLoopCtx {
+                llm_backend: &OPENAI_COMPAT_BACKEND,
+                client: &client,
+                api_key: "",
+                cfg: &cfg,
+                tools_defs: &[],
+                out: None,
+                effective_working_dir: std::path::Path::new("."),
+                workspace_is_set: false,
+                no_stream: true,
+                cancel: None,
+                render_to_terminal: false,
+                plain_terminal_stream: false,
+                web_tool_ctx: None,
+                cli_tool_ctx: None,
+                per_flight: None,
+                long_term_memory: None,
+                long_term_memory_scope_id: None,
+                mcp_session: None,
+                read_file_turn_cache: None,
+                workspace_changelist: None,
+                staged_plan_optimizer_round: cfg.staged_plan_optimizer_round,
+                staged_plan_optimizer_requires_parallel_tools: cfg
+                    .staged_plan_optimizer_requires_parallel_tools,
+                staged_plan_ensemble_count: cfg.staged_plan_ensemble_count,
+                staged_plan_skip_ensemble_on_casual_prompt: cfg
+                    .staged_plan_skip_ensemble_on_casual_prompt,
+                request_chrome_trace: None,
+                turn_allowed_tool_names: None,
+                tracing_chat_turn: None,
+            },
+            turn: RunLoopTurnState {
+                messages: &mut messages,
+                sub_phase: AgentTurnSubPhase::Planner,
+                intent_turn_gate_hint: None,
+                step_executor_constraint: None,
+                temperature_override: None,
+                model_override: None,
+                use_executor_model: false,
+                executor_model_override: None,
+                executor_api_base: None,
+                executor_api_key: None,
+                seed_override: LlmSeedOverride::FromConfig,
+            },
+        };
+
+        let req = prepare_staged_planner_no_tools_request(
+            &mut p,
+            &mut per,
+            build_single_agent_planner_messages,
+        )
+        .await
+        .expect("prepare_staged_planner_no_tools_request");
+
+        assert!(
+            req.messages.iter().any(|m| {
+                message_content_as_str(&m.content)
+                    .is_some_and(|c| c.contains("fixture：分阶段规划请求拼装"))
+            }),
+            "用户正文应在上下文变换后仍出现在 ChatRequest.messages"
+        );
+        assert!(
+            req.messages.iter().any(|m| {
+                m.role == "system"
+                    && message_content_as_str(&m.content).is_some_and(|c| c.contains("分阶段规划"))
+            }),
+            "末尾规划 system 应进入 ChatRequest"
         );
     }
 }
