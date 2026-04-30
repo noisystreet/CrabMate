@@ -1101,11 +1101,9 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     } else {
                         error!(
                             target: "crabmate",
-                            "chat stream 任务失败 job_id={} err_kind=agent_turn public_code={} sub_phase={} reason={}",
+                            "chat stream 任务失败 job_id={} err_kind=agent_turn {}",
                             job_id,
-                            e.public_error_code(),
-                            e.sub_phase().as_str(),
-                            e.internal_reason_for_logs(),
+                            e.diag_log_kv(),
                         );
                         let err_body = e.sse_error_payload(Some(job_id));
                         let err_line = crate::sse::encode_message(crate::sse::SsePayload::Error(
@@ -1288,29 +1286,23 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     if cancelled {
                         info!(
                             target: "crabmate",
-                            "chat json 任务已取消 job_id={} err_kind=cancelled public_code={} sub_phase={} reason={}",
+                            "chat json 任务已取消 job_id={} err_kind=cancelled {}",
                             job_id,
-                            e.public_error_code(),
-                            e.sub_phase().as_str(),
-                            e.internal_reason_for_logs(),
+                            e.diag_log_kv(),
                         );
                     } else if staged_invalid {
                         warn!(
                             target: "crabmate",
-                            "chat json 任务结束（分阶段规划解析失败） job_id={} err_kind=staged_plan_invalid public_code={} sub_phase={} reason={}",
+                            "chat json 任务结束（分阶段规划解析失败） job_id={} err_kind=staged_plan_invalid {}",
                             job_id,
-                            e.public_error_code(),
-                            e.sub_phase().as_str(),
-                            e.internal_reason_for_logs(),
+                            e.diag_log_kv(),
                         );
                     } else {
                         error!(
                             target: "crabmate",
-                            "chat json 任务失败 job_id={} err_kind=agent_turn public_code={} sub_phase={} reason={}",
+                            "chat json 任务失败 job_id={} err_kind=agent_turn {}",
                             job_id,
-                            e.public_error_code(),
-                            e.sub_phase().as_str(),
-                            e.internal_reason_for_logs(),
+                            e.diag_log_kv(),
                         );
                     }
                     let prev = e.short_detail_for_job_log();

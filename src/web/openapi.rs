@@ -821,7 +821,7 @@ pub fn build_openapi_spec() -> Value {
                         "reason_code": {
                             "type": "string",
                             "nullable": true,
-                            "description": "Optional sub-code for branching under the same `code` (e.g. truncated internal detail for `INTERNAL_ERROR`)"
+                            "description": "When present: truncated internal detail for `INTERNAL_ERROR` on `POST /chat` JSON only; SSE may use `reason_code` more broadly (see docs/SSE_PROTOCOL.md)"
                         }
                     }
                 }

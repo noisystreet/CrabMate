@@ -32,7 +32,7 @@
 
 **`INTERNAL_ERROR`** 等码在 **SSE 流**与 **`POST /chat` JSON** 中可由同一套 `RunAgentTurnError` 映射产生；`chat` 子进程仍由 `classify_model_error_message` 等对**错误字符串**归类。
 
-**HTTP JSON（非 SSE `data:`）**：`POST /chat` 失败时 **`ApiError`** 含 **`code`**、**`message`**（用户可读）及可选 **`reason_code`**（内部摘要，与 SSE **`reason_code`** 同源语义）；握手阶段其它码以 **`web/chat_handlers`** 与 OpenAPI 为准；与 **SSE 协议版本**相关的补充码见 **[`docs/SSE_PROTOCOL.md`](SSE_PROTOCOL.md)**。
+**HTTP JSON（非 SSE `data:`）**：`POST /chat` 失败时 **`ApiError`** 含 **`code`**、**`message`**（用户可读）；可选 **`reason_code`** 仅在 **`code` 为 `INTERNAL_ERROR`** 时出现（截断内部摘要）。**SSE** 仍可在多种 `code` 下带 **`reason_code`**（见 **`docs/SSE_PROTOCOL.md`**）。握手阶段其它码以 **`web/chat_handlers`** 与 OpenAPI 为准；与 **SSE 协议版本**相关的补充码见 **[`docs/SSE_PROTOCOL.md`](SSE_PROTOCOL.md)**。
 
 ## `chat --output json` 每行结果（稳定形状）
 

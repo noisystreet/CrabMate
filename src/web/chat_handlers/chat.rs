@@ -688,11 +688,9 @@ pub(crate) async fn chat_handler(
             chat_job_queue::ChatJsonJobFailure::Agent(err) => {
                 error!(
                     target: "crabmate",
-                    "chat_handler 队列任务失败 job_id={} public_code={} sub_phase={} reason={}",
+                    "chat_handler 队列任务失败 job_id={} err_kind=agent_turn {}",
                     job_id,
-                    err.public_error_code(),
-                    err.sub_phase().as_str(),
-                    err.internal_reason_for_logs(),
+                    err.diag_log_kv(),
                 );
                 let status = err.suggested_http_status();
                 let body = err.http_api_error();
