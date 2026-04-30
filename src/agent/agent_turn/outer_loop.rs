@@ -16,7 +16,7 @@ use super::execute_tools::{
 };
 use super::messages::push_assistant_merging_trailing_empty_placeholder;
 use super::params::RunLoopParams;
-use super::plan_call::{PerPlanCallModelParams, per_plan_call_model_retrying};
+use super::plan::{PerPlanCallModelParams, per_plan_call_model_retrying};
 use super::reflect::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
 use super::sub_agent_policy::filter_tool_defs_for_executor_kind;
 

@@ -23,12 +23,12 @@ use crate::types::{
     messages_for_api_stripping_reasoning_skip_ui_separators,
 };
 
-use super::agent_llm_call::AgentLlmCall;
 use super::errors::{AgentTurnSubPhase, RunAgentTurnError};
 use super::execute_tools::sse_sender_closed;
 use super::messages::push_assistant_merging_trailing_empty_placeholder;
 use super::outer_loop::run_agent_outer_loop;
 use super::params::RunLoopParams;
+use super::plan::agent_llm_call::AgentLlmCall;
 use super::staged_orchestrator;
 use super::staged_sse::{
     emit_chat_ui_separator_sse, next_staged_plan_id, send_staged_plan_finished,
@@ -94,7 +94,7 @@ fn staged_planner_sse_fully_suppressed(cfg: &crate::config::AgentConfig) -> bool
 
 /// 无工具规划轮 `complete_chat_retrying`：
 /// - **两阶段 NL**：`out: None`（整段抑制）；
-/// - **Web + 未** `CM_WEB_RAW_ASSISTANT_OUTPUT`：经 [`super::planner_sse_gate::PlannerSseGate`] — 解析（正文+思维链）为 `no_task` 则整轮不落 SSE，且不将本条 assistant 写入会话；否则仅落 `assistant_answer_phase` 之后的正文增量；
+/// - **Web + 未** `CM_WEB_RAW_ASSISTANT_OUTPUT`：经 [`super::plan::PlannerSseGate`] — 解析（正文+思维链）为 `no_task` 则整轮不落 SSE，且不将本条 assistant 写入会话；否则仅落 `assistant_answer_phase` 之后的正文增量；
 /// - **RAW** 或 **非 Web**：`out: p.out`（整段原样下发）。
 async fn complete_planner_no_tools_chat_retrying(
     p: &RunLoopParams<'_>,
@@ -107,9 +107,7 @@ async fn complete_planner_no_tools_chat_retrying(
         && !suppress_full;
 
     let gate_opt = match (use_gate, p.out.as_ref()) {
-        (true, Some(out)) => Some(super::planner_sse_gate::PlannerSseGate::spawn(
-            (*out).clone(),
-        )),
+        (true, Some(out)) => Some(super::plan::PlannerSseGate::spawn((*out).clone())),
         _ => None,
     };
 
