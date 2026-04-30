@@ -412,7 +412,7 @@ mod staged_single_step_rolling_tests {
 }
 
 mod staged_intent_gate_tests {
-    use super::super::should_enter_staged_planning;
+    use super::super::run_dispatch::should_enter_staged_planning;
     use crate::types::Message;
 
     fn test_cfg() -> crate::config::AgentConfig {

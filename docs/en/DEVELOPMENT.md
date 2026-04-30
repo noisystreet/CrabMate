@@ -198,7 +198,7 @@ This section records **maintainer rules** (aligned with `src/llm/mod.rs`): **one
 
 ## Core mechanism: agent loop and tools
 
-Entry: **`run_agent_turn`** → **`run_turn_common`** (`src/agent/agent_turn.rs`).
+Entry: **`run_agent_turn`** → **`run_agent_turn_common`** (`src/agent/agent_turn/mod.rs`; mode dispatch in **`run_dispatch.rs`**).
 
 - **Optional MCP** at turn start (`mcp_enabled` + `mcp_command`); merged tools in **`tools_defs`**.
 - **P step**: one `stream_chat` via **`per_plan_call_model_retrying`** (not a separate planner process).
