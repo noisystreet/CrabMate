@@ -817,7 +817,12 @@ pub fn build_openapi_spec() -> Value {
                     "type": "object",
                     "properties": {
                         "code": { "type": "string" },
-                        "message": { "type": "string" }
+                        "message": { "type": "string" },
+                        "reason_code": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "Optional sub-code for branching under the same `code` (e.g. truncated internal detail for `INTERNAL_ERROR`)"
+                        }
                     }
                 }
             }

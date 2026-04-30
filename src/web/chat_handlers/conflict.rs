@@ -17,6 +17,7 @@ pub(crate) fn conversation_conflict_http_response() -> (StatusCode, Json<ApiErro
         Json(ApiError {
             code: CONVERSATION_CONFLICT_CODE,
             message: CONVERSATION_CONFLICT_MESSAGE.to_string(),
+            reason_code: None,
         }),
     )
 }

@@ -92,6 +92,7 @@ pub(crate) async fn require_web_api_bearer_auth(
         Json(ApiError {
             code: "UNAUTHORIZED",
             message: "缺少或无效的 Web API 凭证（Authorization: Bearer 或 X-API-Key）".to_string(),
+            reason_code: None,
         }),
     )
         .into_response()

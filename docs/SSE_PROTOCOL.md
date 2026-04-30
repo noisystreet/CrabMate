@@ -97,7 +97,11 @@
 | `code` | 来源（模块） | 含义 |
 |--------|----------------|------|
 | `CONVERSATION_CONFLICT` | `web/chat_handlers/conflict`、`chat_job_queue`（流式保存冲突） | 会话 revision / 保存冲突 |
-| `INTERNAL_ERROR` | `chat_job_queue` | `run_agent_turn` 失败等非取消类错误（用户可见兜底文案；**`reason_code`** 可为截断后的内部摘要） |
+| `INTERNAL_ERROR` | `chat_job_queue` | 编排层其它失败（**`error`** 为通用用户文案；**`reason_code`** 为截断后的内部摘要，与 `plan_rewrite_exhausted` 的子码表不同） |
+| `STEP_RETRY_EXHAUSTED` | `agent_turn` | 单步子重试耗尽（**`error`** 为通用用户文案；**`reason_code`** 含内部摘要） |
+| `REPLAN_EXHAUSTED` | `agent_turn` | 全局重规划耗尽（同上） |
+| `TIME_LIMIT_EXHAUSTED` | `agent_turn` | 墙钟超时（同上） |
+| `TOKEN_LIMIT_EXHAUSTED` | `agent_turn` | Token 预算耗尽（同上） |
 | `LLM_REQUEST_FAILED` | `chat_job_queue`（由 `agent_turn` 映射） | 模型 HTTP/传输失败（**`error`** 为脱敏后的网关说明；**429** 等限流见 **`LLM_RATE_LIMIT`**） |
 | `LLM_RATE_LIMIT` | `chat_job_queue`（由 `agent_turn` 映射） | 限流 / 配额类（**HTTP 429** 或文案启发式与 `agent_errors::is_quota_or_rate_limit_llm_message` 一致） |
 | `turn_aborted` | `chat_job_queue`（由 `agent_turn` 映射） | 编排早停（如 **SSE 接收端已关闭**仍尝试继续）；**`error`** 为用户可读说明 |
@@ -105,7 +109,7 @@
 | `plan_rewrite_exhausted` | `agent_turn/outer_loop`、`agent_turn/staged` | 终答规划重写次数用尽 |
 | `SSE_ENCODE` | `sse/protocol` | `encode_message` 序列化失败兜底 |
 
-**可选字段 `reason_code`**：与 `error` / `code` 同级的字符串子码，供客户端在**同一 `code`** 下做细粒度分支（当前主要用于 `plan_rewrite_exhausted`）；旧实现可忽略。
+**可选字段 `reason_code`**：与 `error` / `code` 同级的字符串子码，供客户端在**同一 `code`** 下做细粒度分支；**`plan_rewrite_exhausted`** 使用下表中的语义化子码；**`INTERNAL_ERROR`** / **`STEP_RETRY_EXHAUSTED`** 等编排失败时为**截断后的内部摘要**（便于排障，旧客户端可忽略）。
 
 **可选字段 `turn_id`**：与响应头 **`x-stream-job-id`**、首帧 **`sse_capabilities.job_id`** 一致（`u64`）；非 Web 路径或历史帧可省略。
 
@@ -130,10 +134,15 @@
 | `code` | HTTP | 说明 |
 |--------|------|------|
 | `STREAM_JOB_GONE` | 410 | **`stream_resume`** 任务不在 hub（见 `chat_stream_handler`） |
-| `SSE_CLIENT_TOO_NEW` | 400 | 请求体 **`client_sse_protocol`** 大于服务端 **`SSE_PROTOCOL_VERSION`** |
+| `SSE_CLIENT_TOO_NEW` | 400 | **`client_sse_protocol`** 高于服务端 **`SSE_PROTOCOL_VERSION`** |
 | `INVALID_SSE_CLIENT_PROTOCOL` | 400 | **`client_sse_protocol == 0`** |
-| `INVALID_AT_FILE_REF` | 400 | 用户消息含非法 **`@…`** 文件引用（如绝对路径或 **`/`** 开头的「伪相对」）；须为相对当前工作区根的相对路径，语义与 **`read_file`** 一致 |
-| `INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS` | 400 | **`clarify_questionnaire_answers`** 形状非法（`questionnaire_id` / `answers` 键值与长度限制）；见 `clarification_questionnaire` 模块 |
+| `INVALID_AT_FILE_REF` | 400 | 用户消息含非法 **`@…`** 文件引用（与 **`read_file`** 规则一致） |
+| `INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS` | 400 | 澄清问卷作答体非法（见 `clarification_questionnaire`） |
+| `LLM_RATE_LIMIT` | 429 | **`POST /chat`** 模型限流/配额类（与 SSE 同源码） |
+| `LLM_REQUEST_FAILED` | 502 等 | **`POST /chat`** 模型 HTTP/传输失败（与上游状态对齐时可能为其它 5xx） |
+| `STEP_RETRY_EXHAUSTED` / `REPLAN_EXHAUSTED` / `TIME_LIMIT_EXHAUSTED` / `TOKEN_LIMIT_EXHAUSTED` | 422 | 编排预算类失败（**`message`** 为通用用户文案；**`reason_code`** 为内部摘要） |
+| `INTERNAL_ERROR` | 500 | 其它编排失败（**`message`** 为通用用户文案；**`reason_code`** 为内部摘要） |
+| `STREAM_CANCELLED` | 499 | 用户/协作取消（非标准状态码，与 SSE 同源码；部分客户端可能按 4xx 处理） |
 
 **客户端仅日志/文案用（非服务端下发的 SSE `code`）**：官方 Leptos 在 **`sse_capabilities`** 与本地版本不一致时，`onError` 字符串中含 **`SSE_SERVER_TOO_NEW`** 或 **`SSE_SERVER_TOO_OLD`**。
 

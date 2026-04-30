@@ -24,14 +24,15 @@
 
 | `code` | 含义（摘要） |
 |--------|----------------|
-| `INTERNAL_ERROR` | 队列或内部未预期错误 |
+| `INTERNAL_ERROR` | 队列或编排其它失败（**`error`** 为通用用户文案；**`reason_code`** 为截断内部摘要） |
+| `STEP_RETRY_EXHAUSTED` / `REPLAN_EXHAUSTED` / `TIME_LIMIT_EXHAUSTED` / `TOKEN_LIMIT_EXHAUSTED` | 编排预算类失败（同上） |
 | `CONVERSATION_CONFLICT` | 会话版本冲突 |
 | `plan_rewrite_exhausted` | 终答规划重写次数用尽（可选 `reason_code`，见 `docs/SSE_PROTOCOL.md`） |
 | `SSE_ENCODE` | 控制面 JSON 序列化失败（兜底） |
 
-**`INTERNAL_ERROR`** 仅出现在 **SSE 流** 场景，**不**映射为 `chat` 子进程的上述数字退出码；`chat` 失败仍由 `classify_model_error_message` 等对**错误字符串**归类。
+**`INTERNAL_ERROR`** 等码在 **SSE 流**与 **`POST /chat` JSON** 中可由同一套 `RunAgentTurnError` 映射产生；`chat` 子进程仍由 `classify_model_error_message` 等对**错误字符串**归类。
 
-**HTTP JSON（非 SSE `data:`）**：`POST /chat`、`POST /chat/stream` 在握手阶段返回的 **`ApiError.code`** 全集以 **`web/chat_handlers`** 与 OpenAPI 为准；与 **SSE 协议版本**相关的补充码见 **[`docs/SSE_PROTOCOL.md`](SSE_PROTOCOL.md)**（`SSE_CLIENT_TOO_NEW`、`INVALID_SSE_CLIENT_PROTOCOL`、`STREAM_JOB_GONE` 等）。
+**HTTP JSON（非 SSE `data:`）**：`POST /chat` 失败时 **`ApiError`** 含 **`code`**、**`message`**（用户可读）及可选 **`reason_code`**（内部摘要，与 SSE **`reason_code`** 同源语义）；握手阶段其它码以 **`web/chat_handlers`** 与 OpenAPI 为准；与 **SSE 协议版本**相关的补充码见 **[`docs/SSE_PROTOCOL.md`](SSE_PROTOCOL.md)**。
 
 ## `chat --output json` 每行结果（稳定形状）
 
