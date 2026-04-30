@@ -1,8 +1,11 @@
 //! 子目标验证器（GoalVerifier）：验证子目标是否达成
 //!
-//! 根据 SubGoal 中定义的 acceptance 条件对执行结果进行验证
+//! 根据 SubGoal 中定义的 acceptance 条件对执行结果进行验证。
+//! 与分阶段步骤共用 [`crate::agent::acceptance`] 内核（文件 / 合并输出 / 退出码等）。
 
-use super::task::{ArtifactKind, GoalAcceptance, SubGoal, TaskResult, TaskStatus};
+use crate::agent::acceptance::{AcceptanceEvidence, VerifyOutcome};
+
+use super::task::{ArtifactKind, SubGoal, TaskResult, TaskStatus};
 
 /// 验证结果
 #[derive(Debug, Clone)]
@@ -25,6 +28,20 @@ impl VerificationResult {
     }
 }
 
+/// 将共用内核的英文 machine reason 映射回分层历史中文文案（仅覆盖当前会触发的分支）。
+fn localize_hierarchy_verify_reason(reason: String) -> String {
+    if let Some(suffix) = reason.strip_prefix("exit_code_mismatch: expected ")
+        && let Some((exp, got_part)) = suffix.split_once(", got ")
+    {
+        return format!(
+            "退出码不匹配: 期望 {}, 实际 {}",
+            exp.trim(),
+            got_part.trim()
+        );
+    }
+    reason
+}
+
 /// 子目标验证器
 pub struct GoalVerifier {
     workspace_root: std::path::PathBuf,
@@ -40,9 +57,9 @@ impl GoalVerifier {
     ///
     /// 检查顺序：
     /// 1. 执行结果状态
-    /// 2. 文件存在性
-    /// 3. 输出内容匹配
-    /// 4. 验证命令执行
+    /// 2. 目标级硬门槛（编写运行程序 / 运行可执行体证据）
+    /// 3. [`GoalAcceptance`] 字段：文件 / 合并输出 / 退出码（经 [`crate::agent::acceptance`]）
+    /// 4. `expect_command_success` 二次验证命令
     pub fn verify(&self, goal: &SubGoal, result: &TaskResult) -> VerificationResult {
         // 首先检查执行结果状态
         match &result.status {
@@ -113,19 +130,31 @@ impl GoalVerifier {
             goal.goal_id
         );
 
-        // 验证文件存在性
-        if let Err(reason) = self.verify_file_exists(acceptance) {
-            return VerificationResult::Fail { reason };
-        }
-
-        // 验证输出内容
-        if let Err(reason) = self.verify_output_contains(acceptance, result) {
-            return VerificationResult::Fail { reason };
-        }
-
-        // 验证退出码
-        if let Err(reason) = self.verify_exit_code(acceptance, result) {
-            return VerificationResult::Fail { reason };
+        let spec = acceptance.to_acceptance_spec();
+        if !spec.is_empty() {
+            let output = result.output.as_deref().unwrap_or("");
+            let error = result.error.as_deref().unwrap_or("");
+            let combined = format!("{output} {error}");
+            let exit_parsed = GoalVerifier::extract_exit_code(&combined);
+            let ev = AcceptanceEvidence {
+                tool_name: "",
+                tool_output: combined.as_str(),
+                stdout: output,
+                stderr: error,
+                tool_error: None,
+                fallback_exit_code: exit_parsed,
+                workspace_root: self.workspace_root.as_path(),
+                file_resolve: spec.file_resolve,
+                combined_text_override: Some(combined.as_str()),
+            };
+            match crate::agent::acceptance::verify_against_spec(&spec, &ev) {
+                VerifyOutcome::Pass => {}
+                VerifyOutcome::Fail { reason } => {
+                    return VerificationResult::Fail {
+                        reason: localize_hierarchy_verify_reason(reason),
+                    };
+                }
+            }
         }
 
         // 验证命令成功执行（如果有定义）
@@ -154,94 +183,7 @@ impl GoalVerifier {
         VerificationResult::Pass
     }
 
-    /// 验证文件是否存在
-    fn verify_file_exists(&self, acceptance: &GoalAcceptance) -> Result<(), String> {
-        for path in &acceptance.expect_file_exists {
-            let full_path = self.workspace_root.join(path);
-            if !full_path.exists() {
-                return Err(format!("期望文件不存在: {}", path));
-            }
-            log::debug!(
-                target: "crabmate",
-                "[GOAL_VERIFIER] File exists: {}",
-                full_path.display()
-            );
-        }
-        Ok(())
-    }
-
-    /// 验证输出内容是否包含期望字符串
-    fn verify_output_contains(
-        &self,
-        acceptance: &GoalAcceptance,
-        result: &TaskResult,
-    ) -> Result<(), String> {
-        if acceptance.expect_output_contains.is_empty() {
-            return Ok(());
-        }
-
-        let output = result.output.as_deref().unwrap_or("").to_lowercase();
-        let error = result.error.as_deref().unwrap_or("").to_lowercase();
-        let combined = format!("{} {}", output, error);
-
-        for expected in &acceptance.expect_output_contains {
-            if !combined.contains(&expected.to_lowercase()) {
-                return Err(format!("输出不包含期望内容: '{}'", expected));
-            }
-            log::debug!(
-                target: "crabmate",
-                "[GOAL_VERIFIER] Output contains: {}",
-                expected
-            );
-        }
-        Ok(())
-    }
-
-    /// 验证退出码
-    fn verify_exit_code(
-        &self,
-        acceptance: &GoalAcceptance,
-        result: &TaskResult,
-    ) -> Result<(), String> {
-        let expected_code = match acceptance.expect_exit_code {
-            Some(code) => code,
-            None => return Ok(()), // 没有定义退出码要求，跳过
-        };
-
-        // 从输出中解析退出码
-        // 格式如："退出码：0" 或 "(exit=0)"
-        let output = result.output.as_deref().unwrap_or("");
-        let error = result.error.as_deref().unwrap_or("");
-        let combined = format!("{} {}", output, error);
-
-        // 尝试提取退出码
-        let exit_code = Self::extract_exit_code(&combined);
-
-        match exit_code {
-            Some(code) if code == expected_code => {
-                log::debug!(
-                    target: "crabmate",
-                    "[GOAL_VERIFIER] Exit code matches: {}",
-                    code
-                );
-                Ok(())
-            }
-            Some(code) => Err(format!(
-                "退出码不匹配: 期望 {}, 实际 {}",
-                expected_code, code
-            )),
-            None => {
-                // 无法解析退出码，假设成功（因为 TaskStatus 是 Completed）
-                log::warn!(
-                    target: "crabmate",
-                    "[GOAL_VERIFIER] Could not extract exit code from output"
-                );
-                Ok(())
-            }
-        }
-    }
-
-    /// 从输出中提取退出码
+    /// 从输出中提取退出码（分层子目标摘要文本）
     fn extract_exit_code(output: &str) -> Option<i32> {
         // 匹配 "退出码：0" 或 "(exit=0)" 或 "exit code: 0"
         let patterns = ["退出码：", "exit=", "exit code: ", "exit code:", "(exit="];

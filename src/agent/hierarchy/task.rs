@@ -174,6 +174,22 @@ pub struct GoalAcceptance {
 }
 
 impl GoalAcceptance {
+    /// 转为与 [`crate::agent::acceptance`] 内核一致的规范化验收规则。
+    pub(crate) fn to_acceptance_spec(&self) -> crate::agent::acceptance::AcceptanceSpec {
+        crate::agent::acceptance::AcceptanceSpec {
+            expect_exit_code: self.expect_exit_code,
+            exit_code_policy: crate::agent::acceptance::ExitCodePolicy::LenientIfUnparsed,
+            expect_stdout_contains: None,
+            expect_stderr_contains: None,
+            expect_combined_output_contains: self.expect_output_contains.clone(),
+            combined_match_case_insensitive: true,
+            expect_file_exists: self.expect_file_exists.clone(),
+            expect_json_path_equals: None,
+            expect_http_status: None,
+            file_resolve: crate::agent::acceptance::FileResolveKind::WorkspaceJoin,
+        }
+    }
+
     /// 创建文件存在验证
     pub fn file_exists(path: &str) -> Self {
         Self {
