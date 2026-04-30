@@ -14,7 +14,7 @@ use super::thinking_strip::{
 /// 须与主仓 `src/runtime/plan_section.rs` 中 `STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX` 同步。
 pub(crate) const STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX: &str = "### CrabMate·NL补全\n";
 
-/// 与 `src/agent/agent_turn/staged_sse.rs`、`plan_optimizer.rs`、`plan_ensemble.rs` 等注入的 **system** 首行对齐；聊天区展示时剥除，避免「分阶段 ·」原样进气泡。
+/// 与 `src/agent/agent_turn/staged/sse.rs`、`plan_optimizer.rs`、`plan_ensemble.rs` 等注入的 **system** 首行对齐；聊天区展示时剥除，避免「分阶段 ·」原样进气泡。
 const STAGED_PLAN_SYSTEM_COACH_PREFIX: &str = "### 分阶段规划 ·";
 
 fn coach_ordinal_from_injection_header(first_line: &str) -> usize {

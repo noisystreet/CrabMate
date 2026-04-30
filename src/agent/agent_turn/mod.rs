@@ -5,8 +5,7 @@
 //!
 //! 被 crate 根 [`crate::run_agent_turn`]（Web/CLI）与 Axum handler 共用。
 //!
-//! 子模块：`intent`（回合起点意图门控）、`plan`（P：一次模型调用、`PlannerSseGate`、`AgentLlmCall`）、`messages`（助手合并/分隔线）、`staged_sse`（分阶段 SSE）、`params`（`RunLoopParams`）、`reflect`（R）、
-//! `execute_tools`（E）、`outer_loop`（默认主循环）、`staged`（分阶段与逻辑双 agent）。
+//! 子模块：`intent`、`plan`（P）、`reflect`（R）、`execute`（E，实现见 **`execute/tools`**）、`messages`、`staged_sse`（实现见 **`staged/sse`**）、`params`、`outer_loop`、`staged`（含 **`staged/orchestrator`**、**`staged/patch_planner`**）。
 //!
 //! **与 `llm` 的边界**：本目录内对模型的调用须经 **`llm::complete_chat_retrying`**（见 **`docs/DEVELOPMENT.md`**「`agent_turn` 与 `llm`：唯一入口与禁止事项」）；**禁止**直接调用 **`llm::api::stream_chat`**。
 
@@ -22,7 +21,8 @@ use crate::config::PlannerExecutorMode;
 use crate::types::Message;
 
 mod errors;
-mod execute_tools;
+mod execute;
+pub(crate) use execute::tools as execute_tools;
 mod hierarchy;
 mod intent;
 mod messages;
@@ -31,8 +31,6 @@ mod params;
 mod plan;
 mod reflect;
 mod staged;
-mod staged_orchestrator;
-mod staged_sse;
 mod sub_agent_policy;
 
 // 供 crate 内其它模块与文档链接；本文件自身不直接使用这些符号。

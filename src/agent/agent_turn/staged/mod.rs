@@ -29,17 +29,23 @@ use super::messages::push_assistant_merging_trailing_empty_placeholder;
 use super::outer_loop::run_agent_outer_loop;
 use super::params::RunLoopParams;
 use super::plan::agent_llm_call::AgentLlmCall;
-use super::staged_orchestrator;
-use super::staged_sse::{
+
+mod orchestrator;
+mod patch_planner;
+mod sse;
+
+use orchestrator as staged_orchestrator;
+use sse as staged_sse;
+
+use patch_planner::{
+    StagedPlanPatchPlannerCtx, run_staged_plan_patch_planner_round,
+    staged_plan_step_failure_feedback_user_body,
+};
+use staged_sse::{
     emit_chat_ui_separator_sse, next_staged_plan_id, send_staged_plan_finished,
     send_staged_plan_notice, send_staged_plan_step_finished, send_staged_plan_step_started,
     staged_plan_nl_followup_user_body, staged_plan_phase_instruction_default,
     staged_plan_queue_summary_text,
-};
-mod patch_planner;
-use patch_planner::{
-    StagedPlanPatchPlannerCtx, run_staged_plan_patch_planner_round,
-    staged_plan_step_failure_feedback_user_body,
 };
 
 fn staged_planner_tool_call_reject_user_body(tool_call_count: usize) -> String {
