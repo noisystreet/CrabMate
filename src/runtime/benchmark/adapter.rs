@@ -386,3 +386,125 @@ fn run_git_cmd(dir: &Path, args: &[&str]) -> Result<(), String> {
 fn run_git_cmd_in(cwd: &Path, args: &[&str]) -> Result<(), String> {
     run_git_cmd(cwd, args)
 }
+
+#[cfg(test)]
+mod contract_tests {
+    use super::*;
+    use crate::runtime::benchmark::types::parse_task_jsonl_line;
+    use std::path::Path;
+
+    const SMOKE_JSONL: &str = include_str!("../../../fixtures/benchmark/tasks_smoke.jsonl");
+
+    #[test]
+    fn smoke_jsonl_deserializes_and_validates() {
+        let mut tasks = Vec::new();
+        for line in SMOKE_JSONL.lines() {
+            if let Some(t) = parse_task_jsonl_line(line).expect("line parses") {
+                tasks.push(t);
+            }
+        }
+        assert_eq!(tasks.len(), 2, "smoke file should yield two tasks");
+
+        let generic_adapter = GenericAdapter;
+        assert!(generic_adapter.validate_task(&tasks[0]).is_ok());
+        assert_eq!(
+            generic_adapter.build_user_prompt(&tasks[0]),
+            "Say hi in one word."
+        );
+
+        let he = HumanEvalAdapter;
+        assert!(he.validate_task(&tasks[1]).is_ok());
+        let user = he.build_user_prompt(&tasks[1]);
+        assert!(user.contains("def add(a, b):"));
+        assert!(user.contains("```python"));
+        let suffix = he.system_prompt_suffix().expect("suffix");
+        assert!(suffix.contains("函数体"));
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        assert!(
+            generic_adapter
+                .setup_workspace(&tasks[0], tmp.path())
+                .is_ok()
+        );
+        assert!(he.setup_workspace(&tasks[1], tmp.path()).is_ok());
+    }
+
+    #[test]
+    fn swe_bench_validate_and_prompt() {
+        let adapter = SweBenchAdapter;
+        let missing_repo = BenchmarkTask {
+            instance_id: "x".into(),
+            prompt: "p".into(),
+            repo: None,
+            base_commit: Some("abc".into()),
+            problem_statement: Some("bug".into()),
+            hints_text: None,
+            file_attachments: vec![],
+            task_id: None,
+            entry_point: None,
+        };
+        assert!(adapter.validate_task(&missing_repo).is_err());
+
+        let ok = BenchmarkTask {
+            instance_id: "inst".into(),
+            prompt: String::new(),
+            repo: Some("owner/repo".into()),
+            base_commit: Some("deadbeef".into()),
+            problem_statement: Some("Fix it".into()),
+            hints_text: Some("hint line".into()),
+            file_attachments: vec![],
+            task_id: None,
+            entry_point: None,
+        };
+        assert!(adapter.validate_task(&ok).is_ok());
+        let p = adapter.build_user_prompt(&ok);
+        assert!(p.contains("Fix it"));
+        assert!(p.contains("hint line"));
+        assert!(p.contains("Issue"));
+    }
+
+    #[test]
+    fn gaia_validate_build_and_extract() {
+        let adapter = GaiaAdapter;
+        let bad = BenchmarkTask {
+            instance_id: "g".into(),
+            prompt: String::new(),
+            repo: None,
+            base_commit: None,
+            problem_statement: None,
+            hints_text: None,
+            file_attachments: vec![],
+            task_id: None,
+            entry_point: None,
+        };
+        assert!(adapter.validate_task(&bad).is_err());
+
+        let task = BenchmarkTask {
+            instance_id: "g1".into(),
+            prompt: "What is 2+2?".into(),
+            repo: None,
+            base_commit: None,
+            problem_statement: None,
+            hints_text: None,
+            file_attachments: vec!["data/x.txt".into()],
+            task_id: None,
+            entry_point: None,
+        };
+        assert!(adapter.validate_task(&task).is_ok());
+        let u = adapter.build_user_prompt(&task);
+        assert!(u.contains("What is 2+2?"));
+        assert!(u.contains("data/x.txt"));
+
+        let m = super::super::metrics::TaskMetrics::default();
+        let r = adapter.extract_result(
+            &task,
+            Some("thought\nFINAL ANSWER: 4\n"),
+            Path::new("."),
+            TaskStatus::Success,
+            m,
+            "m",
+            None,
+        );
+        assert_eq!(r.final_answer.as_deref(), Some("4"));
+    }
+}

@@ -53,7 +53,7 @@
 
 ### 4.2 不调用 LLM 的契约测试（推荐新增）
 
-- **JSONL → `BenchmarkTask`**：用最小 fixture（1～2 行）断言反序列化与各 `validate_task` 行为。  
+- **JSONL → `BenchmarkTask`**：用最小 fixture（1～2 行）断言反序列化与各 `validate_task` 行为；仓库内示例见 **`fixtures/benchmark/tasks_smoke.jsonl`**，单测覆盖见 **`types::parse_task_jsonl_line`** 与 **`adapter` 模块 `#[cfg(test)]`**。  
 - **adapter 纯函数**：`build_user_prompt` / `system_prompt_suffix` 对固定 `BenchmarkTask` 的快照或包含断言（避免与 `run_agent_turn` 耦合）。
 
 ### 4.3 集成 / 端到端（可选、成本高）
