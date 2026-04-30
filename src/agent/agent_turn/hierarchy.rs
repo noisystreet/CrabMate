@@ -37,18 +37,13 @@ async fn emit_hierarchical_final_assistant(p: &mut RunLoopParams<'_>, final_resp
         final_response.clone(),
     ));
     if let Some(out) = p.out {
-        let final_tl = sse::encode_message(crate::sse::SsePayload::TimelineLog {
-            log: crate::sse::protocol::TimelineLogBody {
-                kind: "final_response".to_string(),
-                title: final_response,
-                detail: None,
-            },
-        });
-        let _ = sse::send_string_logged(out, final_tl, "hierarchical::final_response").await;
-        let phase_payload = sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
-            assistant_answer_phase: true,
-        });
-        let _ = sse::send_string_logged(out, phase_payload, "hierarchical::answer_phase").await;
+        crate::sse::send_final_response_timeline_then_answer_phase(
+            out,
+            final_response,
+            "hierarchical::final_response",
+            "hierarchical::answer_phase",
+        )
+        .await;
     }
 }
 

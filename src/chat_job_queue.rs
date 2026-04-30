@@ -813,25 +813,10 @@ async fn emit_missing_final_response_fallback_if_needed(
         "stream compatibility fallback: missing final_response timeline, emit synthesized terminal frame job_id={}",
         job_id
     );
-    let timeline = crate::sse::encode_message(crate::sse::SsePayload::TimelineLog {
-        log: crate::sse::protocol::TimelineLogBody {
-            kind: "final_response".to_string(),
-            title: final_text,
-            detail: None,
-        },
-    });
-    let _ = crate::sse::send_string_logged(
+    crate::sse::send_final_response_timeline_then_answer_phase(
         sse_tx,
-        timeline,
+        final_text,
         "chat_job_queue::stream final_response_fallback",
-    )
-    .await;
-    let phase = crate::sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
-        assistant_answer_phase: true,
-    });
-    let _ = crate::sse::send_string_logged(
-        sse_tx,
-        phase,
         "chat_job_queue::stream answer_phase_fallback",
     )
     .await;
