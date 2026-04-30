@@ -22,6 +22,7 @@ pre-commit run --all-files
 
 - **`cargo fmt --all`**
 - **`cargo clippy --all-targets --all-features -- -D warnings`**
+- **`lizard-rust`**：对 `src/`、`crates/` 的 Rust 代码做 **圈复杂度（CCN）** 扫描（需 **`pip install lizard`**；同一逻辑见 **`scripts/lizard-rust.sh`**，环境变量 **`LIZARD_CCN`** 可覆盖默认 CCN 上限；CI 见 **`.github/workflows/code-complexity.yml`**）
 - **`cargo test golden_sse_control`**（当改动 `fixtures/sse_control_golden.jsonl`、`crates/crabmate-sse-protocol/control_classify.rs` 或 `frontend-leptos/src/sse_dispatch.rs` 时由钩子条件触发）
 
 未安装 pre-commit 时，可至少执行：
@@ -29,6 +30,7 @@ pre-commit run --all-files
 ```bash
 cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
+bash scripts/lizard-rust.sh
 ```
 
 **说明**：`pre-commit run --all-files` **不会**跑 `commit-msg`；提交说明格式在 **`git commit`** 时由 conventional-pre-commit 校验（见 [`.cursor/rules/conventional-commits.mdc`](../.cursor/rules/conventional-commits.mdc)）。

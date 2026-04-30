@@ -22,6 +22,7 @@ Includes (non-exhaustive):
 
 - **`cargo fmt --all`**
 - **`cargo clippy --all-targets --all-features -- -D warnings`**
+- **`lizard-rust`**: CCN scan for `src/` and `crates/` (requires **`pip install lizard`**; see **`scripts/lizard-rust.sh`**, override threshold with **`LIZARD_CCN`**; CI: **`.github/workflows/code-complexity.yml`**)
 - **`cargo test golden_sse_control`** (conditional hook when `fixtures/sse_control_golden.jsonl`, `crates/crabmate-sse-protocol/control_classify.rs`, or `frontend-leptos/src/sse_dispatch.rs` change)
 
 Without pre-commit installed, run at least:
@@ -29,6 +30,7 @@ Without pre-commit installed, run at least:
 ```bash
 cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
+bash scripts/lizard-rust.sh
 ```
 
 Note: `pre-commit run --all-files` does **not** run `commit-msg`; message format is checked on **`git commit`** (see [`.cursor/rules/conventional-commits.mdc`](../../.cursor/rules/conventional-commits.mdc)).
