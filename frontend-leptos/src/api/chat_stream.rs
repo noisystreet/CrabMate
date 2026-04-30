@@ -375,6 +375,15 @@ fn handle_sse_block(
     if data.is_empty() || data.trim() == "[DONE]" {
         return Ok(());
     }
+    if let Ok(v) = serde_json::from_str::<Value>(&data)
+        && let Some(obj) = v.as_object()
+        && key_present_non_null_sse(obj, "stream_ended")
+        && let Some(Value::Object(ended)) = obj.get("stream_ended")
+        && let Some(Value::String(reason)) = ended.get("reason")
+    {
+        *saw_stream_ended = true;
+        (cbs.on_stream_ended)(reason.clone());
+    }
 
     let mut stop = false;
     let mut on_err = |msg: String| {
@@ -425,15 +434,6 @@ fn handle_sse_block(
     match try_dispatch_sse_control_payload(&data, &mut cbs2) {
         crate::sse_dispatch::SseDispatch::Stop => Ok(()),
         crate::sse_dispatch::SseDispatch::Handled => {
-            if let Ok(v) = serde_json::from_str::<Value>(&data)
-                && let Some(obj) = v.as_object()
-                && key_present_non_null_sse(obj, "stream_ended")
-                && let Some(Value::Object(ended)) = obj.get("stream_ended")
-                && let Some(Value::String(reason)) = ended.get("reason")
-            {
-                *saw_stream_ended = true;
-                (cbs.on_stream_ended)(reason.clone());
-            }
             if stop {
                 Err(crate::i18n::api_err_stream_stopped(loc).to_string())
             } else {

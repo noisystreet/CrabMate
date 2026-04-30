@@ -11,7 +11,7 @@ For scripts and CI: aligned with `src/runtime/cli_exit.rs`, `src/config/cli.rs` 
 | 0 | Success | Turn completed without “all denied” branch |
 | 1 | General error | I/O, config, uncategorized failure |
 | 2 | Usage / input | Bad args, JSON/JSONL parse failure |
-| 3 | Model / parse | Gateway error body, unparseable response, some invalid plan prefix (heuristic `classify_model_error_message`) |
+| 3 | Model / parse | Gateway error body, unparsable response, some invalid plan prefix (heuristic `classify_model_error_message`) |
 | 4 | All `run_command` attempts denied this turn | Pipe without `y`/`a`, or interactive all-deny |
 | 5 | Quota / rate limit | HTTP 429, 402, some 503 (heuristic) |
 | 6 | Tool replay mismatch | `tool-replay run --compare-recorded` string mismatch vs `recorded_output` |

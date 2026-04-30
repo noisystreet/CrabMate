@@ -184,26 +184,26 @@ mod tests {
             fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
 
         let checkpoints = [
-            r#"if let Some(e) = obj.get("error")"#,
+            r#"if let Some(d) = handle_error_stop(obj, cbs) {"#,
             r#"if obj.get("plan_required") == Some(&Value::Bool(true))"#,
             r#"if let Some(Value::Bool(b)) = obj.get("assistant_answer_phase")"#,
             r#"if key_present_non_null(obj, "staged_plan_started")"#,
             r#"if key_present_non_null(obj, "staged_plan_step_started")"#,
             r#"if key_present_non_null(obj, "staged_plan_step_finished")"#,
             r#"if key_present_non_null(obj, "staged_plan_finished")"#,
-            r#"if key_present_non_null(obj, "clarification_questionnaire")"#,
-            r#"if let Some(Value::Object(tt)) = obj.get("thinking_trace")"#,
+            r#"if let Some(d) = handle_clarification_questionnaire(obj, cbs) {"#,
+            r#"if let Some(d) = handle_thinking_trace(obj, cbs) {"#,
             r#"if obj.get("workspace_changed") == Some(&Value::Bool(true))"#,
-            r#"if let Some(Value::Object(tc)) = obj.get("tool_call")"#,
+            r#"if let Some(d) = handle_tool_call(obj, cbs) {"#,
             r#"if let Some(Value::Bool(b)) = obj.get("parsing_tool_calls")"#,
             r#"if let Some(Value::Bool(b)) = obj.get("tool_running")"#,
-            r#"if let Some(Value::Object(tr)) = obj.get("tool_result")"#,
+            r#"if let Some(d) = handle_tool_result(obj, cbs) {"#,
             r#"if key_present_non_null(obj, "command_approval_request")"#,
             r#"if obj.get("staged_plan_notice").is_some_and(|x| x.is_string())"#,
             r#"if let Some(Value::Bool(_)) = obj.get("chat_ui_separator")"#,
             r#"if key_present_non_null(obj, "conversation_saved")"#,
-            r#"if let Some(Value::Object(tl)) = obj.get("timeline_log")"#,
-            r#"if key_present_non_null(obj, "sse_capabilities")"#,
+            r#"if let Some(d) = handle_timeline_log(obj, cbs) {"#,
+            r#"if let Some(d) = handle_sse_capabilities(obj, cbs) {"#,
             r#"if key_present_non_null(obj, "stream_ended")"#,
         ];
 
