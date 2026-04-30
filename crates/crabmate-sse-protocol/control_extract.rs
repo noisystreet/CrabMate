@@ -39,6 +39,47 @@ pub struct SseTimelineLog {
     pub detail: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SseStagedPlanStepStart {
+    pub step_index: usize,
+    pub total_steps: usize,
+    pub description: String,
+    pub executor_kind: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SseStagedPlanStepEnd {
+    pub step_index: usize,
+    pub total_steps: usize,
+    pub status: String,
+    pub executor_kind: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SseClarificationField {
+    pub id: String,
+    pub label: String,
+    pub hint: Option<String>,
+    pub required: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SseClarificationQuestionnaire {
+    pub questionnaire_id: String,
+    pub intro: String,
+    pub fields: Vec<SseClarificationField>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SseThinkingTrace {
+    pub op: String,
+    pub node_id: Option<String>,
+    pub parent_id: Option<String>,
+    pub title: Option<String>,
+    pub chunk: Option<String>,
+    pub context_snapshot: Option<String>,
+}
+
 pub fn extract_tool_call(obj: &serde_json::Map<String, Value>) -> Option<SseToolCall> {
     let tc = obj.get("tool_call")?.as_object()?;
     let summary = tc.get("summary").and_then(|x| x.as_str()).unwrap_or("");
@@ -176,9 +217,170 @@ pub fn extract_error_stop(obj: &serde_json::Map<String, Value>) -> Option<SseErr
     })
 }
 
+pub fn extract_staged_plan_step_started(
+    obj: &serde_json::Map<String, Value>,
+) -> Option<SseStagedPlanStepStart> {
+    let inner = obj.get("staged_plan_step_started")?.as_object()?;
+    Some(SseStagedPlanStepStart {
+        step_index: inner
+            .get("step_index")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0) as usize,
+        total_steps: inner
+            .get("total_steps")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0) as usize,
+        description: inner
+            .get("description")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+        executor_kind: inner
+            .get("executor_kind")
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from),
+    })
+}
+
+pub fn extract_staged_plan_step_finished(
+    obj: &serde_json::Map<String, Value>,
+) -> Option<SseStagedPlanStepEnd> {
+    let inner = obj.get("staged_plan_step_finished")?.as_object()?;
+    Some(SseStagedPlanStepEnd {
+        step_index: inner
+            .get("step_index")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0) as usize,
+        total_steps: inner
+            .get("total_steps")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0) as usize,
+        status: inner
+            .get("status")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+        executor_kind: inner
+            .get("executor_kind")
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from),
+    })
+}
+
+pub fn extract_clarification_questionnaire(
+    obj: &serde_json::Map<String, Value>,
+) -> Option<SseClarificationQuestionnaire> {
+    let inner = obj.get("clarification_questionnaire")?.as_object()?;
+    let qid = inner
+        .get("questionnaire_id")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)?;
+    let intro = inner
+        .get("intro")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)?;
+    let qarr = inner.get("questions")?.as_array()?;
+    let mut fields: Vec<SseClarificationField> = Vec::new();
+    for q in qarr {
+        let qo = match q.as_object() {
+            Some(v) => v,
+            None => continue,
+        };
+        let id = qo
+            .get("id")
+            .and_then(|x| x.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from);
+        let label = qo
+            .get("label")
+            .and_then(|x| x.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from);
+        let (Some(id), Some(label)) = (id, label) else {
+            continue;
+        };
+        let hint = qo
+            .get("hint")
+            .and_then(|x| x.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from);
+        let required = qo
+            .get("required")
+            .and_then(|x| x.as_bool())
+            .unwrap_or(false);
+        fields.push(SseClarificationField {
+            id,
+            label,
+            hint,
+            required,
+        });
+    }
+    if fields.is_empty() {
+        return None;
+    }
+    Some(SseClarificationQuestionnaire {
+        questionnaire_id: qid,
+        intro,
+        fields,
+    })
+}
+
+pub fn extract_thinking_trace(obj: &serde_json::Map<String, Value>) -> Option<SseThinkingTrace> {
+    let tt = obj.get("thinking_trace")?.as_object()?;
+    let op = tt
+        .get("op")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .unwrap_or("");
+    if op.is_empty() {
+        return None;
+    }
+    Some(SseThinkingTrace {
+        op: op.to_string(),
+        node_id: tt
+            .get("node_id")
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from),
+        parent_id: tt
+            .get("parent_id")
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from),
+        title: tt
+            .get("title")
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from),
+        chunk: tt
+            .get("chunk")
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from),
+        context_snapshot: tt
+            .get("context_snapshot")
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from),
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{extract_error_stop, extract_timeline_log, extract_tool_call, extract_tool_result};
+    use super::{
+        extract_clarification_questionnaire, extract_error_stop, extract_staged_plan_step_finished,
+        extract_staged_plan_step_started, extract_thinking_trace, extract_timeline_log,
+        extract_tool_call, extract_tool_result,
+    };
     use serde_json::json;
 
     #[test]
@@ -221,5 +423,48 @@ mod tests {
         let e = extract_error_stop(obj).unwrap();
         assert_eq!(e.code, "E_BAD");
         assert_eq!(e.reason_code.as_deref(), Some("R1"));
+    }
+
+    #[test]
+    fn extract_staged_plan_steps() {
+        let v =
+            json!({"staged_plan_step_started":{"step_index":1,"total_steps":3,"description":"d"}});
+        let obj = v.as_object().unwrap();
+        assert_eq!(extract_staged_plan_step_started(obj).unwrap().step_index, 1);
+        let v = json!({"staged_plan_step_finished":{"step_index":2,"total_steps":3,"status":"ok"}});
+        let obj = v.as_object().unwrap();
+        assert_eq!(extract_staged_plan_step_finished(obj).unwrap().status, "ok");
+    }
+
+    #[test]
+    fn extract_clarification_requires_non_empty_fields() {
+        let v = json!({
+            "clarification_questionnaire":{
+                "questionnaire_id":"q1",
+                "intro":"i",
+                "questions":[{"id":"f1","label":"L1","required":true}]
+            }
+        });
+        let obj = v.as_object().unwrap();
+        assert_eq!(
+            extract_clarification_questionnaire(obj)
+                .unwrap()
+                .fields
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn extract_thinking_trace_requires_non_empty_op() {
+        let v = json!({"thinking_trace":{"op":"  "}});
+        let obj = v.as_object().unwrap();
+        assert!(extract_thinking_trace(obj).is_none());
+        let v = json!({"thinking_trace":{"op":"append","node_id":"n1"}});
+        let obj = v.as_object().unwrap();
+        assert_eq!(
+            extract_thinking_trace(obj).unwrap().node_id.as_deref(),
+            Some("n1")
+        );
     }
 }
