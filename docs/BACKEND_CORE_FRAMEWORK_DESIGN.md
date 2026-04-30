@@ -11,7 +11,7 @@
 
 ## 2. 当前结构（简要）
 
-- **根包 `crabmate`**：`src/lib.rs` 同时承载 Agent、LLM、工具、**Axum Web**、**CLI（clap）**、**TUI（crossterm / reedline）**、记忆（**fastembed**）、MCP、Docker 沙盒（**bollard**）等；二进制入口 `main.rs` 极薄，主要调用 `crabmate::run()`（即 `cli_run`）。
+- **根包 `crabmate`**：`src/lib.rs` 同时承载 Agent、LLM、工具、**Axum Web**、**CLI（clap）**、**TUI（crossterm / reedline）**、记忆（可选 **`fastembed`**）、MCP、Docker 沙盒（**`bollard`**）等；二进制入口 `main.rs` 极薄，主要调用 `crabmate::run()`（即 `cli_run`）。
 - **工作区已有拆分**：`frontend-leptos`（Web UI）、`crates/crabmate-sse-protocol`（SSE 控制面协议）。**协议与前端**已部分外置，**「无 UI 的服务端核心」**仍集中在根包。
 - **对外可见 API**：`lib.rs` 中大量模块为私有（`mod`）；部分 Web 相关为 `pub(crate)`。对外以零散 `pub use` 与 **`RunAgentTurnParams` + `run_agent_turn`** 等为主，整体仍偏**应用集成面**，而非 semver 稳定的「框架表面」。
 
@@ -24,9 +24,9 @@
 | 单一 `crabmate` 包聚合 Web、CLI、TUI、重依赖（如 fastembed、bollard） | 嵌入方难以只链接「核心子集」；编译时间与二进制体积不易裁剪。 |
 | 缺少按能力的 **Cargo features**（如 `core-only` / `no-web` / `no-tui` / 可选 memory） | 无法在产品与库两种用法之间做依赖隔离。 |
 
-**已落地（第一步）**：根 `Cargo.toml` 提供可选特性 **`mcp`**（`rmcp`：MCP 客户端/stdio server）与 **`docker_sandbox`**（`bollard`：Docker 沙盒）；**默认** `default = ["mcp", "docker_sandbox"]` 与历史行为一致。关闭示例：`cargo build --no-default-features`（二者皆关）或 `--no-default-features --features mcp`（仅关 Docker）。**`fastembed`** 仍为必选依赖（长期记忆与 `codebase_semantic_search` 深度耦合）；后续可再拆 `fastembed` feature。
+**已落地（依赖裁剪）**：根 `Cargo.toml` 提供可选特性 **`mcp`**（`rmcp`）、**`docker_sandbox`**（`bollard`）、**`fastembed`**（本地 ONNX 嵌入）；**默认** `default = ["mcp", "docker_sandbox", "fastembed"]` 与完整产品一致。关闭示例：`cargo build --no-default-features`（三者皆关）或按需子集。**无 `fastembed`** 时：`finalize` 将 **`long_term_memory_vector_backend=fastembed`** 降为 **`disabled`**（仍可用 SQLite 长期记忆）；**`codebase_semantic_search`** 从工具列表移除且配置项 **`codebase_semantic_search_enabled`** 强制为 **`false`**；**`hybrid`** 检索退化为仅 FTS。**Web（Axum）/ TUI** 仍为必选依赖，待后续分层。
 
-**结论**：要做「框架」，通常仍需要 **workspace 内多 crate** 或进一步 **feature**（如 Web/TUI/fastembed），把 HTTP/TUI/可选子系统变为可选依赖。
+**结论**：要做「框架」，通常仍需要 **workspace 内多 crate** 或进一步 **feature**（如 Web/TUI），把 HTTP/TUI 变为可选依赖。
 
 
 ### 3.2 对外 API 形态
@@ -62,7 +62,7 @@
 
 ## 4. 演进方向（建议优先级，供路线图参考）
 
-1. **依赖分层**：用 Cargo features 或拆出 `*-core`，使「无 Axum / 无 TUI / 无 fastembed」的构建路径成立。（**进展**：已可选 **`mcp`** / **`docker_sandbox`**；`fastembed` 与 Web/TUI 仍待分层。）
+1. **依赖分层**：用 Cargo features 或拆出 `*-core`，使「无 Axum / 无 TUI」的构建路径成立。（**进展**：已可选 **`mcp`** / **`docker_sandbox`** / **`fastembed`**；Web/TUI 仍待分层。）
 2. **稳定表面**：收敛公开类型与函数，明确 `RunAgentTurnParams` 的继任者或适配层；错误类型与取消语义文档化。
 3. **跨语言边界**：二选一或并存——**子进程 + 明确定义的 RPC/HTTP API**（实现成本与运维清晰）vs **PyO3/FFI**（集成紧、ABI 与 async 成本高）。
 4. **上下文注入**：减少隐式全局，将配置、工作区、HTTP 客户端、工具后端纳入可构造对象。

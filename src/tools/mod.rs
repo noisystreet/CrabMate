@@ -251,6 +251,11 @@ struct ToolSpec {
     summary: ToolSummaryKind,
 }
 
+#[inline]
+fn tool_spec_requires_fastembed(name: &str) -> bool {
+    name == "codebase_semantic_search"
+}
+
 fn runner_get_current_time(args: &str, _ctx: &ToolContext<'_>) -> String {
     let v: serde_json::Value = match serde_json::from_str(args) {
         Ok(v) => v,
@@ -1078,6 +1083,9 @@ pub struct ToolsBuildOptions<'a> {
 }
 
 fn tool_passes_filters(spec: &ToolSpec, opts: ToolsBuildOptions<'_>) -> bool {
+    if !cfg!(feature = "fastembed") && tool_spec_requires_fastembed(spec.name) {
+        return false;
+    }
     let cats = opts.categories.unwrap_or(&[]);
     if !cats.is_empty() && !cats.contains(&spec.category) {
         return false;
@@ -1149,6 +1157,10 @@ pub(crate) use schema_check::workflow_tool_args_satisfy_required;
 /// 执行本地工具并返回结果字符串。
 /// `ToolContext` 聚合 `run_command`、`get_weather`、`web_search` 等工具所需的配置项。
 pub fn run_tool(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
+    if !cfg!(feature = "fastembed") && tool_spec_requires_fastembed(name) {
+        return "错误：codebase_semantic_search 需要 `fastembed` Cargo feature；当前构建未启用。"
+            .to_string();
+    }
     match find_spec(name) {
         Some(spec) => {
             if let Some(Err(e)) =
@@ -1169,6 +1181,11 @@ fn run_tool_dispatch(
     args_json: &str,
     ctx: &ToolContext<'_>,
 ) -> Result<(String, crate::tool_result::ParsedLegacyOutput), ToolError> {
+    if !cfg!(feature = "fastembed") && tool_spec_requires_fastembed(name) {
+        return Err(ToolError::invalid_args(
+            "codebase_semantic_search 需要 `fastembed` Cargo feature；当前构建未启用。".to_string(),
+        ));
+    }
     if find_spec(name).is_none() {
         return Err(ToolError::unknown_tool(name));
     }

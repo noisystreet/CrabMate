@@ -42,11 +42,13 @@ assets = [
 ]
 
 [features]
-default = ["mcp", "docker_sandbox"]
+default = ["mcp", "docker_sandbox", "fastembed"]
 ## Model Context Protocol（`rmcp`）：`mcp list` / `mcp serve`、进程内 MCP 工具代理。
 mcp = ["dep:rmcp"]
 ## `sync_default_tool_sandbox_mode = docker` 时连接 Docker Engine（`bollard`）。
 docker_sandbox = ["dep:bollard"]
+## 本地向量嵌入（**fastembed** / ONNX）：长期记忆 `fastembed` 后端、`codebase_semantic_search` 的向量索引与 hybrid/semantic 查询。
+fastembed = ["dep:fastembed"]
 
 [dependencies]
 crabmate-sse-protocol = { path = "crates/crabmate-sse-protocol" }
@@ -112,7 +114,7 @@ ignore = "0.4"
 tempfile = "3"
 thiserror = "2"
 tokei = { version = "14", default-features = false }
-fastembed = "5.13"
+fastembed = { version = "5.13", optional = true }
 rmcp = { version = "1.3", optional = true, default-features = false, features = [
     "client",
     "server",

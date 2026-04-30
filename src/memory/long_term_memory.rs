@@ -3,10 +3,13 @@
 //! - **作用域**：当前仅 `conversation_id`（与 `LongTermMemoryScopeMode::Conversation` 一致）。
 //! - **安全**：索引前截断正文；日志不输出全文。无 Web 鉴权时勿依赖其隔离性（见 README）。
 
+#![cfg_attr(not(feature = "fastembed"), allow(dead_code))]
+
 use std::path::Path;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex, OnceLock};
 
+#[cfg(feature = "fastembed")]
 use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
 use log::{debug, warn};
 use rusqlite::Connection;
@@ -105,10 +108,13 @@ fn bytes_to_f32_slice(b: &[u8]) -> Option<Vec<f32>> {
     Some(out)
 }
 
-/// 进程内共享：SQLite 连接 + 可选 fastembed（首次 embed 时初始化）。
+/// 进程内共享：SQLite 连接 + 可选 fastembed（首次 embed 时初始化；未编译 **`fastembed`** feature 时无嵌入器）。
 pub struct LongTermMemoryRuntime {
     conn: Arc<Mutex<Connection>>,
+    #[cfg(feature = "fastembed")]
     embedder: Mutex<Option<TextEmbedding>>,
+    #[cfg(not(feature = "fastembed"))]
+    _no_fastembed: (),
     pub(crate) index_errors: AtomicU64,
 }
 
@@ -117,7 +123,10 @@ impl LongTermMemoryRuntime {
         let conn = long_term_memory_store::open_file(path)?;
         Ok(Arc::new(Self {
             conn: Arc::new(Mutex::new(conn)),
+            #[cfg(feature = "fastembed")]
             embedder: Mutex::new(None),
+            #[cfg(not(feature = "fastembed"))]
+            _no_fastembed: (),
             index_errors: AtomicU64::new(0),
         }))
     }
@@ -126,7 +135,10 @@ impl LongTermMemoryRuntime {
     pub fn new_shared_sqlite(conn: Arc<Mutex<Connection>>) -> Arc<Self> {
         Arc::new(Self {
             conn,
+            #[cfg(feature = "fastembed")]
             embedder: Mutex::new(None),
+            #[cfg(not(feature = "fastembed"))]
+            _no_fastembed: (),
             index_errors: AtomicU64::new(0),
         })
     }
@@ -136,6 +148,7 @@ impl LongTermMemoryRuntime {
         long_term_memory_store::migrate(conn)
     }
 
+    #[cfg(feature = "fastembed")]
     fn ensure_embedder(
         embedder: &Mutex<Option<TextEmbedding>>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -199,45 +212,59 @@ impl LongTermMemoryRuntime {
         let mut picked: Vec<(f32, String)> = Vec::new();
         match cfg.long_term_memory_vector_backend {
             LongTermMemoryVectorBackend::Fastembed => {
-                if let Err(e) = Self::ensure_embedder(&self.embedder) {
-                    warn!(target: "crabmate", "长期记忆嵌入不可用，跳过向量检索: {}", e);
+                #[cfg(feature = "fastembed")]
+                {
+                    if let Err(e) = Self::ensure_embedder(&self.embedder) {
+                        warn!(target: "crabmate", "长期记忆嵌入不可用，跳过向量检索: {}", e);
+                        for row in rows.iter().take(cfg.long_term_memory_top_k) {
+                            picked.push((0.0, row.chunk_text.clone()));
+                        }
+                    } else {
+                        let q_emb = {
+                            let mut g = match self.embedder.lock() {
+                                Ok(x) => x,
+                                Err(_) => return,
+                            };
+                            let Some(ref mut model) = *g else {
+                                return;
+                            };
+                            let docs = vec![format!("query: {}", q)];
+                            match model.embed(docs, None) {
+                                Ok(v) => v.into_iter().next(),
+                                Err(e) => {
+                                    warn!(target: "crabmate", "长期记忆 query 嵌入失败: {}", e);
+                                    None
+                                }
+                            }
+                        };
+                        let Some(qv) = q_emb else {
+                            return;
+                        };
+                        for row in rows {
+                            let score = if let Some(ref b) = row.embedding {
+                                bytes_to_f32_slice(b)
+                                    .map(|ev| cosine_sim(&qv, &ev))
+                                    .unwrap_or(0.0)
+                            } else {
+                                0.0
+                            };
+                            picked.push((score, row.chunk_text));
+                        }
+                        picked.sort_by(|a, b| {
+                            b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
+                        });
+                        picked.truncate(cfg.long_term_memory_top_k);
+                    }
+                }
+                #[cfg(not(feature = "fastembed"))]
+                {
+                    warn!(
+                        target: "crabmate",
+                        "长期记忆向量后端为 fastembed 但本构建未启用 `fastembed` feature，按时间倒序取用"
+                    );
                     for row in rows.iter().take(cfg.long_term_memory_top_k) {
                         picked.push((0.0, row.chunk_text.clone()));
                     }
-                } else {
-                    let q_emb = {
-                        let mut g = match self.embedder.lock() {
-                            Ok(x) => x,
-                            Err(_) => return,
-                        };
-                        let Some(ref mut model) = *g else {
-                            return;
-                        };
-                        let docs = vec![format!("query: {}", q)];
-                        match model.embed(docs, None) {
-                            Ok(v) => v.into_iter().next(),
-                            Err(e) => {
-                                warn!(target: "crabmate", "长期记忆 query 嵌入失败: {}", e);
-                                None
-                            }
-                        }
-                    };
-                    let Some(qv) = q_emb else {
-                        return;
-                    };
-                    for row in rows {
-                        let score = if let Some(ref b) = row.embedding {
-                            bytes_to_f32_slice(b)
-                                .map(|ev| cosine_sim(&qv, &ev))
-                                .unwrap_or(0.0)
-                        } else {
-                            0.0
-                        };
-                        picked.push((score, row.chunk_text));
-                    }
-                    picked
-                        .sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-                    picked.truncate(cfg.long_term_memory_top_k);
                 }
             }
             LongTermMemoryVectorBackend::Disabled
@@ -352,11 +379,13 @@ impl LongTermMemoryRuntime {
             to_store.push((part, "assistant"));
         }
 
-        let need_embed = matches!(
-            cfg.long_term_memory_vector_backend,
-            LongTermMemoryVectorBackend::Fastembed
-        );
+        let need_embed = cfg!(feature = "fastembed")
+            && matches!(
+                cfg.long_term_memory_vector_backend,
+                LongTermMemoryVectorBackend::Fastembed
+            );
         if need_embed {
+            #[cfg(feature = "fastembed")]
             LongTermMemoryRuntime::ensure_embedder(&rt.embedder)?;
         }
 
@@ -377,21 +406,28 @@ impl LongTermMemoryRuntime {
                 continue;
             }
             let emb = if need_embed {
-                let mut g = rt
-                    .embedder
-                    .lock()
-                    .map_err(|e| format!("embedder 锁失败: {e}"))?;
-                let model = g.as_mut().ok_or("embedder 未初始化")?;
-                let prefixed = if role == "user" {
-                    format!("query: {}", text)
-                } else {
-                    format!("passage: {}", text)
-                };
-                let v = model
-                    .embed(vec![prefixed], None)
-                    .map_err(|e| format!("嵌入失败: {e}"))?;
-                let vec = v.into_iter().next().ok_or("嵌入结果为空")?;
-                Some(f32_slice_to_bytes(&vec))
+                #[cfg(feature = "fastembed")]
+                {
+                    let mut g = rt
+                        .embedder
+                        .lock()
+                        .map_err(|e| format!("embedder 锁失败: {e}"))?;
+                    let model = g.as_mut().ok_or("embedder 未初始化")?;
+                    let prefixed = if role == "user" {
+                        format!("query: {}", text)
+                    } else {
+                        format!("passage: {}", text)
+                    };
+                    let v = model
+                        .embed(vec![prefixed], None)
+                        .map_err(|e| format!("嵌入失败: {e}"))?;
+                    let vec = v.into_iter().next().ok_or("嵌入结果为空")?;
+                    Some(f32_slice_to_bytes(&vec))
+                }
+                #[cfg(not(feature = "fastembed"))]
+                {
+                    None::<Vec<u8>>
+                }
             } else {
                 None
             };
@@ -439,29 +475,38 @@ impl LongTermMemoryRuntime {
             .as_secs() as i64;
         let expires_at = ttl_secs.map(|s| now + s as i64);
 
-        let need_embed = matches!(
-            cfg.long_term_memory_vector_backend,
-            LongTermMemoryVectorBackend::Fastembed
-        );
+        let need_embed = cfg!(feature = "fastembed")
+            && matches!(
+                cfg.long_term_memory_vector_backend,
+                LongTermMemoryVectorBackend::Fastembed
+            );
         if need_embed {
+            #[cfg(feature = "fastembed")]
             Self::ensure_embedder(&self.embedder).map_err(|e| e.to_string())?;
         }
 
         let emb = if need_embed {
-            let mut g = self
-                .embedder
-                .lock()
-                .map_err(|e| format!("embedder 锁失败: {e}"))?;
-            let model = g.as_mut().ok_or_else(|| "embedder 未初始化".to_string())?;
-            let prefixed = format!("passage: {}", text);
-            let v = model
-                .embed(vec![prefixed], None)
-                .map_err(|e| format!("嵌入失败: {e}"))?;
-            let vec = v
-                .into_iter()
-                .next()
-                .ok_or_else(|| "嵌入结果为空".to_string())?;
-            Some(f32_slice_to_bytes(&vec))
+            #[cfg(feature = "fastembed")]
+            {
+                let mut g = self
+                    .embedder
+                    .lock()
+                    .map_err(|e| format!("embedder 锁失败: {e}"))?;
+                let model = g.as_mut().ok_or_else(|| "embedder 未初始化".to_string())?;
+                let prefixed = format!("passage: {}", text);
+                let v = model
+                    .embed(vec![prefixed], None)
+                    .map_err(|e| format!("嵌入失败: {e}"))?;
+                let vec = v
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| "嵌入结果为空".to_string())?;
+                Some(f32_slice_to_bytes(&vec))
+            }
+            #[cfg(not(feature = "fastembed"))]
+            {
+                None::<Vec<u8>>
+            }
         } else {
             None
         };
