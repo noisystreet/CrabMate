@@ -4,7 +4,9 @@
 
 use super::adapter::{BenchmarkAdapter, create_adapter};
 use super::metrics::{BatchSummary, TaskMetrics};
-use super::types::{BatchRunConfig, BenchmarkResult, BenchmarkTask, TaskStatus};
+use super::types::{
+    BatchRunConfig, BenchmarkResult, BenchmarkTask, TaskStatus, parse_task_jsonl_line,
+};
 use crate::config::{AgentConfig, SharedAgentConfig};
 use crate::types::Tool;
 use log::{error, info, warn};
@@ -297,12 +299,9 @@ fn load_tasks(path: &str) -> Result<Vec<BenchmarkTask>, Box<dyn std::error::Erro
 
     for (line_num, line) in reader.lines().enumerate() {
         let line = line.map_err(|e| format!("读取第 {} 行失败: {e}", line_num + 1))?;
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-        match serde_json::from_str::<BenchmarkTask>(trimmed) {
-            Ok(task) => tasks.push(task),
+        match parse_task_jsonl_line(&line) {
+            Ok(None) => continue,
+            Ok(Some(task)) => tasks.push(task),
             Err(e) => {
                 warn!(
                     target: "crabmate::benchmark",

@@ -145,3 +145,53 @@ pub struct BatchRunConfig {
     /// 自定义 system prompt 覆盖
     pub system_prompt_override: Option<String>,
 }
+
+/// 将 JSONL 中的一行解析为 `BenchmarkTask`。
+///
+/// 空行与以 `#` 开头的注释行返回 `Ok(None)`；其余行按 JSON 反序列化。
+pub fn parse_task_jsonl_line(line: &str) -> Result<Option<BenchmarkTask>, serde_json::Error> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return Ok(None);
+    }
+    serde_json::from_str(trimmed).map(Some)
+}
+
+#[cfg(test)]
+mod parse_tests {
+    use super::*;
+
+    #[test]
+    fn benchmark_kind_parse_aliases() {
+        assert_eq!(
+            BenchmarkKind::parse("human_eval").unwrap(),
+            BenchmarkKind::HumanEval
+        );
+        assert_eq!(
+            BenchmarkKind::parse("HumanEval").unwrap(),
+            BenchmarkKind::HumanEval
+        );
+        assert_eq!(
+            BenchmarkKind::parse("humaneval").unwrap(),
+            BenchmarkKind::HumanEval
+        );
+        assert_eq!(
+            BenchmarkKind::parse("swe-bench").unwrap(),
+            BenchmarkKind::SweBench
+        );
+        assert_eq!(
+            BenchmarkKind::parse("SWE_BENCH").unwrap(),
+            BenchmarkKind::SweBench
+        );
+        let err = BenchmarkKind::parse("unknown_suite").unwrap_err();
+        assert!(err.contains("未知 benchmark 类型"), "{err}");
+    }
+
+    #[test]
+    fn parse_task_jsonl_skips_blank_and_hash() {
+        assert!(parse_task_jsonl_line("").unwrap().is_none());
+        assert!(parse_task_jsonl_line("   ").unwrap().is_none());
+        assert!(parse_task_jsonl_line("# comment").unwrap().is_none());
+        assert!(parse_task_jsonl_line(" # leading").unwrap().is_none());
+    }
+}
