@@ -57,6 +57,17 @@
 
 **职责摘要**：`agent_turn` 主循环；`context_window` 裁剪/摘要；`reflection/plan_rewrite` 终答规划重写与历史扫描；`per_coord` / `plan_artifact` / `workflow_reflection_controller`；`workflow` DAG 执行。
 
+### 编排层改进（`agent_turn` / PER / 与 `llm` 共享契约）
+
+- [ ] **编排层结构化（阶段模型、入参收敛、可测与可观测）**：
+  - **严守分层**：对外模型调用仅经 `llm::complete_chat_retrying`；会话侧语义变换仅在 `message_pipeline` / `context_window`；失败语义分层为 `LlmCompleteError` → `RunAgentTurnError`（含 `sub_phase`）→ SSE `code`（权威说明见 `docs/DEVELOPMENT.md`「`agent_turn` 与 `llm`」）。
+  - **显式阶段机**：用枚举/小状态表表达 P/R/E、分阶段 `staged`、工作流嵌套等迁移，与 `AgentTurnSubPhase` 及 SSE 对齐；意图与执行/澄清阈值尽量 **单一决策入口**，并与 `plan_rewrite` / `intent_execute_*` 的边界在实现或文档中对齐（可与本章「意图识别」条目协同落地）。
+  - **收敛入参**：拆分整场只读上下文（client、cfg、取消、tracing 等）、可变回合状态（`messages`、PER/工作流相关状态）与本轮覆盖项（模型/温度等），抑制 `RunAgentTurnParams` / `RunLoopParams` 持续膨胀，便于单测与假 `ChatCompletionsBackend`。
+  - **用例层薄封装**：`agent_turn/run_dispatch.rs` 承载 **分层** / **非分层**（`LogicalDualAgent` / `staged` / `single_agent`外循环）顶层分发与 **`should_enter_staged_planning`**；**`mod.rs`** 的 **`run_agent_turn_common`** 仅日志、`insert_separator`、`PerCoordinator::new` 与 **`dispatch_*`** 接线；更深层的 P/E/R 仍以 **`plan`** / **`execute_tools`** / **`outer_loop`** / **`staged`** 等子模块为真源，可继续下钻抽「命名步骤」。
+  - **可测性**：优先补阶段迁移与 LLM/工具失败 → SSE 映射的 fixture；`plan_artifact` / staged / `context_window` 组合测试可与 **P4「集成/契约测试」** 合并推进。
+  - **分层与线性共享**：`hierarchy` 侧 ReAct 消息裁剪与执行预算尽量复用 `context_window` / `message_pipeline` 与可共享的 **预算/limiter**（与本章 **`hierarchy/` 深度改进`** 中 ReAct 裁剪、token/墙钟预算条目协同，避免两套编排各维护一套策略）。
+  - **可观测性**：阶段迁移在统一位置打结构化日志（与 `TracingChatTurn`、`job_id`、`sub_phase`、Chrome trace 字段对齐），减少深层模块散落叙述性日志。
+
 - [ ] **意图识别：非分层模式与 L3 阈值**：在 `planner_executor_mode != hierarchical` 的回合链路上复用 `intent_pipeline` + 可选 L2；将设计稿中的**独立** `execute_direct` / 澄清 阈值与 `plan_rewrite` 类配置解耦（或文档说明沿用 `intent_execute_*` 的边界）；失败样本**离线回归集**见 `docs/design/intent_regression_seed_cases.md` 与 CI 挂钩。
 - [ ] **规划器/执行器阶段 2（模型与预算解耦）**：在阶段 1 逻辑双 agent 基础上，为 planner / executor 提供独立模型、温度、max_tokens 与上下文预算，建立成本/时延对照基线。
 - [ ] **规划器/执行器阶段 3（物理拆分可选）**：评估是否拆分为独立进程/服务（队列、会话与重试语义一致），目标是故障隔离与独立扩缩容；若收益不足则保留同进程架构。
