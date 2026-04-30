@@ -1,0 +1,75 @@
+# 后端核心库化与跨语言嵌入：现状与差距
+
+本文记录将 CrabMate **后端核心**进一步独立为**可复用框架**、并支持未来由 **Python 或其他语言宿主**调用的**设计分析**（非实施承诺）。面向架构讨论与路线图规划；具体模块索引仍以 **`docs/DEVELOPMENT.md`** 为准。
+
+## 1. 背景与目标
+
+- **目标**：核心逻辑（Agent 回合、LLM 调用、工具编排、配置与类型等）与「产品形态」（自带 Web、CLI、TUI、完整依赖集）解耦，便于：
+  - 在其他 Rust 项目中以**库**形式依赖；
+  - 通过 **FFI / 子进程 RPC / HTTP** 等边界被 **Python** 等语言调用。
+- **非目标**（本文不展开）：具体选型 PyO3 与 maturin、gRPC schema、或拆分后的 crate 命名表。
+
+## 2. 当前结构（简要）
+
+- **根包 `crabmate`**：`src/lib.rs` 同时承载 Agent、LLM、工具、**Axum Web**、**CLI（clap）**、**TUI（crossterm / reedline）**、记忆（**fastembed**）、MCP、Docker 沙盒（**bollard**）等；二进制入口 `main.rs` 极薄，主要调用 `crabmate::run()`（即 `cli_run`）。
+- **工作区已有拆分**：`frontend-leptos`（Web UI）、`crates/crabmate-sse-protocol`（SSE 控制面协议）。**协议与前端**已部分外置，**「无 UI 的服务端核心」**仍集中在根包。
+- **对外可见 API**：`lib.rs` 中大量模块为私有（`mod`）；部分 Web 相关为 `pub(crate)`。对外以零散 `pub use` 与 **`RunAgentTurnParams` + `run_agent_turn`** 等为主，整体仍偏**应用集成面**，而非 semver 稳定的「框架表面」。
+
+## 3. 差距分析
+
+### 3.1 Crate 边界与依赖图
+
+| 现象 | 影响 |
+|------|------|
+| 单一 `crabmate` 包聚合 Web、CLI、TUI、重依赖（如 fastembed、bollard） | 嵌入方难以只链接「核心子集」；编译时间与二进制体积不易裁剪。 |
+| 缺少按能力的 **Cargo features**（如 `core-only` / `no-web` / `no-tui` / 可选 memory） | 无法在产品与库两种用法之间做依赖隔离。 |
+
+**结论**：要做「框架」，通常需要 **workspace 内多 crate** 或 **强 feature 分层**（例如 `crabmate-core` + `crabmate-server` + `crabmate-cli`），把 HTTP/TUI/可选子系统变为可选依赖。
+
+### 3.2 对外 API 形态
+
+| 现象 | 影响 |
+|------|------|
+| `RunAgentTurnParams` 字段多，且与终端流式、Web/CLI 工具运行时、tracing、记忆作用域等耦合 | 非 Rust 或「仅跑一轮 agent」的宿主难以获得**窄而稳定**的入口。 |
+| 缺少单独文档化的 **semver 稳定 API 清单** 与版本策略 | 重构易破坏下游；难以区分「公开契约」与「内部实现」。 |
+
+**结论**：框架化后宜收敛为 **窄入口**（如显式 `Engine`/`Session`）、**结构化错误类型**、以及 **trait/回调** 注入（工具审批、日志、取消），而不是继续扩展巨型参数结构体。
+
+### 3.3 与 Python / 其他语言的衔接
+
+| 路径 | 现状与缺口 |
+|------|------------|
+| **进程外**：HTTP + SSE（如 `serve`） | 已有产品级路径；`crabmate-sse-protocol` 对齐控制面。**缺口**：若无 HTTP，缺少与 UI 解耦的 **专用 IPC 契约**（如 JSON-RPC / gRPC）及稳定性承诺。 |
+| **进程内**：FFI / PyO3 | **缺口**：无稳定 C ABI 或 PyO3 层；需处理 **Tokio 异步** 与 Python **GIL / asyncio** 的桥接策略。 |
+| **同步宿主** | 核心路径偏 async；若仅暴露阻塞 FFI，需明确 **runtime 归属**（谁在跑 `block_on`、线程池边界）。 |
+
+**结论**：跨语言集成需**先选定边界**（子进程 + HTTP/gRPC **或** 内嵌 + PyO3），再反推应拆出哪些类型与 feature。
+
+### 3.4 运行时与全局状态
+
+| 现象 | 影响 |
+|------|------|
+| 日志、配置加载、工作区、会话等与 CLI/Web 行为交织 | 库用户更需要 **显式上下文**（注入 `AgentConfig`、工作区路径、`reqwest::Client` 等），而非隐式依赖环境变量/全局初始化顺序。 |
+| 工具执行、白名单、审批与 `tool_registry` 深度绑定 | 第三方宿主若要替换沙箱或工具集，需要文档化的 **扩展点**（trait / 注册表），避免 fork 内部实现。 |
+
+### 3.5 演进与维护成本
+
+- 将 `src/` 拆为多 crate 会大量调整 `use crate::` 与可见性，短期成本高；长期有利于 **API 版本化**、**可选依赖** 与 **CI 分矩阵**（仅测 core）。
+- 任何「稳定框架 API」的引入，应配套：**稳定性说明**、破坏性变更策略、以及针对嵌入场景的 **最小集成测试**（不要求启动完整 Web）。
+
+## 4. 演进方向（建议优先级，供路线图参考）
+
+1. **依赖分层**：用 Cargo features 或拆出 `*-core`，使「无 Axum / 无 TUI / 无 fastembed」的构建路径成立。
+2. **稳定表面**：收敛公开类型与函数，明确 `RunAgentTurnParams` 的继任者或适配层；错误类型与取消语义文档化。
+3. **跨语言边界**：二选一或并存——**子进程 + 明确定义的 RPC/HTTP API**（实现成本与运维清晰）vs **PyO3/FFI**（集成紧、ABI 与 async 成本高）。
+4. **上下文注入**：减少隐式全局，将配置、工作区、HTTP 客户端、工具后端纳入可构造对象。
+
+## 5. 相关文档
+
+- **`docs/DEVELOPMENT.md`**：模块索引、分层图、与 SSE/工具契约的维护约定。
+- **`.cursor/rules/cli-tui-web-shared-logic.mdc`**：三端共享逻辑与扩展时避免重复业务规则。
+- **`docs/SSE_PROTOCOL.md`**：Web 流式契约；若新增非 HTTP 嵌入 API，应避免与之语义冲突或需显式映射层。
+
+---
+
+*本文随架构讨论更新；若实际完成 crate 拆分或新 FFI/RPC 层，应同步修订本节并更新 `docs/DEVELOPMENT.md` 中的架构描述与模块索引。*

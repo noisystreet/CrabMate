@@ -76,6 +76,7 @@ flowchart TB
 
 For **state-machine-style configuration**, **conditional branching**, and **bounded loops**—how they relate to today’s **`workflow_execute` DAG**, **staged planning**, and **`agent_reply_plan` / workflow reflection**—see **`docs/WORKFLOW_ORCHESTRATION_ARCHITECTURE.md`** (Chinese design doc).  
 For the **plan → execute → verify** closed loop (explicit subtasks, deterministic acceptance, boundaries vs **`plan_rewrite` / workflow reflection / `final_plan_semantic_check`**), see **`docs/PLAN_EXECUTE_VERIFY_ARCHITECTURE.md`**.  
+For **backend core as an embeddable framework** and **cross-language hosting** (today’s single-crate layout, public API surface, and Python-style integration boundaries), see **`docs/BACKEND_CORE_FRAMEWORK_DESIGN.md`** (Chinese design doc).  
 If you extend **`src/agent/workflow/`** or **`plan_artifact` / `per_coord` / staged`** semantics, update those design docs, **`docs/TOOLS.md`**, and (if needed) this chapter’s architecture/module index; SSE changes must follow **`.cursor/rules/api-sse-chat-protocol.mdc`**.
 
 ### `agent_turn` vs `llm`: single entrypoint and anti-patterns

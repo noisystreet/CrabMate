@@ -77,6 +77,7 @@ flowchart TB
 
 状态机式配置、条件分支与有界循环等**能力边界与推荐演进方向**（与当前 **`workflow_execute` DAG**、**分阶段规划**、**`agent_reply_plan` / 工作流反思** 的关系）见 **`docs/WORKFLOW_ORCHESTRATION_ARCHITECTURE.md`**。  
 **结构化规划—执行—验证（P-E-V）闭环**（显式子任务、确定性验收、与 **`plan_rewrite` / 工作流反思 / `final_plan_semantic_check`** 的边界）见 **`docs/PLAN_EXECUTE_VERIFY_ARCHITECTURE.md`**。  
+**后端核心库化与跨语言嵌入**（单体 crate 与公开 API 现状、Python 等宿主的可行边界与演进注意点）见 **`docs/BACKEND_CORE_FRAMEWORK_DESIGN.md`**。  
 若实现涉及 **`src/agent/workflow/`** 或 **`plan_artifact` / `per_coord` / `staged`** 语义扩展，须同步更新上述设计稿、**`docs/TOOLS.md`** 相关契约与（若变更模块边界）本节「架构设计」/「代码模块索引」；触及 **SSE** 时遵守 **`.cursor/rules/api-sse-chat-protocol.mdc`**。
 
 ### `agent_turn` 与 `llm`：唯一入口与禁止事项
