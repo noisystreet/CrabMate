@@ -1,5 +1,7 @@
 //! Agent 回合、上下文裁剪/摘要、PER、工作流与终答规划解析（与 `lib` 中 HTTP 路由、`tools` 实现解耦）。
 
+/// 分阶段与分层共用的验收规则内核（规范化 spec + 证据 → 判定）。
+pub mod acceptance;
 pub mod agent_turn;
 pub mod context_window;
 /// Agent 自我进化模块：决策历史记录、策略分析、system prompt 动态注入。
