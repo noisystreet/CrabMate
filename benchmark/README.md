@@ -13,6 +13,7 @@
 - `swe_bench`
   - 面向真实仓库问题修复（代码修改 + patch 产出）。
   - 评测成本高（仓库准备、执行耗时、环境依赖重），更适合稳定后做阶段性评估。
+  - **逐步命令见下文「SWE-bench 流程」**。
 
 - `gaia`
   - 面向更综合的任务完成与最终答案抽取（包含多步推理/工具使用场景）。
@@ -119,6 +120,89 @@ cargo run -- bench \
   --resume
 ```
 
+## SWE-bench 流程（`swe_bench`）
+
+本节说明如何用 CrabMate **批量跑 SWE-bench 风格任务**：每条任务会 **克隆上游仓库、checkout 到基线提交、在工作区内调用 Agent 修改代码**，最后在结果 JSONL 中写入 **`model_patch`**（由工作区 **`git diff`** 抽取）。**不包含** SWE-bench 官方 Docker 环境与单元测试判分；若要与论文 / 排行榜指标对齐，须在 **`bench` 产出 patch 之后**，使用 **上游 SWE-bench 仓库提供的评测 harness**（自行对接）。
+
+### 0) 前置（在 HumanEval 共用前提之上）
+
+- **`git`** 已在 `PATH` 中，且本机可访问 GitHub（或你的 `repo` URL）。每条任务会执行 **`git clone`** / **`git checkout`**。
+- **磁盘空间**：每条实例会在配置的 **`run_command_working_dir`**（见 `docs/配置说明.md` / `run_command_working_dir`）下创建 **`<instance_id 安全化>/`** 目录并保留完整克隆；全量数据集体积很大，建议使用专用目录与大磁盘。
+- **工作区策略**：批量 runner 以配置中的 **`run_command_working_dir`** 为「父目录」存放各实例克隆（见 `src/runtime/benchmark/runner.rs`）。不要在同一目录手动删改正在跑的实例目录，除非你清楚 **`--resume`** 与缓存目录语义。
+- **模型与密钥**：与其它 benchmark 相同，需可用的 **`API_KEY`**（若使用 `bearer`）、`api_base`、`model` 等；可先 `cargo run -- probe` 验证联通。
+
+### 1) 准备任务 JSONL（CrabMate `BenchmarkTask`）
+
+每行一个 JSON 对象，**必填字段**如下（与 `src/runtime/benchmark/types.rs` / `SweBenchAdapter` 一致）：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `instance_id` | string | 稳定唯一 ID；用于结果主键及本地目录名（`/`、`\\`、空格会被替换为 `_`）。 |
+| `repo` | string | `owner/repo`（如 `django/django`），或 **`http(s)://` 开头的完整 clone URL**。非 URL 时等价于克隆 `https://github.com/{repo}.git`。 |
+| `base_commit` | string | 基线提交的完整 SHA（或可被 `git checkout` 接受的引用）。 |
+| `problem_statement` **或** `prompt` | string | Issue / 任务描述；二者至少填其一（适配器优先使用 `problem_statement`）。 |
+| `hints_text` | string（可选） | 额外提示，会追加进发给模型的用户消息。 |
+
+**最小示例一行**（虚构小号仓库，仅演示格式；路径换行仅为可读性，实际 JSONL 需单行或合法 JSON）：
+
+```json
+{"instance_id":"demo-owner_demo-repo_42","repo":"demo-owner/demo-repo","base_commit":"abcd1234deadbeef","problem_statement":"修复：某条件下函数返回错误。\n\n复现步骤：…"}
+```
+
+将多行合法 JSONL 存为文件，例如 **`benchmark/swe_tasks.jsonl`**。
+
+### 2) 与官方 SWE-bench 数据集对齐（无内置转换脚本）
+
+本仓库 **未** 附带「官方 `instances.jsonl` → CrabMate JSONL」脚本（HumanEval 才有 `scripts/humaneval_official_to_crabmate_jsonl.py`）。若你手上的官方任务文件字段名 **已与上表一致**，可直接作为输入；否则请用 **`jq` / 自写 Python** 等生成上述列。
+
+常见映射思路（以官方实例中含 `instance_id`、`repo`、`base_commit`、`problem_statement` 为例）：
+
+```bash
+# 示例：从上游 JSONL 抽出 CrabMate 所需列（按你的文件结构调整 jq 过滤器）
+jq -c '{instance_id, repo, base_commit, problem_statement}' \
+  /path/to/instances.jsonl > benchmark/swe_tasks.jsonl
+```
+
+若上游字段名不同（例如仓库字段拆开），先在脚本里拼成 `repo` 字符串再写出 JSONL。
+
+### 3) 执行 benchmark
+
+在项目根目录执行（路径可按需修改）：
+
+```bash
+mkdir -p benchmark
+
+cargo run -- bench \
+  --benchmark swe_bench \
+  --batch benchmark/swe_tasks.jsonl \
+  --batch-output benchmark/swe_results.jsonl \
+  --task-timeout 600
+```
+
+**类型别名**：`--benchmark swe_bench` 与 `swebench`、`swe-bench`（解析时归一为 `swe_bench`）等价。
+
+**可选常用参数**：
+
+- **`--resume`**：跳过输出 JSONL 中已有 `instance_id` 的任务，适合长跑中断后续跑。
+- **`--max-tool-rounds N`**：限制 Agent 工具轮次（默认视配置而定；SWE 场景通常需要工具读写仓库，勿过小）。
+- **`--bench-system-prompt <file>`**：追加自定义系统提示文件。
+- **`--no-tools`**：关闭工具（一般 **不适合** SWE-bench，除非纯文本补丁策略实验）。
+
+建议阶段评估时适当增大 **`--task-timeout`**（例如 `900` 或更高），避免大仓库慢冷启动导致误超时。
+
+### 4) 输出说明与官方判分
+
+- **`benchmark/swe_results.jsonl`**：每任务一行 **`BenchmarkResult`**；关注字段 **`model_patch`**（成功时多为 unified diff 文本）、**`status`**、**`error`**、**`raw_reply`**。
+- 另会生成与 **`--batch-output`** 同目录、同主文件名的 **汇总文件**（runner 内由输出路径派生，终端结束时会打印路径）。
+- **官方分辨率 / pass@k**：请将本文件中的 patch 按 **SWE-bench 官方流程** 传入其验证器（Docker、测试命令等）；详见上游项目文档（如 [SWE-bench](https://github.com/princeton-nlp/SWE-bench)）及 **`docs/基准测试规划.md`** §6。
+
+### 5) SWE-bench 常见问题
+
+- **`git clone` 失败或超时**：检查网络、代理、`repo` URL；GitHub API 限流时可配置凭据或使用镜像。
+- **磁盘占满**：缩小任务子集、清理旧的 `<instance_id>/` 克隆目录，或将 **`run_command_working_dir`** 指到大分区。
+- **`model_patch` 为空**：Agent 未修改跟踪文件、或修改未反映为相对 HEAD 的 diff；可调提示词、允许编辑的文件范围或工具策略。
+- **与 HumanEval 的差异**：SWE-bench **不要**指望使用 `humaneval_score_benchmark_results.py`；判分链路在上游 harness。
+
 ## 快速冒烟（仓库内置 tiny 夹具）
 
 ```bash
@@ -136,7 +220,8 @@ python3 scripts/humaneval_score_benchmark_results.py \
 
 - `cargo` 与 Rust 环境可用。
 - 模型调用配置可用（如 `API_KEY`、`api_base`、`model`）。
-- `python3` 可用（判分与转换脚本依赖 Python 标准库）。
+- `python3` 可用（HumanEval 判分与转换脚本依赖 Python 标准库）。
+- 跑 **`swe_bench`** 时还需 **`git`** 与足够磁盘/网络（见上文「SWE-bench 流程」）。
 
 ## 推荐可复现实验参数
 
@@ -208,6 +293,9 @@ PY
   - 现象：`results.jsonl` 为空或题数不全。
   - 处理：确认输入 JSONL 每行是合法 JSON；优先跑 tiny 夹具定位是输入问题还是运行时问题；中断场景配合 `--resume`。
 
+- **`swe_bench`：`git clone` / patch 为空 / 磁盘**
+  - 处理：见上文「SWE-bench 流程」§5；通用连通性问题仍可用 `cargo run -- probe`。
+
 ## 安全注意
 
 HumanEval 判分会执行模型生成的 Python 代码（通过 vendored `execution.py` 的 `check_correctness`）。  
@@ -223,3 +311,4 @@ HumanEval 判分会执行模型生成的 Python 代码（通过 vendored `execut
 - `docs/基准测试规划.md`
 - `docs/命令行与路由.md`（`bench` 子命令）
 - `scripts/vendor/human_eval_openai/README.md`
+- SWE-bench 上游（数据集与官方评测）：<https://github.com/princeton-nlp/SWE-bench>
