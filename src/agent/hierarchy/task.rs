@@ -165,12 +165,24 @@ pub struct GoalAcceptance {
     /// 期望命令成功执行（验证命令）
     #[serde(default)]
     pub expect_command_success: Option<String>,
-    /// 期望输出包含特定字符串
+    /// 期望输出包含特定字符串（在 **`TaskResult.output` 与 `error` 合并文本**上匹配；默认忽略大小写）
     #[serde(default)]
     pub expect_output_contains: Vec<String>,
     /// 期望退出码（默认 0）
     #[serde(default)]
     pub expect_exit_code: Option<i32>,
+    /// 期望 **`TaskResult.output`** 包含的子串（大小写敏感；与 [`Self::expect_output_contains`] 可同时使用）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expect_stdout_contains: Option<String>,
+    /// 期望 **`TaskResult.error`** 包含的子串（大小写敏感）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expect_stderr_contains: Option<String>,
+    /// JSON path 验证（在合并输出文本上解析 JSON；语义与分阶段 [`crate::agent::plan_artifact::PlanStepAcceptance`] 一致）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expect_json_path_equals: Option<crate::agent::plan_artifact::JsonPathEqualsRule>,
+    /// HTTP 响应状态码（在合并输出中抽取；若 [`TaskResult::tools_invoked`] 末项为 `http_request` / `http_fetch` 等则更可靠）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expect_http_status: Option<u16>,
 }
 
 impl GoalAcceptance {
@@ -179,13 +191,13 @@ impl GoalAcceptance {
         crate::agent::acceptance::AcceptanceSpec {
             expect_exit_code: self.expect_exit_code,
             exit_code_policy: crate::agent::acceptance::ExitCodePolicy::LenientIfUnparsed,
-            expect_stdout_contains: None,
-            expect_stderr_contains: None,
+            expect_stdout_contains: self.expect_stdout_contains.clone(),
+            expect_stderr_contains: self.expect_stderr_contains.clone(),
             expect_combined_output_contains: self.expect_output_contains.clone(),
             combined_match_case_insensitive: true,
             expect_file_exists: self.expect_file_exists.clone(),
-            expect_json_path_equals: None,
-            expect_http_status: None,
+            expect_json_path_equals: self.expect_json_path_equals.clone(),
+            expect_http_status: self.expect_http_status,
             file_resolve: crate::agent::acceptance::FileResolveKind::WorkspaceJoin,
         }
     }
