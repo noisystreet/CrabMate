@@ -62,16 +62,9 @@ use tokio::sync::mpsc;
 use tracing::Instrument;
 use types::Message;
 
-/// Web/CLI/基准测试共用的 `run_agent_turn` 入参（避免长参数列表）。
-pub struct RunAgentTurnParams<'a> {
-    pub client: &'a reqwest::Client,
-    pub api_key: &'a str,
-    pub cfg: &'a Arc<config::AgentConfig>,
-    pub tools: &'a [crate::types::Tool],
-    pub messages: &'a mut Vec<Message>,
+/// 回合传输与端点表现（SSE、取消、审批上下文、终端渲染等），与模型采样/路由覆盖解耦。
+pub struct AgentTurnTransport<'a> {
     pub out: Option<&'a mpsc::Sender<String>>,
-    pub effective_working_dir: &'a std::path::Path,
-    pub workspace_is_set: bool,
     pub render_to_terminal: bool,
     pub no_stream: bool,
     pub cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
@@ -82,9 +75,13 @@ pub struct RunAgentTurnParams<'a> {
     pub plain_terminal_stream: bool,
     /// 可选：自定义 [`llm::ChatCompletionsBackend`]；`None` 时使用 OpenAI 兼容 HTTP（与历史行为一致）。
     pub llm_backend: Option<&'a (dyn llm::ChatCompletionsBackend + 'static)>,
+}
+
+/// 本回合对 `chat/completions` 的采样与模型路由覆盖（相对 [`config::AgentConfig`]）。
+pub struct AgentTurnLlmOverrides {
     /// 覆盖本回合 `chat/completions` 的 **`temperature`**（`None` 则用 [`config::AgentConfig::temperature`]）。
     pub temperature_override: Option<f32>,
-    /// 覆盖本回合的 `model`（仅 planner 阶段）
+    /// 覆盖本回合的 `model`（planner 阶段，见编排层 `use_executor_model`）
     pub model_override: Option<String>,
     /// 若为 `true`，LLM 调用时使用 `cfg.executor_model` 而非 `cfg.planner_model`。
     pub use_executor_model: bool,
@@ -95,6 +92,19 @@ pub struct RunAgentTurnParams<'a> {
     /// 当 use_executor_model 为 true 时，优先使用此 api_key。
     pub executor_api_key: Option<String>,
     pub seed_override: types::LlmSeedOverride,
+}
+
+/// Web/CLI/基准测试共用的 `run_agent_turn` 入参（避免长参数列表）。
+pub struct RunAgentTurnParams<'a> {
+    pub client: &'a reqwest::Client,
+    pub api_key: &'a str,
+    pub cfg: &'a Arc<config::AgentConfig>,
+    pub tools: &'a [crate::types::Tool],
+    pub messages: &'a mut Vec<Message>,
+    pub effective_working_dir: &'a std::path::Path,
+    pub workspace_is_set: bool,
+    pub transport: AgentTurnTransport<'a>,
+    pub llm: AgentTurnLlmOverrides,
     /// 长期记忆（可选）；与 `long_term_memory_scope_id` 配对使用。
     pub long_term_memory:
         Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
@@ -143,24 +153,28 @@ impl<'a> RunAgentTurnParams<'a> {
             cfg,
             tools,
             messages,
-            out: Some(out),
             effective_working_dir,
             workspace_is_set,
-            render_to_terminal: false,
-            no_stream: false,
-            cancel: Some(cancel),
-            per_flight: Some(per_flight),
-            web_tool_ctx,
-            cli_tool_ctx: None,
-            plain_terminal_stream: false,
-            llm_backend: None,
-            temperature_override,
-            model_override,
-            use_executor_model,
-            executor_model_override,
-            executor_api_base,
-            executor_api_key,
-            seed_override,
+            transport: AgentTurnTransport {
+                out: Some(out),
+                render_to_terminal: false,
+                no_stream: false,
+                cancel: Some(cancel),
+                per_flight: Some(per_flight),
+                web_tool_ctx,
+                cli_tool_ctx: None,
+                plain_terminal_stream: false,
+                llm_backend: None,
+            },
+            llm: AgentTurnLlmOverrides {
+                temperature_override,
+                model_override,
+                use_executor_model,
+                executor_model_override,
+                executor_api_base,
+                executor_api_key,
+                seed_override,
+            },
             long_term_memory,
             long_term_memory_scope_id: Some(conversation_id.to_string()),
             read_file_turn_cache: None,
@@ -200,24 +214,28 @@ impl<'a> RunAgentTurnParams<'a> {
             cfg,
             tools,
             messages,
-            out: None,
             effective_working_dir,
             workspace_is_set,
-            render_to_terminal: true,
-            no_stream: false,
-            cancel: None,
-            per_flight: Some(per_flight),
-            web_tool_ctx: None,
-            cli_tool_ctx: None,
-            plain_terminal_stream: false,
-            llm_backend: None,
-            temperature_override,
-            model_override,
-            use_executor_model,
-            executor_model_override,
-            executor_api_base,
-            executor_api_key,
-            seed_override,
+            transport: AgentTurnTransport {
+                out: None,
+                render_to_terminal: true,
+                no_stream: false,
+                cancel: None,
+                per_flight: Some(per_flight),
+                web_tool_ctx: None,
+                cli_tool_ctx: None,
+                plain_terminal_stream: false,
+                llm_backend: None,
+            },
+            llm: AgentTurnLlmOverrides {
+                temperature_override,
+                model_override,
+                use_executor_model,
+                executor_model_override,
+                executor_api_base,
+                executor_api_key,
+                seed_override,
+            },
             long_term_memory,
             long_term_memory_scope_id: Some(conversation_id.to_string()),
             read_file_turn_cache: None,
@@ -249,24 +267,28 @@ impl<'a> RunAgentTurnParams<'a> {
             cfg,
             tools,
             messages,
-            out: None,
             effective_working_dir,
             workspace_is_set: true,
-            render_to_terminal: true,
-            no_stream,
-            cancel: None,
-            per_flight: None,
-            web_tool_ctx: None,
-            cli_tool_ctx,
-            plain_terminal_stream: true,
-            llm_backend: None,
-            temperature_override: None,
-            model_override: None,
-            use_executor_model: false,
-            executor_model_override: None,
-            executor_api_base: None,
-            executor_api_key: None,
-            seed_override: types::LlmSeedOverride::default(),
+            transport: AgentTurnTransport {
+                out: None,
+                render_to_terminal: true,
+                no_stream,
+                cancel: None,
+                per_flight: None,
+                web_tool_ctx: None,
+                cli_tool_ctx,
+                plain_terminal_stream: true,
+                llm_backend: None,
+            },
+            llm: AgentTurnLlmOverrides {
+                temperature_override: None,
+                model_override: None,
+                use_executor_model: false,
+                executor_model_override: None,
+                executor_api_base: None,
+                executor_api_key: None,
+                seed_override: types::LlmSeedOverride::default(),
+            },
             long_term_memory,
             long_term_memory_scope_id,
             read_file_turn_cache: None,
@@ -291,24 +313,28 @@ impl<'a> RunAgentTurnParams<'a> {
             cfg,
             tools,
             messages,
-            out: None,
             effective_working_dir,
             workspace_is_set: true,
-            render_to_terminal: false,
-            no_stream: true,
-            cancel: Some(cancel),
-            per_flight: None,
-            web_tool_ctx: None,
-            cli_tool_ctx: None,
-            plain_terminal_stream: false,
-            llm_backend: None,
-            temperature_override: None,
-            model_override: None,
-            use_executor_model: false,
-            executor_model_override: None,
-            executor_api_base: None,
-            executor_api_key: None,
-            seed_override: types::LlmSeedOverride::default(),
+            transport: AgentTurnTransport {
+                out: None,
+                render_to_terminal: false,
+                no_stream: true,
+                cancel: Some(cancel),
+                per_flight: None,
+                web_tool_ctx: None,
+                cli_tool_ctx: None,
+                plain_terminal_stream: false,
+                llm_backend: None,
+            },
+            llm: AgentTurnLlmOverrides {
+                temperature_override: None,
+                model_override: None,
+                use_executor_model: false,
+                executor_model_override: None,
+                executor_api_base: None,
+                executor_api_key: None,
+                seed_override: types::LlmSeedOverride::default(),
+            },
             long_term_memory: None,
             long_term_memory_scope_id: None,
             read_file_turn_cache: None,
@@ -320,16 +346,16 @@ impl<'a> RunAgentTurnParams<'a> {
 
 /// 执行一轮 Agent：发请求、若遇 tool_calls 则执行工具并继续，直到模型返回最终回复。
 /// `cfg` 建议使用 [`Arc`] 共享（与进程内 Web 服务状态一致），以便工具在 `spawn_blocking` 路径中复用同一份配置而不反复深拷贝。
-/// 若提供 out，则流式 content 会通过 out 发送（供 SSE 等使用）；`no_stream` 为 true 时 API 使用 `stream: false`，
+/// 若提供 transport.out，则流式 content 会通过 out 发送（供 SSE 等使用）；`transport.no_stream` 为 true 时 API 使用 `stream: false`，
 /// 有正文则通过 `out` 一次性下发整段。
-/// 若 `plain_terminal_stream` 为 `true`（仅 **`runtime::cli`** 应传入）：`render_to_terminal` 且 `out` 为 `None` 时，助手正文以**纯文本**流式（或 `--no-stream` 时整段）写入 stdout，不经 `markdown_to_ansi`。
-/// 若 `plain_terminal_stream` 为 `false` 且 `render_to_terminal` 为 `true`：仍在整段到达后用 `markdown_to_ansi` 渲染（用于服务端 jobs 等 **`out.is_none()`** 场景，避免与 CLI 混淆）。
-/// 当 `out` 为 `None` 且 `render_to_terminal` 为 `true` 时，分阶段规划通知、分步注入 user 与各工具结果另经 `runtime::terminal_cli_transcript` 写入 stdout；通知与注入正文经 `user_message_for_chat_display`（分步长句可压缩）；`plain_terminal_stream` 为 `true` 时助手正文为上游原始增量/拼接，为 `false` 时经 `assistant_markdown_source_for_display` 管线再渲染。
+/// 若 `transport.plain_terminal_stream` 为 `true`（仅 **`runtime::cli`** 应传入）：`transport.render_to_terminal` 且 `transport.out` 为 `None` 时，助手正文以**纯文本**流式（或 `--no-stream` 时整段）写入 stdout，不经 `markdown_to_ansi`。
+/// 若 `transport.plain_terminal_stream` 为 `false` 且 `transport.render_to_terminal` 为 `true`：仍在整段到达后用 `markdown_to_ansi` 渲染（用于服务端 jobs 等 **`out.is_none()`** 场景，避免与 CLI 混淆）。
+/// 当 `transport.out` 为 `None` 且 `transport.render_to_terminal` 为 `true` 时，分阶段规划通知、分步注入 user 与各工具结果另经 `runtime::terminal_cli_transcript` 写入 stdout；通知与注入正文经 `user_message_for_chat_display`（分步长句可压缩）；`transport.plain_terminal_stream` 为 `true` 时助手正文为上游原始增量/拼接，为 `false` 时经 `assistant_markdown_source_for_display` 管线再渲染。
 /// effective_working_dir 为当前生效的工作目录（可与前端设置的工作区一致）。
-/// `cancel` 为 `Some` 时，各轮请求会在流式读与重试间隔中轮询其标志；置位后尽快结束并返回 `Ok`（或 `Err`：[`agent::agent_turn::RunAgentTurnError`] 中含取消 / 限流 / SSE 早停等，用户可见串与常量 [`crate::types::LLM_CANCELLED_ERROR`] 对齐），供协作取消等场景使用。
+/// `transport.cancel` 为 `Some` 时，各轮请求会在流式读与重试间隔中轮询其标志；置位后尽快结束并返回 `Ok`（或 `Err`：[`agent::agent_turn::RunAgentTurnError`] 中含取消 / 限流 / SSE 早停等，用户可见串与常量 [`crate::types::LLM_CANCELLED_ERROR`] 对齐），供协作取消等场景使用。
 /// 分阶段规划（`staged_plan_execution` / `logical_dual_agent`）下若规划轮未解析出合法 `agent_reply_plan` v1：**不再**整轮失败退出：保留规划轮助手正文并**降级**为与关闭分阶段规划时相同的常规 `run_agent_outer_loop`（含工具）。规划轮会先丢弃 API 返回的原生 `tool_calls`，再从正文 DeepSeek DSML 物化并视情况执行工具，避免网关误报 `tool_calls` 时 CLI 静默无动作。
-/// `per_flight` 仅 Web 队列任务传入，用于 `GET /status` 的 `per_active_jobs` 镜像；CLI 传 `None`。
-/// `llm_backend` 见 [`RunAgentTurnParams::llm_backend`]。
+/// `transport.per_flight` 仅 Web 队列任务传入，用于 `GET /status` 的 `per_active_jobs` 镜像；CLI 传 `None`。
+/// 自定义 `ChatCompletionsBackend` 见 [`AgentTurnTransport::llm_backend`]。
 pub async fn run_agent_turn<'a>(
     p: RunAgentTurnParams<'a>,
 ) -> Result<(), crate::agent::agent_turn::RunAgentTurnError> {
@@ -339,9 +365,18 @@ pub async fn run_agent_turn<'a>(
         cfg,
         tools,
         messages,
-        out,
         effective_working_dir,
         workspace_is_set,
+        transport,
+        llm,
+        long_term_memory,
+        long_term_memory_scope_id,
+        read_file_turn_cache,
+        turn_allowed_tool_names,
+        tracing_chat_turn,
+    } = p;
+    let AgentTurnTransport {
+        out,
         render_to_terminal,
         no_stream,
         cancel,
@@ -350,6 +385,8 @@ pub async fn run_agent_turn<'a>(
         cli_tool_ctx,
         plain_terminal_stream,
         llm_backend,
+    } = transport;
+    let AgentTurnLlmOverrides {
         temperature_override,
         model_override,
         use_executor_model,
@@ -357,12 +394,7 @@ pub async fn run_agent_turn<'a>(
         executor_api_base,
         executor_api_key,
         seed_override,
-        long_term_memory,
-        long_term_memory_scope_id,
-        read_file_turn_cache,
-        turn_allowed_tool_names,
-        tracing_chat_turn,
-    } = p;
+    } = llm;
     let turn_dump_scope_id = long_term_memory_scope_id.clone();
     let turn_dump_model_override = model_override.clone();
     let turn_dump_executor_model_override = executor_model_override.clone();
@@ -446,48 +478,54 @@ pub async fn run_agent_turn<'a>(
     );
 
     let mut loop_params = agent::agent_turn::RunLoopParams {
-        llm_backend,
-        client,
-        api_key,
-        cfg,
-        tools_defs: tools_for_turn.as_slice(),
-        messages,
-        out,
-        effective_working_dir,
-        workspace_is_set,
-        no_stream,
-        cancel: cancel.as_deref(),
-        render_to_terminal,
-        plain_terminal_stream,
-        web_tool_ctx,
-        cli_tool_ctx,
-        per_flight,
-        temperature_override,
-        model_override,
-        use_executor_model,
-        executor_model_override,
-        executor_api_base,
-        executor_api_key,
-        seed_override,
-        long_term_memory,
-        long_term_memory_scope_id,
-        mcp_session,
-        read_file_turn_cache,
-        workspace_changelist,
-        staged_plan_optimizer_round: cfg.staged_plan_optimizer_round,
-        staged_plan_optimizer_requires_parallel_tools: cfg
-            .staged_plan_optimizer_requires_parallel_tools,
-        staged_plan_ensemble_count: cfg.staged_plan_ensemble_count,
-        staged_plan_skip_ensemble_on_casual_prompt: cfg.staged_plan_skip_ensemble_on_casual_prompt,
-        request_chrome_trace: request_chrome_trace.clone(),
-        step_executor_constraint: None,
-        turn_allowed_tool_names: turn_allowed_tool_names.clone(),
-        tracing_chat_turn: tracing_chat_turn.clone(),
-        sub_phase: crate::agent::agent_turn::AgentTurnSubPhase::Planner,
-        intent_turn_gate_hint: None,
+        ctx: agent::agent_turn::RunLoopCtx {
+            llm_backend,
+            client,
+            api_key,
+            cfg,
+            tools_defs: tools_for_turn.as_slice(),
+            out,
+            effective_working_dir,
+            workspace_is_set,
+            no_stream,
+            cancel: cancel.as_deref(),
+            render_to_terminal,
+            plain_terminal_stream,
+            web_tool_ctx,
+            cli_tool_ctx,
+            per_flight,
+            long_term_memory,
+            long_term_memory_scope_id,
+            mcp_session,
+            read_file_turn_cache,
+            workspace_changelist,
+            staged_plan_optimizer_round: cfg.staged_plan_optimizer_round,
+            staged_plan_optimizer_requires_parallel_tools: cfg
+                .staged_plan_optimizer_requires_parallel_tools,
+            staged_plan_ensemble_count: cfg.staged_plan_ensemble_count,
+            staged_plan_skip_ensemble_on_casual_prompt: cfg
+                .staged_plan_skip_ensemble_on_casual_prompt,
+            request_chrome_trace: request_chrome_trace.clone(),
+            turn_allowed_tool_names: turn_allowed_tool_names.clone(),
+            tracing_chat_turn: tracing_chat_turn.clone(),
+        },
+        turn: agent::agent_turn::RunLoopTurnState {
+            messages,
+            sub_phase: crate::agent::agent_turn::AgentTurnSubPhase::Planner,
+            intent_turn_gate_hint: None,
+            step_executor_constraint: None,
+            temperature_override,
+            model_override,
+            use_executor_model,
+            executor_model_override,
+            executor_api_base,
+            executor_api_key,
+            seed_override,
+        },
     };
 
     let trace_span = loop_params
+        .ctx
         .tracing_chat_turn
         .as_ref()
         .map(|t| t.span.clone());
@@ -508,9 +546,9 @@ pub async fn run_agent_turn<'a>(
         turn_dump_scope_id.as_deref(),
         tracing_chat_turn.as_ref().map(|t| t.job_id),
         &res,
-        loop_params.messages,
+        loop_params.turn.messages,
         tools_for_turn.as_slice(),
-        loop_params.cfg,
+        loop_params.ctx.cfg,
         no_stream,
         render_to_terminal,
         plain_terminal_stream,

@@ -83,11 +83,11 @@ pub(crate) async fn dispatch_non_hierarchical_turn(
     if !intent_at_turn_start::run_intent_at_turn_start_if_configured(p).await? {
         return Ok(());
     }
-    let allow_staged = should_enter_staged_planning(p.messages, p.cfg.as_ref());
-    if p.cfg.planner_executor_mode == PlannerExecutorMode::LogicalDualAgent && allow_staged {
+    let allow_staged = should_enter_staged_planning(p.turn.messages, p.ctx.cfg.as_ref());
+    if p.ctx.cfg.planner_executor_mode == PlannerExecutorMode::LogicalDualAgent && allow_staged {
         log::info!(target: "crabmate", "run_agent_turn: using LogicalDualAgent mode");
         run_logical_dual_agent_then_execute_steps(p, per_coord).await
-    } else if p.cfg.staged_plan_execution && allow_staged {
+    } else if p.ctx.cfg.staged_plan_execution && allow_staged {
         log::info!(target: "crabmate", "run_agent_turn: using staged_plan mode");
         run_staged_plan_then_execute_steps(p, per_coord).await
     } else {

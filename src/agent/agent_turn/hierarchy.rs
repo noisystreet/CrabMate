@@ -33,10 +33,10 @@ fn format_hierarchical_aborted_summary(e: &ExecutionError, task: &str) -> String
 /// Web 端以 `on_timeline_log` 落主气泡；不再下发裸 Markdown delta，避免与 `timeline_log`
 /// 重复以及由缓冲/解析顺序带来的总结缺失问题。
 async fn emit_hierarchical_final_assistant(p: &mut RunLoopParams<'_>, final_response: String) {
-    p.messages.push(crate::types::Message::assistant_only(
+    p.turn.messages.push(crate::types::Message::assistant_only(
         final_response.clone(),
     ));
-    if let Some(out) = p.out {
+    if let Some(out) = p.ctx.out {
         crate::sse::send_final_response_timeline_then_answer_phase(
             out,
             final_response,
@@ -51,8 +51,8 @@ async fn emit_hierarchical_final_assistant(p: &mut RunLoopParams<'_>, final_resp
 pub(crate) async fn run_hierarchical_agent(
     p: &mut RunLoopParams<'_>,
 ) -> Result<(), RunAgentTurnError> {
-    let in_clarification_flow = intent_user::recently_waiting_execute_confirmation(p.messages);
-    let task = intent_user::extract_effective_user_task(p.messages, in_clarification_flow);
+    let in_clarification_flow = intent_user::recently_waiting_execute_confirmation(p.turn.messages);
+    let task = intent_user::extract_effective_user_task(p.turn.messages, in_clarification_flow);
     if task.is_empty() {
         log::warn!(target: "crabmate", "Hierarchical mode: no user task found");
         return Err(RunAgentTurnError::Other {
@@ -105,7 +105,7 @@ pub(crate) async fn run_hierarchical_agent(
             action_tag
         );
         let mut per_coord =
-            PerCoordinator::new(PerCoordinatorInit::from_agent_config(p.cfg.as_ref()));
+            PerCoordinator::new(PerCoordinatorInit::from_agent_config(p.ctx.cfg.as_ref()));
         return run_agent_outer_loop(p, &mut per_coord).await;
     }
 
@@ -126,7 +126,7 @@ pub(crate) async fn run_hierarchical_agent(
         Ok(r) => r,
         Err(e) => {
             log::error!(target: "crabmate", "Hierarchical agent failed: {}", e);
-            if let Some(out) = p.out {
+            if let Some(out) = p.ctx.out {
                 let title = format!("分层执行未正常完成：{e}");
                 let _ = sse::send_string_logged(
                     out,
@@ -174,7 +174,7 @@ async fn handle_execution_result(
     );
 
     // 发送执行摘要到 SSE
-    if let Some(out) = p.out {
+    if let Some(out) = p.ctx.out {
         let summary = format!(
             "分层执行完成：模式={}, 完成={}, 失败={}, 耗时={}ms",
             mode.as_str(),

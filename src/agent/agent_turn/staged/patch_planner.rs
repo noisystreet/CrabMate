@@ -74,7 +74,9 @@ where
         planner_render_to_terminal,
         make_step_user_message,
     } = ctx;
-    p.messages.push(make_step_user_message(feedback_user_body));
+    p.turn
+        .messages
+        .push(make_step_user_message(feedback_user_body));
     let req = prepare_staged_planner_no_tools_request(p, per_coord, labels.build_planner_messages)
         .await?;
     let (mut msg, finish_reason) =
@@ -101,14 +103,14 @@ where
     msg.tool_calls = None;
     crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
         &mut msg,
-        p.cfg.materialize_deepseek_dsml_tool_calls,
+        p.ctx.cfg.materialize_deepseek_dsml_tool_calls,
     );
 
-    push_assistant_merging_trailing_empty_placeholder(p.messages, msg.clone());
+    push_assistant_merging_trailing_empty_placeholder(p.turn.messages, msg.clone());
 
     if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
         let rejected = msg.tool_calls.as_ref().map(|c| c.len()).unwrap_or(0);
-        emit_staged_planner_tool_call_rejected_timeline(p.out, rejected).await;
+        emit_staged_planner_tool_call_rejected_timeline(p.ctx.out, rejected).await;
         warn!(
             target: "crabmate",
             "分阶段规划补丁轮：检测到 {} 条 tool_calls，严格无工具模式下拒绝并等待下次补丁重试",
@@ -118,7 +120,7 @@ where
     }
 
     let validate_only_binding_ids =
-        plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.messages);
+        plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.turn.messages);
     let patch_plan = match plan_artifact::parse_agent_reply_plan_v1_from_assistant_message_with_validate_only_binding_ids(
         &msg,
         validate_only_binding_ids.as_deref(),

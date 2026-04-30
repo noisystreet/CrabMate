@@ -247,7 +247,7 @@ cargo test golden_intent_regression -p crabmate
 
 - 管线内占位：`qa.readonly`（及 `qa.codebase`）等走 `intent_router::qa_direct_reply_for_primary` 生成 `IntentAction::DirectReply` 正文；`qa.explain` / `qa.meta*` / 寒暄同理仅作占位。L2 覆盖 L1 后由 `intent_pipeline` 内 `refresh_decision_action_after_l2_override` 同步正文。
 - **`intent_router::intent_reply_delegates_to_main_model`**：`Greeting`（`meta.greeting`）、**`qa.meta` / `qa.meta.*`**、**`qa.explain`** 在 **`intent_at_turn_start`** 中对 `DirectReply` 改为 **`ProceedExecute`**，由主模型作答，不展示 canned。`PlannerExecutorMode::Hierarchical` 时 **`run_hierarchical_agent`** 在门控后用同一判定**直接** **`run_agent_outer_loop`**，跳过 SmartRouter/Manager，避免能力/解释类问句被拆成执行子目标。
-- **`qa.readonly` / `qa.codebase`**：意图门控对 **`Qa` + `DirectReply` + `qa.readonly*`** 进入主循环，设置 `RunLoopParams::step_executor_constraint = ReviewReadonly`，并注入一轮 ephemeral **`system_intent_gate_hint`**（首轮 P 后从会话剔除）；**不再**要求 `l2_applied`。分层模式下此类问句与澄清/确认一致，**不**进 Manager，直接 **`run_agent_outer_loop`**。
+- **`qa.readonly` / `qa.codebase`**：意图门控对 **`Qa` + `DirectReply` + `qa.readonly*`** 进入主循环，设置 `RunLoopParams::turn.step_executor_constraint = ReviewReadonly`，并注入一轮 ephemeral **`system_intent_gate_hint`**（首轮 P 后从会话剔除）；**不再**要求 `l2_applied`。分层模式下此类问句与澄清/确认一致，**不**进 Manager，直接 **`run_agent_outer_loop`**。
 - **`ClarifyThenExecute` / `ConfirmThenExecute`**：不再 canned 终答；`ProceedExecute` + ephemeral hint（确认类 hint 要求模型保留可与 `is_waiting_execute_confirmation_prompt` 对齐的措辞）。分层模式下同样早退到单 Agent 外层循环。
 
 ---
