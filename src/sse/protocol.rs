@@ -227,6 +227,10 @@ pub struct ToolResultBody {
     pub stdout: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stderr: Option<String>,
+    /// 可选：与工具 `output` 首行 **`crabmate_tool_output`** JSON 同源的小型结构化预览（**不含**文件正文），供 Web/集成方解析。
+    /// 当前由 **`read_file`** / **`read_dir`** / **`list_tree`** 等只读文件工具填充；其它工具省略。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structured_preview: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -464,6 +468,7 @@ mod tests {
                 parallel_batch_id: None,
                 stdout: Some(String::new()),
                 stderr: Some("permission denied".into()),
+                structured_preview: None,
             },
         });
         let m: SseMessage = serde_json::from_str(&s).unwrap();
@@ -479,6 +484,7 @@ mod tests {
                 assert_eq!(tool_result.tool_call_id.as_deref(), Some("tc1"));
                 assert_eq!(tool_result.execution_mode.as_deref(), Some("serial"));
                 assert_eq!(tool_result.stderr.as_deref(), Some("permission denied"));
+                assert!(tool_result.structured_preview.is_none());
             }
             _ => panic!("expected tool_result payload"),
         }

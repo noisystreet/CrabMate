@@ -46,7 +46,7 @@
   - `search_replace`：单文件搜索替换（字面量或正则，默认 `dry_run` 预览，写盘需 `confirm`）。
   - `create_file` / `modify_file`：创建或修改文件；`read_file` 支持分段与行上限及 **`encoding`**（`utf-8` 严格、`utf-8-sig`、`gb18030`/`gbk`/`big5`、`utf-16le`/`be`、`auto` 等；非法序列报错而非静默替换）；`modify_file` 支持按行区间替换（大文件友好）。**单轮** `run_agent_turn` 内，服务端可对相同文件+相同读取参数缓存 `read_file` 正文（比对磁盘 **mtime+size**；执行写类工具或工作区变更后缓存清空），键含 **encoding**，见配置 **`read_file_turn_cache_max_entries`**。Web `GET /workspace/file` 默认仅读取不超过 **1 MiB** 的文件，正文解码规则与 `read_file` 一致，可选查询参数 **`encoding`**；超出大小返回错误（避免大文件导致内存放大）。上述及 `hash_file`、`read_binary_meta`、`format_file` 等返回说明中的路径均为**相对工作区根**（POSIX 风格），不输出本机绝对路径。
   - `copy_file` / `move_file`：在工作区内复制或移动**文件**（相对路径、防目录穿越与 symlink 逃逸与 `create_file` 一致）；目标已存在时默认不覆盖，需 `overwrite: true`；`move_file` 跨盘时会自动复制后删源。
-  - `read_dir` / `glob_files` / `list_tree`：列单层目录；按 glob（如 `**/*.rs`）递归匹配文件路径；递归列树（`max_depth` / `max_entries` 有上限，路径不出工作区）。
+  - `read_dir` / `glob_files` / `list_tree`：列单层目录；按 glob（如 `**/*.rs`）递归匹配文件路径；递归列树（`max_depth` / `max_entries` 有上限，路径不出工作区）。**`read_dir`** 与 **`list_tree`** 成功时正文首行均为 **`crabmate_tool_output` v1**（`tool` 分别为 **`read_dir`** / **`list_tree`**），与 Web SSE **`tool_result.structured_preview`** 同源。
   - `codebase_semantic_search`：工作区**混合**代码检索（SQLite **FTS5** 全文索引 + **fastembed** 向量，与**会话长期记忆**分库；**`crabmate_codebase_chunks`** 外挂 **`crabmate_codebase_chunks_fts`**，触发器同步；库内另有 **`crabmate_codebase_files`** 记录每文件指纹）。**`rebuild_index: true`** 扫描 `.gitignore` 感知的源码树并写入默认 **`.crabmate/codebase_semantic.sqlite`**（schema **v4** 起含 FTS）。**整库**默认**增量**（**`mtime`+`size`+SHA256**；**`incremental:false`** 或 **`codebase_semantic_rebuild_incremental=false`** 全量）；子目录 **`path`** 仍为子树全量替换。**`.rs`** 分块嵌入前有符号提示行。**`query`** 默认 **`retrieve_mode: hybrid`**：**BM25** 与余弦按 **`hybrid_alpha`**（配置 **`codebase_semantic_hybrid_alpha`**）加权；可选 **`semantic_only`** / **`fts_only`**。**`fts_top_n`**、**`hybrid_semantic_pool`** 见配置或工具参数。**`query_max_chunks`** 仍限制向量扫描量。单文件大小、**`codebase_semantic_rebuild_max_files`** 等同上。不设为只读。关闭：`codebase_semantic_search_enabled = false`。**写工具联动**（**`codebase_semantic_invalidate_on_workspace_change`**）：删块时 FTS 由触发器同步；`run_command` / `git_*` 等仍可能整表清空。
   - `markdown_check_links`：扫描 Markdown（默认 `README.md` 与 `docs/`），校验**相对路径**链接与 `#fragment` 锚点；支持 `output_format=text|json|sarif`。`http(s)://` 外链默认不联网，可选 `allowed_external_prefixes` 对匹配 URL 做 HEAD 探测（同 URL 去重缓存）。
   - `typos_check` / `codespell_check`：文档拼写检查（**只读**，需本机安装 [typos](https://github.com/crate-ci/typos) / [codespell](https://github.com/codespell-project/codespell)）；默认优先检查存在的 `README.md` 与 `docs/`，可用 `paths` 收窄；`typos_check` 支持 `config_path`（项目词典通常在 `.typos.toml`），`codespell_check` 支持 `dictionary_paths`（`-I` 词典文件）与 `ignore_words_list`（`-L`）。
@@ -454,7 +454,7 @@
   ```json
   {"path":"src/main.rs","start_line":1,"max_lines":200}
   ```
-  非 UTF-8 或需去 BOM 时可设 **`encoding`**，例如 `{"path":"legacy.txt","encoding":"gb18030"}`、`{"path":"utf8bom.txt","encoding":"utf-8-sig"}`、`{"path":"unknown.bin","encoding":"auto"}`。默认 **`utf-8` 严格**：非法 UTF-8 字节会返回明确错误，而**不会**用替换字符静默乱码。响应中会提示「下一段可将 start_line 设为 N」。需要精确总行数时可设 `"count_total_lines": true`（大文件会多扫一遍）。也可用 `start_line` + `end_line` 精确区间（仍受 `max_lines` 上限截断）；若两者同时给出且 **end_line 小于 start_line**（起止写反），会**自动交换**后再读，聊天摘要中的 `[a-b]` 也会按升序显示。**成功**时正文**第一行**为单行 JSON **`{"kind":"crabmate_tool_output","tool":"read_file","version":1,…}`**（`path`、`start_line`、`line_count_returned`、`has_more` 等），其后为历史人类可读块；`role: tool` 信封的 **`error_code`** 在失败时另有稳定子码（如 `read_file_workspace_*`、`read_file_invalid_range`）。
+  非 UTF-8 或需去 BOM 时可设 **`encoding`**，例如 `{"path":"legacy.txt","encoding":"gb18030"}`、`{"path":"utf8bom.txt","encoding":"utf-8-sig"}`、`{"path":"unknown.bin","encoding":"auto"}`。默认 **`utf-8` 严格**：非法 UTF-8 字节会返回明确错误，而**不会**用替换字符静默乱码。响应中会提示「下一段可将 start_line 设为 N」。需要精确总行数时可设 `"count_total_lines": true`（大文件会多扫一遍）。也可用 `start_line` + `end_line` 精确区间（仍受 `max_lines` 上限截断）；若两者同时给出且 **end_line 小于 start_line**（起止写反），会**自动交换**后再读，聊天摘要中的 `[a-b]` 也会按升序显示。**成功**时正文**第一行**为单行 JSON **`{"kind":"crabmate_tool_output","tool":"read_file","version":1,…}`**（`path`、`start_line`、`line_count_returned`、`has_more` 等），其后为历史人类可读块；`role: tool` 信封的 **`error_code`** 在失败时另有稳定子码（如 `read_file_workspace_*`、`read_file_invalid_range`）。**Web SSE**：`tool_result` 控制面在同帧 **`output`**（完整正文）之外，可选带 **`structured_preview`**（与首行 JSON **同源**的副本，便于前端/集成方解析元数据而不扫长文本）。
 - `modify_file`（大文件局部改：`mode=replace_lines` + 行号区间 + `content`，流式改写不落整文件到内存）：
   ```json
   {"path":"src/huge.rs","mode":"replace_lines","start_line":120,"end_line":135,"content":"// 新片段\n"}
@@ -463,6 +463,12 @@
   ```json
   {"path":"src","max_entries":50,"include_hidden":false}
   ```
+  **成功**时正文首行亦为 **`crabmate_tool_output` v1**（`tool":"read_dir"`：`path`、`entries_shown`、`entries_walked`），其后为人类可读列表；SSE **`tool_result.structured_preview`** 与之同源。
+- `list_tree`（递归列树，相对工作区）：
+  ```json
+  {"path":"src","max_depth":4,"max_entries":500,"include_hidden":false}
+  ```
+  **成功**时首行 **`crabmate_tool_output` v1**（`tool":"list_tree"`：`path`、`max_depth`、`lines_count`、`truncated` 等），其后为 `dir:` / `file:` 行列表。
 - `file_exists`（检查文件/目录是否存在）：
   ```json
   {"path":"src/main.rs","kind":"file"}

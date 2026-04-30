@@ -84,6 +84,8 @@ async fn emit_sse_tool_result(
     } else {
         Some(parsed.stderr)
     };
+    let structured_preview =
+        crate::tools::structured_preview::structured_preview_for_tool_sse(name, result);
     let _ = crate::sse::send_string_logged(
         tx,
         encode_message(SsePayload::ToolResult {
@@ -103,6 +105,7 @@ async fn emit_sse_tool_result(
                 parallel_batch_id: norm.parallel_batch_id,
                 stdout,
                 stderr,
+                structured_preview,
             },
         }),
         "execute_tools::emit_tool_result_sse",

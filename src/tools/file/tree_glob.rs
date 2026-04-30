@@ -2,6 +2,7 @@
 #![allow(clippy::manual_string_new)]
 
 use glob::Pattern;
+use serde_json::json;
 use std::path::Path;
 
 use super::path::{
@@ -22,6 +23,29 @@ const TREE_DEFAULT_MAX_ENTRIES: usize = 500;
 const TREE_ABS_MAX_ENTRIES: usize = 10000;
 fn rel_path_posix(rel: &Path) -> String {
     rel.to_string_lossy().replace('\\', "/")
+}
+
+fn prepend_list_tree_output_header(
+    body: &str,
+    root_rel: &str,
+    max_depth: usize,
+    max_entries: usize,
+    include_hidden: bool,
+    lines_count: usize,
+    truncated: bool,
+) -> String {
+    let header = json!({
+        "kind": "crabmate_tool_output",
+        "tool": "list_tree",
+        "version": 1,
+        "path": root_rel,
+        "max_depth": max_depth,
+        "max_entries": max_entries,
+        "include_hidden": include_hidden,
+        "lines_count": lines_count,
+        "truncated": truncated,
+    });
+    format!("{}\n{}", header, body)
 }
 
 /// 在 `abs_dir`（已位于工作区内）下列目录，按 glob 收集文件相对路径（相对**起始目录** `scan_root_display`）。
@@ -314,5 +338,13 @@ pub fn list_tree(args_json: &str, working_dir: &Path) -> String {
             String::new()
         }
     ));
-    out
+    prepend_list_tree_output_header(
+        out.trim_end(),
+        root,
+        max_depth,
+        max_entries,
+        include_hidden,
+        lines.len(),
+        truncated,
+    )
 }

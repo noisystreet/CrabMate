@@ -322,12 +322,29 @@ fn test_glob_files_recursive_rs() {
 }
 
 #[test]
+fn test_read_dir_output_starts_with_header() {
+    let dir = make_test_dir();
+    std::fs::write(dir.join("f.txt"), "x").unwrap();
+    let out = read_dir(r#"{"path":".","max_entries":10}"#, &dir);
+    let first = out.lines().next().expect("header line");
+    let v: serde_json::Value = serde_json::from_str(first).expect("json");
+    assert_eq!(v["kind"], "crabmate_tool_output");
+    assert_eq!(v["tool"], "read_dir");
+    assert!(out.contains("file: f.txt"), "{}", out);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn test_list_tree_respects_max_depth() {
     let dir = make_test_dir();
     std::fs::create_dir_all(dir.join("a/b")).unwrap();
     std::fs::write(dir.join("a/x.txt"), "").unwrap();
     std::fs::write(dir.join("a/b/y.txt"), "").unwrap();
     let out = list_tree(r#"{"max_depth":1}"#, &dir);
+    let first = out.lines().next().expect("header");
+    let v: serde_json::Value = serde_json::from_str(first).expect("json");
+    assert_eq!(v["kind"], "crabmate_tool_output");
+    assert_eq!(v["tool"], "list_tree");
     assert!(out.contains("a/") && out.contains("dir:"), "{}", out);
     assert!(out.contains("a/x.txt"), "{}", out);
     assert!(!out.contains("y.txt"), "不应列出 a/b 内文件: {}", out);

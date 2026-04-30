@@ -6,6 +6,23 @@ use std::path::Path;
 use super::display_fmt::{format_size, format_unix_timestamp};
 use super::path::{path_for_tool_display, resolve_for_read};
 
+fn prepend_read_dir_output_header(
+    body: &str,
+    path_disp: &str,
+    entries_shown: usize,
+    entries_walked: usize,
+) -> String {
+    let header = serde_json::json!({
+        "kind": "crabmate_tool_output",
+        "tool": "read_dir",
+        "version": 1,
+        "path": path_disp,
+        "entries_shown": entries_shown,
+        "entries_walked": entries_walked,
+    });
+    format!("{}\n{}", header, body)
+}
+
 /// 敏感路径前缀（拒绝绝对路径访问）
 const SENSITIVE_EXTERNAL_PATHS: &[&str] = &["/proc", "/sys", "/dev", "/root", "/etc"];
 
@@ -138,7 +155,8 @@ pub fn read_dir(args_json: &str, working_dir: &Path) -> String {
                 out.push('\n');
             }
             out.push_str(&format!("总计遍历: {}，展示: {}\n", count, shown));
-            out.trim_end().to_string()
+            let path_disp = path_for_tool_display(working_dir, &root, Some(path));
+            prepend_read_dir_output_header(out.trim_end(), &path_disp, shown, count)
         }
         Err(e) => format!("读取目录失败：{}", e),
     }
