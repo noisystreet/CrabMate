@@ -5,7 +5,7 @@ use tokio::sync::mpsc;
 
 use crate::agent::plan_artifact::AgentReplyPlanV1;
 
-use super::staged_sse::{
+use super::sse::{
     send_staged_plan_notice, send_staged_plan_started, staged_plan_queue_summary_text,
 };
 

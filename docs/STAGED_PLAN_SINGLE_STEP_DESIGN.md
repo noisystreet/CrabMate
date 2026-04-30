@@ -167,7 +167,7 @@
 
 | 区域 | 路径 |
 |------|------|
-| 分阶段入口 | `src/agent/agent_turn/staged.rs`（`run_staged_plan_then_execute_steps` 等） |
+| 分阶段入口 | `src/agent/agent_turn/staged/mod.rs`（`run_staged_plan_then_execute_steps` 等） |
 | 规划 JSON 类型与校验 | `src/agent/plan_artifact.rs`（`AgentReplyPlanV1`、`validate_agent_reply_plan_v1`、workflow 绑定） |
 | 顶层分支 | `src/agent/agent_turn/mod.rs`（`run_agent_turn_common`） |
 | 配置类型 | `src/config/types.rs`、`finalize.rs`、`env_overrides.rs`、`hot_reload.rs` |

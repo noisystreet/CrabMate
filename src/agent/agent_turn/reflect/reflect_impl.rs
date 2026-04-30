@@ -4,7 +4,7 @@ use crate::agent::per_coord::{AfterFinalAssistant, PerCoordinator, PlanRewriteEx
 use crate::agent::per_plan_semantic_check::{self, PlanSemanticLlmCtx};
 use crate::types::Message;
 
-use super::params::RunLoopParams;
+use super::super::params::RunLoopParams;
 
 /// R：模型本轮若为最终文本（非 tool_calls），决定是否结束或追加重写提示。
 pub(crate) enum ReflectOnAssistantOutcome {

@@ -8,7 +8,7 @@
 - **`docs/PLAN_EXECUTE_VERIFY_ARCHITECTURE.md`**（结构化 P-E-V 与 `plan_rewrite` 正交关系）
 - **`docs/HIERARCHICAL_MULTI_CM_ARCHITECTURE.md`**（分层模式与 Manager 反思）
 - **`docs/design/agent_state_management.md`**（更广义的会话/产物状态，与本设计正交）
-- 源码：`src/agent/agent_turn/mod.rs`（P/E/R 定义）、`src/agent/per_coord/`（`mod.rs`、`final_plan_gate.rs`）、`src/agent/agent_turn/staged.rs`、`src/agent/agent_turn/staged_orchestrator.rs`、`src/agent/workflow_reflection_controller.rs`
+- 源码：`src/agent/agent_turn/mod.rs`（P/E/R 定义）、`src/agent/per_coord/`（`mod.rs`、`final_plan_gate.rs`）、`src/agent/agent_turn/staged/mod.rs`、`src/agent/agent_turn/staged/orchestrator.rs`、`src/agent/workflow_reflection_controller.rs`
 
 ---
 
@@ -20,7 +20,7 @@
 - **E（Execute）**：`execute_tools` / 工作流执行路径。
 - **R（Reflect）**：`per_reflect_after_assistant`；终答无 `tool_calls` 时由 **`PerCoordinator::after_final_assistant`** 决定是否结束、要求 **`agent_reply_plan` v1** 重写，或进入侧向 **`per_plan_semantic_check`**。
 
-此外，**分阶段规划**（`staged.rs`）在单轮内叠加：无工具规划轮 → 解析 `agent_reply_plan` → 按步多次进入 **`run_agent_outer_loop`**；其间还有优化轮、集成、patch planner、`no_task` 降级等分支。
+此外，**分阶段规划**（`staged/mod.rs`）在单轮内叠加：无工具规划轮 → 解析 `agent_reply_plan` → 按步多次进入 **`run_agent_outer_loop`**；其间还有优化轮、集成、patch planner、`no_task` 降级等分支。
 
 **分层模式**（`hierarchy`）中，Manager 的 **`reflect_and_replan`** 对验证失败做 JSON 反思，与上路径**共享心智模型**但**不同代码路径**。
 
@@ -30,7 +30,7 @@
 |------|-------------|
 | 终答是否必须含规划 | `FinalPlanRequirementMode` + `PlanRequirementSource` + `require_plan` 多段推导（`per_coord/final_plan_gate.rs`） |
 | 规划静态校验与重写 | `after_final_assistant` 内长链：解析、层数、workflow 节点子集/全覆盖、validate-only 绑定、重写次数、语义检查挂起等 |
-| 分阶段主循环 | `staged.rs`：`for` 步、patch 重入、优化/集成/两阶段 NL 等交叉 `if` |
+| 分阶段主循环 | `staged/mod.rs`：`for` 步、patch 重入、优化/集成/两阶段 NL 等交叉 `if` |
 | 可观测子阶段 | 已有 **`AgentTurnSubPhase`**（`planner` / `executor` / `reflect`）与 SSE **`sub_phase`**，与**内部决策状态**未一一对应 |
 
 问题不是「缺少功能」，而是：**合法转移路径**分散在多个布尔/计数组合里，新加一条规则时容易漏改或产生不可达组合。
@@ -116,7 +116,7 @@
 
 1. **文档与日志**：为 Gate 的「决策原因」增加结构化枚举（内部或 `debug!`），不先改控制流，便于与重构后 diff 行为。  
 2. **终答 Gate 提取**：在 `per_coord` 子模块中新增 `final_plan_gate`（名可调整），**输入**与现 `after_final_assistant` 相同，**输出**仍为 `AfterFinalAssistant`；`after_final_assistant` 变为一行委托或薄包装。单测覆盖与当前行为矩阵一致。  
-3. **分阶段 FSM（可选）**：在 `staged.rs` 先抽取「从规划成功到 `send_staged_plan_started`」的转移，再步进 `for` 循环。  
+3. **分阶段 FSM（可选）**：在 `staged/mod.rs` 先抽取「从规划成功到 `send_staged_plan_started`」的转移，再步进 `for` 循环。  
 4. **Hierarchical**：仅在 Manager 与 `PerCoordinator` 的**日志与 reason 枚举**上对齐，避免两套名词。
 
 ---
@@ -142,4 +142,4 @@
 | 日期 | 说明 |
 |------|------|
 | 2026-04-28 | 初稿：问题陈述、双 FSM 建议、与现有类型对照、分阶段实现顺序 |
-| 2026-04-28 | 实现增量：`per_coord/final_plan_gate.rs`、`agent_turn/staged_orchestrator.rs` |
+| 2026-04-28 | 实现增量：`per_coord/final_plan_gate.rs`、`agent_turn/staged/orchestrator.rs` |
