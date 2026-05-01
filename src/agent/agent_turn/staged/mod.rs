@@ -57,8 +57,8 @@ use ensemble_schedule_fsm::{
     resolve_ensemble_driver_phase,
 };
 use patch_planner::{
-    StagedPlanPatchPlannerCtx, run_staged_plan_patch_planner_round,
-    staged_plan_step_failure_feedback_user_body,
+    StagedPlanPatchPlannerCtx, StagedPlanStepFailureFeedbackMeta,
+    run_staged_plan_patch_planner_round, staged_plan_step_failure_feedback_user_body,
 };
 use planner_parse_fsm::omit_no_task_planner_from_history;
 use post_parse_pipeline_fsm::{
@@ -1132,25 +1132,36 @@ where
                     step.max_step_retries,
                     patch_ctx.p.ctx.cfg.staged_plan_patch_max_attempts,
                 );
-                for _ in 0..patch_budget {
+                let audit_footer = patch_ctx
+                    .per_coord
+                    .staged_plan_patch_vs_plan_rewrite_counters_footer();
+                for (attempt_idx, _) in (0..patch_budget).enumerate() {
+                    let attempt_1based = attempt_idx.saturating_add(1);
                     let feedback = if let Some(ref vr) = step_verify_failed_reason {
-                        staged_plan_step_failure_feedback_user_body(
+                        let detail_verify = staged_step_verify_fail_patch_detail(vr);
+                        let meta = StagedPlanStepFailureFeedbackMeta {
                             plan_id,
-                            i,
-                            n,
-                            &step,
-                            "本步确定性验证失败 (Step Verification Failed)",
-                            &staged_step_verify_fail_patch_detail(vr),
-                        )
+                            step_zero_based: i,
+                            n_steps_total: n,
+                            plan_patch_attempt_one_based: attempt_1based,
+                            plan_patch_budget: patch_budget,
+                            reason_zh: "本步确定性验证失败 (Step Verification Failed)",
+                            detail: detail_verify.as_str(),
+                            audit_counters_footer: &audit_footer,
+                        };
+                        staged_plan_step_failure_feedback_user_body(&meta, &step)
                     } else {
-                        staged_plan_step_failure_feedback_user_body(
+                        let meta = StagedPlanStepFailureFeedbackMeta {
                             plan_id,
-                            i,
-                            n,
-                            &step,
-                            "执行子循环返回错误",
-                            STAGED_STEP_OUTER_LOOP_FAIL_DETAIL,
-                        )
+                            step_zero_based: i,
+                            n_steps_total: n,
+                            plan_patch_attempt_one_based: attempt_1based,
+                            plan_patch_budget: patch_budget,
+                            reason_zh: "执行子循环返回错误",
+                            detail: STAGED_STEP_OUTER_LOOP_FAIL_DETAIL,
+                            audit_counters_footer: &audit_footer,
+                        };
+                        staged_plan_step_failure_feedback_user_body(&meta, &step)
                     };
                     if let Some(merged) = run_staged_plan_patch_planner_round(
                         patch_ctx,
@@ -1191,8 +1202,18 @@ where
             )
             .await;
 
-            let reason =
-                staged_step_failure_retry_exhausted_message(&run_step, &step_verify_failed_reason);
+            let reason = {
+                let mut s = staged_step_failure_retry_exhausted_message(
+                    &run_step,
+                    &step_verify_failed_reason,
+                );
+                s.push_str(
+                    &patch_ctx
+                        .per_coord
+                        .staged_plan_patch_vs_plan_rewrite_counters_footer(),
+                );
+                s
+            };
             return Err(RunAgentTurnError::StepRetryExhausted {
                 phase: AgentTurnSubPhase::Executor,
                 message: reason,
@@ -1231,15 +1252,22 @@ where
             let tool_patch_budget = staged_patch_budget_tool_messages_not_ok(
                 patch_ctx.p.ctx.cfg.staged_plan_patch_max_attempts,
             );
-            for _ in 0..tool_patch_budget {
-                let feedback = staged_plan_step_failure_feedback_user_body(
+            let audit_footer = patch_ctx
+                .per_coord
+                .staged_plan_patch_vs_plan_rewrite_counters_footer();
+            for (attempt_idx, _) in (0..tool_patch_budget).enumerate() {
+                let attempt_1based = attempt_idx.saturating_add(1);
+                let meta = StagedPlanStepFailureFeedbackMeta {
                     plan_id,
-                    i,
-                    n,
-                    &step,
-                    "本步内工具调用未全部成功",
-                    STAGED_STEP_TOOL_MSG_FAIL_DETAIL,
-                );
+                    step_zero_based: i,
+                    n_steps_total: n,
+                    plan_patch_attempt_one_based: attempt_1based,
+                    plan_patch_budget: tool_patch_budget,
+                    reason_zh: "本步内工具调用未全部成功",
+                    detail: STAGED_STEP_TOOL_MSG_FAIL_DETAIL,
+                    audit_counters_footer: &audit_footer,
+                };
+                let feedback = staged_plan_step_failure_feedback_user_body(&meta, &step);
                 if let Some(merged) = run_staged_plan_patch_planner_round(
                     patch_ctx,
                     feedback,
@@ -1279,7 +1307,12 @@ where
             .await;
             return Err(RunAgentTurnError::StepRetryExhausted {
                 phase: AgentTurnSubPhase::Executor,
-                message: "局部修复耗尽上限 (工具执行失败)".to_string(),
+                message: format!(
+                    "局部修复耗尽上限 (工具执行失败){}",
+                    patch_ctx
+                        .per_coord
+                        .staged_plan_patch_vs_plan_rewrite_counters_footer()
+                ),
             });
         }
         StagedStepToolPhaseRoute::EmitStepSuccess => {}
