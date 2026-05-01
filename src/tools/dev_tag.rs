@@ -29,7 +29,9 @@ pub const DOCKER: &str = "docker";
 pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
     match name {
         // --- 语言无关 / 工作区 ---
-        "run_command" | "run_executable" | "workflow_execute" => &[GENERAL, CPP],
+        "run_command" | "run_executable" => &[GENERAL, CPP],
+        // 编排入口：`workflow_execute` 常与 Rust CI DAG 模板叠用；归入 rust+quality 便于 `build_tools_with_options` 栈裁剪。
+        "workflow_execute" => &[GENERAL, RUST, QUALITY],
         "package_query" => &[GENERAL],
         "diagnostic_summary"
         | "error_output_playbook"
@@ -231,6 +233,12 @@ pub fn suggest_dev_tags_for_workspace(root: &std::path::Path) -> Vec<&'static st
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn workflow_execute_tags_rust_and_quality() {
+        let t = tags_for_tool_name("workflow_execute");
+        assert!(t.contains(&RUST) && t.contains(&QUALITY) && t.contains(&GENERAL));
+    }
 
     #[test]
     fn cargo_check_is_rust_and_quality() {

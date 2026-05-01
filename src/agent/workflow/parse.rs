@@ -4,10 +4,44 @@ use crate::tools::workflow_tool_args_satisfy_required;
 
 use super::dag::topo_layers;
 use super::model::{WorkflowNodeSpec, WorkflowSpec};
+use super::workflow_templates::{merge_workflow_template_overlay, workflow_template_rust_ci_light};
+
+fn resolve_workflow_template(spec_v: serde_json::Value) -> Result<serde_json::Value, String> {
+    let template_key = spec_v
+        .get("workflow_template")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+
+    let Some(key) = template_key else {
+        return Ok(spec_v);
+    };
+
+    let base = match key {
+        "rust_ci_light" => workflow_template_rust_ci_light(),
+        other => {
+            return Err(format!(
+                "未知 workflow_template: {other}（当前支持：rust_ci_light）"
+            ));
+        }
+    };
+
+    let overlay = spec_v.as_object().map(|m| {
+        serde_json::Value::Object(
+            m.iter()
+                .filter(|(k, _)| *k != "workflow_template")
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+        )
+    });
+
+    Ok(merge_workflow_template_overlay(base, overlay.as_ref()))
+}
 
 pub(crate) fn parse_workflow_spec(args_json: &str) -> Result<WorkflowSpec, String> {
     let v: serde_json::Value = serde_json::from_str(args_json).map_err(|e| e.to_string())?;
-    let spec_v = v.get("workflow").unwrap_or(&v);
+    let mut spec_v = v.get("workflow").cloned().unwrap_or_else(|| v.clone());
+    spec_v = resolve_workflow_template(spec_v)?;
 
     let max_parallelism = spec_v
         .get("max_parallelism")
