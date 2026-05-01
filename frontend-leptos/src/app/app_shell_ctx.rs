@@ -1,5 +1,5 @@
 //! 壳层 `*_view` 聚合为 [`AppShellCtx`]，压缩 `App` 内 `view!` 的长实参列表。
-//!
+//! 阶段 B：对「仅由壳已持有的一组 `RwSignal` 拼出的子组件入参」提供 **`settings_page_form_signals()`** 等组装方法，避免在 **`App`** 中重复罗列字段。
 //! **未使用** Leptos `Context` / `<Provider>`：壳层状态含 `Rc<RefCell<…>>`、`Rc<dyn Fn()>` 等，
 //! 不满足 `provide_context` 的 `Send + Sync + 'static` 约束；以结构体 **`Clone`**（内部多为
 //! `Copy` / `Rc::clone` / `Arc::clone`）在 `*_view` 间传递即可。
@@ -19,6 +19,7 @@ use crate::sse_dispatch::ThinkingTraceInfo;
 use crate::app_prefs::SidePanelView;
 
 use super::chat::ChatColumnShell;
+use super::settings_page::SettingsPageFormSignals;
 use super::status_tasks_state::StatusTasksSignals;
 use super::workspace_panel_state::WorkspacePanelSignals;
 
@@ -96,4 +97,31 @@ pub struct AppShellCtx {
     pub changelist_modal_rev: RwSignal<u64>,
     pub changelist_body_ref: NodeRef<Div>,
     pub chat_column: ChatColumnShell,
+}
+
+impl AppShellCtx {
+    /// 设置页表单所需 `RwSignal` 聚合（阶段 B：避免在 `App` 的 `view!` 中重复罗列字段）。
+    pub fn settings_page_form_signals(&self) -> SettingsPageFormSignals {
+        SettingsPageFormSignals {
+            locale: self.locale,
+            theme: self.theme,
+            bg_decor: self.bg_decor,
+            llm_api_base_draft: self.llm_api_base_draft,
+            llm_api_base_preset_select: self.llm_api_base_preset_select,
+            llm_model_draft: self.llm_model_draft,
+            llm_temperature_draft: self.llm_temperature_draft,
+            llm_context_tokens_draft: self.llm_context_tokens_draft,
+            llm_api_key_draft: self.llm_api_key_draft,
+            llm_has_saved_key: self.llm_has_saved_key,
+            llm_settings_feedback: self.llm_settings_feedback,
+            executor_llm_api_base_draft: self.executor_llm_api_base_draft,
+            executor_llm_api_base_preset_select: self.executor_llm_api_base_preset_select,
+            executor_llm_model_draft: self.executor_llm_model_draft,
+            executor_llm_api_key_draft: self.executor_llm_api_key_draft,
+            executor_llm_has_saved_key: self.executor_llm_has_saved_key,
+            executor_llm_settings_feedback: self.executor_llm_settings_feedback,
+            execution_mode_draft: self.execution_mode_draft,
+            client_llm_storage_tick: self.client_llm_storage_tick,
+        }
+    }
 }
