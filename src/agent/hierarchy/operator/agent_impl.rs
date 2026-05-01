@@ -1,4 +1,8 @@
 //! `OperatorAgent` 实现：简化执行路径、LLM 调用、产物上下文、注入与工具结果分析。
+//!
+//! **分层 ReAct 上下文**：每次调用模型前对 [`ReactState::messages`] 执行与主循环相同的
+//! **`prepare_messages_before_model_call_sync`**（`tool` 压缩、条数/字符裁剪等），避免 ReAct
+//! 轮次堆积撑爆上下文（见 **`docs/design/context_trimming_scheme.md`**）。
 
 use std::time::Instant;
 
@@ -47,8 +51,12 @@ impl OperatorAgent {
         llm_backend: &dyn ChatCompletionsBackend,
         client: &reqwest::Client,
         api_key: &str,
-        state: &ReactState,
+        state: &mut ReactState,
     ) -> Result<Message, OperatorError> {
+        crate::agent::context_window::prepare_messages_before_model_call_sync(
+            &mut state.messages,
+            cfg,
+        );
         let params = CompleteChatRetryingParams::new(
             llm_backend,
             client,

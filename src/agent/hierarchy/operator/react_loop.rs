@@ -197,9 +197,9 @@ impl super::types::OperatorAgent {
                 });
             }
 
-            // 调用 LLM
+            // 调用 LLM（内部对 messages 跑会话同步管道：压缩 tool / 按配置裁剪条数与字符）
             let response = self
-                .call_llm(cfg, llm_backend, client, api_key, &state)
+                .call_llm(cfg, llm_backend, client, api_key, &mut state)
                 .await?;
 
             if let Some(result) = self

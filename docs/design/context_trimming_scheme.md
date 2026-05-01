@@ -118,7 +118,8 @@
 
 ### 6.5 多入口一致性
 
-- Web / CLI / 分阶段 / 分层等路径应统一经 **`prepare_messages_for_model`**（或等价入口），避免同一会话在不同入口「模型所见不同」。
+- Web / CLI / 分阶段路径统一经 **`prepare_messages_for_model`**（会话同步 + 可选摘要等）。
+- **分层 Operator ReAct**（`hierarchy/operator`）：每次 **`call_llm`** 前对 **[`ReactState::messages`]** 调用 **`prepare_messages_before_model_call_sync`**，与同进程的 **`max_message_history`** / **`tool_message_max_chars`** / **`context_char_budget`** 对齐；**不**在此路径自动跑 **`maybe_summarize_with_llm`**、工作区变更集注入（与子目标隔离上下文一致）。若将来需要摘要，再评估是否复用异步 **`prepare_messages_for_model`** 或引入分层专用摘要开关。
 
 ### 6.6 可观测性
 
@@ -169,3 +170,4 @@
 | 日期 | 摘要 |
 |------|------|
 | 2026-05-01 | 初版：会话同步契约、两阶段架构、设计要点与关联文档。 |
+| 2026-05-01 | 分层 Operator ReAct：`call_llm` 接入 **`prepare_messages_before_model_call_sync`**；补充 §6.5 多入口说明。 |
