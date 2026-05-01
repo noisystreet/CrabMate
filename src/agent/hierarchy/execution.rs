@@ -15,7 +15,7 @@ use super::artifact_store::ArtifactStore;
 use super::build_state::BuildState;
 use super::events;
 use super::goal_verifier::{GoalVerifier, VerificationResult};
-use super::manager::{ManagerOutput, handle_failure};
+use super::manager::{ManagerOutput, ReflectAndReplanContext, handle_failure};
 use super::operator::{OperatorAgent, OperatorConfig};
 use super::task::{
     ArtifactKind, BuildArtifactKind, ExecutionStrategy, SubGoal, TaskResult, TaskStatus,
@@ -1484,18 +1484,18 @@ impl<'a> HierarchicalExecutor<'a> {
 
         // 调用 Manager 进行反思和重新规划
         let reflection_result = manager
-            .reflect_and_replan(
+            .reflect_and_replan(ReflectAndReplanContext {
                 failed_goal,
                 verification_failure,
                 execution_result,
-                &cfg,
+                cfg: &cfg,
                 llm_backend,
-                &client,
-                &api_key,
-                &working_dir,
-                &self.tools_defs,
+                client: &client,
+                api_key: &api_key,
+                working_dir: &working_dir,
+                tools_defs: &self.tools_defs,
                 artifacts,
-            )
+            })
             .await;
 
         match reflection_result {

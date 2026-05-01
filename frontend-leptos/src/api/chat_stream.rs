@@ -215,22 +215,37 @@ async fn consume_chat_stream_response_body(
     Ok((stream_finished_normally, saw_stream_ended))
 }
 
+/// `/chat/stream` 请求参数（缩短 [`send_chat_stream`] 形参列表）。
+pub struct SendChatStreamParams<'a> {
+    pub message: String,
+    pub image_urls: Vec<String>,
+    pub conversation_id: Option<String>,
+    pub agent_role: Option<String>,
+    pub approval_session_id: Option<String>,
+    pub stream_resume_job_id: Option<u64>,
+    pub stream_resume_after_seq: Option<u64>,
+    pub signal: &'a web_sys::AbortSignal,
+    pub cbs: ChatStreamCallbacks,
+    pub loc: Locale,
+    /// 可选：`POST /chat/stream` 的 `clarify_questionnaire_answers`（`questionnaire_id` + `answers`）。
+    pub clarify_questionnaire_answers: Option<serde_json::Value>,
+}
+
 /// `/chat/stream`：支持 **`Last-Event-ID`** 与 JSON **`stream_resume`** 断线重连（网络抖动时自动重试若干次）。
-#[allow(clippy::too_many_arguments)] // 流式聊天入口：正文、图片、会话、审批、断线续传、回调与语言等正交参数
-pub async fn send_chat_stream(
-    message: String,
-    image_urls: Vec<String>,
-    conversation_id: Option<String>,
-    agent_role: Option<String>,
-    approval_session_id: Option<String>,
-    mut stream_resume_job_id: Option<u64>,
-    stream_resume_after_seq: Option<u64>,
-    signal: &web_sys::AbortSignal,
-    cbs: ChatStreamCallbacks,
-    loc: Locale,
-    // 可选：`POST /chat/stream` 的 `clarify_questionnaire_answers`（`questionnaire_id` + `answers`）。
-    clarify_questionnaire_answers: Option<serde_json::Value>,
-) -> Result<(), String> {
+pub async fn send_chat_stream(p: SendChatStreamParams<'_>) -> Result<(), String> {
+    let SendChatStreamParams {
+        message,
+        image_urls,
+        conversation_id,
+        agent_role,
+        approval_session_id,
+        mut stream_resume_job_id,
+        stream_resume_after_seq,
+        signal,
+        cbs,
+        loc,
+        clarify_questionnaire_answers,
+    } = p;
     let w = window().ok_or_else(|| "no window".to_string())?;
     let mut last_event_id: u64 = stream_resume_after_seq.unwrap_or(0);
     let mut attempt: u32 = 0;

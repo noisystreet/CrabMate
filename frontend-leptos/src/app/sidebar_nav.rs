@@ -55,6 +55,38 @@ struct NavRailSessionScrollSignals {
     apply_assistant_display_filters: RwSignal<bool>,
 }
 
+/// 侧栏搜索命中与会话行按钮共享的导航信号（缩短 [`nav_search_hit_button`] / [`nav_session_row_button`] 形参列表）。
+#[derive(Clone)]
+struct NavRailHitRowNavSignals {
+    composer_buf_nav: Arc<Mutex<String>>,
+    sessions: RwSignal<Vec<ChatSession>>,
+    active_id: RwSignal<String>,
+    draft: RwSignal<String>,
+    session_sync: RwSignal<SessionSyncState>,
+    session_context_menu: RwSignal<Option<SessionContextAnchor>>,
+    sidebar_rail_ctx_menu: RwSignal<Option<(f64, f64)>>,
+    focus_message_id_after_nav: RwSignal<Option<String>>,
+    mobile_nav_open: RwSignal<bool>,
+    locale: RwSignal<crate::i18n::Locale>,
+}
+
+fn nav_rail_hit_row_nav_signals_from_scroll(
+    s: &NavRailSessionScrollSignals,
+) -> NavRailHitRowNavSignals {
+    NavRailHitRowNavSignals {
+        composer_buf_nav: Arc::clone(&s.composer_buf_nav),
+        sessions: s.sessions,
+        active_id: s.active_id,
+        draft: s.draft,
+        session_sync: s.session_sync,
+        session_context_menu: s.session_context_menu,
+        sidebar_rail_ctx_menu: s.sidebar_rail_ctx_menu,
+        focus_message_id_after_nav: s.focus_message_id_after_nav,
+        mobile_nav_open: s.mobile_nav_open,
+        locale: s.locale,
+    }
+}
+
 fn debounce_signal_to_effect(source: RwSignal<String>, target: RwSignal<String>, delay_ms: u32) {
     let debounce_seq: Rc<Cell<u64>> = Rc::new(Cell::new(0));
     Effect::new({
@@ -389,21 +421,15 @@ fn nav_rail_search_panel(
 }
 
 fn nav_rail_session_scroll_inner(s: NavRailSessionScrollSignals) -> impl IntoView {
+    let hit_row_nav = nav_rail_hit_row_nav_signals_from_scroll(&s);
     let NavRailSessionScrollSignals {
         locale,
         sidebar_search_panel_open,
         sidebar_filter_debounced,
         global_message_filter_debounced,
         sessions,
-        composer_buf_nav,
-        active_id,
-        draft,
-        session_sync,
-        mobile_nav_open,
-        session_context_menu,
-        sidebar_rail_ctx_menu,
-        focus_message_id_after_nav,
         apply_assistant_display_filters,
+        ..
     } = s;
     move || {
         let search_ui_open = sidebar_search_panel_open.get();
@@ -444,21 +470,7 @@ fn nav_rail_session_scroll_inner(s: NavRailSessionScrollSignals) -> impl IntoVie
                 .into_any()
             } else {
                 hits.into_iter()
-                    .map(|h| {
-                        nav_search_hit_button(
-                            h,
-                            Arc::clone(&composer_buf_nav),
-                            sessions,
-                            active_id,
-                            draft,
-                            session_sync,
-                            session_context_menu,
-                            sidebar_rail_ctx_menu,
-                            focus_message_id_after_nav,
-                            mobile_nav_open,
-                            locale,
-                        )
-                    })
+                    .map(|h| nav_search_hit_button(h, hit_row_nav.clone()))
                     .collect_view()
                     .into_any()
             }
@@ -470,19 +482,8 @@ fn nav_rail_session_scroll_inner(s: NavRailSessionScrollSignals) -> impl IntoVie
                 {hit_views}
             </div>
             {v.into_iter()
-                .map(|s| {
-                    nav_session_row_button(
-                        s,
-                        Arc::clone(&composer_buf_nav),
-                        sessions,
-                        active_id,
-                        draft,
-                        session_sync,
-                        session_context_menu,
-                        sidebar_rail_ctx_menu,
-                        mobile_nav_open,
-                        locale,
-                    )
+                .map(|sess| {
+                    nav_session_row_button(sess, hit_row_nav.clone())
                 })
                 .collect_view()}
         }
@@ -490,20 +491,19 @@ fn nav_rail_session_scroll_inner(s: NavRailSessionScrollSignals) -> impl IntoVie
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn nav_search_hit_button(
-    h: MessageSearchHit,
-    composer_buf_nav: Arc<Mutex<String>>,
-    sessions: RwSignal<Vec<ChatSession>>,
-    active_id: RwSignal<String>,
-    draft: RwSignal<String>,
-    session_sync: RwSignal<SessionSyncState>,
-    session_context_menu: RwSignal<Option<SessionContextAnchor>>,
-    sidebar_rail_ctx_menu: RwSignal<Option<(f64, f64)>>,
-    focus_message_id_after_nav: RwSignal<Option<String>>,
-    mobile_nav_open: RwSignal<bool>,
-    locale: RwSignal<crate::i18n::Locale>,
-) -> impl IntoView {
+fn nav_search_hit_button(h: MessageSearchHit, nav: NavRailHitRowNavSignals) -> impl IntoView {
+    let NavRailHitRowNavSignals {
+        composer_buf_nav,
+        sessions,
+        active_id,
+        draft,
+        session_sync,
+        session_context_menu,
+        sidebar_rail_ctx_menu,
+        focus_message_id_after_nav,
+        mobile_nav_open,
+        locale,
+    } = nav;
     let sid = h.session_id.clone();
     let mid = h.message_id.clone();
     let title = h.session_title.clone();
@@ -549,19 +549,19 @@ fn nav_search_hit_button(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn nav_session_row_button(
-    s: ChatSession,
-    composer_buf_nav: Arc<Mutex<String>>,
-    sessions: RwSignal<Vec<ChatSession>>,
-    active_id: RwSignal<String>,
-    draft: RwSignal<String>,
-    session_sync: RwSignal<SessionSyncState>,
-    session_context_menu: RwSignal<Option<SessionContextAnchor>>,
-    sidebar_rail_ctx_menu: RwSignal<Option<(f64, f64)>>,
-    mobile_nav_open: RwSignal<bool>,
-    locale: RwSignal<crate::i18n::Locale>,
-) -> impl IntoView {
+fn nav_session_row_button(s: ChatSession, nav: NavRailHitRowNavSignals) -> impl IntoView {
+    let NavRailHitRowNavSignals {
+        composer_buf_nav,
+        sessions,
+        active_id,
+        draft,
+        session_sync,
+        session_context_menu,
+        sidebar_rail_ctx_menu,
+        mobile_nav_open,
+        locale,
+        ..
+    } = nav;
     let session_id_class = s.id.clone();
     let session_id_click = s.id.clone();
     let session_id_ctx = s.id.clone();

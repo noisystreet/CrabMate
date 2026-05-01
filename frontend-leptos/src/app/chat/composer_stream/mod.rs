@@ -17,7 +17,7 @@ use std::cell::Cell;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 
-use crate::api::send_chat_stream;
+use crate::api::{SendChatStreamParams, send_chat_stream};
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::Locale;
 use crate::session_ops::approval_session_id;
@@ -87,19 +87,19 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
             let shell_for_stream_err = shell_outer.clone();
             let on_error_spawn = cbs.on_error.clone();
             spawn_local(async move {
-                let stream_result = send_chat_stream(
-                    user_text,
+                let stream_result = send_chat_stream(SendChatStreamParams {
+                    message: user_text,
                     image_urls,
-                    conv,
+                    conversation_id: conv,
                     agent_role,
-                    Some(appr_for_stream),
-                    None,
-                    None,
-                    &signal,
-                    cbs.clone(),
-                    locale_sig.get_untracked(),
-                    clarify_json,
-                )
+                    approval_session_id: Some(appr_for_stream),
+                    stream_resume_job_id: None,
+                    stream_resume_after_seq: None,
+                    signal: &signal,
+                    cbs: cbs.clone(),
+                    loc: locale_sig.get_untracked(),
+                    clarify_questionnaire_answers: clarify_json,
+                })
                 .await;
                 if let Err(e) = stream_result {
                     if *user_cancelled_for_spawn.lock().unwrap() {
