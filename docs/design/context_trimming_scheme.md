@@ -70,7 +70,7 @@
 1. 记录起点快照（观测）  
 2. **`compress_tool_message_contents`**（**`tool_message_max_chars`**）  
 3. **`trim_messages_by_count`**（**`max_message_history`**）  
-4. 若 **`context_char_budget > 0`**：**`trim_messages_by_char_budget`** → 再次 **`compress_tool_message_contents`**  
+4. 若 **`context_char_budget > 0` 或按 `llm_context_tokens` 推导的预算 `> 0`**（**`AgentConfig::effective_context_char_budget_for_pipeline`** 取显式与推导的**更小非零**）：**`trim_messages_by_char_budget`** → 再次 **`compress_tool_message_contents`**  
 5. **`drop_orphan_tool_messages`**  
 6. **`merge_consecutive_assistants_in_place`**
 

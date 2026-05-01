@@ -68,6 +68,9 @@ pub(crate) struct ClientLlmBody {
     pub(crate) model: Option<String>,
     #[serde(default)]
     pub(crate) api_key: Option<String>,
+    /// 可选：模型上下文窗口 token 上限（输入+输出），仅本回合；与 `llm_context_tokens` / `CM_LLM_CONTEXT_TOKENS` 一致。
+    #[serde(default)]
+    pub(crate) llm_context_tokens: Option<u64>,
 }
 
 /// `ChatRequestBody::executor_llm` 的 JSON 形状（与前端 `executor_llm` 对象一致）。

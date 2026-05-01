@@ -467,6 +467,7 @@ struct FinalizeAfterRoles {
     command_timeout_secs: u64,
     command_max_output_len: usize,
     max_tokens: u32,
+    llm_context_tokens: u32,
     temperature: f32,
     api_timeout_secs: u64,
     api_max_retries: u32,
@@ -508,6 +509,7 @@ fn finalize_agent_config(
     let command_max_output_len =
         b.command_max_output_len.unwrap_or(8192).clamp(1024, 131072) as usize;
     let max_tokens = b.max_tokens.unwrap_or(4096).clamp(256, 32768) as u32;
+    let llm_context_tokens = b.llm_context_tokens.unwrap_or(0).min(10_000_000) as u32;
     let temperature = b.temperature.unwrap_or(0.3).clamp(0.0, 2.0) as f32;
     let api_timeout_secs = b.api_timeout_secs.unwrap_or(60).max(1);
     let api_max_retries = b.api_max_retries.unwrap_or(2).min(10) as u32;
@@ -713,6 +715,7 @@ fn finalize_agent_config(
         command_timeout_secs,
         command_max_output_len,
         max_tokens,
+        llm_context_tokens,
         temperature,
         api_timeout_secs,
         api_max_retries,
@@ -744,6 +747,7 @@ fn finalize_agent_config_tail(mid: FinalizeAfterRoles) -> Result<AgentConfig, St
         command_timeout_secs,
         command_max_output_len,
         max_tokens,
+        llm_context_tokens,
         temperature,
         api_timeout_secs,
         api_max_retries,
@@ -1019,6 +1023,7 @@ fn finalize_agent_config_tail(mid: FinalizeAfterRoles) -> Result<AgentConfig, St
         allowed_commands,
         run_command_working_dir: run_command_working_dir.display().to_string(),
         max_tokens,
+        llm_context_tokens,
         temperature,
         llm_seed: b.llm_seed,
         llm_reasoning_split: intent.llm_reasoning_split,

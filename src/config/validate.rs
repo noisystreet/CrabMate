@@ -74,6 +74,12 @@ fn validate_u64_table(b: &ConfigBuilder) -> Result<(), String> {
             131_072,
         ),
         ("max_tokens", |b| b.max_tokens, 256, 32_768),
+        (
+            "llm_context_tokens",
+            |b| b.llm_context_tokens,
+            0,
+            10_000_000,
+        ),
         ("api_timeout_secs", |b| b.api_timeout_secs, 1, u64::MAX),
         ("api_max_retries", |b| b.api_max_retries, 0, 10),
         (

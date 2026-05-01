@@ -49,6 +49,8 @@ pub struct WebChatLlmOverride {
     pub api_base: Option<String>,
     pub model: Option<String>,
     pub api_key: Option<String>,
+    /// 可选：覆盖本次任务的模型上下文窗口 token 上限（输入+输出），用于会话裁剪近似字符预算。
+    pub llm_context_tokens: Option<u32>,
 }
 
 /// Web 会话设置中的执行模式覆盖（仅作用于当前任务）。
@@ -78,6 +80,9 @@ fn resolve_web_llm_for_job(
             if let Some(ref x) = o.api_key {
                 key.clone_from(x);
                 c.llm_http_auth_mode = LlmHttpAuthMode::Bearer;
+            }
+            if let Some(n) = o.llm_context_tokens {
+                c.llm_context_tokens = n;
             }
             (Arc::new(c), key)
         }

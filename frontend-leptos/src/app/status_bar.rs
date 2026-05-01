@@ -105,7 +105,7 @@ fn StatusBarFooterBody(
                                     <span class="status-chip-value">{move || {
                                         let _tick = client_llm_storage_tick.get();
                                         let sd = st.status_data.get();
-                                        let (_, stored_model, _) =
+                                        let (_, stored_model, _, _) =
                                             load_client_llm_text_fields_from_storage();
                                         status_bar_effective_model(
                                             sd.as_ref(),
@@ -116,7 +116,7 @@ fn StatusBarFooterBody(
                                 <span class="status-chip status-chip-url" title=move || {
                                     let _tick = client_llm_storage_tick.get();
                                     let sd = st.status_data.get();
-                                    let (stored_base, _, _) =
+                                    let (stored_base, _, _, _) =
                                         load_client_llm_text_fields_from_storage();
                                     status_bar_effective_api_base(
                                         sd.as_ref(),
@@ -129,7 +129,7 @@ fn StatusBarFooterBody(
                                     <span class="status-chip-value">{move || {
                                         let _tick = client_llm_storage_tick.get();
                                         let sd = st.status_data.get();
-                                        let (stored_base, _stored_model, _) =
+                                        let (stored_base, _stored_model, _, _) =
                                             load_client_llm_text_fields_from_storage();
                                         status_bar_effective_api_base(
                                             sd.as_ref(),

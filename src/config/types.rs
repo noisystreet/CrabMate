@@ -359,6 +359,8 @@ pub struct AgentConfig {
     pub run_command_working_dir: String,
     /// 对话 API 单次请求最大 token 数
     pub max_tokens: u32,
+    /// 模型上下文窗口上限（输入+输出，按供应商 token 计量；用于推导会话同步裁剪的近似字符预算）。`0` 表示不据此推导（仍可用 [`Self::context_char_budget`]）。
+    pub llm_context_tokens: u32,
     /// 采样温度，0～2
     pub temperature: f32,
     /// 可选：写入 `chat/completions` 的 **`seed`**（OpenAI 兼容；`None` 则请求 JSON 省略该字段）。
@@ -670,6 +672,62 @@ pub struct AgentConfig {
 }
 
 impl AgentConfig {
+    /// 将会话同步管道使用的「非 system 近似字符预算」：显式 `context_char_budget` 与按 [`Self::llm_context_tokens`] 推导值取**更小者**（任一者为 `0` 则忽略该侧上限）。
+    ///
+    /// 推导：`≈ max(0, llm_context_tokens − max_tokens) × 4`（字节近似 UTF-8，偏保守），并封顶 `50_000_000`。
+    #[must_use]
+    pub fn effective_context_char_budget_for_pipeline(&self) -> usize {
+        let explicit = self.context_char_budget;
+        let ctx = u64::from(self.llm_context_tokens);
+        let derived = Self::approx_non_system_chars_budget_from_context_tokens(
+            ctx,
+            u64::from(self.max_tokens),
+        );
+        match (explicit, derived) {
+            (0, 0) => 0,
+            (0, d) => d,
+            (e, 0) => e,
+            (e, d) => e.min(d),
+        }
+    }
+
+    /// 供 [`maybe_summarize_with_llm`] 使用的摘要触发阈值：若配置中 `context_summary_trigger_chars > 0` 则沿用；否则在 [`Self::llm_context_tokens`] 非零时取推导字符预算的约一半（下限 8192，且不超过推导预算）。
+    #[must_use]
+    pub fn effective_context_summary_trigger_chars(&self) -> usize {
+        let explicit = self.context_summary_trigger_chars;
+        if explicit > 0 {
+            return explicit;
+        }
+        let ctx = u64::from(self.llm_context_tokens);
+        if ctx == 0 {
+            return 0;
+        }
+        let cap = Self::approx_non_system_chars_budget_from_context_tokens(
+            ctx,
+            u64::from(self.max_tokens),
+        );
+        if cap == 0 {
+            return 0;
+        }
+        let half = cap / 2;
+        half.max(8_192).min(cap)
+    }
+
+    fn approx_non_system_chars_budget_from_context_tokens(
+        context_tokens: u64,
+        max_output_tokens: u64,
+    ) -> usize {
+        if context_tokens == 0 {
+            return 0;
+        }
+        let ctx = context_tokens.max(1024);
+        let mo = max_output_tokens.min(ctx.saturating_sub(256));
+        let input_tokens = ctx.saturating_sub(mo).max(256);
+        let chars = (input_tokens as u128).saturating_mul(4);
+        let cap = 50_000_000usize;
+        chars.min(cap as u128) as usize
+    }
+
     /// 新建 Web/CLI 会话首条 `system` 的正文来源。
     ///
     /// - 显式 `agent_role`：须在 [`Self::agent_roles`] 中存在，否则返回 `Err`。
@@ -693,6 +751,23 @@ impl AgentConfig {
                 .map(|s| s.system_prompt.as_str())
                 .unwrap_or(self.system_prompt.as_str())),
         }
+    }
+}
+
+#[cfg(test)]
+mod llm_context_budget_tests {
+    #[test]
+    fn effective_context_char_budget_is_min_of_explicit_and_derived() {
+        let mut cfg = crate::config::load_config(None).expect("embed default config");
+        cfg.max_tokens = 2048;
+        cfg.llm_context_tokens = 100_000;
+        cfg.context_char_budget = 1000;
+        assert_eq!(cfg.effective_context_char_budget_for_pipeline(), 1000);
+        cfg.context_char_budget = 0;
+        assert!(
+            cfg.effective_context_char_budget_for_pipeline() > 1000,
+            "derived budget should exceed 1000 when explicit is off"
+        );
     }
 }
 

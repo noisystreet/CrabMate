@@ -113,6 +113,33 @@ pub(crate) fn LlmModelField(
 }
 
 #[component]
+pub(crate) fn LlmContextTokensField(
+    locale: RwSignal<Locale>,
+    llm_context_tokens_draft: RwSignal<String>,
+    hint_class: &'static str,
+) -> impl IntoView {
+    view! {
+        <div class="settings-field">
+            <label class="settings-field-label" for="settings-llm-context-tokens">
+                {move || i18n::settings_label_llm_context_tokens(locale.get())}
+            </label>
+            <input
+                type="number"
+                id="settings-llm-context-tokens"
+                class="settings-text-input"
+                min="0"
+                max="10000000"
+                step="1"
+                prop:placeholder=move || i18n::settings_ph_llm_context_tokens(locale.get())
+                prop:value=move || llm_context_tokens_draft.get()
+                on:input=move |ev| llm_context_tokens_draft.set(leptos_dom::helpers::event_target_value(&ev))
+            />
+            <p class=hint_class>{move || i18n::settings_llm_context_tokens_hint(locale.get())}</p>
+        </div>
+    }
+}
+
+#[component]
 pub(crate) fn LlmTemperatureField(
     locale: RwSignal<Locale>,
     temperature_draft: RwSignal<String>,

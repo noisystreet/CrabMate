@@ -4,7 +4,7 @@
 .SH NAME
 crabmate \- 基于 OpenAI 兼容 chat/completions 的 Rust AI Agent（DeepSeek / MiniMax / Ollama 等），支持工具调用、Web 界面与 CLI
 .SH SYNOPSIS
-\fBcrabmate\fR [\fB\-\-config\fR] [\fB\-\-workspace\fR] [\fB\-\-no\-tools\fR] [\fB\-\-agent\-role\fR] [\fB\-\-log\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] [\fIsubcommands\fR]
+\fBcrabmate\fR [\fB\-\-config\fR] [\fB\-\-workspace\fR] [\fB\-\-no\-tools\fR] [\fB\-\-agent\-role\fR] [\fB\-\-llm\-context\-tokens\fR] [\fB\-\-log\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] [\fIsubcommands\fR]
 .SH DESCRIPTION
 基于 OpenAI 兼容 chat/completions 的 Rust AI Agent（DeepSeek / MiniMax / Ollama 等），支持工具调用、Web 界面与 CLI
 .SH OPTIONS
@@ -20,6 +20,9 @@ crabmate \- 基于 OpenAI 兼容 chat/completions 的 Rust AI Agent（DeepSeek /
 .TP
 \fB\-\-agent\-role\fR \fI<ID>\fR
 新建 REPL / `chat` 会话时使用的命名角色 id（须与配置中 `[[agent_roles]]` 或 `agent_roles.toml` 一致；与 `\-\-system\-prompt\-file` 互斥时以后者为准）
+.TP
+\fB\-\-llm\-context\-tokens\fR \fI<N>\fR
+模型上下文窗口 token 上限（输入+输出），覆盖配置 `llm_context_tokens` / `CM_LLM_CONTEXT_TOKENS`；省略则使用配置文件；`0` 视为不覆盖
 .TP
 \fB\-\-log\fR \fI<FILE>\fR
 将日志追加写入指定文件（与 `RUST_LOG` 配合）。未设置 `RUST_LOG` 时，指定本选项会启用默认 **info** 级别写入，并同时输出到 stderr
@@ -63,6 +66,9 @@ crabmate\-tool\-replay(1)
 .TP
 crabmate\-mcp(1)
 MCP stdio 客户端运维：列出本进程内已缓存会话（**不要**求 API_KEY）
+.TP
+crabmate\-plugin(1)
+动态工具模板与校验（工作区 `plugins/*.json`）
 .PP
 Use \fBcrabmate \-\-help\fR or \fBcrabmate \fIsubcommand\fR \fB\-\-help\fR.
 .SH EXTRA

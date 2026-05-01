@@ -96,12 +96,13 @@ pub async fn maybe_summarize_with_llm(
     cfg: &AgentConfig,
     messages: &mut Vec<Message>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    if cfg.context_summary_trigger_chars == 0 {
+    let trigger = cfg.effective_context_summary_trigger_chars();
+    if trigger == 0 {
         return Ok(());
     }
     let tail = cfg.context_summary_tail_messages.clamp(4, 64);
     let chars = crate::agent::message_pipeline::estimate_non_system_chars(messages);
-    if chars < cfg.context_summary_trigger_chars {
+    if chars < trigger {
         return Ok(());
     }
     if messages.is_empty() || messages[0].role != "system" {

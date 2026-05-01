@@ -228,6 +228,7 @@ pub fn wire_settings_modal_llm_drafts_on_open(
     llm_api_base_preset_select: RwSignal<String>,
     llm_model_draft: RwSignal<String>,
     llm_temperature_draft: RwSignal<String>,
+    llm_context_tokens_draft: RwSignal<String>,
     llm_api_key_draft: RwSignal<String>,
     llm_has_saved_key: RwSignal<bool>,
     llm_settings_feedback: RwSignal<Option<String>>,
@@ -243,7 +244,7 @@ pub fn wire_settings_modal_llm_drafts_on_open(
         if !settings_modal.get() && !settings_page.get() {
             return;
         }
-        let (stored_base, stored_model, stored_temperature) =
+        let (stored_base, stored_model, stored_temperature, stored_ctx_tokens) =
             load_client_llm_text_fields_from_storage();
         let sd = status_tasks.status_data.get_untracked();
         let base = if stored_base.trim().is_empty() {
@@ -262,6 +263,14 @@ pub fn wire_settings_modal_llm_drafts_on_open(
         );
         llm_model_draft.set(model);
         llm_temperature_draft.set(stored_temperature);
+        let ctx_tokens = if stored_ctx_tokens.trim().is_empty() {
+            sd.as_ref()
+                .map(|d| d.llm_context_tokens.to_string())
+                .unwrap_or_default()
+        } else {
+            stored_ctx_tokens
+        };
+        llm_context_tokens_draft.set(ctx_tokens);
         llm_api_key_draft.set(String::new());
         llm_has_saved_key.set(client_llm_storage_has_api_key());
         llm_settings_feedback.set(None);

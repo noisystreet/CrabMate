@@ -194,6 +194,7 @@ fn SettingsPageContentPanels(
     llm_api_base_preset_select: RwSignal<String>,
     llm_model_draft: RwSignal<String>,
     llm_temperature_draft: RwSignal<String>,
+    llm_context_tokens_draft: RwSignal<String>,
     llm_api_key_draft: RwSignal<String>,
     llm_has_saved_key: RwSignal<bool>,
     clear_client_key_intent: RwSignal<bool>,
@@ -227,6 +228,7 @@ fn SettingsPageContentPanels(
                     llm_api_base_preset_select=llm_api_base_preset_select
                     llm_model_draft=llm_model_draft
                     llm_temperature_draft=llm_temperature_draft
+                    llm_context_tokens_draft=llm_context_tokens_draft
                     execution_mode_draft=Some(execution_mode_draft)
                     llm_api_key_draft=llm_api_key_draft
                     llm_has_saved_key=llm_has_saved_key
@@ -268,6 +270,7 @@ pub fn SettingsPageView(
     llm_api_base_preset_select: RwSignal<String>,
     llm_model_draft: RwSignal<String>,
     llm_temperature_draft: RwSignal<String>,
+    llm_context_tokens_draft: RwSignal<String>,
     llm_api_key_draft: RwSignal<String>,
     llm_has_saved_key: RwSignal<bool>,
     llm_settings_feedback: RwSignal<Option<String>>,
@@ -297,6 +300,7 @@ pub fn SettingsPageView(
         llm_api_base_preset_select.get_untracked(),
         llm_model_draft.get_untracked(),
         llm_temperature_draft.get_untracked(),
+        llm_context_tokens_draft.get_untracked(),
         execution_mode_draft.get_untracked(),
         llm_has_saved_key.get_untracked(),
     ));
@@ -318,6 +322,7 @@ pub fn SettingsPageView(
         llm_api_base_preset_select: llm_api_base_preset_select.get_untracked(),
         llm_model_draft: llm_model_draft.get_untracked(),
         llm_temperature_draft: llm_temperature_draft.get_untracked(),
+        llm_context_tokens_draft: llm_context_tokens_draft.get_untracked(),
         execution_mode_draft: execution_mode_draft.get_untracked(),
         llm_has_saved_key: llm_has_saved_key.get_untracked(),
         executor_llm_api_base_draft: executor_llm_api_base_draft.get_untracked(),
@@ -378,6 +383,7 @@ pub fn SettingsPageView(
             llm_api_base_preset_select: llm_api_base_preset_select.get(),
             llm_model_draft: llm_model_draft.get(),
             llm_temperature_draft: llm_temperature_draft.get(),
+            llm_context_tokens_draft: llm_context_tokens_draft.get(),
             execution_mode_draft: execution_mode_draft.get(),
             llm_has_saved_key: llm_has_saved_key.get(),
             executor_llm_api_base_draft: executor_llm_api_base_draft.get(),
@@ -403,11 +409,12 @@ pub fn SettingsPageView(
         appearance_theme.set(bt);
         appearance_bg_decor.set(bbd);
 
-        let (bb, bp, bm, bt, be, bh) = baseline_llm.get_value();
+        let (bb, bp, bm, bt, bct, be, bh) = baseline_llm.get_value();
         llm_api_base_draft.set(bb);
         llm_api_base_preset_select.set(bp);
         llm_model_draft.set(bm);
         llm_temperature_draft.set(bt);
+        llm_context_tokens_draft.set(bct);
         execution_mode_draft.set(be);
         llm_has_saved_key.set(bh);
         llm_api_key_draft.set(String::new());
@@ -446,6 +453,7 @@ pub fn SettingsPageView(
             llm_api_base_draft.get().as_str(),
             llm_model_draft.get().as_str(),
             llm_temperature_draft.get().as_str(),
+            llm_context_tokens_draft.get().as_str(),
             llm_api_key_draft.get().as_str(),
             executor_llm_api_base_draft.get().as_str(),
             executor_llm_model_draft.get().as_str(),
@@ -543,6 +551,7 @@ pub fn SettingsPageView(
                         llm_api_base_preset_select=llm_api_base_preset_select
                         llm_model_draft=llm_model_draft
                         llm_temperature_draft=llm_temperature_draft
+                        llm_context_tokens_draft=llm_context_tokens_draft
                         llm_api_key_draft=llm_api_key_draft
                         llm_has_saved_key=llm_has_saved_key
                         clear_client_key_intent=clear_client_key_intent

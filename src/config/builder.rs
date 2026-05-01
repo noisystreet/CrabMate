@@ -26,6 +26,7 @@ pub(crate) struct ConfigBuilder {
     pub(crate) allowed_commands: Option<Vec<String>>,
     pub(crate) run_command_working_dir: Option<String>,
     pub(crate) max_tokens: Option<u64>,
+    pub(crate) llm_context_tokens: Option<u64>,
     pub(crate) temperature: Option<f64>,
     pub(crate) llm_seed: Option<i64>,
     pub(crate) llm_reasoning_split: Option<bool>,
@@ -284,6 +285,7 @@ impl ConfigBuilder {
         self.command_timeout_secs = agent.command_timeout_secs.or(self.command_timeout_secs);
         self.command_max_output_len = agent.command_max_output_len.or(self.command_max_output_len);
         self.max_tokens = agent.max_tokens.or(self.max_tokens);
+        self.llm_context_tokens = agent.llm_context_tokens.or(self.llm_context_tokens);
         self.temperature = agent.temperature.or(self.temperature);
         self.llm_seed = agent.llm_seed.or(self.llm_seed);
         self.llm_reasoning_split = agent.llm_reasoning_split.or(self.llm_reasoning_split);

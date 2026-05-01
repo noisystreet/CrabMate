@@ -38,6 +38,7 @@
 # thinking_avoid_echo_appendix = """多行内联…"""   # 有非空文件路径时读盘优先于内联
 # thinking_avoid_echo_system_prompt = false   # CM_THINKING_AVOID_ECHO_SYSTEM_PROMPT=0
 # CM_THINKING_AVOID_ECHO_APPENDIX / CM_THINKING_AVOID_ECHO_APPENDIX_FILE
+# llm_context_tokens = 65536   # 模型上下文窗口 token；推导会话裁剪并与 context_char_budget 取更小；0 关闭窗口推导；CM_LLM_CONTEXT_TOKENS
 # context_char_budget = 200000
 # parallel_readonly_tools_max = 4
 # read_file_turn_cache_max_entries = 64   # 0 关闭单轮 read_file 缓存；CM_READ_FILE_TURN_CACHE_MAX_ENTRIES

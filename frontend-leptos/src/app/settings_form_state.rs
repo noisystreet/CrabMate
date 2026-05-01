@@ -3,7 +3,7 @@ use leptos::prelude::*;
 use crate::i18n::Locale;
 
 pub(crate) type AppearanceBaseline = (Locale, String, bool);
-pub(crate) type LlmBaseline = (String, String, String, String, String, bool);
+pub(crate) type LlmBaseline = (String, String, String, String, String, String, bool);
 pub(crate) type ExecutorBaseline = (String, String, String, bool);
 
 #[derive(Clone)]
@@ -15,6 +15,7 @@ pub(crate) struct SettingsFormCurrent {
     pub llm_api_base_preset_select: String,
     pub llm_model_draft: String,
     pub llm_temperature_draft: String,
+    pub llm_context_tokens_draft: String,
     pub execution_mode_draft: String,
     pub llm_has_saved_key: bool,
     pub executor_llm_api_base_draft: String,
@@ -49,11 +50,12 @@ pub(crate) fn is_settings_dirty(
         return true;
     }
 
-    let (bb, bp, bm, bt, be, bh) = baseline_llm;
+    let (bb, bp, bm, bt, bct, be, bh) = baseline_llm;
     if current.llm_api_base_draft != *bb
         || current.llm_api_base_preset_select != *bp
         || current.llm_model_draft != *bm
         || current.llm_temperature_draft != *bt
+        || current.llm_context_tokens_draft != *bct
         || current.execution_mode_draft != *be
         || current.llm_has_saved_key != *bh
     {
@@ -86,6 +88,7 @@ pub(crate) fn refresh_baselines(
             current.llm_api_base_preset_select.clone(),
             current.llm_model_draft.clone(),
             current.llm_temperature_draft.clone(),
+            current.llm_context_tokens_draft.clone(),
             current.execution_mode_draft.clone(),
             current.llm_has_saved_key,
         );

@@ -75,6 +75,8 @@ pub(super) struct AgentSection {
     pub(super) allowed_commands: Option<Vec<String>>,
     pub(super) run_command_working_dir: Option<String>,
     pub(super) max_tokens: Option<u64>,
+    /// 模型上下文窗口 token 上限（输入+输出）；用于推导会话裁剪近似字符预算。`CM_LLM_CONTEXT_TOKENS`
+    pub(super) llm_context_tokens: Option<u64>,
     pub(super) temperature: Option<f64>,
     pub(super) llm_seed: Option<i64>,
     /// MiniMax 等：`reasoning_split`；`None` 时由 `finalize` 按网关推断默认（MiniMax 为 `true`）。
