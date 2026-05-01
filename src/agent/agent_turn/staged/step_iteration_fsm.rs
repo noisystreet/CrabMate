@@ -1,5 +1,5 @@
 //! 分阶段 **`run_staged_plan_steps_loop`** 单次迭代在 **transition 已处理之后** 的纯决策：
-//! outer_loop + 验收结果如何归类、工具健康检查阶段走哪条路径。
+//! outer_loop + 验收结果如何归类、工具健康检查阶段走哪条路径；以及墙钟是否超限（与循环顶部一致）。
 //! **不**运行 outer_loop / 补丁 LLM / 不发 SSE。
 
 use crate::agent::agent_turn::errors::RunAgentTurnError;
@@ -69,6 +69,26 @@ pub(crate) fn staged_step_tool_phase_route(
         StagedStepToolPhaseRoute::EmitStepSuccess
     }
 }
+
+/// 与 `run_staged_plan_steps_loop` 顶部墙钟检查一致：`max_turn_duration_seconds == 0` 表示不限制。
+pub(crate) fn staged_step_wall_clock_exceeded(
+    max_turn_duration_seconds: u64,
+    elapsed_secs: u64,
+) -> bool {
+    max_turn_duration_seconds > 0 && elapsed_secs > max_turn_duration_seconds
+}
+
+pub(crate) fn staged_step_verify_fail_patch_detail(verify_reason: &str) -> String {
+    format!(
+        "验证闸门报告失败: {}\n请根据对话历史缩短或调整后续步骤，并在补丁中修复此问题。",
+        verify_reason
+    )
+}
+
+pub(crate) const STAGED_STEP_OUTER_LOOP_FAIL_DETAIL: &str =
+    "请根据对话历史缩短或调整后续步骤；若属环境/权限问题请在补丁中显式增加修复步。";
+
+pub(crate) const STAGED_STEP_TOOL_MSG_FAIL_DETAIL: &str = "请阅读本步对应的 `role: tool` 输出（含失败原因），修订从当前步起的 `steps`（可替换、拆分或追加一步）。";
 
 #[cfg(test)]
 mod tests {
@@ -156,5 +176,12 @@ mod tests {
             staged_step_tool_phase_route(false, true),
             StagedStepToolPhaseRoute::AttemptToolFailurePatches
         );
+    }
+
+    #[test]
+    fn wall_clock_exceeded_matches_loop() {
+        assert!(!staged_step_wall_clock_exceeded(0, 999));
+        assert!(!staged_step_wall_clock_exceeded(10, 10));
+        assert!(staged_step_wall_clock_exceeded(10, 11));
     }
 }

@@ -141,6 +141,7 @@
 
 | 日期 | 说明 |
 |------|------|
+| 2026-04-30 | 步循环：`mod.rs` 内 **`run_one_staged_plan_step_iteration`**（单次迭代 I/O + `StagedStepIterationCtl`）；**`step_iteration_fsm.rs`** 增补墙钟 **`staged_step_wall_clock_exceeded`**、补丁反馈常量与 **`staged_step_verify_fail_patch_detail`** |
 | 2026-04-30 | 步循环单次迭代（transition 之后）：`agent_turn/staged/step_iteration_fsm.rs`（outer_loop 后阶段划分、工具健康检查阶段路由）；与 **`step_loop_fsm`** / **`staged_step_fsm`** 并列 |
 | 2026-04-30 | 解析成功后管线：`agent_turn/staged/post_parse_pipeline_fsm.rs`（ensemble/优化轮是否调用、结构化 `debug!`）；与 **`planner_round_fsm`**（路由枚举）配合 |
 | 2026-04-30 | 步执行循环：`agent_turn/staged/step_loop_fsm.rs`（`transitions` 跳转、注入步 user）；**`staged_step_fsm.rs`**（补丁预算、`PatchPlanner`）；首轮解析 / `no_task` 历史：**`planner_parse_fsm.rs`**（`NotFound` 收敛 vs 降级） |
