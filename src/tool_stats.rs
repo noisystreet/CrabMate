@@ -29,12 +29,14 @@ pub(crate) fn record_tool_outcome(
     }
     let parsed = parse_legacy_output(tool_name, result_raw);
     let summary = tool_summary.unwrap_or_else(|| format!("tool: {tool_name}"));
+    let structured_payload = crate::tool_result::structured_payload_for_tool(tool_name, result_raw);
     let norm = NormalizedToolEnvelope::from_tool_run(
         tool_name,
         summary,
         &parsed,
         result_raw,
         envelope_ctx,
+        structured_payload,
     );
     let cap = cfg.agent_tool_stats_window_events.max(1);
     let mut q = TOOL_STAT_EVENTS.lock().unwrap_or_else(|e| e.into_inner());

@@ -81,7 +81,7 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `tool_call_id` | string? | OpenAI `tool_calls[].id` |
 | `execution_mode` | string? | `serial` or `parallel_readonly_batch` |
 | `parallel_batch_id` | string? | Shared id for parallel readonly batch |
-| `structured_preview` | object? | Optional; a small copy of the first-line **`crabmate_tool_output`** JSON from **`read_file`** / **`read_dir`** / **`list_tree`** (**no** file body); other tools usually omit it |
+| `structured_preview` | object? | Optional; **`read_file`** / **`read_dir`** / **`list_tree`**: small copy of first-line **`crabmate_tool_output`** JSON (**no** file body); **`run_command`**: mirrors **`crabmate_tool.structured_payload`** (**`run_command_exit_v1`**). When both a header preview and **`structured_payload`** exist, merged object with **`tool_output_header`** + **`structured_payload`** |
 
 ### `command_approval_request`
 

@@ -14,7 +14,7 @@ use super::{
 pub const CRABMATE_TOOL_ENVELOPE_VERSION_V1: u32 = 1;
 
 /// 归一化后的工具结果（信封 v1 形状的逻辑视图）。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct NormalizedToolEnvelope {
     pub envelope_version: u32,
     pub name: String,
@@ -33,6 +33,8 @@ pub struct NormalizedToolEnvelope {
     pub output_original_chars: Option<u64>,
     pub output_kept_head_chars: Option<u64>,
     pub output_kept_tail_chars: Option<u64>,
+    /// 可选：机器可读摘要（如 **`run_command`** 的 **`run_command_exit_v1`**），与 **`output`** 正文并存。
+    pub structured_payload: Option<Value>,
 }
 
 impl NormalizedToolEnvelope {
@@ -43,6 +45,7 @@ impl NormalizedToolEnvelope {
         parsed: &ParsedLegacyOutput,
         raw_output: &str,
         envelope_ctx: Option<&ToolEnvelopeContext<'_>>,
+        structured_payload: Option<Value>,
     ) -> Self {
         let retryable = if parsed.ok {
             None
@@ -83,6 +86,7 @@ impl NormalizedToolEnvelope {
             output_original_chars: None,
             output_kept_head_chars: None,
             output_kept_tail_chars: None,
+            structured_payload,
         }
     }
 
@@ -132,6 +136,7 @@ impl NormalizedToolEnvelope {
         let output_original_chars = ct.get("output_original_chars").and_then(|x| x.as_u64());
         let output_kept_head_chars = ct.get("output_kept_head_chars").and_then(|x| x.as_u64());
         let output_kept_tail_chars = ct.get("output_kept_tail_chars").and_then(|x| x.as_u64());
+        let structured_payload = ct.get("structured_payload").cloned();
         let failure_category = failure_category_stored.or_else(|| {
             if ok {
                 return None;
@@ -158,6 +163,7 @@ impl NormalizedToolEnvelope {
             output_original_chars,
             output_kept_head_chars,
             output_kept_tail_chars,
+            structured_payload,
         })
     }
 
@@ -208,6 +214,9 @@ impl NormalizedToolEnvelope {
         }
         if let Some(n) = self.output_kept_tail_chars {
             ct.insert("output_kept_tail_chars".into(), Value::from(n));
+        }
+        if let Some(ref p) = self.structured_payload {
+            ct.insert("structured_payload".into(), p.clone());
         }
         ct
     }
