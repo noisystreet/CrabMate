@@ -6,6 +6,22 @@ use crate::settings_llm_fields::{
     LlmExecutorApiKeyField, LlmModelField, LlmTemperatureField, OptionalLlmExecutionModeField,
 };
 
+/// 设置页「主 LLM」区块所需信号（缩短 [`SettingsLlmBlock`] 形参列表；勿命名为 `*Props`，与 Leptos 组件宏生成类型冲突）。
+#[derive(Clone)]
+pub(crate) struct SettingsLlmBlockBundle {
+    pub locale: RwSignal<Locale>,
+    pub llm_api_base_draft: RwSignal<String>,
+    pub llm_api_base_preset_select: RwSignal<String>,
+    pub llm_model_draft: RwSignal<String>,
+    pub llm_temperature_draft: RwSignal<String>,
+    pub llm_context_tokens_draft: RwSignal<String>,
+    pub execution_mode_draft: Option<RwSignal<String>>,
+    pub llm_api_key_draft: RwSignal<String>,
+    pub llm_has_saved_key: RwSignal<bool>,
+    pub clear_client_key_intent: RwSignal<bool>,
+    pub hint_class: &'static str,
+}
+
 #[component]
 pub(crate) fn SettingsAppearanceBlock(
     locale: RwSignal<Locale>,
@@ -71,19 +87,20 @@ pub(crate) fn SettingsAppearanceBlock(
 }
 
 #[component]
-pub(crate) fn SettingsLlmBlock(
-    locale: RwSignal<Locale>,
-    llm_api_base_draft: RwSignal<String>,
-    llm_api_base_preset_select: RwSignal<String>,
-    llm_model_draft: RwSignal<String>,
-    llm_temperature_draft: RwSignal<String>,
-    llm_context_tokens_draft: RwSignal<String>,
-    execution_mode_draft: Option<RwSignal<String>>,
-    llm_api_key_draft: RwSignal<String>,
-    llm_has_saved_key: RwSignal<bool>,
-    clear_client_key_intent: RwSignal<bool>,
-    hint_class: &'static str,
-) -> impl IntoView {
+pub(crate) fn SettingsLlmBlock(bundle: SettingsLlmBlockBundle) -> impl IntoView {
+    let SettingsLlmBlockBundle {
+        locale,
+        llm_api_base_draft,
+        llm_api_base_preset_select,
+        llm_model_draft,
+        llm_temperature_draft,
+        llm_context_tokens_draft,
+        execution_mode_draft,
+        llm_api_key_draft,
+        llm_has_saved_key,
+        clear_client_key_intent,
+        hint_class,
+    } = bundle;
     view! {
         <div class="settings-block">
             <h3 class="settings-block-title">{move || i18n::settings_block_llm(locale.get())}</h3>

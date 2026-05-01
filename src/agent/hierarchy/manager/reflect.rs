@@ -14,24 +14,40 @@ use super::manager_tail::{
 };
 use super::types::{ManagerAgent, ManagerError};
 
+/// 反思并重规划子目标所需的 LLM 与任务上下文（缩短 [`ManagerAgent::reflect_and_replan`] 形参列表）。
+pub struct ReflectAndReplanContext<'a> {
+    pub failed_goal: &'a SubGoal,
+    pub verification_failure: &'a str,
+    pub execution_result: &'a TaskResult,
+    pub cfg: &'a AgentConfig,
+    pub llm_backend: &'a dyn ChatCompletionsBackend,
+    pub client: &'a reqwest::Client,
+    pub api_key: &'a str,
+    pub working_dir: &'a std::path::Path,
+    pub tools_defs: &'a [crate::types::Tool],
+    pub artifacts: &'a [Artifact],
+}
+
 impl ManagerAgent {
     /// 反思验证失败并重新规划子目标
     ///
     /// 当验证失败时，分析失败原因并生成修复策略
-    #[allow(clippy::too_many_arguments)]
     pub async fn reflect_and_replan(
         &self,
-        failed_goal: &SubGoal,
-        verification_failure: &str,
-        execution_result: &TaskResult,
-        cfg: &AgentConfig,
-        llm_backend: &dyn ChatCompletionsBackend,
-        client: &reqwest::Client,
-        api_key: &str,
-        working_dir: &std::path::Path,
-        tools_defs: &[crate::types::Tool],
-        artifacts: &[Artifact],
+        ctx: ReflectAndReplanContext<'_>,
     ) -> Result<SubGoal, ManagerError> {
+        let ReflectAndReplanContext {
+            failed_goal,
+            verification_failure,
+            execution_result,
+            cfg,
+            llm_backend,
+            client,
+            api_key,
+            working_dir,
+            tools_defs,
+            artifacts,
+        } = ctx;
         log::info!(
             target: "crabmate",
             "[HIERARCHICAL] Manager: reflecting on verification failure for goal={}",

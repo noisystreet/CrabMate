@@ -11,4 +11,5 @@ mod session_compile;
 mod types;
 
 pub use manager_tail::{FailureDecision, ManagerOutput, handle_failure};
+pub use reflect::ReflectAndReplanContext;
 pub use types::{ManagerAgent, ManagerConfig, ManagerDecision, ManagerError};

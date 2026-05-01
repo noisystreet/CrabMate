@@ -5,7 +5,8 @@ use leptos_dom::helpers::window_event_listener;
 
 use super::settings_form_state::{SettingsFormCurrent, is_settings_dirty, refresh_baselines};
 use super::settings_sections::{
-    SettingsAppearanceBlock, SettingsExecutorLlmBlock, SettingsLlmBlock, SettingsShortcutsBlock,
+    SettingsAppearanceBlock, SettingsExecutorLlmBlock, SettingsLlmBlock, SettingsLlmBlockBundle,
+    SettingsShortcutsBlock,
 };
 use crate::app::settings_commit::{CommitAllSettingsInput, commit_all_settings};
 use crate::i18n::{self, Locale};
@@ -269,19 +270,19 @@ fn SettingsPageContentPanels(
             </Show>
 
             <Show when=move || active_section.get() == SettingsSection::Llm>
-                <SettingsLlmBlock
-                    locale=appearance_locale
-                    llm_api_base_draft=llm_api_base_draft
-                    llm_api_base_preset_select=llm_api_base_preset_select
-                    llm_model_draft=llm_model_draft
-                    llm_temperature_draft=llm_temperature_draft
-                    llm_context_tokens_draft=llm_context_tokens_draft
-                    execution_mode_draft=Some(execution_mode_draft)
-                    llm_api_key_draft=llm_api_key_draft
-                    llm_has_saved_key=llm_has_saved_key
-                    clear_client_key_intent=clear_client_key_intent
-                    hint_class="settings-field-nested-hint"
-                />
+                <SettingsLlmBlock bundle=SettingsLlmBlockBundle {
+                    locale: appearance_locale,
+                    llm_api_base_draft,
+                    llm_api_base_preset_select,
+                    llm_model_draft,
+                    llm_temperature_draft,
+                    llm_context_tokens_draft,
+                    execution_mode_draft: Some(execution_mode_draft),
+                    llm_api_key_draft,
+                    llm_has_saved_key,
+                    clear_client_key_intent,
+                    hint_class: "settings-field-nested-hint",
+                } />
             </Show>
 
             <Show when=move || active_section.get() == SettingsSection::ExecutorLlm>

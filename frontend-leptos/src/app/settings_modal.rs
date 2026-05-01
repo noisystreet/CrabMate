@@ -12,7 +12,8 @@ use crate::i18n::{self};
 use super::app_shell_ctx::AppShellCtx;
 use super::settings_form_state::{SettingsFormCurrent, is_settings_dirty, refresh_baselines};
 use super::settings_sections::{
-    SettingsAppearanceBlock, SettingsExecutorLlmBlock, SettingsLlmBlock, SettingsShortcutsBlock,
+    SettingsAppearanceBlock, SettingsExecutorLlmBlock, SettingsLlmBlock, SettingsLlmBlockBundle,
+    SettingsShortcutsBlock,
 };
 
 pub fn settings_modal_view(ctx: AppShellCtx) -> impl IntoView {
@@ -346,19 +347,19 @@ pub fn settings_modal_view(ctx: AppShellCtx) -> impl IntoView {
                                 appearance_theme=appearance_theme
                                 appearance_bg_decor=appearance_bg_decor
                             />
-                            <SettingsLlmBlock
-                                locale=appearance_locale
-                                llm_api_base_draft=llm_api_base_draft
-                                llm_api_base_preset_select=llm_api_base_preset_select
-                                llm_model_draft=llm_model_draft
-                                llm_temperature_draft=llm_temperature_draft
-                                llm_context_tokens_draft=llm_context_tokens_draft
-                                execution_mode_draft=None
-                                llm_api_key_draft=llm_api_key_draft
-                                llm_has_saved_key=llm_has_saved_key
-                                clear_client_key_intent=clear_client_key_intent
-                                hint_class="modal-hint settings-field-nested-hint"
-                            />
+                            <SettingsLlmBlock bundle=SettingsLlmBlockBundle {
+                                locale: appearance_locale,
+                                llm_api_base_draft,
+                                llm_api_base_preset_select,
+                                llm_model_draft,
+                                llm_temperature_draft,
+                                llm_context_tokens_draft,
+                                execution_mode_draft: None,
+                                llm_api_key_draft,
+                                llm_has_saved_key,
+                                clear_client_key_intent,
+                                hint_class: "modal-hint settings-field-nested-hint",
+                            } />
                             <SettingsExecutorLlmBlock
                                 locale=appearance_locale
                                 executor_llm_api_base_draft=executor_llm_api_base_draft

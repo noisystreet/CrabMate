@@ -563,8 +563,7 @@ fn build_non_assistant_message_body(
     .into_any()
 }
 
-#[allow(clippy::too_many_arguments)]
-fn build_message_actions_bar(
+struct MessageActionsBarParams {
     show_msg_action_bar: bool,
     is_user_plain: bool,
     err: bool,
@@ -576,7 +575,22 @@ fn build_message_actions_bar(
     retry_assistant_target: RwSignal<Option<String>>,
     status_busy: RwSignal<bool>,
     locale: RwSignal<Locale>,
-) -> AnyView {
+}
+
+fn build_message_actions_bar(p: MessageActionsBarParams) -> AnyView {
+    let MessageActionsBarParams {
+        show_msg_action_bar,
+        is_user_plain,
+        err,
+        msg_idx,
+        user_retry_id,
+        user_branch_id,
+        mid_retry,
+        row_actions,
+        retry_assistant_target,
+        status_busy,
+        locale,
+    } = p;
     if !show_msg_action_bar {
         return ().into_any();
     }
@@ -950,19 +964,19 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
                         </pre>
                     </div>
                 </Show>
-                {build_message_actions_bar(
+                {build_message_actions_bar(MessageActionsBarParams {
                     show_msg_action_bar,
                     is_user_plain,
                     err,
                     msg_idx,
-                    user_retry_id.clone(),
-                    user_branch_id.clone(),
-                    mid_retry.clone(),
+                    user_retry_id: user_retry_id.clone(),
+                    user_branch_id: user_branch_id.clone(),
+                    mid_retry: mid_retry.clone(),
                     row_actions,
                     retry_assistant_target,
                     status_busy,
                     locale,
-                )}
+                })}
             </div>
         </div>
     }

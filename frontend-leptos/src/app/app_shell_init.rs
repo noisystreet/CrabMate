@@ -23,7 +23,7 @@ use super::chat::{
 use super::status_tasks_wiring::{
     make_refresh_status, make_refresh_tasks, make_toggle_task, wire_status_tasks_domain_effects,
 };
-use super::wire_workspace_domain::wire_workspace_domain_effects;
+use super::wire_workspace_domain::{WireWorkspaceDomainEffectsArgs, wire_workspace_domain_effects};
 use super::workspace_panel::{make_insert_workspace_path_into_composer, make_refresh_workspace};
 
 /// 初始化后的壳级句柄集合，供 `App` 视图层消费。
@@ -85,19 +85,19 @@ pub fn init_app_shell() -> AppShellInit {
         app_signals.shell_ui.locale.get_untracked(),
     );
 
-    wire_workspace_domain_effects(
-        app_signals.chat.session_sync,
-        app_signals.modal.changelist_fetch_nonce,
-        app_signals.modal.changelist_modal_loading,
-        app_signals.modal.changelist_modal_err,
-        app_signals.modal.changelist_modal_html,
-        app_signals.modal.changelist_modal_rev,
-        app_signals.shell_ui.markdown_render,
-        app_signals.modal.changelist_body_ref,
-        app_signals.shell_ui.side_panel_view,
-        app_signals.initialized,
-        Arc::clone(&refresh_workspace),
-    );
+    wire_workspace_domain_effects(WireWorkspaceDomainEffectsArgs {
+        session_sync: app_signals.chat.session_sync,
+        changelist_fetch_nonce: app_signals.modal.changelist_fetch_nonce,
+        changelist_modal_loading: app_signals.modal.changelist_modal_loading,
+        changelist_modal_err: app_signals.modal.changelist_modal_err,
+        changelist_modal_html: app_signals.modal.changelist_modal_html,
+        changelist_modal_rev: app_signals.modal.changelist_modal_rev,
+        markdown_render: app_signals.shell_ui.markdown_render,
+        changelist_body_ref: app_signals.modal.changelist_body_ref,
+        side_panel_view: app_signals.shell_ui.side_panel_view,
+        initialized: app_signals.initialized,
+        refresh_workspace: Arc::clone(&refresh_workspace),
+    });
 
     let refresh_status = make_refresh_status(
         app_signals.to_status_tasks(),
