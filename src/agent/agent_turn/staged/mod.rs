@@ -1360,9 +1360,8 @@ where
         ) {
             return Err(RunAgentTurnError::TimeLimitExhausted {
                 phase: AgentTurnSubPhase::Executor,
-                message: format!(
-                    "已达到单轮墙钟时间上限 ({}秒)",
-                    patch_ctx.p.ctx.cfg.max_turn_duration_seconds
+                message: crate::agent::turn_budget::turn_wall_clock_limit_user_message(
+                    patch_ctx.p.ctx.cfg.max_turn_duration_seconds,
                 ),
             });
         }

@@ -197,6 +197,33 @@ impl super::types::OperatorAgent {
                 });
             }
 
+            if crate::agent::turn_budget::turn_wall_clock_exceeded(
+                cfg.max_turn_duration_seconds,
+                start_time.elapsed().as_secs(),
+            ) {
+                let msg = crate::agent::turn_budget::turn_wall_clock_limit_user_message(
+                    cfg.max_turn_duration_seconds,
+                );
+                tracing::warn!(
+                    target: "crabmate::hierarchy",
+                    limiter = "turn_wall_clock",
+                    max_turn_duration_seconds = cfg.max_turn_duration_seconds,
+                    goal_id = %goal.goal_id,
+                    "Operator ReAct: turn wall clock exceeded (shared with agent_turn outer_loop)"
+                );
+                return Ok(TaskResult {
+                    task_id: goal.goal_id.clone(),
+                    status: TaskStatus::Failed {
+                        reason: msg.clone(),
+                    },
+                    output: Some(self.build_output_summary(&state)),
+                    error: Some(msg),
+                    artifacts: Vec::new(),
+                    duration_ms: start_time.elapsed().as_millis() as u64,
+                    tools_invoked: state.tool_names_chron.clone(),
+                });
+            }
+
             // 调用 LLM（内部对 messages 跑会话同步管道：压缩 tool / 按配置裁剪条数与字符）
             let response = self
                 .call_llm(cfg, llm_backend, client, api_key, &mut state)

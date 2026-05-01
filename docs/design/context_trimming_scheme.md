@@ -3,6 +3,7 @@
 **状态**：与当前实现同步的设计说明（会话同步管道以源码为准；分层 ReAct 专用裁剪另见下文关联文档）。  
 **受众**：维护 `agent::message_pipeline`、`agent::context_window` 与 Agent 主循环的开发者。  
 **权威实现**：`src/agent/message_pipeline.rs`（**`apply_session_sync_pipeline`** 顺序契约）、`src/agent/context_window.rs`（**`prepare_messages_for_model`**、**`maybe_summarize_with_llm`**）。  
+**单轮墙钟预算**（**`max_turn_duration_seconds`**；与 messages 体积裁剪正交）：**`src/agent/turn_budget.rs`**（**`agent_turn` / `staged` / `hierarchy` Operator** 共用判定与文案）。  
 **配置与环境变量**：键名与默认值以 **`docs/配置说明.md`**、`config/default_config.toml` 为准。
 
 ---

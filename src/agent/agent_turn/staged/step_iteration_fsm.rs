@@ -84,12 +84,12 @@ pub(crate) fn staged_step_tool_phase_route(
     }
 }
 
-/// 与 `run_staged_plan_steps_loop` 顶部墙钟检查一致：`max_turn_duration_seconds == 0` 表示不限制。
+/// 与 [`crate::agent::turn_budget::turn_wall_clock_exceeded`] 一致：`max_turn_duration_seconds == 0` 表示不限制。
 pub(crate) fn staged_step_wall_clock_exceeded(
     max_turn_duration_seconds: u64,
     elapsed_secs: u64,
 ) -> bool {
-    max_turn_duration_seconds > 0 && elapsed_secs > max_turn_duration_seconds
+    crate::agent::turn_budget::turn_wall_clock_exceeded(max_turn_duration_seconds, elapsed_secs)
 }
 
 pub(crate) fn staged_step_verify_fail_patch_detail(verify_reason: &str) -> String {
