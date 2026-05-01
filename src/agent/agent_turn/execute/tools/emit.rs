@@ -64,6 +64,7 @@ async fn emit_sse_tool_result(
     envelope_ctx: Option<ToolEnvelopeContext<'_>>,
 ) {
     let parsed = parse_legacy_output(name, result);
+    let structured_payload = tool_result::structured_payload_for_tool(name, result);
     let summary_for_norm = tool_summary
         .clone()
         .unwrap_or_else(|| format!("tool: {name}"));
@@ -73,6 +74,7 @@ async fn emit_sse_tool_result(
         &parsed,
         result,
         envelope_ctx.as_ref(),
+        structured_payload,
     );
     let stdout = if parsed.stdout.is_empty() {
         None
@@ -84,8 +86,11 @@ async fn emit_sse_tool_result(
     } else {
         Some(parsed.stderr)
     };
-    let structured_preview =
-        crate::tools::structured_preview::structured_preview_for_tool_sse(name, result);
+    let structured_preview = crate::tools::structured_preview::structured_preview_for_tool_sse(
+        name,
+        result,
+        norm.structured_payload.as_ref(),
+    );
     let _ = crate::sse::send_string_logged(
         tx,
         encode_message(SsePayload::ToolResult {

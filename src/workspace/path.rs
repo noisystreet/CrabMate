@@ -375,7 +375,7 @@ mod proptest_workspace_paths {
     #[test]
     fn proptest_ensure_within_descendants_and_rejects_sibling_branch() {
         let mut runner = proptest::test_runner::TestRunner::new(ProptestConfig::with_cases(128));
-        let strat = (arb_unix_abs_components(4), 1usize..5usize, 0usize..6usize).prop_flat_map(
+        let strategy = (arb_unix_abs_components(4), 1usize..5usize, 0usize..6usize).prop_flat_map(
             |(base, root_depth, extra)| {
                 let mut root = base.clone();
                 for i in 0..root_depth {
@@ -396,7 +396,7 @@ mod proptest_workspace_paths {
         );
 
         runner
-            .run(&strat, |(root, candidate, sibling_path)| {
+            .run(&strategy, |(root, candidate, sibling_path)| {
                 prop_assert!(ensure_canonical_within_root(&candidate, &root).is_ok());
                 prop_assert!(ensure_canonical_within_root(&sibling_path, &root).is_err());
                 Ok(())
@@ -409,10 +409,10 @@ mod proptest_workspace_paths {
         let mut runner = proptest::test_runner::TestRunner::new(ProptestConfig::with_cases(64));
         let dir = tempdir().expect("tempdir");
         let root = dir.path().canonicalize().expect("canonical temp root");
-        let strat = prop::collection::vec("[a-z0-9]{1,12}", 1..10);
+        let strategy = prop::collection::vec("[a-z0-9]{1,12}", 1..10);
 
         runner
-            .run(&strat, |segments| {
+            .run(&strategy, |segments| {
                 let mut rel = String::new();
                 for (i, s) in segments.iter().enumerate() {
                     if i > 0 {
@@ -432,10 +432,10 @@ mod proptest_workspace_paths {
     #[test]
     fn proptest_allowed_roots_matches_tempdir() {
         let mut runner = proptest::test_runner::TestRunner::new(ProptestConfig::with_cases(32));
-        let strat = prop::collection::vec("[a-z0-9]{1,8}", 1..6);
+        let strategy = prop::collection::vec("[a-z0-9]{1,8}", 1..6);
 
         runner
-            .run(&strat, |subdirs| {
+            .run(&strategy, |subdirs| {
                 let dir = tempdir().expect("tempdir");
                 let canon_root = dir.path().canonicalize().expect("canon");
                 let roots = vec![canon_root.clone()];

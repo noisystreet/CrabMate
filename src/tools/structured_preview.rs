@@ -22,17 +22,52 @@ pub fn crabmate_tool_output_header(tool_name: &str, result: &str) -> Option<Valu
     Some(v)
 }
 
-/// 为 `emit_sse_tool_result` 生成可选的结构化预览对象（体积须小；**不**含文件正文）。
-pub fn structured_preview_for_tool_sse(tool_name: &str, result: &str) -> Option<Value> {
-    match tool_name {
-        "read_file" | "read_dir" | "list_tree" => crabmate_tool_output_header(tool_name, result),
-        _ => None,
+/// 合并 **`crabmate_tool_output`** 首行预览与信封 **`structured_payload`**（如 **`run_command`**），供 SSE **`tool_result.structured_preview`** 单一出口。
+pub fn merge_sse_structured_preview(
+    tool_name: &str,
+    result: &str,
+    envelope_structured: Option<&Value>,
+) -> Option<Value> {
+    let header = crabmate_tool_output_header(tool_name, result);
+    match (header, envelope_structured) {
+        (None, None) => None,
+        (Some(h), None) => Some(h),
+        (None, Some(p)) => Some(p.clone()),
+        (Some(h), Some(p)) => {
+            let mut m = serde_json::Map::new();
+            m.insert("tool_output_header".into(), h);
+            m.insert("structured_payload".into(), p.clone());
+            Some(Value::Object(m))
+        }
     }
+}
+
+/// 为 `emit_sse_tool_result` 生成可选的结构化预览对象（体积须小；**不**含文件正文）。
+pub fn structured_preview_for_tool_sse(
+    tool_name: &str,
+    result: &str,
+    envelope_structured: Option<&Value>,
+) -> Option<Value> {
+    merge_sse_structured_preview(tool_name, result, envelope_structured)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn merge_preview_header_and_payload() {
+        let header = "{\"kind\":\"crabmate_tool_output\",\"tool\":\"read_file\",\"version\":1,\"path\":\"a.rs\"}\nbody";
+        let payload = serde_json::json!({"kind":"crabmate_structured_payload","tool":"run_command","version":1});
+        let m = crate::tools::structured_preview::merge_sse_structured_preview(
+            "read_file",
+            header,
+            Some(&payload),
+        )
+        .expect("merged");
+        assert!(m.get("tool_output_header").is_some());
+        assert!(m.get("structured_payload").is_some());
+    }
 
     #[test]
     fn read_file_header_roundtrip() {
@@ -51,7 +86,7 @@ mod tests {
         });
         let body = "line1\nline2";
         let combined = format!("{}\n{}", header, body);
-        let p = structured_preview_for_tool_sse("read_file", &combined).expect("preview");
+        let p = structured_preview_for_tool_sse("read_file", &combined, None).expect("preview");
         assert_eq!(p["tool"], "read_file");
         assert_eq!(p["path"], "src/x.rs");
     }
@@ -71,7 +106,7 @@ mod tests {
         });
         let body = "dir: .\nfile: a.rs\n";
         let combined = format!("{}\n{}", header, body);
-        let p = structured_preview_for_tool_sse("list_tree", &combined).expect("preview");
+        let p = structured_preview_for_tool_sse("list_tree", &combined, None).expect("preview");
         assert_eq!(p["tool"], "list_tree");
         assert_eq!(p["lines_count"], 5);
     }
@@ -79,6 +114,6 @@ mod tests {
     #[test]
     fn wrong_tool_yields_none() {
         let s = "{\"kind\":\"crabmate_tool_output\",\"tool\":\"read_file\",\"version\":1}\n";
-        assert!(structured_preview_for_tool_sse("read_dir", s).is_none());
+        assert!(structured_preview_for_tool_sse("read_dir", s, None).is_none());
     }
 }

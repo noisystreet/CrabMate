@@ -4,6 +4,7 @@
 //!
 //! 顶层键 **`crabmate_tool`**，内含 `v`（**载荷版本**，当前为 **1**；与 SSE 整条控制面的 **`SseMessage.v`** 不同）、`name`、`summary`（与 SSE / `summarize_tool_call` 同源）、
 //! `ok`、`exit_code`、`error_code`、`output`（工具原始返回正文，供模型阅读或再解析）。
+//! 可选 **`structured_payload`**：机器可读的小对象（如 **`run_command`** 的 **`run_command_exit_v1`**），与正文并存；SSE **`tool_result.structured_preview`** 可与首行 **`crabmate_tool_output`** 合并下发。
 //! SSE `tool_result` 对象另含 **`result_version`**，与 `crabmate_tool.v` 对齐，便于客户端区分「控制面版本」与「工具结果载荷版本」。
 //! 可选扩展（见 [`ToolEnvelopeContext`]）：**`tool_call_id`**、**`execution_mode`**（`serial` / `parallel_readonly_batch`）、
 //! **`parallel_batch_id`**（同批并行只读工具共享）、失败时的 **`failure_category`**（与 [`tool_error::ToolFailureCategory`] 蛇形字符串同源，由 **`error_code`** 推导）、**`retryable`**（与 `error_code` 配套的启发式，非保证）。
@@ -22,6 +23,8 @@ pub use normalize::{
 pub use tool_error::{ToolError, ToolFailureCategory, failure_category_for_error_code};
 
 use std::borrow::Cow;
+
+use serde_json::Value;
 
 #[derive(Debug, Clone)]
 pub struct ToolResult {
@@ -164,6 +167,44 @@ fn classify_error_code(first_line: &str, tool_name: &str) -> String {
     format!("{}_failed", tool_name)
 }
 
+/// 供 **`crabmate_tool.structured_payload`** 与 SSE 合并路径使用：对已格式化命令输出生成稳定 JSON（**不含** stdout/stderr 全文）。
+pub fn structured_payload_for_tool(tool_name: &str, raw_output: &str) -> Option<Value> {
+    match tool_name {
+        "run_command" => Some(run_command_structured_payload(raw_output)),
+        _ => None,
+    }
+}
+
+fn run_command_structured_payload(raw_output: &str) -> Value {
+    let invocation = raw_output
+        .lines()
+        .next()
+        .and_then(|line| line.strip_prefix("命令："))
+        .map(str::trim)
+        .unwrap_or("")
+        .to_string();
+    let body = strip_leading_command_invocation_line(raw_output);
+    let first = body.lines().next().unwrap_or("").trim();
+    let exit_code = parse_exit_code(first);
+    let ok = if let Some(code) = exit_code {
+        code == 0
+    } else {
+        !looks_like_failure(first)
+    };
+    let (stdout, stderr) = extract_streams(raw_output);
+    serde_json::json!({
+        "kind": "crabmate_structured_payload",
+        "tool": "run_command",
+        "version": 1_u64,
+        "schema": "run_command_exit_v1",
+        "invocation": invocation,
+        "ok": ok,
+        "exit_code": exit_code,
+        "stdout_nonempty": !stdout.is_empty(),
+        "stderr_nonempty": !stderr.is_empty(),
+    })
+}
+
 fn extract_streams(output: &str) -> (String, String) {
     let stdout_marker = "标准输出：\n";
     let stderr_marker = "标准错误：\n";
@@ -207,8 +248,16 @@ pub fn encode_tool_message_envelope_v1(
     raw_output: &str,
     envelope_ctx: Option<&ToolEnvelopeContext<'_>>,
 ) -> String {
-    NormalizedToolEnvelope::from_tool_run(tool_name, summary, parsed, raw_output, envelope_ctx)
-        .encode_to_message_line()
+    let structured_payload = structured_payload_for_tool(tool_name, raw_output);
+    NormalizedToolEnvelope::from_tool_run(
+        tool_name,
+        summary,
+        parsed,
+        raw_output,
+        envelope_ctx,
+        structured_payload,
+    )
+    .encode_to_message_line()
 }
 
 /// 从 `role: tool` 正文中取出用于 **JSON 再解析** 的载荷（如 `workflow_validate_result`）。
@@ -340,6 +389,19 @@ mod tests {
         let ok_env =
             encode_tool_message_envelope_v1("run_command", "s".into(), &ok_parsed, ok_raw, None);
         assert!(tool_message_content_ok_for_model(&ok_env, "run_command"));
+    }
+
+    #[test]
+    fn envelope_includes_structured_payload_run_command() {
+        let raw = "命令：echo hi\n退出码：0\n标准输出：\nhi\n";
+        let parsed = parse_legacy_output("run_command", raw);
+        let s = encode_tool_message_envelope_v1("run_command", "s".into(), &parsed, raw, None);
+        let v: Value = serde_json::from_str(&s).unwrap();
+        let ct = v.get("crabmate_tool").unwrap();
+        let sp = ct.get("structured_payload").expect("structured_payload");
+        assert_eq!(sp["schema"], "run_command_exit_v1");
+        assert_eq!(sp["exit_code"], 0);
+        assert!(sp["stdout_nonempty"].as_bool() == Some(true));
     }
 
     #[test]
