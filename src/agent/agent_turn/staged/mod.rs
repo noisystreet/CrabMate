@@ -56,13 +56,15 @@ use patch_planner::{
     staged_plan_step_failure_feedback_user_body,
 };
 use planner_parse_fsm::omit_no_task_planner_from_history;
-use planner_round_fsm::{staged_plan_ensemble_route, staged_plan_optimizer_route};
 use post_parse_pipeline_fsm::{
     ensemble_merge_should_invoke, ensemble_merge_skip_for_casual_prompt,
     log_staged_plan_ensemble_route, log_staged_plan_optimizer_route, optimizer_round_should_run,
 };
 use prepared_parse_fsm::{PreparedPlannerParseOutcome, resolve_parse_with_assistant};
-use prepared_post_parse_fsm::{PreparedPostParseSchedule, prepared_post_parse_schedule};
+use prepared_post_parse_fsm::{
+    PreparedFullPipelineInputs, PreparedPostParseSchedule, prepared_full_pipeline_schedule,
+    prepared_post_parse_schedule,
+};
 use staged_sse::{
     emit_chat_ui_separator_sse, next_staged_plan_id, send_staged_plan_finished,
     send_staged_plan_notice, send_staged_plan_step_finished, send_staged_plan_step_started,
@@ -1616,12 +1618,22 @@ where
         plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.turn.messages)
             .is_some_and(|ids| !ids.is_empty());
     let trigger_user = plan_optimizer::staged_plan_trigger_user_content(p.turn.messages);
-    let ensemble_route = staged_plan_ensemble_route(
-        p.ctx.staged_plan_ensemble_count,
-        p.ctx.staged_plan_skip_ensemble_on_casual_prompt,
+    let pipeline_schedule = prepared_full_pipeline_schedule(PreparedFullPipelineInputs {
+        staged_plan_ensemble_count: p.ctx.staged_plan_ensemble_count,
+        staged_plan_skip_ensemble_on_casual_prompt: p
+            .ctx
+            .staged_plan_skip_ensemble_on_casual_prompt,
         validate_only_binding_active,
-        trigger_user,
-    );
+        trigger_user_content: trigger_user,
+        plan_steps_len: plan.steps.len(),
+        staged_plan_optimizer_round: p.ctx.staged_plan_optimizer_round,
+        staged_plan_optimizer_requires_parallel_tools: p
+            .ctx
+            .staged_plan_optimizer_requires_parallel_tools,
+        parallel_tool_names_csv: parallel_csv.as_str(),
+        staged_plan_two_phase_nl_display: p.ctx.cfg.staged_plan_two_phase_nl_display,
+    });
+    let ensemble_route = pipeline_schedule.ensemble_route;
     log_staged_plan_ensemble_route(ensemble_route, p.ctx.staged_plan_ensemble_count);
 
     if ensemble_merge_should_invoke(ensemble_route) {
@@ -1638,13 +1650,7 @@ where
         .await?;
     }
 
-    let optimizer_route = staged_plan_optimizer_route(
-        plan.steps.len(),
-        p.ctx.staged_plan_optimizer_round,
-        validate_only_binding_active,
-        p.ctx.staged_plan_optimizer_requires_parallel_tools,
-        parallel_csv.as_str(),
-    );
+    let optimizer_route = pipeline_schedule.optimizer_route;
     log_staged_plan_optimizer_route(optimizer_route, plan.steps.len());
 
     if optimizer_round_should_run(optimizer_route) {
@@ -1693,7 +1699,7 @@ where
         }
     }
 
-    if p.ctx.cfg.staged_plan_two_phase_nl_display {
+    if pipeline_schedule.nl_followup_before_steps {
         run_staged_plan_nl_followup_round(p, per_coord, &make_step_user_message).await?;
     }
 
