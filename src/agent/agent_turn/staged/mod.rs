@@ -35,6 +35,7 @@ mod orchestrator;
 mod patch_planner;
 mod planner_parse_fsm;
 mod planner_round_fsm;
+mod post_parse_pipeline_fsm;
 mod sse;
 mod staged_step_fsm;
 mod step_loop_fsm;
@@ -54,9 +55,10 @@ use patch_planner::{
 use planner_parse_fsm::{
     StagedPlannerParseRoute, omit_no_task_planner_from_history, staged_planner_parse_route,
 };
-use planner_round_fsm::{
-    StagedPlanEnsembleRoute, StagedPlanOptimizerRoute, staged_plan_ensemble_route,
-    staged_plan_optimizer_route,
+use planner_round_fsm::{staged_plan_ensemble_route, staged_plan_optimizer_route};
+use post_parse_pipeline_fsm::{
+    ensemble_merge_should_invoke, ensemble_merge_skip_for_casual_prompt,
+    log_staged_plan_ensemble_route, log_staged_plan_optimizer_route, optimizer_round_should_run,
 };
 use staged_sse::{
     emit_chat_ui_separator_sse, next_staged_plan_id, send_staged_plan_finished,
@@ -743,6 +745,39 @@ fn staged_step_tool_messages_all_ok(messages: &[Message], step_user_index: usize
     true
 }
 
+/// 补丁规划返回新 `steps` 后：写入 assistant JSON（围栏）并刷新队列 notice（两处失败路径共用）。
+async fn push_patch_replan_assistant_json_and_notice(
+    p: &mut RunLoopParams<'_>,
+    plan_steps: &[PlanStepV1],
+    echo_terminal_staged: bool,
+    completed_steps_for_notice: usize,
+) -> Result<(), RunAgentTurnError> {
+    let replan = AgentReplyPlanV1 {
+        plan_type: "agent_reply_plan".to_string(),
+        version: 1,
+        steps: plan_steps.to_vec(),
+        no_task: false,
+    };
+    let json = plan_artifact::agent_reply_plan_v1_to_json_string(&replan).map_err(|e| {
+        RunAgentTurnError::Other {
+            phase: AgentTurnSubPhase::Executor,
+            message: e.to_string(),
+        }
+    })?;
+    push_assistant_merging_trailing_empty_placeholder(
+        p.turn.messages,
+        Message::assistant_only(json),
+    );
+    send_staged_plan_notice(
+        p.ctx.out,
+        echo_terminal_staged,
+        true,
+        staged_plan_queue_summary_text(&replan, completed_steps_for_notice),
+    )
+    .await;
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_staged_plan_steps_loop<F>(
     plan_id: String,
@@ -933,28 +968,13 @@ where
                     {
                         plan_steps = merged;
                         n = plan_steps.len();
-                        let replan = AgentReplyPlanV1 {
-                            plan_type: "agent_reply_plan".to_string(),
-                            version: 1,
-                            steps: plan_steps.clone(),
-                            no_task: false,
-                        };
-                        let json = plan_artifact::agent_reply_plan_v1_to_json_string(&replan)
-                            .map_err(|e| RunAgentTurnError::Other {
-                                phase: AgentTurnSubPhase::Executor,
-                                message: e.to_string(),
-                            })?;
-                        push_assistant_merging_trailing_empty_placeholder(
-                            patch_ctx.p.turn.messages,
-                            Message::assistant_only(json),
-                        );
-                        send_staged_plan_notice(
-                            patch_ctx.p.ctx.out,
+                        push_patch_replan_assistant_json_and_notice(
+                            patch_ctx.p,
+                            plan_steps.as_slice(),
                             echo_terminal_staged,
-                            true,
-                            staged_plan_queue_summary_text(&replan, completed_steps),
+                            completed_steps,
                         )
-                        .await;
+                        .await?;
                         recovered = true;
                         break;
                     }
@@ -1032,29 +1052,13 @@ where
                 {
                     plan_steps = merged;
                     n = plan_steps.len();
-                    let replan = AgentReplyPlanV1 {
-                        plan_type: "agent_reply_plan".to_string(),
-                        version: 1,
-                        steps: plan_steps.clone(),
-                        no_task: false,
-                    };
-                    let json = plan_artifact::agent_reply_plan_v1_to_json_string(&replan).map_err(
-                        |e| RunAgentTurnError::Other {
-                            phase: AgentTurnSubPhase::Executor,
-                            message: e.to_string(),
-                        },
-                    )?;
-                    push_assistant_merging_trailing_empty_placeholder(
-                        patch_ctx.p.turn.messages,
-                        Message::assistant_only(json),
-                    );
-                    send_staged_plan_notice(
-                        patch_ctx.p.ctx.out,
+                    push_patch_replan_assistant_json_and_notice(
+                        patch_ctx.p,
+                        plan_steps.as_slice(),
                         echo_terminal_staged,
-                        true,
-                        staged_plan_queue_summary_text(&replan, completed_steps),
+                        completed_steps,
                     )
-                    .await;
+                    .await?;
                     recovered = true;
                     break;
                 }
@@ -1317,29 +1321,10 @@ where
         validate_only_binding_active,
         trigger_user,
     );
-    match ensemble_route {
-        StagedPlanEnsembleRoute::SkipValidateOnlyBinding => {
-            debug!(
-                target: "crabmate",
-                "分阶段规划·逻辑多规划员：检测到 workflow_validate_only 节点绑定上下文，跳过 ensemble 以保持逐步绑定稳定"
-            );
-        }
-        StagedPlanEnsembleRoute::SkipCasualHeuristic => {
-            debug!(
-                target: "crabmate",
-                "分阶段规划·逻辑多规划员：用户输入偏短/寒暄启发式，跳过 ensemble（staged_plan_ensemble_count={}）以省 API",
-                p.ctx.staged_plan_ensemble_count
-            );
-        }
-        StagedPlanEnsembleRoute::SkipNotConfigured | StagedPlanEnsembleRoute::Run => {}
-    }
+    log_staged_plan_ensemble_route(ensemble_route, p.ctx.staged_plan_ensemble_count);
 
-    if !matches!(
-        ensemble_route,
-        StagedPlanEnsembleRoute::SkipValidateOnlyBinding
-    ) {
-        let skip_ensemble_for_casual =
-            matches!(ensemble_route, StagedPlanEnsembleRoute::SkipCasualHeuristic);
+    if ensemble_merge_should_invoke(ensemble_route) {
+        let skip_ensemble_for_casual = ensemble_merge_skip_for_casual_prompt(ensemble_route);
         maybe_run_staged_plan_ensemble_then_merge(
             p,
             per_coord,
@@ -1359,26 +1344,9 @@ where
         p.ctx.staged_plan_optimizer_requires_parallel_tools,
         parallel_csv.as_str(),
     );
-    match optimizer_route {
-        StagedPlanOptimizerRoute::SkipValidateOnlyBinding => {
-            debug!(
-                target: "crabmate",
-                "分阶段规划优化轮：检测到 workflow_validate_only 节点绑定上下文，跳过优化轮以避免破坏绑定约束"
-            );
-        }
-        StagedPlanOptimizerRoute::SkipNoParallelTools => {
-            debug!(
-                target: "crabmate",
-                "分阶段规划优化轮：本会话无可同轮并行批处理的内建工具，跳过优化轮以省 API（步数={}）",
-                plan.steps.len()
-            );
-        }
-        StagedPlanOptimizerRoute::SkipStepsLt2
-        | StagedPlanOptimizerRoute::SkipOptimizerRoundDisabled
-        | StagedPlanOptimizerRoute::Run => {}
-    }
+    log_staged_plan_optimizer_route(optimizer_route, plan.steps.len());
 
-    if matches!(optimizer_route, StagedPlanOptimizerRoute::Run) {
+    if optimizer_round_should_run(optimizer_route) {
         let opt_body =
             plan_optimizer::staged_plan_optimizer_user_body(&plan, parallel_csv.as_str());
         p.turn.messages.push(make_step_user_message(opt_body));
