@@ -48,6 +48,7 @@
 | 文档 | 内容 | English |
 | --- | --- | --- |
 | [docs/基准测试规划.md](docs/基准测试规划.md) | `crabmate bench` 能力规划、开源 benchmark 对接与测试策略（与通用功能文档分离） | — |
+| [docs/评测任务集设计.md](docs/评测任务集设计.md) | 评测任务集：覆盖矩阵、元数据、证据采集、CI 分层与安全（与 bench 契约衔接） | [en](docs/en/BENCHMARK_TASK_SUITE_DESIGN.md) |
 | [benchmark/README.md](benchmark/README.md) | benchmark 快速执行指南（HumanEval 转换、执行、判分与冒烟） | — |
 | [docs/分阶段规划单步设计.md](docs/分阶段规划单步设计.md) | 分阶段规划单步化设计稿：Planner 每轮 1 条 `steps` + 步后 replan，向「单智能体 + 工具循环」收敛（未实现） | — |
 | [docs/中英文文档对照.md](docs/中英文文档对照.md) | 中文主文档与 `docs/en/` 英文文档的一一对应表 | — |

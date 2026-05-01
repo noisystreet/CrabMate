@@ -2,6 +2,8 @@
 
 本目录用于集中放置 CrabMate benchmark 的执行说明与脚本，避免在 `docs/`、`scripts/` 和命令行参数之间来回查找。
 
+**任务集如何设计与运维**（覆盖矩阵、元数据、CI、证据采集）：见 **`docs/评测任务集设计.md`**（英文 **`docs/en/BENCHMARK_TASK_SUITE_DESIGN.md`**）；与 **`docs/基准测试规划.md`**（bench 子系统契约）配合阅读。
+
 ## 常见基准简介
 
 ### 本项目已支持（`crabmate bench --benchmark`）
