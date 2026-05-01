@@ -127,84 +127,98 @@ fn combined_haystack(ev: &AcceptanceEvidence<'_>) -> String {
     format!("{} {}", ev.stdout, ev.stderr)
 }
 
-/// 对给定证据运行全部启用的验收项。
-pub fn verify_against_spec(spec: &AcceptanceSpec, ev: &AcceptanceEvidence<'_>) -> VerifyOutcome {
-    if spec.is_empty() {
-        return VerifyOutcome::Pass;
-    }
+fn verify_exit_code_branch(
+    spec: &AcceptanceSpec,
+    ev: &AcceptanceEvidence<'_>,
+) -> Option<VerifyOutcome> {
+    let expected_code = spec.expect_exit_code?;
 
-    if let Some(expected_code) = spec.expect_exit_code {
-        let parsed_structured = ev
-            .tool_error
-            .and_then(|e| e.code.parse::<i32>().ok())
-            .or(ev.fallback_exit_code);
+    let parsed_structured = ev
+        .tool_error
+        .and_then(|e| e.code.parse::<i32>().ok())
+        .or(ev.fallback_exit_code);
 
-        match parsed_structured {
-            Some(actual) if actual != expected_code => {
-                return VerifyOutcome::Fail {
-                    reason: format!(
-                        "exit_code_mismatch: expected {}, got {}",
-                        expected_code, actual
-                    ),
-                };
+    match parsed_structured {
+        Some(actual) if actual != expected_code => Some(VerifyOutcome::Fail {
+            reason: format!(
+                "exit_code_mismatch: expected {}, got {}",
+                expected_code, actual
+            ),
+        }),
+        Some(_) => None,
+        None => match spec.exit_code_policy {
+            ExitCodePolicy::DefaultZeroIfMissing => {
+                let implicit = 0;
+                if implicit != expected_code {
+                    Some(VerifyOutcome::Fail {
+                        reason: format!(
+                            "exit_code_mismatch: expected {}, got {}",
+                            expected_code, implicit
+                        ),
+                    })
+                } else {
+                    None
+                }
             }
-            Some(_) => {}
-            None => match spec.exit_code_policy {
-                ExitCodePolicy::DefaultZeroIfMissing => {
-                    let implicit = 0;
-                    if implicit != expected_code {
-                        return VerifyOutcome::Fail {
-                            reason: format!(
-                                "exit_code_mismatch: expected {}, got {}",
-                                expected_code, implicit
-                            ),
-                        };
-                    }
-                }
-                ExitCodePolicy::LenientIfUnparsed => {
-                    // 与 GoalVerifier：无法解析则不因退出码拒绝
-                }
-            },
-        }
+            ExitCodePolicy::LenientIfUnparsed => None,
+        },
     }
+}
 
+fn verify_streams_contains(
+    spec: &AcceptanceSpec,
+    ev: &AcceptanceEvidence<'_>,
+) -> Option<VerifyOutcome> {
     if let Some(ref expect_str) = spec.expect_stdout_contains
         && !ev.stdout.contains(expect_str)
     {
-        return VerifyOutcome::Fail {
+        return Some(VerifyOutcome::Fail {
             reason: format!("stdout_missing: expected to contain '{}'", expect_str),
-        };
+        });
     }
 
     if let Some(ref expect_str) = spec.expect_stderr_contains
         && !ev.stderr.contains(expect_str)
     {
-        return VerifyOutcome::Fail {
+        return Some(VerifyOutcome::Fail {
             reason: format!("stderr_missing: expected to contain '{}'", expect_str),
-        };
+        });
     }
+    None
+}
 
-    if !spec.expect_combined_output_contains.is_empty() {
-        let raw = combined_haystack(ev);
-        let haystack = if spec.combined_match_case_insensitive {
-            raw.to_lowercase()
+fn verify_combined_output_contains(
+    spec: &AcceptanceSpec,
+    ev: &AcceptanceEvidence<'_>,
+) -> Option<VerifyOutcome> {
+    if spec.expect_combined_output_contains.is_empty() {
+        return None;
+    }
+    let raw = combined_haystack(ev);
+    let haystack = if spec.combined_match_case_insensitive {
+        raw.to_lowercase()
+    } else {
+        raw
+    };
+    for expected in &spec.expect_combined_output_contains {
+        let needle = if spec.combined_match_case_insensitive {
+            expected.to_lowercase()
         } else {
-            raw
+            expected.clone()
         };
-        for expected in &spec.expect_combined_output_contains {
-            let needle = if spec.combined_match_case_insensitive {
-                expected.to_lowercase()
-            } else {
-                expected.clone()
-            };
-            if !haystack.contains(&needle) {
-                return VerifyOutcome::Fail {
-                    reason: format!("输出不包含期望内容: '{}'", expected),
-                };
-            }
+        if !haystack.contains(&needle) {
+            return Some(VerifyOutcome::Fail {
+                reason: format!("输出不包含期望内容: '{}'", expected),
+            });
         }
     }
+    None
+}
 
+fn verify_expected_files(
+    spec: &AcceptanceSpec,
+    ev: &AcceptanceEvidence<'_>,
+) -> Option<VerifyOutcome> {
     for file_path in &spec.expect_file_exists {
         if file_path.trim().is_empty() {
             continue;
@@ -222,68 +236,110 @@ pub fn verify_against_spec(spec: &AcceptanceSpec, ev: &AcceptanceEvidence<'_>) -
                 }
                 FileResolveKind::WorkspaceJoin => format!("期望文件不存在: {}", file_path),
             };
-            return VerifyOutcome::Fail { reason };
+            return Some(VerifyOutcome::Fail { reason });
         }
     }
+    None
+}
 
-    if let Some(json_rule) = &spec.expect_json_path_equals {
-        let path = &json_rule.path;
-        let expected = &json_rule.value;
+fn verify_json_path_equals(
+    spec: &AcceptanceSpec,
+    ev: &AcceptanceEvidence<'_>,
+) -> Option<VerifyOutcome> {
+    let json_rule = spec.expect_json_path_equals.as_ref()?;
 
-        let json_output =
-            extract_json_output(ev.tool_output).unwrap_or_else(|| ev.tool_output.to_string());
+    let path = &json_rule.path;
+    let expected = &json_rule.value;
 
-        match get_json_path_value(&json_output, path) {
-            Some(actual) => {
-                if &actual != expected {
-                    return VerifyOutcome::Fail {
-                        reason: format!(
-                            "json_path_mismatch: path '{}' expected {}, got {}",
-                            path, expected, actual
-                        ),
-                    };
-                }
-            }
-            None => {
-                return VerifyOutcome::Fail {
+    let json_output =
+        extract_json_output(ev.tool_output).unwrap_or_else(|| ev.tool_output.to_string());
+
+    match get_json_path_value(&json_output, path) {
+        Some(actual) => {
+            if &actual != expected {
+                Some(VerifyOutcome::Fail {
                     reason: format!(
-                        "json_path_error: could not extract value at path '{}'",
-                        path
+                        "json_path_mismatch: path '{}' expected {}, got {}",
+                        path, expected, actual
                     ),
-                };
+                })
+            } else {
+                None
             }
         }
+        None => Some(VerifyOutcome::Fail {
+            reason: format!(
+                "json_path_error: could not extract value at path '{}'",
+                path
+            ),
+        }),
+    }
+}
+
+fn verify_http_status_branch(
+    spec: &AcceptanceSpec,
+    ev: &AcceptanceEvidence<'_>,
+) -> Option<VerifyOutcome> {
+    let expected_status = spec.expect_http_status?;
+
+    let tool_name_lower = ev.tool_name.to_lowercase();
+    let allow_http_probe = tool_name_lower.contains("http")
+        || tool_name_lower.contains("fetch")
+        || ev.tool_name.is_empty();
+    if !allow_http_probe {
+        return None;
     }
 
-    if let Some(expected_status) = spec.expect_http_status {
-        let tool_name_lower = ev.tool_name.to_lowercase();
-        let allow_http_probe = tool_name_lower.contains("http")
-            || tool_name_lower.contains("fetch")
-            || ev.tool_name.is_empty();
-        if allow_http_probe {
-            if let Some(actual_status) = extract_http_status(ev.tool_name, ev.tool_output) {
-                if actual_status != expected_status {
-                    return VerifyOutcome::Fail {
-                        reason: format!(
-                            "http_status_mismatch: expected {}, got {}",
-                            expected_status, actual_status
-                        ),
-                    };
-                }
-            } else {
-                let exit_code = ev.tool_error.and_then(|e| e.code.parse::<i32>().ok());
-                if exit_code == Some(0) && (200..300).contains(&expected_status) {
-                    // exit 0 对于 HTTP 工具通常表示成功
-                } else if exit_code.is_none() {
-                    return VerifyOutcome::Fail {
-                        reason: format!(
-                            "http_status_error: could not extract HTTP status code from output (expected {})",
-                            expected_status
-                        ),
-                    };
-                }
-            }
+    if let Some(actual_status) = extract_http_status(ev.tool_name, ev.tool_output) {
+        if actual_status != expected_status {
+            return Some(VerifyOutcome::Fail {
+                reason: format!(
+                    "http_status_mismatch: expected {}, got {}",
+                    expected_status, actual_status
+                ),
+            });
         }
+        return None;
+    }
+
+    let exit_code = ev.tool_error.and_then(|e| e.code.parse::<i32>().ok());
+    if exit_code == Some(0) && (200..300).contains(&expected_status) {
+        return None;
+    }
+    if exit_code.is_none() {
+        return Some(VerifyOutcome::Fail {
+            reason: format!(
+                "http_status_error: could not extract HTTP status code from output (expected {})",
+                expected_status
+            ),
+        });
+    }
+    None
+}
+
+/// 对给定证据运行全部启用的验收项。
+pub fn verify_against_spec(spec: &AcceptanceSpec, ev: &AcceptanceEvidence<'_>) -> VerifyOutcome {
+    if spec.is_empty() {
+        return VerifyOutcome::Pass;
+    }
+
+    if let Some(o) = verify_exit_code_branch(spec, ev) {
+        return o;
+    }
+    if let Some(o) = verify_streams_contains(spec, ev) {
+        return o;
+    }
+    if let Some(o) = verify_combined_output_contains(spec, ev) {
+        return o;
+    }
+    if let Some(o) = verify_expected_files(spec, ev) {
+        return o;
+    }
+    if let Some(o) = verify_json_path_equals(spec, ev) {
+        return o;
+    }
+    if let Some(o) = verify_http_status_branch(spec, ev) {
+        return o;
     }
 
     VerifyOutcome::Pass

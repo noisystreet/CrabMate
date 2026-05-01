@@ -1,23 +1,28 @@
 //! 由 `file.rs` 拆分；与拆分前行为一致。
 #![allow(clippy::manual_string_new)]
 
-use regex::RegexBuilder;
+use regex::{Regex, RegexBuilder};
 use std::path::Path;
 
 use crate::text_encoding::{decode_bytes_strict, parse_text_encoding_name};
 
 use super::path::{path_for_tool_display, resolve_for_read, tool_user_error_from_workspace_path};
 
-/// 在文件中按正则抽取匹配行（只读）。
-/// 参数：
-/// { "path": string, "pattern": string, "start_line"?: int, "end_line"?: int,
-///   "max_matches"?: int, "case_insensitive"?: bool, "max_snippet_chars"?: int }
-pub fn extract_in_file(args_json: &str, working_dir: &Path) -> String {
-    let v = match crate::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
+struct ExtractInFileParams {
+    path: String,
+    enc_name: crate::text_encoding::TextEncodingName,
+    pattern: String,
+    start_line: Option<usize>,
+    end_line: Option<usize>,
+    max_matches: usize,
+    case_insensitive: bool,
+    max_snippet_chars: usize,
+    mode: String,
+    max_block_chars: usize,
+    max_block_lines: usize,
+}
 
+fn parse_extract_in_file_params(v: &serde_json::Value) -> Result<ExtractInFileParams, String> {
     let path = v
         .get("path")
         .and_then(|p| p.as_str())
@@ -26,12 +31,9 @@ pub fn extract_in_file(args_json: &str, working_dir: &Path) -> String {
         .map(|s| s.to_string())
         .unwrap_or_default();
     if path.is_empty() {
-        return "缺少 path 参数".to_string();
+        return Err("缺少 path 参数".to_string());
     }
-    let enc_name = match parse_text_encoding_name(v.get("encoding").and_then(|x| x.as_str())) {
-        Ok(n) => n,
-        Err(e) => return e,
-    };
+    let enc_name = parse_text_encoding_name(v.get("encoding").and_then(|x| x.as_str()))?;
 
     let pattern = v
         .get("pattern")
@@ -39,28 +41,25 @@ pub fn extract_in_file(args_json: &str, working_dir: &Path) -> String {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
-    let pattern = match pattern {
-        Some(p) => p,
-        None => return "缺少 pattern 参数".to_string(),
-    };
+    let pattern = pattern.ok_or_else(|| "缺少 pattern 参数".to_string())?;
 
     let start_line = v.get("start_line").and_then(|n| n.as_u64());
     let end_line = v.get("end_line").and_then(|n| n.as_u64());
 
     let start_line = match start_line {
         Some(n) if n >= 1 => Some(n as usize),
-        Some(_) => return "错误：start_line 必须是大于等于 1 的整数".to_string(),
+        Some(_) => return Err("错误：start_line 必须是大于等于 1 的整数".to_string()),
         None => None,
     };
     let end_line = match end_line {
         Some(n) if n >= 1 => Some(n as usize),
-        Some(_) => return "错误：end_line 必须是大于等于 1 的整数".to_string(),
+        Some(_) => return Err("错误：end_line 必须是大于等于 1 的整数".to_string()),
         None => None,
     };
     if let (Some(s), Some(e)) = (start_line, end_line)
         && e < s
     {
-        return "错误：end_line 不能小于 start_line".to_string();
+        return Err("错误：end_line 不能小于 start_line".to_string());
     }
 
     let max_matches = v
@@ -92,6 +91,167 @@ pub fn extract_in_file(args_json: &str, working_dir: &Path) -> String {
         .and_then(|n| n.as_u64())
         .map(|n| n.max(1) as usize)
         .unwrap_or(500);
+
+    Ok(ExtractInFileParams {
+        path,
+        enc_name,
+        pattern,
+        start_line,
+        end_line,
+        max_matches,
+        case_insensitive,
+        max_snippet_chars,
+        mode,
+        max_block_chars,
+        max_block_lines,
+    })
+}
+
+/// 行模式匹配输出（与拆分前 `extract_in_file` 的 `mode=lines` 分支一致）。
+#[allow(clippy::too_many_arguments)]
+fn extract_in_file_lines_mode(
+    working_dir: &Path,
+    path: &str,
+    target: &Path,
+    all_lines: &[&str],
+    total: usize,
+    from: usize,
+    to: usize,
+    re: &Regex,
+    pattern: &str,
+    max_matches: usize,
+    max_snippet_chars: usize,
+) -> String {
+    let mut matches: Vec<(usize, String)> = Vec::new();
+    for idx in from..=to {
+        let line = all_lines[idx - 1];
+        if re.is_match(line) {
+            matches.push((idx, truncate_line(line, max_snippet_chars)));
+            if matches.len() >= max_matches {
+                break;
+            }
+        }
+    }
+
+    if matches.is_empty() {
+        return format!(
+            "未找到匹配：pattern=\"{}\"（文件: {}, 行范围 {}-{}）",
+            pattern,
+            path_for_tool_display(working_dir, target, Some(path)),
+            from,
+            to
+        );
+    }
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "文件: {}\npattern: \"{}\"\n行范围: {}-{} / 总行数 {}\n匹配结果（最多 {} 条，实际 {} 条）：\n",
+        path_for_tool_display(working_dir, target, Some(path)),
+        pattern,
+        from,
+        to,
+        total,
+        max_matches,
+        matches.len()
+    ));
+    for (line_no, line) in matches {
+        out.push_str(&format!("{}|{}\n", line_no, line));
+    }
+    out.trim_end().to_string()
+}
+
+/// `rust_fn_block` 模式（与拆分前一致）。
+#[allow(clippy::too_many_arguments)]
+fn extract_in_file_rust_fn_block_mode(
+    working_dir: &Path,
+    path: &str,
+    target: &Path,
+    all_lines: &[&str],
+    total: usize,
+    from: usize,
+    to: usize,
+    re: &Regex,
+    pattern: &str,
+    max_matches: usize,
+    max_block_lines: usize,
+    max_block_chars: usize,
+) -> String {
+    let mut blocks: Vec<(usize, usize, String)> = Vec::new();
+    for idx in from..=to {
+        let line = all_lines[idx - 1];
+        if !re.is_match(line) {
+            continue;
+        }
+
+        let block = match extract_rust_brace_block(all_lines, idx, max_block_lines, max_block_chars)
+        {
+            Ok(Some((s, e, txt))) => (s, e, txt),
+            Ok(None) => continue,
+            Err(e) => return e,
+        };
+        if blocks.len() >= max_matches {
+            break;
+        }
+        blocks.push(block);
+    }
+
+    if blocks.is_empty() {
+        return format!(
+            "未找到 Rust 代码块：pattern=\"{}\"（文件: {}, 行范围 {}-{}）",
+            pattern,
+            path_for_tool_display(working_dir, target, Some(path)),
+            from,
+            to
+        );
+    }
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "文件: {}\nmode: rust_fn_block\npattern: \"{}\"\n行范围: {}-{} / 总行数 {}\n块结果（最多 {} 条，实际 {} 条）：\n",
+        path_for_tool_display(working_dir, target, Some(path)),
+        pattern,
+        from,
+        to,
+        total,
+        max_matches,
+        blocks.len()
+    ));
+    for (s, e, txt) in blocks {
+        out.push_str(&format!("block: {}-{}\n", s, e));
+        out.push_str(&format!("{}\n", txt));
+        out.push('\n');
+    }
+    out.trim_end().to_string()
+}
+
+/// 在文件中按正则抽取匹配行（只读）。
+/// 参数：
+/// { "path": string, "pattern": string, "start_line"?: int, "end_line"?: int,
+///   "max_matches"?: int, "case_insensitive"?: bool, "max_snippet_chars"?: int }
+pub fn extract_in_file(args_json: &str, working_dir: &Path) -> String {
+    let v = match crate::tools::parse_args_json(args_json) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+
+    let p = match parse_extract_in_file_params(&v) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+
+    let ExtractInFileParams {
+        path,
+        enc_name,
+        pattern,
+        start_line,
+        end_line,
+        max_matches,
+        case_insensitive,
+        max_snippet_chars,
+        mode,
+        max_block_chars,
+        max_block_lines,
+    } = p;
 
     let target = match resolve_for_read(working_dir, &path) {
         Ok(p) => p,
@@ -134,42 +294,19 @@ pub fn extract_in_file(args_json: &str, working_dir: &Path) -> String {
     };
 
     if mode == "lines" {
-        let mut matches: Vec<(usize, String)> = Vec::new();
-        for idx in from..=to {
-            let line = all_lines[idx - 1];
-            if re.is_match(line) {
-                matches.push((idx, truncate_line(line, max_snippet_chars)));
-                if matches.len() >= max_matches {
-                    break;
-                }
-            }
-        }
-
-        if matches.is_empty() {
-            return format!(
-                "未找到匹配：pattern=\"{}\"（文件: {}, 行范围 {}-{}）",
-                pattern,
-                path_for_tool_display(working_dir, &target, Some(&path)),
-                from,
-                to
-            );
-        }
-
-        let mut out = String::new();
-        out.push_str(&format!(
-            "文件: {}\npattern: \"{}\"\n行范围: {}-{} / 总行数 {}\n匹配结果（最多 {} 条，实际 {} 条）：\n",
-            path_for_tool_display(working_dir, &target, Some(&path)),
-            pattern,
+        return extract_in_file_lines_mode(
+            working_dir,
+            path.as_str(),
+            &target,
+            &all_lines,
+            total,
             from,
             to,
-            total,
+            &re,
+            pattern.as_str(),
             max_matches,
-            matches.len()
-        ));
-        for (line_no, line) in matches {
-            out.push_str(&format!("{}|{}\n", line_no, line));
-        }
-        return out.trim_end().to_string();
+            max_snippet_chars,
+        );
     }
 
     if mode != "rust_fn_block" {
@@ -179,53 +316,20 @@ pub fn extract_in_file(args_json: &str, working_dir: &Path) -> String {
         );
     }
 
-    // Rust 函数块提取：从匹配行开始找后续第一个 `{`，再按花括号配对抓到块结束。
-    let mut blocks: Vec<(usize, usize, String)> = Vec::new(); // (start_line, end_line, text)
-    for idx in from..=to {
-        let line = all_lines[idx - 1];
-        if !re.is_match(line) {
-            continue;
-        }
-
-        let block =
-            match extract_rust_brace_block(&all_lines, idx, max_block_lines, max_block_chars) {
-                Ok(Some((s, e, txt))) => (s, e, txt),
-                Ok(None) => continue,
-                Err(e) => return e,
-            };
-        if blocks.len() >= max_matches {
-            break;
-        }
-        blocks.push(block);
-    }
-
-    if blocks.is_empty() {
-        return format!(
-            "未找到 Rust 代码块：pattern=\"{}\"（文件: {}, 行范围 {}-{}）",
-            pattern,
-            path_for_tool_display(working_dir, &target, Some(&path)),
-            from,
-            to
-        );
-    }
-
-    let mut out = String::new();
-    out.push_str(&format!(
-        "文件: {}\nmode: rust_fn_block\npattern: \"{}\"\n行范围: {}-{} / 总行数 {}\n块结果（最多 {} 条，实际 {} 条）：\n",
-        path_for_tool_display(working_dir, &target, Some(&path)),
-        pattern,
+    extract_in_file_rust_fn_block_mode(
+        working_dir,
+        path.as_str(),
+        &target,
+        &all_lines,
+        total,
         from,
         to,
-        total,
+        &re,
+        pattern.as_str(),
         max_matches,
-        blocks.len()
-    ));
-    for (s, e, txt) in blocks {
-        out.push_str(&format!("block: {}-{}\n", s, e));
-        out.push_str(&format!("{}\n", txt));
-        out.push('\n');
-    }
-    out.trim_end().to_string()
+        max_block_lines,
+        max_block_chars,
+    )
 }
 
 fn truncate_line(s: &str, max_chars: usize) -> String {

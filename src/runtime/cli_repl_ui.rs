@@ -63,6 +63,83 @@ const HELP_GAP: usize = 1;
 /// 表格布局时第一行至少留给说明的列数；不足则改为「命令单独一行」。
 const HELP_DESC_MIN: usize = 8;
 
+/// `/help` 命令列与说明（与 [`CliReplStyle::print_help`] 同源）。
+const REPL_HELP_ROWS: &[(&str, &str)] = &[
+    ("/clear", "清空对话，仅保留当前 system 提示词"),
+    (
+        "/model · /model set <名称>",
+        "显示或写入内存中的 model（set 不校验 GET /models 列表；持久化请改配置）",
+    ),
+    (
+        "/api-base · /api-base set <url> · /apibase …",
+        "显示或写入内存中的 api_base（OpenAI 兼容网关根；持久化请改配置）",
+    ),
+    (
+        "/api-key · /api-key status · /api-key set <密钥> · /api-key clear",
+        "本进程内存中的 LLM Bearer 密钥（不写盘；未 export API_KEY 时可用；/config reload 不清除）",
+    ),
+    (
+        "/config",
+        "打印关键运行配置摘要（与启动横幅同源字段；不含密钥）",
+    ),
+    (
+        "/config reload",
+        "从磁盘+环境变量热重载可更字段（不含会话 SQLite 路径；详见文档）",
+    ),
+    (
+        "/doctor",
+        "一页环境诊断（同 crabmate doctor；不要求 API_KEY）",
+    ),
+    (
+        "/probe",
+        "探测 api_base 的 GET …/models 连通性（同 crabmate probe；需 bearer 时依赖 API_KEY）",
+    ),
+    (
+        "/models · /models list",
+        "列出 GET …/models 返回的模型 id（同 crabmate models；需 bearer 时依赖 API_KEY）",
+    ),
+    (
+        "/models choose <id>",
+        "从上述列表设当前 model（内存；支持唯一前缀；持久化请改配置）",
+    ),
+    (
+        "/agent · /agent list",
+        "列出内建 default 与配置中的命名角色 id（与 REPL「当前」行一致；无表时提示未启用多角色）",
+    ),
+    (
+        "/agent set <id> | /agent set default",
+        "set <id>：须存在于角色表；**set default**：清除显式角色，与 Web 未选角色及「默认」逻辑一致（default_agent_role_id 或全局 system）",
+    ),
+    ("/workspace", "显示当前工作区"),
+    (
+        "/workspace <路径>",
+        "切换工作区（须为已存在目录，别名 /cd）：相对路径同 read_file（相对当前根、禁止 / 开头）；绝对路径须落在 workspace_allowed_roots",
+    ),
+    (
+        "/skills · /skills list",
+        "列出当前工作区下可见的 skills 文件",
+    ),
+    ("/tools", "列出当前加载的工具名"),
+    (
+        "/export [json|markdown|both]",
+        "导出当前内存对话到 .crabmate/exports/（与 Web 同形 JSON/Markdown）",
+    ),
+    (
+        "/save-session [json|markdown|both]",
+        "从磁盘会话文件导出到 .crabmate/exports/（同 crabmate save-session；默认 tui_session.json）",
+    ),
+    (
+        "/mcp · /mcp list · /mcp probe · /mcp list probe",
+        "列出本进程内 MCP stdio 缓存与合并工具名（同 crabmate mcp list；probe 会启动 mcp_command 子进程）",
+    ),
+    ("/version", "打印 crabmate 版本与 OS/ARCH（不含密钥）"),
+    ("/help, /?", "本说明"),
+    (
+        "$ → bash#:",
+        "交互终端行首按 `$` 后提示变为 bash#: 并输入命令；管道输入仍可用 `$ <命令>`",
+    ),
+];
+
 fn pad_cmd_to_display_width(cmd: &str, target: usize) -> String {
     let mut s = cmd.to_string();
     while s.width() < target {
@@ -236,6 +313,69 @@ impl CliReplStyle {
         writeln!(out, "{line}")?;
         self.queue_reset(&mut out, true)?;
         out.flush()
+    }
+
+    fn write_help_row_stacked(
+        &self,
+        out: &mut io::Stdout,
+        cmd: &str,
+        desc_lines: &[String],
+    ) -> io::Result<()> {
+        if self.use_color_stdout {
+            queue!(
+                out,
+                SetForegroundColor(Self::C_HELP_CMD),
+                SetAttribute(Attribute::Bold)
+            )?;
+        }
+        writeln!(out, "  {cmd}")?;
+        self.queue_reset(out, true)?;
+        for line in desc_lines {
+            if self.use_color_stdout {
+                queue!(
+                    out,
+                    SetForegroundColor(Self::C_HELP_DESC),
+                    SetAttribute(Attribute::Dim)
+                )?;
+            }
+            writeln!(out, "  {line}")?;
+            self.queue_reset(out, true)?;
+        }
+        Ok(())
+    }
+
+    fn write_help_row_table(
+        &self,
+        out: &mut io::Stdout,
+        padded_cmd: &str,
+        cont_pad: &str,
+        desc_lines: &[String],
+    ) -> io::Result<()> {
+        for (i, line) in desc_lines.iter().enumerate() {
+            if self.use_color_stdout {
+                queue!(
+                    out,
+                    SetForegroundColor(Self::C_HELP_CMD),
+                    SetAttribute(Attribute::Bold)
+                )?;
+            }
+            if i == 0 {
+                write!(out, "  {padded_cmd} ")?;
+            } else {
+                write!(out, "  {cont_pad}")?;
+            }
+            self.queue_reset(out, true)?;
+            if self.use_color_stdout {
+                queue!(
+                    out,
+                    SetForegroundColor(Self::C_HELP_DESC),
+                    SetAttribute(Attribute::Dim)
+                )?;
+            }
+            writeln!(out, "{line}")?;
+            self.queue_reset(out, true)?;
+        }
+        Ok(())
     }
 
     fn write_banner_subheading<W: Write + QueueableCommand>(
@@ -777,81 +917,7 @@ impl CliReplStyle {
         writeln!(out, "内建命令")?;
         self.queue_reset(&mut out, true)?;
 
-        let rows: &[(&str, &str)] = &[
-            ("/clear", "清空对话，仅保留当前 system 提示词"),
-            (
-                "/model · /model set <名称>",
-                "显示或写入内存中的 model（set 不校验 GET /models 列表；持久化请改配置）",
-            ),
-            (
-                "/api-base · /api-base set <url> · /apibase …",
-                "显示或写入内存中的 api_base（OpenAI 兼容网关根；持久化请改配置）",
-            ),
-            (
-                "/api-key · /api-key status · /api-key set <密钥> · /api-key clear",
-                "本进程内存中的 LLM Bearer 密钥（不写盘；未 export API_KEY 时可用；/config reload 不清除）",
-            ),
-            (
-                "/config",
-                "打印关键运行配置摘要（与启动横幅同源字段；不含密钥）",
-            ),
-            (
-                "/config reload",
-                "从磁盘+环境变量热重载可更字段（不含会话 SQLite 路径；详见文档）",
-            ),
-            (
-                "/doctor",
-                "一页环境诊断（同 crabmate doctor；不要求 API_KEY）",
-            ),
-            (
-                "/probe",
-                "探测 api_base 的 GET …/models 连通性（同 crabmate probe；需 bearer 时依赖 API_KEY）",
-            ),
-            (
-                "/models · /models list",
-                "列出 GET …/models 返回的模型 id（同 crabmate models；需 bearer 时依赖 API_KEY）",
-            ),
-            (
-                "/models choose <id>",
-                "从上述列表设当前 model（内存；支持唯一前缀；持久化请改配置）",
-            ),
-            (
-                "/agent · /agent list",
-                "列出内建 default 与配置中的命名角色 id（与 REPL「当前」行一致；无表时提示未启用多角色）",
-            ),
-            (
-                "/agent set <id> | /agent set default",
-                "set <id>：须存在于角色表；**set default**：清除显式角色，与 Web 未选角色及「默认」逻辑一致（default_agent_role_id 或全局 system）",
-            ),
-            ("/workspace", "显示当前工作区"),
-            (
-                "/workspace <路径>",
-                "切换工作区（须为已存在目录，别名 /cd）：相对路径同 read_file（相对当前根、禁止 / 开头）；绝对路径须落在 workspace_allowed_roots",
-            ),
-            (
-                "/skills · /skills list",
-                "列出当前工作区下可见的 skills 文件",
-            ),
-            ("/tools", "列出当前加载的工具名"),
-            (
-                "/export [json|markdown|both]",
-                "导出当前内存对话到 .crabmate/exports/（与 Web 同形 JSON/Markdown）",
-            ),
-            (
-                "/save-session [json|markdown|both]",
-                "从磁盘会话文件导出到 .crabmate/exports/（同 crabmate save-session；默认 tui_session.json）",
-            ),
-            (
-                "/mcp · /mcp list · /mcp probe · /mcp list probe",
-                "列出本进程内 MCP stdio 缓存与合并工具名（同 crabmate mcp list；probe 会启动 mcp_command 子进程）",
-            ),
-            ("/version", "打印 crabmate 版本与 OS/ARCH（不含密钥）"),
-            ("/help, /?", "本说明"),
-            (
-                "$ → bash#:",
-                "交互终端行首按 `$` 后提示变为 bash#: 并输入命令；管道输入仍可用 `$ <命令>`",
-            ),
-        ];
+        let rows = REPL_HELP_ROWS;
 
         let (tw, _) = crossterm::terminal::size().unwrap_or((80, 24));
         let inner = tw as usize;
@@ -871,55 +937,12 @@ impl CliReplStyle {
             };
 
             if !table_ok {
-                if self.use_color_stdout {
-                    queue!(
-                        out,
-                        SetForegroundColor(Self::C_HELP_CMD),
-                        SetAttribute(Attribute::Bold)
-                    )?;
-                }
-                writeln!(out, "  {cmd}")?;
-                self.queue_reset(&mut out, true)?;
-                for line in &desc_lines {
-                    if self.use_color_stdout {
-                        queue!(
-                            out,
-                            SetForegroundColor(Self::C_HELP_DESC),
-                            SetAttribute(Attribute::Dim)
-                        )?;
-                    }
-                    writeln!(out, "  {line}")?;
-                    self.queue_reset(&mut out, true)?;
-                }
+                self.write_help_row_stacked(&mut out, cmd, &desc_lines)?;
                 continue;
             }
 
             let padded = pad_cmd_to_display_width(cmd, max_cmd_w);
-
-            for (i, line) in desc_lines.iter().enumerate() {
-                if self.use_color_stdout {
-                    queue!(
-                        out,
-                        SetForegroundColor(Self::C_HELP_CMD),
-                        SetAttribute(Attribute::Bold)
-                    )?;
-                }
-                if i == 0 {
-                    write!(out, "  {padded} ")?;
-                } else {
-                    write!(out, "  {cont_pad}")?;
-                }
-                self.queue_reset(&mut out, true)?;
-                if self.use_color_stdout {
-                    queue!(
-                        out,
-                        SetForegroundColor(Self::C_HELP_DESC),
-                        SetAttribute(Attribute::Dim)
-                    )?;
-                }
-                writeln!(out, "{line}")?;
-                self.queue_reset(&mut out, true)?;
-            }
+            self.write_help_row_table(&mut out, &padded, &cont_pad, &desc_lines)?;
         }
         writeln!(out)?;
         self.writeln_muted_line(
