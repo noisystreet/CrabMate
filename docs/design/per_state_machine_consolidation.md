@@ -141,6 +141,7 @@
 
 | 日期 | 说明 |
 |------|------|
+| 2026-04-30 | 解析成功后管线：`agent_turn/staged/post_parse_pipeline_fsm.rs`（ensemble/优化轮是否调用、结构化 `debug!`）；与 **`planner_round_fsm`**（路由枚举）配合 |
 | 2026-04-30 | 步执行循环：`agent_turn/staged/step_loop_fsm.rs`（`transitions` 跳转、注入步 user）；**`staged_step_fsm.rs`**（补丁预算、`PatchPlanner`）；首轮解析 / `no_task` 历史：**`planner_parse_fsm.rs`**（`NotFound` 收敛 vs 降级） |
 | 2026-04-30 | 逻辑多规划员内部：`agent_turn/staged/ensemble_fsm.rs`（辅助规划员草案采纳 vs 停止链、合并轮步列表应用）；与 `planner_round_fsm`（是否进入 ensemble）分层 |
 | 2026-04-30 | 规划子回合门控：`agent_turn/staged/planner_round_fsm.rs`（ensemble / 优化轮是否运行）；与 `turn_fsm` / `orchestrator` 并列 |
