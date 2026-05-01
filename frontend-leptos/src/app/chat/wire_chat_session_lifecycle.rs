@@ -14,20 +14,35 @@ use crate::app::app_shell_effects::{
 };
 use crate::app::session_hydrate::wire_session_hydration;
 
+/// `wire_chat_session_lifecycle_effects` 的输入（聚合壳级 RwSignal，避免长参数列表）。
+pub(crate) struct WireChatSessionLifecycleEffectsArgs {
+    pub initialized: RwSignal<bool>,
+    pub sessions: RwSignal<Vec<ChatSession>>,
+    pub active_id: RwSignal<String>,
+    pub draft: RwSignal<String>,
+    pub locale: RwSignal<Locale>,
+    pub web_ui_config_loaded: RwSignal<bool>,
+    pub markdown_render: RwSignal<bool>,
+    pub apply_assistant_display_filters: RwSignal<bool>,
+    pub chat_session: ChatSessionSignals,
+    pub selected_agent_role: RwSignal<Option<String>>,
+}
+
 /// 注册与「会话生命周期 + 展示偏好」相关的壳级 `wire_*`（不含纯主题/侧栏宽度等）。
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn wire_chat_session_lifecycle_effects(
-    initialized: RwSignal<bool>,
-    sessions: RwSignal<Vec<ChatSession>>,
-    active_id: RwSignal<String>,
-    draft: RwSignal<String>,
-    locale: RwSignal<Locale>,
-    web_ui_config_loaded: RwSignal<bool>,
-    markdown_render: RwSignal<bool>,
-    apply_assistant_display_filters: RwSignal<bool>,
-    chat_session: ChatSessionSignals,
-    selected_agent_role: RwSignal<Option<String>>,
-) {
+pub(crate) fn wire_chat_session_lifecycle_effects(args: WireChatSessionLifecycleEffectsArgs) {
+    let WireChatSessionLifecycleEffectsArgs {
+        initialized,
+        sessions,
+        active_id,
+        draft,
+        locale,
+        web_ui_config_loaded,
+        markdown_render,
+        apply_assistant_display_filters,
+        chat_session,
+        selected_agent_role,
+    } = args;
+
     wire_initial_sessions_from_storage(initialized, sessions, active_id, draft, locale);
     wire_web_ui_config_once_after_init(
         initialized,

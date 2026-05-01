@@ -74,17 +74,17 @@ pub fn find_references(args_json: &str, workspace_root: &Path) -> String {
 
     let mut results: Vec<(PathBuf, usize, String)> = Vec::new();
     let mut visited = 0usize;
-    if let Err(e) = walk_rs(
-        &root,
-        &ref_re,
-        &symbol,
+    let mut walk_ctx = RsWalkCtx {
+        ref_re: &ref_re,
+        symbol: &symbol,
         exclude_definitions,
         case_insensitive,
-        &mut results,
-        &mut visited,
+        results: &mut results,
+        visited_files: &mut visited,
         max_results,
-        include_hidden,
-    ) {
+        ignore_hidden_dirs: include_hidden,
+    };
+    if let Err(e) = walk_rs(&root, &mut walk_ctx) {
         return format!("搜索过程中发生错误：{}", e);
     }
 
@@ -231,18 +231,18 @@ fn resolve_file(base: &Path, sub: &str) -> Result<PathBuf, String> {
     Ok(canonical)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn walk_rs(
-    root: &Path,
-    ref_re: &Regex,
-    symbol: &str,
+struct RsWalkCtx<'a> {
+    ref_re: &'a Regex,
+    symbol: &'a str,
     exclude_definitions: bool,
     case_insensitive: bool,
-    results: &mut Vec<(PathBuf, usize, String)>,
-    visited_files: &mut usize,
+    results: &'a mut Vec<(PathBuf, usize, String)>,
+    visited_files: &'a mut usize,
     max_results: usize,
     ignore_hidden_dirs: bool,
-) -> Result<(), String> {
+}
+
+fn walk_rs(root: &Path, ctx: &mut RsWalkCtx<'_>) -> Result<(), String> {
     if !root.exists() {
         return Ok(());
     }
@@ -250,15 +250,15 @@ fn walk_rs(
         if root.extension().and_then(|e| e.to_str()) != Some("rs") {
             return Ok(());
         }
-        *visited_files += 1;
+        *ctx.visited_files += 1;
         search_refs_in_file(
             root,
-            ref_re,
-            symbol,
-            exclude_definitions,
-            case_insensitive,
-            results,
-            max_results,
+            ctx.ref_re,
+            ctx.symbol,
+            ctx.exclude_definitions,
+            ctx.case_insensitive,
+            ctx.results,
+            ctx.max_results,
         )?;
         return Ok(());
     }
@@ -266,36 +266,26 @@ fn walk_rs(
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
-        if ignore_hidden_dirs && name.starts_with('.') {
+        if ctx.ignore_hidden_dirs && name.starts_with('.') {
             continue;
         }
         if path.is_dir() {
-            walk_rs(
-                &path,
-                ref_re,
-                symbol,
-                exclude_definitions,
-                case_insensitive,
-                results,
-                visited_files,
-                max_results,
-                ignore_hidden_dirs,
-            )?;
-            if results.len() >= max_results {
+            walk_rs(&path, ctx)?;
+            if ctx.results.len() >= ctx.max_results {
                 break;
             }
         } else if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("rs") {
-            *visited_files += 1;
+            *ctx.visited_files += 1;
             search_refs_in_file(
                 &path,
-                ref_re,
-                symbol,
-                exclude_definitions,
-                case_insensitive,
-                results,
-                max_results,
+                ctx.ref_re,
+                ctx.symbol,
+                ctx.exclude_definitions,
+                ctx.case_insensitive,
+                ctx.results,
+                ctx.max_results,
             )?;
-            if results.len() >= max_results {
+            if ctx.results.len() >= ctx.max_results {
                 break;
             }
         }

@@ -1,7 +1,18 @@
 //! Manager 对外类型与 `ManagerAgent` 结构体。
 
+use crate::config::AgentConfig;
+use crate::llm::backend::ChatCompletionsBackend;
+
 use super::super::session_state::SessionStateManager;
 use super::super::task::{ExecutionStrategy, SubGoal};
+
+/// Manager 重规划 / 失败处理等路径共用的 LLM 传输上下文（避免重复传递 cfg/client/key）。
+pub struct ManagerLlmContext<'a> {
+    pub cfg: &'a AgentConfig,
+    pub llm_backend: &'a dyn ChatCompletionsBackend,
+    pub client: &'a reqwest::Client,
+    pub api_key: &'a str,
+}
 
 /// Manager Agent 配置
 #[derive(Debug, Clone)]

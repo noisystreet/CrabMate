@@ -15,7 +15,7 @@ use super::artifact_store::ArtifactStore;
 use super::build_state::BuildState;
 use super::events;
 use super::goal_verifier::{GoalVerifier, VerificationResult};
-use super::manager::{ManagerOutput, ReflectAndReplanContext, handle_failure};
+use super::manager::{ManagerLlmContext, ManagerOutput, ReflectAndReplanContext, handle_failure};
 use super::operator::{OperatorAgent, OperatorConfig};
 use super::task::{
     ArtifactKind, BuildArtifactKind, ExecutionStrategy, SubGoal, TaskResult, TaskStatus,
@@ -1366,10 +1366,12 @@ impl<'a> HierarchicalExecutor<'a> {
             .handle_failed_goal(
                 &goal,
                 &error,
-                &cfg,
-                llm_backend,
-                &client,
-                &api_key,
+                ManagerLlmContext {
+                    cfg: &cfg,
+                    llm_backend,
+                    client: &client,
+                    api_key: &api_key,
+                },
                 &working_dir,
                 &tools_defs,
                 &artifacts,
@@ -1430,10 +1432,12 @@ impl<'a> HierarchicalExecutor<'a> {
         let manager_output = manager
             .replan_with_artifacts(
                 original_task,
-                cfg,
-                llm_backend,
-                client,
-                api_key,
+                ManagerLlmContext {
+                    cfg,
+                    llm_backend,
+                    client,
+                    api_key,
+                },
                 working_dir,
                 &self.tools_defs,
                 previous_results,

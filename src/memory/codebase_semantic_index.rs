@@ -509,18 +509,18 @@ pub fn run_tool(
         .unwrap_or(p.rebuild_incremental);
 
     if rebuild {
-        return rebuild_index(
-            &ws_root,
-            &ws_key,
-            &index_path,
+        return rebuild_index(RebuildIndexParams {
+            ws_root: &ws_root,
+            ws_key: &ws_key,
+            index_path: &index_path,
             sub_path,
-            p.max_file_bytes,
-            p.chunk_max_chars,
-            p.rebuild_max_files,
-            &ext_set,
-            file_glob_pat.as_ref(),
+            max_file_bytes: p.max_file_bytes,
+            chunk_max_chars: p.chunk_max_chars,
+            rebuild_max_files: p.rebuild_max_files,
+            ext_set: &ext_set,
+            file_glob_pat: file_glob_pat.as_ref(),
             incremental,
-        );
+        });
     }
 
     let retrieve_mode = v
@@ -1032,19 +1032,32 @@ fn write_file_rows_and_meta(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-fn rebuild_index(
-    ws_root: &Path,
-    ws_key: &str,
-    index_path: &Path,
-    sub_path: Option<&str>,
+struct RebuildIndexParams<'a> {
+    ws_root: &'a Path,
+    ws_key: &'a str,
+    index_path: &'a Path,
+    sub_path: Option<&'a str>,
     max_file_bytes: usize,
     chunk_max_chars: usize,
     rebuild_max_files: usize,
-    ext_set: &HashSet<String>,
-    file_glob_pat: Option<&glob::Pattern>,
+    ext_set: &'a HashSet<String>,
+    file_glob_pat: Option<&'a glob::Pattern>,
     incremental: bool,
-) -> String {
+}
+
+fn rebuild_index(p: RebuildIndexParams<'_>) -> String {
+    let RebuildIndexParams {
+        ws_root,
+        ws_key,
+        index_path,
+        sub_path,
+        max_file_bytes,
+        chunk_max_chars,
+        rebuild_max_files,
+        ext_set,
+        file_glob_pat,
+        incremental,
+    } = p;
     #[cfg(not(feature = "fastembed"))]
     {
         return "错误：rebuild_index 需要本地向量嵌入；当前二进制未启用 `fastembed` Cargo feature。请使用带 fastembed 的构建，或关闭 codebase_semantic_search。".to_string();

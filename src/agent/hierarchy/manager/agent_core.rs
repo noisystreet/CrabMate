@@ -11,7 +11,7 @@ use crate::types::{LlmSeedOverride, Message, message_content_as_str};
 use super::super::session_state::SessionStateManager;
 use super::super::task::{ExecutionStrategy, SubGoal};
 use super::manager_tail::{ManagerOutput, truncate_for_log, truncate_task};
-use super::types::{ManagerAgent, ManagerConfig, ManagerDecision, ManagerError};
+use super::types::{ManagerAgent, ManagerConfig, ManagerDecision, ManagerError, ManagerLlmContext};
 
 impl ManagerAgent {
     /// 初次分解与重规划共用的「分解硬性规则」第 1～10 条（单源维护，避免两处 prompt 漂移）。
@@ -219,14 +219,10 @@ impl ManagerAgent {
     ///
     /// 当子目标执行失败或需要调整时，调用此方法让 Manager 重新分解任务，
     /// 结合已完成的 artifacts 和失败信息生成新的子目标计划。
-    #[allow(clippy::too_many_arguments)]
     pub async fn replan_with_artifacts(
         &self,
         original_task: &str,
-        cfg: &AgentConfig,
-        llm_backend: &dyn ChatCompletionsBackend,
-        client: &reqwest::Client,
-        api_key: &str,
+        llm: ManagerLlmContext<'_>,
         working_dir: &std::path::Path,
         tools_defs: &[crate::types::Tool],
         previous_results: &[super::super::task::TaskResult],
@@ -249,7 +245,7 @@ impl ManagerAgent {
 
         let messages = vec![Message::user_only(&prompt)];
         let mut request = no_tools_chat_request_for_hierarchical_manager(
-            cfg,
+            llm.cfg,
             &messages,
             None,
             None,
@@ -259,10 +255,10 @@ impl ManagerAgent {
 
         match complete_chat_retrying(
             &CompleteChatRetryingParams::new(
-                llm_backend,
-                client,
-                api_key,
-                cfg,
+                llm.llm_backend,
+                llm.client,
+                llm.api_key,
+                llm.cfg,
                 LlmRetryingTransportOpts::headless_no_stream(),
                 None,
                 None,
@@ -279,10 +275,10 @@ impl ManagerAgent {
                 self.parse_output_with_one_json_repair(
                     &content,
                     Some(finish_reason.as_str()),
-                    cfg,
-                    llm_backend,
-                    client,
-                    api_key,
+                    llm.cfg,
+                    llm.llm_backend,
+                    llm.client,
+                    llm.api_key,
                 )
                 .await
             }
@@ -302,15 +298,11 @@ impl ManagerAgent {
     ///
     /// 当 Executor 执行子目标失败时，调用此方法让 Manager 分析失败原因，
     /// 决定是重试（可能修改子目标描述）、跳过还是终止。
-    #[allow(clippy::too_many_arguments)]
     pub async fn handle_failed_goal(
         &self,
         failed_goal: &SubGoal,
         error_message: &str,
-        cfg: &AgentConfig,
-        llm_backend: &dyn ChatCompletionsBackend,
-        client: &reqwest::Client,
-        api_key: &str,
+        llm: ManagerLlmContext<'_>,
         working_dir: &std::path::Path,
         tools_defs: &[crate::types::Tool],
         previous_artifacts: &[super::super::task::Artifact],
@@ -332,7 +324,7 @@ impl ManagerAgent {
 
         let messages = vec![Message::user_only(&prompt)];
         let mut request = no_tools_chat_request_for_hierarchical_manager(
-            cfg,
+            llm.cfg,
             &messages,
             None,
             None,
@@ -341,10 +333,10 @@ impl ManagerAgent {
         Self::force_manager_structured_json_mode(&mut request);
 
         let params = CompleteChatRetryingParams::new(
-            llm_backend,
-            client,
-            api_key,
-            cfg,
+            llm.llm_backend,
+            llm.client,
+            llm.api_key,
+            llm.cfg,
             LlmRetryingTransportOpts::headless_no_stream(),
             None,
             None,
