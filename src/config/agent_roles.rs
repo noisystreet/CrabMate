@@ -154,22 +154,40 @@ fn read_system_prompt_file_resolved(
 }
 
 /// 由累加后的角色条目生成 `id -> 已合并 cursor rules 的 system`；并校验 `default_role_id`。
-#[allow(clippy::too_many_arguments)]
+pub(super) struct FinalizeAgentRoleCatalogParams<'a> {
+    pub entries: HashMap<String, AgentRoleEntryBuilder>,
+    pub default_role_id: Option<String>,
+    pub global_effective_system_prompt: &'a str,
+    pub system_prompt_search_bases: &'a [PathBuf],
+    pub run_command_working_dir: &'a Path,
+    pub cursor_rules_enabled: bool,
+    pub cursor_rules_dir: &'a str,
+    pub cursor_rules_include_agents_md: bool,
+    pub cursor_rules_max_chars: usize,
+    pub skills_enabled: bool,
+    pub skills_dir: &'a str,
+    pub skills_max_chars: usize,
+    pub skills_top_k: usize,
+}
+
 pub(super) fn finalize_agent_role_catalog(
-    entries: HashMap<String, AgentRoleEntryBuilder>,
-    default_role_id: Option<String>,
-    global_effective_system_prompt: &str,
-    system_prompt_search_bases: &[PathBuf],
-    run_command_working_dir: &Path,
-    cursor_rules_enabled: bool,
-    cursor_rules_dir: &str,
-    cursor_rules_include_agents_md: bool,
-    cursor_rules_max_chars: usize,
-    skills_enabled: bool,
-    skills_dir: &str,
-    skills_max_chars: usize,
-    skills_top_k: usize,
+    p: FinalizeAgentRoleCatalogParams<'_>,
 ) -> Result<(Option<String>, AgentRoleCatalogBuilt), String> {
+    let FinalizeAgentRoleCatalogParams {
+        entries,
+        default_role_id,
+        global_effective_system_prompt,
+        system_prompt_search_bases,
+        run_command_working_dir,
+        cursor_rules_enabled,
+        cursor_rules_dir,
+        cursor_rules_include_agents_md,
+        cursor_rules_max_chars,
+        skills_enabled,
+        skills_dir,
+        skills_max_chars,
+        skills_top_k,
+    } = p;
     let mut out: HashMap<String, AgentRoleSpec> = HashMap::with_capacity(entries.len());
     for (id, b) in entries {
         let allowed_tools = normalize_allowed_tools(b.allowed_tools);

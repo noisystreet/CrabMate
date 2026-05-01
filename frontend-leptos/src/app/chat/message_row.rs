@@ -284,7 +284,7 @@ fn chat_message_row_meta_view(
     }
 }
 
-fn chat_message_row_body_core(
+struct ChatMessageRowBodyCoreParams {
     m: StoredMessage,
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
@@ -298,7 +298,24 @@ fn chat_message_row_body_core(
     tool_detail_open: RwSignal<bool>,
     jump_uid: Option<String>,
     auto_scroll_chat: RwSignal<bool>,
-) -> AnyView {
+}
+
+fn chat_message_row_body_core(p: ChatMessageRowBodyCoreParams) -> AnyView {
+    let ChatMessageRowBodyCoreParams {
+        m,
+        sessions,
+        active_id,
+        collapsed_long_assistant_ids,
+        locale,
+        markdown_render,
+        apply_assistant_display_filters,
+        chat_find_query,
+        is_tool_bubble,
+        tool_detail_text,
+        tool_detail_open,
+        jump_uid,
+        auto_scroll_chat,
+    } = p;
     if m.role == "assistant" && !m.is_tool {
         return assistant_markdown_collapsible_view(
             sessions,
@@ -755,8 +772,8 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
             loc_ut,
         )
     });
-    let msg_core = chat_message_row_body_core(
-        m.clone(),
+    let msg_core = chat_message_row_body_core(ChatMessageRowBodyCoreParams {
+        m: m.clone(),
         sessions,
         active_id,
         collapsed_long_assistant_ids,
@@ -765,11 +782,11 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
         apply_assistant_display_filters,
         chat_find_query,
         is_tool_bubble,
-        tool_detail_text.clone(),
+        tool_detail_text: tool_detail_text.clone(),
         tool_detail_open,
         jump_uid,
         auto_scroll_chat,
-    );
+    });
     let mid_dom = m.id.clone();
     let detail_for_drawer_when = tool_detail_text.clone();
     let detail_for_drawer_text = tool_detail_text.clone();

@@ -686,21 +686,22 @@ fn finalize_agent_config(
         .as_ref()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
-    let (default_agent_role_id, agent_roles) = agent_roles::finalize_agent_role_catalog(
-        std::mem::take(&mut b.agent_role_entries),
-        default_agent_role_id,
-        system_prompt.as_str(),
-        &system_prompt_search_bases,
-        run_command_working_dir.as_path(),
-        cursor_rules_enabled,
-        &cursor_rules_dir,
-        cursor_rules_include_agents_md,
-        cursor_rules_max_chars as usize,
-        skills_enabled,
-        &skills_dir,
-        skills_max_chars as usize,
-        skills_top_k,
-    )?;
+    let (default_agent_role_id, agent_roles) =
+        agent_roles::finalize_agent_role_catalog(agent_roles::FinalizeAgentRoleCatalogParams {
+            entries: std::mem::take(&mut b.agent_role_entries),
+            default_role_id: default_agent_role_id,
+            global_effective_system_prompt: system_prompt.as_str(),
+            system_prompt_search_bases: &system_prompt_search_bases,
+            run_command_working_dir: run_command_working_dir.as_path(),
+            cursor_rules_enabled,
+            cursor_rules_dir: &cursor_rules_dir,
+            cursor_rules_include_agents_md,
+            cursor_rules_max_chars: cursor_rules_max_chars as usize,
+            skills_enabled,
+            skills_dir: &skills_dir,
+            skills_max_chars: skills_max_chars as usize,
+            skills_top_k,
+        })?;
 
     finalize_agent_config_tail(FinalizeAfterRoles {
         b,

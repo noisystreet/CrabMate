@@ -161,21 +161,36 @@ fn extract_in_file_lines_mode(
 }
 
 /// `rust_fn_block` 模式（与拆分前一致）。
-#[allow(clippy::too_many_arguments)]
-fn extract_in_file_rust_fn_block_mode(
-    working_dir: &Path,
-    path: &str,
-    target: &Path,
-    all_lines: &[&str],
+struct ExtractInFileRustFnBlockParams<'a> {
+    working_dir: &'a Path,
+    path: &'a str,
+    target: &'a Path,
+    all_lines: &'a [&'a str],
     total: usize,
     from: usize,
     to: usize,
-    re: &Regex,
-    pattern: &str,
+    re: &'a Regex,
+    pattern: &'a str,
     max_matches: usize,
     max_block_lines: usize,
     max_block_chars: usize,
-) -> String {
+}
+
+fn extract_in_file_rust_fn_block_mode(p: ExtractInFileRustFnBlockParams<'_>) -> String {
+    let ExtractInFileRustFnBlockParams {
+        working_dir,
+        path,
+        target,
+        all_lines,
+        total,
+        from,
+        to,
+        re,
+        pattern,
+        max_matches,
+        max_block_lines,
+        max_block_chars,
+    } = p;
     let mut blocks: Vec<(usize, usize, String)> = Vec::new();
     for idx in from..=to {
         let line = all_lines[idx - 1];
@@ -316,20 +331,20 @@ pub fn extract_in_file(args_json: &str, working_dir: &Path) -> String {
         );
     }
 
-    extract_in_file_rust_fn_block_mode(
+    extract_in_file_rust_fn_block_mode(ExtractInFileRustFnBlockParams {
         working_dir,
-        path.as_str(),
-        &target,
-        &all_lines,
+        path: path.as_str(),
+        target: &target,
+        all_lines: &all_lines,
         total,
         from,
         to,
-        &re,
-        pattern.as_str(),
+        re: &re,
+        pattern: pattern.as_str(),
         max_matches,
         max_block_lines,
         max_block_chars,
-    )
+    })
 }
 
 fn truncate_line(s: &str, max_chars: usize) -> String {
