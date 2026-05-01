@@ -17,15 +17,9 @@
   flex-direction: column;
   min-height: 0;
   height: 100%;
-  background: color-mix(in srgb, var(--bg) 94%, var(--surface));
+  background: var(--nav-rail-bg);
   border-right: 1px solid var(--border-subtle);
 }
-
-:root[data-theme="light"] .nav-rail {
-  background: color-mix(in srgb, var(--bg-elevated) 88%, var(--bg));
-}
-
-.nav-rail-brand {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;

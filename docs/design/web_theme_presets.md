@@ -64,20 +64,13 @@
 
 **可选整理**：将默认 `:root` 改为显式 `:root[data-theme="dark"]`，使「无属性」与「暗色」不重复；若保留无属性默认，须在文档中说明优先级。
 
-### 3.3 「仅 light 写死」选择器的处理（实现前必做清单）
+### 3.3 浅色相关「组件分叉」→ token 覆层（已完成收敛）
 
-下列文件含 `:root[data-theme="light"]` 的额外规则，新增 **浅色类** 预设时若不处理会漏样式：
-
-- `frontend-leptos/styles/base.css`
-- `frontend-leptos/styles/shell-ds.css`
-- `frontend-leptos/styles/layout-chat.css`
-- `frontend-leptos/styles/components.css`
-- `frontend-leptos/styles/modal.css`
-- `frontend-leptos/styles/status.css`
+历史上以下文件含 **`:root[data-theme="light"]`** 的额外规则；现已 **迁入 `tokens.css` 的覆层变量**（见 §3.2 注释与 `:root` / `:root[data-theme="light"]` 内 `--selection-bg`、`--page-bg-decor-*`、`--nav-rail-bg`、`--btn-primary-*`、`--modal-backdrop-bg`、`--status-agent-select-bg-image`、`--composer-bar-box-shadow`、`--composer-ws-ref-*`），**`base.css`、`shell-ds.css`、`layout-chat.css`、`components.css`、`modal.css`、`status.css`** 仅引用 `var(--*)`，**不再**按 `light` 写死选择器。
 
 **推荐路径（优先）**：
 
-- **A. 变量化**：把这些文件里的颜色/背景差异 **收拢到 `tokens.css` 的变量**，组件文件只引用 `var(--*)`，则新预设只需在 `tokens.css` 增加一块，**不必**改 6 个文件。
+- **A. 变量化**（现状）：新增浅色预设时 **复制 `:root[data-theme="light"]` 整块** 为新 slug（如 `light-warm`），覆写 **色板变量 + 上列覆层变量** 即可；多预设时可将浅色共用覆层提取为 **`@layer` + 共用选择器列表** 或 **`themes/*.css`**，见 §3.4。
 
 **备选路径**：
 
@@ -150,3 +143,4 @@
 | 日期 | 摘要 |
 |------|------|
 | 2026-05-01 | 初稿：扩展 `data-theme`、CSS 与分叉选择器处理、Rust 白名单与设置 UI、无障碍与可选二维 accent、文档与回归清单。 |
+| 2026-05-01 | 浅色相关组件分叉迁入 `tokens.css` 覆层变量（`--selection-bg`、`--page-bg-decor-*` 等），业务 CSS 仅引用变量。 |

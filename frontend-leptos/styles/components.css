@@ -230,15 +230,10 @@
 }
 
 .btn-primary {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 95%, #fff) 0%, var(--accent) 100%);
-  border-color: color-mix(in srgb, var(--accent) 70%, #000);
+  background: var(--btn-primary-bg);
+  border-color: var(--btn-primary-border);
   color: #fff;
   box-shadow: 0 1px 0 color-mix(in srgb, #fff 12%, transparent) inset;
-}
-
-:root[data-theme="light"] .btn-primary {
-  background: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 85%, #000);
 }
 
 .btn-primary:hover:not(:disabled) {
