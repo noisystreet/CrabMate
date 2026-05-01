@@ -50,7 +50,10 @@ pub(in crate::tools) fn params_workflow_execute() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
         "properties": {
-            "workflow": { "type": "object", "description": "DAG 工作流定义：max_parallelism/fail_fast/compensate_on_failure + nodes" }
+            "workflow": {
+                "type": "object",
+                "description": "DAG 工作流定义。可选 **`workflow_template`**（如 **`rust_ci_light`**）：与手写 **`nodes`** 二选一；若同时存在则模板先展开再被 **`workflow`** 中其余键覆盖（含 **`nodes`** 整体替换）。详见 **`docs/工具说明.md`**。"
+            }
         },
         "required": ["workflow"],
         "additionalProperties": false

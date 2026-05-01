@@ -8,6 +8,33 @@ use super::placeholders::inject_placeholders;
 use super::types::{NodeRunResult, NodeRunStatus};
 
 #[test]
+fn test_parse_workflow_template_rust_ci_light() {
+    let json = r#"{"workflow":{"workflow_template":"rust_ci_light"}}"#;
+    let spec = parse_workflow_spec(json).unwrap();
+    assert_eq!(spec.nodes.len(), 4);
+    assert_eq!(spec.nodes[0].tool_name, "cargo_fmt_check");
+    assert_eq!(spec.nodes[1].tool_name, "cargo_check");
+    assert_eq!(spec.nodes[2].tool_name, "cargo_clippy");
+    assert_eq!(spec.nodes[3].tool_name, "cargo_test");
+    assert_eq!(spec.cached_layer_count, 4);
+}
+
+#[test]
+fn test_parse_workflow_template_overlay_fail_fast() {
+    let json = r#"{"workflow":{"workflow_template":"rust_ci_light","fail_fast":false}}"#;
+    let spec = parse_workflow_spec(json).unwrap();
+    assert!(!spec.fail_fast);
+    assert_eq!(spec.nodes.len(), 4);
+}
+
+#[test]
+fn test_parse_unknown_workflow_template_errors() {
+    let json = r#"{"workflow":{"workflow_template":"unknown_xyz"}}"#;
+    let err = parse_workflow_spec(json).unwrap_err();
+    assert!(err.contains("未知 workflow_template"), "got {err}");
+}
+
+#[test]
 fn test_parse_workflow_spec_array_nodes() {
     let json = r#"{
         "workflow":{

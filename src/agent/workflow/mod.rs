@@ -13,6 +13,7 @@ mod parse;
 mod placeholders;
 mod run;
 mod types;
+mod workflow_templates;
 
 pub use execute::WorkflowApprovalMode;
 pub use run::run_workflow_execute_tool;

@@ -203,6 +203,7 @@ Structured function-calling JSON examples:
   {"script":"test"}
   ```
 - `workflow_execute` (DAG: parallelism, approval, SLA, compensation):
+  - **Built-in template**: set **`workflow.workflow_template`** (currently **`rust_ci_light`**) to expand a serial **`cargo_fmt_check` → `cargo_check` (`all_targets`) → `cargo_clippy` (`all_targets`) → `cargo_test`** DAG without hand-writing **`nodes`**. Mutually exclusive with a fully custom **`nodes`** unless you override after expansion: other **`workflow`** keys merge on top; a provided **`nodes`** array replaces the template’s nodes.
   - Node **`max_retries`** (0–5, default 0): auto backoff retry for **`timeout`**, **`workflow_tool_join_error`**, **`workflow_semaphore_closed`**, …; **not** for business failures (tests, non-zero exit) to avoid duplicate side effects.
   - **Static check**: each **`tool_name`** must be a built-in tool; **`tool_args`** must include schema **`required`** keys (recursive into nested objects/arrays; full validation still in runners).
   - **Result JSON** (`workflow_execute_result` / `workflow_validate_result`): **`workflow_run_id`** (matches logs), **`trace`** (`dag_start`, `node_attempt_*`, `node_retry_backoff`, `dag_end`, …), **`completion_order`**, **`nodes[].attempt`** final count.
