@@ -2,19 +2,160 @@
 //!
 //! 从 `app/mod.rs` 抽出，避免根组件既管布局又实现同步语义。
 
+use std::collections::HashSet;
+
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use crate::api::fetch_conversation_messages;
-use crate::conversation_hydrate::stored_messages_from_conversation_api;
+use crate::conversation_hydrate::{
+    ConversationMessagesResponse, stored_messages_from_conversation_api,
+};
 use crate::i18n::{self, Locale};
 use crate::session_ops::title_from_user_prompt;
-use crate::storage::StoredMessage;
+use crate::storage::{ChatSession, StoredMessage};
 
 use crate::chat_session_state::ChatSessionSignals;
 
 fn count_user_role_bubbles(messages: &[StoredMessage]) -> usize {
     messages.iter().filter(|m| m.role == "user").count()
+}
+
+fn messages_contain_loading(messages: &[StoredMessage]) -> bool {
+    messages
+        .iter()
+        .any(|m| m.state.as_deref() == Some("loading"))
+}
+
+fn trimmed_server_conversation_id(session: &ChatSession) -> Option<&str> {
+    session
+        .server_conversation_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|x| !x.is_empty())
+}
+
+/// 服务端快照中不存在的本地消息：工具卡与 TimelineLog，须保留并与快照合并。
+fn local_messages_preserved_after_hydrate(
+    server_msgs: &[StoredMessage],
+    local_msgs: &[StoredMessage],
+) -> Vec<StoredMessage> {
+    let server_msg_ids: HashSet<_> = server_msgs.iter().map(|m| m.id.as_str()).collect();
+    local_msgs
+        .iter()
+        .filter(|m| {
+            if m.is_tool && !server_msg_ids.contains(m.id.as_str()) {
+                return true;
+            }
+            if let Some(ref state) = m.state {
+                if state.contains("cm_tl") && !server_msg_ids.contains(m.id.as_str()) {
+                    return true;
+                }
+            }
+            false
+        })
+        .cloned()
+        .collect()
+}
+
+/// 将 `GET /conversation/messages` 结果合并进当前会话；成功时返回 `true`（已写 `messages` / `server_revision` 等）。
+fn merge_hydration_into_active_session(
+    session: &mut ChatSession,
+    aid: &str,
+    cid: &str,
+    hydrated: Vec<StoredMessage>,
+    resp: &ConversationMessagesResponse,
+    nonce_at_start: u64,
+    current_nonce: u64,
+    active_id: &str,
+    selected_agent_role: RwSignal<Option<String>>,
+) -> bool {
+    if active_id != aid {
+        return false;
+    }
+    if messages_contain_loading(&session.messages) {
+        return false;
+    }
+    let still = trimmed_server_conversation_id(session);
+    if still != Some(cid) {
+        return false;
+    }
+    if current_nonce != nonce_at_start {
+        return false;
+    }
+    let local_users = count_user_role_bubbles(&session.messages);
+    let hydrated_users = count_user_role_bubbles(&hydrated);
+    if !session.messages.is_empty() && hydrated.is_empty() {
+        return false;
+    }
+    if local_users > 0 && hydrated_users < local_users {
+        return false;
+    }
+    let mut new_messages = hydrated;
+    let preserved = local_messages_preserved_after_hydrate(&new_messages, &session.messages);
+    new_messages.extend(preserved);
+    session.messages = new_messages;
+    session.server_revision = Some(resp.revision);
+    if let Some(role) = resp
+        .active_agent_role
+        .as_deref()
+        .map(str::trim)
+        .filter(|r| !r.is_empty())
+    {
+        selected_agent_role.set(Some(role.to_string()));
+    }
+    let user_count = session.messages.iter().filter(|m| m.role == "user").count();
+    if user_count == 1 && i18n::is_default_session_title(&session.title) {
+        if let Some(u) = session.messages.iter().find(|m| m.role == "user") {
+            session.title = title_from_user_prompt(&u.text);
+        }
+    }
+    true
+}
+
+fn restore_reasoning_after_hydration(chat: &ChatSessionSignals, aid: &str, nonce_at_start: u64) {
+    if chat.session_hydrate_nonce.get_untracked() != nonce_at_start {
+        return;
+    }
+    let preserved = chat.reasoning_preserved.get_untracked();
+    web_sys::console::log_1(
+        &format!(
+            "[hydration] restoring {} reasoning_text entries, aid={}",
+            preserved.len(),
+            aid
+        )
+        .into(),
+    );
+    if preserved.is_empty() {
+        return;
+    }
+    chat.sessions.update(|list| {
+        if let Some(s) = list.iter_mut().find(|x| x.id == aid) {
+            for m in s.messages.iter_mut() {
+                if let Some(rt) = preserved.get(&m.id) {
+                    web_sys::console::log_1(
+                        &format!(
+                            "[hydration] restored reasoning_text len={} for mid={}",
+                            rt.len(),
+                            m.id
+                        )
+                        .into(),
+                    );
+                    m.reasoning_text = rt.clone();
+                }
+            }
+        }
+    });
+    chat.reasoning_preserved
+        .update(|map| map.retain(|k, _| !preserved.contains_key(k)));
+}
+
+fn apply_saved_revision_if_same_conversation(chat: &ChatSessionSignals, cid: &str, revision: u64) {
+    chat.session_sync.update(|st| {
+        if st.conversation_id.as_deref().map(str::trim) == Some(cid) {
+            st.apply_saved_revision(revision);
+        }
+    });
 }
 
 /// 订阅 `chat.session_hydrate_nonce`：流结束后由 composer 递增，拉取服务端快照并写回当前会话。
@@ -38,18 +179,10 @@ pub fn wire_session_hydration(
             let nonce_at_start = chat.session_hydrate_nonce.get();
             let Some(cid) = chat.sessions.with_untracked(|list| {
                 list.iter().find(|s| s.id == aid).and_then(|s| {
-                    if s.messages
-                        .iter()
-                        .any(|m| m.state.as_deref() == Some("loading"))
-                    {
+                    if messages_contain_loading(&s.messages) {
                         return None;
                     }
-                    let c = s
-                        .server_conversation_id
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|x| !x.is_empty())?;
-                    Some(c.to_string())
+                    trimmed_server_conversation_id(s).map(|c| c.to_string())
                 })
             }) else {
                 return;
@@ -68,79 +201,22 @@ pub fn wire_session_hydration(
                 }
                 let mut applied_hydration = false;
                 chat.sessions.update(|list| {
-                    if chat.active_id.get_untracked() != aid {
-                        return;
-                    }
+                    let active = chat.active_id.get_untracked();
+                    let cur_nonce = chat.session_hydrate_nonce.get_untracked();
                     let Some(s) = list.iter_mut().find(|x| x.id == aid) else {
                         return;
                     };
-                    if s.messages
-                        .iter()
-                        .any(|m| m.state.as_deref() == Some("loading"))
-                    {
-                        return;
-                    }
-                    let still = s
-                        .server_conversation_id
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|x| !x.is_empty());
-                    if still != Some(cid.as_str()) {
-                        return;
-                    }
-                    if chat.session_hydrate_nonce.get_untracked() != nonce_at_start {
-                        return;
-                    }
-                    let local_users = count_user_role_bubbles(&s.messages);
-                    let hydrated_users = count_user_role_bubbles(&msgs);
-                    if !s.messages.is_empty() && msgs.is_empty() {
-                        return;
-                    }
-                    if local_users > 0 && hydrated_users < local_users {
-                        return;
-                    }
-                    // 保留本地的工具消息（is_tool=true 的消息，如分层执行通过 SSE 添加的工具卡片）
-                    let server_msg_ids: std::collections::HashSet<_> =
-                        msgs.iter().map(|m| m.id.as_str()).collect();
-                    let local_preserved: Vec<StoredMessage> = s
-                        .messages
-                        .iter()
-                        .filter(|m| {
-                            // 保留 is_tool=true 的工具卡片
-                            if m.is_tool && !server_msg_ids.contains(m.id.as_str()) {
-                                return true;
-                            }
-                            // 保留 TimelineLog 消息（state 包含 cm_tl 的消息，如 hierarchical_plan）
-                            if let Some(ref state) = m.state {
-                                if state.contains("cm_tl")
-                                    && !server_msg_ids.contains(m.id.as_str())
-                                {
-                                    return true;
-                                }
-                            }
-                            false
-                        })
-                        .cloned()
-                        .collect();
-                    let mut new_messages = msgs;
-                    new_messages.extend(local_preserved);
-                    s.messages = new_messages;
-                    s.server_revision = Some(resp.revision);
-                    applied_hydration = true;
-                    if let Some(role) = resp
-                        .active_agent_role
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|r| !r.is_empty())
-                    {
-                        selected_agent_role.set(Some(role.to_string()));
-                    }
-                    let user_count = s.messages.iter().filter(|m| m.role == "user").count();
-                    if user_count == 1 && i18n::is_default_session_title(&s.title) {
-                        if let Some(u) = s.messages.iter().find(|m| m.role == "user") {
-                            s.title = title_from_user_prompt(&u.text);
-                        }
-                    }
+                    applied_hydration |= merge_hydration_into_active_session(
+                        s,
+                        &aid,
+                        cid.as_str(),
+                        msgs,
+                        &resp,
+                        nonce_at_start,
+                        cur_nonce,
+                        &active,
+                        selected_agent_role,
+                    );
                 });
                 if !applied_hydration {
                     return;
@@ -148,42 +224,8 @@ pub fn wire_session_hydration(
                 if chat.session_hydrate_nonce.get_untracked() != nonce_at_start {
                     return;
                 }
-                // 恢复 hydration 覆盖的 reasoning_text（SSE 实时累积，服务端不存）
-                let preserved = chat.reasoning_preserved.get_untracked();
-                web_sys::console::log_1(
-                    &format!(
-                        "[hydration] restoring {} reasoning_text entries, aid={}",
-                        preserved.len(),
-                        aid
-                    )
-                    .into(),
-                );
-                if !preserved.is_empty() {
-                    chat.sessions.update(|list| {
-                        if let Some(s) = list.iter_mut().find(|x| x.id == aid) {
-                            for m in s.messages.iter_mut() {
-                                if let Some(rt) = preserved.get(&m.id) {
-                                    web_sys::console::log_1(
-                                        &format!(
-                                            "[hydration] restored reasoning_text len={} for mid={}",
-                                            rt.len(),
-                                            m.id
-                                        )
-                                        .into(),
-                                    );
-                                    m.reasoning_text = rt.clone();
-                                }
-                            }
-                        }
-                    });
-                    chat.reasoning_preserved
-                        .update(|map| map.retain(|k, _| !preserved.contains_key(k)));
-                }
-                chat.session_sync.update(|st| {
-                    if st.conversation_id.as_deref().map(str::trim) == Some(cid.as_str()) {
-                        st.apply_saved_revision(resp.revision);
-                    }
-                });
+                restore_reasoning_after_hydration(&chat, &aid, nonce_at_start);
+                apply_saved_revision_if_same_conversation(&chat, cid.as_str(), resp.revision);
             });
         }
     });
