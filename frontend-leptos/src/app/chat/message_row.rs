@@ -173,6 +173,181 @@ fn is_running_subgoal_phase(loc: Locale, phase: Option<&str>) -> bool {
     subgoal_phase_key(phase).is_some()
 }
 
+fn message_row_shell_class(is_staged_timeline: bool, m: &StoredMessage) -> &'static str {
+    if is_staged_timeline {
+        "msg msg-staged-timeline"
+    } else {
+        match m.role.as_str() {
+            "user" => "msg msg-user",
+            "assistant" if m.is_tool => "msg msg-tool",
+            "assistant" => "msg msg-assistant",
+            _ if m.is_tool => "msg msg-tool",
+            _ => "msg msg-system",
+        }
+    }
+}
+
+fn message_row_loading_and_error(is_tool: bool, role: &str, state: Option<&str>) -> (bool, bool) {
+    let loading =
+        (role == "assistant" && state == Some("loading")) || (is_tool && state == Some("loading"));
+    let err = state == Some("error");
+    (loading, err)
+}
+
+fn message_row_prefixed_class(cls: &str, err: bool, loading: bool) -> String {
+    if err {
+        format!("{cls} msg-error")
+    } else if loading {
+        format!("{cls} msg-loading")
+    } else {
+        cls.to_string()
+    }
+}
+
+fn hierarchical_subgoal_banner_is_active(
+    sessions: &[ChatSession],
+    active_session_id: &str,
+    current_msg_id: &str,
+    subgoal_exec_banner: Option<&String>,
+    phase_for_run_check: Option<&str>,
+    loc: Locale,
+) -> bool {
+    if subgoal_exec_banner.is_none() || !is_running_subgoal_phase(loc, phase_for_run_check) {
+        return false;
+    }
+    sessions
+        .iter()
+        .find(|s| s.id == active_session_id)
+        .and_then(|sess| {
+            sess.messages
+                .iter()
+                .rev()
+                .find(|msg| is_hierarchical_subgoal_state(msg.state.as_deref()))
+        })
+        .map(|msg| msg.id == current_msg_id)
+        .unwrap_or(false)
+}
+
+fn chat_message_row_meta_view(
+    locale: RwSignal<Locale>,
+    show_planner_round_badge: bool,
+    is_staged_timeline: bool,
+    m_role: StoredMessage,
+    time_str: String,
+) -> impl IntoView {
+    let role_lbl = move || {
+        if is_staged_timeline {
+            i18n::msg_staged_timeline_role_meta(locale.get())
+        } else {
+            message_role_label(&m_role, locale.get())
+        }
+    };
+    view! {
+        <div class="msg-meta" aria-hidden="true">
+            <span class="msg-meta-primary">
+                <span class="msg-meta-role">{role_lbl}</span>
+                <Show when=move || show_planner_round_badge>
+                    <span
+                        class="msg-planner-round-badge"
+                        prop:title=move || {
+                            i18n::msg_planner_round_badge_title(locale.get())
+                        }
+                    >
+                        {move || i18n::msg_planner_round_badge(locale.get())}
+                    </span>
+                </Show>
+            </span>
+            <span class="msg-meta-time">{time_str.clone()}</span>
+        </div>
+    }
+}
+
+fn chat_message_row_body_core(
+    m: StoredMessage,
+    sessions: RwSignal<Vec<ChatSession>>,
+    active_id: RwSignal<String>,
+    collapsed_long_assistant_ids: RwSignal<Vec<String>>,
+    locale: RwSignal<Locale>,
+    markdown_render: RwSignal<bool>,
+    apply_assistant_display_filters: RwSignal<bool>,
+    chat_find_query: RwSignal<String>,
+    is_tool_bubble: bool,
+    tool_detail_text: Option<String>,
+    tool_detail_open: RwSignal<bool>,
+    jump_uid: Option<String>,
+    auto_scroll_chat: RwSignal<bool>,
+) -> AnyView {
+    if m.role == "assistant" && !m.is_tool {
+        return assistant_markdown_collapsible_view(
+            sessions,
+            active_id,
+            m.id.clone(),
+            collapsed_long_assistant_ids,
+            locale,
+            markdown_render,
+            apply_assistant_display_filters,
+        )
+        .into_any();
+    }
+    let body_inner = build_non_assistant_message_body(
+        m.clone(),
+        is_tool_bubble,
+        tool_detail_text.clone(),
+        tool_detail_open,
+        locale,
+        chat_find_query,
+        apply_assistant_display_filters,
+        jump_uid,
+        auto_scroll_chat,
+    );
+    if m.role == "user" && !m.is_tool && !m.image_urls.is_empty() {
+        let imgs: Vec<String> = m.image_urls.clone();
+        view! {
+            <div class="msg-user-with-images">
+                <div class="msg-user-images">
+                    {imgs
+                        .into_iter()
+                        .map(|u| {
+                            view! { <img class="msg-user-img" src=u alt="" /> }.into_any()
+                        })
+                        .collect_view()}
+                </div>
+                {body_inner}
+            </div>
+        }
+        .into_any()
+    } else {
+        body_inner
+    }
+}
+
+fn chat_message_row_subgoal_exec_banner_view(
+    subgoal_exec_banner: Option<String>,
+    subgoal_exec_banner_icon_key: Option<&str>,
+    is_active_subgoal_banner: bool,
+) -> impl IntoView {
+    subgoal_exec_banner
+        .map(|banner| {
+            let icon_key = subgoal_exec_banner_icon_key.unwrap_or("run").to_string();
+            let active_cls = if is_active_subgoal_banner {
+                " is-active-subgoal-banner"
+            } else {
+                ""
+            };
+            let banner_class = format!("msg-subgoal-exec-banner phase-{icon_key}{active_cls}");
+            view! {
+                <div class=banner_class>
+                    <span class="msg-subgoal-exec-banner-icon" aria-hidden="true">
+                        {subgoal_exec_banner_icon_view(icon_key.as_str())}
+                    </span>
+                    <span class="msg-subgoal-exec-banner-text" prop:title=banner.clone()>{banner.clone()}</span>
+                </div>
+            }
+            .into_any()
+        })
+        .unwrap_or_else(|| ().into_any())
+}
+
 fn render_highlighted_message_text(
     msg: &StoredMessage,
     loc: Locale,
@@ -510,36 +685,11 @@ pub(crate) fn chat_message_row(
         locale,
     };
     let is_staged_timeline = is_staged_timeline_bubble(&m);
-    let cls = if is_staged_timeline {
-        "msg msg-staged-timeline"
-    } else {
-        match m.role.as_str() {
-            "user" => "msg msg-user",
-            "assistant" if m.is_tool => "msg msg-tool",
-            "assistant" => "msg msg-assistant",
-            _ if m.is_tool => "msg msg-tool",
-            _ => "msg msg-system",
-        }
-    };
-    let loading = (m.role == "assistant" && m.state.as_deref() == Some("loading"))
-        || (m.is_tool && m.state.as_deref() == Some("loading"));
-    let err = m.state.as_deref() == Some("error");
-    let class_prefix = if err {
-        format!("{cls} msg-error")
-    } else if loading {
-        format!("{cls} msg-loading")
-    } else {
-        cls.to_string()
-    };
+    let cls = message_row_shell_class(is_staged_timeline, &m);
+    let (loading, err) =
+        message_row_loading_and_error(m.is_tool, m.role.as_str(), m.state.as_deref());
+    let class_prefix = message_row_prefixed_class(cls, err, loading);
     let mid_highlight = m.id.clone();
-    let m_role = m.clone();
-    let role_lbl = move || {
-        if is_staged_timeline {
-            i18n::msg_staged_timeline_role_meta(locale.get())
-        } else {
-            message_role_label(&m_role, locale.get())
-        }
-    };
     let time_str = format_msg_time_label(m.created_at).unwrap_or_default();
     let mid_retry = m.id.clone();
     let copy_id = m.id.clone();
@@ -568,79 +718,36 @@ pub(crate) fn chat_message_row(
     let subgoal_phase_chip = extract_hierarchical_phase_chip(&m);
     let subgoal_metrics_line = extract_hierarchical_metrics(&m);
     let subgoal_target_line = extract_hierarchical_goal_target(&m);
-    let subgoal_exec_banner = build_subgoal_exec_banner_text(
-        locale.get_untracked(),
-        subgoal_phase_chip.as_ref().map(|(phase, _)| phase.as_str()),
-        subgoal_target_line.as_deref(),
-    );
-    let subgoal_exec_banner_icon_key = build_subgoal_exec_banner_icon_key(
-        locale.get_untracked(),
-        subgoal_phase_chip.as_ref().map(|(phase, _)| phase.as_str()),
-    );
-    let is_active_subgoal_banner = if subgoal_exec_banner.is_some()
-        && is_running_subgoal_phase(
-            locale.get_untracked(),
-            subgoal_phase_chip.as_ref().map(|(phase, _)| phase.as_str()),
-        ) {
-        sessions.with(|list| {
-            let aid = active_id.get_untracked();
-            list.iter()
-                .find(|s| s.id == aid)
-                .and_then(|sess| {
-                    sess.messages
-                        .iter()
-                        .rev()
-                        .find(|msg| is_hierarchical_subgoal_state(msg.state.as_deref()))
-                })
-                .map(|msg| msg.id == m.id)
-                .unwrap_or(false)
-        })
-    } else {
-        false
-    };
-    let msg_core = if m.role == "assistant" && !m.is_tool {
-        assistant_markdown_collapsible_view(
-            sessions,
-            active_id,
-            m.id.clone(),
-            collapsed_long_assistant_ids,
-            locale,
-            markdown_render,
-            apply_assistant_display_filters,
+    let loc_ut = locale.get_untracked();
+    let phase_for_banner = subgoal_phase_chip.as_ref().map(|(phase, _)| phase.as_str());
+    let subgoal_exec_banner =
+        build_subgoal_exec_banner_text(loc_ut, phase_for_banner, subgoal_target_line.as_deref());
+    let subgoal_exec_banner_icon_key = build_subgoal_exec_banner_icon_key(loc_ut, phase_for_banner);
+    let is_active_subgoal_banner = sessions.with(|list| {
+        hierarchical_subgoal_banner_is_active(
+            list,
+            active_id.get_untracked().as_str(),
+            m.id.as_str(),
+            subgoal_exec_banner.as_ref(),
+            phase_for_banner,
+            loc_ut,
         )
-        .into_any()
-    } else {
-        let body_inner = build_non_assistant_message_body(
-            m.clone(),
-            is_tool_bubble,
-            tool_detail_text.clone(),
-            tool_detail_open,
-            locale,
-            chat_find_query,
-            apply_assistant_display_filters,
-            jump_uid,
-            auto_scroll_chat,
-        );
-        if is_user_plain && !m.image_urls.is_empty() {
-            let imgs: Vec<String> = m.image_urls.clone();
-            view! {
-                <div class="msg-user-with-images">
-                    <div class="msg-user-images">
-                        {imgs
-                            .into_iter()
-                            .map(|u| {
-                                view! { <img class="msg-user-img" src=u alt="" /> }.into_any()
-                            })
-                            .collect_view()}
-                    </div>
-                    {body_inner}
-                </div>
-            }
-            .into_any()
-        } else {
-            body_inner
-        }
-    };
+    });
+    let msg_core = chat_message_row_body_core(
+        m.clone(),
+        sessions,
+        active_id,
+        collapsed_long_assistant_ids,
+        locale,
+        markdown_render,
+        apply_assistant_display_filters,
+        chat_find_query,
+        is_tool_bubble,
+        tool_detail_text.clone(),
+        tool_detail_open,
+        jump_uid,
+        auto_scroll_chat,
+    );
     let mid_dom = m.id.clone();
     let detail_for_drawer_when = tool_detail_text.clone();
     let detail_for_drawer_text = tool_detail_text.clone();
@@ -648,24 +755,13 @@ pub(crate) fn chat_message_row(
         <div class="msg-with-select">
             <div class="msg-stack">
                 {true.then(|| {
-                    view! {
-                        <div class="msg-meta" aria-hidden="true">
-                            <span class="msg-meta-primary">
-                                <span class="msg-meta-role">{role_lbl}</span>
-                                <Show when=move || show_planner_round_badge>
-                                    <span
-                                        class="msg-planner-round-badge"
-                                        prop:title=move || {
-                                            i18n::msg_planner_round_badge_title(locale.get())
-                                        }
-                                    >
-                                        {move || i18n::msg_planner_round_badge(locale.get())}
-                                    </span>
-                                </Show>
-                            </span>
-                            <span class="msg-meta-time">{time_str.clone()}</span>
-                        </div>
-                    }
+                    chat_message_row_meta_view(
+                        locale,
+                        show_planner_round_badge,
+                        is_staged_timeline,
+                        m.clone(),
+                        time_str.clone(),
+                    )
                 })}
                 <div
                     class=move || {
@@ -778,25 +874,11 @@ pub(crate) fn chat_message_row(
                             }
                         }}
                     </Show>
-                    {subgoal_exec_banner.as_ref().map(|banner| {
-                        let banner = banner.clone();
-                        let icon_key = subgoal_exec_banner_icon_key.unwrap_or("run").to_string();
-                        let active_cls = if is_active_subgoal_banner {
-                            " is-active-subgoal-banner"
-                        } else {
-                            ""
-                        };
-                        let banner_class =
-                            format!("msg-subgoal-exec-banner phase-{icon_key}{active_cls}");
-                        view! {
-                            <div class=banner_class>
-                                <span class="msg-subgoal-exec-banner-icon" aria-hidden="true">
-                                    {subgoal_exec_banner_icon_view(icon_key.as_str())}
-                                </span>
-                                <span class="msg-subgoal-exec-banner-text" prop:title=banner.clone()>{banner.clone()}</span>
-                            </div>
-                        }
-                    })}
+                    {chat_message_row_subgoal_exec_banner_view(
+                        subgoal_exec_banner.clone(),
+                        subgoal_exec_banner_icon_key,
+                        is_active_subgoal_banner,
+                    )}
                     {subgoal_metrics_line.as_ref().map(|line| {
                         let line = line.clone();
                         view! {

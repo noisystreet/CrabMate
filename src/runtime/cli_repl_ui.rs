@@ -458,36 +458,75 @@ impl CliReplStyle {
         writeln!(out)?;
         self.write_banner_subheading(&mut out, "运行配置摘要")?;
 
-        self.write_banner_subheading(&mut out, "模型")?;
-        self.write_banner_item(&mut out, "model", &cfg.model)?;
-        self.write_banner_item(&mut out, "api_base", &api_base_short)?;
-        self.write_banner_item(&mut out, "llm_http_auth", cfg.llm_http_auth_mode.as_str())?;
-        self.write_banner_item(&mut out, "temperature", &format!("{}", cfg.temperature))?;
+        self.write_repl_config_summary_model_section(&mut out, cfg, &api_base_short, no_stream)?;
+        self.write_repl_config_summary_workspace_section(&mut out, work_dir, tool_count)?;
+        self.write_repl_config_summary_essentials_section(&mut out, cfg)?;
+        self.write_repl_config_summary_planning_section(&mut out, cfg)?;
+        self.write_repl_config_summary_staged_section(&mut out, cfg)?;
+        self.write_repl_config_summary_cursor_section(&mut out, cfg, inner)?;
+        self.write_repl_config_summary_flags_section(&mut out, cfg)?;
+        self.write_repl_config_summary_optional_services(&mut out, cfg)?;
+
+        self.write_banner_note_line(
+            &mut out,
+            "    不含 API_KEY / web_api_bearer_token 等密钥；逐项说明见 docs/配置说明.md",
+        )?;
+        writeln!(out)?;
+        out.flush()
+    }
+
+    fn write_repl_config_summary_model_section(
+        &self,
+        out: &mut io::Stdout,
+        cfg: &AgentConfig,
+        api_base_short: &str,
+        no_stream: bool,
+    ) -> io::Result<()> {
+        self.write_banner_subheading(out, "模型")?;
+        self.write_banner_item(out, "model", &cfg.model)?;
+        self.write_banner_item(out, "api_base", api_base_short)?;
+        self.write_banner_item(out, "llm_http_auth", cfg.llm_http_auth_mode.as_str())?;
+        self.write_banner_item(out, "temperature", &format!("{}", cfg.temperature))?;
         let seed_line = cfg
             .llm_seed
             .map(|s| s.to_string())
             .unwrap_or_else(|| "（未设置）".to_string());
-        self.write_banner_item(&mut out, "llm_seed", &seed_line)?;
+        self.write_banner_item(out, "llm_seed", &seed_line)?;
         let stream_line = if no_stream {
             "关闭（本进程 --no-stream）"
         } else {
             "开启（流式）"
         };
-        self.write_banner_item(&mut out, "stream", stream_line)?;
+        self.write_banner_item(out, "stream", stream_line)?;
+        Ok(())
+    }
 
-        self.write_banner_subheading(&mut out, "工作区与工具")?;
-        self.write_banner_item(&mut out, "工作区", &work_dir.display().to_string())?;
+    fn write_repl_config_summary_workspace_section(
+        &self,
+        out: &mut io::Stdout,
+        work_dir: &Path,
+        tool_count: usize,
+    ) -> io::Result<()> {
+        self.write_banner_subheading(out, "工作区与工具")?;
+        self.write_banner_item(out, "工作区", &work_dir.display().to_string())?;
         let tools_detail = if tool_count == 0 {
             "已关闭（--no-tools）".to_string()
         } else {
             format!("{tool_count} 个可用")
         };
-        self.write_banner_item(&mut out, "工具", &tools_detail)?;
+        self.write_banner_item(out, "工具", &tools_detail)?;
+        Ok(())
+    }
 
-        self.write_banner_subheading(&mut out, "要点配置")?;
-        self.write_banner_item(&mut out, "max_tokens", &cfg.max_tokens.to_string())?;
+    fn write_repl_config_summary_essentials_section(
+        &self,
+        out: &mut io::Stdout,
+        cfg: &AgentConfig,
+    ) -> io::Result<()> {
+        self.write_banner_subheading(out, "要点配置")?;
+        self.write_banner_item(out, "max_tokens", &cfg.max_tokens.to_string())?;
         self.write_banner_item(
-            &mut out,
+            out,
             "max_message_history",
             &format!(
                 "保留最近 {} 轮（user+assistant 计一轮）",
@@ -496,13 +535,13 @@ impl CliReplStyle {
         )?;
         if cfg.context_char_budget > 0 {
             self.write_banner_item(
-                &mut out,
+                out,
                 "context_char_budget",
                 &format!("{}（启用按字符删旧）", cfg.context_char_budget),
             )?;
         }
         self.write_banner_item(
-            &mut out,
+            out,
             "API",
             &format!(
                 "超时 {}s · 失败重试 {} 次",
@@ -510,7 +549,7 @@ impl CliReplStyle {
             ),
         )?;
         self.write_banner_item(
-            &mut out,
+            out,
             "run_command",
             &format!(
                 "超时 {}s · 输出上限 {} 字",
@@ -518,41 +557,63 @@ impl CliReplStyle {
             ),
         )?;
         self.write_banner_item(
-            &mut out,
+            out,
             "tool_message_max_chars",
             &cfg.tool_message_max_chars.to_string(),
         )?;
+        Ok(())
+    }
 
+    fn write_repl_config_summary_planning_section(
+        &self,
+        out: &mut io::Stdout,
+        cfg: &AgentConfig,
+    ) -> io::Result<()> {
         let final_plan = match cfg.final_plan_requirement {
             FinalPlanRequirementMode::Never => "never",
             FinalPlanRequirementMode::WorkflowReflection => "workflow_reflection",
             FinalPlanRequirementMode::Always => "always",
         };
-        self.write_banner_item(&mut out, "final_plan_requirement", final_plan)?;
+        self.write_banner_item(out, "final_plan_requirement", final_plan)?;
         self.write_banner_item(
-            &mut out,
+            out,
             "plan_rewrite_max_attempts",
             &cfg.plan_rewrite_max_attempts.to_string(),
         )?;
         self.write_banner_item(
-            &mut out,
+            out,
             "planner_executor_mode",
             cfg.planner_executor_mode.as_str(),
         )?;
+        Ok(())
+    }
 
+    fn write_repl_config_summary_staged_section(
+        &self,
+        out: &mut io::Stdout,
+        cfg: &AgentConfig,
+    ) -> io::Result<()> {
         let staged = if cfg.staged_plan_execution {
             format!("开启（{}）", cfg.staged_plan_feedback_mode.as_str())
         } else {
             "关闭".to_string()
         };
-        self.write_banner_item(&mut out, "staged_plan_execution", &staged)?;
+        self.write_banner_item(out, "staged_plan_execution", &staged)?;
         let staged_cli = if cfg.staged_plan_cli_show_planner_stream {
             "开启（CLI 规划轮打印模型 stdout）"
         } else {
             "关闭（CLI 规划轮不打印模型 stdout）"
         };
-        self.write_banner_item(&mut out, "staged_plan_cli_show_planner_stream", staged_cli)?;
+        self.write_banner_item(out, "staged_plan_cli_show_planner_stream", staged_cli)?;
+        Ok(())
+    }
 
+    fn write_repl_config_summary_cursor_section(
+        &self,
+        out: &mut io::Stdout,
+        cfg: &AgentConfig,
+        inner: usize,
+    ) -> io::Result<()> {
         let cursor = if cfg.cursor_rules_enabled {
             let d = cfg.cursor_rules_dir.trim();
             let short = if d.is_empty() {
@@ -564,10 +625,17 @@ impl CliReplStyle {
         } else {
             "关闭".to_string()
         };
-        self.write_banner_item(&mut out, "cursor_rules", &cursor)?;
+        self.write_banner_item(out, "cursor_rules", &cursor)?;
+        Ok(())
+    }
 
+    fn write_repl_config_summary_flags_section(
+        &self,
+        out: &mut io::Stdout,
+        cfg: &AgentConfig,
+    ) -> io::Result<()> {
         self.write_banner_item(
-            &mut out,
+            out,
             "materialize_deepseek_dsml_tool_calls",
             if cfg.materialize_deepseek_dsml_tool_calls {
                 "开启"
@@ -575,7 +643,6 @@ impl CliReplStyle {
                 "关闭"
             },
         )?;
-
         let explain = if cfg.tool_call_explain_enabled {
             format!(
                 "开启（{}～{} 字）",
@@ -584,28 +651,29 @@ impl CliReplStyle {
         } else {
             "关闭".to_string()
         };
-        self.write_banner_item(&mut out, "tool_call_explain", &explain)?;
+        self.write_banner_item(out, "tool_call_explain", &explain)?;
+        Ok(())
+    }
 
+    fn write_repl_config_summary_optional_services(
+        &self,
+        out: &mut io::Stdout,
+        cfg: &AgentConfig,
+    ) -> io::Result<()> {
         if cfg.tui_load_session_on_start {
             self.write_banner_item(
-                &mut out,
+                out,
                 "会话恢复",
                 "启动时加载 .crabmate/tui_session.json（若存在）",
             )?;
         }
         if cfg.mcp_enabled && !cfg.mcp_command.trim().is_empty() {
-            self.write_banner_item(&mut out, "MCP", "已启用（stdio）")?;
+            self.write_banner_item(out, "MCP", "已启用（stdio）")?;
         }
         if cfg.long_term_memory_enabled {
-            self.write_banner_item(&mut out, "long_term_memory", "已启用")?;
+            self.write_banner_item(out, "long_term_memory", "已启用")?;
         }
-
-        self.write_banner_note_line(
-            &mut out,
-            "    不含 API_KEY / web_api_bearer_token 等密钥；逐项说明见 docs/配置说明.md",
-        )?;
-        writeln!(out)?;
-        out.flush()
+        Ok(())
     }
 
     pub(crate) fn print_farewell(&self) -> io::Result<()> {

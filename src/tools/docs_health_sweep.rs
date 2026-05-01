@@ -29,6 +29,330 @@ fn markdown_links_failed(block: &str) -> bool {
     block.contains("结论: 发现")
 }
 
+fn tool_context_for_sweep(workspace_root: &Path, max_output_len: usize) -> ToolContext<'_> {
+    ToolContext {
+        cfg: None,
+        codebase_semantic: None,
+        command_max_output_len: max_output_len,
+        weather_timeout_secs: 0,
+        allowed_commands: &[],
+        working_dir: workspace_root,
+        web_search_timeout_secs: 0,
+        web_search_provider: crate::config::WebSearchProvider::Brave,
+        web_search_api_key: "",
+        web_search_max_results: 0,
+        http_fetch_allowed_prefixes: &[],
+        http_fetch_timeout_secs: 0,
+        http_fetch_max_response_bytes: 0,
+        command_timeout_secs: 30,
+        read_file_turn_cache: None,
+        workspace_changelist: None,
+        test_result_cache_enabled: false,
+        test_result_cache_max_entries: 8,
+        long_term_memory: None,
+        long_term_memory_scope_id: None,
+    }
+}
+
+fn push_skipped_after_typos(
+    summary: &mut Vec<(String, String)>,
+    run_codespell: bool,
+    run_markdown_links: bool,
+) {
+    if run_codespell {
+        summary.push(("codespell_check".to_string(), "skipped".to_string()));
+    }
+    if run_markdown_links {
+        summary.push(("markdown_check_links".to_string(), "skipped".to_string()));
+    }
+}
+
+fn append_doc_preview_section(
+    v: &serde_json::Value,
+    workspace_root: &Path,
+    ctx: &ToolContext<'_>,
+    run_doc_preview: bool,
+    summary_only: bool,
+    sections: &mut Vec<String>,
+    summary: &mut Vec<(String, String)>,
+) {
+    let doc_preview_max_lines = v
+        .get("doc_preview_max_lines")
+        .and_then(|n| n.as_u64())
+        .map(|n| n as usize)
+        .unwrap_or(60)
+        .clamp(10, 200);
+
+    let doc_paths: Vec<String> = v
+        .get("doc_paths")
+        .and_then(|x| x.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_str().map(|s| s.trim().to_string()))
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .filter(|x: &Vec<String>| !x.is_empty())
+        .unwrap_or_else(default_doc_preview_paths);
+
+    if run_doc_preview {
+        sections.push("## 1) 主文档预览\n".to_string());
+        if !summary_only {
+            for rel in &doc_paths {
+                let joined = workspace_root.join(rel);
+                if !joined.is_file() {
+                    sections.push(format!("- `{}`：不存在或非文件，跳过\n", rel));
+                    continue;
+                }
+                let args = serde_json::json!({
+                    "path": rel,
+                    "start_line": 1,
+                    "max_lines": doc_preview_max_lines,
+                    "encoding": "utf-8"
+                });
+                let args_s = match serde_json::to_string(&args) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        sections.push(format!("- `{}`：序列化失败：{}\n", rel, e));
+                        continue;
+                    }
+                };
+                sections.push(format!("### `{}`\n", rel));
+                sections.push(read_file(&args_s, workspace_root, ctx));
+                sections.push("\n---\n".to_string());
+            }
+        }
+        summary.push(("doc_preview".to_string(), "done".to_string()));
+    } else {
+        summary.push(("doc_preview".to_string(), "skipped".to_string()));
+    }
+}
+
+fn typos_args_json(v: &serde_json::Value) -> Result<String, String> {
+    let spell_paths = v.get("spell_paths").cloned();
+    let mut o = serde_json::Map::new();
+    if let Some(p) = spell_paths {
+        o.insert("paths".to_string(), p);
+    }
+    if let Some(s) = v.get("typos_config_path").and_then(|x| x.as_str()) {
+        o.insert(
+            "config_path".to_string(),
+            serde_json::Value::String(s.to_string()),
+        );
+    }
+    serde_json::to_string(&serde_json::Value::Object(o))
+        .map_err(|e| format!("typos 参数序列化失败：{}", e))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_typos_phase(
+    v: &serde_json::Value,
+    workspace_root: &Path,
+    max_output_len: usize,
+    run_typos: bool,
+    fail_fast: bool,
+    summary_only: bool,
+    run_codespell: bool,
+    run_markdown_links: bool,
+    sections: &mut Vec<String>,
+    summary: &mut Vec<(String, String)>,
+) -> Option<String> {
+    if !run_typos {
+        summary.push(("typos_check".to_string(), "skipped".to_string()));
+        return None;
+    }
+    let typos_args = match typos_args_json(v) {
+        Ok(s) => s,
+        Err(e) => return Some(e),
+    };
+    let r = spell_astgrep_tools::typos_check(&typos_args, workspace_root, max_output_len);
+    let failed = spell_tool_failed(&r);
+    summary.push((
+        "typos_check".to_string(),
+        if r.contains("无法启动") {
+            "skipped".to_string()
+        } else if failed {
+            "failed".to_string()
+        } else {
+            "passed".to_string()
+        },
+    ));
+    if !summary_only {
+        sections.push("## 2) typos_check\n\n".to_string());
+        sections.push(r);
+        sections.push("\n\n".to_string());
+    }
+    if fail_fast && failed {
+        push_skipped_after_typos(summary, run_codespell, run_markdown_links);
+        return Some(build_output(
+            summary,
+            sections,
+            summary_only,
+            max_output_len,
+            true,
+        ));
+    }
+    None
+}
+
+fn codespell_args_json(v: &serde_json::Value) -> Result<String, String> {
+    let spell_paths = v.get("spell_paths").cloned();
+    let mut o = serde_json::Map::new();
+    if let Some(p) = spell_paths {
+        o.insert("paths".to_string(), p);
+    }
+    if let Some(s) = v.get("codespell_skip").and_then(|x| x.as_str()) {
+        o.insert("skip".to_string(), serde_json::Value::String(s.to_string()));
+    }
+    if let Some(a) = v
+        .get("codespell_dictionary_paths")
+        .and_then(|x| x.as_array())
+    {
+        o.insert(
+            "dictionary_paths".to_string(),
+            serde_json::Value::Array(a.clone()),
+        );
+    }
+    if let Some(s) = v
+        .get("codespell_ignore_words_list")
+        .and_then(|x| x.as_str())
+    {
+        o.insert(
+            "ignore_words_list".to_string(),
+            serde_json::Value::String(s.to_string()),
+        );
+    }
+    serde_json::to_string(&serde_json::Value::Object(o))
+        .map_err(|e| format!("codespell 参数序列化失败：{}", e))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_codespell_phase(
+    v: &serde_json::Value,
+    workspace_root: &Path,
+    max_output_len: usize,
+    run_codespell: bool,
+    fail_fast: bool,
+    summary_only: bool,
+    run_markdown_links: bool,
+    sections: &mut Vec<String>,
+    summary: &mut Vec<(String, String)>,
+) -> Option<String> {
+    if !run_codespell {
+        summary.push(("codespell_check".to_string(), "skipped".to_string()));
+        return None;
+    }
+    let codespell_args = match codespell_args_json(v) {
+        Ok(s) => s,
+        Err(e) => return Some(e),
+    };
+    let r = spell_astgrep_tools::codespell_check(&codespell_args, workspace_root, max_output_len);
+    let failed = spell_tool_failed(&r);
+    summary.push((
+        "codespell_check".to_string(),
+        if r.contains("无法启动") {
+            "skipped".to_string()
+        } else if failed {
+            "failed".to_string()
+        } else {
+            "passed".to_string()
+        },
+    ));
+    if !summary_only {
+        sections.push("## 3) codespell_check\n\n".to_string());
+        sections.push(r);
+        sections.push("\n\n".to_string());
+    }
+    if fail_fast && failed {
+        if run_markdown_links {
+            summary.push(("markdown_check_links".to_string(), "skipped".to_string()));
+        }
+        return Some(build_output(
+            summary,
+            sections,
+            summary_only,
+            max_output_len,
+            true,
+        ));
+    }
+    None
+}
+
+fn markdown_check_links_args_json(v: &serde_json::Value) -> Result<String, String> {
+    let mut o = serde_json::Map::new();
+    if let Some(a) = v.get("md_roots").and_then(|x| x.as_array())
+        && !a.is_empty()
+    {
+        o.insert("roots".to_string(), serde_json::Value::Array(a.clone()));
+    }
+    if let Some(n) = v.get("md_max_files").and_then(|x| x.as_u64()) {
+        o.insert("max_files".to_string(), serde_json::Value::from(n));
+    }
+    if let Some(n) = v.get("md_max_depth").and_then(|x| x.as_u64()) {
+        o.insert("max_depth".to_string(), serde_json::Value::from(n));
+    }
+    if let Some(a) = v
+        .get("md_allowed_external_prefixes")
+        .and_then(|x| x.as_array())
+    {
+        o.insert(
+            "allowed_external_prefixes".to_string(),
+            serde_json::Value::Array(a.clone()),
+        );
+    }
+    if let Some(n) = v.get("md_external_timeout_secs").and_then(|x| x.as_u64()) {
+        o.insert(
+            "external_timeout_secs".to_string(),
+            serde_json::Value::from(n),
+        );
+    }
+    if let Some(b) = v.get("md_check_fragments").and_then(|x| x.as_bool()) {
+        o.insert("check_fragments".to_string(), serde_json::Value::Bool(b));
+    }
+    if let Some(s) = v.get("md_output_format").and_then(|x| x.as_str()) {
+        o.insert(
+            "output_format".to_string(),
+            serde_json::Value::String(s.to_string()),
+        );
+    }
+    serde_json::to_string(&serde_json::Value::Object(o))
+        .map_err(|e| format!("markdown_check_links 参数序列化失败：{}", e))
+}
+
+fn run_markdown_links_phase(
+    v: &serde_json::Value,
+    workspace_root: &Path,
+    run_markdown_links: bool,
+    summary_only: bool,
+    sections: &mut Vec<String>,
+    summary: &mut Vec<(String, String)>,
+) -> Option<String> {
+    if !run_markdown_links {
+        summary.push(("markdown_check_links".to_string(), "skipped".to_string()));
+        return None;
+    }
+    let md_args = match markdown_check_links_args_json(v) {
+        Ok(s) => s,
+        Err(e) => return Some(e),
+    };
+    let r = super::markdown_links::markdown_check_links(&md_args, workspace_root);
+    let failed = markdown_links_failed(&r);
+    summary.push((
+        "markdown_check_links".to_string(),
+        if failed {
+            "failed".to_string()
+        } else {
+            "passed".to_string()
+        },
+    ));
+    if !summary_only {
+        sections.push("## 4) markdown_check_links\n\n".to_string());
+        sections.push(r);
+        sections.push("\n".to_string());
+    }
+    None
+}
+
 /// 只读聚合：文档头预览、`typos_check`、`codespell_check`、`markdown_check_links`。
 ///
 /// **外链探测**：`markdown_check_links` 在 `allowed_external_prefixes` 非空时使用内置 HTTP 客户端发 HEAD，
@@ -62,59 +386,10 @@ pub fn docs_health_sweep(args_json: &str, workspace_root: &Path, max_output_len:
         .and_then(|x| x.as_bool())
         .unwrap_or(false);
 
-    let doc_preview_max_lines = v
-        .get("doc_preview_max_lines")
-        .and_then(|n| n.as_u64())
-        .map(|n| n as usize)
-        .unwrap_or(60)
-        .clamp(10, 200);
-
-    let doc_paths: Vec<String> = v
-        .get("doc_paths")
-        .and_then(|x| x.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|x| x.as_str().map(|s| s.trim().to_string()))
-                .filter(|s| !s.is_empty())
-                .collect()
-        })
-        .filter(|x: &Vec<String>| !x.is_empty())
-        .unwrap_or_else(default_doc_preview_paths);
-
-    let ctx = ToolContext {
-        cfg: None,
-        codebase_semantic: None,
-        command_max_output_len: max_output_len,
-        weather_timeout_secs: 0,
-        allowed_commands: &[],
-        working_dir: workspace_root,
-        web_search_timeout_secs: 0,
-        web_search_provider: crate::config::WebSearchProvider::Brave,
-        web_search_api_key: "",
-        web_search_max_results: 0,
-        http_fetch_allowed_prefixes: &[],
-        http_fetch_timeout_secs: 0,
-        http_fetch_max_response_bytes: 0,
-        command_timeout_secs: 30,
-        read_file_turn_cache: None,
-        workspace_changelist: None,
-        test_result_cache_enabled: false,
-        test_result_cache_max_entries: 8,
-        long_term_memory: None,
-        long_term_memory_scope_id: None,
-    };
+    let ctx = tool_context_for_sweep(workspace_root, max_output_len);
 
     let mut sections: Vec<String> = Vec::new();
     let mut summary: Vec<(String, String)> = Vec::new();
-
-    let push_skipped_after_typos = |summary: &mut Vec<(String, String)>| {
-        if run_codespell {
-            summary.push(("codespell_check".to_string(), "skipped".to_string()));
-        }
-        if run_markdown_links {
-            summary.push(("markdown_check_links".to_string(), "skipped".to_string()));
-        }
-    };
 
     sections.push(
         "=== docs_health_sweep（只读）===\n\
@@ -123,207 +398,54 @@ pub fn docs_health_sweep(args_json: &str, workspace_root: &Path, max_output_len:
             .to_string(),
     );
 
-    if run_doc_preview {
-        sections.push("## 1) 主文档预览\n".to_string());
-        if !summary_only {
-            for rel in &doc_paths {
-                let joined = workspace_root.join(rel);
-                if !joined.is_file() {
-                    sections.push(format!("- `{}`：不存在或非文件，跳过\n", rel));
-                    continue;
-                }
-                let args = serde_json::json!({
-                    "path": rel,
-                    "start_line": 1,
-                    "max_lines": doc_preview_max_lines,
-                    "encoding": "utf-8"
-                });
-                let args_s = match serde_json::to_string(&args) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        sections.push(format!("- `{}`：序列化失败：{}\n", rel, e));
-                        continue;
-                    }
-                };
-                sections.push(format!("### `{}`\n", rel));
-                sections.push(read_file(&args_s, workspace_root, &ctx));
-                sections.push("\n---\n".to_string());
-            }
-        }
-        summary.push(("doc_preview".to_string(), "done".to_string()));
-    } else {
-        summary.push(("doc_preview".to_string(), "skipped".to_string()));
+    append_doc_preview_section(
+        &v,
+        workspace_root,
+        &ctx,
+        run_doc_preview,
+        summary_only,
+        &mut sections,
+        &mut summary,
+    );
+
+    if let Some(out) = run_typos_phase(
+        &v,
+        workspace_root,
+        max_output_len,
+        run_typos,
+        fail_fast,
+        summary_only,
+        run_codespell,
+        run_markdown_links,
+        &mut sections,
+        &mut summary,
+    ) {
+        return out;
     }
 
-    let spell_paths = v.get("spell_paths").cloned();
-    let typos_extra = {
-        let mut o = serde_json::Map::new();
-        if let Some(p) = spell_paths.clone() {
-            o.insert("paths".to_string(), p);
-        }
-        if let Some(s) = v.get("typos_config_path").and_then(|x| x.as_str()) {
-            o.insert(
-                "config_path".to_string(),
-                serde_json::Value::String(s.to_string()),
-            );
-        }
-        serde_json::Value::Object(o)
-    };
-    let typos_args = match serde_json::to_string(&typos_extra) {
-        Ok(s) => s,
-        Err(e) => return format!("typos 参数序列化失败：{}", e),
-    };
-
-    if run_typos {
-        let r = spell_astgrep_tools::typos_check(&typos_args, workspace_root, max_output_len);
-        let failed = spell_tool_failed(&r);
-        summary.push((
-            "typos_check".to_string(),
-            if r.contains("无法启动") {
-                "skipped".to_string()
-            } else if failed {
-                "failed".to_string()
-            } else {
-                "passed".to_string()
-            },
-        ));
-        if !summary_only {
-            sections.push("## 2) typos_check\n\n".to_string());
-            sections.push(r);
-            sections.push("\n\n".to_string());
-        }
-        if fail_fast && failed {
-            push_skipped_after_typos(&mut summary);
-            return build_output(&summary, &sections, summary_only, max_output_len, true);
-        }
-    } else {
-        summary.push(("typos_check".to_string(), "skipped".to_string()));
+    if let Some(out) = run_codespell_phase(
+        &v,
+        workspace_root,
+        max_output_len,
+        run_codespell,
+        fail_fast,
+        summary_only,
+        run_markdown_links,
+        &mut sections,
+        &mut summary,
+    ) {
+        return out;
     }
 
-    let codespell_extra = {
-        let mut o = serde_json::Map::new();
-        if let Some(p) = spell_paths {
-            o.insert("paths".to_string(), p);
-        }
-        if let Some(s) = v.get("codespell_skip").and_then(|x| x.as_str()) {
-            o.insert("skip".to_string(), serde_json::Value::String(s.to_string()));
-        }
-        if let Some(a) = v
-            .get("codespell_dictionary_paths")
-            .and_then(|x| x.as_array())
-        {
-            o.insert(
-                "dictionary_paths".to_string(),
-                serde_json::Value::Array(a.clone()),
-            );
-        }
-        if let Some(s) = v
-            .get("codespell_ignore_words_list")
-            .and_then(|x| x.as_str())
-        {
-            o.insert(
-                "ignore_words_list".to_string(),
-                serde_json::Value::String(s.to_string()),
-            );
-        }
-        serde_json::Value::Object(o)
-    };
-    let codespell_args = match serde_json::to_string(&codespell_extra) {
-        Ok(s) => s,
-        Err(e) => return format!("codespell 参数序列化失败：{}", e),
-    };
-
-    if run_codespell {
-        let r =
-            spell_astgrep_tools::codespell_check(&codespell_args, workspace_root, max_output_len);
-        let failed = spell_tool_failed(&r);
-        summary.push((
-            "codespell_check".to_string(),
-            if r.contains("无法启动") {
-                "skipped".to_string()
-            } else if failed {
-                "failed".to_string()
-            } else {
-                "passed".to_string()
-            },
-        ));
-        if !summary_only {
-            sections.push("## 3) codespell_check\n\n".to_string());
-            sections.push(r);
-            sections.push("\n\n".to_string());
-        }
-        if fail_fast && failed {
-            if run_markdown_links {
-                summary.push(("markdown_check_links".to_string(), "skipped".to_string()));
-            }
-            return build_output(&summary, &sections, summary_only, max_output_len, true);
-        }
-    } else {
-        summary.push(("codespell_check".to_string(), "skipped".to_string()));
-    }
-
-    let md_obj = {
-        let mut o = serde_json::Map::new();
-        if let Some(a) = v.get("md_roots").and_then(|x| x.as_array())
-            && !a.is_empty()
-        {
-            o.insert("roots".to_string(), serde_json::Value::Array(a.clone()));
-        }
-        if let Some(n) = v.get("md_max_files").and_then(|x| x.as_u64()) {
-            o.insert("max_files".to_string(), serde_json::Value::from(n));
-        }
-        if let Some(n) = v.get("md_max_depth").and_then(|x| x.as_u64()) {
-            o.insert("max_depth".to_string(), serde_json::Value::from(n));
-        }
-        if let Some(a) = v
-            .get("md_allowed_external_prefixes")
-            .and_then(|x| x.as_array())
-        {
-            o.insert(
-                "allowed_external_prefixes".to_string(),
-                serde_json::Value::Array(a.clone()),
-            );
-        }
-        if let Some(n) = v.get("md_external_timeout_secs").and_then(|x| x.as_u64()) {
-            o.insert(
-                "external_timeout_secs".to_string(),
-                serde_json::Value::from(n),
-            );
-        }
-        if let Some(b) = v.get("md_check_fragments").and_then(|x| x.as_bool()) {
-            o.insert("check_fragments".to_string(), serde_json::Value::Bool(b));
-        }
-        if let Some(s) = v.get("md_output_format").and_then(|x| x.as_str()) {
-            o.insert(
-                "output_format".to_string(),
-                serde_json::Value::String(s.to_string()),
-            );
-        }
-        serde_json::Value::Object(o)
-    };
-    let md_args = match serde_json::to_string(&md_obj) {
-        Ok(s) => s,
-        Err(e) => return format!("markdown_check_links 参数序列化失败：{}", e),
-    };
-
-    if run_markdown_links {
-        let r = super::markdown_links::markdown_check_links(&md_args, workspace_root);
-        let failed = markdown_links_failed(&r);
-        summary.push((
-            "markdown_check_links".to_string(),
-            if failed {
-                "failed".to_string()
-            } else {
-                "passed".to_string()
-            },
-        ));
-        if !summary_only {
-            sections.push("## 4) markdown_check_links\n\n".to_string());
-            sections.push(r);
-            sections.push("\n".to_string());
-        }
-    } else {
-        summary.push(("markdown_check_links".to_string(), "skipped".to_string()));
+    if let Some(out) = run_markdown_links_phase(
+        &v,
+        workspace_root,
+        run_markdown_links,
+        summary_only,
+        &mut sections,
+        &mut summary,
+    ) {
+        return out;
     }
 
     let any_failed = summary.iter().any(|(_, s)| s == "failed");

@@ -6,7 +6,7 @@
 
 use std::cell::Cell;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use gloo_timers::future::TimeoutFuture;
 use leptos::prelude::*;
@@ -22,7 +22,7 @@ use crate::session_ops::{
     set_session_pinned, set_session_starred,
 };
 use crate::session_search::{
-    MESSAGE_SEARCH_MAX_HITS, collect_message_search_hits, normalize_search_query,
+    MESSAGE_SEARCH_MAX_HITS, MessageSearchHit, collect_message_search_hits, normalize_search_query,
     session_title_matches,
 };
 use crate::session_sort::sorted_sessions_clone;
@@ -322,6 +322,325 @@ fn RailContextMenuLayer(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn nav_rail_search_panel(
+    locale: RwSignal<crate::i18n::Locale>,
+    sidebar_search_panel_open: RwSignal<bool>,
+    sidebar_session_query: RwSignal<String>,
+    global_message_query: RwSignal<String>,
+) -> impl IntoView {
+    view! {
+        <Show when=move || sidebar_search_panel_open.get()>
+            <div class="nav-rail-search">
+                <div class="nav-rail-search-header">
+                    <button
+                        type="button"
+                        class="btn btn-nav-ghost-ds nav-rail-search-hide"
+                        prop:aria-label=move || i18n::nav_hide_search_panel_aria(locale.get())
+                        on:click=move |_| sidebar_search_panel_open.set(false)
+                    >
+                        {move || i18n::nav_hide_search_panel(locale.get())}
+                    </button>
+                </div>
+                <label class="nav-rail-search-label" for="nav-session-filter">{move || i18n::nav_filter_sessions(locale.get())}</label>
+                <input
+                    id="nav-session-filter"
+                    type="search"
+                    class="nav-session-search-input"
+                    prop:placeholder=move || i18n::nav_ph_filter(locale.get())
+                    prop:value=move || sidebar_session_query.get()
+                    on:input=move |ev| {
+                        sidebar_session_query.set(event_target_value(&ev));
+                    }
+                />
+                <label class="nav-rail-search-label" for="nav-msg-search">{move || i18n::nav_search_messages(locale.get())}</label>
+                <input
+                    id="nav-msg-search"
+                    type="search"
+                    class="nav-global-search-input"
+                    prop:placeholder=move || i18n::nav_ph_global_search(locale.get())
+                    prop:value=move || global_message_query.get()
+                    on:input=move |ev| {
+                        global_message_query.set(event_target_value(&ev));
+                    }
+                />
+            </div>
+        </Show>
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn nav_rail_session_scroll_inner(
+    locale: RwSignal<crate::i18n::Locale>,
+    sidebar_search_panel_open: RwSignal<bool>,
+    sidebar_filter_debounced: RwSignal<String>,
+    global_message_filter_debounced: RwSignal<String>,
+    sessions: RwSignal<Vec<ChatSession>>,
+    composer_buf_nav: Arc<Mutex<String>>,
+    active_id: RwSignal<String>,
+    draft: RwSignal<String>,
+    session_sync: RwSignal<SessionSyncState>,
+    mobile_nav_open: RwSignal<bool>,
+    session_context_menu: RwSignal<Option<SessionContextAnchor>>,
+    sidebar_rail_ctx_menu: RwSignal<Option<(f64, f64)>>,
+    focus_message_id_after_nav: RwSignal<Option<String>>,
+    apply_assistant_display_filters: RwSignal<bool>,
+) -> impl IntoView {
+    move || {
+        let search_ui_open = sidebar_search_panel_open.get();
+        let needle = if search_ui_open {
+            normalize_search_query(&sidebar_filter_debounced.get())
+        } else {
+            String::new()
+        };
+        let msg_needle = if search_ui_open {
+            normalize_search_query(&global_message_filter_debounced.get())
+        } else {
+            String::new()
+        };
+        let v: Vec<ChatSession> = sorted_sessions_clone(&sessions.get())
+            .into_iter()
+            .filter(|s| session_title_matches(s, &needle))
+            .collect();
+        let hits = if msg_needle.is_empty() {
+            Vec::new()
+        } else {
+            sessions.with(|list| {
+                collect_message_search_hits(
+                    list,
+                    &msg_needle,
+                    MESSAGE_SEARCH_MAX_HITS,
+                    locale.get(),
+                    apply_assistant_display_filters.get(),
+                )
+            })
+        };
+        let hit_views = if !msg_needle.is_empty() {
+            if hits.is_empty() {
+                view! {
+                    <div class="nav-search-hits-empty" role="status">
+                        {move || i18n::nav_no_message_hits(locale.get())}
+                    </div>
+                }
+                .into_any()
+            } else {
+                hits.into_iter()
+                    .map(|h| {
+                        nav_search_hit_button(
+                            h,
+                            Arc::clone(&composer_buf_nav),
+                            sessions,
+                            active_id,
+                            draft,
+                            session_sync,
+                            session_context_menu,
+                            sidebar_rail_ctx_menu,
+                            focus_message_id_after_nav,
+                            mobile_nav_open,
+                            locale,
+                        )
+                    })
+                    .collect_view()
+                    .into_any()
+            }
+        } else {
+            ().into_any()
+        };
+        view! {
+            <div class="nav-search-hits" role="region" prop:aria-label=move || i18n::nav_search_hits_region(locale.get())>
+                {hit_views}
+            </div>
+            {v.into_iter()
+                .map(|s| {
+                    nav_session_row_button(
+                        s,
+                        Arc::clone(&composer_buf_nav),
+                        sessions,
+                        active_id,
+                        draft,
+                        session_sync,
+                        session_context_menu,
+                        sidebar_rail_ctx_menu,
+                        mobile_nav_open,
+                        locale,
+                    )
+                })
+                .collect_view()}
+        }
+        .into_any()
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn nav_search_hit_button(
+    h: MessageSearchHit,
+    composer_buf_nav: Arc<Mutex<String>>,
+    sessions: RwSignal<Vec<ChatSession>>,
+    active_id: RwSignal<String>,
+    draft: RwSignal<String>,
+    session_sync: RwSignal<SessionSyncState>,
+    session_context_menu: RwSignal<Option<SessionContextAnchor>>,
+    sidebar_rail_ctx_menu: RwSignal<Option<(f64, f64)>>,
+    focus_message_id_after_nav: RwSignal<Option<String>>,
+    mobile_nav_open: RwSignal<bool>,
+    locale: RwSignal<crate::i18n::Locale>,
+) -> impl IntoView {
+    let sid = h.session_id.clone();
+    let mid = h.message_id.clone();
+    let title = h.session_title.clone();
+    let snip = h.snippet.clone();
+    let buf_hit = Arc::clone(&composer_buf_nav);
+    view! {
+        <button
+            type="button"
+            class="nav-search-hit"
+            on:click=move |_| {
+                let prev = active_id.get_untracked();
+                if !prev.is_empty() {
+                    let t = buf_hit.lock().unwrap().clone();
+                    flush_composer_draft_to_session(
+                        sessions,
+                        &prev,
+                        &t,
+                    );
+                }
+                session_context_menu.set(None);
+                sidebar_rail_ctx_menu.set(None);
+                active_id.set(sid.clone());
+                draft.set(
+                    sessions.with(|list| {
+                        list.iter()
+                            .find(|s| s.id == sid)
+                            .map(|s| s.draft.clone())
+                            .unwrap_or_default()
+                    }),
+                );
+                session_sync.set(SessionSyncState::local_only());
+                focus_message_id_after_nav.set(Some(mid.clone()));
+                mobile_nav_open.set(false);
+            }
+        >
+            <span class="nav-search-hit-title">
+                {move || {
+                    i18n::session_title_for_display(&title, locale.get())
+                }}
+            </span>
+            <span class="nav-search-hit-snippet">{snip}</span>
+        </button>
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn nav_session_row_button(
+    s: ChatSession,
+    composer_buf_nav: Arc<Mutex<String>>,
+    sessions: RwSignal<Vec<ChatSession>>,
+    active_id: RwSignal<String>,
+    draft: RwSignal<String>,
+    session_sync: RwSignal<SessionSyncState>,
+    session_context_menu: RwSignal<Option<SessionContextAnchor>>,
+    sidebar_rail_ctx_menu: RwSignal<Option<(f64, f64)>>,
+    mobile_nav_open: RwSignal<bool>,
+    locale: RwSignal<crate::i18n::Locale>,
+) -> impl IntoView {
+    let session_id_class = s.id.clone();
+    let session_id_click = s.id.clone();
+    let session_id_ctx = s.id.clone();
+    let title = s.title.clone();
+    let n = s.messages.len();
+    let is_pinned = s.pinned;
+    let is_starred = s.starred;
+    let buf_sess = Arc::clone(&composer_buf_nav);
+    view! {
+        <button
+            type="button"
+            class=move || {
+                let mut c = String::from("nav-session-item");
+                if active_id.get() == session_id_class {
+                    c.push_str(" is-active");
+                }
+                if is_pinned {
+                    c.push_str(" is-pinned");
+                }
+                if is_starred {
+                    c.push_str(" is-starred");
+                }
+                c
+            }
+            on:contextmenu=move |ev: web_sys::MouseEvent| {
+                ev.prevent_default();
+                ev.stop_propagation();
+                sidebar_rail_ctx_menu.set(None);
+                let (x, y) = clamp_session_ctx_menu_pos(
+                    ev.client_x(),
+                    ev.client_y(),
+                );
+                session_context_menu.set(Some(SessionContextAnchor {
+                    session_id: session_id_ctx.clone(),
+                    x,
+                    y,
+                }));
+            }
+            on:click={
+                let id = session_id_click;
+                move |_| {
+                    let prev = active_id.get_untracked();
+                    if !prev.is_empty() {
+                        let t = buf_sess.lock().unwrap().clone();
+                        flush_composer_draft_to_session(
+                            sessions,
+                            &prev,
+                            &t,
+                        );
+                    }
+                    session_context_menu.set(None);
+                    sidebar_rail_ctx_menu.set(None);
+                    active_id.set(id.clone());
+                    draft.set(
+                        sessions.with(|list| {
+                            list.iter()
+                                .find(|s| s.id == id)
+                                .map(|s| s.draft.clone())
+                                .unwrap_or_default()
+                        }),
+                    );
+                    session_sync.set(SessionSyncState::local_only());
+                    mobile_nav_open.set(false);
+                }
+            }
+        >
+            <span class="nav-session-title-row">
+                <span class="nav-session-badges">
+                    <Show when=move || is_pinned>
+                        <span
+                            class="nav-session-badge nav-session-badge-pin"
+                            aria-hidden="true"
+                            prop:title=move || i18n::session_badge_pin_aria(locale.get())
+                        >
+                            "📌"
+                        </span>
+                    </Show>
+                    <Show when=move || is_starred>
+                        <span
+                            class="nav-session-badge nav-session-badge-star"
+                            aria-hidden="true"
+                            prop:title=move || i18n::session_badge_star_aria(locale.get())
+                        >
+                            "★"
+                        </span>
+                    </Show>
+                </span>
+                <span class="nav-session-title">
+                    {move || {
+                        i18n::session_title_for_display(&title, locale.get())
+                    }}
+                </span>
+            </span>
+            <span class="nav-session-meta">{move || i18n::session_row_msg_count(locale.get(), n)}</span>
+        </button>
+    }
+}
+
 pub fn sidebar_nav_view(ctx: AppShellCtx) -> impl IntoView {
     let AppShellCtx {
         locale,
@@ -399,42 +718,12 @@ pub fn sidebar_nav_view(ctx: AppShellCtx) -> impl IntoView {
             >
                 {move || i18n::nav_new_chat(locale.get())}
             </button>
-            <Show when=move || sidebar_search_panel_open.get()>
-                <div class="nav-rail-search">
-                    <div class="nav-rail-search-header">
-                        <button
-                            type="button"
-                            class="btn btn-nav-ghost-ds nav-rail-search-hide"
-                            prop:aria-label=move || i18n::nav_hide_search_panel_aria(locale.get())
-                            on:click=move |_| sidebar_search_panel_open.set(false)
-                        >
-                            {move || i18n::nav_hide_search_panel(locale.get())}
-                        </button>
-                    </div>
-                    <label class="nav-rail-search-label" for="nav-session-filter">{move || i18n::nav_filter_sessions(locale.get())}</label>
-                    <input
-                        id="nav-session-filter"
-                        type="search"
-                        class="nav-session-search-input"
-                        prop:placeholder=move || i18n::nav_ph_filter(locale.get())
-                        prop:value=move || sidebar_session_query.get()
-                        on:input=move |ev| {
-                            sidebar_session_query.set(event_target_value(&ev));
-                        }
-                    />
-                    <label class="nav-rail-search-label" for="nav-msg-search">{move || i18n::nav_search_messages(locale.get())}</label>
-                    <input
-                        id="nav-msg-search"
-                        type="search"
-                        class="nav-global-search-input"
-                        prop:placeholder=move || i18n::nav_ph_global_search(locale.get())
-                        prop:value=move || global_message_query.get()
-                        on:input=move |ev| {
-                            global_message_query.set(event_target_value(&ev));
-                        }
-                    />
-                </div>
-            </Show>
+            {nav_rail_search_panel(
+                locale,
+                sidebar_search_panel_open,
+                sidebar_session_query,
+                global_message_query,
+            )}
             <div
                 class="nav-rail-scroll"
                 prop:title=move || i18n::nav_rail_scroll_search_hint(locale.get())
@@ -450,204 +739,22 @@ pub fn sidebar_nav_view(ctx: AppShellCtx) -> impl IntoView {
                 }
             >
                 <div class="nav-rail-scroll-label">{move || i18n::nav_recent(locale.get())}</div>
-                {move || {
-                    let search_ui_open = sidebar_search_panel_open.get();
-                    let needle = if search_ui_open {
-                        normalize_search_query(&sidebar_filter_debounced.get())
-                    } else {
-                        String::new()
-                    };
-                    let msg_needle = if search_ui_open {
-                        normalize_search_query(&global_message_filter_debounced.get())
-                    } else {
-                        String::new()
-                    };
-                    let v: Vec<ChatSession> = sorted_sessions_clone(&sessions.get())
-                        .into_iter()
-                        .filter(|s| session_title_matches(s, &needle))
-                        .collect();
-                    let hits = if msg_needle.is_empty() {
-                        Vec::new()
-                    } else {
-                        sessions.with(|list| {
-                            collect_message_search_hits(
-                                list,
-                                &msg_needle,
-                                MESSAGE_SEARCH_MAX_HITS,
-                                locale.get(),
-                                apply_assistant_display_filters.get(),
-                            )
-                        })
-                    };
-                    let hit_views = if !msg_needle.is_empty() {
-                        if hits.is_empty() {
-                            view! {
-                                <div class="nav-search-hits-empty" role="status">
-                                    {move || i18n::nav_no_message_hits(locale.get())}
-                                </div>
-                            }
-                            .into_any()
-                        } else {
-                            hits
-                                .into_iter()
-                                .map(|h| {
-                                    let sid = h.session_id.clone();
-                                    let mid = h.message_id.clone();
-                                    let title = h.session_title.clone();
-                                    let snip = h.snippet.clone();
-                                    let buf_hit = Arc::clone(&composer_buf_nav);
-                                    view! {
-                                        <button
-                                            type="button"
-                                            class="nav-search-hit"
-                                            on:click=move |_| {
-                                                let prev = active_id.get_untracked();
-                                                if !prev.is_empty() {
-                                                    let t = buf_hit.lock().unwrap().clone();
-                                                    flush_composer_draft_to_session(
-                                                        sessions,
-                                                        &prev,
-                                                        &t,
-                                                    );
-                                                }
-                                                session_context_menu.set(None);
-                                                sidebar_rail_ctx_menu.set(None);
-                                                active_id.set(sid.clone());
-                                                draft.set(
-                                                    sessions.with(|list| {
-                                                        list.iter()
-                                                            .find(|s| s.id == sid)
-                                                            .map(|s| s.draft.clone())
-                                                            .unwrap_or_default()
-                                                    }),
-                                                );
-                                                session_sync.set(SessionSyncState::local_only());
-                                                focus_message_id_after_nav.set(Some(mid.clone()));
-                                                mobile_nav_open.set(false);
-                                            }
-                                        >
-                                            <span class="nav-search-hit-title">
-                                                {move || {
-                                                    i18n::session_title_for_display(&title, locale.get())
-                                                }}
-                                            </span>
-                                            <span class="nav-search-hit-snippet">{snip}</span>
-                                        </button>
-                                    }
-                                })
-                                .collect_view()
-                                .into_any()
-                        }
-                    } else {
-                        ().into_any()
-                    };
-                    view! {
-                        <div class="nav-search-hits" role="region" prop:aria-label=move || i18n::nav_search_hits_region(locale.get())>
-                            {hit_views}
-                        </div>
-                        {v.into_iter()
-                        .map(|s| {
-                            let session_id_class = s.id.clone();
-                            let session_id_click = s.id.clone();
-                            let session_id_ctx = s.id.clone();
-                            let title = s.title.clone();
-                            let n = s.messages.len();
-                            let is_pinned = s.pinned;
-                            let is_starred = s.starred;
-                            let buf_sess = Arc::clone(&composer_buf_nav);
-                            view! {
-                                <button
-                                    type="button"
-                                    class=move || {
-                                        let mut c = String::from("nav-session-item");
-                                        if active_id.get() == session_id_class {
-                                            c.push_str(" is-active");
-                                        }
-                                        if is_pinned {
-                                            c.push_str(" is-pinned");
-                                        }
-                                        if is_starred {
-                                            c.push_str(" is-starred");
-                                        }
-                                        c
-                                    }
-                                    on:contextmenu=move |ev: web_sys::MouseEvent| {
-                                        ev.prevent_default();
-                                        ev.stop_propagation();
-                                        sidebar_rail_ctx_menu.set(None);
-                                        let (x, y) = clamp_session_ctx_menu_pos(
-                                            ev.client_x(),
-                                            ev.client_y(),
-                                        );
-                                        session_context_menu.set(Some(SessionContextAnchor {
-                                            session_id: session_id_ctx.clone(),
-                                            x,
-                                            y,
-                                        }));
-                                    }
-                                    on:click={
-                                        let id = session_id_click;
-                                        move |_| {
-                                            let prev = active_id.get_untracked();
-                                            if !prev.is_empty() {
-                                                let t = buf_sess.lock().unwrap().clone();
-                                                flush_composer_draft_to_session(
-                                                    sessions,
-                                                    &prev,
-                                                    &t,
-                                                );
-                                            }
-                                            session_context_menu.set(None);
-                                            sidebar_rail_ctx_menu.set(None);
-                                            active_id.set(id.clone());
-                                            draft.set(
-                                                sessions.with(|list| {
-                                                    list.iter()
-                                                        .find(|s| s.id == id)
-                                                        .map(|s| s.draft.clone())
-                                                        .unwrap_or_default()
-                                                }),
-                                            );
-                                            session_sync.set(SessionSyncState::local_only());
-                                            mobile_nav_open.set(false);
-                                        }
-                                    }
-                                >
-                                    <span class="nav-session-title-row">
-                                        <span class="nav-session-badges">
-                                            <Show when=move || is_pinned>
-                                                <span
-                                                    class="nav-session-badge nav-session-badge-pin"
-                                                    aria-hidden="true"
-                                                    prop:title=move || i18n::session_badge_pin_aria(locale.get())
-                                                >
-                                                    "📌"
-                                                </span>
-                                            </Show>
-                                            <Show when=move || is_starred>
-                                                <span
-                                                    class="nav-session-badge nav-session-badge-star"
-                                                    aria-hidden="true"
-                                                    prop:title=move || i18n::session_badge_star_aria(locale.get())
-                                                >
-                                                    "★"
-                                                </span>
-                                            </Show>
-                                        </span>
-                                        <span class="nav-session-title">
-                                            {move || {
-                                                i18n::session_title_for_display(&title, locale.get())
-                                            }}
-                                        </span>
-                                    </span>
-                                    <span class="nav-session-meta">{move || i18n::session_row_msg_count(locale.get(), n)}</span>
-                                </button>
-                            }
-                        })
-                        .collect_view()}
-                    }
-                    .into_any()
-                }}
+                {nav_rail_session_scroll_inner(
+                    locale,
+                    sidebar_search_panel_open,
+                    sidebar_filter_debounced,
+                    global_message_filter_debounced,
+                    sessions,
+                    composer_buf_nav.clone(),
+                    active_id,
+                    draft,
+                    session_sync,
+                    mobile_nav_open,
+                    session_context_menu,
+                    sidebar_rail_ctx_menu,
+                    focus_message_id_after_nav,
+                    apply_assistant_display_filters,
+                )}
             </div>
         </aside>
 
