@@ -19,6 +19,28 @@ use crate::storage::{ChatSession, StoredMessage};
 
 use super::message_row_actions::{MessageRowActionSignals, spawn_scroll_to_linked_user_message};
 
+/// 聊天消息行视图所需信号与数据（缩短 [`chat_message_row`] 形参列表；勿命名为 `*Props`，与 Leptos 组件宏生成类型冲突）。
+#[derive(Clone)]
+pub(crate) struct ChatMessageRowSignals {
+    pub msg_idx: usize,
+    pub m: StoredMessage,
+    pub sessions: RwSignal<Vec<ChatSession>>,
+    pub active_id: RwSignal<String>,
+    pub collapsed_long_assistant_ids: RwSignal<Vec<String>>,
+    pub chat_find_query: RwSignal<String>,
+    pub chat_find_match_ids: RwSignal<Vec<String>>,
+    pub chat_find_cursor: RwSignal<usize>,
+    pub auto_scroll_chat: RwSignal<bool>,
+    pub status_busy: RwSignal<bool>,
+    pub session_sync: RwSignal<SessionSyncState>,
+    pub regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
+    pub retry_assistant_target: RwSignal<Option<String>>,
+    pub status_err: RwSignal<Option<String>>,
+    pub locale: RwSignal<Locale>,
+    pub markdown_render: RwSignal<bool>,
+    pub apply_assistant_display_filters: RwSignal<bool>,
+}
+
 fn is_hierarchical_subgoal_state(state: Option<&str>) -> bool {
     state.is_some_and(|s| s.starts_with("hierarchical-subgoal:"))
 }
@@ -656,26 +678,26 @@ fn build_message_actions_bar(
     .into_any()
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn chat_message_row(
-    msg_idx: usize,
-    m: StoredMessage,
-    sessions: RwSignal<Vec<ChatSession>>,
-    active_id: RwSignal<String>,
-    collapsed_long_assistant_ids: RwSignal<Vec<String>>,
-    chat_find_query: RwSignal<String>,
-    chat_find_match_ids: RwSignal<Vec<String>>,
-    chat_find_cursor: RwSignal<usize>,
-    auto_scroll_chat: RwSignal<bool>,
-    status_busy: RwSignal<bool>,
-    session_sync: RwSignal<SessionSyncState>,
-    regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
-    retry_assistant_target: RwSignal<Option<String>>,
-    status_err: RwSignal<Option<String>>,
-    locale: RwSignal<Locale>,
-    markdown_render: RwSignal<bool>,
-    apply_assistant_display_filters: RwSignal<bool>,
-) -> impl IntoView {
+pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
+    let ChatMessageRowSignals {
+        msg_idx,
+        m,
+        sessions,
+        active_id,
+        collapsed_long_assistant_ids,
+        chat_find_query,
+        chat_find_match_ids,
+        chat_find_cursor,
+        auto_scroll_chat,
+        status_busy,
+        session_sync,
+        regen_stream_after_truncate,
+        retry_assistant_target,
+        status_err,
+        locale,
+        markdown_render,
+        apply_assistant_display_filters,
+    } = s;
     let row_actions = MessageRowActionSignals {
         session_sync,
         sessions,

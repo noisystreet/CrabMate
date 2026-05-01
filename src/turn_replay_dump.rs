@@ -224,26 +224,48 @@ pub(crate) fn append_decision_point_event_if_configured(
 }
 
 /// 兼容旧调用点：不再生成 `turn-replay-*.json`，仅写一条回合摘要事件。
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn write_turn_replay_dump_if_configured(
-    wall_ms: u64,
-    long_term_memory_scope_id: Option<&str>,
-    tracing_job_id: Option<u64>,
-    result: &Result<(), crate::agent::agent_turn::RunAgentTurnError>,
-    _messages: &[Message],
-    _tools: &[Tool],
-    _cfg: &AgentConfig,
-    _no_stream: bool,
-    _render_to_terminal: bool,
-    _plain_terminal_stream: bool,
-    _effective_working_dir: &std::path::Path,
-    _workspace_is_set: bool,
-    _temperature_override: Option<f32>,
-    _model_override: Option<String>,
-    _use_executor_model: bool,
-    _executor_model_override: Option<String>,
-    _seed_override: LlmSeedOverride,
-) {
+///
+/// 其余字段保留在结构体上，便于调用方不必删参数即可迁移到「单结构体」调用。
+pub(crate) struct TurnReplayDumpParams<'a> {
+    pub wall_ms: u64,
+    pub long_term_memory_scope_id: Option<&'a str>,
+    pub tracing_job_id: Option<u64>,
+    pub result: &'a Result<(), crate::agent::agent_turn::RunAgentTurnError>,
+    pub messages: &'a [Message],
+    pub tools: &'a [Tool],
+    pub cfg: &'a AgentConfig,
+    pub no_stream: bool,
+    pub render_to_terminal: bool,
+    pub plain_terminal_stream: bool,
+    pub effective_working_dir: &'a std::path::Path,
+    pub workspace_is_set: bool,
+    pub temperature_override: Option<f32>,
+    pub model_override: Option<String>,
+    pub use_executor_model: bool,
+    pub executor_model_override: Option<String>,
+    pub seed_override: LlmSeedOverride,
+}
+
+pub(crate) fn write_turn_replay_dump_if_configured(p: TurnReplayDumpParams<'_>) {
+    let TurnReplayDumpParams {
+        wall_ms,
+        long_term_memory_scope_id,
+        tracing_job_id,
+        result,
+        messages: _messages,
+        tools: _tools,
+        cfg: _cfg,
+        no_stream: _no_stream,
+        render_to_terminal: _render_to_terminal,
+        plain_terminal_stream: _plain_terminal_stream,
+        effective_working_dir: _effective_working_dir,
+        workspace_is_set: _workspace_is_set,
+        temperature_override: _temperature_override,
+        model_override: _model_override,
+        use_executor_model: _use_executor_model,
+        executor_model_override: _executor_model_override,
+        seed_override: _seed_override,
+    } = p;
     // 旧函数保持存在，避免改动调用链；仅追加事件，不再写 turn-replay-*.json。
     append_turn_replay_event_json_if_configured(
         "turn_snapshot_skipped",

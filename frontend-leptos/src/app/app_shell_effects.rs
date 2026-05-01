@@ -20,6 +20,7 @@ use crate::i18n::{self, Locale};
 use crate::session_ops::SessionContextAnchor;
 use crate::storage::{ChatSession, ensure_at_least_one, load_sessions, save_sessions};
 
+use super::app_signals::LLMSettingsSignals;
 use super::status_tasks_state::StatusTasksSignals;
 
 /// 供全局 **`Escape`** 处理器按固定顺序关闭的模态/抽屉句柄。
@@ -218,28 +219,41 @@ pub fn wire_sync_bg_decor_to_storage_and_dom(bg_decor: RwSignal<bool>) {
     });
 }
 
+/// 打开设置弹窗或设置页面时，用 **`localStorage`** 与 **`/status`** 快照填充 LLM 草稿区（缩短 [`wire_settings_modal_llm_drafts_on_open`] 形参列表）。
+#[derive(Clone, Copy)]
+pub struct WireSettingsModalLlmDraftsSignals {
+    pub settings_modal: RwSignal<bool>,
+    pub settings_page: RwSignal<bool>,
+    pub status_tasks: StatusTasksSignals,
+    pub llm: LLMSettingsSignals,
+}
+
 /// 打开设置弹窗或设置页面时，用 **`localStorage`** 与 **`/status`** 快照填充 LLM 草稿区。
-#[allow(clippy::too_many_arguments)]
-pub fn wire_settings_modal_llm_drafts_on_open(
-    settings_modal: RwSignal<bool>,
-    settings_page: RwSignal<bool>,
-    status_tasks: StatusTasksSignals,
-    llm_api_base_draft: RwSignal<String>,
-    llm_api_base_preset_select: RwSignal<String>,
-    llm_model_draft: RwSignal<String>,
-    llm_temperature_draft: RwSignal<String>,
-    llm_context_tokens_draft: RwSignal<String>,
-    llm_api_key_draft: RwSignal<String>,
-    llm_has_saved_key: RwSignal<bool>,
-    llm_settings_feedback: RwSignal<Option<String>>,
-    executor_llm_api_base_draft: RwSignal<String>,
-    executor_llm_api_base_preset_select: RwSignal<String>,
-    executor_llm_model_draft: RwSignal<String>,
-    executor_llm_api_key_draft: RwSignal<String>,
-    executor_llm_has_saved_key: RwSignal<bool>,
-    executor_llm_settings_feedback: RwSignal<Option<String>>,
-    execution_mode_draft: RwSignal<String>,
-) {
+pub fn wire_settings_modal_llm_drafts_on_open(s: WireSettingsModalLlmDraftsSignals) {
+    let WireSettingsModalLlmDraftsSignals {
+        settings_modal,
+        settings_page,
+        status_tasks,
+        llm:
+            LLMSettingsSignals {
+                llm_api_base_draft,
+                llm_api_base_preset_select,
+                llm_model_draft,
+                llm_temperature_draft,
+                llm_context_tokens_draft,
+                llm_api_key_draft,
+                llm_has_saved_key,
+                llm_settings_feedback,
+                executor_llm_api_base_draft,
+                executor_llm_api_base_preset_select,
+                executor_llm_model_draft,
+                executor_llm_api_key_draft,
+                executor_llm_has_saved_key,
+                executor_llm_settings_feedback,
+                execution_mode_draft,
+                ..
+            },
+    } = s;
     Effect::new(move |_| {
         if !settings_modal.get() && !settings_page.get() {
             return;

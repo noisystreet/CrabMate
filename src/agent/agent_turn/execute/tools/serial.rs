@@ -27,21 +27,36 @@ use super::{
 };
 
 /// 串行工具路径：统一构造 `ToolEnvelopeContext` 并下发 SSE / 追加消息。
-#[allow(clippy::too_many_arguments)]
-async fn emit_serial_tool_result(
-    messages: &mut Vec<crate::types::Message>,
-    per_coord: &mut PerCoordinator,
-    cfg: &Arc<crate::config::AgentConfig>,
-    out: Option<&mpsc::Sender<String>>,
+struct SerialEmitToolResultParams<'a> {
+    messages: &'a mut Vec<crate::types::Message>,
+    per_coord: &'a mut PerCoordinator,
+    cfg: &'a Arc<crate::config::AgentConfig>,
+    out: Option<&'a mpsc::Sender<String>>,
     echo_terminal_transcript: bool,
     terminal_tool_display_max_chars: usize,
     tool_result_envelope_v1: bool,
-    name: &str,
-    args: &str,
-    id: &str,
+    name: &'a str,
+    args: &'a str,
+    id: &'a str,
     result: String,
     reflection_inject: Option<serde_json::Value>,
-) {
+}
+
+async fn emit_serial_tool_result(p: SerialEmitToolResultParams<'_>) {
+    let SerialEmitToolResultParams {
+        messages,
+        per_coord,
+        cfg,
+        out,
+        echo_terminal_transcript,
+        terminal_tool_display_max_chars,
+        tool_result_envelope_v1,
+        name,
+        args,
+        id,
+        result,
+        reflection_inject,
+    } = p;
     let env = ToolEnvelopeContext {
         tool_call_id: id,
         execution_mode: "serial",
@@ -68,29 +83,47 @@ async fn emit_serial_tool_result(
 }
 
 /// 预检 / 策略拒绝 / `run_command` 短路 / 只读缓存命中：若已下发工具结果则返回 `true`（外层应 `continue`）。
-#[allow(clippy::too_many_arguments)]
-async fn serial_emit_early_without_dispatch(
-    messages: &mut Vec<crate::types::Message>,
-    per_coord: &mut PerCoordinator,
-    cfg: &Arc<crate::config::AgentConfig>,
-    out: Option<&mpsc::Sender<String>>,
+struct SerialEmitEarlyWithoutDispatchParams<'a> {
+    messages: &'a mut Vec<crate::types::Message>,
+    per_coord: &'a mut PerCoordinator,
+    cfg: &'a Arc<crate::config::AgentConfig>,
+    out: Option<&'a mpsc::Sender<String>>,
     echo_terminal_transcript: bool,
     terminal_tool_display_max_chars: usize,
     tool_result_envelope_v1: bool,
-    effective_working_dir: &Path,
-    name: &str,
-    args: &str,
-    id: &str,
+    effective_working_dir: &'a Path,
+    name: &'a str,
+    args: &'a str,
+    id: &'a str,
     step_executor_constraint: Option<PlanStepExecutorKind>,
-    tools_defs_full: &[crate::types::Tool],
-    turn_allow: Option<&HashSet<String>>,
-    readonly_cache: &mut HashMap<(String, String), String>,
-) -> bool {
+    tools_defs_full: &'a [crate::types::Tool],
+    turn_allow: Option<&'a HashSet<String>>,
+    readonly_cache: &'a mut HashMap<(String, String), String>,
+}
+
+async fn serial_emit_early_without_dispatch(p: SerialEmitEarlyWithoutDispatchParams<'_>) -> bool {
+    let SerialEmitEarlyWithoutDispatchParams {
+        messages,
+        per_coord,
+        cfg,
+        out,
+        echo_terminal_transcript,
+        terminal_tool_display_max_chars,
+        tool_result_envelope_v1,
+        effective_working_dir,
+        name,
+        args,
+        id,
+        step_executor_constraint,
+        tools_defs_full,
+        turn_allow,
+        readonly_cache,
+    } = p;
     if let Some(preflight_error) =
         run_command_cargo_workdir_preflight_error(name, args, effective_working_dir)
     {
         per_coord.mark_tool_failure_signature(name, args, "cargo_manifest_missing".to_string());
-        emit_serial_tool_result(
+        emit_serial_tool_result(SerialEmitToolResultParams {
             messages,
             per_coord,
             cfg,
@@ -101,9 +134,9 @@ async fn serial_emit_early_without_dispatch(
             name,
             args,
             id,
-            preflight_error,
-            None,
-        )
+            result: preflight_error,
+            reflection_inject: None,
+        })
         .await;
         return true;
     }
@@ -114,7 +147,7 @@ async fn serial_emit_early_without_dispatch(
             "ctest_dash_c_build_misuse",
             "ctest_dash_c_build_misuse".to_string(),
         );
-        emit_serial_tool_result(
+        emit_serial_tool_result(SerialEmitToolResultParams {
             messages,
             per_coord,
             cfg,
@@ -125,9 +158,9 @@ async fn serial_emit_early_without_dispatch(
             name,
             args,
             id,
-            preflight_error,
-            None,
-        )
+            result: preflight_error,
+            reflection_inject: None,
+        })
         .await;
         return true;
     }
@@ -137,7 +170,7 @@ async fn serial_emit_early_without_dispatch(
     {
         let denied = executor_kind_tool_denied_body(cfg.as_ref(), tools_defs_full, name, k);
         warn!(target: super::LOG_TARGET, "{}", denied);
-        emit_serial_tool_result(
+        emit_serial_tool_result(SerialEmitToolResultParams {
             messages,
             per_coord,
             cfg,
@@ -148,9 +181,9 @@ async fn serial_emit_early_without_dispatch(
             name,
             args,
             id,
-            denied,
-            None,
-        )
+            result: denied,
+            reflection_inject: None,
+        })
         .await;
         return true;
     }
@@ -158,7 +191,7 @@ async fn serial_emit_early_without_dispatch(
     if !crate::agent_role_turn::tool_allowed_for_turn(name, turn_allow) {
         let denied = crate::agent_role_turn::turn_tool_denied_message(name);
         warn!(target: super::LOG_TARGET, "{}", denied);
-        emit_serial_tool_result(
+        emit_serial_tool_result(SerialEmitToolResultParams {
             messages,
             per_coord,
             cfg,
@@ -169,9 +202,9 @@ async fn serial_emit_early_without_dispatch(
             name,
             args,
             id,
-            denied,
-            None,
-        )
+            result: denied,
+            reflection_inject: None,
+        })
         .await;
         return true;
     }
@@ -191,7 +224,7 @@ async fn serial_emit_early_without_dispatch(
             crate::redact::tool_arguments_preview_for_log(args),
             prev_error
         );
-        emit_serial_tool_result(
+        emit_serial_tool_result(SerialEmitToolResultParams {
             messages,
             per_coord,
             cfg,
@@ -202,9 +235,9 @@ async fn serial_emit_early_without_dispatch(
             name,
             args,
             id,
-            short_circuit,
-            None,
-        )
+            result: short_circuit,
+            reflection_inject: None,
+        })
         .await;
         return true;
     }
@@ -226,7 +259,7 @@ async fn serial_emit_early_without_dispatch(
             crate::redact::tool_arguments_preview_for_log(args),
             prev_error
         );
-        emit_serial_tool_result(
+        emit_serial_tool_result(SerialEmitToolResultParams {
             messages,
             per_coord,
             cfg,
@@ -237,9 +270,9 @@ async fn serial_emit_early_without_dispatch(
             name,
             args,
             id,
-            short_circuit,
-            None,
-        )
+            result: short_circuit,
+            reflection_inject: None,
+        })
         .await;
         return true;
     }
@@ -251,7 +284,7 @@ async fn serial_emit_early_without_dispatch(
             name,
             crate::redact::tool_arguments_preview_for_log(args)
         );
-        emit_serial_tool_result(
+        emit_serial_tool_result(SerialEmitToolResultParams {
             messages,
             per_coord,
             cfg,
@@ -262,9 +295,9 @@ async fn serial_emit_early_without_dispatch(
             name,
             args,
             id,
-            cached.clone(),
-            None,
-        )
+            result: cached.clone(),
+            reflection_inject: None,
+        })
         .await;
         return true;
     }
@@ -412,7 +445,7 @@ pub(super) async fn execute_tools_serial(
             crate::redact::tool_arguments_preview_for_log(&args)
         );
 
-        if serial_emit_early_without_dispatch(
+        if serial_emit_early_without_dispatch(SerialEmitEarlyWithoutDispatchParams {
             messages,
             per_coord,
             cfg,
@@ -421,14 +454,14 @@ pub(super) async fn execute_tools_serial(
             terminal_tool_display_max_chars,
             tool_result_envelope_v1,
             effective_working_dir,
-            name.as_str(),
-            args.as_str(),
-            id.as_str(),
+            name: name.as_str(),
+            args: args.as_str(),
+            id: id.as_str(),
             step_executor_constraint,
             tools_defs_full,
             turn_allow,
-            &mut readonly_cache,
-        )
+            readonly_cache: &mut readonly_cache,
+        })
         .await
         {
             continue;
@@ -516,7 +549,7 @@ pub(super) async fn execute_tools_serial(
             readonly_cache.clear();
         }
 
-        emit_serial_tool_result(
+        emit_serial_tool_result(SerialEmitToolResultParams {
             messages,
             per_coord,
             cfg,
@@ -524,12 +557,12 @@ pub(super) async fn execute_tools_serial(
             echo_terminal_transcript,
             terminal_tool_display_max_chars,
             tool_result_envelope_v1,
-            name.as_str(),
-            args.as_str(),
-            id.as_str(),
+            name: name.as_str(),
+            args: args.as_str(),
+            id: id.as_str(),
             result,
             reflection_inject,
-        )
+        })
         .await;
     }
 

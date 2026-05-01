@@ -5,32 +5,63 @@ use std::collections::HashSet;
 
 use leptos::prelude::*;
 
-use super::message_row::chat_message_row;
+use super::message_row::{ChatMessageRowSignals, chat_message_row};
 use crate::i18n::{self, Locale};
 use crate::session_search::normalize_search_query;
 use crate::session_sync::SessionSyncState;
 use crate::storage::{ChatSession, StoredMessage};
 
-#[allow(clippy::too_many_arguments)]
+/// 工具组内每条 [`chat_message_row`] 共享的信号（缩短 [`tool_run_group_view`] 形参列表）。
+#[derive(Clone, Copy)]
+pub(crate) struct ToolRunGroupSignals {
+    pub collapsed_tool_run_heads: RwSignal<HashSet<String>>,
+    pub chat_find_query: RwSignal<String>,
+    pub chat_find_match_ids: RwSignal<Vec<String>>,
+    pub sessions: RwSignal<Vec<ChatSession>>,
+    pub active_id: RwSignal<String>,
+    pub collapsed_long_assistant_ids: RwSignal<Vec<String>>,
+    pub chat_find_cursor: RwSignal<usize>,
+    pub status_busy: RwSignal<bool>,
+    pub session_sync: RwSignal<SessionSyncState>,
+    pub regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
+    pub retry_assistant_target: RwSignal<Option<String>>,
+    pub status_err: RwSignal<Option<String>>,
+    pub auto_scroll_chat: RwSignal<bool>,
+    pub locale: RwSignal<Locale>,
+    pub markdown_render: RwSignal<bool>,
+    pub apply_assistant_display_filters: RwSignal<bool>,
+}
+
+fn chat_row_for_tool_group(
+    msg_idx: usize,
+    m: StoredMessage,
+    g: ToolRunGroupSignals,
+) -> impl IntoView {
+    chat_message_row(ChatMessageRowSignals {
+        msg_idx,
+        m,
+        sessions: g.sessions,
+        active_id: g.active_id,
+        collapsed_long_assistant_ids: g.collapsed_long_assistant_ids,
+        chat_find_query: g.chat_find_query,
+        chat_find_match_ids: g.chat_find_match_ids,
+        chat_find_cursor: g.chat_find_cursor,
+        auto_scroll_chat: g.auto_scroll_chat,
+        status_busy: g.status_busy,
+        session_sync: g.session_sync,
+        regen_stream_after_truncate: g.regen_stream_after_truncate,
+        retry_assistant_target: g.retry_assistant_target,
+        status_err: g.status_err,
+        locale: g.locale,
+        markdown_render: g.markdown_render,
+        apply_assistant_display_filters: g.apply_assistant_display_filters,
+    })
+}
+
 pub(crate) fn tool_run_group_view(
     head_key: String,
     items: Vec<(usize, StoredMessage)>,
-    collapsed_tool_run_heads: RwSignal<HashSet<String>>,
-    chat_find_query: RwSignal<String>,
-    chat_find_match_ids: RwSignal<Vec<String>>,
-    sessions: RwSignal<Vec<ChatSession>>,
-    active_id: RwSignal<String>,
-    collapsed_long_assistant_ids: RwSignal<Vec<String>>,
-    chat_find_cursor: RwSignal<usize>,
-    status_busy: RwSignal<bool>,
-    session_sync: RwSignal<SessionSyncState>,
-    regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
-    retry_assistant_target: RwSignal<Option<String>>,
-    status_err: RwSignal<Option<String>>,
-    auto_scroll_chat: RwSignal<bool>,
-    locale: RwSignal<Locale>,
-    markdown_render: RwSignal<bool>,
-    apply_assistant_display_filters: RwSignal<bool>,
+    g: ToolRunGroupSignals,
 ) -> impl IntoView {
     let items_sv = StoredValue::new(items);
     let group_ids: Vec<String> = items_sv
@@ -46,14 +77,14 @@ pub(crate) fn tool_run_group_view(
         <div class="msg-tool-run" data-tool-run=head_attr>
             {move || {
                 let folded_to_last =
-                    collapsed_tool_run_heads.with(|s| s.contains(&fold_head));
+                    g.collapsed_tool_run_heads.with(|s| s.contains(&fold_head));
                 let find_hit = {
-                    let q = normalize_search_query(&chat_find_query.get());
+                    let q = normalize_search_query(&g.chat_find_query.get());
                     !q.is_empty()
-                        && chat_find_match_ids.with(|ids| {
+                        && g.chat_find_match_ids.with(|ids| {
                             ids
                                 .iter()
-                                .any(|mid| group_ids.iter().any(|g| g == mid))
+                                .any(|mid| group_ids.iter().any(|g_id| g_id == mid))
                         })
                 };
                 let show_all = !folded_to_last || find_hit;
@@ -66,83 +97,47 @@ pub(crate) fn tool_run_group_view(
                             entries
                                 .iter()
                                 .map(|(msg_idx, m)| {
-                                    chat_message_row(
-                                        *msg_idx,
-                                        m.clone(),
-                                        sessions,
-                                        active_id,
-                                        collapsed_long_assistant_ids,
-                                        chat_find_query,
-                                        chat_find_match_ids,
-                                        chat_find_cursor,
-                                        auto_scroll_chat,
-                                        status_busy,
-                                        session_sync,
-                                        regen_stream_after_truncate,
-                                        retry_assistant_target,
-                                        status_err,
-                                        locale,
-                                        markdown_render,
-                                        apply_assistant_display_filters,
-                                    )
+                                    chat_row_for_tool_group(*msg_idx, m.clone(), g)
                                 })
                                 .collect_view()
                         }
-                        <div class="msg-tool-run-head" role="group" prop:aria-label=move || i18n::msg_tool_run_group_aria(locale.get())>
-                            <span class="msg-tool-run-count">{move || i18n::msg_tool_run_count(locale.get(), n)}</span>
+                        <div class="msg-tool-run-head" role="group" prop:aria-label=move || i18n::msg_tool_run_group_aria(g.locale.get())>
+                            <span class="msg-tool-run-count">{move || i18n::msg_tool_run_count(g.locale.get(), n)}</span>
                             <button
                                 type="button"
                                 class="btn btn-muted btn-sm msg-tool-run-toggle"
-                                prop:title=move || i18n::msg_tool_collapse_title(locale.get())
-                                prop:aria-label=move || i18n::msg_tool_collapse_aria(locale.get())
+                                prop:title=move || i18n::msg_tool_collapse_title(g.locale.get())
+                                prop:aria-label=move || i18n::msg_tool_collapse_aria(g.locale.get())
                                 on:click=move |_| {
                                     let k = fold_on_click.clone();
-                                    collapsed_tool_run_heads.update(|s| {
+                                    g.collapsed_tool_run_heads.update(|s| {
                                         s.insert(k);
                                     });
                                 }
                             >
-                                {move || i18n::msg_tool_collapse_btn(locale.get())}
+                                {move || i18n::msg_tool_collapse_btn(g.locale.get())}
                             </button>
                         </div>
                     }
                     .into_any()
                 } else if let Some((msg_idx, last)) = entries.last().cloned() {
                     view! {
-                        {chat_message_row(
-                            msg_idx,
-                            last,
-                            sessions,
-                            active_id,
-                            collapsed_long_assistant_ids,
-                            chat_find_query,
-                            chat_find_match_ids,
-                            chat_find_cursor,
-                            auto_scroll_chat,
-                            status_busy,
-                            session_sync,
-                            regen_stream_after_truncate,
-                            retry_assistant_target,
-                            status_err,
-                            locale,
-                            markdown_render,
-                            apply_assistant_display_filters,
-                        )}
-                        <div class="msg-tool-run-head" role="group" prop:aria-label=move || i18n::msg_tool_run_group_aria(locale.get())>
-                            <span class="msg-tool-run-count">{move || i18n::msg_tool_run_count(locale.get(), n)}</span>
+                        {chat_row_for_tool_group(msg_idx, last, g)}
+                        <div class="msg-tool-run-head" role="group" prop:aria-label=move || i18n::msg_tool_run_group_aria(g.locale.get())>
+                            <span class="msg-tool-run-count">{move || i18n::msg_tool_run_count(g.locale.get(), n)}</span>
                             <button
                                 type="button"
                                 class="btn btn-muted btn-sm msg-tool-run-toggle"
-                                prop:title=move || i18n::msg_tool_expand_title(locale.get())
-                                prop:aria-label=move || i18n::msg_tool_expand_aria(locale.get())
+                                prop:title=move || i18n::msg_tool_expand_title(g.locale.get())
+                                prop:aria-label=move || i18n::msg_tool_expand_aria(g.locale.get())
                                 on:click=move |_| {
                                     let h = expand_on_click.clone();
-                                    collapsed_tool_run_heads.update(|s| {
+                                    g.collapsed_tool_run_heads.update(|s| {
                                         s.remove(&h);
                                     });
                                 }
                             >
-                                {move || i18n::msg_tool_expand_btn(locale.get())}
+                                {move || i18n::msg_tool_expand_btn(g.locale.get())}
                             </button>
                         </div>
                     }
