@@ -3,13 +3,8 @@
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--accent) 32%, var(--surface));
-  color: var(--text);
-}
-
-:root[data-theme="light"] ::selection {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-  color: var(--text);
+  background: var(--selection-bg);
+  color: var(--selection-color);
 }
 
 html,
@@ -18,9 +13,6 @@ body {
   height: 100%;
   font-family: var(--font-sans);
   background: var(--bg);
-  background-image:
-    radial-gradient(ellipse 120% 80% at 100% -20%, var(--accent-glow), transparent 50%),
-    radial-gradient(ellipse 80% 50% at -10% 100%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 45%);
   background-attachment: fixed;
   color: var(--text);
   font-size: 14px;
@@ -28,13 +20,15 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-:root[data-theme="light"] body {
-  background-image:
-    radial-gradient(ellipse 100% 60% at 100% 0%, var(--accent-glow), transparent 55%),
-    radial-gradient(ellipse 60% 40% at 0% 100%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 50%);
+html {
+  background-image: var(--page-bg-decor-html);
 }
 
-/* 设置中关闭「背景光晕」时仅保留纯色底，避免与浅色 body's 渐变规则抢优先级，放在其后 */
+body {
+  background-image: var(--page-bg-decor-body);
+}
+
+/* 设置中关闭「背景光晕」时仅保留纯色底 */
 :root[data-bg-decor="plain"] html,
 :root[data-bg-decor="plain"] body {
   background-image: none;

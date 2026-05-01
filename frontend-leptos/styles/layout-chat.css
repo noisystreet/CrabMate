@@ -1565,15 +1565,7 @@
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   backdrop-filter: blur(8px);
   align-items: flex-end;
-  box-shadow:
-    0 -1px 0 color-mix(in srgb, #fff 5%, transparent) inset,
-    0 -12px 28px color-mix(in srgb, var(--bg) 55%, transparent);
-}
-
-:root[data-theme="light"] .composer {
-  box-shadow:
-    0 -1px 0 color-mix(in srgb, #fff 70%, transparent) inset,
-    0 -8px 20px color-mix(in srgb, var(--border) 12%, transparent);
+  box-shadow: var(--composer-bar-box-shadow);
 }
 
 .composer-input {
@@ -1688,15 +1680,8 @@
   vertical-align: baseline;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
-  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 38%, var(--border));
-  color: color-mix(in srgb, var(--text) 88%, var(--accent));
-}
-
-:root[data-theme="light"] .composer-ws-ref {
-  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 28%, var(--border));
-}
+  background: var(--composer-ws-ref-bg);
+  box-shadow: var(--composer-ws-ref-box-shadow);
 
 .composer-actions {
   display: flex;
