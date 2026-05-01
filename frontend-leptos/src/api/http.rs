@@ -50,6 +50,12 @@ pub struct StatusData {
     #[allow(dead_code)]
     pub context_char_budget: usize,
     #[serde(default)]
+    pub llm_context_tokens: u32,
+    /// 会话同步管道实际采用的近似字符预算（与后端 `AgentConfig::effective_context_char_budget_for_pipeline` 一致）。
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub effective_context_char_budget: usize,
+    #[serde(default)]
     pub executor_model: String,
     #[serde(default)]
     pub executor_api_base: String,

@@ -24,6 +24,20 @@ fn validate_temperature_override(raw: &str, loc: Locale) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_llm_context_tokens_override(raw: &str, loc: Locale) -> Result<(), String> {
+    let t = raw.trim();
+    if t.is_empty() {
+        return Ok(());
+    }
+    let parsed = t
+        .parse::<u64>()
+        .map_err(|_| crate::i18n::settings_err_context_tokens_invalid(loc).to_string())?;
+    if parsed > 10_000_000 {
+        return Err(crate::i18n::settings_err_context_tokens_range(loc).to_string());
+    }
+    Ok(())
+}
+
 /// 将语言 / 主题 / 背景与（可选）LLM 覆盖写入 `localStorage`，并更新全局 UI 信号。
 ///
 /// - `api_key_update`：`None` 表示不改已存密钥；`Some(...)` 则按 `persist_*` 语义写入或清除。
@@ -39,6 +53,7 @@ pub fn commit_all_settings(
     client_base: &str,
     client_model: &str,
     client_temperature: &str,
+    client_llm_context_tokens: &str,
     client_api_key_draft: &str,
     executor_base: &str,
     executor_model: &str,
@@ -67,10 +82,12 @@ pub fn commit_all_settings(
         Some(client_api_key_draft)
     };
     validate_temperature_override(client_temperature, ui_locale)?;
+    validate_llm_context_tokens_override(client_llm_context_tokens, ui_locale)?;
     persist_client_llm_to_storage(
         client_base,
         client_model,
         client_temperature,
+        client_llm_context_tokens,
         client_key_upd,
         ui_locale,
     )?;

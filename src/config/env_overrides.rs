@@ -114,6 +114,11 @@ fn apply_env_overrides_part_2(b: &mut ConfigBuilder) {
     {
         b.max_tokens = Some(n);
     }
+    if let Ok(v) = std::env::var("CM_LLM_CONTEXT_TOKENS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.llm_context_tokens = Some(n);
+    }
     if let Ok(v) = std::env::var("CM_TEMPERATURE")
         && let Ok(n) = v.trim().parse::<f64>()
     {

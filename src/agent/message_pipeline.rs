@@ -78,7 +78,7 @@ impl From<&AgentConfig> for MessagePipelineConfig {
         Self {
             tool_message_max_chars: cfg.tool_message_max_chars,
             max_message_history: cfg.max_message_history,
-            context_char_budget: cfg.context_char_budget,
+            context_char_budget: cfg.effective_context_char_budget_for_pipeline(),
             context_min_messages_after_system: cfg.context_min_messages_after_system,
         }
     }

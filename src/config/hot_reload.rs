@@ -30,6 +30,7 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.run_command_working_dir
         .clone_from(&src.run_command_working_dir);
     dst.max_tokens = src.max_tokens;
+    dst.llm_context_tokens = src.llm_context_tokens;
     dst.temperature = src.temperature;
     dst.llm_seed = src.llm_seed;
     dst.llm_reasoning_split = src.llm_reasoning_split;

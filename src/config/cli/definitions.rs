@@ -21,6 +21,10 @@ pub struct GlobalOpts {
     #[arg(long = "agent-role", global = true, value_name = "ID")]
     pub agent_role: Option<String>,
 
+    /// 模型上下文窗口 token 上限（输入+输出），覆盖配置 `llm_context_tokens` / `CM_LLM_CONTEXT_TOKENS`；省略则使用配置文件；`0` 视为不覆盖
+    #[arg(long = "llm-context-tokens", global = true, value_name = "N")]
+    pub llm_context_tokens: Option<u32>,
+
     /// 将日志追加写入指定文件（与 `RUST_LOG` 配合）。未设置 `RUST_LOG` 时，指定本选项会启用默认 **info** 级别写入，并同时输出到 stderr
     #[arg(long, global = true, value_name = "FILE")]
     pub log: Option<String>,
@@ -465,6 +469,8 @@ pub struct ParsedCliArgs {
     pub plugin_validate: Option<PluginValidateCli>,
     /// `Some` 时执行动态工具列表后退出（不要求 API_KEY）
     pub plugin_list: Option<PluginListCli>,
+    /// 全局 `--llm-context-tokens`：非零时覆盖已加载配置中的 `llm_context_tokens`
+    pub llm_context_tokens_cli: Option<u32>,
 }
 
 /// `plugin init` 解析结果（供 `runtime::cli` 执行）

@@ -63,7 +63,9 @@ fn build_parsed_cli_args(
         no_tools,
         log,
         agent_role,
+        llm_context_tokens,
     } = root.global;
+    let llm_context_tokens_cli = llm_context_tokens.filter(|&n| n > 0);
     let agent_role_cli = agent_role
         .as_ref()
         .map(|s| s.trim().to_string())
@@ -92,6 +94,7 @@ fn build_parsed_cli_args(
         None => ParsedCliArgs {
             config_path: config,
             agent_role_cli: agent_role_cli.clone(),
+            llm_context_tokens_cli,
             chat_cli: ChatCliArgs::default(),
             serve_port: None,
             http_bind_host: http_bind_host(None),
@@ -114,6 +117,7 @@ fn build_parsed_cli_args(
             ParsedCliArgs {
                 config_path: config,
                 agent_role_cli: agent_role_cli.clone(),
+                llm_context_tokens_cli,
                 chat_cli: ChatCliArgs::default(),
                 serve_port: port,
                 http_bind_host: http_bind_host(s.host),
@@ -135,6 +139,7 @@ fn build_parsed_cli_args(
         Some(Commands::Repl(r)) => ParsedCliArgs {
             config_path: config,
             agent_role_cli: agent_role_cli.clone(),
+            llm_context_tokens_cli,
             chat_cli: ChatCliArgs::default(),
             serve_port: None,
             http_bind_host: http_bind_host(None),
@@ -167,6 +172,7 @@ fn build_parsed_cli_args(
             ParsedCliArgs {
                 config_path: config,
                 agent_role_cli: agent_role_cli.clone(),
+                llm_context_tokens_cli,
                 chat_cli: ChatCliArgs {
                     inline_user_text,
                     user_prompt_file: c.user_prompt_file,
@@ -198,6 +204,7 @@ fn build_parsed_cli_args(
         Some(Commands::Bench(b)) => ParsedCliArgs {
             config_path: config,
             agent_role_cli: agent_role_cli.clone(),
+            llm_context_tokens_cli,
             chat_cli: ChatCliArgs::default(),
             serve_port: None,
             http_bind_host: http_bind_host(None),
@@ -227,6 +234,7 @@ fn build_parsed_cli_args(
         Some(Commands::Config(_c)) => ParsedCliArgs {
             config_path: config,
             agent_role_cli: agent_role_cli.clone(),
+            llm_context_tokens_cli,
             chat_cli: ChatCliArgs::default(),
             serve_port: None,
             http_bind_host: http_bind_host(None),
@@ -247,6 +255,7 @@ fn build_parsed_cli_args(
         Some(Commands::Doctor) => ParsedCliArgs {
             config_path: config,
             agent_role_cli: agent_role_cli.clone(),
+            llm_context_tokens_cli,
             chat_cli: ChatCliArgs::default(),
             serve_port: None,
             http_bind_host: http_bind_host(None),
@@ -267,6 +276,7 @@ fn build_parsed_cli_args(
         Some(Commands::Models) => ParsedCliArgs {
             config_path: config,
             agent_role_cli: agent_role_cli.clone(),
+            llm_context_tokens_cli,
             chat_cli: ChatCliArgs::default(),
             serve_port: None,
             http_bind_host: http_bind_host(None),
@@ -287,6 +297,7 @@ fn build_parsed_cli_args(
         Some(Commands::Probe) => ParsedCliArgs {
             config_path: config,
             agent_role_cli: agent_role_cli.clone(),
+            llm_context_tokens_cli,
             chat_cli: ChatCliArgs::default(),
             serve_port: None,
             http_bind_host: http_bind_host(None),
@@ -307,6 +318,7 @@ fn build_parsed_cli_args(
         Some(Commands::SaveSession(e)) => ParsedCliArgs {
             config_path: config,
             agent_role_cli: agent_role_cli.clone(),
+            llm_context_tokens_cli,
             chat_cli: ChatCliArgs::default(),
             serve_port: None,
             http_bind_host: http_bind_host(None),
@@ -342,6 +354,7 @@ fn build_parsed_cli_args(
             ParsedCliArgs {
                 config_path: config,
                 agent_role_cli: agent_role_cli.clone(),
+                llm_context_tokens_cli,
                 chat_cli: ChatCliArgs::default(),
                 serve_port: None,
                 http_bind_host: http_bind_host(None),
@@ -373,6 +386,7 @@ fn build_parsed_cli_args(
             ParsedCliArgs {
                 config_path: config,
                 agent_role_cli: agent_role_cli.clone(),
+                llm_context_tokens_cli,
                 chat_cli: ChatCliArgs::default(),
                 serve_port: None,
                 http_bind_host: http_bind_host(None),
@@ -427,6 +441,7 @@ fn build_parsed_cli_args(
             ParsedCliArgs {
                 config_path: config,
                 agent_role_cli: agent_role_cli.clone(),
+                llm_context_tokens_cli,
                 chat_cli: ChatCliArgs::default(),
                 serve_port: None,
                 http_bind_host: http_bind_host(None),

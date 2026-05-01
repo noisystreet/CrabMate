@@ -52,6 +52,7 @@ struct StatusResponse {
     model: String,
     api_base: String,
     max_tokens: u32,
+    llm_context_tokens: u32,
     temperature: f32,
     /// 默认写入 `chat/completions` 的整数 seed（未配置则为 `null`）。
     llm_seed: Option<i64>,
@@ -95,6 +96,8 @@ struct StatusResponse {
     max_message_history: usize,
     tool_message_max_chars: usize,
     context_char_budget: usize,
+    /// 会话同步管道实际采用的近似字符预算（`context_char_budget` 与按 `llm_context_tokens` 推导值取更小）。
+    effective_context_char_budget: usize,
     context_summary_trigger_chars: usize,
     chat_queue_max_concurrent: usize,
     chat_queue_max_pending: usize,
@@ -170,6 +173,7 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         model: cfg.model.clone(),
         api_base: cfg.api_base.clone(),
         max_tokens: cfg.max_tokens,
+        llm_context_tokens: cfg.llm_context_tokens,
         temperature: cfg.temperature,
         llm_seed: cfg.llm_seed,
         tool_count: tool_names.len(),
@@ -206,6 +210,7 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         max_message_history: cfg.max_message_history,
         tool_message_max_chars: cfg.tool_message_max_chars,
         context_char_budget: cfg.context_char_budget,
+        effective_context_char_budget: cfg.effective_context_char_budget_for_pipeline(),
         context_summary_trigger_chars: cfg.context_summary_trigger_chars,
         chat_queue_max_concurrent: state.chat_queue.max_concurrent(),
         chat_queue_max_pending: state.chat_queue.max_pending(),

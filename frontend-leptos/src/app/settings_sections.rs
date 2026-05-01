@@ -2,8 +2,8 @@ use leptos::prelude::*;
 
 use crate::i18n::{self, Locale};
 use crate::settings_llm_fields::{
-    LlmApiBasePresetSelect, LlmClientApiKeyField, LlmCustomApiBaseInput, LlmExecutorApiKeyField,
-    LlmModelField, LlmTemperatureField, OptionalLlmExecutionModeField,
+    LlmApiBasePresetSelect, LlmClientApiKeyField, LlmContextTokensField, LlmCustomApiBaseInput,
+    LlmExecutorApiKeyField, LlmModelField, LlmTemperatureField, OptionalLlmExecutionModeField,
 };
 
 #[component]
@@ -77,6 +77,7 @@ pub(crate) fn SettingsLlmBlock(
     llm_api_base_preset_select: RwSignal<String>,
     llm_model_draft: RwSignal<String>,
     llm_temperature_draft: RwSignal<String>,
+    llm_context_tokens_draft: RwSignal<String>,
     execution_mode_draft: Option<RwSignal<String>>,
     llm_api_key_draft: RwSignal<String>,
     llm_has_saved_key: RwSignal<bool>,
@@ -110,6 +111,7 @@ pub(crate) fn SettingsLlmBlock(
                 input_id="settings-llm-model"
             />
             <LlmTemperatureField locale temperature_draft=llm_temperature_draft hint_class />
+            <LlmContextTokensField locale llm_context_tokens_draft hint_class />
             <OptionalLlmExecutionModeField locale execution_mode_draft hint_class />
             <LlmClientApiKeyField
                 locale

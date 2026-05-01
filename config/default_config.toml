@@ -10,6 +10,8 @@ model = "deepseek-chat"
 # 模型 HTTP 鉴权：bearer（默认，需环境变量 API_KEY）| none（不向 chat/models 发 Authorization；本地 Ollama 等可不设 API_KEY）
 # llm_http_auth_mode = "bearer"
 max_tokens = 2048
+# 模型上下文窗口 token 上限（输入+输出）；用于推导会话同步裁剪的近似字符预算（与 context_char_budget 取更小）。示例：DeepSeek 常见 64k；设为 0 则不因窗口推导裁剪。
+llm_context_tokens = 65536
 # 注意：一些模型只支持设置固定的温度，如kimi-k2.5系列模型。
 temperature = 0.7
 

@@ -315,6 +315,47 @@ pub fn settings_temperature_hint(l: Locale) -> &'static str {
     }
 }
 
+pub fn settings_label_llm_context_tokens(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "上下文窗口（tokens）",
+        Locale::En => "Context window (tokens)",
+    }
+}
+
+pub fn settings_ph_llm_context_tokens(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "留空使用服务端；与 llm_context_tokens / CM_LLM_CONTEXT_TOKENS 一致",
+        Locale::En => {
+            "Leave empty for server default; same as llm_context_tokens / CM_LLM_CONTEXT_TOKENS"
+        }
+    }
+}
+
+pub fn settings_llm_context_tokens_hint(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => {
+            "模型输入+输出的 token 上限（供应商计量）。用于推导会话裁剪近似字符预算；与配置 llm_context_tokens 等价。"
+        }
+        Locale::En => {
+            "Vendor token budget for input+output; drives approximate session trimming (same as llm_context_tokens)."
+        }
+    }
+}
+
+pub fn settings_err_context_tokens_invalid(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "上下文窗口须为非负整数",
+        Locale::En => "Context window must be a non-negative integer",
+    }
+}
+
+pub fn settings_err_context_tokens_range(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "上下文窗口过大（上限 10000000）",
+        Locale::En => "Context window too large (max 10000000)",
+    }
+}
+
 pub fn settings_err_temperature_invalid(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "温度格式无效，请输入数字（例如 0.7）",

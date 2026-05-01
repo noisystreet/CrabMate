@@ -63,7 +63,17 @@ pub(super) fn parse_client_llm_override(
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
-    if api_base.is_none() && model.is_none() && api_key.is_none() {
+    let llm_context_tokens = match b.llm_context_tokens {
+        None => None,
+        Some(0) => None,
+        Some(n) => {
+            if n > 10_000_000 {
+                return Err("client_llm.llm_context_tokens 过大（上限 10000000）".to_string());
+            }
+            Some(n as u32)
+        }
+    };
+    if api_base.is_none() && model.is_none() && api_key.is_none() && llm_context_tokens.is_none() {
         return Ok(None);
     }
     if let Some(ref s) = api_base
@@ -94,6 +104,7 @@ pub(super) fn parse_client_llm_override(
         api_base,
         model,
         api_key,
+        llm_context_tokens,
     }))
 }
 
@@ -152,6 +163,7 @@ pub(super) fn parse_executor_llm_override(
         api_base,
         model,
         api_key,
+        llm_context_tokens: None,
     }))
 }
 

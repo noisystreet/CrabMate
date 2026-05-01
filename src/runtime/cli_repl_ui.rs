@@ -708,6 +708,21 @@ impl CliReplStyle {
                 &format!("{}（启用按字符删旧）", cfg.context_char_budget),
             )?;
         }
+        if cfg.llm_context_tokens > 0 {
+            self.write_banner_item(
+                out,
+                "llm_context_tokens",
+                &cfg.llm_context_tokens.to_string(),
+            )?;
+            let eff = cfg.effective_context_char_budget_for_pipeline();
+            if eff > 0 {
+                self.write_banner_item(
+                    out,
+                    "effective_context_char_budget",
+                    &format!("{}（与窗口推导取较小后的会话裁剪预算）", eff),
+                )?;
+            }
+        }
         self.write_banner_item(
             out,
             "API",
