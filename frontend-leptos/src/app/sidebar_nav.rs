@@ -36,6 +36,25 @@ const SIDEBAR_SESSION_FILTER_DEBOUNCE_MS: u32 = 250;
 /// 跨会话消息搜索防抖（毫秒）。
 const GLOBAL_MESSAGE_SEARCH_DEBOUNCE_MS: u32 = 250;
 
+/// 侧栏会话列表滚动区内共享信号（缩短 [`nav_rail_session_scroll_inner`] 形参列表）。
+#[derive(Clone)]
+struct NavRailSessionScrollSignals {
+    locale: RwSignal<crate::i18n::Locale>,
+    sidebar_search_panel_open: RwSignal<bool>,
+    sidebar_filter_debounced: RwSignal<String>,
+    global_message_filter_debounced: RwSignal<String>,
+    sessions: RwSignal<Vec<ChatSession>>,
+    composer_buf_nav: Arc<Mutex<String>>,
+    active_id: RwSignal<String>,
+    draft: RwSignal<String>,
+    session_sync: RwSignal<SessionSyncState>,
+    mobile_nav_open: RwSignal<bool>,
+    session_context_menu: RwSignal<Option<SessionContextAnchor>>,
+    sidebar_rail_ctx_menu: RwSignal<Option<(f64, f64)>>,
+    focus_message_id_after_nav: RwSignal<Option<String>>,
+    apply_assistant_display_filters: RwSignal<bool>,
+}
+
 fn debounce_signal_to_effect(source: RwSignal<String>, target: RwSignal<String>, delay_ms: u32) {
     let debounce_seq: Rc<Cell<u64>> = Rc::new(Cell::new(0));
     Effect::new({
@@ -369,23 +388,23 @@ fn nav_rail_search_panel(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn nav_rail_session_scroll_inner(
-    locale: RwSignal<crate::i18n::Locale>,
-    sidebar_search_panel_open: RwSignal<bool>,
-    sidebar_filter_debounced: RwSignal<String>,
-    global_message_filter_debounced: RwSignal<String>,
-    sessions: RwSignal<Vec<ChatSession>>,
-    composer_buf_nav: Arc<Mutex<String>>,
-    active_id: RwSignal<String>,
-    draft: RwSignal<String>,
-    session_sync: RwSignal<SessionSyncState>,
-    mobile_nav_open: RwSignal<bool>,
-    session_context_menu: RwSignal<Option<SessionContextAnchor>>,
-    sidebar_rail_ctx_menu: RwSignal<Option<(f64, f64)>>,
-    focus_message_id_after_nav: RwSignal<Option<String>>,
-    apply_assistant_display_filters: RwSignal<bool>,
-) -> impl IntoView {
+fn nav_rail_session_scroll_inner(s: NavRailSessionScrollSignals) -> impl IntoView {
+    let NavRailSessionScrollSignals {
+        locale,
+        sidebar_search_panel_open,
+        sidebar_filter_debounced,
+        global_message_filter_debounced,
+        sessions,
+        composer_buf_nav,
+        active_id,
+        draft,
+        session_sync,
+        mobile_nav_open,
+        session_context_menu,
+        sidebar_rail_ctx_menu,
+        focus_message_id_after_nav,
+        apply_assistant_display_filters,
+    } = s;
     move || {
         let search_ui_open = sidebar_search_panel_open.get();
         let needle = if search_ui_open {
@@ -739,13 +758,13 @@ pub fn sidebar_nav_view(ctx: AppShellCtx) -> impl IntoView {
                 }
             >
                 <div class="nav-rail-scroll-label">{move || i18n::nav_recent(locale.get())}</div>
-                {nav_rail_session_scroll_inner(
+                {nav_rail_session_scroll_inner(NavRailSessionScrollSignals {
                     locale,
                     sidebar_search_panel_open,
                     sidebar_filter_debounced,
                     global_message_filter_debounced,
                     sessions,
-                    composer_buf_nav.clone(),
+                    composer_buf_nav: composer_buf_nav.clone(),
                     active_id,
                     draft,
                     session_sync,
@@ -754,7 +773,7 @@ pub fn sidebar_nav_view(ctx: AppShellCtx) -> impl IntoView {
                     sidebar_rail_ctx_menu,
                     focus_message_id_after_nav,
                     apply_assistant_display_filters,
-                )}
+                })}
             </div>
         </aside>
 

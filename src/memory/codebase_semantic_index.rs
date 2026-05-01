@@ -794,21 +794,37 @@ fn delete_rows_for_rel(
 }
 
 #[cfg(feature = "fastembed")]
-#[allow(clippy::too_many_arguments)]
-fn scan_rebuild_files(
-    ws_root: &Path,
-    ws_key: &str,
-    tx: &rusqlite::Transaction<'_>,
-    search_root: &Path,
+struct ScanRebuildFilesParams<'a> {
+    ws_root: &'a Path,
+    ws_key: &'a str,
+    tx: &'a rusqlite::Transaction<'a>,
+    search_root: &'a Path,
     max_file_bytes: usize,
     chunk_max_chars: usize,
     rebuild_max_files: usize,
-    ext_set: &HashSet<String>,
-    file_glob_pat: Option<&glob::Pattern>,
+    ext_set: &'a HashSet<String>,
+    file_glob_pat: Option<&'a glob::Pattern>,
     incremental: bool,
     subtree: bool,
-    catalog: &HashMap<String, (u64, i64, String)>,
-) -> Result<RebuildScanOutcome, String> {
+    catalog: &'a HashMap<String, (u64, i64, String)>,
+}
+
+#[cfg(feature = "fastembed")]
+fn scan_rebuild_files(p: ScanRebuildFilesParams<'_>) -> Result<RebuildScanOutcome, String> {
+    let ScanRebuildFilesParams {
+        ws_root,
+        ws_key,
+        tx,
+        search_root,
+        max_file_bytes,
+        chunk_max_chars,
+        rebuild_max_files,
+        ext_set,
+        file_glob_pat,
+        incremental,
+        subtree,
+        catalog,
+    } = p;
     let walker = WalkBuilder::new(search_root)
         .hidden(true)
         .git_ignore(true)
@@ -1063,11 +1079,11 @@ fn rebuild_index(
             Ok(c) => c,
             Err(e) => return e,
         };
-        let scan = match scan_rebuild_files(
+        let scan = match scan_rebuild_files(ScanRebuildFilesParams {
             ws_root,
             ws_key,
-            &tx,
-            &search_root,
+            tx: &tx,
+            search_root: &search_root,
             max_file_bytes,
             chunk_max_chars,
             rebuild_max_files,
@@ -1075,8 +1091,8 @@ fn rebuild_index(
             file_glob_pat,
             incremental,
             subtree,
-            &catalog,
-        ) {
+            catalog: &catalog,
+        }) {
             Ok(s) => s,
             Err(e) => return e,
         };
