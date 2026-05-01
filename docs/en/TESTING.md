@@ -22,7 +22,7 @@ Includes (non-exhaustive):
 
 - **`cargo fmt --all`**
 - **`cargo clippy --all-targets --all-features -- -D warnings`**
-- **`lizard-rust`**: CCN scan for `src/` and `crates/` (requires **`pip install lizard`**; see **`scripts/lizard-rust.sh`**, override threshold with **`LIZARD_CCN`**; CI: **`.github/workflows/code-complexity.yml`**)
+- **`lizard-rust`**: Rust cyclomatic complexity (requires **`pip install lizard`**; **`scripts/lizard-rust.sh`** / **`scripts/lizard_rust_metrics.py`**: per-function cap **`LIZARD_CCN`** (default 40), ratchet files **`scripts/lizard_max_ccn_baseline.txt`** and **`scripts/lizard_top10_ccn_sum.txt`**; CI: **`.github/workflows/code-complexity.yml`**)
 - **`cargo test golden_sse_control`** (conditional hook when `fixtures/sse_control_golden.jsonl`, `crates/crabmate-sse-protocol/control_classify.rs`, or `frontend-leptos/src/sse_dispatch.rs` change)
 
 Without pre-commit installed, run at least:
