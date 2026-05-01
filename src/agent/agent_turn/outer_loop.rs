@@ -40,14 +40,14 @@ pub(crate) async fn run_agent_outer_loop(
                 ),
             });
         }
-        if p.ctx.cfg.max_turn_duration_seconds > 0
-            && start_time.elapsed().as_secs() > p.ctx.cfg.max_turn_duration_seconds
-        {
+        if crate::agent::turn_budget::turn_wall_clock_exceeded(
+            p.ctx.cfg.max_turn_duration_seconds,
+            start_time.elapsed().as_secs(),
+        ) {
             return Err(RunAgentTurnError::TimeLimitExhausted {
                 phase: AgentTurnSubPhase::Planner,
-                message: format!(
-                    "已达到单轮墙钟时间上限 ({}秒)",
-                    p.ctx.cfg.max_turn_duration_seconds
+                message: crate::agent::turn_budget::turn_wall_clock_limit_user_message(
+                    p.ctx.cfg.max_turn_duration_seconds,
                 ),
             });
         }
