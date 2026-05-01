@@ -52,6 +52,7 @@ pub fn App() -> impl IntoView {
     let chat_find_bar_signals = app_ctx.chat_find_bar_signals();
     let approval_modal_signals = app_ctx.approval_modal_signals();
     let settings_page_view_input = app_ctx.settings_page_view_input();
+    let mobile_shell_header_signals = app_ctx.mobile_shell_header_signals();
 
     view! {
         <div
@@ -72,7 +73,7 @@ pub fn App() -> impl IntoView {
             </Show>
 
             <div class="shell-main" class:settings-page-hidden=move || app_ctx.settings_page.get()>
-                {mobile_shell_header_view(app_ctx.clone())}
+                {mobile_shell_header_view(mobile_shell_header_signals)}
 
                 <Show when=move || app_ctx.chat_find_panel_open.get()>
                     <ChatFindBar signals=chat_find_bar_signals />

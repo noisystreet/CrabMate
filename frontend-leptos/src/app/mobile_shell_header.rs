@@ -4,12 +4,14 @@ use leptos::prelude::*;
 
 use crate::i18n;
 
-use super::app_shell_ctx::AppShellCtx;
+use super::app_shell_ctx::MobileShellHeaderSignals;
 
-pub fn mobile_shell_header_view(ctx: AppShellCtx) -> impl IntoView {
-    let mobile_nav_open = ctx.mobile_nav_open;
-    let locale = ctx.locale;
-    let new_session = ctx.new_session;
+pub fn mobile_shell_header_view(signals: MobileShellHeaderSignals) -> impl IntoView {
+    let MobileShellHeaderSignals {
+        mobile_nav_open,
+        locale,
+        new_session,
+    } = signals;
     view! {
         <div class="shell-main-header-mobile">
             <button

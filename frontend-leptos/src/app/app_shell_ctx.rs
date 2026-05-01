@@ -25,6 +25,14 @@ use super::workspace_panel_state::WorkspacePanelSignals;
 
 use super::approval_modal::ApprovalModalSignals;
 
+/// 窄屏顶栏所需句柄（阶段 B：避免向 `mobile_shell_header_view` 传递整份 [`AppShellCtx`]）。
+#[derive(Clone)]
+pub struct MobileShellHeaderSignals {
+    pub mobile_nav_open: RwSignal<bool>,
+    pub locale: RwSignal<Locale>,
+    pub new_session: Rc<dyn Fn()>,
+}
+
 type SideResizeHandlesCell = Rc<
     RefCell<
         Option<(
@@ -104,6 +112,14 @@ pub struct AppShellCtx {
 }
 
 impl AppShellCtx {
+    pub fn mobile_shell_header_signals(&self) -> MobileShellHeaderSignals {
+        MobileShellHeaderSignals {
+            mobile_nav_open: self.mobile_nav_open,
+            locale: self.locale,
+            new_session: self.new_session.clone(),
+        }
+    }
+
     pub fn approval_modal_signals(&self) -> ApprovalModalSignals {
         ApprovalModalSignals {
             pending_approval: self.pending_approval,
