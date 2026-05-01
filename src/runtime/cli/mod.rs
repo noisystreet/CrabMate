@@ -1,10 +1,11 @@
-//! `chat` 子命令与交互式 REPL：按职责拆分为 `repl_parse`（`/…` 解析）、`commands`（`save-session` / `tool-replay`）、`chat`（`run_chat_invocation`）、`repl_extras`（斜杠命令处理与导出）、`repl`（主循环）。
+//! `chat` 子命令与交互式 REPL：按职责拆分为 `repl_parse`（`/…` 解析）、`commands`（`save-session` / `tool-replay`）、`chat`（`run_chat_invocation`）、`repl_extras`（斜杠命令入口与导出）、`repl_slash_dispatch`（斜杠命令分派实现）、`repl`（主循环）。
 
 mod chat;
 mod commands;
 mod repl;
 mod repl_extras;
 pub(crate) mod repl_parse;
+mod repl_slash_dispatch;
 
 pub use chat::run_chat_invocation;
 pub use commands::{
