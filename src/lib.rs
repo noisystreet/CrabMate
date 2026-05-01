@@ -169,6 +169,22 @@ pub struct WebChatJsonBuildArgs<'a> {
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
 }
 
+/// 构造 [`RunAgentTurnParams::cli_terminal_chat`] 所需的参数包。
+pub struct CliTerminalChatBuildArgs<'a> {
+    pub client: &'a reqwest::Client,
+    pub api_key: &'a str,
+    pub cfg: &'a Arc<config::AgentConfig>,
+    pub tools: &'a [crate::types::Tool],
+    pub messages: &'a mut Vec<Message>,
+    pub effective_working_dir: &'a std::path::Path,
+    pub no_stream: bool,
+    pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
+    pub long_term_memory:
+        Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
+    pub long_term_memory_scope_id: Option<String>,
+    pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
+}
+
 impl<'a> RunAgentTurnParams<'a> {
     /// Web `/chat/stream`：SSE 输出、可选工具审批、可取消。
     pub fn web_chat_stream(args: WebChatStreamBuildArgs<'a>) -> Self {
@@ -292,22 +308,20 @@ impl<'a> RunAgentTurnParams<'a> {
     }
 
     /// `chat` 子命令等：本机终端、纯文本流式、可选 `run_command` 交互。
-    #[allow(clippy::too_many_arguments)]
-    pub fn cli_terminal_chat(
-        client: &'a reqwest::Client,
-        api_key: &'a str,
-        cfg: &'a Arc<config::AgentConfig>,
-        tools: &'a [crate::types::Tool],
-        messages: &'a mut Vec<Message>,
-        effective_working_dir: &'a std::path::Path,
-        no_stream: bool,
-        cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
-        long_term_memory: Option<
-            std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>,
-        >,
-        long_term_memory_scope_id: Option<String>,
-        turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
-    ) -> Self {
+    pub fn cli_terminal_chat(args: CliTerminalChatBuildArgs<'a>) -> Self {
+        let CliTerminalChatBuildArgs {
+            client,
+            api_key,
+            cfg,
+            tools,
+            messages,
+            effective_working_dir,
+            no_stream,
+            cli_tool_ctx,
+            long_term_memory,
+            long_term_memory_scope_id,
+            turn_allowed_tool_names,
+        } = args;
         Self {
             client,
             api_key,

@@ -42,17 +42,19 @@ pub(crate) async fn run_agent_turn_for_cli(
     let turn_allow = turn_allow_for_web_or_cli_job(cfg, active_agent_role, None);
     let tools_for_job = filter_tools_for_agent_role(tools, turn_allow.as_ref().map(|a| a.as_ref()));
     run_agent_turn(RunAgentTurnParams::cli_terminal_chat(
-        client,
-        api_key,
-        cfg,
-        tools_for_job.as_slice(),
-        messages,
-        work_dir,
-        no_stream,
-        cli_tool_ctx,
-        ltm,
-        scope,
-        turn_allow,
+        crate::CliTerminalChatBuildArgs {
+            client,
+            api_key,
+            cfg,
+            tools: tools_for_job.as_slice(),
+            messages,
+            effective_working_dir: work_dir,
+            no_stream,
+            cli_tool_ctx,
+            long_term_memory: ltm,
+            long_term_memory_scope_id: scope,
+            turn_allowed_tool_names: turn_allow,
+        },
     ))
     .await
     .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })
