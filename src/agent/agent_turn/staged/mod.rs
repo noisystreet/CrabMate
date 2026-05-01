@@ -36,6 +36,8 @@ mod patch_planner;
 mod planner_parse_fsm;
 mod planner_round_fsm;
 mod post_parse_pipeline_fsm;
+mod prepared_parse_fsm;
+mod prepared_post_parse_fsm;
 mod sse;
 mod staged_step_fsm;
 mod step_iteration_fsm;
@@ -53,14 +55,14 @@ use patch_planner::{
     StagedPlanPatchPlannerCtx, run_staged_plan_patch_planner_round,
     staged_plan_step_failure_feedback_user_body,
 };
-use planner_parse_fsm::{
-    StagedPlannerParseRoute, omit_no_task_planner_from_history, staged_planner_parse_route,
-};
+use planner_parse_fsm::omit_no_task_planner_from_history;
 use planner_round_fsm::{staged_plan_ensemble_route, staged_plan_optimizer_route};
 use post_parse_pipeline_fsm::{
     ensemble_merge_should_invoke, ensemble_merge_skip_for_casual_prompt,
     log_staged_plan_ensemble_route, log_staged_plan_optimizer_route, optimizer_round_should_run,
 };
+use prepared_parse_fsm::{PreparedPlannerParseOutcome, resolve_parse_with_assistant};
+use prepared_post_parse_fsm::{PreparedPostParseSchedule, prepared_post_parse_schedule};
 use staged_sse::{
     emit_chat_ui_separator_sse, next_staged_plan_id, send_staged_plan_finished,
     send_staged_plan_notice, send_staged_plan_step_finished, send_staged_plan_step_started,
@@ -1525,53 +1527,60 @@ where
         crate::agent::plan_artifact::assistant_merged_text_for_plan_artifact_parse(&msg);
     let validate_only_binding_ids =
         plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.turn.messages);
-    let plan = match crate::agent::plan_artifact::parse_agent_reply_plan_v1_from_assistant_message_with_validate_only_binding_ids(
-        &msg,
-        validate_only_binding_ids.as_deref(),
+    let parse_result =
+        crate::agent::plan_artifact::parse_agent_reply_plan_v1_from_assistant_message_with_validate_only_binding_ids(
+            &msg,
+            validate_only_binding_ids.as_deref(),
+        );
+    let parse_err_detail = parse_result
+        .as_ref()
+        .err()
+        .map(crate::agent::plan_artifact::plan_artifact_error_log_summary);
+    let degrade_like_not_found = matches!(
+        parse_result.as_ref().err(),
+        Some(crate::agent::plan_artifact::PlanArtifactError::NotFound)
+    );
+
+    let mut plan = match resolve_parse_with_assistant(
+        parse_result,
+        entered_from_step_execution_round,
+        msg.clone(),
     ) {
-        Ok(plan_v1) => plan_v1,
-        Err(parse_err) => {
-            let detail = crate::agent::plan_artifact::plan_artifact_error_log_summary(&parse_err);
-            match staged_planner_parse_route(&parse_err, entered_from_step_execution_round) {
-                StagedPlannerParseRoute::QuietFinishOnPlanNotFound => {
-                    debug!(
-                        target: "crabmate",
-                        "分阶段重规划：检测到分步执行后重入且本轮未产出结构化计划，视为收敛完成，直接结束（避免重复总结）"
-                    );
-                    return Ok(StagedPlanRunOutcome::Finished);
-                }
-                StagedPlannerParseRoute::DegradeToOuterLoop => {
-                    if matches!(
-                        parse_err,
-                        crate::agent::plan_artifact::PlanArtifactError::NotFound
-                    ) {
-                        debug!(
-                            target: "crabmate",
-                            "分阶段规划未产出结构化任务 (可能是通识问答或直接回复) merged_len={} merged_preview={}；降级为常规循环",
-                            merged_for_log.chars().count(),
-                            crate::redact::preview_chars(
-                                merged_for_log.as_str(),
-                                crate::redact::MESSAGE_LOG_PREVIEW_CHARS,
-                            )
-                        );
-                    } else {
-                        warn!(
-                            target: "crabmate",
-                            "staged_plan_invalid parse_err={} merged_len={} merged_preview={}；降级为常规工具循环",
-                            detail,
-                            merged_for_log.chars().count(),
-                            crate::redact::preview_chars(
-                                merged_for_log.as_str(),
-                                crate::redact::MESSAGE_LOG_PREVIEW_CHARS,
-                            )
-                        );
-                    }
-                    // 保留规划轮正文，避免整轮失败退出（REPL/脚本/Web 均与关闭分阶段规划时的行为对齐）。
-                    push_assistant_merging_trailing_empty_placeholder(p.turn.messages, msg.clone());
-                    run_agent_outer_loop(p, per_coord).await?;
-                    return Ok(StagedPlanRunOutcome::Finished);
-                }
+        PreparedPlannerParseOutcome::ContinueWithPlan { plan } => plan,
+        PreparedPlannerParseOutcome::QuietFinish => {
+            debug!(
+                target: "crabmate",
+                "分阶段重规划：检测到分步执行后重入且本轮未产出结构化计划，视为收敛完成，直接结束（避免重复总结）"
+            );
+            return Ok(StagedPlanRunOutcome::Finished);
+        }
+        PreparedPlannerParseOutcome::DegradeToOuterLoop => {
+            if degrade_like_not_found {
+                debug!(
+                    target: "crabmate",
+                    "分阶段规划未产出结构化任务 (可能是通识问答或直接回复) merged_len={} merged_preview={}；降级为常规循环",
+                    merged_for_log.chars().count(),
+                    crate::redact::preview_chars(
+                        merged_for_log.as_str(),
+                        crate::redact::MESSAGE_LOG_PREVIEW_CHARS,
+                    )
+                );
+            } else {
+                warn!(
+                    target: "crabmate",
+                    "staged_plan_invalid parse_err={} merged_len={} merged_preview={}；降级为常规工具循环",
+                    parse_err_detail.unwrap_or_default(),
+                    merged_for_log.chars().count(),
+                    crate::redact::preview_chars(
+                        merged_for_log.as_str(),
+                        crate::redact::MESSAGE_LOG_PREVIEW_CHARS,
+                    )
+                );
             }
+            // 保留规划轮正文，避免整轮失败退出（REPL/脚本/Web 均与关闭分阶段规划时的行为对齐）。
+            push_assistant_merging_trailing_empty_placeholder(p.turn.messages, msg.clone());
+            run_agent_outer_loop(p, per_coord).await?;
+            return Ok(StagedPlanRunOutcome::Finished);
         }
     };
 
@@ -1584,19 +1593,20 @@ where
         push_assistant_merging_trailing_empty_placeholder(p.turn.messages, msg.clone());
     }
 
-    if plan.no_task {
-        if p.ctx.cfg.staged_plan_two_phase_nl_display {
-            run_staged_plan_nl_followup_round(p, per_coord, &make_step_user_message).await?;
+    match prepared_post_parse_schedule(plan.no_task) {
+        PreparedPostParseSchedule::NoTaskThenOuter => {
+            if p.ctx.cfg.staged_plan_two_phase_nl_display {
+                run_staged_plan_nl_followup_round(p, per_coord, &make_step_user_message).await?;
+            }
+            debug!(
+                target: "crabmate",
+                "分阶段规划：no_task=true，跳过分步注入，转入常规对话循环"
+            );
+            run_agent_outer_loop(p, per_coord).await?;
+            return Ok(StagedPlanRunOutcome::Finished);
         }
-        debug!(
-            target: "crabmate",
-            "分阶段规划：no_task=true，跳过分步注入，转入常规对话循环"
-        );
-        run_agent_outer_loop(p, per_coord).await?;
-        return Ok(StagedPlanRunOutcome::Finished);
+        PreparedPostParseSchedule::FullPipelineThenSteps => {}
     }
-
-    let mut plan = plan;
 
     let parallel_csv = plan_optimizer::parallel_batchable_tool_names_csv_from_defs(
         p.ctx.tools_defs,
