@@ -1,5 +1,4 @@
-//! 分阶段规划 **回合级** 状态机：单次「规划→执行」子调用结束后，决定下一轮相位与副作用。
-//! 见 `docs/design/per_state_machine_consolidation.md` §3.2；步内 `outer_loop` 不在此模块表达。
+//! **编排观测**：滚动视界外层循环在 `mod.rs` 中 **`run_staged_rolling_horizon_outer_loop`** 打点（`target: crabmate::staged`，`staged_fsm = rolling_horizon`），与步内子阶段日志区分。
 
 use crate::types::Message;
 

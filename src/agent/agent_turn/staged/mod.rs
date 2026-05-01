@@ -489,6 +489,187 @@ async fn prepare_staged_planner_no_tools_request(
     ))
 }
 
+/// 滚动视界外层循环变体（与 [`advance_staged_turn_after_sub_call`]、`StagedTurnPhase` 对齐）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StagedRollingHorizonKind {
+    SingleAgent,
+    LogicalDualAgent,
+}
+
+impl StagedRollingHorizonKind {
+    fn max_rounds_error_message(self, cap: usize) -> String {
+        match self {
+            Self::SingleAgent => format!(
+                "分阶段单步规划轮次超过上限（{}），已停止以避免无限循环",
+                cap
+            ),
+            Self::LogicalDualAgent => format!(
+                "逻辑双Agent分阶段单步规划轮次超过上限（{}），已停止以避免无限循环",
+                cap
+            ),
+        }
+    }
+
+    fn snapshot_rollback_warn_summary(self) -> &'static str {
+        match self {
+            Self::SingleAgent => "工作区快照回滚失败",
+            Self::LogicalDualAgent => "逻辑双Agent快照回滚失败",
+        }
+    }
+}
+
+/// 单 agent / 逻辑双 agent 共用的 **滚动视界** 外层循环：`turn_fsm` 相位 + 子调用结果 → `StagedTurnAdvance`。
+///
+/// 见 `docs/design/per_state_machine_consolidation.md` §3.2（分阶段回合编排）；真实转移表在 [`advance_staged_turn_after_sub_call`]。
+#[allow(clippy::too_many_arguments)]
+async fn run_staged_rolling_horizon_outer_loop<F>(
+    kind: StagedRollingHorizonKind,
+    p: &mut RunLoopParams<'_>,
+    per_coord: &mut PerCoordinator,
+    labels: StagedPlanRunLabels,
+    render_to_terminal: bool,
+    echo_terminal_staged: bool,
+    make_step_user_message: F,
+) -> Result<(), RunAgentTurnError>
+where
+    F: Fn(String) -> Message + Copy,
+{
+    let mut rewrite_attempts = 0;
+    let max_rewrites = p.ctx.cfg.full_plan_rewrite_max_attempts;
+    let mut phase = StagedTurnPhase::PreStepExecutionRound;
+    let mut staged_rounds = 0usize;
+    const STAGED_SINGLE_STEP_MAX_ROUNDS: usize = 64;
+    let snapshot =
+        crate::agent::workspace_snapshot::WorkspaceSnapshot::take(p.ctx.effective_working_dir);
+
+    loop {
+        staged_rounds = staged_rounds.saturating_add(1);
+        if staged_rounds > STAGED_SINGLE_STEP_MAX_ROUNDS {
+            tracing::warn!(
+                target: "crabmate::staged",
+                staged_fsm = "rolling_horizon",
+                rolling_horizon_kind = ?kind,
+                staged_round = staged_rounds,
+                staged_turn_phase = ?phase,
+                sub_phase = "planner",
+                "staged rolling horizon exceeded max rounds"
+            );
+            return Err(RunAgentTurnError::Other {
+                phase: AgentTurnSubPhase::Planner,
+                message: kind.max_rounds_error_message(STAGED_SINGLE_STEP_MAX_ROUNDS),
+            });
+        }
+
+        tracing::debug!(
+            target: "crabmate::staged",
+            staged_fsm = "rolling_horizon",
+            rolling_horizon_kind = ?kind,
+            staged_round = staged_rounds,
+            staged_turn_phase = ?phase,
+            rewrite_attempts = rewrite_attempts,
+            sub_phase = "planner",
+            "staged rolling horizon iteration enter"
+        );
+
+        let req =
+            prepare_staged_planner_no_tools_request(p, per_coord, labels.build_planner_messages)
+                .await?;
+        let entered_from_step_execution_round = entered_flag_for_next_planner_call(phase);
+        let res = run_staged_plan_with_prepared_request(
+            p,
+            per_coord,
+            req,
+            render_to_terminal,
+            echo_terminal_staged,
+            entered_from_step_execution_round,
+            labels,
+            make_step_user_message,
+        )
+        .await;
+
+        let event = match res {
+            Ok(o) => StagedTurnSubCallOutcome::Ok(o),
+            Err(e) => StagedTurnSubCallOutcome::Err(e),
+        };
+        let advance =
+            advance_staged_turn_after_sub_call(phase, rewrite_attempts, max_rewrites, event);
+        rewrite_attempts = next_rewrite_attempts_after_advance(rewrite_attempts, &advance);
+
+        let advance_kind = match &advance {
+            StagedTurnAdvance::Continue { .. } => "continue",
+            StagedTurnAdvance::Finished => "finished",
+            StagedTurnAdvance::ReplanExhausted { .. } => "replan_exhausted",
+            StagedTurnAdvance::Propagate(_) => "propagate",
+        };
+        let propagate_public_code = match &advance {
+            StagedTurnAdvance::Propagate(e) => Some(e.public_error_code()),
+            _ => None,
+        };
+        tracing::debug!(
+            target: "crabmate::staged",
+            staged_fsm = "rolling_horizon",
+            rolling_horizon_kind = ?kind,
+            staged_round = staged_rounds,
+            prior_staged_turn_phase = ?phase,
+            advance_kind = advance_kind,
+            propagate_public_code = propagate_public_code,
+            rewrite_attempts = rewrite_attempts,
+            sub_phase = "planner",
+            "staged rolling horizon advance"
+        );
+
+        match advance {
+            StagedTurnAdvance::Continue {
+                phase: next_phase,
+                push_feedback_user,
+            } => {
+                phase = next_phase;
+                if let Some(u) = push_feedback_user {
+                    if let Some(ref snap) = snapshot {
+                        if let Err(e) = snap.restore() {
+                            tracing::warn!(
+                                target: "crabmate::staged",
+                                staged_fsm = "rolling_horizon",
+                                rolling_horizon_kind = ?kind,
+                                summary = kind.snapshot_rollback_warn_summary(),
+                                error = %e,
+                                sub_phase = "planner",
+                                "workspace snapshot rollback failed"
+                            );
+                        } else {
+                            tracing::info!(
+                                target: "crabmate::staged",
+                                staged_fsm = "rolling_horizon",
+                                rolling_horizon_kind = ?kind,
+                                sub_phase = "planner",
+                                "global replan triggered; workspace snapshot restored"
+                            );
+                        }
+                    }
+                    p.turn.messages.push(u);
+                } else if matches!(phase, StagedTurnPhase::AfterStepExecutionRound) {
+                    tracing::debug!(
+                        target: "crabmate::staged",
+                        staged_fsm = "rolling_horizon",
+                        rolling_horizon_kind = ?kind,
+                        staged_round = staged_rounds,
+                        staged_turn_phase = ?phase,
+                        outcome = "continue_after_step",
+                        sub_phase = "planner",
+                        "step execution round completed; next no-tools planner round"
+                    );
+                }
+                continue;
+            }
+            StagedTurnAdvance::Finished => return Ok(()),
+            StagedTurnAdvance::ReplanExhausted { phase: ph, message } => {
+                return Err(RunAgentTurnError::ReplanExhausted { phase: ph, message });
+            }
+            StagedTurnAdvance::Propagate(e) => return Err(e),
+        }
+    }
+}
+
 pub(super) async fn run_staged_plan_then_execute_steps(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
@@ -502,88 +683,24 @@ pub(super) async fn run_staged_plan_then_execute_steps(
         build_planner_messages: build_single_agent_planner_messages,
     };
 
-    let mut rewrite_attempts = 0;
-    let max_rewrites = p.ctx.cfg.full_plan_rewrite_max_attempts;
-    let mut phase = StagedTurnPhase::PreStepExecutionRound;
-    let mut staged_rounds = 0usize;
-    const STAGED_SINGLE_STEP_MAX_ROUNDS: usize = 64;
-    let snapshot =
-        crate::agent::workspace_snapshot::WorkspaceSnapshot::take(p.ctx.effective_working_dir);
-
-    loop {
-        staged_rounds = staged_rounds.saturating_add(1);
-        if staged_rounds > STAGED_SINGLE_STEP_MAX_ROUNDS {
-            return Err(RunAgentTurnError::Other {
-                phase: AgentTurnSubPhase::Planner,
-                message: format!(
-                    "分阶段单步规划轮次超过上限（{}），已停止以避免无限循环",
-                    STAGED_SINGLE_STEP_MAX_ROUNDS
-                ),
-            });
-        }
-        let req =
-            prepare_staged_planner_no_tools_request(p, per_coord, labels.build_planner_messages)
-                .await?;
-        let entered_from_step_execution_round = entered_flag_for_next_planner_call(phase);
-        let res = run_staged_plan_with_prepared_request(
-            p,
-            per_coord,
-            req,
-            render_to_terminal,
-            echo_terminal_staged,
-            entered_from_step_execution_round,
-            labels,
-            |body| Message {
-                role: "user".to_string(),
-                content: Some(body.into()),
-                reasoning_content: None,
-                reasoning_details: None,
-                tool_calls: None,
-                name: None,
-                tool_call_id: None,
-            },
-        )
-        .await;
-
-        let event = match res {
-            Ok(o) => StagedTurnSubCallOutcome::Ok(o),
-            Err(e) => StagedTurnSubCallOutcome::Err(e),
-        };
-        let advance =
-            advance_staged_turn_after_sub_call(phase, rewrite_attempts, max_rewrites, event);
-        rewrite_attempts = next_rewrite_attempts_after_advance(rewrite_attempts, &advance);
-
-        match advance {
-            StagedTurnAdvance::Continue {
-                phase: next_phase,
-                push_feedback_user,
-            } => {
-                phase = next_phase;
-                if let Some(u) = push_feedback_user {
-                    if let Some(ref snap) = snapshot {
-                        if let Err(e) = snap.restore() {
-                            tracing::warn!(target: "crabmate", "工作区快照回滚失败: {}", e);
-                        } else {
-                            tracing::info!(target: "crabmate", "全局重规划触发，工作区已回滚到快照状态");
-                        }
-                    }
-                    p.turn.messages.push(u);
-                } else if matches!(phase, StagedTurnPhase::AfterStepExecutionRound) {
-                    debug!(
-                        target: "crabmate",
-                        "分阶段单步：本轮执行完成，进入下一轮无工具规划（round={}）",
-                        staged_rounds
-                    );
-                }
-                continue;
-            }
-            StagedTurnAdvance::Finished => return Ok(()),
-            StagedTurnAdvance::ReplanExhausted { phase: ph, message } => {
-                return Err(RunAgentTurnError::ReplanExhausted { phase: ph, message });
-            }
-            StagedTurnAdvance::Propagate(e) => return Err(e),
-        }
-    }
+    run_staged_rolling_horizon_outer_loop(
+        StagedRollingHorizonKind::SingleAgent,
+        p,
+        per_coord,
+        labels,
+        render_to_terminal,
+        echo_terminal_staged,
+        |body| Message {
+            role: "user".to_string(),
+            content: Some(body.into()),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        },
+    )
+    .await
 }
 
 pub(crate) fn build_single_agent_planner_messages(
@@ -669,6 +786,20 @@ pub(crate) fn simulate_single_step_rolling_horizon_for_test(
             StagedPlanRunOutcome::ContinuePlanning => continue,
             StagedPlanRunOutcome::Finished => return Ok(staged_rounds),
         }
+    }
+}
+
+#[cfg(test)]
+mod staged_rolling_horizon_kind_tests {
+    use super::StagedRollingHorizonKind;
+
+    #[test]
+    fn max_rounds_error_messages_distinct_by_variant() {
+        let a = StagedRollingHorizonKind::SingleAgent.max_rounds_error_message(64);
+        let b = StagedRollingHorizonKind::LogicalDualAgent.max_rounds_error_message(64);
+        assert_ne!(a, b);
+        assert!(a.contains("分阶段单步"), "{a}");
+        assert!(b.contains("逻辑双Agent"), "{b}");
     }
 }
 
@@ -1593,80 +1724,16 @@ pub(super) async fn run_logical_dual_agent_then_execute_steps(
         build_planner_messages: build_logical_dual_planner_messages,
     };
 
-    let mut rewrite_attempts = 0;
-    let max_rewrites = p.ctx.cfg.full_plan_rewrite_max_attempts;
-    let mut phase = StagedTurnPhase::PreStepExecutionRound;
-    let mut staged_rounds = 0usize;
-    const STAGED_SINGLE_STEP_MAX_ROUNDS: usize = 64;
-    let snapshot =
-        crate::agent::workspace_snapshot::WorkspaceSnapshot::take(p.ctx.effective_working_dir);
-
-    loop {
-        staged_rounds = staged_rounds.saturating_add(1);
-        if staged_rounds > STAGED_SINGLE_STEP_MAX_ROUNDS {
-            return Err(RunAgentTurnError::Other {
-                phase: AgentTurnSubPhase::Planner,
-                message: format!(
-                    "逻辑双Agent分阶段单步规划轮次超过上限（{}），已停止以避免无限循环",
-                    STAGED_SINGLE_STEP_MAX_ROUNDS
-                ),
-            });
-        }
-        let req =
-            prepare_staged_planner_no_tools_request(p, per_coord, labels.build_planner_messages)
-                .await?;
-        let entered_from_step_execution_round = entered_flag_for_next_planner_call(phase);
-        let res = run_staged_plan_with_prepared_request(
-            p,
-            per_coord,
-            req,
-            render_to_terminal,
-            echo_terminal_staged,
-            entered_from_step_execution_round,
-            labels,
-            Message::user_only,
-        )
-        .await;
-
-        let event = match res {
-            Ok(o) => StagedTurnSubCallOutcome::Ok(o),
-            Err(e) => StagedTurnSubCallOutcome::Err(e),
-        };
-        let advance =
-            advance_staged_turn_after_sub_call(phase, rewrite_attempts, max_rewrites, event);
-        rewrite_attempts = next_rewrite_attempts_after_advance(rewrite_attempts, &advance);
-
-        match advance {
-            StagedTurnAdvance::Continue {
-                phase: next_phase,
-                push_feedback_user,
-            } => {
-                phase = next_phase;
-                if let Some(u) = push_feedback_user {
-                    if let Some(ref snap) = snapshot {
-                        if let Err(e) = snap.restore() {
-                            tracing::warn!(target: "crabmate", "逻辑双Agent快照回滚失败: {}", e);
-                        } else {
-                            tracing::info!(target: "crabmate", "全局重规划触发，工作区已回滚到快照状态");
-                        }
-                    }
-                    p.turn.messages.push(u);
-                } else if matches!(phase, StagedTurnPhase::AfterStepExecutionRound) {
-                    debug!(
-                        target: "crabmate",
-                        "逻辑双Agent分阶段单步：本轮执行完成，进入下一轮无工具规划（round={}）",
-                        staged_rounds
-                    );
-                }
-                continue;
-            }
-            StagedTurnAdvance::Finished => return Ok(()),
-            StagedTurnAdvance::ReplanExhausted { phase: ph, message } => {
-                return Err(RunAgentTurnError::ReplanExhausted { phase: ph, message });
-            }
-            StagedTurnAdvance::Propagate(e) => return Err(e),
-        }
-    }
+    run_staged_rolling_horizon_outer_loop(
+        StagedRollingHorizonKind::LogicalDualAgent,
+        p,
+        per_coord,
+        labels,
+        render_to_terminal,
+        echo_terminal_staged,
+        Message::user_only,
+    )
+    .await
 }
 
 #[cfg(test)]
