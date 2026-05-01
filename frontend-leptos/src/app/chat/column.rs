@@ -217,6 +217,223 @@ struct ChatComposerPaneSignals {
     composer_mirror_scroll_top: RwSignal<f64>,
 }
 
+fn handle_composer_image_input_change(
+    ev: web_sys::Event,
+    locale: RwSignal<crate::i18n::Locale>,
+    pending_images: RwSignal<Vec<String>>,
+    status_err: RwSignal<Option<String>>,
+) {
+    let Some(t) = ev.target() else {
+        return;
+    };
+    let Ok(input) = t.dyn_into::<web_sys::HtmlInputElement>() else {
+        return;
+    };
+    let files = input.files();
+    let Some(list) = files else {
+        return;
+    };
+    let n = list.length();
+    if n == 0 {
+        return;
+    }
+    let form = web_sys::FormData::new().expect("FormData");
+    for i in 0..n {
+        if let Some(f) = list.item(i) {
+            let name = f.name();
+            let _ = form.append_with_blob_and_filename("file", &f, &name);
+        }
+    }
+    spawn_local(async move {
+        match upload_files_multipart(&form, locale.get_untracked()).await {
+            Ok(urls) => {
+                pending_images.update(|v| {
+                    for u in urls {
+                        if v.len() >= 6 {
+                            break;
+                        }
+                        if !v.contains(&u) {
+                            v.push(u);
+                        }
+                    }
+                });
+            }
+            Err(e) => {
+                status_err.set(Some(e));
+            }
+        }
+    });
+    input.set_value("");
+}
+
+#[component]
+fn ComposerImageInput(
+    locale: RwSignal<crate::i18n::Locale>,
+    pending_images: RwSignal<Vec<String>>,
+    status_err: RwSignal<Option<String>>,
+) -> impl IntoView {
+    view! {
+        <input
+            type="file"
+            class="composer-file-input-hidden"
+            id="composer-image-input"
+            accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+            multiple
+            on:change=move |ev: web_sys::Event| {
+                handle_composer_image_input_change(ev, locale, pending_images, status_err);
+            }
+        />
+    }
+}
+
+#[component]
+fn ComposerPendingImagesRow(
+    locale: RwSignal<crate::i18n::Locale>,
+    pending_images: RwSignal<Vec<String>>,
+) -> impl IntoView {
+    view! {
+        <div class="composer-pending-images" data-testid="composer-pending-images">
+            {move || {
+                let imgs = pending_images.get();
+                if imgs.is_empty() {
+                    return view! { <span></span> }.into_any();
+                }
+                imgs.iter()
+                    .map(|url| {
+                        let u = url.clone();
+                        let u_rm = url.clone();
+                        view! {
+                            <div class="composer-pending-img-wrap">
+                                <img class="composer-pending-img" src=u alt="" />
+                                <button
+                                    type="button"
+                                    class="composer-pending-img-remove"
+                                    prop:aria-label=move || i18n::composer_remove_image_aria(locale.get())
+                                    on:click=move |_| pending_images.update(|v| v.retain(|x| x != &u_rm))
+                                >"×"</button>
+                            </div>
+                        }
+                        .into_any()
+                    })
+                    .collect_view()
+                    .into_any()
+            }}
+        </div>
+    }
+}
+
+#[component]
+fn ComposerClarificationPanel(
+    locale: RwSignal<crate::i18n::Locale>,
+    pending_clarification: RwSignal<Option<crate::clarification_form::PendingClarificationForm>>,
+    status_busy: RwSignal<bool>,
+    run_send_clarify_sv: StoredValue<Arc<dyn Fn() + Send + Sync>>,
+) -> impl IntoView {
+    view! {
+        <Show when=move || pending_clarification.get().is_some()>
+            <div class="composer-clarification-panel" data-testid="composer-clarification-panel">
+                {move || {
+                    let Some(form) = pending_clarification.get() else {
+                        return view! { <span></span> }.into_any();
+                    };
+                    let intro = form.intro.clone();
+                    let loc = locale.get();
+                    let n = form.fields.len();
+                    let pc = pending_clarification;
+                    if form.values.len() != n {
+                        pc.update(|opt| {
+                            if let Some(fm) = opt.as_mut() {
+                                fm.values.resize(n, String::new());
+                            }
+                        });
+                    }
+                    view! {
+                        <div class="composer-clarification-title">
+                            {i18n::clarification_panel_title(loc)}
+                        </div>
+                        <p class="composer-clarification-intro">{intro}</p>
+                        <div class="composer-clarification-fields">
+                            {form
+                                .fields
+                                .iter()
+                                .enumerate()
+                                .map(|(i, f)| {
+                                    let label = f.label.clone();
+                                    let hint = f.hint.clone();
+                                    let req = f.required;
+                                    let idx = i;
+                                    let pc2 = pc;
+                                    view! {
+                                        <label class="composer-clarification-field">
+                                            <span class="composer-clarification-label">
+                                                {label.clone()}
+                                                {if req {
+                                                    i18n::clarification_required_suffix(loc).to_string()
+                                                } else {
+                                                    String::new()
+                                                }}
+                                            </span>
+                                            {match &hint {
+                                                Some(h) => view! {
+                                                    <span class="composer-clarification-hint">{h.clone()}</span>
+                                                }
+                                                .into_any(),
+                                                None => view! { <span></span> }.into_any(),
+                                            }}
+                                            <input
+                                                type="text"
+                                                class="composer-clarification-input"
+                                                prop:value=move || {
+                                                    pc2.with(|opt| {
+                                                        opt.as_ref()
+                                                            .and_then(|fm| fm.values.get(idx))
+                                                            .cloned()
+                                                            .unwrap_or_default()
+                                                    })
+                                                }
+                                                on:input=move |ev| {
+                                                    let t = event_target_value(&ev);
+                                                    pc2.update(|opt| {
+                                                        if let Some(fm) = opt.as_mut()
+                                                            && fm.values.len() > idx
+                                                        {
+                                                            fm.values[idx] = t;
+                                                        }
+                                                    });
+                                                }
+                                            />
+                                        </label>
+                                    }
+                                    .into_any()
+                                })
+                                .collect_view()}
+                        </div>
+                        <div class="composer-clarification-actions">
+                            <button
+                                type="button"
+                                class="btn btn-muted btn-sm"
+                                prop:disabled=move || status_busy.get()
+                                on:click=move |_| pending_clarification.set(None)
+                            >
+                                {move || i18n::clarification_dismiss(locale.get())}
+                            </button>
+                            <button
+                                type="button"
+                                class="btn btn-primary btn-sm"
+                                prop:disabled=move || status_busy.get()
+                                on:click=move |_| run_send_clarify_sv.get_value()()
+                            >
+                                {move || i18n::clarification_submit(locale.get())}
+                            </button>
+                        </div>
+                    }
+                    .into_any()
+                }}
+            </div>
+        </Show>
+    }
+}
+
 #[component]
 fn ChatComposerPane(signals: ChatComposerPaneSignals) -> impl IntoView {
     let ChatComposerPaneSignals {
@@ -238,184 +455,18 @@ fn ChatComposerPane(signals: ChatComposerPaneSignals) -> impl IntoView {
     view! {
         <div class="composer composer-ds">
             <div class="composer-inner-ds">
-                <input
-                    type="file"
-                    class="composer-file-input-hidden"
-                    id="composer-image-input"
-                    accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
-                    multiple
-                    on:change=move |ev: web_sys::Event| {
-                        let Some(t) = ev.target() else {
-                            return;
-                        };
-                        let Ok(input) = t.dyn_into::<web_sys::HtmlInputElement>() else {
-                            return;
-                        };
-                        let files = input.files();
-                        let Some(list) = files else {
-                            return;
-                        };
-                        let n = list.length();
-                        if n == 0 {
-                            return;
-                        }
-                        let form = web_sys::FormData::new().expect("FormData");
-                        for i in 0..n {
-                            if let Some(f) = list.item(i) {
-                                let name = f.name();
-                                let _ = form.append_with_blob_and_filename("file", &f, &name);
-                            }
-                        }
-                        spawn_local(async move {
-                            match upload_files_multipart(&form, locale.get_untracked()).await {
-                                Ok(urls) => {
-                                    pending_images.update(|v| {
-                                        for u in urls {
-                                            if v.len() >= 6 {
-                                                break;
-                                            }
-                                            if !v.contains(&u) {
-                                                v.push(u);
-                                            }
-                                        }
-                                    });
-                                }
-                                Err(e) => {
-                                    status_err.set(Some(e));
-                                }
-                            }
-                        });
-                        input.set_value("");
-                    }
+                <ComposerImageInput
+                    locale=locale
+                    pending_images=pending_images
+                    status_err=status_err
                 />
-                <div class="composer-pending-images" data-testid="composer-pending-images">
-                    {move || {
-                        let imgs = pending_images.get();
-                        if imgs.is_empty() {
-                            return view! { <span></span> }.into_any();
-                        }
-                        imgs.iter()
-                            .map(|url| {
-                                let u = url.clone();
-                                let u_rm = url.clone();
-                                view! {
-                                    <div class="composer-pending-img-wrap">
-                                        <img class="composer-pending-img" src=u alt="" />
-                                        <button
-                                            type="button"
-                                            class="composer-pending-img-remove"
-                                            prop:aria-label=move || i18n::composer_remove_image_aria(locale.get())
-                                            on:click=move |_| pending_images.update(|v| v.retain(|x| x != &u_rm))
-                                        >"×"</button>
-                                    </div>
-                                }
-                                .into_any()
-                            })
-                            .collect_view()
-                            .into_any()
-                    }}
-                </div>
-                <Show when=move || pending_clarification.get().is_some()>
-                    <div class="composer-clarification-panel" data-testid="composer-clarification-panel">
-                        {move || {
-                            let Some(form) = pending_clarification.get() else {
-                                return view! { <span></span> }.into_any();
-                            };
-                            let intro = form.intro.clone();
-                            let loc = locale.get();
-                            let n = form.fields.len();
-                            let pc = pending_clarification;
-                            if form.values.len() != n {
-                                pc.update(|opt| {
-                                    if let Some(fm) = opt.as_mut() {
-                                        fm.values.resize(n, String::new());
-                                    }
-                                });
-                            }
-                            view! {
-                                <div class="composer-clarification-title">
-                                    {i18n::clarification_panel_title(loc)}
-                                </div>
-                                <p class="composer-clarification-intro">{intro}</p>
-                                <div class="composer-clarification-fields">
-                                    {form
-                                        .fields
-                                        .iter()
-                                        .enumerate()
-                                        .map(|(i, f)| {
-                                            let label = f.label.clone();
-                                            let hint = f.hint.clone();
-                                            let req = f.required;
-                                            let idx = i;
-                                            let pc2 = pc;
-                                            view! {
-                                                <label class="composer-clarification-field">
-                                                    <span class="composer-clarification-label">
-                                                        {label.clone()}
-                                                        {if req {
-                                                            i18n::clarification_required_suffix(loc).to_string()
-                                                        } else {
-                                                            String::new()
-                                                        }}
-                                                    </span>
-                                                    {match &hint {
-                                                        Some(h) => view! {
-                                                            <span class="composer-clarification-hint">{h.clone()}</span>
-                                                        }
-                                                        .into_any(),
-                                                        None => view! { <span></span> }.into_any(),
-                                                    }}
-                                                    <input
-                                                        type="text"
-                                                        class="composer-clarification-input"
-                                                        prop:value=move || {
-                                                            pc2.with(|opt| {
-                                                                opt.as_ref()
-                                                                    .and_then(|fm| fm.values.get(idx))
-                                                                    .cloned()
-                                                                    .unwrap_or_default()
-                                                            })
-                                                        }
-                                                        on:input=move |ev| {
-                                                            let t = event_target_value(&ev);
-                                                            pc2.update(|opt| {
-                                                                if let Some(fm) = opt.as_mut()
-                                                                    && fm.values.len() > idx
-                                                                {
-                                                                    fm.values[idx] = t;
-                                                                }
-                                                            });
-                                                        }
-                                                    />
-                                                </label>
-                                            }
-                                            .into_any()
-                                        })
-                                        .collect_view()}
-                                </div>
-                                <div class="composer-clarification-actions">
-                                    <button
-                                        type="button"
-                                        class="btn btn-muted btn-sm"
-                                        prop:disabled=move || status_busy.get()
-                                        on:click=move |_| pending_clarification.set(None)
-                                    >
-                                        {move || i18n::clarification_dismiss(locale.get())}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        class="btn btn-primary btn-sm"
-                                        prop:disabled=move || status_busy.get()
-                                        on:click=move |_| run_send_clarify_sv.get_value()()
-                                    >
-                                        {move || i18n::clarification_submit(locale.get())}
-                                    </button>
-                                </div>
-                            }
-                            .into_any()
-                        }}
-                    </div>
-                </Show>
+                <ComposerPendingImagesRow locale=locale pending_images=pending_images />
+                <ComposerClarificationPanel
+                    locale=locale
+                    pending_clarification=pending_clarification
+                    status_busy=status_busy
+                    run_send_clarify_sv=run_send_clarify_sv
+                />
                 <div class="composer-input-row">
                     <ComposerInputStack
                         composer_input_ref=composer_input_ref
