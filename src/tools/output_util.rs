@@ -155,186 +155,180 @@ pub(crate) fn cli_missing_install_hint(program: &str) -> Option<&'static str> {
     if key.eq_ignore_ascii_case("sh") || key.eq_ignore_ascii_case("bash") {
         return None;
     }
-    if key.eq_ignore_ascii_case("cargo") {
-        return Some(
-            "安装提示：安装 Rust 工具链（含 cargo），见 https://rustup.rs/ 。验证：`cargo --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("shellcheck") {
-        return Some(
-            "安装提示：Debian/Ubuntu `sudo apt install shellcheck`；macOS `brew install shellcheck`；文档 https://github.com/koalaman/shellcheck#installing 。验证：`shellcheck --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("cppcheck") {
-        return Some(
-            "安装提示：Debian/Ubuntu `sudo apt install cppcheck`；macOS `brew install cppcheck`；文档 https://cppcheck.sourceforge.io/ 。验证：`cppcheck --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("semgrep") {
-        return Some(
-            "安装提示：`pip install semgrep` 或 `pipx install semgrep`；官方说明见 https://semgrep.dev/docs/getting-started/ 。验证：`semgrep --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("hadolint") {
-        return Some(
-            "安装提示：macOS `brew install hadolint`；或从 https://github.com/hadolint/hadolint/releases 下载二进制并加入 PATH。验证：`hadolint --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("bandit") {
-        return Some(
-            "安装提示：`pip install bandit` 或 `pipx install bandit`。验证：`bandit --version` 或 `python3 -m bandit --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("lizard") {
-        return Some(
-            "安装提示：`pip install lizard`；确保 `lizard` 或 `python3 -m lizard` 在 PATH 中。验证：`lizard --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("typos") {
-        return Some(
-            "安装提示：`cargo install typos-cli` 或从 https://github.com/crate-ci/typos/releases 获取二进制。验证：`typos --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("codespell") {
-        return Some(
-            "安装提示：`pip install codespell` 或发行版包 `codespell`。验证：`codespell --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("ast-grep") || key.eq_ignore_ascii_case("sg") {
-        return Some(
+    cli_missing_install_hint_for_base_name(key)
+}
+
+fn cli_missing_install_hint_for_base_name(key: &str) -> Option<&'static str> {
+    const ENTRIES: &[(&str, &str)] = &[
+        (
+            "ast-grep",
             "安装提示：`cargo install ast-grep --locked` 或见 https://ast-grep.github.io/guide/quick-start.html 。验证：`ast-grep --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("pre-commit") {
-        return Some(
-            "安装提示：`pip install pre-commit` 或 `pipx install pre-commit`。验证：`pre-commit --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("ruff") {
-        return Some(
-            "安装提示：`pip install ruff` 或 `cargo install ruff`（任选其一）。验证：`ruff --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("mypy") {
-        return Some(
-            "安装提示：`pip install mypy`。验证：`mypy --version` 或 `python3 -m mypy --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("uv") {
-        return Some(
-            "安装提示：见 https://docs.astral.sh/uv/getting-started/installation/ （官方安装脚本或包管理器）。验证：`uv --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("npm") || key.eq_ignore_ascii_case("npx") {
-        return Some(
-            "安装提示：安装 Node.js（含 npm/npx），见 https://nodejs.org/ 或发行版包 `nodejs`。验证：`node --version` 与 `npm --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("mvn") || key.eq_ignore_ascii_case("maven") {
-        return Some(
-            "安装提示：安装 Apache Maven（`mvn`），见 https://maven.apache.org/install.html 。验证：`mvn --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("gradle") {
-        return Some("安装提示：安装 Gradle 或使用项目自带 `gradlew`。验证：`gradle --version`。");
-    }
-    if key.eq_ignore_ascii_case("docker") {
-        return Some(
-            "安装提示：安装 Docker Engine / Docker CLI，见 https://docs.docker.com/get-docker/ 。验证：`docker version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("podman") {
-        return Some(
-            "安装提示：安装 Podman（发行版包或 https://podman.io/docs/installation ）。验证：`podman --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("go") {
-        return Some("安装提示：安装 Go 工具链，见 https://go.dev/dl/ 。验证：`go version`。");
-    }
-    if key.eq_ignore_ascii_case("gofmt") {
-        return Some("安装提示：`gofmt` 随 Go 发行，见 https://go.dev/dl/ 。验证：`gofmt -h`。");
-    }
-    if key.eq_ignore_ascii_case("golangci-lint") {
-        return Some(
-            "安装提示：见 https://golangci-lint.run/welcome/install/ （官方安装脚本或包管理器）。验证：`golangci-lint --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("python3") || key.eq_ignore_ascii_case("python") {
-        return Some(
-            "安装提示：Debian/Ubuntu `sudo apt install python3`；macOS 可用 `brew install python` 或 https://www.python.org/downloads/ 。验证：`python3 --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("pytest") {
-        return Some(
-            "安装提示：`pip install pytest` 或 `python3 -m pip install pytest`。验证：`pytest --version` 或 `python3 -m pytest --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("git") {
-        return Some(
-            "安装提示：Debian/Ubuntu `sudo apt install git`；macOS `brew install git`；文档 https://git-scm.com/downloads 。验证：`git --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("gh") {
-        return Some(
-            "安装提示：macOS `brew install gh`；Debian/Ubuntu 见 https://github.com/cli/cli/blob/trunk/docs/install_linux.md 。验证：`gh --version`；认证：`gh auth login`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("bc") {
-        return Some(
+        ),
+        (
+            "bandit",
+            "安装提示：`pip install bandit` 或 `pipx install bandit`。验证：`bandit --version` 或 `python3 -m bandit --version`。",
+        ),
+        (
+            "bc",
             "安装提示：Debian/Ubuntu `sudo apt install bc`；macOS `brew install bc`；验证：`bc --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("rustfmt") {
-        return Some(
-            "安装提示：`rustup component add rustfmt`（推荐）或 `cargo install rustfmt`。验证：`rustfmt --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("clang-format") {
-        return Some(
+        ),
+        (
+            "clang-format",
             "安装提示：Debian/Ubuntu `sudo apt install clang-format`；macOS `brew install clang-format`。验证：`clang-format --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("shfmt") {
-        return Some(
-            "安装提示：macOS `brew install shfmt`；或 `go install mvdan.cc/sh/v3/cmd/shfmt@latest`（需 Go）。文档 https://github.com/mvdan/sh 。验证：`shfmt --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("xmllint") {
-        return Some(
-            "安装提示：Debian/Ubuntu `sudo apt install libxml2-utils`；macOS `brew install libxml2`（通常含 xmllint）。验证：`xmllint --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("sqlfluff") {
-        return Some(
-            "安装提示：`pip install sqlfluff` 或 `pipx install sqlfluff`。验证：`sqlfluff --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("pg_format") {
-        return Some(
-            "安装提示：安装 [pgFormatter](https://github.com/darold/pgFormatter)（发行版包名因系统而异，可搜索 `pgformatter`）。验证：`pg_format --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("tsc") {
-        return Some(
-            "安装提示：在工作区 `npm install -D typescript` 后使用 `npx tsc`，或全局 `npm install -g typescript`。验证：`npx tsc --version`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("ss") {
-        return Some(
-            "安装提示：Debian/Ubuntu `sudo apt install iproute2`（提供 `ss`）；多数精简容器需手动安装。验证：`ss -V`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("lsof") {
-        return Some(
+        ),
+        (
+            "codespell",
+            "安装提示：`pip install codespell` 或发行版包 `codespell`。验证：`codespell --version`。",
+        ),
+        (
+            "cppcheck",
+            "安装提示：Debian/Ubuntu `sudo apt install cppcheck`；macOS `brew install cppcheck`；文档 https://cppcheck.sourceforge.io/ 。验证：`cppcheck --version`。",
+        ),
+        (
+            "cargo",
+            "安装提示：安装 Rust 工具链（含 cargo），见 https://rustup.rs/ 。验证：`cargo --version`。",
+        ),
+        (
+            "docker",
+            "安装提示：安装 Docker Engine / Docker CLI，见 https://docs.docker.com/get-docker/ 。验证：`docker version`。",
+        ),
+        (
+            "gh",
+            "安装提示：macOS `brew install gh`；Debian/Ubuntu 见 https://github.com/cli/cli/blob/trunk/docs/install_linux.md 。验证：`gh --version`；认证：`gh auth login`。",
+        ),
+        (
+            "git",
+            "安装提示：Debian/Ubuntu `sudo apt install git`；macOS `brew install git`；文档 https://git-scm.com/downloads 。验证：`git --version`。",
+        ),
+        (
+            "go",
+            "安装提示：安装 Go 工具链，见 https://go.dev/dl/ 。验证：`go version`。",
+        ),
+        (
+            "gofmt",
+            "安装提示：`gofmt` 随 Go 发行，见 https://go.dev/dl/ 。验证：`gofmt -h`。",
+        ),
+        (
+            "golangci-lint",
+            "安装提示：见 https://golangci-lint.run/welcome/install/ （官方安装脚本或包管理器）。验证：`golangci-lint --version`。",
+        ),
+        (
+            "gradle",
+            "安装提示：安装 Gradle 或使用项目自带 `gradlew`。验证：`gradle --version`。",
+        ),
+        (
+            "hadolint",
+            "安装提示：macOS `brew install hadolint`；或从 https://github.com/hadolint/hadolint/releases 下载二进制并加入 PATH。验证：`hadolint --version`。",
+        ),
+        (
+            "lizard",
+            "安装提示：`pip install lizard`；确保 `lizard` 或 `python3 -m lizard` 在 PATH 中。验证：`lizard --version`。",
+        ),
+        (
+            "lsof",
             "安装提示：Debian/Ubuntu `sudo apt install lsof`；macOS 通常已内置。验证：`lsof -v`。",
-        );
-    }
-    if key.eq_ignore_ascii_case("ps") {
-        return Some(
+        ),
+        (
+            "maven",
+            "安装提示：安装 Apache Maven（`mvn`），见 https://maven.apache.org/install.html 。验证：`mvn --version`。",
+        ),
+        (
+            "mvn",
+            "安装提示：安装 Apache Maven（`mvn`），见 https://maven.apache.org/install.html 。验证：`mvn --version`。",
+        ),
+        (
+            "mypy",
+            "安装提示：`pip install mypy`。验证：`mypy --version` 或 `python3 -m mypy --version`。",
+        ),
+        (
+            "npm",
+            "安装提示：安装 Node.js（含 npm/npx），见 https://nodejs.org/ 或发行版包 `nodejs`。验证：`node --version` 与 `npm --version`。",
+        ),
+        (
+            "npx",
+            "安装提示：安装 Node.js（含 npm/npx），见 https://nodejs.org/ 或发行版包 `nodejs`。验证：`node --version` 与 `npm --version`。",
+        ),
+        (
+            "pg_format",
+            "安装提示：安装 [pgFormatter](https://github.com/darold/pgFormatter)（发行版包名因系统而异，可搜索 `pgformatter`）。验证：`pg_format --version`。",
+        ),
+        (
+            "podman",
+            "安装提示：安装 Podman（发行版包或 https://podman.io/docs/installation ）。验证：`podman --version`。",
+        ),
+        (
+            "pre-commit",
+            "安装提示：`pip install pre-commit` 或 `pipx install pre-commit`。验证：`pre-commit --version`。",
+        ),
+        (
+            "ps",
             "安装提示：Debian/Ubuntu `sudo apt install procps`（提供 `ps`）。验证：`ps --version`。",
-        );
-    }
-    None
+        ),
+        (
+            "pytest",
+            "安装提示：`pip install pytest` 或 `python3 -m pip install pytest`。验证：`pytest --version` 或 `python3 -m pytest --version`。",
+        ),
+        (
+            "python",
+            "安装提示：Debian/Ubuntu `sudo apt install python3`；macOS 可用 `brew install python` 或 https://www.python.org/downloads/ 。验证：`python3 --version`。",
+        ),
+        (
+            "python3",
+            "安装提示：Debian/Ubuntu `sudo apt install python3`；macOS 可用 `brew install python` 或 https://www.python.org/downloads/ 。验证：`python3 --version`。",
+        ),
+        (
+            "ruff",
+            "安装提示：`pip install ruff` 或 `cargo install ruff`（任选其一）。验证：`ruff --version`。",
+        ),
+        (
+            "rustfmt",
+            "安装提示：`rustup component add rustfmt`（推荐）或 `cargo install rustfmt`。验证：`rustfmt --version`。",
+        ),
+        (
+            "semgrep",
+            "安装提示：`pip install semgrep` 或 `pipx install semgrep`；官方说明见 https://semgrep.dev/docs/getting-started/ 。验证：`semgrep --version`。",
+        ),
+        (
+            "sg",
+            "安装提示：`cargo install ast-grep --locked` 或见 https://ast-grep.github.io/guide/quick-start.html 。验证：`ast-grep --version`。",
+        ),
+        (
+            "shellcheck",
+            "安装提示：Debian/Ubuntu `sudo apt install shellcheck`；macOS `brew install shellcheck`；文档 https://github.com/koalaman/shellcheck#installing 。验证：`shellcheck --version`。",
+        ),
+        (
+            "shfmt",
+            "安装提示：macOS `brew install shfmt`；或 `go install mvdan.cc/sh/v3/cmd/shfmt@latest`（需 Go）。文档 https://github.com/mvdan/sh 。验证：`shfmt --version`。",
+        ),
+        (
+            "sqlfluff",
+            "安装提示：`pip install sqlfluff` 或 `pipx install sqlfluff`。验证：`sqlfluff --version`。",
+        ),
+        (
+            "ss",
+            "安装提示：Debian/Ubuntu `sudo apt install iproute2`（提供 `ss`）；多数精简容器需手动安装。验证：`ss -V`。",
+        ),
+        (
+            "tsc",
+            "安装提示：在工作区 `npm install -D typescript` 后使用 `npx tsc`，或全局 `npm install -g typescript`。验证：`npx tsc --version`。",
+        ),
+        (
+            "typos",
+            "安装提示：`cargo install typos-cli` 或从 https://github.com/crate-ci/typos/releases 获取二进制。验证：`typos --version`。",
+        ),
+        (
+            "uv",
+            "安装提示：见 https://docs.astral.sh/uv/getting-started/installation/ （官方安装脚本或包管理器）。验证：`uv --version`。",
+        ),
+        (
+            "xmllint",
+            "安装提示：Debian/Ubuntu `sudo apt install libxml2-utils`；macOS `brew install libxml2`（通常含 xmllint）。验证：`xmllint --version`。",
+        ),
+    ];
+    ENTRIES
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(key))
+        .map(|(_, hint)| *hint)
 }
 
 /// 执行 **`cmd.output()`**，合并输出并格式化为工具返回字符串；启动失败时按 **`spawn_style`** 生成说明。

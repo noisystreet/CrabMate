@@ -1,8 +1,10 @@
 use leptos::prelude::*;
-use leptos_dom::helpers::event_target_value;
 
-use crate::client_llm_presets::{CLIENT_LLM_API_BASE_PRESETS, preset_by_id};
 use crate::i18n::{self, Locale};
+use crate::settings_llm_fields::{
+    LlmApiBasePresetSelect, LlmClientApiKeyField, LlmCustomApiBaseInput, LlmExecutorApiKeyField,
+    LlmModelField, LlmTemperatureField, OptionalLlmExecutionModeField,
+};
 
 #[component]
 pub(crate) fn SettingsAppearanceBlock(
@@ -85,147 +87,39 @@ pub(crate) fn SettingsLlmBlock(
         <div class="settings-block">
             <h3 class="settings-block-title">{move || i18n::settings_block_llm(locale.get())}</h3>
             <p class=hint_class>{move || i18n::settings_llm_hint(locale.get())}</p>
-            <div class="settings-field">
-                <label class="settings-field-label" for="settings-llm-api-base-preset">
-                    {move || i18n::settings_label_api_base_preset(locale.get())}
-                </label>
-                <select
-                    id="settings-llm-api-base-preset"
-                    class="settings-select"
-                    prop:value=move || llm_api_base_preset_select.get()
-                    on:change=move |ev| {
-                        let id = event_target_value(&ev);
-                        llm_api_base_preset_select.set(id.clone());
-                        let Some(p) = preset_by_id(id.as_str()) else {
-                            return;
-                        };
-                        if p.id == "custom" {
-                            return;
-                        }
-                        llm_api_base_draft.set(p.url.to_string());
-                        if let Some(m) = p.suggested_model
-                            && llm_model_draft.get_untracked().trim().is_empty()
-                        {
-                            llm_model_draft.set(m.to_string());
-                        }
-                    }
-                >
-                    {CLIENT_LLM_API_BASE_PRESETS
-                        .iter()
-                        .filter(|p| p.id != "custom")
-                        .map(|p| {
-                            let id = p.id;
-                            view! {
-                                <option value=id>{move || i18n::settings_api_base_preset_label(id, locale.get())}</option>
-                            }
-                        })
-                        .collect_view()}
-                    <option value="custom">{move || i18n::settings_api_base_preset_custom(locale.get())}</option>
-                </select>
-            </div>
-            <Show when=move || llm_api_base_preset_select.get() == "custom">
-                <div class="settings-field">
-                    <label class="settings-field-label" for="settings-llm-api-base">
-                        {move || i18n::settings_label_api_base(locale.get())}
-                    </label>
-                    <input
-                        type="text"
-                        id="settings-llm-api-base"
-                        class="settings-text-input"
-                        prop:placeholder=move || i18n::settings_ph_api_base(locale.get())
-                        prop:value=move || llm_api_base_draft.get()
-                        on:input=move |ev| {
-                            llm_api_base_preset_select.set("custom".to_string());
-                            llm_api_base_draft.set(event_target_value(&ev));
-                        }
-                    />
-                </div>
-            </Show>
-            <div class="settings-field">
-                <label class="settings-field-label" for="settings-llm-model">
-                    {move || i18n::settings_label_model(locale.get())}
-                </label>
-                <input
-                    type="text"
-                    id="settings-llm-model"
-                    class="settings-text-input"
-                    prop:placeholder=move || i18n::settings_ph_model(locale.get())
-                    prop:value=move || llm_model_draft.get()
-                    on:input=move |ev| llm_model_draft.set(event_target_value(&ev))
-                />
-            </div>
-            <div class="settings-field">
-                <label class="settings-field-label" for="settings-llm-temperature">
-                    {move || i18n::settings_label_temperature(locale.get())}
-                </label>
-                <input
-                    type="number"
-                    id="settings-llm-temperature"
-                    class="settings-text-input"
-                    min="0"
-                    max="2"
-                    step="0.1"
-                    prop:placeholder=move || i18n::settings_ph_temperature(locale.get())
-                    prop:value=move || llm_temperature_draft.get()
-                    on:input=move |ev| llm_temperature_draft.set(event_target_value(&ev))
-                />
-                <p class=hint_class>{move || i18n::settings_temperature_hint(locale.get())}</p>
-            </div>
-            <Show when=move || execution_mode_draft.is_some()>
-                <div class="settings-field">
-                    <label class="settings-field-label" for="settings-execution-mode">
-                        {move || i18n::settings_label_execution_mode(locale.get())}
-                    </label>
-                    <select
-                        id="settings-execution-mode"
-                        class="settings-select"
-                        prop:value=move || execution_mode_draft.map(|s| s.get()).unwrap_or_default()
-                        on:change=move |ev| {
-                            if let Some(sig) = execution_mode_draft {
-                                sig.set(event_target_value(&ev));
-                            }
-                        }
-                    >
-                        <option value="rolling_planning">
-                            {move || i18n::settings_execution_mode_rolling(locale.get())}
-                        </option>
-                        <option value="hierarchical">
-                            {move || i18n::settings_execution_mode_hierarchical(locale.get())}
-                        </option>
-                    </select>
-                    <p class=hint_class>{move || i18n::settings_execution_mode_hint(locale.get())}</p>
-                </div>
-            </Show>
-            <div class="settings-field">
-                <label class="settings-field-label" for="settings-llm-api-key">
-                    {move || i18n::settings_label_api_key(locale.get())}
-                </label>
-                <input
-                    type="password"
-                    id="settings-llm-api-key"
-                    class="settings-text-input"
-                    autocomplete="off"
-                    prop:placeholder=move || i18n::settings_ph_api_key(locale.get())
-                    prop:value=move || llm_api_key_draft.get()
-                    on:input=move |ev| llm_api_key_draft.set(event_target_value(&ev))
-                />
-            </div>
-            <Show when=move || llm_has_saved_key.get() && !clear_client_key_intent.get()>
-                <p class=hint_class>{move || i18n::settings_key_saved_note(locale.get())}</p>
-            </Show>
-            <div class="settings-actions-row">
-                <button
-                    type="button"
-                    class="btn btn-secondary btn-sm"
-                    prop:disabled=move || !llm_has_saved_key.get() || clear_client_key_intent.get()
-                    on:click=move |_| {
-                        clear_client_key_intent.set(true);
-                        llm_api_key_draft.set(String::new());
-                    }
-                >
-                    {move || i18n::settings_clear_key(locale.get())}
-                </button>
-            </div>
+            <LlmApiBasePresetSelect
+                locale
+                api_base_draft=llm_api_base_draft
+                api_base_preset_select=llm_api_base_preset_select
+                model_draft=llm_model_draft
+                select_id="settings-llm-api-base-preset"
+            />
+            <LlmCustomApiBaseInput
+                locale
+                api_base_draft=llm_api_base_draft
+                api_base_preset_select=llm_api_base_preset_select
+                label_fn=i18n::settings_label_api_base
+                placeholder_fn=i18n::settings_ph_api_base
+                input_id="settings-llm-api-base"
+            />
+            <LlmModelField
+                locale
+                model_draft=llm_model_draft
+                label_fn=i18n::settings_label_model
+                placeholder_fn=i18n::settings_ph_model
+                input_id="settings-llm-model"
+            />
+            <LlmTemperatureField locale temperature_draft=llm_temperature_draft hint_class />
+            <OptionalLlmExecutionModeField locale execution_mode_draft hint_class />
+            <LlmClientApiKeyField
+                locale
+                api_key_draft=llm_api_key_draft
+                has_saved_key=llm_has_saved_key
+                clear_key_intent=clear_client_key_intent
+                hint_class
+                saved_note_fn=i18n::settings_key_saved_note
+                clear_label_fn=i18n::settings_clear_key
+            />
         </div>
     }
 }
@@ -245,105 +139,35 @@ pub(crate) fn SettingsExecutorLlmBlock(
         <div class="settings-block">
             <h3 class="settings-block-title">{move || i18n::settings_block_executor_llm(locale.get())}</h3>
             <p class=hint_class>{move || i18n::settings_executor_llm_hint(locale.get())}</p>
-            <div class="settings-field">
-                <label class="settings-field-label" for="settings-executor-llm-api-base-preset">
-                    {move || i18n::settings_label_api_base_preset(locale.get())}
-                </label>
-                <select
-                    id="settings-executor-llm-api-base-preset"
-                    class="settings-select"
-                    prop:value=move || executor_llm_api_base_preset_select.get()
-                    on:change=move |ev| {
-                        let id = event_target_value(&ev);
-                        executor_llm_api_base_preset_select.set(id.clone());
-                        let Some(p) = preset_by_id(id.as_str()) else {
-                            return;
-                        };
-                        if p.id == "custom" {
-                            return;
-                        }
-                        executor_llm_api_base_draft.set(p.url.to_string());
-                        if let Some(m) = p.suggested_model
-                            && executor_llm_model_draft.get_untracked().trim().is_empty()
-                        {
-                            executor_llm_model_draft.set(m.to_string());
-                        }
-                    }
-                >
-                    {CLIENT_LLM_API_BASE_PRESETS
-                        .iter()
-                        .filter(|p| p.id != "custom")
-                        .map(|p| {
-                            let id = p.id;
-                            view! {
-                                <option value=id>{move || i18n::settings_api_base_preset_label(id, locale.get())}</option>
-                            }
-                        })
-                        .collect_view()}
-                    <option value="custom">{move || i18n::settings_api_base_preset_custom(locale.get())}</option>
-                </select>
-            </div>
-            <Show when=move || executor_llm_api_base_preset_select.get() == "custom">
-                <div class="settings-field">
-                    <label class="settings-field-label" for="settings-executor-llm-api-base">
-                        {move || i18n::settings_label_executor_api_base(locale.get())}
-                    </label>
-                    <input
-                        type="text"
-                        id="settings-executor-llm-api-base"
-                        class="settings-text-input"
-                        prop:placeholder=move || i18n::settings_ph_api_base(locale.get())
-                        prop:value=move || executor_llm_api_base_draft.get()
-                        on:input=move |ev| {
-                            executor_llm_api_base_preset_select.set("custom".to_string());
-                            executor_llm_api_base_draft.set(event_target_value(&ev));
-                        }
-                    />
-                </div>
-            </Show>
-            <div class="settings-field">
-                <label class="settings-field-label" for="settings-executor-llm-model">
-                    {move || i18n::settings_label_executor_model(locale.get())}
-                </label>
-                <input
-                    type="text"
-                    id="settings-executor-llm-model"
-                    class="settings-text-input"
-                    prop:placeholder=move || i18n::settings_ph_model(locale.get())
-                    prop:value=move || executor_llm_model_draft.get()
-                    on:input=move |ev| executor_llm_model_draft.set(event_target_value(&ev))
-                />
-            </div>
-            <div class="settings-field">
-                <label class="settings-field-label" for="settings-executor-llm-api-key">
-                    {move || i18n::settings_label_executor_api_key(locale.get())}
-                </label>
-                <input
-                    type="password"
-                    id="settings-executor-llm-api-key"
-                    class="settings-text-input"
-                    autocomplete="off"
-                    prop:placeholder=move || i18n::settings_ph_executor_api_key(locale.get())
-                    prop:value=move || executor_llm_api_key_draft.get()
-                    on:input=move |ev| executor_llm_api_key_draft.set(event_target_value(&ev))
-                />
-            </div>
-            <Show when=move || executor_llm_has_saved_key.get() && !clear_executor_key_intent.get()>
-                <p class=hint_class>{move || i18n::settings_executor_key_saved_note(locale.get())}</p>
-            </Show>
-            <div class="settings-actions-row">
-                <button
-                    type="button"
-                    class="btn btn-secondary btn-sm"
-                    prop:disabled=move || !executor_llm_has_saved_key.get() || clear_executor_key_intent.get()
-                    on:click=move |_| {
-                        clear_executor_key_intent.set(true);
-                        executor_llm_api_key_draft.set(String::new());
-                    }
-                >
-                    {move || i18n::settings_clear_executor_key(locale.get())}
-                </button>
-            </div>
+            <LlmApiBasePresetSelect
+                locale
+                api_base_draft=executor_llm_api_base_draft
+                api_base_preset_select=executor_llm_api_base_preset_select
+                model_draft=executor_llm_model_draft
+                select_id="settings-executor-llm-api-base-preset"
+            />
+            <LlmCustomApiBaseInput
+                locale
+                api_base_draft=executor_llm_api_base_draft
+                api_base_preset_select=executor_llm_api_base_preset_select
+                label_fn=i18n::settings_label_executor_api_base
+                placeholder_fn=i18n::settings_ph_api_base
+                input_id="settings-executor-llm-api-base"
+            />
+            <LlmModelField
+                locale
+                model_draft=executor_llm_model_draft
+                label_fn=i18n::settings_label_executor_model
+                placeholder_fn=i18n::settings_ph_model
+                input_id="settings-executor-llm-model"
+            />
+            <LlmExecutorApiKeyField
+                locale
+                api_key_draft=executor_llm_api_key_draft
+                has_saved_key=executor_llm_has_saved_key
+                clear_key_intent=clear_executor_key_intent
+                hint_class
+            />
         </div>
     }
 }

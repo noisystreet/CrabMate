@@ -20,81 +20,69 @@ fn is_known_subcommand(s: &str) -> bool {
     )
 }
 
-/// 若 argv 在 **未写子命令名** 时使用历史平铺 flag（`--serve`、`--query` 等），改写为 `serve` / `chat` / … 形式再交给 clap。
-///
-/// 已写子命令（如 `crabmate repl` / `crabmate doctor`）或 `-h` / `--help` / `-V` / `--version` 时不改写。
-///
-/// **`help` 子命令**：`crabmate help` → 根级 `--help`；`crabmate help serve` 等 → 对应子命令 `--help`（否则未写子命令时会被当成 `repl` 的多余参数并报错）。
-///
-/// 将历史平铺 flag 映射为子命令形式（**契约稳定面**）；与 [`super::parse::parse_args`] / [`super::parse::parse_args_from_argv`] 共用。
-pub fn normalize_legacy_argv(args: Vec<String>) -> Vec<String> {
-    if args.len() <= 1 {
-        return args;
+fn normalize_help_argv(prog: String, rest: &[String]) -> Option<Vec<String>> {
+    if rest.first().is_none_or(|s| s != "help") {
+        return None;
     }
-    let prog = args[0].clone();
-    let rest = &args[1..];
-    if rest.first().is_some_and(|s| s == "help") {
-        return match rest.len() {
-            1 => vec![prog, "--help".into()],
-            _ if is_known_subcommand(rest[1].as_str()) => {
-                vec![prog, rest[1].clone(), "--help".into()]
-            }
-            _ => vec![prog, "--help".into()],
-        };
-    }
-    // 任意位置出现显式子命令名（如 `crabmate --workspace /x doctor`）时不再插入默认 `repl`。
-    if rest.iter().any(|a| is_known_subcommand(a.as_str())) {
-        return args;
-    }
-    if rest
-        .iter()
-        .any(|a| matches!(a.as_str(), "-h" | "--help" | "-V" | "--version"))
-    {
-        return args;
-    }
-
-    if rest.iter().any(|a| a == "--dry-run") {
-        let mut out = vec![prog, "config".into()];
-        for a in rest {
-            if a != "--dry-run" {
-                out.push(a.clone());
-            }
+    Some(match rest.len() {
+        1 => vec![prog, "--help".into()],
+        _ if is_known_subcommand(rest[1].as_str()) => {
+            vec![prog, rest[1].clone(), "--help".into()]
         }
-        out.push("--dry-run".into());
-        return out;
-    }
+        _ => vec![prog, "--help".into()],
+    })
+}
 
-    if rest.iter().any(|a| a == "--serve") {
-        let mut new_rest: Vec<String> = Vec::new();
-        let mut i = 0;
-        while i < rest.len() {
-            if rest[i] == "--serve" {
-                i += 1;
-                if i < rest.len() && !rest[i].starts_with('-') {
-                    i += 1;
-                }
-                continue;
-            }
-            new_rest.push(rest[i].clone());
+fn rewrite_dry_run_to_config(prog: &str, rest: &[String]) -> Option<Vec<String>> {
+    if !rest.iter().any(|a| a == "--dry-run") {
+        return None;
+    }
+    let mut out = vec![prog.to_string(), "config".into()];
+    for a in rest {
+        if a != "--dry-run" {
+            out.push(a.clone());
+        }
+    }
+    out.push("--dry-run".into());
+    Some(out)
+}
+
+/// `--serve` 及可选端口 → `serve …`；其余 flag 保留在尾部。
+fn rewrite_serve_subcommand(prog: String, rest: &[String]) -> Option<Vec<String>> {
+    if !rest.iter().any(|a| a == "--serve") {
+        return None;
+    }
+    let mut new_rest: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < rest.len() {
+        if rest[i] == "--serve" {
             i += 1;
-        }
-        let mut out = vec![prog, "serve".into()];
-        i = 0;
-        while i < rest.len() {
-            if rest[i] == "--serve" {
+            if i < rest.len() && !rest[i].starts_with('-') {
                 i += 1;
-                if i < rest.len() && !rest[i].starts_with('-') {
-                    out.push(rest[i].clone());
-                }
-                break;
             }
-            i += 1;
+            continue;
         }
-        out.extend(new_rest);
-        return out;
+        new_rest.push(rest[i].clone());
+        i += 1;
     }
+    let mut out = vec![prog, "serve".into()];
+    i = 0;
+    while i < rest.len() {
+        if rest[i] == "--serve" {
+            i += 1;
+            if i < rest.len() && !rest[i].starts_with('-') {
+                out.push(rest[i].clone());
+            }
+            break;
+        }
+        i += 1;
+    }
+    out.extend(new_rest);
+    Some(out)
+}
 
-    let has_bench = rest.iter().any(|a| {
+fn rest_has_legacy_bench_flag(rest: &[String]) -> bool {
+    rest.iter().any(|a| {
         a == "--benchmark"
             || a.starts_with("--benchmark=")
             || a == "--batch"
@@ -108,14 +96,11 @@ pub fn normalize_legacy_argv(args: Vec<String>) -> Vec<String> {
             || a == "--resume"
             || a == "--bench-system-prompt"
             || a.starts_with("--bench-system-prompt=")
-    });
-    if has_bench {
-        let mut out = vec![prog, "bench".into()];
-        out.extend(rest.iter().cloned());
-        return out;
-    }
+    })
+}
 
-    let has_chat = rest.iter().any(|a| {
+fn rest_has_legacy_chat_flag(rest: &[String]) -> bool {
+    rest.iter().any(|a| {
         a == "--query"
             || a.starts_with("--query=")
             || a == "--stdin"
@@ -134,8 +119,50 @@ pub fn normalize_legacy_argv(args: Vec<String>) -> Vec<String> {
             || a.starts_with("--approve-commands=")
             || a == "--agent-role"
             || a.starts_with("--agent-role=")
-    });
-    if has_chat {
+    })
+}
+
+/// 若 argv 在 **未写子命令名** 时使用历史平铺 flag（`--serve`、`--query` 等），改写为 `serve` / `chat` / … 形式再交给 clap。
+///
+/// 已写子命令（如 `crabmate repl` / `crabmate doctor`）或 `-h` / `--help` / `-V` / `--version` 时不改写。
+///
+/// **`help` 子命令**：`crabmate help` → 根级 `--help`；`crabmate help serve` 等 → 对应子命令 `--help`（否则未写子命令时会被当成 `repl` 的多余参数并报错）。
+///
+/// 将历史平铺 flag 映射为子命令形式（**契约稳定面**）；与 [`super::parse::parse_args`] / [`super::parse::parse_args_from_argv`] 共用。
+pub fn normalize_legacy_argv(args: Vec<String>) -> Vec<String> {
+    if args.len() <= 1 {
+        return args;
+    }
+    let prog = args[0].clone();
+    let rest = &args[1..];
+    if let Some(v) = normalize_help_argv(prog.clone(), rest) {
+        return v;
+    }
+    if rest.iter().any(|a| is_known_subcommand(a.as_str())) {
+        return args;
+    }
+    if rest
+        .iter()
+        .any(|a| matches!(a.as_str(), "-h" | "--help" | "-V" | "--version"))
+    {
+        return args;
+    }
+
+    if let Some(out) = rewrite_dry_run_to_config(&prog, rest) {
+        return out;
+    }
+
+    if let Some(out) = rewrite_serve_subcommand(prog.clone(), rest) {
+        return out;
+    }
+
+    if rest_has_legacy_bench_flag(rest) {
+        let mut out = vec![prog, "bench".into()];
+        out.extend(rest.iter().cloned());
+        return out;
+    }
+
+    if rest_has_legacy_chat_flag(rest) {
         let mut out = vec![prog, "chat".into()];
         out.extend(rest.iter().cloned());
         return out;

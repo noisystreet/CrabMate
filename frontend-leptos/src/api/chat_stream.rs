@@ -84,6 +84,75 @@ impl Clone for ChatStreamCallbacks {
     }
 }
 
+/// 块边界可能截断 UTF-8：只把从开头起「完整码点」前缀解码进 `text`，余字节留在 `raw`。
+fn append_chunk_to_text_buffer(raw: &mut Vec<u8>, chunk: &[u8], text: &mut String) {
+    raw.extend_from_slice(chunk);
+    loop {
+        if raw.is_empty() {
+            break;
+        }
+        match std::str::from_utf8(raw.as_slice()) {
+            Ok(s) => {
+                text.push_str(s);
+                raw.clear();
+                break;
+            }
+            Err(e) => {
+                let n = e.valid_up_to();
+                if n == 0 {
+                    break;
+                }
+                text.push_str(std::str::from_utf8(&raw[..n]).expect("valid_up_to"));
+                raw.drain(..n);
+            }
+        }
+    }
+}
+
+fn build_chat_stream_post_body(
+    message: &str,
+    image_urls: &[String],
+    conversation_id: &Option<String>,
+    agent_role: &Option<String>,
+    approval_session_id: &Option<String>,
+    stream_resume_job_id: Option<u64>,
+    last_event_id: u64,
+    clarify_questionnaire_answers: &Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    let mut body = serde_json::json!({
+        "message": message,
+        "conversation_id": conversation_id,
+        "agent_role": agent_role,
+        "approval_session_id": approval_session_id,
+        "client_sse_protocol": SSE_PROTOCOL_VERSION,
+    });
+    if !image_urls.is_empty() {
+        body["image_urls"] = serde_json::json!(image_urls);
+    }
+    if let Some(cq) = clarify_questionnaire_answers {
+        body["clarify_questionnaire_answers"] = cq.clone();
+    }
+    if let Some(jid) = stream_resume_job_id {
+        body["stream_resume"] = serde_json::json!({
+            "job_id": jid,
+            "after_seq": last_event_id,
+        });
+    }
+    if let Some(cl) = client_llm_json_for_chat_body() {
+        body["client_llm"] = cl;
+    }
+    if let Some(el) = executor_llm_json_for_chat_body() {
+        body["executor_llm"] = el;
+    }
+    if let Some(temp) = chat_temperature_override_from_storage() {
+        body["temperature"] = serde_json::json!(temp);
+    }
+    if let Some(mode) = execution_mode_for_chat_body() {
+        body["execution_mode"] = serde_json::json!(mode);
+    }
+    Ok(body)
+}
+
 /// `/chat/stream`：支持 **`Last-Event-ID`** 与 JSON **`stream_resume`** 断线重连（网络抖动时自动重试若干次）。
 #[allow(clippy::too_many_arguments)] // 流式聊天入口：正文、图片、会话、审批、断线续传、回调与语言等正交参数
 pub async fn send_chat_stream(
@@ -107,37 +176,16 @@ pub async fn send_chat_stream(
         if signal.aborted() {
             return Ok(());
         }
-        let mut body = serde_json::json!({
-            "message": message,
-            "conversation_id": conversation_id,
-            "agent_role": agent_role,
-            "approval_session_id": approval_session_id,
-            "client_sse_protocol": SSE_PROTOCOL_VERSION,
-        });
-        if !image_urls.is_empty() {
-            body["image_urls"] = serde_json::json!(image_urls);
-        }
-        if let Some(ref cq) = clarify_questionnaire_answers {
-            body["clarify_questionnaire_answers"] = cq.clone();
-        }
-        if let Some(jid) = stream_resume_job_id {
-            body["stream_resume"] = serde_json::json!({
-                "job_id": jid,
-                "after_seq": last_event_id,
-            });
-        }
-        if let Some(cl) = client_llm_json_for_chat_body() {
-            body["client_llm"] = cl;
-        }
-        if let Some(el) = executor_llm_json_for_chat_body() {
-            body["executor_llm"] = el;
-        }
-        if let Some(temp) = chat_temperature_override_from_storage() {
-            body["temperature"] = serde_json::json!(temp);
-        }
-        if let Some(mode) = execution_mode_for_chat_body() {
-            body["execution_mode"] = serde_json::json!(mode);
-        }
+        let body = build_chat_stream_post_body(
+            &message,
+            &image_urls,
+            &conversation_id,
+            &agent_role,
+            &approval_session_id,
+            stream_resume_job_id,
+            last_event_id,
+            &clarify_questionnaire_answers,
+        )?;
         let init = RequestInit::new();
         init.set_method("POST");
         init.set_mode(RequestMode::Cors);
@@ -203,34 +251,7 @@ pub async fn send_chat_stream(
             .dyn_into()
             .map_err(|_| crate::i18n::api_err_stream_reader(loc).to_string())?;
 
-        // 块边界可能截断 UTF-8：只把从开头起「完整码点」前缀解码进 `text`，余字节留在 `raw`。
-        // 使用 `Utf8Error::valid_up_to` 一次确定合法前缀，避免对每个字节反复 `from_utf8`（原 while 递减为 O(n²)）。
-        // SSE 仍由下方 `process_sse_buffer` 按 `\n\n` 分帧；ReadableStream 块与 UTF-8/行边界无关，只能缓冲后解码。
-        fn append_chunk_to_text_buffer(raw: &mut Vec<u8>, chunk: &[u8], text: &mut String) {
-            raw.extend_from_slice(chunk);
-            loop {
-                if raw.is_empty() {
-                    break;
-                }
-                match std::str::from_utf8(raw) {
-                    Ok(s) => {
-                        text.push_str(s);
-                        raw.clear();
-                        break;
-                    }
-                    Err(e) => {
-                        let n = e.valid_up_to();
-                        if n == 0 {
-                            break;
-                        }
-                        // `valid_up_to` 保证 `raw[..n]` 为合法 UTF-8 且落在码点边界上。
-                        text.push_str(std::str::from_utf8(&raw[..n]).expect("valid_up_to"));
-                        raw.drain(..n);
-                    }
-                }
-            }
-        }
-
+        // UTF-8 与 SSE 分帧：见模块级 `append_chunk_to_text_buffer` / `process_sse_buffer`。
         let mut raw: Vec<u8> = Vec::new();
         let mut buffer = String::new();
         let mut stream_finished_normally = false;

@@ -128,22 +128,21 @@ fn effective_ecosystem(requested: Ecosystem, text: &str) -> Ecosystem {
     }
 }
 
-fn detect_category(text: &str, eco: Ecosystem) -> Category {
-    let t = text.to_ascii_lowercase();
-    if t.contains("no space left on device")
+fn detect_category_disk(t: &str) -> bool {
+    t.contains("no space left on device")
         || t.contains("enospc")
         || t.contains("disk quota exceeded")
-    {
-        return Category::Disk;
-    }
-    if t.contains("permission denied")
+}
+
+fn detect_category_permission(t: &str) -> bool {
+    t.contains("permission denied")
         || t.contains("eacces")
         || t.contains("eperm")
         || t.contains("operation not permitted")
-    {
-        return Category::Permission;
-    }
-    if t.contains("connection refused")
+}
+
+fn detect_category_network(t: &str) -> bool {
+    t.contains("connection refused")
         || t.contains("econnrefused")
         || t.contains("connection timed out")
         || t.contains("etimedout")
@@ -152,40 +151,62 @@ fn detect_category(text: &str, eco: Ecosystem) -> Category {
         || t.contains("tls handshake")
         || t.contains("ssl certificate")
         || t.contains("certificate verify failed")
-    {
-        return Category::Network;
-    }
-    if matches!(eco, Ecosystem::Rust | Ecosystem::Generic | Ecosystem::Auto)
+}
+
+fn detect_category_dependency_rustish(t: &str, eco: Ecosystem) -> bool {
+    matches!(eco, Ecosystem::Rust | Ecosystem::Generic | Ecosystem::Auto)
         && (t.contains("could not find `")
             || t.contains("failed to select a version")
             || t.contains("no matching package named")
             || t.contains("failed to resolve")
             || t.contains("unresolved import"))
-    {
-        return Category::Dependency;
-    }
-    if t.contains("modulenotfounderror")
+}
+
+fn detect_category_dependency_other(t: &str) -> bool {
+    t.contains("modulenotfounderror")
         || t.contains("no module named")
         || t.contains("cannot find module")
         || (t.contains("npm err!")
             && (t.contains("enoent") || t.contains("not found") || t.contains("missing")))
-    {
-        return Category::Dependency;
-    }
-    if t.contains("failed") && (t.contains("assertion") || t.contains("test result:"))
+}
+
+fn detect_category_test_failure(t: &str) -> bool {
+    (t.contains("failed") && (t.contains("assertion") || t.contains("test result:")))
         || t.contains("assertionerror")
         || t.contains("==== failures ====")
-    {
-        return Category::TestFailure;
-    }
-    if t.contains("error[e")
+}
+
+fn detect_category_syntax_or_type(t: &str) -> bool {
+    t.contains("error[e")
         || t.contains("error: could not compile")
         || t.contains("syntax error")
         || t.contains("parse error")
         || t.contains("unexpected token")
         || t.contains("typeerror")
         || t.contains("referenceerror")
-    {
+}
+
+fn detect_category(text: &str, eco: Ecosystem) -> Category {
+    let t = text.to_ascii_lowercase();
+    if detect_category_disk(&t) {
+        return Category::Disk;
+    }
+    if detect_category_permission(&t) {
+        return Category::Permission;
+    }
+    if detect_category_network(&t) {
+        return Category::Network;
+    }
+    if detect_category_dependency_rustish(&t, eco) {
+        return Category::Dependency;
+    }
+    if detect_category_dependency_other(&t) {
+        return Category::Dependency;
+    }
+    if detect_category_test_failure(&t) {
+        return Category::TestFailure;
+    }
+    if detect_category_syntax_or_type(&t) {
         return Category::SyntaxOrType;
     }
     Category::Other

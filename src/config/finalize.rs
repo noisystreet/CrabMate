@@ -126,8 +126,335 @@ pub(crate) fn context_budget_vs_history_suspicious(
     context_char_budget > 0 && context_min_messages_after_system >= max_message_history
 }
 
-/// 验证、clamp 并组装最终 `AgentConfig`。
-pub(super) fn finalize(
+fn validate_ltm_backend_when_enabled(
+    enabled: bool,
+    backend: LongTermMemoryVectorBackend,
+) -> Result<(), String> {
+    if !enabled {
+        return Ok(());
+    }
+    match backend {
+        LongTermMemoryVectorBackend::Qdrant | LongTermMemoryVectorBackend::Pgvector => Err(
+            "配置错误：长期记忆向量后端 qdrant / pgvector 尚未接入；请使用 disabled 或 fastembed，或关闭 long_term_memory_enabled"
+                .to_string(),
+        ),
+        LongTermMemoryVectorBackend::Disabled | LongTermMemoryVectorBackend::Fastembed => Ok(()),
+    }
+}
+
+fn validate_docker_sandbox_image(
+    mode: types::SyncDefaultToolSandboxMode,
+    image: &str,
+) -> Result<(), String> {
+    if mode == types::SyncDefaultToolSandboxMode::Docker && image.trim().is_empty() {
+        return Err(
+            "配置错误：sync_default_tool_sandbox_mode=docker 时必须设置非空的 sync_default_tool_sandbox_docker_image"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+struct ToolRegistryDerived {
+    tool_registry_http_fetch_wall_timeout_secs: Option<u64>,
+    tool_registry_http_request_wall_timeout_secs: Option<u64>,
+    tool_registry_parallel_wall_timeout_secs: Arc<HashMap<String, u64>>,
+    tool_registry_parallel_sync_denied_tools: Option<Arc<HashSet<String>>>,
+    tool_registry_parallel_sync_denied_prefixes: Option<Arc<[String]>>,
+    tool_registry_sync_default_inline_tools: Option<Arc<HashSet<String>>>,
+    tool_registry_write_effect_tools: Option<Arc<HashSet<String>>>,
+    tool_registry_sub_agent_patch_write_extra_tools: Option<Arc<HashSet<String>>>,
+    tool_registry_sub_agent_test_runner_extra_tools: Option<Arc<HashSet<String>>>,
+    tool_registry_sub_agent_review_readonly_deny_tools: Option<Arc<HashSet<String>>>,
+}
+
+fn derive_tool_registry_fields(b: &ConfigBuilder) -> ToolRegistryDerived {
+    ToolRegistryDerived {
+        tool_registry_http_fetch_wall_timeout_secs: b
+            .tool_registry_http_fetch_wall_timeout_secs
+            .map(|s| s.clamp(1, 86_400)),
+        tool_registry_http_request_wall_timeout_secs: b
+            .tool_registry_http_request_wall_timeout_secs
+            .map(|s| s.clamp(1, 86_400)),
+        tool_registry_parallel_wall_timeout_secs: Arc::new(
+            b.tool_registry_parallel_wall_timeout_secs
+                .iter()
+                .map(|(k, v)| (k.clone(), (*v).clamp(1, 86_400)))
+                .collect::<HashMap<_, _>>(),
+        ),
+        tool_registry_parallel_sync_denied_tools: b
+            .tool_registry_parallel_sync_denied_tools
+            .as_ref()
+            .map(|v| {
+                Arc::new(
+                    v.iter()
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect::<HashSet<_>>(),
+                )
+            }),
+        tool_registry_parallel_sync_denied_prefixes: b
+            .tool_registry_parallel_sync_denied_prefixes
+            .as_ref()
+            .map(|v| {
+                let cleaned: Vec<String> = v
+                    .iter()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                Arc::from(cleaned.into_boxed_slice())
+            }),
+        tool_registry_sync_default_inline_tools: b
+            .tool_registry_sync_default_inline_tools
+            .as_ref()
+            .map(|v| {
+                Arc::new(
+                    v.iter()
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect::<HashSet<_>>(),
+                )
+            }),
+        tool_registry_write_effect_tools: b.tool_registry_write_effect_tools.as_ref().map(|v| {
+            Arc::new(
+                v.iter()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect::<HashSet<_>>(),
+            )
+        }),
+        tool_registry_sub_agent_patch_write_extra_tools: b
+            .tool_registry_sub_agent_patch_write_extra_tools
+            .as_ref()
+            .map(|v| {
+                Arc::new(
+                    v.iter()
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect::<HashSet<_>>(),
+                )
+            }),
+        tool_registry_sub_agent_test_runner_extra_tools: b
+            .tool_registry_sub_agent_test_runner_extra_tools
+            .as_ref()
+            .map(|v| {
+                Arc::new(
+                    v.iter()
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect::<HashSet<_>>(),
+                )
+            }),
+        tool_registry_sub_agent_review_readonly_deny_tools: b
+            .tool_registry_sub_agent_review_readonly_deny_tools
+            .as_ref()
+            .map(|v| {
+                Arc::new(
+                    v.iter()
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect::<HashSet<_>>(),
+                )
+            }),
+    }
+}
+
+struct IntentDerived {
+    llm_http_auth_mode: types::LlmHttpAuthMode,
+    llm_reasoning_split: bool,
+    intent_execute_low_threshold: f32,
+    intent_execute_high_threshold: f32,
+    intent_non_hier_execute_low_threshold: f32,
+    intent_non_hier_execute_high_threshold: f32,
+    intent_mode_bias_enabled: bool,
+    intent_l2_enabled: bool,
+    intent_l2_min_confidence: f32,
+    intent_l2_max_tokens: u32,
+    intent_at_turn_start_enabled: bool,
+    intent_l0_routing_boost_enabled: bool,
+}
+
+fn derive_intent_fields(b: &ConfigBuilder) -> Result<IntentDerived, String> {
+    let llm_http_auth_mode = match b.llm_http_auth_mode_str.as_deref() {
+        Some(s) => types::LlmHttpAuthMode::parse(s)?,
+        None => types::LlmHttpAuthMode::default(),
+    };
+    let llm_reasoning_split = b.llm_reasoning_split.unwrap_or_else(|| {
+        crate::llm::vendor::default_llm_reasoning_split_for_gateway(&b.model, &b.api_base)
+    });
+    let intent_execute_low_threshold = b
+        .intent_execute_low_threshold
+        .unwrap_or(0.2)
+        .clamp(0.0, 1.0) as f32;
+    let intent_execute_high_threshold = b
+        .intent_execute_high_threshold
+        .unwrap_or(0.45)
+        .clamp(0.0, 1.0) as f32;
+    let intent_execute_high_threshold =
+        intent_execute_high_threshold.max(intent_execute_low_threshold);
+    let intent_non_hier_execute_low_threshold = b
+        .intent_non_hier_execute_low_threshold
+        .unwrap_or(intent_execute_low_threshold as f64)
+        .clamp(0.0, 1.0) as f32;
+    let intent_non_hier_execute_high_threshold = b
+        .intent_non_hier_execute_high_threshold
+        .unwrap_or(intent_execute_high_threshold as f64)
+        .clamp(0.0, 1.0) as f32;
+    let intent_non_hier_execute_high_threshold =
+        intent_non_hier_execute_high_threshold.max(intent_non_hier_execute_low_threshold);
+    Ok(IntentDerived {
+        llm_http_auth_mode,
+        llm_reasoning_split,
+        intent_execute_low_threshold,
+        intent_execute_high_threshold,
+        intent_non_hier_execute_low_threshold,
+        intent_non_hier_execute_high_threshold,
+        intent_mode_bias_enabled: b.intent_mode_bias_enabled.unwrap_or(true),
+        intent_l2_enabled: b.intent_l2_enabled.unwrap_or(true),
+        intent_l2_min_confidence: b.intent_l2_min_confidence.unwrap_or(0.7).clamp(0.0, 1.0) as f32,
+        intent_l2_max_tokens: b.intent_l2_max_tokens.unwrap_or(220).clamp(32, 1024) as u32,
+        intent_at_turn_start_enabled: b.intent_at_turn_start_enabled.unwrap_or(false),
+        intent_l0_routing_boost_enabled: b.intent_l0_routing_boost_enabled.unwrap_or(true),
+    })
+}
+
+struct LtmDerived {
+    long_term_memory_enabled: bool,
+    long_term_memory_scope_mode: LongTermMemoryScopeMode,
+    long_term_memory_vector_backend: LongTermMemoryVectorBackend,
+    long_term_memory_max_entries: usize,
+    long_term_memory_inject_max_chars: usize,
+    long_term_memory_store_sqlite_path: String,
+    long_term_memory_top_k: usize,
+    long_term_memory_max_chars_per_chunk: usize,
+    long_term_memory_min_chars_to_index: usize,
+    long_term_memory_async_index: bool,
+    long_term_memory_auto_index_turns: bool,
+    long_term_memory_default_ttl_secs: u64,
+}
+
+fn derive_ltm(b: &ConfigBuilder) -> Result<LtmDerived, String> {
+    let long_term_memory_enabled = b.long_term_memory_enabled.unwrap_or(true);
+    let long_term_memory_scope_mode = match b.long_term_memory_scope_mode_str.as_deref() {
+        Some(s) => LongTermMemoryScopeMode::parse(s)?,
+        None => LongTermMemoryScopeMode::default(),
+    };
+    let long_term_memory_vector_backend = match b.long_term_memory_vector_backend_str.as_deref() {
+        Some(s) => LongTermMemoryVectorBackend::parse(s)?,
+        None => LongTermMemoryVectorBackend::default(),
+    };
+    #[cfg(not(feature = "fastembed"))]
+    let long_term_memory_vector_backend = if long_term_memory_enabled
+        && long_term_memory_vector_backend == LongTermMemoryVectorBackend::Fastembed
+    {
+        LongTermMemoryVectorBackend::Disabled
+    } else {
+        long_term_memory_vector_backend
+    };
+    validate_ltm_backend_when_enabled(long_term_memory_enabled, long_term_memory_vector_backend)?;
+    Ok(LtmDerived {
+        long_term_memory_enabled,
+        long_term_memory_scope_mode,
+        long_term_memory_vector_backend,
+        long_term_memory_max_entries: b
+            .long_term_memory_max_entries
+            .unwrap_or(256)
+            .clamp(1, 100_000) as usize,
+        long_term_memory_inject_max_chars: b
+            .long_term_memory_inject_max_chars
+            .unwrap_or(8000)
+            .clamp(256, 500_000) as usize,
+        long_term_memory_store_sqlite_path: b
+            .long_term_memory_store_sqlite_path
+            .clone()
+            .unwrap_or_default(),
+        long_term_memory_top_k: b.long_term_memory_top_k.unwrap_or(8).clamp(1, 64) as usize,
+        long_term_memory_max_chars_per_chunk: b
+            .long_term_memory_max_chars_per_chunk
+            .unwrap_or(1024)
+            .clamp(256, 32_000) as usize,
+        long_term_memory_min_chars_to_index: b
+            .long_term_memory_min_chars_to_index
+            .unwrap_or(8)
+            .clamp(0, 4096) as usize,
+        long_term_memory_async_index: b.long_term_memory_async_index.unwrap_or(true),
+        long_term_memory_auto_index_turns: b.long_term_memory_auto_index_turns.unwrap_or(true),
+        long_term_memory_default_ttl_secs: b
+            .long_term_memory_default_ttl_secs
+            .unwrap_or(0)
+            .clamp(0, 365 * 86400 * 10),
+    })
+}
+
+struct CodebaseSemanticDerived {
+    codebase_semantic_search_enabled: bool,
+    codebase_semantic_invalidate_on_workspace_change: bool,
+    codebase_semantic_index_sqlite_path: String,
+    codebase_semantic_max_file_bytes: usize,
+    codebase_semantic_chunk_max_chars: usize,
+    codebase_semantic_top_k: usize,
+    codebase_semantic_query_max_chunks: usize,
+    codebase_semantic_rebuild_max_files: usize,
+    codebase_semantic_rebuild_incremental: bool,
+    codebase_semantic_hybrid_alpha: f32,
+    codebase_semantic_fts_top_n: usize,
+    codebase_semantic_hybrid_semantic_pool: usize,
+}
+
+fn derive_codebase_semantic(b: &ConfigBuilder) -> CodebaseSemanticDerived {
+    #[cfg(feature = "fastembed")]
+    let codebase_semantic_search_enabled = b.codebase_semantic_search_enabled.unwrap_or(true);
+    #[cfg(not(feature = "fastembed"))]
+    let codebase_semantic_search_enabled = false;
+    let mut codebase_semantic_hybrid_alpha =
+        b.codebase_semantic_hybrid_alpha.unwrap_or(0.55_f64) as f32;
+    if !codebase_semantic_hybrid_alpha.is_finite() {
+        codebase_semantic_hybrid_alpha = 0.55;
+    }
+    codebase_semantic_hybrid_alpha = codebase_semantic_hybrid_alpha.clamp(0.0, 1.0);
+    CodebaseSemanticDerived {
+        codebase_semantic_search_enabled,
+        codebase_semantic_invalidate_on_workspace_change: b
+            .codebase_semantic_invalidate_on_workspace_change
+            .unwrap_or(true),
+        codebase_semantic_index_sqlite_path: b
+            .codebase_semantic_index_sqlite_path
+            .clone()
+            .unwrap_or_default(),
+        codebase_semantic_max_file_bytes: b
+            .codebase_semantic_max_file_bytes
+            .unwrap_or(512 * 1024)
+            .clamp(4096, 4 * 1024 * 1024) as usize,
+        codebase_semantic_chunk_max_chars: b
+            .codebase_semantic_chunk_max_chars
+            .unwrap_or(1200)
+            .clamp(256, 16_000) as usize,
+        codebase_semantic_top_k: b.codebase_semantic_top_k.unwrap_or(8).clamp(1, 64) as usize,
+        codebase_semantic_query_max_chunks: b
+            .codebase_semantic_query_max_chunks
+            .unwrap_or(50_000)
+            .clamp(0, 2_000_000) as usize,
+        codebase_semantic_rebuild_max_files: b
+            .codebase_semantic_rebuild_max_files
+            .unwrap_or(2000)
+            .clamp(1, 100_000) as usize,
+        codebase_semantic_rebuild_incremental: b
+            .codebase_semantic_rebuild_incremental
+            .unwrap_or(true),
+        codebase_semantic_hybrid_alpha,
+        codebase_semantic_fts_top_n: b
+            .codebase_semantic_fts_top_n
+            .unwrap_or(400)
+            .clamp(1, 10_000) as usize,
+        codebase_semantic_hybrid_semantic_pool: b
+            .codebase_semantic_hybrid_semantic_pool
+            .unwrap_or(256)
+            .clamp(1, 10_000) as usize,
+    }
+}
+
+/// 验证、clamp 并组装最终 `AgentConfig`（实现体；`finalize` 为薄包装以降低圈复杂度扫描中的函数 CCN）。
+fn finalize_agent_config(
     b: ConfigBuilder,
     system_prompt_search_bases: Vec<PathBuf>,
 ) -> Result<AgentConfig, String> {
@@ -138,6 +465,10 @@ pub(super) fn finalize(
     if b.model.is_empty() {
         return Err("配置错误：未设置 model（请在 config/default_config.toml、config.toml、.agent_demo.toml 或环境变量 CM_MODEL 中设置）".to_string());
     }
+    let tr = derive_tool_registry_fields(&b);
+    let intent = derive_intent_fields(&b)?;
+    let ltm = derive_ltm(&b)?;
+    let sem = derive_codebase_semantic(&b);
     let max_message_history = b.max_message_history.unwrap_or(32).clamp(1, 1024) as usize;
     let tui_load_session_on_start = b.tui_load_session_on_start.unwrap_or(false);
     let tui_session_max_messages =
@@ -491,14 +822,10 @@ pub(super) fn finalize(
                 .as_deref()
                 .unwrap_or(""),
         );
-    if sync_default_tool_sandbox_mode == types::SyncDefaultToolSandboxMode::Docker
-        && sync_default_tool_sandbox_docker_image.trim().is_empty()
-    {
-        return Err(
-            "配置错误：sync_default_tool_sandbox_mode=docker 时必须设置非空的 sync_default_tool_sandbox_docker_image"
-                .to_string(),
-        );
-    }
+    validate_docker_sandbox_image(
+        sync_default_tool_sandbox_mode,
+        sync_default_tool_sandbox_docker_image.as_str(),
+    )?;
     let web_api_bearer_token =
         types::SecretString::new(b.web_api_bearer_token.unwrap_or_default().into());
     let web_api_require_bearer = b.web_api_require_bearer.unwrap_or(false);
@@ -545,110 +872,12 @@ pub(super) fn finalize(
     let max_chars_raw = b.tool_call_explain_max_chars.unwrap_or(400).clamp(1, 4000) as usize;
     let tool_call_explain_max_chars = max_chars_raw.max(tool_call_explain_min_chars);
 
-    let long_term_memory_enabled = b.long_term_memory_enabled.unwrap_or(true);
-    let long_term_memory_scope_mode = match b.long_term_memory_scope_mode_str.as_deref() {
-        Some(s) => LongTermMemoryScopeMode::parse(s)?,
-        None => LongTermMemoryScopeMode::default(),
-    };
-    let long_term_memory_vector_backend = match b.long_term_memory_vector_backend_str.as_deref() {
-        Some(s) => LongTermMemoryVectorBackend::parse(s)?,
-        None => LongTermMemoryVectorBackend::default(),
-    };
-    #[cfg(not(feature = "fastembed"))]
-    let long_term_memory_vector_backend = if long_term_memory_enabled
-        && long_term_memory_vector_backend == LongTermMemoryVectorBackend::Fastembed
-    {
-        // 默认合并配置常为 fastembed；无 ONNX 依赖构建时降级为 disabled，避免 `load_config` 在单测与嵌入场景中大面积失败。
-        LongTermMemoryVectorBackend::Disabled
-    } else {
-        long_term_memory_vector_backend
-    };
-    if long_term_memory_enabled {
-        match long_term_memory_vector_backend {
-            LongTermMemoryVectorBackend::Qdrant | LongTermMemoryVectorBackend::Pgvector => {
-                return Err(
-                    "配置错误：长期记忆向量后端 qdrant / pgvector 尚未接入；请使用 disabled 或 fastembed，或关闭 long_term_memory_enabled"
-                        .to_string(),
-                );
-            }
-            LongTermMemoryVectorBackend::Disabled | LongTermMemoryVectorBackend::Fastembed => {}
-        }
-    }
-    let long_term_memory_max_entries = b
-        .long_term_memory_max_entries
-        .unwrap_or(256)
-        .clamp(1, 100_000) as usize;
-    let long_term_memory_inject_max_chars = b
-        .long_term_memory_inject_max_chars
-        .unwrap_or(8000)
-        .clamp(256, 500_000) as usize;
-    let long_term_memory_store_sqlite_path =
-        b.long_term_memory_store_sqlite_path.unwrap_or_default();
-    let long_term_memory_top_k = b.long_term_memory_top_k.unwrap_or(8).clamp(1, 64) as usize;
-    let long_term_memory_max_chars_per_chunk = b
-        .long_term_memory_max_chars_per_chunk
-        .unwrap_or(1024)
-        .clamp(256, 32_000) as usize;
-    let long_term_memory_min_chars_to_index = b
-        .long_term_memory_min_chars_to_index
-        .unwrap_or(8)
-        .clamp(0, 4096) as usize;
-    let long_term_memory_async_index = b.long_term_memory_async_index.unwrap_or(true);
-    let long_term_memory_auto_index_turns = b.long_term_memory_auto_index_turns.unwrap_or(true);
-    let long_term_memory_default_ttl_secs = b
-        .long_term_memory_default_ttl_secs
-        .unwrap_or(0)
-        .clamp(0, 365 * 86400 * 10);
-
     let mcp_enabled = b.mcp_enabled.unwrap_or(false);
     let mcp_command = b.mcp_command.unwrap_or_default();
     let mcp_tool_timeout_secs = b
         .mcp_tool_timeout_secs
         .unwrap_or(command_timeout_secs)
         .max(1);
-
-    #[cfg(feature = "fastembed")]
-    let codebase_semantic_search_enabled = b.codebase_semantic_search_enabled.unwrap_or(true);
-    #[cfg(not(feature = "fastembed"))]
-    let codebase_semantic_search_enabled = false;
-    let codebase_semantic_invalidate_on_workspace_change = b
-        .codebase_semantic_invalidate_on_workspace_change
-        .unwrap_or(true);
-    let codebase_semantic_index_sqlite_path =
-        b.codebase_semantic_index_sqlite_path.unwrap_or_default();
-    let codebase_semantic_max_file_bytes = b
-        .codebase_semantic_max_file_bytes
-        .unwrap_or(512 * 1024)
-        .clamp(4096, 4 * 1024 * 1024) as usize;
-    let codebase_semantic_chunk_max_chars = b
-        .codebase_semantic_chunk_max_chars
-        .unwrap_or(1200)
-        .clamp(256, 16_000) as usize;
-    let codebase_semantic_top_k = b.codebase_semantic_top_k.unwrap_or(8).clamp(1, 64) as usize;
-    let codebase_semantic_query_max_chunks = b
-        .codebase_semantic_query_max_chunks
-        .unwrap_or(50_000)
-        .clamp(0, 2_000_000) as usize;
-    let codebase_semantic_rebuild_max_files = b
-        .codebase_semantic_rebuild_max_files
-        .unwrap_or(2000)
-        .clamp(1, 100_000) as usize;
-    let codebase_semantic_rebuild_incremental =
-        b.codebase_semantic_rebuild_incremental.unwrap_or(true);
-    let mut codebase_semantic_hybrid_alpha =
-        b.codebase_semantic_hybrid_alpha.unwrap_or(0.55_f64) as f32;
-    if !codebase_semantic_hybrid_alpha.is_finite() {
-        codebase_semantic_hybrid_alpha = 0.55;
-    }
-    codebase_semantic_hybrid_alpha = codebase_semantic_hybrid_alpha.clamp(0.0, 1.0);
-    let codebase_semantic_fts_top_n = b
-        .codebase_semantic_fts_top_n
-        .unwrap_or(400)
-        .clamp(1, 10_000) as usize;
-    let codebase_semantic_hybrid_semantic_pool = b
-        .codebase_semantic_hybrid_semantic_pool
-        .unwrap_or(256)
-        .clamp(1, 10_000) as usize;
 
     let web_search_provider = match b.web_search_provider_str.as_deref() {
         Some(s) => WebSearchProvider::parse(s)?,
@@ -666,123 +895,12 @@ pub(super) fn finalize(
         .unwrap_or(524_288)
         .clamp(1024, 4_194_304) as usize;
 
-    let tool_registry_http_fetch_wall_timeout_secs = b
-        .tool_registry_http_fetch_wall_timeout_secs
-        .map(|s| s.clamp(1, 86_400));
-    let tool_registry_http_request_wall_timeout_secs = b
-        .tool_registry_http_request_wall_timeout_secs
-        .map(|s| s.clamp(1, 86_400));
-    let tool_registry_parallel_wall_timeout_secs = Arc::new(
-        b.tool_registry_parallel_wall_timeout_secs
-            .into_iter()
-            .map(|(k, v)| (k, v.clamp(1, 86_400)))
-            .collect::<HashMap<_, _>>(),
-    );
-    let tool_registry_parallel_sync_denied_tools =
-        b.tool_registry_parallel_sync_denied_tools.map(|v| {
-            Arc::new(
-                v.into_iter()
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect::<HashSet<_>>(),
-            )
-        });
-    let tool_registry_parallel_sync_denied_prefixes =
-        b.tool_registry_parallel_sync_denied_prefixes.map(|v| {
-            let cleaned: Vec<String> = v
-                .into_iter()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
-            Arc::from(cleaned.into_boxed_slice())
-        });
-    let tool_registry_sync_default_inline_tools =
-        b.tool_registry_sync_default_inline_tools.map(|v| {
-            Arc::new(
-                v.into_iter()
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect::<HashSet<_>>(),
-            )
-        });
-    let tool_registry_write_effect_tools = b.tool_registry_write_effect_tools.map(|v| {
-        Arc::new(
-            v.into_iter()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect::<HashSet<_>>(),
-        )
-    });
-    let tool_registry_sub_agent_patch_write_extra_tools =
-        b.tool_registry_sub_agent_patch_write_extra_tools.map(|v| {
-            Arc::new(
-                v.into_iter()
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect::<HashSet<_>>(),
-            )
-        });
-    let tool_registry_sub_agent_test_runner_extra_tools =
-        b.tool_registry_sub_agent_test_runner_extra_tools.map(|v| {
-            Arc::new(
-                v.into_iter()
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect::<HashSet<_>>(),
-            )
-        });
-    let tool_registry_sub_agent_review_readonly_deny_tools = b
-        .tool_registry_sub_agent_review_readonly_deny_tools
-        .map(|v| {
-            Arc::new(
-                v.into_iter()
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect::<HashSet<_>>(),
-            )
-        });
-
-    let llm_http_auth_mode = match b.llm_http_auth_mode_str.as_deref() {
-        Some(s) => types::LlmHttpAuthMode::parse(s)?,
-        None => types::LlmHttpAuthMode::default(),
-    };
-
-    let llm_reasoning_split = b.llm_reasoning_split.unwrap_or_else(|| {
-        crate::llm::vendor::default_llm_reasoning_split_for_gateway(&b.model, &b.api_base)
-    });
-    let intent_execute_low_threshold = b
-        .intent_execute_low_threshold
-        .unwrap_or(0.2)
-        .clamp(0.0, 1.0) as f32;
-    let intent_execute_high_threshold = b
-        .intent_execute_high_threshold
-        .unwrap_or(0.45)
-        .clamp(0.0, 1.0) as f32;
-    let intent_execute_high_threshold =
-        intent_execute_high_threshold.max(intent_execute_low_threshold);
-    let intent_non_hier_execute_low_threshold = b
-        .intent_non_hier_execute_low_threshold
-        .unwrap_or(intent_execute_low_threshold as f64)
-        .clamp(0.0, 1.0) as f32;
-    let intent_non_hier_execute_high_threshold = b
-        .intent_non_hier_execute_high_threshold
-        .unwrap_or(intent_execute_high_threshold as f64)
-        .clamp(0.0, 1.0) as f32;
-    let intent_non_hier_execute_high_threshold =
-        intent_non_hier_execute_high_threshold.max(intent_non_hier_execute_low_threshold);
-    let intent_mode_bias_enabled = b.intent_mode_bias_enabled.unwrap_or(true);
-    let intent_l2_enabled = b.intent_l2_enabled.unwrap_or(true);
-    let intent_l2_min_confidence = b.intent_l2_min_confidence.unwrap_or(0.7).clamp(0.0, 1.0) as f32;
-    let intent_l2_max_tokens = b.intent_l2_max_tokens.unwrap_or(220).clamp(32, 1024) as u32;
-    let intent_at_turn_start_enabled = b.intent_at_turn_start_enabled.unwrap_or(false);
-    let intent_l0_routing_boost_enabled = b.intent_l0_routing_boost_enabled.unwrap_or(true);
-
     Ok(AgentConfig {
-        api_base: b.api_base,
-        model: b.model,
-        planner_model: b.planner_model,
-        executor_model: b.executor_model,
-        llm_http_auth_mode,
+        api_base: b.api_base.clone(),
+        model: b.model.clone(),
+        planner_model: b.planner_model.clone(),
+        executor_model: b.executor_model.clone(),
+        llm_http_auth_mode: intent.llm_http_auth_mode,
         max_message_history,
         tui_load_session_on_start,
         tui_session_max_messages,
@@ -794,7 +912,7 @@ pub(super) fn finalize(
         max_tokens,
         temperature,
         llm_seed: b.llm_seed,
-        llm_reasoning_split,
+        llm_reasoning_split: intent.llm_reasoning_split,
         llm_bigmodel_thinking: b.llm_bigmodel_thinking.unwrap_or(false),
         llm_kimi_thinking_disabled: b.llm_kimi_thinking_disabled.unwrap_or(false),
         api_timeout_secs,
@@ -890,56 +1008,68 @@ pub(super) fn finalize(
         tool_call_explain_enabled,
         tool_call_explain_min_chars,
         tool_call_explain_max_chars,
-        long_term_memory_enabled,
-        long_term_memory_scope_mode,
-        long_term_memory_vector_backend,
-        long_term_memory_max_entries,
-        long_term_memory_inject_max_chars,
-        long_term_memory_store_sqlite_path,
-        long_term_memory_top_k,
-        long_term_memory_max_chars_per_chunk,
-        long_term_memory_min_chars_to_index,
-        long_term_memory_async_index,
-        long_term_memory_auto_index_turns,
-        long_term_memory_default_ttl_secs,
+        long_term_memory_enabled: ltm.long_term_memory_enabled,
+        long_term_memory_scope_mode: ltm.long_term_memory_scope_mode,
+        long_term_memory_vector_backend: ltm.long_term_memory_vector_backend,
+        long_term_memory_max_entries: ltm.long_term_memory_max_entries,
+        long_term_memory_inject_max_chars: ltm.long_term_memory_inject_max_chars,
+        long_term_memory_store_sqlite_path: ltm.long_term_memory_store_sqlite_path,
+        long_term_memory_top_k: ltm.long_term_memory_top_k,
+        long_term_memory_max_chars_per_chunk: ltm.long_term_memory_max_chars_per_chunk,
+        long_term_memory_min_chars_to_index: ltm.long_term_memory_min_chars_to_index,
+        long_term_memory_async_index: ltm.long_term_memory_async_index,
+        long_term_memory_auto_index_turns: ltm.long_term_memory_auto_index_turns,
+        long_term_memory_default_ttl_secs: ltm.long_term_memory_default_ttl_secs,
         mcp_enabled,
         mcp_command,
         mcp_tool_timeout_secs,
-        codebase_semantic_search_enabled,
-        codebase_semantic_invalidate_on_workspace_change,
-        codebase_semantic_index_sqlite_path,
-        codebase_semantic_max_file_bytes,
-        codebase_semantic_chunk_max_chars,
-        codebase_semantic_top_k,
-        codebase_semantic_query_max_chunks,
-        codebase_semantic_rebuild_max_files,
-        codebase_semantic_rebuild_incremental,
-        codebase_semantic_hybrid_alpha,
-        codebase_semantic_fts_top_n,
-        codebase_semantic_hybrid_semantic_pool,
-        tool_registry_http_fetch_wall_timeout_secs,
-        tool_registry_http_request_wall_timeout_secs,
-        tool_registry_parallel_wall_timeout_secs,
-        tool_registry_parallel_sync_denied_tools,
-        tool_registry_parallel_sync_denied_prefixes,
-        tool_registry_sync_default_inline_tools,
-        tool_registry_write_effect_tools,
-        tool_registry_sub_agent_patch_write_extra_tools,
-        tool_registry_sub_agent_test_runner_extra_tools,
-        tool_registry_sub_agent_review_readonly_deny_tools,
+        codebase_semantic_search_enabled: sem.codebase_semantic_search_enabled,
+        codebase_semantic_invalidate_on_workspace_change: sem
+            .codebase_semantic_invalidate_on_workspace_change,
+        codebase_semantic_index_sqlite_path: sem.codebase_semantic_index_sqlite_path.clone(),
+        codebase_semantic_max_file_bytes: sem.codebase_semantic_max_file_bytes,
+        codebase_semantic_chunk_max_chars: sem.codebase_semantic_chunk_max_chars,
+        codebase_semantic_top_k: sem.codebase_semantic_top_k,
+        codebase_semantic_query_max_chunks: sem.codebase_semantic_query_max_chunks,
+        codebase_semantic_rebuild_max_files: sem.codebase_semantic_rebuild_max_files,
+        codebase_semantic_rebuild_incremental: sem.codebase_semantic_rebuild_incremental,
+        codebase_semantic_hybrid_alpha: sem.codebase_semantic_hybrid_alpha,
+        codebase_semantic_fts_top_n: sem.codebase_semantic_fts_top_n,
+        codebase_semantic_hybrid_semantic_pool: sem.codebase_semantic_hybrid_semantic_pool,
+        tool_registry_http_fetch_wall_timeout_secs: tr.tool_registry_http_fetch_wall_timeout_secs,
+        tool_registry_http_request_wall_timeout_secs: tr
+            .tool_registry_http_request_wall_timeout_secs,
+        tool_registry_parallel_wall_timeout_secs: tr.tool_registry_parallel_wall_timeout_secs,
+        tool_registry_parallel_sync_denied_tools: tr.tool_registry_parallel_sync_denied_tools,
+        tool_registry_parallel_sync_denied_prefixes: tr.tool_registry_parallel_sync_denied_prefixes,
+        tool_registry_sync_default_inline_tools: tr.tool_registry_sync_default_inline_tools,
+        tool_registry_write_effect_tools: tr.tool_registry_write_effect_tools,
+        tool_registry_sub_agent_patch_write_extra_tools: tr
+            .tool_registry_sub_agent_patch_write_extra_tools,
+        tool_registry_sub_agent_test_runner_extra_tools: tr
+            .tool_registry_sub_agent_test_runner_extra_tools,
+        tool_registry_sub_agent_review_readonly_deny_tools: tr
+            .tool_registry_sub_agent_review_readonly_deny_tools,
         max_turn_duration_seconds: 600,
         max_turn_tokens: 100_000,
         full_plan_rewrite_max_attempts: 2,
         enable_llm_routing: Some(true), // 默认开启 LLM 智能路由
-        intent_mode_bias_enabled,
-        intent_l2_enabled,
-        intent_l2_min_confidence,
-        intent_l2_max_tokens,
-        intent_execute_low_threshold,
-        intent_execute_high_threshold,
-        intent_non_hier_execute_low_threshold,
-        intent_non_hier_execute_high_threshold,
-        intent_at_turn_start_enabled,
-        intent_l0_routing_boost_enabled,
+        intent_mode_bias_enabled: intent.intent_mode_bias_enabled,
+        intent_l2_enabled: intent.intent_l2_enabled,
+        intent_l2_min_confidence: intent.intent_l2_min_confidence,
+        intent_l2_max_tokens: intent.intent_l2_max_tokens,
+        intent_execute_low_threshold: intent.intent_execute_low_threshold,
+        intent_execute_high_threshold: intent.intent_execute_high_threshold,
+        intent_non_hier_execute_low_threshold: intent.intent_non_hier_execute_low_threshold,
+        intent_non_hier_execute_high_threshold: intent.intent_non_hier_execute_high_threshold,
+        intent_at_turn_start_enabled: intent.intent_at_turn_start_enabled,
+        intent_l0_routing_boost_enabled: intent.intent_l0_routing_boost_enabled,
     })
+}
+
+pub(super) fn finalize(
+    b: ConfigBuilder,
+    system_prompt_search_bases: Vec<PathBuf>,
+) -> Result<AgentConfig, String> {
+    finalize_agent_config(b, system_prompt_search_bases)
 }

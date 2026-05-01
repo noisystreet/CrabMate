@@ -482,6 +482,29 @@ impl super::types::OperatorAgent {
             }
         }
         let execution_outcome = self.analyze_tool_execution(&result, goal);
+        self.process_single_tool_call_after_execute(
+            goal,
+            state,
+            tool_call,
+            &result,
+            convergence_goal,
+            start_time,
+            execution_outcome,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn process_single_tool_call_after_execute(
+        &self,
+        goal: &SubGoal,
+        state: &mut ReactState,
+        tool_call: &crate::types::ToolCall,
+        result: &super::super::tool_executor::ToolExecutionResult,
+        convergence_goal: bool,
+        start_time: Instant,
+        execution_outcome: ToolExecutionOutcome,
+    ) -> Option<TaskResult> {
         let observation = if result.success {
             format!(
                 "Tool {} executed successfully: {}",

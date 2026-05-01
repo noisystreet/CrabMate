@@ -27,6 +27,7 @@ mod session_ops;
 mod session_search;
 mod session_sort;
 mod session_sync;
+mod settings_llm_fields;
 mod sse_dispatch;
 mod storage;
 mod timeline_scan;

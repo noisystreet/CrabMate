@@ -2,6 +2,7 @@
 
 mod agent_impl;
 mod compile;
+mod execution_guides;
 mod inject;
 mod prompt;
 mod react_loop;

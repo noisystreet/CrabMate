@@ -256,8 +256,20 @@ impl GoalVerifier {
 /// 子目标是否要求「真正运行已构建的可执行体」（与仅「检查产物是否生成」区分，仅用于分层模式验收）。
 pub(crate) fn is_run_executable_subgoal(goal: &SubGoal) -> bool {
     let d = goal.description.to_lowercase();
-    // 纯编译/构建步骤（即使提到“生成可执行文件”）不应被当作“运行可执行体”验收
-    let build_only = (d.contains("编译")
+    if run_exec_subgoal_excluded_build_only(&d) {
+        return false;
+    }
+    if run_exec_subgoal_excluded_cmake_build_compile(&d) {
+        return false;
+    }
+    if run_exec_subgoal_excluded_check_only(&d) {
+        return false;
+    }
+    run_exec_subgoal_positive_signals(&d)
+}
+
+fn run_exec_subgoal_excluded_build_only(d: &str) -> bool {
+    (d.contains("编译")
         || d.contains("构建")
         || d.contains("cmake --build")
         || d.contains("linking")
@@ -266,29 +278,27 @@ pub(crate) fn is_run_executable_subgoal(goal: &SubGoal) -> bool {
         && !d.contains("执行")
         && !d.contains("run ")
         && !d.contains("run_executable")
-        && !d.contains("./");
-    if build_only {
-        return false;
-    }
-    // “运行 cmake --build ... 编译生成可执行文件”这类表述本质仍是编译步骤，不是运行产物。
-    if d.contains("cmake --build")
+        && !d.contains("./")
+}
+
+fn run_exec_subgoal_excluded_cmake_build_compile(d: &str) -> bool {
+    d.contains("cmake --build")
         && d.contains("编译")
         && d.contains("生成可执行")
         && !d.contains("./")
         && !d.contains("run_executable")
-    {
-        return false;
-    }
-    // 仅检查目录/是否生成/是否存在 → 不强制 run_executable
-    if d.contains("检查")
+}
+
+fn run_exec_subgoal_excluded_check_only(d: &str) -> bool {
+    d.contains("检查")
         && (d.contains("是否生成")
             || d.contains("是否已生成")
             || d.contains("是否存在")
             || d.contains("是否产生"))
         && !d.contains("运行")
-    {
-        return false;
-    }
+}
+
+fn run_exec_subgoal_positive_signals(d: &str) -> bool {
     let has_run_verb = d.contains("运行")
         || d.contains("并运行")
         || d.contains("跑")
