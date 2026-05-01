@@ -1,6 +1,7 @@
 //! 分阶段规划与逻辑双 agent：规划轮 + 逐步注入执行。
 
 use std::collections::HashMap;
+use std::ops::ControlFlow;
 use std::sync::atomic::Ordering;
 
 use log::{debug, warn};
@@ -72,8 +73,8 @@ use post_parse_pipeline_fsm::{
 };
 use prepared_parse_fsm::{PreparedPlannerParseOutcome, resolve_parse_with_assistant};
 use prepared_post_parse_fsm::{
-    PreparedFullPipelineInputs, PreparedPostParseSchedule, prepared_full_pipeline_schedule,
-    prepared_post_parse_schedule,
+    PreparedFullPipelineInputs, PreparedFullPipelineSchedule, PreparedPostParseSchedule,
+    prepared_full_pipeline_schedule, prepared_post_parse_schedule,
 };
 use staged_sse::{
     emit_chat_ui_separator_sse, next_staged_plan_id, send_staged_plan_finished,
@@ -1517,68 +1518,79 @@ where
     Ok(StagedPlanRunOutcome::ContinuePlanning)
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) async fn run_staged_plan_with_prepared_request<F>(
+/// 首轮无工具规划后解析分支：供 `run_staged_plan_with_prepared_request` 早退，降低单函数圈复杂度。
+enum ParsedStagedPlannerFlow {
+    /// `resolve_parse_with_assistant` 静默结束。
+    QuietFinish,
+    /// 降级到通常 `run_agent_outer_loop`（已包含 `push_assistant`）。
+    DegradeToOuterLoop { msg: Message },
+    /// 进入 `no_task` / full-pipeline 后续（assistant 入史规则在调用方处理）。
+    Continue {
+        plan: plan_artifact::AgentReplyPlanV1,
+        msg: Message,
+    },
+}
+
+async fn complete_first_planner_round_maybe_retry_tool_reject<F>(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
-    req: crate::types::ChatRequest,
-    render_to_terminal: bool,
-    echo_terminal_staged: bool,
-    entered_from_step_execution_round: bool,
+    req: &crate::types::ChatRequest,
+    planner_render_to_terminal: bool,
     labels: StagedPlanRunLabels,
-    make_step_user_message: F,
-) -> Result<StagedPlanRunOutcome, RunAgentTurnError>
+    make_step_user_message: &F,
+) -> Result<(Message, String), RunAgentTurnError>
 where
     F: Fn(String) -> Message,
 {
-    let planner_render_to_terminal = render_to_terminal
-        && (p.ctx.out.is_some() || p.ctx.cfg.staged_plan_cli_show_planner_stream);
-    let (mut msg, finish_reason) = {
-        let (mut first_msg, first_finish) =
-            complete_planner_no_tools_chat_retrying(p, &req, planner_render_to_terminal).await?;
-        if first_finish != USER_CANCELLED_FINISH_REASON {
-            let first_total = staged_first_planner_round_tool_call_total_after_materialize(
-                &mut first_msg,
-                p.ctx.cfg.materialize_deepseek_dsml_tool_calls,
+    let (mut first_msg, first_finish) =
+        complete_planner_no_tools_chat_retrying(p, req, planner_render_to_terminal).await?;
+    let (msg, finish_reason) = if first_finish != USER_CANCELLED_FINISH_REASON {
+        let first_total = staged_first_planner_round_tool_call_total_after_materialize(
+            &mut first_msg,
+            p.ctx.cfg.materialize_deepseek_dsml_tool_calls,
+        );
+        if first_total > 0 {
+            warn!(
+                target: "crabmate",
+                "分阶段规划轮：检测到 {} 条 tool_calls，严格无工具模式触发一次轻量重写",
+                first_total
             );
-            if first_total > 0 {
-                warn!(
-                    target: "crabmate",
-                    "分阶段规划轮：检测到 {} 条 tool_calls，严格无工具模式触发一次轻量重写",
-                    first_total
-                );
-                emit_staged_planner_tool_call_rejected_timeline(p.ctx.out, first_total).await;
-                p.turn.messages.push(make_step_user_message(
-                    staged_planner_tool_call_reject_user_body(first_total),
-                ));
-                let retry_req = prepare_staged_planner_no_tools_request(
-                    p,
-                    per_coord,
-                    labels.build_planner_messages,
-                )
-                .await?;
-                complete_planner_no_tools_chat_retrying(p, &retry_req, planner_render_to_terminal)
-                    .await?
-            } else {
-                (first_msg, first_finish)
-            }
+            emit_staged_planner_tool_call_rejected_timeline(p.ctx.out, first_total).await;
+            p.turn.messages.push(make_step_user_message(
+                staged_planner_tool_call_reject_user_body(first_total),
+            ));
+            let retry_req = prepare_staged_planner_no_tools_request(
+                p,
+                per_coord,
+                labels.build_planner_messages,
+            )
+            .await?;
+            complete_planner_no_tools_chat_retrying(p, &retry_req, planner_render_to_terminal)
+                .await?
         } else {
             (first_msg, first_finish)
         }
+    } else {
+        (first_msg, first_finish)
     };
 
+    Ok((msg, finish_reason))
+}
+
+fn debug_first_planner_finish(labels: StagedPlanRunLabels, finish_reason: &str, msg: &Message) {
     debug!(
         target: "crabmate",
         "{} finish_reason={} assistant_preview={}",
         labels.planning_log_label,
         finish_reason,
-        crate::redact::assistant_message_preview_for_log(&msg)
+        crate::redact::assistant_message_preview_for_log(msg)
     );
+}
 
-    if finish_reason == USER_CANCELLED_FINISH_REASON {
-        return Ok(StagedPlanRunOutcome::Finished);
-    }
-
+async fn strip_non_tool_planner_assistant_after_first_round(
+    msg: &mut Message,
+    p: &RunLoopParams<'_>,
+) {
     let raw_tool_calls = msg.tool_calls.as_ref().map(|c| c.len()).unwrap_or(0);
     if raw_tool_calls > 0 {
         warn!(
@@ -1589,7 +1601,7 @@ where
     }
     msg.tool_calls = None;
     crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
-        &mut msg,
+        msg,
         p.ctx.cfg.materialize_deepseek_dsml_tool_calls,
     );
     let dsml_tool_calls = msg.tool_calls.as_ref().map(|c| c.len()).unwrap_or(0);
@@ -1602,38 +1614,22 @@ where
         );
     }
     msg.tool_calls = None;
+}
 
-    let merged_for_log =
-        crate::agent::plan_artifact::assistant_merged_text_for_plan_artifact_parse(&msg);
-    let validate_only_binding_ids =
-        plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.turn.messages);
-    let parse_result =
-        crate::agent::plan_artifact::parse_agent_reply_plan_v1_from_assistant_message_with_validate_only_binding_ids(
-            &msg,
-            validate_only_binding_ids.as_deref(),
-        );
-    let parse_err_detail = parse_result
-        .as_ref()
-        .err()
-        .map(crate::agent::plan_artifact::plan_artifact_error_log_summary);
-    let degrade_like_not_found = matches!(
-        parse_result.as_ref().err(),
-        Some(crate::agent::plan_artifact::PlanArtifactError::NotFound)
-    );
-
-    let mut plan = match resolve_parse_with_assistant(
-        parse_result,
-        entered_from_step_execution_round,
-        msg.clone(),
-    ) {
-        PreparedPlannerParseOutcome::ContinueWithPlan { plan } => plan,
-        PreparedPlannerParseOutcome::QuietFinish => {
-            debug!(
-                target: "crabmate",
-                "分阶段重规划：检测到分步执行后重入且本轮未产出结构化计划，视为收敛完成，直接结束（避免重复总结）"
-            );
-            return Ok(StagedPlanRunOutcome::Finished);
+fn resolve_parsed_staged_planner_flow(
+    parse_result: Result<plan_artifact::AgentReplyPlanV1, plan_artifact::PlanArtifactError>,
+    entered_from_step_execution_round: bool,
+    msg: Message,
+    merged_for_log: String,
+    parse_err_detail: Option<String>,
+    degrade_like_not_found: bool,
+) -> ParsedStagedPlannerFlow {
+    match resolve_parse_with_assistant(parse_result, entered_from_step_execution_round, msg.clone())
+    {
+        PreparedPlannerParseOutcome::ContinueWithPlan { plan } => {
+            ParsedStagedPlannerFlow::Continue { plan, msg }
         }
+        PreparedPlannerParseOutcome::QuietFinish => ParsedStagedPlannerFlow::QuietFinish,
         PreparedPlannerParseOutcome::DegradeToOuterLoop => {
             if degrade_like_not_found {
                 debug!(
@@ -1657,60 +1653,136 @@ where
                     )
                 );
             }
-            // 保留规划轮正文，避免整轮失败退出（REPL/脚本/Web 均与关闭分阶段规划时的行为对齐）。
-            push_assistant_merging_trailing_empty_placeholder(p.turn.messages, msg.clone());
-            run_agent_outer_loop(p, per_coord).await?;
-            return Ok(StagedPlanRunOutcome::Finished);
+            ParsedStagedPlannerFlow::DegradeToOuterLoop { msg }
         }
-    };
-
-    let omit_no_task_planner_from_history = omit_no_task_planner_from_history(
-        p.ctx.out.is_some(),
-        crate::web::web_ui_env::web_raw_assistant_output_env(),
-        plan.no_task,
-    );
-    if !omit_no_task_planner_from_history {
-        push_assistant_merging_trailing_empty_placeholder(p.turn.messages, msg.clone());
     }
+}
 
-    match prepared_post_parse_schedule(plan.no_task) {
-        PreparedPostParseSchedule::NoTaskThenOuter => {
-            if p.ctx.cfg.staged_plan_two_phase_nl_display {
-                run_staged_plan_nl_followup_round(p, per_coord, &make_step_user_message).await?;
+async fn run_no_task_branch_then_outer<F>(
+    p: &mut RunLoopParams<'_>,
+    per_coord: &mut PerCoordinator,
+    make_step_user_message: &F,
+) -> Result<(), RunAgentTurnError>
+where
+    F: Fn(String) -> Message,
+{
+    if p.ctx.cfg.staged_plan_two_phase_nl_display {
+        run_staged_plan_nl_followup_round(p, per_coord, make_step_user_message).await?;
+    }
+    debug!(
+        target: "crabmate",
+        "分阶段规划：no_task=true，跳过分步注入，转入常规对话循环"
+    );
+    run_agent_outer_loop(p, per_coord).await?;
+    Ok(())
+}
+
+/// 分阶段规划优化轮：入参聚合（控制 `clippy::too_many_arguments`）。
+struct StagedOptimizerRoundParams<'a, 'b, F> {
+    p: &'a mut RunLoopParams<'b>,
+    per_coord: &'a mut PerCoordinator,
+    labels: StagedPlanRunLabels,
+    planner_render_to_terminal: bool,
+    make_step_user_message: &'a F,
+    plan: &'a mut plan_artifact::AgentReplyPlanV1,
+    optimizer_route: planner_round_fsm::StagedPlanOptimizerRoute,
+    parallel_csv: &'a str,
+}
+
+async fn maybe_run_optimizer_round_and_apply_steps_inner<F>(
+    params: StagedOptimizerRoundParams<'_, '_, F>,
+) -> Result<ControlFlow<StagedPlanRunOutcome, ()>, RunAgentTurnError>
+where
+    F: Fn(String) -> Message,
+{
+    let StagedOptimizerRoundParams {
+        p,
+        per_coord,
+        labels,
+        planner_render_to_terminal,
+        make_step_user_message,
+        plan,
+        optimizer_route,
+        parallel_csv,
+    } = params;
+    if !optimizer_round_should_run(optimizer_route) {
+        return Ok(ControlFlow::Continue(()));
+    }
+    let opt_body = plan_optimizer::staged_plan_optimizer_user_body(plan, parallel_csv);
+    p.turn.messages.push(make_step_user_message(opt_body));
+    let (mut opt_msg, opt_finish) = complete_one_staged_planner_assistant_round(
+        p,
+        per_coord,
+        labels.build_planner_messages,
+        planner_render_to_terminal,
+        "分阶段规划优化轮模型输出",
+    )
+    .await?;
+    if opt_finish == USER_CANCELLED_FINISH_REASON {
+        pop_last_staged_planner_coach_user_if_present(p.turn.messages);
+        return Ok(ControlFlow::Break(StagedPlanRunOutcome::Finished));
+    }
+    strip_staged_planner_message_tool_calls(
+        &mut opt_msg,
+        "优化轮",
+        p.ctx.cfg.materialize_deepseek_dsml_tool_calls,
+    );
+    let opt_content = crate::types::message_content_as_str(&opt_msg.content).unwrap_or("");
+    let merged_steps = plan_optimizer::try_parse_optimizer_reply(opt_content);
+    match ensemble_merge_outcome_from_parsed_steps(merged_steps) {
+        EnsembleMergeOutcome::AppliedSteps(steps) => {
+            if steps.len() < plan.steps.len() {
+                debug!(
+                    target: "crabmate",
+                    "分阶段规划优化轮：步数 {} -> {}",
+                    plan.steps.len(),
+                    steps.len()
+                );
             }
-            debug!(
-                target: "crabmate",
-                "分阶段规划：no_task=true，跳过分步注入，转入常规对话循环"
-            );
-            run_agent_outer_loop(p, per_coord).await?;
-            return Ok(StagedPlanRunOutcome::Finished);
+            push_assistant_merging_trailing_empty_placeholder(p.turn.messages, opt_msg);
+            plan.steps = steps;
         }
-        PreparedPostParseSchedule::FullPipelineThenSteps => {}
+        EnsembleMergeOutcome::KeepPriorPlan => {
+            warn!(
+                target: "crabmate",
+                "分阶段规划优化轮：未解析出合法 agent_reply_plan v1 或非空 steps，沿用首轮规划"
+            );
+            pop_last_staged_planner_coach_user_if_present(p.turn.messages);
+        }
     }
+    Ok(ControlFlow::Continue(()))
+}
 
-    let parallel_csv = plan_optimizer::parallel_batchable_tool_names_csv_from_defs(
-        p.ctx.tools_defs,
-        p.ctx.cfg.as_ref(),
-    );
-    let validate_only_binding_active =
-        plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.turn.messages)
-            .is_some_and(|ids| !ids.is_empty());
-    let trigger_user = plan_optimizer::staged_plan_trigger_user_content(p.turn.messages);
-    let pipeline_schedule = prepared_full_pipeline_schedule(PreparedFullPipelineInputs {
-        staged_plan_ensemble_count: p.ctx.staged_plan_ensemble_count,
-        staged_plan_skip_ensemble_on_casual_prompt: p
-            .ctx
-            .staged_plan_skip_ensemble_on_casual_prompt,
-        validate_only_binding_active,
-        trigger_user_content: trigger_user,
-        plan_steps_len: plan.steps.len(),
-        staged_plan_optimizer_round: p.ctx.staged_plan_optimizer_round,
-        staged_plan_optimizer_requires_parallel_tools: p
-            .ctx
-            .staged_plan_optimizer_requires_parallel_tools,
-        parallel_tool_names_csv: parallel_csv.as_str(),
-        staged_plan_two_phase_nl_display: p.ctx.cfg.staged_plan_two_phase_nl_display,
-    });
+/// 首轮解析后 full-pipeline 直至分步循环：入参聚合（控制 `clippy::too_many_arguments`）。
+struct AdvanceFullPipelineAfterParseParams<'a, 'b, F> {
+    p: &'a mut RunLoopParams<'b>,
+    per_coord: &'a mut PerCoordinator,
+    labels: StagedPlanRunLabels,
+    planner_render_to_terminal: bool,
+    echo_terminal_staged: bool,
+    make_step_user_message: &'a F,
+    plan: plan_artifact::AgentReplyPlanV1,
+    pipeline_schedule: PreparedFullPipelineSchedule,
+    parallel_csv: String,
+}
+
+async fn advance_full_pipeline_phases_after_parse_inner<F>(
+    params: AdvanceFullPipelineAfterParseParams<'_, '_, F>,
+) -> Result<StagedPlanRunOutcome, RunAgentTurnError>
+where
+    F: Fn(String) -> Message,
+{
+    let AdvanceFullPipelineAfterParseParams {
+        p,
+        per_coord,
+        labels,
+        planner_render_to_terminal,
+        echo_terminal_staged,
+        make_step_user_message,
+        mut plan,
+        pipeline_schedule,
+        parallel_csv,
+    } = params;
     let ensemble_route = pipeline_schedule.ensemble_route;
     log_staged_plan_ensemble_route(ensemble_route, p.ctx.staged_plan_ensemble_count);
 
@@ -1723,7 +1795,7 @@ where
             p,
             per_coord,
             &labels,
-            &make_step_user_message,
+            make_step_user_message,
             planner_render_to_terminal,
             &mut plan,
             skip_ensemble_for_casual,
@@ -1739,51 +1811,22 @@ where
     let optimizer_route = pipeline_schedule.optimizer_route;
     log_staged_plan_optimizer_route(optimizer_route, plan.steps.len());
 
-    if optimizer_round_should_run(optimizer_route) {
-        let opt_body =
-            plan_optimizer::staged_plan_optimizer_user_body(&plan, parallel_csv.as_str());
-        p.turn.messages.push(make_step_user_message(opt_body));
-        let (mut opt_msg, opt_finish) = complete_one_staged_planner_assistant_round(
-            p,
-            per_coord,
-            labels.build_planner_messages,
-            planner_render_to_terminal,
-            "分阶段规划优化轮模型输出",
-        )
-        .await?;
-        if opt_finish == USER_CANCELLED_FINISH_REASON {
-            pop_last_staged_planner_coach_user_if_present(p.turn.messages);
-            return Ok(StagedPlanRunOutcome::Finished);
-        }
-        strip_staged_planner_message_tool_calls(
-            &mut opt_msg,
-            "优化轮",
-            p.ctx.cfg.materialize_deepseek_dsml_tool_calls,
-        );
-        let opt_content = crate::types::message_content_as_str(&opt_msg.content).unwrap_or("");
-        let merged_steps = plan_optimizer::try_parse_optimizer_reply(opt_content);
-        match ensemble_merge_outcome_from_parsed_steps(merged_steps) {
-            EnsembleMergeOutcome::AppliedSteps(steps) => {
-                if steps.len() < plan.steps.len() {
-                    debug!(
-                        target: "crabmate",
-                        "分阶段规划优化轮：步数 {} -> {}",
-                        plan.steps.len(),
-                        steps.len()
-                    );
-                }
-                push_assistant_merging_trailing_empty_placeholder(p.turn.messages, opt_msg);
-                plan.steps = steps;
-            }
-            EnsembleMergeOutcome::KeepPriorPlan => {
-                warn!(
-                    target: "crabmate",
-                    "分阶段规划优化轮：未解析出合法 agent_reply_plan v1 或非空 steps，沿用首轮规划"
-                );
-                pop_last_staged_planner_coach_user_if_present(p.turn.messages);
-            }
-        }
+    match maybe_run_optimizer_round_and_apply_steps_inner(StagedOptimizerRoundParams {
+        p,
+        per_coord,
+        labels,
+        planner_render_to_terminal,
+        make_step_user_message,
+        plan: &mut plan,
+        optimizer_route,
+        parallel_csv: parallel_csv.as_str(),
+    })
+    .await?
+    {
+        ControlFlow::Break(outcome) => return Ok(outcome),
+        ControlFlow::Continue(()) => {}
     }
+
     let next_fp = fp_phase
         .advance()
         .expect("full_pipeline: after_ensemble -> after_optimizer");
@@ -1791,7 +1834,7 @@ where
     fp_phase = next_fp;
 
     if pipeline_schedule.nl_followup_before_steps {
-        run_staged_plan_nl_followup_round(p, per_coord, &make_step_user_message).await?;
+        run_staged_plan_nl_followup_round(p, per_coord, make_step_user_message).await?;
     }
     let next_fp = fp_phase
         .advance()
@@ -1809,7 +1852,7 @@ where
         per_coord,
         labels: &labels,
         planner_render_to_terminal,
-        make_step_user_message: &make_step_user_message,
+        make_step_user_message,
     };
 
     run_staged_plan_steps_loop(
@@ -1819,9 +1862,146 @@ where
         echo_terminal_staged,
         &labels,
         patch_ctx,
-        &make_step_user_message,
+        make_step_user_message,
     )
     .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn run_staged_plan_with_prepared_request<F>(
+    p: &mut RunLoopParams<'_>,
+    per_coord: &mut PerCoordinator,
+    req: crate::types::ChatRequest,
+    render_to_terminal: bool,
+    echo_terminal_staged: bool,
+    entered_from_step_execution_round: bool,
+    labels: StagedPlanRunLabels,
+    make_step_user_message: F,
+) -> Result<StagedPlanRunOutcome, RunAgentTurnError>
+where
+    F: Fn(String) -> Message,
+{
+    let planner_render_to_terminal = render_to_terminal
+        && (p.ctx.out.is_some() || p.ctx.cfg.staged_plan_cli_show_planner_stream);
+    let (mut msg, finish_reason) = complete_first_planner_round_maybe_retry_tool_reject(
+        p,
+        per_coord,
+        &req,
+        planner_render_to_terminal,
+        labels,
+        &make_step_user_message,
+    )
+    .await?;
+
+    debug_first_planner_finish(labels, finish_reason.as_str(), &msg);
+
+    if finish_reason == USER_CANCELLED_FINISH_REASON {
+        return Ok(StagedPlanRunOutcome::Finished);
+    }
+
+    strip_non_tool_planner_assistant_after_first_round(&mut msg, p).await;
+
+    let merged_for_log =
+        crate::agent::plan_artifact::assistant_merged_text_for_plan_artifact_parse(&msg);
+    let validate_only_binding_ids =
+        plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.turn.messages);
+    let parse_result =
+        crate::agent::plan_artifact::parse_agent_reply_plan_v1_from_assistant_message_with_validate_only_binding_ids(
+            &msg,
+            validate_only_binding_ids.as_deref(),
+        );
+    let parse_err_detail = parse_result
+        .as_ref()
+        .err()
+        .map(crate::agent::plan_artifact::plan_artifact_error_log_summary);
+    let degrade_like_not_found = matches!(
+        parse_result.as_ref().err(),
+        Some(crate::agent::plan_artifact::PlanArtifactError::NotFound)
+    );
+
+    match resolve_parsed_staged_planner_flow(
+        parse_result,
+        entered_from_step_execution_round,
+        msg,
+        merged_for_log,
+        parse_err_detail,
+        degrade_like_not_found,
+    ) {
+        ParsedStagedPlannerFlow::QuietFinish => {
+            debug!(
+                target: "crabmate",
+                "分阶段重规划：检测到分步执行后重入且本轮未产出结构化计划，视为收敛完成，直接结束（避免重复总结）"
+            );
+            Ok(StagedPlanRunOutcome::Finished)
+        }
+        ParsedStagedPlannerFlow::DegradeToOuterLoop { msg } => {
+            push_assistant_merging_trailing_empty_placeholder(p.turn.messages, msg.clone());
+            run_agent_outer_loop(p, per_coord).await?;
+            Ok(StagedPlanRunOutcome::Finished)
+        }
+        ParsedStagedPlannerFlow::Continue { plan, msg } => {
+            let omit_no_task_planner_from_history = omit_no_task_planner_from_history(
+                p.ctx.out.is_some(),
+                crate::web::web_ui_env::web_raw_assistant_output_env(),
+                plan.no_task,
+            );
+            if !omit_no_task_planner_from_history {
+                push_assistant_merging_trailing_empty_placeholder(p.turn.messages, msg.clone());
+            }
+
+            match prepared_post_parse_schedule(plan.no_task) {
+                PreparedPostParseSchedule::NoTaskThenOuter => {
+                    run_no_task_branch_then_outer(p, per_coord, &make_step_user_message).await?;
+                    Ok(StagedPlanRunOutcome::Finished)
+                }
+                PreparedPostParseSchedule::FullPipelineThenSteps => {
+                    let parallel_csv = plan_optimizer::parallel_batchable_tool_names_csv_from_defs(
+                        p.ctx.tools_defs,
+                        p.ctx.cfg.as_ref(),
+                    );
+                    let validate_only_binding_active =
+                        plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.turn.messages)
+                            .is_some_and(|ids| !ids.is_empty());
+                    let trigger_user =
+                        plan_optimizer::staged_plan_trigger_user_content(p.turn.messages);
+                    let pipeline_schedule =
+                        prepared_full_pipeline_schedule(PreparedFullPipelineInputs {
+                            staged_plan_ensemble_count: p.ctx.staged_plan_ensemble_count,
+                            staged_plan_skip_ensemble_on_casual_prompt: p
+                                .ctx
+                                .staged_plan_skip_ensemble_on_casual_prompt,
+                            validate_only_binding_active,
+                            trigger_user_content: trigger_user,
+                            plan_steps_len: plan.steps.len(),
+                            staged_plan_optimizer_round: p.ctx.staged_plan_optimizer_round,
+                            staged_plan_optimizer_requires_parallel_tools: p
+                                .ctx
+                                .staged_plan_optimizer_requires_parallel_tools,
+                            parallel_tool_names_csv: parallel_csv.as_str(),
+                            staged_plan_two_phase_nl_display: p
+                                .ctx
+                                .cfg
+                                .staged_plan_two_phase_nl_display,
+                        });
+
+                    advance_full_pipeline_phases_after_parse_inner(
+                        AdvanceFullPipelineAfterParseParams {
+                            p,
+                            per_coord,
+                            labels,
+                            planner_render_to_terminal,
+                            echo_terminal_staged,
+                            make_step_user_message: &make_step_user_message,
+                            plan,
+                            pipeline_schedule,
+                            parallel_csv,
+                        },
+                    )
+                    .await
+                }
+            }
+        }
+    }
 }
 
 pub(super) async fn run_logical_dual_agent_then_execute_steps(
