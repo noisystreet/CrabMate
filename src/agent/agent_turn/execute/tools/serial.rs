@@ -1,7 +1,11 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Instant;
 
 use log::{info, warn};
+use tokio::sync::mpsc;
+
+use crate::agent::per_coord::PerCoordinator;
 
 use crate::agent::agent_turn::sub_agent_policy::{
     executor_kind_tool_denied_body, tool_allowed_for_step_executor_kind,
@@ -19,6 +23,47 @@ use super::{
     ExecuteToolsBatchOutcome, ExecuteToolsCommonCtx, abort_tool_batch_if_sse_closed,
     emit_timeline_log_sse, emit_tool_call_summary_sse, emit_tool_result_sse_and_append,
 };
+
+/// 串行工具路径：统一构造 `ToolEnvelopeContext` 并下发 SSE / 追加消息。
+#[allow(clippy::too_many_arguments)]
+async fn emit_serial_tool_result(
+    messages: &mut Vec<crate::types::Message>,
+    per_coord: &mut PerCoordinator,
+    cfg: &Arc<crate::config::AgentConfig>,
+    out: Option<&mpsc::Sender<String>>,
+    echo_terminal_transcript: bool,
+    terminal_tool_display_max_chars: usize,
+    tool_result_envelope_v1: bool,
+    name: &str,
+    args: &str,
+    id: &str,
+    result: String,
+    reflection_inject: Option<serde_json::Value>,
+) {
+    let env = ToolEnvelopeContext {
+        tool_call_id: id,
+        execution_mode: "serial",
+        parallel_batch_id: None,
+    };
+    emit_tool_result_sse_and_append(
+        messages,
+        per_coord,
+        super::EmitToolResultParams {
+            cfg,
+            out,
+            echo_terminal_transcript,
+            terminal_tool_display_max_chars,
+            tool_result_envelope_v1,
+            name,
+            args,
+            id,
+            result,
+            reflection_inject,
+            envelope_ctx: Some(env),
+        },
+    )
+    .await;
+}
 
 /// 串行路径：`dispatch_tool`、只读结果缓存、写操作后清缓存。
 pub(super) async fn execute_tools_serial(
@@ -96,27 +141,19 @@ pub(super) async fn execute_tools_serial(
                 args.as_str(),
                 "cargo_manifest_missing".to_string(),
             );
-            let env = ToolEnvelopeContext {
-                tool_call_id: id.as_str(),
-                execution_mode: "serial",
-                parallel_batch_id: None,
-            };
-            emit_tool_result_sse_and_append(
+            emit_serial_tool_result(
                 messages,
                 per_coord,
-                super::EmitToolResultParams {
-                    cfg,
-                    out,
-                    echo_terminal_transcript,
-                    terminal_tool_display_max_chars,
-                    tool_result_envelope_v1,
-                    name: name.as_str(),
-                    args: args.as_str(),
-                    id: id.as_str(),
-                    result: preflight_error,
-                    reflection_inject: None,
-                    envelope_ctx: Some(env),
-                },
+                cfg,
+                out,
+                echo_terminal_transcript,
+                terminal_tool_display_max_chars,
+                tool_result_envelope_v1,
+                name.as_str(),
+                args.as_str(),
+                id.as_str(),
+                preflight_error,
+                None,
             )
             .await;
             continue;
@@ -134,27 +171,19 @@ pub(super) async fn execute_tools_serial(
                 "ctest_dash_c_build_misuse",
                 "ctest_dash_c_build_misuse".to_string(),
             );
-            let env = ToolEnvelopeContext {
-                tool_call_id: id.as_str(),
-                execution_mode: "serial",
-                parallel_batch_id: None,
-            };
-            emit_tool_result_sse_and_append(
+            emit_serial_tool_result(
                 messages,
                 per_coord,
-                super::EmitToolResultParams {
-                    cfg,
-                    out,
-                    echo_terminal_transcript,
-                    terminal_tool_display_max_chars,
-                    tool_result_envelope_v1,
-                    name: name.as_str(),
-                    args: args.as_str(),
-                    id: id.as_str(),
-                    result: preflight_error,
-                    reflection_inject: None,
-                    envelope_ctx: Some(env),
-                },
+                cfg,
+                out,
+                echo_terminal_transcript,
+                terminal_tool_display_max_chars,
+                tool_result_envelope_v1,
+                name.as_str(),
+                args.as_str(),
+                id.as_str(),
+                preflight_error,
+                None,
             )
             .await;
             continue;
@@ -166,27 +195,19 @@ pub(super) async fn execute_tools_serial(
             let denied =
                 executor_kind_tool_denied_body(cfg.as_ref(), tools_defs_full, name.as_str(), k);
             warn!(target: super::LOG_TARGET, "{}", denied);
-            let env = ToolEnvelopeContext {
-                tool_call_id: id.as_str(),
-                execution_mode: "serial",
-                parallel_batch_id: None,
-            };
-            emit_tool_result_sse_and_append(
+            emit_serial_tool_result(
                 messages,
                 per_coord,
-                super::EmitToolResultParams {
-                    cfg,
-                    out,
-                    echo_terminal_transcript,
-                    terminal_tool_display_max_chars,
-                    tool_result_envelope_v1,
-                    name: name.as_str(),
-                    args: args.as_str(),
-                    id: id.as_str(),
-                    result: denied,
-                    reflection_inject: None,
-                    envelope_ctx: Some(env),
-                },
+                cfg,
+                out,
+                echo_terminal_transcript,
+                terminal_tool_display_max_chars,
+                tool_result_envelope_v1,
+                name.as_str(),
+                args.as_str(),
+                id.as_str(),
+                denied,
+                None,
             )
             .await;
             continue;
@@ -195,27 +216,19 @@ pub(super) async fn execute_tools_serial(
         if !crate::agent_role_turn::tool_allowed_for_turn(name.as_str(), turn_allow) {
             let denied = crate::agent_role_turn::turn_tool_denied_message(name.as_str());
             warn!(target: super::LOG_TARGET, "{}", denied);
-            let env = ToolEnvelopeContext {
-                tool_call_id: id.as_str(),
-                execution_mode: "serial",
-                parallel_batch_id: None,
-            };
-            emit_tool_result_sse_and_append(
+            emit_serial_tool_result(
                 messages,
                 per_coord,
-                super::EmitToolResultParams {
-                    cfg,
-                    out,
-                    echo_terminal_transcript,
-                    terminal_tool_display_max_chars,
-                    tool_result_envelope_v1,
-                    name: name.as_str(),
-                    args: args.as_str(),
-                    id: id.as_str(),
-                    result: denied,
-                    reflection_inject: None,
-                    envelope_ctx: Some(env),
-                },
+                cfg,
+                out,
+                echo_terminal_transcript,
+                terminal_tool_display_max_chars,
+                tool_result_envelope_v1,
+                name.as_str(),
+                args.as_str(),
+                id.as_str(),
+                denied,
+                None,
             )
             .await;
             continue;
@@ -237,27 +250,19 @@ pub(super) async fn execute_tools_serial(
                 crate::redact::tool_arguments_preview_for_log(&args),
                 prev_error
             );
-            let env = ToolEnvelopeContext {
-                tool_call_id: id.as_str(),
-                execution_mode: "serial",
-                parallel_batch_id: None,
-            };
-            emit_tool_result_sse_and_append(
+            emit_serial_tool_result(
                 messages,
                 per_coord,
-                super::EmitToolResultParams {
-                    cfg,
-                    out,
-                    echo_terminal_transcript,
-                    terminal_tool_display_max_chars,
-                    tool_result_envelope_v1,
-                    name: name.as_str(),
-                    args: args.as_str(),
-                    id: id.as_str(),
-                    result: short_circuit,
-                    reflection_inject: None,
-                    envelope_ctx: Some(env),
-                },
+                cfg,
+                out,
+                echo_terminal_transcript,
+                terminal_tool_display_max_chars,
+                tool_result_envelope_v1,
+                name.as_str(),
+                args.as_str(),
+                id.as_str(),
+                short_circuit,
+                None,
             )
             .await;
             continue;
@@ -281,27 +286,19 @@ pub(super) async fn execute_tools_serial(
                 crate::redact::tool_arguments_preview_for_log(&args),
                 prev_error
             );
-            let env = ToolEnvelopeContext {
-                tool_call_id: id.as_str(),
-                execution_mode: "serial",
-                parallel_batch_id: None,
-            };
-            emit_tool_result_sse_and_append(
+            emit_serial_tool_result(
                 messages,
                 per_coord,
-                super::EmitToolResultParams {
-                    cfg,
-                    out,
-                    echo_terminal_transcript,
-                    terminal_tool_display_max_chars,
-                    tool_result_envelope_v1,
-                    name: name.as_str(),
-                    args: args.as_str(),
-                    id: id.as_str(),
-                    result: short_circuit,
-                    reflection_inject: None,
-                    envelope_ctx: Some(env),
-                },
+                cfg,
+                out,
+                echo_terminal_transcript,
+                terminal_tool_display_max_chars,
+                tool_result_envelope_v1,
+                name.as_str(),
+                args.as_str(),
+                id.as_str(),
+                short_circuit,
+                None,
             )
             .await;
             continue;
@@ -314,27 +311,19 @@ pub(super) async fn execute_tools_serial(
                 name,
                 crate::redact::tool_arguments_preview_for_log(&args)
             );
-            let env = ToolEnvelopeContext {
-                tool_call_id: id.as_str(),
-                execution_mode: "serial",
-                parallel_batch_id: None,
-            };
-            emit_tool_result_sse_and_append(
+            emit_serial_tool_result(
                 messages,
                 per_coord,
-                super::EmitToolResultParams {
-                    cfg,
-                    out,
-                    echo_terminal_transcript,
-                    terminal_tool_display_max_chars,
-                    tool_result_envelope_v1,
-                    name: name.as_str(),
-                    args: args.as_str(),
-                    id: id.as_str(),
-                    result: cached.clone(),
-                    reflection_inject: None,
-                    envelope_ctx: Some(env),
-                },
+                cfg,
+                out,
+                echo_terminal_transcript,
+                terminal_tool_display_max_chars,
+                tool_result_envelope_v1,
+                name.as_str(),
+                args.as_str(),
+                id.as_str(),
+                cached.clone(),
+                None,
             )
             .await;
             continue;
@@ -460,27 +449,19 @@ pub(super) async fn execute_tools_serial(
             readonly_cache.clear();
         }
 
-        let env = ToolEnvelopeContext {
-            tool_call_id: id.as_str(),
-            execution_mode: "serial",
-            parallel_batch_id: None,
-        };
-        emit_tool_result_sse_and_append(
+        emit_serial_tool_result(
             messages,
             per_coord,
-            super::EmitToolResultParams {
-                cfg,
-                out,
-                echo_terminal_transcript,
-                terminal_tool_display_max_chars,
-                tool_result_envelope_v1,
-                name: name.as_str(),
-                args: args.as_str(),
-                id: id.as_str(),
-                result,
-                reflection_inject,
-                envelope_ctx: Some(env),
-            },
+            cfg,
+            out,
+            echo_terminal_transcript,
+            terminal_tool_display_max_chars,
+            tool_result_envelope_v1,
+            name.as_str(),
+            args.as_str(),
+            id.as_str(),
+            result,
+            reflection_inject,
         )
         .await;
     }

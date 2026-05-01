@@ -205,21 +205,20 @@ struct AssembleReadOutputParams<'a> {
 const READ_FILE_DEFAULT_MAX_LINES: usize = 500;
 /// read_file 允许的单次上限
 const READ_FILE_ABS_MAX_LINES: usize = 8000;
-/// 读取文件：按行**流式**读取，不把整文件载入内存。
-///
-/// - `max_lines`：单次最多返回行数（默认 500，上限 8000）。若未指定 `end_line`，则读到 `start_line + max_lines - 1` 或 EOF。
-/// - 若同时指定 `end_line` 与 `max_lines`，实际返回行数不超过 `max_lines`；若区间更宽会截断并提示 `has_more`。
-/// - `count_total_lines=true` 时会再扫描一遍文件统计总行数（大文件较慢）。
-/// - `encoding`：可选 `utf-8`（默认，严格）、`utf-8-sig`、`gb18030`、`gbk`、`gb2312`、`big5`、`utf-16le`、`utf-16be`、`auto`（BOM 优先，否则嗅探）；非法序列返回明确错误。
-/// - 若同时指定 `end_line` 与 `start_line` 且 **end_line 小于 start_line**（模型偶发起止写反），**自动交换**后再读，与单轮缓存键一致。
+
+struct ReadFileParsedArgs {
+    path: String,
+    enc_name: TextEncodingName,
+    start_line: usize,
+    end_line_opt: Option<usize>,
+    max_lines: usize,
+    count_total: bool,
+}
+
 #[allow(clippy::result_large_err)]
-pub fn read_file_try(
-    args_json: &str,
-    working_dir: &Path,
-    ctx: &super::super::ToolContext<'_>,
-) -> Result<String, crate::tool_result::ToolError> {
-    let v = crate::tools::parse_args_json(args_json)
-        .map_err(crate::tool_result::ToolError::invalid_args)?;
+fn parse_read_file_args(
+    v: &serde_json::Value,
+) -> Result<ReadFileParsedArgs, crate::tool_result::ToolError> {
     let path = match v.get("path").and_then(|p| p.as_str()) {
         Some(s) if !s.trim().is_empty() => s.trim().to_string(),
         _ => {
@@ -269,6 +268,53 @@ pub fn read_file_try(
     {
         std::mem::swap(&mut start_line, e);
     }
+
+    Ok(ReadFileParsedArgs {
+        path,
+        enc_name,
+        start_line,
+        end_line_opt,
+        max_lines,
+        count_total,
+    })
+}
+
+fn read_file_body_error_to_tool_error(e: String) -> crate::tool_result::ToolError {
+    if e.contains("UTF-8") || e.contains("非法字节") || e.contains("解码") {
+        return crate::tool_result::ToolError::external_code("read_file_utf8_decode", e);
+    }
+    if e.starts_with("错误：start_line=") || e.starts_with("错误：未读取到任何行") {
+        return crate::tool_result::ToolError::external_code("read_file_invalid_range", e);
+    }
+    if e.contains("内部错误") {
+        return crate::tool_result::ToolError::internal_code("read_file_internal", e);
+    }
+    crate::tool_result::ToolError::external_code("read_file_io", e)
+}
+
+/// 读取文件：按行**流式**读取，不把整文件载入内存。
+///
+/// - `max_lines`：单次最多返回行数（默认 500，上限 8000）。若未指定 `end_line`，则读到 `start_line + max_lines - 1` 或 EOF。
+/// - 若同时指定 `end_line` 与 `max_lines`，实际返回行数不超过 `max_lines`；若区间更宽会截断并提示 `has_more`。
+/// - `count_total_lines=true` 时会再扫描一遍文件统计总行数（大文件较慢）。
+/// - `encoding`：可选 `utf-8`（默认，严格）、`utf-8-sig`、`gb18030`、`gbk`、`gb2312`、`big5`、`utf-16le`、`utf-16be`、`auto`（BOM 优先，否则嗅探）；非法序列返回明确错误。
+/// - 若同时指定 `end_line` 与 `start_line` 且 **end_line 小于 start_line**（模型偶发起止写反），**自动交换**后再读，与单轮缓存键一致。
+#[allow(clippy::result_large_err)]
+pub fn read_file_try(
+    args_json: &str,
+    working_dir: &Path,
+    ctx: &super::super::ToolContext<'_>,
+) -> Result<String, crate::tool_result::ToolError> {
+    let v = crate::tools::parse_args_json(args_json)
+        .map_err(crate::tool_result::ToolError::invalid_args)?;
+    let ReadFileParsedArgs {
+        path,
+        enc_name,
+        start_line,
+        end_line_opt,
+        max_lines,
+        count_total,
+    } = parse_read_file_args(&v)?;
 
     let opened =
         resolve_for_read_open(working_dir, &path).map_err(read_file_workspace_tool_error)?;
@@ -386,31 +432,7 @@ pub fn read_file_try(
 
     let raw_body = match body {
         Ok(out) => out,
-        Err(e) => {
-            if e.contains("UTF-8") || e.contains("非法字节") || e.contains("解码") {
-                return Err(crate::tool_result::ToolError::external_code(
-                    "read_file_utf8_decode",
-                    e,
-                ));
-            }
-            if e.starts_with("错误：start_line=") || e.starts_with("错误：未读取到任何行")
-            {
-                return Err(crate::tool_result::ToolError::external_code(
-                    "read_file_invalid_range",
-                    e,
-                ));
-            }
-            if e.contains("内部错误") {
-                return Err(crate::tool_result::ToolError::internal_code(
-                    "read_file_internal",
-                    e,
-                ));
-            }
-            return Err(crate::tool_result::ToolError::external_code(
-                "read_file_io",
-                e,
-            ));
-        }
+        Err(e) => return Err(read_file_body_error_to_tool_error(e)),
     };
 
     let content_line_numbers: Vec<usize> = raw_body
