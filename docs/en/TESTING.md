@@ -23,7 +23,8 @@ Includes (non-exhaustive):
 - **`cargo fmt --all`**
 - **`cargo clippy --all-targets --all-features -- -D warnings`**
 - **`lizard-rust`**: Rust cyclomatic complexity (requires **`pip install lizard`**; **`scripts/lizard-rust.sh`** / **`scripts/lizard_rust_metrics.py`**: per-function cap **`LIZARD_CCN`** (default 40), ratchet files **`scripts/lizard_max_ccn_baseline.txt`** and **`scripts/lizard_top10_ccn_sum.txt`**)
-- **`fn-param-ratchet`**: Rust function parameter counts (lizard `parameter_count`) plus **`#[allow(clippy::too_many_arguments)]`** line count; ratchet files **`scripts/fn_param_max_baseline.txt`**, **`scripts/fn_param_top10_sum_baseline.txt`**, **`scripts/fn_param_allow_count_baseline.txt`**; hard cap **`PARAM_COUNT_CAP`** (default 32); runs alongside **`lizard-rust`** in **`.github/workflows/code-complexity.yml`**
+- **`fn-nloc-ratchet`**: Rust function body line counts (lizard **`nloc`**; **`scripts/fn-nloc-ratchet.sh`** / **`scripts/fn_nloc_rust_metrics.py`**); ratchet files **`scripts/fn_nloc_max_baseline.txt`**, **`scripts/fn_nloc_top10_sum_baseline.txt`**; optional hard cap **`FN_NLOC_CAP`**; runs in **`.github/workflows/code-complexity.yml`**
+- **Coverage**: **`.github/workflows/code-coverage.yml`** is **manual-only** (`workflow_dispatch`); locally you can still run `cargo llvm-cov` + **`scripts/check_coverage_ratchet.py`**
 - **`cargo test golden_sse_control`** (conditional hook when `fixtures/sse_control_golden.jsonl`, `crates/crabmate-sse-protocol/control_classify.rs`, or `frontend-leptos/src/sse_dispatch.rs` change)
 
 Without pre-commit installed, run at least:
@@ -33,6 +34,7 @@ cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 bash scripts/lizard-rust.sh
 bash scripts/fn-param-ratchet.sh
+bash scripts/fn-nloc-ratchet.sh
 ```
 
 Note: `pre-commit run --all-files` does **not** run `commit-msg`; message format is checked on **`git commit`** (see [`.cursor/rules/conventional-commits.mdc`](../../.cursor/rules/conventional-commits.mdc)).

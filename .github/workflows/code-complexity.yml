@@ -1,4 +1,4 @@
-# 圈复杂度（lizard CCN）与函数形参棘轮（fn-param），与 scripts/lizard-rust.sh、scripts/fn-param-ratchet.sh / pre-commit 对齐。
+# 圈复杂度（lizard CCN）、函数形参棘轮（fn-param）与函数行数棘轮（fn-nloc），与 scripts/*.sh / pre-commit 对齐。
 name: code-complexity
 
 on:
@@ -24,3 +24,6 @@ jobs:
 
       - name: Run fn-param ratchet (Rust parameter counts + allow lines)
         run: bash scripts/fn-param-ratchet.sh
+
+      - name: Run fn-nloc ratchet (Rust function nloc lines)
+        run: bash scripts/fn-nloc-ratchet.sh

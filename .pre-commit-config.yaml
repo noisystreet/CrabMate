@@ -36,6 +36,13 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
+      - id: fn-nloc-ratchet
+        name: fn nloc ratchet (lizard function line counts)
+        entry: bash scripts/fn-nloc-ratchet.sh
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
       - id: frontend-wasm-check
         name: frontend wasm check
         entry: bash -c 'staged=$(git diff --cached --name-only -- "frontend-leptos/" | wc -l); if [ "$staged" -gt 0 ]; then cd frontend-leptos && cargo check --target wasm32-unknown-unknown; else exit 0; fi'

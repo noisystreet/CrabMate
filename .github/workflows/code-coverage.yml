@@ -1,11 +1,10 @@
-# 覆盖率：摘要 + 关键目录「行覆盖率」棘轮（fixtures/coverage_ratchet_baselines.json；脚本 scripts/check_coverage_ratchet.py）
+# 覆盖率：llvm-cov 摘要 + 关键目录行覆盖率棘轮。
+#
+# 默认不在 push/PR 上运行（避免占用 CI）；需要时在 Actions 里手动触发「Run workflow」。
 name: code-coverage
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
