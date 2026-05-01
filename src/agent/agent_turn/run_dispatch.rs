@@ -23,6 +23,7 @@ use super::params::RunLoopParams;
 use super::staged::{
     run_logical_dual_agent_then_execute_steps, run_staged_plan_then_execute_steps,
 };
+use super::turn_orchestration::{TurnOrchestrationMode, resolve_non_hierarchical_main_path};
 
 const STAGED_INTENT_GATE_RECENT_USER_FOR_MERGE: usize = 4;
 const STAGED_INTENT_GATE_MSG_TAIL_FOR_TOOL: usize = 32;
@@ -148,6 +149,11 @@ pub(crate) fn assess_staged_planning_gate(
 pub(crate) async fn dispatch_hierarchical_turn(
     p: &mut RunLoopParams<'_>,
 ) -> Result<(), RunAgentTurnError> {
+    tracing::info!(
+        target: "crabmate::agent_turn",
+        turn_orchestration_mode = TurnOrchestrationMode::Hierarchical.as_str(),
+        "dispatch_hierarchical_turn"
+    );
     log::info!(target: "crabmate", "run_agent_turn: using Hierarchical mode");
     hierarchy::run_hierarchical_agent(p).await
 }
@@ -158,10 +164,25 @@ pub(crate) async fn dispatch_non_hierarchical_turn(
     per_coord: &mut PerCoordinator,
 ) -> Result<(), RunAgentTurnError> {
     if !intent_at_turn_start::run_intent_at_turn_start_if_configured(p).await? {
+        tracing::info!(
+            target: "crabmate::agent_turn",
+            turn_orchestration_mode = TurnOrchestrationMode::IntentAtTurnStartFinished.as_str(),
+            "dispatch_non_hierarchical_turn intent_at_turn_start finished"
+        );
+        log::info!(target: "crabmate", "run_agent_turn: intent_at_turn_start finished turn early");
         return Ok(());
     }
     let staged_gate = assess_staged_planning_gate(p.turn.messages, p.ctx.cfg.as_ref());
     let allow_staged = staged_gate.allows_staged_planning();
+    let mode = resolve_non_hierarchical_main_path(p.ctx.cfg.as_ref(), allow_staged);
+    tracing::info!(
+        target: "crabmate::agent_turn",
+        turn_orchestration_mode = mode.as_str(),
+        staged_plan_intent_gate_allow = allow_staged,
+        planner_executor_mode = p.ctx.cfg.planner_executor_mode.as_str(),
+        staged_plan_execution = p.ctx.cfg.staged_plan_execution,
+        "dispatch_non_hierarchical_turn main_path"
+    );
     if p.ctx.cfg.planner_executor_mode == PlannerExecutorMode::LogicalDualAgent && allow_staged {
         log::info!(target: "crabmate", "run_agent_turn: using LogicalDualAgent mode");
         run_logical_dual_agent_then_execute_steps(p, per_coord).await

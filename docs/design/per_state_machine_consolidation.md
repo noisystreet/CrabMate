@@ -32,6 +32,7 @@
 | 规划静态校验与重写 | `after_final_assistant` 内长链：解析、层数、workflow 节点子集/全覆盖、validate-only 绑定、重写次数、语义检查挂起等 |
 | 分阶段主循环 | `staged/mod.rs`：`for` 步、patch 重入、优化/集成/两阶段 NL 等交叉 `if` |
 | 终答门控入口 | `final_plan_gate::after_final_assistant`：**始终**经 **`run_final_plan_gate(phase, …)`**；`NoRequirement` 时不扫描 `workflow_validate` 缓存（避免无需求路径的副作用） |
+| 顶层回合形态 | `run_agent_turn_common` / `run_dispatch`：`tracing` 字段 **`turn_orchestration_mode`**（**`turn_orchestration::TurnOrchestrationMode`**），与分层 / 非分层主路径对齐 |
 | 可观测子阶段 | 已有 **`AgentTurnSubPhase`**（`planner` / `executor` / `reflect`）与 SSE **`sub_phase`**，与**内部决策状态**未一一对应 |
 
 问题不是「缺少功能」，而是：**合法转移路径**分散在多个布尔/计数组合里，新加一条规则时容易漏改或产生不可达组合。
@@ -144,6 +145,7 @@
 
 | 日期 | 说明 |
 |------|------|
+| 2026-05-01 | **`agent_turn/turn_orchestration`**：**`TurnOrchestrationMode`** + **`resolve_non_hierarchical_main_path`**；**`run_agent_turn_common` / `run_dispatch`** 打 **`tracing`**（`target: crabmate::agent_turn`，`turn_orchestration_mode`）。 |
 | 2026-05-01 | **`agent_turn/reflect/reflect_semantic.rs`**：`PlanSemanticLlmOutcome` → **`PlanSemanticConsistencyReflectCtl`**（侧向语义 LLM 后与 **`final_plan_gate`** 挂起态衔接；单测覆盖）。 |
 | 2026-05-01 | **`after_final_assistant`**：**始终**经 **`run_final_plan_gate(phase, …)`**；`NoRequirement` 时不调用 **`workflow_validate_layer_need`**（避免无需求路径更新层数缓存）。**`outer_loop`**：`run_agent_outer_loop` 拆迭代守卫、上下文准备、**`ReflectBranchCtl`** 反思分支与工具执行轮。 |
 | 2026-05-01 | 滚动视界外层：新增 **`staged_rolling_horizon_apply_advance`**（`turn_fsm.rs`），集中 **advance + rewrite 计数 + advance_kind / propagate_public_code**；`run_staged_rolling_horizon_outer_loop` 仅保留 IO 与 tracing。 |
