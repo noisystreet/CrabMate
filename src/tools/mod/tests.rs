@@ -390,6 +390,7 @@ fn test_build_tools_names() {
     assert!(names.contains(&"changelog_draft"));
     assert!(names.contains(&"license_notice"));
     assert!(names.contains(&"repo_overview_sweep"));
+    assert!(names.contains(&"crate_contract_map"));
     assert!(names.contains(&"docs_health_sweep"));
     assert!(names.contains(&"git_status"));
     assert!(names.contains(&"git_clean_check"));

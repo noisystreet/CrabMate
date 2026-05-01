@@ -11,6 +11,7 @@ mod code_metrics;
 mod code_nav;
 mod command;
 mod container_tools;
+mod contract_map;
 mod date_calc;
 mod debug_tools;
 mod diagnostics;
@@ -677,6 +678,10 @@ fn runner_license_notice(args: &str, ctx: &ToolContext<'_>) -> String {
 
 fn runner_repo_overview_sweep(args: &str, ctx: &ToolContext<'_>) -> String {
     repo_overview::repo_overview_sweep(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_crate_contract_map(args: &str, ctx: &ToolContext<'_>) -> String {
+    contract_map::crate_contract_map(args, ctx)
 }
 
 fn runner_docs_health_sweep(args: &str, ctx: &ToolContext<'_>) -> String {
