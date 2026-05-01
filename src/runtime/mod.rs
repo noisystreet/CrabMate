@@ -13,6 +13,7 @@ pub mod latex_unicode;
 pub(crate) mod message_display;
 pub(crate) mod plan_section;
 pub(crate) mod repl_reedline;
+pub(crate) mod repl_slash_complete;
 pub(crate) mod terminal_cli_transcript;
 pub(crate) mod terminal_labels;
 pub mod tool_replay;

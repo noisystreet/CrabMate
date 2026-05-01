@@ -4,6 +4,7 @@ mod agent_impl;
 mod compile;
 mod execution_guides;
 mod inject;
+mod operator_tool_analysis;
 mod prompt;
 mod react_loop;
 mod state;

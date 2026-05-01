@@ -87,77 +87,7 @@ impl OperatorAgent {
         result: &super::super::tool_executor::ToolExecutionResult,
         goal: &SubGoal,
     ) -> ToolExecutionOutcome {
-        if !result.success {
-            return ToolExecutionOutcome::Normal;
-        }
-
-        let output = &result.output;
-        let tool_name = &result.tool_name;
-        let goal_desc = goal.description.to_lowercase();
-
-        if tool_name == "run_executable"
-            && (output.to_lowercase().contains("hello")
-                || (output.contains("退出码：0")
-                    && output.chars().count() < 8000
-                    && !output.contains("cmake version")))
-        {
-            return ToolExecutionOutcome::TaskCompleted {
-                reason: "Program executed successfully with expected output".to_string(),
-            };
-        }
-        if tool_name == "run_command"
-            && super::super::goal_verifier::is_run_executable_subgoal(goal)
-            && super::super::goal_verifier::run_command_invocation_mentions_hello(&format!(
-                "Tool run_command executed successfully: {}",
-                output
-            ))
-        {
-            return ToolExecutionOutcome::TaskCompleted {
-                reason: "Program executed successfully via run_command (verified stdout)"
-                    .to_string(),
-            };
-        }
-        if tool_name == "run_command" && output.contains("ELF") && output.contains("executable") {
-            return ToolExecutionOutcome::Normal;
-        }
-
-        if (tool_name == "run_command" || tool_name == "cmake" || tool_name == "make")
-            && !super::super::goal_verifier::is_run_executable_subgoal(goal)
-            && output.contains("[100%]")
-            && output.contains("Linking")
-            && output.contains("executable")
-            && let Some(line) = output
-                .lines()
-                .find(|l| l.contains("Linking") && l.contains("executable"))
-            && let Some(name) = line.split_whitespace().last()
-        {
-            return ToolExecutionOutcome::TaskCompleted {
-                reason: format!("Build completed: executable '{name}' generated"),
-            };
-        }
-
-        if !super::super::goal_verifier::is_run_executable_subgoal(goal)
-            && (goal_desc.contains("编译")
-                || goal_desc.contains("build")
-                || goal_desc.contains("make")
-                || goal_desc.contains("cmake")
-                || goal_desc.contains("链接")
-                || goal_desc.contains("build"))
-            && !result.extracted_artifacts.is_empty()
-        {
-            for artifact in &result.extracted_artifacts {
-                if matches!(
-                    artifact.kind,
-                    super::super::tool_executor::ExtractedArtifactKind::Executable
-                ) {
-                    return ToolExecutionOutcome::TaskCompleted {
-                        reason: format!("Build completed: {} generated", artifact.path.display()),
-                    };
-                }
-            }
-        }
-
-        ToolExecutionOutcome::Normal
+        super::operator_tool_analysis::analyze_operator_tool_execution(result, goal)
     }
 
     pub(super) fn build_context_with_artifacts(
