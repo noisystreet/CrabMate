@@ -1,7 +1,41 @@
+use crate::agent::context_window::prepare_messages_before_model_call_sync;
+use crate::types::{Message, MessageContent};
+
 use super::super::artifact_resolver::ArtifactResolver;
 use super::super::artifact_store::ArtifactStore;
 use super::super::task::{Artifact, ArtifactKind, SubGoal, TaskStatus};
 use super::{OperatorAgent, OperatorConfig};
+
+#[test]
+fn react_messages_session_sync_truncates_like_main_loop() {
+    let mut cfg = crate::config::load_config(None).expect("embed default");
+    cfg.max_message_history = 6;
+    cfg.tool_message_max_chars = 1_000_000;
+    cfg.context_char_budget = 0;
+
+    let mut messages = vec![
+        Message::system_only("sys".to_string()),
+        Message::user_only("task".to_string()),
+    ];
+    for i in 0..20 {
+        messages.push(Message {
+            role: "assistant".to_string(),
+            content: Some(MessageContent::Text(format!("step {i}"))),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        });
+    }
+    let before = messages.len();
+    prepare_messages_before_model_call_sync(&mut messages, &cfg);
+    assert!(
+        messages.len() < before,
+        "session sync should drop old rounds when exceeding max_message_history"
+    );
+    assert_eq!(messages.first().map(|m| m.role.as_str()), Some("system"));
+}
 
 #[tokio::test]
 async fn test_execute() {
