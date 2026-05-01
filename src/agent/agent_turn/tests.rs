@@ -424,7 +424,9 @@ mod staged_single_step_rolling_tests {
 }
 
 mod staged_intent_gate_tests {
-    use super::super::run_dispatch::should_enter_staged_planning;
+    use super::super::run_dispatch::{
+        StagedPlanningDenyReason, StagedPlanningGateOutcome, assess_staged_planning_gate,
+    };
     use crate::types::Message;
 
     fn test_cfg() -> crate::config::AgentConfig {
@@ -435,10 +437,16 @@ mod staged_intent_gate_tests {
     fn plain_qa_should_not_enter_staged_planning() {
         let cfg = test_cfg();
         let messages = vec![Message::user_only("你有哪些技能")];
-        assert!(
-            !should_enter_staged_planning(&messages, &cfg),
-            "普通问答不应进入分阶段规划"
-        );
+        let gate = assess_staged_planning_gate(&messages, &cfg);
+        assert!(!gate.allows_staged_planning(), "普通问答不应进入分阶段规划");
+        match gate {
+            StagedPlanningGateOutcome::Deny {
+                reason: StagedPlanningDenyReason::IntentPipelineNotExecute,
+                task_preview: Some(_),
+                intent_decision: Some(_),
+            } => {}
+            other => panic!("unexpected gate outcome: {:?}", other),
+        }
     }
 
     #[test]
@@ -447,10 +455,31 @@ mod staged_intent_gate_tests {
         let messages = vec![Message::user_only(
             "请修复 src/lib.rs 的编译错误并运行 cargo test",
         )];
+        let gate = assess_staged_planning_gate(&messages, &cfg);
         assert!(
-            should_enter_staged_planning(&messages, &cfg),
+            gate.allows_staged_planning(),
             "任务执行类请求应进入分阶段规划"
         );
+        assert!(
+            matches!(gate, StagedPlanningGateOutcome::Allow { .. }),
+            "expected Allow outcome"
+        );
+    }
+
+    #[test]
+    fn empty_messages_yield_empty_task_deny() {
+        let cfg = test_cfg();
+        let messages: Vec<Message> = Vec::new();
+        let gate = assess_staged_planning_gate(&messages, &cfg);
+        assert!(!gate.allows_staged_planning());
+        match gate {
+            StagedPlanningGateOutcome::Deny {
+                reason: StagedPlanningDenyReason::EmptyEffectiveTask,
+                task_preview: None,
+                intent_decision: None,
+            } => {}
+            other => panic!("unexpected gate outcome: {:?}", other),
+        }
     }
 }
 
