@@ -504,7 +504,7 @@ pub struct AgentConfig {
     /// **兼容保留**：旧版曾用该键切换规划轮是否追加「无任务则 `no_task`」**硬提示**；现已移除硬提示，`no_task` 语义仅以 [`crate::agent::plan_artifact::PLAN_V1_SCHEMA_RULES`]（拼入默认规划 **system**）为准。配置项仍解析/热重载，**无运行时效果**。
     #[allow(dead_code)]
     pub staged_plan_allow_no_task: bool,
-    /// 分阶段单步失败或步内工具报错时的处理：`fail_fast`（默认）或 `patch_planner`（短规划补丁）。
+    /// 分阶段单步失败或步内工具报错时的处理：`fail_fast`（遇错即停）或 `patch_planner`（短规划补丁；嵌入默认见 `config/planning.toml`）。
     pub staged_plan_feedback_mode: StagedPlanFeedbackMode,
     /// `patch_planner` 下对单步连续规划补丁的最大次数（含首次补丁）；达到后仍按 `fail_fast` 结束。
     pub staged_plan_patch_max_attempts: usize,

@@ -70,7 +70,7 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | `CM_STAGED_PLAN_EXECUTION` | Enable staged planning. |
 | `CM_STAGED_PLAN_PHASE_INSTRUCTION` | Planner phase instruction text. |
 | `CM_STAGED_PLAN_ALLOW_NO_TASK` | Legacy; **no effect** (`no_task` rules come from embedded schema in the default planner system). |
-| `CM_STAGED_PLAN_FEEDBACK_MODE` | `fail_fast` / `patch_planner`. |
+| `CM_STAGED_PLAN_FEEDBACK_MODE` | `fail_fast` / `patch_planner` (embedded default in **`config/planning.toml`**). |
 | `CM_STAGED_PLAN_PATCH_MAX_ATTEMPTS` | Max patch-planner rounds. |
 | `CM_STAGED_PLAN_ENSEMBLE_COUNT` | Logical multi-planner count (1–3, default 1). |
 | `CM_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM` | Print no-tools planner stream to stdout in CLI/`chat` (default `true`; see § Staged planning). |
@@ -347,7 +347,7 @@ With **`planner_executor_mode = single_agent`**, each user message runs a no-too
 
 **Per-step sub-agent (`executor_kind` in plan JSON)**: Each **`steps[]`** entry in **`agent_reply_plan` v1** may set **`executor_kind`** to **`review_readonly`**, **`patch_write`**, or **`test_runner`** to narrow the tool list for that staged step and reject out-of-role **`tool_calls`** at execution time (deny messages include a short CSV of allowed tool names for that step); omit the field for legacy behavior. **`test_runner`** includes built-in test runners and **`run_command`** for **allowlisted** commands only (same **`allowed_commands`** rules as elsewhere), e.g. **`cargo build`** / **`cargo check`**. Readonly/write semantics align with **`write_effect_tools`**; patch and test allowlists extend via **`sub_agent_patch_write_extra_tools`** / **`sub_agent_test_runner_extra_tools`**. Does **not** replace **`run_command`** allowlists or MCP approval. SSE **`staged_plan_step_started`** / **`staged_plan_step_finished`** may include optional **`executor_kind`** for UI. On **`patch_planner`** merges, if a patched step omits **`executor_kind`**, the server inherits it from the same index in the pre-patch plan (with a **`debug`** log) to avoid silently dropping sub-agent boundaries.
 
-**`staged_plan_feedback_mode`**: Default **`fail_fast`**; **`patch_planner`** injects feedback and reruns planner without tools, merging patched **`steps`** (capped by **`staged_plan_patch_max_attempts`**).
+**`staged_plan_feedback_mode`**: Default **`patch_planner`** in embedded **`config/planning.toml`**; **`fail_fast`** ends the turn on first step/tool/acceptance failure. **`patch_planner`** injects feedback and reruns planner without tools, merging patched **`steps`** (capped by **`staged_plan_patch_max_attempts`**).
 
 **`staged_plan_cli_show_planner_stream`** (default `true`, **`CM_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM`**)**: For CLI/`chat` with **`out: None`**, whether no-tools planner (and patch planner) streams to stdout. **`false`** hides planner raw output but keeps notices and execution steps; Web SSE unchanged.
 
