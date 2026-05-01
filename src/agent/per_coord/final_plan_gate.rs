@@ -1,6 +1,8 @@
 //! 终答 `agent_reply_plan` v1 门控：**显式状态 / 路由** 表述 `(FinalPlanGatePhase, FinalPlanGateEvent) → 终端路由`
 //! （见 `docs/design/per_state_machine_consolidation.md`）。
 //! **不**修改 `messages`；侧向语义 LLM 仍由调用方在收到 `StopTurnPendingPlanConsistencyLlm` 后执行。
+//!
+//! 入口为 [`run_final_plan_gate`]：先根据配置解析相位，再对单次事件做一步转移。
 
 use crate::agent::plan_artifact::{self, AgentReplyPlanV1};
 use crate::agent::reflection::plan_rewrite;
@@ -10,6 +12,53 @@ use crate::types::Message;
 use super::{AfterFinalAssistant, FinalPlanRequirementMode, PlanRequirementSource};
 
 // --- FSM 门面（单事件一步：终答 assistant 到达后的单次判定） ---
+
+/// 由策略与来源解析进入门控时的相位（与 `require_plan` 布尔一致）。
+pub(crate) fn resolve_final_plan_gate_phase(
+    policy: FinalPlanRequirementMode,
+    source: PlanRequirementSource,
+) -> FinalPlanGatePhase {
+    let require_plan = match policy {
+        FinalPlanRequirementMode::Never => false,
+        FinalPlanRequirementMode::WorkflowReflection => {
+            source == PlanRequirementSource::WorkflowReflection
+        }
+        FinalPlanRequirementMode::Always => true,
+    };
+    if require_plan {
+        FinalPlanGatePhase::CheckStructuredPlan
+    } else {
+        FinalPlanGatePhase::NoRequirement
+    }
+}
+
+/// `(相位, 事件) → 一步结果`。`NoRequirement` 通常由调用方提前返回 `StopTurn`；若误传入此相位，仍返回安全默认以免遗漏分支。
+pub(crate) fn run_final_plan_gate(
+    phase: FinalPlanGatePhase,
+    event: FinalPlanGateEvent,
+    args: FinalPlanGateArgs<'_>,
+) -> FinalPlanGateStepOutcome {
+    match (phase, event) {
+        (FinalPlanGatePhase::NoRequirement, FinalPlanGateEvent::FinalAssistantArrived) => {
+            tracing::debug!(
+                target: "crabmate::per",
+                gate_phase = ?phase,
+                gate_event = ?event,
+                gate_route = ?FinalPlanGateRoute::StopNoRequirement,
+                sub_phase = "reflect",
+                "final_plan_gate transition defensive_no_requirement"
+            );
+            FinalPlanGateStepOutcome {
+                route: FinalPlanGateRoute::StopNoRequirement,
+                after: AfterFinalAssistant::StopTurn,
+                next_plan_rewrite_count: None,
+            }
+        }
+        (FinalPlanGatePhase::CheckStructuredPlan, FinalPlanGateEvent::FinalAssistantArrived) => {
+            step_check_structured_plan(args)
+        }
+    }
+}
 
 /// 进入门控瞬间所处「编排相位」（不含异步挂起的 PendingSemanticLlm；那次由返回值表达）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,7 +85,7 @@ pub(crate) enum FinalPlanGateRoute {
     SemanticsFailedRewriteExhausted,
 }
 
-/// `step_after_require_plan` 的完整输出（含可选的重写计数递增）。
+/// [`step_check_structured_plan`] 的完整输出（含可选的重写计数递增）。
 pub(crate) struct FinalPlanGateStepOutcome {
     pub route: FinalPlanGateRoute,
     pub after: AfterFinalAssistant,
@@ -120,13 +169,15 @@ fn evaluate_static_semantics(
         true
     };
     if !(layers_ok && workflow_ids_ok && validate_only_binding_ok) {
-        log::info!(
+        tracing::info!(
             target: "crabmate::per",
-            "after_final_assistant outcome=plan_schema_ok_semantics_fail plan_steps={} layer_need={:?} workflow_node_ids_ok={} validate_only_binding_ok={}",
-            plan.steps.len(),
-            layer_need,
-            workflow_ids_ok,
-            validate_only_binding_ok
+            outcome = "plan_schema_ok_semantics_fail",
+            plan_steps = plan.steps.len(),
+            layer_need = ?layer_need,
+            workflow_node_ids_ok = workflow_ids_ok,
+            validate_only_binding_ok = validate_only_binding_ok,
+            sub_phase = "reflect",
+            "after_final_assistant static semantics failed"
         );
         return StaticSemanticsOutcome::Fail;
     }
@@ -145,22 +196,26 @@ fn evaluate_static_semantics(
         && args.plan_requirement_source == PlanRequirementSource::WorkflowReflection
         && digest.is_some();
     if want_llm {
-        log::info!(
+        tracing::info!(
             target: "crabmate::per",
-            "after_final_assistant outcome=pending_plan_consistency_llm plan_steps={} layer_need={:?}",
-            plan.steps.len(),
-            layer_need
+            outcome = "pending_plan_consistency_llm",
+            plan_steps = plan.steps.len(),
+            layer_need = ?layer_need,
+            sub_phase = "reflect",
+            "after_final_assistant pending semantic consistency LLM"
         );
         StaticSemanticsOutcome::PassPendingSemanticLlm {
             plan: plan.clone(),
             tool_digest: digest,
         }
     } else {
-        log::info!(
+        tracing::info!(
             target: "crabmate::per",
-            "after_final_assistant outcome=stop_plan_ok plan_steps={} layer_need={:?}",
-            plan.steps.len(),
-            layer_need
+            outcome = "stop_plan_ok",
+            plan_steps = plan.steps.len(),
+            layer_need = ?layer_need,
+            sub_phase = "reflect",
+            "after_final_assistant plan ok stop turn"
         );
         StaticSemanticsOutcome::PassStopTurn
     }
@@ -179,11 +234,13 @@ fn outcome_after_semantics_failure(args: FinalPlanGateArgs<'_>) -> FinalPlanGate
             apply_layer_semantics,
             args.final_plan_require_strict_workflow_node_coverage,
         );
-        log::warn!(
+        tracing::warn!(
             target: "crabmate::per",
-            "after_final_assistant outcome=plan_rewrite_exhausted layer_need={:?} reason={:?}",
-            layer_need,
-            reason
+            outcome = "plan_rewrite_exhausted",
+            layer_need = ?layer_need,
+            reason = ?reason,
+            sub_phase = "reflect",
+            "after_final_assistant plan rewrite exhausted"
         );
         return FinalPlanGateStepOutcome {
             route: FinalPlanGateRoute::SemanticsFailedRewriteExhausted,
@@ -239,11 +296,13 @@ fn outcome_after_semantics_failure(args: FinalPlanGateArgs<'_>) -> FinalPlanGate
         (None, _) => plan_rewrite::plan_rewrite_user_text_base(),
     };
     let rewrite_text = format!("{rewrite_text}{bind_suffix}");
-    log::info!(
+    tracing::info!(
         target: "crabmate::per",
-        "after_final_assistant outcome=request_plan_rewrite attempt={} layer_need={:?}",
-        next_attempt,
-        layer_need
+        outcome = "request_plan_rewrite",
+        attempt = next_attempt,
+        layer_need = ?layer_need,
+        sub_phase = "reflect",
+        "after_final_assistant request plan rewrite"
     );
     FinalPlanGateStepOutcome {
         route: FinalPlanGateRoute::SemanticsFailedRequestRewrite,
@@ -260,14 +319,15 @@ fn outcome_after_semantics_failure(args: FinalPlanGateArgs<'_>) -> FinalPlanGate
     }
 }
 
-/// 在「需要终答规划」前提下，从 **`CheckStructuredPlan`** 相位处理 **`FinalAssistantArrived`**。
-/// 调用方须在返回 `RequestPlanRewrite` 后自行将 `plan_rewrite_attempts` 与之一致（本函数**不**修改计数，与旧实现一致：先判断耗尽再 `+=1`）。
-pub(crate) fn step_after_require_plan(args: FinalPlanGateArgs<'_>) -> FinalPlanGateStepOutcome {
-    log::debug!(
+/// 在 **`CheckStructuredPlan`** 相位处理 **`FinalAssistantArrived`**（解析 JSON + 静态语义 + 重写 / 挂起侧向 LLM）。
+/// 调用方须在返回 `RequestPlanRewrite` 后自行将 `plan_rewrite_attempts` 与之一致（本函数**不**修改计数：先判断耗尽再 `+=1`）。
+pub(crate) fn step_check_structured_plan(args: FinalPlanGateArgs<'_>) -> FinalPlanGateStepOutcome {
+    tracing::debug!(
         target: "crabmate::per",
-        "final_plan_gate step phase={:?} event={:?}",
-        FinalPlanGatePhase::CheckStructuredPlan,
-        FinalPlanGateEvent::FinalAssistantArrived
+        gate_phase = ?FinalPlanGatePhase::CheckStructuredPlan,
+        gate_event = ?FinalPlanGateEvent::FinalAssistantArrived,
+        sub_phase = "reflect",
+        "final_plan_gate step"
     );
 
     let apply_layer_semantics = args.apply_layer_semantics();
@@ -316,31 +376,31 @@ pub(crate) fn after_final_assistant(
     cfg: &AgentConfig,
     workspace_is_set: bool,
 ) -> AfterFinalAssistant {
-    let require_plan = match per.final_plan_policy {
-        FinalPlanRequirementMode::Never => false,
-        FinalPlanRequirementMode::WorkflowReflection => {
-            per.plan_requirement_source == PlanRequirementSource::WorkflowReflection
-        }
-        FinalPlanRequirementMode::Always => true,
-    };
+    let phase = resolve_final_plan_gate_phase(per.final_plan_policy, per.plan_requirement_source);
+    let require_plan = matches!(phase, FinalPlanGatePhase::CheckStructuredPlan);
+    let reflection_stage_round = per.reflection.stage_round();
 
-    log::info!(
+    tracing::info!(
         target: "crabmate::per",
-        "after_final_assistant enter policy={:?} require_plan={} plan_requirement_source={:?} reflection_stage_round={} plan_rewrite_attempts={} plan_rewrite_max={}",
-        per.final_plan_policy,
-        require_plan,
-        per.plan_requirement_source,
-        per.reflection.stage_round(),
-        per.plan_rewrite_attempts,
-        per.plan_rewrite_max_attempts
+        final_plan_policy = ?per.final_plan_policy,
+        require_plan = require_plan,
+        plan_requirement_source = ?per.plan_requirement_source,
+        reflection_stage_round = reflection_stage_round,
+        plan_rewrite_attempts = per.plan_rewrite_attempts,
+        plan_rewrite_max = per.plan_rewrite_max_attempts,
+        gate_phase = ?phase,
+        sub_phase = "reflect",
+        "after_final_assistant enter"
     );
 
     if !require_plan {
-        log::info!(
+        tracing::info!(
             target: "crabmate::per",
-            "after_final_assistant outcome=stop_no_requirement gate_route={:?} gate_phase={:?}",
-            FinalPlanGateRoute::StopNoRequirement,
-            FinalPlanGatePhase::NoRequirement
+            outcome = "stop_no_requirement",
+            gate_route = ?FinalPlanGateRoute::StopNoRequirement,
+            gate_phase = ?FinalPlanGatePhase::NoRequirement,
+            sub_phase = "reflect",
+            "after_final_assistant outcome"
         );
         return AfterFinalAssistant::StopTurn;
     }
@@ -349,28 +409,33 @@ pub(crate) fn after_final_assistant(
     let validate_only_binding_ids =
         plan_rewrite::last_workflow_validate_binding_plan_node_ids(messages);
 
-    let outcome = step_after_require_plan(FinalPlanGateArgs {
-        msg,
-        messages,
-        cfg,
-        workspace_is_set,
-        final_plan_policy: per.final_plan_policy,
-        plan_requirement_source: per.plan_requirement_source,
-        final_plan_require_strict_workflow_node_coverage: per
-            .final_plan_require_strict_workflow_node_coverage,
-        final_plan_semantic_check_enabled: per.final_plan_semantic_check_enabled,
-        final_plan_semantic_check_max_non_readonly_tools: per
-            .final_plan_semantic_check_max_non_readonly_tools,
-        layer_need,
-        validate_only_binding_ids,
-        plan_rewrite_attempts: per.plan_rewrite_attempts,
-        plan_rewrite_max_attempts: per.plan_rewrite_max_attempts,
-    });
-    log::debug!(
+    let outcome = run_final_plan_gate(
+        FinalPlanGatePhase::CheckStructuredPlan,
+        FinalPlanGateEvent::FinalAssistantArrived,
+        FinalPlanGateArgs {
+            msg,
+            messages,
+            cfg,
+            workspace_is_set,
+            final_plan_policy: per.final_plan_policy,
+            plan_requirement_source: per.plan_requirement_source,
+            final_plan_require_strict_workflow_node_coverage: per
+                .final_plan_require_strict_workflow_node_coverage,
+            final_plan_semantic_check_enabled: per.final_plan_semantic_check_enabled,
+            final_plan_semantic_check_max_non_readonly_tools: per
+                .final_plan_semantic_check_max_non_readonly_tools,
+            layer_need,
+            validate_only_binding_ids,
+            plan_rewrite_attempts: per.plan_rewrite_attempts,
+            plan_rewrite_max_attempts: per.plan_rewrite_max_attempts,
+        },
+    );
+    tracing::debug!(
         target: "crabmate::per",
-        "final_plan_gate route={:?} phase={:?}",
-        outcome.route,
-        FinalPlanGatePhase::CheckStructuredPlan
+        gate_route = ?outcome.route,
+        gate_phase = ?FinalPlanGatePhase::CheckStructuredPlan,
+        sub_phase = "reflect",
+        "final_plan_gate transition"
     );
     if let Some(n) = outcome.next_plan_rewrite_count {
         per.plan_rewrite_attempts = n;
@@ -432,7 +497,7 @@ mod tests {
             tool_call_id: None,
         };
         let hist: Vec<Message> = vec![];
-        let o = step_after_require_plan(gate_args(
+        let o = step_check_structured_plan(gate_args(
             &ok,
             &hist,
             &cfg,
@@ -458,7 +523,7 @@ mod tests {
             tool_call_id: None,
         };
         let hist: Vec<Message> = vec![];
-        let o = step_after_require_plan(gate_args(
+        let o = step_check_structured_plan(gate_args(
             &bad,
             &hist,
             &cfg,
@@ -488,7 +553,7 @@ mod tests {
             tool_call_id: None,
         };
         let hist: Vec<Message> = vec![];
-        let o = step_after_require_plan(gate_args(
+        let o = step_check_structured_plan(gate_args(
             &bad,
             &hist,
             &cfg,
@@ -504,6 +569,46 @@ mod tests {
                 reason: PlanRewriteExhaustedReason::PlanMissing
             }
         ));
+    }
+
+    #[test]
+    fn resolve_phase_never_is_no_requirement() {
+        assert_eq!(
+            resolve_final_plan_gate_phase(
+                FinalPlanRequirementMode::Never,
+                PlanRequirementSource::WorkflowReflection
+            ),
+            FinalPlanGatePhase::NoRequirement
+        );
+    }
+
+    #[test]
+    fn run_gate_no_requirement_returns_stop_turn() {
+        let cfg = minimal_cfg();
+        let msg = Message {
+            role: "assistant".to_string(),
+            content: Some("x".into()),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        let o = run_final_plan_gate(
+            FinalPlanGatePhase::NoRequirement,
+            FinalPlanGateEvent::FinalAssistantArrived,
+            gate_args(
+                &msg,
+                &[],
+                &cfg,
+                FinalPlanRequirementMode::Never,
+                PlanRequirementSource::None,
+                0,
+                2,
+            ),
+        );
+        assert_eq!(o.route, FinalPlanGateRoute::StopNoRequirement);
+        assert!(matches!(o.after, AfterFinalAssistant::StopTurn));
     }
 
     #[test]
@@ -550,7 +655,7 @@ mod tests {
                 tool_call_id: Some("tc0".to_string()),
             },
         ];
-        let o = step_after_require_plan(FinalPlanGateArgs {
+        let o = step_check_structured_plan(FinalPlanGateArgs {
             msg: &ok,
             messages: &hist,
             cfg: &cfg,
