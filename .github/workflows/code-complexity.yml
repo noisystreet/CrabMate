@@ -1,4 +1,4 @@
-# 圈复杂度扫描（lizard + Rust），与 scripts/lizard-rust.sh / pre-commit 对齐。
+# 圈复杂度（lizard CCN）与函数形参棘轮（fn-param），与 scripts/lizard-rust.sh、scripts/fn-param-ratchet.sh / pre-commit 对齐。
 name: code-complexity
 
 on:
@@ -21,3 +21,6 @@ jobs:
 
       - name: Run lizard (Rust, CCN threshold from repo script)
         run: bash scripts/lizard-rust.sh
+
+      - name: Run fn-param ratchet (Rust parameter counts + allow lines)
+        run: bash scripts/fn-param-ratchet.sh
