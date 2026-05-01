@@ -12,7 +12,7 @@ use crate::agent::plan_artifact::{
     strip_agent_reply_plan_fence_blocks_for_display,
 };
 use crate::runtime::latex_unicode::latex_math_to_unicode;
-use crate::tool_result::{ToolResult, normalize_tool_message_content};
+use crate::tool_result::{NormalizedToolEnvelope, ToolResult, normalize_tool_message_content};
 use crate::types::Message;
 
 /// 工具结果中「原始输出」块的 Markdown 小标题（与 Web `ChatPanel`、CLI 完整回显一致）。
@@ -42,99 +42,9 @@ pub(crate) fn tool_content_for_display_impl(raw: &str, include_raw: bool) -> Str
         && let Ok(v) = serde_json::from_str::<serde_json::Value>(t)
     {
         if let Some(env) = normalize_tool_message_content(t) {
-            let summary = env.summary.trim();
-            let trunc_note = if env.output_truncated {
-                let orig = env
-                    .output_original_chars
-                    .map(|n| n.to_string())
-                    .unwrap_or_else(|| "?".to_string());
-                let head = env
-                    .output_kept_head_chars
-                    .map(|n| n.to_string())
-                    .unwrap_or_else(|| "?".to_string());
-                let tail = env
-                    .output_kept_tail_chars
-                    .map(|n| n.to_string())
-                    .unwrap_or_else(|| "?".to_string());
-                Some(format!(
-                    "（输出已压缩入上下文：原文约 {orig} 字符，保留首尾约 {head}+{tail} 字符；见 `output` 内采样与说明。）"
-                ))
-            } else {
-                None
-            };
-            let struct_note = {
-                let mut parts: Vec<String> = Vec::new();
-                if env.execution_mode.as_deref() == Some("parallel_readonly_batch")
-                    && let Some(ref bid) = env.parallel_batch_id
-                    && !bid.is_empty()
-                {
-                    parts.push(format!("并行只读批次 `{bid}`"));
-                }
-                if env.retryable == Some(true) {
-                    parts.push("失败可能可重试（启发式 `retryable`）".to_string());
-                }
-                if parts.is_empty() {
-                    None
-                } else {
-                    Some(format!("（{}）", parts.join("；")))
-                }
-            };
-            let mut note_lines: Vec<String> = Vec::new();
-            if let Some(ref n) = trunc_note
-                && !n.is_empty()
-            {
-                note_lines.push(n.clone());
-            }
-            if let Some(ref n) = struct_note
-                && !n.is_empty()
-            {
-                note_lines.push(n.clone());
-            }
-            let combined_note = if note_lines.is_empty() {
-                None
-            } else {
-                Some(note_lines.join("\n"))
-            };
-            if include_raw {
-                let pretty = serde_json::to_string_pretty(&v).unwrap_or_else(|_| t.to_string());
-                if summary.is_empty() {
-                    return match combined_note {
-                        Some(ref note) if !note.is_empty() => {
-                            format!("{note}\n\n{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}")
-                        }
-                        _ => format!("{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}"),
-                    };
-                }
-                return match combined_note {
-                    Some(ref note) if !note.is_empty() => {
-                        format!("{summary}\n{note}\n\n{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}")
-                    }
-                    _ => format!("{summary}\n\n{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}"),
-                };
-            }
-            if summary.is_empty() {
-                return combined_note.unwrap_or_default();
-            }
-            return match combined_note {
-                Some(note) if !note.is_empty() => format!("{summary}\n{note}"),
-                _ => summary.to_string(),
-            };
+            return tool_display_from_normalized_envelope(&v, t, &env, include_raw);
         }
-        if include_raw {
-            if let Some(h) = v.get("human_summary").and_then(|x| x.as_str()) {
-                let pretty = serde_json::to_string_pretty(&v).unwrap_or_else(|_| t.to_string());
-                return format!("{h}\n\n{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}");
-            }
-            return serde_json::to_string_pretty(&v).unwrap_or_else(|_| t.to_string());
-        }
-        if let Some(h) = v.get("human_summary").and_then(|x| x.as_str()) {
-            let hs = h.trim();
-            if hs.is_empty() {
-                return String::new();
-            }
-            return hs.to_string();
-        }
-        return String::new();
+        return tool_display_from_json_value(&v, t, include_raw);
     }
     if should_format_as_structured_plain_tool(t) {
         return format_structured_plain_tool(t, include_raw);
@@ -144,6 +54,109 @@ pub(crate) fn tool_content_for_display_impl(raw: &str, include_raw: bool) -> Str
     } else {
         String::new()
     }
+}
+
+fn tool_display_from_normalized_envelope(
+    v: &serde_json::Value,
+    t: &str,
+    env: &NormalizedToolEnvelope,
+    include_raw: bool,
+) -> String {
+    let summary = env.summary.trim();
+    let trunc_note = if env.output_truncated {
+        let orig = env
+            .output_original_chars
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "?".to_string());
+        let head = env
+            .output_kept_head_chars
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "?".to_string());
+        let tail = env
+            .output_kept_tail_chars
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "?".to_string());
+        Some(format!(
+            "（输出已压缩入上下文：原文约 {orig} 字符，保留首尾约 {head}+{tail} 字符；见 `output` 内采样与说明。）"
+        ))
+    } else {
+        None
+    };
+    let struct_note = {
+        let mut parts: Vec<String> = Vec::new();
+        if env.execution_mode.as_deref() == Some("parallel_readonly_batch")
+            && let Some(ref bid) = env.parallel_batch_id
+            && !bid.is_empty()
+        {
+            parts.push(format!("并行只读批次 `{bid}`"));
+        }
+        if env.retryable == Some(true) {
+            parts.push("失败可能可重试（启发式 `retryable`）".to_string());
+        }
+        if parts.is_empty() {
+            None
+        } else {
+            Some(format!("（{}）", parts.join("；")))
+        }
+    };
+    let mut note_lines: Vec<String> = Vec::new();
+    if let Some(ref n) = trunc_note
+        && !n.is_empty()
+    {
+        note_lines.push(n.clone());
+    }
+    if let Some(ref n) = struct_note
+        && !n.is_empty()
+    {
+        note_lines.push(n.clone());
+    }
+    let combined_note = if note_lines.is_empty() {
+        None
+    } else {
+        Some(note_lines.join("\n"))
+    };
+    if include_raw {
+        let pretty = serde_json::to_string_pretty(v).unwrap_or_else(|_| t.to_string());
+        if summary.is_empty() {
+            return match combined_note {
+                Some(ref note) if !note.is_empty() => {
+                    format!("{note}\n\n{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}")
+                }
+                _ => format!("{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}"),
+            };
+        }
+        return match combined_note {
+            Some(ref note) if !note.is_empty() => {
+                format!("{summary}\n{note}\n\n{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}")
+            }
+            _ => format!("{summary}\n\n{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}"),
+        };
+    }
+    if summary.is_empty() {
+        return combined_note.unwrap_or_default();
+    }
+    match combined_note {
+        Some(note) if !note.is_empty() => format!("{summary}\n{note}"),
+        _ => summary.to_string(),
+    }
+}
+
+fn tool_display_from_json_value(v: &serde_json::Value, t: &str, include_raw: bool) -> String {
+    if include_raw {
+        if let Some(h) = v.get("human_summary").and_then(|x| x.as_str()) {
+            let pretty = serde_json::to_string_pretty(v).unwrap_or_else(|_| t.to_string());
+            return format!("{h}\n\n{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}");
+        }
+        return serde_json::to_string_pretty(v).unwrap_or_else(|_| t.to_string());
+    }
+    if let Some(h) = v.get("human_summary").and_then(|x| x.as_str()) {
+        let hs = h.trim();
+        if hs.is_empty() {
+            return String::new();
+        }
+        return hs.to_string();
+    }
+    String::new()
 }
 
 fn should_format_as_structured_plain_tool(raw: &str) -> bool {
