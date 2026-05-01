@@ -40,13 +40,13 @@ pub(crate) fn run_final_plan_gate(
 ) -> FinalPlanGateStepOutcome {
     match (phase, event) {
         (FinalPlanGatePhase::NoRequirement, FinalPlanGateEvent::FinalAssistantArrived) => {
-            tracing::debug!(
+            tracing::info!(
                 target: "crabmate::per",
-                gate_phase = ?phase,
-                gate_event = ?event,
+                outcome = "stop_no_requirement",
                 gate_route = ?FinalPlanGateRoute::StopNoRequirement,
+                gate_phase = ?phase,
                 sub_phase = "reflect",
-                "final_plan_gate transition defensive_no_requirement"
+                "after_final_assistant outcome"
             );
             FinalPlanGateStepOutcome {
                 route: FinalPlanGateRoute::StopNoRequirement,
@@ -368,7 +368,7 @@ pub(crate) fn step_check_structured_plan(args: FinalPlanGateArgs<'_>) -> FinalPl
     }
 }
 
-/// 对一次终答 assistant 运行完整门控（含 `require_plan == false` 的早停）。
+/// 对一次终答 assistant 运行完整门控（**始终**经 [`run_final_plan_gate`]；`NoRequirement` 相位下 `layer_need` 等字段不读取）。
 pub(crate) fn after_final_assistant(
     per: &mut super::PerCoordinator,
     msg: &Message,
@@ -393,24 +393,17 @@ pub(crate) fn after_final_assistant(
         "after_final_assistant enter"
     );
 
-    if !require_plan {
-        tracing::info!(
-            target: "crabmate::per",
-            outcome = "stop_no_requirement",
-            gate_route = ?FinalPlanGateRoute::StopNoRequirement,
-            gate_phase = ?FinalPlanGatePhase::NoRequirement,
-            sub_phase = "reflect",
-            "after_final_assistant outcome"
-        );
-        return AfterFinalAssistant::StopTurn;
-    }
-
-    let layer_need = per.workflow_validate_layer_need(messages);
-    let validate_only_binding_ids =
-        plan_rewrite::last_workflow_validate_binding_plan_node_ids(messages);
+    let (layer_need, validate_only_binding_ids) = if require_plan {
+        (
+            per.workflow_validate_layer_need(messages),
+            plan_rewrite::last_workflow_validate_binding_plan_node_ids(messages),
+        )
+    } else {
+        (None, None)
+    };
 
     let outcome = run_final_plan_gate(
-        FinalPlanGatePhase::CheckStructuredPlan,
+        phase,
         FinalPlanGateEvent::FinalAssistantArrived,
         FinalPlanGateArgs {
             msg,
@@ -433,7 +426,7 @@ pub(crate) fn after_final_assistant(
     tracing::debug!(
         target: "crabmate::per",
         gate_route = ?outcome.route,
-        gate_phase = ?FinalPlanGatePhase::CheckStructuredPlan,
+        gate_phase = ?phase,
         sub_phase = "reflect",
         "final_plan_gate transition"
     );
