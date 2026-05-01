@@ -1,0 +1,37 @@
+# 可选覆盖率摘要（不门槛化）：帮助发现未执行分支；本地：cargo install cargo-llvm-cov && rustup component add llvm-tools-preview
+name: code-coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  llvm-cov:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps (Wayland headers for rfd / Linux build)
+        run: sudo apt-get update && sudo apt-get install -y libwayland-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov@0.6
+
+      - name: cargo llvm-cov (workspace lib summary)
+        run: cargo llvm-cov --workspace --lib --summary-only
