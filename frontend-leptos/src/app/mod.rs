@@ -35,7 +35,7 @@ use chat::chat_column_view;
 use mobile_shell_header::mobile_shell_header_view;
 use session_list_modal::session_list_modal_view;
 use settings_modal::settings_modal_view;
-use settings_page::SettingsPageView;
+use settings_page::{SettingsPageFormSignals, SettingsPageView};
 use side_column::side_column_view;
 use sidebar_nav::sidebar_nav_view;
 use status_bar::status_bar_footer_view;
@@ -108,25 +108,31 @@ pub fn App() -> impl IntoView {
 
             <SettingsPageView
                 settings_page=app_signals.modal.settings_page
-                locale=app_signals.shell_ui.locale
-                theme=app_signals.shell_ui.theme
-                bg_decor=app_signals.shell_ui.bg_decor
-                llm_api_base_draft=app_signals.llm_settings.llm_api_base_draft
-                llm_api_base_preset_select=app_signals.llm_settings.llm_api_base_preset_select
-                llm_model_draft=app_signals.llm_settings.llm_model_draft
-                llm_temperature_draft=app_signals.llm_settings.llm_temperature_draft
-                llm_context_tokens_draft=app_signals.llm_settings.llm_context_tokens_draft
-                llm_api_key_draft=app_signals.llm_settings.llm_api_key_draft
-                llm_has_saved_key=app_signals.llm_settings.llm_has_saved_key
-                llm_settings_feedback=app_signals.llm_settings.llm_settings_feedback
-                executor_llm_api_base_draft=app_signals.llm_settings.executor_llm_api_base_draft
-                executor_llm_api_base_preset_select=app_signals.llm_settings.executor_llm_api_base_preset_select
-                executor_llm_model_draft=app_signals.llm_settings.executor_llm_model_draft
-                executor_llm_api_key_draft=app_signals.llm_settings.executor_llm_api_key_draft
-                executor_llm_has_saved_key=app_signals.llm_settings.executor_llm_has_saved_key
-                executor_llm_settings_feedback=app_signals.llm_settings.executor_llm_settings_feedback
-                execution_mode_draft=app_signals.llm_settings.execution_mode_draft
-                client_llm_storage_tick=app_signals.llm_settings.client_llm_storage_tick
+                form=SettingsPageFormSignals {
+                    locale: app_signals.shell_ui.locale,
+                    theme: app_signals.shell_ui.theme,
+                    bg_decor: app_signals.shell_ui.bg_decor,
+                    llm_api_base_draft: app_signals.llm_settings.llm_api_base_draft,
+                    llm_api_base_preset_select: app_signals.llm_settings.llm_api_base_preset_select,
+                    llm_model_draft: app_signals.llm_settings.llm_model_draft,
+                    llm_temperature_draft: app_signals.llm_settings.llm_temperature_draft,
+                    llm_context_tokens_draft: app_signals.llm_settings.llm_context_tokens_draft,
+                    llm_api_key_draft: app_signals.llm_settings.llm_api_key_draft,
+                    llm_has_saved_key: app_signals.llm_settings.llm_has_saved_key,
+                    llm_settings_feedback: app_signals.llm_settings.llm_settings_feedback,
+                    executor_llm_api_base_draft: app_signals.llm_settings.executor_llm_api_base_draft,
+                    executor_llm_api_base_preset_select: app_signals
+                        .llm_settings
+                        .executor_llm_api_base_preset_select,
+                    executor_llm_model_draft: app_signals.llm_settings.executor_llm_model_draft,
+                    executor_llm_api_key_draft: app_signals.llm_settings.executor_llm_api_key_draft,
+                    executor_llm_has_saved_key: app_signals.llm_settings.executor_llm_has_saved_key,
+                    executor_llm_settings_feedback: app_signals
+                        .llm_settings
+                        .executor_llm_settings_feedback,
+                    execution_mode_draft: app_signals.llm_settings.execution_mode_draft,
+                    client_llm_storage_tick: app_signals.llm_settings.client_llm_storage_tick,
+                }
             />
         </div>
     }

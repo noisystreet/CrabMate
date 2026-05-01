@@ -20,33 +20,61 @@ use super::find::wire_chat_find_matches;
 use super::handles::{ComposerStreamShell, WireComposerStreamsArgs};
 use super::scroll::{wire_focus_message_after_nav, wire_messages_auto_scroll};
 
+/// 注册 `wire_chat_domain_effects` 所需的信号与句柄（避免长形参列表）。
+pub(crate) struct WireChatDomainEffectsArgs {
+    pub initialized: RwSignal<bool>,
+    pub chat_session: ChatSessionSignals,
+    pub draft: RwSignal<String>,
+    pub pending_images: RwSignal<Vec<String>>,
+    pub pending_clarification: RwSignal<Option<PendingClarificationForm>>,
+    pub collapsed_long_assistant_ids: RwSignal<Vec<String>>,
+    pub composer_draft_buffer: Arc<Mutex<String>>,
+    pub composer_mirror_html: RwSignal<String>,
+    pub composer_mirror_scroll_top: RwSignal<f64>,
+    pub composer_input_ref: NodeRef<Textarea>,
+    pub sessions: RwSignal<Vec<ChatSession>>,
+    pub active_id: RwSignal<String>,
+    pub messages_scroller: NodeRef<leptos::html::Div>,
+    pub auto_scroll_chat: RwSignal<bool>,
+    pub messages_scroll_from_effect: RwSignal<bool>,
+    pub chat_find_query: RwSignal<String>,
+    pub chat_find_match_ids: RwSignal<Vec<String>>,
+    pub chat_find_cursor: RwSignal<usize>,
+    pub locale: RwSignal<Locale>,
+    pub apply_assistant_display_filters: RwSignal<bool>,
+    pub focus_message_id_after_nav: RwSignal<Option<String>>,
+    pub selected_agent_role: RwSignal<Option<String>>,
+    pub stream_shell: ComposerStreamShell,
+}
+
 /// 注册聊天列与输入/流式相关 `wire_*`，并返回 composer 侧闭包（`new_session` / `cancel_stream` 等）。
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn wire_chat_domain_effects(
-    initialized: RwSignal<bool>,
-    chat_session: ChatSessionSignals,
-    draft: RwSignal<String>,
-    pending_images: RwSignal<Vec<String>>,
-    pending_clarification: RwSignal<Option<PendingClarificationForm>>,
-    collapsed_long_assistant_ids: RwSignal<Vec<String>>,
-    composer_draft_buffer: Arc<Mutex<String>>,
-    composer_mirror_html: RwSignal<String>,
-    composer_mirror_scroll_top: RwSignal<f64>,
-    composer_input_ref: NodeRef<Textarea>,
-    sessions: RwSignal<Vec<ChatSession>>,
-    active_id: RwSignal<String>,
-    messages_scroller: NodeRef<leptos::html::Div>,
-    auto_scroll_chat: RwSignal<bool>,
-    messages_scroll_from_effect: RwSignal<bool>,
-    chat_find_query: RwSignal<String>,
-    chat_find_match_ids: RwSignal<Vec<String>>,
-    chat_find_cursor: RwSignal<usize>,
-    locale: RwSignal<Locale>,
-    apply_assistant_display_filters: RwSignal<bool>,
-    focus_message_id_after_nav: RwSignal<Option<String>>,
-    selected_agent_role: RwSignal<Option<String>>,
-    stream_shell: ComposerStreamShell,
-) -> ChatComposerWires {
+pub(crate) fn wire_chat_domain_effects(args: WireChatDomainEffectsArgs) -> ChatComposerWires {
+    let WireChatDomainEffectsArgs {
+        initialized,
+        chat_session,
+        draft,
+        pending_images,
+        pending_clarification,
+        collapsed_long_assistant_ids,
+        composer_draft_buffer,
+        composer_mirror_html,
+        composer_mirror_scroll_top,
+        composer_input_ref,
+        sessions,
+        active_id,
+        messages_scroller,
+        auto_scroll_chat,
+        messages_scroll_from_effect,
+        chat_find_query,
+        chat_find_match_ids,
+        chat_find_cursor,
+        locale,
+        apply_assistant_display_filters,
+        focus_message_id_after_nav,
+        selected_agent_role,
+        stream_shell,
+    } = args;
+
     wire_session_switch_clears_chat_state(
         initialized,
         chat_session,

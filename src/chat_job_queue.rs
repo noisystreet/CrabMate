@@ -962,28 +962,30 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     None => (None, None, None),
                 };
             let r = crate::run_agent_turn(crate::RunAgentTurnParams::web_chat_stream(
-                &queue_deps.client,
-                api_key_turn.as_str(),
-                &cfg_turn,
-                tools_for_job.as_slice(),
-                &mut messages,
-                &work_dir,
-                workspace_is_set,
-                Arc::clone(&cancel),
-                flight,
-                web_tool_ctx.as_ref(),
-                temperature_override,
-                None,  // model_override: planner 阶段不使用前端传来的 executor model
-                false, // use_executor_model: first iteration is always planner round
-                executor_model_override, // executor_model_override: 前端传来的 executor_llm.model
-                executor_api_base,
-                executor_api_key,
-                seed_override,
-                queue_deps.long_term_memory.clone(),
-                job_id,
-                &conversation_id,
-                &sse_tx,
-                turn_allow,
+                crate::WebChatStreamBuildArgs {
+                    client: &queue_deps.client,
+                    api_key: api_key_turn.as_str(),
+                    cfg: &cfg_turn,
+                    tools: tools_for_job.as_slice(),
+                    messages: &mut messages,
+                    effective_working_dir: &work_dir,
+                    workspace_is_set,
+                    cancel: Arc::clone(&cancel),
+                    per_flight: flight,
+                    web_tool_ctx: web_tool_ctx.as_ref(),
+                    temperature_override,
+                    model_override: None, // planner 阶段不使用前端传来的 executor model
+                    use_executor_model: false, // first iteration is always planner round
+                    executor_model_override, // 前端传来的 executor_llm.model
+                    executor_api_base,
+                    executor_api_key,
+                    seed_override,
+                    long_term_memory: queue_deps.long_term_memory.clone(),
+                    job_id,
+                    conversation_id: conversation_id.as_str(),
+                    out: &sse_tx,
+                    turn_allowed_tool_names: turn_allow,
+                },
             ))
             .await;
             cancel_watcher.abort();
@@ -1217,25 +1219,27 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     None => (None, None, None),
                 };
             let r = crate::run_agent_turn(crate::RunAgentTurnParams::web_chat_json(
-                &queue_deps.client,
-                api_key_turn.as_str(),
-                &cfg_turn,
-                tools_for_job.as_slice(),
-                &mut messages,
-                &work_dir,
-                workspace_is_set,
-                flight,
-                temperature_override,
-                None,  // model_override: planner 阶段不使用前端传来的 executor model
-                false, // use_executor_model: first iteration is always planner round
-                executor_model_override, // executor_model_override: 前端传来的 executor_llm.model
-                executor_api_base,
-                executor_api_key,
-                seed_override,
-                queue_deps.long_term_memory.clone(),
-                job_id,
-                &conversation_id,
-                turn_allow,
+                crate::WebChatJsonBuildArgs {
+                    client: &queue_deps.client,
+                    api_key: api_key_turn.as_str(),
+                    cfg: &cfg_turn,
+                    tools: tools_for_job.as_slice(),
+                    messages: &mut messages,
+                    effective_working_dir: &work_dir,
+                    workspace_is_set,
+                    per_flight: flight,
+                    temperature_override,
+                    model_override: None,
+                    use_executor_model: false,
+                    executor_model_override,
+                    executor_api_base,
+                    executor_api_key,
+                    seed_override,
+                    long_term_memory: queue_deps.long_term_memory.clone(),
+                    job_id,
+                    conversation_id: conversation_id.as_str(),
+                    turn_allowed_tool_names: turn_allow,
+                },
             ))
             .await;
             let (ok, cancelled, err) = match r {

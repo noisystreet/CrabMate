@@ -38,80 +38,88 @@ fn validate_llm_context_tokens_override(raw: &str, loc: Locale) -> Result<(), St
     Ok(())
 }
 
+/// 一次「保存全部设置」所需的表单快照与 UI 信号（避免长参数列表）。
+pub struct CommitAllSettingsInput<'a> {
+    pub ui_locale: Locale,
+    pub appearance_locale: Locale,
+    pub appearance_theme: String,
+    pub appearance_bg_decor: bool,
+    pub locale: RwSignal<Locale>,
+    pub theme: RwSignal<String>,
+    pub bg_decor: RwSignal<bool>,
+    pub client_base: &'a str,
+    pub client_model: &'a str,
+    pub client_temperature: &'a str,
+    pub client_llm_context_tokens: &'a str,
+    pub client_api_key_draft: &'a str,
+    pub executor_base: &'a str,
+    pub executor_model: &'a str,
+    pub executor_api_key_draft: &'a str,
+    pub execution_mode: &'a str,
+    pub clear_client_llm_key: bool,
+    pub clear_executor_llm_key: bool,
+    pub llm_api_key_draft: RwSignal<String>,
+    pub llm_has_saved_key: RwSignal<bool>,
+    pub executor_llm_api_key_draft: RwSignal<String>,
+    pub executor_llm_has_saved_key: RwSignal<bool>,
+    pub client_llm_storage_tick: RwSignal<u64>,
+}
+
 /// 将语言 / 主题 / 背景与（可选）LLM 覆盖写入 `localStorage`，并更新全局 UI 信号。
 ///
-/// - `api_key_update`：`None` 表示不改已存密钥；`Some(...)` 则按 `persist_*` 语义写入或清除。
-#[allow(clippy::too_many_arguments)]
-pub fn commit_all_settings(
-    ui_locale: Locale,
-    appearance_locale: Locale,
-    appearance_theme: String,
-    appearance_bg_decor: bool,
-    locale: RwSignal<Locale>,
-    theme: RwSignal<String>,
-    bg_decor: RwSignal<bool>,
-    client_base: &str,
-    client_model: &str,
-    client_temperature: &str,
-    client_llm_context_tokens: &str,
-    client_api_key_draft: &str,
-    executor_base: &str,
-    executor_model: &str,
-    executor_api_key_draft: &str,
-    execution_mode: &str,
-    clear_client_llm_key: bool,
-    clear_executor_llm_key: bool,
-    llm_api_key_draft: RwSignal<String>,
-    llm_has_saved_key: RwSignal<bool>,
-    executor_llm_api_key_draft: RwSignal<String>,
-    executor_llm_has_saved_key: RwSignal<bool>,
-    client_llm_storage_tick: RwSignal<u64>,
-) -> Result<(), String> {
-    if clear_client_llm_key {
-        clear_client_llm_api_key_storage(ui_locale)?;
+/// - 密钥草稿：`clear_*` 为真或草稿非空时按 `persist_*` 语义写入或清除。
+pub fn commit_all_settings(p: CommitAllSettingsInput<'_>) -> Result<(), String> {
+    if p.clear_client_llm_key {
+        clear_client_llm_api_key_storage(p.ui_locale)?;
     }
-    if clear_executor_llm_key {
-        clear_executor_llm_api_key_storage(ui_locale)?;
+    if p.clear_executor_llm_key {
+        clear_executor_llm_api_key_storage(p.ui_locale)?;
     }
 
-    let client_key_upd = if clear_client_llm_key {
+    let client_key_upd = if p.clear_client_llm_key {
         Some("")
-    } else if client_api_key_draft.trim().is_empty() {
+    } else if p.client_api_key_draft.trim().is_empty() {
         None
     } else {
-        Some(client_api_key_draft)
+        Some(p.client_api_key_draft)
     };
-    validate_temperature_override(client_temperature, ui_locale)?;
-    validate_llm_context_tokens_override(client_llm_context_tokens, ui_locale)?;
+    validate_temperature_override(p.client_temperature, p.ui_locale)?;
+    validate_llm_context_tokens_override(p.client_llm_context_tokens, p.ui_locale)?;
     persist_client_llm_to_storage(
-        client_base,
-        client_model,
-        client_temperature,
-        client_llm_context_tokens,
+        p.client_base,
+        p.client_model,
+        p.client_temperature,
+        p.client_llm_context_tokens,
         client_key_upd,
-        ui_locale,
+        p.ui_locale,
     )?;
 
-    let executor_key_upd = if clear_executor_llm_key {
+    let executor_key_upd = if p.clear_executor_llm_key {
         Some("")
-    } else if executor_api_key_draft.trim().is_empty() {
+    } else if p.executor_api_key_draft.trim().is_empty() {
         None
     } else {
-        Some(executor_api_key_draft)
+        Some(p.executor_api_key_draft)
     };
-    persist_executor_llm_to_storage(executor_base, executor_model, executor_key_upd, ui_locale)?;
-    persist_execution_mode_to_storage(execution_mode, ui_locale)?;
+    persist_executor_llm_to_storage(
+        p.executor_base,
+        p.executor_model,
+        executor_key_upd,
+        p.ui_locale,
+    )?;
+    persist_execution_mode_to_storage(p.execution_mode, p.ui_locale)?;
 
-    locale.set(appearance_locale);
-    store_locale_slug(appearance_locale.storage_slug());
-    theme.set(appearance_theme);
-    bg_decor.set(appearance_bg_decor);
+    p.locale.set(p.appearance_locale);
+    store_locale_slug(p.appearance_locale.storage_slug());
+    p.theme.set(p.appearance_theme);
+    p.bg_decor.set(p.appearance_bg_decor);
 
-    llm_api_key_draft.set(String::new());
-    executor_llm_api_key_draft.set(String::new());
-    llm_has_saved_key.set(client_llm_storage_has_api_key());
-    executor_llm_has_saved_key.set(executor_llm_storage_has_api_key());
-    client_llm_storage_tick.update(|n| *n = n.wrapping_add(1));
+    p.llm_api_key_draft.set(String::new());
+    p.executor_llm_api_key_draft.set(String::new());
+    p.llm_has_saved_key.set(client_llm_storage_has_api_key());
+    p.executor_llm_has_saved_key
+        .set(executor_llm_storage_has_api_key());
+    p.client_llm_storage_tick.update(|n| *n = n.wrapping_add(1));
 
     Ok(())
 }
