@@ -346,6 +346,35 @@ fn truncate_tool_output_with_note(raw: &str, max_chars: usize) -> String {
     s
 }
 
+/// 终端摘要：多行正文的前若干行，单行过长时截断。
+fn terminal_line_block_preview(
+    lines: &[&str],
+    preview_lines_cap: usize,
+    max_line_chars: usize,
+) -> (usize, String, usize) {
+    let n_preview = lines.len().min(preview_lines_cap);
+    let mut preview = String::new();
+    for line in lines.iter().take(n_preview) {
+        let line_len = line.chars().count();
+        let lim: String = line.chars().take(max_line_chars).collect();
+        preview.push_str(&lim);
+        if line_len > max_line_chars {
+            preview.push_str(" …(行内截断)");
+        }
+        preview.push('\n');
+    }
+    let more = lines.len().saturating_sub(n_preview);
+    (n_preview, preview, more)
+}
+
+fn push_terminal_context_footer(out: &mut String, footer: Option<&str>) {
+    if let Some(f) = footer {
+        out.push_str(&format!("\n---\n{f}\n（完整输出已写入本轮对话上下文。）"));
+    } else {
+        out.push_str("\n（完整输出已写入本轮对话上下文。）");
+    }
+}
+
 /// CLI 下 `search_in_files`：保留首行 `crabmate_tool_output` JSON，**不**列出 `path:line:` 逐行匹配，以缩短终端输出。
 #[must_use]
 pub(crate) fn search_in_files_result_terminal_short(raw: &str) -> String {
@@ -435,18 +464,8 @@ pub(crate) fn read_dir_result_terminal_summary(raw: &str) -> String {
         })
         .collect();
     let footer = lines.iter().rev().find(|l| l.contains("总计遍历")).copied();
-    let n_preview = body_lines.len().min(PREVIEW_LINES);
-    let mut preview = String::new();
-    for line in body_lines.iter().take(n_preview) {
-        let line_len = line.chars().count();
-        let lim: String = line.chars().take(MAX_LINE_CHARS).collect();
-        preview.push_str(&lim);
-        if line_len > MAX_LINE_CHARS {
-            preview.push_str(" …(行内截断)");
-        }
-        preview.push('\n');
-    }
-    let more = body_lines.len().saturating_sub(n_preview);
+    let (n_preview, preview, more) =
+        terminal_line_block_preview(&body_lines, PREVIEW_LINES, MAX_LINE_CHARS);
     let more_note = if more > 0 {
         format!("尚有后续 {more} 条条目未在终端显示。")
     } else {
@@ -456,11 +475,7 @@ pub(crate) fn read_dir_result_terminal_summary(raw: &str) -> String {
         "{first}\n\n---\n终端摘要：以下为前 {n_preview} 条（共 {} 条展示用条目）。{more_note}\n\n{preview}",
         body_lines.len(),
     );
-    if let Some(f) = footer {
-        out.push_str(&format!("\n---\n{f}\n（完整输出已写入本轮对话上下文。）"));
-    } else {
-        out.push_str("\n（完整输出已写入本轮对话上下文。）");
-    }
+    push_terminal_context_footer(&mut out, footer);
     out
 }
 
@@ -484,18 +499,8 @@ pub(crate) fn list_tree_result_terminal_summary(raw: &str) -> String {
     let mid = parts[1];
     let footer = parts.get(2).map(|s| s.trim()).filter(|s| !s.is_empty());
     let mid_lines: Vec<&str> = mid.lines().collect();
-    let n_preview = mid_lines.len().min(PREVIEW_LINES);
-    let mut preview = String::new();
-    for line in mid_lines.iter().take(n_preview) {
-        let line_len = line.chars().count();
-        let lim: String = line.chars().take(MAX_LINE_CHARS).collect();
-        preview.push_str(&lim);
-        if line_len > MAX_LINE_CHARS {
-            preview.push_str(" …(行内截断)");
-        }
-        preview.push('\n');
-    }
-    let more = mid_lines.len().saturating_sub(n_preview);
+    let (n_preview, preview, more) =
+        terminal_line_block_preview(&mid_lines, PREVIEW_LINES, MAX_LINE_CHARS);
     let more_note = if more > 0 {
         format!("尚有后续 {more} 行未在终端显示。")
     } else {
@@ -505,11 +510,7 @@ pub(crate) fn list_tree_result_terminal_summary(raw: &str) -> String {
         "{meta}\n\n---\n终端摘要：以下为树输出前 {n_preview} 行（本段共 {} 行）。{more_note}\n\n{preview}",
         mid_lines.len(),
     );
-    if let Some(f) = footer {
-        out.push_str(&format!("\n---\n{f}\n（完整输出已写入本轮对话上下文。）"));
-    } else {
-        out.push_str("\n（完整输出已写入本轮对话上下文。）");
-    }
+    push_terminal_context_footer(&mut out, footer);
     out
 }
 

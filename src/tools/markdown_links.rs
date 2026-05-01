@@ -607,23 +607,18 @@ fn render_text_report(
     out.trim_end().to_string()
 }
 
-/// 参数 JSON：
-/// - `roots`?: string[]，默认 `["README.md","docs"]`
-/// - `max_files`?: number，默认 300，上限 3000
-/// - `max_depth`?: number，目录递归深度，默认 24，上限 80
-/// - `allowed_external_prefixes`?: string[]，非空时：以这些前缀开头的 http(s)/协议相对 URL 会发 HEAD（失败时 GET Range 回退）
-/// - `external_timeout_secs`?: number，默认 10，上限 60
-/// - `check_fragments`?: bool，默认 true；是否校验 `#fragment`（按目标 Markdown 标题锚点）
-/// - `output_format`?: string，默认 text；可选 text/json/sarif
-pub fn markdown_check_links(args_json: &str, working_dir: &Path) -> String {
-    let v = match crate::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let output_format = match parse_output_format(v.get("output_format").and_then(|x| x.as_str())) {
-        Ok(fmt) => fmt,
-        Err(e) => return e,
-    };
+struct MarkdownCheckParsed {
+    output_format: OutputFormat,
+    roots: Vec<String>,
+    max_files: usize,
+    max_depth: usize,
+    allowed_prefixes: Vec<String>,
+    ext_timeout: u64,
+    check_fragments: bool,
+}
+
+fn parse_markdown_check_args(v: &serde_json::Value) -> Result<MarkdownCheckParsed, String> {
+    let output_format = parse_output_format(v.get("output_format").and_then(|x| x.as_str()))?;
 
     let roots: Vec<String> = v
         .get("roots")
@@ -671,6 +666,28 @@ pub fn markdown_check_links(args_json: &str, working_dir: &Path) -> String {
         .get("check_fragments")
         .and_then(|x| x.as_bool())
         .unwrap_or(true);
+
+    Ok(MarkdownCheckParsed {
+        output_format,
+        roots,
+        max_files,
+        max_depth,
+        allowed_prefixes,
+        ext_timeout,
+        check_fragments,
+    })
+}
+
+fn markdown_check_links_inner(parsed: MarkdownCheckParsed, working_dir: &Path) -> String {
+    let MarkdownCheckParsed {
+        output_format,
+        roots,
+        max_files,
+        max_depth,
+        allowed_prefixes,
+        ext_timeout,
+        check_fragments,
+    } = parsed;
 
     let ws_canonical = match canonical_workspace_root(working_dir) {
         Ok(p) => p,
@@ -1003,6 +1020,25 @@ pub fn markdown_check_links(args_json: &str, working_dir: &Path) -> String {
             }))
             .unwrap_or_else(|e| format!("SARIF 序列化失败: {}", e))
         }
+    }
+}
+
+/// 参数 JSON：
+/// - `roots`?: string[]，默认 `["README.md","docs"]`
+/// - `max_files`?: number，默认 300，上限 3000
+/// - `max_depth`?: number，目录递归深度，默认 24，上限 80
+/// - `allowed_external_prefixes`?: string[]，非空时：以这些前缀开头的 http(s)/协议相对 URL 会发 HEAD（失败时 GET Range 回退）
+/// - `external_timeout_secs`?: number，默认 10，上限 60
+/// - `check_fragments`?: bool，默认 true；是否校验 `#fragment`（按目标 Markdown 标题锚点）
+/// - `output_format`?: string，默认 text；可选 text/json/sarif
+pub fn markdown_check_links(args_json: &str, working_dir: &Path) -> String {
+    let v = match crate::tools::parse_args_json(args_json) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    match parse_markdown_check_args(&v) {
+        Ok(parsed) => markdown_check_links_inner(parsed, working_dir),
+        Err(e) => e,
     }
 }
 
