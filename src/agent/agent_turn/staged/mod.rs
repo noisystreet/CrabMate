@@ -72,8 +72,10 @@ use staged_step_fsm::{
     staged_step_patch_planner_enabled,
 };
 use step_iteration_fsm::{
-    StagedStepAfterOuterLoop, StagedStepToolPhaseRoute, staged_step_after_outer_loop,
+    STAGED_STEP_OUTER_LOOP_FAIL_DETAIL, STAGED_STEP_TOOL_MSG_FAIL_DETAIL, StagedStepAfterOuterLoop,
+    StagedStepToolPhaseRoute, staged_step_after_outer_loop,
     staged_step_failure_retry_exhausted_message, staged_step_tool_phase_route,
+    staged_step_verify_fail_patch_detail, staged_step_wall_clock_exceeded,
 };
 use step_loop_fsm::{staged_injected_step_user_body, try_apply_staged_plan_control_flow_jump};
 use turn_fsm::{
@@ -783,6 +785,331 @@ async fn push_patch_replan_assistant_json_and_notice(
     Ok(())
 }
 
+/// 单次 `run_staged_plan_steps_loop` 迭代结束方式（不含墙钟：由外层检查）。
+enum StagedStepIterationCtl {
+    /// 补丁重规划后重试当前下标（`i` 不变）。
+    RetryCurrentStep { n: usize },
+    /// 本步已完结（transition 或成功），调用方将 `i += 1`。
+    AdvanceToNextStep { n: usize, completed_steps: usize },
+    /// 本步成功后检测到取消（与历史：先发 `step_finished(cancelled)` 再 `break`）。
+    CancelledAfterOuterOk,
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_one_staged_plan_step_iteration<F>(
+    plan_id: &str,
+    i: usize,
+    mut n: usize,
+    completed_steps: usize,
+    plan_steps: &mut Vec<PlanStepV1>,
+    original_steps: &[PlanStepV1],
+    transition_counters: &mut HashMap<String, u32>,
+    echo_terminal_staged: bool,
+    labels: &StagedPlanRunLabels,
+    patch_ctx: &mut StagedPlanPatchPlannerCtx<'_, '_, F>,
+    make_step_user_message: &F,
+) -> Result<StagedStepIterationCtl, RunAgentTurnError>
+where
+    F: Fn(String) -> Message,
+{
+    let step = plan_steps[i].clone();
+    let step_index = i + 1;
+    send_staged_plan_step_started(
+        patch_ctx.p.ctx.out,
+        plan_id,
+        step.id.trim(),
+        step_index,
+        n,
+        step.description.trim(),
+        step.executor_kind.map(|k| k.as_snake_case_str()),
+    )
+    .await;
+
+    let body = staged_injected_step_user_body(step_index, n, &step);
+    debug!(
+        target: "crabmate",
+        "{} step={}/{} body_len={} body_preview={}",
+        labels.step_injection_log_label,
+        i + 1,
+        n,
+        body.len(),
+        crate::redact::preview_chars(&body, crate::redact::MESSAGE_LOG_PREVIEW_CHARS)
+    );
+    if echo_terminal_staged {
+        let _ = crate::runtime::terminal_cli_transcript::print_staged_plan_notice(false, &body);
+    }
+    let step_user_idx = patch_ctx.p.turn.messages.len();
+    patch_ctx.p.turn.messages.push(make_step_user_message(body));
+    let prev_executor_constraint = patch_ctx.p.turn.step_executor_constraint;
+    patch_ctx.p.turn.step_executor_constraint = step.executor_kind;
+    let run_step = run_agent_outer_loop(patch_ctx.p, patch_ctx.per_coord).await;
+    patch_ctx.p.turn.step_executor_constraint = prev_executor_constraint;
+
+    let mut step_verify_failed_reason: Option<String> = None;
+    if run_step.is_ok() {
+        #[allow(clippy::collapsible_if)]
+        if let Some(ref acceptance) = step.acceptance {
+            let verify_result = crate::agent::step_verifier::verify_step_execution(
+                acceptance,
+                patch_ctx.p.turn.messages,
+                step_user_idx,
+                patch_ctx.p.ctx.effective_working_dir,
+            );
+
+            if let crate::agent::step_verifier::VerifyResult::Fail { reason } = verify_result {
+                step_verify_failed_reason = Some(reason);
+            }
+        }
+    }
+
+    if let Some((fb, step_status)) = try_apply_staged_plan_control_flow_jump(
+        &step,
+        i,
+        plan_steps,
+        original_steps,
+        transition_counters,
+        run_step.is_err() || step_verify_failed_reason.is_some(),
+        &step_verify_failed_reason,
+    ) {
+        n = plan_steps.len();
+
+        patch_ctx.p.turn.messages.push(Message::user_only(fb));
+
+        let replan = AgentReplyPlanV1 {
+            plan_type: "agent_reply_plan".to_string(),
+            version: 1,
+            steps: plan_steps.clone(),
+            no_task: false,
+        };
+        send_staged_plan_notice(
+            patch_ctx.p.ctx.out,
+            echo_terminal_staged,
+            true,
+            staged_plan_queue_summary_text(&replan, completed_steps),
+        )
+        .await;
+
+        let step_verify_fail_reason = step_verify_failed_reason.as_deref();
+        finish_staged_plan_step_sse(
+            patch_ctx.p.ctx.out,
+            plan_id,
+            step.id.trim(),
+            step_index,
+            n,
+            step_status,
+            step.executor_kind,
+            step_verify_fail_reason,
+        )
+        .await;
+        patch_ctx
+            .p
+            .turn
+            .messages
+            .push(Message::chat_ui_separator(true));
+        emit_chat_ui_separator_sse(patch_ctx.p.ctx.out, true).await;
+        return Ok(StagedStepIterationCtl::AdvanceToNextStep {
+            n,
+            completed_steps: step_index,
+        });
+    }
+
+    match staged_step_after_outer_loop(&run_step, &step_verify_failed_reason) {
+        StagedStepAfterOuterLoop::ExecutionOrVerifyFailed { .. } => {
+            if staged_step_patch_planner_enabled(patch_ctx.p.ctx.cfg.staged_plan_feedback_mode) {
+                let mut recovered = false;
+                let patch_budget = staged_patch_budget_after_step_failure(
+                    step.max_step_retries,
+                    patch_ctx.p.ctx.cfg.staged_plan_patch_max_attempts,
+                );
+                for _ in 0..patch_budget {
+                    let feedback = if let Some(ref vr) = step_verify_failed_reason {
+                        staged_plan_step_failure_feedback_user_body(
+                            plan_id,
+                            i,
+                            n,
+                            &step,
+                            "本步确定性验证失败 (Step Verification Failed)",
+                            &staged_step_verify_fail_patch_detail(vr),
+                        )
+                    } else {
+                        staged_plan_step_failure_feedback_user_body(
+                            plan_id,
+                            i,
+                            n,
+                            &step,
+                            "执行子循环返回错误",
+                            STAGED_STEP_OUTER_LOOP_FAIL_DETAIL,
+                        )
+                    };
+                    if let Some(merged) = run_staged_plan_patch_planner_round(
+                        patch_ctx,
+                        feedback,
+                        plan_steps.as_slice(),
+                        i,
+                    )
+                    .await?
+                    {
+                        *plan_steps = merged;
+                        n = plan_steps.len();
+                        push_patch_replan_assistant_json_and_notice(
+                            patch_ctx.p,
+                            plan_steps.as_slice(),
+                            echo_terminal_staged,
+                            completed_steps,
+                        )
+                        .await?;
+                        recovered = true;
+                        break;
+                    }
+                }
+                if recovered {
+                    return Ok(StagedStepIterationCtl::RetryCurrentStep { n });
+                }
+            }
+            finish_staged_plan_step_failed_and_plan_failed_sse(
+                StagedPlanStepFailedExit {
+                    out: patch_ctx.p.ctx.out,
+                    plan_id,
+                    step_id_trim: step.id.trim(),
+                    step_index,
+                    n,
+                    completed_steps_before_this: completed_steps,
+                },
+                step.executor_kind,
+                step_verify_failed_reason.as_deref(),
+            )
+            .await;
+
+            let reason =
+                staged_step_failure_retry_exhausted_message(&run_step, &step_verify_failed_reason);
+            return Err(RunAgentTurnError::StepRetryExhausted {
+                phase: AgentTurnSubPhase::Executor,
+                message: reason,
+            });
+        }
+        StagedStepAfterOuterLoop::ProceedToToolCheck => {}
+    }
+
+    if sse_sender_closed(patch_ctx.p.ctx.out)
+        || patch_ctx
+            .p
+            .ctx
+            .cancel
+            .is_some_and(|c| c.load(Ordering::SeqCst))
+    {
+        finish_staged_plan_step_sse(
+            patch_ctx.p.ctx.out,
+            plan_id,
+            step.id.trim(),
+            step_index,
+            n,
+            "cancelled",
+            step.executor_kind,
+            None,
+        )
+        .await;
+        return Ok(StagedStepIterationCtl::CancelledAfterOuterOk);
+    }
+
+    let tools_ok = staged_step_tool_messages_all_ok(patch_ctx.p.turn.messages, step_user_idx);
+    let patch_planner_on =
+        staged_step_patch_planner_enabled(patch_ctx.p.ctx.cfg.staged_plan_feedback_mode);
+    match staged_step_tool_phase_route(tools_ok, patch_planner_on) {
+        StagedStepToolPhaseRoute::AttemptToolFailurePatches => {
+            let mut recovered = false;
+            let tool_patch_budget = staged_patch_budget_tool_messages_not_ok(
+                patch_ctx.p.ctx.cfg.staged_plan_patch_max_attempts,
+            );
+            for _ in 0..tool_patch_budget {
+                let feedback = staged_plan_step_failure_feedback_user_body(
+                    plan_id,
+                    i,
+                    n,
+                    &step,
+                    "本步内工具调用未全部成功",
+                    STAGED_STEP_TOOL_MSG_FAIL_DETAIL,
+                );
+                if let Some(merged) = run_staged_plan_patch_planner_round(
+                    patch_ctx,
+                    feedback,
+                    plan_steps.as_slice(),
+                    i,
+                )
+                .await?
+                {
+                    *plan_steps = merged;
+                    n = plan_steps.len();
+                    push_patch_replan_assistant_json_and_notice(
+                        patch_ctx.p,
+                        plan_steps.as_slice(),
+                        echo_terminal_staged,
+                        completed_steps,
+                    )
+                    .await?;
+                    recovered = true;
+                    break;
+                }
+            }
+            if recovered {
+                return Ok(StagedStepIterationCtl::RetryCurrentStep { n });
+            }
+            finish_staged_plan_step_failed_and_plan_failed_sse(
+                StagedPlanStepFailedExit {
+                    out: patch_ctx.p.ctx.out,
+                    plan_id,
+                    step_id_trim: step.id.trim(),
+                    step_index,
+                    n,
+                    completed_steps_before_this: completed_steps,
+                },
+                step.executor_kind,
+                None,
+            )
+            .await;
+            return Err(RunAgentTurnError::StepRetryExhausted {
+                phase: AgentTurnSubPhase::Executor,
+                message: "局部修复耗尽上限 (工具执行失败)".to_string(),
+            });
+        }
+        StagedStepToolPhaseRoute::EmitStepSuccess => {}
+    }
+
+    finish_staged_plan_step_sse(
+        patch_ctx.p.ctx.out,
+        plan_id,
+        step.id.trim(),
+        step_index,
+        n,
+        "ok",
+        step.executor_kind,
+        None,
+    )
+    .await;
+    patch_ctx
+        .p
+        .turn
+        .messages
+        .push(Message::chat_ui_separator(true));
+    let plan_row = AgentReplyPlanV1 {
+        plan_type: "agent_reply_plan".to_string(),
+        version: 1,
+        steps: plan_steps.clone(),
+        no_task: false,
+    };
+    send_staged_plan_notice(
+        patch_ctx.p.ctx.out,
+        echo_terminal_staged,
+        true,
+        staged_plan_queue_summary_text(&plan_row, step_index),
+    )
+    .await;
+    emit_chat_ui_separator_sse(patch_ctx.p.ctx.out, true).await;
+    Ok(StagedStepIterationCtl::AdvanceToNextStep {
+        n,
+        completed_steps: step_index,
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_staged_plan_steps_loop<F>(
     plan_id: String,
@@ -811,9 +1138,10 @@ where
     let mut transition_counters: HashMap<String, u32> = HashMap::new();
     let start_time = std::time::Instant::now();
     while i < plan_steps.len() {
-        if patch_ctx.p.ctx.cfg.max_turn_duration_seconds > 0
-            && start_time.elapsed().as_secs() > patch_ctx.p.ctx.cfg.max_turn_duration_seconds
-        {
+        if staged_step_wall_clock_exceeded(
+            patch_ctx.p.ctx.cfg.max_turn_duration_seconds,
+            start_time.elapsed().as_secs(),
+        ) {
             return Err(RunAgentTurnError::TimeLimitExhausted {
                 phase: AgentTurnSubPhase::Executor,
                 message: format!(
@@ -833,306 +1161,38 @@ where
             staged_loop_cancelled = true;
             break;
         }
-        let step = plan_steps[i].clone();
-        let step_index = i + 1;
-        send_staged_plan_step_started(
-            patch_ctx.p.ctx.out,
-            &plan_id,
-            step.id.trim(),
-            step_index,
-            n,
-            step.description.trim(),
-            step.executor_kind.map(|k| k.as_snake_case_str()),
-        )
-        .await;
 
-        let body = staged_injected_step_user_body(step_index, n, &step);
-        debug!(
-            target: "crabmate",
-            "{} step={}/{} body_len={} body_preview={}",
-            labels.step_injection_log_label,
-            i + 1,
-            n,
-            body.len(),
-            crate::redact::preview_chars(&body, crate::redact::MESSAGE_LOG_PREVIEW_CHARS)
-        );
-        if echo_terminal_staged {
-            let _ = crate::runtime::terminal_cli_transcript::print_staged_plan_notice(false, &body);
-        }
-        let step_user_idx = patch_ctx.p.turn.messages.len();
-        patch_ctx.p.turn.messages.push(make_step_user_message(body));
-        let prev_executor_constraint = patch_ctx.p.turn.step_executor_constraint;
-        patch_ctx.p.turn.step_executor_constraint = step.executor_kind;
-        let run_step = run_agent_outer_loop(patch_ctx.p, patch_ctx.per_coord).await;
-        patch_ctx.p.turn.step_executor_constraint = prev_executor_constraint;
-
-        let mut step_verify_failed_reason: Option<String> = None;
-        if run_step.is_ok() {
-            #[allow(clippy::collapsible_if)]
-            if let Some(ref acceptance) = step.acceptance {
-                let verify_result = crate::agent::step_verifier::verify_step_execution(
-                    acceptance,
-                    patch_ctx.p.turn.messages,
-                    step_user_idx,
-                    patch_ctx.p.ctx.effective_working_dir,
-                );
-
-                if let crate::agent::step_verifier::VerifyResult::Fail { reason } = verify_result {
-                    step_verify_failed_reason = Some(reason);
-                }
-            }
-        }
-
-        if let Some((fb, step_status)) = try_apply_staged_plan_control_flow_jump(
-            &step,
+        match run_one_staged_plan_step_iteration(
+            plan_id.as_str(),
             i,
+            n,
+            completed_steps,
             &mut plan_steps,
             original_steps.as_slice(),
             &mut transition_counters,
-            run_step.is_err() || step_verify_failed_reason.is_some(),
-            &step_verify_failed_reason,
-        ) {
-            n = plan_steps.len();
-
-            patch_ctx.p.turn.messages.push(Message::user_only(fb));
-
-            let replan = AgentReplyPlanV1 {
-                plan_type: "agent_reply_plan".to_string(),
-                version: 1,
-                steps: plan_steps.clone(),
-                no_task: false,
-            };
-            send_staged_plan_notice(
-                patch_ctx.p.ctx.out,
-                echo_terminal_staged,
-                true,
-                staged_plan_queue_summary_text(&replan, completed_steps),
-            )
-            .await;
-
-            let step_verify_fail_reason = step_verify_failed_reason.as_deref();
-            finish_staged_plan_step_sse(
-                patch_ctx.p.ctx.out,
-                &plan_id,
-                step.id.trim(),
-                step_index,
-                n,
-                step_status,
-                step.executor_kind,
-                step_verify_fail_reason,
-            )
-            .await;
-            completed_steps = step_index;
-            patch_ctx
-                .p
-                .turn
-                .messages
-                .push(Message::chat_ui_separator(true));
-            emit_chat_ui_separator_sse(patch_ctx.p.ctx.out, true).await;
-            i += 1;
-            continue;
-        }
-
-        match staged_step_after_outer_loop(&run_step, &step_verify_failed_reason) {
-            StagedStepAfterOuterLoop::ExecutionOrVerifyFailed { .. } => {
-                if staged_step_patch_planner_enabled(patch_ctx.p.ctx.cfg.staged_plan_feedback_mode)
-                {
-                    let mut recovered = false;
-                    let patch_budget = staged_patch_budget_after_step_failure(
-                        step.max_step_retries,
-                        patch_ctx.p.ctx.cfg.staged_plan_patch_max_attempts,
-                    );
-                    for _ in 0..patch_budget {
-                        let feedback = if let Some(ref vr) = step_verify_failed_reason {
-                            staged_plan_step_failure_feedback_user_body(
-                                &plan_id,
-                                i,
-                                n,
-                                &step,
-                                "本步确定性验证失败 (Step Verification Failed)",
-                                &format!(
-                                    "验证闸门报告失败: {}\n请根据对话历史缩短或调整后续步骤，并在补丁中修复此问题。",
-                                    vr
-                                ),
-                            )
-                        } else {
-                            staged_plan_step_failure_feedback_user_body(
-                                &plan_id,
-                                i,
-                                n,
-                                &step,
-                                "执行子循环返回错误",
-                                "请根据对话历史缩短或调整后续步骤；若属环境/权限问题请在补丁中显式增加修复步。",
-                            )
-                        };
-                        if let Some(merged) = run_staged_plan_patch_planner_round(
-                            &mut patch_ctx,
-                            feedback,
-                            &plan_steps,
-                            i,
-                        )
-                        .await?
-                        {
-                            plan_steps = merged;
-                            n = plan_steps.len();
-                            push_patch_replan_assistant_json_and_notice(
-                                patch_ctx.p,
-                                plan_steps.as_slice(),
-                                echo_terminal_staged,
-                                completed_steps,
-                            )
-                            .await?;
-                            recovered = true;
-                            break;
-                        }
-                    }
-                    if recovered {
-                        continue;
-                    }
-                }
-                finish_staged_plan_step_failed_and_plan_failed_sse(
-                    StagedPlanStepFailedExit {
-                        out: patch_ctx.p.ctx.out,
-                        plan_id: &plan_id,
-                        step_id_trim: step.id.trim(),
-                        step_index,
-                        n,
-                        completed_steps_before_this: completed_steps,
-                    },
-                    step.executor_kind,
-                    step_verify_failed_reason.as_deref(),
-                )
-                .await;
-
-                let reason = staged_step_failure_retry_exhausted_message(
-                    &run_step,
-                    &step_verify_failed_reason,
-                );
-                return Err(RunAgentTurnError::StepRetryExhausted {
-                    phase: AgentTurnSubPhase::Executor,
-                    message: reason,
-                });
-            }
-            StagedStepAfterOuterLoop::ProceedToToolCheck => {}
-        }
-
-        if sse_sender_closed(patch_ctx.p.ctx.out)
-            || patch_ctx
-                .p
-                .ctx
-                .cancel
-                .is_some_and(|c| c.load(Ordering::SeqCst))
-        {
-            finish_staged_plan_step_sse(
-                patch_ctx.p.ctx.out,
-                &plan_id,
-                step.id.trim(),
-                step_index,
-                n,
-                "cancelled",
-                step.executor_kind,
-                None,
-            )
-            .await;
-            staged_loop_cancelled = true;
-            break;
-        }
-
-        let tools_ok = staged_step_tool_messages_all_ok(patch_ctx.p.turn.messages, step_user_idx);
-        let patch_planner_on =
-            staged_step_patch_planner_enabled(patch_ctx.p.ctx.cfg.staged_plan_feedback_mode);
-        match staged_step_tool_phase_route(tools_ok, patch_planner_on) {
-            StagedStepToolPhaseRoute::AttemptToolFailurePatches => {
-                let mut recovered = false;
-                let tool_patch_budget = staged_patch_budget_tool_messages_not_ok(
-                    patch_ctx.p.ctx.cfg.staged_plan_patch_max_attempts,
-                );
-                for _ in 0..tool_patch_budget {
-                    let feedback = staged_plan_step_failure_feedback_user_body(
-                        &plan_id,
-                        i,
-                        n,
-                        &step,
-                        "本步内工具调用未全部成功",
-                        "请阅读本步对应的 `role: tool` 输出（含失败原因），修订从当前步起的 `steps`（可替换、拆分或追加一步）。",
-                    );
-                    if let Some(merged) = run_staged_plan_patch_planner_round(
-                        &mut patch_ctx,
-                        feedback,
-                        &plan_steps,
-                        i,
-                    )
-                    .await?
-                    {
-                        plan_steps = merged;
-                        n = plan_steps.len();
-                        push_patch_replan_assistant_json_and_notice(
-                            patch_ctx.p,
-                            plan_steps.as_slice(),
-                            echo_terminal_staged,
-                            completed_steps,
-                        )
-                        .await?;
-                        recovered = true;
-                        break;
-                    }
-                }
-                if recovered {
-                    continue;
-                }
-                finish_staged_plan_step_failed_and_plan_failed_sse(
-                    StagedPlanStepFailedExit {
-                        out: patch_ctx.p.ctx.out,
-                        plan_id: &plan_id,
-                        step_id_trim: step.id.trim(),
-                        step_index,
-                        n,
-                        completed_steps_before_this: completed_steps,
-                    },
-                    step.executor_kind,
-                    None,
-                )
-                .await;
-                return Err(RunAgentTurnError::StepRetryExhausted {
-                    phase: AgentTurnSubPhase::Executor,
-                    message: "局部修复耗尽上限 (工具执行失败)".to_string(),
-                });
-            }
-            StagedStepToolPhaseRoute::EmitStepSuccess => {}
-        }
-
-        finish_staged_plan_step_sse(
-            patch_ctx.p.ctx.out,
-            &plan_id,
-            step.id.trim(),
-            step_index,
-            n,
-            "ok",
-            step.executor_kind,
-            None,
-        )
-        .await;
-        completed_steps = step_index;
-        patch_ctx
-            .p
-            .turn
-            .messages
-            .push(Message::chat_ui_separator(true));
-        let plan_row = AgentReplyPlanV1 {
-            plan_type: "agent_reply_plan".to_string(),
-            version: 1,
-            steps: plan_steps.clone(),
-            no_task: false,
-        };
-        send_staged_plan_notice(
-            patch_ctx.p.ctx.out,
             echo_terminal_staged,
-            true,
-            staged_plan_queue_summary_text(&plan_row, step_index),
+            labels,
+            &mut patch_ctx,
+            make_step_user_message,
         )
-        .await;
-        emit_chat_ui_separator_sse(patch_ctx.p.ctx.out, true).await;
-        i += 1;
+        .await?
+        {
+            StagedStepIterationCtl::RetryCurrentStep { n: new_n } => {
+                n = new_n;
+            }
+            StagedStepIterationCtl::AdvanceToNextStep {
+                n: new_n,
+                completed_steps: new_completed,
+            } => {
+                n = new_n;
+                completed_steps = new_completed;
+                i += 1;
+            }
+            StagedStepIterationCtl::CancelledAfterOuterOk => {
+                staged_loop_cancelled = true;
+                break;
+            }
+        }
     }
     // 末步成功后循环内已发送含「[✓] 全部完成」的摘要，勿再发一次（否则重复一条）。
     send_staged_plan_finished(
