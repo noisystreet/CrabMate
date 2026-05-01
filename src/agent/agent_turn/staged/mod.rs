@@ -31,6 +31,7 @@ use super::params::RunLoopParams;
 use super::plan::agent_llm_call::AgentLlmCall;
 
 mod ensemble_fsm;
+mod ensemble_schedule_fsm;
 mod orchestrator;
 mod patch_planner;
 mod planner_parse_fsm;
@@ -50,6 +51,10 @@ use sse as staged_sse;
 use ensemble_fsm::{
     EnsembleMergeOutcome, EnsembleSecondaryPlannerRoundOutcome,
     ensemble_merge_outcome_from_parsed_steps, ensemble_secondary_planner_round_outcome,
+};
+use ensemble_schedule_fsm::{
+    EnsembleDriverPhase, ensemble_merge_should_run, ensemble_secondary_planner_display_index,
+    resolve_ensemble_driver_phase,
 };
 use patch_planner::{
     StagedPlanPatchPlannerCtx, run_staged_plan_patch_planner_round,
@@ -332,24 +337,26 @@ async fn maybe_run_staged_plan_ensemble_then_merge<F>(
 where
     F: Fn(String) -> Message,
 {
-    let extra = p.ctx.staged_plan_ensemble_count.saturating_sub(1);
-    if extra == 0 {
+    let phase = resolve_ensemble_driver_phase(
+        p.ctx.staged_plan_ensemble_count,
+        skip_for_casual_user_prompt,
+    );
+    let EnsembleDriverPhase::SecondaryChain { extra } = phase else {
+        if skip_for_casual_user_prompt {
+            debug!(
+                target: "crabmate",
+                "分阶段规划·逻辑多规划员：用户输入偏短/寒暄启发式，跳过 ensemble（staged_plan_ensemble_count={}）以省 API",
+                p.ctx.staged_plan_ensemble_count
+            );
+        }
         return Ok(());
-    }
-    if skip_for_casual_user_prompt {
-        debug!(
-            target: "crabmate",
-            "分阶段规划·逻辑多规划员：用户输入偏短/寒暄启发式，跳过 ensemble（staged_plan_ensemble_count={}）以省 API",
-            p.ctx.staged_plan_ensemble_count
-        );
-        return Ok(());
-    }
+    };
 
     let dsml = p.ctx.cfg.materialize_deepseek_dsml_tool_calls;
     let mut accepted: Vec<AgentReplyPlanV1> = vec![plan.clone()];
 
     for i in 0..extra {
-        let planner_idx = i.saturating_add(2);
+        let planner_idx = ensemble_secondary_planner_display_index(i);
         let body = plan_ensemble::ensemble_secondary_planner_user_body(planner_idx, &accepted);
         p.turn.messages.push(make_step_user_message(body));
         let (mut sec_msg, fin) = complete_one_staged_planner_assistant_round(
@@ -390,7 +397,7 @@ where
         }
     }
 
-    if accepted.len() < 2 {
+    if !ensemble_merge_should_run(accepted.len()) {
         return Ok(());
     }
 
