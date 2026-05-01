@@ -10,22 +10,41 @@ use crate::session_ops::{
     delete_session_after_confirm, export_session_json_for_id, export_session_markdown_for_id,
     flush_composer_draft_to_session, set_session_pinned, set_session_starred,
 };
-#[component]
-pub fn SessionModalRow(
-    id: String,
-    title: String,
-    message_count: usize,
-    pinned: bool,
-    starred: bool,
-    active: bool,
-    locale: RwSignal<Locale>,
-    chat: ChatSessionSignals,
-    draft: RwSignal<String>,
+
+/// 「管理会话」模态单行所需字段（缩短 [`SessionModalRow`] 形参列表；勿命名为 `*Props`，与 Leptos 组件宏生成类型冲突）。
+#[derive(Clone)]
+pub struct SessionModalRowBundle {
+    pub id: String,
+    pub title: String,
+    pub message_count: usize,
+    pub pinned: bool,
+    pub starred: bool,
+    pub active: bool,
+    pub locale: RwSignal<Locale>,
+    pub chat: ChatSessionSignals,
+    pub draft: RwSignal<String>,
     /// 与主界面输入框共享；打开会话前把当前草稿写回上一活跃会话。
-    composer_draft_buffer: Arc<Mutex<String>>,
-    session_modal: RwSignal<bool>,
-    apply_assistant_display_filters: RwSignal<bool>,
-) -> impl IntoView {
+    pub composer_draft_buffer: Arc<Mutex<String>>,
+    pub session_modal: RwSignal<bool>,
+    pub apply_assistant_display_filters: RwSignal<bool>,
+}
+
+#[component]
+pub fn SessionModalRow(row: SessionModalRowBundle) -> impl IntoView {
+    let SessionModalRowBundle {
+        id,
+        title,
+        message_count,
+        pinned,
+        starred,
+        active,
+        locale,
+        chat,
+        draft,
+        composer_draft_buffer,
+        session_modal,
+        apply_assistant_display_filters,
+    } = row;
     let id_rename = id.clone();
     let id_star = id.clone();
     let id_pin = id.clone();

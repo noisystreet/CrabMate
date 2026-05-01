@@ -1021,22 +1021,37 @@ where
 }
 
 /// **`StagedStepRunningSub::AfterOuterLoop`**：transition、失败补丁、取消、工具补丁、成功 SSE。
-#[allow(clippy::too_many_arguments)]
-async fn staged_step_run_after_outer_half<F>(
+struct StagedStepRunAfterOuterHalfParams<'a, 'b, 'c, F> {
     outer: StagedStepOuterHalfResult,
-    plan_id: &str,
+    plan_id: &'a str,
     i: usize,
-    mut n: usize,
+    n: usize,
     completed_steps: usize,
-    plan_steps: &mut Vec<PlanStepV1>,
-    original_steps: &[PlanStepV1],
-    transition_counters: &mut HashMap<String, u32>,
+    plan_steps: &'a mut Vec<PlanStepV1>,
+    original_steps: &'a [PlanStepV1],
+    transition_counters: &'a mut HashMap<String, u32>,
     echo_terminal_staged: bool,
-    patch_ctx: &mut StagedPlanPatchPlannerCtx<'_, '_, F>,
+    patch_ctx: &'a mut StagedPlanPatchPlannerCtx<'b, 'c, F>,
+}
+
+async fn staged_step_run_after_outer_half<F>(
+    p: StagedStepRunAfterOuterHalfParams<'_, '_, '_, F>,
 ) -> Result<StagedStepIterationCtl, RunAgentTurnError>
 where
     F: Fn(String) -> Message,
 {
+    let StagedStepRunAfterOuterHalfParams {
+        outer,
+        plan_id,
+        i,
+        mut n,
+        completed_steps,
+        plan_steps,
+        original_steps,
+        transition_counters,
+        echo_terminal_staged,
+        patch_ctx,
+    } = p;
     let StagedStepOuterHalfResult {
         step,
         step_index,
@@ -1293,23 +1308,39 @@ where
     })
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn run_one_staged_plan_step_iteration<F>(
-    plan_id: &str,
+struct RunOneStagedPlanStepIterationParams<'a, 'b, 'c, F> {
+    plan_id: &'a str,
     i: usize,
     n: usize,
     completed_steps: usize,
-    plan_steps: &mut Vec<PlanStepV1>,
-    original_steps: &[PlanStepV1],
-    transition_counters: &mut HashMap<String, u32>,
+    plan_steps: &'a mut Vec<PlanStepV1>,
+    original_steps: &'a [PlanStepV1],
+    transition_counters: &'a mut HashMap<String, u32>,
     echo_terminal_staged: bool,
-    labels: &StagedPlanRunLabels,
-    patch_ctx: &mut StagedPlanPatchPlannerCtx<'_, '_, F>,
-    make_step_user_message: &F,
+    labels: &'a StagedPlanRunLabels,
+    patch_ctx: &'a mut StagedPlanPatchPlannerCtx<'b, 'c, F>,
+    make_step_user_message: &'a F,
+}
+
+async fn run_one_staged_plan_step_iteration<F>(
+    p: RunOneStagedPlanStepIterationParams<'_, '_, '_, F>,
 ) -> Result<StagedStepIterationCtl, RunAgentTurnError>
 where
     F: Fn(String) -> Message,
 {
+    let RunOneStagedPlanStepIterationParams {
+        plan_id,
+        i,
+        n,
+        completed_steps,
+        plan_steps,
+        original_steps,
+        transition_counters,
+        echo_terminal_staged,
+        labels,
+        patch_ctx,
+        make_step_user_message,
+    } = p;
     let outer = staged_step_run_outer_half(
         plan_id,
         i,
@@ -1322,7 +1353,7 @@ where
     )
     .await;
 
-    staged_step_run_after_outer_half(
+    staged_step_run_after_outer_half(StagedStepRunAfterOuterHalfParams {
         outer,
         plan_id,
         i,
@@ -1333,7 +1364,7 @@ where
         transition_counters,
         echo_terminal_staged,
         patch_ctx,
-    )
+    })
     .await
 }
 
@@ -1388,19 +1419,19 @@ where
             break;
         }
 
-        match run_one_staged_plan_step_iteration(
-            plan_id.as_str(),
+        match run_one_staged_plan_step_iteration(RunOneStagedPlanStepIterationParams {
+            plan_id: plan_id.as_str(),
             i,
             n,
             completed_steps,
-            &mut plan_steps,
-            original_steps.as_slice(),
-            &mut transition_counters,
+            plan_steps: &mut plan_steps,
+            original_steps: original_steps.as_slice(),
+            transition_counters: &mut transition_counters,
             echo_terminal_staged,
             labels,
-            &mut patch_ctx,
+            patch_ctx: &mut patch_ctx,
             make_step_user_message,
-        )
+        })
         .await?
         {
             StagedStepIterationCtl::RetryCurrentStep { n: new_n } => {

@@ -22,20 +22,36 @@ use std::sync::Mutex as StdMutex;
 const REPL_SHELL_USAGE: &str = "bash#: <命令>  在当前工作区执行一行 shell（不发给模型；无交互 stdin）。等同本机 `sh -c` / `cmd /C`，不受模型 `run_command` 白名单约束，仅应在可信环境使用。交互 TTY：空行按 `$` 即切换「我:」/ bash#:（也可单独一行 `$` 后 Enter）；管道/非 TTY 仍可用行内 `$ <命令>`。历史保存在工作区 `.crabmate/repl_history.txt`。示例: ls  pwd  git status";
 
 /// 处理 `ReplReadLine::Chat` 中的 `/` 命令分支：`true` 表示已消费输入并应 `continue` 主循环；`false` 表示继续走普通对话回合。
-#[allow(clippy::too_many_arguments)]
-async fn repl_slash_branch_continue_loop(
-    input: &str,
-    cfg_holder: &SharedAgentConfig,
-    config_path: Option<&str>,
-    tools: &[crate::types::Tool],
-    messages: &mut Vec<Message>,
-    work_dir: &mut PathBuf,
-    style: &CliReplStyle,
+struct ReplSlashBranchContinueLoopParams<'a> {
+    input: &'a str,
+    cfg_holder: &'a SharedAgentConfig,
+    config_path: Option<&'a str>,
+    tools: &'a [crate::types::Tool],
+    messages: &'a mut Vec<Message>,
+    work_dir: &'a mut PathBuf,
+    style: &'a CliReplStyle,
     no_stream: bool,
-    agent_role_owned: &mut Option<String>,
-    api_key_holder: &Arc<StdMutex<String>>,
-    client: &reqwest::Client,
+    agent_role_owned: &'a mut Option<String>,
+    api_key_holder: &'a Arc<StdMutex<String>>,
+    client: &'a reqwest::Client,
+}
+
+async fn repl_slash_branch_continue_loop(
+    p: ReplSlashBranchContinueLoopParams<'_>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
+    let ReplSlashBranchContinueLoopParams {
+        input,
+        cfg_holder,
+        config_path,
+        tools,
+        messages,
+        work_dir,
+        style,
+        no_stream,
+        agent_role_owned,
+        api_key_holder,
+        client,
+    } = p;
     match try_handle_repl_slash_command(
         input,
         cfg_holder,
@@ -286,19 +302,19 @@ pub async fn run_repl(
                     break;
                 }
 
-                if repl_slash_branch_continue_loop(
-                    input.as_str(),
+                if repl_slash_branch_continue_loop(ReplSlashBranchContinueLoopParams {
+                    input: input.as_str(),
                     cfg_holder,
                     config_path,
                     tools,
-                    &mut messages,
-                    &mut work_dir,
-                    &style,
+                    messages: &mut messages,
+                    work_dir: &mut work_dir,
+                    style: &style,
                     no_stream,
-                    &mut agent_role_owned,
-                    &api_key_holder,
+                    agent_role_owned: &mut agent_role_owned,
+                    api_key_holder: &api_key_holder,
                     client,
-                )
+                })
                 .await?
                 {
                     continue;

@@ -10,7 +10,7 @@ use leptos::task::spawn_local;
 use crate::a11y::{focus_first_in_modal_container, trap_tab_in_container};
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::{self, Locale};
-use crate::session_modal_row::SessionModalRow;
+use crate::session_modal_row::{SessionModalRow, SessionModalRowBundle};
 use crate::session_sort::sorted_sessions_clone;
 
 use super::app_shell_ctx::AppShellCtx;
@@ -82,20 +82,20 @@ fn SessionListModalPanel(
                             let pinned = s.pinned;
                             let starred = s.starred;
                             view! {
-                                <SessionModalRow
-                                    id=id.clone()
-                                    title=row_title
-                                    message_count=s.messages.len()
-                                    pinned=pinned
-                                    starred=starred
-                                    active=active
-                                    locale=locale
-                                    chat=chat
-                                    draft=draft
-                                    composer_draft_buffer=row_buf
-                                    session_modal=session_modal
-                                    apply_assistant_display_filters=apply_assistant_display_filters
-                                />
+                                <SessionModalRow row=SessionModalRowBundle {
+                                    id: id.clone(),
+                                    title: row_title,
+                                    message_count: s.messages.len(),
+                                    pinned,
+                                    starred,
+                                    active,
+                                    locale,
+                                    chat,
+                                    draft,
+                                    composer_draft_buffer: row_buf,
+                                    session_modal,
+                                    apply_assistant_display_filters,
+                                } />
                             }
                         })
                         .collect_view()
