@@ -11,7 +11,6 @@ use crate::agent::plan_artifact::{self, AgentReplyPlanV1, PlanStepV1};
 use crate::agent::plan_ensemble;
 use crate::agent::plan_optimizer::{self, STAGED_PLAN_OPTIMIZER_COACH_MARK};
 use crate::agent::reflection::plan_rewrite;
-use crate::config::StagedPlanFeedbackMode;
 use crate::llm::{
     LlmCompleteError, LlmRetryingTransportOpts, kimi_k2_5_vendor_requires_tool_call_reasoning,
     no_tools_chat_request_from_messages,
@@ -34,8 +33,10 @@ use super::plan::agent_llm_call::AgentLlmCall;
 mod ensemble_fsm;
 mod orchestrator;
 mod patch_planner;
+mod planner_parse_fsm;
 mod planner_round_fsm;
 mod sse;
+mod staged_step_fsm;
 mod turn_fsm;
 
 use orchestrator as staged_orchestrator;
@@ -49,6 +50,9 @@ use patch_planner::{
     StagedPlanPatchPlannerCtx, run_staged_plan_patch_planner_round,
     staged_plan_step_failure_feedback_user_body,
 };
+use planner_parse_fsm::{
+    StagedPlannerParseRoute, omit_no_task_planner_from_history, staged_planner_parse_route,
+};
 use planner_round_fsm::{
     StagedPlanEnsembleRoute, StagedPlanOptimizerRoute, staged_plan_ensemble_route,
     staged_plan_optimizer_route,
@@ -59,11 +63,30 @@ use staged_sse::{
     staged_plan_nl_followup_user_body, staged_plan_phase_instruction_default,
     staged_plan_queue_summary_text,
 };
+use staged_step_fsm::{
+    staged_patch_budget_after_step_failure, staged_patch_budget_tool_messages_not_ok,
+    staged_step_patch_planner_enabled,
+};
 use turn_fsm::{
     StagedTurnAdvance, StagedTurnPhase, StagedTurnSubCallOutcome,
     advance_staged_turn_after_sub_call, entered_flag_for_next_planner_call,
     next_rewrite_attempts_after_advance,
 };
+
+/// 首轮规划 assistant：清空原生 tool_calls 后经 DSML 物化，返回「等价 tool_calls 条数」总和（用于判定是否触发一次重写 user）。
+fn staged_first_planner_round_tool_call_total_after_materialize(
+    msg: &mut Message,
+    materialize_deepseek_dsml_tool_calls: bool,
+) -> usize {
+    let raw_count = msg.tool_calls.as_ref().map(|c| c.len()).unwrap_or(0);
+    msg.tool_calls = None;
+    crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
+        msg,
+        materialize_deepseek_dsml_tool_calls,
+    );
+    let dsml_count = msg.tool_calls.as_ref().map(|c| c.len()).unwrap_or(0);
+    raw_count.saturating_add(dsml_count)
+}
 
 fn staged_planner_tool_call_reject_user_body(tool_call_count: usize) -> String {
     format!(
@@ -611,11 +634,6 @@ pub(crate) enum StagedPlanRunOutcome {
     Finished,
 }
 
-#[inline]
-fn should_finish_when_plan_not_found(entered_from_step_execution_round: bool) -> bool {
-    entered_from_step_execution_round
-}
-
 #[cfg(test)]
 pub(crate) fn simulate_single_step_rolling_horizon_for_test(
     outcomes: &[StagedPlanRunOutcome],
@@ -956,14 +974,13 @@ where
         }
 
         if run_step.is_err() || step_verify_failed_reason.is_some() {
-            if patch_ctx.p.ctx.cfg.staged_plan_feedback_mode == StagedPlanFeedbackMode::PatchPlanner
-            {
+            if staged_step_patch_planner_enabled(patch_ctx.p.ctx.cfg.staged_plan_feedback_mode) {
                 let mut recovered = false;
-                let max_retries = step
-                    .max_step_retries
-                    .unwrap_or(patch_ctx.p.ctx.cfg.staged_plan_patch_max_attempts as u32)
-                    as usize;
-                for _ in 0..max_retries {
+                let patch_budget = staged_patch_budget_after_step_failure(
+                    step.max_step_retries,
+                    patch_ctx.p.ctx.cfg.staged_plan_patch_max_attempts,
+                );
+                for _ in 0..patch_budget {
                     let feedback = if let Some(ref vr) = step_verify_failed_reason {
                         staged_plan_step_failure_feedback_user_body(
                             &plan_id,
@@ -1074,10 +1091,13 @@ where
 
         let tools_ok = staged_step_tool_messages_all_ok(patch_ctx.p.turn.messages, step_user_idx);
         if !tools_ok
-            && patch_ctx.p.ctx.cfg.staged_plan_feedback_mode == StagedPlanFeedbackMode::PatchPlanner
+            && staged_step_patch_planner_enabled(patch_ctx.p.ctx.cfg.staged_plan_feedback_mode)
         {
             let mut recovered = false;
-            for _ in 0..patch_ctx.p.ctx.cfg.staged_plan_patch_max_attempts {
+            let tool_patch_budget = staged_patch_budget_tool_messages_not_ok(
+                patch_ctx.p.ctx.cfg.staged_plan_patch_max_attempts,
+            );
+            for _ in 0..tool_patch_budget {
                 let feedback = staged_plan_step_failure_feedback_user_body(
                     &plan_id,
                     i,
@@ -1220,14 +1240,10 @@ where
         let (mut first_msg, first_finish) =
             complete_planner_no_tools_chat_retrying(p, &req, planner_render_to_terminal).await?;
         if first_finish != USER_CANCELLED_FINISH_REASON {
-            let first_raw_count = first_msg.tool_calls.as_ref().map(|c| c.len()).unwrap_or(0);
-            first_msg.tool_calls = None;
-            crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
+            let first_total = staged_first_planner_round_tool_call_total_after_materialize(
                 &mut first_msg,
                 p.ctx.cfg.materialize_deepseek_dsml_tool_calls,
             );
-            let first_dsml_count = first_msg.tool_calls.as_ref().map(|c| c.len()).unwrap_or(0);
-            let first_total = first_raw_count.saturating_add(first_dsml_count);
             if first_total > 0 {
                 warn!(
                     target: "crabmate",
@@ -1301,48 +1317,54 @@ where
         Ok(plan_v1) => plan_v1,
         Err(parse_err) => {
             let detail = crate::agent::plan_artifact::plan_artifact_error_log_summary(&parse_err);
-            if matches!(
-                parse_err,
-                crate::agent::plan_artifact::PlanArtifactError::NotFound
-            ) {
-                if should_finish_when_plan_not_found(entered_from_step_execution_round) {
+            match staged_planner_parse_route(&parse_err, entered_from_step_execution_round) {
+                StagedPlannerParseRoute::QuietFinishOnPlanNotFound => {
                     debug!(
                         target: "crabmate",
                         "分阶段重规划：检测到分步执行后重入且本轮未产出结构化计划，视为收敛完成，直接结束（避免重复总结）"
                     );
                     return Ok(StagedPlanRunOutcome::Finished);
                 }
-                debug!(
-                    target: "crabmate",
-                    "分阶段规划未产出结构化任务 (可能是通识问答或直接回复) merged_len={} merged_preview={}；降级为常规循环",
-                    merged_for_log.chars().count(),
-                    crate::redact::preview_chars(
-                        merged_for_log.as_str(),
-                        crate::redact::MESSAGE_LOG_PREVIEW_CHARS,
-                    )
-                );
-            } else {
-                warn!(
-                    target: "crabmate",
-                    "staged_plan_invalid parse_err={} merged_len={} merged_preview={}；降级为常规工具循环",
-                    detail,
-                    merged_for_log.chars().count(),
-                    crate::redact::preview_chars(
-                        merged_for_log.as_str(),
-                        crate::redact::MESSAGE_LOG_PREVIEW_CHARS,
-                    )
-                );
+                StagedPlannerParseRoute::DegradeToOuterLoop => {
+                    if matches!(
+                        parse_err,
+                        crate::agent::plan_artifact::PlanArtifactError::NotFound
+                    ) {
+                        debug!(
+                            target: "crabmate",
+                            "分阶段规划未产出结构化任务 (可能是通识问答或直接回复) merged_len={} merged_preview={}；降级为常规循环",
+                            merged_for_log.chars().count(),
+                            crate::redact::preview_chars(
+                                merged_for_log.as_str(),
+                                crate::redact::MESSAGE_LOG_PREVIEW_CHARS,
+                            )
+                        );
+                    } else {
+                        warn!(
+                            target: "crabmate",
+                            "staged_plan_invalid parse_err={} merged_len={} merged_preview={}；降级为常规工具循环",
+                            detail,
+                            merged_for_log.chars().count(),
+                            crate::redact::preview_chars(
+                                merged_for_log.as_str(),
+                                crate::redact::MESSAGE_LOG_PREVIEW_CHARS,
+                            )
+                        );
+                    }
+                    // 保留规划轮正文，避免整轮失败退出（REPL/脚本/Web 均与关闭分阶段规划时的行为对齐）。
+                    push_assistant_merging_trailing_empty_placeholder(p.turn.messages, msg.clone());
+                    run_agent_outer_loop(p, per_coord).await?;
+                    return Ok(StagedPlanRunOutcome::Finished);
+                }
             }
-            // 保留规划轮正文，避免整轮失败退出（REPL/脚本/Web 均与关闭分阶段规划时的行为对齐）。
-            push_assistant_merging_trailing_empty_placeholder(p.turn.messages, msg.clone());
-            run_agent_outer_loop(p, per_coord).await?;
-            return Ok(StagedPlanRunOutcome::Finished);
         }
     };
 
-    let omit_no_task_planner_from_history = p.ctx.out.is_some()
-        && !crate::web::web_ui_env::web_raw_assistant_output_env()
-        && plan.no_task;
+    let omit_no_task_planner_from_history = omit_no_task_planner_from_history(
+        p.ctx.out.is_some(),
+        crate::web::web_ui_env::web_raw_assistant_output_env(),
+        plan.no_task,
+    );
     if !omit_no_task_planner_from_history {
         push_assistant_merging_trailing_empty_placeholder(p.turn.messages, msg.clone());
     }
@@ -1458,23 +1480,27 @@ where
             p.ctx.cfg.materialize_deepseek_dsml_tool_calls,
         );
         let opt_content = crate::types::message_content_as_str(&opt_msg.content).unwrap_or("");
-        if let Some(merged_steps) = plan_optimizer::try_parse_optimizer_reply(opt_content) {
-            if merged_steps.len() < plan.steps.len() {
-                debug!(
-                    target: "crabmate",
-                    "分阶段规划优化轮：步数 {} -> {}",
-                    plan.steps.len(),
-                    merged_steps.len()
-                );
+        let merged_steps = plan_optimizer::try_parse_optimizer_reply(opt_content);
+        match ensemble_merge_outcome_from_parsed_steps(merged_steps) {
+            EnsembleMergeOutcome::AppliedSteps(steps) => {
+                if steps.len() < plan.steps.len() {
+                    debug!(
+                        target: "crabmate",
+                        "分阶段规划优化轮：步数 {} -> {}",
+                        plan.steps.len(),
+                        steps.len()
+                    );
+                }
+                push_assistant_merging_trailing_empty_placeholder(p.turn.messages, opt_msg);
+                plan.steps = steps;
             }
-            push_assistant_merging_trailing_empty_placeholder(p.turn.messages, opt_msg);
-            plan.steps = merged_steps;
-        } else {
-            warn!(
-                target: "crabmate",
-                "分阶段规划优化轮：未解析出合法 agent_reply_plan v1 或非空 steps，沿用首轮规划"
-            );
-            pop_last_staged_planner_coach_user_if_present(p.turn.messages);
+            EnsembleMergeOutcome::KeepPriorPlan => {
+                warn!(
+                    target: "crabmate",
+                    "分阶段规划优化轮：未解析出合法 agent_reply_plan v1 或非空 steps，沿用首轮规划"
+                );
+                pop_last_staged_planner_coach_user_if_present(p.turn.messages);
+            }
         }
     }
 
@@ -1596,12 +1622,17 @@ pub(super) async fn run_logical_dual_agent_then_execute_steps(
 
 #[cfg(test)]
 mod staged_not_found_convergence_tests {
-    use super::should_finish_when_plan_not_found;
+    use crate::agent::plan_artifact::PlanArtifactError;
+
+    use super::planner_parse_fsm::{StagedPlannerParseRoute, staged_planner_parse_route};
 
     #[test]
     fn not_found_does_not_finish_for_plain_qa_round() {
         assert!(
-            !should_finish_when_plan_not_found(false),
+            !matches!(
+                staged_planner_parse_route(&PlanArtifactError::NotFound, false),
+                StagedPlannerParseRoute::QuietFinishOnPlanNotFound
+            ),
             "普通问答轮（未进入步后重规划）遇到 NotFound 不应直接收敛结束"
         );
     }
@@ -1609,7 +1640,10 @@ mod staged_not_found_convergence_tests {
     #[test]
     fn not_found_finishes_only_after_step_execution_reentry() {
         assert!(
-            should_finish_when_plan_not_found(true),
+            matches!(
+                staged_planner_parse_route(&PlanArtifactError::NotFound, true),
+                StagedPlannerParseRoute::QuietFinishOnPlanNotFound
+            ),
             "仅在同 turn 的步后重规划轮，NotFound 才应触发收敛结束"
         );
     }
