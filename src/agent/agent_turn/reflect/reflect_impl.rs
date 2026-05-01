@@ -5,6 +5,9 @@ use crate::agent::per_plan_semantic_check::{self, PlanSemanticLlmCtx};
 use crate::types::Message;
 
 use super::super::params::RunLoopParams;
+use super::reflect_semantic::{
+    PlanSemanticConsistencyReflectCtl, map_plan_semantic_llm_outcome_to_reflect_ctl,
+};
 
 /// R：模型本轮若为最终文本（非 tool_calls），决定是否结束或追加重写提示。
 pub(crate) enum ReflectOnAssistantOutcome {
@@ -70,24 +73,20 @@ pub(crate) async fn per_reflect_after_assistant(
                 tool_digest.as_deref(),
             )
             .await;
-            if outcome.consistent {
-                ReflectOnAssistantOutcome::StopTurn
-            } else if per_coord.plan_rewrite_attempts_snapshot()
-                >= per_coord.plan_rewrite_max_attempts_limit()
-            {
-                ReflectOnAssistantOutcome::PlanRewriteExhausted {
-                    reason: PlanRewriteExhaustedReason::PlanSemanticInconsistent,
+            match map_plan_semantic_llm_outcome_to_reflect_ctl(
+                per_coord.plan_rewrite_attempts_snapshot(),
+                per_coord.plan_rewrite_max_attempts_limit(),
+                &outcome,
+            ) {
+                PlanSemanticConsistencyReflectCtl::StopTurn => ReflectOnAssistantOutcome::StopTurn,
+                PlanSemanticConsistencyReflectCtl::PlanRewriteExhausted { reason } => {
+                    ReflectOnAssistantOutcome::PlanRewriteExhausted { reason }
                 }
-            } else {
-                per_coord.increment_plan_rewrite_attempts();
-                let rationale = outcome.rationale.as_deref();
-                p.turn.messages.push(
-                    PerCoordinator::plan_semantic_mismatch_rewrite_message_with_feedback(
-                        outcome.violation_codes.as_slice(),
-                        rationale,
-                    ),
-                );
-                ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite
+                PlanSemanticConsistencyReflectCtl::ContinueOuterWithRewriteUser(m) => {
+                    per_coord.increment_plan_rewrite_attempts();
+                    p.turn.messages.push(m);
+                    ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite
+                }
             }
         }
     }
