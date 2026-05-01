@@ -453,9 +453,38 @@ fn derive_codebase_semantic(b: &ConfigBuilder) -> CodebaseSemanticDerived {
     }
 }
 
+/// `finalize_agent_config` 在角色目录就绪后的后半段（降低单函数 CCN）。
+struct FinalizeAfterRoles {
+    b: ConfigBuilder,
+    tr: ToolRegistryDerived,
+    intent: IntentDerived,
+    ltm: LtmDerived,
+    sem: CodebaseSemanticDerived,
+    max_message_history: usize,
+    tui_load_session_on_start: bool,
+    tui_session_max_messages: usize,
+    repl_initial_workspace_messages_enabled: bool,
+    command_timeout_secs: u64,
+    command_max_output_len: usize,
+    max_tokens: u32,
+    temperature: f32,
+    api_timeout_secs: u64,
+    api_max_retries: u32,
+    api_retry_delay_secs: u64,
+    weather_timeout_secs: u64,
+    reflection_default_max_rounds: usize,
+    allowed_commands: Arc<[String]>,
+    workspace_allowed_roots: Vec<PathBuf>,
+    system_prompt: String,
+    default_agent_role_id: Option<String>,
+    agent_roles: agent_roles::AgentRoleCatalogBuilt,
+    system_prompt_search_bases: Vec<PathBuf>,
+    run_command_working_dir: PathBuf,
+}
+
 /// 验证、clamp 并组装最终 `AgentConfig`（实现体；`finalize` 为薄包装以降低圈复杂度扫描中的函数 CCN）。
 fn finalize_agent_config(
-    b: ConfigBuilder,
+    mut b: ConfigBuilder,
     system_prompt_search_bases: Vec<PathBuf>,
 ) -> Result<AgentConfig, String> {
     validate::validate_builder_numeric_ranges(&b)?;
@@ -487,7 +516,7 @@ fn finalize_agent_config(
     let reflection_default_max_rounds =
         b.reflection_default_max_rounds.unwrap_or(5).max(1) as usize;
 
-    let allowed_commands_vec = b.allowed_commands.unwrap_or_else(|| {
+    let allowed_commands_vec = b.allowed_commands.clone().unwrap_or_else(|| {
         vec![
             "aclocal".into(),
             "ar".into(),
@@ -578,6 +607,7 @@ fn finalize_agent_config(
 
     let run_command_working_dir = b
         .run_command_working_dir
+        .clone()
         .ok_or("配置错误：未设置 run_command_working_dir（请在 config/tools.toml、config.toml、.agent_demo.toml 或环境变量 CM_RUN_COMMAND_WORKING_DIR 中设置）")?;
     let run_command_working_dir = std::path::Path::new(&run_command_working_dir);
     let run_command_working_dir = match run_command_working_dir.canonicalize() {
@@ -598,7 +628,7 @@ fn finalize_agent_config(
     }
 
     let workspace_allowed_roots = workspace_roots::resolve_workspace_allowed_roots(
-        b.workspace_allowed_roots,
+        b.workspace_allowed_roots.clone(),
         run_command_working_dir.as_path(),
     )?;
 
@@ -609,7 +639,7 @@ fn finalize_agent_config(
             run_command_working_dir.as_path(),
         )?
     } else if !b.system_prompt.trim().is_empty() {
-        b.system_prompt
+        b.system_prompt.clone()
     } else {
         return Err(
             "配置错误：未设置 system_prompt_file 或内联 system_prompt（请在 config/default_config.toml、config.toml、环境变量 CM_SYSTEM_PROMPT / CM_SYSTEM_PROMPT_FILE 中配置）".to_string(),
@@ -621,6 +651,7 @@ fn finalize_agent_config(
     let cursor_rules_enabled = b.cursor_rules_enabled.unwrap_or(true);
     let cursor_rules_dir = b
         .cursor_rules_dir
+        .clone()
         .unwrap_or_else(|| ".cursor/rules".to_string());
     let cursor_rules_include_agents_md = b.cursor_rules_include_agents_md.unwrap_or(true);
     let cursor_rules_max_chars = b
@@ -637,6 +668,7 @@ fn finalize_agent_config(
     let skills_enabled = b.skills_enabled.unwrap_or(true);
     let skills_dir = b
         .skills_dir
+        .clone()
         .unwrap_or_else(|| ".crabmate/skills".to_string());
     let skills_max_chars = b.skills_max_chars.unwrap_or(32_000).clamp(1024, 1_000_000);
     let skills_top_k = b.skills_top_k.unwrap_or(3).clamp(1, 64) as usize;
@@ -653,7 +685,7 @@ fn finalize_agent_config(
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
     let (default_agent_role_id, agent_roles) = agent_roles::finalize_agent_role_catalog(
-        b.agent_role_entries,
+        std::mem::take(&mut b.agent_role_entries),
         default_agent_role_id,
         system_prompt.as_str(),
         &system_prompt_search_bases,
@@ -667,6 +699,83 @@ fn finalize_agent_config(
         skills_max_chars as usize,
         skills_top_k,
     )?;
+
+    finalize_agent_config_tail(FinalizeAfterRoles {
+        b,
+        tr,
+        intent,
+        ltm,
+        sem,
+        max_message_history,
+        tui_load_session_on_start,
+        tui_session_max_messages,
+        repl_initial_workspace_messages_enabled,
+        command_timeout_secs,
+        command_max_output_len,
+        max_tokens,
+        temperature,
+        api_timeout_secs,
+        api_max_retries,
+        api_retry_delay_secs,
+        weather_timeout_secs,
+        reflection_default_max_rounds,
+        allowed_commands,
+        workspace_allowed_roots,
+        system_prompt,
+        default_agent_role_id,
+        agent_roles,
+        system_prompt_search_bases,
+        run_command_working_dir,
+    })
+}
+
+#[allow(clippy::too_many_lines)]
+fn finalize_agent_config_tail(mid: FinalizeAfterRoles) -> Result<AgentConfig, String> {
+    let FinalizeAfterRoles {
+        b,
+        tr,
+        ltm,
+        sem,
+        intent,
+        max_message_history,
+        tui_load_session_on_start,
+        tui_session_max_messages,
+        repl_initial_workspace_messages_enabled,
+        command_timeout_secs,
+        command_max_output_len,
+        max_tokens,
+        temperature,
+        api_timeout_secs,
+        api_max_retries,
+        api_retry_delay_secs,
+        weather_timeout_secs,
+        reflection_default_max_rounds,
+        allowed_commands,
+        workspace_allowed_roots,
+        system_prompt,
+        default_agent_role_id,
+        agent_roles,
+        system_prompt_search_bases,
+        run_command_working_dir,
+    } = mid;
+
+    let cursor_rules_enabled = b.cursor_rules_enabled.unwrap_or(true);
+    let cursor_rules_dir = b
+        .cursor_rules_dir
+        .clone()
+        .unwrap_or_else(|| ".cursor/rules".to_string());
+    let cursor_rules_include_agents_md = b.cursor_rules_include_agents_md.unwrap_or(true);
+    let cursor_rules_max_chars = b
+        .cursor_rules_max_chars
+        .unwrap_or(48_000)
+        .clamp(1024, 1_000_000);
+    let skills_enabled = b.skills_enabled.unwrap_or(true);
+    let skills_dir = b
+        .skills_dir
+        .clone()
+        .unwrap_or_else(|| ".crabmate/skills".to_string());
+    let skills_max_chars = b.skills_max_chars.unwrap_or(32_000).clamp(1024, 1_000_000);
+    let skills_top_k = b.skills_top_k.unwrap_or(3).clamp(1, 64) as usize;
 
     let final_plan_requirement = match b.final_plan_requirement_str.as_deref() {
         Some(s) => FinalPlanRequirementMode::parse(s)?,
