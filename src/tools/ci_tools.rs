@@ -4,46 +4,148 @@ use std::path::Path;
 
 use super::{cargo_tools, frontend_tools, python_tools, security_tools};
 
+struct CiPipelineOpts {
+    run_fmt: bool,
+    run_clippy: bool,
+    run_test: bool,
+    run_frontend_lint: bool,
+    run_frontend_build: bool,
+    run_ruff_check: bool,
+    run_pytest: bool,
+    run_mypy: bool,
+    fail_fast: bool,
+    summary_only: bool,
+}
+
+impl CiPipelineOpts {
+    fn from_json(v: &serde_json::Value) -> Self {
+        Self {
+            run_fmt: v.get("run_fmt").and_then(|x| x.as_bool()).unwrap_or(true),
+            run_clippy: v
+                .get("run_clippy")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(true),
+            run_test: v.get("run_test").and_then(|x| x.as_bool()).unwrap_or(true),
+            run_frontend_lint: v
+                .get("run_frontend_lint")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(true),
+            run_frontend_build: v
+                .get("run_frontend_build")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false),
+            run_ruff_check: v
+                .get("run_ruff_check")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(true),
+            run_pytest: v
+                .get("run_pytest")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false),
+            run_mypy: v.get("run_mypy").and_then(|x| x.as_bool()).unwrap_or(false),
+            fail_fast: v
+                .get("fail_fast")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false),
+            summary_only: v
+                .get("summary_only")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false),
+        }
+    }
+}
+
 pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
     let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let run_fmt = v.get("run_fmt").and_then(|x| x.as_bool()).unwrap_or(true);
-    let run_clippy = v
-        .get("run_clippy")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(true);
-    let run_test = v.get("run_test").and_then(|x| x.as_bool()).unwrap_or(true);
-    let run_frontend_lint = v
-        .get("run_frontend_lint")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(true);
-    let run_frontend_build = v
-        .get("run_frontend_build")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
-    let run_ruff_check = v
-        .get("run_ruff_check")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(true);
-    let run_pytest = v
-        .get("run_pytest")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
-    let run_mypy = v.get("run_mypy").and_then(|x| x.as_bool()).unwrap_or(false);
-    let fail_fast = v
-        .get("fail_fast")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
-    let summary_only = v
-        .get("summary_only")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
-
+    let o = CiPipelineOpts::from_json(&v);
     let mut sections = Vec::new();
     let mut summary: Vec<(String, &'static str)> = Vec::new();
-    if run_fmt {
+
+    if let Some(out) = ci_run_fmt(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    ) {
+        return out;
+    }
+    if let Some(out) = ci_run_clippy(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    ) {
+        return out;
+    }
+    if let Some(out) = ci_run_cargo_test(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    ) {
+        return out;
+    }
+    if let Some(out) = ci_run_frontend_lint(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    ) {
+        return out;
+    }
+    if let Some(out) = ci_run_frontend_build(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    ) {
+        return out;
+    }
+    if let Some(out) = ci_run_ruff(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    ) {
+        return out;
+    }
+    if let Some(out) = ci_run_pytest(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    ) {
+        return out;
+    }
+    ci_run_mypy(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    );
+
+    build_output(&summary, &sections, o.summary_only, false)
+}
+
+fn ci_run_fmt(
+    o: &CiPipelineOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) -> Option<String> {
+    if o.run_fmt {
         let r = cargo_fmt_check(workspace_root, max_output_len);
         let failed = section_failed(&r);
         summary.push((
@@ -51,23 +153,33 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
             if failed { "failed" } else { "passed" },
         ));
         sections.push(r);
-        if fail_fast && failed {
+        if o.fail_fast && failed {
             push_skipped(
-                &mut summary,
-                run_clippy,
-                run_test,
-                run_frontend_lint,
-                run_frontend_build,
-                run_ruff_check,
-                run_pytest,
-                run_mypy,
+                summary,
+                o.run_clippy,
+                o.run_test,
+                o.run_frontend_lint,
+                o.run_frontend_build,
+                o.run_ruff_check,
+                o.run_pytest,
+                o.run_mypy,
             );
-            return build_output(&summary, &sections, summary_only, true);
+            return Some(build_output(summary, sections, o.summary_only, true));
         }
     } else {
         summary.push(("cargo fmt --check".to_string(), "skipped"));
     }
-    if run_clippy {
+    None
+}
+
+fn ci_run_clippy(
+    o: &CiPipelineOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) -> Option<String> {
+    if o.run_clippy {
         let r =
             cargo_tools::cargo_clippy(r#"{"all_targets":true}"#, workspace_root, max_output_len);
         let failed = section_failed(&r);
@@ -76,23 +188,33 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
             if failed { "failed" } else { "passed" },
         ));
         sections.push(r);
-        if fail_fast && failed {
+        if o.fail_fast && failed {
             push_skipped(
-                &mut summary,
+                summary,
                 false,
-                run_test,
-                run_frontend_lint,
-                run_frontend_build,
-                run_ruff_check,
-                run_pytest,
-                run_mypy,
+                o.run_test,
+                o.run_frontend_lint,
+                o.run_frontend_build,
+                o.run_ruff_check,
+                o.run_pytest,
+                o.run_mypy,
             );
-            return build_output(&summary, &sections, summary_only, true);
+            return Some(build_output(summary, sections, o.summary_only, true));
         }
     } else {
         summary.push(("cargo clippy".to_string(), "skipped"));
     }
-    if run_test {
+    None
+}
+
+fn ci_run_cargo_test(
+    o: &CiPipelineOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) -> Option<String> {
+    if o.run_test {
         let r = cargo_tools::cargo_test("{}", workspace_root, max_output_len, None);
         let failed = section_failed(&r);
         summary.push((
@@ -100,23 +222,33 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
             if failed { "failed" } else { "passed" },
         ));
         sections.push(r);
-        if fail_fast && failed {
+        if o.fail_fast && failed {
             push_skipped(
-                &mut summary,
+                summary,
                 false,
                 false,
-                run_frontend_lint,
-                run_frontend_build,
-                run_ruff_check,
-                run_pytest,
-                run_mypy,
+                o.run_frontend_lint,
+                o.run_frontend_build,
+                o.run_ruff_check,
+                o.run_pytest,
+                o.run_mypy,
             );
-            return build_output(&summary, &sections, summary_only, true);
+            return Some(build_output(summary, sections, o.summary_only, true));
         }
     } else {
         summary.push(("cargo test".to_string(), "skipped"));
     }
-    if run_frontend_lint {
+    None
+}
+
+fn ci_run_frontend_lint(
+    o: &CiPipelineOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) -> Option<String> {
+    if o.run_frontend_lint {
         let r =
             frontend_tools::frontend_lint(r#"{"script":"lint"}"#, workspace_root, max_output_len);
         let failed = section_failed(&r) && !r.contains("跳过（");
@@ -125,24 +257,33 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
             if failed { "failed" } else { "passed" },
         ));
         sections.push(r);
-        if fail_fast && failed {
+        if o.fail_fast && failed {
             push_skipped(
-                &mut summary,
+                summary,
                 false,
                 false,
                 false,
-                run_frontend_build,
-                run_ruff_check,
-                run_pytest,
-                run_mypy,
+                o.run_frontend_build,
+                o.run_ruff_check,
+                o.run_pytest,
+                o.run_mypy,
             );
-            return build_output(&summary, &sections, summary_only, true);
+            return Some(build_output(summary, sections, o.summary_only, true));
         }
     } else {
         summary.push(("frontend lint".to_string(), "skipped"));
     }
+    None
+}
 
-    if run_frontend_build {
+fn ci_run_frontend_build(
+    o: &CiPipelineOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) -> Option<String> {
+    if o.run_frontend_build {
         let r =
             frontend_tools::frontend_build(r#"{"script":"build"}"#, workspace_root, max_output_len);
         let failed = section_failed(&r) && !r.contains("跳过（");
@@ -151,24 +292,33 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
             if failed { "failed" } else { "passed" },
         ));
         sections.push(r);
-        if fail_fast && failed {
+        if o.fail_fast && failed {
             push_skipped(
-                &mut summary,
+                summary,
                 false,
                 false,
                 false,
                 false,
-                run_ruff_check,
-                run_pytest,
-                run_mypy,
+                o.run_ruff_check,
+                o.run_pytest,
+                o.run_mypy,
             );
-            return build_output(&summary, &sections, summary_only, true);
+            return Some(build_output(summary, sections, o.summary_only, true));
         }
     } else {
         summary.push(("frontend build".to_string(), "skipped"));
     }
+    None
+}
 
-    if run_ruff_check {
+fn ci_run_ruff(
+    o: &CiPipelineOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) -> Option<String> {
+    if o.run_ruff_check {
         let r = python_tools::ruff_check("{}", workspace_root, max_output_len);
         let failed = section_failed(&r) && !r.contains("跳过（");
         summary.push((
@@ -176,20 +326,29 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
             if failed { "failed" } else { "passed" },
         ));
         sections.push(r);
-        if fail_fast && failed {
-            if run_pytest {
+        if o.fail_fast && failed {
+            if o.run_pytest {
                 summary.push(("pytest".to_string(), "skipped"));
             }
-            if run_mypy {
+            if o.run_mypy {
                 summary.push(("mypy".to_string(), "skipped"));
             }
-            return build_output(&summary, &sections, summary_only, true);
+            return Some(build_output(summary, sections, o.summary_only, true));
         }
     } else {
         summary.push(("ruff check".to_string(), "skipped"));
     }
+    None
+}
 
-    if run_pytest {
+fn ci_run_pytest(
+    o: &CiPipelineOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) -> Option<String> {
+    if o.run_pytest {
         let r = python_tools::pytest_run("{}", workspace_root, max_output_len);
         let failed = section_failed(&r) && !r.contains("跳过（");
         summary.push((
@@ -197,17 +356,26 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
             if failed { "failed" } else { "passed" },
         ));
         sections.push(r);
-        if fail_fast && failed {
-            if run_mypy {
+        if o.fail_fast && failed {
+            if o.run_mypy {
                 summary.push(("mypy".to_string(), "skipped"));
             }
-            return build_output(&summary, &sections, summary_only, true);
+            return Some(build_output(summary, sections, o.summary_only, true));
         }
     } else {
         summary.push(("pytest".to_string(), "skipped"));
     }
+    None
+}
 
-    if run_mypy {
+fn ci_run_mypy(
+    o: &CiPipelineOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) {
+    if o.run_mypy {
         let r = python_tools::mypy_check("{}", workspace_root, max_output_len);
         let failed = section_failed(&r) && !r.contains("跳过（");
         summary.push(("mypy".to_string(), if failed { "failed" } else { "passed" }));
@@ -215,8 +383,6 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
     } else {
         summary.push(("mypy".to_string(), "skipped"));
     }
-
-    build_output(&summary, &sections, summary_only, false)
 }
 
 pub fn release_ready_check(

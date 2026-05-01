@@ -313,6 +313,134 @@ impl CliReplStyle {
         Ok(())
     }
 
+    fn print_banner_model_section<W: Write + QueueableCommand>(
+        &self,
+        w: &mut W,
+        cfg: &AgentConfig,
+        api_base_short: &str,
+        no_stream: bool,
+    ) -> io::Result<()> {
+        self.write_banner_subheading(w, "模型")?;
+        self.write_banner_item(w, "model", &cfg.model)?;
+        self.write_banner_item(w, "api_base", api_base_short)?;
+        self.write_banner_item(w, "llm_http_auth", cfg.llm_http_auth_mode.as_str())?;
+        self.write_banner_item(w, "temperature", &format!("{}", cfg.temperature))?;
+        let seed_line = cfg
+            .llm_seed
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "（未设置，请求不带 seed）".to_string());
+        self.write_banner_item(w, "llm_seed", &seed_line)?;
+        let stream_line = if no_stream {
+            "关闭（本进程 --no-stream）"
+        } else {
+            "开启（流式）"
+        };
+        self.write_banner_item(w, "stream", stream_line)?;
+        Ok(())
+    }
+
+    fn print_banner_workspace_section<W: Write + QueueableCommand>(
+        &self,
+        w: &mut W,
+        work_dir: &Path,
+        tool_count: usize,
+    ) -> io::Result<()> {
+        self.write_banner_subheading(w, "工作区与工具")?;
+        self.write_banner_item(w, "工作区", &work_dir.display().to_string())?;
+        let tools_detail = if tool_count == 0 {
+            "已关闭（--no-tools）".to_string()
+        } else {
+            format!("{tool_count} 个可用")
+        };
+        self.write_banner_item(w, "工具", &tools_detail)?;
+        Ok(())
+    }
+
+    fn print_banner_builtin_section<W: Write + QueueableCommand>(
+        &self,
+        w: &mut W,
+        cfg: &AgentConfig,
+        repl_llm_bearer_key_ready: bool,
+    ) -> io::Result<()> {
+        self.write_banner_subheading(w, "内建命令")?;
+        self.write_banner_note_line(
+            w,
+            "    /clear  /model（·set） /api-base（·set） /models（list·choose） /api-key  /agent（list·set） /config  /doctor  /probe  /mcp  /version  /workspace（/cd） /skills（list） /tools  /export  /save-session  /help  /?  · Tab 补全",
+        )?;
+        self.write_banner_note_line(
+            w,
+            "    行首 $ → 本地 shell（bash#:）；quit / exit / Ctrl+D 退出",
+        )?;
+        self.write_banner_note_line(w, "    非白名单 run_command：y 一次 / a 本会话允许该命令名")?;
+        if cfg.llm_http_auth_mode == LlmHttpAuthMode::Bearer && !repl_llm_bearer_key_ready {
+            self.write_banner_note_line(
+                w,
+                "    提示：未检测到环境变量 API_KEY；对话前请执行 /api-key set <密钥>（仅本进程）或 export API_KEY 后重启。",
+            )?;
+        }
+        Ok(())
+    }
+
+    fn print_banner_highlights_section<W: Write + QueueableCommand>(
+        &self,
+        w: &mut W,
+        cfg: &AgentConfig,
+    ) -> io::Result<()> {
+        self.write_banner_subheading(w, "要点配置")?;
+        self.write_banner_item(w, "max_tokens", &cfg.max_tokens.to_string())?;
+        self.write_banner_item(
+            w,
+            "max_message_history",
+            &format!(
+                "保留最近 {} 轮（user+assistant 计一轮）",
+                cfg.max_message_history
+            ),
+        )?;
+        self.write_banner_item(
+            w,
+            "API",
+            &format!(
+                "超时 {}s · 失败重试 {} 次",
+                cfg.api_timeout_secs, cfg.api_max_retries
+            ),
+        )?;
+        self.write_banner_item(
+            w,
+            "run_command",
+            &format!(
+                "超时 {}s · 输出上限 {} 字",
+                cfg.command_timeout_secs, cfg.command_max_output_len
+            ),
+        )?;
+        let staged = if cfg.staged_plan_execution {
+            format!("开启（{}）", cfg.staged_plan_feedback_mode.as_str())
+        } else {
+            "关闭".to_string()
+        };
+        self.write_banner_item(w, "staged_plan_execution", &staged)?;
+        if cfg.planner_executor_mode != PlannerExecutorMode::SingleAgent {
+            self.write_banner_item(
+                w,
+                "planner_executor_mode",
+                cfg.planner_executor_mode.as_str(),
+            )?;
+        }
+        if cfg.tui_load_session_on_start {
+            self.write_banner_item(
+                w,
+                "会话恢复",
+                "启动时加载 .crabmate/tui_session.json（若存在）",
+            )?;
+        }
+        if cfg.mcp_enabled && !cfg.mcp_command.trim().is_empty() {
+            self.write_banner_item(w, "MCP", "已启用（stdio）")?;
+        }
+        if cfg.long_term_memory_enabled {
+            self.write_banner_item(w, "long_term_memory", "已启用")?;
+        }
+        Ok(())
+    }
+
     /// 启动横幅：**FIGlet CrabMate** 顶栏 + **模型状态**、**内建命令**、**要点配置**分节（与 `/help` 同色阶；**`NO_COLOR`** 下纯文本）。
     /// `repl_llm_bearer_key_ready`：为 true 时不在横幅打印「未设 API_KEY」提示（启动时环境变量非空即可为 true；REPL 内设置密钥后横幅不会自动刷新）。
     pub(crate) fn print_banner(
@@ -332,110 +460,10 @@ impl CliReplStyle {
         writeln!(out)?;
         self.write_banner_art_header(&mut out)?;
 
-        self.write_banner_subheading(&mut out, "模型")?;
-        self.write_banner_item(&mut out, "model", &cfg.model)?;
-        self.write_banner_item(&mut out, "api_base", &api_base_short)?;
-        self.write_banner_item(&mut out, "llm_http_auth", cfg.llm_http_auth_mode.as_str())?;
-        self.write_banner_item(&mut out, "temperature", &format!("{}", cfg.temperature))?;
-        let seed_line = cfg
-            .llm_seed
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "（未设置，请求不带 seed）".to_string());
-        self.write_banner_item(&mut out, "llm_seed", &seed_line)?;
-        let stream_line = if no_stream {
-            "关闭（本进程 --no-stream）"
-        } else {
-            "开启（流式）"
-        };
-        self.write_banner_item(&mut out, "stream", stream_line)?;
-
-        self.write_banner_subheading(&mut out, "工作区与工具")?;
-        self.write_banner_item(&mut out, "工作区", &work_dir.display().to_string())?;
-        let tools_detail = if tool_count == 0 {
-            "已关闭（--no-tools）".to_string()
-        } else {
-            format!("{tool_count} 个可用")
-        };
-        self.write_banner_item(&mut out, "工具", &tools_detail)?;
-
-        self.write_banner_subheading(&mut out, "内建命令")?;
-        self.write_banner_note_line(
-            &mut out,
-            "    /clear  /model（·set） /api-base（·set） /models（list·choose） /api-key  /agent（list·set） /config  /doctor  /probe  /mcp  /version  /workspace（/cd） /skills（list） /tools  /export  /save-session  /help  /?  · Tab 补全",
-        )?;
-        self.write_banner_note_line(
-            &mut out,
-            "    行首 $ → 本地 shell（bash#:）；quit / exit / Ctrl+D 退出",
-        )?;
-        self.write_banner_note_line(
-            &mut out,
-            "    非白名单 run_command：y 一次 / a 本会话允许该命令名",
-        )?;
-        if cfg.llm_http_auth_mode == LlmHttpAuthMode::Bearer && !repl_llm_bearer_key_ready {
-            self.write_banner_note_line(
-                &mut out,
-                "    提示：未检测到环境变量 API_KEY；对话前请执行 /api-key set <密钥>（仅本进程）或 export API_KEY 后重启。",
-            )?;
-        }
-
-        self.write_banner_subheading(&mut out, "要点配置")?;
-        self.write_banner_item(&mut out, "max_tokens", &cfg.max_tokens.to_string())?;
-        self.write_banner_item(
-            &mut out,
-            "max_message_history",
-            &format!(
-                "保留最近 {} 轮（user+assistant 计一轮）",
-                cfg.max_message_history
-            ),
-        )?;
-
-        self.write_banner_item(
-            &mut out,
-            "API",
-            &format!(
-                "超时 {}s · 失败重试 {} 次",
-                cfg.api_timeout_secs, cfg.api_max_retries
-            ),
-        )?;
-        self.write_banner_item(
-            &mut out,
-            "run_command",
-            &format!(
-                "超时 {}s · 输出上限 {} 字",
-                cfg.command_timeout_secs, cfg.command_max_output_len
-            ),
-        )?;
-
-        let staged = if cfg.staged_plan_execution {
-            format!("开启（{}）", cfg.staged_plan_feedback_mode.as_str())
-        } else {
-            "关闭".to_string()
-        };
-        self.write_banner_item(&mut out, "staged_plan_execution", &staged)?;
-
-        if cfg.planner_executor_mode != PlannerExecutorMode::SingleAgent {
-            self.write_banner_item(
-                &mut out,
-                "planner_executor_mode",
-                cfg.planner_executor_mode.as_str(),
-            )?;
-        }
-
-        if cfg.tui_load_session_on_start {
-            self.write_banner_item(
-                &mut out,
-                "会话恢复",
-                "启动时加载 .crabmate/tui_session.json（若存在）",
-            )?;
-        }
-
-        if cfg.mcp_enabled && !cfg.mcp_command.trim().is_empty() {
-            self.write_banner_item(&mut out, "MCP", "已启用（stdio）")?;
-        }
-
-        if cfg.long_term_memory_enabled {
-            self.write_banner_item(&mut out, "long_term_memory", "已启用")?;
-        }
+        self.print_banner_model_section(&mut out, cfg, &api_base_short, no_stream)?;
+        self.print_banner_workspace_section(&mut out, work_dir, tool_count)?;
+        self.print_banner_builtin_section(&mut out, cfg, repl_llm_bearer_key_ready)?;
+        self.print_banner_highlights_section(&mut out, cfg)?;
 
         writeln!(out)?;
         out.flush()
