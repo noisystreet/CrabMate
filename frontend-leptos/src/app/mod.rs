@@ -27,7 +27,7 @@ mod wire_workspace_domain;
 mod workspace_panel;
 mod workspace_panel_state;
 
-use app_shell_init::{AppShellInit, init_app_shell};
+use app_shell_init::init_app_shell;
 use approval_modal::ApprovalModal;
 use changelist_modal::changelist_modal_view;
 use chat::ChatFindBar;
@@ -46,41 +46,40 @@ use leptos::prelude::*;
 
 #[component]
 pub fn App() -> impl IntoView {
-    let AppShellInit {
-        app_signals,
-        app_ctx,
-    } = init_app_shell();
+    let app_ctx = init_app_shell();
 
     // `AppShellCtx` 含 `Rc` 等，不满足 `Send`；子组件闭包不得捕获整 ctx（见 Leptos `ToChildren` 约束）。
     let chat_find_bar_signals = app_ctx.chat_find_bar_signals();
+    let approval_modal_signals = app_ctx.approval_modal_signals();
+    let settings_page_view_input = app_ctx.settings_page_view_input();
 
     view! {
         <div
             class="app-root app-shell-ds"
-            class:sidebar-rail-collapsed=move || app_signals.sidebar.sidebar_rail_collapsed.get()
+            class:sidebar-rail-collapsed=move || app_ctx.sidebar_rail_collapsed.get()
         >
             {sidebar_nav_view(app_ctx.clone())}
 
-            <Show when=move || app_signals.sidebar.sidebar_rail_collapsed.get()>
+            <Show when=move || app_ctx.sidebar_rail_collapsed.get()>
                 <button
                     type="button"
                     class="btn btn-secondary sidebar-rail-reveal-btn"
-                    prop:aria-label=move || i18n::nav_sidebar_expand_aria(app_signals.shell_ui.locale.get())
-                    on:click=move |_| app_signals.sidebar.sidebar_rail_collapsed.set(false)
+                    prop:aria-label=move || i18n::nav_sidebar_expand_aria(app_ctx.locale.get())
+                    on:click=move |_| app_ctx.sidebar_rail_collapsed.set(false)
                 >
                     "›"
                 </button>
             </Show>
 
-            <div class="shell-main" class:settings-page-hidden=move || app_signals.modal.settings_page.get()>
+            <div class="shell-main" class:settings-page-hidden=move || app_ctx.settings_page.get()>
                 {mobile_shell_header_view(app_ctx.clone())}
 
-                <Show when=move || app_signals.chat_composer.chat_find_panel_open.get()>
+                <Show when=move || app_ctx.chat_find_panel_open.get()>
                     <ChatFindBar signals=chat_find_bar_signals />
                 </Show>
 
                 <div
-                    class:main-row-resizing=move || app_signals.resize.side_resize_dragging.get()
+                    class:main-row-resizing=move || app_ctx.side_resize_dragging.get()
                     class="main-row"
                 >
                     {chat_column_view(app_ctx.chat_column.clone())}
@@ -97,15 +96,9 @@ pub fn App() -> impl IntoView {
 
             {changelist_modal_view(app_ctx.clone())}
 
-            <ApprovalModal
-                pending_approval=app_signals.approval.pending_approval
-                locale=app_signals.shell_ui.locale
-            />
+            <ApprovalModal signals=approval_modal_signals />
 
-            <SettingsPageView
-                settings_page=app_signals.modal.settings_page
-                form=app_ctx.settings_page_form_signals()
-            />
+            <SettingsPageView input=settings_page_view_input />
         </div>
     }
 }

@@ -6,12 +6,20 @@ use leptos::task::spawn_local;
 use crate::api::submit_chat_approval;
 use crate::i18n::{self, Locale};
 
+/// 审批弹窗入参聚合（阶段 B：`App` 单行传入）。
+#[derive(Clone, Copy)]
+pub struct ApprovalModalSignals {
+    pub pending_approval: RwSignal<Option<(String, String, String)>>,
+    pub locale: RwSignal<Locale>,
+}
+
 /// `pending_approval`: `(approval_session_id, command, args)`
 #[component]
-pub fn ApprovalModal(
-    pending_approval: RwSignal<Option<(String, String, String)>>,
-    locale: RwSignal<Locale>,
-) -> impl IntoView {
+pub fn ApprovalModal(signals: ApprovalModalSignals) -> impl IntoView {
+    let ApprovalModalSignals {
+        pending_approval,
+        locale,
+    } = signals;
     let deny = {
         let pending_approval = pending_approval.clone();
         let locale = locale.clone();

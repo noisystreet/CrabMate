@@ -28,14 +28,8 @@ use super::status_tasks_wiring::{
 use super::wire_workspace_domain::{WireWorkspaceDomainEffectsArgs, wire_workspace_domain_effects};
 use super::workspace_panel::{make_insert_workspace_path_into_composer, make_refresh_workspace};
 
-/// 初始化后的壳级句柄集合，供 `App` 视图层消费。
-pub struct AppShellInit {
-    pub app_signals: AppSignals,
-    pub app_ctx: AppShellCtx,
-}
-
 /// 执行所有 wire_* 注册、闭包构建与 `AppShellCtx` 组装。
-pub fn init_app_shell() -> AppShellInit {
+pub fn init_app_shell() -> AppShellCtx {
     let app_signals = AppSignals::new();
 
     wire_chat_session_lifecycle_effects(WireChatSessionLifecycleEffectsArgs {
@@ -213,6 +207,7 @@ pub fn init_app_shell() -> AppShellInit {
         status_err: app_signals.stream.status_err,
         tool_busy: app_signals.stream.tool_busy,
         status_busy: app_signals.stream.status_busy,
+        pending_approval: app_signals.approval.pending_approval,
         client_llm_storage_tick: app_signals.llm_settings.client_llm_storage_tick,
         selected_agent_role: app_signals.llm_settings.selected_agent_role,
         refresh_status: Arc::clone(&refresh_status),
@@ -269,8 +264,5 @@ pub fn init_app_shell() -> AppShellInit {
         },
     };
 
-    AppShellInit {
-        app_signals,
-        app_ctx,
-    }
+    app_ctx
 }

@@ -35,6 +35,13 @@ pub struct SettingsPageFormSignals {
     pub client_llm_storage_tick: RwSignal<u64>,
 }
 
+/// 设置页全屏视图入参（阶段 B：`App` 单行传入）。
+#[derive(Clone, Copy)]
+pub struct SettingsPageViewInput {
+    pub settings_page: RwSignal<bool>,
+    pub form: SettingsPageFormSignals,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SettingsSection {
     Appearance,
@@ -309,10 +316,11 @@ fn SettingsPageContentPanels(
 }
 
 #[component]
-pub fn SettingsPageView(
-    settings_page: RwSignal<bool>,
-    form: SettingsPageFormSignals,
-) -> impl IntoView {
+pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
+    let SettingsPageViewInput {
+        settings_page,
+        form,
+    } = input;
     let SettingsPageFormSignals {
         locale,
         theme,

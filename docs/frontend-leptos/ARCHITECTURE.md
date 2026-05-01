@@ -89,7 +89,7 @@
 阶段 | 目标 | 完成判据（建议）
 ------|------|------------------
 **A. 巩固聚合** | 新增长会话相关状态优先进入 **`ChatSessionSignals`**（或同类聚合），`App` 不再增加平行的会话 `RwSignal` | 新 PR 不扩大 `wire_chat_composer_streams` 参数列表
-**B. 壳与域分离** | `app/mod.rs` 仅保留布局组合 + 全局 `Effect`，会话/工作区/任务各自的 `Effect` 块可迁到对应子模块的 `wire_*`；**长 `view!` 实参**（如大块 `SettingsPageFormSignals { … }`、`ChatFindBar` 的多个 `RwSignal`）收拢到 **`AppShellCtx`** 的组装方法（如 **`settings_page_form_signals()`**、**`chat_find_bar_signals()`**），避免在 `App` 内联重复字段 | `mod.rs` 行数持续下降或由脚本统计不再增长
+**B. 壳与域分离** | `app/mod.rs` 仅保留布局组合 + 全局 `Effect`，会话/工作区/任务各自的 `Effect` 块可迁到对应子模块的 `wire_*`；**`init_app_shell()`** 直接返回 **`AppShellCtx`**（不再向 `App` 暴露 **`AppSignals`**）；**长 `view!` 实参**收拢到 **`AppShellCtx`** 的组装方法（如 **`chat_find_bar_signals()`**、**`approval_modal_signals()`**、**`settings_page_view_input()`**、**`settings_page_form_signals()`**） | `mod.rs` 行数持续下降或由脚本统计不再增长
 **C. 功能子目录** | `chat` 相关文件物理上归入 `app/chat/`（或等价命名），`mod` 再导出 | **已落地** `app/chat/`；`docs/开发文档.md` 已同步 |
 **D. 端口清晰** | `api.rs` 保持最薄；如需 mock，对 `fetch_*` 层包一层 trait 或测试桩（按需） | 关键 `fetch` 在 `wasm-bindgen-test` 或集成测试可替换
 
