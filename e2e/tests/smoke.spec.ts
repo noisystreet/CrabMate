@@ -2,6 +2,16 @@ import { expect, test } from '@playwright/test';
 import { installChatStreamStub } from './fix-chat-stream';
 
 test.describe('Web UI smoke', () => {
+  test('GET /health returns JSON with status and checks', async ({ request }) => {
+    const res = await request.get('/health');
+    expect(res.ok()).toBeTruthy();
+    const body = (await res.json()) as { status: string; checks: Record<string, { ok: boolean }> };
+    expect(typeof body.status).toBe('string');
+    expect(['ok', 'degraded']).toContain(body.status);
+    expect(body.checks).toBeDefined();
+    expect(typeof body.checks).toBe('object');
+  });
+
   test('send message shows assistant reply and tool card (stub stream)', async ({ page }) => {
     await installChatStreamStub(page);
 

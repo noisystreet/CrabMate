@@ -353,3 +353,110 @@ mod tests {
         assert_eq!(e.kind(), "outside_workspace_root");
     }
 }
+
+/// 路径策略与属性测试（与 golden 互补：随机探索分量边界）。
+#[cfg(test)]
+mod proptest_workspace_paths {
+    use super::*;
+    use proptest::prelude::*;
+    use tempfile::tempdir;
+
+    /// 生成形如 `/seg/seg/...` 的绝对路径（不含 `..`，便于构造子孙关系）。
+    fn arb_unix_abs_components(max_depth: usize) -> impl Strategy<Value = PathBuf> {
+        prop::collection::vec("[a-z0-9]{1,10}", 1..=max_depth).prop_map(|segments| {
+            let mut p = PathBuf::from("/");
+            for s in segments {
+                p.push(s.as_str());
+            }
+            p
+        })
+    }
+
+    #[test]
+    fn proptest_ensure_within_descendants_and_rejects_sibling_branch() {
+        let mut runner = proptest::test_runner::TestRunner::new(ProptestConfig::with_cases(128));
+        let strat = (arb_unix_abs_components(4), 1usize..5usize, 0usize..6usize).prop_flat_map(
+            |(base, root_depth, extra)| {
+                let mut root = base.clone();
+                for i in 0..root_depth {
+                    root.push(format!("r{i}"));
+                }
+                let mut candidate = root.clone();
+                for i in 0..extra {
+                    candidate.push(format!("d{i}"));
+                }
+                // 与 root 同祖先 base 的另一分支：不得被 `starts_with(root)` 误判为根内。
+                let sibling_path = {
+                    let mut s = base;
+                    s.push("side_branch_not_under_root");
+                    s
+                };
+                Just((root, candidate, sibling_path))
+            },
+        );
+
+        runner
+            .run(&strat, |(root, candidate, sibling_path)| {
+                prop_assert!(ensure_canonical_within_root(&candidate, &root).is_ok());
+                prop_assert!(ensure_canonical_within_root(&sibling_path, &root).is_err());
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn proptest_absolutize_relative_stays_under_temp_root() {
+        let mut runner = proptest::test_runner::TestRunner::new(ProptestConfig::with_cases(64));
+        let dir = tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonical temp root");
+        let strat = prop::collection::vec("[a-z0-9]{1,12}", 1..10);
+
+        runner
+            .run(&strat, |segments| {
+                let mut rel = String::new();
+                for (i, s) in segments.iter().enumerate() {
+                    if i > 0 {
+                        rel.push('/');
+                    }
+                    rel.push_str(s);
+                    let nested = root.join(&rel);
+                    std::fs::create_dir_all(&nested).expect("mkdir");
+                }
+                let got = absolutize_relative_under_root(&root, &rel).expect("absolutize");
+                prop_assert!(got.starts_with(&root), "got={got:?} root={root:?}");
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn proptest_allowed_roots_matches_tempdir() {
+        let mut runner = proptest::test_runner::TestRunner::new(ProptestConfig::with_cases(32));
+        let strat = prop::collection::vec("[a-z0-9]{1,8}", 1..6);
+
+        runner
+            .run(&strat, |subdirs| {
+                let dir = tempdir().expect("tempdir");
+                let canon_root = dir.path().canonicalize().expect("canon");
+                let roots = vec![canon_root.clone()];
+                let mut target = canon_root.clone();
+                for s in &subdirs {
+                    target.push(s);
+                }
+                std::fs::create_dir_all(&target).expect("mkdir");
+                let canon_target = target.canonicalize().expect("canon target");
+                prop_assert!(is_within_allowed_roots(&canon_target, &roots));
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn proptest_absolutize_rejects_parent_escape() {
+        let dir = tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canon");
+        let res = absolutize_relative_under_root(&root, "../../../etc/passwd");
+        assert!(res.is_err());
+        assert_eq!(res.expect_err("escape").kind(), "outside_workspace_root");
+    }
+}
