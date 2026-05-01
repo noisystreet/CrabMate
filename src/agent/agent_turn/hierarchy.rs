@@ -16,9 +16,44 @@ use super::intent_at_turn_start;
 use super::intent_user;
 use super::outer_loop::run_agent_outer_loop;
 use super::params::RunLoopParams;
+use super::turn_orchestration::TurnOrchestrationMode;
 use crate::agent::agent_turn::errors::AgentTurnSubPhase;
 use crate::agent::hierarchy::execution::ExecutionError;
 use crate::agent::intent_pipeline::IntentAction;
+use tracing::{info, warn};
+
+/// `run_hierarchical_agent` 内子阶段（与顶层 [`TurnOrchestrationMode::Hierarchical`] 正交；供 `tracing` 字段 **`hierarchical_phase`**）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HierarchicalRunPhase {
+    /// 无有效 user 任务句，本路径返回 `Err`。
+    NoUserTask,
+    /// 分层意图门控（`run_intent_for_hierarchical`）。
+    IntentGate,
+    /// 意图门控已写入终答，本函数即将 `return Ok(())`。
+    IntentGateFinishedEarly,
+    /// 话语型 / 澄清确认 / 只读 QA：跳 Manager，走 **`run_agent_outer_loop`**。
+    DiscourseFallbackOuter,
+    /// Router → Manager → Operator → `run_hierarchical` 主路径。
+    RouterManagerRunner,
+    /// `run_hierarchical` 返回 `Err`：时间线 + 用户可见中止摘要。
+    ExecutionAbortedSummary,
+    /// 正常收尾：聚合子目标结果、任务级验收、终答气泡。
+    FinalizeSummary,
+}
+
+impl HierarchicalRunPhase {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::NoUserTask => "no_user_task",
+            Self::IntentGate => "intent_gate",
+            Self::IntentGateFinishedEarly => "intent_gate_finished_early",
+            Self::DiscourseFallbackOuter => "discourse_fallback_outer",
+            Self::RouterManagerRunner => "router_manager_runner",
+            Self::ExecutionAbortedSummary => "execution_aborted_summary",
+            Self::FinalizeSummary => "finalize_summary",
+        }
+    }
+}
 
 fn format_hierarchical_aborted_summary(e: &ExecutionError, task: &str) -> String {
     format!(
@@ -54,6 +89,12 @@ pub(crate) async fn run_hierarchical_agent(
     let in_clarification_flow = intent_user::recently_waiting_execute_confirmation(p.turn.messages);
     let task = intent_user::extract_effective_user_task(p.turn.messages, in_clarification_flow);
     if task.is_empty() {
+        warn!(
+            target: "crabmate::agent_turn",
+            turn_orchestration_mode = TurnOrchestrationMode::Hierarchical.as_str(),
+            hierarchical_phase = HierarchicalRunPhase::NoUserTask.as_str(),
+            "run_hierarchical_agent: no user task"
+        );
         log::warn!(target: "crabmate", "Hierarchical mode: no user task found");
         return Err(RunAgentTurnError::Other {
             phase: AgentTurnSubPhase::Planner,
@@ -61,9 +102,22 @@ pub(crate) async fn run_hierarchical_agent(
         });
     }
 
+    info!(
+        target: "crabmate::agent_turn",
+        turn_orchestration_mode = TurnOrchestrationMode::Hierarchical.as_str(),
+        hierarchical_phase = HierarchicalRunPhase::IntentGate.as_str(),
+        task_preview = %truncate_string(&task, 120),
+        "run_hierarchical_agent intent_gate"
+    );
     let intent_gate = intent_at_turn_start::run_intent_for_hierarchical(p, &task).await?;
     let assessment = match intent_gate {
         intent_at_turn_start::IntentGateResult::Finished => {
+            info!(
+                target: "crabmate::agent_turn",
+                turn_orchestration_mode = TurnOrchestrationMode::Hierarchical.as_str(),
+                hierarchical_phase = HierarchicalRunPhase::IntentGateFinishedEarly.as_str(),
+                "run_hierarchical_agent intent finished early"
+            );
             return Ok(());
         }
         intent_at_turn_start::IntentGateResult::ProceedExecute { assessment } => assessment,
@@ -104,6 +158,15 @@ pub(crate) async fn run_hierarchical_agent(
             assessment.primary_intent,
             action_tag
         );
+        info!(
+            target: "crabmate::agent_turn",
+            turn_orchestration_mode = TurnOrchestrationMode::Hierarchical.as_str(),
+            hierarchical_phase = HierarchicalRunPhase::DiscourseFallbackOuter.as_str(),
+            intent_kind = ?assessment.kind,
+            primary_intent = %assessment.primary_intent,
+            action = action_tag,
+            "run_hierarchical_agent discourse fallback to outer_loop"
+        );
         let mut per_coord =
             PerCoordinator::new(PerCoordinatorInit::from_agent_config(p.ctx.cfg.as_ref()));
         return run_agent_outer_loop(p, &mut per_coord).await;
@@ -113,6 +176,13 @@ pub(crate) async fn run_hierarchical_agent(
         target: "crabmate",
         "[HIERARCHICAL] === Agent Role Enter === role=hierarchical task={}",
         truncate_string(&task, 100)
+    );
+    info!(
+        target: "crabmate::agent_turn",
+        turn_orchestration_mode = TurnOrchestrationMode::Hierarchical.as_str(),
+        hierarchical_phase = HierarchicalRunPhase::RouterManagerRunner.as_str(),
+        task_preview = %truncate_string(&task, 120),
+        "run_hierarchical_agent router_manager_runner"
     );
 
     let params = p.hierarchy_runner_params(
@@ -125,6 +195,13 @@ pub(crate) async fn run_hierarchical_agent(
     let result = match hierarchy::runner::run_hierarchical(params).await {
         Ok(r) => r,
         Err(e) => {
+            info!(
+                target: "crabmate::agent_turn",
+                turn_orchestration_mode = TurnOrchestrationMode::Hierarchical.as_str(),
+                hierarchical_phase = HierarchicalRunPhase::ExecutionAbortedSummary.as_str(),
+                error = %e,
+                "run_hierarchical_agent execution error"
+            );
             log::error!(target: "crabmate", "Hierarchical agent failed: {}", e);
             if let Some(out) = p.ctx.out {
                 let title = format!("分层执行未正常完成：{e}");
@@ -163,6 +240,18 @@ async fn handle_execution_result(
         execution_result,
         mode,
     } = result;
+
+    info!(
+        target: "crabmate::agent_turn",
+        turn_orchestration_mode = TurnOrchestrationMode::Hierarchical.as_str(),
+        hierarchical_phase = HierarchicalRunPhase::FinalizeSummary.as_str(),
+        router_mode = %mode.as_str(),
+        total_completed = execution_result.total_completed,
+        total_failed = execution_result.total_failed,
+        total_duration_ms = execution_result.total_duration_ms,
+        goals = execution_result.results.len(),
+        "handle_execution_result finalize"
+    );
 
     log::info!(
         target: "crabmate",
@@ -677,6 +766,20 @@ mod tests {
     use crate::agent::intent_pipeline::{IntentAction, IntentDecision};
     use crate::agent::intent_router::IntentKind;
     use crate::types::Message;
+
+    #[test]
+    fn hierarchical_run_phase_as_str_stable() {
+        use super::HierarchicalRunPhase;
+        assert_eq!(HierarchicalRunPhase::NoUserTask.as_str(), "no_user_task");
+        assert_eq!(
+            HierarchicalRunPhase::DiscourseFallbackOuter.as_str(),
+            "discourse_fallback_outer"
+        );
+        assert_eq!(
+            HierarchicalRunPhase::RouterManagerRunner.as_str(),
+            "router_manager_runner"
+        );
+    }
 
     #[test]
     fn confirmation_followup_uses_previous_user_task() {
