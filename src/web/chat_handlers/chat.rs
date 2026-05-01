@@ -41,7 +41,7 @@ use crate::user_message_file_refs::expand_at_file_refs_in_user_message;
 use crate::web::http_types::chat::{
     ApiError, ChatApprovalRequestBody, ChatApprovalResponseBody, ChatBranchRequestBody,
     ChatBranchResponseBody, ChatRequestBody, ChatResponseBody, ConversationMessagesQuery,
-    ConversationMessagesResponseBody,
+    ConversationMessagesResponseBody, StreamResumeBody,
 };
 
 fn sse_event_with_id(seq: u64, data: String) -> Result<Event, Infallible> {
@@ -340,6 +340,154 @@ fn parse_last_event_id(headers: &HeaderMap) -> Option<u64> {
         return None;
     }
     s.parse::<u64>().ok()
+}
+
+/// `chat_stream_handler` 前半段：校验并解析请求体（降低主 handler 圈复杂度）。
+struct ChatStreamRequestParsed {
+    resume: Option<StreamResumeBody>,
+    image_urls: Vec<String>,
+    clarify: Option<crate::clarification_questionnaire::ClarifyAnswersNormalized>,
+    user_trim: String,
+    conversation_id: String,
+    agent_role: Option<String>,
+    temperature_override: Option<f32>,
+    seed_override: crate::LlmSeedOverride,
+    llm_override: Option<chat_job_queue::WebChatLlmOverride>,
+    executor_llm_override: Option<chat_job_queue::WebChatLlmOverride>,
+    execution_mode_override: Option<chat_job_queue::WebExecutionModeOverride>,
+}
+
+fn parse_chat_stream_request(
+    state: &Arc<AppState>,
+    body: &ChatRequestBody,
+) -> Result<ChatStreamRequestParsed, (StatusCode, Json<ApiError>)> {
+    let resume = body.stream_resume.clone();
+    let image_urls = normalize_chat_image_urls(&body.image_urls).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_IMAGE_URLS",
+                message: e,
+                reason_code: None,
+            }),
+        )
+    })?;
+    let clarify = if let Some(ref c) = body.clarify_questionnaire_answers {
+        normalize_clarify_questionnaire_answers_raw(c.questionnaire_id.clone(), c.answers.clone())
+            .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS",
+                    message: e,
+                    reason_code: None,
+                }),
+            )
+        })?
+    } else {
+        None
+    };
+    let user_trim = body.message.trim().to_string();
+    if user_trim.is_empty() && resume.is_none() && image_urls.is_empty() && clarify.is_none() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "EMPTY_MESSAGE",
+                message: "提问内容不能为空（若仅发图须至少附带一张图片；澄清问卷作答可单独提交）"
+                    .to_string(),
+                reason_code: None,
+            }),
+        ));
+    }
+    reject_if_client_sse_protocol_invalid(body.client_sse_protocol)?;
+    let conversation_id = normalize_client_conversation_id(body.conversation_id.as_deref())
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_CONVERSATION_ID",
+                    message: e,
+                    reason_code: None,
+                }),
+            )
+        })?
+        .unwrap_or_else(|| state.next_conversation_id());
+    let agent_role = normalize_agent_role(body.agent_role.as_deref()).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_AGENT_ROLE",
+                message: e,
+                reason_code: None,
+            }),
+        )
+    })?;
+    let temperature_override = parse_optional_chat_temperature(body.temperature).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_TEMPERATURE",
+                message: e,
+                reason_code: None,
+            }),
+        )
+    })?;
+    let seed_override = parse_seed_override_from_body(body.seed, body.seed_policy.clone())
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_SEED",
+                    message: e,
+                    reason_code: None,
+                }),
+            )
+        })?;
+    let llm_override = parse_client_llm_override(body.client_llm.clone()).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_CLIENT_LLM",
+                message: e,
+                reason_code: None,
+            }),
+        )
+    })?;
+    let executor_llm_override =
+        parse_executor_llm_override(body.executor_llm.clone()).map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_EXECUTOR_LLM",
+                    message: e,
+                    reason_code: None,
+                }),
+            )
+        })?;
+    let execution_mode_override = parse_execution_mode_override(body.execution_mode.clone())
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_EXECUTION_MODE",
+                    message: e,
+                    reason_code: None,
+                }),
+            )
+        })?;
+    Ok(ChatStreamRequestParsed {
+        resume,
+        image_urls,
+        clarify,
+        user_trim,
+        conversation_id,
+        agent_role,
+        temperature_override,
+        seed_override,
+        llm_override,
+        executor_llm_override,
+        execution_mode_override,
+    })
 }
 
 async fn build_messages_for_turn(
@@ -927,127 +1075,16 @@ pub(crate) async fn chat_stream_handler(
     headers: HeaderMap,
     Json(body): Json<ChatRequestBody>,
 ) -> Result<Response, (StatusCode, Json<ApiError>)> {
-    let resume = body.stream_resume.as_ref();
-    let image_urls = normalize_chat_image_urls(&body.image_urls).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "INVALID_IMAGE_URLS",
-                message: e,
-                reason_code: None,
-            }),
-        )
-    })?;
-    let clarify = if let Some(ref c) = body.clarify_questionnaire_answers {
-        normalize_clarify_questionnaire_answers_raw(c.questionnaire_id.clone(), c.answers.clone())
-            .map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    code: "INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS",
-                    message: e,
-                    reason_code: None,
-                }),
-            )
-        })?
-    } else {
-        None
-    };
-    let user_trim = body.message.trim();
-    if user_trim.is_empty() && resume.is_none() && image_urls.is_empty() && clarify.is_none() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "EMPTY_MESSAGE",
-                message: "提问内容不能为空（若仅发图须至少附带一张图片；澄清问卷作答可单独提交）"
-                    .to_string(),
-                reason_code: None,
-            }),
-        ));
-    }
-    reject_if_client_sse_protocol_invalid(body.client_sse_protocol)?;
-    let conversation_id = normalize_client_conversation_id(body.conversation_id.as_deref())
-        .map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    code: "INVALID_CONVERSATION_ID",
-                    message: e,
-                    reason_code: None,
-                }),
-            )
-        })?
-        .unwrap_or_else(|| state.next_conversation_id());
-    let agent_role = normalize_agent_role(body.agent_role.as_deref()).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "INVALID_AGENT_ROLE",
-                message: e,
-                reason_code: None,
-            }),
-        )
-    })?;
-    let temperature_override = parse_optional_chat_temperature(body.temperature).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "INVALID_TEMPERATURE",
-                message: e,
-                reason_code: None,
-            }),
-        )
-    })?;
-    let seed_override =
-        parse_seed_override_from_body(body.seed, body.seed_policy).map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    code: "INVALID_SEED",
-                    message: e,
-                    reason_code: None,
-                }),
-            )
-        })?;
-    let llm_override = parse_client_llm_override(body.client_llm).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "INVALID_CLIENT_LLM",
-                message: e,
-                reason_code: None,
-            }),
-        )
-    })?;
-    let executor_llm_override = parse_executor_llm_override(body.executor_llm).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "INVALID_EXECUTOR_LLM",
-                message: e,
-                reason_code: None,
-            }),
-        )
-    })?;
-    let execution_mode_override =
-        parse_execution_mode_override(body.execution_mode).map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    code: "INVALID_EXECUTION_MODE",
-                    message: e,
-                    reason_code: None,
-                }),
-            )
-        })?;
-    ensure_bearer_api_key_for_chat(&state, &llm_override).await?;
-    if let Some(reply) = run_web_builtin_command(&state, user_trim).await {
+    let p = parse_chat_stream_request(&state, &body)?;
+    let resume = p.resume.as_ref();
+    ensure_bearer_api_key_for_chat(&state, &p.llm_override).await?;
+    if let Some(reply) = run_web_builtin_command(&state, p.user_trim.as_str()).await {
         let stream =
             stream::iter(vec![(1_u64, reply)]).map(|(seq, data)| sse_event_with_id(seq, data));
         let mut resp = Sse::new(stream)
             .keep_alive(KeepAlive::default())
             .into_response();
-        if let Ok(v) = HeaderValue::from_str(&conversation_id) {
+        if let Ok(v) = HeaderValue::from_str(&p.conversation_id) {
             resp.headers_mut().insert("x-conversation-id", v);
         }
         return Ok(resp);
@@ -1113,7 +1150,7 @@ pub(crate) async fn chat_stream_handler(
         if let Ok(v) = HeaderValue::from_str(&job_id.to_string()) {
             resp.headers_mut().insert("x-stream-job-id", v);
         }
-        if let Ok(v) = HeaderValue::from_str(&conversation_id) {
+        if let Ok(v) = HeaderValue::from_str(&p.conversation_id) {
             resp.headers_mut().insert("x-conversation-id", v);
         }
         return Ok(resp);
@@ -1121,7 +1158,7 @@ pub(crate) async fn chat_stream_handler(
 
     let eff_ws_raw = state.effective_workspace_path().await;
     let eff_ws = eff_ws_raw.trim().to_string();
-    if eff_ws.is_empty() && user_trim.contains('@') {
+    if eff_ws.is_empty() && p.user_trim.contains('@') {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ApiError {
@@ -1135,7 +1172,7 @@ pub(crate) async fn chat_stream_handler(
     let work_dir_for_expand = std::path::PathBuf::from(eff_ws_raw.clone());
     let msg = {
         let cfg = state.cfg.read().await;
-        expand_at_file_refs_in_user_message(user_trim, work_dir_for_expand.as_path(), &cfg)
+        expand_at_file_refs_in_user_message(&p.user_trim, work_dir_for_expand.as_path(), &cfg)
             .map_err(|e| {
                 (
                     StatusCode::BAD_REQUEST,
@@ -1147,13 +1184,13 @@ pub(crate) async fn chat_stream_handler(
                 )
             })?
     };
-    let msg = merge_user_text_with_clarification_answers(msg, clarify);
+    let msg = merge_user_text_with_clarification_answers(msg, p.clarify);
     let turn_seed = build_messages_for_turn(
         &state,
-        &conversation_id,
+        &p.conversation_id,
         &msg,
-        &image_urls,
-        agent_role.as_deref(),
+        &p.image_urls,
+        p.agent_role.as_deref(),
     )
     .await
     .map_err(|e| {
@@ -1213,18 +1250,18 @@ pub(crate) async fn chat_stream_handler(
             job_id,
             queue_deps: state.chat_queue_job_deps.clone(),
             app: state.clone(),
-            conversation_id: conversation_id.clone(),
+            conversation_id: p.conversation_id.clone(),
             messages: turn_seed.messages,
             expected_revision: turn_seed.expected_revision,
-            request_agent_role: agent_role.clone(),
+            request_agent_role: p.agent_role.clone(),
             persisted_active_agent_role: turn_seed.persisted_active_agent_role.clone(),
             work_dir: work_dir_for_job,
             workspace_is_set,
-            temperature_override,
-            seed_override,
-            llm_override,
-            executor_llm_override,
-            execution_mode_override,
+            temperature_override: p.temperature_override,
+            seed_override: p.seed_override,
+            llm_override: p.llm_override,
+            executor_llm_override: p.executor_llm_override,
+            execution_mode_override: p.execution_mode_override,
             stream_event_tx: tx,
             web_approval_session,
         })
@@ -1248,7 +1285,7 @@ pub(crate) async fn chat_stream_handler(
     let mut resp = Sse::new(stream)
         .keep_alive(KeepAlive::default())
         .into_response();
-    if let Ok(v) = HeaderValue::from_str(&conversation_id) {
+    if let Ok(v) = HeaderValue::from_str(&p.conversation_id) {
         resp.headers_mut().insert("x-conversation-id", v);
     }
     if let Ok(v) = HeaderValue::from_str(&job_id.to_string()) {

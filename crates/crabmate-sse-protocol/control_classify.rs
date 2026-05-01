@@ -180,50 +180,127 @@ mod tests {
     fn leptos_dispatch_branch_order_snapshot_stays_aligned() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let path = root.join("../../frontend-leptos/src/sse_dispatch.rs");
-        let src =
+        let full_src =
             fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
 
-        let checkpoints = [
-            r#"if let Some(d) = handle_error_stop(obj, cbs) {"#,
-            r#"if obj.get("plan_required") == Some(&Value::Bool(true))"#,
-            r#"if let Some(Value::Bool(b)) = obj.get("assistant_answer_phase")"#,
-            r#"if key_present_non_null(obj, "staged_plan_started")"#,
-            r#"if key_present_non_null(obj, "staged_plan_step_started")"#,
-            r#"if key_present_non_null(obj, "staged_plan_step_finished")"#,
-            r#"if key_present_non_null(obj, "staged_plan_finished")"#,
-            r#"if let Some(d) = handle_clarification_questionnaire(obj, cbs) {"#,
-            r#"if let Some(d) = handle_thinking_trace(obj, cbs) {"#,
-            r#"if obj.get("workspace_changed") == Some(&Value::Bool(true))"#,
-            r#"if let Some(d) = handle_tool_call(obj, cbs) {"#,
-            r#"if let Some(Value::Bool(b)) = obj.get("parsing_tool_calls")"#,
-            r#"if let Some(Value::Bool(b)) = obj.get("tool_running")"#,
-            r#"if let Some(d) = handle_tool_result(obj, cbs) {"#,
-            r#"if key_present_non_null(obj, "command_approval_request")"#,
-            r#"if obj.get("staged_plan_notice").is_some_and(|x| x.is_string())"#,
-            r#"if let Some(Value::Bool(_)) = obj.get("chat_ui_separator")"#,
-            r#"if key_present_non_null(obj, "conversation_saved")"#,
-            r#"if let Some(d) = handle_timeline_log(obj, cbs) {"#,
-            r#"if let Some(d) = handle_sse_capabilities(obj, cbs) {"#,
-            r#"if key_present_non_null(obj, "stream_ended")"#,
-        ];
-
-        let mut prev = 0usize;
-        for needle in checkpoints {
-            let idx = src.find(needle).unwrap_or_else(|| {
-                panic!(
-                    "{} must contain dispatch checkpoint: {}",
-                    path.display(),
-                    needle
-                )
-            });
-            assert!(
-                idx >= prev,
-                "{} checkpoint out of order: {}",
-                path.display(),
-                needle
-            );
-            prev = idx;
+        /// 提取 `fn name` / `pub fn name` 的函数体 `{ ... }`（含外层花括号），用于顺序快照。
+        fn rust_fn_body<'a>(src: &'a str, path: &std::path::Path, fn_sig_start: &str) -> &'a str {
+            let start = src
+                .find(fn_sig_start)
+                .unwrap_or_else(|| panic!("{} must contain `{}`", path.display(), fn_sig_start));
+            let after = &src[start..];
+            let open_rel = after
+                .find('{')
+                .unwrap_or_else(|| panic!("{}: `{}` 后缺少 `{{`", path.display(), fn_sig_start));
+            let open = start + open_rel;
+            let mut depth: i32 = 0;
+            let mut i = open;
+            while i < src.len() {
+                let c = src[i..].chars().next().expect("utf8");
+                match c {
+                    '{' => {
+                        depth += 1;
+                        i += c.len_utf8();
+                    }
+                    '}' => {
+                        depth -= 1;
+                        i += c.len_utf8();
+                        if depth == 0 {
+                            return &src[open..i];
+                        }
+                    }
+                    _ => i += c.len_utf8(),
+                }
+            }
+            panic!("{}: `{}` 函数体未闭合", path.display(), fn_sig_start);
         }
+
+        fn assert_checkpoints_in_order(
+            path: &std::path::Path,
+            body: &str,
+            label: &str,
+            checkpoints: &[&str],
+        ) {
+            let mut prev = 0usize;
+            for needle in checkpoints {
+                let idx = body.find(needle).unwrap_or_else(|| {
+                    panic!(
+                        "{} [{}] must contain checkpoint: {}",
+                        path.display(),
+                        label,
+                        needle
+                    )
+                });
+                assert!(
+                    idx >= prev,
+                    "{} [{}] checkpoint out of order: {}",
+                    path.display(),
+                    label,
+                    needle
+                );
+                prev = idx;
+            }
+        }
+
+        let main = rust_fn_body(&full_src, &path, "pub fn try_dispatch_sse_control_payload");
+        assert_checkpoints_in_order(
+            &path,
+            main,
+            "try_dispatch_sse_control_payload",
+            &[
+                r#"if let Some(d) = handle_error_stop(obj, cbs) {"#,
+                r#"if let Some(d) = dispatch_staged_plan_control(obj, cbs) {"#,
+                r#"if let Some(d) = handle_clarification_questionnaire(obj, cbs) {"#,
+                r#"if let Some(d) = handle_thinking_trace(obj, cbs) {"#,
+                r#"if let Some(d) = dispatch_workspace_tool_control(obj, cbs) {"#,
+                r#"if let Some(d) = dispatch_notice_timeline_tail(obj, cbs) {"#,
+            ],
+        );
+
+        let staged = rust_fn_body(&full_src, &path, "fn dispatch_staged_plan_control");
+        assert_checkpoints_in_order(
+            &path,
+            staged,
+            "dispatch_staged_plan_control",
+            &[
+                r#"if obj.get("plan_required") == Some(&Value::Bool(true))"#,
+                r#"if let Some(Value::Bool(b)) = obj.get("assistant_answer_phase")"#,
+                r#"if key_present_non_null(obj, "staged_plan_started")"#,
+                r#"if key_present_non_null(obj, "staged_plan_step_started")"#,
+                r#"if key_present_non_null(obj, "staged_plan_step_finished")"#,
+                r#"if key_present_non_null(obj, "staged_plan_finished")"#,
+            ],
+        );
+
+        let ws_tool = rust_fn_body(&full_src, &path, "fn dispatch_workspace_tool_control");
+        assert_checkpoints_in_order(
+            &path,
+            ws_tool,
+            "dispatch_workspace_tool_control",
+            &[
+                r#"if obj.get("workspace_changed") == Some(&Value::Bool(true))"#,
+                r#"if let Some(d) = handle_tool_call(obj, cbs) {"#,
+                r#"if let Some(Value::Bool(b)) = obj.get("parsing_tool_calls")"#,
+                r#"if let Some(Value::Bool(b)) = obj.get("tool_running")"#,
+                r#"if let Some(d) = handle_tool_result(obj, cbs) {"#,
+                r#"if key_present_non_null(obj, "command_approval_request")"#,
+            ],
+        );
+
+        let tail = rust_fn_body(&full_src, &path, "fn dispatch_notice_timeline_tail");
+        assert_checkpoints_in_order(
+            &path,
+            tail,
+            "dispatch_notice_timeline_tail",
+            &[
+                r#"if obj.get("staged_plan_notice").is_some_and(|x| x.is_string())"#,
+                r#"if let Some(Value::Bool(_)) = obj.get("chat_ui_separator")"#,
+                r#"if key_present_non_null(obj, "conversation_saved")"#,
+                r#"if let Some(d) = handle_timeline_log(obj, cbs) {"#,
+                r#"if let Some(d) = handle_sse_capabilities(obj, cbs) {"#,
+                r#"if key_present_non_null(obj, "stream_ended")"#,
+            ],
+        );
     }
 
     fn arb_non_empty_trimmed() -> impl Strategy<Value = String> {

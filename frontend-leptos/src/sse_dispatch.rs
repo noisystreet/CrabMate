@@ -310,19 +310,46 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
         return d;
     }
 
+    if let Some(d) = dispatch_staged_plan_control(obj, cbs) {
+        return d;
+    }
+
+    if let Some(d) = handle_clarification_questionnaire(obj, cbs) {
+        return d;
+    }
+
+    if let Some(d) = handle_thinking_trace(obj, cbs) {
+        return d;
+    }
+
+    if let Some(d) = dispatch_workspace_tool_control(obj, cbs) {
+        return d;
+    }
+
+    if let Some(d) = dispatch_notice_timeline_tail(obj, cbs) {
+        return d;
+    }
+
+    SseDispatch::Plain
+}
+
+fn dispatch_staged_plan_control(
+    obj: &serde_json::Map<String, Value>,
+    cbs: &mut SseCallbacks<'_>,
+) -> Option<SseDispatch> {
     if obj.get("plan_required") == Some(&Value::Bool(true)) {
-        return SseDispatch::Handled;
+        return Some(SseDispatch::Handled);
     }
 
     if let Some(Value::Bool(b)) = obj.get("assistant_answer_phase") {
         if *b && let Some(f) = cbs.on_assistant_answer_phase.as_mut() {
             f();
         }
-        return SseDispatch::Handled;
+        return Some(SseDispatch::Handled);
     }
 
     if key_present_non_null(obj, "staged_plan_started") {
-        return SseDispatch::Handled;
+        return Some(SseDispatch::Handled);
     }
     if key_present_non_null(obj, "staged_plan_step_started") {
         if let Some(info) = extract_staged_plan_step_started(obj)
@@ -335,7 +362,7 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
                 executor_kind: info.executor_kind,
             });
         }
-        return SseDispatch::Handled;
+        return Some(SseDispatch::Handled);
     }
     if key_present_non_null(obj, "staged_plan_step_finished") {
         if let Some(info) = extract_staged_plan_step_finished(obj)
@@ -348,46 +375,44 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
                 executor_kind: info.executor_kind,
             });
         }
-        return SseDispatch::Handled;
+        return Some(SseDispatch::Handled);
     }
     if key_present_non_null(obj, "staged_plan_finished") {
-        return SseDispatch::Handled;
+        return Some(SseDispatch::Handled);
     }
+    None
+}
 
-    if let Some(d) = handle_clarification_questionnaire(obj, cbs) {
-        return d;
-    }
-
-    if let Some(d) = handle_thinking_trace(obj, cbs) {
-        return d;
-    }
-
+fn dispatch_workspace_tool_control(
+    obj: &serde_json::Map<String, Value>,
+    cbs: &mut SseCallbacks<'_>,
+) -> Option<SseDispatch> {
     if obj.get("workspace_changed") == Some(&Value::Bool(true)) {
         if let Some(f) = cbs.on_workspace_changed.as_mut() {
             f();
         }
-        return SseDispatch::Handled;
+        return Some(SseDispatch::Handled);
     }
 
     if let Some(d) = handle_tool_call(obj, cbs) {
-        return d;
+        return Some(d);
     }
 
     if let Some(Value::Bool(b)) = obj.get("parsing_tool_calls") {
         if let Some(f) = cbs.on_parsing_tool_calls_change.as_mut() {
             f(*b);
         }
-        return SseDispatch::Handled;
+        return Some(SseDispatch::Handled);
     }
     if let Some(Value::Bool(b)) = obj.get("tool_running") {
         if let Some(f) = cbs.on_tool_status_change.as_mut() {
             f(*b);
         }
-        return SseDispatch::Handled;
+        return Some(SseDispatch::Handled);
     }
 
     if let Some(d) = handle_tool_result(obj, cbs) {
-        return d;
+        return Some(d);
     }
 
     if key_present_non_null(obj, "command_approval_request") {
@@ -412,17 +437,23 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
                 f(req);
             }
         }
-        return SseDispatch::Handled;
+        return Some(SseDispatch::Handled);
     }
+    None
+}
 
+fn dispatch_notice_timeline_tail(
+    obj: &serde_json::Map<String, Value>,
+    cbs: &mut SseCallbacks<'_>,
+) -> Option<SseDispatch> {
     if obj.get("staged_plan_notice").is_some_and(|x| x.is_string())
         || obj.get("staged_plan_notice_clear") == Some(&Value::Bool(true))
     {
-        return SseDispatch::Handled;
+        return Some(SseDispatch::Handled);
     }
 
     if let Some(Value::Bool(_)) = obj.get("chat_ui_separator") {
-        return SseDispatch::Handled;
+        return Some(SseDispatch::Handled);
     }
     if key_present_non_null(obj, "conversation_saved") {
         if let Some(Value::Object(saved)) = obj.get("conversation_saved")
@@ -431,21 +462,20 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
         {
             f(rev);
         }
-        return SseDispatch::Handled;
+        return Some(SseDispatch::Handled);
     }
 
     if let Some(d) = handle_timeline_log(obj, cbs) {
-        return d;
+        return Some(d);
     }
 
     if let Some(d) = handle_sse_capabilities(obj, cbs) {
-        return d;
+        return Some(d);
     }
     if key_present_non_null(obj, "stream_ended") {
-        return SseDispatch::Handled;
+        return Some(SseDispatch::Handled);
     }
-
-    SseDispatch::Plain
+    None
 }
 
 #[cfg(test)]
