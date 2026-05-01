@@ -27,6 +27,8 @@ mod plan_optimizer;
 pub mod plan_rewrite_controller;
 /// 终答规划重写与历史扫描等纯逻辑（侧向 LLM 调用仍在 `per_plan_semantic_check`）。
 pub mod reflection;
+/// 分阶段 `executor_kind` 与 DAG `node_tool_role` 共用的工具允许表。
+pub(crate) mod step_executor_policy;
 pub mod step_verifier;
 /// 单轮墙钟预算判定与文案（`agent_turn` / `staged` / `hierarchy` 共用）。
 pub mod turn_budget;

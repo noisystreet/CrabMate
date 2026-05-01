@@ -1,5 +1,7 @@
 //! 工作流 JSON 解析后的规格（节点、依赖、并行策略等）。
 
+use super::node_tool_role::WorkflowNodeToolRole;
+
 #[derive(Debug, Clone)]
 pub struct WorkflowSpec {
     pub max_parallelism: usize,
@@ -23,4 +25,6 @@ pub struct WorkflowNodeSpec {
     pub timeout_secs: Option<u64>,
     pub compensate_with: Vec<String>,
     pub max_retries: u32,
+    /// 可选：收窄该节点允许调用的工具类别；与分阶段 `executor_kind` 共用策略表。
+    pub node_tool_role: Option<WorkflowNodeToolRole>,
 }

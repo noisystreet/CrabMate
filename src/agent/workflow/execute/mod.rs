@@ -26,6 +26,7 @@ use std::sync::Mutex as StdMutex;
 use log::info;
 use tokio::sync::{Mutex, mpsc};
 
+use crate::config::AgentConfig;
 use crate::types::CommandApprovalDecision;
 
 use super::model::{WorkflowNodeSpec, WorkflowSpec};
@@ -60,6 +61,7 @@ pub enum WorkflowApprovalMode {
 }
 #[derive(Debug, Clone)]
 pub(crate) struct WorkflowToolExecCtx {
+    pub(crate) cfg: Arc<AgentConfig>,
     pub(crate) cfg_command_timeout_secs: u64,
     pub(crate) cfg_weather_timeout_secs: u64,
     pub(crate) cfg_web_search_timeout_secs: u64,

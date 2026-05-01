@@ -81,6 +81,7 @@ fn test_validate_dag_cycle_detection() {
             timeout_secs: None,
             compensate_with: vec![],
             max_retries: 0,
+            node_tool_role: None,
         },
         WorkflowNodeSpec {
             id: "b".to_string(),
@@ -91,6 +92,7 @@ fn test_validate_dag_cycle_detection() {
             timeout_secs: None,
             compensate_with: vec![],
             max_retries: 0,
+            node_tool_role: None,
         },
     ];
     assert!(validate_dag(&nodes).is_err());
@@ -195,4 +197,20 @@ fn test_parse_max_retries_explicit_value() {
     }"#;
     let spec = parse_workflow_spec(json).unwrap();
     assert_eq!(spec.nodes[0].max_retries, 3);
+}
+
+#[test]
+fn test_parse_node_tool_role_executor_kind_alias() {
+    let json = r#"{
+        "workflow":{
+          "nodes":[
+            {"id":"r","tool_name":"read_file","tool_args":{"path":"README.md"},"executor_kind":"review_readonly"}
+          ]
+        }
+    }"#;
+    let spec = parse_workflow_spec(json).unwrap();
+    assert_eq!(
+        spec.nodes[0].node_tool_role,
+        Some(super::node_tool_role::WorkflowNodeToolRole::ReviewReadonly)
+    );
 }

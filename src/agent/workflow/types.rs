@@ -73,6 +73,9 @@ pub(crate) struct WorkflowExecutionNodeReport {
     pub(crate) planned_layer: Option<usize>,
     pub(crate) max_retries: u32,
     pub(crate) attempt: u32,
+    /// 与分阶段 `executor_kind` 同形：节点可选 `node_tool_role` / `executor_kind` 时回显。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) executor_kind: Option<String>,
 }
 pub(crate) static WORKFLOW_RUN_SEQ: AtomicU64 = AtomicU64::new(1);
 #[derive(Serialize)]

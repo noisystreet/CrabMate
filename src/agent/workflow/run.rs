@@ -1,10 +1,11 @@
 //! `workflow_execute` 工具入口：解析参数、validate_only 规划、DAG 执行。
 
+use std::sync::Arc;
+
 use crate::config::{AgentConfig, ExposeSecret};
 use log::{info, warn};
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use super::dag::{topo_layers, validate_dag};
@@ -172,6 +173,11 @@ pub async fn run_workflow_execute_tool(
                 planned_layer: layer_idx_by_id.get(&n.id).copied(),
                 max_retries: n.max_retries,
                 attempt: 1,
+                executor_kind: n.node_tool_role.map(|r| {
+                    r.as_plan_step_executor_kind()
+                        .as_snake_case_str()
+                        .to_string()
+                }),
             })
             .collect();
 
@@ -276,6 +282,7 @@ pub async fn run_workflow_execute_tool(
     let http_fetch_allowed_prefixes = cfg.http_fetch_allowed_prefixes.clone();
 
     let tool_exec_ctx = WorkflowToolExecCtx {
+        cfg: Arc::new(cfg.clone()),
         cfg_command_timeout_secs: command_timeout_secs,
         cfg_weather_timeout_secs: weather_timeout_secs,
         cfg_web_search_timeout_secs: web_search_timeout_secs,

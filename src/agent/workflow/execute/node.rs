@@ -570,6 +570,30 @@ async fn run_node_inner(
         return fail;
     }
 
+    if let Some(role) = node.node_tool_role {
+        let k = role.as_plan_step_executor_kind();
+        if !crate::agent::step_executor_policy::tool_allowed_for_step_executor_kind(
+            tool_exec_ctx.cfg.as_ref(),
+            node.tool_name.as_str(),
+            k,
+        ) {
+            let label = crate::agent::step_executor_policy::executor_kind_user_label(k);
+            return NodeRunResult {
+                id: node.id.clone(),
+                status: NodeRunStatus::Failed,
+                output: format!(
+                    "workflow 节点工具与 node_tool_role 不符：节点 `{}` 声明为 {}，但工具 `{}` 不在该角色的允许集合内（与分阶段 executor_kind 策略一致）。",
+                    node.id, label, node.tool_name
+                )
+                .into(),
+                workspace_changed: false,
+                exit_code: None,
+                error_code: Some("workflow_node_tool_role_denied".to_string()),
+                attempt: 1,
+            };
+        }
+    }
+
     let effective_allowed_arc =
         match apply_run_command_allowlist_approvals(&node, &approval_mode, &tool_exec_ctx).await {
             Ok(a) => a,

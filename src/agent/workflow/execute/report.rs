@@ -51,6 +51,11 @@ pub(super) fn build_workflow_node_reports(
                 planned_layer: None,
                 max_retries: n.max_retries,
                 attempt: r.attempt,
+                executor_kind: n.node_tool_role.map(|role| {
+                    role.as_plan_step_executor_kind()
+                        .as_snake_case_str()
+                        .to_string()
+                }),
             });
         } else if progress.started.contains(&n.id) {
             failed += 1;
@@ -69,6 +74,11 @@ pub(super) fn build_workflow_node_reports(
                 planned_layer: None,
                 max_retries: n.max_retries,
                 attempt: 1,
+                executor_kind: n.node_tool_role.map(|role| {
+                    role.as_plan_step_executor_kind()
+                        .as_snake_case_str()
+                        .to_string()
+                }),
             });
         } else {
             skipped += 1;
@@ -87,6 +97,11 @@ pub(super) fn build_workflow_node_reports(
                 planned_layer: None,
                 max_retries: n.max_retries,
                 attempt: 1,
+                executor_kind: n.node_tool_role.map(|role| {
+                    role.as_plan_step_executor_kind()
+                        .as_snake_case_str()
+                        .to_string()
+                }),
             });
         }
     }
