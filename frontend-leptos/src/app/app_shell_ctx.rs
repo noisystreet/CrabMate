@@ -19,9 +19,11 @@ use crate::sse_dispatch::ThinkingTraceInfo;
 use crate::app_prefs::SidePanelView;
 
 use super::chat::{ChatColumnShell, ChatFindBarSignals};
-use super::settings_page::SettingsPageFormSignals;
+use super::settings_page::{SettingsPageFormSignals, SettingsPageViewInput};
 use super::status_tasks_state::StatusTasksSignals;
 use super::workspace_panel_state::WorkspacePanelSignals;
+
+use super::approval_modal::ApprovalModalSignals;
 
 type SideResizeHandlesCell = Rc<
     RefCell<
@@ -72,6 +74,8 @@ pub struct AppShellCtx {
     pub status_err: RwSignal<Option<String>>,
     pub tool_busy: RwSignal<bool>,
     pub status_busy: RwSignal<bool>,
+    /// 命令审批弹窗（与流式 `ComposerStreamShell` 共用同一 `RwSignal`）。
+    pub pending_approval: RwSignal<Option<(String, String, String)>>,
     pub client_llm_storage_tick: RwSignal<u64>,
     pub selected_agent_role: RwSignal<Option<String>>,
     pub refresh_status: Arc<dyn Fn() + Send + Sync>,
@@ -100,6 +104,21 @@ pub struct AppShellCtx {
 }
 
 impl AppShellCtx {
+    pub fn approval_modal_signals(&self) -> ApprovalModalSignals {
+        ApprovalModalSignals {
+            pending_approval: self.pending_approval,
+            locale: self.locale,
+        }
+    }
+
+    /// 设置页全屏视图：`settings_page` 开关 + 表单信号（阶段 B：单行传入 `SettingsPageView`）。
+    pub fn settings_page_view_input(&self) -> SettingsPageViewInput {
+        SettingsPageViewInput {
+            settings_page: self.settings_page,
+            form: self.settings_page_form_signals(),
+        }
+    }
+
     /// 主区会话内查找条（阶段 B：避免在 `App` 中逐项传 `RwSignal`）。
     pub fn chat_find_bar_signals(&self) -> ChatFindBarSignals {
         ChatFindBarSignals {
