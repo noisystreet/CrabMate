@@ -94,8 +94,7 @@ use step_iteration_fsm::{
 use step_loop_fsm::{staged_injected_step_user_body, try_apply_staged_plan_control_flow_jump};
 use turn_fsm::{
     StagedTurnAdvance, StagedTurnPhase, StagedTurnSubCallOutcome,
-    advance_staged_turn_after_sub_call, entered_flag_for_next_planner_call,
-    next_rewrite_attempts_after_advance,
+    entered_flag_for_next_planner_call, staged_rolling_horizon_apply_advance,
 };
 
 /// 首轮规划 assistant：清空原生 tool_calls 后经 DSML 物化，返回「等价 tool_calls 条数」总和（用于判定是否触发一次重写 user）。
@@ -607,34 +606,24 @@ where
             Ok(o) => StagedTurnSubCallOutcome::Ok(o),
             Err(e) => StagedTurnSubCallOutcome::Err(e),
         };
-        let advance =
-            advance_staged_turn_after_sub_call(phase, rewrite_attempts, max_rewrites, event);
-        rewrite_attempts = next_rewrite_attempts_after_advance(rewrite_attempts, &advance);
+        let step =
+            staged_rolling_horizon_apply_advance(phase, rewrite_attempts, max_rewrites, event);
+        rewrite_attempts = step.next_rewrite_attempts;
 
-        let advance_kind = match &advance {
-            StagedTurnAdvance::Continue { .. } => "continue",
-            StagedTurnAdvance::Finished => "finished",
-            StagedTurnAdvance::ReplanExhausted { .. } => "replan_exhausted",
-            StagedTurnAdvance::Propagate(_) => "propagate",
-        };
-        let propagate_public_code = match &advance {
-            StagedTurnAdvance::Propagate(e) => Some(e.public_error_code()),
-            _ => None,
-        };
         tracing::debug!(
             target: "crabmate::staged",
             staged_fsm = "rolling_horizon",
             rolling_horizon_kind = ?kind,
             staged_round = staged_rounds,
             prior_staged_turn_phase = ?phase,
-            advance_kind = advance_kind,
-            propagate_public_code = propagate_public_code,
+            advance_kind = step.advance_kind,
+            propagate_public_code = step.propagate_public_code,
             rewrite_attempts = rewrite_attempts,
             sub_phase = "planner",
             "staged rolling horizon advance"
         );
 
-        match advance {
+        match step.advance {
             StagedTurnAdvance::Continue {
                 phase: next_phase,
                 push_feedback_user,

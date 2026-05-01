@@ -1,4 +1,5 @@
 //! **编排观测**：滚动视界外层循环在 `mod.rs` 中 **`run_staged_rolling_horizon_outer_loop`** 打点（`target: crabmate::staged`，`staged_fsm = rolling_horizon`），与步内子阶段日志区分。
+//! 一次迭代的 **advance + 计数 + tracing 摘要** 由 [`staged_rolling_horizon_apply_advance`] 集中计算，驱动层只处理 IO。
 
 use crate::types::Message;
 
@@ -43,6 +44,49 @@ pub(crate) enum StagedTurnAdvance {
 impl StagedTurnPhase {
     pub(crate) fn entered_from_step_execution_round(self) -> bool {
         matches!(self, Self::AfterStepExecutionRound)
+    }
+}
+
+/// 一次滚动视界迭代内：子调用结果经 [`advance_staged_turn_after_sub_call`] 后的**逻辑步**（**无** IO）。
+/// 供 [`run_staged_rolling_horizon_outer_loop`] 仅做快照回滚、`messages.push` 与 `tracing`。
+#[derive(Debug)]
+pub(crate) struct RollingHorizonTurnStep {
+    pub advance: StagedTurnAdvance,
+    /// `continue` / `finished` / `replan_exhausted` / `propagate`
+    pub advance_kind: &'static str,
+    pub propagate_public_code: Option<&'static str>,
+    pub next_rewrite_attempts: usize,
+}
+
+#[inline]
+fn staged_turn_advance_kind_str(advance: &StagedTurnAdvance) -> &'static str {
+    match advance {
+        StagedTurnAdvance::Continue { .. } => "continue",
+        StagedTurnAdvance::Finished => "finished",
+        StagedTurnAdvance::ReplanExhausted { .. } => "replan_exhausted",
+        StagedTurnAdvance::Propagate(_) => "propagate",
+    }
+}
+
+/// 由当前相位、重写计数与一次子调用结果，计算下一迭代所需全部**纯逻辑**字段。
+pub(crate) fn staged_rolling_horizon_apply_advance(
+    phase: StagedTurnPhase,
+    rewrite_attempts: usize,
+    max_rewrites: usize,
+    event: StagedTurnSubCallOutcome,
+) -> RollingHorizonTurnStep {
+    let advance = advance_staged_turn_after_sub_call(phase, rewrite_attempts, max_rewrites, event);
+    let advance_kind = staged_turn_advance_kind_str(&advance);
+    let propagate_public_code = match &advance {
+        StagedTurnAdvance::Propagate(e) => Some(e.public_error_code()),
+        _ => None,
+    };
+    let next_rewrite_attempts = next_rewrite_attempts_after_advance(rewrite_attempts, &advance);
+    RollingHorizonTurnStep {
+        advance,
+        advance_kind,
+        propagate_public_code,
+        next_rewrite_attempts,
     }
 }
 
@@ -188,5 +232,44 @@ mod tests {
             }
             other => panic!("unexpected {:?}", other),
         }
+    }
+
+    #[test]
+    fn rolling_horizon_step_matches_advance_kind_and_rewrite_increment() {
+        let ev = StagedTurnSubCallOutcome::Err(RunAgentTurnError::StepRetryExhausted {
+            phase: AgentTurnSubPhase::Executor,
+            message: "x".to_string(),
+        });
+        let step = staged_rolling_horizon_apply_advance(
+            StagedTurnPhase::AfterStepExecutionRound,
+            0,
+            3,
+            ev,
+        );
+        assert_eq!(step.advance_kind, "continue");
+        assert_eq!(step.next_rewrite_attempts, 1);
+        assert!(step.propagate_public_code.is_none());
+        assert!(matches!(
+            step.advance,
+            StagedTurnAdvance::Continue {
+                phase: StagedTurnPhase::PreStepExecutionRound,
+                push_feedback_user: Some(_),
+            }
+        ));
+    }
+
+    #[test]
+    fn rolling_horizon_propagate_sets_public_code() {
+        let step = staged_rolling_horizon_apply_advance(
+            StagedTurnPhase::PreStepExecutionRound,
+            0,
+            2,
+            StagedTurnSubCallOutcome::Err(RunAgentTurnError::Other {
+                phase: AgentTurnSubPhase::Planner,
+                message: "m".into(),
+            }),
+        );
+        assert_eq!(step.advance_kind, "propagate");
+        assert!(step.propagate_public_code.is_some());
     }
 }

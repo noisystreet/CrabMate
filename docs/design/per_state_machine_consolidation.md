@@ -143,6 +143,7 @@
 
 | 日期 | 说明 |
 |------|------|
+| 2026-05-01 | 滚动视界外层：新增 **`staged_rolling_horizon_apply_advance`**（`turn_fsm.rs`），集中 **advance + rewrite 计数 + advance_kind / propagate_public_code**；`run_staged_rolling_horizon_outer_loop` 仅保留 IO 与 tracing。 |
 | 2026-05-01 | 首轮解析后 **FullPipeline** 路径：新增 **`full_pipeline_fsm.rs`**（**`StagedFullPipelinePhase`** 线性相位 + `staged_fsm=full_pipeline` 的 `debug!`）；`run_staged_plan_with_prepared_request` 内 ensemble → 优化 → NL 段与枚举对齐。 |
 | 2026-04-30 | 步内子阶段枚举 **`StagedStepRunningSub`**（`step_iteration_fsm.rs`，对齐设计稿 `StepRunning.sub`）；`mod.rs` 拆 **`staged_step_run_outer_half`** / **`staged_step_run_after_outer_half`** |
 | 2026-04-30 | 步循环：`mod.rs` 内 **`run_one_staged_plan_step_iteration`**（单次迭代 I/O + `StagedStepIterationCtl`）；**`step_iteration_fsm.rs`** 增补墙钟 **`staged_step_wall_clock_exceeded`**、补丁反馈常量与 **`staged_step_verify_fail_patch_detail`** |
