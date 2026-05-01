@@ -15,115 +15,115 @@ pub fn key_present_non_null(obj: &serde_json::Map<String, Value>, key: &str) -> 
     }
 }
 
-/// 返回 `"stop"` | `"handled"` | `"plain"`。
-pub fn classify_sse_control_outcome(v: &Value) -> &'static str {
-    let Some(obj) = v.as_object() else {
-        return "plain";
-    };
-
+fn sse_control_error_stop(obj: &serde_json::Map<String, Value>) -> bool {
     // 与 TS：`parsed.error != null`（忽略 `error: null` 与缺省）
     if let Some(e) = obj.get("error")
         && !e.is_null()
         && let Some(Value::String(c)) = obj.get("code")
         && !c.trim().is_empty()
     {
-        return "stop";
+        return true;
     }
+    false
+}
 
+fn sse_control_handled_planning(obj: &serde_json::Map<String, Value>) -> bool {
     if obj.get("plan_required") == Some(&Value::Bool(true)) {
-        return "handled";
+        return true;
     }
-
     if let Some(Value::Bool(_)) = obj.get("assistant_answer_phase") {
-        return "handled";
+        return true;
     }
+    key_present_non_null(obj, "staged_plan_started")
+        || key_present_non_null(obj, "staged_plan_step_started")
+        || key_present_non_null(obj, "staged_plan_step_finished")
+        || key_present_non_null(obj, "staged_plan_finished")
+}
 
-    if key_present_non_null(obj, "staged_plan_started") {
-        return "handled";
-    }
-    if key_present_non_null(obj, "staged_plan_step_started") {
-        return "handled";
-    }
-    if key_present_non_null(obj, "staged_plan_step_finished") {
-        return "handled";
-    }
-    if key_present_non_null(obj, "staged_plan_finished") {
-        return "handled";
-    }
-
+fn sse_control_handled_workspace_and_clarify(obj: &serde_json::Map<String, Value>) -> bool {
     if key_present_non_null(obj, "clarification_questionnaire") {
-        return "handled";
+        return true;
     }
-
     if let Some(Value::Object(tt)) = obj.get("thinking_trace")
         && tt
             .get("op")
             .and_then(|x| x.as_str())
             .is_some_and(|s| !s.trim().is_empty())
     {
-        return "handled";
+        return true;
     }
+    obj.get("workspace_changed") == Some(&Value::Bool(true))
+}
 
-    if obj.get("workspace_changed") == Some(&Value::Bool(true)) {
-        return "handled";
+fn sse_control_tool_call_nonempty(obj: &serde_json::Map<String, Value>) -> bool {
+    let Some(Value::Object(tc)) = obj.get("tool_call") else {
+        return false;
+    };
+    let summary_ok = tc
+        .get("summary")
+        .and_then(|x| x.as_str())
+        .is_some_and(|s| !s.is_empty());
+    let preview_ok = tc
+        .get("arguments_preview")
+        .and_then(|x| x.as_str())
+        .is_some_and(|s| !s.is_empty());
+    let args_ok = tc
+        .get("arguments")
+        .and_then(|x| x.as_str())
+        .is_some_and(|s| !s.is_empty());
+    summary_ok || preview_ok || args_ok
+}
+
+fn sse_control_handled_tool_lifecycle(obj: &serde_json::Map<String, Value>) -> bool {
+    if sse_control_tool_call_nonempty(obj) {
+        return true;
     }
-
-    if let Some(Value::Object(tc)) = obj.get("tool_call") {
-        let summary_ok = tc
-            .get("summary")
-            .and_then(|x| x.as_str())
-            .is_some_and(|s| !s.is_empty());
-        let preview_ok = tc
-            .get("arguments_preview")
-            .and_then(|x| x.as_str())
-            .is_some_and(|s| !s.is_empty());
-        let args_ok = tc
-            .get("arguments")
-            .and_then(|x| x.as_str())
-            .is_some_and(|s| !s.is_empty());
-        if summary_ok || preview_ok || args_ok {
-            return "handled";
-        }
-    }
-
     if let Some(Value::Bool(_)) = obj.get("parsing_tool_calls") {
-        return "handled";
+        return true;
     }
     if let Some(Value::Bool(_)) = obj.get("tool_running") {
-        return "handled";
+        return true;
     }
-
     if let Some(Value::Object(tr)) = obj.get("tool_result")
         && (tr.get("output").is_some()
             || tr.get("structured_preview").is_some_and(|v| !v.is_null()))
     {
-        return "handled";
+        return true;
     }
+    key_present_non_null(obj, "command_approval_request")
+}
 
-    if key_present_non_null(obj, "command_approval_request") {
-        return "handled";
-    }
-
+fn sse_control_handled_notices_and_meta(obj: &serde_json::Map<String, Value>) -> bool {
     if obj.get("staged_plan_notice").is_some_and(|x| x.is_string())
         || obj.get("staged_plan_notice_clear") == Some(&Value::Bool(true))
     {
-        return "handled";
+        return true;
     }
-
     if let Some(Value::Bool(_)) = obj.get("chat_ui_separator") {
-        return "handled";
+        return true;
     }
     if key_present_non_null(obj, "conversation_saved") {
-        return "handled";
+        return true;
     }
+    key_present_non_null(obj, "sse_capabilities")
+        || key_present_non_null(obj, "stream_ended")
+        || key_present_non_null(obj, "timeline_log")
+}
 
-    if key_present_non_null(obj, "sse_capabilities") {
-        return "handled";
+/// 返回 `"stop"` | `"handled"` | `"plain"`。
+pub fn classify_sse_control_outcome(v: &Value) -> &'static str {
+    let Some(obj) = v.as_object() else {
+        return "plain";
+    };
+
+    if sse_control_error_stop(obj) {
+        return "stop";
     }
-    if key_present_non_null(obj, "stream_ended") {
-        return "handled";
-    }
-    if key_present_non_null(obj, "timeline_log") {
+    if sse_control_handled_planning(obj)
+        || sse_control_handled_workspace_and_clarify(obj)
+        || sse_control_handled_tool_lifecycle(obj)
+        || sse_control_handled_notices_and_meta(obj)
+    {
         return "handled";
     }
 

@@ -6,7 +6,7 @@ use futures_util::StreamExt;
 use tokio::sync::mpsc::Sender;
 
 use crate::sse::{SsePayload, ThinkingTraceBody, encode_message};
-use crate::types::StreamChunk;
+use crate::types::{StreamChoice, StreamChunk, StreamDelta};
 
 use super::super::call_error::LlmCallError;
 use super::terminal_render::cli_terminal_write_plain_fragment;
@@ -220,40 +220,51 @@ pub(super) struct IngestSseState<'a> {
     pub(super) thinking_trace_enabled: bool,
 }
 
-pub(super) async fn ingest_sse_data_payload(
-    payload: &str,
-    state: IngestSseState<'_>,
-) -> std::io::Result<()> {
-    if payload.is_empty() {
-        return Ok(());
+struct IngestSseReasoningFrame<'a> {
+    delta: &'a StreamDelta,
+    reasoning_acc: &'a mut String,
+    minimax_reasoning_snaps: &'a mut Vec<String>,
+    out: Option<&'a Sender<String>>,
+    cli_terminal_plain: bool,
+    cli_plain_prefix_emitted: &'a mut bool,
+    cli_plain_reasoning_style_active: &'a mut bool,
+    coop_cancel: Option<&'a AtomicBool>,
+    thinking_trace_enabled: bool,
+}
+
+struct IngestSseContentFrame<'a> {
+    delta: &'a StreamDelta,
+    content_acc: &'a mut String,
+    pending_sse_delta: &'a mut String,
+    out: Option<&'a Sender<String>>,
+    cli_terminal_plain: bool,
+    cli_plain_prefix_emitted: &'a mut bool,
+    cli_plain_reasoning_style_active: &'a mut bool,
+    coop_cancel: Option<&'a AtomicBool>,
+    thinking_trace_enabled: bool,
+}
+
+#[inline]
+fn ingest_sse_apply_finish_reason(finish_reason: &mut String, choice: &StreamChoice) {
+    if let Some(reason) = choice.finish_reason.as_ref().filter(|r| !r.is_empty()) {
+        *finish_reason = reason.clone();
     }
-    let IngestSseState {
-        out,
-        pending_sse_delta,
+}
+
+async fn ingest_sse_reasoning_from_delta(
+    frame: IngestSseReasoningFrame<'_>,
+) -> std::io::Result<()> {
+    let IngestSseReasoningFrame {
+        delta,
         reasoning_acc,
-        content_acc,
-        finish_reason,
-        tool_calls_acc,
-        parsing_tool_calls_notified,
+        minimax_reasoning_snaps,
+        out,
         cli_terminal_plain,
         cli_plain_prefix_emitted,
         cli_plain_reasoning_style_active,
-        minimax_reasoning_snaps,
         coop_cancel,
         thinking_trace_enabled,
-    } = state;
-    let Ok(chunk) = serde_json::from_slice::<StreamChunk>(payload.as_bytes()) else {
-        return Ok(());
-    };
-    let Some(choice) = chunk.choices.and_then(|c| c.into_iter().next()) else {
-        return Ok(());
-    };
-    if let Some(reason) = choice.finish_reason
-        && !reason.is_empty()
-    {
-        *finish_reason = reason;
-    }
-    let delta = choice.delta;
+    } = frame;
     let has_reasoning_details = delta
         .reasoning_details
         .as_ref()
@@ -297,100 +308,202 @@ pub(super) async fn ingest_sse_data_payload(
         )
         .await?;
     }
-    if let Some(ref s) = delta.content
-        && !s.is_empty()
+    Ok(())
+}
+
+async fn ingest_sse_content_from_delta(frame: IngestSseContentFrame<'_>) -> std::io::Result<()> {
+    let IngestSseContentFrame {
+        delta,
+        content_acc,
+        pending_sse_delta,
+        out,
+        cli_terminal_plain,
+        cli_plain_prefix_emitted,
+        cli_plain_reasoning_style_active,
+        coop_cancel,
+        thinking_trace_enabled,
+    } = frame;
+    let Some(s) = delta.content.as_ref() else {
+        return Ok(());
+    };
+    if s.is_empty() {
+        return Ok(());
+    }
+    if content_acc.is_empty()
+        && let Some(tx) = out
+        && !cli_terminal_plain
     {
-        if content_acc.is_empty()
-            && let Some(tx) = out
-            && !cli_terminal_plain
-        {
+        flush_sse_delta_buffer(pending_sse_delta, Some(tx), coop_cancel).await;
+        let _ = sse_out_send(
+            tx,
+            crate::sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
+                assistant_answer_phase: true,
+            }),
+            "llm::stream_chat assistant_answer_phase",
+            coop_cancel,
+        )
+        .await;
+        emit_thinking_trace_if(
+            thinking_trace_enabled,
+            Some(tx),
+            ThinkingTraceBody {
+                op: "answer_phase".into(),
+                node_id: Some("stream_answer".into()),
+                parent_id: Some("stream_reasoning".into()),
+                title: Some("assistant_answer_phase".into()),
+                chunk: None,
+                context_snapshot: None,
+            },
+            coop_cancel,
+        )
+        .await?;
+    }
+    content_acc.push_str(s);
+    if cli_terminal_plain {
+        cli_terminal_write_plain_fragment(
+            s,
+            cli_plain_prefix_emitted,
+            false,
+            cli_plain_reasoning_style_active,
+        )?;
+    }
+    if let Some(tx) = out {
+        let _ = sse_out_send(
+            tx,
+            s.clone(),
+            "llm::stream_chat ingest delta (content)",
+            coop_cancel,
+        )
+        .await;
+    }
+    Ok(())
+}
+
+fn ingest_sse_merge_tool_call_deltas(
+    tcs: Vec<crate::types::StreamToolCallDelta>,
+    tool_calls_acc: &mut Vec<(String, String, String, String)>,
+) {
+    for tc in tcs {
+        let idx = tc.index;
+        while tool_calls_acc.len() <= idx {
+            tool_calls_acc.push((
+                String::new(),
+                "function".to_string(),
+                String::new(),
+                String::new(),
+            ));
+        }
+        let acc = &mut tool_calls_acc[idx];
+        if let Some(id) = tc.id {
+            acc.0 = id;
+        }
+        if let Some(t) = tc.typ {
+            acc.1 = t;
+        }
+        if let Some(f) = tc.function {
+            if let Some(n) = f.name {
+                acc.2 = n;
+            }
+            if let Some(a) = f.arguments {
+                acc.3.push_str(&a);
+            }
+        }
+    }
+}
+
+async fn ingest_sse_tool_calls_from_delta(
+    delta: StreamDelta,
+    tool_calls_acc: &mut Vec<(String, String, String, String)>,
+    parsing_tool_calls_notified: &mut bool,
+    pending_sse_delta: &mut String,
+    out: Option<&Sender<String>>,
+    coop_cancel: Option<&AtomicBool>,
+) -> std::io::Result<()> {
+    let Some(tcs) = delta.tool_calls else {
+        return Ok(());
+    };
+    if !*parsing_tool_calls_notified && !tcs.is_empty() {
+        *parsing_tool_calls_notified = true;
+        if let Some(tx) = out {
             flush_sse_delta_buffer(pending_sse_delta, Some(tx), coop_cancel).await;
             let _ = sse_out_send(
                 tx,
-                crate::sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
-                    assistant_answer_phase: true,
+                crate::sse::encode_message(crate::sse::SsePayload::ParsingToolCalls {
+                    parsing_tool_calls: true,
                 }),
-                "llm::stream_chat assistant_answer_phase",
-                coop_cancel,
-            )
-            .await;
-            emit_thinking_trace_if(
-                thinking_trace_enabled,
-                Some(tx),
-                ThinkingTraceBody {
-                    op: "answer_phase".into(),
-                    node_id: Some("stream_answer".into()),
-                    parent_id: Some("stream_reasoning".into()),
-                    title: Some("assistant_answer_phase".into()),
-                    chunk: None,
-                    context_snapshot: None,
-                },
-                coop_cancel,
-            )
-            .await?;
-        }
-        content_acc.push_str(s);
-        if cli_terminal_plain {
-            cli_terminal_write_plain_fragment(
-                s,
-                cli_plain_prefix_emitted,
-                false,
-                cli_plain_reasoning_style_active,
-            )?;
-        }
-        if let Some(tx) = out {
-            let _ = sse_out_send(
-                tx,
-                s.clone(),
-                "llm::stream_chat ingest delta (content)",
+                "llm::stream_chat parsing_tool_calls notify",
                 coop_cancel,
             )
             .await;
         }
     }
-    if let Some(tcs) = delta.tool_calls {
-        if !*parsing_tool_calls_notified && !tcs.is_empty() {
-            *parsing_tool_calls_notified = true;
-            if let Some(tx) = out {
-                flush_sse_delta_buffer(pending_sse_delta, Some(tx), coop_cancel).await;
-                let _ = sse_out_send(
-                    tx,
-                    crate::sse::encode_message(crate::sse::SsePayload::ParsingToolCalls {
-                        parsing_tool_calls: true,
-                    }),
-                    "llm::stream_chat parsing_tool_calls notify",
-                    coop_cancel,
-                )
-                .await;
-            }
-        }
-        for tc in tcs {
-            let idx = tc.index;
-            while tool_calls_acc.len() <= idx {
-                tool_calls_acc.push((
-                    String::new(),
-                    "function".to_string(),
-                    String::new(),
-                    String::new(),
-                ));
-            }
-            let acc = &mut tool_calls_acc[idx];
-            if let Some(id) = tc.id {
-                acc.0 = id;
-            }
-            if let Some(t) = tc.typ {
-                acc.1 = t;
-            }
-            if let Some(f) = tc.function {
-                if let Some(n) = f.name {
-                    acc.2 = n;
-                }
-                if let Some(a) = f.arguments {
-                    acc.3.push_str(&a);
-                }
-            }
-        }
+    ingest_sse_merge_tool_call_deltas(tcs, tool_calls_acc);
+    Ok(())
+}
+
+pub(super) async fn ingest_sse_data_payload(
+    payload: &str,
+    state: IngestSseState<'_>,
+) -> std::io::Result<()> {
+    if payload.is_empty() {
+        return Ok(());
     }
+    let IngestSseState {
+        out,
+        pending_sse_delta,
+        reasoning_acc,
+        content_acc,
+        finish_reason,
+        tool_calls_acc,
+        parsing_tool_calls_notified,
+        cli_terminal_plain,
+        cli_plain_prefix_emitted,
+        cli_plain_reasoning_style_active,
+        minimax_reasoning_snaps,
+        coop_cancel,
+        thinking_trace_enabled,
+    } = state;
+    let Ok(chunk) = serde_json::from_slice::<StreamChunk>(payload.as_bytes()) else {
+        return Ok(());
+    };
+    let Some(choice) = chunk.choices.and_then(|c| c.into_iter().next()) else {
+        return Ok(());
+    };
+    ingest_sse_apply_finish_reason(finish_reason, &choice);
+    let delta = choice.delta;
+    ingest_sse_reasoning_from_delta(IngestSseReasoningFrame {
+        delta: &delta,
+        reasoning_acc,
+        minimax_reasoning_snaps,
+        out,
+        cli_terminal_plain,
+        cli_plain_prefix_emitted,
+        cli_plain_reasoning_style_active,
+        coop_cancel,
+        thinking_trace_enabled,
+    })
+    .await?;
+    ingest_sse_content_from_delta(IngestSseContentFrame {
+        delta: &delta,
+        content_acc,
+        pending_sse_delta,
+        out,
+        cli_terminal_plain,
+        cli_plain_prefix_emitted,
+        cli_plain_reasoning_style_active,
+        coop_cancel,
+        thinking_trace_enabled,
+    })
+    .await?;
+    ingest_sse_tool_calls_from_delta(
+        delta,
+        tool_calls_acc,
+        parsing_tool_calls_notified,
+        pending_sse_delta,
+        out,
+        coop_cancel,
+    )
+    .await?;
     Ok(())
 }
 

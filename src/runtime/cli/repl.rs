@@ -15,7 +15,7 @@ use crate::types::Message;
 use crate::user_message_file_refs::expand_at_file_refs_in_user_message;
 use log::debug;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 
@@ -164,6 +164,194 @@ fn repl_execute_shell(
     Ok(())
 }
 
+/// 处理普通对话输入（不含 `/` 斜杠命令与 quit）：合并后台上下文、校验密钥、展开 `@`、合并 system、跑一轮 agent。
+/// 普通对话回合所需句柄（不含 `/` 斜杠命令分支）。
+struct ReplDispatchChatRoundParams<'a> {
+    input: String,
+    cfg_holder: &'a SharedAgentConfig,
+    tools: &'a [crate::types::Tool],
+    messages: &'a mut Vec<Message>,
+    work_dir: &'a mut Path,
+    style: &'a CliReplStyle,
+    no_stream: bool,
+    agent_role_owned: &'a mut Option<String>,
+    api_key_holder: &'a Arc<StdMutex<String>>,
+    client: &'a reqwest::Client,
+    cli_rt: &'a CliToolRuntime,
+    initial_pending: Option<&'a Arc<StdMutex<Option<Vec<crate::types::Message>>>>>,
+}
+
+async fn repl_dispatch_chat_round(
+    p: ReplDispatchChatRoundParams<'_>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let ReplDispatchChatRoundParams {
+        input,
+        cfg_holder,
+        tools,
+        messages,
+        work_dir,
+        style,
+        no_stream,
+        agent_role_owned,
+        api_key_holder,
+        client,
+        cli_rt,
+        initial_pending,
+    } = p;
+    crate::runtime::workspace_session::try_merge_background_initial_workspace(
+        messages,
+        initial_pending,
+    );
+    {
+        let g = cfg_holder.read().await;
+        if g.llm_http_auth_mode == LlmHttpAuthMode::Bearer {
+            let k = api_key_holder.lock().unwrap_or_else(|e| e.into_inner());
+            if k.trim().is_empty() {
+                drop(k);
+                let _ = style.eprint_error(
+                    "当前为 llm_http_auth_mode=bearer，但未配置 LLM API 密钥。请执行 /api-key set <密钥>（仅本进程）或设置环境变量 API_KEY 后重启。",
+                );
+                return Ok(());
+            }
+        }
+    }
+    let user_body = {
+        let g = cfg_holder.read().await;
+        match expand_at_file_refs_in_user_message(input.as_str(), work_dir, &g) {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = style.eprint_error(&e);
+                return Ok(());
+            }
+        }
+    };
+    {
+        let g = cfg_holder.read().await;
+        if let Some(first) = messages.first_mut()
+            && first.role == "system"
+        {
+            let base_system =
+                crate::context_bootstrap::conversation_turn_bootstrap::augmented_system_for_new_conversation_lenient(
+                    &g,
+                    agent_role_owned.as_deref(),
+                );
+            let merged = crate::config::skills::merge_system_prompt_with_skills_selected(
+                base_system.clone(),
+                g.skills_enabled,
+                g.skills_dir.as_str(),
+                g.skills_max_chars,
+                work_dir,
+                user_body.as_str(),
+                g.skills_top_k,
+            )
+            .unwrap_or(base_system);
+            first.content = Some(crate::types::MessageContent::Text(merged));
+        }
+    }
+    messages.push(Message::user_only(user_body));
+    debug!(
+        target: "crabmate::print",
+        "REPL 用户输入已入队 history_len={} input_preview={}",
+        messages.len(),
+        redact::preview_chars(input.as_str(), redact::MESSAGE_LOG_PREVIEW_CHARS)
+    );
+
+    let cfg_snap = {
+        let g = cfg_holder.read().await;
+        Arc::new(g.clone())
+    };
+    let key_snap = api_key_holder
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    if let Err(e) = run_agent_turn_for_cli(
+        client,
+        key_snap.as_str(),
+        &cfg_snap,
+        tools,
+        messages,
+        work_dir,
+        no_stream,
+        Some(cli_rt),
+        agent_role_owned.as_deref(),
+    )
+    .await
+    {
+        let _ = style.eprint_error(&format!(
+            "本轮对话失败（可继续输入；异常历史可 /clear 清空）：{}",
+            e
+        ));
+    }
+    Ok(())
+}
+
+/// 构建首轮消息（含可选后台扫描）、并打开 `.crabmate/repl_history.txt` 行编辑器。
+async fn repl_prepare_messages_and_editor(
+    cfg_holder: &SharedAgentConfig,
+    tui_load: bool,
+    work_dir: &Path,
+    agent_role_owned: &Option<String>,
+    run_root: &str,
+) -> Result<
+    (
+        Vec<Message>,
+        Option<Arc<StdMutex<Option<Vec<Message>>>>>,
+        Arc<StdMutex<ReplLineEditor>>,
+    ),
+    Box<dyn std::error::Error>,
+> {
+    let (messages, initial_pending) = {
+        let g = cfg_holder.read().await;
+        let fast = crate::runtime::workspace_session::repl_bootstrap_messages_fast(
+            &g,
+            agent_role_owned.as_deref(),
+        );
+        if !g.repl_initial_workspace_messages_enabled {
+            (fast, None)
+        } else {
+            let may_scan_workspace = (g.project_profile_inject_enabled
+                && g.project_profile_inject_max_chars > 0)
+                || (g.project_dependency_brief_inject_enabled
+                    && g.project_dependency_brief_inject_max_chars > 0)
+                || (g.agent_memory_file_enabled && !g.agent_memory_file.trim().is_empty());
+            if may_scan_workspace || tui_load {
+                let _ = writeln!(
+                    io::stderr(),
+                    "（后台正在准备工作区首轮上下文或会话恢复，可立即输入；就绪后将并入对话。）"
+                );
+                let _ = io::stderr().flush();
+            }
+            let cfg_bg = g.clone();
+            let slot: Arc<StdMutex<Option<Vec<crate::types::Message>>>> =
+                Arc::new(StdMutex::new(None));
+            let slot_bg = Arc::clone(&slot);
+            let wd_bg = work_dir.to_path_buf();
+            let role_for_bg = agent_role_owned.clone();
+            std::thread::spawn(move || {
+                let built = crate::runtime::workspace_session::initial_workspace_messages(
+                    &cfg_bg,
+                    wd_bg.as_path(),
+                    tui_load,
+                    role_for_bg.as_deref(),
+                );
+                let mut guard = slot_bg.lock().unwrap_or_else(|e| e.into_inner());
+                *guard = Some(built);
+            });
+            (fast, Some(slot))
+        }
+    };
+
+    let history_dir = PathBuf::from(run_root).join(".crabmate");
+    std::fs::create_dir_all(&history_dir)
+        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+    let history_file = history_dir.join("repl_history.txt");
+    let repl_editor = Arc::new(StdMutex::new(
+        ReplLineEditor::new(history_file.as_path())
+            .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?,
+    ));
+    Ok((messages, initial_pending, repl_editor))
+}
+
 /// 交互式 REPL 模式
 #[allow(clippy::too_many_arguments)]
 pub async fn run_repl(
@@ -197,7 +385,7 @@ pub async fn run_repl(
         let repl_llm_bearer_key_ready = !api_key.trim().is_empty();
         style.print_banner(
             &g,
-            work_dir.as_path(),
+            work_dir.as_ref(),
             tools.len(),
             no_stream,
             repl_llm_bearer_key_ready,
@@ -210,55 +398,14 @@ pub async fn run_repl(
         .map(|s| s.to_string());
 
     // `repl_initial_workspace_messages_enabled` 为 true 时：`initial_workspace_messages` 在独立线程中构建，不阻塞 REPL。
-    let (mut messages, initial_pending) = {
-        let g = cfg_holder.read().await;
-        let fast = crate::runtime::workspace_session::repl_bootstrap_messages_fast(
-            &g,
-            agent_role_owned.as_deref(),
-        );
-        if !g.repl_initial_workspace_messages_enabled {
-            (fast, None)
-        } else {
-            let may_scan_workspace = (g.project_profile_inject_enabled
-                && g.project_profile_inject_max_chars > 0)
-                || (g.project_dependency_brief_inject_enabled
-                    && g.project_dependency_brief_inject_max_chars > 0)
-                || (g.agent_memory_file_enabled && !g.agent_memory_file.trim().is_empty());
-            if may_scan_workspace || tui_load {
-                let _ = writeln!(
-                    io::stderr(),
-                    "（后台正在准备工作区首轮上下文或会话恢复，可立即输入；就绪后将并入对话。）"
-                );
-                let _ = io::stderr().flush();
-            }
-            let cfg_bg = g.clone();
-            let slot: Arc<StdMutex<Option<Vec<crate::types::Message>>>> =
-                Arc::new(StdMutex::new(None));
-            let slot_bg = Arc::clone(&slot);
-            let wd_bg = work_dir.clone();
-            let role_for_bg = agent_role_owned.clone();
-            std::thread::spawn(move || {
-                let built = crate::runtime::workspace_session::initial_workspace_messages(
-                    &cfg_bg,
-                    wd_bg.as_path(),
-                    tui_load,
-                    role_for_bg.as_deref(),
-                );
-                let mut guard = slot_bg.lock().unwrap_or_else(|e| e.into_inner());
-                *guard = Some(built);
-            });
-            (fast, Some(slot))
-        }
-    };
-
-    let history_dir = PathBuf::from(&run_root).join(".crabmate");
-    std::fs::create_dir_all(&history_dir)
-        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-    let history_file = history_dir.join("repl_history.txt");
-    let repl_editor = Arc::new(StdMutex::new(
-        ReplLineEditor::new(history_file.as_path())
-            .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?,
-    ));
+    let (mut messages, initial_pending, repl_editor) = repl_prepare_messages_and_editor(
+        cfg_holder,
+        tui_load,
+        &work_dir,
+        &agent_role_owned,
+        run_root.as_str(),
+    )
+    .await?;
 
     loop {
         crate::runtime::workspace_session::try_merge_background_initial_workspace(
@@ -320,95 +467,21 @@ pub async fn run_repl(
                     continue;
                 }
 
-                crate::runtime::workspace_session::try_merge_background_initial_workspace(
-                    &mut messages,
-                    initial_pending.as_ref(),
-                );
-                {
-                    let g = cfg_holder.read().await;
-                    if g.llm_http_auth_mode == LlmHttpAuthMode::Bearer {
-                        let k = api_key_holder.lock().unwrap_or_else(|e| e.into_inner());
-                        if k.trim().is_empty() {
-                            drop(k);
-                            let _ = style.eprint_error(
-                                "当前为 llm_http_auth_mode=bearer，但未配置 LLM API 密钥。请执行 /api-key set <密钥>（仅本进程）或设置环境变量 API_KEY 后重启。",
-                            );
-                            continue;
-                        }
-                    }
-                }
-                let user_body = {
-                    let g = cfg_holder.read().await;
-                    match expand_at_file_refs_in_user_message(
-                        input.as_str(),
-                        work_dir.as_path(),
-                        &g,
-                    ) {
-                        Ok(s) => s,
-                        Err(e) => {
-                            let _ = style.eprint_error(&e);
-                            continue;
-                        }
-                    }
-                };
-                {
-                    let g = cfg_holder.read().await;
-                    if let Some(first) = messages.first_mut()
-                        && first.role == "system"
-                    {
-                        let base_system = crate::context_bootstrap::conversation_turn_bootstrap::augmented_system_for_new_conversation_lenient(
-                            &g,
-                            agent_role_owned.as_deref(),
-                        );
-                        let merged =
-                            crate::config::skills::merge_system_prompt_with_skills_selected(
-                                base_system.clone(),
-                                g.skills_enabled,
-                                g.skills_dir.as_str(),
-                                g.skills_max_chars,
-                                work_dir.as_path(),
-                                user_body.as_str(),
-                                g.skills_top_k,
-                            )
-                            .unwrap_or(base_system);
-                        first.content = Some(crate::types::MessageContent::Text(merged));
-                    }
-                }
-                messages.push(Message::user_only(user_body));
-                debug!(
-                    target: "crabmate::print",
-                    "REPL 用户输入已入队 history_len={} input_preview={}",
-                    messages.len(),
-                    redact::preview_chars(input.as_str(), redact::MESSAGE_LOG_PREVIEW_CHARS)
-                );
-
-                let cfg_snap = {
-                    let g = cfg_holder.read().await;
-                    Arc::new(g.clone())
-                };
-                let key_snap = api_key_holder
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .clone();
-                if let Err(e) = run_agent_turn_for_cli(
-                    client,
-                    key_snap.as_str(),
-                    &cfg_snap,
+                repl_dispatch_chat_round(ReplDispatchChatRoundParams {
+                    input,
+                    cfg_holder,
                     tools,
-                    &mut messages,
-                    work_dir.as_path(),
+                    messages: &mut messages,
+                    work_dir: &mut work_dir,
+                    style: &style,
                     no_stream,
-                    Some(&cli_rt),
-                    agent_role_owned.as_deref(),
-                )
-                .await
-                {
-                    let _ = style.eprint_error(&format!(
-                        "本轮对话失败（可继续输入；异常历史可 /clear 清空）：{}",
-                        e
-                    ));
-                    continue;
-                }
+                    agent_role_owned: &mut agent_role_owned,
+                    api_key_holder: &api_key_holder,
+                    client,
+                    cli_rt: &cli_rt,
+                    initial_pending: initial_pending.as_ref(),
+                })
+                .await?;
             }
         }
     }

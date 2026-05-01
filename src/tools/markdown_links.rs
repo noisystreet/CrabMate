@@ -678,6 +678,189 @@ fn parse_markdown_check_args(v: &serde_json::Value) -> Result<MarkdownCheckParse
     })
 }
 
+struct MarkdownLinkScanCtx<'a> {
+    ws_canonical: &'a Path,
+    allowed_prefixes: &'a [String],
+    http_client: &'a Option<Client>,
+    check_fragments: bool,
+    rel_ok: &'a mut usize,
+    local_issues: &'a mut Vec<LinkIssue>,
+    external_checked_ok: &'a mut usize,
+    external_issues: &'a mut Vec<LinkIssue>,
+    external_ignored: &'a mut usize,
+    special_skipped: &'a mut usize,
+    fragment_ok: &'a mut usize,
+    fragment_bad: &'a mut usize,
+    external_probe_requests: &'a mut usize,
+    external_cache_hits: &'a mut usize,
+    external_cache: &'a mut HashMap<String, Result<u16, String>>,
+    anchor_cache: &'a mut HashMap<PathBuf, Result<HashSet<String>, String>>,
+}
+
+/// 处理单个 Markdown 文件内的一条链接命中；`Err` 为致命错误（需提前结束整个检查并返回该字符串）。
+fn markdown_check_process_one_link_hit(
+    ctx: &mut MarkdownLinkScanCtx<'_>,
+    h: LinkHit,
+    md_abs: &Path,
+    md_rel: &str,
+    md_dir: &Path,
+) -> Result<(), String> {
+    let url = h.raw.trim();
+    if url.is_empty() {
+        return Ok(());
+    }
+    if classify_scheme(url) == "special" {
+        *ctx.special_skipped += 1;
+        return Ok(());
+    }
+    if is_external(url) {
+        if allowed_external(url, ctx.allowed_prefixes) {
+            let full = external_url_for_check(url);
+            let checked = if let Some(cached) = ctx.external_cache.get(&full) {
+                *ctx.external_cache_hits += 1;
+                cached.clone()
+            } else {
+                *ctx.external_probe_requests += 1;
+                let Some(client) = ctx.http_client.as_ref() else {
+                    return Err("错误：HTTP 客户端未初始化".to_string());
+                };
+                let result = head_check_url(client, url);
+                ctx.external_cache.insert(full, result.clone());
+                result
+            };
+            match checked {
+                Ok(code) if (200..400).contains(&code) => {
+                    *ctx.external_checked_ok += 1;
+                }
+                Ok(code) => {
+                    ctx.external_issues.push(LinkIssue {
+                        rule_id: RULE_EXTERNAL,
+                        file: Some(md_rel.to_string()),
+                        line: Some(h.line),
+                        target: url_for_display(url),
+                        message: format!("HTTP {}", code),
+                    });
+                }
+                Err(e) => {
+                    ctx.external_issues.push(LinkIssue {
+                        rule_id: RULE_EXTERNAL,
+                        file: Some(md_rel.to_string()),
+                        line: Some(h.line),
+                        target: url_for_display(url),
+                        message: e,
+                    });
+                }
+            }
+        } else {
+            *ctx.external_ignored += 1;
+        }
+        return Ok(());
+    }
+    let target = parse_local_target(url);
+    if target.path.is_empty() && !target.had_fragment {
+        return Ok(());
+    }
+    if Path::new(&target.path).is_absolute() {
+        ctx.local_issues.push(LinkIssue {
+            rule_id: RULE_LOCAL,
+            file: Some(md_rel.to_string()),
+            line: Some(h.line),
+            target: strip_link_wrappers(url),
+            message: "非相对路径，已标为问题；请改为相对链接".to_string(),
+        });
+        return Ok(());
+    }
+    let target_abs = if target.path.is_empty() {
+        md_abs.to_path_buf()
+    } else {
+        lexical_resolve_under(md_dir, &target.path)
+    };
+    if !target_abs.starts_with(ctx.ws_canonical) {
+        ctx.local_issues.push(LinkIssue {
+            rule_id: RULE_LOCAL,
+            file: Some(md_rel.to_string()),
+            line: Some(h.line),
+            target: strip_link_wrappers(url),
+            message: "解析后越出工作区".to_string(),
+        });
+        return Ok(());
+    }
+    if target_abs.exists() {
+        *ctx.rel_ok += 1;
+    } else {
+        ctx.local_issues.push(LinkIssue {
+            rule_id: RULE_LOCAL,
+            file: Some(md_rel.to_string()),
+            line: Some(h.line),
+            target: strip_link_wrappers(url),
+            message: "目标不存在".to_string(),
+        });
+        return Ok(());
+    }
+    if !ctx.check_fragments || !target.had_fragment {
+        return Ok(());
+    }
+    let Some(fragment_slug) = target.fragment_slug.as_ref() else {
+        *ctx.fragment_bad += 1;
+        ctx.local_issues.push(LinkIssue {
+            rule_id: RULE_ANCHOR,
+            file: Some(md_rel.to_string()),
+            line: Some(h.line),
+            target: strip_link_wrappers(url),
+            message: "锚点为空或无法解析".to_string(),
+        });
+        return Ok(());
+    };
+    if !target_abs
+        .extension()
+        .is_some_and(|x| x.eq_ignore_ascii_case("md"))
+    {
+        *ctx.fragment_bad += 1;
+        ctx.local_issues.push(LinkIssue {
+            rule_id: RULE_ANCHOR,
+            file: Some(md_rel.to_string()),
+            line: Some(h.line),
+            target: strip_link_wrappers(url),
+            message: "锚点校验仅支持 Markdown 目标".to_string(),
+        });
+        return Ok(());
+    }
+    let anchors = if let Some(cached) = ctx.anchor_cache.get(&target_abs) {
+        cached.clone()
+    } else {
+        let loaded = load_markdown_anchor_set(&target_abs);
+        ctx.anchor_cache.insert(target_abs.clone(), loaded.clone());
+        loaded
+    };
+    match anchors {
+        Ok(set) => {
+            if set.contains(fragment_slug) {
+                *ctx.fragment_ok += 1;
+            } else {
+                *ctx.fragment_bad += 1;
+                ctx.local_issues.push(LinkIssue {
+                    rule_id: RULE_ANCHOR,
+                    file: Some(md_rel.to_string()),
+                    line: Some(h.line),
+                    target: strip_link_wrappers(url),
+                    message: format!("锚点不存在: #{}", fragment_slug),
+                });
+            }
+        }
+        Err(e) => {
+            *ctx.fragment_bad += 1;
+            ctx.local_issues.push(LinkIssue {
+                rule_id: RULE_ANCHOR,
+                file: Some(md_rel.to_string()),
+                line: Some(h.line),
+                target: strip_link_wrappers(url),
+                message: format!("锚点校验失败: {}", e),
+            });
+        }
+    }
+    Ok(())
+}
+
 fn markdown_check_links_inner(parsed: MarkdownCheckParsed, working_dir: &Path) -> String {
     let MarkdownCheckParsed {
         output_format,
@@ -785,159 +968,34 @@ fn markdown_check_links_inner(parsed: MarkdownCheckParsed, working_dir: &Path) -
         let hits = extract_link_hits(&content, &ref_map);
         let md_rel = rel_path_for_report(&ws_canonical, md_abs);
 
+        let mut scan_ctx = MarkdownLinkScanCtx {
+            ws_canonical: &ws_canonical,
+            allowed_prefixes: &allowed_prefixes,
+            http_client: &http_client,
+            check_fragments,
+            rel_ok: &mut rel_ok,
+            local_issues: &mut local_issues,
+            external_checked_ok: &mut external_checked_ok,
+            external_issues: &mut external_issues,
+            external_ignored: &mut external_ignored,
+            special_skipped: &mut special_skipped,
+            fragment_ok: &mut fragment_ok,
+            fragment_bad: &mut fragment_bad,
+            external_probe_requests: &mut external_probe_requests,
+            external_cache_hits: &mut external_cache_hits,
+            external_cache: &mut external_cache,
+            anchor_cache: &mut anchor_cache,
+        };
+
         for h in hits {
-            let url = h.raw.trim();
-            if url.is_empty() {
-                continue;
-            }
-            if classify_scheme(url) == "special" {
-                special_skipped += 1;
-                continue;
-            }
-            if is_external(url) {
-                if allowed_external(url, &allowed_prefixes) {
-                    let full = external_url_for_check(url);
-                    let checked = if let Some(cached) = external_cache.get(&full) {
-                        external_cache_hits += 1;
-                        cached.clone()
-                    } else {
-                        external_probe_requests += 1;
-                        let Some(client) = http_client.as_ref() else {
-                            return "错误：HTTP 客户端未初始化".to_string();
-                        };
-                        let result = head_check_url(client, url);
-                        external_cache.insert(full, result.clone());
-                        result
-                    };
-                    match checked {
-                        Ok(code) if (200..400).contains(&code) => {
-                            external_checked_ok += 1;
-                        }
-                        Ok(code) => {
-                            external_issues.push(LinkIssue {
-                                rule_id: RULE_EXTERNAL,
-                                file: Some(md_rel.clone()),
-                                line: Some(h.line),
-                                target: url_for_display(url),
-                                message: format!("HTTP {}", code),
-                            });
-                        }
-                        Err(e) => {
-                            external_issues.push(LinkIssue {
-                                rule_id: RULE_EXTERNAL,
-                                file: Some(md_rel.clone()),
-                                line: Some(h.line),
-                                target: url_for_display(url),
-                                message: e,
-                            });
-                        }
-                    }
-                } else {
-                    external_ignored += 1;
-                }
-                continue;
-            }
-            let target = parse_local_target(url);
-            if target.path.is_empty() && !target.had_fragment {
-                continue;
-            }
-            if Path::new(&target.path).is_absolute() {
-                local_issues.push(LinkIssue {
-                    rule_id: RULE_LOCAL,
-                    file: Some(md_rel.clone()),
-                    line: Some(h.line),
-                    target: strip_link_wrappers(url),
-                    message: "非相对路径，已标为问题；请改为相对链接".to_string(),
-                });
-                continue;
-            }
-            let target_abs = if target.path.is_empty() {
-                md_abs.clone()
-            } else {
-                lexical_resolve_under(md_dir, &target.path)
-            };
-            if !target_abs.starts_with(&ws_canonical) {
-                local_issues.push(LinkIssue {
-                    rule_id: RULE_LOCAL,
-                    file: Some(md_rel.clone()),
-                    line: Some(h.line),
-                    target: strip_link_wrappers(url),
-                    message: "解析后越出工作区".to_string(),
-                });
-                continue;
-            }
-            if target_abs.exists() {
-                rel_ok += 1;
-            } else {
-                local_issues.push(LinkIssue {
-                    rule_id: RULE_LOCAL,
-                    file: Some(md_rel.clone()),
-                    line: Some(h.line),
-                    target: strip_link_wrappers(url),
-                    message: "目标不存在".to_string(),
-                });
-                continue;
-            }
-            if !check_fragments || !target.had_fragment {
-                continue;
-            }
-            let Some(fragment_slug) = target.fragment_slug.as_ref() else {
-                fragment_bad += 1;
-                local_issues.push(LinkIssue {
-                    rule_id: RULE_ANCHOR,
-                    file: Some(md_rel.clone()),
-                    line: Some(h.line),
-                    target: strip_link_wrappers(url),
-                    message: "锚点为空或无法解析".to_string(),
-                });
-                continue;
-            };
-            if !target_abs
-                .extension()
-                .is_some_and(|x| x.eq_ignore_ascii_case("md"))
-            {
-                fragment_bad += 1;
-                local_issues.push(LinkIssue {
-                    rule_id: RULE_ANCHOR,
-                    file: Some(md_rel.clone()),
-                    line: Some(h.line),
-                    target: strip_link_wrappers(url),
-                    message: "锚点校验仅支持 Markdown 目标".to_string(),
-                });
-                continue;
-            }
-            let anchors = if let Some(cached) = anchor_cache.get(&target_abs) {
-                cached.clone()
-            } else {
-                let loaded = load_markdown_anchor_set(&target_abs);
-                anchor_cache.insert(target_abs.clone(), loaded.clone());
-                loaded
-            };
-            match anchors {
-                Ok(set) => {
-                    if set.contains(fragment_slug) {
-                        fragment_ok += 1;
-                    } else {
-                        fragment_bad += 1;
-                        local_issues.push(LinkIssue {
-                            rule_id: RULE_ANCHOR,
-                            file: Some(md_rel.clone()),
-                            line: Some(h.line),
-                            target: strip_link_wrappers(url),
-                            message: format!("锚点不存在: #{}", fragment_slug),
-                        });
-                    }
-                }
-                Err(e) => {
-                    fragment_bad += 1;
-                    local_issues.push(LinkIssue {
-                        rule_id: RULE_ANCHOR,
-                        file: Some(md_rel.clone()),
-                        line: Some(h.line),
-                        target: strip_link_wrappers(url),
-                        message: format!("锚点校验失败: {}", e),
-                    });
-                }
+            if let Err(e) = markdown_check_process_one_link_hit(
+                &mut scan_ctx,
+                h,
+                md_abs,
+                md_rel.as_str(),
+                md_dir,
+            ) {
+                return e;
             }
         }
     }
