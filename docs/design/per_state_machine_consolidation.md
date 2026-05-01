@@ -141,7 +141,7 @@
 
 | 日期 | 说明 |
 |------|------|
-| 2026-04-30 | 步执行循环：`agent_turn/staged/staged_step_fsm.rs`（补丁尝试次数、`PatchPlanner` 门控）；首轮解析路由：`agent_turn/staged/planner_parse_fsm.rs` |
+| 2026-04-30 | 步执行循环：`agent_turn/staged/step_loop_fsm.rs`（`transitions` 跳转、注入步 user）；**`staged_step_fsm.rs`**（补丁预算、`PatchPlanner`）；**`planner_parse_fsm.rs`**（首轮解析路由） |
 | 2026-04-30 | 逻辑多规划员内部：`agent_turn/staged/ensemble_fsm.rs`（辅助规划员草案采纳 vs 停止链、合并轮步列表应用）；与 `planner_round_fsm`（是否进入 ensemble）分层 |
 | 2026-04-30 | 规划子回合门控：`agent_turn/staged/planner_round_fsm.rs`（ensemble / 优化轮是否运行）；与 `turn_fsm` / `orchestrator` 并列 |
 | 2026-04-30 | 回合级：`agent_turn/staged/turn_fsm.rs`（`StagedTurnPhase` / `advance_staged_turn_after_sub_call`）；`prepare_messages_for_model` + `prepare_staged_planner_no_tools_request` fixture 测试见 `staged/mod.rs` |

@@ -37,6 +37,7 @@ mod planner_parse_fsm;
 mod planner_round_fsm;
 mod sse;
 mod staged_step_fsm;
+mod step_loop_fsm;
 mod turn_fsm;
 
 use orchestrator as staged_orchestrator;
@@ -67,6 +68,7 @@ use staged_step_fsm::{
     staged_patch_budget_after_step_failure, staged_patch_budget_tool_messages_not_ok,
     staged_step_patch_planner_enabled,
 };
+use step_loop_fsm::{staged_injected_step_user_body, try_apply_staged_plan_control_flow_jump};
 use turn_fsm::{
     StagedTurnAdvance, StagedTurnPhase, StagedTurnSubCallOutcome,
     advance_staged_turn_after_sub_call, entered_flag_for_next_planner_call,
@@ -741,38 +743,6 @@ fn staged_step_tool_messages_all_ok(messages: &[Message], step_user_index: usize
     true
 }
 
-fn compute_transition_trigger(
-    step: &PlanStepV1,
-    run_failed_or_verify_failed: bool,
-    step_verify_failed_reason: &Option<String>,
-    transition_counters: &mut HashMap<String, u32>,
-) -> Option<(String, String)> {
-    let transitions = step.transitions.as_ref()?;
-    let target = if run_failed_or_verify_failed {
-        transitions
-            .iter()
-            .find(|t| t.condition == "on_verify_fail" || t.condition == "always")
-    } else {
-        transitions
-            .iter()
-            .find(|t| t.condition == "on_verify_success" || t.condition == "always")
-    }?;
-    let key = format!("{}->{}", step.id, target.target_step_id);
-    let count = transition_counters.entry(key).or_insert(0);
-    if *count >= target.max_loops.unwrap_or(3) {
-        return None;
-    }
-    *count += 1;
-    let reason = if run_failed_or_verify_failed {
-        step_verify_failed_reason
-            .clone()
-            .unwrap_or_else(|| "执行错误".to_string())
-    } else {
-        "执行成功".to_string()
-    };
-    Some((target.target_step_id.clone(), reason))
-}
-
 #[allow(clippy::too_many_arguments)]
 async fn run_staged_plan_steps_loop<F>(
     plan_id: String,
@@ -836,36 +806,7 @@ where
         )
         .await;
 
-        let summary_hint = if step_index == n && n > 1 {
-            format!(
-                "\n本步为最后一步，终答中请简要列出本轮全部 {} 个步骤的完成情况（可对每步附简短说明）。",
-                n
-            )
-        } else {
-            String::new()
-        };
-        let sub_agent_hint = match step.executor_kind {
-            Some(crate::agent::plan_artifact::PlanStepExecutorKind::ReviewReadonly) => {
-                "\n- **子代理角色**：`review_readonly`（本步仅允许只读类工具；禁止 MCP 与写盘）\n"
-            }
-            Some(crate::agent::plan_artifact::PlanStepExecutorKind::PatchWrite) => {
-                "\n- **子代理角色**：`patch_write`（本步仅允许只读工具与受限补丁写：`apply_patch` / `search_replace` / `structured_patch` / `create_file` / `modify_file` / `append_file` / `format_file` / `ast_grep_rewrite`）\n"
-            }
-            Some(crate::agent::plan_artifact::PlanStepExecutorKind::TestRunner) => {
-                "\n- **子代理角色**：`test_runner`（本步允许只读工具、内置测试运行器如 `cargo_test` / `pytest_run` / `go_test`，以及 **`run_command`** 执行配置白名单内的编译/检查命令，例如 `cargo build`、`cargo check`）\n"
-            }
-            None => "",
-        };
-        let body = format!(
-            "### 分步 {}/{}\n{}{}{}\n- id: {}\n- 描述: {}",
-            step_index,
-            n,
-            crate::runtime::plan_section::STAGED_STEP_USER_BOILERPLATE,
-            summary_hint,
-            sub_agent_hint,
-            step.id,
-            step.description
-        );
+        let body = staged_injected_step_user_body(step_index, n, &step);
         debug!(
             target: "crabmate",
             "{} step={}/{} body_len={} body_preview={}",
@@ -902,75 +843,54 @@ where
             }
         }
 
-        let transition_triggered = compute_transition_trigger(
+        if let Some((fb, step_status)) = try_apply_staged_plan_control_flow_jump(
             &step,
+            i,
+            &mut plan_steps,
+            original_steps.as_slice(),
+            &mut transition_counters,
             run_step.is_err() || step_verify_failed_reason.is_some(),
             &step_verify_failed_reason,
-            &mut transition_counters,
-        );
+        ) {
+            n = plan_steps.len();
 
-        if let Some((target_id, reason)) = transition_triggered {
-            let target_idx_opt = original_steps.iter().position(|s| s.id == target_id);
-            if let Some(target_idx) = target_idx_opt {
-                let mut new_suffix = original_steps[target_idx..].to_vec();
-                let loop_suffix = format!("-loop{}", i);
-                for s in &mut new_suffix {
-                    s.id = format!("{}{}", s.id, loop_suffix);
-                }
+            patch_ctx.p.turn.messages.push(Message::user_only(fb));
 
-                plan_steps.truncate(i + 1);
-                plan_steps.extend(new_suffix);
-                n = plan_steps.len();
+            let replan = AgentReplyPlanV1 {
+                plan_type: "agent_reply_plan".to_string(),
+                version: 1,
+                steps: plan_steps.clone(),
+                no_task: false,
+            };
+            send_staged_plan_notice(
+                patch_ctx.p.ctx.out,
+                echo_terminal_staged,
+                true,
+                staged_plan_queue_summary_text(&replan, completed_steps),
+            )
+            .await;
 
-                let fb = format!(
-                    "### 状态机流转：触发控制流跳转\n\
-                     根据规划设定的 transitions 规则，由于 [{}]，系统已追加回退或跳转到步骤 `{}` 的执行指令。\n\
-                     请注意调整接下来的工具调用。",
-                    reason, target_id
-                );
-                patch_ctx.p.turn.messages.push(Message::user_only(fb));
-
-                let replan = AgentReplyPlanV1 {
-                    plan_type: "agent_reply_plan".to_string(),
-                    version: 1,
-                    steps: plan_steps.clone(),
-                    no_task: false,
-                };
-                send_staged_plan_notice(
-                    patch_ctx.p.ctx.out,
-                    echo_terminal_staged,
-                    true,
-                    staged_plan_queue_summary_text(&replan, completed_steps),
-                )
-                .await;
-
-                let step_status = if run_step.is_err() || step_verify_failed_reason.is_some() {
-                    "failed"
-                } else {
-                    "ok"
-                };
-                let step_verify_fail_reason = step_verify_failed_reason.as_deref();
-                finish_staged_plan_step_sse(
-                    patch_ctx.p.ctx.out,
-                    &plan_id,
-                    step.id.trim(),
-                    step_index,
-                    n,
-                    step_status,
-                    step.executor_kind,
-                    step_verify_fail_reason,
-                )
-                .await;
-                completed_steps = step_index;
-                patch_ctx
-                    .p
-                    .turn
-                    .messages
-                    .push(Message::chat_ui_separator(true));
-                emit_chat_ui_separator_sse(patch_ctx.p.ctx.out, true).await;
-                i += 1;
-                continue;
-            }
+            let step_verify_fail_reason = step_verify_failed_reason.as_deref();
+            finish_staged_plan_step_sse(
+                patch_ctx.p.ctx.out,
+                &plan_id,
+                step.id.trim(),
+                step_index,
+                n,
+                step_status,
+                step.executor_kind,
+                step_verify_fail_reason,
+            )
+            .await;
+            completed_steps = step_index;
+            patch_ctx
+                .p
+                .turn
+                .messages
+                .push(Message::chat_ui_separator(true));
+            emit_chat_ui_separator_sse(patch_ctx.p.ctx.out, true).await;
+            i += 1;
+            continue;
         }
 
         if run_step.is_err() || step_verify_failed_reason.is_some() {
