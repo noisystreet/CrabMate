@@ -189,6 +189,39 @@ pub(in crate::tools) fn params_repo_overview_sweep() -> serde_json::Value {
     })
 }
 
+pub(in crate::tools) fn params_crate_contract_map() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "head_lines_per_file": {
+                "type": "integer",
+                "description": "每个锚点文件头预览最大行数，默认 24，范围 5～120",
+                "minimum": 5,
+                "maximum": 120
+            },
+            "keyword_hits_per_file": {
+                "type": "integer",
+                "description": "关键字匹配行每文件最多条数，默认 40，范围 5～200",
+                "minimum": 5,
+                "maximum": 200
+            },
+            "extra_paths": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "可选：额外相对路径（须在工作区内），仅做文件头预览，无关键字筛选"
+            },
+            "max_extra_paths": {
+                "type": "integer",
+                "description": "extra_paths 最多处理几条，默认 12，范围 0～40",
+                "minimum": 0,
+                "maximum": 40
+            }
+        },
+        "required": [],
+        "additionalProperties": false
+    })
+}
+
 pub(in crate::tools) fn params_error_output_playbook() -> serde_json::Value {
     serde_json::json!({
         "type": "object",

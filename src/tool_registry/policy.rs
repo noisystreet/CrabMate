@@ -140,6 +140,7 @@ fn builtin_parallel_sync_denied_exact() -> &'static HashSet<String> {
             "quality_workspace",
             "ci_pipeline_local",
             "repo_overview_sweep",
+            "crate_contract_map",
             "codebase_semantic_search",
             "docs_health_sweep",
             "playbook_run_commands",

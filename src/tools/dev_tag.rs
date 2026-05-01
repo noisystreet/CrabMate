@@ -149,6 +149,7 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         "ci_pipeline_local"
         | "release_ready_check"
         | "repo_overview_sweep"
+        | "crate_contract_map"
         | "docs_health_sweep" => &[GENERAL, QUALITY],
         "run_lints" => &[GENERAL, RUST, FRONTEND, PYTHON, QUALITY],
         "quality_workspace" => &[GENERAL, RUST, FRONTEND, PYTHON, JVM, DOCKER, QUALITY],
