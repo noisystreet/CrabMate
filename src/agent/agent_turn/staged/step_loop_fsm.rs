@@ -83,6 +83,8 @@ pub(crate) fn try_apply_staged_plan_control_flow_jump(
     Some((fb, sse_status))
 }
 
+use crate::agent::step_executor_policy::executor_kind_user_label;
+
 /// 注入执行器的单步 **user** 正文（与 `run_staged_plan_steps_loop` 内 `format!` 对齐）。
 pub(crate) fn staged_injected_step_user_body(
     step_index: usize,
@@ -98,16 +100,12 @@ pub(crate) fn staged_injected_step_user_body(
         String::new()
     };
     let sub_agent_hint = match step.executor_kind {
-        Some(crate::agent::plan_artifact::PlanStepExecutorKind::ReviewReadonly) => {
-            "\n- **子代理角色**：`review_readonly`（本步仅允许只读类工具；禁止 MCP 与写盘）\n"
-        }
-        Some(crate::agent::plan_artifact::PlanStepExecutorKind::PatchWrite) => {
-            "\n- **子代理角色**：`patch_write`（本步仅允许只读工具与受限补丁写：`apply_patch` / `search_replace` / `structured_patch` / `create_file` / `modify_file` / `append_file` / `format_file` / `ast_grep_rewrite`）\n"
-        }
-        Some(crate::agent::plan_artifact::PlanStepExecutorKind::TestRunner) => {
-            "\n- **子代理角色**：`test_runner`（本步允许只读工具、内置测试运行器如 `cargo_test` / `pytest_run` / `go_test`，以及 **`run_command`** 执行配置白名单内的编译/检查命令，例如 `cargo build`、`cargo check`）\n"
-        }
-        None => "",
+        Some(k) => format!(
+            "\n- **子代理角色**（本步 `tools` 已按策略表收窄）：`{}` — {}\n",
+            k.as_snake_case_str(),
+            executor_kind_user_label(k)
+        ),
+        None => String::new(),
     };
     format!(
         "### 分步 {}/{}\n{}{}{}\n- id: {}\n- 描述: {}",

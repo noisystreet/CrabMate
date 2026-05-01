@@ -4,6 +4,7 @@ use crate::tools::workflow_tool_args_satisfy_required;
 
 use super::dag::topo_layers;
 use super::model::{WorkflowNodeSpec, WorkflowSpec};
+use super::node_tool_role::WorkflowNodeToolRole;
 use super::workflow_templates::{merge_workflow_template_overlay, workflow_template_rust_ci_light};
 
 fn resolve_workflow_template(spec_v: serde_json::Value) -> Result<serde_json::Value, String> {
@@ -163,6 +164,11 @@ pub(crate) fn parse_node_from_value(
         .unwrap_or(0)
         .min(5) as u32;
 
+    let node_tool_role = v
+        .get("node_tool_role")
+        .or_else(|| v.get("executor_kind"))
+        .and_then(|x| serde_json::from_value::<WorkflowNodeToolRole>(x.clone()).ok());
+
     workflow_tool_args_satisfy_required(&tool_name, &tool_args)
         .map_err(|e| format!("node {id} 工具参数校验失败（tool_name={tool_name}）：{e}"))?;
 
@@ -175,5 +181,6 @@ pub(crate) fn parse_node_from_value(
         timeout_secs,
         compensate_with,
         max_retries,
+        node_tool_role,
     })
 }
