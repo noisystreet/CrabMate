@@ -946,21 +946,34 @@ struct StagedStepOuterHalfResult {
     step_verify_failed_reason: Option<String>,
 }
 
-/// **`StagedStepRunningSub::BeforeStepLlm`** → **`InOuterLoop`**：发 `step_started`、注入 user、`run_agent_outer_loop`、可选 acceptance。
-#[allow(clippy::too_many_arguments)]
-async fn staged_step_run_outer_half<F>(
-    plan_id: &str,
+struct StagedStepRunOuterHalfParams<'a, 'b, 'c, F> {
+    plan_id: &'a str,
     i: usize,
     n: usize,
-    plan_steps: &[PlanStepV1],
+    plan_steps: &'a [PlanStepV1],
     echo_terminal_staged: bool,
-    labels: &StagedPlanRunLabels,
-    patch_ctx: &mut StagedPlanPatchPlannerCtx<'_, '_, F>,
-    make_step_user_message: &F,
+    labels: &'a StagedPlanRunLabels,
+    patch_ctx: &'a mut StagedPlanPatchPlannerCtx<'b, 'c, F>,
+    make_step_user_message: &'a F,
+}
+
+/// **`StagedStepRunningSub::BeforeStepLlm`** → **`InOuterLoop`**：发 `step_started`、注入 user、`run_agent_outer_loop`、可选 acceptance。
+async fn staged_step_run_outer_half<F>(
+    p: StagedStepRunOuterHalfParams<'_, '_, '_, F>,
 ) -> StagedStepOuterHalfResult
 where
     F: Fn(String) -> Message,
 {
+    let StagedStepRunOuterHalfParams {
+        plan_id,
+        i,
+        n,
+        plan_steps,
+        echo_terminal_staged,
+        labels,
+        patch_ctx,
+        make_step_user_message,
+    } = p;
     let step = plan_steps[i].clone();
     let step_index = i + 1;
     send_staged_plan_step_started(
@@ -1341,16 +1354,16 @@ where
         patch_ctx,
         make_step_user_message,
     } = p;
-    let outer = staged_step_run_outer_half(
+    let outer = staged_step_run_outer_half(StagedStepRunOuterHalfParams {
         plan_id,
         i,
         n,
-        plan_steps.as_slice(),
+        plan_steps: plan_steps.as_slice(),
         echo_terminal_staged,
         labels,
         patch_ctx,
         make_step_user_message,
-    )
+    })
     .await;
 
     staged_step_run_after_outer_half(StagedStepRunAfterOuterHalfParams {

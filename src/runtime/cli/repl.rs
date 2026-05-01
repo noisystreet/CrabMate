@@ -2,7 +2,7 @@
 
 use crate::config::{LlmHttpAuthMode, SharedAgentConfig};
 use crate::redact;
-use crate::runtime::cli::chat::run_agent_turn_for_cli;
+use crate::runtime::cli::chat::{RunAgentTurnForCliParams, run_agent_turn_for_cli};
 use crate::runtime::cli::cli_effective_work_dir;
 use crate::runtime::cli::repl_extras::{ReplSlashHandled, try_handle_repl_slash_command};
 use crate::runtime::cli::repl_parse::run_repl_shell_line_sync;
@@ -264,17 +264,17 @@ async fn repl_dispatch_chat_round(
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clone();
-    if let Err(e) = run_agent_turn_for_cli(
+    if let Err(e) = run_agent_turn_for_cli(RunAgentTurnForCliParams {
         client,
-        key_snap.as_str(),
-        &cfg_snap,
+        api_key: key_snap.as_str(),
+        cfg: &cfg_snap,
         tools,
         messages,
         work_dir,
         no_stream,
-        Some(cli_rt),
-        agent_role_owned.as_deref(),
-    )
+        cli_tool_ctx: Some(cli_rt),
+        active_agent_role: agent_role_owned.as_deref(),
+    })
     .await
     {
         let _ = style.eprint_error(&format!(

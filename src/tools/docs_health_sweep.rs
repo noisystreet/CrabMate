@@ -54,6 +54,35 @@ fn tool_context_for_sweep(workspace_root: &Path, max_output_len: usize) -> ToolC
     }
 }
 
+/// `docs_health_sweep` 各阶段共用的 JSON / 路径 / 输出上限（避免 phase 函数长参数列表）。
+struct DocsSweepPhaseEnv<'a> {
+    v: &'a serde_json::Value,
+    workspace_root: &'a Path,
+    max_output_len: usize,
+    fail_fast: bool,
+    summary_only: bool,
+}
+
+struct DocsSweepPhaseIo<'a> {
+    sections: &'a mut Vec<String>,
+    summary: &'a mut Vec<(String, String)>,
+}
+
+struct TyposPhaseCtx<'a> {
+    env: &'a DocsSweepPhaseEnv<'a>,
+    io: DocsSweepPhaseIo<'a>,
+    run_typos: bool,
+    run_codespell: bool,
+    run_markdown_links: bool,
+}
+
+struct CodespellPhaseCtx<'a> {
+    env: &'a DocsSweepPhaseEnv<'a>,
+    io: DocsSweepPhaseIo<'a>,
+    run_codespell: bool,
+    run_markdown_links: bool,
+}
+
 fn push_skipped_after_typos(
     summary: &mut Vec<(String, String)>,
     run_codespell: bool,
@@ -144,28 +173,24 @@ fn typos_args_json(v: &serde_json::Value) -> Result<String, String> {
         .map_err(|e| format!("typos 参数序列化失败：{}", e))
 }
 
-#[allow(clippy::too_many_arguments)]
-fn run_typos_phase(
-    v: &serde_json::Value,
-    workspace_root: &Path,
-    max_output_len: usize,
-    run_typos: bool,
-    fail_fast: bool,
-    summary_only: bool,
-    run_codespell: bool,
-    run_markdown_links: bool,
-    sections: &mut Vec<String>,
-    summary: &mut Vec<(String, String)>,
-) -> Option<String> {
+fn run_typos_phase(ctx: TyposPhaseCtx<'_>) -> Option<String> {
+    let TyposPhaseCtx {
+        env,
+        io,
+        run_typos,
+        run_codespell,
+        run_markdown_links,
+    } = ctx;
+    let DocsSweepPhaseIo { sections, summary } = io;
     if !run_typos {
         summary.push(("typos_check".to_string(), "skipped".to_string()));
         return None;
     }
-    let typos_args = match typos_args_json(v) {
+    let typos_args = match typos_args_json(env.v) {
         Ok(s) => s,
         Err(e) => return Some(e),
     };
-    let r = spell_astgrep_tools::typos_check(&typos_args, workspace_root, max_output_len);
+    let r = spell_astgrep_tools::typos_check(&typos_args, env.workspace_root, env.max_output_len);
     let failed = spell_tool_failed(&r);
     summary.push((
         "typos_check".to_string(),
@@ -177,18 +202,18 @@ fn run_typos_phase(
             "passed".to_string()
         },
     ));
-    if !summary_only {
+    if !env.summary_only {
         sections.push("## 2) typos_check\n\n".to_string());
         sections.push(r);
         sections.push("\n\n".to_string());
     }
-    if fail_fast && failed {
+    if env.fail_fast && failed {
         push_skipped_after_typos(summary, run_codespell, run_markdown_links);
         return Some(build_output(
             summary,
             sections,
-            summary_only,
-            max_output_len,
+            env.summary_only,
+            env.max_output_len,
             true,
         ));
     }
@@ -226,27 +251,27 @@ fn codespell_args_json(v: &serde_json::Value) -> Result<String, String> {
         .map_err(|e| format!("codespell 参数序列化失败：{}", e))
 }
 
-#[allow(clippy::too_many_arguments)]
-fn run_codespell_phase(
-    v: &serde_json::Value,
-    workspace_root: &Path,
-    max_output_len: usize,
-    run_codespell: bool,
-    fail_fast: bool,
-    summary_only: bool,
-    run_markdown_links: bool,
-    sections: &mut Vec<String>,
-    summary: &mut Vec<(String, String)>,
-) -> Option<String> {
+fn run_codespell_phase(ctx: CodespellPhaseCtx<'_>) -> Option<String> {
+    let CodespellPhaseCtx {
+        env,
+        io,
+        run_codespell,
+        run_markdown_links,
+    } = ctx;
+    let DocsSweepPhaseIo { sections, summary } = io;
     if !run_codespell {
         summary.push(("codespell_check".to_string(), "skipped".to_string()));
         return None;
     }
-    let codespell_args = match codespell_args_json(v) {
+    let codespell_args = match codespell_args_json(env.v) {
         Ok(s) => s,
         Err(e) => return Some(e),
     };
-    let r = spell_astgrep_tools::codespell_check(&codespell_args, workspace_root, max_output_len);
+    let r = spell_astgrep_tools::codespell_check(
+        &codespell_args,
+        env.workspace_root,
+        env.max_output_len,
+    );
     let failed = spell_tool_failed(&r);
     summary.push((
         "codespell_check".to_string(),
@@ -258,20 +283,20 @@ fn run_codespell_phase(
             "passed".to_string()
         },
     ));
-    if !summary_only {
+    if !env.summary_only {
         sections.push("## 3) codespell_check\n\n".to_string());
         sections.push(r);
         sections.push("\n\n".to_string());
     }
-    if fail_fast && failed {
+    if env.fail_fast && failed {
         if run_markdown_links {
             summary.push(("markdown_check_links".to_string(), "skipped".to_string()));
         }
         return Some(build_output(
             summary,
             sections,
-            summary_only,
-            max_output_len,
+            env.summary_only,
+            env.max_output_len,
             true,
         ));
     }
@@ -408,32 +433,36 @@ pub fn docs_health_sweep(args_json: &str, workspace_root: &Path, max_output_len:
         &mut summary,
     );
 
-    if let Some(out) = run_typos_phase(
-        &v,
+    let sweep_env = DocsSweepPhaseEnv {
+        v: &v,
         workspace_root,
         max_output_len,
-        run_typos,
         fail_fast,
         summary_only,
+    };
+
+    if let Some(out) = run_typos_phase(TyposPhaseCtx {
+        env: &sweep_env,
+        io: DocsSweepPhaseIo {
+            sections: &mut sections,
+            summary: &mut summary,
+        },
+        run_typos,
         run_codespell,
         run_markdown_links,
-        &mut sections,
-        &mut summary,
-    ) {
+    }) {
         return out;
     }
 
-    if let Some(out) = run_codespell_phase(
-        &v,
-        workspace_root,
-        max_output_len,
+    if let Some(out) = run_codespell_phase(CodespellPhaseCtx {
+        env: &sweep_env,
+        io: DocsSweepPhaseIo {
+            sections: &mut sections,
+            summary: &mut summary,
+        },
         run_codespell,
-        fail_fast,
-        summary_only,
         run_markdown_links,
-        &mut sections,
-        &mut summary,
-    ) {
+    }) {
         return out;
     }
 

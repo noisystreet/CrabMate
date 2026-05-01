@@ -58,18 +58,32 @@ fn local_messages_preserved_after_hydrate(
         .collect()
 }
 
-/// 将 `GET /conversation/messages` 结果合并进当前会话；成功时返回 `true`（已写 `messages` / `server_revision` 等）。
-fn merge_hydration_into_active_session(
-    session: &mut ChatSession,
-    aid: &str,
-    cid: &str,
+/// 合并水合快照时的标识与会话状态（避免 `merge_*` 长参数列表）。
+struct MergeHydrationIntoActiveSessionArgs<'a> {
+    session: &'a mut ChatSession,
+    aid: &'a str,
+    cid: &'a str,
     hydrated: Vec<StoredMessage>,
-    resp: &ConversationMessagesResponse,
+    resp: &'a ConversationMessagesResponse,
     nonce_at_start: u64,
     current_nonce: u64,
-    active_id: &str,
+    active_id: &'a str,
     selected_agent_role: RwSignal<Option<String>>,
-) -> bool {
+}
+
+/// 将 `GET /conversation/messages` 结果合并进当前会话；成功时返回 `true`（已写 `messages` / `server_revision` 等）。
+fn merge_hydration_into_active_session(args: MergeHydrationIntoActiveSessionArgs<'_>) -> bool {
+    let MergeHydrationIntoActiveSessionArgs {
+        session,
+        aid,
+        cid,
+        hydrated,
+        resp,
+        nonce_at_start,
+        current_nonce,
+        active_id,
+        selected_agent_role,
+    } = args;
     if active_id != aid {
         return false;
     }
@@ -206,17 +220,18 @@ pub fn wire_session_hydration(
                     let Some(s) = list.iter_mut().find(|x| x.id == aid) else {
                         return;
                     };
-                    applied_hydration |= merge_hydration_into_active_session(
-                        s,
-                        &aid,
-                        cid.as_str(),
-                        msgs,
-                        &resp,
-                        nonce_at_start,
-                        cur_nonce,
-                        &active,
-                        selected_agent_role,
-                    );
+                    applied_hydration |=
+                        merge_hydration_into_active_session(MergeHydrationIntoActiveSessionArgs {
+                            session: s,
+                            aid: &aid,
+                            cid: cid.as_str(),
+                            hydrated: msgs,
+                            resp: &resp,
+                            nonce_at_start,
+                            current_nonce: cur_nonce,
+                            active_id: &active,
+                            selected_agent_role,
+                        });
                 });
                 if !applied_hydration {
                     return;

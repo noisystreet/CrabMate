@@ -328,17 +328,17 @@ fn chat_message_row_body_core(p: ChatMessageRowBodyCoreParams) -> AnyView {
         )
         .into_any();
     }
-    let body_inner = build_non_assistant_message_body(
-        m.clone(),
+    let body_inner = build_non_assistant_message_body(NonAssistantMessageBodyParams {
+        m_for_body: m.clone(),
         is_tool_bubble,
-        tool_detail_text.clone(),
+        tool_detail_text: tool_detail_text.clone(),
         tool_detail_open,
         locale,
         chat_find_query,
         apply_assistant_display_filters,
         jump_uid,
         auto_scroll_chat,
-    );
+    });
     if m.role == "user" && !m.is_tool && !m.image_urls.is_empty() {
         let imgs: Vec<String> = m.image_urls.clone();
         view! {
@@ -445,8 +445,7 @@ fn subgoal_exec_banner_icon_view(icon_key: &str) -> AnyView {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn build_non_assistant_message_body(
+struct NonAssistantMessageBodyParams {
     m_for_body: StoredMessage,
     is_tool_bubble: bool,
     tool_detail_text: Option<String>,
@@ -456,7 +455,20 @@ fn build_non_assistant_message_body(
     apply_assistant_display_filters: RwSignal<bool>,
     jump_uid: Option<String>,
     auto_scroll_chat: RwSignal<bool>,
-) -> AnyView {
+}
+
+fn build_non_assistant_message_body(p: NonAssistantMessageBodyParams) -> AnyView {
+    let NonAssistantMessageBodyParams {
+        m_for_body,
+        is_tool_bubble,
+        tool_detail_text,
+        tool_detail_open,
+        locale,
+        chat_find_query,
+        apply_assistant_display_filters,
+        jump_uid,
+        auto_scroll_chat,
+    } = p;
     if is_tool_bubble {
         let detail_for_btn = tool_detail_text;
         let tool_emoji = tool_bubble_emoji(&m_for_body);

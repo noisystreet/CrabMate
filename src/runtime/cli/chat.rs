@@ -26,18 +26,32 @@ use tokio::sync::Mutex;
 static CLI_LTM_OPEN_FAILURE_NOTIFIED: AtomicBool = AtomicBool::new(false);
 
 /// CLI（无 SSE、`workspace_is_set` 恒为真）下调用 [`run_agent_turn`] 的固定参数封装。
-#[allow(clippy::too_many_arguments)] // CLI 与可选 cli_tool_ctx 并列，聚合为结构体收益有限
+pub(crate) struct RunAgentTurnForCliParams<'a> {
+    pub client: &'a reqwest::Client,
+    pub api_key: &'a str,
+    pub cfg: &'a Arc<AgentConfig>,
+    pub tools: &'a [crate::types::Tool],
+    pub messages: &'a mut Vec<Message>,
+    pub work_dir: &'a std::path::Path,
+    pub no_stream: bool,
+    pub cli_tool_ctx: Option<&'a CliToolRuntime>,
+    pub active_agent_role: Option<&'a str>,
+}
+
 pub(crate) async fn run_agent_turn_for_cli(
-    client: &reqwest::Client,
-    api_key: &str,
-    cfg: &Arc<AgentConfig>,
-    tools: &[crate::types::Tool],
-    messages: &mut Vec<Message>,
-    work_dir: &std::path::Path,
-    no_stream: bool,
-    cli_tool_ctx: Option<&CliToolRuntime>,
-    active_agent_role: Option<&str>,
+    p: RunAgentTurnForCliParams<'_>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let RunAgentTurnForCliParams {
+        client,
+        api_key,
+        cfg,
+        tools,
+        messages,
+        work_dir,
+        no_stream,
+        cli_tool_ctx,
+        active_agent_role,
+    } = p;
     let (ltm, scope) = cli_long_term_memory_handles(cfg);
     let turn_allow = turn_allow_for_web_or_cli_job(cfg, active_agent_role, None);
     let tools_for_job = filter_tools_for_agent_role(tools, turn_allow.as_ref().map(|a| a.as_ref()));
@@ -248,34 +262,6 @@ fn ensure_all_run_commands_not_denied(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn run_one_cli_turn(
-    client: &reqwest::Client,
-    api_key: &str,
-    cfg: &Arc<AgentConfig>,
-    tools: &[crate::types::Tool],
-    messages: &mut Vec<Message>,
-    work_dir: &Path,
-    no_stream: bool,
-    cli_rt: &CliToolRuntime,
-    active_agent_role: Option<&str>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    run_agent_turn_for_cli(
-        client,
-        api_key,
-        cfg,
-        tools,
-        messages,
-        work_dir,
-        no_stream,
-        Some(cli_rt),
-        active_agent_role,
-    )
-    .await
-    .map_err(map_turn_err)?;
-    Ok(())
-}
-
 struct RunChatBatchJsonlParams<'a> {
     cfg_holder: &'a SharedAgentConfig,
     _config_path: Option<&'a str>,
@@ -401,18 +387,19 @@ async fn run_chat_batch_jsonl(
             let g = cfg_holder.read().await;
             Arc::new(g.clone())
         };
-        run_one_cli_turn(
+        run_agent_turn_for_cli(RunAgentTurnForCliParams {
             client,
             api_key,
-            &cfg_snap,
+            cfg: &cfg_snap,
             tools,
-            &mut messages,
+            messages: &mut messages,
             work_dir,
             no_stream,
-            cli_rt,
-            agent_role,
-        )
-        .await?;
+            cli_tool_ctx: Some(cli_rt),
+            active_agent_role: agent_role,
+        })
+        .await
+        .map_err(map_turn_err)?;
         ensure_all_run_commands_not_denied(cli_rt)?;
         if json_out {
             print_json_reply_line(&cfg_snap, &messages, Some(line_no));
@@ -484,18 +471,19 @@ pub async fn run_chat_invocation(
             let g = cfg_holder.read().await;
             Arc::new(g.clone())
         };
-        run_one_cli_turn(
+        run_agent_turn_for_cli(RunAgentTurnForCliParams {
             client,
             api_key,
-            &cfg_snap,
+            cfg: &cfg_snap,
             tools,
-            &mut messages,
-            work_dir.as_path(),
-            chat.no_stream,
-            &cli_rt,
-            agent_role,
-        )
-        .await?;
+            messages: &mut messages,
+            work_dir: work_dir.as_path(),
+            no_stream: chat.no_stream,
+            cli_tool_ctx: Some(&cli_rt),
+            active_agent_role: agent_role,
+        })
+        .await
+        .map_err(map_turn_err)?;
         ensure_all_run_commands_not_denied(&cli_rt)?;
         if json_out {
             print_json_reply_line(&cfg_snap, &messages, None);
@@ -538,18 +526,19 @@ pub async fn run_chat_invocation(
         let g = cfg_holder.read().await;
         Arc::new(g.clone())
     };
-    run_one_cli_turn(
+    run_agent_turn_for_cli(RunAgentTurnForCliParams {
         client,
         api_key,
-        &cfg_snap,
+        cfg: &cfg_snap,
         tools,
-        &mut messages,
-        work_dir.as_path(),
-        chat.no_stream,
-        &cli_rt,
-        agent_role,
-    )
-    .await?;
+        messages: &mut messages,
+        work_dir: work_dir.as_path(),
+        no_stream: chat.no_stream,
+        cli_tool_ctx: Some(&cli_rt),
+        active_agent_role: agent_role,
+    })
+    .await
+    .map_err(map_turn_err)?;
     ensure_all_run_commands_not_denied(&cli_rt)?;
     if json_out {
         print_json_reply_line(&cfg_snap, &messages, None);
