@@ -55,6 +55,18 @@ This repo already has multi-turn `agent_turn`, final plan validation/rewrite, wo
 - Staged feedback policy (`staged_plan_feedback_mode`, etc.).
 - **Counters (orthogonal to `plan_rewrite`)**: `PerCoordinator` tracks `plan_rewrite_attempts` (final-answer `after_final_assistant`) vs `staged_plan_patch_planner_rounds_completed` (successful staged patch-planner merges). `GET /status` `per_active_jobs[*]` mirrors both plus `staged_plan_patch_max_attempts_config`; staged patch feedback user bodies and `StepRetryExhausted` messages append a `[计数]` footer for log correlation.
 
+### 2.5 Hierarchical (`hierarchy`) vs PER / staged: dual-track contract
+
+**Dual-track** means: end-of-turn **`per_coord::final_plan_gate`** + **`plan_rewrite`** + (optional) **`per_plan_semantic_check`** + **`reflect_semantic`**, versus **Manager / Operator** decomposition, execution, subgoal verification, and **`reflect_and_replan`** under **`src/agent/hierarchy/`**, are **not the same code path or counters**, but share the same P-E-V mental model. **Convergence** means aligned **contracts and observability**, not forcing Manager through `AfterFinalAssistant`.
+
+| Topic | PER / `outer_loop` / `staged` | `hierarchy` (hierarchical) | When changing code |
+|------|-------------------------------|---------------------|-------------|
+| **Final `agent_reply_plan` + `plan_rewrite`** | **`after_final_assistant`** → **`final_plan_gate`**; counter **`plan_rewrite_attempts`** | Manager emits **`SubGoal`** JSON, **not** final-plan gated; discourse/clarify/confirm falls back to **`run_agent_outer_loop`** then PER applies | Do not call **`ManagerAgent::reflect_and_replan`** “`plan_rewrite`”; final-answer rule edits stay in **`per_coord` / `reflect_semantic`** |
+| **Step / subgoal acceptance** | **`step_verifier`** (staged step boundary); shares kernel with **`GoalAcceptance` / `verify_against_spec`** | **`GoalVerifier::run_verify_command`** etc.; failures drive **`reflect_and_replan`** | Changing **`acceptance`** semantics or tool-output checks: review **`step_verifier`** **and** **`hierarchy/goal_verifier`** (and reflection prompts) |
+| **Workflow DAG reflection** | **`WorkflowReflectionController`**, `INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT` | DAG runs inside **`workflow_execute`**; Manager has its own reflection path | If adding prompt-like instructions parallel to reflection injects, document side-by-side in **`DEVELOPMENT.md`** and constants (see §6 checklist) |
+| **Side semantic LLM (plan vs tool digest)** | **`per_plan_semantic_check`** + **`reflect_semantic::map_plan_semantic_llm_outcome_to_reflect_ctl`** | **No** default equivalent | Do not treat hierarchical Manager reflection as **`final_plan_semantic_check`** |
+| **Observability** | **`target: crabmate::agent_turn`**: `turn_orchestration_mode`; **`target: crabmate::per`**: gate routes | Same target: **`hierarchical_phase`** in **`agent_turn/hierarchy.rs`**; keep **`[HIERARCHICAL]`** `log` lines | Correlate **`turn_orchestration_mode`** with **`hierarchical_phase`**; maintenance checklist in **`docs/en/DEVELOPMENT.md`** “sync with `agent_turn` / `per_coord`” |
+
 ---
 
 ## 3. Gaps and principles
@@ -144,6 +156,7 @@ All optional; omitted fields keep current behavior.
 | PER / plan rewrite | `src/agent/per_coord/`, `src/agent/reflection/plan_rewrite.rs` |
 | Workflow reflection | `src/agent/workflow_reflection_controller.rs` |
 | Side semantic check | `src/agent/per_plan_semantic_check.rs` |
+| Hierarchical (Manager/Operator) | `src/agent/hierarchy/`; entry `agent_turn/hierarchy.rs` (`hierarchical_phase` logs) |
 | DAG execution | `src/agent/workflow/`, `src/agent/workflow_tool_dispatch.rs` |
 | Validate-only | `src/agent/workflow/run.rs` |
 
@@ -156,3 +169,4 @@ All optional; omitted fields keep current behavior.
 | 2026-04-12 | Initial Chinese draft: P-E-V layering, mapping to existing capabilities, verifier-vs-plan-rewrite separation, staged roadmap and non-goals |
 | 2026-04-16 | P1 completed in Chinese design: verifier supports JSON path and HTTP status acceptance checks |
 | 2026-05-01 | Split staged patch-planner vs final `plan_rewrite` counters; extend `/status` `per_active_jobs` and patch feedback footers |
+| 2026-05-01 | Added **§2.5**: hierarchical vs PER/staged dual-track responsibility boundary. |
