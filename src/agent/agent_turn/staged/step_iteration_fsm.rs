@@ -1,8 +1,22 @@
 //! 分阶段 **`run_staged_plan_steps_loop`** 单次迭代在 **transition 已处理之后** 的纯决策：
 //! outer_loop + 验收结果如何归类、工具健康检查阶段走哪条路径；以及墙钟是否超限（与循环顶部一致）。
+//! **`StagedStepRunningSub`** 与 **`docs/design/per_state_machine_consolidation.md`** 中 `StepRunning.sub` 对齐（命名略宽：`AfterOuterLoop` 含成功收尾与失败补丁）。
 //! **不**运行 outer_loop / 补丁 LLM / 不发 SSE。
 
 use crate::agent::agent_turn::errors::RunAgentTurnError;
+
+/// 单步执行器内子阶段（对应设计稿 **`StepRunning.sub`**：`BeforeStepLlm` / `InOuterLoop` / 失败处理子集）。
+/// 实现上由 **`staged/mod.rs`** 的 **`staged_step_run_outer_half`** / **`staged_step_run_after_outer_half`** 对应；本类型为**词汇表**（检索/文档对齐），生产路径不直接分支于该枚举。
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StagedStepRunningSub {
+    /// `step_started` 起至注入本步 user、设置 `step_executor_constraint` 止（尚未 `run_agent_outer_loop`）。
+    BeforeStepLlm,
+    /// `run_agent_outer_loop` 与可选 acceptance 验证。
+    InOuterLoop,
+    /// outer 返回之后：transition、执行/验收失败补丁、取消、工具消息检查与补丁、或成功 SSE（设计稿中的 *AfterStepFailure* 为该阶段内子路径）。
+    AfterOuterLoop,
+}
 
 /// `try_apply_staged_plan_control_flow_jump` 未触发时，根据 outer_loop 与验收结果划分阶段。
 #[derive(Debug, Clone, PartialEq, Eq)]

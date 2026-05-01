@@ -795,20 +795,27 @@ enum StagedStepIterationCtl {
     CancelledAfterOuterOk,
 }
 
+/// outer_loop 与验收之后、transition / 补丁 / 工具检查 / 成功收尾 之前的数据（**AfterOuterLoop** 阶段入参）。
+struct StagedStepOuterHalfResult {
+    step: PlanStepV1,
+    step_index: usize,
+    step_user_idx: usize,
+    run_step: Result<(), RunAgentTurnError>,
+    step_verify_failed_reason: Option<String>,
+}
+
+/// **`StagedStepRunningSub::BeforeStepLlm`** → **`InOuterLoop`**：发 `step_started`、注入 user、`run_agent_outer_loop`、可选 acceptance。
 #[allow(clippy::too_many_arguments)]
-async fn run_one_staged_plan_step_iteration<F>(
+async fn staged_step_run_outer_half<F>(
     plan_id: &str,
     i: usize,
-    mut n: usize,
-    completed_steps: usize,
-    plan_steps: &mut Vec<PlanStepV1>,
-    original_steps: &[PlanStepV1],
-    transition_counters: &mut HashMap<String, u32>,
+    n: usize,
+    plan_steps: &[PlanStepV1],
     echo_terminal_staged: bool,
     labels: &StagedPlanRunLabels,
     patch_ctx: &mut StagedPlanPatchPlannerCtx<'_, '_, F>,
     make_step_user_message: &F,
-) -> Result<StagedStepIterationCtl, RunAgentTurnError>
+) -> StagedStepOuterHalfResult
 where
     F: Fn(String) -> Message,
 {
@@ -861,6 +868,40 @@ where
             }
         }
     }
+
+    StagedStepOuterHalfResult {
+        step,
+        step_index,
+        step_user_idx,
+        run_step,
+        step_verify_failed_reason,
+    }
+}
+
+/// **`StagedStepRunningSub::AfterOuterLoop`**：transition、失败补丁、取消、工具补丁、成功 SSE。
+#[allow(clippy::too_many_arguments)]
+async fn staged_step_run_after_outer_half<F>(
+    outer: StagedStepOuterHalfResult,
+    plan_id: &str,
+    i: usize,
+    mut n: usize,
+    completed_steps: usize,
+    plan_steps: &mut Vec<PlanStepV1>,
+    original_steps: &[PlanStepV1],
+    transition_counters: &mut HashMap<String, u32>,
+    echo_terminal_staged: bool,
+    patch_ctx: &mut StagedPlanPatchPlannerCtx<'_, '_, F>,
+) -> Result<StagedStepIterationCtl, RunAgentTurnError>
+where
+    F: Fn(String) -> Message,
+{
+    let StagedStepOuterHalfResult {
+        step,
+        step_index,
+        step_user_idx,
+        run_step,
+        step_verify_failed_reason,
+    } = outer;
 
     if let Some((fb, step_status)) = try_apply_staged_plan_control_flow_jump(
         &step,
@@ -1108,6 +1149,50 @@ where
         n,
         completed_steps: step_index,
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_one_staged_plan_step_iteration<F>(
+    plan_id: &str,
+    i: usize,
+    n: usize,
+    completed_steps: usize,
+    plan_steps: &mut Vec<PlanStepV1>,
+    original_steps: &[PlanStepV1],
+    transition_counters: &mut HashMap<String, u32>,
+    echo_terminal_staged: bool,
+    labels: &StagedPlanRunLabels,
+    patch_ctx: &mut StagedPlanPatchPlannerCtx<'_, '_, F>,
+    make_step_user_message: &F,
+) -> Result<StagedStepIterationCtl, RunAgentTurnError>
+where
+    F: Fn(String) -> Message,
+{
+    let outer = staged_step_run_outer_half(
+        plan_id,
+        i,
+        n,
+        plan_steps.as_slice(),
+        echo_terminal_staged,
+        labels,
+        patch_ctx,
+        make_step_user_message,
+    )
+    .await;
+
+    staged_step_run_after_outer_half(
+        outer,
+        plan_id,
+        i,
+        n,
+        completed_steps,
+        plan_steps,
+        original_steps,
+        transition_counters,
+        echo_terminal_staged,
+        patch_ctx,
+    )
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]
