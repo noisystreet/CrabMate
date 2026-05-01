@@ -32,6 +32,7 @@ use super::plan::agent_llm_call::AgentLlmCall;
 
 mod ensemble_fsm;
 mod ensemble_schedule_fsm;
+mod full_pipeline_fsm;
 mod orchestrator;
 mod patch_planner;
 mod planner_parse_fsm;
@@ -55,6 +56,10 @@ use ensemble_fsm::{
 use ensemble_schedule_fsm::{
     EnsembleDriverPhase, ensemble_merge_should_run, ensemble_secondary_planner_display_index,
     resolve_ensemble_driver_phase,
+};
+use full_pipeline_fsm::{
+    StagedFullPipelinePhase, debug_staged_full_pipeline_enter,
+    debug_staged_full_pipeline_transition,
 };
 use patch_planner::{
     StagedPlanPatchPlannerCtx, StagedPlanStepFailureFeedbackMeta,
@@ -1720,6 +1725,9 @@ where
     let ensemble_route = pipeline_schedule.ensemble_route;
     log_staged_plan_ensemble_route(ensemble_route, p.ctx.staged_plan_ensemble_count);
 
+    let mut fp_phase = StagedFullPipelinePhase::BeforeEnsemble;
+    debug_staged_full_pipeline_enter(fp_phase);
+
     if ensemble_merge_should_invoke(ensemble_route) {
         let skip_ensemble_for_casual = ensemble_merge_skip_for_casual_prompt(ensemble_route);
         maybe_run_staged_plan_ensemble_then_merge(
@@ -1733,6 +1741,11 @@ where
         )
         .await?;
     }
+    let next_fp = fp_phase
+        .advance()
+        .expect("full_pipeline: before_ensemble -> after_ensemble");
+    debug_staged_full_pipeline_transition(fp_phase, Some(next_fp));
+    fp_phase = next_fp;
 
     let optimizer_route = pipeline_schedule.optimizer_route;
     log_staged_plan_optimizer_route(optimizer_route, plan.steps.len());
@@ -1782,10 +1795,22 @@ where
             }
         }
     }
+    let next_fp = fp_phase
+        .advance()
+        .expect("full_pipeline: after_ensemble -> after_optimizer");
+    debug_staged_full_pipeline_transition(fp_phase, Some(next_fp));
+    fp_phase = next_fp;
 
     if pipeline_schedule.nl_followup_before_steps {
         run_staged_plan_nl_followup_round(p, per_coord, &make_step_user_message).await?;
     }
+    let next_fp = fp_phase
+        .advance()
+        .expect("full_pipeline: after_optimizer -> after_nl_followup");
+    debug_staged_full_pipeline_transition(fp_phase, Some(next_fp));
+    fp_phase = next_fp;
+
+    debug_staged_full_pipeline_transition(fp_phase, None);
 
     let plan_id = next_staged_plan_id();
     let plan_steps = plan.steps;
