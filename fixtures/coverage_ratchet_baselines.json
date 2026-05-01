@@ -1,0 +1,25 @@
+{
+  "$schema_comment": "关键路径「行覆盖率」下限（与 cargo llvm-cov --workspace --lib --json --summary-only 中 data[0].files[].summary.lines 一致）。path 以 / 结尾表示目录前缀，否则为仓库内相对路径（含文件名）。仅允许上调 min_line_percent（棘轮收紧）；有意放宽须在 PR 说明。",
+  "targets": [
+    {
+      "path": "crates/crabmate-sse-protocol/",
+      "min_line_percent": 93.0,
+      "note": "SSE 协议 crate：与 golden / 前端对齐"
+    },
+    {
+      "path": "src/workspace/path.rs",
+      "min_line_percent": 69.0,
+      "note": "工作区路径规范化与越界校验（工具/Web 共用）"
+    },
+    {
+      "path": "src/sse/",
+      "min_line_percent": 67.0,
+      "note": "SSE 行协议与分发（共享契约）"
+    },
+    {
+      "path": "src/tools/file/",
+      "min_line_percent": 67.0,
+      "note": "文件类工具路径解析与读写入口"
+    }
+  ]
+}

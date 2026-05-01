@@ -1,4 +1,4 @@
-# 可选覆盖率摘要（不门槛化）：帮助发现未执行分支；本地：cargo install cargo-llvm-cov && rustup component add llvm-tools-preview
+# 覆盖率：摘要 + 关键目录「行覆盖率」棘轮（fixtures/coverage_ratchet_baselines.json；脚本 scripts/check_coverage_ratchet.py）
 name: code-coverage
 
 on:
@@ -33,5 +33,8 @@ jobs:
         with:
           tool: cargo-llvm-cov@0.6
 
-      - name: cargo llvm-cov (workspace lib summary)
-        run: cargo llvm-cov --workspace --lib --summary-only
+      - name: cargo llvm-cov (workspace lib JSON summary)
+        run: cargo llvm-cov --workspace --lib --json --summary-only --output-path target/llvm-cov-summary.json
+
+      - name: Check coverage ratchet (key directories)
+        run: python3 scripts/check_coverage_ratchet.py target/llvm-cov-summary.json
