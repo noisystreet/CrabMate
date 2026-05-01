@@ -9,9 +9,10 @@
 //!
 //! **与 `llm` 的边界**：本目录内对模型的调用须经 **`llm::complete_chat_retrying`**（见 **`docs/开发文档.md`**「`agent_turn` 与 `llm`：唯一入口与禁止事项」）；**禁止**直接调用 **`llm::api::stream_chat`**。
 //!
-//! **编排接线**：回合模式分发（分层 / 逻辑双代理 / 分阶段 / 单 Agent）见 **`run_dispatch`**，主文件仅保留入口日志、分隔线、`PerCoordinator` 构造与分支调用。
+//! **编排接线**：回合模式分发（分层 / 逻辑双代理 / 分阶段 / 单 Agent）见 **`run_dispatch`**；顶层形态枚举与解析见 **`turn_orchestration`**，主文件保留入口日志、分隔线、`PerCoordinator` 构造与分支调用。
 
 use log::debug;
+use tracing::info;
 
 use crate::agent::per_coord::{PerCoordinator, PerCoordinatorInit};
 use crate::config::PlannerExecutorMode;
@@ -29,6 +30,7 @@ mod reflect;
 mod run_dispatch;
 mod staged;
 mod sub_agent_policy;
+mod turn_orchestration;
 
 // 供 crate 内其它模块与文档链接；本文件自身不直接使用这些符号。
 pub(crate) use errors::{AgentTurnSubPhase, RunAgentTurnError};
@@ -72,10 +74,20 @@ pub(crate) async fn run_agent_turn_common(
     );
     insert_separator_after_last_user_for_turn(p.turn.messages);
 
+    let hierarchical = p.ctx.cfg.planner_executor_mode == PlannerExecutorMode::Hierarchical;
+    info!(
+        target: "crabmate::agent_turn",
+        planner_executor_mode = p.ctx.cfg.planner_executor_mode.as_str(),
+        staged_plan_execution = p.ctx.cfg.staged_plan_execution,
+        intent_at_turn_start_enabled = p.ctx.cfg.intent_at_turn_start_enabled,
+        hierarchical,
+        "run_agent_turn_common enter"
+    );
+
     let mut per_coord =
         PerCoordinator::new(PerCoordinatorInit::from_agent_config(p.ctx.cfg.as_ref()));
 
-    if p.ctx.cfg.planner_executor_mode == PlannerExecutorMode::Hierarchical {
+    if hierarchical {
         // 意图门控在 `hierarchy::run_hierarchical_agent` 内通过 `run_intent_for_hierarchical` 执行（与 L0/合并文本一致），勿在此重复。
         run_dispatch::dispatch_hierarchical_turn(p).await
     } else {
