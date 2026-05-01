@@ -65,14 +65,14 @@ fn build_intent_analysis_main_bubble_text(title: &str, detail: Option<&str>) -> 
         let mut clarification = String::new();
         let mut l2 = String::new();
         for line in detail.lines().map(str::trim) {
-            if line.starts_with("综合置信度：") {
-                confidence = line.to_string();
-            } else if line.starts_with("主意图：") {
-                primary = line.to_string();
-            } else if line.starts_with("需要澄清：") {
-                clarification = line.to_string();
-            } else if line.starts_with("L2 结果：") {
-                l2 = line.to_string();
+            match i18n::classify_intent_detail_line(line) {
+                Some(i18n::IntentDetailLineKind::Confidence) => confidence = line.to_string(),
+                Some(i18n::IntentDetailLineKind::PrimaryIntent) => primary = line.to_string(),
+                Some(i18n::IntentDetailLineKind::NeedClarification) => {
+                    clarification = line.to_string();
+                }
+                Some(i18n::IntentDetailLineKind::L2Result) => l2 = line.to_string(),
+                None => {}
             }
         }
         let concise = [confidence, primary, clarification, l2]
@@ -223,25 +223,24 @@ fn has_same_assistant_timeline_bubble(stream_ctx: &ChatStreamCallbackCtx, text: 
 
 fn extract_subgoal_marker_from_title(title: &str) -> Option<String> {
     let title = title.trim();
-    if !title.starts_with("子目标 `") {
-        return None;
+    for prefix in i18n::hierarchical_subgoal_title_prefixes() {
+        if !title.starts_with(prefix) {
+            continue;
+        }
+        let rest = title.strip_prefix(prefix)?;
+        let goal_id = rest.strip_suffix('`')?;
+        if goal_id.is_empty() {
+            return None;
+        }
+        return Some(format!("hierarchical-subgoal:{goal_id}"));
     }
-    let rest = title.strip_prefix("子目标 `")?;
-    let goal_id = rest.strip_suffix('`')?;
-    if goal_id.is_empty() {
-        return None;
-    }
-    Some(format!("hierarchical-subgoal:{goal_id}"))
+    None
 }
 
 fn extract_subgoal_target_line(text: &str) -> Option<String> {
-    text.lines().map(str::trim).find_map(|line| {
-        if line.starts_with("- 目标：") || line.starts_with("目标：") {
-            Some(line.to_string())
-        } else {
-            None
-        }
-    })
+    text.lines()
+        .map(str::trim)
+        .find_map(|line| i18n::hierarchical_goal_target_raw(line).map(|_| line.to_string()))
 }
 
 fn merge_subgoal_text_preserving_target(existing: &str, incoming: &str) -> String {
@@ -255,7 +254,11 @@ fn merge_subgoal_text_preserving_target(existing: &str, incoming: &str) -> Strin
     if lines.is_empty() {
         return format!("{target_line}\n\n");
     }
-    let insert_idx = if lines[0].trim_start().starts_with("子目标 ") {
+    let first_trim = lines[0].trim_start();
+    let insert_idx = if i18n::hierarchical_subgoal_title_second_line_prefixes()
+        .iter()
+        .any(|p| first_trim.starts_with(p))
+    {
         1
     } else {
         0
@@ -1264,6 +1267,22 @@ mod tests {
             t,
             "意图分析：执行类（直接执行）\n综合置信度：0.61\n主意图：execute.run_test_build\n需要澄清：false\nL2 结果：未启用/未触发\n\n"
         );
+    }
+
+    #[test]
+    fn intent_analysis_text_accepts_english_detail_keys() {
+        let detail = concat!(
+            "Primary intent: execute.run_test_build\n",
+            "Overall confidence: 0.61\n",
+            "Needs clarification: false\n",
+            "L2 result: not triggered\n",
+            "override: none\n",
+        );
+        let t = build_intent_analysis_main_bubble_text("Intent: execute", Some(detail));
+        assert!(t.contains("Overall confidence: 0.61"));
+        assert!(t.contains("Primary intent: execute.run_test_build"));
+        assert!(t.contains("Needs clarification: false"));
+        assert!(t.contains("L2 result: not triggered"));
     }
 
     #[test]

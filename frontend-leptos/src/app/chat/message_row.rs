@@ -62,29 +62,15 @@ fn tool_bubble_emoji(m: &StoredMessage) -> &'static str {
     name.map(i18n::tool_kind_emoji).unwrap_or("🔧")
 }
 
-fn extract_hierarchical_phase_chip(msg: &StoredMessage) -> Option<(String, String)> {
+fn extract_hierarchical_phase_chip(msg: &StoredMessage, loc: Locale) -> Option<(String, String)> {
     let state = msg.state.as_deref()?;
     if !is_hierarchical_subgoal_state(Some(state)) {
         return None;
     }
-    let phase = msg.text.lines().map(str::trim).find_map(|line| {
-        line.strip_prefix("- 阶段：")
-            .or_else(|| line.strip_prefix("阶段："))
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-    })?;
-    let cls = match phase.as_str() {
-        "诊断" => "msg-subgoal-phase-chip phase-diagnose",
-        "修复" => "msg-subgoal-phase-chip phase-fix",
-        "验证" => "msg-subgoal-phase-chip phase-verify",
-        "升级" => "msg-subgoal-phase-chip phase-escalate",
-        _ => "msg-subgoal-phase-chip",
-    };
-    Some((phase, cls.to_string()))
+    i18n::hierarchical_phase_chip_view(loc, msg.text.as_str())
 }
 
-fn extract_hierarchical_metrics(msg: &StoredMessage) -> Option<String> {
+fn extract_hierarchical_metrics(msg: &StoredMessage, loc: Locale) -> Option<String> {
     let state = msg.state.as_deref()?;
     if !is_hierarchical_subgoal_state(Some(state)) {
         return None;
@@ -93,9 +79,7 @@ fn extract_hierarchical_metrics(msg: &StoredMessage) -> Option<String> {
     let mut stagnant_rounds: Option<String> = None;
     for line in msg.text.lines().map(str::trim) {
         if error_count.is_none()
-            && let Some(v) = line
-                .strip_prefix("- 错误数：")
-                .or_else(|| line.strip_prefix("错误数："))
+            && let Some(v) = i18n::hierarchical_error_count_raw(line)
         {
             let v = v.trim();
             if !v.is_empty() {
@@ -103,9 +87,7 @@ fn extract_hierarchical_metrics(msg: &StoredMessage) -> Option<String> {
             }
         }
         if stagnant_rounds.is_none()
-            && let Some(v) = line
-                .strip_prefix("- 无进展轮次：")
-                .or_else(|| line.strip_prefix("无进展轮次："))
+            && let Some(v) = i18n::hierarchical_stagnant_rounds_raw(line)
         {
             let v = v.trim();
             if !v.is_empty() {
@@ -113,17 +95,7 @@ fn extract_hierarchical_metrics(msg: &StoredMessage) -> Option<String> {
             }
         }
     }
-    if error_count.is_none() && stagnant_rounds.is_none() {
-        return None;
-    }
-    let mut parts = Vec::new();
-    if let Some(v) = error_count {
-        parts.push(format!("错误数 {v}"));
-    }
-    if let Some(v) = stagnant_rounds {
-        parts.push(format!("无进展 {v} 轮"));
-    }
-    Some(parts.join(" · "))
+    i18n::hierarchical_metrics_line(loc, error_count.as_deref(), stagnant_rounds.as_deref())
 }
 
 fn extract_hierarchical_goal_target(msg: &StoredMessage) -> Option<String> {
@@ -132,8 +104,7 @@ fn extract_hierarchical_goal_target(msg: &StoredMessage) -> Option<String> {
         return None;
     }
     msg.text.lines().map(str::trim).find_map(|line| {
-        line.strip_prefix("- 目标：")
-            .or_else(|| line.strip_prefix("目标："))
+        i18n::hierarchical_goal_target_raw(line)
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .map(str::to_string)
@@ -145,54 +116,27 @@ fn build_subgoal_exec_banner_text(
     phase: Option<&str>,
     target: Option<&str>,
 ) -> Option<String> {
-    let key = subgoal_phase_key(phase)?;
-    let verb = match (loc, key) {
-        (Locale::ZhHans, "diagnose") => "正在诊断",
-        (Locale::ZhHans, "fix") => "正在修复",
-        (Locale::ZhHans, "verify") => "正在验证",
-        (Locale::ZhHans, "escalate") => "正在升级",
-        (Locale::ZhHans, "run") => "正在执行",
-        (Locale::En, "diagnose") => "Diagnosing",
-        (Locale::En, "fix") => "Fixing",
-        (Locale::En, "verify") => "Verifying",
-        (Locale::En, "escalate") => "Escalating",
-        (Locale::En, "run") => "Running",
-        _ => "",
-    };
+    let key = i18n::hierarchical_subgoal_phase_key(phase)?;
+    let verb = i18n::hierarchical_subgoal_exec_verb(loc, key);
     if verb.is_empty() {
         return None;
     }
+    let suffix = i18n::hierarchical_subgoal_running_suffix(loc);
     match (loc, target.filter(|t| !t.trim().is_empty())) {
         (Locale::ZhHans, Some(t)) => Some(format!("{verb}：{}…", t.trim())),
-        (Locale::ZhHans, None) => Some(format!("{verb}子目标…")),
+        (Locale::ZhHans, None) => Some(format!("{verb}{suffix}")),
         (Locale::En, Some(t)) => Some(format!("{verb}: {}…", t.trim())),
-        (Locale::En, None) => Some(format!("{verb} subgoal…")),
-    }
-}
-
-fn subgoal_phase_key(phase: Option<&str>) -> Option<&'static str> {
-    let p = phase.map(str::trim).unwrap_or("").to_ascii_lowercase();
-    if p.is_empty() {
-        return None;
-    }
-    // 阶段文本可能来自模型/后端（中英均可能），因此识别不依赖当前 locale。
-    match p.as_str() {
-        "诊断" | "diagnose" => Some("diagnose"),
-        "修复" | "fix" => Some("fix"),
-        "验证" | "verify" => Some("verify"),
-        "升级" | "escalate" => Some("escalate"),
-        "开始执行" | "start" | "running" => Some("run"),
-        _ => None,
+        (Locale::En, None) => Some(format!("{verb} {suffix}")),
     }
 }
 
 fn build_subgoal_exec_banner_icon_key(_loc: Locale, phase: Option<&str>) -> Option<&'static str> {
-    subgoal_phase_key(phase)
+    i18n::hierarchical_subgoal_phase_key(phase)
 }
 
 fn is_running_subgoal_phase(loc: Locale, phase: Option<&str>) -> bool {
     let _ = loc;
-    subgoal_phase_key(phase).is_some()
+    i18n::hierarchical_subgoal_phase_key(phase).is_some()
 }
 
 fn message_row_shell_class(is_staged_timeline: bool, m: &StoredMessage) -> &'static str {
@@ -780,10 +724,10 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
     };
     let show_msg_action_bar = !is_tool_bubble || is_user_plain || err;
     let show_planner_round_badge = stored_message_is_staged_planner_round(&m);
-    let subgoal_phase_chip = extract_hierarchical_phase_chip(&m);
-    let subgoal_metrics_line = extract_hierarchical_metrics(&m);
-    let subgoal_target_line = extract_hierarchical_goal_target(&m);
     let loc_ut = locale.get_untracked();
+    let subgoal_phase_chip = extract_hierarchical_phase_chip(&m, loc_ut);
+    let subgoal_metrics_line = extract_hierarchical_metrics(&m, loc_ut);
+    let subgoal_target_line = extract_hierarchical_goal_target(&m);
     let phase_for_banner = subgoal_phase_chip.as_ref().map(|(phase, _)| phase.as_str());
     let subgoal_exec_banner =
         build_subgoal_exec_banner_text(loc_ut, phase_for_banner, subgoal_target_line.as_deref());
@@ -999,9 +943,9 @@ mod tests {
     use super::is_running_subgoal_phase;
     use super::{
         build_subgoal_exec_banner_icon_key, build_subgoal_exec_banner_text,
-        extract_hierarchical_goal_target, subgoal_phase_key,
+        extract_hierarchical_goal_target,
     };
-    use crate::i18n::Locale;
+    use crate::i18n::{self, Locale};
     use crate::storage::StoredMessage;
 
     fn subgoal_msg(text: &str) -> StoredMessage {
@@ -1057,7 +1001,13 @@ mod tests {
 
     #[test]
     fn phase_key_is_locale_independent() {
-        assert_eq!(subgoal_phase_key(Some("开始执行")), Some("run"));
-        assert_eq!(subgoal_phase_key(Some("diagnose")), Some("diagnose"));
+        assert_eq!(
+            i18n::hierarchical_subgoal_phase_key(Some("开始执行")),
+            Some("run")
+        );
+        assert_eq!(
+            i18n::hierarchical_subgoal_phase_key(Some("diagnose")),
+            Some("diagnose")
+        );
     }
 }
