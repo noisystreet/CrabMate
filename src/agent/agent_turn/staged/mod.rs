@@ -31,6 +31,7 @@ use super::outer_loop::run_agent_outer_loop;
 use super::params::RunLoopParams;
 use super::plan::agent_llm_call::AgentLlmCall;
 
+mod ensemble_fsm;
 mod orchestrator;
 mod patch_planner;
 mod planner_round_fsm;
@@ -40,6 +41,10 @@ mod turn_fsm;
 use orchestrator as staged_orchestrator;
 use sse as staged_sse;
 
+use ensemble_fsm::{
+    EnsembleMergeOutcome, EnsembleSecondaryPlannerRoundOutcome,
+    ensemble_merge_outcome_from_parsed_steps, ensemble_secondary_planner_round_outcome,
+};
 use patch_planner::{
     StagedPlanPatchPlannerCtx, run_staged_plan_patch_planner_round,
     staged_plan_step_failure_feedback_user_body,
@@ -324,15 +329,17 @@ where
         strip_staged_planner_message_tool_calls(&mut sec_msg, "·逻辑多规划员", dsml);
         let validate_only_binding_ids =
             plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.turn.messages);
-        match plan_artifact::parse_agent_reply_plan_v1_from_assistant_message_with_validate_only_binding_ids(
-            &sec_msg,
-            validate_only_binding_ids.as_deref(),
-        ) {
-            Ok(p2) if !p2.no_task && !p2.steps.is_empty() => {
+        let parsed =
+            plan_artifact::parse_agent_reply_plan_v1_from_assistant_message_with_validate_only_binding_ids(
+                &sec_msg,
+                validate_only_binding_ids.as_deref(),
+            );
+        match ensemble_secondary_planner_round_outcome(parsed) {
+            EnsembleSecondaryPlannerRoundOutcome::AcceptAppend(p2) => {
                 pop_last_staged_planner_coach_user_if_present(p.turn.messages);
                 accepted.push(p2);
             }
-            Ok(_) | Err(_) => {
+            EnsembleSecondaryPlannerRoundOutcome::StopChain => {
                 warn!(
                     target: "crabmate",
                     "分阶段规划·逻辑多规划员：第 {} 份规划解析失败或无效，停止追加规划员（保留已收集的 {} 份）",
@@ -365,23 +372,27 @@ where
     }
     strip_staged_planner_message_tool_calls(&mut merge_msg, "·多规划合并", dsml);
     let merge_content = plan_artifact::assistant_merged_text_for_plan_artifact_parse(&merge_msg);
-    if let Some(steps) = plan_ensemble::try_parse_ensemble_planner_reply(&merge_content) {
-        debug!(
-            target: "crabmate",
-            "分阶段规划·多规划合并：步数 {} -> {}（来自 {} 份草案）",
-            plan.steps.len(),
-            steps.len(),
-            accepted.len()
-        );
-        push_assistant_merging_trailing_empty_placeholder(p.turn.messages, merge_msg);
-        plan.steps = steps;
-    } else {
-        warn!(
-            target: "crabmate",
-            "分阶段规划·多规划合并：未解析出合法 agent_reply_plan，沿用合并前规划（{} 步）",
-            plan.steps.len()
-        );
-        pop_last_staged_planner_coach_user_if_present(p.turn.messages);
+    let merged_steps = plan_ensemble::try_parse_ensemble_planner_reply(&merge_content);
+    match ensemble_merge_outcome_from_parsed_steps(merged_steps) {
+        EnsembleMergeOutcome::AppliedSteps(steps) => {
+            debug!(
+                target: "crabmate",
+                "分阶段规划·多规划合并：步数 {} -> {}（来自 {} 份草案）",
+                plan.steps.len(),
+                steps.len(),
+                accepted.len()
+            );
+            push_assistant_merging_trailing_empty_placeholder(p.turn.messages, merge_msg);
+            plan.steps = steps;
+        }
+        EnsembleMergeOutcome::KeepPriorPlan => {
+            warn!(
+                target: "crabmate",
+                "分阶段规划·多规划合并：未解析出合法 agent_reply_plan，沿用合并前规划（{} 步）",
+                plan.steps.len()
+            );
+            pop_last_staged_planner_coach_user_if_present(p.turn.messages);
+        }
     }
     Ok(())
 }
