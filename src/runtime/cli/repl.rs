@@ -21,6 +21,105 @@ use std::sync::Mutex as StdMutex;
 
 const REPL_SHELL_USAGE: &str = "bash#: <命令>  在当前工作区执行一行 shell（不发给模型；无交互 stdin）。等同本机 `sh -c` / `cmd /C`，不受模型 `run_command` 白名单约束，仅应在可信环境使用。交互 TTY：空行按 `$` 即切换「我:」/ bash#:（也可单独一行 `$` 后 Enter）；管道/非 TTY 仍可用行内 `$ <命令>`。历史保存在工作区 `.crabmate/repl_history.txt`。示例: ls  pwd  git status";
 
+/// 处理 `ReplReadLine::Chat` 中的 `/` 命令分支：`true` 表示已消费输入并应 `continue` 主循环；`false` 表示继续走普通对话回合。
+#[allow(clippy::too_many_arguments)]
+async fn repl_slash_branch_continue_loop(
+    input: &str,
+    cfg_holder: &SharedAgentConfig,
+    config_path: Option<&str>,
+    tools: &[crate::types::Tool],
+    messages: &mut Vec<Message>,
+    work_dir: &mut PathBuf,
+    style: &CliReplStyle,
+    no_stream: bool,
+    agent_role_owned: &mut Option<String>,
+    api_key_holder: &Arc<StdMutex<String>>,
+    client: &reqwest::Client,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    match try_handle_repl_slash_command(
+        input,
+        cfg_holder,
+        tools,
+        messages,
+        work_dir,
+        style,
+        no_stream,
+        agent_role_owned,
+        api_key_holder,
+    )
+    .await
+    {
+        ReplSlashHandled::NotSlash => Ok(false),
+        ReplSlashHandled::Handled => Ok(true),
+        ReplSlashHandled::RunProbe => {
+            let g = cfg_holder.read().await;
+            let k = api_key_holder
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone();
+            if let Err(e) = crate::runtime::cli_doctor::run_probe_cli(client, &g, k.trim()).await {
+                let _ = style.eprint_error(&e.to_string());
+            }
+            Ok(true)
+        }
+        ReplSlashHandled::RunModels => {
+            let g = cfg_holder.read().await;
+            let k = api_key_holder
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone();
+            if let Err(e) = crate::runtime::cli_doctor::run_models_cli(client, &g, k.trim()).await {
+                let _ = style.eprint_error(&e.to_string());
+            }
+            Ok(true)
+        }
+        ReplSlashHandled::RunModelsChoose { model_id } => {
+            let k = api_key_holder
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone();
+            match crate::runtime::cli_doctor::run_models_choose_repl(
+                client,
+                cfg_holder,
+                k.trim(),
+                &model_id,
+            )
+            .await
+            {
+                Ok(resolved) => {
+                    let _ = style.print_success(&format!(
+                        "已设 model = {resolved}（仅本进程有效；持久化请改配置文件；/config reload 会从磁盘覆盖）"
+                    ));
+                }
+                Err(e) => {
+                    let _ = style.eprint_error(&e.to_string());
+                }
+            }
+            Ok(true)
+        }
+        ReplSlashHandled::RunMcpList { probe } => {
+            let g = cfg_holder.read().await;
+            crate::runtime::cli_mcp::run_mcp_list(&g, probe, true).await;
+            Ok(true)
+        }
+        ReplSlashHandled::RunConfigReload => {
+            match crate::runtime::config_reload::reload_shared_agent_config(cfg_holder, config_path)
+                .await
+            {
+                Ok(()) => {
+                    let _ = style.print_success(
+                        "配置已热重载（conversation_store_sqlite_path 与 HTTP Client 未重建；详见文档）。",
+                    );
+                }
+                Err(e) => {
+                    let _ = style.eprint_error(&e);
+                }
+            }
+            Ok(true)
+        }
+    }
+}
+
 /// 执行 REPL 本地 shell 一行：`parsed` 为 `repl_reedline::parse_repl_dollar_shell_line` 的 `Some(...)` 内层；`None` 表示仅 `$` 或空命令，打印用法。
 fn repl_execute_shell(
     parsed: Option<&str>,
@@ -187,9 +286,10 @@ pub async fn run_repl(
                     break;
                 }
 
-                match try_handle_repl_slash_command(
+                if repl_slash_branch_continue_loop(
                     input.as_str(),
                     cfg_holder,
+                    config_path,
                     tools,
                     &mut messages,
                     &mut work_dir,
@@ -197,84 +297,11 @@ pub async fn run_repl(
                     no_stream,
                     &mut agent_role_owned,
                     &api_key_holder,
+                    client,
                 )
-                .await
+                .await?
                 {
-                    ReplSlashHandled::NotSlash => {}
-                    ReplSlashHandled::Handled => continue,
-                    ReplSlashHandled::RunProbe => {
-                        let g = cfg_holder.read().await;
-                        let k = api_key_holder
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .clone();
-                        if let Err(e) =
-                            crate::runtime::cli_doctor::run_probe_cli(client, &g, k.trim()).await
-                        {
-                            let _ = style.eprint_error(&e.to_string());
-                        }
-                        continue;
-                    }
-                    ReplSlashHandled::RunModels => {
-                        let g = cfg_holder.read().await;
-                        let k = api_key_holder
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .clone();
-                        if let Err(e) =
-                            crate::runtime::cli_doctor::run_models_cli(client, &g, k.trim()).await
-                        {
-                            let _ = style.eprint_error(&e.to_string());
-                        }
-                        continue;
-                    }
-                    ReplSlashHandled::RunModelsChoose { model_id } => {
-                        let k = api_key_holder
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .clone();
-                        match crate::runtime::cli_doctor::run_models_choose_repl(
-                            client,
-                            cfg_holder,
-                            k.trim(),
-                            &model_id,
-                        )
-                        .await
-                        {
-                            Ok(resolved) => {
-                                let _ = style.print_success(&format!(
-                                    "已设 model = {resolved}（仅本进程有效；持久化请改配置文件；/config reload 会从磁盘覆盖）"
-                                ));
-                            }
-                            Err(e) => {
-                                let _ = style.eprint_error(&e.to_string());
-                            }
-                        }
-                        continue;
-                    }
-                    ReplSlashHandled::RunMcpList { probe } => {
-                        let g = cfg_holder.read().await;
-                        crate::runtime::cli_mcp::run_mcp_list(&g, probe, true).await;
-                        continue;
-                    }
-                    ReplSlashHandled::RunConfigReload => {
-                        match crate::runtime::config_reload::reload_shared_agent_config(
-                            cfg_holder,
-                            config_path,
-                        )
-                        .await
-                        {
-                            Ok(()) => {
-                                let _ = style.print_success(
-                                    "配置已热重载（conversation_store_sqlite_path 与 HTTP Client 未重建；详见文档）。",
-                                );
-                            }
-                            Err(e) => {
-                                let _ = style.eprint_error(&e);
-                            }
-                        }
-                        continue;
-                    }
+                    continue;
                 }
 
                 crate::runtime::workspace_session::try_merge_background_initial_workspace(

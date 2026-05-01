@@ -130,6 +130,135 @@ fn settings_page_install_hashchange_listener(active_section: RwSignal<SettingsSe
 }
 
 #[component]
+fn SettingsPageNavRail(
+    active_section: RwSignal<SettingsSection>,
+    appearance_locale: RwSignal<Locale>,
+) -> impl IntoView {
+    view! {
+        <nav class="settings-nav" prop:aria-label=move || i18n::settings_nav_aria(appearance_locale.get())>
+            <button
+                type="button"
+                class="settings-nav-item"
+                class:active=move || active_section.get() == SettingsSection::Appearance
+                on:click=move |_| {
+                    active_section.set(SettingsSection::Appearance);
+                    write_settings_section_to_hash(SettingsSection::Appearance);
+                }
+            >
+                {move || i18n::settings_section_appearance_title(appearance_locale.get())}
+            </button>
+            <button
+                type="button"
+                class="settings-nav-item"
+                class:active=move || active_section.get() == SettingsSection::Llm
+                on:click=move |_| {
+                    active_section.set(SettingsSection::Llm);
+                    write_settings_section_to_hash(SettingsSection::Llm);
+                }
+            >
+                {move || i18n::settings_section_llm_title(appearance_locale.get())}
+            </button>
+            <button
+                type="button"
+                class="settings-nav-item"
+                class:active=move || active_section.get() == SettingsSection::ExecutorLlm
+                on:click=move |_| {
+                    active_section.set(SettingsSection::ExecutorLlm);
+                    write_settings_section_to_hash(SettingsSection::ExecutorLlm);
+                }
+            >
+                {move || i18n::settings_section_executor_llm_title(appearance_locale.get())}
+            </button>
+            <button
+                type="button"
+                class="settings-nav-item"
+                class:active=move || active_section.get() == SettingsSection::Shortcuts
+                on:click=move |_| {
+                    active_section.set(SettingsSection::Shortcuts);
+                    write_settings_section_to_hash(SettingsSection::Shortcuts);
+                }
+            >
+                {move || i18n::settings_section_shortcuts_title(appearance_locale.get())}
+            </button>
+        </nav>
+    }
+}
+
+#[component]
+fn SettingsPageContentPanels(
+    active_section: RwSignal<SettingsSection>,
+    appearance_locale: RwSignal<Locale>,
+    appearance_theme: RwSignal<String>,
+    appearance_bg_decor: RwSignal<bool>,
+    llm_api_base_draft: RwSignal<String>,
+    llm_api_base_preset_select: RwSignal<String>,
+    llm_model_draft: RwSignal<String>,
+    llm_temperature_draft: RwSignal<String>,
+    llm_api_key_draft: RwSignal<String>,
+    llm_has_saved_key: RwSignal<bool>,
+    clear_client_key_intent: RwSignal<bool>,
+    executor_llm_api_base_draft: RwSignal<String>,
+    executor_llm_api_base_preset_select: RwSignal<String>,
+    executor_llm_model_draft: RwSignal<String>,
+    executor_llm_api_key_draft: RwSignal<String>,
+    executor_llm_has_saved_key: RwSignal<bool>,
+    clear_executor_key_intent: RwSignal<bool>,
+    execution_mode_draft: RwSignal<String>,
+) -> impl IntoView {
+    view! {
+        <section class="settings-content">
+            <header class="settings-content-header">
+                <h2 class="settings-content-title">{move || section_title(active_section.get(), appearance_locale.get())}</h2>
+                <p class="settings-content-desc">{move || section_desc(active_section.get(), appearance_locale.get())}</p>
+            </header>
+            <Show when=move || active_section.get() == SettingsSection::Appearance>
+                <SettingsAppearanceBlock
+                    locale=appearance_locale
+                    appearance_locale=appearance_locale
+                    appearance_theme=appearance_theme
+                    appearance_bg_decor=appearance_bg_decor
+                />
+            </Show>
+
+            <Show when=move || active_section.get() == SettingsSection::Llm>
+                <SettingsLlmBlock
+                    locale=appearance_locale
+                    llm_api_base_draft=llm_api_base_draft
+                    llm_api_base_preset_select=llm_api_base_preset_select
+                    llm_model_draft=llm_model_draft
+                    llm_temperature_draft=llm_temperature_draft
+                    execution_mode_draft=Some(execution_mode_draft)
+                    llm_api_key_draft=llm_api_key_draft
+                    llm_has_saved_key=llm_has_saved_key
+                    clear_client_key_intent=clear_client_key_intent
+                    hint_class="settings-field-nested-hint"
+                />
+            </Show>
+
+            <Show when=move || active_section.get() == SettingsSection::ExecutorLlm>
+                <SettingsExecutorLlmBlock
+                    locale=appearance_locale
+                    executor_llm_api_base_draft=executor_llm_api_base_draft
+                    executor_llm_api_base_preset_select=executor_llm_api_base_preset_select
+                    executor_llm_model_draft=executor_llm_model_draft
+                    executor_llm_api_key_draft=executor_llm_api_key_draft
+                    executor_llm_has_saved_key=executor_llm_has_saved_key
+                    clear_executor_key_intent=clear_executor_key_intent
+                    hint_class="settings-field-nested-hint"
+                />
+            </Show>
+
+            <Show when=move || active_section.get() == SettingsSection::Shortcuts>
+                <SettingsShortcutsBlock
+                    locale=appearance_locale
+                    body_class="settings-intro"
+                />
+            </Show>
+        </section>
+    }
+}
+
+#[component]
 pub fn SettingsPageView(
     settings_page: RwSignal<bool>,
     locale: RwSignal<Locale>,
@@ -404,102 +533,27 @@ pub fn SettingsPageView(
                     }}</p>
                 </Show>
                 <div class="settings-layout">
-                    <nav class="settings-nav" prop:aria-label=move || i18n::settings_nav_aria(appearance_locale.get())>
-                        <button
-                            type="button"
-                            class="settings-nav-item"
-                            class:active=move || active_section.get() == SettingsSection::Appearance
-                            on:click=move |_| {
-                                active_section.set(SettingsSection::Appearance);
-                                write_settings_section_to_hash(SettingsSection::Appearance);
-                            }
-                        >
-                            {move || i18n::settings_section_appearance_title(appearance_locale.get())}
-                        </button>
-                        <button
-                            type="button"
-                            class="settings-nav-item"
-                            class:active=move || active_section.get() == SettingsSection::Llm
-                            on:click=move |_| {
-                                active_section.set(SettingsSection::Llm);
-                                write_settings_section_to_hash(SettingsSection::Llm);
-                            }
-                        >
-                            {move || i18n::settings_section_llm_title(appearance_locale.get())}
-                        </button>
-                        <button
-                            type="button"
-                            class="settings-nav-item"
-                            class:active=move || active_section.get() == SettingsSection::ExecutorLlm
-                            on:click=move |_| {
-                                active_section.set(SettingsSection::ExecutorLlm);
-                                write_settings_section_to_hash(SettingsSection::ExecutorLlm);
-                            }
-                        >
-                            {move || i18n::settings_section_executor_llm_title(appearance_locale.get())}
-                        </button>
-                        <button
-                            type="button"
-                            class="settings-nav-item"
-                            class:active=move || active_section.get() == SettingsSection::Shortcuts
-                            on:click=move |_| {
-                                active_section.set(SettingsSection::Shortcuts);
-                                write_settings_section_to_hash(SettingsSection::Shortcuts);
-                            }
-                        >
-                            {move || i18n::settings_section_shortcuts_title(appearance_locale.get())}
-                        </button>
-                    </nav>
-
-                    <section class="settings-content">
-                        <header class="settings-content-header">
-                            <h2 class="settings-content-title">{move || section_title(active_section.get(), appearance_locale.get())}</h2>
-                            <p class="settings-content-desc">{move || section_desc(active_section.get(), appearance_locale.get())}</p>
-                        </header>
-                        <Show when=move || active_section.get() == SettingsSection::Appearance>
-                            <SettingsAppearanceBlock
-                                locale=appearance_locale
-                                appearance_locale=appearance_locale
-                                appearance_theme=appearance_theme
-                                appearance_bg_decor=appearance_bg_decor
-                            />
-                        </Show>
-
-                        <Show when=move || active_section.get() == SettingsSection::Llm>
-                            <SettingsLlmBlock
-                                locale=appearance_locale
-                                llm_api_base_draft=llm_api_base_draft
-                                llm_api_base_preset_select=llm_api_base_preset_select
-                                llm_model_draft=llm_model_draft
-                                llm_temperature_draft=llm_temperature_draft
-                                execution_mode_draft=Some(execution_mode_draft)
-                                llm_api_key_draft=llm_api_key_draft
-                                llm_has_saved_key=llm_has_saved_key
-                                clear_client_key_intent=clear_client_key_intent
-                                hint_class="settings-field-nested-hint"
-                            />
-                        </Show>
-
-                        <Show when=move || active_section.get() == SettingsSection::ExecutorLlm>
-                            <SettingsExecutorLlmBlock
-                                locale=appearance_locale
-                                executor_llm_api_base_draft=executor_llm_api_base_draft
-                                executor_llm_api_base_preset_select=executor_llm_api_base_preset_select
-                                executor_llm_model_draft=executor_llm_model_draft
-                                executor_llm_api_key_draft=executor_llm_api_key_draft
-                                executor_llm_has_saved_key=executor_llm_has_saved_key
-                                clear_executor_key_intent=clear_executor_key_intent
-                                hint_class="settings-field-nested-hint"
-                            />
-                        </Show>
-
-                        <Show when=move || active_section.get() == SettingsSection::Shortcuts>
-                            <SettingsShortcutsBlock
-                                locale=appearance_locale
-                                body_class="settings-intro"
-                            />
-                        </Show>
-                    </section>
+                    <SettingsPageNavRail active_section=active_section appearance_locale=appearance_locale />
+                    <SettingsPageContentPanels
+                        active_section=active_section
+                        appearance_locale=appearance_locale
+                        appearance_theme=appearance_theme
+                        appearance_bg_decor=appearance_bg_decor
+                        llm_api_base_draft=llm_api_base_draft
+                        llm_api_base_preset_select=llm_api_base_preset_select
+                        llm_model_draft=llm_model_draft
+                        llm_temperature_draft=llm_temperature_draft
+                        llm_api_key_draft=llm_api_key_draft
+                        llm_has_saved_key=llm_has_saved_key
+                        clear_client_key_intent=clear_client_key_intent
+                        executor_llm_api_base_draft=executor_llm_api_base_draft
+                        executor_llm_api_base_preset_select=executor_llm_api_base_preset_select
+                        executor_llm_model_draft=executor_llm_model_draft
+                        executor_llm_api_key_draft=executor_llm_api_key_draft
+                        executor_llm_has_saved_key=executor_llm_has_saved_key
+                        clear_executor_key_intent=clear_executor_key_intent
+                        execution_mode_draft=execution_mode_draft
+                    />
                 </div>
             </div>
         </div>
