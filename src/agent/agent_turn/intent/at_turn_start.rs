@@ -2,10 +2,9 @@
 //! L0 + L1 + 可选 L2；非「直接执行」时写入助手终答并结束本回合。
 //! `meta.greeting`、`qa.meta*`、`qa.explain`、`qa.readonly*`（只读 + hint）、`ClarifyThenExecute`、`ConfirmThenExecute` 等改入**主模型**；占位 canned 不终答（可配合 `intent_turn_gate_hint` 与 `system_intent_gate_hint`）。
 
-use crate::agent::intent_l0;
 use crate::agent::intent_l2_classifier::classify_intent_l2_with_llm;
 use crate::agent::intent_pipeline::{
-    IntentAction, IntentContext, assess_and_route_with_l2, prepare_intent_routing,
+    IntentAction, assess_and_route_with_l2, prepare_intent_routing,
 };
 use crate::agent::intent_router::{
     ExecuteIntentThresholds, intent_reply_delegates_to_main_model, qa_readonly_style_primary,
@@ -14,10 +13,8 @@ use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crate::sse;
 
 use super::super::params::RunLoopParams;
+use super::build_intent_routing_context;
 use super::intent_user;
-
-const RECENT_USER_FOR_MERGE: usize = 4;
-const MSG_TAIL_FOR_TOOL: usize = 32;
 
 /// 只读门控：主模型作答 + 工具已收窄为只读。
 const GATE_HINT_READONLY_ZH: &str = "【意图门控】当前回合应只读理解仓库（可列出/读取文件），不要改文件、不要跑测试或长耗时构建，除非用户明确要求。";
@@ -205,18 +202,12 @@ async fn run_intent_l0_l1_l2_gate(
     thresholds: ExecuteIntentThresholds,
     sse_log_tag: &'static str,
 ) -> Result<IntentGateResult, super::super::errors::RunAgentTurnError> {
-    let has_recent_tool_failure =
-        intent_l0::messages_have_recent_tool_failure(p.turn.messages, MSG_TAIL_FOR_TOOL);
-    let recent_user_messages =
-        intent_user::collect_recent_user_messages(p.turn.messages, RECENT_USER_FOR_MERGE);
-    let intent_ctx = IntentContext {
-        recent_user_messages,
+    let intent_ctx = build_intent_routing_context(
+        p.turn.messages,
+        p.ctx.cfg.as_ref(),
         in_clarification_flow,
         thresholds,
-        l2_min_confidence: p.ctx.cfg.intent_l2_min_confidence,
-        has_recent_tool_failure,
-        l0_routing_boost_enabled: p.ctx.cfg.intent_l0_routing_boost_enabled,
-    };
+    );
     let (routing_for_l1, _, _) = prepare_intent_routing(task, &intent_ctx);
     let l2_candidate = if p.ctx.cfg.intent_l2_enabled {
         classify_intent_l2_with_llm(

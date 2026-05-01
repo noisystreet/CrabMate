@@ -7,8 +7,7 @@
 
 use crate::agent::per_coord::PerCoordinator;
 use crate::agent::{
-    intent_l0,
-    intent_pipeline::{IntentAction, IntentContext, IntentDecision, assess_and_route},
+    intent_pipeline::{IntentAction, IntentDecision, assess_and_route},
     intent_router::{ExecuteIntentThresholds, IntentKind},
 };
 use crate::config::PlannerExecutorMode;
@@ -16,6 +15,7 @@ use crate::types::Message;
 
 use super::errors::RunAgentTurnError;
 use super::hierarchy;
+use super::intent::build_intent_routing_context;
 use super::intent_at_turn_start;
 use super::intent_user;
 use super::outer_loop::run_agent_outer_loop;
@@ -24,9 +24,6 @@ use super::staged::{
     run_logical_dual_agent_then_execute_steps, run_staged_plan_then_execute_steps,
 };
 use super::turn_orchestration::{TurnOrchestrationMode, resolve_non_hierarchical_main_path};
-
-const STAGED_INTENT_GATE_RECENT_USER_FOR_MERGE: usize = 4;
-const STAGED_INTENT_GATE_MSG_TAIL_FOR_TOOL: usize = 32;
 
 /// 非分层路径下，是否允许进入分阶段 / 逻辑双代理编排（仅 `IntentAction::Execute` 为 true）。
 #[derive(Debug, Clone, PartialEq)]
@@ -90,25 +87,15 @@ pub(crate) fn assess_staged_planning_gate(
         };
     }
 
-    let has_recent_tool_failure = intent_l0::messages_have_recent_tool_failure(
+    let intent_ctx = build_intent_routing_context(
         messages,
-        STAGED_INTENT_GATE_MSG_TAIL_FOR_TOOL,
-    );
-    let recent_user_messages = intent_user::collect_recent_user_messages(
-        messages,
-        STAGED_INTENT_GATE_RECENT_USER_FOR_MERGE,
-    );
-    let intent_ctx = IntentContext {
-        recent_user_messages,
+        cfg,
         in_clarification_flow,
-        thresholds: ExecuteIntentThresholds {
+        ExecuteIntentThresholds {
             low: cfg.intent_non_hier_execute_low_threshold,
             high: cfg.intent_non_hier_execute_high_threshold,
         },
-        l2_min_confidence: cfg.intent_l2_min_confidence,
-        has_recent_tool_failure,
-        l0_routing_boost_enabled: cfg.intent_l0_routing_boost_enabled,
-    };
+    );
     let decision = assess_and_route(task.as_str(), &intent_ctx);
     let allowed = matches!(decision.action, IntentAction::Execute);
 

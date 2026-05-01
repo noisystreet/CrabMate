@@ -4,7 +4,9 @@
 //! `intent_user` / `intent_at_turn_start` 名称 re-export，避免大范围改动调用方。
 
 pub(crate) mod at_turn_start;
+pub(crate) mod context;
 pub(crate) mod user;
 
 pub(crate) use at_turn_start as intent_at_turn_start;
+pub(crate) use context::build_intent_routing_context;
 pub(crate) use user as intent_user;
