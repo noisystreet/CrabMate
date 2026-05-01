@@ -12,8 +12,8 @@ use wasm_bindgen::JsCast;
 use super::composer_input_stack::ComposerInputStack;
 use super::handles::ChatColumnShell;
 use super::message_chunks::{ChatChunk, chunk_messages};
-use super::message_group_views::tool_run_group_view;
-use super::message_row::chat_message_row;
+use super::message_group_views::{ToolRunGroupSignals, tool_run_group_view};
+use super::message_row::{ChatMessageRowSignals, chat_message_row};
 use super::timeline::timeline_panel_view;
 use crate::api::upload_files_multipart;
 use crate::app::scroll_guard::MessagesScrollFromEffectGuard;
@@ -70,6 +70,25 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
         markdown_render,
         apply_assistant_display_filters,
     } = signals;
+
+    let tool_run_group_signals = ToolRunGroupSignals {
+        collapsed_tool_run_heads,
+        chat_find_query,
+        chat_find_match_ids,
+        sessions,
+        active_id,
+        collapsed_long_assistant_ids,
+        chat_find_cursor,
+        status_busy,
+        session_sync,
+        regen_stream_after_truncate,
+        retry_assistant_target,
+        status_err,
+        auto_scroll_chat,
+        locale,
+        markdown_render,
+        apply_assistant_display_filters,
+    };
 
     view! {
         <div
@@ -139,45 +158,32 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
                                     .into_iter()
                                     .map(|chunk| match chunk {
                                         ChatChunk::Single { idx, msg } => chat_message_row(
-                                            idx,
-                                            msg,
-                                            sessions,
-                                            active_id,
-                                            collapsed_long_assistant_ids,
-                                            chat_find_query,
-                                            chat_find_match_ids,
-                                            chat_find_cursor,
-                                            auto_scroll_chat,
-                                            status_busy,
-                                            session_sync,
-                                            regen_stream_after_truncate,
-                                            retry_assistant_target,
-                                            status_err,
-                                            locale,
-                                            markdown_render,
-                                            apply_assistant_display_filters,
+                                            ChatMessageRowSignals {
+                                                msg_idx: idx,
+                                                m: msg,
+                                                sessions,
+                                                active_id,
+                                                collapsed_long_assistant_ids,
+                                                chat_find_query,
+                                                chat_find_match_ids,
+                                                chat_find_cursor,
+                                                auto_scroll_chat,
+                                                status_busy,
+                                                session_sync,
+                                                regen_stream_after_truncate,
+                                                retry_assistant_target,
+                                                status_err,
+                                                locale,
+                                                markdown_render,
+                                                apply_assistant_display_filters,
+                                            },
                                         )
                                         .into_any(),
                                         ChatChunk::ToolGroup { head_id, items } => {
                                             tool_run_group_view(
                                                 head_id,
                                                 items,
-                                                collapsed_tool_run_heads,
-                                                chat_find_query,
-                                                chat_find_match_ids,
-                                                sessions,
-                                                active_id,
-                                                collapsed_long_assistant_ids,
-                                                chat_find_cursor,
-                                                status_busy,
-                                                session_sync,
-                                                regen_stream_after_truncate,
-                                                retry_assistant_target,
-                                                status_err,
-                                                auto_scroll_chat,
-                                                locale,
-                                                markdown_render,
-                                                apply_assistant_display_filters,
+                                                tool_run_group_signals,
                                             )
                                             .into_any()
                                         }

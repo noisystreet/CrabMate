@@ -250,7 +250,7 @@ impl Default for ModalSignals {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct LLMSettingsSignals {
     pub llm_api_base_draft: RwSignal<String>,
     pub llm_api_base_preset_select: RwSignal<String>,

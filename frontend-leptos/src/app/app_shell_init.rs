@@ -8,9 +8,9 @@ use leptos::prelude::*;
 
 use super::app_shell_ctx::AppShellCtx;
 use super::app_shell_effects::{
-    ShellEscapeSignals, wire_approval_expanded_follows_pending, wire_escape_key_layered_dismiss,
-    wire_persist_agent_role, wire_persist_side_panel_view_flags, wire_persist_side_width,
-    wire_persist_sidebar_rail_collapsed, wire_persist_status_bar_visible,
+    ShellEscapeSignals, WireSettingsModalLlmDraftsSignals, wire_approval_expanded_follows_pending,
+    wire_escape_key_layered_dismiss, wire_persist_agent_role, wire_persist_side_panel_view_flags,
+    wire_persist_side_width, wire_persist_sidebar_rail_collapsed, wire_persist_status_bar_visible,
     wire_settings_modal_llm_drafts_on_open, wire_sync_bg_decor_to_storage_and_dom,
     wire_sync_locale_html_lang, wire_sync_theme_to_storage_and_dom,
 };
@@ -61,26 +61,12 @@ pub fn init_app_shell() -> AppShellInit {
     wire_sync_theme_to_storage_and_dom(app_signals.shell_ui.theme);
     wire_sync_locale_html_lang(app_signals.shell_ui.locale);
     wire_sync_bg_decor_to_storage_and_dom(app_signals.shell_ui.bg_decor);
-    wire_settings_modal_llm_drafts_on_open(
-        app_signals.modal.settings_modal,
-        app_signals.modal.settings_page,
-        app_signals.to_status_tasks(),
-        app_signals.llm_settings.llm_api_base_draft,
-        app_signals.llm_settings.llm_api_base_preset_select,
-        app_signals.llm_settings.llm_model_draft,
-        app_signals.llm_settings.llm_temperature_draft,
-        app_signals.llm_settings.llm_context_tokens_draft,
-        app_signals.llm_settings.llm_api_key_draft,
-        app_signals.llm_settings.llm_has_saved_key,
-        app_signals.llm_settings.llm_settings_feedback,
-        app_signals.llm_settings.executor_llm_api_base_draft,
-        app_signals.llm_settings.executor_llm_api_base_preset_select,
-        app_signals.llm_settings.executor_llm_model_draft,
-        app_signals.llm_settings.executor_llm_api_key_draft,
-        app_signals.llm_settings.executor_llm_has_saved_key,
-        app_signals.llm_settings.executor_llm_settings_feedback,
-        app_signals.llm_settings.execution_mode_draft,
-    );
+    wire_settings_modal_llm_drafts_on_open(WireSettingsModalLlmDraftsSignals {
+        settings_modal: app_signals.modal.settings_modal,
+        settings_page: app_signals.modal.settings_page,
+        status_tasks: app_signals.to_status_tasks(),
+        llm: app_signals.llm_settings,
+    });
     let shell_escape = ShellEscapeSignals {
         session_context_menu: app_signals.sidebar.session_context_menu,
         sidebar_rail_ctx_menu: app_signals.sidebar.sidebar_rail_ctx_menu,
