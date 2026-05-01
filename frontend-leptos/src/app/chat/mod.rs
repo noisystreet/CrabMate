@@ -24,5 +24,5 @@ pub(crate) mod wire_chat_session_lifecycle;
 pub use handles::{ChatColumnShell, ComposerStreamShell};
 
 pub(crate) use column::chat_column_view;
-pub(crate) use find_bar::ChatFindBar;
+pub(crate) use find_bar::{ChatFindBar, ChatFindBarSignals};
 pub(crate) use timeline::load_timeline_panel_expanded_default;

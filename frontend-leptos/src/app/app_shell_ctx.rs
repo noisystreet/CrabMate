@@ -1,5 +1,5 @@
 //! 壳层 `*_view` 聚合为 [`AppShellCtx`]，压缩 `App` 内 `view!` 的长实参列表。
-//! 阶段 B：对「仅由壳已持有的一组 `RwSignal` 拼出的子组件入参」提供 **`settings_page_form_signals()`** 等组装方法，避免在 **`App`** 中重复罗列字段。
+//! 阶段 B：对「仅由壳已持有的一组 `RwSignal` 拼出的子组件入参」提供 **`settings_page_form_signals()`**、**`chat_find_bar_signals()`** 等组装方法，避免在 **`App`** 中重复罗列字段。
 //! **未使用** Leptos `Context` / `<Provider>`：壳层状态含 `Rc<RefCell<…>>`、`Rc<dyn Fn()>` 等，
 //! 不满足 `provide_context` 的 `Send + Sync + 'static` 约束；以结构体 **`Clone`**（内部多为
 //! `Copy` / `Rc::clone` / `Arc::clone`）在 `*_view` 间传递即可。
@@ -18,7 +18,7 @@ use crate::sse_dispatch::ThinkingTraceInfo;
 
 use crate::app_prefs::SidePanelView;
 
-use super::chat::ChatColumnShell;
+use super::chat::{ChatColumnShell, ChatFindBarSignals};
 use super::settings_page::SettingsPageFormSignals;
 use super::status_tasks_state::StatusTasksSignals;
 use super::workspace_panel_state::WorkspacePanelSignals;
@@ -100,6 +100,18 @@ pub struct AppShellCtx {
 }
 
 impl AppShellCtx {
+    /// 主区会话内查找条（阶段 B：避免在 `App` 中逐项传 `RwSignal`）。
+    pub fn chat_find_bar_signals(&self) -> ChatFindBarSignals {
+        ChatFindBarSignals {
+            chat_find_panel_open: self.chat_find_panel_open,
+            locale: self.locale,
+            chat_find_query: self.chat_column.chat_find_query,
+            chat_find_match_ids: self.chat_column.chat_find_match_ids,
+            chat_find_cursor: self.chat_column.chat_find_cursor,
+            auto_scroll_chat: self.chat_column.auto_scroll_chat,
+        }
+    }
+
     /// 设置页表单所需 `RwSignal` 聚合（阶段 B：避免在 `App` 的 `view!` 中重复罗列字段）。
     pub fn settings_page_form_signals(&self) -> SettingsPageFormSignals {
         SettingsPageFormSignals {
