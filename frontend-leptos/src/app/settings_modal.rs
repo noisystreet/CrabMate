@@ -6,7 +6,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use crate::a11y::{focus_first_in_modal_container, trap_tab_in_container};
-use crate::app::settings_commit::commit_all_settings;
+use crate::app::settings_commit::{CommitAllSettingsInput, commit_all_settings};
 use crate::i18n::{self};
 
 use super::app_shell_ctx::AppShellCtx;
@@ -247,31 +247,31 @@ pub fn settings_modal_view(ctx: AppShellCtx) -> impl IntoView {
             return;
         }
         let ui_locale = appearance_locale.get();
-        match commit_all_settings(
+        match commit_all_settings(CommitAllSettingsInput {
             ui_locale,
-            appearance_locale.get(),
-            appearance_theme.get(),
-            appearance_bg_decor.get(),
+            appearance_locale: appearance_locale.get(),
+            appearance_theme: appearance_theme.get(),
+            appearance_bg_decor: appearance_bg_decor.get(),
             locale,
             theme,
             bg_decor,
-            llm_api_base_draft.get().as_str(),
-            llm_model_draft.get().as_str(),
-            llm_temperature_draft.get().as_str(),
-            llm_context_tokens_draft.get().as_str(),
-            llm_api_key_draft.get().as_str(),
-            executor_llm_api_base_draft.get().as_str(),
-            executor_llm_model_draft.get().as_str(),
-            executor_llm_api_key_draft.get().as_str(),
-            execution_mode_draft.get().as_str(),
-            clear_client_key_intent.get(),
-            clear_executor_key_intent.get(),
+            client_base: llm_api_base_draft.get().as_str(),
+            client_model: llm_model_draft.get().as_str(),
+            client_temperature: llm_temperature_draft.get().as_str(),
+            client_llm_context_tokens: llm_context_tokens_draft.get().as_str(),
+            client_api_key_draft: llm_api_key_draft.get().as_str(),
+            executor_base: executor_llm_api_base_draft.get().as_str(),
+            executor_model: executor_llm_model_draft.get().as_str(),
+            executor_api_key_draft: executor_llm_api_key_draft.get().as_str(),
+            execution_mode: execution_mode_draft.get().as_str(),
+            clear_client_llm_key: clear_client_key_intent.get(),
+            clear_executor_llm_key: clear_executor_key_intent.get(),
             llm_api_key_draft,
             llm_has_saved_key,
             executor_llm_api_key_draft,
             executor_llm_has_saved_key,
             client_llm_storage_tick,
-        ) {
+        }) {
             Ok(()) => {
                 refresh_baselines(
                     baseline_appearance,

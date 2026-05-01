@@ -21,9 +21,9 @@ use crate::app_prefs::AUTO_SCROLL_RESUME_GAP_PX;
 use crate::i18n;
 use crate::session_ops::messages_scroller_has_non_collapsed_selection;
 
-#[allow(clippy::too_many_arguments)]
-#[component]
-fn ChatMessagesPane(
+/// 消息列表区所需信号（缩短 `ChatMessagesPane` 形参列表；勿命名为 `*Props`，与 Leptos 组件宏生成类型冲突）。
+#[derive(Clone, Copy)]
+struct ChatMessagesPaneSignals {
     locale: RwSignal<crate::i18n::Locale>,
     messages_scroller: NodeRef<leptos::html::Div>,
     auto_scroll_chat: RwSignal<bool>,
@@ -44,7 +44,33 @@ fn ChatMessagesPane(
     status_err: RwSignal<Option<String>>,
     markdown_render: RwSignal<bool>,
     apply_assistant_display_filters: RwSignal<bool>,
-) -> impl IntoView {
+}
+
+#[component]
+fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
+    let ChatMessagesPaneSignals {
+        locale,
+        messages_scroller,
+        auto_scroll_chat,
+        messages_scroll_from_effect,
+        last_messages_scroll_top,
+        timeline_panel_expanded,
+        sessions,
+        active_id,
+        collapsed_long_assistant_ids,
+        collapsed_tool_run_heads,
+        chat_find_query,
+        chat_find_match_ids,
+        chat_find_cursor,
+        status_busy,
+        session_sync,
+        regen_stream_after_truncate,
+        retry_assistant_target,
+        status_err,
+        markdown_render,
+        apply_assistant_display_filters,
+    } = signals;
+
     view! {
         <div
             class="messages"
@@ -167,9 +193,9 @@ fn ChatMessagesPane(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-#[component]
-fn ChatComposerPane(
+/// 输入区所需信号与闭包（勿命名为 `*Props`，与 Leptos 组件宏生成类型冲突）。
+#[derive(Clone)]
+struct ChatComposerPaneSignals {
     locale: RwSignal<crate::i18n::Locale>,
     pending_images: RwSignal<Vec<String>>,
     pending_clarification: RwSignal<Option<crate::clarification_form::PendingClarificationForm>>,
@@ -183,7 +209,26 @@ fn ChatComposerPane(
     composer_buf_ta: Arc<Mutex<String>>,
     composer_mirror_html: RwSignal<String>,
     composer_mirror_scroll_top: RwSignal<f64>,
-) -> impl IntoView {
+}
+
+#[component]
+fn ChatComposerPane(signals: ChatComposerPaneSignals) -> impl IntoView {
+    let ChatComposerPaneSignals {
+        locale,
+        pending_images,
+        pending_clarification,
+        status_busy,
+        status_err,
+        run_send_message,
+        run_send_clarify_sv,
+        trigger_stop,
+        initialized,
+        composer_input_ref,
+        composer_buf_ta,
+        composer_mirror_html,
+        composer_mirror_scroll_top,
+    } = signals;
+
     view! {
         <div class="composer composer-ds">
             <div class="composer-inner-ds">
@@ -550,43 +595,43 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
                         });
                     }
                 >
-                    <ChatMessagesPane
-                        locale=locale
-                        messages_scroller=messages_scroller
-                        auto_scroll_chat=auto_scroll_chat
-                        messages_scroll_from_effect=messages_scroll_from_effect
-                        last_messages_scroll_top=last_messages_scroll_top
-                        timeline_panel_expanded=timeline_panel_expanded
-                        sessions=sessions
-                        active_id=active_id
-                        collapsed_long_assistant_ids=collapsed_long_assistant_ids
-                        collapsed_tool_run_heads=collapsed_tool_run_heads
-                        chat_find_query=chat_find_query
-                        chat_find_match_ids=chat_find_match_ids
-                        chat_find_cursor=chat_find_cursor
-                        status_busy=status_busy
-                        session_sync=session_sync
-                        regen_stream_after_truncate=regen_stream_after_truncate
-                        retry_assistant_target=retry_assistant_target
-                        status_err=status_err
-                        markdown_render=markdown_render
-                        apply_assistant_display_filters=apply_assistant_display_filters
-                    />
-                    <ChatComposerPane
-                        locale=locale
-                        pending_images=pending_images
-                        pending_clarification=pending_clarification
-                        status_busy=status_busy
-                        status_err=status_err
-                        run_send_message=run_send_message.clone()
-                        run_send_clarify_sv=run_send_clarify_sv
-                        trigger_stop=trigger_stop
-                        initialized=initialized
-                        composer_input_ref=composer_input_ref
-                        composer_buf_ta=composer_buf_ta
-                        composer_mirror_html=composer_mirror_html
-                        composer_mirror_scroll_top=composer_mirror_scroll_top
-                    />
+                    <ChatMessagesPane signals=ChatMessagesPaneSignals {
+                        locale,
+                        messages_scroller,
+                        auto_scroll_chat,
+                        messages_scroll_from_effect,
+                        last_messages_scroll_top,
+                        timeline_panel_expanded,
+                        sessions,
+                        active_id,
+                        collapsed_long_assistant_ids,
+                        collapsed_tool_run_heads,
+                        chat_find_query,
+                        chat_find_match_ids,
+                        chat_find_cursor,
+                        status_busy,
+                        session_sync,
+                        regen_stream_after_truncate,
+                        retry_assistant_target,
+                        status_err,
+                        markdown_render,
+                        apply_assistant_display_filters,
+                    } />
+                    <ChatComposerPane signals=ChatComposerPaneSignals {
+                        locale,
+                        pending_images,
+                        pending_clarification,
+                        status_busy,
+                        status_err,
+                        run_send_message: run_send_message.clone(),
+                        run_send_clarify_sv,
+                        trigger_stop,
+                        initialized,
+                        composer_input_ref,
+                        composer_buf_ta,
+                        composer_mirror_html,
+                        composer_mirror_scroll_top,
+                    } />
                 </div>
     }
 }

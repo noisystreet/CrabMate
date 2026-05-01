@@ -16,7 +16,8 @@ use super::app_shell_effects::{
 };
 use super::app_signals::AppSignals;
 use super::chat::{
-    ChatColumnShell, ComposerStreamShell, wire_chat_domain::wire_chat_domain_effects,
+    ChatColumnShell, ComposerStreamShell,
+    wire_chat_domain::{WireChatDomainEffectsArgs, wire_chat_domain_effects},
     wire_chat_session_lifecycle::wire_chat_session_lifecycle_effects,
 };
 use super::status_tasks_wiring::{
@@ -158,31 +159,31 @@ pub fn init_app_shell() -> AppShellInit {
         thinking_trace_log: app_signals.approval.thinking_trace_log,
     };
 
-    let chat_wires = wire_chat_domain_effects(
-        app_signals.initialized,
-        app_signals.chat,
-        app_signals.chat_composer.draft,
-        app_signals.chat_composer.pending_images,
-        app_signals.approval.pending_clarification,
-        app_signals.chat_composer.collapsed_long_assistant_ids,
-        Arc::clone(&app_signals.chat_composer.composer_draft_buffer),
-        app_signals.chat_composer.composer_mirror_html,
-        app_signals.chat_composer.composer_mirror_scroll_top,
-        app_signals.chat_composer.composer_input_ref.clone(),
-        app_signals.chat.sessions,
-        app_signals.chat.active_id,
-        app_signals.chat_composer.messages_scroller,
-        app_signals.chat_composer.auto_scroll_chat,
-        app_signals.chat_composer.messages_scroll_from_effect,
-        app_signals.chat_composer.chat_find_query,
-        app_signals.chat_composer.chat_find_match_ids,
-        app_signals.chat_composer.chat_find_cursor,
-        app_signals.shell_ui.locale,
-        app_signals.shell_ui.apply_assistant_display_filters,
-        app_signals.chat_composer.focus_message_id_after_nav,
-        app_signals.llm_settings.selected_agent_role,
-        chat_stream_shell.clone(),
-    );
+    let chat_wires = wire_chat_domain_effects(WireChatDomainEffectsArgs {
+        initialized: app_signals.initialized,
+        chat_session: app_signals.chat,
+        draft: app_signals.chat_composer.draft,
+        pending_images: app_signals.chat_composer.pending_images,
+        pending_clarification: app_signals.approval.pending_clarification,
+        collapsed_long_assistant_ids: app_signals.chat_composer.collapsed_long_assistant_ids,
+        composer_draft_buffer: Arc::clone(&app_signals.chat_composer.composer_draft_buffer),
+        composer_mirror_html: app_signals.chat_composer.composer_mirror_html,
+        composer_mirror_scroll_top: app_signals.chat_composer.composer_mirror_scroll_top,
+        composer_input_ref: app_signals.chat_composer.composer_input_ref.clone(),
+        sessions: app_signals.chat.sessions,
+        active_id: app_signals.chat.active_id,
+        messages_scroller: app_signals.chat_composer.messages_scroller,
+        auto_scroll_chat: app_signals.chat_composer.auto_scroll_chat,
+        messages_scroll_from_effect: app_signals.chat_composer.messages_scroll_from_effect,
+        chat_find_query: app_signals.chat_composer.chat_find_query,
+        chat_find_match_ids: app_signals.chat_composer.chat_find_match_ids,
+        chat_find_cursor: app_signals.chat_composer.chat_find_cursor,
+        locale: app_signals.shell_ui.locale,
+        apply_assistant_display_filters: app_signals.shell_ui.apply_assistant_display_filters,
+        focus_message_id_after_nav: app_signals.chat_composer.focus_message_id_after_nav,
+        selected_agent_role: app_signals.llm_settings.selected_agent_role,
+        stream_shell: chat_stream_shell.clone(),
+    });
 
     let new_session = Rc::clone(&chat_wires.new_session);
 

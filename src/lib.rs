@@ -118,35 +118,84 @@ pub struct RunAgentTurnParams<'a> {
     pub tracing_chat_turn: Option<Arc<observability::TracingChatTurn>>,
 }
 
+/// 构造 [`RunAgentTurnParams::web_chat_stream`] 所需的参数包（避免长形参列表）。
+pub struct WebChatStreamBuildArgs<'a> {
+    pub client: &'a reqwest::Client,
+    pub api_key: &'a str,
+    pub cfg: &'a Arc<config::AgentConfig>,
+    pub tools: &'a [crate::types::Tool],
+    pub messages: &'a mut Vec<Message>,
+    pub effective_working_dir: &'a std::path::Path,
+    pub workspace_is_set: bool,
+    pub cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub per_flight: std::sync::Arc<chat_job_queue::PerTurnFlight>,
+    pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
+    pub temperature_override: Option<f32>,
+    pub model_override: Option<String>,
+    pub use_executor_model: bool,
+    pub executor_model_override: Option<String>,
+    pub executor_api_base: Option<String>,
+    pub executor_api_key: Option<String>,
+    pub seed_override: types::LlmSeedOverride,
+    pub long_term_memory:
+        Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
+    pub job_id: u64,
+    pub conversation_id: &'a str,
+    pub out: &'a mpsc::Sender<String>,
+    pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
+}
+
+/// 构造 [`RunAgentTurnParams::web_chat_json`] 所需的参数包。
+pub struct WebChatJsonBuildArgs<'a> {
+    pub client: &'a reqwest::Client,
+    pub api_key: &'a str,
+    pub cfg: &'a Arc<config::AgentConfig>,
+    pub tools: &'a [crate::types::Tool],
+    pub messages: &'a mut Vec<Message>,
+    pub effective_working_dir: &'a std::path::Path,
+    pub workspace_is_set: bool,
+    pub per_flight: std::sync::Arc<chat_job_queue::PerTurnFlight>,
+    pub temperature_override: Option<f32>,
+    pub model_override: Option<String>,
+    pub use_executor_model: bool,
+    pub executor_model_override: Option<String>,
+    pub executor_api_base: Option<String>,
+    pub executor_api_key: Option<String>,
+    pub seed_override: types::LlmSeedOverride,
+    pub long_term_memory:
+        Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
+    pub job_id: u64,
+    pub conversation_id: &'a str,
+    pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
+}
+
 impl<'a> RunAgentTurnParams<'a> {
     /// Web `/chat/stream`：SSE 输出、可选工具审批、可取消。
-    #[allow(clippy::too_many_arguments)]
-    pub fn web_chat_stream(
-        client: &'a reqwest::Client,
-        api_key: &'a str,
-        cfg: &'a Arc<config::AgentConfig>,
-        tools: &'a [crate::types::Tool],
-        messages: &'a mut Vec<Message>,
-        effective_working_dir: &'a std::path::Path,
-        workspace_is_set: bool,
-        cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
-        per_flight: std::sync::Arc<chat_job_queue::PerTurnFlight>,
-        web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
-        temperature_override: Option<f32>,
-        model_override: Option<String>,
-        use_executor_model: bool,
-        executor_model_override: Option<String>,
-        executor_api_base: Option<String>,
-        executor_api_key: Option<String>,
-        seed_override: types::LlmSeedOverride,
-        long_term_memory: Option<
-            std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>,
-        >,
-        job_id: u64,
-        conversation_id: &str,
-        out: &'a mpsc::Sender<String>,
-        turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
-    ) -> Self {
+    pub fn web_chat_stream(args: WebChatStreamBuildArgs<'a>) -> Self {
+        let WebChatStreamBuildArgs {
+            client,
+            api_key,
+            cfg,
+            tools,
+            messages,
+            effective_working_dir,
+            workspace_is_set,
+            cancel,
+            per_flight,
+            web_tool_ctx,
+            temperature_override,
+            model_override,
+            use_executor_model,
+            executor_model_override,
+            executor_api_base,
+            executor_api_key,
+            seed_override,
+            long_term_memory,
+            job_id,
+            conversation_id,
+            out,
+            turn_allowed_tool_names,
+        } = args;
         Self {
             client,
             api_key,
@@ -184,30 +233,28 @@ impl<'a> RunAgentTurnParams<'a> {
     }
 
     /// Web `POST /chat`（JSON）：无 SSE，终端渲染管线用于分步通知等。
-    #[allow(clippy::too_many_arguments)]
-    pub fn web_chat_json(
-        client: &'a reqwest::Client,
-        api_key: &'a str,
-        cfg: &'a Arc<config::AgentConfig>,
-        tools: &'a [crate::types::Tool],
-        messages: &'a mut Vec<Message>,
-        effective_working_dir: &'a std::path::Path,
-        workspace_is_set: bool,
-        per_flight: std::sync::Arc<chat_job_queue::PerTurnFlight>,
-        temperature_override: Option<f32>,
-        model_override: Option<String>,
-        use_executor_model: bool,
-        executor_model_override: Option<String>,
-        executor_api_base: Option<String>,
-        executor_api_key: Option<String>,
-        seed_override: types::LlmSeedOverride,
-        long_term_memory: Option<
-            std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>,
-        >,
-        job_id: u64,
-        conversation_id: &str,
-        turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
-    ) -> Self {
+    pub fn web_chat_json(args: WebChatJsonBuildArgs<'a>) -> Self {
+        let WebChatJsonBuildArgs {
+            client,
+            api_key,
+            cfg,
+            tools,
+            messages,
+            effective_working_dir,
+            workspace_is_set,
+            per_flight,
+            temperature_override,
+            model_override,
+            use_executor_model,
+            executor_model_override,
+            executor_api_base,
+            executor_api_key,
+            seed_override,
+            long_term_memory,
+            job_id,
+            conversation_id,
+            turn_allowed_tool_names,
+        } = args;
         Self {
             client,
             api_key,

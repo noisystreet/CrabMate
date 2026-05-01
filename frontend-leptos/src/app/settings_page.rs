@@ -7,8 +7,32 @@ use super::settings_form_state::{SettingsFormCurrent, is_settings_dirty, refresh
 use super::settings_sections::{
     SettingsAppearanceBlock, SettingsExecutorLlmBlock, SettingsLlmBlock, SettingsShortcutsBlock,
 };
-use crate::app::settings_commit::commit_all_settings;
+use crate::app::settings_commit::{CommitAllSettingsInput, commit_all_settings};
 use crate::i18n::{self, Locale};
+
+/// 设置页中与 LLM / 外观相关的 `RwSignal` 聚合（缩短 `SettingsPageView` 形参列表）。
+#[derive(Clone, Copy)]
+pub struct SettingsPageFormSignals {
+    pub locale: RwSignal<Locale>,
+    pub theme: RwSignal<String>,
+    pub bg_decor: RwSignal<bool>,
+    pub llm_api_base_draft: RwSignal<String>,
+    pub llm_api_base_preset_select: RwSignal<String>,
+    pub llm_model_draft: RwSignal<String>,
+    pub llm_temperature_draft: RwSignal<String>,
+    pub llm_context_tokens_draft: RwSignal<String>,
+    pub llm_api_key_draft: RwSignal<String>,
+    pub llm_has_saved_key: RwSignal<bool>,
+    pub llm_settings_feedback: RwSignal<Option<String>>,
+    pub executor_llm_api_base_draft: RwSignal<String>,
+    pub executor_llm_api_base_preset_select: RwSignal<String>,
+    pub executor_llm_model_draft: RwSignal<String>,
+    pub executor_llm_api_key_draft: RwSignal<String>,
+    pub executor_llm_has_saved_key: RwSignal<bool>,
+    pub executor_llm_settings_feedback: RwSignal<Option<String>>,
+    pub execution_mode_draft: RwSignal<String>,
+    pub client_llm_storage_tick: RwSignal<u64>,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SettingsSection {
@@ -184,28 +208,51 @@ fn SettingsPageNavRail(
     }
 }
 
+/// 设置内容区各块共用的草稿信号（缩短 `SettingsPageContentPanels` 形参列表）。
+#[derive(Clone, Copy)]
+pub struct SettingsPagePanelDrafts {
+    pub appearance_theme: RwSignal<String>,
+    pub appearance_bg_decor: RwSignal<bool>,
+    pub llm_api_base_draft: RwSignal<String>,
+    pub llm_api_base_preset_select: RwSignal<String>,
+    pub llm_model_draft: RwSignal<String>,
+    pub llm_temperature_draft: RwSignal<String>,
+    pub llm_context_tokens_draft: RwSignal<String>,
+    pub llm_api_key_draft: RwSignal<String>,
+    pub llm_has_saved_key: RwSignal<bool>,
+    pub executor_llm_api_base_draft: RwSignal<String>,
+    pub executor_llm_api_base_preset_select: RwSignal<String>,
+    pub executor_llm_model_draft: RwSignal<String>,
+    pub executor_llm_api_key_draft: RwSignal<String>,
+    pub executor_llm_has_saved_key: RwSignal<bool>,
+}
+
 #[component]
 fn SettingsPageContentPanels(
     active_section: RwSignal<SettingsSection>,
     appearance_locale: RwSignal<Locale>,
-    appearance_theme: RwSignal<String>,
-    appearance_bg_decor: RwSignal<bool>,
-    llm_api_base_draft: RwSignal<String>,
-    llm_api_base_preset_select: RwSignal<String>,
-    llm_model_draft: RwSignal<String>,
-    llm_temperature_draft: RwSignal<String>,
-    llm_context_tokens_draft: RwSignal<String>,
-    llm_api_key_draft: RwSignal<String>,
-    llm_has_saved_key: RwSignal<bool>,
+    drafts: SettingsPagePanelDrafts,
     clear_client_key_intent: RwSignal<bool>,
-    executor_llm_api_base_draft: RwSignal<String>,
-    executor_llm_api_base_preset_select: RwSignal<String>,
-    executor_llm_model_draft: RwSignal<String>,
-    executor_llm_api_key_draft: RwSignal<String>,
-    executor_llm_has_saved_key: RwSignal<bool>,
     clear_executor_key_intent: RwSignal<bool>,
     execution_mode_draft: RwSignal<String>,
 ) -> impl IntoView {
+    let SettingsPagePanelDrafts {
+        appearance_theme,
+        appearance_bg_decor,
+        llm_api_base_draft,
+        llm_api_base_preset_select,
+        llm_model_draft,
+        llm_temperature_draft,
+        llm_context_tokens_draft,
+        llm_api_key_draft,
+        llm_has_saved_key,
+        executor_llm_api_base_draft,
+        executor_llm_api_base_preset_select,
+        executor_llm_model_draft,
+        executor_llm_api_key_draft,
+        executor_llm_has_saved_key,
+    } = drafts;
+
     view! {
         <section class="settings-content">
             <header class="settings-content-header">
@@ -263,26 +310,30 @@ fn SettingsPageContentPanels(
 #[component]
 pub fn SettingsPageView(
     settings_page: RwSignal<bool>,
-    locale: RwSignal<Locale>,
-    theme: RwSignal<String>,
-    bg_decor: RwSignal<bool>,
-    llm_api_base_draft: RwSignal<String>,
-    llm_api_base_preset_select: RwSignal<String>,
-    llm_model_draft: RwSignal<String>,
-    llm_temperature_draft: RwSignal<String>,
-    llm_context_tokens_draft: RwSignal<String>,
-    llm_api_key_draft: RwSignal<String>,
-    llm_has_saved_key: RwSignal<bool>,
-    llm_settings_feedback: RwSignal<Option<String>>,
-    executor_llm_api_base_draft: RwSignal<String>,
-    executor_llm_api_base_preset_select: RwSignal<String>,
-    executor_llm_model_draft: RwSignal<String>,
-    executor_llm_api_key_draft: RwSignal<String>,
-    executor_llm_has_saved_key: RwSignal<bool>,
-    executor_llm_settings_feedback: RwSignal<Option<String>>,
-    execution_mode_draft: RwSignal<String>,
-    client_llm_storage_tick: RwSignal<u64>,
+    form: SettingsPageFormSignals,
 ) -> impl IntoView {
+    let SettingsPageFormSignals {
+        locale,
+        theme,
+        bg_decor,
+        llm_api_base_draft,
+        llm_api_base_preset_select,
+        llm_model_draft,
+        llm_temperature_draft,
+        llm_context_tokens_draft,
+        llm_api_key_draft,
+        llm_has_saved_key,
+        llm_settings_feedback,
+        executor_llm_api_base_draft,
+        executor_llm_api_base_preset_select,
+        executor_llm_model_draft,
+        executor_llm_api_key_draft,
+        executor_llm_has_saved_key,
+        executor_llm_settings_feedback,
+        execution_mode_draft,
+        client_llm_storage_tick,
+    } = form;
+
     let active_section =
         RwSignal::new(read_settings_section_from_hash().unwrap_or(SettingsSection::Appearance));
 
@@ -442,31 +493,31 @@ pub fn SettingsPageView(
             return;
         }
         let ui_locale = appearance_locale.get();
-        match commit_all_settings(
+        match commit_all_settings(CommitAllSettingsInput {
             ui_locale,
-            appearance_locale.get(),
-            appearance_theme.get(),
-            appearance_bg_decor.get(),
+            appearance_locale: appearance_locale.get(),
+            appearance_theme: appearance_theme.get(),
+            appearance_bg_decor: appearance_bg_decor.get(),
             locale,
             theme,
             bg_decor,
-            llm_api_base_draft.get().as_str(),
-            llm_model_draft.get().as_str(),
-            llm_temperature_draft.get().as_str(),
-            llm_context_tokens_draft.get().as_str(),
-            llm_api_key_draft.get().as_str(),
-            executor_llm_api_base_draft.get().as_str(),
-            executor_llm_model_draft.get().as_str(),
-            executor_llm_api_key_draft.get().as_str(),
-            execution_mode_draft.get().as_str(),
-            clear_client_key_intent.get(),
-            clear_executor_key_intent.get(),
+            client_base: llm_api_base_draft.get().as_str(),
+            client_model: llm_model_draft.get().as_str(),
+            client_temperature: llm_temperature_draft.get().as_str(),
+            client_llm_context_tokens: llm_context_tokens_draft.get().as_str(),
+            client_api_key_draft: llm_api_key_draft.get().as_str(),
+            executor_base: executor_llm_api_base_draft.get().as_str(),
+            executor_model: executor_llm_model_draft.get().as_str(),
+            executor_api_key_draft: executor_llm_api_key_draft.get().as_str(),
+            execution_mode: execution_mode_draft.get().as_str(),
+            clear_client_llm_key: clear_client_key_intent.get(),
+            clear_executor_llm_key: clear_executor_key_intent.get(),
             llm_api_key_draft,
             llm_has_saved_key,
             executor_llm_api_key_draft,
             executor_llm_has_saved_key,
             client_llm_storage_tick,
-        ) {
+        }) {
             Ok(()) => {
                 refresh_baselines(
                     baseline_appearance,
@@ -545,21 +596,23 @@ pub fn SettingsPageView(
                     <SettingsPageContentPanels
                         active_section=active_section
                         appearance_locale=appearance_locale
-                        appearance_theme=appearance_theme
-                        appearance_bg_decor=appearance_bg_decor
-                        llm_api_base_draft=llm_api_base_draft
-                        llm_api_base_preset_select=llm_api_base_preset_select
-                        llm_model_draft=llm_model_draft
-                        llm_temperature_draft=llm_temperature_draft
-                        llm_context_tokens_draft=llm_context_tokens_draft
-                        llm_api_key_draft=llm_api_key_draft
-                        llm_has_saved_key=llm_has_saved_key
+                        drafts=SettingsPagePanelDrafts {
+                            appearance_theme,
+                            appearance_bg_decor,
+                            llm_api_base_draft,
+                            llm_api_base_preset_select,
+                            llm_model_draft,
+                            llm_temperature_draft,
+                            llm_context_tokens_draft,
+                            llm_api_key_draft,
+                            llm_has_saved_key,
+                            executor_llm_api_base_draft,
+                            executor_llm_api_base_preset_select,
+                            executor_llm_model_draft,
+                            executor_llm_api_key_draft,
+                            executor_llm_has_saved_key,
+                        }
                         clear_client_key_intent=clear_client_key_intent
-                        executor_llm_api_base_draft=executor_llm_api_base_draft
-                        executor_llm_api_base_preset_select=executor_llm_api_base_preset_select
-                        executor_llm_model_draft=executor_llm_model_draft
-                        executor_llm_api_key_draft=executor_llm_api_key_draft
-                        executor_llm_has_saved_key=executor_llm_has_saved_key
                         clear_executor_key_intent=clear_executor_key_intent
                         execution_mode_draft=execution_mode_draft
                     />
