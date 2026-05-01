@@ -4,7 +4,7 @@
 //!
 //! 顶层键 **`crabmate_tool`**，内含 `v`（**载荷版本**，当前为 **1**；与 SSE 整条控制面的 **`SseMessage.v`** 不同）、`name`、`summary`（与 SSE / `summarize_tool_call` 同源）、
 //! `ok`、`exit_code`、`error_code`、`output`（工具原始返回正文，供模型阅读或再解析）。
-//! 可选 **`structured_payload`**：机器可读的小对象（如 **`run_command`** 的 **`run_command_exit_v1`**），与正文并存；SSE **`tool_result.structured_preview`** 可与首行 **`crabmate_tool_output`** 合并下发。
+//! 可选 **`structured_payload`**：机器可读的小对象；**`schema`** 见 **`docs/工具说明.md`**（**`run_command_exit_v1`**、**`subprocess_exit_v1`**、**`http_tool_response_v1`** 等），与正文并存；SSE **`tool_result.structured_preview`** 可与首行 **`crabmate_tool_output`** 合并下发。
 //! SSE `tool_result` 对象另含 **`result_version`**，与 `crabmate_tool.v` 对齐，便于客户端区分「控制面版本」与「工具结果载荷版本」。
 //! 可选扩展（见 [`ToolEnvelopeContext`]）：**`tool_call_id`**、**`execution_mode`**（`serial` / `parallel_readonly_batch`）、
 //! **`parallel_batch_id`**（同批并行只读工具共享）、失败时的 **`failure_category`**（与 [`tool_error::ToolFailureCategory`] 蛇形字符串同源，由 **`error_code`** 推导）、**`retryable`**（与 `error_code` 配套的启发式，非保证）。
@@ -169,10 +169,90 @@ fn classify_error_code(first_line: &str, tool_name: &str) -> String {
 
 /// 供 **`crabmate_tool.structured_payload`** 与 SSE 合并路径使用：对已格式化命令输出生成稳定 JSON（**不含** stdout/stderr 全文）。
 pub fn structured_payload_for_tool(tool_name: &str, raw_output: &str) -> Option<Value> {
-    match tool_name {
-        "run_command" => Some(run_command_structured_payload(raw_output)),
-        _ => None,
+    if tool_name == "run_command" {
+        return Some(run_command_structured_payload(raw_output));
     }
+    if matches!(tool_name, "http_fetch" | "http_request") {
+        return http_tool_response_v1_payload(tool_name, raw_output);
+    }
+    if tool_name.starts_with("cargo_") || tool_name == "rust_rustc" {
+        return subprocess_exit_v1_payload(tool_name, raw_output);
+    }
+    None
+}
+
+/// `output_util::format_exited_command_output` 形状：`{title} (exit=N):` + 正文。
+fn subprocess_exit_v1_payload(tool_name: &str, raw_output: &str) -> Option<Value> {
+    let first = raw_output.lines().next()?.trim();
+    let (title, exit_code) = parse_title_exit_prefix_line(first)?;
+    let ok = exit_code == 0;
+    Some(serde_json::json!({
+        "kind": "crabmate_structured_payload",
+        "tool": tool_name,
+        "version": 1_u64,
+        "schema": "subprocess_exit_v1",
+        "title": title,
+        "exit_code": exit_code,
+        "ok": ok,
+    }))
+}
+
+fn parse_title_exit_prefix_line(line: &str) -> Option<(String, i32)> {
+    let idx = line.rfind(" (exit=")?;
+    let after = &line[idx + " (exit=".len()..];
+    let end_paren = after.find(')')?;
+    let code = after[..end_paren].trim().parse::<i32>().ok()?;
+    let rest = after[end_paren + 1..].trim_start();
+    if !rest.starts_with(':') {
+        return None;
+    }
+    let title = line[..idx].trim().to_string();
+    Some((title, code))
+}
+
+/// `http_fetch` / `http_request` 成功响应正文：`method:` / `请求 URL:` / `状态:` 等（见 **`http_fetch.rs`**）。
+fn http_tool_response_v1_payload(tool_name: &str, raw_output: &str) -> Option<Value> {
+    if raw_output.starts_with("错误：")
+        || raw_output.contains("未匹配配置的 http_fetch_allowed_prefixes")
+        || raw_output.starts_with("请求失败:")
+        || raw_output.starts_with("读取响应体失败:")
+        || raw_output.starts_with("HTTP 客户端构建失败")
+        || raw_output.starts_with("json_body 序列化失败")
+    {
+        return None;
+    }
+    let mut method = None::<String>;
+    let mut request_url = None::<String>;
+    let mut status_line = None::<String>;
+    for line in raw_output.lines() {
+        let t = line.trim();
+        if let Some(rest) = t.strip_prefix("method:") {
+            method = Some(rest.trim().to_string());
+        } else if let Some(rest) = t.strip_prefix("请求 URL:") {
+            request_url = Some(rest.trim().to_string());
+        } else if let Some(rest) = t.strip_prefix("状态:") {
+            status_line = Some(rest.trim().to_string());
+        }
+    }
+    let status_text = status_line?;
+    let status_code = status_text
+        .split_whitespace()
+        .next()
+        .and_then(|s| s.parse::<u16>().ok());
+    let ok = status_code.is_some_and(|c| (200..300).contains(&c));
+    let method = method?;
+    let request_url = request_url?;
+    Some(serde_json::json!({
+        "kind": "crabmate_structured_payload",
+        "tool": tool_name,
+        "version": 1_u64,
+        "schema": "http_tool_response_v1",
+        "method": method,
+        "request_url": request_url,
+        "http_status": status_text,
+        "http_status_code": status_code,
+        "ok": ok,
+    }))
 }
 
 fn run_command_structured_payload(raw_output: &str) -> Value {
@@ -389,6 +469,48 @@ mod tests {
         let ok_env =
             encode_tool_message_envelope_v1("run_command", "s".into(), &ok_parsed, ok_raw, None);
         assert!(tool_message_content_ok_for_model(&ok_env, "run_command"));
+    }
+
+    #[test]
+    fn envelope_includes_structured_payload_subprocess_cargo() {
+        let raw = "cargo check (exit=0):\n(check output)";
+        let parsed = parse_legacy_output("cargo_check", raw);
+        let s = encode_tool_message_envelope_v1("cargo_check", "s".into(), &parsed, raw, None);
+        let v: Value = serde_json::from_str(&s).unwrap();
+        let sp = v["crabmate_tool"]["structured_payload"]
+            .as_object()
+            .expect("sp");
+        assert_eq!(sp["schema"], "subprocess_exit_v1");
+        assert_eq!(sp["exit_code"], 0);
+        assert_eq!(sp["title"], "cargo check");
+    }
+
+    #[test]
+    fn envelope_includes_structured_payload_http_fetch() {
+        let raw = r#"method: GET
+请求 URL: https://example.com/a
+最终 URL: https://example.com/a
+状态: 200 OK
+Content-Type: text/plain
+
+正文:
+hi"#;
+        let parsed = parse_legacy_output("http_fetch", raw);
+        let s = encode_tool_message_envelope_v1("http_fetch", "s".into(), &parsed, raw, None);
+        let v: Value = serde_json::from_str(&s).unwrap();
+        let sp = v["crabmate_tool"]["structured_payload"]
+            .as_object()
+            .expect("sp");
+        assert_eq!(sp["schema"], "http_tool_response_v1");
+        assert_eq!(sp["http_status_code"], 200);
+        assert_eq!(sp["method"], "GET");
+        assert_eq!(sp["request_url"], "https://example.com/a");
+    }
+
+    #[test]
+    fn structured_payload_http_skips_prefix_errors() {
+        let raw = "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes";
+        assert!(structured_payload_for_tool("http_fetch", raw).is_none());
     }
 
     #[test]
