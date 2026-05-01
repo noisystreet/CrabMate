@@ -2,7 +2,7 @@
 
 **状态**：设计稿（待实现）  
 **受众**：核心维护者、Agent 编排模块贡献者  
-**关联文档**：`docs/规划执行验证架构.md`、`docs/HIERARCHICAL_MULTI_CM_ARCHITECTURE.md`、`docs/design/agent_state_management.md`
+**关联文档**：`docs/规划执行验证架构.md`、`docs/HIERARCHICAL_MULTI_CM_ARCHITECTURE.md`、`docs/design/agent_state_management.md`；全局会话同步管道与裁剪要点见 **`docs/design/context_trimming_scheme.md`**（本文侧重分层 ReAct 专用裁剪，落地时应与其对齐）。
 
 ---
 
