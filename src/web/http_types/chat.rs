@@ -51,7 +51,7 @@ pub(crate) struct ChatRequestBody {
     pub(crate) clarify_questionnaire_answers: Option<ClarifyQuestionnaireAnswersBody>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Clone)]
 pub(crate) struct StreamResumeBody {
     pub(crate) job_id: u64,
     /// 已收到的最大 SSE `id`（无则 0）；可与 `Last-Event-ID` 合并取 max。
@@ -60,7 +60,7 @@ pub(crate) struct StreamResumeBody {
 }
 
 /// `ChatRequestBody::client_llm` 的 JSON 形状（与前端 `client_llm` 对象一致）。
-#[derive(serde::Deserialize, Default)]
+#[derive(serde::Deserialize, Default, Clone)]
 pub(crate) struct ClientLlmBody {
     #[serde(default)]
     pub(crate) api_base: Option<String>,
@@ -71,7 +71,7 @@ pub(crate) struct ClientLlmBody {
 }
 
 /// `ChatRequestBody::executor_llm` 的 JSON 形状（与前端 `executor_llm` 对象一致）。
-#[derive(serde::Deserialize, Default)]
+#[derive(serde::Deserialize, Default, Clone)]
 pub(crate) struct ExecutorLlmBody {
     #[serde(default)]
     pub(crate) api_base: Option<String>,

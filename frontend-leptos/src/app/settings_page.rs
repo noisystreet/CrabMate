@@ -112,6 +112,23 @@ fn apply_bg_decor_preview_to_dom(bg_decor: bool) {
     }
 }
 
+fn settings_page_install_hashchange_listener(active_section: RwSignal<SettingsSection>) {
+    Effect::new(move |_| {
+        let h = window_event_listener(
+            leptos::ev::hashchange,
+            move |_ev: web_sys::HashChangeEvent| {
+                let Some(section) = read_settings_section_from_hash() else {
+                    return;
+                };
+                if active_section.get_untracked() != section {
+                    active_section.set(section);
+                }
+            },
+        );
+        on_cleanup(move || h.remove());
+    });
+}
+
 #[component]
 pub fn SettingsPageView(
     settings_page: RwSignal<bool>,
@@ -184,20 +201,7 @@ pub fn SettingsPageView(
         executor_llm_api_key_draft: executor_llm_api_key_draft.get_untracked(),
     };
 
-    Effect::new(move |_| {
-        let h = window_event_listener(
-            leptos::ev::hashchange,
-            move |_ev: web_sys::HashChangeEvent| {
-                let Some(section) = read_settings_section_from_hash() else {
-                    return;
-                };
-                if active_section.get_untracked() != section {
-                    active_section.set(section);
-                }
-            },
-        );
-        on_cleanup(move || h.remove());
-    });
+    settings_page_install_hashchange_listener(active_section);
 
     Effect::new(move |_| {
         if !settings_page.get() {

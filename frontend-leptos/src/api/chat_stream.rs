@@ -153,6 +153,68 @@ fn build_chat_stream_post_body(
     Ok(body)
 }
 
+/// 消费 `/chat/stream` 响应体：UTF-8 重组、SSE 分帧与尾部 flush（与断线重连时的读失败语义一致）。
+async fn consume_chat_stream_response_body(
+    rb: web_sys::ReadableStream,
+    signal: &web_sys::AbortSignal,
+    last_event_id: &mut u64,
+    cbs: &ChatStreamCallbacks,
+    loc: Locale,
+    stream_resume_job_id: Option<u64>,
+) -> Result<(bool, bool), String> {
+    let reader: web_sys::ReadableStreamDefaultReader = rb
+        .get_reader()
+        .dyn_into()
+        .map_err(|_| crate::i18n::api_err_stream_reader(loc).to_string())?;
+
+    let mut raw: Vec<u8> = Vec::new();
+    let mut buffer = String::new();
+    let mut stream_finished_normally = false;
+    let mut saw_stream_ended = false;
+    loop {
+        if signal.aborted() {
+            return Ok((true, saw_stream_ended));
+        }
+        let read_promise = reader.read();
+        let chunk: wasm_bindgen::JsValue = match JsFuture::from(read_promise).await {
+            Ok(c) => c,
+            Err(e) => {
+                if stream_resume_job_id.is_none() {
+                    return Err(crate::i18n::api_err_stream_read(&e));
+                }
+                break;
+            }
+        };
+        let done = js_sys::Reflect::get(&chunk, &JsValue::from_str("done"))
+            .ok()
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        if done {
+            stream_finished_normally = true;
+            break;
+        }
+        let value =
+            js_sys::Reflect::get(&chunk, &JsValue::from_str("value")).unwrap_or(JsValue::NULL);
+        if let Some(u8) = value.dyn_ref::<js_sys::Uint8Array>() {
+            append_chunk_to_text_buffer(&mut raw, &u8.to_vec(), &mut buffer);
+        }
+        process_sse_buffer(&mut buffer, last_event_id, &mut saw_stream_ended, cbs, loc)?;
+        if saw_stream_ended {
+            stream_finished_normally = true;
+            break;
+        }
+    }
+    if !raw.is_empty() {
+        buffer.push_str(&String::from_utf8_lossy(&raw));
+        raw.clear();
+    }
+    flush_sse_tail(&mut buffer, last_event_id, &mut saw_stream_ended, cbs, loc)?;
+    if saw_stream_ended {
+        stream_finished_normally = true;
+    }
+    Ok((stream_finished_normally, saw_stream_ended))
+}
+
 /// `/chat/stream`：支持 **`Last-Event-ID`** 与 JSON **`stream_resume`** 断线重连（网络抖动时自动重试若干次）。
 #[allow(clippy::too_many_arguments)] // 流式聊天入口：正文、图片、会话、审批、断线续传、回调与语言等正交参数
 pub async fn send_chat_stream(
@@ -246,71 +308,15 @@ pub async fn send_chat_stream(
         let Some(rb) = resp.body() else {
             return Err(crate::i18n::api_err_no_response_body(loc).to_string());
         };
-        let reader: web_sys::ReadableStreamDefaultReader = rb
-            .get_reader()
-            .dyn_into()
-            .map_err(|_| crate::i18n::api_err_stream_reader(loc).to_string())?;
-
-        // UTF-8 与 SSE 分帧：见模块级 `append_chunk_to_text_buffer` / `process_sse_buffer`。
-        let mut raw: Vec<u8> = Vec::new();
-        let mut buffer = String::new();
-        let mut stream_finished_normally = false;
-        let mut saw_stream_ended = false;
-        loop {
-            if signal.aborted() {
-                return Ok(());
-            }
-            let read_promise = reader.read();
-            let chunk: wasm_bindgen::JsValue = match JsFuture::from(read_promise).await {
-                Ok(c) => c,
-                Err(e) => {
-                    if stream_resume_job_id.is_none() {
-                        return Err(crate::i18n::api_err_stream_read(&e));
-                    }
-                    break;
-                }
-            };
-            let done = js_sys::Reflect::get(&chunk, &JsValue::from_str("done"))
-                .ok()
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
-            if done {
-                stream_finished_normally = true;
-                break;
-            }
-            let value =
-                js_sys::Reflect::get(&chunk, &JsValue::from_str("value")).unwrap_or(JsValue::NULL);
-            if let Some(u8) = value.dyn_ref::<js_sys::Uint8Array>() {
-                append_chunk_to_text_buffer(&mut raw, &u8.to_vec(), &mut buffer);
-            }
-            process_sse_buffer(
-                &mut buffer,
-                &mut last_event_id,
-                &mut saw_stream_ended,
-                &cbs,
-                loc,
-            )?;
-            if saw_stream_ended {
-                // 控制面已给出终止帧时，不再依赖底层连接何时 close；
-                // 这样可避免个别网关/代理尾部挂起导致前端一直显示“模型生成中”。
-                stream_finished_normally = true;
-                break;
-            }
-        }
-        if !raw.is_empty() {
-            buffer.push_str(&String::from_utf8_lossy(&raw));
-            raw.clear();
-        }
-        flush_sse_tail(
-            &mut buffer,
+        let (stream_finished_normally, saw_stream_ended) = consume_chat_stream_response_body(
+            rb,
+            signal,
             &mut last_event_id,
-            &mut saw_stream_ended,
             &cbs,
             loc,
-        )?;
-        if saw_stream_ended {
-            stream_finished_normally = true;
-        }
+            stream_resume_job_id,
+        )
+        .await?;
         if stream_finished_normally {
             if !saw_stream_ended {
                 // 某些后端/网络尾部场景可能未显式下发 `stream_ended`，前端按正常完结补齐。

@@ -1313,6 +1313,189 @@ fn format_search_output(header: &SearchOutputHeader, scored: &[ScoredChunk]) -> 
     out
 }
 
+/// `fts_only`：仅按 BM25 命中块排序输出（不跑向量）。
+fn search_index_fts_only_branch(
+    conn: &Connection,
+    ws_key: &str,
+    fts_by_id: &HashMap<i64, f32>,
+    q: &SearchQueryParams,
+    fts_rows_fetched: usize,
+) -> String {
+    if fts_by_id.is_empty() {
+        return format!(
+            "fts_only：当前查询无 FTS 命中（workspace_root={}）。可换关键词、使用 hybrid，或确认已 rebuild_index（schema 含 FTS5）。",
+            ws_key
+        );
+    }
+    let mut ids: Vec<i64> = fts_by_id.keys().copied().collect();
+    ids.sort_unstable();
+    let mut scored = Vec::with_capacity(ids.len());
+    let sql_one = format!(
+        "SELECT rel_path, start_line, end_line, chunk_text FROM {TABLE} WHERE workspace_root = ?1 AND id = ?2"
+    );
+    for id in ids {
+        let fts_n = *fts_by_id.get(&id).unwrap_or(&0.0);
+        let row: Option<(String, i64, i64, String)> = conn
+            .query_row(&sql_one, params![ws_key, id], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+            })
+            .optional()
+            .ok()
+            .flatten();
+        let Some((rel, sl, el, text)) = row else {
+            continue;
+        };
+        scored.push(ScoredChunk {
+            id,
+            score: fts_n,
+            cosine: 0.0,
+            fts: fts_n,
+            rel,
+            sl,
+            el,
+            text,
+        });
+    }
+    scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
+    let scored: Vec<ScoredChunk> = scored.into_iter().take(q.top_k).collect();
+    if scored.is_empty() {
+        return format!(
+            "索引中无匹配条目（workspace_root={}）。请先使用 rebuild_index=true 构建索引。",
+            ws_key
+        );
+    }
+    let hdr = SearchOutputHeader {
+        mode: q.mode,
+        top_k: q.top_k,
+        hybrid_alpha: q.hybrid_alpha,
+        fts_rows_fetched,
+        vec_scanned: 0,
+        limit_active: false,
+        query_max_chunks: 0,
+        max_out_chars: q.max_out_chars,
+    };
+    format_search_output(&hdr, &scored)
+}
+
+#[cfg(feature = "fastembed")]
+fn search_index_semantic_fastembed(
+    conn: &Connection,
+    ws_key: &str,
+    query: &str,
+    q: &SearchQueryParams,
+    fts_by_id: &HashMap<i64, f32>,
+    fts_rows_fetched: usize,
+) -> String {
+    let pool_k = if q.mode == RetrieveMode::Hybrid {
+        q.hybrid_semantic_pool.max(q.top_k)
+    } else {
+        q.top_k
+    };
+
+    let mut embedder = match ensure_embedder() {
+        Ok(m) => m,
+        Err(e) => return e,
+    };
+    let q_emb = match embedder.embed(vec![format!("query: {}", query)], None) {
+        Ok(mut v) => v.pop(),
+        Err(e) => return format!("查询嵌入失败: {}", e),
+    };
+    let Some(qv) = q_emb else {
+        return "查询嵌入失败: 空结果".to_string();
+    };
+
+    let mut stmt = match conn.prepare_cached(&format!(
+        "SELECT id, rel_path, start_line, end_line, chunk_text, embedding FROM {TABLE} WHERE workspace_root = ?1"
+    )) {
+        Ok(s) => s,
+        Err(e) => return format!("读取索引失败: {}", e),
+    };
+
+    let rows = match stmt.query_map(params![ws_key], |r| {
+        Ok((
+            r.get::<_, i64>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, i64>(2)?,
+            r.get::<_, i64>(3)?,
+            r.get::<_, String>(4)?,
+            r.get::<_, Vec<u8>>(5)?,
+        ))
+    }) {
+        Ok(it) => it,
+        Err(e) => return format!("遍历索引失败: {}", e),
+    };
+
+    let mut heap: BinaryHeap<Reverse<ScoredChunk>> = BinaryHeap::new();
+    let mut scanned = 0usize;
+    let limit_active = q.query_max_chunks > 0;
+    for row in rows {
+        if limit_active && scanned >= q.query_max_chunks {
+            break;
+        }
+        let (id, rel, sl, el, text, blob) = match row {
+            Ok(x) => x,
+            Err(_) => continue,
+        };
+        scanned = scanned.saturating_add(1);
+
+        let cosine = bytes_to_f32_slice(&blob)
+            .map(|ev| cosine_sim(&qv, &ev))
+            .unwrap_or(0.0);
+
+        let fts_n = *fts_by_id.get(&id).unwrap_or(&0.0);
+
+        let (score, fts_for_row) = if q.mode == RetrieveMode::SemanticOnly {
+            (cosine, 0.0f32)
+        } else {
+            let s = q.hybrid_alpha * cosine + (1.0 - q.hybrid_alpha) * fts_n;
+            (s, fts_n)
+        };
+
+        let item = ScoredChunk {
+            id,
+            score,
+            cosine,
+            fts: fts_for_row,
+            rel,
+            sl,
+            el,
+            text,
+        };
+
+        if heap.len() < pool_k {
+            heap.push(Reverse(item));
+        } else if let Some(Reverse(worst)) = heap.peek()
+            && item.score > worst.score
+        {
+            heap.pop();
+            heap.push(Reverse(item));
+        }
+    }
+
+    let mut pool: Vec<ScoredChunk> = heap.into_iter().map(|r| r.0).collect();
+    pool.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
+    let scored: Vec<ScoredChunk> = pool.into_iter().take(q.top_k).collect();
+
+    if scored.is_empty() {
+        return format!(
+            "索引中无匹配条目（workspace_root={}）。请先使用 rebuild_index=true 构建索引；若为 fts_only 且无分词命中，可换关键词或改用 hybrid/semantic_only。",
+            ws_key
+        );
+    }
+
+    let hdr = SearchOutputHeader {
+        mode: q.mode,
+        top_k: q.top_k,
+        hybrid_alpha: q.hybrid_alpha,
+        fts_rows_fetched,
+        vec_scanned: scanned,
+        limit_active,
+        query_max_chunks: q.query_max_chunks,
+        max_out_chars: q.max_out_chars,
+    };
+    format_search_output(&hdr, &scored)
+}
+
 fn search_index(ws_key: &str, index_path: &Path, query: &str, q: SearchQueryParams) -> String {
     let conn = match open_codebase_semantic_db(index_path) {
         Ok(c) => c,
@@ -1366,69 +1549,9 @@ fn search_index(ws_key: &str, index_path: &Path, query: &str, q: SearchQueryPara
         }
     }
 
-    #[cfg(feature = "fastembed")]
-    let pool_k = if mode == RetrieveMode::Hybrid {
-        q.hybrid_semantic_pool.max(q.top_k)
-    } else {
-        q.top_k
-    };
-
     // ── fts_only：仅按 FTS 命中的块 id 拉取，不跑向量 ────────────
     if mode == RetrieveMode::FtsOnly {
-        if fts_by_id.is_empty() {
-            return format!(
-                "fts_only：当前查询无 FTS 命中（workspace_root={}）。可换关键词、使用 hybrid，或确认已 rebuild_index（schema 含 FTS5）。",
-                ws_key
-            );
-        }
-        let mut ids: Vec<i64> = fts_by_id.keys().copied().collect();
-        ids.sort_unstable();
-        let mut scored = Vec::with_capacity(ids.len());
-        let sql_one = format!(
-            "SELECT rel_path, start_line, end_line, chunk_text FROM {TABLE} WHERE workspace_root = ?1 AND id = ?2"
-        );
-        for id in ids {
-            let fts_n = *fts_by_id.get(&id).unwrap_or(&0.0);
-            let row: Option<(String, i64, i64, String)> = conn
-                .query_row(&sql_one, params![ws_key, id], |r| {
-                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
-                })
-                .optional()
-                .ok()
-                .flatten();
-            let Some((rel, sl, el, text)) = row else {
-                continue;
-            };
-            scored.push(ScoredChunk {
-                id,
-                score: fts_n,
-                cosine: 0.0,
-                fts: fts_n,
-                rel,
-                sl,
-                el,
-                text,
-            });
-        }
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
-        let scored: Vec<ScoredChunk> = scored.into_iter().take(q.top_k).collect();
-        if scored.is_empty() {
-            return format!(
-                "索引中无匹配条目（workspace_root={}）。请先使用 rebuild_index=true 构建索引。",
-                ws_key
-            );
-        }
-        let hdr = SearchOutputHeader {
-            mode,
-            top_k: q.top_k,
-            hybrid_alpha: q.hybrid_alpha,
-            fts_rows_fetched,
-            vec_scanned: 0,
-            limit_active: false,
-            query_max_chunks: 0,
-            max_out_chars: q.max_out_chars,
-        };
-        return format_search_output(&hdr, &scored);
+        return search_index_fts_only_branch(&conn, ws_key, &fts_by_id, &q, fts_rows_fetched);
     }
 
     #[cfg(not(feature = "fastembed"))]
@@ -1438,109 +1561,7 @@ fn search_index(ws_key: &str, index_path: &Path, query: &str, q: SearchQueryPara
 
     #[cfg(feature = "fastembed")]
     {
-        // ── semantic_only / hybrid：向量扫描 ───────────────────────
-        let mut embedder = match ensure_embedder() {
-            Ok(m) => m,
-            Err(e) => return e,
-        };
-        let q_emb = match embedder.embed(vec![format!("query: {}", query)], None) {
-            Ok(mut v) => v.pop(),
-            Err(e) => return format!("查询嵌入失败: {}", e),
-        };
-        let Some(qv) = q_emb else {
-            return "查询嵌入失败: 空结果".to_string();
-        };
-
-        let mut stmt = match conn.prepare_cached(&format!(
-        "SELECT id, rel_path, start_line, end_line, chunk_text, embedding FROM {TABLE} WHERE workspace_root = ?1"
-    )) {
-        Ok(s) => s,
-        Err(e) => return format!("读取索引失败: {}", e),
-    };
-
-        let rows = match stmt.query_map(params![ws_key], |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, i64>(2)?,
-                r.get::<_, i64>(3)?,
-                r.get::<_, String>(4)?,
-                r.get::<_, Vec<u8>>(5)?,
-            ))
-        }) {
-            Ok(it) => it,
-            Err(e) => return format!("遍历索引失败: {}", e),
-        };
-
-        let mut heap: BinaryHeap<Reverse<ScoredChunk>> = BinaryHeap::new();
-        let mut scanned = 0usize;
-        let limit_active = q.query_max_chunks > 0;
-        for row in rows {
-            if limit_active && scanned >= q.query_max_chunks {
-                break;
-            }
-            let (id, rel, sl, el, text, blob) = match row {
-                Ok(x) => x,
-                Err(_) => continue,
-            };
-            scanned = scanned.saturating_add(1);
-
-            let cosine = bytes_to_f32_slice(&blob)
-                .map(|ev| cosine_sim(&qv, &ev))
-                .unwrap_or(0.0);
-
-            let fts_n = *fts_by_id.get(&id).unwrap_or(&0.0);
-
-            let (score, fts_for_row) = if q.mode == RetrieveMode::SemanticOnly {
-                (cosine, 0.0f32)
-            } else {
-                let s = q.hybrid_alpha * cosine + (1.0 - q.hybrid_alpha) * fts_n;
-                (s, fts_n)
-            };
-
-            let item = ScoredChunk {
-                id,
-                score,
-                cosine,
-                fts: fts_for_row,
-                rel,
-                sl,
-                el,
-                text,
-            };
-
-            if heap.len() < pool_k {
-                heap.push(Reverse(item));
-            } else if let Some(Reverse(worst)) = heap.peek()
-                && item.score > worst.score
-            {
-                heap.pop();
-                heap.push(Reverse(item));
-            }
-        }
-
-        let mut pool: Vec<ScoredChunk> = heap.into_iter().map(|r| r.0).collect();
-        pool.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
-        let scored: Vec<ScoredChunk> = pool.into_iter().take(q.top_k).collect();
-
-        if scored.is_empty() {
-            return format!(
-                "索引中无匹配条目（workspace_root={}）。请先使用 rebuild_index=true 构建索引；若为 fts_only 且无分词命中，可换关键词或改用 hybrid/semantic_only。",
-                ws_key
-            );
-        }
-
-        let hdr = SearchOutputHeader {
-            mode: q.mode,
-            top_k: q.top_k,
-            hybrid_alpha: q.hybrid_alpha,
-            fts_rows_fetched,
-            vec_scanned: scanned,
-            limit_active,
-            query_max_chunks: q.query_max_chunks,
-            max_out_chars: q.max_out_chars,
-        };
-        format_search_output(&hdr, &scored)
+        search_index_semantic_fastembed(&conn, ws_key, query, &q, &fts_by_id, fts_rows_fetched)
     }
 }
 
