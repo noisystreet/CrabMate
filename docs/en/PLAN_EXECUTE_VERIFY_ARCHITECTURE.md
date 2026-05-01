@@ -53,6 +53,7 @@ This repo already has multi-turn `agent_turn`, final plan validation/rewrite, wo
 - `plan_rewrite_max_attempts` path for plan-format/binding failures.
 - `WorkflowReflectionController` for whether/how to rerun workflow and inject reflection prompts.
 - Staged feedback policy (`staged_plan_feedback_mode`, etc.).
+- **Counters (orthogonal to `plan_rewrite`)**: `PerCoordinator` tracks `plan_rewrite_attempts` (final-answer `after_final_assistant`) vs `staged_plan_patch_planner_rounds_completed` (successful staged patch-planner merges). `GET /status` `per_active_jobs[*]` mirrors both plus `staged_plan_patch_max_attempts_config`; staged patch feedback user bodies and `StepRetryExhausted` messages append a `[计数]` footer for log correlation.
 
 ---
 
@@ -154,3 +155,4 @@ All optional; omitted fields keep current behavior.
 |---|---|
 | 2026-04-12 | Initial Chinese draft: P-E-V layering, mapping to existing capabilities, verifier-vs-plan-rewrite separation, staged roadmap and non-goals |
 | 2026-04-16 | P1 completed in Chinese design: verifier supports JSON path and HTTP status acceptance checks |
+| 2026-05-01 | Split staged patch-planner vs final `plan_rewrite` counters; extend `/status` `per_active_jobs` and patch feedback footers |

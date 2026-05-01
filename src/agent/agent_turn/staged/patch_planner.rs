@@ -23,16 +23,25 @@ pub(super) struct StagedPlanPatchPlannerCtx<'p, 'a, F> {
     pub(super) make_step_user_message: &'p F,
 }
 
+/// 分阶段步失败 → 补丁规划 **user** 文案参数（控制 `clippy::too_many_arguments`）。
+pub(super) struct StagedPlanStepFailureFeedbackMeta<'a> {
+    pub plan_id: &'a str,
+    pub step_zero_based: usize,
+    pub n_steps_total: usize,
+    pub plan_patch_attempt_one_based: usize,
+    pub plan_patch_budget: usize,
+    pub reason_zh: &'a str,
+    pub detail: &'a str,
+    pub audit_counters_footer: &'a str,
+}
+
 pub(super) fn staged_plan_step_failure_feedback_user_body(
-    plan_id: &str,
-    step_zero_based: usize,
-    n: usize,
+    meta: &StagedPlanStepFailureFeedbackMeta<'_>,
     step: &PlanStepV1,
-    reason_zh: &str,
-    detail: &str,
 ) -> String {
     format!(
         "### 分阶段规划 · 步级反馈（plan_id={}）\n\
+         **本步补丁规划尝试**：第 **{}/{}** 次（`staged_plan_patch_max_attempts` 约束的是**本失败分支**内可发起的补丁轮上界；与终答 **`plan_rewrite`** 计数**无关**）。\n\
          当前执行步 **{}/{}**（零基下标 {}）未顺利完成。\n\
          - 失败原因：{}\n\
          - 详情摘要：{}\n\
@@ -42,18 +51,21 @@ pub(super) fn staged_plan_step_failure_feedback_user_body(
          **补丁规则**：`steps` 数组表示从**本步起**的后续计划（可替换原剩余步骤、在末尾增加一步、或合并/拆分步骤）；须 **非空** 且 **不得** 使用 `no_task`。\n\
          已完成的前缀步（下标 0..{}）已由服务端保留，你**不要**在 `steps` 中重复列出。\n\n\
          Schema 须满足：{}\n\
-         示例：\n```json\n{}\n```",
-        plan_id,
-        step_zero_based + 1,
-        n,
-        step_zero_based,
-        reason_zh,
-        detail,
+         示例：\n```json\n{}\n```{}",
+        meta.plan_id,
+        meta.plan_patch_attempt_one_based,
+        meta.plan_patch_budget,
+        meta.step_zero_based + 1,
+        meta.n_steps_total,
+        meta.step_zero_based,
+        meta.reason_zh,
+        meta.detail,
         step.id.trim(),
         step.description.trim(),
-        step_zero_based,
+        meta.step_zero_based,
         plan_artifact::PLAN_V1_SCHEMA_RULES,
-        plan_artifact::PLAN_V1_EXAMPLE_JSON
+        plan_artifact::PLAN_V1_EXAMPLE_JSON,
+        meta.audit_counters_footer
     )
 }
 
@@ -141,7 +153,17 @@ where
         &patch_plan,
         failed_step_zero_based,
     ) {
-        Ok(merged) => Ok(Some(merged)),
+        Ok(merged) => {
+            per_coord.record_staged_plan_patch_planner_round_completed();
+            debug!(
+                target: "crabmate",
+                "staged_plan_patch_planner_ok merged_steps_len={} staged_patch_rounds_completed={} plan_rewrite_attempts={}",
+                merged.len(),
+                per_coord.staged_plan_patch_planner_rounds_snapshot(),
+                per_coord.plan_rewrite_attempts_snapshot()
+            );
+            Ok(Some(merged))
+        }
         Err(e) => {
             warn!(
                 target: "crabmate",

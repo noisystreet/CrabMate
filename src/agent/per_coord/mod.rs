@@ -1,4 +1,4 @@
-//! 规划–执行–反思（PER）协调：**工作流反思**状态机（`prepare_workflow_execute` / `append_tool_result_and_reflection`）与 **`PerCoordinator` 回合状态**（规划需求来源、重写计数、`after_final_assistant` 分支）。
+//! 规划–执行–反思（PER）协调：**工作流反思**状态机（`prepare_workflow_execute` / `append_tool_result_and_reflection`）与 **`PerCoordinator` 回合状态**（规划需求来源、**终答 `plan_rewrite` 计数**、**分阶段补丁规划累计轮次**（与前者独立）、`after_final_assistant` 分支）。
 //! 终答规划 JSON 的**静态校验**、重写 user 文案组装、历史里 `workflow_validate` 扫描与侧向校验**摘要**在 [`super::reflection::plan_rewrite`]；侧向 **LLM** 调用在 [`super::per_plan_semantic_check`]。
 //! Web 与 CLI 的 `run_agent_turn` 共用此层。
 //!
@@ -64,6 +64,8 @@ pub struct PerCoordinatorInit {
     pub reflection_default_max_rounds: usize,
     pub final_plan_policy: FinalPlanRequirementMode,
     pub plan_rewrite_max_attempts: usize,
+    /// 分阶段 **`patch_planner`** 路径下，配置项 **`staged_plan_patch_max_attempts`** 的镜像（仅用于审计/反馈文案；**不**改变 `plan_rewrite_max_attempts`）。
+    pub staged_plan_patch_max_attempts_config: usize,
     /// 为 true 时：若任一步填写 `workflow_node_id`，则须覆盖最近一次工作流工具结果中的**全部** `nodes[].id`。
     pub final_plan_require_strict_workflow_node_coverage: bool,
     /// 可选二次 LLM：对比规划 JSON 与最近工具摘要；默认 false。
@@ -79,6 +81,7 @@ impl PerCoordinatorInit {
             reflection_default_max_rounds: cfg.reflection_default_max_rounds,
             final_plan_policy: cfg.final_plan_requirement,
             plan_rewrite_max_attempts: cfg.plan_rewrite_max_attempts,
+            staged_plan_patch_max_attempts_config: cfg.staged_plan_patch_max_attempts,
             final_plan_require_strict_workflow_node_coverage: cfg
                 .final_plan_require_strict_workflow_node_coverage,
             final_plan_semantic_check_enabled: cfg.final_plan_semantic_check_enabled,
@@ -119,12 +122,17 @@ pub struct PerCoordinator {
     reflection: WorkflowReflectionController,
     final_plan_policy: FinalPlanRequirementMode,
     plan_rewrite_max_attempts: usize,
+    /// 配置 **`staged_plan_patch_max_attempts`** 的镜像（供补丁反馈与 `/status` 展示；与 **`plan_rewrite_max_attempts`** 正交）。
+    staged_plan_patch_max_attempts_config: usize,
     final_plan_require_strict_workflow_node_coverage: bool,
     final_plan_semantic_check_enabled: bool,
     final_plan_semantic_check_max_non_readonly_tools: usize,
     /// 在 [`FinalPlanRequirementMode::WorkflowReflection`] 下，由 `prepare_workflow_execute` 根据反思注入置位。
     plan_requirement_source: PlanRequirementSource,
     plan_rewrite_attempts: usize,
+    /// 本 `run_agent_turn` 回合内，**已成功完成**（解析并合并 `steps`）的**分阶段补丁规划**无工具轮次数。
+    /// **不**计入终答路径的 **`plan_rewrite_attempts`**；与 **`staged_plan_patch_max_attempts`** 所限制的「单步失败分支内尝试次数」亦不同（后者为局部循环上界）。
+    staged_plan_patch_planner_rounds_completed: usize,
     /// 缓存 [`last_workflow_validate_layer_count`]：`messages.len()` 未变时复用上一次的扫描结果。
     /// [`Self::append_tool_result_and_reflection`] 在追加后按新历史重算；[`Self::invalidate_workflow_validate_layer_cache_after_context_mutation`] 在上下文裁剪/摘要后清空，避免误用旧值。
     cached_workflow_validate_layer_count: Option<usize>,
@@ -147,9 +155,37 @@ impl PerCoordinator {
         self.plan_rewrite_attempts
     }
 
+    /// 本回合内已成功完成的分阶段补丁规划轮次数（与 [`Self::plan_rewrite_attempts_snapshot`] 独立）。
+    pub fn staged_plan_patch_planner_rounds_snapshot(&self) -> usize {
+        self.staged_plan_patch_planner_rounds_completed
+    }
+
+    /// 配置中的 **`staged_plan_patch_max_attempts`**（与单步失败分支内补丁循环上界一致；**非** `plan_rewrite_max_attempts`）。
+    pub fn staged_plan_patch_max_attempts_config_snapshot(&self) -> usize {
+        self.staged_plan_patch_max_attempts_config
+    }
+
     /// 配置中的规划重写上限（与 `plan_rewrite_max_attempts` 一致）。
     pub fn plan_rewrite_max_attempts_limit(&self) -> usize {
         self.plan_rewrite_max_attempts
+    }
+
+    /// 分阶段补丁规划轮成功合并 `steps` 后调用，递增与 **`plan_rewrite`** 独立的计数。
+    pub(crate) fn record_staged_plan_patch_planner_round_completed(&mut self) {
+        self.staged_plan_patch_planner_rounds_completed = self
+            .staged_plan_patch_planner_rounds_completed
+            .saturating_add(1);
+    }
+
+    /// 分阶段步级补丁耗尽等错误串尾部：标明与 **`plan_rewrite`** 独立的计数（供排障）。
+    pub(crate) fn staged_plan_patch_vs_plan_rewrite_counters_footer(&self) -> String {
+        format!(
+            "\n\n[计数] 分阶段补丁规划已成功合并轮次={}（配置 `staged_plan_patch_max_attempts`={}，约束**本步失败分支**内尝试上界）；终答 `plan_rewrite` 已用次数={}/{}（**独立计数**，不计入上式）。",
+            self.staged_plan_patch_planner_rounds_completed,
+            self.staged_plan_patch_max_attempts_config,
+            self.plan_rewrite_attempts,
+            self.plan_rewrite_max_attempts
+        )
     }
 
     /// 侧向语义校验判定不一致后，递增重写计数（与 `RequestPlanRewrite` 路径一致）。
@@ -189,6 +225,9 @@ impl PerCoordinator {
             reflection: WorkflowReflectionController::new(init.reflection_default_max_rounds),
             final_plan_policy: init.final_plan_policy,
             plan_rewrite_max_attempts: init.plan_rewrite_max_attempts.max(1),
+            staged_plan_patch_max_attempts_config: init
+                .staged_plan_patch_max_attempts_config
+                .max(1),
             final_plan_require_strict_workflow_node_coverage: init
                 .final_plan_require_strict_workflow_node_coverage,
             final_plan_semantic_check_enabled: init.final_plan_semantic_check_enabled,
@@ -196,6 +235,7 @@ impl PerCoordinator {
                 .final_plan_semantic_check_max_non_readonly_tools,
             plan_requirement_source: initial_source,
             plan_rewrite_attempts: 0,
+            staged_plan_patch_planner_rounds_completed: 0,
             cached_workflow_validate_layer_count: None,
             layer_count_cache_at_message_len: 0,
             repeated_failed_tool_signatures: HashMap::new(),
@@ -437,6 +477,10 @@ mod tests {
         assert_eq!(i.final_plan_policy, cfg.final_plan_requirement);
         assert_eq!(i.plan_rewrite_max_attempts, cfg.plan_rewrite_max_attempts);
         assert_eq!(
+            i.staged_plan_patch_max_attempts_config,
+            cfg.staged_plan_patch_max_attempts
+        );
+        assert_eq!(
             i.final_plan_require_strict_workflow_node_coverage,
             cfg.final_plan_require_strict_workflow_node_coverage
         );
@@ -455,6 +499,7 @@ mod tests {
             reflection_default_max_rounds: 5,
             final_plan_policy: policy,
             plan_rewrite_max_attempts: plan_rewrite_max,
+            staged_plan_patch_max_attempts_config: 2,
             final_plan_require_strict_workflow_node_coverage: false,
             final_plan_semantic_check_enabled: false,
             final_plan_semantic_check_max_non_readonly_tools: 0,
@@ -850,6 +895,7 @@ mod tests {
             reflection_default_max_rounds: 5,
             final_plan_policy: FinalPlanRequirementMode::WorkflowReflection,
             plan_rewrite_max_attempts: 3,
+            staged_plan_patch_max_attempts_config: 2,
             final_plan_require_strict_workflow_node_coverage: true,
             final_plan_semantic_check_enabled: false,
             final_plan_semantic_check_max_non_readonly_tools: 0,
@@ -1076,6 +1122,20 @@ mod tests {
         assert!(prep.execute);
         assert!(prep.reflection_inject.is_none());
         assert!(!c.require_plan_in_final_flag_snapshot());
+    }
+
+    #[test]
+    fn staged_patch_planner_counter_independent_of_plan_rewrite() {
+        let mut c = pc(FinalPlanRequirementMode::Never, 2);
+        assert_eq!(c.staged_plan_patch_planner_rounds_snapshot(), 0);
+        assert_eq!(c.plan_rewrite_attempts_snapshot(), 0);
+        c.record_staged_plan_patch_planner_round_completed();
+        assert_eq!(c.staged_plan_patch_planner_rounds_snapshot(), 1);
+        c.increment_plan_rewrite_attempts();
+        assert_eq!(c.plan_rewrite_attempts_snapshot(), 1);
+        let footer = c.staged_plan_patch_vs_plan_rewrite_counters_footer();
+        assert!(footer.contains("分阶段补丁规划已成功合并轮次=1"));
+        assert!(footer.contains("plan_rewrite"));
     }
 
     #[test]
