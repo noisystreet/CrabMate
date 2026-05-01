@@ -18,7 +18,9 @@ use super::app_signals::AppSignals;
 use super::chat::{
     ChatColumnShell, ComposerStreamShell,
     wire_chat_domain::{WireChatDomainEffectsArgs, wire_chat_domain_effects},
-    wire_chat_session_lifecycle::wire_chat_session_lifecycle_effects,
+    wire_chat_session_lifecycle::{
+        WireChatSessionLifecycleEffectsArgs, wire_chat_session_lifecycle_effects,
+    },
 };
 use super::status_tasks_wiring::{
     make_refresh_status, make_refresh_tasks, make_toggle_task, wire_status_tasks_domain_effects,
@@ -36,18 +38,18 @@ pub struct AppShellInit {
 pub fn init_app_shell() -> AppShellInit {
     let app_signals = AppSignals::new();
 
-    wire_chat_session_lifecycle_effects(
-        app_signals.initialized,
-        app_signals.chat.sessions,
-        app_signals.chat.active_id,
-        app_signals.chat_composer.draft,
-        app_signals.shell_ui.locale,
-        app_signals.shell_ui.web_ui_config_loaded,
-        app_signals.shell_ui.markdown_render,
-        app_signals.shell_ui.apply_assistant_display_filters,
-        app_signals.chat,
-        app_signals.llm_settings.selected_agent_role,
-    );
+    wire_chat_session_lifecycle_effects(WireChatSessionLifecycleEffectsArgs {
+        initialized: app_signals.initialized,
+        sessions: app_signals.chat.sessions,
+        active_id: app_signals.chat.active_id,
+        draft: app_signals.chat_composer.draft,
+        locale: app_signals.shell_ui.locale,
+        web_ui_config_loaded: app_signals.shell_ui.web_ui_config_loaded,
+        markdown_render: app_signals.shell_ui.markdown_render,
+        apply_assistant_display_filters: app_signals.shell_ui.apply_assistant_display_filters,
+        chat_session: app_signals.chat,
+        selected_agent_role: app_signals.llm_settings.selected_agent_role,
+    });
     wire_persist_side_panel_view_flags(app_signals.shell_ui.side_panel_view);
     wire_persist_status_bar_visible(app_signals.shell_ui.status_bar_visible);
     wire_persist_agent_role(app_signals.llm_settings.selected_agent_role);

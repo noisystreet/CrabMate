@@ -61,6 +61,20 @@ pub struct HierarchyRunnerResult {
     pub mode: AgentMode,
 }
 
+/// `run_simple_fallback` 的输入（路由降级路径与 `HierarchyRunnerParams` 对齐字段）。
+struct SimpleFallbackParams<'a> {
+    task: &'a str,
+    cfg: &'a AgentConfig,
+    llm_backend: &'a dyn ChatCompletionsBackend,
+    client: std::sync::Arc<reqwest::Client>,
+    api_key: String,
+    working_dir: std::path::PathBuf,
+    sse_out: Option<Sender<String>>,
+    tools_defs: &'a [crate::types::Tool],
+    tool_approval_out: Option<Sender<String>>,
+    tool_approval_rx: Option<Arc<Mutex<Receiver<CommandApprovalDecision>>>>,
+}
+
 /// 运行分层 Agent（完整流程）
 #[allow(dead_code)]
 pub async fn run_hierarchical(
@@ -146,7 +160,7 @@ pub async fn run_hierarchical(
             "Task complexity {} doesn't require hierarchical execution, falling back",
             router_output.mode.as_str()
         );
-        return run_simple_fallback(
+        return run_simple_fallback(SimpleFallbackParams {
             task,
             cfg,
             llm_backend,
@@ -154,10 +168,10 @@ pub async fn run_hierarchical(
             api_key,
             working_dir,
             sse_out,
-            tools_slice,
+            tools_defs: tools_slice,
             tool_approval_out,
             tool_approval_rx,
-        )
+        })
         .await;
     }
 
@@ -312,19 +326,22 @@ fn apply_intent_mode_bias(
 }
 
 /// 简单降级执行（不进行任务分解）
-#[allow(clippy::too_many_arguments)]
 async fn run_simple_fallback(
-    task: &str,
-    cfg: &AgentConfig,
-    llm_backend: &dyn ChatCompletionsBackend,
-    client: std::sync::Arc<reqwest::Client>,
-    api_key: String,
-    working_dir: std::path::PathBuf,
-    sse_out: Option<Sender<String>>,
-    tools_defs: &[crate::types::Tool],
-    tool_approval_out: Option<Sender<String>>,
-    tool_approval_rx: Option<Arc<Mutex<Receiver<CommandApprovalDecision>>>>,
+    params: SimpleFallbackParams<'_>,
 ) -> Result<HierarchyRunnerResult, ExecutionError> {
+    let SimpleFallbackParams {
+        task,
+        cfg,
+        llm_backend,
+        client,
+        api_key,
+        working_dir,
+        sse_out,
+        tools_defs,
+        tool_approval_out,
+        tool_approval_rx,
+    } = params;
+
     // 直接使用 Manager 的降级分解
     let manager_config = ManagerConfig::default();
     let manager = ManagerAgent::new(manager_config);
