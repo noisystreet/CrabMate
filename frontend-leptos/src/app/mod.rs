@@ -51,6 +51,9 @@ pub fn App() -> impl IntoView {
         app_ctx,
     } = init_app_shell();
 
+    // `AppShellCtx` 含 `Rc` 等，不满足 `Send`；子组件闭包不得捕获整 ctx（见 Leptos `ToChildren` 约束）。
+    let chat_find_bar_signals = app_ctx.chat_find_bar_signals();
+
     view! {
         <div
             class="app-root app-shell-ds"
@@ -73,14 +76,7 @@ pub fn App() -> impl IntoView {
                 {mobile_shell_header_view(app_ctx.clone())}
 
                 <Show when=move || app_signals.chat_composer.chat_find_panel_open.get()>
-                    <ChatFindBar
-                        chat_find_panel_open=app_signals.chat_composer.chat_find_panel_open
-                        locale=app_signals.shell_ui.locale
-                        chat_find_query=app_signals.chat_composer.chat_find_query
-                        chat_find_match_ids=app_signals.chat_composer.chat_find_match_ids
-                        chat_find_cursor=app_signals.chat_composer.chat_find_cursor
-                        auto_scroll_chat=app_signals.chat_composer.auto_scroll_chat
-                    />
+                    <ChatFindBar signals=chat_find_bar_signals />
                 </Show>
 
                 <div

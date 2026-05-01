@@ -6,15 +6,27 @@ use leptos_dom::helpers::event_target_value;
 use crate::i18n::{self, Locale};
 use crate::session_search::scroll_message_into_view;
 
+/// 查找条所需 `RwSignal` 聚合（阶段 B：压缩 `App` 的 `view!` 实参）。
+#[derive(Clone, Copy)]
+pub struct ChatFindBarSignals {
+    pub chat_find_panel_open: RwSignal<bool>,
+    pub locale: RwSignal<Locale>,
+    pub chat_find_query: RwSignal<String>,
+    pub chat_find_match_ids: RwSignal<Vec<String>>,
+    pub chat_find_cursor: RwSignal<usize>,
+    pub auto_scroll_chat: RwSignal<bool>,
+}
+
 #[component]
-pub fn ChatFindBar(
-    chat_find_panel_open: RwSignal<bool>,
-    locale: RwSignal<Locale>,
-    chat_find_query: RwSignal<String>,
-    chat_find_match_ids: RwSignal<Vec<String>>,
-    chat_find_cursor: RwSignal<usize>,
-    auto_scroll_chat: RwSignal<bool>,
-) -> impl IntoView {
+pub fn ChatFindBar(signals: ChatFindBarSignals) -> impl IntoView {
+    let ChatFindBarSignals {
+        chat_find_panel_open,
+        locale,
+        chat_find_query,
+        chat_find_match_ids,
+        chat_find_cursor,
+        auto_scroll_chat,
+    } = signals;
     view! {
         <div class="chat-find-wrap">
             <div class="chat-find-bar" role="search" prop:aria-label=move || i18n::chat_find_region(locale.get())>
