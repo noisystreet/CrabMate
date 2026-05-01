@@ -38,6 +38,7 @@ mod planner_round_fsm;
 mod post_parse_pipeline_fsm;
 mod sse;
 mod staged_step_fsm;
+mod step_iteration_fsm;
 mod step_loop_fsm;
 mod turn_fsm;
 
@@ -69,6 +70,10 @@ use staged_sse::{
 use staged_step_fsm::{
     staged_patch_budget_after_step_failure, staged_patch_budget_tool_messages_not_ok,
     staged_step_patch_planner_enabled,
+};
+use step_iteration_fsm::{
+    StagedStepAfterOuterLoop, StagedStepToolPhaseRoute, staged_step_after_outer_loop,
+    staged_step_failure_retry_exhausted_message, staged_step_tool_phase_route,
 };
 use step_loop_fsm::{staged_injected_step_user_body, try_apply_staged_plan_control_flow_jump};
 use turn_fsm::{
@@ -928,36 +933,129 @@ where
             continue;
         }
 
-        if run_step.is_err() || step_verify_failed_reason.is_some() {
-            if staged_step_patch_planner_enabled(patch_ctx.p.ctx.cfg.staged_plan_feedback_mode) {
+        match staged_step_after_outer_loop(&run_step, &step_verify_failed_reason) {
+            StagedStepAfterOuterLoop::ExecutionOrVerifyFailed { .. } => {
+                if staged_step_patch_planner_enabled(patch_ctx.p.ctx.cfg.staged_plan_feedback_mode)
+                {
+                    let mut recovered = false;
+                    let patch_budget = staged_patch_budget_after_step_failure(
+                        step.max_step_retries,
+                        patch_ctx.p.ctx.cfg.staged_plan_patch_max_attempts,
+                    );
+                    for _ in 0..patch_budget {
+                        let feedback = if let Some(ref vr) = step_verify_failed_reason {
+                            staged_plan_step_failure_feedback_user_body(
+                                &plan_id,
+                                i,
+                                n,
+                                &step,
+                                "本步确定性验证失败 (Step Verification Failed)",
+                                &format!(
+                                    "验证闸门报告失败: {}\n请根据对话历史缩短或调整后续步骤，并在补丁中修复此问题。",
+                                    vr
+                                ),
+                            )
+                        } else {
+                            staged_plan_step_failure_feedback_user_body(
+                                &plan_id,
+                                i,
+                                n,
+                                &step,
+                                "执行子循环返回错误",
+                                "请根据对话历史缩短或调整后续步骤；若属环境/权限问题请在补丁中显式增加修复步。",
+                            )
+                        };
+                        if let Some(merged) = run_staged_plan_patch_planner_round(
+                            &mut patch_ctx,
+                            feedback,
+                            &plan_steps,
+                            i,
+                        )
+                        .await?
+                        {
+                            plan_steps = merged;
+                            n = plan_steps.len();
+                            push_patch_replan_assistant_json_and_notice(
+                                patch_ctx.p,
+                                plan_steps.as_slice(),
+                                echo_terminal_staged,
+                                completed_steps,
+                            )
+                            .await?;
+                            recovered = true;
+                            break;
+                        }
+                    }
+                    if recovered {
+                        continue;
+                    }
+                }
+                finish_staged_plan_step_failed_and_plan_failed_sse(
+                    StagedPlanStepFailedExit {
+                        out: patch_ctx.p.ctx.out,
+                        plan_id: &plan_id,
+                        step_id_trim: step.id.trim(),
+                        step_index,
+                        n,
+                        completed_steps_before_this: completed_steps,
+                    },
+                    step.executor_kind,
+                    step_verify_failed_reason.as_deref(),
+                )
+                .await;
+
+                let reason = staged_step_failure_retry_exhausted_message(
+                    &run_step,
+                    &step_verify_failed_reason,
+                );
+                return Err(RunAgentTurnError::StepRetryExhausted {
+                    phase: AgentTurnSubPhase::Executor,
+                    message: reason,
+                });
+            }
+            StagedStepAfterOuterLoop::ProceedToToolCheck => {}
+        }
+
+        if sse_sender_closed(patch_ctx.p.ctx.out)
+            || patch_ctx
+                .p
+                .ctx
+                .cancel
+                .is_some_and(|c| c.load(Ordering::SeqCst))
+        {
+            finish_staged_plan_step_sse(
+                patch_ctx.p.ctx.out,
+                &plan_id,
+                step.id.trim(),
+                step_index,
+                n,
+                "cancelled",
+                step.executor_kind,
+                None,
+            )
+            .await;
+            staged_loop_cancelled = true;
+            break;
+        }
+
+        let tools_ok = staged_step_tool_messages_all_ok(patch_ctx.p.turn.messages, step_user_idx);
+        let patch_planner_on =
+            staged_step_patch_planner_enabled(patch_ctx.p.ctx.cfg.staged_plan_feedback_mode);
+        match staged_step_tool_phase_route(tools_ok, patch_planner_on) {
+            StagedStepToolPhaseRoute::AttemptToolFailurePatches => {
                 let mut recovered = false;
-                let patch_budget = staged_patch_budget_after_step_failure(
-                    step.max_step_retries,
+                let tool_patch_budget = staged_patch_budget_tool_messages_not_ok(
                     patch_ctx.p.ctx.cfg.staged_plan_patch_max_attempts,
                 );
-                for _ in 0..patch_budget {
-                    let feedback = if let Some(ref vr) = step_verify_failed_reason {
-                        staged_plan_step_failure_feedback_user_body(
-                            &plan_id,
-                            i,
-                            n,
-                            &step,
-                            "本步确定性验证失败 (Step Verification Failed)",
-                            &format!(
-                                "验证闸门报告失败: {}\n请根据对话历史缩短或调整后续步骤，并在补丁中修复此问题。",
-                                vr
-                            ),
-                        )
-                    } else {
-                        staged_plan_step_failure_feedback_user_body(
-                            &plan_id,
-                            i,
-                            n,
-                            &step,
-                            "执行子循环返回错误",
-                            "请根据对话历史缩短或调整后续步骤；若属环境/权限问题请在补丁中显式增加修复步。",
-                        )
-                    };
+                for _ in 0..tool_patch_budget {
+                    let feedback = staged_plan_step_failure_feedback_user_body(
+                        &plan_id,
+                        i,
+                        n,
+                        &step,
+                        "本步内工具调用未全部成功",
+                        "请阅读本步对应的 `role: tool` 输出（含失败原因），修订从当前步起的 `steps`（可替换、拆分或追加一步）。",
+                    );
                     if let Some(merged) = run_staged_plan_patch_planner_round(
                         &mut patch_ctx,
                         feedback,
@@ -982,107 +1080,25 @@ where
                 if recovered {
                     continue;
                 }
+                finish_staged_plan_step_failed_and_plan_failed_sse(
+                    StagedPlanStepFailedExit {
+                        out: patch_ctx.p.ctx.out,
+                        plan_id: &plan_id,
+                        step_id_trim: step.id.trim(),
+                        step_index,
+                        n,
+                        completed_steps_before_this: completed_steps,
+                    },
+                    step.executor_kind,
+                    None,
+                )
+                .await;
+                return Err(RunAgentTurnError::StepRetryExhausted {
+                    phase: AgentTurnSubPhase::Executor,
+                    message: "局部修复耗尽上限 (工具执行失败)".to_string(),
+                });
             }
-            finish_staged_plan_step_failed_and_plan_failed_sse(
-                StagedPlanStepFailedExit {
-                    out: patch_ctx.p.ctx.out,
-                    plan_id: &plan_id,
-                    step_id_trim: step.id.trim(),
-                    step_index,
-                    n,
-                    completed_steps_before_this: completed_steps,
-                },
-                step.executor_kind,
-                step_verify_failed_reason.as_deref(),
-            )
-            .await;
-
-            let reason = if let Err(e) = run_step {
-                e.to_string()
-            } else {
-                step_verify_failed_reason.unwrap_or_else(|| "局部修复耗尽上限".to_string())
-            };
-            return Err(RunAgentTurnError::StepRetryExhausted {
-                phase: AgentTurnSubPhase::Executor,
-                message: reason,
-            });
-        }
-        if sse_sender_closed(patch_ctx.p.ctx.out)
-            || patch_ctx
-                .p
-                .ctx
-                .cancel
-                .is_some_and(|c| c.load(Ordering::SeqCst))
-        {
-            finish_staged_plan_step_sse(
-                patch_ctx.p.ctx.out,
-                &plan_id,
-                step.id.trim(),
-                step_index,
-                n,
-                "cancelled",
-                step.executor_kind,
-                None,
-            )
-            .await;
-            staged_loop_cancelled = true;
-            break;
-        }
-
-        let tools_ok = staged_step_tool_messages_all_ok(patch_ctx.p.turn.messages, step_user_idx);
-        if !tools_ok
-            && staged_step_patch_planner_enabled(patch_ctx.p.ctx.cfg.staged_plan_feedback_mode)
-        {
-            let mut recovered = false;
-            let tool_patch_budget = staged_patch_budget_tool_messages_not_ok(
-                patch_ctx.p.ctx.cfg.staged_plan_patch_max_attempts,
-            );
-            for _ in 0..tool_patch_budget {
-                let feedback = staged_plan_step_failure_feedback_user_body(
-                    &plan_id,
-                    i,
-                    n,
-                    &step,
-                    "本步内工具调用未全部成功",
-                    "请阅读本步对应的 `role: tool` 输出（含失败原因），修订从当前步起的 `steps`（可替换、拆分或追加一步）。",
-                );
-                if let Some(merged) =
-                    run_staged_plan_patch_planner_round(&mut patch_ctx, feedback, &plan_steps, i)
-                        .await?
-                {
-                    plan_steps = merged;
-                    n = plan_steps.len();
-                    push_patch_replan_assistant_json_and_notice(
-                        patch_ctx.p,
-                        plan_steps.as_slice(),
-                        echo_terminal_staged,
-                        completed_steps,
-                    )
-                    .await?;
-                    recovered = true;
-                    break;
-                }
-            }
-            if recovered {
-                continue;
-            }
-            finish_staged_plan_step_failed_and_plan_failed_sse(
-                StagedPlanStepFailedExit {
-                    out: patch_ctx.p.ctx.out,
-                    plan_id: &plan_id,
-                    step_id_trim: step.id.trim(),
-                    step_index,
-                    n,
-                    completed_steps_before_this: completed_steps,
-                },
-                step.executor_kind,
-                None,
-            )
-            .await;
-            return Err(RunAgentTurnError::StepRetryExhausted {
-                phase: AgentTurnSubPhase::Executor,
-                message: "局部修复耗尽上限 (工具执行失败)".to_string(),
-            });
+            StagedStepToolPhaseRoute::EmitStepSuccess => {}
         }
 
         finish_staged_plan_step_sse(
