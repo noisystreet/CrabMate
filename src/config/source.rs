@@ -158,7 +158,7 @@ pub(super) struct AgentSection {
     pub(super) staged_plan_phase_instruction: Option<String>,
     /// 兼容旧键；已无运行时语义（见 `AgentConfig::staged_plan_allow_no_task`）。
     pub(super) staged_plan_allow_no_task: Option<bool>,
-    /// `fail_fast`（默认）或 `patch_planner`
+    /// `fail_fast` 或 `patch_planner`（嵌入默认见 `config/planning.toml`）
     pub(super) staged_plan_feedback_mode: Option<String>,
     pub(super) staged_plan_patch_max_attempts: Option<u64>,
     /// CLI 是否在无工具规划轮向 stdout 打印模型原文；默认 true。`CM_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM`

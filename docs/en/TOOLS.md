@@ -12,6 +12,44 @@ This document describes built-in tools, common function-calling JSON examples, a
 
 **Final answer `agent_reply_plan` v1** (validated on workflow reflection paths): `steps[].id` must be unique and match stable character rules (see **`docs/en/DEVELOPMENT.md`**); optional **`workflow_node_id`** aligns with **`nodes[].id`** from the latest **`workflow_execute`** tool result (subset check). Under staged planning, optional **`steps[].executor_kind`** (`review_readonly` / `patch_write` / `test_runner`) narrows tools per step; see **`docs/en/CONFIGURATION.md`** (staged planning).
 
+**Step-level `acceptance`** (enforced on the staged path by **`step_verifier.rs`**): asserts against the **last** `role: tool` in the staged step window (from the step’s injected `user` until the next `user`). Optional fields: **`expect_exit_code`**, **`expect_stdout_contains`**, **`expect_stderr_contains`**, **`expect_file_exists`** (relative to workspace), **`expect_json_path_equals`** (`path` + `value`), **`expect_http_status`** (HTTP tools). On failure, **`staged_plan_feedback_mode`** controls whether a bounded **patch planner** round runs (embedded default **`patch_planner`** in **`config/planning.toml`**); use **`max_step_retries`** / **`transitions`** for bounded local retries. See **`docs/规划执行验证架构.md`** appendix + top “copy-paste JSON” snippets.
+
+**Copy-paste plan JSON (placeholders, one step per rolling plan round is typical)**:
+
+```json
+{
+  "type": "agent_reply_plan",
+  "version": 1,
+  "steps": [
+    {
+      "id": "read-only-survey",
+      "description": "Read-only scan of YOUR_ANCHOR_FILE.md",
+      "executor_kind": "review_readonly",
+      "max_step_retries": 1
+    }
+  ]
+}
+```
+
+```json
+{
+  "type": "agent_reply_plan",
+  "version": 1,
+  "steps": [
+    {
+      "id": "run-checks",
+      "description": "Run a placeholder check and assert stdout/exit code",
+      "executor_kind": "test_runner",
+      "max_step_retries": 2,
+      "acceptance": {
+        "expect_exit_code": 0,
+        "expect_stdout_contains": "YOUR_EXPECTED_SUBSTRING"
+      }
+    }
+  ]
+}
+```
+
 **Optional Docker sandbox** (`sync_default_tool_sandbox_mode = docker`): **SyncDefault** and **`run_command` / `run_executable` / `get_weather` / `web_search` / `http_fetch` / `http_request`** run in a **one-shot Docker container** (bollard → Engine API) after host approval/allowlist; **`workflow_execute`** and **MCP** stay on the host. Requires reachable **Docker daemon** and non-empty **`sync_default_tool_sandbox_docker_image`** with the CLIs you need (`git`, `rg`, `cargo`, …) and **same CPU arch** as the host `crabmate` binary (mounted read-only; repo ships no fixed image). Default **no network** (`docker_network` empty); for weather/search/HTTP egress set **`sync_default_tool_sandbox_docker_network`** (e.g. `bridge`). Steps, sample Dockerfile, env, and safety notes: [`docs/en/CONFIGURATION.md`](CONFIGURATION.md) § SyncDefault Docker sandbox.
 
 ## Built-in tools (model-callable)
