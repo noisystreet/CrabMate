@@ -158,6 +158,7 @@
 | 2026-05-01 | **`agent_turn/reflect/reflect_semantic.rs`**：`PlanSemanticLlmOutcome` → **`PlanSemanticConsistencyReflectCtl`**（侧向语义 LLM 后与 **`final_plan_gate`** 挂起态衔接；单测覆盖）。 |
 | 2026-05-02 | **`per_coord/final_plan_gate::run_final_plan_gate_semantic_completed`**：侧向语义 LLM 完成后的 **`PendingSemanticLlm`** 一步转移；**`reflect_semantic`** 并入 **`reflect_impl`**（单元测试随迁）。 |
 | 2026-05-01 | **`after_final_assistant`**：**始终**经 **`run_final_plan_gate(phase, …)`**；`NoRequirement` 时不调用 **`workflow_validate_layer_need`**（避免无需求路径更新层数缓存）。**`outer_loop`**：`run_agent_outer_loop` 拆迭代守卫、上下文准备、**`ReflectBranchCtl`** 反思分支与工具执行轮。 |
+| 2026-05-02 | 滚动视界外层实现迁至 **`staged/rolling_horizon_facade.rs`**（门面：`run_staged_rolling_horizon_outer_loop`、`run_staged_plan_then_execute_steps`、`run_logical_dual_agent_then_execute_steps`；删除 **`staged_rolling_horizon_outer_loop.inc.rs`**）；**`StagedPlanRunOutcome`** 仍留在 **`staged/mod.rs`** 避免 **`turn_fsm`** 与门面模块循环依赖。 |
 | 2026-05-01 | 滚动视界外层：新增 **`staged_rolling_horizon_apply_advance`**（`turn_fsm.rs`），集中 **advance + rewrite 计数 + advance_kind / propagate_public_code**；`run_staged_rolling_horizon_outer_loop` 仅保留 IO 与 tracing。 |
 | 2026-05-01 | 首轮解析后 **FullPipeline** 路径：新增 **`full_pipeline_fsm.rs`**（**`StagedFullPipelinePhase`** 线性相位 + `staged_fsm=full_pipeline` 的 `debug!`）；`run_staged_plan_with_prepared_request` 内 ensemble → 优化 → NL 段与枚举对齐。 |
 | 2026-04-30 | 步内子阶段枚举 **`StagedStepRunningSub`**（`step_iteration_fsm.rs`，对齐设计稿 `StepRunning.sub`）；`mod.rs` 拆 **`staged_step_run_outer_half`** / **`staged_step_run_after_outer_half`** |

@@ -9,10 +9,7 @@ use crate::agent::plan_artifact;
 use crate::agent::plan_optimizer;
 use crate::agent::reflection::plan_rewrite;
 use crate::llm::no_tools_chat_request_from_messages;
-use crate::types::{
-    Message, USER_CANCELLED_FINISH_REASON, is_message_excluded_from_llm_context_except_memory,
-    message_clone_stripping_reasoning_for_api,
-};
+use crate::types::{Message, USER_CANCELLED_FINISH_REASON};
 
 use super::errors::{AgentTurnSubPhase, RunAgentTurnError};
 use super::messages::push_assistant_merging_trailing_empty_placeholder;
@@ -30,6 +27,7 @@ mod planner_round_fsm;
 mod post_parse_pipeline_fsm;
 mod prepared_parse_fsm;
 mod prepared_post_parse_fsm;
+mod rolling_horizon_facade;
 mod sse;
 mod staged_step_fsm;
 mod step_iteration_fsm;
@@ -63,10 +61,47 @@ use prepared_post_parse_fsm::{
 };
 use staged_sse::{next_staged_plan_id, staged_plan_phase_instruction_default};
 use steps_loop::run_staged_plan_steps_loop;
-use turn_fsm::{
-    StagedTurnAdvance, StagedTurnPhase, StagedTurnSubCallOutcome,
-    entered_flag_for_next_planner_call, staged_rolling_horizon_apply_advance,
+
+// Re-export for `run_dispatch`, `agent_turn/tests`, and in-module `#[cfg(test)]`.
+#[allow(unused_imports)]
+pub(crate) use rolling_horizon_facade::{
+    build_logical_dual_planner_messages, build_single_agent_planner_messages,
+    run_logical_dual_agent_then_execute_steps, run_staged_plan_then_execute_steps,
 };
+
+/// 单次无工具规划子调用结束时的粗粒度结果（滚动视界外层循环消费）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StagedPlanRunOutcome {
+    ContinuePlanning,
+    Finished,
+}
+
+#[cfg(test)]
+pub(crate) fn simulate_single_step_rolling_horizon_for_test(
+    outcomes: &[StagedPlanRunOutcome],
+    max_rounds: usize,
+) -> Result<usize, String> {
+    let mut staged_rounds = 0usize;
+    let mut idx = 0usize;
+    loop {
+        staged_rounds = staged_rounds.saturating_add(1);
+        if staged_rounds > max_rounds {
+            return Err(format!(
+                "分阶段单步规划轮次超过上限（{}），已停止以避免无限循环",
+                max_rounds
+            ));
+        }
+        let outcome = outcomes
+            .get(idx)
+            .copied()
+            .unwrap_or(StagedPlanRunOutcome::ContinuePlanning);
+        idx = idx.saturating_add(1);
+        match outcome {
+            StagedPlanRunOutcome::ContinuePlanning => continue,
+            StagedPlanRunOutcome::Finished => return Ok(staged_rounds),
+        }
+    }
+}
 
 /// 分阶段规划共享执行路径上的日志文案（避免 `run_staged_plan_with_prepared_request` 参数过长）。
 #[derive(Clone, Copy)]
@@ -125,7 +160,6 @@ pub(super) async fn prepare_staged_planner_no_tools_request(
         p.turn.seed_override,
     ))
 }
-include!("staged_rolling_horizon_outer_loop.inc.rs");
 
 /// 首轮解析成功后 **`PreparedPlannerRoute::ContinueWithPlan`** 的后续管线（no_task / full-pipeline）参聚合。
 struct ContinuePreparedPlanAfterFirstRoundParams<'a, 'b, F> {
@@ -566,31 +600,6 @@ where
             .await
         }
     }
-}
-
-pub(super) async fn run_logical_dual_agent_then_execute_steps(
-    p: &mut RunLoopParams<'_>,
-    per_coord: &mut PerCoordinator,
-) -> Result<(), RunAgentTurnError> {
-    let render_to_terminal = p.ctx.render_to_terminal;
-    let echo_terminal_staged = render_to_terminal && p.ctx.out.is_none();
-
-    let labels = StagedPlanRunLabels {
-        planning_log_label: "逻辑双agent规划轮输出",
-        step_injection_log_label: "逻辑双agent注入执行器user",
-        build_planner_messages: build_logical_dual_planner_messages,
-    };
-
-    run_staged_rolling_horizon_outer_loop(
-        StagedRollingHorizonKind::LogicalDualAgent,
-        p,
-        per_coord,
-        labels,
-        render_to_terminal,
-        echo_terminal_staged,
-        Message::user_only,
-    )
-    .await
 }
 
 #[cfg(test)]

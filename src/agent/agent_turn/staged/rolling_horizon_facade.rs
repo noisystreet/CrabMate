@@ -1,3 +1,26 @@
+//! **滚动视界**外层编排门面：单 Agent / 逻辑双 Agent 共用的
+//! **`run_staged_rolling_horizon_outer_loop`**（`turn_fsm` 相位 + 子调用 → advance），以及
+//! **`build_single_agent_planner_messages`** / **`build_logical_dual_planner_messages`**。
+//!
+//! 首轮无工具规划解析后的 ensemble / 优化轮 / 步循环仍在 [`super::run_staged_plan_with_prepared_request`]。
+//! 设计对照：`docs/design/per_state_machine_consolidation.md` §3.2。
+
+use crate::agent::per_coord::PerCoordinator;
+use crate::types::{
+    Message, is_message_excluded_from_llm_context_except_memory,
+    message_clone_stripping_reasoning_for_api,
+};
+
+use super::super::errors::{AgentTurnSubPhase, RunAgentTurnError};
+use super::super::params::RunLoopParams;
+use super::turn_fsm::{
+    StagedTurnAdvance, StagedTurnPhase, StagedTurnSubCallOutcome,
+    entered_flag_for_next_planner_call, staged_rolling_horizon_apply_advance,
+};
+use super::{
+    StagedPlanRunLabels, prepare_staged_planner_no_tools_request,
+    run_staged_plan_with_prepared_request,
+};
 
 /// 滚动视界外层循环变体（与 [`advance_staged_turn_after_sub_call`]、`StagedTurnPhase` 对齐）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -170,7 +193,7 @@ where
     }
 }
 
-pub(super) async fn run_staged_plan_then_execute_steps(
+pub(crate) async fn run_staged_plan_then_execute_steps(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
 ) -> Result<(), RunAgentTurnError> {
@@ -199,6 +222,31 @@ pub(super) async fn run_staged_plan_then_execute_steps(
             name: None,
             tool_call_id: None,
         },
+    )
+    .await
+}
+
+pub(crate) async fn run_logical_dual_agent_then_execute_steps(
+    p: &mut RunLoopParams<'_>,
+    per_coord: &mut PerCoordinator,
+) -> Result<(), RunAgentTurnError> {
+    let render_to_terminal = p.ctx.render_to_terminal;
+    let echo_terminal_staged = render_to_terminal && p.ctx.out.is_none();
+
+    let labels = StagedPlanRunLabels {
+        planning_log_label: "逻辑双agent规划轮输出",
+        step_injection_log_label: "逻辑双agent注入执行器user",
+        build_planner_messages: build_logical_dual_planner_messages,
+    };
+
+    run_staged_rolling_horizon_outer_loop(
+        StagedRollingHorizonKind::LogicalDualAgent,
+        p,
+        per_coord,
+        labels,
+        render_to_terminal,
+        echo_terminal_staged,
+        Message::user_only,
     )
     .await
 }
@@ -254,39 +302,6 @@ pub(crate) fn build_logical_dual_planner_messages(
         .collect();
     out.push(Message::system_only(plan_system));
     out
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum StagedPlanRunOutcome {
-    ContinuePlanning,
-    Finished,
-}
-
-#[cfg(test)]
-pub(crate) fn simulate_single_step_rolling_horizon_for_test(
-    outcomes: &[StagedPlanRunOutcome],
-    max_rounds: usize,
-) -> Result<usize, String> {
-    let mut staged_rounds = 0usize;
-    let mut idx = 0usize;
-    loop {
-        staged_rounds = staged_rounds.saturating_add(1);
-        if staged_rounds > max_rounds {
-            return Err(format!(
-                "分阶段单步规划轮次超过上限（{}），已停止以避免无限循环",
-                max_rounds
-            ));
-        }
-        let outcome = outcomes
-            .get(idx)
-            .copied()
-            .unwrap_or(StagedPlanRunOutcome::ContinuePlanning);
-        idx = idx.saturating_add(1);
-        match outcome {
-            StagedPlanRunOutcome::ContinuePlanning => continue,
-            StagedPlanRunOutcome::Finished => return Ok(staged_rounds),
-        }
-    }
 }
 
 #[cfg(test)]

@@ -1,4 +1,4 @@
-//! **编排观测**：滚动视界外层循环在 `mod.rs` 中 **`run_staged_rolling_horizon_outer_loop`** 打点（`target: crabmate::staged`，`staged_fsm = rolling_horizon`），与步内子阶段日志区分。
+//! **编排观测**：滚动视界外层循环在 **`rolling_horizon_facade`**（**`run_staged_rolling_horizon_outer_loop`**）打点（`target: crabmate::staged`，`staged_fsm = rolling_horizon`），与步内子阶段日志区分。
 //! 一次迭代的 **advance + 计数 + tracing 摘要** 由 [`staged_rolling_horizon_apply_advance`] 集中计算，驱动层只处理 IO。
 
 use crate::types::Message;
