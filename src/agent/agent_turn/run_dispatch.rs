@@ -4,7 +4,7 @@
 //!
 //! **分阶段意图门控**：[`super::intent::assess_staged_planning_gate_full_pipeline`] 产出结构化 [`super::intent::StagedPlanningGateOutcome`]，
 //! 与 `intent_pipeline::IntentDecision` 对齐，并与 **`intent_at_turn_start`** 共用 **L0+L1+可选 L2**。**[`execute_non_hierarchical_main_route`]** 将
-//! [`super::turn_orchestration::NonHierarchicalMainRoute`] 与三条执行路径一一对应。
+//! [`super::turn_orchestration::NonHierarchicalEntryResolution`] 聚合门控与配置，给出显式 [`super::turn_orchestration::NonHierarchicalMainRoute`]。
 
 use crate::agent::per_coord::PerCoordinator;
 
@@ -18,7 +18,7 @@ use super::staged::{
     run_logical_dual_agent_then_execute_steps, run_staged_plan_then_execute_steps,
 };
 use super::turn_orchestration::{
-    NonHierarchicalMainRoute, TurnOrchestrationMode, resolve_non_hierarchical_main_route,
+    NonHierarchicalEntryResolution, NonHierarchicalMainRoute, TurnOrchestrationMode,
 };
 
 /// 执行非分层主路径（与 [`resolve_non_hierarchical_main_route`] 产物一一对应）。
@@ -80,13 +80,17 @@ pub(crate) async fn dispatch_non_hierarchical_turn(
             "staged_plan_intent_gate deny detail"
         );
     }
-    let main_route = resolve_non_hierarchical_main_route(p.ctx.cfg.as_ref(), allow_staged);
-    let mode: TurnOrchestrationMode = main_route.into();
+    let entry = NonHierarchicalEntryResolution::resolve(p.ctx.cfg.as_ref(), &staged_gate);
+    let main_route = entry.main_route;
+    let mode = entry.orchestration_mode;
     tracing::info!(
         target: "crabmate::agent_turn",
         turn_orchestration_mode = mode.as_str(),
         non_hierarchical_main_route = main_route.as_str(),
         staged_plan_intent_gate_allow = allow_staged,
+        single_agent_outer_loop_because = entry
+            .single_agent_outer_loop_because
+            .map(|b| b.as_str()),
         planner_executor_mode = p.ctx.cfg.planner_executor_mode.as_str(),
         staged_plan_execution = p.ctx.cfg.staged_plan_execution,
         "dispatch_non_hierarchical_turn main_path"
