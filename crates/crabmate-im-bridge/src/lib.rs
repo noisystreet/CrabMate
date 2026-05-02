@@ -7,6 +7,7 @@ pub mod crabmate;
 pub mod feishu;
 mod feishu_decrypt;
 mod feishu_message_content;
+mod feishu_tool_card;
 mod feishu_workspace;
 mod sse_consumer;
 
