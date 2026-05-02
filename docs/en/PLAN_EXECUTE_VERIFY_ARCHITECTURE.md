@@ -67,6 +67,31 @@ This repo already has multi-turn `agent_turn`, final plan validation/rewrite, wo
 | **Side semantic LLM (plan vs tool digest)** | **`per_plan_semantic_check`** + **`final_plan_gate::run_final_plan_gate_semantic_completed`** | **No** default equivalent | Do not treat hierarchical Manager reflection as **`final_plan_semantic_check`** |
 | **Observability** | **`target: crabmate::agent_turn`**: `turn_orchestration_mode`; **`target: crabmate::per`**: gate routes | Same target: **`hierarchical_phase`** in **`agent_turn/hierarchy.rs`**; keep **`[HIERARCHICAL]`** `log` lines | Correlate **`turn_orchestration_mode`** with **`hierarchical_phase`**; maintenance checklist in **`docs/en/DEVELOPMENT.md`** “sync with `agent_turn` / `per_coord`” |
 
+#### 2.5.1 Final answer & reflection: responsibility matrix (source anchors)
+
+This complements the table above: **where the last assistant message comes from** and **what drives reflection vs rewrite**. Do not equate Manager **`reflect_and_replan`** with **`plan_rewrite`**.
+
+| Capability | PER / `outer_loop` / `staged` | `hierarchy` main path | Intersection (discourse → `outer_loop`) |
+|------------|-------------------------------|------------------------|----------------------------------------|
+| **Shape of final assistant** | May require parseable **`agent_reply_plan` v1** (per **`final_plan_requirement`**); **`per_coord::after_final_assistant`** / **`final_plan_gate`** | **`handle_execution_result`** aggregates Markdown (**not** `agent_reply_plan` gating) | Same as PER track after entering **`run_agent_outer_loop`** |
+| **`plan_rewrite` accounting** | **`PerCoordinator::plan_rewrite_attempts`** | **Not counted** (no **`after_final_assistant`**) | After fallback, **counts** on PER track (new **`PerCoordinator::new(PerCoordinatorInit::from_agent_config(...))`**) |
+| **Reflection after step/subgoal failure** | Staged: **`patch_planner`** / **`fail_fast`**; outer loop: **`per_reflect_after_assistant`** context | **`ManagerAgent::reflect_and_replan`**; **not** `plan_rewrite` | No Manager; **`outer_loop`** R semantics |
+| **Workflow DAG alignment** | **`WorkflowReflectionController`**, **`workflow_tool_dispatch`** | **`workflow_execute`** inside Operator; **`workflow_node_id`** rules in **`plan_artifact`** | Same as PER after fallback |
+| **Side semantic LLM** | **`per_plan_semantic_check`** (optional) | **No** default equivalent | Applies when **`final_plan_semantic_check_enabled`** on PER path |
+
+**Source anchors:** **`per_coord/final_plan_gate.rs`**, **`reflection/plan_rewrite.rs`**, **`per_coord/mod.rs`** (`AfterFinalAssistant`); **`agent_turn/hierarchy.rs`** (`DiscourseFallbackOuter` → **`run_agent_outer_loop`**); **`agent_turn/hierarchical_intent_route.rs`** (`resolve_hierarchical_post_intent_route`); **`agent_turn/intent/at_turn_start.rs`** (`run_intent_for_hierarchical`); **`agent_turn/hierarchy.rs`** (`handle_execution_result` / `emit_hierarchical_final_assistant`).
+
+#### 2.5.2 Automated regression touchpoints (dual-track)
+
+| Touchpoint | Command / test | Notes |
+|------------|------------------|-------|
+| Single-agent outer loop + tool + final (**PER `run_agent_outer_loop`**) | `cargo test -p crabmate run_agent_turn_outer_loop_tool_round_then_final_assistant` | `tests/run_agent_turn_orchestration_mock.rs` |
+| Hierarchical Router→Manager→Operator (**no `PerCoordinator` final gate**) | `cargo test -p crabmate run_agent_turn_hierarchical_end_to_end_mock_llm_sequence` (and `run_hierarchical_router_manager_operator_mock_llm_sequence`) | Same file; pins **`run_agent_turn` → `run_hierarchical_agent` → `runner::run_hierarchical`** |
+| **Hierarchical discourse → `outer_loop` (PER ∩ hierarchical)** | `cargo test -p crabmate run_agent_turn_hierarchical_discourse_fallback_uses_per_outer_loop` | User text **`你好`** → **`DiscourseFallbackOuter`** → **one** mock LLM (shared with **`PerCoordinator`** chain) |
+| Fallback routing pure function | `cargo test -p crabmate hierarchical_intent_route` | Run when editing **`resolve_hierarchical_post_intent_route`** |
+
+When changing **`final_plan_requirement` / `plan_rewrite` / `after_final_assistant` / `WorkflowReflectionController`**: run at least the **PER** touchpoints; if the intent pipeline changes, also **`cargo test -p crabmate golden_intent_regression`**. When changing **Manager reflection / subgoal acceptance**: run **hierarchical** touchpoints. When changing **discourse fallback or intent thresholds**: run the **intersection** touchpoint + **`hierarchical_intent_route`**.
+
 ---
 
 ## 3. Gaps and principles
@@ -169,4 +194,5 @@ All optional; omitted fields keep current behavior.
 | 2026-04-12 | Initial Chinese draft: P-E-V layering, mapping to existing capabilities, verifier-vs-plan-rewrite separation, staged roadmap and non-goals |
 | 2026-04-16 | P1 completed in Chinese design: verifier supports JSON path and HTTP status acceptance checks |
 | 2026-05-01 | Split staged patch-planner vs final `plan_rewrite` counters; extend `/status` `per_active_jobs` and patch feedback footers |
+| 2026-05-02 | Added **§2.5.1–§2.5.2**: final-answer/reflection matrix and regression test commands; dual-track touchpoints aligned with Chinese §2.5. |
 | 2026-05-01 | Added **§2.5**: hierarchical vs PER/staged dual-track responsibility boundary. |
