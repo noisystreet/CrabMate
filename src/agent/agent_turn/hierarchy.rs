@@ -18,7 +18,7 @@ use super::outer_loop::run_agent_outer_loop;
 use super::params::RunLoopParams;
 use super::turn_orchestration::TurnOrchestrationMode;
 use crate::agent::agent_turn::errors::AgentTurnSubPhase;
-use crate::agent::hierarchy::execution::ExecutionError;
+use crate::agent::hierarchy::execution_error::ExecutionError;
 use crate::agent::intent_pipeline::IntentAction;
 use tracing::{info, warn};
 

@@ -1,4 +1,11 @@
-fn summarize_subgoal_evidence(result: &TaskResult) -> Option<String> {
+//! `execution.rs` 附属纯函数与 DAG（减轻 `HierarchicalExecutor` 文件体积）。
+
+use std::collections::{HashMap, HashSet};
+
+use super::execution_error::ExecutionError;
+use super::task::{SubGoal, TaskResult};
+
+pub(crate) fn summarize_subgoal_evidence(result: &TaskResult) -> Option<String> {
     let text = format!(
         "{}\n{}",
         result.output.as_deref().unwrap_or(""),
@@ -22,7 +29,7 @@ fn summarize_subgoal_evidence(result: &TaskResult) -> Option<String> {
     None
 }
 
-fn trim_for_detail(s: &str, max_chars: usize) -> String {
+pub(crate) fn trim_for_detail(s: &str, max_chars: usize) -> String {
     if s.chars().count() <= max_chars {
         return s.to_string();
     }
@@ -35,7 +42,7 @@ fn trim_for_detail(s: &str, max_chars: usize) -> String {
 }
 
 /// 截断目标描述用于日志（按字符边界截断，支持中文）
-fn truncate_goal_desc(desc: &str) -> String {
+pub(crate) fn truncate_goal_desc(desc: &str) -> String {
     const MAX_LEN: usize = 80;
     if desc.len() > MAX_LEN {
         let truncated = desc
@@ -52,13 +59,13 @@ fn truncate_goal_desc(desc: &str) -> String {
 
 /// DAG 构建器
 #[derive(Debug)]
-struct Dag {
+pub(crate) struct Dag {
     nodes: HashSet<String>,
     edges: HashMap<String, HashSet<String>>,
 }
 
 impl Dag {
-    fn build(goals: &[SubGoal]) -> Result<Self, ExecutionError> {
+    pub(crate) fn build(goals: &[SubGoal]) -> Result<Self, ExecutionError> {
         let mut dag = Dag {
             nodes: HashSet::new(),
             edges: HashMap::new(),
@@ -81,7 +88,7 @@ impl Dag {
     }
 
     /// 计算拓扑层级
-    fn topological_levels(&self) -> Result<Vec<Vec<String>>, ExecutionError> {
+    pub(crate) fn topological_levels(&self) -> Result<Vec<Vec<String>>, ExecutionError> {
         let mut levels = Vec::new();
         let mut remaining = self.nodes.clone();
         let mut in_degree: HashMap<String, usize> =
@@ -129,7 +136,7 @@ impl Dag {
 }
 
 /// Manager 分解时若填写了非空 `required_tools` 却漏关键工具，Operator 会拒绝调用。按子目标描述补全常见缺口（`required_tools` 为空时仍走全量工具，不调用本函数）。
-fn supplement_subgoal_required_tools(description: &str, tools: &mut Vec<String>) {
+pub(crate) fn supplement_subgoal_required_tools(description: &str, tools: &mut Vec<String>) {
     if tools.is_empty() {
         return;
     }
@@ -211,24 +218,21 @@ mod tests {
     #[test]
     fn supplement_adds_run_command_for_inspect_build_goal() {
         let mut t = vec!["read_dir".to_string()];
-        super::supplement_subgoal_required_tools("检查 build 目录确认可执行文件已生成", &mut t);
+        supplement_subgoal_required_tools("检查 build 目录确认可执行文件已生成", &mut t);
         assert!(t.contains(&"run_command".to_string()));
     }
 
     #[test]
     fn supplement_noop_when_tools_empty() {
         let mut t: Vec<String> = vec![];
-        super::supplement_subgoal_required_tools("cmake --build build", &mut t);
+        supplement_subgoal_required_tools("cmake --build build", &mut t);
         assert!(t.is_empty());
     }
 
     #[test]
     fn supplement_adds_run_command_for_cmake_configure_subset() {
         let mut t = vec!["mkdir".to_string(), "read_dir".to_string()];
-        super::supplement_subgoal_required_tools(
-            "创建 build 并执行 cmake -S . -B build 配置",
-            &mut t,
-        );
+        supplement_subgoal_required_tools("创建 build 并执行 cmake -S . -B build 配置", &mut t);
         assert!(t.contains(&"run_command".to_string()));
     }
 }

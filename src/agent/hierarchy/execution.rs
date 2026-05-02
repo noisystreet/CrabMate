@@ -14,6 +14,10 @@ use super::artifact_resolver::ArtifactResolver;
 use super::artifact_store::ArtifactStore;
 use super::build_state::BuildState;
 use super::events;
+use super::execution_helpers::{
+    Dag, summarize_subgoal_evidence, supplement_subgoal_required_tools, trim_for_detail,
+    truncate_goal_desc,
+};
 use super::goal_verifier::{GoalVerifier, VerificationResult};
 use super::manager::{ManagerLlmContext, ManagerOutput, ReflectAndReplanContext, handle_failure};
 use super::operator::{OperatorAgent, OperatorConfig};
@@ -26,6 +30,8 @@ use log::{error, info, warn};
 use tokio::sync::Mutex as TokioMutex;
 use tokio::sync::mpsc::Receiver;
 
+pub use super::execution_error::ExecutionError;
+
 /// 分层执行结果
 #[derive(Debug, Clone)]
 pub struct HierarchicalExecutionResult {
@@ -35,32 +41,6 @@ pub struct HierarchicalExecutionResult {
     pub total_failed: usize,
     /// 子目标级 `acceptance.expect_output_contains` 快照（按 goal_id）。
     pub goal_expected_outputs: std::collections::HashMap<String, Vec<String>>,
-}
-
-/// 分层执行器错误
-#[derive(Debug)]
-pub enum ExecutionError {
-    DagError(String),
-    MaxFailuresReached(String),
-    OperatorError(super::operator::OperatorError),
-}
-
-impl std::fmt::Display for ExecutionError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ExecutionError::DagError(s) => write!(f, "DAG error: {}", s),
-            ExecutionError::MaxFailuresReached(s) => write!(f, "Max failures: {}", s),
-            ExecutionError::OperatorError(e) => write!(f, "Operator error: {}", e),
-        }
-    }
-}
-
-impl std::error::Error for ExecutionError {}
-
-impl From<super::operator::OperatorError> for ExecutionError {
-    fn from(e: super::operator::OperatorError) -> Self {
-        ExecutionError::OperatorError(e)
-    }
 }
 
 /// 分层执行器
@@ -1618,6 +1598,3 @@ impl<'a> HierarchicalExecutor<'a> {
         }
     }
 }
-
-// 辅助：证据摘要、DAG、补充工具与单测（降低 execution.rs 行数）
-include!("execution_helper.rs");
