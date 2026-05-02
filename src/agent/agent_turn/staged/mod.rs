@@ -1042,6 +1042,171 @@ struct StagedStepRunAfterOuterHalfParams<'a, 'b, 'c, F> {
     patch_ctx: &'a mut StagedPlanPatchPlannerCtx<'b, 'c, F>,
 }
 
+/// 外层循环失败后的补丁规划恢复：成功则 `Ok(Some(RetryCurrentStep))`，否则 `Ok(None)`（由调用方走失败 SSE + `StepRetryExhausted`）。
+/// 外层循环失败后的补丁恢复（降低 `staged_step_run_after_outer_half` 圈复杂度）。
+struct StagedOuterExecFailureRecoverParams<'a, 'b, 'c, F> {
+    plan_id: &'a str,
+    i: usize,
+    n: usize,
+    completed_steps: usize,
+    plan_steps: &'a mut Vec<PlanStepV1>,
+    echo_terminal_staged: bool,
+    patch_ctx: &'a mut StagedPlanPatchPlannerCtx<'b, 'c, F>,
+    step: &'a PlanStepV1,
+    step_verify_failed_reason: &'a Option<String>,
+}
+
+async fn staged_step_try_recover_outer_execution_failure<F>(
+    p: StagedOuterExecFailureRecoverParams<'_, '_, '_, F>,
+) -> Result<Option<StagedStepIterationCtl>, RunAgentTurnError>
+where
+    F: Fn(String) -> Message,
+{
+    let StagedOuterExecFailureRecoverParams {
+        plan_id,
+        i,
+        mut n,
+        completed_steps,
+        plan_steps,
+        echo_terminal_staged,
+        patch_ctx,
+        step,
+        step_verify_failed_reason,
+    } = p;
+    if !staged_step_patch_planner_enabled(patch_ctx.p.ctx.cfg.staged_plan_feedback_mode) {
+        return Ok(None);
+    }
+    let mut recovered = false;
+    let patch_budget = staged_patch_budget_after_step_failure(
+        step.max_step_retries,
+        patch_ctx.p.ctx.cfg.staged_plan_patch_max_attempts,
+    );
+    let audit_footer = patch_ctx
+        .per_coord
+        .staged_plan_patch_vs_plan_rewrite_counters_footer();
+    for (attempt_idx, _) in (0..patch_budget).enumerate() {
+        let attempt_1based = attempt_idx.saturating_add(1);
+        let feedback = if let Some(vr) = step_verify_failed_reason {
+            let detail_verify = staged_step_verify_fail_patch_detail(vr);
+            let meta = StagedPlanStepFailureFeedbackMeta {
+                plan_id,
+                step_zero_based: i,
+                n_steps_total: n,
+                plan_patch_attempt_one_based: attempt_1based,
+                plan_patch_budget: patch_budget,
+                reason_zh: "本步确定性验证失败 (Step Verification Failed)",
+                detail: detail_verify.as_str(),
+                audit_counters_footer: &audit_footer,
+            };
+            staged_plan_step_failure_feedback_user_body(&meta, step)
+        } else {
+            let meta = StagedPlanStepFailureFeedbackMeta {
+                plan_id,
+                step_zero_based: i,
+                n_steps_total: n,
+                plan_patch_attempt_one_based: attempt_1based,
+                plan_patch_budget: patch_budget,
+                reason_zh: "执行子循环返回错误",
+                detail: STAGED_STEP_OUTER_LOOP_FAIL_DETAIL,
+                audit_counters_footer: &audit_footer,
+            };
+            staged_plan_step_failure_feedback_user_body(&meta, step)
+        };
+        if let Some(merged) =
+            run_staged_plan_patch_planner_round(patch_ctx, feedback, plan_steps.as_slice(), i)
+                .await?
+        {
+            *plan_steps = merged;
+            n = plan_steps.len();
+            push_patch_replan_assistant_json_and_notice(
+                patch_ctx.p,
+                plan_steps.as_slice(),
+                echo_terminal_staged,
+                completed_steps,
+            )
+            .await?;
+            recovered = true;
+            break;
+        }
+    }
+    if recovered {
+        return Ok(Some(StagedStepIterationCtl::RetryCurrentStep { n }));
+    }
+    Ok(None)
+}
+
+/// 工具消息未全部成功时的补丁恢复：`Ok(Some(RetryCurrentStep))` 或 `Ok(None)`（由调用方走工具失败耗尽）。
+/// 工具消息失败后的补丁恢复。
+struct StagedToolFailurePatchRecoverParams<'a, 'b, 'c, F> {
+    plan_id: &'a str,
+    i: usize,
+    n: usize,
+    completed_steps: usize,
+    plan_steps: &'a mut Vec<PlanStepV1>,
+    echo_terminal_staged: bool,
+    patch_ctx: &'a mut StagedPlanPatchPlannerCtx<'b, 'c, F>,
+    step: &'a PlanStepV1,
+}
+
+async fn staged_step_try_recover_tool_failure_patches<F>(
+    p: StagedToolFailurePatchRecoverParams<'_, '_, '_, F>,
+) -> Result<Option<StagedStepIterationCtl>, RunAgentTurnError>
+where
+    F: Fn(String) -> Message,
+{
+    let StagedToolFailurePatchRecoverParams {
+        plan_id,
+        i,
+        mut n,
+        completed_steps,
+        plan_steps,
+        echo_terminal_staged,
+        patch_ctx,
+        step,
+    } = p;
+    let mut recovered = false;
+    let tool_patch_budget = staged_patch_budget_tool_messages_not_ok(
+        patch_ctx.p.ctx.cfg.staged_plan_patch_max_attempts,
+    );
+    let audit_footer = patch_ctx
+        .per_coord
+        .staged_plan_patch_vs_plan_rewrite_counters_footer();
+    for (attempt_idx, _) in (0..tool_patch_budget).enumerate() {
+        let attempt_1based = attempt_idx.saturating_add(1);
+        let meta = StagedPlanStepFailureFeedbackMeta {
+            plan_id,
+            step_zero_based: i,
+            n_steps_total: n,
+            plan_patch_attempt_one_based: attempt_1based,
+            plan_patch_budget: tool_patch_budget,
+            reason_zh: "本步内工具调用未全部成功",
+            detail: STAGED_STEP_TOOL_MSG_FAIL_DETAIL,
+            audit_counters_footer: &audit_footer,
+        };
+        let feedback = staged_plan_step_failure_feedback_user_body(&meta, step);
+        if let Some(merged) =
+            run_staged_plan_patch_planner_round(patch_ctx, feedback, plan_steps.as_slice(), i)
+                .await?
+        {
+            *plan_steps = merged;
+            n = plan_steps.len();
+            push_patch_replan_assistant_json_and_notice(
+                patch_ctx.p,
+                plan_steps.as_slice(),
+                echo_terminal_staged,
+                completed_steps,
+            )
+            .await?;
+            recovered = true;
+            break;
+        }
+    }
+    if recovered {
+        return Ok(Some(StagedStepIterationCtl::RetryCurrentStep { n }));
+    }
+    Ok(None)
+}
+
 async fn staged_step_run_after_outer_half<F>(
     p: StagedStepRunAfterOuterHalfParams<'_, '_, '_, F>,
 ) -> Result<StagedStepIterationCtl, RunAgentTurnError>
@@ -1121,67 +1286,22 @@ where
 
     match staged_step_after_outer_loop(&run_step, &step_verify_failed_reason) {
         StagedStepAfterOuterLoop::ExecutionOrVerifyFailed { .. } => {
-            if staged_step_patch_planner_enabled(patch_ctx.p.ctx.cfg.staged_plan_feedback_mode) {
-                let mut recovered = false;
-                let patch_budget = staged_patch_budget_after_step_failure(
-                    step.max_step_retries,
-                    patch_ctx.p.ctx.cfg.staged_plan_patch_max_attempts,
-                );
-                let audit_footer = patch_ctx
-                    .per_coord
-                    .staged_plan_patch_vs_plan_rewrite_counters_footer();
-                for (attempt_idx, _) in (0..patch_budget).enumerate() {
-                    let attempt_1based = attempt_idx.saturating_add(1);
-                    let feedback = if let Some(ref vr) = step_verify_failed_reason {
-                        let detail_verify = staged_step_verify_fail_patch_detail(vr);
-                        let meta = StagedPlanStepFailureFeedbackMeta {
-                            plan_id,
-                            step_zero_based: i,
-                            n_steps_total: n,
-                            plan_patch_attempt_one_based: attempt_1based,
-                            plan_patch_budget: patch_budget,
-                            reason_zh: "本步确定性验证失败 (Step Verification Failed)",
-                            detail: detail_verify.as_str(),
-                            audit_counters_footer: &audit_footer,
-                        };
-                        staged_plan_step_failure_feedback_user_body(&meta, &step)
-                    } else {
-                        let meta = StagedPlanStepFailureFeedbackMeta {
-                            plan_id,
-                            step_zero_based: i,
-                            n_steps_total: n,
-                            plan_patch_attempt_one_based: attempt_1based,
-                            plan_patch_budget: patch_budget,
-                            reason_zh: "执行子循环返回错误",
-                            detail: STAGED_STEP_OUTER_LOOP_FAIL_DETAIL,
-                            audit_counters_footer: &audit_footer,
-                        };
-                        staged_plan_step_failure_feedback_user_body(&meta, &step)
-                    };
-                    if let Some(merged) = run_staged_plan_patch_planner_round(
-                        patch_ctx,
-                        feedback,
-                        plan_steps.as_slice(),
-                        i,
-                    )
-                    .await?
-                    {
-                        *plan_steps = merged;
-                        n = plan_steps.len();
-                        push_patch_replan_assistant_json_and_notice(
-                            patch_ctx.p,
-                            plan_steps.as_slice(),
-                            echo_terminal_staged,
-                            completed_steps,
-                        )
-                        .await?;
-                        recovered = true;
-                        break;
-                    }
-                }
-                if recovered {
-                    return Ok(StagedStepIterationCtl::RetryCurrentStep { n });
-                }
+            if let Some(ctl) = staged_step_try_recover_outer_execution_failure(
+                StagedOuterExecFailureRecoverParams {
+                    plan_id,
+                    i,
+                    n,
+                    completed_steps,
+                    plan_steps,
+                    echo_terminal_staged,
+                    patch_ctx,
+                    step: &step,
+                    step_verify_failed_reason: &step_verify_failed_reason,
+                },
+            )
+            .await?
+            {
+                return Ok(ctl);
             }
             finish_staged_plan_step_failed_and_plan_failed_sse(
                 StagedPlanStepFailedExit {
@@ -1243,49 +1363,20 @@ where
         staged_step_patch_planner_enabled(patch_ctx.p.ctx.cfg.staged_plan_feedback_mode);
     match staged_step_tool_phase_route(tools_ok, patch_planner_on) {
         StagedStepToolPhaseRoute::AttemptToolFailurePatches => {
-            let mut recovered = false;
-            let tool_patch_budget = staged_patch_budget_tool_messages_not_ok(
-                patch_ctx.p.ctx.cfg.staged_plan_patch_max_attempts,
-            );
-            let audit_footer = patch_ctx
-                .per_coord
-                .staged_plan_patch_vs_plan_rewrite_counters_footer();
-            for (attempt_idx, _) in (0..tool_patch_budget).enumerate() {
-                let attempt_1based = attempt_idx.saturating_add(1);
-                let meta = StagedPlanStepFailureFeedbackMeta {
+            if let Some(ctl) =
+                staged_step_try_recover_tool_failure_patches(StagedToolFailurePatchRecoverParams {
                     plan_id,
-                    step_zero_based: i,
-                    n_steps_total: n,
-                    plan_patch_attempt_one_based: attempt_1based,
-                    plan_patch_budget: tool_patch_budget,
-                    reason_zh: "本步内工具调用未全部成功",
-                    detail: STAGED_STEP_TOOL_MSG_FAIL_DETAIL,
-                    audit_counters_footer: &audit_footer,
-                };
-                let feedback = staged_plan_step_failure_feedback_user_body(&meta, &step);
-                if let Some(merged) = run_staged_plan_patch_planner_round(
-                    patch_ctx,
-                    feedback,
-                    plan_steps.as_slice(),
                     i,
-                )
+                    n,
+                    completed_steps,
+                    plan_steps,
+                    echo_terminal_staged,
+                    patch_ctx,
+                    step: &step,
+                })
                 .await?
-                {
-                    *plan_steps = merged;
-                    n = plan_steps.len();
-                    push_patch_replan_assistant_json_and_notice(
-                        patch_ctx.p,
-                        plan_steps.as_slice(),
-                        echo_terminal_staged,
-                        completed_steps,
-                    )
-                    .await?;
-                    recovered = true;
-                    break;
-                }
-            }
-            if recovered {
-                return Ok(StagedStepIterationCtl::RetryCurrentStep { n });
+            {
+                return Ok(ctl);
             }
             finish_staged_plan_step_failed_and_plan_failed_sse(
                 StagedPlanStepFailedExit {
