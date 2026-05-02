@@ -10,10 +10,9 @@ use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension, params};
 
-use super::{
-    TABLE, TABLE_FTS, bytes_to_f32_slice, cosine_sim, ensure_embedder, fts5_match_expression,
-    norm_scores_bm25, open_codebase_semantic_db,
-};
+use super::{TABLE, TABLE_FTS, fts5_match_expression, norm_scores_bm25, open_codebase_semantic_db};
+#[cfg(feature = "fastembed")]
+use super::{bytes_to_f32_slice, cosine_sim, ensure_embedder};
 
 #[derive(Clone)]
 struct ScoredChunk {
