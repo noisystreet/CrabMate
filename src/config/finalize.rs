@@ -12,7 +12,7 @@ use super::cursor_rules;
 use super::skills;
 use super::types::{
     self, AgentConfig, LongTermMemoryScopeMode, LongTermMemoryVectorBackend, PlannerExecutorMode,
-    StagedPlanFeedbackMode, WebSearchProvider,
+    ScheduledAgentTask, StagedPlanFeedbackMode, WebSearchProvider,
 };
 use super::validate;
 use super::workspace_roots;
@@ -481,6 +481,7 @@ struct FinalizeAfterRoles {
     agent_roles: agent_roles::AgentRoleCatalogBuilt,
     system_prompt_search_bases: Vec<PathBuf>,
     run_command_working_dir: PathBuf,
+    scheduled_agent_tasks: Vec<ScheduledAgentTask>,
 }
 
 /// 验证、clamp 并组装最终 `AgentConfig`（实现体；`finalize` 为薄包装以降低圈复杂度扫描中的函数 CCN）。
@@ -703,6 +704,11 @@ fn finalize_agent_config(
             skills_top_k,
         })?;
 
+    let scheduled_agent_tasks = super::scheduled_agent_task::finalize_scheduled_agent_tasks(
+        std::mem::take(&mut b.scheduled_agent_task_rows),
+        agent_roles.as_ref(),
+    )?;
+
     finalize_agent_config_tail(FinalizeAfterRoles {
         b,
         tr,
@@ -730,6 +736,7 @@ fn finalize_agent_config(
         agent_roles,
         system_prompt_search_bases,
         run_command_working_dir,
+        scheduled_agent_tasks,
     })
 }
 
@@ -823,6 +830,7 @@ struct FinalizeTailScalars {
     http_fetch_allowed_prefixes: Vec<String>,
     http_fetch_timeout_secs: u64,
     http_fetch_max_response_bytes: usize,
+    scheduled_agent_tasks: Vec<ScheduledAgentTask>,
 }
 
 /// `derive_finalize_tail_scalars` 中段：规划/工具/思维链附录（降低单函数 `nloc`）。
@@ -1303,6 +1311,7 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
         max_message_history,
         ref system_prompt_search_bases,
         ref run_command_working_dir,
+        ref scheduled_agent_tasks,
         ..
     } = *mid;
 
@@ -1505,6 +1514,7 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
         http_fetch_allowed_prefixes,
         http_fetch_timeout_secs,
         http_fetch_max_response_bytes,
+        scheduled_agent_tasks: scheduled_agent_tasks.clone(),
     })
 }
 
@@ -1629,6 +1639,7 @@ fn build_agent_config_from_finalize(
         http_fetch_allowed_prefixes,
         http_fetch_timeout_secs,
         http_fetch_max_response_bytes,
+        scheduled_agent_tasks,
     } = tail;
 
     AgentConfig {
@@ -1731,6 +1742,7 @@ fn build_agent_config_from_finalize(
         sync_default_tool_sandbox_docker_timeout_secs,
         sync_default_tool_sandbox_docker_user,
         conversation_store_sqlite_path,
+        scheduled_agent_tasks,
         agent_memory_file_enabled,
         agent_memory_file,
         agent_memory_file_max_chars,

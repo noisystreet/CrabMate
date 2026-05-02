@@ -10,6 +10,7 @@ mod env_overrides;
 mod finalize;
 mod hot_reload;
 mod load;
+mod scheduled_agent_task;
 pub(crate) mod skills;
 mod source;
 mod types;
@@ -26,7 +27,7 @@ pub use agent_role_spec::AgentRoleSpec;
 #[allow(unused_imports)]
 pub use types::{
     AgentConfig, ExposeSecret, LlmHttpAuthMode, LongTermMemoryScopeMode,
-    LongTermMemoryVectorBackend, PlannerExecutorMode, StagedPlanFeedbackMode,
+    LongTermMemoryVectorBackend, PlannerExecutorMode, ScheduledAgentTask, StagedPlanFeedbackMode,
     SyncDefaultToolSandboxMode, WebSearchProvider,
 };
 

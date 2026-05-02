@@ -9,9 +9,36 @@ pub(super) struct ConfigFile {
     /// 与 `config/agent_roles.toml` 同形：顶层 `[[agent_roles]]` 表数组
     #[serde(default)]
     pub(super) agent_roles: Vec<AgentRoleRow>,
+    /// `serve` 定时对话：`[[scheduled_agent_task]]`（见 `docs/配置说明.md`）
+    #[serde(default)]
+    pub(super) scheduled_agent_task: Vec<ScheduledAgentTaskRow>,
     /// 可选 `[tool_registry]`：工具分发超时、并行策略等（见 `config/tools.toml`）
     #[serde(default)]
     pub(super) tool_registry: Option<ToolRegistrySection>,
+}
+
+/// `[[scheduled_agent_task]]` 单行（用户 `config.toml` 顶层表数组）
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ScheduledAgentTaskRow {
+    /// 任务标识（日志与固定会话 `conversation_id` 派生用）
+    pub(super) id: String,
+    /// Cron 表达式：`tokio-cron-scheduler` / **croner** 六段（秒 分 时 日 月 星期），UTC
+    pub(super) schedule: String,
+    /// 每轮注入的用户消息正文（等同 `POST /chat` 的 `message`）
+    pub(super) message: String,
+    #[serde(default = "scheduled_agent_task_enabled_default")]
+    pub(super) enabled: bool,
+    /// 非空则固定写入该 `conversation_id`（须合法 Client id）
+    pub(super) conversation_id: Option<String>,
+    /// 为 true 且未配置 `conversation_id` 时每次触发新建会话
+    #[serde(default)]
+    pub(super) new_conversation: bool,
+    pub(super) agent_role: Option<String>,
+}
+
+fn scheduled_agent_task_enabled_default() -> bool {
+    true
 }
 
 /// `config/tools.toml` / 用户 `config.toml` 中 **`[tool_registry]`** 段（与 `[agent]` 并列）。
@@ -261,17 +288,23 @@ pub(super) fn parse_agent_section(s: &str) -> Result<Option<AgentSection>, toml:
     Ok(toml::from_str::<ConfigFile>(s)?.agent)
 }
 
-/// `parse_config_file_roles` 的解析结果：`[agent]`、角色行、`[tool_registry]`。
+/// `parse_config_file_roles` 的解析结果：`[agent]`、角色行、`[tool_registry]`、定时任务行。
 pub(super) type ParsedConfigFileRoles = (
     Option<AgentSection>,
     Vec<AgentRoleRow>,
     Option<ToolRegistrySection>,
+    Vec<ScheduledAgentTaskRow>,
 );
 
-/// 解析完整 TOML（`[agent]` + 可选 `[[agent_roles]]` + 可选 `[tool_registry]`）；`agent` 缺失时仍返回角色行供合并。
+/// 解析完整 TOML（`[agent]` + 可选 `[[agent_roles]]` + 可选 `[tool_registry]` + 可选 `[[scheduled_agent_task]]`）；`agent` 缺失时仍返回角色行供合并。
 pub(super) fn parse_config_file_roles(s: &str) -> Result<ParsedConfigFileRoles, toml::de::Error> {
     let f: ConfigFile = toml::from_str(s)?;
-    Ok((f.agent, f.agent_roles, f.tool_registry))
+    Ok((
+        f.agent,
+        f.agent_roles,
+        f.tool_registry,
+        f.scheduled_agent_task,
+    ))
 }
 
 /// 解析 **`config/tools.toml`** 形文件（`[agent]` + 可选 `[tool_registry]`，无 `agent_roles`）。

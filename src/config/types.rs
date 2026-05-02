@@ -328,6 +328,19 @@ impl LongTermMemoryVectorBackend {
 pub type AgentRoleCatalog =
     std::sync::Arc<std::collections::HashMap<String, super::agent_role_spec::AgentRoleSpec>>;
 
+/// `[[scheduled_agent_task]]` 经校验后的运行态项（`serve` + `tokio-cron-scheduler`）。
+#[derive(Debug, Clone)]
+pub struct ScheduledAgentTask {
+    pub id: String,
+    /// **croner** 六段秒级 cron，UTC
+    pub schedule: String,
+    /// 与 `POST /chat` 的 `message` 等价的用户正文
+    pub message: String,
+    pub conversation_id: Option<String>,
+    pub new_conversation: bool,
+    pub agent_role: Option<String>,
+}
+
 /// Agent 运行配置
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
@@ -532,6 +545,8 @@ pub struct AgentConfig {
     pub sync_default_tool_sandbox_docker_user: SandboxDockerContainerUser,
     /// Web 会话持久化：非空则使用 SQLite（`conversation_id` 跨重启保留）；空则仅进程内内存。
     pub conversation_store_sqlite_path: String,
+    /// 单进程内 `serve` 定时对话（`[[scheduled_agent_task]]`）；`POST /config/reload` 可热更**列表与字段**，已注册的 cron 需重启方重新解析。
+    pub scheduled_agent_tasks: Vec<ScheduledAgentTask>,
     /// 为 true 时：首轮在 `system` 与当前用户消息之间注入工作区内备忘文件（见 `agent_memory_file`）。
     pub agent_memory_file_enabled: bool,
     /// 相对**当前 Web 工作区根**的备忘文件路径（如 `.crabmate/agent_memory.md`）。

@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use super::agent_roles;
-use super::source::{AgentRoleRow, AgentSection, ToolRegistrySection};
+use super::source::{AgentRoleRow, AgentSection, ScheduledAgentTaskRow, ToolRegistrySection};
 
 /// 配置累加器：依次接受嵌入默认 TOML → 用户配置文件 → 环境变量的覆盖，最终 `finalize` 为 `AgentConfig`。
 #[derive(Default)]
@@ -176,6 +176,8 @@ pub(crate) struct ConfigBuilder {
     pub(crate) default_agent_role_id: Option<String>,
     /// `id -> 未合并条目`；在 [`finalize`] 中与全局 cursor rules 设置一并落成 `AgentConfig.agent_roles`。
     pub(crate) agent_role_entries: HashMap<String, agent_roles::AgentRoleEntryBuilder>,
+    /// 顶层 `[[scheduled_agent_task]]` 合并结果（仅用户 `config.toml` 等；嵌入默认分片不含此项）。
+    pub(crate) scheduled_agent_task_rows: Vec<ScheduledAgentTaskRow>,
 }
 
 /// 非空 trim 后覆盖 `String` 字段。
@@ -673,6 +675,12 @@ impl ConfigBuilder {
             if let Some(list) = row.allowed_tools.clone() {
                 slot.allowed_tools = Some(list);
             }
+        }
+    }
+
+    pub(super) fn merge_scheduled_agent_task_rows(&mut self, rows: &[ScheduledAgentTaskRow]) {
+        for row in rows {
+            self.scheduled_agent_task_rows.push(row.clone());
         }
     }
 
