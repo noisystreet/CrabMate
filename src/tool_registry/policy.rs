@@ -105,6 +105,7 @@ fn builtin_write_effect_tools() -> &'static HashSet<String> {
             "workflow_execute",
             "http_request",
             "gh_api",
+            "gh_pr_create",
         ]
         .into_iter()
         .map(|s| s.to_string())

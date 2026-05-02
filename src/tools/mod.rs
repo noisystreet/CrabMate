@@ -348,6 +348,24 @@ fn runner_gh_pr_view(args: &str, ctx: &ToolContext<'_>) -> String {
     )
 }
 
+fn runner_gh_pr_checks(args: &str, ctx: &ToolContext<'_>) -> String {
+    github_cli::gh_pr_checks(
+        args,
+        ctx.command_max_output_len,
+        ctx.allowed_commands,
+        ctx.working_dir,
+    )
+}
+
+fn runner_gh_pr_create(args: &str, ctx: &ToolContext<'_>) -> String {
+    github_cli::gh_pr_create(
+        args,
+        ctx.command_max_output_len,
+        ctx.allowed_commands,
+        ctx.working_dir,
+    )
+}
+
 fn runner_gh_issue_list(args: &str, ctx: &ToolContext<'_>) -> String {
     github_cli::gh_issue_list(
         args,

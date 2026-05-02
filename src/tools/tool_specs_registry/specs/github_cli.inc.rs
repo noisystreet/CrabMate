@@ -16,6 +16,22 @@
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_pr_view),
     },
     ToolSpec {
+        name: "gh_pr_checks",
+        description: "查看 PR 的 **CI 检查状态**（封装 **`gh pr checks`**，只读）。可选 `repo`；可选 `number`（省略则由 `gh` 按当前分支解析关联 PR）。",
+        category: ToolCategory::Development,
+        parameters: tool_params::params_gh_pr_checks,
+        runner: runner_gh_pr_checks,
+        summary: ToolSummaryKind::Dynamic(ts::summary_gh_pr_checks),
+    },
+    ToolSpec {
+        name: "gh_pr_create",
+        description: "在 GitHub **创建 Pull Request**（封装 **`gh pr create`**；**写远端**）。必填 **`title`**；可选 **`body`**（经工作区内临时 `--body-file` 传入，避免 shell 转义）；可选 **`repo`**、**`base`**、**`head`**、**`draft`**、**`web`**、**`extra_args`**。须已 `git push` 过源分支且本机 **`gh auth`** 有效。",
+        category: ToolCategory::Development,
+        parameters: tool_params::params_gh_pr_create,
+        runner: runner_gh_pr_create,
+        summary: ToolSummaryKind::Dynamic(ts::summary_gh_pr_create),
+    },
+    ToolSpec {
         name: "gh_issue_list",
         description: "列出 Issue（封装 **`gh issue list`**）。可选 `repo`、`state`（open/closed/all）、`limit`、`fields`、`web`、`extra_args`。",
         category: ToolCategory::Development,
