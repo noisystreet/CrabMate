@@ -1110,7 +1110,8 @@ fn derive_tail_staged_sandbox_web_scalars(
     )?;
     let web_api_bearer_token =
         types::SecretString::new(b.web_api_bearer_token.clone().unwrap_or_default().into());
-    let web_api_require_bearer = b.web_api_require_bearer.unwrap_or(false);
+    // 默认 **true**：未显式关闭时 `serve` 须配置非空 `web_api_bearer_token`，避免 HTTP API 匿名可用（P0）。
+    let web_api_require_bearer = b.web_api_require_bearer.unwrap_or(true);
     let allow_insecure_no_auth_for_non_loopback =
         b.allow_insecure_no_auth_for_non_loopback.unwrap_or(false);
     Ok(TailStagedSandboxWebScalars {

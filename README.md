@@ -128,7 +128,7 @@ cd frontend-leptos && trunk build && cd ..
 ## 部署与安全
 
 - **监听**：默认 **`127.0.0.1`**；`0.0.0.0` 须 **`web_api_bearer_token`** 或显式不安全开关（见 [docs/配置说明.md](docs/配置说明.md)）。
-- **Web API 密钥**：与 **`web_api_bearer_token`** 一致；请求头 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**（二选一）。前端可读 **`localStorage["crabmate-api-bearer-token"]`**（同时发送上述两头来兼容脚本/网关习惯）。未配置密钥时 **`/chat*`、`/workspace*`** 等可被能访问该地址的客户端匿名调用；生产或共享环境建议配置密钥，或设 **`web_api_require_bearer`** / **`CM_WEB_API_REQUIRE_BEARER`** 强制非空密钥后才允许启动 **`serve`**。
+- **Web API 密钥**：嵌入默认 **`web_api_require_bearer = true`**：启动 **`serve`** 前须在环境中设置 **`CM_WEB_API_BEARER_TOKEN`**（或 TOML **`web_api_bearer_token`**），否则进程拒绝启动。请求头 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**（二选一）。前端可读 **`localStorage["crabmate-api-bearer-token"]`**。纯本地匿名调试可在配置中设 **`web_api_require_bearer = false`** 且不设密钥（仍仅限可信环境）。
 - **调试与排障**：环境变量、日志、`doctor`、HTTP 探针、SSE 对齐等见 **[docs/调试指南.md](docs/调试指南.md)**（含 **`CM_WEB_DISABLE_MARKDOWN`**、**`CM_WEB_RAW_ASSISTANT_OUTPUT`** 与 **`GET /web-ui`**）；变量说明亦在 [docs/配置说明.md](docs/配置说明.md)「Web 服务」。可选 **`CM_REPLAY_DUMP_DIR`** 在对话执行期间**即时追加** `turn-replay-events.jsonl`（动作级事件流），详见 [docs/配置说明.md](docs/配置说明.md)「整请求 Chrome Trace」表。
 - **Web「设置」**：界面语言 / 主题 / 背景与本机 **`client_llm`**（`api_base` / `model` / `temperature` / **`llm_context_tokens`**（模型上下文 token 上限）/ 密钥）等修改后，需点击 **「保存全部」** 才写入浏览器 **`localStorage`** 并随请求生效；`api_base` 可从常用供应商预设中选择或手写，`temperature` 支持 `0~2`（留空使用服务端默认），详 [docs/配置说明.md](docs/配置说明.md)「Web 对话队列」。
 - **工作区**：须在允许根内；Unix 上尽力用 **`openat2`** 等收窄路径风险，**非**绝对沙箱。见 [docs/配置说明.md](docs/配置说明.md)、[`src/workspace/path.rs`](src/workspace/path.rs)。
