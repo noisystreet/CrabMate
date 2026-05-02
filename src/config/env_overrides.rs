@@ -17,6 +17,9 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     apply_env_overrides_part_10(b);
     apply_env_overrides_part_11(b);
     apply_env_overrides_part_12(b);
+    apply_env_overrides_part_13(b);
+    apply_env_overrides_part_14(b);
+    apply_env_overrides_part_15(b);
 }
 
 fn apply_env_overrides_part_1(b: &mut ConfigBuilder) {
@@ -614,6 +617,16 @@ fn apply_env_overrides_part_9(b: &mut ConfigBuilder) {
     {
         b.web_api_require_bearer = Some(val);
     }
+    if let Ok(v) = std::env::var("CM_WEB_AUDIT_LOG_WRITE_TOOLS")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.web_audit_log_write_tools = Some(val);
+    }
+    if let Ok(v) = std::env::var("CM_WEB_AUDIT_TRUST_X_FORWARDED_FOR")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.web_audit_trust_x_forwarded_for = Some(val);
+    }
     if let Ok(v) = std::env::var("CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK")
         && let Some(val) = parse_bool_like(&v)
     {
@@ -641,6 +654,9 @@ fn apply_env_overrides_part_9(b: &mut ConfigBuilder) {
     {
         b.agent_memory_file_max_chars = Some(n);
     }
+}
+
+fn apply_env_overrides_part_10(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_LIVING_DOCS_INJECT_ENABLED")
         && let Some(val) = parse_bool_like(&v)
     {
@@ -667,14 +683,14 @@ fn apply_env_overrides_part_9(b: &mut ConfigBuilder) {
     {
         b.project_profile_inject_enabled = Some(val);
     }
-}
-
-fn apply_env_overrides_part_10(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_PROJECT_PROFILE_INJECT_MAX_CHARS")
         && let Ok(n) = v.trim().parse::<u64>()
     {
         b.project_profile_inject_max_chars = Some(n);
     }
+}
+
+fn apply_env_overrides_part_11(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_PROJECT_DEPENDENCY_BRIEF_INJECT_ENABLED")
         && let Some(val) = parse_bool_like(&v)
     {
@@ -700,6 +716,9 @@ fn apply_env_overrides_part_10(b: &mut ConfigBuilder) {
     {
         b.tool_call_explain_max_chars = Some(n);
     }
+}
+
+fn apply_env_overrides_part_12(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_LONG_TERM_MEMORY_ENABLED")
         && let Some(val) = parse_bool_like(&v)
     {
@@ -740,7 +759,7 @@ fn apply_env_overrides_part_10(b: &mut ConfigBuilder) {
     }
 }
 
-fn apply_env_overrides_part_11(b: &mut ConfigBuilder) {
+fn apply_env_overrides_part_13(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_LONG_TERM_MEMORY_MAX_CHARS_PER_CHUNK")
         && let Ok(n) = v.trim().parse::<u64>()
     {
@@ -766,6 +785,9 @@ fn apply_env_overrides_part_11(b: &mut ConfigBuilder) {
     {
         b.long_term_memory_default_ttl_secs = Some(n);
     }
+}
+
+fn apply_env_overrides_part_14(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_MCP_ENABLED")
         && let Some(val) = parse_bool_like(&v)
     {
@@ -810,7 +832,7 @@ fn apply_env_overrides_part_11(b: &mut ConfigBuilder) {
     }
 }
 
-fn apply_env_overrides_part_12(b: &mut ConfigBuilder) {
+fn apply_env_overrides_part_15(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_CODEBASE_SEMANTIC_TOP_K")
         && let Ok(n) = v.trim().parse::<u64>()
     {

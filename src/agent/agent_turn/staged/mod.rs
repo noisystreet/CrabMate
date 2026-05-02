@@ -1917,6 +1917,7 @@ mod staged_plan_prepare_fixture_tests {
                 request_chrome_trace: None,
                 turn_allowed_tool_names: None,
                 tracing_chat_turn: None,
+                request_audit: None,
             },
             turn: RunLoopTurnState {
                 messages: &mut messages,

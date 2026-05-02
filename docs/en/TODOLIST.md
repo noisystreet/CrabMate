@@ -15,6 +15,7 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 ### P0 — Security (before non-localhost deployment)
 
+- [ ] **Shared-secret HTTP auth limits**: default **`web_api_require_bearer=true`** forces non-empty **`web_api_bearer_token`** before **`serve`** and Bearer/`X-API-Key` on protected routes; there is still **no per-user identity** or quotas; compromise of the shared secret equals full API access. Optional structured audit for write-side-effect tools (**`target=crabmate::audit_write_tool`**, **`web_audit_*`**). **`API_KEY`** remains LLM-only.
 - [ ] **Multi-role / persona switching**: Support multiple **roles** (system prompt, tool visibility, temperature, etc.); **CLI** and **Web** should expose commands or UI to switch the active role per session, with boundaries documented for persistence, export, and `POST /config/reload`. For multi-tenant exposure, identity and isolation belong in a **gateway/BFF in front of CrabMate**; see **`docs/未来规划功能.md`** / **`docs/en/FUTURE_PLANS.md`**.
 
 ### P4 — Testing and quality

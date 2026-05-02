@@ -241,6 +241,7 @@ async fn outer_loop_execute_tools_round(
             long_term_memory: p.ctx.long_term_memory.clone(),
             long_term_memory_scope_id: p.ctx.long_term_memory_scope_id.clone(),
             tracing_chat_turn: p.ctx.tracing_chat_turn.clone(),
+            request_audit: p.ctx.request_audit.clone(),
         },
     )
     .await;

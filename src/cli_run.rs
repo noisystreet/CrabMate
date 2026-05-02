@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::env;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
@@ -423,7 +424,11 @@ async fn run_serve_branch(args: ServeBranchArgs<'_>) -> Result<(), Box<dyn std::
             }
         }
     });
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }
 

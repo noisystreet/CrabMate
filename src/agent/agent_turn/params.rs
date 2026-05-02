@@ -62,6 +62,8 @@ pub(crate) struct RunLoopCtx<'a> {
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
     /// Web `/chat*`：结构化日志根 span（`job_id` / `conversation_id` / 外层轮次 / 当前工具）；CLI 等为 `None`。
     pub tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
+    /// Web：HTTP 审计；非 Web 为 `None`。
+    pub request_audit: Option<Arc<crate::web::audit::WebRequestAudit>>,
 }
 
 /// 会话与编排可变侧：**消息缓冲**、失败时的 **`sub_phase`**、模型覆盖与本步 `executor_kind` 等。

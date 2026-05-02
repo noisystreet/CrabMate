@@ -407,6 +407,7 @@ pub(super) async fn execute_tools_serial(
         long_term_memory,
         long_term_memory_scope_id,
         tracing_chat_turn,
+        request_audit,
     } = ctx;
 
     let mut readonly_cache: HashMap<(String, String), String> = HashMap::new();
@@ -519,6 +520,31 @@ pub(super) async fn execute_tools_serial(
             crate::redact::tool_arguments_preview_for_log(&args),
             t_tool.elapsed().as_millis()
         );
+
+        if !is_readonly
+            && cfg.web_audit_log_write_tools
+            && let Some(ref audit) = request_audit
+        {
+            let ts_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            let job_id = tracing_chat_turn.as_ref().map(|t| t.job_id).unwrap_or(0);
+            let scope = long_term_memory_scope_id.as_deref().unwrap_or("");
+            info!(
+                target: "crabmate::audit_write_tool",
+                "audit_write_tool ts_ms={} job_id={} conversation_id={} source={} client_ip={} peer_ip={} bearer_fp={} tool={} args_preview={}",
+                ts_ms,
+                job_id,
+                scope,
+                audit.source,
+                audit.client_ip,
+                audit.peer_ip,
+                audit.bearer_fp.as_deref().unwrap_or("-"),
+                name,
+                crate::redact::tool_arguments_preview_for_log(&args),
+            );
+        }
 
         serial_bookkeep_run_command_failure(
             per_coord,
