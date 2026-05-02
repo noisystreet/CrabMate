@@ -1,8 +1,25 @@
 //! OpenAPI `components` 对象（由 `openapi::build_openapi_spec` 组装）。
+//!
+//! 拆成多段 `json!` + `merge_component_objects`，降低单函数 `nloc`（`fn-nloc` 棘轮）；运行时合并为单一 object。
 
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
-pub(super) fn openapi_components_value() -> Value {
+fn merge_component_objects(fragments: &[Value]) -> Value {
+    let mut map = Map::new();
+    for fragment in fragments {
+        let Value::Object(o) = fragment else {
+            panic!("openapi components fragment must be a JSON object");
+        };
+        for (k, v) in o {
+            if map.insert(k.clone(), v.clone()).is_some() {
+                panic!("duplicate OpenAPI components/schemas key: {k}");
+            }
+        }
+    }
+    Value::Object(map)
+}
+
+fn openapi_components_security_schemes() -> Value {
     json!({
         "securitySchemes": {
             "bearerAuth": {
@@ -16,8 +33,12 @@ pub(super) fn openapi_components_value() -> Value {
                 "name": "X-API-Key",
                 "description": "与 `web_api_bearer_token` 相同密钥；与 Bearer 二选一即可（常见于 Dify / Open WebUI 类网关习惯）。"
             }
-        },
-        "schemas": {
+        }
+    })
+}
+
+fn openapi_components_schemas_chat_llm_webui() -> Value {
+    json!({
             "ClientLlmBody": {
                 "type": "object",
                 "properties": {
@@ -48,6 +69,11 @@ pub(super) fn openapi_components_value() -> Value {
                     }
                 }
             },
+    })
+}
+
+fn openapi_components_schemas_chat_request() -> Value {
+    json!({
             "ChatRequestBody": {
                 "type": "object",
                 "required": ["message"],
@@ -95,6 +121,11 @@ pub(super) fn openapi_components_value() -> Value {
                     }
                 }
             },
+    })
+}
+
+fn openapi_components_schemas_chat_response_approval_branch() -> Value {
+    json!({
             "ChatResponseBody": {
                 "type": "object",
                 "properties": {
@@ -133,6 +164,11 @@ pub(super) fn openapi_components_value() -> Value {
                     "revision": { "type": "integer", "format": "int64" }
                 }
             },
+    })
+}
+
+fn openapi_components_schemas_chat_messages_uploads() -> Value {
+    json!({
             "ConversationMessagesResponseBody": {
                 "type": "object",
                 "required": ["conversation_id", "revision", "messages"],
@@ -179,6 +215,20 @@ pub(super) fn openapi_components_value() -> Value {
                     "skipped": { "type": "array", "items": { "type": "string" } }
                 }
             },
+    })
+}
+
+fn openapi_components_schemas_chat_core() -> Value {
+    merge_component_objects(&[
+        openapi_components_schemas_chat_llm_webui(),
+        openapi_components_schemas_chat_request(),
+        openapi_components_schemas_chat_response_approval_branch(),
+        openapi_components_schemas_chat_messages_uploads(),
+    ])
+}
+
+fn openapi_components_schemas_workspace_tasks_config() -> Value {
+    json!({
             "WorkspaceEntry": {
                 "type": "object",
                 "properties": {
@@ -302,7 +352,19 @@ pub(super) fn openapi_components_value() -> Value {
                         "description": "When present: truncated internal detail for `INTERNAL_ERROR` on `POST /chat` JSON only; SSE may use `reason_code` more broadly (see docs/SSE协议.md)"
                     }
                 }
-            }
-        }
+            },
     })
+}
+
+pub(super) fn openapi_components_value() -> Value {
+    let schemas_merged = merge_component_objects(&[
+        openapi_components_schemas_chat_core(),
+        openapi_components_schemas_workspace_tasks_config(),
+    ]);
+    let Value::Object(sec_root) = openapi_components_security_schemes() else {
+        panic!("openapi security fragment must be a JSON object");
+    };
+    let mut root = sec_root;
+    root.insert("schemas".to_string(), schemas_merged);
+    Value::Object(root)
 }
