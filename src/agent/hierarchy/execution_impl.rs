@@ -9,10 +9,11 @@ use super::super::artifact_store::ArtifactStore;
 use super::super::build_state::BuildState;
 use super::super::events;
 use super::super::execution_error::ExecutionError;
-use super::super::execution_helpers::{supplement_subgoal_required_tools, truncate_goal_desc};
+use super::super::execution_helpers::truncate_goal_desc;
 use super::super::goal_verifier::{GoalVerifier, VerificationResult};
 use super::super::manager::{ManagerLlmContext, ManagerOutput, ReflectAndReplanContext};
 use super::super::operator::{OperatorAgent, OperatorConfig};
+use super::super::supplement_subgoal_required_tools;
 use super::super::task::{
     ArtifactKind, BuildArtifactKind, GoalType, SubGoal, TaskResult, TaskStatus,
 };

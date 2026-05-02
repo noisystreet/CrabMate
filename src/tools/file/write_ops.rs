@@ -1,8 +1,6 @@
 //! 由 `file.rs` 拆分；与拆分前行为一致。
 #![allow(clippy::manual_string_new)]
 
-use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
 
 use super::path::{
@@ -237,7 +235,14 @@ pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
 
     if mode == "replace_lines" || mode == "lines" {
         let display = path_for_tool_display(working_dir, &target, Some(&path));
-        modify_file_replace_lines(&v, &target, &display, ctx, working_dir, &path)
+        super::replace_lines_stream::modify_file_replace_lines(
+            &v,
+            &target,
+            &display,
+            ctx,
+            working_dir,
+            &path,
+        )
     } else if mode == "full" || mode.is_empty() {
         let content = v
             .get("content")
@@ -256,140 +261,4 @@ pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
     } else {
         format!("错误：mode 仅支持 full 或 replace_lines（收到 {:?}）", mode)
     }
-}
-
-fn modify_file_replace_lines(
-    v: &serde_json::Value,
-    target: &Path,
-    display_path: &str,
-    ctx: &ToolContext<'_>,
-    working_dir: &Path,
-    rel_path: &str,
-) -> String {
-    let original = std::fs::read_to_string(target).ok();
-    let start_line = match v.get("start_line").and_then(|n| n.as_u64()) {
-        Some(n) if n >= 1 => n as usize,
-        _ => return "错误：replace_lines 需要 start_line（>=1）".to_string(),
-    };
-    let end_line = match v.get("end_line").and_then(|n| n.as_u64()) {
-        Some(n) if n >= 1 => n as usize,
-        _ => return "错误：replace_lines 需要 end_line（>=1）".to_string(),
-    };
-    if end_line < start_line {
-        return "错误：end_line 不能小于 start_line".to_string();
-    }
-
-    let new_body = v
-        .get("content")
-        .and_then(|c| c.as_str())
-        .map(String::from)
-        .unwrap_or_default();
-
-    let parent = match target.parent() {
-        Some(p) if !p.as_os_str().is_empty() => p,
-        _ => return "错误：无法解析目标文件父目录".to_string(),
-    };
-    let fname = target
-        .file_name()
-        .and_then(|f| f.to_str())
-        .unwrap_or("file");
-    let tmp_path = parent.join(format!(".{fname}.crabmate_edit_tmp"));
-
-    let src = match File::open(target) {
-        Ok(f) => f,
-        Err(e) => return format!("读取原文件失败: {}", e),
-    };
-    let tmp_file = match File::create(&tmp_path) {
-        Ok(f) => f,
-        Err(e) => return format!("创建临时文件失败: {}", e),
-    };
-    let mut reader = BufReader::new(src);
-    let mut writer = BufWriter::new(tmp_file);
-    let mut line_no: usize = 0;
-    let mut replaced = false;
-    let mut buf = String::new();
-
-    loop {
-        buf.clear();
-        let n = match reader.read_line(&mut buf) {
-            Ok(n) => n,
-            Err(e) => return format!("读取原文件失败: {}", e),
-        };
-        if n == 0 {
-            break;
-        }
-        line_no += 1;
-        if line_no < start_line {
-            if let Err(e) = writer.write_all(buf.as_bytes()) {
-                return format!("写入临时文件失败: {}", e);
-            }
-            continue;
-        }
-        if line_no == start_line {
-            if !new_body.is_empty() {
-                if let Err(e) = writer.write_all(new_body.as_bytes()) {
-                    return format!("写入临时文件失败: {}", e);
-                }
-                if !new_body.ends_with('\n')
-                    && let Err(e) = writer.write_all(b"\n")
-                {
-                    return format!("写入临时文件失败: {}", e);
-                }
-            }
-            replaced = true;
-        }
-        if line_no >= start_line && line_no <= end_line {
-            continue;
-        }
-        if line_no > end_line
-            && let Err(e) = writer.write_all(buf.as_bytes())
-        {
-            return format!("写入临时文件失败: {}", e);
-        }
-    }
-
-    if line_no < start_line {
-        return format!(
-            "错误：start_line={} 超出文件行数（文件共 {} 行）",
-            start_line, line_no
-        );
-    }
-    if line_no < end_line {
-        return format!(
-            "错误：end_line={} 超出文件行数（文件共 {} 行）",
-            end_line, line_no
-        );
-    }
-    if !replaced {
-        return "错误：未执行替换（内部状态异常）".to_string();
-    }
-
-    if let Err(e) = writer.flush() {
-        let _ = std::fs::remove_file(&tmp_path);
-        return format!("刷新临时文件失败: {}", e);
-    }
-    drop(writer);
-    // Windows 上 rename 不能覆盖已存在目标，需先删原文件
-    if target.exists()
-        && let Err(e) = std::fs::remove_file(target)
-    {
-        let _ = std::fs::remove_file(&tmp_path);
-        return format!("删除原文件以替换失败: {}", e);
-    }
-    if let Err(e) = std::fs::rename(&tmp_path, target) {
-        let _ = std::fs::remove_file(&tmp_path);
-        return format!("替换目标文件失败: {}", e);
-    }
-
-    record_file_state_after_write(ctx.workspace_changelist, working_dir, rel_path, original);
-    tool_output_prepend_path(
-        display_path,
-        format!(
-            "已按行替换（行 {}-{}，共删除 {} 行，写入新内容 {} 字节）",
-            start_line,
-            end_line,
-            end_line - start_line + 1,
-            new_body.len()
-        ),
-    )
 }
