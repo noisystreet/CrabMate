@@ -157,10 +157,7 @@ pub(crate) async fn assess_staged_planning_gate_full_pipeline(
         merge_meta.used_merged_continuation,
     );
 
-    let suppress_timeline = p.turn.suppress_duplicate_intent_timeline_once;
-    if suppress_timeline {
-        p.turn.suppress_duplicate_intent_timeline_once = false;
-    }
+    let suppress_timeline = p.turn.take_suppress_duplicate_intent_timeline_once();
     if !suppress_timeline {
         emit_intent_timeline_gate_only(p.ctx.out, sse_log_tag, &decision, &merge_meta).await;
     }

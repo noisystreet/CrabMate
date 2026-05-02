@@ -45,6 +45,7 @@ pub(crate) use messages::push_assistant_merging_trailing_empty_placeholder;
 pub(crate) use params::RunLoopCtx;
 pub(crate) use params::RunLoopParams;
 pub(crate) use params::RunLoopTurnState;
+pub(crate) use params::TurnPlannerHints;
 #[allow(unused_imports)]
 pub(crate) use plan::{
     AgentLlmCall, PerPlanCallModelParams, PlannerSseGate, per_plan_call_model_retrying,

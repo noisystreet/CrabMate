@@ -38,7 +38,7 @@ impl<'a> PlannerRoundTools<'a> {
 }
 
 fn build_planner_round_tools<'a>(p: &RunLoopParams<'a>) -> PlannerRoundTools<'a> {
-    let owned_filtered = match p.turn.step_executor_constraint {
+    let owned_filtered = match p.turn.turn_planner_hints.step_executor_constraint {
         Some(k) => {
             let mut v = filter_tool_defs_for_executor_kind(p.ctx.tools_defs, p.ctx.cfg.as_ref(), k);
             if let Some(ref allow) = p.ctx.turn_allowed_tool_names {
@@ -107,7 +107,7 @@ async fn outer_loop_prepare_planner_context(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
 ) -> Result<(), RunAgentTurnError> {
-    if let Some(hint) = p.turn.intent_turn_gate_hint.take() {
+    if let Some(hint) = p.turn.take_intent_turn_gate_hint() {
         p.turn.messages.push(Message::system_intent_gate_hint(hint));
     }
     if let Some(ref ltm) = p.ctx.long_term_memory {
@@ -235,7 +235,7 @@ async fn outer_loop_execute_tools_round(
             mcp_session: p.ctx.mcp_session.as_ref(),
             workspace_changelist: p.ctx.workspace_changelist.as_ref(),
             request_chrome_trace: p.ctx.request_chrome_trace.clone(),
-            step_executor_constraint: p.turn.step_executor_constraint,
+            step_executor_constraint: p.turn.turn_planner_hints.step_executor_constraint,
             tools_defs_full: p.ctx.tools_defs,
             turn_allow: p.ctx.turn_allowed_tool_names.as_ref().map(|a| a.as_ref()),
             long_term_memory: p.ctx.long_term_memory.clone(),

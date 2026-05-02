@@ -739,9 +739,7 @@ mod staged_plan_prepare_fixture_tests {
             turn: RunLoopTurnState {
                 messages: &mut messages,
                 sub_phase: AgentTurnSubPhase::Planner,
-                suppress_duplicate_intent_timeline_once: false,
-                intent_turn_gate_hint: None,
-                step_executor_constraint: None,
+                turn_planner_hints: crate::agent::agent_turn::TurnPlannerHints::default(),
                 temperature_override: None,
                 model_override: None,
                 use_executor_model: false,
