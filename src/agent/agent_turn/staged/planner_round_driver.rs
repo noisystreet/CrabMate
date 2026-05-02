@@ -18,7 +18,6 @@ use crate::types::{
 };
 
 use super::super::errors::{AgentTurnSubPhase, RunAgentTurnError};
-use super::super::messages::push_assistant_merging_trailing_empty_placeholder;
 use super::super::params::RunLoopParams;
 use super::super::plan::agent_llm_call::AgentLlmCall;
 use super::ensemble_fsm::{
@@ -157,8 +156,7 @@ where
 {
     let mark = p.turn.messages.len();
     p.turn
-        .messages
-        .push(make_step_user_message(staged_plan_nl_followup_user_body()));
+        .push_message(make_step_user_message(staged_plan_nl_followup_user_body()));
     let result: Result<(), RunAgentTurnError> = async {
         crate::agent::context_window::prepare_messages_for_model(
             p.ctx.llm_backend,
@@ -166,8 +164,11 @@ where
             p.ctx.api_key,
             p.ctx.cfg.as_ref(),
             p.turn.messages,
-            Some(per_coord),
             p.ctx.workspace_changelist.as_ref().map(|a| a.as_ref()),
+            crate::agent::context_window::PrepareMessagesForModelHooks {
+                per_coord_layer_cache: Some(per_coord),
+                run_loop_messages_revision: Some(&mut p.turn.messages_revision),
+            },
         )
         .await
         .map_err(|e| RunAgentTurnError::Other {
@@ -189,7 +190,7 @@ where
         let llm = AgentLlmCall::new(p);
         let (mut msg, finish_reason) = llm.complete_retrying(p.llm_transport_opts(), &req).await?;
         if finish_reason == USER_CANCELLED_FINISH_REASON {
-            p.turn.messages.pop();
+            p.turn.pop_message();
             return Ok(());
         }
         if let Some(tc) = msg.tool_calls.as_ref().filter(|c| !c.is_empty()) {
@@ -211,12 +212,12 @@ where
             );
             msg.tool_calls = None;
         }
-        push_assistant_merging_trailing_empty_placeholder(p.turn.messages, msg);
+        p.turn.push_assistant_merging_trailing_empty(msg);
         Ok(())
     }
     .await;
     if result.is_err() && p.turn.messages.len() > mark {
-        p.turn.messages.truncate(mark);
+        p.turn.truncate_messages(mark);
     }
     result
 }
@@ -300,7 +301,7 @@ where
     for i in 0..extra {
         let planner_idx = ensemble_secondary_planner_display_index(i);
         let body = plan_ensemble::ensemble_secondary_planner_user_body(planner_idx, &accepted);
-        p.turn.messages.push(make_step_user_message(body));
+        p.turn.push_message(make_step_user_message(body));
         let (mut sec_msg, fin) = complete_one_staged_planner_assistant_round(
             p,
             per_coord,
@@ -344,7 +345,7 @@ where
     }
 
     let merge_body = plan_ensemble::ensemble_merge_planner_user_body(&accepted);
-    p.turn.messages.push(make_step_user_message(merge_body));
+    p.turn.push_message(make_step_user_message(merge_body));
     let (mut merge_msg, merge_fin) = complete_one_staged_planner_assistant_round(
         p,
         per_coord,
@@ -369,7 +370,7 @@ where
                 steps.len(),
                 accepted.len()
             );
-            push_assistant_merging_trailing_empty_placeholder(p.turn.messages, merge_msg);
+            p.turn.push_assistant_merging_trailing_empty(merge_msg);
             plan.steps = steps;
         }
         EnsembleMergeOutcome::KeepPriorPlan => {
@@ -410,7 +411,7 @@ where
                 first_total
             );
             emit_staged_planner_tool_call_rejected_timeline(p.ctx.out, first_total).await;
-            p.turn.messages.push(make_step_user_message(
+            p.turn.push_message(make_step_user_message(
                 staged_planner_tool_call_reject_user_body(first_total),
             ));
             let retry_req = prepare_staged_planner_no_tools_request(

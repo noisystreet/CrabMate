@@ -583,6 +583,7 @@ pub async fn run_agent_turn<'a>(
         },
         turn: agent::agent_turn::RunLoopTurnState {
             messages,
+            messages_revision: 0,
             sub_phase: crate::agent::agent_turn::AgentTurnSubPhase::Planner,
             turn_planner_hints: crate::agent::agent_turn::TurnPlannerHints::default(),
             temperature_override,

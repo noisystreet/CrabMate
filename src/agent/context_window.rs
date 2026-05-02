@@ -198,6 +198,12 @@ pub async fn maybe_summarize_with_llm(
     Ok(())
 }
 
+/// 与 [`prepare_messages_for_model`] 搭配的**可选**回合侧挂钩：PER 层缓存失效 + `RunLoopTurnState` 缓冲代数。
+pub struct PrepareMessagesForModelHooks<'a> {
+    pub per_coord_layer_cache: Option<&'a mut PerCoordinator>,
+    pub run_loop_messages_revision: Option<&'a mut u64>,
+}
+
 /// 同步策略 + 可选异步摘要（在摘要前后都会再跑一遍同步压缩）。
 pub async fn prepare_messages_for_model(
     llm_backend: &dyn ChatCompletionsBackend,
@@ -205,8 +211,8 @@ pub async fn prepare_messages_for_model(
     api_key: &str,
     cfg: &AgentConfig,
     messages: &mut Vec<Message>,
-    per_coord_layer_cache: Option<&mut PerCoordinator>,
     workspace_changelist: Option<&crate::workspace::changelist::WorkspaceChangelist>,
+    hooks: PrepareMessagesForModelHooks<'_>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     prepare_messages_before_model_call_sync(messages, cfg);
     maybe_summarize_with_llm(llm_backend, client, api_key, cfg, messages).await?;
@@ -216,8 +222,11 @@ pub async fn prepare_messages_for_model(
         cfg.session_workspace_changelist_enabled,
         cfg.session_workspace_changelist_max_chars,
     );
-    if let Some(p) = per_coord_layer_cache {
+    if let Some(p) = hooks.per_coord_layer_cache {
         p.invalidate_workflow_validate_layer_cache_after_context_mutation();
+    }
+    if let Some(r) = hooks.run_loop_messages_revision {
+        *r = r.wrapping_add(1);
     }
     Ok(())
 }

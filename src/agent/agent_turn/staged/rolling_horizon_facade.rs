@@ -169,7 +169,7 @@ where
                             );
                         }
                     }
-                    p.turn.messages.push(u);
+                    p.turn.push_message(u);
                 } else if matches!(phase, StagedTurnPhase::AfterStepExecutionRound) {
                     tracing::debug!(
                         target: "crabmate::staged",

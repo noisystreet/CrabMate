@@ -17,7 +17,6 @@ use super::errors::{
 use super::execute_tools::{
     ExecuteToolsBatchOutcome, WebExecuteCtx, per_execute_tools_web, sse_sender_closed,
 };
-use super::messages::push_assistant_merging_trailing_empty_placeholder;
 use super::params::{OuterLoopPlanCallModelRole, RunLoopParams};
 use super::plan::{PerPlanCallModelParams, per_plan_call_model_retrying};
 use super::reflect::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
@@ -108,7 +107,7 @@ async fn outer_loop_prepare_planner_context(
     per_coord: &mut PerCoordinator,
 ) -> Result<(), RunAgentTurnError> {
     if let Some(hint) = p.turn.take_intent_turn_gate_hint() {
-        p.turn.messages.push(Message::system_intent_gate_hint(hint));
+        p.turn.push_message(Message::system_intent_gate_hint(hint));
     }
     if let Some(ref ltm) = p.ctx.long_term_memory {
         ltm.prepare_messages(
@@ -123,14 +122,16 @@ async fn outer_loop_prepare_planner_context(
         p.ctx.api_key,
         p.ctx.cfg.as_ref(),
         p.turn.messages,
-        Some(per_coord),
         p.ctx.workspace_changelist.as_ref().map(|a| a.as_ref()),
+        crate::agent::context_window::PrepareMessagesForModelHooks {
+            per_coord_layer_cache: Some(per_coord),
+            run_loop_messages_revision: Some(&mut p.turn.messages_revision),
+        },
     )
     .await
     .map_err(|e| {
         p.turn
-            .messages
-            .retain(|m| !is_intent_gate_ephemeral_system(m));
+            .retain_messages(|m| !is_intent_gate_ephemeral_system(m));
         RunAgentTurnError::Other {
             phase: AgentTurnSubPhase::Planner,
             message: e.to_string(),
@@ -380,7 +381,7 @@ async fn run_outer_loop_single_iteration(
         p.turn.messages.len(),
         crate::redact::assistant_message_preview_for_log(&msg)
     );
-    push_assistant_merging_trailing_empty_placeholder(p.turn.messages, msg.clone());
+    p.turn.push_assistant_merging_trailing_empty(msg.clone());
 
     tracing::debug!(
         target: "crabmate::agent_turn",
