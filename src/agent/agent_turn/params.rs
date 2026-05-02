@@ -3,6 +3,7 @@
 //! **`RunLoopCtx`**：整场固定的输入上下文（HTTP 客户端、配置快照、工具表、SSE 通道、冻结的分阶段开关等）。
 //! **`RunLoopTurnState`**：可变会话状态与本回合决策覆盖（`messages`、`sub_phase`、模型/温度覆盖、[`TurnPlannerHints`] 等）。
 //! **`RunLoopParams`**：二者合一，供 `run_agent_turn_common` 与各子模块持有单一句柄。
+//! **[`OuterLoopPlanCallModelRole`]**：单 Agent **`outer_loop`** 每次 **P** 步选用 planner 端点还是 executor 端点（与 `iteration_count` 对应关系集中在一处）。
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -78,6 +79,43 @@ pub(crate) struct TurnPlannerHints {
     pub(crate) step_executor_constraint: Option<PlanStepExecutorKind>,
 }
 
+/// 单 Agent [`super::outer_loop::run_agent_outer_loop`] 内每次 **P** 调用对应的模型端点角色。
+///
+/// 将「第几轮用 planner vs executor」从隐式 `iteration_count >= 2` 收拢为显式枚举，便于 tracing 与文档对齐。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OuterLoopPlanCallModelRole {
+    /// 首轮及唯一一轮：走 `planner_model` / planner 覆盖；**不**应用 executor 的 `api_base` / `api_key` 覆盖。
+    PlannerRound,
+    /// 第二轮及以后：走 `executor_model` / executor 覆盖；可应用 `executor_api_base` / `executor_api_key`。
+    ExecutorRound,
+}
+
+impl OuterLoopPlanCallModelRole {
+    /// `iteration_count` 为 `run_outer_loop_single_iteration` 传入值（从 1 递增）。
+    #[inline]
+    pub(crate) fn from_outer_loop_iteration(iteration_count: u32) -> Self {
+        if iteration_count <= 1 {
+            Self::PlannerRound
+        } else {
+            Self::ExecutorRound
+        }
+    }
+
+    /// 与 [`RunLoopTurnState::use_executor_model`] 对齐：`PlannerRound` → `false`，`ExecutorRound` → `true`。
+    #[inline]
+    pub(crate) fn sets_use_executor_model(self) -> bool {
+        matches!(self, Self::ExecutorRound)
+    }
+
+    #[inline]
+    pub(crate) fn as_trace_str(self) -> &'static str {
+        match self {
+            Self::PlannerRound => "planner_round",
+            Self::ExecutorRound => "executor_round",
+        }
+    }
+}
+
 impl TurnPlannerHints {
     /// 首轮 P 前注入的意图门控临时 system（消费后即清空）。
     pub(crate) fn take_intent_turn_gate_hint(&mut self) -> Option<String> {
@@ -134,6 +172,28 @@ pub(crate) struct RunLoopParams<'a> {
 }
 
 impl RunLoopParams<'_> {
+    /// 按 [`OuterLoopPlanCallModelRole`] 更新 `turn.use_executor_model`（供 **`outer_loop`** 每轮 **P** 前调用）。
+    #[inline]
+    pub(crate) fn apply_outer_loop_plan_call_model_role(
+        &mut self,
+        role: OuterLoopPlanCallModelRole,
+    ) {
+        self.turn.use_executor_model = role.sets_use_executor_model();
+    }
+
+    /// 供 [`super::plan::PerPlanCallModelParams`]：克隆 executor 端点覆盖（仅当 `use_executor_model` 时非空），避免 `&str` 长时间借用 `turn`。
+    #[inline]
+    pub(crate) fn plan_call_executor_endpoint_cloned(&self) -> (Option<String>, Option<String>) {
+        if self.turn.use_executor_model {
+            (
+                self.turn.executor_api_base.clone(),
+                self.turn.executor_api_key.clone(),
+            )
+        } else {
+            (None, None)
+        }
+    }
+
     /// 装配 [`HierarchyRunnerParams`]：与 `hierarchy::run_hierarchical_agent` 内 Web 审批通道（`out_tx` / `approval_rx_shared`）提取逻辑一致，避免分层入口与其它调用点漂移。
     pub(crate) fn hierarchy_runner_params<'b>(
         &'b self,
@@ -199,7 +259,7 @@ impl RunLoopParams<'_> {
 
 #[cfg(test)]
 mod turn_planner_hints_tests {
-    use super::TurnPlannerHints;
+    use super::{OuterLoopPlanCallModelRole, TurnPlannerHints};
 
     #[test]
     fn take_suppress_duplicate_clears_flag() {
@@ -220,5 +280,28 @@ mod turn_planner_hints_tests {
         };
         assert_eq!(h.take_intent_turn_gate_hint().as_deref(), Some("hint"));
         assert!(h.take_intent_turn_gate_hint().is_none());
+    }
+
+    #[test]
+    fn outer_loop_plan_role_matches_iteration_and_trace() {
+        assert_eq!(
+            OuterLoopPlanCallModelRole::from_outer_loop_iteration(1),
+            OuterLoopPlanCallModelRole::PlannerRound
+        );
+        assert!(!OuterLoopPlanCallModelRole::PlannerRound.sets_use_executor_model());
+        assert_eq!(
+            OuterLoopPlanCallModelRole::PlannerRound.as_trace_str(),
+            "planner_round"
+        );
+
+        assert_eq!(
+            OuterLoopPlanCallModelRole::from_outer_loop_iteration(2),
+            OuterLoopPlanCallModelRole::ExecutorRound
+        );
+        assert!(OuterLoopPlanCallModelRole::ExecutorRound.sets_use_executor_model());
+        assert_eq!(
+            OuterLoopPlanCallModelRole::ExecutorRound.as_trace_str(),
+            "executor_round"
+        );
     }
 }
