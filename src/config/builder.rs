@@ -217,38 +217,57 @@ pub(super) fn override_opt_vec(dst: &mut Option<Vec<String>>, src: &Option<Vec<S
 impl ConfigBuilder {
     /// 将 `AgentSection` 中有值的字段覆盖到当前累加器。
     pub(super) fn apply_section(&mut self, agent: AgentSection) {
-        override_string(&mut self.api_base, agent.api_base);
-        override_string(&mut self.model, agent.model);
-        override_opt_string_non_empty(&mut self.planner_model, agent.planner_model);
-        override_opt_string_non_empty(&mut self.executor_model, agent.executor_model);
-        override_opt_string_non_empty(&mut self.llm_http_auth_mode_str, agent.llm_http_auth_mode);
+        self.apply_section_identity_prompt_and_lists(&agent);
+        self.apply_section_merge_numeric_mid(&agent);
+        self.apply_section_merge_numeric_tail(&agent);
+    }
+
+    /// 标识字段、提示词路径、列表类覆盖。
+    fn apply_section_identity_prompt_and_lists(&mut self, agent: &AgentSection) {
+        override_string(&mut self.api_base, agent.api_base.clone());
+        override_string(&mut self.model, agent.model.clone());
+        override_opt_string_non_empty(&mut self.planner_model, agent.planner_model.clone());
+        override_opt_string_non_empty(&mut self.executor_model, agent.executor_model.clone());
+        override_opt_string_non_empty(
+            &mut self.llm_http_auth_mode_str,
+            agent.llm_http_auth_mode.clone(),
+        );
         let no_system_prompt_file_in_section = agent.system_prompt_file.is_none();
         let inline_system_prompt_nonempty = agent
             .system_prompt
             .as_ref()
             .is_some_and(|s| !s.trim().is_empty());
-        override_opt_string_non_empty(&mut self.system_prompt_file, agent.system_prompt_file);
-        override_string(&mut self.system_prompt, agent.system_prompt);
-        override_opt_string_non_empty(&mut self.default_agent_role_id, agent.default_agent_role);
+        override_opt_string_non_empty(
+            &mut self.system_prompt_file,
+            agent.system_prompt_file.clone(),
+        );
+        override_string(&mut self.system_prompt, agent.system_prompt.clone());
+        override_opt_string_non_empty(
+            &mut self.default_agent_role_id,
+            agent.default_agent_role.clone(),
+        );
         // 本段若只给了内联 system_prompt、未再给 system_prompt_file，则不再沿用更早层（如嵌入默认）的文件路径
         if no_system_prompt_file_in_section && inline_system_prompt_nonempty {
             self.system_prompt_file = None;
         }
         override_opt_string_non_empty(
             &mut self.run_command_working_dir,
-            agent.run_command_working_dir,
+            agent.run_command_working_dir.clone(),
         );
-        override_opt_string_non_empty(&mut self.web_search_provider_str, agent.web_search_provider);
+        override_opt_string_non_empty(
+            &mut self.web_search_provider_str,
+            agent.web_search_provider.clone(),
+        );
         override_opt_string_non_empty(
             &mut self.final_plan_requirement_str,
-            agent.final_plan_requirement,
+            agent.final_plan_requirement.clone(),
         );
         override_opt_string_non_empty(
             &mut self.planner_executor_mode_str,
-            agent.planner_executor_mode,
+            agent.planner_executor_mode.clone(),
         );
-        override_opt_string_non_empty(&mut self.cursor_rules_dir, agent.cursor_rules_dir);
-        override_opt_string_non_empty(&mut self.skills_dir, agent.skills_dir);
+        override_opt_string_non_empty(&mut self.cursor_rules_dir, agent.cursor_rules_dir.clone());
+        override_opt_string_non_empty(&mut self.skills_dir, agent.skills_dir.clone());
 
         override_opt_string_trimmed(
             &mut self.web_api_bearer_token,
@@ -271,7 +290,10 @@ impl ConfigBuilder {
             &mut self.workspace_allowed_roots,
             &agent.workspace_allowed_roots,
         );
+    }
 
+    /// `Option` 数值与布尔合并（至上下文摘要与健康探测）。
+    fn apply_section_merge_numeric_mid(&mut self, agent: &AgentSection) {
         self.max_message_history = agent.max_message_history.or(self.max_message_history);
         self.tui_load_session_on_start = agent
             .tui_load_session_on_start
@@ -401,6 +423,10 @@ impl ConfigBuilder {
         self.health_llm_models_probe_cache_secs = agent
             .health_llm_models_probe_cache_secs
             .or(self.health_llm_models_probe_cache_secs);
+    }
+
+    /// 队列、分阶段规划、沙盒、记忆、语义检索与意图阈值合并。
+    fn apply_section_merge_numeric_tail(&mut self, agent: &AgentSection) {
         self.chat_queue_max_concurrent = agent
             .chat_queue_max_concurrent
             .or(self.chat_queue_max_concurrent);
@@ -429,7 +455,7 @@ impl ConfigBuilder {
             .or(self.staged_plan_allow_no_task);
         override_opt_string_non_empty(
             &mut self.staged_plan_feedback_mode_str,
-            agent.staged_plan_feedback_mode,
+            agent.staged_plan_feedback_mode.clone(),
         );
         self.staged_plan_patch_max_attempts = agent
             .staged_plan_patch_max_attempts
@@ -454,22 +480,22 @@ impl ConfigBuilder {
             .or(self.staged_plan_two_phase_nl_display);
         override_opt_string_non_empty(
             &mut self.sync_default_tool_sandbox_mode_str,
-            agent.sync_default_tool_sandbox_mode,
+            agent.sync_default_tool_sandbox_mode.clone(),
         );
         override_opt_string_non_empty(
             &mut self.sync_default_tool_sandbox_docker_image,
-            agent.sync_default_tool_sandbox_docker_image,
+            agent.sync_default_tool_sandbox_docker_image.clone(),
         );
         override_opt_string_non_empty(
             &mut self.sync_default_tool_sandbox_docker_network,
-            agent.sync_default_tool_sandbox_docker_network,
+            agent.sync_default_tool_sandbox_docker_network.clone(),
         );
         self.sync_default_tool_sandbox_docker_timeout_secs = agent
             .sync_default_tool_sandbox_docker_timeout_secs
             .or(self.sync_default_tool_sandbox_docker_timeout_secs);
         override_opt_string_non_empty(
             &mut self.sync_default_tool_sandbox_docker_user,
-            agent.sync_default_tool_sandbox_docker_user,
+            agent.sync_default_tool_sandbox_docker_user.clone(),
         );
         self.web_api_require_bearer = agent.web_api_require_bearer.or(self.web_api_require_bearer);
         self.allow_insecure_no_auth_for_non_loopback = agent
@@ -477,12 +503,12 @@ impl ConfigBuilder {
             .or(self.allow_insecure_no_auth_for_non_loopback);
         override_opt_string_non_empty(
             &mut self.conversation_store_sqlite_path,
-            agent.conversation_store_sqlite_path,
+            agent.conversation_store_sqlite_path.clone(),
         );
         self.agent_memory_file_enabled = agent
             .agent_memory_file_enabled
             .or(self.agent_memory_file_enabled);
-        override_opt_string_non_empty(&mut self.agent_memory_file, agent.agent_memory_file);
+        override_opt_string_non_empty(&mut self.agent_memory_file, agent.agent_memory_file.clone());
         self.agent_memory_file_max_chars = agent
             .agent_memory_file_max_chars
             .or(self.agent_memory_file_max_chars);
@@ -491,7 +517,7 @@ impl ConfigBuilder {
             .or(self.living_docs_inject_enabled);
         override_opt_string_non_empty(
             &mut self.living_docs_relative_dir,
-            agent.living_docs_relative_dir,
+            agent.living_docs_relative_dir.clone(),
         );
         self.living_docs_inject_max_chars = agent
             .living_docs_inject_max_chars
@@ -525,11 +551,11 @@ impl ConfigBuilder {
             .or(self.long_term_memory_enabled);
         override_opt_string_non_empty(
             &mut self.long_term_memory_scope_mode_str,
-            agent.long_term_memory_scope_mode,
+            agent.long_term_memory_scope_mode.clone(),
         );
         override_opt_string_non_empty(
             &mut self.long_term_memory_vector_backend_str,
-            agent.long_term_memory_vector_backend,
+            agent.long_term_memory_vector_backend.clone(),
         );
         self.long_term_memory_max_entries = agent
             .long_term_memory_max_entries
@@ -539,7 +565,7 @@ impl ConfigBuilder {
             .or(self.long_term_memory_inject_max_chars);
         override_opt_string_non_empty(
             &mut self.long_term_memory_store_sqlite_path,
-            agent.long_term_memory_store_sqlite_path,
+            agent.long_term_memory_store_sqlite_path.clone(),
         );
         self.long_term_memory_top_k = agent.long_term_memory_top_k.or(self.long_term_memory_top_k);
         self.long_term_memory_max_chars_per_chunk = agent
@@ -558,7 +584,7 @@ impl ConfigBuilder {
             .long_term_memory_default_ttl_secs
             .or(self.long_term_memory_default_ttl_secs);
         self.mcp_enabled = agent.mcp_enabled.or(self.mcp_enabled);
-        override_opt_string_non_empty(&mut self.mcp_command, agent.mcp_command);
+        override_opt_string_non_empty(&mut self.mcp_command, agent.mcp_command.clone());
         self.mcp_tool_timeout_secs = agent.mcp_tool_timeout_secs.or(self.mcp_tool_timeout_secs);
         self.codebase_semantic_search_enabled = agent
             .codebase_semantic_search_enabled
@@ -568,7 +594,7 @@ impl ConfigBuilder {
             .or(self.codebase_semantic_invalidate_on_workspace_change);
         override_opt_string_non_empty(
             &mut self.codebase_semantic_index_sqlite_path,
-            agent.codebase_semantic_index_sqlite_path,
+            agent.codebase_semantic_index_sqlite_path.clone(),
         );
         self.codebase_semantic_max_file_bytes = agent
             .codebase_semantic_max_file_bytes
