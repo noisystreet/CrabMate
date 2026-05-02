@@ -1,0 +1,40 @@
+[package]
+name = "crabmate-im-bridge"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Optional IM bridge service (Feishu MVP): event webhook → CrabMate POST /chat → Feishu reply"
+default-run = "crabmate-im-bridge"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "crabmate-im-bridge"
+path = "src/main.rs"
+
+[dependencies]
+axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio", "macros"] }
+dashmap = "6"
+hex = "0.4"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+subtle = "2"
+tokio = { version = "1", default-features = false, features = [
+    "macros",
+    "rt-multi-thread",
+    "signal",
+    "sync",
+    "time",
+    "net",
+] }
+tower-http = { version = "0.5", features = ["trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+    "env-filter",
+    "fmt",
+    "std",
+] }
+thiserror = "2"
