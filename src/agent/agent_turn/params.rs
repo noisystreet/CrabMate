@@ -1,7 +1,7 @@
 //! Web/CLI 共用：外层循环与分阶段规划的运行期参数。
 //!
 //! **`RunLoopCtx`**：整场固定的输入上下文（HTTP 客户端、配置快照、工具表、SSE 通道、冻结的分阶段开关等）。
-//! **`RunLoopTurnState`**：可变会话状态与本回合决策覆盖（`messages`、`sub_phase`、模型/温度覆盖、`step_executor_constraint` 等）。
+//! **`RunLoopTurnState`**：可变会话状态与本回合决策覆盖（`messages`、`sub_phase`、模型/温度覆盖、[`TurnPlannerHints`] 等）。
 //! **`RunLoopParams`**：二者合一，供 `run_agent_turn_common` 与各子模块持有单一句柄。
 
 use std::collections::HashSet;
@@ -66,17 +66,39 @@ pub(crate) struct RunLoopCtx<'a> {
     pub request_audit: Option<Arc<crate::web::audit::WebRequestAudit>>,
 }
 
+/// 单轮 planner / 意图门控相关的**附加约束**（与 `messages` 正交），集中存放以避免 `RunLoopTurnState` 顶层散落布尔与 `Option`。
+///
+/// - **意图时间线去重**：`intent_at_turn_start` 与 `staged_plan_intent_gate` 衔接时跳过重复 `intent_analysis`。
+/// - **门控临时 system**：澄清/确认/只读路径在首轮 P 前注入（见 [`crate::types::Message::system_intent_gate_hint`]）。
+/// - **分步子代理**：当前步 `executor_kind` 收窄可见工具（常规外环为 `None`）。
+#[derive(Debug, Clone, Default)]
+pub(crate) struct TurnPlannerHints {
+    pub(crate) suppress_duplicate_intent_timeline_once: bool,
+    pub(crate) intent_turn_gate_hint: Option<String>,
+    pub(crate) step_executor_constraint: Option<PlanStepExecutorKind>,
+}
+
+impl TurnPlannerHints {
+    /// 首轮 P 前注入的意图门控临时 system（消费后即清空）。
+    pub(crate) fn take_intent_turn_gate_hint(&mut self) -> Option<String> {
+        self.intent_turn_gate_hint.take()
+    }
+
+    /// `intent_at_turn_start` 与 `staged_plan_intent_gate` 衔接：读取并清除「跳过重复时间线」标志。
+    pub(crate) fn take_suppress_duplicate_intent_timeline_once(&mut self) -> bool {
+        let v = self.suppress_duplicate_intent_timeline_once;
+        self.suppress_duplicate_intent_timeline_once = false;
+        v
+    }
+}
+
 /// 会话与编排可变侧：**消息缓冲**、失败时的 **`sub_phase`**、模型覆盖与本步 `executor_kind` 等。
 pub(crate) struct RunLoopTurnState<'a> {
     pub messages: &'a mut Vec<Message>,
     /// 当前编排子阶段（供失败时 SSE `sub_phase` 与日志）；由 `outer_loop` / 分阶段路径在调用模型或执行工具前更新。
     pub sub_phase: AgentTurnSubPhase,
-    /// `intent_at_turn_start` 若已进入 **`ProceedExecute`**，下一轮 **`staged_plan_intent_gate`** 应跳过重复的 **`intent_analysis`** 时间线。
-    pub(crate) suppress_duplicate_intent_timeline_once: bool,
-    /// 意图门控将澄清/确认/只读说明改为走主模型时，首轮 P 前注入的临时 system 正文（见 [`crate::types::Message::system_intent_gate_hint`]）。
-    pub(crate) intent_turn_gate_hint: Option<String>,
-    /// 分阶段规划当前步的「子代理」工具约束；`None` 表示不限制（常规循环）。
-    pub step_executor_constraint: Option<PlanStepExecutorKind>,
+    /// 意图门控与分步子代理约束（见 [`TurnPlannerHints`]）。
+    pub(crate) turn_planner_hints: TurnPlannerHints,
     /// `None` 时使用 `cfg.temperature`。
     pub temperature_override: Option<f32>,
     /// 覆盖本回合的 `model`（`None` 时使用 `cfg.model` / planner_model）
@@ -90,6 +112,19 @@ pub(crate) struct RunLoopTurnState<'a> {
     /// 当 use_executor_model 为 true 时，优先使用此 api_key。
     pub executor_api_key: Option<String>,
     pub seed_override: LlmSeedOverride,
+}
+
+impl<'a> RunLoopTurnState<'a> {
+    /// 首轮 P 前注入的意图门控临时 system（消费后即清空）。
+    pub(crate) fn take_intent_turn_gate_hint(&mut self) -> Option<String> {
+        self.turn_planner_hints.take_intent_turn_gate_hint()
+    }
+
+    /// `intent_at_turn_start` 与 `staged_plan_intent_gate` 衔接：读取并清除「跳过重复时间线」标志。
+    pub(crate) fn take_suppress_duplicate_intent_timeline_once(&mut self) -> bool {
+        self.turn_planner_hints
+            .take_suppress_duplicate_intent_timeline_once()
+    }
 }
 
 /// Web/CLI 共用：外层循环与分阶段规划注入共用的一套运行期参数。
@@ -159,5 +194,31 @@ impl RunLoopParams<'_> {
                 .as_deref()
                 .or_else(|| self.ctx.cfg.planner_model.as_deref())
         }
+    }
+}
+
+#[cfg(test)]
+mod turn_planner_hints_tests {
+    use super::TurnPlannerHints;
+
+    #[test]
+    fn take_suppress_duplicate_clears_flag() {
+        let mut h = TurnPlannerHints {
+            suppress_duplicate_intent_timeline_once: true,
+            ..Default::default()
+        };
+        assert!(h.take_suppress_duplicate_intent_timeline_once());
+        assert!(!h.take_suppress_duplicate_intent_timeline_once());
+        assert!(!h.suppress_duplicate_intent_timeline_once);
+    }
+
+    #[test]
+    fn take_intent_gate_hint_drains_once() {
+        let mut h = TurnPlannerHints {
+            intent_turn_gate_hint: Some("hint".into()),
+            ..Default::default()
+        };
+        assert_eq!(h.take_intent_turn_gate_hint().as_deref(), Some("hint"));
+        assert!(h.take_intent_turn_gate_hint().is_none());
     }
 }

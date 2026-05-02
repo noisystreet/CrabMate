@@ -58,7 +58,9 @@ pub(crate) async fn run_intent_at_turn_start_if_configured(
     .await?;
     let proceed = matches!(out, IntentGateResult::ProceedExecute { .. });
     if proceed {
-        p.turn.suppress_duplicate_intent_timeline_once = true;
+        p.turn
+            .turn_planner_hints
+            .suppress_duplicate_intent_timeline_once = true;
     }
     Ok(proceed)
 }
@@ -256,8 +258,9 @@ async fn run_intent_l0_l1_l2_gate(
         && qa_readonly_style_primary(&assessment.primary_intent)
         && matches!(&assessment.action, IntentAction::DirectReply(_))
     {
-        p.turn.step_executor_constraint = Some(PlanStepExecutorKind::ReviewReadonly);
-        p.turn.intent_turn_gate_hint = Some(GATE_HINT_READONLY_ZH.to_string());
+        p.turn.turn_planner_hints.step_executor_constraint =
+            Some(PlanStepExecutorKind::ReviewReadonly);
+        p.turn.turn_planner_hints.intent_turn_gate_hint = Some(GATE_HINT_READONLY_ZH.to_string());
         return Ok(IntentGateResult::ProceedExecute { assessment });
     }
 
@@ -269,11 +272,13 @@ async fn run_intent_l0_l1_l2_gate(
 
     match &assessment.action {
         IntentAction::ClarifyThenExecute(_) => {
-            p.turn.intent_turn_gate_hint = Some(GATE_HINT_CLARIFY_ZH.to_string());
+            p.turn.turn_planner_hints.intent_turn_gate_hint =
+                Some(GATE_HINT_CLARIFY_ZH.to_string());
             return Ok(IntentGateResult::ProceedExecute { assessment });
         }
         IntentAction::ConfirmThenExecute(_) => {
-            p.turn.intent_turn_gate_hint = Some(GATE_HINT_CONFIRM_ZH.to_string());
+            p.turn.turn_planner_hints.intent_turn_gate_hint =
+                Some(GATE_HINT_CONFIRM_ZH.to_string());
             return Ok(IntentGateResult::ProceedExecute { assessment });
         }
         _ => {}

@@ -10,7 +10,7 @@ use crate::agent::agent_turn::errors::RunAgentTurnError;
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StagedStepRunningSub {
-    /// `step_started` 起至注入本步 user、设置 `step_executor_constraint` 止（尚未 `run_agent_outer_loop`）。
+    /// `step_started` 起至注入本步 user、设置 `turn_planner_hints.step_executor_constraint` 止（尚未 `run_agent_outer_loop`）。
     BeforeStepLlm,
     /// `run_agent_outer_loop` 与可选 acceptance 验证。
     InOuterLoop,

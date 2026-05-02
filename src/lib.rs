@@ -584,9 +584,7 @@ pub async fn run_agent_turn<'a>(
         turn: agent::agent_turn::RunLoopTurnState {
             messages,
             sub_phase: crate::agent::agent_turn::AgentTurnSubPhase::Planner,
-            suppress_duplicate_intent_timeline_once: false,
-            intent_turn_gate_hint: None,
-            step_executor_constraint: None,
+            turn_planner_hints: crate::agent::agent_turn::TurnPlannerHints::default(),
             temperature_override,
             model_override,
             use_executor_model,

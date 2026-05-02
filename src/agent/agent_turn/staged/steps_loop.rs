@@ -227,10 +227,10 @@ where
     }
     let step_user_idx = patch_ctx.p.turn.messages.len();
     patch_ctx.p.turn.messages.push(make_step_user_message(body));
-    let prev_executor_constraint = patch_ctx.p.turn.step_executor_constraint;
-    patch_ctx.p.turn.step_executor_constraint = step.executor_kind;
+    let prev_executor_constraint = patch_ctx.p.turn.turn_planner_hints.step_executor_constraint;
+    patch_ctx.p.turn.turn_planner_hints.step_executor_constraint = step.executor_kind;
     let run_step = run_agent_outer_loop(patch_ctx.p, patch_ctx.per_coord).await;
-    patch_ctx.p.turn.step_executor_constraint = prev_executor_constraint;
+    patch_ctx.p.turn.turn_planner_hints.step_executor_constraint = prev_executor_constraint;
 
     let mut step_verify_failed_reason: Option<String> = None;
     if run_step.is_ok() {
