@@ -18,7 +18,7 @@ use super::execute_tools::{
     ExecuteToolsBatchOutcome, WebExecuteCtx, per_execute_tools_web, sse_sender_closed,
 };
 use super::messages::push_assistant_merging_trailing_empty_placeholder;
-use super::params::RunLoopParams;
+use super::params::{OuterLoopPlanCallModelRole, RunLoopParams};
 use super::plan::{PerPlanCallModelParams, per_plan_call_model_retrying};
 use super::reflect::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
 use super::sub_agent_policy::filter_tool_defs_for_executor_kind;
@@ -260,7 +260,7 @@ async fn outer_loop_execute_tools_round(
 /// 单 Agent 外循环内一次迭代的**粗粒度**阶段（与 `AgentTurnSubPhase` 正交，仅用于 `tracing` 排障）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OuterLoopIterationPhase {
-    /// 通过迭代守卫后、准备 planner 上下文前（`use_executor_model` 已更新）。
+    /// 通过迭代守卫后、准备 planner 上下文前（[`OuterLoopPlanCallModelRole`] 已应用到 `use_executor_model`）。
     IterationEnter,
     /// `prepare_messages_for_model` 等准备完成，即将 `per_plan_call_model_retrying`。
     PrepareContextDone,
@@ -310,8 +310,9 @@ async fn run_outer_loop_single_iteration(
     start_time: std::time::Instant,
 ) -> Result<OuterLoopIterationExit, RunAgentTurnError> {
     outer_loop_iteration_guard(iteration_count, p, start_time)?;
-    // 第一轮使用 planner_model（use_executor_model=false），后续轮次使用 executor_model
-    p.turn.use_executor_model = iteration_count >= 2;
+    let plan_model_role = OuterLoopPlanCallModelRole::from_outer_loop_iteration(iteration_count);
+    p.apply_outer_loop_plan_call_model_role(plan_model_role);
+    let (exec_api_base, exec_api_key) = p.plan_call_executor_endpoint_cloned();
 
     tracing::debug!(
         target: "crabmate::agent_turn",
@@ -319,6 +320,7 @@ async fn run_outer_loop_single_iteration(
         outer_loop_step = OuterLoopIterationPhase::IterationEnter.as_str(),
         iteration = iteration_count,
         use_executor_model = p.turn.use_executor_model,
+        outer_loop_plan_model_role = plan_model_role.as_trace_str(),
         "outer_loop iteration enter"
     );
     p.turn.sub_phase = AgentTurnSubPhase::Planner;
@@ -354,16 +356,8 @@ async fn run_outer_loop_single_iteration(
         seed_override: p.turn.seed_override,
         request_chrome_trace: p.ctx.request_chrome_trace.clone(),
         model_override: p.effective_model(),
-        executor_api_base: if p.turn.use_executor_model {
-            p.turn.executor_api_base.as_deref()
-        } else {
-            None
-        },
-        executor_api_key: if p.turn.use_executor_model {
-            p.turn.executor_api_key.as_deref()
-        } else {
-            None
-        },
+        executor_api_base: exec_api_base.as_deref(),
+        executor_api_key: exec_api_key.as_deref(),
     })
     .await
     .map_err(|e| {
