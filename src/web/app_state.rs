@@ -70,6 +70,8 @@ pub(crate) struct AppState {
         Arc<std::sync::Mutex<Option<crate::health::CachedLlmModelsHealthProbe>>>,
     /// `/chat/stream` 断线重连：`Last-Event-ID` / `stream_resume` 与环形缓冲（进程内）。
     pub(crate) sse_stream_hub: Arc<SseStreamHub>,
+    /// **`POST /chat/async`** 轮询状态（**进程内**；`serve` 重启丢失）。
+    pub(crate) async_chat_jobs: super::async_chat_job::AsyncChatJobsMap,
 }
 
 /// Web 会话存储后端。

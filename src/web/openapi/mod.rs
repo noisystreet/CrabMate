@@ -53,6 +53,8 @@ mod tests {
         assert!(paths.contains_key("/health"));
         assert!(paths.contains_key("/web-ui"));
         assert!(paths.contains_key("/chat/stream"));
+        assert!(paths.contains_key("/chat/async"));
+        assert!(paths.contains_key("/chat/jobs/{job_id}"));
         assert!(paths.contains_key("/conversation/messages"));
         assert!(paths.contains_key("/openapi.json"));
         assert!(v["components"]["securitySchemes"]["bearerAuth"].is_object());

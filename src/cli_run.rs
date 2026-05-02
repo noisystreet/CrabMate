@@ -328,6 +328,7 @@ async fn run_serve_branch(args: ServeBranchArgs<'_>) -> Result<(), Box<dyn std::
         web_tasks_by_workspace: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
         llm_models_health_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
         sse_stream_hub,
+        async_chat_jobs: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
     });
     let sched_tasks = {
         let g = cfg_holder.read().await;

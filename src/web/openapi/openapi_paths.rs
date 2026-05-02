@@ -132,6 +132,65 @@ fn openapi_paths_fragment_chat_core() -> Value {
     })
 }
 
+fn openapi_paths_fragment_chat_async() -> Value {
+    json!({
+        "/chat/async": {
+            "post": {
+                "tags": ["chat"],
+                "summary": "异步非流式对话（轮询 / Webhook）",
+                "description": "立即返回 job_id；执行与 POST /chat 相同 JSON 队列路径。状态仅存本进程内存，serve 重启丢失。需工具审批请用 POST /chat/stream。",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/ChatAsyncRequestBody" }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "已接受",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/ChatAsyncSubmitResponseBody" }
+                            }
+                        }
+                    },
+                    "4XX": { "description": "参数或业务错误", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } },
+                    "503": { "description": "队列满（QUEUE_FULL）" }
+                }
+            }
+        },
+        "/chat/jobs/{job_id}": {
+            "get": {
+                "tags": ["chat"],
+                "summary": "查询异步对话任务状态",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "parameters": [
+                    {
+                        "name": "job_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": { "type": "integer", "format": "int64" }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务状态",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/ChatJobStatusResponseBody" }
+                            }
+                        }
+                    },
+                    "404": { "description": "未知 job_id（UNKNOWN_JOB）" }
+                }
+            }
+        }
+    })
+}
+
 fn openapi_paths_fragment_chat_extras() -> Value {
     json!({
         "/chat/approval": {
@@ -546,6 +605,7 @@ pub(super) fn openapi_paths_value() -> Value {
     merge_path_fragments(&[
         openapi_paths_fragment_system(),
         openapi_paths_fragment_chat_core(),
+        openapi_paths_fragment_chat_async(),
         openapi_paths_fragment_chat_extras(),
         openapi_paths_fragment_workspace_list(),
         openapi_paths_fragment_workspace_rest(),
