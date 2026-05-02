@@ -71,7 +71,7 @@ use post_parse_pipeline_fsm::{
     ensemble_merge_should_invoke, ensemble_merge_skip_for_casual_prompt,
     log_staged_plan_ensemble_route, log_staged_plan_optimizer_route, optimizer_round_should_run,
 };
-use prepared_parse_fsm::{PreparedPlannerParseOutcome, resolve_parse_with_assistant};
+use prepared_parse_fsm::{PreparedPlannerRoute, resolve_prepared_planner_route};
 use prepared_post_parse_fsm::{
     PreparedFullPipelineInputs, PreparedFullPipelineSchedule, PreparedPostParseSchedule,
     prepared_full_pipeline_schedule, prepared_post_parse_schedule,
@@ -1576,19 +1576,102 @@ where
     Ok(StagedPlanRunOutcome::ContinuePlanning)
 }
 
-/// 首轮无工具规划后解析分支：供 `run_staged_plan_with_prepared_request` 早退，降低单函数圈复杂度。
-enum ParsedStagedPlannerFlow {
-    /// `resolve_parse_with_assistant` 静默结束。
-    QuietFinish,
-    /// 降级到通常 `run_agent_outer_loop`（已包含 `push_assistant`）。
-    DegradeToOuterLoop { msg: Message },
-    /// 进入 `no_task` / full-pipeline 后续（assistant 入史规则在调用方处理）。
-    Continue {
-        plan: plan_artifact::AgentReplyPlanV1,
-        msg: Message,
-    },
+/// 首轮解析成功后 **`PreparedPlannerRoute::ContinueWithPlan`** 的后续管线（no_task / full-pipeline）参聚合。
+struct ContinuePreparedPlanAfterFirstRoundParams<'a, 'b, F> {
+    p: &'a mut RunLoopParams<'b>,
+    per_coord: &'a mut PerCoordinator,
+    labels: StagedPlanRunLabels,
+    planner_render_to_terminal: bool,
+    echo_terminal_staged: bool,
+    plan: plan_artifact::AgentReplyPlanV1,
+    msg: Message,
+    make_step_user_message: F,
 }
 
+async fn continue_prepared_plan_after_first_round<F>(
+    params: ContinuePreparedPlanAfterFirstRoundParams<'_, '_, F>,
+) -> Result<StagedPlanRunOutcome, RunAgentTurnError>
+where
+    F: Fn(String) -> Message,
+{
+    let ContinuePreparedPlanAfterFirstRoundParams {
+        p,
+        per_coord,
+        labels,
+        planner_render_to_terminal,
+        echo_terminal_staged,
+        plan,
+        msg,
+        make_step_user_message,
+    } = params;
+    let omit_no_task_planner_from_history = omit_no_task_planner_from_history(
+        p.ctx.out.is_some(),
+        crate::web::web_ui_env::web_raw_assistant_output_env(),
+        plan.no_task,
+    );
+    if !omit_no_task_planner_from_history {
+        push_assistant_merging_trailing_empty_placeholder(p.turn.messages, msg.clone());
+    }
+
+    let post_schedule = prepared_post_parse_schedule(plan.no_task);
+    tracing::debug!(
+        target: "crabmate::staged",
+        staged_fsm = "prepared_request",
+        prepared_route = "continue_with_plan",
+        post_parse_schedule = ?post_schedule,
+        plan_no_task = plan.no_task,
+        plan_steps_len = plan.steps.len(),
+        sub_phase = "planner",
+        "staged prepared_request continue: post-parse schedule"
+    );
+
+    match post_schedule {
+        PreparedPostParseSchedule::NoTaskThenOuter => {
+            run_no_task_branch_then_outer(p, per_coord, &make_step_user_message).await?;
+            Ok(StagedPlanRunOutcome::Finished)
+        }
+        PreparedPostParseSchedule::FullPipelineThenSteps => {
+            let parallel_csv = plan_optimizer::parallel_batchable_tool_names_csv_from_defs(
+                p.ctx.tools_defs,
+                p.ctx.cfg.as_ref(),
+            );
+            let validate_only_binding_active =
+                plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.turn.messages)
+                    .is_some_and(|ids| !ids.is_empty());
+            let trigger_user = plan_optimizer::staged_plan_trigger_user_content(p.turn.messages);
+            let pipeline_schedule = prepared_full_pipeline_schedule(PreparedFullPipelineInputs {
+                staged_plan_ensemble_count: p.ctx.staged_plan_ensemble_count,
+                staged_plan_skip_ensemble_on_casual_prompt: p
+                    .ctx
+                    .staged_plan_skip_ensemble_on_casual_prompt,
+                validate_only_binding_active,
+                trigger_user_content: trigger_user,
+                plan_steps_len: plan.steps.len(),
+                staged_plan_optimizer_round: p.ctx.staged_plan_optimizer_round,
+                staged_plan_optimizer_requires_parallel_tools: p
+                    .ctx
+                    .staged_plan_optimizer_requires_parallel_tools,
+                parallel_tool_names_csv: parallel_csv.as_str(),
+                staged_plan_two_phase_nl_display: p.ctx.cfg.staged_plan_two_phase_nl_display,
+            });
+
+            advance_full_pipeline_phases_after_parse_inner(AdvanceFullPipelineAfterParseParams {
+                p,
+                per_coord,
+                labels,
+                planner_render_to_terminal,
+                echo_terminal_staged,
+                make_step_user_message: &make_step_user_message,
+                plan,
+                pipeline_schedule,
+                parallel_csv,
+            })
+            .await
+        }
+    }
+}
+
+/// 首轮无工具规划轮：可选 tool_calls 重写后再返回 assistant。
 async fn complete_first_planner_round_maybe_retry_tool_reject<F>(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
@@ -1672,48 +1755,6 @@ async fn strip_non_tool_planner_assistant_after_first_round(
         );
     }
     msg.tool_calls = None;
-}
-
-fn resolve_parsed_staged_planner_flow(
-    parse_result: Result<plan_artifact::AgentReplyPlanV1, plan_artifact::PlanArtifactError>,
-    entered_from_step_execution_round: bool,
-    msg: Message,
-    merged_for_log: String,
-    parse_err_detail: Option<String>,
-    degrade_like_not_found: bool,
-) -> ParsedStagedPlannerFlow {
-    match resolve_parse_with_assistant(parse_result, entered_from_step_execution_round, msg.clone())
-    {
-        PreparedPlannerParseOutcome::ContinueWithPlan { plan } => {
-            ParsedStagedPlannerFlow::Continue { plan, msg }
-        }
-        PreparedPlannerParseOutcome::QuietFinish => ParsedStagedPlannerFlow::QuietFinish,
-        PreparedPlannerParseOutcome::DegradeToOuterLoop => {
-            if degrade_like_not_found {
-                debug!(
-                    target: "crabmate",
-                    "分阶段规划未产出结构化任务 (可能是通识问答或直接回复) merged_len={} merged_preview={}；降级为常规循环",
-                    merged_for_log.chars().count(),
-                    crate::redact::preview_chars(
-                        merged_for_log.as_str(),
-                        crate::redact::MESSAGE_LOG_PREVIEW_CHARS,
-                    )
-                );
-            } else {
-                warn!(
-                    target: "crabmate",
-                    "staged_plan_invalid parse_err={} merged_len={} merged_preview={}；降级为常规工具循环",
-                    parse_err_detail.unwrap_or_default(),
-                    merged_for_log.chars().count(),
-                    crate::redact::preview_chars(
-                        merged_for_log.as_str(),
-                        crate::redact::MESSAGE_LOG_PREVIEW_CHARS,
-                    )
-                );
-            }
-            ParsedStagedPlannerFlow::DegradeToOuterLoop { msg }
-        }
-    }
 }
 
 async fn run_no_task_branch_then_outer<F>(
@@ -1977,87 +2018,48 @@ where
         Some(crate::agent::plan_artifact::PlanArtifactError::NotFound)
     );
 
-    match resolve_parsed_staged_planner_flow(
+    let route = resolve_prepared_planner_route(
         parse_result,
         entered_from_step_execution_round,
-        msg,
+        &msg,
         merged_for_log,
         parse_err_detail,
         degrade_like_not_found,
-    ) {
-        ParsedStagedPlannerFlow::QuietFinish => {
+    );
+    tracing::debug!(
+        target: "crabmate::staged",
+        staged_fsm = "prepared_request",
+        prepared_route = route.as_static_str(),
+        entered_from_step_execution_round,
+        sub_phase = "planner",
+        "staged prepared_request first-round parse route"
+    );
+
+    match route {
+        PreparedPlannerRoute::QuietFinish => {
             debug!(
                 target: "crabmate",
                 "分阶段重规划：检测到分步执行后重入且本轮未产出结构化计划，视为收敛完成，直接结束（避免重复总结）"
             );
             Ok(StagedPlanRunOutcome::Finished)
         }
-        ParsedStagedPlannerFlow::DegradeToOuterLoop { msg } => {
+        PreparedPlannerRoute::DegradeToOuterLoop => {
             push_assistant_merging_trailing_empty_placeholder(p.turn.messages, msg.clone());
             run_agent_outer_loop(p, per_coord).await?;
             Ok(StagedPlanRunOutcome::Finished)
         }
-        ParsedStagedPlannerFlow::Continue { plan, msg } => {
-            let omit_no_task_planner_from_history = omit_no_task_planner_from_history(
-                p.ctx.out.is_some(),
-                crate::web::web_ui_env::web_raw_assistant_output_env(),
-                plan.no_task,
-            );
-            if !omit_no_task_planner_from_history {
-                push_assistant_merging_trailing_empty_placeholder(p.turn.messages, msg.clone());
-            }
-
-            match prepared_post_parse_schedule(plan.no_task) {
-                PreparedPostParseSchedule::NoTaskThenOuter => {
-                    run_no_task_branch_then_outer(p, per_coord, &make_step_user_message).await?;
-                    Ok(StagedPlanRunOutcome::Finished)
-                }
-                PreparedPostParseSchedule::FullPipelineThenSteps => {
-                    let parallel_csv = plan_optimizer::parallel_batchable_tool_names_csv_from_defs(
-                        p.ctx.tools_defs,
-                        p.ctx.cfg.as_ref(),
-                    );
-                    let validate_only_binding_active =
-                        plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.turn.messages)
-                            .is_some_and(|ids| !ids.is_empty());
-                    let trigger_user =
-                        plan_optimizer::staged_plan_trigger_user_content(p.turn.messages);
-                    let pipeline_schedule =
-                        prepared_full_pipeline_schedule(PreparedFullPipelineInputs {
-                            staged_plan_ensemble_count: p.ctx.staged_plan_ensemble_count,
-                            staged_plan_skip_ensemble_on_casual_prompt: p
-                                .ctx
-                                .staged_plan_skip_ensemble_on_casual_prompt,
-                            validate_only_binding_active,
-                            trigger_user_content: trigger_user,
-                            plan_steps_len: plan.steps.len(),
-                            staged_plan_optimizer_round: p.ctx.staged_plan_optimizer_round,
-                            staged_plan_optimizer_requires_parallel_tools: p
-                                .ctx
-                                .staged_plan_optimizer_requires_parallel_tools,
-                            parallel_tool_names_csv: parallel_csv.as_str(),
-                            staged_plan_two_phase_nl_display: p
-                                .ctx
-                                .cfg
-                                .staged_plan_two_phase_nl_display,
-                        });
-
-                    advance_full_pipeline_phases_after_parse_inner(
-                        AdvanceFullPipelineAfterParseParams {
-                            p,
-                            per_coord,
-                            labels,
-                            planner_render_to_terminal,
-                            echo_terminal_staged,
-                            make_step_user_message: &make_step_user_message,
-                            plan,
-                            pipeline_schedule,
-                            parallel_csv,
-                        },
-                    )
-                    .await
-                }
-            }
+        PreparedPlannerRoute::ContinueWithPlan { plan } => {
+            continue_prepared_plan_after_first_round(ContinuePreparedPlanAfterFirstRoundParams {
+                p,
+                per_coord,
+                labels,
+                planner_render_to_terminal,
+                echo_terminal_staged,
+                plan,
+                msg,
+                make_step_user_message,
+            })
+            .await
         }
     }
 }
