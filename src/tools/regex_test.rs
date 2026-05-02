@@ -3,24 +3,21 @@
 use regex::Regex;
 
 pub fn run(args_json: &str) -> String {
-    let v = match crate::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
+    let args: super::tool_param_types::RegexTestArgs = match serde_json::from_str(args_json) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 无效: {e}"),
     };
-    let pattern = match v.get("pattern").and_then(|x| x.as_str()) {
-        Some(p) if !p.is_empty() => p,
-        _ => return "错误：缺少 pattern 参数".to_string(),
-    };
+    let pattern = args.pattern.trim();
+    if pattern.is_empty() {
+        return "错误：缺少 pattern 参数".to_string();
+    }
     let re = match Regex::new(pattern) {
         Ok(r) => r,
         Err(e) => return format!("正则编译失败：{}", e),
     };
-    let test_strings = match v.get("test_strings").and_then(|x| x.as_array()) {
-        Some(arr) => arr.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>(),
-        None => return "错误：缺少 test_strings 数组参数".to_string(),
-    };
+    let test_strings: Vec<&str> = args.test_strings.iter().map(String::as_str).collect();
     if test_strings.is_empty() {
-        return "错误：test_strings 不能为空".to_string();
+        return "错误：缺少 test_strings 数组参数".to_string();
     }
     if test_strings.len() > 100 {
         return "错误：test_strings 上限 100 条".to_string();

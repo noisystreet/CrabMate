@@ -42,3 +42,121 @@ impl GetCurrentTimeMode {
         }
     }
 }
+
+/// [`super::unit_convert::run`] 入参；`category` 运行时仍按 `unit_convert` 规则解析（含中文别名）。
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ConvertUnitsArgs {
+    pub category: String,
+    pub value: f64,
+    pub from: String,
+    pub to: String,
+}
+
+/// [`super::weather::run`] 入参（`city` 与 `location` 二选一，至少 2 字符由 runner 校验）。
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct GetWeatherArgs {
+    pub city: Option<String>,
+    pub location: Option<String>,
+}
+
+/// [`super::web_search::run`] 入参。
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WebSearchArgs {
+    pub query: String,
+    /// 1～20；省略时用配置默认
+    pub max_results: Option<u64>,
+}
+
+/// [`super::regex_test::run`] 入参。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TextTransformOp {
+    Base64Encode,
+    Base64Decode,
+    UrlEncode,
+    UrlDecode,
+    HashShort,
+    LinesJoin,
+    LinesSplit,
+}
+
+/// `hash_short` 所用算法。
+#[derive(Debug, Clone, Copy, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum TextTransformHashAlgo {
+    #[default]
+    Sha256,
+    Blake3,
+}
+
+/// [`super::text_transform::run`] 入参。
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TextTransformArgs {
+    pub op: TextTransformOp,
+    pub text: String,
+    pub delimiter: Option<String>,
+    #[serde(default)]
+    pub hash_algo: Option<TextTransformHashAlgo>,
+}
+
+/// [`super::regex_test::run`] 入参。
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RegexTestArgs {
+    pub pattern: String,
+    pub test_strings: Vec<String>,
+}
+
+/// [`super::date_calc::run`] 的 `mode`。
+#[derive(Debug, Clone, Copy, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum DateCalcMode {
+    #[default]
+    Offset,
+    Diff,
+}
+
+/// [`super::date_calc::run`] 入参。
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct DateCalcArgs {
+    #[serde(default)]
+    pub mode: Option<DateCalcMode>,
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub base: Option<String>,
+    pub offset: Option<String>,
+}
+
+/// [`super::json_format::run`] 的 `mode`。
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum JsonFormatMode {
+    Pretty,
+    Compact,
+    YamlToJson,
+    JsonToYaml,
+}
+
+/// [`super::json_format::run`] 入参。
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct JsonFormatArgs {
+    pub text: String,
+    #[serde(default)]
+    pub mode: Option<JsonFormatMode>,
+}
+
+/// [`super::env_var_check::run`] 入参。
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct EnvVarCheckArgs {
+    pub names: Vec<String>,
+    #[serde(default)]
+    pub show_length: Option<bool>,
+    pub show_prefix_chars: Option<u64>,
+}

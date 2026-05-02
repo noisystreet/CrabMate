@@ -2,7 +2,6 @@
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64_ENGINE;
-use serde_json::Value;
 
 /// 单次输入上限（字节）
 const MAX_INPUT_BYTES: usize = 256 * 1024;
@@ -31,65 +30,15 @@ fn truncate_output(s: &str) -> String {
     )
 }
 
-fn parse_op(v: &Value) -> Result<String, String> {
-    let s = v
-        .get("op")
-        .and_then(|x| x.as_str())
-        .ok_or_else(|| "缺少 op".to_string())?
-        .trim();
-    if s.is_empty() {
-        return Err("op 不能为空".to_string());
-    }
-    Ok(s.to_lowercase())
-}
-
-fn parse_text(v: &Value) -> Result<String, String> {
-    let s = v
-        .get("text")
-        .and_then(|x| x.as_str())
-        .ok_or_else(|| "缺少 text（字符串）".to_string())?;
-    if s.len() > MAX_INPUT_BYTES {
+fn validate_text(text: &str) -> Result<(), String> {
+    if text.len() > MAX_INPUT_BYTES {
         return Err(format!(
             "text 过长：{} 字节，上限 {}",
-            s.len(),
+            text.len(),
             MAX_INPUT_BYTES
         ));
     }
-    Ok(s.to_string())
-}
-
-fn parse_delimiter(v: &Value, default: &str) -> Result<String, String> {
-    match v.get("delimiter") {
-        None => Ok(default.to_string()),
-        Some(Value::Null) => Ok(default.to_string()),
-        Some(x) => {
-            let s = x
-                .as_str()
-                .ok_or_else(|| "delimiter 须为字符串".to_string())?;
-            if s.len() > MAX_DELIMITER_BYTES {
-                return Err(format!(
-                    "delimiter 过长：{} 字节，上限 {}",
-                    s.len(),
-                    MAX_DELIMITER_BYTES
-                ));
-            }
-            Ok(s.to_string())
-        }
-    }
-}
-
-fn parse_hash_algo(v: &Value) -> Result<&'static str, String> {
-    let a = v
-        .get("hash_algo")
-        .and_then(|x| x.as_str())
-        .unwrap_or("sha256")
-        .trim()
-        .to_lowercase();
-    match a.as_str() {
-        "sha256" => Ok("sha256"),
-        "blake3" => Ok("blake3"),
-        _ => Err("hash_algo 仅支持 sha256 或 blake3".to_string()),
-    }
+    Ok(())
 }
 
 fn hash_short_hex(text: &str, algo: &str) -> String {
@@ -109,29 +58,20 @@ fn hash_short_hex(text: &str, algo: &str) -> String {
 
 /// 执行 `text_transform` 工具。
 pub fn run(args_json: &str) -> String {
-    let v = match crate::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
+    let args: super::tool_param_types::TextTransformArgs = match serde_json::from_str(args_json) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 无效: {e}"),
     };
+    if let Err(e) = validate_text(&args.text) {
+        return e;
+    }
+    let text = &args.text;
 
-    let op = match parse_op(&v) {
-        Ok(o) => o,
-        Err(e) => return e,
-    };
-
-    let out = match op.as_str() {
-        "base64_encode" => {
-            let text = match parse_text(&v) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
+    let out = match args.op {
+        super::tool_param_types::TextTransformOp::Base64Encode => {
             B64_ENGINE.encode(text.as_bytes())
         }
-        "base64_decode" => {
-            let text = match parse_text(&v) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
+        super::tool_param_types::TextTransformOp::Base64Decode => {
             let raw = match B64_ENGINE.decode(text.trim().as_bytes()) {
                 Ok(b) => b,
                 Err(e) => return format!("Base64 解码失败：{}", e),
@@ -150,52 +90,39 @@ pub fn run(args_json: &str) -> String {
                 }
             }
         }
-        "url_encode" => {
-            let text = match parse_text(&v) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            urlencoding::encode(&text).into_owned()
+        super::tool_param_types::TextTransformOp::UrlEncode => {
+            urlencoding::encode(text).into_owned()
         }
-        "url_decode" => {
-            let text = match parse_text(&v) {
-                Ok(t) => t,
-                Err(e) => return e,
+        super::tool_param_types::TextTransformOp::UrlDecode => match urlencoding::decode(text) {
+            Ok(c) => c.into_owned(),
+            Err(e) => return format!("URL 解码失败：{}", e),
+        },
+        super::tool_param_types::TextTransformOp::HashShort => {
+            let algo = match args.hash_algo.unwrap_or_default() {
+                super::tool_param_types::TextTransformHashAlgo::Sha256 => "sha256",
+                super::tool_param_types::TextTransformHashAlgo::Blake3 => "blake3",
             };
-            match urlencoding::decode(&text) {
-                Ok(c) => c.into_owned(),
-                Err(e) => return format!("URL 解码失败：{}", e),
-            }
+            format!("{}:{}", algo, hash_short_hex(text, algo))
         }
-        "hash_short" => {
-            let text = match parse_text(&v) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let algo = match parse_hash_algo(&v) {
-                Ok(a) => a,
-                Err(e) => return e,
-            };
-            format!("{}:{}", algo, hash_short_hex(&text, algo))
-        }
-        "lines_join" => {
-            let text = match parse_text(&v) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let delim = match parse_delimiter(&v, " ") {
-                Ok(d) => d,
-                Err(e) => return e,
+        super::tool_param_types::TextTransformOp::LinesJoin => {
+            let delim = match args.delimiter.as_deref() {
+                None | Some("") => " ".to_string(),
+                Some(s) => {
+                    if s.len() > MAX_DELIMITER_BYTES {
+                        return format!(
+                            "delimiter 过长：{} 字节，上限 {}",
+                            s.len(),
+                            MAX_DELIMITER_BYTES
+                        );
+                    }
+                    s.to_string()
+                }
             };
             let lines: Vec<&str> = text.lines().collect();
             lines.join(&delim)
         }
-        "lines_split" => {
-            let text = match parse_text(&v) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let delim = match v.get("delimiter").and_then(|x| x.as_str()) {
+        super::tool_param_types::TextTransformOp::LinesSplit => {
+            let delim = match args.delimiter.as_deref() {
                 Some(s) if !s.is_empty() => {
                     if s.len() > MAX_DELIMITER_BYTES {
                         return format!(
@@ -214,18 +141,11 @@ pub fn run(args_json: &str) -> String {
             }
             parts.join("\n")
         }
-        _ => {
-            return format!(
-                "未知 op：{}（支持 base64_encode、base64_decode、url_encode、url_decode、hash_short、lines_join、lines_split）",
-                op
-            );
-        }
     };
 
     truncate_output(&out)
 }
 
-// 使用 hex 的 hex crate? We don't have hex crate - use simple hex for bytes
 mod hex {
     pub fn encode(bytes: &[u8]) -> String {
         const HEX: &[u8; 16] = b"0123456789abcdef";

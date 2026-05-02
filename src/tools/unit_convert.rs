@@ -26,26 +26,26 @@ fn norm_unit(s: &str) -> String {
 
 /// JSON：`category`（length|mass|temperature|data|time|area|pressure|speed）、`value`（数字）、`from`、`to`（单位符号或常用别名）。
 pub fn run(args_json: &str) -> String {
-    let v = match crate::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
+    let args: super::tool_param_types::ConvertUnitsArgs = match serde_json::from_str(args_json) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 无效: {e}"),
     };
-    let category = match v.get("category").and_then(|c| c.as_str()) {
-        Some(s) if !s.trim().is_empty() => s.trim(),
-        _ => return "错误：缺少 category（如 length、mass、temperature、data、time、area、pressure、speed）".to_string(),
-    };
-    let value = match v.get("value").and_then(|x| x.as_f64()) {
-        Some(x) if x.is_finite() => x,
-        _ => return "错误：缺少 value 或不是有限数字".to_string(),
-    };
-    let from = match v.get("from").and_then(|x| x.as_str()) {
-        Some(s) if !s.trim().is_empty() => s.trim(),
-        _ => return "错误：缺少 from（源单位）".to_string(),
-    };
-    let to = match v.get("to").and_then(|x| x.as_str()) {
-        Some(s) if !s.trim().is_empty() => s.trim(),
-        _ => return "错误：缺少 to（目标单位）".to_string(),
-    };
+    let category = args.category.trim();
+    if category.is_empty() {
+        return "错误：缺少 category（如 length、mass、temperature、data、time、area、pressure、speed）".to_string();
+    }
+    let value = args.value;
+    if !value.is_finite() {
+        return "错误：缺少 value 或不是有限数字".to_string();
+    }
+    let from = args.from.trim();
+    if from.is_empty() {
+        return "错误：缺少 from（源单位）".to_string();
+    }
+    let to = args.to.trim();
+    if to.is_empty() {
+        return "错误：缺少 to（目标单位）".to_string();
+    }
 
     let cat = norm_unit(category);
     let res = match cat.as_str() {
