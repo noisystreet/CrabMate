@@ -1,7 +1,8 @@
-//! 调用 CrabMate **`POST /chat`**（非流式 JSON），与 Web UI 请求体对齐。
+//! 调用 CrabMate **`POST /chat`**、**`POST /workspace`** 等 Web API，与侧栏行为对齐。
 
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use serde::Serialize;
+use serde_json::Value;
 
 const JSON_UTF8: &str = "application/json; charset=utf-8";
 
@@ -72,6 +73,53 @@ impl CrabmateClient {
             reply: parsed.reply,
             conversation_id: parsed.conversation_id,
         })
+    }
+
+    /// **`POST /workspace`**：`{"path":"..."}`；`path` 为空串表示恢复默认（与 CrabMate Web handler 一致）。
+    pub async fn set_workspace(&self, path: &str) -> Result<(), CrabmateError> {
+        let url = format!("{}/workspace", self.base_url);
+        let body = serde_json::json!({ "path": path });
+        let mut headers = HeaderMap::new();
+        let auth = format!("Bearer {}", self.bearer.trim());
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_str(&auth)
+                .map_err(|e| CrabmateError::InvalidHeader(e.to_string()))?,
+        );
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static(JSON_UTF8));
+
+        let resp = self
+            .http
+            .post(url)
+            .headers(headers)
+            .json(&body)
+            .send()
+            .await?;
+
+        let status = resp.status();
+        let bytes = resp.bytes().await?;
+        if !status.is_success() {
+            let preview = utf8_preview(&bytes, 512);
+            return Err(CrabmateError::HttpStatus {
+                status: status.as_u16(),
+                body_preview: preview,
+            });
+        }
+
+        let v: Value = serde_json::from_slice(&bytes).map_err(|e| {
+            CrabmateError::Decode(format!(
+                "invalid CrabMate /workspace JSON: {e}; preview={}",
+                utf8_preview(&bytes, 256)
+            ))
+        })?;
+        if v.get("ok").and_then(|x| x.as_bool()) != Some(true) {
+            let err = v
+                .get("error")
+                .and_then(|x| x.as_str())
+                .unwrap_or("workspace set failed");
+            return Err(CrabmateError::Decode(err.to_string()));
+        }
+        Ok(())
     }
 }
 
