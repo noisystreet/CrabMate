@@ -18,6 +18,7 @@
 //! | `FEISHU_MAX_MESSAGE_JSON_CHARS` | 否 | **`interactive`/未知类型** 等 `content` 摘要最大字符数，默认 **`12000`**（至少 **256**） |
 //! | `FEISHU_ASYNC_WORKER` | 否 | 默认 **`1`**：`im.message.receive_v1` **先入队并立即 HTTP 200**，后台再调 CrabMate；**`0`** 为同步处理（适合调试） |
 //! | `FEISHU_EVENT_QUEUE_CAPACITY` | 否 | 异步队列长度，默认 **`100`**；满时返回 **503**（`FEISHU_EVENT_QUEUE_FULL`）以便飞书重试 |
+//! | `FEISHU_WORKSPACE_ROOT_TEMPLATE` | 否 | 若设置：每通会话在 **`POST /chat`** 前调用 **`POST /workspace`**；可用 **`{chat_id}`** 占位（飞书 `message.chat_id`），须落在 CrabMate **`workspace_allowed_roots`** 内 |
 //! | `LISTEN_ADDR` | 否 | 默认 `127.0.0.1:9988` |
 //! | `RUST_LOG` | 否 | 如 `info,crabmate_im_bridge=debug` |
 //!
@@ -86,6 +87,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             as usize,
         async_worker: env_bool("FEISHU_ASYNC_WORKER", true)?,
         event_queue_capacity: env_u64("FEISHU_EVENT_QUEUE_CAPACITY", 100)?.max(1) as usize,
+        workspace_root_template: env::var("FEISHU_WORKSPACE_ROOT_TEMPLATE")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
     };
     let state = FeishuBridgeState::try_new(cfg)?;
     let app = build_router(state).layer(TraceLayer::new_for_http());

@@ -9,7 +9,7 @@
 1. 监听 **`POST /feishu/events`**，处理飞书 **事件订阅** 回调。
 2. **加密体**：若请求 JSON 顶层含 **`encrypt`**（Base64），则使用 **`FEISHU_ENCRYPT_KEY`** 按飞书文档 **AES-256-CBC** 解密后再解析（密钥为 **`SHA256(Encrypt Key 字符串 UTF-8)`**，密文为 **`base64(iv(16) || ciphertext)`**，**PKCS#7** 去填充）。算法与官方一致：[事件解密](https://open.feishu.cn/document/server-docs/event-subscription-guide/event-subscription-configure-/encrypt-key-encryption-configuration-case?lang=zh-CN)。
 3. **`url_verification`**：在解密（若需要）后的 JSON 上读取 **`challenge`**，返回 **`{"challenge":"..."}`**。
-4. **`im.message.receive_v1`**（文本）：默认 **先入有界内存队列并立即 HTTP 200**（飞书异步 ACK），单 worker 顺序消费：解析 → CrabMate **`POST /chat`**（`conversation_id` = `feishu:<chat_id>`）→ **`tenant_access_token`** → [回复消息](https://open.feishu.cn/document/server-docs/im-v1/message/reply)。队列满返回 **503**（`FEISHU_EVENT_QUEUE_FULL`）以便飞书重试；可用 **`FEISHU_ASYNC_WORKER=0`** 关闭为同步处理。
+4. **`im.message.receive_v1`**：默认 **先入有界内存队列并立即 HTTP 200**（飞书异步 ACK），单 worker 顺序消费：解析 →（可选）**`POST /workspace`**（见 **`FEISHU_WORKSPACE_ROOT_TEMPLATE`**）→ CrabMate **`POST /chat`**（`conversation_id` = `feishu:<chat_id>`）→ **`tenant_access_token`** → [回复消息](https://open.feishu.cn/document/server-docs/im-v1/message/reply)。队列满返回 **503**（`FEISHU_EVENT_QUEUE_FULL`）以便飞书重试；可用 **`FEISHU_ASYNC_WORKER=0`** 关闭为同步处理。
 5. **安全**：若配置了 **`FEISHU_VERIFICATION_TOKEN`**，则对**除 URL 校验外**的所有事件校验 JSON 内 **`header.token`**（或顶层 **`token`**）与之相等。若已完成 **`X-Lark-Signature`** 验签，则默认校验 **`X-Lark-Request-Timestamp`** 偏差（**`FEISHU_REPLAY_MAX_SKEW_SECS`**，默认 600s）并对 **`X-Lark-Request-Nonce`** 去重（**`FEISHU_NONCE_DEDUP_SECS`**，默认 900s）。群聊可设 **`FEISHU_GROUP_REQUIRE_BOT_MENTION=1`** + **`FEISHU_BOT_OPEN_ID`**，仅处理 **`mentions`** 中含本机器人的消息。
 
 ## 编译与运行
@@ -34,12 +34,21 @@ export FEISHU_APP_SECRET="YOUR_APP_SECRET"
 # 可选：异步 ACK（默认开启）；队列容量（默认 100）
 # export FEISHU_ASYNC_WORKER=1
 # export FEISHU_EVENT_QUEUE_CAPACITY=100
+# 可选：每会话在 POST /chat 前设置 CrabMate Web 工作区；{chat_id} 为飞书 message.chat_id（须落在 CrabMate workspace_allowed_roots）
+# export FEISHU_WORKSPACE_ROOT_TEMPLATE="/data/chats/{chat_id}"
 cargo run -p crabmate-im-bridge
 ```
 
 默认监听 **`127.0.0.1:9988`**，可用 **`LISTEN_ADDR`** 覆盖。
 
 飞书开发者后台「事件与回调」→ 请求 URL：`https://<公网或穿透域名>/feishu/events`。
+
+## 工作区（与 CrabMate Web 对齐）
+
+若设置 **`FEISHU_WORKSPACE_ROOT_TEMPLATE`**（非空），桥接在每次 **`POST /chat`** 前会调用 CrabMate **`POST /workspace`**，body 为 **`{"path":"<展开后的绝对路径>"}`**，与 Web 侧栏「工作区」一致。模板中可使用 **`{chat_id}`**，在运行时替换为当前消息的 **`message.chat_id`**（单聊、群聊均适用）。
+
+- 展开后的路径须为**已存在目录**，且落在 CrabMate 配置的 **`workspace_allowed_roots`**（未配置时仅允许 **`run_command_working_dir`** 及其子目录）内，否则 CrabMate 返回 **400/403**，桥接会记 **warn** 且本轮不调用模型。
+- 同一进程内对**相同展开路径**会跳过重复的 **`POST /workspace`**；不同会话切换目录时会再次调用。
 
 ## 飞书侧配置摘要
 
@@ -50,6 +59,7 @@ cargo run -p crabmate-im-bridge
 ## 已知限制（MVP）
 
 - **消息类型**：已将多种 **`message_type`** 转为送入模型的**纯文本**（**`text`**、**`post`** 富文本递归提取 **`tag:text`/`title`**、**`image`/`sticker`/`file`/`audio`/`media`** 占位 + key、**`interactive`/`share_*`/其它** 的 `content` JSON 截断摘要；长度 **`FEISHU_MAX_MESSAGE_JSON_CHARS`**）。**不**下载或内联图片/文件/语音/视频二进制。
+- **工作区**：模板展开路径须**已存在**且落在 CrabMate **`workspace_allowed_roots`**；桥接**不会** `mkdir`；**`/workspace` 失败时本轮不调用模型**（仅 warn）。
 - **工具审批**：若 CrabMate 配置启用了需审批的工具，IM 侧无自动审批；生产环境应收窄 **`allowed_commands`** 或对 `/chat/stream` 做卡片化审批（见 **`web_api_integration.md`** §4）。
 - **幂等**：同一 **`message_id`** 在约 **10 分钟**内去重（防飞书重复推送）。
 
@@ -115,5 +125,6 @@ cargo run -p crabmate-im-bridge
 - 飞书 HTTP：`crates/crabmate-im-bridge/src/feishu.rs`
 - 飞书加密体解密：`crates/crabmate-im-bridge/src/feishu_decrypt.rs`
 - 飞书消息 content 解析：`crates/crabmate-im-bridge/src/feishu_message_content.rs`
+- 飞书工作区模板：`crates/crabmate-im-bridge/src/feishu_workspace.rs`
 - CrabMate 客户端：`crates/crabmate-im-bridge/src/crabmate.rs`
 - 二进制与环境变量说明：`crates/crabmate-im-bridge/src/main.rs`

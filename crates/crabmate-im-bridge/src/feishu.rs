@@ -2,7 +2,7 @@
 //! - **明文**：直接解析 JSON。
 //! - **加密体**（顶层 **`encrypt`**）：按飞书文档 **AES-256-CBC** 解密后再解析（需配置 **`FEISHU_ENCRYPT_KEY`**）。
 //! - `url_verification`：返回 **`{"challenge":"..."}`**。
-//! - `im.message.receive_v1`（文本）：默认 **先入队再立即 HTTP 200**（异步 ACK），后台 worker 调 **`POST /chat`** 并回复飞书；可关闭为同步处理（见配置）。
+//! - `im.message.receive_v1`（文本）：默认 **先入队再立即 HTTP 200**（异步 ACK），后台 worker 调 **`POST /chat`** 并回复飞书；可关闭为同步处理（见配置）。若配置 **`FEISHU_WORKSPACE_ROOT_TEMPLATE`**，则在 **`POST /chat`** 前调用 **`POST /workspace`** 对齐 CrabMate Web 工作区（支持 **`{chat_id}`** 占位）。
 //!
 //! 签名校验（可选）：若配置了 **Encrypt Key**，且请求带 **`X-Lark-Signature`** 等头，则按飞书文档
 //! `SHA256(timestamp + nonce + encrypt_key + body)` 十六进制小写比对（**原始 HTTP body 字符串**；**URL 校验请求可能无签名头**，此时跳过校验）。
@@ -29,6 +29,7 @@ use tracing::{error, warn};
 use crate::crabmate::{CrabmateClient, CrabmateError};
 use crate::feishu_decrypt::{FeishuDecryptError, maybe_decrypt_event_json};
 use crate::feishu_message_content::incoming_content_as_user_text;
+use crate::feishu_workspace::expand_workspace_root_template;
 
 /// 飞书桥接配置（通常由 `crabmate-im-bridge` 二进制从环境变量组装）。
 #[derive(Clone)]
@@ -58,6 +59,8 @@ pub struct FeishuBridgeConfig {
     pub async_worker: bool,
     /// 异步队列容量（`try_send` 满时返回 **503** 以便飞书重试）；仅在 **`async_worker`** 为 true 时生效，至少为 **1**。
     pub event_queue_capacity: usize,
+    /// 若非空：每通会话在 **`POST /chat`** 前调用 **`POST /workspace`**；支持 **`{chat_id}`** 占位（飞书 `message.chat_id`）。
+    pub workspace_root_template: Option<String>,
 }
 
 pub struct FeishuBridgeState {
@@ -68,6 +71,9 @@ pub struct FeishuBridgeState {
     seen_lark_nonces: DashMap<String, Instant>,
     /// `None`：同步处理；`Some(tx)`：异步 worker 消费。
     event_tx: Option<mpsc::Sender<Value>>,
+    /// 与飞书 worker 单线程一致：避免并发 `POST /workspace` / `POST /chat` 交错。
+    turn_lock: Mutex<()>,
+    last_workspace_path: Mutex<Option<String>>,
 }
 
 struct TenantTokenCache {
@@ -101,6 +107,8 @@ impl FeishuBridgeState {
             seen_message_ids: DashMap::new(),
             seen_lark_nonces: DashMap::new(),
             event_tx,
+            turn_lock: Mutex::new(()),
+            last_workspace_path: Mutex::new(None),
         });
 
         if let Some(mut rx) = event_rx {
@@ -415,6 +423,8 @@ async fn handle_im_message_receive(
     st: &FeishuBridgeState,
     envelope: &Value,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let _turn = st.turn_lock.lock().await;
+
     let sender_type = envelope
         .pointer("/event/sender/sender_type")
         .and_then(|x| x.as_str())
@@ -492,6 +502,8 @@ async fn handle_im_message_receive(
         return Ok(());
     }
 
+    ensure_workspace_for_chat(st, &chat_id).await?;
+
     let conv = format!("feishu:{chat_id}");
     let reply = match st.cfg.crabmate.chat_plain(text, Some(&conv)).await {
         Ok(r) => r.reply,
@@ -510,6 +522,40 @@ async fn handle_im_message_receive(
 
     let clipped = clip_reply_for_feishu(&reply, 18_000);
     reply_text_message(st, &message_id, &clipped).await?;
+    Ok(())
+}
+
+async fn ensure_workspace_for_chat(
+    st: &FeishuBridgeState,
+    chat_id: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let Some(tmpl) = st
+        .cfg
+        .workspace_root_template
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
+        return Ok(());
+    };
+
+    let path = expand_workspace_root_template(tmpl, chat_id);
+    if path.is_empty() {
+        return Ok(());
+    }
+
+    let mut last = st.last_workspace_path.lock().await;
+    if last.as_deref() == Some(path.as_str()) {
+        return Ok(());
+    }
+
+    st.cfg.crabmate.set_workspace(&path).await.map_err(
+        |e: CrabmateError| -> Box<dyn std::error::Error + Send + Sync> {
+            warn!(error=%e, path=%path, "CrabMate POST /workspace failed");
+            Box::new(e)
+        },
+    )?;
+    *last = Some(path);
     Ok(())
 }
 
@@ -680,6 +726,7 @@ mod tests {
             max_message_content_json_chars: 12000,
             async_worker: false,
             event_queue_capacity: 1,
+            workspace_root_template: None,
         };
         let headers = HeaderMap::new();
         assert!(!verify_lark_signature_if_needed(&cfg, &headers, "{}").unwrap());
@@ -713,6 +760,7 @@ mod tests {
             max_message_content_json_chars: 12000,
             async_worker: false,
             event_queue_capacity: 1,
+            workspace_root_template: None,
         };
         let v = json!({ "header": { "token": "vtok" } });
         assert!(verify_event_verification_token(&cfg, &v).is_ok());
