@@ -25,7 +25,7 @@
 //! | `LISTEN_ADDR` | 否 | 默认 `127.0.0.1:9988` |
 //! | `RUST_LOG` | 否 | 如 `info,crabmate_im_bridge=debug` |
 //!
-//! 飞书后台「事件订阅」请求 URL 填：`https://<你的域名>/feishu/events`（本地调试需内网穿透）。
+//! 飞书后台「事件订阅」→ **请求 URL** 填：`https://<你的域名>/feishu/events`（本地调试需内网穿透）。使用**工具审批交互卡片**时，请在同一应用内**订阅** **`card.action.trigger`**，并将 **卡片回调请求地址** 设为与上述相同的 URL（本服务在 **`POST /feishu/events`** 内一并处理 **`im.message.receive_v1`** 与 **`card.action.trigger`**）。
 //!
 //! **安全**：勿将真实密钥写入仓库；生产环境请使用 HTTPS 与网关。
 

@@ -3,7 +3,7 @@
 //! - **加密体**（顶层 **`encrypt`**）：按飞书文档 **AES-256-CBC** 解密后再解析（需配置 **`FEISHU_ENCRYPT_KEY`**）。
 //! - `url_verification`：返回 **`{"challenge":"..."}`**。
 //! - `im.message.receive_v1`（文本）：默认 **先入队再立即 HTTP 200**（异步 ACK），后台 worker 调 **`POST /chat/stream`** 并回复飞书；可关闭为同步处理（见配置）。若配置 **`FEISHU_WORKSPACE_ROOT_TEMPLATE`**，则在调用 CrabMate 前 **`POST /workspace`** 对齐工作区（支持 **`{chat_id}`** 占位）。
-//! - **工具审批**：通过 **`approval_session_id`** 走 CrabMate **`/chat/stream`** + **`POST /chat/approval`**；可选 **`FEISHU_TOOL_APPROVAL_MODE=wait_http`** 时由运维 **`POST /feishu/tool-decision`** 人工决策（须配置 **`FEISHU_TOOL_DECISION_SECRET`**）。
+//! - **工具审批**：通过 **`approval_session_id`** 走 CrabMate **`/chat/stream`** + **`POST /chat/approval`**；**`wait_message` / `wait_http`** 下会回复含按钮的 **交互卡片**（`msg_type: interactive`）。须在飞书开发者后台订阅 **`card.action.trigger`**，且 **卡片回调 URL** 与事件 **`POST /feishu/events`** 使用同一地址；可选 **`FEISHU_TOOL_APPROVAL_MODE=wait_http`** 时仍支持 **`POST /feishu/tool-decision`**。
 //!
 //! 签名校验（可选）：若配置了 **Encrypt Key**，且请求带 **`X-Lark-Signature`** 等头，则按飞书文档
 //! `SHA256(timestamp + nonce + encrypt_key + body)` 十六进制小写比对（**原始 HTTP body 字符串**；**URL 校验请求可能无签名头**，此时跳过校验）。
@@ -17,7 +17,7 @@ use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::header::AUTHORIZATION;
 use axum::http::{HeaderMap, StatusCode};
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use dashmap::DashMap;
@@ -33,6 +33,7 @@ use tracing::{error, warn};
 use crate::crabmate::{CrabmateClient, CrabmateError};
 use crate::feishu_decrypt::{FeishuDecryptError, maybe_decrypt_event_json};
 use crate::feishu_message_content::incoming_content_as_user_text;
+use crate::feishu_tool_card;
 use crate::feishu_workspace::expand_workspace_root_template;
 use crate::sse_consumer::{
     StreamAccum, dispatch_sse_event_block_collect, take_complete_sse_blocks,
@@ -294,6 +295,36 @@ fn feishu_message_command_decision(text: &str) -> Option<&'static str> {
     None
 }
 
+async fn handle_card_action_trigger(st: &Arc<FeishuBridgeState>, v: &Value) -> Response {
+    let Some((session_id, raw_dec)) = feishu_tool_card::parse_card_tool_decision(v) else {
+        return Json(feishu_tool_card::card_callback_error_toast_zh(
+            "无法识别该按钮数据",
+        ))
+        .into_response();
+    };
+    let Some(decision) = normalize_tool_decision(raw_dec.as_str()) else {
+        return Json(feishu_tool_card::card_callback_error_toast_zh(
+            "无效的审批选项",
+        ))
+        .into_response();
+    };
+    match st.pending_tool_decisions.remove(&session_id) {
+        Some((_, pending)) => {
+            if pending.reply_tx.send(decision.to_string()).is_err() {
+                return Json(feishu_tool_card::card_callback_error_toast_zh(
+                    "审批通道已关闭",
+                ))
+                .into_response();
+            }
+            Json(feishu_tool_card::card_callback_ack_toast_zh("已提交审批")).into_response()
+        }
+        None => Json(feishu_tool_card::card_callback_error_toast_zh(
+            "没有待处理的审批（可能已超时或已处理）",
+        ))
+        .into_response(),
+    }
+}
+
 async fn feishu_events(
     State(st): State<Arc<FeishuBridgeState>>,
     headers: HeaderMap,
@@ -367,6 +398,10 @@ async fn feishu_events(
     if let Err(msg) = verify_event_verification_token(&st.cfg, &v) {
         warn!(%msg, "feishu verification token mismatch");
         return (StatusCode::UNAUTHORIZED, Json(json!({ "error": msg }))).into_response();
+    }
+
+    if feishu_tool_card::is_card_action_trigger_payload(&v) {
+        return handle_card_action_trigger(&st, &v).await;
     }
 
     // URL 校验（常见两种载荷）
@@ -851,18 +886,30 @@ async fn resolve_one_tool_approval(
             st.pending_tool_session_by_chat
                 .insert(chat_id.to_string(), approval_session_id.to_string());
             *follow_idx = follow_idx.saturating_add(1);
-            reply_followup_text_message(
+            let uuid = format!("{message_id}-ap-{follow_idx}");
+            if let Err(e) = reply_tool_approval_interactive_card(
                 st,
                 message_id,
-                *follow_idx,
-                &format!(
-                    "⏸ 需人工审批工具：{}\n参数摘要：{}\n请在桥接服务 POST /feishu/tool-decision（Bearer 或 X-API-Key 为 FEISHU_TOOL_DECISION_SECRET），body: {{\"approval_session_id\":\"{}\",\"decision\":\"deny|allow_once|allow_always\"}}",
-                    notice.command,
-                    clip_one_line(&notice.args, 400),
-                    approval_session_id
-                ),
+                &uuid,
+                notice,
+                approval_session_id,
             )
-            .await?;
+            .await
+            {
+                warn!(?e, "feishu interactive approval card failed; fallback text");
+                reply_followup_text_message(
+                    st,
+                    message_id,
+                    *follow_idx,
+                    &format!(
+                        "⏸ 需人工审批工具：{}\n参数摘要：{}\n请在桥接服务 POST /feishu/tool-decision（Bearer 或 X-API-Key 为 FEISHU_TOOL_DECISION_SECRET），body: {{\"approval_session_id\":\"{}\",\"decision\":\"deny|allow_once|allow_always\"}}",
+                        notice.command,
+                        clip_one_line(&notice.args, 400),
+                        approval_session_id
+                    ),
+                )
+                .await?;
+            }
 
             let timeout_secs = st.cfg.tool_decision_timeout_secs.max(5);
             let decision = match tokio::time::timeout(Duration::from_secs(timeout_secs), rx).await {
@@ -901,17 +948,29 @@ async fn resolve_one_tool_approval(
             st.pending_tool_session_by_chat
                 .insert(chat_id.to_string(), approval_session_id.to_string());
             *follow_idx = follow_idx.saturating_add(1);
-            reply_followup_text_message(
+            let uuid = format!("{message_id}-ap-{follow_idx}");
+            if let Err(e) = reply_tool_approval_interactive_card(
                 st,
                 message_id,
-                *follow_idx,
-                &format!(
-                    "⏸ 需你确认是否执行：{}\n参数摘要：{}\n请**下一条消息**发送其一：!允许一次 、 !永久允许 、 !拒绝",
-                    notice.command,
-                    clip_one_line(&notice.args, 400),
-                ),
+                &uuid,
+                notice,
+                approval_session_id,
             )
-            .await?;
+            .await
+            {
+                warn!(?e, "feishu interactive approval card failed; fallback text");
+                reply_followup_text_message(
+                    st,
+                    message_id,
+                    *follow_idx,
+                    &format!(
+                        "⏸ 需你确认是否执行：{}\n参数摘要：{}\n请发送：!允许一次 、 !永久允许 、 !拒绝",
+                        notice.command,
+                        clip_one_line(&notice.args, 400),
+                    ),
+                )
+                .await?;
+            }
 
             let timeout_secs = st.cfg.tool_decision_timeout_secs.max(5);
             let decision = match tokio::time::timeout(Duration::from_secs(timeout_secs), rx).await {
@@ -937,6 +996,50 @@ async fn resolve_one_tool_approval(
                 warn!(?e, "send_chat_approval after message wait failed");
             }
         }
+    }
+    Ok(())
+}
+
+async fn reply_tool_approval_interactive_card(
+    st: &FeishuBridgeState,
+    message_id: &str,
+    uuid: &str,
+    notice: &crate::sse_consumer::CommandApprovalNotice,
+    approval_session_id: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let token = get_tenant_access_token(st).await?;
+    let url = format!("https://open.feishu.cn/open-apis/im/v1/messages/{message_id}/reply");
+    let card = feishu_tool_card::tool_approval_interactive_content(
+        &notice.command,
+        &clip_one_line(&notice.args, 1200),
+        approval_session_id,
+    );
+    let content = serde_json::to_string(&card)?;
+    let body = json!({
+        "content": content,
+        "msg_type": "interactive",
+        "uuid": uuid,
+    });
+    let resp = st
+        .http
+        .post(url)
+        .header("Authorization", format!("Bearer {token}"))
+        .header("Content-Type", "application/json; charset=utf-8")
+        .json(&body)
+        .send()
+        .await?;
+    let status = resp.status();
+    let bytes = resp.bytes().await?;
+    if !status.is_success() {
+        let preview = String::from_utf8_lossy(&bytes).trim().to_string();
+        warn!(%status, %preview, "feishu reply interactive API http error");
+        return Err(format!("feishu interactive http {status}").into());
+    }
+    let v: Value = serde_json::from_slice(&bytes)?;
+    let code = v.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
+    if code != 0 {
+        warn!(%code, body=%String::from_utf8_lossy(&bytes), "feishu reply interactive API business error");
+        return Err(format!("feishu interactive code {code}").into());
     }
     Ok(())
 }
