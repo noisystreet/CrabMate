@@ -110,5 +110,5 @@
 ## 7. 小结
 
 - **短期**：桥接服务 + 现有 **`/chat` / `/chat/stream` + Bearer + `conversation_id`** 即可闭环绝大多数 IM 场景；幂等、验签、卡片在桥接完成。
-- **仓库内参考实现**：workspace crate **`crates/crabmate-im-bridge`**（二进制 **`crabmate-im-bridge`**）提供飞书 MVP，说明见 **`docs/design/feishu_bridge_mvp.md`**。
+- **仓库内参考实现**：workspace crate **`crates/crabmate-im-bridge`**（二进制 **`crabmate-im-bridge`**）提供飞书 MVP；使用说明、已知限制与**后续完善路线图**见 **`docs/design/feishu_bridge_mvp.md`**（「后续完善方向」一节）。
 - **中长期**：若在仓库内减少桥接样板代码、支撑多租户与水平扩展，再按第 5 节逐项立项，并同步 OpenAPI 与 SSE 单一事实来源。
