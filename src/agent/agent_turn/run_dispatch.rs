@@ -10,7 +10,6 @@ use crate::agent::{
     intent_pipeline::{IntentAction, IntentDecision, assess_and_route},
     intent_router::{ExecuteIntentThresholds, IntentKind},
 };
-use crate::config::PlannerExecutorMode;
 use crate::types::Message;
 
 use super::errors::RunAgentTurnError;
@@ -23,7 +22,9 @@ use super::params::RunLoopParams;
 use super::staged::{
     run_logical_dual_agent_then_execute_steps, run_staged_plan_then_execute_steps,
 };
-use super::turn_orchestration::{TurnOrchestrationMode, resolve_non_hierarchical_main_path};
+use super::turn_orchestration::{
+    NonHierarchicalMainRoute, TurnOrchestrationMode, resolve_non_hierarchical_main_route,
+};
 
 /// 非分层路径下，是否允许进入分阶段 / 逻辑双代理编排（仅 `IntentAction::Execute` 为 true）。
 #[derive(Debug, Clone, PartialEq)]
@@ -161,23 +162,29 @@ pub(crate) async fn dispatch_non_hierarchical_turn(
     }
     let staged_gate = assess_staged_planning_gate(p.turn.messages, p.ctx.cfg.as_ref());
     let allow_staged = staged_gate.allows_staged_planning();
-    let mode = resolve_non_hierarchical_main_path(p.ctx.cfg.as_ref(), allow_staged);
+    let main_route = resolve_non_hierarchical_main_route(p.ctx.cfg.as_ref(), allow_staged);
+    let mode: TurnOrchestrationMode = main_route.into();
     tracing::info!(
         target: "crabmate::agent_turn",
         turn_orchestration_mode = mode.as_str(),
+        non_hierarchical_main_route = main_route.as_str(),
         staged_plan_intent_gate_allow = allow_staged,
         planner_executor_mode = p.ctx.cfg.planner_executor_mode.as_str(),
         staged_plan_execution = p.ctx.cfg.staged_plan_execution,
         "dispatch_non_hierarchical_turn main_path"
     );
-    if p.ctx.cfg.planner_executor_mode == PlannerExecutorMode::LogicalDualAgent && allow_staged {
-        log::info!(target: "crabmate", "run_agent_turn: using LogicalDualAgent mode");
-        run_logical_dual_agent_then_execute_steps(p, per_coord).await
-    } else if p.ctx.cfg.staged_plan_execution && allow_staged {
-        log::info!(target: "crabmate", "run_agent_turn: using staged_plan mode");
-        run_staged_plan_then_execute_steps(p, per_coord).await
-    } else {
-        log::info!(target: "crabmate", "run_agent_turn: using single_agent mode");
-        run_agent_outer_loop(p, per_coord).await
+    match main_route {
+        NonHierarchicalMainRoute::LogicalDualAgentStaged => {
+            log::info!(target: "crabmate", "run_agent_turn: using LogicalDualAgent mode");
+            run_logical_dual_agent_then_execute_steps(p, per_coord).await
+        }
+        NonHierarchicalMainRoute::StagedPlanExecution => {
+            log::info!(target: "crabmate", "run_agent_turn: using staged_plan mode");
+            run_staged_plan_then_execute_steps(p, per_coord).await
+        }
+        NonHierarchicalMainRoute::SingleAgentOuterLoop => {
+            log::info!(target: "crabmate", "run_agent_turn: using single_agent mode");
+            run_agent_outer_loop(p, per_coord).await
+        }
     }
 }

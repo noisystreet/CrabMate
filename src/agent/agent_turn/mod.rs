@@ -9,7 +9,7 @@
 //!
 //! **与 `llm` 的边界**：本目录内对模型的调用须经 **`llm::complete_chat_retrying`**（见 **`docs/开发文档.md`**「`agent_turn` 与 `llm`：唯一入口与禁止事项」）；**禁止**直接调用 **`llm::api::stream_chat`**。
 //!
-//! **编排接线**：回合模式分发（分层 / 逻辑双代理 / 分阶段 / 单 Agent）见 **`run_dispatch`**；顶层形态枚举与解析见 **`turn_orchestration`**，主文件保留入口日志、分隔线、`PerCoordinator` 构造与分支调用。
+//! **编排接线**：回合模式分发（分层 / 逻辑双代理 / 分阶段 / 单 Agent）见 **`run_dispatch`**；顶层形态枚举与解析见 **`turn_orchestration`**（含 **`NonHierarchicalMainRoute`**）；分层意图后路由纯函数见 **`hierarchical_intent_route`**；主文件保留入口日志、分隔线、`PerCoordinator` 构造与分支调用。
 
 use log::debug;
 use tracing::info;
@@ -20,6 +20,7 @@ use crate::config::PlannerExecutorMode;
 mod errors;
 mod execute;
 pub(crate) use execute::tools as execute_tools;
+mod hierarchical_intent_route;
 mod hierarchy;
 mod intent;
 mod messages;

@@ -146,6 +146,8 @@
 
 | 日期 | 说明 |
 |------|------|
+| 2026-05-02 | **`agent_turn/turn_orchestration`**：**`NonHierarchicalMainRoute`** + **`resolve_non_hierarchical_main_route`**；**`run_dispatch`** 用 **`match`** 取代 `if/else` 链，**`tracing`** 增加 **`non_hierarchical_main_route`**。 |
+| 2026-05-02 | **`agent_turn/hierarchical_intent_route`**：**`HierarchicalPostIntentRoute`** / **`HierarchicalDiscourseFallbackReason`** + **`resolve_hierarchical_post_intent_route`**；**`hierarchy.rs`** 话语型回落路径写入 **`hierarchical_post_intent_route`** / **`hierarchical_discourse_fallback_reason`** 与回放 JSON。 |
 | 2026-05-01 | **`agent_turn/intent/context.rs`**：**`build_intent_routing_context`** 统一装配 **`IntentContext`**，**`run_dispatch`** 与 **`intent/at_turn_start`** 共用。 |
 | 2026-05-01 | **`docs/规划执行验证架构.md`** §2.5：分层 **`hierarchy`** 与 **PER/staged** 双轨职责表；源码索引补 **`hierarchy`** 入口。 |
 | 2026-05-01 | **`agent_turn/hierarchy.rs`**：`run_hierarchical_agent` / **`handle_execution_result`** 增加 **`tracing`**（`target: crabmate::agent_turn`，**`hierarchical_phase`**）；与 **`turn_orchestration_mode=hierarchical`** 正交。 |
