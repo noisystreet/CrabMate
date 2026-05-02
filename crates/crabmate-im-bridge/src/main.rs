@@ -17,7 +17,11 @@
 //! | `FEISHU_BOT_OPEN_ID` | 否 | 机器人 **`open_id`**（与 `mentions` 中 `id.open_id` 对齐） |
 //! | `FEISHU_MAX_MESSAGE_JSON_CHARS` | 否 | **`interactive`/未知类型** 等 `content` 摘要最大字符数，默认 **`12000`**（至少 **256**） |
 //! | `FEISHU_ASYNC_WORKER` | 否 | 默认 **`1`**：`im.message.receive_v1` **先入队并立即 HTTP 200**，后台再调 CrabMate；**`0`** 为同步处理（适合调试） |
-//! | `FEISHU_EVENT_QUEUE_CAPACITY` | 否 | 异步队列长度，默认 **`100`**；满时返回 **503**（`FEISHU_EVENT_QUEUE_FULL`）以便飞书重试 |
+//! | `FEISHU_EVENT_QUEUE_SQLITE` | 否 | 若设置非空路径（且 **`FEISHU_ASYNC_WORKER=1`**）：**`im.message.receive_v1`** 写入 **SQLite 持久化队列**（进程重启不丢）；与内存队列 **`FEISHU_EVENT_QUEUE_CAPACITY`** 互斥（本路径优先） |
+//! | `FEISHU_EVENT_QUEUE_CAPACITY` | 否 | **内存**异步队列长度，默认 **`100`**；满时返回 **503**（`FEISHU_EVENT_QUEUE_FULL`）；未配置 SQLite 时生效 |
+//! | `FEISHU_SQLITE_QUEUE_MAX_RETRIES` | 否 | 默认 **`5`**（至少 **1**）：SQLite 队列项处理失败后的最大重试次数 |
+//! | `FEISHU_SQLITE_QUEUE_POLL_MS` | 否 | 默认 **`200`**（至少 **50**）：SQLite worker 空闲轮询间隔（毫秒） |
+//! | `FEISHU_SQLITE_QUEUE_LEASE_SECS` | 否 | 默认 **`600`**（至少 **30**）：SQLite 认领租约秒数，崩溃后过期可重新认领 |
 //! | `FEISHU_WORKSPACE_ROOT_TEMPLATE` | 否 | 若设置：每通会话在调用 CrabMate 前 **`POST /workspace`**；可用 **`{chat_id}`** 占位（飞书 `message.chat_id`），须落在 CrabMate **`workspace_allowed_roots`** 内 |
 //! | `FEISHU_TOOL_APPROVAL_MODE` | 否 | 默认 **`wait_message`**：`deny_all` \| **`default_allow_once`** \| **`wait_http`** \| **`wait_message`**（见设计文档） |
 //! | `FEISHU_TOOL_DECISION_SECRET` | 条件 | **`wait_http`** 必填；保护 **`POST /feishu/tool-decision`**（`Authorization: Bearer …` 或 **`X-API-Key`**） |
@@ -37,7 +41,8 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use crabmate_im_bridge::{
-    CrabmateClient, FeishuBridgeConfig, FeishuBridgeState, FeishuToolApprovalMode, build_router,
+    CrabmateClient, FeishuBridgeConfig, FeishuBridgeInitError, FeishuBridgeState,
+    FeishuToolApprovalMode, build_router,
 };
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
@@ -89,6 +94,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
     let tool_decision_timeout_secs = env_u64("FEISHU_TOOL_DECISION_TIMEOUT_SECS", 600)?.max(5);
+    let sqlite_queue_path = env::var("FEISHU_EVENT_QUEUE_SQLITE")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let sqlite_max_retries = env_u64("FEISHU_SQLITE_QUEUE_MAX_RETRIES", 5)?.max(1) as u32;
+    let sqlite_poll_ms = env_u64("FEISHU_SQLITE_QUEUE_POLL_MS", 200)?.max(50);
+    let sqlite_lease_secs = env_u64("FEISHU_SQLITE_QUEUE_LEASE_SECS", 600)? as i64;
     let listen: SocketAddr = env::var("LISTEN_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:9988".into())
         .parse()?;
@@ -121,8 +133,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         result_card_max_body_chars: env_u64("FEISHU_RESULT_CARD_MAX_CHARS", 3500)?.max(200)
             as usize,
         in_place_progress_card: env_bool("FEISHU_IN_PLACE_PROGRESS_CARD", false)?,
+        event_queue_sqlite_path: sqlite_queue_path,
+        sqlite_queue_max_retries: sqlite_max_retries,
+        sqlite_queue_poll_ms: sqlite_poll_ms,
+        sqlite_queue_lease_secs: sqlite_lease_secs.max(30),
     };
-    let state = FeishuBridgeState::try_new(cfg)?;
+    let state =
+        FeishuBridgeState::try_new(cfg).map_err(|e: FeishuBridgeInitError| e.to_string())?;
     let app = build_router(state).layer(TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind(listen).await?;

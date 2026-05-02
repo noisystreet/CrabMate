@@ -1116,6 +1116,7 @@ dependencies = [
  "futures-util",
  "hex",
  "reqwest",
+ "rusqlite",
  "serde",
  "serde_json",
  "sha2",

@@ -6,10 +6,14 @@
 pub mod crabmate;
 pub mod feishu;
 mod feishu_decrypt;
+mod feishu_event_queue;
 mod feishu_message_content;
 mod feishu_tool_card;
 mod feishu_workspace;
 mod sse_consumer;
 
 pub use crabmate::CrabmateClient;
-pub use feishu::{FeishuBridgeConfig, FeishuBridgeState, FeishuToolApprovalMode, build_router};
+pub use feishu::{
+    FeishuBridgeConfig, FeishuBridgeInitError, FeishuBridgeState, FeishuToolApprovalMode,
+    build_router,
+};
