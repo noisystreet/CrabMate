@@ -15,12 +15,43 @@ use crate::config::AgentConfig;
 use crate::llm::backend::ChatCompletionsBackend;
 use crate::sse;
 use crate::types::CommandApprovalDecision;
+use tracing::info;
 
 use super::events;
 use super::execution::{ExecutionError, HierarchicalExecutionResult};
 use super::manager::ManagerAgent;
-use super::router::SmartRouter;
+use super::router::{RouterOutput, SmartRouter};
 use super::{AgentMode, ExecutionStrategy, HierarchicalExecutor, ManagerConfig};
+
+/// [`run_hierarchical`] 在 **SmartRouter** 给出 `AgentMode` 之后的显式分支（消除仅靠嵌套 `if` 表达的路径）。
+///
+/// 与 [`AgentMode`] 对齐：`Hierarchical` / `MultiAgent` 走完整「Manager 分解 → 子目标执行」；
+/// `Single` / `ReAct` 走单 Manager + Executor（历史上称 simple fallback）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HierarchyRunnerRoute {
+    /// `AgentMode::Single` / `ReAct`：仍调用 Manager 分解，但不按分层路由发射完整流水线 SSE 序。
+    SimpleFallback,
+    /// `AgentMode::Hierarchical` | `MultiAgent`：`manager_started` SSE → 分解 → 规划 Timeline → 子目标执行。
+    FullDecomposedExecution,
+}
+
+impl HierarchyRunnerRoute {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::SimpleFallback => "simple_fallback",
+            Self::FullDecomposedExecution => "full_decomposed_execution",
+        }
+    }
+}
+
+fn resolve_hierarchy_runner_route(mode: AgentMode) -> HierarchyRunnerRoute {
+    match mode {
+        AgentMode::Hierarchical | AgentMode::MultiAgent => {
+            HierarchyRunnerRoute::FullDecomposedExecution
+        }
+        AgentMode::Single | AgentMode::ReAct => HierarchyRunnerRoute::SimpleFallback,
+    }
+}
 
 /// 分层 Agent 运行参数
 pub struct HierarchyRunnerParams<'a> {
@@ -73,6 +104,21 @@ struct SimpleFallbackParams<'a> {
     tools_defs: &'a [crate::types::Tool],
     tool_approval_out: Option<Sender<String>>,
     tool_approval_rx: Option<Arc<Mutex<Receiver<CommandApprovalDecision>>>>,
+}
+
+/// `run_full_decomposed_hierarchy` 的输入（避免长参数列表；字段生命周期与一次 runner 调用绑定）。
+struct FullDecomposedHierarchyCtx<'a> {
+    task: &'a str,
+    cfg: &'a AgentConfig,
+    llm_backend: &'a dyn ChatCompletionsBackend,
+    client: std::sync::Arc<reqwest::Client>,
+    api_key: String,
+    working_dir: std::path::PathBuf,
+    sse_out: Option<Sender<String>>,
+    tools_slice: &'a [crate::types::Tool],
+    tool_approval_out: Option<Sender<String>>,
+    tool_approval_rx: Option<Arc<Mutex<Receiver<CommandApprovalDecision>>>>,
+    router_output: RouterOutput,
 }
 
 /// 运行分层 Agent（完整流程）
@@ -132,6 +178,19 @@ pub async fn run_hierarchical(
         );
     }
 
+    let runner_route = resolve_hierarchy_runner_route(router_output.mode);
+
+    info!(
+        target: "crabmate::hierarchy",
+        hierarchy_runner_route = runner_route.as_str(),
+        router_mode = router_output.mode.as_str(),
+        routing_strategy = ?router_output.routing_strategy,
+        max_sub_goals = router_output.max_sub_goals,
+        max_iterations = router_output.max_iterations,
+        task_preview = %truncate_string(task, 80),
+        "hierarchy runner routed after smart_router"
+    );
+
     log::info!(
         target: "crabmate",
         "Hierarchy runner: task={}, mode={:?}, strategy={:?}, max_sub_goals={}",
@@ -150,30 +209,71 @@ pub async fn run_hierarchical(
         );
     }
 
-    // 如果不是 Hierarchical 或 MultiAgent 模式，降级到简单执行
-    if !matches!(
-        router_output.mode,
-        AgentMode::Hierarchical | AgentMode::MultiAgent
-    ) {
-        log::info!(
-            target: "crabmate",
-            "Task complexity {} doesn't require hierarchical execution, falling back",
-            router_output.mode.as_str()
-        );
-        return run_simple_fallback(SimpleFallbackParams {
-            task,
-            cfg,
-            llm_backend,
-            client,
-            api_key,
-            working_dir,
-            sse_out,
-            tools_defs: tools_slice,
-            tool_approval_out,
-            tool_approval_rx,
-        })
-        .await;
+    match runner_route {
+        HierarchyRunnerRoute::SimpleFallback => {
+            log::info!(
+                target: "crabmate",
+                "Task complexity {} doesn't require hierarchical execution, falling back",
+                router_output.mode.as_str()
+            );
+            return run_simple_fallback(SimpleFallbackParams {
+                task,
+                cfg,
+                llm_backend,
+                client,
+                api_key,
+                working_dir,
+                sse_out,
+                tools_defs: tools_slice,
+                tool_approval_out,
+                tool_approval_rx,
+            })
+            .await;
+        }
+        HierarchyRunnerRoute::FullDecomposedExecution => {}
     }
+
+    run_full_decomposed_hierarchy(FullDecomposedHierarchyCtx {
+        task,
+        cfg,
+        llm_backend,
+        client,
+        api_key,
+        working_dir,
+        sse_out,
+        tools_slice,
+        tool_approval_out,
+        tool_approval_rx,
+        router_output,
+    })
+    .await
+}
+
+/// Router 判定为分层/多 Agent：发射 Manager 开始 SSE → LLM 分解 → 规划 Timeline → 子目标执行。
+async fn run_full_decomposed_hierarchy(
+    ctx: FullDecomposedHierarchyCtx<'_>,
+) -> Result<HierarchyRunnerResult, ExecutionError> {
+    let FullDecomposedHierarchyCtx {
+        task,
+        cfg,
+        llm_backend,
+        client,
+        api_key,
+        working_dir,
+        sse_out,
+        tools_slice,
+        tool_approval_out,
+        tool_approval_rx,
+        router_output,
+    } = ctx;
+
+    info!(
+        target: "crabmate::hierarchy",
+        hierarchy_runner_route = HierarchyRunnerRoute::FullDecomposedExecution.as_str(),
+        router_mode = router_output.mode.as_str(),
+        hierarchy_runner_phase = "manager_sse_started",
+        "hierarchy runner full pipeline"
+    );
 
     // 发射 SSE 事件：Manager 开始
     log::info!(target: "crabmate", "[HIERARCHICAL] run_hierarchical: sse_out is {:?}", sse_out.is_some());
@@ -205,6 +305,16 @@ pub async fn run_hierarchical(
         )
         .await
         .map_err(|e| ExecutionError::MaxFailuresReached(e.to_string()))?;
+
+    info!(
+        target: "crabmate::hierarchy",
+        hierarchy_runner_route = HierarchyRunnerRoute::FullDecomposedExecution.as_str(),
+        router_mode = router_output.mode.as_str(),
+        hierarchy_runner_phase = "manager_decomposed",
+        sub_goal_count = manager_output.sub_goals.len(),
+        execution_strategy = manager_output.execution_strategy.as_str(),
+        "hierarchy runner manager decomposed"
+    );
 
     log::info!(
         target: "crabmate",
@@ -253,6 +363,15 @@ pub async fn run_hierarchical(
     }
 
     // 3. 执行子目标（传递完整上下文）
+    info!(
+        target: "crabmate::hierarchy",
+        hierarchy_runner_route = HierarchyRunnerRoute::FullDecomposedExecution.as_str(),
+        router_mode = router_output.mode.as_str(),
+        hierarchy_runner_phase = "subgoal_execution",
+        max_operator_iterations = router_output.max_iterations,
+        "hierarchy runner executing subgoals"
+    );
+
     let mut executor = HierarchicalExecutor::new(router_output.max_iterations, 3)
         .with_context(
             llm_backend,
@@ -341,6 +460,14 @@ async fn run_simple_fallback(
         tool_approval_out,
         tool_approval_rx,
     } = params;
+
+    info!(
+        target: "crabmate::hierarchy",
+        hierarchy_runner_route = HierarchyRunnerRoute::SimpleFallback.as_str(),
+        hierarchy_runner_phase = "simple_fallback_enter",
+        task_preview = %truncate_string(task, 80),
+        "hierarchy runner simple fallback path"
+    );
 
     // 直接使用 Manager 的降级分解
     let manager_config = ManagerConfig::default();
@@ -438,8 +565,29 @@ fn truncate_string(s: &str, max_len: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::apply_intent_mode_bias;
+    use super::{HierarchyRunnerRoute, resolve_hierarchy_runner_route};
     use crate::agent::hierarchy::router::{AgentMode, RouterOutput, RoutingStrategy};
     use crate::agent::hierarchy::task::ExecutionStrategy;
+
+    #[test]
+    fn resolve_runner_route_matches_agent_mode() {
+        assert_eq!(
+            resolve_hierarchy_runner_route(AgentMode::Hierarchical),
+            HierarchyRunnerRoute::FullDecomposedExecution
+        );
+        assert_eq!(
+            resolve_hierarchy_runner_route(AgentMode::MultiAgent),
+            HierarchyRunnerRoute::FullDecomposedExecution
+        );
+        assert_eq!(
+            resolve_hierarchy_runner_route(AgentMode::Single),
+            HierarchyRunnerRoute::SimpleFallback
+        );
+        assert_eq!(
+            resolve_hierarchy_runner_route(AgentMode::ReAct),
+            HierarchyRunnerRoute::SimpleFallback
+        );
+    }
 
     #[test]
     fn promote_to_hierarchical_for_debug_or_build_intent() {
