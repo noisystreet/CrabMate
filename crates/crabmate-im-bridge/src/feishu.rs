@@ -28,6 +28,7 @@ use tracing::{error, warn};
 
 use crate::crabmate::{CrabmateClient, CrabmateError};
 use crate::feishu_decrypt::{FeishuDecryptError, maybe_decrypt_event_json};
+use crate::feishu_message_content::incoming_content_as_user_text;
 
 /// 飞书桥接配置（通常由 `crabmate-im-bridge` 二进制从环境变量组装）。
 #[derive(Clone)]
@@ -51,6 +52,8 @@ pub struct FeishuBridgeConfig {
     pub crabmate: Arc<CrabmateClient>,
     /// 幂等：同一 `message_id` 在窗口内忽略（飞书可能重复推送）。
     pub dedup_ttl: Duration,
+    /// 将 **`interactive` / 未知类型** 等 `content` 序列化为摘要时的最大字符数（防止超大 JSON 撑爆模型）。
+    pub max_message_content_json_chars: usize,
     /// 为 true 时 **`im.message.receive_v1`** 先入内存队列并 **立即返回 HTTP 200**（飞书异步 ACK）；为 false 时在 HTTP 线程内同步处理完再返回。
     pub async_worker: bool,
     /// 异步队列容量（`try_send` 满时返回 **503** 以便飞书重试）；仅在 **`async_worker`** 为 true 时生效，至少为 **1**。
@@ -473,16 +476,16 @@ async fn handle_im_message_receive(
         .get("message_type")
         .and_then(|x| x.as_str())
         .unwrap_or("");
-    if msg_type != "text" {
-        let _ = reply_text_message(st, &message_id, "当前 MVP 仅支持文本消息。").await;
-        return Ok(());
-    }
-
     let content_raw = message
         .get("content")
         .and_then(|x| x.as_str())
         .unwrap_or("{}");
-    let text = parse_text_content(content_raw).unwrap_or_default();
+
+    let Some(text) =
+        incoming_content_as_user_text(msg_type, content_raw, st.cfg.max_message_content_json_chars)
+    else {
+        return Ok(());
+    };
     let text = strip_feishu_mention_placeholders(&text);
     let text = text.trim();
     if text.is_empty() {
@@ -518,11 +521,6 @@ fn message_mentions_bot_open_id(message: &Value, bot_open_id: &str) -> bool {
         m.get("mentioned_type").and_then(|t| t.as_str()) == Some("bot")
             && m.pointer("/id/open_id").and_then(|x| x.as_str()) == Some(bot_open_id)
     })
-}
-
-fn parse_text_content(content_json: &str) -> Option<String> {
-    let v: Value = serde_json::from_str(content_json).ok()?;
-    v.get("text").and_then(|t| t.as_str()).map(str::to_string)
 }
 
 fn strip_feishu_mention_placeholders(s: &str) -> String {
@@ -679,6 +677,7 @@ mod tests {
                 CrabmateClient::new("http://127.0.0.1:9", "b").expect("client"),
             ),
             dedup_ttl: Duration::from_secs(1),
+            max_message_content_json_chars: 12000,
             async_worker: false,
             event_queue_capacity: 1,
         };
@@ -711,6 +710,7 @@ mod tests {
                 CrabmateClient::new("http://127.0.0.1:9", "b").expect("client"),
             ),
             dedup_ttl: Duration::from_secs(1),
+            max_message_content_json_chars: 12000,
             async_worker: false,
             event_queue_capacity: 1,
         };

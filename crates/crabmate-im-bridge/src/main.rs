@@ -15,6 +15,7 @@
 //! | `FEISHU_NONCE_DEDUP_SECS` | 否 | 默认 **`900`**：签名校验通过后对 **`X-Lark-Request-Nonce`** 去重；**`0`** 关闭 |
 //! | `FEISHU_GROUP_REQUIRE_BOT_MENTION` | 否 | 默认 **`0`**；设为 **`1`** 时，群聊仅处理 **`mentions`** 中含本机器人（须配 **`FEISHU_BOT_OPEN_ID`**） |
 //! | `FEISHU_BOT_OPEN_ID` | 否 | 机器人 **`open_id`**（与 `mentions` 中 `id.open_id` 对齐） |
+//! | `FEISHU_MAX_MESSAGE_JSON_CHARS` | 否 | **`interactive`/未知类型** 等 `content` 摘要最大字符数，默认 **`12000`**（至少 **256**） |
 //! | `FEISHU_ASYNC_WORKER` | 否 | 默认 **`1`**：`im.message.receive_v1` **先入队并立即 HTTP 200**，后台再调 CrabMate；**`0`** 为同步处理（适合调试） |
 //! | `FEISHU_EVENT_QUEUE_CAPACITY` | 否 | 异步队列长度，默认 **`100`**；满时返回 **503**（`FEISHU_EVENT_QUEUE_FULL`）以便飞书重试 |
 //! | `LISTEN_ADDR` | 否 | 默认 `127.0.0.1:9988` |
@@ -81,6 +82,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         bot_open_id,
         crabmate,
         dedup_ttl: Duration::from_secs(600),
+        max_message_content_json_chars: env_u64("FEISHU_MAX_MESSAGE_JSON_CHARS", 12000)?.max(256)
+            as usize,
         async_worker: env_bool("FEISHU_ASYNC_WORKER", true)?,
         event_queue_capacity: env_u64("FEISHU_EVENT_QUEUE_CAPACITY", 100)?.max(1) as usize,
     };
