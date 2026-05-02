@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use crate::agent::context_window::prepare_messages_for_hierarchical_llm_sync;
 use crate::config::AgentConfig;
 use crate::llm::backend::ChatCompletionsBackend;
 use crate::llm::{CompleteChatRetryingParams, LlmRetryingTransportOpts, complete_chat_retrying};
@@ -190,7 +191,8 @@ impl SmartRouter {
         let start_time = Instant::now();
         let prompt = self.build_routing_prompt(task);
 
-        let messages = vec![Message::user_only(&prompt)];
+        let mut messages = vec![Message::user_only(&prompt)];
+        prepare_messages_for_hierarchical_llm_sync(&mut messages, cfg);
         let request = crate::types::ChatRequest {
             model: cfg.model.clone(),
             messages,

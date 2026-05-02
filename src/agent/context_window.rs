@@ -88,6 +88,16 @@ pub fn prepare_messages_before_model_call_sync(messages: &mut Vec<Message>, cfg:
     }
 }
 
+/// 分层 **Manager** / 动态分解 / JSON 修复补调用等在组装 `no_tools_chat_request_for_hierarchical_manager` 之前，
+/// 对**临时** `messages` 缓冲区跑与同进程主路径一致的会话同步管道（[`apply_session_sync_pipeline`]）。
+///
+/// 与 [`prepare_messages_before_model_call_sync`] 行为相同；单独命名便于检索「分层是否已走 message_pipeline」，
+/// 并强调此处**不含** [`maybe_summarize_with_llm`]、工作区 changelist 注入、PER 缓存失效（与子目标隔离上下文一致）。
+#[inline]
+pub fn prepare_messages_for_hierarchical_llm_sync(messages: &mut Vec<Message>, cfg: &AgentConfig) {
+    prepare_messages_before_model_call_sync(messages, cfg);
+}
+
 /// 当非 system 文本超过 `context_summary_trigger_chars` 时，调用模型生成摘要并替换「中间」为单条 user。
 pub async fn maybe_summarize_with_llm(
     llm_backend: &dyn ChatCompletionsBackend,
@@ -210,4 +220,38 @@ pub async fn prepare_messages_for_model(
         p.invalidate_workflow_validate_layer_cache_after_context_mutation();
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::MessageContent;
+
+    #[test]
+    fn prepare_messages_for_hierarchical_llm_sync_matches_session_sync() {
+        let mut cfg = crate::config::load_config(None).expect("embed default");
+        cfg.max_message_history = 6;
+        cfg.tool_message_max_chars = 1_000_000;
+        cfg.context_char_budget = 0;
+
+        let mut a = vec![
+            Message::system_only("sys".to_string()),
+            Message::user_only("task".to_string()),
+        ];
+        for i in 0..20 {
+            a.push(Message {
+                role: "assistant".to_string(),
+                content: Some(MessageContent::Text(format!("step {i}"))),
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: None,
+                name: None,
+                tool_call_id: None,
+            });
+        }
+        let mut b = a.clone();
+        prepare_messages_before_model_call_sync(&mut a, &cfg);
+        prepare_messages_for_hierarchical_llm_sync(&mut b, &cfg);
+        assert_eq!(a, b);
+    }
 }

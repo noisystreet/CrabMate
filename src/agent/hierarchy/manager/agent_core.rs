@@ -149,7 +149,11 @@ impl ManagerAgent {
 
         let prompt = self.build_decomposition_prompt(task, working_dir, tools_defs);
 
-        let messages = vec![Message::user_only(&prompt)];
+        let mut messages = vec![Message::user_only(&prompt)];
+        crate::agent::context_window::prepare_messages_for_hierarchical_llm_sync(
+            &mut messages,
+            cfg,
+        );
         let mut request = no_tools_chat_request_for_hierarchical_manager(
             cfg,
             &messages,
@@ -243,7 +247,11 @@ impl ManagerAgent {
             previous_artifacts,
         );
 
-        let messages = vec![Message::user_only(&prompt)];
+        let mut messages = vec![Message::user_only(&prompt)];
+        crate::agent::context_window::prepare_messages_for_hierarchical_llm_sync(
+            &mut messages,
+            llm.cfg,
+        );
         let mut request = no_tools_chat_request_for_hierarchical_manager(
             llm.cfg,
             &messages,
@@ -322,7 +330,11 @@ impl ManagerAgent {
             previous_artifacts,
         );
 
-        let messages = vec![Message::user_only(&prompt)];
+        let mut messages = vec![Message::user_only(&prompt)];
+        crate::agent::context_window::prepare_messages_for_hierarchical_llm_sync(
+            &mut messages,
+            llm.cfg,
+        );
         let mut request = no_tools_chat_request_for_hierarchical_manager(
             llm.cfg,
             &messages,
