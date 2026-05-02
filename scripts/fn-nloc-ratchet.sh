@@ -8,8 +8,8 @@
 #
 # 规则（.rs 文件物理行数）：
 #   - 单文件最大行数不得高于 scripts/rust_file_max_lines_baseline.txt
-#   - 行数最高的 10 个文件之行数和不得高于 scripts/rust_file_top10_lines_sum_baseline.txt
-#   - 可选：RUST_FILE_LINES_MAX_CAP=3000 启用单文件行数硬上限
+#   - 自动写回时：`rust_file_max_lines_baseline.txt` 与 `rust_file_top10_lines_sum_baseline.txt`
+#     的新值不得大于本次运行开始时磁盘上的值（棘轮禁止增大），详见 fn_nloc_rust_metrics.py。
 #
 # 环境变量：见 fn_nloc_rust_metrics.py 文件头注释。
 set -euo pipefail
