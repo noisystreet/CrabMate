@@ -22,6 +22,8 @@
 //! | `FEISHU_TOOL_APPROVAL_MODE` | 否 | 默认 **`wait_message`**：`deny_all` \| **`default_allow_once`** \| **`wait_http`** \| **`wait_message`**（见设计文档） |
 //! | `FEISHU_TOOL_DECISION_SECRET` | 条件 | **`wait_http`** 必填；保护 **`POST /feishu/tool-decision`**（`Authorization: Bearer …` 或 **`X-API-Key`**） |
 //! | `FEISHU_TOOL_DECISION_TIMEOUT_SECS` | 否 | 默认 **`600`**（至少 **5**）：**`wait_http`** / **`wait_message`** 等待人工决策的最长秒数，超时按拒绝 |
+//! | `FEISHU_QUIET_SSE_STATUS` | 否 | 默认 **`0`**；设为 **`1`** 时流式过程中**不**逐条推送 SSE 进度（省 QPS），仅开场提示 + 结束结果卡片 |
+//! | `FEISHU_RESULT_CARD_MAX_CHARS` | 否 | 默认 **`3500`**（至少 **200**）：结束结果卡片内助手正文摘要最大字符数 |
 //! | `LISTEN_ADDR` | 否 | 默认 `127.0.0.1:9988` |
 //! | `RUST_LOG` | 否 | 如 `info,crabmate_im_bridge=debug` |
 //!
@@ -114,6 +116,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         tool_approval_mode,
         tool_decision_secret,
         tool_decision_timeout_secs,
+        quiet_sse_status: env_bool("FEISHU_QUIET_SSE_STATUS", false)?,
+        result_card_max_body_chars: env_u64("FEISHU_RESULT_CARD_MAX_CHARS", 3500)?.max(200)
+            as usize,
     };
     let state = FeishuBridgeState::try_new(cfg)?;
     let app = build_router(state).layer(TraceLayer::new_for_http());

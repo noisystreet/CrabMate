@@ -42,6 +42,10 @@ export FEISHU_APP_SECRET="YOUR_APP_SECRET"
 # export FEISHU_TOOL_APPROVAL_MODE="wait_message"
 # export FEISHU_TOOL_DECISION_SECRET="YOUR_RANDOM_SECRET"
 # export FEISHU_TOOL_DECISION_TIMEOUT_SECS=600
+# 可选：长任务时关闭 SSE 逐条进度（默认 0）；仍为开场提示 + 结束结果卡片
+# export FEISHU_QUIET_SSE_STATUS=1
+# 可选：结束结果卡片内摘要最大字符数（默认 3500，至少 200）
+# export FEISHU_RESULT_CARD_MAX_CHARS=3500
 cargo run -p crabmate-im-bridge
 ```
 
@@ -58,7 +62,8 @@ cargo run -p crabmate-im-bridge
 
 ## 用户可见状态与工具审批
 
-- **进度**：桥接解析 CrabMate SSE 中的 **`tool_call`**、**`tool_running`**、**`parsing_tool_calls`**、**`timeline_log`** 等控制帧，并以**后续飞书回复**形式推送短行状态（注意飞书 **QPS** 与消息条数）。
+- **长任务体验**：每轮在调用 CrabMate 前会先发一条 **「已开始处理…」** 提示；流式结束后发 **只读结果摘要卡片**（`msg_type: interactive`），超长正文在卡片摘要后**再以多条文本**续发。设置 **`FEISHU_QUIET_SSE_STATUS=1`** 可关闭流式过程中逐条 SSE 进度刷屏（仍保留开场提示、审批卡片与结束结果卡片）。
+- **进度（默认可选）**：未开启安静模式时，桥接解析 CrabMate SSE 中的 **`tool_call`**、**`tool_running`**、**`parsing_tool_calls`**、**`timeline_log`** 等控制帧，并以**后续飞书文本**推送短行状态（注意飞书 **QPS**）。
 - **工具审批（CrabMate 契约）**：非流式 **`POST /chat`** 不接审批通道；桥接使用 **`POST /chat/stream`**，并为每通用户消息设置 **`approval_session_id = "feishu:<飞书 message_id>"`**，遇敏感工具时由 CrabMate 下发 **`command_approval_request`**，桥接再 **`POST /chat/approval`** 提交决策。
 - **模式 `FEISHU_TOOL_APPROVAL_MODE`**（默认 **`wait_message`**）：
   - **`deny_all`**：不传 **`approval_session_id`**；遇审批时桥接会尝试 **`deny`**（等价于敏感工具通常无法执行）。
@@ -108,7 +113,7 @@ cargo run -p crabmate-im-bridge
 | 项 | 说明 |
 |----|------|
 | **工具与审批** | **已实现**：**`wait_message` / `wait_http`** 下发 **交互卡片**按钮 + **`card.action.trigger`** 解析；**`POST /chat/stream`** + **`approval_session_id`** + **`POST /chat/approval`**。可增强：点击后 **更新卡片**（`event.token`）、卡片 JSON 2.0 模板化。 |
-| **流式体验** | **部分实现**：SSE 解析后推送**多条短回复**（终答分段）；**未**使用飞书「编辑同一条消息」的增量 UI。 |
+| **流式体验** | **部分实现**：结束 **结果摘要卡片** + 超长续发文本；SSE 进度可 **`FEISHU_QUIET_SSE_STATUS`** 关闭刷屏；**未**编辑同一条消息增量展示。 |
 | **工作区** | 若需工具读仓库：在可信流程中调用 CrabMate **`POST /workspace`**，且路径落在 **`workspace_allowed_roots`** 内。 |
 | **按租户覆盖模型** | 通过请求体 **`client_llm`** 等为不同租户指定网关/模型（密钥勿入日志）。 |
 
@@ -138,7 +143,8 @@ cargo run -p crabmate-im-bridge
 ## 代码入口
 
 - 库根：`crates/crabmate-im-bridge/src/lib.rs`
-- 飞书审批交互卡片：`crates/crabmate-im-bridge/src/feishu_tool_card.rs`
+- 飞书 HTTP：`crates/crabmate-im-bridge/src/feishu.rs`
+- 飞书审批与结果卡片 JSON：`crates/crabmate-im-bridge/src/feishu_tool_card.rs`
 - 飞书加密体解密：`crates/crabmate-im-bridge/src/feishu_decrypt.rs`
 - 飞书消息 content 解析：`crates/crabmate-im-bridge/src/feishu_message_content.rs`
 - 飞书工作区模板：`crates/crabmate-im-bridge/src/feishu_workspace.rs`
