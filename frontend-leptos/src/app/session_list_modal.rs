@@ -13,7 +13,7 @@ use crate::i18n::{self, Locale};
 use crate::session_modal_row::{SessionModalRow, SessionModalRowBundle};
 use crate::session_sort::sorted_sessions_clone;
 
-use super::app_shell_ctx::AppShellCtx;
+use super::app_shell_ctx::SessionListModalSignals;
 #[component]
 fn SessionListModalPanel(
     session_modal: RwSignal<bool>,
@@ -129,16 +129,15 @@ fn SessionListModalBackdrop(
     }
 }
 
-pub fn session_list_modal_view(ctx: AppShellCtx) -> impl IntoView {
-    let AppShellCtx {
+pub fn session_list_modal_view(signals: SessionListModalSignals) -> impl IntoView {
+    let SessionListModalSignals {
         session_modal,
         locale,
         chat,
         draft,
         composer_draft_buffer,
         apply_assistant_display_filters,
-        ..
-    } = ctx;
+    } = signals;
     view! {
         <Show when=move || session_modal.get()>
             <SessionListModalBackdrop

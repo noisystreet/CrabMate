@@ -70,6 +70,32 @@ pub struct SettingsModalSignals {
     pub client_llm_storage_tick: RwSignal<u64>,
 }
 
+/// 会话列表模态所需句柄（阶段 B：避免向 `session_list_modal_view` 传递整份 [`AppShellCtx`]）。
+#[derive(Clone)]
+pub struct SessionListModalSignals {
+    pub session_modal: RwSignal<bool>,
+    pub locale: RwSignal<Locale>,
+    pub chat: ChatSessionSignals,
+    pub draft: RwSignal<String>,
+    pub composer_draft_buffer: Arc<Mutex<String>>,
+    pub apply_assistant_display_filters: RwSignal<bool>,
+}
+
+/// 底栏状态条所需句柄（阶段 B：避免向 `status_bar_footer_view` 传递整份 [`AppShellCtx`]）。
+#[derive(Clone)]
+pub struct StatusBarFooterSignals {
+    pub status_bar_visible: RwSignal<bool>,
+    pub status_tasks: StatusTasksSignals,
+    pub status_err: RwSignal<Option<String>>,
+    pub tool_busy: RwSignal<bool>,
+    pub status_busy: RwSignal<bool>,
+    pub client_llm_storage_tick: RwSignal<u64>,
+    pub selected_agent_role: RwSignal<Option<String>>,
+    pub chat: ChatSessionSignals,
+    pub refresh_status: Arc<dyn Fn() + Send + Sync>,
+    pub locale: RwSignal<Locale>,
+}
+
 type SideResizeHandlesCell = Rc<
     RefCell<
         Option<(
@@ -149,6 +175,32 @@ pub struct AppShellCtx {
 }
 
 impl AppShellCtx {
+    pub fn session_list_modal_signals(&self) -> SessionListModalSignals {
+        SessionListModalSignals {
+            session_modal: self.session_modal,
+            locale: self.locale,
+            chat: self.chat,
+            draft: self.draft,
+            composer_draft_buffer: Arc::clone(&self.composer_draft_buffer),
+            apply_assistant_display_filters: self.apply_assistant_display_filters,
+        }
+    }
+
+    pub fn status_bar_footer_signals(&self) -> StatusBarFooterSignals {
+        StatusBarFooterSignals {
+            status_bar_visible: self.status_bar_visible,
+            status_tasks: self.status_tasks,
+            status_err: self.status_err,
+            tool_busy: self.tool_busy,
+            status_busy: self.status_busy,
+            client_llm_storage_tick: self.client_llm_storage_tick,
+            selected_agent_role: self.selected_agent_role,
+            chat: self.chat,
+            refresh_status: Arc::clone(&self.refresh_status),
+            locale: self.locale,
+        }
+    }
+
     pub fn settings_modal_signals(&self) -> SettingsModalSignals {
         SettingsModalSignals {
             settings_modal: self.settings_modal,
