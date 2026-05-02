@@ -1,6 +1,8 @@
 //! 分层 Agent 运行器
 //!
-//! 提供高层入口，封装 Router → Manager → Operator → Executor 流程
+//! 提供高层入口，封装 Router → Manager → Operator → Executor 流程。
+//!
+//! SmartRouter 与可选意图偏置之后的**聚合状态**见 [`HierarchyRoutingResolution`]；流水线步骤标签见 [`HierarchyRunnerPhase`]（与 `tracing` 字段 `hierarchy_runner_phase` 对齐）。
 
 use std::sync::Arc;
 use tokio::sync::{
@@ -42,14 +44,64 @@ impl HierarchyRunnerRoute {
             Self::FullDecomposedExecution => "full_decomposed_execution",
         }
     }
+
+    pub(crate) fn from_agent_mode(mode: AgentMode) -> Self {
+        match mode {
+            AgentMode::Hierarchical | AgentMode::MultiAgent => Self::FullDecomposedExecution,
+            AgentMode::Single | AgentMode::ReAct => Self::SimpleFallback,
+        }
+    }
 }
 
-fn resolve_hierarchy_runner_route(mode: AgentMode) -> HierarchyRunnerRoute {
-    match mode {
-        AgentMode::Hierarchical | AgentMode::MultiAgent => {
-            HierarchyRunnerRoute::FullDecomposedExecution
+/// SmartRouter 完成且（可选）意图偏置应用后的**结构化解析结果**，用于日志字段与后续分支，避免散落布尔与重复读 `RouterOutput`。
+#[derive(Debug, Clone)]
+pub(crate) struct HierarchyRoutingResolution {
+    pub(crate) runner_route: HierarchyRunnerRoute,
+    pub(crate) router_output: RouterOutput,
+    /// `intent_mode_bias_enabled` 为 true 且意图标签实际改写了 `router_output`。
+    pub(crate) intent_bias_modified_router: bool,
+}
+
+impl HierarchyRoutingResolution {
+    pub(crate) fn resolve_after_smart_router(
+        mut router_output: RouterOutput,
+        intent_mode_bias_enabled: bool,
+        primary_intent: Option<&str>,
+        secondary_intents: &[String],
+    ) -> Self {
+        let intent_bias_modified_router = if intent_mode_bias_enabled {
+            apply_intent_mode_bias(&mut router_output, primary_intent, secondary_intents)
+        } else {
+            false
+        };
+        let runner_route = HierarchyRunnerRoute::from_agent_mode(router_output.mode);
+        Self {
+            runner_route,
+            router_output,
+            intent_bias_modified_router,
         }
-        AgentMode::Single | AgentMode::ReAct => HierarchyRunnerRoute::SimpleFallback,
+    }
+}
+
+/// 分层 runner 内离散步骤（与结构化日志 `hierarchy_runner_phase` 对齐）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HierarchyRunnerPhase {
+    RoutingResolved,
+    SimpleFallbackEnter,
+    ManagerSseStarted,
+    ManagerDecomposed,
+    SubgoalExecution,
+}
+
+impl HierarchyRunnerPhase {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::RoutingResolved => "routing_resolved",
+            Self::SimpleFallbackEnter => "simple_fallback_enter",
+            Self::ManagerSseStarted => "manager_sse_started",
+            Self::ManagerDecomposed => "manager_decomposed",
+            Self::SubgoalExecution => "subgoal_execution",
+        }
     }
 }
 
@@ -160,7 +212,7 @@ pub async fn run_hierarchical(
     // 默认使用规则路由，可以通过配置启用 LLM 智能路由
     let use_llm_routing = cfg.enable_llm_routing.unwrap_or(false);
     let router = SmartRouter::new();
-    let mut router_output = router
+    let router_output = router
         .route_smart(
             task,
             cfg,
@@ -170,23 +222,29 @@ pub async fn run_hierarchical(
             use_llm_routing,
         )
         .await;
-    if intent_mode_bias_enabled {
-        apply_intent_mode_bias(
-            &mut router_output,
-            primary_intent.as_deref(),
-            &secondary_intents,
-        );
-    }
 
-    let runner_route = resolve_hierarchy_runner_route(router_output.mode);
+    let resolved = HierarchyRoutingResolution::resolve_after_smart_router(
+        router_output,
+        intent_mode_bias_enabled,
+        primary_intent.as_deref(),
+        &secondary_intents,
+    );
+    let HierarchyRoutingResolution {
+        runner_route,
+        router_output,
+        intent_bias_modified_router,
+    } = resolved;
 
     info!(
         target: "crabmate::hierarchy",
         hierarchy_runner_route = runner_route.as_str(),
+        hierarchy_runner_phase = HierarchyRunnerPhase::RoutingResolved.as_str(),
         router_mode = router_output.mode.as_str(),
         routing_strategy = ?router_output.routing_strategy,
         max_sub_goals = router_output.max_sub_goals,
         max_iterations = router_output.max_iterations,
+        intent_mode_bias_enabled,
+        intent_bias_modified_router,
         task_preview = %truncate_string(task, 80),
         "hierarchy runner routed after smart_router"
     );
@@ -271,7 +329,7 @@ async fn run_full_decomposed_hierarchy(
         target: "crabmate::hierarchy",
         hierarchy_runner_route = HierarchyRunnerRoute::FullDecomposedExecution.as_str(),
         router_mode = router_output.mode.as_str(),
-        hierarchy_runner_phase = "manager_sse_started",
+        hierarchy_runner_phase = HierarchyRunnerPhase::ManagerSseStarted.as_str(),
         "hierarchy runner full pipeline"
     );
 
@@ -310,7 +368,7 @@ async fn run_full_decomposed_hierarchy(
         target: "crabmate::hierarchy",
         hierarchy_runner_route = HierarchyRunnerRoute::FullDecomposedExecution.as_str(),
         router_mode = router_output.mode.as_str(),
-        hierarchy_runner_phase = "manager_decomposed",
+        hierarchy_runner_phase = HierarchyRunnerPhase::ManagerDecomposed.as_str(),
         sub_goal_count = manager_output.sub_goals.len(),
         execution_strategy = manager_output.execution_strategy.as_str(),
         "hierarchy runner manager decomposed"
@@ -367,7 +425,7 @@ async fn run_full_decomposed_hierarchy(
         target: "crabmate::hierarchy",
         hierarchy_runner_route = HierarchyRunnerRoute::FullDecomposedExecution.as_str(),
         router_mode = router_output.mode.as_str(),
-        hierarchy_runner_phase = "subgoal_execution",
+        hierarchy_runner_phase = HierarchyRunnerPhase::SubgoalExecution.as_str(),
         max_operator_iterations = router_output.max_iterations,
         "hierarchy runner executing subgoals"
     );
@@ -398,11 +456,12 @@ async fn run_full_decomposed_hierarchy(
     })
 }
 
+/// 按意图标签上调路由档位；若改写了 `router_output` 则返回 `true`（供 `intent_bias_modified_router` 日志）。
 fn apply_intent_mode_bias(
     router_output: &mut super::router::RouterOutput,
     primary_intent: Option<&str>,
     secondary_intents: &[String],
-) {
+) -> bool {
     let mut intents = secondary_intents
         .iter()
         .map(String::as_str)
@@ -428,7 +487,7 @@ fn apply_intent_mode_bias(
             Some(old) => format!("{old}；{reason}"),
             None => reason,
         });
-        return;
+        return true;
     }
 
     if prefer_hierarchical && matches!(router_output.mode, AgentMode::Single | AgentMode::ReAct) {
@@ -441,7 +500,9 @@ fn apply_intent_mode_bias(
             Some(old) => format!("{old}；{reason}"),
             None => reason,
         });
+        return true;
     }
+    false
 }
 
 /// 简单降级执行（不进行任务分解）
@@ -464,7 +525,7 @@ async fn run_simple_fallback(
     info!(
         target: "crabmate::hierarchy",
         hierarchy_runner_route = HierarchyRunnerRoute::SimpleFallback.as_str(),
-        hierarchy_runner_phase = "simple_fallback_enter",
+        hierarchy_runner_phase = HierarchyRunnerPhase::SimpleFallbackEnter.as_str(),
         task_preview = %truncate_string(task, 80),
         "hierarchy runner simple fallback path"
     );
@@ -565,27 +626,80 @@ fn truncate_string(s: &str, max_len: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::apply_intent_mode_bias;
-    use super::{HierarchyRunnerRoute, resolve_hierarchy_runner_route};
+    use super::{HierarchyRoutingResolution, HierarchyRunnerPhase, HierarchyRunnerRoute};
     use crate::agent::hierarchy::router::{AgentMode, RouterOutput, RoutingStrategy};
     use crate::agent::hierarchy::task::ExecutionStrategy;
 
     #[test]
     fn resolve_runner_route_matches_agent_mode() {
         assert_eq!(
-            resolve_hierarchy_runner_route(AgentMode::Hierarchical),
+            HierarchyRunnerRoute::from_agent_mode(AgentMode::Hierarchical),
             HierarchyRunnerRoute::FullDecomposedExecution
         );
         assert_eq!(
-            resolve_hierarchy_runner_route(AgentMode::MultiAgent),
+            HierarchyRunnerRoute::from_agent_mode(AgentMode::MultiAgent),
             HierarchyRunnerRoute::FullDecomposedExecution
         );
         assert_eq!(
-            resolve_hierarchy_runner_route(AgentMode::Single),
+            HierarchyRunnerRoute::from_agent_mode(AgentMode::Single),
             HierarchyRunnerRoute::SimpleFallback
         );
         assert_eq!(
-            resolve_hierarchy_runner_route(AgentMode::ReAct),
+            HierarchyRunnerRoute::from_agent_mode(AgentMode::ReAct),
             HierarchyRunnerRoute::SimpleFallback
+        );
+    }
+
+    #[test]
+    fn hierarchy_runner_phase_strings_stable() {
+        assert_eq!(
+            HierarchyRunnerPhase::RoutingResolved.as_str(),
+            "routing_resolved"
+        );
+    }
+
+    #[test]
+    fn hierarchy_routing_resolution_bias_disabled_leaves_router() {
+        let out = RouterOutput {
+            mode: AgentMode::Single,
+            max_iterations: 5,
+            max_sub_goals: 3,
+            execution_strategy: ExecutionStrategy::Sequential,
+            reasoning: None,
+            routing_strategy: RoutingStrategy::RuleBased,
+        };
+        let resolved = HierarchyRoutingResolution::resolve_after_smart_router(
+            out.clone(),
+            false,
+            Some("execute.debug_diagnose"),
+            &[],
+        );
+        assert!(!resolved.intent_bias_modified_router);
+        assert_eq!(resolved.router_output.mode, out.mode);
+        assert_eq!(resolved.runner_route, HierarchyRunnerRoute::SimpleFallback);
+    }
+
+    #[test]
+    fn hierarchy_routing_resolution_bias_promotes_sets_flag_and_route() {
+        let out = RouterOutput {
+            mode: AgentMode::Single,
+            max_iterations: 5,
+            max_sub_goals: 3,
+            execution_strategy: ExecutionStrategy::Sequential,
+            reasoning: None,
+            routing_strategy: RoutingStrategy::RuleBased,
+        };
+        let resolved = HierarchyRoutingResolution::resolve_after_smart_router(
+            out,
+            true,
+            Some("execute.debug_diagnose"),
+            &[],
+        );
+        assert!(resolved.intent_bias_modified_router);
+        assert_eq!(resolved.router_output.mode, AgentMode::Hierarchical);
+        assert_eq!(
+            resolved.runner_route,
+            HierarchyRunnerRoute::FullDecomposedExecution
         );
     }
 
