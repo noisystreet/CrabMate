@@ -6,6 +6,8 @@
 //!
 //! 签名校验（可选）：若配置了 **Encrypt Key**，且请求带 **`X-Lark-Signature`** 等头，则按飞书文档
 //! `SHA256(timestamp + nonce + encrypt_key + body)` 十六进制小写比对（**原始 HTTP body 字符串**；**URL 校验请求可能无签名头**，此时跳过校验）。
+//!
+//! 签名校验通过后可选 **防重放**：校验 **`X-Lark-Request-Timestamp`** 与服务器时间偏差，并对 **`X-Lark-Request-Nonce`** 做短期去重（见配置项）。
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -36,6 +38,16 @@ pub struct FeishuBridgeConfig {
     pub encrypt_key: Option<String>,
     /// 为 true 时：在 **encrypt_key 非空** 且请求含签名头时校验；**URL 校验**无签名头时跳过。
     pub verify_signature_when_possible: bool,
+    /// 飞书控制台 **Verification Token**（可选）。若设置，则在解密/解析后的 JSON 上校验 **`header.token`**（或顶层 **`token`**）与之相等。
+    pub verification_token: Option<String>,
+    /// 签名校验通过时：拒绝与当前时间相差超过该秒数的 **`X-Lark-Request-Timestamp`**（`0` 表示不校验时间）。
+    pub replay_timestamp_max_skew_secs: i64,
+    /// 签名校验通过时：**`X-Lark-Request-Nonce`** 去重窗口（防重放）；`0` 表示不去重 nonce。
+    pub nonce_dedup_ttl: Duration,
+    /// 群聊（`chat_type == group`）是否仅在有 **@ 本机器人** 时处理（需配置 **`bot_open_id`**）。
+    pub group_require_bot_mention: bool,
+    /// 本应用机器人在飞书中的 **`open_id`**（开发者后台 / 调试台获取）；与 **`group_require_bot_mention`** 联用。
+    pub bot_open_id: Option<String>,
     pub crabmate: Arc<CrabmateClient>,
     /// 幂等：同一 `message_id` 在窗口内忽略（飞书可能重复推送）。
     pub dedup_ttl: Duration,
@@ -46,6 +58,7 @@ pub struct FeishuBridgeState {
     http: reqwest::Client,
     token: Mutex<TenantTokenCache>,
     seen_message_ids: DashMap<String, Instant>,
+    seen_lark_nonces: DashMap<String, Instant>,
 }
 
 struct TenantTokenCache {
@@ -68,6 +81,7 @@ impl FeishuBridgeState {
                 expires_at: 0,
             }),
             seen_message_ids: DashMap::new(),
+            seen_lark_nonces: DashMap::new(),
         }))
     }
 }
@@ -99,11 +113,30 @@ async fn feishu_events(
         }
     };
 
-    if let Err(e) = verify_lark_signature_if_needed(&st.cfg, &headers, body_str) {
-        warn!(?e, "feishu signature verification failed");
+    let signature_verified = match verify_lark_signature_if_needed(&st.cfg, &headers, body_str) {
+        Ok(v) => v,
+        Err(e) => {
+            warn!(?e, "feishu signature verification failed");
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({ "error": "invalid signature" })),
+            )
+                .into_response();
+        }
+    };
+
+    if signature_verified
+        && let Err(e) = check_lark_replay_after_signature(
+            &st.cfg,
+            &st.seen_lark_nonces,
+            &headers,
+            time_unix_secs(),
+        )
+    {
+        warn!(?e, "feishu replay protection rejected request");
         return (
             StatusCode::UNAUTHORIZED,
-            Json(json!({ "error": "invalid signature" })),
+            Json(json!({ "error": e.to_string() })),
         )
             .into_response();
     }
@@ -133,6 +166,11 @@ async fn feishu_events(
                 .into_response();
         }
     };
+
+    if let Err(msg) = verify_event_verification_token(&st.cfg, &v) {
+        warn!(%msg, "feishu verification token mismatch");
+        return (StatusCode::UNAUTHORIZED, Json(json!({ "error": msg }))).into_response();
+    }
 
     // URL 校验（常见两种载荷）
     if let Some(ch) = url_verification_challenge(&v) {
@@ -192,16 +230,17 @@ enum SignatureError {
     Mismatch,
 }
 
+/// 返回 **`true`** 表示本次请求完成了 **X-Lark-Signature** 验签（可用于后续防重放）；无签名头或未配置密钥则为 **`false`**。
 fn verify_lark_signature_if_needed(
     cfg: &FeishuBridgeConfig,
     headers: &HeaderMap,
     body: &str,
-) -> Result<(), SignatureError> {
+) -> Result<bool, SignatureError> {
     let Some(key) = &cfg.encrypt_key else {
-        return Ok(());
+        return Ok(false);
     };
     if !cfg.verify_signature_when_possible {
-        return Ok(());
+        return Ok(false);
     }
     let sig = match headers
         .get("X-Lark-Signature")
@@ -209,7 +248,7 @@ fn verify_lark_signature_if_needed(
     {
         Some(s) if !s.is_empty() => s,
         // URL 校验等场景可能无签名头：不拦截。
-        _ => return Ok(()),
+        _ => return Ok(false),
     };
     let ts = headers
         .get("X-Lark-Request-Timestamp")
@@ -229,7 +268,81 @@ fn verify_lark_signature_if_needed(
     if !constant_time_eq_hex(&expect, sig) {
         return Err(SignatureError::Mismatch);
     }
+    Ok(true)
+}
+
+#[derive(Debug, thiserror::Error)]
+enum ReplayError {
+    #[error("X-Lark-Request-Timestamp skew too large")]
+    TimestampSkew,
+    #[error("duplicate X-Lark-Request-Nonce")]
+    DuplicateNonce,
+}
+
+fn check_lark_replay_after_signature(
+    cfg: &FeishuBridgeConfig,
+    nonce_map: &DashMap<String, Instant>,
+    headers: &HeaderMap,
+    now_secs: i64,
+) -> Result<(), ReplayError> {
+    if cfg.replay_timestamp_max_skew_secs > 0 {
+        let raw = headers
+            .get("X-Lark-Request-Timestamp")
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("");
+        if let Some(ts) = parse_lark_timestamp_secs(raw) {
+            let skew = (now_secs - ts).abs();
+            if skew > cfg.replay_timestamp_max_skew_secs {
+                return Err(ReplayError::TimestampSkew);
+            }
+        }
+    }
+
+    if cfg.nonce_dedup_ttl > Duration::ZERO {
+        let nonce = headers
+            .get("X-Lark-Request-Nonce")
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("");
+        if !nonce.is_empty() && is_duplicate(nonce_map, nonce, cfg.nonce_dedup_ttl) {
+            return Err(ReplayError::DuplicateNonce);
+        }
+    }
+
     Ok(())
+}
+
+/// 飞书时间戳多为 **秒** 字符串；若数值过大则按 **毫秒** 解析。
+fn parse_lark_timestamp_secs(raw: &str) -> Option<i64> {
+    let t = raw.trim();
+    if t.is_empty() {
+        return None;
+    }
+    let n: i64 = t.parse().ok()?;
+    if n > 10_000_000_000 {
+        Some(n / 1000)
+    } else {
+        Some(n)
+    }
+}
+
+fn verify_event_verification_token(cfg: &FeishuBridgeConfig, v: &Value) -> Result<(), String> {
+    let Some(expected) = &cfg.verification_token else {
+        return Ok(());
+    };
+    let exp = expected.trim();
+    if exp.is_empty() {
+        return Ok(());
+    }
+    let token = v
+        .pointer("/header/token")
+        .and_then(|x| x.as_str())
+        .or_else(|| v.get("token").and_then(|x| x.as_str()))
+        .unwrap_or("");
+    if token == exp {
+        Ok(())
+    } else {
+        Err("verification token mismatch".into())
+    }
 }
 
 fn constant_time_eq_hex(a: &str, b: &str) -> bool {
@@ -282,6 +395,29 @@ async fn handle_im_message_receive(
         return Ok(());
     }
 
+    let chat_type = message
+        .get("chat_type")
+        .and_then(|x| x.as_str())
+        .unwrap_or("");
+
+    if st.cfg.group_require_bot_mention && chat_type == "group" {
+        let Some(bot_id) = st
+            .cfg
+            .bot_open_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        else {
+            warn!(
+                "FEISHU_GROUP_REQUIRE_BOT_MENTION=1 but FEISHU_BOT_OPEN_ID empty; skip group message"
+            );
+            return Ok(());
+        };
+        if !message_mentions_bot_open_id(&message, bot_id) {
+            return Ok(());
+        }
+    }
+
     let msg_type = message
         .get("message_type")
         .and_then(|x| x.as_str())
@@ -321,6 +457,16 @@ async fn handle_im_message_receive(
     let clipped = clip_reply_for_feishu(&reply, 18_000);
     reply_text_message(st, &message_id, &clipped).await?;
     Ok(())
+}
+
+fn message_mentions_bot_open_id(message: &Value, bot_open_id: &str) -> bool {
+    let Some(arr) = message.get("mentions").and_then(|m| m.as_array()) else {
+        return false;
+    };
+    arr.iter().any(|m| {
+        m.get("mentioned_type").and_then(|t| t.as_str()) == Some("bot")
+            && m.pointer("/id/open_id").and_then(|x| x.as_str()) == Some(bot_open_id)
+    })
 }
 
 fn parse_text_content(content_json: &str) -> Option<String> {
@@ -473,12 +619,61 @@ mod tests {
             app_secret: "y".into(),
             encrypt_key: Some("ek".into()),
             verify_signature_when_possible: true,
+            verification_token: None,
+            replay_timestamp_max_skew_secs: 0,
+            nonce_dedup_ttl: Duration::ZERO,
+            group_require_bot_mention: false,
+            bot_open_id: None,
             crabmate: std::sync::Arc::new(
                 CrabmateClient::new("http://127.0.0.1:9", "b").expect("client"),
             ),
             dedup_ttl: Duration::from_secs(1),
         };
         let headers = HeaderMap::new();
-        assert!(verify_lark_signature_if_needed(&cfg, &headers, "{}").is_ok());
+        assert!(!verify_lark_signature_if_needed(&cfg, &headers, "{}").unwrap());
+    }
+
+    #[test]
+    fn parse_lark_ts_seconds_vs_millis() {
+        assert_eq!(parse_lark_timestamp_secs("1600000000"), Some(1_600_000_000));
+        assert_eq!(
+            parse_lark_timestamp_secs("1600000000000"),
+            Some(1_600_000_000)
+        );
+    }
+
+    #[test]
+    fn verification_token_ok() {
+        let cfg = FeishuBridgeConfig {
+            app_id: "x".into(),
+            app_secret: "y".into(),
+            encrypt_key: None,
+            verify_signature_when_possible: false,
+            verification_token: Some("vtok".into()),
+            replay_timestamp_max_skew_secs: 0,
+            nonce_dedup_ttl: Duration::ZERO,
+            group_require_bot_mention: false,
+            bot_open_id: None,
+            crabmate: std::sync::Arc::new(
+                CrabmateClient::new("http://127.0.0.1:9", "b").expect("client"),
+            ),
+            dedup_ttl: Duration::from_secs(1),
+        };
+        let v = json!({ "header": { "token": "vtok" } });
+        assert!(verify_event_verification_token(&cfg, &v).is_ok());
+    }
+
+    #[test]
+    fn mentions_detect_bot_open_id() {
+        let m = json!({
+            "mentions": [
+                {
+                    "mentioned_type": "bot",
+                    "id": { "open_id": "ou_bot_1" }
+                }
+            ]
+        });
+        assert!(message_mentions_bot_open_id(&m, "ou_bot_1"));
+        assert!(!message_mentions_bot_open_id(&m, "ou_other"));
     }
 }

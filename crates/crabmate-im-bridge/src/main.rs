@@ -10,6 +10,11 @@
 //! | `FEISHU_APP_SECRET` | 是 | 飞书应用 App Secret |
 //! | `FEISHU_ENCRYPT_KEY` | 否 | 事件订阅 Encrypt Key；若设置且请求带签名头则校验 |
 //! | `FEISHU_VERIFY_SIGNATURE` | 否 | 默认 `1`；设为 `0` 关闭签名校验（不推荐） |
+//! | `FEISHU_VERIFICATION_TOKEN` | 否 | 与控制台 **Verification Token** 一致时，校验事件 JSON 内 **`header.token`**（或顶层 **`token`**） |
+//! | `FEISHU_REPLAY_MAX_SKEW_SECS` | 否 | 默认 **`600`**：仅在 **已完成签名校验** 的请求上校验 **`X-Lark-Request-Timestamp`** 与本地时间偏差；**`0`** 关闭 |
+//! | `FEISHU_NONCE_DEDUP_SECS` | 否 | 默认 **`900`**：签名校验通过后对 **`X-Lark-Request-Nonce`** 去重；**`0`** 关闭 |
+//! | `FEISHU_GROUP_REQUIRE_BOT_MENTION` | 否 | 默认 **`0`**；设为 **`1`** 时，群聊仅处理 **`mentions`** 中含本机器人（须配 **`FEISHU_BOT_OPEN_ID`**） |
+//! | `FEISHU_BOT_OPEN_ID` | 否 | 机器人 **`open_id`**（与 `mentions` 中 `id.open_id` 对齐） |
 //! | `LISTEN_ADDR` | 否 | 默认 `127.0.0.1:9988` |
 //! | `RUST_LOG` | 否 | 如 `info,crabmate_im_bridge=debug` |
 //!
@@ -39,10 +44,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
+    let verification_token = env::var("FEISHU_VERIFICATION_TOKEN")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
     let verify_sig = !matches!(
         env::var("FEISHU_VERIFY_SIGNATURE").as_deref(),
         Ok("0") | Ok("false") | Ok("no")
     );
+    let replay_max_skew = env_u64("FEISHU_REPLAY_MAX_SKEW_SECS", 600)? as i64;
+    let nonce_dedup_secs = env_u64("FEISHU_NONCE_DEDUP_SECS", 900)?;
+    let group_require_bot_mention = matches!(
+        env::var("FEISHU_GROUP_REQUIRE_BOT_MENTION").as_deref(),
+        Ok("1") | Ok("true") | Ok("yes")
+    );
+    let bot_open_id = env::var("FEISHU_BOT_OPEN_ID")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
     let listen: SocketAddr = env::var("LISTEN_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:9988".into())
         .parse()?;
@@ -53,6 +72,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         app_secret,
         encrypt_key,
         verify_signature_when_possible: verify_sig,
+        verification_token,
+        replay_timestamp_max_skew_secs: replay_max_skew,
+        nonce_dedup_ttl: Duration::from_secs(nonce_dedup_secs),
+        group_require_bot_mention,
+        bot_open_id,
         crabmate,
         dedup_ttl: Duration::from_secs(600),
     };
@@ -72,4 +96,19 @@ fn env_req(name: &str) -> Result<String, String> {
         return Err(format!("environment variable {name} is empty"));
     }
     Ok(t)
+}
+
+fn env_u64(name: &str, default: u64) -> Result<u64, String> {
+    match env::var(name) {
+        Err(_) => Ok(default),
+        Ok(s) => {
+            let t = s.trim();
+            if t.is_empty() {
+                Ok(default)
+            } else {
+                t.parse::<u64>()
+                    .map_err(|_| format!("invalid unsigned integer for {name}: {s}"))
+            }
+        }
+    }
 }

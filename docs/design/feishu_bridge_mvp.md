@@ -10,6 +10,7 @@
 2. **加密体**：若请求 JSON 顶层含 **`encrypt`**（Base64），则使用 **`FEISHU_ENCRYPT_KEY`** 按飞书文档 **AES-256-CBC** 解密后再解析（密钥为 **`SHA256(Encrypt Key 字符串 UTF-8)`**，密文为 **`base64(iv(16) || ciphertext)`**，**PKCS#7** 去填充）。算法与官方一致：[事件解密](https://open.feishu.cn/document/server-docs/event-subscription-guide/event-subscription-configure-/encrypt-key-encryption-configuration-case?lang=zh-CN)。
 3. **`url_verification`**：在解密（若需要）后的 JSON 上读取 **`challenge`**，返回 **`{"challenge":"..."}`**。
 4. **`im.message.receive_v1`**（文本）：解析 `event.message.content` 内 JSON → 调 CrabMate **`POST /chat`**（`message` + **`conversation_id`** = `feishu:<chat_id>`）→ 使用 **`tenant_access_token`** 调用飞书 **[回复消息](https://open.feishu.cn/document/server-docs/im-v1/message/reply)**。
+5. **安全**：若配置了 **`FEISHU_VERIFICATION_TOKEN`**，则对**除 URL 校验外**的所有事件校验 JSON 内 **`header.token`**（或顶层 **`token`**）与之相等。若已完成 **`X-Lark-Signature`** 验签，则默认校验 **`X-Lark-Request-Timestamp`** 偏差（**`FEISHU_REPLAY_MAX_SKEW_SECS`**，默认 600s）并对 **`X-Lark-Request-Nonce`** 去重（**`FEISHU_NONCE_DEDUP_SECS`**，默认 900s）。群聊可设 **`FEISHU_GROUP_REQUIRE_BOT_MENTION=1`** + **`FEISHU_BOT_OPEN_ID`**，仅处理 **`mentions`** 中含本机器人的消息。
 
 ## 编译与运行
 
@@ -22,6 +23,14 @@ export FEISHU_APP_ID="cli_xxx"
 export FEISHU_APP_SECRET="YOUR_APP_SECRET"
 # 可选：与飞书「加密策略」中的 Encrypt Key 一致；**加密回调体解密**与 **`X-Lark-Signature`** 签名校验均依赖此值（URL 校验可能无签名头则跳过签名校验）
 # export FEISHU_ENCRYPT_KEY="YOUR_ENCRYPT_KEY"
+# 可选：与控制台 Verification Token 一致时，校验事件 JSON 的 header.token（URL 校验 challenge 响应亦须带 token）
+# export FEISHU_VERIFICATION_TOKEN="..."
+# 可选：防重放（仅当本次请求已完成 X-Lark-Signature 验签时生效；0 关闭）
+# export FEISHU_REPLAY_MAX_SKEW_SECS=600
+# export FEISHU_NONCE_DEDUP_SECS=900
+# 可选：群聊仅 @ 机器人时回复（需机器人 open_id）
+# export FEISHU_GROUP_REQUIRE_BOT_MENTION=1
+# export FEISHU_BOT_OPEN_ID="ou_..."
 export RUST_LOG=info
 cargo run -p crabmate-im-bridge
 ```
@@ -59,7 +68,9 @@ cargo run -p crabmate-im-bridge
 
 | 项 | 说明 |
 |----|------|
-| **防重放** | 在已有 **`X-Lark-Signature`** 校验基础上，校验 **`X-Lark-Request-Timestamp`** 窗口；对 **`X-Lark-Request-Nonce`** 做短期去重（与仅 `message_id` 幂等互补）。 |
+| **防重放** | ~~仅规划~~ **已实现（默认）**：签名校验通过后校验 **`X-Lark-Request-Timestamp`** 窗口与 **`X-Lark-Request-Nonce`** 去重（环境变量可调）；与仅 `message_id` 幂等互补。 |
+| **Verification Token** | **已实现（可选）**：配置 **`FEISHU_VERIFICATION_TOKEN`** 后比对事件内 **`header.token`**（明文或解密后）。 |
+| **群 @ 过滤** | **已实现（可选）**：**`FEISHU_GROUP_REQUIRE_BOT_MENTION`** + **`FEISHU_BOT_OPEN_ID`**，群聊仅处理 **`mentions`** 中含 `mentioned_type=bot` 且 `open_id` 匹配的消息。 |
 | **入口加固** | 公网 **HTTPS**；桥接可再加一层 **自定义请求头密钥**（飞书控制台配置）或前置 **API 网关**，避免回调 URL 泄露即被滥用。 |
 | **密钥与日志** | 密钥不落盘明文日志；对齐仓库 **`.cursor/rules/secrets-and-logging.mdc`**。 |
 | **限流** | 按 **`chat_id`** / 用户维度限流；与 CrabMate **`chat_job_queue`** 并发策略协调，避免打满上游。 |
