@@ -15,6 +15,8 @@
 //! | `FEISHU_NONCE_DEDUP_SECS` | 否 | 默认 **`900`**：签名校验通过后对 **`X-Lark-Request-Nonce`** 去重；**`0`** 关闭 |
 //! | `FEISHU_GROUP_REQUIRE_BOT_MENTION` | 否 | 默认 **`0`**；设为 **`1`** 时，群聊仅处理 **`mentions`** 中含本机器人（须配 **`FEISHU_BOT_OPEN_ID`**） |
 //! | `FEISHU_BOT_OPEN_ID` | 否 | 机器人 **`open_id`**（与 `mentions` 中 `id.open_id` 对齐） |
+//! | `FEISHU_ASYNC_WORKER` | 否 | 默认 **`1`**：`im.message.receive_v1` **先入队并立即 HTTP 200**，后台再调 CrabMate；**`0`** 为同步处理（适合调试） |
+//! | `FEISHU_EVENT_QUEUE_CAPACITY` | 否 | 异步队列长度，默认 **`100`**；满时返回 **503**（`FEISHU_EVENT_QUEUE_FULL`）以便飞书重试 |
 //! | `LISTEN_ADDR` | 否 | 默认 `127.0.0.1:9988` |
 //! | `RUST_LOG` | 否 | 如 `info,crabmate_im_bridge=debug` |
 //!
@@ -79,6 +81,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         bot_open_id,
         crabmate,
         dedup_ttl: Duration::from_secs(600),
+        async_worker: env_bool("FEISHU_ASYNC_WORKER", true)?,
+        event_queue_capacity: env_u64("FEISHU_EVENT_QUEUE_CAPACITY", 100)?.max(1) as usize,
     };
     let state = FeishuBridgeState::try_new(cfg)?;
     let app = build_router(state).layer(TraceLayer::new_for_http());
@@ -108,6 +112,23 @@ fn env_u64(name: &str, default: u64) -> Result<u64, String> {
             } else {
                 t.parse::<u64>()
                     .map_err(|_| format!("invalid unsigned integer for {name}: {s}"))
+            }
+        }
+    }
+}
+
+fn env_bool(name: &str, default: bool) -> Result<bool, String> {
+    match env::var(name) {
+        Err(_) => Ok(default),
+        Ok(s) => {
+            let t = s.trim().to_ascii_lowercase();
+            if t.is_empty() {
+                return Ok(default);
+            }
+            match t.as_str() {
+                "1" | "true" | "yes" | "on" => Ok(true),
+                "0" | "false" | "no" | "off" => Ok(false),
+                _ => Err(format!("invalid boolean for {name}: {s}")),
             }
         }
     }
