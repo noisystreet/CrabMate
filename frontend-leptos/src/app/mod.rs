@@ -55,6 +55,8 @@ pub fn App() -> impl IntoView {
     let mobile_shell_header_signals = app_ctx.mobile_shell_header_signals();
     let changelist_modal_signals = app_ctx.changelist_modal_signals();
     let settings_modal_signals = app_ctx.settings_modal_signals();
+    let session_list_modal_signals = app_ctx.session_list_modal_signals();
+    let status_bar_footer_signals = app_ctx.status_bar_footer_signals();
 
     view! {
         <div
@@ -90,10 +92,10 @@ pub fn App() -> impl IntoView {
                     {side_column_view(app_ctx.clone())}
                 </div>
 
-                {status_bar_footer_view(app_ctx.clone())}
+                {status_bar_footer_view(status_bar_footer_signals)}
             </div>
 
-            {session_list_modal_view(app_ctx.clone())}
+            {session_list_modal_view(session_list_modal_signals)}
 
             {settings_modal_view(settings_modal_signals)}
 

@@ -9,7 +9,7 @@ use crate::api::load_client_llm_text_fields_from_storage;
 use crate::app_prefs::{status_bar_effective_api_base, status_bar_effective_model};
 use crate::chat_session_state::ChatSessionSignals;
 
-use super::app_shell_ctx::AppShellCtx;
+use super::app_shell_ctx::StatusBarFooterSignals;
 use super::status_tasks_state::StatusTasksSignals;
 use crate::i18n::{self, Locale};
 
@@ -278,8 +278,8 @@ fn StatusBarFooterBody(
     }
 }
 
-pub fn status_bar_footer_view(ctx: AppShellCtx) -> impl IntoView {
-    let AppShellCtx {
+pub fn status_bar_footer_view(signals: StatusBarFooterSignals) -> impl IntoView {
+    let StatusBarFooterSignals {
         status_bar_visible,
         status_tasks: st,
         status_err,
@@ -290,8 +290,7 @@ pub fn status_bar_footer_view(ctx: AppShellCtx) -> impl IntoView {
         chat,
         refresh_status,
         locale,
-        ..
-    } = ctx;
+    } = signals;
     view! {
         <Show when=move || status_bar_visible.get()>
             <StatusBarFooterBody
