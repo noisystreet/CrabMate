@@ -13,6 +13,7 @@
 
 - 全体已扫描 Rust 源文件中 **最大行数**不得高于 `scripts/rust_file_max_lines_baseline.txt`。
 - **行数最高的 10 个文件之行数和**不得高于 `scripts/rust_file_top10_lines_sum_baseline.txt`。
+- **棘轮禁止增大**：自动写回基线时，上述两个文件的新值 **不得大于** 本次运行开始时磁盘上已存在的值（仅允许持平或由重构收紧变小）；若违反则报错退出、不写文件。
 - 若设置 **`RUST_FILE_LINES_MAX_CAP`**（正整数）：**单行数超过该值的文件即失败**（硬上限，不参与棘轮写回）。
 
 环境变量：
@@ -23,6 +24,7 @@
   RUST_FILE_MAX_LINES_BASELINE_FILE       单文件最大行数棘轮基线路径
   RUST_FILE_TOP10_LINES_SUM_BASELINE_FILE top10 文件行数和棘轮基线路径
   FN_NLOC_NO_UPDATE_BASELINE    设为 1/true 时不写回基线；CI（CI=true）默认不写回
+  （单文件最大行数 / top10 文件行数和棘轮：自动写回时新值不得大于运行开始时磁盘上的值）
 """
 from __future__ import annotations
 
@@ -93,6 +95,20 @@ def _read_int(path: Path, create_val: int, label: str, *, no_update: bool) -> in
 def _file_physical_line_count(path: Path) -> int:
     with path.open("r", encoding="utf-8", errors="replace") as f:
         return sum(1 for _ in f)
+
+
+def _read_optional_int_baseline(path: Path) -> int | None:
+    """磁盘上已提交的棘轮值（若文件不存在则为 None）。用于禁止棘轮增大。"""
+    if not path.is_file():
+        return None
+    try:
+        return int(path.read_text().strip())
+    except ValueError:
+        print(
+            f"fn-nloc: 无法解析棘轮基线文件（应为整数一行）: {path}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 def main() -> int:
@@ -209,6 +225,12 @@ def main() -> int:
     k_file = min(10, len(file_counts_sorted))
     file_top10_sum = sum(c[0] for c in file_counts_sorted[:k_file])
 
+    # 写回前对照：这两个棘轮基线「不允许增大」（仅允许收紧或新建）。
+    orig_file_max_lines_baseline = _read_optional_int_baseline(file_max_baseline_path)
+    orig_file_top10_lines_sum_baseline = _read_optional_int_baseline(
+        file_top10_baseline_path
+    )
+
     file_max_baseline = _read_int(
         file_max_baseline_path, file_max, "单文件最大行数", no_update=no_update
     )
@@ -268,17 +290,43 @@ def main() -> int:
                 f"fn-nloc: 已收紧 top10 nloc 之和棘轮 {top10_baseline} -> {top10_sum} ({top10_baseline_path})"
             )
         if file_max < file_max_baseline:
-            file_max_baseline_path.write_text(f"{file_max}\n", encoding="utf-8")
-            print(
-                f"fn-nloc: 已收紧单文件最大行数棘轮 {file_max_baseline} -> {file_max} ({file_max_baseline_path})"
+            deny_file_max = (
+                orig_file_max_lines_baseline is not None
+                and file_max > orig_file_max_lines_baseline
             )
+            if deny_file_max:
+                print(
+                    "fn-nloc: 拒绝写回单文件最大行数棘轮："
+                    f"度量值 {file_max} 大于本次运行开始时磁盘基线 "
+                    f"{orig_file_max_lines_baseline}（棘轮禁止增大）",
+                    file=sys.stderr,
+                )
+                rc = 1
+            else:
+                file_max_baseline_path.write_text(f"{file_max}\n", encoding="utf-8")
+                print(
+                    f"fn-nloc: 已收紧单文件最大行数棘轮 {file_max_baseline} -> {file_max} ({file_max_baseline_path})"
+                )
         if file_top10_sum < file_top10_baseline:
-            file_top10_baseline_path.write_text(
-                f"{file_top10_sum}\n", encoding="utf-8"
+            deny_file_top10 = (
+                orig_file_top10_lines_sum_baseline is not None
+                and file_top10_sum > orig_file_top10_lines_sum_baseline
             )
-            print(
-                f"fn-nloc: 已收紧 top10 文件行数和棘轮 {file_top10_baseline} -> {file_top10_sum} ({file_top10_baseline_path})"
-            )
+            if deny_file_top10:
+                print(
+                    "fn-nloc: 拒绝写回 top10 文件行数和棘轮："
+                    f"度量值 {file_top10_sum} 大于本次运行开始时磁盘基线 "
+                    f"{orig_file_top10_lines_sum_baseline}（棘轮禁止增大）",
+                    file=sys.stderr,
+                )
+                rc = 1
+            else:
+                file_top10_baseline_path.write_text(
+                    f"{file_top10_sum}\n", encoding="utf-8"
+                )
+                print(
+                    f"fn-nloc: 已收紧 top10 文件行数和棘轮 {file_top10_baseline} -> {file_top10_sum} ({file_top10_baseline_path})"
+                )
 
     return rc
 
