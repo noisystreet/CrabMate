@@ -207,6 +207,7 @@ mod hierarchy_runner_params_tests {
             turn: RunLoopTurnState {
                 messages: &mut messages,
                 sub_phase: crate::agent::agent_turn::AgentTurnSubPhase::Planner,
+                suppress_duplicate_intent_timeline_once: false,
                 intent_turn_gate_hint: None,
                 step_executor_constraint: None,
                 temperature_override: None,
@@ -281,6 +282,7 @@ mod hierarchy_runner_params_tests {
             turn: RunLoopTurnState {
                 messages: &mut messages,
                 sub_phase: crate::agent::agent_turn::AgentTurnSubPhase::Planner,
+                suppress_duplicate_intent_timeline_once: false,
                 intent_turn_gate_hint: None,
                 step_executor_constraint: None,
                 temperature_override: None,
@@ -373,6 +375,7 @@ mod per_reflect_tests {
             turn: RunLoopTurnState {
                 messages: &mut messages,
                 sub_phase: crate::agent::agent_turn::AgentTurnSubPhase::Planner,
+                suppress_duplicate_intent_timeline_once: false,
                 intent_turn_gate_hint: None,
                 step_executor_constraint: None,
                 temperature_override: None,
@@ -425,7 +428,7 @@ mod staged_single_step_rolling_tests {
 }
 
 mod staged_intent_gate_tests {
-    use super::super::run_dispatch::{
+    use super::super::intent::staged_planning_gate::{
         StagedPlanningDenyReason, StagedPlanningGateOutcome, assess_staged_planning_gate,
     };
     use crate::types::Message;

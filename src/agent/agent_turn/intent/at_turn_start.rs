@@ -56,7 +56,11 @@ pub(crate) async fn run_intent_at_turn_start_if_configured(
         "intent_at_turn",
     )
     .await?;
-    Ok(matches!(out, IntentGateResult::ProceedExecute { .. }))
+    let proceed = matches!(out, IntentGateResult::ProceedExecute { .. });
+    if proceed {
+        p.turn.suppress_duplicate_intent_timeline_once = true;
+    }
+    Ok(proceed)
 }
 
 /// 分层模式在命中有效 user 任务后**总是**走完整 L0/L1/可选 L2（与 `intent_at_turn_start` 无关），
@@ -145,7 +149,8 @@ fn format_intent_detail(
     )
 }
 
-async fn emit_intent_timeline(
+/// 推送 `intent_analysis` 时间线（供开局门控与 **非分层** `staged_plan_intent_gate` 共用）。
+pub(crate) async fn emit_intent_timeline_gate_only(
     out: Option<&tokio::sync::mpsc::Sender<String>>,
     sse_log_context: &'static str,
     assessment: &crate::agent::intent_pipeline::IntentDecision,
@@ -241,7 +246,7 @@ async fn run_intent_l0_l1_l2_gate(
         &assessment.action,
         merge_meta.used_merged_continuation,
     );
-    emit_intent_timeline(p.ctx.out, sse_log_tag, &assessment, &merge_meta).await;
+    emit_intent_timeline_gate_only(p.ctx.out, sse_log_tag, &assessment, &merge_meta).await;
 
     if matches!(assessment.action, IntentAction::Execute) {
         return Ok(IntentGateResult::ProceedExecute { assessment });
