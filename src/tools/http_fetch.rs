@@ -14,9 +14,34 @@ use regex::Regex;
 use reqwest::Url;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::redirect::Policy;
+use schemars::JsonSchema;
 use scraper::{Html, Node, Selector};
+use serde::Deserialize;
 
 use super::ToolContext;
+
+/// `http_fetch` 工具入参（与发给模型的 `parameters` 同源，见 `tool_params::params_http_fetch`）。
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct HttpFetchArgs {
+    /// 完整 http(s) URL
+    pub url: String,
+    /// `GET` / `HEAD`（大小写均可），默认 `GET`
+    pub method: Option<String>,
+    /// `raw`（默认）或 `html_text` 等
+    pub text_format: Option<String>,
+}
+
+/// `http_request` 工具入参。
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct HttpRequestArgs {
+    pub url: String,
+    pub method: String,
+    /// 可选 JSON 请求体
+    pub json_body: Option<serde_json::Value>,
+    pub text_format: Option<String>,
+}
 
 /// 响应体硬上限（与配置 `http_fetch_max_response_bytes` 上界一致）
 pub const ABS_MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
@@ -56,10 +81,8 @@ pub enum HttpBodyTextFormat {
     HtmlText,
 }
 
-fn parse_text_format_field(v: &serde_json::Value) -> Result<HttpBodyTextFormat, String> {
-    let raw = v
-        .get("text_format")
-        .and_then(|x| x.as_str())
+fn parse_text_format_optional(raw: Option<&str>) -> Result<HttpBodyTextFormat, String> {
+    let raw = raw
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .unwrap_or("raw");
@@ -391,22 +414,21 @@ impl RequestMethod {
 pub fn parse_http_fetch_args(
     args_json: &str,
 ) -> Result<(Url, FetchMethod, HttpBodyTextFormat), String> {
-    let v: serde_json::Value = crate::tools::parse_args_json(args_json)?;
-    let u = v
-        .get("url")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| "缺少 url".to_string())?;
+    let args: HttpFetchArgs =
+        serde_json::from_str(args_json).map_err(|e| format!("参数 JSON 无效: {e}"))?;
+    let u = args.url.trim();
+    if u.is_empty() {
+        return Err("缺少 url".to_string());
+    }
     let url = Url::parse(u).map_err(|e| format!("URL 解析失败: {}", e))?;
     let scheme = url.scheme();
     if scheme != "http" && scheme != "https" {
         return Err(format!("仅允许 http/https 方案，当前为 {}", scheme));
     }
 
-    let method_upper = v
-        .get("method")
-        .and_then(|x| x.as_str())
+    let method_upper = args
+        .method
+        .as_deref()
         .map(|s| s.trim().to_ascii_uppercase())
         .filter(|s| !s.is_empty());
 
@@ -418,7 +440,7 @@ pub fn parse_http_fetch_args(
         }
     };
 
-    let text_format = parse_text_format_field(&v)?;
+    let text_format = parse_text_format_optional(args.text_format.as_deref())?;
     Ok((url, method, text_format))
 }
 
@@ -434,24 +456,21 @@ pub fn parse_http_request_args(
     ),
     String,
 > {
-    let v: serde_json::Value = crate::tools::parse_args_json(args_json)?;
-    let u = v
-        .get("url")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| "缺少 url".to_string())?;
+    let args: HttpRequestArgs =
+        serde_json::from_str(args_json).map_err(|e| format!("参数 JSON 无效: {e}"))?;
+    let u = args.url.trim();
+    if u.is_empty() {
+        return Err("缺少 url".to_string());
+    }
     let url = Url::parse(u).map_err(|e| format!("URL 解析失败: {}", e))?;
     let scheme = url.scheme();
     if scheme != "http" && scheme != "https" {
         return Err(format!("仅允许 http/https 方案，当前为 {}", scheme));
     }
-    let method_raw = v
-        .get("method")
-        .and_then(|x| x.as_str())
-        .map(|s| s.trim().to_ascii_uppercase())
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| "缺少 method（POST/PUT/PATCH/DELETE）".to_string())?;
+    let method_raw = args.method.trim().to_ascii_uppercase();
+    if method_raw.is_empty() {
+        return Err("缺少 method（POST/PUT/PATCH/DELETE）".to_string());
+    }
     let method = match method_raw.as_str() {
         "POST" => RequestMethod::Post,
         "PUT" => RequestMethod::Put,
@@ -464,7 +483,7 @@ pub fn parse_http_request_args(
             ));
         }
     };
-    let json_body = v.get("json_body").cloned();
+    let json_body = args.json_body.clone();
     if let Some(body) = json_body.as_ref() {
         let body_len = serde_json::to_vec(body)
             .map(|b| b.len())
@@ -476,7 +495,7 @@ pub fn parse_http_request_args(
             ));
         }
     }
-    let text_format = parse_text_format_field(&v)?;
+    let text_format = parse_text_format_optional(args.text_format.as_deref())?;
     Ok((url, method, json_body, text_format))
 }
 

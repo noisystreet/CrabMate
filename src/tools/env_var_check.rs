@@ -1,14 +1,18 @@
 //! 环境变量批量检查工具（只读、脱敏）
 
 pub fn run(args_json: &str) -> String {
-    let v = match crate::tools::parse_args_json(args_json) {
+    let v: serde_json::Value = match serde_json::from_str(args_json) {
         Ok(v) => v,
-        Err(e) => return e,
+        Err(e) => return format!("参数 JSON 无效: {e}"),
     };
-    let names: Vec<&str> = match v.get("names").and_then(|x| x.as_array()) {
-        Some(arr) => arr.iter().filter_map(|x| x.as_str()).collect(),
-        None => return "错误：缺少 names 数组参数".to_string(),
+    if v.get("names").is_none() {
+        return "错误：缺少 names 数组参数".to_string();
+    }
+    let args: super::tool_param_types::EnvVarCheckArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 无效: {e}"),
     };
+    let names: Vec<&str> = args.names.iter().map(String::as_str).collect();
     if names.is_empty() {
         return "错误：names 不能为空".to_string();
     }
@@ -16,15 +20,8 @@ pub fn run(args_json: &str) -> String {
         return "错误：names 上限 50 个".to_string();
     }
 
-    let show_length = v
-        .get("show_length")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
-    let show_prefix = v
-        .get("show_prefix_chars")
-        .and_then(|x| x.as_u64())
-        .unwrap_or(0)
-        .min(8) as usize;
+    let show_length = args.show_length.unwrap_or(false);
+    let show_prefix = args.show_prefix_chars.unwrap_or(0).min(8) as usize;
 
     let mut lines: Vec<String> = Vec::new();
     let mut set_count = 0usize;

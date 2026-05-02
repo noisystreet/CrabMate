@@ -3,15 +3,16 @@
 use chrono::{Datelike, Duration, Local, NaiveDate};
 
 pub fn run(args_json: &str) -> String {
-    let v = match crate::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
+    let args: super::tool_param_types::DateCalcArgs = match serde_json::from_str(args_json) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 无效: {e}"),
     };
-    let mode = v.get("mode").and_then(|x| x.as_str()).unwrap_or("offset");
-    match mode {
-        "diff" => run_diff(&v),
-        "offset" => run_offset(&v),
-        _ => format!("未知 mode：{}（支持 diff / offset）", mode),
+    match args
+        .mode
+        .unwrap_or(super::tool_param_types::DateCalcMode::Offset)
+    {
+        super::tool_param_types::DateCalcMode::Diff => run_diff(&args),
+        super::tool_param_types::DateCalcMode::Offset => run_offset(&args),
     }
 }
 
@@ -19,13 +20,13 @@ fn parse_date(s: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d").ok()
 }
 
-fn run_diff(v: &serde_json::Value) -> String {
-    let from_str = match v.get("from").and_then(|x| x.as_str()) {
-        Some(s) if !s.trim().is_empty() => s,
+fn run_diff(args: &super::tool_param_types::DateCalcArgs) -> String {
+    let from_str = match args.from.as_deref() {
+        Some(s) if !s.trim().is_empty() => s.trim(),
         _ => return "错误：diff 模式需要 from 参数（YYYY-MM-DD）".to_string(),
     };
-    let to_str = match v.get("to").and_then(|x| x.as_str()) {
-        Some(s) if !s.trim().is_empty() => s,
+    let to_str = match args.to.as_deref() {
+        Some(s) if !s.trim().is_empty() => s.trim(),
         _ => return "错误：diff 模式需要 to 参数（YYYY-MM-DD）".to_string(),
     };
     let from = match parse_date(from_str) {
@@ -50,8 +51,8 @@ fn run_diff(v: &serde_json::Value) -> String {
     )
 }
 
-fn run_offset(v: &serde_json::Value) -> String {
-    let base_str = v.get("base").and_then(|x| x.as_str()).unwrap_or("");
+fn run_offset(args: &super::tool_param_types::DateCalcArgs) -> String {
+    let base_str = args.base.as_deref().unwrap_or("");
     let base = if base_str.trim().is_empty() {
         Local::now().date_naive()
     } else {
@@ -60,7 +61,7 @@ fn run_offset(v: &serde_json::Value) -> String {
             None => return format!("错误：无法解析 base 日期 {:?}（格式 YYYY-MM-DD）", base_str),
         }
     };
-    let offset_str = match v.get("offset").and_then(|x| x.as_str()) {
+    let offset_str = match args.offset.as_deref() {
         Some(s) if !s.trim().is_empty() => s.trim(),
         _ => return "错误：offset 模式需要 offset 参数（如 +30d, -2w, +1m）".to_string(),
     };

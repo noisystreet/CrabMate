@@ -55,15 +55,23 @@ fn weather_code_text(code: f64) -> &'static str {
 
 /// 根据城市名（或地区名）获取当前天气，返回格式化的简短描述。`timeout_secs` 为 HTTP 请求超时（秒）。
 pub fn run(args_json: &str, timeout_secs: u64) -> String {
-    let city = match serde_json::from_str::<serde_json::Value>(args_json)
-        .ok()
-        .and_then(|v| {
-            v.get("city")
-                .or(v.get("location"))
-                .and_then(|c| c.as_str())
-                .map(String::from)
-        }) {
-        Some(s) if s.len() >= 2 => s.trim().to_string(),
+    let args: super::tool_param_types::GetWeatherArgs = match serde_json::from_str(args_json) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 无效: {e}"),
+    };
+    let city = args
+        .city
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            args.location
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+        });
+    let city = match city {
+        Some(s) if s.len() >= 2 => s.to_string(),
         _ => return "错误：请提供 city 或 location 参数（至少 2 个字符）".to_string(),
     };
 

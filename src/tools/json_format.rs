@@ -3,14 +3,14 @@
 const MAX_INPUT_BYTES: usize = 512 * 1024;
 
 pub fn run(args_json: &str) -> String {
-    let v = match crate::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
+    let args: super::tool_param_types::JsonFormatArgs = match serde_json::from_str(args_json) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 无效: {e}"),
     };
-    let text = match v.get("text").and_then(|x| x.as_str()) {
-        Some(s) if !s.trim().is_empty() => s,
-        _ => return "错误：缺少 text 参数".to_string(),
-    };
+    let text = args.text.trim();
+    if text.is_empty() {
+        return "错误：缺少 text 参数".to_string();
+    }
     if text.len() > MAX_INPUT_BYTES {
         return format!(
             "错误：输入超过上限（{} 字节，上限 {} 字节）",
@@ -18,16 +18,14 @@ pub fn run(args_json: &str) -> String {
             MAX_INPUT_BYTES
         );
     }
-    let mode = v.get("mode").and_then(|x| x.as_str()).unwrap_or("pretty");
-    match mode {
-        "pretty" => json_pretty(text),
-        "compact" => json_compact(text),
-        "yaml_to_json" => yaml_to_json(text),
-        "json_to_yaml" => json_to_yaml(text),
-        _ => format!(
-            "未知 mode：{}（支持 pretty / compact / yaml_to_json / json_to_yaml）",
-            mode
-        ),
+    match args
+        .mode
+        .unwrap_or(super::tool_param_types::JsonFormatMode::Pretty)
+    {
+        super::tool_param_types::JsonFormatMode::Pretty => json_pretty(text),
+        super::tool_param_types::JsonFormatMode::Compact => json_compact(text),
+        super::tool_param_types::JsonFormatMode::YamlToJson => yaml_to_json(text),
+        super::tool_param_types::JsonFormatMode::JsonToYaml => json_to_yaml(text),
     }
 }
 
