@@ -138,6 +138,8 @@ cd frontend-leptos && trunk build && cd ..
 
 模块与调用链、**`GET /status` 观测**、**`src/`** 索引见 [docs/开发文档.md](docs/开发文档.md)。
 
+- **Workspace 成员**：`crates/crabmate-sse-protocol`（SSE 控制面版本与分类契约）；**`crates/crabmate-im-bridge`**（可选 **IM 桥接**二进制：飞书事件 Webhook → CrabMate **`POST /chat`** → 飞书回复）。飞书接入步骤与限制见 [docs/design/feishu_bridge_mvp.md](docs/design/feishu_bridge_mvp.md)（与 [docs/design/web_api_integration.md](docs/design/web_api_integration.md) 配套）。
+
 ## 参考
 
 - [DeepSeek API - Create Chat Completion](https://api-docs.deepseek.com/api/create-chat-completion)
