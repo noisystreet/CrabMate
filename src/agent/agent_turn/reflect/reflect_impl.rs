@@ -19,6 +19,28 @@ pub(crate) enum ReflectOnAssistantOutcome {
     PlanRewriteExhausted { reason: PlanRewriteExhaustedReason },
 }
 
+/// 将 [`AfterFinalAssistant`] 映射为外环 [`ReflectOnAssistantOutcome`]（**不**修改 `PerCoordinator` 计数；
+/// 计数由 [`final_plan_gate::after_final_assistant`] 或语义路径上的
+/// [`final_plan_gate::apply_plan_rewrite_count_from_gate`] 先行写入）。
+fn reflect_finish_from_after_final_assistant(
+    p: &mut RunLoopParams<'_>,
+    after: AfterFinalAssistant,
+) -> ReflectOnAssistantOutcome {
+    match after {
+        AfterFinalAssistant::StopTurn => ReflectOnAssistantOutcome::StopTurn,
+        AfterFinalAssistant::RequestPlanRewrite(m) => {
+            p.turn.messages.push(m);
+            ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite
+        }
+        AfterFinalAssistant::StopTurnPlanRewriteExhausted { reason } => {
+            ReflectOnAssistantOutcome::PlanRewriteExhausted { reason }
+        }
+        AfterFinalAssistant::StopTurnPendingPlanConsistencyLlm { .. } => unreachable!(
+            "StopTurnPendingPlanConsistencyLlm must be handled in reflect_pending_semantic_consistency_llm"
+        ),
+    }
+}
+
 /// 在已将 assistant 推入 `messages` 之后调用，决定是执行工具、终答结束还是规划重写。
 ///
 /// **兼容**：部分 OpenAI 兼容实现在返回 `tool_calls` 时仍上报 `finish_reason: "stop"` 或空串。
@@ -42,23 +64,15 @@ pub(crate) async fn per_reflect_after_assistant(
         p.ctx.cfg.as_ref(),
         p.ctx.workspace_is_set,
     ) {
-        AfterFinalAssistant::StopTurn => ReflectOnAssistantOutcome::StopTurn,
-        AfterFinalAssistant::RequestPlanRewrite(m) => {
-            p.turn.messages.push(m);
-            ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite
-        }
-        AfterFinalAssistant::StopTurnPlanRewriteExhausted { reason } => {
-            ReflectOnAssistantOutcome::PlanRewriteExhausted { reason }
-        }
         AfterFinalAssistant::StopTurnPendingPlanConsistencyLlm { plan, tool_digest } => {
             reflect_pending_semantic_consistency_llm(p, per_coord, plan, tool_digest).await
         }
+        other => reflect_finish_from_after_final_assistant(p, other),
     }
 }
 
-/// **`PendingSemanticLlm`**：侧向一致性 LLM → [`final_plan_gate::run_final_plan_gate_semantic_completed`] → **外层**结果。
-///
-/// 语义 LLM 判定「不一致且允许重写」时须 **`increment_plan_rewrite_attempts`**（与静态路径经门控写入计数对齐）。
+/// **`PendingSemanticLlm`**：侧向一致性 LLM → [`final_plan_gate::run_final_plan_gate_semantic_completed`] →
+/// [`final_plan_gate::apply_plan_rewrite_count_from_gate`]（与静态终答路径一致）→ 映射为外环结果。
 async fn reflect_pending_semantic_consistency_llm(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
@@ -100,18 +114,11 @@ async fn reflect_pending_semantic_consistency_llm(
         "final_plan_gate semantic transition"
     );
 
+    final_plan_gate::apply_plan_rewrite_count_from_gate(per_coord, &sem_outcome);
     match sem_outcome.after {
-        AfterFinalAssistant::StopTurn => ReflectOnAssistantOutcome::StopTurn,
-        AfterFinalAssistant::StopTurnPlanRewriteExhausted { reason } => {
-            ReflectOnAssistantOutcome::PlanRewriteExhausted { reason }
-        }
-        AfterFinalAssistant::RequestPlanRewrite(m) => {
-            per_coord.increment_plan_rewrite_attempts();
-            p.turn.messages.push(m);
-            ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite
-        }
         AfterFinalAssistant::StopTurnPendingPlanConsistencyLlm { .. } => unreachable!(
             "run_final_plan_gate_semantic_completed must not return StopTurnPendingPlanConsistencyLlm"
         ),
+        other => reflect_finish_from_after_final_assistant(p, other),
     }
 }
