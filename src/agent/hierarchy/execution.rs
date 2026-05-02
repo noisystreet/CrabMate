@@ -758,7 +758,9 @@ impl<'a> HierarchicalExecutor<'a> {
                     &fdeps,
                     prior.as_slice(),
                 );
-                // 使用全局静态的 OPENAI_COMPAT_BACKEND
+                // 并行路径经 `tokio::spawn` 须 `Send + 'static`，无法携带 `HierarchicalExecutor::with_context` 注入的
+                // 非 `'static` `llm_backend`；此处仍用进程内默认 HTTP 后端。自定义后端请走顺序策略或后续改为
+                // `Arc<dyn ChatCompletionsBackend + Send + Sync>` 接线。
                 let result = operator
                     .execute_with_tools(
                         &goal,

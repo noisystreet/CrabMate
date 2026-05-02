@@ -1,11 +1,18 @@
 //! 编排级集成测：通过 [`crabmate::RunAgentTurnParams`] 注入 [`crabmate::llm::ChatCompletionsBackend`]，
 //! 钉住 `run_agent_turn` → `run_agent_outer_loop` 的「Planner → 工具 → Planner → 终答」入口链，**不**访问真实网络。
+//!
+//! 另含分层 [`crabmate::agent::hierarchy::runner::run_hierarchical`]：`Router` → `Manager` 分解 → `Operator`
+//! 首轮终答（顺序执行路径），验证注入的 mock 与 `HierarchicalExecutor::with_context` 一致。
 
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use async_trait::async_trait;
+use crabmate::agent::hierarchy::runner::run_hierarchical;
+use crabmate::agent::hierarchy::{
+    AgentMode, HierarchyRunnerParams, HierarchyRunnerResult, TaskStatus,
+};
 use crabmate::{
     AgentConfig, AgentTurnLlmOverrides, AgentTurnTransport, ChatCompletionsBackend, ChatRequest,
     FunctionCall, LlmSeedOverride, Message, PlannerExecutorMode, RunAgentTurnParams,
@@ -141,5 +148,85 @@ async fn run_agent_turn_outer_loop_tool_round_then_final_assistant() {
     assert!(
         body.contains("mock 编排测"),
         "last assistant should be final mock body, got {body:?}"
+    );
+}
+
+fn cfg_hierarchical_for_mock_runner() -> Arc<AgentConfig> {
+    let mut cfg = load_config(None).expect("embedded default config must load");
+    cfg.planner_executor_mode = PlannerExecutorMode::Hierarchical;
+    cfg.staged_plan_execution = false;
+    cfg.intent_at_turn_start_enabled = false;
+    cfg.intent_l2_enabled = false;
+    cfg.enable_llm_routing = Some(true);
+    Arc::new(cfg)
+}
+
+/// 分层 runner：`route_with_llm` → `Manager::decompose_with_llm` → Operator 首轮 `call_llm`（顺序单子目标）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn run_hierarchical_router_manager_operator_mock_llm_sequence() {
+    let cfg = cfg_hierarchical_for_mock_runner();
+    let client = Arc::new(reqwest::Client::new());
+    let tools = build_tools();
+    let work_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+
+    let router_json = r#"{"mode":"hierarchical","reasoning":"mock","estimated_steps":3}"#;
+    let manager_json = r#"{
+  "sub_goals": [
+    {
+      "goal_id": "goal_1",
+      "description": "性能相关：用 get_current_time 查看时间并一句话总结。",
+      "priority": 0,
+      "depends_on": [],
+      "required_tools": ["get_current_time"],
+      "goal_type": "analyze"
+    }
+  ],
+  "execution_strategy": "sequential"
+}"#;
+    let operator_done = Message::assistant_only("子目标已完成 done".to_string());
+
+    let backend: &'static SequencedMockBackend = Box::leak(Box::new(SequencedMockBackend::new(
+        vec![
+            Message::assistant_only(router_json.to_string()),
+            Message::assistant_only(manager_json.to_string()),
+            operator_done,
+        ],
+        "stop",
+    )));
+
+    let task = "性能相关：请调用 get_current_time 工具查询当前时间，然后用一句话总结。";
+    let params = HierarchyRunnerParams {
+        task,
+        cfg: cfg.as_ref(),
+        llm_backend: backend as &dyn ChatCompletionsBackend,
+        client: client.clone(),
+        api_key: String::new(),
+        working_dir: work_dir.to_path_buf(),
+        sse_out: None,
+        tools_defs: tools.as_slice(),
+        tool_approval_out: None,
+        tool_approval_rx: None,
+        primary_intent: Some("execute.read_inspect".to_string()),
+        secondary_intents: Vec::new(),
+        intent_mode_bias_enabled: false,
+    };
+
+    let outcome: HierarchyRunnerResult = run_hierarchical(params)
+        .await
+        .expect("hierarchical mock run must succeed");
+    assert_eq!(outcome.mode, AgentMode::Hierarchical);
+    assert_eq!(
+        backend.call_seq.load(Ordering::SeqCst),
+        3,
+        "expected router LLM → manager decompose LLM → operator call_llm"
+    );
+    assert!(
+        outcome
+            .execution_result
+            .results
+            .iter()
+            .any(|r| matches!(r.status, TaskStatus::Completed)),
+        "expected at least one completed subgoal, got {:?}",
+        outcome.execution_result.results
     );
 }
