@@ -69,6 +69,8 @@ pub(crate) struct RunLoopTurnState<'a> {
     pub messages: &'a mut Vec<Message>,
     /// 当前编排子阶段（供失败时 SSE `sub_phase` 与日志）；由 `outer_loop` / 分阶段路径在调用模型或执行工具前更新。
     pub sub_phase: AgentTurnSubPhase,
+    /// `intent_at_turn_start` 若已进入 **`ProceedExecute`**，下一轮 **`staged_plan_intent_gate`** 应跳过重复的 **`intent_analysis`** 时间线。
+    pub(crate) suppress_duplicate_intent_timeline_once: bool,
     /// 意图门控将澄清/确认/只读说明改为走主模型时，首轮 P 前注入的临时 system 正文（见 [`crate::types::Message::system_intent_gate_hint`]）。
     pub(crate) intent_turn_gate_hint: Option<String>,
     /// 分阶段规划当前步的「子代理」工具约束；`None` 表示不限制（常规循环）。

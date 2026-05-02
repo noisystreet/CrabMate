@@ -1,5 +1,5 @@
 //! 意图管线 **`IntentContext`** 的**单一构建入口**（L0 尾部工具失败信号 + 近期 user 合并 + 阈值等），
-//! 供 **`run_dispatch::assess_staged_planning_gate`** 与 **`intent/at_turn_start`** 共用，避免两处字段漂移。
+//! 供 **`intent/staged_planning_gate`**（含 **`assess_staged_planning_gate`** / **`assess_staged_planning_gate_full_pipeline`**）与 **`intent/at_turn_start`** 共用，避免两处字段漂移。
 
 use crate::agent::intent_l0;
 use crate::agent::intent_pipeline::IntentContext;
