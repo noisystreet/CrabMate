@@ -96,6 +96,8 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.web_api_bearer_token
         .clone_from(&src.web_api_bearer_token);
     dst.web_api_require_bearer = src.web_api_require_bearer;
+    dst.web_audit_log_write_tools = src.web_audit_log_write_tools;
+    dst.web_audit_trust_x_forwarded_for = src.web_audit_trust_x_forwarded_for;
     dst.allow_insecure_no_auth_for_non_loopback = src.allow_insecure_no_auth_for_non_loopback;
     dst.health_llm_models_probe = src.health_llm_models_probe;
     dst.health_llm_models_probe_cache_secs = src.health_llm_models_probe_cache_secs;

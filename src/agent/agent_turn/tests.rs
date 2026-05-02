@@ -203,6 +203,7 @@ mod hierarchy_runner_params_tests {
                 request_chrome_trace: None,
                 turn_allowed_tool_names: None,
                 tracing_chat_turn: None,
+                request_audit: None,
             },
             turn: RunLoopTurnState {
                 messages: &mut messages,
@@ -278,6 +279,7 @@ mod hierarchy_runner_params_tests {
                 request_chrome_trace: None,
                 turn_allowed_tool_names: None,
                 tracing_chat_turn: None,
+                request_audit: None,
             },
             turn: RunLoopTurnState {
                 messages: &mut messages,
@@ -371,6 +373,7 @@ mod per_reflect_tests {
                 request_chrome_trace: None,
                 turn_allowed_tool_names: None,
                 tracing_chat_turn: None,
+                request_audit: None,
             },
             turn: RunLoopTurnState {
                 messages: &mut messages,

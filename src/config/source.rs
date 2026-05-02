@@ -216,6 +216,10 @@ pub(super) struct AgentSection {
     /// `CM_WEB_API_REQUIRE_BEARER`；未在 TOML/环境显式设置时，finalize 默认 **true**（须配 `web_api_bearer_token` 后 `serve` 才启动）；显式 `false` 时允许无密钥启动（仅可信环境）。
     pub(super) web_api_require_bearer: Option<bool>,
     pub(super) allow_insecure_no_auth_for_non_loopback: Option<bool>,
+    /// `CM_WEB_AUDIT_LOG_WRITE_TOOLS`；默认 true：成功执行的写副作用工具记一行结构化审计日志。
+    pub(super) web_audit_log_write_tools: Option<bool>,
+    /// `CM_WEB_AUDIT_TRUST_X_FORWARDED_FOR`；默认 false：若 true，客户端 IP 优先取 `X-Forwarded-For` 首跳（仅可信反向代理后启用）。
+    pub(super) web_audit_trust_x_forwarded_for: Option<bool>,
     pub(super) conversation_store_sqlite_path: Option<String>,
     pub(super) agent_memory_file_enabled: Option<bool>,
     pub(super) agent_memory_file: Option<String>,

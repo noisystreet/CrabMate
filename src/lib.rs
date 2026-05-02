@@ -115,6 +115,8 @@ pub struct RunAgentTurnParams<'a> {
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
     /// Web `/chat*`：与 **`x-stream-job-id`** / SSE **`sse_capabilities.job_id`** 对齐的结构化日志根 span；CLI 等为 `None`。
     pub tracing_chat_turn: Option<Arc<observability::TracingChatTurn>>,
+    /// Web：HTTP 审计（客户端 IP、共享 Bearer 指纹）；CLI/定时任务等为 `None`。
+    pub request_audit: Option<Arc<crate::web::audit::WebRequestAudit>>,
 }
 
 /// 构造 [`RunAgentTurnParams::web_chat_stream`] 所需的参数包（避免长形参列表）。
@@ -142,6 +144,7 @@ pub struct WebChatStreamBuildArgs<'a> {
     pub conversation_id: &'a str,
     pub out: &'a mpsc::Sender<String>,
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
+    pub request_audit: Arc<crate::web::audit::WebRequestAudit>,
 }
 
 /// 构造 [`RunAgentTurnParams::web_chat_json`] 所需的参数包。
@@ -166,6 +169,7 @@ pub struct WebChatJsonBuildArgs<'a> {
     pub job_id: u64,
     pub conversation_id: &'a str,
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
+    pub request_audit: Arc<crate::web::audit::WebRequestAudit>,
 }
 
 /// 构造 [`RunAgentTurnParams::cli_terminal_chat`] 所需的参数包。
@@ -210,6 +214,7 @@ impl<'a> RunAgentTurnParams<'a> {
             conversation_id,
             out,
             turn_allowed_tool_names,
+            request_audit,
         } = args;
         Self {
             client,
@@ -244,6 +249,7 @@ impl<'a> RunAgentTurnParams<'a> {
             read_file_turn_cache: None,
             turn_allowed_tool_names,
             tracing_chat_turn: Some(observability::TracingChatTurn::new(job_id, conversation_id)),
+            request_audit: Some(request_audit),
         }
     }
 
@@ -269,6 +275,7 @@ impl<'a> RunAgentTurnParams<'a> {
             job_id,
             conversation_id,
             turn_allowed_tool_names,
+            request_audit,
         } = args;
         Self {
             client,
@@ -303,6 +310,7 @@ impl<'a> RunAgentTurnParams<'a> {
             read_file_turn_cache: None,
             turn_allowed_tool_names,
             tracing_chat_turn: Some(observability::TracingChatTurn::new(job_id, conversation_id)),
+            request_audit: Some(request_audit),
         }
     }
 
@@ -354,6 +362,7 @@ impl<'a> RunAgentTurnParams<'a> {
             read_file_turn_cache: None,
             turn_allowed_tool_names,
             tracing_chat_turn: None,
+            request_audit: None,
         }
     }
 
@@ -400,6 +409,7 @@ impl<'a> RunAgentTurnParams<'a> {
             read_file_turn_cache: None,
             turn_allowed_tool_names: None,
             tracing_chat_turn: None,
+            request_audit: None,
         }
     }
 }
@@ -434,6 +444,7 @@ pub async fn run_agent_turn<'a>(
         read_file_turn_cache,
         turn_allowed_tool_names,
         tracing_chat_turn,
+        request_audit,
     } = p;
     let AgentTurnTransport {
         out,
@@ -568,6 +579,7 @@ pub async fn run_agent_turn<'a>(
             request_chrome_trace: request_chrome_trace.clone(),
             turn_allowed_tool_names: turn_allowed_tool_names.clone(),
             tracing_chat_turn: tracing_chat_turn.clone(),
+            request_audit: request_audit.clone(),
         },
         turn: agent::agent_turn::RunLoopTurnState {
             messages,

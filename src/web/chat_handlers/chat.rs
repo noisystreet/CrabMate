@@ -1,11 +1,12 @@
 //! `POST /chat`、`/chat/stream`、`/chat/approval`、`/chat/branch`。
 
 use std::convert::Infallible;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::Json;
-use axum::extract::{Path, Query, State};
+use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
@@ -16,6 +17,7 @@ use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 
 use super::super::app_state::{AppState, ConversationTurnSeed};
+use super::super::audit;
 use super::conflict::conversation_conflict_api_error;
 use super::parse::{
     ensure_bearer_api_key_for_chat, normalize_agent_role, normalize_approval_session_id,
@@ -827,6 +829,8 @@ async fn parse_chat_request_for_enqueue(
 
 async fn enqueue_and_wait_json_chat(
     state: Arc<AppState>,
+    peer: SocketAddr,
+    headers: &HeaderMap,
     parsed: ParsedChatRequestForEnqueue,
 ) -> Result<(Vec<Message>, u64), (StatusCode, Json<ApiError>)> {
     let PreparedJsonChatEnqueue {
@@ -854,6 +858,10 @@ async fn enqueue_and_wait_json_chat(
         redact::preview_chars(&msg, redact::MESSAGE_LOG_PREVIEW_CHARS)
     );
     info!(target: "crabmate", "chat json 任务入队 job_id={}", job_id);
+    let request_audit = {
+        let cfg = state.cfg.read().await;
+        audit::web_request_audit_from_http(&cfg, headers, peer)
+    };
     state
         .chat_queue
         .try_submit_json(chat_job_queue::JsonSubmitParams {
@@ -872,6 +880,7 @@ async fn enqueue_and_wait_json_chat(
             llm_override: parsed.llm_override.clone(),
             executor_llm_override: parsed.executor_llm_override.clone(),
             execution_mode_override: parsed.execution_mode_override,
+            request_audit,
             reply_tx,
         })
         .map_err(|e| {
@@ -920,6 +929,8 @@ async fn enqueue_and_wait_json_chat(
 
 pub(crate) async fn chat_handler(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(body): Json<ChatRequestBody>,
 ) -> Result<Json<ChatResponseBody>, (StatusCode, Json<ApiError>)> {
     let parsed = parse_chat_request_for_enqueue(&state, &body).await?;
@@ -931,7 +942,7 @@ pub(crate) async fn chat_handler(
         }));
     }
     let cid = parsed.conversation_id.clone();
-    let (messages, _) = enqueue_and_wait_json_chat(state.clone(), parsed).await?;
+    let (messages, _) = enqueue_and_wait_json_chat(state.clone(), peer, &headers, parsed).await?;
     let reply = messages
         .last()
         .and_then(|m| crate::types::message_content_as_str(&m.content))
@@ -1121,6 +1132,8 @@ async fn run_async_chat_json_job(
 
 pub(crate) async fn chat_async_handler(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(body): Json<ChatAsyncRequestBody>,
 ) -> Result<Json<ChatAsyncSubmitResponseBody>, (StatusCode, Json<ApiError>)> {
     if body.chat.stream_resume.is_some() {
@@ -1186,6 +1199,18 @@ pub(crate) async fn chat_async_handler(
     )
     .await?;
 
+    debug!(
+        target: "crabmate",
+        "chat async 请求摘要 job_id={} user_len={} user_preview={}",
+        job_id,
+        msg.len(),
+        redact::preview_chars(&msg, redact::MESSAGE_LOG_PREVIEW_CHARS)
+    );
+    info!(target: "crabmate", "chat async 任务入队 job_id={}", job_id);
+    let request_audit = {
+        let cfg = state.cfg.read().await;
+        audit::web_request_audit_from_http(&cfg, &headers, peer)
+    };
     let submit = state
         .chat_queue
         .try_submit_json(chat_job_queue::JsonSubmitParams {
@@ -1204,6 +1229,7 @@ pub(crate) async fn chat_async_handler(
             llm_override: parsed.llm_override.clone(),
             executor_llm_override: parsed.executor_llm_override.clone(),
             execution_mode_override: parsed.execution_mode_override,
+            request_audit,
             reply_tx,
         });
 
@@ -1222,15 +1248,6 @@ pub(crate) async fn chat_async_handler(
             }),
         ));
     }
-
-    debug!(
-        target: "crabmate",
-        "chat async 请求摘要 job_id={} user_len={} user_preview={}",
-        job_id,
-        msg.len(),
-        redact::preview_chars(&msg, redact::MESSAGE_LOG_PREVIEW_CHARS)
-    );
-    info!(target: "crabmate", "chat async 任务入队 job_id={}", job_id);
 
     let st = state.clone();
     let cid = conversation_id.clone();
@@ -1489,6 +1506,7 @@ pub(crate) async fn conversation_messages_handler(
 pub(crate) async fn chat_stream_handler(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(body): Json<ChatRequestBody>,
 ) -> Result<Response, (StatusCode, Json<ApiError>)> {
     let p = parse_chat_stream_request(&state, &body)?;
@@ -1660,6 +1678,10 @@ pub(crate) async fn chat_stream_handler(
         redact::preview_chars(&msg, redact::MESSAGE_LOG_PREVIEW_CHARS)
     );
     info!(target: "crabmate", "chat stream 任务入队 job_id={}", job_id);
+    let request_audit = {
+        let cfg = state.cfg.read().await;
+        audit::web_request_audit_from_http(&cfg, &headers, peer)
+    };
     if let Err(e) = state
         .chat_queue
         .try_submit_stream(chat_job_queue::StreamSubmitParams {
@@ -1678,6 +1700,7 @@ pub(crate) async fn chat_stream_handler(
             llm_override: p.llm_override,
             executor_llm_override: p.executor_llm_override,
             execution_mode_override: p.execution_mode_override,
+            request_audit,
             stream_event_tx: tx,
             web_approval_session,
         })

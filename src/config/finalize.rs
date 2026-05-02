@@ -804,6 +804,8 @@ struct FinalizeTailScalars {
     sync_default_tool_sandbox_docker_user: types::SandboxDockerContainerUser,
     web_api_bearer_token: types::SecretString,
     web_api_require_bearer: bool,
+    web_audit_log_write_tools: bool,
+    web_audit_trust_x_forwarded_for: bool,
     allow_insecure_no_auth_for_non_loopback: bool,
     conversation_store_sqlite_path: String,
     agent_memory_file_enabled: bool,
@@ -1059,6 +1061,8 @@ struct TailStagedSandboxWebScalars {
     sync_default_tool_sandbox_docker_user: types::SandboxDockerContainerUser,
     web_api_bearer_token: types::SecretString,
     web_api_require_bearer: bool,
+    web_audit_log_write_tools: bool,
+    web_audit_trust_x_forwarded_for: bool,
     allow_insecure_no_auth_for_non_loopback: bool,
 }
 
@@ -1120,6 +1124,8 @@ fn derive_tail_staged_sandbox_web_scalars(
         types::SecretString::new(b.web_api_bearer_token.clone().unwrap_or_default().into());
     // 默认 **true**：未显式关闭时 `serve` 须配置非空 `web_api_bearer_token`，避免 HTTP API 匿名可用（P0）。
     let web_api_require_bearer = b.web_api_require_bearer.unwrap_or(true);
+    let web_audit_log_write_tools = b.web_audit_log_write_tools.unwrap_or(true);
+    let web_audit_trust_x_forwarded_for = b.web_audit_trust_x_forwarded_for.unwrap_or(false);
     let allow_insecure_no_auth_for_non_loopback =
         b.allow_insecure_no_auth_for_non_loopback.unwrap_or(false);
     Ok(TailStagedSandboxWebScalars {
@@ -1141,6 +1147,8 @@ fn derive_tail_staged_sandbox_web_scalars(
         sync_default_tool_sandbox_docker_user,
         web_api_bearer_token,
         web_api_require_bearer,
+        web_audit_log_write_tools,
+        web_audit_trust_x_forwarded_for,
         allow_insecure_no_auth_for_non_loopback,
     })
 }
@@ -1395,6 +1403,8 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
         sync_default_tool_sandbox_docker_user,
         web_api_bearer_token,
         web_api_require_bearer,
+        web_audit_log_write_tools,
+        web_audit_trust_x_forwarded_for,
         allow_insecure_no_auth_for_non_loopback,
     } = ssw;
 
@@ -1488,6 +1498,8 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
         sync_default_tool_sandbox_docker_user,
         web_api_bearer_token,
         web_api_require_bearer,
+        web_audit_log_write_tools,
+        web_audit_trust_x_forwarded_for,
         allow_insecure_no_auth_for_non_loopback,
         conversation_store_sqlite_path,
         agent_memory_file_enabled,
@@ -1613,6 +1625,8 @@ fn build_agent_config_from_finalize(
         sync_default_tool_sandbox_docker_user,
         web_api_bearer_token,
         web_api_require_bearer,
+        web_audit_log_write_tools,
+        web_audit_trust_x_forwarded_for,
         allow_insecure_no_auth_for_non_loopback,
         conversation_store_sqlite_path,
         agent_memory_file_enabled,
@@ -1714,6 +1728,8 @@ fn build_agent_config_from_finalize(
         workspace_allowed_roots,
         web_api_bearer_token,
         web_api_require_bearer,
+        web_audit_log_write_tools,
+        web_audit_trust_x_forwarded_for,
         allow_insecure_no_auth_for_non_loopback,
         health_llm_models_probe,
         health_llm_models_probe_cache_secs,

@@ -82,6 +82,8 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     pub long_term_memory_scope_id: Option<String>,
     pub tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
+    /// Web 审计；与写工具日志配套。
+    pub request_audit: Option<Arc<crate::web::audit::WebRequestAudit>>,
 }
 
 pub(crate) enum ExecuteToolsBatchOutcome {
@@ -165,6 +167,7 @@ struct ExecuteToolsCommonCtx<'a> {
     long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     long_term_memory_scope_id: Option<String>,
     tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
+    request_audit: Option<Arc<crate::web::audit::WebRequestAudit>>,
 }
 
 async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsBatchOutcome {
@@ -283,6 +286,7 @@ pub(crate) async fn per_execute_tools_web(
         long_term_memory,
         long_term_memory_scope_id,
         tracing_chat_turn,
+        request_audit,
     } = ctx;
 
     let _tool_trace = request_chrome_trace
@@ -312,6 +316,7 @@ pub(crate) async fn per_execute_tools_web(
         long_term_memory,
         long_term_memory_scope_id,
         tracing_chat_turn,
+        request_audit,
     })
     .await
 }

@@ -132,6 +132,7 @@ async fn run_agent_turn_outer_loop_tool_round_then_final_assistant() {
         read_file_turn_cache: None,
         turn_allowed_tool_names: None,
         tracing_chat_turn: None,
+        request_audit: None,
     };
 
     run_agent_turn(params)
@@ -307,6 +308,7 @@ async fn run_agent_turn_hierarchical_end_to_end_mock_llm_sequence() {
         read_file_turn_cache: None,
         turn_allowed_tool_names: None,
         tracing_chat_turn: None,
+        request_audit: None,
     };
 
     run_agent_turn(params)

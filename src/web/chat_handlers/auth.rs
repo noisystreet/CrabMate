@@ -16,7 +16,7 @@ use crate::config::ExposeSecret;
 use crate::web::http_types::chat::ApiError;
 
 /// 与常见 API 网关（Dify、Open WebUI 等）一致的备用请求头；值与 `web_api_bearer_token` 相同。
-pub(crate) static WEB_API_X_API_KEY_HEADER: &str = "x-api-key";
+pub(crate) const WEB_API_X_API_KEY_HEADER: &str = "x-api-key";
 
 fn secret_bytes_trimmed(token: &str) -> &[u8] {
     token.trim().as_bytes()

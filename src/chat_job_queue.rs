@@ -26,6 +26,7 @@ use crate::sse::SseStreamHub;
 use crate::types::{
     CommandApprovalDecision, LlmSeedOverride, Message, Tool, message_content_as_str,
 };
+use crate::web::audit::WebRequestAudit;
 
 const RECENT_CAP: usize = 32;
 
@@ -224,6 +225,8 @@ pub struct JsonSubmitParams {
     pub executor_llm_override: Option<WebChatLlmOverride>,
     /// 可选：本任务覆盖执行模式（rolling_planning / hierarchical）。
     pub execution_mode_override: Option<WebExecutionModeOverride>,
+    /// HTTP 审计上下文（客户端 IP、Bearer 指纹）；定时任务为占位。
+    pub request_audit: WebRequestAudit,
     pub reply_tx: oneshot::Sender<Result<Vec<Message>, ChatJsonJobFailure>>,
 }
 
@@ -247,6 +250,8 @@ pub struct StreamSubmitParams {
     pub executor_llm_override: Option<WebChatLlmOverride>,
     /// 可选：本任务覆盖执行模式（rolling_planning / hierarchical）。
     pub execution_mode_override: Option<WebExecutionModeOverride>,
+    /// HTTP 审计上下文（客户端 IP、Bearer 指纹）；定时任务为占位。
+    pub request_audit: WebRequestAudit,
     /// HTTP SSE 层：每条为 **`(Last-Event-ID 序号, data 负载)`**（与 hub 环形缓冲一致）。
     pub stream_event_tx: mpsc::Sender<(u64, String)>,
     pub web_approval_session: Option<WebApprovalSession>,
@@ -300,6 +305,7 @@ enum QueuedChatJob {
         execution_mode_override: Option<WebExecutionModeOverride>,
         stream_event_tx: mpsc::Sender<(u64, String)>,
         web_approval_session: Option<WebApprovalSession>,
+        request_audit: WebRequestAudit,
     },
     Json {
         job_id: u64,
@@ -318,6 +324,7 @@ enum QueuedChatJob {
         executor_llm_override: Option<WebChatLlmOverride>,
         execution_mode_override: Option<WebExecutionModeOverride>,
         reply_tx: oneshot::Sender<Result<Vec<Message>, ChatJsonJobFailure>>,
+        request_audit: WebRequestAudit,
     },
 }
 
@@ -480,6 +487,7 @@ impl ChatJobQueue {
             execution_mode_override,
             stream_event_tx,
             web_approval_session,
+            request_audit,
         } = p;
         let job = QueuedChatJob::Stream {
             job_id,
@@ -499,6 +507,7 @@ impl ChatJobQueue {
             execution_mode_override,
             stream_event_tx,
             web_approval_session,
+            request_audit,
         };
         self.inner
             .submit_tx
@@ -526,6 +535,7 @@ impl ChatJobQueue {
             executor_llm_override,
             execution_mode_override,
             reply_tx,
+            request_audit,
         } = p;
         let job = QueuedChatJob::Json {
             job_id,
@@ -544,6 +554,7 @@ impl ChatJobQueue {
             executor_llm_override,
             execution_mode_override,
             reply_tx,
+            request_audit,
         };
         self.inner
             .submit_tx
@@ -1034,6 +1045,7 @@ struct StreamQueuedJobParams {
     execution_mode_override: Option<WebExecutionModeOverride>,
     stream_event_tx: mpsc::Sender<(u64, String)>,
     web_approval_session: Option<WebApprovalSession>,
+    request_audit: WebRequestAudit,
 }
 
 async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcome {
@@ -1055,6 +1067,7 @@ async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcome {
         execution_mode_override,
         stream_event_tx,
         web_approval_session,
+        request_audit,
     } = p;
     queue_deps.sse_stream_hub.register_job(job_id);
     let hub_bridge = queue_deps.sse_stream_hub.clone();
@@ -1187,6 +1200,7 @@ async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcome {
             conversation_id: conversation_id.as_str(),
             out: &sse_tx,
             turn_allowed_tool_names: turn_allow,
+            request_audit: std::sync::Arc::new(request_audit),
         },
     ))
     .await;
@@ -1249,6 +1263,7 @@ struct JsonQueuedJobParams {
     executor_llm_override: Option<WebChatLlmOverride>,
     execution_mode_override: Option<WebExecutionModeOverride>,
     reply_tx: oneshot::Sender<Result<Vec<Message>, ChatJsonJobFailure>>,
+    request_audit: WebRequestAudit,
 }
 
 async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
@@ -1269,6 +1284,7 @@ async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
         executor_llm_override,
         execution_mode_override,
         reply_tx,
+        request_audit,
     } = p;
     info!(
         target: "crabmate",
@@ -1345,6 +1361,7 @@ async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
             job_id,
             conversation_id: conversation_id.as_str(),
             turn_allowed_tool_names: turn_allow,
+            request_audit: std::sync::Arc::new(request_audit),
         },
     ))
     .await;
@@ -1449,6 +1466,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             execution_mode_override,
             stream_event_tx,
             web_approval_session,
+            request_audit,
         } => {
             run_stream_queued_job(StreamQueuedJobParams {
                 job_id,
@@ -1468,6 +1486,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 execution_mode_override,
                 stream_event_tx,
                 web_approval_session,
+                request_audit,
             })
             .await
         }
@@ -1488,6 +1507,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             executor_llm_override,
             execution_mode_override,
             reply_tx,
+            request_audit,
         } => {
             run_json_queued_job(JsonQueuedJobParams {
                 job_id,
@@ -1506,6 +1526,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 executor_llm_override,
                 execution_mode_override,
                 reply_tx,
+                request_audit,
             })
             .await
         }

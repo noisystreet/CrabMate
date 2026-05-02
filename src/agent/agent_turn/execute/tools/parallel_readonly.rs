@@ -421,6 +421,7 @@ pub(super) async fn execute_tools_parallel(
         long_term_memory,
         long_term_memory_scope_id,
         tracing_chat_turn,
+        request_audit: _,
     } = ctx;
 
     let tools_defs_hint = Arc::new(tools_defs_full.to_vec());
