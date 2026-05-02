@@ -4,6 +4,54 @@
 
 use crate::config::{AgentConfig, PlannerExecutorMode};
 
+/// 非分层、且 **`intent_at_turn_start` 已通过** 且已知 **`staged_plan_intent_gate`** 是否放行时，
+/// 主执行路径的**显式枚举**（与 `run_dispatch::dispatch_non_hierarchical_turn` 的 `if` 链一一对应）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NonHierarchicalMainRoute {
+    /// `planner_executor_mode == LogicalDualAgent` 且门控放行。
+    LogicalDualAgentStaged,
+    /// `staged_plan_execution` 且门控放行。
+    StagedPlanExecution,
+    /// 默认：`run_agent_outer_loop`。
+    SingleAgentOuterLoop,
+}
+
+impl NonHierarchicalMainRoute {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::LogicalDualAgentStaged => "logical_dual_agent_staged",
+            Self::StagedPlanExecution => "staged_plan_execution",
+            Self::SingleAgentOuterLoop => "single_agent_outer_loop",
+        }
+    }
+}
+
+/// 解析非分层主路径（纯函数）。
+pub(crate) fn resolve_non_hierarchical_main_route(
+    cfg: &AgentConfig,
+    staged_intent_gate_allow: bool,
+) -> NonHierarchicalMainRoute {
+    if cfg.planner_executor_mode == PlannerExecutorMode::LogicalDualAgent
+        && staged_intent_gate_allow
+    {
+        NonHierarchicalMainRoute::LogicalDualAgentStaged
+    } else if cfg.staged_plan_execution && staged_intent_gate_allow {
+        NonHierarchicalMainRoute::StagedPlanExecution
+    } else {
+        NonHierarchicalMainRoute::SingleAgentOuterLoop
+    }
+}
+
+impl From<NonHierarchicalMainRoute> for TurnOrchestrationMode {
+    fn from(r: NonHierarchicalMainRoute) -> Self {
+        match r {
+            NonHierarchicalMainRoute::LogicalDualAgentStaged => Self::LogicalDualAgentStaged,
+            NonHierarchicalMainRoute::StagedPlanExecution => Self::StagedPlanExecution,
+            NonHierarchicalMainRoute::SingleAgentOuterLoop => Self::SingleAgentOuterLoop,
+        }
+    }
+}
+
 /// 本轮实际进入的主执行形态（在已知分支条件后记录；**不含**分层内 Manager/Operator 子阶段）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TurnOrchestrationMode {
@@ -31,22 +79,6 @@ impl TurnOrchestrationMode {
     }
 }
 
-/// 在 **`intent_at_turn_start` 已通过**（继续主路径）且已知 **`staged_plan_intent_gate`** 是否放行时，解析非分层主路径。
-pub(crate) fn resolve_non_hierarchical_main_path(
-    cfg: &AgentConfig,
-    staged_intent_gate_allow: bool,
-) -> TurnOrchestrationMode {
-    if cfg.planner_executor_mode == PlannerExecutorMode::LogicalDualAgent
-        && staged_intent_gate_allow
-    {
-        TurnOrchestrationMode::LogicalDualAgentStaged
-    } else if cfg.staged_plan_execution && staged_intent_gate_allow {
-        TurnOrchestrationMode::StagedPlanExecution
-    } else {
-        TurnOrchestrationMode::SingleAgentOuterLoop
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -62,7 +94,11 @@ mod tests {
     fn logical_dual_wins_when_gate_allows() {
         let cfg = cfg_with(PlannerExecutorMode::LogicalDualAgent, true);
         assert_eq!(
-            resolve_non_hierarchical_main_path(&cfg, true),
+            resolve_non_hierarchical_main_route(&cfg, true),
+            NonHierarchicalMainRoute::LogicalDualAgentStaged
+        );
+        assert_eq!(
+            TurnOrchestrationMode::from(resolve_non_hierarchical_main_route(&cfg, true)),
             TurnOrchestrationMode::LogicalDualAgentStaged
         );
     }
@@ -71,8 +107,8 @@ mod tests {
     fn staged_when_dual_disabled_but_staged_on() {
         let cfg = cfg_with(PlannerExecutorMode::SingleAgent, true);
         assert_eq!(
-            resolve_non_hierarchical_main_path(&cfg, true),
-            TurnOrchestrationMode::StagedPlanExecution
+            resolve_non_hierarchical_main_route(&cfg, true),
+            NonHierarchicalMainRoute::StagedPlanExecution
         );
     }
 
@@ -80,8 +116,8 @@ mod tests {
     fn single_outer_when_gate_denies() {
         let cfg = cfg_with(PlannerExecutorMode::LogicalDualAgent, true);
         assert_eq!(
-            resolve_non_hierarchical_main_path(&cfg, false),
-            TurnOrchestrationMode::SingleAgentOuterLoop
+            resolve_non_hierarchical_main_route(&cfg, false),
+            NonHierarchicalMainRoute::SingleAgentOuterLoop
         );
     }
 
@@ -89,8 +125,8 @@ mod tests {
     fn single_outer_when_staged_off_even_if_gate_allows() {
         let cfg = cfg_with(PlannerExecutorMode::SingleAgent, false);
         assert_eq!(
-            resolve_non_hierarchical_main_path(&cfg, true),
-            TurnOrchestrationMode::SingleAgentOuterLoop
+            resolve_non_hierarchical_main_route(&cfg, true),
+            NonHierarchicalMainRoute::SingleAgentOuterLoop
         );
     }
 }

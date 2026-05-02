@@ -2,11 +2,11 @@
 //!
 //! 当 `planner_executor_mode = Hierarchical` 时使用此模块执行任务分解和子目标执行。
 
+use super::hierarchical_intent_route::{
+    HierarchicalPostIntentRoute, resolve_hierarchical_post_intent_route,
+};
 use crate::agent::hierarchy::task::{ArtifactKind, BuildArtifactKind, TaskResult};
 use crate::agent::hierarchy::{self, HierarchyRunnerResult};
-use crate::agent::intent_router::{
-    IntentKind, intent_reply_delegates_to_main_model, qa_readonly_style_primary,
-};
 use crate::agent::per_coord::{PerCoordinator, PerCoordinatorInit};
 use crate::sse;
 use std::collections::HashMap;
@@ -123,53 +123,52 @@ pub(crate) async fn run_hierarchical_agent(
         intent_at_turn_start::IntentGateResult::ProceedExecute { assessment } => assessment,
     };
 
-    let skip_manager_for_discourse =
-        intent_reply_delegates_to_main_model(assessment.kind, &assessment.primary_intent)
-            || matches!(
-                &assessment.action,
-                IntentAction::ClarifyThenExecute(_) | IntentAction::ConfirmThenExecute(_)
-            )
-            || (assessment.kind == IntentKind::Qa
-                && qa_readonly_style_primary(&assessment.primary_intent)
-                && matches!(&assessment.action, IntentAction::DirectReply(_)));
-    if skip_manager_for_discourse {
-        crate::turn_replay_dump::append_decision_point_event_if_configured(
-            "intent",
-            "agent_execution_mode",
-            "single_agent_outer_loop",
-            "意图判定为话语型/澄清确认流，跳过分层 Manager，转主模型单 Agent 外循环",
-            serde_json::json!({
-                "intent_kind": format!("{:?}", assessment.kind),
-                "primary_intent": assessment.primary_intent,
-            }),
-            "current_turn",
-            None,
-        );
-        let action_tag = match &assessment.action {
-            IntentAction::Execute => "Execute",
-            IntentAction::DirectReply(_) => "DirectReply",
-            IntentAction::ClarifyThenExecute(_) => "ClarifyThenExecute",
-            IntentAction::ConfirmThenExecute(_) => "ConfirmThenExecute",
-        };
-        log::info!(
-            target: "crabmate",
-            "[HIERARCHICAL] kind={:?} primary={} action={}: discourse/clarify/confirm delegates to main model; skipping Manager/decompose, using single-agent outer loop",
-            assessment.kind,
-            assessment.primary_intent,
-            action_tag
-        );
-        info!(
-            target: "crabmate::agent_turn",
-            turn_orchestration_mode = TurnOrchestrationMode::Hierarchical.as_str(),
-            hierarchical_phase = HierarchicalRunPhase::DiscourseFallbackOuter.as_str(),
-            intent_kind = ?assessment.kind,
-            primary_intent = %assessment.primary_intent,
-            action = action_tag,
-            "run_hierarchical_agent discourse fallback to outer_loop"
-        );
-        let mut per_coord =
-            PerCoordinator::new(PerCoordinatorInit::from_agent_config(p.ctx.cfg.as_ref()));
-        return run_agent_outer_loop(p, &mut per_coord).await;
+    let post_intent = resolve_hierarchical_post_intent_route(&assessment);
+    match post_intent {
+        HierarchicalPostIntentRoute::DiscourseFallbackOuter(reason) => {
+            crate::turn_replay_dump::append_decision_point_event_if_configured(
+                "intent",
+                "agent_execution_mode",
+                "single_agent_outer_loop",
+                "意图判定为话语型/澄清确认流，跳过分层 Manager，转主模型单 Agent 外循环",
+                serde_json::json!({
+                    "intent_kind": format!("{:?}", assessment.kind),
+                    "primary_intent": assessment.primary_intent,
+                    "hierarchical_post_intent_route": post_intent.as_str(),
+                    "hierarchical_discourse_fallback_reason": reason.as_str(),
+                }),
+                "current_turn",
+                None,
+            );
+            let action_tag = match &assessment.action {
+                IntentAction::Execute => "Execute",
+                IntentAction::DirectReply(_) => "DirectReply",
+                IntentAction::ClarifyThenExecute(_) => "ClarifyThenExecute",
+                IntentAction::ConfirmThenExecute(_) => "ConfirmThenExecute",
+            };
+            log::info!(
+                target: "crabmate",
+                "[HIERARCHICAL] kind={:?} primary={} action={}: discourse/clarify/confirm delegates to main model; skipping Manager/decompose, using single-agent outer loop",
+                assessment.kind,
+                assessment.primary_intent,
+                action_tag
+            );
+            info!(
+                target: "crabmate::agent_turn",
+                turn_orchestration_mode = TurnOrchestrationMode::Hierarchical.as_str(),
+                hierarchical_phase = HierarchicalRunPhase::DiscourseFallbackOuter.as_str(),
+                hierarchical_post_intent_route = post_intent.as_str(),
+                hierarchical_discourse_fallback_reason = reason.as_str(),
+                intent_kind = ?assessment.kind,
+                primary_intent = %assessment.primary_intent,
+                action = action_tag,
+                "run_hierarchical_agent discourse fallback to outer_loop"
+            );
+            let mut per_coord =
+                PerCoordinator::new(PerCoordinatorInit::from_agent_config(p.ctx.cfg.as_ref()));
+            return run_agent_outer_loop(p, &mut per_coord).await;
+        }
+        HierarchicalPostIntentRoute::RouterManagerRunner => {}
     }
 
     log::info!(
