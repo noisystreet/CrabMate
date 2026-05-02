@@ -1,42 +1,14 @@
 //! 工具 JSON 参数 schema（按领域拆分；由 `tool_params` 再导出）。
 
+use crate::tools::tool_json_schema::tool_parameters_schema_value;
+use crate::tools::tool_param_types::{CalcArgs, GetCurrentTimeArgs};
+
 pub(in crate::tools) fn params_get_current_time() -> serde_json::Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "mode": {
-                "type": "string",
-                "description": "输出模式：time（仅时间）、calendar（仅日历）、both（时间+日历）。默认 time。",
-                "enum": ["time", "calendar", "both"]
-            },
-            "year": {
-                "type": "integer",
-                "description": "可选：日历年份（仅在 mode=calendar/both 时生效）"
-            },
-            "month": {
-                "type": "integer",
-                "description": "可选：日历月份 1-12（仅在 mode=calendar/both 时生效）",
-                "minimum": 1,
-                "maximum": 12
-            }
-        },
-        "required": [],
-        "additionalProperties": false
-    })
+    tool_parameters_schema_value::<GetCurrentTimeArgs>()
 }
 
 pub(in crate::tools) fn params_calc() -> serde_json::Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "expression": {
-                "type": "string",
-                "description": "数学表达式，如 1+2*3、2^10、sqrt(2)、s(pi/2)、math::log10(100)"
-            }
-        },
-        "required": ["expression"],
-        "additionalProperties": false
-    })
+    tool_parameters_schema_value::<CalcArgs>()
 }
 
 pub(in crate::tools) fn params_convert_units() -> serde_json::Value {

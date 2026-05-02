@@ -67,6 +67,8 @@ mod text_transform;
 mod time;
 mod todo_scan;
 mod tool_args_validate;
+mod tool_json_schema;
+mod tool_param_types;
 mod tool_params;
 mod tool_specs_registry;
 mod tool_summary;

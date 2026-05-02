@@ -9,17 +9,6 @@ pub enum TimeOutputMode {
     Both,
 }
 
-impl TimeOutputMode {
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s.trim().to_lowercase().as_str() {
-            "time" => Some(Self::Time),
-            "calendar" => Some(Self::Calendar),
-            "both" => Some(Self::Both),
-            _ => None,
-        }
-    }
-}
-
 /// 返回当前本地时间或日历（支持 mode= time|calendar|both；可选 year/month 用于日历）
 pub fn run(mode: TimeOutputMode, year: Option<i32>, month: Option<u32>) -> String {
     let now = chrono::Local::now();
