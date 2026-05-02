@@ -1,8 +1,10 @@
 //! 编排级集成测：通过 [`crabmate::RunAgentTurnParams`] 注入 [`crabmate::llm::ChatCompletionsBackend`]，
 //! 钉住 `run_agent_turn` → `run_agent_outer_loop` 的「Planner → 工具 → Planner → 终答」入口链，**不**访问真实网络。
 //!
-//! 另含分层 [`crabmate::agent::hierarchy::runner::run_hierarchical`]：`Router` → `Manager` 分解 → `Operator`
-//! 首轮终答（顺序执行路径），验证注入的 mock 与 `HierarchicalExecutor::with_context` 一致。
+//! 另含分层：
+//! - [`crabmate::run_agent_turn`] + **`PlannerExecutorMode::Hierarchical`**：经 `run_hierarchical_agent` →
+//!   `runner::run_hierarchical`，与生产入口一致；
+//! - 或直接 [`crabmate::agent::hierarchy::runner::run_hierarchical`]（同上三段 LLM，顺序单子目标）。
 
 use std::path::Path;
 use std::sync::Arc;
@@ -228,5 +230,104 @@ async fn run_hierarchical_router_manager_operator_mock_llm_sequence() {
             .any(|r| matches!(r.status, TaskStatus::Completed)),
         "expected at least one completed subgoal, got {:?}",
         outcome.execution_result.results
+    );
+}
+
+/// `run_agent_turn` → `run_agent_turn_common` → `dispatch_hierarchical_turn` → `run_hierarchical`：
+/// 与生产 Web/CLI 相同的 crate 根入口，钉住注入的 `llm_backend` 经 `RunLoopCtx` 传入分层 runner。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn run_agent_turn_hierarchical_end_to_end_mock_llm_sequence() {
+    let cfg = cfg_hierarchical_for_mock_runner();
+    let client = reqwest::Client::new();
+    let tools = build_tools();
+
+    let router_json = r#"{"mode":"hierarchical","reasoning":"mock","estimated_steps":3}"#;
+    let manager_json = r#"{
+  "sub_goals": [
+    {
+      "goal_id": "goal_1",
+      "description": "根据用户指令：定位报错原因，必要时只读查看相关文件。",
+      "priority": 0,
+      "depends_on": [],
+      "required_tools": ["get_current_time"],
+      "goal_type": "analyze"
+    }
+  ],
+  "execution_strategy": "sequential"
+}"#;
+    let operator_done = Message::assistant_only("子目标已完成 done".to_string());
+
+    let backend: &'static SequencedMockBackend = Box::leak(Box::new(SequencedMockBackend::new(
+        vec![
+            Message::assistant_only(router_json.to_string()),
+            Message::assistant_only(manager_json.to_string()),
+            operator_done,
+        ],
+        "stop",
+    )));
+
+    // 须为 L1 **Execute**（避免 `qa.readonly` + `DirectReply` 走话语型回落 `run_agent_outer_loop`，仅消耗一次 mock）。
+    let task = "这个报错帮我定位下原因：error[E0425]: cannot find value `x` in this scope";
+    let mut messages = vec![
+        Message::system_only("test system".to_string()),
+        Message::user_only(task.to_string()),
+    ];
+
+    let work_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let params = RunAgentTurnParams {
+        client: &client,
+        api_key: "",
+        cfg: &cfg,
+        tools: tools.as_slice(),
+        messages: &mut messages,
+        effective_working_dir: work_dir,
+        workspace_is_set: true,
+        transport: AgentTurnTransport {
+            out: None,
+            render_to_terminal: false,
+            no_stream: true,
+            cancel: None,
+            per_flight: None,
+            web_tool_ctx: None,
+            cli_tool_ctx: None,
+            plain_terminal_stream: false,
+            llm_backend: Some(backend as &dyn ChatCompletionsBackend),
+        },
+        llm: AgentTurnLlmOverrides {
+            temperature_override: None,
+            model_override: None,
+            use_executor_model: false,
+            executor_model_override: None,
+            executor_api_base: None,
+            executor_api_key: None,
+            seed_override: LlmSeedOverride::default(),
+        },
+        long_term_memory: None,
+        long_term_memory_scope_id: None,
+        read_file_turn_cache: None,
+        turn_allowed_tool_names: None,
+        tracing_chat_turn: None,
+    };
+
+    run_agent_turn(params)
+        .await
+        .expect("hierarchical run_agent_turn mock must succeed");
+
+    assert_eq!(
+        backend.call_seq.load(Ordering::SeqCst),
+        3,
+        "expected hierarchical path: router LLM → manager decompose LLM → operator call_llm"
+    );
+
+    let last = messages.last().expect("at least one message after turn");
+    assert_eq!(last.role, "assistant");
+    let body = message_content_as_str(&last.content)
+        .unwrap_or("")
+        .to_string();
+    assert!(
+        body.contains("分层执行概览") && body.contains("goal_1"),
+        "expected hierarchical finalize summary in last assistant, got len={} preview={:?}",
+        body.len(),
+        body.chars().take(200).collect::<String>()
     );
 }
