@@ -9,7 +9,7 @@
 1. 监听 **`POST /feishu/events`**，处理飞书 **事件订阅** 回调。
 2. **加密体**：若请求 JSON 顶层含 **`encrypt`**（Base64），则使用 **`FEISHU_ENCRYPT_KEY`** 按飞书文档 **AES-256-CBC** 解密后再解析（密钥为 **`SHA256(Encrypt Key 字符串 UTF-8)`**，密文为 **`base64(iv(16) || ciphertext)`**，**PKCS#7** 去填充）。算法与官方一致：[事件解密](https://open.feishu.cn/document/server-docs/event-subscription-guide/event-subscription-configure-/encrypt-key-encryption-configuration-case?lang=zh-CN)。
 3. **`url_verification`**：在解密（若需要）后的 JSON 上读取 **`challenge`**，返回 **`{"challenge":"..."}`**。
-4. **`im.message.receive_v1`**（文本）：解析 `event.message.content` 内 JSON → 调 CrabMate **`POST /chat`**（`message` + **`conversation_id`** = `feishu:<chat_id>`）→ 使用 **`tenant_access_token`** 调用飞书 **[回复消息](https://open.feishu.cn/document/server-docs/im-v1/message/reply)**。
+4. **`im.message.receive_v1`**（文本）：默认 **先入有界内存队列并立即 HTTP 200**（飞书异步 ACK），单 worker 顺序消费：解析 → CrabMate **`POST /chat`**（`conversation_id` = `feishu:<chat_id>`）→ **`tenant_access_token`** → [回复消息](https://open.feishu.cn/document/server-docs/im-v1/message/reply)。队列满返回 **503**（`FEISHU_EVENT_QUEUE_FULL`）以便飞书重试；可用 **`FEISHU_ASYNC_WORKER=0`** 关闭为同步处理。
 5. **安全**：若配置了 **`FEISHU_VERIFICATION_TOKEN`**，则对**除 URL 校验外**的所有事件校验 JSON 内 **`header.token`**（或顶层 **`token`**）与之相等。若已完成 **`X-Lark-Signature`** 验签，则默认校验 **`X-Lark-Request-Timestamp`** 偏差（**`FEISHU_REPLAY_MAX_SKEW_SECS`**，默认 600s）并对 **`X-Lark-Request-Nonce`** 去重（**`FEISHU_NONCE_DEDUP_SECS`**，默认 900s）。群聊可设 **`FEISHU_GROUP_REQUIRE_BOT_MENTION=1`** + **`FEISHU_BOT_OPEN_ID`**，仅处理 **`mentions`** 中含本机器人的消息。
 
 ## 编译与运行
@@ -31,7 +31,9 @@ export FEISHU_APP_SECRET="YOUR_APP_SECRET"
 # 可选：群聊仅 @ 机器人时回复（需机器人 open_id）
 # export FEISHU_GROUP_REQUIRE_BOT_MENTION=1
 # export FEISHU_BOT_OPEN_ID="ou_..."
-export RUST_LOG=info
+# 可选：异步 ACK（默认开启）；队列容量（默认 100）
+# export FEISHU_ASYNC_WORKER=1
+# export FEISHU_EVENT_QUEUE_CAPACITY=100
 cargo run -p crabmate-im-bridge
 ```
 
@@ -60,7 +62,7 @@ cargo run -p crabmate-im-bridge
 | 项 | 说明 |
 |----|------|
 | **加密事件体** | ~~待实现~~ **已实现**：顶层 **`encrypt`** → **`FEISHU_ENCRYPT_KEY`** + AES-256-CBC + PKCS#7（见上文官方文档链接）。 |
-| **ACK 与超时** | HTTP 回调须在飞书要求时间内响应；大模型慢时可 **先 200 ACK**，再异步调 CrabMate、异步调「回复/编辑消息」接口（需自建任务队列与重试，并处理飞书限频）。 |
+| **ACK 与超时** | **部分缓解**：默认 **先入队再 200**；队列满 **503** 触发重试。仍非持久队列（进程重启丢件）；大并发可前置网关或多实例 + 外部队列（Kafka/Redis）。 |
 | **消息类型扩展** | 支持 **`post`**、图片、文件等，或统一抽取为纯文本再送入模型；参见 [接收消息内容](https://open.feishu.cn/document/server-docs/im-v1/message/events/message_content)。 |
 | **群噪声控制** | 可配置「仅处理 **@ 机器人** 的消息」「忽略 `sender_type=bot`」等，减少无关调用与费用。 |
 

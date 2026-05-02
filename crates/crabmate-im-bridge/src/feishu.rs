@@ -2,7 +2,7 @@
 //! - **明文**：直接解析 JSON。
 //! - **加密体**（顶层 **`encrypt`**）：按飞书文档 **AES-256-CBC** 解密后再解析（需配置 **`FEISHU_ENCRYPT_KEY`**）。
 //! - `url_verification`：返回 **`{"challenge":"..."}`**。
-//! - `im.message.receive_v1`（文本）：→ **`POST /chat`** → [回复消息](https://open.feishu.cn/document/server-docs/im-v1/message/reply)。
+//! - `im.message.receive_v1`（文本）：默认 **先入队再立即 HTTP 200**（异步 ACK），后台 worker 调 **`POST /chat`** 并回复飞书；可关闭为同步处理（见配置）。
 //!
 //! 签名校验（可选）：若配置了 **Encrypt Key**，且请求带 **`X-Lark-Signature`** 等头，则按飞书文档
 //! `SHA256(timestamp + nonce + encrypt_key + body)` 十六进制小写比对（**原始 HTTP body 字符串**；**URL 校验请求可能无签名头**，此时跳过校验）。
@@ -23,7 +23,7 @@ use hex::FromHex;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, mpsc};
 use tracing::{error, warn};
 
 use crate::crabmate::{CrabmateClient, CrabmateError};
@@ -51,6 +51,10 @@ pub struct FeishuBridgeConfig {
     pub crabmate: Arc<CrabmateClient>,
     /// 幂等：同一 `message_id` 在窗口内忽略（飞书可能重复推送）。
     pub dedup_ttl: Duration,
+    /// 为 true 时 **`im.message.receive_v1`** 先入内存队列并 **立即返回 HTTP 200**（飞书异步 ACK）；为 false 时在 HTTP 线程内同步处理完再返回。
+    pub async_worker: bool,
+    /// 异步队列容量（`try_send` 满时返回 **503** 以便飞书重试）；仅在 **`async_worker`** 为 true 时生效，至少为 **1**。
+    pub event_queue_capacity: usize,
 }
 
 pub struct FeishuBridgeState {
@@ -59,6 +63,8 @@ pub struct FeishuBridgeState {
     token: Mutex<TenantTokenCache>,
     seen_message_ids: DashMap<String, Instant>,
     seen_lark_nonces: DashMap<String, Instant>,
+    /// `None`：同步处理；`Some(tx)`：异步 worker 消费。
+    event_tx: Option<mpsc::Sender<Value>>,
 }
 
 struct TenantTokenCache {
@@ -73,7 +79,16 @@ impl FeishuBridgeState {
             .use_rustls_tls()
             .timeout(Duration::from_secs(120))
             .build()?;
-        Ok(Arc::new(Self {
+
+        let (event_tx, event_rx) = if cfg.async_worker && cfg.event_queue_capacity > 0 {
+            let cap = cfg.event_queue_capacity.max(1);
+            let (tx, rx) = mpsc::channel(cap);
+            (Some(tx), Some(rx))
+        } else {
+            (None, None)
+        };
+
+        let state = Arc::new(Self {
             cfg,
             http,
             token: Mutex::new(TenantTokenCache {
@@ -82,7 +97,21 @@ impl FeishuBridgeState {
             }),
             seen_message_ids: DashMap::new(),
             seen_lark_nonces: DashMap::new(),
-        }))
+            event_tx,
+        });
+
+        if let Some(mut rx) = event_rx {
+            let st = Arc::clone(&state);
+            tokio::spawn(async move {
+                while let Some(envelope) = rx.recv().await {
+                    if let Err(e) = handle_im_message_receive(&st, &envelope).await {
+                        error!(?e, "async feishu im.message.receive_v1 worker failed");
+                    }
+                }
+            });
+        }
+
+        Ok(state)
     }
 }
 
@@ -184,13 +213,35 @@ async fn feishu_events(
         .or_else(|| v.get("type").and_then(|x| x.as_str()));
 
     match event_type {
-        Some("im.message.receive_v1") => match handle_im_message_receive(&st, &v).await {
-            Ok(()) => (StatusCode::OK, Json(json!({}))).into_response(),
-            Err(e) => {
-                error!(?e, "handle im.message.receive_v1 failed");
-                (StatusCode::OK, Json(json!({}))).into_response()
+        Some("im.message.receive_v1") => {
+            if let Some(tx) = &st.event_tx {
+                match tx.try_send(v) {
+                    Ok(()) => {
+                        tracing::debug!("feishu im.message.receive_v1 enqueued");
+                        (StatusCode::OK, Json(json!({}))).into_response()
+                    }
+                    Err(e) => {
+                        warn!(?e, "feishu event queue full");
+                        (
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            Json(json!({
+                                "error": "event queue full; retry later",
+                                "code": "FEISHU_EVENT_QUEUE_FULL"
+                            })),
+                        )
+                            .into_response()
+                    }
+                }
+            } else {
+                match handle_im_message_receive(&st, &v).await {
+                    Ok(()) => (StatusCode::OK, Json(json!({}))).into_response(),
+                    Err(e) => {
+                        error!(?e, "handle im.message.receive_v1 failed");
+                        (StatusCode::OK, Json(json!({}))).into_response()
+                    }
+                }
             }
-        },
+        }
         Some(other) => {
             warn!(event_type = other, "ignored feishu event type");
             (StatusCode::OK, Json(json!({}))).into_response()
@@ -628,6 +679,8 @@ mod tests {
                 CrabmateClient::new("http://127.0.0.1:9", "b").expect("client"),
             ),
             dedup_ttl: Duration::from_secs(1),
+            async_worker: false,
+            event_queue_capacity: 1,
         };
         let headers = HeaderMap::new();
         assert!(!verify_lark_signature_if_needed(&cfg, &headers, "{}").unwrap());
@@ -658,6 +711,8 @@ mod tests {
                 CrabmateClient::new("http://127.0.0.1:9", "b").expect("client"),
             ),
             dedup_ttl: Duration::from_secs(1),
+            async_worker: false,
+            event_queue_capacity: 1,
         };
         let v = json!({ "header": { "token": "vtok" } });
         assert!(verify_event_verification_token(&cfg, &v).is_ok());
