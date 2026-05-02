@@ -4,17 +4,15 @@ use gloo_timers::future::TimeoutFuture;
 use leptos::html::Div;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use std::sync::Arc;
 
-use crate::a11y::{focus_first_in_modal_container, trap_tab_in_container};
+use crate::a11y::focus_first_in_modal_container;
 use crate::app::settings_commit::{CommitAllSettingsInput, commit_all_settings};
 use crate::i18n::{self};
 
 use super::app_shell_ctx::SettingsModalSignals;
 use super::settings_form_state::{SettingsFormCurrent, is_settings_dirty, refresh_baselines};
-use super::settings_sections::{
-    SettingsAppearanceBlock, SettingsExecutorLlmBlock, SettingsLlmBlock, SettingsLlmBlockBundle,
-    SettingsShortcutsBlock,
-};
+use super::settings_modal_dialog::{SettingsModalDialogInput, settings_modal_dialog};
 
 pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
     let SettingsModalSignals {
@@ -287,95 +285,34 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
         }
     };
 
-    view! {
-            <Show when=move || settings_modal.get()>
-                <div class="modal-backdrop" on:click=move |_| {
-                    if dirty.get() {
-                        discard();
-                    }
-                    close_modal();
-                }>
-                    <div
-                        class="modal"
-                        node_ref=settings_dialog_ref
-                        role="dialog"
-                        aria-modal="true"
-                        aria-labelledby="settings-modal-title"
-                        tabindex="-1"
-                        on:click=|ev: leptos::ev::MouseEvent| ev.stop_propagation()
-                        on:keydown=move |ev: web_sys::KeyboardEvent| {
-                            if ev.key() == "Tab" {
-                                if let Some(el) = settings_dialog_ref.get() {
-                                    trap_tab_in_container(&ev, el.as_ref());
-                                }
-                            }
-                        }
-                    >
-                        <div class="modal-head">
-                            <h2 class="modal-title" id="settings-modal-title">{move || i18n::settings_title(appearance_locale.get())}</h2>
-                            <span class="modal-badge">{move || i18n::settings_badge_local(appearance_locale.get())}</span>
-                            <Show when=move || dirty.get()>
-                                <span class="settings-unsaved-pill">{move || i18n::settings_unsaved_badge(appearance_locale.get())}</span>
-                            </Show>
-                            <span class="modal-head-spacer"></span>
-                            <button type="button" class="btn btn-secondary btn-sm" prop:disabled=move || !dirty.get() on:click=move |_| discard()>
-                                {move || i18n::settings_discard_changes(appearance_locale.get())}
-                            </button>
-                            <button type="button" class="btn btn-primary btn-sm" prop:disabled=move || !dirty.get() on:click=move |_| save_all()>
-                                {move || i18n::settings_save_all(appearance_locale.get())}
-                            </button>
-                            <button type="button" class="btn btn-ghost btn-sm" on:click=move |_| {
-                                if dirty.get() {
-                                    discard();
-                                }
-                                close_modal();
-                            }>
-                                {move || i18n::settings_close(appearance_locale.get())}
-                            </button>
-                        </div>
-                        <div class="modal-body">
-                            <p class="modal-hint">{move || i18n::settings_intro(appearance_locale.get())}</p>
-                            <Show when=move || llm_settings_feedback.get().is_some()>
-                                <p class="settings-save-feedback settings-save-feedback-global">{move || {
-                                    llm_settings_feedback.get().unwrap_or_default()
-                                }}</p>
-                            </Show>
-                            <SettingsAppearanceBlock
-                                locale=appearance_locale
-                                appearance_locale=appearance_locale
-                                appearance_theme=appearance_theme
-                                appearance_bg_decor=appearance_bg_decor
-                            />
-                            <SettingsLlmBlock bundle=SettingsLlmBlockBundle {
-                                locale: appearance_locale,
-                                llm_api_base_draft,
-                                llm_api_base_preset_select,
-                                llm_model_draft,
-                                llm_temperature_draft,
-                                llm_context_tokens_draft,
-                                execution_mode_draft: None,
-                                llm_api_key_draft,
-                                llm_has_saved_key,
-                                clear_client_key_intent,
-                                hint_class: "modal-hint settings-field-nested-hint",
-                            } />
-                            <SettingsExecutorLlmBlock
-                                locale=appearance_locale
-                                executor_llm_api_base_draft=executor_llm_api_base_draft
-                                executor_llm_api_base_preset_select=executor_llm_api_base_preset_select
-                                executor_llm_model_draft=executor_llm_model_draft
-                                executor_llm_api_key_draft=executor_llm_api_key_draft
-                                executor_llm_has_saved_key=executor_llm_has_saved_key
-                                clear_executor_key_intent=clear_executor_key_intent
-                                hint_class="modal-hint settings-field-nested-hint"
-                            />
-                            <SettingsShortcutsBlock
-                                locale=appearance_locale
-                                body_class="modal-hint"
-                            />
-                        </div>
-                    </div>
-                </div>
-            </Show>
-    }
+    let discard_rc: Arc<dyn Fn() + Send + Sync> = Arc::new(discard);
+    let close_modal_rc: Arc<dyn Fn() + Send + Sync> = Arc::new(close_modal);
+    let save_all_rc: Arc<dyn Fn() + Send + Sync> = Arc::new(save_all);
+
+    settings_modal_dialog(SettingsModalDialogInput {
+        settings_modal,
+        settings_dialog_ref,
+        appearance_locale,
+        appearance_theme,
+        appearance_bg_decor,
+        dirty,
+        discard: discard_rc,
+        close_modal: close_modal_rc,
+        save_all: save_all_rc,
+        llm_settings_feedback,
+        llm_api_base_draft,
+        llm_api_base_preset_select,
+        llm_model_draft,
+        llm_temperature_draft,
+        llm_context_tokens_draft,
+        llm_api_key_draft,
+        llm_has_saved_key,
+        clear_client_key_intent,
+        executor_llm_api_base_draft,
+        executor_llm_api_base_preset_select,
+        executor_llm_model_draft,
+        executor_llm_api_key_draft,
+        executor_llm_has_saved_key,
+        clear_executor_key_intent,
+    })
 }

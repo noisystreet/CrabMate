@@ -11,9 +11,10 @@ use tokio::sync::mpsc::Receiver;
 use crate::agent::hierarchy::{
     artifact_store::ArtifactStore,
     build_state::BuildState,
-    execution_helpers::{supplement_subgoal_required_tools, trim_for_detail},
+    execution_helpers::trim_for_detail,
     operator::{OperatorAgent, OperatorConfig, OperatorError},
     subgoal_context,
+    subgoal_required_tools::supplement_subgoal_required_tools,
     task::{SubGoal, TaskResult},
     tool_executor::{ProbeCache, ToolExecutor, ToolExecutorContext},
 };

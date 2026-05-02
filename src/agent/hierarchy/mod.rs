@@ -24,6 +24,7 @@ pub mod router;
 pub mod runner;
 pub mod session_state;
 pub mod subgoal_context;
+mod subgoal_required_tools;
 pub mod task;
 pub mod tool_executor;
 
@@ -54,3 +55,5 @@ pub use task::{
     DependencyContractEntry, ExecutionStrategy, GoalAcceptance, SubGoal, TaskResult, TaskStatus,
 };
 pub use tool_executor::{ExtractedArtifact, ExtractedArtifactKind, ToolExecutionResult};
+
+pub(crate) use subgoal_required_tools::supplement_subgoal_required_tools;

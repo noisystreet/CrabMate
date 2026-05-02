@@ -10,6 +10,7 @@ mod mutate;
 mod path;
 mod perm;
 mod read_tool;
+mod replace_lines_stream;
 mod symlink;
 mod tree_glob;
 mod write_ops;
