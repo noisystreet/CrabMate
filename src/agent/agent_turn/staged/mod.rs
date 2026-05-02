@@ -1423,13 +1423,23 @@ where
     F: Fn(String) -> Message,
 {
     let mut n = plan_steps.len();
-    staged_orchestrator::enter_steps_executing(
+    let orch_phase = staged_orchestrator::enter_steps_executing(
         patch_ctx.p.ctx.out,
         plan_id.as_str(),
         echo_terminal_staged,
         plan_steps.as_slice(),
     )
     .await;
+    tracing::info!(
+        target: "crabmate::staged",
+        staged_fsm = "steps_loop",
+        steps_loop_phase = "steps_executing_enter",
+        staged_round_orchestrator_phase = ?orch_phase,
+        plan_id = plan_id.as_str(),
+        step_count = n,
+        sub_phase = "executor",
+        "staged plan steps loop: started SSE + queue notice"
+    );
 
     let mut staged_loop_cancelled = false;
     let mut completed_steps = 0usize;
@@ -1437,6 +1447,17 @@ where
     let mut transition_counters: HashMap<String, u32> = HashMap::new();
     let start_time = std::time::Instant::now();
     while i < plan_steps.len() {
+        tracing::debug!(
+            target: "crabmate::staged",
+            staged_fsm = "steps_loop",
+            steps_loop_phase = "step_running",
+            plan_id = plan_id.as_str(),
+            step_index = i,
+            step_count = n,
+            completed_steps,
+            sub_phase = "executor",
+            "staged plan steps loop iteration enter"
+        );
         if staged_step_wall_clock_exceeded(
             patch_ctx.p.ctx.cfg.max_turn_duration_seconds,
             start_time.elapsed().as_secs(),
@@ -1457,6 +1478,17 @@ where
                 .is_some_and(|c| c.load(Ordering::SeqCst))
         {
             staged_loop_cancelled = true;
+            tracing::info!(
+                target: "crabmate::staged",
+                staged_fsm = "steps_loop",
+                steps_loop_phase = "cancelled_before_step",
+                plan_id = plan_id.as_str(),
+                step_index = i,
+                step_count = n,
+                completed_steps,
+                sub_phase = "executor",
+                "staged plan steps loop: SSE closed or user cancel"
+            );
             break;
         }
 
@@ -1488,10 +1520,36 @@ where
             }
             StagedStepIterationCtl::CancelledAfterOuterOk => {
                 staged_loop_cancelled = true;
+                tracing::info!(
+                    target: "crabmate::staged",
+                    staged_fsm = "steps_loop",
+                    steps_loop_phase = "cancelled_after_outer_ok",
+                    plan_id = plan_id.as_str(),
+                    step_index = i,
+                    step_count = n,
+                    completed_steps,
+                    sub_phase = "executor",
+                    "staged plan steps loop: cancelled after outer_loop ok"
+                );
                 break;
             }
         }
     }
+    tracing::info!(
+        target: "crabmate::staged",
+        staged_fsm = "steps_loop",
+        steps_loop_phase = "send_plan_finished",
+        plan_id = plan_id.as_str(),
+        step_count = n,
+        completed_steps,
+        finish_status = if staged_loop_cancelled {
+            "cancelled"
+        } else {
+            "ok"
+        },
+        sub_phase = "executor",
+        "staged plan steps loop: emitting staged_plan_finished"
+    );
     // 末步成功后循环内已发送含「[✓] 全部完成」的摘要，勿再发一次（否则重复一条）。
     send_staged_plan_finished(
         patch_ctx.p.ctx.out,
