@@ -147,6 +147,7 @@
 | 日期 | 说明 |
 |------|------|
 | 2026-05-02 | **`run_dispatch`**：**`execute_non_hierarchical_main_route`**；**`StagedPlanningDenyReason::as_str`** + **`staged_plan_intent_gate_deny_reason`**。**`outer_loop`**：**`OuterLoopIterationPhase`** + **`outer_loop_fsm`/`outer_loop_step`**（**`ReflectBranchCtl::as_trace_str`**）。**`agent_turn/errors`**：**`AgentTurnJobOutcomeKind`** + **`job_queue_*_outcome_kind`**；**`chat_job_queue`** 流式/JSON **`Err`** 分流。 |
+| 2026-05-02 | **`workflow_reflection_controller`**：**`WorkflowReflectionFsmPhase`**、**`reflection_fsm_phase`**；`decide` 按相位分流；**`INSTRUCTION_WORKFLOW_REFLECTION_*`** 常量集中。 |
 | 2026-05-02 | **`staged/prepared_parse_fsm`**：**`PreparedPlannerRoute`**、**`resolve_prepared_planner_route`**；**`run_staged_plan_with_prepared_request`** 首轮出口表驱动 + **`crabmate::staged`** **`prepared_request`** 观测；**`continue_prepared_plan_after_first_round`** 抽离 post-parse 分支。 |
 | 2026-05-02 | **`staged/orchestrator`**：**`StagedRoundOrchestratorPhase`**（与 **`turn_fsm::StagedTurnPhase`** 区分）；**`run_staged_plan_steps_loop`** 增加 **`crabmate::staged`**（**`staged_fsm=steps_loop`**、**`steps_loop_phase`**）。 |
 | 2026-05-02 | **`agent_turn/hierarchical_intent_route`**：**`HierarchicalPostIntentRoute`** / **`HierarchicalDiscourseFallbackReason`** + **`resolve_hierarchical_post_intent_route`**；**`hierarchy.rs`** 话语型回落路径写入 **`hierarchical_post_intent_route`** / **`hierarchical_discourse_fallback_reason`** 与回放 JSON。 |
