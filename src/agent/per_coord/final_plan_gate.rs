@@ -3,13 +3,86 @@
 //! **不**修改 `messages`；侧向语义 LLM 仍由调用方在收到 `StopTurnPendingPlanConsistencyLlm` 后执行。
 //!
 //! 入口为 [`run_final_plan_gate`]：先根据配置解析相位，再对单次事件做一步转移。
+//! 侧向 LLM 完成后经 [`run_final_plan_gate_semantic_completed`]（对应设计稿中的 **`PendingSemanticLlm`** 相位的一步转移）。
 
+use crate::agent::per_plan_semantic_check::PlanSemanticLlmOutcome;
 use crate::agent::plan_artifact::{self, AgentReplyPlanV1};
 use crate::agent::reflection::plan_rewrite;
 use crate::config::AgentConfig;
 use crate::types::Message;
 
 use super::{AfterFinalAssistant, FinalPlanRequirementMode, PlanRequirementSource};
+
+// --- Types（终答门控 FSM；见 `docs/design/per_state_machine_consolidation.md`） ---
+
+/// 进入门控瞬间所处「编排相位」。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FinalPlanGatePhase {
+    /// 当前策略下不要求终答嵌入结构化规划。
+    NoRequirement,
+    /// 已确认需要规划：校验本轮 assistant 正文中的 `agent_reply_plan` v1。
+    CheckStructuredPlan,
+    /// 静态规则已通过，侧向语义一致性 LLM 已调度；**下一步**仅适用 [`run_final_plan_gate_semantic_completed`]（不由 [`run_final_plan_gate`] 与 `FinalAssistantArrived` 组合驱动）。
+    PendingSemanticLlm,
+}
+
+/// 单次门控处理的事件（当前仅一种：模型给出终答 assistant）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FinalPlanGateEvent {
+    FinalAssistantArrived,
+}
+
+/// 本次判定采用的结构性路径（用于日志 / 单测；与 `AfterFinalAssistant` 对齐）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FinalPlanGateRoute {
+    StopNoRequirement,
+    AcceptStructuredPlanOk,
+    PendingSemanticConsistencyLlm,
+    SemanticsFailedRequestRewrite,
+    SemanticsFailedRewriteExhausted,
+    /// 侧向语义 LLM 判定规划与工具摘要一致。
+    SemanticConsistencyAcceptedStop,
+    /// 侧向语义不一致且允许再发起一轮重写 user。
+    SemanticMismatchRequestRewrite,
+    /// 侧向语义不一致且已达重写上限。
+    SemanticMismatchRewriteExhausted,
+}
+
+/// [`step_check_structured_plan`] 的完整输出（含可选的重写计数递增）。
+pub(crate) struct FinalPlanGateStepOutcome {
+    pub route: FinalPlanGateRoute,
+    pub after: AfterFinalAssistant,
+    pub next_plan_rewrite_count: Option<usize>,
+}
+
+pub(crate) struct FinalPlanGateArgs<'a> {
+    pub msg: &'a Message,
+    pub messages: &'a [Message],
+    pub cfg: &'a AgentConfig,
+    pub workspace_is_set: bool,
+    pub final_plan_policy: FinalPlanRequirementMode,
+    pub plan_requirement_source: PlanRequirementSource,
+    pub final_plan_require_strict_workflow_node_coverage: bool,
+    pub final_plan_semantic_check_enabled: bool,
+    pub final_plan_semantic_check_max_non_readonly_tools: usize,
+    /// 已由 `PerCoordinator::workflow_validate_layer_need` 解析；与 `messages` 长度缓存一致。
+    pub layer_need: Option<usize>,
+    pub validate_only_binding_ids: Option<Vec<String>>,
+    pub plan_rewrite_attempts: usize,
+    pub plan_rewrite_max_attempts: usize,
+}
+
+impl FinalPlanGateArgs<'_> {
+    fn apply_layer_semantics(&self) -> bool {
+        match self.final_plan_policy {
+            FinalPlanRequirementMode::Never => false,
+            FinalPlanRequirementMode::WorkflowReflection => {
+                self.plan_requirement_source == PlanRequirementSource::WorkflowReflection
+            }
+            FinalPlanRequirementMode::Always => true,
+        }
+    }
+}
 
 // --- FSM 门面（单事件一步：终答 assistant 到达后的单次判定） ---
 
@@ -57,67 +130,93 @@ pub(crate) fn run_final_plan_gate(
         (FinalPlanGatePhase::CheckStructuredPlan, FinalPlanGateEvent::FinalAssistantArrived) => {
             step_check_structured_plan(args)
         }
+        (FinalPlanGatePhase::PendingSemanticLlm, FinalPlanGateEvent::FinalAssistantArrived) => {
+            tracing::warn!(
+                target: "crabmate::per",
+                gate_phase = ?phase,
+                gate_event = ?event,
+                sub_phase = "reflect",
+                "final_plan_gate unexpected: PendingSemanticLlm requires run_final_plan_gate_semantic_completed"
+            );
+            FinalPlanGateStepOutcome {
+                route: FinalPlanGateRoute::SemanticConsistencyAcceptedStop,
+                after: AfterFinalAssistant::StopTurn,
+                next_plan_rewrite_count: None,
+            }
+        }
     }
 }
 
-/// 进入门控瞬间所处「编排相位」（不含异步挂起的 PendingSemanticLlm；那次由返回值表达）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FinalPlanGatePhase {
-    /// 当前策略下不要求终答嵌入结构化规划。
-    NoRequirement,
-    /// 已确认需要规划：校验本轮 assistant 正文中的 `agent_reply_plan` v1。
-    CheckStructuredPlan,
-}
+/// **`PendingSemanticLlm`** 相位：侧向语义 LLM 已完成，映射为终答路由（`reflect_impl` 侧直接消费返回的 `FinalPlanGateStepOutcome`）。
+pub(crate) fn run_final_plan_gate_semantic_completed(
+    outcome: &PlanSemanticLlmOutcome,
+    plan_rewrite_attempts: usize,
+    plan_rewrite_max_attempts: usize,
+) -> FinalPlanGateStepOutcome {
+    use crate::agent::reflection::plan_rewrite::PlanRewriteExhaustedReason;
 
-/// 单次门控处理的事件（当前仅一种：模型给出终答 assistant）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FinalPlanGateEvent {
-    FinalAssistantArrived,
-}
+    tracing::debug!(
+        target: "crabmate::per",
+        gate_phase = ?FinalPlanGatePhase::PendingSemanticLlm,
+        consistent = outcome.consistent,
+        plan_rewrite_attempts,
+        plan_rewrite_max_attempts,
+        sub_phase = "reflect",
+        "final_plan_gate semantic_completed step"
+    );
 
-/// 本次判定采用的结构性路径（用于日志 / 单测；与 `AfterFinalAssistant` 一一对应）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FinalPlanGateRoute {
-    StopNoRequirement,
-    AcceptStructuredPlanOk,
-    PendingSemanticConsistencyLlm,
-    SemanticsFailedRequestRewrite,
-    SemanticsFailedRewriteExhausted,
-}
+    if outcome.consistent {
+        tracing::info!(
+            target: "crabmate::per",
+            outcome = "semantic_consistency_ok",
+            gate_route = ?FinalPlanGateRoute::SemanticConsistencyAcceptedStop,
+            gate_phase = ?FinalPlanGatePhase::PendingSemanticLlm,
+            sub_phase = "reflect",
+            "after_final_assistant semantic consistency LLM accepted"
+        );
+        return FinalPlanGateStepOutcome {
+            route: FinalPlanGateRoute::SemanticConsistencyAcceptedStop,
+            after: AfterFinalAssistant::StopTurn,
+            next_plan_rewrite_count: None,
+        };
+    }
 
-/// [`step_check_structured_plan`] 的完整输出（含可选的重写计数递增）。
-pub(crate) struct FinalPlanGateStepOutcome {
-    pub route: FinalPlanGateRoute,
-    pub after: AfterFinalAssistant,
-    pub next_plan_rewrite_count: Option<usize>,
-}
+    if plan_rewrite_attempts >= plan_rewrite_max_attempts {
+        tracing::warn!(
+            target: "crabmate::per",
+            outcome = "semantic_consistency_exhausted",
+            gate_route = ?FinalPlanGateRoute::SemanticMismatchRewriteExhausted,
+            gate_phase = ?FinalPlanGatePhase::PendingSemanticLlm,
+            sub_phase = "reflect",
+            "after_final_assistant semantic inconsistency but plan_rewrite exhausted"
+        );
+        return FinalPlanGateStepOutcome {
+            route: FinalPlanGateRoute::SemanticMismatchRewriteExhausted,
+            after: AfterFinalAssistant::StopTurnPlanRewriteExhausted {
+                reason: PlanRewriteExhaustedReason::PlanSemanticInconsistent,
+            },
+            next_plan_rewrite_count: None,
+        };
+    }
 
-pub(crate) struct FinalPlanGateArgs<'a> {
-    pub msg: &'a Message,
-    pub messages: &'a [Message],
-    pub cfg: &'a AgentConfig,
-    pub workspace_is_set: bool,
-    pub final_plan_policy: FinalPlanRequirementMode,
-    pub plan_requirement_source: PlanRequirementSource,
-    pub final_plan_require_strict_workflow_node_coverage: bool,
-    pub final_plan_semantic_check_enabled: bool,
-    pub final_plan_semantic_check_max_non_readonly_tools: usize,
-    /// 已由 `PerCoordinator::workflow_validate_layer_need` 解析；与 `messages` 长度缓存一致。
-    pub layer_need: Option<usize>,
-    pub validate_only_binding_ids: Option<Vec<String>>,
-    pub plan_rewrite_attempts: usize,
-    pub plan_rewrite_max_attempts: usize,
-}
-
-impl FinalPlanGateArgs<'_> {
-    fn apply_layer_semantics(&self) -> bool {
-        match self.final_plan_policy {
-            FinalPlanRequirementMode::Never => false,
-            FinalPlanRequirementMode::WorkflowReflection => {
-                self.plan_requirement_source == PlanRequirementSource::WorkflowReflection
-            }
-            FinalPlanRequirementMode::Always => true,
-        }
+    let next_attempt = plan_rewrite_attempts + 1;
+    let rewrite_msg = super::PerCoordinator::plan_semantic_mismatch_rewrite_message_with_feedback(
+        outcome.violation_codes.as_slice(),
+        outcome.rationale.as_deref(),
+    );
+    tracing::info!(
+        target: "crabmate::per",
+        outcome = "semantic_consistency_rewrite",
+        gate_route = ?FinalPlanGateRoute::SemanticMismatchRequestRewrite,
+        gate_phase = ?FinalPlanGatePhase::PendingSemanticLlm,
+        attempt = next_attempt,
+        sub_phase = "reflect",
+        "after_final_assistant semantic inconsistency requesting rewrite"
+    );
+    FinalPlanGateStepOutcome {
+        route: FinalPlanGateRoute::SemanticMismatchRequestRewrite,
+        after: AfterFinalAssistant::RequestPlanRewrite(rewrite_msg),
+        next_plan_rewrite_count: Some(next_attempt),
     }
 }
 
@@ -439,6 +538,7 @@ pub(crate) fn after_final_assistant(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::per_plan_semantic_check::PlanSemanticLlmOutcome;
     use crate::agent::reflection::plan_rewrite::PlanRewriteExhaustedReason;
     use crate::types::{FunctionCall, MessageContent, ToolCall};
 
@@ -667,6 +767,64 @@ mod tests {
         assert!(matches!(
             o.after,
             AfterFinalAssistant::StopTurnPendingPlanConsistencyLlm { .. }
+        ));
+    }
+
+    #[test]
+    fn semantic_completed_consistent_stops() {
+        let o = run_final_plan_gate_semantic_completed(
+            &PlanSemanticLlmOutcome {
+                consistent: true,
+                violation_codes: vec![],
+                rationale: None,
+            },
+            0,
+            3,
+        );
+        assert_eq!(o.route, FinalPlanGateRoute::SemanticConsistencyAcceptedStop);
+        assert!(matches!(o.after, AfterFinalAssistant::StopTurn));
+        assert_eq!(o.next_plan_rewrite_count, None);
+    }
+
+    #[test]
+    fn semantic_completed_inconsistent_rewrites() {
+        let o = run_final_plan_gate_semantic_completed(
+            &PlanSemanticLlmOutcome {
+                consistent: false,
+                violation_codes: vec!["x".into()],
+                rationale: Some("r".into()),
+            },
+            1,
+            3,
+        );
+        assert_eq!(o.route, FinalPlanGateRoute::SemanticMismatchRequestRewrite);
+        assert!(matches!(
+            o.after,
+            AfterFinalAssistant::RequestPlanRewrite(_)
+        ));
+        assert_eq!(o.next_plan_rewrite_count, Some(2));
+    }
+
+    #[test]
+    fn semantic_completed_inconsistent_exhausted() {
+        let o = run_final_plan_gate_semantic_completed(
+            &PlanSemanticLlmOutcome {
+                consistent: false,
+                violation_codes: vec!["x".into()],
+                rationale: None,
+            },
+            3,
+            3,
+        );
+        assert_eq!(
+            o.route,
+            FinalPlanGateRoute::SemanticMismatchRewriteExhausted
+        );
+        assert!(matches!(
+            o.after,
+            AfterFinalAssistant::StopTurnPlanRewriteExhausted {
+                reason: PlanRewriteExhaustedReason::PlanSemanticInconsistent
+            }
         ));
     }
 }

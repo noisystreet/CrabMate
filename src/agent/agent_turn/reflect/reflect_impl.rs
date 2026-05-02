@@ -1,13 +1,11 @@
 //! R 步：终答阶段（规划校验、是否继续外层循环等）。
 
+use crate::agent::per_coord::final_plan_gate;
 use crate::agent::per_coord::{AfterFinalAssistant, PerCoordinator, PlanRewriteExhaustedReason};
 use crate::agent::per_plan_semantic_check::{self, PlanSemanticLlmCtx};
 use crate::types::Message;
 
 use super::super::params::RunLoopParams;
-use super::reflect_semantic::{
-    PlanSemanticConsistencyReflectCtl, map_plan_semantic_llm_outcome_to_reflect_ctl,
-};
 
 /// R：模型本轮若为最终文本（非 tool_calls），决定是否结束或追加重写提示。
 pub(crate) enum ReflectOnAssistantOutcome {
@@ -73,20 +71,31 @@ pub(crate) async fn per_reflect_after_assistant(
                 tool_digest.as_deref(),
             )
             .await;
-            match map_plan_semantic_llm_outcome_to_reflect_ctl(
+            let sem_outcome = final_plan_gate::run_final_plan_gate_semantic_completed(
+                &outcome,
                 per_coord.plan_rewrite_attempts_snapshot(),
                 per_coord.plan_rewrite_max_attempts_limit(),
-                &outcome,
-            ) {
-                PlanSemanticConsistencyReflectCtl::StopTurn => ReflectOnAssistantOutcome::StopTurn,
-                PlanSemanticConsistencyReflectCtl::PlanRewriteExhausted { reason } => {
+            );
+            tracing::debug!(
+                target: "crabmate::agent_turn",
+                gate_route = ?sem_outcome.route,
+                gate_phase = ?final_plan_gate::FinalPlanGatePhase::PendingSemanticLlm,
+                sub_phase = "reflect",
+                "final_plan_gate semantic transition"
+            );
+            match sem_outcome.after {
+                AfterFinalAssistant::StopTurn => ReflectOnAssistantOutcome::StopTurn,
+                AfterFinalAssistant::StopTurnPlanRewriteExhausted { reason } => {
                     ReflectOnAssistantOutcome::PlanRewriteExhausted { reason }
                 }
-                PlanSemanticConsistencyReflectCtl::ContinueOuterWithRewriteUser(m) => {
+                AfterFinalAssistant::RequestPlanRewrite(m) => {
                     per_coord.increment_plan_rewrite_attempts();
                     p.turn.messages.push(m);
                     ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite
                 }
+                AfterFinalAssistant::StopTurnPendingPlanConsistencyLlm { .. } => unreachable!(
+                    "run_final_plan_gate_semantic_completed must not return StopTurnPendingPlanConsistencyLlm"
+                ),
             }
         }
     }
