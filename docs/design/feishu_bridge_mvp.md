@@ -9,8 +9,9 @@
 1. 监听 **`POST /feishu/events`**，处理飞书 **事件订阅** 回调。
 2. **加密体**：若请求 JSON 顶层含 **`encrypt`**（Base64），则使用 **`FEISHU_ENCRYPT_KEY`** 按飞书文档 **AES-256-CBC** 解密后再解析（密钥为 **`SHA256(Encrypt Key 字符串 UTF-8)`**，密文为 **`base64(iv(16) || ciphertext)`**，**PKCS#7** 去填充）。算法与官方一致：[事件解密](https://open.feishu.cn/document/server-docs/event-subscription-guide/event-subscription-configure-/encrypt-key-encryption-configuration-case?lang=zh-CN)。
 3. **`url_verification`**：在解密（若需要）后的 JSON 上读取 **`challenge`**，返回 **`{"challenge":"..."}`**。
-4. **`im.message.receive_v1`**：默认 **先入有界内存队列并立即 HTTP 200**（飞书异步 ACK），单 worker 顺序消费：解析 →（可选）**`POST /workspace`**（见 **`FEISHU_WORKSPACE_ROOT_TEMPLATE`**）→ CrabMate **`POST /chat`**（`conversation_id` = `feishu:<chat_id>`）→ **`tenant_access_token`** → [回复消息](https://open.feishu.cn/document/server-docs/im-v1/message/reply)。队列满返回 **503**（`FEISHU_EVENT_QUEUE_FULL`）以便飞书重试；可用 **`FEISHU_ASYNC_WORKER=0`** 关闭为同步处理。
+4. **`im.message.receive_v1`**：默认 **先入有界内存队列并立即 HTTP 200**（飞书异步 ACK），单 worker 顺序消费：解析 →（可选）**`POST /workspace`**（见 **`FEISHU_WORKSPACE_ROOT_TEMPLATE`**）→ CrabMate **`POST /chat/stream`**（`conversation_id` = `feishu:<chat_id>`，带 **`approval_session_id`** 以支持工具审批，见下文）→ 解析 SSE 累积终答 → **`tenant_access_token`** → [回复消息](https://open.feishu.cn/document/server-docs/im-v1/message/reply)（长文按约 **3500 字符**分段多条回复，**`uuid`** 除首条外使用 **`{message_id}-{序号}`** 去重）。队列满返回 **503**（`FEISHU_EVENT_QUEUE_FULL`）以便飞书重试；可用 **`FEISHU_ASYNC_WORKER=0`** 关闭为同步处理。
 5. **安全**：若配置了 **`FEISHU_VERIFICATION_TOKEN`**，则对**除 URL 校验外**的所有事件校验 JSON 内 **`header.token`**（或顶层 **`token`**）与之相等。若已完成 **`X-Lark-Signature`** 验签，则默认校验 **`X-Lark-Request-Timestamp`** 偏差（**`FEISHU_REPLAY_MAX_SKEW_SECS`**，默认 600s）并对 **`X-Lark-Request-Nonce`** 去重（**`FEISHU_NONCE_DEDUP_SECS`**，默认 900s）。群聊可设 **`FEISHU_GROUP_REQUIRE_BOT_MENTION=1`** + **`FEISHU_BOT_OPEN_ID`**，仅处理 **`mentions`** 中含本机器人的消息。
+6. **（可选）人工工具审批 HTTP**：在 **`FEISHU_TOOL_APPROVAL_MODE=wait_http`** 且已设置 **`FEISHU_TOOL_DECISION_SECRET`** 时，桥接暴露 **`POST /feishu/tool-decision`**（`Bearer` 或 **`X-API-Key`** 携带该密钥），用于提交 CrabMate **`POST /chat/approval`** 所需的决策。
 
 ## 编译与运行
 
@@ -34,8 +35,12 @@ export FEISHU_APP_SECRET="YOUR_APP_SECRET"
 # 可选：异步 ACK（默认开启）；队列容量（默认 100）
 # export FEISHU_ASYNC_WORKER=1
 # export FEISHU_EVENT_QUEUE_CAPACITY=100
-# 可选：每会话在 POST /chat 前设置 CrabMate Web 工作区；{chat_id} 为飞书 message.chat_id（须落在 CrabMate workspace_allowed_roots）
+# 可选：每会话在调用 CrabMate 前设置 Web 工作区；{chat_id} 为飞书 message.chat_id（须落在 CrabMate workspace_allowed_roots）
 # export FEISHU_WORKSPACE_ROOT_TEMPLATE="/data/chats/{chat_id}"
+# 可选：工具审批模式（默认 wait_message）；wait_http 须同时设置 FEISHU_TOOL_DECISION_SECRET
+# export FEISHU_TOOL_APPROVAL_MODE="wait_message"
+# export FEISHU_TOOL_DECISION_SECRET="YOUR_RANDOM_SECRET"
+# export FEISHU_TOOL_DECISION_TIMEOUT_SECS=600
 cargo run -p crabmate-im-bridge
 ```
 
@@ -45,10 +50,20 @@ cargo run -p crabmate-im-bridge
 
 ## 工作区（与 CrabMate Web 对齐）
 
-若设置 **`FEISHU_WORKSPACE_ROOT_TEMPLATE`**（非空），桥接在每次 **`POST /chat`** 前会调用 CrabMate **`POST /workspace`**，body 为 **`{"path":"<展开后的绝对路径>"}`**，与 Web 侧栏「工作区」一致。模板中可使用 **`{chat_id}`**，在运行时替换为当前消息的 **`message.chat_id`**（单聊、群聊均适用）。
+若设置 **`FEISHU_WORKSPACE_ROOT_TEMPLATE`**（非空），桥接在每次调用 CrabMate 前会 **`POST /workspace`**，body 为 **`{"path":"<展开后的绝对路径>"}`**，与 Web 侧栏「工作区」一致。模板中可使用 **`{chat_id}`**，在运行时替换为当前消息的 **`message.chat_id`**（单聊、群聊均适用）。
 
 - 展开后的路径须为**已存在目录**，且落在 CrabMate 配置的 **`workspace_allowed_roots`**（未配置时仅允许 **`run_command_working_dir`** 及其子目录）内，否则 CrabMate 返回 **400/403**，桥接会记 **warn** 且本轮不调用模型。
 - 同一进程内对**相同展开路径**会跳过重复的 **`POST /workspace`**；不同会话切换目录时会再次调用。
+
+## 用户可见状态与工具审批
+
+- **进度**：桥接解析 CrabMate SSE 中的 **`tool_call`**、**`tool_running`**、**`parsing_tool_calls`**、**`timeline_log`** 等控制帧，并以**后续飞书回复**形式推送短行状态（注意飞书 **QPS** 与消息条数）。
+- **工具审批（CrabMate 契约）**：非流式 **`POST /chat`** 不接审批通道；桥接使用 **`POST /chat/stream`**，并为每通用户消息设置 **`approval_session_id = "feishu:<飞书 message_id>"`**，遇敏感工具时由 CrabMate 下发 **`command_approval_request`**，桥接再 **`POST /chat/approval`** 提交决策。
+- **模式 `FEISHU_TOOL_APPROVAL_MODE`**（默认 **`wait_message`**）：
+  - **`deny_all`**：不传 **`approval_session_id`**；遇审批时桥接会尝试 **`deny`**（等价于敏感工具通常无法执行）。
+  - **`default_allow_once`**：收到审批帧后**自动** `allow_once`（**仅可信环境**）。
+  - **`wait_http`**：挂起并提示运维调用桥接 **`POST /feishu/tool-decision`**，请求头 **`Authorization: Bearer <FEISHU_TOOL_DECISION_SECRET>`** 或 **`X-API-Key: <…>`**，JSON body：`{"approval_session_id":"feishu:…","decision":"deny|allow_once|allow_always"}`。**必须**设置 **`FEISHU_TOOL_DECISION_SECRET`**。超时（**`FEISHU_TOOL_DECISION_TIMEOUT_SECS`**，默认 600）按 **`deny`**。
+  - **`wait_message`**：挂起并提示用户在**下一条飞书消息**中发送 **`!允许一次`** / **`!永久允许`** / **`!拒绝`**（或 `!allow_once` / `!allow_always` / `!deny`）。超时同上。
 
 ## 飞书侧配置摘要
 
@@ -60,7 +75,7 @@ cargo run -p crabmate-im-bridge
 
 - **消息类型**：已将多种 **`message_type`** 转为送入模型的**纯文本**（**`text`**、**`post`** 富文本递归提取 **`tag:text`/`title`**、**`image`/`sticker`/`file`/`audio`/`media`** 占位 + key、**`interactive`/`share_*`/其它** 的 `content` JSON 截断摘要；长度 **`FEISHU_MAX_MESSAGE_JSON_CHARS`**）。**不**下载或内联图片/文件/语音/视频二进制。
 - **工作区**：模板展开路径须**已存在**且落在 CrabMate **`workspace_allowed_roots`**；桥接**不会** `mkdir`；**`/workspace` 失败时本轮不调用模型**（仅 warn）。
-- **工具审批**：若 CrabMate 配置启用了需审批的工具，IM 侧无自动审批；生产环境应收窄 **`allowed_commands`** 或对 `/chat/stream` 做卡片化审批（见 **`web_api_integration.md`** §4）。
+- **工具审批 UX**：当前为**文本指令**（`wait_message`）或 **HTTP 回调**（`wait_http`），非飞书原生卡片；高阶场景可做卡片交互与签名回调。
 - **幂等**：同一 **`message_id`** 在约 **10 分钟**内去重（防飞书重复推送）。
 
 ## 后续完善方向（路线图）
@@ -91,8 +106,8 @@ cargo run -p crabmate-im-bridge
 
 | 项 | 说明 |
 |----|------|
-| **工具与审批** | 非流式 **`POST /chat`** 遇需审批工具时易卡住：生产应 **收窄 `allowed_commands` / `http_fetch_allowed_prefixes`**，或桥接消费 **`POST /chat/stream`** 并将 **`command_approval_request`** 映射为 **飞书卡片交互** 再调 **`POST /chat/approval`**（工作量大，见 **`web_api_integration.md`** §4）。 |
-| **流式体验** | 用 **`/chat/stream`** 分段解析 SSE，向飞书 **更新同一条消息** 或 **多条短消息** 推送增量（注意飞书 **5 QPS** 等限制）。 |
+| **工具与审批** | ~~仅规划~~ **部分已实现**：桥接已走 **`/chat/stream`** + **`approval_session_id`** + **`/chat/approval`**；`wait_message` / `wait_http` / `default_allow_once` 见上文。卡片化审批仍为增强项。 |
+| **流式体验** | **部分实现**：SSE 解析后推送**多条短回复**（终答分段）；**未**使用飞书「编辑同一条消息」的增量 UI。 |
 | **工作区** | 若需工具读仓库：在可信流程中调用 CrabMate **`POST /workspace`**，且路径落在 **`workspace_allowed_roots`** 内。 |
 | **按租户覆盖模型** | 通过请求体 **`client_llm`** 等为不同租户指定网关/模型（密钥勿入日志）。 |
 
