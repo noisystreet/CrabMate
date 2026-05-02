@@ -5,17 +5,18 @@
 use super::hierarchical_intent_route::{
     HierarchicalPostIntentRoute, resolve_hierarchical_post_intent_route,
 };
-use crate::agent::hierarchy::task::{ArtifactKind, BuildArtifactKind, TaskResult};
 use crate::agent::hierarchy::{self, HierarchyRunnerResult};
 use crate::agent::per_coord::{PerCoordinator, PerCoordinatorInit};
 use crate::sse;
-use std::collections::HashMap;
 
 use super::errors::RunAgentTurnError;
 use super::intent_at_turn_start;
 use super::intent_user;
 use super::outer_loop::run_agent_outer_loop;
 use super::params::RunLoopParams;
+use super::task_level_evidence::{
+    is_program_build_run_request, render_task_level_evidence, verify_task_level_execution_evidence,
+};
 use super::turn_orchestration::TurnOrchestrationMode;
 use crate::agent::agent_turn::errors::AgentTurnSubPhase;
 use crate::agent::hierarchy::execution_error::ExecutionError;
@@ -392,110 +393,6 @@ async fn handle_execution_result(
     Ok(())
 }
 
-fn is_program_build_run_request(task: &str) -> bool {
-    let t = task.to_lowercase();
-    let asks_write = t.contains("编写") || t.contains("实现") || t.contains("write");
-    let asks_program = t.contains("程序") || t.contains("c++") || t.contains("cpp");
-    let asks_run = t.contains("执行")
-        || t.contains("运行")
-        || t.contains("编译")
-        || t.contains("build")
-        || t.contains("run");
-    asks_write && asks_program && asks_run
-}
-
-fn verify_task_level_execution_evidence(
-    task: &str,
-    results: &[TaskResult],
-    goal_expected_outputs: &HashMap<String, Vec<String>>,
-) -> Option<String> {
-    if !is_program_build_run_request(task) {
-        return None;
-    }
-    let mut wrote_source = false;
-    let mut compiled = false;
-    let mut ran_program = false;
-    let expected_outputs = expected_output_hints_for_results(task, results, goal_expected_outputs);
-
-    for r in results {
-        let combined = format!(
-            "{}\n{}",
-            r.output.as_deref().unwrap_or(""),
-            r.error.as_deref().unwrap_or("")
-        )
-        .to_lowercase();
-        for a in &r.artifacts {
-            match a.kind {
-                ArtifactKind::File => {
-                    if a.path.as_deref().is_some_and(|p| {
-                        let p = p.to_lowercase();
-                        p.ends_with(".cpp") || p.ends_with(".cc") || p.ends_with(".cxx")
-                    }) {
-                        wrote_source = true;
-                    }
-                }
-                ArtifactKind::BuildArtifact(kind) => match kind {
-                    BuildArtifactKind::SourceFile => wrote_source = true,
-                    BuildArtifactKind::ObjectFile => compiled = true,
-                    _ => {}
-                },
-                _ => {}
-            }
-        }
-        let combined_full = format!(
-            "{}\n{}",
-            r.output.as_deref().unwrap_or(""),
-            r.error.as_deref().unwrap_or("")
-        );
-        if r.tools_invoked.iter().any(|n| n == "run_executable")
-            || (r.tools_invoked.iter().any(|n| n == "run_command")
-                && crate::agent::hierarchy::goal_verifier::run_command_invocation_matches_expected_output(
-                    &combined_full,
-                    &expected_outputs,
-                ))
-        {
-            ran_program = true;
-        }
-        if combined.contains("create_file")
-            || combined.contains("已创建文件")
-            || combined.contains("created file")
-            || combined.contains("write_file")
-            || combined.contains("apply_patch")
-            || combined.contains(".cpp")
-        {
-            wrote_source = true;
-        }
-        if combined.contains("g++")
-            || combined.contains("clang++")
-            || combined.contains("编译")
-            || combined.contains("cmake")
-            || combined.contains("make")
-            || combined.contains("build")
-        {
-            compiled = true;
-        }
-    }
-
-    let mut missing = Vec::new();
-    if !wrote_source {
-        missing.push("write_source");
-    }
-    if !compiled {
-        missing.push("compile");
-    }
-    if !ran_program {
-        missing.push("run");
-    }
-    if missing.is_empty() {
-        None
-    } else {
-        Some(format!(
-            "missing: {}; 需要至少包含写源码(.cpp)+编译(g++/clang++)+运行(可执行输出)",
-            missing.join(",")
-        ))
-    }
-}
-
 /// 汇总子目标结果生成最终回复
 fn aggregate_results(results: &[crate::agent::hierarchy::TaskResult]) -> String {
     if results.is_empty() {
@@ -581,167 +478,6 @@ fn render_plan_completion(results: &[crate::agent::hierarchy::TaskResult]) -> St
         }
     }
     lines.join("\n")
-}
-
-fn render_task_level_evidence(
-    task: &str,
-    results: &[crate::agent::hierarchy::TaskResult],
-    goal_expected_outputs: &HashMap<String, Vec<String>>,
-) -> String {
-    if !is_program_build_run_request(task) {
-        return String::new();
-    }
-
-    let mut wrote_source = false;
-    let mut built_binary = false;
-    let mut ran_binary = false;
-    let mut seen_expected_output = false;
-    let expected_outputs = expected_output_hints_for_results(task, results, goal_expected_outputs);
-    let mut matched_expected_outputs: Vec<String> = Vec::new();
-
-    for r in results {
-        let combined = format!(
-            "{}\n{}",
-            r.output.as_deref().unwrap_or(""),
-            r.error.as_deref().unwrap_or("")
-        );
-        let lower = combined.to_lowercase();
-        for a in &r.artifacts {
-            if a.path.as_deref().is_some_and(|p| {
-                let p = p.to_lowercase();
-                p.ends_with(".cpp") || p.ends_with(".cc") || p.ends_with(".cxx")
-            }) {
-                wrote_source = true;
-            }
-            if a.path
-                .as_deref()
-                .is_some_and(|p| p.to_lowercase().contains("build/"))
-            {
-                built_binary = true;
-            }
-        }
-        if lower.contains("built target")
-            || lower.contains("cmake --build")
-            || lower.contains("linking cxx executable")
-        {
-            built_binary = true;
-        }
-        if r.tools_invoked.iter().any(|n| n == "run_executable")
-            || r.tools_invoked.iter().any(|n| n == "run_command")
-                && crate::agent::hierarchy::goal_verifier::run_command_invocation_matches_expected_output(
-                    &combined,
-                    &expected_outputs,
-                )
-        {
-            ran_binary = true;
-        }
-        for hint in &expected_outputs {
-            if hint.is_empty() {
-                continue;
-            }
-            if lower.contains(&hint.to_lowercase()) {
-                seen_expected_output = true;
-                if !matched_expected_outputs
-                    .iter()
-                    .any(|x| x.eq_ignore_ascii_case(hint))
-                {
-                    matched_expected_outputs.push(hint.clone());
-                }
-            }
-        }
-    }
-
-    let mut lines = vec!["## 关键证据".to_string(), String::new()];
-    lines.push(format!(
-        "- 源码落地：{}",
-        if wrote_source {
-            "已检测到 `.cpp` 源文件写入"
-        } else {
-            "未检测到明确证据"
-        }
-    ));
-    lines.push(format!(
-        "- 编译产物：{}",
-        if built_binary {
-            "已检测到构建/链接成功信号"
-        } else {
-            "未检测到明确证据"
-        }
-    ));
-    lines.push(format!(
-        "- 运行验证：{}",
-        if ran_binary || seen_expected_output {
-            if expected_outputs.is_empty() {
-                "已检测到程序执行（含可核对输出）"
-            } else {
-                "已检测到程序执行（含期望输出）"
-            }
-        } else {
-            "未检测到明确证据"
-        }
-    ));
-    if !expected_outputs.is_empty() {
-        let expected_joined = expected_outputs
-            .iter()
-            .map(|s| format!("`{}`", s))
-            .collect::<Vec<_>>()
-            .join("、");
-        lines.push(format!("- acceptance 期望输出：{}", expected_joined));
-        if matched_expected_outputs.is_empty() {
-            lines.push("- acceptance 核对结果：未在工具输出中检测到期望片段".to_string());
-        } else {
-            let matched_joined = matched_expected_outputs
-                .iter()
-                .map(|s| format!("`{}`", s))
-                .collect::<Vec<_>>()
-                .join("、");
-            lines.push(format!(
-                "- acceptance 核对结果：已检测到 {}",
-                matched_joined
-            ));
-        }
-    }
-    lines.join("\n")
-}
-
-fn expected_output_hints_from_task(task: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    if let Ok(re) = regex::Regex::new(r#""([^"\n]{1,120})""#) {
-        for cap in re.captures_iter(task) {
-            if let Some(m) = cap.get(1) {
-                let t = m.as_str().trim();
-                if !t.is_empty() {
-                    out.push(t.to_string());
-                }
-            }
-        }
-    }
-    if out.is_empty() && task.to_lowercase().contains("hello") {
-        out.push("hello".to_string());
-    }
-    out
-}
-
-fn expected_output_hints_for_results(
-    task: &str,
-    results: &[TaskResult],
-    goal_expected_outputs: &HashMap<String, Vec<String>>,
-) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for r in results {
-        if let Some(v) = goal_expected_outputs.get(&r.task_id) {
-            for s in v {
-                let t = s.trim();
-                if !t.is_empty() && !out.iter().any(|x| x.eq_ignore_ascii_case(t)) {
-                    out.push(t.to_string());
-                }
-            }
-        }
-    }
-    if out.is_empty() {
-        return expected_output_hints_from_task(task);
-    }
-    out
 }
 
 /// 截断字符串（按字符边界截断，支持中文）

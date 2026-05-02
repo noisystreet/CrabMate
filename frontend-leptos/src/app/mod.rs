@@ -21,6 +21,7 @@ mod settings_page;
 mod settings_sections;
 mod side_column;
 mod side_column_toolbar;
+mod side_column_workspace_scroll;
 mod sidebar_nav;
 mod status_bar;
 mod status_tasks_state;
