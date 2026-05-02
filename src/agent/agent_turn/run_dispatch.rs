@@ -3,7 +3,8 @@
 //! 从 [`super::run_agent_turn_common`] 抽离，使 `mod.rs` 仅保留入口日志、分隔线与 `PerCoordinator` 构造等接线。
 //!
 //! **分阶段意图门控**：[`assess_staged_planning_gate`] 产出结构化 [`StagedPlanningGateOutcome`]，
-//! 与 `intent_pipeline::IntentDecision` 对齐。
+//! 与 `intent_pipeline::IntentDecision` 对齐。**[`execute_non_hierarchical_main_route`]** 将
+//! [`super::turn_orchestration::NonHierarchicalMainRoute`] 与三条执行路径一一对应。
 
 use crate::agent::per_coord::PerCoordinator;
 use crate::agent::{
@@ -52,6 +53,15 @@ pub(crate) enum StagedPlanningDenyReason {
     EmptyEffectiveTask,
     /// 管线已跑通，但 `action != Execute`（直接回复 / 澄清 / 确认等）。
     IntentPipelineNotExecute,
+}
+
+impl StagedPlanningDenyReason {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::EmptyEffectiveTask => "empty_effective_task",
+            Self::IntentPipelineNotExecute => "intent_pipeline_not_execute",
+        }
+    }
 }
 
 impl StagedPlanningGateOutcome {
@@ -133,6 +143,28 @@ pub(crate) fn assess_staged_planning_gate(
     }
 }
 
+/// 执行非分层主路径（与 [`resolve_non_hierarchical_main_route`] 产物一一对应）。
+pub(crate) async fn execute_non_hierarchical_main_route(
+    main_route: NonHierarchicalMainRoute,
+    p: &mut RunLoopParams<'_>,
+    per_coord: &mut PerCoordinator,
+) -> Result<(), RunAgentTurnError> {
+    match main_route {
+        NonHierarchicalMainRoute::LogicalDualAgentStaged => {
+            log::info!(target: "crabmate", "run_agent_turn: using LogicalDualAgent mode");
+            run_logical_dual_agent_then_execute_steps(p, per_coord).await
+        }
+        NonHierarchicalMainRoute::StagedPlanExecution => {
+            log::info!(target: "crabmate", "run_agent_turn: using staged_plan mode");
+            run_staged_plan_then_execute_steps(p, per_coord).await
+        }
+        NonHierarchicalMainRoute::SingleAgentOuterLoop => {
+            log::info!(target: "crabmate", "run_agent_turn: using single_agent mode");
+            run_agent_outer_loop(p, per_coord).await
+        }
+    }
+}
+
 /// `planner_executor_mode == Hierarchical`：意图门控在 [`hierarchy::run_hierarchical_agent`] 内完成。
 pub(crate) async fn dispatch_hierarchical_turn(
     p: &mut RunLoopParams<'_>,
@@ -162,6 +194,14 @@ pub(crate) async fn dispatch_non_hierarchical_turn(
     }
     let staged_gate = assess_staged_planning_gate(p.turn.messages, p.ctx.cfg.as_ref());
     let allow_staged = staged_gate.allows_staged_planning();
+    if !allow_staged && let StagedPlanningGateOutcome::Deny { reason, .. } = &staged_gate {
+        tracing::debug!(
+            target: "crabmate::agent_turn",
+            staged_plan_intent_gate_allow = false,
+            staged_plan_intent_gate_deny_reason = reason.as_str(),
+            "staged_plan_intent_gate deny detail"
+        );
+    }
     let main_route = resolve_non_hierarchical_main_route(p.ctx.cfg.as_ref(), allow_staged);
     let mode: TurnOrchestrationMode = main_route.into();
     tracing::info!(
@@ -173,18 +213,5 @@ pub(crate) async fn dispatch_non_hierarchical_turn(
         staged_plan_execution = p.ctx.cfg.staged_plan_execution,
         "dispatch_non_hierarchical_turn main_path"
     );
-    match main_route {
-        NonHierarchicalMainRoute::LogicalDualAgentStaged => {
-            log::info!(target: "crabmate", "run_agent_turn: using LogicalDualAgent mode");
-            run_logical_dual_agent_then_execute_steps(p, per_coord).await
-        }
-        NonHierarchicalMainRoute::StagedPlanExecution => {
-            log::info!(target: "crabmate", "run_agent_turn: using staged_plan mode");
-            run_staged_plan_then_execute_steps(p, per_coord).await
-        }
-        NonHierarchicalMainRoute::SingleAgentOuterLoop => {
-            log::info!(target: "crabmate", "run_agent_turn: using single_agent mode");
-            run_agent_outer_loop(p, per_coord).await
-        }
-    }
+    execute_non_hierarchical_main_route(main_route, p, per_coord).await
 }

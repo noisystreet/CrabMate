@@ -147,6 +147,16 @@ enum ReflectBranchCtl {
     ProceedToTools,
 }
 
+impl ReflectBranchCtl {
+    fn as_trace_str(&self) -> &'static str {
+        match self {
+            Self::BreakOuter => "break_outer",
+            Self::ContinueOuter => "continue_outer",
+            Self::ProceedToTools => "proceed_to_tools",
+        }
+    }
+}
+
 async fn outer_loop_reflect_branch(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
@@ -245,6 +255,33 @@ async fn outer_loop_execute_tools_round(
     Ok(())
 }
 
+/// 单 Agent 外循环内一次迭代的**粗粒度**阶段（与 `sub_phase` 正交，仅用于 `tracing` 排障）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OuterLoopStep {
+    /// 通过迭代守卫后、准备 planner 上下文前（`use_executor_model` 已更新）。
+    IterationEnter,
+    /// `prepare_messages_for_model` 等准备完成，即将 `per_plan_call_model_retrying`。
+    PrepareContextDone,
+    /// 已 `push` assistant，即将反思或（若 `ProceedToTools`）工具轮。
+    AfterPlannerModel,
+    /// 反思分支已决（不进入工具 / 重开一轮 / 去工具）。
+    ReflectDecided,
+    /// `per_execute_tools_web` 工具批。
+    ToolsExecute,
+}
+
+impl OuterLoopStep {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::IterationEnter => "iteration_enter",
+            Self::PrepareContextDone => "prepare_context_done",
+            Self::AfterPlannerModel => "after_planner_model",
+            Self::ReflectDecided => "reflect_decided",
+            Self::ToolsExecute => "tools_execute",
+        }
+    }
+}
+
 pub(crate) async fn run_agent_outer_loop(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
@@ -260,6 +297,14 @@ pub(crate) async fn run_agent_outer_loop(
         if is_first_iteration {
             is_first_iteration = false;
         }
+        tracing::debug!(
+            target: "crabmate::agent_turn",
+            outer_loop_fsm = "single_agent_outer",
+            outer_loop_step = OuterLoopStep::IterationEnter.as_str(),
+            iteration = iteration_count,
+            use_executor_model = p.turn.use_executor_model,
+            "outer_loop iteration enter"
+        );
         p.turn.sub_phase = AgentTurnSubPhase::Planner;
         if let Some(ref t) = p.ctx.tracing_chat_turn {
             t.on_outer_loop_iteration();
@@ -267,6 +312,14 @@ pub(crate) async fn run_agent_outer_loop(
 
         let render_to_terminal = p.ctx.render_to_terminal;
         outer_loop_prepare_planner_context(p, per_coord).await?;
+
+        tracing::debug!(
+            target: "crabmate::agent_turn",
+            outer_loop_fsm = "single_agent_outer",
+            outer_loop_step = OuterLoopStep::PrepareContextDone.as_str(),
+            iteration = iteration_count,
+            "outer_loop planner context prepared"
+        );
 
         let planner_tools = build_planner_round_tools(p);
         let (msg, finish_reason) = per_plan_call_model_retrying(PerPlanCallModelParams {
@@ -318,15 +371,44 @@ pub(crate) async fn run_agent_outer_loop(
             crate::redact::assistant_message_preview_for_log(&msg)
         );
         push_assistant_merging_trailing_empty_placeholder(p.turn.messages, msg.clone());
+
+        tracing::debug!(
+            target: "crabmate::agent_turn",
+            outer_loop_fsm = "single_agent_outer",
+            outer_loop_step = OuterLoopStep::AfterPlannerModel.as_str(),
+            iteration = iteration_count,
+            finish_reason = finish_reason.as_str(),
+            "outer_loop assistant pushed"
+        );
+
         if finish_reason == USER_CANCELLED_FINISH_REASON {
             break;
         }
 
-        match outer_loop_reflect_branch(p, per_coord, finish_reason.as_str(), &msg).await {
+        let reflect_ctl =
+            outer_loop_reflect_branch(p, per_coord, finish_reason.as_str(), &msg).await;
+        tracing::debug!(
+            target: "crabmate::agent_turn",
+            outer_loop_fsm = "single_agent_outer",
+            outer_loop_step = OuterLoopStep::ReflectDecided.as_str(),
+            iteration = iteration_count,
+            reflect_branch = reflect_ctl.as_trace_str(),
+            "outer_loop reflect branch"
+        );
+
+        match reflect_ctl {
             ReflectBranchCtl::BreakOuter => break,
             ReflectBranchCtl::ContinueOuter => continue 'outer,
             ReflectBranchCtl::ProceedToTools => {}
         }
+
+        tracing::debug!(
+            target: "crabmate::agent_turn",
+            outer_loop_fsm = "single_agent_outer",
+            outer_loop_step = OuterLoopStep::ToolsExecute.as_str(),
+            iteration = iteration_count,
+            "outer_loop tools execute"
+        );
 
         outer_loop_execute_tools_round(p, per_coord, &msg, render_to_terminal).await?;
     }
