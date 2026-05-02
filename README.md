@@ -66,6 +66,7 @@
 | [docs/命令行与路由.md](docs/命令行与路由.md) | 子命令、选项、HTTP 路由、打包 deb | [en](docs/en/CLI.md) |
 | [docs/命令行契约.md](docs/命令行契约.md) | `chat` 退出码、`--output json` 行协议、与 SSE 错误码交叉引用 | [en](docs/en/CLI_CONTRACT.md) |
 | [docs/待办清单.md](docs/待办清单.md) | 未完成待办：全局 P0–P5 + 按模块分章（完成后从清单删除） | [en](docs/en/TODOLIST.md) |
+| [docs/未来规划功能.md](docs/未来规划功能.md) | 方向性能力边界（如 Web 身份在网关、不进进程内账号） | [en](docs/en/FUTURE_PLANS.md) |
 | [docs/代码库索引方案.md](docs/代码库索引方案.md) | 统一代码索引与增量缓存规划 | [en](docs/en/CODEBASE_INDEX_PLAN.md) |
 
 **维护约定**：用户可见变更需同步 README 与相关文档，细则见 [docs/开发文档.md](docs/开发文档.md)「TODOLIST 与功能文档约定」。

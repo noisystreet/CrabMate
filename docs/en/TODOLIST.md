@@ -15,8 +15,7 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 ### P0 — Security (before non-localhost deployment)
 
-- [ ] **Shared-secret HTTP auth limits**: default **`web_api_require_bearer=true`** forces non-empty **`web_api_bearer_token`** before **`serve`** and Bearer/`X-API-Key` on protected routes; there is still **no per-user identity**, quotas, or audit trail—compromise of the shared secret equals full API access. **`API_KEY`** remains LLM-only.
-- [ ] **Multi-role / persona switching**: Support multiple **roles** (system prompt, tool visibility, temperature, etc.); **CLI** and **Web** should expose commands or UI to switch the active role per session, with boundaries documented for persistence, export, and `POST /config/reload`; multi-tenant use must align with authentication above.
+- [ ] **Multi-role / persona switching**: Support multiple **roles** (system prompt, tool visibility, temperature, etc.); **CLI** and **Web** should expose commands or UI to switch the active role per session, with boundaries documented for persistence, export, and `POST /config/reload`. For multi-tenant exposure, identity and isolation belong in a **gateway/BFF in front of CrabMate**; see **`docs/未来规划功能.md`** / **`docs/en/FUTURE_PLANS.md`**.
 
 ### P4 — Testing and quality
 
@@ -29,8 +28,8 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 ### P5 — Operations and UX
 
 - [ ] **Cross-process / multi-replica queue**: Today single-process `mpsc` + `Semaphore`; horizontal scale needs Redis/SQS etc.
-- [ ] **Rate limits / quotas**: For `/chat`, `/chat/stream` by IP or token (often with P0 auth).
-- [ ] **Log correlation**: Unify `request_id` / `conversation_id` once session model lands.
+- [ ] **Rate limits / quotas**: For `/chat`, `/chat/stream` by IP or token (often aligned with gateway-side identity and quotas; no per-user accounts in-process—see **`docs/en/FUTURE_PLANS.md`**).
+- [ ] **Log correlation**: Unify `request_id` / `conversation_id` once session model lands; per-user audit belongs in the gateway (**`docs/en/FUTURE_PLANS.md`**).
 
 ---
 
@@ -90,7 +89,7 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 
 **Summary**: Axum router, `AppState`, chat queue, workspace/task APIs.
 
-- [ ] Auth and multi-tenant isolation (with P0).
+- [ ] Auth and multi-tenant isolation (in-process): shared secret today; **no** per-user account system in CrabMate—deployment patterns in **`docs/en/FUTURE_PLANS.md`**. Optional future: trusted proxy headers or multiple service keys—must be designed with the security surface.
 - [ ] Messages / `conversation_id` API aligned with `run_agent_turn`.
 - [ ] Upload quotas and retention.
 
@@ -125,7 +124,7 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 - [ ] Browser session state (follow-up): optional **encrypted** local cache. Implemented: `ChatSession` persists **`server_conversation_id` / `server_revision`** and **`GET /conversation/messages`** hydration after stream saves; tab-local model remains **`frontend-leptos/src/session_sync.rs`** (`SessionSyncState`).
 - [ ] Virtualize long chat lists.
 - [ ] i18n, a11y, keyboard navigation.
-- [ ] Future voice (STT/TTS) with P0 auth alignment.
+- [ ] Future voice (STT/TTS); align with gateway identity policy (**`docs/en/FUTURE_PLANS.md`**).
 
 ---
 
