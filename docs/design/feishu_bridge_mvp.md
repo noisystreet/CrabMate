@@ -49,7 +49,7 @@ cargo run -p crabmate-im-bridge
 
 ## 已知限制（MVP）
 
-- **仅文本** `message_type == text`；其它类型会回复一条说明文本。
+- **消息类型**：已将多种 **`message_type`** 转为送入模型的**纯文本**（**`text`**、**`post`** 富文本递归提取 **`tag:text`/`title`**、**`image`/`sticker`/`file`/`audio`/`media`** 占位 + key、**`interactive`/`share_*`/其它** 的 `content` JSON 截断摘要；长度 **`FEISHU_MAX_MESSAGE_JSON_CHARS`**）。**不**下载或内联图片/文件/语音/视频二进制。
 - **工具审批**：若 CrabMate 配置启用了需审批的工具，IM 侧无自动审批；生产环境应收窄 **`allowed_commands`** 或对 `/chat/stream` 做卡片化审批（见 **`web_api_integration.md`** §4）。
 - **幂等**：同一 **`message_id`** 在约 **10 分钟**内去重（防飞书重复推送）。
 
@@ -63,7 +63,7 @@ cargo run -p crabmate-im-bridge
 |----|------|
 | **加密事件体** | ~~待实现~~ **已实现**：顶层 **`encrypt`** → **`FEISHU_ENCRYPT_KEY`** + AES-256-CBC + PKCS#7（见上文官方文档链接）。 |
 | **ACK 与超时** | **部分缓解**：默认 **先入队再 200**；队列满 **503** 触发重试。仍非持久队列（进程重启丢件）；大并发可前置网关或多实例 + 外部队列（Kafka/Redis）。 |
-| **消息类型扩展** | 支持 **`post`**、图片、文件等，或统一抽取为纯文本再送入模型；参见 [接收消息内容](https://open.feishu.cn/document/server-docs/im-v1/message/events/message_content)。 |
+| **消息类型扩展** | **基础已支持**（见上「已知限制」）；细粒度 **@ 人/链接/at 结构** 与卡片模板语义化解析仍可增强；参见 [接收消息内容](https://open.feishu.cn/document/server-docs/im-v1/message/events/message_content)。 |
 | **群噪声控制** | 可配置「仅处理 **@ 机器人** 的消息」「忽略 `sender_type=bot`」等，减少无关调用与费用。 |
 
 ### 2. 安全与运维
@@ -114,5 +114,6 @@ cargo run -p crabmate-im-bridge
 - 库根：`crates/crabmate-im-bridge/src/lib.rs`
 - 飞书 HTTP：`crates/crabmate-im-bridge/src/feishu.rs`
 - 飞书加密体解密：`crates/crabmate-im-bridge/src/feishu_decrypt.rs`
+- 飞书消息 content 解析：`crates/crabmate-im-bridge/src/feishu_message_content.rs`
 - CrabMate 客户端：`crates/crabmate-im-bridge/src/crabmate.rs`
 - 二进制与环境变量说明：`crates/crabmate-im-bridge/src/main.rs`

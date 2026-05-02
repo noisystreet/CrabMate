@@ -6,6 +6,7 @@
 pub mod crabmate;
 pub mod feishu;
 mod feishu_decrypt;
+mod feishu_message_content;
 
 pub use crabmate::CrabmateClient;
 pub use feishu::{FeishuBridgeConfig, FeishuBridgeState, build_router};
