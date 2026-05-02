@@ -4,7 +4,7 @@
 //!
 //! 终答规划门控（`after_final_assistant` 决策树）见 [`final_plan_gate`]。
 
-mod final_plan_gate;
+pub(crate) mod final_plan_gate;
 
 use crate::config::AgentConfig;
 use crate::types::Message;
