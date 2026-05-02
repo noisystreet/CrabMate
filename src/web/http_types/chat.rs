@@ -51,6 +51,40 @@ pub(crate) struct ChatRequestBody {
     pub(crate) clarify_questionnaire_answers: Option<ClarifyQuestionnaireAnswersBody>,
 }
 
+/// `POST /chat/async` 请求体：与 [`ChatRequestBody`] 相同字段，外加可选 Webhook（完成后 **POST** JSON）。
+#[derive(serde::Deserialize)]
+pub(crate) struct ChatAsyncRequestBody {
+    #[serde(flatten)]
+    pub(crate) chat: ChatRequestBody,
+    /// 非空时：任务进入 **`completed`** / **`failed`** 后向该 URL **POST** JSON（`Content-Type: application/json`）；须为 **http** 或 **https**。
+    #[serde(default)]
+    pub(crate) webhook_url: Option<String>,
+    /// 可选：与 Webhook 一并发送 **`X-Crabmate-Webhook-Secret`**（集成方自行校验；**勿**在日志中输出完整值）。
+    #[serde(default)]
+    pub(crate) webhook_secret: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct ChatAsyncSubmitResponseBody {
+    pub(crate) job_id: u64,
+    /// 初始状态恒为 **`pending`**（轮询见 **`GET /chat/jobs/{job_id}`**）。
+    pub(crate) status: &'static str,
+    pub(crate) conversation_id: String,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct ChatJobStatusResponseBody {
+    pub(crate) job_id: u64,
+    pub(crate) status: String,
+    pub(crate) conversation_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) reply: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) conversation_revision: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) error: Option<ApiError>,
+}
+
 #[derive(serde::Deserialize, Clone)]
 pub(crate) struct StreamResumeBody {
     pub(crate) job_id: u64,
@@ -163,7 +197,7 @@ pub(crate) struct ConversationMessagesResponseBody {
 }
 
 /// 统一的 API 错误结构：包含错误码与面向用户的友好提示
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Clone)]
 pub(crate) struct ApiError {
     /// 机器可读的错误码（前端或日志可用）
     pub code: &'static str,

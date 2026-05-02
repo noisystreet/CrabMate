@@ -1,5 +1,6 @@
 //! Axum handler：浏览器 Web UI 调用的工作区、任务等 HTTP API（**非**终端 TUI；TUI 在 `runtime/tui`）。
 mod app_state;
+mod async_chat_job;
 mod chat_handlers;
 pub(crate) mod cron_scheduler;
 pub(crate) mod http_types;

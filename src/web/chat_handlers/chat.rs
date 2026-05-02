@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::Json;
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
@@ -41,8 +41,9 @@ use crate::types::{
 };
 use crate::user_message_file_refs::expand_at_file_refs_in_user_message;
 use crate::web::http_types::chat::{
-    ApiError, ChatApprovalRequestBody, ChatApprovalResponseBody, ChatBranchRequestBody,
-    ChatBranchResponseBody, ChatRequestBody, ChatResponseBody, ConversationMessagesQuery,
+    ApiError, ChatApprovalRequestBody, ChatApprovalResponseBody, ChatAsyncRequestBody,
+    ChatAsyncSubmitResponseBody, ChatBranchRequestBody, ChatBranchResponseBody,
+    ChatJobStatusResponseBody, ChatRequestBody, ChatResponseBody, ConversationMessagesQuery,
     ConversationMessagesResponseBody, StreamResumeBody,
 };
 
@@ -678,10 +679,24 @@ pub(crate) async fn prepare_json_chat_enqueue(
     })
 }
 
-pub(crate) async fn chat_handler(
-    State(state): State<Arc<AppState>>,
-    Json(body): Json<ChatRequestBody>,
-) -> Result<Json<ChatResponseBody>, (StatusCode, Json<ApiError>)> {
+/// `POST /chat` / **`POST /chat/async`** 共用：校验请求体（**不含** `prepare_json_chat_enqueue` 与内置命令）。
+struct ParsedChatRequestForEnqueue {
+    image_urls: Vec<String>,
+    clarify: Option<ClarifyAnswersNormalized>,
+    user_trim: String,
+    conversation_id: String,
+    agent_role: Option<String>,
+    temperature_override: Option<f32>,
+    seed_override: crate::types::LlmSeedOverride,
+    llm_override: Option<chat_job_queue::WebChatLlmOverride>,
+    executor_llm_override: Option<chat_job_queue::WebChatLlmOverride>,
+    execution_mode_override: Option<chat_job_queue::WebExecutionModeOverride>,
+}
+
+async fn parse_chat_request_for_enqueue(
+    state: &Arc<AppState>,
+    body: &ChatRequestBody,
+) -> Result<ParsedChatRequestForEnqueue, (StatusCode, Json<ApiError>)> {
     let image_urls = normalize_chat_image_urls(&body.image_urls).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
@@ -752,8 +767,8 @@ pub(crate) async fn chat_handler(
             }),
         )
     })?;
-    let seed_override =
-        parse_seed_override_from_body(body.seed, body.seed_policy).map_err(|e| {
+    let seed_override = parse_seed_override_from_body(body.seed, body.seed_policy.clone())
+        .map_err(|e| {
             (
                 StatusCode::BAD_REQUEST,
                 Json(ApiError {
@@ -763,7 +778,7 @@ pub(crate) async fn chat_handler(
                 }),
             )
         })?;
-    let llm_override = parse_client_llm_override(body.client_llm).map_err(|e| {
+    let llm_override = parse_client_llm_override(body.client_llm.clone()).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
             Json(ApiError {
@@ -773,18 +788,19 @@ pub(crate) async fn chat_handler(
             }),
         )
     })?;
-    let executor_llm_override = parse_executor_llm_override(body.executor_llm).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "INVALID_EXECUTOR_LLM",
-                message: e,
-                reason_code: None,
-            }),
-        )
-    })?;
-    let execution_mode_override =
-        parse_execution_mode_override(body.execution_mode).map_err(|e| {
+    let executor_llm_override =
+        parse_executor_llm_override(body.executor_llm.clone()).map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_EXECUTOR_LLM",
+                    message: e,
+                    reason_code: None,
+                }),
+            )
+        })?;
+    let execution_mode_override = parse_execution_mode_override(body.execution_mode.clone())
+        .map_err(|e| {
             (
                 StatusCode::BAD_REQUEST,
                 Json(ApiError {
@@ -794,14 +810,25 @@ pub(crate) async fn chat_handler(
                 }),
             )
         })?;
-    ensure_bearer_api_key_for_chat(&state, &llm_override).await?;
-    if let Some(reply) = run_web_builtin_command(&state, user_trim).await {
-        return Ok(Json(ChatResponseBody {
-            reply,
-            conversation_id,
-            conversation_revision: None,
-        }));
-    }
+    ensure_bearer_api_key_for_chat(state, &llm_override).await?;
+    Ok(ParsedChatRequestForEnqueue {
+        image_urls,
+        clarify,
+        user_trim: user_trim.to_string(),
+        conversation_id,
+        agent_role,
+        temperature_override,
+        seed_override,
+        llm_override,
+        executor_llm_override,
+        execution_mode_override,
+    })
+}
+
+async fn enqueue_and_wait_json_chat(
+    state: Arc<AppState>,
+    parsed: ParsedChatRequestForEnqueue,
+) -> Result<(Vec<Message>, u64), (StatusCode, Json<ApiError>)> {
     let PreparedJsonChatEnqueue {
         conversation_id,
         turn_seed,
@@ -810,11 +837,11 @@ pub(crate) async fn chat_handler(
         msg_for_log: msg,
     } = prepare_json_chat_enqueue(
         &state,
-        user_trim,
-        clarify,
-        &image_urls,
-        agent_role.clone(),
-        conversation_id,
+        parsed.user_trim.as_str(),
+        parsed.clarify,
+        &parsed.image_urls,
+        parsed.agent_role.clone(),
+        parsed.conversation_id.clone(),
     )
     .await?;
     let job_id = state.chat_queue.next_job_id();
@@ -836,15 +863,15 @@ pub(crate) async fn chat_handler(
             conversation_id: conversation_id.clone(),
             messages: turn_seed.messages,
             expected_revision: turn_seed.expected_revision,
-            request_agent_role: agent_role.clone(),
+            request_agent_role: parsed.agent_role.clone(),
             persisted_active_agent_role: turn_seed.persisted_active_agent_role.clone(),
             work_dir: work_dir_for_job,
             workspace_is_set,
-            temperature_override,
-            seed_override,
-            llm_override,
-            executor_llm_override,
-            execution_mode_override,
+            temperature_override: parsed.temperature_override,
+            seed_override: parsed.seed_override,
+            llm_override: parsed.llm_override.clone(),
+            executor_llm_override: parsed.executor_llm_override.clone(),
+            execution_mode_override: parsed.execution_mode_override,
             reply_tx,
         })
         .map_err(|e| {
@@ -879,7 +906,7 @@ pub(crate) async fn chat_handler(
             chat_job_queue::ChatJsonJobFailure::Agent(err) => {
                 error!(
                     target: "crabmate",
-                    "chat_handler 队列任务失败 job_id={} err_kind=agent_turn {}",
+                    "chat json 队列任务失败 job_id={} err_kind=agent_turn {}",
                     job_id,
                     err.diag_log_kv(),
                 );
@@ -888,19 +915,365 @@ pub(crate) async fn chat_handler(
                 (status, Json(body))
             }
         })?;
+    Ok((messages, job_id))
+}
+
+pub(crate) async fn chat_handler(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ChatRequestBody>,
+) -> Result<Json<ChatResponseBody>, (StatusCode, Json<ApiError>)> {
+    let parsed = parse_chat_request_for_enqueue(&state, &body).await?;
+    if let Some(reply) = run_web_builtin_command(&state, parsed.user_trim.as_str()).await {
+        return Ok(Json(ChatResponseBody {
+            reply,
+            conversation_id: parsed.conversation_id,
+            conversation_revision: None,
+        }));
+    }
+    let cid = parsed.conversation_id.clone();
+    let (messages, _) = enqueue_and_wait_json_chat(state.clone(), parsed).await?;
     let reply = messages
         .last()
         .and_then(|m| crate::types::message_content_as_str(&m.content))
         .unwrap_or("")
         .to_string();
     let conversation_revision = state
-        .load_conversation_seed(&conversation_id)
+        .load_conversation_seed(&cid)
         .await
         .and_then(|s| s.expected_revision);
     Ok(Json(ChatResponseBody {
         reply,
-        conversation_id,
+        conversation_id: cid,
         conversation_revision,
+    }))
+}
+
+fn normalize_optional_webhook_url(
+    raw: Option<String>,
+) -> Result<Option<reqwest::Url>, (StatusCode, Json<ApiError>)> {
+    let Some(s) = raw else {
+        return Ok(None);
+    };
+    let t = s.trim();
+    if t.is_empty() {
+        return Ok(None);
+    }
+    let u = reqwest::Url::parse(t).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError::new("INVALID_WEBHOOK_URL", format!("{e}"))),
+        )
+    })?;
+    if matches!(u.scheme(), "http" | "https") {
+        Ok(Some(u))
+    } else {
+        Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError::new(
+                "INVALID_WEBHOOK_URL",
+                "webhook_url 仅支持 http 或 https",
+            )),
+        ))
+    }
+}
+
+fn normalize_webhook_secret(
+    raw: Option<String>,
+) -> Result<Option<String>, (StatusCode, Json<ApiError>)> {
+    let Some(s) = raw else {
+        return Ok(None);
+    };
+    let t = s.trim().to_string();
+    if t.is_empty() {
+        return Ok(None);
+    }
+    if t.len() > 256 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError::new(
+                "INVALID_WEBHOOK_SECRET",
+                "webhook_secret 过长（最多 256 字符）",
+            )),
+        ));
+    }
+    Ok(Some(t))
+}
+
+async fn post_chat_job_webhook(
+    client: &reqwest::Client,
+    url: &reqwest::Url,
+    secret: Option<&str>,
+    payload: &crate::web::async_chat_job::WebhookPayload<'_>,
+) {
+    let mut req = client.post(url.clone()).json(payload);
+    if let Some(s) = secret {
+        if let Ok(v) = HeaderValue::from_str(s) {
+            req = req.header("X-Crabmate-Webhook-Secret", v);
+        } else {
+            warn!(target: "crabmate", "webhook_secret 含非法 HTTP 头字符，跳过 X-Crabmate-Webhook-Secret");
+        }
+    }
+    match req.timeout(std::time::Duration::from_secs(30)).send().await {
+        Ok(resp) if resp.status().is_success() => {
+            debug!(target: "crabmate", "async chat webhook ok status={}", resp.status());
+        }
+        Ok(resp) => {
+            warn!(
+                target: "crabmate",
+                "async chat webhook non-success status={}",
+                resp.status()
+            );
+        }
+        Err(e) => {
+            warn!(
+                target: "crabmate",
+                "async chat webhook request failed: {}",
+                e
+            );
+        }
+    }
+}
+
+async fn run_async_chat_json_job(
+    state: Arc<AppState>,
+    job_id: u64,
+    reply_rx: tokio::sync::oneshot::Receiver<
+        Result<Vec<Message>, chat_job_queue::ChatJsonJobFailure>,
+    >,
+    conversation_id: String,
+    webhook_url: Option<reqwest::Url>,
+    webhook_secret: Option<String>,
+) {
+    {
+        let mut g = state.async_chat_jobs.write().await;
+        if let Some(r) = g.get_mut(&job_id) {
+            r.status = crate::web::async_chat_job::ChatAsyncJobStatus::Running;
+        }
+    }
+
+    let messages_res = reply_rx.await.ok();
+
+    let (status_str, reply, revision, err_api) = match messages_res {
+        Some(Ok(messages)) => {
+            let reply = messages
+                .last()
+                .and_then(|m| crate::types::message_content_as_str(&m.content))
+                .unwrap_or("")
+                .to_string();
+            let revision = state
+                .load_conversation_seed(&conversation_id)
+                .await
+                .and_then(|s| s.expected_revision);
+            ("completed", Some(reply), revision, None)
+        }
+        Some(Err(chat_job_queue::ChatJsonJobFailure::ConversationConflict)) => {
+            let e = ApiError {
+                code: super::conflict::CONVERSATION_CONFLICT_CODE,
+                message: super::conflict::CONVERSATION_CONFLICT_MESSAGE.to_string(),
+                reason_code: None,
+            };
+            ("failed", None, None, Some(e))
+        }
+        Some(Err(chat_job_queue::ChatJsonJobFailure::Agent(err))) => {
+            error!(
+                target: "crabmate",
+                "chat async job failed job_id={} err_kind=agent_turn {}",
+                job_id,
+                err.diag_log_kv(),
+            );
+            let body = err.http_api_error();
+            ("failed", None, None, Some(body))
+        }
+        None => (
+            "failed",
+            None,
+            None,
+            Some(ApiError::new("INTERNAL_ERROR", "对话任务被取消或内部错误")),
+        ),
+    };
+
+    {
+        let mut g = state.async_chat_jobs.write().await;
+        if let Some(r) = g.get_mut(&job_id) {
+            r.status = if status_str == "completed" {
+                crate::web::async_chat_job::ChatAsyncJobStatus::Completed
+            } else {
+                crate::web::async_chat_job::ChatAsyncJobStatus::Failed
+            };
+            r.reply.clone_from(&reply);
+            r.conversation_revision = revision;
+            r.error = err_api.clone();
+        }
+    }
+
+    if let Some(ref url) = webhook_url {
+        let payload = crate::web::async_chat_job::WebhookPayload {
+            job_id,
+            status: status_str,
+            conversation_id: conversation_id.as_str(),
+            conversation_revision: revision,
+            reply: reply.as_deref(),
+            error: err_api.as_ref(),
+        };
+        post_chat_job_webhook(&state.client, url, webhook_secret.as_deref(), &payload).await;
+    }
+}
+
+pub(crate) async fn chat_async_handler(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ChatAsyncRequestBody>,
+) -> Result<Json<ChatAsyncSubmitResponseBody>, (StatusCode, Json<ApiError>)> {
+    if body.chat.stream_resume.is_some() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError::new(
+                "ASYNC_STREAM_RESUME_UNSUPPORTED",
+                "异步任务不支持 stream_resume；请使用 POST /chat/stream",
+            )),
+        ));
+    }
+    let parsed = parse_chat_request_for_enqueue(&state, &body.chat).await?;
+    if run_web_builtin_command(&state, parsed.user_trim.as_str())
+        .await
+        .is_some()
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError::new(
+                "ASYNC_BUILTIN_UNSUPPORTED",
+                "内置命令（如 /skills）请使用同步 POST /chat",
+            )),
+        ));
+    }
+
+    let webhook_url = normalize_optional_webhook_url(body.webhook_url)?;
+    let webhook_secret = normalize_webhook_secret(body.webhook_secret)?;
+    let conversation_id = parsed.conversation_id.clone();
+
+    let job_id = state.chat_queue.next_job_id();
+    let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+
+    {
+        let mut g = state.async_chat_jobs.write().await;
+        g.insert(
+            job_id,
+            crate::web::async_chat_job::ChatAsyncJobRecord {
+                status: crate::web::async_chat_job::ChatAsyncJobStatus::Pending,
+                conversation_id: conversation_id.clone(),
+                created_at: std::time::Instant::now(),
+                webhook_url: webhook_url.as_ref().map(|u| u.to_string()),
+                webhook_secret: webhook_secret.clone(),
+                reply: None,
+                conversation_revision: None,
+                error: None,
+            },
+        );
+    }
+
+    let PreparedJsonChatEnqueue {
+        conversation_id: cid_enqueue,
+        turn_seed,
+        work_dir: work_dir_for_job,
+        workspace_is_set,
+        msg_for_log: msg,
+    } = prepare_json_chat_enqueue(
+        &state,
+        parsed.user_trim.as_str(),
+        parsed.clarify,
+        &parsed.image_urls,
+        parsed.agent_role.clone(),
+        conversation_id.clone(),
+    )
+    .await?;
+
+    let submit = state
+        .chat_queue
+        .try_submit_json(chat_job_queue::JsonSubmitParams {
+            job_id,
+            queue_deps: state.chat_queue_job_deps.clone(),
+            app: state.clone(),
+            conversation_id: cid_enqueue,
+            messages: turn_seed.messages,
+            expected_revision: turn_seed.expected_revision,
+            request_agent_role: parsed.agent_role.clone(),
+            persisted_active_agent_role: turn_seed.persisted_active_agent_role.clone(),
+            work_dir: work_dir_for_job,
+            workspace_is_set,
+            temperature_override: parsed.temperature_override,
+            seed_override: parsed.seed_override,
+            llm_override: parsed.llm_override.clone(),
+            executor_llm_override: parsed.executor_llm_override.clone(),
+            execution_mode_override: parsed.execution_mode_override,
+            reply_tx,
+        });
+
+    if let Err(e) = submit {
+        let mut g = state.async_chat_jobs.write().await;
+        g.remove(&job_id);
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ApiError {
+                code: "QUEUE_FULL",
+                message: format!(
+                    "对话任务队列已满（最多等待 {} 个），请稍后重试",
+                    e.max_pending
+                ),
+                reason_code: None,
+            }),
+        ));
+    }
+
+    debug!(
+        target: "crabmate",
+        "chat async 请求摘要 job_id={} user_len={} user_preview={}",
+        job_id,
+        msg.len(),
+        redact::preview_chars(&msg, redact::MESSAGE_LOG_PREVIEW_CHARS)
+    );
+    info!(target: "crabmate", "chat async 任务入队 job_id={}", job_id);
+
+    let st = state.clone();
+    let cid = conversation_id.clone();
+    let wurl = webhook_url.clone();
+    let wsec = webhook_secret.clone();
+    tokio::spawn(async move {
+        run_async_chat_json_job(st, job_id, reply_rx, cid, wurl, wsec).await;
+    });
+
+    Ok(Json(ChatAsyncSubmitResponseBody {
+        job_id,
+        status: "pending",
+        conversation_id,
+    }))
+}
+
+pub(crate) async fn chat_job_status_handler(
+    State(state): State<Arc<AppState>>,
+    Path(job_id): Path<u64>,
+) -> Result<Json<ChatJobStatusResponseBody>, (StatusCode, Json<ApiError>)> {
+    let g = state.async_chat_jobs.read().await;
+    let Some(rec) = g.get(&job_id) else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ApiError::new(
+                "UNKNOWN_JOB",
+                "不存在或未通过 POST /chat/async 创建的任务",
+            )),
+        ));
+    };
+    let status = match rec.status {
+        crate::web::async_chat_job::ChatAsyncJobStatus::Pending => "pending",
+        crate::web::async_chat_job::ChatAsyncJobStatus::Running => "running",
+        crate::web::async_chat_job::ChatAsyncJobStatus::Completed => "completed",
+        crate::web::async_chat_job::ChatAsyncJobStatus::Failed => "failed",
+    };
+    Ok(Json(ChatJobStatusResponseBody {
+        job_id,
+        status: status.to_string(),
+        conversation_id: rec.conversation_id.clone(),
+        reply: rec.reply.clone(),
+        conversation_revision: rec.conversation_revision,
+        error: rec.error.clone(),
     }))
 }
 

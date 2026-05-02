@@ -164,6 +164,45 @@ fn openapi_components_schemas_chat_response_approval_branch() -> Value {
                     "revision": { "type": "integer", "format": "int64" }
                 }
             },
+            "ChatAsyncRequestBody": {
+                "allOf": [
+                    { "$ref": "#/components/schemas/ChatRequestBody" },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "webhook_url": {
+                                "type": "string",
+                                "description": "可选；http/https；任务 completed/failed 后 POST JSON 回调"
+                            },
+                            "webhook_secret": {
+                                "type": "string",
+                                "description": "可选；随回调发送请求头 X-Crabmate-Webhook-Secret（最多 256 字符）"
+                            }
+                        }
+                    }
+                ]
+            },
+            "ChatAsyncSubmitResponseBody": {
+                "type": "object",
+                "required": ["job_id", "status", "conversation_id"],
+                "properties": {
+                    "job_id": { "type": "integer", "format": "int64" },
+                    "status": { "type": "string", "description": "初始为 pending" },
+                    "conversation_id": { "type": "string" }
+                }
+            },
+            "ChatJobStatusResponseBody": {
+                "type": "object",
+                "required": ["job_id", "status", "conversation_id"],
+                "properties": {
+                    "job_id": { "type": "integer", "format": "int64" },
+                    "status": { "type": "string", "enum": ["pending", "running", "completed", "failed"] },
+                    "conversation_id": { "type": "string" },
+                    "reply": { "type": "string", "nullable": true },
+                    "conversation_revision": { "type": "integer", "format": "int64", "nullable": true },
+                    "error": { "$ref": "#/components/schemas/ApiError", "nullable": true }
+                }
+            },
     })
 }
 

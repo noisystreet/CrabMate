@@ -52,6 +52,7 @@
 |------|------|
 | **OpenAPI** | **`GET /openapi.json`**，便于生成客户端与契约测试。 |
 | **非流式 JSON** | **`POST /chat`**：适合短问答、脚本聚合；需自行从响应 JSON 提取助手最终文本。 |
+| **异步 JSON + 轮询 / Webhook** | **`POST /chat/async`**：请求体为 **`ChatRequestBody` 全部字段** + 可选 **`webhook_url`** / **`webhook_secret`**；立即返回 **`job_id`**；**`GET /chat/jobs/{job_id}`** 查询 **`pending` / `running` / `completed` / `failed`**。与 **`POST /chat`** 共用同一 JSON 队列与限制（**无**流式工具审批；需审批请用 **`POST /chat/stream`**）。任务元数据**仅进程内内存**；**`serve` 重启后 `job_id` 失效**。若配置了 **`webhook_url`**，完成或失败时服务端 **POST** JSON（字段含 **`job_id`**、**`status`**、**`conversation_id`**、**`conversation_revision`**、**`reply`**、**`error`**）；可选请求头 **`X-Crabmate-Webhook-Secret`**（与请求体 **`webhook_secret`** 相同，由集成方校验；**勿**记入日志原文）。 |
 | **SSE 流式** | **`POST /chat/stream`**：`text/event-stream`、事件 **`id:`**、**`Last-Event-ID`** + 请求体 **`stream_resume`**、响应头 **`x-conversation-id`** / **`x-stream-job-id`**；控制面与正文区分见 **`docs/SSE协议.md`**。 |
 | **会话与分叉** | **`conversation_id`**、**`POST /chat/branch`**、**`GET /conversation/messages`**（含 **`revision`**）。 |
 | **审批** | SSE **`command_approval_request`** + **`POST /chat/approval`**；非流式 **`/chat`** 队列路径**未**挂载 `WebToolRuntime`，**不宜**作为需审批工具的集成入口。IM 桥接（**`crabmate-im-bridge`**）已改为消费 **`/chat/stream`** 并转发审批。 |
@@ -73,7 +74,7 @@
 
 ### 5.1 协议与「非浏览器」客户端体验
 
-- **异步任务 + 回调或轮询**：IM 常先快速 ACK，再异步推送结果。可选方向：任务 ID + **`GET /chat/jobs/{id}`** 类轮询，或完成时 **Webhook POST** 到集成方 URL（需签名与超时策略）。
+- ~~**异步任务 + 回调或轮询**~~ **部分已实现**：**`POST /chat/async`** 返回 **`job_id`**，**`GET /chat/jobs/{job_id}`** 轮询；可选 **`webhook_url`** 在完成/失败时 **POST** JSON（见 **`docs/命令行与路由.md`**）。状态为**进程内内存**（重启丢失）；多副本须会话粘性或外部队列仍为后续方向。
 - **稳定「仅正文」响应**：为 **`POST /chat`** 提供可选 **`response_shape`**（例如仅返回 **`assistant_text`** + **`usage`**），减少集成方对内部 JSON 嵌套路径的耦合。
 - **官方最小示例**：在仓库 **`examples/`** 或文档中提供 **curl / Python** 消费 SSE 的片段（拼接同块多行 `data:`、识别控制面 **`code`**、**`stream_ended`**）。
 
