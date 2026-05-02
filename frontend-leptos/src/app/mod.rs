@@ -54,6 +54,7 @@ pub fn App() -> impl IntoView {
     let settings_page_view_input = app_ctx.settings_page_view_input();
     let mobile_shell_header_signals = app_ctx.mobile_shell_header_signals();
     let changelist_modal_signals = app_ctx.changelist_modal_signals();
+    let settings_modal_signals = app_ctx.settings_modal_signals();
 
     view! {
         <div
@@ -94,7 +95,7 @@ pub fn App() -> impl IntoView {
 
             {session_list_modal_view(app_ctx.clone())}
 
-            {settings_modal_view(app_ctx.clone())}
+            {settings_modal_view(settings_modal_signals)}
 
             {changelist_modal_view(changelist_modal_signals)}
 

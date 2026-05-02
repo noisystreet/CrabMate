@@ -45,6 +45,31 @@ pub struct ChangelistModalSignals {
     pub changelist_body_ref: NodeRef<Div>,
 }
 
+/// 设置弹窗所需句柄（阶段 B：避免向 `settings_modal_view` 传递整份 [`AppShellCtx`]）。
+#[derive(Clone, Copy)]
+pub struct SettingsModalSignals {
+    pub settings_modal: RwSignal<bool>,
+    pub locale: RwSignal<Locale>,
+    pub theme: RwSignal<String>,
+    pub bg_decor: RwSignal<bool>,
+    pub llm_api_base_draft: RwSignal<String>,
+    pub llm_api_base_preset_select: RwSignal<String>,
+    pub llm_model_draft: RwSignal<String>,
+    pub llm_temperature_draft: RwSignal<String>,
+    pub llm_context_tokens_draft: RwSignal<String>,
+    pub llm_api_key_draft: RwSignal<String>,
+    pub llm_has_saved_key: RwSignal<bool>,
+    pub llm_settings_feedback: RwSignal<Option<String>>,
+    pub executor_llm_api_base_draft: RwSignal<String>,
+    pub executor_llm_api_base_preset_select: RwSignal<String>,
+    pub executor_llm_model_draft: RwSignal<String>,
+    pub executor_llm_api_key_draft: RwSignal<String>,
+    pub executor_llm_has_saved_key: RwSignal<bool>,
+    pub executor_llm_settings_feedback: RwSignal<Option<String>>,
+    pub execution_mode_draft: RwSignal<String>,
+    pub client_llm_storage_tick: RwSignal<u64>,
+}
+
 type SideResizeHandlesCell = Rc<
     RefCell<
         Option<(
@@ -124,6 +149,31 @@ pub struct AppShellCtx {
 }
 
 impl AppShellCtx {
+    pub fn settings_modal_signals(&self) -> SettingsModalSignals {
+        SettingsModalSignals {
+            settings_modal: self.settings_modal,
+            locale: self.locale,
+            theme: self.theme,
+            bg_decor: self.bg_decor,
+            llm_api_base_draft: self.llm_api_base_draft,
+            llm_api_base_preset_select: self.llm_api_base_preset_select,
+            llm_model_draft: self.llm_model_draft,
+            llm_temperature_draft: self.llm_temperature_draft,
+            llm_context_tokens_draft: self.llm_context_tokens_draft,
+            llm_api_key_draft: self.llm_api_key_draft,
+            llm_has_saved_key: self.llm_has_saved_key,
+            llm_settings_feedback: self.llm_settings_feedback,
+            executor_llm_api_base_draft: self.executor_llm_api_base_draft,
+            executor_llm_api_base_preset_select: self.executor_llm_api_base_preset_select,
+            executor_llm_model_draft: self.executor_llm_model_draft,
+            executor_llm_api_key_draft: self.executor_llm_api_key_draft,
+            executor_llm_has_saved_key: self.executor_llm_has_saved_key,
+            executor_llm_settings_feedback: self.executor_llm_settings_feedback,
+            execution_mode_draft: self.execution_mode_draft,
+            client_llm_storage_tick: self.client_llm_storage_tick,
+        }
+    }
+
     pub fn changelist_modal_signals(&self) -> ChangelistModalSignals {
         ChangelistModalSignals {
             changelist_modal_open: self.changelist_modal_open,

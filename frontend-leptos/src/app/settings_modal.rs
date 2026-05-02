@@ -9,15 +9,15 @@ use crate::a11y::{focus_first_in_modal_container, trap_tab_in_container};
 use crate::app::settings_commit::{CommitAllSettingsInput, commit_all_settings};
 use crate::i18n::{self};
 
-use super::app_shell_ctx::AppShellCtx;
+use super::app_shell_ctx::SettingsModalSignals;
 use super::settings_form_state::{SettingsFormCurrent, is_settings_dirty, refresh_baselines};
 use super::settings_sections::{
     SettingsAppearanceBlock, SettingsExecutorLlmBlock, SettingsLlmBlock, SettingsLlmBlockBundle,
     SettingsShortcutsBlock,
 };
 
-pub fn settings_modal_view(ctx: AppShellCtx) -> impl IntoView {
-    let AppShellCtx {
+pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
+    let SettingsModalSignals {
         settings_modal,
         locale,
         theme,
@@ -38,8 +38,7 @@ pub fn settings_modal_view(ctx: AppShellCtx) -> impl IntoView {
         executor_llm_settings_feedback,
         execution_mode_draft,
         client_llm_storage_tick,
-        ..
-    } = ctx;
+    } = signals;
 
     let settings_dialog_ref = NodeRef::<Div>::new();
 
