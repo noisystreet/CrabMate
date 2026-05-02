@@ -15,7 +15,7 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 ### P0 — Security (before non-localhost deployment)
 
-- [ ] **Unauthenticated HTTP**: `/chat`, `/chat/stream`, workspace, files, upload, tasks do not verify caller identity; `API_KEY` is only for the LLM, not for protecting APIs or quota abuse.
+- [ ] **Shared-secret HTTP auth limits**: default **`web_api_require_bearer=true`** forces non-empty **`web_api_bearer_token`** before **`serve`** and Bearer/`X-API-Key` on protected routes; there is still **no per-user identity**, quotas, or audit trail—compromise of the shared secret equals full API access. **`API_KEY`** remains LLM-only.
 - [ ] **Multi-role / persona switching**: Support multiple **roles** (system prompt, tool visibility, temperature, etc.); **CLI** and **Web** should expose commands or UI to switch the active role per session, with boundaries documented for persistence, export, and `POST /config/reload`; multi-tenant use must align with authentication above.
 
 ### P4 — Testing and quality

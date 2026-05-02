@@ -18,7 +18,7 @@ pub fn build_openapi_spec() -> Value {
             "version": version,
             "description": concat!(
                 "CrabMate `serve` 模式的 HTTP 契约摘要。\n\n",
-                "- **鉴权**：若进程配置了 `CM_WEB_API_BEARER_TOKEN`（或等价 TOML `web_api_bearer_token`），下列标记为需鉴权的路径须在请求头携带 **`Authorization: Bearer <token>`** 或 **`X-API-Key: <token>`**（与配置值为**同一密钥**，二选一即可）。未配置密钥时这些路径可匿名访问；可设 **`web_api_require_bearer=true`**（或 **`CM_WEB_API_REQUIRE_BEARER`**）强制 `serve` 启动前必须配置密钥。\n",
+                "- **鉴权**：嵌入默认 **`web_api_require_bearer=true`**：`serve` 启动须配置 **`CM_WEB_API_BEARER_TOKEN`**（或 TOML **`web_api_bearer_token`**），否则拒绝启动。启动且密钥非空后，下列标记为需鉴权的路径须在请求头携带 **`Authorization: Bearer <token>`** 或 **`X-API-Key: <token>`**（与配置值为**同一密钥**，二选一即可）。若显式关闭 **`web_api_require_bearer`** 且密钥为空，这些路径可对能访问监听地址的客户端匿名访问（仅限可信环境）。\n",
                 "- **SSE**：`POST /chat/stream` 返回 `text/event-stream`；控制面 JSON 与错误码见仓库 `docs/SSE协议.md`，本 OpenAPI 仅作入口说明。\n",
                 "- **上传**：`POST /upload` 使用 `multipart/form-data`。"
             )

@@ -56,6 +56,48 @@ mod embedded_shard_parse_tests {
 }
 
 #[cfg(test)]
+mod web_api_require_bearer_defaults_tests {
+    use super::load_config;
+    use std::fs;
+
+    #[test]
+    fn embedded_default_requires_bearer_without_env_override() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("minimal.toml");
+        fs::write(
+            &path,
+            r#"[agent]
+api_base = "https://api.deepseek.com/v1"
+model = "deepseek-chat"
+"#,
+        )
+        .expect("write");
+        let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
+        assert!(
+            cfg.web_api_require_bearer,
+            "embedded default should require Web API bearer secret before serve"
+        );
+    }
+
+    #[test]
+    fn explicit_false_allows_opt_out() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("minimal.toml");
+        fs::write(
+            &path,
+            r#"[agent]
+api_base = "https://api.deepseek.com/v1"
+model = "deepseek-chat"
+web_api_require_bearer = false
+"#,
+        )
+        .expect("write");
+        let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
+        assert!(!cfg.web_api_require_bearer);
+    }
+}
+
+#[cfg(test)]
 mod llm_reasoning_split_default_tests {
     use super::load_config;
     use std::fs;

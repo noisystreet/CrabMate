@@ -393,7 +393,7 @@ async fn run_serve_branch(args: ServeBranchArgs<'_>) -> Result<(), Box<dyn std::
     }
     if bind_ip.is_loopback() && !auth_enabled {
         eprintln!(
-            "  提示: 未配置 web_api_bearer_token，/chat、/workspace、/upload 等受保护 API 可被本机任意进程调用；生产或共享机器建议设置 CM_WEB_API_BEARER_TOKEN（及浏览器 localStorage「API」同源键 crabmate-api-bearer-token），或启用 web_api_require_bearer 强制非空密钥。"
+            "  提示: 未配置 web_api_bearer_token，受保护 API 可被本机任意进程调用。嵌入默认已启用 web_api_require_bearer；若需纯本地匿名调试请在配置中设 web_api_require_bearer = false 并（可选）清空密钥。否则请设置 CM_WEB_API_BEARER_TOKEN（及浏览器 localStorage「API」同源键 crabmate-api-bearer-token）。"
         );
     }
     if bind_ip.is_unspecified() && auth_enabled {

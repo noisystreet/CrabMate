@@ -186,7 +186,7 @@ pub(super) struct AgentSection {
     /// Web 工作区可选根目录；省略或空则仅允许 `run_command_working_dir` 及其子目录
     pub(super) workspace_allowed_roots: Option<Vec<String>>,
     pub(super) web_api_bearer_token: Option<String>,
-    /// `CM_WEB_API_REQUIRE_BEARER`；为 true 时未配置 `web_api_bearer_token` 则 `serve` 拒绝启动。
+    /// `CM_WEB_API_REQUIRE_BEARER`；未在 TOML/环境显式设置时，finalize 默认 **true**（须配 `web_api_bearer_token` 后 `serve` 才启动）；显式 `false` 时允许无密钥启动（仅可信环境）。
     pub(super) web_api_require_bearer: Option<bool>,
     pub(super) allow_insecure_no_auth_for_non_loopback: Option<bool>,
     pub(super) conversation_store_sqlite_path: Option<String>,
