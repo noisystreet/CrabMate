@@ -29,7 +29,7 @@ fn reflect_finish_from_after_final_assistant(
     match after {
         AfterFinalAssistant::StopTurn => ReflectOnAssistantOutcome::StopTurn,
         AfterFinalAssistant::RequestPlanRewrite(m) => {
-            p.turn.messages.push(m);
+            p.turn.push_message(m);
             ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite
         }
         AfterFinalAssistant::StopTurnPlanRewriteExhausted { reason } => {

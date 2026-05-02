@@ -1,7 +1,9 @@
 //! Web/CLI 共用：外层循环与分阶段规划的运行期参数。
 //!
 //! **`RunLoopCtx`**：整场固定的输入上下文（HTTP 客户端、配置快照、工具表、SSE 通道、冻结的分阶段开关等）。
-//! **`RunLoopTurnState`**：可变会话状态与本回合决策覆盖（`messages`、`sub_phase`、模型/温度覆盖、[`TurnPlannerHints`] 等）。
+//! **`RunLoopTurnState`**：可变会话状态与本回合决策覆盖（`messages`、`messages_revision`、`sub_phase`、模型/温度覆盖、[`TurnPlannerHints`] 等）。
+//! **`messages_revision`**：在每次**就地**改写 `messages` 缓冲、以及每次 [`crate::agent::context_window::prepare_messages_for_model`] 完成后递增（单调；
+//! 可与 `PerCoordinator` 的 workflow_validate 层缓存失效语义对照排障）。
 //! **`RunLoopParams`**：二者合一，供 `run_agent_turn_common` 与各子模块持有单一句柄。
 //! **[`OuterLoopPlanCallModelRole`]**：单 Agent **`outer_loop`** 每次 **P** 步选用 planner 端点还是 executor 端点（与 `iteration_count` 对应关系集中在一处）。
 
@@ -15,6 +17,9 @@ use crate::workspace::changelist::WorkspaceChangelist;
 use tokio::sync::mpsc;
 
 use super::errors::AgentTurnSubPhase;
+use super::messages::{
+    insert_separator_after_last_user_for_turn, push_assistant_merging_trailing_empty_placeholder,
+};
 use crate::agent::hierarchy::HierarchyRunnerParams;
 use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crate::config::AgentConfig;
@@ -133,6 +138,8 @@ impl TurnPlannerHints {
 /// 会话与编排可变侧：**消息缓冲**、失败时的 **`sub_phase`**、模型覆盖与本步 `executor_kind` 等。
 pub(crate) struct RunLoopTurnState<'a> {
     pub messages: &'a mut Vec<Message>,
+    /// 单调递增：任意 `messages` 变异或一次「发往模型前」[`crate::agent::context_window::prepare_messages_for_model`] 完成后 +1（`wrapping`）。
+    pub(crate) messages_revision: u64,
     /// 当前编排子阶段（供失败时 SSE `sub_phase` 与日志）；由 `outer_loop` / 分阶段路径在调用模型或执行工具前更新。
     pub sub_phase: AgentTurnSubPhase,
     /// 意图门控与分步子代理约束（见 [`TurnPlannerHints`]）。
@@ -153,6 +160,59 @@ pub(crate) struct RunLoopTurnState<'a> {
 }
 
 impl<'a> RunLoopTurnState<'a> {
+    #[inline]
+    fn bump_messages_revision(&mut self) {
+        self.messages_revision = self.messages_revision.wrapping_add(1);
+    }
+
+    /// 只读：当前缓冲代数（与 [`Self::messages`] 长度无必然相等关系）。
+    #[inline]
+    pub(crate) fn messages_buffer_revision(&self) -> u64 {
+        self.messages_revision
+    }
+
+    pub(crate) fn push_message(&mut self, msg: Message) {
+        self.messages.push(msg);
+        self.bump_messages_revision();
+    }
+
+    pub(crate) fn pop_message(&mut self) -> Option<Message> {
+        let r = self.messages.pop();
+        if r.is_some() {
+            self.bump_messages_revision();
+        }
+        r
+    }
+
+    pub(crate) fn truncate_messages(&mut self, len: usize) {
+        if self.messages.len() != len {
+            self.messages.truncate(len);
+            self.bump_messages_revision();
+        }
+    }
+
+    pub(crate) fn retain_messages(&mut self, mut keep: impl FnMut(&Message) -> bool) {
+        let before = self.messages.len();
+        self.messages.retain(|m| keep(m));
+        if self.messages.len() != before {
+            self.bump_messages_revision();
+        }
+    }
+
+    pub(crate) fn push_assistant_merging_trailing_empty(&mut self, msg: Message) {
+        push_assistant_merging_trailing_empty_placeholder(self.messages, msg);
+        self.bump_messages_revision();
+    }
+
+    /// 本轮 user 后插入 UI 分隔线（若未插入则不变更代数）。
+    pub(crate) fn insert_separator_after_last_user_for_turn(&mut self) {
+        let n = self.messages.len();
+        insert_separator_after_last_user_for_turn(self.messages);
+        if self.messages.len() != n {
+            self.bump_messages_revision();
+        }
+    }
+
     /// 首轮 P 前注入的意图门控临时 system（消费后即清空）。
     pub(crate) fn take_intent_turn_gate_hint(&mut self) -> Option<String> {
         self.turn_planner_hints.take_intent_turn_gate_hint()
@@ -303,5 +363,35 @@ mod turn_planner_hints_tests {
             OuterLoopPlanCallModelRole::ExecutorRound.as_trace_str(),
             "executor_round"
         );
+    }
+
+    #[test]
+    fn messages_revision_increments_on_buffer_mutations() {
+        use crate::agent::agent_turn::errors::AgentTurnSubPhase;
+        use crate::types::{LlmSeedOverride, Message};
+
+        let mut storage = vec![Message::user_only("u")];
+        let mut turn = super::RunLoopTurnState {
+            messages: &mut storage,
+            messages_revision: 0,
+            sub_phase: AgentTurnSubPhase::Planner,
+            turn_planner_hints: TurnPlannerHints::default(),
+            temperature_override: None,
+            model_override: None,
+            use_executor_model: false,
+            executor_model_override: None,
+            executor_api_base: None,
+            executor_api_key: None,
+            seed_override: LlmSeedOverride::FromConfig,
+        };
+        assert_eq!(turn.messages_buffer_revision(), 0);
+        turn.push_message(Message::assistant_only("a"));
+        assert_eq!(turn.messages_buffer_revision(), 1);
+        turn.truncate_messages(1);
+        assert_eq!(turn.messages_buffer_revision(), 2);
+        turn.retain_messages(|_| true);
+        assert_eq!(turn.messages_buffer_revision(), 2);
+        turn.retain_messages(|m| m.role != "tool");
+        assert_eq!(turn.messages_buffer_revision(), 2);
     }
 }

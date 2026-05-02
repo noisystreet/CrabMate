@@ -68,7 +68,7 @@ fn format_hierarchical_aborted_summary(e: &ExecutionError, task: &str) -> String
 /// Web 端以 `on_timeline_log` 落主气泡；不再下发裸 Markdown delta，避免与 `timeline_log`
 /// 重复以及由缓冲/解析顺序带来的总结缺失问题。
 async fn emit_hierarchical_final_assistant(p: &mut RunLoopParams<'_>, final_response: String) {
-    p.turn.messages.push(crate::types::Message::assistant_only(
+    p.turn.push_message(crate::types::Message::assistant_only(
         final_response.clone(),
     ));
     if let Some(out) = p.ctx.out {

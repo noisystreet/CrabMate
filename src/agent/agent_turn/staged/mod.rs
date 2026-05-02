@@ -12,7 +12,6 @@ use crate::llm::no_tools_chat_request_from_messages;
 use crate::types::{Message, USER_CANCELLED_FINISH_REASON};
 
 use super::errors::{AgentTurnSubPhase, RunAgentTurnError};
-use super::messages::push_assistant_merging_trailing_empty_placeholder;
 use super::outer_loop::run_agent_outer_loop;
 use super::params::RunLoopParams;
 
@@ -129,8 +128,11 @@ pub(super) async fn prepare_staged_planner_no_tools_request(
         p.ctx.api_key,
         p.ctx.cfg.as_ref(),
         p.turn.messages,
-        Some(per_coord),
         p.ctx.workspace_changelist.as_ref().map(|a| a.as_ref()),
+        crate::agent::context_window::PrepareMessagesForModelHooks {
+            per_coord_layer_cache: Some(per_coord),
+            run_loop_messages_revision: Some(&mut p.turn.messages_revision),
+        },
     )
     .await
     .map_err(|e| RunAgentTurnError::Other {
@@ -195,7 +197,7 @@ where
         plan.no_task,
     );
     if !omit_no_task_planner_from_history {
-        push_assistant_merging_trailing_empty_placeholder(p.turn.messages, msg.clone());
+        p.turn.push_assistant_merging_trailing_empty(msg.clone());
     }
 
     let post_schedule = prepared_post_parse_schedule(plan.no_task);
@@ -346,7 +348,7 @@ where
         return Ok(ControlFlow::Continue(()));
     }
     let opt_body = plan_optimizer::staged_plan_optimizer_user_body(plan, parallel_csv);
-    p.turn.messages.push(make_step_user_message(opt_body));
+    p.turn.push_message(make_step_user_message(opt_body));
     let (mut opt_msg, opt_finish) = complete_one_staged_planner_assistant_round(
         p,
         per_coord,
@@ -376,7 +378,7 @@ where
                     steps.len()
                 );
             }
-            push_assistant_merging_trailing_empty_placeholder(p.turn.messages, opt_msg);
+            p.turn.push_assistant_merging_trailing_empty(opt_msg);
             plan.steps = steps;
         }
         EnsembleMergeOutcome::KeepPriorPlan => {
@@ -582,7 +584,7 @@ where
             Ok(StagedPlanRunOutcome::Finished)
         }
         PreparedPlannerRoute::DegradeToOuterLoop => {
-            push_assistant_merging_trailing_empty_placeholder(p.turn.messages, msg.clone());
+            p.turn.push_assistant_merging_trailing_empty(msg.clone());
             run_agent_outer_loop(p, per_coord).await?;
             Ok(StagedPlanRunOutcome::Finished)
         }
@@ -647,7 +649,7 @@ mod staged_not_found_convergence_tests {
 mod staged_plan_prepare_fixture_tests {
     use std::sync::Arc;
 
-    use crate::agent::context_window::prepare_messages_for_model;
+    use crate::agent::context_window::{PrepareMessagesForModelHooks, prepare_messages_for_model};
     use crate::agent::per_coord::{PerCoordinator, PerCoordinatorInit};
     use crate::llm::OPENAI_COMPAT_BACKEND;
     use crate::types::{LlmSeedOverride, Message, message_content_as_str};
@@ -676,8 +678,11 @@ mod staged_plan_prepare_fixture_tests {
             "",
             cfg.as_ref(),
             &mut messages,
-            Some(&mut per),
             None,
+            PrepareMessagesForModelHooks {
+                per_coord_layer_cache: Some(&mut per),
+                run_loop_messages_revision: None,
+            },
         )
         .await
         .expect("prepare_messages_for_model");
@@ -747,6 +752,7 @@ mod staged_plan_prepare_fixture_tests {
             },
             turn: RunLoopTurnState {
                 messages: &mut messages,
+                messages_revision: 0,
                 sub_phase: AgentTurnSubPhase::Planner,
                 turn_planner_hints: crate::agent::agent_turn::TurnPlannerHints::default(),
                 temperature_override: None,

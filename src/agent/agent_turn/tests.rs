@@ -207,6 +207,7 @@ mod hierarchy_runner_params_tests {
             },
             turn: RunLoopTurnState {
                 messages: &mut messages,
+                messages_revision: 0,
                 sub_phase: crate::agent::agent_turn::AgentTurnSubPhase::Planner,
                 turn_planner_hints: crate::agent::agent_turn::TurnPlannerHints::default(),
                 temperature_override: None,
@@ -281,6 +282,7 @@ mod hierarchy_runner_params_tests {
             },
             turn: RunLoopTurnState {
                 messages: &mut messages,
+                messages_revision: 0,
                 sub_phase: crate::agent::agent_turn::AgentTurnSubPhase::Planner,
                 turn_planner_hints: crate::agent::agent_turn::TurnPlannerHints::default(),
                 temperature_override: None,
@@ -373,6 +375,7 @@ mod per_reflect_tests {
             },
             turn: RunLoopTurnState {
                 messages: &mut messages,
+                messages_revision: 0,
                 sub_phase: crate::agent::agent_turn::AgentTurnSubPhase::Planner,
                 turn_planner_hints: crate::agent::agent_turn::TurnPlannerHints::default(),
                 temperature_override: None,

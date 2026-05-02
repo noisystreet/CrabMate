@@ -12,7 +12,6 @@ use crate::types::Message;
 
 use super::super::errors::{AgentTurnSubPhase, RunAgentTurnError};
 use super::super::execute_tools::sse_sender_closed;
-use super::super::messages::push_assistant_merging_trailing_empty_placeholder;
 use super::super::outer_loop::run_agent_outer_loop;
 use super::super::params::RunLoopParams;
 
@@ -138,10 +137,8 @@ async fn push_patch_replan_assistant_json_and_notice(
             message: e.to_string(),
         }
     })?;
-    push_assistant_merging_trailing_empty_placeholder(
-        p.turn.messages,
-        Message::assistant_only(json),
-    );
+    p.turn
+        .push_assistant_merging_trailing_empty(Message::assistant_only(json));
     send_staged_plan_notice(
         p.ctx.out,
         echo_terminal_staged,
@@ -226,7 +223,7 @@ where
         let _ = crate::runtime::terminal_cli_transcript::print_staged_plan_notice(false, &body);
     }
     let step_user_idx = patch_ctx.p.turn.messages.len();
-    patch_ctx.p.turn.messages.push(make_step_user_message(body));
+    patch_ctx.p.turn.push_message(make_step_user_message(body));
     let prev_executor_constraint = patch_ctx.p.turn.turn_planner_hints.step_executor_constraint;
     patch_ctx.p.turn.turn_planner_hints.step_executor_constraint = step.executor_kind;
     let run_step = run_agent_outer_loop(patch_ctx.p, patch_ctx.per_coord).await;
@@ -474,7 +471,7 @@ where
     ) {
         n = plan_steps.len();
 
-        patch_ctx.p.turn.messages.push(Message::user_only(fb));
+        patch_ctx.p.turn.push_message(Message::user_only(fb));
 
         let replan = AgentReplyPlanV1 {
             plan_type: "agent_reply_plan".to_string(),

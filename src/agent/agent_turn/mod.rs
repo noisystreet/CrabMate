@@ -54,8 +54,6 @@ pub(crate) use plan::{
 pub(crate) use reflect::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
 pub(crate) use sub_agent_policy::filter_tool_defs_for_executor_kind;
 
-use messages::insert_separator_after_last_user_for_turn;
-
 #[cfg(test)]
 mod tests;
 
@@ -67,14 +65,15 @@ pub(crate) async fn run_agent_turn_common(
     }
     debug!(
         target: "crabmate",
-        "run_agent_turn 开始 message_count={} last_user_preview={} staged_plan={} planner_executor_mode={} work_dir={}",
+        "run_agent_turn 开始 message_count={} messages_revision={} last_user_preview={} staged_plan={} planner_executor_mode={} work_dir={}",
         p.turn.messages.len(),
+        p.turn.messages_buffer_revision(),
         crate::redact::last_user_message_preview_for_log(p.turn.messages),
         p.ctx.cfg.staged_plan_execution,
         p.ctx.cfg.planner_executor_mode.as_str(),
         p.ctx.effective_working_dir.display()
     );
-    insert_separator_after_last_user_for_turn(p.turn.messages);
+    p.turn.insert_separator_after_last_user_for_turn();
 
     let hierarchical = p.ctx.cfg.planner_executor_mode == PlannerExecutorMode::Hierarchical;
     info!(

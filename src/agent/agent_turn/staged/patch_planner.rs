@@ -9,10 +9,7 @@ use super::super::params::RunLoopParams;
 use super::planner_round_driver::{
     complete_planner_no_tools_chat_retrying, emit_staged_planner_tool_call_rejected_timeline,
 };
-use super::{
-    StagedPlanRunLabels, prepare_staged_planner_no_tools_request,
-    push_assistant_merging_trailing_empty_placeholder,
-};
+use super::{StagedPlanRunLabels, prepare_staged_planner_no_tools_request};
 use crate::agent::agent_turn::errors::RunAgentTurnError;
 
 /// 分阶段规划补丁轮入参（控制 clippy `too_many_arguments`）。
@@ -89,8 +86,7 @@ where
         make_step_user_message,
     } = ctx;
     p.turn
-        .messages
-        .push(make_step_user_message(feedback_user_body));
+        .push_message(make_step_user_message(feedback_user_body));
     let req = prepare_staged_planner_no_tools_request(p, per_coord, labels.build_planner_messages)
         .await?;
     let (mut msg, finish_reason) =
@@ -120,7 +116,7 @@ where
         p.ctx.cfg.materialize_deepseek_dsml_tool_calls,
     );
 
-    push_assistant_merging_trailing_empty_placeholder(p.turn.messages, msg.clone());
+    p.turn.push_assistant_merging_trailing_empty(msg.clone());
 
     if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
         let rejected = msg.tool_calls.as_ref().map(|c| c.len()).unwrap_or(0);
