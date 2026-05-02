@@ -1,9 +1,38 @@
 //! Workflow 反思（Review）控制器：将“反思阶段 -> 模型修订计划 -> 再执行”做成可测试、可复用的决策逻辑。
+//!
+//! **FSM**：[`WorkflowReflectionFsmPhase`] 描述会话状态（与 JSON 注入文案正交）；[`WorkflowReflectionController::reflection_fsm_phase`] 供观测。
 
 use serde_json::{Value, json};
+use std::fmt;
 
 /// 反思首轮注入 JSON 的 `instruction_type`，与 `per_coord` 中「是否强制终答含 `agent_reply_plan`」对齐。
 pub const INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT: &str = "workflow_reflection_plan_next";
+
+pub const INSTRUCTION_WORKFLOW_REFLECTION_NEXT: &str = "workflow_reflection_next";
+pub const INSTRUCTION_WORKFLOW_REFLECTION_LOCKED: &str = "workflow_reflection_locked";
+pub const INSTRUCTION_WORKFLOW_REFLECTION_MAX_ROUNDS_REACHED: &str =
+    "workflow_reflection_max_rounds_reached";
+
+/// 工作流反思控制器会话相位（**不含**单次 `decide` 内的 Plan vs Do 计划轮次；后者见 `round`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WorkflowReflectionFsmPhase {
+    /// 尚未进入反思会话：`reflection.enabled` 从未在本次会话内置 true。
+    Inactive,
+    /// 反思会话进行中：`workflow.done` 尚未置 true，且未因上限锁定。
+    Reflecting,
+    /// 会话已结束侧：`workflow.done=true` 已处理，或已达 `max_rounds`，控制器 **`locked`**。
+    SessionClosed,
+}
+
+impl fmt::Display for WorkflowReflectionFsmPhase {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Inactive => "inactive",
+            Self::Reflecting => "reflecting",
+            Self::SessionClosed => "session_closed",
+        })
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 struct ReflectionControl {
@@ -25,7 +54,7 @@ pub struct WorkflowReflectionDecision {
     pub workflow_args_patch: Option<Value>,
 }
 
-/// 状态机：activation -> stage(loop) -> (done | max_rounds -> locked)
+/// 状态机：**Inactive** → **Reflecting**（多 stage）→ **SessionClosed**（`locked`）。
 #[derive(Debug, Clone)]
 pub struct WorkflowReflectionController {
     mode_active: bool,
@@ -49,6 +78,17 @@ impl WorkflowReflectionController {
     /// 反思会话内当前「stage」轮次（每轮 `decide` 可能递增），供 PER 日志与排错。
     pub fn stage_round(&self) -> usize {
         self.round
+    }
+
+    /// 当前 FSM 相位（纯函数于内存字段；**同一轮** `decide` 开头激活会话后仍为 [`Reflecting`]）。
+    pub(crate) fn reflection_fsm_phase(&self) -> WorkflowReflectionFsmPhase {
+        if !self.mode_active {
+            WorkflowReflectionFsmPhase::Inactive
+        } else if self.locked {
+            WorkflowReflectionFsmPhase::SessionClosed
+        } else {
+            WorkflowReflectionFsmPhase::Reflecting
+        }
     }
 
     /// 设置严格模式：是否要求终答 `agent_reply_plan` 覆盖全部 workflow 节点 id。
@@ -98,84 +138,40 @@ impl WorkflowReflectionController {
 
     pub fn decide(&mut self, args_json: &str) -> WorkflowReflectionDecision {
         let control = self.parse_control(args_json);
+        self.maybe_activate_reflection_session(&control);
 
-        // 只有当 enabled=true 且尚未进入反思模式时，才激活本次反思会话。
+        match self.reflection_fsm_phase() {
+            WorkflowReflectionFsmPhase::Inactive => decision_passthrough_execute(),
+            WorkflowReflectionFsmPhase::Reflecting => self.decide_while_reflecting(&control),
+            WorkflowReflectionFsmPhase::SessionClosed => decision_locked_stop(self.max_rounds),
+        }
+    }
+
+    fn maybe_activate_reflection_session(&mut self, control: &ReflectionControl) {
         if control.enabled && !self.mode_active {
             self.mode_active = true;
             self.locked = false;
             self.max_rounds = control.max_rounds;
             self.round = 0;
         }
+    }
 
-        if !self.mode_active {
-            return WorkflowReflectionDecision {
-                execute: true,
-                stop_output: None,
-                inject_instruction: None,
-                workflow_args_patch: None,
-            };
-        }
-
-        // 反思模式内：由模型的 done=true 决定结束；其余情况下按 max_rounds 兜底。
+    fn decide_while_reflecting(
+        &mut self,
+        control: &ReflectionControl,
+    ) -> WorkflowReflectionDecision {
         if control.done {
             self.locked = true;
-            return WorkflowReflectionDecision {
-                execute: true,
-                stop_output: None,
-                inject_instruction: None,
-                workflow_args_patch: None,
-            };
-        }
-
-        if self.locked {
-            // locked 状态且 done=false：不再执行 DAG，改为引导模型给出最终回复。
-            return WorkflowReflectionDecision {
-                execute: false,
-                stop_output: Some(json!({
-                    "type": "workflow_reflection_stop",
-                    "instruction_type": "workflow_reflection_locked",
-                    "max_rounds": self.max_rounds,
-                    "human_summary": format!(
-                        "workflow_execute 已停止：反思已锁定（max_rounds={}）。",
-                        self.max_rounds
-                    ),
-                })),
-                inject_instruction: Some(json!({
-                    "instruction_type": "workflow_reflection_locked",
-                    "max_rounds": self.max_rounds
-                })),
-                workflow_args_patch: None,
-            };
+            return decision_done_close_session();
         }
 
         if self.round >= self.max_rounds {
             self.locked = true;
-            return WorkflowReflectionDecision {
-                execute: false,
-                stop_output: Some(json!({
-                    "type": "workflow_reflection_stop",
-                    "instruction_type": "workflow_reflection_max_rounds_reached",
-                    "max_rounds": self.max_rounds,
-                    "human_summary": format!(
-                        "workflow_execute 已停止：达到反思重试上限（max_rounds={}）。",
-                        self.max_rounds
-                    ),
-                })),
-                inject_instruction: Some(json!({
-                    "instruction_type": "workflow_reflection_max_rounds_reached",
-                    "max_rounds": self.max_rounds
-                })),
-                workflow_args_patch: None,
-            };
+            return decision_max_rounds_stop(self.max_rounds);
         }
 
-        // 进入下一轮 stage：允许执行，并要求模型修订计划。
         self.round += 1;
 
-        // 规划阶段：第 1 轮只做 validate_only，避免对工作区产生副作用。
-        // 为避免模型在后续轮次仍错误设置 validate_only=true，这里显式覆盖：
-        // - 第 1 轮：validate_only=true（Plan）
-        // - 第 2+ 轮：validate_only=false（Do）
         let workflow_args_patch = Some(json!({
             "validate_only": self.round == 1
         }));
@@ -187,7 +183,7 @@ impl WorkflowReflectionController {
                 "instruction_type": if self.round == 1 {
                     INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT
                 } else {
-                    "workflow_reflection_next"
+                    INSTRUCTION_WORKFLOW_REFLECTION_NEXT
                 },
                 "round": self.round,
                 "max_rounds": self.max_rounds,
@@ -203,6 +199,64 @@ impl WorkflowReflectionController {
             })),
             workflow_args_patch,
         }
+    }
+}
+
+fn decision_passthrough_execute() -> WorkflowReflectionDecision {
+    WorkflowReflectionDecision {
+        execute: true,
+        stop_output: None,
+        inject_instruction: None,
+        workflow_args_patch: None,
+    }
+}
+
+fn decision_done_close_session() -> WorkflowReflectionDecision {
+    WorkflowReflectionDecision {
+        execute: true,
+        stop_output: None,
+        inject_instruction: None,
+        workflow_args_patch: None,
+    }
+}
+
+fn decision_max_rounds_stop(max_rounds: usize) -> WorkflowReflectionDecision {
+    WorkflowReflectionDecision {
+        execute: false,
+        stop_output: Some(json!({
+            "type": "workflow_reflection_stop",
+            "instruction_type": INSTRUCTION_WORKFLOW_REFLECTION_MAX_ROUNDS_REACHED,
+            "max_rounds": max_rounds,
+            "human_summary": format!(
+                "workflow_execute 已停止：达到反思重试上限（max_rounds={}）。",
+                max_rounds
+            ),
+        })),
+        inject_instruction: Some(json!({
+            "instruction_type": INSTRUCTION_WORKFLOW_REFLECTION_MAX_ROUNDS_REACHED,
+            "max_rounds": max_rounds
+        })),
+        workflow_args_patch: None,
+    }
+}
+
+fn decision_locked_stop(max_rounds: usize) -> WorkflowReflectionDecision {
+    WorkflowReflectionDecision {
+        execute: false,
+        stop_output: Some(json!({
+            "type": "workflow_reflection_stop",
+            "instruction_type": INSTRUCTION_WORKFLOW_REFLECTION_LOCKED,
+            "max_rounds": max_rounds,
+            "human_summary": format!(
+                "workflow_execute 已停止：反思已锁定（max_rounds={}）。",
+                max_rounds
+            ),
+        })),
+        inject_instruction: Some(json!({
+            "instruction_type": INSTRUCTION_WORKFLOW_REFLECTION_LOCKED,
+            "max_rounds": max_rounds
+        })),
+        workflow_args_patch: None,
     }
 }
 
@@ -385,6 +439,27 @@ mod tests {
     }
 
     #[test]
+    fn reflection_fsm_phase_tracks_activation_done_and_lock() {
+        let mut c = WorkflowReflectionController::new(5);
+        assert_eq!(
+            c.reflection_fsm_phase(),
+            WorkflowReflectionFsmPhase::Inactive
+        );
+
+        let _ = c.decide(&base_args(true, false, 3));
+        assert_eq!(
+            c.reflection_fsm_phase(),
+            WorkflowReflectionFsmPhase::Reflecting
+        );
+
+        let _ = c.decide(&base_args(true, true, 3));
+        assert_eq!(
+            c.reflection_fsm_phase(),
+            WorkflowReflectionFsmPhase::SessionClosed
+        );
+    }
+
+    #[test]
     fn test_activate_and_stage_injection_then_stop_on_max_rounds() {
         let mut c = WorkflowReflectionController::new(5);
         let max_rounds = 2;
@@ -425,7 +500,7 @@ mod tests {
                 .and_then(|v| v.get("instruction_type"))
                 .and_then(|v| v.as_str())
                 .unwrap_or(""),
-            "workflow_reflection_max_rounds_reached"
+            INSTRUCTION_WORKFLOW_REFLECTION_MAX_ROUNDS_REACHED
         );
 
         // subsequent call => locked stop (different stop text)
@@ -437,7 +512,7 @@ mod tests {
                 .and_then(|v| v.get("instruction_type"))
                 .and_then(|v| v.as_str())
                 .unwrap_or(""),
-            "workflow_reflection_locked"
+            INSTRUCTION_WORKFLOW_REFLECTION_LOCKED
         );
         assert_eq!(
             d4.inject_instruction
@@ -445,7 +520,7 @@ mod tests {
                 .and_then(|v| v.get("instruction_type"))
                 .and_then(|v| v.as_str())
                 .unwrap_or(""),
-            "workflow_reflection_locked"
+            INSTRUCTION_WORKFLOW_REFLECTION_LOCKED
         );
     }
 
