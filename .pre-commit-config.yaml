@@ -37,7 +37,7 @@ repos:
         always_run: true
         stages: [pre-commit]
       - id: fn-nloc-ratchet
-        name: fn nloc ratchet (lizard function line counts)
+        name: fn nloc + file lines ratchet (lizard nloc + per-file line counts)
         entry: bash scripts/fn-nloc-ratchet.sh
         language: system
         pass_filenames: false
