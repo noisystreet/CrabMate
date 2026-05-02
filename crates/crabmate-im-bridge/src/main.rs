@@ -24,6 +24,7 @@
 //! | `FEISHU_TOOL_DECISION_TIMEOUT_SECS` | 否 | 默认 **`600`**（至少 **5**）：**`wait_http`** / **`wait_message`** 等待人工决策的最长秒数，超时按拒绝 |
 //! | `FEISHU_QUIET_SSE_STATUS` | 否 | 默认 **`0`**；设为 **`1`** 时流式过程中**不**逐条推送 SSE 进度（省 QPS），仅开场提示 + 结束结果卡片 |
 //! | `FEISHU_RESULT_CARD_MAX_CHARS` | 否 | 默认 **`3500`**（至少 **200**）：结束结果卡片内助手正文摘要最大字符数 |
+//! | `FEISHU_IN_PLACE_PROGRESS_CARD` | 否 | 默认 **`0`**；设为 **`1`** 时开场发可 **PATCH** 的占位交互卡片，结束时用 **`PATCH /im/v1/messages/:message_id`** 原地更新为结果摘要（需卡片 **`update_multi: true`**；失败则回退为新卡片或文本） |
 //! | `LISTEN_ADDR` | 否 | 默认 `127.0.0.1:9988` |
 //! | `RUST_LOG` | 否 | 如 `info,crabmate_im_bridge=debug` |
 //!
@@ -119,6 +120,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         quiet_sse_status: env_bool("FEISHU_QUIET_SSE_STATUS", false)?,
         result_card_max_body_chars: env_u64("FEISHU_RESULT_CARD_MAX_CHARS", 3500)?.max(200)
             as usize,
+        in_place_progress_card: env_bool("FEISHU_IN_PLACE_PROGRESS_CARD", false)?,
     };
     let state = FeishuBridgeState::try_new(cfg)?;
     let app = build_router(state).layer(TraceLayer::new_for_http());

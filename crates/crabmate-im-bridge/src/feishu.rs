@@ -2,7 +2,7 @@
 //! - **明文**：直接解析 JSON。
 //! - **加密体**（顶层 **`encrypt`**）：按飞书文档 **AES-256-CBC** 解密后再解析（需配置 **`FEISHU_ENCRYPT_KEY`**）。
 //! - `url_verification`：返回 **`{"challenge":"..."}`**。
-//! - `im.message.receive_v1`（文本）：默认 **先入队再立即 HTTP 200**（异步 ACK），后台 worker 调 **`POST /chat/stream`** 并回复飞书；可关闭为同步处理（见配置）。若配置 **`FEISHU_WORKSPACE_ROOT_TEMPLATE`**，则在调用 CrabMate 前 **`POST /workspace`** 对齐工作区（支持 **`{chat_id}`** 占位）。
+//! - `im.message.receive_v1`（文本）：默认 **先入队再立即 HTTP 200**（异步 ACK），后台 worker 调 **`POST /chat/stream`** 并回复飞书；可关闭为同步处理（见配置）。若配置 **`FEISHU_WORKSPACE_ROOT_TEMPLATE`**，则在调用 CrabMate 前 **`POST /workspace`** 对齐工作区（支持 **`{chat_id}`** 占位）。可选 **`FEISHU_IN_PLACE_PROGRESS_CARD`**：先发可 **PATCH** 的占位交互卡片，结束时 **`PATCH /im/v1/messages/:message_id`** 原地更新为结果摘要。
 //! - **工具审批**：通过 **`approval_session_id`** 走 CrabMate **`/chat/stream`** + **`POST /chat/approval`**；**`wait_message` / `wait_http`** 下会回复含按钮的 **交互卡片**（`msg_type: interactive`）。须在飞书开发者后台订阅 **`card.action.trigger`**，且 **卡片回调 URL** 与事件 **`POST /feishu/events`** 使用同一地址；可选 **`FEISHU_TOOL_APPROVAL_MODE=wait_http`** 时仍支持 **`POST /feishu/tool-decision`**。
 //!
 //! 签名校验（可选）：若配置了 **Encrypt Key**，且请求带 **`X-Lark-Signature`** 等头，则按飞书文档
@@ -97,6 +97,8 @@ pub struct FeishuBridgeConfig {
     pub quiet_sse_status: bool,
     /// 结束时的结果卡片内「助手回复」摘要最大字符数（飞书卡片体不宜过大）；至少 **200**。
     pub result_card_max_body_chars: usize,
+    /// 为 true 时：开场发送可 **PATCH** 的占位交互卡片，结束时用同一 **`message_id`** 原地更新为结果摘要（失败则回退为独立回复卡片/文本）。
+    pub in_place_progress_card: bool,
 }
 
 pub struct FeishuBridgeState {
@@ -735,14 +737,46 @@ async fn crabmate_turn_with_feishu(
     };
 
     let mut follow_idx: u64 = 0;
-    follow_idx = follow_idx.saturating_add(1);
-    reply_followup_text_message(
-        st,
-        message_id,
-        follow_idx,
-        "⏳ 已开始处理：CrabMate 正在执行（若含工具可能耗时数分钟）。完成后将发送结果摘要卡片。",
-    )
-    .await?;
+    let mut progress_card_message_id: Option<String> = None;
+    if st.cfg.in_place_progress_card {
+        follow_idx = follow_idx.saturating_add(1);
+        let uuid = format!("{message_id}-prog-{follow_idx}");
+        let card = feishu_tool_card::progress_placeholder_card();
+        match reply_interactive_card(st, message_id, &uuid, &card).await {
+            Ok(Some(mid)) if !mid.is_empty() => progress_card_message_id = Some(mid),
+            Ok(_) => {
+                warn!("feishu progress card sent but no message_id in reply; fallback text");
+                follow_idx = follow_idx.saturating_add(1);
+                reply_followup_text_message(
+                    st,
+                    message_id,
+                    follow_idx,
+                    "⏳ 已开始处理：CrabMate 正在执行（若含工具可能耗时数分钟）。完成后将发送结果摘要。",
+                )
+                .await?;
+            }
+            Err(e) => {
+                warn!(?e, "feishu progress placeholder card failed; fallback text");
+                follow_idx = follow_idx.saturating_add(1);
+                reply_followup_text_message(
+                    st,
+                    message_id,
+                    follow_idx,
+                    "⏳ 已开始处理：CrabMate 正在执行（若含工具可能耗时数分钟）。完成后将发送结果摘要。",
+                )
+                .await?;
+            }
+        }
+    } else {
+        follow_idx = follow_idx.saturating_add(1);
+        reply_followup_text_message(
+            st,
+            message_id,
+            follow_idx,
+            "⏳ 已开始处理：CrabMate 正在执行（若含工具可能耗时数分钟）。完成后将发送结果摘要卡片。",
+        )
+        .await?;
+    }
 
     let resp = match st
         .cfg
@@ -818,6 +852,7 @@ async fn crabmate_turn_with_feishu(
     reply_turn_result_card_and_remainder(
         st,
         message_id,
+        progress_card_message_id.as_deref(),
         title,
         &final_text,
         card_cap,
@@ -910,29 +945,41 @@ async fn dispatch_one_sse_block_to_feishu(
 async fn reply_turn_result_card_and_remainder(
     st: &FeishuBridgeState,
     message_id: &str,
+    progress_card_message_id: Option<&str>,
     title: &str,
     final_text: &str,
     card_cap: usize,
     follow_idx: &mut u64,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let (card_body, remainder) = split_for_result_card(final_text, card_cap);
-    *follow_idx = follow_idx.saturating_add(1);
-    let card_uuid = format!("{message_id}-result-{follow_idx}");
     let card = feishu_tool_card::turn_result_card(title, &card_body);
     let mut seq_after = *follow_idx;
-    if reply_interactive_card(st, message_id, &card_uuid, &card)
-        .await
-        .is_err()
-    {
-        warn!("feishu result card failed; fallback text");
-        seq_after = seq_after.saturating_add(1);
-        reply_followup_text_message(
-            st,
-            message_id,
-            seq_after,
-            &format!("{title}\n{}", card_body),
-        )
-        .await?;
+    let mut patched = false;
+    if let Some(pid) = progress_card_message_id {
+        if patch_interactive_card_message(st, pid, &card).await.is_ok() {
+            patched = true;
+        } else {
+            warn!("feishu PATCH result onto progress card failed; send new card");
+        }
+    }
+    if !patched {
+        *follow_idx = follow_idx.saturating_add(1);
+        let card_uuid = format!("{message_id}-result-{follow_idx}");
+        seq_after = *follow_idx;
+        if reply_interactive_card(st, message_id, &card_uuid, &card)
+            .await
+            .is_err()
+        {
+            warn!("feishu result card failed; fallback text");
+            seq_after = seq_after.saturating_add(1);
+            reply_followup_text_message(
+                st,
+                message_id,
+                seq_after,
+                &format!("{title}\n{}", card_body),
+            )
+            .await?;
+        }
     }
     if !remainder.is_empty() {
         reply_text_chunks_followup(st, message_id, seq_after, &remainder, 3500).await?;
@@ -1137,7 +1184,7 @@ async fn reply_interactive_card(
     message_id: &str,
     uuid: &str,
     card: &Value,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
     let token = get_tenant_access_token(st).await?;
     let url = format!("https://open.feishu.cn/open-apis/im/v1/messages/{message_id}/reply");
     let content = serde_json::to_string(card)?;
@@ -1167,6 +1214,45 @@ async fn reply_interactive_card(
         warn!(%code, body=%String::from_utf8_lossy(&bytes), "feishu reply interactive API business error");
         return Err(format!("feishu interactive code {code}").into());
     }
+    let new_id = v
+        .pointer("/data/message_id")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    Ok(new_id)
+}
+
+async fn patch_interactive_card_message(
+    st: &FeishuBridgeState,
+    patch_message_id: &str,
+    card: &Value,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let token = get_tenant_access_token(st).await?;
+    let url = format!("https://open.feishu.cn/open-apis/im/v1/messages/{patch_message_id}");
+    let content = serde_json::to_string(card)?;
+    let body = json!({ "content": content });
+    let resp = st
+        .http
+        .patch(url)
+        .header("Authorization", format!("Bearer {token}"))
+        .header("Content-Type", "application/json; charset=utf-8")
+        .json(&body)
+        .send()
+        .await?;
+    let status = resp.status();
+    let bytes = resp.bytes().await?;
+    if !status.is_success() {
+        let preview = String::from_utf8_lossy(&bytes).trim().to_string();
+        warn!(%status, %preview, "feishu PATCH interactive message http error");
+        return Err(format!("feishu patch interactive http {status}").into());
+    }
+    let v: Value = serde_json::from_slice(&bytes)?;
+    let code = v.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
+    if code != 0 {
+        warn!(%code, body=%String::from_utf8_lossy(&bytes), "feishu PATCH interactive message business error");
+        return Err(format!("feishu patch interactive code {code}").into());
+    }
     Ok(())
 }
 
@@ -1182,7 +1268,8 @@ async fn reply_tool_approval_interactive_card(
         &clip_one_line(&notice.args, 1200),
         approval_session_id,
     );
-    reply_interactive_card(st, message_id, uuid, &card).await
+    let _ = reply_interactive_card(st, message_id, uuid, &card).await?;
+    Ok(())
 }
 
 fn clip_one_line(s: &str, max_chars: usize) -> String {
@@ -1461,6 +1548,7 @@ mod tests {
             tool_decision_timeout_secs: 300,
             quiet_sse_status: false,
             result_card_max_body_chars: 3500,
+            in_place_progress_card: false,
         };
         let headers = HeaderMap::new();
         assert!(!verify_lark_signature_if_needed(&cfg, &headers, "{}").unwrap());
@@ -1500,6 +1588,7 @@ mod tests {
             tool_decision_timeout_secs: 300,
             quiet_sse_status: false,
             result_card_max_body_chars: 3500,
+            in_place_progress_card: false,
         };
         let v = json!({ "header": { "token": "vtok" } });
         assert!(verify_event_verification_token(&cfg, &v).is_ok());
