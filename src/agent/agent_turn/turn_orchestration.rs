@@ -4,6 +4,9 @@
 
 use crate::config::{AgentConfig, PlannerExecutorMode};
 
+use super::intent::StagedPlanningGateOutcome;
+use super::intent::staged_planning_gate::StagedPlanningDenyReason;
+
 /// 非分层、且 **`intent_at_turn_start` 已通过** 且已知 **`staged_plan_intent_gate`** 是否放行时，
 /// 主执行路径的**显式枚举**（与 `run_dispatch::dispatch_non_hierarchical_turn` 的 `if` 链一一对应）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +42,58 @@ pub(crate) fn resolve_non_hierarchical_main_route(
         NonHierarchicalMainRoute::StagedPlanExecution
     } else {
         NonHierarchicalMainRoute::SingleAgentOuterLoop
+    }
+}
+
+/// 非分层、**`intent_at_turn_start` 已继续** 时：聚合 **`staged_plan_intent_gate`**、配置与
+/// [`NonHierarchicalMainRoute`]，并给出「若落单 Agent 外循环则为何」的显式原因（供 `tracing` / 回放）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NonHierarchicalEntryResolution {
+    pub(crate) main_route: NonHierarchicalMainRoute,
+    pub(crate) orchestration_mode: TurnOrchestrationMode,
+    /// 仅当 [`NonHierarchicalMainRoute::SingleAgentOuterLoop`] 时有值。
+    pub(crate) single_agent_outer_loop_because: Option<SingleAgentOuterLoopBecause>,
+}
+
+/// 非分层下最终走 **`run_agent_outer_loop`** 的根因（门控拒绝 vs 配置未命中更高优先级路径）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SingleAgentOuterLoopBecause {
+    /// [`StagedPlanningGateOutcome::Deny`]：分阶段/逻辑双代理门控未放行。
+    StagedIntentGateDenied(StagedPlanningDenyReason),
+    /// 门控已 **`Allow`**，但当前 `planner_executor_mode` / `staged_plan_execution` 组合未命中逻辑双代理或分阶段主路径，落在默认单 Agent 外循环。
+    ConfigFallbackSingleAgentOuterLoop,
+}
+
+impl SingleAgentOuterLoopBecause {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::StagedIntentGateDenied(r) => r.as_str(),
+            Self::ConfigFallbackSingleAgentOuterLoop => "config_fallback_single_agent_outer_loop",
+        }
+    }
+}
+
+impl NonHierarchicalEntryResolution {
+    pub(crate) fn resolve(cfg: &AgentConfig, staged_gate: &StagedPlanningGateOutcome) -> Self {
+        let allow_staged = staged_gate.allows_staged_planning();
+        let main_route = resolve_non_hierarchical_main_route(cfg, allow_staged);
+        let orchestration_mode = TurnOrchestrationMode::from(main_route);
+        let single_agent_outer_loop_because = match main_route {
+            NonHierarchicalMainRoute::SingleAgentOuterLoop => Some(match staged_gate {
+                StagedPlanningGateOutcome::Deny { reason, .. } => {
+                    SingleAgentOuterLoopBecause::StagedIntentGateDenied(*reason)
+                }
+                StagedPlanningGateOutcome::Allow { .. } => {
+                    SingleAgentOuterLoopBecause::ConfigFallbackSingleAgentOuterLoop
+                }
+            }),
+            _ => None,
+        };
+        Self {
+            main_route,
+            orchestration_mode,
+            single_agent_outer_loop_because,
+        }
     }
 }
 
@@ -128,5 +183,79 @@ mod tests {
             resolve_non_hierarchical_main_route(&cfg, true),
             NonHierarchicalMainRoute::SingleAgentOuterLoop
         );
+    }
+
+    #[test]
+    fn entry_resolution_denied_gate_carries_staged_reason() {
+        let cfg = cfg_with(PlannerExecutorMode::LogicalDualAgent, true);
+        let gate = StagedPlanningGateOutcome::Deny {
+            reason: StagedPlanningDenyReason::EmptyEffectiveTask,
+            task_preview: None,
+            intent_decision: None,
+        };
+        let r = NonHierarchicalEntryResolution::resolve(&cfg, &gate);
+        assert_eq!(r.main_route, NonHierarchicalMainRoute::SingleAgentOuterLoop);
+        assert_eq!(
+            r.single_agent_outer_loop_because,
+            Some(SingleAgentOuterLoopBecause::StagedIntentGateDenied(
+                StagedPlanningDenyReason::EmptyEffectiveTask
+            ))
+        );
+    }
+
+    #[test]
+    fn entry_resolution_allow_but_single_route_is_config_fallback() {
+        let cfg = cfg_with(PlannerExecutorMode::SingleAgent, false);
+        use crate::agent::intent_pipeline::{IntentAction, IntentDecision};
+        use crate::agent::intent_router::IntentKind;
+        let gate = StagedPlanningGateOutcome::Allow {
+            task_preview: "t".into(),
+            intent_kind: IntentKind::Execute,
+            primary_intent: "execute.test".into(),
+            confidence: 0.9,
+            decision: IntentDecision {
+                kind: IntentKind::Execute,
+                primary_intent: "execute.test".into(),
+                secondary_intents: Vec::new(),
+                confidence: 0.9,
+                abstain: false,
+                need_clarification: false,
+                action: IntentAction::Execute,
+            },
+        };
+        let r = NonHierarchicalEntryResolution::resolve(&cfg, &gate);
+        assert_eq!(r.main_route, NonHierarchicalMainRoute::SingleAgentOuterLoop);
+        assert_eq!(
+            r.single_agent_outer_loop_because,
+            Some(SingleAgentOuterLoopBecause::ConfigFallbackSingleAgentOuterLoop)
+        );
+    }
+
+    #[test]
+    fn entry_resolution_logical_dual_no_single_because_field() {
+        let cfg = cfg_with(PlannerExecutorMode::LogicalDualAgent, true);
+        use crate::agent::intent_pipeline::{IntentAction, IntentDecision};
+        use crate::agent::intent_router::IntentKind;
+        let gate = StagedPlanningGateOutcome::Allow {
+            task_preview: "t".into(),
+            intent_kind: IntentKind::Execute,
+            primary_intent: "execute.test".into(),
+            confidence: 0.9,
+            decision: IntentDecision {
+                kind: IntentKind::Execute,
+                primary_intent: "execute.test".into(),
+                secondary_intents: Vec::new(),
+                confidence: 0.9,
+                abstain: false,
+                need_clarification: false,
+                action: IntentAction::Execute,
+            },
+        };
+        let r = NonHierarchicalEntryResolution::resolve(&cfg, &gate);
+        assert_eq!(
+            r.main_route,
+            NonHierarchicalMainRoute::LogicalDualAgentStaged
+        );
+        assert!(r.single_agent_outer_loop_because.is_none());
     }
 }
