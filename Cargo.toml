@@ -141,6 +141,7 @@ flate2 = "1.0"
 bzip2 = "0.4"
 xz2 = "0.1"
 jsonschema = { version = "0.28", default-features = false }
+tokio-cron-scheduler = { version = "0.15", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", default-features = false, features = ["fs", "dir", "signal"] }

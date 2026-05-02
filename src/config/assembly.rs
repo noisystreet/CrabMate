@@ -92,12 +92,13 @@ pub(super) fn merge_user_config_layers(
             system_prompt_search_bases.push(directory_containing_config_file(path));
             let s = std::fs::read_to_string(path)
                 .map_err(|e| format!("无法读取配置文件 \"{}\": {}", path, e))?;
-            let (agent_opt, role_rows, tr_opt) = parse_config_file_roles(&s)
+            let (agent_opt, role_rows, tr_opt, sched_rows) = parse_config_file_roles(&s)
                 .map_err(|e| format!("配置文件 \"{}\" TOML 解析失败: {}", path, e))?;
             if let Some(agent) = agent_opt {
                 b.apply_section(agent);
             }
             b.merge_agent_role_rows(&role_rows);
+            b.merge_scheduled_agent_task_rows(&sched_rows);
             if let Some(tr) = tr_opt {
                 b.apply_tool_registry(tr);
             }

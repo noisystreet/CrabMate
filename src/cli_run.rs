@@ -329,6 +329,11 @@ async fn run_serve_branch(args: ServeBranchArgs<'_>) -> Result<(), Box<dyn std::
         llm_models_health_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
         sse_stream_hub,
     });
+    let sched_tasks = {
+        let g = cfg_holder.read().await;
+        g.scheduled_agent_tasks.clone()
+    };
+    web::cron_scheduler::spawn_serve_cron_scheduler(Arc::clone(&state), sched_tasks);
     let static_dir = web_static_dir::resolve_web_static_dir();
     {
         let g = cfg_holder.read().await;

@@ -1,6 +1,7 @@
 //! `POST /chat`、`/chat/stream`、`/chat/approval`、`/chat/branch`。
 
 use std::convert::Infallible;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::Json;
@@ -25,7 +26,8 @@ use super::parse::{
 use crate::agent_role_turn::maybe_apply_mid_session_agent_role_switch;
 use crate::chat_job_queue;
 use crate::clarification_questionnaire::{
-    merge_user_text_with_clarification_answers, normalize_clarify_questionnaire_answers_raw,
+    ClarifyAnswersNormalized, merge_user_text_with_clarification_answers,
+    normalize_clarify_questionnaire_answers_raw,
 };
 use crate::context_bootstrap::conversation_turn_bootstrap::{
     compose_new_conversation_messages, first_turn_project_context_user_message_for_web,
@@ -596,6 +598,86 @@ async fn build_messages_for_turn(
     })
 }
 
+/// 与 `chat_handler` 共用的 JSON 入队：解析 `@`、组装首轮消息、选定工作目录。
+pub(crate) struct PreparedJsonChatEnqueue {
+    pub(crate) conversation_id: String,
+    pub(crate) turn_seed: ConversationTurnSeed,
+    pub(crate) work_dir: PathBuf,
+    pub(crate) workspace_is_set: bool,
+    pub(crate) msg_for_log: String,
+}
+
+pub(crate) async fn prepare_json_chat_enqueue(
+    state: &Arc<AppState>,
+    user_trim: &str,
+    clarify: Option<ClarifyAnswersNormalized>,
+    image_urls: &[String],
+    agent_role: Option<String>,
+    conversation_id: String,
+) -> Result<PreparedJsonChatEnqueue, (StatusCode, Json<ApiError>)> {
+    let eff_ws_raw = state.effective_workspace_path().await;
+    let eff_ws = eff_ws_raw.trim().to_string();
+    if eff_ws.is_empty() && user_trim.contains('@') {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "WORKSPACE_NOT_SET",
+                message: "未设置工作区：无法在消息中使用 `@` 引用工作区内文件。请先在侧栏工作区面板选择或提交目录。"
+                    .to_string(),
+                reason_code: None,
+            }),
+        ));
+    }
+    let work_dir_for_expand = std::path::PathBuf::from(eff_ws_raw.clone());
+    let msg = {
+        let cfg = state.cfg.read().await;
+        expand_at_file_refs_in_user_message(user_trim, work_dir_for_expand.as_path(), &cfg)
+            .map_err(|e| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(ApiError {
+                        code: "INVALID_AT_FILE_REF",
+                        message: e,
+                        reason_code: None,
+                    }),
+                )
+            })?
+    };
+    let msg = merge_user_text_with_clarification_answers(msg, clarify);
+    let turn_seed = build_messages_for_turn(
+        state,
+        &conversation_id,
+        &msg,
+        image_urls,
+        agent_role.as_deref(),
+    )
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_AGENT_ROLE",
+                message: e,
+                reason_code: None,
+            }),
+        )
+    })?;
+    let workspace_is_set = state.workspace_is_set().await;
+    let work_dir_for_job = if eff_ws.is_empty() {
+        let cfg = state.cfg.read().await;
+        std::path::PathBuf::from(cfg.run_command_working_dir.clone())
+    } else {
+        std::path::PathBuf::from(eff_ws.clone())
+    };
+    Ok(PreparedJsonChatEnqueue {
+        conversation_id,
+        turn_seed,
+        work_dir: work_dir_for_job,
+        workspace_is_set,
+        msg_for_log: msg,
+    })
+}
+
 pub(crate) async fn chat_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<ChatRequestBody>,
@@ -720,60 +802,21 @@ pub(crate) async fn chat_handler(
             conversation_revision: None,
         }));
     }
-    let eff_ws_raw = state.effective_workspace_path().await;
-    let eff_ws = eff_ws_raw.trim().to_string();
-    if eff_ws.is_empty() && user_trim.contains('@') {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "WORKSPACE_NOT_SET",
-                message: "未设置工作区：无法在消息中使用 `@` 引用工作区内文件。请先在侧栏工作区面板选择或提交目录。"
-                    .to_string(),
-                reason_code: None,
-            }),
-        ));
-    }
-    let work_dir_for_expand = std::path::PathBuf::from(eff_ws_raw.clone());
-    let msg = {
-        let cfg = state.cfg.read().await;
-        expand_at_file_refs_in_user_message(user_trim, work_dir_for_expand.as_path(), &cfg)
-            .map_err(|e| {
-                (
-                    StatusCode::BAD_REQUEST,
-                    Json(ApiError {
-                        code: "INVALID_AT_FILE_REF",
-                        message: e,
-                        reason_code: None,
-                    }),
-                )
-            })?
-    };
-    let msg = merge_user_text_with_clarification_answers(msg, clarify);
-    let turn_seed = build_messages_for_turn(
+    let PreparedJsonChatEnqueue {
+        conversation_id,
+        turn_seed,
+        work_dir: work_dir_for_job,
+        workspace_is_set,
+        msg_for_log: msg,
+    } = prepare_json_chat_enqueue(
         &state,
-        &conversation_id,
-        &msg,
+        user_trim,
+        clarify,
         &image_urls,
-        agent_role.as_deref(),
+        agent_role.clone(),
+        conversation_id,
     )
-    .await
-    .map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "INVALID_AGENT_ROLE",
-                message: e,
-                reason_code: None,
-            }),
-        )
-    })?;
-    let workspace_is_set = state.workspace_is_set().await;
-    let work_dir_for_job = if eff_ws.is_empty() {
-        let cfg = state.cfg.read().await;
-        std::path::PathBuf::from(cfg.run_command_working_dir.clone())
-    } else {
-        std::path::PathBuf::from(eff_ws.clone())
-    };
+    .await?;
     let job_id = state.chat_queue.next_job_id();
     let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
     debug!(
