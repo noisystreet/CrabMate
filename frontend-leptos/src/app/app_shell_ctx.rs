@@ -105,6 +105,50 @@ type SideResizeHandlesCell = Rc<
     >,
 >;
 
+/// 左侧导航轨所需句柄（阶段 B：避免向 `sidebar_nav_view` 传递整份 [`AppShellCtx`]）。
+#[derive(Clone)]
+pub struct SidebarNavSignals {
+    pub locale: RwSignal<Locale>,
+    pub mobile_nav_open: RwSignal<bool>,
+    pub session_modal: RwSignal<bool>,
+    pub new_session: Rc<dyn Fn()>,
+    pub sidebar_session_query: RwSignal<String>,
+    pub global_message_query: RwSignal<String>,
+    pub sidebar_search_panel_open: RwSignal<bool>,
+    pub sidebar_rail_ctx_menu: RwSignal<Option<(f64, f64)>>,
+    pub chat_find_panel_open: RwSignal<bool>,
+    pub chat: ChatSessionSignals,
+    pub draft: RwSignal<String>,
+    pub focus_message_id_after_nav: RwSignal<Option<String>>,
+    pub session_context_menu: RwSignal<Option<SessionContextAnchor>>,
+    pub composer_draft_buffer: Arc<Mutex<String>>,
+    pub apply_assistant_display_filters: RwSignal<bool>,
+    pub sidebar_rail_collapsed: RwSignal<bool>,
+}
+
+/// 右列侧栏所需句柄（阶段 B：避免向 `side_column_view` 传递整份 [`AppShellCtx`]）。
+#[derive(Clone)]
+pub struct SideColumnViewSignals {
+    pub locale: RwSignal<Locale>,
+    pub side_resize_dragging: RwSignal<bool>,
+    pub side_panel_view: RwSignal<SidePanelView>,
+    pub side_width: RwSignal<f64>,
+    pub side_resize_session: Rc<RefCell<Option<(f64, f64)>>>,
+    pub side_resize_handles: SideResizeHandlesCell,
+    pub view_menu_open: RwSignal<bool>,
+    pub status_bar_visible: RwSignal<bool>,
+    pub settings_page: RwSignal<bool>,
+    pub workspace_panel: WorkspacePanelSignals,
+    pub status_tasks: StatusTasksSignals,
+    pub refresh_workspace: Arc<dyn Fn() + Send + Sync>,
+    pub refresh_tasks: Arc<dyn Fn() + Send + Sync>,
+    pub toggle_task: Arc<dyn Fn(String) + Send + Sync>,
+    pub changelist_modal_open: RwSignal<bool>,
+    pub changelist_fetch_nonce: RwSignal<u64>,
+    pub insert_workspace_file_ref: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
+    pub thinking_trace_log: RwSignal<Vec<ThinkingTraceInfo>>,
+}
+
 /// 根壳 `App` 与侧栏、底栏、各模态之间共享的一组句柄（由 `App` 构造一次，按需 `clone()`）。
 #[derive(Clone)]
 pub struct AppShellCtx {
@@ -175,6 +219,50 @@ pub struct AppShellCtx {
 }
 
 impl AppShellCtx {
+    pub fn sidebar_nav_signals(&self) -> SidebarNavSignals {
+        SidebarNavSignals {
+            locale: self.locale,
+            mobile_nav_open: self.mobile_nav_open,
+            session_modal: self.session_modal,
+            new_session: self.new_session.clone(),
+            sidebar_session_query: self.sidebar_session_query,
+            global_message_query: self.global_message_query,
+            sidebar_search_panel_open: self.sidebar_search_panel_open,
+            sidebar_rail_ctx_menu: self.sidebar_rail_ctx_menu,
+            chat_find_panel_open: self.chat_find_panel_open,
+            chat: self.chat,
+            draft: self.draft,
+            focus_message_id_after_nav: self.focus_message_id_after_nav,
+            session_context_menu: self.session_context_menu,
+            composer_draft_buffer: Arc::clone(&self.composer_draft_buffer),
+            apply_assistant_display_filters: self.apply_assistant_display_filters,
+            sidebar_rail_collapsed: self.sidebar_rail_collapsed,
+        }
+    }
+
+    pub fn side_column_view_signals(&self) -> SideColumnViewSignals {
+        SideColumnViewSignals {
+            locale: self.locale,
+            side_resize_dragging: self.side_resize_dragging,
+            side_panel_view: self.side_panel_view,
+            side_width: self.side_width,
+            side_resize_session: Rc::clone(&self.side_resize_session),
+            side_resize_handles: Rc::clone(&self.side_resize_handles),
+            view_menu_open: self.view_menu_open,
+            status_bar_visible: self.status_bar_visible,
+            settings_page: self.settings_page,
+            workspace_panel: self.workspace_panel,
+            status_tasks: self.status_tasks,
+            refresh_workspace: Arc::clone(&self.refresh_workspace),
+            refresh_tasks: Arc::clone(&self.refresh_tasks),
+            toggle_task: Arc::clone(&self.toggle_task),
+            changelist_modal_open: self.changelist_modal_open,
+            changelist_fetch_nonce: self.changelist_fetch_nonce,
+            insert_workspace_file_ref: self.insert_workspace_file_ref,
+            thinking_trace_log: self.thinking_trace_log,
+        }
+    }
+
     pub fn session_list_modal_signals(&self) -> SessionListModalSignals {
         SessionListModalSignals {
             session_modal: self.session_modal,
