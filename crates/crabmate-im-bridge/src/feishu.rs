@@ -2,7 +2,7 @@
 //! - **明文**：直接解析 JSON。
 //! - **加密体**（顶层 **`encrypt`**）：按飞书文档 **AES-256-CBC** 解密后再解析（需配置 **`FEISHU_ENCRYPT_KEY`**）。
 //! - `url_verification`：返回 **`{"challenge":"..."}`**。
-//! - `im.message.receive_v1`（文本）：默认 **先入队再立即 HTTP 200**（异步 ACK），后台 worker 调 **`POST /chat/stream`** 并回复飞书；可关闭为同步处理（见配置）。若配置 **`FEISHU_WORKSPACE_ROOT_TEMPLATE`**，则在调用 CrabMate 前 **`POST /workspace`** 对齐工作区（支持 **`{chat_id}`** 占位）。可选 **`FEISHU_IN_PLACE_PROGRESS_CARD`**：先发可 **PATCH** 的占位交互卡片，结束时 **`PATCH /im/v1/messages/:message_id`** 原地更新为结果摘要。
+//! - `im.message.receive_v1`（文本）：默认 **先入队再立即 HTTP 200**（异步 ACK），后台 worker 调 **`POST /chat/stream`** 并回复飞书；可关闭为同步处理（见配置）。队列可选 **内存 `mpsc`** 或 **`FEISHU_EVENT_QUEUE_SQLITE`** 的 **SQLite 持久化**（进程重启不丢）。若配置 **`FEISHU_WORKSPACE_ROOT_TEMPLATE`**，则在调用 CrabMate 前 **`POST /workspace`** 对齐工作区（支持 **`{chat_id}`** 占位）。可选 **`FEISHU_IN_PLACE_PROGRESS_CARD`**：先发可 **PATCH** 的占位交互卡片，结束时 **`PATCH /im/v1/messages/:message_id`** 原地更新为结果摘要。
 //! - **工具审批**：通过 **`approval_session_id`** 走 CrabMate **`/chat/stream`** + **`POST /chat/approval`**；**`wait_message` / `wait_http`** 下会回复含按钮的 **交互卡片**（`msg_type: interactive`）。须在飞书开发者后台订阅 **`card.action.trigger`**，且 **卡片回调 URL** 与事件 **`POST /feishu/events`** 使用同一地址；可选 **`FEISHU_TOOL_APPROVAL_MODE=wait_http`** 时仍支持 **`POST /feishu/tool-decision`**。
 //!
 //! 签名校验（可选）：若配置了 **Encrypt Key**，且请求带 **`X-Lark-Signature`** 等头，则按飞书文档
@@ -28,10 +28,12 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::time::sleep;
 use tracing::{error, warn};
 
 use crate::crabmate::{CrabmateClient, CrabmateError};
 use crate::feishu_decrypt::{FeishuDecryptError, maybe_decrypt_event_json};
+use crate::feishu_event_queue::FeishuImEventSqliteQueue;
 use crate::feishu_message_content::incoming_content_as_user_text;
 use crate::feishu_tool_card;
 use crate::feishu_workspace::expand_workspace_root_template;
@@ -99,6 +101,23 @@ pub struct FeishuBridgeConfig {
     pub result_card_max_body_chars: usize,
     /// 为 true 时：开场发送可 **PATCH** 的占位交互卡片，结束时用同一 **`message_id`** 原地更新为结果摘要（失败则回退为独立回复卡片/文本）。
     pub in_place_progress_card: bool,
+    /// 若非空且 **`async_worker`**：使用 **SQLite 持久化队列**（与内存 `mpsc` 互斥，本字段优先）。
+    pub event_queue_sqlite_path: Option<String>,
+    /// SQLite 队列项处理失败后的最大重试次数（不含首次）；至少 **1**。
+    pub sqlite_queue_max_retries: u32,
+    /// SQLite worker 空闲轮询间隔（毫秒）；至少 **50**。
+    pub sqlite_queue_poll_ms: u64,
+    /// SQLite 认领租约时长（秒），进程崩溃后过期可被重新认领；至少 **30**。
+    pub sqlite_queue_lease_secs: i64,
+}
+
+/// `FeishuBridgeState::try_new` 失败原因（HTTP 客户端或 SQLite 队列）。
+#[derive(Debug, thiserror::Error)]
+pub enum FeishuBridgeInitError {
+    #[error("http client: {0}")]
+    Http(#[from] reqwest::Error),
+    #[error("sqlite queue: {0}")]
+    Sqlite(#[from] rusqlite::Error),
 }
 
 pub struct FeishuBridgeState {
@@ -109,6 +128,8 @@ pub struct FeishuBridgeState {
     seen_lark_nonces: DashMap<String, Instant>,
     /// `None`：同步处理；`Some(tx)`：异步 worker 消费。
     event_tx: Option<mpsc::Sender<Value>>,
+    /// 与 **`event_tx`** 互斥：持久化 **`im.message.receive_v1`** 入队。
+    sqlite_queue: Option<std::sync::Arc<FeishuImEventSqliteQueue>>,
     /// 与飞书 worker 单线程一致：避免并发 `POST /workspace` / CrabMate 请求交错。
     turn_lock: Mutex<()>,
     last_workspace_path: Mutex<Option<String>>,
@@ -125,18 +146,36 @@ struct TenantTokenCache {
 }
 
 impl FeishuBridgeState {
-    pub fn try_new(cfg: FeishuBridgeConfig) -> Result<Arc<Self>, reqwest::Error> {
+    pub fn try_new(cfg: FeishuBridgeConfig) -> Result<Arc<Self>, FeishuBridgeInitError> {
         let http = reqwest::Client::builder()
             .use_rustls_tls()
             .timeout(Duration::from_secs(120))
             .build()?;
 
-        let (event_tx, event_rx) = if cfg.async_worker && cfg.event_queue_capacity > 0 {
-            let cap = cfg.event_queue_capacity.max(1);
-            let (tx, rx) = mpsc::channel(cap);
-            (Some(tx), Some(rx))
+        let sqlite_path = cfg
+            .event_queue_sqlite_path
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(std::path::PathBuf::from);
+
+        let (event_tx, event_rx, sqlite_queue) = if cfg.async_worker {
+            if let Some(ref path) = sqlite_path {
+                let q = FeishuImEventSqliteQueue::new(
+                    path.as_path(),
+                    cfg.sqlite_queue_max_retries,
+                    cfg.sqlite_queue_poll_ms,
+                )?;
+                (None, None, Some(std::sync::Arc::new(q)))
+            } else if cfg.event_queue_capacity > 0 {
+                let cap = cfg.event_queue_capacity.max(1);
+                let (tx, rx) = mpsc::channel(cap);
+                (Some(tx), Some(rx), None)
+            } else {
+                (None, None, None)
+            }
         } else {
-            (None, None)
+            (None, None, None)
         };
 
         let state = Arc::new(Self {
@@ -149,6 +188,7 @@ impl FeishuBridgeState {
             seen_message_ids: DashMap::new(),
             seen_lark_nonces: DashMap::new(),
             event_tx,
+            sqlite_queue,
             turn_lock: Mutex::new(()),
             last_workspace_path: Mutex::new(None),
             pending_tool_decisions: DashMap::new(),
@@ -166,7 +206,89 @@ impl FeishuBridgeState {
             });
         }
 
+        if let Some(q) = state.sqlite_queue.clone() {
+            let st = Arc::clone(&state);
+            let lease = state.cfg.sqlite_queue_lease_secs.max(30);
+            tokio::spawn(async move {
+                run_sqlite_im_queue_consumer(st, q, lease).await;
+            });
+        }
+
         Ok(state)
+    }
+}
+
+async fn run_sqlite_im_queue_consumer(
+    state: Arc<FeishuBridgeState>,
+    queue: std::sync::Arc<FeishuImEventSqliteQueue>,
+    lease_secs: i64,
+) {
+    let idle = Duration::from_millis(queue.poll_idle_ms());
+    loop {
+        let now = time_unix_secs();
+        let q = std::sync::Arc::clone(&queue);
+        let claimed = tokio::task::spawn_blocking(move || {
+            let _ = q.reclaim_expired(now);
+            q.claim_one(now, lease_secs)
+        })
+        .await;
+
+        let claimed = match claimed {
+            Ok(Ok(c)) => c,
+            Ok(Err(e)) => {
+                error!(?e, "feishu sqlite queue claim failed");
+                sleep(idle).await;
+                continue;
+            }
+            Err(e) => {
+                error!(?e, "feishu sqlite queue spawn_blocking join failed");
+                sleep(idle).await;
+                continue;
+            }
+        };
+
+        let Some((id, json)) = claimed else {
+            sleep(idle).await;
+            continue;
+        };
+
+        let envelope: Value = match serde_json::from_str(&json) {
+            Ok(v) => v,
+            Err(e) => {
+                error!(
+                    ?e,
+                    queue_id = id,
+                    "feishu sqlite queue envelope json corrupt"
+                );
+                let q = std::sync::Arc::clone(&queue);
+                let _ = tokio::task::spawn_blocking(move || q.mark_done(id)).await;
+                continue;
+            }
+        };
+
+        let st = Arc::clone(&state);
+        match handle_im_message_receive(&st, &envelope).await {
+            Ok(()) => {
+                let q = std::sync::Arc::clone(&queue);
+                if let Err(e) = tokio::task::spawn_blocking(move || q.mark_done(id)).await {
+                    error!(?e, queue_id = id, "feishu sqlite mark_done join failed");
+                }
+            }
+            Err(e) => {
+                error!(?e, queue_id = id, "feishu sqlite queue handler failed");
+                let msg = e.to_string();
+                let q = std::sync::Arc::clone(&queue);
+                if let Err(join_e) =
+                    tokio::task::spawn_blocking(move || q.mark_retry_or_fail(id, &msg)).await
+                {
+                    error!(
+                        ?join_e,
+                        queue_id = id,
+                        "feishu sqlite mark_retry join failed"
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -423,7 +545,35 @@ async fn feishu_events(
 
     match event_type {
         Some("im.message.receive_v1") => {
-            if let Some(tx) = &st.event_tx {
+            if let Some(q) = &st.sqlite_queue {
+                let qc = std::sync::Arc::clone(q);
+                let payload = v.clone();
+                match tokio::task::spawn_blocking(move || qc.enqueue(&payload)).await {
+                    Ok(Ok(())) => {
+                        tracing::debug!("feishu im.message.receive_v1 persisted to sqlite queue");
+                        (StatusCode::OK, Json(json!({}))).into_response()
+                    }
+                    Ok(Err(e)) => {
+                        error!(?e, "feishu sqlite queue enqueue failed");
+                        (
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            Json(json!({
+                                "error": "persistent queue write failed; retry later",
+                                "code": "FEISHU_EVENT_QUEUE_SQLITE_ERROR"
+                            })),
+                        )
+                            .into_response()
+                    }
+                    Err(e) => {
+                        error!(?e, "feishu sqlite queue enqueue join failed");
+                        (
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            Json(json!({ "error": "queue worker overloaded" })),
+                        )
+                            .into_response()
+                    }
+                }
+            } else if let Some(tx) = &st.event_tx {
                 match tx.try_send(v) {
                     Ok(()) => {
                         tracing::debug!("feishu im.message.receive_v1 enqueued");
@@ -1549,6 +1699,10 @@ mod tests {
             quiet_sse_status: false,
             result_card_max_body_chars: 3500,
             in_place_progress_card: false,
+            event_queue_sqlite_path: None,
+            sqlite_queue_max_retries: 5,
+            sqlite_queue_poll_ms: 200,
+            sqlite_queue_lease_secs: 600,
         };
         let headers = HeaderMap::new();
         assert!(!verify_lark_signature_if_needed(&cfg, &headers, "{}").unwrap());
@@ -1589,6 +1743,10 @@ mod tests {
             quiet_sse_status: false,
             result_card_max_body_chars: 3500,
             in_place_progress_card: false,
+            event_queue_sqlite_path: None,
+            sqlite_queue_max_retries: 5,
+            sqlite_queue_poll_ms: 200,
+            sqlite_queue_lease_secs: 600,
         };
         let v = json!({ "header": { "token": "vtok" } });
         assert!(verify_event_verification_token(&cfg, &v).is_ok());
