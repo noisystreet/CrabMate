@@ -1,14 +1,15 @@
 //! 规划–执行–反思（PER）协调：**工作流反思**状态机（`prepare_workflow_execute` / `append_tool_result_and_reflection`）与 **`PerCoordinator` 回合状态**（规划需求来源、**终答 `plan_rewrite` 计数**、**分阶段补丁规划累计轮次**（与前者独立）、`after_final_assistant` 分支）。
+//! 可变回合侧字段按职责拆入 **[`per_turn_state`]**（计数 / `workflow_validate` 层缓存 / 工具失败短路表），减少顶层「一锅烩」。
 //! 终答规划 JSON 的**静态校验**、重写 user 文案组装、历史里 `workflow_validate` 扫描与侧向校验**摘要**在 [`super::reflection::plan_rewrite`]；侧向 **LLM** 调用在 [`super::per_plan_semantic_check`]。
 //! Web 与 CLI 的 `run_agent_turn` 共用此层。
 //!
 //! 终答规划门控（`after_final_assistant` 决策树）见 [`final_plan_gate`]。
 
 pub(crate) mod final_plan_gate;
+mod per_turn_state;
 
 use crate::config::AgentConfig;
 use crate::types::Message;
-use std::collections::HashMap;
 
 use super::plan_artifact;
 use super::reflection::plan_rewrite;
@@ -129,20 +130,10 @@ pub struct PerCoordinator {
     final_plan_semantic_check_max_non_readonly_tools: usize,
     /// 在 [`FinalPlanRequirementMode::WorkflowReflection`] 下，由 `prepare_workflow_execute` 根据反思注入置位。
     plan_requirement_source: PlanRequirementSource,
-    plan_rewrite_attempts: usize,
-    /// 本 `run_agent_turn` 回合内，**已成功完成**（解析并合并 `steps`）的**分阶段补丁规划**无工具轮次数。
-    /// **不**计入终答路径的 **`plan_rewrite_attempts`**；与 **`staged_plan_patch_max_attempts`** 所限制的「单步失败分支内尝试次数」亦不同（后者为局部循环上界）。
-    staged_plan_patch_planner_rounds_completed: usize,
-    /// 缓存 [`last_workflow_validate_layer_count`]：`messages.len()` 未变时复用上一次的扫描结果。
-    /// [`Self::append_tool_result_and_reflection`] 在追加后按新历史重算；[`Self::invalidate_workflow_validate_layer_cache_after_context_mutation`] 在上下文裁剪/摘要后清空，避免误用旧值。
-    cached_workflow_validate_layer_count: Option<usize>,
-    layer_count_cache_at_message_len: usize,
-    /// 同一回合内已发生失败的工具签名：`(tool_name, tool_args_json) -> error_marker`。
-    /// 用于“同命令同错误短路”，避免模型原样重试。
-    repeated_failed_tool_signatures: HashMap<(String, String), String>,
-    /// 同一回合内已发生失败的工具“错误族”：`(tool_name, failure_family) -> sample_error_marker`。
-    /// 用于“同类失败短路”，避免仅改写命令形态却继续踩同一类约束。
-    repeated_failed_tool_families: HashMap<(String, String), String>,
+    /// 本回合**可变计数**（终答 `plan_rewrite` vs 分阶段补丁已成功合并轮次）；详见 [`per_turn_state::PerTurnCounters`]。
+    pub(crate) counters: per_turn_state::PerTurnCounters,
+    pub(crate) workflow_validate_cache: per_turn_state::WorkflowValidateLayerCache,
+    pub(crate) repeated_tool_failures: per_turn_state::RepeatedToolFailureMemo,
 }
 
 mod coordinator_impl;
@@ -150,7 +141,7 @@ mod coordinator_impl;
 #[cfg(test)]
 impl PerCoordinator {
     fn increment_plan_rewrite_attempts(&mut self) {
-        self.plan_rewrite_attempts += 1;
+        self.counters.plan_rewrite_attempts += 1;
     }
 
     fn test_workflow_validate_layer_need(&mut self, messages: &[Message]) -> Option<usize> {
@@ -158,10 +149,7 @@ impl PerCoordinator {
     }
 
     fn test_layer_cache_snapshot(&self) -> (Option<usize>, usize) {
-        (
-            self.cached_workflow_validate_layer_count,
-            self.layer_count_cache_at_message_len,
-        )
+        self.workflow_validate_cache.snapshot()
     }
 }
 

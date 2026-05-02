@@ -61,7 +61,7 @@ pub(crate) fn apply_plan_rewrite_count_from_gate(
     outcome: &FinalPlanGateStepOutcome,
 ) {
     if let Some(n) = outcome.next_plan_rewrite_count {
-        per.plan_rewrite_attempts = n;
+        per.counters.plan_rewrite_attempts = n;
     }
 }
 
@@ -495,7 +495,7 @@ pub(crate) fn after_final_assistant(
         require_plan = require_plan,
         plan_requirement_source = ?per.plan_requirement_source,
         reflection_stage_round = reflection_stage_round,
-        plan_rewrite_attempts = per.plan_rewrite_attempts,
+        plan_rewrite_attempts = per.counters.plan_rewrite_attempts,
         plan_rewrite_max = per.plan_rewrite_max_attempts,
         gate_phase = ?phase,
         sub_phase = "reflect",
@@ -528,7 +528,7 @@ pub(crate) fn after_final_assistant(
                 .final_plan_semantic_check_max_non_readonly_tools,
             layer_need,
             validate_only_binding_ids,
-            plan_rewrite_attempts: per.plan_rewrite_attempts,
+            plan_rewrite_attempts: per.counters.plan_rewrite_attempts,
             plan_rewrite_max_attempts: per.plan_rewrite_max_attempts,
         },
     );
