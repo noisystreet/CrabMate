@@ -29,7 +29,7 @@ use crate::session_sort::sorted_sessions_clone;
 use crate::session_sync::SessionSyncState;
 use crate::storage::ChatSession;
 
-use super::app_shell_ctx::AppShellCtx;
+use super::app_shell_ctx::SidebarNavSignals;
 
 /// 会话标题筛选防抖（毫秒）。
 const SIDEBAR_SESSION_FILTER_DEBOUNCE_MS: u32 = 250;
@@ -660,8 +660,8 @@ fn nav_session_row_button(s: ChatSession, nav: NavRailHitRowNavSignals) -> impl 
     }
 }
 
-pub fn sidebar_nav_view(ctx: AppShellCtx) -> impl IntoView {
-    let AppShellCtx {
+pub fn sidebar_nav_view(signals: SidebarNavSignals) -> impl IntoView {
+    let SidebarNavSignals {
         locale,
         mobile_nav_open,
         session_modal,
@@ -678,8 +678,7 @@ pub fn sidebar_nav_view(ctx: AppShellCtx) -> impl IntoView {
         composer_draft_buffer,
         apply_assistant_display_filters,
         sidebar_rail_collapsed,
-        ..
-    } = ctx;
+    } = signals;
     let composer_buf_nav = composer_draft_buffer;
     let sessions = chat.sessions;
     let active_id = chat.active_id;

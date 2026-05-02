@@ -57,13 +57,15 @@ pub fn App() -> impl IntoView {
     let settings_modal_signals = app_ctx.settings_modal_signals();
     let session_list_modal_signals = app_ctx.session_list_modal_signals();
     let status_bar_footer_signals = app_ctx.status_bar_footer_signals();
+    let sidebar_nav_signals = app_ctx.sidebar_nav_signals();
+    let side_column_view_signals = app_ctx.side_column_view_signals();
 
     view! {
         <div
             class="app-root app-shell-ds"
             class:sidebar-rail-collapsed=move || app_ctx.sidebar_rail_collapsed.get()
         >
-            {sidebar_nav_view(app_ctx.clone())}
+            {sidebar_nav_view(sidebar_nav_signals)}
 
             <Show when=move || app_ctx.sidebar_rail_collapsed.get()>
                 <button
@@ -89,7 +91,7 @@ pub fn App() -> impl IntoView {
                 >
                     {chat_column_view(app_ctx.chat_column.clone())}
 
-                    {side_column_view(app_ctx.clone())}
+                    {side_column_view(side_column_view_signals)}
                 </div>
 
                 {status_bar_footer_view(status_bar_footer_signals)}

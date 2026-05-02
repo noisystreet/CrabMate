@@ -15,7 +15,7 @@ use crate::sse_dispatch::ThinkingTraceInfo;
 use crate::workspace_shell::{begin_side_column_resize, reload_workspace_panel};
 use crate::workspace_tree::WorkspaceFilesystemTree;
 
-use super::app_shell_ctx::AppShellCtx;
+use super::app_shell_ctx::SideColumnViewSignals;
 use super::workspace_panel_state::WorkspacePanelSignals;
 
 type SideResizeHandlesCell = Rc<
@@ -675,8 +675,8 @@ fn SideColumnWorkspaceCard(
     }
 }
 
-pub fn side_column_view(ctx: AppShellCtx) -> impl IntoView {
-    let AppShellCtx {
+pub fn side_column_view(signals: SideColumnViewSignals) -> impl IntoView {
+    let SideColumnViewSignals {
         locale,
         side_resize_dragging,
         side_panel_view,
@@ -685,7 +685,6 @@ pub fn side_column_view(ctx: AppShellCtx) -> impl IntoView {
         side_resize_handles,
         view_menu_open,
         status_bar_visible,
-        settings_modal: _,
         settings_page,
         workspace_panel: ws,
         status_tasks,
@@ -696,8 +695,7 @@ pub fn side_column_view(ctx: AppShellCtx) -> impl IntoView {
         changelist_fetch_nonce,
         insert_workspace_file_ref,
         thinking_trace_log,
-        ..
-    } = ctx;
+    } = signals;
     let tasks_data = status_tasks.tasks_data;
     let tasks_err = status_tasks.tasks_err;
     let tasks_loading = status_tasks.tasks_loading;
