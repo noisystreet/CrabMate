@@ -1,5 +1,5 @@
 //! 非分层模式下 **`resolve_non_hierarchical_main_route`** 之前的分阶段意图门控：
-//! 与 [`super::at_turn_start::run_intent_l0_l1_l2_gate`] **共用**同一套 L0+L1+可选 L2 管线（见 **`run_full_intent_pipeline_assessment`**），避免仅用 L1（**`assess_and_route`**）与开局门控分叉。
+//! 与 [`super::at_turn_start::run_intent_l0_l1_l2_gate`] **共用**同一套 L0+L1+可选 L2 管线（见 **`assess_staged_planning_gate_full_pipeline`**），避免仅用 L1（**`assess_and_route`**）与开局门控分叉。
 //!
 //! 同步 **`assess_staged_planning_gate`**（仅 L1）保留供不需要异步/`RunLoopParams` 的单测与快速探测。
 
