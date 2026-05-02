@@ -1,30 +1,21 @@
 //! 分层执行器：按依赖层级执行子目标
 
-use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex as StdMutex};
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Instant;
 
 use tokio::sync::mpsc::Sender;
 
 use crate::config::AgentConfig;
-use crate::llm::backend::{ChatCompletionsBackend, OPENAI_COMPAT_BACKEND};
+use crate::llm::backend::ChatCompletionsBackend;
 use crate::sse;
 
-use super::artifact_resolver::ArtifactResolver;
 use super::artifact_store::ArtifactStore;
 use super::build_state::BuildState;
 use super::events;
-use super::execution_helpers::{
-    Dag, summarize_subgoal_evidence, supplement_subgoal_required_tools, trim_for_detail,
-    truncate_goal_desc,
-};
-use super::goal_verifier::{GoalVerifier, VerificationResult};
-use super::manager::{ManagerLlmContext, ManagerOutput, ReflectAndReplanContext, handle_failure};
-use super::operator::{OperatorAgent, OperatorConfig};
-use super::task::{
-    ArtifactKind, BuildArtifactKind, ExecutionStrategy, SubGoal, TaskResult, TaskStatus,
-};
-use super::tool_executor::{ToolExecutor, ToolExecutorContext};
+use super::execution_helpers::{Dag, summarize_subgoal_evidence, trim_for_detail};
+use super::manager::{ManagerOutput, handle_failure};
+use super::task::{ExecutionStrategy, TaskResult, TaskStatus};
 use crate::types::{CommandApprovalDecision, Tool};
 use log::{error, info, warn};
 use tokio::sync::Mutex as TokioMutex;
@@ -518,4 +509,6 @@ impl<'a> HierarchicalExecutor<'a> {
     }
 }
 
-include!("execution_body.inc.rs");
+/// 子目标顺序/并行执行、验证重试与 `BuildState` 更新（原 `execution_body.inc.rs`，现为独立模块以便导航）。
+#[path = "execution_impl.rs"]
+mod execution_impl;

@@ -1,4 +1,28 @@
-impl<'a> HierarchicalExecutor<'a> {
+//! 子目标顺序/并行执行、单步验证/反思与 `BuildState` 更新（自 `include!` 迁出，便于在仓库内搜索与分层导航）。
+//! 由 [`super`]（`execution.rs`）中的 **`execute_with_result`** 调用；本文件仅扩展同一 `HierarchicalExecutor` 的 `impl` 块。
+
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex as StdMutex};
+
+use super::super::artifact_resolver::ArtifactResolver;
+use super::super::artifact_store::ArtifactStore;
+use super::super::build_state::BuildState;
+use super::super::events;
+use super::super::execution_error::ExecutionError;
+use super::super::execution_helpers::{supplement_subgoal_required_tools, truncate_goal_desc};
+use super::super::goal_verifier::{GoalVerifier, VerificationResult};
+use super::super::manager::{ManagerLlmContext, ManagerOutput, ReflectAndReplanContext};
+use super::super::operator::{OperatorAgent, OperatorConfig};
+use super::super::task::{
+    ArtifactKind, BuildArtifactKind, GoalType, SubGoal, TaskResult, TaskStatus,
+};
+use super::super::tool_executor::ToolExecutor;
+use crate::sse;
+use log::{info, warn};
+
+mod execution_parallel;
+
+impl<'a> super::HierarchicalExecutor<'a> {
     /// 执行子目标列表（保持原有接口兼容）
     pub async fn execute(
         &self,
@@ -9,7 +33,7 @@ impl<'a> HierarchicalExecutor<'a> {
     }
 
     /// 顺序执行
-    async fn execute_sequential(
+    pub(super) async fn execute_sequential(
         &self,
         goals: &[&SubGoal],
         prior_subgoal_results: &[TaskResult],
@@ -32,323 +56,6 @@ impl<'a> HierarchicalExecutor<'a> {
         Ok(results)
     }
 
-    /// 并行执行
-    ///
-    /// 使用 tokio::spawn 实现真正的并发执行，通过信号量控制并发度
-    ///
-    /// 特性：
-    /// - 支持部分失败继续执行（收集所有结果后返回）
-    /// - 使用 JoinSet 实现进度追踪和实时结果收集
-    /// - 每个子目标使用独立的 ArtifactStore，执行完成后合并结果
-    async fn execute_parallel(
-        &self,
-        goals: &[&SubGoal],
-        prior_subgoal_results: &[TaskResult],
-        artifact_store: &mut ArtifactStore,
-        build_state: &mut BuildState,
-    ) -> Result<Vec<TaskResult>, ExecutionError> {
-        use std::sync::Arc;
-        use tokio::sync::Semaphore;
-        use tokio::task::JoinSet;
-
-        // 如果没有配置，回退到顺序执行
-        let (Some(cfg), Some(client), Some(api_key)) = (
-            self.cfg.as_ref(),
-            self.client.as_ref(),
-            self.api_key.as_ref(),
-        ) else {
-            warn!(
-                target: "crabmate",
-                "[HIERARCHICAL] Parallel execution requires full context, falling back to sequential"
-            );
-            return self
-                .execute_sequential(goals, prior_subgoal_results, artifact_store, build_state)
-                .await;
-        };
-
-        let semaphore = Arc::new(Semaphore::new(self.max_parallel));
-        let mut join_set = JoinSet::new();
-
-        // 准备共享数据（使用 Arc 包装）
-        let cfg = Arc::new(cfg.clone());
-        let client = client.clone();
-        let api_key = api_key.clone();
-        let working_dir = self.working_dir.clone();
-        let tools_defs = self.tools_defs.clone();
-        let sse_out = self.sse_out.clone(); // 克隆 SSE 发送器以支持并行执行
-        let tool_approval_out = self.tool_approval_out.clone(); // 克隆审批发送器
-        let tool_approval_rx = self.tool_approval_rx.clone(); // 克隆审批接收器
-        let probe_cache = self.probe_cache.clone();
-        let prior = Arc::new(prior_subgoal_results.to_vec());
-        let pre_snapshot: Arc<ArtifactStore> = Arc::new(artifact_store.clone());
-        let current_ids: std::sync::Arc<HashSet<String>> =
-            Arc::new(goals.iter().map(|g| g.goal_id.to_string()).collect());
-
-        // 为每个子目标创建并发任务
-        for goal in goals {
-            let permit = semaphore.clone().acquire_owned().await.map_err(|e| {
-                ExecutionError::DagError(format!("Failed to acquire semaphore: {}", e))
-            })?;
-
-            let goal = (*goal).clone();
-            let cfg = cfg.clone();
-            let client = client.clone();
-            let api_key = api_key.clone();
-            let working_dir = working_dir.clone();
-            let tools_defs = tools_defs.clone();
-            let build_state = build_state.clone();
-            let sse_out = sse_out.clone(); // 每个任务克隆 SSE 发送器
-            let sse_out_for_start = sse_out.clone();
-            let tool_approval_out = tool_approval_out.clone(); // 每个任务克隆审批发送器
-            let tool_approval_rx = tool_approval_rx.clone(); // 每个任务克隆审批接收器
-            let probe_cache = probe_cache.clone();
-            let prior = prior.clone();
-            let pre_snapshot = pre_snapshot.clone();
-            let current_ids = current_ids.clone();
-
-            join_set.spawn(async move {
-                let _permit = permit; // 持有 permit 直到任务完成
-                let goal_id = goal.goal_id.clone();
-                let goal_description = goal.description.clone();
-                let goal_required_tools = goal.required_tools.clone();
-
-                // 独立子 store，先合并**执行本层前**的共享产物，再运行。
-                // 同层并行时：各子目标**彼此**的当轮产物**不可见**（DAG 同层应无互依；若需先后请用边或改顺序策略）。
-                let mut store = ArtifactStore::new();
-                store.merge_from(&pre_snapshot);
-                log::debug!(
-                    target: "crabmate",
-                    "[HIERARCHICAL] parallel subgoal {}: merged pre-level artifact snapshot ({} entries; peer goals in this level are not visible to each other)",
-                    goal_id,
-                    pre_snapshot.all().len(),
-                );
-
-                let mut goal = super::subgoal_context::ensure_consumes_from_dependencies(
-                    &goal,
-                    prior.as_slice(),
-                    current_ids.as_ref(),
-                    true,
-                );
-                if let Some(msg) =
-                    super::subgoal_context::validate_depends_consumes_consistency(&goal)
-                {
-                    log::warn!(target: "crabmate", "[HIERARCHICAL] I/O: {}", msg);
-                }
-                super::subgoal_context::normalize_subgoal_io_contracts(&mut goal);
-
-                let mut allowed_tools = goal.required_tools.clone();
-                supplement_subgoal_required_tools(&goal.description, &mut allowed_tools);
-                let tools_defs_for_llm = if allowed_tools.is_empty() {
-                    tools_defs.clone()
-                } else {
-                    tools_defs
-                        .iter()
-                        .filter(|t| allowed_tools.contains(&t.function.name))
-                        .cloned()
-                        .collect()
-                };
-
-                // 创建 Operator 配置（现在支持 SSE 和动态分解）
-                let operator_config = OperatorConfig {
-                    max_iterations: 15,
-                    allowed_tools: allowed_tools.clone(),
-                    tools_defs: tools_defs_for_llm,
-                    sse_out, // 传递 SSE 发送器以支持工具调用事件
-                    artifact_store: Some(store.clone()),
-                    build_state: Some(Arc::new(StdMutex::new(build_state.clone()))),
-                    enable_compile_error_recovery: true,
-                    compile_error_max_retries: 3,
-                    attempted_configs: Vec::new(),
-                    enable_dynamic_decomposition: true,
-                    dynamic_decomposition_threshold: 40,
-                };
-
-                let operator = OperatorAgent::new(operator_config);
-
-                // 创建工具执行器上下文
-                let mut tool_executor_ctx =
-                    ToolExecutorContext::new(cfg.clone(), working_dir.clone().unwrap_or_default());
-                tool_executor_ctx = tool_executor_ctx.with_probe_cache(probe_cache);
-                if let Some(ref sse_out_tx) = sse_out_for_start {
-                    let title = format!("子目标 `{}`", goal_id);
-                    let mut detail = format!(
-                        "- 阶段：开始执行\n- 目标：{}",
-                        trim_for_detail(&goal_description, 180)
-                    );
-                    if !goal_required_tools.is_empty() {
-                        detail.push_str("\n- 计划工具：");
-                        detail.push_str(&goal_required_tools.join(", "));
-                    }
-                    let payload = sse::encode_message(crate::sse::SsePayload::TimelineLog {
-                        log: crate::sse::protocol::TimelineLogBody {
-                            kind: "hierarchical_subgoal_started".to_string(),
-                            title,
-                            detail: Some(detail),
-                        },
-                    });
-                    let _ = sse::send_string_logged(
-                        sse_out_tx,
-                        payload,
-                        "hierarchical::parallel_subgoal_started_timeline",
-                    )
-                    .await;
-                }
-
-                // 如果有审批上下文，启用 Web 审批流程
-                if let (Some(out_tx), Some(approval_rx)) = (tool_approval_out, tool_approval_rx) {
-                    tool_executor_ctx =
-                        tool_executor_ctx.with_web_approval_arc(out_tx, approval_rx);
-                }
-
-                let tool_executor = ToolExecutor::new(tool_executor_ctx);
-
-                let raw_arts =
-                    super::subgoal_context::collect_artifacts_for_goals(&store, &goal.depends_on);
-                let fdeps: Vec<_> =
-                    super::subgoal_context::filter_dependencies_for_injection(&goal, &raw_arts);
-                if fdeps.len() < raw_arts.len() {
-                    log::info!(
-                        target: "crabmate",
-                        "[HIERARCHICAL] Parallel: dependency filtered {} -> {} for goal_id={}",
-                        raw_arts.len(),
-                        fdeps.len(),
-                        goal.goal_id
-                    );
-                }
-                let extra = super::subgoal_context::build_injected_subgoal_user_extra(
-                    &goal,
-                    &fdeps,
-                    prior.as_slice(),
-                );
-                // 并行路径经 `tokio::spawn` 须 `Send + 'static`，无法携带 `HierarchicalExecutor::with_context` 注入的
-                // 非 `'static` `llm_backend`；此处仍用进程内默认 HTTP 后端。自定义后端请走顺序策略或后续改为
-                // `Arc<dyn ChatCompletionsBackend + Send + Sync>` 接线。
-                let result = operator
-                    .execute_with_tools(
-                        &goal,
-                        &cfg,
-                        &OPENAI_COMPAT_BACKEND,
-                        &client,
-                        &api_key,
-                        &tool_executor,
-                        extra.as_deref(),
-                    )
-                    .await;
-
-                (goal_id, result)
-            });
-        }
-
-        // 使用 JoinSet 收集所有结果（支持部分失败继续）
-        let mut results = Vec::new();
-        let mut failed_count = 0;
-        let mut panicked_count = 0;
-
-        while let Some(join_result) = join_set.join_next().await {
-            match join_result {
-                Ok((goal_id, Ok(result))) => {
-                    // 将成功的结果产物合并到主 artifact_store
-                    if matches!(result.status, TaskStatus::Completed) {
-                        artifact_store.store_result(&result);
-                        info!(
-                            target: "crabmate",
-                            "[HIERARCHICAL] Parallel: Goal {} completed successfully",
-                            goal_id
-                        );
-                    } else if matches!(result.status, TaskStatus::NeedsDecomposition { .. }) {
-                        // NeedsDecomposition 不是失败，而是需要重新规划
-                        info!(
-                            target: "crabmate",
-                            "[HIERARCHICAL] Parallel: Goal {} needs decomposition",
-                            goal_id
-                        );
-                    } else {
-                        warn!(
-                            target: "crabmate",
-                            "[HIERARCHICAL] Parallel: Goal {} failed: {:?}",
-                            goal_id, result.status
-                        );
-                    }
-                    results.push(result);
-                }
-                Ok((goal_id, Err(e))) => {
-                    // 任务执行出错，但继续收集其他结果
-                    failed_count += 1;
-                    error!(
-                        target: "crabmate",
-                        "[HIERARCHICAL] Parallel: Goal {} execution error: {}",
-                        goal_id, e
-                    );
-                    // 创建一个失败的 TaskResult 而不是直接返回错误
-                    results.push(TaskResult {
-                        task_id: goal_id.clone(),
-                        status: TaskStatus::Failed {
-                            reason: format!("Execution error: {}", e),
-                        },
-                        output: None,
-                        error: Some(format!("Execution error: {}", e)),
-                        artifacts: Vec::new(),
-                        duration_ms: 0,
-                        tools_invoked: Vec::new(),
-                    });
-                }
-                Err(e) => {
-                    // 任务 panic，但继续收集其他结果
-                    panicked_count += 1;
-                    error!(
-                        target: "crabmate",
-                        "[HIERARCHICAL] Parallel: Task panicked: {}",
-                        e
-                    );
-                    // 从 panic 信息中提取 goal_id（如果可能）
-                    let goal_id = format!("unknown_panicked_{}", panicked_count);
-                    results.push(TaskResult {
-                        task_id: goal_id,
-                        status: TaskStatus::Failed {
-                            reason: format!("Task panicked: {}", e),
-                        },
-                        output: None,
-                        error: Some(format!("Task panicked: {}", e)),
-                        artifacts: Vec::new(),
-                        duration_ms: 0,
-                        tools_invoked: Vec::new(),
-                    });
-                }
-            }
-        }
-
-        // 记录执行统计
-        let completed_count = results
-            .iter()
-            .filter(|r| matches!(r.status, TaskStatus::Completed))
-            .count();
-        let needs_decomp_count = results
-            .iter()
-            .filter(|r| matches!(r.status, TaskStatus::NeedsDecomposition { .. }))
-            .count();
-        info!(
-            target: "crabmate",
-            "[HIERARCHICAL] Parallel execution summary: {} total, {} completed, {} needs_decomposition, {} failed, {} panicked",
-            results.len(),
-            completed_count,
-            needs_decomp_count,
-            failed_count,
-            panicked_count
-        );
-
-        // 如果所有任务都失败了（排除 NeedsDecomposition），返回错误
-        if completed_count == 0 && needs_decomp_count == 0 && !results.is_empty() {
-            return Err(ExecutionError::MaxFailuresReached(format!(
-                "All {} parallel tasks failed ({} execution errors, {} panics)",
-                results.len(),
-                failed_count,
-                panicked_count
-            )));
-        }
-
-        Ok(results)
-    }
-
     /// 执行单个子目标（带验证和重试循环）
     ///
     /// 执行流程：执行 → 验证 → （失败时）反思/重试
@@ -360,17 +67,19 @@ impl<'a> HierarchicalExecutor<'a> {
         artifact_store: &mut ArtifactStore,
         build_state: &BuildState,
     ) -> Result<TaskResult, ExecutionError> {
-        if let Some(msg) = super::subgoal_context::validate_depends_consumes_consistency(goal) {
+        if let Some(msg) =
+            super::super::subgoal_context::validate_depends_consumes_consistency(goal)
+        {
             warn!(target: "crabmate", "[HIERARCHICAL] I/O 契约: {}", msg);
         }
 
-        let mut current_goal = super::subgoal_context::ensure_consumes_from_dependencies(
+        let mut current_goal = super::super::subgoal_context::ensure_consumes_from_dependencies(
             goal,
             prior_subgoals_for_context,
             current_level_goal_ids,
             true,
         );
-        super::subgoal_context::normalize_subgoal_io_contracts(&mut current_goal);
+        super::super::subgoal_context::normalize_subgoal_io_contracts(&mut current_goal);
         let max_retries = current_goal.max_retries.unwrap_or(3);
 
         // 创建验证器
@@ -574,7 +283,7 @@ impl<'a> HierarchicalExecutor<'a> {
 
             // 执行失败，尝试 Manager 决策（原有逻辑）
             // Analyze 类型的子目标：失败后直接跳过，不重试
-            if matches!(current_goal.goal_type, super::task::GoalType::Analyze) {
+            if matches!(current_goal.goal_type, GoalType::Analyze) {
                 info!(target: "crabmate", "[HIERARCHICAL] Executor: Analyze type goal failed, skipping directly: {}", current_goal.goal_id);
                 return Ok(TaskResult {
                     task_id: current_goal.goal_id.clone(),
@@ -608,12 +317,12 @@ impl<'a> HierarchicalExecutor<'a> {
             };
 
             match decision {
-                super::manager::ManagerDecision::Retry { updated_goal } => {
+                super::super::manager::ManagerDecision::Retry { updated_goal } => {
                     info!(target: "crabmate", "[HIERARCHICAL] Executor: Manager decided to retry (attempt {}/{})" , attempt + 1, max_retries);
                     current_goal = *updated_goal;
                     continue;
                 }
-                super::manager::ManagerDecision::Skip { reason } => {
+                super::super::manager::ManagerDecision::Skip { reason } => {
                     info!(target: "crabmate", "[HIERARCHICAL] Executor: Manager decided to skip: {}", reason);
                     return Ok(TaskResult {
                         task_id: current_goal.goal_id.clone(),
@@ -625,7 +334,7 @@ impl<'a> HierarchicalExecutor<'a> {
                         tools_invoked: result.tools_invoked.clone(),
                     });
                 }
-                super::manager::ManagerDecision::Abort { reason } => {
+                super::super::manager::ManagerDecision::Abort { reason } => {
                     info!(target: "crabmate", "[HIERARCHICAL] Executor: Manager decided to abort: {}", reason);
                     return Err(ExecutionError::MaxFailuresReached(reason));
                 }
@@ -657,7 +366,8 @@ impl<'a> HierarchicalExecutor<'a> {
     ) -> Result<TaskResult, ExecutionError> {
         // 获取依赖的 artifacts 并按 I/O 契约与类型**裁剪**（默认排除 buildlog/纯 CommandOutput 等）
         let raw = artifact_store.get_dependencies(&goal.depends_on);
-        let deps: Vec<_> = super::subgoal_context::filter_dependencies_for_injection(goal, &raw);
+        let deps: Vec<_> =
+            super::super::subgoal_context::filter_dependencies_for_injection(goal, &raw);
         if deps.len() < raw.len() {
             log::info!(
                 target: "crabmate",
@@ -739,7 +449,7 @@ impl<'a> HierarchicalExecutor<'a> {
                 self.working_dir.as_ref(),
             ) {
                 // 有完整上下文，使用带工具的执行
-                let mut tool_executor_ctx = super::tool_executor::ToolExecutorContext::new(
+                let mut tool_executor_ctx = super::super::tool_executor::ToolExecutorContext::new(
                     Arc::new(cfg.clone()),
                     work_dir.clone(),
                 );
@@ -753,7 +463,7 @@ impl<'a> HierarchicalExecutor<'a> {
                         tool_executor_ctx.with_web_approval_arc(out_tx, approval_rx);
                 }
                 let tool_executor = ToolExecutor::new(tool_executor_ctx);
-                let extra = super::subgoal_context::build_injected_subgoal_user_extra(
+                let extra = super::super::subgoal_context::build_injected_subgoal_user_extra(
                     goal,
                     &deps,
                     prior_subgoals,
@@ -797,7 +507,7 @@ impl<'a> HierarchicalExecutor<'a> {
         }
 
         // 如果完成，存储 artifacts
-        if matches!(result.status, super::task::TaskStatus::Completed) {
+        if matches!(result.status, super::super::task::TaskStatus::Completed) {
             artifact_store.store_result(&result);
         }
 
@@ -807,11 +517,11 @@ impl<'a> HierarchicalExecutor<'a> {
     /// 询问 Manager 如何处理失败的子目标
     async fn ask_manager_for_decision(
         &self,
-        manager: &super::manager::ManagerAgent,
+        manager: &super::super::manager::ManagerAgent,
         failed_goal: &SubGoal,
         error_message: &str,
-        previous_artifacts: &[super::task::Artifact],
-    ) -> Option<super::manager::ManagerDecision> {
+        previous_artifacts: &[super::super::task::Artifact],
+    ) -> Option<super::super::manager::ManagerDecision> {
         // 提前提取所有需要的数据，避免生命周期问题
         let manager = manager.clone();
         let goal = failed_goal.clone();
@@ -918,11 +628,11 @@ impl<'a> HierarchicalExecutor<'a> {
     /// 当验证失败时，调用 Manager 进行反思，生成修复策略
     async fn reflect_and_replan(
         &self,
-        manager: &super::manager::ManagerAgent,
+        manager: &super::super::manager::ManagerAgent,
         failed_goal: &SubGoal,
         verification_failure: &str,
         execution_result: &TaskResult,
-        artifacts: &[super::task::Artifact],
+        artifacts: &[super::super::task::Artifact],
     ) -> Option<SubGoal> {
         info!(
             target: "crabmate",
@@ -1012,7 +722,11 @@ impl<'a> HierarchicalExecutor<'a> {
     }
 
     /// 从执行结果中更新构建状态
-    fn update_build_state_from_result(&self, build_state: &mut BuildState, result: &TaskResult) {
+    pub(super) fn update_build_state_from_result(
+        &self,
+        build_state: &mut BuildState,
+        result: &TaskResult,
+    ) {
         for artifact in &result.artifacts {
             // 根据产物类型更新 build_state
             match &artifact.kind {
