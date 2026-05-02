@@ -52,8 +52,9 @@ fn check_f64_inclusive(key: &str, v: Option<f64>, min: f64, max: f64) -> Result<
     Ok(())
 }
 
-fn validate_u64_table(b: &ConfigBuilder) -> Result<(), String> {
-    const ROWS: &[U64RangeRow] = &[
+/// 拆成两段静态表，降低单函数 `nloc`（`fn-nloc` 棘轮）。
+fn u64_range_rows_a() -> &'static [U64RangeRow] {
+    &[
         ("max_message_history", |b| b.max_message_history, 1, 1024),
         (
             "tui_session_max_messages",
@@ -312,6 +313,11 @@ fn validate_u64_table(b: &ConfigBuilder) -> Result<(), String> {
             1,
             4000,
         ),
+    ]
+}
+
+fn u64_range_rows_b() -> &'static [U64RangeRow] {
+    &[
         (
             "long_term_memory_max_entries",
             |b| b.long_term_memory_max_entries,
@@ -408,8 +414,14 @@ fn validate_u64_table(b: &ConfigBuilder) -> Result<(), String> {
             1,
             86_400,
         ),
-    ];
-    for &(key, get, lo, hi) in ROWS {
+    ]
+}
+
+fn validate_u64_table(b: &ConfigBuilder) -> Result<(), String> {
+    for &(key, get, lo, hi) in u64_range_rows_a() {
+        check_u64_inclusive(key, get(b), lo, hi)?;
+    }
+    for &(key, get, lo, hi) in u64_range_rows_b() {
         check_u64_inclusive(key, get(b), lo, hi)?;
     }
     Ok(())
