@@ -1,9 +1,11 @@
-//! 飞书开放平台 **事件订阅（HTTP Webhook）** MVP：
-//! - `url_verification`：原样返回 `challenge`（Encrypt Key 未启用时的明文校验；加密模式见飞书文档，本 MVP 以明文校验为主）。
-//! - `im.message.receive_v1`：解析文本 → **`POST /chat`** → [回复消息](https://open.feishu.cn/document/server-docs/im-v1/message/reply)。
+//! 飞书开放平台 **事件订阅（HTTP Webhook）**：
+//! - **明文**：直接解析 JSON。
+//! - **加密体**（顶层 **`encrypt`**）：按飞书文档 **AES-256-CBC** 解密后再解析（需配置 **`FEISHU_ENCRYPT_KEY`**）。
+//! - `url_verification`：返回 **`{"challenge":"..."}`**。
+//! - `im.message.receive_v1`（文本）：→ **`POST /chat`** → [回复消息](https://open.feishu.cn/document/server-docs/im-v1/message/reply)。
 //!
 //! 签名校验（可选）：若配置了 **Encrypt Key**，且请求带 **`X-Lark-Signature`** 等头，则按飞书文档
-//! `SHA256(timestamp + nonce + encrypt_key + body)` 十六进制小写比对（**URL 校验请求可能无签名头**，此时跳过校验）。
+//! `SHA256(timestamp + nonce + encrypt_key + body)` 十六进制小写比对（**原始 HTTP body 字符串**；**URL 校验请求可能无签名头**，此时跳过校验）。
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -23,6 +25,7 @@ use tokio::sync::Mutex;
 use tracing::{error, warn};
 
 use crate::crabmate::{CrabmateClient, CrabmateError};
+use crate::feishu_decrypt::{FeishuDecryptError, maybe_decrypt_event_json};
 
 /// 飞书桥接配置（通常由 `crabmate-im-bridge` 二进制从环境变量组装）。
 #[derive(Clone)]
@@ -105,12 +108,27 @@ async fn feishu_events(
             .into_response();
     }
 
-    let v: Value = match serde_json::from_str(body_str) {
+    let payload_str = match maybe_decrypt_event_json(st.cfg.encrypt_key.as_deref(), body_str) {
+        Ok(Some(s)) => s,
+        Ok(None) => body_str.to_string(),
+        Err(e) => {
+            warn!(?e, "feishu decrypt failed");
+            let msg = match e {
+                FeishuDecryptError::MissingEncryptKey => {
+                    "encrypted event requires FEISHU_ENCRYPT_KEY".to_string()
+                }
+                _ => e.to_string(),
+            };
+            return (StatusCode::BAD_REQUEST, Json(json!({ "error": msg }))).into_response();
+        }
+    };
+
+    let v: Value = match serde_json::from_str(&payload_str) {
         Ok(v) => v,
         Err(e) => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(json!({ "error": format!("invalid json: {e}") })),
+                Json(json!({ "error": format!("invalid json after decrypt: {e}") })),
             )
                 .into_response();
         }

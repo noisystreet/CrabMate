@@ -15,6 +15,10 @@ path = "src/main.rs"
 
 [dependencies]
 axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio", "macros"] }
+aes = "0.8"
+base64 = "0.22"
+cbc = "0.1"
+cipher = "0.4"
 dashmap = "6"
 hex = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
