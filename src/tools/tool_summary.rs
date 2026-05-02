@@ -287,6 +287,14 @@ pub(super) fn summary_gh_pr_view(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<GhPrNumberSummaryArgs>(v)
 }
 
+pub(super) fn summary_gh_pr_checks(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<GhPrChecksSummaryArgs>(v)
+}
+
+pub(super) fn summary_gh_pr_create(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<GhPrCreateSummaryArgs>(v)
+}
+
 pub(super) fn summary_gh_issue_list(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<GhIssueListSummaryArgs>(v)
 }

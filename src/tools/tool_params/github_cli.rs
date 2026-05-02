@@ -65,6 +65,71 @@ pub(in crate::tools) fn params_gh_pr_view() -> serde_json::Value {
     })
 }
 
+pub(in crate::tools) fn params_gh_pr_checks() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "repo": {
+                "type": "string",
+                "description": "可选。`owner/repo`；省略则用当前目录关联的远程仓库。"
+            },
+            "number": {
+                "type": "integer",
+                "description": "可选。PR 编号（1～999999）；**省略**时由 `gh` 根据当前分支解析关联 PR（与 CLI `gh pr checks` 一致）。"
+            },
+            "extra_args": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "附加传给 `gh` 的参数（不得含 `..` 或以 `/` 开头）。"
+            }
+        },
+        "additionalProperties": false
+    })
+}
+
+pub(in crate::tools) fn params_gh_pr_create() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string",
+                "description": "PR 标题（非空，≤240 字节，不得含换行）。"
+            },
+            "body": {
+                "type": "string",
+                "description": "PR 正文（Markdown 等；≤65536 字节；经工作区内临时文件 `--body-file` 传入 `gh`）。"
+            },
+            "repo": {
+                "type": "string",
+                "description": "可选。`owner/repo`；省略则用当前目录关联的远程。"
+            },
+            "base": {
+                "type": "string",
+                "description": "可选。目标分支名，传给 `--base`（字符集受限，见实现校验）。"
+            },
+            "head": {
+                "type": "string",
+                "description": "可选。源分支或 `owner:branch`，传给 `--head`。"
+            },
+            "draft": {
+                "type": "boolean",
+                "description": "为 true 时追加 `--draft`（草稿 PR）。"
+            },
+            "web": {
+                "type": "boolean",
+                "description": "为 true 时追加 `--web`（无头环境通常不可用）。"
+            },
+            "extra_args": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "附加参数（安全规则同 run_command）。**写操作**：在 GitHub 上创建 PR。"
+            }
+        },
+        "required": ["title"],
+        "additionalProperties": false
+    })
+}
+
 pub(in crate::tools) fn params_gh_issue_list() -> serde_json::Value {
     serde_json::json!({
         "type": "object",

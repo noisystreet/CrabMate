@@ -332,6 +332,8 @@ fn test_build_tools_names() {
     assert!(names.contains(&"run_command"));
     assert!(names.contains(&"gh_pr_list"));
     assert!(names.contains(&"gh_pr_view"));
+    assert!(names.contains(&"gh_pr_checks"));
+    assert!(names.contains(&"gh_pr_create"));
     assert!(names.contains(&"gh_issue_list"));
     assert!(names.contains(&"gh_issue_view"));
     assert!(names.contains(&"gh_run_list"));

@@ -1386,6 +1386,57 @@ impl ToolSummaryLine for GhPrNumberSummaryArgs {
 }
 
 #[derive(Debug, Deserialize)]
+pub(super) struct GhPrChecksSummaryArgs {
+    #[serde(default)]
+    repo: Option<String>,
+    #[serde(default)]
+    number: Option<u64>,
+}
+
+impl ToolSummaryLine for GhPrChecksSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        let suffix = gh_repo_suffix(self.repo);
+        match self.number {
+            Some(n) if n > 0 => Some(format!("gh pr checks #{}{}", n, suffix)),
+            _ => Some(format!("gh pr checks{}", suffix)),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct GhPrCreateSummaryArgs {
+    #[serde(default)]
+    repo: Option<String>,
+    title: String,
+    #[serde(default)]
+    draft: Option<bool>,
+}
+
+impl ToolSummaryLine for GhPrCreateSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        let t = self.title.trim();
+        if t.is_empty() {
+            return None;
+        }
+        let mut head: String = t.chars().take(40).collect();
+        if t.chars().count() > 40 {
+            head.push('…');
+        }
+        let draft = self.draft == Some(true);
+        Some(format!(
+            "gh pr create{}{}{}",
+            gh_repo_suffix(self.repo),
+            if draft { " draft" } else { "" },
+            if head.is_empty() {
+                String::new()
+            } else {
+                format!(": {}", head)
+            }
+        ))
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub(super) struct GhIssueListSummaryArgs {
     #[serde(default)]
     repo: Option<String>,

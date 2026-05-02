@@ -81,9 +81,9 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "git_checkout" | "git_branch_create" | "git_branch_delete" | "git_push" | "git_merge"
         | "git_rebase" | "git_stash" | "git_tag" | "git_reset" | "git_cherry_pick"
         | "git_revert" => &[GENERAL, VCS],
-        "gh_pr_list" | "gh_pr_view" | "gh_pr_diff" | "gh_issue_list" | "gh_issue_view"
-        | "gh_run_list" | "gh_run_view" | "gh_release_list" | "gh_release_view" | "gh_search"
-        | "gh_api" => &[GENERAL, VCS],
+        "gh_pr_list" | "gh_pr_view" | "gh_pr_checks" | "gh_pr_create" | "gh_pr_diff"
+        | "gh_issue_list" | "gh_issue_view" | "gh_run_list" | "gh_run_view" | "gh_release_list"
+        | "gh_release_view" | "gh_search" | "gh_api" => &[GENERAL, VCS],
 
         // --- Rust / Cargo ---
         "cargo_metadata"

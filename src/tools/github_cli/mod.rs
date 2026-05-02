@@ -1,6 +1,6 @@
 //! 内置 GitHub CLI（`gh`）封装：结构化参数；**退出码 0** 且 **stdout 整段为合法 JSON** 时附加格式化块（与是否传入 `--json` 字段无关）。
 //!
-//! 须 **`allowed_commands` 含 `gh`**（嵌入默认已含）。**`gh_api`** 在变更类 HTTP 方法下可能修改远端资源，已列入写副作用工具集。
+//! 须 **`allowed_commands` 含 `gh`**（嵌入默认已含）。**`gh_api`** 在变更类 HTTP 方法下可能修改远端资源；**`gh_pr_create`** 在 GitHub 上创建 PR，二者已列入写副作用工具集。
 
 mod api;
 
@@ -18,6 +18,9 @@ const MAX_SEARCH_LIMIT: u32 = 100;
 const MAX_SEARCH_QUERY_BYTES: usize = 400;
 const MAX_RELEASE_TAG_LEN: usize = 200;
 const MAX_JOB_NAME_LEN: usize = 128;
+const MAX_PR_TITLE_BYTES: usize = 240;
+const MAX_PR_BODY_BYTES: usize = 65_536;
+const MAX_PR_REF_TOKEN_BYTES: usize = 200;
 
 fn is_safe_token(s: &str) -> bool {
     let t = s.trim();
@@ -230,6 +233,63 @@ fn validate_search_query(q: &str) -> Result<(), String> {
         if matches!(ch, ';' | '|' | '&' | '`' | '$' | '<' | '>') {
             return Err(format!("错误：query 含不允许的字符 {:?}", ch));
         }
+    }
+    Ok(())
+}
+
+fn validate_pr_title(title: &str) -> Result<(), String> {
+    let t = title.trim();
+    if t.is_empty() {
+        return Err("错误：title 不能为空".to_string());
+    }
+    if t.len() > MAX_PR_TITLE_BYTES {
+        return Err(format!(
+            "错误：title 过长（上限 {} 字节）",
+            MAX_PR_TITLE_BYTES
+        ));
+    }
+    if t.contains('\0') || t.contains('\n') || t.contains('\r') {
+        return Err("错误：title 不得含换行或空字符".to_string());
+    }
+    Ok(())
+}
+
+fn validate_pr_body(body: &str) -> Result<(), String> {
+    if body.len() > MAX_PR_BODY_BYTES {
+        return Err(format!(
+            "错误：body 过长（上限 {} 字节）",
+            MAX_PR_BODY_BYTES
+        ));
+    }
+    if body.contains('\0') {
+        return Err("错误：body 不得含空字符".to_string());
+    }
+    Ok(())
+}
+
+/// `--base` / `--head` 传给 `gh pr create` 的单个 token（分支名或 `owner:branch` 等）。
+fn validate_pr_ref_token(token: &str) -> Result<(), String> {
+    let t = token.trim();
+    if t.is_empty() {
+        return Err("错误：base/head 不能为空".to_string());
+    }
+    if t.len() > MAX_PR_REF_TOKEN_BYTES {
+        return Err(format!(
+            "错误：base/head 过长（上限 {} 字节）",
+            MAX_PR_REF_TOKEN_BYTES
+        ));
+    }
+    if t.contains("..") || t.starts_with('/') {
+        return Err("错误：base/head 不得含 \"..\" 或以 \"/\" 开头".to_string());
+    }
+    if !t
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || "-_./:@".contains(c))
+    {
+        return Err(
+            "错误：base/head 仅允许字母数字与 - _ . / : @（与常见分支 / fork:branch 写法一致）"
+                .to_string(),
+        );
     }
     Ok(())
 }
@@ -589,6 +649,142 @@ pub fn gh_pr_diff(
     run_gh_vec(argv, max_output_len, allowed_commands, working_dir)
 }
 
+/// `gh pr checks`（只读）：CI 检查状态；省略 `number` 时使用当前分支关联的 PR（与 `gh` 默认一致）。
+pub fn gh_pr_checks(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+) -> String {
+    if let Err(e) = gh_allowed(allowed_commands) {
+        return e;
+    }
+    let v = match crate::tools::parse_args_json(args_json) {
+        Ok(x) => x,
+        Err(e) => return e,
+    };
+    let mut argv = vec!["pr".into(), "checks".into()];
+    if let Some(r) = v.get("repo").and_then(|x| x.as_str()) {
+        if let Err(e) = validate_repo(r) {
+            return e;
+        }
+        argv.push("-R".into());
+        argv.push(r.trim().to_string());
+    }
+    if let Some(n) = v.get("number").and_then(|x| x.as_u64()) {
+        if n == 0 || n > 999_999 {
+            return "错误：number 须为 1～999999 的正整数或省略".to_string();
+        }
+        argv.push(n.to_string());
+    }
+    if let Some(arr) = v.get("extra_args").and_then(|x| x.as_array()) {
+        let extra: Vec<String> = arr
+            .iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect();
+        if let Err(e) = validate_extra_args(&extra) {
+            return e;
+        }
+        argv.extend(extra);
+    }
+    run_gh_vec(argv, max_output_len, allowed_commands, working_dir)
+}
+
+/// `gh pr create`（在远端创建 PR；**写操作**）。`title` + `body` 经工作区内临时文件以 `--body-file` 传入，避免 shell 转义问题。
+pub fn gh_pr_create(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+) -> String {
+    if let Err(e) = gh_allowed(allowed_commands) {
+        return e;
+    }
+    let v = match crate::tools::parse_args_json(args_json) {
+        Ok(x) => x,
+        Err(e) => return e,
+    };
+    let title = match v.get("title").and_then(|x| x.as_str()) {
+        Some(s) => s,
+        None => return "错误：缺少 title".to_string(),
+    };
+    if let Err(e) = validate_pr_title(title) {
+        return e;
+    }
+    let body = v.get("body").and_then(|x| x.as_str()).unwrap_or("");
+    if let Err(e) = validate_pr_body(body) {
+        return e;
+    }
+    if let Some(r) = v.get("repo").and_then(|x| x.as_str())
+        && let Err(e) = validate_repo(r)
+    {
+        return e;
+    }
+    if let Some(b) = v.get("base").and_then(|x| x.as_str())
+        && let Err(e) = validate_pr_ref_token(b)
+    {
+        return e;
+    }
+    if let Some(h) = v.get("head").and_then(|x| x.as_str())
+        && let Err(e) = validate_pr_ref_token(h)
+    {
+        return e;
+    }
+
+    let dir = match tempfile::tempdir_in(working_dir) {
+        Ok(d) => d,
+        Err(e) => return format!("错误：无法在工作区内创建临时目录：{e}"),
+    };
+    let body_path = dir.path().join("crabmate_pr_body.md");
+    if let Err(e) = std::fs::write(&body_path, body.as_bytes()) {
+        return format!("错误：写入 PR 正文临时文件失败：{e}");
+    }
+    let body_path_str = match body_path.to_str() {
+        Some(p) => p.to_string(),
+        None => return "错误：临时文件路径非 UTF-8".to_string(),
+    };
+
+    let mut argv = vec![
+        "pr".into(),
+        "create".into(),
+        "--title".into(),
+        title.trim().to_string(),
+        "--body-file".into(),
+        body_path_str,
+    ];
+    if let Some(r) = v.get("repo").and_then(|x| x.as_str()) {
+        argv.push("-R".into());
+        argv.push(r.trim().to_string());
+    }
+    if let Some(b) = v.get("base").and_then(|x| x.as_str()) {
+        argv.push("--base".into());
+        argv.push(b.trim().to_string());
+    }
+    if let Some(h) = v.get("head").and_then(|x| x.as_str()) {
+        argv.push("--head".into());
+        argv.push(h.trim().to_string());
+    }
+    if v.get("draft").and_then(|x| x.as_bool()) == Some(true) {
+        argv.push("--draft".into());
+    }
+    if v.get("web").and_then(|x| x.as_bool()) == Some(true) {
+        argv.push("--web".into());
+    }
+    if let Some(arr) = v.get("extra_args").and_then(|x| x.as_array()) {
+        let extra: Vec<String> = arr
+            .iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect();
+        if let Err(e) = validate_extra_args(&extra) {
+            return e;
+        }
+        argv.extend(extra);
+    }
+    let out = run_gh_vec(argv, max_output_len, allowed_commands, working_dir);
+    drop(dir);
+    out
+}
+
 /// `gh run view`（日志/摘要；输出受 `command_max_output_len` 截断）
 pub fn gh_run_view(
     args_json: &str,
@@ -878,6 +1074,26 @@ mod tests {
     fn validate_search_query_rejects_shell_chars() {
         assert!(validate_search_query("foo;rm").is_err());
         assert!(validate_search_query("repo:foo/bar").is_ok());
+    }
+
+    #[test]
+    fn validate_pr_title_rejects_newline() {
+        assert!(validate_pr_title("a\nb").is_err());
+        assert!(validate_pr_title("ok title").is_ok());
+    }
+
+    #[test]
+    fn validate_pr_ref_token_rejects_dotdot() {
+        assert!(validate_pr_ref_token("main..other").is_err());
+        assert!(validate_pr_ref_token("feature/foo").is_ok());
+        assert!(validate_pr_ref_token("fork:branch").is_ok());
+    }
+
+    #[test]
+    fn gh_pr_checks_requires_gh_in_allowlist() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let out = gh_pr_checks("{}", 4096, &[], dir.path());
+        assert!(out.contains("未包含 gh"), "{}", out);
     }
 
     #[test]
