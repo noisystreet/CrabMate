@@ -102,6 +102,14 @@ fn apply_env_overrides_part_1(b: &mut ConfigBuilder) {
 }
 
 fn apply_env_overrides_part_2(b: &mut ConfigBuilder) {
+    env_override_workspace_allowed_roots(b);
+    env_override_max_tokens_llm_numeric(b);
+    env_override_llm_bool_flags(b);
+    env_override_api_and_weather_timeouts(b);
+    env_override_web_search_keys(b);
+}
+
+fn env_override_workspace_allowed_roots(b: &mut ConfigBuilder) {
     if let Ok(s) = std::env::var("CM_WORKSPACE_ALLOWED_ROOTS") {
         let list: Vec<String> = s
             .split(',')
@@ -112,6 +120,9 @@ fn apply_env_overrides_part_2(b: &mut ConfigBuilder) {
             b.workspace_allowed_roots = Some(list);
         }
     }
+}
+
+fn env_override_max_tokens_llm_numeric(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_MAX_TOKENS")
         && let Ok(n) = v.trim().parse::<u64>()
     {
@@ -132,6 +143,9 @@ fn apply_env_overrides_part_2(b: &mut ConfigBuilder) {
     {
         b.llm_seed = Some(n);
     }
+}
+
+fn env_override_llm_bool_flags(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_LLM_REASONING_SPLIT")
         && let Some(val) = parse_bool_like(&v)
     {
@@ -147,6 +161,9 @@ fn apply_env_overrides_part_2(b: &mut ConfigBuilder) {
     {
         b.llm_kimi_thinking_disabled = Some(val);
     }
+}
+
+fn env_override_api_and_weather_timeouts(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_API_TIMEOUT_SECS")
         && let Ok(n) = v.trim().parse::<u64>()
     {
@@ -167,6 +184,9 @@ fn apply_env_overrides_part_2(b: &mut ConfigBuilder) {
     {
         b.weather_timeout_secs = Some(n);
     }
+}
+
+fn env_override_web_search_keys(b: &mut ConfigBuilder) {
     if let Ok(s) = std::env::var("CM_WEB_SEARCH_PROVIDER") {
         let s = s.trim().to_string();
         if !s.is_empty() {

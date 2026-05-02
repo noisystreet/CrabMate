@@ -153,6 +153,58 @@ fn build_chat_stream_post_body(
     Ok(body)
 }
 
+fn build_chat_stream_fetch_request(
+    body_json: &str,
+    signal: &web_sys::AbortSignal,
+    last_event_id: u64,
+) -> Result<Request, String> {
+    let init = RequestInit::new();
+    init.set_method("POST");
+    init.set_mode(RequestMode::Cors);
+    init.set_signal(Some(signal));
+    let h = auth_headers();
+    let _ = h.set("Content-Type", "application/json");
+    if last_event_id > 0 {
+        let _ = h.set("Last-Event-ID", &last_event_id.to_string());
+    }
+    init.set_headers(&h);
+    init.set_body(&wasm_bindgen::JsValue::from_str(body_json));
+    Request::new_with_str_and_init("/chat/stream", &init).map_err(|e| format!("req: {:?}", e))
+}
+
+fn apply_chat_stream_response_headers(
+    resp: &Response,
+    cbs: &ChatStreamCallbacks,
+    stream_resume_job_id: &mut Option<u64>,
+) {
+    if let Some(cid) = resp.headers().get("x-conversation-id").ok().flatten() {
+        let t = cid.trim();
+        if !t.is_empty() {
+            (cbs.on_conversation_id)(t.to_string());
+        }
+    }
+    if let Some(jh) = resp.headers().get("x-stream-job-id").ok().flatten() {
+        if let Ok(jid) = jh.trim().parse::<u64>() {
+            *stream_resume_job_id = Some(jid);
+            (cbs.on_stream_job_id)(jid);
+        }
+    }
+}
+
+async fn chat_stream_read_error_body(resp: &Response, loc: Locale) -> Result<String, String> {
+    let text_promise = resp.text().map_err(|e| format!("text: {:?}", e))?;
+    Ok(JsFuture::from(text_promise)
+        .await
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_else(|| crate::i18n::api_err_request_failed(loc).to_string()))
+}
+
+async fn sleep_chat_stream_retry_backoff(attempt: u32) {
+    let ms = (200u64).saturating_mul(1u64 << attempt.min(5));
+    gloo_timers::future::TimeoutFuture::new(ms as u32).await;
+}
+
 /// 消费 `/chat/stream` 响应体：UTF-8 重组、SSE 分帧与尾部 flush（与断线重连时的读失败语义一致）。
 async fn consume_chat_stream_response_body(
     rb: web_sys::ReadableStream,
@@ -263,21 +315,8 @@ pub async fn send_chat_stream(p: SendChatStreamParams<'_>) -> Result<(), String>
             last_event_id,
             &clarify_questionnaire_answers,
         )?;
-        let init = RequestInit::new();
-        init.set_method("POST");
-        init.set_mode(RequestMode::Cors);
-        init.set_signal(Some(signal));
-        let h = auth_headers();
-        let _ = h.set("Content-Type", "application/json");
-        if last_event_id > 0 {
-            let _ = h.set("Last-Event-ID", &last_event_id.to_string());
-        }
-        init.set_headers(&h);
-        init.set_body(&wasm_bindgen::JsValue::from_str(
-            &serde_json::to_string(&body).map_err(|e| e.to_string())?,
-        ));
-        let req = Request::new_with_str_and_init("/chat/stream", &init)
-            .map_err(|e| format!("req: {:?}", e))?;
+        let body_json = serde_json::to_string(&body).map_err(|e| e.to_string())?;
+        let req = build_chat_stream_fetch_request(&body_json, signal, last_event_id)?;
         let resp_val = match JsFuture::from(w.fetch_with_request(&req)).await {
             Ok(v) => v,
             Err(e) => {
@@ -285,33 +324,17 @@ pub async fn send_chat_stream(p: SendChatStreamParams<'_>) -> Result<(), String>
                     return Err(format!("fetch: {:?}", e));
                 }
                 attempt = attempt.saturating_add(1);
-                let ms = (200u64).saturating_mul(1u64 << attempt.min(5));
-                gloo_timers::future::TimeoutFuture::new(ms as u32).await;
+                sleep_chat_stream_retry_backoff(attempt).await;
                 continue;
             }
         };
         let resp: Response = resp_val.dyn_into().map_err(|_| "not Response")?;
-        if let Some(cid) = resp.headers().get("x-conversation-id").ok().flatten() {
-            let t = cid.trim();
-            if !t.is_empty() {
-                (cbs.on_conversation_id)(t.to_string());
-            }
-        }
-        if let Some(jh) = resp.headers().get("x-stream-job-id").ok().flatten() {
-            if let Ok(jid) = jh.trim().parse::<u64>() {
-                stream_resume_job_id = Some(jid);
-                (cbs.on_stream_job_id)(jid);
-            }
-        }
+        apply_chat_stream_response_headers(&resp, &cbs, &mut stream_resume_job_id);
         if resp.status() == 410 {
             return Err(crate::i18n::api_err_stream_gone(loc).to_string());
         }
         if !resp.ok() {
-            let msg = JsFuture::from(resp.text().map_err(|e| format!("text: {:?}", e))?)
-                .await
-                .ok()
-                .and_then(|v| v.as_string())
-                .unwrap_or_else(|| crate::i18n::api_err_request_failed(loc).to_string());
+            let msg = chat_stream_read_error_body(&resp, loc).await?;
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&msg)
                 && let Some(m) = v.get("message").and_then(|x| x.as_str())
                 && !m.trim().is_empty()
@@ -347,8 +370,7 @@ pub async fn send_chat_stream(p: SendChatStreamParams<'_>) -> Result<(), String>
         if attempt >= 6 {
             return Err(crate::i18n::api_err_request_failed(loc).to_string());
         }
-        let ms = (200u64).saturating_mul(1u64 << attempt.min(5));
-        gloo_timers::future::TimeoutFuture::new(ms as u32).await;
+        sleep_chat_stream_retry_backoff(attempt).await;
     }
 }
 
