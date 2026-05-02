@@ -93,6 +93,10 @@ pub struct FeishuBridgeConfig {
     pub tool_decision_secret: Option<String>,
     /// **`WaitHttp`** 下等待人工决策的最长秒数（超时按 **`deny`** 提交）；至少 **5**。
     pub tool_decision_timeout_secs: u64,
+    /// 为 true 时：流式处理中**不**把每条 SSE 进度（工具调用、时间线等）逐条发到飞书，仅保留开场提示与结束结果卡片（适合长任务、省 QPS）。
+    pub quiet_sse_status: bool,
+    /// 结束时的结果卡片内「助手回复」摘要最大字符数（飞书卡片体不宜过大）；至少 **200**。
+    pub result_card_max_body_chars: usize,
 }
 
 pub struct FeishuBridgeState {
@@ -730,6 +734,16 @@ async fn crabmate_turn_with_feishu(
         _ => Some(format!("feishu:{message_id}")),
     };
 
+    let mut follow_idx: u64 = 0;
+    follow_idx = follow_idx.saturating_add(1);
+    reply_followup_text_message(
+        st,
+        message_id,
+        follow_idx,
+        "⏳ 已开始处理：CrabMate 正在执行（若含工具可能耗时数分钟）。完成后将发送结果摘要卡片。",
+    )
+    .await?;
+
     let resp = match st
         .cfg
         .crabmate
@@ -742,9 +756,11 @@ async fn crabmate_turn_with_feishu(
             body_preview,
         }) => {
             warn!(status, %body_preview, "CrabMate /chat/stream error");
-            reply_text_message(
+            follow_idx = follow_idx.saturating_add(1);
+            reply_followup_text_message(
                 st,
                 message_id,
+                follow_idx,
                 &format!("（CrabMate 返回 HTTP {status}，请检查服务与密钥。）"),
             )
             .await?;
@@ -752,78 +768,37 @@ async fn crabmate_turn_with_feishu(
         }
         Err(e) => {
             warn!(?e, "CrabMate /chat/stream request failed");
-            reply_text_message(st, message_id, &format!("（调用 CrabMate 失败：{e}）")).await?;
+            follow_idx = follow_idx.saturating_add(1);
+            reply_followup_text_message(
+                st,
+                message_id,
+                follow_idx,
+                &format!("（调用 CrabMate 失败：{e}）"),
+            )
+            .await?;
             return Ok(());
         }
     };
 
-    let _conv_hdr = resp
-        .headers()
-        .get("x-conversation-id")
-        .and_then(|h| h.to_str().ok())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string);
-
     let mut acc = StreamAccum::default();
-    let mut buf = String::new();
-    let mut follow_idx: u64 = 0;
-    let mut stream = resp.bytes_stream();
+    consume_sse_stream_to_accum(
+        st,
+        message_id,
+        chat_id,
+        approval_session_id.as_deref(),
+        resp,
+        &mut acc,
+        &mut follow_idx,
+    )
+    .await?;
 
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(
-            |e: reqwest::Error| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) },
-        )?;
-        buf.push_str(&String::from_utf8_lossy(&chunk));
-        for block in take_complete_sse_blocks(&mut buf) {
-            let (appr, status_lines) = dispatch_sse_event_block_collect(&block, &mut acc);
-            for line in status_lines {
-                follow_idx = follow_idx.saturating_add(1);
-                reply_followup_text_message(st, message_id, follow_idx, &line).await?;
-            }
-            for notice in appr {
-                if let Some(ref sid) = approval_session_id {
-                    resolve_one_tool_approval(
-                        st,
-                        message_id,
-                        chat_id,
-                        sid,
-                        &notice,
-                        &mut follow_idx,
-                    )
-                    .await?;
-                }
-            }
-        }
-    }
-    if !buf.trim().is_empty() {
-        buf.push_str("\n\n");
-        for block in take_complete_sse_blocks(&mut buf) {
-            let (appr, status_lines) = dispatch_sse_event_block_collect(&block, &mut acc);
-            for line in status_lines {
-                follow_idx = follow_idx.saturating_add(1);
-                reply_followup_text_message(st, message_id, follow_idx, &line).await?;
-            }
-            for notice in appr {
-                if let Some(ref sid) = approval_session_id {
-                    resolve_one_tool_approval(
-                        st,
-                        message_id,
-                        chat_id,
-                        sid,
-                        &notice,
-                        &mut follow_idx,
-                    )
-                    .await?;
-                }
-            }
-        }
-    }
-
+    let card_cap = st.cfg.result_card_max_body_chars.max(200);
     if acc.saw_error && acc.answer.trim().is_empty() {
-        reply_text_message(
+        follow_idx = follow_idx.saturating_add(1);
+        reply_followup_text_message(
             st,
             message_id,
+            follow_idx,
             &format!("（CrabMate 流结束报错：{}）", acc.error_preview),
         )
         .await?;
@@ -835,7 +810,164 @@ async fn crabmate_turn_with_feishu(
     } else {
         acc.answer
     };
-    reply_text_segments(st, message_id, &final_text).await?;
+    let title = if acc.saw_error {
+        "完成（部分报错）"
+    } else {
+        "CrabMate 执行完成"
+    };
+    reply_turn_result_card_and_remainder(
+        st,
+        message_id,
+        title,
+        &final_text,
+        card_cap,
+        &mut follow_idx,
+    )
+    .await?;
+    Ok(())
+}
+
+async fn consume_sse_stream_to_accum(
+    st: &FeishuBridgeState,
+    message_id: &str,
+    chat_id: &str,
+    approval_session_id: Option<&str>,
+    resp: reqwest::Response,
+    acc: &mut StreamAccum,
+    follow_idx: &mut u64,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let _conv_hdr = resp
+        .headers()
+        .get("x-conversation-id")
+        .and_then(|h| h.to_str().ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+
+    let mut buf = String::new();
+    let mut stream = resp.bytes_stream();
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(
+            |e: reqwest::Error| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) },
+        )?;
+        buf.push_str(&String::from_utf8_lossy(&chunk));
+        for block in take_complete_sse_blocks(&mut buf) {
+            dispatch_one_sse_block_to_feishu(
+                st,
+                message_id,
+                chat_id,
+                approval_session_id,
+                &block,
+                acc,
+                follow_idx,
+            )
+            .await?;
+        }
+    }
+    if !buf.trim().is_empty() {
+        buf.push_str("\n\n");
+        for block in take_complete_sse_blocks(&mut buf) {
+            dispatch_one_sse_block_to_feishu(
+                st,
+                message_id,
+                chat_id,
+                approval_session_id,
+                &block,
+                acc,
+                follow_idx,
+            )
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+async fn dispatch_one_sse_block_to_feishu(
+    st: &FeishuBridgeState,
+    message_id: &str,
+    chat_id: &str,
+    approval_session_id: Option<&str>,
+    block: &str,
+    acc: &mut StreamAccum,
+    follow_idx: &mut u64,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let (appr, status_lines) = dispatch_sse_event_block_collect(block, acc);
+    if !st.cfg.quiet_sse_status {
+        for line in status_lines {
+            *follow_idx = follow_idx.saturating_add(1);
+            reply_followup_text_message(st, message_id, *follow_idx, &line).await?;
+        }
+    }
+    for notice in appr {
+        if let Some(sid) = approval_session_id {
+            resolve_one_tool_approval(st, message_id, chat_id, sid, &notice, follow_idx).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn reply_turn_result_card_and_remainder(
+    st: &FeishuBridgeState,
+    message_id: &str,
+    title: &str,
+    final_text: &str,
+    card_cap: usize,
+    follow_idx: &mut u64,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let (card_body, remainder) = split_for_result_card(final_text, card_cap);
+    *follow_idx = follow_idx.saturating_add(1);
+    let card_uuid = format!("{message_id}-result-{follow_idx}");
+    let card = feishu_tool_card::turn_result_card(title, &card_body);
+    let mut seq_after = *follow_idx;
+    if reply_interactive_card(st, message_id, &card_uuid, &card)
+        .await
+        .is_err()
+    {
+        warn!("feishu result card failed; fallback text");
+        seq_after = seq_after.saturating_add(1);
+        reply_followup_text_message(
+            st,
+            message_id,
+            seq_after,
+            &format!("{title}\n{}", card_body),
+        )
+        .await?;
+    }
+    if !remainder.is_empty() {
+        reply_text_chunks_followup(st, message_id, seq_after, &remainder, 3500).await?;
+    }
+    Ok(())
+}
+
+fn split_for_result_card(s: &str, max_body_chars: usize) -> (String, String) {
+    let t = s.trim();
+    if t.is_empty() {
+        return ("（无正文）".to_string(), String::new());
+    }
+    let n = t.chars().count();
+    if n <= max_body_chars {
+        return (t.to_string(), String::new());
+    }
+    let head_len = max_body_chars.saturating_sub(30).max(80);
+    let head: String = t.chars().take(head_len).collect();
+    let card_body = format!("{head}\n…（摘要已截断，下文单独发送）");
+    let tail: String = t.chars().skip(head_len).collect();
+    (card_body, tail)
+}
+
+async fn reply_text_chunks_followup(
+    st: &FeishuBridgeState,
+    message_id: &str,
+    mut start_seq: u64,
+    text: &str,
+    chunk_max: usize,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let parts = split_reply_for_feishu(text, chunk_max);
+    for seg in parts {
+        start_seq = start_seq.saturating_add(1);
+        reply_followup_text_message(st, message_id, start_seq, &seg).await?;
+    }
     Ok(())
 }
 
@@ -1000,21 +1132,15 @@ async fn resolve_one_tool_approval(
     Ok(())
 }
 
-async fn reply_tool_approval_interactive_card(
+async fn reply_interactive_card(
     st: &FeishuBridgeState,
     message_id: &str,
     uuid: &str,
-    notice: &crate::sse_consumer::CommandApprovalNotice,
-    approval_session_id: &str,
+    card: &Value,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let token = get_tenant_access_token(st).await?;
     let url = format!("https://open.feishu.cn/open-apis/im/v1/messages/{message_id}/reply");
-    let card = feishu_tool_card::tool_approval_interactive_content(
-        &notice.command,
-        &clip_one_line(&notice.args, 1200),
-        approval_session_id,
-    );
-    let content = serde_json::to_string(&card)?;
+    let content = serde_json::to_string(card)?;
     let body = json!({
         "content": content,
         "msg_type": "interactive",
@@ -1044,6 +1170,21 @@ async fn reply_tool_approval_interactive_card(
     Ok(())
 }
 
+async fn reply_tool_approval_interactive_card(
+    st: &FeishuBridgeState,
+    message_id: &str,
+    uuid: &str,
+    notice: &crate::sse_consumer::CommandApprovalNotice,
+    approval_session_id: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let card = feishu_tool_card::tool_approval_interactive_content(
+        &notice.command,
+        &clip_one_line(&notice.args, 1200),
+        approval_session_id,
+    );
+    reply_interactive_card(st, message_id, uuid, &card).await
+}
+
 fn clip_one_line(s: &str, max_chars: usize) -> String {
     let t = s.trim().replace('\n', " ");
     let count = t.chars().count();
@@ -1055,22 +1196,6 @@ fn clip_one_line(s: &str, max_chars: usize) -> String {
             .collect::<String>()
             + "…"
     }
-}
-
-async fn reply_text_segments(
-    st: &FeishuBridgeState,
-    message_id: &str,
-    text: &str,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let parts = split_reply_for_feishu(text, 3500);
-    for (i, seg) in parts.iter().enumerate() {
-        if i == 0 {
-            reply_text_message(st, message_id, seg).await?;
-        } else {
-            reply_followup_text_message(st, message_id, i as u64, seg).await?;
-        }
-    }
-    Ok(())
 }
 
 async fn reply_followup_text_message(
@@ -1334,6 +1459,8 @@ mod tests {
             tool_approval_mode: FeishuToolApprovalMode::DenyAll,
             tool_decision_secret: None,
             tool_decision_timeout_secs: 300,
+            quiet_sse_status: false,
+            result_card_max_body_chars: 3500,
         };
         let headers = HeaderMap::new();
         assert!(!verify_lark_signature_if_needed(&cfg, &headers, "{}").unwrap());
@@ -1371,6 +1498,8 @@ mod tests {
             tool_approval_mode: FeishuToolApprovalMode::DenyAll,
             tool_decision_secret: None,
             tool_decision_timeout_secs: 300,
+            quiet_sse_status: false,
+            result_card_max_body_chars: 3500,
         };
         let v = json!({ "header": { "token": "vtok" } });
         assert!(verify_event_verification_token(&cfg, &v).is_ok());
@@ -1388,5 +1517,14 @@ mod tests {
         });
         assert!(message_mentions_bot_open_id(&m, "ou_bot_1"));
         assert!(!message_mentions_bot_open_id(&m, "ou_other"));
+    }
+
+    #[test]
+    fn split_for_result_card_splits_tail() {
+        let s = "x".repeat(100);
+        let (card, tail) = split_for_result_card(&s, 50);
+        assert!(card.contains('…'));
+        assert!(!tail.is_empty());
+        assert!(card.chars().count() + tail.chars().count() >= s.chars().count());
     }
 }

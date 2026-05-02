@@ -138,6 +138,33 @@ pub fn card_callback_error_toast_zh(body: &str) -> Value {
     })
 }
 
+/// 本轮结束后的**只读结果卡片**（无按钮）：标题 + 正文摘要；正文会先截断以防超过飞书卡片限制。
+pub fn turn_result_card(title: &str, body: &str) -> Value {
+    let body_safe = truncate_plain(body, 3500);
+    json!({
+        "config": { "wide_screen_mode": true },
+        "header": {
+            "title": { "tag": "plain_text", "content": truncate_plain(title, 100) },
+            "template": "blue"
+        },
+        "elements": [
+            {
+                "tag": "div",
+                "text": {
+                    "tag": "plain_text",
+                    "content": body_safe
+                }
+            },
+            {
+                "tag": "note",
+                "elements": [
+                    { "tag": "plain_text", "content": "长耗时任务期间仅显示本摘要；详细过程见 CrabMate 日志。" }
+                ]
+            }
+        ]
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,5 +190,22 @@ mod tests {
             parse_card_tool_decision(&v),
             Some(("feishu:om_x".into(), "allow_once".into()))
         );
+    }
+
+    #[test]
+    fn turn_result_card_has_header() {
+        let c = turn_result_card("完成", "hello");
+        assert!(c.get("header").is_some());
+    }
+
+    #[test]
+    fn turn_result_card_truncates_long_body_in_builder() {
+        let long = "a".repeat(5000);
+        let c = turn_result_card("T", &long);
+        let body = c
+            .pointer("/elements/0/text/content")
+            .and_then(|x| x.as_str())
+            .unwrap_or("");
+        assert!(body.len() < long.len());
     }
 }
