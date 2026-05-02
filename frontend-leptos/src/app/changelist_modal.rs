@@ -12,7 +12,7 @@ use crate::i18n::{self, load_locale_from_storage};
 use crate::message_render::fragment_to_chat_safe_html;
 use crate::session_sync::SessionSyncState;
 
-use super::app_shell_ctx::AppShellCtx;
+use super::app_shell_ctx::ChangelistModalSignals;
 
 /// `changelist_fetch_nonce` 递增后拉取 `GET /workspace/changelog`；`nonce==0` 时不请求。
 pub(super) fn wire_changelist_fetch_effects(
@@ -90,8 +90,8 @@ pub(super) fn wire_changelist_body_inner_html(
     });
 }
 
-pub fn changelist_modal_view(ctx: AppShellCtx) -> impl IntoView {
-    let AppShellCtx {
+pub fn changelist_modal_view(signals: ChangelistModalSignals) -> impl IntoView {
+    let ChangelistModalSignals {
         changelist_modal_open,
         locale,
         changelist_modal_loading,
@@ -99,8 +99,7 @@ pub fn changelist_modal_view(ctx: AppShellCtx) -> impl IntoView {
         changelist_modal_rev,
         changelist_fetch_nonce,
         changelist_body_ref,
-        ..
-    } = ctx;
+    } = signals;
     let dialog_ref = NodeRef::<Div>::new();
 
     Effect::new({

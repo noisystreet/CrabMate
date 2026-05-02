@@ -53,6 +53,7 @@ pub fn App() -> impl IntoView {
     let approval_modal_signals = app_ctx.approval_modal_signals();
     let settings_page_view_input = app_ctx.settings_page_view_input();
     let mobile_shell_header_signals = app_ctx.mobile_shell_header_signals();
+    let changelist_modal_signals = app_ctx.changelist_modal_signals();
 
     view! {
         <div
@@ -95,7 +96,7 @@ pub fn App() -> impl IntoView {
 
             {settings_modal_view(app_ctx.clone())}
 
-            {changelist_modal_view(app_ctx.clone())}
+            {changelist_modal_view(changelist_modal_signals)}
 
             <ApprovalModal signals=approval_modal_signals />
 

@@ -33,6 +33,18 @@ pub struct MobileShellHeaderSignals {
     pub new_session: Rc<dyn Fn()>,
 }
 
+/// 变更集预览模态所需句柄（阶段 B：避免向 `changelist_modal_view` 传递整份 [`AppShellCtx`]）。
+#[derive(Clone, Copy)]
+pub struct ChangelistModalSignals {
+    pub changelist_modal_open: RwSignal<bool>,
+    pub locale: RwSignal<Locale>,
+    pub changelist_modal_loading: RwSignal<bool>,
+    pub changelist_modal_err: RwSignal<Option<String>>,
+    pub changelist_modal_rev: RwSignal<u64>,
+    pub changelist_fetch_nonce: RwSignal<u64>,
+    pub changelist_body_ref: NodeRef<Div>,
+}
+
 type SideResizeHandlesCell = Rc<
     RefCell<
         Option<(
@@ -112,6 +124,18 @@ pub struct AppShellCtx {
 }
 
 impl AppShellCtx {
+    pub fn changelist_modal_signals(&self) -> ChangelistModalSignals {
+        ChangelistModalSignals {
+            changelist_modal_open: self.changelist_modal_open,
+            locale: self.locale,
+            changelist_modal_loading: self.changelist_modal_loading,
+            changelist_modal_err: self.changelist_modal_err,
+            changelist_modal_rev: self.changelist_modal_rev,
+            changelist_fetch_nonce: self.changelist_fetch_nonce,
+            changelist_body_ref: self.changelist_body_ref,
+        }
+    }
+
     pub fn mobile_shell_header_signals(&self) -> MobileShellHeaderSignals {
         MobileShellHeaderSignals {
             mobile_nav_open: self.mobile_nav_open,
