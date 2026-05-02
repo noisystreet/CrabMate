@@ -16,7 +16,7 @@ use tokio::time::{Duration, sleep};
 use crabmate_sse_protocol::StreamEndReason;
 
 use crate::AppState;
-use crate::agent_errors::is_user_cancelled_run_agent_error;
+use crate::agent::agent_turn::AgentTurnJobOutcomeKind;
 use crate::agent_role_turn::{
     filter_tools_for_agent_role, persisted_agent_role_after_turn, turn_allow_for_web_or_cli_job,
 };
@@ -963,50 +963,53 @@ async fn stream_job_outcome_after_agent_turn(
         }
         Err(e) => {
             let e_text = e.to_string();
-            if cancelled_by_signal || e.is_user_flow_cancelled() {
-                info!(
-                    target: "crabmate",
-                    "chat stream 任务已取消 job_id={} reason={}",
-                    job_id,
-                    e_text
-                );
-                (false, true, None, StreamEndReason::Cancelled)
-            } else if crate::agent::plan_artifact::is_staged_plan_invalid_run_agent_turn_error(
-                &e_text,
-            ) {
-                warn!(
-                    target: "crabmate",
-                    "chat stream 任务结束（staged_plan_invalid 前缀错误，多为旧服务端或非常规路径） job_id={} detail={}",
-                    job_id,
-                    e_text
-                );
-                (
-                    false,
-                    false,
-                    Some("staged_plan_invalid".to_string()),
-                    StreamEndReason::Fallback,
-                )
-            } else {
-                error!(
-                    target: "crabmate",
-                    "chat stream 任务失败 job_id={} err_kind=agent_turn {}",
-                    job_id,
-                    e.diag_log_kv(),
-                );
-                let err_body = e.sse_error_payload(Some(job_id));
-                let err_line = crate::sse::encode_message(crate::sse::SsePayload::Error(err_body));
-                let _ = crate::sse::send_string_logged(
-                    sse_tx,
-                    err_line,
-                    "chat_job_queue::stream agent_turn_error",
-                )
-                .await;
-                (
-                    false,
-                    false,
-                    e.short_detail_for_job_log(),
-                    StreamEndReason::NoOutput,
-                )
+            match e.job_queue_stream_outcome_kind(cancelled_by_signal) {
+                AgentTurnJobOutcomeKind::UserCancelled => {
+                    info!(
+                        target: "crabmate",
+                        "chat stream 任务已取消 job_id={} reason={}",
+                        job_id,
+                        e_text
+                    );
+                    (false, true, None, StreamEndReason::Cancelled)
+                }
+                AgentTurnJobOutcomeKind::StagedPlanInvalidLegacy => {
+                    warn!(
+                        target: "crabmate",
+                        "chat stream 任务结束（staged_plan_invalid 前缀错误，多为旧服务端或非常规路径） job_id={} detail={}",
+                        job_id,
+                        e_text
+                    );
+                    (
+                        false,
+                        false,
+                        Some("staged_plan_invalid".to_string()),
+                        StreamEndReason::Fallback,
+                    )
+                }
+                AgentTurnJobOutcomeKind::FailureEmitSseError => {
+                    error!(
+                        target: "crabmate",
+                        "chat stream 任务失败 job_id={} err_kind=agent_turn {}",
+                        job_id,
+                        e.diag_log_kv(),
+                    );
+                    let err_body = e.sse_error_payload(Some(job_id));
+                    let err_line =
+                        crate::sse::encode_message(crate::sse::SsePayload::Error(err_body));
+                    let _ = crate::sse::send_string_logged(
+                        sse_tx,
+                        err_line,
+                        "chat_job_queue::stream agent_turn_error",
+                    )
+                    .await;
+                    (
+                        false,
+                        false,
+                        e.short_detail_for_job_log(),
+                        StreamEndReason::NoOutput,
+                    )
+                }
             }
         }
     }
@@ -1384,33 +1387,33 @@ async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
             }
         }
         Err(e) => {
-            let cancelled =
-                e.is_user_flow_cancelled() || is_user_cancelled_run_agent_error(&e.to_string());
-            let staged_invalid =
-                crate::agent::plan_artifact::is_staged_plan_invalid_run_agent_turn_error(
-                    &e.to_string(),
-                );
-            if cancelled {
-                info!(
-                    target: "crabmate",
-                    "chat json 任务已取消 job_id={} err_kind=cancelled {}",
-                    job_id,
-                    e.diag_log_kv(),
-                );
-            } else if staged_invalid {
-                warn!(
-                    target: "crabmate",
-                    "chat json 任务结束（分阶段规划解析失败） job_id={} err_kind=staged_plan_invalid {}",
-                    job_id,
-                    e.diag_log_kv(),
-                );
-            } else {
-                error!(
-                    target: "crabmate",
-                    "chat json 任务失败 job_id={} err_kind=agent_turn {}",
-                    job_id,
-                    e.diag_log_kv(),
-                );
+            let jq_outcome = e.job_queue_json_outcome_kind();
+            let cancelled = matches!(jq_outcome, AgentTurnJobOutcomeKind::UserCancelled);
+            match jq_outcome {
+                AgentTurnJobOutcomeKind::UserCancelled => {
+                    info!(
+                        target: "crabmate",
+                        "chat json 任务已取消 job_id={} err_kind=cancelled {}",
+                        job_id,
+                        e.diag_log_kv(),
+                    );
+                }
+                AgentTurnJobOutcomeKind::StagedPlanInvalidLegacy => {
+                    warn!(
+                        target: "crabmate",
+                        "chat json 任务结束（分阶段规划解析失败） job_id={} err_kind=staged_plan_invalid {}",
+                        job_id,
+                        e.diag_log_kv(),
+                    );
+                }
+                AgentTurnJobOutcomeKind::FailureEmitSseError => {
+                    error!(
+                        target: "crabmate",
+                        "chat json 任务失败 job_id={} err_kind=agent_turn {}",
+                        job_id,
+                        e.diag_log_kv(),
+                    );
+                }
             }
             let prev = e.short_detail_for_job_log();
             if reply_tx.send(Err(ChatJsonJobFailure::Agent(e))).is_err() {

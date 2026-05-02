@@ -255,9 +255,9 @@ async fn outer_loop_execute_tools_round(
     Ok(())
 }
 
-/// 单 Agent 外循环内一次迭代的**粗粒度**阶段（与 `sub_phase` 正交，仅用于 `tracing` 排障）。
+/// 单 Agent 外循环内一次迭代的**粗粒度**阶段（与 `AgentTurnSubPhase` 正交，仅用于 `tracing` 排障）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum OuterLoopStep {
+enum OuterLoopIterationPhase {
     /// 通过迭代守卫后、准备 planner 上下文前（`use_executor_model` 已更新）。
     IterationEnter,
     /// `prepare_messages_for_model` 等准备完成，即将 `per_plan_call_model_retrying`。
@@ -270,7 +270,7 @@ enum OuterLoopStep {
     ToolsExecute,
 }
 
-impl OuterLoopStep {
+impl OuterLoopIterationPhase {
     fn as_str(self) -> &'static str {
         match self {
             Self::IterationEnter => "iteration_enter",
@@ -300,7 +300,7 @@ pub(crate) async fn run_agent_outer_loop(
         tracing::debug!(
             target: "crabmate::agent_turn",
             outer_loop_fsm = "single_agent_outer",
-            outer_loop_step = OuterLoopStep::IterationEnter.as_str(),
+            outer_loop_step = OuterLoopIterationPhase::IterationEnter.as_str(),
             iteration = iteration_count,
             use_executor_model = p.turn.use_executor_model,
             "outer_loop iteration enter"
@@ -316,7 +316,7 @@ pub(crate) async fn run_agent_outer_loop(
         tracing::debug!(
             target: "crabmate::agent_turn",
             outer_loop_fsm = "single_agent_outer",
-            outer_loop_step = OuterLoopStep::PrepareContextDone.as_str(),
+            outer_loop_step = OuterLoopIterationPhase::PrepareContextDone.as_str(),
             iteration = iteration_count,
             "outer_loop planner context prepared"
         );
@@ -375,7 +375,7 @@ pub(crate) async fn run_agent_outer_loop(
         tracing::debug!(
             target: "crabmate::agent_turn",
             outer_loop_fsm = "single_agent_outer",
-            outer_loop_step = OuterLoopStep::AfterPlannerModel.as_str(),
+            outer_loop_step = OuterLoopIterationPhase::AfterPlannerModel.as_str(),
             iteration = iteration_count,
             finish_reason = finish_reason.as_str(),
             "outer_loop assistant pushed"
@@ -390,7 +390,7 @@ pub(crate) async fn run_agent_outer_loop(
         tracing::debug!(
             target: "crabmate::agent_turn",
             outer_loop_fsm = "single_agent_outer",
-            outer_loop_step = OuterLoopStep::ReflectDecided.as_str(),
+            outer_loop_step = OuterLoopIterationPhase::ReflectDecided.as_str(),
             iteration = iteration_count,
             reflect_branch = reflect_ctl.as_trace_str(),
             "outer_loop reflect branch"
@@ -405,7 +405,7 @@ pub(crate) async fn run_agent_outer_loop(
         tracing::debug!(
             target: "crabmate::agent_turn",
             outer_loop_fsm = "single_agent_outer",
-            outer_loop_step = OuterLoopStep::ToolsExecute.as_str(),
+            outer_loop_step = OuterLoopIterationPhase::ToolsExecute.as_str(),
             iteration = iteration_count,
             "outer_loop tools execute"
         );
