@@ -1,4 +1,8 @@
 //! 单轮 Agent 编排层错误：映射 **llm 层**失败为可观测子阶段（`sub_phase`）与用户/SSE 语义。
+//!
+//! **`chat_job_queue`** 对 `Err(RunAgentTurnError)` 的分流见 **[`AgentTurnJobOutcomeKind`]** 与
+//! **[`RunAgentTurnError::job_queue_stream_outcome_kind`] / [`RunAgentTurnError::job_queue_json_outcome_kind`]**
+//!（避免 worker 内重复的字符串前缀判断）。
 
 use std::error::Error;
 use std::fmt;
@@ -100,7 +104,48 @@ pub enum RunAgentTurnError {
     },
 }
 
+/// Web 队列 worker 对 [`RunAgentTurnError`] 的**分流种类**（与 `chat_job_queue` 中 `Err` 分支一致）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AgentTurnJobOutcomeKind {
+    /// 用户/协作取消（含 `Display` 串上的取消启发式）。
+    UserCancelled,
+    /// 历史 **`staged_plan_invalid:`** 前缀（多为旧路径；一般不发送 SSE Error 帧）。
+    StagedPlanInvalidLegacy,
+    /// 发送 **`sse_error_payload`** 的失败路径。
+    FailureEmitSseError,
+}
+
 impl RunAgentTurnError {
+    /// 非流式 JSON 任务：`Err` 分支与 [`Self::job_queue_stream_outcome_kind`] 共用核心归类（无 `cancelled_by_signal`）。
+    pub(crate) fn job_queue_json_outcome_kind(&self) -> AgentTurnJobOutcomeKind {
+        self.job_queue_outcome_kind_inner()
+    }
+
+    /// 流式任务：`cancelled_by_signal` 优先；否则与 JSON 共用归类。
+    pub(crate) fn job_queue_stream_outcome_kind(
+        &self,
+        cancelled_by_signal: bool,
+    ) -> AgentTurnJobOutcomeKind {
+        if cancelled_by_signal {
+            AgentTurnJobOutcomeKind::UserCancelled
+        } else {
+            self.job_queue_outcome_kind_inner()
+        }
+    }
+
+    fn job_queue_outcome_kind_inner(&self) -> AgentTurnJobOutcomeKind {
+        let text = self.to_string();
+        if self.is_user_flow_cancelled()
+            || crate::agent_errors::is_user_cancelled_run_agent_error(&text)
+        {
+            AgentTurnJobOutcomeKind::UserCancelled
+        } else if crate::agent::plan_artifact::is_staged_plan_invalid_run_agent_turn_error(&text) {
+            AgentTurnJobOutcomeKind::StagedPlanInvalidLegacy
+        } else {
+            AgentTurnJobOutcomeKind::FailureEmitSseError
+        }
+    }
+
     /// 与 [`Self::sse_error_payload`] 顶层 `code` 一致；供 `POST /chat` JSON 等 HTTP 层复用。
     pub fn public_error_code(&self) -> &'static str {
         match self {
@@ -475,6 +520,38 @@ mod tests {
         let api = e.http_api_error();
         assert_eq!(api.code, "LLM_REQUEST_FAILED");
         assert!(api.reason_code.is_none());
+    }
+
+    #[test]
+    fn job_queue_stream_cancelled_by_signal_overrides_staged_invalid() {
+        use crate::agent::plan_artifact::{
+            PlanArtifactError, staged_plan_invalid_run_agent_turn_error,
+        };
+        let msg = staged_plan_invalid_run_agent_turn_error(PlanArtifactError::NotFound);
+        let e = RunAgentTurnError::Other {
+            phase: AgentTurnSubPhase::Planner,
+            message: msg,
+        };
+        assert_eq!(
+            e.job_queue_stream_outcome_kind(true),
+            AgentTurnJobOutcomeKind::UserCancelled
+        );
+        assert_eq!(
+            e.job_queue_stream_outcome_kind(false),
+            AgentTurnJobOutcomeKind::StagedPlanInvalidLegacy
+        );
+    }
+
+    #[test]
+    fn job_queue_json_cancelled_string_matches_user_flow() {
+        let e = RunAgentTurnError::Other {
+            phase: AgentTurnSubPhase::Planner,
+            message: LLM_CANCELLED_ERROR.to_string(),
+        };
+        assert_eq!(
+            e.job_queue_json_outcome_kind(),
+            AgentTurnJobOutcomeKind::UserCancelled
+        );
     }
 
     #[test]

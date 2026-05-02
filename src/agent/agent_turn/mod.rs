@@ -34,7 +34,7 @@ mod sub_agent_policy;
 mod turn_orchestration;
 
 // 供 crate 内其它模块与文档链接；本文件自身不直接使用这些符号。
-pub(crate) use errors::{AgentTurnSubPhase, RunAgentTurnError};
+pub(crate) use errors::{AgentTurnJobOutcomeKind, AgentTurnSubPhase, RunAgentTurnError};
 #[allow(unused_imports)]
 pub(crate) use execute_tools::{
     ExecuteToolsBatchOutcome, WebExecuteCtx, per_execute_tools_web, sse_sender_closed,
