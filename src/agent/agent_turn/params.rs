@@ -18,7 +18,8 @@ use tokio::sync::mpsc;
 
 use super::errors::AgentTurnSubPhase;
 use super::messages::{
-    insert_separator_after_last_user_for_turn, push_assistant_merging_trailing_empty_placeholder,
+    insert_separator_after_last_user_for_turn, pop_last_staged_planner_coach_user_if_present,
+    push_assistant_merging_trailing_empty_placeholder,
 };
 use crate::agent::hierarchy::HierarchyRunnerParams;
 use crate::agent::plan_artifact::PlanStepExecutorKind;
@@ -213,6 +214,15 @@ impl<'a> RunLoopTurnState<'a> {
         }
     }
 
+    /// 分阶段规划：若末条为教练 / ensemble 注入的临时 user，则弹出并递增 **`messages_revision`**。
+    pub(crate) fn pop_last_staged_planner_coach_user_if_present(&mut self) {
+        let n = self.messages.len();
+        pop_last_staged_planner_coach_user_if_present(self.messages);
+        if self.messages.len() != n {
+            self.bump_messages_revision();
+        }
+    }
+
     /// 首轮 P 前注入的意图门控临时 system（消费后即清空）。
     pub(crate) fn take_intent_turn_gate_hint(&mut self) -> Option<String> {
         self.turn_planner_hints.take_intent_turn_gate_hint()
@@ -393,5 +403,31 @@ mod turn_planner_hints_tests {
         assert_eq!(turn.messages_buffer_revision(), 2);
         turn.retain_messages(|m| m.role != "tool");
         assert_eq!(turn.messages_buffer_revision(), 2);
+    }
+
+    #[test]
+    fn messages_revision_increments_when_coach_user_popped() {
+        use crate::agent::agent_turn::errors::AgentTurnSubPhase;
+        use crate::agent::plan_optimizer::STAGED_PLAN_OPTIMIZER_COACH_MARK;
+        use crate::types::{LlmSeedOverride, Message};
+
+        let coach = format!("{STAGED_PLAN_OPTIMIZER_COACH_MARK}\ntext");
+        let mut storage = vec![Message::user_only("u"), Message::user_only(coach)];
+        let mut turn = super::RunLoopTurnState {
+            messages: &mut storage,
+            messages_revision: 0,
+            sub_phase: AgentTurnSubPhase::Planner,
+            turn_planner_hints: TurnPlannerHints::default(),
+            temperature_override: None,
+            model_override: None,
+            use_executor_model: false,
+            executor_model_override: None,
+            executor_api_base: None,
+            executor_api_key: None,
+            seed_override: LlmSeedOverride::FromConfig,
+        };
+        turn.pop_last_staged_planner_coach_user_if_present();
+        assert_eq!(turn.messages.len(), 1);
+        assert_eq!(turn.messages_buffer_revision(), 1);
     }
 }
