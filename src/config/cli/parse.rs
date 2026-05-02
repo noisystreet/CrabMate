@@ -27,6 +27,78 @@ fn parse_output_mode(raw: Option<String>) -> Option<String> {
     })
 }
 
+fn resolve_http_bind_host(host_opt: Option<String>) -> String {
+    host_opt
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            std::env::var("CM_HTTP_HOST")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        })
+        .unwrap_or_else(|| "127.0.0.1".to_string())
+}
+
+/// 全局选项解析一次后供各子命令分支复用（降低 `build_parsed_cli_args` 的 `nloc`）。
+struct CliParseCtx {
+    config_path: Option<String>,
+    workspace_cli: Option<String>,
+    no_tools: bool,
+    log_file: Option<String>,
+    agent_role_cli: Option<String>,
+    llm_context_tokens_cli: Option<u32>,
+}
+
+impl CliParseCtx {
+    fn new(global: &GlobalOpts) -> Self {
+        let llm_context_tokens_cli = global.llm_context_tokens.filter(|&n| n > 0);
+        let agent_role_cli = global
+            .agent_role
+            .as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let log_file = global
+            .log
+            .as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        Self {
+            config_path: global.config.clone(),
+            workspace_cli: global.workspace.clone(),
+            no_tools: global.no_tools,
+            log_file,
+            agent_role_cli,
+            llm_context_tokens_cli,
+        }
+    }
+
+    fn base_parsed(&self) -> ParsedCliArgs {
+        ParsedCliArgs {
+            config_path: self.config_path.clone(),
+            agent_role_cli: self.agent_role_cli.clone(),
+            llm_context_tokens_cli: self.llm_context_tokens_cli,
+            chat_cli: ChatCliArgs::default(),
+            serve_port: None,
+            http_bind_host: resolve_http_bind_host(None),
+            workspace_cli: self.workspace_cli.clone(),
+            no_tools: self.no_tools,
+            no_web: false,
+            dry_run: false,
+            no_stream: false,
+            log_file: self.log_file.clone(),
+            bench_args: BenchmarkCliArgs::default(),
+            extra_cli: ExtraCliCommand::None,
+            save_session: None,
+            tool_replay: None,
+            plugin_init: None,
+            plugin_validate: None,
+            plugin_list: None,
+        }
+    }
+}
+
 /// 解析命令行：支持 **`serve` / `repl` / `chat` / `bench` / `config` / `doctor` / `models` / `probe` / `mcp` / `save-session`**（兼容别名 **`export-session`**）、**`tool-replay`** 子命令，**`help`**（同 `--help` 或 `help <子命令>`），并兼容未写子命令时的历史平铺 flag（`--serve`、`--query` 等）。
 ///
 /// `chat --stdin` 时若读取标准输入失败则返回 [`io::Error`]。
@@ -57,107 +129,23 @@ fn build_parsed_cli_args(
     root: RootCli,
     stdin_fixture: Option<String>,
 ) -> io::Result<ParsedCliArgs> {
-    let GlobalOpts {
-        config,
-        workspace,
-        no_tools,
-        log,
-        agent_role,
-        llm_context_tokens,
-    } = root.global;
-    let llm_context_tokens_cli = llm_context_tokens.filter(|&n| n > 0);
-    let agent_role_cli = agent_role
-        .as_ref()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-
-    let log_path = log
-        .as_ref()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-
-    let http_bind_host = |host_opt: Option<String>| {
-        host_opt
-            .as_ref()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .or_else(|| {
-                std::env::var("CM_HTTP_HOST")
-                    .ok()
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-            })
-            .unwrap_or_else(|| "127.0.0.1".to_string())
+    let ctx = CliParseCtx::new(&root.global);
+    let cmd = match root.command {
+        None => return Ok(ctx.base_parsed()),
+        Some(c) => c,
     };
+    let mut b = ctx.base_parsed();
 
-    Ok(match root.command {
-        None => ParsedCliArgs {
-            config_path: config,
-            agent_role_cli: agent_role_cli.clone(),
-            llm_context_tokens_cli,
-            chat_cli: ChatCliArgs::default(),
-            serve_port: None,
-            http_bind_host: http_bind_host(None),
-            workspace_cli: workspace,
-            no_tools,
-            no_web: false,
-            dry_run: false,
-            no_stream: false,
-            log_file: log_path,
-            bench_args: BenchmarkCliArgs::default(),
-            extra_cli: ExtraCliCommand::None,
-            save_session: None,
-            tool_replay: None,
-            plugin_init: None,
-            plugin_validate: None,
-            plugin_list: None,
-        },
-        Some(Commands::Serve(s)) => {
-            let port = s.port.or(s.port_positional).or(Some(8080));
-            ParsedCliArgs {
-                config_path: config,
-                agent_role_cli: agent_role_cli.clone(),
-                llm_context_tokens_cli,
-                chat_cli: ChatCliArgs::default(),
-                serve_port: port,
-                http_bind_host: http_bind_host(s.host),
-                workspace_cli: workspace,
-                no_tools,
-                no_web: s.no_web,
-                dry_run: false,
-                no_stream: false,
-                log_file: log_path,
-                bench_args: BenchmarkCliArgs::default(),
-                extra_cli: ExtraCliCommand::None,
-                save_session: None,
-                tool_replay: None,
-                plugin_init: None,
-                plugin_validate: None,
-                plugin_list: None,
-            }
+    match cmd {
+        Commands::Serve(s) => {
+            b.serve_port = s.port.or(s.port_positional).or(Some(8080));
+            b.http_bind_host = resolve_http_bind_host(s.host);
+            b.no_web = s.no_web;
         }
-        Some(Commands::Repl(r)) => ParsedCliArgs {
-            config_path: config,
-            agent_role_cli: agent_role_cli.clone(),
-            llm_context_tokens_cli,
-            chat_cli: ChatCliArgs::default(),
-            serve_port: None,
-            http_bind_host: http_bind_host(None),
-            workspace_cli: workspace,
-            no_tools,
-            no_web: false,
-            dry_run: false,
-            no_stream: r.no_stream,
-            log_file: log_path,
-            bench_args: BenchmarkCliArgs::default(),
-            extra_cli: ExtraCliCommand::None,
-            save_session: None,
-            tool_replay: None,
-            plugin_init: None,
-            plugin_validate: None,
-            plugin_list: None,
-        },
-        Some(Commands::Chat(c)) => {
+        Commands::Repl(r) => {
+            b.no_stream = r.no_stream;
+        }
+        Commands::Chat(c) => {
             let inline_user_text = if c.user_prompt_file.is_some() {
                 None
             } else if c.stdin {
@@ -169,177 +157,49 @@ fn build_parsed_cli_args(
                 c.query.clone()
             };
             let chat_output = parse_output_mode(c.output);
-            ParsedCliArgs {
-                config_path: config,
-                agent_role_cli: agent_role_cli.clone(),
-                llm_context_tokens_cli,
-                chat_cli: ChatCliArgs {
-                    inline_user_text,
-                    user_prompt_file: c.user_prompt_file,
-                    system_prompt_file: c.system_prompt_file,
-                    messages_json_file: c.messages_json_file,
-                    message_file: c.message_file,
-                    output: chat_output,
-                    no_stream: c.no_stream,
-                    yes_run_command: c.yes,
-                    approve_commands: c.approve_commands,
-                },
-                serve_port: None,
-                http_bind_host: http_bind_host(None),
-                workspace_cli: workspace,
-                no_tools,
-                no_web: false,
-                dry_run: false,
+            b.chat_cli = ChatCliArgs {
+                inline_user_text,
+                user_prompt_file: c.user_prompt_file,
+                system_prompt_file: c.system_prompt_file,
+                messages_json_file: c.messages_json_file,
+                message_file: c.message_file,
+                output: chat_output,
                 no_stream: c.no_stream,
-                log_file: log_path,
-                bench_args: BenchmarkCliArgs::default(),
-                extra_cli: ExtraCliCommand::None,
-                save_session: None,
-                tool_replay: None,
-                plugin_init: None,
-                plugin_validate: None,
-                plugin_list: None,
-            }
+                yes_run_command: c.yes,
+                approve_commands: c.approve_commands,
+            };
+            b.no_stream = c.no_stream;
         }
-        Some(Commands::Bench(b)) => ParsedCliArgs {
-            config_path: config,
-            agent_role_cli: agent_role_cli.clone(),
-            llm_context_tokens_cli,
-            chat_cli: ChatCliArgs::default(),
-            serve_port: None,
-            http_bind_host: http_bind_host(None),
-            workspace_cli: workspace,
-            no_tools,
-            no_web: false,
-            dry_run: false,
-            no_stream: false,
-            log_file: log_path,
-            bench_args: BenchmarkCliArgs {
-                benchmark: b.benchmark,
-                batch: b.batch,
-                batch_output: b.batch_output,
-                task_timeout: b.task_timeout,
-                max_tool_rounds: b.max_tool_rounds,
-                resume: b.resume,
-                system_prompt_file: b.bench_system_prompt,
-            },
-            extra_cli: ExtraCliCommand::None,
-            save_session: None,
-            tool_replay: None,
-            plugin_init: None,
-            plugin_validate: None,
-            plugin_list: None,
-        },
-        // `config` 子命令恒走配置检查并退出，与是否写 `--dry-run` 无关（`--dry-run` 保留为显式别名）。
-        Some(Commands::Config(_c)) => ParsedCliArgs {
-            config_path: config,
-            agent_role_cli: agent_role_cli.clone(),
-            llm_context_tokens_cli,
-            chat_cli: ChatCliArgs::default(),
-            serve_port: None,
-            http_bind_host: http_bind_host(None),
-            workspace_cli: workspace,
-            no_tools,
-            no_web: false,
-            dry_run: true,
-            no_stream: false,
-            log_file: log_path,
-            bench_args: BenchmarkCliArgs::default(),
-            extra_cli: ExtraCliCommand::None,
-            save_session: None,
-            tool_replay: None,
-            plugin_init: None,
-            plugin_validate: None,
-            plugin_list: None,
-        },
-        Some(Commands::Doctor) => ParsedCliArgs {
-            config_path: config,
-            agent_role_cli: agent_role_cli.clone(),
-            llm_context_tokens_cli,
-            chat_cli: ChatCliArgs::default(),
-            serve_port: None,
-            http_bind_host: http_bind_host(None),
-            workspace_cli: workspace,
-            no_tools,
-            no_web: false,
-            dry_run: false,
-            no_stream: false,
-            log_file: log_path,
-            bench_args: BenchmarkCliArgs::default(),
-            extra_cli: ExtraCliCommand::Doctor,
-            save_session: None,
-            tool_replay: None,
-            plugin_init: None,
-            plugin_validate: None,
-            plugin_list: None,
-        },
-        Some(Commands::Models) => ParsedCliArgs {
-            config_path: config,
-            agent_role_cli: agent_role_cli.clone(),
-            llm_context_tokens_cli,
-            chat_cli: ChatCliArgs::default(),
-            serve_port: None,
-            http_bind_host: http_bind_host(None),
-            workspace_cli: workspace,
-            no_tools,
-            no_web: false,
-            dry_run: false,
-            no_stream: false,
-            log_file: log_path,
-            bench_args: BenchmarkCliArgs::default(),
-            extra_cli: ExtraCliCommand::Models,
-            save_session: None,
-            tool_replay: None,
-            plugin_init: None,
-            plugin_validate: None,
-            plugin_list: None,
-        },
-        Some(Commands::Probe) => ParsedCliArgs {
-            config_path: config,
-            agent_role_cli: agent_role_cli.clone(),
-            llm_context_tokens_cli,
-            chat_cli: ChatCliArgs::default(),
-            serve_port: None,
-            http_bind_host: http_bind_host(None),
-            workspace_cli: workspace,
-            no_tools,
-            no_web: false,
-            dry_run: false,
-            no_stream: false,
-            log_file: log_path,
-            bench_args: BenchmarkCliArgs::default(),
-            extra_cli: ExtraCliCommand::Probe,
-            save_session: None,
-            tool_replay: None,
-            plugin_init: None,
-            plugin_validate: None,
-            plugin_list: None,
-        },
-        Some(Commands::SaveSession(e)) => ParsedCliArgs {
-            config_path: config,
-            agent_role_cli: agent_role_cli.clone(),
-            llm_context_tokens_cli,
-            chat_cli: ChatCliArgs::default(),
-            serve_port: None,
-            http_bind_host: http_bind_host(None),
-            workspace_cli: workspace,
-            no_tools,
-            no_web: false,
-            dry_run: false,
-            no_stream: false,
-            log_file: log_path,
-            bench_args: BenchmarkCliArgs::default(),
-            extra_cli: ExtraCliCommand::None,
-            save_session: Some(SaveSessionCli {
+        Commands::Bench(be) => {
+            b.bench_args = BenchmarkCliArgs {
+                benchmark: be.benchmark,
+                batch: be.batch,
+                batch_output: be.batch_output,
+                task_timeout: be.task_timeout,
+                max_tool_rounds: be.max_tool_rounds,
+                resume: be.resume,
+                system_prompt_file: be.bench_system_prompt,
+            };
+        }
+        Commands::Config(_) => {
+            b.dry_run = true;
+        }
+        Commands::Doctor => {
+            b.extra_cli = ExtraCliCommand::Doctor;
+        }
+        Commands::Models => {
+            b.extra_cli = ExtraCliCommand::Models;
+        }
+        Commands::Probe => {
+            b.extra_cli = ExtraCliCommand::Probe;
+        }
+        Commands::SaveSession(e) => {
+            b.save_session = Some(SaveSessionCli {
                 format: e.format,
                 session_file: e.session_file,
-            }),
-            tool_replay: None,
-            plugin_init: None,
-            plugin_validate: None,
-            plugin_list: None,
-        },
-        Some(Commands::ToolReplay(tr)) => {
+            });
+        }
+        Commands::ToolReplay(tr) => {
             let tr_cli = match tr.sub {
                 ToolReplaySubCmd::Export(e) => ToolReplayCli::Export {
                     session_file: e.session_file,
@@ -351,61 +211,22 @@ fn build_parsed_cli_args(
                     compare_recorded: r.compare_recorded,
                 },
             };
-            ParsedCliArgs {
-                config_path: config,
-                agent_role_cli: agent_role_cli.clone(),
-                llm_context_tokens_cli,
-                chat_cli: ChatCliArgs::default(),
-                serve_port: None,
-                http_bind_host: http_bind_host(None),
-                workspace_cli: workspace,
-                no_tools,
-                no_web: false,
-                dry_run: false,
-                no_stream: false,
-                log_file: log_path,
-                bench_args: BenchmarkCliArgs::default(),
-                extra_cli: ExtraCliCommand::None,
-                save_session: None,
-                tool_replay: Some(tr_cli),
-                plugin_init: None,
-                plugin_validate: None,
-                plugin_list: None,
-            }
+            b.tool_replay = Some(tr_cli);
         }
-        Some(Commands::Mcp(m)) => {
+        Commands::Mcp(m) => {
             let (extra_cli, no_tools_mcp) = match m.sub {
-                McpSubCmd::List(l) => (ExtraCliCommand::McpList { probe: l.probe }, no_tools),
+                McpSubCmd::List(l) => (ExtraCliCommand::McpList { probe: l.probe }, ctx.no_tools),
                 McpSubCmd::Serve(s) => (
                     ExtraCliCommand::McpServe {
                         no_tools: s.no_tools,
                     },
-                    no_tools,
+                    ctx.no_tools,
                 ),
             };
-            ParsedCliArgs {
-                config_path: config,
-                agent_role_cli: agent_role_cli.clone(),
-                llm_context_tokens_cli,
-                chat_cli: ChatCliArgs::default(),
-                serve_port: None,
-                http_bind_host: http_bind_host(None),
-                workspace_cli: workspace,
-                no_tools: no_tools_mcp,
-                no_web: false,
-                dry_run: false,
-                no_stream: false,
-                log_file: log_path,
-                bench_args: BenchmarkCliArgs::default(),
-                extra_cli,
-                save_session: None,
-                tool_replay: None,
-                plugin_init: None,
-                plugin_validate: None,
-                plugin_list: None,
-            }
+            b.extra_cli = extra_cli;
+            b.no_tools = no_tools_mcp;
         }
-        Some(Commands::Plugin(p)) => {
+        Commands::Plugin(p) => {
             let (plugin_init, plugin_validate, plugin_list) = match p.sub {
                 PluginSubCmd::Init(i) => (
                     Some(PluginInitCli {
@@ -438,27 +259,11 @@ fn build_parsed_cli_args(
                     None,
                 ),
             };
-            ParsedCliArgs {
-                config_path: config,
-                agent_role_cli: agent_role_cli.clone(),
-                llm_context_tokens_cli,
-                chat_cli: ChatCliArgs::default(),
-                serve_port: None,
-                http_bind_host: http_bind_host(None),
-                workspace_cli: workspace,
-                no_tools,
-                no_web: false,
-                dry_run: false,
-                no_stream: false,
-                log_file: log_path,
-                bench_args: BenchmarkCliArgs::default(),
-                extra_cli: ExtraCliCommand::None,
-                save_session: None,
-                tool_replay: None,
-                plugin_init,
-                plugin_validate,
-                plugin_list,
-            }
+            b.plugin_init = plugin_init;
+            b.plugin_validate = plugin_validate;
+            b.plugin_list = plugin_list;
         }
-    })
+    }
+
+    Ok(b)
 }
