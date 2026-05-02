@@ -2,6 +2,10 @@
 //! **`resolve_parse_with_assistant`** 将 **`Result<AgentReplyPlanV1, PlanArtifactError>`** 与
 //! **`entered_from_step_execution_round`** 映射为 **`PreparedPlannerParseOutcome`**（纯函数，无 IO）。
 //!
+//! **`PreparedPlannerRoute`**：首轮解析后对 **`run_staged_plan_with_prepared_request`** 主路径的**终端路由**
+//!（静默结束 / 降级 outer_loop / 进入 post-parse 管线）；与 **`PreparedPlannerParseOutcome`** 的关系见
+//! **[`resolve_prepared_planner_route`]**。
+//!
 //! ensemble / 优化轮 **是否调用** 仍由 **`planner_round_fsm`** + **`post_parse_pipeline_fsm`** 计算；
 //! 本模块仅收拢解析分支，避免 `mod.rs` 深层嵌套 `match`。
 //!
@@ -11,6 +15,75 @@ use crate::agent::plan_artifact::{AgentReplyPlanV1, PlanArtifactError};
 use crate::types::Message;
 
 use super::planner_parse_fsm::{StagedPlannerParseRoute, staged_planner_parse_route};
+
+/// 首轮规划解析完成后，对 **`run_staged_plan_with_prepared_request`** 的三向路由（**不含** assistant `Message`；
+/// 调用方保留单次 LLM 返回的 `msg` 供 `push` / `outer_loop`）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PreparedPlannerRoute {
+    /// `resolve_parse_with_assistant` → **`QuietFinish`**（重入且无结构化计划时收敛）。
+    QuietFinish,
+    /// 解析失败或非结构化回复 → 降级 **`run_agent_outer_loop`**。
+    DegradeToOuterLoop,
+    /// 已得合法 **`AgentReplyPlanV1`** → **`prepared_post_parse_schedule`** 及后续管线。
+    ContinueWithPlan { plan: AgentReplyPlanV1 },
+}
+
+impl PreparedPlannerRoute {
+    pub(crate) fn as_static_str(&self) -> &'static str {
+        match self {
+            Self::QuietFinish => "quiet_finish",
+            Self::DegradeToOuterLoop => "degrade_to_outer_loop",
+            Self::ContinueWithPlan { .. } => "continue_with_plan",
+        }
+    }
+}
+
+/// 合并 **`resolve_parse_with_assistant`** 与降级路径日志，产出 **`PreparedPlannerRoute`**（无 IO）。
+/// `assistant_msg` 仅用于传入解析器（克隆一次）；调用方保留原始 **`Message`** 供后续 `push`。
+pub(crate) fn resolve_prepared_planner_route(
+    parse_result: Result<AgentReplyPlanV1, PlanArtifactError>,
+    entered_from_step_execution_round: bool,
+    assistant_msg: &Message,
+    merged_for_log: String,
+    parse_err_detail: Option<String>,
+    degrade_like_not_found: bool,
+) -> PreparedPlannerRoute {
+    match resolve_parse_with_assistant(
+        parse_result,
+        entered_from_step_execution_round,
+        assistant_msg.clone(),
+    ) {
+        PreparedPlannerParseOutcome::ContinueWithPlan { plan } => {
+            PreparedPlannerRoute::ContinueWithPlan { plan }
+        }
+        PreparedPlannerParseOutcome::QuietFinish => PreparedPlannerRoute::QuietFinish,
+        PreparedPlannerParseOutcome::DegradeToOuterLoop => {
+            if degrade_like_not_found {
+                log::debug!(
+                    target: "crabmate",
+                    "分阶段规划未产出结构化任务 (可能是通识问答或直接回复) merged_len={} merged_preview={}；降级为常规循环",
+                    merged_for_log.chars().count(),
+                    crate::redact::preview_chars(
+                        merged_for_log.as_str(),
+                        crate::redact::MESSAGE_LOG_PREVIEW_CHARS,
+                    )
+                );
+            } else {
+                log::warn!(
+                    target: "crabmate",
+                    "staged_plan_invalid parse_err={} merged_len={} merged_preview={}；降级为常规工具循环",
+                    parse_err_detail.unwrap_or_default(),
+                    merged_for_log.chars().count(),
+                    crate::redact::preview_chars(
+                        merged_for_log.as_str(),
+                        crate::redact::MESSAGE_LOG_PREVIEW_CHARS,
+                    )
+                );
+            }
+            PreparedPlannerRoute::DegradeToOuterLoop
+        }
+    }
+}
 
 /// 解析一步的终端路由（调用方执行 IO：`push` / `outer_loop` / 继续后续 pipeline）。
 #[derive(Debug)]
@@ -90,12 +163,48 @@ mod tests {
     }
 
     #[test]
-    fn not_found_not_entered_degrades() {
-        let o = resolve_parse_with_assistant(
+    fn resolve_prepared_route_ok_matches_continue() {
+        let plan = minimal_plan();
+        let msg = Message::user_only("u");
+        let r = resolve_prepared_planner_route(
+            Ok(plan.clone()),
+            false,
+            &msg,
+            String::new(),
+            None,
+            false,
+        );
+        assert!(matches!(r, PreparedPlannerRoute::ContinueWithPlan { .. }));
+        assert_eq!(r.as_static_str(), "continue_with_plan");
+    }
+
+    #[test]
+    fn resolve_prepared_route_not_found_entered_is_quiet() {
+        let msg = Message::user_only("u");
+        let r = resolve_prepared_planner_route(
+            Err(PlanArtifactError::NotFound),
+            true,
+            &msg,
+            String::new(),
+            None,
+            true,
+        );
+        assert!(matches!(r, PreparedPlannerRoute::QuietFinish));
+        assert_eq!(r.as_static_str(), "quiet_finish");
+    }
+
+    #[test]
+    fn resolve_prepared_route_not_found_not_entered_is_degrade() {
+        let msg = Message::user_only("x");
+        let r = resolve_prepared_planner_route(
             Err(PlanArtifactError::NotFound),
             false,
-            Message::user_only("x"),
+            &msg,
+            "merged".to_string(),
+            Some("nf".into()),
+            true,
         );
-        assert!(matches!(o, PreparedPlannerParseOutcome::DegradeToOuterLoop));
+        assert!(matches!(r, PreparedPlannerRoute::DegradeToOuterLoop));
+        assert_eq!(r.as_static_str(), "degrade_to_outer_loop");
     }
 }

@@ -146,7 +146,8 @@
 
 | 日期 | 说明 |
 |------|------|
-| 2026-05-02 | **`staged/orchestrator`**：**`StagedRoundOrchestratorPhase`** 取代与 **`turn_fsm::StagedTurnPhase`** 同名的 **`StagedTurnPhase`**；**`run_staged_plan_steps_loop`** 增加 **`crabmate::staged`** 下 **`staged_fsm=steps_loop`** / **`steps_loop_phase`** 观测。 |
+| 2026-05-02 | **`staged/prepared_parse_fsm`**：**`PreparedPlannerRoute`**、**`resolve_prepared_planner_route`**；**`run_staged_plan_with_prepared_request`** 首轮出口表驱动 + **`crabmate::staged`** **`prepared_request`** 观测；**`continue_prepared_plan_after_first_round`** 抽离 post-parse 分支。 |
+| 2026-05-02 | **`staged/orchestrator`**：**`StagedRoundOrchestratorPhase`**（与 **`turn_fsm::StagedTurnPhase`** 区分）；**`run_staged_plan_steps_loop`** 增加 **`crabmate::staged`**（**`staged_fsm=steps_loop`**、**`steps_loop_phase`**）。 |
 | 2026-05-02 | **`agent_turn/hierarchical_intent_route`**：**`HierarchicalPostIntentRoute`** / **`HierarchicalDiscourseFallbackReason`** + **`resolve_hierarchical_post_intent_route`**；**`hierarchy.rs`** 话语型回落路径写入 **`hierarchical_post_intent_route`** / **`hierarchical_discourse_fallback_reason`** 与回放 JSON。 |
 | 2026-05-01 | **`agent_turn/intent/context.rs`**：**`build_intent_routing_context`** 统一装配 **`IntentContext`**，**`run_dispatch`** 与 **`intent/at_turn_start`** 共用。 |
 | 2026-05-01 | **`docs/规划执行验证架构.md`** §2.5：分层 **`hierarchy`** 与 **PER/staged** 双轨职责表；源码索引补 **`hierarchy`** 入口。 |
