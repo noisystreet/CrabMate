@@ -31,6 +31,7 @@ mod reflect;
 mod run_dispatch;
 mod staged;
 mod sub_agent_policy;
+mod task_level_evidence;
 mod turn_orchestration;
 
 // 供 crate 内其它模块与文档链接；本文件自身不直接使用这些符号。
