@@ -1,4 +1,4 @@
-//! `crabmate-im-bridge`：飞书事件订阅 Webhook → CrabMate **`POST /chat`** → 飞书回复消息。
+//! `crabmate-im-bridge`：飞书事件订阅 Webhook → CrabMate **`POST /chat/stream`** → 飞书回复消息。
 //!
 //! ## 环境变量
 //!
@@ -18,7 +18,10 @@
 //! | `FEISHU_MAX_MESSAGE_JSON_CHARS` | 否 | **`interactive`/未知类型** 等 `content` 摘要最大字符数，默认 **`12000`**（至少 **256**） |
 //! | `FEISHU_ASYNC_WORKER` | 否 | 默认 **`1`**：`im.message.receive_v1` **先入队并立即 HTTP 200**，后台再调 CrabMate；**`0`** 为同步处理（适合调试） |
 //! | `FEISHU_EVENT_QUEUE_CAPACITY` | 否 | 异步队列长度，默认 **`100`**；满时返回 **503**（`FEISHU_EVENT_QUEUE_FULL`）以便飞书重试 |
-//! | `FEISHU_WORKSPACE_ROOT_TEMPLATE` | 否 | 若设置：每通会话在 **`POST /chat`** 前调用 **`POST /workspace`**；可用 **`{chat_id}`** 占位（飞书 `message.chat_id`），须落在 CrabMate **`workspace_allowed_roots`** 内 |
+//! | `FEISHU_WORKSPACE_ROOT_TEMPLATE` | 否 | 若设置：每通会话在调用 CrabMate 前 **`POST /workspace`**；可用 **`{chat_id}`** 占位（飞书 `message.chat_id`），须落在 CrabMate **`workspace_allowed_roots`** 内 |
+//! | `FEISHU_TOOL_APPROVAL_MODE` | 否 | 默认 **`wait_message`**：`deny_all` \| **`default_allow_once`** \| **`wait_http`** \| **`wait_message`**（见设计文档） |
+//! | `FEISHU_TOOL_DECISION_SECRET` | 条件 | **`wait_http`** 必填；保护 **`POST /feishu/tool-decision`**（`Authorization: Bearer …` 或 **`X-API-Key`**） |
+//! | `FEISHU_TOOL_DECISION_TIMEOUT_SECS` | 否 | 默认 **`600`**（至少 **5**）：**`wait_http`** / **`wait_message`** 等待人工决策的最长秒数，超时按拒绝 |
 //! | `LISTEN_ADDR` | 否 | 默认 `127.0.0.1:9988` |
 //! | `RUST_LOG` | 否 | 如 `info,crabmate_im_bridge=debug` |
 //!
@@ -30,7 +33,9 @@ use std::env;
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use crabmate_im_bridge::{CrabmateClient, FeishuBridgeConfig, FeishuBridgeState, build_router};
+use crabmate_im_bridge::{
+    CrabmateClient, FeishuBridgeConfig, FeishuBridgeState, FeishuToolApprovalMode, build_router,
+};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
@@ -66,6 +71,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
+    let tool_decision_secret = env::var("FEISHU_TOOL_DECISION_SECRET")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let tool_approval_mode = parse_tool_approval_mode(
+        env::var("FEISHU_TOOL_APPROVAL_MODE")
+            .unwrap_or_else(|_| "wait_message".into())
+            .as_str(),
+    )?;
+    if tool_approval_mode == FeishuToolApprovalMode::WaitHttp && tool_decision_secret.is_none() {
+        return Err(
+            "FEISHU_TOOL_APPROVAL_MODE=wait_http requires FEISHU_TOOL_DECISION_SECRET".into(),
+        );
+    }
+    let tool_decision_timeout_secs = env_u64("FEISHU_TOOL_DECISION_TIMEOUT_SECS", 600)?.max(5);
     let listen: SocketAddr = env::var("LISTEN_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:9988".into())
         .parse()?;
@@ -91,6 +111,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             .ok()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty()),
+        tool_approval_mode,
+        tool_decision_secret,
+        tool_decision_timeout_secs,
     };
     let state = FeishuBridgeState::try_new(cfg)?;
     let app = build_router(state).layer(TraceLayer::new_for_http());
@@ -139,5 +162,19 @@ fn env_bool(name: &str, default: bool) -> Result<bool, String> {
                 _ => Err(format!("invalid boolean for {name}: {s}")),
             }
         }
+    }
+}
+
+fn parse_tool_approval_mode(raw: &str) -> Result<FeishuToolApprovalMode, String> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "" | "wait_message" => Ok(FeishuToolApprovalMode::WaitMessage),
+        "deny_all" | "deny" => Ok(FeishuToolApprovalMode::DenyAll),
+        "default_allow_once" | "auto_allow_once" | "allow_once_auto" => {
+            Ok(FeishuToolApprovalMode::DefaultAllowOnce)
+        }
+        "wait_http" | "http" => Ok(FeishuToolApprovalMode::WaitHttp),
+        other => Err(format!(
+            "invalid FEISHU_TOOL_APPROVAL_MODE: {other} (deny_all | default_allow_once | wait_http | wait_message)"
+        )),
     }
 }

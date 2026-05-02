@@ -53,7 +53,7 @@
 | **非流式 JSON** | **`POST /chat`**：适合短问答、脚本聚合；需自行从响应 JSON 提取助手最终文本。 |
 | **SSE 流式** | **`POST /chat/stream`**：`text/event-stream`、事件 **`id:`**、**`Last-Event-ID`** + 请求体 **`stream_resume`**、响应头 **`x-conversation-id`** / **`x-stream-job-id`**；控制面与正文区分见 **`docs/SSE协议.md`**。 |
 | **会话与分叉** | **`conversation_id`**、**`POST /chat/branch`**、**`GET /conversation/messages`**（含 **`revision`**）。 |
-| **审批** | SSE **`command_approval_request`** + **`POST /chat/approval`**；非流式 **`/chat`** 路径对审批的语义与流式不完全相同，集成前须阅读路由文档与 OpenAPI。 |
+| **审批** | SSE **`command_approval_request`** + **`POST /chat/approval`**；非流式 **`/chat`** 队列路径**未**挂载 `WebToolRuntime`，**不宜**作为需审批工具的集成入口。IM 桥接（**`crabmate-im-bridge`**）已改为消费 **`/chat/stream`** 并转发审批。 |
 | **热重载** | **`POST /config/reload`**；**`web_api_bearer_token` 中间件是否生效**仍以 **`serve` 重启**为准（见配置重载说明）。 |
 | **健康检查** | **`GET /health`**。 |
 

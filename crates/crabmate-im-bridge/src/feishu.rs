@@ -2,7 +2,8 @@
 //! - **明文**：直接解析 JSON。
 //! - **加密体**（顶层 **`encrypt`**）：按飞书文档 **AES-256-CBC** 解密后再解析（需配置 **`FEISHU_ENCRYPT_KEY`**）。
 //! - `url_verification`：返回 **`{"challenge":"..."}`**。
-//! - `im.message.receive_v1`（文本）：默认 **先入队再立即 HTTP 200**（异步 ACK），后台 worker 调 **`POST /chat`** 并回复飞书；可关闭为同步处理（见配置）。若配置 **`FEISHU_WORKSPACE_ROOT_TEMPLATE`**，则在 **`POST /chat`** 前调用 **`POST /workspace`** 对齐 CrabMate Web 工作区（支持 **`{chat_id}`** 占位）。
+//! - `im.message.receive_v1`（文本）：默认 **先入队再立即 HTTP 200**（异步 ACK），后台 worker 调 **`POST /chat/stream`** 并回复飞书；可关闭为同步处理（见配置）。若配置 **`FEISHU_WORKSPACE_ROOT_TEMPLATE`**，则在调用 CrabMate 前 **`POST /workspace`** 对齐工作区（支持 **`{chat_id}`** 占位）。
+//! - **工具审批**：通过 **`approval_session_id`** 走 CrabMate **`/chat/stream`** + **`POST /chat/approval`**；可选 **`FEISHU_TOOL_APPROVAL_MODE=wait_http`** 时由运维 **`POST /feishu/tool-decision`** 人工决策（须配置 **`FEISHU_TOOL_DECISION_SECRET`**）。
 //!
 //! 签名校验（可选）：若配置了 **Encrypt Key**，且请求带 **`X-Lark-Signature`** 等头，则按飞书文档
 //! `SHA256(timestamp + nonce + encrypt_key + body)` 十六进制小写比对（**原始 HTTP body 字符串**；**URL 校验请求可能无签名头**，此时跳过校验）。
@@ -14,22 +15,46 @@ use std::time::{Duration, Instant};
 
 use axum::body::Bytes;
 use axum::extract::State;
+use axum::http::header::AUTHORIZATION;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use dashmap::DashMap;
+use futures_util::StreamExt;
 use hex::FromHex;
+use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{Mutex, mpsc, oneshot};
 use tracing::{error, warn};
 
 use crate::crabmate::{CrabmateClient, CrabmateError};
 use crate::feishu_decrypt::{FeishuDecryptError, maybe_decrypt_event_json};
 use crate::feishu_message_content::incoming_content_as_user_text;
 use crate::feishu_workspace::expand_workspace_root_template;
+use crate::sse_consumer::{
+    StreamAccum, dispatch_sse_event_block_collect, take_complete_sse_blocks,
+};
+
+/// 飞书侧敏感工具审批策略（与 CrabMate **`POST /chat/stream`** 的 **`approval_session_id`** 配合）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FeishuToolApprovalMode {
+    /// 不传 **`approval_session_id`**，敏感工具按服务端默认（通常等同拒绝或需 Web）。
+    DenyAll,
+    /// 传 **`approval_session_id`**，收到审批帧时**自动** `allow_once`（仅可信环境）。
+    DefaultAllowOnce,
+    /// 传 **`approval_session_id`**；收到审批后通过 **`POST /feishu/tool-decision`**（须密钥）提交决策，或超时视为 **`deny`**。
+    WaitHttp,
+    /// 传 **`approval_session_id`**；用户在下一条飞书消息中发送 **`!允许一次`** / **`!永久允许`** / **`!拒绝`**（同一会话内）。
+    WaitMessage,
+}
+
+/// 等待人工 **`POST /feishu/tool-decision`** 的挂起项。
+struct PendingToolDecision {
+    reply_tx: oneshot::Sender<String>,
+}
 
 /// 飞书桥接配置（通常由 `crabmate-im-bridge` 二进制从环境变量组装）。
 #[derive(Clone)]
@@ -59,8 +84,14 @@ pub struct FeishuBridgeConfig {
     pub async_worker: bool,
     /// 异步队列容量（`try_send` 满时返回 **503** 以便飞书重试）；仅在 **`async_worker`** 为 true 时生效，至少为 **1**。
     pub event_queue_capacity: usize,
-    /// 若非空：每通会话在 **`POST /chat`** 前调用 **`POST /workspace`**；支持 **`{chat_id}`** 占位（飞书 `message.chat_id`）。
+    /// 若非空：每通会话在调用 CrabMate 前 **`POST /workspace`**；支持 **`{chat_id}`** 占位（飞书 `message.chat_id`）。
     pub workspace_root_template: Option<String>,
+    /// 飞书侧工具审批模式（见 [`FeishuToolApprovalMode`]）。
+    pub tool_approval_mode: FeishuToolApprovalMode,
+    /// **`FEISHU_TOOL_DECISION_SECRET`**：保护 **`POST /feishu/tool-decision`**；**`WaitHttp`** 模式下必填。
+    pub tool_decision_secret: Option<String>,
+    /// **`WaitHttp`** 下等待人工决策的最长秒数（超时按 **`deny`** 提交）；至少 **5**。
+    pub tool_decision_timeout_secs: u64,
 }
 
 pub struct FeishuBridgeState {
@@ -71,9 +102,13 @@ pub struct FeishuBridgeState {
     seen_lark_nonces: DashMap<String, Instant>,
     /// `None`：同步处理；`Some(tx)`：异步 worker 消费。
     event_tx: Option<mpsc::Sender<Value>>,
-    /// 与飞书 worker 单线程一致：避免并发 `POST /workspace` / `POST /chat` 交错。
+    /// 与飞书 worker 单线程一致：避免并发 `POST /workspace` / CrabMate 请求交错。
     turn_lock: Mutex<()>,
     last_workspace_path: Mutex<Option<String>>,
+    /// `approval_session_id` → 等待中的 **`POST /feishu/tool-decision`**（仅 **`WaitHttp`**）。
+    pending_tool_decisions: DashMap<String, PendingToolDecision>,
+    /// 单会话（`chat_id`）当前挂起的审批 **`approval_session_id`**（**`WaitMessage`** 与 **`WaitHttp`** 均写入，便于 `@` 指令完成）。
+    pending_tool_session_by_chat: DashMap<String, String>,
 }
 
 struct TenantTokenCache {
@@ -109,6 +144,8 @@ impl FeishuBridgeState {
             event_tx,
             turn_lock: Mutex::new(()),
             last_workspace_path: Mutex::new(None),
+            pending_tool_decisions: DashMap::new(),
+            pending_tool_session_by_chat: DashMap::new(),
         });
 
         if let Some(mut rx) = event_rx {
@@ -130,11 +167,131 @@ pub fn build_router(state: Arc<FeishuBridgeState>) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/feishu/events", post(feishu_events))
+        .route("/feishu/tool-decision", post(feishu_tool_decision))
         .with_state(state)
 }
 
 async fn health() -> impl IntoResponse {
     (StatusCode::OK, "ok")
+}
+
+#[derive(Debug, Deserialize)]
+struct ToolDecisionBody {
+    approval_session_id: String,
+    /// **`deny`** / **`allow_once`** / **`allow_always`**（与 CrabMate **`POST /chat/approval`** 一致）。
+    decision: String,
+}
+
+async fn feishu_tool_decision(
+    State(st): State<Arc<FeishuBridgeState>>,
+    headers: HeaderMap,
+    Json(body): Json<ToolDecisionBody>,
+) -> impl IntoResponse {
+    let Some(secret) = st
+        .cfg
+        .tool_decision_secret
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "tool decision endpoint disabled" })),
+        )
+            .into_response();
+    };
+
+    let bearer_ok = headers
+        .get(AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| {
+            s.strip_prefix("Bearer ")
+                .or_else(|| s.strip_prefix("bearer "))
+        })
+        .is_some_and(|t| constant_time_eq_trimmed(t, secret));
+    let key_ok = headers
+        .get("x-api-key")
+        .or_else(|| headers.get("X-API-Key"))
+        .and_then(|h| h.to_str().ok())
+        .is_some_and(|t| constant_time_eq_trimmed(t, secret));
+    if !bearer_ok && !key_ok {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "invalid or missing credential" })),
+        )
+            .into_response();
+    }
+
+    let session_id = body.approval_session_id.trim().to_string();
+    if session_id.is_empty() || session_id.len() > 128 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "invalid approval_session_id" })),
+        )
+            .into_response();
+    }
+
+    let decision = normalize_tool_decision(&body.decision);
+    let Some(decision) = decision else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "decision must be deny / allow_once / allow_always" })),
+        )
+            .into_response();
+    };
+
+    let Some((_, pending)) = st.pending_tool_decisions.remove(&session_id) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "no pending approval for this session" })),
+        )
+            .into_response();
+    };
+
+    if pending.reply_tx.send(decision.to_string()).is_err() {
+        warn!(%session_id, "tool decision receiver dropped");
+        return (
+            StatusCode::GONE,
+            Json(json!({ "error": "approval waiter gone" })),
+        )
+            .into_response();
+    }
+
+    (StatusCode::OK, Json(json!({ "ok": true }))).into_response()
+}
+
+fn constant_time_eq_trimmed(a: &str, b: &str) -> bool {
+    let a = a.trim();
+    let b = b.trim();
+    let ab = a.as_bytes();
+    let bb = b.as_bytes();
+    if ab.len() != bb.len() {
+        return false;
+    }
+    ab.ct_eq(bb).into()
+}
+
+fn normalize_tool_decision(raw: &str) -> Option<&'static str> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "deny" => Some("deny"),
+        "allow_once" => Some("allow_once"),
+        "allow_always" => Some("allow_always"),
+        _ => None,
+    }
+}
+
+fn feishu_message_command_decision(text: &str) -> Option<&'static str> {
+    let t = text.trim();
+    if t == "!拒绝" || t.eq_ignore_ascii_case("!deny") {
+        return Some("deny");
+    }
+    if t == "!允许一次" || t.eq_ignore_ascii_case("!allow_once") {
+        return Some("allow_once");
+    }
+    if t == "!永久允许" || t.eq_ignore_ascii_case("!allow_always") {
+        return Some("allow_always");
+    }
+    None
 }
 
 async fn feishu_events(
@@ -423,8 +580,6 @@ async fn handle_im_message_receive(
     st: &FeishuBridgeState,
     envelope: &Value,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let _turn = st.turn_lock.lock().await;
-
     let sender_type = envelope
         .pointer("/event/sender/sender_type")
         .and_then(|x| x.as_str())
@@ -491,6 +646,23 @@ async fn handle_im_message_receive(
         .and_then(|x| x.as_str())
         .unwrap_or("{}");
 
+    if st.cfg.tool_approval_mode == FeishuToolApprovalMode::WaitMessage
+        && let Some(session_id) = st
+            .pending_tool_session_by_chat
+            .get(&chat_id)
+            .map(|e| e.value().clone())
+        && msg_type == "text"
+        && let Ok(c) = serde_json::from_str::<Value>(content_raw)
+        && let Some(plain) = c.get("text").and_then(|x| x.as_str())
+        && let Some(dec) = feishu_message_command_decision(plain)
+        && let Some((_, pending)) = st.pending_tool_decisions.remove(&session_id)
+    {
+        let _ = pending.reply_tx.send(dec.to_string());
+        st.pending_tool_session_by_chat.remove(&chat_id);
+        reply_text_message(st, &message_id, "已收到审批，正在继续执行…").await?;
+        return Ok(());
+    }
+
     let Some(text) =
         incoming_content_as_user_text(msg_type, content_raw, st.cfg.max_message_content_json_chars)
     else {
@@ -502,27 +674,401 @@ async fn handle_im_message_receive(
         return Ok(());
     }
 
-    ensure_workspace_for_chat(st, &chat_id).await?;
+    {
+        let _turn = st.turn_lock.lock().await;
+        ensure_workspace_for_chat(st, &chat_id).await?;
+    }
 
+    crabmate_turn_with_feishu(st, &message_id, &chat_id, text).await?;
+    Ok(())
+}
+
+async fn crabmate_turn_with_feishu(
+    st: &FeishuBridgeState,
+    message_id: &str,
+    chat_id: &str,
+    user_text: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let conv = format!("feishu:{chat_id}");
-    let reply = match st.cfg.crabmate.chat_plain(text, Some(&conv)).await {
-        Ok(r) => r.reply,
+    let approval_session_id = match st.cfg.tool_approval_mode {
+        FeishuToolApprovalMode::DenyAll => None,
+        _ => Some(format!("feishu:{message_id}")),
+    };
+
+    let resp = match st
+        .cfg
+        .crabmate
+        .post_chat_stream(user_text, Some(&conv), approval_session_id.as_deref())
+        .await
+    {
+        Ok(r) => r,
         Err(CrabmateError::HttpStatus {
             status,
             body_preview,
         }) => {
-            warn!(status, %body_preview, "CrabMate /chat error");
-            format!("（CrabMate 返回 HTTP {status}，请检查服务与密钥。）")
+            warn!(status, %body_preview, "CrabMate /chat/stream error");
+            reply_text_message(
+                st,
+                message_id,
+                &format!("（CrabMate 返回 HTTP {status}，请检查服务与密钥。）"),
+            )
+            .await?;
+            return Ok(());
         }
         Err(e) => {
-            warn!(?e, "CrabMate /chat request failed");
-            format!("（调用 CrabMate 失败：{e}）")
+            warn!(?e, "CrabMate /chat/stream request failed");
+            reply_text_message(st, message_id, &format!("（调用 CrabMate 失败：{e}）")).await?;
+            return Ok(());
         }
     };
 
-    let clipped = clip_reply_for_feishu(&reply, 18_000);
-    reply_text_message(st, &message_id, &clipped).await?;
+    let _conv_hdr = resp
+        .headers()
+        .get("x-conversation-id")
+        .and_then(|h| h.to_str().ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+
+    let mut acc = StreamAccum::default();
+    let mut buf = String::new();
+    let mut follow_idx: u64 = 0;
+    let mut stream = resp.bytes_stream();
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(
+            |e: reqwest::Error| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) },
+        )?;
+        buf.push_str(&String::from_utf8_lossy(&chunk));
+        for block in take_complete_sse_blocks(&mut buf) {
+            let (appr, status_lines) = dispatch_sse_event_block_collect(&block, &mut acc);
+            for line in status_lines {
+                follow_idx = follow_idx.saturating_add(1);
+                reply_followup_text_message(st, message_id, follow_idx, &line).await?;
+            }
+            for notice in appr {
+                if let Some(ref sid) = approval_session_id {
+                    resolve_one_tool_approval(
+                        st,
+                        message_id,
+                        chat_id,
+                        sid,
+                        &notice,
+                        &mut follow_idx,
+                    )
+                    .await?;
+                }
+            }
+        }
+    }
+    if !buf.trim().is_empty() {
+        buf.push_str("\n\n");
+        for block in take_complete_sse_blocks(&mut buf) {
+            let (appr, status_lines) = dispatch_sse_event_block_collect(&block, &mut acc);
+            for line in status_lines {
+                follow_idx = follow_idx.saturating_add(1);
+                reply_followup_text_message(st, message_id, follow_idx, &line).await?;
+            }
+            for notice in appr {
+                if let Some(ref sid) = approval_session_id {
+                    resolve_one_tool_approval(
+                        st,
+                        message_id,
+                        chat_id,
+                        sid,
+                        &notice,
+                        &mut follow_idx,
+                    )
+                    .await?;
+                }
+            }
+        }
+    }
+
+    if acc.saw_error && acc.answer.trim().is_empty() {
+        reply_text_message(
+            st,
+            message_id,
+            &format!("（CrabMate 流结束报错：{}）", acc.error_preview),
+        )
+        .await?;
+        return Ok(());
+    }
+
+    let final_text = if acc.answer.trim().is_empty() {
+        "（本轮无正文输出）".to_string()
+    } else {
+        acc.answer
+    };
+    reply_text_segments(st, message_id, &final_text).await?;
     Ok(())
+}
+
+async fn resolve_one_tool_approval(
+    st: &FeishuBridgeState,
+    message_id: &str,
+    chat_id: &str,
+    approval_session_id: &str,
+    notice: &crate::sse_consumer::CommandApprovalNotice,
+    follow_idx: &mut u64,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    match st.cfg.tool_approval_mode {
+        FeishuToolApprovalMode::DenyAll => {
+            let _ = st
+                .cfg
+                .crabmate
+                .send_chat_approval(approval_session_id, "deny")
+                .await;
+        }
+        FeishuToolApprovalMode::DefaultAllowOnce => {
+            if let Err(e) = st
+                .cfg
+                .crabmate
+                .send_chat_approval(approval_session_id, "allow_once")
+                .await
+            {
+                warn!(?e, "send_chat_approval allow_once failed");
+            }
+            *follow_idx = follow_idx.saturating_add(1);
+            reply_followup_text_message(
+                st,
+                message_id,
+                *follow_idx,
+                &format!(
+                    "✅ 已自动允许一次：{} {}",
+                    notice.command,
+                    clip_one_line(&notice.args, 200)
+                ),
+            )
+            .await?;
+        }
+        FeishuToolApprovalMode::WaitHttp => {
+            let (tx, rx) = oneshot::channel();
+            st.pending_tool_decisions.insert(
+                approval_session_id.to_string(),
+                PendingToolDecision { reply_tx: tx },
+            );
+            st.pending_tool_session_by_chat
+                .insert(chat_id.to_string(), approval_session_id.to_string());
+            *follow_idx = follow_idx.saturating_add(1);
+            reply_followup_text_message(
+                st,
+                message_id,
+                *follow_idx,
+                &format!(
+                    "⏸ 需人工审批工具：{}\n参数摘要：{}\n请在桥接服务 POST /feishu/tool-decision（Bearer 或 X-API-Key 为 FEISHU_TOOL_DECISION_SECRET），body: {{\"approval_session_id\":\"{}\",\"decision\":\"deny|allow_once|allow_always\"}}",
+                    notice.command,
+                    clip_one_line(&notice.args, 400),
+                    approval_session_id
+                ),
+            )
+            .await?;
+
+            let timeout_secs = st.cfg.tool_decision_timeout_secs.max(5);
+            let decision = match tokio::time::timeout(Duration::from_secs(timeout_secs), rx).await {
+                Ok(Ok(d)) => d,
+                Ok(Err(_)) => {
+                    warn!("tool decision channel closed");
+                    let _ = st
+                        .cfg
+                        .crabmate
+                        .send_chat_approval(approval_session_id, "deny")
+                        .await;
+                    "deny".to_string()
+                }
+                Err(_) => {
+                    warn!("tool decision wait timeout; deny");
+                    "deny".to_string()
+                }
+            };
+            st.pending_tool_decisions.remove(approval_session_id);
+            st.pending_tool_session_by_chat.remove(chat_id);
+            if let Err(e) = st
+                .cfg
+                .crabmate
+                .send_chat_approval(approval_session_id, decision.trim())
+                .await
+            {
+                warn!(?e, "send_chat_approval after wait failed");
+            }
+        }
+        FeishuToolApprovalMode::WaitMessage => {
+            let (tx, rx) = oneshot::channel();
+            st.pending_tool_decisions.insert(
+                approval_session_id.to_string(),
+                PendingToolDecision { reply_tx: tx },
+            );
+            st.pending_tool_session_by_chat
+                .insert(chat_id.to_string(), approval_session_id.to_string());
+            *follow_idx = follow_idx.saturating_add(1);
+            reply_followup_text_message(
+                st,
+                message_id,
+                *follow_idx,
+                &format!(
+                    "⏸ 需你确认是否执行：{}\n参数摘要：{}\n请**下一条消息**发送其一：!允许一次 、 !永久允许 、 !拒绝",
+                    notice.command,
+                    clip_one_line(&notice.args, 400),
+                ),
+            )
+            .await?;
+
+            let timeout_secs = st.cfg.tool_decision_timeout_secs.max(5);
+            let decision = match tokio::time::timeout(Duration::from_secs(timeout_secs), rx).await {
+                Ok(Ok(d)) => d,
+                Ok(Err(_)) => "deny".to_string(),
+                Err(_) => {
+                    let _ = st
+                        .cfg
+                        .crabmate
+                        .send_chat_approval(approval_session_id, "deny")
+                        .await;
+                    "deny".to_string()
+                }
+            };
+            st.pending_tool_decisions.remove(approval_session_id);
+            st.pending_tool_session_by_chat.remove(chat_id);
+            if let Err(e) = st
+                .cfg
+                .crabmate
+                .send_chat_approval(approval_session_id, decision.trim())
+                .await
+            {
+                warn!(?e, "send_chat_approval after message wait failed");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn clip_one_line(s: &str, max_chars: usize) -> String {
+    let t = s.trim().replace('\n', " ");
+    let count = t.chars().count();
+    if count <= max_chars {
+        t
+    } else {
+        t.chars()
+            .take(max_chars.saturating_sub(1))
+            .collect::<String>()
+            + "…"
+    }
+}
+
+async fn reply_text_segments(
+    st: &FeishuBridgeState,
+    message_id: &str,
+    text: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let parts = split_reply_for_feishu(text, 3500);
+    for (i, seg) in parts.iter().enumerate() {
+        if i == 0 {
+            reply_text_message(st, message_id, seg).await?;
+        } else {
+            reply_followup_text_message(st, message_id, i as u64, seg).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn reply_followup_text_message(
+    st: &FeishuBridgeState,
+    root_message_id: &str,
+    seq: u64,
+    text: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let uuid = format!("{root_message_id}-{seq}");
+    reply_text_message_with_uuid(st, root_message_id, &uuid, text).await
+}
+
+async fn reply_text_message(
+    st: &FeishuBridgeState,
+    message_id: &str,
+    text: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    reply_text_message_with_uuid(st, message_id, message_id, text).await
+}
+
+async fn reply_text_message_with_uuid(
+    st: &FeishuBridgeState,
+    message_id: &str,
+    uuid: &str,
+    text: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let token = get_tenant_access_token(st).await?;
+    let url = format!("https://open.feishu.cn/open-apis/im/v1/messages/{message_id}/reply");
+    let content = serde_json::to_string(&json!({ "text": text }))?;
+    let body = json!({
+        "content": content,
+        "msg_type": "text",
+        "uuid": uuid,
+    });
+    let resp = st
+        .http
+        .post(url)
+        .header("Authorization", format!("Bearer {token}"))
+        .header("Content-Type", "application/json; charset=utf-8")
+        .json(&body)
+        .send()
+        .await?;
+    let status = resp.status();
+    let bytes = resp.bytes().await?;
+    if !status.is_success() {
+        let preview = String::from_utf8_lossy(&bytes).trim().to_string();
+        warn!(%status, %preview, "feishu reply API http error");
+        return Ok(());
+    }
+    let v: Value = serde_json::from_slice(&bytes)?;
+    let code = v.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
+    if code != 0 {
+        warn!(%code, body=%String::from_utf8_lossy(&bytes), "feishu reply API business error");
+    }
+    Ok(())
+}
+
+fn split_reply_for_feishu(s: &str, max_chars: usize) -> Vec<String> {
+    let max_chars = max_chars.max(256);
+    let count = s.chars().count();
+    if count <= max_chars {
+        return vec![s.to_string()];
+    }
+    let mut out = Vec::new();
+    let mut rest = s;
+    while !rest.is_empty() {
+        if rest.chars().count() <= max_chars {
+            out.push(rest.to_string());
+            break;
+        }
+        let chunk: String = rest.chars().take(max_chars).collect();
+        let split_at = chunk
+            .char_indices()
+            .rev()
+            .find(|(_, c)| *c == '\n')
+            .map(|(i, _)| i)
+            .or_else(|| {
+                chunk
+                    .char_indices()
+                    .rev()
+                    .find(|(_, c)| c.is_whitespace())
+                    .map(|(i, _)| i)
+            })
+            .unwrap_or_else(|| {
+                chunk
+                    .char_indices()
+                    .last()
+                    .map(|(i, c)| i + c.len_utf8())
+                    .unwrap_or(chunk.len())
+            });
+        let (a, b) = rest.split_at(split_at.min(rest.len()));
+        let piece = a.trim_end();
+        if !piece.is_empty() {
+            out.push(piece.to_string());
+        }
+        rest = b.trim_start();
+        if rest.is_empty() {
+            break;
+        }
+    }
+    out
 }
 
 async fn ensure_workspace_for_chat(
@@ -589,15 +1135,6 @@ fn strip_feishu_mention_placeholders(s: &str) -> String {
     out.trim().to_string()
 }
 
-fn clip_reply_for_feishu(s: &str, max_chars: usize) -> String {
-    let count = s.chars().count();
-    if count <= max_chars {
-        return s.to_string();
-    }
-    let take = max_chars.saturating_sub(8);
-    s.chars().take(take).collect::<String>() + "\n…（已截断）"
-}
-
 fn is_duplicate(map: &DashMap<String, Instant>, id: &str, ttl: Duration) -> bool {
     let now = Instant::now();
     if let Some(v) = map.get(id)
@@ -611,42 +1148,6 @@ fn is_duplicate(map: &DashMap<String, Instant>, id: &str, ttl: Duration) -> bool
         map.clear();
     }
     false
-}
-
-async fn reply_text_message(
-    st: &FeishuBridgeState,
-    message_id: &str,
-    text: &str,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let token = get_tenant_access_token(st).await?;
-    let url = format!("https://open.feishu.cn/open-apis/im/v1/messages/{message_id}/reply");
-    let content = serde_json::to_string(&json!({ "text": text }))?;
-    let body = json!({
-        "content": content,
-        "msg_type": "text",
-        "uuid": message_id,
-    });
-    let resp = st
-        .http
-        .post(url)
-        .header("Authorization", format!("Bearer {token}"))
-        .header("Content-Type", "application/json; charset=utf-8")
-        .json(&body)
-        .send()
-        .await?;
-    let status = resp.status();
-    let bytes = resp.bytes().await?;
-    if !status.is_success() {
-        let preview = String::from_utf8_lossy(&bytes).trim().to_string();
-        warn!(%status, %preview, "feishu reply API http error");
-        return Ok(());
-    }
-    let v: Value = serde_json::from_slice(&bytes)?;
-    let code = v.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
-    if code != 0 {
-        warn!(%code, body=%String::from_utf8_lossy(&bytes), "feishu reply API business error");
-    }
-    Ok(())
 }
 
 async fn get_tenant_access_token(
@@ -727,6 +1228,9 @@ mod tests {
             async_worker: false,
             event_queue_capacity: 1,
             workspace_root_template: None,
+            tool_approval_mode: FeishuToolApprovalMode::DenyAll,
+            tool_decision_secret: None,
+            tool_decision_timeout_secs: 300,
         };
         let headers = HeaderMap::new();
         assert!(!verify_lark_signature_if_needed(&cfg, &headers, "{}").unwrap());
@@ -761,6 +1265,9 @@ mod tests {
             async_worker: false,
             event_queue_capacity: 1,
             workspace_root_template: None,
+            tool_approval_mode: FeishuToolApprovalMode::DenyAll,
+            tool_decision_secret: None,
+            tool_decision_timeout_secs: 300,
         };
         let v = json!({ "header": { "token": "vtok" } });
         assert!(verify_event_verification_token(&cfg, &v).is_ok());

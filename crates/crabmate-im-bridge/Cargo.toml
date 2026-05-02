@@ -3,7 +3,7 @@ name = "crabmate-im-bridge"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
-description = "Optional IM bridge service (Feishu MVP): event webhook → CrabMate POST /chat → Feishu reply"
+description = "Optional IM bridge service (Feishu MVP): event webhook → CrabMate POST /chat/stream → Feishu reply"
 default-run = "crabmate-im-bridge"
 
 [lib]
@@ -14,6 +14,7 @@ name = "crabmate-im-bridge"
 path = "src/main.rs"
 
 [dependencies]
+crabmate-sse-protocol = { path = "../crabmate-sse-protocol" }
 axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio", "macros"] }
 aes = "0.8"
 base64 = "0.22"
@@ -21,7 +22,7 @@ cbc = "0.1"
 cipher = "0.4"
 dashmap = "6"
 hex = "0.4"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
@@ -42,3 +43,4 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
     "std",
 ] }
 thiserror = "2"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }

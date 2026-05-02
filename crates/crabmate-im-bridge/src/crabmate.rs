@@ -1,10 +1,11 @@
-//! 调用 CrabMate **`POST /chat`**、**`POST /workspace`** 等 Web API，与侧栏行为对齐。
+//! 调用 CrabMate **`POST /chat`**、**`POST /chat/stream`**、**`POST /chat/approval`**、**`POST /workspace`** 等 Web API。
 
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
+use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 const JSON_UTF8: &str = "application/json; charset=utf-8";
+const SSE_ACCEPT: &str = "text/event-stream";
 
 #[derive(Clone)]
 pub struct CrabmateClient {
@@ -35,6 +36,7 @@ impl CrabmateClient {
         let body = ChatRequestBody {
             message: message.as_ref().to_string(),
             conversation_id: conversation_id.map(String::from),
+            approval_session_id: None,
         };
         let mut headers = HeaderMap::new();
         let auth = format!("Bearer {}", self.bearer.trim());
@@ -73,6 +75,103 @@ impl CrabmateClient {
             reply: parsed.reply,
             conversation_id: parsed.conversation_id,
         })
+    }
+
+    /// **`POST /chat/stream`**：返回已校验状态码的响应体（**200**）；调用方读取 **`bytes_stream()`** 并解析 SSE。
+    pub async fn post_chat_stream(
+        &self,
+        message: impl AsRef<str>,
+        conversation_id: Option<&str>,
+        approval_session_id: Option<&str>,
+    ) -> Result<reqwest::Response, CrabmateError> {
+        let url = format!("{}/chat/stream", self.base_url);
+        let body = ChatRequestBody {
+            message: message.as_ref().to_string(),
+            conversation_id: conversation_id.map(String::from),
+            approval_session_id: approval_session_id.map(String::from),
+        };
+        let mut headers = HeaderMap::new();
+        let auth = format!("Bearer {}", self.bearer.trim());
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_str(&auth)
+                .map_err(|e| CrabmateError::InvalidHeader(e.to_string()))?,
+        );
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static(JSON_UTF8));
+        headers.insert(ACCEPT, HeaderValue::from_static(SSE_ACCEPT));
+
+        let resp = self
+            .http
+            .post(url)
+            .headers(headers)
+            .json(&body)
+            .send()
+            .await?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let bytes = resp.bytes().await.unwrap_or_default();
+            let preview = utf8_preview(&bytes, 512);
+            return Err(CrabmateError::HttpStatus {
+                status: status.as_u16(),
+                body_preview: preview,
+            });
+        }
+        Ok(resp)
+    }
+
+    /// **`POST /chat/approval`**：`decision` 为 **`deny`** / **`allow_once`** / **`allow_always`**（与 CrabMate Web 一致）。
+    pub async fn send_chat_approval(
+        &self,
+        approval_session_id: &str,
+        decision: &str,
+    ) -> Result<(), CrabmateError> {
+        let url = format!("{}/chat/approval", self.base_url);
+        let body = json!({
+            "approval_session_id": approval_session_id,
+            "decision": decision,
+        });
+        let mut headers = HeaderMap::new();
+        let auth = format!("Bearer {}", self.bearer.trim());
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_str(&auth)
+                .map_err(|e| CrabmateError::InvalidHeader(e.to_string()))?,
+        );
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static(JSON_UTF8));
+
+        let resp = self
+            .http
+            .post(url)
+            .headers(headers)
+            .json(&body)
+            .send()
+            .await?;
+
+        let status = resp.status();
+        let bytes = resp.bytes().await?;
+        if !status.is_success() {
+            let preview = utf8_preview(&bytes, 512);
+            return Err(CrabmateError::HttpStatus {
+                status: status.as_u16(),
+                body_preview: preview,
+            });
+        }
+        let v: Value = serde_json::from_slice(&bytes).map_err(|e| {
+            CrabmateError::Decode(format!(
+                "invalid CrabMate /chat/approval JSON: {e}; preview={}",
+                utf8_preview(&bytes, 256)
+            ))
+        })?;
+        if v.get("ok").and_then(|x| x.as_bool()) != Some(true) {
+            let msg = v
+                .get("message")
+                .or_else(|| v.get("error"))
+                .and_then(|x| x.as_str())
+                .unwrap_or("approval failed");
+            return Err(CrabmateError::Decode(msg.to_string()));
+        }
+        Ok(())
     }
 
     /// **`POST /workspace`**：`{"path":"..."}`；`path` 为空串表示恢复默认（与 CrabMate Web handler 一致）。
@@ -145,6 +244,8 @@ struct ChatRequestBody {
     message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     conversation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    approval_session_id: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
