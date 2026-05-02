@@ -9,6 +9,7 @@
 - Web 鉴权实现：**`src/web/chat_handlers/auth.rs`**、`src/web/server.rs`
 - CLI / Web 审批与会话差异：**`docs/命令行与路由.md`**「CLI 与 Web 能力对照」
 - 路线图交叉：**`docs/待办清单.md`**（连接器生态、MCP 扩展等）
+- **进程外身份与账号**：共识见 **`docs/未来规划功能.md`**
 
 ---
 

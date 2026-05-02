@@ -61,6 +61,7 @@ It ships **function calling**, workspace commands and file tools, plus a **Web U
 | [docs/en/CLI.md](docs/en/CLI.md) | Subcommands, HTTP routes, `.deb` | [zh](docs/命令行与路由.md) |
 | [docs/en/CLI_CONTRACT.md](docs/en/CLI_CONTRACT.md) | `chat` exit codes, `--output json`, SSE cross-ref | [zh](docs/命令行契约.md) |
 | [docs/en/TODOLIST.md](docs/en/TODOLIST.md) | Open work P0–P5 + by-module | [zh](docs/待办清单.md) |
+| [docs/en/FUTURE_PLANS.md](docs/en/FUTURE_PLANS.md) | Directional capabilities (e.g. identity at gateway, no in-process accounts) | [zh](docs/未来规划功能.md) |
 | [docs/en/CODEBASE_INDEX_PLAN.md](docs/en/CODEBASE_INDEX_PLAN.md) | Unified codebase index + incremental cache | [zh](docs/代码库索引方案.md) |
 
 **Maintenance**: user-visible changes should stay in sync with README and related docs; see [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md) § TODOLIST and documentation conventions.

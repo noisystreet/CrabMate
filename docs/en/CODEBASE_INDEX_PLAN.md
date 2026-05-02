@@ -4,7 +4,7 @@
 
 **Revision (implemented)**: the `codebase_semantic_search` SQLite store includes **`crabmate_codebase_files`** (`size` / `mtime_ns` / `content_sha256`), **workspace-wide** incremental `rebuild_index`, subtree **`path`** replacement, Rust **symbol hints**, and (schema **v4**+) **FTS5** **`crabmate_codebase_chunks_fts`** with **hybrid** query (BM25 + vector). See `docs/en/DEVELOPMENT.md` and `docs/en/TOOLS.md`.
 
-Directional plan for a **persistent, incrementally updated** unified index of repository source + metadata to speed browsing and search. Implementation must align with **workspace path safety** (`resolve_for_read`, allowed roots, `..` and symlink policy), **secrets and log redaction**, and **P0 Web authentication** (multi-tenant isolation). See `.cursor/rules/security-sensitive-surface.mdc` and [TODOLIST.md](TODOLIST.md) global P0.
+Directional plan for a **persistent, incrementally updated** unified index of repository source + metadata to speed browsing and search. Implementation must align with **workspace path safety** (`resolve_for_read`, allowed roots, `..` and symlink policy), **secrets and log redaction**, and **gateway-side identity / multi-tenant isolation** (CrabMate keeps a shared service secret; see [FUTURE_PLANS.md](FUTURE_PLANS.md)). See `.cursor/rules/security-sensitive-surface.mdc` and [TODOLIST.md](TODOLIST.md) for related backlog items.
 
 ---
 
@@ -21,7 +21,7 @@ Directional plan for a **persistent, incrementally updated** unified index of re
 
 - Replace LSP cross-file type inference / go-to-definition precision.
 - Sub-second real-time FS watch parity with IDEs (future enhancement).
-- Before **P0 auth**, no cross-user shared global index path on Web (default: **workspace + tenant key** isolation).
+- Before **gateway-side tenant isolation** is in place, no cross-user shared global index path on Web (default: **workspace + tenant key** isolation).
 
 ---
 
@@ -70,7 +70,7 @@ Four layers (same SQLite or multiple files; one external **index runtime** handl
 - All index path resolution reuses **`canonical_workspace_root` + `resolve_for_read` semantics**; no new bypass.
 - Do **not** log full index content; errors must not leak user source.
 - Default exclude **`.env`**, common key filenames, **`.pem`**, etc.; configurable globs.
-- Web multi-user: **index and query must bind** session/workspace/tenant keys; ship with P0 auth or CLI-only by default.
+- Web multi-user: **index and query must bind** session/workspace/tenant keys; ship with gateway identity isolation or CLI-only by default.
 
 ---
 

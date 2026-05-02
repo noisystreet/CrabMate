@@ -299,5 +299,5 @@ Aggregated in **`file/mod.rs`**; glob/tree limits; **`resolve_for_read`** for ot
 - Enforce path canonicalization on file/exec tools.
 - Workspace switch affects tool CWD—document UX implications.
 - Never log secrets; follow **`.cursor/rules/secrets-and-logging.mdc`**.
-- Open security/protocol debt: **`docs/待办清单.md`**.
+- Open security/protocol debt: **`docs/待办清单.md`**; Web identity stays out-of-process—**`docs/未来规划功能.md`** / **`docs/en/FUTURE_PLANS.md`**.
 - SSE changes: update **`docs/en/SSE_PROTOCOL.md`**, **`crates/crabmate-sse-protocol`** (`SSE_PROTOCOL_VERSION` / **`control_classify`**), Leptos **`sse_dispatch`**, `fixtures/sse_control_golden.jsonl`, run **`cargo test golden_sse_control --workspace`**.
