@@ -1,7 +1,6 @@
 use crate::config::AgentConfig;
 use crate::types::Message;
 use serde_json::Value;
-use std::collections::HashMap;
 
 use super::workflow_reflection_controller::{self, WorkflowReflectionController};
 use super::{
@@ -27,12 +26,12 @@ impl PerCoordinator {
 
     /// 供 `/status` 等只读镜像：`after_final_assistant` 已递增后的重写次数。
     pub fn plan_rewrite_attempts_snapshot(&self) -> usize {
-        self.plan_rewrite_attempts
+        self.counters.plan_rewrite_attempts
     }
 
     /// 本回合内已成功完成的分阶段补丁规划轮次数（与 [`Self::plan_rewrite_attempts_snapshot`] 独立）。
     pub fn staged_plan_patch_planner_rounds_snapshot(&self) -> usize {
-        self.staged_plan_patch_planner_rounds_completed
+        self.counters.staged_plan_patch_planner_rounds_completed
     }
 
     /// 配置中的 **`staged_plan_patch_max_attempts`**（与单步失败分支内补丁循环上界一致；**非** `plan_rewrite_max_attempts`）。
@@ -47,18 +46,17 @@ impl PerCoordinator {
 
     /// 分阶段补丁规划轮成功合并 `steps` 后调用，递增与 **`plan_rewrite`** 独立的计数。
     pub(crate) fn record_staged_plan_patch_planner_round_completed(&mut self) {
-        self.staged_plan_patch_planner_rounds_completed = self
-            .staged_plan_patch_planner_rounds_completed
-            .saturating_add(1);
+        self.counters
+            .record_staged_plan_patch_planner_round_completed();
     }
 
     /// 分阶段步级补丁耗尽等错误串尾部：标明与 **`plan_rewrite`** 独立的计数（供排障）。
     pub(crate) fn staged_plan_patch_vs_plan_rewrite_counters_footer(&self) -> String {
         format!(
             "\n\n[计数] 分阶段补丁规划已成功合并轮次={}（配置 `staged_plan_patch_max_attempts`={}，约束**本步失败分支**内尝试上界）；终答 `plan_rewrite` 已用次数={}/{}（**独立计数**，不计入上式）。",
-            self.staged_plan_patch_planner_rounds_completed,
+            self.counters.staged_plan_patch_planner_rounds_completed,
             self.staged_plan_patch_max_attempts_config,
-            self.plan_rewrite_attempts,
+            self.counters.plan_rewrite_attempts,
             self.plan_rewrite_max_attempts
         )
     }
@@ -104,12 +102,9 @@ impl PerCoordinator {
             final_plan_semantic_check_max_non_readonly_tools: init
                 .final_plan_semantic_check_max_non_readonly_tools,
             plan_requirement_source: initial_source,
-            plan_rewrite_attempts: 0,
-            staged_plan_patch_planner_rounds_completed: 0,
-            cached_workflow_validate_layer_count: None,
-            layer_count_cache_at_message_len: 0,
-            repeated_failed_tool_signatures: HashMap::new(),
-            repeated_failed_tool_families: HashMap::new(),
+            counters: super::per_turn_state::PerTurnCounters::new(),
+            workflow_validate_cache: super::per_turn_state::WorkflowValidateLayerCache::new(),
+            repeated_tool_failures: super::per_turn_state::RepeatedToolFailureMemo::new(),
         }
     }
 
@@ -118,9 +113,8 @@ impl PerCoordinator {
         tool_name: &str,
         tool_args_json: &str,
     ) -> Option<&str> {
-        self.repeated_failed_tool_signatures
-            .get(&(tool_name.to_string(), tool_args_json.to_string()))
-            .map(|s| s.as_str())
+        self.repeated_tool_failures
+            .repeated_tool_failure_error_marker(tool_name, tool_args_json)
     }
 
     pub(crate) fn mark_tool_failure_signature(
@@ -129,8 +123,9 @@ impl PerCoordinator {
         tool_args_json: &str,
         error_marker: String,
     ) {
-        self.repeated_failed_tool_signatures.insert(
-            (tool_name.to_string(), tool_args_json.to_string()),
+        self.repeated_tool_failures.mark_tool_failure_signature(
+            tool_name,
+            tool_args_json,
             error_marker,
         );
     }
@@ -140,9 +135,8 @@ impl PerCoordinator {
         tool_name: &str,
         failure_family: &str,
     ) -> Option<&str> {
-        self.repeated_failed_tool_families
-            .get(&(tool_name.to_string(), failure_family.to_string()))
-            .map(|s| s.as_str())
+        self.repeated_tool_failures
+            .repeated_tool_failure_family_marker(tool_name, failure_family)
     }
 
     pub(crate) fn mark_tool_failure_family(
@@ -151,43 +145,32 @@ impl PerCoordinator {
         failure_family: &str,
         error_marker: String,
     ) {
-        self.repeated_failed_tool_families.insert(
-            (tool_name.to_string(), failure_family.to_string()),
+        self.repeated_tool_failures.mark_tool_failure_family(
+            tool_name,
+            failure_family,
             error_marker,
         );
     }
 
     pub(crate) fn clear_tool_failure_signature(&mut self, tool_name: &str, tool_args_json: &str) {
-        self.repeated_failed_tool_signatures
-            .remove(&(tool_name.to_string(), tool_args_json.to_string()));
+        self.repeated_tool_failures
+            .clear_tool_failure_signature(tool_name, tool_args_json);
     }
 
     pub(crate) fn clear_tool_failure_families_for_tool(&mut self, tool_name: &str) {
-        self.repeated_failed_tool_families
-            .retain(|(name, _), _| name != tool_name);
+        self.repeated_tool_failures
+            .clear_tool_failure_families_for_tool(tool_name);
     }
 
     /// `context_window` 在裁剪/摘要等**就地**改写 `messages` 后调用，避免 `layer_count` 缓存指向已删除的 `workflow_validate` 工具结果。
     pub fn invalidate_workflow_validate_layer_cache_after_context_mutation(&mut self) {
-        self.cached_workflow_validate_layer_count = None;
-        self.layer_count_cache_at_message_len = 0;
+        self.workflow_validate_cache
+            .invalidate_after_context_mutation();
     }
 
     pub(super) fn workflow_validate_layer_need(&mut self, messages: &[Message]) -> Option<usize> {
-        let len = messages.len();
-        if len != self.layer_count_cache_at_message_len {
-            let n = plan_rewrite::last_workflow_validate_layer_count(messages);
-            self.cached_workflow_validate_layer_count = n;
-            self.layer_count_cache_at_message_len = len;
-            return n;
-        }
-        if self.cached_workflow_validate_layer_count.is_some() {
-            return self.cached_workflow_validate_layer_count;
-        }
-        let n = plan_rewrite::last_workflow_validate_layer_count(messages);
-        self.cached_workflow_validate_layer_count = n;
-        self.layer_count_cache_at_message_len = len;
-        n
+        self.workflow_validate_cache
+            .workflow_validate_layer_need(messages)
     }
 
     /// 是否包含可解析的 `agent_reply_plan` v1 JSON（见 `plan_artifact`）。
@@ -297,8 +280,8 @@ impl PerCoordinator {
                 tool_call_id: None,
             });
         }
-        per_coord.layer_count_cache_at_message_len = messages.len();
-        per_coord.cached_workflow_validate_layer_count =
-            plan_rewrite::last_workflow_validate_layer_count(messages.as_slice());
+        per_coord
+            .workflow_validate_cache
+            .refresh_after_messages_append(messages.len(), messages.as_slice());
     }
 }
