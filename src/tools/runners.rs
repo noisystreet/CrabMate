@@ -31,35 +31,21 @@ pub(crate) fn tool_spec_requires_fastembed(name: &str) -> bool {
 }
 
 pub(crate) fn runner_get_current_time(args: &str, _ctx: &ToolContext<'_>) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args) {
-        Ok(v) => v,
-        Err(_) => serde_json::Value::Object(Default::default()),
-    };
-    let mode = v
-        .get("mode")
-        .and_then(|m| m.as_str())
-        .and_then(time::TimeOutputMode::from_str)
+    let parsed: super::tool_param_types::GetCurrentTimeArgs =
+        serde_json::from_str(args).unwrap_or_default();
+    let mode = parsed
+        .mode
+        .map(super::tool_param_types::GetCurrentTimeMode::to_time_output)
         .unwrap_or(time::TimeOutputMode::Time);
-    let year = v.get("year").and_then(|y| y.as_i64()).map(|y| y as i32);
-    let month = v
-        .get("month")
-        .and_then(|m| m.as_u64())
-        .and_then(|m| u32::try_from(m).ok());
-    time::run(mode, year, month)
+    time::run(mode, parsed.year, parsed.month)
 }
 
 pub(crate) fn runner_calc(args: &str, _ctx: &ToolContext<'_>) -> String {
-    let expr = match serde_json::from_str::<serde_json::Value>(args)
-        .ok()
-        .and_then(|v| {
-            v.get("expression")
-                .and_then(|e| e.as_str())
-                .map(String::from)
-        }) {
-        Some(s) => s,
-        None => return "错误：缺少 expression 参数".to_string(),
+    let parsed: super::tool_param_types::CalcArgs = match serde_json::from_str(args) {
+        Ok(v) => v,
+        Err(e) => return format!("错误：参数 JSON 无效: {e}"),
     };
-    calc::run(&expr)
+    calc::run(&parsed.expression)
 }
 
 pub(crate) fn runner_convert_units(args: &str, _ctx: &ToolContext<'_>) -> String {
