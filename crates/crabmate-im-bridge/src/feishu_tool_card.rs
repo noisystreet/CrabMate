@@ -2,10 +2,39 @@
 //!
 //! 按钮 **`value`** 使用固定键 **`crabmate_tool_decision`**，与 **`card.action.trigger`** 回调解析一致。
 //! 卡片 JSON 采用常见 **1.x** 形态（`config` + `header` + `elements`）；若你方环境仅支持 2.0，请在搭建工具中自建模板并改用模板发送。
+//!
+//! **原地更新**：[`PATCH` 更新消息卡片](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/patch) 要求卡片 **`config.update_multi: true`**（发送与更新后的 JSON 均需包含）。
 
 use serde_json::{Value, json};
 
 const VALUE_MARKER: &str = "crabmate_tool_decision";
+
+fn card_config_patchable() -> Value {
+    json!({
+        "wide_screen_mode": true,
+        "update_multi": true
+    })
+}
+
+/// 开场占位卡片（可随后用 **`PATCH /im/v1/messages/:message_id`** 替换为结果摘要）。
+pub fn progress_placeholder_card() -> Value {
+    json!({
+        "config": card_config_patchable(),
+        "header": {
+            "title": { "tag": "plain_text", "content": "CrabMate" },
+            "template": "wathet"
+        },
+        "elements": [
+            {
+                "tag": "div",
+                "text": {
+                    "tag": "plain_text",
+                    "content": "⏳ 正在执行…（完成后将在此卡片内更新摘要）"
+                }
+            }
+        ]
+    })
+}
 
 /// 构造 **`msg_type: interactive`** 的 **`content`** JSON（再经 `serde_json::to_string` 作为 API 的 `content` 字段）。
 pub fn tool_approval_interactive_content(
@@ -20,7 +49,7 @@ pub fn tool_approval_interactive_content(
         truncate_plain(approval_session_id, 128)
     );
     json!({
-        "config": { "wide_screen_mode": true },
+        "config": card_config_patchable(),
         "header": {
             "title": { "tag": "plain_text", "content": "CrabMate 工具审批" },
             "template": "orange"
@@ -142,7 +171,7 @@ pub fn card_callback_error_toast_zh(body: &str) -> Value {
 pub fn turn_result_card(title: &str, body: &str) -> Value {
     let body_safe = truncate_plain(body, 3500);
     json!({
-        "config": { "wide_screen_mode": true },
+        "config": card_config_patchable(),
         "header": {
             "title": { "tag": "plain_text", "content": truncate_plain(title, 100) },
             "template": "blue"
@@ -196,6 +225,19 @@ mod tests {
     fn turn_result_card_has_header() {
         let c = turn_result_card("完成", "hello");
         assert!(c.get("header").is_some());
+        assert_eq!(
+            c.pointer("/config/update_multi").and_then(|x| x.as_bool()),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn progress_placeholder_is_patchable() {
+        let c = progress_placeholder_card();
+        assert_eq!(
+            c.pointer("/config/update_multi").and_then(|x| x.as_bool()),
+            Some(true)
+        );
     }
 
     #[test]

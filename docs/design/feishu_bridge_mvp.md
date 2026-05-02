@@ -9,7 +9,7 @@
 1. 监听 **`POST /feishu/events`**，处理飞书 **事件订阅** 回调。
 2. **加密体**：若请求 JSON 顶层含 **`encrypt`**（Base64），则使用 **`FEISHU_ENCRYPT_KEY`** 按飞书文档 **AES-256-CBC** 解密后再解析（密钥为 **`SHA256(Encrypt Key 字符串 UTF-8)`**，密文为 **`base64(iv(16) || ciphertext)`**，**PKCS#7** 去填充）。算法与官方一致：[事件解密](https://open.feishu.cn/document/server-docs/event-subscription-guide/event-subscription-configure-/encrypt-key-encryption-configuration-case?lang=zh-CN)。
 3. **`url_verification`**：在解密（若需要）后的 JSON 上读取 **`challenge`**，返回 **`{"challenge":"..."}`**。
-4. **`im.message.receive_v1`**：默认 **先入有界内存队列并立即 HTTP 200**（飞书异步 ACK），单 worker 顺序消费：解析 →（可选）**`POST /workspace`**（见 **`FEISHU_WORKSPACE_ROOT_TEMPLATE`**）→ CrabMate **`POST /chat/stream`**（`conversation_id` = `feishu:<chat_id>`，带 **`approval_session_id`** 以支持工具审批，见下文）→ 解析 SSE 累积终答 → **`tenant_access_token`** → [回复消息](https://open.feishu.cn/document/server-docs/im-v1/message/reply)（长文按约 **3500 字符**分段多条回复，**`uuid`** 除首条外使用 **`{message_id}-{序号}`** 去重）。队列满返回 **503**（`FEISHU_EVENT_QUEUE_FULL`）以便飞书重试；可用 **`FEISHU_ASYNC_WORKER=0`** 关闭为同步处理。
+4. **`im.message.receive_v1`**：默认 **先入有界内存队列并立即 HTTP 200**（飞书异步 ACK），单 worker 顺序消费：解析 →（可选）**`POST /workspace`**（见 **`FEISHU_WORKSPACE_ROOT_TEMPLATE`**）→ CrabMate **`POST /chat/stream`**（`conversation_id` = `feishu:<chat_id>`，带 **`approval_session_id`** 以支持工具审批，见下文）→ 解析 SSE 累积终答 → **`tenant_access_token`** → [回复消息](https://open.feishu.cn/document/server-docs/im-v1/message/reply)（可选 **`FEISHU_IN_PLACE_PROGRESS_CARD=1`**：先发可 **PATCH** 的占位交互卡片，结束时用 [更新已发送的消息卡片](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/patch) 原地换成结果摘要；否则仍为开场文本 + 结束新卡片）。长文按约 **3500 字符**分段多条回复，**`uuid`** 除首条外使用 **`{message_id}-{序号}`** 去重。队列满返回 **503**（`FEISHU_EVENT_QUEUE_FULL`）以便飞书重试；可用 **`FEISHU_ASYNC_WORKER=0`** 关闭为同步处理。
 5. **安全**：若配置了 **`FEISHU_VERIFICATION_TOKEN`**，则对**除 URL 校验外**的所有事件校验 JSON 内 **`header.token`**（或顶层 **`token`**）与之相等。若已完成 **`X-Lark-Signature`** 验签，则默认校验 **`X-Lark-Request-Timestamp`** 偏差（**`FEISHU_REPLAY_MAX_SKEW_SECS`**，默认 600s）并对 **`X-Lark-Request-Nonce`** 去重（**`FEISHU_NONCE_DEDUP_SECS`**，默认 900s）。群聊可设 **`FEISHU_GROUP_REQUIRE_BOT_MENTION=1`** + **`FEISHU_BOT_OPEN_ID`**，仅处理 **`mentions`** 中含本机器人的消息。
 6. **（可选）人工工具审批 HTTP**：在 **`FEISHU_TOOL_APPROVAL_MODE=wait_http`** 且已设置 **`FEISHU_TOOL_DECISION_SECRET`** 时，桥接暴露 **`POST /feishu/tool-decision`**（`Bearer` 或 **`X-API-Key`** 携带该密钥），用于提交 CrabMate **`POST /chat/approval`** 所需的决策。
 7. **工具审批交互卡片**：在 **`wait_message` / `wait_http`** 下，桥接会 **`reply` 一条 `msg_type: interactive` 消息**（含三个按钮）。用户点击后飞书推送 **`card.action.trigger`** 至与 **`/feishu/events`** 相同的 URL；桥接解析按钮 **`value`** 并 **`POST /chat/approval`**。须在开发者后台**订阅该事件**并配置**卡片回调地址**。
@@ -46,6 +46,8 @@ export FEISHU_APP_SECRET="YOUR_APP_SECRET"
 # export FEISHU_QUIET_SSE_STATUS=1
 # 可选：结束结果卡片内摘要最大字符数（默认 3500，至少 200）
 # export FEISHU_RESULT_CARD_MAX_CHARS=3500
+# 可选：开场占位交互卡片 + 结束时 PATCH 同一条消息为结果摘要（卡片须含 update_multi，见飞书文档）
+# export FEISHU_IN_PLACE_PROGRESS_CARD=1
 cargo run -p crabmate-im-bridge
 ```
 
@@ -62,7 +64,7 @@ cargo run -p crabmate-im-bridge
 
 ## 用户可见状态与工具审批
 
-- **长任务体验**：每轮在调用 CrabMate 前会先发一条 **「已开始处理…」** 提示；流式结束后发 **只读结果摘要卡片**（`msg_type: interactive`），超长正文在卡片摘要后**再以多条文本**续发。设置 **`FEISHU_QUIET_SSE_STATUS=1`** 可关闭流式过程中逐条 SSE 进度刷屏（仍保留开场提示、审批卡片与结束结果卡片）。
+- **长任务体验**：默认先发一条 **「已开始处理…」** 文本；流式结束后发 **只读结果摘要卡片**（`msg_type: interactive`），超长正文在卡片摘要后**再以多条文本**续发。设置 **`FEISHU_IN_PLACE_PROGRESS_CARD=1`** 时，开场改为 **占位交互卡片**（`config.update_multi: true`），结束时用 **`PATCH /im/v1/messages/:message_id`** 将**同一条机器人消息**更新为结果摘要（失败则回退为独立新卡片或文本）。设置 **`FEISHU_QUIET_SSE_STATUS=1`** 可关闭流式过程中逐条 SSE 进度刷屏（仍保留开场、审批卡片与结束结果）。
 - **进度（默认可选）**：未开启安静模式时，桥接解析 CrabMate SSE 中的 **`tool_call`**、**`tool_running`**、**`parsing_tool_calls`**、**`timeline_log`** 等控制帧，并以**后续飞书文本**推送短行状态（注意飞书 **QPS**）。
 - **工具审批（CrabMate 契约）**：非流式 **`POST /chat`** 不接审批通道；桥接使用 **`POST /chat/stream`**，并为每通用户消息设置 **`approval_session_id = "feishu:<飞书 message_id>"`**，遇敏感工具时由 CrabMate 下发 **`command_approval_request`**，桥接再 **`POST /chat/approval`** 提交决策。
 - **模式 `FEISHU_TOOL_APPROVAL_MODE`**（默认 **`wait_message`**）：
@@ -81,7 +83,7 @@ cargo run -p crabmate-im-bridge
 
 - **消息类型**：已将多种 **`message_type`** 转为送入模型的**纯文本**（**`text`**、**`post`** 富文本递归提取 **`tag:text`/`title`**、**`image`/`sticker`/`file`/`audio`/`media`** 占位 + key、**`interactive`/`share_*`/其它** 的 `content` JSON 截断摘要；长度 **`FEISHU_MAX_MESSAGE_JSON_CHARS`**）。**不**下载或内联图片/文件/语音/视频二进制。
 - **工作区**：模板展开路径须**已存在**且落在 CrabMate **`workspace_allowed_roots`**；桥接**不会** `mkdir`；**`/workspace` 失败时本轮不调用模型**（仅 warn）。
-- **工具审批 UX**：**`wait_message` / `wait_http`** 下推送 **交互卡片**（按钮回传 **`card.action.trigger`**）；失败时回退为纯文本。审批后卡片不会自动变灰（可后续用 **`event.token`** 调延时更新接口增强）。
+- **工具审批 UX**：**`wait_message` / `wait_http`** 下推送 **交互卡片**（按钮回传 **`card.action.trigger`**）；失败时回退为纯文本。审批卡片已带 **`update_multi: true`**，便于后续用 **`event.token`** + [延时更新卡片](https://open.feishu.cn/document/ukTMukTMukTM/uMDO1YjLzgTN24yM4UjN) 等能力做「已处理」态（当前桥接未在回调内自动 PATCH 审批卡）。
 - **幂等**：同一 **`message_id`** 在约 **10 分钟**内去重（防飞书重复推送）。
 
 ## 后续完善方向（路线图）
@@ -113,7 +115,7 @@ cargo run -p crabmate-im-bridge
 | 项 | 说明 |
 |----|------|
 | **工具与审批** | **已实现**：**`wait_message` / `wait_http`** 下发 **交互卡片**按钮 + **`card.action.trigger`** 解析；**`POST /chat/stream`** + **`approval_session_id`** + **`POST /chat/approval`**。可增强：点击后 **更新卡片**（`event.token`）、卡片 JSON 2.0 模板化。 |
-| **流式体验** | **部分实现**：结束 **结果摘要卡片** + 超长续发文本；SSE 进度可 **`FEISHU_QUIET_SSE_STATUS`** 关闭刷屏；**未**编辑同一条消息增量展示。 |
+| **流式体验** | **部分实现**：结束 **结果摘要卡片** + 超长续发文本；SSE 进度可 **`FEISHU_QUIET_SSE_STATUS`** 关闭刷屏；可选 **`FEISHU_IN_PLACE_PROGRESS_CARD`**：**PATCH** 占位卡为终态摘要（与 **`event.token`** 延时更新为不同路径，可互补）。 |
 | **工作区** | 若需工具读仓库：在可信流程中调用 CrabMate **`POST /workspace`**，且路径落在 **`workspace_allowed_roots`** 内。 |
 | **按租户覆盖模型** | 通过请求体 **`client_llm`** 等为不同租户指定网关/模型（密钥勿入日志）。 |
 
