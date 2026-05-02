@@ -55,6 +55,16 @@ pub(crate) struct FinalPlanGateStepOutcome {
     pub next_plan_rewrite_count: Option<usize>,
 }
 
+/// 将门控一步输出的 `next_plan_rewrite_count` 写入协调器（静态终答与语义 LLM 路径共用）。
+pub(crate) fn apply_plan_rewrite_count_from_gate(
+    per: &mut super::PerCoordinator,
+    outcome: &FinalPlanGateStepOutcome,
+) {
+    if let Some(n) = outcome.next_plan_rewrite_count {
+        per.plan_rewrite_attempts = n;
+    }
+}
+
 pub(crate) struct FinalPlanGateArgs<'a> {
     pub msg: &'a Message,
     pub messages: &'a [Message],
@@ -529,9 +539,7 @@ pub(crate) fn after_final_assistant(
         sub_phase = "reflect",
         "final_plan_gate transition"
     );
-    if let Some(n) = outcome.next_plan_rewrite_count {
-        per.plan_rewrite_attempts = n;
-    }
+    apply_plan_rewrite_count_from_gate(per, &outcome);
     outcome.after
 }
 

@@ -63,11 +63,6 @@ impl PerCoordinator {
         )
     }
 
-    /// 侧向语义校验判定不一致后，递增重写计数（与 `RequestPlanRewrite` 路径一致）。
-    pub(crate) fn increment_plan_rewrite_attempts(&mut self) {
-        self.plan_rewrite_attempts += 1;
-    }
-
     pub(crate) fn plan_semantic_mismatch_rewrite_message_with_feedback(
         violation_codes: &[String],
         rationale: Option<&str>,
