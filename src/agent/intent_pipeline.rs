@@ -552,4 +552,28 @@ mod tests {
         assert_eq!(decision.primary_intent, "execute.docs_ops");
         assert!(meta.l2_applied);
     }
+
+    /// L2 置信度低于 `ctx.l2_min_confidence` 时不得覆盖 L1（与 `classify_intent_l2_with_llm` fail-open 对齐）。
+    #[test]
+    fn l2_below_threshold_does_not_override_l1() {
+        let ctx = IntentContext {
+            l2_min_confidence: 0.75,
+            ..Default::default()
+        };
+        let l2 = L2IntentCandidate {
+            kind: IntentKind::Execute,
+            primary_intent: "execute.code_change".to_string(),
+            secondary_intents: Vec::new(),
+            confidence: 0.74,
+            need_clarification: false,
+            abstain: false,
+        };
+        let (decision, meta) = assess_and_route_with_l2("当前目录下有哪些源文件", &ctx, Some(l2));
+        assert!(!meta.l2_applied);
+        assert_eq!(
+            meta.override_reason.as_deref(),
+            Some("l2_confidence_below_threshold")
+        );
+        assert_ne!(decision.primary_intent, "execute.code_change");
+    }
 }

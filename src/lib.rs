@@ -60,7 +60,6 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::Instrument;
-use types::Message;
 
 /// 回合传输与端点表现（SSE、取消、审批上下文、终端渲染等），与模型采样/路由覆盖解耦。
 pub struct AgentTurnTransport<'a> {
@@ -100,7 +99,7 @@ pub struct RunAgentTurnParams<'a> {
     pub api_key: &'a str,
     pub cfg: &'a Arc<config::AgentConfig>,
     pub tools: &'a [crate::types::Tool],
-    pub messages: &'a mut Vec<Message>,
+    pub messages: &'a mut Vec<types::Message>,
     pub effective_working_dir: &'a std::path::Path,
     pub workspace_is_set: bool,
     pub transport: AgentTurnTransport<'a>,
@@ -124,7 +123,7 @@ pub struct WebChatStreamBuildArgs<'a> {
     pub api_key: &'a str,
     pub cfg: &'a Arc<config::AgentConfig>,
     pub tools: &'a [crate::types::Tool],
-    pub messages: &'a mut Vec<Message>,
+    pub messages: &'a mut Vec<types::Message>,
     pub effective_working_dir: &'a std::path::Path,
     pub workspace_is_set: bool,
     pub cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -151,7 +150,7 @@ pub struct WebChatJsonBuildArgs<'a> {
     pub api_key: &'a str,
     pub cfg: &'a Arc<config::AgentConfig>,
     pub tools: &'a [crate::types::Tool],
-    pub messages: &'a mut Vec<Message>,
+    pub messages: &'a mut Vec<types::Message>,
     pub effective_working_dir: &'a std::path::Path,
     pub workspace_is_set: bool,
     pub per_flight: std::sync::Arc<chat_job_queue::PerTurnFlight>,
@@ -175,7 +174,7 @@ pub struct CliTerminalChatBuildArgs<'a> {
     pub api_key: &'a str,
     pub cfg: &'a Arc<config::AgentConfig>,
     pub tools: &'a [crate::types::Tool],
-    pub messages: &'a mut Vec<Message>,
+    pub messages: &'a mut Vec<types::Message>,
     pub effective_working_dir: &'a std::path::Path,
     pub no_stream: bool,
     pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
@@ -364,7 +363,7 @@ impl<'a> RunAgentTurnParams<'a> {
         api_key: &'a str,
         cfg: &'a Arc<config::AgentConfig>,
         tools: &'a [crate::types::Tool],
-        messages: &'a mut Vec<Message>,
+        messages: &'a mut Vec<types::Message>,
         effective_working_dir: &'a std::path::Path,
         cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
     ) -> Self {
@@ -645,7 +644,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 pub use config::{
-    AgentConfig, ExposeSecret, LlmHttpAuthMode, SharedAgentConfig, load_config, load_config_for_cli,
+    AgentConfig, ExposeSecret, LlmHttpAuthMode, PlannerExecutorMode, SharedAgentConfig,
+    load_config, load_config_for_cli,
 };
 pub use llm::{
     ChatCompletionsBackend, CompleteChatRetryingParams, OPENAI_COMPAT_BACKEND, OpenAiCompatBackend,
@@ -657,7 +657,9 @@ pub use tool_registry::{
 };
 pub use tools::dev_tag;
 pub use tools::{ToolsBuildOptions, build_tools, build_tools_filtered, build_tools_with_options};
-pub use types::LlmSeedOverride;
+pub use types::{
+    ChatRequest, FunctionCall, LlmSeedOverride, Message, ToolCall, message_content_as_str,
+};
 
 pub use runtime::cli_exit::{
     CliExitError, EXIT_GENERAL, EXIT_MODEL_ERROR, EXIT_QUOTA_OR_RATE_LIMIT,
