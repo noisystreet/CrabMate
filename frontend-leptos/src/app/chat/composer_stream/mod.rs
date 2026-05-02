@@ -1,7 +1,7 @@
 //! `/chat/stream` SSE 回调装配：与输入框 / 发送按钮解耦。
 //!
 //! - [`context`]：单次流式共享的 `ChatStreamCallbackCtx`。
-//! - [`callbacks`]：装配 `ChatStreamCallbacks`（各 `on_*`），与 `send_chat_stream` 契约对齐。
+//! - [`callbacks`]：装配 `ChatStreamCallbacks`（各 `on_*`），与 `send_chat_stream` 契约对齐；实现拆为 `callbacks/helpers`、`callbacks/builders`、`callbacks/assemble`。
 //! - 本文件：长生命周期句柄 [`ComposerStreamHandles`]、[`make_attach_chat_stream`]（发起请求 + `spawn_local`）。
 
 mod callbacks;
