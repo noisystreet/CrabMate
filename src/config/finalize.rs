@@ -825,59 +825,35 @@ struct FinalizeTailScalars {
     http_fetch_max_response_bytes: usize,
 }
 
-fn tail_cursor_rules_and_skills_fields(
-    b: &ConfigBuilder,
-) -> (bool, String, bool, u64, bool, String, u64, usize) {
-    let cursor_rules_enabled = b.cursor_rules_enabled.unwrap_or(true);
-    let cursor_rules_dir = b
-        .cursor_rules_dir
-        .clone()
-        .unwrap_or_else(|| ".cursor/rules".to_string());
-    let cursor_rules_include_agents_md = b.cursor_rules_include_agents_md.unwrap_or(true);
-    let cursor_rules_max_chars = b
-        .cursor_rules_max_chars
-        .unwrap_or(48_000)
-        .clamp(1024, 1_000_000);
-    let skills_enabled = b.skills_enabled.unwrap_or(true);
-    let skills_dir = b
-        .skills_dir
-        .clone()
-        .unwrap_or_else(|| ".crabmate/skills".to_string());
-    let skills_max_chars = b.skills_max_chars.unwrap_or(32_000).clamp(1024, 1_000_000);
-    let skills_top_k = b.skills_top_k.unwrap_or(3).clamp(1, 64) as usize;
-    (
-        cursor_rules_enabled,
-        cursor_rules_dir,
-        cursor_rules_include_agents_md,
-        cursor_rules_max_chars,
-        skills_enabled,
-        skills_dir,
-        skills_max_chars,
-        skills_top_k,
-    )
+/// `derive_finalize_tail_scalars` 中段：规划/工具/思维链附录（降低单函数 `nloc`）。
+#[allow(clippy::struct_excessive_bools)]
+struct TailPlanToolThinkingScalars {
+    final_plan_requirement: FinalPlanRequirementMode,
+    plan_rewrite_max_attempts: usize,
+    final_plan_require_strict_workflow_node_coverage: bool,
+    final_plan_semantic_check_enabled: bool,
+    final_plan_semantic_check_max_non_readonly_tools: usize,
+    final_plan_semantic_check_max_tokens: u32,
+    planner_executor_mode: PlannerExecutorMode,
+    tool_message_max_chars: usize,
+    tool_result_envelope_v1: bool,
+    sse_tool_call_include_arguments: bool,
+    agent_thinking_trace_enabled: bool,
+    agent_tool_stats_enabled: bool,
+    agent_tool_stats_window_events: usize,
+    agent_tool_stats_min_samples: usize,
+    agent_tool_stats_max_chars: usize,
+    agent_tool_stats_warn_below_success_ratio: f64,
+    materialize_deepseek_dsml_tool_calls: bool,
+    thinking_avoid_echo_system_prompt: bool,
+    thinking_avoid_echo_appendix: String,
 }
 
-fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTailScalars, String> {
-    let FinalizeAfterRoles {
-        ref b,
-        command_timeout_secs,
-        max_message_history,
-        ref system_prompt_search_bases,
-        ref run_command_working_dir,
-        ..
-    } = *mid;
-
-    let (
-        cursor_rules_enabled,
-        cursor_rules_dir,
-        cursor_rules_include_agents_md,
-        cursor_rules_max_chars,
-        skills_enabled,
-        skills_dir,
-        skills_max_chars,
-        skills_top_k,
-    ) = tail_cursor_rules_and_skills_fields(b);
-
+fn derive_tail_plan_tool_thinking_scalars(
+    b: &ConfigBuilder,
+    system_prompt_search_bases: &[PathBuf],
+    run_command_working_dir: &Path,
+) -> Result<TailPlanToolThinkingScalars, String> {
     let final_plan_requirement = match b.final_plan_requirement_str.as_deref() {
         Some(s) => FinalPlanRequirementMode::parse(s)?,
         None => FinalPlanRequirementMode::default(),
@@ -930,8 +906,55 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
         b.thinking_avoid_echo_appendix.as_deref(),
         b.thinking_avoid_echo_appendix_file.as_deref(),
         system_prompt_search_bases,
-        run_command_working_dir.as_path(),
+        run_command_working_dir,
     )?;
+    Ok(TailPlanToolThinkingScalars {
+        final_plan_requirement,
+        plan_rewrite_max_attempts,
+        final_plan_require_strict_workflow_node_coverage,
+        final_plan_semantic_check_enabled,
+        final_plan_semantic_check_max_non_readonly_tools,
+        final_plan_semantic_check_max_tokens,
+        planner_executor_mode,
+        tool_message_max_chars,
+        tool_result_envelope_v1,
+        sse_tool_call_include_arguments,
+        agent_thinking_trace_enabled,
+        agent_tool_stats_enabled,
+        agent_tool_stats_window_events,
+        agent_tool_stats_min_samples,
+        agent_tool_stats_max_chars,
+        agent_tool_stats_warn_below_success_ratio,
+        materialize_deepseek_dsml_tool_calls,
+        thinking_avoid_echo_system_prompt,
+        thinking_avoid_echo_appendix,
+    })
+}
+
+#[allow(clippy::struct_excessive_bools)]
+struct TailContextQueuesSessionScalars {
+    context_char_budget: usize,
+    context_min_messages_after_system: usize,
+    context_summary_trigger_chars: usize,
+    context_summary_tail_messages: usize,
+    context_summary_max_tokens: u32,
+    context_summary_transcript_max_chars: usize,
+    health_llm_models_probe: bool,
+    health_llm_models_probe_cache_secs: u64,
+    chat_queue_max_concurrent: usize,
+    chat_queue_max_pending: usize,
+    parallel_readonly_tools_max: usize,
+    read_file_turn_cache_max_entries: usize,
+    test_result_cache_enabled: bool,
+    test_result_cache_max_entries: usize,
+    session_workspace_changelist_enabled: bool,
+    session_workspace_changelist_max_chars: usize,
+}
+
+fn derive_tail_context_queues_session_scalars(
+    b: &ConfigBuilder,
+    max_message_history: usize,
+) -> TailContextQueuesSessionScalars {
     let context_char_budget = b.context_char_budget.unwrap_or(0).min(50_000_000) as usize;
     let context_min_messages_after_system = b
         .context_min_messages_after_system
@@ -988,6 +1011,52 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
     } else {
         session_workspace_changelist_max_chars_raw.clamp(2_048, 500_000) as usize
     };
+    TailContextQueuesSessionScalars {
+        context_char_budget,
+        context_min_messages_after_system,
+        context_summary_trigger_chars,
+        context_summary_tail_messages,
+        context_summary_max_tokens,
+        context_summary_transcript_max_chars,
+        health_llm_models_probe,
+        health_llm_models_probe_cache_secs,
+        chat_queue_max_concurrent,
+        chat_queue_max_pending,
+        parallel_readonly_tools_max,
+        read_file_turn_cache_max_entries,
+        test_result_cache_enabled,
+        test_result_cache_max_entries,
+        session_workspace_changelist_enabled,
+        session_workspace_changelist_max_chars,
+    }
+}
+
+#[allow(clippy::struct_excessive_bools)]
+struct TailStagedSandboxWebScalars {
+    staged_plan_execution: bool,
+    staged_plan_phase_instruction: String,
+    staged_plan_allow_no_task: bool,
+    staged_plan_feedback_mode: StagedPlanFeedbackMode,
+    staged_plan_patch_max_attempts: usize,
+    staged_plan_cli_show_planner_stream: bool,
+    staged_plan_optimizer_round: bool,
+    staged_plan_optimizer_requires_parallel_tools: bool,
+    staged_plan_ensemble_count: u8,
+    staged_plan_skip_ensemble_on_casual_prompt: bool,
+    staged_plan_two_phase_nl_display: bool,
+    sync_default_tool_sandbox_mode: types::SyncDefaultToolSandboxMode,
+    sync_default_tool_sandbox_docker_image: String,
+    sync_default_tool_sandbox_docker_network: String,
+    sync_default_tool_sandbox_docker_timeout_secs: u64,
+    sync_default_tool_sandbox_docker_user: types::SandboxDockerContainerUser,
+    web_api_bearer_token: types::SecretString,
+    web_api_require_bearer: bool,
+    allow_insecure_no_auth_for_non_loopback: bool,
+}
+
+fn derive_tail_staged_sandbox_web_scalars(
+    b: &ConfigBuilder,
+) -> Result<TailStagedSandboxWebScalars, String> {
     let staged_plan_execution = b.staged_plan_execution.unwrap_or(true);
     let staged_plan_phase_instruction = b.staged_plan_phase_instruction.clone().unwrap_or_default();
     let staged_plan_allow_no_task = b.staged_plan_allow_no_task.unwrap_or(true);
@@ -1044,7 +1113,62 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
     let web_api_require_bearer = b.web_api_require_bearer.unwrap_or(false);
     let allow_insecure_no_auth_for_non_loopback =
         b.allow_insecure_no_auth_for_non_loopback.unwrap_or(false);
+    Ok(TailStagedSandboxWebScalars {
+        staged_plan_execution,
+        staged_plan_phase_instruction,
+        staged_plan_allow_no_task,
+        staged_plan_feedback_mode,
+        staged_plan_patch_max_attempts,
+        staged_plan_cli_show_planner_stream,
+        staged_plan_optimizer_round,
+        staged_plan_optimizer_requires_parallel_tools,
+        staged_plan_ensemble_count,
+        staged_plan_skip_ensemble_on_casual_prompt,
+        staged_plan_two_phase_nl_display,
+        sync_default_tool_sandbox_mode,
+        sync_default_tool_sandbox_docker_image,
+        sync_default_tool_sandbox_docker_network,
+        sync_default_tool_sandbox_docker_timeout_secs,
+        sync_default_tool_sandbox_docker_user,
+        web_api_bearer_token,
+        web_api_require_bearer,
+        allow_insecure_no_auth_for_non_loopback,
+    })
+}
 
+#[allow(clippy::struct_excessive_bools)]
+struct TailStorageInjectNetScalars {
+    conversation_store_sqlite_path: String,
+    agent_memory_file_enabled: bool,
+    agent_memory_file: String,
+    agent_memory_file_max_chars: usize,
+    living_docs_inject_enabled: bool,
+    living_docs_relative_dir: String,
+    living_docs_inject_max_chars: usize,
+    living_docs_file_max_each_chars: usize,
+    project_profile_inject_enabled: bool,
+    project_profile_inject_max_chars: usize,
+    project_dependency_brief_inject_enabled: bool,
+    project_dependency_brief_inject_max_chars: usize,
+    tool_call_explain_enabled: bool,
+    tool_call_explain_min_chars: usize,
+    tool_call_explain_max_chars: usize,
+    mcp_enabled: bool,
+    mcp_command: String,
+    mcp_tool_timeout_secs: u64,
+    web_search_provider: WebSearchProvider,
+    web_search_api_key: types::SecretString,
+    web_search_timeout_secs: u64,
+    web_search_max_results: u32,
+    http_fetch_allowed_prefixes: Vec<String>,
+    http_fetch_timeout_secs: u64,
+    http_fetch_max_response_bytes: usize,
+}
+
+fn derive_tail_storage_inject_net_scalars(
+    b: &ConfigBuilder,
+    command_timeout_secs: u64,
+) -> Result<TailStorageInjectNetScalars, String> {
     let conversation_store_sqlite_path =
         b.conversation_store_sqlite_path.clone().unwrap_or_default();
     let agent_memory_file_enabled = b.agent_memory_file_enabled.unwrap_or(false);
@@ -1109,6 +1233,188 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
         .http_fetch_max_response_bytes
         .unwrap_or(524_288)
         .clamp(1024, 4_194_304) as usize;
+
+    Ok(TailStorageInjectNetScalars {
+        conversation_store_sqlite_path,
+        agent_memory_file_enabled,
+        agent_memory_file,
+        agent_memory_file_max_chars,
+        living_docs_inject_enabled,
+        living_docs_relative_dir,
+        living_docs_inject_max_chars,
+        living_docs_file_max_each_chars,
+        project_profile_inject_enabled,
+        project_profile_inject_max_chars,
+        project_dependency_brief_inject_enabled,
+        project_dependency_brief_inject_max_chars,
+        tool_call_explain_enabled,
+        tool_call_explain_min_chars,
+        tool_call_explain_max_chars,
+        mcp_enabled,
+        mcp_command,
+        mcp_tool_timeout_secs,
+        web_search_provider,
+        web_search_api_key,
+        web_search_timeout_secs,
+        web_search_max_results,
+        http_fetch_allowed_prefixes,
+        http_fetch_timeout_secs,
+        http_fetch_max_response_bytes,
+    })
+}
+
+fn tail_cursor_rules_and_skills_fields(
+    b: &ConfigBuilder,
+) -> (bool, String, bool, u64, bool, String, u64, usize) {
+    let cursor_rules_enabled = b.cursor_rules_enabled.unwrap_or(true);
+    let cursor_rules_dir = b
+        .cursor_rules_dir
+        .clone()
+        .unwrap_or_else(|| ".cursor/rules".to_string());
+    let cursor_rules_include_agents_md = b.cursor_rules_include_agents_md.unwrap_or(true);
+    let cursor_rules_max_chars = b
+        .cursor_rules_max_chars
+        .unwrap_or(48_000)
+        .clamp(1024, 1_000_000);
+    let skills_enabled = b.skills_enabled.unwrap_or(true);
+    let skills_dir = b
+        .skills_dir
+        .clone()
+        .unwrap_or_else(|| ".crabmate/skills".to_string());
+    let skills_max_chars = b.skills_max_chars.unwrap_or(32_000).clamp(1024, 1_000_000);
+    let skills_top_k = b.skills_top_k.unwrap_or(3).clamp(1, 64) as usize;
+    (
+        cursor_rules_enabled,
+        cursor_rules_dir,
+        cursor_rules_include_agents_md,
+        cursor_rules_max_chars,
+        skills_enabled,
+        skills_dir,
+        skills_max_chars,
+        skills_top_k,
+    )
+}
+
+fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTailScalars, String> {
+    let FinalizeAfterRoles {
+        ref b,
+        command_timeout_secs,
+        max_message_history,
+        ref system_prompt_search_bases,
+        ref run_command_working_dir,
+        ..
+    } = *mid;
+
+    let (
+        cursor_rules_enabled,
+        cursor_rules_dir,
+        cursor_rules_include_agents_md,
+        cursor_rules_max_chars,
+        skills_enabled,
+        skills_dir,
+        skills_max_chars,
+        skills_top_k,
+    ) = tail_cursor_rules_and_skills_fields(b);
+
+    let ptt = derive_tail_plan_tool_thinking_scalars(
+        b,
+        system_prompt_search_bases,
+        run_command_working_dir.as_path(),
+    )?;
+    let cqs = derive_tail_context_queues_session_scalars(b, max_message_history);
+    let ssw = derive_tail_staged_sandbox_web_scalars(b)?;
+    let sin = derive_tail_storage_inject_net_scalars(b, command_timeout_secs)?;
+
+    let TailPlanToolThinkingScalars {
+        final_plan_requirement,
+        plan_rewrite_max_attempts,
+        final_plan_require_strict_workflow_node_coverage,
+        final_plan_semantic_check_enabled,
+        final_plan_semantic_check_max_non_readonly_tools,
+        final_plan_semantic_check_max_tokens,
+        planner_executor_mode,
+        tool_message_max_chars,
+        tool_result_envelope_v1,
+        sse_tool_call_include_arguments,
+        agent_thinking_trace_enabled,
+        agent_tool_stats_enabled,
+        agent_tool_stats_window_events,
+        agent_tool_stats_min_samples,
+        agent_tool_stats_max_chars,
+        agent_tool_stats_warn_below_success_ratio,
+        materialize_deepseek_dsml_tool_calls,
+        thinking_avoid_echo_system_prompt,
+        thinking_avoid_echo_appendix,
+    } = ptt;
+
+    let TailContextQueuesSessionScalars {
+        context_char_budget,
+        context_min_messages_after_system,
+        context_summary_trigger_chars,
+        context_summary_tail_messages,
+        context_summary_max_tokens,
+        context_summary_transcript_max_chars,
+        health_llm_models_probe,
+        health_llm_models_probe_cache_secs,
+        chat_queue_max_concurrent,
+        chat_queue_max_pending,
+        parallel_readonly_tools_max,
+        read_file_turn_cache_max_entries,
+        test_result_cache_enabled,
+        test_result_cache_max_entries,
+        session_workspace_changelist_enabled,
+        session_workspace_changelist_max_chars,
+    } = cqs;
+
+    let TailStagedSandboxWebScalars {
+        staged_plan_execution,
+        staged_plan_phase_instruction,
+        staged_plan_allow_no_task,
+        staged_plan_feedback_mode,
+        staged_plan_patch_max_attempts,
+        staged_plan_cli_show_planner_stream,
+        staged_plan_optimizer_round,
+        staged_plan_optimizer_requires_parallel_tools,
+        staged_plan_ensemble_count,
+        staged_plan_skip_ensemble_on_casual_prompt,
+        staged_plan_two_phase_nl_display,
+        sync_default_tool_sandbox_mode,
+        sync_default_tool_sandbox_docker_image,
+        sync_default_tool_sandbox_docker_network,
+        sync_default_tool_sandbox_docker_timeout_secs,
+        sync_default_tool_sandbox_docker_user,
+        web_api_bearer_token,
+        web_api_require_bearer,
+        allow_insecure_no_auth_for_non_loopback,
+    } = ssw;
+
+    let TailStorageInjectNetScalars {
+        conversation_store_sqlite_path,
+        agent_memory_file_enabled,
+        agent_memory_file,
+        agent_memory_file_max_chars,
+        living_docs_inject_enabled,
+        living_docs_relative_dir,
+        living_docs_inject_max_chars,
+        living_docs_file_max_each_chars,
+        project_profile_inject_enabled,
+        project_profile_inject_max_chars,
+        project_dependency_brief_inject_enabled,
+        project_dependency_brief_inject_max_chars,
+        tool_call_explain_enabled,
+        tool_call_explain_min_chars,
+        tool_call_explain_max_chars,
+        mcp_enabled,
+        mcp_command,
+        mcp_tool_timeout_secs,
+        web_search_provider,
+        web_search_api_key,
+        web_search_timeout_secs,
+        web_search_max_results,
+        http_fetch_allowed_prefixes,
+        http_fetch_timeout_secs,
+        http_fetch_max_response_bytes,
+    } = sin;
 
     Ok(FinalizeTailScalars {
         cursor_rules_enabled,
