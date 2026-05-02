@@ -157,7 +157,11 @@ impl DynamicDecomposer {
         let prompt =
             self.build_decomposition_prompt(parent_goal, execution_history, current_iteration);
 
-        let messages = vec![Message::user_only(&prompt)];
+        let mut messages = vec![Message::user_only(&prompt)];
+        crate::agent::context_window::prepare_messages_for_hierarchical_llm_sync(
+            &mut messages,
+            cfg,
+        );
         let request = no_tools_chat_request_for_hierarchical_manager(
             cfg,
             &messages,

@@ -2,6 +2,7 @@
 //!
 //! 供任务分解输出与验证失败反思两条路径共用（`ManagerAgent`）。
 
+use crate::agent::context_window::prepare_messages_for_hierarchical_llm_sync;
 use crate::config::AgentConfig;
 use crate::llm::{
     CompleteChatRetryingParams, complete_chat_retrying,
@@ -135,10 +136,11 @@ pub(crate) async fn one_shot_json_repair_llm_response(
     json_fragment: String,
     repair_user_prompt: String,
 ) -> Result<String, String> {
-    let messages = vec![
+    let mut messages = vec![
         Message::user_only(json_fragment),
         Message::user_only(repair_user_prompt),
     ];
+    prepare_messages_for_hierarchical_llm_sync(&mut messages, cfg);
     let mut request = no_tools_chat_request_for_hierarchical_manager(
         cfg,
         &messages,

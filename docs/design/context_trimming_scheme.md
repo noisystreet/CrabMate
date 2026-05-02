@@ -120,11 +120,11 @@
 ### 6.5 多入口一致性
 
 - Web / CLI / 分阶段路径统一经 **`prepare_messages_for_model`**（会话同步 + 可选摘要等）。
-- **分层 Operator ReAct**（`hierarchy/operator`）：每次 **`call_llm`** 前对 **[`ReactState::messages`]** 调用 **`prepare_messages_before_model_call_sync`**，与同进程的 **`max_message_history`** / **`tool_message_max_chars`** / **`context_char_budget`** 对齐；**不**在此路径自动跑 **`maybe_summarize_with_llm`**、工作区变更集注入（与子目标隔离上下文一致）。若将来需要摘要，再评估是否复用异步 **`prepare_messages_for_model`** 或引入分层专用摘要开关。
+- **分层**（**`planner_executor_mode = hierarchical`**）：**Operator ReAct**（`hierarchy/operator`）每次 **`call_llm`** 前对 **[`ReactState::messages`]** 调用 **`prepare_messages_before_model_call_sync`**；**Manager** 分解/重规划/反思、**`manager_json_repair`**、**`dynamic_decomposer`**、**`hierarchy/router`** 的 LLM 路由等在发 **`no_tools_chat_request_for_hierarchical_manager`** 前对**临时** `Vec<Message>` 调用 **`prepare_messages_for_hierarchical_llm_sync`**（与上同属 **`apply_session_sync_pipeline`**，**`/status`** 的 **`message_pipeline_*_hits`** 同源累计）。上述分层路径**不**自动跑 **`maybe_summarize_with_llm`**、工作区变更集注入（与子目标/结构化 JSON 隔离上下文一致）。若将来在分层侧需要摘要，再评估是否复用异步 **`prepare_messages_for_model`** 或引入专用开关。
 
 ### 6.6 可观测性
 
-- **`MESSAGE_PIPELINE_COUNTERS`**：**`trim_count_hits`**、**`trim_char_budget_hits`**、**`tool_compress_hits`**、**`orphan_tool_drops`**；**`GET /status`** 暴露累计值（进程级，非单会话）。  
+- **`MESSAGE_PIPELINE_COUNTERS`**：**`trim_count_hits`**、**`trim_char_budget_hits`**、**`tool_compress_hits`**、**`orphan_tool_drops`**；**`GET /status`** 暴露累计值（进程级，非单会话）；**分层 Manager / JSON 修复 / 动态分解 / SmartRouter LLM 路由** 等路径在命中同步管道时同样递增这些计数器。  
 - **日志**：**`crabmate::message_pipeline=trace`** 输出逐步 **`session_sync_step`**。
 
 ### 6.7 安全与脱敏
@@ -171,4 +171,4 @@
 | 日期 | 摘要 |
 |------|------|
 | 2026-05-01 | 初版：会话同步契约、两阶段架构、设计要点与关联文档。 |
-| 2026-05-01 | 分层 Operator ReAct：`call_llm` 接入 **`prepare_messages_before_model_call_sync`**；补充 §6.5 多入口说明。 |
+| 2026-05-02 | 分层 Manager / JSON 修复 / 动态分解 / SmartRouter：`prepare_messages_for_hierarchical_llm_sync` 与主路径 **`message_pipeline`** 对齐；§6.5/6.6 多入口与观测说明更新。 |
