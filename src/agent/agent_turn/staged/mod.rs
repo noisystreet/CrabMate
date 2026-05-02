@@ -46,8 +46,8 @@ use planner_parse_fsm::omit_no_task_planner_from_history;
 use planner_round_driver::{
     complete_first_planner_round_maybe_retry_tool_reject,
     complete_one_staged_planner_assistant_round, emit_staged_planner_tool_call_rejected_timeline,
-    maybe_run_staged_plan_ensemble_then_merge, pop_last_staged_planner_coach_user_if_present,
-    run_staged_plan_nl_followup_round, strip_staged_planner_message_tool_calls,
+    maybe_run_staged_plan_ensemble_then_merge, run_staged_plan_nl_followup_round,
+    strip_staged_planner_message_tool_calls,
 };
 use post_parse_pipeline_fsm::{
     ensemble_merge_should_invoke, ensemble_merge_skip_for_casual_prompt,
@@ -358,7 +358,7 @@ where
     )
     .await?;
     if opt_finish == USER_CANCELLED_FINISH_REASON {
-        pop_last_staged_planner_coach_user_if_present(p.turn.messages);
+        p.turn.pop_last_staged_planner_coach_user_if_present();
         return Ok(ControlFlow::Break(StagedPlanRunOutcome::Finished));
     }
     strip_staged_planner_message_tool_calls(
@@ -386,7 +386,7 @@ where
                 target: "crabmate",
                 "分阶段规划优化轮：未解析出合法 agent_reply_plan v1 或非空 steps，沿用首轮规划"
             );
-            pop_last_staged_planner_coach_user_if_present(p.turn.messages);
+            p.turn.pop_last_staged_planner_coach_user_if_present();
         }
     }
     Ok(ControlFlow::Continue(()))

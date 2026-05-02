@@ -7,7 +7,6 @@ use tokio::sync::mpsc;
 use crate::agent::per_coord::PerCoordinator;
 use crate::agent::plan_artifact::{self, AgentReplyPlanV1};
 use crate::agent::plan_ensemble;
-use crate::agent::plan_optimizer::STAGED_PLAN_OPTIMIZER_COACH_MARK;
 use crate::llm::{
     LlmCompleteError, LlmRetryingTransportOpts, kimi_k2_5_vendor_requires_tool_call_reasoning,
     no_tools_chat_request_from_messages,
@@ -79,19 +78,6 @@ pub(super) async fn emit_staged_planner_tool_call_rejected_timeline(
         "staged::planner_tool_call_rejected_timeline",
     )
     .await;
-}
-
-/// 若最后一条为带「规划教练」标记的临时 user，则弹出（取消或解析失败时避免孤立上下文）。
-pub(super) fn pop_last_staged_planner_coach_user_if_present(messages: &mut Vec<Message>) {
-    if let Some(last) = messages.last()
-        && last.role == "user"
-        && crate::types::message_content_as_str(&last.content).is_some_and(|c| {
-            c.contains(STAGED_PLAN_OPTIMIZER_COACH_MARK)
-                || plan_ensemble::is_ensemble_injected_user_content(c)
-        })
-    {
-        messages.pop();
-    }
 }
 
 /// 两阶段 NL 开启时：无工具规划轮不向 Web/终端流式下发（由 NL 补全轮承担用户可见输出）。
@@ -311,7 +297,7 @@ where
         )
         .await?;
         if fin == USER_CANCELLED_FINISH_REASON {
-            pop_last_staged_planner_coach_user_if_present(p.turn.messages);
+            p.turn.pop_last_staged_planner_coach_user_if_present();
             return Ok(());
         }
         strip_staged_planner_message_tool_calls(&mut sec_msg, "·逻辑多规划员", dsml);
@@ -324,7 +310,7 @@ where
             );
         match ensemble_secondary_planner_round_outcome(parsed) {
             EnsembleSecondaryPlannerRoundOutcome::AcceptAppend(p2) => {
-                pop_last_staged_planner_coach_user_if_present(p.turn.messages);
+                p.turn.pop_last_staged_planner_coach_user_if_present();
                 accepted.push(p2);
             }
             EnsembleSecondaryPlannerRoundOutcome::StopChain => {
@@ -334,7 +320,7 @@ where
                     planner_idx,
                     accepted.len()
                 );
-                pop_last_staged_planner_coach_user_if_present(p.turn.messages);
+                p.turn.pop_last_staged_planner_coach_user_if_present();
                 break;
             }
         }
@@ -355,7 +341,7 @@ where
     )
     .await?;
     if merge_fin == USER_CANCELLED_FINISH_REASON {
-        pop_last_staged_planner_coach_user_if_present(p.turn.messages);
+        p.turn.pop_last_staged_planner_coach_user_if_present();
         return Ok(());
     }
     strip_staged_planner_message_tool_calls(&mut merge_msg, "·多规划合并", dsml);
@@ -379,7 +365,7 @@ where
                 "分阶段规划·多规划合并：未解析出合法 agent_reply_plan，沿用合并前规划（{} 步）",
                 plan.steps.len()
             );
-            pop_last_staged_planner_coach_user_if_present(p.turn.messages);
+            p.turn.pop_last_staged_planner_coach_user_if_present();
         }
     }
     Ok(())
