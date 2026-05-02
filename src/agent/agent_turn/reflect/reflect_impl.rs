@@ -35,6 +35,7 @@ pub(crate) async fn per_reflect_after_assistant(
     if finish_reason == "tool_calls" || msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
         return ReflectOnAssistantOutcome::ProceedToExecuteTools;
     }
+
     match per_coord.after_final_assistant(
         msg,
         p.turn.messages.as_slice(),
@@ -50,53 +51,67 @@ pub(crate) async fn per_reflect_after_assistant(
             ReflectOnAssistantOutcome::PlanRewriteExhausted { reason }
         }
         AfterFinalAssistant::StopTurnPendingPlanConsistencyLlm { plan, tool_digest } => {
-            let plan_json = per_plan_semantic_check::agent_reply_plan_json_compact(&plan);
-            let outcome = per_plan_semantic_check::evaluate_plan_consistency_with_recent_tools_llm(
-                PlanSemanticLlmCtx {
-                    llm_backend: p.ctx.llm_backend,
-                    client: p.ctx.client,
-                    api_key: p.ctx.api_key,
-                    cfg: p.ctx.cfg.as_ref(),
-                    out: p.ctx.out,
-                    no_stream: p.ctx.no_stream,
-                    cancel: p.ctx.cancel,
-                    plain_terminal_stream: p.ctx.plain_terminal_stream,
-                    request_chrome_trace: p.ctx.request_chrome_trace.clone(),
-                    temperature_override: p.turn.temperature_override,
-                    model_override: p.turn.model_override.clone(),
-                    seed_override: p.turn.seed_override,
-                    max_tokens: p.ctx.cfg.final_plan_semantic_check_max_tokens,
-                },
-                plan_json.as_str(),
-                tool_digest.as_deref(),
-            )
-            .await;
-            let sem_outcome = final_plan_gate::run_final_plan_gate_semantic_completed(
-                &outcome,
-                per_coord.plan_rewrite_attempts_snapshot(),
-                per_coord.plan_rewrite_max_attempts_limit(),
-            );
-            tracing::debug!(
-                target: "crabmate::agent_turn",
-                gate_route = ?sem_outcome.route,
-                gate_phase = ?final_plan_gate::FinalPlanGatePhase::PendingSemanticLlm,
-                sub_phase = "reflect",
-                "final_plan_gate semantic transition"
-            );
-            match sem_outcome.after {
-                AfterFinalAssistant::StopTurn => ReflectOnAssistantOutcome::StopTurn,
-                AfterFinalAssistant::StopTurnPlanRewriteExhausted { reason } => {
-                    ReflectOnAssistantOutcome::PlanRewriteExhausted { reason }
-                }
-                AfterFinalAssistant::RequestPlanRewrite(m) => {
-                    per_coord.increment_plan_rewrite_attempts();
-                    p.turn.messages.push(m);
-                    ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite
-                }
-                AfterFinalAssistant::StopTurnPendingPlanConsistencyLlm { .. } => unreachable!(
-                    "run_final_plan_gate_semantic_completed must not return StopTurnPendingPlanConsistencyLlm"
-                ),
-            }
+            reflect_pending_semantic_consistency_llm(p, per_coord, plan, tool_digest).await
         }
+    }
+}
+
+/// **`PendingSemanticLlm`**：侧向一致性 LLM → [`final_plan_gate::run_final_plan_gate_semantic_completed`] → **外层**结果。
+///
+/// 语义 LLM 判定「不一致且允许重写」时须 **`increment_plan_rewrite_attempts`**（与静态路径经门控写入计数对齐）。
+async fn reflect_pending_semantic_consistency_llm(
+    p: &mut RunLoopParams<'_>,
+    per_coord: &mut PerCoordinator,
+    plan: crate::agent::plan_artifact::AgentReplyPlanV1,
+    tool_digest: Option<String>,
+) -> ReflectOnAssistantOutcome {
+    let plan_json = per_plan_semantic_check::agent_reply_plan_json_compact(&plan);
+    let outcome = per_plan_semantic_check::evaluate_plan_consistency_with_recent_tools_llm(
+        PlanSemanticLlmCtx {
+            llm_backend: p.ctx.llm_backend,
+            client: p.ctx.client,
+            api_key: p.ctx.api_key,
+            cfg: p.ctx.cfg.as_ref(),
+            out: p.ctx.out,
+            no_stream: p.ctx.no_stream,
+            cancel: p.ctx.cancel,
+            plain_terminal_stream: p.ctx.plain_terminal_stream,
+            request_chrome_trace: p.ctx.request_chrome_trace.clone(),
+            temperature_override: p.turn.temperature_override,
+            model_override: p.turn.model_override.clone(),
+            seed_override: p.turn.seed_override,
+            max_tokens: p.ctx.cfg.final_plan_semantic_check_max_tokens,
+        },
+        plan_json.as_str(),
+        tool_digest.as_deref(),
+    )
+    .await;
+
+    let sem_outcome = final_plan_gate::run_final_plan_gate_semantic_completed(
+        &outcome,
+        per_coord.plan_rewrite_attempts_snapshot(),
+        per_coord.plan_rewrite_max_attempts_limit(),
+    );
+    tracing::debug!(
+        target: "crabmate::agent_turn",
+        gate_route = ?sem_outcome.route,
+        gate_phase = ?final_plan_gate::FinalPlanGatePhase::PendingSemanticLlm,
+        sub_phase = "reflect",
+        "final_plan_gate semantic transition"
+    );
+
+    match sem_outcome.after {
+        AfterFinalAssistant::StopTurn => ReflectOnAssistantOutcome::StopTurn,
+        AfterFinalAssistant::StopTurnPlanRewriteExhausted { reason } => {
+            ReflectOnAssistantOutcome::PlanRewriteExhausted { reason }
+        }
+        AfterFinalAssistant::RequestPlanRewrite(m) => {
+            per_coord.increment_plan_rewrite_attempts();
+            p.turn.messages.push(m);
+            ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite
+        }
+        AfterFinalAssistant::StopTurnPendingPlanConsistencyLlm { .. } => unreachable!(
+            "run_final_plan_gate_semantic_completed must not return StopTurnPendingPlanConsistencyLlm"
+        ),
     }
 }
