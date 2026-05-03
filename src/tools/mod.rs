@@ -566,6 +566,14 @@ pub(crate) fn summarize_tool_call_parsed(
     }
 }
 
+/// 仅 **`cargo test`**：重置少数进程级可变 `static`（`run_command` 秒级限流、**`test_result_cache`** LRU）。
+/// 集成测试可在夹具开头调用 crate 根 **[`crate::reset_process_tool_globals_for_tests`]**。
+#[cfg(test)]
+pub(crate) fn reset_process_tool_globals_for_tests() {
+    command::reset_run_command_rate_limit_for_tests();
+    test_result_cache::reset_test_result_cache_for_tests();
+}
+
 #[cfg(test)]
 #[path = "mod/tests.rs"]
 mod tests;

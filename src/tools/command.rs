@@ -537,6 +537,14 @@ fn check_rate_limit() -> Result<(), RunCommandError> {
     Ok(())
 }
 
+/// 仅 **`cargo test`**：清空 [`RATE_LIMIT`] 窗口计数，避免与其它测试共享限流状态。
+#[cfg(test)]
+pub(crate) fn reset_run_command_rate_limit_for_tests() {
+    let mut state = RATE_LIMIT.lock().unwrap_or_else(|e| e.into_inner());
+    state.window_sec = 0;
+    state.count = 0;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

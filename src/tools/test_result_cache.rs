@@ -250,10 +250,35 @@ pub(crate) fn store_cached(enabled: bool, max_entries: usize, key: TestCacheKey,
     }
 }
 
+/// 仅 **`cargo test`**：丢弃进程内 LRU，避免 crate 内单测与集成测试夹具互相污染。
+#[cfg(test)]
+pub(crate) fn reset_test_result_cache_for_tests() {
+    let mut g = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    *g = None;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn reset_test_result_cache_for_tests_clears_singleton() {
+        let key = TestCacheKey {
+            workspace_root: PathBuf::from("/tmp/crabmate_reset_cache_test"),
+            kind: TestCacheKind::CargoTest,
+            args_fingerprint: "reset-test-args".to_string(),
+            inputs_fingerprint: "reset-test-inputs".to_string(),
+        };
+        store_cached(true, 8, key.clone(), "cached-output".to_string());
+        assert!(
+            try_get_cached(true, 8, &key)
+                .as_deref()
+                .is_some_and(|s| s == "cached-output")
+        );
+        reset_test_result_cache_for_tests();
+        assert!(try_get_cached(true, 8, &key).is_none());
+    }
 
     #[test]
     fn lru_evicts_oldest() {
