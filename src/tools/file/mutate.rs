@@ -221,6 +221,91 @@ pub fn create_dir(args_json: &str, working_dir: &Path) -> String {
 
 // ── search_replace ──────────────────────────────────────────
 
+fn apply_search_replace_inner(
+    content: &str,
+    search: &str,
+    replace: &str,
+    is_regex: bool,
+    max_replacements: usize,
+) -> Result<(String, usize), String> {
+    if is_regex {
+        let re = RegexBuilder::new(search)
+            .build()
+            .map_err(|e| format!("正则表达式无效：{}", e))?;
+        let mut count = 0usize;
+        let new = if max_replacements == 0 {
+            let result = re.replace_all(content, replace);
+            count = re.find_iter(content).count();
+            result.to_string()
+        } else {
+            let mut result = content.to_string();
+            for _ in 0..max_replacements {
+                if let Some(m) = re.find(&result) {
+                    let before = &result[..m.start()];
+                    let after = &result[m.end()..];
+                    result = format!("{}{}{}", before, replace, after);
+                    count += 1;
+                } else {
+                    break;
+                }
+            }
+            result
+        };
+        Ok((new, count))
+    } else {
+        let mut count = 0usize;
+        let new = if max_replacements == 0 {
+            count = content.matches(search).count();
+            content.replace(search, replace)
+        } else {
+            let mut result = content.to_string();
+            for _ in 0..max_replacements {
+                if let Some(pos) = result.find(search) {
+                    result = format!(
+                        "{}{}{}",
+                        &result[..pos],
+                        replace,
+                        &result[pos + search.len()..]
+                    );
+                    count += 1;
+                } else {
+                    break;
+                }
+            }
+            result
+        };
+        Ok((new, count))
+    }
+}
+
+fn search_replace_dry_run_preview(
+    display: &str,
+    count: usize,
+    content: &str,
+    new_content: &str,
+) -> String {
+    let mut preview = format!("预览（dry-run）：在 {} 中找到 {} 处匹配\n", display, count);
+    let lines: Vec<&str> = new_content.lines().collect();
+    let orig_lines: Vec<&str> = content.lines().collect();
+    let mut shown = 0usize;
+    for (i, (old, new)) in orig_lines.iter().zip(lines.iter()).enumerate() {
+        if old != new && shown < 20 {
+            preview.push_str(&format!(
+                "  L{}: \"{}\" → \"{}\"\n",
+                i + 1,
+                old.trim(),
+                new.trim()
+            ));
+            shown += 1;
+        }
+    }
+    if shown >= 20 {
+        preview.push_str("  ... (更多变更已省略)\n");
+    }
+    preview.push_str("\n设置 dry_run=false, confirm=true 以实际写入");
+    preview
+}
+
 pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
     let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
@@ -264,55 +349,11 @@ pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>
         return format!("错误：文件过大（{} 字节，上限 4MiB）", content.len());
     }
 
-    let (new_content, count) = if is_regex {
-        let re = match RegexBuilder::new(&search).build() {
-            Ok(r) => r,
-            Err(e) => return format!("正则表达式无效：{}", e),
+    let (new_content, count) =
+        match apply_search_replace_inner(&content, &search, &replace, is_regex, max_replacements) {
+            Ok(x) => x,
+            Err(e) => return e,
         };
-        let mut count = 0usize;
-        let new = if max_replacements == 0 {
-            let result = re.replace_all(&content, replace.as_str());
-            count = re.find_iter(&content).count();
-            result.to_string()
-        } else {
-            let mut result = content.clone();
-            for _ in 0..max_replacements {
-                if let Some(m) = re.find(&result) {
-                    let before = &result[..m.start()];
-                    let after = &result[m.end()..];
-                    result = format!("{}{}{}", before, replace, after);
-                    count += 1;
-                } else {
-                    break;
-                }
-            }
-            result
-        };
-        (new, count)
-    } else {
-        let mut count = 0usize;
-        let new = if max_replacements == 0 {
-            count = content.matches(&search).count();
-            content.replace(&search, &replace)
-        } else {
-            let mut result = content.clone();
-            for _ in 0..max_replacements {
-                if let Some(pos) = result.find(&search) {
-                    result = format!(
-                        "{}{}{}",
-                        &result[..pos],
-                        replace,
-                        &result[pos + search.len()..]
-                    );
-                    count += 1;
-                } else {
-                    break;
-                }
-            }
-            result
-        };
-        (new, count)
-    };
 
     if count == 0 {
         return format!("未找到匹配：\"{}\" 在 {}", search, path);
@@ -320,26 +361,7 @@ pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>
 
     let display = path_for_tool_display(working_dir, &target, Some(&path));
     if dry_run {
-        let mut preview = format!("预览（dry-run）：在 {} 中找到 {} 处匹配\n", display, count);
-        let lines: Vec<&str> = new_content.lines().collect();
-        let orig_lines: Vec<&str> = content.lines().collect();
-        let mut shown = 0usize;
-        for (i, (old, new)) in orig_lines.iter().zip(lines.iter()).enumerate() {
-            if old != new && shown < 20 {
-                preview.push_str(&format!(
-                    "  L{}: \"{}\" → \"{}\"\n",
-                    i + 1,
-                    old.trim(),
-                    new.trim()
-                ));
-                shown += 1;
-            }
-        }
-        if shown >= 20 {
-            preview.push_str("  ... (更多变更已省略)\n");
-        }
-        preview.push_str("\n设置 dry_run=false, confirm=true 以实际写入");
-        return preview;
+        return search_replace_dry_run_preview(&display, count, &content, &new_content);
     }
 
     if !confirm {

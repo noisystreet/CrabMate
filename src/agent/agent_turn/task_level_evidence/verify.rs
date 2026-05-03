@@ -68,7 +68,7 @@ fn per_result_verify_flags(
 }
 
 /// 对「写 C++ + 编译 + 运行」类任务做轻量证据核对；缺项时返回说明字符串。
-pub(super) fn verify_task_level_execution_evidence(
+pub(crate) fn verify_task_level_execution_evidence(
     task: &str,
     results: &[TaskResult],
     goal_expected_outputs: &HashMap<String, Vec<String>>,

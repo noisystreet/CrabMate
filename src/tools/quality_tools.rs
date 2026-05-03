@@ -602,50 +602,63 @@ fn skip_docker_podman_only(
 }
 
 fn section_failed(text: &str) -> bool {
-    if text.contains("执行失败（") || text.contains(": 执行失败（") {
-        return true;
-    }
-    if let Some(line) = text.lines().next() {
-        if let Some(rest) = line.strip_prefix("cargo fmt --check (exit=") {
-            return parse_exit_nonzero(rest);
-        }
-        if (line.starts_with("cargo ") || line.starts_with("rustc "))
-            && line.contains("(exit=")
-            && let Some(idx) = line.find("(exit=")
-        {
-            return parse_exit_nonzero(&line[idx..]);
-        }
-        if line.contains("npm run")
-            && line.contains("(exit=")
-            && let Some(idx) = line.find("(exit=")
-        {
-            return parse_exit_nonzero(&line[idx..]);
-        }
-        if line.contains("npx prettier")
-            && line.contains("(exit=")
-            && let Some(idx) = line.find("(exit=")
-        {
-            return parse_exit_nonzero(&line[idx..]);
-        }
-        if (line.starts_with("ruff check")
-            || line.starts_with("python3 -m pytest")
-            || line.starts_with("mypy"))
-            && line.contains("(exit=")
-            && let Some(idx) = line.find("(exit=")
-        {
-            return parse_exit_nonzero(&line[idx..]);
-        }
-        if (line.starts_with("mvn ")
-            || line.starts_with("gradle ")
-            || line.contains("docker compose ps")
-            || line.starts_with("podman images"))
-            && line.contains("(exit=")
-            && let Some(idx) = line.find("(exit=")
-        {
-            return parse_exit_nonzero(&line[idx..]);
-        }
-    }
-    text.contains("error: could not compile") || text.contains("error[E")
+    section_failed_execution_markers(text)
+        || section_failed_first_line_exit_patterns(text)
+        || text.contains("error: could not compile")
+        || text.contains("error[E")
+}
+
+fn section_failed_execution_markers(text: &str) -> bool {
+    text.contains("执行失败（") || text.contains(": 执行失败（")
+}
+
+fn section_failed_first_line_exit_patterns(text: &str) -> bool {
+    let Some(line) = text.lines().next() else {
+        return false;
+    };
+    section_failed_cargo_fmt_exit(line)
+        || section_failed_cargo_or_rustc_exit(line)
+        || section_failed_npm_run_exit(line)
+        || section_failed_npx_prettier_exit(line)
+        || section_failed_python_linters_exit(line)
+        || section_failed_jvm_docker_exit(line)
+}
+
+fn exit_suffix_nonzero(line: &str) -> bool {
+    line.find("(exit=")
+        .is_some_and(|idx| parse_exit_nonzero(&line[idx..]))
+}
+
+fn section_failed_cargo_fmt_exit(line: &str) -> bool {
+    line.strip_prefix("cargo fmt --check (exit=")
+        .is_some_and(parse_exit_nonzero)
+}
+
+fn section_failed_cargo_or_rustc_exit(line: &str) -> bool {
+    (line.starts_with("cargo ") || line.starts_with("rustc ")) && exit_suffix_nonzero(line)
+}
+
+fn section_failed_npm_run_exit(line: &str) -> bool {
+    line.contains("npm run") && exit_suffix_nonzero(line)
+}
+
+fn section_failed_npx_prettier_exit(line: &str) -> bool {
+    line.contains("npx prettier") && exit_suffix_nonzero(line)
+}
+
+fn section_failed_python_linters_exit(line: &str) -> bool {
+    (line.starts_with("ruff check")
+        || line.starts_with("python3 -m pytest")
+        || line.starts_with("mypy"))
+        && exit_suffix_nonzero(line)
+}
+
+fn section_failed_jvm_docker_exit(line: &str) -> bool {
+    (line.starts_with("mvn ")
+        || line.starts_with("gradle ")
+        || line.contains("docker compose ps")
+        || line.starts_with("podman images"))
+        && exit_suffix_nonzero(line)
 }
 
 fn parse_exit_nonzero(s: &str) -> bool {

@@ -6,6 +6,6 @@ mod common;
 mod render;
 mod verify;
 
-pub(super) use common::is_program_build_run_request;
-pub(super) use render::render_task_level_evidence;
-pub(super) use verify::verify_task_level_execution_evidence;
+pub(crate) use common::is_program_build_run_request;
+pub(crate) use render::render_task_level_evidence;
+pub(crate) use verify::verify_task_level_execution_evidence;

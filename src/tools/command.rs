@@ -1,7 +1,7 @@
 //! 有限的 Linux 命令执行工具（白名单、工作目录限制、无 shell 注入）
 
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -240,6 +240,131 @@ fn cargo_test_argv_cache_eligible(cmd_args: &[String]) -> bool {
     true
 }
 
+struct PreparedRunCommand {
+    cmd_raw: String,
+    cmd_name: String,
+    exec_path: Option<PathBuf>,
+    cmd_args: Vec<String>,
+}
+
+fn prepare_run_command_invocation(
+    args: &serde_json::Value,
+    working_dir: &Path,
+    allowed_commands: &[String],
+) -> Result<PreparedRunCommand, RunCommandError> {
+    let cmd_raw = match args.get("command").and_then(|c| c.as_str()) {
+        Some(s) => s.trim().to_string(),
+        None => return Err(RunCommandError::MissingCommand),
+    };
+    let cmd_name = cmd_raw.to_lowercase();
+
+    let is_workspace_executable = cmd_raw.starts_with("./") || cmd_raw.contains('/');
+    let exec_path = if is_workspace_executable {
+        crate::tools::resolve_workspace_executable(working_dir, &cmd_raw).ok()
+    } else {
+        None
+    };
+
+    if exec_path.is_none()
+        && !allowed_commands
+            .iter()
+            .any(|c| c.eq_ignore_ascii_case(&cmd_name))
+    {
+        return Err(RunCommandError::DisallowedCommand {
+            attempted: cmd_name,
+            allowed: allowed_commands.join(", "),
+        });
+    }
+
+    let mut cmd_args: Vec<String> = match args.get("args") {
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect(),
+        Some(_) => return Err(RunCommandError::ArgsNotArray),
+        None => vec![],
+    };
+    cmd_args = cmd_args
+        .into_iter()
+        .map(|a| normalize_workspace_absolute_arg(&a, working_dir))
+        .collect();
+
+    if exec_path.is_some() {
+        for a in &cmd_args {
+            if a.contains("..") || a.trim_start().starts_with('/') {
+                return Err(RunCommandError::UnsafeArg);
+            }
+        }
+    } else {
+        for a in &cmd_args {
+            if !is_arg_safe(&cmd_name, a) {
+                return Err(RunCommandError::UnsafeArg);
+            }
+        }
+    }
+    Ok(PreparedRunCommand {
+        cmd_raw,
+        cmd_name,
+        exec_path,
+        cmd_args,
+    })
+}
+
+fn run_command_execute_workspace_binary(
+    cmd_raw: &str,
+    cmd_args: &[String],
+    working_dir: &Path,
+    target_path: &Path,
+    max_output_len: usize,
+) -> Result<String, RunCommandError> {
+    let invocation = format_invocation_for_display(cmd_raw, cmd_args);
+    let output = Command::new(target_path)
+        .args(cmd_args)
+        .current_dir(working_dir)
+        .output()
+        .map_err(|e| map_spawn_error(cmd_raw, working_dir, e))?;
+    Ok(format_command_output(&invocation, output, max_output_len))
+}
+
+fn run_cargo_test_with_optional_cache(
+    prepared: &PreparedRunCommand,
+    working_dir: &Path,
+    invocation: &str,
+    max_output_len: usize,
+    test_cache: Option<&RunCommandTestCacheOpts<'_>>,
+) -> Result<Option<String>, RunCommandError> {
+    let Some(opts) = test_cache else {
+        return Ok(None);
+    };
+    if prepared.cmd_name != "cargo"
+        || !opts.enabled
+        || !cargo_test_argv_cache_eligible(&prepared.cmd_args)
+    {
+        return Ok(None);
+    }
+    let Some(inputs_fp) = fingerprint_rust_workspace_sources(opts.workspace_root) else {
+        return Ok(None);
+    };
+    let args_fp = cargo_test_run_command_args_fingerprint(&prepared.cmd_args);
+    let key = TestCacheKey {
+        workspace_root: opts.workspace_root.to_path_buf(),
+        kind: TestCacheKind::CargoTestViaRunCommand,
+        args_fingerprint: args_fp,
+        inputs_fingerprint: inputs_fp.clone(),
+    };
+    if let Some(hit) = try_get_cached(opts.enabled, opts.max_entries, &key) {
+        return Ok(Some(wrap_cache_hit(&inputs_fp, &hit)));
+    }
+    let output = Command::new(&prepared.cmd_name)
+        .args(&prepared.cmd_args)
+        .current_dir(working_dir)
+        .output()
+        .map_err(|e| map_spawn_error(&prepared.cmd_name, working_dir, e))?;
+    let formatted = format_command_output(invocation, output, max_output_len);
+    store_cached(opts.enabled, opts.max_entries, key, formatted.clone());
+    Ok(Some(formatted))
+}
+
 /// 在指定工作目录下执行白名单内的 Linux 命令，不经过 shell，输出截断。
 /// `allowed_commands` 为可执行命令名列表（小写）；`working_dir` 为命令的工作目录（已校验为存在目录）。
 pub fn run(
@@ -303,104 +428,36 @@ fn run_impl(
     test_cache: Option<RunCommandTestCacheOpts<'_>>,
 ) -> Result<String, RunCommandError> {
     let args: serde_json::Value = parse_run_command_args_with_repair(args_json)?;
-    let cmd_raw = match args.get("command").and_then(|c| c.as_str()) {
-        Some(s) => s.trim(),
-        None => return Err(RunCommandError::MissingCommand),
-    };
-    let cmd_name = cmd_raw.to_lowercase();
-
-    // 检查是否为 ./xxx 形式的工作区可执行文件
-    let is_workspace_executable = cmd_raw.starts_with("./") || cmd_raw.contains('/');
-    let exec_path = if is_workspace_executable {
-        crate::tools::resolve_workspace_executable(working_dir, cmd_raw).ok()
-    } else {
-        None
-    };
-
-    // 验证命令是否在白名单中（./xxx 形式由 exec_path 验证）
-    if exec_path.is_none()
-        && !allowed_commands
-            .iter()
-            .any(|c| c.eq_ignore_ascii_case(&cmd_name))
-    {
-        return Err(RunCommandError::DisallowedCommand {
-            attempted: cmd_name,
-            allowed: allowed_commands.join(", "),
-        });
-    }
-
-    let mut cmd_args: Vec<String> = match args.get("args") {
-        Some(serde_json::Value::Array(arr)) => arr
-            .iter()
-            .filter_map(|v| v.as_str().map(String::from))
-            .collect(),
-        Some(_) => return Err(RunCommandError::ArgsNotArray),
-        None => vec![],
-    };
-    cmd_args = cmd_args
-        .into_iter()
-        .map(|a| normalize_workspace_absolute_arg(&a, working_dir))
-        .collect();
-
-    // 对于 ./xxx 形式，检查参数安全性
-    if exec_path.is_some() {
-        for a in &cmd_args {
-            if a.contains("..") || a.trim_start().starts_with('/') {
-                return Err(RunCommandError::UnsafeArg);
-            }
-        }
-    } else {
-        for a in &cmd_args {
-            if !is_arg_safe(&cmd_name, a) {
-                return Err(RunCommandError::UnsafeArg);
-            }
-        }
-    }
+    let prepared = prepare_run_command_invocation(&args, working_dir, allowed_commands)?;
     check_rate_limit()?;
 
-    // 执行工作区可执行文件
-    let invocation = format_invocation_for_display(cmd_raw, &cmd_args);
+    let invocation = format_invocation_for_display(&prepared.cmd_raw, &prepared.cmd_args);
 
-    if let Some(target_path) = exec_path {
-        let output = Command::new(&target_path)
-            .args(&cmd_args)
-            .current_dir(working_dir)
-            .output()
-            .map_err(|e| map_spawn_error(cmd_raw, working_dir, e))?;
-        return Ok(format_command_output(&invocation, output, max_output_len));
+    if let Some(ref target_path) = prepared.exec_path {
+        return run_command_execute_workspace_binary(
+            &prepared.cmd_raw,
+            &prepared.cmd_args,
+            working_dir,
+            target_path,
+            max_output_len,
+        );
     }
 
-    if cmd_name == "cargo"
-        && let Some(opts) = test_cache.as_ref()
-        && opts.enabled
-        && cargo_test_argv_cache_eligible(&cmd_args)
-        && let Some(inputs_fp) = fingerprint_rust_workspace_sources(opts.workspace_root)
-    {
-        let args_fp = cargo_test_run_command_args_fingerprint(&cmd_args);
-        let key = TestCacheKey {
-            workspace_root: opts.workspace_root.to_path_buf(),
-            kind: TestCacheKind::CargoTestViaRunCommand,
-            args_fingerprint: args_fp,
-            inputs_fingerprint: inputs_fp.clone(),
-        };
-        if let Some(hit) = try_get_cached(opts.enabled, opts.max_entries, &key) {
-            return Ok(wrap_cache_hit(&inputs_fp, &hit));
-        }
-        let output = Command::new(&cmd_name)
-            .args(&cmd_args)
-            .current_dir(working_dir)
-            .output()
-            .map_err(|e| map_spawn_error(&cmd_name, working_dir, e))?;
-        let formatted = format_command_output(&invocation, output, max_output_len);
-        store_cached(opts.enabled, opts.max_entries, key, formatted.clone());
-        return Ok(formatted);
+    if let Some(cached) = run_cargo_test_with_optional_cache(
+        &prepared,
+        working_dir,
+        &invocation,
+        max_output_len,
+        test_cache.as_ref(),
+    )? {
+        return Ok(cached);
     }
 
-    let output = Command::new(&cmd_name)
-        .args(&cmd_args)
+    let output = Command::new(&prepared.cmd_name)
+        .args(&prepared.cmd_args)
         .current_dir(working_dir)
         .output()
-        .map_err(|e| map_spawn_error(&cmd_name, working_dir, e))?;
+        .map_err(|e| map_spawn_error(&prepared.cmd_name, working_dir, e))?;
     Ok(format_command_output(&invocation, output, max_output_len))
 }
 

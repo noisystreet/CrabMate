@@ -20,7 +20,7 @@ pub(super) fn combined_output_error(r: &TaskResult) -> String {
 }
 
 /// 用户任务是否像「写 C++ 程序并编译运行」类请求（用于任务级验收门控）。
-pub(super) fn is_program_build_run_request(task: &str) -> bool {
+pub(crate) fn is_program_build_run_request(task: &str) -> bool {
     let t = task.to_lowercase();
     let asks_write = t.contains("编写") || t.contains("实现") || t.contains("write");
     let asks_program = t.contains("程序") || t.contains("c++") || t.contains("cpp");

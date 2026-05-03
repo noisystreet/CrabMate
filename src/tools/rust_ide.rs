@@ -252,6 +252,118 @@ pub fn rust_analyzer_document_symbol(args_json: &str, workspace_root: &Path) -> 
     }
 }
 
+fn ra_lsp_request_method_params(
+    op: RaLspOp,
+    uri: &str,
+    line: u32,
+    character: u32,
+    args: &Value,
+) -> (&'static str, Value) {
+    match op {
+        RaLspOp::Definition => (
+            "textDocument/definition",
+            json!({
+                "textDocument": { "uri": uri },
+                "position": { "line": line, "character": character }
+            }),
+        ),
+        RaLspOp::References => (
+            "textDocument/references",
+            json!({
+                "textDocument": { "uri": uri },
+                "position": { "line": line, "character": character },
+                "context": { "includeDeclaration": args.get("include_declaration").and_then(|x| x.as_bool()).unwrap_or(true) }
+            }),
+        ),
+        RaLspOp::Hover => (
+            "textDocument/hover",
+            json!({
+                "textDocument": { "uri": uri },
+                "position": { "line": line, "character": character }
+            }),
+        ),
+        RaLspOp::DocumentSymbol => (
+            "textDocument/documentSymbol",
+            json!({ "textDocument": { "uri": uri } }),
+        ),
+    }
+}
+
+struct LspRustAnalyzerHandshake<'a> {
+    root_uri: &'a str,
+    root: &'a Path,
+    file_uri: &'a str,
+    text: &'a str,
+    wait_ms: u64,
+    deadline: Instant,
+}
+
+fn lsp_rust_analyzer_handshake(
+    stdin: &mut impl Write,
+    reader: &mut BufReader<impl std::io::Read>,
+    h: &LspRustAnalyzerHandshake<'_>,
+) -> Result<(), String> {
+    let init = json!({
+        "jsonrpc": "2.0",
+        "id": 1u64,
+        "method": "initialize",
+        "params": {
+            "processId": std::process::id(),
+            "rootPath": h.root.to_string_lossy(),
+            "rootUri": h.root_uri,
+            "capabilities": {
+                "textDocument": {
+                    "publishDiagnostics": {},
+                    "definition": { "linkSupport": true },
+                    "references": {},
+                    "hover": { "contentFormat": ["markdown", "plaintext"] },
+                    "documentSymbol": { "hierarchicalDocumentSymbolSupport": true }
+                },
+                "workspace": {}
+            },
+            "workspaceFolders": [{
+                "uri": h.root_uri,
+                "name": "workspace"
+            }]
+        }
+    });
+    write_lsp(stdin, &init.to_string()).map_err(|e| e.to_string())?;
+    let _ = read_response_until_id(reader, 1, h.deadline)?;
+
+    let notif_init = json!({
+        "jsonrpc": "2.0",
+        "method": "initialized",
+        "params": {}
+    });
+    write_lsp(stdin, &notif_init.to_string()).map_err(|e| e.to_string())?;
+
+    let did_open = json!({
+        "jsonrpc": "2.0",
+        "method": "textDocument/didOpen",
+        "params": {
+            "textDocument": {
+                "uri": h.file_uri,
+                "languageId": "rust",
+                "version": 1,
+                "text": h.text
+            }
+        }
+    });
+    write_lsp(stdin, &did_open.to_string()).map_err(|e| e.to_string())?;
+
+    std::thread::sleep(Duration::from_millis(h.wait_ms));
+    Ok(())
+}
+
+fn lsp_rust_analyzer_run(op: RaLspOp, resp: &Value, max_symbols: usize) -> Result<String, String> {
+    match op {
+        RaLspOp::Definition => format_lsp_locations(resp, true),
+        RaLspOp::References => format_lsp_locations(resp, false),
+        RaLspOp::Hover => format_lsp_hover(resp),
+        RaLspOp::DocumentSymbol => format_lsp_document_symbols(resp, max_symbols),
+    }
+}
+
 fn lsp_rust_analyzer_request(
     args_json: &str,
     workspace_root: &Path,
@@ -328,85 +440,21 @@ fn lsp_rust_analyzer_request(
     let mut reader = BufReader::new(stdout);
     let deadline = Instant::now() + LSP_IO_TIMEOUT;
 
-    let init = json!({
-        "jsonrpc": "2.0",
-        "id": 1u64,
-        "method": "initialize",
-        "params": {
-            "processId": std::process::id(),
-            "rootPath": root.to_string_lossy(),
-            "rootUri": root_uri,
-            "capabilities": {
-                "textDocument": {
-                    "publishDiagnostics": {},
-                    "definition": { "linkSupport": true },
-                    "references": {},
-                    "hover": { "contentFormat": ["markdown", "plaintext"] },
-                    "documentSymbol": { "hierarchicalDocumentSymbolSupport": true }
-                },
-                "workspace": {}
-            },
-            "workspaceFolders": [{
-                "uri": root_uri,
-                "name": "workspace"
-            }]
-        }
-    });
-    write_lsp(&mut stdin, &init.to_string()).map_err(|e| e.to_string())?;
-    let _ = read_response_until_id(&mut reader, 1, deadline)?;
-
-    let notif_init = json!({
-        "jsonrpc": "2.0",
-        "method": "initialized",
-        "params": {}
-    });
-    write_lsp(&mut stdin, &notif_init.to_string()).map_err(|e| e.to_string())?;
-
-    let did_open = json!({
-        "jsonrpc": "2.0",
-        "method": "textDocument/didOpen",
-        "params": {
-            "textDocument": {
-                "uri": uri,
-                "languageId": "rust",
-                "version": 1,
-                "text": text
-            }
-        }
-    });
-    write_lsp(&mut stdin, &did_open.to_string()).map_err(|e| e.to_string())?;
-
-    std::thread::sleep(Duration::from_millis(wait_ms));
+    lsp_rust_analyzer_handshake(
+        &mut stdin,
+        &mut reader,
+        &LspRustAnalyzerHandshake {
+            root_uri: &root_uri,
+            root: &root,
+            file_uri: &uri,
+            text: &text,
+            wait_ms,
+            deadline,
+        },
+    )?;
 
     let req_id = 2u64;
-    let (method, params) = match op {
-        RaLspOp::Definition => (
-            "textDocument/definition",
-            json!({
-                "textDocument": { "uri": uri },
-                "position": { "line": line, "character": character }
-            }),
-        ),
-        RaLspOp::References => (
-            "textDocument/references",
-            json!({
-                "textDocument": { "uri": uri },
-                "position": { "line": line, "character": character },
-                "context": { "includeDeclaration": v.get("include_declaration").and_then(|x| x.as_bool()).unwrap_or(true) }
-            }),
-        ),
-        RaLspOp::Hover => (
-            "textDocument/hover",
-            json!({
-                "textDocument": { "uri": uri },
-                "position": { "line": line, "character": character }
-            }),
-        ),
-        RaLspOp::DocumentSymbol => (
-            "textDocument/documentSymbol",
-            json!({ "textDocument": { "uri": uri } }),
-        ),
-    };
+    let (method, params) = ra_lsp_request_method_params(op, &uri, line, character, &v);
     let req = json!({
         "jsonrpc": "2.0",
         "id": req_id,
@@ -417,12 +465,7 @@ fn lsp_rust_analyzer_request(
 
     let resp = read_response_until_id(&mut reader, req_id, deadline)?;
     drop(stdin);
-    match op {
-        RaLspOp::Definition => format_lsp_locations(&resp, true),
-        RaLspOp::References => format_lsp_locations(&resp, false),
-        RaLspOp::Hover => format_lsp_hover(&resp),
-        RaLspOp::DocumentSymbol => format_lsp_document_symbols(&resp, max_symbols),
-    }
+    lsp_rust_analyzer_run(op, &resp, max_symbols)
 }
 
 fn format_lsp_locations(resp: &Value, definition: bool) -> Result<String, String> {

@@ -172,12 +172,38 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
 /// 根据工作区根目录推测应启用的开发工具标签（去重）。始终包含 `general` 与 `vcs`。
 pub fn suggest_dev_tags_for_workspace(root: &std::path::Path) -> Vec<&'static str> {
     let mut out = vec![GENERAL, VCS];
+    suggest_tags_from_manifest_files(root, &mut out);
+    if suggest_shell_tag_if_scripts(root) {
+        out.push(SHELL);
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+fn suggest_tags_from_manifest_files(root: &std::path::Path, out: &mut Vec<&'static str>) {
+    suggest_rust_tag_if_cargo_toml(root, out);
+    suggest_frontend_tag_if_package_json(root, out);
+    suggest_python_tag_if_python_manifest(root, out);
+    suggest_cpp_tag_if_native_build_files(root, out);
+    suggest_go_tag_if_go_mod(root, out);
+    suggest_jvm_tag_if_gradle_or_maven(root, out);
+    suggest_docker_tag_if_docker_files(root, out);
+}
+
+fn suggest_rust_tag_if_cargo_toml(root: &std::path::Path, out: &mut Vec<&'static str>) {
     if root.join("Cargo.toml").is_file() {
         out.push(RUST);
     }
+}
+
+fn suggest_frontend_tag_if_package_json(root: &std::path::Path, out: &mut Vec<&'static str>) {
     if root.join("frontend").join("package.json").is_file() || root.join("package.json").is_file() {
         out.push(FRONTEND);
     }
+}
+
+fn suggest_python_tag_if_python_manifest(root: &std::path::Path, out: &mut Vec<&'static str>) {
     if root.join("pyproject.toml").is_file()
         || root.join("setup.py").is_file()
         || root.join("setup.cfg").is_file()
@@ -185,6 +211,9 @@ pub fn suggest_dev_tags_for_workspace(root: &std::path::Path) -> Vec<&'static st
     {
         out.push(PYTHON);
     }
+}
+
+fn suggest_cpp_tag_if_native_build_files(root: &std::path::Path, out: &mut Vec<&'static str>) {
     if root.join("CMakeLists.txt").is_file()
         || root.join("Makefile").is_file()
         || root.join("meson.build").is_file()
@@ -193,9 +222,15 @@ pub fn suggest_dev_tags_for_workspace(root: &std::path::Path) -> Vec<&'static st
     {
         out.push(CPP);
     }
+}
+
+fn suggest_go_tag_if_go_mod(root: &std::path::Path, out: &mut Vec<&'static str>) {
     if root.join("go.mod").is_file() {
         out.push(GO);
     }
+}
+
+fn suggest_jvm_tag_if_gradle_or_maven(root: &std::path::Path, out: &mut Vec<&'static str>) {
     if root.join("pom.xml").is_file()
         || root.join("build.gradle").is_file()
         || root.join("build.gradle.kts").is_file()
@@ -204,6 +239,9 @@ pub fn suggest_dev_tags_for_workspace(root: &std::path::Path) -> Vec<&'static st
     {
         out.push(JVM);
     }
+}
+
+fn suggest_docker_tag_if_docker_files(root: &std::path::Path, out: &mut Vec<&'static str>) {
     if root.join("Dockerfile").is_file()
         || root.join("docker-compose.yml").is_file()
         || root.join("docker-compose.yaml").is_file()
@@ -211,7 +249,10 @@ pub fn suggest_dev_tags_for_workspace(root: &std::path::Path) -> Vec<&'static st
     {
         out.push(DOCKER);
     }
-    let has_shell_scripts = root.join("scripts").is_dir()
+}
+
+fn suggest_shell_tag_if_scripts(root: &std::path::Path) -> bool {
+    root.join("scripts").is_dir()
         || std::fs::read_dir(root)
             .ok()
             .map(|entries| {
@@ -222,13 +263,7 @@ pub fn suggest_dev_tags_for_workspace(root: &std::path::Path) -> Vec<&'static st
                         .is_some_and(|ext| matches!(ext, "sh" | "bash"))
                 })
             })
-            .unwrap_or(false);
-    if has_shell_scripts {
-        out.push(SHELL);
-    }
-    out.sort_unstable();
-    out.dedup();
-    out
+            .unwrap_or(false)
 }
 
 #[cfg(test)]

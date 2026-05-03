@@ -71,7 +71,7 @@ fn per_result_render_scan(
     (wrote_source, built_binary, ran_binary, seen_expected_output)
 }
 
-pub(super) fn render_task_level_evidence(
+pub(crate) fn render_task_level_evidence(
     task: &str,
     results: &[TaskResult],
     goal_expected_outputs: &HashMap<String, Vec<String>>,
