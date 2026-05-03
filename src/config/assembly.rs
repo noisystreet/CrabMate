@@ -127,7 +127,7 @@ pub(super) fn merge_user_config_layers(
                 &mut default_slot,
                 &mut b.agent_role_entries,
             )?;
-            override_opt_string_non_empty(&mut b.default_agent_role_id, default_slot);
+            override_opt_string_non_empty(&mut b.roles_prompts.default_agent_role_id, default_slot);
         }
     } else {
         let sc = Path::new("config/agent_roles.toml");
@@ -140,7 +140,7 @@ pub(super) fn merge_user_config_layers(
                 &mut default_slot,
                 &mut b.agent_role_entries,
             )?;
-            override_opt_string_non_empty(&mut b.default_agent_role_id, default_slot);
+            override_opt_string_non_empty(&mut b.roles_prompts.default_agent_role_id, default_slot);
         }
     }
 

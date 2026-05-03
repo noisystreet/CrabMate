@@ -169,20 +169,21 @@ struct ToolRegistryDerived {
 }
 
 fn derive_tool_registry_fields(b: &ConfigBuilder) -> ToolRegistryDerived {
+    let tr = &b.tool_registry_policy;
     ToolRegistryDerived {
-        tool_registry_http_fetch_wall_timeout_secs: b
+        tool_registry_http_fetch_wall_timeout_secs: tr
             .tool_registry_http_fetch_wall_timeout_secs
             .map(|s| s.clamp(1, 86_400)),
-        tool_registry_http_request_wall_timeout_secs: b
+        tool_registry_http_request_wall_timeout_secs: tr
             .tool_registry_http_request_wall_timeout_secs
             .map(|s| s.clamp(1, 86_400)),
         tool_registry_parallel_wall_timeout_secs: Arc::new(
-            b.tool_registry_parallel_wall_timeout_secs
+            tr.tool_registry_parallel_wall_timeout_secs
                 .iter()
                 .map(|(k, v)| (k.clone(), (*v).clamp(1, 86_400)))
                 .collect::<HashMap<_, _>>(),
         ),
-        tool_registry_parallel_sync_denied_tools: b
+        tool_registry_parallel_sync_denied_tools: tr
             .tool_registry_parallel_sync_denied_tools
             .as_ref()
             .map(|v| {
@@ -193,7 +194,7 @@ fn derive_tool_registry_fields(b: &ConfigBuilder) -> ToolRegistryDerived {
                         .collect::<HashSet<_>>(),
                 )
             }),
-        tool_registry_parallel_sync_denied_prefixes: b
+        tool_registry_parallel_sync_denied_prefixes: tr
             .tool_registry_parallel_sync_denied_prefixes
             .as_ref()
             .map(|v| {
@@ -204,7 +205,7 @@ fn derive_tool_registry_fields(b: &ConfigBuilder) -> ToolRegistryDerived {
                     .collect();
                 Arc::from(cleaned.into_boxed_slice())
             }),
-        tool_registry_sync_default_inline_tools: b
+        tool_registry_sync_default_inline_tools: tr
             .tool_registry_sync_default_inline_tools
             .as_ref()
             .map(|v| {
@@ -215,7 +216,7 @@ fn derive_tool_registry_fields(b: &ConfigBuilder) -> ToolRegistryDerived {
                         .collect::<HashSet<_>>(),
                 )
             }),
-        tool_registry_write_effect_tools: b.tool_registry_write_effect_tools.as_ref().map(|v| {
+        tool_registry_write_effect_tools: tr.tool_registry_write_effect_tools.as_ref().map(|v| {
             Arc::new(
                 v.iter()
                     .map(|s| s.trim().to_string())
@@ -223,7 +224,7 @@ fn derive_tool_registry_fields(b: &ConfigBuilder) -> ToolRegistryDerived {
                     .collect::<HashSet<_>>(),
             )
         }),
-        tool_registry_sub_agent_patch_write_extra_tools: b
+        tool_registry_sub_agent_patch_write_extra_tools: tr
             .tool_registry_sub_agent_patch_write_extra_tools
             .as_ref()
             .map(|v| {
@@ -234,7 +235,7 @@ fn derive_tool_registry_fields(b: &ConfigBuilder) -> ToolRegistryDerived {
                         .collect::<HashSet<_>>(),
                 )
             }),
-        tool_registry_sub_agent_test_runner_extra_tools: b
+        tool_registry_sub_agent_test_runner_extra_tools: tr
             .tool_registry_sub_agent_test_runner_extra_tools
             .as_ref()
             .map(|v| {
@@ -245,7 +246,7 @@ fn derive_tool_registry_fields(b: &ConfigBuilder) -> ToolRegistryDerived {
                         .collect::<HashSet<_>>(),
                 )
             }),
-        tool_registry_sub_agent_review_readonly_deny_tools: b
+        tool_registry_sub_agent_review_readonly_deny_tools: tr
             .tool_registry_sub_agent_review_readonly_deny_tools
             .as_ref()
             .map(|v| {
@@ -275,28 +276,32 @@ struct IntentDerived {
 }
 
 fn derive_intent_fields(b: &ConfigBuilder) -> Result<IntentDerived, String> {
-    let llm_http_auth_mode = match b.llm_http_auth_mode_str.as_deref() {
+    let llm_http_auth_mode = match b.llm.llm_http_auth_mode_str.as_deref() {
         Some(s) => types::LlmHttpAuthMode::parse(s)?,
         None => types::LlmHttpAuthMode::default(),
     };
-    let llm_reasoning_split = b.llm_reasoning_split.unwrap_or_else(|| {
-        crate::llm::vendor::default_llm_reasoning_split_for_gateway(&b.model, &b.api_base)
+    let llm_reasoning_split = b.llm_vendor.llm_reasoning_split.unwrap_or_else(|| {
+        crate::llm::vendor::default_llm_reasoning_split_for_gateway(&b.llm.model, &b.llm.api_base)
     });
     let intent_execute_low_threshold = b
+        .intent_routing
         .intent_execute_low_threshold
         .unwrap_or(0.2)
         .clamp(0.0, 1.0) as f32;
     let intent_execute_high_threshold = b
+        .intent_routing
         .intent_execute_high_threshold
         .unwrap_or(0.45)
         .clamp(0.0, 1.0) as f32;
     let intent_execute_high_threshold =
         intent_execute_high_threshold.max(intent_execute_low_threshold);
     let intent_non_hier_execute_low_threshold = b
+        .intent_routing
         .intent_non_hier_execute_low_threshold
         .unwrap_or(intent_execute_low_threshold as f64)
         .clamp(0.0, 1.0) as f32;
     let intent_non_hier_execute_high_threshold = b
+        .intent_routing
         .intent_non_hier_execute_high_threshold
         .unwrap_or(intent_execute_high_threshold as f64)
         .clamp(0.0, 1.0) as f32;
@@ -309,12 +314,26 @@ fn derive_intent_fields(b: &ConfigBuilder) -> Result<IntentDerived, String> {
         intent_execute_high_threshold,
         intent_non_hier_execute_low_threshold,
         intent_non_hier_execute_high_threshold,
-        intent_mode_bias_enabled: b.intent_mode_bias_enabled.unwrap_or(true),
-        intent_l2_enabled: b.intent_l2_enabled.unwrap_or(true),
-        intent_l2_min_confidence: b.intent_l2_min_confidence.unwrap_or(0.7).clamp(0.0, 1.0) as f32,
-        intent_l2_max_tokens: b.intent_l2_max_tokens.unwrap_or(220).clamp(32, 1024) as u32,
-        intent_at_turn_start_enabled: b.intent_at_turn_start_enabled.unwrap_or(false),
-        intent_l0_routing_boost_enabled: b.intent_l0_routing_boost_enabled.unwrap_or(true),
+        intent_mode_bias_enabled: b.intent_routing.intent_mode_bias_enabled.unwrap_or(true),
+        intent_l2_enabled: b.intent_routing.intent_l2_enabled.unwrap_or(true),
+        intent_l2_min_confidence: b
+            .intent_routing
+            .intent_l2_min_confidence
+            .unwrap_or(0.7)
+            .clamp(0.0, 1.0) as f32,
+        intent_l2_max_tokens: b
+            .intent_routing
+            .intent_l2_max_tokens
+            .unwrap_or(220)
+            .clamp(32, 1024) as u32,
+        intent_at_turn_start_enabled: b
+            .intent_routing
+            .intent_at_turn_start_enabled
+            .unwrap_or(false),
+        intent_l0_routing_boost_enabled: b
+            .intent_routing
+            .intent_l0_routing_boost_enabled
+            .unwrap_or(true),
     })
 }
 
@@ -334,12 +353,20 @@ struct LtmDerived {
 }
 
 fn derive_ltm(b: &ConfigBuilder) -> Result<LtmDerived, String> {
-    let long_term_memory_enabled = b.long_term_memory_enabled.unwrap_or(true);
-    let long_term_memory_scope_mode = match b.long_term_memory_scope_mode_str.as_deref() {
+    let long_term_memory_enabled = b.long_term_memory.long_term_memory_enabled.unwrap_or(true);
+    let long_term_memory_scope_mode = match b
+        .long_term_memory
+        .long_term_memory_scope_mode_str
+        .as_deref()
+    {
         Some(s) => LongTermMemoryScopeMode::parse(s)?,
         None => LongTermMemoryScopeMode::default(),
     };
-    let long_term_memory_vector_backend = match b.long_term_memory_vector_backend_str.as_deref() {
+    let long_term_memory_vector_backend = match b
+        .long_term_memory
+        .long_term_memory_vector_backend_str
+        .as_deref()
+    {
         Some(s) => LongTermMemoryVectorBackend::parse(s)?,
         None => LongTermMemoryVectorBackend::default(),
     };
@@ -357,29 +384,45 @@ fn derive_ltm(b: &ConfigBuilder) -> Result<LtmDerived, String> {
         long_term_memory_scope_mode,
         long_term_memory_vector_backend,
         long_term_memory_max_entries: b
+            .long_term_memory
             .long_term_memory_max_entries
             .unwrap_or(256)
             .clamp(1, 100_000) as usize,
         long_term_memory_inject_max_chars: b
+            .long_term_memory
             .long_term_memory_inject_max_chars
             .unwrap_or(8000)
             .clamp(256, 500_000) as usize,
         long_term_memory_store_sqlite_path: b
+            .long_term_memory
             .long_term_memory_store_sqlite_path
             .clone()
             .unwrap_or_default(),
-        long_term_memory_top_k: b.long_term_memory_top_k.unwrap_or(8).clamp(1, 64) as usize,
+        long_term_memory_top_k: b
+            .long_term_memory
+            .long_term_memory_top_k
+            .unwrap_or(8)
+            .clamp(1, 64) as usize,
         long_term_memory_max_chars_per_chunk: b
+            .long_term_memory
             .long_term_memory_max_chars_per_chunk
             .unwrap_or(1024)
             .clamp(256, 32_000) as usize,
         long_term_memory_min_chars_to_index: b
+            .long_term_memory
             .long_term_memory_min_chars_to_index
             .unwrap_or(8)
             .clamp(0, 4096) as usize,
-        long_term_memory_async_index: b.long_term_memory_async_index.unwrap_or(true),
-        long_term_memory_auto_index_turns: b.long_term_memory_auto_index_turns.unwrap_or(true),
+        long_term_memory_async_index: b
+            .long_term_memory
+            .long_term_memory_async_index
+            .unwrap_or(true),
+        long_term_memory_auto_index_turns: b
+            .long_term_memory
+            .long_term_memory_auto_index_turns
+            .unwrap_or(true),
         long_term_memory_default_ttl_secs: b
+            .long_term_memory
             .long_term_memory_default_ttl_secs
             .unwrap_or(0)
             .clamp(0, 365 * 86400 * 10),
@@ -403,11 +446,16 @@ struct CodebaseSemanticDerived {
 
 fn derive_codebase_semantic(b: &ConfigBuilder) -> CodebaseSemanticDerived {
     #[cfg(feature = "fastembed")]
-    let codebase_semantic_search_enabled = b.codebase_semantic_search_enabled.unwrap_or(true);
+    let codebase_semantic_search_enabled = b
+        .codebase_semantic
+        .codebase_semantic_search_enabled
+        .unwrap_or(true);
     #[cfg(not(feature = "fastembed"))]
     let codebase_semantic_search_enabled = false;
-    let mut codebase_semantic_hybrid_alpha =
-        b.codebase_semantic_hybrid_alpha.unwrap_or(0.55_f64) as f32;
+    let mut codebase_semantic_hybrid_alpha = b
+        .codebase_semantic
+        .codebase_semantic_hybrid_alpha
+        .unwrap_or(0.55_f64) as f32;
     if !codebase_semantic_hybrid_alpha.is_finite() {
         codebase_semantic_hybrid_alpha = 0.55;
     }
@@ -415,38 +463,51 @@ fn derive_codebase_semantic(b: &ConfigBuilder) -> CodebaseSemanticDerived {
     CodebaseSemanticDerived {
         codebase_semantic_search_enabled,
         codebase_semantic_invalidate_on_workspace_change: b
+            .codebase_semantic
             .codebase_semantic_invalidate_on_workspace_change
             .unwrap_or(true),
         codebase_semantic_index_sqlite_path: b
+            .codebase_semantic
             .codebase_semantic_index_sqlite_path
             .clone()
             .unwrap_or_default(),
         codebase_semantic_max_file_bytes: b
+            .codebase_semantic
             .codebase_semantic_max_file_bytes
             .unwrap_or(512 * 1024)
             .clamp(4096, 4 * 1024 * 1024) as usize,
         codebase_semantic_chunk_max_chars: b
+            .codebase_semantic
             .codebase_semantic_chunk_max_chars
             .unwrap_or(1200)
             .clamp(256, 16_000) as usize,
-        codebase_semantic_top_k: b.codebase_semantic_top_k.unwrap_or(8).clamp(1, 64) as usize,
+        codebase_semantic_top_k: b
+            .codebase_semantic
+            .codebase_semantic_top_k
+            .unwrap_or(8)
+            .clamp(1, 64) as usize,
         codebase_semantic_query_max_chunks: b
+            .codebase_semantic
             .codebase_semantic_query_max_chunks
             .unwrap_or(50_000)
             .clamp(0, 2_000_000) as usize,
         codebase_semantic_rebuild_max_files: b
+            .codebase_semantic
             .codebase_semantic_rebuild_max_files
             .unwrap_or(2000)
             .clamp(1, 100_000) as usize,
         codebase_semantic_rebuild_incremental: b
+            .codebase_semantic
             .codebase_semantic_rebuild_incremental
             .unwrap_or(true),
         codebase_semantic_hybrid_alpha,
         codebase_semantic_fts_top_n: b
+            .codebase_semantic
             .codebase_semantic_fts_top_n
             .unwrap_or(400)
             .clamp(1, 10_000) as usize,
         codebase_semantic_hybrid_semantic_pool: b
+            .codebase_semantic
             .codebase_semantic_hybrid_semantic_pool
             .unwrap_or(256)
             .clamp(1, 10_000) as usize,
@@ -490,36 +551,55 @@ fn finalize_agent_config(
     system_prompt_search_bases: Vec<PathBuf>,
 ) -> Result<AgentConfig, String> {
     validate::validate_builder_numeric_ranges(&b)?;
-    if b.api_base.is_empty() {
+    if b.llm.api_base.is_empty() {
         return Err("配置错误：未设置 api_base（请在 config/default_config.toml、config.toml、.agent_demo.toml 或环境变量 CM_API_BASE 中设置）".to_string());
     }
-    if b.model.is_empty() {
+    if b.llm.model.is_empty() {
         return Err("配置错误：未设置 model（请在 config/default_config.toml、config.toml、.agent_demo.toml 或环境变量 CM_MODEL 中设置）".to_string());
     }
     let tr = derive_tool_registry_fields(&b);
     let intent = derive_intent_fields(&b)?;
     let ltm = derive_ltm(&b)?;
     let sem = derive_codebase_semantic(&b);
-    let max_message_history = b.max_message_history.unwrap_or(32).clamp(1, 1024) as usize;
-    let tui_load_session_on_start = b.tui_load_session_on_start.unwrap_or(false);
-    let tui_session_max_messages =
-        b.tui_session_max_messages.unwrap_or(400).clamp(2, 50_000) as usize;
-    let repl_initial_workspace_messages_enabled =
-        b.repl_initial_workspace_messages_enabled.unwrap_or(false);
-    let command_timeout_secs = b.command_timeout_secs.unwrap_or(30).max(1);
-    let command_max_output_len =
-        b.command_max_output_len.unwrap_or(8192).clamp(1024, 131072) as usize;
-    let max_tokens = b.max_tokens.unwrap_or(4096).clamp(256, 32768) as u32;
-    let llm_context_tokens = b.llm_context_tokens.unwrap_or(0).min(10_000_000) as u32;
-    let temperature = b.temperature.unwrap_or(0.3).clamp(0.0, 2.0) as f32;
-    let api_timeout_secs = b.api_timeout_secs.unwrap_or(60).max(1);
-    let api_max_retries = b.api_max_retries.unwrap_or(2).min(10) as u32;
-    let api_retry_delay_secs = b.api_retry_delay_secs.unwrap_or(2).max(1);
-    let weather_timeout_secs = b.weather_timeout_secs.unwrap_or(15).max(1);
-    let reflection_default_max_rounds =
-        b.reflection_default_max_rounds.unwrap_or(5).max(1) as usize;
+    let max_message_history = b
+        .session_ui
+        .max_message_history
+        .unwrap_or(32)
+        .clamp(1, 1024) as usize;
+    let tui_load_session_on_start = b.session_ui.tui_load_session_on_start.unwrap_or(false);
+    let tui_session_max_messages = b
+        .session_ui
+        .tui_session_max_messages
+        .unwrap_or(400)
+        .clamp(2, 50_000) as usize;
+    let repl_initial_workspace_messages_enabled = b
+        .session_ui
+        .repl_initial_workspace_messages_enabled
+        .unwrap_or(false);
+    let command_timeout_secs = b.command_exec.command_timeout_secs.unwrap_or(30).max(1);
+    let command_max_output_len = b
+        .command_exec
+        .command_max_output_len
+        .unwrap_or(8192)
+        .clamp(1024, 131072) as usize;
+    let max_tokens = b.llm_sampling.max_tokens.unwrap_or(4096).clamp(256, 32768) as u32;
+    let llm_context_tokens = b
+        .llm_sampling
+        .llm_context_tokens
+        .unwrap_or(0)
+        .min(10_000_000) as u32;
+    let temperature = b.llm_sampling.temperature.unwrap_or(0.3).clamp(0.0, 2.0) as f32;
+    let api_timeout_secs = b.llm_http_retry.api_timeout_secs.unwrap_or(60).max(1);
+    let api_max_retries = b.llm_http_retry.api_max_retries.unwrap_or(2).min(10) as u32;
+    let api_retry_delay_secs = b.llm_http_retry.api_retry_delay_secs.unwrap_or(2).max(1);
+    let weather_timeout_secs = b.weather_tool.weather_timeout_secs.unwrap_or(15).max(1);
+    let reflection_default_max_rounds = b
+        .per_plan_policy
+        .reflection_default_max_rounds
+        .unwrap_or(5)
+        .max(1) as usize;
 
-    let allowed_commands_vec = b.allowed_commands.clone().unwrap_or_else(|| {
+    let allowed_commands_vec = b.command_exec.allowed_commands.clone().unwrap_or_else(|| {
         vec![
             "aclocal".into(),
             "ar".into(),
@@ -609,7 +689,7 @@ fn finalize_agent_config(
     let allowed_commands: std::sync::Arc<[String]> = allowed_commands_vec.into();
 
     let run_command_working_dir = b
-        .run_command_working_dir
+        .command_exec.run_command_working_dir
         .clone()
         .ok_or("配置错误：未设置 run_command_working_dir（请在 config/tools.toml、config.toml、.agent_demo.toml 或环境变量 CM_RUN_COMMAND_WORKING_DIR 中设置）")?;
     let run_command_working_dir = std::path::Path::new(&run_command_working_dir);
@@ -631,18 +711,18 @@ fn finalize_agent_config(
     }
 
     let workspace_allowed_roots = workspace_roots::resolve_workspace_allowed_roots(
-        b.workspace_allowed_roots.clone(),
+        b.workspace_roots.workspace_allowed_roots.clone(),
         run_command_working_dir.as_path(),
     )?;
 
-    let system_prompt = if let Some(ref path) = b.system_prompt_file {
+    let system_prompt = if let Some(ref path) = b.roles_prompts.system_prompt_file {
         read_system_prompt_file_resolved(
             path,
             &system_prompt_search_bases,
             run_command_working_dir.as_path(),
         )?
-    } else if !b.system_prompt.trim().is_empty() {
-        b.system_prompt.clone()
+    } else if !b.roles_prompts.system_prompt.trim().is_empty() {
+        b.roles_prompts.system_prompt.clone()
     } else {
         return Err(
             "配置错误：未设置 system_prompt_file 或内联 system_prompt（请在 config/default_config.toml、config.toml、环境变量 CM_SYSTEM_PROMPT / CM_SYSTEM_PROMPT_FILE 中配置）".to_string(),
@@ -651,13 +731,18 @@ fn finalize_agent_config(
     if system_prompt.trim().is_empty() {
         return Err("配置错误：system_prompt 从文件或内联加载后为空".to_string());
     }
-    let cursor_rules_enabled = b.cursor_rules_enabled.unwrap_or(true);
+    let cursor_rules_enabled = b.cursor_rules.cursor_rules_enabled.unwrap_or(true);
     let cursor_rules_dir = b
+        .cursor_rules
         .cursor_rules_dir
         .clone()
         .unwrap_or_else(|| ".cursor/rules".to_string());
-    let cursor_rules_include_agents_md = b.cursor_rules_include_agents_md.unwrap_or(true);
+    let cursor_rules_include_agents_md = b
+        .cursor_rules
+        .cursor_rules_include_agents_md
+        .unwrap_or(true);
     let cursor_rules_max_chars = b
+        .cursor_rules
         .cursor_rules_max_chars
         .unwrap_or(48_000)
         .clamp(1024, 1_000_000);
@@ -668,13 +753,18 @@ fn finalize_agent_config(
         cursor_rules_include_agents_md,
         cursor_rules_max_chars as usize,
     )?;
-    let skills_enabled = b.skills_enabled.unwrap_or(true);
+    let skills_enabled = b.skills.skills_enabled.unwrap_or(true);
     let skills_dir = b
+        .skills
         .skills_dir
         .clone()
         .unwrap_or_else(|| ".crabmate/skills".to_string());
-    let skills_max_chars = b.skills_max_chars.unwrap_or(32_000).clamp(1024, 1_000_000);
-    let skills_top_k = b.skills_top_k.unwrap_or(3).clamp(1, 64) as usize;
+    let skills_max_chars = b
+        .skills
+        .skills_max_chars
+        .unwrap_or(32_000)
+        .clamp(1024, 1_000_000);
+    let skills_top_k = b.skills.skills_top_k.unwrap_or(3).clamp(1, 64) as usize;
     let system_prompt = skills::merge_system_prompt_with_skills(
         system_prompt,
         skills_enabled,
@@ -683,6 +773,7 @@ fn finalize_agent_config(
     )?;
 
     let default_agent_role_id = b
+        .roles_prompts
         .default_agent_role_id
         .as_ref()
         .map(|s| s.trim().to_string())

@@ -268,10 +268,8 @@ mod numeric_validate_tests {
 
     #[test]
     fn rejects_temperature_above_two() {
-        let b = ConfigBuilder {
-            temperature: Some(3.0),
-            ..Default::default()
-        };
+        let mut b = ConfigBuilder::default();
+        b.llm_sampling.temperature = Some(3.0);
         let err = validate::validate_builder_numeric_ranges(&b).unwrap_err();
         assert!(err.contains("temperature"), "err: {err}");
     }
@@ -280,10 +278,9 @@ mod numeric_validate_tests {
     fn parallel_wall_timeout_out_of_range() {
         let mut m = HashMap::new();
         m.insert("http_fetch_spawn_timeout".into(), 100_000u64);
-        let b = ConfigBuilder {
-            tool_registry_parallel_wall_timeout_secs: m,
-            ..Default::default()
-        };
+        let mut b = ConfigBuilder::default();
+        b.tool_registry_policy
+            .tool_registry_parallel_wall_timeout_secs = m;
         let err = validate::validate_builder_numeric_ranges(&b).unwrap_err();
         assert!(err.contains("parallel_wall_timeout_secs"), "err: {err}");
     }
