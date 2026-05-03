@@ -44,10 +44,10 @@ fn assemble_agent_config_from_finalize(mid: &FinalizeAfterRoles, tail: &Finalize
 
 fn finalize_section_llm_connection(mid: &FinalizeAfterRoles) -> types::LlmConnectionConfig {
     types::LlmConnectionConfig {
-        api_base: mid.b.api_base.clone(),
-        model: mid.b.model.clone(),
-        planner_model: mid.b.planner_model.clone(),
-        executor_model: mid.b.executor_model.clone(),
+        api_base: mid.b.llm.api_base.clone(),
+        model: mid.b.llm.model.clone(),
+        planner_model: mid.b.llm.planner_model.clone(),
+        executor_model: mid.b.llm.executor_model.clone(),
         llm_http_auth_mode: mid.intent.llm_http_auth_mode,
     }
 }
@@ -75,15 +75,15 @@ fn finalize_section_llm_sampling(mid: &FinalizeAfterRoles) -> types::LlmSampling
         max_tokens: mid.max_tokens,
         llm_context_tokens: mid.llm_context_tokens,
         temperature: mid.temperature,
-        llm_seed: mid.b.llm_seed,
+        llm_seed: mid.b.llm_sampling.llm_seed,
     }
 }
 
 fn finalize_section_llm_vendor_flags(mid: &FinalizeAfterRoles) -> types::LlmVendorFlagsConfig {
     types::LlmVendorFlagsConfig {
         llm_reasoning_split: mid.intent.llm_reasoning_split,
-        llm_bigmodel_thinking: mid.b.llm_bigmodel_thinking.unwrap_or(false),
-        llm_kimi_thinking_disabled: mid.b.llm_kimi_thinking_disabled.unwrap_or(false),
+        llm_bigmodel_thinking: mid.b.llm_vendor.llm_bigmodel_thinking.unwrap_or(false),
+        llm_kimi_thinking_disabled: mid.b.llm_vendor.llm_kimi_thinking_disabled.unwrap_or(false),
     }
 }
 

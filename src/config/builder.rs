@@ -1,186 +1,13 @@
 //! `ConfigBuilder`：嵌入 TOML 分片与用户 `[agent]` / `[tool_registry]` 的合并累加器。
 //!
+//! 结构按运行域拆分为子结构（与 [`super::types::AgentConfig`] 对齐），见 **`config_builder_sections`**。
 //! 由 [`super::assembly`] 与 [`super::env_overrides`] 写入字段，[`super::finalize`] 消费并产出 [`super::types::AgentConfig`]。
 
-use std::collections::HashMap;
+mod config_builder_sections;
 
-use super::agent_roles;
+pub(crate) use config_builder_sections::ConfigBuilder;
+
 use super::source::{AgentRoleRow, AgentSection, ScheduledAgentTaskRow, ToolRegistrySection};
-
-/// 配置累加器：依次接受嵌入默认 TOML → 用户配置文件 → 环境变量的覆盖，最终 `finalize` 为 `AgentConfig`。
-#[derive(Default)]
-pub(crate) struct ConfigBuilder {
-    pub(crate) api_base: String,
-    pub(crate) model: String,
-    pub(crate) planner_model: Option<String>,
-    pub(crate) executor_model: Option<String>,
-    pub(crate) llm_http_auth_mode_str: Option<String>,
-    pub(crate) system_prompt: String,
-    pub(crate) system_prompt_file: Option<String>,
-    pub(crate) max_message_history: Option<u64>,
-    pub(crate) tui_load_session_on_start: Option<bool>,
-    pub(crate) tui_session_max_messages: Option<u64>,
-    pub(crate) repl_initial_workspace_messages_enabled: Option<bool>,
-    pub(crate) command_timeout_secs: Option<u64>,
-    pub(crate) command_max_output_len: Option<u64>,
-    pub(crate) allowed_commands: Option<Vec<String>>,
-    pub(crate) run_command_working_dir: Option<String>,
-    pub(crate) max_tokens: Option<u64>,
-    pub(crate) llm_context_tokens: Option<u64>,
-    pub(crate) temperature: Option<f64>,
-    pub(crate) llm_seed: Option<i64>,
-    pub(crate) llm_reasoning_split: Option<bool>,
-    pub(crate) llm_bigmodel_thinking: Option<bool>,
-    pub(crate) llm_kimi_thinking_disabled: Option<bool>,
-    pub(crate) api_timeout_secs: Option<u64>,
-    pub(crate) api_max_retries: Option<u64>,
-    pub(crate) api_retry_delay_secs: Option<u64>,
-    pub(crate) weather_timeout_secs: Option<u64>,
-    pub(crate) web_search_provider_str: Option<String>,
-    pub(crate) web_search_api_key: Option<String>,
-    pub(crate) web_search_timeout_secs: Option<u64>,
-    pub(crate) web_search_max_results: Option<u64>,
-    pub(crate) http_fetch_allowed_prefixes: Option<Vec<String>>,
-    pub(crate) http_fetch_timeout_secs: Option<u64>,
-    pub(crate) http_fetch_max_response_bytes: Option<u64>,
-    pub(crate) reflection_default_max_rounds: Option<u64>,
-    pub(crate) final_plan_requirement_str: Option<String>,
-    pub(crate) plan_rewrite_max_attempts: Option<u64>,
-    pub(crate) final_plan_require_strict_workflow_node_coverage: Option<bool>,
-    pub(crate) final_plan_semantic_check_enabled: Option<bool>,
-    pub(crate) final_plan_semantic_check_max_non_readonly_tools: Option<u64>,
-    pub(crate) final_plan_semantic_check_max_tokens: Option<u64>,
-    pub(crate) planner_executor_mode_str: Option<String>,
-    pub(crate) cursor_rules_enabled: Option<bool>,
-    pub(crate) cursor_rules_dir: Option<String>,
-    pub(crate) cursor_rules_include_agents_md: Option<bool>,
-    pub(crate) cursor_rules_max_chars: Option<u64>,
-    pub(crate) skills_enabled: Option<bool>,
-    pub(crate) skills_dir: Option<String>,
-    pub(crate) skills_max_chars: Option<u64>,
-    pub(crate) skills_top_k: Option<u64>,
-    pub(crate) tool_message_max_chars: Option<u64>,
-    pub(crate) tool_result_envelope_v1: Option<bool>,
-    pub(crate) sse_tool_call_include_arguments: Option<bool>,
-    /// 仅环境变量 `CM_THINKING_TRACE_ENABLED` 写入；**不**从 `[agent]` TOML 合并。
-    pub(crate) agent_thinking_trace_enabled: Option<bool>,
-    pub(crate) agent_tool_stats_enabled: Option<bool>,
-    pub(crate) agent_tool_stats_window_events: Option<u64>,
-    pub(crate) agent_tool_stats_min_samples: Option<u64>,
-    pub(crate) agent_tool_stats_max_chars: Option<u64>,
-    pub(crate) agent_tool_stats_warn_below_success_ratio: Option<f64>,
-    pub(crate) materialize_deepseek_dsml_tool_calls: Option<bool>,
-    pub(crate) thinking_avoid_echo_system_prompt: Option<bool>,
-    pub(crate) thinking_avoid_echo_appendix: Option<String>,
-    pub(crate) thinking_avoid_echo_appendix_file: Option<String>,
-    pub(crate) context_char_budget: Option<u64>,
-    pub(crate) context_min_messages_after_system: Option<u64>,
-    pub(crate) context_summary_trigger_chars: Option<u64>,
-    pub(crate) context_summary_tail_messages: Option<u64>,
-    pub(crate) context_summary_max_tokens: Option<u64>,
-    pub(crate) context_summary_transcript_max_chars: Option<u64>,
-    pub(crate) health_llm_models_probe: Option<bool>,
-    pub(crate) health_llm_models_probe_cache_secs: Option<u64>,
-    pub(crate) chat_queue_max_concurrent: Option<u64>,
-    pub(crate) chat_queue_max_pending: Option<u64>,
-    pub(crate) parallel_readonly_tools_max: Option<u64>,
-    pub(crate) read_file_turn_cache_max_entries: Option<u64>,
-    pub(crate) test_result_cache_enabled: Option<bool>,
-    pub(crate) test_result_cache_max_entries: Option<u64>,
-    pub(crate) session_workspace_changelist_enabled: Option<bool>,
-    pub(crate) session_workspace_changelist_max_chars: Option<u64>,
-    pub(crate) staged_plan_execution: Option<bool>,
-    pub(crate) staged_plan_phase_instruction: Option<String>,
-    pub(crate) staged_plan_allow_no_task: Option<bool>,
-    pub(crate) staged_plan_feedback_mode_str: Option<String>,
-    pub(crate) staged_plan_patch_max_attempts: Option<u64>,
-    pub(crate) staged_plan_cli_show_planner_stream: Option<bool>,
-    pub(crate) staged_plan_optimizer_round: Option<bool>,
-    pub(crate) staged_plan_optimizer_requires_parallel_tools: Option<bool>,
-    pub(crate) staged_plan_ensemble_count: Option<u64>,
-    pub(crate) staged_plan_skip_ensemble_on_casual_prompt: Option<bool>,
-    pub(crate) staged_plan_two_phase_nl_display: Option<bool>,
-    pub(crate) sync_default_tool_sandbox_mode_str: Option<String>,
-    pub(crate) sync_default_tool_sandbox_docker_image: Option<String>,
-    pub(crate) sync_default_tool_sandbox_docker_network: Option<String>,
-    pub(crate) sync_default_tool_sandbox_docker_timeout_secs: Option<u64>,
-    pub(crate) sync_default_tool_sandbox_docker_user: Option<String>,
-    pub(crate) workspace_allowed_roots: Option<Vec<String>>,
-    pub(crate) web_api_bearer_token: Option<String>,
-    pub(crate) web_api_require_bearer: Option<bool>,
-    pub(crate) web_audit_log_write_tools: Option<bool>,
-    pub(crate) web_audit_trust_x_forwarded_for: Option<bool>,
-    pub(crate) allow_insecure_no_auth_for_non_loopback: Option<bool>,
-    pub(crate) conversation_store_sqlite_path: Option<String>,
-    pub(crate) agent_memory_file_enabled: Option<bool>,
-    pub(crate) agent_memory_file: Option<String>,
-    pub(crate) agent_memory_file_max_chars: Option<u64>,
-    pub(crate) living_docs_inject_enabled: Option<bool>,
-    pub(crate) living_docs_relative_dir: Option<String>,
-    pub(crate) living_docs_inject_max_chars: Option<u64>,
-    pub(crate) living_docs_file_max_each_chars: Option<u64>,
-    pub(crate) project_profile_inject_enabled: Option<bool>,
-    pub(crate) project_profile_inject_max_chars: Option<u64>,
-    pub(crate) project_dependency_brief_inject_enabled: Option<bool>,
-    pub(crate) project_dependency_brief_inject_max_chars: Option<u64>,
-    pub(crate) tool_call_explain_enabled: Option<bool>,
-    pub(crate) tool_call_explain_min_chars: Option<u64>,
-    pub(crate) tool_call_explain_max_chars: Option<u64>,
-    pub(crate) long_term_memory_enabled: Option<bool>,
-    pub(crate) long_term_memory_scope_mode_str: Option<String>,
-    pub(crate) long_term_memory_vector_backend_str: Option<String>,
-    pub(crate) long_term_memory_max_entries: Option<u64>,
-    pub(crate) long_term_memory_inject_max_chars: Option<u64>,
-    pub(crate) long_term_memory_store_sqlite_path: Option<String>,
-    pub(crate) long_term_memory_top_k: Option<u64>,
-    pub(crate) long_term_memory_max_chars_per_chunk: Option<u64>,
-    pub(crate) long_term_memory_min_chars_to_index: Option<u64>,
-    pub(crate) long_term_memory_async_index: Option<bool>,
-    pub(crate) long_term_memory_auto_index_turns: Option<bool>,
-    pub(crate) long_term_memory_default_ttl_secs: Option<u64>,
-    pub(crate) mcp_enabled: Option<bool>,
-    pub(crate) mcp_command: Option<String>,
-    pub(crate) mcp_tool_timeout_secs: Option<u64>,
-    pub(crate) codebase_semantic_search_enabled: Option<bool>,
-    pub(crate) codebase_semantic_invalidate_on_workspace_change: Option<bool>,
-    pub(crate) codebase_semantic_index_sqlite_path: Option<String>,
-    pub(crate) codebase_semantic_max_file_bytes: Option<u64>,
-    pub(crate) codebase_semantic_chunk_max_chars: Option<u64>,
-    pub(crate) codebase_semantic_top_k: Option<u64>,
-    pub(crate) codebase_semantic_query_max_chunks: Option<u64>,
-    pub(crate) codebase_semantic_rebuild_max_files: Option<u64>,
-    pub(crate) codebase_semantic_rebuild_incremental: Option<bool>,
-    pub(crate) codebase_semantic_hybrid_alpha: Option<f64>,
-    pub(crate) codebase_semantic_fts_top_n: Option<u64>,
-    pub(crate) codebase_semantic_hybrid_semantic_pool: Option<u64>,
-    pub(crate) intent_execute_low_threshold: Option<f64>,
-    pub(crate) intent_execute_high_threshold: Option<f64>,
-    pub(crate) intent_non_hier_execute_low_threshold: Option<f64>,
-    pub(crate) intent_non_hier_execute_high_threshold: Option<f64>,
-    pub(crate) intent_mode_bias_enabled: Option<bool>,
-    pub(crate) intent_l2_enabled: Option<bool>,
-    pub(crate) intent_l2_min_confidence: Option<f64>,
-    pub(crate) intent_l2_max_tokens: Option<u64>,
-    pub(crate) intent_at_turn_start_enabled: Option<bool>,
-    pub(crate) intent_l0_routing_boost_enabled: Option<bool>,
-    /// 见 `[tool_registry]`：`http_fetch` spawn 外圈超时秒数
-    pub(crate) tool_registry_http_fetch_wall_timeout_secs: Option<u64>,
-    pub(crate) tool_registry_http_request_wall_timeout_secs: Option<u64>,
-    pub(crate) tool_registry_parallel_wall_timeout_secs: HashMap<String, u64>,
-    pub(crate) tool_registry_parallel_sync_denied_tools: Option<Vec<String>>,
-    pub(crate) tool_registry_parallel_sync_denied_prefixes: Option<Vec<String>>,
-    pub(crate) tool_registry_sync_default_inline_tools: Option<Vec<String>>,
-    pub(crate) tool_registry_write_effect_tools: Option<Vec<String>>,
-    pub(crate) tool_registry_sub_agent_patch_write_extra_tools: Option<Vec<String>>,
-    pub(crate) tool_registry_sub_agent_test_runner_extra_tools: Option<Vec<String>>,
-    pub(crate) tool_registry_sub_agent_review_readonly_deny_tools: Option<Vec<String>>,
-    /// Web/CLI 未指定 `agent_role` 时使用的默认角色 id（须存在于角色表；与 `agent_roles.toml` / `CM_DEFAULT_CM_ROLE` 一致）
-    pub(crate) default_agent_role_id: Option<String>,
-    /// `id -> 未合并条目`；在 [`finalize`] 中与全局 cursor rules 设置一并落成 `AgentConfig.agent_roles`。
-    pub(crate) agent_role_entries: HashMap<String, agent_roles::AgentRoleEntryBuilder>,
-    /// 顶层 `[[scheduled_agent_task]]` 合并结果（仅用户 `config.toml` 等；嵌入默认分片不含此项）。
-    pub(crate) scheduled_agent_task_rows: Vec<ScheduledAgentTaskRow>,
-}
 
 /// 非空 trim 后覆盖 `String` 字段。
 pub(super) fn override_string(dst: &mut String, src: Option<String>) {
@@ -223,170 +50,186 @@ impl ConfigBuilder {
     pub(super) fn apply_section(&mut self, agent: AgentSection) {
         self.apply_section_identity_prompt_and_lists(&agent);
         self.apply_section_merge_numeric_mid(&agent);
-        self.apply_section_merge_numeric_tail(&agent);
+        self.apply_section_merge_numeric_tail_queues_staged(&agent);
+        self.apply_section_merge_numeric_tail_sandbox_web_conv(&agent);
+        self.apply_section_merge_numeric_tail_context_tool_explain(&agent);
+        self.apply_section_merge_numeric_tail_memory_mcp_semantic_intent(&agent);
     }
 
     /// 标识字段、提示词路径、列表类覆盖。
     fn apply_section_identity_prompt_and_lists(&mut self, agent: &AgentSection) {
-        override_string(&mut self.api_base, agent.api_base.clone());
-        override_string(&mut self.model, agent.model.clone());
-        override_opt_string_non_empty(&mut self.planner_model, agent.planner_model.clone());
-        override_opt_string_non_empty(&mut self.executor_model, agent.executor_model.clone());
+        let llm = &mut self.llm;
+        override_string(&mut llm.api_base, agent.api_base.clone());
+        override_string(&mut llm.model, agent.model.clone());
+        override_opt_string_non_empty(&mut llm.planner_model, agent.planner_model.clone());
+        override_opt_string_non_empty(&mut llm.executor_model, agent.executor_model.clone());
         override_opt_string_non_empty(
-            &mut self.llm_http_auth_mode_str,
+            &mut llm.llm_http_auth_mode_str,
             agent.llm_http_auth_mode.clone(),
         );
+        let rp = &mut self.roles_prompts;
         let no_system_prompt_file_in_section = agent.system_prompt_file.is_none();
         let inline_system_prompt_nonempty = agent
             .system_prompt
             .as_ref()
             .is_some_and(|s| !s.trim().is_empty());
+        override_opt_string_non_empty(&mut rp.system_prompt_file, agent.system_prompt_file.clone());
+        override_string(&mut rp.system_prompt, agent.system_prompt.clone());
         override_opt_string_non_empty(
-            &mut self.system_prompt_file,
-            agent.system_prompt_file.clone(),
-        );
-        override_string(&mut self.system_prompt, agent.system_prompt.clone());
-        override_opt_string_non_empty(
-            &mut self.default_agent_role_id,
+            &mut rp.default_agent_role_id,
             agent.default_agent_role.clone(),
         );
-        // 本段若只给了内联 system_prompt、未再给 system_prompt_file，则不再沿用更早层（如嵌入默认）的文件路径
         if no_system_prompt_file_in_section && inline_system_prompt_nonempty {
-            self.system_prompt_file = None;
+            rp.system_prompt_file = None;
         }
         override_opt_string_non_empty(
-            &mut self.run_command_working_dir,
+            &mut self.command_exec.run_command_working_dir,
             agent.run_command_working_dir.clone(),
         );
         override_opt_string_non_empty(
-            &mut self.web_search_provider_str,
+            &mut self.web_search.web_search_provider_str,
             agent.web_search_provider.clone(),
         );
         override_opt_string_non_empty(
-            &mut self.final_plan_requirement_str,
+            &mut self.per_plan_policy.final_plan_requirement_str,
             agent.final_plan_requirement.clone(),
         );
         override_opt_string_non_empty(
-            &mut self.planner_executor_mode_str,
+            &mut self.per_plan_policy.planner_executor_mode_str,
             agent.planner_executor_mode.clone(),
         );
-        override_opt_string_non_empty(&mut self.cursor_rules_dir, agent.cursor_rules_dir.clone());
-        override_opt_string_non_empty(&mut self.skills_dir, agent.skills_dir.clone());
+        override_opt_string_non_empty(
+            &mut self.cursor_rules.cursor_rules_dir,
+            agent.cursor_rules_dir.clone(),
+        );
+        override_opt_string_non_empty(&mut self.skills.skills_dir, agent.skills_dir.clone());
 
         override_opt_string_trimmed(
-            &mut self.web_api_bearer_token,
+            &mut self.web_api.web_api_bearer_token,
             agent.web_api_bearer_token.as_ref(),
         );
         override_opt_string_trimmed(
-            &mut self.staged_plan_phase_instruction,
+            &mut self.staged_planning.staged_plan_phase_instruction,
             agent.staged_plan_phase_instruction.as_ref(),
         );
         if let Some(ref k) = agent.web_search_api_key {
-            self.web_search_api_key = Some(k.clone());
+            self.web_search.web_search_api_key = Some(k.clone());
         }
 
-        override_opt_vec(&mut self.allowed_commands, &agent.allowed_commands);
         override_opt_vec(
-            &mut self.http_fetch_allowed_prefixes,
+            &mut self.command_exec.allowed_commands,
+            &agent.allowed_commands,
+        );
+        override_opt_vec(
+            &mut self.http_fetch.http_fetch_allowed_prefixes,
             &agent.http_fetch_allowed_prefixes,
         );
         override_opt_vec(
-            &mut self.workspace_allowed_roots,
+            &mut self.workspace_roots.workspace_allowed_roots,
             &agent.workspace_allowed_roots,
         );
     }
 
     /// `Option` 数值与布尔合并（至上下文摘要与健康探测）。
     fn apply_section_merge_numeric_mid(&mut self, agent: &AgentSection) {
-        self.max_message_history = agent.max_message_history.or(self.max_message_history);
-        self.tui_load_session_on_start = agent
+        let su = &mut self.session_ui;
+        su.max_message_history = agent.max_message_history.or(su.max_message_history);
+        su.tui_load_session_on_start = agent
             .tui_load_session_on_start
-            .or(self.tui_load_session_on_start);
-        self.tui_session_max_messages = agent
+            .or(su.tui_load_session_on_start);
+        su.tui_session_max_messages = agent
             .tui_session_max_messages
-            .or(self.tui_session_max_messages);
-        self.repl_initial_workspace_messages_enabled = agent
+            .or(su.tui_session_max_messages);
+        su.repl_initial_workspace_messages_enabled = agent
             .repl_initial_workspace_messages_enabled
-            .or(self.repl_initial_workspace_messages_enabled);
-        self.command_timeout_secs = agent.command_timeout_secs.or(self.command_timeout_secs);
-        self.command_max_output_len = agent.command_max_output_len.or(self.command_max_output_len);
-        self.max_tokens = agent.max_tokens.or(self.max_tokens);
-        self.llm_context_tokens = agent.llm_context_tokens.or(self.llm_context_tokens);
-        self.temperature = agent.temperature.or(self.temperature);
-        self.llm_seed = agent.llm_seed.or(self.llm_seed);
-        self.llm_reasoning_split = agent.llm_reasoning_split.or(self.llm_reasoning_split);
-        self.llm_bigmodel_thinking = agent.llm_bigmodel_thinking.or(self.llm_bigmodel_thinking);
-        self.llm_kimi_thinking_disabled = agent
+            .or(su.repl_initial_workspace_messages_enabled);
+        let ce = &mut self.command_exec;
+        ce.command_timeout_secs = agent.command_timeout_secs.or(ce.command_timeout_secs);
+        ce.command_max_output_len = agent.command_max_output_len.or(ce.command_max_output_len);
+        let samp = &mut self.llm_sampling;
+        samp.max_tokens = agent.max_tokens.or(samp.max_tokens);
+        samp.llm_context_tokens = agent.llm_context_tokens.or(samp.llm_context_tokens);
+        samp.temperature = agent.temperature.or(samp.temperature);
+        samp.llm_seed = agent.llm_seed.or(samp.llm_seed);
+        let lv = &mut self.llm_vendor;
+        lv.llm_reasoning_split = agent.llm_reasoning_split.or(lv.llm_reasoning_split);
+        lv.llm_bigmodel_thinking = agent.llm_bigmodel_thinking.or(lv.llm_bigmodel_thinking);
+        lv.llm_kimi_thinking_disabled = agent
             .llm_kimi_thinking_disabled
-            .or(self.llm_kimi_thinking_disabled);
-        self.api_timeout_secs = agent.api_timeout_secs.or(self.api_timeout_secs);
-        self.api_max_retries = agent.api_max_retries.or(self.api_max_retries);
-        self.api_retry_delay_secs = agent.api_retry_delay_secs.or(self.api_retry_delay_secs);
-        self.weather_timeout_secs = agent.weather_timeout_secs.or(self.weather_timeout_secs);
-        self.web_search_timeout_secs = agent
-            .web_search_timeout_secs
-            .or(self.web_search_timeout_secs);
-        self.web_search_max_results = agent.web_search_max_results.or(self.web_search_max_results);
-        self.http_fetch_timeout_secs = agent
-            .http_fetch_timeout_secs
-            .or(self.http_fetch_timeout_secs);
-        self.http_fetch_max_response_bytes = agent
+            .or(lv.llm_kimi_thinking_disabled);
+        let retry = &mut self.llm_http_retry;
+        retry.api_timeout_secs = agent.api_timeout_secs.or(retry.api_timeout_secs);
+        retry.api_max_retries = agent.api_max_retries.or(retry.api_max_retries);
+        retry.api_retry_delay_secs = agent.api_retry_delay_secs.or(retry.api_retry_delay_secs);
+        self.weather_tool.weather_timeout_secs = agent
+            .weather_timeout_secs
+            .or(self.weather_tool.weather_timeout_secs);
+        let ws = &mut self.web_search;
+        ws.web_search_timeout_secs = agent.web_search_timeout_secs.or(ws.web_search_timeout_secs);
+        ws.web_search_max_results = agent.web_search_max_results.or(ws.web_search_max_results);
+        let hf = &mut self.http_fetch;
+        hf.http_fetch_timeout_secs = agent.http_fetch_timeout_secs.or(hf.http_fetch_timeout_secs);
+        hf.http_fetch_max_response_bytes = agent
             .http_fetch_max_response_bytes
-            .or(self.http_fetch_max_response_bytes);
-        self.reflection_default_max_rounds = agent
+            .or(hf.http_fetch_max_response_bytes);
+        let pp = &mut self.per_plan_policy;
+        pp.reflection_default_max_rounds = agent
             .reflection_default_max_rounds
-            .or(self.reflection_default_max_rounds);
-        self.plan_rewrite_max_attempts = agent
+            .or(pp.reflection_default_max_rounds);
+        pp.plan_rewrite_max_attempts = agent
             .plan_rewrite_max_attempts
-            .or(self.plan_rewrite_max_attempts);
-        self.final_plan_require_strict_workflow_node_coverage = agent
+            .or(pp.plan_rewrite_max_attempts);
+        pp.final_plan_require_strict_workflow_node_coverage = agent
             .final_plan_require_strict_workflow_node_coverage
-            .or(self.final_plan_require_strict_workflow_node_coverage);
-        self.final_plan_semantic_check_enabled = agent
+            .or(pp.final_plan_require_strict_workflow_node_coverage);
+        pp.final_plan_semantic_check_enabled = agent
             .final_plan_semantic_check_enabled
-            .or(self.final_plan_semantic_check_enabled);
-        self.final_plan_semantic_check_max_non_readonly_tools = agent
+            .or(pp.final_plan_semantic_check_enabled);
+        pp.final_plan_semantic_check_max_non_readonly_tools = agent
             .final_plan_semantic_check_max_non_readonly_tools
-            .or(self.final_plan_semantic_check_max_non_readonly_tools);
-        self.final_plan_semantic_check_max_tokens = agent
+            .or(pp.final_plan_semantic_check_max_non_readonly_tools);
+        pp.final_plan_semantic_check_max_tokens = agent
             .final_plan_semantic_check_max_tokens
-            .or(self.final_plan_semantic_check_max_tokens);
-        self.cursor_rules_enabled = agent.cursor_rules_enabled.or(self.cursor_rules_enabled);
-        self.cursor_rules_include_agents_md = agent
+            .or(pp.final_plan_semantic_check_max_tokens);
+        let cr = &mut self.cursor_rules;
+        cr.cursor_rules_enabled = agent.cursor_rules_enabled.or(cr.cursor_rules_enabled);
+        cr.cursor_rules_include_agents_md = agent
             .cursor_rules_include_agents_md
-            .or(self.cursor_rules_include_agents_md);
-        self.cursor_rules_max_chars = agent.cursor_rules_max_chars.or(self.cursor_rules_max_chars);
-        self.skills_enabled = agent.skills_enabled.or(self.skills_enabled);
-        self.skills_max_chars = agent.skills_max_chars.or(self.skills_max_chars);
-        self.skills_top_k = agent.skills_top_k.or(self.skills_top_k);
-        self.tool_message_max_chars = agent.tool_message_max_chars.or(self.tool_message_max_chars);
-        self.tool_result_envelope_v1 = agent
-            .tool_result_envelope_v1
-            .or(self.tool_result_envelope_v1);
-        self.sse_tool_call_include_arguments = agent
+            .or(cr.cursor_rules_include_agents_md);
+        cr.cursor_rules_max_chars = agent.cursor_rules_max_chars.or(cr.cursor_rules_max_chars);
+        let sk = &mut self.skills;
+        sk.skills_enabled = agent.skills_enabled.or(sk.skills_enabled);
+        sk.skills_max_chars = agent.skills_max_chars.or(sk.skills_max_chars);
+        sk.skills_top_k = agent.skills_top_k.or(sk.skills_top_k);
+        let tt = &mut self.tool_transcript;
+        tt.tool_message_max_chars = agent.tool_message_max_chars.or(tt.tool_message_max_chars);
+        tt.tool_result_envelope_v1 = agent.tool_result_envelope_v1.or(tt.tool_result_envelope_v1);
+        tt.sse_tool_call_include_arguments = agent
             .sse_tool_call_include_arguments
-            .or(self.sse_tool_call_include_arguments);
-        self.agent_tool_stats_enabled = agent
+            .or(tt.sse_tool_call_include_arguments);
+        let ats = &mut self.agent_tool_stats;
+        ats.agent_tool_stats_enabled = agent
             .agent_tool_stats_enabled
-            .or(self.agent_tool_stats_enabled);
-        self.agent_tool_stats_window_events = agent
+            .or(ats.agent_tool_stats_enabled);
+        ats.agent_tool_stats_window_events = agent
             .agent_tool_stats_window_events
-            .or(self.agent_tool_stats_window_events);
-        self.agent_tool_stats_min_samples = agent
+            .or(ats.agent_tool_stats_window_events);
+        ats.agent_tool_stats_min_samples = agent
             .agent_tool_stats_min_samples
-            .or(self.agent_tool_stats_min_samples);
-        self.agent_tool_stats_max_chars = agent
+            .or(ats.agent_tool_stats_min_samples);
+        ats.agent_tool_stats_max_chars = agent
             .agent_tool_stats_max_chars
-            .or(self.agent_tool_stats_max_chars);
-        self.agent_tool_stats_warn_below_success_ratio = agent
+            .or(ats.agent_tool_stats_max_chars);
+        ats.agent_tool_stats_warn_below_success_ratio = agent
             .agent_tool_stats_warn_below_success_ratio
-            .or(self.agent_tool_stats_warn_below_success_ratio);
-        self.materialize_deepseek_dsml_tool_calls = agent
+            .or(ats.agent_tool_stats_warn_below_success_ratio);
+        self.dsml_materialize.materialize_deepseek_dsml_tool_calls = agent
             .materialize_deepseek_dsml_tool_calls
-            .or(self.materialize_deepseek_dsml_tool_calls);
-        self.thinking_avoid_echo_system_prompt = agent
+            .or(self.dsml_materialize.materialize_deepseek_dsml_tool_calls);
+        let te = &mut self.thinking_echo;
+        te.thinking_avoid_echo_system_prompt = agent
             .thinking_avoid_echo_system_prompt
-            .or(self.thinking_avoid_echo_system_prompt);
+            .or(te.thinking_avoid_echo_system_prompt);
         let no_thinking_appendix_file_in_section =
             agent.thinking_avoid_echo_appendix_file.is_none();
         let inline_thinking_appendix_nonempty = agent
@@ -394,271 +237,295 @@ impl ConfigBuilder {
             .as_ref()
             .is_some_and(|s| !s.trim().is_empty());
         override_opt_string_non_empty(
-            &mut self.thinking_avoid_echo_appendix_file,
+            &mut te.thinking_avoid_echo_appendix_file,
             agent.thinking_avoid_echo_appendix_file.clone(),
         );
         if let Some(ref s) = agent.thinking_avoid_echo_appendix
             && !s.trim().is_empty()
         {
-            self.thinking_avoid_echo_appendix = Some(s.clone());
+            te.thinking_avoid_echo_appendix = Some(s.clone());
         }
         if no_thinking_appendix_file_in_section && inline_thinking_appendix_nonempty {
-            self.thinking_avoid_echo_appendix_file = None;
+            te.thinking_avoid_echo_appendix_file = None;
         }
-        self.context_char_budget = agent.context_char_budget.or(self.context_char_budget);
-        self.context_min_messages_after_system = agent
+        let cp = &mut self.context_pipeline;
+        cp.context_char_budget = agent.context_char_budget.or(cp.context_char_budget);
+        cp.context_min_messages_after_system = agent
             .context_min_messages_after_system
-            .or(self.context_min_messages_after_system);
-        self.context_summary_trigger_chars = agent
+            .or(cp.context_min_messages_after_system);
+        cp.context_summary_trigger_chars = agent
             .context_summary_trigger_chars
-            .or(self.context_summary_trigger_chars);
-        self.context_summary_tail_messages = agent
+            .or(cp.context_summary_trigger_chars);
+        cp.context_summary_tail_messages = agent
             .context_summary_tail_messages
-            .or(self.context_summary_tail_messages);
-        self.context_summary_max_tokens = agent
+            .or(cp.context_summary_tail_messages);
+        cp.context_summary_max_tokens = agent
             .context_summary_max_tokens
-            .or(self.context_summary_max_tokens);
-        self.context_summary_transcript_max_chars = agent
+            .or(cp.context_summary_max_tokens);
+        cp.context_summary_transcript_max_chars = agent
             .context_summary_transcript_max_chars
-            .or(self.context_summary_transcript_max_chars);
-        self.health_llm_models_probe = agent
-            .health_llm_models_probe
-            .or(self.health_llm_models_probe);
-        self.health_llm_models_probe_cache_secs = agent
+            .or(cp.context_summary_transcript_max_chars);
+        let wa = &mut self.web_api;
+        wa.health_llm_models_probe = agent.health_llm_models_probe.or(wa.health_llm_models_probe);
+        wa.health_llm_models_probe_cache_secs = agent
             .health_llm_models_probe_cache_secs
-            .or(self.health_llm_models_probe_cache_secs);
+            .or(wa.health_llm_models_probe_cache_secs);
     }
 
-    /// 队列、分阶段规划、沙盒、记忆、语义检索与意图阈值合并。
-    fn apply_section_merge_numeric_tail(&mut self, agent: &AgentSection) {
-        self.chat_queue_max_concurrent = agent
+    /// 队列、会话变更列表与分阶段规划字段合并。
+    fn apply_section_merge_numeric_tail_queues_staged(&mut self, agent: &AgentSection) {
+        let cqc = &mut self.chat_queues_cache;
+        cqc.chat_queue_max_concurrent = agent
             .chat_queue_max_concurrent
-            .or(self.chat_queue_max_concurrent);
-        self.chat_queue_max_pending = agent.chat_queue_max_pending.or(self.chat_queue_max_pending);
-        self.parallel_readonly_tools_max = agent
+            .or(cqc.chat_queue_max_concurrent);
+        cqc.chat_queue_max_pending = agent.chat_queue_max_pending.or(cqc.chat_queue_max_pending);
+        cqc.parallel_readonly_tools_max = agent
             .parallel_readonly_tools_max
-            .or(self.parallel_readonly_tools_max);
-        self.read_file_turn_cache_max_entries = agent
+            .or(cqc.parallel_readonly_tools_max);
+        cqc.read_file_turn_cache_max_entries = agent
             .read_file_turn_cache_max_entries
-            .or(self.read_file_turn_cache_max_entries);
-        self.test_result_cache_enabled = agent
+            .or(cqc.read_file_turn_cache_max_entries);
+        cqc.test_result_cache_enabled = agent
             .test_result_cache_enabled
-            .or(self.test_result_cache_enabled);
-        self.test_result_cache_max_entries = agent
+            .or(cqc.test_result_cache_enabled);
+        cqc.test_result_cache_max_entries = agent
             .test_result_cache_max_entries
-            .or(self.test_result_cache_max_entries);
-        self.session_workspace_changelist_enabled = agent
+            .or(cqc.test_result_cache_max_entries);
+        let swc = &mut self.session_workspace_changelist;
+        swc.session_workspace_changelist_enabled = agent
             .session_workspace_changelist_enabled
-            .or(self.session_workspace_changelist_enabled);
-        self.session_workspace_changelist_max_chars = agent
+            .or(swc.session_workspace_changelist_enabled);
+        swc.session_workspace_changelist_max_chars = agent
             .session_workspace_changelist_max_chars
-            .or(self.session_workspace_changelist_max_chars);
-        self.staged_plan_execution = agent.staged_plan_execution.or(self.staged_plan_execution);
-        self.staged_plan_allow_no_task = agent
+            .or(swc.session_workspace_changelist_max_chars);
+        let sp = &mut self.staged_planning;
+        sp.staged_plan_execution = agent.staged_plan_execution.or(sp.staged_plan_execution);
+        sp.staged_plan_allow_no_task = agent
             .staged_plan_allow_no_task
-            .or(self.staged_plan_allow_no_task);
+            .or(sp.staged_plan_allow_no_task);
         override_opt_string_non_empty(
-            &mut self.staged_plan_feedback_mode_str,
+            &mut sp.staged_plan_feedback_mode_str,
             agent.staged_plan_feedback_mode.clone(),
         );
-        self.staged_plan_patch_max_attempts = agent
+        sp.staged_plan_patch_max_attempts = agent
             .staged_plan_patch_max_attempts
-            .or(self.staged_plan_patch_max_attempts);
-        self.staged_plan_cli_show_planner_stream = agent
+            .or(sp.staged_plan_patch_max_attempts);
+        sp.staged_plan_cli_show_planner_stream = agent
             .staged_plan_cli_show_planner_stream
-            .or(self.staged_plan_cli_show_planner_stream);
-        self.staged_plan_optimizer_round = agent
+            .or(sp.staged_plan_cli_show_planner_stream);
+        sp.staged_plan_optimizer_round = agent
             .staged_plan_optimizer_round
-            .or(self.staged_plan_optimizer_round);
-        self.staged_plan_optimizer_requires_parallel_tools = agent
+            .or(sp.staged_plan_optimizer_round);
+        sp.staged_plan_optimizer_requires_parallel_tools = agent
             .staged_plan_optimizer_requires_parallel_tools
-            .or(self.staged_plan_optimizer_requires_parallel_tools);
-        self.staged_plan_ensemble_count = agent
+            .or(sp.staged_plan_optimizer_requires_parallel_tools);
+        sp.staged_plan_ensemble_count = agent
             .staged_plan_ensemble_count
-            .or(self.staged_plan_ensemble_count);
-        self.staged_plan_skip_ensemble_on_casual_prompt = agent
+            .or(sp.staged_plan_ensemble_count);
+        sp.staged_plan_skip_ensemble_on_casual_prompt = agent
             .staged_plan_skip_ensemble_on_casual_prompt
-            .or(self.staged_plan_skip_ensemble_on_casual_prompt);
-        self.staged_plan_two_phase_nl_display = agent
+            .or(sp.staged_plan_skip_ensemble_on_casual_prompt);
+        sp.staged_plan_two_phase_nl_display = agent
             .staged_plan_two_phase_nl_display
-            .or(self.staged_plan_two_phase_nl_display);
+            .or(sp.staged_plan_two_phase_nl_display);
+    }
+
+    /// 同步工具沙盒、Web API 审计与会话持久化路径合并。
+    fn apply_section_merge_numeric_tail_sandbox_web_conv(&mut self, agent: &AgentSection) {
+        let sb = &mut self.sync_tool_sandbox;
         override_opt_string_non_empty(
-            &mut self.sync_default_tool_sandbox_mode_str,
+            &mut sb.sync_default_tool_sandbox_mode_str,
             agent.sync_default_tool_sandbox_mode.clone(),
         );
         override_opt_string_non_empty(
-            &mut self.sync_default_tool_sandbox_docker_image,
+            &mut sb.sync_default_tool_sandbox_docker_image,
             agent.sync_default_tool_sandbox_docker_image.clone(),
         );
         override_opt_string_non_empty(
-            &mut self.sync_default_tool_sandbox_docker_network,
+            &mut sb.sync_default_tool_sandbox_docker_network,
             agent.sync_default_tool_sandbox_docker_network.clone(),
         );
-        self.sync_default_tool_sandbox_docker_timeout_secs = agent
+        sb.sync_default_tool_sandbox_docker_timeout_secs = agent
             .sync_default_tool_sandbox_docker_timeout_secs
-            .or(self.sync_default_tool_sandbox_docker_timeout_secs);
+            .or(sb.sync_default_tool_sandbox_docker_timeout_secs);
         override_opt_string_non_empty(
-            &mut self.sync_default_tool_sandbox_docker_user,
+            &mut sb.sync_default_tool_sandbox_docker_user,
             agent.sync_default_tool_sandbox_docker_user.clone(),
         );
-        self.web_api_require_bearer = agent.web_api_require_bearer.or(self.web_api_require_bearer);
-        self.web_audit_log_write_tools = agent
+        let wa = &mut self.web_api;
+        wa.web_api_require_bearer = agent.web_api_require_bearer.or(wa.web_api_require_bearer);
+        wa.web_audit_log_write_tools = agent
             .web_audit_log_write_tools
-            .or(self.web_audit_log_write_tools);
-        self.web_audit_trust_x_forwarded_for = agent
+            .or(wa.web_audit_log_write_tools);
+        wa.web_audit_trust_x_forwarded_for = agent
             .web_audit_trust_x_forwarded_for
-            .or(self.web_audit_trust_x_forwarded_for);
-        self.allow_insecure_no_auth_for_non_loopback = agent
+            .or(wa.web_audit_trust_x_forwarded_for);
+        wa.allow_insecure_no_auth_for_non_loopback = agent
             .allow_insecure_no_auth_for_non_loopback
-            .or(self.allow_insecure_no_auth_for_non_loopback);
+            .or(wa.allow_insecure_no_auth_for_non_loopback);
         override_opt_string_non_empty(
-            &mut self.conversation_store_sqlite_path,
+            &mut self.conversation_persistence.conversation_store_sqlite_path,
             agent.conversation_store_sqlite_path.clone(),
         );
-        self.agent_memory_file_enabled = agent
+    }
+
+    /// 上下文引导注入与工具调用解释字段合并。
+    fn apply_section_merge_numeric_tail_context_tool_explain(&mut self, agent: &AgentSection) {
+        let cbi = &mut self.context_bootstrap_inject;
+        cbi.agent_memory_file_enabled = agent
             .agent_memory_file_enabled
-            .or(self.agent_memory_file_enabled);
-        override_opt_string_non_empty(&mut self.agent_memory_file, agent.agent_memory_file.clone());
-        self.agent_memory_file_max_chars = agent
+            .or(cbi.agent_memory_file_enabled);
+        override_opt_string_non_empty(&mut cbi.agent_memory_file, agent.agent_memory_file.clone());
+        cbi.agent_memory_file_max_chars = agent
             .agent_memory_file_max_chars
-            .or(self.agent_memory_file_max_chars);
-        self.living_docs_inject_enabled = agent
+            .or(cbi.agent_memory_file_max_chars);
+        cbi.living_docs_inject_enabled = agent
             .living_docs_inject_enabled
-            .or(self.living_docs_inject_enabled);
+            .or(cbi.living_docs_inject_enabled);
         override_opt_string_non_empty(
-            &mut self.living_docs_relative_dir,
+            &mut cbi.living_docs_relative_dir,
             agent.living_docs_relative_dir.clone(),
         );
-        self.living_docs_inject_max_chars = agent
+        cbi.living_docs_inject_max_chars = agent
             .living_docs_inject_max_chars
-            .or(self.living_docs_inject_max_chars);
-        self.living_docs_file_max_each_chars = agent
+            .or(cbi.living_docs_inject_max_chars);
+        cbi.living_docs_file_max_each_chars = agent
             .living_docs_file_max_each_chars
-            .or(self.living_docs_file_max_each_chars);
-        self.project_profile_inject_enabled = agent
+            .or(cbi.living_docs_file_max_each_chars);
+        cbi.project_profile_inject_enabled = agent
             .project_profile_inject_enabled
-            .or(self.project_profile_inject_enabled);
-        self.project_profile_inject_max_chars = agent
+            .or(cbi.project_profile_inject_enabled);
+        cbi.project_profile_inject_max_chars = agent
             .project_profile_inject_max_chars
-            .or(self.project_profile_inject_max_chars);
-        self.project_dependency_brief_inject_enabled = agent
+            .or(cbi.project_profile_inject_max_chars);
+        cbi.project_dependency_brief_inject_enabled = agent
             .project_dependency_brief_inject_enabled
-            .or(self.project_dependency_brief_inject_enabled);
-        self.project_dependency_brief_inject_max_chars = agent
+            .or(cbi.project_dependency_brief_inject_enabled);
+        cbi.project_dependency_brief_inject_max_chars = agent
             .project_dependency_brief_inject_max_chars
-            .or(self.project_dependency_brief_inject_max_chars);
-        self.tool_call_explain_enabled = agent
+            .or(cbi.project_dependency_brief_inject_max_chars);
+        let tce = &mut self.tool_call_explain;
+        tce.tool_call_explain_enabled = agent
             .tool_call_explain_enabled
-            .or(self.tool_call_explain_enabled);
-        self.tool_call_explain_min_chars = agent
+            .or(tce.tool_call_explain_enabled);
+        tce.tool_call_explain_min_chars = agent
             .tool_call_explain_min_chars
-            .or(self.tool_call_explain_min_chars);
-        self.tool_call_explain_max_chars = agent
+            .or(tce.tool_call_explain_min_chars);
+        tce.tool_call_explain_max_chars = agent
             .tool_call_explain_max_chars
-            .or(self.tool_call_explain_max_chars);
-        self.long_term_memory_enabled = agent
+            .or(tce.tool_call_explain_max_chars);
+    }
+
+    /// 长期记忆、MCP、语义代码库与意图路由阈值合并。
+    fn apply_section_merge_numeric_tail_memory_mcp_semantic_intent(
+        &mut self,
+        agent: &AgentSection,
+    ) {
+        let ltm = &mut self.long_term_memory;
+        ltm.long_term_memory_enabled = agent
             .long_term_memory_enabled
-            .or(self.long_term_memory_enabled);
+            .or(ltm.long_term_memory_enabled);
         override_opt_string_non_empty(
-            &mut self.long_term_memory_scope_mode_str,
+            &mut ltm.long_term_memory_scope_mode_str,
             agent.long_term_memory_scope_mode.clone(),
         );
         override_opt_string_non_empty(
-            &mut self.long_term_memory_vector_backend_str,
+            &mut ltm.long_term_memory_vector_backend_str,
             agent.long_term_memory_vector_backend.clone(),
         );
-        self.long_term_memory_max_entries = agent
+        ltm.long_term_memory_max_entries = agent
             .long_term_memory_max_entries
-            .or(self.long_term_memory_max_entries);
-        self.long_term_memory_inject_max_chars = agent
+            .or(ltm.long_term_memory_max_entries);
+        ltm.long_term_memory_inject_max_chars = agent
             .long_term_memory_inject_max_chars
-            .or(self.long_term_memory_inject_max_chars);
+            .or(ltm.long_term_memory_inject_max_chars);
         override_opt_string_non_empty(
-            &mut self.long_term_memory_store_sqlite_path,
+            &mut ltm.long_term_memory_store_sqlite_path,
             agent.long_term_memory_store_sqlite_path.clone(),
         );
-        self.long_term_memory_top_k = agent.long_term_memory_top_k.or(self.long_term_memory_top_k);
-        self.long_term_memory_max_chars_per_chunk = agent
+        ltm.long_term_memory_top_k = agent.long_term_memory_top_k.or(ltm.long_term_memory_top_k);
+        ltm.long_term_memory_max_chars_per_chunk = agent
             .long_term_memory_max_chars_per_chunk
-            .or(self.long_term_memory_max_chars_per_chunk);
-        self.long_term_memory_min_chars_to_index = agent
+            .or(ltm.long_term_memory_max_chars_per_chunk);
+        ltm.long_term_memory_min_chars_to_index = agent
             .long_term_memory_min_chars_to_index
-            .or(self.long_term_memory_min_chars_to_index);
-        self.long_term_memory_async_index = agent
+            .or(ltm.long_term_memory_min_chars_to_index);
+        ltm.long_term_memory_async_index = agent
             .long_term_memory_async_index
-            .or(self.long_term_memory_async_index);
-        self.long_term_memory_auto_index_turns = agent
+            .or(ltm.long_term_memory_async_index);
+        ltm.long_term_memory_auto_index_turns = agent
             .long_term_memory_auto_index_turns
-            .or(self.long_term_memory_auto_index_turns);
-        self.long_term_memory_default_ttl_secs = agent
+            .or(ltm.long_term_memory_auto_index_turns);
+        ltm.long_term_memory_default_ttl_secs = agent
             .long_term_memory_default_ttl_secs
-            .or(self.long_term_memory_default_ttl_secs);
-        self.mcp_enabled = agent.mcp_enabled.or(self.mcp_enabled);
-        override_opt_string_non_empty(&mut self.mcp_command, agent.mcp_command.clone());
-        self.mcp_tool_timeout_secs = agent.mcp_tool_timeout_secs.or(self.mcp_tool_timeout_secs);
-        self.codebase_semantic_search_enabled = agent
+            .or(ltm.long_term_memory_default_ttl_secs);
+        let mcp = &mut self.mcp_client;
+        mcp.mcp_enabled = agent.mcp_enabled.or(mcp.mcp_enabled);
+        override_opt_string_non_empty(&mut mcp.mcp_command, agent.mcp_command.clone());
+        mcp.mcp_tool_timeout_secs = agent.mcp_tool_timeout_secs.or(mcp.mcp_tool_timeout_secs);
+        let cs = &mut self.codebase_semantic;
+        cs.codebase_semantic_search_enabled = agent
             .codebase_semantic_search_enabled
-            .or(self.codebase_semantic_search_enabled);
-        self.codebase_semantic_invalidate_on_workspace_change = agent
+            .or(cs.codebase_semantic_search_enabled);
+        cs.codebase_semantic_invalidate_on_workspace_change = agent
             .codebase_semantic_invalidate_on_workspace_change
-            .or(self.codebase_semantic_invalidate_on_workspace_change);
+            .or(cs.codebase_semantic_invalidate_on_workspace_change);
         override_opt_string_non_empty(
-            &mut self.codebase_semantic_index_sqlite_path,
+            &mut cs.codebase_semantic_index_sqlite_path,
             agent.codebase_semantic_index_sqlite_path.clone(),
         );
-        self.codebase_semantic_max_file_bytes = agent
+        cs.codebase_semantic_max_file_bytes = agent
             .codebase_semantic_max_file_bytes
-            .or(self.codebase_semantic_max_file_bytes);
-        self.codebase_semantic_chunk_max_chars = agent
+            .or(cs.codebase_semantic_max_file_bytes);
+        cs.codebase_semantic_chunk_max_chars = agent
             .codebase_semantic_chunk_max_chars
-            .or(self.codebase_semantic_chunk_max_chars);
-        self.codebase_semantic_top_k = agent
-            .codebase_semantic_top_k
-            .or(self.codebase_semantic_top_k);
-        self.codebase_semantic_query_max_chunks = agent
+            .or(cs.codebase_semantic_chunk_max_chars);
+        cs.codebase_semantic_top_k = agent.codebase_semantic_top_k.or(cs.codebase_semantic_top_k);
+        cs.codebase_semantic_query_max_chunks = agent
             .codebase_semantic_query_max_chunks
-            .or(self.codebase_semantic_query_max_chunks);
-        self.codebase_semantic_rebuild_max_files = agent
+            .or(cs.codebase_semantic_query_max_chunks);
+        cs.codebase_semantic_rebuild_max_files = agent
             .codebase_semantic_rebuild_max_files
-            .or(self.codebase_semantic_rebuild_max_files);
-        self.codebase_semantic_rebuild_incremental = agent
+            .or(cs.codebase_semantic_rebuild_max_files);
+        cs.codebase_semantic_rebuild_incremental = agent
             .codebase_semantic_rebuild_incremental
-            .or(self.codebase_semantic_rebuild_incremental);
-        self.codebase_semantic_hybrid_alpha = agent
+            .or(cs.codebase_semantic_rebuild_incremental);
+        cs.codebase_semantic_hybrid_alpha = agent
             .codebase_semantic_hybrid_alpha
-            .or(self.codebase_semantic_hybrid_alpha);
-        self.codebase_semantic_fts_top_n = agent
+            .or(cs.codebase_semantic_hybrid_alpha);
+        cs.codebase_semantic_fts_top_n = agent
             .codebase_semantic_fts_top_n
-            .or(self.codebase_semantic_fts_top_n);
-        self.codebase_semantic_hybrid_semantic_pool = agent
+            .or(cs.codebase_semantic_fts_top_n);
+        cs.codebase_semantic_hybrid_semantic_pool = agent
             .codebase_semantic_hybrid_semantic_pool
-            .or(self.codebase_semantic_hybrid_semantic_pool);
-        self.intent_execute_low_threshold = agent
+            .or(cs.codebase_semantic_hybrid_semantic_pool);
+        let ir = &mut self.intent_routing;
+        ir.intent_execute_low_threshold = agent
             .intent_execute_low_threshold
-            .or(self.intent_execute_low_threshold);
-        self.intent_execute_high_threshold = agent
+            .or(ir.intent_execute_low_threshold);
+        ir.intent_execute_high_threshold = agent
             .intent_execute_high_threshold
-            .or(self.intent_execute_high_threshold);
-        self.intent_non_hier_execute_low_threshold = agent
+            .or(ir.intent_execute_high_threshold);
+        ir.intent_non_hier_execute_low_threshold = agent
             .intent_non_hier_execute_low_threshold
-            .or(self.intent_non_hier_execute_low_threshold);
-        self.intent_non_hier_execute_high_threshold = agent
+            .or(ir.intent_non_hier_execute_low_threshold);
+        ir.intent_non_hier_execute_high_threshold = agent
             .intent_non_hier_execute_high_threshold
-            .or(self.intent_non_hier_execute_high_threshold);
-        self.intent_mode_bias_enabled = agent
+            .or(ir.intent_non_hier_execute_high_threshold);
+        ir.intent_mode_bias_enabled = agent
             .intent_mode_bias_enabled
-            .or(self.intent_mode_bias_enabled);
-        self.intent_l2_enabled = agent.intent_l2_enabled.or(self.intent_l2_enabled);
-        self.intent_l2_min_confidence = agent
+            .or(ir.intent_mode_bias_enabled);
+        ir.intent_l2_enabled = agent.intent_l2_enabled.or(ir.intent_l2_enabled);
+        ir.intent_l2_min_confidence = agent
             .intent_l2_min_confidence
-            .or(self.intent_l2_min_confidence);
-        self.intent_l2_max_tokens = agent.intent_l2_max_tokens.or(self.intent_l2_max_tokens);
-        self.intent_at_turn_start_enabled = agent
+            .or(ir.intent_l2_min_confidence);
+        ir.intent_l2_max_tokens = agent.intent_l2_max_tokens.or(ir.intent_l2_max_tokens);
+        ir.intent_at_turn_start_enabled = agent
             .intent_at_turn_start_enabled
-            .or(self.intent_at_turn_start_enabled);
-        self.intent_l0_routing_boost_enabled = agent
+            .or(ir.intent_at_turn_start_enabled);
+        ir.intent_l0_routing_boost_enabled = agent
             .intent_l0_routing_boost_enabled
-            .or(self.intent_l0_routing_boost_enabled);
+            .or(ir.intent_l0_routing_boost_enabled);
     }
 
     pub(super) fn merge_agent_role_rows(&mut self, rows: &[AgentRoleRow]) {
@@ -693,35 +560,36 @@ impl ConfigBuilder {
     }
 
     pub(super) fn apply_tool_registry(&mut self, tr: ToolRegistrySection) {
+        let p = &mut self.tool_registry_policy;
         if let Some(v) = tr.http_fetch_wall_timeout_secs {
-            self.tool_registry_http_fetch_wall_timeout_secs = Some(v);
+            p.tool_registry_http_fetch_wall_timeout_secs = Some(v);
         }
         if let Some(v) = tr.http_request_wall_timeout_secs {
-            self.tool_registry_http_request_wall_timeout_secs = Some(v);
+            p.tool_registry_http_request_wall_timeout_secs = Some(v);
         }
         for (k, v) in tr.parallel_wall_timeout_secs {
-            self.tool_registry_parallel_wall_timeout_secs.insert(k, v);
+            p.tool_registry_parallel_wall_timeout_secs.insert(k, v);
         }
         if let Some(v) = tr.parallel_sync_denied_tools {
-            self.tool_registry_parallel_sync_denied_tools = Some(v);
+            p.tool_registry_parallel_sync_denied_tools = Some(v);
         }
         if let Some(v) = tr.parallel_sync_denied_prefixes {
-            self.tool_registry_parallel_sync_denied_prefixes = Some(v);
+            p.tool_registry_parallel_sync_denied_prefixes = Some(v);
         }
         if let Some(v) = tr.sync_default_inline_tools {
-            self.tool_registry_sync_default_inline_tools = Some(v);
+            p.tool_registry_sync_default_inline_tools = Some(v);
         }
         if let Some(v) = tr.write_effect_tools {
-            self.tool_registry_write_effect_tools = Some(v);
+            p.tool_registry_write_effect_tools = Some(v);
         }
         if let Some(v) = tr.sub_agent_patch_write_extra_tools {
-            self.tool_registry_sub_agent_patch_write_extra_tools = Some(v);
+            p.tool_registry_sub_agent_patch_write_extra_tools = Some(v);
         }
         if let Some(v) = tr.sub_agent_test_runner_extra_tools {
-            self.tool_registry_sub_agent_test_runner_extra_tools = Some(v);
+            p.tool_registry_sub_agent_test_runner_extra_tools = Some(v);
         }
         if let Some(v) = tr.sub_agent_review_readonly_deny_tools {
-            self.tool_registry_sub_agent_review_readonly_deny_tools = Some(v);
+            p.tool_registry_sub_agent_review_readonly_deny_tools = Some(v);
         }
     }
 }
