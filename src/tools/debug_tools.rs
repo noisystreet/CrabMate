@@ -2,19 +2,25 @@
 
 use std::collections::BTreeMap;
 
+use crate::tools::tool_param_types::BacktraceAnalyzeArgs;
+
 pub fn rust_backtrace_analyze(args_json: &str) -> String {
-    let v = match crate::tools::parse_args_json(args_json) {
+    let parsed = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let text = match v.get("backtrace").and_then(|x| x.as_str()) {
-        Some(s) if !s.trim().is_empty() => s,
+    let args: BacktraceAnalyzeArgs = match serde_json::from_value(parsed) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let text = match args.backtrace.trim() {
+        s if !s.is_empty() => s,
         _ => return "错误：缺少 backtrace 参数".to_string(),
     };
-    let crate_hint = v
-        .get("crate_hint")
-        .and_then(|x| x.as_str())
-        .map(|s| s.trim())
+    let crate_hint = args
+        .crate_hint
+        .as_deref()
+        .map(str::trim)
         .filter(|s| !s.is_empty());
 
     let mut frame_hits: Vec<String> = Vec::new();

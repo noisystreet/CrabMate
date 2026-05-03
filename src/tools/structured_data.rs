@@ -9,6 +9,10 @@ use serde_json::Value as JsonValue;
 
 use super::ToolContext;
 use super::file;
+use super::tool_param_types::{
+    StructuredDiffArgs, StructuredPatchAction, StructuredPatchArgs, StructuredQueryArgs,
+    StructuredValidateArgs,
+};
 use crate::workspace::changelist::record_file_state_after_write;
 
 const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
@@ -62,12 +66,6 @@ fn detect_from_path(path: &str) -> Result<DataFormat, String> {
         return Ok(DataFormat::Tsv);
     }
     Err("无法从扩展名推断格式，请显式传 format（json / yaml / yml / toml / csv / tsv）".to_string())
-}
-
-fn parse_has_header(v: &JsonValue) -> bool {
-    v.get("has_header")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(true)
 }
 
 fn unique_header_keys(header: &csv::StringRecord) -> Vec<String> {
@@ -495,17 +493,17 @@ pub fn structured_validate(args_json: &str, working_dir: &Path) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let path = match v.get("path").and_then(|x| x.as_str()).map(str::trim) {
-        Some(p) if !p.is_empty() => p,
+    let args: StructuredValidateArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let path = match args.path.trim() {
+        p if !p.is_empty() => p,
         _ => return "错误：缺少 path".to_string(),
     };
-    let fmt = v
-        .get("format")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let summarize = v.get("summarize").and_then(|x| x.as_bool()).unwrap_or(true);
-    let has_header = parse_has_header(&v);
+    let fmt = args.format.map(|f| f.as_detect_token());
+    let summarize = args.summarize;
+    let has_header = args.has_header;
 
     let abs = match file::resolve_for_read(working_dir, path) {
         Ok(p) => p,
@@ -539,20 +537,20 @@ pub fn structured_query(args_json: &str, working_dir: &Path) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let path = match v.get("path").and_then(|x| x.as_str()).map(str::trim) {
-        Some(p) if !p.is_empty() => p,
+    let args: StructuredQueryArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let path = match args.path.trim() {
+        p if !p.is_empty() => p,
         _ => return "错误：缺少 path".to_string(),
     };
-    let query = match v.get("query").and_then(|x| x.as_str()).map(str::trim) {
-        Some(q) if !q.is_empty() => q,
+    let query = match args.query.trim() {
+        q if !q.is_empty() => q,
         _ => return "错误：缺少 query（JSON Pointer 如 /a/b 或点号路径如 a.b）".to_string(),
     };
-    let fmt = v
-        .get("format")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let has_header = parse_has_header(&v);
+    let fmt = args.format.map(|f| f.as_detect_token());
+    let has_header = args.has_header;
 
     let abs = match file::resolve_for_read(working_dir, path) {
         Ok(p) => p,
@@ -602,26 +600,22 @@ pub fn structured_diff(args_json: &str, working_dir: &Path) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let path_a = match v.get("path_a").and_then(|x| x.as_str()).map(str::trim) {
-        Some(p) if !p.is_empty() => p,
+    let args: StructuredDiffArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let path_a = match args.path_a.trim() {
+        p if !p.is_empty() => p,
         _ => return "错误：缺少 path_a".to_string(),
     };
-    let path_b = match v.get("path_b").and_then(|x| x.as_str()).map(str::trim) {
-        Some(p) if !p.is_empty() => p,
+    let path_b = match args.path_b.trim() {
+        p if !p.is_empty() => p,
         _ => return "错误：缺少 path_b".to_string(),
     };
-    let fmt_override = v
-        .get("format")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let max_lines = v
-        .get("max_diff_lines")
-        .and_then(|x| x.as_u64())
-        .map(|n| n as usize)
-        .unwrap_or(DEFAULT_DIFF_MAX_LINES)
+    let fmt_override = args.format.map(|f| f.as_detect_token());
+    let max_lines = (args.max_diff_lines.unwrap_or(DEFAULT_DIFF_MAX_LINES as u64) as usize)
         .clamp(1, ABS_DIFF_MAX_LINES);
-    let has_header = parse_has_header(&v);
+    let has_header = args.has_header;
 
     let abs_a = match file::resolve_for_read(working_dir, path_a) {
         Ok(p) => p,
@@ -692,37 +686,29 @@ pub fn structured_patch(args_json: &str, working_dir: &Path, ctx: &ToolContext<'
         Ok(v) => v,
         Err(e) => return e,
     };
-    let path = match v.get("path").and_then(|x| x.as_str()).map(str::trim) {
-        Some(p) if !p.is_empty() => p,
+    let args: StructuredPatchArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let path = match args.path.trim() {
+        p if !p.is_empty() => p,
         _ => return "错误：缺少 path".to_string(),
     };
-    let query = match v.get("query").and_then(|x| x.as_str()).map(str::trim) {
-        Some(q) => q,
-        None => return "错误：缺少 query（JSON Pointer 或点号路径）".to_string(),
+    let query = match args.query.trim() {
+        "" => return "错误：缺少 query（JSON Pointer 或点号路径）".to_string(),
+        q => q,
     };
-    let action = v
-        .get("action")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("set");
-    if action != "set" && action != "remove" {
-        return "错误：action 仅支持 set/remove".to_string();
-    }
-    let create_missing = v
-        .get("create_missing")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(true);
-    let dry_run = v.get("dry_run").and_then(|x| x.as_bool()).unwrap_or(true);
-    let confirm = v.get("confirm").and_then(|x| x.as_bool()).unwrap_or(false);
+    let action = match args.action {
+        StructuredPatchAction::Set => "set",
+        StructuredPatchAction::Remove => "remove",
+    };
+    let create_missing = args.create_missing;
+    let dry_run = args.dry_run;
+    let confirm = args.confirm;
     if !dry_run && !confirm {
         return "错误：structured_patch 写盘需 confirm=true；建议先 dry_run=true 预览".to_string();
     }
-    let fmt = v
-        .get("format")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
+    let fmt = args.format.map(|f| f.as_detect_token());
 
     let abs = match file::resolve_for_read(working_dir, path) {
         Ok(p) => p,
@@ -750,7 +736,7 @@ pub fn structured_patch(args_json: &str, working_dir: &Path, ctx: &ToolContext<'
     };
 
     let apply_result = if action == "set" {
-        let Some(new_value) = v.get("value").cloned() else {
+        let Some(new_value) = args.value.clone() else {
             return "错误：action=set 时必须提供 value".to_string();
         };
         set_value_at_path(&mut jv, &tokens, new_value, create_missing)

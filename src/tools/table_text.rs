@@ -7,6 +7,9 @@ use std::path::Path;
 use serde_json::Value;
 
 use super::file;
+use super::tool_param_types::{
+    TableTextAction, TableTextAggregateOp, TableTextArgs, TableTextDelimiter,
+};
 
 const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_INLINE_BYTES: usize = 256 * 1024;
@@ -19,26 +22,6 @@ const DEFAULT_OUTPUT_ROWS: usize = 500;
 const MAX_OUTPUT_BYTES: usize = 512 * 1024;
 const MAX_MISMATCH_REPORT: usize = 100;
 const MAX_CELL_BYTES: usize = 65_536;
-
-fn parse_action(v: &Value) -> Result<&'static str, String> {
-    let s = v
-        .get("action")
-        .and_then(|x| x.as_str())
-        .ok_or_else(|| "缺少 action".to_string())?
-        .trim()
-        .to_lowercase();
-    match s.as_str() {
-        "preview" => Ok("preview"),
-        "validate" => Ok("validate"),
-        "select_columns" => Ok("select_columns"),
-        "filter_rows" => Ok("filter_rows"),
-        "aggregate" => Ok("aggregate"),
-        _ => Err(format!(
-            "未知 action：{}（支持 preview、validate、select_columns、filter_rows、aggregate）",
-            s
-        )),
-    }
-}
 
 fn parse_delimiter(v: &Value, _path_hint: Option<&str>) -> Result<u8, String> {
     let raw = v
@@ -552,19 +535,90 @@ fn parse_column_indices(v: &Value) -> Result<Vec<usize>, String> {
     Ok(out)
 }
 
-/// 执行 `table_text` 工具。
-pub fn run(args_json: &str, workspace_root: &Path) -> String {
-    let v = match crate::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
+fn table_text_args_to_json_value(args: &TableTextArgs) -> Value {
+    let action_str = match args.action {
+        TableTextAction::Preview => "preview",
+        TableTextAction::Validate => "validate",
+        TableTextAction::SelectColumns => "select_columns",
+        TableTextAction::FilterRows => "filter_rows",
+        TableTextAction::Aggregate => "aggregate",
+    };
+    let delim_str = match args.delimiter.unwrap_or(TableTextDelimiter::Auto) {
+        TableTextDelimiter::Auto => "auto",
+        TableTextDelimiter::Comma => "comma",
+        TableTextDelimiter::Csv => "csv",
+        TableTextDelimiter::Tab => "tab",
+        TableTextDelimiter::Tsv => "tsv",
+        TableTextDelimiter::Semicolon => "semicolon",
+        TableTextDelimiter::Pipe => "pipe",
     };
 
-    let action = match parse_action(&v) {
-        Ok(a) => a,
-        Err(e) => return e,
+    let mut v = serde_json::json!({
+        "action": action_str,
+        "delimiter": delim_str,
+        "has_header": args.has_header,
+    });
+    if let Some(p) = args
+        .path
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+    {
+        v["path"] = serde_json::Value::String(p.to_string());
+    }
+    if let Some(t) = args.text.as_ref() {
+        v["text"] = serde_json::Value::String(t.clone());
+    }
+    if let Some(n) = args.preview_rows {
+        v["preview_rows"] = serde_json::Value::from(n);
+    }
+    if let Some(n) = args.max_rows_scan {
+        v["max_rows_scan"] = serde_json::Value::from(n);
+    }
+    if !args.columns.is_empty() {
+        v["columns"] = serde_json::Value::Array(
+            args.columns
+                .iter()
+                .copied()
+                .map(serde_json::Value::from)
+                .collect(),
+        );
+    }
+    if let Some(c) = args.column {
+        v["column"] = serde_json::Value::from(c);
+    }
+    if let Some(ref s) = args.equals {
+        v["equals"] = serde_json::Value::String(s.clone());
+    }
+    if let Some(ref s) = args.contains {
+        v["contains"] = serde_json::Value::String(s.clone());
+    }
+    if let Some(op) = args.op {
+        let op_str = match op {
+            TableTextAggregateOp::Count => "count",
+            TableTextAggregateOp::CountNonEmpty => "count_non_empty",
+            TableTextAggregateOp::CountNumeric => "count_numeric",
+            TableTextAggregateOp::Sum => "sum",
+            TableTextAggregateOp::Mean => "mean",
+            TableTextAggregateOp::Avg => "avg",
+            TableTextAggregateOp::Min => "min",
+            TableTextAggregateOp::Max => "max",
+        };
+        v["op"] = serde_json::Value::String(op_str.to_string());
+    }
+    if let Some(n) = args.max_output_rows {
+        v["max_output_rows"] = serde_json::Value::from(n);
+    }
+    v
+}
+
+fn run_table_text_from_value(v: &Value, workspace_root: &Path) -> String {
+    let action = match v.get("action").and_then(|x| x.as_str()) {
+        Some(s) => s,
+        None => return "内部错误：缺少 action".to_string(),
     };
 
-    let (path, text) = parse_path_text(&v);
+    let (path, text) = parse_path_text(v);
     let path_str = path.as_deref();
     let text_str = text.as_deref();
 
@@ -573,7 +627,7 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
         Err(e) => return e,
     };
 
-    let delim_flag = match parse_delimiter(&v, path_str) {
+    let delim_flag = match parse_delimiter(v, path_str) {
         Ok(d) => d,
         Err(e) => return e,
     };
@@ -589,7 +643,7 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
 
     match action {
         "preview" => {
-            let pr = match parse_usize(&v, "preview_rows", DEFAULT_PREVIEW_ROWS, MAX_PREVIEW_ROWS) {
+            let pr = match parse_usize(v, "preview_rows", DEFAULT_PREVIEW_ROWS, MAX_PREVIEW_ROWS) {
                 Ok(n) => n,
                 Err(e) => return e,
             };
@@ -599,7 +653,7 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
             }
         }
         "validate" => {
-            let max_scan = match parse_usize(&v, "max_rows_scan", MAX_ROWS_SCAN, MAX_ROWS_SCAN) {
+            let max_scan = match parse_usize(v, "max_rows_scan", MAX_ROWS_SCAN, MAX_ROWS_SCAN) {
                 Ok(n) => n,
                 Err(e) => return e,
             };
@@ -609,12 +663,12 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
             }
         }
         "select_columns" => {
-            let cols = match parse_column_indices(&v) {
+            let cols = match parse_column_indices(v) {
                 Ok(c) => c,
                 Err(e) => return e,
             };
             let max_out =
-                match parse_usize(&v, "max_output_rows", DEFAULT_OUTPUT_ROWS, MAX_OUTPUT_ROWS) {
+                match parse_usize(v, "max_output_rows", DEFAULT_OUTPUT_ROWS, MAX_OUTPUT_ROWS) {
                     Ok(n) => n,
                     Err(e) => return e,
                 };
@@ -631,7 +685,7 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
             let equals = v.get("equals").and_then(|x| x.as_str());
             let contains = v.get("contains").and_then(|x| x.as_str());
             let max_out =
-                match parse_usize(&v, "max_output_rows", DEFAULT_OUTPUT_ROWS, MAX_OUTPUT_ROWS) {
+                match parse_usize(v, "max_output_rows", DEFAULT_OUTPUT_ROWS, MAX_OUTPUT_ROWS) {
                     Ok(n) => n,
                     Err(e) => return e,
                 };
@@ -652,7 +706,7 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
                         .to_string();
                 }
             };
-            let max_scan = match parse_usize(&v, "max_rows_scan", MAX_ROWS_SCAN, MAX_ROWS_SCAN) {
+            let max_scan = match parse_usize(v, "max_rows_scan", MAX_ROWS_SCAN, MAX_ROWS_SCAN) {
                 Ok(n) => n,
                 Err(e) => return e,
             };
@@ -663,6 +717,21 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
         }
         _ => "内部错误：未知 action".to_string(),
     }
+}
+
+/// 执行 `table_text` 工具。
+pub fn run(args_json: &str, workspace_root: &Path) -> String {
+    let parsed = match crate::tools::parse_args_json(args_json) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let args: TableTextArgs = match serde_json::from_value(parsed) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+
+    let v = table_text_args_to_json_value(&args);
+    run_table_text_from_value(&v, workspace_root)
 }
 
 #[cfg(test)]

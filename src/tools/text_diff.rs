@@ -8,6 +8,7 @@ use similar::TextDiff;
 
 use super::file;
 use super::output_util;
+use super::tool_param_types::TextDiffArgs;
 
 /// 内联模式每侧最大字节
 const MAX_INLINE_BYTES: usize = 256 * 1024;
@@ -77,9 +78,17 @@ fn diff_unified(left: &str, right: &str, header_a: &str, header_b: &str, context
 
 /// 执行 `text_diff` 工具。
 pub fn run(args_json: &str, workspace_root: &Path) -> String {
-    let v = match crate::tools::parse_args_json(args_json) {
+    let parsed = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
         Err(e) => return e,
+    };
+    let args: TextDiffArgs = match serde_json::from_value(parsed) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let v = match serde_json::to_value(&args) {
+        Ok(v) => v,
+        Err(e) => return format!("参数序列化错误: {e}"),
     };
 
     let mode = match parse_mode(&v) {

@@ -7,6 +7,7 @@ use super::file::read_file;
 use super::output_util::truncate_output_bytes;
 use super::repo_overview;
 use super::spell_astgrep_tools;
+use crate::tools::tool_param_types::DocsHealthSweepArgs;
 
 fn default_doc_preview_paths() -> Vec<String> {
     repo_overview::default_health_sweep_doc_paths()
@@ -383,9 +384,17 @@ fn run_markdown_links_phase(
 /// **外链探测**：`markdown_check_links` 在 `allowed_external_prefixes` 非空时使用内置 HTTP 客户端发 HEAD，
 /// **不经过** `http_fetch` / `http_request` 工具与 `http_fetch_allowed_prefixes`，也**无** Web/CLI 审批会话。
 pub fn docs_health_sweep(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v = match crate::tools::parse_args_json(args_json) {
+    let parsed = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
         Err(e) => return e,
+    };
+    let args: DocsHealthSweepArgs = match serde_json::from_value(parsed) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let v = match serde_json::to_value(&args) {
+        Ok(v) => v,
+        Err(e) => return format!("参数序列化错误: {e}"),
     };
 
     let run_doc_preview = v
