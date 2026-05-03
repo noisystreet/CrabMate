@@ -92,45 +92,60 @@ pub fn l0_snapshot_from_merged_routing(routing: &str) -> IntentL0Snapshot {
     l0_snapshot_merged(routing, false)
 }
 
-/// 对合并/当前路由正文的**文本**子串特征（不含 tool 位）。
-fn text_flags_from_routing(routing: &str) -> IntentL0Snapshot {
-    let n = routing.to_lowercase();
-    let has_file_path_like = n.contains('/')
+fn l0_has_file_path_like(n: &str) -> bool {
+    n.contains('/')
         || n.contains('@')
         || n.contains("src/")
         || n.contains(".rs")
         || n.contains(".ts")
         || n.contains(".md")
         || n.contains("目录")
-        || n.contains("文件");
-    let has_error_signal = n.contains("error")
+        || n.contains("文件")
+}
+
+fn l0_has_error_signal(n: &str) -> bool {
+    n.contains("error")
         || n.contains("panic")
         || n.contains("traceback")
         || n.contains("stack")
         || n.contains("失败")
         || n.contains("异常")
         || n.contains("报了")
-        || n.contains("bug");
-    let is_short = routing.chars().count() <= SHORT_UTTERANCE_MAX_CHARS && !n.contains("前序用户");
-    let has_git_keyword = n.contains("git")
+        || n.contains("bug")
+}
+
+fn l0_is_short_routing(routing: &str, n: &str) -> bool {
+    routing.chars().count() <= SHORT_UTTERANCE_MAX_CHARS && !n.contains("前序用户")
+}
+
+fn l0_has_git_keyword(n: &str) -> bool {
+    n.contains("git")
         || n.contains("pr")
         || n.contains("rebase")
         || n.contains("cherry")
         || n.contains("commit")
         || n.contains("分支")
-        || n.contains("合并");
-    let has_command_cargo = n.contains("cargo")
+        || n.contains("合并")
+}
+
+fn l0_has_command_cargo(n: &str) -> bool {
+    n.contains("cargo")
         || n.contains("npm")
         || n.contains("pnpm")
         || n.contains("pytest")
-        || n.contains("cmake");
+        || n.contains("cmake")
+}
+
+/// 对合并/当前路由正文的**文本**子串特征（不含 tool 位）。
+fn text_flags_from_routing(routing: &str) -> IntentL0Snapshot {
+    let n = routing.to_lowercase();
     IntentL0Snapshot {
-        has_file_path_like,
-        has_error_signal,
+        has_file_path_like: l0_has_file_path_like(&n),
+        has_error_signal: l0_has_error_signal(&n),
         has_recent_tool_failure: false,
-        is_short,
-        has_git_keyword,
-        has_command_cargo,
+        is_short: l0_is_short_routing(routing, &n),
+        has_git_keyword: l0_has_git_keyword(&n),
+        has_command_cargo: l0_has_command_cargo(&n),
     }
 }
 

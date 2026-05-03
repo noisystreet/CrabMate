@@ -441,6 +441,64 @@ async fn handle_card_action_trigger(st: &Arc<FeishuBridgeState>, v: &Value) -> R
     }
 }
 
+async fn feishu_im_message_receive_v1_response(st: &Arc<FeishuBridgeState>, v: &Value) -> Response {
+    if let Some(q) = &st.sqlite_queue {
+        let qc = std::sync::Arc::clone(q);
+        let payload = v.clone();
+        return match tokio::task::spawn_blocking(move || qc.enqueue(&payload)).await {
+            Ok(Ok(())) => {
+                tracing::debug!("feishu im.message.receive_v1 persisted to sqlite queue");
+                (StatusCode::OK, Json(json!({}))).into_response()
+            }
+            Ok(Err(e)) => {
+                error!(?e, "feishu sqlite queue enqueue failed");
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(json!({
+                        "error": "persistent queue write failed; retry later",
+                        "code": "FEISHU_EVENT_QUEUE_SQLITE_ERROR"
+                    })),
+                )
+                    .into_response()
+            }
+            Err(e) => {
+                error!(?e, "feishu sqlite queue enqueue join failed");
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(json!({ "error": "queue worker overloaded" })),
+                )
+                    .into_response()
+            }
+        };
+    }
+    if let Some(tx) = &st.event_tx {
+        return match tx.try_send(v.clone()) {
+            Ok(()) => {
+                tracing::debug!("feishu im.message.receive_v1 enqueued");
+                (StatusCode::OK, Json(json!({}))).into_response()
+            }
+            Err(e) => {
+                warn!(?e, "feishu event queue full");
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(json!({
+                        "error": "event queue full; retry later",
+                        "code": "FEISHU_EVENT_QUEUE_FULL"
+                    })),
+                )
+                    .into_response()
+            }
+        };
+    }
+    match handle_im_message_receive(st, v).await {
+        Ok(()) => (StatusCode::OK, Json(json!({}))).into_response(),
+        Err(e) => {
+            error!(?e, "handle im.message.receive_v1 failed");
+            (StatusCode::OK, Json(json!({}))).into_response()
+        }
+    }
+}
+
 async fn feishu_events(
     State(st): State<Arc<FeishuBridgeState>>,
     headers: HeaderMap,
@@ -532,63 +590,7 @@ async fn feishu_events(
         .or_else(|| v.get("type").and_then(|x| x.as_str()));
 
     match event_type {
-        Some("im.message.receive_v1") => {
-            if let Some(q) = &st.sqlite_queue {
-                let qc = std::sync::Arc::clone(q);
-                let payload = v.clone();
-                match tokio::task::spawn_blocking(move || qc.enqueue(&payload)).await {
-                    Ok(Ok(())) => {
-                        tracing::debug!("feishu im.message.receive_v1 persisted to sqlite queue");
-                        (StatusCode::OK, Json(json!({}))).into_response()
-                    }
-                    Ok(Err(e)) => {
-                        error!(?e, "feishu sqlite queue enqueue failed");
-                        (
-                            StatusCode::SERVICE_UNAVAILABLE,
-                            Json(json!({
-                                "error": "persistent queue write failed; retry later",
-                                "code": "FEISHU_EVENT_QUEUE_SQLITE_ERROR"
-                            })),
-                        )
-                            .into_response()
-                    }
-                    Err(e) => {
-                        error!(?e, "feishu sqlite queue enqueue join failed");
-                        (
-                            StatusCode::SERVICE_UNAVAILABLE,
-                            Json(json!({ "error": "queue worker overloaded" })),
-                        )
-                            .into_response()
-                    }
-                }
-            } else if let Some(tx) = &st.event_tx {
-                match tx.try_send(v) {
-                    Ok(()) => {
-                        tracing::debug!("feishu im.message.receive_v1 enqueued");
-                        (StatusCode::OK, Json(json!({}))).into_response()
-                    }
-                    Err(e) => {
-                        warn!(?e, "feishu event queue full");
-                        (
-                            StatusCode::SERVICE_UNAVAILABLE,
-                            Json(json!({
-                                "error": "event queue full; retry later",
-                                "code": "FEISHU_EVENT_QUEUE_FULL"
-                            })),
-                        )
-                            .into_response()
-                    }
-                }
-            } else {
-                match handle_im_message_receive(&st, &v).await {
-                    Ok(()) => (StatusCode::OK, Json(json!({}))).into_response(),
-                    Err(e) => {
-                        error!(?e, "handle im.message.receive_v1 failed");
-                        (StatusCode::OK, Json(json!({}))).into_response()
-                    }
-                }
-            }
-        }
+        Some("im.message.receive_v1") => feishu_im_message_receive_v1_response(&st, &v).await,
         Some(other) => {
             warn!(event_type = other, "ignored feishu event type");
             (StatusCode::OK, Json(json!({}))).into_response()

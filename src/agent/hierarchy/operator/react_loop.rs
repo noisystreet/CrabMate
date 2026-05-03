@@ -8,7 +8,7 @@ use crate::types::{Message, MessageContent};
 
 use super::super::artifact_resolver::ArtifactResolver;
 use super::super::task::{SubGoal, TaskResult, TaskStatus};
-use super::super::tool_executor::ToolExecutor;
+use super::super::tool_executor::{ToolExecutionResult, ToolExecutor};
 use super::state::{ConvergenceProgress, ReactState, SubgoalPhase, ToolExecutionOutcome};
 use super::types::{CompileErrorType, OperatorError};
 
@@ -521,13 +521,159 @@ impl super::types::OperatorAgent {
         .await
     }
 
+    fn compile_error_recovery_fields(
+        &self,
+        result: &ToolExecutionResult,
+        tool_call: &crate::types::ToolCall,
+    ) -> (Option<String>, Option<CompileErrorType>) {
+        if result.success
+            || !self.config.enable_compile_error_recovery
+            || !super::compile::is_compile_command(&result.tool_name, &tool_call.function.arguments)
+        {
+            return (None, None);
+        }
+        let Some(error_info) = super::compile::analyze_compile_error(&result.output) else {
+            return (None, None);
+        };
+        if !error_info.retryable {
+            return (None, None);
+        }
+        (
+            Some(super::compile::build_compile_error_recovery_hint(
+                &error_info,
+            )),
+            Some(error_info.error_type.clone()),
+        )
+    }
+
+    fn consecutive_failure_early_exit(
+        goal: &SubGoal,
+        state: &ReactState,
+        start_time: Instant,
+    ) -> Option<TaskResult> {
+        if state.consecutive_failures < 3 {
+            return None;
+        }
+        Some(TaskResult {
+            task_id: goal.goal_id.clone(),
+            status: TaskStatus::Failed {
+                reason: format!(
+                    "连续 {} 次执行失败。请检查工作目录和命令参数是否正确。",
+                    state.consecutive_failures
+                ),
+            },
+            output: Some("连续失败，提前终止".to_string()),
+            error: Some("连续失败，提前终止".to_string()),
+            artifacts: Vec::new(),
+            duration_ms: start_time.elapsed().as_millis() as u64,
+            tools_invoked: state.tool_names_chron.clone(),
+        })
+    }
+
+    fn task_completed_result(
+        goal: &SubGoal,
+        state: &ReactState,
+        start_time: Instant,
+    ) -> TaskResult {
+        let reason = state.completion_reason.clone().unwrap_or_default();
+        let trace = state.observations.join("\n");
+        TaskResult {
+            task_id: goal.goal_id.clone(),
+            status: TaskStatus::Completed,
+            output: Some(format!(
+                "Task completed: {}\n\n[subgoal_tool_trace]\n{}",
+                reason, trace
+            )),
+            error: None,
+            artifacts: Vec::new(),
+            duration_ms: start_time.elapsed().as_millis() as u64,
+            tools_invoked: state.tool_names_chron.clone(),
+        }
+    }
+
+    fn record_extracted_artifacts(&self, result: &ToolExecutionResult) {
+        let Some(ref build_state_arc) = self.config.build_state else {
+            return;
+        };
+        let Ok(mut build_state) = build_state_arc.lock() else {
+            return;
+        };
+        for artifact in &result.extracted_artifacts {
+            match artifact.kind {
+                super::super::tool_executor::ExtractedArtifactKind::SourceFile => {
+                    if let Ok(content) = std::fs::read_to_string(&artifact.path) {
+                        build_state.record_source_file(&artifact.path, &content);
+                    }
+                }
+                super::super::tool_executor::ExtractedArtifactKind::ObjectFile => {
+                    build_state.add_object_file(artifact.path.clone());
+                }
+                super::super::tool_executor::ExtractedArtifactKind::Executable => {
+                    build_state.add_executable(artifact.path.clone());
+                }
+                super::super::tool_executor::ExtractedArtifactKind::StaticLibrary => {
+                    build_state.add_static_library(artifact.path.clone());
+                }
+                super::super::tool_executor::ExtractedArtifactKind::DynamicLibrary => {
+                    build_state.add_dynamic_library(artifact.path.clone());
+                }
+                super::super::tool_executor::ExtractedArtifactKind::BuildDirectory => {
+                    build_state.set_build_dir(artifact.path.clone());
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn maybe_dynamic_decomposition_exit(
+        &self,
+        goal: &SubGoal,
+        state: &ReactState,
+        start_time: Instant,
+    ) -> Option<TaskResult> {
+        if !self.config.enable_dynamic_decomposition
+            || state.dynamic_decomposition_count != 0
+            || state.iteration < 8
+        {
+            return None;
+        }
+        let decomposer = super::super::dynamic_decomposer::DynamicDecomposer::new();
+        let assessment = decomposer.assess_complexity(
+            goal,
+            state.iteration,
+            state.consecutive_failures,
+            state.tools_used.len(),
+        );
+        if !assessment.needs_decomposition
+            || assessment.score < self.config.dynamic_decomposition_threshold
+        {
+            return None;
+        }
+        let reason = assessment.reason.clone();
+        Some(TaskResult {
+            task_id: goal.goal_id.clone(),
+            status: TaskStatus::NeedsDecomposition {
+                reason: assessment.reason,
+                suggested_subgoals: assessment.suggested_subgoals,
+            },
+            output: Some(format!(
+                "任务过于复杂（复杂度评分: {}），建议分解为 {} 个子目标。原因: {}",
+                assessment.score, assessment.suggested_subgoals, reason
+            )),
+            error: None,
+            artifacts: Vec::new(),
+            duration_ms: start_time.elapsed().as_millis() as u64,
+            tools_invoked: state.tool_names_chron.clone(),
+        })
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn process_single_tool_call_after_execute(
         &self,
         goal: &SubGoal,
         state: &mut ReactState,
         tool_call: &crate::types::ToolCall,
-        result: &super::super::tool_executor::ToolExecutionResult,
+        result: &ToolExecutionResult,
         convergence_goal: bool,
         start_time: Instant,
         execution_outcome: ToolExecutionOutcome,
@@ -542,19 +688,8 @@ impl super::types::OperatorAgent {
             format!("Tool {} failed: {}", result.tool_name, result.output)
         };
         state.observations.push(observation);
-        let mut error_recovery_hint = None;
-        let mut current_error_type: Option<CompileErrorType> = None;
-        if !result.success
-            && self.config.enable_compile_error_recovery
-            && super::compile::is_compile_command(&result.tool_name, &tool_call.function.arguments)
-            && let Some(error_info) = super::compile::analyze_compile_error(&result.output)
-            && error_info.retryable
-        {
-            error_recovery_hint = Some(super::compile::build_compile_error_recovery_hint(
-                &error_info,
-            ));
-            current_error_type = Some(error_info.error_type.clone());
-        }
+        let (error_recovery_hint, current_error_type) =
+            self.compile_error_recovery_fields(result, tool_call);
         if convergence_goal
             && super::compile::is_compile_command(&result.tool_name, &tool_call.function.arguments)
         {
@@ -570,21 +705,8 @@ impl super::types::OperatorAgent {
             state.consecutive_failures += 1;
             state.last_failed_tool = Some(result.tool_name.clone());
             state.last_error_type = current_error_type;
-            if state.consecutive_failures >= 3 {
-                return Some(TaskResult {
-                    task_id: goal.goal_id.clone(),
-                    status: TaskStatus::Failed {
-                        reason: format!(
-                            "连续 {} 次执行失败。请检查工作目录和命令参数是否正确。",
-                            state.consecutive_failures
-                        ),
-                    },
-                    output: Some("连续失败，提前终止".to_string()),
-                    error: Some("连续失败，提前终止".to_string()),
-                    artifacts: Vec::new(),
-                    duration_ms: start_time.elapsed().as_millis() as u64,
-                    tools_invoked: state.tool_names_chron.clone(),
-                });
+            if let Some(done) = Self::consecutive_failure_early_exit(goal, state, start_time) {
+                return Some(done);
             }
         } else {
             state.consecutive_failures = 0;
@@ -621,83 +743,10 @@ impl super::types::OperatorAgent {
             state.completion_reason = Some("Built executable run_command succeeded".to_string());
         }
         if state.task_completed {
-            let reason = state.completion_reason.clone().unwrap_or_default();
-            let trace = state.observations.join("\n");
-            return Some(TaskResult {
-                task_id: goal.goal_id.clone(),
-                status: TaskStatus::Completed,
-                output: Some(format!(
-                    "Task completed: {}\n\n[subgoal_tool_trace]\n{}",
-                    reason, trace
-                )),
-                error: None,
-                artifacts: Vec::new(),
-                duration_ms: start_time.elapsed().as_millis() as u64,
-                tools_invoked: state.tool_names_chron.clone(),
-            });
+            return Some(Self::task_completed_result(goal, state, start_time));
         }
-        if let Some(ref build_state_arc) = self.config.build_state
-            && let Ok(mut build_state) = build_state_arc.lock()
-        {
-            for artifact in &result.extracted_artifacts {
-                match artifact.kind {
-                    super::super::tool_executor::ExtractedArtifactKind::SourceFile => {
-                        if let Ok(content) = std::fs::read_to_string(&artifact.path) {
-                            build_state.record_source_file(&artifact.path, &content);
-                        }
-                    }
-                    super::super::tool_executor::ExtractedArtifactKind::ObjectFile => {
-                        build_state.add_object_file(artifact.path.clone());
-                    }
-                    super::super::tool_executor::ExtractedArtifactKind::Executable => {
-                        build_state.add_executable(artifact.path.clone());
-                    }
-                    super::super::tool_executor::ExtractedArtifactKind::StaticLibrary => {
-                        build_state.add_static_library(artifact.path.clone());
-                    }
-                    super::super::tool_executor::ExtractedArtifactKind::DynamicLibrary => {
-                        build_state.add_dynamic_library(artifact.path.clone());
-                    }
-                    super::super::tool_executor::ExtractedArtifactKind::BuildDirectory => {
-                        build_state.set_build_dir(artifact.path.clone());
-                    }
-                    _ => {}
-                }
-            }
-        }
-        if self.config.enable_dynamic_decomposition
-            && state.dynamic_decomposition_count == 0
-            && state.iteration >= 8
-        {
-            let decomposer = super::super::dynamic_decomposer::DynamicDecomposer::new();
-            let assessment = decomposer.assess_complexity(
-                goal,
-                state.iteration,
-                state.consecutive_failures,
-                state.tools_used.len(),
-            );
-            if assessment.needs_decomposition
-                && assessment.score >= self.config.dynamic_decomposition_threshold
-            {
-                let reason = assessment.reason.clone();
-                return Some(TaskResult {
-                    task_id: goal.goal_id.clone(),
-                    status: TaskStatus::NeedsDecomposition {
-                        reason: assessment.reason,
-                        suggested_subgoals: assessment.suggested_subgoals,
-                    },
-                    output: Some(format!(
-                        "任务过于复杂（复杂度评分: {}），建议分解为 {} 个子目标。原因: {}",
-                        assessment.score, assessment.suggested_subgoals, reason
-                    )),
-                    error: None,
-                    artifacts: Vec::new(),
-                    duration_ms: start_time.elapsed().as_millis() as u64,
-                    tools_invoked: state.tool_names_chron.clone(),
-                });
-            }
-        }
-        None
+        self.record_extracted_artifacts(result);
+        self.maybe_dynamic_decomposition_exit(goal, state, start_time)
     }
 
     async fn handle_convergence_metrics(
