@@ -1,6 +1,6 @@
 //! 聊天域接线：会话切换、草稿同步、滚底、查找、composer 流式等 `wire_*` 从 `app/mod.rs` 迁出，落实 **`docs/frontend-leptos/ARCHITECTURE.md`** 阶段 **B（壳与域分离）**。
 //!
-//! `App` 仍负责创建跨域共享的 `RwSignal`（如 `status_busy`）并组装 [`ComposerStreamShell`](super::handles::ComposerStreamShell)；本模块只注册聊天相关副作用并返回 [`ChatComposerWires`](super::composer::ChatComposerWires)。
+//! `App` 仍负责创建跨域共享的 `RwSignal`（如 `status_busy`）并组装 [`ComposerStreamShell`](super::handles::ComposerStreamShell)；本模块只注册聊天相关副作用并返回 [`ChatComposerWires`](super::handles::ChatComposerWires)。
 
 use std::sync::{Arc, Mutex};
 
@@ -13,11 +13,11 @@ use crate::i18n::Locale;
 use crate::storage::ChatSession;
 
 use super::composer::{
-    ChatComposerWires, wire_chat_composer_streams, wire_draft_sync_to_buffer_and_textarea,
+    wire_chat_composer_streams, wire_draft_sync_to_buffer_and_textarea,
     wire_session_switch_clears_chat_state,
 };
 use super::find::wire_chat_find_matches;
-use super::handles::{ComposerStreamShell, WireComposerStreamsArgs};
+use super::handles::{ChatComposerWires, ComposerStreamShell, WireComposerStreamsArgs};
 use super::scroll::{wire_focus_message_after_nav, wire_messages_auto_scroll};
 
 /// 注册 `wire_chat_domain_effects` 所需的信号与句柄（避免长形参列表）。

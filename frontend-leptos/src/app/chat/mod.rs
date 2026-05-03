@@ -7,6 +7,7 @@ mod composer;
 mod composer_input_stack;
 mod composer_mirror;
 mod composer_stream;
+mod composer_wires;
 mod find;
 mod find_bar;
 mod handles;

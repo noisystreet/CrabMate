@@ -3,10 +3,11 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::message_format::staged_timeline_system_message_body;
 use crate::storage::StoredMessage;
-use crate::timeline_scan::{
-    timeline_state_staged_end, timeline_state_staged_start, timeline_state_tool,
+
+use crate::conversation_hydrate_timeline::{
+    append_assistant_tool_calls_timeline_card, append_crabmate_timeline_system_message,
+    append_tool_role_timeline_row,
 };
 
 /// 与后端 `src/types.rs` 中 `CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME` 一致。
@@ -77,41 +78,6 @@ fn text_from_content(content: &Option<Value>) -> (String, Vec<String>) {
     }
 }
 
-fn tool_calls_summary(tool_calls: &Value) -> String {
-    let Some(arr) = tool_calls.as_array() else {
-        return String::new();
-    };
-    let mut lines: Vec<String> = Vec::new();
-    for tc in arr {
-        let Some(obj) = tc.as_object() else {
-            continue;
-        };
-        let name = obj
-            .get("function")
-            .and_then(|f| f.get("name"))
-            .and_then(|n| n.as_str())
-            .unwrap_or("?");
-        lines.push(name.to_string());
-    }
-    if lines.is_empty() {
-        String::new()
-    } else {
-        lines.join(", ")
-    }
-}
-
-fn first_tool_call_function_name(tool_calls: &Value) -> Option<String> {
-    let arr = tool_calls.as_array()?;
-    let tc = arr.first()?;
-    let obj = tc.as_object()?;
-    let n = obj.get("function")?.get("name")?.as_str()?.trim();
-    if n.is_empty() {
-        None
-    } else {
-        Some(n.to_string())
-    }
-}
-
 /// 将会话快照转为 UI 消息列表（新 id；`created_at` 从 `base_ms` 递增以保证顺序）。
 pub fn stored_messages_from_conversation_api_with_base(
     msgs: &[Value],
@@ -141,176 +107,21 @@ pub fn stored_messages_from_conversation_api_with_base(
         }
 
         if role == "system" && name == "crabmate_timeline" {
-            let id = format!("h_{}_{}", base_ms, out.len());
-            t = t.saturating_add(1);
-            let body = text.trim();
-            if let Ok(v) = serde_json::from_str::<Value>(body)
-                && let Some(obj) = v.as_object()
-            {
-                let kind = obj
-                    .get("kind")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or("")
-                    .trim();
-                if kind == "staged_plan_step_started" {
-                    let step = obj.get("step_index").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
-                    let total =
-                        obj.get("total_steps").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
-                    let desc = obj
-                        .get("description")
-                        .and_then(|x| x.as_str())
-                        .unwrap_or("")
-                        .trim();
-                    let exec = obj
-                        .get("executor_kind")
-                        .and_then(|x| x.as_str())
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty());
-                    let ord = step.max(1);
-                    let inner = if let Some(e) = exec {
-                        if desc.is_empty() {
-                            format!("({e})")
-                        } else {
-                            format!("{desc}\n({e})")
-                        }
-                    } else {
-                        desc.to_string()
-                    };
-                    let body = if inner.is_empty() {
-                        format!("{ord}.")
-                    } else {
-                        format!("{ord}. {inner}")
-                    };
-                    let display = staged_timeline_system_message_body(&body);
-                    let state = timeline_state_staged_start(&id, step, total);
-                    out.push(StoredMessage {
-                        id,
-                        role: "system".into(),
-                        text: display,
-                        reasoning_text: String::new(),
-                        image_urls: vec![],
-                        state: Some(state),
-                        is_tool: false,
-                        tool_call_id: None,
-                        tool_name: None,
-                        created_at: t,
-                    });
-                    continue;
-                }
-                if kind == "staged_plan_step_finished" {
-                    let step = obj.get("step_index").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
-                    let total =
-                        obj.get("total_steps").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
-                    let status = obj
-                        .get("status")
-                        .and_then(|x| x.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let exec = obj
-                        .get("executor_kind")
-                        .and_then(|x| x.as_str())
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty());
-                    let ord = step.max(1);
-                    let inner = if let Some(e) = exec {
-                        format!("{status}\n({e})")
-                    } else {
-                        status.clone()
-                    };
-                    let body = if inner.trim().is_empty() {
-                        format!("{ord}.")
-                    } else {
-                        format!("{ord}. {inner}")
-                    };
-                    let display = staged_timeline_system_message_body(&body);
-                    let state = timeline_state_staged_end(&id, step, total, &status);
-                    out.push(StoredMessage {
-                        id,
-                        role: "system".into(),
-                        text: display,
-                        reasoning_text: String::new(),
-                        image_urls: vec![],
-                        state: Some(state),
-                        is_tool: false,
-                        tool_call_id: None,
-                        tool_name: None,
-                        created_at: t,
-                    });
-                    continue;
-                }
-            }
-            let id = format!("h_{}_{}", base_ms, out.len());
-            t = t.saturating_add(1);
-            let display = staged_timeline_system_message_body(body);
-            out.push(StoredMessage {
-                id,
-                role: "system".into(),
-                text: display,
-                reasoning_text: String::new(),
-                image_urls: vec![],
-                state: None,
-                is_tool: false,
-                tool_call_id: None,
-                tool_name: None,
-                created_at: t,
-            });
+            append_crabmate_timeline_system_message(&text, base_ms, &mut out, &mut t);
             continue;
         }
 
         if role == "assistant"
-            && parsed.tool_calls.is_some()
             && text.trim().is_empty()
             && reasoning.trim().is_empty()
+            && let Some(ref tc) = parsed.tool_calls
         {
-            let id = format!("h_{}_{}", base_ms, out.len());
-            t = t.saturating_add(1);
-            let summary = parsed
-                .tool_calls
-                .as_ref()
-                .map(tool_calls_summary)
-                .unwrap_or_default();
-            let card = if summary.is_empty() {
-                "工具调用".to_string()
-            } else {
-                format!("工具：{summary}")
-            };
-            let state = timeline_state_tool(&id, true);
-            let tool_name = parsed
-                .tool_calls
-                .as_ref()
-                .and_then(first_tool_call_function_name);
-            out.push(StoredMessage {
-                id,
-                role: "system".into(),
-                text: card,
-                reasoning_text: String::new(),
-                image_urls: vec![],
-                state: Some(state),
-                is_tool: true,
-                tool_call_id: None,
-                tool_name,
-                created_at: t,
-            });
+            append_assistant_tool_calls_timeline_card(tc, base_ms, &mut out, &mut t);
             continue;
         }
 
         if role == "tool" {
-            let id = format!("h_{}_{}", base_ms, out.len());
-            t = t.saturating_add(1);
-            let state = timeline_state_tool(&id, true);
-            let tool_name = (!name.is_empty()).then(|| name.to_string());
-            out.push(StoredMessage {
-                id,
-                role: "system".into(),
-                text: text.clone(),
-                reasoning_text: String::new(),
-                image_urls: vec![],
-                state: Some(state),
-                is_tool: true,
-                tool_call_id: None,
-                tool_name,
-                created_at: t,
-            });
+            append_tool_role_timeline_row(name, &text, base_ms, &mut out, &mut t);
             continue;
         }
 
