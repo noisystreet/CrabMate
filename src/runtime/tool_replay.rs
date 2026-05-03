@@ -185,7 +185,7 @@ pub fn run_tool_replay_fixture(
             file.version, TOOL_REPLAY_FILE_VERSION
         )?;
     }
-    let allowed = cfg.allowed_commands.as_ref();
+    let allowed = cfg.command_exec.allowed_commands.as_ref();
     let ctx = tool_context_for(cfg, allowed, working_dir);
     let mut mismatches = 0usize;
     for step in &file.steps {

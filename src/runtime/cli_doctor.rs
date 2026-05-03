@@ -16,14 +16,14 @@ fn resolve_workspace_dir(cfg: &AgentConfig, workspace_cli: Option<&str>) -> Path
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(cfg.run_command_working_dir.trim()));
+        .unwrap_or_else(|| PathBuf::from(cfg.command_exec.run_command_working_dir.trim()));
     raw.canonicalize().unwrap_or(raw)
 }
 
 fn api_key_line(cfg: &AgentConfig) -> String {
     match std::env::var("API_KEY") {
         Err(std::env::VarError::NotPresent) => {
-            if cfg.llm_http_auth_mode == LlmHttpAuthMode::None {
+            if cfg.llm.llm_http_auth_mode == LlmHttpAuthMode::None {
                 "API_KEY: 未设置（llm_http_auth_mode=none 时 chat / models / probe 可不依赖密钥）"
                     .to_string()
             } else {
@@ -33,7 +33,7 @@ fn api_key_line(cfg: &AgentConfig) -> String {
         }
         Err(std::env::VarError::NotUnicode(_)) => "API_KEY: 已设置(非 Unicode，不展示)".to_string(),
         Ok(s) if s.trim().is_empty() => {
-            if cfg.llm_http_auth_mode == LlmHttpAuthMode::None {
+            if cfg.llm.llm_http_auth_mode == LlmHttpAuthMode::None {
                 "API_KEY: 已设置但为空（llm_http_auth_mode=none 时可继续）".to_string()
             } else {
                 "API_KEY: 已设置但为空".to_string()
@@ -60,37 +60,52 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
     println!("版本: {}", env!("CARGO_PKG_VERSION"));
     println!();
     println!("【配置摘要】");
-    println!("  api_base: {}", cfg.api_base.trim());
-    println!("  model: {}", cfg.model.trim());
-    println!("  llm_http_auth_mode: {}", cfg.llm_http_auth_mode.as_str());
+    println!("  api_base: {}", cfg.llm.api_base.trim());
+    println!("  model: {}", cfg.llm.model.trim());
+    println!(
+        "  llm_http_auth_mode: {}",
+        cfg.llm.llm_http_auth_mode.as_str()
+    );
     println!(
         "  allowed_commands: {} 条（默认见 config/tools.toml；可被覆盖配置或 CM_ALLOWED_COMMANDS 替换）",
-        cfg.allowed_commands.len()
+        cfg.command_exec.allowed_commands.len()
     );
     println!(
         "  run_command_working_dir: {}",
-        cfg.run_command_working_dir.trim()
+        cfg.command_exec.run_command_working_dir.trim()
     );
     println!(
         "  command_timeout_secs / command_max_output_len: {} / {}",
-        cfg.command_timeout_secs, cfg.command_max_output_len
+        cfg.command_exec.command_timeout_secs, cfg.command_exec.command_max_output_len
     );
     println!(
         "  mcp_enabled: {}  mcp_tool_timeout_secs: {}",
-        cfg.mcp_enabled, cfg.mcp_tool_timeout_secs
+        cfg.mcp_client.mcp_enabled, cfg.mcp_client.mcp_tool_timeout_secs
     );
     println!(
         "  mcp_command: {}",
-        if cfg.mcp_command.trim().is_empty() {
+        if cfg.mcp_client.mcp_command.trim().is_empty() {
             "（未配置）".to_string()
         } else {
-            format!("已配置（{} 字符，内容已隐藏）", cfg.mcp_command.len())
+            format!(
+                "已配置（{} 字符，内容已隐藏）",
+                cfg.mcp_client.mcp_command.len()
+            )
         }
     );
-    println!("  api_timeout_secs: {}", cfg.api_timeout_secs);
+    println!(
+        "  api_timeout_secs: {}",
+        cfg.llm_http_retry.api_timeout_secs
+    );
     println!(
         "  web_api_bearer_token: {}",
-        if cfg.web_api_bearer_token.expose_secret().trim().is_empty() {
+        if cfg
+            .web_api
+            .web_api_bearer_token
+            .expose_secret()
+            .trim()
+            .is_empty()
+        {
             "未配置"
         } else {
             "已配置（值已隐藏）"
@@ -98,7 +113,7 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
     );
     println!(
         "  web_api_require_bearer: {}",
-        if cfg.web_api_require_bearer {
+        if cfg.web_api.web_api_require_bearer {
             "true（serve 须配非空 web_api_bearer_token）"
         } else {
             "false"
@@ -182,7 +197,7 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
             "  建议：脚本使用 **chat --yes**（极危险，仅可信环境）或 **--approve-commands**（仅扩展 run_command 命令名）；HTTP 工具须匹配 **http_fetch_allowed_prefixes** 或改用 Web 审批。"
         );
     }
-    let n_prefix = cfg.http_fetch_allowed_prefixes.len();
+    let n_prefix = cfg.http_fetch.http_fetch_allowed_prefixes.len();
     println!(
         "  http_fetch_allowed_prefixes: {} 条（未匹配的 HTTP 工具在 CLI 与 TTY 路径下可能需审批）",
         n_prefix
@@ -200,9 +215,9 @@ pub async fn run_models_cli(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let r = fetch_models_report(
         client,
-        cfg.api_base.trim(),
+        cfg.llm.api_base.trim(),
         api_key.trim(),
-        cfg.llm_http_auth_mode,
+        cfg.llm.llm_http_auth_mode,
     )
     .await
     .map_err(|e| std::io::Error::other(e.to_string()))?;
@@ -275,7 +290,7 @@ pub async fn run_models_choose_repl(
 ) -> Result<String, String> {
     let (api_base, auth_mode) = {
         let g = cfg_holder.read().await;
-        (g.api_base.clone(), g.llm_http_auth_mode)
+        (g.llm.api_base.clone(), g.llm.llm_http_auth_mode)
     };
     let r = fetch_models_report(client, api_base.trim(), api_key.trim(), auth_mode)
         .await
@@ -291,7 +306,7 @@ pub async fn run_models_choose_repl(
     }
     let resolved = resolve_model_id_from_list(&r.model_ids, requested)?;
     let mut w = cfg_holder.write().await;
-    w.model = resolved.clone();
+    w.llm.model = resolved.clone();
     crate::llm::vendor::refresh_llm_reasoning_split_for_gateway(&mut w);
     Ok(resolved)
 }
@@ -304,9 +319,9 @@ pub async fn run_probe_cli(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let r = fetch_models_report(
         client,
-        cfg.api_base.trim(),
+        cfg.llm.api_base.trim(),
         api_key.trim(),
-        cfg.llm_http_auth_mode,
+        cfg.llm.llm_http_auth_mode,
     )
     .await
     .map_err(|e| std::io::Error::other(e.to_string()))?;

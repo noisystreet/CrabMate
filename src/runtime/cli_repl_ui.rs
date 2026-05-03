@@ -461,11 +461,16 @@ impl CliReplStyle {
         no_stream: bool,
     ) -> io::Result<()> {
         self.write_banner_subheading(w, "模型")?;
-        self.write_banner_item(w, "model", &cfg.model)?;
+        self.write_banner_item(w, "model", &cfg.llm.model)?;
         self.write_banner_item(w, "api_base", api_base_short)?;
-        self.write_banner_item(w, "llm_http_auth", cfg.llm_http_auth_mode.as_str())?;
-        self.write_banner_item(w, "temperature", &format!("{}", cfg.temperature))?;
+        self.write_banner_item(w, "llm_http_auth", cfg.llm.llm_http_auth_mode.as_str())?;
+        self.write_banner_item(
+            w,
+            "temperature",
+            &format!("{}", cfg.llm_sampling.temperature),
+        )?;
         let seed_line = cfg
+            .llm_sampling
             .llm_seed
             .map(|s| s.to_string())
             .unwrap_or_else(|| "（未设置，请求不带 seed）".to_string());
@@ -512,7 +517,7 @@ impl CliReplStyle {
             "    行首 $ → 本地 shell（bash#:）；quit / exit / Ctrl+D 退出",
         )?;
         self.write_banner_note_line(w, "    非白名单 run_command：y 一次 / a 本会话允许该命令名")?;
-        if cfg.llm_http_auth_mode == LlmHttpAuthMode::Bearer && !repl_llm_bearer_key_ready {
+        if cfg.llm.llm_http_auth_mode == LlmHttpAuthMode::Bearer && !repl_llm_bearer_key_ready {
             self.write_banner_note_line(
                 w,
                 "    提示：未检测到环境变量 API_KEY；对话前请执行 /api-key set <密钥>（仅本进程）或 export API_KEY 后重启。",
@@ -527,13 +532,13 @@ impl CliReplStyle {
         cfg: &AgentConfig,
     ) -> io::Result<()> {
         self.write_banner_subheading(w, "要点配置")?;
-        self.write_banner_item(w, "max_tokens", &cfg.max_tokens.to_string())?;
+        self.write_banner_item(w, "max_tokens", &cfg.llm_sampling.max_tokens.to_string())?;
         self.write_banner_item(
             w,
             "max_message_history",
             &format!(
                 "保留最近 {} 轮（user+assistant 计一轮）",
-                cfg.max_message_history
+                cfg.session_ui.max_message_history
             ),
         )?;
         self.write_banner_item(
@@ -541,7 +546,7 @@ impl CliReplStyle {
             "API",
             &format!(
                 "超时 {}s · 失败重试 {} 次",
-                cfg.api_timeout_secs, cfg.api_max_retries
+                cfg.llm_http_retry.api_timeout_secs, cfg.llm_http_retry.api_max_retries
             ),
         )?;
         self.write_banner_item(
@@ -549,33 +554,36 @@ impl CliReplStyle {
             "run_command",
             &format!(
                 "超时 {}s · 输出上限 {} 字",
-                cfg.command_timeout_secs, cfg.command_max_output_len
+                cfg.command_exec.command_timeout_secs, cfg.command_exec.command_max_output_len
             ),
         )?;
-        let staged = if cfg.staged_plan_execution {
-            format!("开启（{}）", cfg.staged_plan_feedback_mode.as_str())
+        let staged = if cfg.staged_planning.staged_plan_execution {
+            format!(
+                "开启（{}）",
+                cfg.staged_planning.staged_plan_feedback_mode.as_str()
+            )
         } else {
             "关闭".to_string()
         };
         self.write_banner_item(w, "staged_plan_execution", &staged)?;
-        if cfg.planner_executor_mode != PlannerExecutorMode::SingleAgent {
+        if cfg.per_plan_policy.planner_executor_mode != PlannerExecutorMode::SingleAgent {
             self.write_banner_item(
                 w,
                 "planner_executor_mode",
-                cfg.planner_executor_mode.as_str(),
+                cfg.per_plan_policy.planner_executor_mode.as_str(),
             )?;
         }
-        if cfg.tui_load_session_on_start {
+        if cfg.session_ui.tui_load_session_on_start {
             self.write_banner_item(
                 w,
                 "会话恢复",
                 "启动时加载 .crabmate/tui_session.json（若存在）",
             )?;
         }
-        if cfg.mcp_enabled && !cfg.mcp_command.trim().is_empty() {
+        if cfg.mcp_client.mcp_enabled && !cfg.mcp_client.mcp_command.trim().is_empty() {
             self.write_banner_item(w, "MCP", "已启用（stdio）")?;
         }
-        if cfg.long_term_memory_enabled {
+        if cfg.long_term_memory.long_term_memory_enabled {
             self.write_banner_item(w, "long_term_memory", "已启用")?;
         }
         Ok(())
@@ -595,7 +603,7 @@ impl CliReplStyle {
         let (tw, _) = crossterm::terminal::size().unwrap_or((72, 24));
         let inner = (tw as usize).saturating_sub(4).clamp(28, 72);
         let api_base_short =
-            ellipsize_terminal_line(&cfg.api_base, inner.saturating_sub(4).max(24));
+            ellipsize_terminal_line(&cfg.llm.api_base, inner.saturating_sub(4).max(24));
 
         writeln!(out)?;
         self.write_banner_art_header(&mut out)?;
@@ -621,7 +629,7 @@ impl CliReplStyle {
         let (tw, _) = crossterm::terminal::size().unwrap_or((72, 24));
         let inner = (tw as usize).saturating_sub(4).clamp(28, 72);
         let api_base_short =
-            ellipsize_terminal_line(&cfg.api_base, inner.saturating_sub(4).max(24));
+            ellipsize_terminal_line(&cfg.llm.api_base, inner.saturating_sub(4).max(24));
 
         writeln!(out)?;
         self.write_banner_subheading(&mut out, "运行配置摘要")?;
@@ -651,11 +659,16 @@ impl CliReplStyle {
         no_stream: bool,
     ) -> io::Result<()> {
         self.write_banner_subheading(out, "模型")?;
-        self.write_banner_item(out, "model", &cfg.model)?;
+        self.write_banner_item(out, "model", &cfg.llm.model)?;
         self.write_banner_item(out, "api_base", api_base_short)?;
-        self.write_banner_item(out, "llm_http_auth", cfg.llm_http_auth_mode.as_str())?;
-        self.write_banner_item(out, "temperature", &format!("{}", cfg.temperature))?;
+        self.write_banner_item(out, "llm_http_auth", cfg.llm.llm_http_auth_mode.as_str())?;
+        self.write_banner_item(
+            out,
+            "temperature",
+            &format!("{}", cfg.llm_sampling.temperature),
+        )?;
         let seed_line = cfg
+            .llm_sampling
             .llm_seed
             .map(|s| s.to_string())
             .unwrap_or_else(|| "（未设置）".to_string());
@@ -692,27 +705,30 @@ impl CliReplStyle {
         cfg: &AgentConfig,
     ) -> io::Result<()> {
         self.write_banner_subheading(out, "要点配置")?;
-        self.write_banner_item(out, "max_tokens", &cfg.max_tokens.to_string())?;
+        self.write_banner_item(out, "max_tokens", &cfg.llm_sampling.max_tokens.to_string())?;
         self.write_banner_item(
             out,
             "max_message_history",
             &format!(
                 "保留最近 {} 轮（user+assistant 计一轮）",
-                cfg.max_message_history
+                cfg.session_ui.max_message_history
             ),
         )?;
-        if cfg.context_char_budget > 0 {
+        if cfg.context_pipeline.context_char_budget > 0 {
             self.write_banner_item(
                 out,
                 "context_char_budget",
-                &format!("{}（启用按字符删旧）", cfg.context_char_budget),
+                &format!(
+                    "{}（启用按字符删旧）",
+                    cfg.context_pipeline.context_char_budget
+                ),
             )?;
         }
-        if cfg.llm_context_tokens > 0 {
+        if cfg.llm_sampling.llm_context_tokens > 0 {
             self.write_banner_item(
                 out,
                 "llm_context_tokens",
-                &cfg.llm_context_tokens.to_string(),
+                &cfg.llm_sampling.llm_context_tokens.to_string(),
             )?;
             let eff = cfg.effective_context_char_budget_for_pipeline();
             if eff > 0 {
@@ -728,7 +744,7 @@ impl CliReplStyle {
             "API",
             &format!(
                 "超时 {}s · 失败重试 {} 次",
-                cfg.api_timeout_secs, cfg.api_max_retries
+                cfg.llm_http_retry.api_timeout_secs, cfg.llm_http_retry.api_max_retries
             ),
         )?;
         self.write_banner_item(
@@ -736,13 +752,13 @@ impl CliReplStyle {
             "run_command",
             &format!(
                 "超时 {}s · 输出上限 {} 字",
-                cfg.command_timeout_secs, cfg.command_max_output_len
+                cfg.command_exec.command_timeout_secs, cfg.command_exec.command_max_output_len
             ),
         )?;
         self.write_banner_item(
             out,
             "tool_message_max_chars",
-            &cfg.tool_message_max_chars.to_string(),
+            &cfg.tool_transcript.tool_message_max_chars.to_string(),
         )?;
         Ok(())
     }
@@ -752,7 +768,7 @@ impl CliReplStyle {
         out: &mut io::Stdout,
         cfg: &AgentConfig,
     ) -> io::Result<()> {
-        let final_plan = match cfg.final_plan_requirement {
+        let final_plan = match cfg.per_plan_policy.final_plan_requirement {
             FinalPlanRequirementMode::Never => "never",
             FinalPlanRequirementMode::WorkflowReflection => "workflow_reflection",
             FinalPlanRequirementMode::Always => "always",
@@ -761,12 +777,12 @@ impl CliReplStyle {
         self.write_banner_item(
             out,
             "plan_rewrite_max_attempts",
-            &cfg.plan_rewrite_max_attempts.to_string(),
+            &cfg.per_plan_policy.plan_rewrite_max_attempts.to_string(),
         )?;
         self.write_banner_item(
             out,
             "planner_executor_mode",
-            cfg.planner_executor_mode.as_str(),
+            cfg.per_plan_policy.planner_executor_mode.as_str(),
         )?;
         Ok(())
     }
@@ -776,13 +792,16 @@ impl CliReplStyle {
         out: &mut io::Stdout,
         cfg: &AgentConfig,
     ) -> io::Result<()> {
-        let staged = if cfg.staged_plan_execution {
-            format!("开启（{}）", cfg.staged_plan_feedback_mode.as_str())
+        let staged = if cfg.staged_planning.staged_plan_execution {
+            format!(
+                "开启（{}）",
+                cfg.staged_planning.staged_plan_feedback_mode.as_str()
+            )
         } else {
             "关闭".to_string()
         };
         self.write_banner_item(out, "staged_plan_execution", &staged)?;
-        let staged_cli = if cfg.staged_plan_cli_show_planner_stream {
+        let staged_cli = if cfg.staged_planning.staged_plan_cli_show_planner_stream {
             "开启（CLI 规划轮打印模型 stdout）"
         } else {
             "关闭（CLI 规划轮不打印模型 stdout）"
@@ -797,8 +816,8 @@ impl CliReplStyle {
         cfg: &AgentConfig,
         inner: usize,
     ) -> io::Result<()> {
-        let cursor = if cfg.cursor_rules_enabled {
-            let d = cfg.cursor_rules_dir.trim();
+        let cursor = if cfg.cursor_rules.cursor_rules_enabled {
+            let d = cfg.cursor_rules.cursor_rules_dir.trim();
             let short = if d.is_empty() {
                 "（目录为空）".to_string()
             } else {
@@ -820,16 +839,17 @@ impl CliReplStyle {
         self.write_banner_item(
             out,
             "materialize_deepseek_dsml_tool_calls",
-            if cfg.materialize_deepseek_dsml_tool_calls {
+            if cfg.dsml_materialize.materialize_deepseek_dsml_tool_calls {
                 "开启"
             } else {
                 "关闭"
             },
         )?;
-        let explain = if cfg.tool_call_explain_enabled {
+        let explain = if cfg.tool_call_explain.tool_call_explain_enabled {
             format!(
                 "开启（{}～{} 字）",
-                cfg.tool_call_explain_min_chars, cfg.tool_call_explain_max_chars
+                cfg.tool_call_explain.tool_call_explain_min_chars,
+                cfg.tool_call_explain.tool_call_explain_max_chars
             )
         } else {
             "关闭".to_string()
@@ -843,17 +863,17 @@ impl CliReplStyle {
         out: &mut io::Stdout,
         cfg: &AgentConfig,
     ) -> io::Result<()> {
-        if cfg.tui_load_session_on_start {
+        if cfg.session_ui.tui_load_session_on_start {
             self.write_banner_item(
                 out,
                 "会话恢复",
                 "启动时加载 .crabmate/tui_session.json（若存在）",
             )?;
         }
-        if cfg.mcp_enabled && !cfg.mcp_command.trim().is_empty() {
+        if cfg.mcp_client.mcp_enabled && !cfg.mcp_client.mcp_command.trim().is_empty() {
             self.write_banner_item(out, "MCP", "已启用（stdio）")?;
         }
-        if cfg.long_term_memory_enabled {
+        if cfg.long_term_memory.long_term_memory_enabled {
             self.write_banner_item(out, "long_term_memory", "已启用")?;
         }
         Ok(())

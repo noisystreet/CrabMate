@@ -24,11 +24,11 @@ pub async fn classify_intent_l2_with_llm(
 ) -> Option<L2IntentCandidate> {
     let prompt = build_l2_prompt(merged_routing_text, current_user_line);
     let request = crate::types::ChatRequest {
-        model: cfg.model.clone(),
+        model: cfg.llm.model.clone(),
         messages: vec![Message::user_only(&prompt)],
         stream: Some(false),
         temperature: 0.0,
-        max_tokens: cfg.intent_l2_max_tokens,
+        max_tokens: cfg.intent_routing.intent_l2_max_tokens,
         tools: None,
         tool_choice: None,
         seed: None,

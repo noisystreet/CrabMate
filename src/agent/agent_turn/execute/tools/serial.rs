@@ -353,8 +353,10 @@ fn serial_maybe_invalidate_codebase_semantic_index(
     args: &str,
     result: &str,
 ) {
-    if !cfg.codebase_semantic_search_enabled
-        || !cfg.codebase_semantic_invalidate_on_workspace_change
+    if !cfg.codebase_semantic.codebase_semantic_search_enabled
+        || !cfg
+            .codebase_semantic
+            .codebase_semantic_invalidate_on_workspace_change
     {
         return;
     }
@@ -541,7 +543,7 @@ pub(super) async fn execute_tools_serial(
         );
 
         if !is_readonly
-            && cfg.web_audit_log_write_tools
+            && cfg.web_api.web_audit_log_write_tools
             && let Some(ref audit) = request_audit
         {
             let ts_ms = std::time::SystemTime::now()

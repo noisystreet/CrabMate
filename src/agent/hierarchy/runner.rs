@@ -215,7 +215,7 @@ pub async fn run_hierarchical(
 
     // 1. 智能路由决策
     // 默认使用规则路由，可以通过配置启用 LLM 智能路由
-    let use_llm_routing = cfg.enable_llm_routing.unwrap_or(false);
+    let use_llm_routing = cfg.hierarchy_routing.enable_llm_routing.unwrap_or(false);
     let router = SmartRouter::new();
     let router_output = router
         .route_smart(

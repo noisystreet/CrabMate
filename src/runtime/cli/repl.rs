@@ -214,7 +214,7 @@ async fn repl_dispatch_chat_round(
     );
     {
         let g = cfg_holder.read().await;
-        if g.llm_http_auth_mode == LlmHttpAuthMode::Bearer {
+        if g.llm.llm_http_auth_mode == LlmHttpAuthMode::Bearer {
             let k = api_key_holder.lock().unwrap_or_else(|e| e.into_inner());
             if k.trim().is_empty() {
                 drop(k);
@@ -248,12 +248,12 @@ async fn repl_dispatch_chat_round(
                 );
             let merged = crate::config::skills::merge_system_prompt_with_skills_selected(
                 base_system.clone(),
-                g.skills_enabled,
-                g.skills_dir.as_str(),
-                g.skills_max_chars,
+                g.skills.skills_enabled,
+                g.skills.skills_dir.as_str(),
+                g.skills.skills_max_chars,
                 work_dir,
                 user_body.as_str(),
-                g.skills_top_k,
+                g.skills.skills_top_k,
             )
             .unwrap_or(base_system);
             first.content = Some(crate::types::MessageContent::Text(merged));
@@ -321,14 +321,23 @@ async fn repl_prepare_messages_and_editor(
             agent_role_owned.as_deref(),
             &recorder,
         );
-        if !g.repl_initial_workspace_messages_enabled {
+        if !g.session_ui.repl_initial_workspace_messages_enabled {
             (fast, None)
         } else {
-            let may_scan_workspace = (g.project_profile_inject_enabled
-                && g.project_profile_inject_max_chars > 0)
-                || (g.project_dependency_brief_inject_enabled
-                    && g.project_dependency_brief_inject_max_chars > 0)
-                || (g.agent_memory_file_enabled && !g.agent_memory_file.trim().is_empty());
+            let may_scan_workspace = (g.context_bootstrap_inject.project_profile_inject_enabled
+                && g.context_bootstrap_inject.project_profile_inject_max_chars > 0)
+                || (g
+                    .context_bootstrap_inject
+                    .project_dependency_brief_inject_enabled
+                    && g.context_bootstrap_inject
+                        .project_dependency_brief_inject_max_chars
+                        > 0)
+                || (g.context_bootstrap_inject.agent_memory_file_enabled
+                    && !g
+                        .context_bootstrap_inject
+                        .agent_memory_file
+                        .trim()
+                        .is_empty());
             if may_scan_workspace || tui_load {
                 let _ = writeln!(
                     io::stderr(),
@@ -387,8 +396,8 @@ pub async fn run_repl(
     let (run_root, tui_load) = {
         let g = cfg_holder.read().await;
         (
-            g.run_command_working_dir.clone(),
-            g.tui_load_session_on_start,
+            g.command_exec.run_command_working_dir.clone(),
+            g.session_ui.tui_load_session_on_start,
         )
     };
     let mut work_dir = cli_effective_work_dir(workspace_cli, &run_root);

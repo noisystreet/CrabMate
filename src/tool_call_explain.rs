@@ -20,7 +20,7 @@ const EXPLAIN_APPEND_ZH: &str = concat!(
 
 /// 为可能产生副作用的工具描述追加解释卡说明（仅当配置启用）。
 pub fn annotate_tool_defs_for_explain_card(tools: &mut [Tool], cfg: &AgentConfig) {
-    if !cfg.tool_call_explain_enabled {
+    if !cfg.tool_call_explain.tool_call_explain_enabled {
         return;
     }
     for t in tools.iter_mut() {
@@ -41,7 +41,7 @@ pub fn require_explain_for_mutation<'a>(
     tool_name: &str,
     args: &'a str,
 ) -> Result<Cow<'a, str>, String> {
-    if !cfg.tool_call_explain_enabled
+    if !cfg.tool_call_explain.tool_call_explain_enabled
         || is_readonly_tool(cfg, tool_name)
         || crate::mcp::is_mcp_proxy_tool(tool_name)
     {
@@ -54,16 +54,16 @@ pub fn require_explain_for_mutation<'a>(
         ));
     };
     let n = e.chars().count();
-    if n < cfg.tool_call_explain_min_chars {
+    if n < cfg.tool_call_explain.tool_call_explain_min_chars {
         return Err(format!(
             "错误：字段 `{EXPLAIN_WHY_KEY}` 过短（至少 {} 个字符，当前 {n}）。请写清本步意图。",
-            cfg.tool_call_explain_min_chars
+            cfg.tool_call_explain.tool_call_explain_min_chars
         ));
     }
-    if n > cfg.tool_call_explain_max_chars {
+    if n > cfg.tool_call_explain.tool_call_explain_max_chars {
         return Err(format!(
             "错误：字段 `{EXPLAIN_WHY_KEY}` 过长（最多 {} 个字符）。请压缩为一句摘要。",
-            cfg.tool_call_explain_max_chars
+            cfg.tool_call_explain.tool_call_explain_max_chars
         ));
     }
     Ok(Cow::Owned(cleaned))
@@ -108,9 +108,9 @@ mod tests {
 
     fn cfg_on() -> crate::config::AgentConfig {
         let mut c = crate::config::load_config(None).expect("embedded default config");
-        c.tool_call_explain_enabled = true;
-        c.tool_call_explain_min_chars = 4;
-        c.tool_call_explain_max_chars = 200;
+        c.tool_call_explain.tool_call_explain_enabled = true;
+        c.tool_call_explain.tool_call_explain_min_chars = 4;
+        c.tool_call_explain.tool_call_explain_max_chars = 200;
         c
     }
 

@@ -48,7 +48,7 @@ fn sha256_hex_prefix(secret: &[u8], prefix_hex_chars: usize) -> String {
 
 /// 与配置中的共享 Web API 密钥对应的稳定指纹（不含明文）。
 pub(crate) fn web_api_bearer_fingerprint(cfg: &AgentConfig) -> Option<String> {
-    let raw = cfg.web_api_bearer_token.expose_secret();
+    let raw = cfg.web_api.web_api_bearer_token.expose_secret();
     let b = raw.trim().as_bytes();
     if b.is_empty() {
         return None;
@@ -87,7 +87,7 @@ pub(crate) fn web_request_audit_from_http(
     headers: &HeaderMap,
     peer: SocketAddr,
 ) -> WebRequestAudit {
-    let trust = cfg.web_audit_trust_x_forwarded_for;
+    let trust = cfg.web_api.web_audit_trust_x_forwarded_for;
     let client_ip = resolve_audit_client_ip(trust, headers, peer);
     let configured_fp = web_api_bearer_fingerprint(cfg);
     let bearer_fp = configured_fp.filter(|_| {
@@ -111,7 +111,12 @@ fn secret_matches_web_api(
     x_api_key: Option<&axum::http::HeaderValue>,
 ) -> bool {
     use subtle::ConstantTimeEq;
-    let secret = cfg.web_api_bearer_token.expose_secret().trim().as_bytes();
+    let secret = cfg
+        .web_api
+        .web_api_bearer_token
+        .expose_secret()
+        .trim()
+        .as_bytes();
     if secret.is_empty() {
         return false;
     }
@@ -157,8 +162,8 @@ mod tests {
 
     fn test_cfg(secret: &str) -> AgentConfig {
         let mut cfg = crate::config::load_config(None).expect("embed default config");
-        cfg.web_api_bearer_token = SecretString::new(secret.to_string().into());
-        cfg.web_audit_trust_x_forwarded_for = false;
+        cfg.web_api.web_api_bearer_token = SecretString::new(secret.to_string().into());
+        cfg.web_api.web_audit_trust_x_forwarded_for = false;
         cfg
     }
 
@@ -229,7 +234,7 @@ mod tests {
     #[test]
     fn audit_client_ip_uses_x_forwarded_for_when_trusted() {
         let mut cfg = test_cfg("t");
-        cfg.web_audit_trust_x_forwarded_for = true;
+        cfg.web_api.web_audit_trust_x_forwarded_for = true;
         let mut headers = HeaderMap::new();
         headers.insert(
             X_FORWARDED_FOR,
@@ -244,7 +249,7 @@ mod tests {
     #[test]
     fn audit_client_ip_ignores_x_forwarded_for_when_untrusted() {
         let mut cfg = test_cfg("t");
-        cfg.web_audit_trust_x_forwarded_for = false;
+        cfg.web_api.web_audit_trust_x_forwarded_for = false;
         let mut headers = HeaderMap::new();
         headers.insert(X_FORWARDED_FOR, HeaderValue::from_static("192.0.2.9"));
         let peer = SocketAddr::from_str("198.18.0.1:443").expect("addr");

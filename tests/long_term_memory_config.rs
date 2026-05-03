@@ -62,7 +62,12 @@ long_term_memory_vector_backend = "disabled"
     .expect("write temp config");
 
     let cfg = crabmate::load_config(Some(path.to_str().expect("utf8 path"))).expect("load ok");
-    assert!(cfg.long_term_memory_enabled);
-    assert_eq!(cfg.long_term_memory_vector_backend.as_str(), "disabled");
+    assert!(cfg.long_term_memory.long_term_memory_enabled);
+    assert_eq!(
+        cfg.long_term_memory
+            .long_term_memory_vector_backend
+            .as_str(),
+        "disabled"
+    );
     let _ = std::fs::remove_file(&path);
 }

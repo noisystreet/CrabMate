@@ -13,10 +13,20 @@ use crate::types::Message;
 
 /// 项目画像 / `cargo metadata` 等重扫描是否应放到阻塞线程（与 Web `build_messages_for_turn`、CLI `prepend_cli_first_turn_injection` 对齐）。
 pub(crate) fn project_scan_needs_spawn_blocking(cfg: &AgentConfig) -> bool {
-    (cfg.living_docs_inject_enabled && cfg.living_docs_inject_max_chars > 0)
-        || (cfg.project_profile_inject_enabled && cfg.project_profile_inject_max_chars > 0)
-        || (cfg.project_dependency_brief_inject_enabled
-            && cfg.project_dependency_brief_inject_max_chars > 0)
+    (cfg.context_bootstrap_inject.living_docs_inject_enabled
+        && cfg.context_bootstrap_inject.living_docs_inject_max_chars > 0)
+        || (cfg.context_bootstrap_inject.project_profile_inject_enabled
+            && cfg
+                .context_bootstrap_inject
+                .project_profile_inject_max_chars
+                > 0)
+        || (cfg
+            .context_bootstrap_inject
+            .project_dependency_brief_inject_enabled
+            && cfg
+                .context_bootstrap_inject
+                .project_dependency_brief_inject_max_chars
+                > 0)
 }
 
 /// 首轮「工作区上下文」`user` 条正文（无则 `None`）。`memory_snippet` 仅 Web 新会话传入；CLI 传 `None`。
@@ -79,7 +89,7 @@ pub(crate) fn augmented_system_for_new_conversation_lenient(
 ) -> String {
     let base = match cfg.system_prompt_for_new_conversation(agent_role) {
         Ok(s) => s.to_string(),
-        Err(_) => cfg.system_prompt.clone(),
+        Err(_) => cfg.roles_prompts.system_prompt.clone(),
     };
     tool_recorder.augment_system_prompt(&base, cfg)
 }

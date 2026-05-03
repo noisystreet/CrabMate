@@ -32,7 +32,8 @@ pub(crate) fn named_agent_role_for_tool_policy(
     if let Some(id) = effective_agent_role_id_for_turn(persisted_active, request_agent_role) {
         return Some(id);
     }
-    cfg.default_agent_role_id
+    cfg.roles_prompts
+        .default_agent_role_id
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
@@ -137,7 +138,8 @@ pub(crate) fn turn_allowed_tool_names_for_role(
     role_id: Option<&str>,
 ) -> Option<Arc<HashSet<String>>> {
     let id = role_id.map(str::trim).filter(|s| !s.is_empty())?;
-    cfg.agent_roles
+    cfg.roles_prompts
+        .agent_roles
         .get(id)
         .and_then(|spec| spec.allowed_tools.clone())
 }

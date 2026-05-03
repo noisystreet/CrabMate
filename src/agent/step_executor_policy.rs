@@ -53,7 +53,8 @@ fn patch_write_allowed_name(cfg: &AgentConfig, name: &str) -> bool {
     if default_patch_write_tool_names().contains(name) {
         return true;
     }
-    cfg.tool_registry_sub_agent_patch_write_extra_tools
+    cfg.tool_registry_policy
+        .tool_registry_sub_agent_patch_write_extra_tools
         .as_ref()
         .is_some_and(|s| s.contains(name))
 }
@@ -62,7 +63,8 @@ fn test_runner_allowed_name(cfg: &AgentConfig, name: &str) -> bool {
     if default_test_runner_tool_names().contains(name) {
         return true;
     }
-    cfg.tool_registry_sub_agent_test_runner_extra_tools
+    cfg.tool_registry_policy
+        .tool_registry_sub_agent_test_runner_extra_tools
         .as_ref()
         .is_some_and(|s| s.contains(name))
 }
@@ -76,6 +78,7 @@ pub(crate) fn tool_allowed_for_step_executor_kind(
     match kind {
         PlanStepExecutorKind::ReviewReadonly => {
             if cfg
+                .tool_registry_policy
                 .tool_registry_sub_agent_review_readonly_deny_tools
                 .as_ref()
                 .is_some_and(|s| s.contains(name))
@@ -191,13 +194,15 @@ mod tests {
         let mut cfg = crate::config::load_config(None).expect("embed default");
         // 将 `my_patch` 标为写副作用，使其在 review_readonly 下被拒；patch_write 仍可通过 extra 名单放行。
         let mut writes = cfg
+            .tool_registry_policy
             .tool_registry_write_effect_tools
             .as_ref()
             .map(|a| a.as_ref().clone())
             .unwrap_or_default();
         writes.insert("my_patch".to_string());
-        cfg.tool_registry_write_effect_tools = Some(Arc::new(writes));
-        cfg.tool_registry_sub_agent_patch_write_extra_tools =
+        cfg.tool_registry_policy.tool_registry_write_effect_tools = Some(Arc::new(writes));
+        cfg.tool_registry_policy
+            .tool_registry_sub_agent_patch_write_extra_tools =
             Some(Arc::new(HashSet::from(["my_patch".to_string()])));
         assert!(tool_allowed_for_step_executor_kind(
             &cfg,
@@ -214,7 +219,8 @@ mod tests {
     #[test]
     fn review_readonly_deny_tools_override() {
         let mut cfg = crate::config::load_config(None).expect("embed default");
-        cfg.tool_registry_sub_agent_review_readonly_deny_tools =
+        cfg.tool_registry_policy
+            .tool_registry_sub_agent_review_readonly_deny_tools =
             Some(Arc::new(HashSet::from(["read_file".to_string()])));
         assert!(!tool_allowed_for_step_executor_kind(
             &cfg,

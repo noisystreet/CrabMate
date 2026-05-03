@@ -182,14 +182,14 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
         let args_owned = args.to_string();
         let wd = effective_working_dir.to_path_buf();
         let cfg2 = Arc::clone(cfg);
-        let wall_secs = cfg.command_timeout_secs.max(1);
+        let wall_secs = cfg.command_exec.command_timeout_secs.max(1);
         let handle = tokio::task::spawn_blocking(move || {
             crate::dynamic_tools::run_dynamic_tool(
                 &def,
                 &args_owned,
                 wd.as_path(),
-                cfg2.command_max_output_len,
-                cfg2.allowed_commands.as_ref(),
+                cfg2.command_exec.command_max_output_len,
+                cfg2.command_exec.allowed_commands.as_ref(),
             )
         });
         let out = match tokio::time::timeout(Duration::from_secs(wall_secs), handle).await {
@@ -226,8 +226,8 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
             &guard,
             remote.as_str(),
             mcp_args.as_str(),
-            Duration::from_secs(cfg.mcp_tool_timeout_secs.max(1)),
-            cfg.command_max_output_len,
+            Duration::from_secs(cfg.mcp_client.mcp_tool_timeout_secs.max(1)),
+            cfg.command_exec.command_max_output_len,
         )
         .await;
         return (out, None);
@@ -325,7 +325,9 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
             .await
         }
         HandlerId::SyncDefault => {
-            if cfg.sync_default_tool_sandbox_mode == SyncDefaultToolSandboxMode::Docker {
+            if cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode
+                == SyncDefaultToolSandboxMode::Docker
+            {
                 if !workspace_is_set {
                     return (
                         "错误：未设置工作区，无法在 Docker 沙盒中执行 SyncDefault 工具（请先设置工作区目录）。"
@@ -365,7 +367,7 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
                     );
                 let ctx = tools::tool_context_for_with_read_cache_and_memory(
                     cfg.as_ref(),
-                    cfg.allowed_commands.as_ref(),
+                    cfg.command_exec.allowed_commands.as_ref(),
                     effective_working_dir,
                     read_file_turn_cache.as_ref().map(|a| a.as_ref()),
                     workspace_changelist.as_ref(),
@@ -392,7 +394,7 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
                     );
                 let ctx = tools::tool_context_for_with_read_cache_and_memory(
                     cfg2.as_ref(),
-                    cfg2.allowed_commands.as_ref(),
+                    cfg2.command_exec.allowed_commands.as_ref(),
                     work_dir.as_path(),
                     rfc.as_ref().map(|a| a.as_ref()),
                     wcl.as_ref(),
@@ -462,7 +464,9 @@ async fn dispatch_non_sync_tool_to_docker(
     args: &str,
     runner_cfg_path: Result<PathBuf, String>,
 ) -> Option<(String, Option<serde_json::Value>)> {
-    if env.cfg.sync_default_tool_sandbox_mode != SyncDefaultToolSandboxMode::Docker {
+    if env.cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode
+        != SyncDefaultToolSandboxMode::Docker
+    {
         return None;
     }
     if !workspace_is_set {
@@ -530,7 +534,7 @@ async fn execute_run_command_impl(
                 .join(" ")
         })
         .unwrap_or_default();
-    let base_allowed = Arc::clone(&cfg.allowed_commands);
+    let base_allowed = Arc::clone(&cfg.command_exec.allowed_commands);
     let mut effective_allowed_arc: Arc<[String]> = base_allowed;
     if !cmd.is_empty()
         && !effective_allowed_arc
@@ -621,13 +625,17 @@ async fn execute_run_command_impl(
                             return (format!("用户拒绝执行命令：{}", cmd_show.trim()), None);
                         }
                         CommandApprovalDecision::AllowOnce => {
-                            effective_allowed_arc =
-                                extend_allowed_commands_arc(&cfg.allowed_commands, &cmd);
+                            effective_allowed_arc = extend_allowed_commands_arc(
+                                &cfg.command_exec.allowed_commands,
+                                &cmd,
+                            );
                         }
                         CommandApprovalDecision::AllowAlways => {
                             crate::tool_approval::persist_allowlist_key(&allow_handles, &cmd).await;
-                            effective_allowed_arc =
-                                extend_allowed_commands_arc(&cfg.allowed_commands, &cmd);
+                            effective_allowed_arc = extend_allowed_commands_arc(
+                                &cfg.command_exec.allowed_commands,
+                                &cmd,
+                            );
                         }
                     }
                 }
@@ -655,7 +663,7 @@ async fn execute_run_command_impl(
     }
 
     let name_in = name.to_string();
-    let cmd_timeout = cfg.command_timeout_secs;
+    let cmd_timeout = cfg.command_exec.command_timeout_secs;
     let cfg = Arc::clone(cfg);
     let work_dir = effective_working_dir.to_path_buf();
     let args_cloned = args.to_string();
@@ -717,8 +725,10 @@ pub(crate) async fn prefetch_http_fetch_parallel_approvals(
         };
         let storage_key = tools::http_fetch::storage_key(&url);
         let approval_args = tools::http_fetch::approval_args_display(method, &url);
-        let allowed_by_cfg =
-            tools::http_fetch::url_matches_allowed_prefixes(&url, &cfg.http_fetch_allowed_prefixes);
+        let allowed_by_cfg = tools::http_fetch::url_matches_allowed_prefixes(
+            &url,
+            &cfg.http_fetch.http_fetch_allowed_prefixes,
+        );
         let allowed_by_list = match (web_ctx, cli_ctx) {
             (Some(w), _) => w
                 .persistent_allowlist_shared
@@ -798,8 +808,10 @@ async fn execute_http_fetch_impl(
     };
     let key = tools::http_fetch::storage_key(&url);
     let approval_args = tools::http_fetch::approval_args_display(method, &url);
-    let allowed_by_cfg =
-        tools::http_fetch::url_matches_allowed_prefixes(&url, &cfg.http_fetch_allowed_prefixes);
+    let allowed_by_cfg = tools::http_fetch::url_matches_allowed_prefixes(
+        &url,
+        &cfg.http_fetch.http_fetch_allowed_prefixes,
+    );
     let allowed_by_list = match (web_ctx, cli_ctx) {
         (Some(w), _) => w.persistent_allowlist_shared.lock().await.contains(&key),
         (None, Some(c)) => c.persistent_allowlist_shared.lock().await.contains(&key),
@@ -861,8 +873,8 @@ async fn execute_http_fetch_impl(
     {
         return out;
     }
-    let timeout_secs = cfg.http_fetch_timeout_secs.max(1);
-    let max_body = cfg.http_fetch_max_response_bytes;
+    let timeout_secs = cfg.http_fetch.http_fetch_timeout_secs.max(1);
+    let max_body = cfg.http_fetch.http_fetch_max_response_bytes;
     let name_in = name.to_string();
     let url_owned = url.clone();
     let outer_wall = http_fetch_outer_wall_secs(cfg);
@@ -909,8 +921,10 @@ async fn execute_http_request_impl(
     let has_body = json_body.is_some();
     let key = tools::http_fetch::request_storage_key(method, &url);
     let approval_args = tools::http_fetch::approval_args_display_request(method, &url, has_body);
-    let allowed_by_cfg =
-        tools::http_fetch::url_matches_allowed_prefixes(&url, &cfg.http_fetch_allowed_prefixes);
+    let allowed_by_cfg = tools::http_fetch::url_matches_allowed_prefixes(
+        &url,
+        &cfg.http_fetch.http_fetch_allowed_prefixes,
+    );
     let allowed_by_list = match (web_ctx, cli_ctx) {
         (Some(w), _) => w.persistent_allowlist_shared.lock().await.contains(&key),
         (None, Some(c)) => c.persistent_allowlist_shared.lock().await.contains(&key),
@@ -972,8 +986,8 @@ async fn execute_http_request_impl(
     {
         return out;
     }
-    let timeout_secs = cfg.http_fetch_timeout_secs.max(1);
-    let max_body = cfg.http_fetch_max_response_bytes;
+    let timeout_secs = cfg.http_fetch.http_fetch_timeout_secs.max(1);
+    let max_body = cfg.http_fetch.http_fetch_max_response_bytes;
     let name_in = name.to_string();
     let url_fetch = url.clone();
     let outer_wall = http_request_outer_wall_secs(cfg);
@@ -1024,14 +1038,14 @@ async fn execute_get_weather_web(
         return out;
     }
     let name_in = name.to_string();
-    let weather_timeout = cfg.weather_timeout_secs;
+    let weather_timeout = cfg.weather_tool.weather_timeout_secs;
     let cfg = Arc::clone(cfg);
     let work_dir = effective_working_dir.to_path_buf();
     let args_owned = args.to_string();
     let handle = tokio::task::spawn_blocking(move || {
         let ctx = tools::tool_context_for(
             cfg.as_ref(),
-            cfg.allowed_commands.as_ref(),
+            cfg.command_exec.allowed_commands.as_ref(),
             work_dir.as_path(),
         );
         tools::run_tool(&name_in, &args_owned, &ctx)
@@ -1076,14 +1090,14 @@ async fn execute_web_search_web(
         return out;
     }
     let name_in = name.to_string();
-    let search_timeout = cfg.web_search_timeout_secs;
+    let search_timeout = cfg.web_search.web_search_timeout_secs;
     let cfg = Arc::clone(cfg);
     let work_dir = effective_working_dir.to_path_buf();
     let args_owned = args.to_string();
     let handle = tokio::task::spawn_blocking(move || {
         let ctx = tools::tool_context_for(
             cfg.as_ref(),
-            cfg.allowed_commands.as_ref(),
+            cfg.command_exec.allowed_commands.as_ref(),
             work_dir.as_path(),
         );
         tools::run_tool(&name_in, &args_owned, &ctx)
@@ -1108,49 +1122,5 @@ async fn execute_web_search_web(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::super::meta::HandlerLookupTable;
-    use super::*;
-    use crate::types::{FunctionCall, ToolCall};
-
-    fn tool_call(name: &str, arguments: &str) -> ToolCall {
-        ToolCall {
-            id: "tc_1".to_string(),
-            typ: "function".to_string(),
-            function: FunctionCall {
-                name: name.to_string(),
-                arguments: arguments.to_string(),
-            },
-        }
-    }
-
-    #[test]
-    fn read_dir_path_is_external_detects_absolute_and_parent_ref() {
-        assert_eq!(
-            read_dir_path_is_external(r#"{"path":"/tmp"}"#),
-            Some("/tmp".to_string())
-        );
-        assert_eq!(
-            read_dir_path_is_external(r#"{"path":"../secrets"}"#),
-            Some("../secrets".to_string())
-        );
-        assert_eq!(read_dir_path_is_external(r#"{"path":"src"}"#), None);
-    }
-
-    #[tokio::test]
-    async fn prefetch_parallel_syncdefault_approvals_blocks_external_read_dir_without_channel() {
-        let calls = vec![tool_call("read_dir", r#"{"path":"/tmp"}"#)];
-        let failures = prefetch_parallel_syncdefault_approvals(
-            &calls,
-            None,
-            None,
-            &HandlerLookupTable::default_dispatch(),
-        )
-        .await;
-        assert_eq!(failures.len(), 1);
-        let msg = failures
-            .get(&("read_dir".to_string(), r#"{"path":"/tmp"}"#.to_string()))
-            .expect("missing failure for external read_dir");
-        assert!(msg.contains("需要审批通道"));
-    }
-}
+#[path = "execute_tests.rs"]
+mod tests;

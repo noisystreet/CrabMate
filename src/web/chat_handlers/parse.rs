@@ -204,7 +204,7 @@ pub(super) async fn ensure_bearer_api_key_for_chat(
 ) -> Result<(), (StatusCode, Json<ApiError>)> {
     let auth = {
         let g = state.cfg.read().await;
-        g.llm_http_auth_mode
+        g.llm.llm_http_auth_mode
     };
     if auth != LlmHttpAuthMode::Bearer {
         return Ok(());

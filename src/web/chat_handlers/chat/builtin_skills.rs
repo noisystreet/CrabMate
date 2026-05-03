@@ -169,13 +169,13 @@ pub(super) async fn run_web_builtin_command(
     match classify_web_builtin_command(command)? {
         "skills" => {
             let cfg = state.cfg.read().await;
-            if !cfg.skills_enabled {
+            if !cfg.skills.skills_enabled {
                 return Some(
                     "skills 已关闭（skills_enabled=false），当前不会加载任何 skills。".to_string(),
                 );
             }
-            let max_chars = cfg.skills_max_chars;
-            let dir = cfg.skills_dir.clone();
+            let max_chars = cfg.skills.skills_max_chars;
+            let dir = cfg.skills.skills_dir.clone();
             drop(cfg);
             let ws = std::path::PathBuf::from(state.effective_workspace_path().await);
             let base_dir = resolve_skills_base_dir(ws.as_path());
@@ -203,13 +203,13 @@ pub(super) async fn run_web_builtin_command(
         }
         "skills_list" => {
             let cfg = state.cfg.read().await;
-            if !cfg.skills_enabled {
+            if !cfg.skills.skills_enabled {
                 return Some(
                     "skills 已关闭（skills_enabled=false），当前不会加载任何 skills。".to_string(),
                 );
             }
-            let max_chars = cfg.skills_max_chars;
-            let dir = cfg.skills_dir.clone();
+            let max_chars = cfg.skills.skills_max_chars;
+            let dir = cfg.skills.skills_dir.clone();
             drop(cfg);
             let ws = std::path::PathBuf::from(state.effective_workspace_path().await);
             let base_dir = resolve_skills_base_dir(ws.as_path());

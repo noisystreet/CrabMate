@@ -159,13 +159,13 @@ async fn slash_model_show(
     style: &CliReplStyle,
 ) -> ReplSlashHandled {
     let cfg = cfg_holder.read().await;
-    let _ = style.print_line(&format!("model: {}", cfg.model));
-    let _ = style.print_line(&format!("api_base: {}", cfg.api_base));
+    let _ = style.print_line(&format!("model: {}", cfg.llm.model));
+    let _ = style.print_line(&format!("api_base: {}", cfg.llm.api_base));
     let _ = style.print_line(&format!(
         "temperature: {}（配置文件；Web chat 可单条覆盖）",
-        cfg.temperature
+        cfg.llm_sampling.temperature
     ));
-    if let Some(seed) = cfg.llm_seed {
+    if let Some(seed) = cfg.llm_sampling.llm_seed {
         let _ = style.print_line(&format!("llm_seed: {seed}"));
     } else {
         let _ = style.print_line("llm_seed: （未设置，请求不带 seed）");
@@ -191,7 +191,7 @@ async fn slash_model_set(
     } else {
         let label = t.to_string();
         let mut w = cfg_holder.write().await;
-        w.model.clone_from(&label);
+        w.llm.model.clone_from(&label);
         refresh_llm_reasoning_split_for_gateway(&mut w);
         drop(w);
         let _ = style.print_success(&format!(
@@ -213,7 +213,7 @@ async fn slash_api_base_show(
     style: &CliReplStyle,
 ) -> ReplSlashHandled {
     let cfg = cfg_holder.read().await;
-    let _ = style.print_line(&format!("api_base: {}", cfg.api_base));
+    let _ = style.print_line(&format!("api_base: {}", cfg.llm.api_base));
     let _ = style.print_line(
         "提示: /api-base set <url> 可改 OpenAI 兼容网关根地址（仅内存；别名 /apibase）。",
     );
@@ -237,7 +237,7 @@ async fn slash_api_base_set(
     } else {
         let label = t.to_string();
         let mut w = cfg_holder.write().await;
-        w.api_base.clone_from(&label);
+        w.llm.api_base.clone_from(&label);
         refresh_llm_reasoning_split_for_gateway(&mut w);
         drop(w);
         let _ = style.print_success(&format!(
@@ -338,11 +338,11 @@ async fn slash_skills_list(
     style: &CliReplStyle,
 ) -> ReplSlashHandled {
     let cfg = cfg_holder.read().await;
-    if !cfg.skills_enabled {
+    if !cfg.skills.skills_enabled {
         let _ = style.print_line("skills 已关闭（skills_enabled=false）。");
         return ReplSlashHandled::Handled;
     }
-    match crate::config::skills::list_skills_from_base(work_dir, &cfg.skills_dir) {
+    match crate::config::skills::list_skills_from_base(work_dir, &cfg.skills.skills_dir) {
         Ok(files) if files.is_empty() => {
             let _ = style.print_line("当前未发现 skills。");
         }
@@ -428,14 +428,14 @@ async fn slash_agent_list(
     style: &CliReplStyle,
 ) -> ReplSlashHandled {
     let cfg = cfg_holder.read().await;
-    if cfg.agent_roles.is_empty() {
+    if cfg.roles_prompts.agent_roles.is_empty() {
         let _ = style.print_line(
             "当前配置未启用多角色（agent_roles 为空）。可在配置中加入 [[agent_roles]] 或 config/agent_roles.toml。",
         );
     } else {
-        let mut ids: Vec<&String> = cfg.agent_roles.keys().collect();
+        let mut ids: Vec<&String> = cfg.roles_prompts.agent_roles.keys().collect();
         ids.sort();
-        let def = cfg.default_agent_role_id.as_deref();
+        let def = cfg.roles_prompts.default_agent_role_id.as_deref();
         let _ = style.print_line("可用角色 id：");
         let _ = style.print_line(
             "  · default（内建：未显式选用命名角色；与 Web「默认」一致：先按 default_agent_role_id，未配置则用全局 system_prompt）",
@@ -463,7 +463,7 @@ async fn slash_agent_set(
     tool_recorder: &Arc<crate::tool_stats::ToolOutcomeRecorder>,
 ) -> ReplSlashHandled {
     let cfg = cfg_holder.read().await;
-    if cfg.agent_roles.is_empty() {
+    if cfg.roles_prompts.agent_roles.is_empty() {
         let _ = style.eprint_error(
             "当前未配置多角色，无法 /agent set。请先配置 [[agent_roles]] 或 agent_roles.toml。",
         );
@@ -522,7 +522,7 @@ async fn slash_api_key_status(
     let k = api_key_holder.lock().unwrap_or_else(|e| e.into_inner());
     let set = !k.trim().is_empty();
     drop(k);
-    if g.llm_http_auth_mode == LlmHttpAuthMode::None {
+    if g.llm.llm_http_auth_mode == LlmHttpAuthMode::None {
         let _ = style.print_line(
             "当前 llm_http_auth_mode=none：发往 LLM 的请求不附带 Bearer，通常无需配置 API 密钥。",
         );

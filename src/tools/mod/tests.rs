@@ -624,6 +624,7 @@ fn test_build_tools_dev_tags_basic_plus_rust() {
 fn repl_workspace_switch_rejects_slash_prefixed_as_tool_relative() {
     let cfg = crate::config::load_config(None).expect("embedded default config");
     let wd = cfg
+        .workspace_roots
         .workspace_allowed_roots
         .first()
         .cloned()
@@ -644,6 +645,7 @@ fn repl_workspace_switch_rejects_slash_prefixed_as_tool_relative() {
 fn repl_workspace_switch_relative_subdir_resolves_like_read_file() {
     let cfg = crate::config::load_config(None).expect("embedded default config");
     let wd = cfg
+        .workspace_roots
         .workspace_allowed_roots
         .first()
         .cloned()

@@ -194,7 +194,7 @@ impl SmartRouter {
         let mut messages = vec![Message::user_only(&prompt)];
         prepare_messages_for_hierarchical_llm_sync(&mut messages, cfg);
         let request = crate::types::ChatRequest {
-            model: cfg.model.clone(),
+            model: cfg.llm.model.clone(),
             messages,
             stream: Some(false),
             temperature: 0.1, // 低温度，确保确定性

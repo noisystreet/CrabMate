@@ -27,7 +27,8 @@ fn test_read_file_with_line_range() {
     let file = dir.join("a.txt");
     std::fs::write(&file, "a\nb\nc\nd\n").unwrap();
     let cfg = crate::config::load_config(None).expect("embedded default config");
-    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = read_file(
         r#"{"path":"a.txt","start_line":2,"end_line":3}"#,
         &dir,
@@ -50,7 +51,8 @@ fn test_read_file_swaps_inverted_start_end() {
     }
     std::fs::write(&file, &content).unwrap();
     let cfg = crate::config::load_config(None).expect("embedded default config");
-    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = read_file(
         r#"{"path":"big.txt","start_line":419,"end_line":150}"#,
         &dir,
@@ -81,7 +83,8 @@ fn test_read_file_respects_max_lines_without_end_line() {
     }
     std::fs::write(&file, &s).unwrap();
     let cfg = crate::config::load_config(None).expect("embedded default config");
-    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = read_file(r#"{"path":"big.txt","max_lines":100}"#, &dir, &ctx);
     let out = strip_read_file_output_header_for_tests(&out);
     assert!(out.contains("仍有后续内容"), "应提示分段: {}", out);
@@ -158,7 +161,8 @@ fn test_modify_file_replace_lines() {
     let file = dir.join("m.txt");
     std::fs::write(&file, "L1\nL2\nL3\nL4\n").unwrap();
     let cfg = crate::config::load_config(None).expect("embedded default config");
-    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = modify_file(
         r#"{"path":"m.txt","mode":"replace_lines","start_line":2,"end_line":3,"content":"X"}"#,
         &dir,
@@ -176,7 +180,8 @@ fn test_read_file_reject_invalid_range() {
     let file = dir.join("a.txt");
     std::fs::write(&file, "x\n").unwrap();
     let cfg = crate::config::load_config(None).expect("embedded default config");
-    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = read_file(r#"{"path":"a.txt","start_line":3}"#, &dir, &ctx);
     let out = strip_read_file_output_header_for_tests(&out);
     assert!(out.contains("超出文件行数"), "应报越界错误: {}", out);
@@ -238,7 +243,8 @@ fn test_read_file_gb18030_and_utf8_strict_error() {
     assert!(!err, "encode");
     std::fs::write(&file, cow.as_ref()).unwrap();
     let cfg = crate::config::load_config(None).expect("embedded default config");
-    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = read_file(
         r#"{"path":"gb.txt","encoding":"gb18030","start_line":1,"end_line":2}"#,
         &dir,
@@ -268,7 +274,8 @@ fn test_read_file_reject_outside_workspace() {
     std::fs::write(&outside, "outside\n").unwrap();
     let arg = serde_json::json!({ "path": format!("../{}", outside_name) }).to_string();
     let cfg = crate::config::load_config(None).expect("embedded default config");
-    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = read_file(&arg, &dir, &ctx);
     assert!(
         out.contains("路径不能超出工作目录"),
@@ -295,7 +302,8 @@ fn test_create_file_reject_symlink_escape() {
     symlink(&outside, &link).unwrap();
 
     let cfg = crate::config::load_config(None).expect("embedded default config");
-    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = create_file(r#"{"path":"link_out/pwned.txt","content":"x"}"#, &dir, &ctx);
     assert!(
         out.contains("路径不能超出工作目录"),
@@ -356,7 +364,8 @@ fn test_copy_file_basic() {
     let dir = make_test_dir();
     std::fs::write(dir.join("a.txt"), "hello").unwrap();
     let cfg = crate::config::load_config(None).expect("embedded default config");
-    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = copy_file(r#"{"from":"a.txt","to":"sub/b.txt"}"#, &dir, &ctx);
     assert!(out.contains("已复制"), "{}", out);
     assert_eq!(
@@ -372,7 +381,8 @@ fn test_copy_file_reject_existing_without_overwrite() {
     std::fs::write(dir.join("a.txt"), "a").unwrap();
     std::fs::write(dir.join("b.txt"), "b").unwrap();
     let cfg = crate::config::load_config(None).expect("embedded default config");
-    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = copy_file(r#"{"from":"a.txt","to":"b.txt"}"#, &dir, &ctx);
     assert!(out.contains("overwrite"), "{}", out);
     assert_eq!(std::fs::read_to_string(dir.join("b.txt")).unwrap(), "b");
@@ -385,7 +395,8 @@ fn test_copy_file_overwrite() {
     std::fs::write(dir.join("a.txt"), "new").unwrap();
     std::fs::write(dir.join("b.txt"), "old").unwrap();
     let cfg = crate::config::load_config(None).expect("embedded default config");
-    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = copy_file(
         r#"{"from":"a.txt","to":"b.txt","overwrite":true}"#,
         &dir,
@@ -401,7 +412,8 @@ fn test_move_file_basic() {
     let dir = make_test_dir();
     std::fs::write(dir.join("a.txt"), "mv").unwrap();
     let cfg = crate::config::load_config(None).expect("embedded default config");
-    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = move_file(r#"{"from":"a.txt","to":"c.txt"}"#, &dir, &ctx);
     assert!(out.contains("已移动"), "{}", out);
     assert!(!dir.join("a.txt").exists());
@@ -415,7 +427,8 @@ fn test_move_file_reject_existing_without_overwrite() {
     std::fs::write(dir.join("a.txt"), "a").unwrap();
     std::fs::write(dir.join("b.txt"), "b").unwrap();
     let cfg = crate::config::load_config(None).expect("embedded default config");
-    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = move_file(r#"{"from":"a.txt","to":"b.txt"}"#, &dir, &ctx);
     assert!(out.contains("overwrite"), "{}", out);
     assert!(dir.join("a.txt").exists());
@@ -457,7 +470,8 @@ fn create_file_accepts_abs_path_string_under_workspace() {
     let dir = make_test_dir();
     let target = dir.join("abs").join("f.txt");
     let cfg = crate::config::load_config(None).expect("embedded default config");
-    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let path_arg = serde_json::to_string(target.to_str().unwrap()).unwrap();
     let out = create_file(
         &format!(r#"{{"path":{},"content":"z"}}"#, path_arg),

@@ -43,18 +43,23 @@ fn default_semantic_rebuild_incremental() -> bool {
 impl CodebaseSemanticToolParams {
     pub fn from_agent_config(cfg: &AgentConfig) -> Self {
         Self {
-            enabled: cfg.codebase_semantic_search_enabled,
-            invalidate_on_workspace_change: cfg.codebase_semantic_invalidate_on_workspace_change,
-            index_sqlite_path: cfg.codebase_semantic_index_sqlite_path.clone(),
-            max_file_bytes: cfg.codebase_semantic_max_file_bytes,
-            chunk_max_chars: cfg.codebase_semantic_chunk_max_chars,
-            top_k: cfg.codebase_semantic_top_k,
-            query_max_chunks: cfg.codebase_semantic_query_max_chunks,
-            rebuild_max_files: cfg.codebase_semantic_rebuild_max_files,
-            rebuild_incremental: cfg.codebase_semantic_rebuild_incremental,
-            hybrid_alpha: cfg.codebase_semantic_hybrid_alpha,
-            fts_top_n: cfg.codebase_semantic_fts_top_n,
-            hybrid_semantic_pool: cfg.codebase_semantic_hybrid_semantic_pool,
+            enabled: cfg.codebase_semantic.codebase_semantic_search_enabled,
+            invalidate_on_workspace_change: cfg
+                .codebase_semantic
+                .codebase_semantic_invalidate_on_workspace_change,
+            index_sqlite_path: cfg
+                .codebase_semantic
+                .codebase_semantic_index_sqlite_path
+                .clone(),
+            max_file_bytes: cfg.codebase_semantic.codebase_semantic_max_file_bytes,
+            chunk_max_chars: cfg.codebase_semantic.codebase_semantic_chunk_max_chars,
+            top_k: cfg.codebase_semantic.codebase_semantic_top_k,
+            query_max_chunks: cfg.codebase_semantic.codebase_semantic_query_max_chunks,
+            rebuild_max_files: cfg.codebase_semantic.codebase_semantic_rebuild_max_files,
+            rebuild_incremental: cfg.codebase_semantic.codebase_semantic_rebuild_incremental,
+            hybrid_alpha: cfg.codebase_semantic.codebase_semantic_hybrid_alpha,
+            fts_top_n: cfg.codebase_semantic.codebase_semantic_fts_top_n,
+            hybrid_semantic_pool: cfg.codebase_semantic.codebase_semantic_hybrid_semantic_pool,
         }
     }
 }

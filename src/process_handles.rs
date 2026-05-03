@@ -76,13 +76,16 @@ impl ProcessHandles {
         cfg: &crate::config::AgentConfig,
         failure_notified: Option<&std::sync::atomic::AtomicBool>,
     ) -> (Option<Arc<LongTermMemoryRuntime>>, Option<String>) {
-        if !cfg.long_term_memory_enabled {
+        if !cfg.long_term_memory.long_term_memory_enabled {
             return (None, None);
         }
         let path = {
-            let p = cfg.long_term_memory_store_sqlite_path.trim();
+            let p = cfg
+                .long_term_memory
+                .long_term_memory_store_sqlite_path
+                .trim();
             if p.is_empty() {
-                std::path::Path::new(&cfg.run_command_working_dir)
+                std::path::Path::new(&cfg.command_exec.run_command_working_dir)
                     .join(".crabmate")
                     .join("long_term_memory.db")
             } else {

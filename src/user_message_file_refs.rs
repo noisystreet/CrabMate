@@ -163,7 +163,7 @@ mod tests {
         let wd = tmp.path();
         fs::write(wd.join("hello.txt"), "line1\nline2\n").expect("write");
         let mut cfg = crate::config::load_config(None).expect("embed default");
-        cfg.run_command_working_dir = wd.to_string_lossy().to_string();
+        cfg.command_exec.run_command_working_dir = wd.to_string_lossy().to_string();
 
         let out =
             expand_at_file_refs_in_user_message("see @hello.txt please", wd, &cfg).expect("expand");
@@ -176,7 +176,7 @@ mod tests {
     fn rejects_absolute_at_path() {
         let tmp = tempdir().expect("tempdir");
         let mut cfg = crate::config::load_config(None).expect("embed default");
-        cfg.run_command_working_dir = tmp.path().to_string_lossy().to_string();
+        cfg.command_exec.run_command_working_dir = tmp.path().to_string_lossy().to_string();
         let wd = tmp.path();
         let err = expand_at_file_refs_in_user_message("x @/etc/passwd", wd, &cfg).expect_err("abs");
         assert!(err.contains("绝对路径") || err.contains("/"));

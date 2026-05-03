@@ -300,13 +300,25 @@ where
         step,
         step_verify_failed_reason,
     } = p;
-    if !staged_step_patch_planner_enabled(patch_ctx.p.ctx.cfg.staged_plan_feedback_mode) {
+    if !staged_step_patch_planner_enabled(
+        patch_ctx
+            .p
+            .ctx
+            .cfg
+            .staged_planning
+            .staged_plan_feedback_mode,
+    ) {
         return Ok(None);
     }
     let mut recovered = false;
     let patch_budget = staged_patch_budget_after_step_failure(
         step.max_step_retries,
-        patch_ctx.p.ctx.cfg.staged_plan_patch_max_attempts,
+        patch_ctx
+            .p
+            .ctx
+            .cfg
+            .staged_planning
+            .staged_plan_patch_max_attempts,
     );
     let audit_footer = patch_ctx
         .per_coord
@@ -393,7 +405,12 @@ where
     } = p;
     let mut recovered = false;
     let tool_patch_budget = staged_patch_budget_tool_messages_not_ok(
-        patch_ctx.p.ctx.cfg.staged_plan_patch_max_attempts,
+        patch_ctx
+            .p
+            .ctx
+            .cfg
+            .staged_planning
+            .staged_plan_patch_max_attempts,
     );
     let audit_footer = patch_ctx
         .per_coord
@@ -586,8 +603,14 @@ where
     }
 
     let tools_ok = staged_step_tool_messages_all_ok(patch_ctx.p.turn.messages, step_user_idx);
-    let patch_planner_on =
-        staged_step_patch_planner_enabled(patch_ctx.p.ctx.cfg.staged_plan_feedback_mode);
+    let patch_planner_on = staged_step_patch_planner_enabled(
+        patch_ctx
+            .p
+            .ctx
+            .cfg
+            .staged_planning
+            .staged_plan_feedback_mode,
+    );
     match staged_step_tool_phase_route(tools_ok, patch_planner_on) {
         StagedStepToolPhaseRoute::AttemptToolFailurePatches => {
             if let Some(ctl) =
@@ -777,13 +800,13 @@ where
             "staged plan steps loop iteration enter"
         );
         if staged_step_wall_clock_exceeded(
-            patch_ctx.p.ctx.cfg.max_turn_duration_seconds,
+            patch_ctx.p.ctx.cfg.turn_budget.max_turn_duration_seconds,
             start_time.elapsed().as_secs(),
         ) {
             return Err(RunAgentTurnError::TimeLimitExhausted {
                 phase: AgentTurnSubPhase::Executor,
                 message: crate::agent::turn_budget::turn_wall_clock_limit_user_message(
-                    patch_ctx.p.ctx.cfg.max_turn_duration_seconds,
+                    patch_ctx.p.ctx.cfg.turn_budget.max_turn_duration_seconds,
                 ),
             });
         }

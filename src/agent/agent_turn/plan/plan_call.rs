@@ -65,7 +65,7 @@ pub(crate) async fn per_plan_call_model_retrying(
             let mut c = (*cfg).clone();
             let mut key = api_key.to_string();
             if let Some(base) = executor_api_base {
-                c.api_base = base.to_string();
+                c.llm.api_base = base.to_string();
             }
             if let Some(key_override) = executor_api_key {
                 key = key_override.to_string();

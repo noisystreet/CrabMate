@@ -235,7 +235,10 @@ mod hierarchy_runner_params_tests {
         assert!(h.tool_approval_rx.is_none());
         assert_eq!(h.primary_intent.as_deref(), Some("execute.run"));
         assert_eq!(h.secondary_intents, vec!["a", "b"]);
-        assert_eq!(h.intent_mode_bias_enabled, cfg.intent_mode_bias_enabled);
+        assert_eq!(
+            h.intent_mode_bias_enabled,
+            cfg.intent_routing.intent_mode_bias_enabled
+        );
         assert!(std::sync::Arc::ptr_eq(
             &h.process_handles,
             &p.ctx.process_handles

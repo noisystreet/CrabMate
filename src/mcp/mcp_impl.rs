@@ -151,10 +151,10 @@ fn strip_mcp_prefix<'a>(openai_name: &'a str, server_slug: &str) -> Option<Cow<'
 
 /// 若 `openai_name` 为本配置下的 MCP 工具名，返回远端 `tools/call` 的 `name`。
 pub fn try_mcp_tool_name(cfg: &AgentConfig, openai_name: &str) -> Option<String> {
-    if !cfg.mcp_enabled || cfg.mcp_command.trim().is_empty() {
+    if !cfg.mcp_client.mcp_enabled || cfg.mcp_client.mcp_command.trim().is_empty() {
         return None;
     }
-    let slug = slug_from_command(cfg.mcp_command.trim());
+    let slug = slug_from_command(cfg.mcp_client.mcp_command.trim());
     strip_mcp_prefix(openai_name, &slug).map(|c| c.into_owned())
 }
 
@@ -282,10 +282,10 @@ struct McpProcessCache {
 
 /// 与配置对应的 MCP 连接指纹；变更 `mcp_command` / 开关后应视为新会话。
 fn mcp_connection_fingerprint(cfg: &AgentConfig) -> Option<String> {
-    if !cfg.mcp_enabled {
+    if !cfg.mcp_client.mcp_enabled {
         return None;
     }
-    let cmd = cfg.mcp_command.trim();
+    let cmd = cfg.mcp_client.mcp_command.trim();
     if cmd.is_empty() {
         return None;
     }
@@ -304,10 +304,10 @@ pub async fn clear_mcp_process_cache() {
 async fn open_mcp_session_fresh(
     cfg: &AgentConfig,
 ) -> Option<(Arc<Mutex<McpClientSession>>, Vec<Tool>)> {
-    if !cfg.mcp_enabled {
+    if !cfg.mcp_client.mcp_enabled {
         return None;
     }
-    let cmd = cfg.mcp_command.trim();
+    let cmd = cfg.mcp_client.mcp_command.trim();
     if cmd.is_empty() {
         log::warn!(target: "crabmate", "mcp_enabled 为 true 但 mcp_command 为空，跳过 MCP");
         return None;
@@ -417,7 +417,7 @@ pub async fn cached_mcp_status(cfg: &AgentConfig) -> McpCachedStatus {
             openai_tool_names: Vec::new(),
         };
     }
-    let slug = Some(slug_from_command(cfg.mcp_command.trim()));
+    let slug = Some(slug_from_command(cfg.mcp_client.mcp_command.trim()));
     McpCachedStatus {
         fingerprint_matches_config: true,
         slug,

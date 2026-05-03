@@ -257,10 +257,10 @@ pub(super) async fn build_messages_for_turn(
             let system_for_turn = if workspace_is_set {
                 merge_system_prompt_with_workspace_skills_for_web(
                     system_for_turn,
-                    cfg.skills_enabled,
-                    cfg.skills_dir.as_str(),
-                    cfg.skills_max_chars,
-                    cfg.skills_top_k,
+                    cfg.skills.skills_enabled,
+                    cfg.skills.skills_dir.as_str(),
+                    cfg.skills.skills_max_chars,
+                    cfg.skills.skills_top_k,
                     root.as_path(),
                     user_msg,
                 )
@@ -288,25 +288,26 @@ pub(super) async fn build_messages_for_turn(
     let system_for_turn = if workspace_is_set {
         merge_system_prompt_with_workspace_skills_for_web(
             system_for_turn,
-            cfg.skills_enabled,
-            cfg.skills_dir.as_str(),
-            cfg.skills_max_chars,
-            cfg.skills_top_k,
+            cfg.skills.skills_enabled,
+            cfg.skills.skills_dir.as_str(),
+            cfg.skills.skills_max_chars,
+            cfg.skills.skills_top_k,
             root.as_path(),
             user_msg,
         )
     } else {
         system_for_turn
     };
-    let memory_snippet = if workspace_is_set && cfg.agent_memory_file_enabled {
-        load_memory_snippet(
-            &root,
-            cfg.agent_memory_file.as_str(),
-            cfg.agent_memory_file_max_chars,
-        )
-    } else {
-        None
-    };
+    let memory_snippet =
+        if workspace_is_set && cfg.context_bootstrap_inject.agent_memory_file_enabled {
+            load_memory_snippet(
+                &root,
+                cfg.context_bootstrap_inject.agent_memory_file.as_str(),
+                cfg.context_bootstrap_inject.agent_memory_file_max_chars,
+            )
+        } else {
+            None
+        };
 
     let combined = first_turn_project_context_user_message_for_web(
         workspace_is_set,

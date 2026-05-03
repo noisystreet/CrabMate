@@ -226,7 +226,7 @@ async fn parallel_collect_unique_results(
                                 );
                             let ctx = crate::tools::tool_context_for_with_read_cache_and_memory(
                                 cfg.as_ref(),
-                                cfg.allowed_commands.as_ref(),
+                                cfg.command_exec.allowed_commands.as_ref(),
                                 wd.as_path(),
                                 rfc.as_ref().map(|a| a.as_ref()),
                                 wcl.as_ref(),
@@ -445,7 +445,7 @@ pub(super) async fn execute_tools_parallel(
     let tools_defs_hint = Arc::new(tools_defs_full.to_vec());
 
     let dedup_count = dedup_readonly_tool_calls_count(tool_calls);
-    let parallel_max = cfg.parallel_readonly_tools_max.max(1);
+    let parallel_max = cfg.chat_queues_cache.parallel_readonly_tools_max.max(1);
     parallel_readonly_log_batch_start(tool_calls, dedup_count, parallel_max);
 
     let parallel_batch_id = format!(

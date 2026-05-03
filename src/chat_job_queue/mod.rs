@@ -69,17 +69,17 @@ pub(super) fn resolve_web_llm_for_job(
             let mut c = (*cfg_snap).clone();
             let mut key = deps.api_key.clone();
             if let Some(ref x) = o.api_base {
-                c.api_base.clone_from(x);
+                c.llm.api_base.clone_from(x);
             }
             if let Some(ref x) = o.model {
-                c.model.clone_from(x);
+                c.llm.model.clone_from(x);
             }
             if let Some(ref x) = o.api_key {
                 key.clone_from(x);
-                c.llm_http_auth_mode = LlmHttpAuthMode::Bearer;
+                c.llm.llm_http_auth_mode = LlmHttpAuthMode::Bearer;
             }
             if let Some(n) = o.llm_context_tokens {
-                c.llm_context_tokens = n;
+                c.llm_sampling.llm_context_tokens = n;
             }
             (Arc::new(c), key)
         }
@@ -88,12 +88,14 @@ pub(super) fn resolve_web_llm_for_job(
         let mut c = (*cfg).clone();
         match mode {
             WebExecutionModeOverride::RollingPlanning => {
-                c.planner_executor_mode = crate::config::PlannerExecutorMode::SingleAgent;
-                c.staged_plan_execution = true;
+                c.per_plan_policy.planner_executor_mode =
+                    crate::config::PlannerExecutorMode::SingleAgent;
+                c.staged_planning.staged_plan_execution = true;
             }
             WebExecutionModeOverride::Hierarchical => {
-                c.planner_executor_mode = crate::config::PlannerExecutorMode::Hierarchical;
-                c.staged_plan_execution = false;
+                c.per_plan_policy.planner_executor_mode =
+                    crate::config::PlannerExecutorMode::Hierarchical;
+                c.staged_planning.staged_plan_execution = false;
             }
         }
         cfg = Arc::new(c);
@@ -112,16 +114,16 @@ pub(super) fn resolve_executor_llm_for_job(
     let mut key = deps.api_key.clone();
     let mut has_override = false;
     if let Some(ref x) = o.api_base {
-        c.api_base.clone_from(x);
+        c.llm.api_base.clone_from(x);
         has_override = true;
     }
     if let Some(ref x) = o.model {
-        c.model.clone_from(x);
+        c.llm.model.clone_from(x);
         has_override = true;
     }
     if let Some(ref x) = o.api_key {
         key.clone_from(x);
-        c.llm_http_auth_mode = LlmHttpAuthMode::Bearer;
+        c.llm.llm_http_auth_mode = LlmHttpAuthMode::Bearer;
         has_override = true;
     }
     if has_override {

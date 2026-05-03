@@ -39,7 +39,7 @@ impl ToolOutcomeRecorder {
         tool_summary: Option<String>,
         envelope_ctx: Option<&ToolEnvelopeContext<'_>>,
     ) {
-        if !cfg.agent_tool_stats_enabled {
+        if !cfg.agent_tool_stats.agent_tool_stats_enabled {
             return;
         }
         let parsed = parse_legacy_output(tool_name, result_raw);
@@ -54,7 +54,7 @@ impl ToolOutcomeRecorder {
             envelope_ctx,
             structured_payload,
         );
-        let cap = cfg.agent_tool_stats_window_events.max(1);
+        let cap = cfg.agent_tool_stats.agent_tool_stats_window_events.max(1);
         let mut q = self.events.lock().unwrap_or_else(|e| e.into_inner());
         q.push_back(ToolStatEvent {
             tool: norm.name.clone(),
@@ -69,8 +69,8 @@ impl ToolOutcomeRecorder {
     /// 在已解析好的首条 `system` 正文后附加统计提示（未启用或无内容则返回 `base` 克隆）。
     pub fn augment_system_prompt(&self, base: &str, cfg: &AgentConfig) -> String {
         let mut out = base.to_string();
-        if cfg.thinking_avoid_echo_system_prompt {
-            let mut app = cfg.thinking_avoid_echo_appendix.trim();
+        if cfg.thinking_echo.thinking_avoid_echo_system_prompt {
+            let mut app = cfg.thinking_echo.thinking_avoid_echo_appendix.trim();
             if app.is_empty() {
                 app = crate::config::embedded_thinking_avoid_echo_appendix();
             }
@@ -92,12 +92,13 @@ impl ToolOutcomeRecorder {
     }
 
     fn hints_markdown(&self, cfg: &AgentConfig) -> Option<String> {
-        if !cfg.agent_tool_stats_enabled {
+        if !cfg.agent_tool_stats.agent_tool_stats_enabled {
             return None;
         }
         let q = self.events.lock().ok()?;
-        let min_s = cfg.agent_tool_stats_min_samples.max(1);
+        let min_s = cfg.agent_tool_stats.agent_tool_stats_min_samples.max(1);
         let ratio_threshold = cfg
+            .agent_tool_stats
             .agent_tool_stats_warn_below_success_ratio
             .clamp(0.0, 1.0);
 
@@ -151,7 +152,7 @@ impl ToolOutcomeRecorder {
         let header = "## 近期工具调用提示（进程内全局统计，仅供参考）";
         let body = lines.join("\n");
         let mut out = format!("{header}\n\n{body}");
-        let max_c = cfg.agent_tool_stats_max_chars.max(64);
+        let max_c = cfg.agent_tool_stats.agent_tool_stats_max_chars.max(64);
         let len = out.chars().count();
         if len > max_c {
             let take = max_c.saturating_sub(12);
@@ -167,11 +168,11 @@ mod tests {
 
     fn test_cfg() -> AgentConfig {
         let mut c = crate::load_config(None).expect("load default config");
-        c.agent_tool_stats_enabled = true;
-        c.agent_tool_stats_window_events = 100;
-        c.agent_tool_stats_min_samples = 3;
-        c.agent_tool_stats_max_chars = 4000;
-        c.agent_tool_stats_warn_below_success_ratio = 0.9;
+        c.agent_tool_stats.agent_tool_stats_enabled = true;
+        c.agent_tool_stats.agent_tool_stats_window_events = 100;
+        c.agent_tool_stats.agent_tool_stats_min_samples = 3;
+        c.agent_tool_stats.agent_tool_stats_max_chars = 4000;
+        c.agent_tool_stats.agent_tool_stats_warn_below_success_ratio = 0.9;
         c
     }
 
@@ -184,8 +185,8 @@ mod tests {
     fn augment_empty_when_disabled() {
         let rec = ToolOutcomeRecorder::new();
         let mut c = test_cfg();
-        c.agent_tool_stats_enabled = false;
-        c.thinking_avoid_echo_system_prompt = false;
+        c.agent_tool_stats.agent_tool_stats_enabled = false;
+        c.thinking_echo.thinking_avoid_echo_system_prompt = false;
         for _ in 0..5 {
             rec.record_tool_outcome(&c, "read_file", fake_read_fail(), None, None);
         }
@@ -197,10 +198,11 @@ mod tests {
     fn thinking_appendix_when_tool_stats_off() {
         let rec = ToolOutcomeRecorder::new();
         let mut c = test_cfg();
-        c.agent_tool_stats_enabled = false;
-        c.thinking_avoid_echo_system_prompt = true;
+        c.agent_tool_stats.agent_tool_stats_enabled = false;
+        c.thinking_echo.thinking_avoid_echo_system_prompt = true;
         // 不依赖默认附录或环境变量覆盖：只验证「工具统计关闭时仍附加思维链纪律」分支
-        c.thinking_avoid_echo_appendix = "## 思考过程纪律\n\n（单元测试占位）".to_string();
+        c.thinking_echo.thinking_avoid_echo_appendix =
+            "## 思考过程纪律\n\n（单元测试占位）".to_string();
         let out = rec.augment_system_prompt("P", &c);
         assert!(out.starts_with("P"));
         assert!(out.contains("思考过程纪律"));
@@ -223,7 +225,7 @@ mod tests {
     fn low_success_ratio_triggers_line() {
         let rec = ToolOutcomeRecorder::new();
         let mut c = test_cfg();
-        c.agent_tool_stats_warn_below_success_ratio = 0.95;
+        c.agent_tool_stats.agent_tool_stats_warn_below_success_ratio = 0.95;
         for _ in 0..3 {
             rec.record_tool_outcome(&c, "run_command", "执行失败\n", None, None);
         }

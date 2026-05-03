@@ -147,7 +147,7 @@ pub fn initial_workspace_messages(
 ) -> Vec<Message> {
     let base_system = match cfg.system_prompt_for_new_conversation(agent_role) {
         Ok(s) => s.to_string(),
-        Err(_) => cfg.system_prompt.clone(),
+        Err(_) => cfg.roles_prompts.system_prompt.clone(),
     };
     if !load_from_disk {
         let system_seed =
@@ -155,14 +155,17 @@ pub fn initial_workspace_messages(
         let ctx = first_turn_project_context_user_message_sync(workspace, cfg, None);
         return compose_new_conversation_messages(&system_seed, ctx, None);
     }
-    load_workspace_session(workspace, &base_system, cfg.tui_session_max_messages).unwrap_or_else(
-        || {
-            let system_seed =
-                augmented_system_for_new_conversation_lenient(cfg, agent_role, tool_recorder);
-            let ctx = first_turn_project_context_user_message_sync(workspace, cfg, None);
-            compose_new_conversation_messages(&system_seed, ctx, None)
-        },
+    load_workspace_session(
+        workspace,
+        &base_system,
+        cfg.session_ui.tui_session_max_messages,
     )
+    .unwrap_or_else(|| {
+        let system_seed =
+            augmented_system_for_new_conversation_lenient(cfg, agent_role, tool_recorder);
+        let ctx = first_turn_project_context_user_message_sync(workspace, cfg, None);
+        compose_new_conversation_messages(&system_seed, ctx, None)
+    })
 }
 
 pub fn save_workspace_session(workspace: &Path, messages: &[Message]) -> std::io::Result<()> {

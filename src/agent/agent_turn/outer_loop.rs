@@ -77,13 +77,13 @@ fn outer_loop_iteration_guard(
         });
     }
     if crate::agent::turn_budget::turn_wall_clock_exceeded(
-        p.ctx.cfg.max_turn_duration_seconds,
+        p.ctx.cfg.turn_budget.max_turn_duration_seconds,
         start_time.elapsed().as_secs(),
     ) {
         return Err(RunAgentTurnError::TimeLimitExhausted {
             phase: AgentTurnSubPhase::Planner,
             message: crate::agent::turn_budget::turn_wall_clock_limit_user_message(
-                p.ctx.cfg.max_turn_duration_seconds,
+                p.ctx.cfg.turn_budget.max_turn_duration_seconds,
             ),
         });
     }

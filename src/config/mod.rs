@@ -26,9 +26,18 @@ pub(crate) use finalize::embedded_thinking_avoid_echo_appendix;
 pub use agent_role_spec::AgentRoleSpec;
 #[allow(unused_imports)]
 pub use types::{
-    AgentConfig, ExposeSecret, LlmHttpAuthMode, LongTermMemoryScopeMode,
-    LongTermMemoryVectorBackend, PlannerExecutorMode, ScheduledAgentTask, StagedPlanFeedbackMode,
-    SyncDefaultToolSandboxMode, WebSearchProvider,
+    AgentConfig, AgentThinkingTraceConfig, AgentToolStatsConfig, ChatQueuesCacheConfig,
+    CodebaseSemanticConfig, CommandExecConfig, ContextBootstrapInjectConfig, ContextPipelineConfig,
+    ConversationPersistenceConfig, CursorRulesConfigSection, DsmlMaterializeConfig, ExposeSecret,
+    HierarchyRoutingConfig, HttpFetchConfigSection, IntentRoutingConfig, LlmConnectionConfig,
+    LlmHttpAuthMode, LlmHttpRetryConfig, LlmSamplingConfig, LlmVendorFlagsConfig,
+    LongTermMemoryConfig, LongTermMemoryScopeMode, LongTermMemoryVectorBackend, McpClientConfig,
+    PerPlanPolicyConfig, PlannerExecutorMode, RolesPromptsConfig, ScheduledAgentTask,
+    SessionUiConfig, SessionWorkspaceChangelistConfig, SkillsConfigSection, StagedPlanFeedbackMode,
+    StagedPlanningConfig, SyncDefaultToolSandboxMode, SyncToolSandboxConfig, ThinkingEchoConfig,
+    ToolCallExplainConfig, ToolRegistryPolicyConfig, ToolTranscriptConfig, TurnBudgetConfig,
+    WeatherToolConfig, WebApiConfig, WebSearchConfigSection, WebSearchProvider,
+    WorkspaceRootsConfig,
 };
 
 /// 进程内共享的 [`AgentConfig`]（`serve` / `repl` / `chat` / `bench`）；热重载时 `write` 更新，回合开始时 `read`+`clone` 得快照传入 `run_agent_turn`。
@@ -75,7 +84,7 @@ model = "deepseek-chat"
         .expect("write");
         let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
         assert!(
-            cfg.web_api_require_bearer,
+            cfg.web_api.web_api_require_bearer,
             "embedded default should require Web API bearer secret before serve"
         );
     }
@@ -94,7 +103,7 @@ web_api_require_bearer = false
         )
         .expect("write");
         let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
-        assert!(!cfg.web_api_require_bearer);
+        assert!(!cfg.web_api.web_api_require_bearer);
     }
 }
 
@@ -127,7 +136,7 @@ model = "MiniMax-M2.7"
         .expect("write");
         let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
         assert!(
-            cfg.llm_reasoning_split,
+            cfg.llm_vendor_flags.llm_reasoning_split,
             "MiniMax 网关未写 llm_reasoning_split 时应默认 true"
         );
         assert!(
@@ -150,7 +159,7 @@ llm_reasoning_split = false
         )
         .expect("write");
         let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
-        assert!(!cfg.llm_reasoning_split);
+        assert!(!cfg.llm_vendor_flags.llm_reasoning_split);
     }
 }
 
@@ -162,11 +171,18 @@ mod hot_reload_tests {
     fn apply_hot_reload_keeps_conversation_store_path() {
         let base = load_config(None).expect("default config");
         let mut dst = base.clone();
-        let frozen = dst.conversation_store_sqlite_path.clone();
+        let frozen = dst
+            .conversation_persistence
+            .conversation_store_sqlite_path
+            .clone();
         let mut src = dst.clone();
-        src.conversation_store_sqlite_path = "/tmp/should_not_apply.sqlite".to_string();
+        src.conversation_persistence.conversation_store_sqlite_path =
+            "/tmp/should_not_apply.sqlite".to_string();
         apply_hot_reload_config_subset(&mut dst, &src);
-        assert_eq!(dst.conversation_store_sqlite_path, frozen);
+        assert_eq!(
+            dst.conversation_persistence.conversation_store_sqlite_path,
+            frozen
+        );
     }
 }
 

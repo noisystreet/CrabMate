@@ -106,8 +106,8 @@ impl<'a> CompleteChatRetryingParams<'a> {
         StreamChatParams {
             client: self.http,
             api_key: self.api_key,
-            api_base: &self.cfg.api_base,
-            auth_mode: self.cfg.llm_http_auth_mode,
+            api_base: &self.cfg.llm.api_base,
+            auth_mode: self.cfg.llm.llm_http_auth_mode,
             out: self.out,
             render_to_terminal: self.render_to_terminal,
             no_stream: self.no_stream,
@@ -118,7 +118,7 @@ impl<'a> CompleteChatRetryingParams<'a> {
                 .preserve_assistant_tool_call_reasoning(self.cfg),
             preserve_deepseek_thinking_reasoning_roundtrip:
                 super::vendor::deepseek_json_output_eligible(self.cfg),
-            thinking_trace_enabled: self.cfg.agent_thinking_trace_enabled,
+            thinking_trace_enabled: self.cfg.agent_thinking_trace.agent_thinking_trace_enabled,
         }
     }
 }

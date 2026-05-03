@@ -119,12 +119,20 @@ pub(crate) async fn assess_staged_planning_gate_full_pipeline(
         p.ctx.cfg.as_ref(),
         in_clarification_flow,
         ExecuteIntentThresholds {
-            low: p.ctx.cfg.intent_non_hier_execute_low_threshold,
-            high: p.ctx.cfg.intent_non_hier_execute_high_threshold,
+            low: p
+                .ctx
+                .cfg
+                .intent_routing
+                .intent_non_hier_execute_low_threshold,
+            high: p
+                .ctx
+                .cfg
+                .intent_routing
+                .intent_non_hier_execute_high_threshold,
         },
     );
     let (routing_for_l1, _, _) = prepare_intent_routing(task.as_str(), &intent_ctx);
-    let l2_candidate = if p.ctx.cfg.intent_l2_enabled {
+    let l2_candidate = if p.ctx.cfg.intent_routing.intent_l2_enabled {
         classify_intent_l2_with_llm(
             &routing_for_l1,
             task.as_str(),
@@ -207,8 +215,8 @@ pub(crate) fn assess_staged_planning_gate(
         cfg,
         in_clarification_flow,
         ExecuteIntentThresholds {
-            low: cfg.intent_non_hier_execute_low_threshold,
-            high: cfg.intent_non_hier_execute_high_threshold,
+            low: cfg.intent_routing.intent_non_hier_execute_low_threshold,
+            high: cfg.intent_routing.intent_non_hier_execute_high_threshold,
         },
     );
     let decision = assess_and_route(task.as_str(), &intent_ctx);

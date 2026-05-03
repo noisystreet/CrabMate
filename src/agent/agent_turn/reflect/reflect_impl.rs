@@ -94,7 +94,11 @@ async fn reflect_pending_semantic_consistency_llm(
             temperature_override: p.turn.temperature_override,
             model_override: p.turn.model_override.clone(),
             seed_override: p.turn.seed_override,
-            max_tokens: p.ctx.cfg.final_plan_semantic_check_max_tokens,
+            max_tokens: p
+                .ctx
+                .cfg
+                .per_plan_policy
+                .final_plan_semantic_check_max_tokens,
         },
         plan_json.as_str(),
         tool_digest.as_deref(),
