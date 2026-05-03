@@ -27,7 +27,7 @@ pub(crate) async fn workspace_changelog_handler(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .unwrap_or("__default__");
-    let cfg = state.cfg.read().await;
+    let cfg = state.http.cfg.read().await;
     if !cfg
         .session_workspace_changelist
         .session_workspace_changelist_enabled
@@ -46,6 +46,7 @@ pub(crate) async fn workspace_changelog_handler(
         .session_workspace_changelist_max_chars;
     drop(cfg);
     let cl = state
+        .aux
         .process_handles
         .workspace_changelist_registry
         .changelist_for_scope(scope);

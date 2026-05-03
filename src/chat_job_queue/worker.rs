@@ -189,10 +189,12 @@ async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcome {
     };
     let r = crate::run_agent_turn(crate::RunAgentTurnParams::web_chat_stream(
         crate::WebChatStreamBuildArgs {
-            client: &queue_deps.client,
-            api_key: api_key_turn.as_str(),
-            cfg: &cfg_turn,
-            tools: tools_for_job.as_slice(),
+            shared: crate::RunAgentTurnSharedInputs {
+                client: &queue_deps.client,
+                api_key: api_key_turn.as_str(),
+                cfg: &cfg_turn,
+                tools: tools_for_job.as_slice(),
+            },
             messages: &mut messages,
             effective_working_dir: &work_dir,
             workspace_is_set,
@@ -212,13 +214,13 @@ async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcome {
             out: &sse_tx,
             turn_allowed_tool_names: turn_allow,
             request_audit: std::sync::Arc::new(request_audit),
-            process_handles: Arc::clone(&app.process_handles),
+            process_handles: Arc::clone(&app.aux.process_handles),
         },
     ))
     .await;
     cancel_watcher.abort();
     if let Some(session_id) = approval_session_id.as_deref() {
-        app.approval_sessions.write().await.remove(session_id);
+        app.aux.approval_sessions.write().await.remove(session_id);
     }
     let cancelled_by_signal = cancel.load(Ordering::SeqCst);
     let mut stream_ended_sent = false;
@@ -354,10 +356,12 @@ async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
     };
     let r = crate::run_agent_turn(crate::RunAgentTurnParams::web_chat_json(
         crate::WebChatJsonBuildArgs {
-            client: &queue_deps.client,
-            api_key: api_key_turn.as_str(),
-            cfg: &cfg_turn,
-            tools: tools_for_job.as_slice(),
+            shared: crate::RunAgentTurnSharedInputs {
+                client: &queue_deps.client,
+                api_key: api_key_turn.as_str(),
+                cfg: &cfg_turn,
+                tools: tools_for_job.as_slice(),
+            },
             messages: &mut messages,
             effective_working_dir: &work_dir,
             workspace_is_set,
@@ -374,7 +378,7 @@ async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
             conversation_id: conversation_id.as_str(),
             turn_allowed_tool_names: turn_allow,
             request_audit: std::sync::Arc::new(request_audit),
-            process_handles: Arc::clone(&app.process_handles),
+            process_handles: Arc::clone(&app.aux.process_handles),
         },
     ))
     .await;

@@ -49,7 +49,7 @@ async fn effective_workspace_base_canonical(
     let base_canonical = base
         .canonicalize()
         .map_err(WorkspacePathError::WorkspaceResolveFailed)?;
-    let cfg = state.cfg.read().await;
+    let cfg = state.http.cfg.read().await;
     validate_effective_workspace_base(&cfg, &base_canonical)?;
     Ok(base_canonical)
 }
@@ -70,13 +70,13 @@ pub async fn workspace_set_handler(
     Json(body): Json<WorkspaceSetBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let raw = body.path.as_deref().map(|s| s.trim()).unwrap_or("");
-    let mut guard = state.workspace_override.write().await;
+    let mut guard = state.http.workspace_override.write().await;
     // None 表示“从未设置过”；Some("") 表示“显式选择默认目录”；Some("...") 表示指定路径（存规范绝对路径）
     if raw.is_empty() {
         *guard = Some(String::new());
         return Ok(Json(serde_json::json!({ "ok": true, "path": "" })));
     }
-    let cfg = state.cfg.read().await;
+    let cfg = state.http.cfg.read().await;
     let canon = match validate_workspace_set_path(&cfg, raw) {
         Ok(p) => p,
         Err(e) => {
@@ -292,7 +292,7 @@ pub async fn workspace_search_handler(
     }
     let args_json = args.to_string();
     let cfg_snap = {
-        let g = state.cfg.read().await;
+        let g = state.http.cfg.read().await;
         g.clone()
     };
     let cfg_arc = Arc::new(cfg_snap);
@@ -644,6 +644,7 @@ pub async fn workspace_profile_handler(
         }
     };
     let max_chars = state
+        .http
         .cfg
         .read()
         .await

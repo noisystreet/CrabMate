@@ -319,24 +319,32 @@ async fn run_serve_branch(args: ServeBranchArgs<'_>) -> Result<(), Box<dyn std::
         sse_stream_hub: Arc::clone(&sse_stream_hub),
     });
     let state = Arc::new(AppState {
-        cfg: Arc::clone(cfg_holder),
-        config_path_for_reload: config_path.clone(),
-        api_key: api_key.clone(),
-        client,
-        tools,
-        workspace_override: std::sync::Arc::new(tokio::sync::RwLock::new(initial_workspace)),
-        uploads_dir: uploads_dir.clone(),
-        chat_queue,
-        chat_queue_job_deps,
-        conversation_backing,
-        conversation_id_counter: std::sync::Arc::new(AtomicU64::new(1)),
-        approval_sessions: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
-        long_term_memory,
-        web_tasks_by_workspace: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
-        llm_models_health_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
-        sse_stream_hub,
-        process_handles: Arc::clone(&process_handles),
-        async_chat_jobs: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+        http: web::AppStateHttpCore {
+            cfg: Arc::clone(cfg_holder),
+            config_path_for_reload: config_path.clone(),
+            api_key: api_key.clone(),
+            client,
+            tools,
+            workspace_override: std::sync::Arc::new(tokio::sync::RwLock::new(initial_workspace)),
+            uploads_dir: uploads_dir.clone(),
+        },
+        chat: web::AppStateChatRuntime {
+            chat_queue,
+            chat_queue_job_deps,
+        },
+        conversation: web::AppStateConversationRuntime {
+            conversation_backing,
+            conversation_id_counter: std::sync::Arc::new(AtomicU64::new(1)),
+        },
+        aux: web::AppStateWebAux {
+            approval_sessions: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            long_term_memory,
+            web_tasks_by_workspace: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            llm_models_health_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            sse_stream_hub,
+            process_handles: Arc::clone(&process_handles),
+            async_chat_jobs: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+        },
     });
     let sched_tasks = {
         let g = cfg_holder.read().await;

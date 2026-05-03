@@ -91,7 +91,7 @@ pub(crate) async fn chat_approval_handler(
         }
     };
     let tx = {
-        let guard = state.approval_sessions.read().await;
+        let guard = state.aux.approval_sessions.read().await;
         guard.get(&session_id).cloned()
     }
     .ok_or((
@@ -108,7 +108,12 @@ pub(crate) async fn chat_approval_handler(
             "approval decision mpsc send failed: session_id={} receiver dropped",
             session_id
         );
-        state.approval_sessions.write().await.remove(&session_id);
+        state
+            .aux
+            .approval_sessions
+            .write()
+            .await
+            .remove(&session_id);
         return Err((
             StatusCode::GONE,
             Json(ApiError {

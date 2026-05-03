@@ -57,17 +57,17 @@ fn test_get_tools_for_capabilities() {
 #[test]
 fn test_is_tool_allowed() {
     let config = OperatorConfig {
-        max_iterations: 10,
-        allowed_tools: vec!["read_file".to_string()],
-        tools_defs: vec![],
-        sse_out: None,
-        artifact_store: None,
-        build_state: None,
-        enable_compile_error_recovery: true,
-        compile_error_max_retries: 3,
-        attempted_configs: Vec::new(),
-        enable_dynamic_decomposition: true,
-        dynamic_decomposition_threshold: 40,
+        policy: crate::agent::hierarchy::operator::OperatorPolicy {
+            max_iterations: 10,
+            allowed_tools: vec!["read_file".to_string()],
+            tools_defs: vec![],
+            enable_compile_error_recovery: true,
+            compile_error_max_retries: 3,
+            attempted_configs: Vec::new(),
+            enable_dynamic_decomposition: true,
+            dynamic_decomposition_threshold: 40,
+        },
+        runtime: crate::agent::hierarchy::operator::OperatorRuntimeHandles::default(),
     };
     let operator = OperatorAgent::new(config);
 

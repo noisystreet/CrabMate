@@ -106,17 +106,21 @@ pub(in crate::agent::hierarchy::execution::execution_impl) async fn run_one_para
     };
 
     let operator_config = OperatorConfig {
-        max_iterations: 15,
-        allowed_tools: allowed_tools.clone(),
-        tools_defs: tools_defs_for_llm,
-        sse_out: sse_out_operator,
-        artifact_store: Some(store.clone()),
-        build_state: Some(Arc::new(StdMutex::new(build_state.clone()))),
-        enable_compile_error_recovery: true,
-        compile_error_max_retries: 3,
-        attempted_configs: Vec::new(),
-        enable_dynamic_decomposition: true,
-        dynamic_decomposition_threshold: 40,
+        policy: crate::agent::hierarchy::operator::OperatorPolicy {
+            max_iterations: 15,
+            allowed_tools: allowed_tools.clone(),
+            tools_defs: tools_defs_for_llm,
+            enable_compile_error_recovery: true,
+            compile_error_max_retries: 3,
+            attempted_configs: Vec::new(),
+            enable_dynamic_decomposition: true,
+            dynamic_decomposition_threshold: 40,
+        },
+        runtime: crate::agent::hierarchy::operator::OperatorRuntimeHandles {
+            sse_out: sse_out_operator,
+            artifact_store: Some(store.clone()),
+            build_state: Some(Arc::new(StdMutex::new(build_state.clone()))),
+        },
     };
 
     let operator = OperatorAgent::new(operator_config);

@@ -76,7 +76,7 @@ pub(crate) async fn require_web_api_bearer_auth(
     next: Next,
 ) -> Response {
     let token = {
-        let g = state.cfg.read().await;
+        let g = state.http.cfg.read().await;
         g.web_api
             .web_api_bearer_token
             .expose_secret()

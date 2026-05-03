@@ -20,8 +20,8 @@ use crabmate::agent::hierarchy::{
 use crabmate::{
     AgentConfig, AgentTurnLlmOverrides, AgentTurnTransport, ChatCompletionsBackend, ChatRequest,
     FunctionCall, LlmSeedOverride, Message, PlannerExecutorMode, ProcessHandles,
-    RunAgentTurnParams, StreamChatParams, ToolCall, build_tools, load_config,
-    message_content_as_str, run_agent_turn,
+    RunAgentTurnParams, RunAgentTurnSharedInputs, StreamChatParams, ToolCall, build_tools,
+    load_config, message_content_as_str, run_agent_turn,
 };
 
 /// 按序返回预设 assistant 消息；用于编排回归，**非**生产后端。
@@ -103,10 +103,12 @@ async fn run_agent_turn_outer_loop_tool_round_then_final_assistant() {
 
     let work_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let params = RunAgentTurnParams {
-        client: &client,
-        api_key: "",
-        cfg: &cfg,
-        tools: tools.as_slice(),
+        shared: RunAgentTurnSharedInputs {
+            client: &client,
+            api_key: "",
+            cfg: &cfg,
+            tools: tools.as_slice(),
+        },
         messages: &mut messages,
         effective_working_dir: work_dir,
         workspace_is_set: true,
@@ -281,10 +283,12 @@ async fn run_agent_turn_hierarchical_end_to_end_mock_llm_sequence() {
 
     let work_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let params = RunAgentTurnParams {
-        client: &client,
-        api_key: "",
-        cfg: &cfg,
-        tools: tools.as_slice(),
+        shared: RunAgentTurnSharedInputs {
+            client: &client,
+            api_key: "",
+            cfg: &cfg,
+            tools: tools.as_slice(),
+        },
         messages: &mut messages,
         effective_working_dir: work_dir,
         workspace_is_set: true,
@@ -362,10 +366,12 @@ async fn run_agent_turn_hierarchical_discourse_fallback_uses_per_outer_loop() {
 
     let work_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let params = RunAgentTurnParams {
-        client: &client,
-        api_key: "",
-        cfg: &cfg,
-        tools: tools.as_slice(),
+        shared: RunAgentTurnSharedInputs {
+            client: &client,
+            api_key: "",
+            cfg: &cfg,
+            tools: tools.as_slice(),
+        },
         messages: &mut messages,
         effective_working_dir: work_dir,
         workspace_is_set: true,

@@ -2,10 +2,10 @@
 
 use super::super::task::SubGoal;
 use super::execution_guides;
-use super::types::OperatorConfig;
+use super::types::OperatorPolicy;
 
 pub(crate) fn build_system_prompt(
-    config: &OperatorConfig,
+    config: &OperatorPolicy,
     goal: &SubGoal,
     current_dir: Option<&std::path::Path>,
 ) -> String {

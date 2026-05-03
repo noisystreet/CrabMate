@@ -10,6 +10,8 @@ pub mod agent;
 mod agent_errors;
 /// Web/CLI 多角色工作台：中途切换 system、按角色裁剪工具列表。
 mod agent_role_turn;
+/// Web/CLI 共用的 `run_agent_turn` 前置逻辑（工具合并、MCP、缓存句柄）。
+mod agent_turn_prep;
 /// 工作区内 `cargo metadata` 子进程参数单一真源（工具与首轮注入等共用）。
 mod cargo_metadata;
 mod chat_job_queue;
@@ -102,12 +104,17 @@ pub struct AgentTurnLlmOverrides {
     pub seed_override: types::LlmSeedOverride,
 }
 
-/// Web/CLI/基准测试共用的 `run_agent_turn` 入参（避免长参数列表）。
-pub struct RunAgentTurnParams<'a> {
+/// Web/CLI/bench 共用的 LLM 接入侧不变输入（HTTP 客户端、密钥、配置快照、工具表）。
+pub struct RunAgentTurnSharedInputs<'a> {
     pub client: &'a reqwest::Client,
     pub api_key: &'a str,
     pub cfg: &'a Arc<config::AgentConfig>,
     pub tools: &'a [crate::types::Tool],
+}
+
+/// Web/CLI/基准测试共用的 `run_agent_turn` 入参（避免长参数列表）。
+pub struct RunAgentTurnParams<'a> {
+    pub shared: RunAgentTurnSharedInputs<'a>,
     pub messages: &'a mut Vec<types::Message>,
     pub effective_working_dir: &'a std::path::Path,
     pub workspace_is_set: bool,
@@ -132,10 +139,7 @@ pub struct RunAgentTurnParams<'a> {
 
 /// 构造 [`RunAgentTurnParams::web_chat_stream`] 所需的参数包（避免长形参列表）。
 pub struct WebChatStreamBuildArgs<'a> {
-    pub client: &'a reqwest::Client,
-    pub api_key: &'a str,
-    pub cfg: &'a Arc<config::AgentConfig>,
-    pub tools: &'a [crate::types::Tool],
+    pub shared: RunAgentTurnSharedInputs<'a>,
     pub messages: &'a mut Vec<types::Message>,
     pub effective_working_dir: &'a std::path::Path,
     pub workspace_is_set: bool,
@@ -161,10 +165,7 @@ pub struct WebChatStreamBuildArgs<'a> {
 
 /// 构造 [`RunAgentTurnParams::web_chat_json`] 所需的参数包。
 pub struct WebChatJsonBuildArgs<'a> {
-    pub client: &'a reqwest::Client,
-    pub api_key: &'a str,
-    pub cfg: &'a Arc<config::AgentConfig>,
-    pub tools: &'a [crate::types::Tool],
+    pub shared: RunAgentTurnSharedInputs<'a>,
     pub messages: &'a mut Vec<types::Message>,
     pub effective_working_dir: &'a std::path::Path,
     pub workspace_is_set: bool,
@@ -185,10 +186,7 @@ pub struct WebChatJsonBuildArgs<'a> {
     pub process_handles: Arc<crate::process_handles::ProcessHandles>,
 }
 pub struct CliTerminalChatBuildArgs<'a> {
-    pub client: &'a reqwest::Client,
-    pub api_key: &'a str,
-    pub cfg: &'a Arc<config::AgentConfig>,
-    pub tools: &'a [crate::types::Tool],
+    pub shared: RunAgentTurnSharedInputs<'a>,
     pub messages: &'a mut Vec<types::Message>,
     pub effective_working_dir: &'a std::path::Path,
     pub no_stream: bool,
@@ -200,14 +198,60 @@ pub struct CliTerminalChatBuildArgs<'a> {
     pub process_handles: Arc<crate::process_handles::ProcessHandles>,
 }
 
+/// `web_chat_stream` / `web_chat_json` 共用的字段装配（单参数传入以满足形参棘轮）。
+struct WebChatJobCommonParts<'a> {
+    shared: RunAgentTurnSharedInputs<'a>,
+    messages: &'a mut Vec<types::Message>,
+    effective_working_dir: &'a std::path::Path,
+    workspace_is_set: bool,
+    transport: AgentTurnTransport<'a>,
+    llm: AgentTurnLlmOverrides,
+    long_term_memory:
+        Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
+    conversation_id: &'a str,
+    turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
+    tracing_chat_turn: Arc<observability::TracingChatTurn>,
+    request_audit: Arc<crate::web::audit::WebRequestAudit>,
+    process_handles: Arc<crate::process_handles::ProcessHandles>,
+}
+
 impl<'a> RunAgentTurnParams<'a> {
+    fn from_web_job_common(parts: WebChatJobCommonParts<'a>) -> Self {
+        let WebChatJobCommonParts {
+            shared,
+            messages,
+            effective_working_dir,
+            workspace_is_set,
+            transport,
+            llm,
+            long_term_memory,
+            conversation_id,
+            turn_allowed_tool_names,
+            tracing_chat_turn,
+            request_audit,
+            process_handles,
+        } = parts;
+        Self {
+            shared,
+            messages,
+            effective_working_dir,
+            workspace_is_set,
+            transport,
+            llm,
+            long_term_memory,
+            long_term_memory_scope_id: Some(conversation_id.to_string()),
+            read_file_turn_cache: None,
+            turn_allowed_tool_names,
+            tracing_chat_turn: Some(tracing_chat_turn),
+            request_audit: Some(request_audit),
+            process_handles,
+        }
+    }
+
     /// Web `/chat/stream`：SSE 输出、可选工具审批、可取消。
     pub fn web_chat_stream(args: WebChatStreamBuildArgs<'a>) -> Self {
         let WebChatStreamBuildArgs {
-            client,
-            api_key,
-            cfg,
-            tools,
+            shared,
             messages,
             effective_working_dir,
             workspace_is_set,
@@ -229,11 +273,8 @@ impl<'a> RunAgentTurnParams<'a> {
             request_audit,
             process_handles,
         } = args;
-        Self {
-            client,
-            api_key,
-            cfg,
-            tools,
+        Self::from_web_job_common(WebChatJobCommonParts {
+            shared,
             messages,
             effective_working_dir,
             workspace_is_set,
@@ -258,22 +299,18 @@ impl<'a> RunAgentTurnParams<'a> {
                 seed_override,
             },
             long_term_memory,
-            long_term_memory_scope_id: Some(conversation_id.to_string()),
-            read_file_turn_cache: None,
+            conversation_id,
             turn_allowed_tool_names,
-            tracing_chat_turn: Some(observability::TracingChatTurn::new(job_id, conversation_id)),
-            request_audit: Some(request_audit),
+            tracing_chat_turn: observability::TracingChatTurn::new(job_id, conversation_id),
+            request_audit,
             process_handles,
-        }
+        })
     }
 
     /// Web `POST /chat`（JSON）：无 SSE，终端渲染管线用于分步通知等。
     pub fn web_chat_json(args: WebChatJsonBuildArgs<'a>) -> Self {
         let WebChatJsonBuildArgs {
-            client,
-            api_key,
-            cfg,
-            tools,
+            shared,
             messages,
             effective_working_dir,
             workspace_is_set,
@@ -292,11 +329,8 @@ impl<'a> RunAgentTurnParams<'a> {
             request_audit,
             process_handles,
         } = args;
-        Self {
-            client,
-            api_key,
-            cfg,
-            tools,
+        Self::from_web_job_common(WebChatJobCommonParts {
+            shared,
             messages,
             effective_working_dir,
             workspace_is_set,
@@ -321,22 +355,18 @@ impl<'a> RunAgentTurnParams<'a> {
                 seed_override,
             },
             long_term_memory,
-            long_term_memory_scope_id: Some(conversation_id.to_string()),
-            read_file_turn_cache: None,
+            conversation_id,
             turn_allowed_tool_names,
-            tracing_chat_turn: Some(observability::TracingChatTurn::new(job_id, conversation_id)),
-            request_audit: Some(request_audit),
+            tracing_chat_turn: observability::TracingChatTurn::new(job_id, conversation_id),
+            request_audit,
             process_handles,
-        }
+        })
     }
 
     /// `chat` 子命令等：本机终端、纯文本流式、可选 `run_command` 交互。
     pub fn cli_terminal_chat(args: CliTerminalChatBuildArgs<'a>) -> Self {
         let CliTerminalChatBuildArgs {
-            client,
-            api_key,
-            cfg,
-            tools,
+            shared,
             messages,
             effective_working_dir,
             no_stream,
@@ -347,10 +377,7 @@ impl<'a> RunAgentTurnParams<'a> {
             process_handles,
         } = args;
         Self {
-            client,
-            api_key,
-            cfg,
-            tools,
+            shared,
             messages,
             effective_working_dir,
             workspace_is_set: true,
@@ -395,10 +422,12 @@ impl<'a> RunAgentTurnParams<'a> {
         cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
     ) -> Self {
         Self {
-            client,
-            api_key,
-            cfg,
-            tools,
+            shared: RunAgentTurnSharedInputs {
+                client,
+                api_key,
+                cfg,
+                tools,
+            },
             messages,
             effective_working_dir,
             workspace_is_set: true,
@@ -449,10 +478,7 @@ pub async fn run_agent_turn<'a>(
     p: RunAgentTurnParams<'a>,
 ) -> Result<(), crate::agent::agent_turn::RunAgentTurnError> {
     let RunAgentTurnParams {
-        client,
-        api_key,
-        cfg,
-        tools,
+        shared,
         messages,
         effective_working_dir,
         workspace_is_set,
@@ -466,6 +492,12 @@ pub async fn run_agent_turn<'a>(
         request_audit,
         process_handles,
     } = p;
+    let RunAgentTurnSharedInputs {
+        client,
+        api_key,
+        cfg,
+        tools,
+    } = shared;
     let AgentTurnTransport {
         out,
         render_to_terminal,
@@ -494,67 +526,25 @@ pub async fn run_agent_turn<'a>(
         None => llm::default_chat_completions_backend(),
     };
 
-    let read_file_turn_cache = match read_file_turn_cache {
-        Some(a) => Some(a),
-        None if cfg.chat_queues_cache.read_file_turn_cache_max_entries > 0 => {
-            Some(read_file_turn_cache::new_turn_cache_handle(
-                cfg.chat_queues_cache.read_file_turn_cache_max_entries,
-            ))
-        }
-        None => None,
-    };
+    let read_file_turn_cache =
+        crate::agent_turn_prep::resolve_read_file_turn_cache_for_turn(cfg, read_file_turn_cache);
 
-    let workspace_changelist = if cfg
-        .session_workspace_changelist
-        .session_workspace_changelist_enabled
-    {
-        let scope = long_term_memory_scope_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .unwrap_or("__default__");
-        Some(
-            process_handles
-                .workspace_changelist_registry
-                .changelist_for_scope(scope),
-        )
-    } else {
-        None
-    };
-
-    let mut tools_for_turn: Vec<types::Tool> = tools.to_vec();
-    tools_for_turn = mcp::merge_tool_lists(
-        tools_for_turn,
-        dynamic_tools::load_dynamic_tools(effective_working_dir),
+    let workspace_changelist = crate::agent_turn_prep::workspace_changelist_for_turn(
+        cfg.as_ref(),
+        process_handles.as_ref(),
+        long_term_memory_scope_id.as_deref(),
     );
-    let mcp_session = match mcp::try_open_session_and_tools(cfg.as_ref()).await {
-        Some((sess, extra)) => {
-            tools_for_turn = mcp::merge_tool_lists(tools_for_turn, extra);
-            Some(sess)
-        }
-        None => None,
-    };
-    if !cfg.codebase_semantic.codebase_semantic_search_enabled {
-        tools_for_turn.retain(|t| t.function.name != "codebase_semantic_search");
-    }
-    if !cfg.long_term_memory.long_term_memory_enabled {
-        tools_for_turn.retain(|t| {
-            !matches!(
-                t.function.name.as_str(),
-                "long_term_remember" | "long_term_forget" | "long_term_memory_list"
-            )
-        });
-    }
-    if let Some(ref allow) = turn_allowed_tool_names {
-        let mcp_ok = allow.contains("mcp");
-        tools_for_turn.retain(|t| {
-            let n = t.function.name.as_str();
-            if n.starts_with("mcp__") {
-                return mcp_ok;
-            }
-            allow.contains(n)
-        });
-    }
+
+    let crate::agent_turn_prep::ToolsForTurnPrepared {
+        tools_for_turn,
+        mcp_session,
+    } = crate::agent_turn_prep::prepare_tools_for_turn(
+        cfg,
+        tools,
+        effective_working_dir,
+        turn_allowed_tool_names.as_ref().map(|a| a.as_ref()),
+    )
+    .await;
 
     let request_chrome_trace = crate::request_chrome_trace::request_trace_dir_from_env()
         .map(|_| std::sync::Arc::new(crate::request_chrome_trace::RequestTurnTrace::new()));

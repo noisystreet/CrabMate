@@ -228,7 +228,7 @@ pub(super) async fn build_messages_for_turn(
     if let Some(mut seed) = state.load_conversation_seed(conversation_id).await {
         let persisted = seed.persisted_active_agent_role.clone();
         {
-            let cfg = state.cfg.read().await;
+            let cfg = state.http.cfg.read().await;
             if let Some(id) = agent_role.map(str::trim).filter(|s| !s.is_empty()) {
                 cfg.system_prompt_for_new_conversation(Some(id))
                     .map_err(|e| e.to_string())?;
@@ -238,7 +238,7 @@ pub(super) async fn build_messages_for_turn(
                 &mut seed.messages,
                 persisted.as_deref(),
                 agent_role,
-                &state.process_handles.tool_outcome_recorder,
+                &state.aux.process_handles.tool_outcome_recorder,
             )?;
             let role_for_turn = agent_role
                 .and_then(|s| {
@@ -251,6 +251,7 @@ pub(super) async fn build_messages_for_turn(
                 .map_err(|e| e.to_string())?
                 .to_string();
             let system_for_turn = state
+                .aux
                 .process_handles
                 .tool_outcome_recorder
                 .augment_system_prompt(&system_for_turn, &cfg);
@@ -276,12 +277,13 @@ pub(super) async fn build_messages_for_turn(
         seed.messages.push(last_user);
         return Ok(seed);
     }
-    let cfg = state.cfg.read().await;
+    let cfg = state.http.cfg.read().await;
     let system_for_turn = cfg
         .system_prompt_for_new_conversation(agent_role)
         .map_err(|e| e.to_string())?
         .to_string();
     let system_for_turn = state
+        .aux
         .process_handles
         .tool_outcome_recorder
         .augment_system_prompt(&system_for_turn, &cfg);

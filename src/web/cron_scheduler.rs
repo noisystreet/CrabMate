@@ -131,7 +131,7 @@ async fn run_scheduled_json_turn(state: Arc<AppState>, task: ScheduledAgentTask)
             return;
         }
     };
-    let job_id = state.chat_queue.next_job_id();
+    let job_id = state.chat.chat_queue.next_job_id();
     let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
     info!(
         target: "crabmate",
@@ -145,10 +145,11 @@ async fn run_scheduled_json_turn(state: Arc<AppState>, task: ScheduledAgentTask)
         )
     );
     if let Err(e) = state
+        .chat
         .chat_queue
         .try_submit_json(chat_job_queue::JsonSubmitParams {
             job_id,
-            queue_deps: state.chat_queue_job_deps.clone(),
+            queue_deps: state.chat.chat_queue_job_deps.clone(),
             app: state.clone(),
             conversation_id: prepared.conversation_id,
             messages: prepared.turn_seed.messages,
