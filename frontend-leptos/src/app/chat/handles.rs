@@ -4,6 +4,7 @@
 //! 聚合侧栏 / 底栏 / 模态等 `*_view` 入参（同因 `Rc` 等未走 `provide_context`）。
 
 use std::collections::HashSet;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use leptos::html::Textarea;
@@ -67,6 +68,15 @@ pub struct ChatColumnShell {
     pub retry_assistant_target: RwSignal<Option<String>>,
     pub markdown_render: RwSignal<bool>,
     pub apply_assistant_display_filters: RwSignal<bool>,
+}
+
+/// `wire_chat_composer_streams` 的返回值：重试 / 截断再生目标与发送、停止、新会话句柄。
+pub(crate) struct ChatComposerWires {
+    pub retry_assistant_target: RwSignal<Option<String>>,
+    pub regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
+    pub run_send_message: Arc<dyn Fn() + Send + Sync>,
+    pub cancel_stream: Arc<dyn Fn() + Send + Sync>,
+    pub new_session: Rc<dyn Fn()>,
 }
 
 /// `wire_chat_composer_streams` 的输入：流式、草稿、审批与工作区刷新等接线句柄。

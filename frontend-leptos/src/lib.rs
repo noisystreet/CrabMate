@@ -16,6 +16,7 @@ mod chat_session_state;
 mod clarification_form;
 mod client_llm_presets;
 mod conversation_hydrate;
+mod conversation_hydrate_timeline;
 mod debounce_schedule;
 mod i18n;
 mod markdown;
