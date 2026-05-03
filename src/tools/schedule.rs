@@ -538,6 +538,85 @@ pub fn delete_event(args_json: &str, working_dir: &Path) -> String {
     format!("已删除日程：id={}", id)
 }
 
+struct EventUpdateFields {
+    title: Option<String>,
+    start_at: Option<String>,
+    end_at: Option<String>,
+    location: Option<String>,
+    notes: Option<String>,
+}
+
+fn parse_event_update_fields(v: &serde_json::Value) -> EventUpdateFields {
+    EventUpdateFields {
+        title: v
+            .get("title")
+            .and_then(|x| x.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
+        start_at: v
+            .get("start_at")
+            .and_then(|x| x.as_str())
+            .map(|s| s.trim().to_string()),
+        end_at: v
+            .get("end_at")
+            .and_then(|x| x.as_str())
+            .map(|s| s.trim().to_string()),
+        location: v
+            .get("location")
+            .and_then(|x| x.as_str())
+            .map(|s| s.trim().to_string()),
+        notes: v
+            .get("notes")
+            .and_then(|x| x.as_str())
+            .map(|s| s.trim().to_string()),
+    }
+}
+
+fn event_update_fields_any_set(patch: &EventUpdateFields) -> bool {
+    patch.title.is_some()
+        || patch.start_at.is_some()
+        || patch.end_at.is_some()
+        || patch.location.is_some()
+        || patch.notes.is_some()
+}
+
+fn apply_event_updates(e: &mut Event, patch: &EventUpdateFields) {
+    if let Some(ref t) = patch.title {
+        e.title = t.clone();
+    }
+    if let Some(ref s) = patch.start_at {
+        let t = s.trim();
+        if !t.is_empty() {
+            e.start_at = parse_datetime_to_rfc3339(t).unwrap_or_else(|| t.to_string());
+        }
+    }
+    if let Some(ref s) = patch.end_at {
+        let t = s.trim();
+        if t.is_empty() {
+            e.end_at = None;
+        } else {
+            e.end_at = Some(parse_datetime_to_rfc3339(t).unwrap_or_else(|| t.to_string()));
+        }
+    }
+    if let Some(ref s) = patch.location {
+        let t = s.trim();
+        e.location = if t.is_empty() {
+            None
+        } else {
+            Some(t.to_string())
+        };
+    }
+    if let Some(ref s) = patch.notes {
+        let t = s.trim();
+        e.notes = if t.is_empty() {
+            None
+        } else {
+            Some(t.to_string())
+        };
+    }
+    e.updated_at = Some(now_rfc3339());
+}
+
 pub fn update_event(args_json: &str, working_dir: &Path) -> String {
     let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
@@ -547,34 +626,9 @@ pub fn update_event(args_json: &str, working_dir: &Path) -> String {
         Some(s) if !s.is_empty() => s.to_string(),
         _ => return "错误：缺少 id 参数".to_string(),
     };
-    let title = v
-        .get("title")
-        .and_then(|x| x.as_str())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-    let start_at = v
-        .get("start_at")
-        .and_then(|x| x.as_str())
-        .map(|s| s.trim().to_string());
-    let end_at = v
-        .get("end_at")
-        .and_then(|x| x.as_str())
-        .map(|s| s.trim().to_string());
-    let location = v
-        .get("location")
-        .and_then(|x| x.as_str())
-        .map(|s| s.trim().to_string());
-    let notes = v
-        .get("notes")
-        .and_then(|x| x.as_str())
-        .map(|s| s.trim().to_string());
+    let patch = parse_event_update_fields(&v);
 
-    if title.is_none()
-        && start_at.is_none()
-        && end_at.is_none()
-        && location.is_none()
-        && notes.is_none()
-    {
+    if !event_update_fields_any_set(&patch) {
         return "错误：至少提供 title/start_at/end_at/location/notes 中的一个用于更新".to_string();
     }
 
@@ -586,40 +640,7 @@ pub fn update_event(args_json: &str, working_dir: &Path) -> String {
     let mut found = None;
     for e in &mut data.items {
         if e.id == id {
-            if let Some(t) = title.clone() {
-                e.title = t;
-            }
-            if let Some(s) = start_at.as_deref() {
-                let s = s.trim();
-                if !s.is_empty() {
-                    e.start_at = parse_datetime_to_rfc3339(s).unwrap_or_else(|| s.to_string());
-                }
-            }
-            if let Some(s) = end_at.as_deref() {
-                let s = s.trim();
-                if s.is_empty() {
-                    e.end_at = None;
-                } else {
-                    e.end_at = Some(parse_datetime_to_rfc3339(s).unwrap_or_else(|| s.to_string()));
-                }
-            }
-            if let Some(s) = location.as_deref() {
-                let s = s.trim();
-                e.location = if s.is_empty() {
-                    None
-                } else {
-                    Some(s.to_string())
-                };
-            }
-            if let Some(s) = notes.as_deref() {
-                let s = s.trim();
-                e.notes = if s.is_empty() {
-                    None
-                } else {
-                    Some(s.to_string())
-                };
-            }
-            e.updated_at = Some(now_rfc3339());
+            apply_event_updates(e, &patch);
             found = Some(e.title.clone());
             break;
         }
