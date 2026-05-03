@@ -8,6 +8,8 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use crate::tools::tool_param_types::CallGraphSketchArgs;
+
 const MAX_FILE_BYTES: usize = 2 * 1024 * 1024;
 const DEFAULT_MAX_EDGES: usize = 400;
 const MAX_EDGES_CAP: usize = 3000;
@@ -30,19 +32,20 @@ struct Edge {
 }
 
 fn parse_params(args_json: &str) -> Result<SketchParams, String> {
-    let v: serde_json::Value = crate::tools::parse_args_json(args_json)?;
-    let mut symbols: Vec<String> = v
-        .get("symbols")
-        .and_then(|x| x.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|x| x.as_str().map(str::trim).filter(|s| !s.is_empty()))
-                .map(|s| s.to_string())
-                .collect::<Vec<_>>()
+    let v = crate::tools::parse_args_json(args_json)?;
+    let args: CallGraphSketchArgs =
+        serde_json::from_value(v).map_err(|e| format!("参数解析错误: {e}"))?;
+
+    let mut symbols: Vec<String> = args
+        .symbols
+        .iter()
+        .filter_map(|x| {
+            let t = x.trim();
+            (!t.is_empty()).then(|| t.to_string())
         })
-        .unwrap_or_default();
+        .collect();
     if symbols.is_empty()
-        && let Some(s) = v.get("symbol").and_then(|x| x.as_str()).map(str::trim)
+        && let Some(s) = args.symbol.as_deref().map(str::trim)
         && !s.is_empty()
     {
         symbols.push(s.to_string());
@@ -53,31 +56,20 @@ fn parse_params(args_json: &str) -> Result<SketchParams, String> {
     symbols.sort();
     symbols.dedup();
 
-    let sub_path = v
-        .get("path")
-        .and_then(|p| p.as_str())
+    let sub_path = args
+        .path
+        .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
 
-    let max_edges = v
-        .get("max_edges")
-        .and_then(|n| n.as_u64())
-        .map(|n| n.max(1) as usize)
-        .unwrap_or(DEFAULT_MAX_EDGES)
-        .min(MAX_EDGES_CAP);
+    let max_edges =
+        (args.max_edges.unwrap_or(DEFAULT_MAX_EDGES as u64).max(1) as usize).min(MAX_EDGES_CAP);
 
-    let max_files = v
-        .get("max_files")
-        .and_then(|n| n.as_u64())
-        .map(|n| n.max(1) as usize)
-        .unwrap_or(DEFAULT_MAX_FILES)
-        .min(50_000);
+    let max_files =
+        (args.max_files.unwrap_or(DEFAULT_MAX_FILES as u64).max(1) as usize).min(50_000);
 
-    let include_hidden = v
-        .get("include_hidden")
-        .and_then(|b| b.as_bool())
-        .unwrap_or(false);
+    let include_hidden = args.include_hidden;
 
     Ok(SketchParams {
         symbols,

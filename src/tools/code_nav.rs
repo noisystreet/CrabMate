@@ -1,6 +1,7 @@
 //! 代码理解与导航：符号引用搜索、Rust 单文件结构大纲。
 
 use crate::tools::symbol;
+use crate::tools::tool_param_types::FindReferencesArgs;
 use regex::Regex;
 use std::fs;
 use std::io::Read;
@@ -17,45 +18,34 @@ pub fn find_references(args_json: &str, workspace_root: &Path) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let symbol = v
-        .get("symbol")
-        .and_then(|s| s.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string());
-    let Some(symbol) = symbol else {
-        return "错误：缺少 symbol 参数".to_string();
+    let args: FindReferencesArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
     };
+    let symbol = args.symbol.trim().to_string();
+    if symbol.is_empty() {
+        return "错误：缺少 symbol 参数".to_string();
+    }
 
-    let sub_path = v
-        .get("path")
-        .and_then(|p| p.as_str())
+    let sub_path = args
+        .path
+        .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
 
-    let max_results = v
-        .get("max_results")
-        .and_then(|n| n.as_u64())
-        .map(|n| n.max(1) as usize)
-        .unwrap_or(DEFAULT_MAX_RESULTS)
+    let max_results = (args
+        .max_results
+        .unwrap_or(DEFAULT_MAX_RESULTS as u64)
+        .max(1) as usize)
         .min(MAX_RESULTS_LIMIT);
 
     // 与 JSON schema 一致：case_sensitive 默认 false 表示忽略大小写
-    let case_insensitive = !v
-        .get("case_sensitive")
-        .and_then(|b| b.as_bool())
-        .unwrap_or(false);
+    let case_insensitive = !args.case_sensitive;
 
-    let exclude_definitions = v
-        .get("exclude_definitions")
-        .and_then(|b| b.as_bool())
-        .unwrap_or(true);
+    let exclude_definitions = args.exclude_definitions;
 
-    let include_hidden = v
-        .get("include_hidden")
-        .and_then(|b| b.as_bool())
-        .unwrap_or(false);
+    let include_hidden = args.include_hidden;
 
     let root = match resolve_root(workspace_root, sub_path.as_deref()) {
         Ok(p) => p,

@@ -18,10 +18,11 @@ pub(crate) fn tool_parameters_schema_value<T: JsonSchema>() -> serde_json::Value
 mod tests {
     use super::*;
     use crate::tools::tool_param_types::{
-        CalcArgs, CodeStatsArgs, CoverageReportArgs, DependencyGraphArgs, FormatOnePathArgs,
-        GoBuildArgs, GolangciLintArgs, MarkdownCheckLinksArgs, NpmRunArgs, PackageQueryArgs,
-        PortCheckArgs, ProcessListArgs, QualityWorkspaceArgs, RunLintsArgs, ShellcheckCheckArgs,
-        TodoScanArgs,
+        AddReminderArgs, ArchivePackArgs, CalcArgs, CallGraphSketchArgs, CodeStatsArgs,
+        CoverageReportArgs, DependencyGraphArgs, FindReferencesArgs, FindSymbolArgs,
+        FormatOnePathArgs, GoBuildArgs, GolangciLintArgs, GradleTasksArgs, ListRemindersArgs,
+        MarkdownCheckLinksArgs, MavenCompileArgs, NpmRunArgs, PackageQueryArgs, PortCheckArgs,
+        ProcessListArgs, QualityWorkspaceArgs, RunLintsArgs, ShellcheckCheckArgs, TodoScanArgs,
     };
     use serde_json::json;
 
@@ -196,5 +197,82 @@ mod tests {
         let v = tool_parameters_schema_value::<QualityWorkspaceArgs>();
         assert!(v.pointer("/properties/run_cargo_fmt_check").is_some());
         assert!(v.pointer("/properties/run_podman_images").is_some());
+    }
+
+    #[test]
+    fn add_reminder_schema_requires_title() {
+        let v = tool_parameters_schema_value::<AddReminderArgs>();
+        let req = v
+            .pointer("/required")
+            .and_then(|r| r.as_array())
+            .expect("required");
+        assert!(req.iter().any(|x| x == "title"));
+    }
+
+    #[test]
+    fn list_reminders_schema_has_include_done() {
+        let v = tool_parameters_schema_value::<ListRemindersArgs>();
+        assert!(v.pointer("/properties/include_done").is_some());
+    }
+
+    #[test]
+    fn maven_compile_schema_has_optional_profile() {
+        let v = tool_parameters_schema_value::<MavenCompileArgs>();
+        assert!(v.pointer("/properties/profile").is_some());
+    }
+
+    #[test]
+    fn gradle_tasks_schema_has_tasks_array() {
+        let v = tool_parameters_schema_value::<GradleTasksArgs>();
+        assert_eq!(
+            v.pointer("/properties/tasks/type"),
+            Some(&json!("array"))
+        );
+    }
+
+    #[test]
+    fn archive_pack_schema_requires_output_sources() {
+        let v = tool_parameters_schema_value::<ArchivePackArgs>();
+        let req = v
+            .pointer("/required")
+            .and_then(|r| r.as_array())
+            .expect("required");
+        assert!(req.iter().any(|x| x == "output"));
+        assert!(req.iter().any(|x| x == "sources"));
+    }
+
+    #[test]
+    fn find_symbol_schema_requires_symbol() {
+        let v = tool_parameters_schema_value::<FindSymbolArgs>();
+        let req = v
+            .pointer("/required")
+            .and_then(|r| r.as_array())
+            .expect("required");
+        assert!(req.iter().any(|x| x == "symbol"));
+        assert_eq!(
+            v.pointer("/additionalProperties"),
+            Some(&json!(false)),
+            "{v}"
+        );
+    }
+
+    #[test]
+    fn find_references_schema_requires_symbol() {
+        let v = tool_parameters_schema_value::<FindReferencesArgs>();
+        let req = v
+            .pointer("/required")
+            .and_then(|r| r.as_array())
+            .expect("required");
+        assert!(req.iter().any(|x| x == "symbol"));
+    }
+
+    #[test]
+    fn call_graph_sketch_schema_denies_unknown() {
+        let v = tool_parameters_schema_value::<CallGraphSketchArgs>();
+        assert_eq!(
+            v.pointer("/additionalProperties"),
+            Some(&json!(false)),
+            "{v}"
+        );
     }
 }

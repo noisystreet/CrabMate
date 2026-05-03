@@ -4,6 +4,7 @@ use std::path::Path;
 use std::process::Command;
 
 use super::output_util;
+use super::tool_param_types::{GradleTasksArgs, MavenCompileArgs, MavenTestArgs};
 
 const MAX_OUTPUT_LINES: usize = 800;
 
@@ -69,11 +70,15 @@ pub fn maven_compile(args_json: &str, workspace_root: &Path, max_output_len: usi
         Ok(v) => v,
         Err(e) => return e,
     };
+    let args: MavenCompileArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
     if !has_pom(workspace_root) {
         return "maven_compile: 跳过（未找到 pom.xml）".to_string();
     }
 
-    if let Some(p) = v.get("profile").and_then(|x| x.as_str())
+    if let Some(ref p) = args.profile
         && let Err(e) = safe_maven_profile(p)
     {
         return format!("错误：{}", e);
@@ -81,7 +86,7 @@ pub fn maven_compile(args_json: &str, workspace_root: &Path, max_output_len: usi
 
     let mut cmd = Command::new("mvn");
     cmd.arg("-q").arg("compile");
-    if let Some(p) = v.get("profile").and_then(|x| x.as_str()).map(str::trim)
+    if let Some(p) = args.profile.as_deref().map(str::trim)
         && !p.is_empty()
     {
         cmd.arg("-P").arg(p);
@@ -95,16 +100,20 @@ pub fn maven_test(args_json: &str, workspace_root: &Path, max_output_len: usize)
         Ok(v) => v,
         Err(e) => return e,
     };
+    let args: MavenTestArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
     if !has_pom(workspace_root) {
         return "maven_test: 跳过（未找到 pom.xml）".to_string();
     }
 
-    if let Some(p) = v.get("profile").and_then(|x| x.as_str())
+    if let Some(ref p) = args.profile
         && let Err(e) = safe_maven_profile(p)
     {
         return format!("错误：{}", e);
     }
-    if let Some(t) = v.get("test").and_then(|x| x.as_str()) {
+    if let Some(ref t) = args.test {
         let t = t.trim();
         if !t.is_empty()
             && !t
@@ -117,12 +126,12 @@ pub fn maven_test(args_json: &str, workspace_root: &Path, max_output_len: usize)
 
     let mut cmd = Command::new("mvn");
     cmd.arg("-q").arg("test");
-    if let Some(p) = v.get("profile").and_then(|x| x.as_str()).map(str::trim)
+    if let Some(p) = args.profile.as_deref().map(str::trim)
         && !p.is_empty()
     {
         cmd.arg("-P").arg(p);
     }
-    if let Some(t) = v.get("test").and_then(|x| x.as_str()).map(str::trim)
+    if let Some(t) = args.test.as_deref().map(str::trim)
         && !t.is_empty()
     {
         cmd.arg(format!("-Dtest={t}"));
@@ -151,22 +160,26 @@ pub fn gradle_compile(args_json: &str, workspace_root: &Path, max_output_len: us
         Ok(v) => v,
         Err(e) => return e,
     };
+    let args: GradleTasksArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
     if !has_gradle(workspace_root) {
         return "gradle_compile: 跳过（未找到 build.gradle / build.gradle.kts / settings.gradle*）"
             .to_string();
     }
 
-    let tasks: Vec<String> = v
-        .get("tasks")
-        .and_then(|x| x.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|x| x.as_str().map(str::trim).filter(|s| !s.is_empty()))
-                .map(String::from)
-                .collect()
-        })
-        .filter(|t: &Vec<String>| !t.is_empty())
-        .unwrap_or_else(|| vec!["classes".to_string()]);
+    let tasks: Vec<String> = if args.tasks.iter().any(|t| !t.trim().is_empty()) {
+        args.tasks
+            .iter()
+            .filter_map(|x| {
+                let t = x.trim();
+                (!t.is_empty()).then(|| t.to_string())
+            })
+            .collect()
+    } else {
+        vec!["classes".to_string()]
+    };
 
     for t in &tasks {
         if let Err(e) = safe_gradle_task_token(t) {
@@ -188,22 +201,26 @@ pub fn gradle_test(args_json: &str, workspace_root: &Path, max_output_len: usize
         Ok(v) => v,
         Err(e) => return e,
     };
+    let args: GradleTasksArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
     if !has_gradle(workspace_root) {
         return "gradle_test: 跳过（未找到 build.gradle / build.gradle.kts / settings.gradle*）"
             .to_string();
     }
 
-    let tasks: Vec<String> = v
-        .get("tasks")
-        .and_then(|x| x.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|x| x.as_str().map(str::trim).filter(|s| !s.is_empty()))
-                .map(String::from)
-                .collect()
-        })
-        .filter(|t: &Vec<String>| !t.is_empty())
-        .unwrap_or_else(|| vec!["test".to_string()]);
+    let tasks: Vec<String> = if args.tasks.iter().any(|t| !t.trim().is_empty()) {
+        args.tasks
+            .iter()
+            .filter_map(|x| {
+                let t = x.trim();
+                (!t.is_empty()).then(|| t.to_string())
+            })
+            .collect()
+    } else {
+        vec!["test".to_string()]
+    };
 
     for t in &tasks {
         if let Err(e) = safe_gradle_task_token(t) {
