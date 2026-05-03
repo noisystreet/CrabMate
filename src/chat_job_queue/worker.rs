@@ -212,6 +212,7 @@ async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcome {
             out: &sse_tx,
             turn_allowed_tool_names: turn_allow,
             request_audit: std::sync::Arc::new(request_audit),
+            process_handles: Arc::clone(&app.process_handles),
         },
     ))
     .await;
@@ -373,6 +374,7 @@ async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
             conversation_id: conversation_id.as_str(),
             turn_allowed_tool_names: turn_allow,
             request_audit: std::sync::Arc::new(request_audit),
+            process_handles: Arc::clone(&app.process_handles),
         },
     ))
     .await;

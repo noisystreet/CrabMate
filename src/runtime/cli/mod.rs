@@ -7,7 +7,7 @@ mod repl_extras;
 pub(crate) mod repl_parse;
 mod repl_slash_dispatch;
 
-pub use chat::run_chat_invocation;
+pub use chat::{CliMainInvocationCommon, run_chat_invocation};
 pub use commands::{
     run_plugin_init_command, run_plugin_list_command, run_plugin_validate_command,
     run_save_session_command, run_tool_replay_command,

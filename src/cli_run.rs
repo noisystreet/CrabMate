@@ -221,6 +221,7 @@ struct ServeBranchArgs<'a> {
     port: u16,
     http_bind_host: &'a str,
     no_web: bool,
+    process_handles: Arc<crate::process_handles::ProcessHandles>,
 }
 
 async fn run_serve_branch(args: ServeBranchArgs<'_>) -> Result<(), Box<dyn std::error::Error>> {
@@ -234,6 +235,7 @@ async fn run_serve_branch(args: ServeBranchArgs<'_>) -> Result<(), Box<dyn std::
         port,
         http_bind_host,
         no_web,
+        process_handles,
     } = args;
     let initial_workspace = workspace_cli.clone();
     let uploads_dir = std::env::temp_dir().join("crabmate_uploads");
@@ -329,6 +331,7 @@ async fn run_serve_branch(args: ServeBranchArgs<'_>) -> Result<(), Box<dyn std::
         web_tasks_by_workspace: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
         llm_models_health_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
         sse_stream_hub,
+        process_handles: Arc::clone(&process_handles),
         async_chat_jobs: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
     });
     let sched_tasks = {
@@ -517,6 +520,11 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let tools = if no_tools { Vec::new() } else { all_tools };
 
+    let cli_process_handles = crate::process_handles::ProcessHandles::new_arc(
+        Arc::new(crate::workspace::changelist::WorkspaceChangelistRegistry::default()),
+        Arc::new(crate::tool_stats::ToolOutcomeRecorder::new()),
+    );
+
     if let Some(port) = serve_port {
         run_serve_branch(ServeBranchArgs {
             cfg_holder: &cfg_holder,
@@ -528,6 +536,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             port,
             http_bind_host: &http_bind_host,
             no_web,
+            process_handles: Arc::clone(&cli_process_handles),
         })
         .await?;
         return Ok(());
@@ -578,28 +587,34 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     if chat_cli.wants_chat() {
         crate::runtime::cli::run_chat_invocation(
-            &cfg_holder,
-            config_path.as_deref(),
-            &client,
-            &api_key,
-            &tools,
-            &workspace_cli,
+            crate::runtime::cli::CliMainInvocationCommon {
+                cfg_holder: &cfg_holder,
+                config_path: config_path.as_deref(),
+                client: &client,
+                api_key: &api_key,
+                tools: &tools,
+                workspace_cli: &workspace_cli,
+                agent_role: agent_role_cli.as_deref(),
+                process_handles: Arc::clone(&cli_process_handles),
+            },
             &chat_cli,
-            agent_role_cli.as_deref(),
         )
         .await?;
         return Ok(());
     }
 
     crate::runtime::cli::run_repl(
-        &cfg_holder,
-        config_path.as_deref(),
-        &client,
-        &api_key,
-        &tools,
-        &workspace_cli,
+        crate::runtime::cli::CliMainInvocationCommon {
+            cfg_holder: &cfg_holder,
+            config_path: config_path.as_deref(),
+            client: &client,
+            api_key: &api_key,
+            tools: &tools,
+            workspace_cli: &workspace_cli,
+            agent_role: agent_role_cli.as_deref(),
+            process_handles: Arc::clone(&cli_process_handles),
+        },
         no_stream,
-        agent_role_cli.as_deref(),
     )
     .await
 }

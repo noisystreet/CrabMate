@@ -310,6 +310,7 @@ struct ParallelEmitOrderedParams<'a> {
     per_coord: &'a mut crate::agent::per_coord::PerCoordinator,
     messages: &'a mut Vec<Message>,
     cfg: &'a Arc<AgentConfig>,
+    tool_outcome_recorder: &'a Arc<crate::tool_stats::ToolOutcomeRecorder>,
     out: Option<&'a tokio::sync::mpsc::Sender<String>>,
     echo_terminal_transcript: bool,
     terminal_tool_display_max_chars: usize,
@@ -326,6 +327,7 @@ async fn parallel_emit_ordered_tool_results(
         per_coord,
         messages,
         cfg,
+        tool_outcome_recorder,
         out,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
@@ -377,6 +379,7 @@ async fn parallel_emit_ordered_tool_results(
             per_coord,
             super::EmitToolResultParams {
                 cfg,
+                tool_outcome_recorder,
                 out,
                 echo_terminal_transcript,
                 terminal_tool_display_max_chars,
@@ -422,6 +425,7 @@ pub(super) async fn execute_tools_parallel(
         long_term_memory_scope_id,
         tracing_chat_turn,
         request_audit: _,
+        tool_outcome_recorder,
     } = ctx;
 
     let tools_defs_hint = Arc::new(tools_defs_full.to_vec());
@@ -473,6 +477,7 @@ pub(super) async fn execute_tools_parallel(
         per_coord,
         messages,
         cfg,
+        tool_outcome_recorder: &tool_outcome_recorder,
         out,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,

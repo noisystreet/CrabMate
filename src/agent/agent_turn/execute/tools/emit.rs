@@ -172,6 +172,7 @@ pub(super) async fn emit_tool_result_sse_and_append(
     let tool_t0 = std::time::Instant::now();
     let EmitToolResultParams {
         cfg,
+        tool_outcome_recorder,
         out,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
@@ -265,7 +266,7 @@ pub(super) async fn emit_tool_result_sse_and_append(
         })),
     );
 
-    crate::tool_stats::record_tool_outcome(
+    tool_outcome_recorder.record_tool_outcome(
         cfg.as_ref(),
         name,
         result.as_str(),

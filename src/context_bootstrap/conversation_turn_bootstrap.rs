@@ -75,12 +75,13 @@ pub(crate) fn first_turn_project_context_user_message_sync(
 pub(crate) fn augmented_system_for_new_conversation_lenient(
     cfg: &AgentConfig,
     agent_role: Option<&str>,
+    tool_recorder: &std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder>,
 ) -> String {
     let base = match cfg.system_prompt_for_new_conversation(agent_role) {
         Ok(s) => s.to_string(),
         Err(_) => cfg.system_prompt.clone(),
     };
-    crate::tool_stats::augment_system_prompt(&base, cfg)
+    tool_recorder.augment_system_prompt(&base, cfg)
 }
 
 /// 新会话首轮：`system` + 可选项目上下文 `user` + 可选本轮用户 `user`（与 Web 新会话、`messages_chat_seed` 组合一致）。

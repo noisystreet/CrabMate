@@ -3,6 +3,7 @@
 //! 迭代开头守卫、上下文准备、工具表选择与反思分支拆到私有辅助，以降低 `run_agent_outer_loop` 圈复杂度。
 //! 单次迭代体为 [`run_outer_loop_single_iteration`]，结束去向由 [`OuterLoopIterationExit`] 显式表达（替代仅依赖 `break`/`continue` 读懂控制流）。
 
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use log::{debug, info};
@@ -243,6 +244,7 @@ async fn outer_loop_execute_tools_round(
             long_term_memory_scope_id: p.ctx.long_term_memory_scope_id.clone(),
             tracing_chat_turn: p.ctx.tracing_chat_turn.clone(),
             request_audit: p.ctx.request_audit.clone(),
+            tool_outcome_recorder: Arc::clone(&p.ctx.process_handles.tool_outcome_recorder),
         },
     )
     .await;

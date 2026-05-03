@@ -1,10 +1,15 @@
 //! 交互式 REPL 主循环。
 
+use crate::ProcessHandles;
 use crate::config::{LlmHttpAuthMode, SharedAgentConfig};
 use crate::redact;
-use crate::runtime::cli::chat::{RunAgentTurnForCliParams, run_agent_turn_for_cli};
+use crate::runtime::cli::chat::{
+    CliMainInvocationCommon, RunAgentTurnForCliParams, run_agent_turn_for_cli,
+};
 use crate::runtime::cli::cli_effective_work_dir;
-use crate::runtime::cli::repl_extras::{ReplSlashHandled, try_handle_repl_slash_command};
+use crate::runtime::cli::repl_extras::{
+    ReplSlashHandled, ReplSlashSharedHandles, try_handle_repl_slash_command,
+};
 use crate::runtime::cli::repl_parse::run_repl_shell_line_sync;
 use crate::runtime::cli_exit::CliExitError;
 use crate::runtime::cli_exit::EXIT_USAGE;
@@ -32,7 +37,7 @@ struct ReplSlashBranchContinueLoopParams<'a> {
     style: &'a CliReplStyle,
     no_stream: bool,
     agent_role_owned: &'a mut Option<String>,
-    api_key_holder: &'a Arc<StdMutex<String>>,
+    slash_handles: &'a ReplSlashSharedHandles,
     client: &'a reqwest::Client,
 }
 
@@ -49,7 +54,7 @@ async fn repl_slash_branch_continue_loop(
         style,
         no_stream,
         agent_role_owned,
-        api_key_holder,
+        slash_handles,
         client,
     } = p;
     match try_handle_repl_slash_command(
@@ -61,7 +66,7 @@ async fn repl_slash_branch_continue_loop(
         style,
         no_stream,
         agent_role_owned,
-        api_key_holder,
+        slash_handles,
     )
     .await
     {
@@ -69,7 +74,8 @@ async fn repl_slash_branch_continue_loop(
         ReplSlashHandled::Handled => Ok(true),
         ReplSlashHandled::RunProbe => {
             let g = cfg_holder.read().await;
-            let k = api_key_holder
+            let k = slash_handles
+                .api_key_holder
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .clone();
@@ -80,7 +86,8 @@ async fn repl_slash_branch_continue_loop(
         }
         ReplSlashHandled::RunModels => {
             let g = cfg_holder.read().await;
-            let k = api_key_holder
+            let k = slash_handles
+                .api_key_holder
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .clone();
@@ -90,7 +97,8 @@ async fn repl_slash_branch_continue_loop(
             Ok(true)
         }
         ReplSlashHandled::RunModelsChoose { model_id } => {
-            let k = api_key_holder
+            let k = slash_handles
+                .api_key_holder
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .clone();
@@ -179,6 +187,7 @@ struct ReplDispatchChatRoundParams<'a> {
     client: &'a reqwest::Client,
     cli_rt: &'a CliToolRuntime,
     initial_pending: Option<&'a Arc<StdMutex<Option<Vec<crate::types::Message>>>>>,
+    process_handles: Arc<ProcessHandles>,
 }
 
 async fn repl_dispatch_chat_round(
@@ -197,6 +206,7 @@ async fn repl_dispatch_chat_round(
         client,
         cli_rt,
         initial_pending,
+        process_handles,
     } = p;
     crate::runtime::workspace_session::try_merge_background_initial_workspace(
         messages,
@@ -234,6 +244,7 @@ async fn repl_dispatch_chat_round(
                 crate::context_bootstrap::conversation_turn_bootstrap::augmented_system_for_new_conversation_lenient(
                     &g,
                     agent_role_owned.as_deref(),
+                    &process_handles.tool_outcome_recorder,
                 );
             let merged = crate::config::skills::merge_system_prompt_with_skills_selected(
                 base_system.clone(),
@@ -274,6 +285,7 @@ async fn repl_dispatch_chat_round(
         no_stream,
         cli_tool_ctx: Some(cli_rt),
         active_agent_role: agent_role_owned.as_deref(),
+        process_handles: Arc::clone(&process_handles),
     })
     .await
     {
@@ -292,6 +304,7 @@ async fn repl_prepare_messages_and_editor(
     work_dir: &Path,
     agent_role_owned: &Option<String>,
     run_root: &str,
+    process_handles: Arc<ProcessHandles>,
 ) -> Result<
     (
         Vec<Message>,
@@ -302,9 +315,11 @@ async fn repl_prepare_messages_and_editor(
 > {
     let (messages, initial_pending) = {
         let g = cfg_holder.read().await;
+        let recorder = Arc::clone(&process_handles.tool_outcome_recorder);
         let fast = crate::runtime::workspace_session::repl_bootstrap_messages_fast(
             &g,
             agent_role_owned.as_deref(),
+            &recorder,
         );
         if !g.repl_initial_workspace_messages_enabled {
             (fast, None)
@@ -327,12 +342,14 @@ async fn repl_prepare_messages_and_editor(
             let slot_bg = Arc::clone(&slot);
             let wd_bg = work_dir.to_path_buf();
             let role_for_bg = agent_role_owned.clone();
+            let handles_bg = Arc::clone(&process_handles);
             std::thread::spawn(move || {
                 let built = crate::runtime::workspace_session::initial_workspace_messages(
                     &cfg_bg,
                     wd_bg.as_path(),
                     tui_load,
                     role_for_bg.as_deref(),
+                    &handles_bg.tool_outcome_recorder,
                 );
                 let mut guard = slot_bg.lock().unwrap_or_else(|e| e.into_inner());
                 *guard = Some(built);
@@ -353,17 +370,20 @@ async fn repl_prepare_messages_and_editor(
 }
 
 /// 交互式 REPL 模式
-#[allow(clippy::too_many_arguments)]
 pub async fn run_repl(
-    cfg_holder: &SharedAgentConfig,
-    config_path: Option<&str>,
-    client: &reqwest::Client,
-    api_key: &str,
-    tools: &[crate::types::Tool],
-    workspace_cli: &Option<String>,
+    common: CliMainInvocationCommon<'_>,
     no_stream: bool,
-    agent_role: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let CliMainInvocationCommon {
+        cfg_holder,
+        config_path,
+        client,
+        api_key,
+        tools,
+        workspace_cli,
+        agent_role,
+        process_handles,
+    } = common;
     let (run_root, tui_load) = {
         let g = cfg_holder.read().await;
         (
@@ -375,6 +395,10 @@ pub async fn run_repl(
     let cli_rt = CliToolRuntime::new_interactive_default();
     let style = CliReplStyle::new();
     let api_key_holder = Arc::new(StdMutex::new(api_key.to_string()));
+    let slash_handles = ReplSlashSharedHandles {
+        api_key_holder: Arc::clone(&api_key_holder),
+        process_handles: Arc::clone(&process_handles),
+    };
 
     {
         let g = cfg_holder.read().await;
@@ -404,6 +428,7 @@ pub async fn run_repl(
         &work_dir,
         &agent_role_owned,
         run_root.as_str(),
+        Arc::clone(&process_handles),
     )
     .await?;
 
@@ -459,7 +484,7 @@ pub async fn run_repl(
                     style: &style,
                     no_stream,
                     agent_role_owned: &mut agent_role_owned,
-                    api_key_holder: &api_key_holder,
+                    slash_handles: &slash_handles,
                     client,
                 })
                 .await?
@@ -480,6 +505,7 @@ pub async fn run_repl(
                     client,
                     cli_rt: &cli_rt,
                     initial_pending: initial_pending.as_ref(),
+                    process_handles: Arc::clone(&process_handles),
                 })
                 .await?;
             }

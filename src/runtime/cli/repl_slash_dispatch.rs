@@ -17,8 +17,8 @@ use crate::runtime::cli_repl_ui::CliReplStyle;
 use crate::types::Message;
 
 use super::repl_extras::{
-    REPL_LLM_API_BASE_MAX, REPL_LLM_MODEL_MAX, ReplSlashHandled, repl_export_current_messages,
-    repl_export_kind_from_arg, repl_rebuild_bootstrap_messages,
+    REPL_LLM_API_BASE_MAX, REPL_LLM_MODEL_MAX, ReplSlashHandled, ReplSlashSharedHandles,
+    repl_export_current_messages, repl_export_kind_from_arg, repl_rebuild_bootstrap_messages,
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -31,7 +31,7 @@ pub(super) async fn dispatch_repl_slash_builtin<'a>(
     style: &CliReplStyle,
     no_stream: bool,
     agent_role: &mut Option<String>,
-    api_key_holder: &Arc<StdMutex<String>>,
+    handles: &ReplSlashSharedHandles,
 ) -> ReplSlashHandled {
     match builtin {
         ReplBuiltIn::BareSlash => {
@@ -45,7 +45,15 @@ pub(super) async fn dispatch_repl_slash_builtin<'a>(
             ReplSlashHandled::Handled
         }
         ReplBuiltIn::Clear => {
-            slash_clear(cfg_holder, messages, work_dir.as_path(), agent_role, style).await
+            slash_clear(
+                cfg_holder,
+                messages,
+                work_dir.as_path(),
+                agent_role,
+                style,
+                &handles.process_handles.tool_outcome_recorder,
+            )
+            .await
         }
         ReplBuiltIn::ModelShow => slash_model_show(cfg_holder, style).await,
         ReplBuiltIn::ModelSet(name) => slash_model_set(name, cfg_holder, style).await,
@@ -99,7 +107,15 @@ pub(super) async fn dispatch_repl_slash_builtin<'a>(
         }
         ReplBuiltIn::AgentList => slash_agent_list(cfg_holder, agent_role, style).await,
         ReplBuiltIn::AgentSet(id) => {
-            slash_agent_set(id, cfg_holder, messages, agent_role, style).await
+            slash_agent_set(
+                id,
+                cfg_holder,
+                messages,
+                agent_role,
+                style,
+                &handles.process_handles.tool_outcome_recorder,
+            )
+            .await
         }
         ReplBuiltIn::AgentUsage => {
             let _ = style.eprint_error(
@@ -112,9 +128,11 @@ pub(super) async fn dispatch_repl_slash_builtin<'a>(
             ReplSlashHandled::Handled
         }
         ReplBuiltIn::ApiKeyUsage => slash_api_key_usage(style),
-        ReplBuiltIn::ApiKeyStatus => slash_api_key_status(cfg_holder, api_key_holder, style).await,
-        ReplBuiltIn::ApiKeyClear => slash_api_key_clear(api_key_holder, style),
-        ReplBuiltIn::ApiKeySet(secret) => slash_api_key_set(secret, api_key_holder, style),
+        ReplBuiltIn::ApiKeyStatus => {
+            slash_api_key_status(cfg_holder, &handles.api_key_holder, style).await
+        }
+        ReplBuiltIn::ApiKeyClear => slash_api_key_clear(&handles.api_key_holder, style),
+        ReplBuiltIn::ApiKeySet(secret) => slash_api_key_set(secret, &handles.api_key_holder, style),
     }
 }
 
@@ -124,9 +142,11 @@ async fn slash_clear(
     work_dir: &Path,
     agent_role: &mut Option<String>,
     style: &CliReplStyle,
+    tool_recorder: &Arc<crate::tool_stats::ToolOutcomeRecorder>,
 ) -> ReplSlashHandled {
     let cfg = cfg_holder.read().await.clone();
-    *messages = repl_rebuild_bootstrap_messages(&cfg, work_dir, agent_role.as_deref()).await;
+    *messages =
+        repl_rebuild_bootstrap_messages(&cfg, work_dir, agent_role.as_deref(), tool_recorder).await;
     let _ = style.print_success(&format!(
         "已清空对话（保留当前 system 提示词），共 {} 条消息。",
         messages.len()
@@ -440,6 +460,7 @@ async fn slash_agent_set(
     messages: &mut [Message],
     agent_role: &mut Option<String>,
     style: &CliReplStyle,
+    tool_recorder: &Arc<crate::tool_stats::ToolOutcomeRecorder>,
 ) -> ReplSlashHandled {
     let cfg = cfg_holder.read().await;
     if cfg.agent_roles.is_empty() {
@@ -450,7 +471,7 @@ async fn slash_agent_set(
         drop(cfg);
         *agent_role = None;
         let cfg = cfg_holder.read().await.clone();
-        if let Err(e) = apply_agent_role_switch_to_messages(&cfg, messages, None) {
+        if let Err(e) = apply_agent_role_switch_to_messages(&cfg, messages, None, tool_recorder) {
             let _ = style.eprint_error(&e);
         } else {
             let _ = style.print_success(&format!(
@@ -465,9 +486,12 @@ async fn slash_agent_set(
         drop(cfg);
         *agent_role = Some(id);
         let cfg = cfg_holder.read().await.clone();
-        if let Err(e) =
-            apply_agent_role_switch_to_messages(&cfg, messages, Some(role_label.as_str()))
-        {
+        if let Err(e) = apply_agent_role_switch_to_messages(
+            &cfg,
+            messages,
+            Some(role_label.as_str()),
+            tool_recorder,
+        ) {
             let _ = style.eprint_error(&e);
         } else {
             let _ = style.print_success(&format!(

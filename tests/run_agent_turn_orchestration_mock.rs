@@ -19,8 +19,9 @@ use crabmate::agent::hierarchy::{
 };
 use crabmate::{
     AgentConfig, AgentTurnLlmOverrides, AgentTurnTransport, ChatCompletionsBackend, ChatRequest,
-    FunctionCall, LlmSeedOverride, Message, PlannerExecutorMode, RunAgentTurnParams,
-    StreamChatParams, ToolCall, build_tools, load_config, message_content_as_str, run_agent_turn,
+    FunctionCall, LlmSeedOverride, Message, PlannerExecutorMode, ProcessHandles,
+    RunAgentTurnParams, StreamChatParams, ToolCall, build_tools, load_config,
+    message_content_as_str, run_agent_turn,
 };
 
 /// 按序返回预设 assistant 消息；用于编排回归，**非**生产后端。
@@ -135,6 +136,7 @@ async fn run_agent_turn_outer_loop_tool_round_then_final_assistant() {
         turn_allowed_tool_names: None,
         tracing_chat_turn: None,
         request_audit: None,
+        process_handles: ProcessHandles::singleton_for_fallback_process(),
     };
 
     run_agent_turn(params)
@@ -311,6 +313,7 @@ async fn run_agent_turn_hierarchical_end_to_end_mock_llm_sequence() {
         turn_allowed_tool_names: None,
         tracing_chat_turn: None,
         request_audit: None,
+        process_handles: ProcessHandles::singleton_for_fallback_process(),
     };
 
     run_agent_turn(params)
@@ -391,6 +394,7 @@ async fn run_agent_turn_hierarchical_discourse_fallback_uses_per_outer_loop() {
         turn_allowed_tool_names: None,
         tracing_chat_turn: None,
         request_audit: None,
+        process_handles: ProcessHandles::singleton_for_fallback_process(),
     };
 
     run_agent_turn(params)

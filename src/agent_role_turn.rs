@@ -59,8 +59,9 @@ pub(crate) fn apply_agent_role_switch_to_messages(
     cfg: &AgentConfig,
     messages: &mut [Message],
     role_id: Option<&str>,
+    tool_recorder: &std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder>,
 ) -> Result<(), String> {
-    let sys = augmented_system_for_new_conversation_lenient(cfg, role_id);
+    let sys = augmented_system_for_new_conversation_lenient(cfg, role_id, tool_recorder);
     let mut found_system = false;
     for m in messages.iter_mut() {
         if m.role == "system" {
@@ -93,6 +94,7 @@ pub(crate) fn maybe_apply_mid_session_agent_role_switch(
     messages: &mut [Message],
     persisted_active: Option<&str>,
     request_agent_role: Option<&str>,
+    tool_recorder: &std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder>,
 ) -> Result<(), String> {
     if messages.is_empty() {
         return Ok(());
@@ -104,7 +106,7 @@ pub(crate) fn maybe_apply_mid_session_agent_role_switch(
     if normalized_role_key(Some(req_id), persisted_active) {
         return Ok(());
     }
-    apply_agent_role_switch_to_messages(cfg, messages, Some(req_id))
+    apply_agent_role_switch_to_messages(cfg, messages, Some(req_id), tool_recorder)
 }
 
 /// 按角色 `allowed_tools` 过滤 `tools`（`None` 表示不限制）。`mcp__` 前缀工具仅在允许集合显式包含 `"mcp"` 时保留。

@@ -2,29 +2,33 @@
 //! 在每次调用模型前注入一条 `user` 消息（见 [`crate::types::CRABMATE_WORKSPACE_CHANGELIST_NAME`]），减少大仓库下路径猜测。
 
 use std::collections::HashMap;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, Mutex};
 
 use similar::TextDiff;
 
 use crate::types::CRABMATE_WORKSPACE_CHANGELIST_NAME;
 
-/// 全局表：`scope_id` → 本会话变更集（进程内；与 SQLite 会话持久化无关）。
-static SCOPES: LazyLock<Mutex<HashMap<String, Arc<WorkspaceChangelist>>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+/// `scope_id` → 本会话变更集；由 Web/CLI 入口显式持有 [`Arc<WorkspaceChangelistRegistry>`]，**不**使用进程级 `static`。
+#[derive(Default)]
+pub struct WorkspaceChangelistRegistry {
+    scopes: Mutex<HashMap<String, Arc<WorkspaceChangelist>>>,
+}
 
-/// 返回给定作用域的变更集句柄（不存在则插入空表）。
-pub fn changelist_for_scope(scope_id: &str) -> Arc<WorkspaceChangelist> {
-    let key = scope_id.trim();
-    let key_owned = if key.is_empty() {
-        "__default__".to_string()
-    } else {
-        key.to_string()
-    };
-    let mut guard = SCOPES.lock().unwrap_or_else(|e| e.into_inner());
-    guard
-        .entry(key_owned)
-        .or_insert_with(|| Arc::new(WorkspaceChangelist::default()))
-        .clone()
+impl WorkspaceChangelistRegistry {
+    /// 返回给定作用域的变更集句柄（不存在则插入空表）。
+    pub fn changelist_for_scope(self: &Arc<Self>, scope_id: &str) -> Arc<WorkspaceChangelist> {
+        let key = scope_id.trim();
+        let key_owned = if key.is_empty() {
+            "__default__".to_string()
+        } else {
+            key.to_string()
+        };
+        let mut guard = self.scopes.lock().unwrap_or_else(|e| e.into_inner());
+        guard
+            .entry(key_owned)
+            .or_insert_with(|| Arc::new(WorkspaceChangelist::default()))
+            .clone()
+    }
 }
 
 #[derive(Debug, Clone)]

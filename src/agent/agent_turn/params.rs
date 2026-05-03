@@ -71,6 +71,8 @@ pub(crate) struct RunLoopCtx<'a> {
     pub tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
     /// Web：HTTP 审计；非 Web 为 `None`。
     pub request_audit: Option<Arc<crate::web::audit::WebRequestAudit>>,
+    /// 进程句柄：工具统计记录器等（与 [`crate::RunAgentTurnParams::process_handles`] 同源）。
+    pub process_handles: Arc<crate::process_handles::ProcessHandles>,
 }
 
 /// 单轮 planner / 意图门控相关的**附加约束**（与 `messages` 正交），集中存放以避免 `RunLoopTurnState` 顶层散落布尔与 `Option`。
