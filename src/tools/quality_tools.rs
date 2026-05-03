@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+use super::tool_param_types::QualityWorkspaceArgs;
 use super::{cargo_tools, ci_tools, container_tools, frontend_tools, jvm_tools, python_tools};
 
 #[derive(Clone, Copy)]
@@ -433,74 +434,30 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
         Ok(v) => v,
         Err(e) => return e,
     };
+    let a: QualityWorkspaceArgs = match serde_json::from_value(v) {
+        Ok(x) => x,
+        Err(e) => return format!("参数 JSON 与 quality_workspace 形状不一致: {e}"),
+    };
 
     let flags = QualityFlags {
-        run_cargo_fmt_check: v
-            .get("run_cargo_fmt_check")
-            .and_then(|x| x.as_bool())
-            .unwrap_or(true),
-        run_cargo_check: v
-            .get("run_cargo_check")
-            .and_then(|x| x.as_bool())
-            .unwrap_or(false),
-        run_cargo_clippy: v
-            .get("run_cargo_clippy")
-            .and_then(|x| x.as_bool())
-            .unwrap_or(true),
-        run_cargo_test: v
-            .get("run_cargo_test")
-            .and_then(|x| x.as_bool())
-            .unwrap_or(false),
-        run_frontend_lint: v
-            .get("run_frontend_lint")
-            .and_then(|x| x.as_bool())
-            .unwrap_or(false),
-        run_frontend_build: v
-            .get("run_frontend_build")
-            .and_then(|x| x.as_bool())
-            .unwrap_or(false),
-        run_frontend_prettier_check: v
-            .get("run_frontend_prettier_check")
-            .and_then(|x| x.as_bool())
-            .unwrap_or(false),
-        run_ruff_check: v
-            .get("run_ruff_check")
-            .and_then(|x| x.as_bool())
-            .unwrap_or(false),
-        run_pytest: v
-            .get("run_pytest")
-            .and_then(|x| x.as_bool())
-            .unwrap_or(false),
-        run_mypy: v.get("run_mypy").and_then(|x| x.as_bool()).unwrap_or(false),
-        run_maven_compile: v
-            .get("run_maven_compile")
-            .and_then(|x| x.as_bool())
-            .unwrap_or(false),
-        run_maven_test: v
-            .get("run_maven_test")
-            .and_then(|x| x.as_bool())
-            .unwrap_or(false),
-        run_gradle_compile: v
-            .get("run_gradle_compile")
-            .and_then(|x| x.as_bool())
-            .unwrap_or(false),
-        run_gradle_test: v
-            .get("run_gradle_test")
-            .and_then(|x| x.as_bool())
-            .unwrap_or(false),
-        run_docker_compose_ps: v
-            .get("run_docker_compose_ps")
-            .and_then(|x| x.as_bool())
-            .unwrap_or(false),
-        run_podman_images: v
-            .get("run_podman_images")
-            .and_then(|x| x.as_bool())
-            .unwrap_or(false),
-        fail_fast: v.get("fail_fast").and_then(|x| x.as_bool()).unwrap_or(true),
-        summary_only: v
-            .get("summary_only")
-            .and_then(|x| x.as_bool())
-            .unwrap_or(false),
+        run_cargo_fmt_check: a.run_cargo_fmt_check,
+        run_cargo_check: a.run_cargo_check,
+        run_cargo_clippy: a.run_cargo_clippy,
+        run_cargo_test: a.run_cargo_test,
+        run_frontend_lint: a.run_frontend_lint,
+        run_frontend_build: a.run_frontend_build,
+        run_frontend_prettier_check: a.run_frontend_prettier_check,
+        run_ruff_check: a.run_ruff_check,
+        run_pytest: a.run_pytest,
+        run_mypy: a.run_mypy,
+        run_maven_compile: a.run_maven_compile,
+        run_maven_test: a.run_maven_test,
+        run_gradle_compile: a.run_gradle_compile,
+        run_gradle_test: a.run_gradle_test,
+        run_docker_compose_ps: a.run_docker_compose_ps,
+        run_podman_images: a.run_podman_images,
+        fail_fast: a.fail_fast,
+        summary_only: a.summary_only,
     };
 
     if !flags.any_step_enabled() {

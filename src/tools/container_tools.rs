@@ -4,6 +4,7 @@ use std::path::Path;
 use std::process::Command;
 
 use super::output_util;
+use super::tool_param_types::{DockerBuildArgs, DockerComposePsArgs, PodmanImagesArgs};
 
 const MAX_OUTPUT_LINES: usize = 800;
 
@@ -66,10 +67,14 @@ pub fn docker_build(args_json: &str, workspace_root: &Path, max_output_len: usiz
         Ok(v) => v,
         Err(e) => return e,
     };
+    let args: DockerBuildArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 docker_build 形状不一致: {e}"),
+    };
 
-    let context = v
-        .get("context")
-        .and_then(|x| x.as_str())
+    let context = args
+        .context
+        .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .unwrap_or(".");
@@ -77,9 +82,9 @@ pub fn docker_build(args_json: &str, workspace_root: &Path, max_output_len: usiz
         return format!("错误：{}", e);
     }
 
-    let tag = v
-        .get("tag")
-        .and_then(|x| x.as_str())
+    let tag = args
+        .tag
+        .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .unwrap_or("crabmate-local:latest");
@@ -87,22 +92,28 @@ pub fn docker_build(args_json: &str, workspace_root: &Path, max_output_len: usiz
         return format!("错误：{}", e);
     }
 
-    if let Some(f) = v.get("dockerfile").and_then(|x| x.as_str())
-        && !f.trim().is_empty()
-        && let Err(e) = safe_relative_path(f.trim(), "dockerfile")
+    if let Some(f) = args
+        .dockerfile
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        && let Err(e) = safe_relative_path(f, "dockerfile")
     {
         return format!("错误：{}", e);
     }
 
-    let no_cache = v.get("no_cache").and_then(|x| x.as_bool()).unwrap_or(false);
+    let no_cache = args.no_cache;
 
     let mut cmd = Command::new("docker");
     cmd.arg("build").arg("-t").arg(tag);
     if no_cache {
         cmd.arg("--no-cache");
     }
-    if let Some(f) = v.get("dockerfile").and_then(|x| x.as_str()).map(str::trim)
-        && !f.is_empty()
+    if let Some(f) = args
+        .dockerfile
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
     {
         cmd.arg("-f").arg(f);
     }
@@ -116,37 +127,45 @@ pub fn docker_compose_ps(args_json: &str, workspace_root: &Path, max_output_len:
         Ok(v) => v,
         Err(e) => return e,
     };
+    let args: DockerComposePsArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 docker_compose_ps 形状不一致: {e}"),
+    };
 
-    if let Some(p) = v.get("project").and_then(|x| x.as_str())
-        && !p.trim().is_empty()
-        && let Err(e) = safe_compose_project(p.trim())
+    if let Some(p) = args
+        .project
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        && let Err(e) = safe_compose_project(p)
     {
         return format!("错误：{}", e);
     }
 
-    if let Some(arr) = v.get("compose_files").and_then(|x| x.as_array()) {
-        for x in arr {
-            let Some(f) = x.as_str().map(str::trim).filter(|s| !s.is_empty()) else {
-                continue;
-            };
-            if let Err(e) = safe_relative_path(f, "compose_files") {
-                return format!("错误：{}", e);
-            }
+    for f in &args.compose_files {
+        let f = f.trim();
+        if f.is_empty() {
+            continue;
+        }
+        if let Err(e) = safe_relative_path(f, "compose_files") {
+            return format!("错误：{}", e);
         }
     }
 
     let mut cmd = Command::new("docker");
     cmd.arg("compose");
-    if let Some(p) = v.get("project").and_then(|x| x.as_str()).map(str::trim)
-        && !p.is_empty()
+    if let Some(p) = args
+        .project
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
     {
         cmd.arg("-p").arg(p);
     }
-    if let Some(arr) = v.get("compose_files").and_then(|x| x.as_array()) {
-        for x in arr {
-            if let Some(f) = x.as_str().map(str::trim).filter(|s| !s.is_empty()) {
-                cmd.arg("-f").arg(f);
-            }
+    for f in &args.compose_files {
+        let t = f.trim();
+        if !t.is_empty() {
+            cmd.arg("-f").arg(t);
         }
     }
     cmd.arg("ps");
@@ -159,9 +178,17 @@ pub fn podman_images(args_json: &str, workspace_root: &Path, max_output_len: usi
         Ok(v) => v,
         Err(e) => return e,
     };
+    let args: PodmanImagesArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 podman_images 形状不一致: {e}"),
+    };
 
-    let reference = v.get("reference").and_then(|x| x.as_str()).map(str::trim);
-    if let Some(r) = reference.filter(|s| !s.is_empty())
+    let reference = args
+        .reference
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    if let Some(r) = reference
         && let Err(e) = safe_image_ref(r)
     {
         return format!("错误：{}", e);
@@ -169,7 +196,7 @@ pub fn podman_images(args_json: &str, workspace_root: &Path, max_output_len: usi
 
     let mut cmd = Command::new("podman");
     cmd.arg("images");
-    if let Some(r) = reference.filter(|s| !s.is_empty()) {
+    if let Some(r) = reference {
         cmd.arg(r);
     }
     cmd.current_dir(workspace_root);

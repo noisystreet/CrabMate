@@ -4,6 +4,9 @@ use std::path::Path;
 use std::process::Command;
 
 use super::output_util;
+use super::tool_param_types::{
+    GoBuildArgs, GoFmtCheckArgs, GoModTidyArgs, GoTestArgs, GoVetArgs, GolangciLintArgs,
+};
 
 const MAX_OUTPUT_LINES: usize = 800;
 
@@ -16,24 +19,28 @@ pub fn go_build(args_json: &str, workspace_root: &Path, max_output_len: usize) -
         Ok(v) => v,
         Err(e) => return e,
     };
+    let args: GoBuildArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 go_build 形状不一致: {e}"),
+    };
     if !has_go_project(workspace_root) {
         return "go build: 跳过（未找到 go.mod）".to_string();
     }
 
-    let package = v
-        .get("package")
-        .and_then(|x| x.as_str())
+    let package = args
+        .package
+        .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .unwrap_or("./...");
     if package.contains("..") && package != "./..." && package != "..." {
         return "错误：package 参数不安全".to_string();
     }
-    let race = v.get("race").and_then(|x| x.as_bool()).unwrap_or(false);
-    let verbose = v.get("verbose").and_then(|x| x.as_bool()).unwrap_or(false);
-    let tags = v
-        .get("tags")
-        .and_then(|x| x.as_str())
+    let race = args.race;
+    let verbose = args.verbose;
+    let tags = args
+        .tags
+        .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty());
 
@@ -48,6 +55,17 @@ pub fn go_build(args_json: &str, workspace_root: &Path, max_output_len: usize) -
     if let Some(t) = tags {
         cmd.arg("-tags").arg(t);
     }
+    if let Some(out) = args
+        .output
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        if out.contains("..") || out.starts_with('/') {
+            return "错误：output 参数不安全".to_string();
+        }
+        cmd.arg("-o").arg(out);
+    }
     cmd.arg(package).current_dir(workspace_root);
     run_and_format(cmd, max_output_len, "go build")
 }
@@ -57,36 +75,36 @@ pub fn go_test(args_json: &str, workspace_root: &Path, max_output_len: usize) ->
         Ok(v) => v,
         Err(e) => return e,
     };
+    let args: GoTestArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 go_test 形状不一致: {e}"),
+    };
     if !has_go_project(workspace_root) {
         return "go test: 跳过（未找到 go.mod）".to_string();
     }
 
-    let package = v
-        .get("package")
-        .and_then(|x| x.as_str())
+    let package = args
+        .package
+        .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .unwrap_or("./...");
     if package.contains("..") && package != "./..." && package != "..." {
         return "错误：package 参数不安全".to_string();
     }
-    let run_filter = v
-        .get("run")
-        .and_then(|x| x.as_str())
+    let run_filter = args.run.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let race = args.race;
+    let verbose = args.verbose;
+    let short = args.short;
+    let count = args.count;
+    let timeout = args
+        .timeout
+        .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty());
-    let race = v.get("race").and_then(|x| x.as_bool()).unwrap_or(false);
-    let verbose = v.get("verbose").and_then(|x| x.as_bool()).unwrap_or(true);
-    let short = v.get("short").and_then(|x| x.as_bool()).unwrap_or(false);
-    let count = v.get("count").and_then(|x| x.as_u64());
-    let timeout = v
-        .get("timeout")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let tags = v
-        .get("tags")
-        .and_then(|x| x.as_str())
+    let tags = args
+        .tags
+        .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty());
 
@@ -122,22 +140,26 @@ pub fn go_vet(args_json: &str, workspace_root: &Path, max_output_len: usize) -> 
         Ok(v) => v,
         Err(e) => return e,
     };
+    let args: GoVetArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 go_vet 形状不一致: {e}"),
+    };
     if !has_go_project(workspace_root) {
         return "go vet: 跳过（未找到 go.mod）".to_string();
     }
 
-    let package = v
-        .get("package")
-        .and_then(|x| x.as_str())
+    let package = args
+        .package
+        .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .unwrap_or("./...");
     if package.contains("..") && package != "./..." && package != "..." {
         return "错误：package 参数不安全".to_string();
     }
-    let tags = v
-        .get("tags")
-        .and_then(|x| x.as_str())
+    let tags = args
+        .tags
+        .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty());
 
@@ -155,11 +177,14 @@ pub fn go_mod_tidy(args_json: &str, workspace_root: &Path, max_output_len: usize
         Ok(v) => v,
         Err(e) => return e,
     };
+    let args: GoModTidyArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 go_mod_tidy 形状不一致: {e}"),
+    };
     if !has_go_project(workspace_root) {
         return "go mod tidy: 跳过（未找到 go.mod）".to_string();
     }
-    let confirm = v.get("confirm").and_then(|x| x.as_bool()).unwrap_or(false);
-    if !confirm {
+    if !args.confirm {
         return "拒绝执行：go_mod_tidy 需要 confirm=true".to_string();
     }
 
@@ -173,13 +198,17 @@ pub fn go_fmt_check(args_json: &str, workspace_root: &Path, max_output_len: usiz
         Ok(v) => v,
         Err(e) => return e,
     };
+    let args: GoFmtCheckArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 go_fmt_check 形状不一致: {e}"),
+    };
     if !has_go_project(workspace_root) {
         return "gofmt: 跳过（未找到 go.mod）".to_string();
     }
 
-    let path = v
-        .get("path")
-        .and_then(|x| x.as_str())
+    let path = args
+        .path
+        .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .unwrap_or(".");
@@ -197,11 +226,10 @@ pub fn golangci_lint(args_json: &str, workspace_root: &Path, max_output_len: usi
         Ok(v) => v,
         Err(e) => return e,
     };
-    let super::tool_param_types::GolangciLintArgs { fix, fast } =
-        match serde_json::from_value::<super::tool_param_types::GolangciLintArgs>(v) {
-            Ok(a) => a,
-            Err(e) => return format!("参数 JSON 与 golangci_lint 形状不一致: {e}"),
-        };
+    let GolangciLintArgs { fix, fast } = match serde_json::from_value::<GolangciLintArgs>(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 golangci_lint 形状不一致: {e}"),
+    };
     if !has_go_project(workspace_root) {
         return "golangci-lint: 跳过（未找到 go.mod）".to_string();
     }
