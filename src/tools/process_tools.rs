@@ -3,6 +3,7 @@
 use std::process::Command;
 
 use super::output_util;
+use super::tool_param_types::{PortCheckArgs, ProcessListArgs};
 
 const MAX_OUTPUT_LINES: usize = 400;
 
@@ -11,10 +12,11 @@ pub fn port_check(args_json: &str, max_output_len: usize) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let port = match v.get("port").and_then(|x| x.as_u64()) {
-        Some(p) if p > 0 && p <= 65535 => p as u16,
-        _ => return "错误：缺少合法 port 参数（1-65535）".to_string(),
+    let PortCheckArgs { port } = match serde_json::from_value::<PortCheckArgs>(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 port_check 形状不一致: {e}"),
     };
+    let port = port as u16;
 
     let mut cmd = Command::new("ss");
     cmd.arg("-tlnp").arg(format!("sport = :{}", port));
@@ -81,13 +83,16 @@ pub fn process_list(args_json: &str, max_output_len: usize) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let filter = v
-        .get("filter")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let user_only = v.get("user_only").and_then(|x| x.as_bool()).unwrap_or(true);
-    let max_count = v.get("max_count").and_then(|x| x.as_u64()).unwrap_or(100) as usize;
+    let ProcessListArgs {
+        filter,
+        user_only,
+        max_count,
+    } = match serde_json::from_value::<ProcessListArgs>(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 process_list 形状不一致: {e}"),
+    };
+    let filter = filter.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let max_count = max_count as usize;
 
     let mut cmd = Command::new("ps");
     if user_only {

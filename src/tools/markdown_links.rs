@@ -2,6 +2,7 @@
 //!
 //! 路径与 `file` 工具一致：扫描根须为工作区相对路径，禁止 `..` 与绝对路径；解析目标时做词法归一化并限制在工作区根之下。
 
+use crate::tools::tool_param_types::MarkdownCheckLinksOutputFormat;
 use crate::workspace::path::canonical_workspace_root;
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
@@ -56,13 +57,6 @@ struct LinkIssue {
     line: Option<usize>,
     target: String,
     message: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum OutputFormat {
-    Text,
-    Json,
-    Sarif,
 }
 
 fn lexical_resolve_under(base: &Path, rel: &str) -> PathBuf {
@@ -162,16 +156,6 @@ fn head_check_url(client: &Client, url: &str) -> Result<u16, String> {
         return Ok(resp2.status().as_u16());
     }
     Ok(status)
-}
-
-fn parse_output_format(raw: Option<&str>) -> Result<OutputFormat, String> {
-    let raw = raw.map(str::trim).unwrap_or("text").to_ascii_lowercase();
-    match raw.as_str() {
-        "text" => Ok(OutputFormat::Text),
-        "json" => Ok(OutputFormat::Json),
-        "sarif" => Ok(OutputFormat::Sarif),
-        _ => Err("错误：output_format 仅支持 text/json/sarif".to_string()),
-    }
 }
 
 #[allow(clippy::too_many_arguments)] // 递归收集入口：根路径、上限与错误收集一次传入
@@ -608,7 +592,7 @@ fn render_text_report(
 }
 
 struct MarkdownCheckParsed {
-    output_format: OutputFormat,
+    output_format: MarkdownCheckLinksOutputFormat,
     roots: Vec<String>,
     max_files: usize,
     max_depth: usize,
@@ -617,55 +601,51 @@ struct MarkdownCheckParsed {
     check_fragments: bool,
 }
 
-fn parse_markdown_check_args(v: &serde_json::Value) -> Result<MarkdownCheckParsed, String> {
-    let output_format = parse_output_format(v.get("output_format").and_then(|x| x.as_str()))?;
+fn parse_markdown_check_args(
+    args: &crate::tools::tool_param_types::MarkdownCheckLinksArgs,
+) -> Result<MarkdownCheckParsed, String> {
+    let output_format = args.output_format.unwrap_or_default();
 
-    let roots: Vec<String> = v
-        .get("roots")
-        .and_then(|x| x.as_array())
+    let roots: Vec<String> = args
+        .roots
+        .as_ref()
         .map(|arr| {
             arr.iter()
-                .filter_map(|x| x.as_str().map(|s| s.trim().to_string()))
+                .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
-                .collect()
+                .collect::<Vec<_>>()
         })
         .filter(|roots_vec: &Vec<String>| !roots_vec.is_empty())
         .unwrap_or_else(|| vec!["README.md".into(), "docs".into()]);
 
-    let max_files = v
-        .get("max_files")
-        .and_then(|n| n.as_u64())
+    let max_files = args
+        .max_files
         .map(|n| n as usize)
         .unwrap_or(DEFAULT_MAX_FILES)
         .clamp(1, ABS_MAX_FILES);
 
-    let max_depth = v
-        .get("max_depth")
-        .and_then(|n| n.as_u64())
+    let max_depth = args
+        .max_depth
         .map(|n| n as usize)
         .unwrap_or(DEFAULT_MAX_DEPTH)
         .clamp(1, ABS_MAX_DEPTH);
 
-    let allowed_prefixes: Vec<String> = v
-        .get("allowed_external_prefixes")
-        .and_then(|x| x.as_array())
+    let allowed_prefixes: Vec<String> = args
+        .allowed_external_prefixes
+        .as_ref()
         .map(|arr| {
             arr.iter()
-                .filter_map(|x| x.as_str().map(|s| s.trim().to_string()))
+                .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect()
         })
         .unwrap_or_default();
 
-    let ext_timeout = v
-        .get("external_timeout_secs")
-        .and_then(|n| n.as_u64())
+    let ext_timeout = args
+        .external_timeout_secs
+        .map(|n| n as u64)
         .unwrap_or(DEFAULT_EXTERNAL_TIMEOUT_SECS)
         .clamp(1, ABS_MAX_EXTERNAL_TIMEOUT_SECS);
-    let check_fragments = v
-        .get("check_fragments")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(true);
 
     Ok(MarkdownCheckParsed {
         output_format,
@@ -674,7 +654,7 @@ fn parse_markdown_check_args(v: &serde_json::Value) -> Result<MarkdownCheckParse
         max_depth,
         allowed_prefixes,
         ext_timeout,
-        check_fragments,
+        check_fragments: args.check_fragments,
     })
 }
 
@@ -1024,8 +1004,8 @@ fn markdown_check_links_inner(parsed: MarkdownCheckParsed, working_dir: &Path) -
         .map(issue_json)
         .collect::<Vec<_>>();
     match output_format {
-        OutputFormat::Text => text,
-        OutputFormat::Json => serde_json::to_string_pretty(&serde_json::json!({
+        MarkdownCheckLinksOutputFormat::Text => text,
+        MarkdownCheckLinksOutputFormat::Json => serde_json::to_string_pretty(&serde_json::json!({
             "tool": "markdown_check_links",
             "workspace": ws_canonical.to_string_lossy(),
             "roots": roots,
@@ -1046,7 +1026,7 @@ fn markdown_check_links_inner(parsed: MarkdownCheckParsed, working_dir: &Path) -
             "problems": all_issues
         }))
         .unwrap_or_else(|e| format!("JSON 序列化失败: {}", e)),
-        OutputFormat::Sarif => {
+        MarkdownCheckLinksOutputFormat::Sarif => {
             let results = local_issues
                 .iter()
                 .chain(external_issues.iter())
@@ -1094,7 +1074,12 @@ pub fn markdown_check_links(args_json: &str, working_dir: &Path) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    match parse_markdown_check_args(&v) {
+    let args: crate::tools::tool_param_types::MarkdownCheckLinksArgs =
+        match serde_json::from_value(v) {
+            Ok(a) => a,
+            Err(e) => return format!("参数 JSON 与 markdown_check_links 形状不一致: {e}"),
+        };
+    match parse_markdown_check_args(&args) {
         Ok(parsed) => markdown_check_links_inner(parsed, working_dir),
         Err(e) => e,
     }
