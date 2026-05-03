@@ -1413,3 +1413,71 @@ impl Default for TextDiffArgs {
         }
     }
 }
+
+// ── 文件额外写操作（`file::mutate` / `perm` / `symlink`）────────
+
+/// [`super::file::mutate::delete_file`] 入参。
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct DeleteFileArgs {
+    pub path: String,
+    pub confirm: Option<bool>,
+}
+
+/// [`super::file::mutate::delete_dir`] 入参。
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct DeleteDirArgs {
+    pub path: String,
+    #[serde(default)]
+    pub recursive: bool,
+    pub confirm: Option<bool>,
+}
+
+/// [`super::file::mutate::append_file`] 入参。
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct AppendFileArgs {
+    pub path: String,
+    #[serde(default)]
+    pub content: String,
+    #[serde(default)]
+    pub create_if_missing: bool,
+}
+
+/// [`super::file::mutate::create_dir`] 入参。
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct CreateDirArgs {
+    pub path: String,
+    #[serde(default = "default_true")]
+    pub parents: bool,
+}
+
+/// [`super::file::mutate::search_replace`] 入参。
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SearchReplaceArgs {
+    pub path: String,
+    pub search: String,
+    #[serde(default)]
+    pub replace: String,
+    #[serde(default)]
+    pub regex: bool,
+    #[serde(default)]
+    #[schemars(range(min = 0))]
+    pub max_replacements: Option<u64>,
+    #[serde(default = "default_true")]
+    pub dry_run: bool,
+    #[serde(default)]
+    pub confirm: bool,
+}
+
+/// [`super::file::perm::chmod_file`] 入参。
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct ChmodFileArgs {
+    pub path: String,
+    pub mode: String,
+    pub confirm: Option<bool>,
+}
+
+/// [`super::file::symlink::symlink_info`] 入参。
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SymlinkInfoArgs {
+    pub path: String,
+}
