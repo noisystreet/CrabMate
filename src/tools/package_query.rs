@@ -6,6 +6,7 @@ use std::io;
 use std::process::Command;
 
 use super::output_util;
+use super::tool_param_types::{PackageQueryArgs, PackageQueryManagerPref};
 
 const MAX_OUTPUT_LINES: usize = 200;
 
@@ -35,16 +36,19 @@ pub fn run(args_json: &str, max_output_len: usize) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let package = match v.get("package").and_then(|x| x.as_str()) {
-        Some(s) => match validate_package_name(s) {
-            Ok(pkg) => pkg,
-            Err(e) => return e,
-        },
-        None => return "错误：缺少 package 参数".to_string(),
+    let PackageQueryArgs { package, manager } = match serde_json::from_value::<PackageQueryArgs>(v)
+    {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 package_query 形状不一致: {e}"),
     };
-    let pref = match parse_manager_pref(v.get("manager").and_then(|x| x.as_str())) {
-        Ok(p) => p,
+    let package = match validate_package_name(&package) {
+        Ok(pkg) => pkg,
         Err(e) => return e,
+    };
+    let pref = match manager {
+        PackageQueryManagerPref::Auto => ManagerPref::Auto,
+        PackageQueryManagerPref::Apt => ManagerPref::Apt,
+        PackageQueryManagerPref::Rpm => ManagerPref::Rpm,
     };
 
     let queried = match pref {
@@ -173,21 +177,6 @@ fn query_rpm(package: &str) -> Result<PackageQueryResult, QueryError> {
     )))
 }
 
-fn parse_manager_pref(raw: Option<&str>) -> Result<ManagerPref, String> {
-    match raw
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("auto")
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "auto" => Ok(ManagerPref::Auto),
-        "apt" => Ok(ManagerPref::Apt),
-        "rpm" => Ok(ManagerPref::Rpm),
-        _ => Err("错误：manager 仅支持 auto / apt / rpm".to_string()),
-    }
-}
-
 fn validate_package_name(raw: &str) -> Result<String, String> {
     let pkg = raw.trim();
     if pkg.is_empty() {
@@ -253,14 +242,16 @@ fn concise_err(stdout: &str, stderr: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tools::tool_param_types::{PackageQueryArgs, PackageQueryManagerPref};
 
     #[test]
     fn manager_pref_defaults_to_auto() {
-        assert!(matches!(parse_manager_pref(None), Ok(ManagerPref::Auto)));
-        assert!(matches!(
-            parse_manager_pref(Some(" ")),
-            Ok(ManagerPref::Auto)
-        ));
+        let v: serde_json::Value = serde_json::json!({ "package": "bash" });
+        let a: PackageQueryArgs = serde_json::from_value(v).unwrap();
+        assert!(matches!(a.manager, PackageQueryManagerPref::Auto));
+        let v2: serde_json::Value = serde_json::json!({ "package": "bash", "manager": " " });
+        let a2: PackageQueryArgs = serde_json::from_value(v2).unwrap();
+        assert!(matches!(a2.manager, PackageQueryManagerPref::Auto));
     }
 
     #[test]
