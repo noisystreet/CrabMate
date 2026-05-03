@@ -623,7 +623,7 @@ fn env_override_staged_plan_execution_flags(b: &mut ConfigBuilder) {
     }
 }
 
-fn apply_env_overrides_part_8(b: &mut ConfigBuilder) {
+fn env_override_staged_plan_phase_and_feedback_strings(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_STAGED_PLAN_PHASE_INSTRUCTION") {
         b.staged_plan_phase_instruction = Some(v);
     }
@@ -633,6 +633,9 @@ fn apply_env_overrides_part_8(b: &mut ConfigBuilder) {
             b.staged_plan_feedback_mode_str = Some(s);
         }
     }
+}
+
+fn env_override_staged_plan_patch_and_planner_flags(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_STAGED_PLAN_PATCH_MAX_ATTEMPTS")
         && let Ok(n) = v.trim().parse::<u64>()
     {
@@ -653,6 +656,9 @@ fn apply_env_overrides_part_8(b: &mut ConfigBuilder) {
     {
         b.staged_plan_optimizer_requires_parallel_tools = Some(val);
     }
+}
+
+fn env_override_staged_plan_ensemble_and_nl_display(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_STAGED_PLAN_ENSEMBLE_COUNT")
         && let Ok(n) = v.trim().parse::<u64>()
     {
@@ -668,6 +674,9 @@ fn apply_env_overrides_part_8(b: &mut ConfigBuilder) {
     {
         b.staged_plan_two_phase_nl_display = Some(val);
     }
+}
+
+fn env_override_sync_default_tool_sandbox_from_env(b: &mut ConfigBuilder) {
     if let Ok(s) = std::env::var("CM_SYNC_DEFAULT_TOOL_SANDBOX_MODE") {
         let s = s.trim().to_string();
         if !s.is_empty() {
@@ -688,6 +697,13 @@ fn apply_env_overrides_part_8(b: &mut ConfigBuilder) {
     {
         b.sync_default_tool_sandbox_docker_timeout_secs = Some(n);
     }
+}
+
+fn apply_env_overrides_part_8(b: &mut ConfigBuilder) {
+    env_override_staged_plan_phase_and_feedback_strings(b);
+    env_override_staged_plan_patch_and_planner_flags(b);
+    env_override_staged_plan_ensemble_and_nl_display(b);
+    env_override_sync_default_tool_sandbox_from_env(b);
 }
 
 fn apply_env_overrides_part_9(b: &mut ConfigBuilder) {

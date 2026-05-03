@@ -53,6 +53,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
+    let cfg = load_feishu_bridge_config()?;
+    run_feishu_bridge_server(cfg).await
+}
+
+fn load_feishu_bridge_config()
+-> Result<FeishuBridgeConfig, Box<dyn std::error::Error + Send + Sync>> {
     let crabmate_base = env_req("CRABMATE_BASE_URL")?;
     let crabmate_bearer = env_req("CRABMATE_WEB_API_BEARER")?;
     let app_id = env_req("FEISHU_APP_ID")?;
@@ -101,12 +107,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let sqlite_max_retries = env_u64("FEISHU_SQLITE_QUEUE_MAX_RETRIES", 5)?.max(1) as u32;
     let sqlite_poll_ms = env_u64("FEISHU_SQLITE_QUEUE_POLL_MS", 200)?.max(50);
     let sqlite_lease_secs = env_u64("FEISHU_SQLITE_QUEUE_LEASE_SECS", 600)? as i64;
-    let listen: SocketAddr = env::var("LISTEN_ADDR")
-        .unwrap_or_else(|_| "127.0.0.1:9988".into())
-        .parse()?;
 
     let crabmate = std::sync::Arc::new(CrabmateClient::new(crabmate_base, crabmate_bearer)?);
-    let cfg = FeishuBridgeConfig {
+    Ok(FeishuBridgeConfig {
         app_id,
         app_secret,
         encrypt_key,
@@ -137,7 +140,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         sqlite_queue_max_retries: sqlite_max_retries,
         sqlite_queue_poll_ms: sqlite_poll_ms,
         sqlite_queue_lease_secs: sqlite_lease_secs.max(30),
-    };
+    })
+}
+
+async fn run_feishu_bridge_server(
+    cfg: FeishuBridgeConfig,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let listen: SocketAddr = env::var("LISTEN_ADDR")
+        .unwrap_or_else(|_| "127.0.0.1:9988".into())
+        .parse()?;
     let state =
         FeishuBridgeState::try_new(cfg).map_err(|e: FeishuBridgeInitError| e.to_string())?;
     let app = build_router(state).layer(TraceLayer::new_for_http());
