@@ -117,7 +117,7 @@ async fn run_async_chat_json_job(
     webhook_secret: Option<String>,
 ) {
     {
-        let mut g = state.async_chat_jobs.write().await;
+        let mut g = state.aux.async_chat_jobs.write().await;
         if let Some(r) = g.get_mut(&job_id) {
             r.status = crate::web::async_chat_job::ChatAsyncJobStatus::Running;
         }
@@ -165,7 +165,7 @@ async fn run_async_chat_json_job(
     };
 
     {
-        let mut g = state.async_chat_jobs.write().await;
+        let mut g = state.aux.async_chat_jobs.write().await;
         if let Some(r) = g.get_mut(&job_id) {
             r.status = if status_str == "completed" {
                 crate::web::async_chat_job::ChatAsyncJobStatus::Completed
@@ -187,7 +187,7 @@ async fn run_async_chat_json_job(
             reply: reply.as_deref(),
             error: err_api.as_ref(),
         };
-        post_chat_job_webhook(&state.client, url, webhook_secret.as_deref(), &payload).await;
+        post_chat_job_webhook(&state.http.client, url, webhook_secret.as_deref(), &payload).await;
     }
 }
 
@@ -224,11 +224,11 @@ pub(crate) async fn chat_async_handler(
     let webhook_secret = normalize_webhook_secret(body.webhook_secret)?;
     let conversation_id = parsed.conversation_id.clone();
 
-    let job_id = state.chat_queue.next_job_id();
+    let job_id = state.chat.chat_queue.next_job_id();
     let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
 
     {
-        let mut g = state.async_chat_jobs.write().await;
+        let mut g = state.aux.async_chat_jobs.write().await;
         g.insert(
             job_id,
             crate::web::async_chat_job::ChatAsyncJobRecord {
@@ -269,14 +269,15 @@ pub(crate) async fn chat_async_handler(
     );
     info!(target: "crabmate", "chat async 任务入队 job_id={}", job_id);
     let request_audit = {
-        let cfg = state.cfg.read().await;
+        let cfg = state.http.cfg.read().await;
         audit::web_request_audit_from_http(&cfg, &headers, peer)
     };
     let submit = state
+        .chat
         .chat_queue
         .try_submit_json(chat_job_queue::JsonSubmitParams {
             job_id,
-            queue_deps: state.chat_queue_job_deps.clone(),
+            queue_deps: state.chat.chat_queue_job_deps.clone(),
             app: state.clone(),
             conversation_id: cid_enqueue,
             messages: turn_seed.messages,
@@ -295,7 +296,7 @@ pub(crate) async fn chat_async_handler(
         });
 
     if let Err(e) = submit {
-        let mut g = state.async_chat_jobs.write().await;
+        let mut g = state.aux.async_chat_jobs.write().await;
         g.remove(&job_id);
         return Err((
             StatusCode::SERVICE_UNAVAILABLE,
@@ -329,7 +330,7 @@ pub(crate) async fn chat_job_status_handler(
     State(state): State<Arc<AppState>>,
     Path(job_id): Path<u64>,
 ) -> Result<Json<ChatJobStatusResponseBody>, (StatusCode, Json<ApiError>)> {
-    let g = state.async_chat_jobs.read().await;
+    let g = state.aux.async_chat_jobs.read().await;
     let Some(rec) = g.get(&job_id) else {
         return Err((
             StatusCode::NOT_FOUND,

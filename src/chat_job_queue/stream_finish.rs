@@ -29,7 +29,7 @@ pub(super) async fn post_turn_web_prepare_and_save(
     let scope = conversation_id.to_string();
     let to_index = messages.clone();
     if let (Some(ltm), true) = (
-        app.long_term_memory.as_ref(),
+        app.aux.long_term_memory.as_ref(),
         cfg_snap.long_term_memory.long_term_memory_enabled,
     ) {
         ltm.clone()

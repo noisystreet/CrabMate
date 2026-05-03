@@ -39,8 +39,9 @@ pub(crate) struct ConversationTurnSeed {
     pub persisted_active_agent_role: Option<String>,
 }
 
+/// HTTP 客户端、共享配置快照与工作区覆盖（与队列 / 会话后端解耦）。
 #[derive(Clone)]
-pub(crate) struct AppState {
+pub(crate) struct AppStateHttpCore {
     pub(crate) cfg: SharedAgentConfig,
     /// 与启动时 `--config` / 默认探测一致，供 **`POST /config/reload`** 调用 [`load_config`]。
     pub(crate) config_path_for_reload: Option<String>,
@@ -50,30 +51,43 @@ pub(crate) struct AppState {
     /// 前端设置的工作区路径覆盖；为 None 时使用 cfg.command_exec.run_command_working_dir
     pub(crate) workspace_override: Arc<tokio::sync::RwLock<Option<String>>>,
     pub(crate) uploads_dir: std::path::PathBuf,
-    /// `/chat` / `/chat/stream` 进程内任务队列（有界排队 + 并发上限）
+}
+
+/// `/chat` / `/chat/stream` 进程内队列及其 worker 依赖。
+#[derive(Clone)]
+pub(crate) struct AppStateChatRuntime {
     pub(crate) chat_queue: ChatJobQueue,
-    /// 队列 worker 使用的 LLM/工具/hub 句柄（与会话存储等字段分离，见 [`WebChatQueueDeps`]）。
     pub(crate) chat_queue_job_deps: Arc<WebChatQueueDeps>,
+}
+
+/// 会话持久化与默认 `conversation_id` 生成。
+#[derive(Clone)]
+pub(crate) struct AppStateConversationRuntime {
     /// `conversation_id` → 消息与 revision：内存或 SQLite（见配置 `conversation_store_sqlite_path`）
     pub(crate) conversation_backing: ConversationBacking,
-    /// 新会话 ID 递增计数器（仅用于生成默认 conversation_id）。
     pub(crate) conversation_id_counter: Arc<AtomicU64>,
-    /// Web 流式审批会话 -> 决策通道。
+}
+
+/// 审批表、任务侧栏、SSE hub、异步作业等 Web 辅助状态。
+#[derive(Clone)]
+pub(crate) struct AppStateWebAux {
     pub(crate) approval_sessions:
         Arc<tokio::sync::RwLock<HashMap<String, mpsc::Sender<CommandApprovalDecision>>>>,
-    /// 长期记忆（可选 SQLite + 可选 fastembed）；未启用或未配置路径时为 `None`。
     pub(crate) long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
-    /// Web 侧栏任务清单：按**当前生效工作区路径**键入，仅存本进程内存（**不**写 `tasks.json`）。
     pub(crate) web_tasks_by_workspace: Arc<tokio::sync::RwLock<HashMap<String, TasksData>>>,
-    /// [`GET /health`](crate::web::chat_handlers::health_handler) 可选 **GET …/models** 探测结果缓存（见 `health_llm_models_probe_cache_secs`）。
     pub(crate) llm_models_health_cache:
         Arc<std::sync::Mutex<Option<crate::health::CachedLlmModelsHealthProbe>>>,
-    /// `/chat/stream` 断线重连：`Last-Event-ID` / `stream_resume` 与环形缓冲（进程内）。
     pub(crate) sse_stream_hub: Arc<SseStreamHub>,
-    /// 进程内显式句柄：工作区变更集、工具统计等（与 `run_agent_turn` 注入同源）。
     pub(crate) process_handles: Arc<crate::process_handles::ProcessHandles>,
-    /// **`POST /chat/async`** 轮询状态（**进程内**；`serve` 重启丢失）。
     pub(crate) async_chat_jobs: super::async_chat_job::AsyncChatJobsMap,
+}
+
+#[derive(Clone)]
+pub(crate) struct AppState {
+    pub(crate) http: AppStateHttpCore,
+    pub(crate) chat: AppStateChatRuntime,
+    pub(crate) conversation: AppStateConversationRuntime,
+    pub(crate) aux: AppStateWebAux,
 }
 
 /// Web 会话存储后端。
@@ -134,11 +148,11 @@ impl AppState {
     ///
     /// 与配置项 **`run_command_working_dir`** 分离：后者仍供 CLI、配置解析、`GET /health` 等使用；Web 侧栏在首次设置前不应默认等同于进程当前目录。
     pub(crate) async fn effective_workspace_path(&self) -> String {
-        let guard = self.workspace_override.read().await;
+        let guard = self.http.workspace_override.read().await;
         match guard.as_deref() {
             None => String::new(),
             Some(s) if s.trim().is_empty() => {
-                let cfg = self.cfg.read().await;
+                let cfg = self.http.cfg.read().await;
                 cfg.command_exec.run_command_working_dir.clone()
             }
             Some(s) => s.to_string(),
@@ -148,12 +162,15 @@ impl AppState {
     /// 前端是否已经“设置过明确工作区路径”（`Some(non-empty)`）。
     /// `Some("")` 仅表示回退默认目录，不视为“已设置工作区”。
     pub(crate) async fn workspace_is_set(&self) -> bool {
-        let guard = self.workspace_override.read().await;
+        let guard = self.http.workspace_override.read().await;
         guard.as_deref().is_some_and(|s| !s.trim().is_empty())
     }
 
     pub(crate) fn next_conversation_id(&self) -> String {
-        let n = self.conversation_id_counter.fetch_add(1, Ordering::Relaxed);
+        let n = self
+            .conversation
+            .conversation_id_counter
+            .fetch_add(1, Ordering::Relaxed);
         let ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -165,7 +182,7 @@ impl AppState {
         &self,
         conversation_id: &str,
     ) -> Option<ConversationTurnSeed> {
-        match &self.conversation_backing {
+        match &self.conversation.conversation_backing {
             ConversationBacking::Memory(map) => {
                 let mut guard = map.write().await;
                 let entry = guard.get_mut(conversation_id)?;
@@ -253,7 +270,7 @@ impl AppState {
         active_agent_role: Option<&str>,
         expected_revision: Option<u64>,
     ) -> SaveConversationOutcome {
-        match &self.conversation_backing {
+        match &self.conversation.conversation_backing {
             ConversationBacking::Memory(map) => {
                 let mut guard = map.write().await;
                 let now = std::time::Instant::now();
@@ -316,7 +333,7 @@ impl AppState {
         user_ordinal: usize,
         expected_revision: u64,
     ) -> SaveConversationOutcome {
-        match &self.conversation_backing {
+        match &self.conversation.conversation_backing {
             ConversationBacking::Memory(map) => {
                 let mut guard = map.write().await;
                 let Some(entry) = guard.get_mut(&conversation_id) else {
@@ -368,7 +385,7 @@ impl AppState {
     }
 
     pub(crate) async fn conversation_count(&self) -> usize {
-        match &self.conversation_backing {
+        match &self.conversation.conversation_backing {
             ConversationBacking::Memory(map) => map.read().await.len(),
             ConversationBacking::Sqlite(conn) => {
                 let c = Arc::clone(conn);

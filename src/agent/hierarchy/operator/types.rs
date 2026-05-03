@@ -43,21 +43,15 @@ pub struct CompileErrorInfo {
     pub alternative_config: Option<String>,
 }
 
-/// Operator Agent 配置
+/// ReAct 策略与工具可见性（与分层执行注入的运行时句柄分离）。
 #[derive(Debug, Clone)]
-pub struct OperatorConfig {
+pub struct OperatorPolicy {
     /// 最大 ReAct 迭代次数
     pub max_iterations: usize,
     /// 可用的工具列表（为空表示使用全部工具）
     pub allowed_tools: Vec<String>,
     /// 工具定义列表（用于 LLM 函数调用）
     pub tools_defs: Vec<Tool>,
-    /// SSE 发送器（用于发送工具调用/结果事件）
-    pub sse_out: Option<Sender<String>>,
-    /// 产物存储（用于状态共享）
-    pub artifact_store: Option<ArtifactStore>,
-    /// 构建状态（编译任务使用）
-    pub build_state: Option<std::sync::Arc<std::sync::Mutex<BuildState>>>,
     /// 是否启用编译错误自动修复
     pub enable_compile_error_recovery: bool,
     /// 编译错误重试次数
@@ -70,21 +64,45 @@ pub struct OperatorConfig {
     pub dynamic_decomposition_threshold: u8,
 }
 
-impl Default for OperatorConfig {
+impl Default for OperatorPolicy {
     fn default() -> Self {
         Self {
             max_iterations: 15,
             allowed_tools: Vec::new(),
             tools_defs: Vec::new(),
-            sse_out: None,
-            artifact_store: None,
-            build_state: None,
             enable_compile_error_recovery: true,
             compile_error_max_retries: 3,
             attempted_configs: Vec::new(),
             enable_dynamic_decomposition: true,
             dynamic_decomposition_threshold: 40,
         }
+    }
+}
+
+/// SSE、产物存储与构建可变状态（按子目标实例化；与 [`OperatorPolicy`] 正交）。
+#[derive(Default, Clone)]
+pub struct OperatorRuntimeHandles {
+    /// SSE 发送器（用于发送工具调用/结果事件）
+    pub sse_out: Option<Sender<String>>,
+    /// 产物存储（用于状态共享）
+    pub artifact_store: Option<ArtifactStore>,
+    /// 构建状态（编译任务使用）
+    pub build_state: Option<std::sync::Arc<std::sync::Mutex<BuildState>>>,
+}
+
+/// Operator Agent 完整配置：策略 + 本轮运行时句柄。
+#[derive(Default, Clone)]
+pub struct OperatorConfig {
+    pub policy: OperatorPolicy,
+    pub runtime: OperatorRuntimeHandles,
+}
+
+impl std::fmt::Debug for OperatorConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OperatorConfig")
+            .field("policy", &self.policy)
+            .field("runtime", &"<OperatorRuntimeHandles>")
+            .finish()
     }
 }
 

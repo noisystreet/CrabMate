@@ -73,10 +73,12 @@ pub(crate) async fn run_agent_turn_for_cli(
     let tools_for_job = filter_tools_for_agent_role(tools, turn_allow.as_ref().map(|a| a.as_ref()));
     run_agent_turn(RunAgentTurnParams::cli_terminal_chat(
         crate::CliTerminalChatBuildArgs {
-            client,
-            api_key,
-            cfg,
-            tools: tools_for_job.as_slice(),
+            shared: crate::RunAgentTurnSharedInputs {
+                client,
+                api_key,
+                cfg,
+                tools: tools_for_job.as_slice(),
+            },
             messages,
             effective_working_dir: work_dir,
             no_stream,

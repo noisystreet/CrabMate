@@ -195,7 +195,7 @@ fn effective_llm_api_key_for_web_chat(
     {
         return k.clone();
     }
-    state.api_key.clone()
+    state.http.api_key.clone()
 }
 
 pub(super) async fn ensure_bearer_api_key_for_chat(
@@ -203,7 +203,7 @@ pub(super) async fn ensure_bearer_api_key_for_chat(
     llm_override: &Option<chat_job_queue::WebChatLlmOverride>,
 ) -> Result<(), (StatusCode, Json<ApiError>)> {
     let auth = {
-        let g = state.cfg.read().await;
+        let g = state.http.cfg.read().await;
         g.llm.llm_http_auth_mode
     };
     if auth != LlmHttpAuthMode::Bearer {

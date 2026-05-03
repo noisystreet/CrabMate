@@ -168,7 +168,7 @@ pub(super) async fn run_web_builtin_command(
 ) -> Option<String> {
     match classify_web_builtin_command(command)? {
         "skills" => {
-            let cfg = state.cfg.read().await;
+            let cfg = state.http.cfg.read().await;
             if !cfg.skills.skills_enabled {
                 return Some(
                     "skills 已关闭（skills_enabled=false），当前不会加载任何 skills。".to_string(),
@@ -202,7 +202,7 @@ pub(super) async fn run_web_builtin_command(
             Some(text)
         }
         "skills_list" => {
-            let cfg = state.cfg.read().await;
+            let cfg = state.http.cfg.read().await;
             if !cfg.skills.skills_enabled {
                 return Some(
                     "skills 已关闭（skills_enabled=false），当前不会加载任何 skills。".to_string(),

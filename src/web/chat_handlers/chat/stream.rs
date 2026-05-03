@@ -27,10 +27,87 @@ use crate::web::audit;
 
 use super::super::parse::{ensure_bearer_api_key_for_chat, normalize_approval_session_id};
 use super::builtin_skills::run_web_builtin_command;
-use super::turn_build::{build_messages_for_turn, parse_chat_stream_request, parse_last_event_id};
+use super::turn_build::{
+    ChatStreamRequestParsed, build_messages_for_turn, parse_chat_stream_request,
+    parse_last_event_id,
+};
 
 pub(super) fn sse_event_with_id(seq: u64, data: String) -> Result<Event, Infallible> {
     Ok(Event::default().id(seq.to_string()).data(data))
+}
+
+async fn chat_stream_resume_response(
+    state: &Arc<AppState>,
+    headers: &HeaderMap,
+    p: &ChatStreamRequestParsed,
+) -> Result<Option<Response>, (StatusCode, Json<ApiError>)> {
+    let Some(sr) = p.resume.as_ref() else {
+        return Ok(None);
+    };
+    let job_id = sr.job_id;
+    if !state.aux.sse_stream_hub.has_job(job_id) {
+        return Err((
+            StatusCode::GONE,
+            Json(ApiError {
+                code: "STREAM_JOB_GONE",
+                message: "流式任务已结束或不在本进程内存中，无法重连".to_string(),
+                reason_code: None,
+            }),
+        ));
+    }
+    let after_header = parse_last_event_id(headers).unwrap_or(0);
+    let after_body = sr.after_seq.unwrap_or(0);
+    let after_seq = after_header.max(after_body);
+    let Some(sub) = state.aux.sse_stream_hub.subscribe(job_id) else {
+        return Err((
+            StatusCode::GONE,
+            Json(ApiError {
+                code: "STREAM_JOB_GONE",
+                message: "流式任务已结束或不在本进程内存中，无法重连".to_string(),
+                reason_code: None,
+            }),
+        ));
+    };
+    let replay = state
+        .aux
+        .sse_stream_hub
+        .replay_after(job_id, after_seq)
+        .unwrap_or_default();
+    let max_replayed = replay.last().map(|(s, _)| *s).unwrap_or(after_seq);
+    info!(
+        target: "crabmate",
+        "chat stream 断线重连 job_id={} after_seq={} replayed={}",
+        job_id,
+        after_seq,
+        replay.len()
+    );
+    let replay_st = stream::iter(replay).map(|(seq, data)| sse_event_with_id(seq, data));
+    let live_st = BroadcastStream::new(sub).filter_map(move |item| {
+        std::future::ready(match item {
+            Ok((seq, data)) if seq > max_replayed => Some(sse_event_with_id(seq, data)),
+            Ok(_) => None,
+            Err(BroadcastStreamRecvError::Lagged(n)) => {
+                warn!(
+                    target: "crabmate",
+                    "chat stream 重连 broadcast lag job_id={} skipped={}",
+                    job_id,
+                    n
+                );
+                None
+            }
+        })
+    });
+    let merged = replay_st.chain(live_st);
+    let mut resp = Sse::new(merged)
+        .keep_alive(KeepAlive::default())
+        .into_response();
+    if let Ok(v) = HeaderValue::from_str(&job_id.to_string()) {
+        resp.headers_mut().insert("x-stream-job-id", v);
+    }
+    if let Ok(v) = HeaderValue::from_str(&p.conversation_id) {
+        resp.headers_mut().insert("x-conversation-id", v);
+    }
+    Ok(Some(resp))
 }
 
 /// 流式 chat：返回 SSE，每个 event 的 **`id`** 为单调序号（断线重连与 **`Last-Event-ID`** / **`stream_resume`**），`data` 为控制面 JSON 或正文 delta。
@@ -41,7 +118,6 @@ pub(crate) async fn chat_stream_handler(
     Json(body): Json<ChatRequestBody>,
 ) -> Result<Response, (StatusCode, Json<ApiError>)> {
     let p = parse_chat_stream_request(&state, &body)?;
-    let resume = p.resume.as_ref();
     ensure_bearer_api_key_for_chat(&state, &p.llm_override).await?;
     if let Some(reply) = run_web_builtin_command(&state, p.user_trim.as_str()).await {
         let stream =
@@ -55,69 +131,7 @@ pub(crate) async fn chat_stream_handler(
         return Ok(resp);
     }
 
-    if let Some(sr) = resume {
-        let job_id = sr.job_id;
-        if !state.sse_stream_hub.has_job(job_id) {
-            return Err((
-                StatusCode::GONE,
-                Json(ApiError {
-                    code: "STREAM_JOB_GONE",
-                    message: "流式任务已结束或不在本进程内存中，无法重连".to_string(),
-                    reason_code: None,
-                }),
-            ));
-        }
-        let after_header = parse_last_event_id(&headers).unwrap_or(0);
-        let after_body = sr.after_seq.unwrap_or(0);
-        let after_seq = after_header.max(after_body);
-        let Some(sub) = state.sse_stream_hub.subscribe(job_id) else {
-            return Err((
-                StatusCode::GONE,
-                Json(ApiError {
-                    code: "STREAM_JOB_GONE",
-                    message: "流式任务已结束或不在本进程内存中，无法重连".to_string(),
-                    reason_code: None,
-                }),
-            ));
-        };
-        let replay = state
-            .sse_stream_hub
-            .replay_after(job_id, after_seq)
-            .unwrap_or_default();
-        let max_replayed = replay.last().map(|(s, _)| *s).unwrap_or(after_seq);
-        info!(
-            target: "crabmate",
-            "chat stream 断线重连 job_id={} after_seq={} replayed={}",
-            job_id,
-            after_seq,
-            replay.len()
-        );
-        let replay_st = stream::iter(replay).map(|(seq, data)| sse_event_with_id(seq, data));
-        let live_st = BroadcastStream::new(sub).filter_map(move |item| {
-            std::future::ready(match item {
-                Ok((seq, data)) if seq > max_replayed => Some(sse_event_with_id(seq, data)),
-                Ok(_) => None,
-                Err(BroadcastStreamRecvError::Lagged(n)) => {
-                    warn!(
-                        target: "crabmate",
-                        "chat stream 重连 broadcast lag job_id={} skipped={}",
-                        job_id,
-                        n
-                    );
-                    None
-                }
-            })
-        });
-        let merged = replay_st.chain(live_st);
-        let mut resp = Sse::new(merged)
-            .keep_alive(KeepAlive::default())
-            .into_response();
-        if let Ok(v) = HeaderValue::from_str(&job_id.to_string()) {
-            resp.headers_mut().insert("x-stream-job-id", v);
-        }
-        if let Ok(v) = HeaderValue::from_str(&p.conversation_id) {
-            resp.headers_mut().insert("x-conversation-id", v);
-        }
+    if let Some(resp) = chat_stream_resume_response(&state, &headers, &p).await? {
         return Ok(resp);
     }
 
@@ -136,7 +150,7 @@ pub(crate) async fn chat_stream_handler(
     }
     let work_dir_for_expand = std::path::PathBuf::from(eff_ws_raw.clone());
     let msg = {
-        let cfg = state.cfg.read().await;
+        let cfg = state.http.cfg.read().await;
         expand_at_file_refs_in_user_message(&p.user_trim, work_dir_for_expand.as_path(), &cfg)
             .map_err(|e| {
                 (
@@ -170,7 +184,7 @@ pub(crate) async fn chat_stream_handler(
     })?;
     let workspace_is_set = state.workspace_is_set().await;
     let work_dir_for_job = if eff_ws.is_empty() {
-        let cfg = state.cfg.read().await;
+        let cfg = state.http.cfg.read().await;
         std::path::PathBuf::from(cfg.command_exec.run_command_working_dir.clone())
     } else {
         std::path::PathBuf::from(eff_ws.clone())
@@ -190,6 +204,7 @@ pub(crate) async fn chat_stream_handler(
     if let Some(session_id) = approval_session_id.as_ref() {
         let (approval_tx, approval_rx) = mpsc::channel::<CommandApprovalDecision>(8);
         state
+            .aux
             .approval_sessions
             .write()
             .await
@@ -199,7 +214,7 @@ pub(crate) async fn chat_stream_handler(
             approval_rx,
         });
     }
-    let job_id = state.chat_queue.next_job_id();
+    let job_id = state.chat.chat_queue.next_job_id();
     let (tx, rx) = mpsc::channel::<(u64, String)>(1024);
     debug!(
         target: "crabmate",
@@ -210,14 +225,15 @@ pub(crate) async fn chat_stream_handler(
     );
     info!(target: "crabmate", "chat stream 任务入队 job_id={}", job_id);
     let request_audit = {
-        let cfg = state.cfg.read().await;
+        let cfg = state.http.cfg.read().await;
         audit::web_request_audit_from_http(&cfg, &headers, peer)
     };
     if let Err(e) = state
+        .chat
         .chat_queue
         .try_submit_stream(chat_job_queue::StreamSubmitParams {
             job_id,
-            queue_deps: state.chat_queue_job_deps.clone(),
+            queue_deps: state.chat.chat_queue_job_deps.clone(),
             app: state.clone(),
             conversation_id: p.conversation_id.clone(),
             messages: turn_seed.messages,
@@ -237,7 +253,12 @@ pub(crate) async fn chat_stream_handler(
         })
     {
         if let Some(session_id) = approval_session_id {
-            state.approval_sessions.write().await.remove(&session_id);
+            state
+                .aux
+                .approval_sessions
+                .write()
+                .await
+                .remove(&session_id);
         }
         return Err((
             StatusCode::SERVICE_UNAVAILABLE,

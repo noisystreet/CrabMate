@@ -30,7 +30,7 @@ pub(crate) async fn delete_uploads_handler(
             skipped.push(u);
             continue;
         }
-        let path = state.uploads_dir.join(name);
+        let path = state.http.uploads_dir.join(name);
         // 不暴露更多信息：不存在也当作 skipped
         match tokio::fs::remove_file(&path).await {
             Ok(()) => deleted.push(format!("/uploads/{}", name)),
@@ -216,7 +216,7 @@ pub(crate) async fn upload_handler(
             .as_millis();
         let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let safe_name = format!("u{}_{}_{}{}", std::process::id(), ts, n, ext_with_dot);
-        let path = state.uploads_dir.join(&safe_name);
+        let path = state.http.uploads_dir.join(&safe_name);
 
         let mut f = tokio::fs::File::create(&path).await.map_err(|e| {
             (

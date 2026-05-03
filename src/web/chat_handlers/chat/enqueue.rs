@@ -60,7 +60,7 @@ pub(crate) async fn prepare_json_chat_enqueue(
     }
     let work_dir_for_expand = std::path::PathBuf::from(eff_ws_raw.clone());
     let msg = {
-        let cfg = state.cfg.read().await;
+        let cfg = state.http.cfg.read().await;
         expand_at_file_refs_in_user_message(user_trim, work_dir_for_expand.as_path(), &cfg)
             .map_err(|e| {
                 (
@@ -94,7 +94,7 @@ pub(crate) async fn prepare_json_chat_enqueue(
     })?;
     let workspace_is_set = state.workspace_is_set().await;
     let work_dir_for_job = if eff_ws.is_empty() {
-        let cfg = state.cfg.read().await;
+        let cfg = state.http.cfg.read().await;
         std::path::PathBuf::from(cfg.command_exec.run_command_working_dir.clone())
     } else {
         std::path::PathBuf::from(eff_ws.clone())
@@ -275,7 +275,7 @@ pub(crate) async fn enqueue_and_wait_json_chat(
         parsed.conversation_id.clone(),
     )
     .await?;
-    let job_id = state.chat_queue.next_job_id();
+    let job_id = state.chat.chat_queue.next_job_id();
     let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
     debug!(
         target: "crabmate",
@@ -286,14 +286,15 @@ pub(crate) async fn enqueue_and_wait_json_chat(
     );
     info!(target: "crabmate", "chat json 任务入队 job_id={}", job_id);
     let request_audit = {
-        let cfg = state.cfg.read().await;
+        let cfg = state.http.cfg.read().await;
         audit::web_request_audit_from_http(&cfg, headers, peer)
     };
     state
+        .chat
         .chat_queue
         .try_submit_json(chat_job_queue::JsonSubmitParams {
             job_id,
-            queue_deps: state.chat_queue_job_deps.clone(),
+            queue_deps: state.chat.chat_queue_job_deps.clone(),
             app: state.clone(),
             conversation_id: conversation_id.clone(),
             messages: turn_seed.messages,

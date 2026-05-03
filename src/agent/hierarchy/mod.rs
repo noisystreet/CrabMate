@@ -42,7 +42,9 @@ pub use execution::{HierarchicalExecutionResult, HierarchicalExecutor};
 pub use execution_error::ExecutionError;
 pub use goal_verifier::{GoalVerifier, VerificationResult};
 pub use manager::{FailureDecision, ManagerAgent, ManagerConfig, ManagerError};
-pub use operator::{OperatorAgent, OperatorConfig, OperatorError};
+pub use operator::{
+    OperatorAgent, OperatorConfig, OperatorError, OperatorPolicy, OperatorRuntimeHandles,
+};
 pub use router::{
     AgentMode, Router, RouterError, RouterOutput, RoutingStrategy, SmartRouter, TaskComplexity,
 };

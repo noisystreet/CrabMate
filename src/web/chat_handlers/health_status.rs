@@ -15,7 +15,7 @@ use crate::tool_registry;
 pub(crate) async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let eff = state.effective_workspace_path().await;
     let (work_dir, auth_mode, probe, probe_cache_secs, api_base) = {
-        let g = state.cfg.read().await;
+        let g = state.http.cfg.read().await;
         let wd = if eff.trim().is_empty() {
             std::path::PathBuf::from(g.command_exec.run_command_working_dir.clone())
         } else {
@@ -29,16 +29,17 @@ pub(crate) async fn health_handler(State(state): State<Arc<AppState>>) -> impl I
             g.llm.api_base.clone(),
         )
     };
-    let mut report = health::build_health_report(&work_dir, &state.api_key, auth_mode, true).await;
+    let mut report =
+        health::build_health_report(&work_dir, &state.http.api_key, auth_mode, true).await;
     health::append_llm_models_endpoint_probe(
         &mut report,
         health::LlmModelsEndpointProbeParams {
             enabled: probe,
             cache_secs: probe_cache_secs,
-            cache_cell: state.llm_models_health_cache.as_ref(),
-            client: &state.client,
+            cache_cell: state.aux.llm_models_health_cache.as_ref(),
+            client: &state.http.client,
             api_base: api_base.as_str(),
-            api_key: state.api_key.as_str(),
+            api_key: state.http.api_key.as_str(),
             auth_mode,
         },
     )
@@ -151,10 +152,10 @@ struct StatusResponse {
 }
 
 pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    let cfg = state.cfg.read().await;
+    let cfg = state.http.cfg.read().await;
     let mp = MESSAGE_PIPELINE_COUNTERS.snapshot();
     let conversation_store_entries = state.conversation_count().await;
-    let (ltm_ready, ltm_idx_err) = match state.long_term_memory.as_ref() {
+    let (ltm_ready, ltm_idx_err) = match state.aux.long_term_memory.as_ref() {
         Some(l) => (
             true,
             l.index_errors.load(std::sync::atomic::Ordering::Relaxed),
@@ -162,6 +163,7 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         None => (false, 0u64),
     };
     let tool_names: Vec<String> = state
+        .http
         .tools
         .iter()
         .map(|t| t.function.name.clone())
@@ -231,16 +233,16 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         context_char_budget: cfg.context_pipeline.context_char_budget,
         effective_context_char_budget: cfg.effective_context_char_budget_for_pipeline(),
         context_summary_trigger_chars: cfg.context_pipeline.context_summary_trigger_chars,
-        chat_queue_max_concurrent: state.chat_queue.max_concurrent(),
-        chat_queue_max_pending: state.chat_queue.max_pending(),
+        chat_queue_max_concurrent: state.chat.chat_queue.max_concurrent(),
+        chat_queue_max_pending: state.chat.chat_queue.max_pending(),
         parallel_readonly_tools_max: cfg.chat_queues_cache.parallel_readonly_tools_max,
         read_file_turn_cache_max_entries: cfg.chat_queues_cache.read_file_turn_cache_max_entries,
-        chat_queue_running: state.chat_queue.running_count(),
-        chat_queue_completed_ok: state.chat_queue.completed_ok(),
-        chat_queue_completed_cancelled: state.chat_queue.completed_cancelled(),
-        chat_queue_completed_err: state.chat_queue.completed_err(),
-        chat_queue_recent_jobs: state.chat_queue.recent_jobs(),
-        per_active_jobs: state.chat_queue.active_per_jobs(),
+        chat_queue_running: state.chat.chat_queue.running_count(),
+        chat_queue_completed_ok: state.chat.chat_queue.completed_ok(),
+        chat_queue_completed_cancelled: state.chat.chat_queue.completed_cancelled(),
+        chat_queue_completed_err: state.chat.chat_queue.completed_err(),
+        chat_queue_recent_jobs: state.chat.chat_queue.recent_jobs(),
+        per_active_jobs: state.chat.chat_queue.active_per_jobs(),
         workspace_allowed_roots_count: cfg.workspace_roots.workspace_allowed_roots.len(),
         conversation_store_entries,
         long_term_memory_enabled: cfg.long_term_memory.long_term_memory_enabled,

@@ -89,7 +89,7 @@ impl super::types::OperatorAgent {
         log::info!(target: "crabmate", "[HIERARCHICAL] Operator (react): goal_id={} desc={}", goal.goal_id, super::text::truncate_goal(&goal.description));
 
         // 构建产物解析器
-        let artifact_store = self.config.artifact_store.as_ref();
+        let artifact_store = self.config.runtime.artifact_store.as_ref();
         let resolver = artifact_store.map(|store| {
             // 注意：这里我们暂时不传递 build_state 给 resolver，因为生命周期问题
             // 产物路径注入主要依赖 artifact_store
@@ -127,7 +127,7 @@ impl super::types::OperatorAgent {
 
         // 构建初始系统提示（传入当前工作目录）
         let system_prompt = super::prompt::build_system_prompt(
-            &self.config,
+            &self.config.policy,
             goal,
             state.current_working_dir.as_deref(),
         );
@@ -183,7 +183,7 @@ impl super::types::OperatorAgent {
                 ));
             }
 
-            if state.iteration > self.config.max_iterations {
+            if state.iteration > self.config.policy.max_iterations {
                 return Ok(TaskResult {
                     task_id: goal.goal_id.clone(),
                     status: TaskStatus::Failed {
@@ -368,7 +368,7 @@ impl super::types::OperatorAgent {
                 role: "tool".to_string(),
                 content: Some(MessageContent::Text(format!(
                     "Error: Tool {} is not allowed. Available tools: {:?}",
-                    tool_name, self.config.allowed_tools
+                    tool_name, self.config.policy.allowed_tools
                 ))),
                 reasoning_content: None,
                 reasoning_details: None,
@@ -378,7 +378,7 @@ impl super::types::OperatorAgent {
             });
             return None;
         }
-        if let Some(ref sse_out) = self.config.sse_out {
+        if let Some(ref sse_out) = self.config.runtime.sse_out {
             let args = &tool_call.function.arguments;
             let summary = crate::tools::summarize_tool_call(tool_name, args)
                 .unwrap_or_else(|| format!("tool: {tool_name}"));
@@ -439,7 +439,7 @@ impl super::types::OperatorAgent {
         {
             state.current_working_dir = Some(new_dir);
         }
-        if let Some(ref sse_out) = self.config.sse_out {
+        if let Some(ref sse_out) = self.config.runtime.sse_out {
             let tool_summary = if result.success {
                 if result.output.len() > 100 {
                     let truncated: String = result.output.chars().take(100).collect();
@@ -527,7 +527,7 @@ impl super::types::OperatorAgent {
         tool_call: &crate::types::ToolCall,
     ) -> (Option<String>, Option<CompileErrorType>) {
         if result.success
-            || !self.config.enable_compile_error_recovery
+            || !self.config.policy.enable_compile_error_recovery
             || !super::compile::is_compile_command(&result.tool_name, &tool_call.function.arguments)
         {
             return (None, None);
@@ -592,7 +592,7 @@ impl super::types::OperatorAgent {
     }
 
     fn record_extracted_artifacts(&self, result: &ToolExecutionResult) {
-        let Some(ref build_state_arc) = self.config.build_state else {
+        let Some(ref build_state_arc) = self.config.runtime.build_state else {
             return;
         };
         let Ok(mut build_state) = build_state_arc.lock() else {
@@ -631,7 +631,7 @@ impl super::types::OperatorAgent {
         state: &ReactState,
         start_time: Instant,
     ) -> Option<TaskResult> {
-        if !self.config.enable_dynamic_decomposition
+        if !self.config.policy.enable_dynamic_decomposition
             || state.dynamic_decomposition_count != 0
             || state.iteration < 8
         {
@@ -645,7 +645,7 @@ impl super::types::OperatorAgent {
             state.tools_used.len(),
         );
         if !assessment.needs_decomposition
-            || assessment.score < self.config.dynamic_decomposition_threshold
+            || assessment.score < self.config.policy.dynamic_decomposition_threshold
         {
             return None;
         }

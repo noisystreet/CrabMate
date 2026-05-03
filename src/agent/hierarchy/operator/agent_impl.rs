@@ -67,7 +67,7 @@ impl OperatorAgent {
             None,
         );
 
-        let request = if self.config.tools_defs.is_empty() {
+        let request = if self.config.policy.tools_defs.is_empty() {
             crate::llm::no_tools_chat_request(
                 cfg,
                 &state.messages,
@@ -79,7 +79,7 @@ impl OperatorAgent {
             crate::llm::tool_chat_request(
                 cfg,
                 &state.messages,
-                &self.config.tools_defs,
+                &self.config.policy.tools_defs,
                 None,
                 None,
                 crate::types::LlmSeedOverride::FromConfig,
@@ -141,9 +141,10 @@ impl OperatorAgent {
     }
 
     pub fn is_tool_allowed(&self, tool_name: &str) -> bool {
-        self.config.allowed_tools.is_empty()
+        self.config.policy.allowed_tools.is_empty()
             || self
                 .config
+                .policy
                 .allowed_tools
                 .iter()
                 .any(|t| t == tool_name || t == "*")
@@ -193,7 +194,7 @@ impl OperatorAgent {
         stagnant_rounds: usize,
         first_error: Option<&str>,
     ) {
-        let Some(ref sse_out) = self.config.sse_out else {
+        let Some(ref sse_out) = self.config.runtime.sse_out else {
             return;
         };
         let phase_label = match phase {

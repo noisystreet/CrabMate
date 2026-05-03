@@ -14,4 +14,7 @@ mod types;
 #[cfg(test)]
 mod tests;
 
-pub use types::{CompileErrorInfo, CompileErrorType, OperatorAgent, OperatorConfig, OperatorError};
+pub use types::{
+    CompileErrorInfo, CompileErrorType, OperatorAgent, OperatorConfig, OperatorError,
+    OperatorPolicy, OperatorRuntimeHandles,
+};
