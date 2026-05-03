@@ -65,6 +65,9 @@ pub struct HierarchicalExecutor<'a> {
     tool_approval_rx: Option<Arc<TokioMutex<Receiver<CommandApprovalDecision>>>>,
     /// 分层单轮共享探测缓存：去重 `which` / `--version` 等无副作用探测命令。
     probe_cache: Arc<TokioMutex<super::tool_executor::ProbeCache>>,
+    /// 与主 Agent `process_handles` 对齐；缺省在 `with_context` 中填生产表与默认 Docker 后端。
+    handler_lookup: Option<crate::tool_registry::HandlerLookupTable>,
+    sync_default_sandbox_backend: Option<Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>>,
 }
 
 impl HierarchicalExecutor<'_> {
@@ -85,6 +88,8 @@ impl HierarchicalExecutor<'_> {
             tool_approval_out: None,
             tool_approval_rx: None,
             probe_cache: Arc::new(TokioMutex::new(Default::default())),
+            handler_lookup: None,
+            sync_default_sandbox_backend: None,
         }
     }
 }
@@ -217,6 +222,20 @@ impl<'a> HierarchicalExecutor<'a> {
         self.client = Some(client);
         self.api_key = Some(api_key);
         self.working_dir = Some(working_dir);
+        self.handler_lookup = Some(crate::tool_registry::HandlerLookupTable::default_dispatch());
+        self.sync_default_sandbox_backend =
+            Some(crate::tool_sandbox::default_sync_default_sandbox_backend());
+        self
+    }
+
+    /// 覆盖默认的工具分发表与 Docker 沙盒后端（与 [`crate::process_handles::ProcessHandles`] 同源）。
+    pub fn with_process_tool_handles(
+        mut self,
+        handler_lookup: crate::tool_registry::HandlerLookupTable,
+        sync_default_sandbox_backend: Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
+    ) -> Self {
+        self.handler_lookup = Some(handler_lookup);
+        self.sync_default_sandbox_backend = Some(sync_default_sandbox_backend);
         self
     }
 

@@ -136,7 +136,7 @@ async fn run_agent_turn_outer_loop_tool_round_then_final_assistant() {
         turn_allowed_tool_names: None,
         tracing_chat_turn: None,
         request_audit: None,
-        process_handles: ProcessHandles::singleton_for_fallback_process(),
+        process_handles: ProcessHandles::default_arc_process_handles(),
     };
 
     run_agent_turn(params)
@@ -216,6 +216,7 @@ async fn run_hierarchical_router_manager_operator_mock_llm_sequence() {
         primary_intent: Some("execute.read_inspect".to_string()),
         secondary_intents: Vec::new(),
         intent_mode_bias_enabled: false,
+        process_handles: ProcessHandles::default_arc_process_handles(),
     };
 
     let outcome: HierarchyRunnerResult = run_hierarchical(params)
@@ -313,7 +314,7 @@ async fn run_agent_turn_hierarchical_end_to_end_mock_llm_sequence() {
         turn_allowed_tool_names: None,
         tracing_chat_turn: None,
         request_audit: None,
-        process_handles: ProcessHandles::singleton_for_fallback_process(),
+        process_handles: ProcessHandles::default_arc_process_handles(),
     };
 
     run_agent_turn(params)
@@ -394,7 +395,7 @@ async fn run_agent_turn_hierarchical_discourse_fallback_uses_per_outer_loop() {
         turn_allowed_tool_names: None,
         tracing_chat_turn: None,
         request_audit: None,
-        process_handles: ProcessHandles::singleton_for_fallback_process(),
+        process_handles: ProcessHandles::default_arc_process_handles(),
     };
 
     run_agent_turn(params)

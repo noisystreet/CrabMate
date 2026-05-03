@@ -220,6 +220,7 @@ where
         PreparedPostParseSchedule::FullPipelineThenSteps => {
             let parallel_csv = plan_optimizer::parallel_batchable_tool_names_csv_from_defs(
                 p.ctx.tools_defs,
+                &p.ctx.process_handles.handler_lookup,
                 p.ctx.cfg.as_ref(),
             );
             let validate_only_binding_active =
@@ -750,7 +751,7 @@ mod staged_plan_prepare_fixture_tests {
                 tracing_chat_turn: None,
                 request_audit: None,
                 process_handles:
-                    crate::process_handles::ProcessHandles::singleton_for_fallback_process(),
+                    crate::process_handles::ProcessHandles::default_arc_process_handles(),
             },
             turn: RunLoopTurnState {
                 messages: &mut messages,

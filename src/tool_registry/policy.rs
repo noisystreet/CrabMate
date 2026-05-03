@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 use crate::config::AgentConfig;
 use crate::types::ToolCall;
 
-use super::meta::{HandlerId, ToolExecutionClass, execution_class_for_tool, handler_id_for};
+use super::meta::{HandlerId, HandlerLookupTable, ToolExecutionClass, execution_class_for_tool};
 
 fn execution_class_parallel_wall_key(class: ToolExecutionClass) -> &'static str {
     match class {
@@ -192,12 +192,16 @@ fn parallel_sync_batch_denied(cfg: &AgentConfig, name: &str) -> bool {
 /// - **`SyncDefault`**：内建只读且非 `parallel_sync_batch_denied`。
 /// - **`http_fetch`**：GET/HEAD 只读；审批在并行 `spawn_blocking` 之前**串行**完成（见 `execute_tools`）。
 /// - **`get_weather` / `web_search`**：出站只读 HTTP；无工作区副作用，可与 `read_file` 等同批并行。
-fn parallel_batch_eligible_tool(cfg: &AgentConfig, name: &str) -> bool {
+fn parallel_batch_eligible_tool(
+    handler_lookup: &HandlerLookupTable,
+    cfg: &AgentConfig,
+    name: &str,
+) -> bool {
     if parallel_sync_batch_denied(cfg, name) {
         return false;
     }
     matches!(
-        handler_id_for(name),
+        handler_lookup.id_for(name),
         HandlerId::SyncDefault
             | HandlerId::HttpFetch
             | HandlerId::GetWeather
@@ -208,19 +212,31 @@ fn parallel_batch_eligible_tool(cfg: &AgentConfig, name: &str) -> bool {
 /// 单工具是否满足「可与其它同类工具同批并行」的语义（不含「至少 2 个调用」前提）。
 ///
 /// 与 [`tool_calls_allow_parallel_sync_batch`] 中每个 `ToolCall` 的判定一致；供分阶段规划**优化轮**提示词列举可批量并行的内建工具名。
-pub fn tool_ok_for_parallel_readonly_batch_piece(cfg: &AgentConfig, name: &str) -> bool {
+pub fn tool_ok_for_parallel_readonly_batch_piece(
+    handler_lookup: &HandlerLookupTable,
+    cfg: &AgentConfig,
+    name: &str,
+) -> bool {
     !crate::mcp::is_mcp_proxy_tool(name)
         && is_readonly_tool(cfg, name)
-        && parallel_batch_eligible_tool(cfg, name)
+        && parallel_batch_eligible_tool(handler_lookup, cfg, name)
 }
 
 /// 本批 **至少 2 个** 工具且全部为语义只读、且均为 [`parallel_batch_eligible_tool`] 时，可在单轮内并行执行
 ///（`SyncDefault` / `http_fetch` / `get_weather` / `web_search`；**不含** `http_request`、命令类、MCP；`http_fetch` 的审批先于并行 IO，见 `agent_turn::per_execute_tools_common`）。
-pub fn tool_calls_allow_parallel_sync_batch(cfg: &AgentConfig, tool_calls: &[ToolCall]) -> bool {
+pub fn tool_calls_allow_parallel_sync_batch(
+    handler_lookup: &HandlerLookupTable,
+    cfg: &AgentConfig,
+    tool_calls: &[ToolCall],
+) -> bool {
     tool_calls.len() > 1
-        && tool_calls
-            .iter()
-            .all(|tc| tool_ok_for_parallel_readonly_batch_piece(cfg, tc.function.name.as_str()))
+        && tool_calls.iter().all(|tc| {
+            tool_ok_for_parallel_readonly_batch_piece(
+                handler_lookup,
+                cfg,
+                tc.function.name.as_str(),
+            )
+        })
 }
 fn builtin_sync_default_inline_tools() -> &'static HashSet<String> {
     static S: OnceLock<HashSet<String>> = OnceLock::new();

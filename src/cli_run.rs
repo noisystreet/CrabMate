@@ -523,6 +523,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli_process_handles = crate::process_handles::ProcessHandles::new_arc(
         Arc::new(crate::workspace::changelist::WorkspaceChangelistRegistry::default()),
         Arc::new(crate::tool_stats::ToolOutcomeRecorder::new()),
+        crate::tool_registry::HandlerLookupTable::default_dispatch(),
+        crate::tool_sandbox::default_sync_default_sandbox_backend(),
     );
 
     if let Some(port) = serve_port {

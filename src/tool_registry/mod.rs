@@ -20,10 +20,10 @@ pub use execute::{DispatchToolParams, dispatch_tool};
 pub(crate) use execute::{
     prefetch_http_fetch_parallel_approvals, prefetch_parallel_syncdefault_approvals,
 };
-pub(crate) use meta::{HandlerId, handler_id_for};
+pub(crate) use meta::HandlerId;
 pub use meta::{
-    ToolDispatchMeta, ToolExecutionClass, all_dispatch_metadata, execution_class_for_tool,
-    try_dispatch_meta,
+    HandlerLookupTable, ToolDispatchMeta, ToolExecutionClass, all_dispatch_metadata,
+    execution_class_for_tool, try_dispatch_meta,
 };
 pub use policy::{
     is_readonly_tool, parallel_tool_wall_timeout_secs, tool_calls_allow_parallel_sync_batch,

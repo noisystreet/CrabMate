@@ -20,6 +20,8 @@ static TOOL_CALL_COUNTER: AtomicU64 = AtomicU64::new(1);
 pub struct ToolExecutorContext {
     pub cfg: Arc<AgentConfig>,
     pub working_dir: std::path::PathBuf,
+    pub handler_lookup: crate::tool_registry::HandlerLookupTable,
+    pub sync_default_sandbox_backend: Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
     /// 可选的 Web 审批运行时（用于触发审批对话框）
     pub web_tool_runtime: Option<crate::tool_registry::WebToolRuntime>,
     /// 分层回合内无副作用探测命令缓存（例如 `which` / `--version`）。
@@ -33,10 +35,23 @@ impl ToolExecutorContext {
         Self {
             cfg,
             working_dir,
+            handler_lookup: crate::tool_registry::HandlerLookupTable::default_dispatch(),
+            sync_default_sandbox_backend: crate::tool_sandbox::default_sync_default_sandbox_backend(
+            ),
             web_tool_runtime: None,
             probe_cache: None,
             dedupe_cache: Arc::new(TokioMutex::new(HashSet::new())),
         }
+    }
+
+    pub fn with_dispatch_handles(
+        mut self,
+        handler_lookup: crate::tool_registry::HandlerLookupTable,
+        sync_default_sandbox_backend: Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
+    ) -> Self {
+        self.handler_lookup = handler_lookup;
+        self.sync_default_sandbox_backend = sync_default_sandbox_backend;
+        self
     }
 
     pub fn with_probe_cache(mut self, cache: Arc<TokioMutex<ProbeCache>>) -> Self {
@@ -267,6 +282,8 @@ impl ToolExecutor {
             turn_allow: None,
             long_term_memory: None,
             long_term_memory_scope_id: None,
+            handler_lookup: &self.ctx.handler_lookup,
+            sync_default_sandbox_backend: &self.ctx.sync_default_sandbox_backend,
         })
         .await;
 

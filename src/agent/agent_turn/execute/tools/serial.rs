@@ -13,7 +13,7 @@ use crate::agent::agent_turn::sub_agent_policy::{
     executor_kind_tool_denied_body, tool_allowed_for_step_executor_kind,
 };
 use crate::agent::workflow_tool_dispatch;
-use crate::tool_registry::{self, HandlerId, ToolRuntime, handler_id_for};
+use crate::tool_registry::{self, HandlerId, ToolRuntime};
 use crate::tool_result::{ToolEnvelopeContext, parse_legacy_output};
 
 use super::run_command_guard::{
@@ -421,6 +421,8 @@ pub(super) async fn execute_tools_serial(
         tracing_chat_turn,
         request_audit,
         tool_outcome_recorder,
+        handler_lookup,
+        sync_default_sandbox_backend,
     } = ctx;
 
     let mut readonly_cache: HashMap<(String, String), String> = HashMap::new();
@@ -497,35 +499,38 @@ pub(super) async fn execute_tools_serial(
                 ctx: web_tool_ctx,
             }
         };
-        let (result, reflection_inject) = if handler_id_for(name.as_str()) == HandlerId::Workflow {
-            workflow_tool_dispatch::dispatch_workflow_execute_tool(
-                runtime,
-                per_coord,
-                cfg,
-                effective_working_dir,
-                workspace_is_set,
-                args.as_str(),
-                request_chrome_trace.clone(),
-            )
-            .await
-        } else {
-            tool_registry::dispatch_tool(tool_registry::DispatchToolParams {
-                runtime,
-                cfg,
-                effective_working_dir,
-                workspace_is_set,
-                name: &name,
-                args: &args,
-                tc,
-                read_file_turn_cache: read_file_turn_cache.clone(),
-                workspace_changelist: workspace_changelist.cloned(),
-                mcp_session,
-                turn_allow,
-                long_term_memory: long_term_memory.clone(),
-                long_term_memory_scope_id: long_term_memory_scope_id.clone(),
-            })
-            .await
-        };
+        let (result, reflection_inject) =
+            if handler_lookup.id_for(name.as_str()) == HandlerId::Workflow {
+                workflow_tool_dispatch::dispatch_workflow_execute_tool(
+                    runtime,
+                    per_coord,
+                    cfg,
+                    effective_working_dir,
+                    workspace_is_set,
+                    args.as_str(),
+                    request_chrome_trace.clone(),
+                )
+                .await
+            } else {
+                tool_registry::dispatch_tool(tool_registry::DispatchToolParams {
+                    runtime,
+                    cfg,
+                    effective_working_dir,
+                    workspace_is_set,
+                    name: &name,
+                    args: &args,
+                    tc,
+                    read_file_turn_cache: read_file_turn_cache.clone(),
+                    workspace_changelist: workspace_changelist.cloned(),
+                    mcp_session,
+                    turn_allow,
+                    long_term_memory: long_term_memory.clone(),
+                    long_term_memory_scope_id: long_term_memory_scope_id.clone(),
+                    handler_lookup: &handler_lookup,
+                    sync_default_sandbox_backend: &sync_default_sandbox_backend,
+                })
+                .await
+            };
 
         info!(
             target: super::LOG_TARGET,

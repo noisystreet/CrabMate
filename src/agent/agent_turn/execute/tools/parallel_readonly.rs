@@ -13,7 +13,7 @@ use crate::agent_role_turn::{tool_allowed_for_turn, turn_tool_denied_message};
 use crate::config::AgentConfig;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::tool_registry::{
-    self, CliToolRuntime, HandlerId, ToolRuntime, WebToolRuntime, handler_id_for,
+    self, CliToolRuntime, HandlerId, HandlerLookupTable, ToolRuntime, WebToolRuntime,
 };
 use crate::tool_result::ToolEnvelopeContext;
 use crate::types::{Message, ToolCall};
@@ -50,6 +50,8 @@ struct ParallelUniqueBatchParts<'a> {
     long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     long_term_memory_scope_id: Option<String>,
     tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
+    handler_lookup: HandlerLookupTable,
+    sync_default_sandbox_backend: Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
 }
 
 fn parallel_readonly_log_batch_start(
@@ -91,6 +93,7 @@ async fn parallel_prefetch_approval_failures(
     cfg: &Arc<AgentConfig>,
     web_tool_ctx: Option<&WebToolRuntime>,
     cli_tool_ctx: Option<&CliToolRuntime>,
+    handler_lookup: &HandlerLookupTable,
 ) -> HashMap<(String, String), String> {
     let mut prefetch_failures = HashMap::new();
     if tool_calls.iter().any(|t| t.function.name == "http_fetch") {
@@ -109,6 +112,7 @@ async fn parallel_prefetch_approval_failures(
             tool_calls,
             web_tool_ctx,
             cli_tool_ctx,
+            handler_lookup,
         )
         .await,
     );
@@ -134,6 +138,8 @@ async fn parallel_collect_unique_results(
         long_term_memory,
         long_term_memory_scope_id,
         tracing_chat_turn,
+        handler_lookup,
+        sync_default_sandbox_backend,
     } = parts;
 
     let wd_root = effective_working_dir.to_path_buf();
@@ -157,7 +163,9 @@ async fn parallel_collect_unique_results(
         let tc_owned = tc.clone();
         let tool_call_id_for_trace = tc.id.clone();
         let tracing_turn_parallel = tracing_chat_turn.clone();
-        let kind = match handler_id_for(name.as_str()) {
+        let hl = handler_lookup.clone();
+        let sb = Arc::clone(&sync_default_sandbox_backend);
+        let kind = match hl.id_for(name.as_str()) {
             HandlerId::HttpFetch => ParallelToolKind::HttpFetch,
             HandlerId::GetWeather => ParallelToolKind::GetWeather,
             HandlerId::WebSearch => ParallelToolKind::WebSearch,
@@ -259,6 +267,8 @@ async fn parallel_collect_unique_results(
                             turn_allow,
                             long_term_memory: ltm.clone(),
                             long_term_memory_scope_id: ltm_scope.clone(),
+                            handler_lookup: &hl,
+                            sync_default_sandbox_backend: &sb,
                         })
                         .await
                         .0
@@ -426,7 +436,11 @@ pub(super) async fn execute_tools_parallel(
         tracing_chat_turn,
         request_audit: _,
         tool_outcome_recorder,
+        handler_lookup,
+        sync_default_sandbox_backend,
     } = ctx;
+
+    let sandbox_backend = Arc::clone(&sync_default_sandbox_backend);
 
     let tools_defs_hint = Arc::new(tools_defs_full.to_vec());
 
@@ -446,8 +460,14 @@ pub(super) async fn execute_tools_parallel(
     );
     let parallel_batch_id_ref = parallel_batch_id.as_str();
 
-    let prefetch_failures =
-        parallel_prefetch_approval_failures(tool_calls, cfg, web_tool_ctx, cli_tool_ctx).await;
+    let prefetch_failures = parallel_prefetch_approval_failures(
+        tool_calls,
+        cfg,
+        web_tool_ctx,
+        cli_tool_ctx,
+        &handler_lookup,
+    )
+    .await;
 
     let result_by_name_args = parallel_collect_unique_results(
         ParallelUniqueBatchParts {
@@ -464,6 +484,8 @@ pub(super) async fn execute_tools_parallel(
             long_term_memory,
             long_term_memory_scope_id,
             tracing_chat_turn,
+            handler_lookup,
+            sync_default_sandbox_backend: sandbox_backend.clone(),
         },
         prefetch_failures,
         parallel_max,

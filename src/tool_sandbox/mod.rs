@@ -31,19 +31,19 @@ use crate::config::{AgentConfig, SyncDefaultToolSandboxMode};
 
 use self::runner::write_runner_config_json as write_runner_cfg_default;
 
-/// 进程内默认后端（Docker Engine API，[bollard](https://docs.rs/bollard)；未启用 **`docker_sandbox`** feature 时为占位实现）。
-///
-/// 若需替换实现（单测或其它运行时），可改为 `OnceLock<Arc<dyn SyncDefaultSandboxBackend>>` 并在启动时注入。
-static SANDBOX_BACKEND: std::sync::LazyLock<std::sync::Arc<dyn SyncDefaultSandboxBackend>> =
-    std::sync::LazyLock::new(|| std::sync::Arc::new(BollardSandboxBackend));
+/// 进程默认 Docker Engine 后端（与 [`crate::process_handles::ProcessHandles`] 注入同源）。
+pub fn default_sync_default_sandbox_backend() -> std::sync::Arc<dyn SyncDefaultSandboxBackend> {
+    std::sync::Arc::new(BollardSandboxBackend)
+}
 
 /// 是否启用 Docker 沙盒（与 `dispatch_tool` 中多 handler 共用）。
 pub fn docker_sandbox_enabled(cfg: &AgentConfig) -> bool {
     cfg.sync_default_tool_sandbox_mode == SyncDefaultToolSandboxMode::Docker
 }
 
-/// 在沙盒内执行一次工具（经 [`SANDBOX_BACKEND`]）；`cfg_json_path` 由调用方写入后传入，本函数结束时删除。
+/// 在沙盒内执行一次工具；`cfg_json_path` 由调用方写入后传入，本函数结束时删除。
 pub async fn run_tool_in_docker(
+    backend: &std::sync::Arc<dyn SyncDefaultSandboxBackend>,
     cfg: &AgentConfig,
     effective_working_dir: &Path,
     cfg_json_path: PathBuf,
@@ -116,7 +116,7 @@ pub async fn run_tool_in_docker(
         user,
     };
 
-    let out = SANDBOX_BACKEND.run_isolated(req).await;
+    let out = backend.run_isolated(req).await;
     let _ = std::fs::remove_file(&cfg_json_path);
     let bytes = out?;
     String::from_utf8(bytes).map_err(|e| format!("工具输出非 UTF-8：{}", e))
@@ -124,6 +124,7 @@ pub async fn run_tool_in_docker(
 
 /// 在沙盒内执行单个 `SyncDefault` 工具。
 pub async fn run_sync_default_in_docker(
+    backend: &std::sync::Arc<dyn SyncDefaultSandboxBackend>,
     cfg: &AgentConfig,
     effective_working_dir: &Path,
     tool_name: &str,
@@ -135,5 +136,5 @@ pub async fn run_sync_default_in_docker(
         tool: Some(tool_name.to_string()),
         args_json: args_json.to_string(),
     };
-    run_tool_in_docker(cfg, effective_working_dir, cfg_path, inv).await
+    run_tool_in_docker(backend, cfg, effective_working_dir, cfg_path, inv).await
 }

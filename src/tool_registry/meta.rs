@@ -1,7 +1,7 @@
 //! 工具名 → [`ToolExecutionClass`] / [`ToolDispatchMeta`] / 内部分发 [`HandlerId`]（`tool_dispatch_registry!`）。
 
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::Arc;
 
 /// 工具在运行时的执行类别。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -32,7 +32,7 @@ pub(crate) enum HandlerId {
     SyncDefault,
 }
 
-/// 由 `tool_dispatch_registry!` 展开：生成 `DISPATCH_METADATA` 与 `handler_dispatch_map_build`，与 `HANDLER_MAP` 同源。
+/// 由 `tool_dispatch_registry!` 展开：生成 `DISPATCH_METADATA` 与 `handler_dispatch_map_build`。
 macro_rules! tool_dispatch_registry {
     ( $( ( $name:literal, $reqws:expr, $class:ident, $handler:ident ) ),* $(,)? ) => {
         static DISPATCH_METADATA: &[ToolDispatchMeta] = &[
@@ -65,19 +65,31 @@ tool_dispatch_registry! {
 }
 
 /// 注册表中显式声明的工具；其余名称运行时走 `SyncDefault`（同步 `run_tool`）。
-/// 与 `handler_id_for` / `HANDLER_MAP` 共用 `tool_dispatch_registry!` 生成的表，勿分开维护。
+/// 与 [`HandlerLookupTable`] / `tool_dispatch_registry!` 生成的表同源，勿分开维护。
 pub fn all_dispatch_metadata() -> &'static [ToolDispatchMeta] {
     DISPATCH_METADATA
 }
 
-static HANDLER_MAP: OnceLock<HashMap<&'static str, HandlerId>> = OnceLock::new();
+/// 工具名 → [`HandlerId`] 查找表；由 [`crate::process_handles::ProcessHandles`] 持有，避免模块级 `static`。
+#[derive(Debug, Clone)]
+pub struct HandlerLookupTable {
+    map: Arc<HashMap<&'static str, HandlerId>>,
+}
 
-pub(crate) fn handler_id_for(name: &str) -> HandlerId {
-    HANDLER_MAP
-        .get_or_init(handler_dispatch_map_build)
-        .get(name)
-        .copied()
-        .unwrap_or(HandlerId::SyncDefault)
+impl HandlerLookupTable {
+    /// 生产默认表（与历史 `HANDLER_MAP` 单次初始化结果一致）。
+    pub fn default_dispatch() -> Self {
+        Self {
+            map: Arc::new(handler_dispatch_map_build()),
+        }
+    }
+
+    pub(crate) fn id_for(&self, name: &str) -> HandlerId {
+        self.map
+            .get(name)
+            .copied()
+            .unwrap_or(HandlerId::SyncDefault)
+    }
 }
 
 fn meta_by_name(name: &str) -> Option<&'static ToolDispatchMeta> {
