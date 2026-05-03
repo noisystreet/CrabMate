@@ -165,6 +165,7 @@ llm_reasoning_split = false
 
 #[cfg(test)]
 mod hot_reload_tests {
+    use super::ScheduledAgentTask;
     use super::{apply_hot_reload_config_subset, load_config};
 
     #[test]
@@ -182,6 +183,58 @@ mod hot_reload_tests {
         assert_eq!(
             dst.conversation_persistence.conversation_store_sqlite_path,
             frozen
+        );
+    }
+
+    /// 组合式配置下：各子结构应从 `src` 整段替换；仅会话库路径保留 `dst` 原值。
+    #[test]
+    fn apply_hot_reload_updates_sections_but_not_sqlite_path() {
+        let mut dst = load_config(None).expect("default config");
+        let frozen_store = dst
+            .conversation_persistence
+            .conversation_store_sqlite_path
+            .clone();
+        let mut src = dst.clone();
+        src.llm.model = "hot-reload-model-snapshot".to_string();
+        src.session_ui.max_message_history = src.session_ui.max_message_history.saturating_add(3);
+        src.weather_tool.weather_timeout_secs =
+            src.weather_tool.weather_timeout_secs.saturating_add(11);
+        src.conversation_persistence.conversation_store_sqlite_path =
+            "/tmp/ignored_on_hot_reload.sqlite".to_string();
+        apply_hot_reload_config_subset(&mut dst, &src);
+        assert_eq!(
+            dst.conversation_persistence.conversation_store_sqlite_path,
+            frozen_store
+        );
+        assert_eq!(dst.llm.model, src.llm.model);
+        assert_eq!(
+            dst.session_ui.max_message_history,
+            src.session_ui.max_message_history
+        );
+        assert_eq!(
+            dst.weather_tool.weather_timeout_secs,
+            src.weather_tool.weather_timeout_secs
+        );
+    }
+
+    #[test]
+    fn apply_hot_reload_updates_scheduled_tasks_from_src() {
+        let mut dst = load_config(None).expect("default config");
+        dst.conversation_persistence.scheduled_agent_tasks.clear();
+        let mut src = dst.clone();
+        src.conversation_persistence.scheduled_agent_tasks = vec![ScheduledAgentTask {
+            id: "cron_smoke".to_string(),
+            schedule: "0 0 * * * *".to_string(),
+            message: "hello".to_string(),
+            conversation_id: None,
+            new_conversation: false,
+            agent_role: None,
+        }];
+        apply_hot_reload_config_subset(&mut dst, &src);
+        assert_eq!(dst.conversation_persistence.scheduled_agent_tasks.len(), 1);
+        assert_eq!(
+            dst.conversation_persistence.scheduled_agent_tasks[0].id,
+            "cron_smoke"
         );
     }
 }
