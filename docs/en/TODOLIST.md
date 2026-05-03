@@ -53,6 +53,8 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 
 **Summary**: `agent_turn` main loop; `context_window` trim/summarize; `reflection/plan_rewrite` final-plan rewrite helpers; `per_coord` / `plan_artifact` / `workflow_reflection_controller`; `workflow` DAG execution.
 
+- [ ] **Audience role (side-channel critic)**: optional bounded tool-less side calls per **`docs/design/audience_critic_role.md`**; align with **`plan_rewrite`**, staged patch counters, and **`final_plan_semantic_check`**; default fail-open; observability across CLI/TUI/Web per repo conventions. Indexed from **`docs/en/FUTURE_PLANS.md`**.
+
 (Items mirror the Chinese [TODOLIST.md](../待办清单.md): planner/executor phases, PER plug-in, long-term memory external vector DB, TTL/dedup, compliance APIs; large-repo index ops per [CODEBASE_INDEX_PLAN.md](CODEBASE_INDEX_PLAN.md). **agent_turn vs llm** entrypoint rules: **`docs/en/DEVELOPMENT.md`**.)
 
 ---
