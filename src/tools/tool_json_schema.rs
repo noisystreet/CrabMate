@@ -19,12 +19,12 @@ mod tests {
     use super::*;
     use crate::tools::tool_param_types::{
         AddReminderArgs, ArchivePackArgs, AstGrepRunArgs, BacktraceAnalyzeArgs, CalcArgs,
-        CallGraphSketchArgs, CiPipelineLocalArgs, CodeStatsArgs, CoverageReportArgs,
+        CallGraphSketchArgs, ChmodFileArgs, CiPipelineLocalArgs, CodeStatsArgs, CoverageReportArgs,
         DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs,
         FormatOnePathArgs, GoBuildArgs, GolangciLintArgs, GradleTasksArgs, ListRemindersArgs,
         MarkdownCheckLinksArgs, MavenCompileArgs, NpmRunArgs, PackageQueryArgs, PortCheckArgs,
         ProcessListArgs, QualityWorkspaceArgs, RunLintsArgs, ShellcheckCheckArgs,
-        StructuredValidateArgs, TableTextArgs, TodoScanArgs, WorkflowExecuteArgs,
+        StructuredValidateArgs, SymlinkInfoArgs, TableTextArgs, TodoScanArgs, WorkflowExecuteArgs,
     };
     use serde_json::json;
 
@@ -345,5 +345,27 @@ mod tests {
             .and_then(|r| r.as_array())
             .expect("required");
         assert!(req.iter().any(|x| x == "action"));
+    }
+
+    #[test]
+    fn symlink_info_schema_requires_path() {
+        let v = tool_parameters_schema_value::<SymlinkInfoArgs>();
+        let req = v
+            .pointer("/required")
+            .and_then(|r| r.as_array())
+            .expect("required");
+        assert!(req.iter().any(|x| x == "path"));
+        assert!(v.pointer("/properties/path").is_some());
+    }
+
+    #[test]
+    fn chmod_file_schema_requires_path_and_mode() {
+        let v = tool_parameters_schema_value::<ChmodFileArgs>();
+        let req = v
+            .pointer("/required")
+            .and_then(|r| r.as_array())
+            .expect("required");
+        assert!(req.iter().any(|x| x == "path"));
+        assert!(req.iter().any(|x| x == "mode"));
     }
 }

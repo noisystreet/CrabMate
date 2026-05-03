@@ -5,6 +5,8 @@ use std::path::Path;
 
 use super::path::{path_for_tool_display, resolve_for_read, tool_user_error_from_workspace_path};
 
+use crate::tools::tool_param_types::ChmodFileArgs;
+
 // ── chmod_file ──────────────────────────────────────────────
 
 #[cfg(unix)]
@@ -15,15 +17,19 @@ pub fn chmod_file(args_json: &str, working_dir: &Path) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let path = match v.get("path").and_then(|p| p.as_str()).map(str::trim) {
-        Some(s) if !s.is_empty() => s.to_string(),
+    let args: ChmodFileArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let path = match args.path.trim() {
+        s if !s.is_empty() => s.to_string(),
         _ => return "缺少 path 参数".to_string(),
     };
-    let mode_str = match v.get("mode").and_then(|m| m.as_str()).map(str::trim) {
-        Some(s) if !s.is_empty() => s.to_string(),
+    let mode_str = match args.mode.trim() {
+        s if !s.is_empty() => s.to_string(),
         _ => return "缺少 mode 参数（如 \"755\"、\"644\"）".to_string(),
     };
-    let confirm = v.get("confirm").and_then(|c| c.as_bool()).unwrap_or(false);
+    let confirm = args.confirm.unwrap_or(false);
     if !confirm {
         return "拒绝执行：chmod_file 需要 confirm=true".to_string();
     }

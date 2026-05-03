@@ -5,13 +5,19 @@ use std::path::Path;
 
 use super::path::{canonical_workspace_root, tool_user_error_from_workspace_path};
 
+use crate::tools::tool_param_types::SymlinkInfoArgs;
+
 pub fn symlink_info(args_json: &str, working_dir: &Path) -> String {
     let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let path = match v.get("path").and_then(|p| p.as_str()).map(str::trim) {
-        Some(s) if !s.is_empty() => s.to_string(),
+    let args: SymlinkInfoArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let path = match args.path.trim() {
+        s if !s.is_empty() => s.to_string(),
         _ => return "缺少 path 参数".to_string(),
     };
     if Path::new(&path).is_absolute() || path.contains("..") {

@@ -10,6 +10,9 @@ use super::path::{
     tool_user_error_from_workspace_path,
 };
 use crate::tools::ToolContext;
+use crate::tools::tool_param_types::{
+    AppendFileArgs, CreateDirArgs, DeleteDirArgs, DeleteFileArgs, SearchReplaceArgs,
+};
 use crate::workspace::changelist::record_file_state_after_write;
 
 pub fn delete_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
@@ -17,11 +20,15 @@ pub fn delete_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
         Ok(v) => v,
         Err(e) => return e,
     };
-    let path = match v.get("path").and_then(|p| p.as_str()).map(str::trim) {
-        Some(s) if !s.is_empty() => s.to_string(),
+    let args: DeleteFileArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let path = match args.path.trim() {
+        s if !s.is_empty() => s.to_string(),
         _ => return "缺少 path 参数".to_string(),
     };
-    let confirm = v.get("confirm").and_then(|c| c.as_bool()).unwrap_or(false);
+    let confirm = args.confirm.unwrap_or(false);
     if !confirm {
         return "拒绝执行：delete_file 需要 confirm=true".to_string();
     }
@@ -58,18 +65,19 @@ pub fn delete_dir(args_json: &str, working_dir: &Path) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let path = match v.get("path").and_then(|p| p.as_str()).map(str::trim) {
-        Some(s) if !s.is_empty() => s.to_string(),
+    let args: DeleteDirArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let path = match args.path.trim() {
+        s if !s.is_empty() => s.to_string(),
         _ => return "缺少 path 参数".to_string(),
     };
-    let confirm = v.get("confirm").and_then(|c| c.as_bool()).unwrap_or(false);
+    let confirm = args.confirm.unwrap_or(false);
     if !confirm {
         return "拒绝执行：delete_dir 需要 confirm=true".to_string();
     }
-    let recursive = v
-        .get("recursive")
-        .and_then(|r| r.as_bool())
-        .unwrap_or(false);
+    let recursive = args.recursive;
 
     let target = match resolve_for_read(working_dir, &path) {
         Ok(p) => p,
@@ -117,18 +125,16 @@ pub fn append_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
         Ok(v) => v,
         Err(e) => return e,
     };
-    let path = match v.get("path").and_then(|p| p.as_str()).map(str::trim) {
-        Some(s) if !s.is_empty() => s.to_string(),
+    let args: AppendFileArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let path = match args.path.trim() {
+        s if !s.is_empty() => s.to_string(),
         _ => return "缺少 path 参数".to_string(),
     };
-    let content = v
-        .get("content")
-        .and_then(|c| c.as_str())
-        .unwrap_or_default();
-    let create_if_missing = v
-        .get("create_if_missing")
-        .and_then(|c| c.as_bool())
-        .unwrap_or(false);
+    let content = args.content;
+    let create_if_missing = args.create_if_missing;
 
     let target = if create_if_missing {
         match resolve_for_write(working_dir, &path) {
@@ -183,11 +189,15 @@ pub fn create_dir(args_json: &str, working_dir: &Path) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let path = match v.get("path").and_then(|p| p.as_str()).map(str::trim) {
-        Some(s) if !s.is_empty() => s.to_string(),
+    let args: CreateDirArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let path = match args.path.trim() {
+        s if !s.is_empty() => s.to_string(),
         _ => return "缺少 path 参数".to_string(),
     };
-    let parents = v.get("parents").and_then(|p| p.as_bool()).unwrap_or(true);
+    let parents = args.parents;
 
     let target = match resolve_for_write(working_dir, &path) {
         Ok(p) => p,
@@ -311,26 +321,23 @@ pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>
         Ok(v) => v,
         Err(e) => return e,
     };
-    let path = match v.get("path").and_then(|p| p.as_str()).map(str::trim) {
-        Some(s) if !s.is_empty() => s.to_string(),
+    let args: SearchReplaceArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let path = match args.path.trim() {
+        s if !s.is_empty() => s.to_string(),
         _ => return "缺少 path 参数".to_string(),
     };
-    let search = match v.get("search").and_then(|s| s.as_str()) {
-        Some(s) if !s.is_empty() => s.to_string(),
+    let search = match args.search.trim() {
+        s if !s.is_empty() => s.to_string(),
         _ => return "缺少 search 参数".to_string(),
     };
-    let replace = v
-        .get("replace")
-        .and_then(|r| r.as_str())
-        .unwrap_or("")
-        .to_string();
-    let is_regex = v.get("regex").and_then(|r| r.as_bool()).unwrap_or(false);
-    let dry_run = v.get("dry_run").and_then(|d| d.as_bool()).unwrap_or(true);
-    let confirm = v.get("confirm").and_then(|c| c.as_bool()).unwrap_or(false);
-    let max_replacements = v
-        .get("max_replacements")
-        .and_then(|m| m.as_u64())
-        .unwrap_or(0) as usize;
+    let replace = args.replace;
+    let is_regex = args.regex;
+    let dry_run = args.dry_run;
+    let confirm = args.confirm;
+    let max_replacements = args.max_replacements.unwrap_or(0) as usize;
 
     let target = match resolve_for_read(working_dir, &path) {
         Ok(p) => p,
