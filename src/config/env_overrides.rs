@@ -23,6 +23,12 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
 }
 
 fn apply_env_overrides_part_1(b: &mut ConfigBuilder) {
+    env_override_api_base_models_auth(b);
+    env_override_tui_repl_session_flags(b);
+    env_override_run_command_limits(b);
+}
+
+fn env_override_api_base_models_auth(b: &mut ConfigBuilder) {
     if let Ok(a) = std::env::var("CM_API_BASE") {
         let a = a.trim().to_string();
         if !a.is_empty() {
@@ -53,6 +59,9 @@ fn apply_env_overrides_part_1(b: &mut ConfigBuilder) {
             b.llm_http_auth_mode_str = Some(s);
         }
     }
+}
+
+fn env_override_tui_repl_session_flags(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_MAX_MESSAGE_HISTORY")
         && let Ok(n) = v.trim().parse::<u64>()
     {
@@ -73,6 +82,9 @@ fn apply_env_overrides_part_1(b: &mut ConfigBuilder) {
     {
         b.repl_initial_workspace_messages_enabled = Some(val);
     }
+}
+
+fn env_override_run_command_limits(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_COMMAND_TIMEOUT_SECS")
         && let Ok(n) = v.trim().parse::<u64>()
     {
@@ -199,6 +211,12 @@ fn env_override_web_search_keys(b: &mut ConfigBuilder) {
 }
 
 fn apply_env_overrides_part_3(b: &mut ConfigBuilder) {
+    env_override_web_search_limits_part_3(b);
+    env_override_http_fetch_limits(b);
+    env_override_reflection_and_final_plan(b);
+}
+
+fn env_override_web_search_limits_part_3(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_WEB_SEARCH_TIMEOUT_SECS")
         && let Ok(n) = v.trim().parse::<u64>()
     {
@@ -209,6 +227,9 @@ fn apply_env_overrides_part_3(b: &mut ConfigBuilder) {
     {
         b.web_search_max_results = Some(n);
     }
+}
+
+fn env_override_http_fetch_limits(b: &mut ConfigBuilder) {
     if let Ok(s) = std::env::var("CM_HTTP_FETCH_ALLOWED_PREFIXES") {
         let list: Vec<String> = s
             .split(',')
@@ -229,6 +250,9 @@ fn apply_env_overrides_part_3(b: &mut ConfigBuilder) {
     {
         b.http_fetch_max_response_bytes = Some(n);
     }
+}
+
+fn env_override_reflection_and_final_plan(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_REFLECTION_DEFAULT_MAX_ROUNDS")
         && let Ok(n) = v.trim().parse::<u64>()
     {
@@ -274,6 +298,11 @@ fn apply_env_overrides_part_3(b: &mut ConfigBuilder) {
 }
 
 fn apply_env_overrides_part_4(b: &mut ConfigBuilder) {
+    env_override_intent_thresholds(b);
+    env_override_system_prompt_and_default_role(b);
+}
+
+fn env_override_intent_thresholds(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_INTENT_AT_TURN_START_ENABLED")
         && let Some(val) = parse_bool_like(&v)
     {
@@ -324,6 +353,9 @@ fn apply_env_overrides_part_4(b: &mut ConfigBuilder) {
     {
         b.intent_mode_bias_enabled = Some(val);
     }
+}
+
+fn env_override_system_prompt_and_default_role(b: &mut ConfigBuilder) {
     if let Ok(s) = std::env::var("CM_SYSTEM_PROMPT") {
         let s = s.trim().to_string();
         if !s.is_empty() {
@@ -346,6 +378,12 @@ fn apply_env_overrides_part_4(b: &mut ConfigBuilder) {
 }
 
 fn apply_env_overrides_part_5(b: &mut ConfigBuilder) {
+    env_override_cursor_rules_part_5(b);
+    env_override_skills_part_5(b);
+    env_override_tool_streaming_flags(b);
+}
+
+fn env_override_cursor_rules_part_5(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_CURSOR_RULES_ENABLED")
         && let Some(val) = parse_bool_like(&v)
     {
@@ -367,6 +405,9 @@ fn apply_env_overrides_part_5(b: &mut ConfigBuilder) {
     {
         b.cursor_rules_max_chars = Some(n);
     }
+}
+
+fn env_override_skills_part_5(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_SKILLS_ENABLED")
         && let Some(val) = parse_bool_like(&v)
     {
@@ -388,6 +429,9 @@ fn apply_env_overrides_part_5(b: &mut ConfigBuilder) {
     {
         b.skills_top_k = Some(n);
     }
+}
+
+fn env_override_tool_streaming_flags(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_TOOL_MESSAGE_MAX_CHARS")
         && let Ok(n) = v.trim().parse::<u64>()
     {
@@ -416,6 +460,12 @@ fn apply_env_overrides_part_5(b: &mut ConfigBuilder) {
 }
 
 fn apply_env_overrides_part_6(b: &mut ConfigBuilder) {
+    env_override_tool_stats_numeric(b);
+    env_override_thinking_echo_appendix(b);
+    env_override_context_budget_and_summary(b);
+}
+
+fn env_override_tool_stats_numeric(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_TOOL_STATS_WINDOW_EVENTS")
         && let Ok(n) = v.trim().parse::<u64>()
     {
@@ -436,6 +486,9 @@ fn apply_env_overrides_part_6(b: &mut ConfigBuilder) {
     {
         b.agent_tool_stats_warn_below_success_ratio = Some(x);
     }
+}
+
+fn env_override_thinking_echo_appendix(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_MATERIALIZE_DEEPSEEK_DSML_TOOL_CALLS")
         && let Some(val) = parse_bool_like(&v)
     {
@@ -460,6 +513,9 @@ fn apply_env_overrides_part_6(b: &mut ConfigBuilder) {
             b.thinking_avoid_echo_appendix_file = Some(p);
         }
     }
+}
+
+fn env_override_context_budget_and_summary(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_CONTEXT_CHAR_BUDGET")
         && let Ok(n) = v.trim().parse::<u64>()
     {
@@ -488,6 +544,12 @@ fn apply_env_overrides_part_6(b: &mut ConfigBuilder) {
 }
 
 fn apply_env_overrides_part_7(b: &mut ConfigBuilder) {
+    env_override_context_transcript_and_health_probe(b);
+    env_override_chat_queue_parallel_and_caches(b);
+    env_override_staged_plan_execution_flags(b);
+}
+
+fn env_override_context_transcript_and_health_probe(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS")
         && let Ok(n) = v.trim().parse::<u64>()
     {
@@ -503,6 +565,9 @@ fn apply_env_overrides_part_7(b: &mut ConfigBuilder) {
     {
         b.health_llm_models_probe_cache_secs = Some(n);
     }
+}
+
+fn env_override_chat_queue_parallel_and_caches(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_CHAT_QUEUE_MAX_CONCURRENT")
         && let Ok(n) = v.trim().parse::<u64>()
     {
@@ -543,6 +608,9 @@ fn apply_env_overrides_part_7(b: &mut ConfigBuilder) {
     {
         b.session_workspace_changelist_max_chars = Some(n);
     }
+}
+
+fn env_override_staged_plan_execution_flags(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_STAGED_PLAN_EXECUTION")
         && let Some(val) = parse_bool_like(&v)
     {
