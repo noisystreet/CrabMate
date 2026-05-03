@@ -119,7 +119,7 @@ pub struct RunAgentTurnParams<'a> {
     pub tracing_chat_turn: Option<Arc<observability::TracingChatTurn>>,
     /// Web：HTTP 审计（客户端 IP、共享 Bearer 指纹）；CLI/定时任务等为 `None`。
     pub request_audit: Option<Arc<crate::web::audit::WebRequestAudit>>,
-    /// 进程内显式句柄：工作区变更集注册表、工具统计等（`bench` 等无 `AppState` 时用 [`crate::process_handles::ProcessHandles::singleton_for_fallback_process`]）。
+    /// 进程内显式句柄：工作区变更集注册表、工具统计等（`bench` 等无 `AppState` 时用 [`crate::process_handles::ProcessHandles::default_arc_process_handles`]）。
     pub process_handles: Arc<crate::process_handles::ProcessHandles>,
 }
 
@@ -421,8 +421,7 @@ impl<'a> RunAgentTurnParams<'a> {
             turn_allowed_tool_names: None,
             tracing_chat_turn: None,
             request_audit: None,
-            process_handles: crate::process_handles::ProcessHandles::singleton_for_fallback_process(
-            ),
+            process_handles: crate::process_handles::ProcessHandles::default_arc_process_handles(),
         }
     }
 }

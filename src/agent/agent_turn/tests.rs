@@ -205,7 +205,7 @@ mod hierarchy_runner_params_tests {
                 tracing_chat_turn: None,
                 request_audit: None,
                 process_handles:
-                    crate::process_handles::ProcessHandles::singleton_for_fallback_process(),
+                    crate::process_handles::ProcessHandles::default_arc_process_handles(),
             },
             turn: RunLoopTurnState {
                 messages: &mut messages,
@@ -236,6 +236,10 @@ mod hierarchy_runner_params_tests {
         assert_eq!(h.primary_intent.as_deref(), Some("execute.run"));
         assert_eq!(h.secondary_intents, vec!["a", "b"]);
         assert_eq!(h.intent_mode_bias_enabled, cfg.intent_mode_bias_enabled);
+        assert!(std::sync::Arc::ptr_eq(
+            &h.process_handles,
+            &p.ctx.process_handles
+        ));
     }
 
     #[test]
@@ -282,7 +286,7 @@ mod hierarchy_runner_params_tests {
                 tracing_chat_turn: None,
                 request_audit: None,
                 process_handles:
-                    crate::process_handles::ProcessHandles::singleton_for_fallback_process(),
+                    crate::process_handles::ProcessHandles::default_arc_process_handles(),
             },
             turn: RunLoopTurnState {
                 messages: &mut messages,
@@ -377,7 +381,7 @@ mod per_reflect_tests {
                 tracing_chat_turn: None,
                 request_audit: None,
                 process_handles:
-                    crate::process_handles::ProcessHandles::singleton_for_fallback_process(),
+                    crate::process_handles::ProcessHandles::default_arc_process_handles(),
             },
             turn: RunLoopTurnState {
                 messages: &mut messages,

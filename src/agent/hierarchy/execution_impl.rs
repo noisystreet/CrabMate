@@ -441,49 +441,61 @@ impl<'a> super::HierarchicalExecutor<'a> {
         let operator = OperatorAgent::new(op_config);
 
         // 根据是否有完整上下文选择执行方法
-        let result =
-            if let (Some(llm_backend), Some(cfg), Some(client), Some(api_key), Some(work_dir)) = (
-                self.llm_backend,
-                self.cfg.as_ref(),
-                self.client.as_ref(),
-                self.api_key.as_ref(),
-                self.working_dir.as_ref(),
+        let result = if let (
+            Some(llm_backend),
+            Some(cfg),
+            Some(client),
+            Some(api_key),
+            Some(work_dir),
+        ) = (
+            self.llm_backend,
+            self.cfg.as_ref(),
+            self.client.as_ref(),
+            self.api_key.as_ref(),
+            self.working_dir.as_ref(),
+        ) {
+            // 有完整上下文，使用带工具的执行
+            let hl = self
+                .handler_lookup
+                .clone()
+                .expect("hierarchical executor missing handler_lookup (with_context not applied)");
+            let sb = self.sync_default_sandbox_backend.clone().expect(
+                    "hierarchical executor missing sync_default_sandbox_backend (with_context not applied)",
+                );
+            let mut tool_executor_ctx = super::super::tool_executor::ToolExecutorContext::new(
+                Arc::new(cfg.clone()),
+                work_dir.clone(),
+            )
+            .with_dispatch_handles(hl, sb);
+            tool_executor_ctx = tool_executor_ctx.with_probe_cache(self.probe_cache.clone());
+            // 如果有审批上下文，启用 Web 审批流程
+            if let (Some(out_tx), Some(approval_rx)) = (
+                self.tool_approval_out.clone(),
+                self.tool_approval_rx.clone(),
             ) {
-                // 有完整上下文，使用带工具的执行
-                let mut tool_executor_ctx = super::super::tool_executor::ToolExecutorContext::new(
-                    Arc::new(cfg.clone()),
-                    work_dir.clone(),
-                );
-                tool_executor_ctx = tool_executor_ctx.with_probe_cache(self.probe_cache.clone());
-                // 如果有审批上下文，启用 Web 审批流程
-                if let (Some(out_tx), Some(approval_rx)) = (
-                    self.tool_approval_out.clone(),
-                    self.tool_approval_rx.clone(),
-                ) {
-                    tool_executor_ctx =
-                        tool_executor_ctx.with_web_approval_arc(out_tx, approval_rx);
-                }
-                let tool_executor = ToolExecutor::new(tool_executor_ctx);
-                let extra = super::super::subgoal_context::build_injected_subgoal_user_extra(
+                tool_executor_ctx = tool_executor_ctx.with_web_approval_arc(out_tx, approval_rx);
+            }
+            let tool_executor = ToolExecutor::new(tool_executor_ctx);
+            let extra = super::super::subgoal_context::build_injected_subgoal_user_extra(
+                goal,
+                &deps,
+                prior_subgoals,
+            );
+            operator
+                .execute_with_tools(
                     goal,
-                    &deps,
-                    prior_subgoals,
-                );
-                operator
-                    .execute_with_tools(
-                        goal,
-                        cfg,
-                        llm_backend,
-                        client,
-                        api_key,
-                        &tool_executor,
-                        extra.as_deref(),
-                    )
-                    .await
-            } else {
-                // 降级使用简化版本
-                operator.execute(goal).await
-            };
+                    cfg,
+                    llm_backend,
+                    client,
+                    api_key,
+                    &tool_executor,
+                    extra.as_deref(),
+                )
+                .await
+        } else {
+            // 降级使用简化版本
+            operator.execute(goal).await
+        };
 
         let result = result.map_err(ExecutionError::OperatorError)?;
 

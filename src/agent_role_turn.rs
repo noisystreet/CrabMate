@@ -169,11 +169,13 @@ pub(crate) fn turn_tool_denied_message(name: &str) -> String {
 
 /// 在原有「只读并行批」判定之上，叠加多角色工具白名单。
 pub(crate) fn tool_calls_allow_parallel_for_role(
+    handler_lookup: &crate::tool_registry::HandlerLookupTable,
     cfg: &AgentConfig,
     tool_calls: &[ToolCall],
     turn_allow: Option<&HashSet<String>>,
 ) -> bool {
-    if !crate::tool_registry::tool_calls_allow_parallel_sync_batch(cfg, tool_calls) {
+    if !crate::tool_registry::tool_calls_allow_parallel_sync_batch(handler_lookup, cfg, tool_calls)
+    {
         return false;
     }
     if let Some(a) = turn_allow {

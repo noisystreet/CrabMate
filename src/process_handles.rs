@@ -1,10 +1,12 @@
 //! 单进程内共享的运行时句柄（非 `static`）：工作区变更集注册表、工具调用统计记录器与 CLI 长期记忆缓存。
-//! 由 Web `AppState` 或 CLI 入口构造并注入 [`crate::RunAgentTurnParams`]，避免隐式全局状态。
+//! 由 Web `AppState` 或 CLI 入口构造并注入 [`crate::RunAgentTurnParams`]，避免隐式全局状态；**`default_arc_process_handles`** 为无 `AppState` 时的独立默认 `Arc`（**不**用进程级 `static` 单例）。
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
+use crate::tool_registry::HandlerLookupTable;
+use crate::tool_sandbox::SyncDefaultSandboxBackend;
 use crate::tool_stats::ToolOutcomeRecorder;
 use crate::workspace::changelist::WorkspaceChangelistRegistry;
 
@@ -12,6 +14,10 @@ use crate::workspace::changelist::WorkspaceChangelistRegistry;
 pub struct ProcessHandles {
     pub workspace_changelist_registry: Arc<WorkspaceChangelistRegistry>,
     pub tool_outcome_recorder: Arc<ToolOutcomeRecorder>,
+    /// 工具名 → 分发 handler（原模块级 `HANDLER_MAP`）。
+    pub handler_lookup: HandlerLookupTable,
+    /// Docker `sync_default` 沙盒后端（原模块级 `SANDBOX_BACKEND`）。
+    pub sync_default_sandbox_backend: Arc<dyn SyncDefaultSandboxBackend>,
     /// CLI：懒打开的长期记忆运行时（路径变更后下次调用会重开）。
     cli_long_term_memory: Mutex<Option<(PathBuf, Arc<LongTermMemoryRuntime>)>>,
 }
@@ -20,10 +26,14 @@ impl ProcessHandles {
     pub fn new(
         workspace_changelist_registry: Arc<WorkspaceChangelistRegistry>,
         tool_outcome_recorder: Arc<ToolOutcomeRecorder>,
+        handler_lookup: HandlerLookupTable,
+        sync_default_sandbox_backend: Arc<dyn SyncDefaultSandboxBackend>,
     ) -> Self {
         Self {
             workspace_changelist_registry,
             tool_outcome_recorder,
+            handler_lookup,
+            sync_default_sandbox_backend,
             cli_long_term_memory: Mutex::new(None),
         }
     }
@@ -31,24 +41,26 @@ impl ProcessHandles {
     pub fn new_arc(
         workspace_changelist_registry: Arc<WorkspaceChangelistRegistry>,
         tool_outcome_recorder: Arc<ToolOutcomeRecorder>,
+        handler_lookup: HandlerLookupTable,
+        sync_default_sandbox_backend: Arc<dyn SyncDefaultSandboxBackend>,
     ) -> Arc<Self> {
         Arc::new(Self::new(
             workspace_changelist_registry,
             tool_outcome_recorder,
+            handler_lookup,
+            sync_default_sandbox_backend,
         ))
     }
 
-    /// `bench` 等未显式传入句柄时的回退：单例（仅用于无 Web `AppState` 的路径）。
-    pub fn singleton_for_fallback_process() -> Arc<Self> {
-        static HANDLES: OnceLock<Arc<ProcessHandles>> = OnceLock::new();
-        HANDLES
-            .get_or_init(|| {
-                ProcessHandles::new_arc(
-                    Arc::new(WorkspaceChangelistRegistry::default()),
-                    Arc::new(ToolOutcomeRecorder::new()),
-                )
-            })
-            .clone()
+    /// 默认进程句柄（独立 `Arc`，非全局单例）：用于 **`RunAgentTurnParams::benchmark_batch`**、单元测试等无 `AppState` 的路径。
+    /// Web `serve` / CLI `chat`·`repl` 应在入口构造 [`ProcessHandles::new_arc`] 并注入 `run_agent_turn`，以便与工作区会话对齐。
+    pub fn default_arc_process_handles() -> Arc<Self> {
+        ProcessHandles::new_arc(
+            Arc::new(WorkspaceChangelistRegistry::default()),
+            Arc::new(ToolOutcomeRecorder::new()),
+            HandlerLookupTable::default_dispatch(),
+            crate::tool_sandbox::default_sync_default_sandbox_backend(),
+        )
     }
 
     pub(crate) fn cli_long_term_memory_handles_with_stderr_notice(

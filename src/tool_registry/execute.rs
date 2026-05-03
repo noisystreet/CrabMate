@@ -18,7 +18,7 @@ use crate::tool_approval::{
 use crate::tools;
 use crate::types::{CommandApprovalDecision, ToolCall};
 
-use super::meta::{HandlerId, handler_id_for};
+use super::meta::{HandlerId, HandlerLookupTable};
 use super::policy::{
     http_fetch_outer_wall_secs, http_request_outer_wall_secs, parallel_tool_wall_timeout_secs,
     sync_default_runs_inline,
@@ -58,6 +58,15 @@ pub struct DispatchToolParams<'a> {
     pub turn_allow: Option<&'a HashSet<String>>,
     pub long_term_memory: Option<Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
     pub long_term_memory_scope_id: Option<String>,
+    /// 与 [`crate::RunAgentTurnParams::process_handles`] 同源。
+    pub handler_lookup: &'a HandlerLookupTable,
+    pub sync_default_sandbox_backend: &'a Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
+}
+
+/// [`DispatchToolParams`] 中与 Docker / 配置快照相关的字段合并，降低内部分发函数的形参个数。
+struct ToolExecEnv<'a> {
+    cfg: &'a Arc<AgentConfig>,
+    sandbox_backend: &'a Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
 }
 
 /// `http_fetch` / `http_request` 共用：`Web` 带可选审批会话，`Cli` 带终端审批上下文（本路径不使用 `workspace_changed`）。
@@ -148,7 +157,13 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
         turn_allow,
         long_term_memory,
         long_term_memory_scope_id,
+        handler_lookup,
+        sync_default_sandbox_backend,
     } = p;
+    let env = ToolExecEnv {
+        cfg,
+        sandbox_backend: sync_default_sandbox_backend,
+    };
     if !crate::agent_role_turn::tool_allowed_for_turn(name, turn_allow) {
         return (crate::agent_role_turn::turn_tool_denied_message(name), None);
     }
@@ -225,7 +240,7 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
         };
     let args = args_processed.as_ref();
 
-    let hid = handler_id_for(name);
+    let hid = handler_lookup.id_for(name);
 
     // Web 未设置工作区时：仍允许出网类工具；禁止所有 SyncDefault（否则 `working_dir` 会回落到配置目录，等效于未选工作区仍可读本地树）。
     if !workspace_is_set && matches!(hid, HandlerId::SyncDefault) {
@@ -249,7 +264,7 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
                 ctx,
             } => {
                 execute_run_command_impl(
-                    cfg,
+                    &env,
                     effective_working_dir,
                     workspace_is_set,
                     workspace_changed,
@@ -265,7 +280,7 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
                 ctx,
             } => {
                 execute_run_command_impl(
-                    cfg,
+                    &env,
                     effective_working_dir,
                     workspace_is_set,
                     workspace_changed,
@@ -278,15 +293,15 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
             }
         },
         HandlerId::GetWeather => {
-            execute_get_weather_web(cfg, effective_working_dir, workspace_is_set, name, args).await
+            execute_get_weather_web(&env, effective_working_dir, workspace_is_set, name, args).await
         }
         HandlerId::WebSearch => {
-            execute_web_search_web(cfg, effective_working_dir, workspace_is_set, name, args).await
+            execute_web_search_web(&env, effective_working_dir, workspace_is_set, name, args).await
         }
         HandlerId::HttpFetch => {
             let (web_ctx, cli_ctx) = http_tool_approval_context(runtime);
             execute_http_fetch_impl(
-                cfg,
+                &env,
                 effective_working_dir,
                 workspace_is_set,
                 web_ctx,
@@ -299,7 +314,7 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
         HandlerId::HttpRequest => {
             let (web_ctx, cli_ctx) = http_tool_approval_context(runtime);
             execute_http_request_impl(
-                cfg,
+                &env,
                 effective_working_dir,
                 workspace_is_set,
                 web_ctx,
@@ -319,6 +334,7 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
                     );
                 }
                 let out = crate::tool_sandbox::run_sync_default_in_docker(
+                    env.sandbox_backend,
                     cfg.as_ref(),
                     effective_working_dir,
                     name,
@@ -412,11 +428,12 @@ pub(crate) async fn prefetch_parallel_syncdefault_approvals(
     tool_calls: &[ToolCall],
     web_ctx: Option<&WebToolRuntime>,
     cli_ctx: Option<&CliToolRuntime>,
+    handler_lookup: &HandlerLookupTable,
 ) -> HashMap<(String, String), String> {
     let mut failures: HashMap<(String, String), String> = HashMap::new();
     let mut seen: HashSet<(String, String)> = HashSet::new();
     for tc in tool_calls {
-        if handler_id_for(tc.function.name.as_str()) != HandlerId::SyncDefault {
+        if handler_lookup.id_for(tc.function.name.as_str()) != HandlerId::SyncDefault {
             continue;
         }
         if tc.function.name != "read_dir" {
@@ -438,14 +455,14 @@ pub(crate) async fn prefetch_parallel_syncdefault_approvals(
 
 /// `sync_default_tool_sandbox_mode = docker` 时，在宿主完成审批/白名单后把本类工具交给容器内 `tool-runner-internal`。
 async fn dispatch_non_sync_tool_to_docker(
-    cfg: &Arc<AgentConfig>,
+    env: &ToolExecEnv<'_>,
     effective_working_dir: &Path,
     workspace_is_set: bool,
     kind: &str,
     args: &str,
     runner_cfg_path: Result<PathBuf, String>,
 ) -> Option<(String, Option<serde_json::Value>)> {
-    if cfg.sync_default_tool_sandbox_mode != SyncDefaultToolSandboxMode::Docker {
+    if env.cfg.sync_default_tool_sandbox_mode != SyncDefaultToolSandboxMode::Docker {
         return None;
     }
     if !workspace_is_set {
@@ -464,9 +481,14 @@ async fn dispatch_non_sync_tool_to_docker(
         tool: None,
         args_json: args.to_string(),
     };
-    let out =
-        crate::tool_sandbox::run_tool_in_docker(cfg.as_ref(), effective_working_dir, path, inv)
-            .await;
+    let out = crate::tool_sandbox::run_tool_in_docker(
+        env.sandbox_backend,
+        env.cfg.as_ref(),
+        effective_working_dir,
+        path,
+        inv,
+    )
+    .await;
     Some(match out {
         Ok(s) => (s, None),
         Err(e) => (e, None),
@@ -475,7 +497,7 @@ async fn dispatch_non_sync_tool_to_docker(
 
 #[allow(clippy::too_many_arguments)] // Web + CLI 双路径审批共享实现
 async fn execute_run_command_impl(
-    cfg: &Arc<AgentConfig>,
+    env: &ToolExecEnv<'_>,
     effective_working_dir: &Path,
     workspace_is_set: bool,
     workspace_changed: &mut bool,
@@ -484,6 +506,7 @@ async fn execute_run_command_impl(
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
+    let cfg = env.cfg;
     if !workspace_is_set {
         return (web_tool_err_workspace_not_set("执行命令"), None);
     }
@@ -613,7 +636,7 @@ async fn execute_run_command_impl(
     }
 
     if let Some((s, inj)) = dispatch_non_sync_tool_to_docker(
-        cfg,
+        env,
         effective_working_dir,
         workspace_is_set,
         "run_command",
@@ -760,7 +783,7 @@ pub(crate) async fn prefetch_http_fetch_parallel_approvals(
 }
 
 async fn execute_http_fetch_impl(
-    cfg: &Arc<AgentConfig>,
+    env: &ToolExecEnv<'_>,
     effective_working_dir: &Path,
     workspace_is_set: bool,
     web_ctx: Option<&WebToolRuntime>,
@@ -768,6 +791,7 @@ async fn execute_http_fetch_impl(
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
+    let cfg = env.cfg;
     let (url, method, text_format) = match tools::http_fetch::parse_http_fetch_args(args) {
         Ok(x) => x,
         Err(e) => return (format!("错误：{}", e), None),
@@ -826,7 +850,7 @@ async fn execute_http_fetch_impl(
         }
     }
     if let Some(out) = dispatch_non_sync_tool_to_docker(
-        cfg,
+        env,
         effective_working_dir,
         workspace_is_set,
         "http_fetch",
@@ -868,7 +892,7 @@ async fn execute_http_fetch_impl(
 }
 
 async fn execute_http_request_impl(
-    cfg: &Arc<AgentConfig>,
+    env: &ToolExecEnv<'_>,
     effective_working_dir: &Path,
     workspace_is_set: bool,
     web_ctx: Option<&WebToolRuntime>,
@@ -876,6 +900,7 @@ async fn execute_http_request_impl(
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
+    let cfg = env.cfg;
     let (url, method, json_body, text_format) =
         match tools::http_fetch::parse_http_request_args(args) {
             Ok(x) => x,
@@ -936,7 +961,7 @@ async fn execute_http_request_impl(
         }
     }
     if let Some(out) = dispatch_non_sync_tool_to_docker(
-        cfg,
+        env,
         effective_working_dir,
         workspace_is_set,
         "http_request",
@@ -979,14 +1004,15 @@ async fn execute_http_request_impl(
 }
 
 async fn execute_get_weather_web(
-    cfg: &Arc<AgentConfig>,
+    env: &ToolExecEnv<'_>,
     effective_working_dir: &Path,
     workspace_is_set: bool,
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
+    let cfg = env.cfg;
     if let Some(out) = dispatch_non_sync_tool_to_docker(
-        cfg,
+        env,
         effective_working_dir,
         workspace_is_set,
         "get_weather",
@@ -1030,14 +1056,15 @@ async fn execute_get_weather_web(
 }
 
 async fn execute_web_search_web(
-    cfg: &Arc<AgentConfig>,
+    env: &ToolExecEnv<'_>,
     effective_working_dir: &Path,
     workspace_is_set: bool,
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
+    let cfg = env.cfg;
     if let Some(out) = dispatch_non_sync_tool_to_docker(
-        cfg,
+        env,
         effective_working_dir,
         workspace_is_set,
         "web_search",
@@ -1082,6 +1109,7 @@ async fn execute_web_search_web(
 
 #[cfg(test)]
 mod tests {
+    use super::super::meta::HandlerLookupTable;
     use super::*;
     use crate::types::{FunctionCall, ToolCall};
 
@@ -1112,7 +1140,13 @@ mod tests {
     #[tokio::test]
     async fn prefetch_parallel_syncdefault_approvals_blocks_external_read_dir_without_channel() {
         let calls = vec![tool_call("read_dir", r#"{"path":"/tmp"}"#)];
-        let failures = prefetch_parallel_syncdefault_approvals(&calls, None, None).await;
+        let failures = prefetch_parallel_syncdefault_approvals(
+            &calls,
+            None,
+            None,
+            &HandlerLookupTable::default_dispatch(),
+        )
+        .await;
         assert_eq!(failures.len(), 1);
         let msg = failures
             .get(&("read_dir".to_string(), r#"{"path":"/tmp"}"#.to_string()))

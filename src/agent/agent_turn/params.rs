@@ -295,6 +295,7 @@ impl RunLoopParams<'_> {
             primary_intent,
             secondary_intents,
             intent_mode_bias_enabled: self.ctx.cfg.intent_mode_bias_enabled,
+            process_handles: Arc::clone(&self.ctx.process_handles),
         }
     }
 

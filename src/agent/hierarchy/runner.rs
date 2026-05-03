@@ -133,6 +133,8 @@ pub struct HierarchyRunnerParams<'a> {
     pub secondary_intents: Vec<String>,
     /// 是否启用基于意图标签的执行模式偏置。
     pub intent_mode_bias_enabled: bool,
+    /// 与主 Agent 轮次共用的进程句柄（工具分发表、Docker 沙盒后端等）。
+    pub process_handles: std::sync::Arc<crate::process_handles::ProcessHandles>,
 }
 
 /// 分层 Agent 运行结果
@@ -156,6 +158,7 @@ struct SimpleFallbackParams<'a> {
     tools_defs: &'a [crate::types::Tool],
     tool_approval_out: Option<Sender<String>>,
     tool_approval_rx: Option<Arc<Mutex<Receiver<CommandApprovalDecision>>>>,
+    process_handles: std::sync::Arc<crate::process_handles::ProcessHandles>,
 }
 
 /// `run_full_decomposed_hierarchy` 的输入（避免长参数列表；字段生命周期与一次 runner 调用绑定）。
@@ -171,6 +174,7 @@ struct FullDecomposedHierarchyCtx<'a> {
     tool_approval_out: Option<Sender<String>>,
     tool_approval_rx: Option<Arc<Mutex<Receiver<CommandApprovalDecision>>>>,
     router_output: RouterOutput,
+    process_handles: std::sync::Arc<crate::process_handles::ProcessHandles>,
 }
 
 /// 运行分层 Agent（完整流程）
@@ -192,6 +196,7 @@ pub async fn run_hierarchical(
         primary_intent,
         secondary_intents,
         intent_mode_bias_enabled,
+        process_handles,
     } = params;
 
     let tools_eff: std::borrow::Cow<'_, [crate::types::Tool]> = if primary_intent
@@ -285,6 +290,7 @@ pub async fn run_hierarchical(
                 tools_defs: tools_slice,
                 tool_approval_out,
                 tool_approval_rx,
+                process_handles: std::sync::Arc::clone(&process_handles),
             })
             .await;
         }
@@ -303,6 +309,7 @@ pub async fn run_hierarchical(
         tool_approval_out,
         tool_approval_rx,
         router_output,
+        process_handles: std::sync::Arc::clone(&process_handles),
     })
     .await
 }
@@ -323,6 +330,7 @@ async fn run_full_decomposed_hierarchy(
         tool_approval_out,
         tool_approval_rx,
         router_output,
+        process_handles,
     } = ctx;
 
     info!(
@@ -438,6 +446,10 @@ async fn run_full_decomposed_hierarchy(
             api_key.clone(),
             working_dir.clone(),
         )
+        .with_process_tool_handles(
+            process_handles.handler_lookup.clone(),
+            Arc::clone(&process_handles.sync_default_sandbox_backend),
+        )
         .with_tools_defs(tools_slice.to_vec())
         .with_manager(manager.clone())
         .with_original_task(task.to_string());
@@ -520,6 +532,7 @@ async fn run_simple_fallback(
         tools_defs,
         tool_approval_out,
         tool_approval_rx,
+        process_handles,
     } = params;
 
     info!(
@@ -592,6 +605,10 @@ async fn run_simple_fallback(
 
     let mut executor = HierarchicalExecutor::new(10, 3)
         .with_context(llm_backend, cfg.clone(), client, api_key, working_dir)
+        .with_process_tool_handles(
+            process_handles.handler_lookup.clone(),
+            Arc::clone(&process_handles.sync_default_sandbox_backend),
+        )
         .with_tools_defs(tools_defs.to_vec());
     if let Some(sse_tx) = sse_out {
         executor = executor.with_sse(sse_tx);

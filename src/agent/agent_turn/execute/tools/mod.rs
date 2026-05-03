@@ -86,6 +86,9 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub request_audit: Option<Arc<crate::web::audit::WebRequestAudit>>,
     /// 与 [`crate::RunAgentTurnParams::process_handles`] 同源。
     pub tool_outcome_recorder: Arc<crate::tool_stats::ToolOutcomeRecorder>,
+    /// 与 `process_handles.handler_lookup` 同源（随 `RunLoopCtx` 注入，避免在批处理中再借 `process_handles`）。
+    pub handler_lookup: crate::tool_registry::HandlerLookupTable,
+    pub sync_default_sandbox_backend: Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
 }
 
 pub(crate) enum ExecuteToolsBatchOutcome {
@@ -172,6 +175,8 @@ struct ExecuteToolsCommonCtx<'a> {
     tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
     request_audit: Option<Arc<crate::web::audit::WebRequestAudit>>,
     tool_outcome_recorder: Arc<crate::tool_stats::ToolOutcomeRecorder>,
+    handler_lookup: crate::tool_registry::HandlerLookupTable,
+    sync_default_sandbox_backend: Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
 }
 
 async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsBatchOutcome {
@@ -186,6 +191,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
     let workspace_changed = if !force_serial
         && ctx.workspace_is_set
         && crate::agent_role_turn::tool_calls_allow_parallel_for_role(
+            &ctx.handler_lookup,
             ctx.cfg.as_ref(),
             ctx.tool_calls,
             ctx.turn_allow,
@@ -292,6 +298,8 @@ pub(crate) async fn per_execute_tools_web(
         tracing_chat_turn,
         request_audit,
         tool_outcome_recorder,
+        handler_lookup,
+        sync_default_sandbox_backend,
     } = ctx;
 
     let _tool_trace = request_chrome_trace
@@ -323,6 +331,8 @@ pub(crate) async fn per_execute_tools_web(
         tracing_chat_turn,
         request_audit,
         tool_outcome_recorder,
+        handler_lookup,
+        sync_default_sandbox_backend,
     })
     .await
 }

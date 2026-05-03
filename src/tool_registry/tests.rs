@@ -1,8 +1,6 @@
 use crate::types::{FunctionCall, ToolCall};
 
-use super::meta::{
-    HandlerId, ToolExecutionClass, execution_class_for_tool, handler_id_for, try_dispatch_meta,
-};
+use super::meta::{HandlerId, ToolExecutionClass, execution_class_for_tool, try_dispatch_meta};
 use super::policy::{
     parallel_tool_wall_timeout_secs, sync_default_runs_inline, tool_calls_allow_parallel_sync_batch,
 };
@@ -22,21 +20,31 @@ fn test_cfg() -> crate::config::AgentConfig {
     crate::config::load_config(None).expect("embed default")
 }
 
+fn default_lookup() -> super::HandlerLookupTable {
+    super::HandlerLookupTable::default_dispatch()
+}
+
 #[test]
 fn parallel_sync_batch_two_readonly_sync_tools() {
     let cfg = test_cfg();
     let batch = vec![tc("read_file"), tc("list_dir")];
-    assert!(tool_calls_allow_parallel_sync_batch(&cfg, &batch));
+    assert!(tool_calls_allow_parallel_sync_batch(
+        &default_lookup(),
+        &cfg,
+        &batch
+    ));
 }
 
 #[test]
 fn parallel_sync_batch_mixed_readonly_http_and_search() {
     let cfg = test_cfg();
     assert!(tool_calls_allow_parallel_sync_batch(
+        &default_lookup(),
         &cfg,
         &[tc("read_file"), tc("http_fetch")]
     ));
     assert!(tool_calls_allow_parallel_sync_batch(
+        &default_lookup(),
         &cfg,
         &[tc("get_weather"), tc("web_search")]
     ));
@@ -46,10 +54,12 @@ fn parallel_sync_batch_mixed_readonly_http_and_search() {
 fn parallel_sync_batch_denied_for_cargo_or_workflow() {
     let cfg = test_cfg();
     assert!(!tool_calls_allow_parallel_sync_batch(
+        &default_lookup(),
         &cfg,
         &[tc("read_file"), tc("cargo_check")]
     ));
     assert!(!tool_calls_allow_parallel_sync_batch(
+        &default_lookup(),
         &cfg,
         &[tc("workflow_execute"), tc("read_file")]
     ));
@@ -59,6 +69,7 @@ fn parallel_sync_batch_denied_for_cargo_or_workflow() {
 fn parallel_sync_batch_denied_for_http_request() {
     let cfg = test_cfg();
     assert!(!tool_calls_allow_parallel_sync_batch(
+        &default_lookup(),
         &cfg,
         &[tc("read_file"), tc("http_request")]
     ));
@@ -68,6 +79,7 @@ fn parallel_sync_batch_denied_for_http_request() {
 fn parallel_sync_batch_single_tool_false() {
     let cfg = test_cfg();
     assert!(!tool_calls_allow_parallel_sync_batch(
+        &default_lookup(),
         &cfg,
         &[tc("read_file")]
     ));
@@ -75,11 +87,12 @@ fn parallel_sync_batch_single_tool_false() {
 
 #[test]
 fn handler_map_resolves_known_tools() {
-    assert_eq!(handler_id_for("workflow_execute"), HandlerId::Workflow);
-    assert_eq!(handler_id_for("run_command"), HandlerId::RunCommand);
-    assert_eq!(handler_id_for("web_search"), HandlerId::WebSearch);
-    assert_eq!(handler_id_for("http_request"), HandlerId::HttpRequest);
-    assert_eq!(handler_id_for("unknown_xyz"), HandlerId::SyncDefault);
+    let table = default_lookup();
+    assert_eq!(table.id_for("workflow_execute"), HandlerId::Workflow);
+    assert_eq!(table.id_for("run_command"), HandlerId::RunCommand);
+    assert_eq!(table.id_for("web_search"), HandlerId::WebSearch);
+    assert_eq!(table.id_for("http_request"), HandlerId::HttpRequest);
+    assert_eq!(table.id_for("unknown_xyz"), HandlerId::SyncDefault);
 }
 
 #[test]

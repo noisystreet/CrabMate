@@ -40,6 +40,8 @@ pub(super) struct ParallelSubgoalTask {
     pub prior: Arc<Vec<TaskResult>>,
     pub pre_snapshot: Arc<ArtifactStore>,
     pub current_ids: Arc<HashSet<String>>,
+    pub handler_lookup: crate::tool_registry::HandlerLookupTable,
+    pub sync_default_sandbox_backend: Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
 }
 
 /// 在共享快照上执行单个子目标；供 `JoinSet` 内 `spawn` 使用。
@@ -62,6 +64,8 @@ pub(in crate::agent::hierarchy::execution::execution_impl) async fn run_one_para
         prior,
         pre_snapshot,
         current_ids,
+        handler_lookup,
+        sync_default_sandbox_backend,
     } = task;
     let goal_id = goal.goal_id.clone();
     let goal_description = goal.description.clone();
@@ -118,7 +122,8 @@ pub(in crate::agent::hierarchy::execution::execution_impl) async fn run_one_para
     let operator = OperatorAgent::new(operator_config);
 
     let mut tool_executor_ctx =
-        ToolExecutorContext::new(cfg.clone(), working_dir.clone().unwrap_or_default());
+        ToolExecutorContext::new(cfg.clone(), working_dir.clone().unwrap_or_default())
+            .with_dispatch_handles(handler_lookup, sync_default_sandbox_backend);
     tool_executor_ctx = tool_executor_ctx.with_probe_cache(probe_cache);
     if let Some(ref sse_out_tx) = sse_out_timeline {
         let title = format!("子目标 `{goal_id}`");

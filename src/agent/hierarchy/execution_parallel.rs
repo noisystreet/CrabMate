@@ -61,6 +61,13 @@ impl<'a> HierarchicalExecutor<'a> {
         let sse_out = self.sse_out.clone(); // 克隆 SSE 发送器以支持并行执行
         let tool_approval_out = self.tool_approval_out.clone(); // 克隆审批发送器
         let tool_approval_rx = self.tool_approval_rx.clone(); // 克隆审批接收器
+        let hl = self
+            .handler_lookup
+            .clone()
+            .expect("hierarchical executor missing handler_lookup (with_context not applied)");
+        let sb = self.sync_default_sandbox_backend.clone().expect(
+            "hierarchical executor missing sync_default_sandbox_backend (with_context not applied)",
+        );
         let probe_cache = self.probe_cache.clone();
         let prior = Arc::new(prior_subgoal_results.to_vec());
         let pre_snapshot: Arc<ArtifactStore> = Arc::new(artifact_store.clone());
@@ -88,6 +95,8 @@ impl<'a> HierarchicalExecutor<'a> {
             let prior = prior.clone();
             let pre_snapshot = pre_snapshot.clone();
             let current_ids = current_ids.clone();
+            let hl_c = hl.clone();
+            let sb_c = sb.clone();
 
             let tools_defs_arc = Arc::new(tools_defs.clone());
             join_set.spawn(async move {
@@ -109,6 +118,8 @@ impl<'a> HierarchicalExecutor<'a> {
                         prior,
                         pre_snapshot,
                         current_ids,
+                        handler_lookup: hl_c,
+                        sync_default_sandbox_backend: sb_c,
                     },
                 )
                 .await

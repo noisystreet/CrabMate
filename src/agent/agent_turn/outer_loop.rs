@@ -245,6 +245,10 @@ async fn outer_loop_execute_tools_round(
             tracing_chat_turn: p.ctx.tracing_chat_turn.clone(),
             request_audit: p.ctx.request_audit.clone(),
             tool_outcome_recorder: Arc::clone(&p.ctx.process_handles.tool_outcome_recorder),
+            handler_lookup: p.ctx.process_handles.handler_lookup.clone(),
+            sync_default_sandbox_backend: Arc::clone(
+                &p.ctx.process_handles.sync_default_sandbox_backend,
+            ),
         },
     )
     .await;
