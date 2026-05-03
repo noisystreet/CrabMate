@@ -160,3 +160,88 @@ pub struct EnvVarCheckArgs {
     pub show_length: Option<bool>,
     pub show_prefix_chars: Option<u64>,
 }
+
+/// [`super::process_tools::port_check`] 入参。
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PortCheckArgs {
+    /// 要检查的端口号（1–65535）
+    #[schemars(range(min = 1, max = 65535))]
+    pub port: u32,
+}
+
+/// [`super::process_tools::process_list`] 入参。
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ProcessListArgs {
+    /// 按进程名/命令行关键词过滤（不区分大小写）
+    pub filter: Option<String>,
+    /// 是否仅当前用户进程，默认 true
+    #[serde(default = "default_true")]
+    pub user_only: bool,
+    /// 最多返回条数，默认 100，上限 500
+    #[serde(default = "default_process_list_max_count")]
+    #[schemars(range(min = 1, max = 500))]
+    pub max_count: u32,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_process_list_max_count() -> u32 {
+    100
+}
+
+/// [`super::go_tools::golangci_lint`] 入参。
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct GolangciLintArgs {
+    /// 是否 `--fix` 自动修复，默认 false
+    #[serde(default)]
+    pub fix: bool,
+    /// 是否 `--fast` 快速模式，默认 false
+    #[serde(default)]
+    pub fast: bool,
+}
+
+/// [`super::markdown_links::markdown_check_links`] 的 `output_format`。
+#[derive(Debug, Clone, Copy, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum MarkdownCheckLinksOutputFormat {
+    #[default]
+    #[serde(alias = "TEXT", alias = "Text")]
+    Text,
+    #[serde(alias = "JSON", alias = "Json")]
+    Json,
+    #[serde(alias = "SARIF", alias = "Sarif")]
+    Sarif,
+}
+
+/// [`super::markdown_links::markdown_check_links`] 入参（字段缺省与 runner 内 `parse_markdown_check_args` 一致）。
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MarkdownCheckLinksArgs {
+    /// 要扫描的相对路径（`.md` 文件或递归目录）；默认 `README.md` + `docs`
+    pub roots: Option<Vec<String>>,
+    /// 最多处理多少个 Markdown 文件，默认 300，上限 3000
+    #[serde(default)]
+    #[schemars(range(min = 1, max = 3000))]
+    pub max_files: Option<u32>,
+    /// 目录递归深度上限，默认 24，上限 80
+    #[serde(default)]
+    #[schemars(range(min = 1, max = 80))]
+    pub max_depth: Option<u32>,
+    /// 仅对这些前缀匹配的 http(s) 或 `//` 外链发起 HEAD；为空则外链仅计数、不联网
+    pub allowed_external_prefixes: Option<Vec<String>>,
+    /// 外链探测超时（秒），默认 10，上限 60
+    #[serde(default)]
+    #[schemars(range(min = 1, max = 60))]
+    pub external_timeout_secs: Option<u32>,
+    /// 是否校验 Markdown 锚点（`#fragment`），默认 true
+    #[serde(default = "default_true")]
+    pub check_fragments: bool,
+    /// 输出格式：text（默认）/ json / sarif
+    #[serde(default)]
+    pub output_format: Option<MarkdownCheckLinksOutputFormat>,
+}

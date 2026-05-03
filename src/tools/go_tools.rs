@@ -197,12 +197,14 @@ pub fn golangci_lint(args_json: &str, workspace_root: &Path, max_output_len: usi
         Ok(v) => v,
         Err(e) => return e,
     };
+    let super::tool_param_types::GolangciLintArgs { fix, fast } =
+        match serde_json::from_value::<super::tool_param_types::GolangciLintArgs>(v) {
+            Ok(a) => a,
+            Err(e) => return format!("参数 JSON 与 golangci_lint 形状不一致: {e}"),
+        };
     if !has_go_project(workspace_root) {
         return "golangci-lint: 跳过（未找到 go.mod）".to_string();
     }
-
-    let fix = v.get("fix").and_then(|x| x.as_bool()).unwrap_or(false);
-    let fast = v.get("fast").and_then(|x| x.as_bool()).unwrap_or(false);
 
     let mut cmd = Command::new("golangci-lint");
     cmd.arg("run");
