@@ -18,11 +18,13 @@ pub(crate) fn tool_parameters_schema_value<T: JsonSchema>() -> serde_json::Value
 mod tests {
     use super::*;
     use crate::tools::tool_param_types::{
-        AddReminderArgs, ArchivePackArgs, CalcArgs, CallGraphSketchArgs, CodeStatsArgs,
-        CoverageReportArgs, DependencyGraphArgs, FindReferencesArgs, FindSymbolArgs,
+        AddReminderArgs, ArchivePackArgs, AstGrepRunArgs, BacktraceAnalyzeArgs, CalcArgs,
+        CallGraphSketchArgs, CiPipelineLocalArgs, CodeStatsArgs, CoverageReportArgs,
+        DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs,
         FormatOnePathArgs, GoBuildArgs, GolangciLintArgs, GradleTasksArgs, ListRemindersArgs,
         MarkdownCheckLinksArgs, MavenCompileArgs, NpmRunArgs, PackageQueryArgs, PortCheckArgs,
-        ProcessListArgs, QualityWorkspaceArgs, RunLintsArgs, ShellcheckCheckArgs, TodoScanArgs,
+        ProcessListArgs, QualityWorkspaceArgs, RunLintsArgs, ShellcheckCheckArgs,
+        StructuredValidateArgs, TableTextArgs, TodoScanArgs, WorkflowExecuteArgs,
     };
     use serde_json::json;
 
@@ -271,5 +273,77 @@ mod tests {
             Some(&json!(false)),
             "{v}"
         );
+    }
+
+    #[test]
+    fn structured_validate_schema_requires_path() {
+        let v = tool_parameters_schema_value::<StructuredValidateArgs>();
+        let req = v
+            .pointer("/required")
+            .and_then(|r| r.as_array())
+            .expect("required");
+        assert!(req.iter().any(|x| x == "path"));
+    }
+
+    #[test]
+    fn workflow_execute_schema_requires_workflow() {
+        let v = tool_parameters_schema_value::<WorkflowExecuteArgs>();
+        let req = v
+            .pointer("/required")
+            .and_then(|r| r.as_array())
+            .expect("required");
+        assert!(req.iter().any(|x| x == "workflow"));
+        assert_eq!(
+            v.pointer("/additionalProperties"),
+            Some(&json!(false)),
+            "{v}"
+        );
+    }
+
+    #[test]
+    fn backtrace_analyze_schema_requires_backtrace() {
+        let v = tool_parameters_schema_value::<BacktraceAnalyzeArgs>();
+        let req = v
+            .pointer("/required")
+            .and_then(|r| r.as_array())
+            .expect("required");
+        assert!(req.iter().any(|x| x == "backtrace"));
+    }
+
+    #[test]
+    fn ci_pipeline_local_schema_has_run_fmt() {
+        let v = tool_parameters_schema_value::<CiPipelineLocalArgs>();
+        assert!(v.pointer("/properties/run_fmt").is_some());
+    }
+
+    #[test]
+    fn docs_health_sweep_schema_denies_unknown() {
+        let v = tool_parameters_schema_value::<DocsHealthSweepArgs>();
+        assert_eq!(
+            v.pointer("/additionalProperties"),
+            Some(&json!(false)),
+            "{v}"
+        );
+    }
+
+    #[test]
+    fn ast_grep_run_schema_requires_pattern_and_lang() {
+        let v = tool_parameters_schema_value::<AstGrepRunArgs>();
+        let req = v
+            .pointer("/required")
+            .and_then(|r| r.as_array())
+            .expect("required");
+        assert!(req.iter().any(|x| x == "pattern"));
+        assert!(req.iter().any(|x| x == "lang"));
+    }
+
+    #[test]
+    fn table_text_schema_requires_action() {
+        let v = tool_parameters_schema_value::<TableTextArgs>();
+        let req = v
+            .pointer("/required")
+            .and_then(|r| r.as_array())
+            .expect("required");
+        assert!(req.iter().any(|x| x == "action"));
     }
 }

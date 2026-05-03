@@ -5,6 +5,8 @@ use std::process::{Command, Stdio};
 
 use super::output_util;
 
+use crate::tools::tool_param_types::PreCommitRunArgs;
+
 const MAX_OUTPUT_LINES: usize = 800;
 
 fn has_precommit_config(root: &Path) -> bool {
@@ -22,12 +24,20 @@ pub fn pre_commit_run(args_json: &str, workspace_root: &Path, max_output_len: us
         return "pre-commit run: 跳过（未找到 .pre-commit-config.yaml / .pre-commit-config.yml）"
             .to_string();
     }
-    let v = match crate::tools::parse_args_json(args_json) {
+    let parsed = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
         Err(e) => return e,
     };
+    let args: PreCommitRunArgs = match serde_json::from_value(parsed) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let v = match serde_json::to_value(&args) {
+        Ok(v) => v,
+        Err(e) => return format!("参数序列化错误: {e}"),
+    };
 
-    if let Some(h) = v.get("hook").and_then(|x| x.as_str()).map(str::trim)
+    if let Some(h) = args.hook.as_deref().map(str::trim)
         && !h.is_empty()
         && !is_safe_hook_id(h)
     {
