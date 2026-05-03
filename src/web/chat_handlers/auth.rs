@@ -77,7 +77,11 @@ pub(crate) async fn require_web_api_bearer_auth(
 ) -> Response {
     let token = {
         let g = state.cfg.read().await;
-        g.web_api_bearer_token.expose_secret().trim().to_string()
+        g.web_api
+            .web_api_bearer_token
+            .expose_secret()
+            .trim()
+            .to_string()
     };
     if token.is_empty() {
         return next.run(req).await;

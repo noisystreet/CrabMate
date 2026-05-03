@@ -11,25 +11,33 @@ fn per_coordinator_init_from_agent_config_matches_cfg_fields() {
     let i = PerCoordinatorInit::from_agent_config(&cfg);
     assert_eq!(
         i.reflection_default_max_rounds,
-        cfg.reflection_default_max_rounds
+        cfg.per_plan_policy.reflection_default_max_rounds
     );
-    assert_eq!(i.final_plan_policy, cfg.final_plan_requirement);
-    assert_eq!(i.plan_rewrite_max_attempts, cfg.plan_rewrite_max_attempts);
+    assert_eq!(
+        i.final_plan_policy,
+        cfg.per_plan_policy.final_plan_requirement
+    );
+    assert_eq!(
+        i.plan_rewrite_max_attempts,
+        cfg.per_plan_policy.plan_rewrite_max_attempts
+    );
     assert_eq!(
         i.staged_plan_patch_max_attempts_config,
-        cfg.staged_plan_patch_max_attempts
+        cfg.staged_planning.staged_plan_patch_max_attempts
     );
     assert_eq!(
         i.final_plan_require_strict_workflow_node_coverage,
-        cfg.final_plan_require_strict_workflow_node_coverage
+        cfg.per_plan_policy
+            .final_plan_require_strict_workflow_node_coverage
     );
     assert_eq!(
         i.final_plan_semantic_check_enabled,
-        cfg.final_plan_semantic_check_enabled
+        cfg.per_plan_policy.final_plan_semantic_check_enabled
     );
     assert_eq!(
         i.final_plan_semantic_check_max_non_readonly_tools,
-        cfg.final_plan_semantic_check_max_non_readonly_tools
+        cfg.per_plan_policy
+            .final_plan_semantic_check_max_non_readonly_tools
     );
 }
 

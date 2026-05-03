@@ -198,16 +198,16 @@ impl super::types::OperatorAgent {
             }
 
             if crate::agent::turn_budget::turn_wall_clock_exceeded(
-                cfg.max_turn_duration_seconds,
+                cfg.turn_budget.max_turn_duration_seconds,
                 start_time.elapsed().as_secs(),
             ) {
                 let msg = crate::agent::turn_budget::turn_wall_clock_limit_user_message(
-                    cfg.max_turn_duration_seconds,
+                    cfg.turn_budget.max_turn_duration_seconds,
                 );
                 tracing::warn!(
                     target: "crabmate::hierarchy",
                     limiter = "turn_wall_clock",
-                    max_turn_duration_seconds = cfg.max_turn_duration_seconds,
+                    max_turn_duration_seconds = cfg.turn_budget.max_turn_duration_seconds,
                     goal_id = %goal.goal_id,
                     "Operator ReAct: turn wall clock exceeded (shared with agent_turn outer_loop)"
                 );

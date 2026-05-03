@@ -62,7 +62,7 @@ pub async fn dispatch_workflow_execute_tool(
                 effective_working_dir,
                 workspace_is_set,
                 approval_mode,
-                cfg.command_max_output_len,
+                cfg.command_exec.command_max_output_len,
                 request_chrome_merge,
             )
             .await;

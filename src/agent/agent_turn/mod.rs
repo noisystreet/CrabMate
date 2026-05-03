@@ -70,18 +70,19 @@ pub(crate) async fn run_agent_turn_common(
         p.turn.messages.len(),
         p.turn.messages_buffer_revision(),
         crate::redact::last_user_message_preview_for_log(p.turn.messages),
-        p.ctx.cfg.staged_plan_execution,
-        p.ctx.cfg.planner_executor_mode.as_str(),
+        p.ctx.cfg.staged_planning.staged_plan_execution,
+        p.ctx.cfg.per_plan_policy.planner_executor_mode.as_str(),
         p.ctx.effective_working_dir.display()
     );
     p.turn.insert_separator_after_last_user_for_turn();
 
-    let hierarchical = p.ctx.cfg.planner_executor_mode == PlannerExecutorMode::Hierarchical;
+    let hierarchical =
+        p.ctx.cfg.per_plan_policy.planner_executor_mode == PlannerExecutorMode::Hierarchical;
     info!(
         target: "crabmate::agent_turn",
-        planner_executor_mode = p.ctx.cfg.planner_executor_mode.as_str(),
-        staged_plan_execution = p.ctx.cfg.staged_plan_execution,
-        intent_at_turn_start_enabled = p.ctx.cfg.intent_at_turn_start_enabled,
+        planner_executor_mode = p.ctx.cfg.per_plan_policy.planner_executor_mode.as_str(),
+        staged_plan_execution = p.ctx.cfg.staged_planning.staged_plan_execution,
+        intent_at_turn_start_enabled = p.ctx.cfg.intent_routing.intent_at_turn_start_enabled,
         hierarchical,
         "run_agent_turn_common enter"
     );

@@ -18,11 +18,11 @@ mod full {
             let _ = crate::mcp::try_open_session_and_tools(cfg).await;
         }
         let st = crate::mcp::cached_mcp_status(cfg).await;
-        if !cfg.mcp_enabled {
+        if !cfg.mcp_client.mcp_enabled {
             println!("MCP：配置中未启用 (mcp_enabled=false)。本进程无 MCP 会话缓存。");
             return;
         }
-        if cfg.mcp_command.trim().is_empty() {
+        if cfg.mcp_client.mcp_command.trim().is_empty() {
             println!("MCP：已启用但 mcp_command 为空，无法建立 stdio 会话。");
             return;
         }
@@ -64,7 +64,7 @@ mod full {
         no_tools: bool,
     ) -> Result<(), String> {
         let workspace: PathBuf =
-            cli_effective_work_dir(workspace_cli, &cfg.run_command_working_dir);
+            cli_effective_work_dir(workspace_cli, &cfg.command_exec.run_command_working_dir);
         crate::mcp::server::run_stdio_mcp_server(cfg.clone(), workspace, no_tools).await
     }
 }

@@ -300,7 +300,7 @@ pub async fn workspace_search_handler(
     let output = match tokio::task::spawn_blocking(move || {
         let ctx = crate::tools::tool_context_for(
             cfg_arc.as_ref(),
-            cfg_arc.allowed_commands.as_ref(),
+            cfg_arc.command_exec.allowed_commands.as_ref(),
             &work_dir,
         );
         crate::tools::run_tool("search_in_files", &args_json, &ctx)
@@ -643,7 +643,12 @@ pub async fn workspace_profile_handler(
             });
         }
     };
-    let max_chars = state.cfg.read().await.project_profile_inject_max_chars;
+    let max_chars = state
+        .cfg
+        .read()
+        .await
+        .context_bootstrap_inject
+        .project_profile_inject_max_chars;
     let md_result = tokio::task::spawn_blocking(move || {
         crate::context_bootstrap::project_profile::build_project_profile_markdown(
             &base_canonical,

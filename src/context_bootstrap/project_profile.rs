@@ -355,42 +355,59 @@ pub fn build_first_turn_user_context_markdown(
         return None;
     }
     let memory_snippet = memory_preloaded.or_else(|| {
-        if cfg.agent_memory_file_enabled {
+        if cfg.context_bootstrap_inject.agent_memory_file_enabled {
             crate::memory::agent_memory::load_memory_snippet(
                 workspace_root,
-                cfg.agent_memory_file.as_str(),
-                cfg.agent_memory_file_max_chars,
+                cfg.context_bootstrap_inject.agent_memory_file.as_str(),
+                cfg.context_bootstrap_inject.agent_memory_file_max_chars,
             )
         } else {
             None
         }
     });
-    let living_snippet = if cfg.living_docs_inject_enabled && cfg.living_docs_inject_max_chars > 0 {
+    let living_snippet = if cfg.context_bootstrap_inject.living_docs_inject_enabled
+        && cfg.context_bootstrap_inject.living_docs_inject_max_chars > 0
+    {
         crate::context_bootstrap::living_docs::load_living_docs_snippet(
             workspace_root,
-            cfg.living_docs_relative_dir.as_str(),
-            cfg.living_docs_inject_max_chars,
-            cfg.living_docs_file_max_each_chars,
+            cfg.context_bootstrap_inject
+                .living_docs_relative_dir
+                .as_str(),
+            cfg.context_bootstrap_inject.living_docs_inject_max_chars,
+            cfg.context_bootstrap_inject.living_docs_file_max_each_chars,
         )
     } else {
         None
     };
-    let want_profile =
-        cfg.project_profile_inject_enabled && cfg.project_profile_inject_max_chars > 0;
-    let want_dep = cfg.project_dependency_brief_inject_enabled
-        && cfg.project_dependency_brief_inject_max_chars > 0;
+    let want_profile = cfg.context_bootstrap_inject.project_profile_inject_enabled
+        && cfg
+            .context_bootstrap_inject
+            .project_profile_inject_max_chars
+            > 0;
+    let want_dep = cfg
+        .context_bootstrap_inject
+        .project_dependency_brief_inject_enabled
+        && cfg
+            .context_bootstrap_inject
+            .project_dependency_brief_inject_max_chars
+            > 0;
     if !want_profile && !want_dep && memory_snippet.is_none() && living_snippet.is_none() {
         return None;
     }
     let profile_md = if want_profile {
-        build_project_profile_markdown(workspace_root, cfg.project_profile_inject_max_chars)
+        build_project_profile_markdown(
+            workspace_root,
+            cfg.context_bootstrap_inject
+                .project_profile_inject_max_chars,
+        )
     } else {
         String::new()
     };
     let dep_md = if want_dep {
         crate::context_bootstrap::project_dependency_brief::build_project_dependency_brief_markdown(
             workspace_root,
-            cfg.project_dependency_brief_inject_max_chars,
+            cfg.context_bootstrap_inject
+                .project_dependency_brief_inject_max_chars,
         )
     } else {
         String::new()

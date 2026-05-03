@@ -30,7 +30,7 @@ pub(super) async fn post_turn_web_prepare_and_save(
     let to_index = messages.clone();
     if let (Some(ltm), true) = (
         app.long_term_memory.as_ref(),
-        cfg_snap.long_term_memory_enabled,
+        cfg_snap.long_term_memory.long_term_memory_enabled,
     ) {
         ltm.clone()
             .spawn_index_turn(Arc::clone(cfg_snap), scope, to_index);
@@ -42,11 +42,12 @@ pub(super) async fn post_turn_web_prepare_and_save(
     if active_save.is_none()
         && expected_revision.is_none()
         && let Some(id) = cfg_snap
+            .roles_prompts
             .default_agent_role_id
             .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty())
-        && cfg_snap.agent_roles.contains_key(id)
+        && cfg_snap.roles_prompts.agent_roles.contains_key(id)
     {
         active_save = Some(id.to_string());
     }

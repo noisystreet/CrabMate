@@ -68,7 +68,7 @@ where
     F: Fn(String) -> Message + Copy,
 {
     let mut rewrite_attempts = 0;
-    let max_rewrites = p.ctx.cfg.full_plan_rewrite_max_attempts;
+    let max_rewrites = p.ctx.cfg.turn_budget.full_plan_rewrite_max_attempts;
     let mut phase = StagedTurnPhase::PreStepExecutionRound;
     let mut staged_rounds = 0usize;
     const STAGED_SINGLE_STEP_MAX_ROUNDS: usize = 64;

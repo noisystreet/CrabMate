@@ -90,7 +90,6 @@ struct FinalizeTailScalars {
     http_fetch_allowed_prefixes: Vec<String>,
     http_fetch_timeout_secs: u64,
     http_fetch_max_response_bytes: usize,
-    scheduled_agent_tasks: Vec<ScheduledAgentTask>,
 }
 
 /// `derive_finalize_tail_scalars` 中段：规划/工具/思维链附录（降低单函数 `nloc`）。
@@ -577,7 +576,6 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
         max_message_history,
         ref system_prompt_search_bases,
         ref run_command_working_dir,
-        ref scheduled_agent_tasks,
         ..
     } = *mid;
 
@@ -784,7 +782,6 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
         http_fetch_allowed_prefixes,
         http_fetch_timeout_secs,
         http_fetch_max_response_bytes,
-        scheduled_agent_tasks: scheduled_agent_tasks.clone(),
     })
 }
 

@@ -60,7 +60,7 @@ pub(crate) fn vendor_temperature_for_model(model: &str, temperature: f32) -> f32
 /// 按 **`AgentConfig`**（**`model` + `api_base`**）钳制温度（摘要等路径与 [`llm_vendor_adapter`] 一致）。
 #[inline]
 pub(crate) fn vendor_temperature_for_config(cfg: &AgentConfig, temperature: f32) -> f32 {
-    let effective_model = &cfg.model;
+    let effective_model = &cfg.llm.model;
     llm_vendor_adapter(cfg).coerce_temperature(effective_model, temperature)
 }
 
@@ -80,7 +80,7 @@ pub fn tool_chat_request(
     seed_override: LlmSeedOverride,
 ) -> ChatRequest {
     let v = llm_vendor_adapter(cfg);
-    let effective_model = model_override.unwrap_or(&cfg.model);
+    let effective_model = model_override.unwrap_or(&cfg.llm.model);
     ChatRequest {
         model: effective_model.to_string(),
         messages: crate::agent::message_pipeline::conversation_messages_to_vendor_body(
@@ -91,14 +91,14 @@ pub fn tool_chat_request(
         ),
         tools: Some(tools.to_vec()),
         tool_choice: Some("auto".to_string()),
-        max_tokens: cfg.max_tokens,
+        max_tokens: cfg.llm_sampling.max_tokens,
         temperature: v.coerce_temperature(
             effective_model,
-            temperature_override.unwrap_or(cfg.temperature),
+            temperature_override.unwrap_or(cfg.llm_sampling.temperature),
         ),
-        seed: resolved_llm_seed(cfg.llm_seed, seed_override),
+        seed: resolved_llm_seed(cfg.llm_sampling.llm_seed, seed_override),
         stream: None,
-        reasoning_split: cfg.llm_reasoning_split.then_some(true),
+        reasoning_split: cfg.llm_vendor_flags.llm_reasoning_split.then_some(true),
         thinking: v.thinking_field(cfg),
         response_format: None,
     }
@@ -141,7 +141,7 @@ pub fn no_tools_chat_request_from_messages(
         .filter(|m| !is_long_term_memory_injection(m))
         .collect();
     let v = llm_vendor_adapter(cfg);
-    let effective_model = model_override.unwrap_or(&cfg.model);
+    let effective_model = model_override.unwrap_or(&cfg.llm.model);
     ChatRequest {
         model: effective_model.to_string(),
         messages: crate::agent::message_pipeline::normalize_stripped_messages_for_vendor_body(
@@ -150,14 +150,14 @@ pub fn no_tools_chat_request_from_messages(
         ),
         tools: Some(vec![]),
         tool_choice: Some("none".to_string()),
-        max_tokens: cfg.max_tokens,
+        max_tokens: cfg.llm_sampling.max_tokens,
         temperature: v.coerce_temperature(
             effective_model,
-            temperature_override.unwrap_or(cfg.temperature),
+            temperature_override.unwrap_or(cfg.llm_sampling.temperature),
         ),
-        seed: resolved_llm_seed(cfg.llm_seed, seed_override),
+        seed: resolved_llm_seed(cfg.llm_sampling.llm_seed, seed_override),
         stream: None,
-        reasoning_split: cfg.llm_reasoning_split.then_some(true),
+        reasoning_split: cfg.llm_vendor_flags.llm_reasoning_split.then_some(true),
         thinking: v.thinking_field(cfg),
         response_format: None,
     }
@@ -206,7 +206,7 @@ pub async fn complete_chat_retrying(
             "llm_call_id": llm_call_id,
             "model": request.model,
             "message_count": request.messages.len(),
-            "max_attempts": p.cfg.api_max_retries + 1,
+            "max_attempts": p.cfg.llm_http_retry.api_max_retries + 1,
             "phase": "llm",
         })),
     );
@@ -215,7 +215,7 @@ pub async fn complete_chat_retrying(
         .as_ref()
         .map(|t| t.enter_section("llm.chat_completions"));
     let t0 = Instant::now();
-    let max_attempts = p.cfg.api_max_retries + 1;
+    let max_attempts = p.cfg.llm_http_retry.api_max_retries + 1;
     let mut last_ok = None;
     let mut req = request.clone();
     let stream = p.stream_params();
@@ -229,7 +229,7 @@ pub async fn complete_chat_retrying(
                 let (mut msg, finish_reason) = r;
                 crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
                     &mut msg,
-                    p.cfg.materialize_deepseek_dsml_tool_calls,
+                    p.cfg.dsml_materialize.materialize_deepseek_dsml_tool_calls,
                 );
                 info!(
                     target: "crabmate",
@@ -280,6 +280,7 @@ pub async fn complete_chat_retrying(
                 let can_backoff = attempt < max_attempts - 1 && retryable;
                 let backoff_ms = if can_backoff {
                     p.cfg
+                        .llm_http_retry
                         .api_retry_delay_secs
                         .saturating_mul(2_u64.saturating_pow(attempt))
                         .saturating_mul(1000)
@@ -341,6 +342,7 @@ pub async fn complete_chat_retrying(
                 if can_backoff {
                     let delay_secs = p
                         .cfg
+                        .llm_http_retry
                         .api_retry_delay_secs
                         .saturating_mul(2_u64.saturating_pow(attempt));
                     info!(
@@ -416,8 +418,8 @@ mod tests {
     #[test]
     fn tool_chat_request_coerces_temperature_for_kimi_k2_5_model() {
         let mut cfg = load_config(None).expect("default embedded config");
-        cfg.model = "kimi-k2.5".to_string();
-        cfg.temperature = 0.3;
+        cfg.llm.model = "kimi-k2.5".to_string();
+        cfg.llm_sampling.temperature = 0.3;
         let req = super::tool_chat_request(
             &cfg,
             &[Message::user_only("hi")],
@@ -441,7 +443,7 @@ mod tests {
     #[test]
     fn hierarchical_manager_json_mode_only_on_deepseek_api_base() {
         let mut cfg = load_config(None).expect("default embedded config");
-        cfg.api_base = "https://api.deepseek.com/v1".to_string();
+        cfg.llm.api_base = "https://api.deepseek.com/v1".to_string();
         let req = super::no_tools_chat_request_for_hierarchical_manager(
             &cfg,
             &[Message::user_only("x")],
@@ -457,7 +459,7 @@ mod tests {
             Some("json_object")
         );
 
-        cfg.api_base = "http://127.0.0.1:11434/v1".to_string();
+        cfg.llm.api_base = "http://127.0.0.1:11434/v1".to_string();
         let req_local = super::no_tools_chat_request_for_hierarchical_manager(
             &cfg,
             &[Message::user_only("x")],

@@ -147,13 +147,13 @@ pub(crate) struct RunLoopTurnState<'a> {
     pub sub_phase: AgentTurnSubPhase,
     /// 意图门控与分步子代理约束（见 [`TurnPlannerHints`]）。
     pub(crate) turn_planner_hints: TurnPlannerHints,
-    /// `None` 时使用 `cfg.temperature`。
+    /// `None` 时使用 `cfg.llm_sampling.temperature`。
     pub temperature_override: Option<f32>,
-    /// 覆盖本回合的 `model`（`None` 时使用 `cfg.model` / planner_model）
+    /// 覆盖本回合的 `model`（`None` 时使用 `cfg.llm.model` / planner_model）
     pub model_override: Option<String>,
-    /// 若为 `true`，LLM 调用时使用 `cfg.executor_model` 而非 `cfg.planner_model`。
+    /// 若为 `true`，LLM 调用时使用 `cfg.llm.executor_model` 而非 `cfg.llm.planner_model`。
     pub use_executor_model: bool,
-    /// 执行阶段模型覆盖（当 use_executor_model 为 true 时优先于 cfg.executor_model）
+    /// 执行阶段模型覆盖（当 use_executor_model 为 true 时优先于 cfg.llm.executor_model）
     pub executor_model_override: Option<String>,
     /// 当 use_executor_model 为 true 时，优先使用此 api_base。
     pub executor_api_base: Option<String>,
@@ -294,7 +294,7 @@ impl RunLoopParams<'_> {
             tool_approval_rx,
             primary_intent,
             secondary_intents,
-            intent_mode_bias_enabled: self.ctx.cfg.intent_mode_bias_enabled,
+            intent_mode_bias_enabled: self.ctx.cfg.intent_routing.intent_mode_bias_enabled,
             process_handles: Arc::clone(&self.ctx.process_handles),
         }
     }
@@ -312,20 +312,20 @@ impl RunLoopParams<'_> {
     }
 
     /// 获取本回合 LLM 调用应使用的 model：
-    /// - planner 阶段：`model_override` > `cfg.planner_model` > `cfg.model`
-    /// - executor 阶段：`executor_model_override` > `cfg.executor_model` > `cfg.model`
+    /// - planner 阶段：`model_override` > `cfg.llm.planner_model` > `cfg.llm.model`
+    /// - executor 阶段：`executor_model_override` > `cfg.llm.executor_model` > `cfg.llm.model`
     #[inline]
     pub(crate) fn effective_model(&self) -> Option<&str> {
         if self.turn.use_executor_model {
             self.turn
                 .executor_model_override
                 .as_deref()
-                .or_else(|| self.ctx.cfg.executor_model.as_deref())
+                .or_else(|| self.ctx.cfg.llm.executor_model.as_deref())
         } else {
             self.turn
                 .model_override
                 .as_deref()
-                .or_else(|| self.ctx.cfg.planner_model.as_deref())
+                .or_else(|| self.ctx.cfg.llm.planner_model.as_deref())
         }
     }
 }

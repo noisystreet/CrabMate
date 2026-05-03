@@ -27,9 +27,9 @@ pub(crate) fn build_intent_routing_context(
         recent_user_messages,
         in_clarification_flow,
         thresholds,
-        l2_min_confidence: cfg.intent_l2_min_confidence,
+        l2_min_confidence: cfg.intent_routing.intent_l2_min_confidence,
         has_recent_tool_failure,
-        l0_routing_boost_enabled: cfg.intent_l0_routing_boost_enabled,
+        l0_routing_boost_enabled: cfg.intent_routing.intent_l0_routing_boost_enabled,
     }
 }
 

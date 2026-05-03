@@ -91,9 +91,9 @@ pub struct AgentTurnLlmOverrides {
     pub temperature_override: Option<f32>,
     /// 覆盖本回合的 `model`（planner 阶段，见编排层 `use_executor_model`）
     pub model_override: Option<String>,
-    /// 若为 `true`，LLM 调用时使用 `cfg.executor_model` 而非 `cfg.planner_model`。
+    /// 若为 `true`，LLM 调用时使用 `cfg.llm.executor_model` 而非 `cfg.llm.planner_model`。
     pub use_executor_model: bool,
-    /// 执行阶段模型覆盖（当 use_executor_model 为 true 时优先于 cfg.executor_model）
+    /// 执行阶段模型覆盖（当 use_executor_model 为 true 时优先于 cfg.llm.executor_model）
     pub executor_model_override: Option<String>,
     /// 当 use_executor_model 为 true 时，优先使用此 api_base。
     pub executor_api_base: Option<String>,
@@ -496,13 +496,18 @@ pub async fn run_agent_turn<'a>(
 
     let read_file_turn_cache = match read_file_turn_cache {
         Some(a) => Some(a),
-        None if cfg.read_file_turn_cache_max_entries > 0 => Some(
-            read_file_turn_cache::new_turn_cache_handle(cfg.read_file_turn_cache_max_entries),
-        ),
+        None if cfg.chat_queues_cache.read_file_turn_cache_max_entries > 0 => {
+            Some(read_file_turn_cache::new_turn_cache_handle(
+                cfg.chat_queues_cache.read_file_turn_cache_max_entries,
+            ))
+        }
         None => None,
     };
 
-    let workspace_changelist = if cfg.session_workspace_changelist_enabled {
+    let workspace_changelist = if cfg
+        .session_workspace_changelist
+        .session_workspace_changelist_enabled
+    {
         let scope = long_term_memory_scope_id
             .as_deref()
             .map(str::trim)
@@ -529,10 +534,10 @@ pub async fn run_agent_turn<'a>(
         }
         None => None,
     };
-    if !cfg.codebase_semantic_search_enabled {
+    if !cfg.codebase_semantic.codebase_semantic_search_enabled {
         tools_for_turn.retain(|t| t.function.name != "codebase_semantic_search");
     }
-    if !cfg.long_term_memory_enabled {
+    if !cfg.long_term_memory.long_term_memory_enabled {
         tools_for_turn.retain(|t| {
             !matches!(
                 t.function.name.as_str(),
@@ -594,11 +599,13 @@ pub async fn run_agent_turn<'a>(
             mcp_session,
             read_file_turn_cache,
             workspace_changelist,
-            staged_plan_optimizer_round: cfg.staged_plan_optimizer_round,
+            staged_plan_optimizer_round: cfg.staged_planning.staged_plan_optimizer_round,
             staged_plan_optimizer_requires_parallel_tools: cfg
+                .staged_planning
                 .staged_plan_optimizer_requires_parallel_tools,
-            staged_plan_ensemble_count: cfg.staged_plan_ensemble_count,
+            staged_plan_ensemble_count: cfg.staged_planning.staged_plan_ensemble_count,
             staged_plan_skip_ensemble_on_casual_prompt: cfg
+                .staged_planning
                 .staged_plan_skip_ensemble_on_casual_prompt,
             request_chrome_trace: request_chrome_trace.clone(),
             turn_allowed_tool_names: turn_allowed_tool_names.clone(),

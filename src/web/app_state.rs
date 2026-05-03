@@ -47,7 +47,7 @@ pub(crate) struct AppState {
     pub(crate) api_key: String,
     pub(crate) client: reqwest::Client,
     pub(crate) tools: Vec<crate::types::Tool>,
-    /// 前端设置的工作区路径覆盖；为 None 时使用 cfg.run_command_working_dir
+    /// 前端设置的工作区路径覆盖；为 None 时使用 cfg.command_exec.run_command_working_dir
     pub(crate) workspace_override: Arc<tokio::sync::RwLock<Option<String>>>,
     pub(crate) uploads_dir: std::path::PathBuf,
     /// `/chat` / `/chat/stream` 进程内任务队列（有界排队 + 并发上限）
@@ -139,7 +139,7 @@ impl AppState {
             None => String::new(),
             Some(s) if s.trim().is_empty() => {
                 let cfg = self.cfg.read().await;
-                cfg.run_command_working_dir.clone()
+                cfg.command_exec.run_command_working_dir.clone()
             }
             Some(s) => s.to_string(),
         }

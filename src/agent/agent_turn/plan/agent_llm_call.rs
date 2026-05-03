@@ -36,7 +36,7 @@ impl<'p> AgentLlmCall<'p> {
                 .turn
                 .model_override
                 .as_deref()
-                .or(self.p.ctx.cfg.planner_model.as_deref()),
+                .or(self.p.ctx.cfg.llm.planner_model.as_deref()),
         );
         complete_chat_retrying(&cc, req).await
     }

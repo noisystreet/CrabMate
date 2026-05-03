@@ -38,7 +38,7 @@ pub fn default_sync_default_sandbox_backend() -> std::sync::Arc<dyn SyncDefaultS
 
 /// 是否启用 Docker 沙盒（与 `dispatch_tool` 中多 handler 共用）。
 pub fn docker_sandbox_enabled(cfg: &AgentConfig) -> bool {
-    cfg.sync_default_tool_sandbox_mode == SyncDefaultToolSandboxMode::Docker
+    cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode == SyncDefaultToolSandboxMode::Docker
 }
 
 /// 在沙盒内执行一次工具；`cfg_json_path` 由调用方写入后传入，本函数结束时删除。
@@ -52,7 +52,10 @@ pub async fn run_tool_in_docker(
     if !docker_sandbox_enabled(cfg) {
         return Err("内部错误：未启用 Docker 沙盒".to_string());
     }
-    let image = cfg.sync_default_tool_sandbox_docker_image.trim();
+    let image = cfg
+        .sync_tool_sandbox
+        .sync_default_tool_sandbox_docker_image
+        .trim();
     if image.is_empty() {
         return Err("错误：sync_default_tool_sandbox_docker_image 为空".to_string());
     }
@@ -66,7 +69,10 @@ pub async fn run_tool_in_docker(
     let cfg_in_container = "/run/crabmate-tool-runner.json";
     let crabmate_in_container = "/crabmate";
 
-    let network = cfg.sync_default_tool_sandbox_docker_network.trim();
+    let network = cfg
+        .sync_tool_sandbox
+        .sync_default_tool_sandbox_docker_network
+        .trim();
     let network_mode = if network.is_empty() {
         None
     } else {
@@ -99,8 +105,12 @@ pub async fn run_tool_in_docker(
     )
     .into_bytes();
 
-    let timeout_secs = cfg.sync_default_tool_sandbox_docker_timeout_secs.max(1);
+    let timeout_secs = cfg
+        .sync_tool_sandbox
+        .sync_default_tool_sandbox_docker_timeout_secs
+        .max(1);
     let user = cfg
+        .sync_tool_sandbox
         .sync_default_tool_sandbox_docker_user
         .as_docker_user_string()
         .map(str::to_string);

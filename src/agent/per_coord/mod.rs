@@ -79,14 +79,20 @@ impl PerCoordinatorInit {
     /// 与 [`AgentConfig`] 中 PER 协调相关字段对齐；供默认外循环与分层「话语型」回落路径共用，避免两处分叉漂移。
     pub fn from_agent_config(cfg: &AgentConfig) -> Self {
         Self {
-            reflection_default_max_rounds: cfg.reflection_default_max_rounds,
-            final_plan_policy: cfg.final_plan_requirement,
-            plan_rewrite_max_attempts: cfg.plan_rewrite_max_attempts,
-            staged_plan_patch_max_attempts_config: cfg.staged_plan_patch_max_attempts,
+            reflection_default_max_rounds: cfg.per_plan_policy.reflection_default_max_rounds,
+            final_plan_policy: cfg.per_plan_policy.final_plan_requirement,
+            plan_rewrite_max_attempts: cfg.per_plan_policy.plan_rewrite_max_attempts,
+            staged_plan_patch_max_attempts_config: cfg
+                .staged_planning
+                .staged_plan_patch_max_attempts,
             final_plan_require_strict_workflow_node_coverage: cfg
+                .per_plan_policy
                 .final_plan_require_strict_workflow_node_coverage,
-            final_plan_semantic_check_enabled: cfg.final_plan_semantic_check_enabled,
+            final_plan_semantic_check_enabled: cfg
+                .per_plan_policy
+                .final_plan_semantic_check_enabled,
             final_plan_semantic_check_max_non_readonly_tools: cfg
+                .per_plan_policy
                 .final_plan_semantic_check_max_non_readonly_tools,
         }
     }

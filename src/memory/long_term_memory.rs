@@ -170,7 +170,7 @@ impl LongTermMemoryRuntime {
         scope_id: Option<&str>,
         messages: &mut Vec<Message>,
     ) {
-        if !cfg.long_term_memory_enabled {
+        if !cfg.long_term_memory.long_term_memory_enabled {
             return;
         }
         let Some(scope) = scope_id.filter(|s| !s.trim().is_empty()) else {
@@ -195,7 +195,7 @@ impl LongTermMemoryRuntime {
             match long_term_memory_store::list_for_scope(
                 &g,
                 scope,
-                cfg.long_term_memory_max_entries,
+                cfg.long_term_memory.long_term_memory_max_entries,
             ) {
                 Ok(r) => r,
                 Err(e) => {
@@ -210,13 +210,16 @@ impl LongTermMemoryRuntime {
         }
 
         let mut picked: Vec<(f32, String)> = Vec::new();
-        match cfg.long_term_memory_vector_backend {
+        match cfg.long_term_memory.long_term_memory_vector_backend {
             LongTermMemoryVectorBackend::Fastembed => {
                 #[cfg(feature = "fastembed")]
                 {
                     if let Err(e) = Self::ensure_embedder(&self.embedder) {
                         warn!(target: "crabmate", "长期记忆嵌入不可用，跳过向量检索: {}", e);
-                        for row in rows.iter().take(cfg.long_term_memory_top_k) {
+                        for row in rows
+                            .iter()
+                            .take(cfg.long_term_memory.long_term_memory_top_k)
+                        {
                             picked.push((0.0, row.chunk_text.clone()));
                         }
                     } else {
@@ -253,7 +256,7 @@ impl LongTermMemoryRuntime {
                         picked.sort_by(|a, b| {
                             b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
                         });
-                        picked.truncate(cfg.long_term_memory_top_k);
+                        picked.truncate(cfg.long_term_memory.long_term_memory_top_k);
                     }
                 }
                 #[cfg(not(feature = "fastembed"))]
@@ -262,7 +265,10 @@ impl LongTermMemoryRuntime {
                         target: "crabmate",
                         "长期记忆向量后端为 fastembed 但本构建未启用 `fastembed` feature，按时间倒序取用"
                     );
-                    for row in rows.iter().take(cfg.long_term_memory_top_k) {
+                    for row in rows
+                        .iter()
+                        .take(cfg.long_term_memory.long_term_memory_top_k)
+                    {
                         picked.push((0.0, row.chunk_text.clone()));
                     }
                 }
@@ -271,12 +277,15 @@ impl LongTermMemoryRuntime {
             | LongTermMemoryVectorBackend::Qdrant
             | LongTermMemoryVectorBackend::Pgvector => {
                 if matches!(
-                    cfg.long_term_memory_vector_backend,
+                    cfg.long_term_memory.long_term_memory_vector_backend,
                     LongTermMemoryVectorBackend::Qdrant | LongTermMemoryVectorBackend::Pgvector
                 ) {
-                    debug!(target: "crabmate", "长期记忆向量后端 {:?} 未接外部服务，按时间倒序取用", cfg.long_term_memory_vector_backend);
+                    debug!(target: "crabmate", "长期记忆向量后端 {:?} 未接外部服务，按时间倒序取用", cfg.long_term_memory.long_term_memory_vector_backend);
                 }
-                for row in rows.iter().take(cfg.long_term_memory_top_k) {
+                for row in rows
+                    .iter()
+                    .take(cfg.long_term_memory.long_term_memory_top_k)
+                {
                     picked.push((0.0, row.chunk_text.clone()));
                 }
             }
@@ -286,7 +295,7 @@ impl LongTermMemoryRuntime {
             "以下为与当前问题可能相关的历史摘要（来自本会话长期记忆，供参考；若无关请忽略）：\n\n",
         );
         let mut used = 0usize;
-        let budget = cfg.long_term_memory_inject_max_chars;
+        let budget = cfg.long_term_memory.long_term_memory_inject_max_chars;
         for (i, (_s, t)) in picked.iter().enumerate() {
             if used >= budget {
                 break;
@@ -328,13 +337,13 @@ impl LongTermMemoryRuntime {
         scope_id: String,
         messages: Vec<Message>,
     ) {
-        if !cfg.long_term_memory_enabled {
+        if !cfg.long_term_memory.long_term_memory_enabled {
             return;
         }
         if scope_id.trim().is_empty() {
             return;
         }
-        if !cfg.long_term_memory_async_index {
+        if !cfg.long_term_memory.long_term_memory_async_index {
             return;
         }
         tokio::spawn(async move {
@@ -357,31 +366,43 @@ impl LongTermMemoryRuntime {
         scope_id: &str,
         messages: &[Message],
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        if !cfg.long_term_memory_auto_index_turns {
+        if !cfg.long_term_memory.long_term_memory_auto_index_turns {
             return Ok(());
         }
         let Some((user_t, asst_t)) = last_user_assistant_final_pair(messages) else {
             return Ok(());
         };
-        let user_t = clamp_text(user_t, cfg.long_term_memory_max_chars_per_chunk);
-        let asst_t = clamp_text(asst_t, cfg.long_term_memory_max_chars_per_chunk);
-        if user_t.len() < cfg.long_term_memory_min_chars_to_index
-            && asst_t.len() < cfg.long_term_memory_min_chars_to_index
+        let user_t = clamp_text(
+            user_t,
+            cfg.long_term_memory.long_term_memory_max_chars_per_chunk,
+        );
+        let asst_t = clamp_text(
+            asst_t,
+            cfg.long_term_memory.long_term_memory_max_chars_per_chunk,
+        );
+        if user_t.len() < cfg.long_term_memory.long_term_memory_min_chars_to_index
+            && asst_t.len() < cfg.long_term_memory.long_term_memory_min_chars_to_index
         {
             return Ok(());
         }
 
         let mut to_store: Vec<(String, &'static str)> = Vec::new();
-        for part in chunk_text(&user_t, cfg.long_term_memory_max_chars_per_chunk) {
+        for part in chunk_text(
+            &user_t,
+            cfg.long_term_memory.long_term_memory_max_chars_per_chunk,
+        ) {
             to_store.push((part, "user"));
         }
-        for part in chunk_text(&asst_t, cfg.long_term_memory_max_chars_per_chunk) {
+        for part in chunk_text(
+            &asst_t,
+            cfg.long_term_memory.long_term_memory_max_chars_per_chunk,
+        ) {
             to_store.push((part, "assistant"));
         }
 
         let need_embed = cfg!(feature = "fastembed")
             && matches!(
-                cfg.long_term_memory_vector_backend,
+                cfg.long_term_memory.long_term_memory_vector_backend,
                 LongTermMemoryVectorBackend::Fastembed
             );
         if need_embed {
@@ -398,8 +419,8 @@ impl LongTermMemoryRuntime {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
-        let auto_expires = (cfg.long_term_memory_default_ttl_secs > 0)
-            .then_some(now + cfg.long_term_memory_default_ttl_secs as i64);
+        let auto_expires = (cfg.long_term_memory.long_term_memory_default_ttl_secs > 0)
+            .then_some(now + cfg.long_term_memory.long_term_memory_default_ttl_secs as i64);
 
         for (text, role) in to_store {
             if long_term_memory_store::has_duplicate_text(&conn, scope_id, &text)? {
@@ -442,7 +463,7 @@ impl LongTermMemoryRuntime {
             long_term_memory_store::delete_oldest_beyond(
                 &conn,
                 scope_id,
-                cfg.long_term_memory_max_entries,
+                cfg.long_term_memory.long_term_memory_max_entries,
             )?;
         }
         Ok(())
@@ -457,14 +478,17 @@ impl LongTermMemoryRuntime {
         tags: &[String],
         ttl_secs: Option<u64>,
     ) -> Result<i64, String> {
-        if !cfg.long_term_memory_enabled {
+        if !cfg.long_term_memory.long_term_memory_enabled {
             return Err("长期记忆未启用（long_term_memory_enabled = false）".to_string());
         }
         let scope = scope_id.trim();
         if scope.is_empty() {
             return Err("长期记忆作用域为空（无会话 id）".to_string());
         }
-        let text = clamp_text(text, cfg.long_term_memory_max_chars_per_chunk);
+        let text = clamp_text(
+            text,
+            cfg.long_term_memory.long_term_memory_max_chars_per_chunk,
+        );
         if text.is_empty() {
             return Err("记忆正文为空".to_string());
         }
@@ -477,7 +501,7 @@ impl LongTermMemoryRuntime {
 
         let need_embed = cfg!(feature = "fastembed")
             && matches!(
-                cfg.long_term_memory_vector_backend,
+                cfg.long_term_memory.long_term_memory_vector_backend,
                 LongTermMemoryVectorBackend::Fastembed
             );
         if need_embed {
@@ -527,7 +551,7 @@ impl LongTermMemoryRuntime {
         long_term_memory_store::delete_oldest_beyond(
             &conn,
             scope,
-            cfg.long_term_memory_max_entries,
+            cfg.long_term_memory.long_term_memory_max_entries,
         )
         .map_err(|e| format!("长期记忆淘汰失败: {e}"))?;
         Ok(id)
@@ -542,7 +566,7 @@ impl LongTermMemoryRuntime {
         text: Option<&str>,
         explicit_only: bool,
     ) -> Result<usize, String> {
-        if !cfg.long_term_memory_enabled {
+        if !cfg.long_term_memory.long_term_memory_enabled {
             return Err("长期记忆未启用".to_string());
         }
         let scope = scope_id.trim();
@@ -571,7 +595,7 @@ impl LongTermMemoryRuntime {
         scope_id: &str,
         limit: usize,
     ) -> Result<String, String> {
-        if !cfg.long_term_memory_enabled {
+        if !cfg.long_term_memory.long_term_memory_enabled {
             return Err("长期记忆未启用".to_string());
         }
         let scope = scope_id.trim();
@@ -682,7 +706,7 @@ pub(crate) fn tool_context_memory_extras(
     ltm: Option<Arc<LongTermMemoryRuntime>>,
     scope_id: Option<&str>,
 ) -> (Option<Arc<LongTermMemoryRuntime>>, Option<String>) {
-    if !cfg.long_term_memory_enabled {
+    if !cfg.long_term_memory.long_term_memory_enabled {
         return (None, None);
     }
     let Some(rt) = ltm else {

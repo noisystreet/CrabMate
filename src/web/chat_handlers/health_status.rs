@@ -17,16 +17,16 @@ pub(crate) async fn health_handler(State(state): State<Arc<AppState>>) -> impl I
     let (work_dir, auth_mode, probe, probe_cache_secs, api_base) = {
         let g = state.cfg.read().await;
         let wd = if eff.trim().is_empty() {
-            std::path::PathBuf::from(g.run_command_working_dir.clone())
+            std::path::PathBuf::from(g.command_exec.run_command_working_dir.clone())
         } else {
             std::path::PathBuf::from(eff)
         };
         (
             wd,
-            g.llm_http_auth_mode,
-            g.health_llm_models_probe,
-            g.health_llm_models_probe_cache_secs,
-            g.api_base.clone(),
+            g.llm.llm_http_auth_mode,
+            g.web_api.health_llm_models_probe,
+            g.web_api.health_llm_models_probe_cache_secs,
+            g.llm.api_base.clone(),
         )
     };
     let mut report = health::build_health_report(&work_dir, &state.api_key, auth_mode, true).await;
@@ -166,82 +166,111 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         .iter()
         .map(|t| t.function.name.clone())
         .collect();
-    let mut agent_role_ids: Vec<String> = cfg.agent_roles.keys().cloned().collect();
+    let mut agent_role_ids: Vec<String> = cfg.roles_prompts.agent_roles.keys().cloned().collect();
     agent_role_ids.sort();
     Json(StatusResponse {
         status: "ok",
-        model: cfg.model.clone(),
-        api_base: cfg.api_base.clone(),
-        max_tokens: cfg.max_tokens,
-        llm_context_tokens: cfg.llm_context_tokens,
-        temperature: cfg.temperature,
-        llm_seed: cfg.llm_seed,
+        model: cfg.llm.model.clone(),
+        api_base: cfg.llm.api_base.clone(),
+        max_tokens: cfg.llm_sampling.max_tokens,
+        llm_context_tokens: cfg.llm_sampling.llm_context_tokens,
+        temperature: cfg.llm_sampling.temperature,
+        llm_seed: cfg.llm_sampling.llm_seed,
         tool_count: tool_names.len(),
         tool_names,
         tool_dispatch_registry: tool_registry::all_dispatch_metadata(),
-        reflection_default_max_rounds: cfg.reflection_default_max_rounds,
-        final_plan_requirement: cfg.final_plan_requirement,
-        plan_rewrite_max_attempts: cfg.plan_rewrite_max_attempts,
+        reflection_default_max_rounds: cfg.per_plan_policy.reflection_default_max_rounds,
+        final_plan_requirement: cfg.per_plan_policy.final_plan_requirement,
+        plan_rewrite_max_attempts: cfg.per_plan_policy.plan_rewrite_max_attempts,
         final_plan_require_strict_workflow_node_coverage: cfg
+            .per_plan_policy
             .final_plan_require_strict_workflow_node_coverage,
-        final_plan_semantic_check_enabled: cfg.final_plan_semantic_check_enabled,
+        final_plan_semantic_check_enabled: cfg.per_plan_policy.final_plan_semantic_check_enabled,
         final_plan_semantic_check_max_non_readonly_tools: cfg
+            .per_plan_policy
             .final_plan_semantic_check_max_non_readonly_tools,
-        final_plan_semantic_check_max_tokens: cfg.final_plan_semantic_check_max_tokens,
-        planner_executor_mode: cfg.planner_executor_mode.as_str(),
-        staged_plan_execution: cfg.staged_plan_execution,
-        staged_plan_cli_show_planner_stream: cfg.staged_plan_cli_show_planner_stream,
-        staged_plan_optimizer_round: cfg.staged_plan_optimizer_round,
+        final_plan_semantic_check_max_tokens: cfg
+            .per_plan_policy
+            .final_plan_semantic_check_max_tokens,
+        planner_executor_mode: cfg.per_plan_policy.planner_executor_mode.as_str(),
+        staged_plan_execution: cfg.staged_planning.staged_plan_execution,
+        staged_plan_cli_show_planner_stream: cfg
+            .staged_planning
+            .staged_plan_cli_show_planner_stream,
+        staged_plan_optimizer_round: cfg.staged_planning.staged_plan_optimizer_round,
         staged_plan_optimizer_requires_parallel_tools: cfg
+            .staged_planning
             .staged_plan_optimizer_requires_parallel_tools,
-        staged_plan_ensemble_count: cfg.staged_plan_ensemble_count,
-        staged_plan_skip_ensemble_on_casual_prompt: cfg.staged_plan_skip_ensemble_on_casual_prompt,
-        sync_default_tool_sandbox_mode: cfg.sync_default_tool_sandbox_mode.as_str().to_string(),
-        sync_default_tool_sandbox_docker_image: cfg.sync_default_tool_sandbox_docker_image.clone(),
+        staged_plan_ensemble_count: cfg.staged_planning.staged_plan_ensemble_count,
+        staged_plan_skip_ensemble_on_casual_prompt: cfg
+            .staged_planning
+            .staged_plan_skip_ensemble_on_casual_prompt,
+        sync_default_tool_sandbox_mode: cfg
+            .sync_tool_sandbox
+            .sync_default_tool_sandbox_mode
+            .as_str()
+            .to_string(),
+        sync_default_tool_sandbox_docker_image: cfg
+            .sync_tool_sandbox
+            .sync_default_tool_sandbox_docker_image
+            .clone(),
         sync_default_tool_sandbox_docker_user_effective: match cfg
+            .sync_tool_sandbox
             .sync_default_tool_sandbox_docker_user
             .as_docker_user_string()
         {
             Some(s) => s.to_string(),
             None => "image_default".to_string(),
         },
-        tui_load_session_on_start: cfg.tui_load_session_on_start,
-        repl_initial_workspace_messages_enabled: cfg.repl_initial_workspace_messages_enabled,
-        max_message_history: cfg.max_message_history,
-        tool_message_max_chars: cfg.tool_message_max_chars,
-        context_char_budget: cfg.context_char_budget,
+        tui_load_session_on_start: cfg.session_ui.tui_load_session_on_start,
+        repl_initial_workspace_messages_enabled: cfg
+            .session_ui
+            .repl_initial_workspace_messages_enabled,
+        max_message_history: cfg.session_ui.max_message_history,
+        tool_message_max_chars: cfg.tool_transcript.tool_message_max_chars,
+        context_char_budget: cfg.context_pipeline.context_char_budget,
         effective_context_char_budget: cfg.effective_context_char_budget_for_pipeline(),
-        context_summary_trigger_chars: cfg.context_summary_trigger_chars,
+        context_summary_trigger_chars: cfg.context_pipeline.context_summary_trigger_chars,
         chat_queue_max_concurrent: state.chat_queue.max_concurrent(),
         chat_queue_max_pending: state.chat_queue.max_pending(),
-        parallel_readonly_tools_max: cfg.parallel_readonly_tools_max,
-        read_file_turn_cache_max_entries: cfg.read_file_turn_cache_max_entries,
+        parallel_readonly_tools_max: cfg.chat_queues_cache.parallel_readonly_tools_max,
+        read_file_turn_cache_max_entries: cfg.chat_queues_cache.read_file_turn_cache_max_entries,
         chat_queue_running: state.chat_queue.running_count(),
         chat_queue_completed_ok: state.chat_queue.completed_ok(),
         chat_queue_completed_cancelled: state.chat_queue.completed_cancelled(),
         chat_queue_completed_err: state.chat_queue.completed_err(),
         chat_queue_recent_jobs: state.chat_queue.recent_jobs(),
         per_active_jobs: state.chat_queue.active_per_jobs(),
-        workspace_allowed_roots_count: cfg.workspace_allowed_roots.len(),
+        workspace_allowed_roots_count: cfg.workspace_roots.workspace_allowed_roots.len(),
         conversation_store_entries,
-        long_term_memory_enabled: cfg.long_term_memory_enabled,
-        long_term_memory_vector_backend: cfg.long_term_memory_vector_backend.as_str().to_string(),
+        long_term_memory_enabled: cfg.long_term_memory.long_term_memory_enabled,
+        long_term_memory_vector_backend: cfg
+            .long_term_memory
+            .long_term_memory_vector_backend
+            .as_str()
+            .to_string(),
         long_term_memory_store_ready: ltm_ready,
         long_term_memory_index_errors: ltm_idx_err,
-        project_profile_inject_enabled: cfg.project_profile_inject_enabled,
-        project_profile_inject_max_chars: cfg.project_profile_inject_max_chars,
-        project_dependency_brief_inject_enabled: cfg.project_dependency_brief_inject_enabled,
-        project_dependency_brief_inject_max_chars: cfg.project_dependency_brief_inject_max_chars,
-        tool_call_explain_enabled: cfg.tool_call_explain_enabled,
-        tool_call_explain_min_chars: cfg.tool_call_explain_min_chars,
-        tool_call_explain_max_chars: cfg.tool_call_explain_max_chars,
+        project_profile_inject_enabled: cfg.context_bootstrap_inject.project_profile_inject_enabled,
+        project_profile_inject_max_chars: cfg
+            .context_bootstrap_inject
+            .project_profile_inject_max_chars,
+        project_dependency_brief_inject_enabled: cfg
+            .context_bootstrap_inject
+            .project_dependency_brief_inject_enabled,
+        project_dependency_brief_inject_max_chars: cfg
+            .context_bootstrap_inject
+            .project_dependency_brief_inject_max_chars,
+        tool_call_explain_enabled: cfg.tool_call_explain.tool_call_explain_enabled,
+        tool_call_explain_min_chars: cfg.tool_call_explain.tool_call_explain_min_chars,
+        tool_call_explain_max_chars: cfg.tool_call_explain.tool_call_explain_max_chars,
         message_pipeline_trim_count_hits: mp.trim_count_hits,
         message_pipeline_trim_char_budget_hits: mp.trim_char_budget_hits,
         message_pipeline_tool_compress_hits: mp.tool_compress_hits,
         message_pipeline_orphan_tool_drops: mp.orphan_tool_drops,
-        llm_http_auth_mode: cfg.llm_http_auth_mode.as_str(),
+        llm_http_auth_mode: cfg.llm.llm_http_auth_mode.as_str(),
         agent_role_ids,
-        default_agent_role_id: cfg.default_agent_role_id.clone(),
+        default_agent_role_id: cfg.roles_prompts.default_agent_role_id.clone(),
     })
 }
 

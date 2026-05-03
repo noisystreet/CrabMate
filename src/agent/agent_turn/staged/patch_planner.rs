@@ -113,7 +113,10 @@ where
     msg.tool_calls = None;
     crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
         &mut msg,
-        p.ctx.cfg.materialize_deepseek_dsml_tool_calls,
+        p.ctx
+            .cfg
+            .dsml_materialize
+            .materialize_deepseek_dsml_tool_calls,
     );
 
     p.turn.push_assistant_merging_trailing_empty(msg.clone());

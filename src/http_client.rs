@@ -43,7 +43,7 @@ pub fn map_reqwest_transport_err(e: reqwest::Error) -> Box<dyn std::error::Error
 
 /// 建立 TLS 等阶段的上限，避免坏网络长时间挂死（与整请求 `timeout` 区分）。
 fn connect_timeout_for(cfg: &AgentConfig) -> Duration {
-    let secs = cfg.api_timeout_secs.clamp(5, 45);
+    let secs = cfg.llm_http_retry.api_timeout_secs.clamp(5, 45);
     Duration::from_secs(secs)
 }
 
@@ -51,7 +51,7 @@ fn connect_timeout_for(cfg: &AgentConfig) -> Duration {
 pub fn build_shared_api_client(cfg: &AgentConfig) -> Result<Client, reqwest::Error> {
     Client::builder()
         // 整次请求（含读完全部响应体；流式直到 `[DONE]`）的上限
-        .timeout(Duration::from_secs(cfg.api_timeout_secs))
+        .timeout(Duration::from_secs(cfg.llm_http_retry.api_timeout_secs))
         .connect_timeout(connect_timeout_for(cfg))
         // 对单一模型网关多轮对话/工具循环时复用连接
         .pool_max_idle_per_host(8)

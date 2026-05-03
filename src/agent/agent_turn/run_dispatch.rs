@@ -91,8 +91,8 @@ pub(crate) async fn dispatch_non_hierarchical_turn(
         single_agent_outer_loop_because = entry
             .single_agent_outer_loop_because
             .map(|b| b.as_str()),
-        planner_executor_mode = p.ctx.cfg.planner_executor_mode.as_str(),
-        staged_plan_execution = p.ctx.cfg.staged_plan_execution,
+        planner_executor_mode = p.ctx.cfg.per_plan_policy.planner_executor_mode.as_str(),
+        staged_plan_execution = p.ctx.cfg.staged_planning.staged_plan_execution,
         "dispatch_non_hierarchical_turn main_path"
     );
     execute_non_hierarchical_main_route(main_route, p, per_coord).await

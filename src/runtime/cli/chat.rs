@@ -211,7 +211,7 @@ fn print_json_reply_line(cfg: &Arc<AgentConfig>, messages: &[Message], batch_lin
         "type": "crabmate_chat_cli_result",
         "v": 1u32,
         "reply": reply,
-        "model": cfg.model,
+        "model": cfg.llm.model,
     });
     if let Some(n) = batch_line {
         obj["batch_line"] = serde_json::json!(n);
@@ -317,12 +317,12 @@ async fn run_chat_batch_jsonl(
                 let system_selected =
                     crate::config::skills::merge_system_prompt_with_skills_selected(
                         system_seed.clone(),
-                        cfg_snap.skills_enabled,
-                        cfg_snap.skills_dir.as_str(),
-                        cfg_snap.skills_max_chars,
+                        cfg_snap.skills.skills_enabled,
+                        cfg_snap.skills.skills_dir.as_str(),
+                        cfg_snap.skills.skills_max_chars,
                         work_dir,
                         &u_exp,
-                        cfg_snap.skills_top_k,
+                        cfg_snap.skills.skills_top_k,
                     )
                     .unwrap_or_else(|_| system_seed.clone());
                 messages = messages_chat_seed(&system_selected, &u_exp);
@@ -401,7 +401,7 @@ pub async fn run_chat_invocation(
     } = common;
     let work_dir = {
         let g = cfg_holder.read().await;
-        cli_effective_work_dir(workspace_cli, &g.run_command_working_dir)
+        cli_effective_work_dir(workspace_cli, &g.command_exec.run_command_working_dir)
     };
     {
         let g = cfg_holder.read().await;
@@ -492,12 +492,12 @@ pub async fn run_chat_invocation(
     let base_system = system;
     let system = crate::config::skills::merge_system_prompt_with_skills_selected(
         base_system.clone(),
-        cfg_for_expand.skills_enabled,
-        cfg_for_expand.skills_dir.as_str(),
-        cfg_for_expand.skills_max_chars,
+        cfg_for_expand.skills.skills_enabled,
+        cfg_for_expand.skills.skills_dir.as_str(),
+        cfg_for_expand.skills.skills_max_chars,
         work_dir.as_path(),
         &user,
-        cfg_for_expand.skills_top_k,
+        cfg_for_expand.skills.skills_top_k,
     )
     .unwrap_or(base_system);
     let mut messages = messages_chat_seed(&system, &user);

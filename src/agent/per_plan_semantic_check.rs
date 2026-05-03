@@ -212,7 +212,7 @@ pub(crate) async fn evaluate_plan_consistency_with_recent_tools_llm(
     let model_override = ctx
         .model_override
         .as_deref()
-        .or(ctx.cfg.planner_model.as_deref());
+        .or(ctx.cfg.llm.planner_model.as_deref());
     let mut req = no_tools_chat_request(
         ctx.cfg,
         &side_messages,

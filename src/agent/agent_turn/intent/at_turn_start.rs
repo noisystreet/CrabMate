@@ -37,7 +37,7 @@ pub(crate) enum IntentGateResult {
 pub(crate) async fn run_intent_at_turn_start_if_configured(
     p: &mut RunLoopParams<'_>,
 ) -> Result<bool, super::super::errors::RunAgentTurnError> {
-    if !p.ctx.cfg.intent_at_turn_start_enabled {
+    if !p.ctx.cfg.intent_routing.intent_at_turn_start_enabled {
         return Ok(true);
     }
     let in_clarification_flow = intent_user::recently_waiting_execute_confirmation(p.turn.messages);
@@ -50,8 +50,16 @@ pub(crate) async fn run_intent_at_turn_start_if_configured(
         &task,
         in_clarification_flow,
         ExecuteIntentThresholds {
-            low: p.ctx.cfg.intent_non_hier_execute_low_threshold,
-            high: p.ctx.cfg.intent_non_hier_execute_high_threshold,
+            low: p
+                .ctx
+                .cfg
+                .intent_routing
+                .intent_non_hier_execute_low_threshold,
+            high: p
+                .ctx
+                .cfg
+                .intent_routing
+                .intent_non_hier_execute_high_threshold,
         },
         "intent_at_turn",
     )
@@ -77,8 +85,8 @@ pub(crate) async fn run_intent_for_hierarchical(
         task,
         in_clarification_flow,
         ExecuteIntentThresholds {
-            low: p.ctx.cfg.intent_execute_low_threshold,
-            high: p.ctx.cfg.intent_execute_high_threshold,
+            low: p.ctx.cfg.intent_routing.intent_execute_low_threshold,
+            high: p.ctx.cfg.intent_routing.intent_execute_high_threshold,
         },
         "hierarchical::intent",
     )
@@ -216,7 +224,7 @@ async fn run_intent_l0_l1_l2_gate(
         thresholds,
     );
     let (routing_for_l1, _, _) = prepare_intent_routing(task, &intent_ctx);
-    let l2_candidate = if p.ctx.cfg.intent_l2_enabled {
+    let l2_candidate = if p.ctx.cfg.intent_routing.intent_l2_enabled {
         classify_intent_l2_with_llm(
             &routing_for_l1,
             task,

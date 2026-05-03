@@ -53,9 +53,9 @@ pub async fn run_batch(
     let mut results: Vec<BenchmarkResult> = Vec::new();
     let base_work_dir = {
         let g = cfg.read().await;
-        std::path::Path::new(&g.run_command_working_dir)
+        std::path::Path::new(&g.command_exec.run_command_working_dir)
             .canonicalize()
-            .unwrap_or_else(|_| std::path::PathBuf::from(&g.run_command_working_dir))
+            .unwrap_or_else(|_| std::path::PathBuf::from(&g.command_exec.run_command_working_dir))
     };
 
     let mut out_file = open_output_file(&batch_cfg.output_path, batch_cfg.resume_from_existing)?;
@@ -149,7 +149,7 @@ async fn run_single_task(
             base_work_dir,
             TaskStatus::Error,
             TaskMetrics::default(),
-            &cfg.model,
+            &cfg.llm.model,
             Some(format!("输入校验失败: {e}")),
         );
     }
@@ -168,7 +168,7 @@ async fn run_single_task(
                 base_work_dir,
                 TaskStatus::Error,
                 TaskMetrics::default(),
-                &cfg.model,
+                &cfg.llm.model,
                 Some(format!("工作区初始化失败: {e}")),
             );
         }
@@ -176,7 +176,8 @@ async fn run_single_task(
 
     let task_cfg = build_task_config(cfg, adapter, batch_cfg);
     let user_prompt = adapter.build_user_prompt(task);
-    let mut messages = crate::types::messages_chat_seed(&task_cfg.system_prompt, &user_prompt);
+    let mut messages =
+        crate::types::messages_chat_seed(&task_cfg.roles_prompts.system_prompt, &user_prompt);
 
     let start = Instant::now();
     let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -252,7 +253,7 @@ async fn run_single_task(
         &work_dir,
         status,
         metrics,
-        &cfg.model,
+        &cfg.llm.model,
         agent_error,
     )
 }
@@ -266,22 +267,24 @@ fn build_task_config(
     let mut cfg = (**base).clone();
 
     if let Some(ref override_prompt) = batch_cfg.system_prompt_override {
-        cfg.system_prompt = override_prompt.clone();
+        cfg.roles_prompts.system_prompt = override_prompt.clone();
     }
 
     if let Some(suffix) = adapter.system_prompt_suffix() {
-        if !cfg.system_prompt.is_empty() {
-            cfg.system_prompt.push('\n');
+        if !cfg.roles_prompts.system_prompt.is_empty() {
+            cfg.roles_prompts.system_prompt.push('\n');
         }
-        cfg.system_prompt.push_str(&suffix);
+        cfg.roles_prompts.system_prompt.push_str(&suffix);
     }
 
     // max_tool_rounds > 0 时，用 max_message_history 近似限制轮次
     // （每轮 assistant + tool 约 2 条消息，加上 system + user 起始 2 条）
     if batch_cfg.max_tool_rounds > 0 {
         let estimated_max = 2 + batch_cfg.max_tool_rounds * 3;
-        if estimated_max < cfg.max_message_history || cfg.max_message_history == 0 {
-            cfg.max_message_history = estimated_max;
+        if estimated_max < cfg.session_ui.max_message_history
+            || cfg.session_ui.max_message_history == 0
+        {
+            cfg.session_ui.max_message_history = estimated_max;
         }
     }
 

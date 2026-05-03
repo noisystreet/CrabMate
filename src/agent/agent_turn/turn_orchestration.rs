@@ -34,11 +34,11 @@ pub(crate) fn resolve_non_hierarchical_main_route(
     cfg: &AgentConfig,
     staged_intent_gate_allow: bool,
 ) -> NonHierarchicalMainRoute {
-    if cfg.planner_executor_mode == PlannerExecutorMode::LogicalDualAgent
+    if cfg.per_plan_policy.planner_executor_mode == PlannerExecutorMode::LogicalDualAgent
         && staged_intent_gate_allow
     {
         NonHierarchicalMainRoute::LogicalDualAgentStaged
-    } else if cfg.staged_plan_execution && staged_intent_gate_allow {
+    } else if cfg.staged_planning.staged_plan_execution && staged_intent_gate_allow {
         NonHierarchicalMainRoute::StagedPlanExecution
     } else {
         NonHierarchicalMainRoute::SingleAgentOuterLoop
@@ -140,8 +140,8 @@ mod tests {
 
     fn cfg_with(mode: PlannerExecutorMode, staged_plan_execution: bool) -> AgentConfig {
         let mut c = crate::config::load_config(None).expect("embed default config");
-        c.planner_executor_mode = mode;
-        c.staged_plan_execution = staged_plan_execution;
+        c.per_plan_policy.planner_executor_mode = mode;
+        c.staged_planning.staged_plan_execution = staged_plan_execution;
         c
     }
 

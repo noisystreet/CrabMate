@@ -9,9 +9,9 @@ use super::{OperatorAgent, OperatorConfig};
 #[test]
 fn react_messages_session_sync_truncates_like_main_loop() {
     let mut cfg = crate::config::load_config(None).expect("embed default");
-    cfg.max_message_history = 6;
-    cfg.tool_message_max_chars = 1_000_000;
-    cfg.context_char_budget = 0;
+    cfg.session_ui.max_message_history = 6;
+    cfg.tool_transcript.tool_message_max_chars = 1_000_000;
+    cfg.context_pipeline.context_char_budget = 0;
 
     let mut messages = vec![
         Message::system_only("sys".to_string()),

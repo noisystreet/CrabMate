@@ -62,9 +62,9 @@ impl ChatCompletionsBackend for SequencedMockBackend {
 
 fn cfg_single_agent_outer_loop() -> Arc<AgentConfig> {
     let mut cfg = load_config(None).expect("embedded default config must load");
-    cfg.planner_executor_mode = PlannerExecutorMode::SingleAgent;
-    cfg.staged_plan_execution = false;
-    cfg.intent_at_turn_start_enabled = false;
+    cfg.per_plan_policy.planner_executor_mode = PlannerExecutorMode::SingleAgent;
+    cfg.staged_planning.staged_plan_execution = false;
+    cfg.intent_routing.intent_at_turn_start_enabled = false;
     Arc::new(cfg)
 }
 
@@ -160,11 +160,11 @@ async fn run_agent_turn_outer_loop_tool_round_then_final_assistant() {
 
 fn cfg_hierarchical_for_mock_runner() -> Arc<AgentConfig> {
     let mut cfg = load_config(None).expect("embedded default config must load");
-    cfg.planner_executor_mode = PlannerExecutorMode::Hierarchical;
-    cfg.staged_plan_execution = false;
-    cfg.intent_at_turn_start_enabled = false;
-    cfg.intent_l2_enabled = false;
-    cfg.enable_llm_routing = Some(true);
+    cfg.per_plan_policy.planner_executor_mode = PlannerExecutorMode::Hierarchical;
+    cfg.staged_planning.staged_plan_execution = false;
+    cfg.intent_routing.intent_at_turn_start_enabled = false;
+    cfg.intent_routing.intent_l2_enabled = false;
+    cfg.hierarchy_routing.enable_llm_routing = Some(true);
     Arc::new(cfg)
 }
 

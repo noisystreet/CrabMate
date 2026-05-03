@@ -213,16 +213,20 @@ async fn workflow_execute_dag_body(p: WorkflowExecuteDagParams<'_>) -> (String, 
     }
 
     let workdir = effective_working_dir.to_path_buf();
-    let allowed_commands = Arc::clone(&cfg.allowed_commands);
-    let weather_timeout_secs = cfg.weather_timeout_secs;
-    let command_timeout_secs = cfg.command_timeout_secs;
-    let web_search_timeout_secs = cfg.web_search_timeout_secs;
-    let web_search_provider = cfg.web_search_provider;
-    let web_search_api_key = cfg.web_search_api_key.expose_secret().to_string();
-    let web_search_max_results = cfg.web_search_max_results;
-    let http_fetch_timeout_secs = cfg.http_fetch_timeout_secs;
-    let http_fetch_max_response_bytes = cfg.http_fetch_max_response_bytes;
-    let http_fetch_allowed_prefixes = cfg.http_fetch_allowed_prefixes.clone();
+    let allowed_commands = Arc::clone(&cfg.command_exec.allowed_commands);
+    let weather_timeout_secs = cfg.weather_tool.weather_timeout_secs;
+    let command_timeout_secs = cfg.command_exec.command_timeout_secs;
+    let web_search_timeout_secs = cfg.web_search.web_search_timeout_secs;
+    let web_search_provider = cfg.web_search.web_search_provider;
+    let web_search_api_key = cfg
+        .web_search
+        .web_search_api_key
+        .expose_secret()
+        .to_string();
+    let web_search_max_results = cfg.web_search.web_search_max_results;
+    let http_fetch_timeout_secs = cfg.http_fetch.http_fetch_timeout_secs;
+    let http_fetch_max_response_bytes = cfg.http_fetch.http_fetch_max_response_bytes;
+    let http_fetch_allowed_prefixes = cfg.http_fetch.http_fetch_allowed_prefixes.clone();
 
     let tool_exec_ctx = WorkflowToolExecCtx {
         cfg: Arc::new(cfg.clone()),
@@ -239,8 +243,8 @@ async fn workflow_execute_dag_body(p: WorkflowExecuteDagParams<'_>) -> (String, 
         effective_working_dir: workdir,
         workspace_is_set,
         command_max_output_len,
-        test_result_cache_enabled: cfg.test_result_cache_enabled,
-        test_result_cache_max_entries: cfg.test_result_cache_max_entries,
+        test_result_cache_enabled: cfg.chat_queues_cache.test_result_cache_enabled,
+        test_result_cache_max_entries: cfg.chat_queues_cache.test_result_cache_max_entries,
         codebase_semantic:
             crate::memory::codebase_semantic_index::CodebaseSemanticToolParams::from_agent_config(
                 cfg,

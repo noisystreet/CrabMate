@@ -29,7 +29,7 @@ fn require_api_key_for_cli_models_probe(
     cfg: &config::AgentConfig,
 ) -> Result<String, std::io::Error> {
     let v = env::var("API_KEY").unwrap_or_default();
-    if cfg.llm_http_auth_mode == config::LlmHttpAuthMode::Bearer && v.trim().is_empty() {
+    if cfg.llm.llm_http_auth_mode == config::LlmHttpAuthMode::Bearer && v.trim().is_empty() {
         eprintln!(
             "请设置环境变量 API_KEY（当前 llm_http_auth_mode=bearer；models/probe 须从环境读取密钥）"
         );
@@ -44,7 +44,7 @@ fn require_api_key_for_cli_models_probe(
 /// `serve` / `repl` / `chat` / `bench`：读取 **`API_KEY`**；`bearer` 且未设置时返回空串（不报错）。
 fn read_llm_api_key_from_env_lenient(cfg: &config::AgentConfig) -> String {
     let v = env::var("API_KEY").unwrap_or_default();
-    if cfg.llm_http_auth_mode == config::LlmHttpAuthMode::Bearer && v.trim().is_empty() {
+    if cfg.llm.llm_http_auth_mode == config::LlmHttpAuthMode::Bearer && v.trim().is_empty() {
         info!(
             target: "crabmate",
             "API_KEY 未设置（llm_http_auth_mode=bearer）：Web 请在侧栏设置中填写 API 密钥；REPL 请使用 /api-key set <密钥>"
@@ -58,7 +58,7 @@ fn apply_cli_llm_context_tokens_override(
     cli_tokens: Option<u32>,
 ) -> config::AgentConfig {
     if let Some(n) = cli_tokens {
-        cfg.llm_context_tokens = n.min(10_000_000);
+        cfg.llm_sampling.llm_context_tokens = n.min(10_000_000);
     }
     cfg
 }
@@ -170,7 +170,7 @@ async fn run_dry_run(
         eprintln!("{msg}");
         return Err(std::io::Error::new(std::io::ErrorKind::NotFound, msg).into());
     }
-    let key_note = match cfg.llm_http_auth_mode {
+    let key_note = match cfg.llm.llm_http_auth_mode {
         config::LlmHttpAuthMode::None => "llm_http_auth_mode=none（API_KEY 可选）".to_string(),
         config::LlmHttpAuthMode::Bearer => {
             if env::var("API_KEY")
@@ -243,11 +243,15 @@ async fn run_serve_branch(args: ServeBranchArgs<'_>) -> Result<(), Box<dyn std::
     let (cq_conc, cq_pending, conv_sqlite, ltm_enabled, ltm_store_path) = {
         let g = cfg_holder.read().await;
         (
-            g.chat_queue_max_concurrent,
-            g.chat_queue_max_pending,
-            g.conversation_store_sqlite_path.clone(),
-            g.long_term_memory_enabled,
-            g.long_term_memory_store_sqlite_path.clone(),
+            g.chat_queues_cache.chat_queue_max_concurrent,
+            g.chat_queues_cache.chat_queue_max_pending,
+            g.conversation_persistence
+                .conversation_store_sqlite_path
+                .clone(),
+            g.long_term_memory.long_term_memory_enabled,
+            g.long_term_memory
+                .long_term_memory_store_sqlite_path
+                .clone(),
         )
     };
     let chat_queue = chat_job_queue::ChatJobQueue::new(cq_conc, cq_pending);
@@ -336,14 +340,14 @@ async fn run_serve_branch(args: ServeBranchArgs<'_>) -> Result<(), Box<dyn std::
     });
     let sched_tasks = {
         let g = cfg_holder.read().await;
-        g.scheduled_agent_tasks.clone()
+        g.conversation_persistence.scheduled_agent_tasks.clone()
     };
     web::cron_scheduler::spawn_serve_cron_scheduler(Arc::clone(&state), sched_tasks);
     let static_dir = web_static_dir::resolve_web_static_dir();
     {
         let g = cfg_holder.read().await;
-        if g.web_api_require_bearer
-            && crate::config::ExposeSecret::expose_secret(&g.web_api_bearer_token)
+        if g.web_api.web_api_require_bearer
+            && crate::config::ExposeSecret::expose_secret(&g.web_api.web_api_bearer_token)
                 .trim()
                 .is_empty()
         {
@@ -356,7 +360,7 @@ async fn run_serve_branch(args: ServeBranchArgs<'_>) -> Result<(), Box<dyn std::
     }
     let web_api_bearer_layer_enabled = {
         let g = cfg_holder.read().await;
-        !crate::config::ExposeSecret::expose_secret(&g.web_api_bearer_token)
+        !crate::config::ExposeSecret::expose_secret(&g.web_api.web_api_bearer_token)
             .trim()
             .is_empty()
     };
@@ -379,10 +383,10 @@ async fn run_serve_branch(args: ServeBranchArgs<'_>) -> Result<(), Box<dyn std::
     let (auth_enabled, allow_insec) = {
         let g = cfg_holder.read().await;
         (
-            !crate::config::ExposeSecret::expose_secret(&g.web_api_bearer_token)
+            !crate::config::ExposeSecret::expose_secret(&g.web_api.web_api_bearer_token)
                 .trim()
                 .is_empty(),
-            g.allow_insecure_no_auth_for_non_loopback,
+            g.web_api.allow_insecure_no_auth_for_non_loopback,
         )
     };
     if !bind_ip.is_loopback() && !auth_enabled && !allow_insec {
@@ -505,8 +509,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         info!(
             target: "crabmate",
             "配置已加载 api_base={} model={}",
-            g.api_base,
-            g.model
+            g.llm.api_base,
+            g.llm.model
         );
     }
     let client = {

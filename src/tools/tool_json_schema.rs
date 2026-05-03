@@ -224,10 +224,7 @@ mod tests {
     #[test]
     fn gradle_tasks_schema_has_tasks_array() {
         let v = tool_parameters_schema_value::<GradleTasksArgs>();
-        assert_eq!(
-            v.pointer("/properties/tasks/type"),
-            Some(&json!("array"))
-        );
+        assert_eq!(v.pointer("/properties/tasks/type"), Some(&json!("array")));
     }
 
     #[test]

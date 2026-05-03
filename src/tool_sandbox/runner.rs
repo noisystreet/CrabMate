@@ -47,19 +47,23 @@ pub struct SandboxToolRunnerConfig {
 impl SandboxToolRunnerConfig {
     pub fn from_agent_config(cfg: &AgentConfig) -> Self {
         Self {
-            command_max_output_len: cfg.command_max_output_len,
-            weather_timeout_secs: cfg.weather_timeout_secs,
-            command_timeout_secs: cfg.command_timeout_secs,
-            test_result_cache_enabled: cfg.test_result_cache_enabled,
-            test_result_cache_max_entries: cfg.test_result_cache_max_entries,
-            allowed_commands: cfg.allowed_commands.iter().cloned().collect(),
-            web_search_provider: cfg.web_search_provider.as_str().to_string(),
-            web_search_api_key: cfg.web_search_api_key.expose_secret().to_string(),
-            web_search_timeout_secs: cfg.web_search_timeout_secs,
-            web_search_max_results: cfg.web_search_max_results,
-            http_fetch_allowed_prefixes: cfg.http_fetch_allowed_prefixes.clone(),
-            http_fetch_timeout_secs: cfg.http_fetch_timeout_secs,
-            http_fetch_max_response_bytes: cfg.http_fetch_max_response_bytes,
+            command_max_output_len: cfg.command_exec.command_max_output_len,
+            weather_timeout_secs: cfg.weather_tool.weather_timeout_secs,
+            command_timeout_secs: cfg.command_exec.command_timeout_secs,
+            test_result_cache_enabled: cfg.chat_queues_cache.test_result_cache_enabled,
+            test_result_cache_max_entries: cfg.chat_queues_cache.test_result_cache_max_entries,
+            allowed_commands: cfg.command_exec.allowed_commands.iter().cloned().collect(),
+            web_search_provider: cfg.web_search.web_search_provider.as_str().to_string(),
+            web_search_api_key: cfg
+                .web_search
+                .web_search_api_key
+                .expose_secret()
+                .to_string(),
+            web_search_timeout_secs: cfg.web_search.web_search_timeout_secs,
+            web_search_max_results: cfg.web_search.web_search_max_results,
+            http_fetch_allowed_prefixes: cfg.http_fetch.http_fetch_allowed_prefixes.clone(),
+            http_fetch_timeout_secs: cfg.http_fetch.http_fetch_timeout_secs,
+            http_fetch_max_response_bytes: cfg.http_fetch.http_fetch_max_response_bytes,
             codebase_semantic: CodebaseSemanticToolParams::from_agent_config(cfg),
         }
     }

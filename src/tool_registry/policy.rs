@@ -25,34 +25,42 @@ fn execution_class_parallel_wall_key(class: ToolExecutionClass) -> &'static str 
 pub fn parallel_tool_wall_timeout_secs(cfg: &AgentConfig, tool_name: &str) -> u64 {
     let class = execution_class_for_tool(tool_name);
     let key = execution_class_parallel_wall_key(class);
-    if let Some(&secs) = cfg.tool_registry_parallel_wall_timeout_secs.get(key) {
+    if let Some(&secs) = cfg
+        .tool_registry_policy
+        .tool_registry_parallel_wall_timeout_secs
+        .get(key)
+    {
         return secs.max(1);
     }
     use ToolExecutionClass::*;
     match class {
         HttpFetchSpawnTimeout => cfg
+            .http_fetch
             .http_fetch_timeout_secs
             .max(1)
-            .max(cfg.command_timeout_secs.max(1)),
-        WeatherSpawnTimeout => cfg.weather_timeout_secs.max(1),
-        WebSearchSpawnTimeout => cfg.web_search_timeout_secs.max(1),
-        CommandSpawnTimeout => cfg.command_timeout_secs.max(1),
-        Workflow | BlockingSync => cfg.command_timeout_secs.max(1),
+            .max(cfg.command_exec.command_timeout_secs.max(1)),
+        WeatherSpawnTimeout => cfg.weather_tool.weather_timeout_secs.max(1),
+        WebSearchSpawnTimeout => cfg.web_search.web_search_timeout_secs.max(1),
+        CommandSpawnTimeout => cfg.command_exec.command_timeout_secs.max(1),
+        Workflow | BlockingSync => cfg.command_exec.command_timeout_secs.max(1),
     }
 }
 
 /// `http_fetch` / `http_request`：`spawn_blocking` **外圈** `tokio::time::timeout`（与 `reqwest` 内读秒数 `http_fetch_timeout_secs` 区分）。
 pub(crate) fn http_fetch_outer_wall_secs(cfg: &AgentConfig) -> u64 {
-    cfg.tool_registry_http_fetch_wall_timeout_secs
+    cfg.tool_registry_policy
+        .tool_registry_http_fetch_wall_timeout_secs
         .unwrap_or_else(|| {
-            cfg.command_timeout_secs
-                .max(cfg.http_fetch_timeout_secs)
+            cfg.command_exec
+                .command_timeout_secs
+                .max(cfg.http_fetch.http_fetch_timeout_secs)
                 .max(1)
         })
 }
 
 pub(crate) fn http_request_outer_wall_secs(cfg: &AgentConfig) -> u64 {
-    cfg.tool_registry_http_request_wall_timeout_secs
+    cfg.tool_registry_policy
+        .tool_registry_http_request_wall_timeout_secs
         .unwrap_or_else(|| http_fetch_outer_wall_secs(cfg))
 }
 fn builtin_write_effect_tools() -> &'static HashSet<String> {
@@ -126,7 +134,7 @@ pub fn is_readonly_tool(cfg: &AgentConfig, name: &str) -> bool {
         // 动态工具语义不可静态证明，默认按写副作用处理。
         return false;
     }
-    let writes = match &cfg.tool_registry_write_effect_tools {
+    let writes = match &cfg.tool_registry_policy.tool_registry_write_effect_tools {
         None => builtin_write_effect_tools(),
         Some(arc) => arc.as_ref(),
     };
@@ -174,14 +182,20 @@ fn builtin_parallel_sync_prefix_hit(name: &str) -> bool {
 
 /// 即使 [`is_readonly_tool`] 为真，并行 `spawn_blocking` 仍可能争抢 cargo/npm 等构建锁或缓存；勿与同批其它工具并行。
 fn parallel_sync_batch_denied(cfg: &AgentConfig, name: &str) -> bool {
-    let exact = match &cfg.tool_registry_parallel_sync_denied_tools {
+    let exact = match &cfg
+        .tool_registry_policy
+        .tool_registry_parallel_sync_denied_tools
+    {
         None => builtin_parallel_sync_denied_exact(),
         Some(arc) => arc.as_ref(),
     };
     if exact.contains(name) {
         return true;
     }
-    match &cfg.tool_registry_parallel_sync_denied_prefixes {
+    match &cfg
+        .tool_registry_policy
+        .tool_registry_parallel_sync_denied_prefixes
+    {
         None => builtin_parallel_sync_prefix_hit(name),
         Some(prefs) => prefs.iter().any(|p| name.starts_with(p)),
     }
@@ -252,7 +266,10 @@ fn builtin_sync_default_inline_tools() -> &'static HashSet<String> {
 ///
 /// 可由 **`[tool_registry] sync_default_inline_tools`** 覆盖。
 pub(crate) fn sync_default_runs_inline(cfg: &AgentConfig, name: &str) -> bool {
-    match &cfg.tool_registry_sync_default_inline_tools {
+    match &cfg
+        .tool_registry_policy
+        .tool_registry_sync_default_inline_tools
+    {
         None => builtin_sync_default_inline_tools().contains(name),
         Some(arc) => arc.contains(name),
     }

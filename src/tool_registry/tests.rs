@@ -136,6 +136,6 @@ fn parallel_tool_wall_timeout_secs_smoke() {
     assert!(fetch_budget >= cmd_budget);
     assert_eq!(
         parallel_tool_wall_timeout_secs(&cfg, "get_weather"),
-        cfg.weather_timeout_secs.max(1)
+        cfg.weather_tool.weather_timeout_secs.max(1)
     );
 }

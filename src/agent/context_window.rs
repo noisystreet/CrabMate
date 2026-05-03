@@ -110,7 +110,10 @@ pub async fn maybe_summarize_with_llm(
     if trigger == 0 {
         return Ok(());
     }
-    let tail = cfg.context_summary_tail_messages.clamp(4, 64);
+    let tail = cfg
+        .context_pipeline
+        .context_summary_tail_messages
+        .clamp(4, 64);
     let chars = crate::agent::message_pipeline::estimate_non_system_chars(messages);
     if chars < trigger {
         return Ok(());
@@ -121,9 +124,11 @@ pub async fn maybe_summarize_with_llm(
     if messages.len() <= 1 + tail + 1 {
         return Ok(());
     }
-    let Some(transcript) =
-        build_transcript_middle(messages, tail, cfg.context_summary_transcript_max_chars)
-    else {
+    let Some(transcript) = build_transcript_middle(
+        messages,
+        tail,
+        cfg.context_pipeline.context_summary_transcript_max_chars,
+    ) else {
         return Ok(());
     };
 
@@ -131,19 +136,19 @@ pub async fn maybe_summarize_with_llm(
         Message::system_only(SUMMARY_SYSTEM.to_string()),
         Message::user_only(format!(
             "请将下列对话压缩为要点（不超过约 {} 字）。保留技术细节与待办：\n\n{}",
-            cfg.context_summary_max_tokens, transcript
+            cfg.context_pipeline.context_summary_max_tokens, transcript
         )),
     ];
     let req = ChatRequest {
-        model: cfg.model.clone(),
+        model: cfg.llm.model.clone(),
         messages: sum_messages,
         tools: None,
         tool_choice: None,
-        max_tokens: cfg.context_summary_max_tokens,
+        max_tokens: cfg.context_pipeline.context_summary_max_tokens,
         temperature: vendor_temperature_for_config(cfg, 0.2),
         seed: None,
         stream: None,
-        reasoning_split: cfg.llm_reasoning_split.then_some(true),
+        reasoning_split: cfg.llm_vendor_flags.llm_reasoning_split.then_some(true),
         thinking: chat_request_thinking_from_cfg(cfg),
         response_format: None,
     };
@@ -219,8 +224,10 @@ pub async fn prepare_messages_for_model(
     crate::workspace::changelist::sync_changelist_user_message(
         messages,
         workspace_changelist,
-        cfg.session_workspace_changelist_enabled,
-        cfg.session_workspace_changelist_max_chars,
+        cfg.session_workspace_changelist
+            .session_workspace_changelist_enabled,
+        cfg.session_workspace_changelist
+            .session_workspace_changelist_max_chars,
     );
     if let Some(p) = hooks.per_coord_layer_cache {
         p.invalidate_workflow_validate_layer_cache_after_context_mutation();
@@ -239,9 +246,9 @@ mod tests {
     #[test]
     fn prepare_messages_for_hierarchical_llm_sync_matches_session_sync() {
         let mut cfg = crate::config::load_config(None).expect("embed default");
-        cfg.max_message_history = 6;
-        cfg.tool_message_max_chars = 1_000_000;
-        cfg.context_char_budget = 0;
+        cfg.session_ui.max_message_history = 6;
+        cfg.tool_transcript.tool_message_max_chars = 1_000_000;
+        cfg.context_pipeline.context_char_budget = 0;
 
         let mut a = vec![
             Message::system_only("sys".to_string()),

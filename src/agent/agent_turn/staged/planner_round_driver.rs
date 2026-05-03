@@ -82,7 +82,7 @@ pub(super) async fn emit_staged_planner_tool_call_rejected_timeline(
 
 /// 两阶段 NL 开启时：无工具规划轮不向 Web/终端流式下发（由 NL 补全轮承担用户可见输出）。
 fn staged_planner_sse_fully_suppressed(cfg: &crate::config::AgentConfig) -> bool {
-    cfg.staged_plan_two_phase_nl_display
+    cfg.staged_planning.staged_plan_two_phase_nl_display
 }
 
 /// 无工具规划轮 `complete_chat_retrying`：
@@ -189,7 +189,10 @@ where
         msg.tool_calls = None;
         crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
             &mut msg,
-            p.ctx.cfg.materialize_deepseek_dsml_tool_calls,
+            p.ctx
+                .cfg
+                .dsml_materialize
+                .materialize_deepseek_dsml_tool_calls,
         );
         if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
             warn!(
@@ -281,7 +284,11 @@ where
         return Ok(());
     };
 
-    let dsml = p.ctx.cfg.materialize_deepseek_dsml_tool_calls;
+    let dsml = p
+        .ctx
+        .cfg
+        .dsml_materialize
+        .materialize_deepseek_dsml_tool_calls;
     let mut accepted: Vec<AgentReplyPlanV1> = vec![plan.clone()];
 
     for i in 0..extra {
@@ -388,7 +395,10 @@ where
     let (msg, finish_reason) = if first_finish != USER_CANCELLED_FINISH_REASON {
         let first_total = staged_first_planner_round_tool_call_total_after_materialize(
             &mut first_msg,
-            p.ctx.cfg.materialize_deepseek_dsml_tool_calls,
+            p.ctx
+                .cfg
+                .dsml_materialize
+                .materialize_deepseek_dsml_tool_calls,
         );
         if first_total > 0 {
             warn!(

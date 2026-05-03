@@ -150,8 +150,9 @@ pub(crate) fn validate_workspace_set_path(
     if is_sensitive_workspace_path(&canon) {
         return Err(WorkspacePathError::SensitivePathDenied);
     }
-    if !is_within_allowed_roots(&canon, &cfg.workspace_allowed_roots) {
+    if !is_within_allowed_roots(&canon, &cfg.workspace_roots.workspace_allowed_roots) {
         let roots_display = cfg
+            .workspace_roots
             .workspace_allowed_roots
             .iter()
             .map(|p| p.display().to_string())
@@ -210,8 +211,9 @@ pub(crate) fn validate_effective_workspace_base(
     if is_sensitive_workspace_path(base_canonical) {
         return Err(WorkspacePathError::EffectiveRootSensitive);
     }
-    if !is_within_allowed_roots(base_canonical, &cfg.workspace_allowed_roots) {
+    if !is_within_allowed_roots(base_canonical, &cfg.workspace_roots.workspace_allowed_roots) {
         let roots_display = cfg
+            .workspace_roots
             .workspace_allowed_roots
             .iter()
             .map(|p| p.display().to_string())

@@ -140,7 +140,12 @@ pub(super) async fn prepare_staged_planner_no_tools_request(
         message: e.to_string(),
     })?;
 
-    let instr = p.ctx.cfg.staged_plan_phase_instruction.trim();
+    let instr = p
+        .ctx
+        .cfg
+        .staged_planning
+        .staged_plan_phase_instruction
+        .trim();
     let plan_system = if instr.is_empty() {
         staged_plan_phase_instruction_default()
     } else {
@@ -240,7 +245,11 @@ where
                     .ctx
                     .staged_plan_optimizer_requires_parallel_tools,
                 parallel_tool_names_csv: parallel_csv.as_str(),
-                staged_plan_two_phase_nl_display: p.ctx.cfg.staged_plan_two_phase_nl_display,
+                staged_plan_two_phase_nl_display: p
+                    .ctx
+                    .cfg
+                    .staged_planning
+                    .staged_plan_two_phase_nl_display,
             });
 
             advance_full_pipeline_phases_after_parse_inner(AdvanceFullPipelineAfterParseParams {
@@ -284,7 +293,10 @@ async fn strip_non_tool_planner_assistant_after_first_round(
     msg.tool_calls = None;
     crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
         msg,
-        p.ctx.cfg.materialize_deepseek_dsml_tool_calls,
+        p.ctx
+            .cfg
+            .dsml_materialize
+            .materialize_deepseek_dsml_tool_calls,
     );
     let dsml_tool_calls = msg.tool_calls.as_ref().map(|c| c.len()).unwrap_or(0);
     if dsml_tool_calls > 0 {
@@ -306,7 +318,7 @@ async fn run_no_task_branch_then_outer<F>(
 where
     F: Fn(String) -> Message,
 {
-    if p.ctx.cfg.staged_plan_two_phase_nl_display {
+    if p.ctx.cfg.staged_planning.staged_plan_two_phase_nl_display {
         run_staged_plan_nl_followup_round(p, per_coord, make_step_user_message).await?;
     }
     debug!(
@@ -365,7 +377,10 @@ where
     strip_staged_planner_message_tool_calls(
         &mut opt_msg,
         "优化轮",
-        p.ctx.cfg.materialize_deepseek_dsml_tool_calls,
+        p.ctx
+            .cfg
+            .dsml_materialize
+            .materialize_deepseek_dsml_tool_calls,
     );
     let opt_content = crate::types::message_content_as_str(&opt_msg.content).unwrap_or("");
     let merged_steps = plan_optimizer::try_parse_optimizer_reply(opt_content);
@@ -522,7 +537,11 @@ where
     F: Fn(String) -> Message,
 {
     let planner_render_to_terminal = render_to_terminal
-        && (p.ctx.out.is_some() || p.ctx.cfg.staged_plan_cli_show_planner_stream);
+        && (p.ctx.out.is_some()
+            || p.ctx
+                .cfg
+                .staged_planning
+                .staged_plan_cli_show_planner_stream);
     let (mut msg, finish_reason) = complete_first_planner_round_maybe_retry_tool_reject(
         p,
         per_coord,
@@ -740,11 +759,13 @@ mod staged_plan_prepare_fixture_tests {
                 mcp_session: None,
                 read_file_turn_cache: None,
                 workspace_changelist: None,
-                staged_plan_optimizer_round: cfg.staged_plan_optimizer_round,
+                staged_plan_optimizer_round: cfg.staged_planning.staged_plan_optimizer_round,
                 staged_plan_optimizer_requires_parallel_tools: cfg
+                    .staged_planning
                     .staged_plan_optimizer_requires_parallel_tools,
-                staged_plan_ensemble_count: cfg.staged_plan_ensemble_count,
+                staged_plan_ensemble_count: cfg.staged_planning.staged_plan_ensemble_count,
                 staged_plan_skip_ensemble_on_casual_prompt: cfg
+                    .staged_planning
                     .staged_plan_skip_ensemble_on_casual_prompt,
                 request_chrome_trace: None,
                 turn_allowed_tool_names: None,

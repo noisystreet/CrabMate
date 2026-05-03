@@ -28,7 +28,10 @@ pub(crate) async fn workspace_changelog_handler(
         .filter(|s| !s.is_empty())
         .unwrap_or("__default__");
     let cfg = state.cfg.read().await;
-    if !cfg.session_workspace_changelist_enabled {
+    if !cfg
+        .session_workspace_changelist
+        .session_workspace_changelist_enabled
+    {
         return Json(WorkspaceChangelogResponse {
             revision: 0,
             markdown: String::new(),
@@ -38,7 +41,9 @@ pub(crate) async fn workspace_changelog_handler(
             ),
         });
     }
-    let max_chars = cfg.session_workspace_changelist_max_chars;
+    let max_chars = cfg
+        .session_workspace_changelist
+        .session_workspace_changelist_max_chars;
     drop(cfg);
     let cl = state
         .process_handles

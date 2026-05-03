@@ -95,7 +95,7 @@ pub(crate) async fn prepare_json_chat_enqueue(
     let workspace_is_set = state.workspace_is_set().await;
     let work_dir_for_job = if eff_ws.is_empty() {
         let cfg = state.cfg.read().await;
-        std::path::PathBuf::from(cfg.run_command_working_dir.clone())
+        std::path::PathBuf::from(cfg.command_exec.run_command_working_dir.clone())
     } else {
         std::path::PathBuf::from(eff_ws.clone())
     };

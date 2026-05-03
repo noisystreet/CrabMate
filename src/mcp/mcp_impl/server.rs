@@ -104,7 +104,7 @@ impl ServerHandler for CrabmateMcpServer {
         let args_map = request.arguments.unwrap_or_default();
         let cfg = self.cfg.clone();
         let work_dir = self.working_dir.clone();
-        let allowed = self.cfg.allowed_commands.clone();
+        let allowed = self.cfg.command_exec.allowed_commands.clone();
 
         async move {
             let args_json = match serde_json::to_string(&Value::Object(args_map)) {

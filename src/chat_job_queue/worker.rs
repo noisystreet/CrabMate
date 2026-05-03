@@ -173,13 +173,13 @@ async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcome {
     );
     let (executor_api_base, executor_api_key, executor_model_override) = match executor_override {
         Some((executor_cfg, executor_key)) => {
-            let base = if executor_cfg.api_base != cfg_turn.api_base {
-                Some(executor_cfg.api_base.clone())
+            let base = if executor_cfg.llm.api_base != cfg_turn.llm.api_base {
+                Some(executor_cfg.llm.api_base.clone())
             } else {
                 None
             };
-            let model = if executor_cfg.model != cfg_turn.model {
-                Some(executor_cfg.model.clone())
+            let model = if executor_cfg.llm.model != cfg_turn.llm.model {
+                Some(executor_cfg.llm.model.clone())
             } else {
                 None
             };
@@ -338,13 +338,13 @@ async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
     );
     let (executor_api_base, executor_api_key, executor_model_override) = match executor_override {
         Some((executor_cfg, executor_key)) => {
-            let base = if executor_cfg.api_base != cfg_turn.api_base {
-                Some(executor_cfg.api_base.clone())
+            let base = if executor_cfg.llm.api_base != cfg_turn.llm.api_base {
+                Some(executor_cfg.llm.api_base.clone())
             } else {
                 None
             };
-            let model = if executor_cfg.model != cfg_turn.model {
-                Some(executor_cfg.model.clone())
+            let model = if executor_cfg.llm.model != cfg_turn.llm.model {
+                Some(executor_cfg.llm.model.clone())
             } else {
                 None
             };

@@ -16,7 +16,8 @@ pub fn run_tool_replay_command(
     workspace_cli: &Option<String>,
     cmd: ToolReplayCli,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let workspace = cli_effective_work_dir(workspace_cli, &cfg.run_command_working_dir);
+    let workspace =
+        cli_effective_work_dir(workspace_cli, &cfg.command_exec.run_command_working_dir);
     match cmd {
         ToolReplayCli::Export {
             session_file,
@@ -96,7 +97,8 @@ pub fn run_save_session_command(
     workspace_cli: &Option<String>,
     args: SaveSessionCli,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let workspace = cli_effective_work_dir(workspace_cli, &cfg.run_command_working_dir);
+    let workspace =
+        cli_effective_work_dir(workspace_cli, &cfg.command_exec.run_command_working_dir);
     let session_path = match args
         .session_file
         .as_ref()
@@ -246,6 +248,7 @@ fn validate_plugin_file(path: &PathBuf, cfg: &AgentConfig) -> PluginCheckResult 
     if cmd.is_empty() {
         out.errors.push("command 不能为空".to_string());
     } else if !cfg
+        .command_exec
         .allowed_commands
         .iter()
         .any(|c| c.eq_ignore_ascii_case(cmd))
@@ -262,7 +265,8 @@ pub fn run_plugin_init_command(
     workspace_cli: &Option<String>,
     cli: PluginInitCli,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let workspace = cli_effective_work_dir(workspace_cli, &cfg.run_command_working_dir);
+    let workspace =
+        cli_effective_work_dir(workspace_cli, &cfg.command_exec.run_command_working_dir);
     let name = cli.name.trim();
     if !name.starts_with("dyn__") {
         return Err(
@@ -318,7 +322,8 @@ pub fn run_plugin_validate_command(
     workspace_cli: &Option<String>,
     cli: PluginValidateCli,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let workspace = cli_effective_work_dir(workspace_cli, &cfg.run_command_working_dir);
+    let workspace =
+        cli_effective_work_dir(workspace_cli, &cfg.command_exec.run_command_working_dir);
     let paths = collect_plugin_paths(&workspace, cli.file.as_deref())?;
     if paths.is_empty() {
         println!("未发现可校验的动态工具文件");
@@ -385,7 +390,8 @@ pub fn run_plugin_list_command(
     workspace_cli: &Option<String>,
     cli: PluginListCli,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let workspace = cli_effective_work_dir(workspace_cli, &cfg.run_command_working_dir);
+    let workspace =
+        cli_effective_work_dir(workspace_cli, &cfg.command_exec.run_command_working_dir);
     let paths = collect_plugin_paths(&workspace, cli.file.as_deref())?;
     if paths.is_empty() {
         println!("未发现动态工具文件");

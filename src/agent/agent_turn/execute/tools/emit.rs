@@ -41,7 +41,7 @@ pub(super) async fn emit_thinking_trace_sse(
     cfg: &AgentConfig,
     body: ThinkingTraceBody,
 ) {
-    if !cfg.agent_thinking_trace_enabled {
+    if !cfg.agent_thinking_trace.agent_thinking_trace_enabled {
         return;
     }
     let Some(tx) = out else {
@@ -344,6 +344,7 @@ pub(super) async fn emit_tool_call_summary_sse(
     .unwrap_or_else(|| format!("tool: {name}"));
     let arguments_preview = Some(args_preview.clone());
     let arguments = cfg
+        .tool_transcript
         .sse_tool_call_include_arguments
         .then(|| crate::redact::tool_arguments_redacted_for_sse(args));
 
