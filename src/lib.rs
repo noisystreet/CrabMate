@@ -30,6 +30,13 @@ mod memory;
 mod observability;
 mod process_handles;
 pub use process_handles::ProcessHandles;
+
+/// 仅 **`cargo test`**：清空 **`run_command`** 全局限流状态与 **`test_result_cache`** LRU，减轻测试顺序依赖。
+#[cfg(test)]
+pub fn reset_process_tool_globals_for_tests() {
+    crate::tools::reset_process_tool_globals_for_tests();
+}
+
 mod read_file_turn_cache;
 mod redact;
 mod request_chrome_trace;
