@@ -4,27 +4,28 @@ use std::io::{Read, Write};
 use std::path::Path;
 
 use crate::tools::ToolContext;
+use crate::tools::tool_param_types::{ArchiveListArgs, ArchivePackArgs, ArchiveUnpackArgs};
 
 /// 创建归档
 pub fn archive_pack(args_json: &str, working_dir: &Path, _ctx: &ToolContext<'_>) -> String {
-    let args: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
+        Err(e) => return e,
+    };
+    let args: ArchivePackArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
         Err(e) => return format!("参数解析错误: {}", e),
     };
 
-    let output = args
-        .get("output")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default();
-    let sources = args
-        .get("sources")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    let output = args.output.trim();
+    let sources: Vec<String> = args
+        .sources
+        .iter()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect();
+    let _ = (&args.exclude, &args.format);
 
     if output.is_empty() {
         return "错误: 缺少 output 参数".to_string();
@@ -56,19 +57,18 @@ pub fn archive_pack(args_json: &str, working_dir: &Path, _ctx: &ToolContext<'_>)
 
 /// 解压归档
 pub fn archive_unpack(args_json: &str, working_dir: &Path, _ctx: &ToolContext<'_>) -> String {
-    let args: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
+        Err(e) => return e,
+    };
+    let args: ArchiveUnpackArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
         Err(e) => return format!("参数解析错误: {}", e),
     };
 
-    let archive = args
-        .get("archive")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default();
-    let output_dir = args
-        .get("output_dir")
-        .and_then(|v| v.as_str())
-        .unwrap_or(".");
+    let archive = args.archive.trim();
+    let output_dir = args.output_dir.trim();
+    let _ = (&args.files, &args.strip_components);
 
     if archive.is_empty() {
         return "错误: 缺少 archive 参数".to_string();
@@ -103,19 +103,17 @@ pub fn archive_unpack(args_json: &str, working_dir: &Path, _ctx: &ToolContext<'_
 
 /// 列出归档内容
 pub fn archive_list(args_json: &str, working_dir: &Path, _ctx: &ToolContext<'_>) -> String {
-    let args: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
+        Err(e) => return e,
+    };
+    let args: ArchiveListArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
         Err(e) => return format!("参数解析错误: {}", e),
     };
 
-    let archive = args
-        .get("archive")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default();
-    let verbose = args
-        .get("verbose")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+    let archive = args.archive.trim();
+    let verbose = args.verbose;
 
     if archive.is_empty() {
         return "错误: 缺少 archive 参数".to_string();

@@ -7,6 +7,8 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use crate::tools::tool_param_types::FindSymbolArgs;
+
 const MAX_FILE_SIZE_BYTES: usize = 2 * 1024 * 1024; // 2MB
 const DEFAULT_MAX_RESULTS: usize = 30;
 const DEFAULT_CONTEXT_LINES: usize = 2;
@@ -92,49 +94,40 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
 }
 
 fn parse_params(args_json: &str) -> Result<SymbolParams, String> {
-    let v: serde_json::Value = crate::tools::parse_args_json(args_json)?;
+    let v = crate::tools::parse_args_json(args_json)?;
+    let args: FindSymbolArgs =
+        serde_json::from_value(v).map_err(|e| format!("参数解析错误: {e}"))?;
 
-    let symbol = v
-        .get("symbol")
-        .and_then(|s| s.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
-        .ok_or_else(|| "缺少 symbol 参数".to_string())?;
+    let symbol = args.symbol.trim().to_string();
+    if symbol.is_empty() {
+        return Err("缺少 symbol 参数".to_string());
+    }
 
-    let sub_path = v
-        .get("path")
-        .and_then(|p| p.as_str())
+    let sub_path = args
+        .path
+        .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
 
-    let max_results = v
-        .get("max_results")
-        .and_then(|n| n.as_u64())
-        .map(|n| n.max(1) as usize)
-        .unwrap_or(DEFAULT_MAX_RESULTS)
+    let max_results = (args
+        .max_results
+        .unwrap_or(DEFAULT_MAX_RESULTS as u64)
+        .max(1) as usize)
         .min(MAX_RESULTS_LIMIT);
 
-    let case_insensitive = v
-        .get("case_insensitive")
-        .and_then(|b| b.as_bool())
-        .unwrap_or(true);
+    let case_insensitive = args.case_insensitive;
 
-    let include_hidden = v
-        .get("include_hidden")
-        .and_then(|b| b.as_bool())
-        .unwrap_or(false);
+    let include_hidden = args.include_hidden;
 
-    let context_lines = v
-        .get("context_lines")
-        .and_then(|n| n.as_u64())
-        .map(|n| n as usize)
-        .unwrap_or(DEFAULT_CONTEXT_LINES);
+    let context_lines = args
+        .context_lines
+        .unwrap_or(DEFAULT_CONTEXT_LINES as u64)
+        .min(1_000_000) as usize;
 
-    let kind = v
-        .get("kind")
-        .and_then(|k| k.as_str())
+    let kind = args
+        .kind
+        .as_deref()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
 

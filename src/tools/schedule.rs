@@ -6,6 +6,11 @@ use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+use crate::tools::tool_param_types::{
+    AddEventArgs, AddReminderArgs, IdOnlyArgs, ListEventsArgs, ListRemindersArgs, UpdateEventArgs,
+    UpdateReminderArgs,
+};
+
 const DATA_DIR: &str = ".crabmate";
 const REMINDERS_FILE: &str = "reminders.json";
 const EVENTS_FILE: &str = "events.json";
@@ -140,15 +145,15 @@ pub fn add_reminder(args_json: &str, working_dir: &Path) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let title = match v.get("title").and_then(|x| x.as_str()).map(|s| s.trim()) {
-        Some(s) if !s.is_empty() => s.to_string(),
+    let args: AddReminderArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let title = match args.title.trim() {
+        s if !s.is_empty() => s.to_string(),
         _ => return "错误：缺少 title 参数".to_string(),
     };
-    let due_at_raw = v
-        .get("due_at")
-        .and_then(|x| x.as_str())
-        .unwrap_or("")
-        .trim();
+    let due_at_raw = args.due_at.as_deref().unwrap_or("").trim();
     let due_at = if due_at_raw.is_empty() {
         None
     } else {
@@ -183,16 +188,13 @@ pub fn add_reminder(args_json: &str, working_dir: &Path) -> String {
 }
 
 pub fn list_reminders(args_json: &str, working_dir: &Path) -> String {
-    let v: serde_json::Value =
-        serde_json::from_str(args_json).unwrap_or_else(|_| serde_json::json!({}));
-    let include_done = v
-        .get("include_done")
-        .and_then(|b| b.as_bool())
-        .unwrap_or(false);
-    let future_days = v
-        .get("future_days")
-        .and_then(|d| d.as_u64())
-        .map(|d| d as i64);
+    let v = crate::tools::parse_args_json(args_json).unwrap_or_else(|_| serde_json::json!({}));
+    let args: ListRemindersArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let include_done = args.include_done;
+    let future_days = args.future_days.map(|d| d as i64);
 
     let path = reminders_path(working_dir);
     let mut data: RemindersData = match read_json(&path) {
@@ -254,8 +256,12 @@ pub fn complete_reminder(args_json: &str, working_dir: &Path) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let id = match v.get("id").and_then(|x| x.as_str()).map(|s| s.trim()) {
-        Some(s) if !s.is_empty() => s.to_string(),
+    let args: IdOnlyArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let id = match args.id.trim() {
+        s if !s.is_empty() => s.to_string(),
         _ => return "错误：缺少 id 参数".to_string(),
     };
     let path = reminders_path(working_dir);
@@ -287,20 +293,22 @@ pub fn update_reminder(args_json: &str, working_dir: &Path) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let id = match v.get("id").and_then(|x| x.as_str()).map(|s| s.trim()) {
-        Some(s) if !s.is_empty() => s.to_string(),
+    let args: UpdateReminderArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let id = match args.id.trim() {
+        s if !s.is_empty() => s.to_string(),
         _ => return "错误：缺少 id 参数".to_string(),
     };
-    let title = v
-        .get("title")
-        .and_then(|x| x.as_str())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-    let due_at = v
-        .get("due_at")
-        .and_then(|x| x.as_str())
-        .map(|s| s.trim().to_string());
-    let done = v.get("done").and_then(|b| b.as_bool());
+    let title = args
+        .title
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let due_at = args.due_at.as_deref().map(|s| s.trim().to_string());
+    let done = args.done;
 
     if title.is_none() && due_at.is_none() && done.is_none() {
         return "错误：至少提供 title/due_at/done 中的一个用于更新".to_string();
@@ -348,8 +356,12 @@ pub fn delete_reminder(args_json: &str, working_dir: &Path) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let id = match v.get("id").and_then(|x| x.as_str()).map(|s| s.trim()) {
-        Some(s) if !s.is_empty() => s.to_string(),
+    let args: IdOnlyArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let id = match args.id.trim() {
+        s if !s.is_empty() => s.to_string(),
         _ => return "错误：缺少 id 参数".to_string(),
     };
     let path = reminders_path(working_dir);
@@ -375,36 +387,38 @@ pub fn add_event(args_json: &str, working_dir: &Path) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let title = match v.get("title").and_then(|x| x.as_str()).map(|s| s.trim()) {
-        Some(s) if !s.is_empty() => s.to_string(),
+    let args: AddEventArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let title = match args.title.trim() {
+        s if !s.is_empty() => s.to_string(),
         _ => return "错误：缺少 title 参数".to_string(),
     };
-    let start_at_raw = match v.get("start_at").and_then(|x| x.as_str()).map(|s| s.trim()) {
-        Some(s) if !s.is_empty() => s,
+    let start_at_raw = match args.start_at.trim() {
+        s if !s.is_empty() => s,
         _ => return "错误：缺少 start_at 参数".to_string(),
     };
     let start_at =
         parse_datetime_to_rfc3339(start_at_raw).unwrap_or_else(|| start_at_raw.to_string());
-    let end_at_raw = v
-        .get("end_at")
-        .and_then(|x| x.as_str())
-        .unwrap_or("")
-        .trim();
+    let end_at_raw = args.end_at.as_deref().unwrap_or("").trim();
     let end_at = if end_at_raw.is_empty() {
         None
     } else {
         Some(parse_datetime_to_rfc3339(end_at_raw).unwrap_or_else(|| end_at_raw.to_string()))
     };
-    let location = v
-        .get("location")
-        .and_then(|x| x.as_str())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-    let notes = v
-        .get("notes")
-        .and_then(|x| x.as_str())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
+    let location = args
+        .location
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let notes = args
+        .notes
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
     // 用于返回消息（title 会在构造 Event 时 move 进去）
     let title_for_return = title.clone();
 
@@ -436,17 +450,14 @@ pub fn add_event(args_json: &str, working_dir: &Path) -> String {
 }
 
 pub fn list_events(args_json: &str, working_dir: &Path) -> String {
-    let v: serde_json::Value =
-        serde_json::from_str(args_json).unwrap_or_else(|_| serde_json::json!({}));
-    let year = v.get("year").and_then(|y| y.as_i64()).map(|y| y as i32);
-    let month = v
-        .get("month")
-        .and_then(|m| m.as_u64())
-        .and_then(|m| u32::try_from(m).ok());
-    let future_days = v
-        .get("future_days")
-        .and_then(|d| d.as_u64())
-        .map(|d| d as i64);
+    let v = crate::tools::parse_args_json(args_json).unwrap_or_else(|_| serde_json::json!({}));
+    let args: ListEventsArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let year = args.year;
+    let month = args.month;
+    let future_days = args.future_days.map(|d| d as i64);
 
     let path = events_path(working_dir);
     let mut data: EventsData = match read_json(&path) {
@@ -518,8 +529,12 @@ pub fn delete_event(args_json: &str, working_dir: &Path) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let id = match v.get("id").and_then(|x| x.as_str()).map(|s| s.trim()) {
-        Some(s) if !s.is_empty() => s.to_string(),
+    let args: IdOnlyArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let id = match args.id.trim() {
+        s if !s.is_empty() => s.to_string(),
         _ => return "错误：缺少 id 参数".to_string(),
     };
     let path = events_path(working_dir);
@@ -546,29 +561,18 @@ struct EventUpdateFields {
     notes: Option<String>,
 }
 
-fn parse_event_update_fields(v: &serde_json::Value) -> EventUpdateFields {
+fn event_update_fields_from_args(args: &UpdateEventArgs) -> EventUpdateFields {
     EventUpdateFields {
-        title: v
-            .get("title")
-            .and_then(|x| x.as_str())
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty()),
-        start_at: v
-            .get("start_at")
-            .and_then(|x| x.as_str())
-            .map(|s| s.trim().to_string()),
-        end_at: v
-            .get("end_at")
-            .and_then(|x| x.as_str())
-            .map(|s| s.trim().to_string()),
-        location: v
-            .get("location")
-            .and_then(|x| x.as_str())
-            .map(|s| s.trim().to_string()),
-        notes: v
-            .get("notes")
-            .and_then(|x| x.as_str())
-            .map(|s| s.trim().to_string()),
+        title: args
+            .title
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
+        start_at: args.start_at.as_deref().map(|s| s.trim().to_string()),
+        end_at: args.end_at.as_deref().map(|s| s.trim().to_string()),
+        location: args.location.as_deref().map(|s| s.trim().to_string()),
+        notes: args.notes.as_deref().map(|s| s.trim().to_string()),
     }
 }
 
@@ -622,11 +626,15 @@ pub fn update_event(args_json: &str, working_dir: &Path) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let id = match v.get("id").and_then(|x| x.as_str()).map(|s| s.trim()) {
-        Some(s) if !s.is_empty() => s.to_string(),
+    let args: UpdateEventArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let id = match args.id.trim() {
+        s if !s.is_empty() => s.to_string(),
         _ => return "错误：缺少 id 参数".to_string(),
     };
-    let patch = parse_event_update_fields(&v);
+    let patch = event_update_fields_from_args(&args);
 
     if !event_update_fields_any_set(&patch) {
         return "错误：至少提供 title/start_at/end_at/location/notes 中的一个用于更新".to_string();
