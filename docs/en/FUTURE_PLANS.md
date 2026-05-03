@@ -23,4 +23,14 @@ This document holds **directional** product and deployment boundaries that are *
 
 ---
 
+## Audience role (side-channel critic)
+
+**Consensus**: Optionally add **tool-less** side `chat/completions` calls that emit **structured** commentary on plan / execute / reflect segments—**without replacing** deterministic checks (**`acceptance` / `step_verifier`**, etc.). Must stay bounded, redacted, and clearly scoped vs existing **`final_plan_semantic_check_*`**.
+
+**Design draft** (anchors, input hygiene, output schema, phased rollout, relationship to **`plan_rewrite`**): **`docs/design/audience_critic_role.md`**.
+
+**Tracking**: Open work is listed under **`docs/en/TODOLIST.md`** → **`agent/`** (“Audience role”); P-E-V alignment is described in **`docs/规划执行验证架构.md`** / **`docs/en/PLAN_EXECUTE_VERIFY_ARCHITECTURE.md`** §2.3.
+
+---
+
 *Maintenance: user-visible deployment and security changes still belong in `README.md` / configuration docs; this file is planning narrative, not the source of truth for flags.*

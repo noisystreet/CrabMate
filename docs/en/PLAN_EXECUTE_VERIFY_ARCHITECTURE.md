@@ -47,6 +47,7 @@ This repo already has multi-turn `agent_turn`, final plan validation/rewrite, wo
   - `expect_http_status` (for HTTP-like tools)
 - Implicit verifier facts already exist in tool envelopes (`error_code`, exit code, structured fields).
 - `final_plan_semantic_check_enabled` remains a plan-vs-summary consistency check, not a generic acceptance gate.
+- **Audience / critic role (planned)**: a broader “structured commentary on plan / execute / reflect segments” design lives in **`docs/design/audience_critic_role.md`**. If implemented, it must align with **`plan_rewrite` / staged patch counters / `per_plan_semantic_check`** to avoid duplicate side calls and silent divergence.
 
 ### 2.4 Reflect / retry (partially implemented)
 
