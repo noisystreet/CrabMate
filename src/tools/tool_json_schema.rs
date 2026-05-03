@@ -18,7 +18,8 @@ pub(crate) fn tool_parameters_schema_value<T: JsonSchema>() -> serde_json::Value
 mod tests {
     use super::*;
     use crate::tools::tool_param_types::{
-        CalcArgs, GolangciLintArgs, MarkdownCheckLinksArgs, PortCheckArgs, ProcessListArgs,
+        CalcArgs, CodeStatsArgs, CoverageReportArgs, DependencyGraphArgs, GolangciLintArgs,
+        MarkdownCheckLinksArgs, PackageQueryArgs, PortCheckArgs, ProcessListArgs, TodoScanArgs,
     };
     use serde_json::json;
 
@@ -85,5 +86,62 @@ mod tests {
         assert!(fmt.iter().any(|x| x == "text"));
         assert!(fmt.iter().any(|x| x == "json"));
         assert!(fmt.iter().any(|x| x == "sarif"));
+    }
+
+    #[test]
+    fn package_query_schema_requires_package() {
+        let v = tool_parameters_schema_value::<PackageQueryArgs>();
+        let req = v
+            .pointer("/required")
+            .and_then(|r| r.as_array())
+            .expect("required array");
+        assert!(req.iter().any(|x| x == "package"));
+        assert_eq!(
+            v.pointer("/additionalProperties"),
+            Some(&json!(false)),
+            "deny_unknown_fields"
+        );
+    }
+
+    #[test]
+    fn todo_scan_schema_has_paths_markers_exclude() {
+        let v = tool_parameters_schema_value::<TodoScanArgs>();
+        assert!(v.pointer("/properties/paths").is_some());
+        assert!(v.pointer("/properties/markers").is_some());
+        assert!(v.pointer("/properties/exclude").is_some());
+    }
+
+    #[test]
+    fn code_stats_schema_has_format_enum() {
+        let v = tool_parameters_schema_value::<CodeStatsArgs>();
+        let defs = v.get("definitions").expect("definitions");
+        let def = defs.get("CodeStatsFormat").expect("CodeStatsFormat");
+        let e = def.get("enum").and_then(|x| x.as_array()).expect("enum");
+        assert!(e.iter().any(|x| x == "table"));
+        assert!(e.iter().any(|x| x == "json"));
+    }
+
+    #[test]
+    fn dependency_graph_schema_has_depth_range() {
+        let v = tool_parameters_schema_value::<DependencyGraphArgs>();
+        let depth = v.pointer("/properties/depth").expect("depth");
+        let dumped = depth.to_string();
+        assert!(
+            dumped.contains("\"minimum\"") && dumped.contains("\"maximum\""),
+            "expected range on depth: {dumped}"
+        );
+    }
+
+    #[test]
+    fn coverage_report_schema_has_format_variants() {
+        let v = tool_parameters_schema_value::<CoverageReportArgs>();
+        let defs = v.get("definitions").expect("definitions");
+        let def = defs
+            .get("CoverageReportFormat")
+            .expect("CoverageReportFormat");
+        let e = def.get("enum").and_then(|x| x.as_array()).expect("enum");
+        assert!(e.iter().any(|x| x == "auto"));
+        assert!(e.iter().any(|x| x == "lcov"));
+        assert!(e.iter().any(|x| x == "tarpaulin_json"));
     }
 }

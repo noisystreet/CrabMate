@@ -245,3 +245,135 @@ pub struct MarkdownCheckLinksArgs {
     #[serde(default)]
     pub output_format: Option<MarkdownCheckLinksOutputFormat>,
 }
+
+/// [`super::todo_scan::run`] 入参。
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct TodoScanArgs {
+    /// 扫描路径（相对工作区，默认 `[\".\"]`）
+    pub paths: Option<Vec<String>>,
+    /// 标记列表（默认 TODO / FIXME / HACK / XXX）
+    pub markers: Option<Vec<String>>,
+    /// 排除目录名（默认 target、node_modules 等）
+    pub exclude: Option<Vec<String>>,
+}
+
+/// [`super::code_metrics::code_stats`] 的 `format`。
+#[derive(Debug, Clone, Copy, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum CodeStatsFormat {
+    #[default]
+    Table,
+    Json,
+}
+
+/// [`super::code_metrics::code_stats`] 入参。
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct CodeStatsArgs {
+    /// 统计的子路径（相对工作区，默认 `.`）
+    pub path: Option<String>,
+    #[serde(default)]
+    pub format: Option<CodeStatsFormat>,
+}
+
+/// [`super::code_metrics::dependency_graph`] 的 `format`。
+#[derive(Debug, Clone, Copy, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum DependencyGraphFormat {
+    #[default]
+    Mermaid,
+    Dot,
+    Tree,
+}
+
+/// [`super::code_metrics::dependency_graph`] 的 `kind`。
+#[derive(Debug, Clone, Copy, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum DependencyGraphKind {
+    #[default]
+    Auto,
+    Rust,
+    Cargo,
+    Go,
+    Npm,
+    Node,
+}
+
+/// [`super::code_metrics::dependency_graph`] 入参。
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct DependencyGraphArgs {
+    #[serde(default)]
+    pub format: Option<DependencyGraphFormat>,
+    /// 依赖树深度（仅 Cargo），默认 1，上限 10
+    #[serde(default)]
+    #[schemars(range(min = 0, max = 10))]
+    pub depth: Option<u32>,
+    #[serde(default)]
+    pub kind: Option<DependencyGraphKind>,
+}
+
+/// [`super::code_metrics::coverage_report`] 的 `format`。
+#[derive(Debug, Clone, Copy, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CoverageReportFormat {
+    #[default]
+    Auto,
+    Lcov,
+    Tarpaulin,
+    TarpaulinJson,
+    Cobertura,
+}
+
+/// [`super::code_metrics::coverage_report`] 入参。
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct CoverageReportArgs {
+    /// 覆盖率报告文件路径（相对工作区）；省略则自动检测
+    pub path: Option<String>,
+    #[serde(default)]
+    pub format: Option<CoverageReportFormat>,
+}
+
+/// [`super::package_query::run`] 的包管理器偏好。
+#[derive(Debug, Clone, Copy, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum PackageQueryManagerPref {
+    #[default]
+    Auto,
+    Apt,
+    Rpm,
+}
+
+/// [`super::package_query::run`] 入参。
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PackageQueryArgs {
+    pub package: String,
+    #[serde(default, deserialize_with = "deserialize_package_query_manager")]
+    pub manager: PackageQueryManagerPref,
+}
+
+fn deserialize_package_query_manager<'de, D>(
+    deserializer: D,
+) -> Result<PackageQueryManagerPref, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+    let opt = Option::<String>::deserialize(deserializer)?;
+    let raw = opt
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("auto");
+    match raw.to_ascii_lowercase().as_str() {
+        "auto" => Ok(PackageQueryManagerPref::Auto),
+        "apt" => Ok(PackageQueryManagerPref::Apt),
+        "rpm" => Ok(PackageQueryManagerPref::Rpm),
+        _ => Err(Error::custom(
+            "manager 仅支持 auto / apt / rpm（大小写不敏感；可省略）",
+        )),
+    }
+}

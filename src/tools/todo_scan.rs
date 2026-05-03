@@ -3,6 +3,8 @@
 use std::fs;
 use std::path::Path;
 
+use super::tool_param_types::TodoScanArgs;
+
 const DEFAULT_MARKERS: &[&str] = &["TODO", "FIXME", "HACK", "XXX"];
 const MAX_RESULTS: usize = 200;
 const MAX_LINE_PREVIEW: usize = 200;
@@ -12,45 +14,32 @@ pub fn run(args_json: &str, working_dir: &Path) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let markers: Vec<String> = v
-        .get("markers")
-        .and_then(|x| x.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|x| x.as_str())
-                .map(|s| s.to_uppercase())
-                .collect()
-        })
+    let args: TodoScanArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 todo_scan 形状不一致: {e}"),
+    };
+    let markers: Vec<String> = args
+        .markers
+        .as_ref()
+        .map(|arr| arr.iter().map(|s| s.to_uppercase()).collect::<Vec<_>>())
+        .filter(|m: &Vec<String>| !m.is_empty())
         .unwrap_or_else(|| DEFAULT_MARKERS.iter().map(|s| s.to_string()).collect());
 
-    let paths: Vec<String> = v
-        .get("paths")
-        .and_then(|x| x.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|x| x.as_str().map(|s| s.to_string()))
-                .collect()
-        })
-        .unwrap_or_else(|| vec![".".to_string()]);
+    let paths: Vec<String> = match args.paths {
+        None => vec![".".to_string()],
+        Some(p) => p.into_iter().filter(|s| !s.is_empty()).collect(),
+    };
 
-    let exclude: Vec<String> = v
-        .get("exclude")
-        .and_then(|x| x.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|x| x.as_str().map(|s| s.to_string()))
-                .collect()
-        })
-        .unwrap_or_else(|| {
-            vec![
-                "target".into(),
-                "node_modules".into(),
-                ".git".into(),
-                "vendor".into(),
-                "dist".into(),
-                "build".into(),
-            ]
-        });
+    let exclude: Vec<String> = args.exclude.unwrap_or_else(|| {
+        vec![
+            "target".into(),
+            "node_modules".into(),
+            ".git".into(),
+            "vendor".into(),
+            "dist".into(),
+            "build".into(),
+        ]
+    });
 
     let mut results: Vec<String> = Vec::new();
     for rel_path in &paths {

@@ -5,6 +5,10 @@ use std::path::Path;
 use std::process::Command;
 
 use super::output_util;
+use super::tool_param_types::{
+    CodeStatsArgs, CodeStatsFormat, CoverageReportArgs, CoverageReportFormat, DependencyGraphArgs,
+    DependencyGraphFormat, DependencyGraphKind,
+};
 
 const MAX_OUTPUT_LINES: usize = 600;
 const EXCLUDED_DIRS: &[&str] = &["target", "node_modules", "vendor", "dist", "build", ".git"];
@@ -16,9 +20,13 @@ pub fn code_stats(args_json: &str, workspace_root: &Path, max_output_len: usize)
         Ok(v) => v,
         Err(e) => return e,
     };
-    let path = v
-        .get("path")
-        .and_then(|x| x.as_str())
+    let args: CodeStatsArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 code_stats 形状不一致: {e}"),
+    };
+    let path = args
+        .path
+        .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .unwrap_or(".");
@@ -30,11 +38,10 @@ pub fn code_stats(args_json: &str, workspace_root: &Path, max_output_len: usize)
         return format!("错误：路径 {} 不存在", path);
     }
 
-    let format = v
-        .get("format")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .unwrap_or("table");
+    let format = match args.format.unwrap_or_default() {
+        CodeStatsFormat::Table => "table",
+        CodeStatsFormat::Json => "json",
+    };
 
     let paths = &[target.to_string_lossy().to_string()];
     let excluded: Vec<&str> = EXCLUDED_DIRS.to_vec();
@@ -123,17 +130,24 @@ pub fn dependency_graph(args_json: &str, workspace_root: &Path, max_output_len: 
         Ok(v) => v,
         Err(e) => return e,
     };
-    let format = v
-        .get("format")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .unwrap_or("mermaid");
-    let depth = v.get("depth").and_then(|x| x.as_u64()).unwrap_or(1) as usize;
-    let kind = v
-        .get("kind")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .unwrap_or("auto");
+    let args: DependencyGraphArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 dependency_graph 形状不一致: {e}"),
+    };
+    let format = match args.format.unwrap_or_default() {
+        DependencyGraphFormat::Mermaid => "mermaid",
+        DependencyGraphFormat::Dot => "dot",
+        DependencyGraphFormat::Tree => "tree",
+    };
+    let depth = args.depth.unwrap_or(1) as usize;
+    let kind = match args.kind.unwrap_or_default() {
+        DependencyGraphKind::Auto => "auto",
+        DependencyGraphKind::Rust => "rust",
+        DependencyGraphKind::Cargo => "cargo",
+        DependencyGraphKind::Go => "go",
+        DependencyGraphKind::Npm => "npm",
+        DependencyGraphKind::Node => "node",
+    };
 
     if workspace_root.join("Cargo.toml").is_file()
         && (kind == "auto" || kind == "rust" || kind == "cargo")
@@ -432,7 +446,11 @@ pub fn coverage_report(args_json: &str, workspace_root: &Path, max_output_len: u
         Ok(v) => v,
         Err(e) => return e,
     };
-    let path = match v.get("path").and_then(|x| x.as_str()).map(str::trim) {
+    let args: CoverageReportArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 coverage_report 形状不一致: {e}"),
+    };
+    let path = match args.path.as_deref().map(str::trim) {
         Some(p) if !p.is_empty() => p.to_string(),
         _ => {
             return auto_detect_coverage(workspace_root, max_output_len);
@@ -442,11 +460,13 @@ pub fn coverage_report(args_json: &str, workspace_root: &Path, max_output_len: u
         return "错误：path 不安全（禁止 .. 与绝对路径）".to_string();
     }
 
-    let format = v
-        .get("format")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .unwrap_or("auto");
+    let format = match args.format.unwrap_or_default() {
+        CoverageReportFormat::Auto => "auto",
+        CoverageReportFormat::Lcov => "lcov",
+        CoverageReportFormat::Tarpaulin => "tarpaulin",
+        CoverageReportFormat::TarpaulinJson => "tarpaulin_json",
+        CoverageReportFormat::Cobertura => "cobertura",
+    };
 
     let full = workspace_root.join(&path);
     if !full.is_file() {
