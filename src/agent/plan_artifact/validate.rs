@@ -102,6 +102,101 @@ pub(super) fn validate_agent_reply_plan_v1(p: &AgentReplyPlanV1) -> Result<(), P
     validate_agent_reply_plan_v1_with_validate_only_binding_ids(p, None)
 }
 
+fn validate_plan_step_transitions(
+    p: &AgentReplyPlanV1,
+    step_index: usize,
+    transitions: &[super::PlanStepControlFlow],
+    seen_step_ids: &HashSet<String>,
+) -> Result<(), PlanArtifactError> {
+    for t in transitions {
+        if !seen_step_ids.contains(t.target_step_id.as_str())
+            && !p.steps.iter().any(|st| st.id == t.target_step_id)
+        {
+            return Err(PlanArtifactError::InvalidStep {
+                index: step_index,
+                reason: "transitions 包含不存在的 target_step_id",
+            });
+        }
+        #[allow(clippy::collapsible_if)]
+        if let Some(max) = t.max_loops {
+            if max > 20 {
+                return Err(PlanArtifactError::InvalidStep {
+                    index: step_index,
+                    reason: "transitions 中的 max_loops 不得超过 20",
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_single_plan_step_v1(
+    p: &AgentReplyPlanV1,
+    step_index: usize,
+    s: &super::PlanStepV1,
+    seen_step_ids: &mut HashSet<String>,
+) -> Result<(), PlanArtifactError> {
+    let raw_id = s.id.as_str();
+    if raw_id != raw_id.trim() {
+        return Err(PlanArtifactError::InvalidStep {
+            index: step_index,
+            reason: "id 首尾不得含空白",
+        });
+    }
+    let id = raw_id.trim();
+    if id.is_empty() {
+        return Err(PlanArtifactError::InvalidStep {
+            index: step_index,
+            reason: "id 为空",
+        });
+    }
+    if !plan_step_id_syntax_ok(id) {
+        return Err(PlanArtifactError::InvalidStep {
+            index: step_index,
+            reason: "id 语法不合法（须 ASCII 字母数字起头，仅含 - _ . /，总长不超过 128）",
+        });
+    }
+    if !seen_step_ids.insert(id.to_string()) {
+        return Err(PlanArtifactError::InvalidStep {
+            index: step_index,
+            reason: "id 重复",
+        });
+    }
+    if s.description.trim().is_empty() {
+        return Err(PlanArtifactError::InvalidStep {
+            index: step_index,
+            reason: "description 为空",
+        });
+    }
+    if let Some(ref w) = s.workflow_node_id {
+        let raw_w = w.as_str();
+        if raw_w != raw_w.trim() {
+            return Err(PlanArtifactError::InvalidStep {
+                index: step_index,
+                reason: "workflow_node_id 首尾不得含空白",
+            });
+        }
+        let w = raw_w.trim();
+        if w.is_empty() {
+            return Err(PlanArtifactError::InvalidStep {
+                index: step_index,
+                reason: "workflow_node_id 若出现须为非空字符串（否则请省略该字段）",
+            });
+        }
+        if !plan_step_id_syntax_ok(w) {
+            return Err(PlanArtifactError::InvalidStep {
+                index: step_index,
+                reason: "workflow_node_id 语法不合法",
+            });
+        }
+    }
+
+    if let Some(ref transitions) = s.transitions {
+        validate_plan_step_transitions(p, step_index, transitions, seen_step_ids)?;
+    }
+    Ok(())
+}
+
 pub(super) fn validate_agent_reply_plan_v1_with_validate_only_binding_ids(
     p: &AgentReplyPlanV1,
     validate_only_binding_ids: Option<&[String]>,
@@ -144,82 +239,7 @@ pub(super) fn validate_agent_reply_plan_v1_with_validate_only_binding_ids(
     }
     let mut seen_step_ids = HashSet::<String>::new();
     for (i, s) in p.steps.iter().enumerate() {
-        let raw_id = s.id.as_str();
-        if raw_id != raw_id.trim() {
-            return Err(PlanArtifactError::InvalidStep {
-                index: i,
-                reason: "id 首尾不得含空白",
-            });
-        }
-        let id = raw_id.trim();
-        if id.is_empty() {
-            return Err(PlanArtifactError::InvalidStep {
-                index: i,
-                reason: "id 为空",
-            });
-        }
-        if !plan_step_id_syntax_ok(id) {
-            return Err(PlanArtifactError::InvalidStep {
-                index: i,
-                reason: "id 语法不合法（须 ASCII 字母数字起头，仅含 - _ . /，总长不超过 128）",
-            });
-        }
-        if !seen_step_ids.insert(id.to_string()) {
-            return Err(PlanArtifactError::InvalidStep {
-                index: i,
-                reason: "id 重复",
-            });
-        }
-        if s.description.trim().is_empty() {
-            return Err(PlanArtifactError::InvalidStep {
-                index: i,
-                reason: "description 为空",
-            });
-        }
-        if let Some(ref w) = s.workflow_node_id {
-            let raw_w = w.as_str();
-            if raw_w != raw_w.trim() {
-                return Err(PlanArtifactError::InvalidStep {
-                    index: i,
-                    reason: "workflow_node_id 首尾不得含空白",
-                });
-            }
-            let w = raw_w.trim();
-            if w.is_empty() {
-                return Err(PlanArtifactError::InvalidStep {
-                    index: i,
-                    reason: "workflow_node_id 若出现须为非空字符串（否则请省略该字段）",
-                });
-            }
-            if !plan_step_id_syntax_ok(w) {
-                return Err(PlanArtifactError::InvalidStep {
-                    index: i,
-                    reason: "workflow_node_id 语法不合法",
-                });
-            }
-        }
-
-        if let Some(ref transitions) = s.transitions {
-            for t in transitions {
-                if !seen_step_ids.contains(t.target_step_id.as_str())
-                    && !p.steps.iter().any(|st| st.id == t.target_step_id)
-                {
-                    return Err(PlanArtifactError::InvalidStep {
-                        index: i,
-                        reason: "transitions 包含不存在的 target_step_id",
-                    });
-                }
-                #[allow(clippy::collapsible_if)]
-                if let Some(max) = t.max_loops {
-                    if max > 20 {
-                        return Err(PlanArtifactError::InvalidStep {
-                            index: i,
-                            reason: "transitions 中的 max_loops 不得超过 20",
-                        });
-                    }
-                }
-            }
-        }
+        validate_single_plan_step_v1(p, i, s, &mut seen_step_ids)?;
     }
     Ok(())
 }

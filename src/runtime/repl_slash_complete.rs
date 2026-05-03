@@ -167,6 +167,176 @@ pub(super) fn complete_slash_no_whitespace_tail(span: Span, tail: &str) -> Vec<S
         .collect()
 }
 
+fn complete_slash_config_second(span: Span, after_ws: &str) -> Vec<Suggestion> {
+    let ap = after_ws.trim_start();
+    let ap_l = ap.to_ascii_lowercase();
+    let hits: Vec<&str> = if ap_l.is_empty() || "reload".starts_with(ap_l.as_str()) {
+        vec!["reload"]
+    } else {
+        vec![]
+    };
+    hits.into_iter()
+        .map(|a| Suggestion {
+            value: format!("/config {a}"),
+            span,
+            append_whitespace: false,
+            ..Default::default()
+        })
+        .collect()
+}
+
+fn complete_slash_mcp_second(span: Span, after_ws: &str) -> Vec<Suggestion> {
+    let ap = after_ws.trim_start();
+    let ap_l = ap.to_ascii_lowercase();
+    let hits: Vec<&str> = if ap_l.is_empty() {
+        vec!["list", "probe"]
+    } else if ap_l.starts_with("list") {
+        let rest = ap_l.strip_prefix("list").unwrap_or("").trim_start();
+        if rest.is_empty() {
+            vec!["list", "list probe"]
+        } else if "probe".starts_with(rest) {
+            vec!["list probe"]
+        } else {
+            vec![]
+        }
+    } else {
+        ["list", "probe"]
+            .iter()
+            .copied()
+            .filter(|s| s.starts_with(ap_l.as_str()))
+            .collect()
+    };
+    hits.into_iter()
+        .map(|a| Suggestion {
+            value: format!("/mcp {a}"),
+            span,
+            append_whitespace: false,
+            ..Default::default()
+        })
+        .collect()
+}
+
+fn complete_slash_models_second(span: Span, after_ws: &str) -> Vec<Suggestion> {
+    let ap = after_ws.trim_start();
+    let ap_l = ap.to_ascii_lowercase();
+    let hits: Vec<&str> = if ap_l.is_empty() {
+        vec!["list", "choose"]
+    } else {
+        ["list", "choose"]
+            .iter()
+            .copied()
+            .filter(|s| s.starts_with(ap_l.as_str()))
+            .collect()
+    };
+    hits.into_iter()
+        .map(|a| {
+            let value = if a == "choose" {
+                format!("/models {a} ")
+            } else {
+                format!("/models {a}")
+            };
+            Suggestion {
+                value,
+                span,
+                append_whitespace: false,
+                ..Default::default()
+            }
+        })
+        .collect()
+}
+
+fn complete_slash_agent_second(span: Span, after_ws: &str) -> Vec<Suggestion> {
+    let ap = after_ws.trim_start();
+    let ap_l = ap.to_ascii_lowercase();
+    let hits: Vec<&str> = if ap_l.is_empty() {
+        vec!["list", "set"]
+    } else {
+        ["list", "set"]
+            .iter()
+            .copied()
+            .filter(|s| s.starts_with(ap_l.as_str()))
+            .collect()
+    };
+    hits.into_iter()
+        .map(|a| {
+            let value = if a == "set" {
+                format!("/agent {a} ")
+            } else {
+                format!("/agent {a}")
+            };
+            Suggestion {
+                value,
+                span,
+                append_whitespace: false,
+                ..Default::default()
+            }
+        })
+        .collect()
+}
+
+fn complete_slash_model_second(span: Span, after_ws: &str) -> Vec<Suggestion> {
+    let ap = after_ws.trim_start();
+    let ap_l = ap.to_ascii_lowercase();
+    let hits: Vec<&str> = if ap_l.is_empty() {
+        vec!["set"]
+    } else {
+        ["set"]
+            .iter()
+            .copied()
+            .filter(|s| s.starts_with(ap_l.as_str()))
+            .collect()
+    };
+    hits.into_iter()
+        .map(|a| {
+            let value = if a == "set" {
+                format!("/model {a} ")
+            } else {
+                format!("/model {a}")
+            };
+            Suggestion {
+                value,
+                span,
+                append_whitespace: false,
+                ..Default::default()
+            }
+        })
+        .collect()
+}
+
+fn complete_slash_api_base_second(span: Span, cmd: &str, after_ws: &str) -> Vec<Suggestion> {
+    let slash = if cmd.eq_ignore_ascii_case("apibase") {
+        "/apibase"
+    } else {
+        "/api-base"
+    };
+    let ap = after_ws.trim_start();
+    let ap_l = ap.to_ascii_lowercase();
+    let hits: Vec<&str> = if ap_l.is_empty() {
+        vec!["set"]
+    } else {
+        ["set"]
+            .iter()
+            .copied()
+            .filter(|s| s.starts_with(ap_l.as_str()))
+            .collect()
+    };
+    hits.into_iter()
+        .map(|a| {
+            let value = if a == "set" {
+                format!("{slash} {a} ")
+            } else {
+                format!("{slash} {a}")
+            };
+            Suggestion {
+                value,
+                span,
+                append_whitespace: false,
+                ..Default::default()
+            }
+        })
+        .collect()
+}
+
 /// `cmd` = 第一个 token（已 trim），`after_ws` = 其后的原文（可含前导空白）。
 pub(super) fn complete_slash_after_whitespace(
     span: Span,
@@ -174,174 +344,22 @@ pub(super) fn complete_slash_after_whitespace(
     after_ws: &str,
 ) -> Vec<Suggestion> {
     if cmd.eq_ignore_ascii_case("config") {
-        let ap = after_ws.trim_start();
-        let ap_l = ap.to_ascii_lowercase();
-        let hits: Vec<&str> = if ap_l.is_empty() || "reload".starts_with(ap_l.as_str()) {
-            vec!["reload"]
-        } else {
-            vec![]
-        };
-        return hits
-            .into_iter()
-            .map(|a| Suggestion {
-                value: format!("/config {a}"),
-                span,
-                append_whitespace: false,
-                ..Default::default()
-            })
-            .collect();
+        return complete_slash_config_second(span, after_ws);
     }
     if cmd.eq_ignore_ascii_case("mcp") {
-        let ap = after_ws.trim_start();
-        let ap_l = ap.to_ascii_lowercase();
-        let hits: Vec<&str> = if ap_l.is_empty() {
-            vec!["list", "probe"]
-        } else if ap_l.starts_with("list") {
-            let rest = ap_l.strip_prefix("list").unwrap_or("").trim_start();
-            if rest.is_empty() {
-                vec!["list", "list probe"]
-            } else if "probe".starts_with(rest) {
-                vec!["list probe"]
-            } else {
-                vec![]
-            }
-        } else {
-            ["list", "probe"]
-                .iter()
-                .copied()
-                .filter(|s| s.starts_with(ap_l.as_str()))
-                .collect()
-        };
-        return hits
-            .into_iter()
-            .map(|a| Suggestion {
-                value: format!("/mcp {a}"),
-                span,
-                append_whitespace: false,
-                ..Default::default()
-            })
-            .collect();
+        return complete_slash_mcp_second(span, after_ws);
     }
     if cmd.eq_ignore_ascii_case("models") {
-        let ap = after_ws.trim_start();
-        let ap_l = ap.to_ascii_lowercase();
-        let hits: Vec<&str> = if ap_l.is_empty() {
-            vec!["list", "choose"]
-        } else {
-            ["list", "choose"]
-                .iter()
-                .copied()
-                .filter(|s| s.starts_with(ap_l.as_str()))
-                .collect()
-        };
-        return hits
-            .into_iter()
-            .map(|a| {
-                let value = if a == "choose" {
-                    format!("/models {a} ")
-                } else {
-                    format!("/models {a}")
-                };
-                Suggestion {
-                    value,
-                    span,
-                    append_whitespace: false,
-                    ..Default::default()
-                }
-            })
-            .collect();
+        return complete_slash_models_second(span, after_ws);
     }
     if cmd.eq_ignore_ascii_case("agent") {
-        let ap = after_ws.trim_start();
-        let ap_l = ap.to_ascii_lowercase();
-        let hits: Vec<&str> = if ap_l.is_empty() {
-            vec!["list", "set"]
-        } else {
-            ["list", "set"]
-                .iter()
-                .copied()
-                .filter(|s| s.starts_with(ap_l.as_str()))
-                .collect()
-        };
-        return hits
-            .into_iter()
-            .map(|a| {
-                let value = if a == "set" {
-                    format!("/agent {a} ")
-                } else {
-                    format!("/agent {a}")
-                };
-                Suggestion {
-                    value,
-                    span,
-                    append_whitespace: false,
-                    ..Default::default()
-                }
-            })
-            .collect();
+        return complete_slash_agent_second(span, after_ws);
     }
     if cmd.eq_ignore_ascii_case("model") {
-        let ap = after_ws.trim_start();
-        let ap_l = ap.to_ascii_lowercase();
-        let hits: Vec<&str> = if ap_l.is_empty() {
-            vec!["set"]
-        } else {
-            ["set"]
-                .iter()
-                .copied()
-                .filter(|s| s.starts_with(ap_l.as_str()))
-                .collect()
-        };
-        return hits
-            .into_iter()
-            .map(|a| {
-                let value = if a == "set" {
-                    format!("/model {a} ")
-                } else {
-                    format!("/model {a}")
-                };
-                Suggestion {
-                    value,
-                    span,
-                    append_whitespace: false,
-                    ..Default::default()
-                }
-            })
-            .collect();
+        return complete_slash_model_second(span, after_ws);
     }
     if cmd.eq_ignore_ascii_case("api-base") || cmd.eq_ignore_ascii_case("apibase") {
-        let slash = if cmd.eq_ignore_ascii_case("apibase") {
-            "/apibase"
-        } else {
-            "/api-base"
-        };
-        let ap = after_ws.trim_start();
-        let ap_l = ap.to_ascii_lowercase();
-        let hits: Vec<&str> = if ap_l.is_empty() {
-            vec!["set"]
-        } else {
-            ["set"]
-                .iter()
-                .copied()
-                .filter(|s| s.starts_with(ap_l.as_str()))
-                .collect()
-        };
-        return hits
-            .into_iter()
-            .map(|a| {
-                let value = if a == "set" {
-                    format!("{slash} {a} ")
-                } else {
-                    format!("{slash} {a}")
-                };
-                Suggestion {
-                    value,
-                    span,
-                    append_whitespace: false,
-                    ..Default::default()
-                }
-            })
-            .collect();
+        return complete_slash_api_base_second(span, cmd, after_ws);
     }
     let prefix = if cmd.eq_ignore_ascii_case("export") {
         "/export"
