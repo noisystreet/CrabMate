@@ -1,6 +1,7 @@
 use super::cargo_tools;
 use super::frontend_tools;
 use super::python_tools;
+use super::tool_param_types::RunLintsArgs;
 use std::path::Path;
 
 /// 运行 cargo clippy、（可选）frontend 的 npm lint、（可选）`ruff check`，将结果聚合为一段文本。
@@ -18,23 +19,15 @@ pub fn run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> Str
         Ok(v) => v,
         Err(e) => return e,
     };
-    let run_cargo = v.get("run_cargo").and_then(|b| b.as_bool()).unwrap_or(true);
-    let run_cargo_check = v
-        .get("run_cargo_check")
-        .and_then(|b| b.as_bool())
-        .unwrap_or(true);
-    let run_frontend = v
-        .get("run_frontend")
-        .and_then(|b| b.as_bool())
-        .unwrap_or(true);
-    let run_frontend_build = v
-        .get("run_frontend_build")
-        .and_then(|b| b.as_bool())
-        .unwrap_or(false);
-    let run_python_ruff = v
-        .get("run_python_ruff")
-        .and_then(|b| b.as_bool())
-        .unwrap_or(true);
+    let args: RunLintsArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 run_lints 形状不一致: {e}"),
+    };
+    let run_cargo = args.run_cargo;
+    let run_cargo_check = args.run_cargo_check;
+    let run_frontend = args.run_frontend;
+    let run_frontend_build = args.run_frontend_build;
+    let run_python_ruff = args.run_python_ruff;
 
     let mut sections = Vec::new();
 

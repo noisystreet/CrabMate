@@ -19,16 +19,21 @@ use std::process::{Command, Stdio};
 
 use super::output_util;
 use super::python_tools;
+use super::tool_param_types::FormatOnePathArgs;
 
 pub fn run(args_json: &str, workspace_root: &Path) -> String {
     let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let path = match v.get("path").and_then(|p| p.as_str()) {
-        Some(s) if !s.trim().is_empty() => s.trim(),
-        _ => return "错误：缺少 path 参数".to_string(),
+    let FormatOnePathArgs { path } = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 format_file 形状不一致: {e}"),
     };
+    let path = path.trim();
+    if path.is_empty() {
+        return "错误：缺少 path 参数".to_string();
+    }
 
     let target = match resolve_target(workspace_root, path) {
         Ok(p) => p,
@@ -64,10 +69,14 @@ pub fn run_check(args_json: &str, workspace_root: &Path) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let path = match v.get("path").and_then(|p| p.as_str()) {
-        Some(s) if !s.trim().is_empty() => s.trim(),
-        _ => return "错误：缺少 path 参数".to_string(),
+    let FormatOnePathArgs { path } = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 format_check_file 形状不一致: {e}"),
     };
+    let path = path.trim();
+    if path.is_empty() {
+        return "错误：缺少 path 参数".to_string();
+    }
 
     let target = match resolve_target(workspace_root, path) {
         Ok(p) => p,

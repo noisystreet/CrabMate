@@ -18,8 +18,10 @@ pub(crate) fn tool_parameters_schema_value<T: JsonSchema>() -> serde_json::Value
 mod tests {
     use super::*;
     use crate::tools::tool_param_types::{
-        CalcArgs, CodeStatsArgs, CoverageReportArgs, DependencyGraphArgs, GolangciLintArgs,
-        MarkdownCheckLinksArgs, PackageQueryArgs, PortCheckArgs, ProcessListArgs, TodoScanArgs,
+        CalcArgs, CodeStatsArgs, CoverageReportArgs, DependencyGraphArgs, FormatOnePathArgs,
+        GoBuildArgs, GolangciLintArgs, MarkdownCheckLinksArgs, NpmRunArgs, PackageQueryArgs,
+        PortCheckArgs, ProcessListArgs, QualityWorkspaceArgs, RunLintsArgs, ShellcheckCheckArgs,
+        TodoScanArgs,
     };
     use serde_json::json;
 
@@ -143,5 +145,56 @@ mod tests {
         assert!(e.iter().any(|x| x == "auto"));
         assert!(e.iter().any(|x| x == "lcov"));
         assert!(e.iter().any(|x| x == "tarpaulin_json"));
+    }
+
+    #[test]
+    fn npm_run_schema_requires_script() {
+        let v = tool_parameters_schema_value::<NpmRunArgs>();
+        let req = v
+            .pointer("/required")
+            .and_then(|r| r.as_array())
+            .expect("required");
+        assert!(req.iter().any(|x| x == "script"));
+    }
+
+    #[test]
+    fn go_build_schema_has_race_verbose_tags() {
+        let v = tool_parameters_schema_value::<GoBuildArgs>();
+        assert!(v.pointer("/properties/race").is_some());
+        assert!(v.pointer("/properties/verbose").is_some());
+        assert!(v.pointer("/properties/tags").is_some());
+    }
+
+    #[test]
+    fn shellcheck_schema_denies_unknown() {
+        let v = tool_parameters_schema_value::<ShellcheckCheckArgs>();
+        assert_eq!(
+            v.pointer("/additionalProperties"),
+            Some(&json!(false)),
+            "{v}"
+        );
+    }
+
+    #[test]
+    fn format_file_schema_requires_path() {
+        let v = tool_parameters_schema_value::<FormatOnePathArgs>();
+        let req = v
+            .pointer("/required")
+            .and_then(|r| r.as_array())
+            .expect("req");
+        assert!(req.iter().any(|x| x == "path"));
+    }
+
+    #[test]
+    fn run_lints_schema_has_run_cargo_defaults() {
+        let v = tool_parameters_schema_value::<RunLintsArgs>();
+        assert!(v.pointer("/properties/run_cargo").is_some());
+    }
+
+    #[test]
+    fn quality_workspace_schema_has_many_flags() {
+        let v = tool_parameters_schema_value::<QualityWorkspaceArgs>();
+        assert!(v.pointer("/properties/run_cargo_fmt_check").is_some());
+        assert!(v.pointer("/properties/run_podman_images").is_some());
     }
 }

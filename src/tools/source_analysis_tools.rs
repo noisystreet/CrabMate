@@ -7,6 +7,12 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use super::output_util;
+use super::tool_param_types::{
+    BanditConfidenceArg, BanditOutputFormat, BanditScanArgs, BanditSeverityArg,
+    CppcheckAnalyzeArgs, CppcheckPlatform, HadolintCheckArgs, HadolintOutputFormat,
+    LizardComplexityArgs, LizardSortKind, SemgrepScanArgs, ShellcheckCheckArgs,
+    ShellcheckOutputFormat, ShellcheckSeverity, ShellcheckShellDialect,
+};
 
 const MAX_OUTPUT_LINES: usize = 800;
 const MAX_PATHS: usize = 24;
@@ -15,19 +21,20 @@ fn is_safe_rel_path(s: &str) -> bool {
     !s.is_empty() && !s.starts_with('/') && !s.contains("..")
 }
 
-fn parse_rel_paths(
-    v: &serde_json::Value,
+fn parse_rel_paths_from_slice(
+    paths: &[String],
     key: &str,
     default: &[&str],
     max: usize,
 ) -> Result<Vec<String>, String> {
-    let arr = match v.get(key) {
-        Some(serde_json::Value::Array(a)) if !a.is_empty() => a
+    let arr = if paths.is_empty() {
+        default.iter().map(|s| (*s).to_string()).collect()
+    } else {
+        paths
             .iter()
-            .filter_map(|x| x.as_str().map(str::trim).filter(|s| !s.is_empty()))
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>(),
-        _ => default.iter().map(|s| (*s).to_string()).collect(),
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
     };
     if arr.len() > max {
         return Err(format!("错误：{key} 最多 {max} 项"));
@@ -69,13 +76,6 @@ fn run_and_format(mut cmd: Command, max_output_len: usize, title: &str) -> Strin
     )
 }
 
-fn opt_str<'a>(v: &'a serde_json::Value, key: &str) -> Option<&'a str> {
-    v.get(key)
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-}
-
 // ── ShellCheck ──────────────────────────────────────────────
 
 pub fn shellcheck_check(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
@@ -83,11 +83,15 @@ pub fn shellcheck_check(args_json: &str, workspace_root: &Path, max_output_len: 
         Ok(v) => v,
         Err(e) => return e,
     };
+    let args: ShellcheckCheckArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 shellcheck_check 形状不一致: {e}"),
+    };
     let base = match workspace_root.canonicalize() {
         Ok(p) => p,
         Err(e) => return format!("工作区根目录无法解析: {e}"),
     };
-    let paths = match parse_rel_paths(&v, "paths", &["."], MAX_PATHS) {
+    let paths = match parse_rel_paths_from_slice(&args.paths, "paths", &["."], MAX_PATHS) {
         Ok(p) => p,
         Err(e) => return e,
     };
@@ -96,33 +100,34 @@ pub fn shellcheck_check(args_json: &str, workspace_root: &Path, max_output_len: 
     let mut cmd = Command::new("shellcheck");
     cmd.arg("--color=never").current_dir(&base);
 
-    if let Some(sev) = opt_str(&v, "severity") {
-        match sev {
-            "error" | "warning" | "info" | "style" => {
-                cmd.arg("--severity").arg(sev);
-            }
-            _ => return format!("错误：severity 须为 error/warning/info/style，收到 {sev}"),
-        }
+    if let Some(sev) = args.severity {
+        let s = match sev {
+            ShellcheckSeverity::Error => "error",
+            ShellcheckSeverity::Warning => "warning",
+            ShellcheckSeverity::Info => "info",
+            ShellcheckSeverity::Style => "style",
+        };
+        cmd.arg("--severity").arg(s);
     }
-    if let Some(sh) = opt_str(&v, "shell") {
-        match sh {
-            "sh" | "bash" | "dash" | "ksh" => {
-                cmd.arg("--shell").arg(sh);
-            }
-            _ => return format!("错误：shell 须为 sh/bash/dash/ksh，收到 {sh}"),
-        }
+    if let Some(sh) = args.shell {
+        let s = match sh {
+            ShellcheckShellDialect::Sh => "sh",
+            ShellcheckShellDialect::Bash => "bash",
+            ShellcheckShellDialect::Dash => "dash",
+            ShellcheckShellDialect::Ksh => "ksh",
+        };
+        cmd.arg("--shell").arg(s);
     }
-    if let Some(fmt) = opt_str(&v, "format") {
-        match fmt {
-            "tty" | "gcc" | "json1" | "checkstyle" | "diff" | "quiet" => {
-                cmd.arg("--format").arg(fmt);
-            }
-            _ => {
-                return format!(
-                    "错误：format 须为 tty/gcc/json1/checkstyle/diff/quiet，收到 {fmt}"
-                );
-            }
-        }
+    if let Some(fmt) = args.format {
+        let s = match fmt {
+            ShellcheckOutputFormat::Tty => "tty",
+            ShellcheckOutputFormat::Gcc => "gcc",
+            ShellcheckOutputFormat::Json1 => "json1",
+            ShellcheckOutputFormat::Checkstyle => "checkstyle",
+            ShellcheckOutputFormat::Diff => "diff",
+            ShellcheckOutputFormat::Quiet => "quiet",
+        };
+        cmd.arg("--format").arg(s);
     }
 
     let mut found_scripts = Vec::new();
@@ -218,11 +223,15 @@ pub fn cppcheck_analyze(args_json: &str, workspace_root: &Path, max_output_len: 
         Ok(v) => v,
         Err(e) => return e,
     };
+    let args: CppcheckAnalyzeArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 cppcheck_analyze 形状不一致: {e}"),
+    };
     let base = match workspace_root.canonicalize() {
         Ok(p) => p,
         Err(e) => return format!("工作区根目录无法解析: {e}"),
     };
-    let paths = match parse_rel_paths(&v, "paths", &["src"], MAX_PATHS) {
+    let paths = match parse_rel_paths_from_slice(&args.paths, "paths", &["src"], MAX_PATHS) {
         Ok(p) => p,
         Err(e) => return e,
     };
@@ -231,7 +240,12 @@ pub fn cppcheck_analyze(args_json: &str, workspace_root: &Path, max_output_len: 
     let mut cmd = Command::new("cppcheck");
     cmd.current_dir(&base);
 
-    let enable = opt_str(&v, "enable").unwrap_or("all");
+    let enable = args
+        .enable
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("all");
     match enable {
         "all" | "style" | "performance" | "portability" | "information" | "warning"
         | "unusedFunction" | "missingInclude" => {
@@ -244,7 +258,7 @@ pub fn cppcheck_analyze(args_json: &str, workspace_root: &Path, max_output_len: 
         }
     }
 
-    if let Some(std_val) = opt_str(&v, "std") {
+    if let Some(std_val) = args.std.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
         if std_val.len() > 20
             || std_val
                 .chars()
@@ -255,17 +269,16 @@ pub fn cppcheck_analyze(args_json: &str, workspace_root: &Path, max_output_len: 
         cmd.arg(format!("--std={std_val}"));
     }
 
-    if let Some(platform) = opt_str(&v, "platform") {
-        match platform {
-            "unix32" | "unix64" | "win32A" | "win32W" | "win64" | "native" => {
-                cmd.arg(format!("--platform={platform}"));
-            }
-            _ => {
-                return format!(
-                    "错误：platform 须为 unix32/unix64/win32A/win32W/win64/native，收到 {platform}"
-                );
-            }
-        }
+    if let Some(platform) = args.platform {
+        let s = match platform {
+            CppcheckPlatform::Unix32 => "unix32",
+            CppcheckPlatform::Unix64 => "unix64",
+            CppcheckPlatform::Win32a => "win32A",
+            CppcheckPlatform::Win32w => "win32W",
+            CppcheckPlatform::Win64 => "win64",
+            CppcheckPlatform::Native => "native",
+        };
+        cmd.arg(format!("--platform={s}"));
     }
 
     cmd.arg("--quiet");
@@ -283,11 +296,15 @@ pub fn semgrep_scan(args_json: &str, workspace_root: &Path, max_output_len: usiz
         Ok(v) => v,
         Err(e) => return e,
     };
+    let args: SemgrepScanArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 semgrep_scan 形状不一致: {e}"),
+    };
     let base = match workspace_root.canonicalize() {
         Ok(p) => p,
         Err(e) => return format!("工作区根目录无法解析: {e}"),
     };
-    let paths = match parse_rel_paths(&v, "paths", &["."], MAX_PATHS) {
+    let paths = match parse_rel_paths_from_slice(&args.paths, "paths", &["."], MAX_PATHS) {
         Ok(p) => p,
         Err(e) => return e,
     };
@@ -296,13 +313,23 @@ pub fn semgrep_scan(args_json: &str, workspace_root: &Path, max_output_len: usiz
     let mut cmd = Command::new("semgrep");
     cmd.arg("scan").arg("--no-git-ignore").current_dir(&base);
 
-    let config = opt_str(&v, "config").unwrap_or("auto");
+    let config = args
+        .config
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("auto");
     if config.len() > 256 || config.contains("..") || config.contains('\n') {
         return "错误：config 值过长或含非法字符".to_string();
     }
     cmd.arg("--config").arg(config);
 
-    if let Some(sev) = opt_str(&v, "severity") {
+    if let Some(sev) = args
+        .severity
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         for s in sev.split(',') {
             let s = s.trim().to_uppercase();
             match s.as_str() {
@@ -318,7 +345,12 @@ pub fn semgrep_scan(args_json: &str, workspace_root: &Path, max_output_len: usiz
         }
     }
 
-    if let Some(lang) = opt_str(&v, "lang") {
+    if let Some(lang) = args
+        .lang
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         if lang.len() > 40
             || lang
                 .chars()
@@ -329,7 +361,7 @@ pub fn semgrep_scan(args_json: &str, workspace_root: &Path, max_output_len: usiz
         cmd.arg("--lang").arg(lang);
     }
 
-    if v.get("json").and_then(|x| x.as_bool()).unwrap_or(false) {
+    if args.json {
         cmd.arg("--json");
     }
 
@@ -346,11 +378,20 @@ pub fn hadolint_check(args_json: &str, workspace_root: &Path, max_output_len: us
         Ok(v) => v,
         Err(e) => return e,
     };
+    let args: HadolintCheckArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 hadolint_check 形状不一致: {e}"),
+    };
     let base = match workspace_root.canonicalize() {
         Ok(p) => p,
         Err(e) => return format!("工作区根目录无法解析: {e}"),
     };
-    let path_raw = opt_str(&v, "path").unwrap_or("Dockerfile");
+    let path_raw = args
+        .path
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Dockerfile");
     if !is_safe_rel_path(path_raw) {
         return format!("错误：path 须为相对路径且不含 ..：{path_raw}");
     }
@@ -362,38 +403,35 @@ pub fn hadolint_check(args_json: &str, workspace_root: &Path, max_output_len: us
     let mut cmd = Command::new("hadolint");
     cmd.current_dir(&base);
 
-    if let Some(fmt) = opt_str(&v, "format") {
-        match fmt {
-            "tty" | "json" | "checkstyle" | "codeclimate" | "gitlab_codeclimate" | "gnu"
-            | "codacy" | "sonarqube" | "sarif" => {
-                cmd.arg("--format").arg(fmt);
-            }
-            _ => {
-                return format!(
-                    "错误：format 须为 tty/json/checkstyle/codeclimate/gnu/codacy/sonarqube/sarif，收到 {fmt}"
-                );
-            }
-        }
+    if let Some(fmt) = args.format {
+        let s = match fmt {
+            HadolintOutputFormat::Tty => "tty",
+            HadolintOutputFormat::Json => "json",
+            HadolintOutputFormat::Checkstyle => "checkstyle",
+            HadolintOutputFormat::Codeclimate => "codeclimate",
+            HadolintOutputFormat::GitlabCodeclimate => "gitlab_codeclimate",
+            HadolintOutputFormat::Gnu => "gnu",
+            HadolintOutputFormat::Codacy => "codacy",
+            HadolintOutputFormat::Sonarqube => "sonarqube",
+            HadolintOutputFormat::Sarif => "sarif",
+        };
+        cmd.arg("--format").arg(s);
     }
 
-    if let Some(ignore) = v.get("ignore").and_then(|x| x.as_array()) {
-        for rule in ignore.iter().filter_map(|x| x.as_str()) {
-            let rule = rule.trim();
-            if rule.is_empty() || rule.len() > 20 {
-                continue;
-            }
-            cmd.arg("--ignore").arg(rule);
+    for rule in &args.ignore {
+        let rule = rule.trim();
+        if rule.is_empty() || rule.len() > 20 {
+            continue;
         }
+        cmd.arg("--ignore").arg(rule);
     }
 
-    if let Some(registries) = v.get("trusted_registries").and_then(|x| x.as_array()) {
-        for reg in registries.iter().filter_map(|x| x.as_str()) {
-            let reg = reg.trim();
-            if reg.is_empty() || reg.len() > 200 || reg.contains("..") {
-                continue;
-            }
-            cmd.arg("--trusted-registry").arg(reg);
+    for reg in &args.trusted_registries {
+        let reg = reg.trim();
+        if reg.is_empty() || reg.len() > 200 || reg.contains("..") {
+            continue;
         }
+        cmd.arg("--trusted-registry").arg(reg);
     }
 
     cmd.arg(path_raw);
@@ -407,11 +445,15 @@ pub fn bandit_scan(args_json: &str, workspace_root: &Path, max_output_len: usize
         Ok(v) => v,
         Err(e) => return e,
     };
+    let args: BanditScanArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 bandit_scan 形状不一致: {e}"),
+    };
     let base = match workspace_root.canonicalize() {
         Ok(p) => p,
         Err(e) => return format!("工作区根目录无法解析: {e}"),
     };
-    let paths = match parse_rel_paths(&v, "paths", &["."], MAX_PATHS) {
+    let paths = match parse_rel_paths_from_slice(&args.paths, "paths", &["."], MAX_PATHS) {
         Ok(p) => p,
         Err(e) => return e,
     };
@@ -420,54 +462,58 @@ pub fn bandit_scan(args_json: &str, workspace_root: &Path, max_output_len: usize
     let mut cmd = Command::new("bandit");
     cmd.arg("-r").current_dir(&base);
 
-    if let Some(sev) = opt_str(&v, "severity") {
-        match sev.to_lowercase().as_str() {
-            "low" | "l" => {
+    if let Some(sev) = args.severity {
+        match sev {
+            BanditSeverityArg::Low => {
                 cmd.arg("-ll");
             }
-            "medium" | "m" => {
+            BanditSeverityArg::Medium => {
                 cmd.arg("-ll");
             }
-            "high" | "h" => {
+            BanditSeverityArg::High => {
                 cmd.arg("-lll");
             }
-            _ => return format!("错误：severity 须为 low/medium/high，收到 {sev}"),
         }
     }
 
-    if let Some(conf) = opt_str(&v, "confidence") {
-        match conf.to_lowercase().as_str() {
-            "low" | "l" => {
+    if let Some(conf) = args.confidence {
+        match conf {
+            BanditConfidenceArg::Low => {
                 cmd.arg("-i");
             }
-            "medium" | "m" => {
+            BanditConfidenceArg::Medium => {
                 cmd.arg("-ii");
             }
-            "high" | "h" => {
+            BanditConfidenceArg::High => {
                 cmd.arg("-iii");
             }
-            _ => return format!("错误：confidence 须为 low/medium/high，收到 {conf}"),
         }
     }
 
-    if let Some(skip) = opt_str(&v, "skip") {
+    if let Some(skip) = args
+        .skip
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         if skip.len() > 512 || skip.contains('\n') || skip.contains("..") {
             return "错误：skip 值过长或含非法字符".to_string();
         }
         cmd.arg("--skip").arg(skip);
     }
 
-    if let Some(fmt) = opt_str(&v, "format") {
-        match fmt {
-            "txt" | "json" | "csv" | "xml" | "html" | "yaml" | "screen" | "custom" => {
-                cmd.arg("-f").arg(fmt);
-            }
-            _ => {
-                return format!(
-                    "错误：format 须为 txt/json/csv/xml/html/yaml/screen/custom，收到 {fmt}"
-                );
-            }
-        }
+    if let Some(fmt) = args.format {
+        let s = match fmt {
+            BanditOutputFormat::Txt => "txt",
+            BanditOutputFormat::Json => "json",
+            BanditOutputFormat::Csv => "csv",
+            BanditOutputFormat::Xml => "xml",
+            BanditOutputFormat::Html => "html",
+            BanditOutputFormat::Yaml => "yaml",
+            BanditOutputFormat::Screen => "screen",
+            BanditOutputFormat::Custom => "custom",
+        };
+        cmd.arg("-f").arg(s);
     }
 
     for p in &paths {
@@ -480,55 +526,48 @@ pub fn bandit_scan(args_json: &str, workspace_root: &Path, max_output_len: usize
 
 fn push_lizard_cli_args(
     cmd: &mut Command,
-    v: &serde_json::Value,
+    args: &LizardComplexityArgs,
     paths: &[String],
 ) -> Result<(), String> {
-    if let Some(threshold) = v.get("threshold").and_then(|x| x.as_u64())
+    if let Some(threshold) = args.threshold
         && threshold > 0
         && threshold <= 200
     {
         cmd.arg("-C").arg(threshold.to_string());
     }
 
-    if let Some(lang) = opt_str(v, "language") {
+    if let Some(lang) = args
+        .language
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         if lang.len() > 40 || lang.chars().any(|c| !c.is_alphanumeric() && c != ',') {
             return Err(format!("错误：language 值非法：{lang}"));
         }
         cmd.arg("-l").arg(lang);
     }
 
-    if let Some(sort) = opt_str(v, "sort") {
-        match sort {
-            "cyclomatic_complexity" | "length" | "token_count" | "parameter_count" | "nloc" => {
-                cmd.arg("--sort").arg(sort);
-            }
-            _ => {
-                return Err(format!(
-                    "错误：sort 须为 cyclomatic_complexity/length/token_count/parameter_count/nloc，收到 {sort}"
-                ));
-            }
-        }
+    if let Some(sort) = args.sort {
+        let s = match sort {
+            LizardSortKind::CyclomaticComplexity => "cyclomatic_complexity",
+            LizardSortKind::Length => "length",
+            LizardSortKind::TokenCount => "token_count",
+            LizardSortKind::ParameterCount => "parameter_count",
+            LizardSortKind::Nloc => "nloc",
+        };
+        cmd.arg("--sort").arg(s);
     }
 
-    if v.get("warnings_only")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false)
-    {
+    if args.warnings_only {
         cmd.arg("-w");
     }
 
-    let exclude = v
-        .get("exclude")
-        .and_then(|x| x.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|x| x.as_str())
-                .map(str::trim)
-                .filter(|s| !s.is_empty() && s.len() <= 160 && !s.contains(".."))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    for ex in &exclude {
+    for ex in &args.exclude {
+        let ex = ex.trim();
+        if ex.is_empty() || ex.len() > 160 || ex.contains("..") {
+            continue;
+        }
         cmd.arg("-x").arg(format!("*/{ex}/*"));
     }
 
@@ -543,11 +582,15 @@ pub fn lizard_complexity(args_json: &str, workspace_root: &Path, max_output_len:
         Ok(v) => v,
         Err(e) => return e,
     };
+    let args: LizardComplexityArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 lizard_complexity 形状不一致: {e}"),
+    };
     let base = match workspace_root.canonicalize() {
         Ok(p) => p,
         Err(e) => return format!("工作区根目录无法解析: {e}"),
     };
-    let paths = match parse_rel_paths(&v, "paths", &["."], MAX_PATHS) {
+    let paths = match parse_rel_paths_from_slice(&args.paths, "paths", &["."], MAX_PATHS) {
         Ok(p) => p,
         Err(e) => return e,
     };
@@ -558,7 +601,7 @@ pub fn lizard_complexity(args_json: &str, workspace_root: &Path, max_output_len:
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    if let Err(msg) = push_lizard_cli_args(&mut cmd, &v, &paths) {
+    if let Err(msg) = push_lizard_cli_args(&mut cmd, &args, &paths) {
         return msg;
     }
 
@@ -573,7 +616,7 @@ pub fn lizard_complexity(args_json: &str, workspace_root: &Path, max_output_len:
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
-            if let Err(msg) = push_lizard_cli_args(&mut cmd_py, &v, &paths) {
+            if let Err(msg) = push_lizard_cli_args(&mut cmd_py, &args, &paths) {
                 return msg;
             }
             match cmd_py.output() {
@@ -659,7 +702,10 @@ mod tests {
     #[test]
     fn shellcheck_invalid_severity() {
         let out = shellcheck_check(r#"{"severity":"evil"}"#, Path::new("."), 4096);
-        assert!(out.contains("错误"), "{out}");
+        assert!(
+            out.contains("形状不一致") || out.contains("shellcheck"),
+            "{out}"
+        );
     }
 
     #[test]

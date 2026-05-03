@@ -9,6 +9,7 @@ use super::test_result_cache::{
     TestCacheKey, TestCacheKind, fingerprint_npm_package_dir, npm_test_args_fingerprint,
     store_cached, try_get_cached, wrap_cache_hit,
 };
+use super::tool_param_types::{NpmInstallArgs, NpmRunArgs, NpxRunArgs, TscCheckArgs};
 
 const MAX_OUTPUT_LINES: usize = 800;
 
@@ -17,12 +18,18 @@ pub fn npm_install(args_json: &str, workspace_root: &Path, max_output_len: usize
         Ok(v) => v,
         Err(e) => return e,
     };
-    let subdir = safe_subdir(&v);
-    let ci = v.get("ci").and_then(|x| x.as_bool()).unwrap_or(false);
-    let production = v
-        .get("production")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
+    let args: NpmInstallArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 npm_install 形状不一致: {e}"),
+    };
+    let subdir = args
+        .subdir
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(".");
+    let ci = args.ci;
+    let production = args.production;
 
     if let Some(e) = check_subdir(subdir) {
         return e;
@@ -56,11 +63,20 @@ pub fn npm_run(
         Ok(v) => v,
         Err(e) => return e,
     };
-    let subdir = safe_subdir(&v);
-    let script = match v.get("script").and_then(|x| x.as_str()).map(str::trim) {
-        Some(s) if !s.is_empty() => s,
-        _ => return "错误：缺少 script 参数".to_string(),
+    let args: NpmRunArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 npm_run 形状不一致: {e}"),
     };
+    let subdir = args
+        .subdir
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(".");
+    let script = args.script.trim();
+    if script.is_empty() {
+        return "错误：缺少 script 参数".to_string();
+    }
     if script.contains(char::is_whitespace) {
         return "错误：script 参数无效（不能包含空白字符）".to_string();
     }
@@ -73,15 +89,7 @@ pub fn npm_run(
         return format!("npm run {}: 跳过（{}/package.json 不存在）", script, subdir);
     }
 
-    let extra_args: Vec<String> = v
-        .get("args")
-        .and_then(|a| a.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|x| x.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
+    let extra_args = args.args;
 
     let run = || {
         let mut cmd = Command::new("npm");
@@ -134,11 +142,20 @@ pub fn npx_run(args_json: &str, workspace_root: &Path, max_output_len: usize) ->
         Ok(v) => v,
         Err(e) => return e,
     };
-    let subdir = safe_subdir(&v);
-    let package = match v.get("package").and_then(|x| x.as_str()).map(str::trim) {
-        Some(s) if !s.is_empty() => s,
-        _ => return "错误：缺少 package 参数".to_string(),
+    let args: NpxRunArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 npx_run 形状不一致: {e}"),
     };
+    let subdir = args
+        .subdir
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(".");
+    let package = args.package.trim();
+    if package.is_empty() {
+        return "错误：缺少 package 参数".to_string();
+    }
     if package.contains("..") || package.starts_with('/') {
         return "错误：package 参数不安全".to_string();
     }
@@ -151,11 +168,7 @@ pub fn npx_run(args_json: &str, workspace_root: &Path, max_output_len: usize) ->
         return format!("npx {}: 跳过（{}/package.json 不存在）", package, subdir);
     }
 
-    let extra_args: Vec<&str> = v
-        .get("args")
-        .and_then(|a| a.as_array())
-        .map(|arr| arr.iter().filter_map(|x| x.as_str()).collect())
-        .unwrap_or_default();
+    let extra_args: Vec<&str> = args.args.iter().map(|s| s.as_str()).collect();
 
     let mut cmd = Command::new("npx");
     cmd.arg("--yes").arg(package);
@@ -171,13 +184,22 @@ pub fn tsc_check(args_json: &str, workspace_root: &Path, max_output_len: usize) 
         Ok(v) => v,
         Err(e) => return e,
     };
-    let subdir = safe_subdir(&v);
-    let project = v
-        .get("project")
-        .and_then(|x| x.as_str())
+    let args: TscCheckArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 tsc_check 形状不一致: {e}"),
+    };
+    let subdir = args
+        .subdir
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(".");
+    let project = args
+        .project
+        .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty());
-    let strict = v.get("strict").and_then(|x| x.as_bool()).unwrap_or(false);
+    let strict = args.strict;
 
     if let Some(e) = check_subdir(subdir) {
         return e;
@@ -206,14 +228,6 @@ pub fn tsc_check(args_json: &str, workspace_root: &Path, max_output_len: usize) 
     }
     cmd.current_dir(&dir);
     run_and_format(cmd, max_output_len, "npx tsc --noEmit")
-}
-
-fn safe_subdir(v: &serde_json::Value) -> &str {
-    v.get("subdir")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or(".")
 }
 
 fn check_subdir(subdir: &str) -> Option<String> {
