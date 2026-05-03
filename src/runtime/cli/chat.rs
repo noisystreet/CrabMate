@@ -3,6 +3,7 @@
 use crate::agent_role_turn::{filter_tools_for_agent_role, turn_allow_for_web_or_cli_job};
 use crate::config::cli::ChatCliArgs;
 use crate::config::{AgentConfig, SharedAgentConfig};
+use crate::process_handles::ProcessHandles;
 use crate::redact;
 use crate::runtime::cli::cli_effective_work_dir;
 use crate::runtime::cli::repl_extras::prepend_cli_first_turn_injection;
@@ -19,11 +20,23 @@ use std::collections::HashSet;
 use std::io::BufRead;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use tokio::sync::Mutex;
 
 /// 长期记忆库打开失败时，仅向 stderr 打印**一次**用户可见说明（避免每轮 REPL/chat 重复刷屏）。
 static CLI_LTM_OPEN_FAILURE_NOTIFIED: AtomicBool = AtomicBool::new(false);
+
+/// `cli_run` → `run_chat_invocation` / `run_repl` 共用的入口参数（合并以减少顶层形参个数）。
+pub struct CliMainInvocationCommon<'a> {
+    pub cfg_holder: &'a SharedAgentConfig,
+    pub config_path: Option<&'a str>,
+    pub client: &'a reqwest::Client,
+    pub api_key: &'a str,
+    pub tools: &'a [crate::types::Tool],
+    pub workspace_cli: &'a Option<String>,
+    pub agent_role: Option<&'a str>,
+    pub process_handles: Arc<ProcessHandles>,
+}
 
 /// CLI（无 SSE、`workspace_is_set` 恒为真）下调用 [`run_agent_turn`] 的固定参数封装。
 pub(crate) struct RunAgentTurnForCliParams<'a> {
@@ -36,6 +49,7 @@ pub(crate) struct RunAgentTurnForCliParams<'a> {
     pub no_stream: bool,
     pub cli_tool_ctx: Option<&'a CliToolRuntime>,
     pub active_agent_role: Option<&'a str>,
+    pub process_handles: Arc<ProcessHandles>,
 }
 
 pub(crate) async fn run_agent_turn_for_cli(
@@ -51,8 +65,10 @@ pub(crate) async fn run_agent_turn_for_cli(
         no_stream,
         cli_tool_ctx,
         active_agent_role,
+        process_handles,
     } = p;
-    let (ltm, scope) = cli_long_term_memory_handles(cfg);
+    let (ltm, scope) = process_handles
+        .cli_long_term_memory_handles_with_stderr_notice(cfg, &CLI_LTM_OPEN_FAILURE_NOTIFIED);
     let turn_allow = turn_allow_for_web_or_cli_job(cfg, active_agent_role, None);
     let tools_for_job = filter_tools_for_agent_role(tools, turn_allow.as_ref().map(|a| a.as_ref()));
     run_agent_turn(RunAgentTurnParams::cli_terminal_chat(
@@ -68,59 +84,11 @@ pub(crate) async fn run_agent_turn_for_cli(
             long_term_memory: ltm,
             long_term_memory_scope_id: scope,
             turn_allowed_tool_names: turn_allow,
+            process_handles,
         },
     ))
     .await
     .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })
-}
-
-fn cli_long_term_memory_handles(
-    cfg: &Arc<AgentConfig>,
-) -> (
-    Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
-    Option<String>,
-) {
-    if !cfg.long_term_memory_enabled {
-        return (None, None);
-    }
-    let path = cfg.long_term_memory_store_sqlite_path.trim();
-    let p = if path.is_empty() {
-        let base = std::path::Path::new(&cfg.run_command_working_dir).join(".crabmate");
-        base.join("long_term_memory.db")
-    } else {
-        std::path::PathBuf::from(path)
-    };
-    match crate::memory::long_term_memory::cli_runtime_lazy(&p) {
-        Ok(r) => (Some(r), Some("cli".to_string())),
-        Err(e) => {
-            log::warn!(
-                target: "crabmate",
-                "CLI 长期记忆库打开失败 path={} error={}",
-                p.display(),
-                e
-            );
-            if !CLI_LTM_OPEN_FAILURE_NOTIFIED.swap(true, Ordering::SeqCst) {
-                let detail = e.to_string();
-                let max = 240usize;
-                let (head, tail) = if detail.chars().count() > max {
-                    let head: String = detail.chars().take(max).collect();
-                    (head, "…")
-                } else {
-                    (detail, "")
-                };
-                eprintln!(
-                    "crabmate: 警告：配置中已启用长期记忆 (long_term_memory_enabled)，但本进程无法打开 SQLite；长期记忆在本进程中已禁用。\n\
-                     路径: {}\n\
-                     错误: {}{}\n\
-                     请检查目录权限、磁盘空间或向量后端依赖（如 fastembed / ONNX）；若暂不需要可设 long_term_memory_enabled = false。详情见日志 (target=crabmate)。",
-                    p.display(),
-                    head,
-                    tail
-                );
-            }
-            (None, None)
-        }
-    }
 }
 
 fn map_turn_err(e: Box<dyn std::error::Error + Send + Sync>) -> Box<dyn std::error::Error> {
@@ -152,6 +120,7 @@ fn resolve_system_prompt_for_chat(
     cfg: &Arc<AgentConfig>,
     chat: &ChatCliArgs,
     agent_role: Option<&str>,
+    tool_recorder: &std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder>,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let base = if let Some(p) = chat.system_prompt_file.as_deref() {
         std::fs::read_to_string(p).map_err(|e| {
@@ -165,7 +134,7 @@ fn resolve_system_prompt_for_chat(
             .map_err(|e| CliExitError::new(EXIT_USAGE, e))?
             .to_string()
     };
-    Ok(crate::tool_stats::augment_system_prompt(&base, cfg))
+    Ok(tool_recorder.augment_system_prompt(&base, cfg))
 }
 
 fn resolve_user_body(chat: &ChatCliArgs) -> Result<String, Box<dyn std::error::Error>> {
@@ -275,6 +244,7 @@ struct RunChatBatchJsonlParams<'a> {
     path: &'a str,
     chat: &'a ChatCliArgs,
     agent_role: Option<&'a str>,
+    process_handles: Arc<ProcessHandles>,
 }
 
 async fn run_chat_batch_jsonl(
@@ -293,6 +263,7 @@ async fn run_chat_batch_jsonl(
         path,
         chat,
         agent_role,
+        process_handles,
     } = p;
     let file = std::fs::File::open(path).map_err(|e| {
         CliExitError::new(EXIT_GENERAL, format!("无法打开 --message-file {path}: {e}"))
@@ -300,7 +271,12 @@ async fn run_chat_batch_jsonl(
     let reader = std::io::BufReader::new(file);
     let system_seed = {
         let g = cfg_holder.read().await;
-        resolve_system_prompt_for_chat(&Arc::new(g.clone()), chat, agent_role)?
+        resolve_system_prompt_for_chat(
+            &Arc::new(g.clone()),
+            chat,
+            agent_role,
+            &process_handles.tool_outcome_recorder,
+        )?
     };
     let mut messages: Vec<Message> = Vec::new();
     let mut line_no: usize = 0;
@@ -397,6 +373,7 @@ async fn run_chat_batch_jsonl(
             no_stream,
             cli_tool_ctx: Some(cli_rt),
             active_agent_role: agent_role,
+            process_handles: Arc::clone(&process_handles),
         })
         .await
         .map_err(map_turn_err)?;
@@ -408,18 +385,20 @@ async fn run_chat_batch_jsonl(
     Ok(())
 }
 
-/// `chat` 子命令：单轮、整表 JSON、或 `--message-file` 多轮批跑。
-#[allow(clippy::too_many_arguments)]
 pub async fn run_chat_invocation(
-    cfg_holder: &SharedAgentConfig,
-    config_path: Option<&str>,
-    client: &reqwest::Client,
-    api_key: &str,
-    tools: &[crate::types::Tool],
-    workspace_cli: &Option<String>,
+    common: CliMainInvocationCommon<'_>,
     chat: &ChatCliArgs,
-    agent_role: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let CliMainInvocationCommon {
+        cfg_holder,
+        config_path,
+        client,
+        api_key,
+        tools,
+        workspace_cli,
+        agent_role,
+        process_handles,
+    } = common;
     let work_dir = {
         let g = cfg_holder.read().await;
         cli_effective_work_dir(workspace_cli, &g.run_command_working_dir)
@@ -455,6 +434,7 @@ pub async fn run_chat_invocation(
             path: batch_path,
             chat,
             agent_role,
+            process_handles: Arc::clone(&process_handles),
         })
         .await;
     }
@@ -481,6 +461,7 @@ pub async fn run_chat_invocation(
             no_stream: chat.no_stream,
             cli_tool_ctx: Some(&cli_rt),
             active_agent_role: agent_role,
+            process_handles: Arc::clone(&process_handles),
         })
         .await
         .map_err(map_turn_err)?;
@@ -493,7 +474,12 @@ pub async fn run_chat_invocation(
 
     let system = {
         let g = cfg_holder.read().await;
-        resolve_system_prompt_for_chat(&Arc::new(g.clone()), chat, agent_role)?
+        resolve_system_prompt_for_chat(
+            &Arc::new(g.clone()),
+            chat,
+            agent_role,
+            &process_handles.tool_outcome_recorder,
+        )?
     };
     let user = resolve_user_body(chat)?;
     let cfg_for_expand = {
@@ -536,6 +522,7 @@ pub async fn run_chat_invocation(
         no_stream: chat.no_stream,
         cli_tool_ctx: Some(&cli_rt),
         active_agent_role: agent_role,
+        process_handles,
     })
     .await
     .map_err(map_turn_err)?;

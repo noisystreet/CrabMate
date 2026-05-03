@@ -79,8 +79,12 @@ pub fn load_workspace_session(
 }
 
 /// REPL 启动后**立刻**可用的消息列表（仅 `system`），不阻塞项目画像 / 会话恢复等耗时逻辑。
-pub fn repl_bootstrap_messages_fast(cfg: &AgentConfig, agent_role: Option<&str>) -> Vec<Message> {
-    let system = augmented_system_for_new_conversation_lenient(cfg, agent_role);
+pub fn repl_bootstrap_messages_fast(
+    cfg: &AgentConfig,
+    agent_role: Option<&str>,
+    tool_recorder: &std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder>,
+) -> Vec<Message> {
+    let system = augmented_system_for_new_conversation_lenient(cfg, agent_role, tool_recorder);
     vec![Message::system_only(system)]
 }
 
@@ -139,19 +143,22 @@ pub fn initial_workspace_messages(
     workspace: &Path,
     load_from_disk: bool,
     agent_role: Option<&str>,
+    tool_recorder: &std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder>,
 ) -> Vec<Message> {
     let base_system = match cfg.system_prompt_for_new_conversation(agent_role) {
         Ok(s) => s.to_string(),
         Err(_) => cfg.system_prompt.clone(),
     };
     if !load_from_disk {
-        let system_seed = augmented_system_for_new_conversation_lenient(cfg, agent_role);
+        let system_seed =
+            augmented_system_for_new_conversation_lenient(cfg, agent_role, tool_recorder);
         let ctx = first_turn_project_context_user_message_sync(workspace, cfg, None);
         return compose_new_conversation_messages(&system_seed, ctx, None);
     }
     load_workspace_session(workspace, &base_system, cfg.tui_session_max_messages).unwrap_or_else(
         || {
-            let system_seed = augmented_system_for_new_conversation_lenient(cfg, agent_role);
+            let system_seed =
+                augmented_system_for_new_conversation_lenient(cfg, agent_role, tool_recorder);
             let ctx = first_turn_project_context_user_message_sync(workspace, cfg, None);
             compose_new_conversation_messages(&system_seed, ctx, None)
         },

@@ -6,6 +6,7 @@ use crate::context_bootstrap::conversation_turn_bootstrap::{
     augmented_system_for_new_conversation_lenient, compose_new_conversation_messages,
     first_turn_project_context_user_message_sync,
 };
+use crate::process_handles::ProcessHandles;
 use crate::runtime::cli::ReplExportKind;
 use crate::runtime::cli::repl_parse::classify_repl_slash_command;
 use crate::runtime::cli_repl_ui::CliReplStyle;
@@ -18,6 +19,12 @@ use std::sync::Mutex as StdMutex;
 /// 与 Web **`client_llm`** 校验上限对齐（仅本进程内存覆盖）。
 pub(super) const REPL_LLM_API_BASE_MAX: usize = 2048;
 pub(super) const REPL_LLM_MODEL_MAX: usize = 512;
+
+/// REPL `/…` 命令：`api_key_holder` 与 [`ProcessHandles`] 合并传递以降低顶层函数形参计数。
+pub(crate) struct ReplSlashSharedHandles {
+    pub api_key_holder: Arc<StdMutex<String>>,
+    pub process_handles: Arc<ProcessHandles>,
+}
 
 /// [`try_handle_repl_slash_command`] 的返回值：`RunProbe` / `RunModels` / `RunModelsChoose` 需在异步上下文中分别调用
 /// [`crate::runtime::cli_doctor::run_probe_cli`]、[`crate::runtime::cli_doctor::run_models_cli`]、
@@ -56,8 +63,10 @@ pub(crate) async fn repl_rebuild_bootstrap_messages(
     cfg: &AgentConfig,
     work_dir: &Path,
     agent_role: Option<&str>,
+    tool_recorder: &std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder>,
 ) -> Vec<Message> {
-    let system_prompt = augmented_system_for_new_conversation_lenient(cfg, agent_role);
+    let system_prompt =
+        augmented_system_for_new_conversation_lenient(cfg, agent_role, tool_recorder);
     let system_prompt_fb = system_prompt.clone();
     let cfg = cfg.clone();
     let wd = work_dir.to_path_buf();
@@ -126,21 +135,13 @@ pub(crate) async fn try_handle_repl_slash_command(
     style: &CliReplStyle,
     no_stream: bool,
     agent_role: &mut Option<String>,
-    api_key_holder: &Arc<StdMutex<String>>,
+    handles: &ReplSlashSharedHandles,
 ) -> ReplSlashHandled {
     let Some(builtin) = classify_repl_slash_command(input) else {
         return ReplSlashHandled::NotSlash;
     };
     super::repl_slash_dispatch::dispatch_repl_slash_builtin(
-        builtin,
-        cfg_holder,
-        tools,
-        messages,
-        work_dir,
-        style,
-        no_stream,
-        agent_role,
-        api_key_holder,
+        builtin, cfg_holder, tools, messages, work_dir, style, no_stream, agent_role, handles,
     )
     .await
 }

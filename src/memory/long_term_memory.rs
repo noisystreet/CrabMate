@@ -7,7 +7,7 @@
 
 use std::path::Path;
 use std::sync::atomic::AtomicU64;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 #[cfg(feature = "fastembed")]
 use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
@@ -676,8 +676,6 @@ fn last_user_assistant_final_pair(messages: &[Message]) -> Option<(&str, &str)> 
     None
 }
 
-static CLI_MEMORY_RUNTIME: OnceLock<Arc<LongTermMemoryRuntime>> = OnceLock::new();
-
 /// 为 `ToolContext` 准备长期记忆运行时与会话 id；未启用或缺运行时返回 `(None, None)`。
 pub(crate) fn tool_context_memory_extras(
     cfg: &AgentConfig,
@@ -695,16 +693,4 @@ pub(crate) fn tool_context_memory_extras(
         .filter(|s| !s.is_empty())
         .map(std::string::ToString::to_string);
     (Some(rt), scope)
-}
-
-/// CLI / 单进程：在首次需要时打开 `path` 并缓存。
-pub fn cli_runtime_lazy(
-    path: &Path,
-) -> Result<Arc<LongTermMemoryRuntime>, Box<dyn std::error::Error + Send + Sync>> {
-    if let Some(r) = CLI_MEMORY_RUNTIME.get() {
-        return Ok(Arc::clone(r));
-    }
-    let r = LongTermMemoryRuntime::open(path)?;
-    let _ = CLI_MEMORY_RUNTIME.set(Arc::clone(&r));
-    Ok(r)
 }

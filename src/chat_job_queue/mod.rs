@@ -30,7 +30,7 @@ const RECENT_CAP: usize = 32;
 ///
 /// 会话落盘、审批会话表等仍经入队参数中的 [`Arc<AppState>`] 完成。
 #[derive(Clone)]
-pub struct WebChatQueueDeps {
+pub(crate) struct WebChatQueueDeps {
     pub cfg: SharedAgentConfig,
     pub api_key: String,
     pub client: reqwest::Client,

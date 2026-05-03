@@ -84,6 +84,8 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
     /// Web 审计；与写工具日志配套。
     pub request_audit: Option<Arc<crate::web::audit::WebRequestAudit>>,
+    /// 与 [`crate::RunAgentTurnParams::process_handles`] 同源。
+    pub tool_outcome_recorder: Arc<crate::tool_stats::ToolOutcomeRecorder>,
 }
 
 pub(crate) enum ExecuteToolsBatchOutcome {
@@ -96,6 +98,7 @@ pub(crate) enum ExecuteToolsBatchOutcome {
 /// 单工具：SSE / 终端回显 + 追加 `tool` 与可选反思 `user`（与串行路径一致）的入参。
 pub(super) struct EmitToolResultParams<'a> {
     cfg: &'a Arc<AgentConfig>,
+    tool_outcome_recorder: &'a Arc<crate::tool_stats::ToolOutcomeRecorder>,
     out: Option<&'a mpsc::Sender<String>>,
     echo_terminal_transcript: bool,
     terminal_tool_display_max_chars: usize,
@@ -168,6 +171,7 @@ struct ExecuteToolsCommonCtx<'a> {
     long_term_memory_scope_id: Option<String>,
     tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
     request_audit: Option<Arc<crate::web::audit::WebRequestAudit>>,
+    tool_outcome_recorder: Arc<crate::tool_stats::ToolOutcomeRecorder>,
 }
 
 async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsBatchOutcome {
@@ -287,6 +291,7 @@ pub(crate) async fn per_execute_tools_web(
         long_term_memory_scope_id,
         tracing_chat_turn,
         request_audit,
+        tool_outcome_recorder,
     } = ctx;
 
     let _tool_trace = request_chrome_trace
@@ -317,6 +322,7 @@ pub(crate) async fn per_execute_tools_web(
         long_term_memory_scope_id,
         tracing_chat_turn,
         request_audit,
+        tool_outcome_recorder,
     })
     .await
 }

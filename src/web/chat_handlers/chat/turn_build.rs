@@ -238,6 +238,7 @@ pub(super) async fn build_messages_for_turn(
                 &mut seed.messages,
                 persisted.as_deref(),
                 agent_role,
+                &state.process_handles.tool_outcome_recorder,
             )?;
             let role_for_turn = agent_role
                 .and_then(|s| {
@@ -249,7 +250,10 @@ pub(super) async fn build_messages_for_turn(
                 .system_prompt_for_new_conversation(role_for_turn)
                 .map_err(|e| e.to_string())?
                 .to_string();
-            let system_for_turn = crate::tool_stats::augment_system_prompt(&system_for_turn, &cfg);
+            let system_for_turn = state
+                .process_handles
+                .tool_outcome_recorder
+                .augment_system_prompt(&system_for_turn, &cfg);
             let system_for_turn = if workspace_is_set {
                 merge_system_prompt_with_workspace_skills_for_web(
                     system_for_turn,
@@ -277,7 +281,10 @@ pub(super) async fn build_messages_for_turn(
         .system_prompt_for_new_conversation(agent_role)
         .map_err(|e| e.to_string())?
         .to_string();
-    let system_for_turn = crate::tool_stats::augment_system_prompt(&system_for_turn, &cfg);
+    let system_for_turn = state
+        .process_handles
+        .tool_outcome_recorder
+        .augment_system_prompt(&system_for_turn, &cfg);
     let system_for_turn = if workspace_is_set {
         merge_system_prompt_with_workspace_skills_for_web(
             system_for_turn,

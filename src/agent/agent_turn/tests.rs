@@ -204,6 +204,8 @@ mod hierarchy_runner_params_tests {
                 turn_allowed_tool_names: None,
                 tracing_chat_turn: None,
                 request_audit: None,
+                process_handles:
+                    crate::process_handles::ProcessHandles::singleton_for_fallback_process(),
             },
             turn: RunLoopTurnState {
                 messages: &mut messages,
@@ -279,6 +281,8 @@ mod hierarchy_runner_params_tests {
                 turn_allowed_tool_names: None,
                 tracing_chat_turn: None,
                 request_audit: None,
+                process_handles:
+                    crate::process_handles::ProcessHandles::singleton_for_fallback_process(),
             },
             turn: RunLoopTurnState {
                 messages: &mut messages,
@@ -372,6 +376,8 @@ mod per_reflect_tests {
                 turn_allowed_tool_names: None,
                 tracing_chat_turn: None,
                 request_audit: None,
+                process_handles:
+                    crate::process_handles::ProcessHandles::singleton_for_fallback_process(),
             },
             turn: RunLoopTurnState {
                 messages: &mut messages,

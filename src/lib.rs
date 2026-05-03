@@ -28,6 +28,8 @@ mod mcp;
 /// 长期记忆、备忘片段、代码语义索引（SQLite + fastembed）。
 mod memory;
 mod observability;
+mod process_handles;
+pub use process_handles::ProcessHandles;
 mod read_file_turn_cache;
 mod redact;
 mod request_chrome_trace;
@@ -117,6 +119,8 @@ pub struct RunAgentTurnParams<'a> {
     pub tracing_chat_turn: Option<Arc<observability::TracingChatTurn>>,
     /// Web：HTTP 审计（客户端 IP、共享 Bearer 指纹）；CLI/定时任务等为 `None`。
     pub request_audit: Option<Arc<crate::web::audit::WebRequestAudit>>,
+    /// 进程内显式句柄：工作区变更集注册表、工具统计等（`bench` 等无 `AppState` 时用 [`crate::process_handles::ProcessHandles::singleton_for_fallback_process`]）。
+    pub process_handles: Arc<crate::process_handles::ProcessHandles>,
 }
 
 /// 构造 [`RunAgentTurnParams::web_chat_stream`] 所需的参数包（避免长形参列表）。
@@ -145,6 +149,7 @@ pub struct WebChatStreamBuildArgs<'a> {
     pub out: &'a mpsc::Sender<String>,
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
     pub request_audit: Arc<crate::web::audit::WebRequestAudit>,
+    pub process_handles: Arc<crate::process_handles::ProcessHandles>,
 }
 
 /// 构造 [`RunAgentTurnParams::web_chat_json`] 所需的参数包。
@@ -170,9 +175,8 @@ pub struct WebChatJsonBuildArgs<'a> {
     pub conversation_id: &'a str,
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
     pub request_audit: Arc<crate::web::audit::WebRequestAudit>,
+    pub process_handles: Arc<crate::process_handles::ProcessHandles>,
 }
-
-/// 构造 [`RunAgentTurnParams::cli_terminal_chat`] 所需的参数包。
 pub struct CliTerminalChatBuildArgs<'a> {
     pub client: &'a reqwest::Client,
     pub api_key: &'a str,
@@ -186,6 +190,7 @@ pub struct CliTerminalChatBuildArgs<'a> {
         Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
     pub long_term_memory_scope_id: Option<String>,
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
+    pub process_handles: Arc<crate::process_handles::ProcessHandles>,
 }
 
 impl<'a> RunAgentTurnParams<'a> {
@@ -215,6 +220,7 @@ impl<'a> RunAgentTurnParams<'a> {
             out,
             turn_allowed_tool_names,
             request_audit,
+            process_handles,
         } = args;
         Self {
             client,
@@ -250,6 +256,7 @@ impl<'a> RunAgentTurnParams<'a> {
             turn_allowed_tool_names,
             tracing_chat_turn: Some(observability::TracingChatTurn::new(job_id, conversation_id)),
             request_audit: Some(request_audit),
+            process_handles,
         }
     }
 
@@ -276,6 +283,7 @@ impl<'a> RunAgentTurnParams<'a> {
             conversation_id,
             turn_allowed_tool_names,
             request_audit,
+            process_handles,
         } = args;
         Self {
             client,
@@ -311,6 +319,7 @@ impl<'a> RunAgentTurnParams<'a> {
             turn_allowed_tool_names,
             tracing_chat_turn: Some(observability::TracingChatTurn::new(job_id, conversation_id)),
             request_audit: Some(request_audit),
+            process_handles,
         }
     }
 
@@ -328,6 +337,7 @@ impl<'a> RunAgentTurnParams<'a> {
             long_term_memory,
             long_term_memory_scope_id,
             turn_allowed_tool_names,
+            process_handles,
         } = args;
         Self {
             client,
@@ -363,6 +373,7 @@ impl<'a> RunAgentTurnParams<'a> {
             turn_allowed_tool_names,
             tracing_chat_turn: None,
             request_audit: None,
+            process_handles,
         }
     }
 
@@ -410,6 +421,8 @@ impl<'a> RunAgentTurnParams<'a> {
             turn_allowed_tool_names: None,
             tracing_chat_turn: None,
             request_audit: None,
+            process_handles: crate::process_handles::ProcessHandles::singleton_for_fallback_process(
+            ),
         }
     }
 }
@@ -445,6 +458,7 @@ pub async fn run_agent_turn<'a>(
         turn_allowed_tool_names,
         tracing_chat_turn,
         request_audit,
+        process_handles,
     } = p;
     let AgentTurnTransport {
         out,
@@ -488,7 +502,11 @@ pub async fn run_agent_turn<'a>(
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .unwrap_or("__default__");
-        Some(crate::workspace::changelist::changelist_for_scope(scope))
+        Some(
+            process_handles
+                .workspace_changelist_registry
+                .changelist_for_scope(scope),
+        )
     } else {
         None
     };
@@ -580,6 +598,7 @@ pub async fn run_agent_turn<'a>(
             turn_allowed_tool_names: turn_allowed_tool_names.clone(),
             tracing_chat_turn: tracing_chat_turn.clone(),
             request_audit: request_audit.clone(),
+            process_handles: Arc::clone(&process_handles),
         },
         turn: agent::agent_turn::RunLoopTurnState {
             messages,
