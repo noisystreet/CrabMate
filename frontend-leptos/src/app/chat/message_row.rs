@@ -9,15 +9,15 @@ use crate::i18n::{self, Locale};
 use crate::message_format::{
     is_staged_timeline_bubble, message_text_for_display_ex, stored_message_is_staged_planner_round,
 };
-use crate::session_ops::{
-    format_msg_time_label, message_role_label, preceding_plain_user_message_id,
-    write_clipboard_text,
-};
+use crate::session_ops::{format_msg_time_label, message_role_label, write_clipboard_text};
 use crate::session_search::{normalize_search_query, split_for_find_highlight};
 use crate::session_sync::SessionSyncState;
 use crate::storage::{ChatSession, StoredMessage};
 
 use super::message_row_actions::{MessageRowActionSignals, spawn_scroll_to_linked_user_message};
+use super::message_row_user_layout::{
+    chat_row_wrap_and_user_styles, tool_bubble_detail_and_jump_uid,
+};
 
 /// 聊天消息行视图所需信号与数据（缩短 [`chat_message_row`] 形参列表；勿命名为 `*Props`，与 Leptos 组件宏生成类型冲突）。
 #[derive(Clone)]
@@ -706,22 +706,16 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
     let user_branch_id = m.id.clone();
     let is_user_plain = m.role == "user" && !m.is_tool;
     let is_tool_bubble = m.is_tool;
+    let (wrap_class, user_row_outer_style, user_row_stack_style, user_row_bubble_style) =
+        chat_row_wrap_and_user_styles(m.role.as_str(), is_tool_bubble);
     let tool_detail_open = RwSignal::new(false);
-    let tool_detail_text = if is_tool_bubble {
-        Some(m.reasoning_text.clone())
-    } else {
-        None
-    };
-    let jump_uid = if is_tool_bubble {
-        sessions.with(|list| {
-            let aid = active_id.get();
-            list.iter()
-                .find(|s| s.id == aid)
-                .and_then(|sess| preceding_plain_user_message_id(&sess.messages, msg_idx))
-        })
-    } else {
-        None
-    };
+    let (tool_detail_text, jump_uid) = tool_bubble_detail_and_jump_uid(
+        is_tool_bubble,
+        m.reasoning_text.clone(),
+        sessions,
+        active_id,
+        msg_idx,
+    );
     let show_msg_action_bar = !is_tool_bubble || is_user_plain || err;
     let show_planner_round_badge = stored_message_is_staged_planner_round(&m);
     let loc_ut = locale.get_untracked();
@@ -761,8 +755,8 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
     let detail_for_drawer_when = tool_detail_text.clone();
     let detail_for_drawer_text = tool_detail_text.clone();
     view! {
-        <div class="msg-with-select">
-            <div class="msg-stack">
+        <div class=wrap_class style=user_row_outer_style>
+            <div class="msg-stack" style=user_row_stack_style>
                 {true.then(|| {
                     chat_message_row_meta_view(
                         locale,
@@ -807,6 +801,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
                             "chat-message-row"
                         }
                     }
+                    style=user_row_bubble_style
                 >
                     {(!is_tool_bubble).then(|| {
                         view! {

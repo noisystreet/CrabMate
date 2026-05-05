@@ -15,6 +15,7 @@ mod message_chunks;
 mod message_group_views;
 mod message_row;
 mod message_row_actions;
+mod message_row_user_layout;
 mod scroll;
 #[cfg(test)]
 mod staged_plan_todo;

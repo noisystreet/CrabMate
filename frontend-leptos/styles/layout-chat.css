@@ -416,7 +416,7 @@
   opacity: 0.88;
 }
 
-.msg-with-select:has(.msg-user) .msg-meta {
+.msg-with-select.msg-row-user .msg-meta {
   flex-direction: row-reverse;
   justify-content: flex-start;
 }
@@ -641,7 +641,7 @@
 }
 
 /* 与 .msg-stack 的 align-items 配合，整行图标仍可用 justify 控制间距 */
-.msg-with-select:has(.msg-user) .msg-actions-below {
+.msg-with-select.msg-row-user .msg-actions-below {
   justify-content: flex-end;
 }
 
@@ -825,7 +825,6 @@
 
 .msg-user .msg-body {
   text-align: right;
-  min-width: 0;
   max-width: 100%;
   overflow-wrap: break-word;
   word-break: normal;
@@ -1694,7 +1693,7 @@
   min-width: 76px;
 }
 
-/* 消息行包装：对齐须作用在本层，不能占满列宽，否则会盖住 .msg-user 的 flex-end */
+/* 消息行包装：用户行主轴对齐见 `message_row.rs` 内联 style；此处仅兜底非用户行与其它列 */
 .msg-with-select {
   display: flex;
   align-items: flex-start;
@@ -1702,12 +1701,6 @@
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
-}
-
-.msg-with-select:has(.msg-user) {
-  align-self: flex-end;
-  width: fit-content;
-  max-width: 100%;
 }
 
 /* 气泡 + 其下工具条纵向成组 */
@@ -1718,10 +1711,6 @@
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
-}
-
-.msg-with-select:has(.msg-user) > .msg-stack {
-  align-items: flex-end;
 }
 
 /* stretch：纵轴 flex 下让 .msg 在横向上拉满栈宽；flex-start 会使子项宽度=内容宽（流式初期塌条） */
@@ -1737,13 +1726,7 @@
   min-width: 0;
 }
 
-.msg-with-select:has(.msg-user) > .msg-stack > .msg {
-  flex: 0 0 auto;
-  min-width: 0;
-  max-width: 100%;
-}
-
-/* 助手整行占满聊天列，避免外包层 fit-content 与气泡同塌；用户行仍 fit-content 右对齐 */
+/* 助手整行占满聊天列 */
 .msg-with-select:has(.msg-assistant) {
   align-self: stretch;
   width: 100%;
