@@ -391,8 +391,9 @@ pub fn begin_side_column_resize(
     let drag_sig = side_resize_dragging;
 
     let hm = window_event_listener(leptos::ev::mousemove, move |e: web_sys::MouseEvent| {
-        let borrow = session_m.borrow();
-        let Some((sx, sw)) = *borrow else {
+        // 必须先释放 `Ref` 再 `side_w.set`：否则同步渲染可能再次触碰 `side_resize_session`，
+        // 触发 RefCell 冲突；WASM 下偶现为 `Out of bounds memory access` / closure invoke 栈。
+        let Some((sx, sw)) = session_m.borrow().as_ref().copied() else {
             return;
         };
         let cx = e.client_x() as f64;

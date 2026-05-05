@@ -85,9 +85,11 @@ pub fn assistant_markdown_collapsible_view(
                     g.raf_scheduled = false;
                     g.take_html()
                 };
-                if let Some(n) = answer_body_ref.get_untracked()
-                    && let Some(he) = n.dyn_ref::<web_sys::HtmlElement>()
-                {
+                // rAF 可能在消息行已卸载后执行；此时 NodeRef 已 dispose，`get_untracked` 会 panic。
+                let Some(node) = answer_body_ref.try_get_untracked().flatten() else {
+                    return;
+                };
+                if let Some(he) = node.dyn_ref::<web_sys::HtmlElement>() {
                     he.set_inner_html(&html);
                 }
             });
