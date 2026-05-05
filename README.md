@@ -55,7 +55,7 @@
 | [docs/开发文档.md](docs/开发文档.md) | 架构、模块索引、协议与扩展点 | [en](docs/en/DEVELOPMENT.md) |
 | [docs/后端核心框架设计.md](docs/后端核心框架设计.md) | 后端核心库化与跨语言嵌入差距分析 | [en](docs/en/BACKEND_CORE_FRAMEWORK_DESIGN.md) |
 | [docs/形式化验证计划.md](docs/形式化验证计划.md) | 形式化验证方案设计：SSE 不变量、属性测试、模型检查分阶段落地 | [en](docs/en/FORMAL_VERIFICATION_PLAN.md) |
-| [docs/frontend-leptos/ARCHITECTURE.md](docs/frontend-leptos/ARCHITECTURE.md) | Web 前端目标架构与分阶段重构（Leptos / WASM） | — |
+| [docs/frontend/ARCHITECTURE.md](docs/frontend/ARCHITECTURE.md) | Web 前端目标架构与分阶段重构（Leptos / WASM） | — |
 | [docs/工作流编排架构.md](docs/工作流编排架构.md) | 工作流编排扩展设计：状态机、条件与有界循环 | [en](docs/en/WORKFLOW_ORCHESTRATION_ARCHITECTURE.md) |
 | [docs/规划执行验证架构.md](docs/规划执行验证架构.md) | 结构化规划—执行—验证闭环设计与步级验收闸门 | [en](docs/en/PLAN_EXECUTE_VERIFY_ARCHITECTURE.md) |
 | [docs/测试指南.md](docs/测试指南.md) | 前后端测试、E2E、pre-commit、依赖审计命令汇总 | [en](docs/en/TESTING.md) |
@@ -97,7 +97,7 @@
 # 可选：export CM_API_BASE=… CM_MODEL=… API_KEY=…（或 Web「设置」/ REPL /api-key set）
 cargo build
 ./target/debug/crabmate repl    # 安装到 PATH 后可直接 crabmate repl
-cd frontend-leptos && trunk build && cd ..
+cd frontend && trunk build && cd ..
 ./target/debug/crabmate serve   # 默认 8080；发布前端用 trunk build --release
 ```
 
@@ -108,7 +108,7 @@ cd frontend-leptos && trunk build && cd ..
 - **常用**：**`doctor`**、**`config`**、**`probe`** / **`models`**、**`bench`**、**`save-session`** / **`export-session`**、**`tool-replay`**、**`mcp list`** / **`mcp serve`**。全局选项 **`--config`**、**`--workspace`**、**`--agent-role`**、**`--no-tools`**、**`--llm-context-tokens`**、**`--no-stream`** 等。
 - 配置键：[docs/配置说明.md](docs/配置说明.md)；子命令全表、Benchmark、**`man crabmate`**：[docs/命令行与路由.md](docs/命令行与路由.md)。
 
-**前端**：`cd frontend-leptos && trunk build`（开发；**`--release`** 用于发布），再 **`crabmate serve`**。界面语言在「设置」；详 `frontend-leptos/README.md`、`docs/开发文档.md`。
+**前端**：`cd frontend && trunk build`（开发；**`--release`** 用于发布），再 **`crabmate serve`**。界面语言在「设置」；详 `frontend/README.md`、`docs/开发文档.md`。
 
 **配置**：默认 `config/*.toml`（编译嵌入）+ 可选根目录 **`config.toml`**；**`system_prompt_file`** 指向 `config/prompts/default_system_prompt.md`（改后不必重编）。**`[agent] llm_context_tokens`**（或 **`CM_LLM_CONTEXT_TOKENS`**、CLI **`--llm-context-tokens`**）为模型上下文窗口 token 上限（输入+输出），与会话同步裁剪的近似字符预算推导一致（与 **`context_char_budget`** 取更小；详见 [CONFIGURATION](docs/配置说明.md)「上下文与工具消息」）。默认在首条 `system` 末附思考纪律附录（**`config/prompts/thinking_avoid_echo_appendix.md`** 等，见 [CONFIGURATION](docs/配置说明.md)）。意图增强可用 `[agent] intent_mode_bias_enabled`（默认 true）控制“意图到执行模式”的偏置；`intent_execute_low_threshold` / `intent_execute_high_threshold` 控制全局执行意图阈值，`intent_non_hier_execute_low_threshold` / `intent_non_hier_execute_high_threshold` 可单独覆盖**非分层**路径阈值；`[agent] intent_l2_enabled` 默认 **true**（L2 语义分类，额外一次无工具 `chat`；失败自动回退 L1，受 `intent_l2_min_confidence` 控制覆盖阈值）；若需节省调用可设为 **false**。**非** `Hierarchical` 时可选 `intent_at_turn_start_enabled`（`CM_INTENT_AT_TURN_START_ENABLED`）在进主循环前做一轮 L0/L1/可选 L2 门控；分层模式内建同一套管线。高级项同页。**release / deb / man** 见 **[源码编译与打包](#源码编译与打包)**。
 
@@ -117,13 +117,13 @@ cd frontend-leptos && trunk build && cd ..
 ## 源码编译与打包
 
 - **工具链**：**Rust 1.85+**、**Trunk** + **`wasm32-unknown-unknown`**；Linux / 长期记忆等见 [AGENTS.md](AGENTS.md)。
-- **构建**：`cargo build` → `target/debug/crabmate`；**`--release`** → `target/release/crabmate`。带 Web 时先 **`cd frontend-leptos && trunk build`**（发布用 **`--release`**）。
+- **构建**：`cargo build` → `target/debug/crabmate`；**`--release`** → `target/release/crabmate`。带 Web 时先 **`cd frontend && trunk build`**（发布用 **`--release`**）。
 - **可选 Cargo features**（根包 **`crabmate`**，默认 **`mcp` + `docker_sandbox` + `fastembed`**，与完整产品一致）：裁剪 **`rmcp`**（MCP）、**`bollard`**（Docker 沙盒）或 **`fastembed`**（本地向量嵌入 / ONNX）时用 **`cargo build --no-default-features`** 或按需 **`--features mcp,docker_sandbox`** 等；关闭 **`docker_sandbox`** 时**勿**在配置里使用 **`sync_default_tool_sandbox_mode = docker`**；关闭 **`fastembed`** 时 **`codebase_semantic_search`** 会从工具列表中移除，**`hybrid`** 查询退化为 **FTS**，**`finalize`** 会将 **`long_term_memory_vector_backend=fastembed`** 自动降为 **`disabled`**（仍保留长期记忆 SQLite，仅无向量）。维护者说明见 **`docs/开发文档.md`** 与 **`docs/后端核心框架设计.md`**。
 - **检查**：`cargo fmt --all`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test`；或 [.pre-commit-config.yaml](.pre-commit-config.yaml)。完整测试与质量检查命令见 **[docs/测试指南.md](docs/测试指南.md)**。
 - **SSE 协议回归**：可执行 **`./scripts/check-sse-protocol.sh`** 一键跑协议属性测试 + 控制面分类金样/顺序校验（若网络受限，先设置 `http_proxy`/`https_proxy`）。
-- **E2E**（可选）：`frontend-leptos` 构建后 **`cd e2e && npm ci && npx playwright install chromium && npm test`**。见 [docs/测试指南.md](docs/测试指南.md) 与 [docs/开发文档.md](docs/开发文档.md)。
+- **E2E**（可选）：`frontend` 构建后 **`cd e2e && npm ci && npx playwright install chromium && npm test`**。见 [docs/测试指南.md](docs/测试指南.md) 与 [docs/开发文档.md](docs/开发文档.md)。
 - **安装**：`cargo install --path .`（**不**自动装 man；`.deb` 包或手动 [man/crabmate.1](man/crabmate.1)）。同步 clap 与 troff：`cargo run --bin crabmate-gen-man`。
-- **一键打包**：**`./scripts/package-release.sh`** → **`dist/`** 下 **`crabmate_<version>_<os>_<arch>.tar.gz`**（含二进制、`config/`、`frontend-leptos/dist`、man）；Linux 且已安装 **`cargo-deb`** 时同时复制 **`target/debian/crabmate_*.deb`** 到 **`dist/`**。
+- **一键打包**：**`./scripts/package-release.sh`** → **`dist/`** 下 **`crabmate_<version>_<os>_<arch>.tar.gz`**（含二进制、`config/`、`frontend/dist`、man）；Linux 且已安装 **`cargo-deb`** 时同时复制 **`target/debian/crabmate_*.deb`** 到 **`dist/`**。
 - **`.deb`**：[cargo-deb](https://github.com/kornelski/cargo-deb)，亦可手动：前端 release + **`cargo deb`**，默认产物 **`target/debian/`**。详 [docs/命令行与路由.md](docs/命令行与路由.md)「打包 Debian `.deb`」。
 
 ## 部署与安全

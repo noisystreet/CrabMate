@@ -1,6 +1,6 @@
 # CrabMate Web 前端目标架构（Leptos / WASM）
 
-本文描述 **`frontend-leptos/`** 期望演进的**页面与模块架构**，用于指导后续重构；**当前代码未必已完全实现**下文目标形态，以 Git 历史与 [`docs/开发文档.md`](../DEVELOPMENT.md) 模块索引为准。
+本文描述 **`frontend/`** 期望演进的**页面与模块架构**，用于指导后续重构；**当前代码未必已完全实现**下文目标形态，以 Git 历史与 [`docs/开发文档.md`](../DEVELOPMENT.md) 模块索引为准。
 
 ## 1. 文档目的
 
@@ -10,7 +10,7 @@
 
 ## 2. 技术栈约束（不可回避）
 
-- **Leptos CSR**：入口为单根 [`App`](../../frontend-leptos/src/app/mod.rs)，**细粒度响应式**（`RwSignal` / `Effect`）是状态主模型。
+- **Leptos CSR**：入口为单根 [`App`](../../frontend/src/app/mod.rs)，**细粒度响应式**（`RwSignal` / `Effect`）是状态主模型。
 - **WASM**：无传统「多线程共享可变状态」；跨异步边界用 `spawn_local`、共享句柄多为 `Rc` / `Arc` + 内部可变性。
 - **与后端契约**：HTTP / SSE 形状以 Rust 后端与 [`docs/SSE协议.md`](../SSE_PROTOCOL.md) 为权威；前端**不**私自发明事件名或字段语义（见 §8）。
 
@@ -93,7 +93,7 @@
 **C. 功能子目录** | `chat` 相关文件物理上归入 `app/chat/`（或等价命名），`mod` 再导出 | **已落地** `app/chat/`；`docs/开发文档.md` 已同步 |
 **D. 端口清晰** | `api.rs` 保持最薄；如需 mock，对 `fetch_*` 层包一层 trait 或测试桩（按需） | 关键 `fetch` 在 `wasm-bindgen-test` 或集成测试可替换
 
-**注意**：每一阶段完成后应 **`cd frontend-leptos && cargo check --target wasm32-unknown-unknown`**，并与 [`docs/SSE协议.md`](../SSE_PROTOCOL.md) / 前端解析路径交叉检查。
+**注意**：每一阶段完成后应 **`cd frontend && cargo check --target wasm32-unknown-unknown`**，并与 [`docs/SSE协议.md`](../SSE_PROTOCOL.md) / 前端解析路径交叉检查。
 
 ## 10. 反模式（应主动纠正）
 
@@ -104,11 +104,11 @@
 
 ## 11. 相关文档
 
-- [`docs/开发文档.md`](../DEVELOPMENT.md)：`frontend-leptos` 模块索引与维护约定。
+- [`docs/开发文档.md`](../DEVELOPMENT.md)：`frontend` 模块索引与维护约定。
 - [`docs/SSE协议.md`](../SSE_PROTOCOL.md)：流式协议。
 - [`docs/测试指南.md`](../TESTING.md)：前端构建与测试命令。
-- [`frontend-leptos/VISUAL_REGRESSION_CHECKLIST.md`](VISUAL_REGRESSION_CHECKLIST.md)：视觉回归自检（若有 UI 大改）。
+- [`frontend/VISUAL_REGRESSION_CHECKLIST.md`](VISUAL_REGRESSION_CHECKLIST.md)：视觉回归自检（若有 UI 大改）。
 
 ---
 
-**修订策略**：当目标目录结构或分层原则发生实质变化时，更新本文并同步 [`docs/开发文档.md`](../DEVELOPMENT.md) 中 `frontend-leptos` 小节或 [`README.md`](../README.md) 文档表（若需对外可见索引）。
+**修订策略**：当目标目录结构或分层原则发生实质变化时，更新本文并同步 [`docs/开发文档.md`](../DEVELOPMENT.md) 中 `frontend` 小节或 [`README.md`](../README.md) 文档表（若需对外可见索引）。

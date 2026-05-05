@@ -9,7 +9,7 @@ usage() {
   cat <<'EOF'
 用法: scripts/package-release.sh [选项]
 
-  --skip-frontend   跳过 frontend-leptos 的 trunk build（需已有 dist/）
+  --skip-frontend   跳过 frontend 的 trunk build（需已有 dist/）
   --skip-man        跳过 crabmate-gen-man
   --skip-tar        不生成 tar.gz
   --skip-deb        不生成 .deb
@@ -91,11 +91,11 @@ if [[ "$SKIP_FRONTEND" -eq 0 ]]; then
     echo "错误: 未找到 trunk。请安装: https://trunkrs.dev/ 或 cargo install trunk" >&2
     exit 1
   fi
-  (cd frontend-leptos && trunk build --release)
+  (cd frontend && trunk build --release)
 else
   echo "==> 跳过前端构建"
-  if [[ ! -d frontend-leptos/dist ]]; then
-    echo "错误: frontend-leptos/dist 不存在，请去掉 --skip-frontend 或先手动 trunk build。" >&2
+  if [[ ! -d frontend/dist ]]; then
+    echo "错误: frontend/dist 不存在，请去掉 --skip-frontend 或先手动 trunk build。" >&2
     exit 1
   fi
 fi
@@ -120,8 +120,8 @@ if [[ "$SKIP_TAR" -eq 0 ]]; then
   cp -R config "$STAGE_DIR/"
   mkdir -p "$STAGE_DIR/man"
   cp man/crabmate.1 "$STAGE_DIR/man/"
-  mkdir -p "$STAGE_DIR/frontend-leptos"
-  cp -R frontend-leptos/dist "$STAGE_DIR/frontend-leptos/"
+  mkdir -p "$STAGE_DIR/frontend"
+  cp -R frontend/dist "$STAGE_DIR/frontend/"
 
   TAR_NAME="crabmate_${VERSION}_${OS_RAW}_${ARCH_RAW}.tar.gz"
   TAR_PATH="dist/${TAR_NAME}"

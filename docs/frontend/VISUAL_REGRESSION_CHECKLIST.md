@@ -1,6 +1,6 @@
 # Leptos Web UI 视觉回归检查清单
 
-在改动 `frontend-leptos/styles/**` 或 `frontend-leptos/src/lib.rs` 中影响布局/主题的视图后，发版或合并前建议逐项手测（无需自动化截图）。
+在改动 `frontend/styles/**` 或 `frontend/src/lib.rs` 中影响布局/主题的视图后，发版或合并前建议逐项手测（无需自动化截图）。
 
 ## 主题
 
@@ -38,4 +38,4 @@
 
 ## 构建
 
-- [ ] `cd frontend-leptos && trunk build` 成功（确认 `@import` 子样式被打包）。
+- [ ] `cd frontend && trunk build` 成功（确认 `@import` 子样式被打包）。

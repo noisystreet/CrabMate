@@ -22,7 +22,7 @@
 
 ### 1.2 本文不讨论什么
 
-- **前端 Leptos** 的交互与 `localStorage`（见 **`frontend-leptos/src/api/client_llm_storage.rs`**）。
+- **前端 Leptos** 的交互与 `localStorage`（见 **`frontend/src/api/client_llm_storage.rs`**）。
 - **MCP stdio** 客户端/服务端细节（见 **`docs/开发文档.md`** → `mcp/mod.rs`）；MCP 可作为「工具扩展」与 HTTP 集成**并行**存在，但不替代 IM 回调 → CrabMate 的主路径。
 - 各 IM 厂商的具体签名算法与事件字段（由**桥接服务**实现）。
 

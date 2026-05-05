@@ -57,11 +57,11 @@ let _hashchange_handle = window_event_listener(leptos::ev::hashchange, {
 
 | 文件 | 操作 |
 |------|------|
-| `frontend-leptos/src/app/mod.rs` | 添加 Route 枚举、hashchange 监听、`Show` 路由渲染 |
-| `frontend-leptos/src/app/settings_page.rs` | 新建，SettingsPage 组件 |
-| `frontend-leptos/src/app/side_column.rs` | 设置按钮改为 hash 跳转 |
-| `frontend-leptos/src/i18n/settings.rs` | 添加 `settings_back`、`settings_back_aria` |
-| `frontend-leptos/styles/modal.css` | 添加 `.settings-page` 等布局样式 |
+| `frontend/src/app/mod.rs` | 添加 Route 枚举、hashchange 监听、`Show` 路由渲染 |
+| `frontend/src/app/settings_page.rs` | 新建，SettingsPage 组件 |
+| `frontend/src/app/side_column.rs` | 设置按钮改为 hash 跳转 |
+| `frontend/src/i18n/settings.rs` | 添加 `settings_back`、`settings_back_aria` |
+| `frontend/styles/modal.css` | 添加 `.settings-page` 等布局样式 |
 
 ---
 

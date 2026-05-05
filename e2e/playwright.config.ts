@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const repoRoot = path.resolve(__dirname, '..');
-const distIndex = path.join(repoRoot, 'frontend-leptos', 'dist', 'index.html');
+const distIndex = path.join(repoRoot, 'frontend', 'dist', 'index.html');
 const defaultPort = 18081;
 const port = Number(process.env.E2E_PORT || defaultPort);
 const baseURL = `http://127.0.0.1:${port}`;
@@ -20,7 +20,7 @@ if (!fs.existsSync(distIndex)) {
   // Fail fast with a clear message (webServer may still start; tests need the UI bundle).
   console.warn(
     `[e2e] Missing ${distIndex}\n` +
-      '  Build the Leptos bundle first: cd frontend-leptos && trunk build',
+      '  Build the Leptos bundle first: cd frontend && trunk build',
   );
 }
 

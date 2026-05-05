@@ -10,7 +10,7 @@ use std::path::Path;
 /// {
 ///   "run_cargo": bool,           // 可选，默认 true
 ///   "run_cargo_check": bool,     // 可选，默认 true；为 true 且 run_cargo 时先 `cargo check --all-targets` 再 clippy
-///   "run_frontend": bool,        // 可选，默认 true（npm run lint；未指定 subdir 时按 frontend / frontend-leptos 启发式选含 package.json 的目录）
+///   "run_frontend": bool,        // 可选，默认 true（npm run lint；未指定 subdir 时默认子目录名 frontend，无 package.json 则跳过）
 ///   "run_frontend_build": bool,  // 可选，默认 false（npm run build）
 ///   "run_python_ruff": bool      // 可选，默认 true（无 Python 项目标记时跳过）
 /// }

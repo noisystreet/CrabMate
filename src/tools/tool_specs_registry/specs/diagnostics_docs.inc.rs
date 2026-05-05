@@ -9,7 +9,7 @@
         },
         ToolSpec {
             name: "diagnostic_summary",
-            description: "只读排障摘要：**Rust 工具链**（rustc/cargo -V、rustc -vV 的 host/release、rustup default、bc 是否可用）、**工作区**（根路径、`target/` 是否存在、`Cargo.toml` / `frontend-leptos/Trunk.toml` / `frontend-leptos/dist` 是否存在）、**环境变量仅状态**（`API_KEY`、常见 `CM_*`、`RUST_LOG` 等：未设置/空/非空；**永不输出变量值**；密钥类亦不输出长度）。可选 `extra_env_vars`（大写安全名）。与 AGENTS.md 排障场景一致。",
+            description: "只读排障摘要：**Rust 工具链**（rustc/cargo -V、rustc -vV 的 host/release、rustup default、bc 是否可用）、**工作区**（根路径、`target/` 是否存在、`Cargo.toml` / `frontend/Trunk.toml` / `frontend/dist` 是否存在）、**环境变量仅状态**（`API_KEY`、常见 `CM_*`、`RUST_LOG` 等：未设置/空/非空；**永不输出变量值**；密钥类亦不输出长度）。可选 `extra_env_vars`（大写安全名）。与 AGENTS.md 排障场景一致。",
             category: ToolCategory::Development,
             parameters: tool_params::params_diagnostic_summary,
             runner: runner_diagnostic_summary,
@@ -57,7 +57,7 @@
         },
         ToolSpec {
             name: "crate_contract_map",
-            description: "只读**契约地图**：对工作区内 `src/lib.rs`、`docs/SSE协议.md`、`frontend-leptos/src/api.rs` / `sse_dispatch.rs`、`crates/crabmate-sse-protocol/control_classify.rs`、`fixtures/sse_control_golden.jsonl`、`config/default_config.toml`、`docs/配置说明.md`、`docs/命令行与路由.md` 等锚点做**短文件头**与少量**关键字行节选**（不执行命令、不联网、不读 `.env`）。用于复杂任务前快速对齐 HTTP/SSE/配置入口；细节仍请 `read_file`。可选 `extra_paths` 追加更多相对路径。",
+            description: "只读**契约地图**：对工作区内 `src/lib.rs`、`docs/SSE协议.md`、`frontend/src/api.rs` / `sse_dispatch.rs`、`crates/crabmate-sse-protocol/control_classify.rs`、`fixtures/sse_control_golden.jsonl`、`config/default_config.toml`、`docs/配置说明.md`、`docs/命令行与路由.md` 等锚点做**短文件头**与少量**关键字行节选**（不执行命令、不联网、不读 `.env`）。用于复杂任务前快速对齐 HTTP/SSE/配置入口；细节仍请 `read_file`。可选 `extra_paths` 追加更多相对路径。",
             category: ToolCategory::Development,
             parameters: tool_params::params_crate_contract_map,
             runner: runner_crate_contract_map,

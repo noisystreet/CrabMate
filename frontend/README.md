@@ -1,6 +1,6 @@
 # CrabMate Web（Leptos + WASM，实验性）
 
-当前项目唯一 Web 前端实现；`cargo run -- serve` 读取 **`frontend-leptos/dist`**。
+当前项目唯一 Web 前端实现；`cargo run -- serve` 读取 **`frontend/dist`**。
 
 ## 依赖
 
@@ -9,7 +9,7 @@
 
 构建时若环境变量 **`NO_COLOR=1`**，部分 Trunk 版本会报错，可先 `unset NO_COLOR` 再执行 `trunk build`。
 
-样式源文件按模块拆在 **`frontend-leptos/styles/*.css`**；**Trunk** 在 **`index.html`** 里对每条模块 CSS 使用 `<link data-trunk rel="css" href="styles/…">` 打入 `dist`（单文件 `@import` 在打包后路径会失效，勿只靠根目录 `styles.css` 聚合）。修改后仍需 `trunk build` 生成 `dist`。发版前视觉手测清单见 **`docs/frontend-leptos/VISUAL_REGRESSION_CHECKLIST.md`**。
+样式源文件按模块拆在 **`frontend/styles/*.css`**；**Trunk** 在 **`index.html`** 里对每条模块 CSS 使用 `<link data-trunk rel="css" href="styles/…">` 打入 `dist`（单文件 `@import` 在打包后路径会失效，勿只靠根目录 `styles.css` 聚合）。修改后仍需 `trunk build` 生成 `dist`。发版前视觉手测清单见 **`docs/frontend/VISUAL_REGRESSION_CHECKLIST.md`**。
 
 ## 构建
 
@@ -17,13 +17,13 @@
 - **发布 / 与生产体积一致**：`trunk build --release`（启用默认 `wasm-opt`，WASM 更小、冷启动通常更好）。
 
 ```bash
-cd frontend-leptos
+cd frontend
 trunk build          # 开发
 # 或
 trunk build --release
 ```
 
-产物在 **`frontend-leptos/dist/`**。
+产物在 **`frontend/dist/`**。
 
 `index.html` 中 **`rel="rust"`** 未设置 **`data-wasm-opt`** 时即按上述规则区分；若要在 release 构建中也跳过优化，可给该标签加 **`data-wasm-opt="0"`**；更激进压体积可用 **`data-wasm-opt="z"`** 等（见 [Trunk](https://trunkrs.dev/) 文档）。
 

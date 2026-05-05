@@ -15,7 +15,7 @@ This document captures a **design analysis** (not an implementation commitment) 
 
 - The root **`crabmate`** crate still hosts agent/runtime logic plus **Axum Web**, **CLI** (`clap`), **TUI** (`crossterm`/`reedline`), optional memory embeddings (`fastembed`), MCP, and Docker sandbox (`bollard`).
 - Workspace-level extraction already exists for:
-  - `frontend-leptos` (Web UI)
+  - `frontend` (Web UI)
   - `crates/crabmate-sse-protocol` (SSE control-plane contract)
 - Public API is still application-shaped: some `pub use` exports and `run_agent_turn` entrypoints exist, but there is no clearly versioned “framework surface”.
 

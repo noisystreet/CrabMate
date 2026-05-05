@@ -106,7 +106,7 @@ cargo run -- save-session --format json --workspace /path/to/proj
 
 ## `save-session`
 
-Reads **`<workspace>/.crabmate/tui_session.json`** by default (`--workspace` and global `--config` before subcommand), writes timestamped **`chat_export_*.json`** / **`chat_export_*.md`** under **`<workspace>/.crabmate/exports/`** (same contract as Web; see `runtime/chat_export.rs` and `frontend-leptos/src/session_export.rs`). JSON top-level **`ChatSessionFile`**: `schema` (fixed `crabmate.chat_session`), `schema_version` (SemVer for the envelope), `version` (message-array contract, evolved with OpenAI-compatible `messages`), `messages`. Older files without `schema` / `schema_version` still deserialize; missing fields default to current constants. Each stdout line is the absolute path of a written file for scripts.
+Reads **`<workspace>/.crabmate/tui_session.json`** by default (`--workspace` and global `--config` before subcommand), writes timestamped **`chat_export_*.json`** / **`chat_export_*.md`** under **`<workspace>/.crabmate/exports/`** (same contract as Web; see `runtime/chat_export.rs` and `frontend/src/session_export.rs`). JSON top-level **`ChatSessionFile`**: `schema` (fixed `crabmate.chat_session`), `schema_version` (SemVer for the envelope), `version` (message-array contract, evolved with OpenAI-compatible `messages`), `messages`. Older files without `schema` / `schema_version` still deserialize; missing fields default to current constants. Each stdout line is the absolute path of a written file for scripts.
 
 ## `tool-replay` (tool timeline fixture)
 
@@ -175,12 +175,12 @@ Keep this section in sync with `README.md` when export behavior changes.
 ## Frontend build and Web
 
 ```bash
-cd frontend-leptos && trunk build && cd ..   # dev (faster, no wasm-opt)
-# For production WASM size: cd frontend-leptos && trunk build --release && cd ..
+cd frontend && trunk build && cd ..   # dev (faster, no wasm-opt)
+# For production WASM size: cd frontend && trunk build --release && cd ..
 cargo run -- serve
 ```
 
-Static assets are served from `frontend-leptos/dist`.
+Static assets are served from `frontend/dist`.
 
 ## Main HTTP routes (`serve`)
 
@@ -216,7 +216,7 @@ Artifacts land in **`dist/`** at the repo root: a **`tar.gz`** is always produce
 
 ```bash
 cargo install cargo-deb
-cd frontend-leptos && trunk build --release && cd ..
+cd frontend && trunk build --release && cd ..
 cargo build --release
 cargo deb
 sudo dpkg -i target/debian/crabmate_*.deb

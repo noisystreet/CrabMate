@@ -85,7 +85,7 @@ This document describes built-in tools, common function-calling JSON examples, a
   - `changelog_draft`: **git log** → Markdown changelog draft (no repo write); by date, `flat`, or adjacent **tag** ranges (`tag_ranges`).
   - `license_notice`: **cargo metadata** → Markdown **crate → license** table (placeholders if missing); **not legal advice**.
   - `repo_overview_sweep`: Read-only **rollup**: optional **project profile** (same as sidebar / `GET /workspace/profile` / first-turn inject: `Cargo.toml` / workspace, `package.json`, top dirs, tokei, optional `cargo metadata --no-deps`; `include_project_profile`, `project_profile_max_chars`, default on, 6000 cap); doc previews (default `README.md`, `AGENTS.md`, `docs/开发文档.md`, …); `list_tree` on `src` (`source_roots`); globs for manifests/CI; ends with an **outline for conclusions**. **No LLM inside**—the model writes analysis from this output. Options: `doc_paths`, `doc_preview_max_lines`, `list_tree_*`, `build_globs`, ….
-  - `crate_contract_map`: Read-only **contract map**: fixed anchors for **HTTP/SSE/config and FE/BE alignment** (e.g. `src/lib.rs`, `docs/SSE协议.md`, `frontend-leptos/src/api.rs`, `frontend-leptos/src/sse_dispatch.rs`, `crates/crabmate-sse-protocol/control_classify.rs`, `fixtures/sse_control_golden.jsonl`, `config/default_config.toml`, `docs/配置说明.md`, `docs/命令行与路由.md`) with **short file heads** and **keyword line excerpts** per section (no subprocess, no network, no `.env`). Options: `head_lines_per_file`, `keyword_hits_per_file`, `extra_paths` (relative, head-only), `max_extra_paths`. Complements `repo_overview_sweep` (repo skeleton vs protocol/routing entrypoints).
+  - `crate_contract_map`: Read-only **contract map**: fixed anchors for **HTTP/SSE/config and FE/BE alignment** (e.g. `src/lib.rs`, `docs/SSE协议.md`, `frontend/src/api.rs`, `frontend/src/sse_dispatch.rs`, `crates/crabmate-sse-protocol/control_classify.rs`, `fixtures/sse_control_golden.jsonl`, `config/default_config.toml`, `docs/配置说明.md`, `docs/命令行与路由.md`) with **short file heads** and **keyword line excerpts** per section (no subprocess, no network, no `.env`). Options: `head_lines_per_file`, `keyword_hits_per_file`, `extra_paths` (relative, head-only), `max_extra_paths`. Complements `repo_overview_sweep` (repo skeleton vs protocol/routing entrypoints).
   - `docs_health_sweep`: Doc previews + `typos_check` + `codespell_check` + `markdown_check_links`. Missing CLIs → **skipped** steps. **External links**: only if **`md_allowed_external_prefixes`** non-empty does `markdown_check_links` use the **built-in HTTP client** for HEAD; **not** `http_fetch`/`http_request`, **not** `http_fetch_allowed_prefixes`, **no** Web/CLI approval. Empty prefix → count only, no network. Options: `fail_fast`, `summary_only`, `spell_paths`, per-step toggles, ….
   - `hash_file`: Read-only **SHA-256 / SHA-512 / BLAKE3** (streaming); optional `max_bytes` prefix hash.
   - `diagnostic_summary`: Redacted diagnostics—Rust toolchain (`rustc`/`cargo`/`rustup`/`bc`), workspace `target/`, common `Cargo.toml` / `frontend` paths, whether key env vars **are set** (**never values**; no length for secrets). Optional `extra_env_vars` (safe uppercase names).
@@ -476,13 +476,13 @@ Typical `release_ready_check` / `cargo_deny` / `cargo_audit` issues:
   Default roots: `README.md` and `docs/`.
 - `structured_validate`:
   ```json
-  {"path":"frontend-leptos/Cargo.toml","format":"auto","summarize":true}
+  {"path":"frontend/Cargo.toml","format":"auto","summarize":true}
   ```
 - `structured_query`:
   ```json
   {"path":"Cargo.toml","query":"/package/name","format":"toml"}
   ```
-  Dot path: `{"path":"frontend-leptos/Cargo.toml","query":"dependencies.leptos"}`.
+  Dot path: `{"path":"frontend/Cargo.toml","query":"dependencies.leptos"}`.
 - `structured_diff`:
   ```json
   {"path_a":"specs/openapi.v1.json","path_b":"specs/openapi.v2.json","max_diff_lines":200}

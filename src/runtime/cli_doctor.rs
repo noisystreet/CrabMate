@@ -128,11 +128,8 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
     println!("【工作区路径】");
     println!("  当前目录: {}", ws.display());
     path_status_line("Cargo.toml", &ws.join("Cargo.toml"));
-    path_status_line(
-        "frontend-leptos/Trunk.toml",
-        &ws.join("frontend-leptos/Trunk.toml"),
-    );
-    path_status_line("frontend-leptos/dist", &ws.join("frontend-leptos/dist"));
+    path_status_line("frontend/Trunk.toml", &ws.join("frontend/Trunk.toml"));
+    path_status_line("frontend/dist", &ws.join("frontend/dist"));
     path_status_line("target", &ws.join("target"));
     if let Ok(root) = canonical_workspace_root(&ws)
         && root != ws
@@ -160,15 +157,15 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
     }
     println!();
 
-    println!("【Web 前端构建（frontend-leptos）】");
-    if ws.join("frontend-leptos/Trunk.toml").is_file() {
+    println!("【Web 前端构建（frontend）】");
+    if ws.join("frontend/Trunk.toml").is_file() {
         if let Some(s) = capture_trimmed("trunk", &["--version"]) {
             println!("  trunk --version: {}", s);
         } else {
             println!("  trunk: 未找到或执行失败");
         }
     } else {
-        println!("  （跳过：无 frontend-leptos/Trunk.toml）");
+        println!("  （跳过：无 frontend/Trunk.toml）");
     }
     println!();
 

@@ -23,7 +23,7 @@ except ImportError:
     sys.exit(1)
 
 ROOT = Path(__file__).resolve().parent.parent
-RUST_ROOTS = [ROOT / "src", ROOT / "crates", ROOT / "frontend-leptos" / "src"]
+RUST_ROOTS = [ROOT / "src", ROOT / "crates", ROOT / "frontend" / "src"]
 DEFAULT_TOP10_BASELINE = ROOT / "scripts" / "lizard_top10_ccn_sum.txt"
 DEFAULT_MAX_BASELINE = ROOT / "scripts" / "lizard_max_ccn_baseline.txt"
 

@@ -171,11 +171,7 @@ pub fn diagnostic_summary(args_json: &str, working_dir: &Path) -> String {
                         "不存在或非目录"
                     }
                 ));
-                for rel in [
-                    "Cargo.toml",
-                    "frontend-leptos/Trunk.toml",
-                    "frontend-leptos/dist",
-                ] {
+                for rel in ["Cargo.toml", "frontend/Trunk.toml", "frontend/dist"] {
                     let p = base.join(rel);
                     let st = if p.is_file() {
                         "文件存在"

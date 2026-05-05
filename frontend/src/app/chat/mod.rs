@@ -1,6 +1,6 @@
 //! 聊天主路径：主列视图、输入与流式、`wire_*` 接线（滚动、查找、时间线）。
 //!
-//! 对应 `docs/frontend-leptos/ARCHITECTURE.md` 中 **`app/chat_*`** 域；[`ChatSessionSignals`](crate::chat_session_state::ChatSessionSignals) 仍在 crate 根以便与会话模态等共用。
+//! 对应 `docs/frontend/ARCHITECTURE.md` 中 **`app/chat_*`** 域；[`ChatSessionSignals`](crate::chat_session_state::ChatSessionSignals) 仍在 crate 根以便与会话模态等共用。
 
 mod column;
 mod composer;

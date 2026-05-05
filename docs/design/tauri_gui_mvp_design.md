@@ -4,7 +4,7 @@
 
 在不重构现有业务逻辑的前提下，为项目新增一个桌面 GUI：
 
-- 复用已有 `frontend-leptos` Web UI
+- 复用已有 `frontend` Web UI
 - 复用已有 Rust 后端 `serve` 模式
 - 通过 Tauri 提供桌面应用壳层与进程管理
 

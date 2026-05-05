@@ -8,7 +8,7 @@ This page lists **automated tests and common checks** for the CrabMate repo (run
 
 - **Rust**: 1.85+ (edition 2024); see [`README-en.md`](../../README-en.md).
 - **E2E**: Node.js and npm; install Playwright’s Chromium once.
-- **Web assets**: E2E and `serve` need **`frontend-leptos/dist/index.html`** — build with **`cd frontend-leptos && trunk build`** (use **`trunk build --release`** for production-sized WASM).
+- **Web assets**: E2E and `serve` need **`frontend/dist/index.html`** — build with **`cd frontend && trunk build`** (use **`trunk build --release`** for production-sized WASM).
 
 ## Pre-commit
 
@@ -25,7 +25,7 @@ Includes (non-exhaustive):
 - **`lizard-rust`**: Rust cyclomatic complexity (requires **`pip install lizard`**; **`scripts/lizard-rust.sh`** / **`scripts/lizard_rust_metrics.py`**: per-function cap **`LIZARD_CCN`** (default 40), ratchet files **`scripts/lizard_max_ccn_baseline.txt`** and **`scripts/lizard_top10_ccn_sum.txt`**)
 - **`fn-nloc-ratchet`**: Rust function-body **`nloc`** (lizard) plus **physical `.rs` file line counts** (same script **`scripts/fn-nloc-ratchet.sh`** / **`scripts/fn_nloc_rust_metrics.py`**); function ratchets **`scripts/fn_nloc_max_baseline.txt`**, **`scripts/fn_nloc_top10_sum_baseline.txt`**; optional hard cap **`FN_NLOC_CAP`**; file ratchets **`scripts/rust_file_max_lines_baseline.txt`**, **`scripts/rust_file_top10_lines_sum_baseline.txt`**; optional hard cap **`RUST_FILE_LINES_MAX_CAP`**; runs in **`.github/workflows/code-complexity.yml`**
 - **Coverage**: **`.github/workflows/code-coverage.yml`** is **manual-only** (`workflow_dispatch`); locally you can still run `cargo llvm-cov` + **`scripts/check_coverage_ratchet.py`**
-- **`cargo test golden_sse_control`** (conditional hook when `fixtures/sse_control_golden.jsonl`, `crates/crabmate-sse-protocol/control_classify.rs`, or `frontend-leptos/src/sse_dispatch.rs` change)
+- **`cargo test golden_sse_control`** (conditional hook when `fixtures/sse_control_golden.jsonl`, `crates/crabmate-sse-protocol/control_classify.rs`, or `frontend/src/sse_dispatch.rs` change)
 
 Without pre-commit installed, run at least:
 
@@ -71,7 +71,7 @@ If you change SSE **control-plane** branch ordering, update the golden fixture a
 cargo +nightly test
 ```
 
-## Frontend (Leptos / `frontend-leptos`)
+## Frontend (Leptos / `frontend`)
 
 ### Host target unit tests (default)
 
@@ -84,7 +84,7 @@ cargo test -p crabmate-web-leptos
 Or:
 
 ```bash
-cd frontend-leptos && cargo test
+cd frontend && cargo test
 ```
 
 Covers Markdown sanitization, session helpers, `debounce_schedule`, etc. (no browser).
@@ -106,15 +106,15 @@ If `wasm-bindgen` is bumped in the lockfile, use that version in the install com
 After protocol or large UI changes, at least:
 
 ```bash
-cd frontend-leptos && cargo check --target wasm32-unknown-unknown
+cd frontend && cargo check --target wasm32-unknown-unknown
 ```
 
 ### Static bundle build (required for E2E / `serve`)
 
 ```bash
-cd frontend-leptos && trunk build
+cd frontend && trunk build
 # Production-sized WASM:
-# cd frontend-leptos && trunk build --release
+# cd frontend && trunk build --release
 ```
 
 ## Browser E2E (Playwright)
@@ -122,7 +122,7 @@ cd frontend-leptos && trunk build
 Directory: **`e2e/`**. Stubs **`POST /chat/stream`** and **`/workspace`** routes — **no real LLM**. Tests live under **`e2e/tests/`** (e.g. **`smoke.spec.ts`**); prefer **`data-testid`** selectors.
 
 ```bash
-cd frontend-leptos && trunk build
+cd frontend && trunk build
 cd ../e2e && npm ci
 npx playwright install chromium
 npm test
@@ -150,10 +150,10 @@ Policy file: root **`deny.toml`**. These checks are **not** in pre-commit to avo
 
 ## Not automated
 
-- **Visual / layout smoke list**: [`docs/frontend-leptos/VISUAL_REGRESSION_CHECKLIST.md`](../frontend-leptos/VISUAL_REGRESSION_CHECKLIST.md) (no screenshot diff pipeline in-repo).
+- **Visual / layout smoke list**: [`docs/frontend/VISUAL_REGRESSION_CHECKLIST.md`](../frontend/VISUAL_REGRESSION_CHECKLIST.md) (no screenshot diff pipeline in-repo).
 
 ## See also
 
-- Architecture and E2E detail: [`DEVELOPMENT.md`](DEVELOPMENT.md) (§ `frontend-leptos`, E2E)
+- Architecture and E2E detail: [`DEVELOPMENT.md`](DEVELOPMENT.md) (§ `frontend`, E2E)
 - SSE contract and goldens: [`SSE_PROTOCOL.md`](../SSE协议.md)
 - Debugging: [`DEBUG.md`](../调试指南.md)

@@ -92,7 +92,7 @@ Local checks: **`crabmate doctor`** (no `API_KEY`), **`probe`** / **`models`**. 
 # Optional: export CM_API_BASE=… CM_MODEL=… API_KEY=… (or Web Settings / REPL /api-key set)
 cargo build
 ./target/debug/crabmate repl    # or crabmate repl when on PATH
-cd frontend-leptos && trunk build && cd ..
+cd frontend && trunk build && cd ..
 ./target/debug/crabmate serve   # default :8080; release WASM: trunk build --release
 ```
 
@@ -103,7 +103,7 @@ cd frontend-leptos && trunk build && cd ..
 - **Common**: **`doctor`**, **`config`**, **`probe`** / **`models`**, **`bench`**, **`save-session`** / **`export-session`**, **`tool-replay`**, **`mcp list`**. Globals: **`--config`**, **`--workspace`**, **`--agent-role`**, **`--no-tools`**, **`--no-stream`**, etc.
 - Config keys: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md); full subcommand list, benchmark, **`man crabmate`**: [docs/en/CLI.md](docs/en/CLI.md).
 
-**Frontend**: `cd frontend-leptos && trunk build` (dev; **`--release`** for production), then **`crabmate serve`**. UI language in Settings; see `frontend-leptos/README.md`, [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md).
+**Frontend**: `cd frontend && trunk build` (dev; **`--release`** for production), then **`crabmate serve`**. UI language in Settings; see `frontend/README.md`, [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md).
 
 **Config**: default `config/*.toml` (embedded) + optional root **`config.toml`**; **`system_prompt_file`** → `config/prompts/default_system_prompt.md` (edit without rebuild). By default a thinking-discipline appendix is appended to the first `system` (editable **`config/prompts/thinking_avoid_echo_appendix.md`**, see [CONFIGURATION](docs/en/CONFIGURATION.md)). **Release / deb / man**: **[Build and packaging](#build-and-packaging)**.
 
@@ -112,11 +112,11 @@ cd frontend-leptos && trunk build && cd ..
 ## Build and packaging
 
 - **Toolchain**: **Rust 1.85+**, **Trunk** + **`wasm32-unknown-unknown`**; Linux / long-term memory notes: [AGENTS.md](AGENTS.md).
-- **Build**: `cargo build` → `target/debug/crabmate`; **`--release`** → `target/release/crabmate`. With Web: **`cd frontend-leptos && trunk build`** first (**`--release`** for production WASM).
+- **Build**: `cargo build` → `target/debug/crabmate`; **`--release`** → `target/release/crabmate`. With Web: **`cd frontend && trunk build`** first (**`--release`** for production WASM).
 - **Checks**: `cargo fmt --all`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`; or [.pre-commit-config.yaml](.pre-commit-config.yaml). Full testing and quality checklist: **[docs/en/TESTING.md](docs/en/TESTING.md)**.
-- **E2E** (optional): after `frontend-leptos` build, **`cd e2e && npm ci && npx playwright install chromium && npm test`**. See [docs/en/TESTING.md](docs/en/TESTING.md) and [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md).
+- **E2E** (optional): after `frontend` build, **`cd e2e && npm ci && npx playwright install chromium && npm test`**. See [docs/en/TESTING.md](docs/en/TESTING.md) and [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md).
 - **Install**: `cargo install --path .` (**does not** install man; use `.deb` or [man/crabmate.1](man/crabmate.1)). Regenerate man: `cargo run --bin crabmate-gen-man`.
-- **One-shot packaging**: **`./scripts/package-release.sh`** → **`dist/`** with **`crabmate_<version>_<os>_<arch>.tar.gz`** (binary, `config/`, `frontend-leptos/dist`, man); on Linux with **`cargo-deb`** installed, also copies **`target/debian/crabmate_*.deb`** into **`dist/`**.
+- **One-shot packaging**: **`./scripts/package-release.sh`** → **`dist/`** with **`crabmate_<version>_<os>_<arch>.tar.gz`** (binary, `config/`, `frontend/dist`, man); on Linux with **`cargo-deb`** installed, also copies **`target/debian/crabmate_*.deb`** into **`dist/`**.
 - **`.deb`**: [cargo-deb](https://github.com/kornelski/cargo-deb), or manually: frontend release + **`cargo deb`**, default output **`target/debian/`**. Details: [docs/en/CLI.md](docs/en/CLI.md) § Debian `.deb` packaging.
 
 ## Deployment and security

@@ -508,7 +508,7 @@ fn test_summarize_tool_call_dynamic_run_command() {
 fn test_summarize_read_file_range_normalizes_inverted_order() {
     let s = summarize_tool_call(
         "read_file",
-        r#"{"path":"frontend-leptos/src/api.rs","start_line":419,"end_line":150}"#,
+        r#"{"path":"frontend/src/api.rs","start_line":419,"end_line":150}"#,
     )
     .expect("summary");
     assert!(

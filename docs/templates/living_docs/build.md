@@ -3,5 +3,5 @@
 ```bash
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test -p crabmate
-cd frontend-leptos && trunk build
+cd frontend && trunk build
 ```

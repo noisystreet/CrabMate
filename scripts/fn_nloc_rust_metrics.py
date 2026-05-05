@@ -39,7 +39,7 @@ except ImportError:
     sys.exit(1)
 
 ROOT = Path(__file__).resolve().parent.parent
-RUST_ROOTS = [ROOT / "src", ROOT / "crates", ROOT / "frontend-leptos" / "src"]
+RUST_ROOTS = [ROOT / "src", ROOT / "crates", ROOT / "frontend" / "src"]
 
 DEFAULT_MAX_BASELINE = ROOT / "scripts" / "fn_nloc_max_baseline.txt"
 DEFAULT_TOP10_BASELINE = ROOT / "scripts" / "fn_nloc_top10_sum_baseline.txt"

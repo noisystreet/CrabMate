@@ -82,7 +82,7 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 
 ## `sse/`
 
-**Summary**: `protocol` encodes control JSON; `line` classifies lines (align with `frontend-leptos`).
+**Summary**: `protocol` encodes control JSON; `line` classifies lines (align with `frontend`).
 
 - [ ] Optional debug payloads (dev-only).
 
@@ -120,11 +120,11 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 
 ---
 
-## `frontend-leptos/`
+## `frontend/`
 
 **Summary**: `api.rs`, `sse_dispatch.rs`, panels, session state, `session_export`.
 
-- [ ] Browser session state (follow-up): optional **encrypted** local cache. Implemented: `ChatSession` persists **`server_conversation_id` / `server_revision`** and **`GET /conversation/messages`** hydration after stream saves; tab-local model remains **`frontend-leptos/src/session_sync.rs`** (`SessionSyncState`).
+- [ ] Browser session state (follow-up): optional **encrypted** local cache. Implemented: `ChatSession` persists **`server_conversation_id` / `server_revision`** and **`GET /conversation/messages`** hydration after stream saves; tab-local model remains **`frontend/src/session_sync.rs`** (`SessionSyncState`).
 - [ ] Virtualize long chat lists.
 - [ ] i18n, a11y, keyboard navigation.
 - [ ] Future voice (STT/TTS); align with gateway identity policy (**`docs/en/FUTURE_PLANS.md`**).

@@ -9,7 +9,7 @@ End-user features: **`README.md`**; env/config: **`docs/en/CONFIGURATION.md`**; 
 
 - **`docs/待办清单.md`**: **Open items only**; global P0–P5 plus per-module sections. **Delete** a line when done (no permanent `[x]`); drop empty section headers. History lives in Git.
 - **User-visible changes** (new CLI flags, HTTP routes, config keys, tool names, Web/CLI behavior): update **`README.md`** and/or this file; **built-in tools** live in **`docs/en/TOOLS.md`**. Pure refactors: `DEVELOPMENT` and/or comments may suffice.
-- **Cursor rules**: `.cursor/rules/todolist-and-documentation.mdc`; architecture/module moves: `.cursor/rules/architecture-docs-sync.mdc` (keep § Architecture + module index + Mermaid in sync). Web UI (Leptos): `frontend-leptos.mdc`; tools: `tools-registry.mdc`; SSE/chat: `api-sse-chat-protocol.mdc`; security surfaces: `security-sensitive-surface.mdc`; deps/licenses: `dependencies-licenses.mdc`.
+- **Cursor rules**: `.cursor/rules/todolist-and-documentation.mdc`; architecture/module moves: `.cursor/rules/architecture-docs-sync.mdc` (keep § Architecture + module index + Mermaid in sync). Web UI (Leptos): `frontend.mdc`; tools: `tools-registry.mdc`; SSE/chat: `api-sse-chat-protocol.mdc`; security surfaces: `security-sensitive-surface.mdc`; deps/licenses: `dependencies-licenses.mdc`.
 - **PR/Issue templates**: `.github/pull_request_template.md`, `.github/ISSUE_TEMPLATE/`.
 - **Pre-commit**: `.pre-commit-config.yaml` (`cargo fmt`, `cargo clippy -D warnings`, `lizard-rust` / `scripts/lizard-rust.sh` for Rust CCN, `fn-param-ratchet` / `scripts/fn-param-ratchet.sh` for parameter-count + `too_many_arguments` allow ratchet, `fn-nloc-ratchet` / `scripts/fn-nloc-ratchet.sh` for function `nloc` + per-file physical line-count ratchets, Conventional Commits on `commit-msg`). Install: `pip install pre-commit lizard && pre-commit install` (add `--hook-type commit-msg` if needed). Agent rule: `.cursor/rules/pre-commit-before-commit.mdc`. Rust tests/error handling: `rust-clippy-and-tests.mdc`, `rust-error-handling.mdc`.
 - **Commits**: Conventional Commits (`.cursor/rules/conventional-commits.mdc`).
@@ -19,7 +19,7 @@ End-user features: **`README.md`**; env/config: **`docs/en/CONFIGURATION.md`**; 
 ## System overview
 
 - **Rust backend (`src/`)**: OpenAI-compatible **`chat/completions`** to configured **`api_base`**; agent loop, HTTP + SSE, tools, workspace/tasks/upload.
-- **Web frontend (`frontend-leptos/`)**: Leptos (CSR) + WASM, **Trunk** build; static assets served from **`frontend-leptos/dist`**. Chat UI, workspace browser/editor, tasks, status bar, SSE consumer.
+- **Web frontend (`frontend/`)**: Leptos (CSR) + WASM, **Trunk** build; static assets served from **`frontend/dist`**. Chat UI, workspace browser/editor, tasks, status bar, SSE consumer.
 
 ## Architecture
 
@@ -171,7 +171,7 @@ This section records **maintainer rules** (aligned with `src/llm/mod.rs`): **one
 | `memory/agent_memory.rs` / `context_bootstrap/project_profile.rs` / `context_bootstrap/project_dependency_brief.rs` | Workspace memo + living-docs snippet + project profile + dependency brief for first-turn context. |
 | `read_file_turn_cache.rs` | Per-turn **`read_file`** cache. |
 | `workspace/changelist.rs` | Session write tracking + injected changelist user message; Web **`GET /workspace/changelog`** returns the same Markdown for UI preview. |
-| `web/` | Axum **`AppState`**, chat handlers (including **`GET /workspace/changelog`**), **`GET /openapi.json`** (OpenAPI 3.0 spec), workspace, tasks (in-memory per workspace), static **`frontend-leptos/dist`**, config reload path alignment. |
+| `web/` | Axum **`AppState`**, chat handlers (including **`GET /workspace/changelog`**), **`GET /openapi.json`** (OpenAPI 3.0 spec), workspace, tasks (in-memory per workspace), static **`frontend/dist`**, config reload path alignment. |
 
 ### `lib.rs` responsibilities
 
@@ -261,7 +261,7 @@ Shared client; separate connect vs request timeout; pool tuning for keep-alive.
 
 ### `src/sse/protocol.rs` / `line.rs`
 
-**`SsePayload`** encoding; **`SSE_PROTOCOL_VERSION`** from **`crates/crabmate-sse-protocol`** (re-exported in `protocol`); consumer classification aligned with **`frontend-leptos/src/sse_dispatch.rs`** / **`api.rs`**.
+**`SsePayload`** encoding; **`SSE_PROTOCOL_VERSION`** from **`crates/crabmate-sse-protocol`** (re-exported in `protocol`); consumer classification aligned with **`frontend/src/sse_dispatch.rs`** / **`api.rs`**.
 
 ### `src/types.rs`
 
@@ -279,7 +279,7 @@ Aggregated in **`file/mod.rs`**; glob/tree limits; **`resolve_for_read`** for ot
 
 **`web`**: handlers matching UI. **`runtime`**: CLI session file (`.crabmate/tui_session.json`), optional background **`initial_workspace_messages`** gated by **`repl_initial_workspace_messages_enabled`**, benchmark runner, MCP list, config reload, tool replay exit code 6 on mismatch. Product differences vs Web: **`docs/en/CLI.md`** § CLI vs Web.
 
-## Frontend (`frontend-leptos/`)
+## Frontend (`frontend/`)
 
 - **`src/api.rs`**: `fetch` + **`send_chat_stream`**（**`client_sse_protocol`** 与 **`crabmate_sse_protocol::SSE_PROTOCOL_VERSION`**）等。
 - **`src/sse_dispatch.rs`**: 控制面 JSON 分类（含 **`sse_capabilities`** 版本核对）。

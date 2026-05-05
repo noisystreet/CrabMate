@@ -123,7 +123,7 @@
 
 ### 5.2 MemoryModal 组件
 
-新建 `frontend-leptos/src/app/memory_modal.rs`：
+新建 `frontend/src/app/memory_modal.rs`：
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -224,7 +224,7 @@ async fn memory_delete_handler(
 
 ### Step 2: 前端 API 客户端
 
-**新增文件**：`frontend-leptos/src/api/memory.rs`
+**新增文件**：`frontend/src/api/memory.rs`
 
 ```rust
 pub async fn list_memories(query: MemoryListQuery) -> Result<MemoryListResponse, ApiError>
@@ -233,25 +233,25 @@ pub async fn delete_memory(id: i64) -> Result<MemoryDeleteResponse, ApiError>
 
 ### Step 3: 前端 Signal/State
 
-**新增文件**：`frontend-leptos/src/chat_memory_state.rs`
+**新增文件**：`frontend/src/chat_memory_state.rs`
 
 实现 `MemorySignals` 结构体，管理 modal 状态和数据获取。
 
 ### Step 4: 前端 MemoryModal 组件
 
-**新增文件**：`frontend-leptos/src/app/memory_modal.rs`
+**新增文件**：`frontend/src/app/memory_modal.rs`
 
 实现 `MemoryModal` 组件，包含列表、筛选、搜索、删除功能。
 
 ### Step 5: i18n
 
-**新增文件**：`frontend-leptos/src/i18n/memory.rs`
+**新增文件**：`frontend/src/i18n/memory.rs`
 
 在 `i18n/mod.rs` 中引入并导出。
 
 ### Step 6: 入口绑定
 
-在 `frontend-leptos/src/app/sidebar_nav.rs` 中增加记忆按钮，点击时打开 modal。
+在 `frontend/src/app/sidebar_nav.rs` 中增加记忆按钮，点击时打开 modal。
 
 ---
 

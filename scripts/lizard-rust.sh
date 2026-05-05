@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 对 `src/`、`crates/` 与 `frontend-leptos/src/` 下 Rust 代码做圈复杂度（CCN）扫描，使用 lizard（https://github.com/terryyin/lizard）。
+# 对 `src/`、`crates/` 与 `frontend/src/` 下 Rust 代码做圈复杂度（CCN）扫描，使用 lizard（https://github.com/terryyin/lizard）。
 # 未安装时：pip install lizard
 #
 # 规则：

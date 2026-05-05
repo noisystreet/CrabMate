@@ -164,7 +164,7 @@ async fn run_dry_run(
     let static_dir = web_static_dir::resolve_web_static_dir();
     if !static_dir.is_dir() {
         let msg = format!(
-            "dry-run 失败：前端静态目录不存在：{}（请先构建：cd frontend-leptos && trunk build）",
+            "dry-run 失败：前端静态目录不存在：{}（请先构建：cd frontend && trunk build）",
             static_dir.display()
         );
         eprintln!("{msg}");

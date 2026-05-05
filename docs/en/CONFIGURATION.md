@@ -136,7 +136,7 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | `CM_PROJECT_PROFILE_INJECT_ENABLED` | Project profile injection. |
 | `CM_PROJECT_PROFILE_INJECT_MAX_CHARS` | Profile max chars. |
 | `CM_PROJECT_DEPENDENCY_BRIEF_INJECT_ENABLED` | Dependency brief (merged with profile/memo). |
-| `CM_PROJECT_DEPENDENCY_BRIEF_INJECT_MAX_CHARS` | From `cargo metadata` edges + Mermaid + **workspace root or `frontend/`** `package.json` name excerpts (common npm subfolder layout; unrelated to CrabMate’s bundled `frontend-leptos`); `0` disables segment. |
+| `CM_PROJECT_DEPENDENCY_BRIEF_INJECT_MAX_CHARS` | From `cargo metadata` edges + Mermaid + **`package.json` name excerpts** under the **workspace root or a `frontend/` subdirectory** (common npm layout). **Only paths that actually contain `package.json`** contribute; this does not collide with this repo’s Leptos **`frontend/`** tree (usually no `package.json`); `0` disables segment. |
 
 ### Tool explain card
 

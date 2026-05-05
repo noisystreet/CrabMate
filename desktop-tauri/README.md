@@ -47,4 +47,4 @@ cargo install tauri-cli --version "^2"
 
 ## 备注
 
-当前仓库主 Web 前端仍在 `frontend-leptos/`，桌面端复用该 UI，不重复实现业务页面。
+当前仓库主 Web 前端仍在 `frontend/`，桌面端复用该 UI，不重复实现业务页面。

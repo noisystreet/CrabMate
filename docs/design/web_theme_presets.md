@@ -1,14 +1,14 @@
 # Web 前端：多套预设主题（扩展 `data-theme`）设计
 
-**状态**：设计稿（**未**承诺实现时间表）。**受众**：维护 `frontend-leptos/` 样式与设置相关 Rust 的开发者。  
+**状态**：设计稿（**未**承诺实现时间表）。**受众**：维护 `frontend/` 样式与设置相关 Rust 的开发者。  
 **语言**：中文。  
 **关联**：
 
-- 现状与 token：**`frontend-leptos/styles/tokens.css`**
-- 主题同步 DOM / 存储：**`frontend-leptos/src/app/app_shell_effects.rs`**（`wire_sync_theme_to_storage_and_dom`）
-- 偏好键：**`frontend-leptos/src/app_prefs.rs`**（`THEME_KEY` = `crabmate-theme`）
-- 设置 UI：**`frontend-leptos/src/app/settings_sections.rs`**、**`settings_modal.rs`**、**`settings_page.rs`**
-- 初始化：**`frontend-leptos/src/app/app_signals.rs`**
+- 现状与 token：**`frontend/styles/tokens.css`**
+- 主题同步 DOM / 存储：**`frontend/src/app/app_shell_effects.rs`**（`wire_sync_theme_to_storage_and_dom`）
+- 偏好键：**`frontend/src/app_prefs.rs`**（`THEME_KEY` = `crabmate-theme`）
+- 设置 UI：**`frontend/src/app/settings_sections.rs`**、**`settings_modal.rs`**、**`settings_page.rs`**
+- 初始化：**`frontend/src/app/app_signals.rs`**
 - 界面美化总览：**`docs/Web界面美化设计.md`**（若与本设计交叉，以本设计为准定义「多预设」契约，实现后可在该文增加指针）
 
 ---
@@ -81,7 +81,7 @@
 
 ### 3.4 文件组织（可选）
 
-- 预设较多时，可将各主题块拆到 **`frontend-leptos/styles/themes/*.css`**，在 **`index.html`** 的 `data-trunk` 链中 **置于 `tokens.css` 之后**，便于覆盖默认 token；须在 **`docs/开发文档.md`** 的样式链说明中同步路径。
+- 预设较多时，可将各主题块拆到 **`frontend/styles/themes/*.css`**，在 **`index.html`** 的 `data-trunk` 链中 **置于 `tokens.css` 之后**，便于覆盖默认 token；须在 **`docs/开发文档.md`** 的样式链说明中同步路径。
 
 ---
 
@@ -94,7 +94,7 @@
 | **`settings_sections.rs`** | 用预设列表驱动 UI（按钮组 / 下拉 / 网格），替代硬编码两个 `on:click`。 |
 | **`settings_modal.rs` / `settings_page.rs`** | 与设置区块 **同一套预设来源**；`apply_theme_preview_to_dom` 已通用，仅需传入合法 slug。 |
 | **`settings_form_state.rs` / `settings_commit.rs`** | 仍为 `String` 即可；提交时写入 `theme` signal。 |
-| **i18n** | `frontend-leptos/src/i18n/settings.rs`（或等价模块）：每个 slug 的 **用户可见名称**、设置页说明一句。 |
+| **i18n** | `frontend/src/i18n/settings.rs`（或等价模块）：每个 slug 的 **用户可见名称**、设置页说明一句。 |
 
 **测试（建议）**：对 `normalize_theme_slug` 做 `#[cfg(test)]` 单元测试（未知值、空串、旧值兼容）。
 
@@ -125,9 +125,9 @@
 
 | 项 | 动作 |
 |----|------|
-| **`frontend-leptos/README.md`** | 更新 `crabmate-theme` 合法取值说明。 |
+| **`frontend/README.md`** | 更新 `crabmate-theme` 合法取值说明。 |
 | **`docs/开发文档.md`** | 「样式结构」小节增加指向本文的链接。 |
-| **`docs/frontend-leptos/VISUAL_REGRESSION_CHECKLIST.md`** | 为每个新预设增加一条手测（聊天列、模态、侧栏、composer、状态栏）。 |
+| **`docs/frontend/VISUAL_REGRESSION_CHECKLIST.md`** | 为每个新预设增加一条手测（聊天列、模态、侧栏、composer、状态栏）。 |
 
 ---
 
