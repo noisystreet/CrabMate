@@ -11,7 +11,7 @@ use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n;
 use crate::i18n::Locale;
 use crate::session_ops::{
-    flush_composer_draft_to_session, make_message_id, message_created_ms, patch_active_session,
+    flush_active_composer_draft, make_message_id, message_created_ms, patch_active_session,
     prepare_retry_failed_assistant_turn, title_from_user_prompt,
 };
 use crate::session_sync::SessionSyncState;
@@ -264,11 +264,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
     let new_session: Rc<dyn Fn()> = Rc::new({
         let chat = chat;
         move || {
-            let prev = chat.active_id.get_untracked();
-            if !prev.is_empty() {
-                let buf = draft.get_untracked();
-                flush_composer_draft_to_session(chat.sessions, &prev, &buf);
-            }
+            flush_active_composer_draft(chat.sessions, chat.active_id, draft);
             let now = js_sys::Date::now() as i64;
             let s = ChatSession {
                 id: make_session_id(),

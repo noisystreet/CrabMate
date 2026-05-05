@@ -17,7 +17,7 @@ use crate::debounce_schedule;
 use crate::i18n;
 use crate::session_ops::{
     SessionContextAnchor, clamp_session_ctx_menu_pos, delete_session_after_confirm,
-    export_session_json_for_id, export_session_markdown_for_id, flush_composer_draft_to_session,
+    export_session_json_for_id, export_session_markdown_for_id, flush_active_composer_draft,
     set_session_pinned, set_session_starred,
 };
 use crate::session_search::{
@@ -508,15 +508,7 @@ fn nav_search_hit_button(h: MessageSearchHit, nav: NavRailHitRowNavSignals) -> i
             type="button"
             class="nav-search-hit"
             on:click=move |_| {
-                let prev = active_id.get_untracked();
-                if !prev.is_empty() {
-                    let t = draft.get_untracked();
-                    flush_composer_draft_to_session(
-                        sessions,
-                        &prev,
-                        &t,
-                    );
-                }
+                flush_active_composer_draft(sessions, active_id, draft);
                 session_context_menu.set(None);
                 sidebar_rail_ctx_menu.set(None);
                 active_id.set(sid.clone());
@@ -595,15 +587,7 @@ fn nav_session_row_button(s: ChatSession, nav: NavRailHitRowNavSignals) -> impl 
             on:click={
                 let id = session_id_click;
                 move |_| {
-                    let prev = active_id.get_untracked();
-                    if !prev.is_empty() {
-                        let t = draft.get_untracked();
-                        flush_composer_draft_to_session(
-                            sessions,
-                            &prev,
-                            &t,
-                        );
-                    }
+                    flush_active_composer_draft(sessions, active_id, draft);
                     session_context_menu.set(None);
                     sidebar_rail_ctx_menu.set(None);
                     active_id.set(id.clone());

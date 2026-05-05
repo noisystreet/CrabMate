@@ -336,6 +336,19 @@ pub fn flush_composer_draft_to_session(
     });
 }
 
+/// 将当前输入草稿写入 `active_id` 指向的会话（侧栏切换、管理会话、新建会话等导航前调用）。
+pub fn flush_active_composer_draft(
+    sessions: RwSignal<Vec<ChatSession>>,
+    active_id: RwSignal<String>,
+    draft: RwSignal<String>,
+) {
+    let prev = active_id.get_untracked();
+    if prev.is_empty() {
+        return;
+    }
+    flush_composer_draft_to_session(sessions, &prev, &draft.get_untracked());
+}
+
 pub fn export_session_json_for_id(
     sessions: RwSignal<Vec<ChatSession>>,
     id: &str,

@@ -6,7 +6,7 @@ use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::{self, Locale};
 use crate::session_ops::{
     delete_session_after_confirm, export_session_json_for_id, export_session_markdown_for_id,
-    flush_composer_draft_to_session, set_session_pinned, set_session_starred,
+    flush_active_composer_draft, set_session_pinned, set_session_starred,
 };
 
 /// 「管理会话」模态单行所需字段（缩短 [`SessionModalRow`] 形参列表；勿命名为 `*Props`，与 Leptos 组件宏生成类型冲突）。
@@ -60,11 +60,7 @@ pub fn SessionModalRow(row: SessionModalRowBundle) -> impl IntoView {
                 on:click={
                     let id = id.clone();
                     move |_| {
-                        let prev = chat.active_id.get_untracked();
-                        if !prev.is_empty() {
-                            let t = draft.get_untracked();
-                            flush_composer_draft_to_session(chat.sessions, &prev, &t);
-                        }
+                        flush_active_composer_draft(chat.sessions, chat.active_id, draft);
                         chat.active_id.set(id.clone());
                         draft.set(
                             chat.sessions.with(|list| {
