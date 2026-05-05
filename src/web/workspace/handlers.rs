@@ -54,14 +54,10 @@ async fn effective_workspace_base_canonical(
     Ok(base_canonical)
 }
 
-/// 通过原生文件对话框选择工作区根目录
+/// 工作区「选目录」占位接口（历史兼容）：已不再绑定原生对话框依赖，始终返回 `path: null`。
+/// Web 侧请在输入框中填写路径后按 Enter 提交 [`workspace_set_handler`]。
 pub async fn workspace_pick_handler() -> Json<WorkspacePickResponse> {
-    let path = tokio::task::spawn_blocking(|| rfd::FileDialog::new().pick_folder())
-        .await
-        .ok()
-        .and_then(|opt| opt)
-        .map(|p| p.display().to_string());
-    Json(WorkspacePickResponse { path })
+    Json(WorkspacePickResponse { path: None })
 }
 
 /// 设置当前工作区根目录（来自前端）。非空路径须已存在、为目录，且落在配置的 `workspace_allowed_roots` 内（未配置时仅允许 `run_command_working_dir` 及其子目录），并且不得命中敏感系统目录黑名单。

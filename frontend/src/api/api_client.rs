@@ -28,8 +28,6 @@ pub trait ApiClient {
         loc: Locale,
     ) -> Result<WorkspaceData, String>;
 
-    async fn fetch_workspace_pick(&self, loc: Locale) -> Result<Option<String>, String>;
-
     async fn fetch_workspace_changelog(
         &self,
         conversation_id: Option<&str>,
@@ -99,10 +97,6 @@ impl ApiClient for RealApiClient {
         loc: Locale,
     ) -> Result<WorkspaceData, String> {
         super::http::fetch_workspace(path, loc).await
-    }
-
-    async fn fetch_workspace_pick(&self, loc: Locale) -> Result<Option<String>, String> {
-        super::http::fetch_workspace_pick(loc).await
     }
 
     async fn fetch_workspace_changelog(

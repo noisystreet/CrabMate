@@ -31,12 +31,45 @@ export function invokeTauriSaveTextFile(defaultName, body) {
     content: body
   });
 }
+
+export function invokeTauriPickWorkspaceFolder() {
+  const invoke =
+    (globalThis.__TAURI__ && globalThis.__TAURI__.core && globalThis.__TAURI__.core.invoke) ||
+    (globalThis.__TAURI_INTERNALS__ && globalThis.__TAURI_INTERNALS__.invoke);
+  if (typeof invoke !== "function") {
+    throw new Error("Tauri invoke unavailable");
+  }
+  return invoke("pick_workspace_folder_via_dialog", {});
+}
 "#)]
 extern "C" {
     #[wasm_bindgen(js_name = hasTauriInvoke)]
     fn has_tauri_invoke() -> bool;
     #[wasm_bindgen(js_name = invokeTauriSaveTextFile)]
     fn invoke_tauri_save_text_file(default_name: &str, body: &str) -> js_sys::Promise;
+    #[wasm_bindgen(js_name = invokeTauriPickWorkspaceFolder)]
+    fn invoke_tauri_pick_workspace_folder() -> js_sys::Promise;
+}
+
+/// CrabMate Desktop（Tauri WebView）内嵌时可调用 `invoke`（含对话框保存等）。
+pub(crate) fn tauri_shell_available() -> bool {
+    has_tauri_invoke()
+}
+
+/// 打开系统文件夹对话框；取消返回 `Ok(None)`。
+pub(crate) async fn tauri_pick_workspace_folder() -> Result<Option<String>, String> {
+    let promise = invoke_tauri_pick_workspace_folder();
+    match JsFuture::from(promise).await {
+        Ok(v) => {
+            if v.is_null() || v.is_undefined() {
+                return Ok(None);
+            }
+            v.as_string()
+                .map(Some)
+                .ok_or_else(|| "unexpected folder picker result".to_string())
+        }
+        Err(e) => Err(format!("{e:?}")),
+    }
 }
 
 /// 须与 `src/runtime/chat_export.rs` 中 `CHAT_SESSION_FILE_VERSION` 一致。
@@ -225,7 +258,7 @@ pub fn trigger_download(
     body: &str,
     loc: crate::i18n::Locale,
 ) -> Result<(), String> {
-    if has_tauri_invoke() {
+    if tauri_shell_available() {
         let default_name = filename.to_string();
         let content = body.to_string();
         let Some(w) = web_sys::window() else {

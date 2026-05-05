@@ -32,8 +32,7 @@ pub use client_llm_storage::{
 #[allow(unused_imports)]
 pub use http::{
     ChatBranchError, StatusData, TaskItem, TasksData, UploadedFileInfo, WebUiConfig,
-    WorkspaceChangelogResponse, WorkspaceData, WorkspaceEntry, WorkspacePickResponse,
-    fetch_conversation_messages, fetch_status, fetch_tasks, fetch_web_ui_config, fetch_workspace,
-    fetch_workspace_changelog, fetch_workspace_pick, post_chat_branch, post_workspace_set,
-    save_tasks, submit_chat_approval, upload_files_multipart,
+    WorkspaceChangelogResponse, WorkspaceData, WorkspaceEntry, fetch_conversation_messages,
+    fetch_status, fetch_tasks, fetch_web_ui_config, fetch_workspace, fetch_workspace_changelog,
+    post_chat_branch, post_workspace_set, save_tasks, submit_chat_approval, upload_files_multipart,
 };

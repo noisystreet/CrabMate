@@ -90,20 +90,6 @@ pub async fn fetch_workspace(path: Option<&str>, loc: Locale) -> Result<Workspac
     fetch_json("GET", &url, None, loc).await
 }
 
-#[derive(Debug, Deserialize)]
-pub struct WorkspacePickResponse {
-    pub path: Option<String>,
-}
-
-/// `GET /workspace/pick`：在**运行 crabmate serve 的进程所在机器**上弹出原生「选择文件夹」对话框（`rfd`）。
-/// 无图形、无头或用户取消时 `path` 为 `None`。
-pub async fn fetch_workspace_pick(loc: Locale) -> Result<Option<String>, String> {
-    let r: WorkspacePickResponse = fetch_json("GET", "/workspace/pick", None, loc).await?;
-    Ok(r.path
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty()))
-}
-
 /// 与 **`session_workspace_changelist`** 注入模型正文同源（Markdown）。
 #[derive(Debug, Deserialize)]
 pub struct WorkspaceChangelogResponse {

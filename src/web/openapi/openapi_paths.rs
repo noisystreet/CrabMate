@@ -375,7 +375,7 @@ fn openapi_paths_fragment_workspace_list() -> Value {
         "/workspace/pick": {
             "get": {
                 "tags": ["workspace"],
-                "summary": "服务端本机原生选目录（图形环境）",
+                "summary": "工作区选目录占位（始终 path=null；请在侧栏手动填写路径）",
                 "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                 "responses": {
                     "200": {

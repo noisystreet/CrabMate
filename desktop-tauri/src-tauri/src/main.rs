@@ -223,6 +223,31 @@ async fn save_text_file_via_dialog(
 }
 
 #[tauri::command]
+async fn pick_workspace_folder_via_dialog(
+    app: tauri::AppHandle,
+) -> Result<Option<String>, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel::<Option<FilePath>>();
+    app.dialog().file().pick_folder(move |picked| {
+        let _ = tx.send(picked);
+    });
+
+    let picked = rx
+        .await
+        .map_err(|e| format!("pick folder dialog channel failed: {e}"))?;
+
+    Ok(match picked {
+        None => None,
+        Some(FilePath::Path(p)) => Some(p.to_string_lossy().into_owned()),
+        Some(FilePath::Url(url)) => Some(
+            url.to_file_path()
+                .map_err(|_| "pick folder returned a non-file URL".to_string())?
+                .to_string_lossy()
+                .into_owned(),
+        ),
+    })
+}
+
+#[tauri::command]
 async fn confirm_delete_session_via_dialog(
     app: tauri::AppHandle,
     message: String,
@@ -252,6 +277,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             save_text_file_via_dialog,
+            pick_workspace_folder_via_dialog,
             confirm_delete_session_via_dialog
         ])
         .setup(move |app| {

@@ -133,51 +133,21 @@ pub fn ws_root_label(l: Locale) -> &'static str {
 
 pub fn ws_input_ph(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "绝对路径（允许根内）；浏览选目录将自动生效，手动输入后按 Enter",
+        Locale::ZhHans => {
+            "绝对路径（允许根内）；桌面壳可点「浏览」选目录并提交；浏览器请手输后按 Enter"
+        }
         Locale::En => {
-            "Absolute path (within allowed roots); pick applies automatically, or type and press Enter"
+            "Absolute path (within allowed roots); desktop app can Browse and submit; browser: type and Enter"
         }
     }
 }
 
 pub fn ws_input_title(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "在运行 serve 的机器上选目录后会立即提交；亦可手输路径后按 Enter",
+        Locale::ZhHans => "桌面壳（Tauri）可用系统文件夹对话框；浏览器仅手输路径后按 Enter",
         Locale::En => {
-            "Picking a folder on the serve host submits immediately; or type a path and press Enter"
+            "Desktop (Tauri) can use the native folder picker; browser: type path and press Enter"
         }
-    }
-}
-
-pub fn ws_path_required(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "请填写目录路径。",
-        Locale::En => "Please enter a directory path.",
-    }
-}
-
-pub fn ws_browse_title(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "在运行 serve 的机器上打开系统选目录对话框",
-        Locale::En => "Open folder picker on the serve host",
-    }
-}
-
-pub fn ws_pick_none(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => {
-            "未选择目录，或服务端无法弹窗（无图形/无头/SSH 远端）。请手动填写路径后按 Enter。"
-        }
-        Locale::En => {
-            "No folder chosen, or the server cannot show a dialog (headless/SSH). Enter a path manually and press Enter."
-        }
-    }
-}
-
-pub fn ws_browse_busy(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "…",
-        Locale::En => "…",
     }
 }
 
@@ -185,6 +155,27 @@ pub fn ws_browse_label(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "浏览…",
         Locale::En => "Browse…",
+    }
+}
+
+pub fn ws_browse_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "选择工作区根目录",
+        Locale::En => "Pick workspace root folder",
+    }
+}
+
+pub fn ws_browse_busy_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "正在打开文件夹对话框…",
+        Locale::En => "Opening folder picker…",
+    }
+}
+
+pub fn ws_path_required(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "请填写目录路径。",
+        Locale::En => "Please enter a directory path.",
     }
 }
 
