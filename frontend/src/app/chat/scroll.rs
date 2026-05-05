@@ -1,6 +1,6 @@
 //! 主聊天区滚动：流式跟底、侧栏「在消息中打开」后滚入视图。
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use leptos::html::Div;
 use leptos::prelude::*;
@@ -14,10 +14,47 @@ use crate::storage::ChatSession;
 
 use crate::app::scroll_guard;
 
-/// 合并同一短窗口内多次触发的跟底：仅保留「最新一次」effect 入队的滚动任务，避免尾包文本 + 收尾 state 连续更新导致多次 `set_scroll_top` 抖动。
+/// 流式增量计数：两次滚底之间若仍在持续增长，则跳过第二次 `scroll_height`（减少布局抖动）。
 static MESSAGES_AUTO_SCROLL_GEN: AtomicU64 = AtomicU64::new(0);
 
-/// 消息列表指纹变化且开启自动跟底时，将滚动条置底（多帧以覆盖流式换行后高度变化）。
+/// 合并同一宏任务/短窗口内多次 Effect：仅保留一条在飞的跟底任务，避免每个 SSE chunk 各起一个 `spawn_local`。
+static MESSAGES_SCROLL_TASK_PENDING: AtomicBool = AtomicBool::new(false);
+
+/// 跟底指纹：只看活跃会话尾部若干条，避免流式时对整页消息 `fold` 全文长度（长会话下每个 chunk 同步开销大）。
+fn active_session_tail_scroll_fingerprint(list: &[ChatSession], aid: &str) -> u64 {
+    let Some(session) = list.iter().find(|s| s.id == aid) else {
+        return 0;
+    };
+    let mut fp = session.messages.len() as u64;
+    const TAIL: usize = 6;
+    for msg in session.messages.iter().rev().take(TAIL) {
+        fp = fp.wrapping_mul(41);
+        fp = fp.wrapping_add(msg.id.len() as u64);
+        fp = fp.wrapping_add(msg.text.len() as u64);
+        fp = fp.wrapping_add(msg.reasoning_text.len() as u64);
+        if let Some(st) = msg.state.as_deref() {
+            fp = fp.wrapping_add(st.len() as u64);
+        }
+        fp = fp.wrapping_add(u64::from(msg.is_tool));
+    }
+    fp
+}
+
+fn scroll_messages_to_bottom_if_allowed(mref: &NodeRef<Div>, follow: &RwSignal<bool>) -> bool {
+    if !follow.get_untracked() {
+        return false;
+    }
+    let Some(el) = mref.get_untracked() else {
+        return false;
+    };
+    if messages_scroller_has_non_collapsed_selection(&el) {
+        return false;
+    }
+    el.set_scroll_top(el.scroll_height());
+    true
+}
+
+/// 消息列表指纹变化且开启自动跟底时，将滚动条置底（必要时二次对齐以覆盖换行后高度变化）。
 pub(crate) fn wire_messages_auto_scroll(
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
@@ -27,71 +64,50 @@ pub(crate) fn wire_messages_auto_scroll(
 ) {
     Effect::new(move |_| {
         let aid = active_id.get();
-        let _fingerprint = sessions.with(|list| {
-            list.iter()
-                .find(|s| s.id == aid)
-                .map(|s| {
-                    s.messages
-                        .iter()
-                        .fold(0u64, |acc, m| acc.wrapping_add(m.text.len() as u64))
-                        .wrapping_add((s.messages.len() as u64).saturating_mul(17))
-                })
-                .unwrap_or(0)
-        });
+        let _fingerprint = sessions.with(|list| active_session_tail_scroll_fingerprint(list, &aid));
 
         if !auto_scroll_chat.get() {
             return;
         }
 
-        let generation = MESSAGES_AUTO_SCROLL_GEN
-            .fetch_add(1, Ordering::Relaxed)
-            .wrapping_add(1);
+        MESSAGES_AUTO_SCROLL_GEN.fetch_add(1, Ordering::Relaxed);
+        if MESSAGES_SCROLL_TASK_PENDING.swap(true, Ordering::AcqRel) {
+            return;
+        }
+
         let mref = messages_scroller;
         let follow = auto_scroll_chat;
         let scroll_from_effect = messages_scroll_from_effect;
         spawn_local(async move {
             let _scroll_from_effect_guard =
                 scroll_guard::MessagesScrollFromEffectGuard::new(scroll_from_effect);
-            if !follow.get_untracked() {
-                return;
-            }
+
+            let clear_task_pending =
+                || MESSAGES_SCROLL_TASK_PENDING.store(false, Ordering::Release);
+
             TimeoutFuture::new(0).await;
-            if MESSAGES_AUTO_SCROLL_GEN.load(Ordering::Relaxed) != generation {
+            if !follow.get_untracked() {
+                clear_task_pending();
+                return;
+            }
+
+            let gen_after_yield = MESSAGES_AUTO_SCROLL_GEN.load(Ordering::Relaxed);
+            if !scroll_messages_to_bottom_if_allowed(&mref, &follow) {
+                clear_task_pending();
+                return;
+            }
+
+            // 流式仍高频更新时跳过第二次读 `scroll_height`，减轻主线程布局压力。
+            TimeoutFuture::new(28).await;
+            clear_task_pending();
+
+            if MESSAGES_AUTO_SCROLL_GEN.load(Ordering::Relaxed) != gen_after_yield {
                 return;
             }
             if !follow.get_untracked() {
                 return;
             }
-            if let Some(el) = mref.get_untracked() {
-                if !messages_scroller_has_non_collapsed_selection(&el) {
-                    el.set_scroll_top(el.scroll_height());
-                }
-            }
-            TimeoutFuture::new(0).await;
-            if MESSAGES_AUTO_SCROLL_GEN.load(Ordering::Relaxed) != generation {
-                return;
-            }
-            if !follow.get_untracked() {
-                return;
-            }
-            if let Some(el) = mref.get_untracked() {
-                if !messages_scroller_has_non_collapsed_selection(&el) {
-                    el.set_scroll_top(el.scroll_height());
-                }
-            }
-            // 再等一帧：流式换行后布局高度可能在本轮 paint 后才稳定
-            TimeoutFuture::new(16).await;
-            if MESSAGES_AUTO_SCROLL_GEN.load(Ordering::Relaxed) != generation {
-                return;
-            }
-            if !follow.get_untracked() {
-                return;
-            }
-            if let Some(el) = mref.get_untracked() {
-                if !messages_scroller_has_non_collapsed_selection(&el) {
-                    el.set_scroll_top(el.scroll_height());
-                }
-            }
+            let _ = scroll_messages_to_bottom_if_allowed(&mref, &follow);
         });
     });
 }
