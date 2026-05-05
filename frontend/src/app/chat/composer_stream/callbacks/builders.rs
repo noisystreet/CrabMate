@@ -17,9 +17,7 @@ use crate::timeline_scan::timeline_state_tool;
 
 use super::super::context::ChatStreamCallbackCtx;
 use super::super::shell_abort::{clear_abort_slot, user_cancelled_flag};
-use super::done_empty_loading::{
-    EmptyLoadingTailAction, EmptyLoadingTailInputs, decide_empty_loading_tail_action,
-};
+use super::done_bubble::{DoneBubbleAction, DoneBubbleDecisionInputs, decide_done_bubble_action};
 use super::helpers::*;
 use super::stream_session_access::with_active_session_mut;
 use super::stream_turn_state::{
@@ -335,43 +333,43 @@ pub(super) fn chat_stream_on_done_builder(
                 let body_chars = s.messages[idx].text.chars().count()
                     + s.messages[idx].reasoning_text.chars().count();
                 let diag_chars = body_chars.max(answer_delta_chars.get());
-                if s.messages[idx].text.trim().is_empty()
-                    && s.messages[idx].reasoning_text.trim().is_empty()
-                {
-                    let end_reason = stream_end_reason.borrow();
-                    let in_lane = output_lane.get().in_answer_body_lane();
-                    match decide_empty_loading_tail_action(EmptyLoadingTailInputs {
-                        end_reason_raw: end_reason.as_deref(),
-                        in_answer_body_lane: in_lane,
-                        diag_chars,
-                        has_hierarchical_or_tool,
-                        saw_final_response_timeline: saw_final_response_timeline.get(),
-                    }) {
-                        EmptyLoadingTailAction::RemoveBubble => {
-                            // 含：completed 且有可见增量尾占位、工具型回合空主泡、fallback/final_response 补偿尾戳等。
-                            s.messages.remove(idx);
-                            return;
-                        }
-                        EmptyLoadingTailAction::FillMissingFinalHint => {
-                            s.messages[idx].text = format!(
-                                "{}\n\n{}",
-                                i18n::stream_completed_missing_final_summary_hint(loc),
-                                i18n::stream_empty_reply_diag_line(
-                                    loc,
-                                    end_reason.as_deref(),
-                                    in_lane,
-                                    diag_chars
-                                )
-                            );
-                        }
-                        EmptyLoadingTailAction::FillEmptyDiagnostic => {
-                            s.messages[idx].text = build_empty_reply_with_diagnostic(
+                let body_and_reasoning_empty = s.messages[idx].text.trim().is_empty()
+                    && s.messages[idx].reasoning_text.trim().is_empty();
+                let end_reason = stream_end_reason.borrow();
+                let in_lane = output_lane.get().in_answer_body_lane();
+                match decide_done_bubble_action(DoneBubbleDecisionInputs {
+                    body_and_reasoning_empty,
+                    end_reason_raw: end_reason.as_deref(),
+                    in_answer_body_lane: in_lane,
+                    diag_chars,
+                    has_hierarchical_or_tool,
+                    saw_final_response_timeline: saw_final_response_timeline.get(),
+                }) {
+                    DoneBubbleAction::Keep => {}
+                    DoneBubbleAction::RemoveBubble => {
+                        // 含：completed 且有可见增量尾占位、工具型回合空主泡、fallback/final_response 补偿尾戳等。
+                        s.messages.remove(idx);
+                        return;
+                    }
+                    DoneBubbleAction::FillMissingFinalHint => {
+                        s.messages[idx].text = format!(
+                            "{}\n\n{}",
+                            i18n::stream_completed_missing_final_summary_hint(loc),
+                            i18n::stream_empty_reply_diag_line(
                                 loc,
-                                in_lane,
-                                diag_chars,
                                 end_reason.as_deref(),
-                            );
-                        }
+                                in_lane,
+                                diag_chars
+                            )
+                        );
+                    }
+                    DoneBubbleAction::FillDiagnostic => {
+                        s.messages[idx].text = build_empty_reply_with_diagnostic(
+                            loc,
+                            in_lane,
+                            diag_chars,
+                            end_reason.as_deref(),
+                        );
                     }
                 }
             }
