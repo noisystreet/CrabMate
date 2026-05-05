@@ -155,7 +155,7 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
                                 }
                                 .into_any()
                             } else {
-                                chunk_messages(&msgs)
+                                chunk_messages(msgs)
                                     .into_iter()
                                     .map(|chunk| match chunk {
                                         ChatChunk::Single { idx, msg } => chat_message_row(
@@ -544,32 +544,34 @@ fn ChatComposerPane(signals: ChatComposerPaneSignals) -> impl IntoView {
 
 pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
     let ChatColumnShell {
-        locale,
-        messages_scroller,
-        auto_scroll_chat,
-        messages_scroll_from_effect,
-        last_messages_scroll_top,
-        timeline_panel_expanded,
-        chat,
-        collapsed_long_assistant_ids,
-        collapsed_tool_run_heads,
-        chat_find_query,
-        chat_find_match_ids,
-        chat_find_cursor,
-        draft,
-        composer_mirror_html,
-        composer_mirror_scroll_top,
-        composer_input_ref,
-        pending_images,
+        app,
         stream_shell,
         run_send_message,
         trigger_stop,
-        initialized,
         regen_stream_after_truncate,
         retry_assistant_target,
-        markdown_render,
-        apply_assistant_display_filters,
     } = shell;
+
+    let locale = app.shell_ui.locale;
+    let messages_scroller = app.chat_composer.messages_scroller;
+    let auto_scroll_chat = app.chat_composer.auto_scroll_chat;
+    let messages_scroll_from_effect = app.chat_composer.messages_scroll_from_effect;
+    let last_messages_scroll_top = app.chat_composer.last_messages_scroll_top;
+    let timeline_panel_expanded = app.chat_composer.timeline_panel_expanded;
+    let chat = app.chat;
+    let collapsed_long_assistant_ids = app.chat_composer.collapsed_long_assistant_ids;
+    let collapsed_tool_run_heads = app.chat_composer.collapsed_tool_run_heads;
+    let chat_find_query = app.chat_composer.chat_find_query;
+    let chat_find_match_ids = app.chat_composer.chat_find_match_ids;
+    let chat_find_cursor = app.chat_composer.chat_find_cursor;
+    let draft = app.chat_composer.draft;
+    let composer_mirror_html = app.chat_composer.composer_mirror_html;
+    let composer_mirror_scroll_top = app.chat_composer.composer_mirror_scroll_top;
+    let composer_input_ref = app.chat_composer.composer_input_ref.clone();
+    let pending_images = app.chat_composer.pending_images;
+    let initialized = app.initialized;
+    let markdown_render = app.shell_ui.markdown_render;
+    let apply_assistant_display_filters = app.shell_ui.apply_assistant_display_filters;
 
     let status_busy = stream_shell.stream.status_busy;
     let status_err = stream_shell.stream.status_err;

@@ -21,6 +21,7 @@ use crate::sse_dispatch::ThinkingTraceInfo;
 
 use crate::app_prefs::SidePanelView;
 
+use super::app_signals::AppSignals;
 use super::chat::{ChatColumnShell, ChatFindBarSignals};
 use super::settings_page::{SettingsPageFormSignals, SettingsPageViewInput};
 use super::status_tasks_state::StatusTasksSignals;
@@ -152,200 +153,153 @@ pub struct SideColumnViewSignals {
 }
 
 /// 根壳 `App` 与侧栏、底栏、各模态之间共享的一组句柄（由 `App` 构造一次，按需 `clone()`）。
+///
+/// **Step 1**：扁平字段已并入 [`AppSignals`]；此处仅保留初始化阶段构造的闭包与 [`ChatColumnShell`]，
+/// 新增全局 `RwSignal` 时只需改 [`AppSignals`] 与（按需）[`init_app_shell`](super::app_shell_init::init_app_shell) 中的 wire 实参，不必再维护超长「逐字段拷贝」列表。
 #[derive(Clone)]
 pub struct AppShellCtx {
-    pub locale: RwSignal<Locale>,
-    pub mobile_nav_open: RwSignal<bool>,
-    pub session_modal: RwSignal<bool>,
+    pub signals: AppSignals,
     pub new_session: Rc<dyn Fn()>,
-    pub sidebar_session_query: RwSignal<String>,
-    pub global_message_query: RwSignal<String>,
-    pub sidebar_search_panel_open: RwSignal<bool>,
-    pub sidebar_rail_ctx_menu: RwSignal<Option<(f64, f64)>>,
-    pub chat_find_panel_open: RwSignal<bool>,
-    pub chat: ChatSessionSignals,
-    pub draft: RwSignal<String>,
-    pub focus_message_id_after_nav: RwSignal<Option<String>>,
-    pub session_context_menu: RwSignal<Option<SessionContextAnchor>>,
-    pub apply_assistant_display_filters: RwSignal<bool>,
-    pub sidebar_rail_collapsed: RwSignal<bool>,
-    pub side_resize_dragging: RwSignal<bool>,
-    pub side_panel_view: RwSignal<SidePanelView>,
-    pub side_width: RwSignal<f64>,
-    pub side_resize_session: Rc<RefCell<Option<(f64, f64)>>>,
-    pub side_resize_handles: SideResizeHandlesCell,
-    pub view_menu_open: RwSignal<bool>,
-    pub status_bar_visible: RwSignal<bool>,
-    pub settings_modal: RwSignal<bool>,
-    pub settings_page: RwSignal<bool>,
-    pub workspace_panel: WorkspacePanelSignals,
-    pub status_tasks: StatusTasksSignals,
     pub refresh_workspace: Arc<dyn Fn() + Send + Sync>,
     pub refresh_tasks: Arc<dyn Fn() + Send + Sync>,
     pub toggle_task: Arc<dyn Fn(String) + Send + Sync>,
-    pub changelist_modal_open: RwSignal<bool>,
-    pub changelist_fetch_nonce: RwSignal<u64>,
-    pub insert_workspace_file_ref: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
-    pub thinking_trace_log: RwSignal<Vec<ThinkingTraceInfo>>,
-    pub status_err: RwSignal<Option<String>>,
-    pub tool_busy: RwSignal<bool>,
-    pub status_busy: RwSignal<bool>,
-    /// 命令审批弹窗（与流式 `ComposerStreamShell` 共用同一 `RwSignal`）。
-    pub pending_approval: RwSignal<Option<(String, String, String)>>,
-    pub client_llm_storage_tick: RwSignal<u64>,
-    pub selected_agent_role: RwSignal<Option<String>>,
     pub refresh_status: Arc<dyn Fn() + Send + Sync>,
-    pub theme: RwSignal<String>,
-    pub bg_decor: RwSignal<bool>,
-    pub llm_api_base_draft: RwSignal<String>,
-    pub llm_api_base_preset_select: RwSignal<String>,
-    pub llm_model_draft: RwSignal<String>,
-    pub llm_temperature_draft: RwSignal<String>,
-    pub llm_context_tokens_draft: RwSignal<String>,
-    pub llm_thinking_mode_draft: RwSignal<String>,
-    pub llm_api_key_draft: RwSignal<String>,
-    pub llm_has_saved_key: RwSignal<bool>,
-    pub llm_settings_feedback: RwSignal<Option<String>>,
-    pub executor_llm_api_base_draft: RwSignal<String>,
-    pub executor_llm_api_base_preset_select: RwSignal<String>,
-    pub executor_llm_model_draft: RwSignal<String>,
-    pub executor_llm_api_key_draft: RwSignal<String>,
-    pub executor_llm_has_saved_key: RwSignal<bool>,
-    pub executor_llm_settings_feedback: RwSignal<Option<String>>,
-    pub execution_mode_draft: RwSignal<String>,
-    pub changelist_modal_loading: RwSignal<bool>,
-    pub changelist_modal_err: RwSignal<Option<String>>,
-    pub changelist_modal_rev: RwSignal<u64>,
-    pub changelist_body_ref: NodeRef<Div>,
+    pub insert_workspace_file_ref: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
     pub chat_column: ChatColumnShell,
 }
 
 impl AppShellCtx {
     pub fn sidebar_nav_signals(&self) -> SidebarNavSignals {
         SidebarNavSignals {
-            locale: self.locale,
-            mobile_nav_open: self.mobile_nav_open,
-            session_modal: self.session_modal,
+            locale: self.signals.shell_ui.locale,
+            mobile_nav_open: self.signals.sidebar.mobile_nav_open,
+            session_modal: self.signals.modal.session_modal,
             new_session: self.new_session.clone(),
-            sidebar_session_query: self.sidebar_session_query,
-            global_message_query: self.global_message_query,
-            sidebar_search_panel_open: self.sidebar_search_panel_open,
-            sidebar_rail_ctx_menu: self.sidebar_rail_ctx_menu,
-            chat_find_panel_open: self.chat_find_panel_open,
-            chat: self.chat,
-            draft: self.draft,
-            focus_message_id_after_nav: self.focus_message_id_after_nav,
-            session_context_menu: self.session_context_menu,
-            apply_assistant_display_filters: self.apply_assistant_display_filters,
-            sidebar_rail_collapsed: self.sidebar_rail_collapsed,
+            sidebar_session_query: self.signals.sidebar.sidebar_session_query,
+            global_message_query: self.signals.sidebar.global_message_query,
+            sidebar_search_panel_open: self.signals.sidebar.sidebar_search_panel_open,
+            sidebar_rail_ctx_menu: self.signals.sidebar.sidebar_rail_ctx_menu,
+            chat_find_panel_open: self.signals.chat_composer.chat_find_panel_open,
+            chat: self.signals.chat,
+            draft: self.signals.chat_composer.draft,
+            focus_message_id_after_nav: self.signals.chat_composer.focus_message_id_after_nav,
+            session_context_menu: self.signals.sidebar.session_context_menu,
+            apply_assistant_display_filters: self.signals.shell_ui.apply_assistant_display_filters,
+            sidebar_rail_collapsed: self.signals.sidebar.sidebar_rail_collapsed,
         }
     }
 
     pub fn side_column_view_signals(&self) -> SideColumnViewSignals {
         SideColumnViewSignals {
-            locale: self.locale,
-            side_resize_dragging: self.side_resize_dragging,
-            side_panel_view: self.side_panel_view,
-            side_width: self.side_width,
-            side_resize_session: Rc::clone(&self.side_resize_session),
-            side_resize_handles: Rc::clone(&self.side_resize_handles),
-            view_menu_open: self.view_menu_open,
-            status_bar_visible: self.status_bar_visible,
-            settings_page: self.settings_page,
-            workspace_panel: self.workspace_panel,
-            status_tasks: self.status_tasks,
+            locale: self.signals.shell_ui.locale,
+            side_resize_dragging: self.signals.resize.side_resize_dragging,
+            side_panel_view: self.signals.shell_ui.side_panel_view,
+            side_width: self.signals.shell_ui.side_width,
+            side_resize_session: Rc::clone(&self.signals.resize.side_resize_session),
+            side_resize_handles: Rc::clone(&self.signals.resize.side_resize_handles),
+            view_menu_open: self.signals.shell_ui.view_menu_open,
+            status_bar_visible: self.signals.shell_ui.status_bar_visible,
+            settings_page: self.signals.modal.settings_page,
+            workspace_panel: self.signals.to_workspace_panel(),
+            status_tasks: self.signals.to_status_tasks(),
             refresh_workspace: Arc::clone(&self.refresh_workspace),
             refresh_tasks: Arc::clone(&self.refresh_tasks),
             toggle_task: Arc::clone(&self.toggle_task),
-            changelist_modal_open: self.changelist_modal_open,
-            changelist_fetch_nonce: self.changelist_fetch_nonce,
+            changelist_modal_open: self.signals.modal.changelist_modal_open,
+            changelist_fetch_nonce: self.signals.modal.changelist_fetch_nonce,
             insert_workspace_file_ref: self.insert_workspace_file_ref,
-            thinking_trace_log: self.thinking_trace_log,
+            thinking_trace_log: self.signals.approval.thinking_trace_log,
         }
     }
 
     pub fn session_list_modal_signals(&self) -> SessionListModalSignals {
         SessionListModalSignals {
-            session_modal: self.session_modal,
-            locale: self.locale,
-            chat: self.chat,
-            draft: self.draft,
-            apply_assistant_display_filters: self.apply_assistant_display_filters,
+            session_modal: self.signals.modal.session_modal,
+            locale: self.signals.shell_ui.locale,
+            chat: self.signals.chat,
+            draft: self.signals.chat_composer.draft,
+            apply_assistant_display_filters: self.signals.shell_ui.apply_assistant_display_filters,
         }
     }
 
     pub fn status_bar_footer_signals(&self) -> StatusBarFooterSignals {
         StatusBarFooterSignals {
-            status_bar_visible: self.status_bar_visible,
-            status_tasks: self.status_tasks,
-            status_err: self.status_err,
-            tool_busy: self.tool_busy,
-            status_busy: self.status_busy,
-            client_llm_storage_tick: self.client_llm_storage_tick,
-            selected_agent_role: self.selected_agent_role,
-            chat: self.chat,
+            status_bar_visible: self.signals.shell_ui.status_bar_visible,
+            status_tasks: self.signals.to_status_tasks(),
+            status_err: self.signals.stream.status_err,
+            tool_busy: self.signals.stream.tool_busy,
+            status_busy: self.signals.stream.status_busy,
+            client_llm_storage_tick: self.signals.llm_settings.client_llm_storage_tick,
+            selected_agent_role: self.signals.llm_settings.selected_agent_role,
+            chat: self.signals.chat,
             refresh_status: Arc::clone(&self.refresh_status),
-            locale: self.locale,
+            locale: self.signals.shell_ui.locale,
         }
     }
 
     pub fn settings_modal_signals(&self) -> SettingsModalSignals {
         SettingsModalSignals {
-            settings_modal: self.settings_modal,
-            locale: self.locale,
-            theme: self.theme,
-            bg_decor: self.bg_decor,
-            llm_api_base_draft: self.llm_api_base_draft,
-            llm_api_base_preset_select: self.llm_api_base_preset_select,
-            llm_model_draft: self.llm_model_draft,
-            llm_temperature_draft: self.llm_temperature_draft,
-            llm_context_tokens_draft: self.llm_context_tokens_draft,
-            llm_thinking_mode_draft: self.llm_thinking_mode_draft,
-            llm_api_key_draft: self.llm_api_key_draft,
-            llm_has_saved_key: self.llm_has_saved_key,
-            llm_settings_feedback: self.llm_settings_feedback,
-            executor_llm_api_base_draft: self.executor_llm_api_base_draft,
-            executor_llm_api_base_preset_select: self.executor_llm_api_base_preset_select,
-            executor_llm_model_draft: self.executor_llm_model_draft,
-            executor_llm_api_key_draft: self.executor_llm_api_key_draft,
-            executor_llm_has_saved_key: self.executor_llm_has_saved_key,
-            executor_llm_settings_feedback: self.executor_llm_settings_feedback,
-            execution_mode_draft: self.execution_mode_draft,
-            client_llm_storage_tick: self.client_llm_storage_tick,
+            settings_modal: self.signals.modal.settings_modal,
+            locale: self.signals.shell_ui.locale,
+            theme: self.signals.shell_ui.theme,
+            bg_decor: self.signals.shell_ui.bg_decor,
+            llm_api_base_draft: self.signals.llm_settings.llm_api_base_draft,
+            llm_api_base_preset_select: self.signals.llm_settings.llm_api_base_preset_select,
+            llm_model_draft: self.signals.llm_settings.llm_model_draft,
+            llm_temperature_draft: self.signals.llm_settings.llm_temperature_draft,
+            llm_context_tokens_draft: self.signals.llm_settings.llm_context_tokens_draft,
+            llm_thinking_mode_draft: self.signals.llm_settings.llm_thinking_mode_draft,
+            llm_api_key_draft: self.signals.llm_settings.llm_api_key_draft,
+            llm_has_saved_key: self.signals.llm_settings.llm_has_saved_key,
+            llm_settings_feedback: self.signals.llm_settings.llm_settings_feedback,
+            executor_llm_api_base_draft: self.signals.llm_settings.executor_llm_api_base_draft,
+            executor_llm_api_base_preset_select: self
+                .signals
+                .llm_settings
+                .executor_llm_api_base_preset_select,
+            executor_llm_model_draft: self.signals.llm_settings.executor_llm_model_draft,
+            executor_llm_api_key_draft: self.signals.llm_settings.executor_llm_api_key_draft,
+            executor_llm_has_saved_key: self.signals.llm_settings.executor_llm_has_saved_key,
+            executor_llm_settings_feedback: self
+                .signals
+                .llm_settings
+                .executor_llm_settings_feedback,
+            execution_mode_draft: self.signals.llm_settings.execution_mode_draft,
+            client_llm_storage_tick: self.signals.llm_settings.client_llm_storage_tick,
         }
     }
 
     pub fn changelist_modal_signals(&self) -> ChangelistModalSignals {
         ChangelistModalSignals {
-            changelist_modal_open: self.changelist_modal_open,
-            locale: self.locale,
-            changelist_modal_loading: self.changelist_modal_loading,
-            changelist_modal_err: self.changelist_modal_err,
-            changelist_modal_rev: self.changelist_modal_rev,
-            changelist_fetch_nonce: self.changelist_fetch_nonce,
-            changelist_body_ref: self.changelist_body_ref,
+            changelist_modal_open: self.signals.modal.changelist_modal_open,
+            locale: self.signals.shell_ui.locale,
+            changelist_modal_loading: self.signals.modal.changelist_modal_loading,
+            changelist_modal_err: self.signals.modal.changelist_modal_err,
+            changelist_modal_rev: self.signals.modal.changelist_modal_rev,
+            changelist_fetch_nonce: self.signals.modal.changelist_fetch_nonce,
+            changelist_body_ref: self.signals.modal.changelist_body_ref,
         }
     }
 
     pub fn mobile_shell_header_signals(&self) -> MobileShellHeaderSignals {
         MobileShellHeaderSignals {
-            mobile_nav_open: self.mobile_nav_open,
-            locale: self.locale,
+            mobile_nav_open: self.signals.sidebar.mobile_nav_open,
+            locale: self.signals.shell_ui.locale,
             new_session: self.new_session.clone(),
         }
     }
 
     pub fn approval_modal_signals(&self) -> ApprovalModalSignals {
         ApprovalModalSignals {
-            pending_approval: self.pending_approval,
-            locale: self.locale,
+            pending_approval: self.signals.approval.pending_approval,
+            locale: self.signals.shell_ui.locale,
         }
     }
 
     /// 设置页全屏视图：`settings_page` 开关 + 表单信号（阶段 B：单行传入 `SettingsPageView`）。
     pub fn settings_page_view_input(&self) -> SettingsPageViewInput {
         SettingsPageViewInput {
-            settings_page: self.settings_page,
+            settings_page: self.signals.modal.settings_page,
             form: self.settings_page_form_signals(),
         }
     }
@@ -353,38 +307,44 @@ impl AppShellCtx {
     /// 主区会话内查找条（阶段 B：避免在 `App` 中逐项传 `RwSignal`）。
     pub fn chat_find_bar_signals(&self) -> ChatFindBarSignals {
         ChatFindBarSignals {
-            chat_find_panel_open: self.chat_find_panel_open,
-            locale: self.locale,
-            chat_find_query: self.chat_column.chat_find_query,
-            chat_find_match_ids: self.chat_column.chat_find_match_ids,
-            chat_find_cursor: self.chat_column.chat_find_cursor,
-            auto_scroll_chat: self.chat_column.auto_scroll_chat,
+            chat_find_panel_open: self.signals.chat_composer.chat_find_panel_open,
+            locale: self.signals.shell_ui.locale,
+            chat_find_query: self.signals.chat_composer.chat_find_query,
+            chat_find_match_ids: self.signals.chat_composer.chat_find_match_ids,
+            chat_find_cursor: self.signals.chat_composer.chat_find_cursor,
+            auto_scroll_chat: self.signals.chat_composer.auto_scroll_chat,
         }
     }
 
     /// 设置页表单所需 `RwSignal` 聚合（阶段 B：避免在 `App` 的 `view!` 中重复罗列字段）。
     pub fn settings_page_form_signals(&self) -> SettingsPageFormSignals {
         SettingsPageFormSignals {
-            locale: self.locale,
-            theme: self.theme,
-            bg_decor: self.bg_decor,
-            llm_api_base_draft: self.llm_api_base_draft,
-            llm_api_base_preset_select: self.llm_api_base_preset_select,
-            llm_model_draft: self.llm_model_draft,
-            llm_temperature_draft: self.llm_temperature_draft,
-            llm_context_tokens_draft: self.llm_context_tokens_draft,
-            llm_thinking_mode_draft: self.llm_thinking_mode_draft,
-            llm_api_key_draft: self.llm_api_key_draft,
-            llm_has_saved_key: self.llm_has_saved_key,
-            llm_settings_feedback: self.llm_settings_feedback,
-            executor_llm_api_base_draft: self.executor_llm_api_base_draft,
-            executor_llm_api_base_preset_select: self.executor_llm_api_base_preset_select,
-            executor_llm_model_draft: self.executor_llm_model_draft,
-            executor_llm_api_key_draft: self.executor_llm_api_key_draft,
-            executor_llm_has_saved_key: self.executor_llm_has_saved_key,
-            executor_llm_settings_feedback: self.executor_llm_settings_feedback,
-            execution_mode_draft: self.execution_mode_draft,
-            client_llm_storage_tick: self.client_llm_storage_tick,
+            locale: self.signals.shell_ui.locale,
+            theme: self.signals.shell_ui.theme,
+            bg_decor: self.signals.shell_ui.bg_decor,
+            llm_api_base_draft: self.signals.llm_settings.llm_api_base_draft,
+            llm_api_base_preset_select: self.signals.llm_settings.llm_api_base_preset_select,
+            llm_model_draft: self.signals.llm_settings.llm_model_draft,
+            llm_temperature_draft: self.signals.llm_settings.llm_temperature_draft,
+            llm_context_tokens_draft: self.signals.llm_settings.llm_context_tokens_draft,
+            llm_thinking_mode_draft: self.signals.llm_settings.llm_thinking_mode_draft,
+            llm_api_key_draft: self.signals.llm_settings.llm_api_key_draft,
+            llm_has_saved_key: self.signals.llm_settings.llm_has_saved_key,
+            llm_settings_feedback: self.signals.llm_settings.llm_settings_feedback,
+            executor_llm_api_base_draft: self.signals.llm_settings.executor_llm_api_base_draft,
+            executor_llm_api_base_preset_select: self
+                .signals
+                .llm_settings
+                .executor_llm_api_base_preset_select,
+            executor_llm_model_draft: self.signals.llm_settings.executor_llm_model_draft,
+            executor_llm_api_key_draft: self.signals.llm_settings.executor_llm_api_key_draft,
+            executor_llm_has_saved_key: self.signals.llm_settings.executor_llm_has_saved_key,
+            executor_llm_settings_feedback: self
+                .signals
+                .llm_settings
+                .executor_llm_settings_feedback,
+            execution_mode_draft: self.signals.llm_settings.execution_mode_draft,
+            client_llm_storage_tick: self.signals.llm_settings.client_llm_storage_tick,
         }
     }
 }

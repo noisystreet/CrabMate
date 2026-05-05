@@ -3,11 +3,9 @@
 //! 不引入 Leptos Context；仍为显式结构体传递，便于跳转与类型检查。根壳层另有 [`super::app_shell_ctx::AppShellCtx`]
 //! 聚合侧栏 / 底栏 / 模态等 `*_view` 入参（同因 `Rc` 等未走 `provide_context`）。
 
-use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use leptos::html::Textarea;
 use leptos::prelude::*;
 
 use crate::app::app_signals::{AppSignals, StreamControlSignals};
@@ -72,36 +70,18 @@ impl ComposerStreamShell {
 
 /// 中部聊天列：`messages` 滚动区、时间线、消息列表与输入区所需的信号与闭包。
 ///
-/// 与 [`ComposerStreamShell`] 共享 **`status_busy` / `status_err` / `pending_clarification`** 等句柄，
-/// 避免 `App` 在 `wire_chat_composer_streams` 与 `chat_column_view` 之间重复传入同一组 `RwSignal`。
+/// **不再**逐字段复制 [`AppSignals::chat_composer`] / [`AppSignals::shell_ui`]：视图从 [`Self::app`] 读取，
+/// 仅保留流式子壳与 `wire_chat_composer_streams` 产出的闭包 / 信号，避免与根壳层双重映射。
+///
+/// 与 [`ComposerStreamShell`] 共享 **`status_busy` / `status_err` / `pending_clarification`** 等句柄。
 #[derive(Clone)]
 pub struct ChatColumnShell {
-    pub locale: RwSignal<Locale>,
-    pub messages_scroller: NodeRef<leptos::html::Div>,
-    pub auto_scroll_chat: RwSignal<bool>,
-    pub messages_scroll_from_effect: RwSignal<bool>,
-    pub last_messages_scroll_top: RwSignal<i32>,
-    pub timeline_panel_expanded: RwSignal<bool>,
-    pub chat: ChatSessionSignals,
-    pub collapsed_long_assistant_ids: RwSignal<Vec<String>>,
-    pub collapsed_tool_run_heads: RwSignal<HashSet<String>>,
-    pub chat_find_query: RwSignal<String>,
-    pub chat_find_match_ids: RwSignal<Vec<String>>,
-    pub chat_find_cursor: RwSignal<usize>,
-    pub draft: RwSignal<String>,
-    pub composer_mirror_html: RwSignal<String>,
-    pub composer_mirror_scroll_top: RwSignal<f64>,
-    pub composer_input_ref: NodeRef<Textarea>,
-    pub pending_images: RwSignal<Vec<String>>,
-    /// 与 `wire_chat_composer_streams` / SSE 回调共用（含 `status_busy`、`status_err`、`pending_clarification`）。
+    pub app: AppSignals,
     pub stream_shell: ComposerStreamShell,
     pub run_send_message: Arc<dyn Fn() + Send + Sync>,
     pub trigger_stop: Arc<dyn Fn() + Send + Sync>,
-    pub initialized: RwSignal<bool>,
     pub regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
     pub retry_assistant_target: RwSignal<Option<String>>,
-    pub markdown_render: RwSignal<bool>,
-    pub apply_assistant_display_filters: RwSignal<bool>,
 }
 
 /// `wire_chat_composer_streams` 的返回值：重试 / 截断再生目标与发送、停止、新会话句柄。

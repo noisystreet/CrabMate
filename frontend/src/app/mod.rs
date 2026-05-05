@@ -66,30 +66,30 @@ pub fn App() -> impl IntoView {
     view! {
         <div
             class="app-root app-shell-ds"
-            class:sidebar-rail-collapsed=move || app_ctx.sidebar_rail_collapsed.get()
+            class:sidebar-rail-collapsed=move || app_ctx.signals.sidebar.sidebar_rail_collapsed.get()
         >
             {sidebar_nav_view(sidebar_nav_signals)}
 
-            <Show when=move || app_ctx.sidebar_rail_collapsed.get()>
+            <Show when=move || app_ctx.signals.sidebar.sidebar_rail_collapsed.get()>
                 <button
                     type="button"
                     class="btn btn-secondary sidebar-rail-reveal-btn"
-                    prop:aria-label=move || i18n::nav_sidebar_expand_aria(app_ctx.locale.get())
-                    on:click=move |_| app_ctx.sidebar_rail_collapsed.set(false)
+                    prop:aria-label=move || i18n::nav_sidebar_expand_aria(app_ctx.signals.shell_ui.locale.get())
+                    on:click=move |_| app_ctx.signals.sidebar.sidebar_rail_collapsed.set(false)
                 >
                     "›"
                 </button>
             </Show>
 
-            <div class="shell-main" class:settings-page-hidden=move || app_ctx.settings_page.get()>
+            <div class="shell-main" class:settings-page-hidden=move || app_ctx.signals.modal.settings_page.get()>
                 {mobile_shell_header_view(mobile_shell_header_signals)}
 
-                <Show when=move || app_ctx.chat_find_panel_open.get()>
+                <Show when=move || app_ctx.signals.chat_composer.chat_find_panel_open.get()>
                     <ChatFindBar signals=chat_find_bar_signals />
                 </Show>
 
                 <div
-                    class:main-row-resizing=move || app_ctx.side_resize_dragging.get()
+                    class:main-row-resizing=move || app_ctx.signals.resize.side_resize_dragging.get()
                     class="main-row"
                 >
                     {chat_column_view(app_ctx.chat_column.clone())}
