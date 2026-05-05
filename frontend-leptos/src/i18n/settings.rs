@@ -301,6 +301,52 @@ pub fn settings_execution_mode_hint(l: Locale) -> &'static str {
     }
 }
 
+pub fn settings_label_llm_thinking_mode(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "模型思考模式（thinking）",
+        Locale::En => "Model thinking mode (thinking)",
+    }
+}
+
+pub fn settings_thinking_mode_server(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "跟随服务端配置",
+        Locale::En => "Follow server config",
+    }
+}
+
+pub fn settings_thinking_mode_on(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "开启（请求启用 thinking）",
+        Locale::En => "On (request thinking enabled)",
+    }
+}
+
+pub fn settings_thinking_mode_off(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "关闭（请求禁用 thinking）",
+        Locale::En => "Off (request thinking disabled)",
+    }
+}
+
+pub fn settings_llm_thinking_mode_hint(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => {
+            "覆盖每轮发往模型的 thinking 相关字段（如智谱 GLM 深度思考、Moonshot kimi-k2.5 默认思考）。开启：发送 thinking enabled；关闭：智谱不写 thinking，Kimi k2.5 发送 disabled。仅影响本机保存的聊天请求覆盖。"
+        }
+        Locale::En => {
+            "Per-request override for vendor thinking fields (e.g. Zhipu GLM deep thinking, Moonshot kimi-k2.5 default thinking). On: request enabled; Off: omit Zhipu thinking and send disabled for kimi-k2.5. Stored locally and sent with each chat request."
+        }
+    }
+}
+
+pub fn settings_err_thinking_mode_invalid(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "思考模式须为 server、on 或 off",
+        Locale::En => "Thinking mode must be server, on, or off",
+    }
+}
+
 pub fn settings_ph_temperature(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "0 到 2，留空使用服务端默认值",

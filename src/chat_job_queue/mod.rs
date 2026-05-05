@@ -40,6 +40,15 @@ pub(crate) struct WebChatQueueDeps {
     pub sse_stream_hub: Arc<SseStreamHub>,
 }
 
+/// Web `client_llm.llm_thinking_mode` 解析后的本回合 **`thinking`** 策略覆盖（不写服务端磁盘配置）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WebClientLlmThinkingMode {
+    /// 请求体显式开启：智谱等写 **`thinking: enabled`**；Kimi k2.5 不发送 **`disabled`**（即不关闭网关默认思考）。
+    On,
+    /// 请求体显式关闭：不写智谱 **`thinking`**；Kimi k2.5 发送 **`thinking: disabled`**（与其它关闭路径一致）。
+    Off,
+}
+
 /// Web `POST /chat` / `/chat/stream` 请求体中可选的 **`client_llm`**：仅作用于**该次入队任务**，不写盘。
 #[derive(Clone, Debug, Default)]
 pub struct WebChatLlmOverride {
@@ -48,6 +57,8 @@ pub struct WebChatLlmOverride {
     pub api_key: Option<String>,
     /// 可选：覆盖本次任务的模型上下文窗口 token 上限（输入+输出），用于会话裁剪近似字符预算。
     pub llm_context_tokens: Option<u32>,
+    /// 可选：覆盖 **`llm_bigmodel_thinking`** / **`llm_kimi_thinking_disabled`**（见 [`WebClientLlmThinkingMode`]）。
+    pub llm_thinking_mode: Option<WebClientLlmThinkingMode>,
 }
 
 /// Web 会话设置中的执行模式覆盖（仅作用于当前任务）。
@@ -80,6 +91,18 @@ pub(super) fn resolve_web_llm_for_job(
             }
             if let Some(n) = o.llm_context_tokens {
                 c.llm_sampling.llm_context_tokens = n;
+            }
+            if let Some(mode) = o.llm_thinking_mode {
+                match mode {
+                    WebClientLlmThinkingMode::On => {
+                        c.llm_vendor_flags.llm_bigmodel_thinking = true;
+                        c.llm_vendor_flags.llm_kimi_thinking_disabled = false;
+                    }
+                    WebClientLlmThinkingMode::Off => {
+                        c.llm_vendor_flags.llm_bigmodel_thinking = false;
+                        c.llm_vendor_flags.llm_kimi_thinking_disabled = true;
+                    }
+                }
             }
             (Arc::new(c), key)
         }

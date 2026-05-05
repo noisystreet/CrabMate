@@ -14,6 +14,8 @@ pub const CLIENT_LLM_MODEL_STORAGE_KEY: &str = "crabmate-client-llm-model";
 pub const CLIENT_LLM_TEMPERATURE_STORAGE_KEY: &str = "crabmate-client-llm-temperature";
 /// Web 设置中保存的模型上下文窗口 token 上限（`llm_context_tokens`，与后端 `[agent] llm_context_tokens` 一致）。
 pub const CLIENT_LLM_CONTEXT_TOKENS_STORAGE_KEY: &str = "crabmate-client-llm-context-tokens";
+/// Web 设置中保存的 **`thinking`** 策略覆盖（`llm_thinking_mode`：`server` / `on` / `off`，与 `POST /chat` 的 `client_llm` 字段一致）。
+pub const CLIENT_LLM_THINKING_MODE_STORAGE_KEY: &str = "crabmate-client-llm-thinking-mode";
 /// Web 设置中保存的云端 API 密钥（`client_llm.api_key`）；**仅存本机**。
 pub const CLIENT_LLM_API_KEY_STORAGE_KEY: &str = "crabmate-client-llm-api-key";
 
@@ -42,13 +44,14 @@ pub fn client_llm_storage_has_api_key() -> bool {
     storage_trimmed_item(CLIENT_LLM_API_KEY_STORAGE_KEY).is_some()
 }
 
-/// 供设置弹窗加载：`api_base` / `model` / `temperature` / `llm_context_tokens` 的已存值（无则空串）。
-pub fn load_client_llm_text_fields_from_storage() -> (String, String, String, String) {
+/// 供设置弹窗加载：`api_base` / `model` / `temperature` / `llm_context_tokens` / `llm_thinking_mode` 的已存值（无则空串）。
+pub fn load_client_llm_text_fields_from_storage() -> (String, String, String, String, String) {
     (
         storage_trimmed_item(CLIENT_LLM_API_BASE_STORAGE_KEY).unwrap_or_default(),
         storage_trimmed_item(CLIENT_LLM_MODEL_STORAGE_KEY).unwrap_or_default(),
         storage_trimmed_item(CLIENT_LLM_TEMPERATURE_STORAGE_KEY).unwrap_or_default(),
         storage_trimmed_item(CLIENT_LLM_CONTEXT_TOKENS_STORAGE_KEY).unwrap_or_default(),
+        storage_trimmed_item(CLIENT_LLM_THINKING_MODE_STORAGE_KEY).unwrap_or_default(),
     )
 }
 
@@ -63,6 +66,7 @@ pub fn persist_client_llm_to_storage(
     model: &str,
     temperature: &str,
     llm_context_tokens: &str,
+    llm_thinking_mode: &str,
     api_key_update: Option<&str>,
     loc: Locale,
 ) -> Result<(), String> {
@@ -96,6 +100,13 @@ pub fn persist_client_llm_to_storage(
         st.set_item(CLIENT_LLM_CONTEXT_TOKENS_STORAGE_KEY, ct)
             .map_err(|_| crate::i18n::api_err_write_model(loc).to_string())?;
     }
+    let tm = llm_thinking_mode.trim();
+    if tm.is_empty() || tm == "server" {
+        let _ = st.remove_item(CLIENT_LLM_THINKING_MODE_STORAGE_KEY);
+    } else {
+        st.set_item(CLIENT_LLM_THINKING_MODE_STORAGE_KEY, tm)
+            .map_err(|_| crate::i18n::api_err_write_model(loc).to_string())?;
+    }
     if let Some(k) = api_key_update {
         let t = k.trim();
         if t.is_empty() {
@@ -127,6 +138,11 @@ pub fn client_llm_json_for_chat_body() -> Option<Value> {
     if let Some(v) = storage_trimmed_item(CLIENT_LLM_CONTEXT_TOKENS_STORAGE_KEY) {
         if let Ok(n) = v.parse::<u64>() {
             m.insert("llm_context_tokens".into(), Value::Number(n.into()));
+        }
+    }
+    if let Some(v) = storage_trimmed_item(CLIENT_LLM_THINKING_MODE_STORAGE_KEY) {
+        if v == "on" || v == "off" {
+            m.insert("llm_thinking_mode".into(), Value::String(v));
         }
     }
     if let Some(v) = storage_trimmed_item(CLIENT_LLM_API_KEY_STORAGE_KEY) {

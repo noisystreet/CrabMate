@@ -3,7 +3,8 @@ use leptos::prelude::*;
 use crate::i18n::{self, Locale};
 use crate::settings_llm_fields::{
     LlmApiBasePresetSelect, LlmClientApiKeyField, LlmContextTokensField, LlmCustomApiBaseInput,
-    LlmExecutorApiKeyField, LlmModelField, LlmTemperatureField, OptionalLlmExecutionModeField,
+    LlmExecutorApiKeyField, LlmModelField, LlmTemperatureField, LlmThinkingModeField,
+    OptionalLlmExecutionModeField,
 };
 
 /// 设置页「主 LLM」区块所需信号（缩短 [`SettingsLlmBlock`] 形参列表；勿命名为 `*Props`，与 Leptos 组件宏生成类型冲突）。
@@ -15,11 +16,14 @@ pub(crate) struct SettingsLlmBlockBundle {
     pub llm_model_draft: RwSignal<String>,
     pub llm_temperature_draft: RwSignal<String>,
     pub llm_context_tokens_draft: RwSignal<String>,
+    pub llm_thinking_mode_draft: RwSignal<String>,
     pub execution_mode_draft: Option<RwSignal<String>>,
     pub llm_api_key_draft: RwSignal<String>,
     pub llm_has_saved_key: RwSignal<bool>,
     pub clear_client_key_intent: RwSignal<bool>,
     pub hint_class: &'static str,
+    /// `<select id=…>`：设置页与弹窗可能同时挂载，须用不同 id。
+    pub llm_thinking_mode_select_id: &'static str,
 }
 
 #[component]
@@ -95,11 +99,13 @@ pub(crate) fn SettingsLlmBlock(bundle: SettingsLlmBlockBundle) -> impl IntoView 
         llm_model_draft,
         llm_temperature_draft,
         llm_context_tokens_draft,
+        llm_thinking_mode_draft,
         execution_mode_draft,
         llm_api_key_draft,
         llm_has_saved_key,
         clear_client_key_intent,
         hint_class,
+        llm_thinking_mode_select_id,
     } = bundle;
     view! {
         <div class="settings-block">
@@ -129,6 +135,12 @@ pub(crate) fn SettingsLlmBlock(bundle: SettingsLlmBlockBundle) -> impl IntoView 
             />
             <LlmTemperatureField locale temperature_draft=llm_temperature_draft hint_class />
             <LlmContextTokensField locale llm_context_tokens_draft hint_class />
+            <LlmThinkingModeField
+                locale
+                thinking_mode_draft=llm_thinking_mode_draft
+                hint_class
+                select_id=llm_thinking_mode_select_id
+            />
             <OptionalLlmExecutionModeField locale execution_mode_draft hint_class />
             <LlmClientApiKeyField
                 locale

@@ -241,6 +241,7 @@ pub fn wire_settings_modal_llm_drafts_on_open(s: WireSettingsModalLlmDraftsSigna
                 llm_model_draft,
                 llm_temperature_draft,
                 llm_context_tokens_draft,
+                llm_thinking_mode_draft,
                 llm_api_key_draft,
                 llm_has_saved_key,
                 llm_settings_feedback,
@@ -258,7 +259,7 @@ pub fn wire_settings_modal_llm_drafts_on_open(s: WireSettingsModalLlmDraftsSigna
         if !settings_modal.get() && !settings_page.get() {
             return;
         }
-        let (stored_base, stored_model, stored_temperature, stored_ctx_tokens) =
+        let (stored_base, stored_model, stored_temperature, stored_ctx_tokens, stored_thinking) =
             load_client_llm_text_fields_from_storage();
         let sd = status_tasks.status_data.get_untracked();
         let base = if stored_base.trim().is_empty() {
@@ -285,6 +286,12 @@ pub fn wire_settings_modal_llm_drafts_on_open(s: WireSettingsModalLlmDraftsSigna
             stored_ctx_tokens
         };
         llm_context_tokens_draft.set(ctx_tokens);
+        let thinking = stored_thinking.trim();
+        if thinking == "on" || thinking == "off" {
+            llm_thinking_mode_draft.set(thinking.to_string());
+        } else {
+            llm_thinking_mode_draft.set("server".to_string());
+        }
         llm_api_key_draft.set(String::new());
         llm_has_saved_key.set(client_llm_storage_has_api_key());
         llm_settings_feedback.set(None);

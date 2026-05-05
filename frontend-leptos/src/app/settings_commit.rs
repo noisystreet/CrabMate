@@ -38,6 +38,14 @@ fn validate_llm_context_tokens_override(raw: &str, loc: Locale) -> Result<(), St
     Ok(())
 }
 
+fn validate_llm_thinking_mode_override(raw: &str, loc: Locale) -> Result<(), String> {
+    let t = raw.trim();
+    if t.is_empty() || t == "server" || t == "on" || t == "off" {
+        return Ok(());
+    }
+    Err(crate::i18n::settings_err_thinking_mode_invalid(loc).to_string())
+}
+
 /// 一次「保存全部设置」所需的表单快照与 UI 信号（避免长参数列表）。
 pub struct CommitAllSettingsInput<'a> {
     pub ui_locale: Locale,
@@ -51,6 +59,7 @@ pub struct CommitAllSettingsInput<'a> {
     pub client_model: &'a str,
     pub client_temperature: &'a str,
     pub client_llm_context_tokens: &'a str,
+    pub client_llm_thinking_mode: &'a str,
     pub client_api_key_draft: &'a str,
     pub executor_base: &'a str,
     pub executor_model: &'a str,
@@ -85,11 +94,13 @@ pub fn commit_all_settings(p: CommitAllSettingsInput<'_>) -> Result<(), String> 
     };
     validate_temperature_override(p.client_temperature, p.ui_locale)?;
     validate_llm_context_tokens_override(p.client_llm_context_tokens, p.ui_locale)?;
+    validate_llm_thinking_mode_override(p.client_llm_thinking_mode, p.ui_locale)?;
     persist_client_llm_to_storage(
         p.client_base,
         p.client_model,
         p.client_temperature,
         p.client_llm_context_tokens,
+        p.client_llm_thinking_mode,
         client_key_upd,
         p.ui_locale,
     )?;

@@ -4,7 +4,7 @@ use axum::Json;
 use axum::http::StatusCode;
 
 use super::super::app_state::{AppState, CONVERSATION_ID_MAX_LEN};
-use crate::chat_job_queue;
+use crate::chat_job_queue::{self, WebClientLlmThinkingMode};
 use crate::config::LlmHttpAuthMode;
 use crate::web::http_types::chat::{ApiError, ClientLlmBody, ExecutorLlmBody};
 
@@ -73,7 +73,27 @@ pub(super) fn parse_client_llm_override(
             Some(n as u32)
         }
     };
-    if api_base.is_none() && model.is_none() && api_key.is_none() && llm_context_tokens.is_none() {
+    let llm_thinking_mode = match b
+        .llm_thinking_mode
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+    {
+        None | Some("server") => None,
+        Some("on") => Some(WebClientLlmThinkingMode::On),
+        Some("off") => Some(WebClientLlmThinkingMode::Off),
+        Some(other) => {
+            return Err(format!(
+                "client_llm.llm_thinking_mode 非法: {other:?}（支持 server、on、off）"
+            ));
+        }
+    };
+    if api_base.is_none()
+        && model.is_none()
+        && api_key.is_none()
+        && llm_context_tokens.is_none()
+        && llm_thinking_mode.is_none()
+    {
         return Ok(None);
     }
     if let Some(ref s) = api_base
@@ -105,6 +125,7 @@ pub(super) fn parse_client_llm_override(
         model,
         api_key,
         llm_context_tokens,
+        llm_thinking_mode,
     }))
 }
 
@@ -164,6 +185,7 @@ pub(super) fn parse_executor_llm_override(
         model,
         api_key,
         llm_context_tokens: None,
+        llm_thinking_mode: None,
     }))
 }
 

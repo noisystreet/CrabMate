@@ -30,6 +30,7 @@ pub struct SettingsModalDialogInput {
     pub llm_model_draft: RwSignal<String>,
     pub llm_temperature_draft: RwSignal<String>,
     pub llm_context_tokens_draft: RwSignal<String>,
+    pub llm_thinking_mode_draft: RwSignal<String>,
     pub llm_api_key_draft: RwSignal<String>,
     pub llm_has_saved_key: RwSignal<bool>,
     pub clear_client_key_intent: RwSignal<bool>,
@@ -59,6 +60,7 @@ pub fn settings_modal_dialog(input: SettingsModalDialogInput) -> impl IntoView {
         llm_model_draft,
         llm_temperature_draft,
         llm_context_tokens_draft,
+        llm_thinking_mode_draft,
         llm_api_key_draft,
         llm_has_saved_key,
         clear_client_key_intent,
@@ -150,11 +152,13 @@ pub fn settings_modal_dialog(input: SettingsModalDialogInput) -> impl IntoView {
                             llm_model_draft,
                             llm_temperature_draft,
                             llm_context_tokens_draft,
+                            llm_thinking_mode_draft,
                             execution_mode_draft: None,
                             llm_api_key_draft,
                             llm_has_saved_key,
                             clear_client_key_intent,
                             hint_class: "modal-hint settings-field-nested-hint",
+                            llm_thinking_mode_select_id: "settings-modal-llm-thinking-mode",
                         } />
                         <SettingsExecutorLlmBlock
                             locale=appearance_locale
