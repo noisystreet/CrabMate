@@ -23,7 +23,7 @@ use super::plan::{PerPlanCallModelParams, per_plan_call_model_retrying};
 use super::reflect::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
 use super::sub_agent_policy::filter_tool_defs_for_executor_kind;
 
-const MAX_OUTER_LOOP_ITERATIONS_SAFETY: u32 = 40;
+const MAX_OUTER_LOOP_ITERATIONS_SAFETY: u32 = 500;
 
 /// 步级子代理约束时可能需 `Vec` 持有过滤后的工具定义；否则用全量 `tools_defs` 切片。
 struct PlannerRoundTools<'a> {
