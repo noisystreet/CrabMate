@@ -194,17 +194,21 @@ impl SmartRouter {
         let mut messages = vec![Message::user_only(&prompt)];
         prepare_messages_for_hierarchical_llm_sync(&mut messages, cfg);
         let request = crate::types::ChatRequest {
-            model: cfg.llm.model.clone(),
-            messages,
-            stream: Some(false),
-            temperature: 0.1, // 低温度，确保确定性
-            max_tokens: 500,
-            tools: None,
-            tool_choice: None,
-            seed: None,
-            reasoning_split: Some(false),
-            thinking: None,
-            response_format: None,
+            core: crate::types::ChatRequestCore {
+                model: cfg.llm.model.clone(),
+                messages,
+                tools: None,
+                tool_choice: None,
+                max_tokens: 500,
+                temperature: 0.1, // 低温度，确保确定性
+                seed: None,
+                stream: Some(false),
+            },
+            vendor: crate::types::ChatRequestVendorExtensions {
+                reasoning_split: Some(false),
+                thinking: None,
+                response_format: None,
+            },
         };
 
         let params = CompleteChatRetryingParams::new(

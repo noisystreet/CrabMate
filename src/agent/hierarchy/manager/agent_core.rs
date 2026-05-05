@@ -64,8 +64,8 @@ impl ManagerAgent {
     /// Manager 的结构化 JSON 调用：禁用 thinking/reasoning_split，避免 DeepSeek thinking 模式
     /// 对历史 `reasoning_content` 回传的额外约束干扰纯 JSON 分解/修复流程。
     pub(super) fn force_manager_structured_json_mode(req: &mut crate::types::ChatRequest) {
-        req.thinking = None;
-        req.reasoning_split = None;
+        req.vendor.thinking = None;
+        req.vendor.reasoning_split = None;
     }
 
     pub fn new(config: ManagerConfig) -> Self {

@@ -1,27 +1,23 @@
 //! 队列 worker：在独立 task 中执行 `run_agent_turn`（流式与 JSON 模式）。
 
 use std::collections::HashSet;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use log::{debug, error, info, warn};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::AppState;
 use crate::agent::agent_turn::AgentTurnJobOutcomeKind;
 use crate::agent_role_turn::{filter_tools_for_agent_role, turn_allow_for_web_or_cli_job};
-use crate::types::{LlmSeedOverride, Message};
-use crate::web::audit::WebRequestAudit;
+use crate::types::Message;
 
 use super::stream_finish::{
     StreamJobOutcomeCtx, emit_stream_cancelled_terminal, emit_stream_ended_once,
     post_turn_web_prepare_and_save, stream_job_outcome_after_agent_turn,
 };
 use super::{
-    ChatJsonJobFailure, PerTurnFlight, QueuedChatJob, WebApprovalSession, WebChatLlmOverride,
-    WebChatQueueDeps, WebExecutionModeOverride, resolve_executor_llm_for_job,
-    resolve_web_llm_for_job,
+    ChatJsonJobFailure, PerTurnFlight, QueuedChatJob, WebApprovalSession, WebChatJobEnvelope,
+    resolve_executor_llm_for_job, resolve_web_llm_for_job,
 };
 
 pub(super) enum JobOutcome {
@@ -37,30 +33,20 @@ pub(super) enum JobOutcome {
     },
 }
 
-/// `run_stream_queued_job` 入参（与 `QueuedChatJob::Stream` 字段一致；单结构体避免超长形参列表）。
+/// `run_stream_queued_job` 入参（[`WebChatJobEnvelope`] + SSE / 审批）。
 struct StreamQueuedJobParams {
-    job_id: u64,
-    queue_deps: Arc<WebChatQueueDeps>,
-    app: Arc<AppState>,
-    conversation_id: String,
-    messages: Vec<Message>,
-    expected_revision: Option<u64>,
-    request_agent_role: Option<String>,
-    persisted_active_agent_role: Option<String>,
-    work_dir: PathBuf,
-    workspace_is_set: bool,
-    temperature_override: Option<f32>,
-    seed_override: LlmSeedOverride,
-    llm_override: Option<WebChatLlmOverride>,
-    executor_llm_override: Option<WebChatLlmOverride>,
-    execution_mode_override: Option<WebExecutionModeOverride>,
+    envelope: WebChatJobEnvelope,
     stream_event_tx: mpsc::Sender<(u64, String)>,
     web_approval_session: Option<WebApprovalSession>,
-    request_audit: WebRequestAudit,
 }
 
 async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcome {
     let StreamQueuedJobParams {
+        envelope,
+        stream_event_tx,
+        web_approval_session,
+    } = p;
+    let WebChatJobEnvelope {
         job_id,
         queue_deps,
         app,
@@ -76,10 +62,8 @@ async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcome {
         llm_override,
         executor_llm_override,
         execution_mode_override,
-        stream_event_tx,
-        web_approval_session,
         request_audit,
-    } = p;
+    } = envelope;
     queue_deps.sse_stream_hub.register_job(job_id);
     let hub_bridge = queue_deps.sse_stream_hub.clone();
     let bridge_job = job_id;
@@ -259,29 +243,15 @@ async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcome {
     JobOutcome::Stream { ok, cancelled, err }
 }
 
-/// `run_json_queued_job` 入参（与 `QueuedChatJob::Json` 字段一致）。
+/// `run_json_queued_job` 入参（[`WebChatJobEnvelope`] + JSON oneshot）。
 struct JsonQueuedJobParams {
-    job_id: u64,
-    queue_deps: Arc<WebChatQueueDeps>,
-    app: Arc<AppState>,
-    conversation_id: String,
-    messages: Vec<Message>,
-    expected_revision: Option<u64>,
-    request_agent_role: Option<String>,
-    persisted_active_agent_role: Option<String>,
-    work_dir: PathBuf,
-    workspace_is_set: bool,
-    temperature_override: Option<f32>,
-    seed_override: LlmSeedOverride,
-    llm_override: Option<WebChatLlmOverride>,
-    executor_llm_override: Option<WebChatLlmOverride>,
-    execution_mode_override: Option<WebExecutionModeOverride>,
+    envelope: WebChatJobEnvelope,
     reply_tx: oneshot::Sender<Result<Vec<Message>, ChatJsonJobFailure>>,
-    request_audit: WebRequestAudit,
 }
 
 async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
-    let JsonQueuedJobParams {
+    let JsonQueuedJobParams { envelope, reply_tx } = p;
+    let WebChatJobEnvelope {
         job_id,
         queue_deps,
         app,
@@ -297,9 +267,8 @@ async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
         llm_override,
         executor_llm_override,
         execution_mode_override,
-        reply_tx,
         request_audit,
-    } = p;
+    } = envelope;
     info!(
         target: "crabmate",
         "chat json 任务开始执行 job_id={}",
@@ -466,86 +435,19 @@ async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
 pub(super) async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
     match job {
         QueuedChatJob::Stream {
-            job_id,
-            queue_deps,
-            app,
-            conversation_id,
-            messages,
-            expected_revision,
-            request_agent_role,
-            persisted_active_agent_role,
-            work_dir,
-            workspace_is_set,
-            temperature_override,
-            seed_override,
-            llm_override,
-            executor_llm_override,
-            execution_mode_override,
+            envelope,
             stream_event_tx,
             web_approval_session,
-            request_audit,
         } => {
             run_stream_queued_job(StreamQueuedJobParams {
-                job_id,
-                queue_deps,
-                app,
-                conversation_id,
-                messages,
-                expected_revision,
-                request_agent_role,
-                persisted_active_agent_role,
-                work_dir,
-                workspace_is_set,
-                temperature_override,
-                seed_override,
-                llm_override,
-                executor_llm_override,
-                execution_mode_override,
+                envelope,
                 stream_event_tx,
                 web_approval_session,
-                request_audit,
             })
             .await
         }
-        QueuedChatJob::Json {
-            job_id,
-            queue_deps,
-            app,
-            conversation_id,
-            messages,
-            expected_revision,
-            request_agent_role,
-            persisted_active_agent_role,
-            work_dir,
-            workspace_is_set,
-            temperature_override,
-            seed_override,
-            llm_override,
-            executor_llm_override,
-            execution_mode_override,
-            reply_tx,
-            request_audit,
-        } => {
-            run_json_queued_job(JsonQueuedJobParams {
-                job_id,
-                queue_deps,
-                app,
-                conversation_id,
-                messages,
-                expected_revision,
-                request_agent_role,
-                persisted_active_agent_role,
-                work_dir,
-                workspace_is_set,
-                temperature_override,
-                seed_override,
-                llm_override,
-                executor_llm_override,
-                execution_mode_override,
-                reply_tx,
-                request_audit,
-            })
-            .await
+        QueuedChatJob::Json { envelope, reply_tx } => {
+            run_json_queued_job(JsonQueuedJobParams { envelope, reply_tx }).await
         }
     }
 }
