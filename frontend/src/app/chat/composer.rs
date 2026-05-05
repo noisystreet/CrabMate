@@ -11,12 +11,55 @@ use gloo_timers::future::TimeoutFuture;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::clarification_form::PendingClarificationForm;
 use crate::session_sync::SessionSyncState;
+use crate::storage::ChatSession;
 
 use super::composer_mirror::composer_workspace_at_refs_html;
 
 pub(crate) use super::composer_wires::wire_chat_composer_streams;
 
-/// 切换会话时重置会话级 UI 状态并加载该会话草稿（勿订阅 `sessions`，避免流式更新覆盖缓冲）。
+/// 用单次 `sessions` 快照刷新壳层状态（草稿、`session_sync`、流式 job 重置等）。
+///
+/// `sessions_snapshot` **必须**由调用方通过 [`RwSignal::get_untracked`]（或等价「不订阅」快照）提供；
+/// 若在响应式 `Effect` 内改为 `sessions.with`/`get`，effect 会订阅每条流式消息写入并反复执行本逻辑，
+/// 覆盖作曲器缓冲。
+fn apply_shell_after_active_session_changed(
+    chat: &ChatSessionSignals,
+    draft: RwSignal<String>,
+    pending_images: RwSignal<Vec<String>>,
+    pending_clarification: RwSignal<Option<PendingClarificationForm>>,
+    collapsed_long_assistant_ids: RwSignal<Vec<String>>,
+    sessions_snapshot: &[ChatSession],
+    active_id: &str,
+) {
+    let active = sessions_snapshot.iter().find(|s| s.id == active_id);
+    let d = active.map(|s| s.draft.clone()).unwrap_or_default();
+    draft.set(d);
+    pending_images.set(Vec::new());
+    pending_clarification.set(None);
+    let st = active.map(|s| {
+        let mut st = SessionSyncState::local_only();
+        if let Some(ref cid) = s.server_conversation_id {
+            let t = cid.trim();
+            if !t.is_empty() {
+                st.apply_stream_conversation_id(t.to_string());
+                if let Some(rev) = s.server_revision {
+                    st.apply_saved_revision(rev);
+                }
+            }
+        }
+        st
+    });
+    chat.session_sync
+        .set(st.unwrap_or_else(SessionSyncState::local_only));
+    chat.stream_job_id.set(None);
+    chat.stream_last_event_seq.set(0);
+    collapsed_long_assistant_ids.set(Vec::new());
+}
+
+/// 切换会话时重置会话级 UI 状态并加载该会话草稿。
+///
+/// **依赖**：`Effect` 仅追踪 `active_id` 与 `initialized`；会话列表通过 `get_untracked` 传入
+/// [`apply_shell_after_active_session_changed`]（见该函数说明）。
 pub(crate) fn wire_session_switch_clears_chat_state(
     initialized: RwSignal<bool>,
     chat: ChatSessionSignals,
@@ -31,34 +74,15 @@ pub(crate) fn wire_session_switch_clears_chat_state(
             return;
         }
         let list = chat.sessions.get_untracked();
-        let d = list
-            .iter()
-            .find(|s| s.id == id)
-            .map(|s| s.draft.clone())
-            .unwrap_or_default();
-        draft.set(d);
-        pending_images.set(Vec::new());
-        pending_clarification.set(None);
-        // 仅用上方 `list`（get_untracked）：勿再 `sessions.with`，否则 effect 会订阅流式
-        // `sessions` 更新。
-        let st = list.iter().find(|s| s.id == id).map(|s| {
-            let mut st = SessionSyncState::local_only();
-            if let Some(ref cid) = s.server_conversation_id {
-                let t = cid.trim();
-                if !t.is_empty() {
-                    st.apply_stream_conversation_id(t.to_string());
-                    if let Some(rev) = s.server_revision {
-                        st.apply_saved_revision(rev);
-                    }
-                }
-            }
-            st
-        });
-        chat.session_sync
-            .set(st.unwrap_or_else(SessionSyncState::local_only));
-        chat.stream_job_id.set(None);
-        chat.stream_last_event_seq.set(0);
-        collapsed_long_assistant_ids.set(Vec::new());
+        apply_shell_after_active_session_changed(
+            &chat,
+            draft,
+            pending_images,
+            pending_clarification,
+            collapsed_long_assistant_ids,
+            list.as_slice(),
+            id.as_str(),
+        );
     });
 }
 
