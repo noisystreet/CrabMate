@@ -6,9 +6,11 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::{HtmlElement, Node};
 
+use crate::chat_session_state::ChatSessionSignals;
 use crate::session_export::{
     export_filename_stem, session_to_export_file, session_to_markdown, trigger_download,
 };
+use crate::session_sync::SessionSyncState;
 use crate::storage::{
     ChatSession, DEFAULT_CHAT_SESSION_TITLE, StoredMessage, ensure_at_least_one, make_session_id,
 };
@@ -347,6 +349,28 @@ pub fn flush_active_composer_draft(
         return;
     }
     flush_composer_draft_to_session(sessions, &prev, &draft.get_untracked());
+}
+
+/// 切换当前活跃会话：**先**将作曲器草稿写入当前会话，再激活 `next_session_id` 并从会话条目载入草稿。
+///
+/// `reset_sync_to_local_only`：侧栏 /「管理会话」点选时为 `true`（与历史行为一致，`session_sync` 回到仅本地语义）。
+pub fn switch_active_session_after_composer_flush(
+    chat: ChatSessionSignals,
+    draft: RwSignal<String>,
+    next_session_id: &str,
+    reset_sync_to_local_only: bool,
+) {
+    flush_active_composer_draft(chat.sessions, chat.active_id, draft);
+    chat.active_id.set(next_session_id.to_string());
+    draft.set(chat.sessions.with(|list| {
+        list.iter()
+            .find(|s| s.id == next_session_id)
+            .map(|s| s.draft.clone())
+            .unwrap_or_default()
+    }));
+    if reset_sync_to_local_only {
+        chat.session_sync.set(SessionSyncState::local_only());
+    }
 }
 
 pub fn export_session_json_for_id(
