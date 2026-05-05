@@ -3,10 +3,9 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use crabmate_sse_protocol::StreamEndReason;
 use leptos::prelude::*;
 
-use crate::api::{ChatStreamCallbacks, OnToolCallFn};
+use crate::api::ChatStreamCallbacks;
 use crate::clarification_form::PendingClarificationForm;
 use crate::i18n;
 use crate::message_format::staged_timeline_system_message_body;
@@ -52,81 +51,10 @@ pub(crate) fn build_chat_stream_callbacks(
 
     let on_ws: Rc<dyn Fn()> = chat_stream_on_ws_builder(Rc::clone(&stream_ctx));
 
-    // 暂存 tool_call 参数
-    let on_tool_call: OnToolCallFn = {
-        let stream_ctx = Rc::clone(&stream_ctx);
-        let current_subgoal_marker = Rc::clone(&current_subgoal_marker);
-        Rc::new(
-            move |name: String,
-                  summary: String,
-                  preview: Option<String>,
-                  full: Option<String>,
-                  goal_id: Option<String>,
-                  tool_call_id: Option<String>| {
-                let _ = (preview, full);
-                let loc = stream_ctx.locale.get_untracked();
-                let core = if !summary.trim().is_empty() {
-                    summary.trim().to_string()
-                } else if !name.trim().is_empty() {
-                    format!("{}{}", i18n::tool_card_prefix(loc), name.trim())
-                } else {
-                    i18n::tool_card_fallback(loc).to_string()
-                };
-                let text = to_single_line(
-                    &format!("{} · {}", core, i18n::status_tool_running(loc)),
-                    140,
-                );
-                let detail = if !name.trim().is_empty() {
-                    format!("tool: {name}\nstatus: running")
-                } else {
-                    "status: running".to_string()
-                };
-                let id = make_message_id();
-                let aid = stream_ctx.active_session_id.as_str();
-                let marker = goal_id
-                    .as_deref()
-                    .map(|g| format!("hierarchical-subgoal:{g}"))
-                    .or_else(|| current_subgoal_marker.borrow().clone());
-                let tcid = tool_call_id
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .map(str::to_string);
-                stream_ctx.chat.sessions.update(|list| {
-                    if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-                        let msg = StoredMessage {
-                            id: id.clone(),
-                            role: "system".to_string(),
-                            text,
-                            reasoning_text: detail.clone(),
-                            image_urls: vec![],
-                            state: Some("loading".to_string()),
-                            is_tool: true,
-                            tool_call_id: tcid.clone(),
-                            tool_name: non_empty_trimmed_tool_name(&name),
-                            created_at: message_created_ms(),
-                        };
-                        if let Some(mk) = marker.as_deref()
-                            && let Some(idx) = s
-                                .messages
-                                .iter()
-                                .rposition(|m| m.state.as_deref() == Some(mk))
-                        {
-                            s.messages.insert(idx + 1, msg);
-                        } else {
-                            s.messages.push(msg);
-                        }
-                    }
-                });
-                // 开场白留在时间线/工具之上；工具后挂新占位，续写走新气泡，避免“最早的话出现在最下面”。
-                finalize_loading_assistant_before_tool_and_tail_with_new_loading(&stream_ctx, &id);
-                // 有 `tool_call_id` 时由 `tool_result` 按 id 命中占位气泡；否则保持 FIFO。
-                if tcid.is_none() {
-                    enqueue_pending_tool_message_id(&stream_ctx.pending_tool_message_ids, id);
-                }
-            },
-        )
-    };
+    let on_tool_call = chat_stream_on_tool_call_builder(
+        Rc::clone(&stream_ctx),
+        Rc::clone(&current_subgoal_marker),
+    );
 
     let on_tool_status: Rc<dyn Fn(bool)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
@@ -186,24 +114,12 @@ pub(crate) fn build_chat_stream_callbacks(
         let stream_end_reason = Rc::clone(&stream_end_reason);
         Rc::new(move |reason: String| {
             *stream_end_reason.borrow_mut() = Some(reason.clone());
-            if matches!(
-                reason.parse::<StreamEndReason>().ok(),
-                Some(
-                    StreamEndReason::Completed
-                        | StreamEndReason::Cancelled
-                        | StreamEndReason::Conflict
-                        | StreamEndReason::Fallback
-                        | StreamEndReason::NoOutput
-                        | StreamEndReason::Gone
-                )
-            ) {
-                stream_ctx.chat.stream_job_id.set(None);
-                stream_ctx.chat.stream_last_event_seq.set(0);
-                // 保险收尾：某些连接尾部场景可能导致 `on_done` 延后或缺失，
-                // 看到明确终止帧时先回落 busy，避免状态栏长期停在“模型生成中”。
-                stream_ctx.shell.status_busy.set(false);
-                *stream_ctx.shell.abort_cell.lock().unwrap() = None;
-            }
+            stream_ctx.chat.stream_job_id.set(None);
+            stream_ctx.chat.stream_last_event_seq.set(0);
+            // `stream_ended` 表示服务端已结束本轮流式任务：无论 `reason` 是否能解析为已知枚举，
+            // 都应回落 busy，避免状态栏长期停在「模型生成中」。（未知 reason 仍写入 stream_end_reason 供 diagnostics。）
+            stream_ctx.shell.status_busy.set(false);
+            *stream_ctx.shell.abort_cell.lock().unwrap() = None;
         })
     };
 

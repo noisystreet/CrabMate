@@ -136,7 +136,6 @@ mod tests {
             !super::super::helpers::should_show_missing_final_summary_hint(
                 Some("completed"),
                 true,
-                128,
                 true,
                 true,
             )
@@ -145,7 +144,18 @@ mod tests {
             super::super::helpers::should_show_missing_final_summary_hint(
                 Some("completed"),
                 true,
-                128,
+                true,
+                false,
+            )
+        );
+    }
+
+    #[test]
+    fn missing_final_summary_hint_never_without_answer_phase_even_if_diag_chars() {
+        assert!(
+            !super::super::helpers::should_show_missing_final_summary_hint(
+                Some("completed"),
+                false,
                 true,
                 false,
             )

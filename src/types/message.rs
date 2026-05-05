@@ -583,16 +583,19 @@ pub fn merge_consecutive_assistants_in_place(messages: &mut Vec<Message>) {
 ///
 /// 末尾「仅有 `tool_calls`、无对应 `tool` 消息」的 assistant 会先清空 `tool_calls`（悬空调用非法）；
 /// 若清空后正文仍为空，须再删掉该条，否则供应商返回 `content or tool_calls must be set`。
+///
+/// **`reasoning_content` 已剥离**后，会话里可能留下仅有思维链语义、正文为空的助手（中间或尾部）；
+/// 须从**整条** `messages` 剔除，否则 DeepSeek 等返回 HTTP 400（`Invalid assistant message: content or tool_calls must be set`）。
 pub fn normalize_messages_for_openai_compatible_request(msgs: Vec<Message>) -> Vec<Message> {
     let mut out = merge_all_consecutive_assistant_messages_in_vec(msgs);
-    pop_trailing_assistants_with_neither_content_nor_tool_calls(&mut out);
+    remove_all_assistants_lacking_openai_content_or_tool_calls(&mut out);
     if let Some(last) = out.last_mut()
         && is_assistant_role(&last.role)
         && assistant_has_non_empty_tool_calls(last)
     {
         last.tool_calls = None;
     }
-    pop_trailing_assistants_with_neither_content_nor_tool_calls(&mut out);
+    remove_all_assistants_lacking_openai_content_or_tool_calls(&mut out);
     out
 }
 
@@ -647,17 +650,23 @@ pub fn fold_system_messages_into_following_user(msgs: Vec<Message>) -> Vec<Messa
     out
 }
 
-/// 删除尾部「无正文且无 `tool_calls`」的 assistant（OpenAI 兼容 API 不接受该形态）。
-fn pop_trailing_assistants_with_neither_content_nor_tool_calls(out: &mut Vec<Message>) {
-    while out.last().is_some_and(|m| {
-        is_assistant_role(&m.role)
-            && !assistant_has_non_empty_tool_calls(m)
-            && message_content_as_str(&m.content)
-                .map(|s| s.trim().is_empty())
-                .unwrap_or_else(|| message_content_is_effectively_empty(m))
-    }) {
-        out.pop();
+/// `assistant` 在 OpenAI 兼容 `chat/completions` 下非法：**无**非空 `content`（含多模态 `Parts`）且**无** `tool_calls`。
+#[inline]
+fn assistant_lacks_openai_content_and_tool_calls(m: &Message) -> bool {
+    if !is_assistant_role(m.role.as_str()) {
+        return false;
     }
+    if assistant_has_non_empty_tool_calls(m) {
+        return false;
+    }
+    message_content_as_str(&m.content)
+        .map(|s| s.trim().is_empty())
+        .unwrap_or_else(|| message_content_is_effectively_empty(m))
+}
+
+/// 删除**任意位置**「无正文且无 `tool_calls`」的 assistant（与仅 `pop` 尾部等价类，兼修 strip 后留在中间的垃圾助手）。
+fn remove_all_assistants_lacking_openai_content_or_tool_calls(out: &mut Vec<Message>) {
+    out.retain(|m| !assistant_lacks_openai_content_and_tool_calls(m));
 }
 
 /// Web `/chat`、队列任务与 CLI 单次问答共用的首轮：`[system, user]`。

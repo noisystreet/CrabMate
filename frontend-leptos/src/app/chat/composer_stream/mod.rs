@@ -101,6 +101,10 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                     clarify_questionnaire_answers: clarify_json,
                 })
                 .await;
+                // HTTP 读取结束后必须回落 busy：正常路径已由 `on_done` / `on_stream_ended` / `on_error` 清理；
+                // 若连接悬挂、取消分支提前 return、或回调遗漏，避免状态栏永久「模型生成中」。
+                shell_for_stream_err.status_busy.set(false);
+                shell_for_stream_err.tool_busy.set(false);
                 if let Err(e) = stream_result {
                     if *user_cancelled_for_spawn.lock().unwrap() {
                         return;

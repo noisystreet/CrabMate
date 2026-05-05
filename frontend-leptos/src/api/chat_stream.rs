@@ -1,5 +1,7 @@
 //! `/chat/stream`：`fetch` + SSE 帧解析与 `sse_dispatch` 桥接。
 
+use futures_util::future::{Either, select};
+use gloo_timers::future::TimeoutFuture;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
@@ -205,6 +207,18 @@ async fn sleep_chat_stream_retry_backoff(attempt: u32) {
     gloo_timers::future::TimeoutFuture::new(ms as u32).await;
 }
 
+/// 已收到 `stream_ended` 后，部分浏览器/代理可能长期不结束 body；超时则 `releaseLock` 结束挂起。
+const POST_STREAM_ENDED_READ_TIMEOUT_MS: u32 = 25_000;
+
+/// 尚未收到 `stream_ended` 时，单次 `read()` 若长期无字节（断流、掉帧、代理挂起），会永远阻塞；设上限以便回落 busy。
+/// 长思考无 SSE 的网关较少见；若仍误判可调大或做配置。
+const PRE_STREAM_ENDED_READ_STALL_TIMEOUT_MS: u32 = 300_000;
+
+/// 两次「含 `data:` 的有效负载」之间的最大间隔（毫秒）。代理可能周期性下发不含 `data:` 的注释帧，
+/// 使 `read()` 频繁返回，从而永远不触发 [`PRE_STREAM_ENDED_READ_STALL_TIMEOUT_MS`]；此上限仍可结束悬挂流。
+/// 断线重连路径亦依赖此项（该路径不设单次 read 超时）。
+const SSE_MEANINGFUL_PAYLOAD_IDLE_TIMEOUT_MS: f64 = 180_000.0;
+
 /// 消费 `/chat/stream` 响应体：UTF-8 重组、SSE 分帧与尾部 flush（与断线重连时的读失败语义一致）。
 async fn consume_chat_stream_response_body(
     rb: web_sys::ReadableStream,
@@ -223,18 +237,65 @@ async fn consume_chat_stream_response_body(
     let mut buffer = String::new();
     let mut stream_finished_normally = false;
     let mut saw_stream_ended = false;
+    let mut last_meaningful_payload_ms = js_sys::Date::now();
     loop {
         if signal.aborted() {
             return Ok((true, saw_stream_ended));
         }
-        let read_promise = reader.read();
-        let chunk: wasm_bindgen::JsValue = match JsFuture::from(read_promise).await {
-            Ok(c) => c,
-            Err(e) => {
-                if stream_resume_job_id.is_none() {
+        if !saw_stream_ended {
+            let now = js_sys::Date::now();
+            if now - last_meaningful_payload_ms > SSE_MEANINGFUL_PAYLOAD_IDLE_TIMEOUT_MS {
+                reader.release_lock();
+                stream_finished_normally = true;
+                break;
+            }
+        }
+        let chunk: wasm_bindgen::JsValue = if saw_stream_ended {
+            match select(
+                JsFuture::from(reader.read()),
+                TimeoutFuture::new(POST_STREAM_ENDED_READ_TIMEOUT_MS),
+            )
+            .await
+            {
+                Either::Left((Ok(c), _)) => c,
+                Either::Left((Err(e), _)) => {
+                    if stream_resume_job_id.is_none() {
+                        return Err(crate::i18n::api_err_stream_read(&e));
+                    }
+                    break;
+                }
+                Either::Right(((), _pending_read)) => {
+                    reader.release_lock();
+                    stream_finished_normally = true;
+                    break;
+                }
+            }
+        } else if stream_resume_job_id.is_none() {
+            match select(
+                JsFuture::from(reader.read()),
+                TimeoutFuture::new(PRE_STREAM_ENDED_READ_STALL_TIMEOUT_MS),
+            )
+            .await
+            {
+                Either::Left((Ok(c), _)) => c,
+                Either::Left((Err(e), _)) => {
                     return Err(crate::i18n::api_err_stream_read(&e));
                 }
-                break;
+                Either::Right(((), _)) => {
+                    reader.release_lock();
+                    stream_finished_normally = true;
+                    break;
+                }
+            }
+        } else {
+            match JsFuture::from(reader.read()).await {
+                Ok(c) => c,
+                Err(e) => {
+                    if stream_resume_job_id.is_none() {
+                        return Err(crate::i18n::api_err_stream_read(&e));
+                    }
+                    break;
+                }
             }
         };
         let done = js_sys::Reflect::get(&chunk, &JsValue::from_str("done"))
@@ -250,17 +311,20 @@ async fn consume_chat_stream_response_body(
         if let Some(u8) = value.dyn_ref::<js_sys::Uint8Array>() {
             append_chunk_to_text_buffer(&mut raw, &u8.to_vec(), &mut buffer);
         }
-        process_sse_buffer(&mut buffer, last_event_id, &mut saw_stream_ended, cbs, loc)?;
-        if saw_stream_ended {
-            stream_finished_normally = true;
-            break;
+        let meaningful =
+            process_sse_buffer(&mut buffer, last_event_id, &mut saw_stream_ended, cbs, loc)?;
+        if meaningful > 0 {
+            last_meaningful_payload_ms = js_sys::Date::now();
         }
+        // 不在此处因 `stream_ended` 提前 break：提前结束 ReadableStream 消费可能导致部分环境下
+        // `fetch` 身未完成、外层 `send_chat_stream` 永久 await，状态栏卡「模型生成中」。
     }
     if !raw.is_empty() {
         buffer.push_str(&String::from_utf8_lossy(&raw));
         raw.clear();
     }
-    flush_sse_tail(&mut buffer, last_event_id, &mut saw_stream_ended, cbs, loc)?;
+    let _tail_meaningful =
+        flush_sse_tail(&mut buffer, last_event_id, &mut saw_stream_ended, cbs, loc)?;
     if saw_stream_ended {
         stream_finished_normally = true;
     }
@@ -380,13 +444,16 @@ fn process_sse_buffer(
     saw_stream_ended: &mut bool,
     cbs: &ChatStreamCallbacks,
     loc: Locale,
-) -> Result<(), String> {
+) -> Result<usize, String> {
+    let mut meaningful = 0usize;
     while let Some(pos) = buffer.find("\n\n") {
         let block = buffer[..pos].to_string();
         *buffer = buffer[pos + 2..].to_string();
-        handle_sse_block(&block, last_event_id, saw_stream_ended, cbs, loc)?;
+        if handle_sse_block(&block, last_event_id, saw_stream_ended, cbs, loc)? {
+            meaningful = meaningful.saturating_add(1);
+        }
     }
-    Ok(())
+    Ok(meaningful)
 }
 
 fn flush_sse_tail(
@@ -395,36 +462,56 @@ fn flush_sse_tail(
     saw_stream_ended: &mut bool,
     cbs: &ChatStreamCallbacks,
     loc: Locale,
-) -> Result<(), String> {
+) -> Result<usize, String> {
     // 勿对尾部缓冲 `trim`：流式正文可能单独落在仅含空格/`data: ` 尾部的帧里，trim 会吞掉词间空格。
-    if !buffer.is_empty() {
-        handle_sse_block(buffer.as_str(), last_event_id, saw_stream_ended, cbs, loc)?;
-    }
+    let meaningful = if buffer.is_empty() {
+        0usize
+    } else if handle_sse_block(buffer.as_str(), last_event_id, saw_stream_ended, cbs, loc)? {
+        1
+    } else {
+        0
+    };
     buffer.clear();
-    Ok(())
+    Ok(meaningful)
 }
 
+/// `Ok(true)`：本帧带有非空、非 `[DONE]` 的 `data:` 负载，并已走完 `stream_ended` 或控制面/正文分发。
 fn handle_sse_block(
     block: &str,
     last_event_id: &mut u64,
     saw_stream_ended: &mut bool,
     cbs: &ChatStreamCallbacks,
     loc: Locale,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     if let Some(id) = parse_sse_event_id(block) {
         *last_event_id = id;
         (cbs.on_last_sse_event_id)(id);
     }
     let Some(data) = join_sse_data_lines(block) else {
-        return Ok(());
+        return Ok(false);
     };
     // 勿对 `data` 全文 `trim`：模型/代理可能把词间空格单独打成一段 SSE，trim 会导致单词粘在一起。
     if data.is_empty() || is_sse_done_sentinel(&data) {
-        return Ok(());
+        return Ok(false);
     }
     if let Some(reason) = extract_stream_ended_reason(&data) {
         *saw_stream_ended = true;
         (cbs.on_stream_ended)(reason);
+        return Ok(true);
+    }
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&data)
+        && let Some(ended) = v.get("stream_ended")
+        && !ended.is_null()
+    {
+        // `reason` 缺失或非字符串时仍须回落 busy（与 `dispatch_notice_timeline_tail` 吞掉 `stream_ended` 的形态对齐）。
+        let reason = ended
+            .get("reason")
+            .and_then(|x| x.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| StreamEndReason::Completed.to_string());
+        *saw_stream_ended = true;
+        (cbs.on_stream_ended)(reason);
+        return Ok(true);
     }
 
     let mut stop = false;
@@ -474,12 +561,12 @@ fn handle_sse_block(
         on_timeline_log: Some(&mut on_timeline_log),
     };
     match try_dispatch_sse_control_payload(&data, &mut cbs2) {
-        crate::sse_dispatch::SseDispatch::Stop => Ok(()),
+        crate::sse_dispatch::SseDispatch::Stop => Ok(true),
         crate::sse_dispatch::SseDispatch::Handled => {
             if stop {
                 Err(crate::i18n::api_err_stream_stopped(loc).to_string())
             } else {
-                Ok(())
+                Ok(true)
             }
         }
         crate::sse_dispatch::SseDispatch::Plain => {
@@ -487,7 +574,7 @@ fn handle_sse_block(
                 return Err(crate::i18n::api_err_stream_stopped(loc).to_string());
             }
             (cbs.on_delta)(data);
-            Ok(())
+            Ok(true)
         }
     }
 }
@@ -542,6 +629,25 @@ mod tests {
         assert!(res.is_ok());
         assert!(saw_stream_ended);
         assert_eq!(last_event_id, 12);
+        assert_eq!(ended.borrow().as_deref(), Some("completed"));
+    }
+
+    #[test]
+    fn handle_block_marks_stream_ended_when_reason_missing_uses_completed() {
+        let ended = Rc::new(RefCell::new(None::<String>));
+        let cbs = callbacks_with_end_capture(Rc::clone(&ended));
+        let mut last_event_id = 0u64;
+        let mut saw_stream_ended = false;
+        let block = "data: {\"stream_ended\":{\"job_id\":3}}\n\n";
+        let res = handle_sse_block(
+            block.trim(),
+            &mut last_event_id,
+            &mut saw_stream_ended,
+            &cbs,
+            Locale::ZhHans,
+        );
+        assert!(res.is_ok());
+        assert!(saw_stream_ended);
         assert_eq!(ended.borrow().as_deref(), Some("completed"));
     }
 

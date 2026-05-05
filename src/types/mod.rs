@@ -433,6 +433,30 @@ mod normalize_messages_tests {
         assert_eq!(n.len(), 2);
         assert_eq!(n[1].role, "user");
     }
+
+    /// strip `reasoning_content` 后正文为空、也无 `tool_calls` 的助手若在**中间**，仍会导致 DeepSeek HTTP 400，须整表剔除。
+    #[test]
+    fn drops_infix_empty_assistant_without_tool_calls() {
+        let v = vec![
+            Message::system_only("s"),
+            Message::user_only("u1"),
+            Message {
+                role: "assistant".to_string(),
+                content: None,
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: None,
+                name: None,
+                tool_call_id: None,
+            },
+            Message::user_only("u2"),
+        ];
+        let n = normalize_messages_for_openai_compatible_request(v);
+        assert_eq!(n.len(), 3);
+        assert_eq!(n[0].role, "system");
+        assert_eq!(n[1].role, "user");
+        assert_eq!(n[2].role, "user");
+    }
 }
 
 #[cfg(test)]

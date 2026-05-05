@@ -1,4 +1,4 @@
-//! SSE 回调闭包工厂：`on_tool_result`、`on_timeline_log`、`on_delta`、`on_done`、`on_error`、`on_workspace_changed`。
+//! SSE 回调闭包工厂：`on_tool_result`、`on_timeline_log`、`on_delta`、`on_done`、`on_error`、`on_workspace_changed`、`on_tool_call`。
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -6,6 +6,7 @@ use std::rc::Rc;
 use crabmate_sse_protocol::StreamEndReason;
 use leptos::prelude::*;
 
+use crate::api::OnToolCallFn;
 use crate::i18n;
 use crate::message_format::{
     staged_timeline_system_message_body, tool_card_compact_text, tool_card_text,
@@ -101,6 +102,85 @@ pub(super) fn make_on_tool_result(
     })
 }
 
+pub(super) fn chat_stream_on_tool_call_builder(
+    stream_ctx: Rc<ChatStreamCallbackCtx>,
+    current_subgoal_marker: Rc<RefCell<Option<String>>>,
+) -> OnToolCallFn {
+    Rc::new(
+        move |name: String,
+              summary: String,
+              preview: Option<String>,
+              full: Option<String>,
+              goal_id: Option<String>,
+              tool_call_id: Option<String>| {
+            let _ = (preview, full);
+            // 与后端 `tool_running` 帧互补：tool_call 往往先于或并列到达，此处立即置位可避免
+            // 长耗时工具（如 git_commit）期间状态栏仍误显「模型生成中」。
+            stream_ctx.shell.tool_busy.set(true);
+            let loc = stream_ctx.locale.get_untracked();
+            let core = if !summary.trim().is_empty() {
+                summary.trim().to_string()
+            } else if !name.trim().is_empty() {
+                format!("{}{}", i18n::tool_card_prefix(loc), name.trim())
+            } else {
+                i18n::tool_card_fallback(loc).to_string()
+            };
+            let text = to_single_line(
+                &format!("{} · {}", core, i18n::status_tool_running(loc)),
+                140,
+            );
+            let detail = if !name.trim().is_empty() {
+                format!("tool: {name}\nstatus: running")
+            } else {
+                "status: running".to_string()
+            };
+            let id = make_message_id();
+            let aid = stream_ctx.active_session_id.as_str();
+            let marker = goal_id
+                .as_deref()
+                .map(|g| format!("hierarchical-subgoal:{g}"))
+                .or_else(|| current_subgoal_marker.borrow().clone());
+            let tcid = tool_call_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            stream_ctx.chat.sessions.update(|list| {
+                if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
+                    let msg = StoredMessage {
+                        id: id.clone(),
+                        role: "system".to_string(),
+                        text,
+                        reasoning_text: detail.clone(),
+                        image_urls: vec![],
+                        state: Some("loading".to_string()),
+                        is_tool: true,
+                        tool_call_id: tcid.clone(),
+                        tool_name: non_empty_trimmed_tool_name(&name),
+                        created_at: message_created_ms(),
+                    };
+                    if let Some(mk) = marker.as_deref()
+                        && let Some(idx) = s
+                            .messages
+                            .iter()
+                            .rposition(|m| m.state.as_deref() == Some(mk))
+                    {
+                        s.messages.insert(idx + 1, msg);
+                    } else {
+                        s.messages.push(msg);
+                    }
+                }
+            });
+            // 开场白留在时间线/工具之上；工具后挂新占位，续写走新气泡，避免“最早的话出现在最下面”。
+            finalize_loading_assistant_before_tool_and_tail_with_new_loading(&stream_ctx, &id);
+            // 有 `tool_call_id` 时由 `tool_result` 按 id 命中占位气泡；否则保持 FIFO。
+            if tcid.is_none() {
+                enqueue_pending_tool_message_id(&stream_ctx.pending_tool_message_ids, id);
+            }
+        },
+    )
+}
+
 pub(super) fn make_on_timeline_log(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
     answer_delta_chars: Rc<Cell<usize>>,
@@ -123,6 +203,9 @@ pub(super) fn make_on_timeline_log(
                             .saturating_add(final_text.chars().count()),
                     );
                 }
+            } else {
+                // 补偿收尾可能带空 final_response；若不撤 loading，on_done 会误报「未收到正文片段」。
+                remove_loading_assistant_placeholder(&stream_ctx);
             }
             return;
         }
@@ -226,10 +309,18 @@ pub(super) fn chat_stream_on_done_builder(
     saw_final_response_timeline: Rc<Cell<bool>>,
 ) -> Rc<dyn Fn()> {
     Rc::new(move || {
-        pending_followup_answer_round.set(false);
         if *stream_ctx.shell.user_cancelled_stream.lock().unwrap() {
+            pending_followup_answer_round.set(false);
             *stream_ctx.shell.abort_cell.lock().unwrap() = None;
             return;
+        }
+        // 第二次 `assistant_answer_phase` 后若再无正文增量，须在此补做轮换并清零计数器；
+        // 否则 `answer_delta_chars` 仍为上一轮时间轴累计，易误判「有输出却无正文」。
+        let had_pending_followup = pending_followup_answer_round.get();
+        pending_followup_answer_round.set(false);
+        if had_pending_followup {
+            rotate_streaming_assistant_for_followup_model_round(stream_ctx.as_ref());
+            answer_delta_chars.set(0);
         }
         let loc = stream_ctx.locale.get_untracked();
         let aid = stream_ctx.active_session_id.clone();
@@ -264,10 +355,40 @@ pub(super) fn chat_stream_on_done_builder(
                             s.messages.remove(idx);
                             return;
                         }
+                        let drop_empty_main_after_tool_like_turn = end_reason
+                            .as_deref()
+                            .and_then(|s| s.parse::<StreamEndReason>().ok())
+                            .is_some_and(|r| {
+                                matches!(
+                                    r,
+                                    StreamEndReason::Completed
+                                        | StreamEndReason::Fallback
+                                        | StreamEndReason::Cancelled
+                                        | StreamEndReason::NoOutput
+                                )
+                            })
+                            && has_hierarchical_or_tool
+                            && (!in_answer_phase.get() || diag_chars == 0);
+                        if drop_empty_main_after_tool_like_turn {
+                            // 工具/子目标已占满可见输出；主占位虽可能已进终答相却无任何正文增量（diag=0），删空尾泡。
+                            s.messages.remove(idx);
+                            return;
+                        }
+                        let drop_redundant_empty_after_fallback_timeline = (end_reason
+                            .as_deref()
+                            .and_then(|r| r.parse::<StreamEndReason>().ok())
+                            == Some(StreamEndReason::Fallback)
+                            || saw_final_response_timeline.get())
+                            && in_answer_phase.get()
+                            && diag_chars == 0;
+                        if drop_redundant_empty_after_fallback_timeline {
+                            // 补偿收尾 / final_response 时间轴：正文应在时间轴气泡或已随 placeholder 移除；空尾戳无须「无正文片段」。
+                            s.messages.remove(idx);
+                            return;
+                        }
                         let completed_no_final = should_show_missing_final_summary_hint(
                             end_reason.as_deref(),
                             in_answer_phase.get(),
-                            diag_chars,
                             has_hierarchical_or_tool,
                             saw_final_response_timeline.get(),
                         );
@@ -295,6 +416,7 @@ pub(super) fn chat_stream_on_done_builder(
             }
         });
         stream_ctx.shell.status_busy.set(false);
+        stream_ctx.shell.tool_busy.set(false);
         *stream_ctx.shell.abort_cell.lock().unwrap() = None;
     })
 }
@@ -322,6 +444,7 @@ pub(super) fn chat_stream_on_error_builder(
             }
         });
         stream_ctx.shell.status_busy.set(false);
+        stream_ctx.shell.tool_busy.set(false);
         stream_ctx.shell.status_err.set(Some(
             i18n::chat_failed_banner(stream_ctx.locale.get_untracked()).to_string(),
         ));

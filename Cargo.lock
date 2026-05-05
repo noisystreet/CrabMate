@@ -1157,6 +1157,7 @@ dependencies = [
  "async-trait",
  "console_error_panic_hook",
  "crabmate-sse-protocol",
+ "futures-util",
  "gloo-timers",
  "js-sys",
  "leptos",

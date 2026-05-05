@@ -562,14 +562,15 @@ pub(super) fn build_stream_error_with_suggestion(raw: &str, loc: Locale) -> Stri
 pub(super) fn should_show_missing_final_summary_hint(
     end_reason: Option<&str>,
     in_answer_phase: bool,
-    diag_chars: usize,
     has_hierarchical_or_tool: bool,
     saw_final_response_timeline: bool,
 ) -> bool {
+    // 须已收到 `assistant_answer_phase`：否则 `answer_delta_chars` 可能仅来自分层时间轴/子目标更新，
+    // 与主气泡 `text` 无关，易误判「最终总结缺失」（见 issue：stream_ended=completed, answer_phase=false）。
     end_reason
         .and_then(|s| s.parse::<StreamEndReason>().ok())
         .is_some_and(|r| r == StreamEndReason::Completed)
-        && (in_answer_phase || diag_chars > 0)
+        && in_answer_phase
         && has_hierarchical_or_tool
         && !saw_final_response_timeline
 }
