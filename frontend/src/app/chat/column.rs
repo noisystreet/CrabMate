@@ -19,6 +19,7 @@ use crate::app::scroll_guard::MessagesScrollFromEffectGuard;
 use crate::app_prefs::AUTO_SCROLL_RESUME_GAP_PX;
 use crate::i18n;
 use crate::session_ops::messages_scroller_has_non_collapsed_selection;
+use crate::storage::StoredMessage;
 
 /// 消息列表区所需信号（缩短 `ChatMessagesPane` 形参列表；勿命名为 `*Props`，与 Leptos 组件宏生成类型冲突）。
 #[derive(Clone, Copy)]
@@ -129,11 +130,12 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
                     {move || {
                         let id = active_id.get();
                         sessions.with(|list| {
-                            let msgs = list
+                            // 勿 `messages.clone()`：流式每个 SSE 片段都会触发此处，整表克隆会放大主线程开销。
+                            let msgs: &[StoredMessage] = list
                                 .iter()
                                 .find(|s| s.id == id)
-                                .map(|s| s.messages.clone())
-                                .unwrap_or_default();
+                                .map(|s| s.messages.as_slice())
+                                .unwrap_or(&[]);
                             if msgs.is_empty() {
                                 view! {
                                     <div class="messages-empty" role="status">
