@@ -311,6 +311,16 @@ llm_http_auth_mode = "bearer"
 # llm_kimi_thinking_disabled = true   # optional: disable k2.5 default thinking
 ```
 
+## DeepSeek (OpenAI-compatible)
+
+**`api_base`** containing **`deepseek`** (e.g. **`https://api.deepseek.com/v1`**) selects the DeepSeek vendor adapter (after Kimi/MiniMax/Zhipu routing). Per [DeepSeek thinking mode](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode), CrabMate may send **`thinking: {"type":"enabled"|"disabled"}`** and, when explicitly enabling, **`reasoning_effort: "high"`** on **`chat/completions`** requests.
+
+- **`llm_bigmodel_thinking = true`** (**`CM_LLM_BIGMODEL_THINKING=1`**, or Web **`client_llm.llm_thinking_mode: on`**) → **`thinking` enabled** + **`reasoning_effort: high`**.
+- **`llm_kimi_thinking_disabled = true`** (Web **`llm_thinking_mode: off`** sets this) → **`thinking` disabled**; **`reasoning_effort`** omitted. If both flags apply, **disabled wins** (same precedence as Kimi).
+- Neither flag → omit both fields; gateway defaults apply (docs: thinking **enabled** by default).
+
+Hierarchical **Manager** JSON paths still strip **`thinking`**, **`reasoning_split`**, and **`reasoning_effort`**.
+
 ## Sample `config.toml`
 
 ```toml

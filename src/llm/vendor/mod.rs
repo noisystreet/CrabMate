@@ -1,4 +1,4 @@
-//! 按 **OpenAI 兼容网关族** 调整出站 `chat/completions` 请求（温度、`thinking`、是否保留带 `tool_calls` 的 `reasoning_content` 等）。
+//! 按 **OpenAI 兼容网关族** 调整出站 `chat/completions` 请求（温度、`thinking`、`reasoning_effort`、是否保留带 `tool_calls` 的 `reasoning_content` 等）。
 //!
 //! 新增厂商时：实现 [`LlmVendorAdapter`]，并在 [`llm_vendor_adapter_for_model`] / [`llm_vendor_adapter`] 中注册路由（优先 **`model` ID**；[`llm_vendor_adapter`] 还可参考 **`api_base`**）。
 
@@ -123,6 +123,27 @@ pub fn deepseek_json_output_eligible(cfg: &AgentConfig) -> bool {
     cfg.llm.api_base.to_ascii_lowercase().contains("deepseek")
 }
 
+/// DeepSeek 官方 **`api_base`** 时，是否在出站 JSON 中带显式 **`thinking`** / **`reasoning_effort`**（与 [`deepseek_json_output_eligible`] 同源 URL 判定）。
+///
+/// [思考模式](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode)：**`thinking: { "type": "enabled" }`**；**`reasoning_effort`**（如 **`high`**）与显式开启一并下发。
+///
+/// - **`llm_bigmodel_thinking`**（Web **`client_llm.llm_thinking_mode: on`** 或 **`CM_LLM_BIGMODEL_THINKING=1`**）→ **`enabled`** + **`reasoning_effort: high`**。
+/// - **`llm_kimi_thinking_disabled`**（Web **`llm_thinking_mode: off`** 会一并置位）→ **`thinking: disabled`**，不传 **`reasoning_effort`**。
+/// - 二者均未触发 → **省略**上述字段，由 DeepSeek 网关默认（文档：思考默认 **enabled**、普通请求 effort 默认 **high**）。
+#[must_use]
+pub(crate) fn deepseek_reasoning_effort_for_request(cfg: &AgentConfig) -> Option<String> {
+    if !deepseek_json_output_eligible(cfg) {
+        return None;
+    }
+    if cfg.llm_vendor_flags.llm_kimi_thinking_disabled {
+        return None;
+    }
+    if cfg.llm_vendor_flags.llm_bigmodel_thinking {
+        return Some("high".to_string());
+    }
+    None
+}
+
 fn kimi_coerce_temperature(model: &str, temperature: f32) -> f32 {
     if is_kimi_k2_thinking_model(model) {
         return 1.0;
@@ -195,6 +216,33 @@ impl LlmVendorAdapter for MiniMaxVendor {
     }
 }
 
+/// DeepSeek 官方 OpenAI 兼容：**`api_base`** 含 **`deepseek`** 且未被 Kimi/MiniMax/智谱路由命中时选用。
+///
+/// [思考模式](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode)：`thinking` 为 **`{"type":"enabled"}`** / **`disabled`**；显式开启时另见 [`deepseek_reasoning_effort_for_request`]。
+#[derive(Debug, Copy, Clone, Default)]
+pub struct DeepSeekVendor;
+
+impl LlmVendorAdapter for DeepSeekVendor {
+    fn coerce_temperature(&self, _model: &str, temperature: f32) -> f32 {
+        temperature
+    }
+
+    fn thinking_field(&self, cfg: &AgentConfig) -> Option<serde_json::Value> {
+        // 与 Kimi 路径一致：Web **`thinking` off** 置 `llm_kimi_thinking_disabled`，须优先于 enabled。
+        if cfg.llm_vendor_flags.llm_kimi_thinking_disabled {
+            return Some(serde_json::json!({ "type": "disabled" }));
+        }
+        if cfg.llm_vendor_flags.llm_bigmodel_thinking {
+            return Some(serde_json::json!({ "type": "enabled" }));
+        }
+        None
+    }
+
+    fn preserve_assistant_tool_call_reasoning(&self, _cfg: &AgentConfig) -> bool {
+        false
+    }
+}
+
 /// Moonshot Kimi（`kimi-k2*`）：温度钳制、**k2.5** 可写 **`thinking: disabled`**、k2.5+默认 thinking 时保留 tool 轮 `reasoning_content`。
 #[derive(Debug, Copy, Clone, Default)]
 pub struct MoonshotKimiVendor;
@@ -220,6 +268,7 @@ impl LlmVendorAdapter for MoonshotKimiVendor {
 }
 
 static GENERIC: GenericOpenAiCompatVendor = GenericOpenAiCompatVendor;
+static DEEPSEEK: DeepSeekVendor = DeepSeekVendor;
 static KIMI: MoonshotKimiVendor = MoonshotKimiVendor;
 static GLM: ZhipuGlmVendor = ZhipuGlmVendor;
 static MINIMAX: MiniMaxVendor = MiniMaxVendor;
@@ -237,6 +286,9 @@ pub fn llm_vendor_adapter(cfg: &AgentConfig) -> &'static dyn LlmVendorAdapter {
         || api_base_looks_zhipu_bigmodel(&cfg.llm.api_base)
     {
         return &GLM;
+    }
+    if deepseek_json_output_eligible(cfg) {
+        return &DEEPSEEK;
     }
     &GENERIC
 }
@@ -283,15 +335,53 @@ mod tests {
     }
 
     #[test]
-    fn bigmodel_thinking_not_sent_for_generic_deepseek() {
+    fn deepseek_vendor_sends_thinking_enabled_when_bigmodel_flag_on() {
         let mut cfg = cfg_neutral_deepseek_base();
         cfg.llm.model = "deepseek-chat".to_string();
         cfg.llm_vendor_flags.llm_bigmodel_thinking = true;
+        cfg.llm_vendor_flags.llm_kimi_thinking_disabled = false;
         let v = llm_vendor_adapter(&cfg);
-        assert!(
-            v.thinking_field(&cfg).is_none(),
-            "智谱 thinking 仅应由 ZhipuGlmVendor 写出"
+        let t = v.thinking_field(&cfg).expect("thinking");
+        assert_eq!(t.get("type").and_then(|x| x.as_str()), Some("enabled"));
+        assert_eq!(
+            super::deepseek_reasoning_effort_for_request(&cfg).as_deref(),
+            Some("high")
         );
+    }
+
+    #[test]
+    fn deepseek_vendor_sends_thinking_disabled_when_kimi_disabled_flag_on() {
+        let mut cfg = cfg_neutral_deepseek_base();
+        cfg.llm.model = "deepseek-chat".to_string();
+        cfg.llm_vendor_flags.llm_bigmodel_thinking = false;
+        cfg.llm_vendor_flags.llm_kimi_thinking_disabled = true;
+        let v = llm_vendor_adapter(&cfg);
+        let t = v.thinking_field(&cfg).expect("thinking");
+        assert_eq!(t.get("type").and_then(|x| x.as_str()), Some("disabled"));
+        assert!(super::deepseek_reasoning_effort_for_request(&cfg).is_none());
+    }
+
+    #[test]
+    fn deepseek_vendor_omits_thinking_when_no_explicit_toggle() {
+        let mut cfg = cfg_neutral_deepseek_base();
+        cfg.llm.model = "deepseek-chat".to_string();
+        cfg.llm_vendor_flags.llm_bigmodel_thinking = false;
+        cfg.llm_vendor_flags.llm_kimi_thinking_disabled = false;
+        let v = llm_vendor_adapter(&cfg);
+        assert!(v.thinking_field(&cfg).is_none());
+        assert!(super::deepseek_reasoning_effort_for_request(&cfg).is_none());
+    }
+
+    #[test]
+    fn deepseek_thinking_disabled_wins_over_bigmodel_thinking() {
+        let mut cfg = cfg_neutral_deepseek_base();
+        cfg.llm.model = "deepseek-chat".to_string();
+        cfg.llm_vendor_flags.llm_bigmodel_thinking = true;
+        cfg.llm_vendor_flags.llm_kimi_thinking_disabled = true;
+        let v = llm_vendor_adapter(&cfg);
+        let t = v.thinking_field(&cfg).expect("thinking");
+        assert_eq!(t.get("type").and_then(|x| x.as_str()), Some("disabled"));
+        assert!(super::deepseek_reasoning_effort_for_request(&cfg).is_none());
     }
 
     #[test]

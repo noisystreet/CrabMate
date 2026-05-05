@@ -207,6 +207,7 @@ impl SmartRouter {
             vendor: crate::types::ChatRequestVendorExtensions {
                 reasoning_split: Some(false),
                 thinking: None,
+                reasoning_effort: None,
                 response_format: None,
             },
         };

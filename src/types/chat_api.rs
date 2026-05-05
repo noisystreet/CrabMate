@@ -43,9 +43,12 @@ pub struct ChatRequestVendorExtensions {
     /// MiniMax OpenAI 兼容扩展：为 `true` 时流式/非流式可将思维链与正文分离（`delta.reasoning_details` / `message.reasoning_details`）。
     #[serde(skip_serializing_if = "Option::is_none", rename = "reasoning_split")]
     pub reasoning_split: Option<bool>,
-    /// 供应商扩展：**`thinking`**（如智谱 GLM-5 深度思考、Moonshot **kimi-k2.5** 开关）；由 **`llm_bigmodel_thinking`** / **`llm_kimi_thinking_disabled`** 等配置拼装（见 `docs/配置说明.md`）。
+    /// 供应商扩展：**`thinking`**（智谱 GLM-5、Moonshot **kimi-k2.5**、[DeepSeek 思考模式](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode) 的 **`{"type":"enabled|disabled"}`** 等）；由厂商适配器与配置拼装（见 `docs/配置说明.md`）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking: Option<serde_json::Value>,
+    /// DeepSeek [思考模式](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode) OpenAI 兼容：**`reasoning_effort`**（如 **`high`** / **`max`**）；与显式 **`thinking: enabled`** 一并下发；省略时由网关默认。
+    #[serde(skip_serializing_if = "Option::is_none", rename = "reasoning_effort")]
+    pub reasoning_effort: Option<String>,
     /// OpenAI 兼容 **`response_format`**（如 DeepSeek [JSON Output](https://api-docs.deepseek.com/zh-cn/guides/json_mode) 的 `{"type":"json_object"}`）；`None` 则省略。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response_format: Option<serde_json::Value>,

@@ -2,7 +2,7 @@
 //!
 //! - **`api`**：单次 HTTP + SSE/JSON 解析 + 可选终端 Markdown 渲染（传输与协议细节）。
 //! - **`backend`**：[`ChatCompletionsBackend`] 可插拔抽象，默认 [`OpenAiCompatBackend`]（即 `api::stream_chat`）。
-//! - **`vendor`**：按网关族调整出站 JSON（温度、`thinking`、是否保留 tool 轮 `reasoning_content`）；新增厂商见 [`vendor::LlmVendorAdapter`]。
+//! - **`vendor`**：按网关族调整出站 JSON（温度、`thinking`、`reasoning_effort`、是否保留 tool 轮 `reasoning_content`）；新增厂商见 [`vendor::LlmVendorAdapter`]。
 //! - **本模块**：`ChatRequest` 的惯用构造、带指数退避的**重试策略**（仅对 [`call_error::LlmCallError`] 标记为 `retryable` 的失败：如 **408/429/5xx** 与部分传输错误；**401/400** 等客户端错误不重试）；[`complete_chat_retrying`] 失败为 [`LlmCompleteError`]（**无**「第几步规划」等编排语义）；以及后续可扩展的调用入口（例如统一超时、观测字段）。
 //!
 //! Agent 主循环应通过 [`complete_chat_retrying`] 发请求，避免在 `agent::agent_turn` 中散落重试与请求拼装逻辑。
@@ -65,10 +65,18 @@ pub(crate) fn vendor_temperature_for_config(cfg: &AgentConfig, temperature: f32)
     llm_vendor_adapter(cfg).coerce_temperature(effective_model, temperature)
 }
 
-/// 按配置生成请求体可选字段 **`thinking`**（由各厂商 [`LlmVendorAdapter::thinking_field`] 决定）。
+/// Agent 主路径与普通 LLM 调用共用的 **`ChatRequestVendorExtensions`**（工具轮 / 无工具轮）。
 #[inline]
-pub(crate) fn chat_request_thinking_from_cfg(cfg: &AgentConfig) -> Option<serde_json::Value> {
-    llm_vendor_adapter(cfg).thinking_field(cfg)
+pub(crate) fn chat_request_vendor_extensions_for_agent(
+    cfg: &AgentConfig,
+) -> ChatRequestVendorExtensions {
+    let v = llm_vendor_adapter(cfg);
+    ChatRequestVendorExtensions {
+        reasoning_split: cfg.llm_vendor_flags.llm_reasoning_split.then_some(true),
+        thinking: v.thinking_field(cfg),
+        reasoning_effort: vendor::deepseek_reasoning_effort_for_request(cfg),
+        response_format: None,
+    }
 }
 
 /// 构造带 tools、**`tool_choice: auto`** 及采样参数的请求体（`stream` 由 [`api::stream_chat`] 按 `no_stream` 覆盖）。
@@ -101,11 +109,7 @@ pub fn tool_chat_request(
             seed: resolved_llm_seed(cfg.llm_sampling.llm_seed, seed_override),
             stream: None,
         },
-        vendor: ChatRequestVendorExtensions {
-            reasoning_split: cfg.llm_vendor_flags.llm_reasoning_split.then_some(true),
-            thinking: v.thinking_field(cfg),
-            response_format: None,
-        },
+        vendor: chat_request_vendor_extensions_for_agent(cfg),
     }
 }
 
@@ -164,11 +168,7 @@ pub fn no_tools_chat_request_from_messages(
             seed: resolved_llm_seed(cfg.llm_sampling.llm_seed, seed_override),
             stream: None,
         },
-        vendor: ChatRequestVendorExtensions {
-            reasoning_split: cfg.llm_vendor_flags.llm_reasoning_split.then_some(true),
-            thinking: v.thinking_field(cfg),
-            response_format: None,
-        },
+        vendor: chat_request_vendor_extensions_for_agent(cfg),
     }
 }
 

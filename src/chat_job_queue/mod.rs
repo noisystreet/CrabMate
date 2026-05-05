@@ -41,6 +41,7 @@ pub(crate) struct WebChatQueueDeps {
 }
 
 /// Web `client_llm.llm_thinking_mode` 解析后的本回合 **`thinking`** 策略覆盖（不写服务端磁盘配置）。
+/// 映射：`on`/`off` 写入 **`llm_bigmodel_thinking`** / **`llm_kimi_thinking_disabled`**；**DeepSeek 官方 `api_base`** 下由 [`crate::llm::vendor::DeepSeekVendor`] 转为请求体 **`thinking`** 与可选 **`reasoning_effort`**（见 DeepSeek [思考模式](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode)）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WebClientLlmThinkingMode {
     /// 请求体显式开启：智谱等写 **`thinking: enabled`**；Kimi k2.5 不发送 **`disabled`**（即不关闭网关默认思考）。

@@ -66,6 +66,7 @@ impl ManagerAgent {
     pub(super) fn force_manager_structured_json_mode(req: &mut crate::types::ChatRequest) {
         req.vendor.thinking = None;
         req.vendor.reasoning_split = None;
+        req.vendor.reasoning_effort = None;
     }
 
     pub fn new(config: ManagerConfig) -> Self {

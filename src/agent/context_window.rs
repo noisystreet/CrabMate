@@ -6,7 +6,7 @@ use crate::agent::per_coord::PerCoordinator;
 use crate::config::AgentConfig;
 use crate::llm::{
     ChatCompletionsBackend, CompleteChatRetryingParams, LlmRetryingTransportOpts,
-    chat_request_thinking_from_cfg, complete_chat_retrying, vendor_temperature_for_config,
+    complete_chat_retrying, vendor_temperature_for_config,
 };
 use crate::types::{
     ChatRequest, Message, is_message_excluded_from_llm_context_except_memory,
@@ -150,11 +150,7 @@ pub async fn maybe_summarize_with_llm(
             seed: None,
             stream: None,
         },
-        vendor: crate::types::ChatRequestVendorExtensions {
-            reasoning_split: cfg.llm_vendor_flags.llm_reasoning_split.then_some(true),
-            thinking: chat_request_thinking_from_cfg(cfg),
-            response_format: None,
-        },
+        vendor: crate::llm::chat_request_vendor_extensions_for_agent(cfg),
     };
 
     let cc = CompleteChatRetryingParams::new(

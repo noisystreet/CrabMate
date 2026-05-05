@@ -37,6 +37,7 @@ pub async fn classify_intent_l2_with_llm(
         vendor: crate::types::ChatRequestVendorExtensions {
             reasoning_split: Some(false),
             thinking: None,
+            reasoning_effort: None,
             response_format: None,
         },
     };

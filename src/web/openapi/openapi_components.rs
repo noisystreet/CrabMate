@@ -46,7 +46,7 @@ fn openapi_components_schemas_chat_llm_webui() -> Value {
                     "model": { "type": "string" },
                     "api_key": { "type": "string", "description": "浏览器侧覆盖，勿记录到服务端日志" },
                     "llm_context_tokens": { "type": "integer", "format": "int64", "description": "可选；本回合上下文窗口 token 上限覆盖" },
-                    "llm_thinking_mode": { "type": "string", "enum": ["server", "on", "off"], "description": "可选；本回合 thinking 策略：server 跟随服务端；on 开启（智谱 thinking enabled，Kimi k2.5 不发送 disabled）；off 关闭（智谱不写 thinking，Kimi k2.5 发送 thinking disabled）" }
+                    "llm_thinking_mode": { "type": "string", "enum": ["server", "on", "off"], "description": "可选；本回合 thinking 策略：server 跟随服务端；on 开启（智谱 thinking enabled；DeepSeek 官方 api_base 时 thinking enabled + reasoning_effort high；Kimi k2.5 不发送 disabled）；off 关闭（智谱不写 thinking；DeepSeek 写 thinking disabled；Kimi k2.5 发送 thinking disabled）" }
                 }
             },
             "ExecutorLlmBody": {
