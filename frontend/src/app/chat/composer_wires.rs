@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use leptos::prelude::*;
 
-use super::composer_stream::{ComposerStreamHandles, make_attach_chat_stream};
+use super::composer_stream::{
+    ComposerStreamHandles, make_attach_chat_stream, user_cancel_in_flight_stream,
+};
 use super::handles::{ChatComposerWires, ComposerStreamShell, WireComposerStreamsArgs};
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n;
@@ -246,12 +248,8 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
         let shell = stream_shell.clone();
         let locale = locale;
         move || {
-            if shell.abort_cell.lock().unwrap().is_none() {
+            if !user_cancel_in_flight_stream(&shell) {
                 return;
-            }
-            *shell.user_cancelled_stream.lock().unwrap() = true;
-            if let Some(ac) = shell.abort_cell.lock().unwrap().take() {
-                ac.abort();
             }
             let loc = locale.get_untracked();
             let aid = chat.active_id.get();

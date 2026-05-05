@@ -1,11 +1,13 @@
 //! `/chat/stream` SSE 回调装配：与输入框 / 发送按钮解耦。
 //!
 //! - [`context`]：单次流式共享的 `ChatStreamCallbackCtx`。
+//! - `shell_abort`：`AbortController` 与用户取消 Mutex 的集中读写。
 //! - [`callbacks`]：装配 `ChatStreamCallbacks`（各 `on_*`），与 `send_chat_stream` 契约对齐；实现拆为 `callbacks/helpers`、`callbacks/builders`、`callbacks/assemble`。
 //! - 本文件：长生命周期句柄 [`ComposerStreamHandles`]、[`make_attach_chat_stream`]（发起请求 + `spawn_local`）。
 
 mod callbacks;
 mod context;
+mod shell_abort;
 
 use std::rc::Rc;
 use std::sync::Arc;
@@ -25,6 +27,7 @@ use crate::session_ops::approval_session_id;
 use super::handles::ComposerStreamShell;
 
 use context::ChatStreamCallbackCtx;
+use shell_abort::{reset_abort_state_for_new_attach, store_abort_controller};
 
 /// 长生命周期句柄：`attach` 闭包捕获，供每次发起流式请求复用。
 pub(super) struct ComposerStreamHandles {
@@ -58,13 +61,10 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
             chat.stream_job_id.set(None);
             chat.stream_last_event_seq.set(0);
             shell_outer.thinking_trace_log.set(Vec::new());
-            if let Some(prev) = shell_outer.abort_cell.lock().unwrap().take() {
-                prev.abort();
-            }
-            *shell_outer.user_cancelled_stream.lock().unwrap() = false;
+            reset_abort_state_for_new_attach(&shell_outer);
             let ac = web_sys::AbortController::new().expect("AbortController");
             let signal = ac.signal();
-            *shell_outer.abort_cell.lock().unwrap() = Some(ac);
+            store_abort_controller(&shell_outer, ac);
             let agent_role = selected_agent_role.get();
             let appr_for_stream = approval_session_id();
             let appr_store = appr_for_stream.clone();
@@ -119,3 +119,5 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
         }
     })
 }
+
+pub(crate) use shell_abort::user_cancel_in_flight_stream;

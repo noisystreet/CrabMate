@@ -17,6 +17,7 @@ use crate::storage::StoredMessage;
 use crate::timeline_scan::timeline_state_tool;
 
 use super::super::context::ChatStreamCallbackCtx;
+use super::super::shell_abort::{clear_abort_slot, user_cancelled_flag};
 use super::helpers::*;
 
 pub(super) fn make_on_tool_result(
@@ -309,9 +310,9 @@ pub(super) fn chat_stream_on_done_builder(
     saw_final_response_timeline: Rc<Cell<bool>>,
 ) -> Rc<dyn Fn()> {
     Rc::new(move || {
-        if *stream_ctx.shell.user_cancelled_stream.lock().unwrap() {
+        if user_cancelled_flag(&stream_ctx.shell) {
             pending_followup_answer_round.set(false);
-            *stream_ctx.shell.abort_cell.lock().unwrap() = None;
+            clear_abort_slot(&stream_ctx.shell);
             return;
         }
         // 第二次 `assistant_answer_phase` 后若再无正文增量，须在此补做轮换并清零计数器；
@@ -417,7 +418,7 @@ pub(super) fn chat_stream_on_done_builder(
         });
         stream_ctx.shell.status_busy.set(false);
         stream_ctx.shell.tool_busy.set(false);
-        *stream_ctx.shell.abort_cell.lock().unwrap() = None;
+        clear_abort_slot(&stream_ctx.shell);
     })
 }
 
@@ -425,8 +426,8 @@ pub(super) fn chat_stream_on_error_builder(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
 ) -> Rc<dyn Fn(String)> {
     Rc::new(move |msg: String| {
-        if *stream_ctx.shell.user_cancelled_stream.lock().unwrap() {
-            *stream_ctx.shell.abort_cell.lock().unwrap() = None;
+        if user_cancelled_flag(&stream_ctx.shell) {
+            clear_abort_slot(&stream_ctx.shell);
             return;
         }
         stream_ctx.chat.stream_job_id.set(None);
@@ -448,7 +449,7 @@ pub(super) fn chat_stream_on_error_builder(
         stream_ctx.shell.status_err.set(Some(
             i18n::chat_failed_banner(stream_ctx.locale.get_untracked()).to_string(),
         ));
-        *stream_ctx.shell.abort_cell.lock().unwrap() = None;
+        clear_abort_slot(&stream_ctx.shell);
     })
 }
 

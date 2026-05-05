@@ -18,6 +18,7 @@ use crate::storage::StoredMessage;
 use crate::timeline_scan::{timeline_state_staged_end, timeline_state_staged_start};
 
 use super::super::context::ChatStreamCallbackCtx;
+use super::super::shell_abort::clear_abort_slot;
 use super::builders::*;
 use super::helpers::*;
 
@@ -119,7 +120,7 @@ pub(crate) fn build_chat_stream_callbacks(
             // `stream_ended` 表示服务端已结束本轮流式任务：无论 `reason` 是否能解析为已知枚举，
             // 都应回落 busy，避免状态栏长期停在「模型生成中」。（未知 reason 仍写入 stream_end_reason 供 diagnostics。）
             stream_ctx.shell.status_busy.set(false);
-            *stream_ctx.shell.abort_cell.lock().unwrap() = None;
+            clear_abort_slot(&stream_ctx.shell);
         })
     };
 
