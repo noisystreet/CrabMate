@@ -136,19 +136,8 @@ pub fn init_app_shell() -> AppShellCtx {
         );
     let insert_workspace_file_ref_sv = StoredValue::new(Arc::clone(&insert_workspace_file_ref));
 
-    let chat_stream_shell = ComposerStreamShell {
-        status_busy: app_signals.stream.status_busy,
-        status_err: app_signals.stream.status_err,
-        pending_approval: app_signals.approval.pending_approval,
-        tool_busy: app_signals.stream.tool_busy,
-        abort_cell: Arc::clone(&app_signals.stream.abort_cell),
-        user_cancelled_stream: Arc::clone(&app_signals.stream.user_cancelled_stream),
-        refresh_workspace: Arc::clone(&refresh_workspace),
-        changelist_modal_open: app_signals.modal.changelist_modal_open,
-        changelist_fetch_nonce: app_signals.modal.changelist_fetch_nonce,
-        pending_clarification: app_signals.approval.pending_clarification,
-        thinking_trace_log: app_signals.approval.thinking_trace_log,
-    };
+    let chat_stream_shell =
+        ComposerStreamShell::from_app_signals(&app_signals, Arc::clone(&refresh_workspace));
 
     let chat_wires = wire_chat_domain_effects(WireChatDomainEffectsArgs {
         initialized: app_signals.initialized,
@@ -210,7 +199,7 @@ pub fn init_app_shell() -> AppShellCtx {
         changelist_modal_open: app_signals.modal.changelist_modal_open,
         changelist_fetch_nonce: app_signals.modal.changelist_fetch_nonce,
         insert_workspace_file_ref: insert_workspace_file_ref_sv,
-        thinking_trace_log: chat_stream_shell.thinking_trace_log,
+        thinking_trace_log: chat_stream_shell.approval.thinking_trace_log,
         status_err: app_signals.stream.status_err,
         tool_busy: app_signals.stream.tool_busy,
         status_busy: app_signals.stream.status_busy,

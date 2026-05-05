@@ -59,7 +59,7 @@ pub(crate) fn build_chat_stream_callbacks(
     let on_tool_status: Rc<dyn Fn(bool)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |b: bool| {
-            stream_ctx.shell.tool_busy.set(b);
+            stream_ctx.shell.stream.tool_busy.set(b);
         })
     };
 
@@ -68,7 +68,7 @@ pub(crate) fn build_chat_stream_callbacks(
     let on_approval: Rc<dyn Fn(CommandApprovalRequest)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |req: CommandApprovalRequest| {
-            stream_ctx.shell.pending_approval.set(Some((
+            stream_ctx.shell.approval.pending_approval.set(Some((
                 stream_ctx.approval_session_store_id.clone(),
                 req.command,
                 req.args,
@@ -111,7 +111,7 @@ pub(crate) fn build_chat_stream_callbacks(
             stream_ctx.chat.clear_stream_resume_handles();
             // `stream_ended` 表示服务端已结束本轮流式任务：无论 `reason` 是否能解析为已知枚举，
             // 都应回落 busy，避免状态栏长期停在「模型生成中」。（未知 reason 仍写入 stream_end_reason 供 diagnostics。）
-            stream_ctx.shell.status_busy.set(false);
+            stream_ctx.shell.stream.status_busy.set(false);
             clear_abort_slot(&stream_ctx.shell);
         })
     };
@@ -175,6 +175,7 @@ pub(crate) fn build_chat_stream_callbacks(
         Rc::new(move |info: ClarificationQuestionnaireInfo| {
             stream_ctx
                 .shell
+                .approval
                 .pending_clarification
                 .set(Some(PendingClarificationForm::from_sse(info)));
         })

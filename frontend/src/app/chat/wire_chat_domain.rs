@@ -1,6 +1,6 @@
 //! 聊天域接线：会话切换、草稿同步、滚底、查找、composer 流式等 `wire_*` 从 `app/mod.rs` 迁出，落实 **`docs/frontend/ARCHITECTURE.md`** 阶段 **B（壳与域分离）**。
 //!
-//! `App` 仍负责创建跨域共享的 `RwSignal`（如 `status_busy`）并组装 [`ComposerStreamShell`](super::handles::ComposerStreamShell)；本模块只注册聊天相关副作用并返回 [`ChatComposerWires`](super::handles::ChatComposerWires)。
+//! `App` 仍负责 [`AppSignals`](crate::app::app_signals::AppSignals) 与 [`ComposerStreamShell::from_app_signals`](super::handles::ComposerStreamShell::from_app_signals)；本模块只注册聊天相关副作用并返回 [`ChatComposerWires`](super::handles::ChatComposerWires)。
 //!
 //! # `wire_chat_domain_effects` 内顺序
 //!

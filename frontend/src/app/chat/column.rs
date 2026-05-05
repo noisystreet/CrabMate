@@ -569,9 +569,9 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
         apply_assistant_display_filters,
     } = shell;
 
-    let status_busy = stream_shell.status_busy;
-    let status_err = stream_shell.status_err;
-    let pending_clarification = stream_shell.pending_clarification;
+    let status_busy = stream_shell.stream.status_busy;
+    let status_err = stream_shell.stream.status_err;
+    let pending_clarification = stream_shell.approval.pending_clarification;
 
     let sessions = chat.sessions;
     let active_id = chat.active_id;

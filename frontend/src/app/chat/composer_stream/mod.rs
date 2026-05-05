@@ -60,7 +60,7 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
               clarify_json: Option<serde_json::Value>| {
             let conv = chat.session_sync.with(|s| s.stream_conversation_id());
             chat.clear_stream_resume_handles();
-            shell_outer.thinking_trace_log.set(Vec::new());
+            shell_outer.approval.thinking_trace_log.set(Vec::new());
             reset_abort_state_for_new_attach(&shell_outer);
             let ac = web_sys::AbortController::new().expect("AbortController");
             let signal = ac.signal();
@@ -68,7 +68,7 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
             let agent_role = selected_agent_role.get();
             let appr_for_stream = approval_session_id();
             let appr_store = appr_for_stream.clone();
-            let user_cancelled_for_spawn = Arc::clone(&shell_outer.user_cancelled_stream);
+            let user_cancelled_for_spawn = Arc::clone(&shell_outer.stream.user_cancelled_stream);
 
             let stream_ctx = Rc::new(ChatStreamCallbackCtx {
                 chat,
@@ -103,8 +103,8 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                 .await;
                 // HTTP 读取结束后必须回落 busy：正常路径已由 `on_done` / `on_stream_ended` / `on_error` 清理；
                 // 若连接悬挂、取消分支提前 return、或回调遗漏，避免状态栏永久「模型生成中」。
-                shell_for_stream_err.status_busy.set(false);
-                shell_for_stream_err.tool_busy.set(false);
+                shell_for_stream_err.stream.status_busy.set(false);
+                shell_for_stream_err.stream.tool_busy.set(false);
                 if let Err(e) = stream_result {
                     if *user_cancelled_for_spawn.lock().unwrap() {
                         return;
@@ -112,7 +112,7 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                     if e == "stream stopped" {
                         return;
                     }
-                    shell_for_stream_err.status_err.set(Some(e.clone()));
+                    shell_for_stream_err.stream.status_err.set(Some(e.clone()));
                     on_error_spawn(e);
                 }
             });

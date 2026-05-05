@@ -118,7 +118,7 @@ pub(super) fn chat_stream_on_tool_call_builder(
             let _ = (preview, full);
             // 与后端 `tool_running` 帧互补：tool_call 往往先于或并列到达，此处立即置位可避免
             // 长耗时工具（如 git_commit）期间状态栏仍误显「模型生成中」。
-            stream_ctx.shell.tool_busy.set(true);
+            stream_ctx.shell.stream.tool_busy.set(true);
             let loc = stream_ctx.locale.get_untracked();
             let core = if !summary.trim().is_empty() {
                 summary.trim().to_string()
@@ -190,7 +190,7 @@ pub(super) fn make_on_timeline_log(
         web_sys::console::log_1(&format!("[TL] kind={} title={}", info.kind, info.title).into());
         if info.kind == "final_response" {
             saw_final_response_timeline.set(true);
-            stream_ctx.shell.status_busy.set(false);
+            stream_ctx.shell.stream.status_busy.set(false);
             let final_text = build_final_response_text(&info.title, info.detail.as_deref());
             if !final_text.is_empty() {
                 remove_loading_assistant_placeholder(&stream_ctx);
@@ -407,8 +407,8 @@ pub(super) fn chat_stream_on_done_builder(
                 }
             }
         });
-        stream_ctx.shell.status_busy.set(false);
-        stream_ctx.shell.tool_busy.set(false);
+        stream_ctx.shell.stream.status_busy.set(false);
+        stream_ctx.shell.stream.tool_busy.set(false);
         clear_abort_slot(&stream_ctx.shell);
     })
 }
@@ -431,9 +431,9 @@ pub(super) fn chat_stream_on_error_builder(
                 m.state = Some("error".to_string());
             }
         });
-        stream_ctx.shell.status_busy.set(false);
-        stream_ctx.shell.tool_busy.set(false);
-        stream_ctx.shell.status_err.set(Some(
+        stream_ctx.shell.stream.status_busy.set(false);
+        stream_ctx.shell.stream.tool_busy.set(false);
+        stream_ctx.shell.stream.status_err.set(Some(
             i18n::chat_failed_banner(stream_ctx.locale.get_untracked()).to_string(),
         ));
         clear_abort_slot(&stream_ctx.shell);
@@ -443,9 +443,10 @@ pub(super) fn chat_stream_on_error_builder(
 pub(super) fn chat_stream_on_ws_builder(stream_ctx: Rc<ChatStreamCallbackCtx>) -> Rc<dyn Fn()> {
     Rc::new(move || {
         (stream_ctx.shell.refresh_workspace)();
-        if stream_ctx.shell.changelist_modal_open.get_untracked() {
+        if stream_ctx.shell.modal.changelist_modal_open.get_untracked() {
             stream_ctx
                 .shell
+                .modal
                 .changelist_fetch_nonce
                 .update(|x| *x = x.wrapping_add(1));
         }

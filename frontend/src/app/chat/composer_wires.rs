@@ -24,7 +24,7 @@ fn user_line_and_clarify_from_shell(
     trimmed_draft: &str,
     loc: Locale,
 ) -> Option<(String, Option<serde_json::Value>)> {
-    if let Some(form) = shell.pending_clarification.get() {
+    if let Some(form) = shell.approval.pending_clarification.get() {
         let mut answers = serde_json::Map::new();
         let mut ok = true;
         for (i, f) in form.fields.iter().enumerate() {
@@ -41,12 +41,13 @@ fn user_line_and_clarify_from_shell(
         }
         if !ok {
             shell
+                .stream
                 .status_err
                 .set(Some(i18n::clarification_missing_required(loc).to_string()));
             return None;
         }
         let qid = form.questionnaire_id.clone();
-        shell.pending_clarification.set(None);
+        shell.approval.pending_clarification.set(None);
         let cq = serde_json::json!({
             "questionnaire_id": qid,
             "answers": serde_json::Value::Object(answers),
@@ -102,9 +103,9 @@ fn push_user_and_loading_assistant(
 }
 
 fn begin_stream_shell_turn(shell: &ComposerStreamShell) {
-    shell.status_busy.set(true);
-    shell.status_err.set(None);
-    shell.pending_approval.set(None);
+    shell.stream.status_busy.set(true);
+    shell.stream.status_err.set(None);
+    shell.approval.pending_approval.set(None);
 }
 
 fn finalize_loading_assistant_after_user_abort(chat: ChatSessionSignals, aid: String, loc: Locale) {
@@ -164,7 +165,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
             };
             if (user_line.is_empty() && imgs.is_empty() && clarify_json.is_none())
                 || !initialized.get()
-                || shell.status_busy.get()
+                || shell.stream.status_busy.get()
             {
                 return;
             }
@@ -199,7 +200,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
                 return;
             };
             retry_assistant_target.set(None);
-            if !initialized.get() || shell.status_busy.get() {
+            if !initialized.get() || shell.stream.status_busy.get() {
                 return;
             }
             let aid = chat.active_id.get();
@@ -226,7 +227,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
             };
             regen_stream_after_truncate.set(None);
             let init = initialized.get();
-            let busy = shell.status_busy.get();
+            let busy = shell.stream.status_busy.get();
             web_sys::console::log_1(
                 &format!(
                     "[effect] regen_stream consumed: init={}, busy={}, text={}, asst_id={}",
@@ -254,8 +255,8 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
             let loc = locale.get_untracked();
             let aid = chat.active_id.get();
             finalize_loading_assistant_after_user_abort(chat, aid, loc);
-            shell.status_busy.set(false);
-            shell.tool_busy.set(false);
+            shell.stream.status_busy.set(false);
+            shell.stream.tool_busy.set(false);
         }
     });
 

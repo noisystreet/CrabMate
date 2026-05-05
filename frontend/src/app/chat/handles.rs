@@ -5,34 +5,69 @@
 
 use std::collections::HashSet;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use leptos::html::Textarea;
 use leptos::prelude::*;
 
+use crate::app::app_signals::{AppSignals, StreamControlSignals};
 use crate::chat_session_state::ChatSessionSignals;
 use crate::clarification_form::PendingClarificationForm;
 use crate::i18n::Locale;
 use crate::sse_dispatch::ThinkingTraceInfo;
 
+/// 流式路径使用的审批 / 澄清 / 思维迹信号子集（与 [`AppSignals::approval`] 同源句柄）。
+#[derive(Clone, Copy)]
+pub struct ComposerStreamApprovalSignals {
+    pub pending_approval: RwSignal<Option<(String, String, String)>>,
+    pub pending_clarification: RwSignal<Option<PendingClarificationForm>>,
+    /// 服务端 `thinking_trace` 事件累积（新流开始时清空）。
+    pub thinking_trace_log: RwSignal<Vec<ThinkingTraceInfo>>,
+}
+
+/// 流式与工作区刷新联动的变更集模态信号子集（与 [`AppSignals::modal`] 同源句柄）。
+#[derive(Clone, Copy)]
+pub struct ComposerStreamModalSignals {
+    pub changelist_modal_open: RwSignal<bool>,
+    pub changelist_fetch_nonce: RwSignal<u64>,
+}
+
 /// `/chat/stream` 与壳层共享的一组信号与句柄：状态栏错误、工具忙、审批、中止、工作区刷新、变更集拉取、澄清表单。
+///
+/// 字段按 **`stream` / `approval` / `modal`** 与 `AppSignals` 子域对齐，并通过 [`ComposerStreamShell::from_app_signals`] **单点组装**，
+/// 避免在壳初始化处手写逐字段拷贝导致漏接。
 ///
 /// 从 [`WireComposerStreamsArgs`] 与 `composer_stream` 子模块的 **`ComposerStreamHandles`** 成组传入，
 /// 避免 `composer_stream` 与 `App` 之间重复罗列同一批字段，并作为流式回调上下文的子聚合。
 #[derive(Clone)]
 pub struct ComposerStreamShell {
-    pub status_busy: RwSignal<bool>,
-    pub status_err: RwSignal<Option<String>>,
-    pub tool_busy: RwSignal<bool>,
-    pub pending_approval: RwSignal<Option<(String, String, String)>>,
-    pub abort_cell: Arc<Mutex<Option<web_sys::AbortController>>>,
-    pub user_cancelled_stream: Arc<Mutex<bool>>,
+    pub stream: StreamControlSignals,
+    pub approval: ComposerStreamApprovalSignals,
+    pub modal: ComposerStreamModalSignals,
     pub refresh_workspace: Arc<dyn Fn() + Send + Sync>,
-    pub changelist_modal_open: RwSignal<bool>,
-    pub changelist_fetch_nonce: RwSignal<u64>,
-    pub pending_clarification: RwSignal<Option<PendingClarificationForm>>,
-    /// 服务端 `thinking_trace` 事件累积（新流开始时清空）。
-    pub thinking_trace_log: RwSignal<Vec<ThinkingTraceInfo>>,
+}
+
+impl ComposerStreamShell {
+    /// 从 [`AppSignals`] 抽取流式所需句柄并附带工作区刷新闭包（与原先 `app_shell_init` 手写赋值语义一致）。
+    #[must_use]
+    pub fn from_app_signals(
+        app: &AppSignals,
+        refresh_workspace: Arc<dyn Fn() + Send + Sync>,
+    ) -> Self {
+        Self {
+            stream: app.stream.clone(),
+            approval: ComposerStreamApprovalSignals {
+                pending_approval: app.approval.pending_approval,
+                pending_clarification: app.approval.pending_clarification,
+                thinking_trace_log: app.approval.thinking_trace_log,
+            },
+            modal: ComposerStreamModalSignals {
+                changelist_modal_open: app.modal.changelist_modal_open,
+                changelist_fetch_nonce: app.modal.changelist_fetch_nonce,
+            },
+            refresh_workspace,
+        }
+    }
 }
 
 /// 中部聊天列：`messages` 滚动区、时间线、消息列表与输入区所需的信号与闭包。
