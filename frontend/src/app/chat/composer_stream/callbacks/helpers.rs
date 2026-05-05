@@ -314,13 +314,16 @@ pub(super) fn upsert_hierarchical_subgoal_bubble(
 /// 结束当前 `assistant_message_id` 指向的流式 `loading` 助手行：空正文则删除，否则去掉 `loading` state。
 ///
 /// 供工具前收尾与无工具多轮轮换共用，避免两处复制分叉。
+///
+/// **注意**：`reasoning_text` 非空时视为有内容，保留气泡并清除 loading state，
+/// 避免 `assistant_answer_phase` 之前的思维链在工具调用时被误删。
 pub(super) fn finalize_current_loading_streaming_assistant_row(stream_ctx: &ChatStreamCallbackCtx) {
     with_active_session_mut(stream_ctx, |s| {
         let mid = stream_ctx.tail.borrow_assistant_id();
         if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) {
             let m = &mut s.messages[idx];
             if m.role == "assistant" && m.state.as_ref().is_some_and(|s| s.is_loading()) {
-                if m.text.trim().is_empty() {
+                if m.text.trim().is_empty() && m.reasoning_text.trim().is_empty() {
                     s.messages.remove(idx);
                 } else {
                     m.state = None;
