@@ -1,7 +1,5 @@
 //! 「管理会话」模态框中的单行。
 
-use std::sync::{Arc, Mutex};
-
 use leptos::prelude::*;
 
 use crate::chat_session_state::ChatSessionSignals;
@@ -23,8 +21,7 @@ pub struct SessionModalRowBundle {
     pub locale: RwSignal<Locale>,
     pub chat: ChatSessionSignals,
     pub draft: RwSignal<String>,
-    /// 与主界面输入框共享；打开会话前把当前草稿写回上一活跃会话。
-    pub composer_draft_buffer: Arc<Mutex<String>>,
+    /// 「管理会话」弹窗开关。
     pub session_modal: RwSignal<bool>,
     pub apply_assistant_display_filters: RwSignal<bool>,
 }
@@ -41,7 +38,6 @@ pub fn SessionModalRow(row: SessionModalRowBundle) -> impl IntoView {
         locale,
         chat,
         draft,
-        composer_draft_buffer,
         session_modal,
         apply_assistant_display_filters,
     } = row;
@@ -63,11 +59,10 @@ pub fn SessionModalRow(row: SessionModalRowBundle) -> impl IntoView {
                 class="session-open"
                 on:click={
                     let id = id.clone();
-                    let buf = Arc::clone(&composer_draft_buffer);
                     move |_| {
                         let prev = chat.active_id.get_untracked();
                         if !prev.is_empty() {
-                            let t = buf.lock().unwrap().clone();
+                            let t = draft.get_untracked();
                             flush_composer_draft_to_session(chat.sessions, &prev, &t);
                         }
                         chat.active_id.set(id.clone());

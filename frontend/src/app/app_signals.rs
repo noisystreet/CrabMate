@@ -75,7 +75,6 @@ impl Default for ShellUISignals {
 pub struct ChatComposerSignals {
     pub draft: RwSignal<String>,
     pub pending_images: RwSignal<Vec<String>>,
-    pub composer_draft_buffer: Arc<Mutex<String>>,
     /// 输入框镜像层 HTML（`@{工作区路径}` 高亮）；与草稿缓冲同源更新。
     pub composer_mirror_html: RwSignal<String>,
     pub composer_mirror_scroll_top: RwSignal<f64>,
@@ -100,7 +99,6 @@ impl ChatComposerSignals {
         Self {
             draft: RwSignal::new(String::new()),
             pending_images: RwSignal::new(Vec::new()),
-            composer_draft_buffer: Arc::new(Mutex::new(String::new())),
             composer_mirror_html: RwSignal::new(String::new()),
             composer_mirror_scroll_top: RwSignal::new(0.0),
             composer_input_ref: NodeRef::new(),

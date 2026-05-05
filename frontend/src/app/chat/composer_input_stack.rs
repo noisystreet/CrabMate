@@ -9,12 +9,10 @@ use wasm_bindgen::JsCast;
 
 use crate::i18n::{self, Locale};
 
-use super::composer_mirror::composer_workspace_at_refs_html;
-
 #[component]
 pub fn ComposerInputStack(
     composer_input_ref: NodeRef<Textarea>,
-    composer_buf_ta: Arc<std::sync::Mutex<String>>,
+    draft: RwSignal<String>,
     composer_mirror_html: RwSignal<String>,
     composer_mirror_scroll_top: RwSignal<f64>,
     run_send_message: Arc<dyn Fn() + Send + Sync>,
@@ -49,8 +47,7 @@ pub fn ComposerInputStack(
                 node_ref=composer_input_ref
                 on:input=move |ev| {
                     let v = event_target_value(&ev);
-                    *composer_buf_ta.lock().unwrap() = v.clone();
-                    composer_mirror_html.set(composer_workspace_at_refs_html(&v));
+                    draft.set(v);
                 }
                 on:keydown={
                     let r = Arc::clone(&run_send_message);

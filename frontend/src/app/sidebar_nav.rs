@@ -6,7 +6,6 @@
 
 use std::cell::Cell;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
 
 use gloo_timers::future::TimeoutFuture;
 use leptos::prelude::*;
@@ -44,7 +43,6 @@ struct NavRailSessionScrollSignals {
     sidebar_filter_debounced: RwSignal<String>,
     global_message_filter_debounced: RwSignal<String>,
     sessions: RwSignal<Vec<ChatSession>>,
-    composer_buf_nav: Arc<Mutex<String>>,
     active_id: RwSignal<String>,
     draft: RwSignal<String>,
     session_sync: RwSignal<SessionSyncState>,
@@ -58,7 +56,6 @@ struct NavRailSessionScrollSignals {
 /// 侧栏搜索命中与会话行按钮共享的导航信号（缩短 [`nav_search_hit_button`] / [`nav_session_row_button`] 形参列表）。
 #[derive(Clone)]
 struct NavRailHitRowNavSignals {
-    composer_buf_nav: Arc<Mutex<String>>,
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
     draft: RwSignal<String>,
@@ -74,7 +71,6 @@ fn nav_rail_hit_row_nav_signals_from_scroll(
     s: &NavRailSessionScrollSignals,
 ) -> NavRailHitRowNavSignals {
     NavRailHitRowNavSignals {
-        composer_buf_nav: Arc::clone(&s.composer_buf_nav),
         sessions: s.sessions,
         active_id: s.active_id,
         draft: s.draft,
@@ -493,7 +489,6 @@ fn nav_rail_session_scroll_inner(s: NavRailSessionScrollSignals) -> impl IntoVie
 
 fn nav_search_hit_button(h: MessageSearchHit, nav: NavRailHitRowNavSignals) -> impl IntoView {
     let NavRailHitRowNavSignals {
-        composer_buf_nav,
         sessions,
         active_id,
         draft,
@@ -508,7 +503,6 @@ fn nav_search_hit_button(h: MessageSearchHit, nav: NavRailHitRowNavSignals) -> i
     let mid = h.message_id.clone();
     let title = h.session_title.clone();
     let snip = h.snippet.clone();
-    let buf_hit = Arc::clone(&composer_buf_nav);
     view! {
         <button
             type="button"
@@ -516,7 +510,7 @@ fn nav_search_hit_button(h: MessageSearchHit, nav: NavRailHitRowNavSignals) -> i
             on:click=move |_| {
                 let prev = active_id.get_untracked();
                 if !prev.is_empty() {
-                    let t = buf_hit.lock().unwrap().clone();
+                    let t = draft.get_untracked();
                     flush_composer_draft_to_session(
                         sessions,
                         &prev,
@@ -551,7 +545,6 @@ fn nav_search_hit_button(h: MessageSearchHit, nav: NavRailHitRowNavSignals) -> i
 
 fn nav_session_row_button(s: ChatSession, nav: NavRailHitRowNavSignals) -> impl IntoView {
     let NavRailHitRowNavSignals {
-        composer_buf_nav,
         sessions,
         active_id,
         draft,
@@ -569,7 +562,6 @@ fn nav_session_row_button(s: ChatSession, nav: NavRailHitRowNavSignals) -> impl 
     let n = s.messages.len();
     let is_pinned = s.pinned;
     let is_starred = s.starred;
-    let buf_sess = Arc::clone(&composer_buf_nav);
     view! {
         <button
             type="button"
@@ -605,7 +597,7 @@ fn nav_session_row_button(s: ChatSession, nav: NavRailHitRowNavSignals) -> impl 
                 move |_| {
                     let prev = active_id.get_untracked();
                     if !prev.is_empty() {
-                        let t = buf_sess.lock().unwrap().clone();
+                        let t = draft.get_untracked();
                         flush_composer_draft_to_session(
                             sessions,
                             &prev,
@@ -675,11 +667,9 @@ pub fn sidebar_nav_view(signals: SidebarNavSignals) -> impl IntoView {
         draft,
         focus_message_id_after_nav,
         session_context_menu,
-        composer_draft_buffer,
         apply_assistant_display_filters,
         sidebar_rail_collapsed,
     } = signals;
-    let composer_buf_nav = composer_draft_buffer;
     let sessions = chat.sessions;
     let active_id = chat.active_id;
     let session_sync = chat.session_sync;
@@ -763,7 +753,6 @@ pub fn sidebar_nav_view(signals: SidebarNavSignals) -> impl IntoView {
                     sidebar_filter_debounced,
                     global_message_filter_debounced,
                     sessions,
-                    composer_buf_nav: composer_buf_nav.clone(),
                     active_id,
                     draft,
                     session_sync,

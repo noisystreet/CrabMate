@@ -119,7 +119,6 @@ pub fn init_app_shell() -> AppShellCtx {
 
     let insert_workspace_file_ref: Arc<dyn Fn(String) + Send + Sync> =
         make_insert_workspace_path_into_composer(
-            Arc::clone(&app_signals.chat_composer.composer_draft_buffer),
             app_signals.chat_composer.draft,
             app_signals.stream.status_err,
             app_signals.shell_ui.locale,
@@ -148,7 +147,6 @@ pub fn init_app_shell() -> AppShellCtx {
         pending_images: app_signals.chat_composer.pending_images,
         pending_clarification: app_signals.approval.pending_clarification,
         collapsed_long_assistant_ids: app_signals.chat_composer.collapsed_long_assistant_ids,
-        composer_draft_buffer: Arc::clone(&app_signals.chat_composer.composer_draft_buffer),
         composer_mirror_html: app_signals.chat_composer.composer_mirror_html,
         composer_mirror_scroll_top: app_signals.chat_composer.composer_mirror_scroll_top,
         composer_input_ref: app_signals.chat_composer.composer_input_ref.clone(),
@@ -169,7 +167,7 @@ pub fn init_app_shell() -> AppShellCtx {
 
     let new_session = Rc::clone(&chat_wires.new_session);
 
-    let app_ctx = AppShellCtx {
+    AppShellCtx {
         locale: app_signals.shell_ui.locale,
         mobile_nav_open: app_signals.sidebar.mobile_nav_open,
         session_modal: app_signals.modal.session_modal,
@@ -183,7 +181,6 @@ pub fn init_app_shell() -> AppShellCtx {
         draft: app_signals.chat_composer.draft,
         focus_message_id_after_nav: app_signals.chat_composer.focus_message_id_after_nav,
         session_context_menu: app_signals.sidebar.session_context_menu,
-        composer_draft_buffer: Arc::clone(&app_signals.chat_composer.composer_draft_buffer),
         apply_assistant_display_filters: app_signals.shell_ui.apply_assistant_display_filters,
         sidebar_rail_collapsed: app_signals.sidebar.sidebar_rail_collapsed,
         side_resize_dragging: app_signals.resize.side_resize_dragging,
@@ -252,7 +249,6 @@ pub fn init_app_shell() -> AppShellCtx {
             composer_mirror_html: app_signals.chat_composer.composer_mirror_html,
             composer_mirror_scroll_top: app_signals.chat_composer.composer_mirror_scroll_top,
             composer_input_ref: app_signals.chat_composer.composer_input_ref,
-            composer_buf_ta: Arc::clone(&app_signals.chat_composer.composer_draft_buffer),
             pending_images: app_signals.chat_composer.pending_images,
             stream_shell: chat_stream_shell.clone(),
             run_send_message: chat_wires.run_send_message.clone(),
@@ -263,7 +259,5 @@ pub fn init_app_shell() -> AppShellCtx {
             markdown_render: app_signals.shell_ui.markdown_render,
             apply_assistant_display_filters: app_signals.shell_ui.apply_assistant_display_filters,
         },
-    };
-
-    app_ctx
+    }
 }

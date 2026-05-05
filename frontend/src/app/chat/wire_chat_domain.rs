@@ -2,8 +2,6 @@
 //!
 //! `App` 仍负责创建跨域共享的 `RwSignal`（如 `status_busy`）并组装 [`ComposerStreamShell`](super::handles::ComposerStreamShell)；本模块只注册聊天相关副作用并返回 [`ChatComposerWires`](super::handles::ChatComposerWires)。
 
-use std::sync::{Arc, Mutex};
-
 use leptos::html::Textarea;
 use leptos::prelude::*;
 
@@ -13,7 +11,7 @@ use crate::i18n::Locale;
 use crate::storage::ChatSession;
 
 use super::composer::{
-    wire_chat_composer_streams, wire_draft_sync_to_buffer_and_textarea,
+    wire_chat_composer_streams, wire_draft_sync_to_mirror_and_textarea,
     wire_session_switch_clears_chat_state,
 };
 use super::find::wire_chat_find_matches;
@@ -28,7 +26,6 @@ pub(crate) struct WireChatDomainEffectsArgs {
     pub pending_images: RwSignal<Vec<String>>,
     pub pending_clarification: RwSignal<Option<PendingClarificationForm>>,
     pub collapsed_long_assistant_ids: RwSignal<Vec<String>>,
-    pub composer_draft_buffer: Arc<Mutex<String>>,
     pub composer_mirror_html: RwSignal<String>,
     pub composer_mirror_scroll_top: RwSignal<f64>,
     pub composer_input_ref: NodeRef<Textarea>,
@@ -56,7 +53,6 @@ pub(crate) fn wire_chat_domain_effects(args: WireChatDomainEffectsArgs) -> ChatC
         pending_images,
         pending_clarification,
         collapsed_long_assistant_ids,
-        composer_draft_buffer,
         composer_mirror_html,
         composer_mirror_scroll_top,
         composer_input_ref,
@@ -84,9 +80,8 @@ pub(crate) fn wire_chat_domain_effects(args: WireChatDomainEffectsArgs) -> ChatC
         collapsed_long_assistant_ids,
     );
 
-    wire_draft_sync_to_buffer_and_textarea(
+    wire_draft_sync_to_mirror_and_textarea(
         draft,
-        Arc::clone(&composer_draft_buffer),
         composer_input_ref.clone(),
         composer_mirror_html,
         composer_mirror_scroll_top,
@@ -120,7 +115,6 @@ pub(crate) fn wire_chat_domain_effects(args: WireChatDomainEffectsArgs) -> ChatC
         draft,
         selected_agent_role,
         stream_shell,
-        composer_draft_buffer: Arc::clone(&composer_draft_buffer),
         auto_scroll_chat,
         pending_images,
     })

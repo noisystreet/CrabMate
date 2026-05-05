@@ -1,6 +1,6 @@
 //! Workspace 侧栏：拉取目录树与在切换到 Workspace 视图时自动刷新；以及树双击插入 **`@路径`** 到输入框。
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use gloo_timers::future::TimeoutFuture;
 use leptos::html::Textarea;
@@ -37,7 +37,6 @@ pub(super) fn make_refresh_workspace(
 
 /// 工作区树双击文件时，将 **`@{rel}`** 插入 composer 草稿并聚焦输入框。
 pub(super) fn make_insert_workspace_path_into_composer(
-    composer_draft_buffer: Arc<Mutex<String>>,
     draft: RwSignal<String>,
     status_err: RwSignal<Option<String>>,
     locale: RwSignal<Locale>,
@@ -51,7 +50,7 @@ pub(super) fn make_insert_workspace_path_into_composer(
             return;
         }
         let token = format!("@{rel}");
-        let mut guard = composer_draft_buffer.lock().unwrap();
+        let mut guard = draft.get_untracked();
         let needs_space = guard
             .chars()
             .next_back()
@@ -61,9 +60,7 @@ pub(super) fn make_insert_workspace_path_into_composer(
         }
         guard.push_str(&token);
         guard.push(' ');
-        let next = guard.clone();
-        drop(guard);
-        draft.set(next.clone());
+        draft.set(guard);
         status_err.set(None);
         let cref = composer_input_ref.clone();
         spawn_local(async move {

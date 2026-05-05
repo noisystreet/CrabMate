@@ -1,7 +1,6 @@
 //! 中部聊天列：消息列表、输入框、查找入口。
 
 use std::sync::Arc;
-use std::sync::Mutex;
 
 use gloo_timers::future::TimeoutFuture;
 use leptos::prelude::{StoredValue, *};
@@ -212,7 +211,7 @@ struct ChatComposerPaneSignals {
     trigger_stop: Arc<dyn Fn() + Send + Sync>,
     initialized: RwSignal<bool>,
     composer_input_ref: NodeRef<leptos::html::Textarea>,
-    composer_buf_ta: Arc<Mutex<String>>,
+    draft: RwSignal<String>,
     composer_mirror_html: RwSignal<String>,
     composer_mirror_scroll_top: RwSignal<f64>,
 }
@@ -447,7 +446,7 @@ fn ChatComposerPane(signals: ChatComposerPaneSignals) -> impl IntoView {
         trigger_stop,
         initialized,
         composer_input_ref,
-        composer_buf_ta,
+        draft,
         composer_mirror_html,
         composer_mirror_scroll_top,
     } = signals;
@@ -470,7 +469,7 @@ fn ChatComposerPane(signals: ChatComposerPaneSignals) -> impl IntoView {
                 <div class="composer-input-row">
                     <ComposerInputStack
                         composer_input_ref=composer_input_ref
-                        composer_buf_ta=composer_buf_ta
+                        draft=draft
                         composer_mirror_html=composer_mirror_html
                         composer_mirror_scroll_top=composer_mirror_scroll_top
                         run_send_message=run_send_message.clone()
@@ -555,11 +554,10 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
         chat_find_query,
         chat_find_match_ids,
         chat_find_cursor,
-        draft: _draft,
+        draft,
         composer_mirror_html,
         composer_mirror_scroll_top,
         composer_input_ref,
-        composer_buf_ta,
         pending_images,
         stream_shell,
         run_send_message,
@@ -685,7 +683,7 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
                         trigger_stop,
                         initialized,
                         composer_input_ref,
-                        composer_buf_ta,
+                        draft,
                         composer_mirror_html,
                         composer_mirror_scroll_top,
                     } />

@@ -133,7 +133,6 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
         draft,
         selected_agent_role,
         stream_shell,
-        composer_draft_buffer,
         auto_scroll_chat,
         pending_images,
     } = args;
@@ -150,11 +149,10 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
         let chat = chat;
         let attach = Arc::clone(&attach_chat_stream);
         let auto_scroll_chat = auto_scroll_chat;
-        let composer_draft_buffer = Arc::clone(&composer_draft_buffer);
         let shell = stream_shell.clone();
         let locale_sig = locale;
         move || {
-            let text = composer_draft_buffer.lock().unwrap().trim().to_string();
+            let text = draft.get_untracked().trim().to_string();
             let imgs = pending_images.get();
             let loc = locale_sig.get();
             let Some((user_line, clarify_json)) =
@@ -180,7 +178,6 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
                 asst_id.clone(),
             );
             draft.set(String::new());
-            *composer_draft_buffer.lock().unwrap() = String::new();
             pending_images.set(Vec::new());
             begin_stream_shell_turn(&shell);
             attach(user_line, imgs_send, asst_id, clarify_json);
@@ -266,11 +263,10 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
 
     let new_session: Rc<dyn Fn()> = Rc::new({
         let chat = chat;
-        let composer_draft_buffer = Arc::clone(&composer_draft_buffer);
         move || {
             let prev = chat.active_id.get_untracked();
             if !prev.is_empty() {
-                let buf = composer_draft_buffer.lock().unwrap().clone();
+                let buf = draft.get_untracked();
                 flush_composer_draft_to_session(chat.sessions, &prev, &buf);
             }
             let now = js_sys::Date::now() as i64;

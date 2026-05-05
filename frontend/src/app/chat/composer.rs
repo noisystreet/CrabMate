@@ -2,8 +2,6 @@
 //!
 //! `/chat/stream` 的 SSE 回调装配见 [`super::composer_stream`]；流式接线实现见 [`super::composer_wires`]。
 
-use std::sync::{Arc, Mutex};
-
 use leptos::html::Textarea;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -64,20 +62,17 @@ pub(crate) fn wire_session_switch_clears_chat_state(
     });
 }
 
-/// `draft` 程序化更新时同步 Mutex 与 textarea（输入过程不订阅 `draft`）。
-pub(crate) fn wire_draft_sync_to_buffer_and_textarea(
+/// `draft` 变更时同步 `@引用` 镜像与 textarea（用户输入亦写入同一 `draft`，与 DOM 不等时再 `set_value`，避免误伤光标）。
+pub(crate) fn wire_draft_sync_to_mirror_and_textarea(
     draft: RwSignal<String>,
-    composer_draft_buffer: Arc<Mutex<String>>,
     composer_input_ref: NodeRef<Textarea>,
     composer_mirror_html: RwSignal<String>,
     composer_mirror_scroll_top: RwSignal<f64>,
 ) {
     Effect::new({
-        let composer_draft_buffer = Arc::clone(&composer_draft_buffer);
         let composer_input_ref = composer_input_ref.clone();
         move |_| {
             let d = draft.get();
-            *composer_draft_buffer.lock().unwrap() = d.clone();
             composer_mirror_html.set(composer_workspace_at_refs_html(&d));
             composer_mirror_scroll_top.set(0.0);
             let d_for_dom = d.clone();

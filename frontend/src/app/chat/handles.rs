@@ -57,7 +57,6 @@ pub struct ChatColumnShell {
     pub composer_mirror_html: RwSignal<String>,
     pub composer_mirror_scroll_top: RwSignal<f64>,
     pub composer_input_ref: NodeRef<Textarea>,
-    pub composer_buf_ta: Arc<Mutex<String>>,
     pub pending_images: RwSignal<Vec<String>>,
     /// 与 `wire_chat_composer_streams` / SSE 回调共用（含 `status_busy`、`status_err`、`pending_clarification`）。
     pub stream_shell: ComposerStreamShell,
@@ -88,7 +87,6 @@ pub struct WireComposerStreamsArgs {
     pub selected_agent_role: RwSignal<Option<String>>,
     /// 与 SSE 流式回调共享的壳层状态（见 [`ComposerStreamShell`]）。
     pub stream_shell: ComposerStreamShell,
-    pub composer_draft_buffer: Arc<Mutex<String>>,
     pub auto_scroll_chat: RwSignal<bool>,
     pub pending_images: RwSignal<Vec<String>>,
 }

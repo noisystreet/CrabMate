@@ -6,7 +6,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use leptos::html::Div;
 use leptos::prelude::*;
@@ -78,7 +78,6 @@ pub struct SessionListModalSignals {
     pub locale: RwSignal<Locale>,
     pub chat: ChatSessionSignals,
     pub draft: RwSignal<String>,
-    pub composer_draft_buffer: Arc<Mutex<String>>,
     pub apply_assistant_display_filters: RwSignal<bool>,
 }
 
@@ -122,7 +121,6 @@ pub struct SidebarNavSignals {
     pub draft: RwSignal<String>,
     pub focus_message_id_after_nav: RwSignal<Option<String>>,
     pub session_context_menu: RwSignal<Option<SessionContextAnchor>>,
-    pub composer_draft_buffer: Arc<Mutex<String>>,
     pub apply_assistant_display_filters: RwSignal<bool>,
     pub sidebar_rail_collapsed: RwSignal<bool>,
 }
@@ -166,7 +164,6 @@ pub struct AppShellCtx {
     pub draft: RwSignal<String>,
     pub focus_message_id_after_nav: RwSignal<Option<String>>,
     pub session_context_menu: RwSignal<Option<SessionContextAnchor>>,
-    pub composer_draft_buffer: Arc<Mutex<String>>,
     pub apply_assistant_display_filters: RwSignal<bool>,
     pub sidebar_rail_collapsed: RwSignal<bool>,
     pub side_resize_dragging: RwSignal<bool>,
@@ -236,7 +233,6 @@ impl AppShellCtx {
             draft: self.draft,
             focus_message_id_after_nav: self.focus_message_id_after_nav,
             session_context_menu: self.session_context_menu,
-            composer_draft_buffer: Arc::clone(&self.composer_draft_buffer),
             apply_assistant_display_filters: self.apply_assistant_display_filters,
             sidebar_rail_collapsed: self.sidebar_rail_collapsed,
         }
@@ -271,7 +267,6 @@ impl AppShellCtx {
             locale: self.locale,
             chat: self.chat,
             draft: self.draft,
-            composer_draft_buffer: Arc::clone(&self.composer_draft_buffer),
             apply_assistant_display_filters: self.apply_assistant_display_filters,
         }
     }

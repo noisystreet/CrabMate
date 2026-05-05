@@ -1,7 +1,5 @@
 //! 管理会话模态框。
 
-use std::sync::{Arc, Mutex};
-
 use gloo_timers::future::TimeoutFuture;
 use leptos::html::Div;
 use leptos::prelude::*;
@@ -20,7 +18,6 @@ fn SessionListModalPanel(
     locale: RwSignal<Locale>,
     chat: ChatSessionSignals,
     draft: RwSignal<String>,
-    composer_draft_buffer: Arc<Mutex<String>>,
     apply_assistant_display_filters: RwSignal<bool>,
 ) -> impl IntoView {
     let dialog_ref = NodeRef::<Div>::new();
@@ -71,13 +68,11 @@ fn SessionListModalPanel(
                     {move || i18n::session_modal_hint(locale.get())}
                 </p>
                 {move || {
-                    let buf = composer_draft_buffer.clone();
                     sorted_sessions_clone(&chat.sessions.get())
                         .into_iter()
                         .map(|s| {
                             let id = s.id.clone();
                             let active = chat.active_id.get() == id;
-                            let row_buf = Arc::clone(&buf);
                             let row_title = s.title.clone();
                             let pinned = s.pinned;
                             let starred = s.starred;
@@ -92,7 +87,6 @@ fn SessionListModalPanel(
                                     locale,
                                     chat,
                                     draft,
-                                    composer_draft_buffer: row_buf,
                                     session_modal,
                                     apply_assistant_display_filters,
                                 } />
@@ -105,14 +99,13 @@ fn SessionListModalPanel(
     }
 }
 
-/// 避免 `view!` 中 backdrop 子树与 `composer_draft_buffer` 移动导致 `FnOnce`。
+/// 避免 `view!` 中 backdrop 子树闭包捕获移动导致 `FnOnce`。
 #[component]
 fn SessionListModalBackdrop(
     session_modal: RwSignal<bool>,
     locale: RwSignal<Locale>,
     chat: ChatSessionSignals,
     draft: RwSignal<String>,
-    composer_draft_buffer: Arc<Mutex<String>>,
     apply_assistant_display_filters: RwSignal<bool>,
 ) -> impl IntoView {
     view! {
@@ -122,7 +115,6 @@ fn SessionListModalBackdrop(
                 locale=locale
                 chat=chat
                 draft=draft
-                composer_draft_buffer=composer_draft_buffer
                 apply_assistant_display_filters=apply_assistant_display_filters
             />
         </div>
@@ -135,7 +127,6 @@ pub fn session_list_modal_view(signals: SessionListModalSignals) -> impl IntoVie
         locale,
         chat,
         draft,
-        composer_draft_buffer,
         apply_assistant_display_filters,
     } = signals;
     view! {
@@ -145,7 +136,6 @@ pub fn session_list_modal_view(signals: SessionListModalSignals) -> impl IntoVie
                 locale=locale
                 chat=chat
                 draft=draft
-                composer_draft_buffer=composer_draft_buffer.clone()
                 apply_assistant_display_filters=apply_assistant_display_filters
             />
         </Show>
