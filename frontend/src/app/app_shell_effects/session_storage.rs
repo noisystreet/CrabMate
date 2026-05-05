@@ -7,7 +7,10 @@ use leptos::task::spawn_local;
 
 use crate::api::fetch_web_ui_config;
 use crate::i18n::{self, Locale};
-use crate::storage::{ChatSession, ensure_at_least_one, load_sessions, save_sessions};
+use crate::storage::{
+    ChatSession, clear_stale_assistant_loading_states, ensure_at_least_one, load_sessions,
+    save_sessions,
+};
 
 /// 首次渲染时从 `localStorage` 加载会话列表并设活动会话与草稿。
 pub fn wire_initial_sessions_from_storage(
@@ -22,10 +25,13 @@ pub fn wire_initial_sessions_from_storage(
             return;
         }
         let (list, aid) = load_sessions();
-        let (list, def_id) = ensure_at_least_one(
+        let (mut list, def_id) = ensure_at_least_one(
             list,
             i18n::default_session_title(locale.get_untracked()).to_string(),
         );
+        for s in &mut list {
+            clear_stale_assistant_loading_states(&mut s.messages);
+        }
         let pick = aid
             .filter(|id| list.iter().any(|s| s.id == *id))
             .unwrap_or(def_id);

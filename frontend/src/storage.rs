@@ -174,6 +174,16 @@ pub struct ChatSession {
     pub server_revision: Option<u64>,
 }
 
+/// 进程重启后不再有挂起的 SSE；本地持久化的助手 `loading` 占位若不清理会永久显示「生成中」。
+/// 在从 `localStorage` 恢复会话列表时调用（见 `wire_initial_sessions_from_storage`）。
+pub fn clear_stale_assistant_loading_states(messages: &mut [StoredMessage]) {
+    for m in messages.iter_mut() {
+        if m.role == "assistant" && m.state.as_ref().is_some_and(|s| s.is_loading()) {
+            m.state = None;
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct SessionsFile {
     sessions: Vec<ChatSession>,
@@ -280,5 +290,38 @@ mod tests {
         let raw = r#"{"k":"cm_tl","t":"tool","msg":"x","ok":true}"#.to_string();
         let st = StoredMessageState::from_wire(raw.clone());
         assert!(matches!(st, StoredMessageState::TimelineUiJson(s) if s == raw));
+    }
+
+    #[test]
+    fn clear_stale_assistant_loading_clears_assistant_only() {
+        let mut msgs = vec![
+            StoredMessage {
+                id: "a".into(),
+                role: "assistant".into(),
+                text: "partial".into(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: Some(StoredMessageState::Loading),
+                is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
+                created_at: 0,
+            },
+            StoredMessage {
+                id: "u".into(),
+                role: "user".into(),
+                text: "hi".into(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: Some(StoredMessageState::Loading),
+                is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
+                created_at: 0,
+            },
+        ];
+        clear_stale_assistant_loading_states(&mut msgs);
+        assert!(msgs[0].state.is_none());
+        assert_eq!(msgs[1].state, Some(StoredMessageState::Loading));
     }
 }
