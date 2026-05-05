@@ -25,10 +25,21 @@
   RUST_FILE_TOP10_LINES_SUM_BASELINE_FILE top10 文件行数和棘轮基线路径
   FN_NLOC_NO_UPDATE_BASELINE    设为 1/true 时不写回基线；CI（CI=true）默认不写回
   （单文件最大行数 / top10 文件行数和棘轮：自动写回时新值不得大于运行开始时磁盘上的值）
+  FN_NLOC_ALLOW_BASELINE_INCREASE  设为 1/true 时跳过「禁止棘轮基线增大」的 Git 校验（慎用）
+  FN_NLOC_BASELINE_COMPARE_REF     可选；例如 origin/main（须已 fetch）。`HEAD` 中基线不得大于该引用
+                                   （pull_request CI 对照目标分支）
+  FN_NLOC_BASELINE_COMPARE_PUSH_BEFORE  可选；push CI 传入旧 SHA（如 github.event.before）。
+                                        `HEAD` 中基线不得大于该提交中的值（避免仅抬基线过钩）
+
+棘轮基线文件 **禁止人为抬高**，否则直接失败：
+  - 工作区文件数值 > `git show HEAD`（未提交或工作区与 HEAD 不一致时在盘上改大）
+  - 若设置 `FN_NLOC_BASELINE_COMPARE_REF`：`HEAD` > 该引用中的值
+  - 若设置 `FN_NLOC_BASELINE_COMPARE_PUSH_BEFORE`：`HEAD` > 该旧 SHA 中的值
 """
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -111,6 +122,89 @@ def _read_optional_int_baseline(path: Path) -> int | None:
         sys.exit(1)
 
 
+def _git_show_baseline_int(root: Path, rev: str, path: Path) -> int | None:
+    """读取 `rev:path` 中棘轮整数一行；不可用时返回 None（无 Git、浅克隆、文件在该版本不存在）。"""
+    try:
+        rel = path.relative_to(root).as_posix()
+    except ValueError:
+        return None
+    spec = f"{rev}:{rel}"
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(root), "show", spec],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    raw = proc.stdout.strip().splitlines()
+    if not raw:
+        return None
+    try:
+        return int(raw[0].strip())
+    except ValueError:
+        return None
+
+
+def _reject_manual_baseline_increases(
+    root: Path,
+    baseline_specs: list[tuple[Path, str]],
+) -> int:
+    """禁止通过改基线文件「放水」：工作区对 HEAD；HEAD 对可选 PR 引用 / push 旧 SHA。"""
+    if _truthy(os.environ.get("FN_NLOC_ALLOW_BASELINE_INCREASE")):
+        print(
+            "fn-nloc: 已跳过「禁止棘轮基线增大」校验（FN_NLOC_ALLOW_BASELINE_INCREASE）",
+            file=sys.stderr,
+        )
+        return 0
+    compare_ref = os.environ.get("FN_NLOC_BASELINE_COMPARE_REF", "").strip()
+    push_before = os.environ.get("FN_NLOC_BASELINE_COMPARE_PUSH_BEFORE", "").strip()
+    _pb = push_before.strip().lower()
+    if _pb and all(c == "0" for c in _pb):
+        push_before = ""
+    rc = 0
+    for path, label in baseline_specs:
+        disk = _read_optional_int_baseline(path)
+        head_v = _git_show_baseline_int(root, "HEAD", path)
+
+        if disk is not None and head_v is not None and disk > head_v:
+            print(
+                f"fn-nloc: 禁止棘轮基线增大（{label}）: 工作区={disk} > HEAD={head_v} ({path})",
+                file=sys.stderr,
+            )
+            rc = 1
+
+        if compare_ref:
+            ref_v = _git_show_baseline_int(root, compare_ref, path)
+            if ref_v is not None and head_v is not None and head_v > ref_v:
+                print(
+                    f"fn-nloc: 禁止棘轮基线大于对比引用 {compare_ref!r}（{label}）: "
+                    f"HEAD={head_v} > {compare_ref}={ref_v} ({path})",
+                    file=sys.stderr,
+                )
+                rc = 1
+
+        if push_before:
+            before_v = _git_show_baseline_int(root, push_before, path)
+            if before_v is not None and head_v is not None and head_v > before_v:
+                print(
+                    f"fn-nloc: 禁止棘轮基线相对推送前增大（{label}）: "
+                    f"HEAD={head_v} > push_before={before_v} ({path})",
+                    file=sys.stderr,
+                )
+                rc = 1
+    if rc != 0:
+        print(
+            "fn-nloc: 请用拆分模块、压缩函数等方式降低度量；确需抬高基线时使用 "
+            "FN_NLOC_ALLOW_BASELINE_INCREASE=1 并说明理由。",
+            file=sys.stderr,
+        )
+    return rc
+
+
 def main() -> int:
     cap = _optional_positive_int("FN_NLOC_CAP")
     file_cap = _optional_positive_int("RUST_FILE_LINES_MAX_CAP")
@@ -134,6 +228,16 @@ def main() -> int:
     no_update = _truthy(os.environ.get("FN_NLOC_NO_UPDATE_BASELINE"))
     if _truthy(os.environ.get("CI")):
         no_update = True
+
+    baseline_specs = [
+        (max_baseline_path, "最大 nloc"),
+        (top10_baseline_path, "top10 nloc 之和"),
+        (file_max_baseline_path, "单文件最大行数"),
+        (file_top10_baseline_path, "top10 文件行数和"),
+    ]
+    bump_rc = _reject_manual_baseline_increases(ROOT, baseline_specs)
+    if bump_rc != 0:
+        return bump_rc
 
     files = _rust_files()
     if not files:

@@ -11,6 +11,11 @@
 #   - 自动写回时：`rust_file_max_lines_baseline.txt` 与 `rust_file_top10_lines_sum_baseline.txt`
 #     的新值不得大于本次运行开始时磁盘上的值（棘轮禁止增大），详见 fn_nloc_rust_metrics.py。
 #
+# 基线文件禁止人为抬高（Git 对照；放水会直接失败）：
+#   - 工作区数值 > HEAD；PR CI：HEAD 对比 FN_NLOC_BASELINE_COMPARE_REF（如 origin/main）；
+#     push CI：HEAD 对比 FN_NLOC_BASELINE_COMPARE_PUSH_BEFORE（如 github.event.before）。
+#   - 例外：FN_NLOC_ALLOW_BASELINE_INCREASE=1（须注明理由）。
+#
 # 环境变量：见 fn_nloc_rust_metrics.py 文件头注释。
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
