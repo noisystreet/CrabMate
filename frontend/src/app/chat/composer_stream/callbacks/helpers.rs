@@ -13,6 +13,7 @@ use crate::session_ops::{make_message_id, message_created_ms};
 use crate::storage::{ChatSession, StoredMessage};
 
 use super::super::context::ChatStreamCallbackCtx;
+use super::stream_session_access::{with_active_session_mut, with_active_session_ref};
 
 pub(super) fn enqueue_pending_tool_message_id(
     queue: &Rc<RefCell<VecDeque<String>>>,
@@ -171,12 +172,9 @@ pub(super) fn insert_before_streaming_assistant_or_append(
     stream_ctx: &ChatStreamCallbackCtx,
     msg: StoredMessage,
 ) {
-    let aid = stream_ctx.active_session_id.as_str();
     let mid = stream_ctx.assistant_message_id.borrow().clone();
-    stream_ctx.chat.sessions.update(|list| {
-        if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-            insert_msg_before_streaming_assistant_tail(&mut s.messages, &mid, msg);
-        }
+    with_active_session_mut(stream_ctx, |s| {
+        insert_msg_before_streaming_assistant_tail(&mut s.messages, &mid, msg);
     });
 }
 
@@ -209,18 +207,14 @@ pub(super) fn has_same_assistant_timeline_bubble(
     stream_ctx: &ChatStreamCallbackCtx,
     text: &str,
 ) -> bool {
-    let aid = stream_ctx.active_session_id.as_str();
-    stream_ctx.chat.sessions.with(|list| {
-        list.iter()
-            .find(|s| s.id == aid)
-            .and_then(|s| {
-                s.messages
-                    .iter()
-                    .rev()
-                    .find(|m| m.role == "assistant" && !m.is_tool && m.state.is_none())
-            })
+    with_active_session_ref(stream_ctx, |s| {
+        s.messages
+            .iter()
+            .rev()
+            .find(|m| m.role == "assistant" && !m.is_tool && m.state.is_none())
             .is_some_and(|m| m.text.trim() == text.trim())
     })
+    .unwrap_or(false)
 }
 
 pub(super) fn extract_subgoal_marker_from_title(title: &str) -> Option<String> {
@@ -287,34 +281,31 @@ pub(super) fn upsert_hierarchical_subgoal_bubble(
         return;
     }
     let marker = marker.unwrap_or_default();
-    let aid = stream_ctx.active_session_id.as_str();
     let now = message_created_ms();
-    stream_ctx.chat.sessions.update(|list| {
-        if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-            if let Some(existing) = s
-                .messages
-                .iter_mut()
-                .find(|m| m.role == "assistant" && m.state.as_deref() == Some(marker.as_str()))
-            {
-                existing.text = merge_subgoal_text_preserving_target(&existing.text, &text);
-                existing.created_at = now;
-                return;
-            }
-            let msg = StoredMessage {
-                id: make_message_id(),
-                role: "assistant".to_string(),
-                text: text.clone(),
-                reasoning_text: String::new(),
-                image_urls: vec![],
-                state: Some(marker.clone()),
-                is_tool: false,
-                tool_call_id: None,
-                tool_name: None,
-                created_at: now,
-            };
-            let mid = stream_ctx.assistant_message_id.borrow().clone();
-            insert_msg_before_streaming_assistant_tail(&mut s.messages, &mid, msg);
+    with_active_session_mut(stream_ctx, |s| {
+        if let Some(existing) = s
+            .messages
+            .iter_mut()
+            .find(|m| m.role == "assistant" && m.state.as_deref() == Some(marker.as_str()))
+        {
+            existing.text = merge_subgoal_text_preserving_target(&existing.text, &text);
+            existing.created_at = now;
+            return;
         }
+        let msg = StoredMessage {
+            id: make_message_id(),
+            role: "assistant".to_string(),
+            text: text.clone(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(marker.clone()),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: now,
+        };
+        let mid = stream_ctx.assistant_message_id.borrow().clone();
+        insert_msg_before_streaming_assistant_tail(&mut s.messages, &mid, msg);
     });
     ensure_streaming_assistant_tail_last(stream_ctx);
 }
@@ -325,13 +316,9 @@ pub(super) fn finalize_loading_assistant_before_tool_and_tail_with_new_loading(
     stream_ctx: &ChatStreamCallbackCtx,
     tool_message_id: &str,
 ) {
-    let aid = stream_ctx.active_session_id.as_str();
     let now = message_created_ms();
     let new_tail_id = RefCell::new(None::<String>);
-    stream_ctx.chat.sessions.update(|list| {
-        let Some(s) = list.iter_mut().find(|s| s.id == aid) else {
-            return;
-        };
+    with_active_session_mut(stream_ctx, |s| {
         if !s.messages.iter().any(|m| m.id == tool_message_id) {
             return;
         }
@@ -379,13 +366,9 @@ pub(super) fn finalize_loading_assistant_before_tool_and_tail_with_new_loading(
 pub(super) fn rotate_streaming_assistant_for_followup_model_round(
     stream_ctx: &ChatStreamCallbackCtx,
 ) {
-    let aid = stream_ctx.active_session_id.as_str();
     let now = message_created_ms();
     let new_tail_id = RefCell::new(None::<String>);
-    stream_ctx.chat.sessions.update(|list| {
-        let Some(s) = list.iter_mut().find(|s| s.id == aid) else {
-            return;
-        };
+    with_active_session_mut(stream_ctx, |s| {
         let mid = stream_ctx.assistant_message_id.borrow();
         if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) {
             let m = &mut s.messages[idx];
@@ -424,30 +407,25 @@ pub(super) fn ensure_streaming_assistant_tail_last(stream_ctx: &ChatStreamCallba
     if !stream_ctx.post_tool_stream_tail.get() {
         return;
     }
-    let aid = stream_ctx.active_session_id.as_str();
     let mid = stream_ctx.assistant_message_id.borrow().clone();
-    stream_ctx.chat.sessions.update(|list| {
-        if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-            let Some(idx) = s.messages.iter().position(|m| m.id == mid) else {
-                return;
-            };
-            if s.messages[idx].role != "assistant"
-                || s.messages[idx].state.as_deref() != Some("loading")
-            {
-                return;
-            }
-            let m = s.messages.remove(idx);
-            s.messages.push(m);
+    with_active_session_mut(stream_ctx, |s| {
+        let Some(idx) = s.messages.iter().position(|m| m.id == mid) else {
+            return;
+        };
+        if s.messages[idx].role != "assistant"
+            || s.messages[idx].state.as_deref() != Some("loading")
+        {
+            return;
         }
+        let m = s.messages.remove(idx);
+        s.messages.push(m);
     });
 }
 
 pub(super) fn remove_loading_assistant_placeholder(stream_ctx: &ChatStreamCallbackCtx) {
-    let aid = stream_ctx.active_session_id.as_str();
     let mid = stream_ctx.assistant_message_id.borrow();
-    stream_ctx.chat.sessions.update(|list| {
-        if let Some(s) = list.iter_mut().find(|s| s.id == aid)
-            && let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str())
+    with_active_session_mut(stream_ctx, |s| {
+        if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str())
             && s.messages[idx].role == "assistant"
             && s.messages[idx].state.as_deref() == Some("loading")
         {

@@ -19,6 +19,7 @@ use crate::timeline_scan::timeline_state_tool;
 use super::super::context::ChatStreamCallbackCtx;
 use super::super::shell_abort::{clear_abort_slot, user_cancelled_flag};
 use super::helpers::*;
+use super::stream_session_access::with_active_session_mut;
 
 pub(super) fn make_on_tool_result(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
@@ -31,71 +32,68 @@ pub(super) fn make_on_tool_result(
         let detail = result_text.clone();
 
         let id = make_message_id();
-        let aid = stream_ctx.active_session_id.as_str();
         let tl_ok = info.ok.unwrap_or(true);
         let state = timeline_state_tool(&id, tl_ok);
         let pending_queue = Rc::clone(&stream_ctx.pending_tool_message_ids);
         let mut updated_existing = false;
-        stream_ctx.chat.sessions.update(|list| {
-            if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-                let tid = info
-                    .tool_call_id
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty());
-                let idx_by_tid = tid.and_then(|tid| {
-                    s.messages.iter().position(|m| {
-                        m.is_tool
-                            && m.tool_call_id.as_deref() == Some(tid)
-                            && m.state.as_deref() == Some("loading")
-                    })
-                });
-                let idx_by_fifo = idx_by_tid.is_none().then(|| {
-                    take_pending_tool_message_id(&pending_queue)
-                        .and_then(|pid| s.messages.iter().position(|m| m.id == pid))
-                });
-                let idx_opt = idx_by_tid.or(idx_by_fifo.flatten());
-                if let Some(idx) = idx_opt {
-                    let m = &mut s.messages[idx];
-                    m.text = t.clone();
-                    m.reasoning_text = detail.clone();
-                    m.state = Some(state.clone());
-                    m.is_tool = true;
-                    if m.tool_call_id.is_none() {
-                        m.tool_call_id = info.tool_call_id.clone().filter(|x| !x.trim().is_empty());
-                    }
-                    if let Some(tn) = non_empty_trimmed_tool_name(&info.name) {
-                        m.tool_name = Some(tn);
-                    }
-                    updated_existing = true;
+        with_active_session_mut(stream_ctx.as_ref(), |s| {
+            let tid = info
+                .tool_call_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            let idx_by_tid = tid.and_then(|tid| {
+                s.messages.iter().position(|m| {
+                    m.is_tool
+                        && m.tool_call_id.as_deref() == Some(tid)
+                        && m.state.as_deref() == Some("loading")
+                })
+            });
+            let idx_by_fifo = idx_by_tid.is_none().then(|| {
+                take_pending_tool_message_id(&pending_queue)
+                    .and_then(|pid| s.messages.iter().position(|m| m.id == pid))
+            });
+            let idx_opt = idx_by_tid.or(idx_by_fifo.flatten());
+            if let Some(idx) = idx_opt {
+                let m = &mut s.messages[idx];
+                m.text = t.clone();
+                m.reasoning_text = detail.clone();
+                m.state = Some(state.clone());
+                m.is_tool = true;
+                if m.tool_call_id.is_none() {
+                    m.tool_call_id = info.tool_call_id.clone().filter(|x| !x.trim().is_empty());
                 }
-                if !updated_existing {
-                    let msg = StoredMessage {
-                        id: id.clone(),
-                        role: "system".to_string(),
-                        text: t.clone(),
-                        reasoning_text: detail.clone(),
-                        image_urls: vec![],
-                        state: Some(state.clone()),
-                        is_tool: true,
-                        tool_call_id: info.tool_call_id.clone().filter(|x| !x.trim().is_empty()),
-                        tool_name: non_empty_trimmed_tool_name(&info.name),
-                        created_at: message_created_ms(),
-                    };
-                    if let Some(goal_id) = info.goal_id.as_deref() {
-                        let marker = format!("hierarchical-subgoal:{goal_id}");
-                        if let Some(idx) = s
-                            .messages
-                            .iter()
-                            .rposition(|m| m.state.as_deref() == Some(marker.as_str()))
-                        {
-                            s.messages.insert(idx + 1, msg);
-                        } else {
-                            s.messages.push(msg);
-                        }
+                if let Some(tn) = non_empty_trimmed_tool_name(&info.name) {
+                    m.tool_name = Some(tn);
+                }
+                updated_existing = true;
+            }
+            if !updated_existing {
+                let msg = StoredMessage {
+                    id: id.clone(),
+                    role: "system".to_string(),
+                    text: t.clone(),
+                    reasoning_text: detail.clone(),
+                    image_urls: vec![],
+                    state: Some(state.clone()),
+                    is_tool: true,
+                    tool_call_id: info.tool_call_id.clone().filter(|x| !x.trim().is_empty()),
+                    tool_name: non_empty_trimmed_tool_name(&info.name),
+                    created_at: message_created_ms(),
+                };
+                if let Some(goal_id) = info.goal_id.as_deref() {
+                    let marker = format!("hierarchical-subgoal:{goal_id}");
+                    if let Some(idx) = s
+                        .messages
+                        .iter()
+                        .rposition(|m| m.state.as_deref() == Some(marker.as_str()))
+                    {
+                        s.messages.insert(idx + 1, msg);
                     } else {
                         s.messages.push(msg);
                     }
+                } else {
+                    s.messages.push(msg);
                 }
             }
         });
@@ -136,7 +134,6 @@ pub(super) fn chat_stream_on_tool_call_builder(
                 "status: running".to_string()
             };
             let id = make_message_id();
-            let aid = stream_ctx.active_session_id.as_str();
             let marker = goal_id
                 .as_deref()
                 .map(|g| format!("hierarchical-subgoal:{g}"))
@@ -146,30 +143,28 @@ pub(super) fn chat_stream_on_tool_call_builder(
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .map(str::to_string);
-            stream_ctx.chat.sessions.update(|list| {
-                if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-                    let msg = StoredMessage {
-                        id: id.clone(),
-                        role: "system".to_string(),
-                        text,
-                        reasoning_text: detail.clone(),
-                        image_urls: vec![],
-                        state: Some("loading".to_string()),
-                        is_tool: true,
-                        tool_call_id: tcid.clone(),
-                        tool_name: non_empty_trimmed_tool_name(&name),
-                        created_at: message_created_ms(),
-                    };
-                    if let Some(mk) = marker.as_deref()
-                        && let Some(idx) = s
-                            .messages
-                            .iter()
-                            .rposition(|m| m.state.as_deref() == Some(mk))
-                    {
-                        s.messages.insert(idx + 1, msg);
-                    } else {
-                        s.messages.push(msg);
-                    }
+            with_active_session_mut(stream_ctx.as_ref(), |s| {
+                let msg = StoredMessage {
+                    id: id.clone(),
+                    role: "system".to_string(),
+                    text,
+                    reasoning_text: detail.clone(),
+                    image_urls: vec![],
+                    state: Some("loading".to_string()),
+                    is_tool: true,
+                    tool_call_id: tcid.clone(),
+                    tool_name: non_empty_trimmed_tool_name(&name),
+                    created_at: message_created_ms(),
+                };
+                if let Some(mk) = marker.as_deref()
+                    && let Some(idx) = s
+                        .messages
+                        .iter()
+                        .rposition(|m| m.state.as_deref() == Some(mk))
+                {
+                    s.messages.insert(idx + 1, msg);
+                } else {
+                    s.messages.push(msg);
                 }
             });
             // 开场白留在时间线/工具之上；工具后挂新占位，续写走新气泡，避免“最早的话出现在最下面”。
@@ -324,94 +319,91 @@ pub(super) fn chat_stream_on_done_builder(
             answer_delta_chars.set(0);
         }
         let loc = stream_ctx.locale.get_untracked();
-        let aid = stream_ctx.active_session_id.clone();
         let mid = stream_ctx.assistant_message_id.borrow().clone();
-        stream_ctx.chat.sessions.update(|list| {
-            if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-                let has_hierarchical_or_tool = s.messages.iter().any(|x| {
-                    x.is_tool
-                        || x.state
-                            .as_deref()
-                            .is_some_and(|st| st.starts_with("hierarchical-subgoal:"))
-                });
-                if let Some(idx) = s.messages.iter().position(|m| m.id == mid)
-                    && s.messages[idx].state.as_deref() == Some("loading")
+        with_active_session_mut(stream_ctx.as_ref(), |s| {
+            let has_hierarchical_or_tool = s.messages.iter().any(|x| {
+                x.is_tool
+                    || x.state
+                        .as_deref()
+                        .is_some_and(|st| st.starts_with("hierarchical-subgoal:"))
+            });
+            if let Some(idx) = s.messages.iter().position(|m| m.id == mid)
+                && s.messages[idx].state.as_deref() == Some("loading")
+            {
+                s.messages[idx].state = None;
+                let body_chars = s.messages[idx].text.chars().count()
+                    + s.messages[idx].reasoning_text.chars().count();
+                let diag_chars = body_chars.max(answer_delta_chars.get());
+                if s.messages[idx].text.trim().is_empty()
+                    && s.messages[idx].reasoning_text.trim().is_empty()
                 {
-                    s.messages[idx].state = None;
-                    let body_chars = s.messages[idx].text.chars().count()
-                        + s.messages[idx].reasoning_text.chars().count();
-                    let diag_chars = body_chars.max(answer_delta_chars.get());
-                    if s.messages[idx].text.trim().is_empty()
-                        && s.messages[idx].reasoning_text.trim().is_empty()
-                    {
-                        let end_reason = stream_end_reason.borrow();
-                        let completed_with_visible_delta = end_reason
-                            .as_deref()
-                            .and_then(|s| s.parse::<StreamEndReason>().ok())
-                            .is_some_and(|r| r == StreamEndReason::Completed)
-                            && in_answer_phase.get()
-                            && diag_chars > 0;
-                        if completed_with_visible_delta {
-                            // 流程已完成且本轮存在可见输出时，空 loading 气泡多为尾部占位残留，直接删除避免误报“无回复”。
-                            s.messages.remove(idx);
-                            return;
-                        }
-                        let drop_empty_main_after_tool_like_turn = end_reason
-                            .as_deref()
-                            .and_then(|s| s.parse::<StreamEndReason>().ok())
-                            .is_some_and(|r| {
-                                matches!(
-                                    r,
-                                    StreamEndReason::Completed
-                                        | StreamEndReason::Fallback
-                                        | StreamEndReason::Cancelled
-                                        | StreamEndReason::NoOutput
-                                )
-                            })
-                            && has_hierarchical_or_tool
-                            && (!in_answer_phase.get() || diag_chars == 0);
-                        if drop_empty_main_after_tool_like_turn {
-                            // 工具/子目标已占满可见输出；主占位虽可能已进终答相却无任何正文增量（diag=0），删空尾泡。
-                            s.messages.remove(idx);
-                            return;
-                        }
-                        let drop_redundant_empty_after_fallback_timeline = (end_reason
-                            .as_deref()
-                            .and_then(|r| r.parse::<StreamEndReason>().ok())
-                            == Some(StreamEndReason::Fallback)
-                            || saw_final_response_timeline.get())
-                            && in_answer_phase.get()
-                            && diag_chars == 0;
-                        if drop_redundant_empty_after_fallback_timeline {
-                            // 补偿收尾 / final_response 时间轴：正文应在时间轴气泡或已随 placeholder 移除；空尾戳无须「无正文片段」。
-                            s.messages.remove(idx);
-                            return;
-                        }
-                        let completed_no_final = should_show_missing_final_summary_hint(
-                            end_reason.as_deref(),
-                            in_answer_phase.get(),
-                            has_hierarchical_or_tool,
-                            saw_final_response_timeline.get(),
-                        );
-                        if completed_no_final {
-                            s.messages[idx].text = format!(
-                                "{}\n\n{}",
-                                i18n::stream_completed_missing_final_summary_hint(loc),
-                                i18n::stream_empty_reply_diag_line(
-                                    loc,
-                                    end_reason.as_deref(),
-                                    in_answer_phase.get(),
-                                    diag_chars
-                                )
-                            );
-                        } else {
-                            s.messages[idx].text = build_empty_reply_with_diagnostic(
+                    let end_reason = stream_end_reason.borrow();
+                    let completed_with_visible_delta = end_reason
+                        .as_deref()
+                        .and_then(|s| s.parse::<StreamEndReason>().ok())
+                        .is_some_and(|r| r == StreamEndReason::Completed)
+                        && in_answer_phase.get()
+                        && diag_chars > 0;
+                    if completed_with_visible_delta {
+                        // 流程已完成且本轮存在可见输出时，空 loading 气泡多为尾部占位残留，直接删除避免误报“无回复”。
+                        s.messages.remove(idx);
+                        return;
+                    }
+                    let drop_empty_main_after_tool_like_turn = end_reason
+                        .as_deref()
+                        .and_then(|s| s.parse::<StreamEndReason>().ok())
+                        .is_some_and(|r| {
+                            matches!(
+                                r,
+                                StreamEndReason::Completed
+                                    | StreamEndReason::Fallback
+                                    | StreamEndReason::Cancelled
+                                    | StreamEndReason::NoOutput
+                            )
+                        })
+                        && has_hierarchical_or_tool
+                        && (!in_answer_phase.get() || diag_chars == 0);
+                    if drop_empty_main_after_tool_like_turn {
+                        // 工具/子目标已占满可见输出；主占位虽可能已进终答相却无任何正文增量（diag=0），删空尾泡。
+                        s.messages.remove(idx);
+                        return;
+                    }
+                    let drop_redundant_empty_after_fallback_timeline = (end_reason
+                        .as_deref()
+                        .and_then(|r| r.parse::<StreamEndReason>().ok())
+                        == Some(StreamEndReason::Fallback)
+                        || saw_final_response_timeline.get())
+                        && in_answer_phase.get()
+                        && diag_chars == 0;
+                    if drop_redundant_empty_after_fallback_timeline {
+                        // 补偿收尾 / final_response 时间轴：正文应在时间轴气泡或已随 placeholder 移除；空尾戳无须「无正文片段」。
+                        s.messages.remove(idx);
+                        return;
+                    }
+                    let completed_no_final = should_show_missing_final_summary_hint(
+                        end_reason.as_deref(),
+                        in_answer_phase.get(),
+                        has_hierarchical_or_tool,
+                        saw_final_response_timeline.get(),
+                    );
+                    if completed_no_final {
+                        s.messages[idx].text = format!(
+                            "{}\n\n{}",
+                            i18n::stream_completed_missing_final_summary_hint(loc),
+                            i18n::stream_empty_reply_diag_line(
                                 loc,
-                                in_answer_phase.get(),
-                                diag_chars,
                                 end_reason.as_deref(),
-                            );
-                        }
+                                in_answer_phase.get(),
+                                diag_chars
+                            )
+                        );
+                    } else {
+                        s.messages[idx].text = build_empty_reply_with_diagnostic(
+                            loc,
+                            in_answer_phase.get(),
+                            diag_chars,
+                            end_reason.as_deref(),
+                        );
                     }
                 }
             }
@@ -432,16 +424,13 @@ pub(super) fn chat_stream_on_error_builder(
         }
         stream_ctx.chat.stream_job_id.set(None);
         stream_ctx.chat.stream_last_event_seq.set(0);
-        let aid = stream_ctx.active_session_id.clone();
         let mid = stream_ctx.assistant_message_id.borrow().clone();
         let loc = stream_ctx.locale.get_untracked();
         let friendly = build_stream_error_with_suggestion(&msg, loc);
-        stream_ctx.chat.sessions.update(|list| {
-            if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-                if let Some(m) = s.messages.iter_mut().find(|m| m.id == mid) {
-                    m.text = friendly.clone();
-                    m.state = Some("error".to_string());
-                }
+        with_active_session_mut(stream_ctx.as_ref(), |s| {
+            if let Some(m) = s.messages.iter_mut().find(|m| m.id == mid) {
+                m.text = friendly.clone();
+                m.state = Some("error".to_string());
             }
         });
         stream_ctx.shell.status_busy.set(false);

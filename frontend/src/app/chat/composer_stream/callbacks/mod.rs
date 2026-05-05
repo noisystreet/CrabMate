@@ -7,6 +7,7 @@
 mod assemble;
 mod builders;
 mod helpers;
+mod stream_session_access;
 
 pub(super) use assemble::build_chat_stream_callbacks;
 

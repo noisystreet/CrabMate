@@ -21,6 +21,7 @@ use super::super::context::ChatStreamCallbackCtx;
 use super::super::shell_abort::clear_abort_slot;
 use super::builders::*;
 use super::helpers::*;
+use super::stream_session_access::with_active_session_mut;
 
 /// 由 [`super::super::make_attach_chat_stream`](super::super::make_attach_chat_stream) 调用；集中所有 `on_*` 闭包，降低父模块维护面。
 pub(crate) fn build_chat_stream_callbacks(
@@ -84,12 +85,9 @@ pub(crate) fn build_chat_stream_callbacks(
                 .chat
                 .session_sync
                 .update(|s| s.apply_stream_conversation_id(id.clone()));
-            let aid = stream_ctx.active_session_id.clone();
-            stream_ctx.chat.sessions.update(|list| {
-                if let Some(s) = list.iter_mut().find(|x| x.id == aid) {
-                    s.server_conversation_id = Some(id);
-                    s.server_revision = None;
-                }
+            with_active_session_mut(stream_ctx.as_ref(), |s| {
+                s.server_conversation_id = Some(id);
+                s.server_revision = None;
             });
         })
     };
@@ -101,11 +99,8 @@ pub(crate) fn build_chat_stream_callbacks(
                 .chat
                 .session_sync
                 .update(|s| s.apply_saved_revision(rev));
-            let aid = stream_ctx.active_session_id.clone();
-            stream_ctx.chat.sessions.update(|list| {
-                if let Some(s) = list.iter_mut().find(|x| x.id == aid) {
-                    s.server_revision = Some(rev);
-                }
+            with_active_session_mut(stream_ctx.as_ref(), |s| {
+                s.server_revision = Some(rev);
             });
         })
     };
@@ -162,24 +157,21 @@ pub(crate) fn build_chat_stream_callbacks(
                 info.executor_kind.as_deref(),
             ));
             let id = make_message_id();
-            let aid = stream_ctx.active_session_id.as_str();
             let now = message_created_ms();
             let state = timeline_state_staged_start(&id, info.step_index, info.total_steps);
-            stream_ctx.chat.sessions.update(|list| {
-                if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-                    s.messages.push(StoredMessage {
-                        id,
-                        role: "system".to_string(),
-                        text,
-                        reasoning_text: String::new(),
-                        image_urls: vec![],
-                        state: Some(state),
-                        is_tool: false,
-                        tool_call_id: None,
-                        tool_name: None,
-                        created_at: now,
-                    });
-                }
+            with_active_session_mut(stream_ctx.as_ref(), |s| {
+                s.messages.push(StoredMessage {
+                    id,
+                    role: "system".to_string(),
+                    text,
+                    reasoning_text: String::new(),
+                    image_urls: vec![],
+                    state: Some(state),
+                    is_tool: false,
+                    tool_call_id: None,
+                    tool_name: None,
+                    created_at: now,
+                });
             });
             ensure_streaming_assistant_tail_last(&stream_ctx);
         })
@@ -214,25 +206,22 @@ pub(crate) fn build_chat_stream_callbacks(
                 info.executor_kind.as_deref(),
             ));
             let id = make_message_id();
-            let aid = stream_ctx.active_session_id.as_str();
             let now = message_created_ms();
             let state =
                 timeline_state_staged_end(&id, info.step_index, info.total_steps, &info.status);
-            stream_ctx.chat.sessions.update(|list| {
-                if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-                    s.messages.push(StoredMessage {
-                        id,
-                        role: "system".to_string(),
-                        text,
-                        reasoning_text: String::new(),
-                        image_urls: vec![],
-                        state: Some(state),
-                        is_tool: false,
-                        tool_call_id: None,
-                        tool_name: None,
-                        created_at: now,
-                    });
-                }
+            with_active_session_mut(stream_ctx.as_ref(), |s| {
+                s.messages.push(StoredMessage {
+                    id,
+                    role: "system".to_string(),
+                    text,
+                    reasoning_text: String::new(),
+                    image_urls: vec![],
+                    state: Some(state),
+                    is_tool: false,
+                    tool_call_id: None,
+                    tool_name: None,
+                    created_at: now,
+                });
             });
             ensure_streaming_assistant_tail_last(&stream_ctx);
         })
