@@ -69,41 +69,72 @@ mod embedded_shard_parse_tests {
 mod web_api_require_bearer_defaults_tests {
     use super::load_config;
     use std::fs;
+    use std::sync::Mutex;
+
+    /// `load_config` 会读 `CM_WEB_API_REQUIRE_BEARER`（优先级高于 TOML）；开发者本机若导出 `0`/`false` 会覆盖嵌入默认，导致「仅测嵌入默认」的断言不稳定。
+    static CM_WEB_API_REQUIRE_BEARER_LOCK: Mutex<()> = Mutex::new(());
+
+    fn without_cm_web_api_require_bearer_env<F, R>(f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        let _g = CM_WEB_API_REQUIRE_BEARER_LOCK
+            .lock()
+            .expect("web_api_require_bearer defaults tests must run serialized");
+        let prev = std::env::var("CM_WEB_API_REQUIRE_BEARER").ok();
+        // SAFETY: `remove_var`/`set_var` are unsafe in Rust 2024; we hold the mutex so no other
+        // test in this module touches `CM_WEB_API_REQUIRE_BEARER` during `f()`.
+        unsafe {
+            std::env::remove_var("CM_WEB_API_REQUIRE_BEARER");
+        }
+        let out = f();
+        unsafe {
+            match prev.as_ref() {
+                Some(v) => std::env::set_var("CM_WEB_API_REQUIRE_BEARER", v),
+                None => std::env::remove_var("CM_WEB_API_REQUIRE_BEARER"),
+            }
+        }
+        out
+    }
 
     #[test]
     fn embedded_default_requires_bearer_without_env_override() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("minimal.toml");
-        fs::write(
-            &path,
-            r#"[agent]
+        without_cm_web_api_require_bearer_env(|| {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("minimal.toml");
+            fs::write(
+                &path,
+                r#"[agent]
 api_base = "https://api.deepseek.com/v1"
 model = "deepseek-chat"
 "#,
-        )
-        .expect("write");
-        let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
-        assert!(
-            cfg.web_api.web_api_require_bearer,
-            "embedded default should require Web API bearer secret before serve"
-        );
+            )
+            .expect("write");
+            let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
+            assert!(
+                cfg.web_api.web_api_require_bearer,
+                "embedded default should require Web API bearer secret before serve"
+            );
+        });
     }
 
     #[test]
     fn explicit_false_allows_opt_out() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("minimal.toml");
-        fs::write(
-            &path,
-            r#"[agent]
+        without_cm_web_api_require_bearer_env(|| {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("minimal.toml");
+            fs::write(
+                &path,
+                r#"[agent]
 api_base = "https://api.deepseek.com/v1"
 model = "deepseek-chat"
 web_api_require_bearer = false
 "#,
-        )
-        .expect("write");
-        let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
-        assert!(!cfg.web_api.web_api_require_bearer);
+            )
+            .expect("write");
+            let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
+            assert!(!cfg.web_api.web_api_require_bearer);
+        });
     }
 }
 
