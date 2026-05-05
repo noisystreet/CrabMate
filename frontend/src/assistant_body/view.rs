@@ -1,6 +1,4 @@
-//! 助手消息 Markdown 渲染（随会话信号刷新 DOM）；超长回复默认全文，可由用户折叠。
-//!
-//! 展示链与 HTML 出口见 [`crate::message_render`]。
+//! [`assistant_markdown_collapsible_view`]：助手气泡 DOM 写入与折叠 UI。
 
 use std::sync::{Arc, Mutex};
 
@@ -10,12 +8,10 @@ use leptos_dom::helpers::request_animation_frame;
 use wasm_bindgen::JsCast;
 
 use crate::i18n::{self, Locale};
-use crate::message_format::message_text_for_display_ex;
 use crate::message_render::fragment_to_chat_safe_html;
 use crate::storage::ChatSession;
 
-/// 超过该字符数的已完成助手消息可手动折叠（作用于整条消息，含思考区）。
-const LONG_ASSISTANT_COLLAPSE_THRESHOLD: usize = 2400;
+use super::helpers::{LONG_ASSISTANT_COLLAPSE_THRESHOLD, snapshot_assistant_message_for_mid};
 
 #[derive(Default)]
 struct SectionPaint {
@@ -45,7 +41,9 @@ pub fn assistant_markdown_collapsible_view(
 
     let answer_paint = StoredValue::new(Arc::new(Mutex::new(SectionPaint::default())));
 
-    // ---------- 回答区 Effect ----------
+    // 回答区 Effect：`Effect` **顶层**对下列信号做 `.get()` 以建立订阅；块内对 `active_id` /
+    // `locale` 等再用 `get_untracked`，避免在 `sessions.with` 的子追踪域里重复注册同一依赖，
+    // 并与本轮 `sessions` 快照一致（见模块 `mod.rs` 说明）。
     Effect::new({
         let answer_body_ref = answer_body_ref.clone();
         let answer_paint = answer_paint.clone();
@@ -57,25 +55,18 @@ pub fn assistant_markdown_collapsible_view(
             let _ = locale.get();
             let _ = markdown_render.get();
             let _ = apply_assistant_display_filters.get();
-            let (text_src, is_loading_msg) = sessions.with(|list| {
+            let (text_src, is_loading) = sessions.with(|list| {
                 let aid = active_id.get_untracked();
                 let loc = locale.get_untracked();
                 let apply = apply_assistant_display_filters.get_untracked();
-                list.iter()
-                    .find(|s| s.id == aid)
-                    .and_then(|s| s.messages.iter().find(|msg| msg.id == mid))
-                    .map(|m| {
-                        (
-                            message_text_for_display_ex(m, loc, apply),
-                            m.state.as_deref() == Some("loading"),
-                        )
-                    })
+                snapshot_assistant_message_for_mid(list, &aid, &mid, loc, apply)
+                    .map(|s| (s.display_text, s.is_loading))
                     .unwrap_or_default()
             });
 
             // 流式生成中先按纯文本渲染，避免半截 Markdown（尤其未闭合代码围栏）
             // 在不同浏览器里触发布局伪影（如黑条/闪动）；完成后自动切回 Markdown。
-            let md_on = markdown_render.get_untracked() && !is_loading_msg;
+            let md_on = markdown_render.get_untracked() && !is_loading;
             let html = fragment_to_chat_safe_html(&text_src, md_on);
             let paint_arc = answer_paint.get_value();
             {
@@ -120,23 +111,18 @@ pub fn assistant_markdown_collapsible_view(
                     let apply = apply_assistant_display_filters.get();
                     let (is_loading, raw_len) = sessions.with(|list| {
                         let aid = active_id.get();
-                        let m = list
-                            .iter()
-                            .find(|s| s.id == aid)
-                            .and_then(|s| {
-                                s.messages
-                                    .iter()
-                                    .find(|msg| msg.id == mid_stored.get_value())
-                            });
-                        match m {
-                            Some(msg) => {
-                                let len = message_text_for_display_ex(msg, loc, apply).chars().count();
-                                (msg.state.as_deref() == Some("loading"), len)
-                            }
-                            None => (false, 0),
-                        }
+                        snapshot_assistant_message_for_mid(
+                            list,
+                            &aid,
+                            mid_stored.get_value().as_str(),
+                            loc,
+                            apply,
+                        )
+                        .map(|s| (s.is_loading, s.display_char_len))
+                        .unwrap_or((false, 0))
                     });
-                    let long = !is_loading && raw_len >= LONG_ASSISTANT_COLLAPSE_THRESHOLD;
+                    let long =
+                        !is_loading && raw_len >= LONG_ASSISTANT_COLLAPSE_THRESHOLD;
                     let mid = mid_stored.get_value();
                     let user_collapsed =
                         collapsed_long_assistant_ids.with(|v| v.iter().any(|id| id == &mid));
@@ -159,20 +145,16 @@ pub fn assistant_markdown_collapsible_view(
                 let apply = apply_assistant_display_filters.get();
                 sessions.with(|list| {
                     let aid = active_id.get();
-                    let Some(msg) = list
-                        .iter()
-                        .find(|s| s.id == aid)
-                        .and_then(|s| {
-                            s.messages
-                                .iter()
-                                .find(|msg| msg.id == mid_stored.get_value())
-                        })
-                    else {
-                        return false;
-                    };
-                    let is_loading = msg.state.as_deref() == Some("loading");
-                    let raw_len = message_text_for_display_ex(msg, loc, apply).chars().count();
-                    !is_loading && raw_len >= LONG_ASSISTANT_COLLAPSE_THRESHOLD
+                    snapshot_assistant_message_for_mid(
+                        list,
+                        &aid,
+                        mid_stored.get_value().as_str(),
+                        loc,
+                        apply,
+                    )
+                    .is_some_and(|s| {
+                        !s.is_loading && s.display_char_len >= LONG_ASSISTANT_COLLAPSE_THRESHOLD
+                    })
                 })
             }>
                 <button
