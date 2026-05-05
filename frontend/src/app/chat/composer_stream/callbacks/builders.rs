@@ -3,7 +3,6 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use crabmate_sse_protocol::StreamEndReason;
 use leptos::prelude::*;
 
 use crate::api::OnToolCallFn;
@@ -18,6 +17,9 @@ use crate::timeline_scan::timeline_state_tool;
 
 use super::super::context::ChatStreamCallbackCtx;
 use super::super::shell_abort::{clear_abort_slot, user_cancelled_flag};
+use super::done_empty_loading::{
+    EmptyLoadingTailAction, EmptyLoadingTailInputs, decide_empty_loading_tail_action,
+};
 use super::helpers::*;
 use super::stream_session_access::with_active_session_mut;
 use super::stream_turn_state::{
@@ -37,7 +39,7 @@ pub(super) fn make_on_tool_result(
         let id = make_message_id();
         let tl_ok = info.ok.unwrap_or(true);
         let state = timeline_state_tool(&id, tl_ok);
-        let pending_queue = Rc::clone(&stream_ctx.pending_tool_message_ids);
+        let pending_queue = stream_ctx.tail.pending_tool_message_ids();
         let mut updated_existing = false;
         with_active_session_mut(stream_ctx.as_ref(), |s| {
             let tid = info
@@ -174,7 +176,7 @@ pub(super) fn chat_stream_on_tool_call_builder(
             finalize_loading_assistant_before_tool_and_tail_with_new_loading(&stream_ctx, &id);
             // 有 `tool_call_id` 时由 `tool_result` 按 id 命中占位气泡；否则保持 FIFO。
             if tcid.is_none() {
-                enqueue_pending_tool_message_id(&stream_ctx.pending_tool_message_ids, id);
+                enqueue_pending_tool_message_id(&stream_ctx.tail.pending_tool_message_ids(), id);
             }
         },
     )
@@ -283,7 +285,7 @@ pub(super) fn chat_stream_on_delta_builder(
             answer_delta_chars.set(0);
         }
         let aid = stream_ctx.active_session_id.as_str();
-        let mid = stream_ctx.assistant_message_id.borrow();
+        let mid = stream_ctx.tail.borrow_assistant_id();
         let lane = output_lane.get();
         if lane.in_answer_body_lane() {
             answer_delta_chars.set(
@@ -318,7 +320,7 @@ pub(super) fn chat_stream_on_done_builder(
             answer_delta_chars.set(0);
         }
         let loc = stream_ctx.locale.get_untracked();
-        let mid = stream_ctx.assistant_message_id.borrow().clone();
+        let mid = stream_ctx.tail.clone_assistant_id();
         with_active_session_mut(stream_ctx.as_ref(), |s| {
             let has_hierarchical_or_tool = s.messages.iter().any(|x| {
                 x.is_tool
@@ -337,72 +339,39 @@ pub(super) fn chat_stream_on_done_builder(
                     && s.messages[idx].reasoning_text.trim().is_empty()
                 {
                     let end_reason = stream_end_reason.borrow();
-                    let completed_with_visible_delta = end_reason
-                        .as_deref()
-                        .and_then(|s| s.parse::<StreamEndReason>().ok())
-                        .is_some_and(|r| r == StreamEndReason::Completed)
-                        && output_lane.get().in_answer_body_lane()
-                        && diag_chars > 0;
-                    if completed_with_visible_delta {
-                        // 流程已完成且本轮存在可见输出时，空 loading 气泡多为尾部占位残留，直接删除避免误报“无回复”。
-                        s.messages.remove(idx);
-                        return;
-                    }
-                    let drop_empty_main_after_tool_like_turn = end_reason
-                        .as_deref()
-                        .and_then(|s| s.parse::<StreamEndReason>().ok())
-                        .is_some_and(|r| {
-                            matches!(
-                                r,
-                                StreamEndReason::Completed
-                                    | StreamEndReason::Fallback
-                                    | StreamEndReason::Cancelled
-                                    | StreamEndReason::NoOutput
-                            )
-                        })
-                        && has_hierarchical_or_tool
-                        && (!output_lane.get().in_answer_body_lane() || diag_chars == 0);
-                    if drop_empty_main_after_tool_like_turn {
-                        // 工具/子目标已占满可见输出；主占位虽可能已进终答相却无任何正文增量（diag=0），删空尾泡。
-                        s.messages.remove(idx);
-                        return;
-                    }
-                    let drop_redundant_empty_after_fallback_timeline = (end_reason
-                        .as_deref()
-                        .and_then(|r| r.parse::<StreamEndReason>().ok())
-                        == Some(StreamEndReason::Fallback)
-                        || saw_final_response_timeline.get())
-                        && output_lane.get().in_answer_body_lane()
-                        && diag_chars == 0;
-                    if drop_redundant_empty_after_fallback_timeline {
-                        // 补偿收尾 / final_response 时间轴：正文应在时间轴气泡或已随 placeholder 移除；空尾戳无须「无正文片段」。
-                        s.messages.remove(idx);
-                        return;
-                    }
-                    let completed_no_final = should_show_missing_final_summary_hint(
-                        end_reason.as_deref(),
-                        output_lane.get().in_answer_body_lane(),
+                    let in_lane = output_lane.get().in_answer_body_lane();
+                    match decide_empty_loading_tail_action(EmptyLoadingTailInputs {
+                        end_reason_raw: end_reason.as_deref(),
+                        in_answer_body_lane: in_lane,
+                        diag_chars,
                         has_hierarchical_or_tool,
-                        saw_final_response_timeline.get(),
-                    );
-                    if completed_no_final {
-                        s.messages[idx].text = format!(
-                            "{}\n\n{}",
-                            i18n::stream_completed_missing_final_summary_hint(loc),
-                            i18n::stream_empty_reply_diag_line(
+                        saw_final_response_timeline: saw_final_response_timeline.get(),
+                    }) {
+                        EmptyLoadingTailAction::RemoveBubble => {
+                            // 含：completed 且有可见增量尾占位、工具型回合空主泡、fallback/final_response 补偿尾戳等。
+                            s.messages.remove(idx);
+                            return;
+                        }
+                        EmptyLoadingTailAction::FillMissingFinalHint => {
+                            s.messages[idx].text = format!(
+                                "{}\n\n{}",
+                                i18n::stream_completed_missing_final_summary_hint(loc),
+                                i18n::stream_empty_reply_diag_line(
+                                    loc,
+                                    end_reason.as_deref(),
+                                    in_lane,
+                                    diag_chars
+                                )
+                            );
+                        }
+                        EmptyLoadingTailAction::FillEmptyDiagnostic => {
+                            s.messages[idx].text = build_empty_reply_with_diagnostic(
                                 loc,
+                                in_lane,
+                                diag_chars,
                                 end_reason.as_deref(),
-                                output_lane.get().in_answer_body_lane(),
-                                diag_chars
-                            )
-                        );
-                    } else {
-                        s.messages[idx].text = build_empty_reply_with_diagnostic(
-                            loc,
-                            output_lane.get().in_answer_body_lane(),
-                            diag_chars,
-                            end_reason.as_deref(),
-                        );
+                            );
+                        }
                     }
                 }
             }
@@ -422,7 +391,7 @@ pub(super) fn chat_stream_on_error_builder(
             return;
         }
         stream_ctx.chat.clear_stream_resume_handles();
-        let mid = stream_ctx.assistant_message_id.borrow().clone();
+        let mid = stream_ctx.tail.clone_assistant_id();
         let loc = stream_ctx.locale.get_untracked();
         let friendly = build_stream_error_with_suggestion(&msg, loc);
         with_active_session_mut(stream_ctx.as_ref(), |s| {

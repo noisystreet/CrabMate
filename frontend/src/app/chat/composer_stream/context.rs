@@ -1,27 +1,19 @@
 //! 单次 `/chat/stream` 回调共享的只读/句柄上下文（与 `callbacks` 分离，便于单测与浏览）。
 
-use std::cell::{Cell, RefCell};
-use std::collections::VecDeque;
-use std::rc::Rc;
-
 use leptos::prelude::*;
 
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::Locale;
 
 use super::super::handles::ComposerStreamShell;
+use super::streaming_tail::StreamingAssistantTail;
 
 /// 各 `Rc<dyn Fn>` 共享：避免在闭包树中重复 `Arc::clone` 同一组字段。
 pub(super) struct ChatStreamCallbackCtx {
     pub(super) chat: ChatSessionSignals,
     pub(super) locale: RwSignal<Locale>,
     pub(super) active_session_id: String,
-    /// 当前接收流式正文的助手气泡 id；工具轮次中会切换为工具卡片后的新占位气泡。
-    pub(super) assistant_message_id: RefCell<String>,
-    /// 首轮工具已切分出「工具后」续写占位后置 true；此前不钉尾，避免开场白被挤到分步时间线下面。
-    pub(super) post_tool_stream_tail: Cell<bool>,
+    pub(super) tail: StreamingAssistantTail,
     pub(super) approval_session_store_id: String,
     pub(super) shell: ComposerStreamShell,
-    /// 当前“工具调用中”卡片的消息 id 队列；收到结果后按先入先出就地更新。
-    pub(super) pending_tool_message_ids: Rc<RefCell<VecDeque<String>>>,
 }

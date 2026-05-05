@@ -8,15 +8,13 @@
 mod callbacks;
 mod context;
 mod shell_abort;
+mod streaming_tail;
 
 use std::rc::Rc;
 use std::sync::Arc;
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-
-use std::cell::{Cell, RefCell};
-use std::collections::VecDeque;
 
 use crate::api::{SendChatStreamParams, send_chat_stream};
 use crate::chat_session_state::ChatSessionSignals;
@@ -29,6 +27,7 @@ use callbacks::new_stream_output_lane_cell;
 
 use context::ChatStreamCallbackCtx;
 use shell_abort::{reset_abort_state_for_new_attach, store_abort_controller};
+use streaming_tail::StreamingAssistantTail;
 
 /// 长生命周期句柄：`attach` 闭包捕获，供每次发起流式请求复用。
 pub(super) struct ComposerStreamHandles {
@@ -74,11 +73,9 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                 chat,
                 locale: locale_sig,
                 active_session_id: chat.active_id.get(),
-                assistant_message_id: RefCell::new(asst_id.clone()),
-                post_tool_stream_tail: Cell::new(false),
+                tail: StreamingAssistantTail::new(asst_id.clone()),
                 approval_session_store_id: appr_store.clone(),
                 shell: shell_outer.clone(),
-                pending_tool_message_ids: Rc::new(RefCell::new(VecDeque::new())),
             });
 
             let output_lane = new_stream_output_lane_cell();
