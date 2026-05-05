@@ -17,7 +17,9 @@ use crate::session_ops::{
     prepare_retry_failed_assistant_turn, title_from_user_prompt,
 };
 use crate::session_sync::SessionSyncState;
-use crate::storage::{ChatSession, DEFAULT_CHAT_SESSION_TITLE, StoredMessage, make_session_id};
+use crate::storage::{
+    ChatSession, DEFAULT_CHAT_SESSION_TITLE, StoredMessage, StoredMessageState, make_session_id,
+};
 
 fn user_line_and_clarify_from_shell(
     shell: &ComposerStreamShell,
@@ -89,7 +91,7 @@ fn push_user_and_loading_assistant(
             text: String::new(),
             reasoning_text: String::new(),
             image_urls: vec![],
-            state: Some("loading".to_string()),
+            state: Some(StoredMessageState::Loading),
             is_tool: false,
             tool_call_id: None,
             tool_name: None,
@@ -111,11 +113,10 @@ fn begin_stream_shell_turn(shell: &ComposerStreamShell) {
 fn finalize_loading_assistant_after_user_abort(chat: ChatSessionSignals, aid: String, loc: Locale) {
     chat.sessions.update(|list| {
         if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-            if let Some(m) = s
-                .messages
-                .iter_mut()
-                .rev()
-                .find(|m| m.role == "assistant" && m.state.as_deref() == Some("loading"))
+            if let Some(m) =
+                s.messages.iter_mut().rev().find(|m| {
+                    m.role == "assistant" && m.state.as_ref().is_some_and(|s| s.is_loading())
+                })
             {
                 m.state = None;
                 if m.text.trim().is_empty() {

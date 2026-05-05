@@ -24,7 +24,7 @@ fn count_user_role_bubbles(messages: &[StoredMessage]) -> usize {
 fn messages_contain_loading(messages: &[StoredMessage]) -> bool {
     messages
         .iter()
-        .any(|m| m.state.as_deref() == Some("loading"))
+        .any(|m| m.state.as_ref().is_some_and(|s| s.is_loading()))
 }
 
 fn trimmed_server_conversation_id(session: &ChatSession) -> Option<&str> {
@@ -48,7 +48,8 @@ fn local_messages_preserved_after_hydrate(
                 return true;
             }
             if let Some(ref state) = m.state {
-                if state.contains("cm_tl") && !server_msg_ids.contains(m.id.as_str()) {
+                if state.is_local_timeline_snapshot_row() && !server_msg_ids.contains(m.id.as_str())
+                {
                     return true;
                 }
             }

@@ -97,14 +97,14 @@ fn user_text_for_chat_display(raw: &str) -> String {
 }
 
 fn maybe_trim_hierarchical_subgoal_redundant_lines(
-    state: Option<&str>,
+    state: Option<&crate::storage::StoredMessageState>,
     raw: String,
     apply_assistant_display_filters: bool,
 ) -> String {
     if !apply_assistant_display_filters {
         return raw;
     }
-    let is_subgoal = state.is_some_and(|s| s.starts_with("hierarchical-subgoal:"));
+    let is_subgoal = state.is_some_and(|s| s.looks_like_hierarchical_subgoal());
     if !is_subgoal {
         return raw;
     }
@@ -129,7 +129,7 @@ pub fn message_text_for_display_ex(
     apply_assistant_display_filters: bool,
 ) -> String {
     if m.role == "assistant" {
-        let is_streaming_last_assistant = m.state.as_deref() == Some("loading");
+        let is_streaming_last_assistant = m.state.as_ref().is_some_and(|s| s.is_loading());
         let reasoning_for_split: Cow<str> = if apply_assistant_display_filters {
             Cow::Owned(filter_assistant_thinking_markers_for_display(
                 m.reasoning_text.as_str(),
@@ -193,7 +193,7 @@ pub fn message_text_for_display_ex(
                 format!("{r}\n\n{answer}")
             };
             maybe_trim_hierarchical_subgoal_redundant_lines(
-                m.state.as_deref(),
+                m.state.as_ref(),
                 out,
                 apply_assistant_display_filters,
             )
@@ -208,7 +208,7 @@ pub fn message_text_for_display_ex(
                 format!("{r_body}\n\n{answer}")
             };
             maybe_trim_hierarchical_subgoal_redundant_lines(
-                m.state.as_deref(),
+                m.state.as_ref(),
                 out,
                 apply_assistant_display_filters,
             )

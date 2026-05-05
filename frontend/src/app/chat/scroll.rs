@@ -32,8 +32,8 @@ fn active_session_tail_scroll_fingerprint(list: &[ChatSession], aid: &str) -> u6
         fp = fp.wrapping_add(msg.id.len() as u64);
         fp = fp.wrapping_add(msg.text.len() as u64);
         fp = fp.wrapping_add(msg.reasoning_text.len() as u64);
-        if let Some(st) = msg.state.as_deref() {
-            fp = fp.wrapping_add(st.len() as u64);
+        if let Some(st) = &msg.state {
+            fp = fp.wrapping_add(st.to_wire().len() as u64);
         }
         fp = fp.wrapping_add(u64::from(msg.is_tool));
     }

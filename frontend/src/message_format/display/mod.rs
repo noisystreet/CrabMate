@@ -26,7 +26,7 @@ mod tests {
         filter_redacted_thinking_for_display,
     };
     use crate::i18n::Locale;
-    use crate::storage::StoredMessage;
+    use crate::storage::{StoredMessage, StoredMessageState};
 
     /// Embedded copy of `fixtures/chat_resp1.md` (redacted blocks + `agent_reply_plan` fence).
     const CHAT_RESP1_FIXTURE: &str = include_str!("../../../fixtures/chat_resp1.md");
@@ -297,7 +297,7 @@ mod tests {
             text: r#"{"type":"agent_reply_plan","version":1"#.into(),
             reasoning_text: String::new(),
             image_urls: vec![],
-            state: Some("loading".into()),
+            state: Some(StoredMessageState::Loading),
             is_tool: false,
             tool_call_id: None,
             tool_name: None,
@@ -603,7 +603,9 @@ mod tests {
                 .into(),
             reasoning_text: String::new(),
             image_urls: vec![],
-            state: Some("hierarchical-subgoal:goal_2".into()),
+            state: Some(StoredMessageState::HierarchicalSubgoal(
+                "hierarchical-subgoal:goal_2".into(),
+            )),
             is_tool: false,
             tool_call_id: None,
             tool_name: None,

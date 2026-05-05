@@ -20,7 +20,7 @@ fn snapshot_from_message(
     apply_assistant_display_filters: bool,
 ) -> AssistantMsgSnapshot {
     let display_text = message_text_for_display_ex(msg, locale, apply_assistant_display_filters);
-    let is_loading = msg.state.as_deref() == Some("loading");
+    let is_loading = msg.state.as_ref().is_some_and(|s| s.is_loading());
     let display_char_len = display_text.chars().count();
     AssistantMsgSnapshot {
         display_text,

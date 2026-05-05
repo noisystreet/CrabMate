@@ -12,7 +12,8 @@ use crate::session_export::{
 };
 use crate::session_sync::SessionSyncState;
 use crate::storage::{
-    ChatSession, DEFAULT_CHAT_SESSION_TITLE, StoredMessage, ensure_at_least_one, make_session_id,
+    ChatSession, DEFAULT_CHAT_SESSION_TITLE, StoredMessage, StoredMessageState,
+    ensure_at_least_one, make_session_id,
 };
 
 #[wasm_bindgen(inline_js = r#"
@@ -159,7 +160,7 @@ pub fn truncate_at_user_message_and_prepare_regenerate(
         text: String::new(),
         reasoning_text: String::new(),
         image_urls: vec![],
-        state: Some("loading".to_string()),
+        state: Some(StoredMessageState::Loading),
         is_tool: false,
         tool_call_id: None,
         tool_name: None,
@@ -201,7 +202,7 @@ pub fn prepare_retry_failed_assistant_turn(
         m.id == failed_asst_id
             && m.role == "assistant"
             && !m.is_tool
-            && m.state.as_deref() == Some("error")
+            && m.state.as_ref().is_some_and(|s| s.is_error())
     })?;
     if idx == 0 {
         return None;
@@ -220,7 +221,7 @@ pub fn prepare_retry_failed_assistant_turn(
         text: String::new(),
         reasoning_text: String::new(),
         image_urls: vec![],
-        state: Some("loading".to_string()),
+        state: Some(StoredMessageState::Loading),
         is_tool: false,
         tool_call_id: None,
         tool_name: None,

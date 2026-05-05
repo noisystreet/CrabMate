@@ -12,7 +12,7 @@ use crate::message_format::{
 };
 use crate::session_ops::{make_message_id, message_created_ms};
 use crate::sse_dispatch::{TimelineLogInfo, ToolResultInfo};
-use crate::storage::StoredMessage;
+use crate::storage::{StoredMessage, StoredMessageState};
 use crate::timeline_scan::timeline_state_tool;
 
 use super::super::context::ChatStreamCallbackCtx;
@@ -49,7 +49,7 @@ pub(super) fn make_on_tool_result(
                 s.messages.iter().position(|m| {
                     m.is_tool
                         && m.tool_call_id.as_deref() == Some(tid)
-                        && m.state.as_deref() == Some("loading")
+                        && m.state.as_ref().is_some_and(|s| s.is_loading())
                 })
             });
             let idx_by_fifo = idx_by_tid.is_none().then(|| {
@@ -86,11 +86,11 @@ pub(super) fn make_on_tool_result(
                 };
                 if let Some(goal_id) = info.goal_id.as_deref() {
                     let marker = format!("hierarchical-subgoal:{goal_id}");
-                    if let Some(idx) = s
-                        .messages
-                        .iter()
-                        .rposition(|m| m.state.as_deref() == Some(marker.as_str()))
-                    {
+                    if let Some(idx) = s.messages.iter().rposition(|m| {
+                        m.state
+                            .as_ref()
+                            .is_some_and(|st| st.matches_full_marker(marker.as_str()))
+                    }) {
                         s.messages.insert(idx + 1, msg);
                     } else {
                         s.messages.push(msg);
@@ -153,17 +153,18 @@ pub(super) fn chat_stream_on_tool_call_builder(
                     text,
                     reasoning_text: detail.clone(),
                     image_urls: vec![],
-                    state: Some("loading".to_string()),
+                    state: Some(StoredMessageState::Loading),
                     is_tool: true,
                     tool_call_id: tcid.clone(),
                     tool_name: non_empty_trimmed_tool_name(&name),
                     created_at: message_created_ms(),
                 };
                 if let Some(mk) = marker.as_deref()
-                    && let Some(idx) = s
-                        .messages
-                        .iter()
-                        .rposition(|m| m.state.as_deref() == Some(mk))
+                    && let Some(idx) = s.messages.iter().rposition(|m| {
+                        m.state
+                            .as_ref()
+                            .is_some_and(|st| st.matches_full_marker(mk))
+                    })
                 {
                     s.messages.insert(idx + 1, msg);
                 } else {
@@ -323,11 +324,14 @@ pub(super) fn chat_stream_on_done_builder(
             let has_hierarchical_or_tool = s.messages.iter().any(|x| {
                 x.is_tool
                     || x.state
-                        .as_deref()
-                        .is_some_and(|st| st.starts_with("hierarchical-subgoal:"))
+                        .as_ref()
+                        .is_some_and(|st| st.looks_like_hierarchical_subgoal())
             });
             if let Some(idx) = s.messages.iter().position(|m| m.id == mid)
-                && s.messages[idx].state.as_deref() == Some("loading")
+                && s.messages[idx]
+                    .state
+                    .as_ref()
+                    .is_some_and(|st| st.is_loading())
             {
                 s.messages[idx].state = None;
                 let body_chars = s.messages[idx].text.chars().count()
@@ -395,7 +399,7 @@ pub(super) fn chat_stream_on_error_builder(
         with_active_session_mut(stream_ctx.as_ref(), |s| {
             if let Some(m) = s.messages.iter_mut().find(|m| m.id == mid) {
                 m.text = friendly.clone();
-                m.state = Some("error".to_string());
+                m.state = Some(StoredMessageState::Error);
             }
         });
         stream_ctx.shell.stream.status_busy.set(false);

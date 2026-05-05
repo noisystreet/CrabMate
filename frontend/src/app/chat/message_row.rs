@@ -12,7 +12,7 @@ use crate::message_format::{
 use crate::session_ops::{format_msg_time_label, message_role_label, write_clipboard_text};
 use crate::session_search::{normalize_search_query, split_for_find_highlight};
 use crate::session_sync::SessionSyncState;
-use crate::storage::{ChatSession, StoredMessage};
+use crate::storage::{ChatSession, StoredMessage, StoredMessageState};
 
 use super::message_row_actions::{MessageRowActionSignals, spawn_scroll_to_linked_user_message};
 use super::message_row_user_layout::{
@@ -41,8 +41,8 @@ pub(crate) struct ChatMessageRowSignals {
     pub apply_assistant_display_filters: RwSignal<bool>,
 }
 
-fn is_hierarchical_subgoal_state(state: Option<&str>) -> bool {
-    state.is_some_and(|s| s.starts_with("hierarchical-subgoal:"))
+fn is_hierarchical_subgoal_state(state: Option<&StoredMessageState>) -> bool {
+    state.is_some_and(|s| s.looks_like_hierarchical_subgoal())
 }
 
 fn tool_bubble_emoji(m: &StoredMessage) -> &'static str {
@@ -63,16 +63,14 @@ fn tool_bubble_emoji(m: &StoredMessage) -> &'static str {
 }
 
 fn extract_hierarchical_phase_chip(msg: &StoredMessage, loc: Locale) -> Option<(String, String)> {
-    let state = msg.state.as_deref()?;
-    if !is_hierarchical_subgoal_state(Some(state)) {
+    if !is_hierarchical_subgoal_state(msg.state.as_ref()) {
         return None;
     }
     i18n::hierarchical_phase_chip_view(loc, msg.text.as_str())
 }
 
 fn extract_hierarchical_metrics(msg: &StoredMessage, loc: Locale) -> Option<String> {
-    let state = msg.state.as_deref()?;
-    if !is_hierarchical_subgoal_state(Some(state)) {
+    if !is_hierarchical_subgoal_state(msg.state.as_ref()) {
         return None;
     }
     let mut error_count: Option<String> = None;
@@ -99,8 +97,7 @@ fn extract_hierarchical_metrics(msg: &StoredMessage, loc: Locale) -> Option<Stri
 }
 
 fn extract_hierarchical_goal_target(msg: &StoredMessage) -> Option<String> {
-    let state = msg.state.as_deref()?;
-    if !is_hierarchical_subgoal_state(Some(state)) {
+    if !is_hierarchical_subgoal_state(msg.state.as_ref()) {
         return None;
     }
     msg.text.lines().map(str::trim).find_map(|line| {
@@ -153,10 +150,13 @@ fn message_row_shell_class(is_staged_timeline: bool, m: &StoredMessage) -> &'sta
     }
 }
 
-fn message_row_loading_and_error(is_tool: bool, role: &str, state: Option<&str>) -> (bool, bool) {
-    let loading =
-        (role == "assistant" && state == Some("loading")) || (is_tool && state == Some("loading"));
-    let err = state == Some("error");
+fn message_row_loading_and_error(
+    is_tool: bool,
+    role: &str,
+    state: Option<&StoredMessageState>,
+) -> (bool, bool) {
+    let loading = state.is_some_and(|s| s.is_loading()) && (role == "assistant" || is_tool);
+    let err = state.is_some_and(|s| s.is_error());
     (loading, err)
 }
 
@@ -188,7 +188,7 @@ fn hierarchical_subgoal_banner_is_active(
             sess.messages
                 .iter()
                 .rev()
-                .find(|msg| is_hierarchical_subgoal_state(msg.state.as_deref()))
+                .find(|msg| is_hierarchical_subgoal_state(msg.state.as_ref()))
         })
         .map(|msg| msg.id == current_msg_id)
         .unwrap_or(false)
@@ -696,7 +696,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
     let is_staged_timeline = is_staged_timeline_bubble(&m);
     let cls = message_row_shell_class(is_staged_timeline, &m);
     let (loading, err) =
-        message_row_loading_and_error(m.is_tool, m.role.as_str(), m.state.as_deref());
+        message_row_loading_and_error(m.is_tool, m.role.as_str(), m.state.as_ref());
     let class_prefix = message_row_prefixed_class(cls, err, loading);
     let mid_highlight = m.id.clone();
     let time_str = format_msg_time_label(m.created_at).unwrap_or_default();
@@ -941,7 +941,7 @@ mod tests {
         extract_hierarchical_goal_target,
     };
     use crate::i18n::{self, Locale};
-    use crate::storage::StoredMessage;
+    use crate::storage::{StoredMessage, StoredMessageState};
 
     fn subgoal_msg(text: &str) -> StoredMessage {
         StoredMessage {
@@ -950,7 +950,9 @@ mod tests {
             text: text.to_string(),
             reasoning_text: String::new(),
             image_urls: vec![],
-            state: Some("hierarchical-subgoal:goal_5".to_string()),
+            state: Some(StoredMessageState::HierarchicalSubgoal(
+                "hierarchical-subgoal:goal_5".into(),
+            )),
             is_tool: false,
             tool_call_id: None,
             tool_name: None,

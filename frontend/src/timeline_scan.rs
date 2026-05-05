@@ -4,10 +4,9 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::message_format::STAGED_TIMELINE_SYSTEM_PREFIX;
-use crate::storage::StoredMessage;
+use crate::storage::{StoredMessage, StoredMessageState};
 
-/// `StoredMessage.state` 内嵌 JSON 的判别键；**仅** Web 本地展示用，不参与模型上下文。
-pub const TIMELINE_UI_STATE_KEY: &str = "cm_tl";
+pub use crate::storage::TIMELINE_UI_STATE_KEY;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TimelineKind {
@@ -79,7 +78,9 @@ fn parse_ui_state(raw: &str) -> Option<TimelineUiState> {
 /// 扫描单条消息；不匹配则返回 `None`。
 pub fn timeline_entry_for_message(m: &StoredMessage) -> Option<TimelineEntry> {
     if let Some(ref st) = m.state {
-        if let Some(u) = parse_ui_state(st) {
+        if let Some(raw) = st.as_timeline_parse_candidate()
+            && let Some(u) = parse_ui_state(raw)
+        {
             let id = if u.msg.is_empty() {
                 m.id.clone()
             } else {
@@ -120,7 +121,7 @@ pub fn timeline_entry_for_message(m: &StoredMessage) -> Option<TimelineEntry> {
 
     if m.role == "system"
         && m.text.starts_with(STAGED_TIMELINE_SYSTEM_PREFIX)
-        && m.state.as_deref() != Some("error")
+        && !m.state.as_ref().is_some_and(|s| s.is_error())
     {
         return Some(TimelineEntry {
             message_id: m.id.clone(),
@@ -128,7 +129,7 @@ pub fn timeline_entry_for_message(m: &StoredMessage) -> Option<TimelineEntry> {
         });
     }
 
-    if m.is_tool && m.role == "system" && m.state.as_deref() != Some("error") {
+    if m.is_tool && m.role == "system" && !m.state.as_ref().is_some_and(|s| s.is_error()) {
         return Some(TimelineEntry {
             message_id: m.id.clone(),
             kind: TimelineKind::LegacyTool,
@@ -145,16 +146,22 @@ pub fn collect_timeline_entries(messages: &[StoredMessage]) -> Vec<TimelineEntry
         .collect()
 }
 
-/// 写入 `StoredMessage.state` 的 JSON，供时间线面板解析（**仅**本机 UI）。
-pub fn timeline_state_staged_start(msg_id: &str, step_index: usize, total_steps: usize) -> String {
-    json!({
-        "k": TIMELINE_UI_STATE_KEY,
-        "t": "staged_start",
-        "msg": msg_id,
-        "i": step_index,
-        "n": total_steps,
-    })
-    .to_string()
+/// 写入 `StoredMessage.state` 的时间线 JSON，供侧栏解析（**仅**本机 UI）。
+pub fn timeline_state_staged_start(
+    msg_id: &str,
+    step_index: usize,
+    total_steps: usize,
+) -> StoredMessageState {
+    StoredMessageState::TimelineUiJson(
+        json!({
+            "k": TIMELINE_UI_STATE_KEY,
+            "t": "staged_start",
+            "msg": msg_id,
+            "i": step_index,
+            "n": total_steps,
+        })
+        .to_string(),
+    )
 }
 
 pub fn timeline_state_staged_end(
@@ -162,32 +169,36 @@ pub fn timeline_state_staged_end(
     step_index: usize,
     total_steps: usize,
     status: &str,
-) -> String {
-    json!({
-        "k": TIMELINE_UI_STATE_KEY,
-        "t": "staged_end",
-        "msg": msg_id,
-        "i": step_index,
-        "n": total_steps,
-        "st": status,
-    })
-    .to_string()
+) -> StoredMessageState {
+    StoredMessageState::TimelineUiJson(
+        json!({
+            "k": TIMELINE_UI_STATE_KEY,
+            "t": "staged_end",
+            "msg": msg_id,
+            "i": step_index,
+            "n": total_steps,
+            "st": status,
+        })
+        .to_string(),
+    )
 }
 
-pub fn timeline_state_tool(msg_id: &str, ok: bool) -> String {
-    json!({
-        "k": TIMELINE_UI_STATE_KEY,
-        "t": "tool",
-        "msg": msg_id,
-        "ok": ok,
-    })
-    .to_string()
+pub fn timeline_state_tool(msg_id: &str, ok: bool) -> StoredMessageState {
+    StoredMessageState::TimelineUiJson(
+        json!({
+            "k": TIMELINE_UI_STATE_KEY,
+            "t": "tool",
+            "msg": msg_id,
+            "ok": ok,
+        })
+        .to_string(),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::StoredMessage;
+    use crate::storage::{StoredMessage, StoredMessageState};
 
     #[test]
     fn parses_staged_end_failed() {
@@ -197,9 +208,9 @@ mod tests {
             text: "### x".into(),
             reasoning_text: String::new(),
             image_urls: vec![],
-            state: Some(
+            state: Some(StoredMessageState::from_wire(
                 r#"{"k":"cm_tl","t":"staged_end","msg":"m1","i":2,"n":5,"st":"failed"}"#.into(),
-            ),
+            )),
             is_tool: false,
             tool_call_id: None,
             tool_name: None,
@@ -217,7 +228,9 @@ mod tests {
             text: "tool".into(),
             reasoning_text: String::new(),
             image_urls: vec![],
-            state: Some(r#"{"k":"cm_tl","t":"tool","msg":"t1","ok":false}"#.into()),
+            state: Some(StoredMessageState::from_wire(
+                r#"{"k":"cm_tl","t":"tool","msg":"t1","ok":false}"#.into(),
+            )),
             is_tool: true,
             tool_call_id: None,
             tool_name: None,

@@ -10,7 +10,7 @@ use leptos::prelude::*;
 use crate::i18n;
 use crate::i18n::Locale;
 use crate::session_ops::{make_message_id, message_created_ms};
-use crate::storage::{ChatSession, StoredMessage};
+use crate::storage::{ChatSession, StoredMessage, StoredMessageState};
 
 use super::super::context::ChatStreamCallbackCtx;
 use super::stream_session_access::{with_active_session_mut, with_active_session_ref};
@@ -158,7 +158,7 @@ pub(super) fn insert_msg_before_streaming_assistant_tail(
     if let Some(idx) = messages.iter().position(|m| {
         m.id == streaming_assistant_id
             && m.role == "assistant"
-            && m.state.as_deref() == Some("loading")
+            && m.state.as_ref().is_some_and(|s| s.is_loading())
     }) {
         messages.insert(idx, msg);
     } else {
@@ -181,7 +181,7 @@ pub(super) fn insert_before_streaming_assistant_or_append(
 pub(super) fn push_assistant_timeline_bubble(
     stream_ctx: &ChatStreamCallbackCtx,
     text: String,
-    state: Option<String>,
+    state: Option<StoredMessageState>,
 ) {
     if text.trim().is_empty() {
         return;
@@ -283,11 +283,12 @@ pub(super) fn upsert_hierarchical_subgoal_bubble(
     let marker = marker.unwrap_or_default();
     let now = message_created_ms();
     with_active_session_mut(stream_ctx, |s| {
-        if let Some(existing) = s
-            .messages
-            .iter_mut()
-            .find(|m| m.role == "assistant" && m.state.as_deref() == Some(marker.as_str()))
-        {
+        if let Some(existing) = s.messages.iter_mut().find(|m| {
+            m.role == "assistant"
+                && m.state
+                    .as_ref()
+                    .is_some_and(|st| st.matches_full_marker(marker.as_str()))
+        }) {
             existing.text = merge_subgoal_text_preserving_target(&existing.text, &text);
             existing.created_at = now;
             return;
@@ -298,7 +299,7 @@ pub(super) fn upsert_hierarchical_subgoal_bubble(
             text: text.clone(),
             reasoning_text: String::new(),
             image_urls: vec![],
-            state: Some(marker.clone()),
+            state: Some(StoredMessageState::HierarchicalSubgoal(marker.clone())),
             is_tool: false,
             tool_call_id: None,
             tool_name: None,
@@ -318,7 +319,7 @@ pub(super) fn finalize_current_loading_streaming_assistant_row(stream_ctx: &Chat
         let mid = stream_ctx.tail.borrow_assistant_id();
         if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) {
             let m = &mut s.messages[idx];
-            if m.role == "assistant" && m.state.as_deref() == Some("loading") {
+            if m.role == "assistant" && m.state.as_ref().is_some_and(|s| s.is_loading()) {
                 if m.text.trim().is_empty() {
                     s.messages.remove(idx);
                 } else {
@@ -358,7 +359,7 @@ pub(super) fn finalize_loading_assistant_before_tool_and_tail_with_new_loading(
                 text: String::new(),
                 reasoning_text: String::new(),
                 image_urls: vec![],
-                state: Some("loading".to_string()),
+                state: Some(StoredMessageState::Loading),
                 is_tool: false,
                 tool_call_id: None,
                 tool_name: None,
@@ -390,7 +391,7 @@ pub(super) fn rotate_streaming_assistant_for_followup_model_round(
             text: String::new(),
             reasoning_text: String::new(),
             image_urls: vec![],
-            state: Some("loading".to_string()),
+            state: Some(StoredMessageState::Loading),
             is_tool: false,
             tool_call_id: None,
             tool_name: None,
@@ -416,7 +417,10 @@ pub(super) fn ensure_streaming_assistant_tail_last(stream_ctx: &ChatStreamCallba
             return;
         };
         if s.messages[idx].role != "assistant"
-            || s.messages[idx].state.as_deref() != Some("loading")
+            || !s.messages[idx]
+                .state
+                .as_ref()
+                .is_some_and(|st| st.is_loading())
         {
             return;
         }
@@ -430,7 +434,10 @@ pub(super) fn remove_loading_assistant_placeholder(stream_ctx: &ChatStreamCallba
     with_active_session_mut(stream_ctx, |s| {
         if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str())
             && s.messages[idx].role == "assistant"
-            && s.messages[idx].state.as_deref() == Some("loading")
+            && s.messages[idx]
+                .state
+                .as_ref()
+                .is_some_and(|st| st.is_loading())
         {
             s.messages.remove(idx);
         }
