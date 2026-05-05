@@ -157,3 +157,106 @@ pub(super) async fn consume_chat_stream_response_body(
     }
     Ok((stream_finished_normally, saw_stream_ended))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::append_chunk_to_text_buffer;
+
+    /// 完整 ASCII 块：直接追加到 text，raw 清空。
+    #[test]
+    fn append_ascii_chunk() {
+        let mut raw = Vec::new();
+        let mut text = String::new();
+        append_chunk_to_text_buffer(&mut raw, b"hello", &mut text);
+        assert_eq!(text, "hello");
+        assert!(raw.is_empty());
+    }
+
+    /// 多字节 UTF-8 完整块（中文）。
+    #[test]
+    fn append_utf8_chunk() {
+        let mut raw = Vec::new();
+        let mut text = String::new();
+        append_chunk_to_text_buffer(&mut raw, "你好世界".as_bytes(), &mut text);
+        assert_eq!(text, "你好世界");
+        assert!(raw.is_empty());
+    }
+
+    /// 块边界截断 UTF-8：3 字节中文字符只给了前 2 字节，应留在 raw 中。
+    #[test]
+    fn append_truncated_utf8_keeps_in_raw() {
+        let mut raw = Vec::new();
+        let mut text = String::new();
+        // "你" = [0xE4, 0xBD, 0xA0]，只给前 2 字节
+        append_chunk_to_text_buffer(&mut raw, &[0xE4, 0xBD], &mut text);
+        assert!(text.is_empty());
+        assert_eq!(raw, vec![0xE4, 0xBD]);
+    }
+
+    /// 前一个块留下不完整字节，后一个块补全。
+    #[test]
+    fn append_completes_partial_from_previous_chunk() {
+        let mut raw = vec![0xE4, 0xBD]; // "你" 的前 2 字节
+        let mut text = String::new();
+        append_chunk_to_text_buffer(&mut raw, &[0xA0], &mut text); // "你" 的最后一字节
+        assert_eq!(text, "你");
+        assert!(raw.is_empty());
+    }
+
+    /// 前一个块留下不完整字节，后一个块仍不完整：应继续留在 raw。
+    #[test]
+    fn append_partial_then_still_partial() {
+        let mut raw = vec![0xE4]; // 某 3 字节字符的第 1 字节
+        let mut text = String::new();
+        append_chunk_to_text_buffer(&mut raw, &[0xBD], &mut text); // 第 2 字节，仍不完整
+        assert!(text.is_empty());
+        assert_eq!(raw, vec![0xE4, 0xBD]);
+    }
+
+    /// 空 chunk：不应改变任何状态。
+    #[test]
+    fn append_empty_chunk_noop() {
+        let mut raw = Vec::new();
+        let mut text = String::new();
+        append_chunk_to_text_buffer(&mut raw, b"", &mut text);
+        assert!(text.is_empty());
+        assert!(raw.is_empty());
+    }
+
+    /// 混合：前一段完整 ASCII + 后一段不完整 UTF-8 前缀。
+    #[test]
+    fn append_ascii_then_truncated_utf8() {
+        let mut raw = Vec::new();
+        let mut text = String::new();
+        append_chunk_to_text_buffer(&mut raw, b"abc", &mut text);
+        assert_eq!(text, "abc");
+        assert!(raw.is_empty());
+
+        append_chunk_to_text_buffer(&mut raw, &[0xE4, 0xBD], &mut text);
+        assert_eq!(text, "abc");
+        assert_eq!(raw, vec![0xE4, 0xBD]);
+    }
+
+    /// raw 中已有不完整字节，追加新 chunk 后仍不完整。
+    #[test]
+    fn append_to_non_empty_raw() {
+        let mut raw = vec![0xE4, 0xBD]; // 不完整
+        let mut text = String::new();
+        // 追加完整 ASCII
+        append_chunk_to_text_buffer(&mut raw, b"!", &mut text);
+        // raw 仍不完整（0xE4 0xBD 0x21 不是合法 UTF-8 前缀序列）
+        assert!(text.is_empty());
+        assert_eq!(raw, vec![0xE4, 0xBD, 0x21]);
+    }
+
+    /// 连续追加多个完整块。
+    #[test]
+    fn append_multiple_full_chunks() {
+        let mut raw = Vec::new();
+        let mut text = String::new();
+        append_chunk_to_text_buffer(&mut raw, b"ab", &mut text);
+        append_chunk_to_text_buffer(&mut raw, b"cd", &mut text);
+        assert_eq!(text, "abcd");
+        assert!(raw.is_empty());
+    }
+}

@@ -155,7 +155,7 @@ pub(super) fn handle_sse_block(
 #[cfg(test)]
 mod tests {
     use super::super::ChatStreamCallbacks;
-    use super::handle_sse_block;
+    use super::{flush_sse_tail, handle_sse_block, process_sse_buffer};
     use crate::i18n::Locale;
     use std::cell::RefCell;
     use std::rc::Rc;
@@ -262,6 +262,188 @@ mod tests {
             Locale::ZhHans,
         );
         assert!(res.is_ok());
+        assert_eq!(got.borrow().as_str(), " ");
+    }
+
+    /// process_sse_buffer: 空 buffer 返回 0。
+    #[test]
+    fn process_sse_buffer_empty() {
+        let cbs = callbacks_with_end_capture(Rc::new(RefCell::new(None)));
+        let mut buf = String::new();
+        let mut last_event_id = 0u64;
+        let mut saw_stream_ended = false;
+        let n = process_sse_buffer(
+            &mut buf,
+            &mut last_event_id,
+            &mut saw_stream_ended,
+            &cbs,
+            Locale::ZhHans,
+        )
+        .unwrap();
+        assert_eq!(n, 0);
+        assert!(buf.is_empty());
+    }
+
+    /// process_sse_buffer: 无 `\n\n` 分隔符时返回 0，buffer 不变。
+    #[test]
+    fn process_sse_buffer_no_delimiter() {
+        let cbs = callbacks_with_end_capture(Rc::new(RefCell::new(None)));
+        let mut buf = "data: hello".to_string();
+        let mut last_event_id = 0u64;
+        let mut saw_stream_ended = false;
+        let n = process_sse_buffer(
+            &mut buf,
+            &mut last_event_id,
+            &mut saw_stream_ended,
+            &cbs,
+            Locale::ZhHans,
+        )
+        .unwrap();
+        assert_eq!(n, 0);
+        assert_eq!(buf, "data: hello");
+    }
+
+    /// process_sse_buffer: 单个完整 SSE 块。
+    #[test]
+    fn process_sse_buffer_single_block() {
+        let got = Rc::new(RefCell::new(String::new()));
+        let got2 = Rc::clone(&got);
+        let cbs = ChatStreamCallbacks {
+            on_delta: Rc::new(move |s| got2.borrow_mut().push_str(&s)),
+            ..callbacks_with_end_capture(Rc::new(RefCell::new(None)))
+        };
+        let mut buf = "data: hello\n\n".to_string();
+        let mut last_event_id = 0u64;
+        let mut saw_stream_ended = false;
+        let n = process_sse_buffer(
+            &mut buf,
+            &mut last_event_id,
+            &mut saw_stream_ended,
+            &cbs,
+            Locale::ZhHans,
+        )
+        .unwrap();
+        assert_eq!(n, 1);
+        assert!(buf.is_empty());
+        assert_eq!(got.borrow().as_str(), "hello");
+    }
+
+    /// process_sse_buffer: 多个 SSE 块一次处理。
+    #[test]
+    fn process_sse_buffer_multiple_blocks() {
+        let got = Rc::new(RefCell::new(String::new()));
+        let got2 = Rc::clone(&got);
+        let cbs = ChatStreamCallbacks {
+            on_delta: Rc::new(move |s| got2.borrow_mut().push_str(&s)),
+            ..callbacks_with_end_capture(Rc::new(RefCell::new(None)))
+        };
+        let mut buf = "data: a\n\ndata: b\n\n".to_string();
+        let mut last_event_id = 0u64;
+        let mut saw_stream_ended = false;
+        let n = process_sse_buffer(
+            &mut buf,
+            &mut last_event_id,
+            &mut saw_stream_ended,
+            &cbs,
+            Locale::ZhHans,
+        )
+        .unwrap();
+        assert_eq!(n, 2);
+        assert!(buf.is_empty());
+        assert_eq!(got.borrow().as_str(), "ab");
+    }
+
+    /// process_sse_buffer: 块后残留未完成数据。
+    #[test]
+    fn process_sse_buffer_with_tail() {
+        let got = Rc::new(RefCell::new(String::new()));
+        let got2 = Rc::clone(&got);
+        let cbs = ChatStreamCallbacks {
+            on_delta: Rc::new(move |s| got2.borrow_mut().push_str(&s)),
+            ..callbacks_with_end_capture(Rc::new(RefCell::new(None)))
+        };
+        let mut buf = "data: hello\n\ndata: wor".to_string();
+        let mut last_event_id = 0u64;
+        let mut saw_stream_ended = false;
+        let n = process_sse_buffer(
+            &mut buf,
+            &mut last_event_id,
+            &mut saw_stream_ended,
+            &cbs,
+            Locale::ZhHans,
+        )
+        .unwrap();
+        assert_eq!(n, 1);
+        assert_eq!(buf, "data: wor");
+        assert_eq!(got.borrow().as_str(), "hello");
+    }
+
+    /// flush_sse_tail: 空 buffer 返回 0。
+    #[test]
+    fn flush_sse_tail_empty() {
+        let cbs = callbacks_with_end_capture(Rc::new(RefCell::new(None)));
+        let mut buf = String::new();
+        let mut last_event_id = 0u64;
+        let mut saw_stream_ended = false;
+        let n = flush_sse_tail(
+            &mut buf,
+            &mut last_event_id,
+            &mut saw_stream_ended,
+            &cbs,
+            Locale::ZhHans,
+        )
+        .unwrap();
+        assert_eq!(n, 0);
+        assert!(buf.is_empty());
+    }
+
+    /// flush_sse_tail: 尾部有完整 SSE 块（无 `\n\n` 后缀）。
+    #[test]
+    fn flush_sse_tail_meaningful() {
+        let got = Rc::new(RefCell::new(String::new()));
+        let got2 = Rc::clone(&got);
+        let cbs = ChatStreamCallbacks {
+            on_delta: Rc::new(move |s| got2.borrow_mut().push_str(&s)),
+            ..callbacks_with_end_capture(Rc::new(RefCell::new(None)))
+        };
+        let mut buf = "data: tail".to_string();
+        let mut last_event_id = 0u64;
+        let mut saw_stream_ended = false;
+        let n = flush_sse_tail(
+            &mut buf,
+            &mut last_event_id,
+            &mut saw_stream_ended,
+            &cbs,
+            Locale::ZhHans,
+        )
+        .unwrap();
+        assert_eq!(n, 1);
+        assert!(buf.is_empty());
+        assert_eq!(got.borrow().as_str(), "tail");
+    }
+
+    /// flush_sse_tail: 尾部仅空白（`data:  `），不应被 trim 吞掉。
+    #[test]
+    fn flush_sse_tail_whitespace_only() {
+        let got = Rc::new(RefCell::new(String::new()));
+        let got2 = Rc::clone(&got);
+        let cbs = ChatStreamCallbacks {
+            on_delta: Rc::new(move |s| got2.borrow_mut().push_str(&s)),
+            ..callbacks_with_end_capture(Rc::new(RefCell::new(None)))
+        };
+        let mut buf = "data:  ".to_string();
+        let mut last_event_id = 0u64;
+        let mut saw_stream_ended = false;
+        let n = flush_sse_tail(
+            &mut buf,
+            &mut last_event_id,
+            &mut saw_stream_ended,
+            &cbs,
+            Locale::ZhHans,
+        )
+        .unwrap();
+        assert_eq!(n, 1);
+        assert!(buf.is_empty());
         assert_eq!(got.borrow().as_str(), " ");
     }
 }
