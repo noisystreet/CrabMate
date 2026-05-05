@@ -20,6 +20,9 @@ use super::super::context::ChatStreamCallbackCtx;
 use super::super::shell_abort::{clear_abort_slot, user_cancelled_flag};
 use super::helpers::*;
 use super::stream_session_access::with_active_session_mut;
+use super::stream_turn_state::{
+    StreamOutputLaneCell, lane_clear_followup_pending, lane_take_followup_rotation_pending,
+};
 
 pub(super) fn make_on_tool_result(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
@@ -271,19 +274,18 @@ pub(super) fn make_on_timeline_log(
 
 pub(super) fn chat_stream_on_delta_builder(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
-    in_answer_phase: Rc<Cell<bool>>,
+    output_lane: StreamOutputLaneCell,
     answer_delta_chars: Rc<Cell<usize>>,
-    pending_followup_answer_round: Rc<Cell<bool>>,
 ) -> Rc<dyn Fn(String)> {
     Rc::new(move |chunk: String| {
-        if pending_followup_answer_round.get() {
+        if lane_take_followup_rotation_pending(output_lane.as_ref()) {
             rotate_streaming_assistant_for_followup_model_round(stream_ctx.as_ref());
-            pending_followup_answer_round.set(false);
             answer_delta_chars.set(0);
         }
         let aid = stream_ctx.active_session_id.as_str();
         let mid = stream_ctx.assistant_message_id.borrow();
-        if in_answer_phase.get() {
+        let lane = output_lane.get();
+        if lane.in_answer_body_lane() {
             answer_delta_chars.set(
                 answer_delta_chars
                     .get()
@@ -298,23 +300,20 @@ pub(super) fn chat_stream_on_delta_builder(
 
 pub(super) fn chat_stream_on_done_builder(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
-    in_answer_phase: Rc<Cell<bool>>,
+    output_lane: StreamOutputLaneCell,
     answer_delta_chars: Rc<Cell<usize>>,
-    pending_followup_answer_round: Rc<Cell<bool>>,
     stream_end_reason: Rc<RefCell<Option<String>>>,
     saw_final_response_timeline: Rc<Cell<bool>>,
 ) -> Rc<dyn Fn()> {
     Rc::new(move || {
         if user_cancelled_flag(&stream_ctx.shell) {
-            pending_followup_answer_round.set(false);
+            lane_clear_followup_pending(output_lane.as_ref());
             clear_abort_slot(&stream_ctx.shell);
             return;
         }
         // 第二次 `assistant_answer_phase` 后若再无正文增量，须在此补做轮换并清零计数器；
         // 否则 `answer_delta_chars` 仍为上一轮时间轴累计，易误判「有输出却无正文」。
-        let had_pending_followup = pending_followup_answer_round.get();
-        pending_followup_answer_round.set(false);
-        if had_pending_followup {
+        if lane_take_followup_rotation_pending(output_lane.as_ref()) {
             rotate_streaming_assistant_for_followup_model_round(stream_ctx.as_ref());
             answer_delta_chars.set(0);
         }
@@ -342,7 +341,7 @@ pub(super) fn chat_stream_on_done_builder(
                         .as_deref()
                         .and_then(|s| s.parse::<StreamEndReason>().ok())
                         .is_some_and(|r| r == StreamEndReason::Completed)
-                        && in_answer_phase.get()
+                        && output_lane.get().in_answer_body_lane()
                         && diag_chars > 0;
                     if completed_with_visible_delta {
                         // 流程已完成且本轮存在可见输出时，空 loading 气泡多为尾部占位残留，直接删除避免误报“无回复”。
@@ -362,7 +361,7 @@ pub(super) fn chat_stream_on_done_builder(
                             )
                         })
                         && has_hierarchical_or_tool
-                        && (!in_answer_phase.get() || diag_chars == 0);
+                        && (!output_lane.get().in_answer_body_lane() || diag_chars == 0);
                     if drop_empty_main_after_tool_like_turn {
                         // 工具/子目标已占满可见输出；主占位虽可能已进终答相却无任何正文增量（diag=0），删空尾泡。
                         s.messages.remove(idx);
@@ -373,7 +372,7 @@ pub(super) fn chat_stream_on_done_builder(
                         .and_then(|r| r.parse::<StreamEndReason>().ok())
                         == Some(StreamEndReason::Fallback)
                         || saw_final_response_timeline.get())
-                        && in_answer_phase.get()
+                        && output_lane.get().in_answer_body_lane()
                         && diag_chars == 0;
                     if drop_redundant_empty_after_fallback_timeline {
                         // 补偿收尾 / final_response 时间轴：正文应在时间轴气泡或已随 placeholder 移除；空尾戳无须「无正文片段」。
@@ -382,7 +381,7 @@ pub(super) fn chat_stream_on_done_builder(
                     }
                     let completed_no_final = should_show_missing_final_summary_hint(
                         end_reason.as_deref(),
-                        in_answer_phase.get(),
+                        output_lane.get().in_answer_body_lane(),
                         has_hierarchical_or_tool,
                         saw_final_response_timeline.get(),
                     );
@@ -393,14 +392,14 @@ pub(super) fn chat_stream_on_done_builder(
                             i18n::stream_empty_reply_diag_line(
                                 loc,
                                 end_reason.as_deref(),
-                                in_answer_phase.get(),
+                                output_lane.get().in_answer_body_lane(),
                                 diag_chars
                             )
                         );
                     } else {
                         s.messages[idx].text = build_empty_reply_with_diagnostic(
                             loc,
-                            in_answer_phase.get(),
+                            output_lane.get().in_answer_body_lane(),
                             diag_chars,
                             end_reason.as_deref(),
                         );

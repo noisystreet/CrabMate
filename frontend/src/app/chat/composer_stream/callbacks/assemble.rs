@@ -22,29 +22,27 @@ use super::super::shell_abort::clear_abort_slot;
 use super::builders::*;
 use super::helpers::*;
 use super::stream_session_access::with_active_session_mut;
+use super::stream_turn_state::{StreamOutputLaneCell, lane_on_assistant_answer_phase};
 
 /// 由 [`super::super::make_attach_chat_stream`](super::super::make_attach_chat_stream) 调用；集中所有 `on_*` 闭包，降低父模块维护面。
 pub(crate) fn build_chat_stream_callbacks(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
-    in_answer_phase: Rc<Cell<bool>>,
+    output_lane: StreamOutputLaneCell,
 ) -> ChatStreamCallbacks {
     let answer_delta_chars: Rc<Cell<usize>> = Rc::new(Cell::new(0));
-    let pending_followup_answer_round: Rc<Cell<bool>> = Rc::new(Cell::new(false));
     let stream_end_reason: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
     let current_subgoal_marker: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
     let saw_final_response_timeline: Rc<Cell<bool>> = Rc::new(Cell::new(false));
     let on_delta: Rc<dyn Fn(String)> = chat_stream_on_delta_builder(
         Rc::clone(&stream_ctx),
-        Rc::clone(&in_answer_phase),
+        Rc::clone(&output_lane),
         Rc::clone(&answer_delta_chars),
-        Rc::clone(&pending_followup_answer_round),
     );
 
     let on_done: Rc<dyn Fn()> = chat_stream_on_done_builder(
         Rc::clone(&stream_ctx),
-        Rc::clone(&in_answer_phase),
+        Rc::clone(&output_lane),
         Rc::clone(&answer_delta_chars),
-        Rc::clone(&pending_followup_answer_round),
         Rc::clone(&stream_end_reason),
         Rc::clone(&saw_final_response_timeline),
     );
@@ -133,14 +131,10 @@ pub(crate) fn build_chat_stream_callbacks(
     };
 
     let on_assistant_answer_phase: Rc<dyn Fn()> = {
-        let in_answer_phase = Rc::clone(&in_answer_phase);
-        let pending_followup_answer_round = Rc::clone(&pending_followup_answer_round);
+        let output_lane = Rc::clone(&output_lane);
         Rc::new(move || {
-            if in_answer_phase.get() {
-                // 重复 answer_phase 仅标记“下一段正文需轮换气泡”，避免无后续 delta 时产生空 "(无回复)" 气泡。
-                pending_followup_answer_round.set(true);
-            }
-            in_answer_phase.set(true);
+            // 重复 answer_phase 将车道切入 PendingFollowup；轮换由 `on_delta` / `on_done` 消费。
+            lane_on_assistant_answer_phase(output_lane.as_ref());
         })
     };
 

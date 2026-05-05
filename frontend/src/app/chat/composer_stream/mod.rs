@@ -15,8 +15,7 @@ use std::sync::Arc;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
-use std::cell::Cell;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 
 use crate::api::{SendChatStreamParams, send_chat_stream};
@@ -25,6 +24,8 @@ use crate::i18n::Locale;
 use crate::session_ops::approval_session_id;
 
 use super::handles::ComposerStreamShell;
+
+use callbacks::new_stream_output_lane_cell;
 
 use context::ChatStreamCallbackCtx;
 use shell_abort::{reset_abort_state_for_new_attach, store_abort_controller};
@@ -80,8 +81,8 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                 pending_tool_message_ids: Rc::new(RefCell::new(VecDeque::new())),
             });
 
-            let in_answer_phase: Rc<Cell<bool>> = Rc::new(Cell::new(false));
-            let cbs = callbacks::build_chat_stream_callbacks(stream_ctx, in_answer_phase);
+            let output_lane = new_stream_output_lane_cell();
+            let cbs = callbacks::build_chat_stream_callbacks(stream_ctx, output_lane);
 
             let shell_for_stream_err = shell_outer.clone();
             let on_error_spawn = cbs.on_error.clone();

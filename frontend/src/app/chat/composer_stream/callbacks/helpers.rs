@@ -310,18 +310,11 @@ pub(super) fn upsert_hierarchical_subgoal_bubble(
     ensure_streaming_assistant_tail_last(stream_ctx);
 }
 
-/// 工具卡片插入前：结束当前流式段（开场白等保留在工具与时间线**之上**），
-/// 并在本条工具消息之后挂新的 `loading` 占位，供工具结束后的续写。
-pub(super) fn finalize_loading_assistant_before_tool_and_tail_with_new_loading(
-    stream_ctx: &ChatStreamCallbackCtx,
-    tool_message_id: &str,
-) {
-    let now = message_created_ms();
-    let new_tail_id = RefCell::new(None::<String>);
+/// 结束当前 `assistant_message_id` 指向的流式 `loading` 助手行：空正文则删除，否则去掉 `loading` state。
+///
+/// 供工具前收尾与无工具多轮轮换共用，避免两处复制分叉。
+pub(super) fn finalize_current_loading_streaming_assistant_row(stream_ctx: &ChatStreamCallbackCtx) {
     with_active_session_mut(stream_ctx, |s| {
-        if !s.messages.iter().any(|m| m.id == tool_message_id) {
-            return;
-        }
         let mid = stream_ctx.assistant_message_id.borrow();
         if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) {
             let m = &mut s.messages[idx];
@@ -333,6 +326,26 @@ pub(super) fn finalize_loading_assistant_before_tool_and_tail_with_new_loading(
                 }
             }
         }
+    });
+}
+
+/// 工具卡片插入前：结束当前流式段（开场白等保留在工具与时间线**之上**），
+/// 并在本条工具消息之后挂新的 `loading` 占位，供工具结束后的续写。
+pub(super) fn finalize_loading_assistant_before_tool_and_tail_with_new_loading(
+    stream_ctx: &ChatStreamCallbackCtx,
+    tool_message_id: &str,
+) {
+    let tool_present = with_active_session_ref(stream_ctx, |s| {
+        s.messages.iter().any(|m| m.id == tool_message_id)
+    })
+    .unwrap_or(false);
+    if !tool_present {
+        return;
+    }
+    finalize_current_loading_streaming_assistant_row(stream_ctx);
+    let now = message_created_ms();
+    let new_tail_id = RefCell::new(None::<String>);
+    with_active_session_mut(stream_ctx, |s| {
         let Some(tidx) = s.messages.iter().position(|m| m.id == tool_message_id) else {
             return;
         };
@@ -366,20 +379,10 @@ pub(super) fn finalize_loading_assistant_before_tool_and_tail_with_new_loading(
 pub(super) fn rotate_streaming_assistant_for_followup_model_round(
     stream_ctx: &ChatStreamCallbackCtx,
 ) {
+    finalize_current_loading_streaming_assistant_row(stream_ctx);
     let now = message_created_ms();
     let new_tail_id = RefCell::new(None::<String>);
     with_active_session_mut(stream_ctx, |s| {
-        let mid = stream_ctx.assistant_message_id.borrow();
-        if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) {
-            let m = &mut s.messages[idx];
-            if m.role == "assistant" && m.state.as_deref() == Some("loading") {
-                if m.text.trim().is_empty() {
-                    s.messages.remove(idx);
-                } else {
-                    m.state = None;
-                }
-            }
-        }
         let new_asst_id = make_message_id();
         s.messages.push(StoredMessage {
             id: new_asst_id.clone(),
