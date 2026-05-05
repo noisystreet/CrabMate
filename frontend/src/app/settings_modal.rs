@@ -1,4 +1,8 @@
 //! 设置：主题、背景、本机模型覆盖。
+//!
+//! **状态分层**（避免隐式混写）：**全局生效信号**（`locale` / `theme` / `bg_decor` / LLM drafts）由壳持有；
+//! **弹窗内预览副本**（`appearance_*`）仅在弹窗打开期间驱动 DOM 预览与 dirty 比较；**`StoredValue` baseline**
+//! 在打开时捕获，用于「放弃更改」回滚。关闭弹窗时 [`Effect`] 将预览重置回全局信号。
 
 use gloo_timers::future::TimeoutFuture;
 use leptos::html::Div;

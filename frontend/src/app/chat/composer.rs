@@ -51,8 +51,7 @@ fn apply_shell_after_active_session_changed(
     });
     chat.session_sync
         .set(st.unwrap_or_else(SessionSyncState::local_only));
-    chat.stream_job_id.set(None);
-    chat.stream_last_event_seq.set(0);
+    chat.clear_stream_resume_handles();
     collapsed_long_assistant_ids.set(Vec::new());
 }
 

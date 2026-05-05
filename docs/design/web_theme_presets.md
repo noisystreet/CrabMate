@@ -5,7 +5,7 @@
 **关联**：
 
 - 现状与 token：**`frontend/styles/tokens.css`**
-- 主题同步 DOM / 存储：**`frontend/src/app/app_shell_effects.rs`**（`wire_sync_theme_to_storage_and_dom`）
+- 主题同步 DOM / 存储：**`frontend/src/app/app_shell_effects/sync_dom.rs`**（`wire_sync_theme_to_storage_and_dom`）
 - 偏好键：**`frontend/src/app_prefs.rs`**（`THEME_KEY` = `crabmate-theme`）
 - 设置 UI：**`frontend/src/app/settings_sections.rs`**、**`settings_modal.rs`**、**`settings_page.rs`**
 - 初始化：**`frontend/src/app/app_signals.rs`**

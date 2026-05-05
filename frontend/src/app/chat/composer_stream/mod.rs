@@ -58,8 +58,7 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
               asst_id: String,
               clarify_json: Option<serde_json::Value>| {
             let conv = chat.session_sync.with(|s| s.stream_conversation_id());
-            chat.stream_job_id.set(None);
-            chat.stream_last_event_seq.set(0);
+            chat.clear_stream_resume_handles();
             shell_outer.thinking_trace_log.set(Vec::new());
             reset_abort_state_for_new_attach(&shell_outer);
             let ac = web_sys::AbortController::new().expect("AbortController");

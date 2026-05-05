@@ -160,8 +160,7 @@ fn StatusBarChipsRow(
                                         } else {
                                             selected_agent_role.set(Some(t.to_string()));
                                         }
-                                        chat.stream_job_id.set(None);
-                                        chat.stream_last_event_seq.set(0);
+                                        chat.clear_stream_resume_handles();
                                     }
                                 >
                                     <option value="__default__">{move || {

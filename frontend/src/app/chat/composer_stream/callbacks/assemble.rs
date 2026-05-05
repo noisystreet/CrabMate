@@ -110,8 +110,7 @@ pub(crate) fn build_chat_stream_callbacks(
         let stream_end_reason = Rc::clone(&stream_end_reason);
         Rc::new(move |reason: String| {
             *stream_end_reason.borrow_mut() = Some(reason.clone());
-            stream_ctx.chat.stream_job_id.set(None);
-            stream_ctx.chat.stream_last_event_seq.set(0);
+            stream_ctx.chat.clear_stream_resume_handles();
             // `stream_ended` 表示服务端已结束本轮流式任务：无论 `reason` 是否能解析为已知枚举，
             // 都应回落 busy，避免状态栏长期停在「模型生成中」。（未知 reason 仍写入 stream_end_reason 供 diagnostics。）
             stream_ctx.shell.status_busy.set(false);

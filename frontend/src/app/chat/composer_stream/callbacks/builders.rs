@@ -422,8 +422,7 @@ pub(super) fn chat_stream_on_error_builder(
             clear_abort_slot(&stream_ctx.shell);
             return;
         }
-        stream_ctx.chat.stream_job_id.set(None);
-        stream_ctx.chat.stream_last_event_seq.set(0);
+        stream_ctx.chat.clear_stream_resume_handles();
         let mid = stream_ctx.assistant_message_id.borrow().clone();
         let loc = stream_ctx.locale.get_untracked();
         let friendly = build_stream_error_with_suggestion(&msg, loc);
