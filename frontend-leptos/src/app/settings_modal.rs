@@ -6,13 +6,19 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use std::sync::Arc;
 
-use crate::a11y::focus_first_in_modal_container;
-use crate::app::settings_commit::{CommitAllSettingsInput, commit_all_settings};
-use crate::i18n::{self};
-
 use super::app_shell_ctx::SettingsModalSignals;
-use super::settings_form_state::{SettingsFormCurrent, is_settings_dirty, refresh_baselines};
+use super::settings_form_state::{is_settings_dirty, refresh_baselines};
 use super::settings_modal_dialog::{SettingsModalDialogInput, settings_modal_dialog};
+use crate::a11y::focus_first_in_modal_container;
+use crate::app::settings_page::dom_preview::{
+    apply_bg_decor_preview_to_dom, apply_theme_preview_to_dom,
+};
+use crate::app::settings_page::form_snapshot::{
+    SettingsPageDraftSignals, form_current_tracked, form_current_untracked,
+};
+use crate::app::settings_page::page_actions::{
+    DiscardToBaselinesCtx, SaveAllSettingsCtx, discard_to_baselines, try_save_all_settings,
+};
 
 pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
     let SettingsModalSignals {
@@ -70,47 +76,29 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
     let clear_client_key_intent = RwSignal::new(false);
     let clear_executor_key_intent = RwSignal::new(false);
 
-    let current_state_untracked = move || SettingsFormCurrent {
-        appearance_locale: appearance_locale.get_untracked(),
-        appearance_theme: appearance_theme.get_untracked(),
-        appearance_bg_decor: appearance_bg_decor.get_untracked(),
-        llm_api_base_draft: llm_api_base_draft.get_untracked(),
-        llm_api_base_preset_select: llm_api_base_preset_select.get_untracked(),
-        llm_model_draft: llm_model_draft.get_untracked(),
-        llm_temperature_draft: llm_temperature_draft.get_untracked(),
-        llm_context_tokens_draft: llm_context_tokens_draft.get_untracked(),
-        llm_thinking_mode_draft: llm_thinking_mode_draft.get_untracked(),
-        execution_mode_draft: execution_mode_draft.get_untracked(),
-        llm_has_saved_key: llm_has_saved_key.get_untracked(),
-        executor_llm_api_base_draft: executor_llm_api_base_draft.get_untracked(),
-        executor_llm_api_base_preset_select: executor_llm_api_base_preset_select.get_untracked(),
-        executor_llm_model_draft: executor_llm_model_draft.get_untracked(),
-        executor_llm_has_saved_key: executor_llm_has_saved_key.get_untracked(),
-        clear_client_key_intent: clear_client_key_intent.get_untracked(),
-        clear_executor_key_intent: clear_executor_key_intent.get_untracked(),
-        llm_api_key_draft: llm_api_key_draft.get_untracked(),
-        executor_llm_api_key_draft: executor_llm_api_key_draft.get_untracked(),
+    let drafts = SettingsPageDraftSignals {
+        appearance_locale,
+        appearance_theme,
+        appearance_bg_decor,
+        llm_api_base_draft,
+        llm_api_base_preset_select,
+        llm_model_draft,
+        llm_temperature_draft,
+        llm_context_tokens_draft,
+        llm_thinking_mode_draft,
+        execution_mode_draft,
+        llm_has_saved_key,
+        executor_llm_api_base_draft,
+        executor_llm_api_base_preset_select,
+        executor_llm_model_draft,
+        executor_llm_has_saved_key,
+        clear_client_key_intent,
+        clear_executor_key_intent,
+        llm_api_key_draft,
+        executor_llm_api_key_draft,
     };
 
-    fn apply_theme_preview_to_dom(theme: &str) {
-        if let Some(doc) = web_sys::window().and_then(|w| w.document())
-            && let Some(root) = doc.document_element()
-        {
-            let _ = root.set_attribute("data-theme", theme);
-        }
-    }
-
-    fn apply_bg_decor_preview_to_dom(bg_decor: bool) {
-        if let Some(doc) = web_sys::window().and_then(|w| w.document())
-            && let Some(root) = doc.document_element()
-        {
-            if bg_decor {
-                let _ = root.remove_attribute("data-bg-decor");
-            } else {
-                let _ = root.set_attribute("data-bg-decor", "plain");
-            }
-        }
-    }
+    let current_state_untracked = move || form_current_untracked(drafts);
 
     let capture_baselines_after_open = move || {
         spawn_local(async move {
@@ -135,34 +123,18 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
     };
 
     let discard = {
+        let baseline_appearance = baseline_appearance;
+        let baseline_llm = baseline_llm;
+        let baseline_executor = baseline_executor;
         move || {
-            let (bl, bt, bbd) = baseline_appearance.get_value();
-            appearance_locale.set(bl);
-            appearance_theme.set(bt);
-            appearance_bg_decor.set(bbd);
-
-            let (bb, bp, bm, bt, bct, btm, be, bh) = baseline_llm.get_value();
-            llm_api_base_draft.set(bb);
-            llm_api_base_preset_select.set(bp);
-            llm_model_draft.set(bm);
-            llm_temperature_draft.set(bt);
-            llm_context_tokens_draft.set(bct);
-            llm_thinking_mode_draft.set(btm);
-            execution_mode_draft.set(be);
-            llm_has_saved_key.set(bh);
-            llm_api_key_draft.set(String::new());
-
-            let (eb, ep, em, eh) = baseline_executor.get_value();
-            executor_llm_api_base_draft.set(eb);
-            executor_llm_api_base_preset_select.set(ep);
-            executor_llm_model_draft.set(em);
-            executor_llm_has_saved_key.set(eh);
-            executor_llm_api_key_draft.set(String::new());
-
-            clear_client_key_intent.set(false);
-            clear_executor_key_intent.set(false);
-            llm_settings_feedback.set(None);
-            executor_llm_settings_feedback.set(None);
+            discard_to_baselines(DiscardToBaselinesCtx {
+                baseline_appearance,
+                baseline_llm,
+                baseline_executor,
+                drafts,
+                llm_settings_feedback,
+                executor_llm_settings_feedback,
+            });
         }
     };
 
@@ -204,27 +176,7 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
     });
 
     let dirty = Memo::new(move |_| {
-        let current = SettingsFormCurrent {
-            appearance_locale: appearance_locale.get(),
-            appearance_theme: appearance_theme.get(),
-            appearance_bg_decor: appearance_bg_decor.get(),
-            llm_api_base_draft: llm_api_base_draft.get(),
-            llm_api_base_preset_select: llm_api_base_preset_select.get(),
-            llm_model_draft: llm_model_draft.get(),
-            llm_temperature_draft: llm_temperature_draft.get(),
-            llm_context_tokens_draft: llm_context_tokens_draft.get(),
-            llm_thinking_mode_draft: llm_thinking_mode_draft.get(),
-            execution_mode_draft: execution_mode_draft.get(),
-            llm_has_saved_key: llm_has_saved_key.get(),
-            executor_llm_api_base_draft: executor_llm_api_base_draft.get(),
-            executor_llm_api_base_preset_select: executor_llm_api_base_preset_select.get(),
-            executor_llm_model_draft: executor_llm_model_draft.get(),
-            executor_llm_has_saved_key: executor_llm_has_saved_key.get(),
-            clear_client_key_intent: clear_client_key_intent.get(),
-            clear_executor_key_intent: clear_executor_key_intent.get(),
-            llm_api_key_draft: llm_api_key_draft.get(),
-            executor_llm_api_key_draft: executor_llm_api_key_draft.get(),
-        };
+        let current = form_current_tracked(drafts);
         is_settings_dirty(
             &current,
             &baseline_appearance.get_value(),
@@ -240,54 +192,26 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
         }
     };
 
-    let save_all = move || {
-        llm_settings_feedback.set(None);
-        executor_llm_settings_feedback.set(None);
-        if !dirty.get() {
-            llm_settings_feedback.set(Some(
-                i18n::settings_nothing_to_save(appearance_locale.get()).to_string(),
-            ));
-            return;
-        }
-        let ui_locale = appearance_locale.get();
-        match commit_all_settings(CommitAllSettingsInput {
-            ui_locale,
-            appearance_locale: appearance_locale.get(),
-            appearance_theme: appearance_theme.get(),
-            appearance_bg_decor: appearance_bg_decor.get(),
-            locale,
-            theme,
-            bg_decor,
-            client_base: llm_api_base_draft.get().as_str(),
-            client_model: llm_model_draft.get().as_str(),
-            client_temperature: llm_temperature_draft.get().as_str(),
-            client_llm_context_tokens: llm_context_tokens_draft.get().as_str(),
-            client_llm_thinking_mode: llm_thinking_mode_draft.get().as_str(),
-            client_api_key_draft: llm_api_key_draft.get().as_str(),
-            executor_base: executor_llm_api_base_draft.get().as_str(),
-            executor_model: executor_llm_model_draft.get().as_str(),
-            executor_api_key_draft: executor_llm_api_key_draft.get().as_str(),
-            execution_mode: execution_mode_draft.get().as_str(),
-            clear_client_llm_key: clear_client_key_intent.get(),
-            clear_executor_llm_key: clear_executor_key_intent.get(),
-            llm_api_key_draft,
-            llm_has_saved_key,
-            executor_llm_api_key_draft,
-            executor_llm_has_saved_key,
-            client_llm_storage_tick,
-        }) {
-            Ok(()) => {
-                refresh_baselines(
-                    baseline_appearance,
-                    baseline_llm,
-                    baseline_executor,
-                    &current_state_untracked(),
-                );
-                clear_client_key_intent.set(false);
-                clear_executor_key_intent.set(false);
-                llm_settings_feedback.set(Some(i18n::settings_save_all_ok(ui_locale).to_string()));
-            }
-            Err(e) => llm_settings_feedback.set(Some(e)),
+    let save_all = {
+        let dirty = dirty;
+        let baseline_appearance = baseline_appearance;
+        let baseline_llm = baseline_llm;
+        let baseline_executor = baseline_executor;
+        move || {
+            try_save_all_settings(SaveAllSettingsCtx {
+                dirty,
+                appearance_locale,
+                locale,
+                theme,
+                bg_decor,
+                drafts,
+                llm_settings_feedback,
+                executor_llm_settings_feedback,
+                client_llm_storage_tick,
+                baseline_appearance,
+                baseline_llm,
+                baseline_executor,
+            });
         }
     };
 
