@@ -140,17 +140,21 @@ pub async fn maybe_summarize_with_llm(
         )),
     ];
     let req = ChatRequest {
-        model: cfg.llm.model.clone(),
-        messages: sum_messages,
-        tools: None,
-        tool_choice: None,
-        max_tokens: cfg.context_pipeline.context_summary_max_tokens,
-        temperature: vendor_temperature_for_config(cfg, 0.2),
-        seed: None,
-        stream: None,
-        reasoning_split: cfg.llm_vendor_flags.llm_reasoning_split.then_some(true),
-        thinking: chat_request_thinking_from_cfg(cfg),
-        response_format: None,
+        core: crate::types::ChatRequestCore {
+            model: cfg.llm.model.clone(),
+            messages: sum_messages,
+            tools: None,
+            tool_choice: None,
+            max_tokens: cfg.context_pipeline.context_summary_max_tokens,
+            temperature: vendor_temperature_for_config(cfg, 0.2),
+            seed: None,
+            stream: None,
+        },
+        vendor: crate::types::ChatRequestVendorExtensions {
+            reasoning_split: cfg.llm_vendor_flags.llm_reasoning_split.then_some(true),
+            thinking: chat_request_thinking_from_cfg(cfg),
+            response_format: None,
+        },
     };
 
     let cc = CompleteChatRetryingParams::new(

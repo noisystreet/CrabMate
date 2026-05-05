@@ -24,17 +24,21 @@ pub async fn classify_intent_l2_with_llm(
 ) -> Option<L2IntentCandidate> {
     let prompt = build_l2_prompt(merged_routing_text, current_user_line);
     let request = crate::types::ChatRequest {
-        model: cfg.llm.model.clone(),
-        messages: vec![Message::user_only(&prompt)],
-        stream: Some(false),
-        temperature: 0.0,
-        max_tokens: cfg.intent_routing.intent_l2_max_tokens,
-        tools: None,
-        tool_choice: None,
-        seed: None,
-        reasoning_split: Some(false),
-        thinking: None,
-        response_format: None,
+        core: crate::types::ChatRequestCore {
+            model: cfg.llm.model.clone(),
+            messages: vec![Message::user_only(&prompt)],
+            tools: None,
+            tool_choice: None,
+            max_tokens: cfg.intent_routing.intent_l2_max_tokens,
+            temperature: 0.0,
+            seed: None,
+            stream: Some(false),
+        },
+        vendor: crate::types::ChatRequestVendorExtensions {
+            reasoning_split: Some(false),
+            thinking: None,
+            response_format: None,
+        },
     };
     let params = CompleteChatRetryingParams::new(
         llm_backend,

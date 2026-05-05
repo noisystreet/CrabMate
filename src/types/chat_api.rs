@@ -19,9 +19,9 @@ pub struct FunctionDef {
     pub parameters: serde_json::Value,
 }
 
-/// 请求体
+/// OpenAI 兼容 **`chat/completions`** 请求体的核心字段（模型、消息、工具与采样）。
 #[derive(Debug, Clone, Serialize)]
-pub struct ChatRequest {
+pub struct ChatRequestCore {
     pub model: String,
     pub messages: Vec<Message>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -35,6 +35,11 @@ pub struct ChatRequest {
     pub seed: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
+}
+
+/// 网关 / 厂商扩展字段（仍扁平序列化进同一 JSON 对象，见 [`ChatRequest`]）。
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ChatRequestVendorExtensions {
     /// MiniMax OpenAI 兼容扩展：为 `true` 时流式/非流式可将思维链与正文分离（`delta.reasoning_details` / `message.reasoning_details`）。
     #[serde(skip_serializing_if = "Option::is_none", rename = "reasoning_split")]
     pub reasoning_split: Option<bool>,
@@ -44,6 +49,29 @@ pub struct ChatRequest {
     /// OpenAI 兼容 **`response_format`**（如 DeepSeek [JSON Output](https://api-docs.deepseek.com/zh-cn/guides/json_mode) 的 `{"type":"json_object"}`）；`None` 则省略。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response_format: Option<serde_json::Value>,
+}
+
+/// 发往供应商的 **`chat/completions`** 请求体（[`ChatRequestCore`] + [`ChatRequestVendorExtensions`]，`serde` 双层 **`flatten`** 保持原有 JSON 扁平形状）。
+#[derive(Debug, Clone, Serialize)]
+pub struct ChatRequest {
+    #[serde(flatten)]
+    pub core: ChatRequestCore,
+    #[serde(flatten)]
+    pub vendor: ChatRequestVendorExtensions,
+}
+
+impl std::ops::Deref for ChatRequest {
+    type Target = ChatRequestCore;
+
+    fn deref(&self) -> &Self::Target {
+        &self.core
+    }
+}
+
+impl std::ops::DerefMut for ChatRequest {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.core
+    }
 }
 
 // ---------- 非流式响应（`stream: false` 时 chat/completions 返回体） ----------

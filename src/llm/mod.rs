@@ -30,7 +30,8 @@ use log::{debug, error, info};
 
 use crate::config::AgentConfig;
 use crate::types::{
-    ChatRequest, LlmSeedOverride, Message, Tool, is_long_term_memory_injection, resolved_llm_seed,
+    ChatRequest, ChatRequestCore, ChatRequestVendorExtensions, LlmSeedOverride, Message, Tool,
+    is_long_term_memory_injection, resolved_llm_seed,
 };
 
 pub use backend::{
@@ -82,25 +83,29 @@ pub fn tool_chat_request(
     let v = llm_vendor_adapter(cfg);
     let effective_model = model_override.unwrap_or(&cfg.llm.model);
     ChatRequest {
-        model: effective_model.to_string(),
-        messages: crate::agent::message_pipeline::conversation_messages_to_vendor_body(
-            messages,
-            fold_system_into_user_for_config(cfg),
-            v.preserve_assistant_tool_call_reasoning(cfg),
-            vendor::deepseek_json_output_eligible(cfg),
-        ),
-        tools: Some(tools.to_vec()),
-        tool_choice: Some("auto".to_string()),
-        max_tokens: cfg.llm_sampling.max_tokens,
-        temperature: v.coerce_temperature(
-            effective_model,
-            temperature_override.unwrap_or(cfg.llm_sampling.temperature),
-        ),
-        seed: resolved_llm_seed(cfg.llm_sampling.llm_seed, seed_override),
-        stream: None,
-        reasoning_split: cfg.llm_vendor_flags.llm_reasoning_split.then_some(true),
-        thinking: v.thinking_field(cfg),
-        response_format: None,
+        core: ChatRequestCore {
+            model: effective_model.to_string(),
+            messages: crate::agent::message_pipeline::conversation_messages_to_vendor_body(
+                messages,
+                fold_system_into_user_for_config(cfg),
+                v.preserve_assistant_tool_call_reasoning(cfg),
+                vendor::deepseek_json_output_eligible(cfg),
+            ),
+            tools: Some(tools.to_vec()),
+            tool_choice: Some("auto".to_string()),
+            max_tokens: cfg.llm_sampling.max_tokens,
+            temperature: v.coerce_temperature(
+                effective_model,
+                temperature_override.unwrap_or(cfg.llm_sampling.temperature),
+            ),
+            seed: resolved_llm_seed(cfg.llm_sampling.llm_seed, seed_override),
+            stream: None,
+        },
+        vendor: ChatRequestVendorExtensions {
+            reasoning_split: cfg.llm_vendor_flags.llm_reasoning_split.then_some(true),
+            thinking: v.thinking_field(cfg),
+            response_format: None,
+        },
     }
 }
 
@@ -143,23 +148,27 @@ pub fn no_tools_chat_request_from_messages(
     let v = llm_vendor_adapter(cfg);
     let effective_model = model_override.unwrap_or(&cfg.llm.model);
     ChatRequest {
-        model: effective_model.to_string(),
-        messages: crate::agent::message_pipeline::normalize_stripped_messages_for_vendor_body(
-            messages,
-            fold_system_into_user_for_config(cfg),
-        ),
-        tools: Some(vec![]),
-        tool_choice: Some("none".to_string()),
-        max_tokens: cfg.llm_sampling.max_tokens,
-        temperature: v.coerce_temperature(
-            effective_model,
-            temperature_override.unwrap_or(cfg.llm_sampling.temperature),
-        ),
-        seed: resolved_llm_seed(cfg.llm_sampling.llm_seed, seed_override),
-        stream: None,
-        reasoning_split: cfg.llm_vendor_flags.llm_reasoning_split.then_some(true),
-        thinking: v.thinking_field(cfg),
-        response_format: None,
+        core: ChatRequestCore {
+            model: effective_model.to_string(),
+            messages: crate::agent::message_pipeline::normalize_stripped_messages_for_vendor_body(
+                messages,
+                fold_system_into_user_for_config(cfg),
+            ),
+            tools: Some(vec![]),
+            tool_choice: Some("none".to_string()),
+            max_tokens: cfg.llm_sampling.max_tokens,
+            temperature: v.coerce_temperature(
+                effective_model,
+                temperature_override.unwrap_or(cfg.llm_sampling.temperature),
+            ),
+            seed: resolved_llm_seed(cfg.llm_sampling.llm_seed, seed_override),
+            stream: None,
+        },
+        vendor: ChatRequestVendorExtensions {
+            reasoning_split: cfg.llm_vendor_flags.llm_reasoning_split.then_some(true),
+            thinking: v.thinking_field(cfg),
+            response_format: None,
+        },
     }
 }
 
@@ -182,7 +191,7 @@ pub fn no_tools_chat_request_for_hierarchical_manager(
         seed_override,
     );
     if vendor::deepseek_json_output_eligible(cfg) {
-        req.response_format = Some(serde_json::json!({ "type": "json_object" }));
+        req.vendor.response_format = Some(serde_json::json!({ "type": "json_object" }));
         debug!(
             target: "crabmate",
             "no_tools_chat_request_for_hierarchical_manager: response_format=json_object (DeepSeek JSON Output)"
@@ -452,7 +461,8 @@ mod tests {
             LlmSeedOverride::FromConfig,
         );
         assert_eq!(
-            req.response_format
+            req.vendor
+                .response_format
                 .as_ref()
                 .and_then(|v| v.get("type"))
                 .and_then(|t| t.as_str()),
@@ -467,6 +477,6 @@ mod tests {
             None,
             LlmSeedOverride::FromConfig,
         );
-        assert!(req_local.response_format.is_none());
+        assert!(req_local.vendor.response_format.is_none());
     }
 }
