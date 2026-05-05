@@ -209,6 +209,39 @@ pub(crate) fn OptionalLlmExecutionModeField(
 }
 
 #[component]
+pub(crate) fn LlmThinkingModeField(
+    locale: RwSignal<Locale>,
+    thinking_mode_draft: RwSignal<String>,
+    hint_class: &'static str,
+    select_id: &'static str,
+) -> impl IntoView {
+    view! {
+        <div class="settings-field">
+            <label class="settings-field-label" for=select_id>
+                {move || i18n::settings_label_llm_thinking_mode(locale.get())}
+            </label>
+            <select
+                id=select_id
+                class="settings-select"
+                prop:value=move || thinking_mode_draft.get()
+                on:change=move |ev| thinking_mode_draft.set(event_target_value(&ev))
+            >
+                <option value="server">
+                    {move || i18n::settings_thinking_mode_server(locale.get())}
+                </option>
+                <option value="on">
+                    {move || i18n::settings_thinking_mode_on(locale.get())}
+                </option>
+                <option value="off">
+                    {move || i18n::settings_thinking_mode_off(locale.get())}
+                </option>
+            </select>
+            <p class=hint_class>{move || i18n::settings_llm_thinking_mode_hint(locale.get())}</p>
+        </div>
+    }
+}
+
+#[component]
 pub(crate) fn LlmClientApiKeyField(
     locale: RwSignal<Locale>,
     api_key_draft: RwSignal<String>,

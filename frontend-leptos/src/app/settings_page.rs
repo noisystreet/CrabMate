@@ -22,6 +22,7 @@ pub struct SettingsPageFormSignals {
     pub llm_model_draft: RwSignal<String>,
     pub llm_temperature_draft: RwSignal<String>,
     pub llm_context_tokens_draft: RwSignal<String>,
+    pub llm_thinking_mode_draft: RwSignal<String>,
     pub llm_api_key_draft: RwSignal<String>,
     pub llm_has_saved_key: RwSignal<bool>,
     pub llm_settings_feedback: RwSignal<Option<String>>,
@@ -226,6 +227,7 @@ pub struct SettingsPagePanelDrafts {
     pub llm_model_draft: RwSignal<String>,
     pub llm_temperature_draft: RwSignal<String>,
     pub llm_context_tokens_draft: RwSignal<String>,
+    pub llm_thinking_mode_draft: RwSignal<String>,
     pub llm_api_key_draft: RwSignal<String>,
     pub llm_has_saved_key: RwSignal<bool>,
     pub executor_llm_api_base_draft: RwSignal<String>,
@@ -252,6 +254,7 @@ fn SettingsPageContentPanels(
         llm_model_draft,
         llm_temperature_draft,
         llm_context_tokens_draft,
+        llm_thinking_mode_draft,
         llm_api_key_draft,
         llm_has_saved_key,
         executor_llm_api_base_draft,
@@ -284,11 +287,13 @@ fn SettingsPageContentPanels(
                     llm_model_draft,
                     llm_temperature_draft,
                     llm_context_tokens_draft,
+                    llm_thinking_mode_draft,
                     execution_mode_draft: Some(execution_mode_draft),
                     llm_api_key_draft,
                     llm_has_saved_key,
                     clear_client_key_intent,
                     hint_class: "settings-field-nested-hint",
+                    llm_thinking_mode_select_id: "settings-page-llm-thinking-mode",
                 } />
             </Show>
 
@@ -330,6 +335,7 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
         llm_model_draft,
         llm_temperature_draft,
         llm_context_tokens_draft,
+        llm_thinking_mode_draft,
         llm_api_key_draft,
         llm_has_saved_key,
         llm_settings_feedback,
@@ -361,6 +367,7 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
         llm_model_draft.get_untracked(),
         llm_temperature_draft.get_untracked(),
         llm_context_tokens_draft.get_untracked(),
+        llm_thinking_mode_draft.get_untracked(),
         execution_mode_draft.get_untracked(),
         llm_has_saved_key.get_untracked(),
     ));
@@ -383,6 +390,7 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
         llm_model_draft: llm_model_draft.get_untracked(),
         llm_temperature_draft: llm_temperature_draft.get_untracked(),
         llm_context_tokens_draft: llm_context_tokens_draft.get_untracked(),
+        llm_thinking_mode_draft: llm_thinking_mode_draft.get_untracked(),
         execution_mode_draft: execution_mode_draft.get_untracked(),
         llm_has_saved_key: llm_has_saved_key.get_untracked(),
         executor_llm_api_base_draft: executor_llm_api_base_draft.get_untracked(),
@@ -444,6 +452,7 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
             llm_model_draft: llm_model_draft.get(),
             llm_temperature_draft: llm_temperature_draft.get(),
             llm_context_tokens_draft: llm_context_tokens_draft.get(),
+            llm_thinking_mode_draft: llm_thinking_mode_draft.get(),
             execution_mode_draft: execution_mode_draft.get(),
             llm_has_saved_key: llm_has_saved_key.get(),
             executor_llm_api_base_draft: executor_llm_api_base_draft.get(),
@@ -469,12 +478,13 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
         appearance_theme.set(bt);
         appearance_bg_decor.set(bbd);
 
-        let (bb, bp, bm, bt, bct, be, bh) = baseline_llm.get_value();
+        let (bb, bp, bm, bt, bct, btm, be, bh) = baseline_llm.get_value();
         llm_api_base_draft.set(bb);
         llm_api_base_preset_select.set(bp);
         llm_model_draft.set(bm);
         llm_temperature_draft.set(bt);
         llm_context_tokens_draft.set(bct);
+        llm_thinking_mode_draft.set(btm);
         execution_mode_draft.set(be);
         llm_has_saved_key.set(bh);
         llm_api_key_draft.set(String::new());
@@ -514,6 +524,7 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
             client_model: llm_model_draft.get().as_str(),
             client_temperature: llm_temperature_draft.get().as_str(),
             client_llm_context_tokens: llm_context_tokens_draft.get().as_str(),
+            client_llm_thinking_mode: llm_thinking_mode_draft.get().as_str(),
             client_api_key_draft: llm_api_key_draft.get().as_str(),
             executor_base: executor_llm_api_base_draft.get().as_str(),
             executor_model: executor_llm_model_draft.get().as_str(),
@@ -613,6 +624,7 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
                             llm_model_draft,
                             llm_temperature_draft,
                             llm_context_tokens_draft,
+                            llm_thinking_mode_draft,
                             llm_api_key_draft,
                             llm_has_saved_key,
                             executor_llm_api_base_draft,
