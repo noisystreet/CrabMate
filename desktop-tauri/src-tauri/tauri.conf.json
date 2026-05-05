@@ -27,6 +27,13 @@
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.png"
-    ]
+    ],
+    "linux": {
+      "deb": {
+        "files": {
+          "usr/share/applications/crabmate.desktop": "bundle/deb/crabmate.desktop"
+        }
+      }
+    }
   }
 }

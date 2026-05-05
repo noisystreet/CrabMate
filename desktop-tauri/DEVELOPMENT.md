@@ -120,6 +120,18 @@ crabmate serve --host 127.0.0.1 --port 0 --desktop-ready-json
 
 用于将该子工程作为独立 workspace 处理。
 
+### 2.5 Wayland 下 fcitx5 等 IME 在 WebView 内异常
+
+在 **Wayland** 会话里，GTK/WebKitGTK（Tauri 嵌入页）对输入法支持仍可能不完整，表现为候选窗不显示或无法内联输入。若在终端中设置 **`GDK_BACKEND=x11`** 后正常，说明走 **X11（XWayland）后端** 可规避。
+
+打包的 **deb** 在 `bundle > linux > deb > files` 中**覆盖** `usr/share/applications/crabmate.desktop`（见 `src-tauri/bundle/deb/crabmate.desktop`），在 `Exec=` 中注入 `GDK_BACKEND=x11`。该步骤在 Tauri 生成默认桌面文件**之后**执行，不依赖 Handlebars 模板是否生效。若修改 `productName` 或二进制名，请同步该文件名与条目的 `Name` / `Exec` / `Icon`。
+
+本地调试可：
+
+```bash
+GDK_BACKEND=x11 cargo tauri dev
+```
+
 ## 3. 代理与网络说明
 
 ### 3.1 什么时候需要代理

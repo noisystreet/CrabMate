@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=crabmate
+Comment=CrabMate desktop shell
+Exec=env GDK_BACKEND=x11 crabmate-desktop
+Icon=crabmate-desktop
+Terminal=false
+Categories=Utility;
+StartupWMClass=crabmate-desktop
