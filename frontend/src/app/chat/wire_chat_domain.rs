@@ -1,6 +1,17 @@
 //! 聊天域接线：会话切换、草稿同步、滚底、查找、composer 流式等 `wire_*` 从 `app/mod.rs` 迁出，落实 **`docs/frontend/ARCHITECTURE.md`** 阶段 **B（壳与域分离）**。
 //!
 //! `App` 仍负责创建跨域共享的 `RwSignal`（如 `status_busy`）并组装 [`ComposerStreamShell`](super::handles::ComposerStreamShell)；本模块只注册聊天相关副作用并返回 [`ChatComposerWires`](super::handles::ChatComposerWires)。
+//!
+//! # `wire_chat_domain_effects` 内顺序
+//!
+//! 1. [`wire_session_switch_clears_chat_state`](super::composer::wire_session_switch_clears_chat_state) — 切会话时加载草稿与 `session_sync`。  
+//! 2. [`wire_draft_sync_to_mirror_and_textarea`](super::composer::wire_draft_sync_to_mirror_and_textarea) — `draft` → 镜像层与 textarea。  
+//! 3. [`wire_messages_auto_scroll`](super::scroll::wire_messages_auto_scroll)。  
+//! 4. [`wire_chat_find_matches`](super::find::wire_chat_find_matches)。  
+//! 5. [`wire_focus_message_after_nav`](super::scroll::wire_focus_message_after_nav)。  
+//! 6. [`wire_chat_composer_streams`](super::composer::wire_chat_composer_streams)。  
+//!
+//! 调整顺序前须确认：会话切换与草稿同步应先于依赖 `draft` / `active_id` 的发送闭包稳定注册。
 
 use leptos::html::Textarea;
 use leptos::prelude::*;

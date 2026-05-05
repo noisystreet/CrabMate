@@ -1,5 +1,15 @@
 //! App 壳初始化：将所有 wire_* 调用、闭包构建与 AppShellCtx 组装外提，
 //! 使 `App` 组件本身仅保留布局组合。
+//!
+//! # `wire_*` 注册顺序（隐式依赖）
+//!
+//! 1. `wire_chat_session_lifecycle_effects` — 首启、`session_hydrate`、本地持久化等。  
+//! 2. 壳级偏好与快捷键：`wire_persist_*`、`wire_escape_key_layered_dismiss` 等。  
+//! 3. `wire_workspace_domain_effects`、`wire_status_tasks_domain_effects`。  
+//! 4. `wire_chat_domain_effects` — 聊天主列；**其内部**子 `wire_*` 顺序见
+//!    [`wire_chat_domain`](super::chat::wire_chat_domain) 模块文档。  
+//!
+//! 新增全局 `Effect` 时尽量落在对应域的 `wire_*` 内，并同步上述文档。
 
 use std::rc::Rc;
 use std::sync::Arc;
