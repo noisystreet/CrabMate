@@ -13,6 +13,7 @@ use leptos::task::spawn_local;
 use leptos_dom::helpers::event_target_value;
 use wasm_bindgen::JsCast;
 
+use crate::chat_session_state::ChatSessionSignals;
 use crate::debounce_schedule;
 use crate::i18n;
 use crate::session_ops::{
@@ -36,16 +37,14 @@ const SIDEBAR_SESSION_FILTER_DEBOUNCE_MS: u32 = 250;
 const GLOBAL_MESSAGE_SEARCH_DEBOUNCE_MS: u32 = 250;
 
 /// 侧栏会话列表滚动区内共享信号（缩短 [`nav_rail_session_scroll_inner`] 形参列表）。
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 struct NavRailSessionScrollSignals {
     locale: RwSignal<crate::i18n::Locale>,
     sidebar_search_panel_open: RwSignal<bool>,
     sidebar_filter_debounced: RwSignal<String>,
     global_message_filter_debounced: RwSignal<String>,
-    sessions: RwSignal<Vec<ChatSession>>,
-    active_id: RwSignal<String>,
+    chat: ChatSessionSignals,
     draft: RwSignal<String>,
-    session_sync: RwSignal<SessionSyncState>,
     mobile_nav_open: RwSignal<bool>,
     session_context_menu: RwSignal<Option<SessionContextAnchor>>,
     sidebar_rail_ctx_menu: RwSignal<Option<(f64, f64)>>,
@@ -54,32 +53,28 @@ struct NavRailSessionScrollSignals {
 }
 
 /// 侧栏搜索命中与会话行按钮共享的导航信号（缩短 [`nav_search_hit_button`] / [`nav_session_row_button`] 形参列表）。
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 struct NavRailHitRowNavSignals {
-    sessions: RwSignal<Vec<ChatSession>>,
-    active_id: RwSignal<String>,
+    chat: ChatSessionSignals,
     draft: RwSignal<String>,
-    session_sync: RwSignal<SessionSyncState>,
     session_context_menu: RwSignal<Option<SessionContextAnchor>>,
     sidebar_rail_ctx_menu: RwSignal<Option<(f64, f64)>>,
-    focus_message_id_after_nav: RwSignal<Option<String>>,
     mobile_nav_open: RwSignal<bool>,
     locale: RwSignal<crate::i18n::Locale>,
+    focus_message_id_after_nav: RwSignal<Option<String>>,
 }
 
 fn nav_rail_hit_row_nav_signals_from_scroll(
     s: &NavRailSessionScrollSignals,
 ) -> NavRailHitRowNavSignals {
     NavRailHitRowNavSignals {
-        sessions: s.sessions,
-        active_id: s.active_id,
+        chat: s.chat,
         draft: s.draft,
-        session_sync: s.session_sync,
         session_context_menu: s.session_context_menu,
         sidebar_rail_ctx_menu: s.sidebar_rail_ctx_menu,
-        focus_message_id_after_nav: s.focus_message_id_after_nav,
         mobile_nav_open: s.mobile_nav_open,
         locale: s.locale,
+        focus_message_id_after_nav: s.focus_message_id_after_nav,
     }
 }
 
@@ -113,17 +108,14 @@ fn rail_context_menu_target_is_session_row_or_hit(ev: &web_sys::MouseEvent) -> b
         || el.closest(".nav-search-hit").ok().flatten().is_some()
 }
 
-#[allow(clippy::too_many_arguments)]
 #[component]
 fn SessionContextMenuLayer(
     locale: RwSignal<crate::i18n::Locale>,
     session_context_menu: RwSignal<Option<SessionContextAnchor>>,
     session_modal: RwSignal<bool>,
     mobile_nav_open: RwSignal<bool>,
-    sessions: RwSignal<Vec<ChatSession>>,
-    active_id: RwSignal<String>,
+    chat: ChatSessionSignals,
     draft: RwSignal<String>,
-    session_sync: RwSignal<SessionSyncState>,
     apply_assistant_display_filters: RwSignal<bool>,
 ) -> impl IntoView {
     view! {
@@ -166,23 +158,23 @@ fn SessionContextMenuLayer(
                                 return;
                             };
                             let id = a.session_id.clone();
-                            let starred = sessions.with(|list| {
+                            let starred = chat.sessions.with(|list| {
                                 list.iter()
                                     .find(|s| s.id == id)
                                     .map(|s| s.starred)
                                     .unwrap_or(false)
                             });
                             session_context_menu.set(None);
-                            set_session_starred(sessions, &id, !starred);
+                            set_session_starred(chat.sessions, &id, !starred);
                         }
                     >
                         {move || {
-                            let _ = sessions.get();
+                            let _ = chat.sessions.get();
                             let loc = locale.get();
                             let Some(a) = session_context_menu.get() else {
                                 return i18n::ctx_star_session(loc).to_string();
                             };
-                            let starred = sessions.with(|list| {
+                            let starred = chat.sessions.with(|list| {
                                 list.iter()
                                     .find(|s| s.id == a.session_id)
                                     .map(|s| s.starred)
@@ -204,23 +196,23 @@ fn SessionContextMenuLayer(
                                 return;
                             };
                             let id = a.session_id.clone();
-                            let pinned = sessions.with(|list| {
+                            let pinned = chat.sessions.with(|list| {
                                 list.iter()
                                     .find(|s| s.id == id)
                                     .map(|s| s.pinned)
                                     .unwrap_or(false)
                             });
                             session_context_menu.set(None);
-                            set_session_pinned(sessions, &id, !pinned);
+                            set_session_pinned(chat.sessions, &id, !pinned);
                         }
                     >
                         {move || {
-                            let _ = sessions.get();
+                            let _ = chat.sessions.get();
                             let loc = locale.get();
                             let Some(a) = session_context_menu.get() else {
                                 return i18n::ctx_pin_session(loc).to_string();
                             };
-                            let pinned = sessions.with(|list| {
+                            let pinned = chat.sessions.with(|list| {
                                 list.iter()
                                     .find(|s| s.id == a.session_id)
                                     .map(|s| s.pinned)
@@ -244,7 +236,7 @@ fn SessionContextMenuLayer(
                             let id = a.session_id;
                             session_context_menu.set(None);
                             export_session_json_for_id(
-                                sessions,
+                                chat.sessions,
                                 &id,
                                 locale.get_untracked(),
                                 apply_assistant_display_filters.get_untracked(),
@@ -264,7 +256,7 @@ fn SessionContextMenuLayer(
                             let id = a.session_id;
                             session_context_menu.set(None);
                             export_session_markdown_for_id(
-                                sessions,
+                                chat.sessions,
                                 &id,
                                 locale.get_untracked(),
                                 apply_assistant_display_filters.get_untracked(),
@@ -284,10 +276,10 @@ fn SessionContextMenuLayer(
                             let id = a.session_id;
                             session_context_menu.set(None);
                             delete_session_after_confirm(
-                                sessions,
-                                active_id,
+                                chat.sessions,
+                                chat.active_id,
                                 draft,
-                                session_sync,
+                                chat.session_sync,
                                 &id,
                                 locale.get_untracked(),
                             );
@@ -423,10 +415,11 @@ fn nav_rail_session_scroll_inner(s: NavRailSessionScrollSignals) -> impl IntoVie
         sidebar_search_panel_open,
         sidebar_filter_debounced,
         global_message_filter_debounced,
-        sessions,
+        chat,
         apply_assistant_display_filters,
         ..
     } = s;
+    let sessions = chat.sessions;
     move || {
         let search_ui_open = sidebar_search_panel_open.get();
         let needle = if search_ui_open {
@@ -489,16 +482,17 @@ fn nav_rail_session_scroll_inner(s: NavRailSessionScrollSignals) -> impl IntoVie
 
 fn nav_search_hit_button(h: MessageSearchHit, nav: NavRailHitRowNavSignals) -> impl IntoView {
     let NavRailHitRowNavSignals {
-        sessions,
-        active_id,
+        chat,
         draft,
-        session_sync,
         session_context_menu,
         sidebar_rail_ctx_menu,
         focus_message_id_after_nav,
         mobile_nav_open,
         locale,
     } = nav;
+    let sessions = chat.sessions;
+    let active_id = chat.active_id;
+    let session_sync = chat.session_sync;
     let sid = h.session_id.clone();
     let mid = h.message_id.clone();
     let title = h.session_title.clone();
@@ -537,16 +531,17 @@ fn nav_search_hit_button(h: MessageSearchHit, nav: NavRailHitRowNavSignals) -> i
 
 fn nav_session_row_button(s: ChatSession, nav: NavRailHitRowNavSignals) -> impl IntoView {
     let NavRailHitRowNavSignals {
-        sessions,
-        active_id,
+        chat,
         draft,
-        session_sync,
         session_context_menu,
         sidebar_rail_ctx_menu,
         mobile_nav_open,
         locale,
         ..
     } = nav;
+    let sessions = chat.sessions;
+    let active_id = chat.active_id;
+    let session_sync = chat.session_sync;
     let session_id_class = s.id.clone();
     let session_id_click = s.id.clone();
     let session_id_ctx = s.id.clone();
@@ -654,9 +649,6 @@ pub fn sidebar_nav_view(signals: SidebarNavSignals) -> impl IntoView {
         apply_assistant_display_filters,
         sidebar_rail_collapsed,
     } = signals;
-    let sessions = chat.sessions;
-    let active_id = chat.active_id;
-    let session_sync = chat.session_sync;
     let sidebar_filter_debounced = RwSignal::new(String::new());
     let global_message_filter_debounced = RwSignal::new(String::new());
     debounce_signal_to_effect(
@@ -736,10 +728,8 @@ pub fn sidebar_nav_view(signals: SidebarNavSignals) -> impl IntoView {
                     sidebar_search_panel_open,
                     sidebar_filter_debounced,
                     global_message_filter_debounced,
-                    sessions,
-                    active_id,
+                    chat,
                     draft,
-                    session_sync,
                     mobile_nav_open,
                     session_context_menu,
                     sidebar_rail_ctx_menu,
@@ -754,10 +744,8 @@ pub fn sidebar_nav_view(signals: SidebarNavSignals) -> impl IntoView {
             session_context_menu=session_context_menu
             session_modal=session_modal
             mobile_nav_open=mobile_nav_open
-            sessions=sessions
-            active_id=active_id
+            chat=chat
             draft=draft
-            session_sync=session_sync
             apply_assistant_display_filters=apply_assistant_display_filters
         />
 
