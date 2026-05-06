@@ -20,6 +20,7 @@ mod settings_modal;
 mod settings_modal_dialog;
 mod settings_page;
 mod settings_sections;
+pub(crate) mod shell_prefs_storage;
 mod side_column;
 mod side_column_toolbar;
 mod side_column_workspace_scroll;

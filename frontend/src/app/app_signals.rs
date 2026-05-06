@@ -15,10 +15,10 @@ use leptos::prelude::*;
 use leptos_dom::helpers::WindowListenerHandle;
 
 use crate::api::{StatusData, TasksData, WorkspaceData};
+use crate::app::shell_prefs_storage;
 use crate::app_prefs::{
-    BG_DECOR_KEY, CM_ROLE_KEY, DEFAULT_SIDE_WIDTH, SIDEBAR_RAIL_COLLAPSED_KEY,
-    STATUS_BAR_VISIBLE_KEY, SidePanelView, THEME_KEY, WORKSPACE_WIDTH_KEY, load_bool_key,
-    load_f64_key, load_side_panel_view, local_storage,
+    BG_DECOR_KEY, DEFAULT_SIDE_WIDTH, SIDEBAR_RAIL_COLLAPSED_KEY, STATUS_BAR_VISIBLE_KEY,
+    SidePanelView, WORKSPACE_WIDTH_KEY, load_bool_key, load_f64_key, load_side_panel_view,
 };
 use crate::clarification_form::PendingClarificationForm;
 use crate::i18n::Locale;
@@ -47,11 +47,7 @@ pub struct ShellUISignals {
 impl ShellUISignals {
     pub fn new() -> Self {
         Self {
-            theme: RwSignal::new(
-                local_storage()
-                    .and_then(|s| s.get_item(THEME_KEY).ok().flatten())
-                    .unwrap_or_else(|| "light".to_string()),
-            ),
+            theme: RwSignal::new(shell_prefs_storage::read_theme_initial()),
             bg_decor: RwSignal::new(load_bool_key(BG_DECOR_KEY, true)),
             locale: RwSignal::new(crate::i18n::load_locale_from_storage()),
             view_menu_open: RwSignal::new(false),
@@ -290,12 +286,7 @@ impl LLMSettingsSignals {
             executor_llm_settings_feedback: RwSignal::new(None),
             execution_mode_draft: RwSignal::new("rolling_planning".to_string()),
             client_llm_storage_tick: RwSignal::new(0),
-            selected_agent_role: RwSignal::new(
-                local_storage()
-                    .and_then(|s| s.get_item(CM_ROLE_KEY).ok().flatten())
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty()),
-            ),
+            selected_agent_role: RwSignal::new(shell_prefs_storage::read_agent_role_initial()),
         }
     }
 }

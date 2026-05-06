@@ -2,10 +2,11 @@
 
 use leptos::prelude::*;
 
+use crate::app::shell_prefs_storage;
 use crate::app_prefs::{
-    CM_ROLE_KEY, SIDEBAR_RAIL_COLLAPSED_KEY, STATUS_BAR_VISIBLE_KEY, SidePanelView,
-    TASKS_VISIBLE_KEY, WORKSPACE_VISIBLE_KEY, WORKSPACE_WIDTH_KEY, local_storage, store_bool_key,
-    store_f64_key, store_side_panel_view,
+    SIDEBAR_RAIL_COLLAPSED_KEY, STATUS_BAR_VISIBLE_KEY, SidePanelView, TASKS_VISIBLE_KEY,
+    WORKSPACE_VISIBLE_KEY, WORKSPACE_WIDTH_KEY, store_bool_key, store_f64_key,
+    store_side_panel_view,
 };
 
 pub fn wire_persist_side_panel_view_flags(side_panel_view: RwSignal<SidePanelView>) {
@@ -25,21 +26,7 @@ pub fn wire_persist_status_bar_visible(status_bar_visible: RwSignal<bool>) {
 
 pub fn wire_persist_agent_role(selected_agent_role: RwSignal<Option<String>>) {
     Effect::new(move |_| {
-        if let Some(st) = local_storage() {
-            match selected_agent_role
-                .get()
-                .as_deref()
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-            {
-                Some(role) => {
-                    let _ = st.set_item(CM_ROLE_KEY, role);
-                }
-                None => {
-                    let _ = st.remove_item(CM_ROLE_KEY);
-                }
-            }
-        }
+        shell_prefs_storage::persist_agent_role_trimmed(selected_agent_role.get().as_deref());
     });
 }
 
