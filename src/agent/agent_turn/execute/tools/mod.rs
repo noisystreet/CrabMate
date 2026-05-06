@@ -64,6 +64,8 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
     pub out: Option<&'a mpsc::Sender<String>>,
     pub tool_running_hook: Option<Arc<dyn Fn(bool) + Send + Sync>>,
+    pub clarification_questionnaire_hook:
+        Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     /// 终端 CLI：`run_command` 非白名单时 stdin 审批；`None` 时与历史一致（非白名单则无法执行）。
     pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
@@ -106,6 +108,9 @@ pub(super) struct EmitToolResultParams<'a> {
     cfg: &'a Arc<AgentConfig>,
     tool_outcome_recorder: &'a Arc<crate::tool_stats::ToolOutcomeRecorder>,
     out: Option<&'a mpsc::Sender<String>>,
+    /// 无 SSE 时（如 `crabmate tui`）：仍通知澄清问卷控制面，与 Web SSE 语义对齐。
+    clarification_questionnaire_hook:
+        Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
     echo_terminal_transcript: bool,
     terminal_tool_display_max_chars: usize,
     tool_result_envelope_v1: bool,
@@ -182,6 +187,8 @@ struct ExecuteToolsCommonCtx<'a> {
     sync_default_sandbox_backend: Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
     readonly_tool_ttl_cache: Arc<crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache>,
     tool_running_hook: Option<Arc<dyn Fn(bool) + Send + Sync>>,
+    clarification_questionnaire_hook:
+        Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
 }
 
 fn notify_cli_tool_running_hook(
@@ -320,6 +327,7 @@ pub(crate) async fn per_execute_tools_web(
         read_file_turn_cache,
         out,
         tool_running_hook,
+        clarification_questionnaire_hook,
         web_tool_ctx,
         cli_tool_ctx,
         echo_terminal_transcript,
@@ -354,6 +362,7 @@ pub(crate) async fn per_execute_tools_web(
         workspace_changelist,
         out,
         tool_running_hook,
+        clarification_questionnaire_hook,
         echo_terminal_transcript,
         terminal_tool_display_max_chars: cfg.command_exec.command_max_output_len,
         tool_result_envelope_v1: cfg.tool_transcript.tool_result_envelope_v1,

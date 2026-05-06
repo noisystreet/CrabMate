@@ -105,7 +105,7 @@ cd frontend && trunk build && cd ..
 
 - **`crabmate repl`**：交互式对话；**`/`** 内建命令与可选 **`bash#:`** 见 [docs/命令行与路由.md](docs/命令行与路由.md)。启动后可 **`/api-key set`**、**`/model set`**、**`/api-base set`**（均仅本进程内存）；bearer 无密钥时提示 **`/api-key`**。
 - **`crabmate chat`**：单次非交互；**`serve`**：HTTP + Web UI（与 Web 共用逻辑）。
-- **`crabmate tui`**：实验性全屏界面；**Enter** 发送；**`/api-key`** 与 **`repl`** 同源（反馈写在会话区）；其它 **`/`** 命令请用 **`repl`**；输入为空时 **`q`** / **Ctrl+C** 退出；**`--no-stream`** 控制是否 SSE；聊天区**不**展示系统提示词及与 Web 会话快照同类注入（仍送模型）；详见 [docs/命令行与路由.md](docs/命令行与路由.md)。
+- **`crabmate tui`**：实验性全屏界面；**Enter** 发送；**`/api-key`** 与 **`repl`** 同源（反馈写在会话区）；其它 **`/`** 命令请用 **`repl`**；输入为空时 **`q`** / **Ctrl+C** 退出；**`--no-stream`** 控制是否 SSE；模型调用 **`present_clarification_questionnaire`** 时弹出澄清问卷（**Tab** 切换题目、**Enter** 提交），答案并入下一轮用户消息（与 Web **`clarify_questionnaire_answers`** 对齐）；聊天区**不**展示系统提示词及与 Web 会话快照同类注入（仍送模型）；详见 [docs/命令行与路由.md](docs/命令行与路由.md)。
 - **常用**：**`doctor`**、**`config`**、**`probe`** / **`models`**、**`bench`**、**`save-session`** / **`export-session`**、**`tool-replay`**、**`mcp list`** / **`mcp serve`**。全局选项 **`--config`**、**`--workspace`**、**`--agent-role`**、**`--no-tools`**、**`--llm-context-tokens`**、**`--no-stream`** 等。
 - 配置键：[docs/配置说明.md](docs/配置说明.md)；子命令全表、Benchmark、**`man crabmate`**：[docs/命令行与路由.md](docs/命令行与路由.md)。
 

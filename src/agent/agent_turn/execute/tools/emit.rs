@@ -2,7 +2,7 @@ use log::info;
 use tokio::sync::mpsc;
 
 use crate::agent::per_coord::PerCoordinator;
-use crate::clarification_questionnaire::maybe_emit_clarification_questionnaire_sse;
+use crate::clarification_questionnaire::clarification_questionnaire_body_if_tool_ok;
 use crate::config::AgentConfig;
 use crate::sse::{SsePayload, ThinkingTraceBody, ToolCallSummary, ToolResultBody, encode_message};
 use crate::tool_result::{self, NormalizedToolEnvelope, ToolEnvelopeContext, parse_legacy_output};
@@ -174,6 +174,7 @@ pub(super) async fn emit_tool_result_sse_and_append(
         cfg,
         tool_outcome_recorder,
         out,
+        clarification_questionnaire_hook,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
         tool_result_envelope_v1,
@@ -211,7 +212,22 @@ pub(super) async fn emit_tool_result_sse_and_append(
             envelope_ctx,
         )
         .await;
-        maybe_emit_clarification_questionnaire_sse(Some(tx), name, args, result.as_str()).await;
+    }
+
+    if let Some(body) = clarification_questionnaire_body_if_tool_ok(name, args, result.as_str()) {
+        if let Some(tx) = out {
+            let _ = crate::sse::send_string_logged(
+                tx,
+                encode_message(SsePayload::ClarificationQuestionnaire {
+                    clarification_questionnaire: body.clone(),
+                }),
+                "clarification_questionnaire",
+            )
+            .await;
+        }
+        if let Some(h) = clarification_questionnaire_hook.as_ref() {
+            h(body);
+        }
     }
 
     let status = if parsed_for_timeline.ok {

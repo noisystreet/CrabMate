@@ -322,6 +322,8 @@ struct ParallelEmitOrderedParams<'a> {
     cfg: &'a Arc<AgentConfig>,
     tool_outcome_recorder: &'a Arc<crate::tool_stats::ToolOutcomeRecorder>,
     out: Option<&'a tokio::sync::mpsc::Sender<String>>,
+    clarification_questionnaire_hook:
+        Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
     echo_terminal_transcript: bool,
     terminal_tool_display_max_chars: usize,
     tool_result_envelope_v1: bool,
@@ -339,6 +341,7 @@ async fn parallel_emit_ordered_tool_results(
         cfg,
         tool_outcome_recorder,
         out,
+        clarification_questionnaire_hook,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
         tool_result_envelope_v1,
@@ -391,6 +394,7 @@ async fn parallel_emit_ordered_tool_results(
                 cfg,
                 tool_outcome_recorder,
                 out,
+                clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
                 echo_terminal_transcript,
                 terminal_tool_display_max_chars,
                 tool_result_envelope_v1,
@@ -440,6 +444,7 @@ pub(super) async fn execute_tools_parallel(
         handler_lookup,
         sync_default_sandbox_backend,
         readonly_tool_ttl_cache: _,
+        clarification_questionnaire_hook,
     } = ctx;
 
     let sandbox_backend = Arc::clone(&sync_default_sandbox_backend);
@@ -506,6 +511,7 @@ pub(super) async fn execute_tools_parallel(
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
         tool_result_envelope_v1,
+        clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
     })
     .await
 }
