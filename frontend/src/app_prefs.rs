@@ -1,4 +1,6 @@
 //! 本机偏好与布局常量：localStorage 键、侧栏视图、状态栏展示用合并逻辑。
+//!
+//! **`localStorage` 句柄**以 [`local_storage`] 为规范实现；各域键名索引见 [`crate::app::local_storage_index`]。
 
 use crate::api::StatusData;
 

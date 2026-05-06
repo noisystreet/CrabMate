@@ -9,7 +9,7 @@ pub fn window() -> Option<Window> {
 }
 
 pub fn local_storage() -> Option<web_sys::Storage> {
-    window().and_then(|w| w.local_storage().ok().flatten())
+    crate::app_prefs::local_storage()
 }
 
 pub fn auth_headers() -> Headers {

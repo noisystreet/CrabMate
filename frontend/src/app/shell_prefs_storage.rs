@@ -2,25 +2,27 @@
 //!
 //! # 与其它模块分工
 //!
-//! - **键名与通用读写**：[`crate::app_prefs`]（`THEME_KEY`、`store_bool_key`、侧栏视图等）。
+//! - **键名与通用读写**：[`crate::app_prefs`]（`THEME_KEY`、`store_bool_key`、侧栏视图等）；句柄经 [`super::local_storage_index`]。
 //! - **会话 JSON**：[`crate::storage`] / [`super::app_shell_effects::session_storage`]。
 //! - **`client_llm.*` / Bearer**：[`crate::api::client_llm_storage`]。
 //!
 //! 新增「首屏就读 / Effect 里写磁盘或改 DOM」的壳偏好时，优先在本模块加函数，避免在多个 `wire_*` 文件里散落 `set_item`。
 
-use crate::app_prefs::{BG_DECOR_KEY, CM_ROLE_KEY, THEME_KEY, local_storage, store_bool_key};
+use crate::app_prefs::{BG_DECOR_KEY, CM_ROLE_KEY, THEME_KEY, store_bool_key};
 use crate::i18n::Locale;
+
+use super::local_storage_index;
 
 #[must_use]
 pub(crate) fn read_theme_initial() -> String {
-    local_storage()
+    local_storage_index::handle()
         .and_then(|s| s.get_item(THEME_KEY).ok().flatten())
         .unwrap_or_else(|| "light".to_string())
 }
 
 /// 将主题写入本机并设置 `data-theme`（与 [`super::app_shell_effects::sync_dom::wire_sync_theme_to_storage_and_dom`] 语义一致）。
 pub(crate) fn persist_theme_to_storage_and_dom(theme: &str) {
-    if let Some(st) = local_storage() {
+    if let Some(st) = local_storage_index::handle() {
         let _ = st.set_item(THEME_KEY, theme);
     }
     if let Some(doc) = web_sys::window().and_then(|w| w.document())
@@ -56,7 +58,7 @@ pub(crate) fn persist_bg_decor_to_storage_and_dom(bg_decor: bool) {
 
 #[must_use]
 pub(crate) fn read_agent_role_initial() -> Option<String> {
-    local_storage()
+    local_storage_index::handle()
         .and_then(|s| s.get_item(CM_ROLE_KEY).ok().flatten())
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
@@ -64,7 +66,7 @@ pub(crate) fn read_agent_role_initial() -> Option<String> {
 
 /// 经纪人角色：非空则 `set_item`，否则 `remove_item`。
 pub(crate) fn persist_agent_role_trimmed(selected: Option<&str>) {
-    let Some(st) = local_storage() else {
+    let Some(st) = local_storage_index::handle() else {
         return;
     };
     match selected.map(str::trim).filter(|s| !s.is_empty()) {

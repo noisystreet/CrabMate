@@ -190,7 +190,7 @@ struct SessionsFile {
 }
 
 pub fn window_storage() -> Option<web_sys::Storage> {
-    web_sys::window()?.local_storage().ok().flatten()
+    crate::app_prefs::local_storage()
 }
 
 pub fn load_sessions() -> (Vec<ChatSession>, Option<String>) {

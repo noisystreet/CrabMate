@@ -10,6 +10,7 @@ mod app_signals;
 mod approval_modal;
 mod changelist_modal;
 mod chat;
+pub(crate) mod local_storage_index;
 mod mobile_shell_header;
 pub mod scroll_guard;
 mod session_hydrate;
