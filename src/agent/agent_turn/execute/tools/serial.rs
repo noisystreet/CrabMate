@@ -625,6 +625,7 @@ pub(super) async fn execute_tools_serial(
         read_file_turn_cache,
         workspace_changelist,
         out,
+        tool_running_hook: _,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
         tool_result_envelope_v1,

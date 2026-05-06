@@ -8,16 +8,21 @@
 //!
 //! **焦点**：左/中上（聊天）/中下（撰写）/右四块可点击聚焦（**`EnableMouseCapture`**），边框与标题高亮；**`Tab` / `Shift+Tab`** 循环焦点。字符输入与退格仅在 **「撰写」** 聚焦时生效；**`Enter`** 始终提交当前输入行。
 //!
+//! **中区 transcript**：与 Web 快照一致的过滤（[`is_message_visible_in_chat_transcript`]）；**工具**条走 [`crate::runtime::message_display::tool_content_for_display_for_message`]（摘要优先，非原始 JSON）；**助手**走 [`assistant_markdown_source_for_message`]；**用户**走 [`user_message_for_chat_display`]（隐藏分步注入等）。
+//!
 //! **工具审批**：全屏居中 Modal（↑↓ / jk · Enter · Esc · 1/2/3），与 REPL dialoguer 三项语义一致；不退出 alternate screen。
 //!
 //! **撰写区**：按单元格宽度自动换行（宽字符计入 **`unicode-width`**）；纵向往下溢出时仅保留底部可见行（滚动）；**「撰写」** 聚焦时 **`Frame::set_cursor_position`** 显示插入光标。
+//!
+//! **底栏**：对齐 Web `status_bar_footer_view` — **模型 · … · base_url · … · 角色 · … ·** 运行态（**就绪** / **模型生成中…** / **工具执行中…** / **错误:** …）；快捷键说明在右侧栏。
 
 mod approval;
 mod render;
+mod transcript;
 
 use std::collections::VecDeque;
 use std::io::{self, IsTerminal, Stdout, stdout};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -39,7 +44,7 @@ use ratatui::text::{Line, Text};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::config::SharedAgentConfig;
+use crate::config::{AgentConfig, SharedAgentConfig};
 use crate::runtime::cli::{
     CliMainInvocationCommon, ReplAfterUserMessageEnqueuedCb, ReplDispatchChatRoundParams,
     ReplSlashFollowupCtx, ReplSlashHandled, ReplSlashSharedHandles, cli_effective_work_dir,
@@ -54,9 +59,7 @@ use crate::runtime::workspace_session;
 use crate::text_util::truncate_chars_with_ellipsis;
 use crate::tool_approval::TuiApprovalRequest;
 use crate::tool_registry::CliToolRuntime;
-use crate::types::{
-    Message, is_message_visible_in_chat_transcript, message_content_plain_for_chat_display,
-};
+use crate::types::Message;
 
 /// 撰写区行首提示符（与 [`composer_wrap_lines`] 起始列一致）。
 const COMPOSER_PROMPT_PREFIX: &str = "› ";
@@ -76,10 +79,66 @@ fn build_tui_nav_summary(
     )
 }
 
-fn build_tui_right_summary(tool_count: usize) -> String {
+fn build_tui_right_summary(tool_count: usize, cli_no_stream: bool) -> String {
     format!(
-        "侧栏占位\n\n敏感工具审批：全屏 Modal（↑↓ · Enter · Esc · 1/2/3）。\n\n已加载工具：{tool_count} 个",
+        "快捷键\n{}\n\n敏感工具审批：全屏 Modal（↑↓ · Enter · Esc · 1/2/3）。\n\n已加载工具：{tool_count} 个",
+        tui_keyboard_help_compact(cli_no_stream),
     )
+}
+
+/// 原底栏文案迁至侧栏；与 `--no-stream` 对齐 REPL 提示。
+fn tui_keyboard_help_compact(cli_no_stream: bool) -> String {
+    let mut s = String::from(
+        "Enter 发送 · 空行 q · Ctrl+C · /help · Tab 切焦点 · 鼠标点面板 · 聊天区 PgUp/PgDn",
+    );
+    if cli_no_stream {
+        s.push_str(" · --no-stream");
+    } else {
+        s.push_str(" · 流式（不写 stdout）");
+    }
+    s
+}
+
+/// 与 Web 底栏「角色」下拉一致：显式 `/agent set` 显示 id；否则 default / default (配置 id)。
+fn tui_status_role_label(agent_role_owned: &Option<String>, cfg: &AgentConfig) -> String {
+    if let Some(id) = agent_role_owned
+        .as_ref()
+        .map(|x| x.trim())
+        .filter(|s| !s.is_empty())
+    {
+        return id.to_string();
+    }
+    match cfg
+        .roles_prompts
+        .default_agent_role_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some(id) => format!("default ({id})"),
+        None => "default".to_string(),
+    }
+}
+
+/// Web 底栏 chips 段（不含末尾「就绪 / 模型生成中…」等运行态）。
+async fn tui_status_chips_line(
+    cfg_holder: &SharedAgentConfig,
+    agent_role_owned: &Option<String>,
+) -> String {
+    let g = cfg_holder.read().await;
+    let model_id = g.llm.model.as_str();
+    let base = truncate_chars_with_ellipsis(g.llm.api_base.trim(), 44);
+    let role = tui_status_role_label(agent_role_owned, &g);
+    format!("模型 · {model_id} · base_url · {base} · 角色 · {role}")
+}
+
+fn tui_status_bar_with_run(chips: &str, run: &str) -> String {
+    format!("{chips} · {run}")
+}
+
+/// Web `status_model_running` 文案 + TUI 补充的消息条数。
+fn tui_status_suffix_model_busy_lines(msg_len: usize) -> String {
+    format!("模型生成中… · {msg_len} 条")
 }
 
 fn tui_use_ansi_color() -> bool {
@@ -254,6 +313,8 @@ struct TuiModel {
     /// 聊天区垂直滚动（`Paragraph::scroll` 的 y）；须与 [`render::clamped_chat_vertical_scroll`] 一致地 clamp，避免 ratatui `scroll_y` 过大导致溢出 panic。
     chat_scroll_y: u16,
     input: String,
+    /// 与 Web 底栏 chips 同源快照（`模型 · … · base_url · … · 角色 · …`），供同步回调拼接运行态。
+    status_chips: String,
     status: String,
     focus: TuiFocus,
     /// 敏感工具审批 Modal（单条）；多条时先入队。
@@ -261,15 +322,100 @@ struct TuiModel {
     approval_backlog: VecDeque<TuiApprovalRequest>,
 }
 
-async fn tui_refresh_after_slash_capture(
-    model: &Arc<Mutex<TuiModel>>,
-    captured: Vec<String>,
-    cfg_holder: &SharedAgentConfig,
-    work_dir: &std::path::Path,
+struct TuiSlashUiRefresh<'a> {
+    model: &'a Arc<Mutex<TuiModel>>,
+    cfg_holder: &'a SharedAgentConfig,
+    work_dir: &'a std::path::Path,
+    agent_role_owned: &'a Option<String>,
     message_count: usize,
     tool_count: usize,
     cli_no_stream: bool,
-) {
+    captured: Vec<String>,
+}
+
+struct TuiSlashSubmit<'a> {
+    cfg_holder: &'a SharedAgentConfig,
+    config_path: Option<&'a str>,
+    client: &'a reqwest::Client,
+    tools: &'a [crate::types::Tool],
+    messages: &'a mut Vec<Message>,
+    work_dir: &'a mut std::path::PathBuf,
+    cli_no_stream: bool,
+    agent_role_owned: &'a mut Option<String>,
+    slash_handles: &'a ReplSlashSharedHandles,
+    model: &'a Arc<Mutex<TuiModel>>,
+    handoff_tx: &'a std::sync::mpsc::Sender<TuiTerminalHandoffOp>,
+}
+
+async fn tui_try_consume_slash_submit(
+    trimmed: &str,
+    ctx: TuiSlashSubmit<'_>,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    if !trimmed.starts_with('/') {
+        return Ok(false);
+    }
+    let cap = Arc::new(Mutex::new(Vec::<String>::new()));
+    let style_cap = CliReplStyle::new_tui_capture(Arc::clone(&cap));
+    let handled = try_handle_repl_slash_command(
+        trimmed,
+        ctx.cfg_holder,
+        ctx.tools,
+        ctx.messages,
+        ctx.work_dir,
+        &style_cap,
+        ctx.cli_no_stream,
+        ctx.agent_role_owned,
+        ctx.slash_handles,
+    )
+    .await;
+    if matches!(handled, ReplSlashHandled::NotSlash) {
+        let mut g = ctx.model.lock().unwrap_or_else(|e| e.into_inner());
+        let chips = g.status_chips.clone();
+        g.status = format!(
+            "{} · 错误: {}",
+            chips, "输入以 / 开头但未识别为内建命令（不应发生）；请报告 issue"
+        );
+        return Ok(true);
+    }
+    repl_slash_handled_followup(
+        handled,
+        ReplSlashFollowupCtx {
+            cfg_holder: ctx.cfg_holder,
+            config_path: ctx.config_path,
+            client: ctx.client,
+            slash_handles: ctx.slash_handles,
+            style: &style_cap,
+            work_dir: ctx.work_dir.as_path(),
+            tui_terminal_tx: Some(ctx.handoff_tx),
+        },
+    )
+    .await?;
+    let captured = cap.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    tui_refresh_after_slash_capture(TuiSlashUiRefresh {
+        model: ctx.model,
+        cfg_holder: ctx.cfg_holder,
+        work_dir: ctx.work_dir.as_path(),
+        agent_role_owned: ctx.agent_role_owned,
+        message_count: ctx.messages.len(),
+        tool_count: ctx.tools.len(),
+        cli_no_stream: ctx.cli_no_stream,
+        captured,
+    })
+    .await;
+    Ok(true)
+}
+
+async fn tui_refresh_after_slash_capture(p: TuiSlashUiRefresh<'_>) {
+    let TuiSlashUiRefresh {
+        model,
+        cfg_holder,
+        work_dir,
+        agent_role_owned,
+        message_count,
+        tool_count,
+        cli_no_stream,
+        captured,
+    } = p;
     let new_header = tui_header_summary(cfg_holder, work_dir).await;
     let tui_load_nav = cfg_holder.read().await.session_ui.tui_load_session_on_start;
     let nav = build_tui_nav_summary(
@@ -278,7 +424,8 @@ async fn tui_refresh_after_slash_capture(
         workspace_session::session_file_path(work_dir).exists(),
         message_count,
     );
-    let right = build_tui_right_summary(tool_count);
+    let right = build_tui_right_summary(tool_count, cli_no_stream);
+    let chips = tui_status_chips_line(cfg_holder, agent_role_owned).await;
     let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
     if !captured.is_empty() {
         g.transcript.push_str("\n[/]\n");
@@ -291,17 +438,15 @@ async fn tui_refresh_after_slash_capture(
     g.header_line = new_header;
     g.nav_summary = nav;
     g.right_summary = right;
-    g.status = format!(
-        "就绪 · {} 条 · {}",
-        message_count,
-        status_hint(cli_no_stream)
-    );
+    g.status_chips = chips.clone();
+    g.status = tui_status_bar_with_run(&chips, "就绪");
 }
 
 async fn tui_refresh_after_chat_round(
     model: &Arc<Mutex<TuiModel>>,
     cfg_holder: &SharedAgentConfig,
     work_dir: &std::path::Path,
+    agent_role_owned: &Option<String>,
     messages: &[Message],
     tool_count: usize,
     cli_no_stream: bool,
@@ -314,18 +459,16 @@ async fn tui_refresh_after_chat_round(
         workspace_session::session_file_path(work_dir).exists(),
         messages.len(),
     );
-    let right = build_tui_right_summary(tool_count);
-    let transcript = messages_to_transcript(messages);
+    let right = build_tui_right_summary(tool_count, cli_no_stream);
+    let chips = tui_status_chips_line(cfg_holder, agent_role_owned).await;
+    let transcript = transcript::messages_to_transcript(messages);
     let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
     g.transcript = transcript;
     g.header_line = new_header;
     g.nav_summary = nav;
     g.right_summary = right;
-    g.status = format!(
-        "就绪 · {} 条消息 · {}",
-        messages.len(),
-        status_hint(cli_no_stream)
-    );
+    g.status_chips = chips.clone();
+    g.status = tui_status_bar_with_run(&chips, "就绪");
 }
 
 /// 进入全屏 TUI 并跑对话循环（须 TTY）。**`cli_no_stream`** 对应全局 **`--no-stream`**；助手正文不因流式写入 stdout（保护 alternate screen）。
@@ -398,7 +541,9 @@ pub async fn run_tui_session(
         workspace_session::session_file_path(work_dir.as_path()).exists(),
         messages.len(),
     );
-    let right_summary = build_tui_right_summary(tools.len());
+    let right_summary = build_tui_right_summary(tools.len(), cli_no_stream);
+    let status_chips = tui_status_chips_line(cfg_holder, &agent_role_owned).await;
+    let status_line = tui_status_bar_with_run(&status_chips, "就绪");
 
     let llm_scratch: TuiLlmStreamScratchArc = Arc::new(Mutex::new(TuiLlmStreamScratch::default()));
 
@@ -408,10 +553,11 @@ pub async fn run_tui_session(
         header_line,
         nav_summary,
         right_summary,
-        transcript: messages_to_transcript(&messages),
+        transcript: transcript::messages_to_transcript(&messages),
         chat_scroll_y: 0,
         input: String::new(),
-        status: status_hint(cli_no_stream),
+        status_chips,
+        status: status_line,
         focus: TuiFocus::default(),
         approval_modal: None,
         approval_backlog: VecDeque::new(),
@@ -439,51 +585,24 @@ pub async fn run_tui_session(
                 if trimmed.is_empty() {
                     continue;
                 }
-                if trimmed.starts_with('/') {
-                    let cap = Arc::new(Mutex::new(Vec::<String>::new()));
-                    let style_cap = CliReplStyle::new_tui_capture(Arc::clone(&cap));
-                    let handled = try_handle_repl_slash_command(
-                        trimmed.as_str(),
+                if tui_try_consume_slash_submit(
+                    trimmed.as_str(),
+                    TuiSlashSubmit {
                         cfg_holder,
+                        config_path,
+                        client,
                         tools,
-                        &mut messages,
-                        &mut work_dir,
-                        &style_cap,
+                        messages: &mut messages,
+                        work_dir: &mut work_dir,
                         cli_no_stream,
-                        &mut agent_role_owned,
-                        &slash_handles,
-                    )
-                    .await;
-                    if matches!(handled, ReplSlashHandled::NotSlash) {
-                        let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-                        g.status =
-                            "输入以 / 开头但未识别为内建命令（不应发生）；请报告 issue".to_string();
-                        continue;
-                    }
-                    repl_slash_handled_followup(
-                        handled,
-                        ReplSlashFollowupCtx {
-                            cfg_holder,
-                            config_path,
-                            client,
-                            slash_handles: &slash_handles,
-                            style: &style_cap,
-                            work_dir: work_dir.as_path(),
-                            tui_terminal_tx: Some(&handoff_tx),
-                        },
-                    )
-                    .await?;
-                    let captured = cap.lock().unwrap_or_else(|e| e.into_inner()).clone();
-                    tui_refresh_after_slash_capture(
-                        &model,
-                        captured,
-                        cfg_holder,
-                        work_dir.as_path(),
-                        messages.len(),
-                        tools.len(),
-                        cli_no_stream,
-                    )
-                    .await;
+                        agent_role_owned: &mut agent_role_owned,
+                        slash_handles: &slash_handles,
+                        model: &model,
+                        handoff_tx: &handoff_tx,
+                    },
+                )
+                .await?
+                {
                     continue;
                 }
                 {
@@ -491,14 +610,31 @@ pub async fn run_tui_session(
                     s.clear();
                 }
                 let model_refresh = Arc::clone(&model);
-                let cli_ns = cli_no_stream;
+                let msg_len_turn = Arc::new(AtomicUsize::new(0));
+                let msg_len_for_cb = Arc::clone(&msg_len_turn);
                 let on_user_enqueued: ReplAfterUserMessageEnqueuedCb =
                     Arc::new(move |msgs: &[Message]| {
-                        let t = messages_to_transcript(msgs);
+                        msg_len_for_cb.store(msgs.len(), Ordering::SeqCst);
+                        let t = transcript::messages_to_transcript(msgs);
                         let mut g = model_refresh.lock().unwrap_or_else(|e| e.into_inner());
                         g.transcript = t;
-                        g.status = format!("生成中 · {} 条 · {}", msgs.len(), status_hint(cli_ns));
+                        let chips = g.status_chips.clone();
+                        let suf = tui_status_suffix_model_busy_lines(msgs.len());
+                        g.status = tui_status_bar_with_run(&chips, suf.as_str());
                     });
+                let model_for_hook = Arc::clone(&model);
+                let msg_len_for_hook = Arc::clone(&msg_len_turn);
+                let tool_running_hook: Arc<dyn Fn(bool) + Send + Sync> = Arc::new(move |running| {
+                    let mut g = model_for_hook.lock().unwrap_or_else(|e| e.into_inner());
+                    let chips = g.status_chips.clone();
+                    let n = msg_len_for_hook.load(Ordering::SeqCst);
+                    g.status = if running {
+                        tui_status_bar_with_run(&chips, "工具执行中…")
+                    } else {
+                        let suf = tui_status_suffix_model_busy_lines(n.max(1));
+                        tui_status_bar_with_run(&chips, suf.as_str())
+                    };
+                });
                 repl_dispatch_chat_round(ReplDispatchChatRoundParams {
                     input: trimmed,
                     cfg_holder,
@@ -509,6 +645,7 @@ pub async fn run_tui_session(
                     no_stream: cli_no_stream,
                     suppress_stdout_render: true,
                     tui_llm_stream_scratch: Some(Arc::clone(&llm_scratch)),
+                    tool_running_hook: Some(tool_running_hook),
                     after_user_message_enqueued: Some(on_user_enqueued),
                     agent_role_owned: &mut agent_role_owned,
                     api_key_holder: &api_key_holder,
@@ -526,6 +663,7 @@ pub async fn run_tui_session(
                     &model,
                     cfg_holder,
                     work_dir.as_path(),
+                    &agent_role_owned,
                     messages.as_slice(),
                     tools.len(),
                     cli_no_stream,
@@ -562,73 +700,6 @@ async fn tui_header_summary(cfg_holder: &SharedAgentConfig, work_dir: &std::path
     let wd = work_dir.display().to_string();
     let wd_short = truncate_chars_with_ellipsis(&wd, 52);
     format!("CrabMate · {model_id} · {base} · {wd_short}")
-}
-
-fn status_hint(cli_no_stream: bool) -> String {
-    let mut s = String::from(
-        "Enter 发送 · 空行 q · Ctrl+C · /help · Tab 切焦点 · 鼠标点面板 · 聊天区 PgUp/PgDn 滚动",
-    );
-    if cli_no_stream {
-        s.push_str(" · --no-stream");
-    } else {
-        s.push_str(" · 流式（不写 stdout）");
-    }
-    s
-}
-
-fn message_body_for_transcript(m: &Message) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    if let Some(r) = m
-        .reasoning_content
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        parts.push(format!("(推理) {}", truncate_chars_with_ellipsis(r, 2000)));
-    }
-    let plain = message_content_plain_for_chat_display(&m.content);
-    let trimmed = plain.trim();
-    if !trimmed.is_empty() {
-        parts.push(truncate_chars_with_ellipsis(trimmed, 8000));
-    }
-    if parts.is_empty() {
-        String::new()
-    } else {
-        parts.join("\n")
-    }
-}
-
-fn messages_to_transcript(messages: &[Message]) -> String {
-    const MAX_TAIL: usize = 48;
-    // 与 Web [`filter_messages_for_web_client_snapshot`] 一致：不展示系统提示词与各类注入 user。
-    let visible: Vec<&Message> = messages
-        .iter()
-        .filter(|m| is_message_visible_in_chat_transcript(m))
-        .collect();
-    let start = visible.len().saturating_sub(MAX_TAIL);
-    let mut out = String::new();
-    for m in visible.into_iter().skip(start) {
-        let body = message_body_for_transcript(m);
-        if body.is_empty() {
-            continue;
-        }
-        out.push_str(&format!("[{}]\n{}\n\n", m.role, body));
-    }
-    const MAX_CHARS: usize = 96_000;
-    if out.len() > MAX_CHARS {
-        let drain = out.len() - MAX_CHARS;
-        let safe = next_char_boundary(&out, drain);
-        out.drain(..safe);
-    }
-    out
-}
-
-fn next_char_boundary(s: &str, byte_idx: usize) -> usize {
-    let mut i = byte_idx.min(s.len());
-    while i < s.len() && !s.is_char_boundary(i) {
-        i += 1;
-    }
-    i
 }
 
 /// UI 线程轮询：`/doctor` 等 stdout 交接与工具审批队列。

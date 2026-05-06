@@ -154,16 +154,15 @@ pub(super) fn render_full(
 
     let status_style = status_line_style(color);
     let status_block = Block::default().style(status_style);
+    let status_w = vertical[2].width.saturating_sub(2).max(8) as usize;
+    let status_text = truncate_chars_with_ellipsis(model.status.as_str(), status_w);
     let status_line = if color {
-        Line::from(vec![
-            Span::styled(model.status.as_str(), Style::default().fg(Color::White)),
-            Span::styled(
-                " · 配置见 crabmate repl /config",
-                Style::default().fg(Color::Gray),
-            ),
-        ])
+        Line::from(Span::styled(
+            status_text.as_str(),
+            Style::default().fg(Color::White),
+        ))
     } else {
-        Line::from(model.status.as_str())
+        Line::from(status_text)
     };
     let status = Paragraph::new(status_line).block(status_block);
     frame.render_widget(status, vertical[2]);

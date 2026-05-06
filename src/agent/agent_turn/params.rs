@@ -46,6 +46,8 @@ pub(crate) struct RunLoopCtx<'a> {
     pub plain_terminal_stream: bool,
     /// TUI：流式增量缓冲；Web/CLI 等为 `None`。
     pub tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
+    /// 无 SSE 时工具批开始/结束回调（与 [`crate::AgentTurnTransport::tool_running_hook`] 同源）。
+    pub tool_running_hook: Option<Arc<dyn Fn(bool) + Send + Sync>>,
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     /// 与 [`WebExecuteCtx::cli_tool_ctx`] 相同；Web 队列传 `None`。
     pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,

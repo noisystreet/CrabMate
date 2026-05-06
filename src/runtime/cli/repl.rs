@@ -274,6 +274,8 @@ pub(crate) struct ReplDispatchChatRoundParams<'a> {
     pub(crate) no_stream: bool,
     pub(crate) suppress_stdout_render: bool,
     pub(crate) tui_llm_stream_scratch: Option<crate::runtime::tui::TuiLlmStreamScratchArc>,
+    /// TUI：工具批开始/结束回调（底栏「工具执行中…」）；REPL 为 `None`。
+    pub(crate) tool_running_hook: Option<std::sync::Arc<dyn Fn(bool) + Send + Sync>>,
     /// TUI 等：用户消息已写入 `messages` 后立即刷新展示（不等整轮 `run_agent_turn` 结束）。
     pub(crate) after_user_message_enqueued: Option<ReplAfterUserMessageEnqueuedCb>,
     pub(crate) agent_role_owned: &'a mut Option<String>,
@@ -297,6 +299,7 @@ pub(crate) async fn repl_dispatch_chat_round(
         no_stream,
         suppress_stdout_render,
         tui_llm_stream_scratch,
+        tool_running_hook,
         after_user_message_enqueued,
         agent_role_owned,
         api_key_holder,
@@ -386,6 +389,7 @@ pub(crate) async fn repl_dispatch_chat_round(
         no_stream,
         suppress_stdout_render,
         tui_llm_stream_scratch,
+        tool_running_hook,
         cli_tool_ctx: Some(cli_rt),
         active_agent_role: agent_role_owned.as_deref(),
         process_handles: Arc::clone(&process_handles),
@@ -614,6 +618,7 @@ pub async fn run_repl(
                     no_stream,
                     suppress_stdout_render: false,
                     tui_llm_stream_scratch: None,
+                    tool_running_hook: None,
                     after_user_message_enqueued: None,
                     agent_role_owned: &mut agent_role_owned,
                     api_key_holder: &api_key_holder,

@@ -63,6 +63,7 @@ pub(crate) struct WebExecuteCtx<'a> {
     /// 单轮 `read_file` 缓存；`None` 表示关闭。
     pub read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
     pub out: Option<&'a mpsc::Sender<String>>,
+    pub tool_running_hook: Option<Arc<dyn Fn(bool) + Send + Sync>>,
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     /// 终端 CLI：`run_command` 非白名单时 stdin 审批；`None` 时与历史一致（非白名单则无法执行）。
     pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
@@ -180,9 +181,24 @@ struct ExecuteToolsCommonCtx<'a> {
     handler_lookup: crate::tool_registry::HandlerLookupTable,
     sync_default_sandbox_backend: Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
     readonly_tool_ttl_cache: Arc<crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache>,
+    tool_running_hook: Option<Arc<dyn Fn(bool) + Send + Sync>>,
+}
+
+fn notify_cli_tool_running_hook(
+    out: Option<&mpsc::Sender<String>>,
+    hook: Option<&Arc<dyn Fn(bool) + Send + Sync>>,
+    running: bool,
+) {
+    if out.is_some() {
+        return;
+    }
+    if let Some(h) = hook {
+        h(running);
+    }
 }
 
 async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsBatchOutcome {
+    let tool_running_hook = ctx.tool_running_hook.clone();
     let out = ctx.out;
     let force_serial = std::env::var("CM_REPLAY_FORCE_SERIAL")
         .ok()
@@ -190,6 +206,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
         .is_some_and(|v| matches!(v.as_str(), "1" | "true" | "yes" | "on"));
 
     emit_sse_tool_running(out, true, "execute_tools::batch tool_running true").await;
+    notify_cli_tool_running_hook(out, tool_running_hook.as_ref(), true);
 
     let workspace_changed = if !force_serial
         && ctx.workspace_is_set
@@ -214,6 +231,13 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
         );
         let outcome = execute_tools_parallel(ctx).await;
         if matches!(outcome, ExecuteToolsBatchOutcome::AbortedSse) {
+            emit_sse_tool_running(
+                out,
+                false,
+                "execute_tools::batch aborted_after_parallel tool_running false",
+            )
+            .await;
+            notify_cli_tool_running_hook(out, tool_running_hook.as_ref(), false);
             return outcome;
         }
         false
@@ -252,6 +276,13 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
         let mut workspace_changed = false;
         let outcome = execute_tools_serial(ctx, &mut workspace_changed).await;
         if matches!(outcome, ExecuteToolsBatchOutcome::AbortedSse) {
+            emit_sse_tool_running(
+                out,
+                false,
+                "execute_tools::batch aborted_after_serial tool_running false",
+            )
+            .await;
+            notify_cli_tool_running_hook(out, tool_running_hook.as_ref(), false);
             return outcome;
         }
         workspace_changed
@@ -270,6 +301,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
         .await;
     }
     emit_sse_tool_running(out, false, "execute_tools::batch tool_running false").await;
+    notify_cli_tool_running_hook(out, tool_running_hook.as_ref(), false);
 
     ExecuteToolsBatchOutcome::Finished
 }
@@ -287,6 +319,7 @@ pub(crate) async fn per_execute_tools_web(
         workspace_is_set,
         read_file_turn_cache,
         out,
+        tool_running_hook,
         web_tool_ctx,
         cli_tool_ctx,
         echo_terminal_transcript,
@@ -320,6 +353,7 @@ pub(crate) async fn per_execute_tools_web(
         read_file_turn_cache,
         workspace_changelist,
         out,
+        tool_running_hook,
         echo_terminal_transcript,
         terminal_tool_display_max_chars: cfg.command_exec.command_max_output_len,
         tool_result_envelope_v1: cfg.tool_transcript.tool_result_envelope_v1,

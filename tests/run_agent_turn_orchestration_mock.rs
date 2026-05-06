@@ -122,6 +122,7 @@ async fn run_agent_turn_outer_loop_tool_round_then_final_assistant() {
             cli_tool_ctx: None,
             plain_terminal_stream: false,
             tui_llm_stream_scratch: None,
+            tool_running_hook: None,
             llm_backend: Some(backend as &dyn ChatCompletionsBackend),
         },
         llm: AgentTurnLlmOverrides {
@@ -303,6 +304,7 @@ async fn run_agent_turn_hierarchical_end_to_end_mock_llm_sequence() {
             cli_tool_ctx: None,
             plain_terminal_stream: false,
             tui_llm_stream_scratch: None,
+            tool_running_hook: None,
             llm_backend: Some(backend as &dyn ChatCompletionsBackend),
         },
         llm: AgentTurnLlmOverrides {
@@ -387,6 +389,7 @@ async fn run_agent_turn_hierarchical_discourse_fallback_uses_per_outer_loop() {
             cli_tool_ctx: None,
             plain_terminal_stream: false,
             tui_llm_stream_scratch: None,
+            tool_running_hook: None,
             llm_backend: Some(backend as &dyn ChatCompletionsBackend),
         },
         llm: AgentTurnLlmOverrides {
