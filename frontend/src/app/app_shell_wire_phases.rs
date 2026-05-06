@@ -6,7 +6,9 @@
 //! | 1 | 会话生命周期、首启与水合相关 `Effect`（须最先）。 |
 //! | 2 | 本机偏好持久化、审批条展开跟随、主题/语言/bg DOM、设置打开时 LLM 草稿。 |
 //! | 3 | `Escape` 分层关闭（依赖阶段 2 已挂接的弹层/菜单信号）。 |
-//! | 4 | 工作区域、`/status`/`/tasks`、composer 流式壳与聊天列 `wire_*`（依赖 `refresh_workspace`）。 |
+//! | 4a | 工作区 / 变更集域（依赖 `refresh_workspace`）。 |
+//! | 4b | `/status`、`/tasks` 与侧栏任务面可见时的 `Effect`。 |
+//! | 4c | 工作区路径插入 composer、流式壳、聊天列 `wire_*`（与 4a 共用 `refresh_workspace`）。 |
 
 use std::sync::Arc;
 
@@ -89,17 +91,10 @@ pub(super) fn wire_phase3_escape_layered_dismiss(app: &AppSignals) {
     wire_escape_key_layered_dismiss(shell_escape);
 }
 
-/// 阶段 4：工作区、`/status`/`/tasks`、聊天列与流式 composer（须在 [`make_refresh_workspace`] 之后）。
-pub(super) fn wire_phase4_workspace_status_and_chat_domain(
+/// 阶段 4a：工作区 / 变更集（须在 [`make_refresh_workspace_for_shell`] 之后）。
+pub(super) fn wire_phase4a_workspace_domain(
     app: &AppSignals,
-    refresh_workspace: Arc<dyn Fn() + Send + Sync>,
-) -> (
-    Arc<dyn Fn() + Send + Sync>,
-    Arc<dyn Fn() + Send + Sync>,
-    Arc<dyn Fn(String) + Send + Sync>,
-    StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
-    ComposerStreamShell,
-    ChatComposerWires,
+    refresh_workspace: &Arc<dyn Fn() + Send + Sync>,
 ) {
     wire_workspace_domain_effects(WireWorkspaceDomainEffectsArgs {
         session_sync: app.chat.session_sync,
@@ -112,9 +107,18 @@ pub(super) fn wire_phase4_workspace_status_and_chat_domain(
         changelist_body_ref: app.modal.changelist_body_ref,
         side_panel_view: app.shell_ui.side_panel_view,
         initialized: app.initialized,
-        refresh_workspace: Arc::clone(&refresh_workspace),
+        refresh_workspace: Arc::clone(refresh_workspace),
     });
+}
 
+/// 阶段 4b：`/status`、`/tasks` 与侧栏任务面可见时的 `Effect`（须在 4a 之后，以便与初始化顺序一致）。
+pub(super) fn wire_phase4b_status_tasks_domain(
+    app: &AppSignals,
+) -> (
+    Arc<dyn Fn() + Send + Sync>,
+    Arc<dyn Fn() + Send + Sync>,
+    Arc<dyn Fn(String) + Send + Sync>,
+) {
     let refresh_status = make_refresh_status(
         app.to_status_tasks(),
         app.llm_settings.selected_agent_role,
@@ -132,6 +136,18 @@ pub(super) fn wire_phase4_workspace_status_and_chat_domain(
         Arc::clone(&refresh_tasks),
     );
 
+    (refresh_status, refresh_tasks, toggle_task)
+}
+
+/// 阶段 4c：工作区路径插入 composer、流式壳、聊天列 `wire_*`（与 4a 共用 `refresh_workspace`）。
+pub(super) fn wire_phase4c_chat_and_workspace_chrome(
+    app: &AppSignals,
+    refresh_workspace: &Arc<dyn Fn() + Send + Sync>,
+) -> (
+    StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
+    ComposerStreamShell,
+    ChatComposerWires,
+) {
     let insert_workspace_file_ref: Arc<dyn Fn(String) + Send + Sync> =
         make_insert_workspace_path_into_composer(
             app.chat_composer.draft,
@@ -142,7 +158,7 @@ pub(super) fn wire_phase4_workspace_status_and_chat_domain(
     let insert_workspace_file_ref_sv = StoredValue::new(Arc::clone(&insert_workspace_file_ref));
 
     let chat_stream_shell =
-        ComposerStreamShell::from_app_signals(app, Arc::clone(&refresh_workspace));
+        ComposerStreamShell::from_app_signals(app, Arc::clone(refresh_workspace));
 
     let chat_wires = wire_chat_domain_effects(WireChatDomainEffectsArgs {
         initialized: app.initialized,
@@ -168,6 +184,26 @@ pub(super) fn wire_phase4_workspace_status_and_chat_domain(
         selected_agent_role: app.llm_settings.selected_agent_role,
         stream_shell: chat_stream_shell.clone(),
     });
+
+    (insert_workspace_file_ref_sv, chat_stream_shell, chat_wires)
+}
+
+/// 阶段 4：依次调用 4a → 4b → 4c（须在 [`make_refresh_workspace_for_shell`] 之后）。
+pub(super) fn wire_phase4_workspace_status_and_chat_domain(
+    app: &AppSignals,
+    refresh_workspace: Arc<dyn Fn() + Send + Sync>,
+) -> (
+    Arc<dyn Fn() + Send + Sync>,
+    Arc<dyn Fn() + Send + Sync>,
+    Arc<dyn Fn(String) + Send + Sync>,
+    StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
+    ComposerStreamShell,
+    ChatComposerWires,
+) {
+    wire_phase4a_workspace_domain(app, &refresh_workspace);
+    let (refresh_status, refresh_tasks, toggle_task) = wire_phase4b_status_tasks_domain(app);
+    let (insert_workspace_file_ref_sv, chat_stream_shell, chat_wires) =
+        wire_phase4c_chat_and_workspace_chrome(app, &refresh_workspace);
 
     (
         refresh_status,
