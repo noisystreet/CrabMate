@@ -11,7 +11,7 @@ use leptos::task::spawn_local;
 use std::sync::Arc;
 
 use super::app_shell_ctx::SettingsModalSignals;
-use super::settings_form_state::{is_settings_dirty, refresh_baselines};
+use super::settings_form_state::SettingsDirtyBaselines;
 use super::settings_modal_dialog::{SettingsModalDialogInput, settings_modal_dialog};
 use crate::a11y::focus_first_in_modal_container;
 use crate::app::settings_page::dom_preview::{
@@ -55,28 +55,6 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
     let appearance_theme = RwSignal::new(theme.get_untracked());
     let appearance_bg_decor = RwSignal::new(bg_decor.get_untracked());
 
-    let baseline_appearance = StoredValue::new((
-        locale.get_untracked(),
-        theme.get_untracked(),
-        bg_decor.get_untracked(),
-    ));
-    let baseline_llm = StoredValue::new((
-        llm_api_base_draft.get_untracked(),
-        llm_api_base_preset_select.get_untracked(),
-        llm_model_draft.get_untracked(),
-        llm_temperature_draft.get_untracked(),
-        llm_context_tokens_draft.get_untracked(),
-        llm_thinking_mode_draft.get_untracked(),
-        execution_mode_draft.get_untracked(),
-        llm_has_saved_key.get_untracked(),
-    ));
-    let baseline_executor = StoredValue::new((
-        executor_llm_api_base_draft.get_untracked(),
-        executor_llm_api_base_preset_select.get_untracked(),
-        executor_llm_model_draft.get_untracked(),
-        executor_llm_has_saved_key.get_untracked(),
-    ));
-
     let clear_client_key_intent = RwSignal::new(false);
     let clear_executor_key_intent = RwSignal::new(false);
 
@@ -102,6 +80,8 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
         executor_llm_api_key_draft,
     };
 
+    let baselines = SettingsDirtyBaselines::from_form_current(&form_current_untracked(drafts));
+
     let current_state_untracked = move || form_current_untracked(drafts);
 
     let capture_baselines_after_open = move || {
@@ -113,12 +93,7 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
             appearance_locale.set(locale.get_untracked());
             appearance_theme.set(theme.get_untracked());
             appearance_bg_decor.set(bg_decor.get_untracked());
-            refresh_baselines(
-                baseline_appearance,
-                baseline_llm,
-                baseline_executor,
-                &current_state_untracked(),
-            );
+            baselines.refresh_from_current(&current_state_untracked());
             clear_client_key_intent.set(false);
             clear_executor_key_intent.set(false);
             llm_settings_feedback.set(None);
@@ -127,14 +102,9 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
     };
 
     let discard = {
-        let baseline_appearance = baseline_appearance;
-        let baseline_llm = baseline_llm;
-        let baseline_executor = baseline_executor;
         move || {
             discard_to_baselines(DiscardToBaselinesCtx {
-                baseline_appearance,
-                baseline_llm,
-                baseline_executor,
+                baselines,
                 drafts,
                 llm_settings_feedback,
                 executor_llm_settings_feedback,
@@ -181,12 +151,7 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
 
     let dirty = Memo::new(move |_| {
         let current = form_current_tracked(drafts);
-        is_settings_dirty(
-            &current,
-            &baseline_appearance.get_value(),
-            &baseline_llm.get_value(),
-            &baseline_executor.get_value(),
-        )
+        baselines.is_dirty(&current)
     });
 
     let close_modal = {
@@ -198,9 +163,6 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
 
     let save_all = {
         let dirty = dirty;
-        let baseline_appearance = baseline_appearance;
-        let baseline_llm = baseline_llm;
-        let baseline_executor = baseline_executor;
         move || {
             try_save_all_settings(SaveAllSettingsCtx {
                 dirty,
@@ -212,9 +174,7 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
                 llm_settings_feedback,
                 executor_llm_settings_feedback,
                 client_llm_storage_tick,
-                baseline_appearance,
-                baseline_llm,
-                baseline_executor,
+                baselines,
             });
         }
     };

@@ -14,7 +14,7 @@ use super::layout::{SettingsPageContentPanels, SettingsPageNavRail, SettingsPage
 use super::page_actions::{
     DiscardToBaselinesCtx, SaveAllSettingsCtx, discard_to_baselines, try_save_all_settings,
 };
-use crate::app::settings_form_state::{SettingsFormCurrent, is_settings_dirty, refresh_baselines};
+use crate::app::settings_form_state::{SettingsDirtyBaselines, SettingsFormCurrent};
 use crate::i18n::{self, Locale};
 
 /// 设置页中与 LLM / 外观相关的 `RwSignal` 聚合（缩短 `SettingsPageView` 形参列表）。
@@ -85,28 +85,6 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
     let appearance_theme = RwSignal::new(theme.get_untracked());
     let appearance_bg_decor = RwSignal::new(bg_decor.get_untracked());
 
-    let baseline_appearance = StoredValue::new((
-        locale.get_untracked(),
-        theme.get_untracked(),
-        bg_decor.get_untracked(),
-    ));
-    let baseline_llm = StoredValue::new((
-        llm_api_base_draft.get_untracked(),
-        llm_api_base_preset_select.get_untracked(),
-        llm_model_draft.get_untracked(),
-        llm_temperature_draft.get_untracked(),
-        llm_context_tokens_draft.get_untracked(),
-        llm_thinking_mode_draft.get_untracked(),
-        execution_mode_draft.get_untracked(),
-        llm_has_saved_key.get_untracked(),
-    ));
-    let baseline_executor = StoredValue::new((
-        executor_llm_api_base_draft.get_untracked(),
-        executor_llm_api_base_preset_select.get_untracked(),
-        executor_llm_model_draft.get_untracked(),
-        executor_llm_has_saved_key.get_untracked(),
-    ));
-
     let clear_client_key_intent = RwSignal::new(false);
     let clear_executor_key_intent = RwSignal::new(false);
 
@@ -132,6 +110,8 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
         executor_llm_api_key_draft,
     };
 
+    let baselines = SettingsDirtyBaselines::from_form_current(&form_current_untracked(drafts));
+
     let current_state_untracked = move || form_current_untracked(drafts);
 
     settings_page_install_hashchange_listener(active_section);
@@ -151,12 +131,7 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
         appearance_locale.set(locale.get_untracked());
         appearance_theme.set(theme.get_untracked());
         appearance_bg_decor.set(bg_decor.get_untracked());
-        refresh_baselines(
-            baseline_appearance,
-            baseline_llm,
-            baseline_executor,
-            &current_state_untracked(),
-        );
+        baselines.refresh_from_current(&current_state_untracked());
         clear_client_key_intent.set(false);
         clear_executor_key_intent.set(false);
         llm_settings_feedback.set(None);
@@ -175,23 +150,13 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
 
     let dirty = Memo::new(move |_| {
         let current: SettingsFormCurrent = form_current_tracked(drafts);
-        is_settings_dirty(
-            &current,
-            &baseline_appearance.get_value(),
-            &baseline_llm.get_value(),
-            &baseline_executor.get_value(),
-        )
+        baselines.is_dirty(&current)
     });
 
     let discard = {
-        let baseline_appearance = baseline_appearance;
-        let baseline_llm = baseline_llm;
-        let baseline_executor = baseline_executor;
         move |_| {
             discard_to_baselines(DiscardToBaselinesCtx {
-                baseline_appearance,
-                baseline_llm,
-                baseline_executor,
+                baselines,
                 drafts,
                 llm_settings_feedback,
                 executor_llm_settings_feedback,
@@ -201,9 +166,6 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
 
     let save_all = {
         let dirty = dirty;
-        let baseline_appearance = baseline_appearance;
-        let baseline_llm = baseline_llm;
-        let baseline_executor = baseline_executor;
         move |_| {
             try_save_all_settings(SaveAllSettingsCtx {
                 dirty,
@@ -215,9 +177,7 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
                 llm_settings_feedback,
                 executor_llm_settings_feedback,
                 client_llm_storage_tick,
-                baseline_appearance,
-                baseline_llm,
-                baseline_executor,
+                baselines,
             });
         }
     };

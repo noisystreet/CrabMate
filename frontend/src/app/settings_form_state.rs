@@ -1,3 +1,6 @@
+//! 设置表单：当前草稿快照、与 **已提交 baseline** 的 dirty 比较、保存后刷新 baseline。
+//! 三元 baseline 句柄见 [`SettingsDirtyBaselines`]。
+
 use leptos::prelude::*;
 
 use crate::i18n::Locale;
@@ -5,6 +8,56 @@ use crate::i18n::Locale;
 pub(crate) type AppearanceBaseline = (Locale, String, bool);
 pub(crate) type LlmBaseline = (String, String, String, String, String, String, String, bool);
 pub(crate) type ExecutorBaseline = (String, String, String, bool);
+
+/// 设置弹窗 / 设置页「已提交快照」：`StoredValue` 三元组打包，避免在 dirty / 放弃 / 保存成功路径上重复传三个句柄。
+#[derive(Clone, Copy)]
+pub(crate) struct SettingsDirtyBaselines {
+    pub appearance: StoredValue<AppearanceBaseline>,
+    pub llm: StoredValue<LlmBaseline>,
+    pub executor: StoredValue<ExecutorBaseline>,
+}
+
+impl SettingsDirtyBaselines {
+    #[must_use]
+    pub(crate) fn from_form_current(current: &SettingsFormCurrent) -> Self {
+        Self {
+            appearance: StoredValue::new((
+                current.appearance_locale,
+                current.appearance_theme.clone(),
+                current.appearance_bg_decor,
+            )),
+            llm: StoredValue::new((
+                current.llm_api_base_draft.clone(),
+                current.llm_api_base_preset_select.clone(),
+                current.llm_model_draft.clone(),
+                current.llm_temperature_draft.clone(),
+                current.llm_context_tokens_draft.clone(),
+                current.llm_thinking_mode_draft.clone(),
+                current.execution_mode_draft.clone(),
+                current.llm_has_saved_key,
+            )),
+            executor: StoredValue::new((
+                current.executor_llm_api_base_draft.clone(),
+                current.executor_llm_api_base_preset_select.clone(),
+                current.executor_llm_model_draft.clone(),
+                current.executor_llm_has_saved_key,
+            )),
+        }
+    }
+
+    pub(crate) fn refresh_from_current(&self, current: &SettingsFormCurrent) {
+        refresh_baselines(self.appearance, self.llm, self.executor, current);
+    }
+
+    pub(crate) fn is_dirty(&self, current: &SettingsFormCurrent) -> bool {
+        is_settings_dirty(
+            current,
+            &self.appearance.get_value(),
+            &self.llm.get_value(),
+            &self.executor.get_value(),
+        )
+    }
+}
 
 #[derive(Clone)]
 pub(crate) struct SettingsFormCurrent {

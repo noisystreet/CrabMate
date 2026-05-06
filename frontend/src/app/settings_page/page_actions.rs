@@ -4,15 +4,13 @@ use leptos::prelude::*;
 
 use super::form_snapshot::{SettingsPageDraftSignals, form_current_untracked};
 use crate::app::settings_commit::{CommitAllSettingsInput, commit_all_settings};
-use crate::app::settings_form_state::refresh_baselines;
+use crate::app::settings_form_state::SettingsDirtyBaselines;
 use crate::i18n::{self, Locale};
 
 /// `discard_to_baselines` 入参（单结构体以满足 `fn-param` 棘轮）。
 #[derive(Clone, Copy)]
 pub(crate) struct DiscardToBaselinesCtx {
-    pub baseline_appearance: StoredValue<(Locale, String, bool)>,
-    pub baseline_llm: StoredValue<(String, String, String, String, String, String, String, bool)>,
-    pub baseline_executor: StoredValue<(String, String, String, bool)>,
+    pub baselines: SettingsDirtyBaselines,
     pub drafts: SettingsPageDraftSignals,
     pub llm_settings_feedback: RwSignal<Option<String>>,
     pub executor_llm_settings_feedback: RwSignal<Option<String>>,
@@ -20,20 +18,18 @@ pub(crate) struct DiscardToBaselinesCtx {
 
 pub(crate) fn discard_to_baselines(ctx: DiscardToBaselinesCtx) {
     let DiscardToBaselinesCtx {
-        baseline_appearance,
-        baseline_llm,
-        baseline_executor,
+        baselines,
         drafts,
         llm_settings_feedback,
         executor_llm_settings_feedback,
     } = ctx;
 
-    let (bl, bt, bbd) = baseline_appearance.get_value();
+    let (bl, bt, bbd) = baselines.appearance.get_value();
     drafts.appearance_locale.set(bl);
     drafts.appearance_theme.set(bt);
     drafts.appearance_bg_decor.set(bbd);
 
-    let (bb, bp, bm, btemp, bct, btm, be, bh) = baseline_llm.get_value();
+    let (bb, bp, bm, btemp, bct, btm, be, bh) = baselines.llm.get_value();
     drafts.llm_api_base_draft.set(bb);
     drafts.llm_api_base_preset_select.set(bp);
     drafts.llm_model_draft.set(bm);
@@ -44,7 +40,7 @@ pub(crate) fn discard_to_baselines(ctx: DiscardToBaselinesCtx) {
     drafts.llm_has_saved_key.set(bh);
     drafts.llm_api_key_draft.set(String::new());
 
-    let (eb, ep, em, eh) = baseline_executor.get_value();
+    let (eb, ep, em, eh) = baselines.executor.get_value();
     drafts.executor_llm_api_base_draft.set(eb);
     drafts.executor_llm_api_base_preset_select.set(ep);
     drafts.executor_llm_model_draft.set(em);
@@ -69,9 +65,7 @@ pub(crate) struct SaveAllSettingsCtx {
     pub llm_settings_feedback: RwSignal<Option<String>>,
     pub executor_llm_settings_feedback: RwSignal<Option<String>>,
     pub client_llm_storage_tick: RwSignal<u64>,
-    pub baseline_appearance: StoredValue<(Locale, String, bool)>,
-    pub baseline_llm: StoredValue<(String, String, String, String, String, String, String, bool)>,
-    pub baseline_executor: StoredValue<(String, String, String, bool)>,
+    pub baselines: SettingsDirtyBaselines,
 }
 
 pub(crate) fn try_save_all_settings(ctx: SaveAllSettingsCtx) {
@@ -85,9 +79,7 @@ pub(crate) fn try_save_all_settings(ctx: SaveAllSettingsCtx) {
         llm_settings_feedback,
         executor_llm_settings_feedback,
         client_llm_storage_tick,
-        baseline_appearance,
-        baseline_llm,
-        baseline_executor,
+        baselines,
     } = ctx;
 
     llm_settings_feedback.set(None);
@@ -126,12 +118,7 @@ pub(crate) fn try_save_all_settings(ctx: SaveAllSettingsCtx) {
         client_llm_storage_tick,
     }) {
         Ok(()) => {
-            refresh_baselines(
-                baseline_appearance,
-                baseline_llm,
-                baseline_executor,
-                &form_current_untracked(drafts),
-            );
+            baselines.refresh_from_current(&form_current_untracked(drafts));
             drafts.clear_client_key_intent.set(false);
             drafts.clear_executor_key_intent.set(false);
             llm_settings_feedback.set(Some(i18n::settings_save_all_ok(ui_locale).to_string()));
