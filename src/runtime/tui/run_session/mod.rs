@@ -312,7 +312,7 @@ fn composer_visible_and_cursor_rel(
 }
 
 struct TuiModel {
-    /// 顶栏一行摘要（对齐 Web 壳层：品牌 · 模型 · 网关 · 工作目录）
+    /// 顶栏一行：`CrabMate · 工作目录`（模型 / `base_url` 见底栏 chips）
     header_line: String,
     /// 左栏：会话文件、`tui_session.json` 与加载开关等（对齐 Web 左侧会话）
     nav_summary: String,
@@ -434,7 +434,7 @@ async fn tui_refresh_after_slash_capture(p: TuiSlashUiRefresh<'_>) {
         cli_no_stream,
         captured,
     } = p;
-    let new_header = tui_header_summary(cfg_holder, work_dir).await;
+    let new_header = tui_header_summary(work_dir);
     let tui_load_nav = cfg_holder.read().await.session_ui.tui_load_session_on_start;
     let nav = build_tui_session_sidebar(
         tui_load_nav,
@@ -469,7 +469,7 @@ async fn tui_refresh_after_chat_round(
     tool_count: usize,
     cli_no_stream: bool,
 ) {
-    let new_header = tui_header_summary(cfg_holder, work_dir).await;
+    let new_header = tui_header_summary(work_dir);
     let tui_load_nav = cfg_holder.read().await.session_ui.tui_load_session_on_start;
     let nav = build_tui_session_sidebar(
         tui_load_nav,
@@ -586,7 +586,7 @@ pub async fn run_tui_session(
         initial_pending.as_ref(),
     );
 
-    let header_line = tui_header_summary(cfg_holder, work_dir.as_path()).await;
+    let header_line = tui_header_summary(work_dir.as_path());
     let nav_summary = build_tui_session_sidebar(
         tui_load,
         workspace_session::session_file_path(work_dir.as_path()).exists(),
@@ -733,14 +733,10 @@ pub async fn run_tui_session(
     Ok(())
 }
 
-async fn tui_header_summary(cfg_holder: &SharedAgentConfig, work_dir: &std::path::Path) -> String {
-    let g = cfg_holder.read().await;
-    let model_id = g.llm.model.as_str();
-    let base_raw = g.llm.api_base.trim();
-    let base = truncate_chars_with_ellipsis(base_raw, 44);
+fn tui_header_summary(work_dir: &std::path::Path) -> String {
     let wd = work_dir.display().to_string();
-    let wd_short = truncate_chars_with_ellipsis(&wd, 52);
-    format!("CrabMate · {model_id} · {base} · {wd_short}")
+    let wd_short = truncate_chars_with_ellipsis(&wd, 72);
+    format!("CrabMate · {wd_short}")
 }
 
 enum TuiPollKeyFlow {

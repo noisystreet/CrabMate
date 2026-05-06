@@ -61,7 +61,7 @@
 - 尊重 **`NO_COLOR`**；可选降级为无 truecolor 主题。
 - 验收：终端缩放后布局可用；无残留乱码光标。
 
-**进展（仓库）**：布局渲染在 **`runtime/tui/run_session.rs`**（**`render_*`**）：**顶栏一行（CrabMate · 模型 · `api_base` · 工作目录）+ 三栏（约 23% / 54% / 23%，贴近 Web `nav-rail` 与主区）+ 底栏快捷键**，区块标题对齐 Web「会话在左 / 工作区在右 / 聊天 / 撰写」语义（左「会话」、右「工作区」含快捷键）；尊重 **`NO_COLOR`**；缩放随 **`Terminal::draw`** 重算。
+**进展（仓库）**：布局渲染在 **`runtime/tui/run_session.rs`**（**`render_*`**）：**顶栏一行（CrabMate · 工作目录）+ 三栏（约 23% / 54% / 23%，贴近 Web `nav-rail` 与主区）+ 底栏（模型 · `base_url` · 角色等 chips）**，区块标题对齐 Web「会话在左 / 工作区在右 / 聊天 / 撰写」语义（左「会话」、右「工作区」含快捷键）；尊重 **`NO_COLOR`**；缩放随 **`Terminal::draw`** 重算。
 
 ### 阶段 C：对话闭环（最小可用）
 

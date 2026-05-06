@@ -79,7 +79,7 @@ pub(super) fn render_full(
     color: bool,
 ) {
     let area = frame.area();
-    // 对齐 Web `shell-ds`：顶栏 + 三列（侧栏宽≈ nav-rail）+ 底栏快捷键
+    // 顶栏仅 CrabMate · 工作目录；模型/base_url 在底栏；三列 + 底栏
     let vertical = Layout::default()
         .direction(Direction::Vertical)
         .constraints([

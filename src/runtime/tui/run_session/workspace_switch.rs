@@ -79,7 +79,7 @@ pub(super) async fn tui_apply_workspace_switch(
             .map_err(|e| e.to_string())?
     };
     *work_dir = new_root;
-    let new_header = tui_header_summary(cfg_holder, work_dir.as_path()).await;
+    let new_header = tui_header_summary(work_dir.as_path());
     let tui_load_nav = cfg_holder.read().await.session_ui.tui_load_session_on_start;
     let nav = build_tui_session_sidebar(
         tui_load_nav,
