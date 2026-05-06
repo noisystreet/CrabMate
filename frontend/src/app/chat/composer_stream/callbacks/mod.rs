@@ -11,10 +11,9 @@ mod builders;
 mod done_bubble;
 mod helpers;
 mod stream_session_access;
-mod stream_turn_state;
+pub(super) mod stream_turn_state;
 
 pub(super) use assemble::build_chat_stream_callbacks;
-pub(crate) use stream_turn_state::new_stream_output_lane_cell;
 
 #[cfg(test)]
 mod tests;

@@ -17,8 +17,8 @@ use crate::storage::StoredMessage;
 use crate::timeline_scan::{timeline_state_staged_end, timeline_state_staged_start};
 
 use super::super::context::ChatStreamCallbackCtx;
-use super::super::per_stream_accum::PerStreamAccum;
 use super::super::shell_abort::clear_abort_slot;
+use super::super::stream_sse_scratch::StreamSseScratch;
 use super::builders::*;
 use super::helpers::*;
 use super::stream_session_access::with_active_session_mut;
@@ -27,20 +27,15 @@ use super::stream_turn_state::{StreamOutputLaneCell, lane_on_assistant_answer_ph
 /// 由 [`super::super::make_attach_chat_stream`](super::super::make_attach_chat_stream) 调用；集中所有 `on_*` 闭包，降低父模块维护面。
 pub(crate) fn build_chat_stream_callbacks(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
-    output_lane: StreamOutputLaneCell,
+    scratch: StreamSseScratch,
 ) -> ChatStreamCallbacks {
-    let accum = PerStreamAccum::new_rc();
-    let on_delta: Rc<dyn Fn(String)> = chat_stream_on_delta_builder(
-        Rc::clone(&stream_ctx),
-        Rc::clone(&output_lane),
-        Rc::clone(&accum),
-    );
+    let lane: StreamOutputLaneCell = scratch.lane.clone();
+    let accum = Rc::clone(&scratch.accum);
+    let on_delta: Rc<dyn Fn(String)> =
+        chat_stream_on_delta_builder(Rc::clone(&stream_ctx), Rc::clone(&lane), Rc::clone(&accum));
 
-    let on_done: Rc<dyn Fn()> = chat_stream_on_done_builder(
-        Rc::clone(&stream_ctx),
-        Rc::clone(&output_lane),
-        Rc::clone(&accum),
-    );
+    let on_done: Rc<dyn Fn()> =
+        chat_stream_on_done_builder(Rc::clone(&stream_ctx), Rc::clone(&lane), Rc::clone(&accum));
 
     let on_error: Rc<dyn Fn(String)> = chat_stream_on_error_builder(Rc::clone(&stream_ctx));
 
@@ -123,10 +118,10 @@ pub(crate) fn build_chat_stream_callbacks(
     };
 
     let on_assistant_answer_phase: Rc<dyn Fn()> = {
-        let output_lane = Rc::clone(&output_lane);
+        let lane = Rc::clone(&lane);
         Rc::new(move || {
             // 重复 answer_phase 将车道切入 PendingFollowup；轮换由 `on_delta` / `on_done` 消费。
-            lane_on_assistant_answer_phase(output_lane.as_ref());
+            lane_on_assistant_answer_phase(lane.as_ref());
         })
     };
 

@@ -2,6 +2,7 @@
 //!
 //! - [`context`]：单次流式共享的 `ChatStreamCallbackCtx`。
 //! - [`per_stream_accum`]：单轮流内的 `Cell`/`RefCell` 累计（正文增量计数、结束 reason 等），与 ctx 分层。
+//! - [`stream_sse_scratch`]：将 **lane + accum** 打一包，供 `build_chat_stream_callbacks` 单参传递。
 //! - `shell_abort`：`AbortController` 与用户取消 Mutex 的集中读写。
 //! - [`callbacks`]：装配 `ChatStreamCallbacks`（各 `on_*`），与 `send_chat_stream` 契约对齐；实现拆为 `callbacks/helpers`、`callbacks/builders`、`callbacks/assemble`。
 //! - 本文件：长生命周期句柄 [`ComposerStreamHandles`]、[`make_attach_chat_stream`]（发起请求 + `spawn_local`）。
@@ -10,6 +11,7 @@ mod callbacks;
 mod context;
 mod per_stream_accum;
 mod shell_abort;
+mod stream_sse_scratch;
 mod streaming_tail;
 
 use std::rc::Rc;
@@ -25,10 +27,9 @@ use crate::session_ops::approval_session_id;
 
 use super::handles::ComposerStreamShell;
 
-use callbacks::new_stream_output_lane_cell;
-
 use context::ChatStreamCallbackCtx;
-use shell_abort::{reset_abort_state_for_new_attach, store_abort_controller};
+use shell_abort::{reset_abort_state_for_new_attach, store_abort_controller, user_cancelled_flag};
+use stream_sse_scratch::StreamSseScratch;
 use streaming_tail::StreamingAssistantTail;
 
 /// 长生命周期句柄：`attach` 闭包捕获，供每次发起流式请求复用。
@@ -69,7 +70,6 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
             let agent_role = selected_agent_role.get();
             let appr_for_stream = approval_session_id();
             let appr_store = appr_for_stream.clone();
-            let user_cancelled_for_spawn = Arc::clone(&shell_outer.stream.user_cancelled_stream);
 
             let stream_ctx = Rc::new(ChatStreamCallbackCtx {
                 chat,
@@ -80,8 +80,8 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                 shell: shell_outer.clone(),
             });
 
-            let output_lane = new_stream_output_lane_cell();
-            let cbs = callbacks::build_chat_stream_callbacks(stream_ctx, output_lane);
+            let scratch = StreamSseScratch::new();
+            let cbs = callbacks::build_chat_stream_callbacks(stream_ctx, scratch);
 
             let shell_for_stream_err = shell_outer.clone();
             let on_error_spawn = cbs.on_error.clone();
@@ -105,7 +105,7 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                 shell_for_stream_err.stream.status_busy.set(false);
                 shell_for_stream_err.stream.tool_busy.set(false);
                 if let Err(e) = stream_result {
-                    if *user_cancelled_for_spawn.lock().unwrap() {
+                    if user_cancelled_flag(&shell_for_stream_err) {
                         return;
                     }
                     if e == "stream stopped" {

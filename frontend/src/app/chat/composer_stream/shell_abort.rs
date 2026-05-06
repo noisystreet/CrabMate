@@ -1,5 +1,6 @@
 //! [`super::handles::ComposerStreamShell`] 上 `AbortController` 与用户取消标志的 Mutex 集中读写，
 //! 避免 `attach` / 回调 / 停止按钮各处重复 `lock().unwrap()`。
+//! `spawn_local` 尾逻辑请用 [`user_cancelled_flag`]，勿在闭包外再 `Arc::clone`  Mutex 手动锁。
 
 use super::super::handles::ComposerStreamShell;
 
