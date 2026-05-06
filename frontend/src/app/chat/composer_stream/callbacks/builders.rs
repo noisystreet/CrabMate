@@ -1,6 +1,5 @@
 //! SSE 回调闭包工厂：`on_tool_result`、`on_timeline_log`、`on_delta`、`on_done`、`on_error`、`on_workspace_changed`、`on_tool_call`。
 
-use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use leptos::prelude::*;
@@ -16,6 +15,7 @@ use crate::storage::{StoredMessage, StoredMessageState};
 use crate::timeline_scan::timeline_state_tool;
 
 use super::super::context::ChatStreamCallbackCtx;
+use super::super::per_stream_accum::PerStreamAccum;
 use super::super::shell_abort::{clear_abort_slot, user_cancelled_flag};
 use super::done_bubble::{DoneBubbleAction, DoneBubbleDecisionInputs, decide_done_bubble_action};
 use super::helpers::*;
@@ -106,7 +106,7 @@ pub(super) fn make_on_tool_result(
 
 pub(super) fn chat_stream_on_tool_call_builder(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
-    current_subgoal_marker: Rc<RefCell<Option<String>>>,
+    accum: Rc<PerStreamAccum>,
 ) -> OnToolCallFn {
     Rc::new(
         move |name: String,
@@ -140,7 +140,7 @@ pub(super) fn chat_stream_on_tool_call_builder(
             let marker = goal_id
                 .as_deref()
                 .map(|g| format!("hierarchical-subgoal:{g}"))
-                .or_else(|| current_subgoal_marker.borrow().clone());
+                .or_else(|| accum.current_subgoal_marker.borrow().clone());
             let tcid = tool_call_id
                 .as_deref()
                 .map(str::trim)
@@ -183,22 +183,21 @@ pub(super) fn chat_stream_on_tool_call_builder(
 
 pub(super) fn make_on_timeline_log(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
-    answer_delta_chars: Rc<Cell<usize>>,
-    current_subgoal_marker: Rc<RefCell<Option<String>>>,
-    saw_final_response_timeline: Rc<Cell<bool>>,
+    accum: Rc<PerStreamAccum>,
 ) -> Rc<dyn Fn(TimelineLogInfo)> {
     Rc::new(move |info: TimelineLogInfo| {
         web_sys::console::log_1(&format!("[TL] kind={} title={}", info.kind, info.title).into());
         if info.kind == "final_response" {
-            saw_final_response_timeline.set(true);
+            accum.saw_final_response_timeline.set(true);
             stream_ctx.shell.stream.status_busy.set(false);
             let final_text = build_final_response_text(&info.title, info.detail.as_deref());
             if !final_text.is_empty() {
                 remove_loading_assistant_placeholder(&stream_ctx);
                 if !has_same_assistant_timeline_bubble(&stream_ctx, &final_text) {
                     push_assistant_timeline_bubble(&stream_ctx, final_text.clone(), None);
-                    answer_delta_chars.set(
-                        answer_delta_chars
+                    accum.answer_delta_chars.set(
+                        accum
+                            .answer_delta_chars
                             .get()
                             .saturating_add(final_text.chars().count()),
                     );
@@ -216,8 +215,9 @@ pub(super) fn make_on_timeline_log(
                 return;
             }
             push_assistant_timeline_bubble(&stream_ctx, intent_text.clone(), None);
-            answer_delta_chars.set(
-                answer_delta_chars
+            accum.answer_delta_chars.set(
+                accum
+                    .answer_delta_chars
                     .get()
                     .saturating_add(intent_text.chars().count()),
             );
@@ -230,8 +230,9 @@ pub(super) fn make_on_timeline_log(
                 return;
             }
             push_assistant_timeline_bubble(&stream_ctx, plan_text.clone(), None);
-            answer_delta_chars.set(
-                answer_delta_chars
+            accum.answer_delta_chars.set(
+                accum
+                    .answer_delta_chars
                     .get()
                     .saturating_add(plan_text.chars().count()),
             );
@@ -243,10 +244,12 @@ pub(super) fn make_on_timeline_log(
             if text.is_empty() {
                 return;
             }
-            *current_subgoal_marker.borrow_mut() = extract_subgoal_marker_from_title(&info.title);
+            *accum.current_subgoal_marker.borrow_mut() =
+                extract_subgoal_marker_from_title(&info.title);
             upsert_hierarchical_subgoal_bubble(&stream_ctx, text.clone(), &info.title);
-            answer_delta_chars.set(
-                answer_delta_chars
+            accum.answer_delta_chars.set(
+                accum
+                    .answer_delta_chars
                     .get()
                     .saturating_add(text.chars().count()),
             );
@@ -276,19 +279,20 @@ pub(super) fn make_on_timeline_log(
 pub(super) fn chat_stream_on_delta_builder(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
     output_lane: StreamOutputLaneCell,
-    answer_delta_chars: Rc<Cell<usize>>,
+    accum: Rc<PerStreamAccum>,
 ) -> Rc<dyn Fn(String)> {
     Rc::new(move |chunk: String| {
         if lane_take_followup_rotation_pending(output_lane.as_ref()) {
             rotate_streaming_assistant_for_followup_model_round(stream_ctx.as_ref());
-            answer_delta_chars.set(0);
+            accum.answer_delta_chars.set(0);
         }
         let aid = stream_ctx.active_session_id.as_str();
         let mid = stream_ctx.tail.borrow_assistant_id();
         let lane = output_lane.get();
         if lane.in_answer_body_lane() {
-            answer_delta_chars.set(
-                answer_delta_chars
+            accum.answer_delta_chars.set(
+                accum
+                    .answer_delta_chars
                     .get()
                     .saturating_add(chunk.chars().count()),
             );
@@ -302,9 +306,7 @@ pub(super) fn chat_stream_on_delta_builder(
 pub(super) fn chat_stream_on_done_builder(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
     output_lane: StreamOutputLaneCell,
-    answer_delta_chars: Rc<Cell<usize>>,
-    stream_end_reason: Rc<RefCell<Option<String>>>,
-    saw_final_response_timeline: Rc<Cell<bool>>,
+    accum: Rc<PerStreamAccum>,
 ) -> Rc<dyn Fn()> {
     Rc::new(move || {
         if user_cancelled_flag(&stream_ctx.shell) {
@@ -316,7 +318,7 @@ pub(super) fn chat_stream_on_done_builder(
         // 否则 `answer_delta_chars` 仍为上一轮时间轴累计，易误判「有输出却无正文」。
         if lane_take_followup_rotation_pending(output_lane.as_ref()) {
             rotate_streaming_assistant_for_followup_model_round(stream_ctx.as_ref());
-            answer_delta_chars.set(0);
+            accum.answer_delta_chars.set(0);
         }
         let loc = stream_ctx.locale.get_untracked();
         let mid = stream_ctx.tail.clone_assistant_id();
@@ -336,10 +338,10 @@ pub(super) fn chat_stream_on_done_builder(
                 s.messages[idx].state = None;
                 let body_chars = s.messages[idx].text.chars().count()
                     + s.messages[idx].reasoning_text.chars().count();
-                let diag_chars = body_chars.max(answer_delta_chars.get());
+                let diag_chars = body_chars.max(accum.answer_delta_chars.get());
                 let body_and_reasoning_empty = s.messages[idx].text.trim().is_empty()
                     && s.messages[idx].reasoning_text.trim().is_empty();
-                let end_reason = stream_end_reason.borrow();
+                let end_reason = accum.stream_end_reason.borrow();
                 let in_lane = output_lane.get().in_answer_body_lane();
                 match decide_done_bubble_action(DoneBubbleDecisionInputs {
                     body_and_reasoning_empty,
@@ -347,7 +349,7 @@ pub(super) fn chat_stream_on_done_builder(
                     in_answer_body_lane: in_lane,
                     diag_chars,
                     has_hierarchical_or_tool,
-                    saw_final_response_timeline: saw_final_response_timeline.get(),
+                    saw_final_response_timeline: accum.saw_final_response_timeline.get(),
                 }) {
                     DoneBubbleAction::Keep => {}
                     DoneBubbleAction::RemoveBubble => {

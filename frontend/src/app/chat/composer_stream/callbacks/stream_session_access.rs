@@ -1,5 +1,6 @@
-//! 流式 SSE 回调内对「当前 `ChatStreamCallbackCtx::active_session_id` 会话」的读写收口，
+//! 流式 SSE 回调内对 **attach 时绑定的会话**（[`ChatStreamCallbackCtx::active_session_id`](super::super::context::ChatStreamCallbackCtx::active_session_id)）的读写收口，
 //! 统一 `find(|s| s.id == aid)`，避免 `builders` / `helpers` / `assemble` 各处重复拼条件。
+//! 与 [`super::super::per_stream_accum::PerStreamAccum`] 分工：此处只碰 `sessions` 向量；累计计数在 `PerStreamAccum`。
 
 use leptos::prelude::*;
 

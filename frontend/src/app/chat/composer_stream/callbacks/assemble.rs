@@ -1,6 +1,5 @@
 //! 装配 [`crate::api::ChatStreamCallbacks`]：集中各 `on_*` 闭包。
 
-use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use leptos::prelude::*;
@@ -18,6 +17,7 @@ use crate::storage::StoredMessage;
 use crate::timeline_scan::{timeline_state_staged_end, timeline_state_staged_start};
 
 use super::super::context::ChatStreamCallbackCtx;
+use super::super::per_stream_accum::PerStreamAccum;
 use super::super::shell_abort::clear_abort_slot;
 use super::builders::*;
 use super::helpers::*;
@@ -29,32 +29,24 @@ pub(crate) fn build_chat_stream_callbacks(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
     output_lane: StreamOutputLaneCell,
 ) -> ChatStreamCallbacks {
-    let answer_delta_chars: Rc<Cell<usize>> = Rc::new(Cell::new(0));
-    let stream_end_reason: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
-    let current_subgoal_marker: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
-    let saw_final_response_timeline: Rc<Cell<bool>> = Rc::new(Cell::new(false));
+    let accum = PerStreamAccum::new_rc();
     let on_delta: Rc<dyn Fn(String)> = chat_stream_on_delta_builder(
         Rc::clone(&stream_ctx),
         Rc::clone(&output_lane),
-        Rc::clone(&answer_delta_chars),
+        Rc::clone(&accum),
     );
 
     let on_done: Rc<dyn Fn()> = chat_stream_on_done_builder(
         Rc::clone(&stream_ctx),
         Rc::clone(&output_lane),
-        Rc::clone(&answer_delta_chars),
-        Rc::clone(&stream_end_reason),
-        Rc::clone(&saw_final_response_timeline),
+        Rc::clone(&accum),
     );
 
     let on_error: Rc<dyn Fn(String)> = chat_stream_on_error_builder(Rc::clone(&stream_ctx));
 
     let on_ws: Rc<dyn Fn()> = chat_stream_on_ws_builder(Rc::clone(&stream_ctx));
 
-    let on_tool_call = chat_stream_on_tool_call_builder(
-        Rc::clone(&stream_ctx),
-        Rc::clone(&current_subgoal_marker),
-    );
+    let on_tool_call = chat_stream_on_tool_call_builder(Rc::clone(&stream_ctx), Rc::clone(&accum));
 
     let on_tool_status: Rc<dyn Fn(bool)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
@@ -105,9 +97,9 @@ pub(crate) fn build_chat_stream_callbacks(
 
     let on_stream_ended: Rc<dyn Fn(String)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
-        let stream_end_reason = Rc::clone(&stream_end_reason);
+        let accum = Rc::clone(&accum);
         Rc::new(move |reason: String| {
-            *stream_end_reason.borrow_mut() = Some(reason.clone());
+            *accum.stream_end_reason.borrow_mut() = Some(reason.clone());
             stream_ctx.chat.clear_stream_resume_handles();
             // `stream_ended` 表示服务端已结束本轮流式任务：无论 `reason` 是否能解析为已知枚举，
             // 都应回落 busy，避免状态栏长期停在「模型生成中」。（未知 reason 仍写入 stream_end_reason 供 diagnostics。）
@@ -181,12 +173,7 @@ pub(crate) fn build_chat_stream_callbacks(
         })
     };
 
-    let on_timeline_log = make_on_timeline_log(
-        Rc::clone(&stream_ctx),
-        Rc::clone(&answer_delta_chars),
-        Rc::clone(&current_subgoal_marker),
-        Rc::clone(&saw_final_response_timeline),
-    );
+    let on_timeline_log = make_on_timeline_log(Rc::clone(&stream_ctx), Rc::clone(&accum));
 
     let on_staged_step_finished: Rc<dyn Fn(StagedPlanStepEndInfo)> = {
         let stream_ctx = Rc::clone(&stream_ctx);

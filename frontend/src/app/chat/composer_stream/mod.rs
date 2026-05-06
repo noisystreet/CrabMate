@@ -1,12 +1,14 @@
 //! `/chat/stream` SSE 回调装配：与输入框 / 发送按钮解耦。
 //!
 //! - [`context`]：单次流式共享的 `ChatStreamCallbackCtx`。
+//! - [`per_stream_accum`]：单轮流内的 `Cell`/`RefCell` 累计（正文增量计数、结束 reason 等），与 ctx 分层。
 //! - `shell_abort`：`AbortController` 与用户取消 Mutex 的集中读写。
 //! - [`callbacks`]：装配 `ChatStreamCallbacks`（各 `on_*`），与 `send_chat_stream` 契约对齐；实现拆为 `callbacks/helpers`、`callbacks/builders`、`callbacks/assemble`。
 //! - 本文件：长生命周期句柄 [`ComposerStreamHandles`]、[`make_attach_chat_stream`]（发起请求 + `spawn_local`）。
 
 mod callbacks;
 mod context;
+mod per_stream_accum;
 mod shell_abort;
 mod streaming_tail;
 
