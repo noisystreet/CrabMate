@@ -135,6 +135,7 @@ pub(super) fn render_full(
     frame.render_widget(input_par, panes.composer);
     if model.approval_modal.is_none()
         && model.clarification_modal.is_none()
+        && model.workspace_modal.is_none()
         && model.focus == TuiFocus::Composer
         && let Some((cx, cy)) = cursor_rel
     {
@@ -173,6 +174,9 @@ pub(super) fn render_full(
     }
     if let Some(ref cq) = model.clarification_modal {
         super::clarify_modal::render_clarification_modal(frame, area, cq, color);
+    }
+    if let Some(ref ws) = model.workspace_modal {
+        super::workspace_modal::render_workspace_modal(frame, area, ws, color);
     }
 }
 
