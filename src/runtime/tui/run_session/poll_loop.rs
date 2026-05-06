@@ -144,7 +144,7 @@ fn run_tui_poll_loop(
 
         if event::poll(Duration::from_millis(120))? {
             match event::read()? {
-                Event::Mouse(mouse) => tui_dispatch_mouse(ctx.model, mouse),
+                Event::Mouse(mouse) => tui_dispatch_mouse(ctx.model, mouse, ctx.llm_scratch),
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
                     match clarify_modal::handle_clarification_modal_keys(
                         ctx.model,

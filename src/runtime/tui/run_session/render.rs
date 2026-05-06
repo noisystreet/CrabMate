@@ -3,11 +3,14 @@
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
+use ratatui::symbols::scrollbar;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+use ratatui::widgets::{
+    Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap,
+};
 use unicode_width::UnicodeWidthStr;
 
-use crate::runtime::tui::TuiLlmStreamScratchArc;
+use crate::runtime::tui::{TuiLlmStreamScratch, TuiLlmStreamScratchArc};
 use crate::text_util::truncate_chars_with_ellipsis;
 
 use super::approval;
@@ -106,19 +109,38 @@ pub(super) fn render_full(
     let chat_body = append_tui_streaming_tail(model.transcript.as_str(), &scratch_guard);
     drop(scratch_guard);
     let chat_block = panel_block(" 聊天 ", color, model.focus == TuiFocus::Chat);
-    let chat_inner = chat_block.inner(panes.chat);
+    let chat_inner = chat_block_inner_area(panes.chat);
+    let (text_rect, scrollbar_rect) = chat_inner_split_text_and_scrollbar(chat_inner);
+    let tw = text_rect.width.max(1);
+    let th = text_rect.height.max(1);
     let chat_scroll_y = clamped_chat_vertical_scroll(
         chat_body.as_str(),
-        chat_inner.width.max(1),
-        chat_inner.height.max(1),
+        tw,
+        th,
         streaming_nonempty,
         model.chat_scroll_y,
     );
+    let rows = estimate_wrapped_line_rows(chat_body.as_str(), tw);
+    let vis_lines = th as usize;
+
+    frame.render_widget(chat_block, panes.chat);
     let center_body = Paragraph::new(chat_body)
         .wrap(Wrap { trim: false })
-        .scroll((chat_scroll_y, 0))
-        .block(chat_block);
-    frame.render_widget(center_body, panes.chat);
+        .scroll((chat_scroll_y, 0));
+    frame.render_widget(center_body, text_rect);
+
+    if scrollbar_rect.width > 0 && rows > vis_lines {
+        let bar_style = scrollbar_track_style(color, model.focus == TuiFocus::Chat);
+        let mut sb_state = ScrollbarState::new(rows.saturating_sub(vis_lines).saturating_add(1))
+            .position(usize::from(chat_scroll_y))
+            .viewport_content_length(vis_lines);
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(None)
+            .end_symbol(None)
+            .symbols(scrollbar::VERTICAL)
+            .style(bar_style);
+        frame.render_stateful_widget(scrollbar, scrollbar_rect, &mut sb_state);
+    }
 
     let composer_block = panel_block(" 撰写 ", color, model.focus == TuiFocus::Composer);
     let composer_inner = composer_block.inner(panes.composer);
@@ -201,6 +223,83 @@ fn render_top_bar(frame: &mut Frame<'_>, area: Rect, header: &str, color: bool) 
     };
     let p = Paragraph::new(line).block(Block::default().style(block_style));
     frame.render_widget(p, area);
+}
+
+/// 与绘制一致的聊天面板 content 区（`Block` 边框 + 标题占用与 [`panel_block`] 一致）。
+pub(super) fn chat_block_inner_area(chat_pane: Rect) -> Rect {
+    Block::default()
+        .borders(Borders::ALL)
+        .title(Line::from(" 聊天 "))
+        .inner(chat_pane)
+}
+
+/// 纵向滚动条可交互时的几何与 `max_scroll`（内容未溢出时返回 `None`）。
+pub(super) struct ChatScrollbarHit {
+    pub(super) rect: Rect,
+    pub(super) max_scroll: u16,
+}
+
+pub(super) fn chat_scrollbar_hit(
+    chat_pane: Rect,
+    transcript: &str,
+    scratch: &TuiLlmStreamScratch,
+) -> Option<ChatScrollbarHit> {
+    let chat_inner = chat_block_inner_area(chat_pane);
+    let (text_rect, sb_rect) = chat_inner_split_text_and_scrollbar(chat_inner);
+    if sb_rect.width == 0 {
+        return None;
+    }
+    let chat_body = append_tui_streaming_tail(transcript, scratch);
+    let tw = text_rect.width.max(1);
+    let th = text_rect.height.max(1);
+    let rows = estimate_wrapped_line_rows(chat_body.as_str(), tw);
+    let vis_lines = th as usize;
+    if rows <= vis_lines {
+        return None;
+    }
+    let max_scroll = rows.saturating_sub(vis_lines).min(u16::MAX as usize) as u16;
+    Some(ChatScrollbarHit {
+        rect: sb_rect,
+        max_scroll,
+    })
+}
+
+/// 将指针所在行映射为 `Paragraph::scroll` 的 `y`（按轨道比例；行坐标可落在轨道外，仍 clamp）。
+pub(super) fn scrollbar_row_to_scroll_y(row: u16, hit: &ChatScrollbarHit) -> u16 {
+    if hit.max_scroll == 0 {
+        return 0;
+    }
+    let h = hit.rect.height.max(1);
+    let rel = row.saturating_sub(hit.rect.y).min(h.saturating_sub(1));
+    let denom = u32::from(h.saturating_sub(1).max(1));
+    let num = u32::from(rel) * u32::from(hit.max_scroll);
+    (num / denom).min(u32::from(hit.max_scroll)) as u16
+}
+
+/// 聊天区内：左侧正文，右侧预留 1 列滚动条（宽度不足时仅占正文）。
+pub(super) fn chat_inner_split_text_and_scrollbar(inner: Rect) -> (Rect, Rect) {
+    if inner.width >= 2 && inner.height >= 1 {
+        let text_w = inner.width.saturating_sub(1);
+        (
+            Rect::new(inner.x, inner.y, text_w, inner.height),
+            Rect::new(inner.x.saturating_add(text_w), inner.y, 1, inner.height),
+        )
+    } else {
+        (inner, Rect::new(0, 0, 0, 0))
+    }
+}
+
+fn scrollbar_track_style(color: bool, chat_focused: bool) -> Style {
+    if color {
+        let fg = if chat_focused {
+            Color::DarkGray
+        } else {
+            Color::Rgb(55, 58, 66)
+        };
+        Style::default().fg(fg)
+    } else {
+        Style::default()
+    }
 }
 
 fn panel_block(title: &str, color: bool, focused: bool) -> Block<'_> {

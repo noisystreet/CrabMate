@@ -15,6 +15,8 @@
 //! **撰写区**：按单元格宽度自动换行（宽字符计入 **`unicode-width`**）；纵向往下溢出时仅保留底部可见行（滚动）；**「撰写」** 聚焦时 **`Frame::set_cursor_position`** 显示插入光标。
 //!
 //! **底栏**：对齐 Web `status_bar_footer_view` — **模型 · … · base_url · … · 角色 · … ·** 运行态（**就绪** / **模型生成中…** / **工具执行中…** / **错误:** …）；快捷键说明在右侧栏。
+//!
+//! **聊天区**：内容溢出时右侧显示滚动条；可 **左键拖动** 滚动条改变纵向位置（与滚轮 / PgUp/PgDn 共用 [`TuiModel::chat_scroll_y`]）。
 
 mod approval;
 mod clarify_modal;
@@ -94,7 +96,7 @@ fn build_tui_workspace_sidebar(
 /// 原底栏文案迁至侧栏；与 `--no-stream` 对齐 REPL 提示。
 fn tui_keyboard_help_compact(cli_no_stream: bool) -> String {
     let mut s = String::from(
-        "Enter 发送 · 空行 q · Ctrl+C · /help · Tab 切焦点 · 鼠标点面板 · 聊天区 PgUp/PgDn",
+        "Enter 发送 · 空行 q · Ctrl+C · /help · Tab 切焦点 · 鼠标点面板 · 聊天区 PgUp/PgDn · 右侧滚动条拖动",
     );
     if cli_no_stream {
         s.push_str(" · --no-stream");
@@ -319,6 +321,8 @@ struct TuiModel {
     transcript: String,
     /// 聊天区垂直滚动（`Paragraph::scroll` 的 y）；须与 [`render::clamped_chat_vertical_scroll`] 一致地 clamp，避免 ratatui `scroll_y` 过大导致溢出 panic。
     chat_scroll_y: u16,
+    /// 左键在聊天区纵向滚动条上按下后拖动（[`tui_dispatch_mouse`]）。
+    chat_scrollbar_dragging: bool,
     input: String,
     /// 与 Web 底栏 chips 同源快照（`模型 · … · base_url · … · 角色 · …`），供同步回调拼接运行态。
     status_chips: String,
@@ -602,6 +606,7 @@ pub async fn run_tui_session(
         right_summary,
         transcript: transcript::messages_to_transcript(&messages),
         chat_scroll_y: 0,
+        chat_scrollbar_dragging: false,
         input: String::new(),
         status_chips,
         status: status_line,
@@ -749,7 +754,11 @@ fn open_workspace_modal(model: &Arc<Mutex<TuiModel>>) {
     g.workspace_modal = Some(workspace_modal::TuiWorkspaceModalState::open(initial));
 }
 
-fn tui_dispatch_mouse(model: &Arc<Mutex<TuiModel>>, mouse: event::MouseEvent) {
+fn tui_dispatch_mouse(
+    model: &Arc<Mutex<TuiModel>>,
+    mouse: event::MouseEvent,
+    llm_scratch: &TuiLlmStreamScratchArc,
+) {
     let modal_open = {
         let g = model.lock().unwrap_or_else(|e| e.into_inner());
         g.approval_modal.is_some() || g.clarification_modal.is_some() || g.workspace_modal.is_some()
@@ -766,6 +775,7 @@ fn tui_dispatch_mouse(model: &Arc<Mutex<TuiModel>>, mouse: event::MouseEvent) {
             if rect_contains(layout.chat, mouse.column, mouse.row) =>
         {
             let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
+            g.chat_scrollbar_dragging = false;
             g.focus = TuiFocus::Chat;
             match mouse.kind {
                 MouseEventKind::ScrollUp => {
@@ -777,10 +787,53 @@ fn tui_dispatch_mouse(model: &Arc<Mutex<TuiModel>>, mouse: event::MouseEvent) {
                 _ => {}
             }
         }
+        MouseEventKind::Up(_) => {
+            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
+            g.chat_scrollbar_dragging = false;
+        }
+        MouseEventKind::Drag(MouseButton::Left) => {
+            let dragging = {
+                let g = model.lock().unwrap_or_else(|e| e.into_inner());
+                g.chat_scrollbar_dragging
+            };
+            if !dragging {
+                return;
+            }
+            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
+            let scratch = llm_scratch.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(hit) =
+                render::chat_scrollbar_hit(layout.chat, g.transcript.as_str(), &scratch)
+            {
+                g.focus = TuiFocus::Chat;
+                g.chat_scroll_y = render::scrollbar_row_to_scroll_y(mouse.row, &hit);
+            }
+        }
         MouseEventKind::Down(MouseButton::Left) => {
+            let consumed_by_scrollbar = {
+                let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
+                let scratch = llm_scratch.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(hit) =
+                    render::chat_scrollbar_hit(layout.chat, g.transcript.as_str(), &scratch)
+                {
+                    if rect_contains(hit.rect, mouse.column, mouse.row) {
+                        g.chat_scrollbar_dragging = true;
+                        g.focus = TuiFocus::Chat;
+                        g.chat_scroll_y = render::scrollbar_row_to_scroll_y(mouse.row, &hit);
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            };
+            if consumed_by_scrollbar {
+                return;
+            }
             if let Some(f) = focus_at_point(&layout, mouse.column, mouse.row) {
                 let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
                 g.focus = f;
+                g.chat_scrollbar_dragging = false;
             }
         }
         _ => {}
