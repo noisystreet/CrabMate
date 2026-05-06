@@ -6,7 +6,7 @@ use crate::config::SharedAgentConfig;
 use crate::runtime::workspace_session;
 
 use super::{
-    TuiModel, build_tui_nav_summary, build_tui_right_summary, tui_header_summary,
+    TuiModel, build_tui_session_sidebar, build_tui_workspace_sidebar, tui_header_summary,
     tui_status_bar_with_run, tui_status_chips_line,
 };
 
@@ -81,13 +81,12 @@ pub(super) async fn tui_apply_workspace_switch(
     *work_dir = new_root;
     let new_header = tui_header_summary(cfg_holder, work_dir.as_path()).await;
     let tui_load_nav = cfg_holder.read().await.session_ui.tui_load_session_on_start;
-    let nav = build_tui_nav_summary(
-        work_dir.as_path(),
+    let nav = build_tui_session_sidebar(
         tui_load_nav,
         workspace_session::session_file_path(work_dir.as_path()).exists(),
         message_count,
     );
-    let right = build_tui_right_summary(tool_count, cli_no_stream);
+    let right = build_tui_workspace_sidebar(work_dir.as_path(), tool_count, cli_no_stream);
     let chips = tui_status_chips_line(cfg_holder, agent_role_owned).await;
     let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
     g.header_line = new_header;

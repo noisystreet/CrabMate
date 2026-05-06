@@ -6,7 +6,7 @@
 //!
 //! 架构：专用线程跑 ratatui + crossterm；[`tokio::sync::mpsc::unbounded_channel`] 投递输入；异步侧执行回合并刷新快照。
 //!
-//! **焦点**：左/中上（聊天）/中下（撰写）/右四块可点击聚焦（**`EnableMouseCapture`**），边框与标题高亮；**`Tab` / `Shift+Tab`** 循环焦点。**导航（左栏）聚焦时 `Enter`** 打开工作区 Modal；**撰写区聚焦时 `Enter`** 提交输入行。字符输入与退格仅在 **「撰写」** 聚焦时生效；
+//! **焦点**：左（会话）/中上（聊天）/中下（撰写）/右（工作区）四块可点击聚焦（**`EnableMouseCapture`**），边框与标题高亮；**`Tab` / `Shift+Tab`** 循环焦点。**右侧工作区栏聚焦时 `Enter`** 打开工作区 Modal（与 Web 侧栏一致）；**撰写区聚焦时 `Enter`** 提交输入行。字符输入与退格仅在 **「撰写」** 聚焦时生效；
 //!
 //! **中区 transcript**：与 Web 快照一致的过滤（[`is_message_visible_in_chat_transcript`]）；**工具**条走 [`crate::runtime::message_display::tool_content_for_display_for_message`]（摘要优先，非原始 JSON）；**助手**走 [`assistant_markdown_source_for_message`]；**用户**走 [`user_message_for_chat_display`]（隐藏分步注入等）。
 //!
@@ -64,24 +64,29 @@ pub(super) struct TuiClarificationShared {
     answers_merge: Arc<Mutex<Option<crate::clarification_questionnaire::ClarifyAnswersNormalized>>>,
 }
 
-fn build_tui_nav_summary(
-    work_dir: &std::path::Path,
+/// 左侧会话栏（对齐 Web：会话在左）。
+fn build_tui_session_sidebar(
     tui_load_on_start: bool,
     session_file_exists: bool,
     message_count: usize,
 ) -> String {
-    let wd = work_dir.display().to_string();
-    let wd_short = truncate_chars_with_ellipsis(&wd, 40);
     let sess = if session_file_exists { "有" } else { "无" };
     let load = if tui_load_on_start { "开" } else { "关" };
     format!(
-        "工作区\n{wd_short}\n\n聚焦本栏按 Enter：浏览/编辑路径\n（与 Web 侧栏工作区、REPL /workspace 同源校验）\n\n会话文件\ntui_session.json：{sess}\n启动加载：{load}\n\n内存消息\n{message_count} 条（含 system / 工具）\n\n中区仅展示 transcript\n可见尾部",
+        "会话\n\n会话文件\ntui_session.json：{sess}\n启动加载：{load}\n\n内存消息\n{message_count} 条（含 system / 工具）\n\n中区仅展示 transcript\n可见尾部",
     )
 }
 
-fn build_tui_right_summary(tool_count: usize, cli_no_stream: bool) -> String {
+/// 右侧工作区栏 + 任务提示（对齐 Web：工作区在右）。
+fn build_tui_workspace_sidebar(
+    work_dir: &std::path::Path,
+    tool_count: usize,
+    cli_no_stream: bool,
+) -> String {
+    let wd = work_dir.display().to_string();
+    let wd_short = truncate_chars_with_ellipsis(&wd, 40);
     format!(
-        "快捷键\n{}\n\n敏感工具审批：全屏 Modal（↑↓ · Enter · Esc · 1/2/3）。\n\n已加载工具：{tool_count} 个",
+        "工作区\n{wd_short}\n\n聚焦本栏按 Enter：浏览/编辑路径\n（与 Web 侧栏工作区、REPL /workspace 同源校验）\n\n快捷键\n{}\n\n敏感工具审批：全屏 Modal（↑↓ · Enter · Esc · 1/2/3）。\n\n已加载工具：{tool_count} 个",
         tui_keyboard_help_compact(cli_no_stream),
     )
 }
@@ -307,9 +312,9 @@ fn composer_visible_and_cursor_rel(
 struct TuiModel {
     /// 顶栏一行摘要（对齐 Web 壳层：品牌 · 模型 · 网关 · 工作目录）
     header_line: String,
-    /// 左栏：工作区路径、`tui_session.json` 与加载开关等（阶段 D）
+    /// 左栏：会话文件、`tui_session.json` 与加载开关等（对齐 Web 左侧会话）
     nav_summary: String,
-    /// 右栏：任务等占位 + 工具数量提示
+    /// 右栏：工作区路径 + 快捷键 / 工具提示（对齐 Web 右侧工作区）
     right_summary: String,
     transcript: String,
     /// 聊天区垂直滚动（`Paragraph::scroll` 的 y）；须与 [`render::clamped_chat_vertical_scroll`] 一致地 clamp，避免 ratatui `scroll_y` 过大导致溢出 panic。
@@ -427,13 +432,12 @@ async fn tui_refresh_after_slash_capture(p: TuiSlashUiRefresh<'_>) {
     } = p;
     let new_header = tui_header_summary(cfg_holder, work_dir).await;
     let tui_load_nav = cfg_holder.read().await.session_ui.tui_load_session_on_start;
-    let nav = build_tui_nav_summary(
-        work_dir,
+    let nav = build_tui_session_sidebar(
         tui_load_nav,
         workspace_session::session_file_path(work_dir).exists(),
         message_count,
     );
-    let right = build_tui_right_summary(tool_count, cli_no_stream);
+    let right = build_tui_workspace_sidebar(work_dir, tool_count, cli_no_stream);
     let chips = tui_status_chips_line(cfg_holder, agent_role_owned).await;
     let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
     if !captured.is_empty() {
@@ -463,13 +467,12 @@ async fn tui_refresh_after_chat_round(
 ) {
     let new_header = tui_header_summary(cfg_holder, work_dir).await;
     let tui_load_nav = cfg_holder.read().await.session_ui.tui_load_session_on_start;
-    let nav = build_tui_nav_summary(
-        work_dir,
+    let nav = build_tui_session_sidebar(
         tui_load_nav,
         workspace_session::session_file_path(work_dir).exists(),
         messages.len(),
     );
-    let right = build_tui_right_summary(tool_count, cli_no_stream);
+    let right = build_tui_workspace_sidebar(work_dir, tool_count, cli_no_stream);
     let chips = tui_status_chips_line(cfg_holder, agent_role_owned).await;
     let transcript = transcript::messages_to_transcript(messages);
     let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
@@ -580,13 +583,12 @@ pub async fn run_tui_session(
     );
 
     let header_line = tui_header_summary(cfg_holder, work_dir.as_path()).await;
-    let nav_summary = build_tui_nav_summary(
-        work_dir.as_path(),
+    let nav_summary = build_tui_session_sidebar(
         tui_load,
         workspace_session::session_file_path(work_dir.as_path()).exists(),
         messages.len(),
     );
-    let right_summary = build_tui_right_summary(tools.len(), cli_no_stream);
+    let right_summary = build_tui_workspace_sidebar(work_dir.as_path(), tools.len(), cli_no_stream);
     let status_chips = tui_status_chips_line(cfg_holder, &agent_role_owned).await;
     let status_line = tui_status_bar_with_run(&status_chips, "就绪");
 
@@ -852,11 +854,11 @@ fn tui_dispatch_key_press(
             TuiPollKeyFlow::ContinueOuter
         }
         KeyCode::Enter => {
-            let nav_enter = {
+            let workspace_enter = {
                 let g = model.lock().unwrap_or_else(|e| e.into_inner());
-                g.focus == TuiFocus::NavLeft
+                g.focus == TuiFocus::SideRight
             };
-            if nav_enter {
+            if workspace_enter {
                 open_workspace_modal(model);
                 return TuiPollKeyFlow::ContinueOuter;
             }

@@ -93,7 +93,7 @@ pub(super) fn render_full(
     render_side_panel(
         frame,
         panes.nav_left,
-        " 导航 · 会话 ",
+        " 会话 ",
         model.nav_summary.as_str(),
         color,
         model.focus == TuiFocus::NavLeft,
@@ -148,7 +148,7 @@ pub(super) fn render_full(
     render_side_panel(
         frame,
         panes.side_right,
-        " 侧栏 · 任务 ",
+        " 工作区 ",
         model.right_summary.as_str(),
         color,
         model.focus == TuiFocus::SideRight,
