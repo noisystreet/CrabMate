@@ -249,6 +249,7 @@ async fn outer_loop_execute_tools_round(
             sync_default_sandbox_backend: Arc::clone(
                 &p.ctx.process_handles.sync_default_sandbox_backend,
             ),
+            readonly_tool_ttl_cache: Arc::clone(&p.ctx.process_handles.readonly_tool_ttl_cache),
         },
     )
     .await;

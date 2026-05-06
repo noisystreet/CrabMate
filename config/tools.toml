@@ -132,6 +132,9 @@ materialize_deepseek_dsml_tool_calls = true
 # 单轮并行只读工具批 spawn_blocking 最大并发；默认 max(chat_queue_max_concurrent, 3)
 # parallel_readonly_tools_max = 4
 read_file_turn_cache_max_entries = 64
+# 进程内只读类 run_command 短时缓存（秒）；0 关闭。CM_READONLY_TOOL_TTL_CACHE_SECS
+# readonly_tool_ttl_cache_secs = 30
+# readonly_tool_ttl_cache_max_entries = 256
 
 # --- 测试输出缓存与会话变更集（工具写盘追踪注入）---
 test_result_cache_enabled = true

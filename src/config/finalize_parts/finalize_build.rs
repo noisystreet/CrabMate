@@ -234,6 +234,8 @@ fn finalize_section_chat_queues_cache(tail: &FinalizeTailScalars) -> types::Chat
         chat_queue_max_pending: tail.chat_queue_max_pending,
         parallel_readonly_tools_max: tail.parallel_readonly_tools_max,
         read_file_turn_cache_max_entries: tail.read_file_turn_cache_max_entries,
+        readonly_tool_ttl_cache_secs: tail.readonly_tool_ttl_cache_secs,
+        readonly_tool_ttl_cache_max_entries: tail.readonly_tool_ttl_cache_max_entries,
         test_result_cache_enabled: tail.test_result_cache_enabled,
         test_result_cache_max_entries: tail.test_result_cache_max_entries,
     }

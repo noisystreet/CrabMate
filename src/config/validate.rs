@@ -270,6 +270,18 @@ fn u64_range_rows_a2() -> &'static [U64RangeRow] {
             4096,
         ),
         (
+            "readonly_tool_ttl_cache_secs",
+            |b| b.chat_queues_cache.readonly_tool_ttl_cache_secs,
+            0,
+            3600,
+        ),
+        (
+            "readonly_tool_ttl_cache_max_entries",
+            |b| b.chat_queues_cache.readonly_tool_ttl_cache_max_entries,
+            1,
+            4096,
+        ),
+        (
             "test_result_cache_max_entries",
             |b| b.chat_queues_cache.test_result_cache_max_entries,
             1,

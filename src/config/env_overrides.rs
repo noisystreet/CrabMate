@@ -590,6 +590,16 @@ fn env_override_chat_queue_parallel_and_caches(b: &mut ConfigBuilder) {
     {
         b.chat_queues_cache.read_file_turn_cache_max_entries = Some(n);
     }
+    if let Ok(v) = std::env::var("CM_READONLY_TOOL_TTL_CACHE_SECS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.chat_queues_cache.readonly_tool_ttl_cache_secs = Some(n);
+    }
+    if let Ok(v) = std::env::var("CM_READONLY_TOOL_TTL_CACHE_MAX_ENTRIES")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.chat_queues_cache.readonly_tool_ttl_cache_max_entries = Some(n);
+    }
     if let Ok(v) = std::env::var("CM_TEST_RESULT_CACHE_ENABLED")
         && let Some(val) = parse_bool_like(&v)
     {

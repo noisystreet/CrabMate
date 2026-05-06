@@ -40,6 +40,7 @@ pub fn reset_process_tool_globals_for_tests() {
 }
 
 mod read_file_turn_cache;
+mod readonly_tool_ttl_cache;
 mod redact;
 mod request_chrome_trace;
 mod runtime;

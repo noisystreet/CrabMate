@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use log::{info, warn};
 use tokio::sync::mpsc;
@@ -41,6 +41,191 @@ struct SerialEmitToolResultParams<'a> {
     id: &'a str,
     result: String,
     reflection_inject: Option<serde_json::Value>,
+}
+
+struct SerialTtlRunCommandEarlyHitParams<'a> {
+    messages: &'a mut Vec<crate::types::Message>,
+    per_coord: &'a mut PerCoordinator,
+    cfg: &'a Arc<crate::config::AgentConfig>,
+    tool_outcome_recorder: &'a Arc<crate::tool_stats::ToolOutcomeRecorder>,
+    out: Option<&'a mpsc::Sender<String>>,
+    echo_terminal_transcript: bool,
+    terminal_tool_display_max_chars: usize,
+    tool_result_envelope_v1: bool,
+    effective_working_dir: &'a Path,
+    name: &'a str,
+    args: &'a str,
+    id: &'a str,
+    readonly_tool_ttl_cache: &'a Arc<crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache>,
+}
+
+async fn serial_try_ttl_run_command_cache_hit(p: SerialTtlRunCommandEarlyHitParams<'_>) -> bool {
+    let ttl_secs = p.cfg.chat_queues_cache.readonly_tool_ttl_cache_secs;
+    if ttl_secs == 0
+        || p.name != "run_command"
+        || !crate::readonly_tool_ttl_cache::run_command_invocation_ttl_cache_eligible(p.args)
+    {
+        return false;
+    }
+    let ws_key = p.effective_working_dir.to_string_lossy();
+    let Some(cached) = p
+        .readonly_tool_ttl_cache
+        .try_get(ws_key.as_ref(), p.name, p.args)
+    else {
+        return false;
+    };
+    let body = format!("[只读命令短时缓存命中 · TTL≤{ttl_secs}s]\n{cached}");
+    info!(
+        target: super::LOG_TARGET,
+        "run_command TTL 缓存命中 args_preview={}",
+        crate::redact::tool_arguments_preview_for_log(p.args)
+    );
+    emit_serial_tool_result(SerialEmitToolResultParams {
+        messages: p.messages,
+        per_coord: p.per_coord,
+        cfg: p.cfg,
+        tool_outcome_recorder: p.tool_outcome_recorder,
+        out: p.out,
+        echo_terminal_transcript: p.echo_terminal_transcript,
+        terminal_tool_display_max_chars: p.terminal_tool_display_max_chars,
+        tool_result_envelope_v1: p.tool_result_envelope_v1,
+        name: p.name,
+        args: p.args,
+        id: p.id,
+        result: body,
+        reflection_inject: None,
+    })
+    .await;
+    true
+}
+
+fn readonly_tool_ttl_cache_should_invalidate_workspace(
+    cfg: &crate::config::AgentConfig,
+    name: &str,
+    args: &str,
+    workspace_changed: bool,
+) -> bool {
+    workspace_changed
+        || if name == "run_command" {
+            !crate::readonly_tool_ttl_cache::run_command_invocation_ttl_cache_eligible(args)
+        } else {
+            !tool_registry::is_readonly_tool(cfg, name)
+        }
+}
+
+struct SerialEarlyToolPolicyDenyParams<'a> {
+    messages: &'a mut Vec<crate::types::Message>,
+    per_coord: &'a mut PerCoordinator,
+    cfg: &'a Arc<crate::config::AgentConfig>,
+    tool_outcome_recorder: &'a Arc<crate::tool_stats::ToolOutcomeRecorder>,
+    out: Option<&'a mpsc::Sender<String>>,
+    echo_terminal_transcript: bool,
+    terminal_tool_display_max_chars: usize,
+    tool_result_envelope_v1: bool,
+    name: &'a str,
+    args: &'a str,
+    id: &'a str,
+    step_executor_constraint: Option<PlanStepExecutorKind>,
+    tools_defs_full: &'a [crate::types::Tool],
+    turn_allow: Option<&'a HashSet<String>>,
+}
+
+async fn serial_emit_early_tool_policy_denials(p: SerialEarlyToolPolicyDenyParams<'_>) -> bool {
+    if let Some(k) = p.step_executor_constraint
+        && !tool_allowed_for_step_executor_kind(p.cfg.as_ref(), p.name, k)
+    {
+        let denied = executor_kind_tool_denied_body(p.cfg.as_ref(), p.tools_defs_full, p.name, k);
+        warn!(target: super::LOG_TARGET, "{}", denied);
+        emit_serial_tool_result(SerialEmitToolResultParams {
+            messages: p.messages,
+            per_coord: p.per_coord,
+            cfg: p.cfg,
+            tool_outcome_recorder: p.tool_outcome_recorder,
+            out: p.out,
+            echo_terminal_transcript: p.echo_terminal_transcript,
+            terminal_tool_display_max_chars: p.terminal_tool_display_max_chars,
+            tool_result_envelope_v1: p.tool_result_envelope_v1,
+            name: p.name,
+            args: p.args,
+            id: p.id,
+            result: denied,
+            reflection_inject: None,
+        })
+        .await;
+        return true;
+    }
+
+    if !crate::agent_role_turn::tool_allowed_for_turn(p.name, p.turn_allow) {
+        let denied = crate::agent_role_turn::turn_tool_denied_message(p.name);
+        warn!(target: super::LOG_TARGET, "{}", denied);
+        emit_serial_tool_result(SerialEmitToolResultParams {
+            messages: p.messages,
+            per_coord: p.per_coord,
+            cfg: p.cfg,
+            tool_outcome_recorder: p.tool_outcome_recorder,
+            out: p.out,
+            echo_terminal_transcript: p.echo_terminal_transcript,
+            terminal_tool_display_max_chars: p.terminal_tool_display_max_chars,
+            tool_result_envelope_v1: p.tool_result_envelope_v1,
+            name: p.name,
+            args: p.args,
+            id: p.id,
+            result: denied,
+            reflection_inject: None,
+        })
+        .await;
+        return true;
+    }
+
+    false
+}
+
+struct SerialTtlAfterDispatchParams<'a> {
+    cfg: &'a crate::config::AgentConfig,
+    effective_working_dir: &'a Path,
+    readonly_tool_ttl_cache: &'a Arc<crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache>,
+    name: &'a str,
+    args: &'a str,
+    result: &'a str,
+    workspace_changed: bool,
+}
+
+fn serial_bookkeep_readonly_tool_ttl_cache_after_tool(p: SerialTtlAfterDispatchParams<'_>) {
+    let ws_key = p.effective_working_dir.to_string_lossy();
+    let ttl_secs = p.cfg.chat_queues_cache.readonly_tool_ttl_cache_secs;
+    let mut ttl_run_command_success_cache: Option<String> = None;
+    if ttl_secs > 0 && p.name == "run_command" {
+        let parsed_tool = parse_legacy_output(p.name, p.result);
+        if parsed_tool.ok
+            && crate::readonly_tool_ttl_cache::run_command_invocation_ttl_cache_eligible(p.args)
+        {
+            ttl_run_command_success_cache = Some(p.result.to_string());
+        } else {
+            p.readonly_tool_ttl_cache
+                .remove(ws_key.as_ref(), p.name, p.args);
+        }
+    }
+
+    if readonly_tool_ttl_cache_should_invalidate_workspace(
+        p.cfg,
+        p.name,
+        p.args,
+        p.workspace_changed,
+    ) {
+        p.readonly_tool_ttl_cache
+            .invalidate_workspace(ws_key.as_ref());
+    }
+
+    if let Some(out) = ttl_run_command_success_cache {
+        p.readonly_tool_ttl_cache.insert(
+            ws_key.as_ref(),
+            p.name,
+            p.args,
+            out,
+            Duration::from_secs(ttl_secs),
+            p.cfg.chat_queues_cache.readonly_tool_ttl_cache_max_entries,
+        );
+    }
 }
 
 async fn emit_serial_tool_result(p: SerialEmitToolResultParams<'_>) {
@@ -103,6 +288,7 @@ struct SerialEmitEarlyWithoutDispatchParams<'a> {
     tools_defs_full: &'a [crate::types::Tool],
     turn_allow: Option<&'a HashSet<String>>,
     readonly_cache: &'a mut HashMap<(String, String), String>,
+    readonly_tool_ttl_cache: &'a Arc<crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache>,
 }
 
 async fn serial_emit_early_without_dispatch(p: SerialEmitEarlyWithoutDispatchParams<'_>) -> bool {
@@ -123,6 +309,7 @@ async fn serial_emit_early_without_dispatch(p: SerialEmitEarlyWithoutDispatchPar
         tools_defs_full,
         turn_allow,
         readonly_cache,
+        readonly_tool_ttl_cache,
     } = p;
     if let Some(preflight_error) =
         run_command_cargo_workdir_preflight_error(name, args, effective_working_dir)
@@ -172,49 +359,24 @@ async fn serial_emit_early_without_dispatch(p: SerialEmitEarlyWithoutDispatchPar
         return true;
     }
 
-    if let Some(k) = step_executor_constraint
-        && !tool_allowed_for_step_executor_kind(cfg.as_ref(), name, k)
+    if serial_emit_early_tool_policy_denials(SerialEarlyToolPolicyDenyParams {
+        messages,
+        per_coord,
+        cfg,
+        tool_outcome_recorder,
+        out,
+        echo_terminal_transcript,
+        terminal_tool_display_max_chars,
+        tool_result_envelope_v1,
+        name,
+        args,
+        id,
+        step_executor_constraint,
+        tools_defs_full,
+        turn_allow,
+    })
+    .await
     {
-        let denied = executor_kind_tool_denied_body(cfg.as_ref(), tools_defs_full, name, k);
-        warn!(target: super::LOG_TARGET, "{}", denied);
-        emit_serial_tool_result(SerialEmitToolResultParams {
-            messages,
-            per_coord,
-            cfg,
-            tool_outcome_recorder,
-            out,
-            echo_terminal_transcript,
-            terminal_tool_display_max_chars,
-            tool_result_envelope_v1,
-            name,
-            args,
-            id,
-            result: denied,
-            reflection_inject: None,
-        })
-        .await;
-        return true;
-    }
-
-    if !crate::agent_role_turn::tool_allowed_for_turn(name, turn_allow) {
-        let denied = crate::agent_role_turn::turn_tool_denied_message(name);
-        warn!(target: super::LOG_TARGET, "{}", denied);
-        emit_serial_tool_result(SerialEmitToolResultParams {
-            messages,
-            per_coord,
-            cfg,
-            tool_outcome_recorder,
-            out,
-            echo_terminal_transcript,
-            terminal_tool_display_max_chars,
-            tool_result_envelope_v1,
-            name,
-            args,
-            id,
-            result: denied,
-            reflection_inject: None,
-        })
-        .await;
         return true;
     }
 
@@ -285,6 +447,26 @@ async fn serial_emit_early_without_dispatch(p: SerialEmitEarlyWithoutDispatchPar
             reflection_inject: None,
         })
         .await;
+        return true;
+    }
+
+    if serial_try_ttl_run_command_cache_hit(SerialTtlRunCommandEarlyHitParams {
+        messages,
+        per_coord,
+        cfg,
+        tool_outcome_recorder,
+        out,
+        echo_terminal_transcript,
+        terminal_tool_display_max_chars,
+        tool_result_envelope_v1,
+        effective_working_dir,
+        name,
+        args,
+        id,
+        readonly_tool_ttl_cache,
+    })
+    .await
+    {
         return true;
     }
 
@@ -393,6 +575,41 @@ fn serial_maybe_invalidate_codebase_semantic_index(
     }
 }
 
+fn serial_log_web_audit_write_tool_if_needed(
+    cfg: &crate::config::AgentConfig,
+    is_readonly: bool,
+    request_audit: Option<&std::sync::Arc<crate::web::audit::WebRequestAudit>>,
+    tracing_chat_turn: Option<&std::sync::Arc<crate::observability::TracingChatTurn>>,
+    long_term_memory_scope_id: Option<&str>,
+    name: &str,
+    args: &str,
+) {
+    if !is_readonly
+        && cfg.web_api.web_audit_log_write_tools
+        && let Some(audit) = request_audit
+    {
+        let ts_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let job_id = tracing_chat_turn.map(|t| t.job_id).unwrap_or(0);
+        let scope = long_term_memory_scope_id.unwrap_or("");
+        info!(
+            target: "crabmate::audit_write_tool",
+            "audit_write_tool ts_ms={} job_id={} conversation_id={} source={} client_ip={} peer_ip={} bearer_fp={} tool={} args_preview={}",
+            ts_ms,
+            job_id,
+            scope,
+            audit.source,
+            audit.client_ip,
+            audit.peer_ip,
+            audit.bearer_fp.as_deref().unwrap_or("-"),
+            name,
+            crate::redact::tool_arguments_preview_for_log(args),
+        );
+    }
+}
+
 /// 串行路径：`dispatch_tool`、只读结果缓存、写操作后清缓存。
 pub(super) async fn execute_tools_serial(
     ctx: ExecuteToolsCommonCtx<'_>,
@@ -425,6 +642,7 @@ pub(super) async fn execute_tools_serial(
         tool_outcome_recorder,
         handler_lookup,
         sync_default_sandbox_backend,
+        readonly_tool_ttl_cache,
     } = ctx;
 
     let mut readonly_cache: HashMap<(String, String), String> = HashMap::new();
@@ -480,6 +698,7 @@ pub(super) async fn execute_tools_serial(
             tools_defs_full,
             turn_allow,
             readonly_cache: &mut readonly_cache,
+            readonly_tool_ttl_cache: &readonly_tool_ttl_cache,
         })
         .await
         {
@@ -542,30 +761,15 @@ pub(super) async fn execute_tools_serial(
             t_tool.elapsed().as_millis()
         );
 
-        if !is_readonly
-            && cfg.web_api.web_audit_log_write_tools
-            && let Some(ref audit) = request_audit
-        {
-            let ts_ms = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
-            let job_id = tracing_chat_turn.as_ref().map(|t| t.job_id).unwrap_or(0);
-            let scope = long_term_memory_scope_id.as_deref().unwrap_or("");
-            info!(
-                target: "crabmate::audit_write_tool",
-                "audit_write_tool ts_ms={} job_id={} conversation_id={} source={} client_ip={} peer_ip={} bearer_fp={} tool={} args_preview={}",
-                ts_ms,
-                job_id,
-                scope,
-                audit.source,
-                audit.client_ip,
-                audit.peer_ip,
-                audit.bearer_fp.as_deref().unwrap_or("-"),
-                name,
-                crate::redact::tool_arguments_preview_for_log(&args),
-            );
-        }
+        serial_log_web_audit_write_tool_if_needed(
+            cfg.as_ref(),
+            is_readonly,
+            request_audit.as_ref(),
+            tracing_chat_turn.as_ref(),
+            long_term_memory_scope_id.as_deref(),
+            name.as_str(),
+            args.as_str(),
+        );
 
         serial_bookkeep_run_command_failure(
             per_coord,
@@ -583,6 +787,16 @@ pub(super) async fn execute_tools_serial(
             args.as_str(),
             result.as_str(),
         );
+
+        serial_bookkeep_readonly_tool_ttl_cache_after_tool(SerialTtlAfterDispatchParams {
+            cfg: cfg.as_ref(),
+            effective_working_dir,
+            readonly_tool_ttl_cache: &readonly_tool_ttl_cache,
+            name: name.as_str(),
+            args: args.as_str(),
+            result: result.as_str(),
+            workspace_changed: *workspace_changed,
+        });
 
         if (!is_readonly || *workspace_changed)
             && let Some(c) = read_file_turn_cache.as_ref()

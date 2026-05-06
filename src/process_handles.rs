@@ -1,10 +1,11 @@
-//! 单进程内共享的运行时句柄（非 `static`）：工作区变更集注册表、工具调用统计记录器与 CLI 长期记忆缓存。
+//! 单进程内共享的运行时句柄（非 `static`）：工作区变更集注册表、工具调用统计记录器、只读类 **`run_command`** 短时 TTL 缓存与 CLI 长期记忆缓存。
 //! 由 Web `AppState` 或 CLI 入口构造并注入 [`crate::RunAgentTurnParams`]，避免隐式全局状态；**`default_arc_process_handles`** 为无 `AppState` 时的独立默认 `Arc`（**不**用进程级 `static` 单例）。
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
+use crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache;
 use crate::tool_registry::HandlerLookupTable;
 use crate::tool_sandbox::SyncDefaultSandboxBackend;
 use crate::tool_stats::ToolOutcomeRecorder;
@@ -18,6 +19,8 @@ pub struct ProcessHandles {
     pub handler_lookup: HandlerLookupTable,
     /// Docker `sync_default` 沙盒后端（原模块级 `SANDBOX_BACKEND`）。
     pub sync_default_sandbox_backend: Arc<dyn SyncDefaultSandboxBackend>,
+    /// 只读类 **`run_command`** 短时 TTL 缓存（按工作区键失效；配置见 **`readonly_tool_ttl_cache_*`**）。
+    pub readonly_tool_ttl_cache: Arc<ReadonlyToolTtlCache>,
     /// CLI：懒打开的长期记忆运行时（路径变更后下次调用会重开）。
     cli_long_term_memory: Mutex<Option<(PathBuf, Arc<LongTermMemoryRuntime>)>>,
 }
@@ -34,6 +37,7 @@ impl ProcessHandles {
             tool_outcome_recorder,
             handler_lookup,
             sync_default_sandbox_backend,
+            readonly_tool_ttl_cache: Arc::new(ReadonlyToolTtlCache::new()),
             cli_long_term_memory: Mutex::new(None),
         }
     }

@@ -89,6 +89,8 @@ pub(crate) struct WebExecuteCtx<'a> {
     /// 与 `process_handles.handler_lookup` 同源（随 `RunLoopCtx` 注入，避免在批处理中再借 `process_handles`）。
     pub handler_lookup: crate::tool_registry::HandlerLookupTable,
     pub sync_default_sandbox_backend: Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
+    /// 与 [`crate::process_handles::ProcessHandles::readonly_tool_ttl_cache`] 同源。
+    pub readonly_tool_ttl_cache: Arc<crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache>,
 }
 
 pub(crate) enum ExecuteToolsBatchOutcome {
@@ -177,6 +179,7 @@ struct ExecuteToolsCommonCtx<'a> {
     tool_outcome_recorder: Arc<crate::tool_stats::ToolOutcomeRecorder>,
     handler_lookup: crate::tool_registry::HandlerLookupTable,
     sync_default_sandbox_backend: Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
+    readonly_tool_ttl_cache: Arc<crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache>,
 }
 
 async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsBatchOutcome {
@@ -300,6 +303,7 @@ pub(crate) async fn per_execute_tools_web(
         tool_outcome_recorder,
         handler_lookup,
         sync_default_sandbox_backend,
+        readonly_tool_ttl_cache,
     } = ctx;
 
     let _tool_trace = request_chrome_trace
@@ -333,6 +337,7 @@ pub(crate) async fn per_execute_tools_web(
         tool_outcome_recorder,
         handler_lookup,
         sync_default_sandbox_backend,
+        readonly_tool_ttl_cache,
     })
     .await
 }

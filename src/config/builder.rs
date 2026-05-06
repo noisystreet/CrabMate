@@ -285,6 +285,12 @@ impl ConfigBuilder {
         cqc.read_file_turn_cache_max_entries = agent
             .read_file_turn_cache_max_entries
             .or(cqc.read_file_turn_cache_max_entries);
+        cqc.readonly_tool_ttl_cache_secs = agent
+            .readonly_tool_ttl_cache_secs
+            .or(cqc.readonly_tool_ttl_cache_secs);
+        cqc.readonly_tool_ttl_cache_max_entries = agent
+            .readonly_tool_ttl_cache_max_entries
+            .or(cqc.readonly_tool_ttl_cache_max_entries);
         cqc.test_result_cache_enabled = agent
             .test_result_cache_enabled
             .or(cqc.test_result_cache_enabled);

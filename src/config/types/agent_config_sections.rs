@@ -184,6 +184,10 @@ pub struct ChatQueuesCacheConfig {
     pub chat_queue_max_pending: usize,
     pub parallel_readonly_tools_max: usize,
     pub read_file_turn_cache_max_entries: usize,
+    /// 进程内只读类 **`run_command`** 缓存 TTL（秒）；**`0`** 关闭。
+    pub readonly_tool_ttl_cache_secs: u64,
+    /// 上述缓存的最大条目数（跨工作区合计）。
+    pub readonly_tool_ttl_cache_max_entries: usize,
     pub test_result_cache_enabled: bool,
     pub test_result_cache_max_entries: usize,
 }

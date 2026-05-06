@@ -438,6 +438,7 @@ pub(super) async fn execute_tools_parallel(
         tool_outcome_recorder,
         handler_lookup,
         sync_default_sandbox_backend,
+        readonly_tool_ttl_cache: _,
     } = ctx;
 
     let sandbox_backend = Arc::clone(&sync_default_sandbox_backend);

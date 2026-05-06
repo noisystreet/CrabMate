@@ -40,6 +40,8 @@ struct FinalizeTailScalars {
     chat_queue_max_pending: usize,
     parallel_readonly_tools_max: usize,
     read_file_turn_cache_max_entries: usize,
+    readonly_tool_ttl_cache_secs: u64,
+    readonly_tool_ttl_cache_max_entries: usize,
     test_result_cache_enabled: bool,
     test_result_cache_max_entries: usize,
     session_workspace_changelist_enabled: bool,
@@ -212,6 +214,8 @@ struct TailContextQueuesSessionScalars {
     chat_queue_max_pending: usize,
     parallel_readonly_tools_max: usize,
     read_file_turn_cache_max_entries: usize,
+    readonly_tool_ttl_cache_secs: u64,
+    readonly_tool_ttl_cache_max_entries: usize,
     test_result_cache_enabled: bool,
     test_result_cache_max_entries: usize,
     session_workspace_changelist_enabled: bool,
@@ -265,6 +269,16 @@ fn derive_tail_context_queues_session_scalars(
         .clamp(1, 256);
     let read_file_turn_cache_max_entries =
         b.chat_queues_cache.read_file_turn_cache_max_entries.unwrap_or(64).min(4096) as usize;
+    let readonly_tool_ttl_cache_secs = b
+        .chat_queues_cache
+        .readonly_tool_ttl_cache_secs
+        .unwrap_or(30)
+        .min(3600);
+    let readonly_tool_ttl_cache_max_entries = b
+        .chat_queues_cache
+        .readonly_tool_ttl_cache_max_entries
+        .unwrap_or(256)
+        .clamp(1, 4096) as usize;
     let test_result_cache_enabled = b.chat_queues_cache.test_result_cache_enabled.unwrap_or(true);
     let test_result_cache_max_entries =
         b.chat_queues_cache.test_result_cache_max_entries.unwrap_or(32).clamp(1, 512) as usize;
@@ -291,6 +305,8 @@ fn derive_tail_context_queues_session_scalars(
         chat_queue_max_pending,
         parallel_readonly_tools_max,
         read_file_turn_cache_max_entries,
+        readonly_tool_ttl_cache_secs,
+        readonly_tool_ttl_cache_max_entries,
         test_result_cache_enabled,
         test_result_cache_max_entries,
         session_workspace_changelist_enabled,
@@ -634,6 +650,8 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
         chat_queue_max_pending,
         parallel_readonly_tools_max,
         read_file_turn_cache_max_entries,
+        readonly_tool_ttl_cache_secs,
+        readonly_tool_ttl_cache_max_entries,
         test_result_cache_enabled,
         test_result_cache_max_entries,
         session_workspace_changelist_enabled,
@@ -732,6 +750,8 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
         chat_queue_max_pending,
         parallel_readonly_tools_max,
         read_file_turn_cache_max_entries,
+        readonly_tool_ttl_cache_secs,
+        readonly_tool_ttl_cache_max_entries,
         test_result_cache_enabled,
         test_result_cache_max_entries,
         session_workspace_changelist_enabled,

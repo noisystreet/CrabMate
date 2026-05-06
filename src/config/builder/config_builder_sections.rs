@@ -175,6 +175,8 @@ pub(crate) struct ConfigBuilderChatQueuesCache {
     pub(crate) chat_queue_max_pending: Option<u64>,
     pub(crate) parallel_readonly_tools_max: Option<u64>,
     pub(crate) read_file_turn_cache_max_entries: Option<u64>,
+    pub(crate) readonly_tool_ttl_cache_secs: Option<u64>,
+    pub(crate) readonly_tool_ttl_cache_max_entries: Option<u64>,
     pub(crate) test_result_cache_enabled: Option<bool>,
     pub(crate) test_result_cache_max_entries: Option<u64>,
 }
