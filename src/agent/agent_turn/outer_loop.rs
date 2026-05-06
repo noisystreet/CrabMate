@@ -232,6 +232,7 @@ async fn outer_loop_execute_tools_round(
             read_file_turn_cache: p.ctx.read_file_turn_cache.clone(),
             out: p.ctx.out,
             tool_running_hook: p.ctx.tool_running_hook.clone(),
+            clarification_questionnaire_hook: p.ctx.clarification_questionnaire_hook.clone(),
             web_tool_ctx: p.ctx.web_tool_ctx,
             cli_tool_ctx: p.ctx.cli_tool_ctx,
             echo_terminal_transcript,

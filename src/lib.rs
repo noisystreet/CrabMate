@@ -88,6 +88,9 @@ pub struct AgentTurnTransport<'a> {
     pub tui_llm_stream_scratch: Option<runtime::tui::TuiLlmStreamScratchArc>,
     /// 无 SSE（`out` 为 `None`）时可选：工具批开始/结束时各调用一次（`true` / `false`），与 Web `SsePayload::ToolRunning` 对齐（如 TUI 底栏）。
     pub tool_running_hook: Option<std::sync::Arc<dyn Fn(bool) + Send + Sync>>,
+    /// 澄清问卷回调（与 [`RunLoopCtx::clarification_questionnaire_hook`] 同源）；Web/SSE 通常为 `None`。
+    pub clarification_questionnaire_hook:
+        Option<std::sync::Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
     /// 可选：自定义 [`llm::ChatCompletionsBackend`]；`None` 时使用 OpenAI 兼容 HTTP（与历史行为一致）。
     pub llm_backend: Option<&'a (dyn llm::ChatCompletionsBackend + 'static)>,
 }
@@ -201,6 +204,9 @@ pub struct CliTerminalChatBuildArgs<'a> {
     pub tui_llm_stream_scratch: Option<runtime::tui::TuiLlmStreamScratchArc>,
     /// 与 [`AgentTurnTransport::tool_running_hook`] 一致；REPL 等为 `None`。
     pub tool_running_hook: Option<Arc<dyn Fn(bool) + Send + Sync>>,
+    /// `present_clarification_questionnaire` 成功时通知 TUI 展示问卷；其它入口 `None`。
+    pub clarification_questionnaire_hook:
+        Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
     pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
     pub long_term_memory:
         Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
@@ -300,6 +306,7 @@ impl<'a> RunAgentTurnParams<'a> {
                 plain_terminal_stream: false,
                 tui_llm_stream_scratch: None,
                 tool_running_hook: None,
+                clarification_questionnaire_hook: None,
                 llm_backend: None,
             },
             llm: AgentTurnLlmOverrides {
@@ -358,6 +365,7 @@ impl<'a> RunAgentTurnParams<'a> {
                 plain_terminal_stream: false,
                 tui_llm_stream_scratch: None,
                 tool_running_hook: None,
+                clarification_questionnaire_hook: None,
                 llm_backend: None,
             },
             llm: AgentTurnLlmOverrides {
@@ -388,6 +396,7 @@ impl<'a> RunAgentTurnParams<'a> {
             suppress_stdout_render,
             tui_llm_stream_scratch,
             tool_running_hook,
+            clarification_questionnaire_hook,
             cli_tool_ctx,
             long_term_memory,
             long_term_memory_scope_id,
@@ -411,6 +420,7 @@ impl<'a> RunAgentTurnParams<'a> {
                 plain_terminal_stream: echo_stdout,
                 tui_llm_stream_scratch,
                 tool_running_hook,
+                clarification_questionnaire_hook,
                 llm_backend: None,
             },
             llm: AgentTurnLlmOverrides {
@@ -463,6 +473,7 @@ impl<'a> RunAgentTurnParams<'a> {
                 plain_terminal_stream: false,
                 tui_llm_stream_scratch: None,
                 tool_running_hook: None,
+                clarification_questionnaire_hook: None,
                 llm_backend: None,
             },
             llm: AgentTurnLlmOverrides {
@@ -532,6 +543,7 @@ pub async fn run_agent_turn<'a>(
         plain_terminal_stream,
         tui_llm_stream_scratch,
         tool_running_hook,
+        clarification_questionnaire_hook,
         llm_backend,
     } = transport;
     let AgentTurnLlmOverrides {
@@ -616,6 +628,7 @@ pub async fn run_agent_turn<'a>(
             read_file_turn_cache,
             workspace_changelist,
             tool_running_hook,
+            clarification_questionnaire_hook,
             staged_plan_optimizer_round: cfg.staged_planning.staged_plan_optimizer_round,
             staged_plan_optimizer_requires_parallel_tools: cfg
                 .staged_planning

@@ -17,28 +17,19 @@
 //! **底栏**：对齐 Web `status_bar_footer_view` — **模型 · … · base_url · … · 角色 · … ·** 运行态（**就绪** / **模型生成中…** / **工具执行中…** / **错误:** …）；快捷键说明在右侧栏。
 
 mod approval;
+mod clarify_modal;
+mod poll_loop;
 mod render;
 mod transcript;
 
 use std::collections::VecDeque;
-use std::io::{self, IsTerminal, Stdout, stdout};
+use std::io;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::Duration;
 
-use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
-    MouseButton, MouseEventKind,
-};
-use crossterm::execute;
-use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
-    size as terminal_size,
-};
-use ratatui::Terminal;
-use ratatui::backend::CrosstermBackend;
+use crossterm::event::{self, KeyCode, KeyModifiers, MouseButton, MouseEventKind};
+use crossterm::terminal::size as terminal_size;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::text::{Line, Text};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
@@ -63,6 +54,13 @@ use crate::types::Message;
 
 /// 撰写区行首提示符（与 [`composer_wrap_lines`] 起始列一致）。
 const COMPOSER_PROMPT_PREFIX: &str = "› ";
+
+/// Agent 异步侧与 UI 线程共享：澄清问卷 inbox + 待并入下一条用户消息的答案。
+#[derive(Clone)]
+pub(super) struct TuiClarificationShared {
+    inbox: Arc<Mutex<VecDeque<crate::sse::ClarificationQuestionnaireBody>>>,
+    answers_merge: Arc<Mutex<Option<crate::clarification_questionnaire::ClarifyAnswersNormalized>>>,
+}
 
 fn build_tui_nav_summary(
     work_dir: &std::path::Path,
@@ -320,6 +318,9 @@ struct TuiModel {
     /// 敏感工具审批 Modal（单条）；多条时先入队。
     approval_modal: Option<approval::TuiApprovalModalState>,
     approval_backlog: VecDeque<TuiApprovalRequest>,
+    /// 澄清问卷（与 Web SSE `clarification_questionnaire` 对齐）。
+    clarification_modal: Option<clarify_modal::TuiClarificationModalState>,
+    clarification_backlog: VecDeque<crate::sse::ClarificationQuestionnaireBody>,
 }
 
 struct TuiSlashUiRefresh<'a> {
@@ -472,6 +473,40 @@ async fn tui_refresh_after_chat_round(
 }
 
 /// 进入全屏 TUI 并跑对话循环（须 TTY）。**`cli_no_stream`** 对应全局 **`--no-stream`**；助手正文不因流式写入 stdout（保护 alternate screen）。
+fn tui_make_submit_hooks(
+    model: &Arc<Mutex<TuiModel>>,
+) -> (
+    ReplAfterUserMessageEnqueuedCb,
+    Arc<dyn Fn(bool) + Send + Sync>,
+) {
+    let msg_len_turn = Arc::new(AtomicUsize::new(0));
+    let msg_len_for_cb = Arc::clone(&msg_len_turn);
+    let model_refresh = Arc::clone(model);
+    let on_user_enqueued: ReplAfterUserMessageEnqueuedCb = Arc::new(move |msgs: &[Message]| {
+        msg_len_for_cb.store(msgs.len(), Ordering::SeqCst);
+        let t = transcript::messages_to_transcript(msgs);
+        let mut g = model_refresh.lock().unwrap_or_else(|e| e.into_inner());
+        g.transcript = t;
+        let chips = g.status_chips.clone();
+        let suf = tui_status_suffix_model_busy_lines(msgs.len());
+        g.status = tui_status_bar_with_run(&chips, suf.as_str());
+    });
+    let model_for_hook = Arc::clone(model);
+    let msg_len_for_hook = Arc::clone(&msg_len_turn);
+    let tool_running_hook: Arc<dyn Fn(bool) + Send + Sync> = Arc::new(move |running| {
+        let mut g = model_for_hook.lock().unwrap_or_else(|e| e.into_inner());
+        let chips = g.status_chips.clone();
+        let n = msg_len_for_hook.load(Ordering::SeqCst);
+        g.status = if running {
+            tui_status_bar_with_run(&chips, "工具执行中…")
+        } else {
+            let suf = tui_status_suffix_model_busy_lines(n.max(1));
+            tui_status_bar_with_run(&chips, suf.as_str())
+        };
+    });
+    (on_user_enqueued, tool_running_hook)
+}
+
 pub async fn run_tui_session(
     common: CliMainInvocationCommon<'_>,
     cli_no_stream: bool,
@@ -561,19 +596,39 @@ pub async fn run_tui_session(
         focus: TuiFocus::default(),
         approval_modal: None,
         approval_backlog: VecDeque::new(),
+        clarification_modal: None,
+        clarification_backlog: VecDeque::new(),
     }));
+
+    let clarify_shared = TuiClarificationShared {
+        inbox: Arc::new(Mutex::new(VecDeque::<
+            crate::sse::ClarificationQuestionnaireBody,
+        >::new())),
+        answers_merge: Arc::new(Mutex::new(
+            None::<crate::clarification_questionnaire::ClarifyAnswersNormalized>,
+        )),
+    };
+    let inbox_hook = Arc::clone(&clarify_shared.inbox);
+    let model_hook = Arc::clone(&model);
+    let clarification_questionnaire_hook: Arc<
+        dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync,
+    > = Arc::new(move |body| {
+        clarify_modal::enqueue_clarification_from_hook(&inbox_hook, &model_hook, body);
+    });
 
     let model_th = Arc::clone(&model);
     let scratch_th = Arc::clone(&llm_scratch);
     let shutdown_th = Arc::clone(&shutdown);
+    let clarify_th = clarify_shared.clone();
     let ui_handle: JoinHandle<io::Result<()>> = std::thread::spawn(move || {
-        run_tui_ui_thread(
+        poll_loop::run_tui_ui_thread(
             model_th,
             scratch_th,
             ev_tx,
             shutdown_th,
             tui_approval_rx,
             handoff_rx,
+            clarify_th,
         )
     });
 
@@ -582,7 +637,12 @@ pub async fn run_tui_session(
             UiEvent::Quit => break,
             UiEvent::Submit(input) => {
                 let trimmed = input.trim().to_string();
-                if trimmed.is_empty() {
+                let allow_empty = clarify_shared
+                    .answers_merge
+                    .lock()
+                    .map(|g| g.is_some())
+                    .unwrap_or(false);
+                if trimmed.is_empty() && !allow_empty {
                     continue;
                 }
                 if tui_try_consume_slash_submit(
@@ -609,32 +669,7 @@ pub async fn run_tui_session(
                     let mut s = llm_scratch.lock().unwrap_or_else(|e| e.into_inner());
                     s.clear();
                 }
-                let model_refresh = Arc::clone(&model);
-                let msg_len_turn = Arc::new(AtomicUsize::new(0));
-                let msg_len_for_cb = Arc::clone(&msg_len_turn);
-                let on_user_enqueued: ReplAfterUserMessageEnqueuedCb =
-                    Arc::new(move |msgs: &[Message]| {
-                        msg_len_for_cb.store(msgs.len(), Ordering::SeqCst);
-                        let t = transcript::messages_to_transcript(msgs);
-                        let mut g = model_refresh.lock().unwrap_or_else(|e| e.into_inner());
-                        g.transcript = t;
-                        let chips = g.status_chips.clone();
-                        let suf = tui_status_suffix_model_busy_lines(msgs.len());
-                        g.status = tui_status_bar_with_run(&chips, suf.as_str());
-                    });
-                let model_for_hook = Arc::clone(&model);
-                let msg_len_for_hook = Arc::clone(&msg_len_turn);
-                let tool_running_hook: Arc<dyn Fn(bool) + Send + Sync> = Arc::new(move |running| {
-                    let mut g = model_for_hook.lock().unwrap_or_else(|e| e.into_inner());
-                    let chips = g.status_chips.clone();
-                    let n = msg_len_for_hook.load(Ordering::SeqCst);
-                    g.status = if running {
-                        tui_status_bar_with_run(&chips, "工具执行中…")
-                    } else {
-                        let suf = tui_status_suffix_model_busy_lines(n.max(1));
-                        tui_status_bar_with_run(&chips, suf.as_str())
-                    };
-                });
+                let (on_user_enqueued, tool_running_hook) = tui_make_submit_hooks(&model);
                 repl_dispatch_chat_round(ReplDispatchChatRoundParams {
                     input: trimmed,
                     cfg_holder,
@@ -653,6 +688,10 @@ pub async fn run_tui_session(
                     cli_rt: &cli_rt,
                     initial_pending: initial_pending.as_ref(),
                     process_handles: Arc::clone(&process_handles),
+                    clarify_answers_for_next_user_message: Some(&clarify_shared.answers_merge),
+                    clarification_questionnaire_hook: Some(Arc::clone(
+                        &clarification_questionnaire_hook,
+                    )),
                 })
                 .await?;
                 {
@@ -702,105 +741,16 @@ async fn tui_header_summary(cfg_holder: &SharedAgentConfig, work_dir: &std::path
     format!("CrabMate · {model_id} · {base} · {wd_short}")
 }
 
-/// UI 线程轮询：`/doctor` 等 stdout 交接与工具审批队列。
-struct TuiBlockingRecv<'a> {
-    approval_rx: &'a Receiver<TuiApprovalRequest>,
-    handoff_rx: &'a Receiver<TuiTerminalHandoffOp>,
-}
-
-fn process_tui_main_thread_ops(
-    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
-    blocking: &TuiBlockingRecv<'_>,
-    model: &Arc<Mutex<TuiModel>>,
-) -> io::Result<()> {
-    while let Ok(op) = blocking.handoff_rx.try_recv() {
-        match op {
-            TuiTerminalHandoffOp::ReleaseForStdout { ack } => {
-                disable_raw_mode()?;
-                execute!(
-                    terminal.backend_mut(),
-                    LeaveAlternateScreen,
-                    DisableMouseCapture
-                )?;
-                terminal.show_cursor()?;
-                let _ = ack.send(());
-            }
-            TuiTerminalHandoffOp::RestoreTui { ack } => {
-                enable_raw_mode()?;
-                execute!(
-                    terminal.backend_mut(),
-                    EnterAlternateScreen,
-                    EnableMouseCapture
-                )?;
-                terminal.hide_cursor()?;
-                let _ = ack.send(());
-            }
-        }
-    }
-    approval::enqueue_tui_approval_requests(model, blocking.approval_rx);
-    Ok(())
-}
-
-fn run_tui_ui_thread(
-    model: Arc<Mutex<TuiModel>>,
-    llm_scratch: TuiLlmStreamScratchArc,
-    ev_tx: UnboundedSender<UiEvent>,
-    shutdown: Arc<AtomicBool>,
-    approval_rx: Receiver<TuiApprovalRequest>,
-    handoff_rx: Receiver<TuiTerminalHandoffOp>,
-) -> io::Result<()> {
-    let mut stdout_h = stdout();
-    if !(stdout_h.is_terminal() && io::stdin().is_terminal()) {
-        eprintln!(
-            "crabmate tui 需要交互式终端（stdin/stdout 均为 TTY）。\
-             管道或非 TTY 环境请使用 crabmate repl 或 crabmate chat。"
-        );
-        return Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "tui requires a TTY",
-        ));
-    }
-
-    enable_raw_mode()?;
-    execute!(stdout_h, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout_h);
-    let mut terminal = Terminal::new(backend)?;
-    let color = tui_use_ansi_color();
-    let blocking_recv = TuiBlockingRecv {
-        approval_rx: &approval_rx,
-        handoff_rx: &handoff_rx,
-    };
-    let r = run_tui_poll_loop(
-        &mut terminal,
-        &model,
-        &llm_scratch,
-        &ev_tx,
-        &shutdown,
-        &blocking_recv,
-        color,
-    );
-
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        DisableMouseCapture,
-        LeaveAlternateScreen
-    )?;
-    terminal.show_cursor()?;
-    r
-}
-
 enum TuiPollKeyFlow {
     BreakLoop,
     ContinueOuter,
 }
 
 fn tui_dispatch_mouse(model: &Arc<Mutex<TuiModel>>, mouse: event::MouseEvent) {
-    let modal_open = model
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .approval_modal
-        .is_some();
+    let modal_open = {
+        let g = model.lock().unwrap_or_else(|e| e.into_inner());
+        g.approval_modal.is_some() || g.clarification_modal.is_some()
+    };
     if modal_open {
         return;
     }
@@ -921,39 +871,4 @@ fn tui_dispatch_key_press(
         }
         _ => TuiPollKeyFlow::ContinueOuter,
     }
-}
-
-fn run_tui_poll_loop(
-    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
-    model: &Arc<Mutex<TuiModel>>,
-    llm_scratch: &TuiLlmStreamScratchArc,
-    ev_tx: &UnboundedSender<UiEvent>,
-    shutdown: &AtomicBool,
-    blocking_recv: &TuiBlockingRecv<'_>,
-    color: bool,
-) -> io::Result<()> {
-    loop {
-        if shutdown.load(Ordering::Relaxed) {
-            break;
-        }
-        process_tui_main_thread_ops(terminal, blocking_recv, model)?;
-        {
-            let guard = model.lock().unwrap_or_else(|e| e.into_inner());
-            terminal.draw(|frame| render::render_full(frame, &guard, llm_scratch, color))?;
-        }
-
-        if event::poll(Duration::from_millis(120))? {
-            match event::read()? {
-                Event::Mouse(mouse) => tui_dispatch_mouse(model, mouse),
-                Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    match tui_dispatch_key_press(model, ev_tx, &key) {
-                        TuiPollKeyFlow::BreakLoop => break,
-                        TuiPollKeyFlow::ContinueOuter => continue,
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-    Ok(())
 }

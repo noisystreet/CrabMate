@@ -1,6 +1,7 @@
 //! 交互式 REPL 主循环。
 
 use crate::ProcessHandles;
+use crate::clarification_questionnaire::merge_user_text_with_clarification_answers;
 use crate::config::{LlmHttpAuthMode, SharedAgentConfig};
 use crate::redact;
 use crate::runtime::cli::chat::{
@@ -284,6 +285,13 @@ pub(crate) struct ReplDispatchChatRoundParams<'a> {
     pub(crate) cli_rt: &'a CliToolRuntime,
     pub(crate) initial_pending: Option<&'a Arc<StdMutex<Option<Vec<crate::types::Message>>>>>,
     pub(crate) process_handles: Arc<ProcessHandles>,
+    /// TUI：问卷 Modal 提交后在下一轮并入用户正文（与 Web `clarify_questionnaire_answers` 对齐）。
+    pub(crate) clarify_answers_for_next_user_message: Option<
+        &'a Arc<StdMutex<Option<crate::clarification_questionnaire::ClarifyAnswersNormalized>>>,
+    >,
+    /// TUI：`present_clarification_questionnaire` 回调；`repl` 为 `None`。
+    pub(crate) clarification_questionnaire_hook:
+        Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
 }
 
 pub(crate) async fn repl_dispatch_chat_round(
@@ -307,12 +315,14 @@ pub(crate) async fn repl_dispatch_chat_round(
         cli_rt,
         initial_pending,
         process_handles,
+        clarify_answers_for_next_user_message,
+        clarification_questionnaire_hook,
     } = p;
     crate::runtime::workspace_session::try_merge_background_initial_workspace(
         messages,
         initial_pending,
     );
-    let user_body = {
+    let expanded_user = {
         let g = cfg_holder.read().await;
         match expand_at_file_refs_in_user_message(input.as_str(), work_dir, &g) {
             Ok(s) => s,
@@ -322,6 +332,9 @@ pub(crate) async fn repl_dispatch_chat_round(
             }
         }
     };
+    let clarify_take = clarify_answers_for_next_user_message
+        .and_then(|m| m.lock().ok().and_then(|mut g| g.take()));
+    let user_body = merge_user_text_with_clarification_answers(expanded_user, clarify_take);
     {
         let g = cfg_holder.read().await;
         if let Some(first) = messages.first_mut()
@@ -390,6 +403,7 @@ pub(crate) async fn repl_dispatch_chat_round(
         suppress_stdout_render,
         tui_llm_stream_scratch,
         tool_running_hook,
+        clarification_questionnaire_hook,
         cli_tool_ctx: Some(cli_rt),
         active_agent_role: agent_role_owned.as_deref(),
         process_handles: Arc::clone(&process_handles),
@@ -626,6 +640,8 @@ pub async fn run_repl(
                     cli_rt: &cli_rt,
                     initial_pending: initial_pending.as_ref(),
                     process_handles: Arc::clone(&process_handles),
+                    clarify_answers_for_next_user_message: None,
+                    clarification_questionnaire_hook: None,
                 })
                 .await?;
             }

@@ -48,6 +48,9 @@ pub(crate) struct RunLoopCtx<'a> {
     pub tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
     /// 无 SSE 时工具批开始/结束回调（与 [`crate::AgentTurnTransport::tool_running_hook`] 同源）。
     pub tool_running_hook: Option<Arc<dyn Fn(bool) + Send + Sync>>,
+    /// 澄清问卷：工具 `present_clarification_questionnaire` 成功时回调（供 `crabmate tui` 等无 SSE 路径）。
+    pub clarification_questionnaire_hook:
+        Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     /// 与 [`WebExecuteCtx::cli_tool_ctx`] 相同；Web 队列传 `None`。
     pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,

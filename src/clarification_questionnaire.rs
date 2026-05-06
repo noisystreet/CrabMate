@@ -3,9 +3,7 @@
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
-use crate::sse::{
-    ClarificationQuestionField, ClarificationQuestionnaireBody, SsePayload, encode_message,
-};
+use crate::sse::{ClarificationQuestionField, ClarificationQuestionnaireBody};
 
 const MAX_QUESTIONNAIRE_ID_LEN: usize = 128;
 const MAX_INTRO_CHARS: usize = 2000;
@@ -158,33 +156,19 @@ pub(crate) fn run_present_clarification_questionnaire(args_json: &str) -> String
     }
 }
 
-/// 若工具为 `present_clarification_questionnaire` 且执行成功，在工具结果 SSE 之后额外下发控制面（不改变写入模型的 tool 正文）。
-pub(crate) async fn maybe_emit_clarification_questionnaire_sse(
-    out: Option<&tokio::sync::mpsc::Sender<String>>,
+/// 工具成功且为澄清问卷时解析出控制面体（与 SSE / TUI 回调共用）。
+pub(crate) fn clarification_questionnaire_body_if_tool_ok(
     tool_name: &str,
     args_json: &str,
     tool_output: &str,
-) {
+) -> Option<crate::sse::ClarificationQuestionnaireBody> {
     if tool_name != "present_clarification_questionnaire" {
-        return;
+        return None;
     }
-    let Some(tx) = out else {
-        return;
-    };
     if !tool_output.trim_start().starts_with("退出码：0") {
-        return;
+        return None;
     }
-    let Ok(body) = parse_present_clarification_body(args_json) else {
-        return;
-    };
-    let _ = crate::sse::send_string_logged(
-        tx,
-        encode_message(SsePayload::ClarificationQuestionnaire {
-            clarification_questionnaire: body,
-        }),
-        "clarification_questionnaire",
-    )
-    .await;
+    parse_present_clarification_body(args_json).ok()
 }
 
 /// 规范化 `POST /chat*` 中的 `clarify_questionnaire_answers`；非法则 Err（HTTP 400）。
