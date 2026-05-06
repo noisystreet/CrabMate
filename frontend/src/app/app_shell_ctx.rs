@@ -4,8 +4,8 @@
 //! 不满足 `provide_context` 的 `Send + Sync + 'static` 约束；以结构体 **`Clone`**（内部多为
 //! `Copy` / `Rc::clone` / `Arc::clone`）在 `*_view` 间传递即可。
 //!
-//! 根壳层 `wire_*` 的**注册顺序**影响隐式时序依赖；见 [`init_app_shell`](super::app_shell_init::init_app_shell)
-//! 与 [`wire_chat_domain`](super::chat::wire_chat_domain) 模块文档。
+//! 根壳层 `wire_*` 的**注册顺序**影响隐式时序依赖；见 [`app_shell_wire_phases`](super::app_shell_wire_phases)
+//! 与 [`init_app_shell`](super::app_shell_init::init_app_shell)；聊天列内部顺序见 [`wire_chat_domain`](super::chat::wire_chat_domain)。
 
 use std::cell::RefCell;
 use std::rc::Rc;

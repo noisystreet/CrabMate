@@ -5,6 +5,7 @@
 mod app_shell_ctx;
 mod app_shell_effects;
 mod app_shell_init;
+mod app_shell_wire_phases;
 mod app_signals;
 mod approval_modal;
 mod changelist_modal;

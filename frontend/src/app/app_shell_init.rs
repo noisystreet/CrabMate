@@ -3,166 +3,41 @@
 //!
 //! # `wire_*` 注册顺序（隐式依赖）
 //!
-//! 1. `wire_chat_session_lifecycle_effects` — 首启、`session_hydrate`、本地持久化等。  
-//! 2. 壳级偏好与快捷键：`wire_persist_*`、`wire_escape_key_layered_dismiss` 等。  
-//! 3. `wire_workspace_domain_effects`、`wire_status_tasks_domain_effects`。  
-//! 4. `wire_chat_domain_effects` — 聊天主列；**其内部**子 `wire_*` 顺序见
-//!    [`wire_chat_domain`](super::chat::wire_chat_domain) 模块文档。  
+//! 具体分阶段说明见 [`app_shell_wire_phases`]；[`init_app_shell`] 仅按编号调用，**勿**在中间插入其它全局 `Effect`
+//! 除非同步更新该模块表格与相关域内文档。
 //!
-//! 新增全局 `Effect` 时尽量落在对应域的 `wire_*` 内，并同步上述文档。
+//! 聊天主列**内部**子 `wire_*` 顺序仍见 [`wire_chat_domain`](super::chat::wire_chat_domain)。
 
 use std::rc::Rc;
 use std::sync::Arc;
 
-use leptos::prelude::*;
-
 use super::app_shell_ctx::AppShellCtx;
-use super::app_shell_effects::{
-    ShellEscapeSignals, WireSettingsModalLlmDraftsSignals, wire_approval_expanded_follows_pending,
-    wire_escape_key_layered_dismiss, wire_persist_agent_role, wire_persist_side_panel_view_flags,
-    wire_persist_side_width, wire_persist_sidebar_rail_collapsed, wire_persist_status_bar_visible,
-    wire_settings_modal_llm_drafts_on_open, wire_sync_bg_decor_to_storage_and_dom,
-    wire_sync_locale_html_lang, wire_sync_theme_to_storage_and_dom,
+use super::app_shell_wire_phases::{
+    make_refresh_workspace_for_shell, wire_phase1_chat_session_lifecycle,
+    wire_phase2_persisted_prefs_dom_and_settings_hooks, wire_phase3_escape_layered_dismiss,
+    wire_phase4_workspace_status_and_chat_domain,
 };
 use super::app_signals::AppSignals;
-use super::chat::{
-    ChatColumnShell, ComposerStreamShell,
-    wire_chat_domain::{WireChatDomainEffectsArgs, wire_chat_domain_effects},
-    wire_chat_session_lifecycle::{
-        WireChatSessionLifecycleEffectsArgs, wire_chat_session_lifecycle_effects,
-    },
-};
-use super::status_tasks_wiring::{
-    make_refresh_status, make_refresh_tasks, make_toggle_task, wire_status_tasks_domain_effects,
-};
-use super::wire_workspace_domain::{WireWorkspaceDomainEffectsArgs, wire_workspace_domain_effects};
-use super::workspace_panel::{make_insert_workspace_path_into_composer, make_refresh_workspace};
+use super::chat::ChatColumnShell;
 
 /// 执行所有 wire_* 注册、闭包构建与 `AppShellCtx` 组装。
 pub fn init_app_shell() -> AppShellCtx {
     let app_signals = AppSignals::new();
 
-    wire_chat_session_lifecycle_effects(WireChatSessionLifecycleEffectsArgs {
-        initialized: app_signals.initialized,
-        sessions: app_signals.chat.sessions,
-        active_id: app_signals.chat.active_id,
-        draft: app_signals.chat_composer.draft,
-        locale: app_signals.shell_ui.locale,
-        web_ui_config_loaded: app_signals.shell_ui.web_ui_config_loaded,
-        markdown_render: app_signals.shell_ui.markdown_render,
-        apply_assistant_display_filters: app_signals.shell_ui.apply_assistant_display_filters,
-        chat_session: app_signals.chat,
-        selected_agent_role: app_signals.llm_settings.selected_agent_role,
-    });
-    wire_persist_side_panel_view_flags(app_signals.shell_ui.side_panel_view);
-    wire_persist_status_bar_visible(app_signals.shell_ui.status_bar_visible);
-    wire_persist_agent_role(app_signals.llm_settings.selected_agent_role);
-    wire_persist_side_width(app_signals.shell_ui.side_width);
-    wire_persist_sidebar_rail_collapsed(app_signals.sidebar.sidebar_rail_collapsed);
-    wire_approval_expanded_follows_pending(
-        app_signals.approval.pending_approval,
-        app_signals.approval.last_approval_sid,
-        app_signals.approval.approval_expanded,
-    );
-    wire_sync_theme_to_storage_and_dom(app_signals.shell_ui.theme);
-    wire_sync_locale_html_lang(app_signals.shell_ui.locale);
-    wire_sync_bg_decor_to_storage_and_dom(app_signals.shell_ui.bg_decor);
-    wire_settings_modal_llm_drafts_on_open(WireSettingsModalLlmDraftsSignals {
-        settings_modal: app_signals.modal.settings_modal,
-        settings_page: app_signals.modal.settings_page,
-        status_tasks: app_signals.to_status_tasks(),
-        llm: app_signals.llm_settings,
-    });
-    let shell_escape = ShellEscapeSignals {
-        session_context_menu: app_signals.sidebar.session_context_menu,
-        sidebar_rail_ctx_menu: app_signals.sidebar.sidebar_rail_ctx_menu,
-        chat_find_panel_open: app_signals.chat_composer.chat_find_panel_open,
-        sidebar_search_panel_open: app_signals.sidebar.sidebar_search_panel_open,
-        view_menu_open: app_signals.shell_ui.view_menu_open,
-        mobile_nav_open: app_signals.sidebar.mobile_nav_open,
-        changelist_modal_open: app_signals.modal.changelist_modal_open,
-        settings_modal: app_signals.modal.settings_modal,
-        session_modal: app_signals.modal.session_modal,
-    };
-    wire_escape_key_layered_dismiss(shell_escape);
+    wire_phase1_chat_session_lifecycle(&app_signals);
+    wire_phase2_persisted_prefs_dom_and_settings_hooks(&app_signals);
+    wire_phase3_escape_layered_dismiss(&app_signals);
 
-    let refresh_workspace = make_refresh_workspace(
-        app_signals.to_workspace_panel(),
-        app_signals.shell_ui.locale.get_untracked(),
-    );
+    let refresh_workspace = make_refresh_workspace_for_shell(&app_signals);
 
-    wire_workspace_domain_effects(WireWorkspaceDomainEffectsArgs {
-        session_sync: app_signals.chat.session_sync,
-        changelist_fetch_nonce: app_signals.modal.changelist_fetch_nonce,
-        changelist_modal_loading: app_signals.modal.changelist_modal_loading,
-        changelist_modal_err: app_signals.modal.changelist_modal_err,
-        changelist_modal_html: app_signals.modal.changelist_modal_html,
-        changelist_modal_rev: app_signals.modal.changelist_modal_rev,
-        markdown_render: app_signals.shell_ui.markdown_render,
-        changelist_body_ref: app_signals.modal.changelist_body_ref,
-        side_panel_view: app_signals.shell_ui.side_panel_view,
-        initialized: app_signals.initialized,
-        refresh_workspace: Arc::clone(&refresh_workspace),
-    });
-
-    let refresh_status = make_refresh_status(
-        app_signals.to_status_tasks(),
-        app_signals.llm_settings.selected_agent_role,
-        app_signals.shell_ui.locale.get_untracked(),
-    );
-    let refresh_tasks = make_refresh_tasks(
-        app_signals.to_status_tasks(),
-        app_signals.shell_ui.locale.get_untracked(),
-    );
-    let toggle_task = make_toggle_task(
-        app_signals.to_status_tasks(),
-        app_signals.shell_ui.locale.get_untracked(),
-    );
-
-    wire_status_tasks_domain_effects(
-        app_signals.initialized,
-        app_signals.to_status_tasks(),
-        Arc::clone(&refresh_status),
-        app_signals.shell_ui.side_panel_view,
-        Arc::clone(&refresh_tasks),
-    );
-
-    let insert_workspace_file_ref: Arc<dyn Fn(String) + Send + Sync> =
-        make_insert_workspace_path_into_composer(
-            app_signals.chat_composer.draft,
-            app_signals.stream.status_err,
-            app_signals.shell_ui.locale,
-            app_signals.chat_composer.composer_input_ref.clone(),
-        );
-    let insert_workspace_file_ref_sv = StoredValue::new(Arc::clone(&insert_workspace_file_ref));
-
-    let chat_stream_shell =
-        ComposerStreamShell::from_app_signals(&app_signals, Arc::clone(&refresh_workspace));
-
-    let chat_wires = wire_chat_domain_effects(WireChatDomainEffectsArgs {
-        initialized: app_signals.initialized,
-        chat_session: app_signals.chat,
-        draft: app_signals.chat_composer.draft,
-        pending_images: app_signals.chat_composer.pending_images,
-        pending_clarification: app_signals.approval.pending_clarification,
-        collapsed_long_assistant_ids: app_signals.chat_composer.collapsed_long_assistant_ids,
-        composer_mirror_html: app_signals.chat_composer.composer_mirror_html,
-        composer_mirror_scroll_top: app_signals.chat_composer.composer_mirror_scroll_top,
-        composer_input_ref: app_signals.chat_composer.composer_input_ref.clone(),
-        sessions: app_signals.chat.sessions,
-        active_id: app_signals.chat.active_id,
-        messages_scroller: app_signals.chat_composer.messages_scroller,
-        auto_scroll_chat: app_signals.chat_composer.auto_scroll_chat,
-        messages_scroll_from_effect: app_signals.chat_composer.messages_scroll_from_effect,
-        chat_find_query: app_signals.chat_composer.chat_find_query,
-        chat_find_match_ids: app_signals.chat_composer.chat_find_match_ids,
-        chat_find_cursor: app_signals.chat_composer.chat_find_cursor,
-        locale: app_signals.shell_ui.locale,
-        apply_assistant_display_filters: app_signals.shell_ui.apply_assistant_display_filters,
-        focus_message_id_after_nav: app_signals.chat_composer.focus_message_id_after_nav,
-        selected_agent_role: app_signals.llm_settings.selected_agent_role,
-        stream_shell: chat_stream_shell.clone(),
-    });
+    let (
+        refresh_status,
+        refresh_tasks,
+        toggle_task,
+        insert_workspace_file_ref_sv,
+        chat_stream_shell,
+        chat_wires,
+    ) = wire_phase4_workspace_status_and_chat_domain(&app_signals, Arc::clone(&refresh_workspace));
 
     let new_session = Rc::clone(&chat_wires.new_session);
 
