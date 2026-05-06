@@ -47,6 +47,10 @@ pub(crate) fn discard_to_baselines(ctx: DiscardToBaselinesCtx) {
     drafts.executor_llm_has_saved_key.set(eh);
     drafts.executor_llm_api_key_draft.set(String::new());
 
+    drafts
+        .readonly_tool_ttl_cache_follow_server
+        .set(baselines.readonly_tool_ttl_cache_follow_server.get_value());
+
     drafts.clear_client_key_intent.set(false);
     drafts.clear_executor_key_intent.set(false);
     llm_settings_feedback.set(None);
@@ -109,6 +113,7 @@ pub(crate) fn try_save_all_settings(ctx: SaveAllSettingsCtx) {
         executor_model: drafts.executor_llm_model_draft.get().as_str(),
         executor_api_key_draft: drafts.executor_llm_api_key_draft.get().as_str(),
         execution_mode: drafts.execution_mode_draft.get().as_str(),
+        readonly_tool_ttl_cache_follow_server: drafts.readonly_tool_ttl_cache_follow_server.get(),
         clear_client_llm_key: drafts.clear_client_key_intent.get(),
         clear_executor_llm_key: drafts.clear_executor_key_intent.get(),
         llm_api_key_draft: drafts.llm_api_key_draft,

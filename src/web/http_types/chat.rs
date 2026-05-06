@@ -37,6 +37,9 @@ pub(crate) struct ChatRequestBody {
     /// 可选：执行模式覆盖（`rolling_planning` / `hierarchical`），仅作用于本回合。
     #[serde(default)]
     pub(crate) execution_mode: Option<String>,
+    /// 可选：本回合覆盖只读类 **`run_command`** 进程内 TTL 缓存秒数（`0` 关闭；上限 **3600**；省略则跟随服务端 **[agent] readonly_tool_ttl_cache_secs**）。
+    #[serde(default)]
+    pub(crate) readonly_tool_ttl_cache_secs: Option<u64>,
     /// 断线重连：挂接到进行中的 `job_id`；`after_seq` 与请求头 **`Last-Event-ID`** 取较大值后从环形缓冲重放。
     #[serde(default)]
     pub(crate) stream_resume: Option<StreamResumeBody>,

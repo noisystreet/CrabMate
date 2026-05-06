@@ -40,6 +40,7 @@ pub struct SettingsPageFormSignals {
     pub executor_llm_settings_feedback: RwSignal<Option<String>>,
     pub execution_mode_draft: RwSignal<String>,
     pub client_llm_storage_tick: RwSignal<u64>,
+    pub readonly_tool_ttl_cache_follow_server: RwSignal<bool>,
 }
 
 /// 设置页全屏视图入参（阶段 B：`App` 单行传入）。
@@ -76,6 +77,7 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
         executor_llm_settings_feedback,
         execution_mode_draft,
         client_llm_storage_tick,
+        readonly_tool_ttl_cache_follow_server,
     } = form;
 
     let active_section =
@@ -108,6 +110,7 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
         clear_executor_key_intent,
         llm_api_key_draft,
         executor_llm_api_key_draft,
+        readonly_tool_ttl_cache_follow_server,
     };
 
     let baselines = SettingsDirtyBaselines::from_form_current(&form_current_untracked(drafts));
@@ -265,6 +268,7 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
                         clear_client_key_intent=clear_client_key_intent
                         clear_executor_key_intent=clear_executor_key_intent
                         execution_mode_draft=execution_mode_draft
+                        readonly_tool_ttl_cache_follow_server=readonly_tool_ttl_cache_follow_server
                     />
                 </div>
             </div>

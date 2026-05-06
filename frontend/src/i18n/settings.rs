@@ -544,6 +544,47 @@ pub fn settings_section_executor_llm_desc(l: Locale) -> &'static str {
     }
 }
 
+pub fn settings_section_tools_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "工具",
+        Locale::En => "Tools",
+    }
+}
+
+pub fn settings_section_tools_desc(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "与本机聊天请求相关的工具行为覆盖（仅存浏览器）。",
+        Locale::En => "Tool-related overrides for chat requests (browser-only).",
+    }
+}
+
+pub fn settings_tools_readonly_ttl_block_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "只读命令结果缓存",
+        Locale::En => "Read-only command result cache",
+    }
+}
+
+pub fn settings_tools_readonly_ttl_cache_label(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "跟随服务端配置的 TTL 缓存（关闭则每条消息禁用该缓存）",
+        Locale::En => {
+            "Follow server TTL for this cache (when off, each message disables the cache)"
+        }
+    }
+}
+
+pub fn settings_tools_readonly_ttl_cache_hint(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => {
+            "对应服务端只读类 run_command 的短时进程内缓存（readonly_tool_ttl_cache_secs）。勾选时不在请求中覆盖；取消勾选后每条 /chat/stream 会附带 readonly_tool_ttl_cache_secs: 0。"
+        }
+        Locale::En => {
+            "Matches the server-side short-lived in-process cache for eligible read-only run_command calls. When checked, requests do not override it; when unchecked, each /chat/stream sends readonly_tool_ttl_cache_secs: 0."
+        }
+    }
+}
+
 pub fn settings_section_shortcuts_title(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "快捷键",

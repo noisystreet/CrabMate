@@ -292,6 +292,7 @@ pub(crate) async fn chat_async_handler(
                 llm_override: parsed.llm_override.clone(),
                 executor_llm_override: parsed.executor_llm_override.clone(),
                 execution_mode_override: parsed.execution_mode_override,
+                readonly_tool_ttl_cache_secs: parsed.readonly_tool_ttl_cache_secs,
                 request_audit,
             },
             reply_tx,

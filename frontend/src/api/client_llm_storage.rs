@@ -27,6 +27,9 @@ pub const EXECUTOR_LLM_MODEL_STORAGE_KEY: &str = "crabmate-executor-llm-model";
 pub const EXECUTOR_LLM_API_KEY_STORAGE_KEY: &str = "crabmate-executor-llm-api-key";
 /// Web 设置中保存的执行模式覆盖（`rolling_planning` / `hierarchical`）。
 pub const EXECUTION_MODE_STORAGE_KEY: &str = "crabmate-execution-mode";
+/// 存在且为 **`1`** 时：浏览器在每条 `/chat/stream` 请求中附带 **`readonly_tool_ttl_cache_secs: 0`**，禁用只读类 **`run_command`** 短时缓存。
+pub const DISABLE_READONLY_TOOL_TTL_CACHE_STORAGE_KEY: &str =
+    "crabmate-disable-readonly-tool-ttl-cache";
 
 fn storage_trimmed_item(key: &str) -> Option<String> {
     let st = local_storage()?;
@@ -252,6 +255,35 @@ pub fn execution_mode_for_chat_body() -> Option<String> {
         Some("rolling_planning") => Some("rolling_planning".to_string()),
         Some("hierarchical") => Some("hierarchical".to_string()),
         _ => None,
+    }
+}
+
+/// **`true`**：跟随服务端 **`readonly_tool_ttl_cache_secs`**；**`false`**：每条聊天请求显式关闭该缓存。
+pub fn load_readonly_tool_ttl_cache_follow_server_from_storage() -> bool {
+    storage_trimmed_item(DISABLE_READONLY_TOOL_TTL_CACHE_STORAGE_KEY).as_deref() != Some("1")
+}
+
+pub fn persist_readonly_tool_ttl_cache_follow_server(
+    follow_server: bool,
+    loc: Locale,
+) -> Result<(), String> {
+    let st =
+        local_storage().ok_or_else(|| crate::i18n::api_err_no_local_storage(loc).to_string())?;
+    if follow_server {
+        let _ = st.remove_item(DISABLE_READONLY_TOOL_TTL_CACHE_STORAGE_KEY);
+    } else {
+        st.set_item(DISABLE_READONLY_TOOL_TTL_CACHE_STORAGE_KEY, "1")
+            .map_err(|_| crate::i18n::api_err_write_model(loc).to_string())?;
+    }
+    Ok(())
+}
+
+/// 写入 **`POST /chat/stream`** JSON：**`None`** 表示不覆盖；**`Some(0)`** 关闭该缓存。
+pub fn readonly_tool_ttl_cache_secs_for_chat_body() -> Option<u64> {
+    if load_readonly_tool_ttl_cache_follow_server_from_storage() {
+        None
+    } else {
+        Some(0)
     }
 }
 

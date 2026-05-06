@@ -247,6 +247,8 @@ pub struct WebChatJobEnvelope {
     pub executor_llm_override: Option<WebChatLlmOverride>,
     /// 可选：本任务覆盖执行模式（rolling_planning / hierarchical）。
     pub execution_mode_override: Option<WebExecutionModeOverride>,
+    /// 可选：本任务覆盖 **`chat_queues_cache.readonly_tool_ttl_cache_secs`**（`None` 表示跟随服务端快照）。
+    pub readonly_tool_ttl_cache_secs: Option<u64>,
     /// HTTP 审计上下文（客户端 IP、Bearer 指纹）；定时任务为占位。
     pub request_audit: WebRequestAudit,
 }

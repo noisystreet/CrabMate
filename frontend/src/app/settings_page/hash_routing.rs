@@ -8,6 +8,7 @@ pub(super) enum SettingsSection {
     Appearance,
     Llm,
     ExecutorLlm,
+    Tools,
     Shortcuts,
 }
 
@@ -17,6 +18,7 @@ impl SettingsSection {
             Self::Appearance => "appearance",
             Self::Llm => "llm",
             Self::ExecutorLlm => "executor-llm",
+            Self::Tools => "tools",
             Self::Shortcuts => "shortcuts",
         }
     }
@@ -26,6 +28,7 @@ impl SettingsSection {
             "appearance" => Some(Self::Appearance),
             "llm" => Some(Self::Llm),
             "executor-llm" => Some(Self::ExecutorLlm),
+            "tools" => Some(Self::Tools),
             "shortcuts" => Some(Self::Shortcuts),
             _ => None,
         }

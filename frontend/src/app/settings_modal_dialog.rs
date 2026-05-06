@@ -10,7 +10,7 @@ use crate::i18n::{self, Locale};
 
 use super::settings_sections::{
     SettingsAppearanceBlock, SettingsExecutorLlmBlock, SettingsLlmBlock, SettingsLlmBlockBundle,
-    SettingsShortcutsBlock,
+    SettingsShortcutsBlock, SettingsToolsBlock,
 };
 
 /// 设置弹窗 `view!` 所需的信号与回调（单参数入口，满足 fn-param 棘轮）。
@@ -40,6 +40,7 @@ pub struct SettingsModalDialogInput {
     pub executor_llm_api_key_draft: RwSignal<String>,
     pub executor_llm_has_saved_key: RwSignal<bool>,
     pub clear_executor_key_intent: RwSignal<bool>,
+    pub readonly_tool_ttl_cache_follow_server: RwSignal<bool>,
 }
 
 /// 弹窗可见时的整棵 DOM（与原先一致：内含 `Show`）。
@@ -70,6 +71,7 @@ pub fn settings_modal_dialog(input: SettingsModalDialogInput) -> impl IntoView {
         executor_llm_api_key_draft,
         executor_llm_has_saved_key,
         clear_executor_key_intent,
+        readonly_tool_ttl_cache_follow_server,
     } = input;
 
     view! {
@@ -169,6 +171,10 @@ pub fn settings_modal_dialog(input: SettingsModalDialogInput) -> impl IntoView {
                             executor_llm_has_saved_key=executor_llm_has_saved_key
                             clear_executor_key_intent=clear_executor_key_intent
                             hint_class="modal-hint settings-field-nested-hint"
+                        />
+                        <SettingsToolsBlock
+                            locale=appearance_locale
+                            readonly_tool_ttl_cache_follow_server=readonly_tool_ttl_cache_follow_server
                         />
                         <SettingsShortcutsBlock
                             locale=appearance_locale

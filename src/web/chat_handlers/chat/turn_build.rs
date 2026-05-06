@@ -9,7 +9,8 @@ use super::super::super::app_state::{AppState, ConversationTurnSeed};
 use super::super::parse::{
     normalize_agent_role, normalize_chat_image_urls, normalize_client_conversation_id,
     parse_client_llm_override, parse_execution_mode_override, parse_executor_llm_override,
-    parse_optional_chat_temperature, parse_seed_override_from_body,
+    parse_optional_chat_temperature, parse_readonly_tool_ttl_cache_secs,
+    parse_seed_override_from_body,
 };
 use crate::agent_role_turn::maybe_apply_mid_session_agent_role_switch;
 use crate::chat_job_queue;
@@ -75,6 +76,7 @@ pub(super) struct ChatStreamRequestParsed {
     pub(super) llm_override: Option<chat_job_queue::WebChatLlmOverride>,
     pub(super) executor_llm_override: Option<chat_job_queue::WebChatLlmOverride>,
     pub(super) execution_mode_override: Option<chat_job_queue::WebExecutionModeOverride>,
+    pub(super) readonly_tool_ttl_cache_secs: Option<u64>,
 }
 
 pub(super) fn parse_chat_stream_request(
@@ -195,6 +197,17 @@ pub(super) fn parse_chat_stream_request(
                 }),
             )
         })?;
+    let readonly_tool_ttl_cache_secs =
+        parse_readonly_tool_ttl_cache_secs(body.readonly_tool_ttl_cache_secs).map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_READONLY_TOOL_TTL_CACHE_SECS",
+                    message: e,
+                    reason_code: None,
+                }),
+            )
+        })?;
     Ok(ChatStreamRequestParsed {
         resume,
         image_urls,
@@ -207,6 +220,7 @@ pub(super) fn parse_chat_stream_request(
         llm_override,
         executor_llm_override,
         execution_mode_override,
+        readonly_tool_ttl_cache_secs,
     })
 }
 

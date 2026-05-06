@@ -96,6 +96,11 @@ fn openapi_components_schemas_chat_request() -> Value {
                         "type": "string",
                         "description": "可选；本回合执行模式覆盖：rolling_planning 或 hierarchical"
                     },
+                    "readonly_tool_ttl_cache_secs": {
+                        "type": "integer",
+                        "format": "int64",
+                        "description": "可选；本回合覆盖只读 run_command 进程内 TTL 缓存秒数；0 关闭；上限 3600；省略则跟随服务端配置"
+                    },
                     "client_sse_protocol": {
                         "type": "integer",
                         "format": "int32",

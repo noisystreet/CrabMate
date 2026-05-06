@@ -62,6 +62,7 @@ async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcome {
         llm_override,
         executor_llm_override,
         execution_mode_override,
+        readonly_tool_ttl_cache_secs,
         request_audit,
     } = envelope;
     queue_deps.sse_stream_hub.register_job(job_id);
@@ -137,12 +138,17 @@ async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcome {
         let g = queue_deps.cfg.read().await;
         std::sync::Arc::new(g.clone())
     };
-    let (cfg_turn, api_key_turn) = resolve_web_llm_for_job(
+    let (mut cfg_turn, api_key_turn) = resolve_web_llm_for_job(
         queue_deps.as_ref(),
         cfg_snap.clone(),
         llm_override.as_ref(),
         execution_mode_override,
     );
+    if let Some(secs) = readonly_tool_ttl_cache_secs {
+        let mut c = (*cfg_turn).clone();
+        c.chat_queues_cache.readonly_tool_ttl_cache_secs = secs;
+        cfg_turn = Arc::new(c);
+    }
     let turn_allow = turn_allow_for_web_or_cli_job(
         &cfg_turn,
         persisted_active_agent_role.as_deref(),
@@ -267,6 +273,7 @@ async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
         llm_override,
         executor_llm_override,
         execution_mode_override,
+        readonly_tool_ttl_cache_secs,
         request_audit,
     } = envelope;
     info!(
@@ -289,12 +296,17 @@ async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
         let g = queue_deps.cfg.read().await;
         std::sync::Arc::new(g.clone())
     };
-    let (cfg_turn, api_key_turn) = resolve_web_llm_for_job(
+    let (mut cfg_turn, api_key_turn) = resolve_web_llm_for_job(
         queue_deps.as_ref(),
         cfg_snap.clone(),
         llm_override.as_ref(),
         execution_mode_override,
     );
+    if let Some(secs) = readonly_tool_ttl_cache_secs {
+        let mut c = (*cfg_turn).clone();
+        c.chat_queues_cache.readonly_tool_ttl_cache_secs = secs;
+        cfg_turn = Arc::new(c);
+    }
     let turn_allow = turn_allow_for_web_or_cli_job(
         &cfg_turn,
         persisted_active_agent_role.as_deref(),

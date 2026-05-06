@@ -204,6 +204,29 @@ pub(crate) fn SettingsExecutorLlmBlock(
 }
 
 #[component]
+pub(crate) fn SettingsToolsBlock(
+    locale: RwSignal<Locale>,
+    readonly_tool_ttl_cache_follow_server: RwSignal<bool>,
+) -> impl IntoView {
+    view! {
+        <div class="settings-block">
+            <h3 class="settings-block-title">{move || i18n::settings_tools_readonly_ttl_block_title(locale.get())}</h3>
+            <p class="settings-field-nested-hint">{move || i18n::settings_tools_readonly_ttl_cache_hint(locale.get())}</p>
+            <label class="settings-checkbox-label">
+                <input
+                    type="checkbox"
+                    prop:checked=move || readonly_tool_ttl_cache_follow_server.get()
+                    on:change=move |_| {
+                        readonly_tool_ttl_cache_follow_server.update(|v| *v = !*v);
+                    }
+                />
+                <span>{move || i18n::settings_tools_readonly_ttl_cache_label(locale.get())}</span>
+            </label>
+        </div>
+    }
+}
+
+#[component]
 pub(crate) fn SettingsShortcutsBlock(
     locale: RwSignal<Locale>,
     body_class: &'static str,

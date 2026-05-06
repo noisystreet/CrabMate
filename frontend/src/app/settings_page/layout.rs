@@ -4,7 +4,7 @@ use leptos::prelude::*;
 
 use super::super::settings_sections::{
     SettingsAppearanceBlock, SettingsExecutorLlmBlock, SettingsLlmBlock, SettingsLlmBlockBundle,
-    SettingsShortcutsBlock,
+    SettingsShortcutsBlock, SettingsToolsBlock,
 };
 use super::hash_routing::{SettingsSection, write_settings_section_to_hash};
 use super::section_copy::{section_desc, section_title};
@@ -53,6 +53,17 @@ pub(super) fn SettingsPageNavRail(
             <button
                 type="button"
                 class="settings-nav-item"
+                class:active=move || active_section.get() == SettingsSection::Tools
+                on:click=move |_| {
+                    active_section.set(SettingsSection::Tools);
+                    write_settings_section_to_hash(SettingsSection::Tools);
+                }
+            >
+                {move || i18n::settings_section_tools_title(appearance_locale.get())}
+            </button>
+            <button
+                type="button"
+                class="settings-nav-item"
                 class:active=move || active_section.get() == SettingsSection::Shortcuts
                 on:click=move |_| {
                     active_section.set(SettingsSection::Shortcuts);
@@ -93,6 +104,7 @@ pub(super) fn SettingsPageContentPanels(
     clear_client_key_intent: RwSignal<bool>,
     clear_executor_key_intent: RwSignal<bool>,
     execution_mode_draft: RwSignal<String>,
+    readonly_tool_ttl_cache_follow_server: RwSignal<bool>,
 ) -> impl IntoView {
     let SettingsPagePanelDrafts {
         appearance_theme,
@@ -155,6 +167,13 @@ pub(super) fn SettingsPageContentPanels(
                     executor_llm_has_saved_key=executor_llm_has_saved_key
                     clear_executor_key_intent=clear_executor_key_intent
                     hint_class="settings-field-nested-hint"
+                />
+            </Show>
+
+            <Show when=move || active_section.get() == SettingsSection::Tools>
+                <SettingsToolsBlock
+                    locale=appearance_locale
+                    readonly_tool_ttl_cache_follow_server=readonly_tool_ttl_cache_follow_server
                 />
             </Show>
 

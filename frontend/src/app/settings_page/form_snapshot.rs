@@ -27,6 +27,7 @@ pub(crate) struct SettingsPageDraftSignals {
     pub clear_executor_key_intent: RwSignal<bool>,
     pub llm_api_key_draft: RwSignal<String>,
     pub executor_llm_api_key_draft: RwSignal<String>,
+    pub readonly_tool_ttl_cache_follow_server: RwSignal<bool>,
 }
 
 pub(crate) fn form_current_tracked(s: SettingsPageDraftSignals) -> SettingsFormCurrent {
@@ -50,6 +51,7 @@ pub(crate) fn form_current_tracked(s: SettingsPageDraftSignals) -> SettingsFormC
         clear_executor_key_intent: s.clear_executor_key_intent.get(),
         llm_api_key_draft: s.llm_api_key_draft.get(),
         executor_llm_api_key_draft: s.executor_llm_api_key_draft.get(),
+        readonly_tool_ttl_cache_follow_server: s.readonly_tool_ttl_cache_follow_server.get(),
     }
 }
 
@@ -74,5 +76,8 @@ pub(crate) fn form_current_untracked(s: SettingsPageDraftSignals) -> SettingsFor
         clear_executor_key_intent: s.clear_executor_key_intent.get_untracked(),
         llm_api_key_draft: s.llm_api_key_draft.get_untracked(),
         executor_llm_api_key_draft: s.executor_llm_api_key_draft.get_untracked(),
+        readonly_tool_ttl_cache_follow_server: s
+            .readonly_tool_ttl_cache_follow_server
+            .get_untracked(),
     }
 }

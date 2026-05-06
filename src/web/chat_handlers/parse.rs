@@ -207,6 +207,16 @@ pub(super) fn parse_execution_mode_override(
     }
 }
 
+pub(super) fn parse_readonly_tool_ttl_cache_secs(raw: Option<u64>) -> Result<Option<u64>, String> {
+    let Some(n) = raw else {
+        return Ok(None);
+    };
+    if n > 3600 {
+        return Err("readonly_tool_ttl_cache_secs 过大（上限 3600）".to_string());
+    }
+    Ok(Some(n))
+}
+
 fn effective_llm_api_key_for_web_chat(
     state: &AppState,
     ov: &Option<chat_job_queue::WebChatLlmOverride>,

@@ -73,6 +73,7 @@ pub struct SettingsModalSignals {
     pub executor_llm_settings_feedback: RwSignal<Option<String>>,
     pub execution_mode_draft: RwSignal<String>,
     pub client_llm_storage_tick: RwSignal<u64>,
+    pub readonly_tool_ttl_cache_follow_server: RwSignal<bool>,
 }
 
 /// 会话列表模态所需句柄（阶段 B：避免向 `session_list_modal_view` 传递整份 [`AppShellCtx`]）。
@@ -266,6 +267,10 @@ impl AppShellCtx {
                 .executor_llm_settings_feedback,
             execution_mode_draft: self.signals.llm_settings.execution_mode_draft,
             client_llm_storage_tick: self.signals.llm_settings.client_llm_storage_tick,
+            readonly_tool_ttl_cache_follow_server: self
+                .signals
+                .llm_settings
+                .readonly_tool_ttl_cache_follow_server,
         }
     }
 
@@ -345,6 +350,10 @@ impl AppShellCtx {
                 .executor_llm_settings_feedback,
             execution_mode_draft: self.signals.llm_settings.execution_mode_draft,
             client_llm_storage_tick: self.signals.llm_settings.client_llm_storage_tick,
+            readonly_tool_ttl_cache_follow_server: self
+                .signals
+                .llm_settings
+                .readonly_tool_ttl_cache_follow_server,
         }
     }
 }

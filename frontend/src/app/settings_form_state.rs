@@ -15,6 +15,7 @@ pub(crate) struct SettingsDirtyBaselines {
     pub appearance: StoredValue<AppearanceBaseline>,
     pub llm: StoredValue<LlmBaseline>,
     pub executor: StoredValue<ExecutorBaseline>,
+    pub readonly_tool_ttl_cache_follow_server: StoredValue<bool>,
 }
 
 impl SettingsDirtyBaselines {
@@ -42,11 +43,20 @@ impl SettingsDirtyBaselines {
                 current.executor_llm_model_draft.clone(),
                 current.executor_llm_has_saved_key,
             )),
+            readonly_tool_ttl_cache_follow_server: StoredValue::new(
+                current.readonly_tool_ttl_cache_follow_server,
+            ),
         }
     }
 
     pub(crate) fn refresh_from_current(&self, current: &SettingsFormCurrent) {
-        refresh_baselines(self.appearance, self.llm, self.executor, current);
+        refresh_baselines(
+            self.appearance,
+            self.llm,
+            self.executor,
+            self.readonly_tool_ttl_cache_follow_server,
+            current,
+        );
     }
 
     pub(crate) fn is_dirty(&self, current: &SettingsFormCurrent) -> bool {
@@ -55,6 +65,7 @@ impl SettingsDirtyBaselines {
             &self.appearance.get_value(),
             &self.llm.get_value(),
             &self.executor.get_value(),
+            self.readonly_tool_ttl_cache_follow_server.get_value(),
         )
     }
 }
@@ -80,6 +91,7 @@ pub(crate) struct SettingsFormCurrent {
     pub clear_executor_key_intent: bool,
     pub llm_api_key_draft: String,
     pub executor_llm_api_key_draft: String,
+    pub readonly_tool_ttl_cache_follow_server: bool,
 }
 
 pub(crate) fn is_settings_dirty(
@@ -87,6 +99,7 @@ pub(crate) fn is_settings_dirty(
     baseline_appearance: &AppearanceBaseline,
     baseline_llm: &LlmBaseline,
     baseline_executor: &ExecutorBaseline,
+    baseline_readonly_tool_ttl_cache_follow_server: bool,
 ) -> bool {
     let (bl, bt, bbd) = baseline_appearance;
     if current.appearance_locale != *bl
@@ -118,16 +131,22 @@ pub(crate) fn is_settings_dirty(
     }
 
     let (eb, ep, em, eh) = baseline_executor;
-    current.executor_llm_api_base_draft != *eb
+    if current.executor_llm_api_base_draft != *eb
         || current.executor_llm_api_base_preset_select != *ep
         || current.executor_llm_model_draft != *em
         || current.executor_llm_has_saved_key != *eh
+    {
+        return true;
+    }
+
+    current.readonly_tool_ttl_cache_follow_server != baseline_readonly_tool_ttl_cache_follow_server
 }
 
 pub(crate) fn refresh_baselines(
     baseline_appearance: StoredValue<AppearanceBaseline>,
     baseline_llm: StoredValue<LlmBaseline>,
     baseline_executor: StoredValue<ExecutorBaseline>,
+    baseline_readonly_tool_ttl_cache_follow_server: StoredValue<bool>,
     current: &SettingsFormCurrent,
 ) {
     let _ = baseline_appearance.try_update_value(|v| {
@@ -156,5 +175,8 @@ pub(crate) fn refresh_baselines(
             current.executor_llm_model_draft.clone(),
             current.executor_llm_has_saved_key,
         );
+    });
+    let _ = baseline_readonly_tool_ttl_cache_follow_server.try_update_value(|v| {
+        *v = current.readonly_tool_ttl_cache_follow_server;
     });
 }

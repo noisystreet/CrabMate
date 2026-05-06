@@ -164,6 +164,7 @@ async fn run_scheduled_json_turn(state: Arc<AppState>, task: ScheduledAgentTask)
                 llm_override: None,
                 executor_llm_override: None,
                 execution_mode_override: None,
+                readonly_tool_ttl_cache_secs: None,
                 request_audit: audit::WebRequestAudit::scheduled_placeholder(),
             },
             reply_tx,

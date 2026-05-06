@@ -6,7 +6,7 @@ use crate::api::{
     clear_client_llm_api_key_storage, clear_executor_llm_api_key_storage,
     client_llm_storage_has_api_key, executor_llm_storage_has_api_key,
     persist_client_llm_to_storage, persist_execution_mode_to_storage,
-    persist_executor_llm_to_storage,
+    persist_executor_llm_to_storage, persist_readonly_tool_ttl_cache_follow_server,
 };
 use crate::i18n::{Locale, store_locale_slug};
 
@@ -65,6 +65,7 @@ pub struct CommitAllSettingsInput<'a> {
     pub executor_model: &'a str,
     pub executor_api_key_draft: &'a str,
     pub execution_mode: &'a str,
+    pub readonly_tool_ttl_cache_follow_server: bool,
     pub clear_client_llm_key: bool,
     pub clear_executor_llm_key: bool,
     pub llm_api_key_draft: RwSignal<String>,
@@ -119,6 +120,10 @@ pub fn commit_all_settings(p: CommitAllSettingsInput<'_>) -> Result<(), String> 
         p.ui_locale,
     )?;
     persist_execution_mode_to_storage(p.execution_mode, p.ui_locale)?;
+    persist_readonly_tool_ttl_cache_follow_server(
+        p.readonly_tool_ttl_cache_follow_server,
+        p.ui_locale,
+    )?;
 
     p.locale.set(p.appearance_locale);
     store_locale_slug(p.appearance_locale.storage_slug());
