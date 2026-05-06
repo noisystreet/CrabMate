@@ -126,6 +126,7 @@ async fn approve_external_read_dir_if_needed(
         web_ctx.map(|w| w.approval_sink()),
         cli_ctx.map(|c| CliApprovalInput {
             auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command,
+            tui_blocking_approval_tx: c.tui_blocking_approval_tx.clone(),
         }),
         &spec,
         "tool_registry::read_dir external path approval",
@@ -586,6 +587,7 @@ async fn execute_run_command_impl(
                             None,
                             Some(crate::tool_approval::CliApprovalInput {
                                 auto_approve_all_sensitive: false,
+                                tui_blocking_approval_tx: ctx.tui_blocking_approval_tx.clone(),
                             }),
                             &spec,
                             "tool_registry::run_command approval",
@@ -773,6 +775,7 @@ pub(crate) async fn prefetch_http_fetch_parallel_approvals(
             web_ctx.map(|w| w.approval_sink()),
             cli_ctx.map(|c| crate::tool_approval::CliApprovalInput {
                 auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command,
+                tui_blocking_approval_tx: c.tui_blocking_approval_tx.clone(),
             }),
             &spec,
             "tool_registry::http_fetch approval parallel prefetch",
@@ -845,6 +848,7 @@ async fn execute_http_fetch_impl(
             web_ctx.map(|w| w.approval_sink()),
             cli_ctx.map(|c| crate::tool_approval::CliApprovalInput {
                 auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command,
+                tui_blocking_approval_tx: c.tui_blocking_approval_tx.clone(),
             }),
             &spec,
             "tool_registry::http_fetch approval",
@@ -958,6 +962,7 @@ async fn execute_http_request_impl(
             web_ctx.map(|w| w.approval_sink()),
             cli_ctx.map(|c| crate::tool_approval::CliApprovalInput {
                 auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command,
+                tui_blocking_approval_tx: c.tui_blocking_approval_tx.clone(),
             }),
             &spec,
             "tool_registry::http_request approval",

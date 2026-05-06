@@ -1,7 +1,18 @@
 //! REPL 终端样式：**集中在 [`CliReplStyle`]**（配色、是否启用 ANSI）；尊重 **`NO_COLOR`**，非 TTY 时不写入转义序列。
+//!
+//! **捕获模式**：[`CliReplStyle::new_tui_capture`] 将本应写入终端的行追加到缓冲区（纯文本、无 ANSI），供全屏 TUI 写入 transcript。
+
+mod config_summary;
+mod tables;
 
 use std::io::{self, IsTerminal, Write};
 use std::path::Path;
+use std::sync::{Arc, Mutex};
+use tables::{
+    HELP_DESC_MIN, HELP_GAP, HELP_LEFT, REPL_HELP_ROWS, pad_cmd_to_display_width,
+    spaces_to_display_width, wrap_help_description,
+};
+use unicode_width::UnicodeWidthStr;
 
 use crate::agent::per_coord::FinalPlanRequirementMode;
 use crate::config::{AgentConfig, LlmHttpAuthMode, PlannerExecutorMode};
@@ -10,8 +21,6 @@ use crossterm::{
     QueueableCommand, queue,
     style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor},
 };
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
-
 // --- 与横幅 / `/help` 节标题共用的 RGB（单一真源）；`terminal_labels` 输入提示与此对齐 ---
 const RGB_BANNER_TITLE: Color = Color::Rgb {
     r: 78,
@@ -56,117 +65,6 @@ pub(crate) const CLI_PROMPT_USER_FG: Color = RGB_BANNER_TITLE;
 /// `bash#:` 提示前景色（同 [`CLI_REPL_HELP_TITLE_FG`]）。
 pub(crate) const CLI_PROMPT_BASH_FG: Color = CLI_REPL_HELP_TITLE_FG;
 
-/// 左缘空白列数（`"  "`）。
-const HELP_LEFT: usize = 2;
-/// 命令列与说明之间的空隙列数。
-const HELP_GAP: usize = 1;
-/// 表格布局时第一行至少留给说明的列数；不足则改为「命令单独一行」。
-const HELP_DESC_MIN: usize = 8;
-
-/// `/help` 命令列与说明（与 [`CliReplStyle::print_help`] 同源）。
-const REPL_HELP_ROWS: &[(&str, &str)] = &[
-    ("/clear", "清空对话，仅保留当前 system 提示词"),
-    (
-        "/model · /model set <名称>",
-        "显示或写入内存中的 model（set 不校验 GET /models 列表；持久化请改配置）",
-    ),
-    (
-        "/api-base · /api-base set <url> · /apibase …",
-        "显示或写入内存中的 api_base（OpenAI 兼容网关根；持久化请改配置）",
-    ),
-    (
-        "/api-key · /api-key status · /api-key set <密钥> · /api-key clear",
-        "本进程内存中的 LLM Bearer 密钥（不写盘；未 export API_KEY 时可用；/config reload 不清除）",
-    ),
-    (
-        "/config",
-        "打印关键运行配置摘要（与启动横幅同源字段；不含密钥）",
-    ),
-    (
-        "/config reload",
-        "从磁盘+环境变量热重载可更字段（不含会话 SQLite 路径；详见文档）",
-    ),
-    (
-        "/doctor",
-        "一页环境诊断（同 crabmate doctor；不要求 API_KEY）",
-    ),
-    (
-        "/probe",
-        "探测 api_base 的 GET …/models 连通性（同 crabmate probe；需 bearer 时依赖 API_KEY）",
-    ),
-    (
-        "/models · /models list",
-        "列出 GET …/models 返回的模型 id（同 crabmate models；需 bearer 时依赖 API_KEY）",
-    ),
-    (
-        "/models choose <id>",
-        "从上述列表设当前 model（内存；支持唯一前缀；持久化请改配置）",
-    ),
-    (
-        "/agent · /agent list",
-        "列出内建 default 与配置中的命名角色 id（与 REPL「当前」行一致；无表时提示未启用多角色）",
-    ),
-    (
-        "/agent set <id> | /agent set default",
-        "set <id>：须存在于角色表；**set default**：清除显式角色，与 Web 未选角色及「默认」逻辑一致（default_agent_role_id 或全局 system）",
-    ),
-    ("/workspace", "显示当前工作区"),
-    (
-        "/workspace <路径>",
-        "切换工作区（须为已存在目录，别名 /cd）：相对路径同 read_file（相对当前根、禁止 / 开头）；绝对路径须落在 workspace_allowed_roots",
-    ),
-    (
-        "/skills · /skills list",
-        "列出当前工作区下可见的 skills 文件",
-    ),
-    ("/tools", "列出当前加载的工具名"),
-    (
-        "/export [json|markdown|both]",
-        "导出当前内存对话到 .crabmate/exports/（与 Web 同形 JSON/Markdown）",
-    ),
-    (
-        "/save-session [json|markdown|both]",
-        "从磁盘会话文件导出到 .crabmate/exports/（同 crabmate save-session；默认 tui_session.json）",
-    ),
-    (
-        "/mcp · /mcp list · /mcp probe · /mcp list probe",
-        "列出本进程内 MCP stdio 缓存与合并工具名（同 crabmate mcp list；probe 会启动 mcp_command 子进程）",
-    ),
-    ("/version", "打印 crabmate 版本与 OS/ARCH（不含密钥）"),
-    ("/help, /?", "本说明"),
-    (
-        "$ → bash#:",
-        "交互终端行首按 `$` 后提示变为 bash#: 并输入命令；管道输入仍可用 `$ <命令>`",
-    ),
-];
-
-fn pad_cmd_to_display_width(cmd: &str, target: usize) -> String {
-    let mut s = cmd.to_string();
-    while s.width() < target {
-        s.push(' ');
-    }
-    s
-}
-
-fn spaces_to_display_width(target: usize) -> String {
-    let mut s = String::new();
-    while s.width() < target {
-        s.push(' ');
-    }
-    s
-}
-
-/// 启动横幅里 `api_base` 等过长单行：按 Unicode 标量截断并加 `…`。
-fn ellipsize_terminal_line(s: &str, max_chars: usize) -> String {
-    let max_chars = max_chars.max(12);
-    let n = s.chars().count();
-    if n <= max_chars {
-        return s.to_string();
-    }
-    let keep = max_chars.saturating_sub(1);
-    format!("{}…", s.chars().take(keep).collect::<String>())
-}
-
 /// REPL 顶栏 FIGlet 风格 **CrabMate**（固定 6 行 ASCII；`r"..."` 保留 `\`）。
 const BANNER_CRABMATE_ART: &[&str] = &[
     r"  ______ .______          ___      .______   .___  ___.      ___   .___________. _______ ",
@@ -177,88 +75,12 @@ const BANNER_CRABMATE_ART: &[&str] = &[
     r" \______|| _| `._____/__/     \__\ |______/  |__|  |__| /__/     \__\  |__|     |_______|",
 ];
 
-/// 无空格且超过 `max_w` 显示宽度的片段，按字符边界硬拆行。
-fn break_long_word(word: &str, max_w: usize) -> Vec<String> {
-    let max_w = max_w.max(1);
-    let mut out = Vec::new();
-    let mut cur = String::new();
-    let mut acc = 0usize;
-    for ch in word.chars() {
-        let cw = ch.width().unwrap_or(0).max(1);
-        if acc + cw > max_w {
-            if !cur.is_empty() {
-                out.push(std::mem::take(&mut cur));
-                acc = 0;
-            }
-            if cw > max_w {
-                out.push(ch.to_string());
-                continue;
-            }
-        }
-        cur.push(ch);
-        acc += cw;
-    }
-    if !cur.is_empty() {
-        out.push(cur);
-    }
-    out
-}
-
-/// 按空白分词软换行；显示宽度用 [`UnicodeWidthStr`]（CJK 等按终端惯例计宽）。
-fn wrap_help_description(text: &str, max_w: usize) -> Vec<String> {
-    let max_w = max_w.max(1);
-    let text = text.trim();
-    if text.is_empty() {
-        return vec![String::new()];
-    }
-
-    let mut lines: Vec<String> = Vec::new();
-    let mut current = String::new();
-    let mut cur_w = 0usize;
-
-    for word in text.split_whitespace() {
-        let ww = word.width();
-        let need_space = !current.is_empty();
-        let sep_w = need_space as usize;
-
-        if ww > max_w {
-            if !current.is_empty() {
-                lines.push(std::mem::take(&mut current));
-                cur_w = 0;
-            }
-            for chunk in break_long_word(word, max_w) {
-                lines.push(chunk);
-            }
-            continue;
-        }
-
-        if cur_w + sep_w + ww > max_w {
-            if !current.is_empty() {
-                lines.push(std::mem::take(&mut current));
-            }
-            current.push_str(word);
-            cur_w = ww;
-        } else {
-            if need_space {
-                current.push(' ');
-                cur_w += 1;
-            }
-            current.push_str(word);
-            cur_w += ww;
-        }
-    }
-
-    if !current.is_empty() {
-        lines.push(current);
-    }
-    lines
-}
-
 /// CLI REPL 的终端样式：构造时固定 stdout/stderr 是否着色，所有横幅、帮助、成功/错误行均经此结构输出。
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct CliReplStyle {
     use_color_stdout: bool,
     use_color_stderr: bool,
+    capture: Option<Arc<Mutex<Vec<String>>>>,
 }
 
 impl CliReplStyle {
@@ -287,7 +109,25 @@ impl CliReplStyle {
         Self {
             use_color_stdout: cli_repl_stdout_use_color(),
             use_color_stderr: cli_repl_stderr_use_color(),
+            capture: None,
         }
+    }
+
+    /// 全屏 TUI：`print_*` / `eprint_*` 写入的行追加到 `buf`（无 ANSI；成功 `[ok]`、错误 `[err]`）。
+    pub(crate) fn new_tui_capture(buf: Arc<Mutex<Vec<String>>>) -> Self {
+        Self {
+            use_color_stdout: false,
+            use_color_stderr: false,
+            capture: Some(buf),
+        }
+    }
+
+    fn push_capture(&self, line: String) -> bool {
+        let Some(cap) = self.capture.as_ref() else {
+            return false;
+        };
+        cap.lock().unwrap_or_else(|e| e.into_inner()).push(line);
+        true
     }
 
     fn queue_reset(
@@ -599,11 +439,16 @@ impl CliReplStyle {
         no_stream: bool,
         repl_llm_bearer_key_ready: bool,
     ) -> io::Result<()> {
+        if self.capture.is_some() {
+            return Ok(());
+        }
         let mut out = io::stdout();
         let (tw, _) = crossterm::terminal::size().unwrap_or((72, 24));
         let inner = (tw as usize).saturating_sub(4).clamp(28, 72);
-        let api_base_short =
-            ellipsize_terminal_line(&cfg.llm.api_base, inner.saturating_sub(4).max(24));
+        let api_base_short = config_summary::ellipsize_terminal_line(
+            &cfg.llm.api_base,
+            inner.saturating_sub(4).max(24),
+        );
 
         writeln!(out)?;
         self.write_banner_art_header(&mut out)?;
@@ -617,7 +462,6 @@ impl CliReplStyle {
         out.flush()
     }
 
-    /// REPL **`/config`**：打印关键运行配置（与启动横幅同源字段 + 若干排障项；**不**含任何密钥）。
     pub(crate) fn print_repl_config_summary(
         &self,
         cfg: &AgentConfig,
@@ -625,11 +469,20 @@ impl CliReplStyle {
         tool_count: usize,
         no_stream: bool,
     ) -> io::Result<()> {
+        if let Some(cap) = &self.capture {
+            let plain = config_summary::repl_config_summary_plain_lines(
+                cfg, work_dir, tool_count, no_stream,
+            );
+            cap.lock().unwrap_or_else(|e| e.into_inner()).extend(plain);
+            return Ok(());
+        }
         let mut out = io::stdout();
         let (tw, _) = crossterm::terminal::size().unwrap_or((72, 24));
         let inner = (tw as usize).saturating_sub(4).clamp(28, 72);
-        let api_base_short =
-            ellipsize_terminal_line(&cfg.llm.api_base, inner.saturating_sub(4).max(24));
+        let api_base_short = config_summary::ellipsize_terminal_line(
+            &cfg.llm.api_base,
+            inner.saturating_sub(4).max(24),
+        );
 
         writeln!(out)?;
         self.write_banner_subheading(&mut out, "运行配置摘要")?;
@@ -821,7 +674,7 @@ impl CliReplStyle {
             let short = if d.is_empty() {
                 "（目录为空）".to_string()
             } else {
-                ellipsize_terminal_line(d, inner.min(48))
+                config_summary::ellipsize_terminal_line(d, inner.min(48))
             };
             format!("开启 · {}", short)
         } else {
@@ -880,6 +733,9 @@ impl CliReplStyle {
     }
 
     pub(crate) fn print_farewell(&self) -> io::Result<()> {
+        if self.capture.is_some() {
+            return Ok(());
+        }
         let mut out = io::stdout();
         if self.use_color_stdout {
             queue!(
@@ -894,6 +750,9 @@ impl CliReplStyle {
     }
 
     pub(crate) fn print_line(&self, msg: &str) -> io::Result<()> {
+        if self.push_capture(msg.to_string()) {
+            return Ok(());
+        }
         let mut out = io::stdout();
         writeln!(out, "{msg}")?;
         out.flush()
@@ -901,6 +760,9 @@ impl CliReplStyle {
 
     /// 成功反馈行：着色 TTY 下前缀 **`✓`**；**`NO_COLOR`** 或非 TTY 下为 **`[ok]`**，避免缺字字体显示为乱码。
     pub(crate) fn print_success(&self, msg: &str) -> io::Result<()> {
+        if self.push_capture(format!("[ok] {msg}")) {
+            return Ok(());
+        }
         let mut out = io::stdout();
         let prefix = if self.use_color_stdout {
             "✓ "
@@ -921,6 +783,9 @@ impl CliReplStyle {
 
     /// 错误行：着色 TTY 下前缀 **`✗`**；**`NO_COLOR`** 或非 TTY 下为 **`[err]`**。
     pub(crate) fn eprint_error(&self, msg: &str) -> io::Result<()> {
+        if self.push_capture(format!("[err] {msg}")) {
+            return Ok(());
+        }
         let mut err = io::stderr();
         let prefix = if self.use_color_stderr {
             "✗ "
@@ -940,7 +805,60 @@ impl CliReplStyle {
     }
 
     /// `/help`：节标题 + 命令/说明列（宽度随终端、`unicode-width` 软换行）。
+    fn print_help_capture(&self) -> io::Result<()> {
+        let Some(cap) = self.capture.as_ref() else {
+            return Ok(());
+        };
+        let mut lines: Vec<String> = Vec::new();
+        lines.push(String::new());
+        lines.push("  内建命令".to_string());
+        let rows = REPL_HELP_ROWS;
+        let (tw, _) = crossterm::terminal::size().unwrap_or((80, 24));
+        let inner = tw as usize;
+        let max_cmd_w = rows.iter().map(|(c, _)| c.width()).max().unwrap_or(0);
+        let table_ok = inner >= HELP_LEFT + max_cmd_w + HELP_GAP + HELP_DESC_MIN;
+        let w_desc_table = inner
+            .saturating_sub(HELP_LEFT + max_cmd_w + HELP_GAP)
+            .max(1);
+        let w_desc_stacked = inner.saturating_sub(HELP_LEFT).max(1);
+        for (cmd, desc) in rows {
+            let desc_lines = if table_ok {
+                wrap_help_description(desc, w_desc_table)
+            } else {
+                wrap_help_description(desc, w_desc_stacked)
+            };
+            if !table_ok {
+                lines.push(format!("  {cmd}"));
+                for d in &desc_lines {
+                    lines.push(format!("  {d}"));
+                }
+                continue;
+            }
+            let padded = pad_cmd_to_display_width(cmd, max_cmd_w);
+            let cont_pad = spaces_to_display_width(max_cmd_w + HELP_GAP);
+            for (i, line) in desc_lines.iter().enumerate() {
+                if i == 0 {
+                    lines.push(format!("  {padded} {line}"));
+                } else {
+                    lines.push(format!("  {cont_pad}{line}"));
+                }
+            }
+        }
+        lines.push(String::new());
+        lines.push(
+            "  「我:」下光标前为 /… 时按 Tab 可补全内建命令与 /export、/save-session、/mcp 子命令；bash#: 下不补全"
+                .to_string(),
+        );
+        lines.push("  退出：quit · exit · Ctrl+D".to_string());
+        cap.lock().unwrap_or_else(|e| e.into_inner()).extend(lines);
+        Ok(())
+    }
+
+    /// `/help`：节标题 + 命令/说明列（宽度随终端、`unicode-width` 软换行）。
     pub(crate) fn print_help(&self) -> io::Result<()> {
+        if self.capture.is_some() {
+            return self.print_help_capture();
+        }
         let mut out = io::stdout();
         if self.use_color_stdout {
             queue!(

@@ -18,4 +18,5 @@ pub(crate) mod terminal_cli_transcript;
 pub(crate) mod terminal_labels;
 pub mod tool_replay;
 pub mod tui;
+pub(crate) mod tui_terminal_bridge;
 pub mod workspace_session;

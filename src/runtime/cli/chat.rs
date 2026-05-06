@@ -123,6 +123,7 @@ fn build_cli_runtime(chat: &ChatCliArgs) -> CliToolRuntime {
         auto_approve_all_non_whitelist_run_command: chat.yes_run_command,
         extra_allowlist_commands: extra.into(),
         command_stats: Arc::new(std::sync::Mutex::new(CliCommandTurnStats::default())),
+        tui_blocking_approval_tx: None,
     }
 }
 

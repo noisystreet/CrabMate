@@ -33,6 +33,8 @@ pub(crate) struct ReplSlashSharedHandles {
 pub(crate) enum ReplSlashHandled {
     NotSlash,
     Handled,
+    /// `/doctor`：大量 stdout，TUI 需先 [`crate::runtime::tui_terminal_bridge`] 释放终端。
+    RunDoctor,
     RunProbe,
     RunModels,
     RunModelsChoose {

@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use tokio::sync::{Mutex as TokioMutex, mpsc};
 
+use crate::tool_approval::TuiApprovalRequest;
 use crate::types::CommandApprovalDecision;
 
 // --- 运行时上下文 ---
@@ -55,6 +56,8 @@ pub struct CliToolRuntime {
     /// `--approve-commands` 额外允许的命令名（小写），与配置白名单合并后再决定是否提示。
     pub extra_allowlist_commands: Arc<[String]>,
     pub command_stats: Arc<std::sync::Mutex<CliCommandTurnStats>>,
+    /// **`crabmate tui`**：`run_command` / http 等审批发往 UI 线程（无则走 dialoguer/stdin）。
+    pub tui_blocking_approval_tx: Option<std::sync::mpsc::SyncSender<TuiApprovalRequest>>,
 }
 
 impl CliToolRuntime {
@@ -65,7 +68,16 @@ impl CliToolRuntime {
             auto_approve_all_non_whitelist_run_command: false,
             extra_allowlist_commands: Arc::from([] as [String; 0]),
             command_stats: Arc::new(std::sync::Mutex::new(CliCommandTurnStats::default())),
+            tui_blocking_approval_tx: None,
         }
+    }
+
+    pub(crate) fn with_tui_blocking_approval(
+        mut self,
+        tx: std::sync::mpsc::SyncSender<TuiApprovalRequest>,
+    ) -> Self {
+        self.tui_blocking_approval_tx = Some(tx);
+        self
     }
 
     pub fn reset_command_stats(&self) {

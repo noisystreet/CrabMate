@@ -14,11 +14,12 @@ pub use commands::{
 };
 pub use repl::run_repl;
 pub(crate) use repl::{
-    ReplAfterUserMessageEnqueuedCb, ReplDispatchChatRoundParams, repl_dispatch_chat_round,
-    repl_prepare_messages_and_editor,
+    ReplAfterUserMessageEnqueuedCb, ReplDispatchChatRoundParams, ReplSlashFollowupCtx,
+    repl_dispatch_chat_round, repl_prepare_messages_and_editor, repl_slash_handled_followup,
 };
-pub(crate) use repl_slash_dispatch::try_dispatch_api_key_slash_for_tui;
-
+pub(crate) use repl_extras::{
+    ReplSlashHandled, ReplSlashSharedHandles, try_handle_repl_slash_command,
+};
 /// REPL `/export`、`/save-session` 与 `save-session` 子命令共用的导出格式。
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ReplExportKind {

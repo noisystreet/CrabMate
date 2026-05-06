@@ -14,6 +14,14 @@ use tokio::sync::{Mutex, mpsc};
 
 use crate::types::CommandApprovalDecision;
 
+/// 全屏 TUI：工具审批由 UI 线程接管 stdin（暂停 ratatui），异步侧在 [`Self::respond_tx`] 上阻塞等待结果。
+#[derive(Debug)]
+pub struct TuiApprovalRequest {
+    pub title: String,
+    pub detail: String,
+    pub respond_tx: std::sync::mpsc::Sender<CommandApprovalDecision>,
+}
+
 /// 需人工确认的能力域（与 `tool_registry` 中带审批的工具对齐；后续可接配置策略）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SensitiveCapability {
@@ -40,6 +48,8 @@ pub struct WebApprovalSink<'a> {
 pub struct CliApprovalInput {
     /// 与 [`crate::tool_registry::CliToolRuntime::auto_approve_all_non_whitelist_run_command`] 一致：**所有**下列敏感能力在非白名单时均自动「本次允许」（仅可信环境）。
     pub auto_approve_all_sensitive: bool,
+    /// `crabmate tui`：发往 UI 线程的阻塞审批队列（容量小，`send` 可能阻塞）。
+    pub tui_blocking_approval_tx: Option<std::sync::mpsc::SyncSender<TuiApprovalRequest>>,
 }
 
 /// 一次交互审批的展示与 SSE 载荷（`CommandApprovalBody` 同源字段）。
@@ -187,6 +197,25 @@ pub async fn request_tool_interactive_approval(
                 spec.cli_title
             );
             return Ok(CommandApprovalDecision::AllowOnce);
+        }
+        if let Some(ref tx) = cli_in.tui_blocking_approval_tx {
+            let tx = tx.clone();
+            let title = spec.cli_title.to_string();
+            let detail = spec.cli_detail.clone();
+            return Ok(tokio::task::spawn_blocking(move || {
+                let (respond_tx, respond_rx) = std::sync::mpsc::channel();
+                let req = TuiApprovalRequest {
+                    title,
+                    detail,
+                    respond_tx,
+                };
+                if tx.send(req).is_err() {
+                    return CommandApprovalDecision::Deny;
+                }
+                respond_rx.recv().unwrap_or(CommandApprovalDecision::Deny)
+            })
+            .await
+            .unwrap_or(CommandApprovalDecision::Deny));
         }
         return Ok(cli_terminal::prompt_tool_approval_cli(spec.cli_title, &spec.cli_detail).await);
     }

@@ -277,18 +277,15 @@ async fn slash_config(
 
 async fn slash_doctor(
     extra: &str,
-    cfg_holder: &SharedAgentConfig,
-    work_dir: &Path,
+    _cfg_holder: &SharedAgentConfig,
+    _work_dir: &Path,
     style: &CliReplStyle,
 ) -> ReplSlashHandled {
     if !extra.is_empty() {
         let _ = style.eprint_error("用法: /doctor（无额外参数；同 crabmate doctor）");
-    } else {
-        let ws = work_dir.to_str();
-        let cfg = cfg_holder.read().await;
-        crate::runtime::cli_doctor::print_doctor_report(&cfg, ws);
+        return ReplSlashHandled::Handled;
     }
-    ReplSlashHandled::Handled
+    ReplSlashHandled::RunDoctor
 }
 
 fn slash_probe(extra: &str, style: &CliReplStyle) -> ReplSlashHandled {
@@ -513,13 +510,6 @@ fn api_key_usage_lines_for_terminal() -> [&'static str; 2] {
     ]
 }
 
-pub(crate) fn api_key_usage_lines_owned() -> Vec<String> {
-    api_key_usage_lines_for_terminal()
-        .into_iter()
-        .map(str::to_string)
-        .collect()
-}
-
 pub(crate) async fn api_key_status_lines_owned(
     cfg_holder: &SharedAgentConfig,
     api_key_holder: &Arc<StdMutex<String>>,
@@ -560,23 +550,6 @@ pub(crate) fn api_key_set_lines_owned(
     } else {
         *api_key_holder.lock().unwrap_or_else(|e| e.into_inner()) = secret;
         vec!["[ok] 已写入本进程 LLM API 密钥（仅存内存；值已隐藏）。".to_string()]
-    }
-}
-
-/// 供全屏 TUI：不向 stdout 打印，仅返回与 REPL 一致的文本行。
-pub(crate) async fn try_dispatch_api_key_slash_for_tui<'a>(
-    builtin: ReplBuiltIn<'a>,
-    cfg_holder: &SharedAgentConfig,
-    api_key_holder: &Arc<StdMutex<String>>,
-) -> Option<Vec<String>> {
-    match builtin {
-        ReplBuiltIn::ApiKeyUsage => Some(api_key_usage_lines_owned()),
-        ReplBuiltIn::ApiKeyStatus => {
-            Some(api_key_status_lines_owned(cfg_holder, api_key_holder).await)
-        }
-        ReplBuiltIn::ApiKeyClear => Some(api_key_clear_lines_owned(api_key_holder)),
-        ReplBuiltIn::ApiKeySet(secret) => Some(api_key_set_lines_owned(secret, api_key_holder)),
-        _ => None,
     }
 }
 

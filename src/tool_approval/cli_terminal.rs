@@ -8,8 +8,8 @@ use dialoguer::theme::{ColorfulTheme, SimpleTheme};
 
 use crate::types::CommandApprovalDecision;
 
-/// 与 `tool_registry` 单测及管道回退共用。
-pub(super) fn parse_cli_command_approval_line(line: &str) -> CommandApprovalDecision {
+/// 与 `tool_registry` 单测、TUI 审批行、管道回退共用。
+pub(crate) fn parse_cli_command_approval_line(line: &str) -> CommandApprovalDecision {
     let t = line.trim().to_ascii_lowercase();
     match t.as_str() {
         "" | "n" | "no" | "deny" | "d" | "q" => CommandApprovalDecision::Deny,

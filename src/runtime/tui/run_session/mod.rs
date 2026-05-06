@@ -2,16 +2,23 @@
 //!
 //! 与 REPL 共用配置加载、`CliToolRuntime`、首轮消息准备；**不向 stdout 渲染助手输出**（`suppress_stdout_render`），可按 CLI **`--no-stream`** 选择是否 SSE。
 //!
-//! **`/api-key`**：见 [`crate::runtime::cli::try_dispatch_api_key_slash_for_tui`]，反馈写入中区 transcript。
+//! **`/` 内建命令**：与 REPL 同源（[`try_handle_repl_slash_command`] + [`repl_slash_handled_followup`]），输出捕获至中区 transcript；**/probe、/models、/mcp** 会短暂退出全屏写 stdout。
 //!
 //! 架构：专用线程跑 ratatui + crossterm；[`tokio::sync::mpsc::unbounded_channel`] 投递输入；异步侧执行回合并刷新快照。
 //!
 //! **焦点**：左/中上（聊天）/中下（撰写）/右四块可点击聚焦（**`EnableMouseCapture`**），边框与标题高亮；**`Tab` / `Shift+Tab`** 循环焦点。字符输入与退格仅在 **「撰写」** 聚焦时生效；**`Enter`** 始终提交当前输入行。
 //!
+//! **工具审批**：全屏居中 Modal（↑↓ / jk · Enter · Esc · 1/2/3），与 REPL dialoguer 三项语义一致；不退出 alternate screen。
+//!
 //! **撰写区**：按单元格宽度自动换行（宽字符计入 **`unicode-width`**）；纵向往下溢出时仅保留底部可见行（滚动）；**「撰写」** 聚焦时 **`Frame::set_cursor_position`** 显示插入光标。
 
+mod approval;
+mod render;
+
+use std::collections::VecDeque;
 use std::io::{self, IsTerminal, Stdout, stdout};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -25,27 +32,27 @@ use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
     size as terminal_size,
 };
-use ratatui::Frame;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::text::{Line, Text};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::config::SharedAgentConfig;
-use crate::runtime::cli::repl_parse::classify_repl_slash_command;
 use crate::runtime::cli::{
     CliMainInvocationCommon, ReplAfterUserMessageEnqueuedCb, ReplDispatchChatRoundParams,
-    cli_effective_work_dir, repl_dispatch_chat_round, repl_prepare_messages_and_editor,
-    try_dispatch_api_key_slash_for_tui,
+    ReplSlashFollowupCtx, ReplSlashHandled, ReplSlashSharedHandles, cli_effective_work_dir,
+    repl_dispatch_chat_round, repl_prepare_messages_and_editor, repl_slash_handled_followup,
+    try_handle_repl_slash_command,
 };
 use crate::runtime::cli_exit::{CliExitError, EXIT_USAGE};
 use crate::runtime::cli_repl_ui::CliReplStyle;
 use crate::runtime::tui::{TuiLlmStreamScratch, TuiLlmStreamScratchArc};
+use crate::runtime::tui_terminal_bridge::TuiTerminalHandoffOp;
+use crate::runtime::workspace_session;
 use crate::text_util::truncate_chars_with_ellipsis;
+use crate::tool_approval::TuiApprovalRequest;
 use crate::tool_registry::CliToolRuntime;
 use crate::types::{
     Message, is_message_visible_in_chat_transcript, message_content_plain_for_chat_display,
@@ -53,6 +60,27 @@ use crate::types::{
 
 /// 撰写区行首提示符（与 [`composer_wrap_lines`] 起始列一致）。
 const COMPOSER_PROMPT_PREFIX: &str = "› ";
+
+fn build_tui_nav_summary(
+    work_dir: &std::path::Path,
+    tui_load_on_start: bool,
+    session_file_exists: bool,
+    message_count: usize,
+) -> String {
+    let wd = work_dir.display().to_string();
+    let wd_short = truncate_chars_with_ellipsis(&wd, 40);
+    let sess = if session_file_exists { "有" } else { "无" };
+    let load = if tui_load_on_start { "开" } else { "关" };
+    format!(
+        "工作区\n{wd_short}\n\n会话文件\ntui_session.json：{sess}\n启动加载：{load}\n\n内存消息\n{message_count} 条（含 system / 工具）\n\n中区仅展示 transcript\n可见尾部",
+    )
+}
+
+fn build_tui_right_summary(tool_count: usize) -> String {
+    format!(
+        "侧栏占位\n\n敏感工具审批：全屏 Modal（↑↓ · Enter · Esc · 1/2/3）。\n\n已加载工具：{tool_count} 个",
+    )
+}
 
 fn tui_use_ansi_color() -> bool {
     std::env::var_os("NO_COLOR").is_none()
@@ -93,7 +121,7 @@ impl TuiFocus {
     }
 }
 
-/// 与 [`render_full`] 一致的分区，供鼠标命中与绘制共用。
+/// 与 [`render::render_full`] 一致的分区，供鼠标命中与绘制共用。
 struct TuiPaneLayout {
     nav_left: Rect,
     chat: Rect,
@@ -218,65 +246,86 @@ fn composer_visible_and_cursor_rel(
 struct TuiModel {
     /// 顶栏一行摘要（对齐 Web 壳层：品牌 · 模型 · 网关 · 工作目录）
     header_line: String,
+    /// 左栏：工作区路径、`tui_session.json` 与加载开关等（阶段 D）
+    nav_summary: String,
+    /// 右栏：任务等占位 + 工具数量提示
+    right_summary: String,
     transcript: String,
-    /// 聊天区垂直滚动（`Paragraph::scroll` 的 y）；须与 [`clamped_chat_vertical_scroll`]  clamp，避免 ratatui `scroll_y` 过大导致溢出 panic。
+    /// 聊天区垂直滚动（`Paragraph::scroll` 的 y）；须与 [`render::clamped_chat_vertical_scroll`] 一致地 clamp，避免 ratatui `scroll_y` 过大导致溢出 panic。
     chat_scroll_y: u16,
     input: String,
     status: String,
     focus: TuiFocus,
+    /// 敏感工具审批 Modal（单条）；多条时先入队。
+    approval_modal: Option<approval::TuiApprovalModalState>,
+    approval_backlog: VecDeque<TuiApprovalRequest>,
 }
 
-fn append_tui_streaming_tail(transcript: &str, scratch: &TuiLlmStreamScratch) -> String {
-    let r = scratch.reasoning.trim();
-    let c = scratch.content.trim();
-    if r.is_empty() && c.is_empty() {
-        return transcript.to_string();
+async fn tui_refresh_after_slash_capture(
+    model: &Arc<Mutex<TuiModel>>,
+    captured: Vec<String>,
+    cfg_holder: &SharedAgentConfig,
+    work_dir: &std::path::Path,
+    message_count: usize,
+    tool_count: usize,
+    cli_no_stream: bool,
+) {
+    let new_header = tui_header_summary(cfg_holder, work_dir).await;
+    let tui_load_nav = cfg_holder.read().await.session_ui.tui_load_session_on_start;
+    let nav = build_tui_nav_summary(
+        work_dir,
+        tui_load_nav,
+        workspace_session::session_file_path(work_dir).exists(),
+        message_count,
+    );
+    let right = build_tui_right_summary(tool_count);
+    let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
+    if !captured.is_empty() {
+        g.transcript.push_str("\n[/]\n");
+        for ln in captured {
+            g.transcript.push_str(&ln);
+            g.transcript.push('\n');
+        }
+        g.transcript.push('\n');
     }
-    let mut out = String::from(transcript);
-    out.push_str("\n────────────────────────────────\n[assistant · 生成中]\n\n");
-    if !r.is_empty() {
-        out.push_str("(推理) ");
-        out.push_str(&truncate_chars_with_ellipsis(r, 8000));
-        out.push_str("\n\n");
-    }
-    if !c.is_empty() {
-        out.push_str(&truncate_chars_with_ellipsis(c, 12000));
-        out.push('\n');
-    }
-    out
+    g.header_line = new_header;
+    g.nav_summary = nav;
+    g.right_summary = right;
+    g.status = format!(
+        "就绪 · {} 条 · {}",
+        message_count,
+        status_hint(cli_no_stream)
+    );
 }
 
-/// 粗算 `Paragraph` + `Wrap` 下的总行数（与 ratatui `WordWrapper` 不完全一致；用于 **限制 scroll_y**，避免 `area.height + scroll_y` 的 `u16` 溢出与 panic）。
-fn estimate_wrapped_line_rows(text: &str, inner_width: u16) -> usize {
-    let w = inner_width.max(1) as usize;
-    if text.is_empty() {
-        return 1;
-    }
-    text.split('\n')
-        .map(|line| {
-            let lw = UnicodeWidthStr::width(line);
-            lw.div_ceil(w).max(1)
-        })
-        .sum::<usize>()
-        .max(1)
-}
-
-/// ratatui 0.29：`Paragraph::scroll` 的 `y` 不得大到使内部 `area.height + scroll_y` 溢出；也不得大于「总行数 − 视口行数」。
-fn clamped_chat_vertical_scroll(
-    text: &str,
-    inner_width: u16,
-    inner_height: u16,
-    stick_to_bottom: bool,
-    manual_scroll_y: u16,
-) -> u16 {
-    let rows = estimate_wrapped_line_rows(text, inner_width);
-    let vis = inner_height.max(1) as usize;
-    let max_scroll = rows.saturating_sub(vis).min(u16::MAX as usize) as u16;
-    if stick_to_bottom {
-        max_scroll
-    } else {
-        manual_scroll_y.min(max_scroll)
-    }
+async fn tui_refresh_after_chat_round(
+    model: &Arc<Mutex<TuiModel>>,
+    cfg_holder: &SharedAgentConfig,
+    work_dir: &std::path::Path,
+    messages: &[Message],
+    tool_count: usize,
+    cli_no_stream: bool,
+) {
+    let new_header = tui_header_summary(cfg_holder, work_dir).await;
+    let tui_load_nav = cfg_holder.read().await.session_ui.tui_load_session_on_start;
+    let nav = build_tui_nav_summary(
+        work_dir,
+        tui_load_nav,
+        workspace_session::session_file_path(work_dir).exists(),
+        messages.len(),
+    );
+    let right = build_tui_right_summary(tool_count);
+    let transcript = messages_to_transcript(messages);
+    let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
+    g.transcript = transcript;
+    g.header_line = new_header;
+    g.nav_summary = nav;
+    g.right_summary = right;
+    g.status = format!(
+        "就绪 · {} 条消息 · {}",
+        messages.len(),
+        status_hint(cli_no_stream)
+    );
 }
 
 /// 进入全屏 TUI 并跑对话循环（须 TTY）。**`cli_no_stream`** 对应全局 **`--no-stream`**；助手正文不因流式写入 stdout（保护 alternate screen）。
@@ -286,7 +335,7 @@ pub async fn run_tui_session(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let CliMainInvocationCommon {
         cfg_holder,
-        config_path: _config_path,
+        config_path,
         client,
         api_key,
         tools,
@@ -303,9 +352,16 @@ pub async fn run_tui_session(
         )
     };
     let mut work_dir = cli_effective_work_dir(workspace_cli, &run_root);
-    let cli_rt = CliToolRuntime::new_interactive_default();
+    let (handoff_tx, handoff_rx) = std::sync::mpsc::channel::<TuiTerminalHandoffOp>();
+    let (tui_approval_tx, tui_approval_rx) = std::sync::mpsc::sync_channel::<TuiApprovalRequest>(8);
+    let cli_rt =
+        CliToolRuntime::new_interactive_default().with_tui_blocking_approval(tui_approval_tx);
     let style = CliReplStyle::new();
     let api_key_holder = Arc::new(std::sync::Mutex::new(api_key.to_string()));
+    let slash_handles = ReplSlashSharedHandles {
+        api_key_holder: Arc::clone(&api_key_holder),
+        process_handles: Arc::clone(&process_handles),
+    };
 
     {
         let g = cfg_holder.read().await;
@@ -336,6 +392,13 @@ pub async fn run_tui_session(
     );
 
     let header_line = tui_header_summary(cfg_holder, work_dir.as_path()).await;
+    let nav_summary = build_tui_nav_summary(
+        work_dir.as_path(),
+        tui_load,
+        workspace_session::session_file_path(work_dir.as_path()).exists(),
+        messages.len(),
+    );
+    let right_summary = build_tui_right_summary(tools.len());
 
     let llm_scratch: TuiLlmStreamScratchArc = Arc::new(Mutex::new(TuiLlmStreamScratch::default()));
 
@@ -343,18 +406,30 @@ pub async fn run_tui_session(
     let shutdown = Arc::new(AtomicBool::new(false));
     let model = Arc::new(Mutex::new(TuiModel {
         header_line,
+        nav_summary,
+        right_summary,
         transcript: messages_to_transcript(&messages),
         chat_scroll_y: 0,
         input: String::new(),
         status: status_hint(cli_no_stream),
         focus: TuiFocus::default(),
+        approval_modal: None,
+        approval_backlog: VecDeque::new(),
     }));
 
     let model_th = Arc::clone(&model);
     let scratch_th = Arc::clone(&llm_scratch);
     let shutdown_th = Arc::clone(&shutdown);
-    let ui_handle: JoinHandle<io::Result<()>> =
-        std::thread::spawn(move || run_tui_ui_thread(model_th, scratch_th, ev_tx, shutdown_th));
+    let ui_handle: JoinHandle<io::Result<()>> = std::thread::spawn(move || {
+        run_tui_ui_thread(
+            model_th,
+            scratch_th,
+            ev_tx,
+            shutdown_th,
+            tui_approval_rx,
+            handoff_rx,
+        )
+    });
 
     while let Some(ev) = ev_rx.recv().await {
         match ev {
@@ -365,31 +440,50 @@ pub async fn run_tui_session(
                     continue;
                 }
                 if trimmed.starts_with('/') {
-                    let builtin = classify_repl_slash_command(trimmed.as_str())
-                        .expect("slash-prefixed input always classifies to a builtin");
-                    if let Some(lines) =
-                        try_dispatch_api_key_slash_for_tui(builtin, cfg_holder, &api_key_holder)
-                            .await
-                    {
-                        let new_header = tui_header_summary(cfg_holder, work_dir.as_path()).await;
+                    let cap = Arc::new(Mutex::new(Vec::<String>::new()));
+                    let style_cap = CliReplStyle::new_tui_capture(Arc::clone(&cap));
+                    let handled = try_handle_repl_slash_command(
+                        trimmed.as_str(),
+                        cfg_holder,
+                        tools,
+                        &mut messages,
+                        &mut work_dir,
+                        &style_cap,
+                        cli_no_stream,
+                        &mut agent_role_owned,
+                        &slash_handles,
+                    )
+                    .await;
+                    if matches!(handled, ReplSlashHandled::NotSlash) {
                         let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-                        g.transcript.push_str("\n[/]\n");
-                        for ln in lines {
-                            g.transcript.push_str(&ln);
-                            g.transcript.push('\n');
-                        }
-                        g.transcript.push('\n');
-                        g.header_line = new_header;
-                        g.status = format!(
-                            "就绪 · {} 条 · {}",
-                            messages.len(),
-                            status_hint(cli_no_stream)
-                        );
+                        g.status =
+                            "输入以 / 开头但未识别为内建命令（不应发生）；请报告 issue".to_string();
                         continue;
                     }
-                    let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-                    g.status = "TUI 暂未接入该 / 命令（已支持 /api-key …）；其它请用 crabmate repl"
-                        .to_string();
+                    repl_slash_handled_followup(
+                        handled,
+                        ReplSlashFollowupCtx {
+                            cfg_holder,
+                            config_path,
+                            client,
+                            slash_handles: &slash_handles,
+                            style: &style_cap,
+                            work_dir: work_dir.as_path(),
+                            tui_terminal_tx: Some(&handoff_tx),
+                        },
+                    )
+                    .await?;
+                    let captured = cap.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                    tui_refresh_after_slash_capture(
+                        &model,
+                        captured,
+                        cfg_holder,
+                        work_dir.as_path(),
+                        messages.len(),
+                        tools.len(),
+                        cli_no_stream,
+                    )
+                    .await;
                     continue;
                 }
                 {
@@ -428,18 +522,26 @@ pub async fn run_tui_session(
                     let mut s = llm_scratch.lock().unwrap_or_else(|e| e.into_inner());
                     s.clear();
                 }
-                let new_header = tui_header_summary(cfg_holder, work_dir.as_path()).await;
-                let transcript = messages_to_transcript(&messages);
-                let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-                g.transcript = transcript;
-                g.header_line = new_header;
-                g.status = format!(
-                    "就绪 · {} 条消息 · {}",
-                    messages.len(),
-                    status_hint(cli_no_stream)
-                );
+                tui_refresh_after_chat_round(
+                    &model,
+                    cfg_holder,
+                    work_dir.as_path(),
+                    messages.as_slice(),
+                    tools.len(),
+                    cli_no_stream,
+                )
+                .await;
             }
         }
+    }
+
+    if tui_load
+        && let Err(e) = workspace_session::save_workspace_session(work_dir.as_path(), &messages)
+    {
+        eprintln!(
+            "写入 {} 失败: {e}",
+            workspace_session::session_file_path(work_dir.as_path()).display()
+        );
     }
 
     shutdown.store(true, Ordering::SeqCst);
@@ -464,7 +566,7 @@ async fn tui_header_summary(cfg_holder: &SharedAgentConfig, work_dir: &std::path
 
 fn status_hint(cli_no_stream: bool) -> String {
     let mut s = String::from(
-        "Enter 发送 · 空行 q · Ctrl+C · /api-key … · Tab 切焦点 · 鼠标点面板 · 聊天区 PgUp/PgDn 滚动",
+        "Enter 发送 · 空行 q · Ctrl+C · /help · Tab 切焦点 · 鼠标点面板 · 聊天区 PgUp/PgDn 滚动",
     );
     if cli_no_stream {
         s.push_str(" · --no-stream");
@@ -529,11 +631,52 @@ fn next_char_boundary(s: &str, byte_idx: usize) -> usize {
     i
 }
 
+/// UI 线程轮询：`/doctor` 等 stdout 交接与工具审批队列。
+struct TuiBlockingRecv<'a> {
+    approval_rx: &'a Receiver<TuiApprovalRequest>,
+    handoff_rx: &'a Receiver<TuiTerminalHandoffOp>,
+}
+
+fn process_tui_main_thread_ops(
+    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+    blocking: &TuiBlockingRecv<'_>,
+    model: &Arc<Mutex<TuiModel>>,
+) -> io::Result<()> {
+    while let Ok(op) = blocking.handoff_rx.try_recv() {
+        match op {
+            TuiTerminalHandoffOp::ReleaseForStdout { ack } => {
+                disable_raw_mode()?;
+                execute!(
+                    terminal.backend_mut(),
+                    LeaveAlternateScreen,
+                    DisableMouseCapture
+                )?;
+                terminal.show_cursor()?;
+                let _ = ack.send(());
+            }
+            TuiTerminalHandoffOp::RestoreTui { ack } => {
+                enable_raw_mode()?;
+                execute!(
+                    terminal.backend_mut(),
+                    EnterAlternateScreen,
+                    EnableMouseCapture
+                )?;
+                terminal.hide_cursor()?;
+                let _ = ack.send(());
+            }
+        }
+    }
+    approval::enqueue_tui_approval_requests(model, blocking.approval_rx);
+    Ok(())
+}
+
 fn run_tui_ui_thread(
     model: Arc<Mutex<TuiModel>>,
     llm_scratch: TuiLlmStreamScratchArc,
     ev_tx: UnboundedSender<UiEvent>,
     shutdown: Arc<AtomicBool>,
+    approval_rx: Receiver<TuiApprovalRequest>,
+    handoff_rx: Receiver<TuiTerminalHandoffOp>,
 ) -> io::Result<()> {
     let mut stdout_h = stdout();
     if !(stdout_h.is_terminal() && io::stdin().is_terminal()) {
@@ -552,12 +695,17 @@ fn run_tui_ui_thread(
     let backend = CrosstermBackend::new(stdout_h);
     let mut terminal = Terminal::new(backend)?;
     let color = tui_use_ansi_color();
+    let blocking_recv = TuiBlockingRecv {
+        approval_rx: &approval_rx,
+        handoff_rx: &handoff_rx,
+    };
     let r = run_tui_poll_loop(
         &mut terminal,
         &model,
         &llm_scratch,
         &ev_tx,
         &shutdown,
+        &blocking_recv,
         color,
     );
 
@@ -571,305 +719,170 @@ fn run_tui_ui_thread(
     r
 }
 
+enum TuiPollKeyFlow {
+    BreakLoop,
+    ContinueOuter,
+}
+
+fn tui_dispatch_mouse(model: &Arc<Mutex<TuiModel>>, mouse: event::MouseEvent) {
+    let modal_open = model
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .approval_modal
+        .is_some();
+    if modal_open {
+        return;
+    }
+    let Ok((w, h)) = terminal_size() else {
+        return;
+    };
+    let layout = compute_tui_pane_layout(Rect::new(0, 0, w, h));
+    match mouse.kind {
+        MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+            if rect_contains(layout.chat, mouse.column, mouse.row) =>
+        {
+            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
+            g.focus = TuiFocus::Chat;
+            match mouse.kind {
+                MouseEventKind::ScrollUp => {
+                    g.chat_scroll_y = g.chat_scroll_y.saturating_sub(3);
+                }
+                MouseEventKind::ScrollDown => {
+                    g.chat_scroll_y = g.chat_scroll_y.saturating_add(3);
+                }
+                _ => {}
+            }
+        }
+        MouseEventKind::Down(MouseButton::Left) => {
+            if let Some(f) = focus_at_point(&layout, mouse.column, mouse.row) {
+                let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
+                g.focus = f;
+            }
+        }
+        _ => {}
+    }
+}
+
+fn tui_dispatch_key_press(
+    model: &Arc<Mutex<TuiModel>>,
+    ev_tx: &UnboundedSender<UiEvent>,
+    key: &event::KeyEvent,
+) -> TuiPollKeyFlow {
+    match approval::handle_approval_modal_keys(model, ev_tx, key) {
+        approval::ApprovalModalKeyOutcome::QuitApp => return TuiPollKeyFlow::BreakLoop,
+        approval::ApprovalModalKeyOutcome::Consumed => return TuiPollKeyFlow::ContinueOuter,
+        approval::ApprovalModalKeyOutcome::NotApplicable => {}
+    }
+    match key.code {
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
+            approval::deny_all_pending_approvals(&mut g);
+            let _ = ev_tx.send(UiEvent::Quit);
+            TuiPollKeyFlow::BreakLoop
+        }
+        KeyCode::Char(ch @ ('q' | 'Q')) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            let input_empty = {
+                let g = model.lock().unwrap_or_else(|e| e.into_inner());
+                g.input.is_empty()
+            };
+            if input_empty {
+                let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
+                approval::deny_all_pending_approvals(&mut g);
+                let _ = ev_tx.send(UiEvent::Quit);
+                return TuiPollKeyFlow::BreakLoop;
+            }
+            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
+            g.input.push(ch);
+            TuiPollKeyFlow::ContinueOuter
+        }
+        KeyCode::BackTab => {
+            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
+            g.focus = g.focus.cycle_prev();
+            TuiPollKeyFlow::ContinueOuter
+        }
+        KeyCode::Tab => {
+            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
+            g.focus = if key.modifiers.contains(KeyModifiers::SHIFT) {
+                g.focus.cycle_prev()
+            } else {
+                g.focus.cycle_next()
+            };
+            TuiPollKeyFlow::ContinueOuter
+        }
+        KeyCode::PageUp => {
+            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
+            if g.focus == TuiFocus::Chat {
+                g.chat_scroll_y = g.chat_scroll_y.saturating_sub(8);
+            }
+            TuiPollKeyFlow::ContinueOuter
+        }
+        KeyCode::PageDown => {
+            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
+            if g.focus == TuiFocus::Chat {
+                g.chat_scroll_y = g.chat_scroll_y.saturating_add(8);
+            }
+            TuiPollKeyFlow::ContinueOuter
+        }
+        KeyCode::Enter => {
+            let line = {
+                let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
+                std::mem::take(&mut g.input)
+            };
+            let _ = ev_tx.send(UiEvent::Submit(line));
+            TuiPollKeyFlow::ContinueOuter
+        }
+        KeyCode::Backspace => {
+            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
+            if g.focus == TuiFocus::Composer {
+                g.input.pop();
+            }
+            TuiPollKeyFlow::ContinueOuter
+        }
+        KeyCode::Char(ch) => {
+            if key.modifiers.contains(KeyModifiers::CONTROL) {
+                return TuiPollKeyFlow::ContinueOuter;
+            }
+            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
+            if g.focus == TuiFocus::Composer {
+                g.input.push(ch);
+            }
+            TuiPollKeyFlow::ContinueOuter
+        }
+        _ => TuiPollKeyFlow::ContinueOuter,
+    }
+}
+
 fn run_tui_poll_loop(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     model: &Arc<Mutex<TuiModel>>,
     llm_scratch: &TuiLlmStreamScratchArc,
     ev_tx: &UnboundedSender<UiEvent>,
     shutdown: &AtomicBool,
+    blocking_recv: &TuiBlockingRecv<'_>,
     color: bool,
 ) -> io::Result<()> {
     loop {
         if shutdown.load(Ordering::Relaxed) {
             break;
         }
+        process_tui_main_thread_ops(terminal, blocking_recv, model)?;
         {
             let guard = model.lock().unwrap_or_else(|e| e.into_inner());
-            terminal.draw(|frame| render_full(frame, &guard, llm_scratch, color))?;
+            terminal.draw(|frame| render::render_full(frame, &guard, llm_scratch, color))?;
         }
 
         if event::poll(Duration::from_millis(120))? {
             match event::read()? {
-                Event::Mouse(mouse) => {
-                    let Ok((w, h)) = terminal_size() else {
-                        continue;
-                    };
-                    let layout = compute_tui_pane_layout(Rect::new(0, 0, w, h));
-                    match mouse.kind {
-                        MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
-                            if rect_contains(layout.chat, mouse.column, mouse.row) =>
-                        {
-                            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-                            g.focus = TuiFocus::Chat;
-                            match mouse.kind {
-                                MouseEventKind::ScrollUp => {
-                                    g.chat_scroll_y = g.chat_scroll_y.saturating_sub(3);
-                                }
-                                MouseEventKind::ScrollDown => {
-                                    g.chat_scroll_y = g.chat_scroll_y.saturating_add(3);
-                                }
-                                _ => {}
-                            }
-                        }
-                        MouseEventKind::Down(MouseButton::Left) => {
-                            if let Some(f) = focus_at_point(&layout, mouse.column, mouse.row) {
-                                let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-                                g.focus = f;
-                            }
-                        }
-                        _ => {}
+                Event::Mouse(mouse) => tui_dispatch_mouse(model, mouse),
+                Event::Key(key) if key.kind == KeyEventKind::Press => {
+                    match tui_dispatch_key_press(model, ev_tx, &key) {
+                        TuiPollKeyFlow::BreakLoop => break,
+                        TuiPollKeyFlow::ContinueOuter => continue,
                     }
                 }
-                Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
-                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        let _ = ev_tx.send(UiEvent::Quit);
-                        break;
-                    }
-                    KeyCode::Char(ch @ ('q' | 'Q'))
-                        if !key.modifiers.contains(KeyModifiers::CONTROL) =>
-                    {
-                        let input_empty = {
-                            let g = model.lock().unwrap_or_else(|e| e.into_inner());
-                            g.input.is_empty()
-                        };
-                        if input_empty {
-                            let _ = ev_tx.send(UiEvent::Quit);
-                            break;
-                        }
-                        let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-                        g.input.push(ch);
-                    }
-                    KeyCode::BackTab => {
-                        let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-                        g.focus = g.focus.cycle_prev();
-                    }
-                    KeyCode::Tab => {
-                        let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-                        g.focus = if key.modifiers.contains(KeyModifiers::SHIFT) {
-                            g.focus.cycle_prev()
-                        } else {
-                            g.focus.cycle_next()
-                        };
-                    }
-                    KeyCode::PageUp => {
-                        let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-                        if g.focus == TuiFocus::Chat {
-                            g.chat_scroll_y = g.chat_scroll_y.saturating_sub(8);
-                        }
-                    }
-                    KeyCode::PageDown => {
-                        let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-                        if g.focus == TuiFocus::Chat {
-                            g.chat_scroll_y = g.chat_scroll_y.saturating_add(8);
-                        }
-                    }
-                    KeyCode::Enter => {
-                        let line = {
-                            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-                            std::mem::take(&mut g.input)
-                        };
-                        let _ = ev_tx.send(UiEvent::Submit(line));
-                    }
-                    KeyCode::Backspace => {
-                        let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-                        if g.focus == TuiFocus::Composer {
-                            g.input.pop();
-                        }
-                    }
-                    KeyCode::Char(ch) => {
-                        if key.modifiers.contains(KeyModifiers::CONTROL) {
-                            continue;
-                        }
-                        let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-                        if g.focus == TuiFocus::Composer {
-                            g.input.push(ch);
-                        }
-                    }
-                    _ => {}
-                },
                 _ => {}
             }
         }
     }
     Ok(())
-}
-
-fn render_full(
-    frame: &mut Frame<'_>,
-    model: &TuiModel,
-    llm_scratch: &TuiLlmStreamScratchArc,
-    color: bool,
-) {
-    let area = frame.area();
-    // 对齐 Web `shell-ds`：顶栏 + 三列（侧栏宽≈ nav-rail）+ 底栏快捷键
-    let vertical = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Min(4),
-            Constraint::Length(1),
-        ])
-        .split(area);
-
-    render_top_bar(frame, vertical[0], model.header_line.as_str(), color);
-
-    let panes = compute_tui_pane_layout(area);
-
-    render_side_panel(
-        frame,
-        panes.nav_left,
-        " 导航 · 会话 ",
-        "对齐 Web 左侧导航栏。\n· 会话列表（阶段 D）\n· 工作区树与路径",
-        color,
-        model.focus == TuiFocus::NavLeft,
-    );
-
-    // 「撰写」块含四边边框 + 标题，高度若仅 1 行会导致内层为 0。
-    let scratch_guard = llm_scratch.lock().unwrap_or_else(|e| e.into_inner());
-    let streaming_nonempty =
-        !scratch_guard.reasoning.trim().is_empty() || !scratch_guard.content.trim().is_empty();
-    let chat_body = append_tui_streaming_tail(model.transcript.as_str(), &scratch_guard);
-    drop(scratch_guard);
-    let chat_block = panel_block(" 聊天 ", color, model.focus == TuiFocus::Chat);
-    let chat_inner = chat_block.inner(panes.chat);
-    let chat_scroll_y = clamped_chat_vertical_scroll(
-        chat_body.as_str(),
-        chat_inner.width.max(1),
-        chat_inner.height.max(1),
-        streaming_nonempty,
-        model.chat_scroll_y,
-    );
-    let center_body = Paragraph::new(chat_body)
-        .wrap(Wrap { trim: false })
-        .scroll((chat_scroll_y, 0))
-        .block(chat_block);
-    frame.render_widget(center_body, panes.chat);
-
-    let composer_block = panel_block(" 撰写 ", color, model.focus == TuiFocus::Composer);
-    let composer_inner = composer_block.inner(panes.composer);
-    let (composer_text, cursor_rel) =
-        composer_visible_and_cursor_rel(composer_inner, model.input.as_str());
-    let composer_style = if color && model.focus == TuiFocus::Composer {
-        Style::default().fg(Color::Yellow)
-    } else {
-        Style::default()
-    };
-    let input_par = Paragraph::new(composer_text)
-        .style(composer_style)
-        .block(composer_block);
-    frame.render_widget(input_par, panes.composer);
-    if model.focus == TuiFocus::Composer
-        && let Some((cx, cy)) = cursor_rel
-    {
-        frame.set_cursor_position(Position::new(
-            composer_inner.x.saturating_add(cx),
-            composer_inner.y.saturating_add(cy),
-        ));
-    }
-
-    render_side_panel(
-        frame,
-        panes.side_right,
-        " 侧栏 · 任务 ",
-        "任务 / 规划时间线（占位）\n上下文摘要 · 调试（占位）\n对齐 Web 右侧栏",
-        color,
-        model.focus == TuiFocus::SideRight,
-    );
-
-    let status_style = status_line_style(color);
-    let status_block = Block::default().style(status_style);
-    let status_line = if color {
-        Line::from(vec![
-            Span::styled(model.status.as_str(), Style::default().fg(Color::White)),
-            Span::styled(
-                " · 配置见 crabmate repl /config",
-                Style::default().fg(Color::Gray),
-            ),
-        ])
-    } else {
-        Line::from(model.status.as_str())
-    };
-    let status = Paragraph::new(status_line).block(status_block);
-    frame.render_widget(status, vertical[2]);
-}
-
-fn render_top_bar(frame: &mut Frame<'_>, area: Rect, header: &str, color: bool) {
-    let max_w = area.width.saturating_sub(2).max(4) as usize;
-    let text = truncate_chars_with_ellipsis(header, max_w);
-    let fg = if color {
-        Color::Rgb(200, 204, 212)
-    } else {
-        Color::Reset
-    };
-    let bg = if color {
-        Color::Rgb(40, 44, 52)
-    } else {
-        Color::Reset
-    };
-    let line = Line::from(Span::styled(text, Style::default().fg(fg).bg(bg)));
-    let block_style = if color {
-        Style::default().bg(bg)
-    } else {
-        Style::default()
-    };
-    let p = Paragraph::new(line).block(Block::default().style(block_style));
-    frame.render_widget(p, area);
-}
-
-fn panel_block(title: &str, color: bool, focused: bool) -> Block<'_> {
-    Block::default()
-        .borders(Borders::ALL)
-        .title(Line::from(title))
-        .title_style(title_style(color, focused))
-        .border_style(panel_border_style(color, focused))
-}
-
-fn panel_border_style(color: bool, focused: bool) -> Style {
-    if color {
-        if focused {
-            Style::default().fg(Color::Cyan)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        }
-    } else if focused {
-        Style::default().add_modifier(Modifier::BOLD)
-    } else {
-        Style::default()
-    }
-}
-
-fn render_side_panel(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    title: &str,
-    body: &str,
-    color: bool,
-    focused: bool,
-) {
-    let paragraph = Paragraph::new(body)
-        .wrap(Wrap { trim: true })
-        .block(panel_block(title, color, focused));
-    frame.render_widget(paragraph, area);
-}
-
-fn title_style(color: bool, focused: bool) -> Style {
-    if color {
-        if focused {
-            Style::default().fg(Color::LightCyan)
-        } else {
-            Style::default().fg(Color::Cyan)
-        }
-    } else if focused {
-        Style::default().add_modifier(Modifier::BOLD)
-    } else {
-        Style::default()
-    }
-}
-
-fn status_line_style(color: bool) -> Style {
-    if color {
-        Style::default().bg(Color::DarkGray).fg(Color::White)
-    } else {
-        Style::default()
-    }
 }

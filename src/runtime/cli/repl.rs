@@ -15,6 +15,10 @@ use crate::runtime::cli_exit::CliExitError;
 use crate::runtime::cli_exit::EXIT_USAGE;
 use crate::runtime::cli_repl_ui::CliReplStyle;
 use crate::runtime::repl_reedline::{ReplLineEditor, ReplReadLine, read_repl_line_with_editor};
+use crate::runtime::tui_terminal_bridge::{
+    TuiTerminalHandoffOp, blocking_release_terminal, blocking_restore_terminal,
+    pause_for_return_to_tui,
+};
 use crate::tool_registry::CliToolRuntime;
 use crate::types::Message;
 use crate::user_message_file_refs::expand_at_file_refs_in_user_message;
@@ -28,6 +32,145 @@ use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 
 const REPL_SHELL_USAGE: &str = "bash#: <命令>  在当前工作区执行一行 shell（不发给模型；无交互 stdin）。等同本机 `sh -c` / `cmd /C`，不受模型 `run_command` 白名单约束，仅应在可信环境使用。交互 TTY：空行按 `$` 即切换「我:」/ bash#:（也可单独一行 `$` 后 Enter）；管道/非 TTY 仍可用行内 `$ <命令>`。历史保存在工作区 `.crabmate/repl_history.txt`。示例: ls  pwd  git status";
+
+/// `/…` 命令在 [`try_handle_repl_slash_command`] 之后的异步收尾（probe/models、mcp、热重载等）。
+pub(crate) struct ReplSlashFollowupCtx<'a> {
+    pub cfg_holder: &'a SharedAgentConfig,
+    pub config_path: Option<&'a str>,
+    pub client: &'a reqwest::Client,
+    pub slash_handles: &'a ReplSlashSharedHandles,
+    pub style: &'a CliReplStyle,
+    pub work_dir: &'a std::path::Path,
+    /// **`crabmate tui`**：释放全屏后再执行写 stdout 的子逻辑。
+    pub tui_terminal_tx: Option<&'a std::sync::mpsc::Sender<TuiTerminalHandoffOp>>,
+}
+
+async fn repl_slash_followup_with_optional_tui_handoff<F>(
+    tui_terminal_tx: Option<&std::sync::mpsc::Sender<TuiTerminalHandoffOp>>,
+    fut: F,
+) -> Result<(), Box<dyn std::error::Error>>
+where
+    F: std::future::Future<Output = ()> + Send,
+{
+    if let Some(tx) = tui_terminal_tx {
+        let tx_c = tx.clone();
+        tokio::task::spawn_blocking(move || blocking_release_terminal(&tx_c)).await??;
+        fut.await;
+        let tx_c = tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let _ = pause_for_return_to_tui();
+            blocking_restore_terminal(&tx_c)
+        })
+        .await??;
+    } else {
+        fut.await;
+    }
+    Ok(())
+}
+
+pub(crate) async fn repl_slash_handled_followup(
+    handled: ReplSlashHandled,
+    ctx: ReplSlashFollowupCtx<'_>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match handled {
+        ReplSlashHandled::NotSlash | ReplSlashHandled::Handled => Ok(()),
+        ReplSlashHandled::RunDoctor => {
+            repl_slash_followup_with_optional_tui_handoff(ctx.tui_terminal_tx, async {
+                let cfg = ctx.cfg_holder.read().await;
+                let ws = ctx.work_dir.to_str();
+                crate::runtime::cli_doctor::print_doctor_report(&cfg, ws);
+            })
+            .await
+        }
+        ReplSlashHandled::RunProbe => {
+            repl_slash_followup_with_optional_tui_handoff(ctx.tui_terminal_tx, async {
+                let g = ctx.cfg_holder.read().await;
+                let k = ctx
+                    .slash_handles
+                    .api_key_holder
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone();
+                if let Err(e) =
+                    crate::runtime::cli_doctor::run_probe_cli(ctx.client, &g, k.trim()).await
+                {
+                    let _ = ctx.style.eprint_error(&e.to_string());
+                }
+            })
+            .await
+        }
+        ReplSlashHandled::RunModels => {
+            repl_slash_followup_with_optional_tui_handoff(ctx.tui_terminal_tx, async {
+                let g = ctx.cfg_holder.read().await;
+                let k = ctx
+                    .slash_handles
+                    .api_key_holder
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone();
+                if let Err(e) =
+                    crate::runtime::cli_doctor::run_models_cli(ctx.client, &g, k.trim()).await
+                {
+                    let _ = ctx.style.eprint_error(&e.to_string());
+                }
+            })
+            .await
+        }
+        ReplSlashHandled::RunModelsChoose { model_id } => {
+            repl_slash_followup_with_optional_tui_handoff(ctx.tui_terminal_tx, async {
+                let k = ctx
+                    .slash_handles
+                    .api_key_holder
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone();
+                match crate::runtime::cli_doctor::run_models_choose_repl(
+                    ctx.client,
+                    ctx.cfg_holder,
+                    k.trim(),
+                    &model_id,
+                )
+                .await
+                {
+                    Ok(resolved) => {
+                        let _ = ctx.style.print_success(&format!(
+                        "已设 model = {resolved}（仅本进程有效；持久化请改配置文件；/config reload 会从磁盘覆盖）"
+                    ));
+                    }
+                    Err(e) => {
+                        let _ = ctx.style.eprint_error(&e.to_string());
+                    }
+                }
+            })
+            .await
+        }
+        ReplSlashHandled::RunMcpList { probe } => {
+            repl_slash_followup_with_optional_tui_handoff(ctx.tui_terminal_tx, async {
+                let g = ctx.cfg_holder.read().await;
+                crate::runtime::cli_mcp::run_mcp_list(&g, probe, true).await;
+            })
+            .await
+        }
+        ReplSlashHandled::RunConfigReload => {
+            match crate::runtime::config_reload::reload_shared_agent_config(
+                ctx.cfg_holder,
+                ctx.config_path,
+            )
+            .await
+            {
+                Ok(()) => {
+                    let _ = ctx.style.print_success(
+                        "配置已热重载（conversation_store_sqlite_path 与 HTTP Client 未重建；详见文档）。",
+                    );
+                }
+                Err(e) => {
+                    let _ = ctx.style.eprint_error(&e);
+                }
+            }
+            Ok(())
+        }
+    }
+}
 
 /// 处理 `ReplReadLine::Chat` 中的 `/` 命令分支：`true` 表示已消费输入并应 `continue` 主循环；`false` 表示继续走普通对话回合。
 struct ReplSlashBranchContinueLoopParams<'a> {
@@ -60,7 +203,7 @@ async fn repl_slash_branch_continue_loop(
         slash_handles,
         client,
     } = p;
-    match try_handle_repl_slash_command(
+    let handled = try_handle_repl_slash_command(
         input,
         cfg_holder,
         tools,
@@ -71,80 +214,24 @@ async fn repl_slash_branch_continue_loop(
         agent_role_owned,
         slash_handles,
     )
-    .await
-    {
-        ReplSlashHandled::NotSlash => Ok(false),
-        ReplSlashHandled::Handled => Ok(true),
-        ReplSlashHandled::RunProbe => {
-            let g = cfg_holder.read().await;
-            let k = slash_handles
-                .api_key_holder
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .clone();
-            if let Err(e) = crate::runtime::cli_doctor::run_probe_cli(client, &g, k.trim()).await {
-                let _ = style.eprint_error(&e.to_string());
-            }
-            Ok(true)
-        }
-        ReplSlashHandled::RunModels => {
-            let g = cfg_holder.read().await;
-            let k = slash_handles
-                .api_key_holder
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .clone();
-            if let Err(e) = crate::runtime::cli_doctor::run_models_cli(client, &g, k.trim()).await {
-                let _ = style.eprint_error(&e.to_string());
-            }
-            Ok(true)
-        }
-        ReplSlashHandled::RunModelsChoose { model_id } => {
-            let k = slash_handles
-                .api_key_holder
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .clone();
-            match crate::runtime::cli_doctor::run_models_choose_repl(
-                client,
-                cfg_holder,
-                k.trim(),
-                &model_id,
-            )
-            .await
-            {
-                Ok(resolved) => {
-                    let _ = style.print_success(&format!(
-                        "已设 model = {resolved}（仅本进程有效；持久化请改配置文件；/config reload 会从磁盘覆盖）"
-                    ));
-                }
-                Err(e) => {
-                    let _ = style.eprint_error(&e.to_string());
-                }
-            }
-            Ok(true)
-        }
-        ReplSlashHandled::RunMcpList { probe } => {
-            let g = cfg_holder.read().await;
-            crate::runtime::cli_mcp::run_mcp_list(&g, probe, true).await;
-            Ok(true)
-        }
-        ReplSlashHandled::RunConfigReload => {
-            match crate::runtime::config_reload::reload_shared_agent_config(cfg_holder, config_path)
-                .await
-            {
-                Ok(()) => {
-                    let _ = style.print_success(
-                        "配置已热重载（conversation_store_sqlite_path 与 HTTP Client 未重建；详见文档）。",
-                    );
-                }
-                Err(e) => {
-                    let _ = style.eprint_error(&e);
-                }
-            }
-            Ok(true)
-        }
+    .await;
+    if matches!(handled, ReplSlashHandled::NotSlash) {
+        return Ok(false);
     }
+    repl_slash_handled_followup(
+        handled,
+        ReplSlashFollowupCtx {
+            cfg_holder,
+            config_path,
+            client,
+            slash_handles,
+            style,
+            work_dir: work_dir.as_path(),
+            tui_terminal_tx: None,
+        },
+    )
+    .await?;
+    Ok(true)
 }
 
 /// 执行 REPL 本地 shell 一行：`parsed` 为 `repl_reedline::parse_repl_dollar_shell_line` 的 `Some(...)` 内层；`None` 表示仅 `$` 或空命令，打印用法。
@@ -477,7 +564,7 @@ pub async fn run_repl(
             ReplReadLine::Empty => continue,
             ReplReadLine::Shell(opt_cmd) => {
                 let wd = work_dir.clone();
-                let sty = style;
+                let sty = style.clone();
                 match tokio::task::spawn_blocking(move || {
                     repl_execute_shell(opt_cmd.as_deref(), wd.as_path(), &sty)
                 })
