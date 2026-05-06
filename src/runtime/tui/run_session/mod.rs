@@ -6,7 +6,7 @@
 //!
 //! 架构：专用线程跑 ratatui + crossterm；[`tokio::sync::mpsc::unbounded_channel`] 投递输入；异步侧执行回合并刷新快照。
 //!
-//! **焦点**：左/中上（聊天）/中下（撰写）/右四块可点击聚焦（**`EnableMouseCapture`**），边框与标题高亮；**`Tab` / `Shift+Tab`** 循环焦点。字符输入与退格仅在 **「撰写」** 聚焦时生效；**`Enter`** 始终提交当前输入行。
+//! **焦点**：左/中上（聊天）/中下（撰写）/右四块可点击聚焦（**`EnableMouseCapture`**），边框与标题高亮；**`Tab` / `Shift+Tab`** 循环焦点。**导航（左栏）聚焦时 `Enter`** 打开工作区 Modal；**撰写区聚焦时 `Enter`** 提交输入行。字符输入与退格仅在 **「撰写」** 聚焦时生效；
 //!
 //! **中区 transcript**：与 Web 快照一致的过滤（[`is_message_visible_in_chat_transcript`]）；**工具**条走 [`crate::runtime::message_display::tool_content_for_display_for_message`]（摘要优先，非原始 JSON）；**助手**走 [`assistant_markdown_source_for_message`]；**用户**走 [`user_message_for_chat_display`]（隐藏分步注入等）。
 //!
@@ -20,7 +20,10 @@ mod approval;
 mod clarify_modal;
 mod poll_loop;
 mod render;
+mod submit_ev;
 mod transcript;
+mod workspace_modal;
+mod workspace_switch;
 
 use std::collections::VecDeque;
 use std::io;
@@ -37,10 +40,9 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::config::{AgentConfig, SharedAgentConfig};
 use crate::runtime::cli::{
-    CliMainInvocationCommon, ReplAfterUserMessageEnqueuedCb, ReplDispatchChatRoundParams,
-    ReplSlashFollowupCtx, ReplSlashHandled, ReplSlashSharedHandles, cli_effective_work_dir,
-    repl_dispatch_chat_round, repl_prepare_messages_and_editor, repl_slash_handled_followup,
-    try_handle_repl_slash_command,
+    CliMainInvocationCommon, ReplAfterUserMessageEnqueuedCb, ReplSlashFollowupCtx,
+    ReplSlashHandled, ReplSlashSharedHandles, cli_effective_work_dir,
+    repl_prepare_messages_and_editor, repl_slash_handled_followup, try_handle_repl_slash_command,
 };
 use crate::runtime::cli_exit::{CliExitError, EXIT_USAGE};
 use crate::runtime::cli_repl_ui::CliReplStyle;
@@ -73,7 +75,7 @@ fn build_tui_nav_summary(
     let sess = if session_file_exists { "有" } else { "无" };
     let load = if tui_load_on_start { "开" } else { "关" };
     format!(
-        "工作区\n{wd_short}\n\n会话文件\ntui_session.json：{sess}\n启动加载：{load}\n\n内存消息\n{message_count} 条（含 system / 工具）\n\n中区仅展示 transcript\n可见尾部",
+        "工作区\n{wd_short}\n\n聚焦本栏按 Enter：浏览/编辑路径\n（与 Web 侧栏工作区、REPL /workspace 同源校验）\n\n会话文件\ntui_session.json：{sess}\n启动加载：{load}\n\n内存消息\n{message_count} 条（含 system / 工具）\n\n中区仅展示 transcript\n可见尾部",
     )
 }
 
@@ -146,6 +148,8 @@ fn tui_use_ansi_color() -> bool {
 enum UiEvent {
     Quit,
     Submit(String),
+    /// 工作区路径原始输入（由 Modal 或后续扩展提交）。
+    WorkspaceSwitch(String),
 }
 
 /// 可聚焦面板（鼠标点击 / Tab 切换）；用于边框高亮。
@@ -321,6 +325,10 @@ struct TuiModel {
     /// 澄清问卷（与 Web SSE `clarification_questionnaire` 对齐）。
     clarification_modal: Option<clarify_modal::TuiClarificationModalState>,
     clarification_backlog: VecDeque<crate::sse::ClarificationQuestionnaireBody>,
+    /// 与异步侧 `work_dir` 同步，供 UI 打开工作区 Modal。
+    workspace_path_buf: std::path::PathBuf,
+    /// 工作区切换（目录浏览 + 手动路径，对齐 Web `POST /workspace` / REPL `/workspace`）。
+    workspace_modal: Option<workspace_modal::TuiWorkspaceModalState>,
 }
 
 struct TuiSlashUiRefresh<'a> {
@@ -334,7 +342,7 @@ struct TuiSlashUiRefresh<'a> {
     captured: Vec<String>,
 }
 
-struct TuiSlashSubmit<'a> {
+pub(super) struct TuiSlashSubmit<'a> {
     cfg_holder: &'a SharedAgentConfig,
     config_path: Option<&'a str>,
     client: &'a reqwest::Client,
@@ -348,7 +356,7 @@ struct TuiSlashSubmit<'a> {
     handoff_tx: &'a std::sync::mpsc::Sender<TuiTerminalHandoffOp>,
 }
 
-async fn tui_try_consume_slash_submit(
+pub(super) async fn tui_try_consume_slash_submit(
     trimmed: &str,
     ctx: TuiSlashSubmit<'_>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
@@ -439,6 +447,7 @@ async fn tui_refresh_after_slash_capture(p: TuiSlashUiRefresh<'_>) {
     g.header_line = new_header;
     g.nav_summary = nav;
     g.right_summary = right;
+    g.workspace_path_buf = work_dir.to_path_buf();
     g.status_chips = chips.clone();
     g.status = tui_status_bar_with_run(&chips, "就绪");
 }
@@ -468,6 +477,7 @@ async fn tui_refresh_after_chat_round(
     g.header_line = new_header;
     g.nav_summary = nav;
     g.right_summary = right;
+    g.workspace_path_buf = work_dir.to_path_buf();
     g.status_chips = chips.clone();
     g.status = tui_status_bar_with_run(&chips, "就绪");
 }
@@ -598,6 +608,8 @@ pub async fn run_tui_session(
         approval_backlog: VecDeque::new(),
         clarification_modal: None,
         clarification_backlog: VecDeque::new(),
+        workspace_path_buf: work_dir.clone(),
+        workspace_modal: None,
     }));
 
     let clarify_shared = TuiClarificationShared {
@@ -645,9 +657,10 @@ pub async fn run_tui_session(
                 if trimmed.is_empty() && !allow_empty {
                     continue;
                 }
-                if tui_try_consume_slash_submit(
-                    trimmed.as_str(),
-                    TuiSlashSubmit {
+                match submit_ev::tui_run_submit_ev(
+                    trimmed,
+                    submit_ev::TuiSubmitEv {
+                        clarify_shared: &clarify_shared,
                         cfg_holder,
                         config_path,
                         client,
@@ -659,53 +672,35 @@ pub async fn run_tui_session(
                         slash_handles: &slash_handles,
                         model: &model,
                         handoff_tx: &handoff_tx,
+                        llm_scratch: &llm_scratch,
+                        style: &style,
+                        api_key_holder: &api_key_holder,
+                        cli_rt: &cli_rt,
+                        initial_pending: initial_pending.clone(),
+                        process_handles: Arc::clone(&process_handles),
+                        clarification_questionnaire_hook: Arc::clone(
+                            &clarification_questionnaire_hook,
+                        ),
                     },
                 )
                 .await?
                 {
-                    continue;
+                    submit_ev::TuiSubmitHandled::SlashOnly => continue,
+                    submit_ev::TuiSubmitHandled::RanRound => {}
                 }
-                {
-                    let mut s = llm_scratch.lock().unwrap_or_else(|e| e.into_inner());
-                    s.clear();
-                }
-                let (on_user_enqueued, tool_running_hook) = tui_make_submit_hooks(&model);
-                repl_dispatch_chat_round(ReplDispatchChatRoundParams {
-                    input: trimmed,
-                    cfg_holder,
-                    tools,
-                    messages: &mut messages,
-                    work_dir: &mut work_dir,
-                    style: &style,
-                    no_stream: cli_no_stream,
-                    suppress_stdout_render: true,
-                    tui_llm_stream_scratch: Some(Arc::clone(&llm_scratch)),
-                    tool_running_hook: Some(tool_running_hook),
-                    after_user_message_enqueued: Some(on_user_enqueued),
-                    agent_role_owned: &mut agent_role_owned,
-                    api_key_holder: &api_key_holder,
-                    client,
-                    cli_rt: &cli_rt,
-                    initial_pending: initial_pending.as_ref(),
-                    process_handles: Arc::clone(&process_handles),
-                    clarify_answers_for_next_user_message: Some(&clarify_shared.answers_merge),
-                    clarification_questionnaire_hook: Some(Arc::clone(
-                        &clarification_questionnaire_hook,
-                    )),
-                })
-                .await?;
-                {
-                    let mut s = llm_scratch.lock().unwrap_or_else(|e| e.into_inner());
-                    s.clear();
-                }
-                tui_refresh_after_chat_round(
-                    &model,
-                    cfg_holder,
-                    work_dir.as_path(),
-                    &agent_role_owned,
-                    messages.as_slice(),
-                    tools.len(),
-                    cli_no_stream,
+            }
+            UiEvent::WorkspaceSwitch(raw) => {
+                workspace_switch::tui_event_workspace_switch(
+                    raw,
+                    workspace_switch::TuiWorkspaceUiSwitch {
+                        cfg_holder,
+                        work_dir: &mut work_dir,
+                        model: &model,
+                        agent_role_owned: &agent_role_owned,
+                        message_count: messages.len(),
+                        tool_count: tools.len(),
+                        cli_no_stream,
+                    },
                 )
                 .await;
             }
@@ -746,10 +741,16 @@ enum TuiPollKeyFlow {
     ContinueOuter,
 }
 
+fn open_workspace_modal(model: &Arc<Mutex<TuiModel>>) {
+    let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
+    let initial = g.workspace_path_buf.clone();
+    g.workspace_modal = Some(workspace_modal::TuiWorkspaceModalState::open(initial));
+}
+
 fn tui_dispatch_mouse(model: &Arc<Mutex<TuiModel>>, mouse: event::MouseEvent) {
     let modal_open = {
         let g = model.lock().unwrap_or_else(|e| e.into_inner());
-        g.approval_modal.is_some() || g.clarification_modal.is_some()
+        g.approval_modal.is_some() || g.clarification_modal.is_some() || g.workspace_modal.is_some()
     };
     if modal_open {
         return;
@@ -789,6 +790,12 @@ fn tui_dispatch_key_press(
     ev_tx: &UnboundedSender<UiEvent>,
     key: &event::KeyEvent,
 ) -> TuiPollKeyFlow {
+    match workspace_modal::handle_workspace_modal_keys(model, ev_tx, key) {
+        workspace_modal::WorkspaceModalKeyOutcome::NotApplicable => {}
+        workspace_modal::WorkspaceModalKeyOutcome::Consumed => {
+            return TuiPollKeyFlow::ContinueOuter;
+        }
+    }
     match approval::handle_approval_modal_keys(model, ev_tx, key) {
         approval::ApprovalModalKeyOutcome::QuitApp => return TuiPollKeyFlow::BreakLoop,
         approval::ApprovalModalKeyOutcome::Consumed => return TuiPollKeyFlow::ContinueOuter,
@@ -845,6 +852,14 @@ fn tui_dispatch_key_press(
             TuiPollKeyFlow::ContinueOuter
         }
         KeyCode::Enter => {
+            let nav_enter = {
+                let g = model.lock().unwrap_or_else(|e| e.into_inner());
+                g.focus == TuiFocus::NavLeft
+            };
+            if nav_enter {
+                open_workspace_modal(model);
+                return TuiPollKeyFlow::ContinueOuter;
+            }
             let line = {
                 let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
                 std::mem::take(&mut g.input)
