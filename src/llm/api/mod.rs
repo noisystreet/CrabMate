@@ -229,6 +229,7 @@ async fn streaming_chat_response(
     cancel: Option<&AtomicBool>,
     cli_terminal_plain: bool,
     thinking_trace_enabled: bool,
+    tui_llm_stream_scratch: Option<crate::runtime::tui::TuiLlmStreamScratchArc>,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
     let _cli_wait_spinner =
         crate::runtime::cli_wait_spinner::CliWaitSpinnerGuard::try_start_for_cli_plain_stream(
@@ -241,6 +242,7 @@ async fn streaming_chat_response(
         out,
         cli_terminal_plain,
         thinking_trace_enabled,
+        tui_llm_stream_scratch,
     )
     .await?;
 
@@ -297,6 +299,7 @@ pub async fn stream_chat(
     params: &super::chat_params::StreamChatParams<'_>,
     req: &mut ChatRequest,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
+    let tui_llm_stream_scratch = params.tui_llm_stream_scratch.clone();
     let super::chat_params::StreamChatParams {
         client,
         api_key,
@@ -311,6 +314,7 @@ pub async fn stream_chat(
         preserve_reasoning_on_assistant_tool_calls,
         preserve_deepseek_thinking_reasoning_roundtrip,
         thinking_trace_enabled,
+        ..
     } = *params;
 
     let url = format!(
@@ -365,6 +369,7 @@ pub async fn stream_chat(
             cancel,
             cli_terminal_plain,
             thinking_trace_enabled,
+            tui_llm_stream_scratch,
         )
         .await
     }

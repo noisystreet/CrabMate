@@ -7,17 +7,20 @@ use reqwest::Client;
 use tokio::sync::mpsc::Sender;
 
 use crate::config::{AgentConfig, LlmHttpAuthMode};
+use crate::runtime::tui::TuiLlmStreamScratchArc;
 
 use super::backend::ChatCompletionsBackend;
 
 /// 与 [`CompleteChatRetryingParams`] 配套的 **SSE / 终端 / 流式 / 取消** 开关（各调用点差异主要在此）。
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct LlmRetryingTransportOpts<'a> {
     pub out: Option<&'a Sender<String>>,
     pub render_to_terminal: bool,
     pub no_stream: bool,
     pub cancel: Option<&'a AtomicBool>,
     pub plain_terminal_stream: bool,
+    /// 全屏 TUI：`suppress_stdout_render` 时经 SSE 解析线程写入，UI 线程轮询展示。
+    pub tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
 }
 
 impl<'a> LlmRetryingTransportOpts<'a> {
@@ -29,12 +32,13 @@ impl<'a> LlmRetryingTransportOpts<'a> {
             no_stream: true,
             cancel: None,
             plain_terminal_stream: false,
+            tui_llm_stream_scratch: None,
         }
     }
 }
 
 /// 与 [`super::api::stream_chat`] 一致的传输与展示开关（不含可变请求体）。
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct StreamChatParams<'a> {
     pub client: &'a Client,
     pub api_key: &'a str,
@@ -52,6 +56,7 @@ pub struct StreamChatParams<'a> {
     pub preserve_deepseek_thinking_reasoning_roundtrip: bool,
     /// 为 true 时经 SSE 下发结构化 **`thinking_trace`**（推理增量、终答阶段等），供 Web 调试台。
     pub thinking_trace_enabled: bool,
+    pub tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
 }
 
 /// [`super::complete_chat_retrying`] 入参（不含每次克隆前的 `ChatRequest`）。
@@ -65,6 +70,7 @@ pub struct CompleteChatRetryingParams<'a> {
     pub no_stream: bool,
     pub cancel: Option<&'a AtomicBool>,
     pub plain_terminal_stream: bool,
+    pub tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
     pub request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     pub model_override: Option<&'a str>,
 }
@@ -86,6 +92,7 @@ impl<'a> CompleteChatRetryingParams<'a> {
             no_stream,
             cancel,
             plain_terminal_stream,
+            tui_llm_stream_scratch,
         } = transport;
         Self {
             llm_backend,
@@ -97,6 +104,7 @@ impl<'a> CompleteChatRetryingParams<'a> {
             no_stream,
             cancel,
             plain_terminal_stream,
+            tui_llm_stream_scratch,
             request_chrome_trace,
             model_override,
         }
@@ -119,6 +127,7 @@ impl<'a> CompleteChatRetryingParams<'a> {
             preserve_deepseek_thinking_reasoning_roundtrip:
                 super::vendor::deepseek_json_output_eligible(self.cfg),
             thinking_trace_enabled: self.cfg.agent_thinking_trace.agent_thinking_trace_enabled,
+            tui_llm_stream_scratch: self.tui_llm_stream_scratch.clone(),
         }
     }
 }

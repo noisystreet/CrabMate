@@ -27,7 +27,7 @@
 
 - **内置工具**（**Function Calling**）：文件与工作区、**`run_command`**（白名单）、HTTP/搜索、**`codebase_semantic_search`**（SQLite **FTS5** + 本地向量，默认混合检索）、格式化、依赖图与覆盖率、容器封装等；覆盖 **Rust / Python / JS·TS / Go / JVM / C·C++** 等栈及 **GitHub `gh_*`**。全表与 JSON 示例：[docs/工具说明.md](docs/工具说明.md)。
 
-- **CLI**：**`crabmate repl`** / **`chat`** / **`serve`**（与 Web 共用 Agent/工具）。详 **[CLI](#cli)**、[docs/命令行与路由.md](docs/命令行与路由.md)。**`bench`** 批量测评；HumanEval 官方 JSONL 转换与 **`benchmark_results.jsonl`** 外挂判分见 [docs/基准测试规划.md](docs/基准测试规划.md) §5 与 **`scripts/humaneval_*.py`**（判分会执行模型生成代码，须在隔离环境运行）。
+- **CLI**：**`crabmate repl`** / **`chat`** / **`serve`**（与 Web 共用 Agent/工具）；**`tui`** 为实验性全屏终端 UI（阶段 B/C：分区骨架 + 最小对话闭环，与 **`repl`** 共用 Agent 编排；**不写 stdout 刷流式正文**，遵循 **`--no-stream`**；支持 **`/api-key`**；须交互式 TTY）。详 **[CLI](#cli)**、[docs/命令行与路由.md](docs/命令行与路由.md)。**`bench`** 批量测评；HumanEval 官方 JSONL 转换与 **`benchmark_results.jsonl`** 外挂判分见 [docs/基准测试规划.md](docs/基准测试规划.md) §5 与 **`scripts/humaneval_*.py`**（判分会执行模型生成代码，须在隔离环境运行）。
 
 - **Web UI**：类 DeepSeek 布局；助手 **Markdown**；侧栏会话（会话项或列表空白处**右键**：**管理会话…**、收藏/取消收藏、置顶/取消置顶；列表按 **置顶 → 收藏 → 最近活动时间** 排序；导出、筛选、搜索；**桌面端**品牌行右侧可**收起/展开**左侧会话栏，偏好写入浏览器 **`localStorage`**）、工作区树与变更预览、任务与上下文状态、重试/分支；**须在侧栏「工作区」显式选择或提交目录后**，内置工具与 **`@相对路径`** 文件引用才针对该根生效（启动时不再把进程当前目录当作已选工作区；**`run_command_working_dir`** 仍用于进程合法工作目录与健康检查等，与「已选 Web 工作区」分离）。**刷新/重载**后，若会话已绑定服务端 **`conversation_id`**（`localStorage` 持久化）且配置了 **`conversation_store_sqlite_path`**，前端会 **`GET /conversation/messages`** 拉取服务端消息与 **`revision`**，与分支截断等逻辑对齐。聊天列顶部可展开 **「规划 / 工具时间线」**，汇总 **`staged_plan_step_*`** 旁注与工具摘要卡片并**一键跳转到对应气泡**（失败步骤/工具以危险色高亮）。**调试台**：右侧工具栏 **「视图」** 菜单中选 **「调试台」**，在与工作区/任务相同的右列窗格内查看 **`thinking_trace`** SSE（推理增量、`answer_phase`、工具执行前后上下文摘要等）；仅当环境变量 **`CM_THINKING_TRACE_ENABLED=0`** 时服务端关闭下发。聊天框可写 **`@相对路径`** 引用工作区文件（发送时由服务端按 **`read_file`** 规则展开），或在工作区树中**双击文件**插入 **`@路径`**；输入区可 **附加图片**（先 `POST /upload`，再在 `POST /chat/stream` 中带 `image_urls` 组装 OpenAI 兼容多模态 `user` 消息；**须使用支持视觉的模型**）。**澄清问卷**：模型可调用内置工具 **`present_clarification_questionnaire`**，Web 在 SSE 收到 **`clarification_questionnaire`** 后弹出表单，提交时随 **`POST /chat`** / **`POST /chat/stream`** 附带 JSON **`clarify_questionnaire_answers`**（`questionnaire_id` + `answers` 对象）；详见 [docs/SSE协议.md](docs/SSE协议.md) 与 [docs/工具说明.md](docs/工具说明.md)。**多角色**等见 [docs/配置说明.md](docs/配置说明.md)。
 
@@ -105,6 +105,7 @@ cd frontend && trunk build && cd ..
 
 - **`crabmate repl`**：交互式对话；**`/`** 内建命令与可选 **`bash#:`** 见 [docs/命令行与路由.md](docs/命令行与路由.md)。启动后可 **`/api-key set`**、**`/model set`**、**`/api-base set`**（均仅本进程内存）；bearer 无密钥时提示 **`/api-key`**。
 - **`crabmate chat`**：单次非交互；**`serve`**：HTTP + Web UI（与 Web 共用逻辑）。
+- **`crabmate tui`**：实验性全屏界面；**Enter** 发送；**`/api-key`** 与 **`repl`** 同源（反馈写在会话区）；其它 **`/`** 命令请用 **`repl`**；输入为空时 **`q`** / **Ctrl+C** 退出；**`--no-stream`** 控制是否 SSE；聊天区**不**展示系统提示词及与 Web 会话快照同类注入（仍送模型）；详见 [docs/命令行与路由.md](docs/命令行与路由.md)。
 - **常用**：**`doctor`**、**`config`**、**`probe`** / **`models`**、**`bench`**、**`save-session`** / **`export-session`**、**`tool-replay`**、**`mcp list`** / **`mcp serve`**。全局选项 **`--config`**、**`--workspace`**、**`--agent-role`**、**`--no-tools`**、**`--llm-context-tokens`**、**`--no-stream`** 等。
 - 配置键：[docs/配置说明.md](docs/配置说明.md)；子命令全表、Benchmark、**`man crabmate`**：[docs/命令行与路由.md](docs/命令行与路由.md)。
 

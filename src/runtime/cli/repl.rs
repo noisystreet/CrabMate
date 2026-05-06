@@ -19,6 +19,9 @@ use crate::tool_registry::CliToolRuntime;
 use crate::types::Message;
 use crate::user_message_file_refs::expand_at_file_refs_in_user_message;
 use log::debug;
+
+/// TUI 等：用户句已入队 `messages` 后的即时刷新回调（不等整轮模型返回）。
+pub(crate) type ReplAfterUserMessageEnqueuedCb = Arc<dyn Fn(&[Message]) + Send + Sync>;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -174,23 +177,27 @@ fn repl_execute_shell(
 
 /// 处理普通对话输入（不含 `/` 斜杠命令与 quit）：合并后台上下文、校验密钥、展开 `@`、合并 system、跑一轮 agent。
 /// 普通对话回合所需句柄（不含 `/` 斜杠命令分支）。
-struct ReplDispatchChatRoundParams<'a> {
-    input: String,
-    cfg_holder: &'a SharedAgentConfig,
-    tools: &'a [crate::types::Tool],
-    messages: &'a mut Vec<Message>,
-    work_dir: &'a mut Path,
-    style: &'a CliReplStyle,
-    no_stream: bool,
-    agent_role_owned: &'a mut Option<String>,
-    api_key_holder: &'a Arc<StdMutex<String>>,
-    client: &'a reqwest::Client,
-    cli_rt: &'a CliToolRuntime,
-    initial_pending: Option<&'a Arc<StdMutex<Option<Vec<crate::types::Message>>>>>,
-    process_handles: Arc<ProcessHandles>,
+pub(crate) struct ReplDispatchChatRoundParams<'a> {
+    pub(crate) input: String,
+    pub(crate) cfg_holder: &'a SharedAgentConfig,
+    pub(crate) tools: &'a [crate::types::Tool],
+    pub(crate) messages: &'a mut Vec<Message>,
+    pub(crate) work_dir: &'a mut Path,
+    pub(crate) style: &'a CliReplStyle,
+    pub(crate) no_stream: bool,
+    pub(crate) suppress_stdout_render: bool,
+    pub(crate) tui_llm_stream_scratch: Option<crate::runtime::tui::TuiLlmStreamScratchArc>,
+    /// TUI 等：用户消息已写入 `messages` 后立即刷新展示（不等整轮 `run_agent_turn` 结束）。
+    pub(crate) after_user_message_enqueued: Option<ReplAfterUserMessageEnqueuedCb>,
+    pub(crate) agent_role_owned: &'a mut Option<String>,
+    pub(crate) api_key_holder: &'a Arc<StdMutex<String>>,
+    pub(crate) client: &'a reqwest::Client,
+    pub(crate) cli_rt: &'a CliToolRuntime,
+    pub(crate) initial_pending: Option<&'a Arc<StdMutex<Option<Vec<crate::types::Message>>>>>,
+    pub(crate) process_handles: Arc<ProcessHandles>,
 }
 
-async fn repl_dispatch_chat_round(
+pub(crate) async fn repl_dispatch_chat_round(
     p: ReplDispatchChatRoundParams<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let ReplDispatchChatRoundParams {
@@ -201,6 +208,9 @@ async fn repl_dispatch_chat_round(
         work_dir,
         style,
         no_stream,
+        suppress_stdout_render,
+        tui_llm_stream_scratch,
+        after_user_message_enqueued,
         agent_role_owned,
         api_key_holder,
         client,
@@ -212,19 +222,6 @@ async fn repl_dispatch_chat_round(
         messages,
         initial_pending,
     );
-    {
-        let g = cfg_holder.read().await;
-        if g.llm.llm_http_auth_mode == LlmHttpAuthMode::Bearer {
-            let k = api_key_holder.lock().unwrap_or_else(|e| e.into_inner());
-            if k.trim().is_empty() {
-                drop(k);
-                let _ = style.eprint_error(
-                    "当前为 llm_http_auth_mode=bearer，但未配置 LLM API 密钥。请执行 /api-key set <密钥>（仅本进程）或设置环境变量 API_KEY 后重启。",
-                );
-                return Ok(());
-            }
-        }
-    }
     let user_body = {
         let g = cfg_holder.read().await;
         match expand_at_file_refs_in_user_message(input.as_str(), work_dir, &g) {
@@ -260,12 +257,29 @@ async fn repl_dispatch_chat_round(
         }
     }
     messages.push(Message::user_only(user_body));
+    if let Some(cb) = after_user_message_enqueued.as_ref() {
+        cb(messages.as_slice());
+    }
     debug!(
         target: "crabmate::print",
         "REPL 用户输入已入队 history_len={} input_preview={}",
         messages.len(),
         redact::preview_chars(input.as_str(), redact::MESSAGE_LOG_PREVIEW_CHARS)
     );
+    // 须在入队用户消息之后再拦截：否则 TUI 等仅依赖 `messages` 的界面看不到已发送输入。
+    {
+        let g = cfg_holder.read().await;
+        if g.llm.llm_http_auth_mode == LlmHttpAuthMode::Bearer {
+            let k = api_key_holder.lock().unwrap_or_else(|e| e.into_inner());
+            if k.trim().is_empty() {
+                drop(k);
+                let _ = style.eprint_error(
+                    "当前为 llm_http_auth_mode=bearer，但未配置 LLM API 密钥。请执行 /api-key set <密钥>（仅本进程）或设置环境变量 API_KEY 后重启。",
+                );
+                return Ok(());
+            }
+        }
+    }
 
     let cfg_snap = {
         let g = cfg_holder.read().await;
@@ -283,6 +297,8 @@ async fn repl_dispatch_chat_round(
         messages,
         work_dir,
         no_stream,
+        suppress_stdout_render,
+        tui_llm_stream_scratch,
         cli_tool_ctx: Some(cli_rt),
         active_agent_role: agent_role_owned.as_deref(),
         process_handles: Arc::clone(&process_handles),
@@ -298,7 +314,7 @@ async fn repl_dispatch_chat_round(
 }
 
 /// 构建首轮消息（含可选后台扫描）、并打开 `.crabmate/repl_history.txt` 行编辑器。
-async fn repl_prepare_messages_and_editor(
+pub(crate) async fn repl_prepare_messages_and_editor(
     cfg_holder: &SharedAgentConfig,
     tui_load: bool,
     work_dir: &Path,
@@ -509,6 +525,9 @@ pub async fn run_repl(
                     work_dir: &mut work_dir,
                     style: &style,
                     no_stream,
+                    suppress_stdout_render: false,
+                    tui_llm_stream_scratch: None,
+                    after_user_message_enqueued: None,
                     agent_role_owned: &mut agent_role_owned,
                     api_key_holder: &api_key_holder,
                     client,

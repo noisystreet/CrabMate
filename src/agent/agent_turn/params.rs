@@ -25,6 +25,7 @@ use crate::agent::hierarchy::HierarchyRunnerParams;
 use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crate::config::AgentConfig;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
+use crate::runtime::tui::TuiLlmStreamScratchArc;
 use crate::tool_registry;
 use crate::types::{LlmSeedOverride, Message};
 
@@ -43,6 +44,8 @@ pub(crate) struct RunLoopCtx<'a> {
     pub render_to_terminal: bool,
     /// 见 [`crate::llm::api::stream_chat`] 的 `plain_terminal_stream`；仅 CLI 入口为 `true`。
     pub plain_terminal_stream: bool,
+    /// TUI：流式增量缓冲；Web/CLI 等为 `None`。
+    pub tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     /// 与 [`WebExecuteCtx::cli_tool_ctx`] 相同；Web 队列传 `None`。
     pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
@@ -308,6 +311,7 @@ impl RunLoopParams<'_> {
             no_stream: self.ctx.no_stream,
             cancel: self.ctx.cancel,
             plain_terminal_stream: self.ctx.plain_terminal_stream,
+            tui_llm_stream_scratch: self.ctx.tui_llm_stream_scratch.clone(),
         }
     }
 

@@ -9,6 +9,7 @@ use crate::llm::{
     CompleteChatRetryingParams, LlmCompleteError, LlmRetryingTransportOpts, complete_chat_retrying,
     tool_chat_request,
 };
+use crate::runtime::tui::TuiLlmStreamScratchArc;
 use crate::types::{LlmSeedOverride, Message};
 
 /// P：构造请求并调用模型（`no_stream` 为 true 时走 `stream: false`），**不**修改 `messages`。
@@ -26,6 +27,7 @@ pub(crate) struct PerPlanCallModelParams<'a> {
     pub no_stream: bool,
     pub cancel: Option<&'a AtomicBool>,
     pub plain_terminal_stream: bool,
+    pub tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
     pub temperature_override: Option<f32>,
     pub model_override: Option<&'a str>,
     pub seed_override: LlmSeedOverride,
@@ -51,6 +53,7 @@ pub(crate) async fn per_plan_call_model_retrying(
         no_stream,
         cancel,
         plain_terminal_stream,
+        tui_llm_stream_scratch,
         temperature_override,
         model_override,
         seed_override,
@@ -94,6 +97,7 @@ pub(crate) async fn per_plan_call_model_retrying(
             no_stream,
             cancel,
             plain_terminal_stream,
+            tui_llm_stream_scratch,
         },
         request_chrome_trace,
         model_override,

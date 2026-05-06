@@ -751,6 +751,7 @@ mod staged_plan_prepare_fixture_tests {
                 cancel: None,
                 render_to_terminal: false,
                 plain_terminal_stream: false,
+                tui_llm_stream_scratch: None,
                 web_tool_ctx: None,
                 cli_tool_ctx: None,
                 per_flight: None,

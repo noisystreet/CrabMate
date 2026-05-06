@@ -360,6 +360,7 @@ async fn run_outer_loop_single_iteration(
         no_stream: p.ctx.no_stream,
         cancel: p.ctx.cancel,
         plain_terminal_stream: p.ctx.plain_terminal_stream,
+        tui_llm_stream_scratch: p.ctx.tui_llm_stream_scratch.clone(),
         temperature_override: p.turn.temperature_override,
         seed_override: p.turn.seed_override,
         request_chrome_trace: p.ctx.request_chrome_trace.clone(),

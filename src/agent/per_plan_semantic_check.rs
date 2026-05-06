@@ -233,6 +233,7 @@ pub(crate) async fn evaluate_plan_consistency_with_recent_tools_llm(
             no_stream: ctx.no_stream,
             cancel: ctx.cancel,
             plain_terminal_stream: ctx.plain_terminal_stream,
+            tui_llm_stream_scratch: None,
         },
         ctx.request_chrome_trace,
         model_override,

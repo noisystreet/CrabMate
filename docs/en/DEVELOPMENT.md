@@ -241,7 +241,7 @@ flowchart LR
 
 ### `src/lib.rs` / `src/main.rs`
 
-Crate root exports **`run`**, **`load_config`**, tool builders, **`dev_tag`**, etc. **`main`** is thin `crabmate::run().await`. CLI contract tests in **`tests/cli_contract.rs`**. Subcommands: `serve`, `repl` (default), `chat`, `bench`, `config`, `doctor`, `save-session`/`export-session`, `tool-replay`, `models`, `probe`; legacy argv normalization unless explicit subcommand present. Logging defaults: `serve` info, others warn without `RUST_LOG`. Non-loopback serve requires auth (see **`README.md`**).
+Crate root exports **`run`**, **`load_config`**, tool builders, **`dev_tag`**, etc. **`main`** is thin `crabmate::run().await`. CLI contract tests in **`tests/cli_contract.rs`**. Subcommands: `serve`, `repl` (default), `tui` (experimental full-screen UI; loads config like `repl`; chat via `repl_dispatch_chat_round` with stdout rendering suppressed; respects `--no-stream`; `/api-key` wired), `chat`, `bench`, `config`, `doctor`, `save-session`/`export-session`, `tool-replay`, `models`, `probe`; legacy argv normalization unless explicit subcommand present. Logging defaults: `serve` info, others warn without `RUST_LOG`. Non-loopback serve requires auth (see **`README.md`**).
 
 ### Web routes (summary)
 

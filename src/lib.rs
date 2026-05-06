@@ -84,6 +84,8 @@ pub struct AgentTurnTransport<'a> {
     /// 终端 CLI：`run_command` 非白名单时在 stdin 交互确认；Web 传 `None`。
     pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
     pub plain_terminal_stream: bool,
+    /// 全屏 TUI：流式助手增量写入（见 [`runtime::tui::TuiLlmStreamScratch`]）；其它入口 `None`。
+    pub tui_llm_stream_scratch: Option<runtime::tui::TuiLlmStreamScratchArc>,
     /// 可选：自定义 [`llm::ChatCompletionsBackend`]；`None` 时使用 OpenAI 兼容 HTTP（与历史行为一致）。
     pub llm_backend: Option<&'a (dyn llm::ChatCompletionsBackend + 'static)>,
 }
@@ -191,6 +193,10 @@ pub struct CliTerminalChatBuildArgs<'a> {
     pub messages: &'a mut Vec<types::Message>,
     pub effective_working_dir: &'a std::path::Path,
     pub no_stream: bool,
+    /// 为 `true` 时不向 stdout 渲染助手流式/非流式输出（全屏 TUI alternate screen）。
+    pub suppress_stdout_render: bool,
+    /// 与 **`suppress_stdout_render`** 配套：流式正文写入供 TUI 中区刷新。
+    pub tui_llm_stream_scratch: Option<runtime::tui::TuiLlmStreamScratchArc>,
     pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
     pub long_term_memory:
         Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
@@ -288,6 +294,7 @@ impl<'a> RunAgentTurnParams<'a> {
                 web_tool_ctx,
                 cli_tool_ctx: None,
                 plain_terminal_stream: false,
+                tui_llm_stream_scratch: None,
                 llm_backend: None,
             },
             llm: AgentTurnLlmOverrides {
@@ -344,6 +351,7 @@ impl<'a> RunAgentTurnParams<'a> {
                 web_tool_ctx: None,
                 cli_tool_ctx: None,
                 plain_terminal_stream: false,
+                tui_llm_stream_scratch: None,
                 llm_backend: None,
             },
             llm: AgentTurnLlmOverrides {
@@ -371,12 +379,15 @@ impl<'a> RunAgentTurnParams<'a> {
             messages,
             effective_working_dir,
             no_stream,
+            suppress_stdout_render,
+            tui_llm_stream_scratch,
             cli_tool_ctx,
             long_term_memory,
             long_term_memory_scope_id,
             turn_allowed_tool_names,
             process_handles,
         } = args;
+        let echo_stdout = !suppress_stdout_render;
         Self {
             shared,
             messages,
@@ -384,13 +395,14 @@ impl<'a> RunAgentTurnParams<'a> {
             workspace_is_set: true,
             transport: AgentTurnTransport {
                 out: None,
-                render_to_terminal: true,
+                render_to_terminal: echo_stdout,
                 no_stream,
                 cancel: None,
                 per_flight: None,
                 web_tool_ctx: None,
                 cli_tool_ctx,
-                plain_terminal_stream: true,
+                plain_terminal_stream: echo_stdout,
+                tui_llm_stream_scratch,
                 llm_backend: None,
             },
             llm: AgentTurnLlmOverrides {
@@ -441,6 +453,7 @@ impl<'a> RunAgentTurnParams<'a> {
                 web_tool_ctx: None,
                 cli_tool_ctx: None,
                 plain_terminal_stream: false,
+                tui_llm_stream_scratch: None,
                 llm_backend: None,
             },
             llm: AgentTurnLlmOverrides {
@@ -508,6 +521,7 @@ pub async fn run_agent_turn<'a>(
         web_tool_ctx,
         cli_tool_ctx,
         plain_terminal_stream,
+        tui_llm_stream_scratch,
         llm_backend,
     } = transport;
     let AgentTurnLlmOverrides {
@@ -582,6 +596,7 @@ pub async fn run_agent_turn<'a>(
             cancel: cancel.as_deref(),
             render_to_terminal,
             plain_terminal_stream,
+            tui_llm_stream_scratch,
             web_tool_ctx,
             cli_tool_ctx,
             per_flight,

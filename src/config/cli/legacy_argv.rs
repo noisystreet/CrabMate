@@ -6,6 +6,7 @@ fn is_known_subcommand(s: &str) -> bool {
         s,
         "serve"
             | "repl"
+            | "tui"
             | "chat"
             | "bench"
             | "config"

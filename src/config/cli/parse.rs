@@ -95,11 +95,12 @@ impl CliParseCtx {
             plugin_init: None,
             plugin_validate: None,
             plugin_list: None,
+            tui: false,
         }
     }
 }
 
-/// 解析命令行：支持 **`serve` / `repl` / `chat` / `bench` / `config` / `doctor` / `models` / `probe` / `mcp` / `save-session`**（兼容别名 **`export-session`**）、**`tool-replay`** 子命令，**`help`**（同 `--help` 或 `help <子命令>`），并兼容未写子命令时的历史平铺 flag（`--serve`、`--query` 等）。
+/// 解析命令行：支持 **`serve` / `repl` / `tui` / `chat` / `bench` / `config` / `doctor` / `models` / `probe` / `mcp` / `save-session`**（兼容别名 **`export-session`**）、**`tool-replay`** 子命令，**`help`**（同 `--help` 或 `help <子命令>`），并兼容未写子命令时的历史平铺 flag（`--serve`、`--query` 等）。
 ///
 /// `chat --stdin` 时若读取标准输入失败则返回 [`io::Error`]。
 ///
@@ -144,6 +145,9 @@ fn build_parsed_cli_args(
         }
         Commands::Repl(r) => {
             b.no_stream = r.no_stream;
+        }
+        Commands::Tui => {
+            b.tui = true;
         }
         Commands::Chat(c) => {
             let inline_user_text = if c.user_prompt_file.is_some() {

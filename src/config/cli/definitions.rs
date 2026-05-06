@@ -384,6 +384,8 @@ pub enum Commands {
     Serve(ServeCmd),
     /// 交互式终端对话（默认子命令）
     Repl(ReplCmd),
+    /// 全屏终端 UI（实验性；须交互式 TTY；与 repl 共用 Agent 回合；不写 stdout 渲染流式正文，遵循 **`--no-stream`**；支持 **`/api-key`**；见 **`runtime::tui`**）
+    Tui,
     /// 单次提问后退出（脚本/管道）
     Chat(ChatCmd),
     /// 批量 benchmark 测评（JSONL）
@@ -471,6 +473,8 @@ pub struct ParsedCliArgs {
     pub plugin_list: Option<PluginListCli>,
     /// 全局 `--llm-context-tokens`：非零时覆盖已加载配置中的 `llm_context_tokens`
     pub llm_context_tokens_cli: Option<u32>,
+    /// 是否执行 **`crabmate tui`** 全屏界面（与默认 **`repl`** 互斥）
+    pub tui: bool,
 }
 
 /// `plugin init` 解析结果（供 `runtime::cli` 执行）

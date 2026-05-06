@@ -143,6 +143,7 @@ jsonschema = { version = "0.28", default-features = false }
 tokio-cron-scheduler = { version = "0.15", default-features = false }
 # 内置工具 parameters：可选由类型 `JsonSchema` 生成，与 `jsonschema` 运行时校验对齐（MIT / Apache-2.0 双许可）
 schemars = { version = "0.8", features = ["derive"] }
+ratatui = { version = "0.29", default-features = false, features = ["crossterm"] }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", default-features = false, features = ["fs", "dir", "signal"] }

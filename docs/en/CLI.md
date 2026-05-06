@@ -18,6 +18,7 @@ Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as 
 |------------|-------------|
 | `serve [PORT]` | Web UI + HTTP API, default **8080**; with **`bearer`**, may **start without `API_KEY`**; set the key in the sidebar **Settings** (`client_llm`) before chatting. |
 | `repl` | Interactive chat; **default when no subcommand**. With **`bearer`** and no env **`API_KEY`**, use **`/api-key set <secret>`** before sending messages. |
+| `tui` | Full-screen terminal UI (**experimental**); phase B/C: layout + minimal chat loop sharing **`repl_dispatch_chat_round`** with **`repl`**. **Requires an interactive TTY for stdin and stdout**. Assistant output is **not rendered to stdout** (alternate-screen safe); respects global **`--no-stream`** for SSE vs JSON. **`Enter`** sends the line; **`/api-key`** / **`/apikey`** supported (feedback in the transcript); other **`/` commands → use **`repl`**. **`q`/`Q` with empty input** or **Ctrl+C** exits. Loads **`AgentConfig`** like **`repl`**. See **`runtime/tui`**. |
 | `chat` | One-shot / scripted chat: `--query` / `--stdin` / `--user-prompt-file`, `--system-prompt-file`, `--messages-json-file`, `--message-file` (JSONL), `--yes` / `--approve-commands`, `--output json`, `--no-stream`. With **`bearer`** and no **`API_KEY`**, the first turn fails unless you export **`API_KEY`** or use **`repl`** / **`serve`** as above. |
 | `bench` | Batch eval: `--benchmark`, `--batch`, etc. |
 | `config` | Config + **`API_KEY`** status self-check; optional `--dry-run`. |
@@ -34,7 +35,7 @@ Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as 
 
 ## Log levels
 
-Without `RUST_LOG`: `serve` defaults to **info**; `repl` / `chat` / `bench` / `config` / `mcp` / `save-session` (and alias `export-session`) / `tool-replay` / `plugin` default to **warn**. Use `RUST_LOG` or `--log <FILE>`.
+Without `RUST_LOG`: `serve` defaults to **info**; `repl` / `chat` / `tui` / `bench` / `config` / `mcp` / `save-session` (and alias `export-session`) / `tool-replay` / `plugin` default to **warn**. Use `RUST_LOG` or `--log <FILE>`.
 
 ## Message pipeline debug logs
 
@@ -42,7 +43,7 @@ With `RUST_LOG=crabmate=debug`, each model call prints **`message_pipeline sessi
 
 ## Legacy usage
 
-Without a subcommand, legacy flags `--serve`, `--query`, `--benchmark`, `--dry-run`, etc. still map internally. If argv **anywhere** contains an explicit subcommand name (`serve`, `doctor`, `save-session`, `export-session`, `tool-replay`, `plugin`, …), the default `repl` is **not** inserted (see `tests/fixtures/cli/legacy_normalize.json`).
+Without a subcommand, legacy flags `--serve`, `--query`, `--benchmark`, `--dry-run`, etc. still map internally. If argv **anywhere** contains an explicit subcommand name (`serve`, `doctor`, `tui`, `save-session`, `export-session`, `tool-replay`, `plugin`, …), the default `repl` is **not** inserted (see `tests/fixtures/cli/legacy_normalize.json`).
 
 ## Common options (compat)
 

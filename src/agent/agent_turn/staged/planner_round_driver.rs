@@ -121,6 +121,7 @@ pub(super) async fn complete_planner_no_tools_chat_retrying(
                 no_stream: p.ctx.no_stream,
                 cancel: p.ctx.cancel,
                 plain_terminal_stream: p.ctx.plain_terminal_stream,
+                tui_llm_stream_scratch: p.ctx.tui_llm_stream_scratch.clone(),
             },
             req,
         )

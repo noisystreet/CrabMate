@@ -13,6 +13,11 @@ pub use commands::{
     run_save_session_command, run_tool_replay_command,
 };
 pub use repl::run_repl;
+pub(crate) use repl::{
+    ReplAfterUserMessageEnqueuedCb, ReplDispatchChatRoundParams, repl_dispatch_chat_round,
+    repl_prepare_messages_and_editor,
+};
+pub(crate) use repl_slash_dispatch::try_dispatch_api_key_slash_for_tui;
 
 /// REPL `/export`、`/save-session` 与 `save-session` 子命令共用的导出格式。
 #[derive(Debug, PartialEq, Eq)]

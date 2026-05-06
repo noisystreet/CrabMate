@@ -124,6 +124,7 @@ fn fixture_parse_args_from_argv_contract() {
                 case["chat_wants"].as_bool().unwrap(),
                 "{name} chat_wants"
             );
+            assert_eq!(p.tui, case["tui"].as_bool().unwrap_or(false), "{name} tui");
 
             if let Some(ar) = case.get("agent_role").and_then(|v| v.as_str()) {
                 assert_eq!(p.agent_role_cli.as_deref(), Some(ar), "{name} agent_role");

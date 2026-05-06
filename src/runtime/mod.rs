@@ -17,4 +17,5 @@ pub(crate) mod repl_slash_complete;
 pub(crate) mod terminal_cli_transcript;
 pub(crate) mod terminal_labels;
 pub mod tool_replay;
+pub mod tui;
 pub mod workspace_session;

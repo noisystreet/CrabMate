@@ -115,12 +115,7 @@ pub fn is_message_excluded_from_llm_context_except_memory(m: &Message) -> bool {
 pub fn filter_messages_for_web_client_snapshot(messages: &[Message]) -> Vec<Message> {
     messages
         .iter()
-        .filter(|m| {
-            !is_long_term_memory_injection(m)
-                && !is_workspace_changelist_injection(m)
-                && !is_first_turn_workspace_context_injection(m)
-                && !is_system_role_hidden_from_web_transcript(m)
-        })
+        .filter(|m| is_message_visible_in_chat_transcript(m))
         .cloned()
         .collect()
 }
@@ -129,6 +124,17 @@ pub fn filter_messages_for_web_client_snapshot(messages: &[Message]) -> Vec<Mess
 #[inline]
 fn is_system_role_hidden_from_web_transcript(m: &Message) -> bool {
     m.role == "system" && !is_chat_timeline_marker(m)
+}
+
+/// Web 聊天区与 TUI transcript 是否展示该条（与 [`filter_messages_for_web_client_snapshot`] 过滤条件一致）。
+///
+/// 省略：普通 **`system`**（含系统提示词）、长期记忆 / 工作区变更集 / 首轮工作区画像等 **`user.name`** 注入；保留 **`crabmate_timeline`** 等时间线 **`system`**。
+#[inline]
+pub fn is_message_visible_in_chat_transcript(m: &Message) -> bool {
+    !is_long_term_memory_injection(m)
+        && !is_workspace_changelist_injection(m)
+        && !is_first_turn_workspace_context_injection(m)
+        && !is_system_role_hidden_from_web_transcript(m)
 }
 
 /// 长期记忆注入条目的 `user.name`；仅供模型上下文使用，**不得**发往供应商 API。
@@ -179,6 +185,22 @@ pub fn message_content_as_str(content: &Option<MessageContent>) -> Option<&str> 
     match content {
         Some(MessageContent::Text(s)) => Some(s.as_str()),
         Some(MessageContent::Parts(_)) | None => None,
+    }
+}
+
+/// 聊天区等 UI 纯文本展示：**`Text`** 全文，或 **`Parts`** 内各 **`text`** 字段（非空）按序拼接。
+#[must_use]
+pub fn message_content_plain_for_chat_display(content: &Option<MessageContent>) -> String {
+    match content {
+        None => String::new(),
+        Some(MessageContent::Text(s)) => s.clone(),
+        Some(MessageContent::Parts(parts)) => parts
+            .iter()
+            .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n"),
     }
 }
 

@@ -197,5 +197,16 @@
     "chat_wants": false,
     "save_session_format": null,
     "agent_role": "code"
+  },
+  {
+    "name": "tui_subcommand",
+    "argv": ["crabmate", "tui"],
+    "extra_cli": "None",
+    "dry_run": false,
+    "serve_port": null,
+    "no_stream": false,
+    "chat_wants": false,
+    "save_session_format": null,
+    "tui": true
   }
 ]
