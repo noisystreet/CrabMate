@@ -6,10 +6,7 @@ use crate::config::SharedAgentConfig;
 use crate::process_handles::ProcessHandles;
 use crate::runtime::workspace_session;
 
-use super::{
-    TuiModel, build_tui_session_sidebar, tui_header_summary, tui_status_bar_with_run,
-    tui_status_chips_line, workspace_sidebar_extra,
-};
+use super::{TuiModel, tui_header_summary, workspace_sidebar_extra};
 
 pub(super) struct TuiWorkspaceUiSwitch<'a> {
     pub(super) cfg_holder: &'a SharedAgentConfig,
@@ -48,7 +45,7 @@ pub(super) async fn tui_event_workspace_switch(raw: String, ctx: TuiWorkspaceUiS
     )
     .await
     {
-        let chips = tui_status_chips_line(cfg_holder, agent_role_owned).await;
+        let chips = super::sidebar_text::tui_status_chips_line(cfg_holder, agent_role_owned).await;
         let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
         g.status = format!("{} · 工作区: {}", chips, msg);
     }
@@ -91,7 +88,7 @@ pub(super) async fn tui_apply_workspace_switch(
         let g = model.lock().unwrap_or_else(|e| e.into_inner());
         g.sqlite_conversation_id.clone()
     };
-    let nav = build_tui_session_sidebar(
+    let nav = super::sidebar_text::build_tui_session_sidebar(
         tui_load_nav,
         workspace_session::session_file_path(work_dir.as_path()).exists(),
         message_count,
@@ -106,13 +103,13 @@ pub(super) async fn tui_apply_workspace_switch(
         sqlite_nav.as_deref(),
     )
     .await;
-    let chips = tui_status_chips_line(cfg_holder, agent_role_owned).await;
+    let chips = super::sidebar_text::tui_status_chips_line(cfg_holder, agent_role_owned).await;
     let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
     g.header_line = new_header;
     g.nav_summary = nav;
     g.right_summary = right;
     g.workspace_path_buf = work_dir.clone();
     g.status_chips = chips.clone();
-    g.status = tui_status_bar_with_run(&chips, "就绪");
+    g.status = super::sidebar_text::tui_status_bar_with_run(&chips, "就绪");
     Ok(())
 }

@@ -20,7 +20,7 @@ use crate::tool_approval::TuiApprovalRequest;
 
 use super::{
     TuiClarificationShared, TuiModel, approval, clarify_modal, render, tui_dispatch_key_press,
-    tui_dispatch_mouse, tui_use_ansi_color,
+    tui_dispatch_mouse,
 };
 use crate::runtime::tui::TuiLlmStreamScratchArc;
 
@@ -100,7 +100,7 @@ pub(super) fn run_tui_ui_thread(
     execute!(stdout_h, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout_h);
     let mut terminal = Terminal::new(backend)?;
-    let color = tui_use_ansi_color();
+    let color = super::sidebar_text::tui_use_ansi_color();
     let blocking_recv = TuiBlockingRecv {
         approval_rx: &approval_rx,
         handoff_rx: &handoff_rx,
