@@ -19,7 +19,7 @@ use super::super::per_stream_accum::PerStreamAccum;
 use super::super::shell_abort::{clear_abort_slot, user_cancelled_flag};
 use super::done_bubble::{DoneBubbleAction, DoneBubbleDecisionInputs, decide_done_bubble_action};
 use super::helpers::*;
-use super::stream_session_access::with_active_session_mut;
+use super::stream_session_access::{append_stream_assistant_chunk, with_active_session_mut};
 use super::stream_turn_state::{
     StreamOutputLaneCell, lane_clear_followup_pending, lane_take_followup_rotation_pending,
 };
@@ -286,7 +286,6 @@ pub(super) fn chat_stream_on_delta_builder(
             rotate_streaming_assistant_for_followup_model_round(stream_ctx.as_ref());
             accum.answer_delta_chars.set(0);
         }
-        let aid = stream_ctx.active_session_id.as_str();
         let mid = stream_ctx.tail.borrow_assistant_id();
         let lane = output_lane.get();
         if lane.in_answer_body_lane() {
@@ -296,9 +295,9 @@ pub(super) fn chat_stream_on_delta_builder(
                     .get()
                     .saturating_add(chunk.chars().count()),
             );
-            append_to_assistant_text(aid, mid.as_str(), &chunk, &stream_ctx.chat.sessions);
+            append_stream_assistant_chunk(stream_ctx.as_ref(), mid.as_str(), &chunk, false);
         } else {
-            append_to_assistant_reasoning(aid, mid.as_str(), &chunk, &stream_ctx.chat.sessions);
+            append_stream_assistant_chunk(stream_ctx.as_ref(), mid.as_str(), &chunk, true);
         }
     })
 }

@@ -68,7 +68,8 @@
 ## 6. 状态与上下文策略
 
 - **全局壳级**：主题、语言、侧栏宽度、`SidePanelView`、仅与「壳」相关的 `RwSignal` 可保留在 **`App`**。
-- **会话 + 流式**：已与 **`ChatSessionSignals`** 对齐；**`stream_bound_session_id`** 为 attach 时快照，与 UI **`active_id`** 可暂时不一致（SSE 仍写绑定会话）。后续新增字段（如只读展示标志）应优先加在聚合体上，而非再增加平行的 6 个参数。
+- **会话 + 流式**：已与 **`ChatSessionSignals`** 对齐；**`stream_bound_session_id`** 为 attach 时快照，与 UI **`active_id`** 可暂时不一致（SSE 仍写绑定会话）。**`composer_stream/callbacks/stream_session_access`** 的 **`append_stream_assistant_chunk`** 为 **`on_delta`** 正文/思维链追加的单一入口。后续新增字段（如只读展示标志）应优先加在聚合体上，而非再增加平行的 6 个参数。
+- **壳首屏读**：主题 / 语言 / 侧栏视图与宽度等 **`localStorage`** 键由 **`shell_prefs_storage::read_shell_ui_initial_snapshot`** 聚合后再填入 **`ShellUISignals`**，避免 `AppSignals::new` 内散落读键。
 - **模态与抽屉**：各自用独立 `RwSignal<bool>` 或小型结构；**关闭顺序**（Escape 层级）由 **`app_shell_effects::wire_escape_key_layered_dismiss`**（或同类集中模块）处理，避免多处重复监听。
 - **Context**：若未来子树加深，可对「只读下传」的句柄使用 Leptos **Context** 减少 props 钻孔；**慎用**全局隐式 context，以免调试困难。
 

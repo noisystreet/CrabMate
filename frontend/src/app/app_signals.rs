@@ -16,10 +16,7 @@ use leptos_dom::helpers::WindowListenerHandle;
 
 use crate::api::{StatusData, TasksData, WorkspaceData};
 use crate::app::shell_prefs_storage;
-use crate::app_prefs::{
-    BG_DECOR_KEY, DEFAULT_SIDE_WIDTH, SIDEBAR_RAIL_COLLAPSED_KEY, STATUS_BAR_VISIBLE_KEY,
-    SidePanelView, WORKSPACE_WIDTH_KEY, load_bool_key, load_f64_key, load_side_panel_view,
-};
+use crate::app_prefs::{SIDEBAR_RAIL_COLLAPSED_KEY, SidePanelView, load_bool_key};
 use crate::clarification_form::PendingClarificationForm;
 use crate::i18n::Locale;
 use crate::session_ops::SessionContextAnchor;
@@ -46,14 +43,15 @@ pub struct ShellUISignals {
 
 impl ShellUISignals {
     pub fn new() -> Self {
+        let s = shell_prefs_storage::read_shell_ui_initial_snapshot();
         Self {
-            theme: RwSignal::new(shell_prefs_storage::read_theme_initial()),
-            bg_decor: RwSignal::new(load_bool_key(BG_DECOR_KEY, true)),
-            locale: RwSignal::new(crate::i18n::load_locale_from_storage()),
+            theme: RwSignal::new(s.theme),
+            bg_decor: RwSignal::new(s.bg_decor),
+            locale: RwSignal::new(s.locale),
             view_menu_open: RwSignal::new(false),
-            status_bar_visible: RwSignal::new(load_bool_key(STATUS_BAR_VISIBLE_KEY, true)),
-            side_panel_view: RwSignal::new(load_side_panel_view()),
-            side_width: RwSignal::new(load_f64_key(WORKSPACE_WIDTH_KEY, DEFAULT_SIDE_WIDTH)),
+            status_bar_visible: RwSignal::new(s.status_bar_visible),
+            side_panel_view: RwSignal::new(s.side_panel_view),
+            side_width: RwSignal::new(s.side_width),
             web_ui_config_loaded: RwSignal::new(false),
             markdown_render: RwSignal::new(true),
             apply_assistant_display_filters: RwSignal::new(true),
