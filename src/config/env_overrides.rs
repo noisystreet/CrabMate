@@ -3,6 +3,13 @@
 use super::builder::ConfigBuilder;
 use super::source::parse_bool_like;
 
+#[path = "env_overrides_chat_queue.rs"]
+mod env_overrides_chat_queue;
+#[path = "env_overrides_intent.rs"]
+mod env_overrides_intent;
+#[path = "env_overrides_part9.rs"]
+mod env_overrides_part9;
+
 /// 从 `CM_*` 环境变量覆盖 `ConfigBuilder` 字段。
 pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     apply_env_overrides_part_1(b);
@@ -301,61 +308,8 @@ fn env_override_reflection_and_final_plan(b: &mut ConfigBuilder) {
 }
 
 fn apply_env_overrides_part_4(b: &mut ConfigBuilder) {
-    env_override_intent_thresholds(b);
+    env_overrides_intent::env_override_intent_thresholds(b);
     env_override_system_prompt_and_default_role(b);
-}
-
-fn env_override_intent_thresholds(b: &mut ConfigBuilder) {
-    if let Ok(v) = std::env::var("CM_INTENT_AT_TURN_START_ENABLED")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.intent_routing.intent_at_turn_start_enabled = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_INTENT_L2_ENABLED")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.intent_routing.intent_l2_enabled = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_INTENT_L2_MIN_CONFIDENCE")
-        && let Ok(f) = v.trim().parse::<f64>()
-    {
-        b.intent_routing.intent_l2_min_confidence = Some(f);
-    }
-    if let Ok(v) = std::env::var("CM_INTENT_L2_MAX_TOKENS")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.intent_routing.intent_l2_max_tokens = Some(n);
-    }
-    if let Ok(v) = std::env::var("CM_INTENT_L0_ROUTING_BOOST_ENABLED")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.intent_routing.intent_l0_routing_boost_enabled = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_INTENT_EXECUTE_LOW_THRESHOLD")
-        && let Ok(f) = v.trim().parse::<f64>()
-    {
-        b.intent_routing.intent_execute_low_threshold = Some(f);
-    }
-    if let Ok(v) = std::env::var("CM_INTENT_EXECUTE_HIGH_THRESHOLD")
-        && let Ok(f) = v.trim().parse::<f64>()
-    {
-        b.intent_routing.intent_execute_high_threshold = Some(f);
-    }
-    if let Ok(v) = std::env::var("CM_INTENT_NON_HIER_EXECUTE_LOW_THRESHOLD")
-        && let Ok(f) = v.trim().parse::<f64>()
-    {
-        b.intent_routing.intent_non_hier_execute_low_threshold = Some(f);
-    }
-    if let Ok(v) = std::env::var("CM_INTENT_NON_HIER_EXECUTE_HIGH_THRESHOLD")
-        && let Ok(f) = v.trim().parse::<f64>()
-    {
-        b.intent_routing.intent_non_hier_execute_high_threshold = Some(f);
-    }
-    if let Ok(v) = std::env::var("CM_INTENT_MODE_BIAS_ENABLED")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.intent_routing.intent_mode_bias_enabled = Some(val);
-    }
 }
 
 fn env_override_system_prompt_and_default_role(b: &mut ConfigBuilder) {
@@ -548,7 +502,7 @@ fn env_override_context_budget_and_summary(b: &mut ConfigBuilder) {
 
 fn apply_env_overrides_part_7(b: &mut ConfigBuilder) {
     env_override_context_transcript_and_health_probe(b);
-    env_override_chat_queue_parallel_and_caches(b);
+    env_overrides_chat_queue::env_override_chat_queue_parallel_and_caches(b);
     env_override_staged_plan_execution_flags(b);
 }
 
@@ -567,61 +521,6 @@ fn env_override_context_transcript_and_health_probe(b: &mut ConfigBuilder) {
         && let Ok(n) = v.trim().parse::<u64>()
     {
         b.web_api.health_llm_models_probe_cache_secs = Some(n);
-    }
-}
-
-fn env_override_chat_queue_parallel_and_caches(b: &mut ConfigBuilder) {
-    if let Ok(v) = std::env::var("CM_CHAT_QUEUE_MAX_CONCURRENT")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.chat_queues_cache.chat_queue_max_concurrent = Some(n);
-    }
-    if let Ok(v) = std::env::var("CM_CHAT_QUEUE_MAX_PENDING")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.chat_queues_cache.chat_queue_max_pending = Some(n);
-    }
-    if let Ok(v) = std::env::var("CM_PARALLEL_READONLY_TOOLS_MAX")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.chat_queues_cache.parallel_readonly_tools_max = Some(n);
-    }
-    if let Ok(v) = std::env::var("CM_READ_FILE_TURN_CACHE_MAX_ENTRIES")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.chat_queues_cache.read_file_turn_cache_max_entries = Some(n);
-    }
-    if let Ok(v) = std::env::var("CM_READONLY_TOOL_TTL_CACHE_SECS")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.chat_queues_cache.readonly_tool_ttl_cache_secs = Some(n);
-    }
-    if let Ok(v) = std::env::var("CM_READONLY_TOOL_TTL_CACHE_MAX_ENTRIES")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.chat_queues_cache.readonly_tool_ttl_cache_max_entries = Some(n);
-    }
-    if let Ok(v) = std::env::var("CM_TEST_RESULT_CACHE_ENABLED")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.chat_queues_cache.test_result_cache_enabled = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_TEST_RESULT_CACHE_MAX_ENTRIES")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.chat_queues_cache.test_result_cache_max_entries = Some(n);
-    }
-    if let Ok(v) = std::env::var("CM_SESSION_WORKSPACE_CHANGELIST_ENABLED")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.session_workspace_changelist
-            .session_workspace_changelist_enabled = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_SESSION_WORKSPACE_CHANGELIST_MAX_CHARS")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.session_workspace_changelist
-            .session_workspace_changelist_max_chars = Some(n);
     }
 }
 
@@ -711,57 +610,7 @@ fn apply_env_sync_tool_sandbox_overrides_part_8(b: &mut ConfigBuilder) {
 }
 
 fn apply_env_overrides_part_9(b: &mut ConfigBuilder) {
-    if let Ok(v) = std::env::var("CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_USER") {
-        let v = v.trim().to_string();
-        if !v.is_empty() {
-            b.sync_tool_sandbox.sync_default_tool_sandbox_docker_user = Some(v);
-        }
-    }
-    if let Ok(v) = std::env::var("CM_WEB_API_BEARER_TOKEN") {
-        b.web_api.web_api_bearer_token = Some(v.trim().to_string());
-    }
-    if let Ok(v) = std::env::var("CM_WEB_API_REQUIRE_BEARER")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.web_api.web_api_require_bearer = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_WEB_AUDIT_LOG_WRITE_TOOLS")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.web_api.web_audit_log_write_tools = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_WEB_AUDIT_TRUST_X_FORWARDED_FOR")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.web_api.web_audit_trust_x_forwarded_for = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.web_api.allow_insecure_no_auth_for_non_loopback = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_CONVERSATION_STORE_SQLITE_PATH") {
-        let v = v.trim().to_string();
-        if !v.is_empty() {
-            b.conversation_persistence.conversation_store_sqlite_path = Some(v);
-        }
-    }
-    if let Ok(v) = std::env::var("CM_MEMORY_FILE_ENABLED")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.context_bootstrap_inject.agent_memory_file_enabled = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_MEMORY_FILE") {
-        let v = v.trim().to_string();
-        if !v.is_empty() {
-            b.context_bootstrap_inject.agent_memory_file = Some(v);
-        }
-    }
-    if let Ok(v) = std::env::var("CM_MEMORY_FILE_MAX_CHARS")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.context_bootstrap_inject.agent_memory_file_max_chars = Some(n);
-    }
+    env_overrides_part9::apply_env_overrides_part_9(b);
 }
 
 fn apply_env_overrides_part_10(b: &mut ConfigBuilder) {
