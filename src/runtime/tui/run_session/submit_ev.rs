@@ -15,8 +15,9 @@ use crate::tool_registry::CliToolRuntime;
 use crate::types::{Message, Tool};
 
 use super::{
-    TuiClarificationShared, TuiModel, TuiSlashSubmit, tui_make_submit_hooks,
-    tui_refresh_after_chat_round, tui_try_consume_slash_submit,
+    TuiAfterChatRoundRefresh, TuiClarificationShared, TuiModel, TuiSlashSubmit,
+    sqlite_slash::{TuiSqliteSlashEnv, tui_try_consume_sqlite_slash},
+    tui_make_submit_hooks, tui_refresh_after_chat_round, tui_try_consume_slash_submit,
 };
 
 pub(super) enum TuiSubmitHandled {
@@ -48,48 +49,45 @@ pub(super) struct TuiSubmitEv<'a> {
     pub(super) process_handles: Arc<ProcessHandles>,
     pub(super) clarification_questionnaire_hook:
         std::sync::Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>,
+    pub(super) sqlite_session: Option<&'a mut super::sqlite_session::TuiSqliteSessionState>,
 }
 
 pub(super) async fn tui_run_submit_ev(
     trimmed: String,
-    ctx: TuiSubmitEv<'_>,
+    mut ctx: TuiSubmitEv<'_>,
 ) -> Result<TuiSubmitHandled, Box<dyn std::error::Error>> {
-    let TuiSubmitEv {
-        clarify_shared,
-        cfg_holder,
-        config_path,
-        client,
-        tools,
-        messages,
-        work_dir,
-        cli_no_stream,
-        agent_role_owned,
-        slash_handles,
-        model,
-        handoff_tx,
-        llm_scratch,
-        style,
-        api_key_holder,
-        cli_rt,
-        initial_pending,
-        process_handles,
-        clarification_questionnaire_hook,
-    } = ctx;
+    if tui_try_consume_sqlite_slash(
+        trimmed.as_str(),
+        &mut ctx.sqlite_session,
+        ctx.messages,
+        ctx.agent_role_owned,
+        &TuiSqliteSlashEnv {
+            cfg_holder: ctx.cfg_holder,
+            model: ctx.model,
+            work_dir: ctx.work_dir.as_path(),
+            tool_count: ctx.tools.len(),
+            cli_no_stream: ctx.cli_no_stream,
+        },
+    )
+    .await?
+    {
+        return Ok(TuiSubmitHandled::SlashOnly);
+    }
 
     if tui_try_consume_slash_submit(
         trimmed.as_str(),
         TuiSlashSubmit {
-            cfg_holder,
-            config_path,
-            client,
-            tools,
-            messages,
-            work_dir,
-            cli_no_stream,
-            agent_role_owned,
-            slash_handles,
-            model,
-            handoff_tx,
+            cfg_holder: ctx.cfg_holder,
+            config_path: ctx.config_path,
+            client: ctx.client,
+            tools: ctx.tools,
+            messages: ctx.messages,
+            work_dir: ctx.work_dir,
+            cli_no_stream: ctx.cli_no_stream,
+            agent_role_owned: ctx.agent_role_owned,
+            slash_handles: ctx.slash_handles,
+            model: ctx.model,
+            handoff_tx: ctx.handoff_tx,
         },
     )
     .await?
@@ -97,45 +95,46 @@ pub(super) async fn tui_run_submit_ev(
         return Ok(TuiSubmitHandled::SlashOnly);
     }
     {
-        let mut s = llm_scratch.lock().unwrap_or_else(|e| e.into_inner());
+        let mut s = ctx.llm_scratch.lock().unwrap_or_else(|e| e.into_inner());
         s.clear();
     }
-    let (on_user_enqueued, tool_running_hook) = tui_make_submit_hooks(model);
+    let (on_user_enqueued, tool_running_hook) = tui_make_submit_hooks(ctx.model);
     repl_dispatch_chat_round(ReplDispatchChatRoundParams {
         input: trimmed,
-        cfg_holder,
-        tools,
-        messages,
-        work_dir,
-        style,
-        no_stream: cli_no_stream,
+        cfg_holder: ctx.cfg_holder,
+        tools: ctx.tools,
+        messages: ctx.messages,
+        work_dir: ctx.work_dir,
+        style: ctx.style,
+        no_stream: ctx.cli_no_stream,
         suppress_stdout_render: true,
-        tui_llm_stream_scratch: Some(Arc::clone(llm_scratch)),
+        tui_llm_stream_scratch: Some(Arc::clone(ctx.llm_scratch)),
         tool_running_hook: Some(tool_running_hook),
         after_user_message_enqueued: Some(on_user_enqueued),
-        agent_role_owned,
-        api_key_holder,
-        client,
-        cli_rt,
-        initial_pending: initial_pending.as_ref(),
-        process_handles,
-        clarify_answers_for_next_user_message: Some(&clarify_shared.answers_merge),
-        clarification_questionnaire_hook: Some(clarification_questionnaire_hook),
+        agent_role_owned: ctx.agent_role_owned,
+        api_key_holder: ctx.api_key_holder,
+        client: ctx.client,
+        cli_rt: ctx.cli_rt,
+        initial_pending: ctx.initial_pending.as_ref(),
+        process_handles: Arc::clone(&ctx.process_handles),
+        clarify_answers_for_next_user_message: Some(&ctx.clarify_shared.answers_merge),
+        clarification_questionnaire_hook: Some(Arc::clone(&ctx.clarification_questionnaire_hook)),
     })
     .await?;
     {
-        let mut s = llm_scratch.lock().unwrap_or_else(|e| e.into_inner());
+        let mut s = ctx.llm_scratch.lock().unwrap_or_else(|e| e.into_inner());
         s.clear();
     }
-    tui_refresh_after_chat_round(
-        model,
-        cfg_holder,
-        work_dir.as_path(),
-        agent_role_owned,
-        messages.as_slice(),
-        tools.len(),
-        cli_no_stream,
-    )
+    tui_refresh_after_chat_round(TuiAfterChatRoundRefresh {
+        model: ctx.model,
+        cfg_holder: ctx.cfg_holder,
+        work_dir: ctx.work_dir.as_path(),
+        agent_role_owned: ctx.agent_role_owned,
+        messages: ctx.messages.as_slice(),
+        tool_count: ctx.tools.len(),
+        cli_no_stream: ctx.cli_no_stream,
+        sqlite_persist: Some(&mut ctx.sqlite_session),
+    })
     .await;
     Ok(TuiSubmitHandled::RanRound)
 }

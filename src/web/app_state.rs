@@ -19,8 +19,9 @@ use crate::types::{CommandApprovalDecision, Message};
 use super::http_types::tasks::TasksData;
 use crate::sse::SseStreamHub;
 
-/// 与 `normalize_client_conversation_id`（`chat_handlers`）及存储上限对齐。
-pub(crate) const CONVERSATION_ID_MAX_LEN: usize = 128;
+/// 与 `chat_handlers::normalize_client_conversation_id` 及存储上限对齐。
+pub(crate) use crate::conversation_store::CONVERSATION_ID_MAX_LEN;
+
 const CONVERSATION_STORE_TTL: Duration = Duration::from_secs(CONVERSATION_STORE_TTL_SECS);
 
 #[derive(Clone)]

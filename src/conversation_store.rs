@@ -236,6 +236,46 @@ pub fn count(conn: &Connection) -> Result<usize, rusqlite::Error> {
     Ok(n as usize)
 }
 
+/// 与 Web `normalize_client_conversation_id` 字符集一致，供 TUI/CLI 校验。
+pub const CONVERSATION_ID_MAX_LEN: usize = 128;
+
+pub fn validate_conversation_id_chars(raw: &str) -> Result<(), String> {
+    let id = raw.trim();
+    if id.is_empty() {
+        return Err("conversation_id 不能为空".to_string());
+    }
+    if id.len() > CONVERSATION_ID_MAX_LEN {
+        return Err(format!(
+            "conversation_id 过长（最多 {} 个字符）",
+            CONVERSATION_ID_MAX_LEN
+        ));
+    }
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':'))
+    {
+        return Err("conversation_id 仅允许字母、数字、- _ . :".to_string());
+    }
+    Ok(())
+}
+
+/// 按最近更新时间倒序返回会话 id（与 Web 共用 SQLite 时便于 TUI 列出）。
+pub fn list_conversation_ids_recent_first(
+    conn: &Connection,
+    limit: usize,
+) -> Result<Vec<String>, rusqlite::Error> {
+    let lim = i64::try_from(limit).unwrap_or(i64::MAX);
+    let mut stmt = conn.prepare(&format!(
+        "SELECT id FROM {TABLE} ORDER BY updated_at_unix DESC LIMIT ?1"
+    ))?;
+    let rows = stmt.query_map(params![lim], |r| r.get::<_, String>(0))?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
 fn update_messages_json_if_revision(
     conn: &Connection,
     id: &str,
@@ -422,5 +462,26 @@ mod tests {
         );
         let loaded3 = load(&conn, "c1", 3600).unwrap().expect("exists");
         assert_eq!(loaded3.2, "");
+    }
+
+    #[test]
+    fn list_conversation_ids_recent_first_orders_by_updated_desc() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let m = vec![Message::system_only("s".to_string())];
+        save_if_revision(&conn, "older", m.clone(), None, None).unwrap();
+        save_if_revision(&conn, "newer", m.clone(), None, None).unwrap();
+        conn.execute(
+            &format!(
+                "UPDATE {} SET updated_at_unix = updated_at_unix - 999 WHERE id = 'older'",
+                super::TABLE
+            ),
+            [],
+        )
+        .unwrap();
+        let ids = list_conversation_ids_recent_first(&conn, 10).unwrap();
+        assert_eq!(ids.as_slice(), &["newer".to_string(), "older".to_string()]);
+        let lim = list_conversation_ids_recent_first(&conn, 1).unwrap();
+        assert_eq!(lim.as_slice(), &["newer".to_string()]);
     }
 }

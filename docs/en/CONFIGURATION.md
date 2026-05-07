@@ -230,6 +230,7 @@ Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`confi
 | --- | --- |
 | `CM_TUI_LOAD_SESSION_ON_START` | Load session from disk on start. |
 | `CM_TUI_SESSION_MAX_MESSAGES` | Max messages in session file. |
+| `CM_TUI_CONVERSATION_ID` | **`tui` only**: when **`conversation_store_sqlite_path`** is set, bind this **`conversation_id`** at startup (same charset rules as Web); if unset, an id **`tui-…`** is generated. |
 | `CM_REPL_INITIAL_WORKSPACE_MESSAGES_ENABLED` | If `true`, background `initial_workspace_messages` (profile, deps); default `false`. TOML: `[agent] repl_initial_workspace_messages_enabled`. |
 | `CM_CLI_WAIT_SPINNER` | If truthy, show indicatif spinner on stderr before first stream chunk in CLI/`chat` (needs TTY stderr, not **`NO_COLOR`**). |
 

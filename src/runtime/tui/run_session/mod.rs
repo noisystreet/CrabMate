@@ -2,7 +2,7 @@
 //!
 //! 与 REPL 共用配置加载、`CliToolRuntime`、首轮消息准备；**不向 stdout 渲染助手输出**（`suppress_stdout_render`），可按 CLI **`--no-stream`** 选择是否 SSE。
 //!
-//! **`/` 内建命令**：与 REPL 同源（[`try_handle_repl_slash_command`] + [`repl_slash_handled_followup`]），输出捕获至中区 transcript；**/probe、/models、/mcp** 会短暂退出全屏写 stdout。
+//! **`/` 内建命令**：与 REPL 同源（[`try_handle_repl_slash_command`] + [`repl_slash_handled_followup`]），输出捕获至中区 transcript；**/probe、/models、/mcp** 会短暂退出全屏写 stdout。若配置 **`conversation_store_sqlite_path`**，另有 **`/conv`**、**`/branch`**（与 Web **`conversation_id`** / **`POST /chat/branch`** 同源），并在 **`CM_TUI_CONVERSATION_ID`** 可选指定启动会话 id。
 //!
 //! 架构：专用线程跑 ratatui + crossterm；[`tokio::sync::mpsc::unbounded_channel`] 投递输入；异步侧执行回合并刷新快照。
 //!
@@ -22,6 +22,9 @@ mod approval;
 mod clarify_modal;
 mod poll_loop;
 mod render;
+mod session_loop;
+mod sqlite_session;
+mod sqlite_slash;
 mod submit_ev;
 mod transcript;
 mod workspace_modal;
@@ -71,11 +74,21 @@ fn build_tui_session_sidebar(
     tui_load_on_start: bool,
     session_file_exists: bool,
     message_count: usize,
+    sqlite_conversation_id: Option<&str>,
 ) -> String {
     let sess = if session_file_exists { "有" } else { "无" };
     let load = if tui_load_on_start { "开" } else { "关" };
+    let sqlite_block = if let Some(id) = sqlite_conversation_id
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        let short = truncate_chars_with_ellipsis(id, 40);
+        format!("\n\nSQLite 会话\n{short}\n（/conv、/branch）")
+    } else {
+        String::new()
+    };
     format!(
-        "会话\n\n会话文件\ntui_session.json：{sess}\n启动加载：{load}\n\n内存消息\n{message_count} 条（含 system / 工具）\n\n中区仅展示 transcript\n可见尾部",
+        "会话\n\n会话文件\ntui_session.json：{sess}\n启动加载：{load}\n\n内存消息\n{message_count} 条（含 system / 工具）{sqlite_block}\n\n中区仅展示 transcript\n可见尾部",
     )
 }
 
@@ -341,6 +354,8 @@ struct TuiModel {
     workspace_path_buf: std::path::PathBuf,
     /// 工作区切换（目录浏览 + 手动路径，对齐 Web `POST /workspace` / REPL `/workspace`）。
     workspace_modal: Option<workspace_modal::TuiWorkspaceModalState>,
+    /// 已启用 **`conversation_store_sqlite_path`** 时当前 **`conversation_id`**（左栏与会话命令同源）。
+    sqlite_conversation_id: Option<String>,
 }
 
 struct TuiSlashUiRefresh<'a> {
@@ -439,10 +454,15 @@ async fn tui_refresh_after_slash_capture(p: TuiSlashUiRefresh<'_>) {
     } = p;
     let new_header = tui_header_summary(work_dir);
     let tui_load_nav = cfg_holder.read().await.session_ui.tui_load_session_on_start;
+    let sqlite_nav = {
+        let g = model.lock().unwrap_or_else(|e| e.into_inner());
+        g.sqlite_conversation_id.as_deref().map(|s| s.to_string())
+    };
     let nav = build_tui_session_sidebar(
         tui_load_nav,
         workspace_session::session_file_path(work_dir).exists(),
         message_count,
+        sqlite_nav.as_deref(),
     );
     let right = build_tui_workspace_sidebar(work_dir, tool_count, cli_no_stream);
     let chips = tui_status_chips_line(cfg_holder, agent_role_owned).await;
@@ -463,21 +483,48 @@ async fn tui_refresh_after_slash_capture(p: TuiSlashUiRefresh<'_>) {
     g.status = tui_status_bar_with_run(&chips, "就绪");
 }
 
-async fn tui_refresh_after_chat_round(
-    model: &Arc<Mutex<TuiModel>>,
-    cfg_holder: &SharedAgentConfig,
-    work_dir: &std::path::Path,
-    agent_role_owned: &Option<String>,
-    messages: &[Message],
-    tool_count: usize,
-    cli_no_stream: bool,
-) {
+pub(in crate::runtime::tui::run_session) struct TuiAfterChatRoundRefresh<'a> {
+    pub model: &'a Arc<Mutex<TuiModel>>,
+    pub cfg_holder: &'a SharedAgentConfig,
+    pub work_dir: &'a std::path::Path,
+    pub agent_role_owned: &'a Option<String>,
+    pub messages: &'a [Message],
+    pub tool_count: usize,
+    pub cli_no_stream: bool,
+    pub sqlite_persist: Option<&'a mut Option<&'a mut sqlite_session::TuiSqliteSessionState>>,
+}
+
+async fn tui_refresh_after_chat_round(p: TuiAfterChatRoundRefresh<'_>) {
+    let TuiAfterChatRoundRefresh {
+        model,
+        cfg_holder,
+        work_dir,
+        agent_role_owned,
+        messages,
+        tool_count,
+        cli_no_stream,
+        sqlite_persist,
+    } = p;
+    let persist_note = if let Some(sqlite_slot) = sqlite_persist
+        && let Some(sess) = sqlite_slot.as_mut()
+    {
+        (*sess)
+            .persist_round(messages, agent_role_owned.as_deref())
+            .err()
+    } else {
+        None
+    };
     let new_header = tui_header_summary(work_dir);
     let tui_load_nav = cfg_holder.read().await.session_ui.tui_load_session_on_start;
+    let sqlite_nav = {
+        let g = model.lock().unwrap_or_else(|e| e.into_inner());
+        g.sqlite_conversation_id.clone()
+    };
     let nav = build_tui_session_sidebar(
         tui_load_nav,
         workspace_session::session_file_path(work_dir).exists(),
         messages.len(),
+        sqlite_nav.as_deref(),
     );
     let right = build_tui_workspace_sidebar(work_dir, tool_count, cli_no_stream);
     let chips = tui_status_chips_line(cfg_holder, agent_role_owned).await;
@@ -490,7 +537,10 @@ async fn tui_refresh_after_chat_round(
     g.right_summary = right;
     g.workspace_path_buf = work_dir.to_path_buf();
     g.status_chips = chips.clone();
-    g.status = tui_status_bar_with_run(&chips, "就绪");
+    g.status = match persist_note {
+        Some(err) => format!("{} · SQLite: {}", chips, err),
+        None => tui_status_bar_with_run(&chips, "就绪"),
+    };
 }
 
 /// 进入全屏 TUI 并跑对话循环（须 TTY）。**`cli_no_stream`** 对应全局 **`--no-stream`**；助手正文不因流式写入 stdout（保护 alternate screen）。
@@ -570,7 +620,7 @@ pub async fn run_tui_session(
         }
     }
 
-    let mut agent_role_owned = agent_role
+    let agent_role_owned = agent_role
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
@@ -590,11 +640,18 @@ pub async fn run_tui_session(
         initial_pending.as_ref(),
     );
 
+    let (sqlite_sess, messages, mut agent_role_owned) =
+        sqlite_session::maybe_bootstrap_tui_sqlite(cfg_holder, messages, agent_role_owned).await?;
+    let mut sqlite_sess = sqlite_sess;
+    let mut messages = messages;
+
     let header_line = tui_header_summary(work_dir.as_path());
+    let sqlite_id_nav = sqlite_sess.as_ref().map(|s| s.conversation_id.as_str());
     let nav_summary = build_tui_session_sidebar(
         tui_load,
         workspace_session::session_file_path(work_dir.as_path()).exists(),
         messages.len(),
+        sqlite_id_nav,
     );
     let right_summary = build_tui_workspace_sidebar(work_dir.as_path(), tools.len(), cli_no_stream);
     let status_chips = tui_status_chips_line(cfg_holder, &agent_role_owned).await;
@@ -622,6 +679,7 @@ pub async fn run_tui_session(
         clarification_backlog: VecDeque::new(),
         workspace_path_buf: work_dir.clone(),
         workspace_modal: None,
+        sqlite_conversation_id: sqlite_sess.as_ref().map(|s| s.conversation_id.clone()),
     }));
 
     let clarify_shared = TuiClarificationShared {
@@ -656,70 +714,33 @@ pub async fn run_tui_session(
         )
     });
 
-    while let Some(ev) = ev_rx.recv().await {
-        match ev {
-            UiEvent::Quit => break,
-            UiEvent::Submit(input) => {
-                let trimmed = input.trim().to_string();
-                let allow_empty = clarify_shared
-                    .answers_merge
-                    .lock()
-                    .map(|g| g.is_some())
-                    .unwrap_or(false);
-                if trimmed.is_empty() && !allow_empty {
-                    continue;
-                }
-                match submit_ev::tui_run_submit_ev(
-                    trimmed,
-                    submit_ev::TuiSubmitEv {
-                        clarify_shared: &clarify_shared,
-                        cfg_holder,
-                        config_path,
-                        client,
-                        tools,
-                        messages: &mut messages,
-                        work_dir: &mut work_dir,
-                        cli_no_stream,
-                        agent_role_owned: &mut agent_role_owned,
-                        slash_handles: &slash_handles,
-                        model: &model,
-                        handoff_tx: &handoff_tx,
-                        llm_scratch: &llm_scratch,
-                        style: &style,
-                        api_key_holder: &api_key_holder,
-                        cli_rt: &cli_rt,
-                        initial_pending: initial_pending.clone(),
-                        process_handles: Arc::clone(&process_handles),
-                        clarification_questionnaire_hook: Arc::clone(
-                            &clarification_questionnaire_hook,
-                        ),
-                    },
-                )
-                .await?
-                {
-                    submit_ev::TuiSubmitHandled::SlashOnly => continue,
-                    submit_ev::TuiSubmitHandled::RanRound => {}
-                }
-            }
-            UiEvent::WorkspaceSwitch(raw) => {
-                workspace_switch::tui_event_workspace_switch(
-                    raw,
-                    workspace_switch::TuiWorkspaceUiSwitch {
-                        cfg_holder,
-                        work_dir: &mut work_dir,
-                        model: &model,
-                        agent_role_owned: &agent_role_owned,
-                        message_count: messages.len(),
-                        tool_count: tools.len(),
-                        cli_no_stream,
-                    },
-                )
-                .await;
-            }
-        }
-    }
+    session_loop::run_tui_session_event_loop(session_loop::TuiSessionEventLoopCtx {
+        ev_rx: &mut ev_rx,
+        clarify_shared: &clarify_shared,
+        cfg_holder,
+        config_path,
+        client,
+        tools,
+        messages: &mut messages,
+        work_dir: &mut work_dir,
+        cli_no_stream,
+        agent_role_owned: &mut agent_role_owned,
+        slash_handles: &slash_handles,
+        model: &model,
+        handoff_tx: &handoff_tx,
+        llm_scratch: &llm_scratch,
+        style: &style,
+        api_key_holder: &api_key_holder,
+        cli_rt: &cli_rt,
+        initial_pending: initial_pending.clone(),
+        process_handles: Arc::clone(&process_handles),
+        clarification_questionnaire_hook: Arc::clone(&clarification_questionnaire_hook),
+        sqlite_sess: &mut sqlite_sess,
+    })
+    .await?;
 
     if tui_load
+        && sqlite_sess.is_none()
         && let Err(e) = workspace_session::save_workspace_session(work_dir.as_path(), &messages)
     {
         eprintln!(

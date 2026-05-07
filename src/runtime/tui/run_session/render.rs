@@ -54,21 +54,42 @@ pub(super) fn estimate_wrapped_line_rows(text: &str, inner_width: u16) -> usize 
         .max(1)
 }
 
+/// 聊天区纵向滚动模式（[`clamped_chat_vertical_scroll`]）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ChatVerticalStickMode {
+    /// 用户拖动滚轮/滚动条后的手动位置（仍 clamp 在合法范围内）。
+    Manual,
+    /// 流式生成中贴底：**不加** slack，避免估算略高于真实折行时出现「底部大块空白」。
+    StreamStickBottom,
+    /// 回合结束、已用完整 transcript 重绘后的首帧贴底：允许 slack，缓解 `WordWrapper` 与 [`estimate_wrapped_line_rows`] 不一致导致的裁底。
+    SnapAfterRefreshStickBottom,
+}
+
+/// 缓解 `WordWrapper` 与 [`estimate_wrapped_line_rows`] 的偏差；**仅**用于非流式时的滚动上限（含 [`ChatVerticalStickMode::Manual`]），流式贴底见 [`ChatVerticalStickMode::StreamStickBottom`]（slack=0）。
+fn snap_after_refresh_slack_rows(rows_base: usize) -> usize {
+    rows_base.saturating_mul(35).div_ceil(100).clamp(8, 120)
+}
+
 /// ratatui 0.29：`Paragraph::scroll` 的 `y` 不得大到使内部 `area.height + scroll_y` 溢出；也不得大于「总行数 − 视口行数」。
 pub(super) fn clamped_chat_vertical_scroll(
     text: &str,
     inner_width: u16,
     inner_height: u16,
-    stick_to_bottom: bool,
+    mode: ChatVerticalStickMode,
     manual_scroll_y: u16,
 ) -> u16 {
-    let rows = estimate_wrapped_line_rows(text, inner_width);
+    let rows_base = estimate_wrapped_line_rows(text, inner_width);
     let vis = inner_height.max(1) as usize;
-    let max_scroll = rows.saturating_sub(vis).min(u16::MAX as usize) as u16;
-    if stick_to_bottom {
-        max_scroll
-    } else {
-        manual_scroll_y.min(max_scroll)
+    let slack = snap_after_refresh_slack_rows(rows_base);
+    let max_strict = rows_base.saturating_sub(vis).min(u16::MAX as usize) as u16;
+    let max_loose = rows_base
+        .saturating_add(slack)
+        .saturating_sub(vis)
+        .min(u16::MAX as usize) as u16;
+    match mode {
+        ChatVerticalStickMode::Manual => manual_scroll_y.min(max_loose),
+        ChatVerticalStickMode::StreamStickBottom => max_strict,
+        ChatVerticalStickMode::SnapAfterRefreshStickBottom => max_loose,
     }
 }
 
@@ -113,24 +134,24 @@ pub(super) fn render_full(
     let (text_rect, scrollbar_rect) = chat_inner_split_text_and_scrollbar(chat_inner);
     let tw = text_rect.width.max(1);
     let th = text_rect.height.max(1);
-    let rows = estimate_wrapped_line_rows(chat_body.as_str(), tw);
+    let rows_base = estimate_wrapped_line_rows(chat_body.as_str(), tw);
     let vis_lines = th as usize;
-    let max_scroll_rows = rows.saturating_sub(vis_lines).min(u16::MAX as usize) as u16;
-    if model.chat_snap_bottom_next_draw {
-        model.chat_scroll_y = max_scroll_rows;
+    let snap_bottom_this_frame = model.chat_snap_bottom_next_draw;
+    if snap_bottom_this_frame {
         model.chat_snap_bottom_next_draw = false;
     }
-    let chat_scroll_y = clamped_chat_vertical_scroll(
-        chat_body.as_str(),
-        tw,
-        th,
-        streaming_nonempty,
-        model.chat_scroll_y,
-    );
-    if streaming_nonempty {
-        // 流式贴底仅体现在 clamp；须写回状态，否则回合结束后仍用旧 chat_scroll_y（常为 0）会跳到开头。
-        model.chat_scroll_y = chat_scroll_y;
-    }
+    // 流式贴底与回合结束 snap 贴底分开：`StreamStickBottom` 不加 slack；`SnapAfterRefreshStickBottom` 加 slack 防裁底。
+    let stick_mode = if snap_bottom_this_frame {
+        ChatVerticalStickMode::SnapAfterRefreshStickBottom
+    } else if streaming_nonempty {
+        ChatVerticalStickMode::StreamStickBottom
+    } else {
+        ChatVerticalStickMode::Manual
+    };
+    let chat_scroll_y =
+        clamped_chat_vertical_scroll(chat_body.as_str(), tw, th, stick_mode, model.chat_scroll_y);
+    // Manual 也须写回：否则 snap 后用过大 scroll_y 会在下一帧被错误沿用；与 max_loose 一致的写回可稳定贴底。
+    model.chat_scroll_y = chat_scroll_y;
 
     frame.render_widget(chat_block, panes.chat);
     let center_body = Paragraph::new(chat_body)
@@ -138,11 +159,14 @@ pub(super) fn render_full(
         .scroll((chat_scroll_y, 0));
     frame.render_widget(center_body, text_rect);
 
-    if scrollbar_rect.width > 0 && rows > vis_lines {
+    if scrollbar_rect.width > 0 && rows_base > vis_lines {
         let bar_style = scrollbar_track_style(color, model.focus == TuiFocus::Chat);
-        let mut sb_state = ScrollbarState::new(rows.saturating_sub(vis_lines).saturating_add(1))
-            .position(usize::from(chat_scroll_y))
-            .viewport_content_length(vis_lines);
+        let max_thumb = rows_base.saturating_sub(vis_lines).min(u16::MAX as usize) as u16;
+        let thumb_y = chat_scroll_y.min(max_thumb);
+        let mut sb_state =
+            ScrollbarState::new(rows_base.saturating_sub(vis_lines).saturating_add(1))
+                .position(usize::from(thumb_y))
+                .viewport_content_length(vis_lines);
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
             .begin_symbol(None)
             .end_symbol(None)

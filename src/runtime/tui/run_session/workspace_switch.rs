@@ -81,10 +81,15 @@ pub(super) async fn tui_apply_workspace_switch(
     *work_dir = new_root;
     let new_header = tui_header_summary(work_dir.as_path());
     let tui_load_nav = cfg_holder.read().await.session_ui.tui_load_session_on_start;
+    let sqlite_nav = {
+        let g = model.lock().unwrap_or_else(|e| e.into_inner());
+        g.sqlite_conversation_id.clone()
+    };
     let nav = build_tui_session_sidebar(
         tui_load_nav,
         workspace_session::session_file_path(work_dir.as_path()).exists(),
         message_count,
+        sqlite_nav.as_deref(),
     );
     let right = build_tui_workspace_sidebar(work_dir.as_path(), tool_count, cli_no_stream);
     let chips = tui_status_chips_line(cfg_holder, agent_role_owned).await;
