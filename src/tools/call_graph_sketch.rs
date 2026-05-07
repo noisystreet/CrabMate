@@ -307,31 +307,16 @@ fn truncate(s: &str, max: usize) -> String {
     )
 }
 
-pub fn run(args_json: &str, workspace_root: &Path) -> String {
-    let params = match parse_params(args_json) {
-        Ok(p) => p,
-        Err(e) => return format!("错误：{e}"),
-    };
-
-    let root = match resolve_root(workspace_root, params.sub_path.as_deref()) {
-        Ok(p) => p,
-        Err(e) => return format!("错误：{e}"),
-    };
-
-    let mut symbol_res: Vec<(String, Regex)> = Vec::new();
-    for sym in &params.symbols {
-        let esc = regex::escape(sym);
-        let pat = format!(r"\b{esc}\b");
-        match RegexBuilder::new(&pat).build() {
-            Ok(r) => symbol_res.push((sym.clone(), r)),
-            Err(e) => return format!("错误：无法为符号 \"{sym}\" 构建匹配规则：{e}"),
-        }
-    }
-
+fn sketch_collect_edges(
+    workspace_root: &Path,
+    root: &Path,
+    params: &SketchParams,
+    symbol_res: &[(String, Regex)],
+) -> (Vec<Edge>, usize) {
     let mut edges: Vec<Edge> = Vec::new();
     let mut files_seen = 0usize;
 
-    let walker = WalkBuilder::new(&root)
+    let walker = WalkBuilder::new(root)
         .hidden(!params.include_hidden)
         .git_ignore(true)
         .git_global(false)
@@ -363,15 +348,23 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
             if buf.len() > MAX_FILE_BYTES {
                 buf.truncate(MAX_FILE_BYTES);
             }
-            scan_file_for_edges(&rel, &buf, &symbol_res, &mut edges, params.max_edges);
+            scan_file_for_edges(&rel, &buf, symbol_res, &mut edges, params.max_edges);
         }
     }
+    (edges, files_seen)
+}
 
+fn sketch_render_report(
+    params: &SketchParams,
+    root: &Path,
+    edges: &[Edge],
+    files_seen: usize,
+) -> String {
     let truncated_edges = edges.len() >= params.max_edges;
     let truncated_files = files_seen >= params.max_files;
 
     let mut by_dir: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for e in &edges {
+    for e in edges {
         let dir = coarse_dir_for_file(&e.file_rel);
         by_dir.entry(dir).or_default().insert(e.file_rel.clone());
     }
@@ -443,6 +436,31 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
     }
 
     out.trim_end().to_string()
+}
+
+pub fn run(args_json: &str, workspace_root: &Path) -> String {
+    let params = match parse_params(args_json) {
+        Ok(p) => p,
+        Err(e) => return format!("错误：{e}"),
+    };
+
+    let root = match resolve_root(workspace_root, params.sub_path.as_deref()) {
+        Ok(p) => p,
+        Err(e) => return format!("错误：{e}"),
+    };
+
+    let mut symbol_res: Vec<(String, Regex)> = Vec::new();
+    for sym in &params.symbols {
+        let esc = regex::escape(sym);
+        let pat = format!(r"\b{esc}\b");
+        match RegexBuilder::new(&pat).build() {
+            Ok(r) => symbol_res.push((sym.clone(), r)),
+            Err(e) => return format!("错误：无法为符号 \"{sym}\" 构建匹配规则：{e}"),
+        }
+    }
+
+    let (edges, files_seen) = sketch_collect_edges(workspace_root, &root, &params, &symbol_res);
+    sketch_render_report(&params, &root, &edges, files_seen)
 }
 
 #[cfg(test)]

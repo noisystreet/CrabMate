@@ -243,6 +243,55 @@ pub fn codespell_check(args_json: &str, workspace_root: &Path, max_output_len: u
     run_and_format(cmd, max_output_len, "codespell")
 }
 
+fn extract_ast_pattern_and_lang(v: &serde_json::Value) -> Result<(String, &'static str), String> {
+    let pattern = match v.get("pattern").and_then(|x| x.as_str()) {
+        Some(s) if is_safe_ast_pattern(s) => s.to_string(),
+        Some(_) => return Err("错误：pattern 为空或过长或含非法字符".to_string()),
+        None => return Err("错误：缺少 pattern（ast-grep 模式串）".to_string()),
+    };
+    let lang_raw = match v.get("lang").and_then(|x| x.as_str()) {
+        Some(s) if !s.trim().is_empty() => s.trim(),
+        Some(_) => return Err("错误：lang 不能为空（如 rust、typescript、python）".to_string()),
+        None => return Err("错误：缺少 lang（如 rust、typescript、python）".to_string()),
+    };
+    let lang = normalize_ast_lang(lang_raw)?;
+    Ok((pattern, lang))
+}
+
+const AST_GREP_DEFAULT_GLOBS: &[&str] = &[
+    "!**/target/**",
+    "!**/node_modules/**",
+    "!**/.git/**",
+    "!**/vendor/**",
+    "!**/dist/**",
+    "!**/build/**",
+];
+
+fn ast_grep_append_default_globs(cmd: &mut Command) {
+    for g in AST_GREP_DEFAULT_GLOBS {
+        cmd.arg("--globs").arg(*g);
+    }
+}
+
+fn ast_grep_append_custom_globs(v: &serde_json::Value, cmd: &mut Command) -> Result<(), String> {
+    let Some(arr) = v.get("globs").and_then(|x| x.as_array()) else {
+        return Ok(());
+    };
+    if arr.len() > MAX_AST_GLOBS {
+        return Err(format!("错误：globs 最多 {} 项", MAX_AST_GLOBS));
+    }
+    for x in arr {
+        let Some(s) = x.as_str().map(str::trim).filter(|s| !s.is_empty()) else {
+            return Err("错误：globs 须为非空字符串数组".to_string());
+        };
+        if !is_safe_glob_token(s) {
+            return Err(format!("错误：非法 glob：{}", s));
+        }
+        cmd.arg("--globs").arg(s);
+    }
+    Ok(())
+}
+
 /// `ast-grep run`：结构化搜索。默认路径 `["src"]`；内置排除 `target`、`node_modules` 等 glob。
 pub fn ast_grep_run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
     let parsed = match crate::tools::parse_args_json(args_json) {
@@ -257,18 +306,8 @@ pub fn ast_grep_run(args_json: &str, workspace_root: &Path, max_output_len: usiz
         Ok(v) => v,
         Err(e) => return format!("参数序列化错误: {e}"),
     };
-    let pattern = match v.get("pattern").and_then(|x| x.as_str()) {
-        Some(s) if is_safe_ast_pattern(s) => s.to_string(),
-        Some(_) => return "错误：pattern 为空或过长或含非法字符".to_string(),
-        None => return "错误：缺少 pattern（ast-grep 模式串）".to_string(),
-    };
-    let lang_raw = match v.get("lang").and_then(|x| x.as_str()) {
-        Some(s) if !s.trim().is_empty() => s.trim(),
-        Some(_) => return "错误：lang 不能为空（如 rust、typescript、python）".to_string(),
-        None => return "错误：缺少 lang（如 rust、typescript、python）".to_string(),
-    };
-    let lang = match normalize_ast_lang(lang_raw) {
-        Ok(l) => l,
+    let (pattern, lang) = match extract_ast_pattern_and_lang(&v) {
+        Ok(x) => x,
         Err(e) => return e,
     };
 
@@ -290,31 +329,9 @@ pub fn ast_grep_run(args_json: &str, workspace_root: &Path, max_output_len: usiz
         .arg(lang)
         .current_dir(&base);
 
-    const DEFAULT_GLOBS: &[&str] = &[
-        "!**/target/**",
-        "!**/node_modules/**",
-        "!**/.git/**",
-        "!**/vendor/**",
-        "!**/dist/**",
-        "!**/build/**",
-    ];
-    for g in DEFAULT_GLOBS {
-        cmd.arg("--globs").arg(*g);
-    }
-
-    if let Some(arr) = v.get("globs").and_then(|x| x.as_array()) {
-        if arr.len() > MAX_AST_GLOBS {
-            return format!("错误：globs 最多 {} 项", MAX_AST_GLOBS);
-        }
-        for x in arr {
-            let Some(s) = x.as_str().map(str::trim).filter(|s| !s.is_empty()) else {
-                return "错误：globs 须为非空字符串数组".to_string();
-            };
-            if !is_safe_glob_token(s) {
-                return format!("错误：非法 glob：{}", s);
-            }
-            cmd.arg("--globs").arg(s);
-        }
+    ast_grep_append_default_globs(&mut cmd);
+    if let Err(e) = ast_grep_append_custom_globs(&v, &mut cmd) {
+        return e;
     }
 
     for p in &paths {
@@ -338,24 +355,14 @@ pub fn ast_grep_rewrite(args_json: &str, workspace_root: &Path, max_output_len: 
         Ok(v) => v,
         Err(e) => return format!("参数序列化错误: {e}"),
     };
-    let pattern = match v.get("pattern").and_then(|x| x.as_str()) {
-        Some(s) if is_safe_ast_pattern(s) => s.to_string(),
-        Some(_) => return "错误：pattern 为空或过长或含非法字符".to_string(),
-        None => return "错误：缺少 pattern（ast-grep 模式串）".to_string(),
+    let (pattern, lang) = match extract_ast_pattern_and_lang(&v) {
+        Ok(x) => x,
+        Err(e) => return e,
     };
     let rewrite = match v.get("rewrite").and_then(|x| x.as_str()) {
         Some(s) if is_safe_ast_pattern(s) => s.to_string(),
         Some(_) => return "错误：rewrite 为空或过长或含非法字符".to_string(),
         None => return "错误：缺少 rewrite（目标替换模板）".to_string(),
-    };
-    let lang_raw = match v.get("lang").and_then(|x| x.as_str()) {
-        Some(s) if !s.trim().is_empty() => s.trim(),
-        Some(_) => return "错误：lang 不能为空（如 rust、typescript、python）".to_string(),
-        None => return "错误：缺少 lang（如 rust、typescript、python）".to_string(),
-    };
-    let lang = match normalize_ast_lang(lang_raw) {
-        Ok(l) => l,
-        Err(e) => return e,
     };
     let dry_run = v.get("dry_run").and_then(|x| x.as_bool()).unwrap_or(true);
     let confirm = v.get("confirm").and_then(|x| x.as_bool()).unwrap_or(false);
@@ -383,30 +390,9 @@ pub fn ast_grep_rewrite(args_json: &str, workspace_root: &Path, max_output_len: 
         .arg(lang)
         .current_dir(&base);
 
-    const DEFAULT_GLOBS: &[&str] = &[
-        "!**/target/**",
-        "!**/node_modules/**",
-        "!**/.git/**",
-        "!**/vendor/**",
-        "!**/dist/**",
-        "!**/build/**",
-    ];
-    for g in DEFAULT_GLOBS {
-        cmd.arg("--globs").arg(*g);
-    }
-    if let Some(arr) = v.get("globs").and_then(|x| x.as_array()) {
-        if arr.len() > MAX_AST_GLOBS {
-            return format!("错误：globs 最多 {} 项", MAX_AST_GLOBS);
-        }
-        for x in arr {
-            let Some(s) = x.as_str().map(str::trim).filter(|s| !s.is_empty()) else {
-                return "错误：globs 须为非空字符串数组".to_string();
-            };
-            if !is_safe_glob_token(s) {
-                return format!("错误：非法 glob：{}", s);
-            }
-            cmd.arg("--globs").arg(s);
-        }
+    ast_grep_append_default_globs(&mut cmd);
+    if let Err(e) = ast_grep_append_custom_globs(&v, &mut cmd) {
+        return e;
     }
     if !dry_run {
         cmd.arg("--update-all");
