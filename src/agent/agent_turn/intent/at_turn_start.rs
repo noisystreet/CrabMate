@@ -40,8 +40,9 @@ pub(crate) async fn run_intent_at_turn_start_if_configured(
     if !p.ctx.core.cfg.intent_routing.intent_at_turn_start_enabled {
         return Ok(true);
     }
-    let in_clarification_flow = intent_user::recently_waiting_execute_confirmation(p.turn.messages);
-    let task = intent_user::extract_effective_user_task(p.turn.messages, in_clarification_flow);
+    let in_clarification_flow =
+        intent_user::recently_waiting_execute_confirmation(p.turn.messages());
+    let task = intent_user::extract_effective_user_task(p.turn.messages(), in_clarification_flow);
     if task.trim().is_empty() {
         return Ok(true);
     }
@@ -81,7 +82,8 @@ pub(crate) async fn run_intent_for_hierarchical(
     p: &mut RunLoopParams<'_>,
     task: &str,
 ) -> Result<IntentGateResult, super::super::errors::RunAgentTurnError> {
-    let in_clarification_flow = intent_user::recently_waiting_execute_confirmation(p.turn.messages);
+    let in_clarification_flow =
+        intent_user::recently_waiting_execute_confirmation(p.turn.messages());
     run_intent_l0_l1_l2_gate(
         p,
         task,
@@ -191,8 +193,7 @@ async fn apply_non_execute_and_finish(
     reply: &str,
 ) -> Result<bool, super::super::errors::RunAgentTurnError> {
     p.turn
-        .messages
-        .push(crate::types::Message::assistant_only(reply.to_string()));
+        .push_message(crate::types::Message::assistant_only(reply.to_string()));
     if let Some(out) = p.ctx.io.out {
         let phase = sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
             assistant_answer_phase: true,
@@ -220,7 +221,7 @@ async fn run_intent_l0_l1_l2_gate(
     sse_log_tag: &'static str,
 ) -> Result<IntentGateResult, super::super::errors::RunAgentTurnError> {
     let intent_ctx = build_intent_routing_context(
-        p.turn.messages,
+        p.turn.messages(),
         p.ctx.core.cfg.as_ref(),
         in_clarification_flow,
         thresholds,

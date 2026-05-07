@@ -118,7 +118,7 @@ async fn outer_loop_prepare_planner_context(
         ltm.prepare_messages(
             p.ctx.core.cfg.as_ref(),
             p.ctx.attach.long_term_memory_scope_id.as_deref(),
-            p.turn.messages,
+            p.turn.messages_buffer_mut(),
         );
     }
     p.prepare_turn_messages_for_model(Some(per_coord))
@@ -214,10 +214,11 @@ async fn outer_loop_execute_tools_round(
         })?;
     p.turn.sub_phase = AgentTurnSubPhase::Executor;
     let echo_terminal_transcript = render_to_terminal && p.ctx.io.out.is_none();
+    let step_executor_constraint = p.turn.turn_planner_hints.step_executor_constraint;
     let exec_outcome = per_execute_tools_web(
         tool_calls,
         per_coord,
-        p.turn.messages,
+        p.turn.messages_buffer_mut(),
         WebExecuteCtx {
             cfg: p.ctx.core.cfg,
             effective_working_dir: p.ctx.core.effective_working_dir,
@@ -232,7 +233,7 @@ async fn outer_loop_execute_tools_round(
             mcp_session: p.ctx.attach.mcp_session.as_ref(),
             workspace_changelist: p.ctx.attach.workspace_changelist.as_ref(),
             request_chrome_trace: p.ctx.obs.request_chrome_trace.clone(),
-            step_executor_constraint: p.turn.turn_planner_hints.step_executor_constraint,
+            step_executor_constraint,
             tools_defs_full: p.ctx.core.tools_defs,
             turn_allow: p
                 .ctx
@@ -355,7 +356,7 @@ async fn run_outer_loop_single_iteration(
         api_key: p.ctx.core.api_key,
         cfg: p.ctx.core.cfg.as_ref(),
         tools_defs: planner_tools.as_slice(),
-        messages: p.turn.messages,
+        messages: p.turn.messages(),
         out: p.ctx.io.out,
         render_to_terminal,
         no_stream: p.ctx.io.no_stream,
@@ -372,13 +373,11 @@ async fn run_outer_loop_single_iteration(
     .await
     .map_err(|e| {
         p.turn
-            .messages
-            .retain(|m| !is_intent_gate_ephemeral_system(m));
+            .retain_messages(|m| !is_intent_gate_ephemeral_system(m));
         RunAgentTurnError::from_llm(AgentTurnSubPhase::Planner, e)
     })?;
     p.turn
-        .messages
-        .retain(|m| !is_intent_gate_ephemeral_system(m));
+        .retain_messages(|m| !is_intent_gate_ephemeral_system(m));
     if let Some(f) = p.ctx.attach.per_flight.as_ref() {
         f.awaiting_plan_rewrite_model
             .store(false, Ordering::Relaxed);
@@ -387,7 +386,7 @@ async fn run_outer_loop_single_iteration(
         target: "crabmate",
         "模型轮次输出 finish_reason={} message_count_before_push={} assistant_preview={}",
         finish_reason,
-        p.turn.messages.len(),
+        p.turn.messages().len(),
         crate::redact::assistant_message_preview_for_log(&msg)
     );
     p.turn.push_assistant_merging_trailing_empty(msg.clone());

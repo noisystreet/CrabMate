@@ -100,8 +100,9 @@ pub(crate) async fn assess_staged_planning_gate_full_pipeline(
     p: &mut crate::agent::agent_turn::params::RunLoopParams<'_>,
     sse_log_tag: &'static str,
 ) -> StagedPlanningGateOutcome {
-    let in_clarification_flow = intent_user::recently_waiting_execute_confirmation(p.turn.messages);
-    let task = intent_user::extract_effective_user_task(p.turn.messages, in_clarification_flow);
+    let in_clarification_flow =
+        intent_user::recently_waiting_execute_confirmation(p.turn.messages());
+    let task = intent_user::extract_effective_user_task(p.turn.messages(), in_clarification_flow);
     if task.trim().is_empty() {
         log::info!(
             target: "crabmate",
@@ -115,7 +116,7 @@ pub(crate) async fn assess_staged_planning_gate_full_pipeline(
     }
 
     let intent_ctx = build_intent_routing_context(
-        p.turn.messages,
+        p.turn.messages(),
         p.ctx.core.cfg.as_ref(),
         in_clarification_flow,
         ExecuteIntentThresholds {

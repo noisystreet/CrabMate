@@ -6,9 +6,9 @@
 //! - [`RunLoopAttach`]：工具运行时句柄、缓存、记忆、分阶段冻结开关；
 //! - [`RunLoopObs`]：Chrome trace、结构化 tracing、HTTP 审计、[`crate::process_handles::ProcessHandles`]。
 //!
-//! **`RunLoopTurnState`**：可变会话状态与本回合决策覆盖（`messages`、`messages_revision`、`sub_phase`、模型/温度覆盖、[`TurnPlannerHints`] 等）。
+//! **`RunLoopTurnState`**：可变会话状态与本回合决策覆盖（私有 **`messages_buf`**、**`messages()`** / **`messages_buffer_mut()`**、**`messages_revision`**、`sub_phase`、模型/温度覆盖、[`TurnPlannerHints`] 等）。
 //!
-//! **`messages_revision`**：在每次**就地**改写 `messages` 缓冲、以及每次 [`crate::agent::context_window::prepare_messages_for_model`] 完成后递增（单调；
+//! **`messages_revision`**：在每次**就地**改写消息缓冲、以及每次 [`crate::agent::context_window::prepare_messages_for_model`] 完成后递增（单调；
 //! 可与 `PerCoordinator` 的 workflow_validate 层缓存失效语义对照排障）。
 //!
 //! **`RunLoopParams`**：二者合一，供 `run_agent_turn_common` 与各子模块持有单一句柄。
@@ -178,8 +178,9 @@ impl TurnPlannerHints {
 
 /// 会话与编排可变侧：**消息缓冲**、失败时的 **`sub_phase`**、模型覆盖与本步 `executor_kind` 等。
 pub(crate) struct RunLoopTurnState<'a> {
-    pub messages: &'a mut Vec<Message>,
-    /// 单调递增：任意 `messages` 变异或一次「发往模型前」[`crate::agent::context_window::prepare_messages_for_model`] 完成后 +1（`wrapping`）。
+    /// 装配入口（`lib` / 测试）写入；业务路径请优先用 [`RunLoopTurnState::messages`] / [`RunLoopTurnState::messages_buffer_mut`]。
+    pub(crate) messages_buf: &'a mut Vec<Message>,
+    /// 单调递增：任意消息缓冲变异或一次「发往模型前」[`crate::agent::context_window::prepare_messages_for_model`] 完成后 +1（`wrapping`）。
     pub(crate) messages_revision: u64,
     /// 当前编排子阶段（供失败时 SSE `sub_phase` 与日志）；由 `outer_loop` / 分阶段路径在调用模型或执行工具前更新。
     pub sub_phase: AgentTurnSubPhase,
@@ -206,19 +207,34 @@ impl<'a> RunLoopTurnState<'a> {
         self.messages_revision = self.messages_revision.wrapping_add(1);
     }
 
-    /// 只读：当前缓冲代数（与 [`Self::messages`] 长度无必然相等关系）。
+    /// 只读：当前消息缓冲（与底层 `Vec` 同源）。
+    #[inline]
+    pub(crate) fn messages(&self) -> &[Message] {
+        self.messages_buf
+    }
+
+    /// 工具执行、SSE 分隔线注入等需持有 `&mut Vec<Message>` 的路径。
+    ///
+    /// 若直接改了 `Vec` 的内容而未经过 [`Self::push_message`] 等自带 bump 的 API，调用方须在返回后自行保证
+    /// **`messages_revision`** 与缓存语义一致（通常下一轮 **`prepare_messages_for_model`** 会再递增修订号）。
+    #[inline]
+    pub(crate) fn messages_buffer_mut(&mut self) -> &mut Vec<Message> {
+        self.messages_buf
+    }
+
+    /// 只读：当前缓冲代数（与当前缓冲条数无必然相等关系）。
     #[inline]
     pub(crate) fn messages_buffer_revision(&self) -> u64 {
         self.messages_revision
     }
 
     pub(crate) fn push_message(&mut self, msg: Message) {
-        self.messages.push(msg);
+        self.messages_buf.push(msg);
         self.bump_messages_revision();
     }
 
     pub(crate) fn pop_message(&mut self) -> Option<Message> {
-        let r = self.messages.pop();
+        let r = self.messages_buf.pop();
         if r.is_some() {
             self.bump_messages_revision();
         }
@@ -226,39 +242,39 @@ impl<'a> RunLoopTurnState<'a> {
     }
 
     pub(crate) fn truncate_messages(&mut self, len: usize) {
-        if self.messages.len() != len {
-            self.messages.truncate(len);
+        if self.messages_buf.len() != len {
+            self.messages_buf.truncate(len);
             self.bump_messages_revision();
         }
     }
 
     pub(crate) fn retain_messages(&mut self, mut keep: impl FnMut(&Message) -> bool) {
-        let before = self.messages.len();
-        self.messages.retain(|m| keep(m));
-        if self.messages.len() != before {
+        let before = self.messages_buf.len();
+        self.messages_buf.retain(|m| keep(m));
+        if self.messages_buf.len() != before {
             self.bump_messages_revision();
         }
     }
 
     pub(crate) fn push_assistant_merging_trailing_empty(&mut self, msg: Message) {
-        push_assistant_merging_trailing_empty_placeholder(self.messages, msg);
+        push_assistant_merging_trailing_empty_placeholder(self.messages_buf, msg);
         self.bump_messages_revision();
     }
 
     /// 本轮 user 后插入 UI 分隔线（若未插入则不变更代数）。
     pub(crate) fn insert_separator_after_last_user_for_turn(&mut self) {
-        let n = self.messages.len();
-        insert_separator_after_last_user_for_turn(self.messages);
-        if self.messages.len() != n {
+        let n = self.messages_buf.len();
+        insert_separator_after_last_user_for_turn(self.messages_buf);
+        if self.messages_buf.len() != n {
             self.bump_messages_revision();
         }
     }
 
     /// 分阶段规划：若末条为教练 / ensemble 注入的临时 user，则弹出并递增 **`messages_revision`**。
     pub(crate) fn pop_last_staged_planner_coach_user_if_present(&mut self) {
-        let n = self.messages.len();
-        pop_last_staged_planner_coach_user_if_present(self.messages);
-        if self.messages.len() != n {
+        let n = self.messages_buf.len();
+        pop_last_staged_planner_coach_user_if_present(self.messages_buf);
+        if self.messages_buf.len() != n {
             self.bump_messages_revision();
         }
     }
@@ -372,7 +388,7 @@ impl RunLoopParams<'_> {
 
     /// 发往模型前的同步裁剪 / 可选摘要 / changelist 注入；并驱动 **`messages_revision`** 与可选 **`PerCoordinator`** 层缓存失效。
     ///
-    /// 将 [`crate::agent::context_window::prepare_messages_for_model`] 与 `turn.messages` + `turn.messages_revision` 挂钩集中在一处，避免调用点漏传 revision。
+    /// 将 [`crate::agent::context_window::prepare_messages_for_model`] 与回合缓冲 + **`messages_revision`** 挂钩集中在一处，避免调用点漏传 revision。
     pub(crate) async fn prepare_turn_messages_for_model(
         &mut self,
         per_coord_layer_cache: Option<&mut crate::agent::per_coord::PerCoordinator>,
@@ -382,7 +398,7 @@ impl RunLoopParams<'_> {
             self.ctx.core.client,
             self.ctx.core.api_key,
             self.ctx.core.cfg.as_ref(),
-            self.turn.messages,
+            self.turn.messages_buf,
             self.ctx
                 .attach
                 .workspace_changelist
@@ -452,7 +468,7 @@ mod turn_planner_hints_tests {
 
         let mut storage = vec![Message::user_only("u")];
         let mut turn = super::RunLoopTurnState {
-            messages: &mut storage,
+            messages_buf: &mut storage,
             messages_revision: 0,
             sub_phase: AgentTurnSubPhase::Planner,
             turn_planner_hints: TurnPlannerHints::default(),
@@ -484,7 +500,7 @@ mod turn_planner_hints_tests {
         let coach = format!("{STAGED_PLAN_OPTIMIZER_COACH_MARK}\ntext");
         let mut storage = vec![Message::user_only("u"), Message::user_only(coach)];
         let mut turn = super::RunLoopTurnState {
-            messages: &mut storage,
+            messages_buf: &mut storage,
             messages_revision: 0,
             sub_phase: AgentTurnSubPhase::Planner,
             turn_planner_hints: TurnPlannerHints::default(),
@@ -497,7 +513,7 @@ mod turn_planner_hints_tests {
             seed_override: LlmSeedOverride::FromConfig,
         };
         turn.pop_last_staged_planner_coach_user_if_present();
-        assert_eq!(turn.messages.len(), 1);
+        assert_eq!(turn.messages().len(), 1);
         assert_eq!(turn.messages_buffer_revision(), 1);
     }
 }

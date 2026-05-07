@@ -223,7 +223,7 @@ where
     if echo_terminal_staged {
         let _ = crate::runtime::terminal_cli_transcript::print_staged_plan_notice(false, &body);
     }
-    let step_user_idx = patch_ctx.p.turn.messages.len();
+    let step_user_idx = patch_ctx.p.turn.messages().len();
     patch_ctx.p.turn.push_message(make_step_user_message(body));
     let prev_executor_constraint = patch_ctx.p.turn.turn_planner_hints.step_executor_constraint;
     patch_ctx.p.turn.turn_planner_hints.step_executor_constraint = step.executor_kind;
@@ -236,7 +236,7 @@ where
         if let Some(ref acceptance) = step.acceptance {
             let verify_result = crate::agent::step_verifier::verify_step_execution(
                 acceptance,
-                patch_ctx.p.turn.messages,
+                patch_ctx.p.turn.messages(),
                 step_user_idx,
                 patch_ctx.p.ctx.core.effective_working_dir,
             );
@@ -525,8 +525,7 @@ where
         patch_ctx
             .p
             .turn
-            .messages
-            .push(Message::chat_ui_separator(true));
+            .push_message(Message::chat_ui_separator(true));
         emit_chat_ui_separator_sse(out, true).await;
         return Ok(StagedStepIterationCtl::AdvanceToNextStep {
             n,
@@ -609,7 +608,7 @@ where
         return Ok(StagedStepIterationCtl::CancelledAfterOuterOk);
     }
 
-    let tools_ok = staged_step_tool_messages_all_ok(patch_ctx.p.turn.messages, step_user_idx);
+    let tools_ok = staged_step_tool_messages_all_ok(patch_ctx.p.turn.messages(), step_user_idx);
     let patch_planner_on = staged_step_patch_planner_enabled(
         patch_ctx
             .p
@@ -664,7 +663,7 @@ where
 
     staged_step_emit_ok_step_and_queue_notice(StagedStepOkNoticeParams {
         out,
-        messages: patch_ctx.p.turn.messages,
+        messages: patch_ctx.p.turn.messages_buffer_mut(),
         plan_id,
         step_id_trim: step.id.trim(),
         step_index,
@@ -903,8 +902,7 @@ where
         patch_ctx
             .p
             .turn
-            .messages
-            .push(Message::chat_ui_separator(true));
+            .push_message(Message::chat_ui_separator(true));
         emit_chat_ui_separator_sse(patch_ctx.p.ctx.io.out, true).await;
     }
     Ok(StagedPlanRunOutcome::ContinuePlanning)

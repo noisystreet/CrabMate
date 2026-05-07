@@ -134,7 +134,7 @@ where
     }
 
     let validate_only_binding_ids =
-        plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.turn.messages);
+        plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.turn.messages());
     let patch_plan = match plan_artifact::parse_agent_reply_plan_v1_from_assistant_message_with_validate_only_binding_ids(
         &msg,
         validate_only_binding_ids.as_deref(),

@@ -60,7 +60,7 @@ pub(crate) async fn per_reflect_after_assistant(
 
     match per_coord.after_final_assistant(
         msg,
-        p.turn.messages.as_slice(),
+        p.turn.messages(),
         p.ctx.core.cfg.as_ref(),
         p.ctx.core.workspace_is_set,
     ) {

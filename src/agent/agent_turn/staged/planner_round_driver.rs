@@ -141,7 +141,7 @@ pub(super) async fn run_staged_plan_nl_followup_round<F>(
 where
     F: Fn(String) -> Message,
 {
-    let mark = p.turn.messages.len();
+    let mark = p.turn.messages().len();
     p.turn
         .push_message(make_step_user_message(staged_plan_nl_followup_user_body()));
     let result: Result<(), RunAgentTurnError> = async {
@@ -152,7 +152,7 @@ where
                 message: e.to_string(),
             })?;
         let stripped = messages_for_api_stripping_reasoning_skip_ui_separators(
-            p.turn.messages.as_slice(),
+            p.turn.messages(),
             kimi_k2_5_vendor_requires_tool_call_reasoning(p.ctx.core.cfg.as_ref()),
             crate::llm::vendor::deepseek_json_output_eligible(p.ctx.core.cfg.as_ref()),
         );
@@ -196,13 +196,13 @@ where
         Ok(())
     }
     .await;
-    if result.is_err() && p.turn.messages.len() > mark {
+    if result.is_err() && p.turn.messages().len() > mark {
         p.turn.truncate_messages(mark);
     }
     result
 }
 
-/// 无工具规划补全：假定 `p.turn.messages` 已含本轮所需的 user（若有）；与 `prepare_staged_planner_no_tools_request` + `complete_planner_no_tools_chat_retrying` 一致。
+/// 无工具规划补全：假定回合缓冲已含本轮所需的 user（若有）；与 `prepare_staged_planner_no_tools_request` + `complete_planner_no_tools_chat_retrying` 一致。
 pub(super) async fn complete_one_staged_planner_assistant_round(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
@@ -301,7 +301,7 @@ where
         }
         strip_staged_planner_message_tool_calls(&mut sec_msg, "·逻辑多规划员", dsml);
         let validate_only_binding_ids =
-            plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.turn.messages);
+            plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.turn.messages());
         let parsed =
             plan_artifact::parse_agent_reply_plan_v1_from_assistant_message_with_validate_only_binding_ids(
                 &sec_msg,

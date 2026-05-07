@@ -117,6 +117,10 @@ pub(super) fn merge_system_prompt_with_cursor_rules(
 mod tests {
     use super::merge_system_prompt_with_cursor_rules;
     use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
+
+    /// `merge_system_prompt_with_cursor_rules` 依赖进程 `cwd`；并行跑测会导致偶发读错目录。
+    static CURSOR_RULES_CWD_TEST_MUTEX: Mutex<()> = Mutex::new(());
 
     struct CwdGuard {
         prev: PathBuf,
@@ -153,6 +157,9 @@ mod tests {
 
     #[test]
     fn merge_system_prompt_appends_agents_and_sorted_rules() {
+        let _g = CURSOR_RULES_CWD_TEST_MUTEX
+            .lock()
+            .expect("cursor_rules cwd test lock");
         let ws = temp_workspace("merge-order");
         std::fs::write(
             ws.join("AGENTS.md"),
@@ -189,6 +196,9 @@ mod tests {
 
     #[test]
     fn merge_system_prompt_truncates_when_over_limit() {
+        let _g = CURSOR_RULES_CWD_TEST_MUTEX
+            .lock()
+            .expect("cursor_rules cwd test lock");
         let ws = temp_workspace("merge-truncate");
         let rules_dir = ws.join(".cursor/rules");
         std::fs::create_dir_all(&rules_dir).expect("mkdir rules");

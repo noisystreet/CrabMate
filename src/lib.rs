@@ -663,7 +663,7 @@ pub async fn run_agent_turn<'a>(
             },
         },
         turn: agent::agent_turn::RunLoopTurnState {
-            messages,
+            messages_buf: messages,
             messages_revision: 0,
             sub_phase: crate::agent::agent_turn::AgentTurnSubPhase::Planner,
             turn_planner_hints: crate::agent::agent_turn::TurnPlannerHints::default(),
@@ -701,7 +701,7 @@ pub async fn run_agent_turn<'a>(
             long_term_memory_scope_id: turn_dump_scope_id.as_deref(),
             tracing_job_id: tracing_chat_turn.as_ref().map(|t| t.job_id),
             result: &res,
-            messages: loop_params.turn.messages,
+            messages: loop_params.turn.messages(),
             tools: tools_for_turn.as_slice(),
             cfg: loop_params.ctx.core.cfg,
             no_stream,

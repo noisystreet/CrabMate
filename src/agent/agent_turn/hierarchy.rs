@@ -87,8 +87,9 @@ async fn emit_hierarchical_final_assistant(p: &mut RunLoopParams<'_>, final_resp
 pub(crate) async fn run_hierarchical_agent(
     p: &mut RunLoopParams<'_>,
 ) -> Result<(), RunAgentTurnError> {
-    let in_clarification_flow = intent_user::recently_waiting_execute_confirmation(p.turn.messages);
-    let task = intent_user::extract_effective_user_task(p.turn.messages, in_clarification_flow);
+    let in_clarification_flow =
+        intent_user::recently_waiting_execute_confirmation(p.turn.messages());
+    let task = intent_user::extract_effective_user_task(p.turn.messages(), in_clarification_flow);
     if task.is_empty() {
         warn!(
             target: "crabmate::agent_turn",

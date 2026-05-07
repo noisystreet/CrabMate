@@ -119,7 +119,7 @@ pub(super) async fn prepare_staged_planner_no_tools_request(
         ltm.prepare_messages(
             p.ctx.core.cfg.as_ref(),
             p.ctx.attach.long_term_memory_scope_id.as_deref(),
-            p.turn.messages,
+            p.turn.messages_buffer_mut(),
         );
     }
     p.prepare_turn_messages_for_model(Some(per_coord))
@@ -148,7 +148,7 @@ pub(super) async fn prepare_staged_planner_no_tools_request(
     Ok(no_tools_chat_request_from_messages(
         p.ctx.core.cfg.as_ref(),
         build_planner_messages(
-            p.turn.messages,
+            p.turn.messages(),
             plan_system,
             preserve_kimi,
             preserve_deepseek,
@@ -220,9 +220,9 @@ where
                 p.ctx.core.cfg.as_ref(),
             );
             let validate_only_binding_active =
-                plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.turn.messages)
+                plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.turn.messages())
                     .is_some_and(|ids| !ids.is_empty());
-            let trigger_user = plan_optimizer::staged_plan_trigger_user_content(p.turn.messages);
+            let trigger_user = plan_optimizer::staged_plan_trigger_user_content(p.turn.messages());
             let pipeline_schedule = prepared_full_pipeline_schedule(PreparedFullPipelineInputs {
                 staged_plan_ensemble_count: p.ctx.attach.staged_plan_ensemble_count,
                 staged_plan_skip_ensemble_on_casual_prompt: p
@@ -565,7 +565,7 @@ where
     let merged_for_log =
         crate::agent::plan_artifact::assistant_merged_text_for_plan_artifact_parse(&msg);
     let validate_only_binding_ids =
-        plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.turn.messages);
+        plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.turn.messages());
     let parse_result =
         crate::agent::plan_artifact::parse_agent_reply_plan_v1_from_assistant_message_with_validate_only_binding_ids(
             &msg,
@@ -792,7 +792,7 @@ mod staged_plan_prepare_fixture_tests {
                 },
             },
             turn: RunLoopTurnState {
-                messages: &mut messages,
+                messages_buf: &mut messages,
                 messages_revision: 0,
                 sub_phase: AgentTurnSubPhase::Planner,
                 turn_planner_hints: crate::agent::agent_turn::TurnPlannerHints::default(),

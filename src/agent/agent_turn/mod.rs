@@ -67,9 +67,9 @@ pub(crate) async fn run_agent_turn_common(
     debug!(
         target: "crabmate",
         "run_agent_turn 开始 message_count={} messages_revision={} last_user_preview={} staged_plan={} planner_executor_mode={} work_dir={}",
-        p.turn.messages.len(),
+        p.turn.messages().len(),
         p.turn.messages_buffer_revision(),
-        crate::redact::last_user_message_preview_for_log(p.turn.messages),
+        crate::redact::last_user_message_preview_for_log(p.turn.messages()),
         p.ctx.core.cfg.staged_planning.staged_plan_execution,
         p.ctx.core.cfg.per_plan_policy.planner_executor_mode.as_str(),
         p.ctx.core.effective_working_dir.display()
