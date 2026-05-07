@@ -167,19 +167,7 @@ pub fn gh_pr_create(
     if let Err(e) = validate_pr_body(body) {
         return e;
     }
-    if let Some(r) = v.get("repo").and_then(|x| x.as_str())
-        && let Err(e) = validate_repo(r)
-    {
-        return e;
-    }
-    if let Some(b) = v.get("base").and_then(|x| x.as_str())
-        && let Err(e) = validate_pr_ref_token(b)
-    {
-        return e;
-    }
-    if let Some(h) = v.get("head").and_then(|x| x.as_str())
-        && let Err(e) = validate_pr_ref_token(h)
-    {
+    if let Err(e) = gh_pr_create_validate_repo_base_head(&v) {
         return e;
     }
 
@@ -196,6 +184,33 @@ pub fn gh_pr_create(
         None => return "错误：临时文件路径非 UTF-8".to_string(),
     };
 
+    let argv = match gh_pr_create_build_argv(&v, title, body_path_str) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
+    let out = run_gh_vec(argv, max_output_len, allowed_commands, working_dir);
+    drop(dir);
+    out
+}
+
+fn gh_pr_create_validate_repo_base_head(v: &serde_json::Value) -> Result<(), String> {
+    if let Some(r) = v.get("repo").and_then(|x| x.as_str()) {
+        validate_repo(r)?;
+    }
+    if let Some(b) = v.get("base").and_then(|x| x.as_str()) {
+        validate_pr_ref_token(b)?;
+    }
+    if let Some(h) = v.get("head").and_then(|x| x.as_str()) {
+        validate_pr_ref_token(h)?;
+    }
+    Ok(())
+}
+
+fn gh_pr_create_build_argv(
+    v: &serde_json::Value,
+    title: &str,
+    body_path_str: String,
+) -> Result<Vec<String>, String> {
     let mut argv = vec![
         "pr".into(),
         "create".into(),
@@ -227,12 +242,8 @@ pub fn gh_pr_create(
             .iter()
             .filter_map(|x| x.as_str().map(String::from))
             .collect();
-        if let Err(e) = validate_extra_args(&extra) {
-            return e;
-        }
+        validate_extra_args(&extra)?;
         argv.extend(extra);
     }
-    let out = run_gh_vec(argv, max_output_len, allowed_commands, working_dir);
-    drop(dir);
-    out
+    Ok(argv)
 }

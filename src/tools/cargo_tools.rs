@@ -726,6 +726,96 @@ pub fn cargo_fix_try(
     run_and_format_try(cmd, max_output_len, "cargo fix", "cargo_fix")
 }
 
+struct CargoSubCmdOpts<'a> {
+    release: bool,
+    all_targets: bool,
+    package: Option<&'a str>,
+    bin: Option<&'a str>,
+    features: Option<&'a str>,
+    test_filter: Option<&'a str>,
+    no_capture: bool,
+    run_args: Vec<serde_json::Value>,
+}
+
+fn parse_cargo_subcmd_opts(v: &serde_json::Value) -> Result<CargoSubCmdOpts<'_>, ToolError> {
+    let package = v.get("package").and_then(|x| x.as_str()).map(str::trim);
+    let bin = v.get("bin").and_then(|x| x.as_str()).map(str::trim);
+    if let Some(p) = package
+        && (p.is_empty() || p.contains(char::is_whitespace))
+    {
+        return Err(ToolError::invalid_args(
+            "错误：package 参数无效".to_string(),
+        ));
+    }
+    if let Some(b) = bin
+        && (b.is_empty() || b.contains(char::is_whitespace))
+    {
+        return Err(ToolError::invalid_args("错误：bin 参数无效".to_string()));
+    }
+    Ok(CargoSubCmdOpts {
+        release: v.get("release").and_then(|x| x.as_bool()).unwrap_or(false),
+        all_targets: v
+            .get("all_targets")
+            .and_then(|x| x.as_bool())
+            .unwrap_or(false),
+        package,
+        bin,
+        features: v
+            .get("features")
+            .and_then(|x| x.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty()),
+        test_filter: v
+            .get("test_filter")
+            .and_then(|x| x.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty()),
+        no_capture: v
+            .get("nocapture")
+            .and_then(|x| x.as_bool())
+            .unwrap_or(false),
+        run_args: v
+            .get("args")
+            .and_then(|x| x.as_array())
+            .cloned()
+            .unwrap_or_default(),
+    })
+}
+
+fn push_cargo_subcmd_cli(cmd: &mut Command, subcmd: &str, o: &CargoSubCmdOpts<'_>) {
+    cmd.arg(subcmd);
+    if o.release {
+        cmd.arg("--release");
+    }
+    if o.all_targets && matches!(subcmd, "check" | "clippy") {
+        cmd.arg("--all-targets");
+    }
+    if let Some(p) = o.package {
+        cmd.arg("--package").arg(p);
+    }
+    if let Some(b) = o.bin {
+        cmd.arg("--bin").arg(b);
+    }
+    if let Some(f) = o.features {
+        cmd.arg("--features").arg(f);
+    }
+    if subcmd == "test" {
+        if let Some(filter) = o.test_filter {
+            cmd.arg(filter);
+        }
+        if o.no_capture {
+            cmd.arg("--").arg("--nocapture");
+        }
+    } else if subcmd == "run" && !o.run_args.is_empty() {
+        cmd.arg("--");
+        for a in &o.run_args {
+            if let Some(s) = a.as_str() {
+                cmd.arg(s);
+            }
+        }
+    }
+}
+
 fn run_cargo_subcommand_str_try(
     subcmd: &str,
     args_json: &str,
@@ -749,78 +839,9 @@ fn run_cargo_subcommand_value_try(
         ));
     }
 
-    let release = v.get("release").and_then(|x| x.as_bool()).unwrap_or(false);
-    let all_targets = v
-        .get("all_targets")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
-    let package = v.get("package").and_then(|x| x.as_str()).map(str::trim);
-    let bin = v.get("bin").and_then(|x| x.as_str()).map(str::trim);
-    let features = v
-        .get("features")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let test_filter = v
-        .get("test_filter")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let no_capture = v
-        .get("nocapture")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
-    let run_args = v
-        .get("args")
-        .and_then(|x| x.as_array())
-        .cloned()
-        .unwrap_or_default();
-
-    if let Some(p) = package
-        && (p.is_empty() || p.contains(char::is_whitespace))
-    {
-        return Err(ToolError::invalid_args(
-            "错误：package 参数无效".to_string(),
-        ));
-    }
-    if let Some(b) = bin
-        && (b.is_empty() || b.contains(char::is_whitespace))
-    {
-        return Err(ToolError::invalid_args("错误：bin 参数无效".to_string()));
-    }
-
+    let o = parse_cargo_subcmd_opts(v)?;
     let mut cmd = Command::new("cargo");
-    cmd.arg(subcmd);
-    if release {
-        cmd.arg("--release");
-    }
-    if all_targets && matches!(subcmd, "check" | "clippy") {
-        cmd.arg("--all-targets");
-    }
-    if let Some(p) = package {
-        cmd.arg("--package").arg(p);
-    }
-    if let Some(b) = bin {
-        cmd.arg("--bin").arg(b);
-    }
-    if let Some(f) = features {
-        cmd.arg("--features").arg(f);
-    }
-    if subcmd == "test" {
-        if let Some(filter) = test_filter {
-            cmd.arg(filter);
-        }
-        if no_capture {
-            cmd.arg("--").arg("--nocapture");
-        }
-    } else if subcmd == "run" && !run_args.is_empty() {
-        cmd.arg("--");
-        for a in run_args {
-            if let Some(s) = a.as_str() {
-                cmd.arg(s);
-            }
-        }
-    }
+    push_cargo_subcmd_cli(&mut cmd, subcmd, &o);
     cmd.current_dir(workspace_root);
     let tool_code = format!("cargo_{}", subcmd);
     run_and_format_try(
