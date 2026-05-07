@@ -51,6 +51,8 @@ pub(crate) struct RunLoopCtx<'a> {
     /// 澄清问卷：工具 `present_clarification_questionnaire` 成功时回调（供 `crabmate tui` 等无 SSE 路径）。
     pub clarification_questionnaire_hook:
         Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
+    /// 无 SSE 时镜像 [`crate::sse::SsePayload`]（与 Web `/chat/stream` 控制面对齐）；Web 通常为 `None`。
+    pub sse_control_mirror: Option<crate::sse::SseControlMirror>,
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     /// 与 [`WebExecuteCtx::cli_tool_ctx`] 相同；Web 队列传 `None`。
     pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
@@ -304,6 +306,7 @@ impl RunLoopParams<'_> {
             secondary_intents,
             intent_mode_bias_enabled: self.ctx.cfg.intent_routing.intent_mode_bias_enabled,
             process_handles: Arc::clone(&self.ctx.process_handles),
+            sse_control_mirror: self.ctx.sse_control_mirror.clone(),
         }
     }
 

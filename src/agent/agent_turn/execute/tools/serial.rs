@@ -33,6 +33,7 @@ struct SerialEmitToolResultParams<'a> {
     cfg: &'a Arc<crate::config::AgentConfig>,
     tool_outcome_recorder: &'a Arc<crate::tool_stats::ToolOutcomeRecorder>,
     out: Option<&'a mpsc::Sender<String>>,
+    sse_control_mirror: Option<crate::sse::SseControlMirror>,
     clarification_questionnaire_hook:
         Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
     echo_terminal_transcript: bool,
@@ -51,6 +52,7 @@ struct SerialTtlRunCommandEarlyHitParams<'a> {
     cfg: &'a Arc<crate::config::AgentConfig>,
     tool_outcome_recorder: &'a Arc<crate::tool_stats::ToolOutcomeRecorder>,
     out: Option<&'a mpsc::Sender<String>>,
+    sse_control_mirror: Option<crate::sse::SseControlMirror>,
     clarification_questionnaire_hook:
         Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
     echo_terminal_transcript: bool,
@@ -90,6 +92,7 @@ async fn serial_try_ttl_run_command_cache_hit(p: SerialTtlRunCommandEarlyHitPara
         cfg: p.cfg,
         tool_outcome_recorder: p.tool_outcome_recorder,
         out: p.out,
+        sse_control_mirror: p.sse_control_mirror.clone(),
         clarification_questionnaire_hook: p.clarification_questionnaire_hook.clone(),
         echo_terminal_transcript: p.echo_terminal_transcript,
         terminal_tool_display_max_chars: p.terminal_tool_display_max_chars,
@@ -124,6 +127,7 @@ struct SerialEarlyToolPolicyDenyParams<'a> {
     cfg: &'a Arc<crate::config::AgentConfig>,
     tool_outcome_recorder: &'a Arc<crate::tool_stats::ToolOutcomeRecorder>,
     out: Option<&'a mpsc::Sender<String>>,
+    sse_control_mirror: Option<crate::sse::SseControlMirror>,
     clarification_questionnaire_hook:
         Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
     echo_terminal_transcript: bool,
@@ -149,6 +153,7 @@ async fn serial_emit_early_tool_policy_denials(p: SerialEarlyToolPolicyDenyParam
             cfg: p.cfg,
             tool_outcome_recorder: p.tool_outcome_recorder,
             out: p.out,
+            sse_control_mirror: p.sse_control_mirror.clone(),
             clarification_questionnaire_hook: p.clarification_questionnaire_hook.clone(),
             echo_terminal_transcript: p.echo_terminal_transcript,
             terminal_tool_display_max_chars: p.terminal_tool_display_max_chars,
@@ -172,6 +177,7 @@ async fn serial_emit_early_tool_policy_denials(p: SerialEarlyToolPolicyDenyParam
             cfg: p.cfg,
             tool_outcome_recorder: p.tool_outcome_recorder,
             out: p.out,
+            sse_control_mirror: p.sse_control_mirror.clone(),
             clarification_questionnaire_hook: p.clarification_questionnaire_hook.clone(),
             echo_terminal_transcript: p.echo_terminal_transcript,
             terminal_tool_display_max_chars: p.terminal_tool_display_max_chars,
@@ -244,6 +250,7 @@ async fn emit_serial_tool_result(p: SerialEmitToolResultParams<'_>) {
         cfg,
         tool_outcome_recorder,
         out,
+        sse_control_mirror,
         clarification_questionnaire_hook,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
@@ -266,6 +273,7 @@ async fn emit_serial_tool_result(p: SerialEmitToolResultParams<'_>) {
             cfg,
             tool_outcome_recorder,
             out,
+            sse_control_mirror,
             clarification_questionnaire_hook,
             echo_terminal_transcript,
             terminal_tool_display_max_chars,
@@ -288,6 +296,7 @@ struct SerialEmitEarlyWithoutDispatchParams<'a> {
     cfg: &'a Arc<crate::config::AgentConfig>,
     tool_outcome_recorder: &'a Arc<crate::tool_stats::ToolOutcomeRecorder>,
     out: Option<&'a mpsc::Sender<String>>,
+    sse_control_mirror: Option<crate::sse::SseControlMirror>,
     clarification_questionnaire_hook:
         Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
     echo_terminal_transcript: bool,
@@ -311,6 +320,7 @@ async fn serial_emit_early_without_dispatch(p: SerialEmitEarlyWithoutDispatchPar
         cfg,
         tool_outcome_recorder,
         out,
+        sse_control_mirror,
         clarification_questionnaire_hook,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
@@ -335,6 +345,7 @@ async fn serial_emit_early_without_dispatch(p: SerialEmitEarlyWithoutDispatchPar
             cfg,
             tool_outcome_recorder,
             out,
+            sse_control_mirror: sse_control_mirror.clone(),
             clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
             echo_terminal_transcript,
             terminal_tool_display_max_chars,
@@ -361,6 +372,7 @@ async fn serial_emit_early_without_dispatch(p: SerialEmitEarlyWithoutDispatchPar
             cfg,
             tool_outcome_recorder,
             out,
+            sse_control_mirror: sse_control_mirror.clone(),
             clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
             echo_terminal_transcript,
             terminal_tool_display_max_chars,
@@ -381,6 +393,7 @@ async fn serial_emit_early_without_dispatch(p: SerialEmitEarlyWithoutDispatchPar
         cfg,
         tool_outcome_recorder,
         out,
+        sse_control_mirror: sse_control_mirror.clone(),
         clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
@@ -418,6 +431,7 @@ async fn serial_emit_early_without_dispatch(p: SerialEmitEarlyWithoutDispatchPar
             cfg,
             tool_outcome_recorder,
             out,
+            sse_control_mirror: sse_control_mirror.clone(),
             clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
             echo_terminal_transcript,
             terminal_tool_display_max_chars,
@@ -455,6 +469,7 @@ async fn serial_emit_early_without_dispatch(p: SerialEmitEarlyWithoutDispatchPar
             cfg,
             tool_outcome_recorder,
             out,
+            sse_control_mirror: sse_control_mirror.clone(),
             clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
             echo_terminal_transcript,
             terminal_tool_display_max_chars,
@@ -475,6 +490,7 @@ async fn serial_emit_early_without_dispatch(p: SerialEmitEarlyWithoutDispatchPar
         cfg,
         tool_outcome_recorder,
         out,
+        sse_control_mirror: sse_control_mirror.clone(),
         clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
@@ -503,6 +519,7 @@ async fn serial_emit_early_without_dispatch(p: SerialEmitEarlyWithoutDispatchPar
             cfg,
             tool_outcome_recorder,
             out,
+            sse_control_mirror: sse_control_mirror.clone(),
             clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
             echo_terminal_transcript,
             terminal_tool_display_max_chars,
@@ -666,9 +683,10 @@ pub(super) async fn execute_tools_serial(
         handler_lookup,
         sync_default_sandbox_backend,
         readonly_tool_ttl_cache,
+        sse_control_mirror,
     } = ctx;
 
-    let clarify_hook = clarification_questionnaire_hook.clone();
+    let sse_mirror_for_emit = sse_control_mirror.clone();
 
     let mut readonly_cache: HashMap<(String, String), String> = HashMap::new();
     for tc in tool_calls {
@@ -687,9 +705,19 @@ pub(super) async fn execute_tools_serial(
         if let Some(ref t) = tracing_chat_turn {
             t.record_tool_call_id_for_log(id.as_str());
         }
-        emit_tool_call_summary_sse(out, cfg.as_ref(), id.as_str(), &name, &args, messages).await;
+        emit_tool_call_summary_sse(
+            out,
+            sse_mirror_for_emit.as_ref(),
+            cfg.as_ref(),
+            id.as_str(),
+            &name,
+            &args,
+            messages,
+        )
+        .await;
         emit_timeline_log_sse(
             out,
+            sse_mirror_for_emit.as_ref(),
             "tool_step_started",
             name.clone(),
             Some(format!(
@@ -712,7 +740,8 @@ pub(super) async fn execute_tools_serial(
             cfg,
             tool_outcome_recorder: &tool_outcome_recorder,
             out,
-            clarification_questionnaire_hook: clarify_hook.clone(),
+            sse_control_mirror: sse_mirror_for_emit.clone(),
+            clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
             echo_terminal_transcript,
             terminal_tool_display_max_chars,
             tool_result_envelope_v1,
@@ -842,7 +871,8 @@ pub(super) async fn execute_tools_serial(
             cfg,
             tool_outcome_recorder: &tool_outcome_recorder,
             out,
-            clarification_questionnaire_hook: clarify_hook.clone(),
+            sse_control_mirror: sse_mirror_for_emit.clone(),
+            clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
             echo_terminal_transcript,
             terminal_tool_display_max_chars,
             tool_result_envelope_v1,

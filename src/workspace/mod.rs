@@ -7,3 +7,4 @@
 pub mod changelist;
 pub mod fs;
 pub mod path;
+pub mod tasks_side;

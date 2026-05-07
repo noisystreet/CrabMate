@@ -3,6 +3,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::config::SharedAgentConfig;
+use crate::process_handles::ProcessHandles;
 use crate::runtime::workspace_session;
 use crate::tool_stats::ToolOutcomeRecorder;
 use crate::types::Message;
@@ -18,6 +19,7 @@ pub(super) struct TuiSqliteSlashEnv<'a> {
     pub(super) work_dir: &'a std::path::Path,
     pub(super) tool_count: usize,
     pub(super) cli_no_stream: bool,
+    pub(super) process_handles: &'a Arc<ProcessHandles>,
 }
 
 fn push_block(model: &Arc<Mutex<TuiModel>>, lines: &[String]) {
@@ -43,6 +45,7 @@ pub(super) async fn tui_try_consume_sqlite_slash(
         work_dir,
         tool_count,
         cli_no_stream,
+        process_handles,
     } = env;
 
     let Some(sess) = sqlite_slot.as_mut() else {
@@ -95,6 +98,7 @@ pub(super) async fn tui_try_consume_sqlite_slash(
                     tool_count: *tool_count,
                     cli_no_stream: *cli_no_stream,
                     sqlite_persist: None,
+                    process_handles,
                 })
                 .await;
             }
@@ -179,6 +183,7 @@ pub(super) async fn tui_try_consume_sqlite_slash(
                         tool_count: *tool_count,
                         cli_no_stream: *cli_no_stream,
                         sqlite_persist: None,
+                        process_handles,
                     })
                     .await;
                 }
@@ -217,6 +222,7 @@ pub(super) async fn tui_try_consume_sqlite_slash(
                         tool_count: *tool_count,
                         cli_no_stream: *cli_no_stream,
                         sqlite_persist: None,
+                        process_handles,
                     })
                     .await;
                 }

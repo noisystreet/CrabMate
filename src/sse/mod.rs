@@ -6,6 +6,7 @@
 //!
 //! 控制面 **`stop`/`handled`/`plain`** 分类见 workspace crate **`crabmate-sse-protocol`**（`classify_sse_control_outcome`），金样 **`fixtures/sse_control_golden.jsonl`**。
 
+mod control_mirror;
 mod final_response_terminal;
 pub mod line;
 mod mpsc_send;
@@ -13,10 +14,12 @@ pub mod protocol;
 pub(crate) mod stream_hub;
 pub(crate) mod web_approval;
 
+pub(crate) use control_mirror::send_sse_control_payload_optional;
 pub(crate) use final_response_terminal::send_final_response_timeline_then_answer_phase;
 pub(crate) use mpsc_send::{send_string_logged, send_string_logged_cooperative_cancel};
 pub(crate) use stream_hub::SseStreamHub;
 
+pub use control_mirror::SseControlMirror;
 pub use protocol::{
     ClarificationQuestionField, ClarificationQuestionnaireBody, CommandApprovalBody,
     ConversationSavedBody, SseCapabilitiesBody, SseErrorBody, SsePayload, StagedPlanFinishedBody,

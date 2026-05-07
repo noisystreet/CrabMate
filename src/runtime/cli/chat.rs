@@ -59,6 +59,7 @@ pub(crate) struct RunAgentTurnForCliParams<'a> {
     pub cli_tool_ctx: Option<&'a CliToolRuntime>,
     pub active_agent_role: Option<&'a str>,
     pub process_handles: Arc<ProcessHandles>,
+    pub sse_control_mirror: Option<crate::sse::SseControlMirror>,
 }
 
 pub(crate) async fn run_agent_turn_for_cli(
@@ -79,6 +80,7 @@ pub(crate) async fn run_agent_turn_for_cli(
         cli_tool_ctx,
         active_agent_role,
         process_handles,
+        sse_control_mirror,
     } = p;
     let (ltm, scope) = process_handles
         .cli_long_term_memory_handles_with_stderr_notice(cfg, &CLI_LTM_OPEN_FAILURE_NOTIFIED);
@@ -104,6 +106,7 @@ pub(crate) async fn run_agent_turn_for_cli(
             long_term_memory_scope_id: scope,
             turn_allowed_tool_names: turn_allow,
             process_handles,
+            sse_control_mirror,
         },
     ))
     .await
@@ -398,6 +401,7 @@ async fn run_chat_batch_jsonl(
             cli_tool_ctx: Some(cli_rt),
             active_agent_role: agent_role,
             process_handles: Arc::clone(&process_handles),
+            sse_control_mirror: None,
         })
         .await
         .map_err(map_turn_err)?;
@@ -490,6 +494,7 @@ pub async fn run_chat_invocation(
             cli_tool_ctx: Some(&cli_rt),
             active_agent_role: agent_role,
             process_handles: Arc::clone(&process_handles),
+            sse_control_mirror: None,
         })
         .await
         .map_err(map_turn_err)?;
@@ -555,6 +560,7 @@ pub async fn run_chat_invocation(
         cli_tool_ctx: Some(&cli_rt),
         active_agent_role: agent_role,
         process_handles,
+        sse_control_mirror: None,
     })
     .await
     .map_err(map_turn_err)?;

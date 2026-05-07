@@ -94,6 +94,8 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub sync_default_sandbox_backend: Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
     /// 与 [`crate::process_handles::ProcessHandles::readonly_tool_ttl_cache`] 同源。
     pub readonly_tool_ttl_cache: Arc<crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache>,
+    /// 无 HTTP SSE 时镜像控制面（与 Web `SsePayload` 对齐）；Web 为 `None`。
+    pub sse_control_mirror: Option<crate::sse::SseControlMirror>,
 }
 
 pub(crate) enum ExecuteToolsBatchOutcome {
@@ -108,6 +110,7 @@ pub(super) struct EmitToolResultParams<'a> {
     cfg: &'a Arc<AgentConfig>,
     tool_outcome_recorder: &'a Arc<crate::tool_stats::ToolOutcomeRecorder>,
     out: Option<&'a mpsc::Sender<String>>,
+    sse_control_mirror: Option<crate::sse::SseControlMirror>,
     /// 无 SSE 时（如 `crabmate tui`）：仍通知澄清问卷控制面，与 Web SSE 语义对齐。
     clarification_questionnaire_hook:
         Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
@@ -189,6 +192,7 @@ struct ExecuteToolsCommonCtx<'a> {
     tool_running_hook: Option<Arc<dyn Fn(bool) + Send + Sync>>,
     clarification_questionnaire_hook:
         Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
+    sse_control_mirror: Option<crate::sse::SseControlMirror>,
 }
 
 fn notify_cli_tool_running_hook(
@@ -345,6 +349,7 @@ pub(crate) async fn per_execute_tools_web(
         handler_lookup,
         sync_default_sandbox_backend,
         readonly_tool_ttl_cache,
+        sse_control_mirror,
     } = ctx;
 
     let _tool_trace = request_chrome_trace
@@ -381,6 +386,7 @@ pub(crate) async fn per_execute_tools_web(
         handler_lookup,
         sync_default_sandbox_backend,
         readonly_tool_ttl_cache,
+        sse_control_mirror,
     })
     .await
 }
