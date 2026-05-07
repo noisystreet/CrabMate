@@ -63,6 +63,16 @@ fn apply_cli_llm_context_tokens_override(
     cfg
 }
 
+fn load_cli_config_for_early_command(
+    config_path: &Option<String>,
+    llm_context_tokens_cli: Option<u32>,
+) -> Result<config::AgentConfig, Box<dyn std::error::Error>> {
+    Ok(apply_cli_llm_context_tokens_override(
+        config::load_config_for_cli(config_path.as_deref())?,
+        llm_context_tokens_cli,
+    ))
+}
+
 struct EarlyCliDispatch<'a> {
     config_path: &'a Option<String>,
     workspace_cli: &'a Option<String>,
@@ -74,82 +84,76 @@ struct EarlyCliDispatch<'a> {
     plugin_list: Option<PluginListCli>,
 }
 
+/// `doctor` / `mcp list` / `mcp serve`：由 [`ExtraCliCommand`] 分流。
+async fn try_dispatch_early_extra_cli(
+    d: &EarlyCliDispatch<'_>,
+    tokens: Option<u32>,
+) -> Result<Option<bool>, Box<dyn std::error::Error>> {
+    match d.extra_cli {
+        ExtraCliCommand::Doctor => {
+            let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+            crate::runtime::cli_doctor::print_doctor_report(&cfg, d.workspace_cli.as_deref());
+            Ok(Some(true))
+        }
+        ExtraCliCommand::McpList { probe } => {
+            let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+            crate::runtime::cli_mcp::run_mcp_list(&cfg, probe, false).await;
+            Ok(Some(true))
+        }
+        ExtraCliCommand::McpServe { no_tools } => {
+            let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+            crate::runtime::cli_mcp::run_mcp_serve(&cfg, d.workspace_cli, no_tools)
+                .await
+                .map_err(std::io::Error::other)?;
+            Ok(Some(true))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// `save-session` / `tool-replay` / `plugin *` 等非默认主流程。
+fn try_dispatch_early_workspace_commands(
+    d: &EarlyCliDispatch<'_>,
+    tokens: Option<u32>,
+) -> Result<Option<bool>, Box<dyn std::error::Error>> {
+    if let Some(ss) = d.save_session.clone() {
+        let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+        crate::runtime::cli::run_save_session_command(&cfg, d.workspace_cli, ss)?;
+        return Ok(Some(true));
+    }
+    if let Some(tr) = d.tool_replay.clone() {
+        let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+        crate::runtime::cli::run_tool_replay_command(&cfg, d.workspace_cli, tr)?;
+        return Ok(Some(true));
+    }
+    if let Some(pi) = d.plugin_init.clone() {
+        let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+        crate::runtime::cli::run_plugin_init_command(&cfg, d.workspace_cli, pi)?;
+        return Ok(Some(true));
+    }
+    if let Some(pv) = d.plugin_validate.clone() {
+        let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+        crate::runtime::cli::run_plugin_validate_command(&cfg, d.workspace_cli, pv)?;
+        return Ok(Some(true));
+    }
+    if let Some(pl) = d.plugin_list.clone() {
+        let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+        crate::runtime::cli::run_plugin_list_command(&cfg, d.workspace_cli, pl)?;
+        return Ok(Some(true));
+    }
+    Ok(None)
+}
+
 async fn run_early_commands(
     d: EarlyCliDispatch<'_>,
     llm_context_tokens_cli: Option<u32>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    if d.extra_cli == ExtraCliCommand::Doctor {
-        let cfg = apply_cli_llm_context_tokens_override(
-            config::load_config_for_cli(d.config_path.as_deref())?,
-            llm_context_tokens_cli,
-        );
-        crate::runtime::cli_doctor::print_doctor_report(&cfg, d.workspace_cli.as_deref());
+    if let Some(true) = try_dispatch_early_extra_cli(&d, llm_context_tokens_cli).await? {
         return Ok(true);
     }
-
-    if let ExtraCliCommand::McpList { probe } = d.extra_cli {
-        let cfg = apply_cli_llm_context_tokens_override(
-            config::load_config_for_cli(d.config_path.as_deref())?,
-            llm_context_tokens_cli,
-        );
-        crate::runtime::cli_mcp::run_mcp_list(&cfg, probe, false).await;
+    if let Some(true) = try_dispatch_early_workspace_commands(&d, llm_context_tokens_cli)? {
         return Ok(true);
     }
-
-    if let ExtraCliCommand::McpServe { no_tools } = d.extra_cli {
-        let cfg = apply_cli_llm_context_tokens_override(
-            config::load_config_for_cli(d.config_path.as_deref())?,
-            llm_context_tokens_cli,
-        );
-        crate::runtime::cli_mcp::run_mcp_serve(&cfg, d.workspace_cli, no_tools)
-            .await
-            .map_err(std::io::Error::other)?;
-        return Ok(true);
-    }
-
-    if let Some(ss) = d.save_session {
-        let cfg = apply_cli_llm_context_tokens_override(
-            config::load_config_for_cli(d.config_path.as_deref())?,
-            llm_context_tokens_cli,
-        );
-        crate::runtime::cli::run_save_session_command(&cfg, d.workspace_cli, ss)?;
-        return Ok(true);
-    }
-
-    if let Some(tr) = d.tool_replay {
-        let cfg = apply_cli_llm_context_tokens_override(
-            config::load_config_for_cli(d.config_path.as_deref())?,
-            llm_context_tokens_cli,
-        );
-        crate::runtime::cli::run_tool_replay_command(&cfg, d.workspace_cli, tr)?;
-        return Ok(true);
-    }
-
-    if let Some(pi) = d.plugin_init {
-        let cfg = apply_cli_llm_context_tokens_override(
-            config::load_config_for_cli(d.config_path.as_deref())?,
-            llm_context_tokens_cli,
-        );
-        crate::runtime::cli::run_plugin_init_command(&cfg, d.workspace_cli, pi)?;
-        return Ok(true);
-    }
-    if let Some(pv) = d.plugin_validate {
-        let cfg = apply_cli_llm_context_tokens_override(
-            config::load_config_for_cli(d.config_path.as_deref())?,
-            llm_context_tokens_cli,
-        );
-        crate::runtime::cli::run_plugin_validate_command(&cfg, d.workspace_cli, pv)?;
-        return Ok(true);
-    }
-    if let Some(pl) = d.plugin_list {
-        let cfg = apply_cli_llm_context_tokens_override(
-            config::load_config_for_cli(d.config_path.as_deref())?,
-            llm_context_tokens_cli,
-        );
-        crate::runtime::cli::run_plugin_list_command(&cfg, d.workspace_cli, pl)?;
-        return Ok(true);
-    }
-
     Ok(false)
 }
 
