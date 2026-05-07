@@ -4,7 +4,10 @@ use tokio::sync::mpsc;
 use crate::agent::per_coord::PerCoordinator;
 use crate::clarification_questionnaire::clarification_questionnaire_body_if_tool_ok;
 use crate::config::AgentConfig;
-use crate::sse::{SsePayload, ThinkingTraceBody, ToolCallSummary, ToolResultBody, encode_message};
+use crate::sse::{
+    SsePayload, ThinkingTraceBody, ToolCallSummary, ToolResultBody, encode_message,
+    send_sse_control_payload_optional,
+};
 use crate::tool_result::{self, NormalizedToolEnvelope, ToolEnvelopeContext, parse_legacy_output};
 use crate::tools;
 use crate::types::{Message, message_content_byte_len_for_estimate};
@@ -57,7 +60,8 @@ pub(super) async fn emit_thinking_trace_sse(
 
 /// SSE：`SsePayload::ToolResult`（含 stdout/stderr、retryable、信封元数据）。
 async fn emit_sse_tool_result(
-    tx: &mpsc::Sender<String>,
+    out: Option<&mpsc::Sender<String>>,
+    sse_control_mirror: Option<&crate::sse::SseControlMirror>,
     name: &str,
     result: &str,
     tool_summary: Option<String>,
@@ -91,28 +95,30 @@ async fn emit_sse_tool_result(
         result,
         norm.structured_payload.as_ref(),
     );
-    let _ = crate::sse::send_string_logged(
-        tx,
-        encode_message(SsePayload::ToolResult {
-            tool_result: ToolResultBody {
-                name: norm.name,
-                goal_id: None,
-                result_version: norm.envelope_version,
-                summary: tool_summary,
-                output: result.to_string(),
-                ok: Some(norm.ok),
-                exit_code: norm.exit_code,
-                error_code: norm.error_code.clone(),
-                failure_category: norm.failure_category.clone(),
-                retryable: norm.retryable,
-                tool_call_id: norm.tool_call_id,
-                execution_mode: norm.execution_mode,
-                parallel_batch_id: norm.parallel_batch_id,
-                stdout,
-                stderr,
-                structured_preview,
-            },
-        }),
+    let payload = SsePayload::ToolResult {
+        tool_result: ToolResultBody {
+            name: norm.name,
+            goal_id: None,
+            result_version: norm.envelope_version,
+            summary: tool_summary,
+            output: result.to_string(),
+            ok: Some(norm.ok),
+            exit_code: norm.exit_code,
+            error_code: norm.error_code.clone(),
+            failure_category: norm.failure_category.clone(),
+            retryable: norm.retryable,
+            tool_call_id: norm.tool_call_id,
+            execution_mode: norm.execution_mode,
+            parallel_batch_id: norm.parallel_batch_id,
+            stdout,
+            stderr,
+            structured_preview,
+        },
+    };
+    let _ = send_sse_control_payload_optional(
+        out,
+        sse_control_mirror,
+        payload,
         "execute_tools::emit_tool_result_sse",
     )
     .await;
@@ -137,6 +143,7 @@ pub(super) async fn emit_sse_tool_running(
 
 pub(super) async fn emit_timeline_log_sse(
     out: Option<&mpsc::Sender<String>>,
+    sse_control_mirror: Option<&crate::sse::SseControlMirror>,
     kind: &str,
     title: String,
     detail: Option<String>,
@@ -147,21 +154,14 @@ pub(super) async fn emit_timeline_log_sse(
         title.as_str(),
         detail.as_deref(),
     );
-    let Some(tx) = out else {
-        return;
+    let payload = SsePayload::TimelineLog {
+        log: crate::sse::protocol::TimelineLogBody {
+            kind: kind.to_string(),
+            title,
+            detail,
+        },
     };
-    let _ = crate::sse::send_string_logged(
-        tx,
-        encode_message(SsePayload::TimelineLog {
-            log: crate::sse::protocol::TimelineLogBody {
-                kind: kind.to_string(),
-                title,
-                detail,
-            },
-        }),
-        log_label,
-    )
-    .await;
+    let _ = send_sse_control_payload_optional(out, sse_control_mirror, payload, log_label).await;
 }
 
 pub(super) async fn emit_tool_result_sse_and_append(
@@ -174,6 +174,7 @@ pub(super) async fn emit_tool_result_sse_and_append(
         cfg,
         tool_outcome_recorder,
         out,
+        sse_control_mirror,
         clarification_questionnaire_hook,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
@@ -203,28 +204,27 @@ pub(super) async fn emit_tool_result_sse_and_append(
         terminal_tool_display_max_chars,
     );
 
-    if let Some(tx) = out {
-        emit_sse_tool_result(
-            tx,
-            name,
-            result.as_str(),
-            tool_summary.clone(),
-            envelope_ctx,
-        )
-        .await;
-    }
+    emit_sse_tool_result(
+        out,
+        sse_control_mirror.as_ref(),
+        name,
+        result.as_str(),
+        tool_summary.clone(),
+        envelope_ctx,
+    )
+    .await;
 
     if let Some(body) = clarification_questionnaire_body_if_tool_ok(name, args, result.as_str()) {
-        if let Some(tx) = out {
-            let _ = crate::sse::send_string_logged(
-                tx,
-                encode_message(SsePayload::ClarificationQuestionnaire {
-                    clarification_questionnaire: body.clone(),
-                }),
-                "clarification_questionnaire",
-            )
-            .await;
-        }
+        let payload = SsePayload::ClarificationQuestionnaire {
+            clarification_questionnaire: body.clone(),
+        };
+        let _ = send_sse_control_payload_optional(
+            out,
+            sse_control_mirror.as_ref(),
+            payload,
+            "clarification_questionnaire",
+        )
+        .await;
         if let Some(h) = clarification_questionnaire_hook.as_ref() {
             h(body);
         }
@@ -246,6 +246,7 @@ pub(super) async fn emit_tool_result_sse_and_append(
     });
     emit_timeline_log_sse(
         out,
+        sse_control_mirror.as_ref(),
         "tool_step_finished",
         name.to_string(),
         detail,
@@ -331,6 +332,7 @@ pub(super) async fn emit_tool_result_sse_and_append(
 
 pub(super) async fn emit_tool_call_summary_sse(
     out: Option<&mpsc::Sender<String>>,
+    sse_control_mirror: Option<&crate::sse::SseControlMirror>,
     cfg: &AgentConfig,
     tool_call_id: &str,
     name: &str,
@@ -338,19 +340,6 @@ pub(super) async fn emit_tool_call_summary_sse(
     messages: &[Message],
 ) {
     let args_preview = crate::redact::tool_arguments_preview_for_sse(args);
-    let Some(tx) = out else {
-        crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
-            "tool_call_started",
-            name,
-            Some(&serde_json::json!({
-                "tool_call_id": tool_call_id,
-                "tool_name": name,
-                "args_preview": args_preview,
-                "phase": "tool_execution",
-            })),
-        );
-        return;
-    };
     let args_parsed: Option<serde_json::Value> = serde_json::from_str(args).ok();
     let summary = if let Some(ref parsed) = args_parsed {
         tools::summarize_tool_call_parsed(name, parsed)
@@ -364,7 +353,6 @@ pub(super) async fn emit_tool_call_summary_sse(
         .sse_tool_call_include_arguments
         .then(|| crate::redact::tool_arguments_redacted_for_sse(args));
 
-    // 记录工具调用参数（脱敏后）
     let args_for_log = crate::redact::tool_arguments_preview_for_log(args);
     info!(
         target: "crabmate::tool_call",
@@ -385,23 +373,29 @@ pub(super) async fn emit_tool_call_summary_sse(
         })),
     );
 
-    let _ = crate::sse::send_string_logged(
-        tx,
-        encode_message(SsePayload::ToolCall {
-            tool_call: ToolCallSummary {
-                name: name.to_string(),
-                summary,
-                goal_id: None,
-                tool_call_id: Some(tool_call_id.to_string()),
-                arguments_preview,
-                arguments,
-            },
-        }),
+    if out.is_none() && sse_control_mirror.is_none() {
+        return;
+    }
+
+    let payload = SsePayload::ToolCall {
+        tool_call: ToolCallSummary {
+            name: name.to_string(),
+            summary,
+            goal_id: None,
+            tool_call_id: Some(tool_call_id.to_string()),
+            arguments_preview,
+            arguments,
+        },
+    };
+    let _ = send_sse_control_payload_optional(
+        out,
+        sse_control_mirror,
+        payload,
         "execute_tools::tool_call summary",
     )
     .await;
     emit_thinking_trace_sse(
-        Some(tx),
+        out,
         cfg,
         ThinkingTraceBody {
             op: "tool_call".into(),

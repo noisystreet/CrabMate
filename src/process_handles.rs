@@ -1,6 +1,8 @@
 //! 单进程内共享的运行时句柄（非 `static`）：工作区变更集注册表、工具调用统计记录器、只读类 **`run_command`** 短时 TTL 缓存与 CLI 长期记忆缓存。
+//! 侧栏任务清单（[`workspace::tasks_side`]）与 Web **`GET`/`POST /tasks`** 共用同一内存表。
 //! 由 Web `AppState` 或 CLI 入口构造并注入 [`crate::RunAgentTurnParams`]，避免隐式全局状态；**`default_arc_process_handles`** 为无 `AppState` 时的独立默认 `Arc`（**不**用进程级 `static` 单例）。
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -10,6 +12,7 @@ use crate::tool_registry::HandlerLookupTable;
 use crate::tool_sandbox::SyncDefaultSandboxBackend;
 use crate::tool_stats::ToolOutcomeRecorder;
 use crate::workspace::changelist::WorkspaceChangelistRegistry;
+use crate::workspace::tasks_side::{TasksData, WorkspaceTasksByPath};
 
 /// Web `serve` 与 CLI `chat`/`repl` 共用的进程级句柄（显式 `Arc` 传递，替代模块级 `static`）。
 pub struct ProcessHandles {
@@ -21,6 +24,8 @@ pub struct ProcessHandles {
     pub sync_default_sandbox_backend: Arc<dyn SyncDefaultSandboxBackend>,
     /// 只读类 **`run_command`** 短时 TTL 缓存（按工作区键失效；配置见 **`readonly_tool_ttl_cache_*`**）。
     pub readonly_tool_ttl_cache: Arc<ReadonlyToolTtlCache>,
+    /// 与 Web 侧栏任务同源：键为规范化工作区路径字符串。
+    pub workspace_tasks_by_path: WorkspaceTasksByPath,
     /// CLI：懒打开的长期记忆运行时（路径变更后下次调用会重开）。
     cli_long_term_memory: Mutex<Option<(PathBuf, Arc<LongTermMemoryRuntime>)>>,
 }
@@ -38,6 +43,7 @@ impl ProcessHandles {
             handler_lookup,
             sync_default_sandbox_backend,
             readonly_tool_ttl_cache: Arc::new(ReadonlyToolTtlCache::new()),
+            workspace_tasks_by_path: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             cli_long_term_memory: Mutex::new(None),
         }
     }
@@ -142,5 +148,33 @@ impl ProcessHandles {
                 (None, None)
             }
         }
+    }
+
+    /// 与 Web `GET /tasks` 同源：按工作区键读取侧栏任务（进程内存）。
+    pub async fn tasks_data_for_workspace_path(self: &Arc<Self>, workspace_key: &str) -> TasksData {
+        let g = self.workspace_tasks_by_path.read().await;
+        g.get(workspace_key).cloned().unwrap_or_default()
+    }
+
+    /// 与 Web `GET /workspace/changelog` 同源：返回 Markdown 正文；配置关闭时返回 `Err` 说明。
+    pub fn workspace_changelog_markdown_for_scope(
+        self: &Arc<Self>,
+        cfg: &crate::config::AgentConfig,
+        scope: &str,
+    ) -> Result<String, &'static str> {
+        if !cfg
+            .session_workspace_changelist
+            .session_workspace_changelist_enabled
+        {
+            return Err("会话工作区变更集已在配置中关闭（session_workspace_changelist_enabled）");
+        }
+        let max_chars = cfg
+            .session_workspace_changelist
+            .session_workspace_changelist_max_chars;
+        let cl = self
+            .workspace_changelist_registry
+            .changelist_for_scope(scope);
+        let (_rev, body) = cl.snapshot_markdown(max_chars);
+        Ok(body.unwrap_or_default())
     }
 }

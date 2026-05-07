@@ -124,6 +124,7 @@ async fn run_agent_turn_outer_loop_tool_round_then_final_assistant() {
             tui_llm_stream_scratch: None,
             tool_running_hook: None,
             clarification_questionnaire_hook: None,
+            sse_control_mirror: None,
             llm_backend: Some(backend as &dyn ChatCompletionsBackend),
         },
         llm: AgentTurnLlmOverrides {
@@ -222,6 +223,7 @@ async fn run_hierarchical_router_manager_operator_mock_llm_sequence() {
         secondary_intents: Vec::new(),
         intent_mode_bias_enabled: false,
         process_handles: ProcessHandles::default_arc_process_handles(),
+        sse_control_mirror: None,
     };
 
     let outcome: HierarchyRunnerResult = run_hierarchical(params)
@@ -307,6 +309,7 @@ async fn run_agent_turn_hierarchical_end_to_end_mock_llm_sequence() {
             tui_llm_stream_scratch: None,
             tool_running_hook: None,
             clarification_questionnaire_hook: None,
+            sse_control_mirror: None,
             llm_backend: Some(backend as &dyn ChatCompletionsBackend),
         },
         llm: AgentTurnLlmOverrides {
@@ -393,6 +396,7 @@ async fn run_agent_turn_hierarchical_discourse_fallback_uses_per_outer_loop() {
             tui_llm_stream_scratch: None,
             tool_running_hook: None,
             clarification_questionnaire_hook: None,
+            sse_control_mirror: None,
             llm_backend: Some(backend as &dyn ChatCompletionsBackend),
         },
         llm: AgentTurnLlmOverrides {

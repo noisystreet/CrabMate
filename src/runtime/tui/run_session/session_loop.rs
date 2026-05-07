@@ -105,6 +105,7 @@ pub(super) async fn run_tui_session_event_loop(
                         message_count: ctx.messages.len(),
                         tool_count: ctx.tools.len(),
                         cli_no_stream: ctx.cli_no_stream,
+                        process_handles: &ctx.process_handles,
                     },
                 )
                 .await;

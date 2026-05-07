@@ -91,6 +91,8 @@ pub struct AgentTurnTransport<'a> {
     /// 澄清问卷回调（与 [`RunLoopCtx::clarification_questionnaire_hook`] 同源）；Web/SSE 通常为 `None`。
     pub clarification_questionnaire_hook:
         Option<std::sync::Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
+    /// 无 `/chat/stream` 通道时镜像 SSE 控制面（与 Web [`crate::sse::SsePayload`] 同形），供 TUI 等终端界面展示。
+    pub sse_control_mirror: Option<crate::sse::SseControlMirror>,
     /// 可选：自定义 [`llm::ChatCompletionsBackend`]；`None` 时使用 OpenAI 兼容 HTTP（与历史行为一致）。
     pub llm_backend: Option<&'a (dyn llm::ChatCompletionsBackend + 'static)>,
 }
@@ -213,6 +215,8 @@ pub struct CliTerminalChatBuildArgs<'a> {
     pub long_term_memory_scope_id: Option<String>,
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
     pub process_handles: Arc<crate::process_handles::ProcessHandles>,
+    /// TUI：SSE 控制面镜像（与 Web `SsePayload` 对齐）；`repl` / `chat` 为 `None`。
+    pub sse_control_mirror: Option<crate::sse::SseControlMirror>,
 }
 
 /// `web_chat_stream` / `web_chat_json` 共用的字段装配（单参数传入以满足形参棘轮）。
@@ -307,6 +311,7 @@ impl<'a> RunAgentTurnParams<'a> {
                 tui_llm_stream_scratch: None,
                 tool_running_hook: None,
                 clarification_questionnaire_hook: None,
+                sse_control_mirror: None,
                 llm_backend: None,
             },
             llm: AgentTurnLlmOverrides {
@@ -366,6 +371,7 @@ impl<'a> RunAgentTurnParams<'a> {
                 tui_llm_stream_scratch: None,
                 tool_running_hook: None,
                 clarification_questionnaire_hook: None,
+                sse_control_mirror: None,
                 llm_backend: None,
             },
             llm: AgentTurnLlmOverrides {
@@ -402,6 +408,7 @@ impl<'a> RunAgentTurnParams<'a> {
             long_term_memory_scope_id,
             turn_allowed_tool_names,
             process_handles,
+            sse_control_mirror,
         } = args;
         let echo_stdout = !suppress_stdout_render;
         Self {
@@ -421,6 +428,7 @@ impl<'a> RunAgentTurnParams<'a> {
                 tui_llm_stream_scratch,
                 tool_running_hook,
                 clarification_questionnaire_hook,
+                sse_control_mirror,
                 llm_backend: None,
             },
             llm: AgentTurnLlmOverrides {
@@ -474,6 +482,7 @@ impl<'a> RunAgentTurnParams<'a> {
                 tui_llm_stream_scratch: None,
                 tool_running_hook: None,
                 clarification_questionnaire_hook: None,
+                sse_control_mirror: None,
                 llm_backend: None,
             },
             llm: AgentTurnLlmOverrides {
@@ -544,6 +553,7 @@ pub async fn run_agent_turn<'a>(
         tui_llm_stream_scratch,
         tool_running_hook,
         clarification_questionnaire_hook,
+        sse_control_mirror,
         llm_backend,
     } = transport;
     let AgentTurnLlmOverrides {
@@ -629,6 +639,7 @@ pub async fn run_agent_turn<'a>(
             workspace_changelist,
             tool_running_hook,
             clarification_questionnaire_hook,
+            sse_control_mirror,
             staged_plan_optimizer_round: cfg.staged_planning.staged_plan_optimizer_round,
             staged_plan_optimizer_requires_parallel_tools: cfg
                 .staged_planning

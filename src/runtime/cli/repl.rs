@@ -292,6 +292,8 @@ pub(crate) struct ReplDispatchChatRoundParams<'a> {
     /// TUI：`present_clarification_questionnaire` 回调；`repl` 为 `None`。
     pub(crate) clarification_questionnaire_hook:
         Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
+    /// TUI：SSE 控制面镜像；`repl` 为 `None`。
+    pub(crate) sse_control_mirror: Option<crate::sse::SseControlMirror>,
 }
 
 pub(crate) async fn repl_dispatch_chat_round(
@@ -317,6 +319,7 @@ pub(crate) async fn repl_dispatch_chat_round(
         process_handles,
         clarify_answers_for_next_user_message,
         clarification_questionnaire_hook,
+        sse_control_mirror,
     } = p;
     crate::runtime::workspace_session::try_merge_background_initial_workspace(
         messages,
@@ -407,6 +410,7 @@ pub(crate) async fn repl_dispatch_chat_round(
         cli_tool_ctx: Some(cli_rt),
         active_agent_role: agent_role_owned.as_deref(),
         process_handles: Arc::clone(&process_handles),
+        sse_control_mirror,
     })
     .await
     {
@@ -642,6 +646,7 @@ pub async fn run_repl(
                     process_handles: Arc::clone(&process_handles),
                     clarify_answers_for_next_user_message: None,
                     clarification_questionnaire_hook: None,
+                    sse_control_mirror: None,
                 })
                 .await?;
             }

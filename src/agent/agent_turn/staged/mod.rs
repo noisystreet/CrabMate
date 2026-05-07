@@ -774,6 +774,7 @@ mod staged_plan_prepare_fixture_tests {
                 turn_allowed_tool_names: None,
                 tracing_chat_turn: None,
                 request_audit: None,
+                sse_control_mirror: None,
                 process_handles:
                     crate::process_handles::ProcessHandles::default_arc_process_handles(),
             },
