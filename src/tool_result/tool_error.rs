@@ -94,7 +94,9 @@ pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
         "command_not_found" | "permission_denied" | "spawn_failed" | "cargo_spawn_failed" => {
             ToolFailureCategory::External
         }
-        "read_file_invalid_range" => ToolFailureCategory::InvalidInput,
+        "read_file_invalid_range" | "read_file_count_total_too_large" => {
+            ToolFailureCategory::InvalidInput
+        }
         "read_file_not_file"
         | "read_file_io"
         | "read_file_utf8_decode"

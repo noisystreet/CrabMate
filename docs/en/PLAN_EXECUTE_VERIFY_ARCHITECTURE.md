@@ -43,7 +43,7 @@ This repo already has multi-turn `agent_turn`, final plan validation/rewrite, wo
   - `expect_stdout_contains`
   - `expect_stderr_contains`
   - `expect_file_exists`
-  - `expect_json_path_equals` (`$.a.b`, `$[0].k`)
+  - `expect_json_path_equals` (legacy `$.a.b`, `$[0].k`, `$.items[0][1]`; JSON Pointer `/a/0`; empty path = whole JSON)
   - `expect_http_status` (for HTTP-like tools)
 - Implicit verifier facts already exist in tool envelopes (`error_code`, exit code, structured fields).
 - `final_plan_semantic_check_enabled` remains a plan-vs-summary consistency check, not a generic acceptance gate.

@@ -543,6 +543,26 @@ fn test_summarize_search_in_files_with_path_short() {
 }
 
 #[test]
+fn test_read_file_count_total_rejects_oversized_file() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("big.txt");
+    let f = std::fs::File::create(&path).expect("create");
+    let oversized: u64 = 32 * 1024 * 1024 + 1;
+    f.set_len(oversized).expect("set_len sparse");
+    let args = serde_json::json!({
+        "path": "big.txt",
+        "count_total_lines": true
+    })
+    .to_string();
+    let allowed = test_allowed_commands();
+    let mut ctx = test_ctx(&allowed);
+    ctx.working_dir = dir.path();
+    let err = run_tool_try("read_file", &args, &ctx).expect_err("oversized count_total");
+    assert_eq!(err.code, "read_file_count_total_too_large");
+    assert_eq!(err.category, ToolFailureCategory::InvalidInput);
+}
+
+#[test]
 fn test_read_file_try_workspace_error_has_stable_code() {
     let dir = tempfile::tempdir().expect("tempdir");
     let parent = dir.path().parent().expect("parent");

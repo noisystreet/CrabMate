@@ -9,6 +9,7 @@ mod inspect;
 mod mutate;
 mod path;
 mod perm;
+mod read_file_pipeline;
 mod read_tool;
 mod replace_lines_stream;
 mod rust_brace_scan;

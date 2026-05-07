@@ -66,7 +66,8 @@ pub struct PlanStepAcceptance {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expect_file_exists: Option<String>,
     /// JSON path 验证：期望该路径的值等于指定值。
-    /// 格式：`$.field.nested` 或 `$[0].field`。
+    /// - **Legacy**：`$.field.nested`、`$[0].field`、`$.items[0][1]`（段内可多段 `[n]`）；空白路径表示整份 JSON。
+    /// - **RFC 6901 JSON Pointer**：以 `/` 开头，例如 `/a/b/0`；`/` 表示键名为空字符串；键内含 `/` 或 `~` 时用 `~1`、`~0` 转义。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expect_json_path_equals: Option<JsonPathEqualsRule>,
     /// HTTP 状态码验证：期望的 HTTP 状态码。
@@ -77,7 +78,7 @@ pub struct PlanStepAcceptance {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct JsonPathEqualsRule {
-    /// JSON path 表达式。
+    /// JSON path 表达式（Legacy `$…` 或 RFC 6901 Pointer `/…`，见 `expect_json_path_equals` 文档）。
     pub path: String,
     /// 期望的 JSON 值（支持任意 JSON 标量/对象/数组）。
     pub value: serde_json::Value,

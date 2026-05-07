@@ -235,7 +235,7 @@ For config keys and env vars, **`docs/en/CONFIGURATION.md`** remains authoritati
 |------|------|
 | `calc.rs`, `unit_convert.rs`, `time.rs`, `weather.rs`, `web_search.rs`, `http_fetch.rs` | Basic utilities + HTTP tools (`http_fetch` / `http_request`: charset / meta / sniff, optional **`html_text`** via **`scraper`**, **`User-Agent: crabmate/<version>`**) |
 | `command.rs`, `exec.rs`, `test_result_cache.rs`, `package_query.rs` | Process execution + package query |
-| `file/` | Workspace file ops (path safety in `path.rs`) |
+| `file/` | Workspace file ops (path safety in `path.rs`); **`read_tool`** (`read_file` / `read_file_try`) + **`read_file_pipeline`** (encoding sniff, line streaming, `count_total_lines` size guard) |
 | `cargo_tools.rs`, `ci_tools.rs`, `rust_ide.rs`, `frontend_tools.rs` | Rust / CI / RA / npm |
 | `python_tools.rs`, `precommit_tools.rs`, `go_tools.rs`, `jvm_tools.rs`, `container_tools.rs`, `nodejs_tools.rs` | Language/ecosystem tools |
 | `git.rs`, `github_cli/`, `grep.rs`, `symbol.rs`, `code_nav.rs`, `call_graph_sketch.rs`, `code_metrics.rs` | VCS, GitHub CLI wrappers, search, metrics |

@@ -5,6 +5,7 @@
 //! - **判定**：[`verify_against_spec`] 产出 [`VerifyOutcome`]（与 `step_verifier::VerifyResult` 对齐）。
 
 mod check;
+mod json_path_resolve;
 
 pub use check::verify_against_spec;
 

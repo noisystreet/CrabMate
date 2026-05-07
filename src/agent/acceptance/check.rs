@@ -1,5 +1,6 @@
 //! 对 [`super::AcceptanceSpec`] 与 [`super::AcceptanceEvidence`] 执行逐项断言。
 
+use super::json_path_resolve::resolve_json_path_value;
 use super::{AcceptanceEvidence, AcceptanceSpec, ExitCodePolicy, FileResolveKind, VerifyOutcome};
 
 /// 从工具输出中提取 JSON 信封内的 output 字段（如果有的话）
@@ -54,58 +55,6 @@ fn extract_http_status(tool_name: &str, output: &str) -> Option<u16> {
     }
 
     None
-}
-
-fn get_json_path_value(json_str: &str, path: &str) -> Option<serde_json::Value> {
-    let value: serde_json::Value = serde_json::from_str(json_str).ok()?;
-
-    let mut current = &value;
-    let parts: Vec<&str> = path.split('.').collect();
-
-    for (i, part) in parts.iter().enumerate() {
-        let part = *part;
-
-        if part.starts_with('$') && i == 0 {
-            let rest = &part[1..];
-            if rest.is_empty() {
-                continue;
-            }
-            if let Some((idx, next)) = rest.split_once('[') {
-                if !idx.is_empty() {
-                    current = current.get(idx)?;
-                }
-                let idx_str = next.trim_start_matches('[').trim_end_matches(']');
-                if let Ok(index) = idx_str.parse::<usize>() {
-                    current = current.get(index)?;
-                }
-            } else if !rest.is_empty() {
-                current = current.get(rest)?;
-            }
-            continue;
-        }
-
-        if let Some((field, rest)) = part.split_once('[') {
-            if !field.is_empty() {
-                current = current.get(field)?;
-            }
-            let idx_str = rest.trim_start_matches('[').trim_end_matches(']');
-            if let Ok(index) = idx_str.parse::<usize>() {
-                current = current.get(index)?;
-            }
-            if let Some((_, next_field)) = rest.split_once(']').and_then(|(_, b)| b.split_once('.'))
-                && !next_field.is_empty()
-            {
-                current = current.get(next_field)?;
-            }
-            continue;
-        }
-
-        if !part.is_empty() {
-            current = current.get(part)?;
-        }
-    }
-
-    Some(current.clone())
 }
 
 fn resolve_file(workspace_root: &std::path::Path, path: &str, kind: FileResolveKind) -> bool {
@@ -254,8 +203,8 @@ fn verify_json_path_equals(
     let json_output =
         extract_json_output(ev.tool_output).unwrap_or_else(|| ev.tool_output.to_string());
 
-    match get_json_path_value(&json_output, path) {
-        Some(actual) => {
+    match resolve_json_path_value(&json_output, path) {
+        Ok(actual) => {
             if &actual != expected {
                 Some(VerifyOutcome::Fail {
                     reason: format!(
@@ -267,11 +216,8 @@ fn verify_json_path_equals(
                 None
             }
         }
-        None => Some(VerifyOutcome::Fail {
-            reason: format!(
-                "json_path_error: could not extract value at path '{}'",
-                path
-            ),
+        Err(e) => Some(VerifyOutcome::Fail {
+            reason: format!("json_path_error: path '{}' — {}", path, e.user_reason()),
         }),
     }
 }
