@@ -144,7 +144,7 @@ fn restore_reasoning_after_hydration(chat: &ChatSessionSignals, aid: &str, nonce
     if preserved.is_empty() {
         return;
     }
-    chat.sessions.update(|list| {
+    chat.update_sessions_hydration(|list| {
         if let Some(s) = list.iter_mut().find(|x| x.id == aid) {
             for m in s.messages.iter_mut() {
                 if let Some(rt) = preserved.get(&m.id) {
@@ -215,7 +215,7 @@ pub fn wire_session_hydration(
                     return;
                 }
                 let mut applied_hydration = false;
-                chat.sessions.update(|list| {
+                chat.update_sessions_hydration(|list| {
                     let active = chat.active_id.get_untracked();
                     let cur_nonce = chat.session_hydrate_nonce.get_untracked();
                     let Some(s) = list.iter_mut().find(|x| x.id == aid) else {

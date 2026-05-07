@@ -6,10 +6,10 @@ use std::collections::HashSet;
 use leptos::prelude::*;
 
 use super::message_row::{ChatMessageRowSignals, chat_message_row};
+use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::{self, Locale};
 use crate::session_search::normalize_search_query;
-use crate::session_sync::SessionSyncState;
-use crate::storage::{ChatSession, StoredMessage};
+use crate::storage::StoredMessage;
 
 /// 工具组内每条 [`chat_message_row`] 共享的信号（缩短 [`tool_run_group_view`] 形参列表）。
 #[derive(Clone, Copy)]
@@ -17,12 +17,10 @@ pub(crate) struct ToolRunGroupSignals {
     pub collapsed_tool_run_heads: RwSignal<HashSet<String>>,
     pub chat_find_query: RwSignal<String>,
     pub chat_find_match_ids: RwSignal<Vec<String>>,
-    pub sessions: RwSignal<Vec<ChatSession>>,
-    pub active_id: RwSignal<String>,
+    pub chat: ChatSessionSignals,
     pub collapsed_long_assistant_ids: RwSignal<Vec<String>>,
     pub chat_find_cursor: RwSignal<usize>,
     pub status_busy: RwSignal<bool>,
-    pub session_sync: RwSignal<SessionSyncState>,
     pub regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
     pub retry_assistant_target: RwSignal<Option<String>>,
     pub status_err: RwSignal<Option<String>>,
@@ -40,15 +38,13 @@ fn chat_row_for_tool_group(
     chat_message_row(ChatMessageRowSignals {
         msg_idx,
         m,
-        sessions: g.sessions,
-        active_id: g.active_id,
+        chat: g.chat,
         collapsed_long_assistant_ids: g.collapsed_long_assistant_ids,
         chat_find_query: g.chat_find_query,
         chat_find_match_ids: g.chat_find_match_ids,
         chat_find_cursor: g.chat_find_cursor,
         auto_scroll_chat: g.auto_scroll_chat,
         status_busy: g.status_busy,
-        session_sync: g.session_sync,
         regen_stream_after_truncate: g.regen_stream_after_truncate,
         retry_assistant_target: g.retry_assistant_target,
         status_err: g.status_err,
