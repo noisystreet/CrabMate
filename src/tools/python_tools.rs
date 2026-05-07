@@ -422,41 +422,21 @@ pub fn python_snippet_run(
     });
 
     let deadline = Instant::now() + Duration::from_secs(wall_secs);
-    let output = loop {
-        let now = Instant::now();
-        if now >= deadline {
-            python_snippet_hard_kill(child_pid);
-            let _ = join.join();
-            let body = format!(
-                "已超出墙上时钟上限（{} 秒）；子进程已发送终止信号。请在更小数据集上重试或调大 timeout_secs（上限 {}）。",
-                wall_secs, MAX_PYTHON_SNIPPET_TIMEOUT_SECS
-            );
+    let output = match python_snippet_wait_child_output(child_pid, join, rx, deadline, &title) {
+        Ok(o) => o,
+        Err(SnippetWaitOutcome::Timeout) => {
             return output_util::format_exited_command_output(
                 &title,
                 -1,
-                &body,
+                &format!(
+                    "已超出墙上时钟上限（{} 秒）；子进程已发送终止信号。请在更小数据集上重试或调大 timeout_secs（上限 {}）。",
+                    wall_secs, MAX_PYTHON_SNIPPET_TIMEOUT_SECS
+                ),
                 max_output_len,
                 MAX_OUTPUT_LINES,
             );
         }
-        let step = deadline
-            .saturating_duration_since(now)
-            .min(Duration::from_millis(200));
-        match rx.recv_timeout(step) {
-            Ok(Ok(out)) => {
-                let _ = join.join();
-                break out;
-            }
-            Ok(Err(e)) => {
-                let _ = join.join();
-                return format!("{}: 收集子进程输出失败（{}）", title, e);
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => continue,
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                let _ = join.join();
-                return format!("{}: 等待子进程输出的线程已结束但未返回结果", title);
-            }
-        }
+        Err(SnippetWaitOutcome::Err(msg)) => return msg,
     };
 
     let code = output.status.code().unwrap_or(-1);
@@ -465,6 +445,52 @@ pub fn python_snippet_run(
         output_util::ProcessOutputMerge::StderrElseStdout,
     );
     output_util::format_exited_command_output(&title, code, &body, max_output_len, MAX_OUTPUT_LINES)
+}
+
+enum SnippetWaitOutcome {
+    Timeout,
+    Err(String),
+}
+
+fn python_snippet_wait_child_output(
+    child_pid: u32,
+    join: thread::JoinHandle<()>,
+    rx: mpsc::Receiver<std::io::Result<std::process::Output>>,
+    deadline: Instant,
+    title: &str,
+) -> Result<std::process::Output, SnippetWaitOutcome> {
+    loop {
+        let now = Instant::now();
+        if now >= deadline {
+            python_snippet_hard_kill(child_pid);
+            let _ = join.join();
+            return Err(SnippetWaitOutcome::Timeout);
+        }
+        let step = deadline
+            .saturating_duration_since(now)
+            .min(Duration::from_millis(200));
+        match rx.recv_timeout(step) {
+            Ok(Ok(out)) => {
+                let _ = join.join();
+                return Ok(out);
+            }
+            Ok(Err(e)) => {
+                let _ = join.join();
+                return Err(SnippetWaitOutcome::Err(format!(
+                    "{}: 收集子进程输出失败（{}）",
+                    title, e
+                )));
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                let _ = join.join();
+                return Err(SnippetWaitOutcome::Err(format!(
+                    "{}: 等待子进程输出的线程已结束但未返回结果",
+                    title
+                )));
+            }
+        }
+    }
 }
 
 #[cfg(unix)]
