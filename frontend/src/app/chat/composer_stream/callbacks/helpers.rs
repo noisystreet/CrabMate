@@ -5,12 +5,11 @@ use std::collections::VecDeque;
 use std::rc::Rc;
 
 use crabmate_sse_protocol::StreamEndReason;
-use leptos::prelude::*;
 
 use crate::i18n;
 use crate::i18n::Locale;
 use crate::session_ops::{make_message_id, message_created_ms};
-use crate::storage::{ChatSession, StoredMessage, StoredMessageState};
+use crate::storage::{StoredMessage, StoredMessageState};
 
 use super::super::context::ChatStreamCallbackCtx;
 use super::stream_session_access::{with_active_session_mut, with_active_session_ref};
@@ -443,38 +442,6 @@ pub(super) fn remove_loading_assistant_placeholder(stream_ctx: &ChatStreamCallba
                 .is_some_and(|st| st.is_loading())
         {
             s.messages.remove(idx);
-        }
-    });
-}
-
-/// 将内容追加到正在流式生成的 assistant 消息 text 中。
-pub(super) fn append_to_assistant_text(
-    aid: &str,
-    mid: &str,
-    chunk: &str,
-    sessions: &RwSignal<Vec<ChatSession>>,
-) {
-    sessions.update(|list| {
-        if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-            if let Some(m) = s.messages.iter_mut().find(|m| m.id == mid) {
-                m.text.push_str(chunk);
-            }
-        }
-    });
-}
-
-/// `assistant_answer_phase` 之前的增量（思维链/思考区）：须写入 `reasoning_text`，`message_text_for_display_ex` 才能与终答 `text` 分流展示。
-pub(super) fn append_to_assistant_reasoning(
-    aid: &str,
-    mid: &str,
-    chunk: &str,
-    sessions: &RwSignal<Vec<ChatSession>>,
-) {
-    sessions.update(|list| {
-        if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-            if let Some(m) = s.messages.iter_mut().find(|m| m.id == mid) {
-                m.reasoning_text.push_str(chunk);
-            }
         }
     });
 }
