@@ -240,18 +240,22 @@ enum StaticSemanticsOutcome {
     Fail,
 }
 
-fn evaluate_static_semantics(
+fn static_semantics_layers_ok(
     plan: &AgentReplyPlanV1,
-    args: &FinalPlanGateArgs<'_>,
     apply_layer_semantics: bool,
     layer_need: Option<usize>,
-    validate_only_binding_ids: Option<&Vec<String>>,
-) -> StaticSemanticsOutcome {
-    let layers_ok = match layer_need {
+) -> bool {
+    match layer_need {
         Some(n) if n > 0 && apply_layer_semantics => plan.steps.len() >= n,
         _ => true,
-    };
-    let wf_ids = plan_rewrite::last_workflow_tool_node_ids(args.messages);
+    }
+}
+
+fn static_semantics_workflow_ids_ok(
+    plan: &AgentReplyPlanV1,
+    args: &FinalPlanGateArgs<'_>,
+    wf_ids: &Option<Vec<String>>,
+) -> bool {
     let workflow_subset_ok = match wf_ids.as_ref() {
         Some(ids) => plan_artifact::validate_plan_workflow_node_ids_subset(plan, ids).is_ok(),
         None => true,
@@ -266,8 +270,15 @@ fn evaluate_static_semantics(
     } else {
         true
     };
-    let workflow_ids_ok = workflow_subset_ok && workflow_cover_ok;
-    let validate_only_binding_ok = if apply_layer_semantics {
+    workflow_subset_ok && workflow_cover_ok
+}
+
+fn static_semantics_validate_only_binding_ok(
+    plan: &AgentReplyPlanV1,
+    apply_layer_semantics: bool,
+    validate_only_binding_ids: Option<&Vec<String>>,
+) -> bool {
+    if apply_layer_semantics {
         match validate_only_binding_ids {
             Some(ids) if !ids.is_empty() => {
                 plan_artifact::validate_plan_binds_workflow_validate_nodes(plan, ids).is_ok()
@@ -276,7 +287,24 @@ fn evaluate_static_semantics(
         }
     } else {
         true
-    };
+    }
+}
+
+fn evaluate_static_semantics(
+    plan: &AgentReplyPlanV1,
+    args: &FinalPlanGateArgs<'_>,
+    apply_layer_semantics: bool,
+    layer_need: Option<usize>,
+    validate_only_binding_ids: Option<&Vec<String>>,
+) -> StaticSemanticsOutcome {
+    let layers_ok = static_semantics_layers_ok(plan, apply_layer_semantics, layer_need);
+    let wf_ids = plan_rewrite::last_workflow_tool_node_ids(args.messages);
+    let workflow_ids_ok = static_semantics_workflow_ids_ok(plan, args, &wf_ids);
+    let validate_only_binding_ok = static_semantics_validate_only_binding_ok(
+        plan,
+        apply_layer_semantics,
+        validate_only_binding_ids,
+    );
     if !(layers_ok && workflow_ids_ok && validate_only_binding_ok) {
         tracing::info!(
             target: "crabmate::per",

@@ -1,5 +1,8 @@
 //! `cargo run` / 库入口 [`crate::run`] 的 CLI 编排（从 `lib.rs` 拆出以降低单函数圈复杂度）。
 
+#[path = "cli_run_serve.rs"]
+mod cli_run_serve;
+
 use std::collections::HashMap;
 use std::env;
 use std::net::SocketAddr;
@@ -259,59 +262,13 @@ async fn run_serve_branch(args: ServeBranchArgs<'_>) -> Result<(), Box<dyn std::
         )
     };
     let chat_queue = chat_job_queue::ChatJobQueue::new(cq_conc, cq_pending);
-    let conversation_backing = if conv_sqlite.trim().is_empty() {
-        web::ConversationBacking::memory_default()
-    } else {
-        let p = std::path::Path::new(conv_sqlite.trim());
-        let conn = web::open_conversation_sqlite(p).map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("无法初始化会话 SQLite {}: {}", p.display(), e),
-            )
-        })?;
-        info!(
-            target: "crabmate",
-            "Web 会话持久化已启用 path={}",
-            p.display()
-        );
-        web::ConversationBacking::Sqlite(conn)
-    };
-    let long_term_memory = if ltm_enabled {
-        match &conversation_backing {
-            web::ConversationBacking::Sqlite(conn) => Some(
-                crate::memory::long_term_memory::LongTermMemoryRuntime::new_shared_sqlite(
-                    Arc::clone(conn),
-                ),
-            ),
-            web::ConversationBacking::Memory(_) => {
-                let p = ltm_store_path.trim();
-                if p.is_empty() {
-                    info!(
-                        target: "crabmate",
-                        "长期记忆已启用：Web 会话为内存模式且未配置 long_term_memory_store_sqlite_path，跳过持久化记忆"
-                    );
-                    None
-                } else {
-                    match crate::memory::long_term_memory::LongTermMemoryRuntime::open(
-                        std::path::Path::new(p),
-                    ) {
-                        Ok(r) => Some(r),
-                        Err(e) => {
-                            log::warn!(
-                                target: "crabmate",
-                                "长期记忆库打开失败 path={} error={}",
-                                p,
-                                e
-                            );
-                            None
-                        }
-                    }
-                }
-            }
-        }
-    } else {
-        None
-    };
+    let conversation_backing =
+        cli_run_serve::conversation_backing_from_sqlite_path(conv_sqlite.trim())?;
+    let long_term_memory = cli_run_serve::serve_long_term_memory_runtime(
+        ltm_enabled,
+        &conversation_backing,
+        ltm_store_path.trim(),
+    );
     let sse_stream_hub = std::sync::Arc::new(crate::sse::SseStreamHub::new());
     let chat_queue_job_deps = std::sync::Arc::new(chat_job_queue::WebChatQueueDeps {
         cfg: Arc::clone(cfg_holder),
@@ -355,26 +312,9 @@ async fn run_serve_branch(args: ServeBranchArgs<'_>) -> Result<(), Box<dyn std::
     };
     web::cron_scheduler::spawn_serve_cron_scheduler(Arc::clone(&state), sched_tasks);
     let static_dir = web_static_dir::resolve_web_static_dir();
-    {
-        let g = cfg_holder.read().await;
-        if g.web_api.web_api_require_bearer
-            && crate::config::ExposeSecret::expose_secret(&g.web_api.web_api_bearer_token)
-                .trim()
-                .is_empty()
-        {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "已启用 web_api_require_bearer（或 CM_WEB_API_REQUIRE_BEARER），但未配置非空的 web_api_bearer_token / CM_WEB_API_BEARER_TOKEN；请设置共享密钥后再启动 serve，或在配置中关闭 web_api_require_bearer。",
-            )
-            .into());
-        }
-    }
-    let web_api_bearer_layer_enabled = {
-        let g = cfg_holder.read().await;
-        !crate::config::ExposeSecret::expose_secret(&g.web_api.web_api_bearer_token)
-            .trim()
-            .is_empty()
-    };
+    cli_run_serve::serve_require_web_api_bearer_when_enabled(cfg_holder).await?;
+    let web_api_bearer_layer_enabled =
+        cli_run_serve::serve_web_api_bearer_layer_enabled(cfg_holder).await;
     let app = web::server::build_app(
         state,
         no_web,
@@ -391,15 +331,7 @@ async fn run_serve_branch(args: ServeBranchArgs<'_>) -> Result<(), Box<dyn std::
             ),
         )
     })?;
-    let (auth_enabled, allow_insec) = {
-        let g = cfg_holder.read().await;
-        (
-            !crate::config::ExposeSecret::expose_secret(&g.web_api.web_api_bearer_token)
-                .trim()
-                .is_empty(),
-            g.web_api.allow_insecure_no_auth_for_non_loopback,
-        )
-    };
+    let (auth_enabled, allow_insec) = cli_run_serve::serve_bind_auth_flags(cfg_holder).await;
     if !bind_ip.is_loopback() && !auth_enabled && !allow_insec {
         return Err(std::io::Error::new(
             std::io::ErrorKind::PermissionDenied,

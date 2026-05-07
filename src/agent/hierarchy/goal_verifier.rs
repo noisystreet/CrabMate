@@ -447,15 +447,8 @@ fn is_program_build_and_run_goal(goal: &SubGoal) -> bool {
     asks_write && asks_program && asks_run
 }
 
-fn verify_program_build_and_run_evidence(result: &TaskResult) -> Result<(), String> {
-    let combined = format!(
-        "{}\n{}",
-        result.output.as_deref().unwrap_or(""),
-        result.error.as_deref().unwrap_or("")
-    )
-    .to_lowercase();
-
-    let has_source_artifact = result.artifacts.iter().any(|a| match a.kind {
+fn program_build_run_has_cpp_source_artifact(result: &TaskResult) -> bool {
+    result.artifacts.iter().any(|a| match a.kind {
         ArtifactKind::File => a.path.as_deref().is_some_and(|p| {
             let p = p.to_lowercase();
             p.ends_with(".cpp") || p.ends_with(".cc") || p.ends_with(".cxx")
@@ -464,30 +457,53 @@ fn verify_program_build_and_run_evidence(result: &TaskResult) -> Result<(), Stri
             matches!(kind, super::task::BuildArtifactKind::SourceFile)
         }
         _ => false,
-    });
-    let wrote_source = has_source_artifact
-        || combined.contains(".cpp")
-            && (combined.contains("create_file")
-                || combined.contains("已创建文件")
-                || combined.contains("created file")
-                || combined.contains("write_file")
-                || combined.contains("apply_patch"));
+    })
+}
 
-    let compiled = combined.contains("g++")
-        || combined.contains("clang++")
-        || combined.contains("编译")
-        || combined.contains("cmake")
-        || combined.contains("make")
-        || combined.contains("build");
+fn program_build_run_text_suggests_write(combined_lower: &str) -> bool {
+    combined_lower.contains(".cpp")
+        && (combined_lower.contains("create_file")
+            || combined_lower.contains("已创建文件")
+            || combined_lower.contains("created file")
+            || combined_lower.contains("write_file")
+            || combined_lower.contains("apply_patch"))
+}
+
+fn program_build_run_text_suggests_compile(combined_lower: &str) -> bool {
+    combined_lower.contains("g++")
+        || combined_lower.contains("clang++")
+        || combined_lower.contains("编译")
+        || combined_lower.contains("cmake")
+        || combined_lower.contains("make")
+        || combined_lower.contains("build")
+}
+
+fn program_build_run_text_suggests_executed(result: &TaskResult, combined_raw: &str) -> bool {
+    result.tools_invoked.iter().any(|n| n == "run_executable")
+        || (result.tools_invoked.iter().any(|n| n == "run_command")
+            && run_command_invocation_mentions_hello(combined_raw))
+}
+
+fn verify_program_build_and_run_evidence(result: &TaskResult) -> Result<(), String> {
+    let combined_lower = format!(
+        "{}\n{}",
+        result.output.as_deref().unwrap_or(""),
+        result.error.as_deref().unwrap_or("")
+    )
+    .to_lowercase();
+
+    let has_source_artifact = program_build_run_has_cpp_source_artifact(result);
+    let wrote_source =
+        has_source_artifact || program_build_run_text_suggests_write(&combined_lower);
+
+    let compiled = program_build_run_text_suggests_compile(&combined_lower);
 
     let combined_raw = format!(
         "{}\n{}",
         result.output.as_deref().unwrap_or(""),
         result.error.as_deref().unwrap_or("")
     );
-    let ran_program = result.tools_invoked.iter().any(|n| n == "run_executable")
-        || (result.tools_invoked.iter().any(|n| n == "run_command")
-            && run_command_invocation_mentions_hello(&combined_raw));
+    let ran_program = program_build_run_text_suggests_executed(result, &combined_raw);
 
     let mut missing = Vec::new();
     if !wrote_source {
