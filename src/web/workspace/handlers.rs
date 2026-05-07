@@ -527,6 +527,36 @@ pub async fn workspace_file_delete_handler(
     }
 }
 
+#[cfg(unix)]
+fn workspace_file_write_sync_unix(
+    base: std::path::PathBuf,
+    normalized: std::path::PathBuf,
+    content: String,
+    create_only: bool,
+    update_only: bool,
+) -> Result<(), String> {
+    use std::io::{ErrorKind, Write};
+    if let Some(parent) = normalized.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
+    }
+    let mut f = match open_file_write_under_root(&base, &normalized, create_only, update_only) {
+        Ok(f) => f,
+        Err(e) if create_only && e.kind() == ErrorKind::AlreadyExists => {
+            return Err("文件已存在，无法仅创建".to_string());
+        }
+        Err(e) if update_only && e.kind() == ErrorKind::NotFound => {
+            return Err("文件不存在，无法仅修改".to_string());
+        }
+        Err(e) => {
+            return Err(format!("打开文件失败: {e}"));
+        }
+    };
+    f.write_all(content.as_bytes())
+        .map_err(|e| format!("写入文件失败: {e}"))
+}
+
 /// 工作区文件写入：支持创建、写入（创建或覆盖）、仅创建、仅修改
 pub async fn workspace_file_write_handler(
     State(state): State<Arc<AppState>>,
@@ -557,33 +587,13 @@ pub async fn workspace_file_write_handler(
 
     #[cfg(unix)]
     {
-        use std::io::{ErrorKind, Write};
         let base = base_canonical.clone();
         let normalized = canonical.clone();
         let content = body.content;
         let create_only = body.create_only;
         let update_only = body.update_only;
         match tokio::task::spawn_blocking(move || {
-            if let Some(parent) = normalized.parent()
-                && !parent.as_os_str().is_empty()
-            {
-                std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
-            }
-            let mut f =
-                match open_file_write_under_root(&base, &normalized, create_only, update_only) {
-                    Ok(f) => f,
-                    Err(e) if create_only && e.kind() == ErrorKind::AlreadyExists => {
-                        return Err("文件已存在，无法仅创建".to_string());
-                    }
-                    Err(e) if update_only && e.kind() == ErrorKind::NotFound => {
-                        return Err("文件不存在，无法仅修改".to_string());
-                    }
-                    Err(e) => {
-                        return Err(format!("打开文件失败: {e}"));
-                    }
-                };
-            f.write_all(content.as_bytes())
-                .map_err(|e| format!("写入文件失败: {e}"))
+            workspace_file_write_sync_unix(base, normalized, content, create_only, update_only)
         })
         .await
         {

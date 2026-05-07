@@ -63,6 +63,22 @@ pub struct DispatchToolParams<'a> {
     pub sync_default_sandbox_backend: &'a Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
 }
 
+/// `HandlerId::SyncDefault` 分支入参（与 [`DispatchToolParams`] 中部分字段一致，避免 `dispatch_sync_default` 形参过多）。
+struct SyncDefaultToolDispatchArgs<'a> {
+    env: &'a ToolExecEnv<'a>,
+    runtime: ToolRuntime<'a>,
+    cfg: &'a Arc<AgentConfig>,
+    effective_working_dir: &'a std::path::Path,
+    workspace_is_set: bool,
+    name: &'a str,
+    args: &'a str,
+    tc: &'a ToolCall,
+    read_file_turn_cache: Option<std::sync::Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
+    workspace_changelist: Option<std::sync::Arc<crate::workspace::changelist::WorkspaceChangelist>>,
+    long_term_memory: Option<Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
+    long_term_memory_scope_id: Option<String>,
+}
+
 /// [`DispatchToolParams`] 中与 Docker / 配置快照相关的字段合并，降低内部分发函数的形参个数。
 struct ToolExecEnv<'a> {
     cfg: &'a Arc<AgentConfig>,

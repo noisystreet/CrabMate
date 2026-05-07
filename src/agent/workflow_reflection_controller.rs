@@ -3,7 +3,11 @@
 //! **FSM**：[`WorkflowReflectionFsmPhase`] 描述会话状态（与 JSON 注入文案正交）；[`WorkflowReflectionController::reflection_fsm_phase`] 供观测。
 
 use serde_json::{Value, json};
+use std::collections::HashSet;
 use std::fmt;
+
+/// Do 阶段契约校验收集到的节点集合（id 集合 + 节点副本与 id）。
+type WorkflowExecuteCollectedNodes = (HashSet<String>, Vec<(Value, String)>);
 
 /// 反思首轮注入 JSON 的 `instruction_type`，与 `per_coord` 中「是否强制终答含 `agent_reply_plan`」对齐。
 pub const INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT: &str = "workflow_reflection_plan_next";
@@ -289,6 +293,96 @@ pub fn apply_workflow_patch(args_json: &str, workflow_patch: &Value) -> String {
     v.to_string()
 }
 
+fn workflow_contract_error(summary: impl Into<String>) -> Value {
+    json!({
+        "type": "workflow_execute_do_contract_error",
+        "human_summary": summary.into(),
+    })
+}
+
+fn collect_workflow_execute_nodes(nodes_v: &Value) -> Result<WorkflowExecuteCollectedNodes, Value> {
+    let mut node_ids: HashSet<String> = HashSet::new();
+    let mut entries: Vec<(Value, String)> = Vec::new();
+
+    if let Some(arr) = nodes_v.as_array() {
+        if arr.is_empty() {
+            return Err(workflow_contract_error("Do 阶段 workflow.nodes 不能为空"));
+        }
+        for node in arr.iter() {
+            let id = node
+                .get("id")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string());
+            let Some(id) = id else {
+                return Err(workflow_contract_error(
+                    "Do 阶段 nodes 数组中的每个 node 都必须有字符串 id",
+                ));
+            };
+            node_ids.insert(id.clone());
+            entries.push((node.clone(), id));
+        }
+    } else if let Some(obj) = nodes_v.as_object() {
+        if obj.is_empty() {
+            return Err(workflow_contract_error(
+                "Do 阶段 workflow.nodes 对象不能为空",
+            ));
+        }
+        for (id, node) in obj.iter() {
+            node_ids.insert(id.clone());
+            entries.push((node.clone(), id.clone()));
+        }
+    } else {
+        return Err(workflow_contract_error(
+            "Do 阶段 workflow.nodes 必须是数组或对象",
+        ));
+    }
+
+    Ok((node_ids, entries))
+}
+
+fn validate_one_workflow_node_contract(
+    node: &Value,
+    id: &str,
+    node_ids: &HashSet<String>,
+) -> Result<(), Value> {
+    let node_obj = node
+        .as_object()
+        .ok_or_else(|| workflow_contract_error(format!("node {} 必须是对象", id)))?;
+
+    let deps_values: Vec<Value> = match node_obj.get("deps") {
+        None => Vec::new(),
+        Some(dv) => dv
+            .as_array()
+            .ok_or_else(|| workflow_contract_error(format!("node {} 的 deps 必须是数组", id)))?
+            .clone(),
+    };
+
+    for dep in deps_values.iter() {
+        let dep_id = dep.as_str().ok_or_else(|| {
+            workflow_contract_error(format!("node {} 的 deps 元素必须是字符串", id))
+        })?;
+        if !node_ids.contains(dep_id) {
+            return Err(workflow_contract_error(format!(
+                "node {} 的 deps 引用了未知节点 {}",
+                id, dep_id
+            )));
+        }
+    }
+
+    let tool_name = node_obj
+        .get("tool_name")
+        .or_else(|| node_obj.get("tool"))
+        .and_then(|x| x.as_str())
+        .unwrap_or("");
+    if tool_name.trim().is_empty() {
+        return Err(workflow_contract_error(format!(
+            "node {} 缺少 tool_name（或 tool）",
+            id
+        )));
+    }
+    Ok(())
+}
+
 /// Do 阶段契约校验：当 `workflow.validate_only != true` 时，
 /// 在真正执行 DAG 之前，确保 workflow 的 nodes/依赖结构是一个可执行的基本形态。
 ///
@@ -297,10 +391,9 @@ pub fn validate_workflow_execute_do_contract(args_json: &str) -> Result<(), Valu
     let v: Value = match serde_json::from_str(args_json) {
         Ok(v) => v,
         Err(_) => {
-            return Err(json!({
-                "type": "workflow_execute_do_contract_error",
-                "human_summary": "workflow_execute_do_contract：参数不是合法 JSON"
-            }));
+            return Err(workflow_contract_error(
+                "workflow_execute_do_contract：参数不是合法 JSON",
+            ));
         }
     };
 
@@ -318,105 +411,16 @@ pub fn validate_workflow_execute_do_contract(args_json: &str) -> Result<(), Valu
     let nodes_v = match wf_v.get("nodes") {
         Some(n) => n,
         None => {
-            return Err(json!({
-                "type": "workflow_execute_do_contract_error",
-                "human_summary": "Do 阶段必须提供 workflow.nodes（不能为空）"
-            }));
+            return Err(workflow_contract_error(
+                "Do 阶段必须提供 workflow.nodes（不能为空）",
+            ));
         }
     };
 
-    let mut node_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut nodes_as_iter: Vec<(&serde_json::Value, String)> = Vec::new();
+    let (node_ids, entries) = collect_workflow_execute_nodes(nodes_v)?;
 
-    if let Some(arr) = nodes_v.as_array() {
-        if arr.is_empty() {
-            return Err(json!({
-                "type": "workflow_execute_do_contract_error",
-                "human_summary": "Do 阶段 workflow.nodes 不能为空"
-            }));
-        }
-        for node in arr.iter() {
-            let id = node
-                .get("id")
-                .and_then(|x| x.as_str())
-                .map(|s| s.to_string());
-            let Some(id) = id else {
-                return Err(json!({
-                    "type": "workflow_execute_do_contract_error",
-                    "human_summary": "Do 阶段 nodes 数组中的每个 node 都必须有字符串 id"
-                }));
-            };
-            node_ids.insert(id.clone());
-            nodes_as_iter.push((node, id));
-        }
-    } else if let Some(obj) = nodes_v.as_object() {
-        if obj.is_empty() {
-            return Err(json!({
-                "type": "workflow_execute_do_contract_error",
-                "human_summary": "Do 阶段 workflow.nodes 对象不能为空"
-            }));
-        }
-        for (id, node) in obj.iter() {
-            node_ids.insert(id.clone());
-            nodes_as_iter.push((node, id.clone()));
-        }
-    } else {
-        return Err(json!({
-            "type": "workflow_execute_do_contract_error",
-            "human_summary": "Do 阶段 workflow.nodes 必须是数组或对象"
-        }));
-    }
-
-    // 验证 deps 形态 + deps 引用必须在 nodes_id 集合中
-    for (node, id) in nodes_as_iter.iter() {
-        let node_obj = node.as_object().ok_or_else(|| {
-            json!({
-                "type": "workflow_execute_do_contract_error",
-                "human_summary": format!("node {} 必须是对象", id)
-            })
-        })?;
-
-        // 与 parse_workflow_spec 保持一致：deps 缺失视为 []。
-        let deps_values: Vec<Value> = match node_obj.get("deps") {
-            None => Vec::new(),
-            Some(dv) => dv
-                .as_array()
-                .ok_or_else(|| {
-                    json!({
-                        "type": "workflow_execute_do_contract_error",
-                        "human_summary": format!("node {} 的 deps 必须是数组", id)
-                    })
-                })?
-                .clone(),
-        };
-
-        for dep in deps_values.iter() {
-            let dep_id = dep.as_str().ok_or_else(|| {
-                json!({
-                    "type": "workflow_execute_do_contract_error",
-                    "human_summary": format!("node {} 的 deps 元素必须是字符串", id)
-                })
-            })?;
-            if !node_ids.contains(dep_id) {
-                return Err(json!({
-                    "type": "workflow_execute_do_contract_error",
-                    "human_summary": format!("node {} 的 deps 引用了未知节点 {}", id, dep_id)
-                }));
-            }
-        }
-
-        // tool_name 必须存在，避免后续运行时 unknown tool
-        let tool_name = node_obj
-            .get("tool_name")
-            .or_else(|| node_obj.get("tool"))
-            .and_then(|x| x.as_str())
-            .unwrap_or("");
-        if tool_name.trim().is_empty() {
-            return Err(json!({
-                "type": "workflow_execute_do_contract_error",
-                "human_summary": format!("node {} 缺少 tool_name（或 tool）", id)
-            }));
-        }
+    for (node, id) in entries.iter() {
+        validate_one_workflow_node_contract(node, id.as_str(), &node_ids)?;
     }
 
     Ok(())

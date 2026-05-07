@@ -1,3 +1,197 @@
+async fn try_dispatch_dynamic_tool(
+    cfg: &Arc<AgentConfig>,
+    effective_working_dir: &std::path::Path,
+    workspace_is_set: bool,
+    name: &str,
+    args: &str,
+) -> Option<(String, Option<serde_json::Value>)> {
+    if !crate::dynamic_tools::is_dynamic_tool_name(name) {
+        return None;
+    }
+    if !workspace_is_set {
+        return Some((
+            web_tool_err_workspace_not_set("执行动态工具").to_string(),
+            None,
+        ));
+    }
+    let def = match crate::dynamic_tools::resolve_runtime_def(effective_working_dir, name) {
+        Ok(Some(d)) => d,
+        Ok(None) => return Some((format!("未知工具：{}", name), None)),
+        Err(e) => return Some((format!("错误：动态工具加载失败：{}", e), None)),
+    };
+    let args_owned = args.to_string();
+    let wd = effective_working_dir.to_path_buf();
+    let cfg2 = Arc::clone(cfg);
+    let wall_secs = cfg.command_exec.command_timeout_secs.max(1);
+    let handle = tokio::task::spawn_blocking(move || {
+        crate::dynamic_tools::run_dynamic_tool(
+            &def,
+            &args_owned,
+            wd.as_path(),
+            cfg2.command_exec.command_max_output_len,
+            cfg2.command_exec.allowed_commands.as_ref(),
+        )
+    });
+    let out = match tokio::time::timeout(Duration::from_secs(wall_secs), handle).await {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => {
+            error!(
+                target: "crabmate",
+                "动态工具执行异常 tool={} error={:?}",
+                name,
+                e
+            );
+            format!("动态工具执行异常：{:?}", e)
+        }
+        Err(_) => format!("动态工具执行超时（{} 秒）", wall_secs),
+    };
+    Some((out, None))
+}
+
+async fn try_dispatch_mcp_proxy_tool(
+    cfg: &Arc<AgentConfig>,
+    mcp_session: Option<&Arc<Mutex<crate::mcp::McpClientSession>>>,
+    name: &str,
+    args: &str,
+) -> Option<(String, Option<serde_json::Value>)> {
+    if !crate::mcp::is_mcp_proxy_tool(name) {
+        return None;
+    }
+    let Some(remote) = crate::mcp::try_mcp_tool_name(cfg.as_ref(), name) else {
+        return Some((
+            "错误：无法将工具名解析为 MCP 远端名（请检查 mcp_command 与命名前缀）".to_string(),
+            None,
+        ));
+    };
+    let Some(sess) = mcp_session else {
+        return Some((
+            "错误：MCP 会话未建立（连接或 tools/list 失败）".to_string(),
+            None,
+        ));
+    };
+    let guard = sess.lock().await;
+    let mcp_args = crate::tool_call_explain::strip_explain_why_if_present(args);
+    let out = crate::mcp::call_mcp_tool(
+        &guard,
+        remote.as_str(),
+        mcp_args.as_str(),
+        Duration::from_secs(cfg.mcp_client.mcp_tool_timeout_secs.max(1)),
+        cfg.command_exec.command_max_output_len,
+    )
+    .await;
+    Some((out, None))
+}
+
+async fn dispatch_sync_default_tool(
+    p: SyncDefaultToolDispatchArgs<'_>,
+) -> (String, Option<serde_json::Value>) {
+    let SyncDefaultToolDispatchArgs {
+        env,
+        runtime,
+        cfg,
+        effective_working_dir,
+        workspace_is_set,
+        name,
+        args,
+        tc,
+        read_file_turn_cache,
+        workspace_changelist,
+        long_term_memory,
+        long_term_memory_scope_id,
+    } = p;
+    if cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode == SyncDefaultToolSandboxMode::Docker {
+        if !workspace_is_set {
+            return (
+                "错误：未设置工作区，无法在 Docker 沙盒中执行 SyncDefault 工具（请先设置工作区目录）。"
+                    .to_string(),
+                None,
+            );
+        }
+        let out = crate::tool_sandbox::run_sync_default_in_docker(
+            env.sandbox_backend,
+            cfg.as_ref(),
+            effective_working_dir,
+            name,
+            args,
+        )
+        .await;
+        return match out {
+            Ok(s) => (s, None),
+            Err(e) => (e, None),
+        };
+    }
+
+    // `read_dir` 外部路径审批：绝对路径或含 `..` 时需用户确认（不走白名单）。
+    if name == "read_dir" {
+        let (web_ctx, cli_ctx) = http_tool_approval_context(runtime);
+        if let Err(msg) = approve_external_read_dir_if_needed(args, web_ctx, cli_ctx).await {
+            return (msg, None);
+        }
+    }
+
+    if sync_default_runs_inline(cfg.as_ref(), name) {
+        let (mem_rt, mem_scope) =
+            crate::memory::long_term_memory::tool_context_memory_extras(
+                cfg.as_ref(),
+                long_term_memory.clone(),
+                long_term_memory_scope_id.as_deref(),
+            );
+        let ctx = tools::tool_context_for_with_read_cache_and_memory(
+            cfg.as_ref(),
+            cfg.command_exec.allowed_commands.as_ref(),
+            effective_working_dir,
+            read_file_turn_cache.as_ref().map(|a| a.as_ref()),
+            workspace_changelist.as_ref(),
+            mem_rt,
+            mem_scope,
+        );
+        return (tools::run_tool(name, args, &ctx), None);
+    }
+    let cfg2 = Arc::clone(cfg);
+    let tool_name = tc.function.name.clone();
+    let tool_args = tc.function.arguments.clone();
+    let work_dir = effective_working_dir.to_path_buf();
+    let rfc = read_file_turn_cache.clone();
+    let wcl = workspace_changelist.clone();
+    let ltm2 = long_term_memory.clone();
+    let ltm_scope2 = long_term_memory_scope_id.clone();
+    let wall_secs = parallel_tool_wall_timeout_secs(cfg.as_ref(), name);
+    let handle = tokio::task::spawn_blocking(move || {
+        let (mem_rt, mem_scope) = crate::memory::long_term_memory::tool_context_memory_extras(
+            cfg2.as_ref(),
+            ltm2,
+            ltm_scope2.as_deref(),
+        );
+        let ctx = tools::tool_context_for_with_read_cache_and_memory(
+            cfg2.as_ref(),
+            cfg2.command_exec.allowed_commands.as_ref(),
+            work_dir.as_path(),
+            rfc.as_ref().map(|a| a.as_ref()),
+            wcl.as_ref(),
+            mem_rt,
+            mem_scope,
+        );
+        tools::run_tool(&tool_name, &tool_args, &ctx)
+    });
+    let result = match tokio::time::timeout(Duration::from_secs(wall_secs), handle).await {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => {
+            error!(
+                target: "crabmate",
+                "工具执行异常 tool={} error={:?}",
+                name,
+                e
+            );
+            format!("工具执行异常：{:?}", e)
+        }
+        Err(_) => {
+            error!(target: "crabmate", "工具执行超时 tool={} wall_secs={}", name, wall_secs);
+            format!("工具执行超时（{} 秒）", wall_secs)
+        }
+    };
+    (result, None)
+}
+
 pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_json::Value>) {
     let DispatchToolParams {
         runtime,
@@ -23,70 +217,15 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
     if !crate::agent_role_turn::tool_allowed_for_turn(name, turn_allow) {
         return (crate::agent_role_turn::turn_tool_denied_message(name), None);
     }
-    if crate::dynamic_tools::is_dynamic_tool_name(name) {
-        if !workspace_is_set {
-            return (
-                web_tool_err_workspace_not_set("执行动态工具").to_string(),
-                None,
-            );
-        }
-        let def = match crate::dynamic_tools::resolve_runtime_def(effective_working_dir, name) {
-            Ok(Some(d)) => d,
-            Ok(None) => return (format!("未知工具：{}", name), None),
-            Err(e) => return (format!("错误：动态工具加载失败：{}", e), None),
-        };
-        let args_owned = args.to_string();
-        let wd = effective_working_dir.to_path_buf();
-        let cfg2 = Arc::clone(cfg);
-        let wall_secs = cfg.command_exec.command_timeout_secs.max(1);
-        let handle = tokio::task::spawn_blocking(move || {
-            crate::dynamic_tools::run_dynamic_tool(
-                &def,
-                &args_owned,
-                wd.as_path(),
-                cfg2.command_exec.command_max_output_len,
-                cfg2.command_exec.allowed_commands.as_ref(),
-            )
-        });
-        let out = match tokio::time::timeout(Duration::from_secs(wall_secs), handle).await {
-            Ok(Ok(s)) => s,
-            Ok(Err(e)) => {
-                error!(
-                    target: "crabmate",
-                    "动态工具执行异常 tool={} error={:?}",
-                    name,
-                    e
-                );
-                format!("动态工具执行异常：{:?}", e)
-            }
-            Err(_) => format!("动态工具执行超时（{} 秒）", wall_secs),
-        };
-        return (out, None);
+
+    if let Some(out) =
+        try_dispatch_dynamic_tool(cfg, effective_working_dir, workspace_is_set, name, args).await
+    {
+        return out;
     }
-    if crate::mcp::is_mcp_proxy_tool(name) {
-        let Some(remote) = crate::mcp::try_mcp_tool_name(cfg.as_ref(), name) else {
-            return (
-                "错误：无法将工具名解析为 MCP 远端名（请检查 mcp_command 与命名前缀）".to_string(),
-                None,
-            );
-        };
-        let Some(sess) = mcp_session else {
-            return (
-                "错误：MCP 会话未建立（连接或 tools/list 失败）".to_string(),
-                None,
-            );
-        };
-        let guard = sess.lock().await;
-        let mcp_args = crate::tool_call_explain::strip_explain_why_if_present(args);
-        let out = crate::mcp::call_mcp_tool(
-            &guard,
-            remote.as_str(),
-            mcp_args.as_str(),
-            Duration::from_secs(cfg.mcp_client.mcp_tool_timeout_secs.max(1)),
-            cfg.command_exec.command_max_output_len,
-        )
-        .await;
-        return (out, None);
+
+    if let Some(out) = try_dispatch_mcp_proxy_tool(cfg, mcp_session, name, args).await {
+        return out;
     }
 
     let args_processed =
@@ -181,101 +320,21 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
             .await
         }
         HandlerId::SyncDefault => {
-            if cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode
-                == SyncDefaultToolSandboxMode::Docker
-            {
-                if !workspace_is_set {
-                    return (
-                        "错误：未设置工作区，无法在 Docker 沙盒中执行 SyncDefault 工具（请先设置工作区目录）。"
-                            .to_string(),
-                        None,
-                    );
-                }
-                let out = crate::tool_sandbox::run_sync_default_in_docker(
-                    env.sandbox_backend,
-                    cfg.as_ref(),
-                    effective_working_dir,
-                    name,
-                    args,
-                )
-                .await;
-                return match out {
-                    Ok(s) => (s, None),
-                    Err(e) => (e, None),
-                };
-            }
-
-            // `read_dir` 外部路径审批：绝对路径或含 `..` 时需用户确认（不走白名单）。
-            if name == "read_dir" {
-                let (web_ctx, cli_ctx) = http_tool_approval_context(runtime);
-                if let Err(msg) = approve_external_read_dir_if_needed(args, web_ctx, cli_ctx).await
-                {
-                    return (msg, None);
-                }
-            }
-
-            if sync_default_runs_inline(cfg.as_ref(), name) {
-                let (mem_rt, mem_scope) =
-                    crate::memory::long_term_memory::tool_context_memory_extras(
-                        cfg.as_ref(),
-                        long_term_memory.clone(),
-                        long_term_memory_scope_id.as_deref(),
-                    );
-                let ctx = tools::tool_context_for_with_read_cache_and_memory(
-                    cfg.as_ref(),
-                    cfg.command_exec.allowed_commands.as_ref(),
-                    effective_working_dir,
-                    read_file_turn_cache.as_ref().map(|a| a.as_ref()),
-                    workspace_changelist.as_ref(),
-                    mem_rt,
-                    mem_scope,
-                );
-                return (tools::run_tool(name, args, &ctx), None);
-            }
-            let cfg2 = Arc::clone(cfg);
-            let tool_name = tc.function.name.clone();
-            let tool_args = tc.function.arguments.clone();
-            let work_dir = effective_working_dir.to_path_buf();
-            let rfc = read_file_turn_cache.clone();
-            let wcl = workspace_changelist.clone();
-            let ltm2 = long_term_memory.clone();
-            let ltm_scope2 = long_term_memory_scope_id.clone();
-            let wall_secs = parallel_tool_wall_timeout_secs(cfg.as_ref(), name);
-            let handle = tokio::task::spawn_blocking(move || {
-                let (mem_rt, mem_scope) =
-                    crate::memory::long_term_memory::tool_context_memory_extras(
-                        cfg2.as_ref(),
-                        ltm2,
-                        ltm_scope2.as_deref(),
-                    );
-                let ctx = tools::tool_context_for_with_read_cache_and_memory(
-                    cfg2.as_ref(),
-                    cfg2.command_exec.allowed_commands.as_ref(),
-                    work_dir.as_path(),
-                    rfc.as_ref().map(|a| a.as_ref()),
-                    wcl.as_ref(),
-                    mem_rt,
-                    mem_scope,
-                );
-                tools::run_tool(&tool_name, &tool_args, &ctx)
-            });
-            let result = match tokio::time::timeout(Duration::from_secs(wall_secs), handle).await {
-                Ok(Ok(s)) => s,
-                Ok(Err(e)) => {
-                    error!(
-                        target: "crabmate",
-                        "工具执行异常 tool={} error={:?}",
-                        name,
-                        e
-                    );
-                    format!("工具执行异常：{:?}", e)
-                }
-                Err(_) => {
-                    error!(target: "crabmate", "工具执行超时 tool={} wall_secs={}", name, wall_secs);
-                    format!("工具执行超时（{} 秒）", wall_secs)
-                }
-            };
-            (result, None)
+            dispatch_sync_default_tool(SyncDefaultToolDispatchArgs {
+                env: &env,
+                runtime,
+                cfg,
+                effective_working_dir,
+                workspace_is_set,
+                name,
+                args,
+                tc,
+                read_file_turn_cache,
+                workspace_changelist,
+                long_term_memory,
+                long_term_memory_scope_id,
+            })
+            .await
         }
     }
 }
