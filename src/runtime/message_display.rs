@@ -12,11 +12,12 @@ use crate::agent::plan_artifact::{
     strip_agent_reply_plan_fence_blocks_for_display,
 };
 use crate::runtime::latex_unicode::latex_math_to_unicode;
-use crate::tool_result::{NormalizedToolEnvelope, ToolResult, normalize_tool_message_content};
+use crate::runtime::message_display_parts::tool_display_from_normalized_envelope;
+use crate::tool_result::{ToolResult, normalize_tool_message_content};
 use crate::types::Message;
 
 /// 工具结果中「原始输出」块的 Markdown 小标题（与 Web `ChatPanel`、CLI 完整回显一致）。
-pub(crate) const TOOL_OUTPUT_SECTION_HEADLINE: &str = "### 执行输出";
+pub(crate) use crate::runtime::message_display_parts::TOOL_OUTPUT_SECTION_HEADLINE;
 
 /// 聊天区（Web 工具卡等）是否展示 **`### 执行输出`** 整块（状态行、stdout/stderr、完整 JSON、纯文本正文等）。
 /// `false` 时仅展示 `summarize_tool_call` / JSON `human_summary` 等摘要；**不打印**「`### 执行输出`」及其下任何内容；`Message.content` 与 tracing 仍为全文。
@@ -53,91 +54,6 @@ pub(crate) fn tool_content_for_display_impl(raw: &str, include_raw: bool) -> Str
         t.to_string()
     } else {
         String::new()
-    }
-}
-
-fn tool_display_from_normalized_envelope(
-    v: &serde_json::Value,
-    t: &str,
-    env: &NormalizedToolEnvelope,
-    include_raw: bool,
-) -> String {
-    let summary = env.summary.trim();
-    let trunc_note = if env.output_truncated {
-        let orig = env
-            .output_original_chars
-            .map(|n| n.to_string())
-            .unwrap_or_else(|| "?".to_string());
-        let head = env
-            .output_kept_head_chars
-            .map(|n| n.to_string())
-            .unwrap_or_else(|| "?".to_string());
-        let tail = env
-            .output_kept_tail_chars
-            .map(|n| n.to_string())
-            .unwrap_or_else(|| "?".to_string());
-        Some(format!(
-            "（输出已压缩入上下文：原文约 {orig} 字符，保留首尾约 {head}+{tail} 字符；见 `output` 内采样与说明。）"
-        ))
-    } else {
-        None
-    };
-    let struct_note = {
-        let mut parts: Vec<String> = Vec::new();
-        if env.execution_mode.as_deref() == Some("parallel_readonly_batch")
-            && let Some(ref bid) = env.parallel_batch_id
-            && !bid.is_empty()
-        {
-            parts.push(format!("并行只读批次 `{bid}`"));
-        }
-        if env.retryable == Some(true) {
-            parts.push("失败可能可重试（启发式 `retryable`）".to_string());
-        }
-        if parts.is_empty() {
-            None
-        } else {
-            Some(format!("（{}）", parts.join("；")))
-        }
-    };
-    let mut note_lines: Vec<String> = Vec::new();
-    if let Some(ref n) = trunc_note
-        && !n.is_empty()
-    {
-        note_lines.push(n.clone());
-    }
-    if let Some(ref n) = struct_note
-        && !n.is_empty()
-    {
-        note_lines.push(n.clone());
-    }
-    let combined_note = if note_lines.is_empty() {
-        None
-    } else {
-        Some(note_lines.join("\n"))
-    };
-    if include_raw {
-        let pretty = serde_json::to_string_pretty(v).unwrap_or_else(|_| t.to_string());
-        if summary.is_empty() {
-            return match combined_note {
-                Some(ref note) if !note.is_empty() => {
-                    format!("{note}\n\n{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}")
-                }
-                _ => format!("{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}"),
-            };
-        }
-        return match combined_note {
-            Some(ref note) if !note.is_empty() => {
-                format!("{summary}\n{note}\n\n{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}")
-            }
-            _ => format!("{summary}\n\n{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}"),
-        };
-    }
-    if summary.is_empty() {
-        return combined_note.unwrap_or_default();
-    }
-    match combined_note {
-        Some(note) if !note.is_empty() => format!("{summary}\n{note}"),
-        _ => summary.to_string(),
     }
 }
 

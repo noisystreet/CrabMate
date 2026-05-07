@@ -7,6 +7,9 @@ use std::path::Path;
 use crate::text_encoding::{decode_bytes_strict, parse_text_encoding_name};
 
 use super::path::{path_for_tool_display, resolve_for_read, tool_user_error_from_workspace_path};
+use super::rust_brace_scan::{
+    RustBraceLineStep, RustBraceScanCtx, RustBraceScanState, rust_brace_scan_step,
+};
 
 struct ExtractInFileParams {
     path: String,
@@ -394,17 +397,7 @@ fn extract_rust_brace_block(
         return Ok(None);
     }
 
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    enum ScanState {
-        Normal,
-        LineComment,
-        BlockComment,
-        StringLit { escape: bool },
-        CharLit { escape: bool },
-        RawString { hash_count: usize },
-    }
-
-    let mut state = ScanState::Normal;
+    let mut state = RustBraceScanState::Normal;
     let mut brace_count: i32 = 0;
     let mut started = false;
     let mut end_line: Option<usize> = None;
@@ -420,6 +413,13 @@ fn extract_rust_brace_block(
         let line = *line;
         let chars: Vec<char> = line.chars().collect();
         let mut pos: usize = 0;
+        let mut scan_ctx = RustBraceScanCtx {
+            line_idx,
+            chars: &chars,
+            started: &mut started,
+            brace_count: &mut brace_count,
+            end_line: &mut end_line,
+        };
 
         while pos < chars.len() {
             if char_budget == 0 {
@@ -428,149 +428,19 @@ fn extract_rust_brace_block(
             let ch = chars[pos];
             char_budget = char_budget.saturating_sub(1);
 
-            match state {
-                ScanState::Normal => {
-                    // // ... 直到行尾
-                    if ch == '/' && pos + 1 < chars.len() && chars[pos + 1] == '/' {
-                        state = ScanState::LineComment;
-                        pos += 2;
-                        continue;
-                    }
-                    // /* ... */
-                    if ch == '/' && pos + 1 < chars.len() && chars[pos + 1] == '*' {
-                        state = ScanState::BlockComment;
-                        pos += 2;
-                        continue;
-                    }
-
-                    // 原始字符串 r###" ... "###
-                    if ch == 'r' || ch == 'R' {
-                        // r" ... "
-                        if pos + 1 < chars.len() && chars[pos + 1] == '"' {
-                            state = ScanState::RawString { hash_count: 0 };
-                            pos += 2;
-                            continue;
-                        }
-
-                        // r#"... "#  /  r##"... "## ...
-                        if pos + 1 < chars.len() && chars[pos + 1] == '#' {
-                            let mut hash_count = 0usize;
-                            let mut j = pos + 1;
-                            while j < chars.len() && chars[j] == '#' {
-                                hash_count += 1;
-                                j += 1;
-                            }
-                            if j < chars.len() && chars[j] == '"' {
-                                state = ScanState::RawString { hash_count };
-                                pos = j + 1;
-                                continue;
-                            }
-                        }
-                    }
-
-                    // 字符串
-                    if ch == '"' {
-                        state = ScanState::StringLit { escape: false };
-                        pos += 1;
-                        continue;
-                    }
-                    // 字符字面量
-                    if ch == '\'' {
-                        state = ScanState::CharLit { escape: false };
-                        pos += 1;
-                        continue;
-                    }
-
-                    // brace counting (只在 Normal 状态)
-                    if !started {
-                        if ch == '{' {
-                            started = true;
-                            brace_count = 1;
-                        }
-                    } else if ch == '{' {
-                        brace_count += 1;
-                    } else if ch == '}' {
-                        brace_count -= 1;
-                        if brace_count == 0 {
-                            end_line = Some(line_idx);
-                            break;
-                        }
-                    }
-
-                    pos += 1;
+            match rust_brace_scan_step(state, pos, ch, &mut scan_ctx) {
+                RustBraceLineStep::Continue { state: ns, pos: np } => {
+                    state = ns;
+                    pos = np;
                 }
-                ScanState::LineComment => {
-                    // 跳过到行尾
-                    break;
-                }
-                ScanState::BlockComment => {
-                    if ch == '*' && pos + 1 < chars.len() && chars[pos + 1] == '/' {
-                        state = ScanState::Normal;
-                        pos += 2;
-                        continue;
-                    }
-                    pos += 1;
-                }
-                ScanState::StringLit { escape } => {
-                    if escape {
-                        state = ScanState::StringLit { escape: false };
-                        pos += 1;
-                        continue;
-                    }
-                    if ch == '\\' {
-                        state = ScanState::StringLit { escape: true };
-                        pos += 1;
-                        continue;
-                    }
-                    if ch == '"' {
-                        state = ScanState::Normal;
-                        pos += 1;
-                        continue;
-                    }
-                    pos += 1;
-                }
-                ScanState::CharLit { escape } => {
-                    if escape {
-                        state = ScanState::CharLit { escape: false };
-                        pos += 1;
-                        continue;
-                    }
-                    if ch == '\\' {
-                        state = ScanState::CharLit { escape: true };
-                        pos += 1;
-                        continue;
-                    }
-                    if ch == '\'' {
-                        state = ScanState::Normal;
-                        pos += 1;
-                        continue;
-                    }
-                    pos += 1;
-                }
-                ScanState::RawString { hash_count } => {
-                    if ch == '"' {
-                        // 检查后续是否为 hash_count 个 # 组成的结束定界符
-                        let mut ok = true;
-                        for k in 0..hash_count {
-                            if pos + 1 + k >= chars.len() || chars[pos + 1 + k] != '#' {
-                                ok = false;
-                                break;
-                            }
-                        }
-                        if ok {
-                            state = ScanState::Normal;
-                            pos = pos + 1 + hash_count;
-                            continue;
-                        }
-                    }
-                    pos += 1;
-                }
+                RustBraceLineStep::BreakCharLoop => break,
+                RustBraceLineStep::BreakLineScan => break,
             }
         }
 
         // // ... 在下一行会自动回到 Normal
-        if state == ScanState::LineComment {
-            state = ScanState::Normal;
+        if state == RustBraceScanState::LineComment {
+            state = RustBraceScanState::Normal;
         }
     }
 

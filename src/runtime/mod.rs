@@ -11,6 +11,7 @@ pub(crate) mod cli_wait_spinner;
 pub(crate) mod config_reload;
 pub mod latex_unicode;
 pub(crate) mod message_display;
+pub(crate) mod message_display_parts;
 pub(crate) mod plan_section;
 pub(crate) mod repl_reedline;
 pub(crate) mod repl_slash_complete;

@@ -38,11 +38,11 @@
 
 use std::env;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use crabmate_im_bridge::{
-    CrabmateClient, FeishuBridgeConfig, FeishuBridgeInitError, FeishuBridgeState,
-    FeishuToolApprovalMode, build_router,
+    CrabmateClient, FeishuBridgeConfig, FeishuBridgeState, FeishuToolApprovalMode, build_router,
 };
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
@@ -53,6 +53,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
+    let cfg = feishu_bridge_config_from_env()?;
+    let state = FeishuBridgeState::try_new(cfg)?;
+    let listen: SocketAddr = env::var("LISTEN_ADDR")
+        .unwrap_or_else(|_| "127.0.0.1:9988".into())
+        .parse()?;
+    let app = build_router(state).layer(TraceLayer::new_for_http());
+
+    let listener = tokio::net::TcpListener::bind(listen).await?;
+    tracing::info!(%listen, "crabmate-im-bridge listening");
+    axum::serve(listener, app.into_make_service()).await?;
+    Ok(())
+}
+
+fn feishu_bridge_config_from_env() -> Result<FeishuBridgeConfig, String> {
     let crabmate_base = env_req("CRABMATE_BASE_URL")?;
     let crabmate_bearer = env_req("CRABMATE_WEB_API_BEARER")?;
     let app_id = env_req("FEISHU_APP_ID")?;
@@ -90,7 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     )?;
     if tool_approval_mode == FeishuToolApprovalMode::WaitHttp && tool_decision_secret.is_none() {
         return Err(
-            "FEISHU_TOOL_APPROVAL_MODE=wait_http requires FEISHU_TOOL_DECISION_SECRET".into(),
+            "FEISHU_TOOL_APPROVAL_MODE=wait_http requires FEISHU_TOOL_DECISION_SECRET".to_string(),
         );
     }
     let tool_decision_timeout_secs = env_u64("FEISHU_TOOL_DECISION_TIMEOUT_SECS", 600)?.max(5);
@@ -101,12 +115,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let sqlite_max_retries = env_u64("FEISHU_SQLITE_QUEUE_MAX_RETRIES", 5)?.max(1) as u32;
     let sqlite_poll_ms = env_u64("FEISHU_SQLITE_QUEUE_POLL_MS", 200)?.max(50);
     let sqlite_lease_secs = env_u64("FEISHU_SQLITE_QUEUE_LEASE_SECS", 600)? as i64;
-    let listen: SocketAddr = env::var("LISTEN_ADDR")
-        .unwrap_or_else(|_| "127.0.0.1:9988".into())
-        .parse()?;
 
-    let crabmate = std::sync::Arc::new(CrabmateClient::new(crabmate_base, crabmate_bearer)?);
-    let cfg = FeishuBridgeConfig {
+    let crabmate =
+        Arc::new(CrabmateClient::new(crabmate_base, crabmate_bearer).map_err(|e| e.to_string())?);
+    Ok(FeishuBridgeConfig {
         app_id,
         app_secret,
         encrypt_key,
@@ -137,15 +149,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         sqlite_queue_max_retries: sqlite_max_retries,
         sqlite_queue_poll_ms: sqlite_poll_ms,
         sqlite_queue_lease_secs: sqlite_lease_secs.max(30),
-    };
-    let state =
-        FeishuBridgeState::try_new(cfg).map_err(|e: FeishuBridgeInitError| e.to_string())?;
-    let app = build_router(state).layer(TraceLayer::new_for_http());
-
-    let listener = tokio::net::TcpListener::bind(listen).await?;
-    tracing::info!(%listen, "crabmate-im-bridge listening");
-    axum::serve(listener, app.into_make_service()).await?;
-    Ok(())
+    })
 }
 
 fn env_req(name: &str) -> Result<String, String> {

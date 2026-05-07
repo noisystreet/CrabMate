@@ -12,7 +12,8 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     apply_env_overrides_part_5(b);
     apply_env_overrides_part_6(b);
     apply_env_overrides_part_7(b);
-    apply_env_overrides_part_8(b);
+    apply_env_staged_planning_overrides_part_8(b);
+    apply_env_sync_tool_sandbox_overrides_part_8(b);
     apply_env_overrides_part_9(b);
     apply_env_overrides_part_10(b);
     apply_env_overrides_part_11(b);
@@ -637,7 +638,7 @@ fn env_override_staged_plan_execution_flags(b: &mut ConfigBuilder) {
     }
 }
 
-fn apply_env_overrides_part_8(b: &mut ConfigBuilder) {
+fn apply_env_staged_planning_overrides_part_8(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_STAGED_PLAN_PHASE_INSTRUCTION") {
         b.staged_planning.staged_plan_phase_instruction = Some(v);
     }
@@ -683,6 +684,9 @@ fn apply_env_overrides_part_8(b: &mut ConfigBuilder) {
     {
         b.staged_planning.staged_plan_two_phase_nl_display = Some(val);
     }
+}
+
+fn apply_env_sync_tool_sandbox_overrides_part_8(b: &mut ConfigBuilder) {
     if let Ok(s) = std::env::var("CM_SYNC_DEFAULT_TOOL_SANDBOX_MODE") {
         let s = s.trim().to_string();
         if !s.is_empty() {

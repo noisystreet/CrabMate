@@ -259,31 +259,41 @@ pub fn trigger_download(
     loc: crate::i18n::Locale,
 ) -> Result<(), String> {
     if tauri_shell_available() {
-        let default_name = filename.to_string();
-        let content = body.to_string();
-        let Some(w) = web_sys::window() else {
-            return Err("no window".to_string());
-        };
-        spawn_local(async move {
-            let p = invoke_tauri_save_text_file(&default_name, &content);
-            match JsFuture::from(p).await {
-                Ok(v) => {
-                    let cancelled = v.as_bool().is_some_and(|saved| !saved);
-                    if cancelled {
-                        let _ = w.alert_with_message(
-                            crate::i18n::export_tauri_save_cancelled_alert(loc),
-                        );
-                    }
-                }
-                Err(e) => {
-                    let msg = crate::i18n::export_tauri_save_failed_alert(loc, &format!("{e:?}"));
-                    let _ = w.alert_with_message(&msg);
+        return trigger_download_via_tauri(filename, body, loc);
+    }
+    trigger_download_via_anchor(filename, mime, body)
+}
+
+fn trigger_download_via_tauri(
+    filename: &str,
+    body: &str,
+    loc: crate::i18n::Locale,
+) -> Result<(), String> {
+    let default_name = filename.to_string();
+    let content = body.to_string();
+    let Some(w) = web_sys::window() else {
+        return Err("no window".to_string());
+    };
+    spawn_local(async move {
+        let p = invoke_tauri_save_text_file(&default_name, &content);
+        match JsFuture::from(p).await {
+            Ok(v) => {
+                let cancelled = v.as_bool().is_some_and(|saved| !saved);
+                if cancelled {
+                    let _ =
+                        w.alert_with_message(crate::i18n::export_tauri_save_cancelled_alert(loc));
                 }
             }
-        });
-        return Ok(());
-    }
+            Err(e) => {
+                let msg = crate::i18n::export_tauri_save_failed_alert(loc, &format!("{e:?}"));
+                let _ = w.alert_with_message(&msg);
+            }
+        }
+    });
+    Ok(())
+}
 
+fn trigger_download_via_anchor(filename: &str, mime: &str, body: &str) -> Result<(), String> {
     let window = web_sys::window().ok_or_else(|| "no window".to_string())?;
     let document = window.document().ok_or_else(|| "no document".to_string())?;
     let body_el = document.body().ok_or_else(|| "no body".to_string())?;
