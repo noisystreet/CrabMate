@@ -4,18 +4,17 @@
 
 use leptos::prelude::*;
 
-use crate::session_sync::SessionSyncState;
-use crate::storage::ChatSession;
+use crate::chat_session_state::ChatSessionSignals;
 
 /// `POST /chat/branch` 成功后，更新 `session_sync` 与活动会话的 `server_revision`。
 pub fn apply_branch_success_revision(
-    session_sync: RwSignal<SessionSyncState>,
-    sessions: RwSignal<Vec<ChatSession>>,
+    chat: ChatSessionSignals,
     active_session_id: &str,
     new_revision: u64,
 ) {
-    session_sync.update(|s| s.set_revision_after_branch(new_revision));
-    sessions.update(|list| {
+    chat.session_sync
+        .update(|s| s.set_revision_after_branch(new_revision));
+    chat.update_sessions_branch(|list| {
         if let Some(s) = list.iter_mut().find(|x| x.id == active_session_id) {
             s.server_revision = Some(new_revision);
         }

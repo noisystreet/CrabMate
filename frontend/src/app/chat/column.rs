@@ -17,6 +17,7 @@ use super::timeline::timeline_panel_view;
 use crate::api::upload_files_multipart;
 use crate::app::scroll_guard::MessagesScrollFromEffectGuard;
 use crate::app_prefs::AUTO_SCROLL_RESUME_GAP_PX;
+use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n;
 use crate::session_ops::messages_scroller_has_non_collapsed_selection;
 use crate::storage::StoredMessage;
@@ -30,15 +31,13 @@ struct ChatMessagesPaneSignals {
     messages_scroll_from_effect: RwSignal<bool>,
     last_messages_scroll_top: RwSignal<i32>,
     timeline_panel_expanded: RwSignal<bool>,
-    sessions: RwSignal<Vec<crate::storage::ChatSession>>,
-    active_id: RwSignal<String>,
+    chat: ChatSessionSignals,
     collapsed_long_assistant_ids: RwSignal<Vec<String>>,
     collapsed_tool_run_heads: RwSignal<std::collections::HashSet<String>>,
     chat_find_query: RwSignal<String>,
     chat_find_match_ids: RwSignal<Vec<String>>,
     chat_find_cursor: RwSignal<usize>,
     status_busy: RwSignal<bool>,
-    session_sync: RwSignal<crate::session_sync::SessionSyncState>,
     regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
     retry_assistant_target: RwSignal<Option<String>>,
     status_err: RwSignal<Option<String>>,
@@ -55,15 +54,13 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
         messages_scroll_from_effect,
         last_messages_scroll_top,
         timeline_panel_expanded,
-        sessions,
-        active_id,
+        chat,
         collapsed_long_assistant_ids,
         collapsed_tool_run_heads,
         chat_find_query,
         chat_find_match_ids,
         chat_find_cursor,
         status_busy,
-        session_sync,
         regen_stream_after_truncate,
         retry_assistant_target,
         status_err,
@@ -71,16 +68,17 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
         apply_assistant_display_filters,
     } = signals;
 
+    let sessions = chat.sessions;
+    let active_id = chat.active_id;
+
     let tool_run_group_signals = ToolRunGroupSignals {
         collapsed_tool_run_heads,
         chat_find_query,
         chat_find_match_ids,
-        sessions,
-        active_id,
+        chat,
         collapsed_long_assistant_ids,
         chat_find_cursor,
         status_busy,
-        session_sync,
         regen_stream_after_truncate,
         retry_assistant_target,
         status_err,
@@ -162,15 +160,13 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
                                             ChatMessageRowSignals {
                                                 msg_idx: idx,
                                                 m: msg,
-                                                sessions,
-                                                active_id,
+                                                chat,
                                                 collapsed_long_assistant_ids,
                                                 chat_find_query,
                                                 chat_find_match_ids,
                                                 chat_find_cursor,
                                                 auto_scroll_chat,
                                                 status_busy,
-                                                session_sync,
                                                 regen_stream_after_truncate,
                                                 retry_assistant_target,
                                                 status_err,
@@ -577,9 +573,6 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
     let status_err = stream_shell.stream.status_err;
     let pending_clarification = stream_shell.approval.pending_clarification;
 
-    let sessions = chat.sessions;
-    let active_id = chat.active_id;
-    let session_sync = chat.session_sync;
     let run_send_clarify_sv = StoredValue::new(run_send_message.clone());
     view! {
                 <div
@@ -661,15 +654,13 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
                         messages_scroll_from_effect,
                         last_messages_scroll_top,
                         timeline_panel_expanded,
-                        sessions,
-                        active_id,
+                        chat,
                         collapsed_long_assistant_ids,
                         collapsed_tool_run_heads,
                         chat_find_query,
                         chat_find_match_ids,
                         chat_find_cursor,
                         status_busy,
-                        session_sync,
                         regen_stream_after_truncate,
                         retry_assistant_target,
                         status_err,

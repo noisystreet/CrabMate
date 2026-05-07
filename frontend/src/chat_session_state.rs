@@ -7,6 +7,18 @@
 //! - **`stream_bound_session_id`**：与 [`crate::app::chat::composer_stream::context::ChatStreamCallbackCtx::active_session_id`] 同源——**发起 attach 时**的快照；可与 UI [`Self::active_id`] 对比以发现「侧栏已切会话但 SSE 仍写旧会话」。
 //! - **`session_sync`**：服务端 `conversation_id` / revision，与 `POST /chat/branch` 等对齐。
 //! - **`session_hydrate_nonce` / `reasoning_preserved`**：拉取会话正文与水合时的补偿字段。
+//!
+//! # `sessions` 向量的写入通道（命名封装）
+//!
+//! 底层仍是 [`RwSignal::update`]；下列方法仅用于**标明语义来源**，便于检索竞态（水合 nonce、流绑定 id、分支 revision 等），并非运行时强制分区。
+//!
+//! | 方法 | 典型调用方 |
+//! |------|-----------|
+//! | [`Self::update_sessions_hydration`] | `app::session_hydrate` |
+//! | [`Self::update_sessions_composer`] | `app::chat::composer_wires`、`session_ops::patch_active_session`（经 `sessions`） |
+//! | [`Self::update_sessions_stream_sse`] | `composer_stream::callbacks::stream_session_access` |
+//! | [`Self::update_sessions_branch`] | `chat_actions`、`POST /chat/branch` 成功后 revision |
+//! | [`Self::update_sessions_message_row`] | `message_row_actions`（再生/分支截断） |
 
 use std::collections::HashMap;
 
@@ -47,5 +59,35 @@ impl ChatSessionSignals {
         self.stream_job_id.set(None);
         self.stream_last_event_seq.set(0);
         self.stream_bound_session_id.set(None);
+    }
+
+    /// [`GET /conversation/messages`] 水合合并与 reasoning 恢复。
+    #[inline]
+    pub fn update_sessions_hydration(self, f: impl FnOnce(&mut Vec<ChatSession>)) {
+        self.sessions.update(f);
+    }
+
+    /// 作曲器：发送、重试、取消流、新建会话等。
+    #[inline]
+    pub fn update_sessions_composer(self, f: impl FnOnce(&mut Vec<ChatSession>)) {
+        self.sessions.update(f);
+    }
+
+    /// SSE 流式回调（须与 [`Self::stream_bound_session_id`] / attach 快照一致）。
+    #[inline]
+    pub fn update_sessions_stream_sse(self, f: impl FnOnce(&mut Vec<ChatSession>)) {
+        self.sessions.update(f);
+    }
+
+    /// `POST /chat/branch` 成功后对齐 `server_revision` 等。
+    #[inline]
+    pub fn update_sessions_branch(self, f: impl FnOnce(&mut Vec<ChatSession>)) {
+        self.sessions.update(f);
+    }
+
+    /// 消息行：再生、分支、本地截断。
+    #[inline]
+    pub fn update_sessions_message_row(self, f: impl FnOnce(&mut Vec<ChatSession>)) {
+        self.sessions.update(f);
     }
 }

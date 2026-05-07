@@ -111,7 +111,7 @@ fn begin_stream_shell_turn(shell: &ComposerStreamShell) {
 }
 
 fn finalize_loading_assistant_after_user_abort(chat: ChatSessionSignals, aid: String, loc: Locale) {
-    chat.sessions.update(|list| {
+    chat.update_sessions_composer(|list| {
         if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
             if let Some(m) =
                 s.messages.iter_mut().rev().find(|m| {
@@ -206,7 +206,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
             }
             let aid = chat.active_id.get();
             let mut prepared: Option<(String, Vec<String>, String)> = None;
-            chat.sessions.update(|list| {
+            chat.update_sessions_composer(|list| {
                 prepared = prepare_retry_failed_assistant_turn(list, &aid, &failed_asst_id);
             });
             let Some((user_text, user_imgs, asst_id)) = prepared else {
@@ -278,7 +278,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
                 server_revision: None,
             };
             let id = s.id.clone();
-            chat.sessions.update(|list| {
+            chat.update_sessions_composer(|list| {
                 list.insert(0, s);
             });
             chat.active_id.set(id);
