@@ -130,6 +130,55 @@ This section records **maintainer rules** (aligned with `src/llm/mod.rs`): **one
 - **Logs**: `RUST_LOG=crabmate=debug` → one **`message_pipeline session_sync`** line per model call; `crabmate::message_pipeline=trace` → per-stage **`session_sync_step`**.
 - **Warnings**: **`config::finalize`** warns if **`context_char_budget > 0`** and **`context_min_messages_after_system >= max_message_history`** (see **`docs/en/CONFIGURATION.md`**).
 
+### Dynamic system prompt assembly (target design vs current behavior)
+
+This section describes **how CrabMate composes the first `system` message and related injections** into `messages`: a **maintainer mental model** and a **target layering** for future refactors. Logic spans **`config/finalize`**, **`AgentConfig::system_prompt_for_new_conversation`**, Web **`chat_handlers/chat/turn_build`**, **`context_bootstrap/conversation_turn_bootstrap`**, **`tool_stats::ToolOutcomeRecorder::augment_system_prompt`**, **`agent_turn`** (intent gate, staged planning), etc. **Web / CLI / TUI** should share the **same semantics** (thin adapter differences at the edge are fine).
+
+#### Design principles
+
+1. **P0 — Priority / conflict resolution**: safety / irreversibility → explicit user instruction → **orchestration** hints (intent gate, planner coaches) → Cursor-like project rules + Skills → runtime statistical appendix (tool outcome hints). **Any clash during dynamic assembly must follow this order (P0).**
+2. **Split `system` vs injected messages**: **Stable** role text and project rules → session **first `system`**. **Easy to confuse with user text or only valid this turn** → separate **server-injected** messages (special `user` prefixes, `system_intent_gate_hint`, staged planning planning-`system` / ensemble **`user`** bodies), same rationale as **`staged_plan_nl_followup_user_body`** (see **`agent_turn/staged/sse.rs`** comments).
+3. **Isolation from user/tool content**: user input and tool results are **not** written back into the first `system` by default; workspace rules / Skills are trusted appendix material—still treat the workspace as a trust boundary per **`security-sensitive-surface`**.
+4. **Align with tool contracts**: anything `system` / coaches claim about tools must match **`tool_registry`**, JSON Schema, and **`sub_agent_policy` / `executor_kind`** narrowing.
+5. **Budget**: **`cursor_rules_max_chars`**, **`skills_max_chars` / `skills_top_k`**, **`context_char_budget` / `max_message_history`** jointly bound what the model sees; truncated rules already append a “do not assume unseen rules” notice (**`config/cursor_rules.rs`**).
+6. **Observability**: use **`GET /status`**, **`message_pipeline` / `context_window`** logs; when debugging model bias, inspect the **vendor-bound `messages` slice** (**`conversation_messages_to_vendor_body`**), not only persisted session JSON.
+
+#### Logical blocks (L0–L9)
+
+Conceptual layers for discussion; **not** a single struct in code.
+
+| Block | Typical source | When assembled | Code anchor |
+|-------|----------------|----------------|-------------|
+| **L0 Global base** | **`system_prompt` / `system_prompt_file`** | **`config::finalize`** | **`config/finalize.rs`** |
+| **L1 Project rules** | **`.cursor/rules/*.mdc`**, optional **`AGENTS.md`** | **`finalize`**: **`merge_system_prompt_with_cursor_rules`** | **`config/cursor_rules.rs`** |
+| **L2 Global Skills** | **`.crabmate/skills`** | **`finalize`**: **`merge_system_prompt_with_skills`** | **`config/skills.rs`** |
+| **L3 Named roles** | **`config/agent_roles.toml`** per-role file / inline | **`finalize_agent_role_catalog`**: L1+L2 per role (**`merge_system_prompt_with_skills_selected`**, empty query placeholder) | **`config/agent_roles.rs`** |
+| **L4 Runtime appendix** | **`thinking_avoid_echo_appendix`** (or embedded fallback); **`agent_tool_stats`** | **At runtime** when building first `system`: **`ToolOutcomeRecorder::augment_system_prompt`** | **`tool_stats.rs`** |
+| **L5 Web turn Skills** | Workspace Skills + **current user message** top-k | Web **`build_messages_for_turn`** | **`web/chat_handlers/chat/turn_build.rs`**, **`builtin_skills.rs`** |
+| **L6 First-turn workspace context** | Project profile / living docs / dependency brief | **Dedicated first `user`**, **`compose_new_conversation_messages`** | **`context_bootstrap/conversation_turn_bootstrap.rs`**, **`project_profile`** |
+| **L7 Intent gate** | **`intent_turn_gate_hint`** | Before outer-loop **P**: **`Message::system_intent_gate_hint`** | **`agent_turn/intent/at_turn_start.rs`**, **`agent_turn/outer_loop.rs`** |
+| **L8 Staged planning** | **`staged_plan_phase_instruction`** or **`staged_plan_phase_instruction_default`**; **`plan_ensemble`** coaches | **No-tools planner rounds** | **`agent_turn/staged/mod.rs`**, **`staged/sse.rs`**, **`plan_ensemble.rs`** |
+| **L9 Memory & other** | LTM strip, changelist, etc. | Around **`prepare_messages_for_model` / pipeline** | **`memory`**, **`agent_turn`**, **`message_pipeline`** |
+
+**Runtime selection**: **`AgentConfig::system_prompt_for_new_conversation`** (**`src/config/types/mod.rs`**) picks resolved role text (**L3**) vs global **`roles_prompts.system_prompt`**; callers then apply **L4** (and Web **L5**).
+
+#### Lifecycle ordering (summary)
+
+1. **Load config**: L0 → L1 → L2 → L3 per role.  
+2. **New session**: **`system`** = `system_prompt_for_new_conversation(role)` + **L4** (+ Web **L5**); optional **L6** `user`; then real user `user`.  
+3. **Continue (Web)**: **`maybe_apply_mid_session_agent_role_switch`** may rewrite first **`system`** (**`agent_role_turn.rs`**), then **L4** / **L5**.  
+4. **Resume from disk**: **`workspace_session`** replaces first **`system`** with **current** config (see module docs).  
+5. **Each agent turn**: **L7** (if any) → **`prepare_turn_messages_for_model`** → **L8** when staged planning runs; **L9** per config.
+
+#### Possible evolutions
+
+- Block **registry** (id → predicate → order) to centralize scattered coach strings.  
+- Explicit **template variables** for role id, workspace root hints, etc.  
+- **Version fingerprint** in logs when prompt files change.  
+- **Regression**: sanitized golden substrings for assembled prompts.
+
+For config keys and env vars, **`docs/en/CONFIGURATION.md`** remains authoritative.
+
 ## `src/` module index
 
 > When you add/remove `lib.rs` mods or change call chains, update this table and the Mermaid diagram (`.cursor/rules/architecture-docs-sync.mdc`).
