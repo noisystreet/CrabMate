@@ -117,6 +117,47 @@ fn preprocess_text_wrappers(s: &str) -> String {
     cur
 }
 
+/// `\sqrt` 之后可选的 `[n]` 根指数；`j` 指向 `[` 或 `{`。
+fn parse_sqrt_optional_root_index<'a>(
+    s: &'a str,
+    bytes: &[u8],
+    j: usize,
+) -> Option<(Option<&'a str>, usize)> {
+    if bytes.get(j) != Some(&b'[') {
+        return Some((None, j));
+    }
+    let n_start = j + 1;
+    let close_rel = s.get(n_start..)?.find(']')?;
+    let n_end = n_start + close_rel;
+    let n_raw = s.get(n_start..n_end)?;
+    if n_raw.contains('{') || n_raw.contains('}') {
+        return None;
+    }
+    let mut after_br = n_end + 1;
+    while after_br < bytes.len() && bytes[after_br].is_ascii_whitespace() {
+        after_br += 1;
+    }
+    Some((Some(n_raw.trim()), after_br))
+}
+
+fn sqrt_body_display(inner: &str) -> String {
+    let inner = inner.trim();
+    if inner.len() == 1 && inner.chars().next().is_some_and(|c| c.is_alphanumeric()) {
+        inner.to_string()
+    } else {
+        format!("({})", inner)
+    }
+}
+
+fn sqrt_unicode_from_root_index(n_opt: Option<&str>, body_out: &str) -> String {
+    match n_opt {
+        None | Some("2") | Some("") => format!("\u{221a}{}", body_out),
+        Some("3") => format!("\u{221b}{}", body_out),
+        Some("4") => format!("\u{221c}{}", body_out),
+        Some(n) => format!("root({},{})", n, body_out),
+    }
+}
+
 /// 解析 `\sqrt[n]{body}`（`n` 段无 `{`）或 `\sqrt{body}`。`body` 内仍含 `\sqrt` 时不处理（留给更内层）。
 fn try_parse_sqrt(s: &str, pos: usize) -> Option<(String, usize, usize)> {
     let rest = s.get(pos..)?;
@@ -136,41 +177,13 @@ fn try_parse_sqrt(s: &str, pos: usize) -> Option<(String, usize, usize)> {
         return None;
     }
 
-    let (n_opt, k) = if bytes[j] == b'[' {
-        let n_start = j + 1;
-        let close_rel = s.get(n_start..)?.find(']')?;
-        let n_end = n_start + close_rel;
-        let n_raw = s.get(n_start..n_end)?;
-        if n_raw.contains('{') || n_raw.contains('}') {
-            return None;
-        }
-        let mut after_br = n_end + 1;
-        while after_br < bytes.len() && bytes[after_br].is_ascii_whitespace() {
-            after_br += 1;
-        }
-        (Some(n_raw.trim()), after_br)
-    } else {
-        (None, j)
-    };
-
+    let (n_opt, k) = parse_sqrt_optional_root_index(s, bytes, j)?;
     let (body, end) = parse_balanced_brace(s, k)?;
     if body.contains("\\sqrt") {
         return None;
     }
-    let inner = body.trim();
-    let body_out = if inner.len() == 1 && inner.chars().next().is_some_and(|c| c.is_alphanumeric())
-    {
-        inner.to_string()
-    } else {
-        format!("({})", inner)
-    };
-
-    let rep = match n_opt {
-        None | Some("2") | Some("") => format!("\u{221a}{}", body_out),
-        Some("3") => format!("\u{221b}{}", body_out),
-        Some("4") => format!("\u{221c}{}", body_out),
-        Some(n) => format!("root({},{})", n, body_out),
-    };
+    let body_out = sqrt_body_display(body);
+    let rep = sqrt_unicode_from_root_index(n_opt, &body_out);
     Some((rep, pos, end))
 }
 
