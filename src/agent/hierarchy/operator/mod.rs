@@ -2,6 +2,7 @@
 
 mod agent_impl;
 mod compile;
+mod compile_error_match;
 mod execution_guides;
 mod inject;
 mod operator_tool_analysis;

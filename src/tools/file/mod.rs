@@ -11,6 +11,7 @@ mod path;
 mod perm;
 mod read_tool;
 mod replace_lines_stream;
+mod rust_brace_scan;
 mod symlink;
 mod tree_glob;
 mod write_ops;

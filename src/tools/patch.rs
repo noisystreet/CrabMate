@@ -52,103 +52,28 @@ fn apply_unified_patch(
     strip: usize,
     changelist: Option<&Arc<WorkspaceChangelist>>,
 ) -> String {
-    let patch = match diffy::Patch::from_str(patch_text) {
-        Ok(p) => p,
-        Err(e) => return format!("解析 unified diff 失败: {}", e),
-    };
+    if let Err(e) = diffy::Patch::from_str(patch_text) {
+        return format!("解析 unified diff 失败: {}", e);
+    }
 
     let mut applied_files = Vec::new();
     let mut errors = Vec::new();
 
     for hunk_patch in split_patch_by_file(patch_text) {
-        let (file_path, original_path) = match extract_target_path(&hunk_patch, strip) {
-            Some(p) => p,
-            None => {
-                errors.push("无法提取文件路径".to_string());
-                continue;
-            }
-        };
-
-        if file_path == "/dev/null" || original_path == "/dev/null" {
-            if original_path == "/dev/null" {
-                let target = root.join(&file_path);
-                let single = match diffy::Patch::from_str(&hunk_patch) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        errors.push(format!("{}: 解析失败: {}", file_path, e));
-                        continue;
-                    }
-                };
-                let new_content = diffy::apply("", &single);
-                match new_content {
-                    Ok(content) => {
-                        if let Some(parent) = target.parent() {
-                            let _ = std::fs::create_dir_all(parent);
-                        }
-                        if let Err(e) = std::fs::write(&target, content.as_bytes()) {
-                            errors.push(format!("{}: 创建文件失败: {}", file_path, e));
-                        } else {
-                            if let Some(cl) = changelist {
-                                cl.record_mutation(&file_path, None, Some(content));
-                            }
-                            applied_files.push(format!("新建: {}", file_path));
-                        }
-                    }
-                    Err(e) => errors.push(format!("{}: 应用失败: {}", file_path, e)),
-                }
-                continue;
-            }
-            if file_path == "/dev/null" {
-                let source = root.join(&original_path);
-                if source.exists() {
-                    let before = std::fs::read_to_string(&source).ok();
-                    if let Err(e) = std::fs::remove_file(&source) {
-                        errors.push(format!("{}: 删除失败: {}", original_path, e));
-                    } else {
-                        if let Some(cl) = changelist {
-                            cl.record_mutation(&original_path, before, None);
-                        }
-                        applied_files.push(format!("删除: {}", original_path));
-                    }
-                }
-                continue;
-            }
-        }
-
-        let target = root.join(&file_path);
-        let original = match std::fs::read_to_string(&target) {
-            Ok(s) => s,
-            Err(e) => {
-                errors.push(format!("{}: 读取失败: {}", file_path, e));
-                continue;
-            }
-        };
-
-        let single = match diffy::Patch::from_str(&hunk_patch) {
-            Ok(p) => p,
-            Err(e) => {
-                errors.push(format!("{}: 解析失败: {}", file_path, e));
-                continue;
-            }
-        };
-
-        match diffy::apply(&original, &single) {
-            Ok(patched) => {
-                if let Err(e) = std::fs::write(&target, patched.as_bytes()) {
-                    errors.push(format!("{}: 写入失败: {}", file_path, e));
-                } else {
-                    if let Some(cl) = changelist {
-                        cl.record_mutation(&file_path, Some(original.clone()), Some(patched));
-                    }
-                    applied_files.push(file_path);
-                }
-            }
-            Err(e) => errors.push(format!("{}: 应用失败: {}", file_path, e)),
-        }
+        apply_single_unified_hunk(
+            &hunk_patch,
+            root,
+            strip,
+            changelist,
+            &mut applied_files,
+            &mut errors,
+        );
     }
 
-    let _ = patch;
+    unified_patch_format_outcome(&applied_files, &errors)
+}
 
+fn unified_patch_format_outcome(applied_files: &[String], errors: &[String]) -> String {
     if errors.is_empty() {
         if applied_files.is_empty() {
             "补丁应用成功（无文件变更）".to_string()
@@ -163,6 +88,129 @@ fn apply_unified_patch(
             applied_files.join("\n"),
             errors.join("\n")
         )
+    }
+}
+
+fn apply_single_unified_hunk(
+    hunk_patch: &str,
+    root: &Path,
+    strip: usize,
+    changelist: Option<&Arc<WorkspaceChangelist>>,
+    applied_files: &mut Vec<String>,
+    errors: &mut Vec<String>,
+) {
+    let (file_path, original_path) = match extract_target_path(hunk_patch, strip) {
+        Some(p) => p,
+        None => {
+            errors.push("无法提取文件路径".to_string());
+            return;
+        }
+    };
+
+    if file_path == "/dev/null" || original_path == "/dev/null" {
+        if original_path == "/dev/null" {
+            unified_hunk_create_new_file(
+                hunk_patch,
+                root,
+                &file_path,
+                changelist,
+                applied_files,
+                errors,
+            );
+            return;
+        }
+        if file_path == "/dev/null" {
+            unified_hunk_delete_file(root, &original_path, changelist, applied_files, errors);
+        }
+        return;
+    }
+
+    let target = root.join(&file_path);
+    let original = match std::fs::read_to_string(&target) {
+        Ok(s) => s,
+        Err(e) => {
+            errors.push(format!("{}: 读取失败: {}", file_path, e));
+            return;
+        }
+    };
+
+    let single = match diffy::Patch::from_str(hunk_patch) {
+        Ok(p) => p,
+        Err(e) => {
+            errors.push(format!("{}: 解析失败: {}", file_path, e));
+            return;
+        }
+    };
+
+    match diffy::apply(&original, &single) {
+        Ok(patched) => {
+            if let Err(e) = std::fs::write(&target, patched.as_bytes()) {
+                errors.push(format!("{}: 写入失败: {}", file_path, e));
+            } else {
+                if let Some(cl) = changelist {
+                    cl.record_mutation(&file_path, Some(original.clone()), Some(patched));
+                }
+                applied_files.push(file_path);
+            }
+        }
+        Err(e) => errors.push(format!("{}: 应用失败: {}", file_path, e)),
+    }
+}
+
+fn unified_hunk_create_new_file(
+    hunk_patch: &str,
+    root: &Path,
+    file_path: &str,
+    changelist: Option<&Arc<WorkspaceChangelist>>,
+    applied_files: &mut Vec<String>,
+    errors: &mut Vec<String>,
+) {
+    let target = root.join(file_path);
+    let single = match diffy::Patch::from_str(hunk_patch) {
+        Ok(p) => p,
+        Err(e) => {
+            errors.push(format!("{}: 解析失败: {}", file_path, e));
+            return;
+        }
+    };
+    let new_content = diffy::apply("", &single);
+    match new_content {
+        Ok(content) => {
+            if let Some(parent) = target.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Err(e) = std::fs::write(&target, content.as_bytes()) {
+                errors.push(format!("{}: 创建文件失败: {}", file_path, e));
+            } else {
+                if let Some(cl) = changelist {
+                    cl.record_mutation(file_path, None, Some(content));
+                }
+                applied_files.push(format!("新建: {}", file_path));
+            }
+        }
+        Err(e) => errors.push(format!("{}: 应用失败: {}", file_path, e)),
+    }
+}
+
+fn unified_hunk_delete_file(
+    root: &Path,
+    original_path: &str,
+    changelist: Option<&Arc<WorkspaceChangelist>>,
+    applied_files: &mut Vec<String>,
+    errors: &mut Vec<String>,
+) {
+    let source = root.join(original_path);
+    if !source.exists() {
+        return;
+    }
+    let before = std::fs::read_to_string(&source).ok();
+    if let Err(e) = std::fs::remove_file(&source) {
+        errors.push(format!("{}: 删除失败: {}", original_path, e));
+    } else {
+        if let Some(cl) = changelist {
+            cl.record_mutation(original_path, before, None);
+        }
+        applied_files.push(format!("删除: {}", original_path));
     }
 }
 
