@@ -3,12 +3,17 @@
 //! # 与其它模块分工
 //!
 //! - **键名与通用读写**：[`crate::app_prefs`]（`THEME_KEY`、`store_bool_key`、侧栏视图等）；句柄经 [`super::local_storage_index`]。
+//! - **首屏壳 UI 快照**：[`read_shell_ui_initial_snapshot`] 聚合主题/语言/侧栏宽度等读路径，供 [`super::app_signals::ShellUISignals::new`] 单点消费。
 //! - **会话 JSON**：[`crate::storage`] / [`super::app_shell_effects::session_storage`]。
 //! - **`client_llm.*` / Bearer**：[`crate::api::client_llm_storage`]。
 //!
 //! 新增「首屏就读 / Effect 里写磁盘或改 DOM」的壳偏好时，优先在本模块加函数，避免在多个 `wire_*` 文件里散落 `set_item`。
 
-use crate::app_prefs::{BG_DECOR_KEY, CM_ROLE_KEY, THEME_KEY, store_bool_key};
+use crate::app_prefs::{
+    BG_DECOR_KEY, CM_ROLE_KEY, DEFAULT_SIDE_WIDTH, STATUS_BAR_VISIBLE_KEY, SidePanelView,
+    THEME_KEY, WORKSPACE_WIDTH_KEY, load_bool_key, load_f64_key, load_side_panel_view,
+    store_bool_key,
+};
 use crate::i18n::Locale;
 
 use super::local_storage_index;
@@ -18,6 +23,29 @@ pub(crate) fn read_theme_initial() -> String {
     local_storage_index::handle()
         .and_then(|s| s.get_item(THEME_KEY).ok().flatten())
         .unwrap_or_else(|| "light".to_string())
+}
+
+/// 首屏 [`super::app_signals::ShellUISignals`] 所需的 **`localStorage`** 域快照（单入口读键）。
+#[derive(Clone)]
+pub(crate) struct ShellUiInitialSnapshot {
+    pub theme: String,
+    pub bg_decor: bool,
+    pub locale: Locale,
+    pub status_bar_visible: bool,
+    pub side_panel_view: SidePanelView,
+    pub side_width: f64,
+}
+
+#[must_use]
+pub(crate) fn read_shell_ui_initial_snapshot() -> ShellUiInitialSnapshot {
+    ShellUiInitialSnapshot {
+        theme: read_theme_initial(),
+        bg_decor: load_bool_key(BG_DECOR_KEY, true),
+        locale: crate::i18n::load_locale_from_storage(),
+        status_bar_visible: load_bool_key(STATUS_BAR_VISIBLE_KEY, true),
+        side_panel_view: load_side_panel_view(),
+        side_width: load_f64_key(WORKSPACE_WIDTH_KEY, DEFAULT_SIDE_WIDTH),
+    }
 }
 
 /// 将主题写入本机并设置 `data-theme`（与 [`super::app_shell_effects::sync_dom::wire_sync_theme_to_storage_and_dom`] 语义一致）。
