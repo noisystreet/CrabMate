@@ -313,6 +313,15 @@ struct SerialEmitEarlyWithoutDispatchParams<'a> {
     readonly_tool_ttl_cache: &'a Arc<crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache>,
 }
 
+fn mark_ctest_preflight_failure_signature(per_coord: &mut PerCoordinator, name: &str, args: &str) {
+    per_coord.mark_tool_failure_signature(name, args, "ctest_dash_c_build_misuse".to_string());
+    per_coord.mark_tool_failure_family(
+        name,
+        "ctest_dash_c_build_misuse",
+        "ctest_dash_c_build_misuse".to_string(),
+    );
+}
+
 async fn serial_emit_early_without_dispatch(p: SerialEmitEarlyWithoutDispatchParams<'_>) -> bool {
     let SerialEmitEarlyWithoutDispatchParams {
         messages,
@@ -360,12 +369,7 @@ async fn serial_emit_early_without_dispatch(p: SerialEmitEarlyWithoutDispatchPar
         return true;
     }
     if let Some(preflight_error) = run_command_ctest_preflight_error(name, args) {
-        per_coord.mark_tool_failure_signature(name, args, "ctest_dash_c_build_misuse".to_string());
-        per_coord.mark_tool_failure_family(
-            name,
-            "ctest_dash_c_build_misuse",
-            "ctest_dash_c_build_misuse".to_string(),
-        );
+        mark_ctest_preflight_failure_signature(per_coord, name, args);
         emit_serial_tool_result(SerialEmitToolResultParams {
             messages,
             per_coord,
@@ -648,6 +652,53 @@ fn serial_log_web_audit_write_tool_if_needed(
     }
 }
 
+/// 每轮工具迭代开头：记录 tracing、下发 `tool_call` / `timeline`、打调用日志（从 [`execute_tools_serial`] 拆出以降低 nloc）。
+struct SerialToolIterationSsePreface<'a> {
+    out: Option<&'a mpsc::Sender<String>>,
+    sse_mirror: Option<&'a crate::sse::SseControlMirror>,
+    cfg: &'a std::sync::Arc<crate::config::AgentConfig>,
+    tracing_chat_turn: Option<&'a std::sync::Arc<crate::observability::TracingChatTurn>>,
+    id: &'a str,
+    name: &'a str,
+    args: &'a str,
+    messages: &'a [crate::types::Message],
+}
+
+async fn serial_tool_iteration_sse_preface(p: SerialToolIterationSsePreface<'_>) {
+    let SerialToolIterationSsePreface {
+        out,
+        sse_mirror,
+        cfg,
+        tracing_chat_turn,
+        id,
+        name,
+        args,
+        messages,
+    } = p;
+    if let Some(t) = tracing_chat_turn {
+        t.record_tool_call_id_for_log(id);
+    }
+    emit_tool_call_summary_sse(out, sse_mirror, cfg.as_ref(), id, name, args, messages).await;
+    emit_timeline_log_sse(
+        out,
+        sse_mirror,
+        "tool_step_started",
+        name.to_string(),
+        Some(format!(
+            "args={}",
+            crate::redact::tool_arguments_preview_for_sse(args)
+        )),
+        "execute_tools::timeline tool_step_started",
+    )
+    .await;
+    info!(
+        target: super::LOG_TARGET,
+        "调用工具 tool={} args_preview={}",
+        name,
+        crate::redact::tool_arguments_preview_for_log(args)
+    );
+}
+
 /// 串行路径：`dispatch_tool`、只读结果缓存、写操作后清缓存。
 pub(super) async fn execute_tools_serial(
     ctx: ExecuteToolsCommonCtx<'_>,
@@ -702,37 +753,17 @@ pub(super) async fn execute_tools_serial(
         let name = tc.function.name.clone();
         let args = tc.function.arguments.clone();
         let id = tc.id.clone();
-        if let Some(ref t) = tracing_chat_turn {
-            t.record_tool_call_id_for_log(id.as_str());
-        }
-        emit_tool_call_summary_sse(
+        serial_tool_iteration_sse_preface(SerialToolIterationSsePreface {
             out,
-            sse_mirror_for_emit.as_ref(),
-            cfg.as_ref(),
-            id.as_str(),
-            &name,
-            &args,
+            sse_mirror: sse_mirror_for_emit.as_ref(),
+            cfg,
+            tracing_chat_turn: tracing_chat_turn.as_ref(),
+            id: id.as_str(),
+            name: &name,
+            args: &args,
             messages,
-        )
+        })
         .await;
-        emit_timeline_log_sse(
-            out,
-            sse_mirror_for_emit.as_ref(),
-            "tool_step_started",
-            name.clone(),
-            Some(format!(
-                "args={}",
-                crate::redact::tool_arguments_preview_for_sse(&args)
-            )),
-            "execute_tools::timeline tool_step_started",
-        )
-        .await;
-        info!(
-            target: super::LOG_TARGET,
-            "调用工具 tool={} args_preview={}",
-            name,
-            crate::redact::tool_arguments_preview_for_log(&args)
-        );
 
         if serial_emit_early_without_dispatch(SerialEmitEarlyWithoutDispatchParams {
             messages,

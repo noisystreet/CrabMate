@@ -9,9 +9,7 @@ use crate::tool_stats::ToolOutcomeRecorder;
 use crate::types::Message;
 
 use super::sqlite_session::TuiSqliteSessionState;
-use super::{
-    TuiAfterChatRoundRefresh, TuiModel, tui_refresh_after_chat_round, tui_status_chips_line,
-};
+use super::{TuiAfterChatRoundRefresh, TuiModel, tui_refresh_after_chat_round};
 
 pub(super) struct TuiSqliteSlashEnv<'a> {
     pub(super) cfg_holder: &'a SharedAgentConfig,
@@ -55,7 +53,8 @@ pub(super) async fn tui_try_consume_sqlite_slash(
                 &["未启用 SQLite 会话库。请在配置中设置非空 conversation_store_sqlite_path（与 Web serve 同源）。"
                     .to_string()],
             );
-            let chips = tui_status_chips_line(cfg_holder, agent_role_owned).await;
+            let chips =
+                super::sidebar_text::tui_status_chips_line(cfg_holder, agent_role_owned).await;
             let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
             g.status = format!("{} · /conv /branch 需要会话 SQLite", chips);
             return Ok(true);
@@ -104,7 +103,8 @@ pub(super) async fn tui_try_consume_sqlite_slash(
             }
             Err(e) => {
                 push_block(model, &[format!("分支失败: {e}")]);
-                let chips = tui_status_chips_line(cfg_holder, agent_role_owned).await;
+                let chips =
+                    super::sidebar_text::tui_status_chips_line(cfg_holder, agent_role_owned).await;
                 let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
                 g.status = format!("{} · {e}", chips);
             }

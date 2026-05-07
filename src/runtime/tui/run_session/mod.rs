@@ -23,6 +23,7 @@ mod clarify_modal;
 mod poll_loop;
 mod render;
 mod session_loop;
+mod sidebar_text;
 mod sqlite_session;
 mod sqlite_slash;
 mod sse_mirror;
@@ -45,7 +46,7 @@ use ratatui::text::{Line, Text};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::config::{AgentConfig, SharedAgentConfig};
+use crate::config::SharedAgentConfig;
 use crate::process_handles::ProcessHandles;
 use crate::runtime::cli::{
     CliMainInvocationCommon, ReplAfterUserMessageEnqueuedCb, ReplSlashFollowupCtx,
@@ -70,102 +71,6 @@ const COMPOSER_PROMPT_PREFIX: &str = "› ";
 pub(super) struct TuiClarificationShared {
     inbox: Arc<Mutex<VecDeque<crate::sse::ClarificationQuestionnaireBody>>>,
     answers_merge: Arc<Mutex<Option<crate::clarification_questionnaire::ClarifyAnswersNormalized>>>,
-}
-
-/// 左侧会话栏（对齐 Web：会话在左）。
-fn build_tui_session_sidebar(
-    tui_load_on_start: bool,
-    session_file_exists: bool,
-    message_count: usize,
-    sqlite_conversation_id: Option<&str>,
-) -> String {
-    let sess = if session_file_exists { "有" } else { "无" };
-    let load = if tui_load_on_start { "开" } else { "关" };
-    let sqlite_block = if let Some(id) = sqlite_conversation_id
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        let short = truncate_chars_with_ellipsis(id, 40);
-        format!("\n\nSQLite 会话\n{short}\n（/conv、/branch）")
-    } else {
-        String::new()
-    };
-    format!(
-        "会话\n\n会话文件\ntui_session.json：{sess}\n启动加载：{load}\n\n内存消息\n{message_count} 条（含 system / 工具）{sqlite_block}\n\n中区仅展示 transcript\n可见尾部",
-    )
-}
-
-/// 右侧工作区栏 + 任务提示（对齐 Web：工作区在右）。
-fn build_tui_workspace_sidebar(
-    work_dir: &std::path::Path,
-    tool_count: usize,
-    cli_no_stream: bool,
-) -> String {
-    let wd = work_dir.display().to_string();
-    let wd_short = truncate_chars_with_ellipsis(&wd, 40);
-    format!(
-        "工作区\n{wd_short}\n\n聚焦本栏按 Enter：浏览/编辑路径\n（与 Web 侧栏工作区、REPL /workspace 同源校验）\n\n快捷键\n{}\n\n敏感工具审批：全屏 Modal（↑↓ · Enter · Esc · 1/2/3）。\n\n已加载工具：{tool_count} 个",
-        tui_keyboard_help_compact(cli_no_stream),
-    )
-}
-
-/// 原底栏文案迁至侧栏；与 `--no-stream` 对齐 REPL 提示。
-fn tui_keyboard_help_compact(cli_no_stream: bool) -> String {
-    let mut s = String::from(
-        "Enter 发送 · 空行 q · Ctrl+C · /help · Tab 切焦点 · 鼠标点面板 · 聊天区 PgUp/PgDn · 右侧滚动条拖动",
-    );
-    if cli_no_stream {
-        s.push_str(" · --no-stream");
-    } else {
-        s.push_str(" · 流式（不写 stdout）");
-    }
-    s
-}
-
-/// 与 Web 底栏「角色」下拉一致：显式 `/agent set` 显示 id；否则 default / default (配置 id)。
-fn tui_status_role_label(agent_role_owned: &Option<String>, cfg: &AgentConfig) -> String {
-    if let Some(id) = agent_role_owned
-        .as_ref()
-        .map(|x| x.trim())
-        .filter(|s| !s.is_empty())
-    {
-        return id.to_string();
-    }
-    match cfg
-        .roles_prompts
-        .default_agent_role_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        Some(id) => format!("default ({id})"),
-        None => "default".to_string(),
-    }
-}
-
-/// Web 底栏 chips 段（不含末尾「就绪 / 模型生成中…」等运行态）。
-async fn tui_status_chips_line(
-    cfg_holder: &SharedAgentConfig,
-    agent_role_owned: &Option<String>,
-) -> String {
-    let g = cfg_holder.read().await;
-    let model_id = g.llm.model.as_str();
-    let base = truncate_chars_with_ellipsis(g.llm.api_base.trim(), 44);
-    let role = tui_status_role_label(agent_role_owned, &g);
-    format!("模型 · {model_id} · base_url · {base} · 角色 · {role}")
-}
-
-fn tui_status_bar_with_run(chips: &str, run: &str) -> String {
-    format!("{chips} · {run}")
-}
-
-/// Web `status_model_running` 文案 + TUI 补充的消息条数。
-fn tui_status_suffix_model_busy_lines(msg_len: usize) -> String {
-    format!("模型生成中… · {msg_len} 条")
-}
-
-fn tui_use_ansi_color() -> bool {
-    std::env::var_os("NO_COLOR").is_none()
 }
 
 enum UiEvent {
@@ -467,7 +372,7 @@ async fn tui_refresh_after_slash_capture(p: TuiSlashUiRefresh<'_>) {
         let g = model.lock().unwrap_or_else(|e| e.into_inner());
         g.sqlite_conversation_id.as_deref().map(|s| s.to_string())
     };
-    let nav = build_tui_session_sidebar(
+    let nav = sidebar_text::build_tui_session_sidebar(
         tui_load_nav,
         workspace_session::session_file_path(work_dir).exists(),
         message_count,
@@ -482,7 +387,7 @@ async fn tui_refresh_after_slash_capture(p: TuiSlashUiRefresh<'_>) {
         sqlite_nav.as_deref(),
     )
     .await;
-    let chips = tui_status_chips_line(cfg_holder, agent_role_owned).await;
+    let chips = sidebar_text::tui_status_chips_line(cfg_holder, agent_role_owned).await;
     let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
     if !captured.is_empty() {
         g.transcript.push_str("\n[/]\n");
@@ -497,7 +402,7 @@ async fn tui_refresh_after_slash_capture(p: TuiSlashUiRefresh<'_>) {
     g.right_summary = right;
     g.workspace_path_buf = work_dir.to_path_buf();
     g.status_chips = chips.clone();
-    g.status = tui_status_bar_with_run(&chips, "就绪");
+    g.status = sidebar_text::tui_status_bar_with_run(&chips, "就绪");
 }
 
 pub(in crate::runtime::tui::run_session) struct TuiAfterChatRoundRefresh<'a> {
@@ -539,7 +444,7 @@ async fn tui_refresh_after_chat_round(p: TuiAfterChatRoundRefresh<'_>) {
         let g = model.lock().unwrap_or_else(|e| e.into_inner());
         g.sqlite_conversation_id.clone()
     };
-    let nav = build_tui_session_sidebar(
+    let nav = sidebar_text::build_tui_session_sidebar(
         tui_load_nav,
         workspace_session::session_file_path(work_dir).exists(),
         messages.len(),
@@ -554,7 +459,7 @@ async fn tui_refresh_after_chat_round(p: TuiAfterChatRoundRefresh<'_>) {
         sqlite_nav.as_deref(),
     )
     .await;
-    let chips = tui_status_chips_line(cfg_holder, agent_role_owned).await;
+    let chips = sidebar_text::tui_status_chips_line(cfg_holder, agent_role_owned).await;
     let transcript = transcript::messages_to_transcript(messages);
     let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
     g.transcript = transcript;
@@ -566,7 +471,7 @@ async fn tui_refresh_after_chat_round(p: TuiAfterChatRoundRefresh<'_>) {
     g.status_chips = chips.clone();
     g.status = match persist_note {
         Some(err) => format!("{} · SQLite: {}", chips, err),
-        None => tui_status_bar_with_run(&chips, "就绪"),
+        None => sidebar_text::tui_status_bar_with_run(&chips, "就绪"),
     };
 }
 
@@ -586,8 +491,8 @@ fn tui_make_submit_hooks(
         let mut g = model_refresh.lock().unwrap_or_else(|e| e.into_inner());
         g.transcript = t;
         let chips = g.status_chips.clone();
-        let suf = tui_status_suffix_model_busy_lines(msgs.len());
-        g.status = tui_status_bar_with_run(&chips, suf.as_str());
+        let suf = sidebar_text::tui_status_suffix_model_busy_lines(msgs.len());
+        g.status = sidebar_text::tui_status_bar_with_run(&chips, suf.as_str());
     });
     let model_for_hook = Arc::clone(model);
     let msg_len_for_hook = Arc::clone(&msg_len_turn);
@@ -596,10 +501,10 @@ fn tui_make_submit_hooks(
         let chips = g.status_chips.clone();
         let n = msg_len_for_hook.load(Ordering::SeqCst);
         g.status = if running {
-            tui_status_bar_with_run(&chips, "工具执行中…")
+            sidebar_text::tui_status_bar_with_run(&chips, "工具执行中…")
         } else {
-            let suf = tui_status_suffix_model_busy_lines(n.max(1));
-            tui_status_bar_with_run(&chips, suf.as_str())
+            let suf = sidebar_text::tui_status_suffix_model_busy_lines(n.max(1));
+            sidebar_text::tui_status_bar_with_run(&chips, suf.as_str())
         };
     });
     (on_user_enqueued, tool_running_hook)
@@ -674,7 +579,7 @@ pub async fn run_tui_session(
 
     let header_line = tui_header_summary(work_dir.as_path());
     let sqlite_id_nav = sqlite_sess.as_ref().map(|s| s.conversation_id.as_str());
-    let nav_summary = build_tui_session_sidebar(
+    let nav_summary = sidebar_text::build_tui_session_sidebar(
         tui_load,
         workspace_session::session_file_path(work_dir.as_path()).exists(),
         messages.len(),
@@ -689,8 +594,8 @@ pub async fn run_tui_session(
         sqlite_id_nav,
     )
     .await;
-    let status_chips = tui_status_chips_line(cfg_holder, &agent_role_owned).await;
-    let status_line = tui_status_bar_with_run(&status_chips, "就绪");
+    let status_chips = sidebar_text::tui_status_chips_line(cfg_holder, &agent_role_owned).await;
+    let status_line = sidebar_text::tui_status_bar_with_run(&status_chips, "就绪");
 
     let llm_scratch: TuiLlmStreamScratchArc = Arc::new(Mutex::new(TuiLlmStreamScratch::default()));
 

@@ -7,7 +7,7 @@ use crate::process_handles::ProcessHandles;
 use crate::text_util::truncate_chars_with_ellipsis;
 use crate::workspace::tasks_side::TasksData;
 
-use super::build_tui_workspace_sidebar;
+use super::sidebar_text::build_tui_workspace_sidebar;
 
 pub(in crate::runtime::tui::run_session) async fn build_tui_workspace_sidebar_extended(
     work_dir: &std::path::Path,
