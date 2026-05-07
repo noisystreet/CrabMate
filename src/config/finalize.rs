@@ -545,18 +545,49 @@ struct FinalizeAfterRoles {
     scheduled_agent_tasks: Vec<ScheduledAgentTask>,
 }
 
-/// 验证、clamp 并组装最终 `AgentConfig`（实现体；`finalize` 为薄包装以降低圈复杂度扫描中的函数 CCN）。
-fn finalize_agent_config(
-    mut b: ConfigBuilder,
-    system_prompt_search_bases: Vec<PathBuf>,
-) -> Result<AgentConfig, String> {
-    validate::validate_builder_numeric_ranges(&b)?;
+fn validate_required_llm_endpoints(b: &ConfigBuilder) -> Result<(), String> {
     if b.llm.api_base.is_empty() {
         return Err("配置错误：未设置 api_base（请在 config/default_config.toml、config.toml、.agent_demo.toml 或环境变量 CM_API_BASE 中设置）".to_string());
     }
     if b.llm.model.is_empty() {
         return Err("配置错误：未设置 model（请在 config/default_config.toml、config.toml、.agent_demo.toml 或环境变量 CM_MODEL 中设置）".to_string());
     }
+    Ok(())
+}
+
+fn canonical_run_command_working_dir(b: &ConfigBuilder) -> Result<PathBuf, String> {
+    let raw = b
+        .command_exec
+        .run_command_working_dir
+        .clone()
+        .ok_or("配置错误：未设置 run_command_working_dir（请在 config/tools.toml、config.toml、.agent_demo.toml 或环境变量 CM_RUN_COMMAND_WORKING_DIR 中设置）")?;
+    let p = Path::new(&raw);
+    let p = match p.canonicalize() {
+        Ok(path) => path,
+        Err(e) => {
+            return Err(format!(
+                "配置错误：run_command_working_dir \"{}\" 不存在或无法解析: {}",
+                p.display(),
+                e
+            ));
+        }
+    };
+    if !p.is_dir() {
+        return Err(format!(
+            "配置错误：run_command_working_dir \"{}\" 不是目录",
+            p.display()
+        ));
+    }
+    Ok(p)
+}
+
+/// 验证、clamp 并组装最终 `AgentConfig`（实现体；`finalize` 为薄包装以降低圈复杂度扫描中的函数 CCN）。
+fn finalize_agent_config(
+    mut b: ConfigBuilder,
+    system_prompt_search_bases: Vec<PathBuf>,
+) -> Result<AgentConfig, String> {
+    validate::validate_builder_numeric_ranges(&b)?;
+    validate_required_llm_endpoints(&b)?;
     let tr = derive_tool_registry_fields(&b);
     let intent = derive_intent_fields(&b)?;
     let ltm = derive_ltm(&b)?;
@@ -686,29 +717,9 @@ fn finalize_agent_config(
             "zcat".into(),
         ]
     });
-    let allowed_commands: std::sync::Arc<[String]> = allowed_commands_vec.into();
+    let allowed_commands: Arc<[String]> = allowed_commands_vec.into();
 
-    let run_command_working_dir = b
-        .command_exec.run_command_working_dir
-        .clone()
-        .ok_or("配置错误：未设置 run_command_working_dir（请在 config/tools.toml、config.toml、.agent_demo.toml 或环境变量 CM_RUN_COMMAND_WORKING_DIR 中设置）")?;
-    let run_command_working_dir = std::path::Path::new(&run_command_working_dir);
-    let run_command_working_dir = match run_command_working_dir.canonicalize() {
-        Ok(p) => p,
-        Err(e) => {
-            return Err(format!(
-                "配置错误：run_command_working_dir \"{}\" 不存在或无法解析: {}",
-                run_command_working_dir.display(),
-                e
-            ));
-        }
-    };
-    if !run_command_working_dir.is_dir() {
-        return Err(format!(
-            "配置错误：run_command_working_dir \"{}\" 不是目录",
-            run_command_working_dir.display()
-        ));
-    }
+    let run_command_working_dir = canonical_run_command_working_dir(&b)?;
 
     let workspace_allowed_roots = workspace_roots::resolve_workspace_allowed_roots(
         b.workspace_roots.workspace_allowed_roots.clone(),
