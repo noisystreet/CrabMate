@@ -137,9 +137,9 @@ fn run_tui_poll_loop(
         clarify_modal::poll_clarification_inbox(&ctx.clarify.inbox, ctx.model);
         process_tui_main_thread_ops(terminal, ctx.blocking_recv, ctx.model)?;
         {
-            let guard = ctx.model.lock().unwrap_or_else(|e| e.into_inner());
+            let mut guard = ctx.model.lock().unwrap_or_else(|e| e.into_inner());
             terminal
-                .draw(|frame| render::render_full(frame, &guard, ctx.llm_scratch, ctx.color))?;
+                .draw(|frame| render::render_full(frame, &mut guard, ctx.llm_scratch, ctx.color))?;
         }
 
         if event::poll(Duration::from_millis(120))? {

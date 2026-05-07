@@ -320,7 +320,10 @@ struct TuiModel {
     right_summary: String,
     transcript: String,
     /// 聊天区垂直滚动（`Paragraph::scroll` 的 y）；须与 [`render::clamped_chat_vertical_scroll`] 一致地 clamp，避免 ratatui `scroll_y` 过大导致溢出 panic。
+    /// 流式生成时由 [`render::render_full`] 写回贴底偏移；**勿**用远大于 `max_scroll` 的哨兵值（否则滚轮每次 `-3` 需很久才生效，表现为卡顿）。
     chat_scroll_y: u16,
+    /// 回合刷新 transcript 后下一帧按当前布局写入真实贴底 `chat_scroll_y`（见 [`render::render_full`]）。
+    chat_snap_bottom_next_draw: bool,
     /// 左键在聊天区纵向滚动条上按下后拖动（[`tui_dispatch_mouse`]）。
     chat_scrollbar_dragging: bool,
     input: String,
@@ -481,6 +484,7 @@ async fn tui_refresh_after_chat_round(
     let transcript = transcript::messages_to_transcript(messages);
     let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
     g.transcript = transcript;
+    g.chat_snap_bottom_next_draw = true;
     g.header_line = new_header;
     g.nav_summary = nav;
     g.right_summary = right;
@@ -606,6 +610,7 @@ pub async fn run_tui_session(
         right_summary,
         transcript: transcript::messages_to_transcript(&messages),
         chat_scroll_y: 0,
+        chat_snap_bottom_next_draw: false,
         chat_scrollbar_dragging: false,
         input: String::new(),
         status_chips,

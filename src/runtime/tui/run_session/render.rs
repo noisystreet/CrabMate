@@ -74,7 +74,7 @@ pub(super) fn clamped_chat_vertical_scroll(
 
 pub(super) fn render_full(
     frame: &mut Frame<'_>,
-    model: &TuiModel,
+    model: &mut TuiModel,
     llm_scratch: &TuiLlmStreamScratchArc,
     color: bool,
 ) {
@@ -113,6 +113,13 @@ pub(super) fn render_full(
     let (text_rect, scrollbar_rect) = chat_inner_split_text_and_scrollbar(chat_inner);
     let tw = text_rect.width.max(1);
     let th = text_rect.height.max(1);
+    let rows = estimate_wrapped_line_rows(chat_body.as_str(), tw);
+    let vis_lines = th as usize;
+    let max_scroll_rows = rows.saturating_sub(vis_lines).min(u16::MAX as usize) as u16;
+    if model.chat_snap_bottom_next_draw {
+        model.chat_scroll_y = max_scroll_rows;
+        model.chat_snap_bottom_next_draw = false;
+    }
     let chat_scroll_y = clamped_chat_vertical_scroll(
         chat_body.as_str(),
         tw,
@@ -120,8 +127,10 @@ pub(super) fn render_full(
         streaming_nonempty,
         model.chat_scroll_y,
     );
-    let rows = estimate_wrapped_line_rows(chat_body.as_str(), tw);
-    let vis_lines = th as usize;
+    if streaming_nonempty {
+        // 流式贴底仅体现在 clamp；须写回状态，否则回合结束后仍用旧 chat_scroll_y（常为 0）会跳到开头。
+        model.chat_scroll_y = chat_scroll_y;
+    }
 
     frame.render_widget(chat_block, panes.chat);
     let center_body = Paragraph::new(chat_body)
