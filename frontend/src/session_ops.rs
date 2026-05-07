@@ -291,6 +291,9 @@ pub fn title_from_user_prompt(text: &str) -> String {
     }
 }
 
+/// 修改当前活跃会话并刷新 [`ChatSession::updated_at`]（视为对话/结构层面的活动时间）。
+///
+/// 纯导航时写入输入框草稿请走 [`flush_composer_draft_to_session`]，勿经此函数，否则会打乱侧栏排序。
 pub fn patch_active_session(
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: &str,
@@ -325,6 +328,9 @@ pub fn set_session_starred(sessions: RwSignal<Vec<ChatSession>>, id: &str, starr
 }
 
 /// 将输入框草稿写入指定会话（切换会话、新建会话前调用），触发 `sessions` 更新与本地持久化。
+///
+/// **不**刷新 [`ChatSession::updated_at`]：侧栏顺序按「置顶 > 收藏 > 活动时间」排序（见 [`crate::session_sort`]），
+/// 若此处等同 [`patch_active_session`] 每次写入草稿都刷新时间，用户一点击切换会话，刚离开的条目就会跳到「最近」顶端，列表会跳动。
 pub fn flush_composer_draft_to_session(
     sessions: RwSignal<Vec<ChatSession>>,
     session_id: &str,
@@ -334,8 +340,14 @@ pub fn flush_composer_draft_to_session(
         return;
     }
     let t = text.to_string();
-    patch_active_session(sessions, session_id, move |s| {
-        s.draft = t;
+    let id = session_id.to_string();
+    sessions.update(|list| {
+        if let Some(s) = list.iter_mut().find(|s| s.id == id) {
+            if s.draft == t {
+                return;
+            }
+            s.draft = t;
+        }
     });
 }
 
