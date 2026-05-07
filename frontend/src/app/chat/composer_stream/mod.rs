@@ -64,6 +64,8 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
             chat.clear_stream_resume_handles();
             shell_outer.approval.thinking_trace_log.set(Vec::new());
             reset_abort_state_for_new_attach(&shell_outer);
+            let bound_session_id = chat.active_id.get();
+            chat.bind_stream_to_session(bound_session_id.clone());
             let ac = web_sys::AbortController::new().expect("AbortController");
             let signal = ac.signal();
             store_abort_controller(&shell_outer, ac);
@@ -74,7 +76,7 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
             let stream_ctx = Rc::new(ChatStreamCallbackCtx {
                 chat,
                 locale: locale_sig,
-                active_session_id: chat.active_id.get(),
+                active_session_id: bound_session_id,
                 tail: StreamingAssistantTail::new(asst_id.clone()),
                 approval_session_store_id: appr_store.clone(),
                 shell: shell_outer.clone(),
