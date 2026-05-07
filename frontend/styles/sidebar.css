@@ -294,7 +294,7 @@
   color: var(--text);
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-input);
 }
 
 .workspace-set-input:focus {
@@ -443,7 +443,7 @@
   margin: 0;
   padding: 0;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-btn);
   background: transparent;
   color: var(--muted);
   font-size: 0.65rem;
@@ -677,13 +677,13 @@
 .skeleton-chip-label {
   width: 34px;
   height: 9px;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-btn);
   flex-shrink: 0;
 }
 
 .skeleton-chip-value {
   height: 11px;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-btn);
 }
 
 .skeleton-chip-model {
@@ -702,7 +702,7 @@
 .skeleton-context-bar {
   width: 100px;
   height: 6px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-btn);
   flex-shrink: 0;
 }
 

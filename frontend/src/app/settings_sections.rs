@@ -1,4 +1,5 @@
 use leptos::prelude::*;
+use leptos_dom::helpers::event_target_value;
 
 use crate::i18n::{self, Locale};
 use crate::settings_llm_fields::{
@@ -32,6 +33,8 @@ pub(crate) fn SettingsAppearanceBlock(
     appearance_locale: RwSignal<Locale>,
     appearance_theme: RwSignal<String>,
     appearance_bg_decor: RwSignal<bool>,
+    /// `<select id=…>`：设置页与弹窗可能同时挂载，须用不同 id。
+    theme_select_id: &'static str,
 ) -> impl IntoView {
     view! {
         <div class="settings-block">
@@ -57,23 +60,20 @@ pub(crate) fn SettingsAppearanceBlock(
         </div>
         <div class="settings-block">
             <h3 class="settings-block-title">{move || i18n::settings_block_theme(locale.get())}</h3>
-            <div class="settings-row">
-                <button
-                    type="button"
-                    class="btn btn-secondary btn-sm"
-                    class:active=move || appearance_theme.get() == "dark"
-                    on:click=move |_| appearance_theme.set("dark".to_string())
+            <div class="settings-field">
+                <label class="settings-field-label" for=theme_select_id>
+                    {move || i18n::settings_label_theme_preset(locale.get())}
+                </label>
+                <select
+                    id=theme_select_id
+                    class="settings-select"
+                    prop:value=move || appearance_theme.get()
+                    on:change=move |ev| appearance_theme.set(event_target_value(&ev))
                 >
-                    {move || i18n::settings_theme_dark(locale.get())}
-                </button>
-                <button
-                    type="button"
-                    class="btn btn-secondary btn-sm"
-                    class:active=move || appearance_theme.get() == "light"
-                    on:click=move |_| appearance_theme.set("light".to_string())
-                >
-                    {move || i18n::settings_theme_light(locale.get())}
-                </button>
+                    <option value="dark">{move || i18n::settings_theme_dark(locale.get())}</option>
+                    <option value="light">{move || i18n::settings_theme_light(locale.get())}</option>
+                    <option value="material">{move || i18n::settings_theme_material(locale.get())}</option>
+                </select>
             </div>
         </div>
         <div class="settings-block">

@@ -49,6 +49,14 @@ pub(super) fn decide_done_bubble_action(inp: DoneBubbleDecisionInputs<'_>) -> Do
         return DoneBubbleAction::RemoveBubble;
     }
 
+    // completed 且无正文增量、无工具/分层时，空泡直接删除（无需诊断说明）。
+    let completed_plain_empty = parsed == Some(StreamEndReason::Completed)
+        && inp.diag_chars == 0
+        && !inp.has_hierarchical_or_tool;
+    if completed_plain_empty {
+        return DoneBubbleAction::RemoveBubble;
+    }
+
     let drop_empty_main_after_tool_like_turn = parsed.is_some_and(|r| {
         matches!(
             r,
@@ -153,7 +161,7 @@ mod tests {
     }
 
     #[test]
-    fn completed_plain_round_empty_fills_diagnostic() {
+    fn completed_plain_empty_removed() {
         let a = decide_done_bubble_action(DoneBubbleDecisionInputs {
             body_and_reasoning_empty: true,
             end_reason_raw: Some("completed"),
@@ -162,6 +170,6 @@ mod tests {
             has_hierarchical_or_tool: false,
             saw_final_response_timeline: false,
         });
-        assert_eq!(a, DoneBubbleAction::FillDiagnostic);
+        assert_eq!(a, DoneBubbleAction::RemoveBubble);
     }
 }

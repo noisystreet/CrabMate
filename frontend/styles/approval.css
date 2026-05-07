@@ -22,7 +22,7 @@
   font-family: inherit;
   font-size: 12px;
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-btn);
   background: color-mix(in srgb, var(--bg) 40%, var(--surface));
   color: var(--text);
   cursor: pointer;

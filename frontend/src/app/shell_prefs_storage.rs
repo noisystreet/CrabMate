@@ -20,9 +20,17 @@ use super::local_storage_index;
 
 #[must_use]
 pub(crate) fn read_theme_initial() -> String {
-    local_storage_index::handle()
+    let raw = local_storage_index::handle()
         .and_then(|s| s.get_item(THEME_KEY).ok().flatten())
-        .unwrap_or_else(|| "light".to_string())
+        .unwrap_or_else(|| "light".to_string());
+    normalize_theme_slug(&raw)
+}
+
+fn normalize_theme_slug(raw: &str) -> String {
+    match raw.trim() {
+        "dark" | "light" | "material" => raw.trim().to_string(),
+        _ => "light".to_string(),
+    }
 }
 
 /// 首屏 [`super::app_signals::ShellUISignals`] 所需的 **`localStorage`** 域快照（单入口读键）。

@@ -20,6 +20,8 @@
   background: var(--nav-rail-bg);
   border-right: 1px solid var(--border-subtle);
 }
+
+.nav-rail-brand {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -83,7 +85,7 @@
     min-height: 72px;
     padding: 6px 0;
     margin: 0;
-    border-radius: 0 var(--radius-md, 8px) var(--radius-md, 8px) 0;
+    border-radius: 0 var(--radius-btn, 5px) var(--radius-btn, 5px) 0;
     border-left: none;
     font-size: 18px;
     font-weight: 650;
@@ -138,7 +140,7 @@
   padding: 10px 14px;
   font-size: 13px;
   font-weight: 600;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-btn);
   justify-content: center;
 }
 
@@ -147,7 +149,7 @@
   margin: 0 10px 8px;
   padding: 8px 12px;
   font-size: 12px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-btn);
   justify-content: flex-start;
   color: var(--muted);
   background: transparent;
@@ -199,7 +201,7 @@
   width: 100%;
   box-sizing: border-box;
   padding: 7px 9px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-input);
   border: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--surface) 55%, var(--bg));
   color: var(--text);
@@ -241,7 +243,7 @@
   width: 100%;
   text-align: left;
   padding: 7px 8px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-btn);
   font-family: inherit;
   font-size: 12px;
   cursor: pointer;
@@ -303,7 +305,7 @@
   text-align: left;
   padding: 9px 10px;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-btn);
   font-family: inherit;
   font-size: 13px;
   color: var(--text);
@@ -469,7 +471,7 @@
   margin: 0;
   padding: 8px 10px;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-btn);
   background: transparent;
   color: var(--text);
   font: inherit;
@@ -595,16 +597,16 @@
 .app-shell-ds .msg-assistant {
   background: linear-gradient(
     168deg,
-    color-mix(in srgb, var(--surface) 92%, var(--bg)) 0%,
-    color-mix(in srgb, var(--surface) 96%, var(--border-subtle)) 100%
+    color-mix(in srgb, var(--surface) 96%, var(--bg)) 0%,
+    color-mix(in srgb, var(--surface) 98%, var(--bg-elevated)) 100%
   );
-  border: 1px solid var(--border-subtle);
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 72%, var(--surface));
   box-shadow: var(--shadow-sm);
 }
 
 .app-shell-ds .msg-user {
-  background: color-mix(in srgb, var(--surface) 82%, var(--bg));
-  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 90%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--border) 78%, var(--surface));
   box-shadow: none;
 }
 
@@ -639,10 +641,10 @@
 .app-shell-ds .msg.msg-staged-timeline {
   background: linear-gradient(
     168deg,
-    color-mix(in srgb, var(--surface) 92%, var(--bg)) 0%,
-    color-mix(in srgb, var(--surface) 96%, var(--border-subtle)) 100%
+    color-mix(in srgb, var(--surface) 96%, var(--bg)) 0%,
+    color-mix(in srgb, var(--surface) 98%, var(--bg-elevated)) 100%
   );
-  border: 1px solid var(--border-subtle);
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 72%, var(--surface));
   box-shadow: var(--shadow-sm);
   border-left-width: 3px;
   border-left-color: color-mix(in srgb, var(--accent) 52%, var(--border-subtle));
@@ -667,7 +669,7 @@
   margin: 0 auto;
   box-sizing: border-box;
   padding: 10px 12px;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-input);
   border: 1px solid var(--border);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
@@ -719,7 +721,7 @@
   line-height: 18px;
   font-size: 14px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-btn);
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   color: var(--text);
   cursor: pointer;
@@ -773,7 +775,7 @@
   width: 100%;
   box-sizing: border-box;
   padding: 8px 10px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-input);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
@@ -838,7 +840,7 @@
 }
 
 .app-shell-ds .composer-ws-ref {
-  border-radius: 4px;
+  border-radius: var(--radius-input);
 }
 
 .composer-inner-ds:focus-within {
@@ -860,7 +862,7 @@
 .composer-bar-actions .btn {
   min-width: auto;
   padding: 8px 14px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-btn);
 }
 
 .btn-send-icon {
@@ -870,7 +872,7 @@
   width: 40px;
   height: 40px;
   padding: 0;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-btn);
   line-height: 0;
 }
 
@@ -975,7 +977,7 @@
   padding: 9px 11px;
   margin: 0;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-btn);
   font-family: inherit;
   font-size: 13px;
   font-weight: 500;

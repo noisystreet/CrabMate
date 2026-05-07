@@ -118,6 +118,20 @@ pub fn settings_theme_light(l: Locale) -> &'static str {
     }
 }
 
+pub fn settings_theme_material(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "Material",
+        Locale::En => "Material",
+    }
+}
+
+pub fn settings_label_theme_preset(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "配色方案",
+        Locale::En => "Color scheme",
+    }
+}
+
 pub fn settings_block_bg(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "页面背景",

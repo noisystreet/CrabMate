@@ -161,7 +161,7 @@
   accent-color: var(--accent);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-input);
   flex-shrink: 0;
 }
 
@@ -192,7 +192,7 @@
   box-sizing: border-box;
   padding: 8px 10px;
   font-size: 13px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-input);
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
@@ -220,7 +220,7 @@
   box-sizing: border-box;
   padding: 8px 10px;
   font-size: 13px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-input);
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
@@ -293,7 +293,7 @@
   background: transparent;
   color: var(--text);
   cursor: pointer;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-btn);
 }
 
 .session-open:hover {
@@ -396,7 +396,7 @@
   color: var(--muted);
   flex-shrink: 0;
   padding: 8px 12px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-btn);
   font-size: 13px;
 }
 
@@ -508,7 +508,7 @@
   font-size: 13px;
   color: var(--muted);
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-btn);
   padding: 8px 10px;
   background: transparent;
   cursor: pointer;

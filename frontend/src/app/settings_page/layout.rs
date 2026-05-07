@@ -136,6 +136,7 @@ pub(super) fn SettingsPageContentPanels(
                     appearance_locale=appearance_locale
                     appearance_theme=appearance_theme
                     appearance_bg_decor=appearance_bg_decor
+                    theme_select_id="settings-page-appearance-theme"
                 />
             </Show>
 
