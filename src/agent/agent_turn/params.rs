@@ -1,10 +1,18 @@
 //! Web/CLI 共用：外层循环与分阶段规划的运行期参数。
 //!
-//! **`RunLoopCtx`**：整场固定的输入上下文（HTTP 客户端、配置快照、工具表、SSE 通道、冻结的分阶段开关等）。
+//! **`RunLoopCtx`**：整场固定的输入上下文，按职责分为四块（降低扁平字段带来的隐式耦合）：
+//! - [`RunLoopCore`]：LLM 接入、配置快照、工具表与工作目录；
+//! - [`RunLoopIo`]：SSE/终端流式、取消与 CLI/TUI 回调；
+//! - [`RunLoopAttach`]：工具运行时句柄、缓存、记忆、分阶段冻结开关；
+//! - [`RunLoopObs`]：Chrome trace、结构化 tracing、HTTP 审计、[`crate::process_handles::ProcessHandles`]。
+//!
 //! **`RunLoopTurnState`**：可变会话状态与本回合决策覆盖（`messages`、`messages_revision`、`sub_phase`、模型/温度覆盖、[`TurnPlannerHints`] 等）。
+//!
 //! **`messages_revision`**：在每次**就地**改写 `messages` 缓冲、以及每次 [`crate::agent::context_window::prepare_messages_for_model`] 完成后递增（单调；
 //! 可与 `PerCoordinator` 的 workflow_validate 层缓存失效语义对照排障）。
+//!
 //! **`RunLoopParams`**：二者合一，供 `run_agent_turn_common` 与各子模块持有单一句柄。
+//!
 //! **[`OuterLoopPlanCallModelRole`]**：单 Agent **`outer_loop`** 每次 **P** 步选用 planner 端点还是 executor 端点（与 `iteration_count` 对应关系集中在一处）。
 
 use std::collections::HashSet;
@@ -29,16 +37,20 @@ use crate::runtime::tui::TuiLlmStreamScratchArc;
 use crate::tool_registry;
 use crate::types::{LlmSeedOverride, Message};
 
-/// 单轮 `run_agent_turn` 内相对稳定的一侧：**接入与配置快照**（整场不应再混入会话可变字段）。
-pub(crate) struct RunLoopCtx<'a> {
+/// LLM 接入、配置快照与工作目录（整场不变）。
+pub(crate) struct RunLoopCore<'a> {
     pub llm_backend: &'a (dyn crate::llm::ChatCompletionsBackend + 'static),
     pub client: &'a reqwest::Client,
     pub api_key: &'a str,
     pub cfg: &'a Arc<AgentConfig>,
     pub tools_defs: &'a [crate::types::Tool],
-    pub out: Option<&'a mpsc::Sender<String>>,
     pub effective_working_dir: &'a Path,
     pub workspace_is_set: bool,
+}
+
+/// SSE/终端流式、取消与 CLI/TUI 侧回调（传输语义）。
+pub(crate) struct RunLoopIo<'a> {
+    pub out: Option<&'a mpsc::Sender<String>>,
     pub no_stream: bool,
     pub cancel: Option<&'a AtomicBool>,
     pub render_to_terminal: bool,
@@ -53,6 +65,10 @@ pub(crate) struct RunLoopCtx<'a> {
         Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
     /// 无 SSE 时镜像 [`crate::sse::SsePayload`]（与 Web `/chat/stream` 控制面对齐）；Web 通常为 `None`。
     pub sse_control_mirror: Option<crate::sse::SseControlMirror>,
+}
+
+/// 工具运行时、缓存、记忆与分阶段冻结开关（执行附件）。
+pub(crate) struct RunLoopAttach<'a> {
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     /// 与 [`WebExecuteCtx::cli_tool_ctx`] 相同；Web 队列传 `None`。
     pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
@@ -66,8 +82,6 @@ pub(crate) struct RunLoopCtx<'a> {
     pub read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
     /// 本会话工作区变更集；`None` 时不记录/不注入（见 `session_workspace_changelist_*` 配置）。
     pub workspace_changelist: Option<Arc<WorkspaceChangelist>>,
-    /// 整请求 Chrome trace（`CRABMATE_REQUEST_CHROME_TRACE_DIR`）；`None` 关闭。
-    pub request_chrome_trace: Option<std::sync::Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     pub staged_plan_optimizer_round: bool,
     /// 无「可同轮并行批处理」内建工具时是否跳过优化轮。见 `AgentConfig::staged_plan_optimizer_requires_parallel_tools`。
     pub staged_plan_optimizer_requires_parallel_tools: bool,
@@ -77,12 +91,26 @@ pub(crate) struct RunLoopCtx<'a> {
     pub staged_plan_skip_ensemble_on_casual_prompt: bool,
     /// 多角色工作台：本回合工具白名单；`None` 不限制。
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
+}
+
+/// Chrome trace、结构化 tracing、HTTP 审计与进程级句柄。
+pub(crate) struct RunLoopObs {
+    /// 整请求 Chrome trace（`CRABMATE_REQUEST_CHROME_TRACE_DIR`）；`None` 关闭。
+    pub request_chrome_trace: Option<std::sync::Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     /// Web `/chat*`：结构化日志根 span（`job_id` / `conversation_id` / 外层轮次 / 当前工具）；CLI 等为 `None`。
     pub tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
     /// Web：HTTP 审计；非 Web 为 `None`。
     pub request_audit: Option<Arc<crate::web::audit::WebRequestAudit>>,
     /// 进程句柄：工具统计记录器等（与 [`crate::RunAgentTurnParams::process_handles`] 同源）。
     pub process_handles: Arc<crate::process_handles::ProcessHandles>,
+}
+
+/// 单轮 `run_agent_turn` 内相对稳定的一侧（整场不应再混入会话可变字段）。
+pub(crate) struct RunLoopCtx<'a> {
+    pub core: RunLoopCore<'a>,
+    pub io: RunLoopIo<'a>,
+    pub attach: RunLoopAttach<'a>,
+    pub obs: RunLoopObs,
 }
 
 /// 单轮 planner / 意图门控相关的**附加约束**（与 `messages` 正交），集中存放以避免 `RunLoopTurnState` 顶层散落布尔与 `Option`。
@@ -283,30 +311,31 @@ impl RunLoopParams<'_> {
         primary_intent: Option<String>,
         secondary_intents: Vec<String>,
     ) -> HierarchyRunnerParams<'b> {
-        let (tool_approval_out, tool_approval_rx) = if let Some(web_ctx) = self.ctx.web_tool_ctx {
-            (
-                Some(web_ctx.out_tx.clone()),
-                Some(web_ctx.approval_rx_shared.clone()),
-            )
-        } else {
-            (None, None)
-        };
+        let (tool_approval_out, tool_approval_rx) =
+            if let Some(web_ctx) = self.ctx.attach.web_tool_ctx {
+                (
+                    Some(web_ctx.out_tx.clone()),
+                    Some(web_ctx.approval_rx_shared.clone()),
+                )
+            } else {
+                (None, None)
+            };
         HierarchyRunnerParams {
             task,
-            cfg: self.ctx.cfg.as_ref(),
-            llm_backend: self.ctx.llm_backend,
-            client: Arc::new(self.ctx.client.clone()),
-            api_key: self.ctx.api_key.to_string(),
-            working_dir: self.ctx.effective_working_dir.to_path_buf(),
-            sse_out: self.ctx.out.cloned(),
-            tools_defs: self.ctx.tools_defs,
+            cfg: self.ctx.core.cfg.as_ref(),
+            llm_backend: self.ctx.core.llm_backend,
+            client: Arc::new(self.ctx.core.client.clone()),
+            api_key: self.ctx.core.api_key.to_string(),
+            working_dir: self.ctx.core.effective_working_dir.to_path_buf(),
+            sse_out: self.ctx.io.out.cloned(),
+            tools_defs: self.ctx.core.tools_defs,
             tool_approval_out,
             tool_approval_rx,
             primary_intent,
             secondary_intents,
-            intent_mode_bias_enabled: self.ctx.cfg.intent_routing.intent_mode_bias_enabled,
-            process_handles: Arc::clone(&self.ctx.process_handles),
-            sse_control_mirror: self.ctx.sse_control_mirror.clone(),
+            intent_mode_bias_enabled: self.ctx.core.cfg.intent_routing.intent_mode_bias_enabled,
+            process_handles: Arc::clone(&self.ctx.obs.process_handles),
+            sse_control_mirror: self.ctx.io.sse_control_mirror.clone(),
         }
     }
 
@@ -314,12 +343,12 @@ impl RunLoopParams<'_> {
     #[inline]
     pub(crate) fn llm_transport_opts(&self) -> crate::llm::LlmRetryingTransportOpts<'_> {
         crate::llm::LlmRetryingTransportOpts {
-            out: self.ctx.out,
-            render_to_terminal: self.ctx.render_to_terminal,
-            no_stream: self.ctx.no_stream,
-            cancel: self.ctx.cancel,
-            plain_terminal_stream: self.ctx.plain_terminal_stream,
-            tui_llm_stream_scratch: self.ctx.tui_llm_stream_scratch.clone(),
+            out: self.ctx.io.out,
+            render_to_terminal: self.ctx.io.render_to_terminal,
+            no_stream: self.ctx.io.no_stream,
+            cancel: self.ctx.io.cancel,
+            plain_terminal_stream: self.ctx.io.plain_terminal_stream,
+            tui_llm_stream_scratch: self.ctx.io.tui_llm_stream_scratch.clone(),
         }
     }
 
@@ -332,12 +361,12 @@ impl RunLoopParams<'_> {
             self.turn
                 .executor_model_override
                 .as_deref()
-                .or_else(|| self.ctx.cfg.llm.executor_model.as_deref())
+                .or_else(|| self.ctx.core.cfg.llm.executor_model.as_deref())
         } else {
             self.turn
                 .model_override
                 .as_deref()
-                .or_else(|| self.ctx.cfg.llm.planner_model.as_deref())
+                .or_else(|| self.ctx.core.cfg.llm.planner_model.as_deref())
         }
     }
 }

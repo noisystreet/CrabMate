@@ -80,7 +80,7 @@ pub(crate) async fn dispatch_non_hierarchical_turn(
             "staged_plan_intent_gate deny detail"
         );
     }
-    let entry = NonHierarchicalEntryResolution::resolve(p.ctx.cfg.as_ref(), &staged_gate);
+    let entry = NonHierarchicalEntryResolution::resolve(p.ctx.core.cfg.as_ref(), &staged_gate);
     let main_route = entry.main_route;
     let mode = entry.orchestration_mode;
     tracing::info!(
@@ -91,8 +91,8 @@ pub(crate) async fn dispatch_non_hierarchical_turn(
         single_agent_outer_loop_because = entry
             .single_agent_outer_loop_because
             .map(|b| b.as_str()),
-        planner_executor_mode = p.ctx.cfg.per_plan_policy.planner_executor_mode.as_str(),
-        staged_plan_execution = p.ctx.cfg.staged_planning.staged_plan_execution,
+        planner_executor_mode = p.ctx.core.cfg.per_plan_policy.planner_executor_mode.as_str(),
+        staged_plan_execution = p.ctx.core.cfg.staged_planning.staged_plan_execution,
         "dispatch_non_hierarchical_turn main_path"
     );
     execute_non_hierarchical_main_route(main_route, p, per_coord).await

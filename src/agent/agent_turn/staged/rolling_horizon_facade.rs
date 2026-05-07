@@ -68,12 +68,12 @@ where
     F: Fn(String) -> Message + Copy,
 {
     let mut rewrite_attempts = 0;
-    let max_rewrites = p.ctx.cfg.turn_budget.full_plan_rewrite_max_attempts;
+    let max_rewrites = p.ctx.core.cfg.turn_budget.full_plan_rewrite_max_attempts;
     let mut phase = StagedTurnPhase::PreStepExecutionRound;
     let mut staged_rounds = 0usize;
     const STAGED_SINGLE_STEP_MAX_ROUNDS: usize = 64;
     let snapshot =
-        crate::agent::workspace_snapshot::WorkspaceSnapshot::take(p.ctx.effective_working_dir);
+        crate::agent::workspace_snapshot::WorkspaceSnapshot::take(p.ctx.core.effective_working_dir);
 
     loop {
         staged_rounds = staged_rounds.saturating_add(1);
@@ -197,8 +197,8 @@ pub(crate) async fn run_staged_plan_then_execute_steps(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
 ) -> Result<(), RunAgentTurnError> {
-    let render_to_terminal = p.ctx.render_to_terminal;
-    let echo_terminal_staged = render_to_terminal && p.ctx.out.is_none();
+    let render_to_terminal = p.ctx.io.render_to_terminal;
+    let echo_terminal_staged = render_to_terminal && p.ctx.io.out.is_none();
 
     let labels = StagedPlanRunLabels {
         planning_log_label: "分阶段规划轮模型输出",
@@ -230,8 +230,8 @@ pub(crate) async fn run_logical_dual_agent_then_execute_steps(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
 ) -> Result<(), RunAgentTurnError> {
-    let render_to_terminal = p.ctx.render_to_terminal;
-    let echo_terminal_staged = render_to_terminal && p.ctx.out.is_none();
+    let render_to_terminal = p.ctx.io.render_to_terminal;
+    let echo_terminal_staged = render_to_terminal && p.ctx.io.out.is_none();
 
     let labels = StagedPlanRunLabels {
         planning_log_label: "逻辑双agent规划轮输出",

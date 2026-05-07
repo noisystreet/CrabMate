@@ -114,6 +114,7 @@ where
     crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
         &mut msg,
         p.ctx
+            .core
             .cfg
             .dsml_materialize
             .materialize_deepseek_dsml_tool_calls,
@@ -123,7 +124,7 @@ where
 
     if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
         let rejected = msg.tool_calls.as_ref().map(|c| c.len()).unwrap_or(0);
-        emit_staged_planner_tool_call_rejected_timeline(p.ctx.out, rejected).await;
+        emit_staged_planner_tool_call_rejected_timeline(p.ctx.io.out, rejected).await;
         warn!(
             target: "crabmate",
             "分阶段规划补丁轮：检测到 {} 条 tool_calls，严格无工具模式下拒绝并等待下次补丁重试",

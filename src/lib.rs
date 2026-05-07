@@ -88,7 +88,7 @@ pub struct AgentTurnTransport<'a> {
     pub tui_llm_stream_scratch: Option<runtime::tui::TuiLlmStreamScratchArc>,
     /// 无 SSE（`out` 为 `None`）时可选：工具批开始/结束时各调用一次（`true` / `false`），与 Web `SsePayload::ToolRunning` 对齐（如 TUI 底栏）。
     pub tool_running_hook: Option<std::sync::Arc<dyn Fn(bool) + Send + Sync>>,
-    /// 澄清问卷回调（与 [`RunLoopCtx::clarification_questionnaire_hook`] 同源）；Web/SSE 通常为 `None`。
+    /// 澄清问卷回调（与 [`crate::agent::agent_turn::RunLoopIo::clarification_questionnaire_hook`] 同源）；Web/SSE 通常为 `None`。
     pub clarification_questionnaire_hook:
         Option<std::sync::Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
     /// 无 `/chat/stream` 通道时镜像 SSE 控制面（与 Web [`crate::sse::SsePayload`] 同形），供 TUI 等终端界面展示。
@@ -616,43 +616,51 @@ pub async fn run_agent_turn<'a>(
 
     let mut loop_params = agent::agent_turn::RunLoopParams {
         ctx: agent::agent_turn::RunLoopCtx {
-            llm_backend,
-            client,
-            api_key,
-            cfg,
-            tools_defs: tools_for_turn.as_slice(),
-            out,
-            effective_working_dir,
-            workspace_is_set,
-            no_stream,
-            cancel: cancel.as_deref(),
-            render_to_terminal,
-            plain_terminal_stream,
-            tui_llm_stream_scratch,
-            web_tool_ctx,
-            cli_tool_ctx,
-            per_flight,
-            long_term_memory,
-            long_term_memory_scope_id,
-            mcp_session,
-            read_file_turn_cache,
-            workspace_changelist,
-            tool_running_hook,
-            clarification_questionnaire_hook,
-            sse_control_mirror,
-            staged_plan_optimizer_round: cfg.staged_planning.staged_plan_optimizer_round,
-            staged_plan_optimizer_requires_parallel_tools: cfg
-                .staged_planning
-                .staged_plan_optimizer_requires_parallel_tools,
-            staged_plan_ensemble_count: cfg.staged_planning.staged_plan_ensemble_count,
-            staged_plan_skip_ensemble_on_casual_prompt: cfg
-                .staged_planning
-                .staged_plan_skip_ensemble_on_casual_prompt,
-            request_chrome_trace: request_chrome_trace.clone(),
-            turn_allowed_tool_names: turn_allowed_tool_names.clone(),
-            tracing_chat_turn: tracing_chat_turn.clone(),
-            request_audit: request_audit.clone(),
-            process_handles: Arc::clone(&process_handles),
+            core: agent::agent_turn::RunLoopCore {
+                llm_backend,
+                client,
+                api_key,
+                cfg,
+                tools_defs: tools_for_turn.as_slice(),
+                effective_working_dir,
+                workspace_is_set,
+            },
+            io: agent::agent_turn::RunLoopIo {
+                out,
+                no_stream,
+                cancel: cancel.as_deref(),
+                render_to_terminal,
+                plain_terminal_stream,
+                tui_llm_stream_scratch,
+                tool_running_hook,
+                clarification_questionnaire_hook,
+                sse_control_mirror,
+            },
+            attach: agent::agent_turn::RunLoopAttach {
+                web_tool_ctx,
+                cli_tool_ctx,
+                per_flight,
+                long_term_memory,
+                long_term_memory_scope_id,
+                mcp_session,
+                read_file_turn_cache,
+                workspace_changelist,
+                staged_plan_optimizer_round: cfg.staged_planning.staged_plan_optimizer_round,
+                staged_plan_optimizer_requires_parallel_tools: cfg
+                    .staged_planning
+                    .staged_plan_optimizer_requires_parallel_tools,
+                staged_plan_ensemble_count: cfg.staged_planning.staged_plan_ensemble_count,
+                staged_plan_skip_ensemble_on_casual_prompt: cfg
+                    .staged_planning
+                    .staged_plan_skip_ensemble_on_casual_prompt,
+                turn_allowed_tool_names: turn_allowed_tool_names.clone(),
+            },
+            obs: agent::agent_turn::RunLoopObs {
+                request_chrome_trace: request_chrome_trace.clone(),
+                tracing_chat_turn: tracing_chat_turn.clone(),
+                request_audit: request_audit.clone(),
+                process_handles: Arc::clone(&process_handles),
+            },
         },
         turn: agent::agent_turn::RunLoopTurnState {
             messages,
@@ -671,6 +679,7 @@ pub async fn run_agent_turn<'a>(
 
     let trace_span = loop_params
         .ctx
+        .obs
         .tracing_chat_turn
         .as_ref()
         .map(|t| t.span.clone());
@@ -694,7 +703,7 @@ pub async fn run_agent_turn<'a>(
             result: &res,
             messages: loop_params.turn.messages,
             tools: tools_for_turn.as_slice(),
-            cfg: loop_params.ctx.cfg,
+            cfg: loop_params.ctx.core.cfg,
             no_stream,
             render_to_terminal,
             plain_terminal_stream,

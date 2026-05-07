@@ -233,3 +233,47 @@ pub(crate) async fn send_staged_plan_finished(
     )
     .await;
 }
+
+/// 成功收尾：step SSE + 分隔线 + 队列摘要（参数聚合以降低形参棘轮）。
+pub(crate) struct StagedStepOkNoticeParams<'a> {
+    pub out: Option<&'a mpsc::Sender<String>>,
+    pub messages: &'a mut Vec<crate::types::Message>,
+    pub plan_id: &'a str,
+    pub step_id_trim: &'a str,
+    pub step_index: usize,
+    pub n: usize,
+    pub executor_kind: Option<crate::agent::plan_artifact::PlanStepExecutorKind>,
+    pub plan_steps: &'a [crate::agent::plan_artifact::PlanStepV1],
+    pub echo_terminal_staged: bool,
+}
+
+/// 本步工具链判定成功：发送 `ok` 的 step SSE、分隔线、队列摘要 notice。
+pub(crate) async fn staged_step_emit_ok_step_and_queue_notice(p: StagedStepOkNoticeParams<'_>) {
+    send_staged_plan_step_finished(
+        p.out,
+        p.plan_id,
+        p.step_id_trim,
+        p.step_index,
+        p.n,
+        "ok",
+        p.executor_kind.map(|k| k.as_snake_case_str()),
+        None,
+    )
+    .await;
+    p.messages
+        .push(crate::types::Message::chat_ui_separator(true));
+    let plan_row = crate::agent::plan_artifact::AgentReplyPlanV1 {
+        plan_type: "agent_reply_plan".to_string(),
+        version: 1,
+        steps: p.plan_steps.to_vec(),
+        no_task: false,
+    };
+    send_staged_plan_notice(
+        p.out,
+        p.echo_terminal_staged,
+        true,
+        staged_plan_queue_summary_text(&plan_row, p.step_index),
+    )
+    .await;
+    emit_chat_ui_separator_sse(p.out, true).await;
+}

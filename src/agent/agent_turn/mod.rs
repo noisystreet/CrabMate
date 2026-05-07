@@ -43,10 +43,10 @@ pub(crate) use execute_tools::{
 pub(crate) use intent::{intent_at_turn_start, intent_user};
 #[allow(unused_imports)]
 pub(crate) use messages::push_assistant_merging_trailing_empty_placeholder;
-pub(crate) use params::RunLoopCtx;
-pub(crate) use params::RunLoopParams;
-pub(crate) use params::RunLoopTurnState;
-pub(crate) use params::TurnPlannerHints;
+pub(crate) use params::{
+    RunLoopAttach, RunLoopCore, RunLoopCtx, RunLoopIo, RunLoopObs, RunLoopParams, RunLoopTurnState,
+    TurnPlannerHints,
+};
 #[allow(unused_imports)]
 pub(crate) use plan::{
     AgentLlmCall, PerPlanCallModelParams, PlannerSseGate, per_plan_call_model_retrying,
@@ -61,7 +61,7 @@ mod tests;
 pub(crate) async fn run_agent_turn_common(
     p: &mut RunLoopParams<'_>,
 ) -> Result<(), RunAgentTurnError> {
-    if let Some(ctx) = p.ctx.cli_tool_ctx {
+    if let Some(ctx) = p.ctx.attach.cli_tool_ctx {
         ctx.reset_command_stats();
     }
     debug!(
@@ -70,25 +70,26 @@ pub(crate) async fn run_agent_turn_common(
         p.turn.messages.len(),
         p.turn.messages_buffer_revision(),
         crate::redact::last_user_message_preview_for_log(p.turn.messages),
-        p.ctx.cfg.staged_planning.staged_plan_execution,
-        p.ctx.cfg.per_plan_policy.planner_executor_mode.as_str(),
-        p.ctx.effective_working_dir.display()
+        p.ctx.core.cfg.staged_planning.staged_plan_execution,
+        p.ctx.core.cfg.per_plan_policy.planner_executor_mode.as_str(),
+        p.ctx.core.effective_working_dir.display()
     );
     p.turn.insert_separator_after_last_user_for_turn();
 
     let hierarchical =
-        p.ctx.cfg.per_plan_policy.planner_executor_mode == PlannerExecutorMode::Hierarchical;
+        p.ctx.core.cfg.per_plan_policy.planner_executor_mode == PlannerExecutorMode::Hierarchical;
     info!(
         target: "crabmate::agent_turn",
-        planner_executor_mode = p.ctx.cfg.per_plan_policy.planner_executor_mode.as_str(),
-        staged_plan_execution = p.ctx.cfg.staged_planning.staged_plan_execution,
-        intent_at_turn_start_enabled = p.ctx.cfg.intent_routing.intent_at_turn_start_enabled,
+        planner_executor_mode = p.ctx.core.cfg.per_plan_policy.planner_executor_mode.as_str(),
+        staged_plan_execution = p.ctx.core.cfg.staged_planning.staged_plan_execution,
+        intent_at_turn_start_enabled = p.ctx.core.cfg.intent_routing.intent_at_turn_start_enabled,
         hierarchical,
         "run_agent_turn_common enter"
     );
 
-    let mut per_coord =
-        PerCoordinator::new(PerCoordinatorInit::from_agent_config(p.ctx.cfg.as_ref()));
+    let mut per_coord = PerCoordinator::new(PerCoordinatorInit::from_agent_config(
+        p.ctx.core.cfg.as_ref(),
+    ));
 
     if hierarchical {
         // 意图门控在 `hierarchy::run_hierarchical_agent` 内通过 `run_intent_for_hierarchical` 执行（与 L0/合并文本一致），勿在此重复。

@@ -88,18 +88,18 @@ fn staged_planner_sse_fully_suppressed(cfg: &crate::config::AgentConfig) -> bool
 /// 无工具规划轮 `complete_chat_retrying`：
 /// - **两阶段 NL**：`out: None`（整段抑制）；
 /// - **Web + 未** `CM_WEB_RAW_ASSISTANT_OUTPUT`：经 [`super::super::plan::PlannerSseGate`] — 解析（正文+思维链）为 `no_task` 则整轮不落 SSE，且不将本条 assistant 写入会话；否则仅落 `assistant_answer_phase` 之后的正文增量；
-/// - **RAW** 或 **非 Web**：`out: p.ctx.out`（整段原样下发）。
+/// - **RAW** 或 **非 Web**：`out: p.ctx.io.out`（整段原样下发）。
 pub(super) async fn complete_planner_no_tools_chat_retrying(
     p: &RunLoopParams<'_>,
     req: &crate::types::ChatRequest,
     planner_render_to_terminal: bool,
 ) -> Result<(Message, String), LlmCompleteError> {
-    let suppress_full = staged_planner_sse_fully_suppressed(p.ctx.cfg.as_ref());
-    let use_gate = p.ctx.out.is_some()
+    let suppress_full = staged_planner_sse_fully_suppressed(p.ctx.core.cfg.as_ref());
+    let use_gate = p.ctx.io.out.is_some()
         && !crate::web::web_ui_env::web_raw_assistant_output_env()
         && !suppress_full;
 
-    let gate_opt = match (use_gate, p.ctx.out.as_ref()) {
+    let gate_opt = match (use_gate, p.ctx.io.out.as_ref()) {
         (true, Some(out)) => Some(super::super::plan::PlannerSseGate::spawn((*out).clone())),
         _ => None,
     };
@@ -109,7 +109,7 @@ pub(super) async fn complete_planner_no_tools_chat_retrying(
     } else if let Some(ref g) = gate_opt {
         Some(&g.inner_tx)
     } else {
-        p.ctx.out
+        p.ctx.io.out
     };
 
     let llm = AgentLlmCall::new(p);
@@ -118,10 +118,10 @@ pub(super) async fn complete_planner_no_tools_chat_retrying(
             LlmRetryingTransportOpts {
                 out: out_ref,
                 render_to_terminal: planner_render_to_terminal && !suppress_full,
-                no_stream: p.ctx.no_stream,
-                cancel: p.ctx.cancel,
-                plain_terminal_stream: p.ctx.plain_terminal_stream,
-                tui_llm_stream_scratch: p.ctx.tui_llm_stream_scratch.clone(),
+                no_stream: p.ctx.io.no_stream,
+                cancel: p.ctx.io.cancel,
+                plain_terminal_stream: p.ctx.io.plain_terminal_stream,
+                tui_llm_stream_scratch: p.ctx.io.tui_llm_stream_scratch.clone(),
             },
             req,
         )
@@ -146,12 +146,16 @@ where
         .push_message(make_step_user_message(staged_plan_nl_followup_user_body()));
     let result: Result<(), RunAgentTurnError> = async {
         crate::agent::context_window::prepare_messages_for_model(
-            p.ctx.llm_backend,
-            p.ctx.client,
-            p.ctx.api_key,
-            p.ctx.cfg.as_ref(),
+            p.ctx.core.llm_backend,
+            p.ctx.core.client,
+            p.ctx.core.api_key,
+            p.ctx.core.cfg.as_ref(),
             p.turn.messages,
-            p.ctx.workspace_changelist.as_ref().map(|a| a.as_ref()),
+            p.ctx
+                .attach
+                .workspace_changelist
+                .as_ref()
+                .map(|a| a.as_ref()),
             crate::agent::context_window::PrepareMessagesForModelHooks {
                 per_coord_layer_cache: Some(per_coord),
                 run_loop_messages_revision: Some(&mut p.turn.messages_revision),
@@ -164,11 +168,11 @@ where
         })?;
         let stripped = messages_for_api_stripping_reasoning_skip_ui_separators(
             p.turn.messages.as_slice(),
-            kimi_k2_5_vendor_requires_tool_call_reasoning(p.ctx.cfg.as_ref()),
-            crate::llm::vendor::deepseek_json_output_eligible(p.ctx.cfg.as_ref()),
+            kimi_k2_5_vendor_requires_tool_call_reasoning(p.ctx.core.cfg.as_ref()),
+            crate::llm::vendor::deepseek_json_output_eligible(p.ctx.core.cfg.as_ref()),
         );
         let req = no_tools_chat_request_from_messages(
-            p.ctx.cfg.as_ref(),
+            p.ctx.core.cfg.as_ref(),
             stripped,
             p.turn.temperature_override,
             p.effective_model(),
@@ -191,6 +195,7 @@ where
         crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
             &mut msg,
             p.ctx
+                .core
                 .cfg
                 .dsml_materialize
                 .materialize_deepseek_dsml_tool_calls,
@@ -271,7 +276,7 @@ where
     F: Fn(String) -> Message,
 {
     let phase = resolve_ensemble_driver_phase(
-        p.ctx.staged_plan_ensemble_count,
+        p.ctx.attach.staged_plan_ensemble_count,
         skip_for_casual_user_prompt,
     );
     let EnsembleDriverPhase::SecondaryChain { extra } = phase else {
@@ -279,7 +284,7 @@ where
             debug!(
                 target: "crabmate",
                 "分阶段规划·逻辑多规划员：用户输入偏短/寒暄启发式，跳过 ensemble（staged_plan_ensemble_count={}）以省 API",
-                p.ctx.staged_plan_ensemble_count
+                p.ctx.attach.staged_plan_ensemble_count
             );
         }
         return Ok(());
@@ -287,6 +292,7 @@ where
 
     let dsml = p
         .ctx
+        .core
         .cfg
         .dsml_materialize
         .materialize_deepseek_dsml_tool_calls;
@@ -397,6 +403,7 @@ where
         let first_total = staged_first_planner_round_tool_call_total_after_materialize(
             &mut first_msg,
             p.ctx
+                .core
                 .cfg
                 .dsml_materialize
                 .materialize_deepseek_dsml_tool_calls,
@@ -407,7 +414,7 @@ where
                 "分阶段规划轮：检测到 {} 条 tool_calls，严格无工具模式触发一次轻量重写",
                 first_total
             );
-            emit_staged_planner_tool_call_rejected_timeline(p.ctx.out, first_total).await;
+            emit_staged_planner_tool_call_rejected_timeline(p.ctx.io.out, first_total).await;
             p.turn.push_message(make_step_user_message(
                 staged_planner_tool_call_reject_user_body(first_total),
             ));

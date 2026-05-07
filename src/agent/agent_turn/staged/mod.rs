@@ -115,20 +115,24 @@ pub(super) async fn prepare_staged_planner_no_tools_request(
     per_coord: &mut PerCoordinator,
     build_planner_messages: fn(&[Message], String, bool, bool) -> Vec<Message>,
 ) -> Result<crate::types::ChatRequest, RunAgentTurnError> {
-    if let Some(ref ltm) = p.ctx.long_term_memory {
+    if let Some(ref ltm) = p.ctx.attach.long_term_memory {
         ltm.prepare_messages(
-            p.ctx.cfg.as_ref(),
-            p.ctx.long_term_memory_scope_id.as_deref(),
+            p.ctx.core.cfg.as_ref(),
+            p.ctx.attach.long_term_memory_scope_id.as_deref(),
             p.turn.messages,
         );
     }
     crate::agent::context_window::prepare_messages_for_model(
-        p.ctx.llm_backend,
-        p.ctx.client,
-        p.ctx.api_key,
-        p.ctx.cfg.as_ref(),
+        p.ctx.core.llm_backend,
+        p.ctx.core.client,
+        p.ctx.core.api_key,
+        p.ctx.core.cfg.as_ref(),
         p.turn.messages,
-        p.ctx.workspace_changelist.as_ref().map(|a| a.as_ref()),
+        p.ctx
+            .attach
+            .workspace_changelist
+            .as_ref()
+            .map(|a| a.as_ref()),
         crate::agent::context_window::PrepareMessagesForModelHooks {
             per_coord_layer_cache: Some(per_coord),
             run_loop_messages_revision: Some(&mut p.turn.messages_revision),
@@ -142,6 +146,7 @@ pub(super) async fn prepare_staged_planner_no_tools_request(
 
     let instr = p
         .ctx
+        .core
         .cfg
         .staged_planning
         .staged_plan_phase_instruction
@@ -151,11 +156,12 @@ pub(super) async fn prepare_staged_planner_no_tools_request(
     } else {
         instr.to_string()
     };
-    let preserve_kimi = crate::llm::llm_vendor_adapter(p.ctx.cfg.as_ref())
-        .preserve_assistant_tool_call_reasoning(p.ctx.cfg.as_ref());
-    let preserve_deepseek = crate::llm::vendor::deepseek_json_output_eligible(p.ctx.cfg.as_ref());
+    let preserve_kimi = crate::llm::llm_vendor_adapter(p.ctx.core.cfg.as_ref())
+        .preserve_assistant_tool_call_reasoning(p.ctx.core.cfg.as_ref());
+    let preserve_deepseek =
+        crate::llm::vendor::deepseek_json_output_eligible(p.ctx.core.cfg.as_ref());
     Ok(no_tools_chat_request_from_messages(
-        p.ctx.cfg.as_ref(),
+        p.ctx.core.cfg.as_ref(),
         build_planner_messages(
             p.turn.messages,
             plan_system,
@@ -197,7 +203,7 @@ where
         make_step_user_message,
     } = params;
     let omit_no_task_planner_from_history = omit_no_task_planner_from_history(
-        p.ctx.out.is_some(),
+        p.ctx.io.out.is_some(),
         crate::web::web_ui_env::web_raw_assistant_output_env(),
         plan.no_task,
     );
@@ -224,29 +230,32 @@ where
         }
         PreparedPostParseSchedule::FullPipelineThenSteps => {
             let parallel_csv = plan_optimizer::parallel_batchable_tool_names_csv_from_defs(
-                p.ctx.tools_defs,
-                &p.ctx.process_handles.handler_lookup,
-                p.ctx.cfg.as_ref(),
+                p.ctx.core.tools_defs,
+                &p.ctx.obs.process_handles.handler_lookup,
+                p.ctx.core.cfg.as_ref(),
             );
             let validate_only_binding_active =
                 plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.turn.messages)
                     .is_some_and(|ids| !ids.is_empty());
             let trigger_user = plan_optimizer::staged_plan_trigger_user_content(p.turn.messages);
             let pipeline_schedule = prepared_full_pipeline_schedule(PreparedFullPipelineInputs {
-                staged_plan_ensemble_count: p.ctx.staged_plan_ensemble_count,
+                staged_plan_ensemble_count: p.ctx.attach.staged_plan_ensemble_count,
                 staged_plan_skip_ensemble_on_casual_prompt: p
                     .ctx
+                    .attach
                     .staged_plan_skip_ensemble_on_casual_prompt,
                 validate_only_binding_active,
                 trigger_user_content: trigger_user,
                 plan_steps_len: plan.steps.len(),
-                staged_plan_optimizer_round: p.ctx.staged_plan_optimizer_round,
+                staged_plan_optimizer_round: p.ctx.attach.staged_plan_optimizer_round,
                 staged_plan_optimizer_requires_parallel_tools: p
                     .ctx
+                    .attach
                     .staged_plan_optimizer_requires_parallel_tools,
                 parallel_tool_names_csv: parallel_csv.as_str(),
                 staged_plan_two_phase_nl_display: p
                     .ctx
+                    .core
                     .cfg
                     .staged_planning
                     .staged_plan_two_phase_nl_display,
@@ -294,13 +303,14 @@ async fn strip_non_tool_planner_assistant_after_first_round(
     crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
         msg,
         p.ctx
+            .core
             .cfg
             .dsml_materialize
             .materialize_deepseek_dsml_tool_calls,
     );
     let dsml_tool_calls = msg.tool_calls.as_ref().map(|c| c.len()).unwrap_or(0);
     if dsml_tool_calls > 0 {
-        emit_staged_planner_tool_call_rejected_timeline(p.ctx.out, dsml_tool_calls).await;
+        emit_staged_planner_tool_call_rejected_timeline(p.ctx.io.out, dsml_tool_calls).await;
         warn!(
             target: "crabmate",
             "分阶段规划轮重写后仍检测到 {} 条 DSML tool_calls；严格无工具模式下将其忽略",
@@ -318,7 +328,12 @@ async fn run_no_task_branch_then_outer<F>(
 where
     F: Fn(String) -> Message,
 {
-    if p.ctx.cfg.staged_planning.staged_plan_two_phase_nl_display {
+    if p.ctx
+        .core
+        .cfg
+        .staged_planning
+        .staged_plan_two_phase_nl_display
+    {
         run_staged_plan_nl_followup_round(p, per_coord, make_step_user_message).await?;
     }
     debug!(
@@ -378,6 +393,7 @@ where
         &mut opt_msg,
         "优化轮",
         p.ctx
+            .core
             .cfg
             .dsml_materialize
             .materialize_deepseek_dsml_tool_calls,
@@ -439,7 +455,7 @@ where
         parallel_csv,
     } = params;
     let ensemble_route = pipeline_schedule.ensemble_route;
-    log_staged_plan_ensemble_route(ensemble_route, p.ctx.staged_plan_ensemble_count);
+    log_staged_plan_ensemble_route(ensemble_route, p.ctx.attach.staged_plan_ensemble_count);
 
     let mut fp_phase = StagedFullPipelinePhase::BeforeEnsemble;
     debug_staged_full_pipeline_enter(fp_phase);
@@ -537,8 +553,9 @@ where
     F: Fn(String) -> Message,
 {
     let planner_render_to_terminal = render_to_terminal
-        && (p.ctx.out.is_some()
+        && (p.ctx.io.out.is_some()
             || p.ctx
+                .core
                 .cfg
                 .staged_planning
                 .staged_plan_cli_show_planner_stream);
@@ -675,7 +692,10 @@ mod staged_plan_prepare_fixture_tests {
     use crate::types::{LlmSeedOverride, Message, message_content_as_str};
 
     use super::super::errors::AgentTurnSubPhase;
-    use super::super::params::{RunLoopCtx, RunLoopParams, RunLoopTurnState};
+    use super::super::params::{
+        RunLoopAttach, RunLoopCore, RunLoopCtx, RunLoopIo, RunLoopObs, RunLoopParams,
+        RunLoopTurnState,
+    };
     use super::staged_sse::staged_plan_phase_instruction_default;
     use super::{build_single_agent_planner_messages, prepare_staged_planner_no_tools_request};
 
@@ -739,44 +759,52 @@ mod staged_plan_prepare_fixture_tests {
 
         let mut p = RunLoopParams {
             ctx: RunLoopCtx {
-                llm_backend: &OPENAI_COMPAT_BACKEND,
-                client: &client,
-                api_key: "",
-                cfg: &cfg,
-                tools_defs: &[],
-                out: None,
-                effective_working_dir: std::path::Path::new("."),
-                workspace_is_set: false,
-                no_stream: true,
-                cancel: None,
-                render_to_terminal: false,
-                plain_terminal_stream: false,
-                tui_llm_stream_scratch: None,
-                tool_running_hook: None,
-                clarification_questionnaire_hook: None,
-                web_tool_ctx: None,
-                cli_tool_ctx: None,
-                per_flight: None,
-                long_term_memory: None,
-                long_term_memory_scope_id: None,
-                mcp_session: None,
-                read_file_turn_cache: None,
-                workspace_changelist: None,
-                staged_plan_optimizer_round: cfg.staged_planning.staged_plan_optimizer_round,
-                staged_plan_optimizer_requires_parallel_tools: cfg
-                    .staged_planning
-                    .staged_plan_optimizer_requires_parallel_tools,
-                staged_plan_ensemble_count: cfg.staged_planning.staged_plan_ensemble_count,
-                staged_plan_skip_ensemble_on_casual_prompt: cfg
-                    .staged_planning
-                    .staged_plan_skip_ensemble_on_casual_prompt,
-                request_chrome_trace: None,
-                turn_allowed_tool_names: None,
-                tracing_chat_turn: None,
-                request_audit: None,
-                sse_control_mirror: None,
-                process_handles:
-                    crate::process_handles::ProcessHandles::default_arc_process_handles(),
+                core: RunLoopCore {
+                    llm_backend: &OPENAI_COMPAT_BACKEND,
+                    client: &client,
+                    api_key: "",
+                    cfg: &cfg,
+                    tools_defs: &[],
+                    effective_working_dir: std::path::Path::new("."),
+                    workspace_is_set: false,
+                },
+                io: RunLoopIo {
+                    out: None,
+                    no_stream: true,
+                    cancel: None,
+                    render_to_terminal: false,
+                    plain_terminal_stream: false,
+                    tui_llm_stream_scratch: None,
+                    tool_running_hook: None,
+                    clarification_questionnaire_hook: None,
+                    sse_control_mirror: None,
+                },
+                attach: RunLoopAttach {
+                    web_tool_ctx: None,
+                    cli_tool_ctx: None,
+                    per_flight: None,
+                    long_term_memory: None,
+                    long_term_memory_scope_id: None,
+                    mcp_session: None,
+                    read_file_turn_cache: None,
+                    workspace_changelist: None,
+                    staged_plan_optimizer_round: cfg.staged_planning.staged_plan_optimizer_round,
+                    staged_plan_optimizer_requires_parallel_tools: cfg
+                        .staged_planning
+                        .staged_plan_optimizer_requires_parallel_tools,
+                    staged_plan_ensemble_count: cfg.staged_planning.staged_plan_ensemble_count,
+                    staged_plan_skip_ensemble_on_casual_prompt: cfg
+                        .staged_planning
+                        .staged_plan_skip_ensemble_on_casual_prompt,
+                    turn_allowed_tool_names: None,
+                },
+                obs: RunLoopObs {
+                    request_chrome_trace: None,
+                    tracing_chat_turn: None,
+                    request_audit: None,
+                    process_handles:
+                        crate::process_handles::ProcessHandles::default_arc_process_handles(),
+                },
             },
             turn: RunLoopTurnState {
                 messages: &mut messages,

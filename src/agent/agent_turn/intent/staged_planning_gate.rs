@@ -116,30 +116,32 @@ pub(crate) async fn assess_staged_planning_gate_full_pipeline(
 
     let intent_ctx = build_intent_routing_context(
         p.turn.messages,
-        p.ctx.cfg.as_ref(),
+        p.ctx.core.cfg.as_ref(),
         in_clarification_flow,
         ExecuteIntentThresholds {
             low: p
                 .ctx
+                .core
                 .cfg
                 .intent_routing
                 .intent_non_hier_execute_low_threshold,
             high: p
                 .ctx
+                .core
                 .cfg
                 .intent_routing
                 .intent_non_hier_execute_high_threshold,
         },
     );
     let (routing_for_l1, _, _) = prepare_intent_routing(task.as_str(), &intent_ctx);
-    let l2_candidate = if p.ctx.cfg.intent_routing.intent_l2_enabled {
+    let l2_candidate = if p.ctx.core.cfg.intent_routing.intent_l2_enabled {
         classify_intent_l2_with_llm(
             &routing_for_l1,
             task.as_str(),
-            p.ctx.cfg.as_ref(),
-            p.ctx.llm_backend,
-            p.ctx.client,
-            p.ctx.api_key,
+            p.ctx.core.cfg.as_ref(),
+            p.ctx.core.llm_backend,
+            p.ctx.core.client,
+            p.ctx.core.api_key,
         )
         .await
     } else {
@@ -167,7 +169,7 @@ pub(crate) async fn assess_staged_planning_gate_full_pipeline(
 
     let suppress_timeline = p.turn.take_suppress_duplicate_intent_timeline_once();
     if !suppress_timeline {
-        emit_intent_timeline_gate_only(p.ctx.out, sse_log_tag, &decision, &merge_meta).await;
+        emit_intent_timeline_gate_only(p.ctx.io.out, sse_log_tag, &decision, &merge_meta).await;
     }
 
     let allowed = matches!(decision.action, IntentAction::Execute);

@@ -21,8 +21,9 @@ use super::patch_planner::{
     run_staged_plan_patch_planner_round, staged_plan_step_failure_feedback_user_body,
 };
 use super::sse::{
-    emit_chat_ui_separator_sse, send_staged_plan_finished, send_staged_plan_notice,
-    send_staged_plan_step_finished, send_staged_plan_step_started, staged_plan_queue_summary_text,
+    StagedStepOkNoticeParams, emit_chat_ui_separator_sse, send_staged_plan_finished,
+    send_staged_plan_notice, send_staged_plan_step_finished, send_staged_plan_step_started,
+    staged_plan_queue_summary_text, staged_step_emit_ok_step_and_queue_notice,
 };
 use super::staged_step_fsm::{
     staged_patch_budget_after_step_failure, staged_patch_budget_tool_messages_not_ok,
@@ -140,7 +141,7 @@ async fn push_patch_replan_assistant_json_and_notice(
     p.turn
         .push_assistant_merging_trailing_empty(Message::assistant_only(json));
     send_staged_plan_notice(
-        p.ctx.out,
+        p.ctx.io.out,
         echo_terminal_staged,
         true,
         staged_plan_queue_summary_text(&replan, completed_steps_for_notice),
@@ -199,7 +200,7 @@ where
     let step = plan_steps[i].clone();
     let step_index = i + 1;
     send_staged_plan_step_started(
-        patch_ctx.p.ctx.out,
+        patch_ctx.p.ctx.io.out,
         plan_id,
         step.id.trim(),
         step_index,
@@ -237,7 +238,7 @@ where
                 acceptance,
                 patch_ctx.p.turn.messages,
                 step_user_idx,
-                patch_ctx.p.ctx.effective_working_dir,
+                patch_ctx.p.ctx.core.effective_working_dir,
             );
 
             if let crate::agent::step_verifier::VerifyResult::Fail { reason } = verify_result {
@@ -304,6 +305,7 @@ where
         patch_ctx
             .p
             .ctx
+            .core
             .cfg
             .staged_planning
             .staged_plan_feedback_mode,
@@ -316,6 +318,7 @@ where
         patch_ctx
             .p
             .ctx
+            .core
             .cfg
             .staged_planning
             .staged_plan_patch_max_attempts,
@@ -408,6 +411,7 @@ where
         patch_ctx
             .p
             .ctx
+            .core
             .cfg
             .staged_planning
             .staged_plan_patch_max_attempts,
@@ -477,6 +481,8 @@ where
         step_verify_failed_reason,
     } = outer;
 
+    let out = patch_ctx.p.ctx.io.out;
+
     if let Some((fb, step_status)) = try_apply_staged_plan_control_flow_jump(
         &step,
         i,
@@ -497,7 +503,7 @@ where
             no_task: false,
         };
         send_staged_plan_notice(
-            patch_ctx.p.ctx.out,
+            out,
             echo_terminal_staged,
             true,
             staged_plan_queue_summary_text(&replan, completed_steps),
@@ -506,7 +512,7 @@ where
 
         let step_verify_fail_reason = step_verify_failed_reason.as_deref();
         finish_staged_plan_step_sse(
-            patch_ctx.p.ctx.out,
+            out,
             plan_id,
             step.id.trim(),
             step_index,
@@ -521,7 +527,7 @@ where
             .turn
             .messages
             .push(Message::chat_ui_separator(true));
-        emit_chat_ui_separator_sse(patch_ctx.p.ctx.out, true).await;
+        emit_chat_ui_separator_sse(out, true).await;
         return Ok(StagedStepIterationCtl::AdvanceToNextStep {
             n,
             completed_steps: step_index,
@@ -549,7 +555,7 @@ where
             }
             finish_staged_plan_step_failed_and_plan_failed_sse(
                 StagedPlanStepFailedExit {
-                    out: patch_ctx.p.ctx.out,
+                    out,
                     plan_id,
                     step_id_trim: step.id.trim(),
                     step_index,
@@ -581,15 +587,16 @@ where
         StagedStepAfterOuterLoop::ProceedToToolCheck => {}
     }
 
-    if sse_sender_closed(patch_ctx.p.ctx.out)
+    if sse_sender_closed(out)
         || patch_ctx
             .p
             .ctx
+            .io
             .cancel
             .is_some_and(|c| c.load(Ordering::SeqCst))
     {
         finish_staged_plan_step_sse(
-            patch_ctx.p.ctx.out,
+            out,
             plan_id,
             step.id.trim(),
             step_index,
@@ -607,6 +614,7 @@ where
         patch_ctx
             .p
             .ctx
+            .core
             .cfg
             .staged_planning
             .staged_plan_feedback_mode,
@@ -630,7 +638,7 @@ where
             }
             finish_staged_plan_step_failed_and_plan_failed_sse(
                 StagedPlanStepFailedExit {
-                    out: patch_ctx.p.ctx.out,
+                    out,
                     plan_id,
                     step_id_trim: step.id.trim(),
                     step_index,
@@ -654,36 +662,18 @@ where
         StagedStepToolPhaseRoute::EmitStepSuccess => {}
     }
 
-    finish_staged_plan_step_sse(
-        patch_ctx.p.ctx.out,
+    staged_step_emit_ok_step_and_queue_notice(StagedStepOkNoticeParams {
+        out,
+        messages: patch_ctx.p.turn.messages,
         plan_id,
-        step.id.trim(),
+        step_id_trim: step.id.trim(),
         step_index,
         n,
-        "ok",
-        step.executor_kind,
-        None,
-    )
-    .await;
-    patch_ctx
-        .p
-        .turn
-        .messages
-        .push(Message::chat_ui_separator(true));
-    let plan_row = AgentReplyPlanV1 {
-        plan_type: "agent_reply_plan".to_string(),
-        version: 1,
-        steps: plan_steps.clone(),
-        no_task: false,
-    };
-    send_staged_plan_notice(
-        patch_ctx.p.ctx.out,
+        executor_kind: step.executor_kind,
+        plan_steps: plan_steps.as_slice(),
         echo_terminal_staged,
-        true,
-        staged_plan_queue_summary_text(&plan_row, step_index),
-    )
+    })
     .await;
-    emit_chat_ui_separator_sse(patch_ctx.p.ctx.out, true).await;
     Ok(StagedStepIterationCtl::AdvanceToNextStep {
         n,
         completed_steps: step_index,
@@ -765,7 +755,7 @@ where
 {
     let mut n = plan_steps.len();
     let orch_phase = staged_orchestrator::enter_steps_executing(
-        patch_ctx.p.ctx.out,
+        patch_ctx.p.ctx.io.out,
         plan_id.as_str(),
         echo_terminal_staged,
         plan_steps.as_slice(),
@@ -799,22 +789,25 @@ where
             sub_phase = "executor",
             "staged plan steps loop iteration enter"
         );
-        if staged_step_wall_clock_exceeded(
-            patch_ctx.p.ctx.cfg.turn_budget.max_turn_duration_seconds,
-            start_time.elapsed().as_secs(),
-        ) {
+        let max_turn_s = patch_ctx
+            .p
+            .ctx
+            .core
+            .cfg
+            .turn_budget
+            .max_turn_duration_seconds;
+        if staged_step_wall_clock_exceeded(max_turn_s, start_time.elapsed().as_secs()) {
             return Err(RunAgentTurnError::TimeLimitExhausted {
                 phase: AgentTurnSubPhase::Executor,
-                message: crate::agent::turn_budget::turn_wall_clock_limit_user_message(
-                    patch_ctx.p.ctx.cfg.turn_budget.max_turn_duration_seconds,
-                ),
+                message: crate::agent::turn_budget::turn_wall_clock_limit_user_message(max_turn_s),
             });
         }
 
-        if sse_sender_closed(patch_ctx.p.ctx.out)
+        if sse_sender_closed(patch_ctx.p.ctx.io.out)
             || patch_ctx
                 .p
                 .ctx
+                .io
                 .cancel
                 .is_some_and(|c| c.load(Ordering::SeqCst))
         {
@@ -893,7 +886,7 @@ where
     );
     // 末步成功后循环内已发送含「[✓] 全部完成」的摘要，勿再发一次（否则重复一条）。
     send_staged_plan_finished(
-        patch_ctx.p.ctx.out,
+        patch_ctx.p.ctx.io.out,
         &plan_id,
         n,
         completed_steps,
@@ -912,7 +905,7 @@ where
             .turn
             .messages
             .push(Message::chat_ui_separator(true));
-        emit_chat_ui_separator_sse(patch_ctx.p.ctx.out, true).await;
+        emit_chat_ui_separator_sse(patch_ctx.p.ctx.io.out, true).await;
     }
     Ok(StagedPlanRunOutcome::ContinuePlanning)
 }

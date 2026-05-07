@@ -40,8 +40,12 @@ impl<'a> PlannerRoundTools<'a> {
 fn build_planner_round_tools<'a>(p: &RunLoopParams<'a>) -> PlannerRoundTools<'a> {
     let owned_filtered = match p.turn.turn_planner_hints.step_executor_constraint {
         Some(k) => {
-            let mut v = filter_tool_defs_for_executor_kind(p.ctx.tools_defs, p.ctx.cfg.as_ref(), k);
-            if let Some(ref allow) = p.ctx.turn_allowed_tool_names {
+            let mut v = filter_tool_defs_for_executor_kind(
+                p.ctx.core.tools_defs,
+                p.ctx.core.cfg.as_ref(),
+                k,
+            );
+            if let Some(ref allow) = p.ctx.attach.turn_allowed_tool_names {
                 let mcp_ok = allow.contains("mcp");
                 v.retain(|t| {
                     let n = t.function.name.as_str();
@@ -58,7 +62,7 @@ fn build_planner_round_tools<'a>(p: &RunLoopParams<'a>) -> PlannerRoundTools<'a>
     };
     PlannerRoundTools {
         owned_filtered,
-        full_defs: p.ctx.tools_defs,
+        full_defs: p.ctx.core.tools_defs,
     }
 }
 
@@ -77,24 +81,24 @@ fn outer_loop_iteration_guard(
         });
     }
     if crate::agent::turn_budget::turn_wall_clock_exceeded(
-        p.ctx.cfg.turn_budget.max_turn_duration_seconds,
+        p.ctx.core.cfg.turn_budget.max_turn_duration_seconds,
         start_time.elapsed().as_secs(),
     ) {
         return Err(RunAgentTurnError::TimeLimitExhausted {
             phase: AgentTurnSubPhase::Planner,
             message: crate::agent::turn_budget::turn_wall_clock_limit_user_message(
-                p.ctx.cfg.turn_budget.max_turn_duration_seconds,
+                p.ctx.core.cfg.turn_budget.max_turn_duration_seconds,
             ),
         });
     }
-    if sse_sender_closed(p.ctx.out) {
+    if sse_sender_closed(p.ctx.io.out) {
         info!(target: "crabmate", "SSE sender closed, aborting run_agent_turn loop early");
         return Err(RunAgentTurnError::TurnAborted {
             phase: AgentTurnSubPhase::Planner,
             reason: TurnAbortReason::SseDisconnected,
         });
     }
-    if p.ctx.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+    if p.ctx.io.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
         return Err(RunAgentTurnError::TurnAborted {
             phase: AgentTurnSubPhase::Planner,
             reason: TurnAbortReason::UserCancelled,
@@ -110,20 +114,24 @@ async fn outer_loop_prepare_planner_context(
     if let Some(hint) = p.turn.take_intent_turn_gate_hint() {
         p.turn.push_message(Message::system_intent_gate_hint(hint));
     }
-    if let Some(ref ltm) = p.ctx.long_term_memory {
+    if let Some(ref ltm) = p.ctx.attach.long_term_memory {
         ltm.prepare_messages(
-            p.ctx.cfg.as_ref(),
-            p.ctx.long_term_memory_scope_id.as_deref(),
+            p.ctx.core.cfg.as_ref(),
+            p.ctx.attach.long_term_memory_scope_id.as_deref(),
             p.turn.messages,
         );
     }
     crate::agent::context_window::prepare_messages_for_model(
-        p.ctx.llm_backend,
-        p.ctx.client,
-        p.ctx.api_key,
-        p.ctx.cfg.as_ref(),
+        p.ctx.core.llm_backend,
+        p.ctx.core.client,
+        p.ctx.core.api_key,
+        p.ctx.core.cfg.as_ref(),
         p.turn.messages,
-        p.ctx.workspace_changelist.as_ref().map(|a| a.as_ref()),
+        p.ctx
+            .attach
+            .workspace_changelist
+            .as_ref()
+            .map(|a| a.as_ref()),
         crate::agent::context_window::PrepareMessagesForModelHooks {
             per_coord_layer_cache: Some(per_coord),
             run_loop_messages_revision: Some(&mut p.turn.messages_revision),
@@ -168,33 +176,33 @@ async fn outer_loop_reflect_branch(
 ) -> ReflectBranchCtl {
     match per_reflect_after_assistant(p, per_coord, finish_reason, msg).await {
         ReflectOnAssistantOutcome::StopTurn => {
-            if let Some(f) = p.ctx.per_flight.as_ref() {
+            if let Some(f) = p.ctx.attach.per_flight.as_ref() {
                 f.sync_from_per_coord(per_coord);
             }
             ReflectBranchCtl::BreakOuter
         }
         ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite => {
-            if let Some(f) = p.ctx.per_flight.as_ref() {
+            if let Some(f) = p.ctx.attach.per_flight.as_ref() {
                 f.sync_from_per_coord(per_coord);
                 f.awaiting_plan_rewrite_model.store(true, Ordering::Relaxed);
             }
             ReflectBranchCtl::ContinueOuter
         }
         ReflectOnAssistantOutcome::ProceedToExecuteTools => {
-            if let Some(f) = p.ctx.per_flight.as_ref() {
+            if let Some(f) = p.ctx.attach.per_flight.as_ref() {
                 f.sync_from_per_coord(per_coord);
             }
             ReflectBranchCtl::ProceedToTools
         }
         ReflectOnAssistantOutcome::PlanRewriteExhausted { reason } => {
-            if let Some(f) = p.ctx.per_flight.as_ref() {
+            if let Some(f) = p.ctx.attach.per_flight.as_ref() {
                 f.sync_from_per_coord(per_coord);
             }
-            if let Some(tx) = p.ctx.out {
+            if let Some(tx) = p.ctx.io.out {
                 let _ = crate::sse::send_string_logged(
                     tx,
                     encode_message(SsePayload::Error(sse_plan_rewrite_exhausted_body(
-                        p.ctx.tracing_chat_turn.as_ref(),
+                        p.ctx.obs.tracing_chat_turn.as_ref(),
                         reason.as_str(),
                     ))),
                     "outer_loop::plan_rewrite_exhausted",
@@ -220,39 +228,44 @@ async fn outer_loop_execute_tools_round(
             message: "无 tool_calls".to_string(),
         })?;
     p.turn.sub_phase = AgentTurnSubPhase::Executor;
-    let echo_terminal_transcript = render_to_terminal && p.ctx.out.is_none();
+    let echo_terminal_transcript = render_to_terminal && p.ctx.io.out.is_none();
     let exec_outcome = per_execute_tools_web(
         tool_calls,
         per_coord,
         p.turn.messages,
         WebExecuteCtx {
-            cfg: p.ctx.cfg,
-            effective_working_dir: p.ctx.effective_working_dir,
-            workspace_is_set: p.ctx.workspace_is_set,
-            read_file_turn_cache: p.ctx.read_file_turn_cache.clone(),
-            out: p.ctx.out,
-            tool_running_hook: p.ctx.tool_running_hook.clone(),
-            clarification_questionnaire_hook: p.ctx.clarification_questionnaire_hook.clone(),
-            web_tool_ctx: p.ctx.web_tool_ctx,
-            cli_tool_ctx: p.ctx.cli_tool_ctx,
+            cfg: p.ctx.core.cfg,
+            effective_working_dir: p.ctx.core.effective_working_dir,
+            workspace_is_set: p.ctx.core.workspace_is_set,
+            read_file_turn_cache: p.ctx.attach.read_file_turn_cache.clone(),
+            out: p.ctx.io.out,
+            tool_running_hook: p.ctx.io.tool_running_hook.clone(),
+            clarification_questionnaire_hook: p.ctx.io.clarification_questionnaire_hook.clone(),
+            web_tool_ctx: p.ctx.attach.web_tool_ctx,
+            cli_tool_ctx: p.ctx.attach.cli_tool_ctx,
             echo_terminal_transcript,
-            mcp_session: p.ctx.mcp_session.as_ref(),
-            workspace_changelist: p.ctx.workspace_changelist.as_ref(),
-            request_chrome_trace: p.ctx.request_chrome_trace.clone(),
+            mcp_session: p.ctx.attach.mcp_session.as_ref(),
+            workspace_changelist: p.ctx.attach.workspace_changelist.as_ref(),
+            request_chrome_trace: p.ctx.obs.request_chrome_trace.clone(),
             step_executor_constraint: p.turn.turn_planner_hints.step_executor_constraint,
-            tools_defs_full: p.ctx.tools_defs,
-            turn_allow: p.ctx.turn_allowed_tool_names.as_ref().map(|a| a.as_ref()),
-            long_term_memory: p.ctx.long_term_memory.clone(),
-            long_term_memory_scope_id: p.ctx.long_term_memory_scope_id.clone(),
-            tracing_chat_turn: p.ctx.tracing_chat_turn.clone(),
-            request_audit: p.ctx.request_audit.clone(),
-            tool_outcome_recorder: Arc::clone(&p.ctx.process_handles.tool_outcome_recorder),
-            handler_lookup: p.ctx.process_handles.handler_lookup.clone(),
+            tools_defs_full: p.ctx.core.tools_defs,
+            turn_allow: p
+                .ctx
+                .attach
+                .turn_allowed_tool_names
+                .as_ref()
+                .map(|a| a.as_ref()),
+            long_term_memory: p.ctx.attach.long_term_memory.clone(),
+            long_term_memory_scope_id: p.ctx.attach.long_term_memory_scope_id.clone(),
+            tracing_chat_turn: p.ctx.obs.tracing_chat_turn.clone(),
+            request_audit: p.ctx.obs.request_audit.clone(),
+            tool_outcome_recorder: Arc::clone(&p.ctx.obs.process_handles.tool_outcome_recorder),
+            handler_lookup: p.ctx.obs.process_handles.handler_lookup.clone(),
             sync_default_sandbox_backend: Arc::clone(
-                &p.ctx.process_handles.sync_default_sandbox_backend,
+                &p.ctx.obs.process_handles.sync_default_sandbox_backend,
             ),
-            readonly_tool_ttl_cache: Arc::clone(&p.ctx.process_handles.readonly_tool_ttl_cache),
-            sse_control_mirror: p.ctx.sse_control_mirror.clone(),
+            readonly_tool_ttl_cache: Arc::clone(&p.ctx.obs.process_handles.readonly_tool_ttl_cache),
+            sse_control_mirror: p.ctx.io.sse_control_mirror.clone(),
         },
     )
     .await;
@@ -262,7 +275,7 @@ async fn outer_loop_execute_tools_round(
             reason: TurnAbortReason::SseDisconnected,
         });
     }
-    if let Some(f) = p.ctx.per_flight.as_ref() {
+    if let Some(f) = p.ctx.attach.per_flight.as_ref() {
         f.sync_from_per_coord(per_coord);
     }
     Ok(())
@@ -335,11 +348,11 @@ async fn run_outer_loop_single_iteration(
         "outer_loop iteration enter"
     );
     p.turn.sub_phase = AgentTurnSubPhase::Planner;
-    if let Some(ref t) = p.ctx.tracing_chat_turn {
+    if let Some(ref t) = p.ctx.obs.tracing_chat_turn {
         t.on_outer_loop_iteration();
     }
 
-    let render_to_terminal = p.ctx.render_to_terminal;
+    let render_to_terminal = p.ctx.io.render_to_terminal;
     outer_loop_prepare_planner_context(p, per_coord).await?;
 
     tracing::debug!(
@@ -352,21 +365,21 @@ async fn run_outer_loop_single_iteration(
 
     let planner_tools = build_planner_round_tools(p);
     let (msg, finish_reason) = per_plan_call_model_retrying(PerPlanCallModelParams {
-        llm_backend: p.ctx.llm_backend,
-        client: p.ctx.client,
-        api_key: p.ctx.api_key,
-        cfg: p.ctx.cfg.as_ref(),
+        llm_backend: p.ctx.core.llm_backend,
+        client: p.ctx.core.client,
+        api_key: p.ctx.core.api_key,
+        cfg: p.ctx.core.cfg.as_ref(),
         tools_defs: planner_tools.as_slice(),
         messages: p.turn.messages,
-        out: p.ctx.out,
+        out: p.ctx.io.out,
         render_to_terminal,
-        no_stream: p.ctx.no_stream,
-        cancel: p.ctx.cancel,
-        plain_terminal_stream: p.ctx.plain_terminal_stream,
-        tui_llm_stream_scratch: p.ctx.tui_llm_stream_scratch.clone(),
+        no_stream: p.ctx.io.no_stream,
+        cancel: p.ctx.io.cancel,
+        plain_terminal_stream: p.ctx.io.plain_terminal_stream,
+        tui_llm_stream_scratch: p.ctx.io.tui_llm_stream_scratch.clone(),
         temperature_override: p.turn.temperature_override,
         seed_override: p.turn.seed_override,
-        request_chrome_trace: p.ctx.request_chrome_trace.clone(),
+        request_chrome_trace: p.ctx.obs.request_chrome_trace.clone(),
         model_override: p.effective_model(),
         executor_api_base: exec_api_base.as_deref(),
         executor_api_key: exec_api_key.as_deref(),
@@ -381,7 +394,7 @@ async fn run_outer_loop_single_iteration(
     p.turn
         .messages
         .retain(|m| !is_intent_gate_ephemeral_system(m));
-    if let Some(f) = p.ctx.per_flight.as_ref() {
+    if let Some(f) = p.ctx.attach.per_flight.as_ref() {
         f.awaiting_plan_rewrite_model
             .store(false, Ordering::Relaxed);
     }

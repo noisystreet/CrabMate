@@ -61,8 +61,8 @@ pub(crate) async fn per_reflect_after_assistant(
     match per_coord.after_final_assistant(
         msg,
         p.turn.messages.as_slice(),
-        p.ctx.cfg.as_ref(),
-        p.ctx.workspace_is_set,
+        p.ctx.core.cfg.as_ref(),
+        p.ctx.core.workspace_is_set,
     ) {
         AfterFinalAssistant::StopTurnPendingPlanConsistencyLlm { plan, tool_digest } => {
             reflect_pending_semantic_consistency_llm(p, per_coord, plan, tool_digest).await
@@ -82,20 +82,21 @@ async fn reflect_pending_semantic_consistency_llm(
     let plan_json = per_plan_semantic_check::agent_reply_plan_json_compact(&plan);
     let outcome = per_plan_semantic_check::evaluate_plan_consistency_with_recent_tools_llm(
         PlanSemanticLlmCtx {
-            llm_backend: p.ctx.llm_backend,
-            client: p.ctx.client,
-            api_key: p.ctx.api_key,
-            cfg: p.ctx.cfg.as_ref(),
-            out: p.ctx.out,
-            no_stream: p.ctx.no_stream,
-            cancel: p.ctx.cancel,
-            plain_terminal_stream: p.ctx.plain_terminal_stream,
-            request_chrome_trace: p.ctx.request_chrome_trace.clone(),
+            llm_backend: p.ctx.core.llm_backend,
+            client: p.ctx.core.client,
+            api_key: p.ctx.core.api_key,
+            cfg: p.ctx.core.cfg.as_ref(),
+            out: p.ctx.io.out,
+            no_stream: p.ctx.io.no_stream,
+            cancel: p.ctx.io.cancel,
+            plain_terminal_stream: p.ctx.io.plain_terminal_stream,
+            request_chrome_trace: p.ctx.obs.request_chrome_trace.clone(),
             temperature_override: p.turn.temperature_override,
             model_override: p.turn.model_override.clone(),
             seed_override: p.turn.seed_override,
             max_tokens: p
                 .ctx
+                .core
                 .cfg
                 .per_plan_policy
                 .final_plan_semantic_check_max_tokens,

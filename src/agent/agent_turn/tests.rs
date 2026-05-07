@@ -165,7 +165,10 @@ mod hierarchy_runner_params_tests {
 
     use tokio::sync::{Mutex, mpsc};
 
-    use crate::agent::agent_turn::{RunLoopCtx, RunLoopParams, RunLoopTurnState};
+    use crate::agent::agent_turn::{
+        RunLoopAttach, RunLoopCore, RunLoopCtx, RunLoopIo, RunLoopObs, RunLoopParams,
+        RunLoopTurnState,
+    };
     use crate::tool_registry::WebToolRuntime;
     use crate::types::{CommandApprovalDecision, LlmSeedOverride, Message};
 
@@ -176,40 +179,48 @@ mod hierarchy_runner_params_tests {
         let mut messages = vec![Message::user_only("hi")];
         let p = RunLoopParams {
             ctx: RunLoopCtx {
-                llm_backend: &crate::llm::OPENAI_COMPAT_BACKEND,
-                client: &client,
-                api_key: "test-key",
-                cfg: &cfg,
-                tools_defs: &[],
-                out: None,
-                effective_working_dir: Path::new("sub/ws"),
-                workspace_is_set: true,
-                no_stream: true,
-                cancel: None,
-                render_to_terminal: false,
-                plain_terminal_stream: false,
-                tui_llm_stream_scratch: None,
-                tool_running_hook: None,
-                clarification_questionnaire_hook: None,
-                web_tool_ctx: None,
-                cli_tool_ctx: None,
-                per_flight: None,
-                long_term_memory: None,
-                long_term_memory_scope_id: None,
-                mcp_session: None,
-                read_file_turn_cache: None,
-                workspace_changelist: None,
-                staged_plan_optimizer_round: false,
-                staged_plan_optimizer_requires_parallel_tools: true,
-                staged_plan_ensemble_count: 1,
-                staged_plan_skip_ensemble_on_casual_prompt: true,
-                request_chrome_trace: None,
-                turn_allowed_tool_names: None,
-                tracing_chat_turn: None,
-                request_audit: None,
-                sse_control_mirror: None,
-                process_handles:
-                    crate::process_handles::ProcessHandles::default_arc_process_handles(),
+                core: RunLoopCore {
+                    llm_backend: &crate::llm::OPENAI_COMPAT_BACKEND,
+                    client: &client,
+                    api_key: "test-key",
+                    cfg: &cfg,
+                    tools_defs: &[],
+                    effective_working_dir: Path::new("sub/ws"),
+                    workspace_is_set: true,
+                },
+                io: RunLoopIo {
+                    out: None,
+                    no_stream: true,
+                    cancel: None,
+                    render_to_terminal: false,
+                    plain_terminal_stream: false,
+                    tui_llm_stream_scratch: None,
+                    tool_running_hook: None,
+                    clarification_questionnaire_hook: None,
+                    sse_control_mirror: None,
+                },
+                attach: RunLoopAttach {
+                    web_tool_ctx: None,
+                    cli_tool_ctx: None,
+                    per_flight: None,
+                    long_term_memory: None,
+                    long_term_memory_scope_id: None,
+                    mcp_session: None,
+                    read_file_turn_cache: None,
+                    workspace_changelist: None,
+                    staged_plan_optimizer_round: false,
+                    staged_plan_optimizer_requires_parallel_tools: true,
+                    staged_plan_ensemble_count: 1,
+                    staged_plan_skip_ensemble_on_casual_prompt: true,
+                    turn_allowed_tool_names: None,
+                },
+                obs: RunLoopObs {
+                    request_chrome_trace: None,
+                    tracing_chat_turn: None,
+                    request_audit: None,
+                    process_handles:
+                        crate::process_handles::ProcessHandles::default_arc_process_handles(),
+                },
             },
             turn: RunLoopTurnState {
                 messages: &mut messages,
@@ -245,7 +256,7 @@ mod hierarchy_runner_params_tests {
         );
         assert!(std::sync::Arc::ptr_eq(
             &h.process_handles,
-            &p.ctx.process_handles
+            &p.ctx.obs.process_handles
         ));
     }
 
@@ -264,40 +275,48 @@ mod hierarchy_runner_params_tests {
         };
         let p = RunLoopParams {
             ctx: RunLoopCtx {
-                llm_backend: &crate::llm::OPENAI_COMPAT_BACKEND,
-                client: &client,
-                api_key: "",
-                cfg: &cfg,
-                tools_defs: &[],
-                out: Some(&out_tx),
-                effective_working_dir: Path::new("."),
-                workspace_is_set: false,
-                no_stream: true,
-                cancel: None,
-                render_to_terminal: false,
-                plain_terminal_stream: false,
-                tui_llm_stream_scratch: None,
-                tool_running_hook: None,
-                clarification_questionnaire_hook: None,
-                web_tool_ctx: Some(&web),
-                cli_tool_ctx: None,
-                per_flight: None,
-                long_term_memory: None,
-                long_term_memory_scope_id: None,
-                mcp_session: None,
-                read_file_turn_cache: None,
-                workspace_changelist: None,
-                staged_plan_optimizer_round: false,
-                staged_plan_optimizer_requires_parallel_tools: true,
-                staged_plan_ensemble_count: 1,
-                staged_plan_skip_ensemble_on_casual_prompt: true,
-                request_chrome_trace: None,
-                turn_allowed_tool_names: None,
-                tracing_chat_turn: None,
-                request_audit: None,
-                sse_control_mirror: None,
-                process_handles:
-                    crate::process_handles::ProcessHandles::default_arc_process_handles(),
+                core: RunLoopCore {
+                    llm_backend: &crate::llm::OPENAI_COMPAT_BACKEND,
+                    client: &client,
+                    api_key: "",
+                    cfg: &cfg,
+                    tools_defs: &[],
+                    effective_working_dir: Path::new("."),
+                    workspace_is_set: false,
+                },
+                io: RunLoopIo {
+                    out: Some(&out_tx),
+                    no_stream: true,
+                    cancel: None,
+                    render_to_terminal: false,
+                    plain_terminal_stream: false,
+                    tui_llm_stream_scratch: None,
+                    tool_running_hook: None,
+                    clarification_questionnaire_hook: None,
+                    sse_control_mirror: None,
+                },
+                attach: RunLoopAttach {
+                    web_tool_ctx: Some(&web),
+                    cli_tool_ctx: None,
+                    per_flight: None,
+                    long_term_memory: None,
+                    long_term_memory_scope_id: None,
+                    mcp_session: None,
+                    read_file_turn_cache: None,
+                    workspace_changelist: None,
+                    staged_plan_optimizer_round: false,
+                    staged_plan_optimizer_requires_parallel_tools: true,
+                    staged_plan_ensemble_count: 1,
+                    staged_plan_skip_ensemble_on_casual_prompt: true,
+                    turn_allowed_tool_names: None,
+                },
+                obs: RunLoopObs {
+                    request_chrome_trace: None,
+                    tracing_chat_turn: None,
+                    request_audit: None,
+                    process_handles:
+                        crate::process_handles::ProcessHandles::default_arc_process_handles(),
+                },
             },
             turn: RunLoopTurnState {
                 messages: &mut messages,
@@ -324,7 +343,10 @@ mod per_reflect_tests {
     use std::path::Path;
     use std::sync::Arc;
 
-    use crate::agent::agent_turn::{RunLoopCtx, RunLoopParams, RunLoopTurnState};
+    use crate::agent::agent_turn::{
+        RunLoopAttach, RunLoopCore, RunLoopCtx, RunLoopIo, RunLoopObs, RunLoopParams,
+        RunLoopTurnState,
+    };
     use crate::agent::per_coord::{FinalPlanRequirementMode, PerCoordinator, PerCoordinatorInit};
     use crate::llm::OPENAI_COMPAT_BACKEND;
     use crate::types::{FunctionCall, LlmSeedOverride, Message, MessageContent, ToolCall};
@@ -363,40 +385,48 @@ mod per_reflect_tests {
         };
         let mut p = RunLoopParams {
             ctx: RunLoopCtx {
-                llm_backend: &OPENAI_COMPAT_BACKEND,
-                client: &client,
-                api_key: "",
-                cfg: &cfg,
-                tools_defs: &[],
-                out: None,
-                effective_working_dir: Path::new("."),
-                workspace_is_set: false,
-                no_stream: true,
-                cancel: None,
-                render_to_terminal: false,
-                plain_terminal_stream: false,
-                tui_llm_stream_scratch: None,
-                tool_running_hook: None,
-                clarification_questionnaire_hook: None,
-                web_tool_ctx: None,
-                cli_tool_ctx: None,
-                per_flight: None,
-                long_term_memory: None,
-                long_term_memory_scope_id: None,
-                mcp_session: None,
-                read_file_turn_cache: None,
-                workspace_changelist: None,
-                staged_plan_optimizer_round: false,
-                staged_plan_optimizer_requires_parallel_tools: true,
-                staged_plan_ensemble_count: 1,
-                staged_plan_skip_ensemble_on_casual_prompt: true,
-                request_chrome_trace: None,
-                turn_allowed_tool_names: None,
-                tracing_chat_turn: None,
-                request_audit: None,
-                sse_control_mirror: None,
-                process_handles:
-                    crate::process_handles::ProcessHandles::default_arc_process_handles(),
+                core: RunLoopCore {
+                    llm_backend: &OPENAI_COMPAT_BACKEND,
+                    client: &client,
+                    api_key: "",
+                    cfg: &cfg,
+                    tools_defs: &[],
+                    effective_working_dir: Path::new("."),
+                    workspace_is_set: false,
+                },
+                io: RunLoopIo {
+                    out: None,
+                    no_stream: true,
+                    cancel: None,
+                    render_to_terminal: false,
+                    plain_terminal_stream: false,
+                    tui_llm_stream_scratch: None,
+                    tool_running_hook: None,
+                    clarification_questionnaire_hook: None,
+                    sse_control_mirror: None,
+                },
+                attach: RunLoopAttach {
+                    web_tool_ctx: None,
+                    cli_tool_ctx: None,
+                    per_flight: None,
+                    long_term_memory: None,
+                    long_term_memory_scope_id: None,
+                    mcp_session: None,
+                    read_file_turn_cache: None,
+                    workspace_changelist: None,
+                    staged_plan_optimizer_round: false,
+                    staged_plan_optimizer_requires_parallel_tools: true,
+                    staged_plan_ensemble_count: 1,
+                    staged_plan_skip_ensemble_on_casual_prompt: true,
+                    turn_allowed_tool_names: None,
+                },
+                obs: RunLoopObs {
+                    request_chrome_trace: None,
+                    tracing_chat_turn: None,
+                    request_audit: None,
+                    process_handles:
+                        crate::process_handles::ProcessHandles::default_arc_process_handles(),
+                },
             },
             turn: RunLoopTurnState {
                 messages: &mut messages,

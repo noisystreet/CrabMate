@@ -72,7 +72,7 @@ async fn emit_hierarchical_final_assistant(p: &mut RunLoopParams<'_>, final_resp
     p.turn.push_message(crate::types::Message::assistant_only(
         final_response.clone(),
     ));
-    if let Some(out) = p.ctx.out {
+    if let Some(out) = p.ctx.io.out {
         crate::sse::send_final_response_timeline_then_answer_phase(
             out,
             final_response,
@@ -165,8 +165,9 @@ pub(crate) async fn run_hierarchical_agent(
                 action = action_tag,
                 "run_hierarchical_agent discourse fallback to outer_loop"
             );
-            let mut per_coord =
-                PerCoordinator::new(PerCoordinatorInit::from_agent_config(p.ctx.cfg.as_ref()));
+            let mut per_coord = PerCoordinator::new(PerCoordinatorInit::from_agent_config(
+                p.ctx.core.cfg.as_ref(),
+            ));
             return run_agent_outer_loop(p, &mut per_coord).await;
         }
         HierarchicalPostIntentRoute::RouterManagerRunner => {}
@@ -203,7 +204,7 @@ pub(crate) async fn run_hierarchical_agent(
                 "run_hierarchical_agent execution error"
             );
             log::error!(target: "crabmate", "Hierarchical agent failed: {}", e);
-            if let Some(out) = p.ctx.out {
+            if let Some(out) = p.ctx.io.out {
                 let title = format!("分层执行未正常完成：{e}");
                 let _ = sse::send_string_logged(
                     out,
@@ -263,7 +264,7 @@ async fn handle_execution_result(
     );
 
     // 发送执行摘要到 SSE
-    if let Some(out) = p.ctx.out {
+    if let Some(out) = p.ctx.io.out {
         let summary = format!(
             "分层执行完成：模式={}, 完成={}, 失败={}, 耗时={}ms",
             mode.as_str(),
