@@ -1,7 +1,8 @@
+use super::fence::strip_optional_json_fence_label;
+use super::types::{AgentReplyPlanV1, PlanArtifactError};
 use super::validate::{
     validate_agent_reply_plan_v1, validate_agent_reply_plan_v1_with_validate_only_binding_ids,
 };
-use super::{AgentReplyPlanV1, PlanArtifactError, strip_optional_json_fence_label};
 
 /// 解析 `agent_reply_plan` v1（**无 validate-only 绑定上下文**）。
 ///

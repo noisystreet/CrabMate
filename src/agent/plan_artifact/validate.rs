@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use super::{AgentReplyPlanV1, PlanArtifactError, plan_step_id_syntax_ok};
+use super::types::{AgentReplyPlanV1, PlanArtifactError, plan_step_id_syntax_ok};
 
 /// 校验规划中出现的 `workflow_node_id` 均为 `workflow_node_ids` 的子集（通常来自最近一次 `workflow_execute` 工具结果的 `nodes[].id`）。
 pub(crate) fn validate_plan_workflow_node_ids_subset(
