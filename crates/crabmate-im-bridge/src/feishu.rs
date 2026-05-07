@@ -10,7 +10,10 @@
 //!
 //! 签名校验通过后可选 **防重放**：校验 **`X-Lark-Request-Timestamp`** 与服务器时间偏差，并对 **`X-Lark-Request-Nonce`** 做短期去重（见配置项）。
 //!
-//! 实现拆分为 **`feishu_parts/router_state.rs`**（配置、状态、路由与队列 worker）与 **`feishu_parts/handlers.rs`**（事件处理与 CrabMate 调用），以降低单文件行数。
+//! 实现拆分为 **`feishu_parts/router_state.rs`**（配置、状态、路由与队列 worker）与 **`feishu_parts/handlers_*.inc.rs`**（事件处理与 CrabMate 调用，按依赖顺序 `include!`），以降低单文件行数。
 
 include!("feishu_parts/router_state.rs");
-include!("feishu_parts/handlers.rs");
+include!("feishu_parts/handlers_util.inc.rs");
+include!("feishu_parts/handlers_reply.inc.rs");
+include!("feishu_parts/handlers_flow.inc.rs");
+include!("feishu_parts/handlers_tests.inc.rs");
