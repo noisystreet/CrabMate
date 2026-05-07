@@ -135,6 +135,8 @@ pub struct HierarchyRunnerParams<'a> {
     pub intent_mode_bias_enabled: bool,
     /// 与主 Agent 轮次共用的进程句柄（工具分发表、Docker 沙盒后端等）。
     pub process_handles: std::sync::Arc<crate::process_handles::ProcessHandles>,
+    /// CLI/TUI：镜像 SSE 控制面（分层 Runner 顶部 ThinkingTrace / TimelineLog）。
+    pub sse_control_mirror: Option<crate::sse::SseControlMirror>,
 }
 
 /// 分层 Agent 运行结果
@@ -159,6 +161,7 @@ struct SimpleFallbackParams<'a> {
     tool_approval_out: Option<Sender<String>>,
     tool_approval_rx: Option<Arc<Mutex<Receiver<CommandApprovalDecision>>>>,
     process_handles: std::sync::Arc<crate::process_handles::ProcessHandles>,
+    sse_control_mirror: Option<crate::sse::SseControlMirror>,
 }
 
 /// `run_full_decomposed_hierarchy` 的输入（避免长参数列表；字段生命周期与一次 runner 调用绑定）。
@@ -175,6 +178,7 @@ struct FullDecomposedHierarchyCtx<'a> {
     tool_approval_rx: Option<Arc<Mutex<Receiver<CommandApprovalDecision>>>>,
     router_output: RouterOutput,
     process_handles: std::sync::Arc<crate::process_handles::ProcessHandles>,
+    sse_control_mirror: Option<crate::sse::SseControlMirror>,
 }
 
 /// 运行分层 Agent（完整流程）
@@ -197,6 +201,7 @@ pub async fn run_hierarchical(
         secondary_intents,
         intent_mode_bias_enabled,
         process_handles,
+        sse_control_mirror,
     } = params;
 
     let tools_eff: std::borrow::Cow<'_, [crate::types::Tool]> = if primary_intent
@@ -291,6 +296,7 @@ pub async fn run_hierarchical(
                 tool_approval_out,
                 tool_approval_rx,
                 process_handles: std::sync::Arc::clone(&process_handles),
+                sse_control_mirror: sse_control_mirror.clone(),
             })
             .await;
         }
@@ -310,6 +316,7 @@ pub async fn run_hierarchical(
         tool_approval_rx,
         router_output,
         process_handles: std::sync::Arc::clone(&process_handles),
+        sse_control_mirror,
     })
     .await
 }
@@ -331,6 +338,7 @@ async fn run_full_decomposed_hierarchy(
         tool_approval_rx,
         router_output,
         process_handles,
+        sse_control_mirror,
     } = ctx;
 
     info!(
@@ -343,11 +351,15 @@ async fn run_full_decomposed_hierarchy(
 
     // 发射 SSE 事件：Manager 开始
     log::info!(target: "crabmate", "[HIERARCHICAL] run_hierarchical: sse_out is {:?}", sse_out.is_some());
-    if let Some(ref sse_out) = sse_out {
+    {
         let trace = events::build_manager_started_trace(task);
-        let encoded = sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace });
-        log::info!(target: "crabmate", "[HIERARCHICAL] manager_started encoded length={}", encoded.len());
-        let _ = sse::send_string_logged(sse_out, encoded, "hierarchical::manager_started").await;
+        let _ = sse::send_sse_control_payload_optional(
+            sse_out.as_ref(),
+            sse_control_mirror.as_ref(),
+            sse::SsePayload::ThinkingTrace { trace },
+            "hierarchical::manager_started",
+        )
+        .await;
         log::info!(target: "crabmate", "[HIERARCHICAL] manager_started send completed");
     }
 
@@ -390,7 +402,7 @@ async fn run_full_decomposed_hierarchy(
     );
 
     // 发射 SSE 事件顺序：TimelineLog(Manager规划) → ThinkingTrace(manager_finished)
-    if let Some(ref sse_out) = sse_out {
+    {
         // 生成子目标列表详情用于聊天气泡显示
         let sub_goals_detail = manager_output
             .sub_goals
@@ -411,18 +423,23 @@ async fn run_full_decomposed_hierarchy(
                 detail: None,
             },
         };
-        let encoded = sse::encode_message(timeline_payload);
-        let _ =
-            sse::send_string_logged(sse_out, encoded, "hierarchical::manager_plan_timeline").await;
+        let _ = sse::send_sse_control_payload_optional(
+            sse_out.as_ref(),
+            sse_control_mirror.as_ref(),
+            timeline_payload,
+            "hierarchical::manager_plan_timeline",
+        )
+        .await;
 
         // ThinkingTrace(manager_finished)
         let trace = events::build_manager_finished_trace(
             manager_output.sub_goals.len(),
             manager_output.execution_strategy.as_str(),
         );
-        let _ = sse::send_string_logged(
-            sse_out,
-            sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace }),
+        let _ = sse::send_sse_control_payload_optional(
+            sse_out.as_ref(),
+            sse_control_mirror.as_ref(),
+            sse::SsePayload::ThinkingTrace { trace },
             "hierarchical::manager_finished",
         )
         .await;
@@ -533,6 +550,7 @@ async fn run_simple_fallback(
         tool_approval_out,
         tool_approval_rx,
         process_handles,
+        sse_control_mirror,
     } = params;
 
     info!(
@@ -562,7 +580,7 @@ async fn run_simple_fallback(
 
     // 发送 SSE 事件顺序：1) TimelineLog(Manager规划) → 2) ThinkingTrace(manager_started) → 3) ThinkingTrace(manager_finished)
     // 这样前端 pending 队列按到达顺序就是正确的逻辑顺序
-    if let Some(ref sse_out) = sse_out {
+    {
         // 1) Manager 规划（TimelineLog）
         let sub_goals_detail = manager_output
             .sub_goals
@@ -583,23 +601,36 @@ async fn run_simple_fallback(
                 detail: None,
             },
         };
-        let encoded = sse::encode_message(timeline_payload);
-        let _ =
-            sse::send_string_logged(sse_out, encoded, "hierarchical::manager_plan_timeline").await;
+        let _ = sse::send_sse_control_payload_optional(
+            sse_out.as_ref(),
+            sse_control_mirror.as_ref(),
+            timeline_payload,
+            "hierarchical::manager_plan_timeline",
+        )
+        .await;
 
         // 2) Manager 开始（ThinkingTrace）
         let trace = events::build_manager_started_trace(task);
-        let encoded = sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace });
-        let _ = sse::send_string_logged(sse_out, encoded, "hierarchical::manager_started").await;
+        let _ = sse::send_sse_control_payload_optional(
+            sse_out.as_ref(),
+            sse_control_mirror.as_ref(),
+            sse::SsePayload::ThinkingTrace { trace },
+            "hierarchical::manager_started",
+        )
+        .await;
 
         // 3) Manager 完成（ThinkingTrace）
         let trace = events::build_manager_finished_trace(
             manager_output.sub_goals.len(),
             manager_output.execution_strategy.as_str(),
         );
-        let encoded_trace = sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace });
-        let _ =
-            sse::send_string_logged(sse_out, encoded_trace, "hierarchical::manager_finished").await;
+        let _ = sse::send_sse_control_payload_optional(
+            sse_out.as_ref(),
+            sse_control_mirror.as_ref(),
+            sse::SsePayload::ThinkingTrace { trace },
+            "hierarchical::manager_finished",
+        )
+        .await;
         // 不在此下发 `assistant_answer_phase`：须等子目标进度或最终汇总，由 execution / handle_execution_result 统一发送，避免「进入终答相却无正文」的错位。
     }
 

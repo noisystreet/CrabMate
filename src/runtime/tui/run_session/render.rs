@@ -127,7 +127,12 @@ pub(super) fn render_full(
     let scratch_guard = llm_scratch.lock().unwrap_or_else(|e| e.into_inner());
     let streaming_nonempty =
         !scratch_guard.reasoning.trim().is_empty() || !scratch_guard.content.trim().is_empty();
-    let chat_body = append_tui_streaming_tail(model.transcript.as_str(), &scratch_guard);
+    let mut transcript_display = model.transcript.clone();
+    if !model.control_plane_tail.is_empty() {
+        transcript_display.push_str("\n\n[SSE 控制面]\n");
+        transcript_display.push_str(model.control_plane_tail.as_str());
+    }
+    let chat_body = append_tui_streaming_tail(transcript_display.as_str(), &scratch_guard);
     drop(scratch_guard);
     let chat_block = panel_block(" 聊天 ", color, model.focus == TuiFocus::Chat);
     let chat_inner = chat_block_inner_area(panes.chat);
@@ -275,6 +280,7 @@ pub(super) struct ChatScrollbarHit {
 pub(super) fn chat_scrollbar_hit(
     chat_pane: Rect,
     transcript: &str,
+    control_plane_tail: &str,
     scratch: &TuiLlmStreamScratch,
 ) -> Option<ChatScrollbarHit> {
     let chat_inner = chat_block_inner_area(chat_pane);
@@ -282,7 +288,12 @@ pub(super) fn chat_scrollbar_hit(
     if sb_rect.width == 0 {
         return None;
     }
-    let chat_body = append_tui_streaming_tail(transcript, scratch);
+    let mut transcript_display = transcript.to_string();
+    if !control_plane_tail.is_empty() {
+        transcript_display.push_str("\n\n[SSE 控制面]\n");
+        transcript_display.push_str(control_plane_tail);
+    }
+    let chat_body = append_tui_streaming_tail(transcript_display.as_str(), scratch);
     let tw = text_rect.width.max(1);
     let th = text_rect.height.max(1);
     let rows = estimate_wrapped_line_rows(chat_body.as_str(), tw);

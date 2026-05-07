@@ -16,7 +16,6 @@ use crate::conversation_store::{
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::types::{CommandApprovalDecision, Message};
 
-use super::http_types::tasks::TasksData;
 use crate::sse::SseStreamHub;
 
 /// 与 `chat_handlers::normalize_client_conversation_id` 及存储上限对齐。
@@ -75,7 +74,6 @@ pub(crate) struct AppStateWebAux {
     pub(crate) approval_sessions:
         Arc<tokio::sync::RwLock<HashMap<String, mpsc::Sender<CommandApprovalDecision>>>>,
     pub(crate) long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
-    pub(crate) web_tasks_by_workspace: Arc<tokio::sync::RwLock<HashMap<String, TasksData>>>,
     pub(crate) llm_models_health_cache:
         Arc<std::sync::Mutex<Option<crate::health::CachedLlmModelsHealthProbe>>>,
     pub(crate) sse_stream_hub: Arc<SseStreamHub>,

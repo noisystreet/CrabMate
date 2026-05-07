@@ -322,6 +322,7 @@ struct ParallelEmitOrderedParams<'a> {
     cfg: &'a Arc<AgentConfig>,
     tool_outcome_recorder: &'a Arc<crate::tool_stats::ToolOutcomeRecorder>,
     out: Option<&'a tokio::sync::mpsc::Sender<String>>,
+    sse_control_mirror: Option<crate::sse::SseControlMirror>,
     clarification_questionnaire_hook:
         Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
     echo_terminal_transcript: bool,
@@ -341,11 +342,14 @@ async fn parallel_emit_ordered_tool_results(
         cfg,
         tool_outcome_recorder,
         out,
+        sse_control_mirror,
         clarification_questionnaire_hook,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
         tool_result_envelope_v1,
     } = p;
+
+    let sse_mirror_ref = sse_control_mirror.as_ref();
 
     for tc in tool_calls {
         if abort_tool_batch_if_sse_closed(
@@ -358,6 +362,7 @@ async fn parallel_emit_ordered_tool_results(
         }
         emit_tool_call_summary_sse(
             out,
+            sse_mirror_ref,
             cfg.as_ref(),
             tc.id.as_str(),
             &tc.function.name,
@@ -367,6 +372,7 @@ async fn parallel_emit_ordered_tool_results(
         .await;
         emit_timeline_log_sse(
             out,
+            sse_mirror_ref,
             "tool_step_started",
             tc.function.name.clone(),
             Some(format!(
@@ -394,6 +400,7 @@ async fn parallel_emit_ordered_tool_results(
                 cfg,
                 tool_outcome_recorder,
                 out,
+                sse_control_mirror: sse_control_mirror.clone(),
                 clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
                 echo_terminal_transcript,
                 terminal_tool_display_max_chars,
@@ -445,7 +452,10 @@ pub(super) async fn execute_tools_parallel(
         sync_default_sandbox_backend,
         readonly_tool_ttl_cache: _,
         clarification_questionnaire_hook,
+        sse_control_mirror,
     } = ctx;
+
+    let sse_mirror_parallel = sse_control_mirror.clone();
 
     let sandbox_backend = Arc::clone(&sync_default_sandbox_backend);
 
@@ -508,6 +518,7 @@ pub(super) async fn execute_tools_parallel(
         cfg,
         tool_outcome_recorder: &tool_outcome_recorder,
         out,
+        sse_control_mirror: sse_mirror_parallel,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
         tool_result_envelope_v1,

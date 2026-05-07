@@ -339,7 +339,6 @@ async fn run_serve_branch(args: ServeBranchArgs<'_>) -> Result<(), Box<dyn std::
         aux: web::AppStateWebAux {
             approval_sessions: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             long_term_memory,
-            web_tasks_by_workspace: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             llm_models_health_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
             sse_stream_hub,
             process_handles: Arc::clone(&process_handles),

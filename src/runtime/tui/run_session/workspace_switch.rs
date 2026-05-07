@@ -3,11 +3,12 @@
 use std::sync::{Arc, Mutex};
 
 use crate::config::SharedAgentConfig;
+use crate::process_handles::ProcessHandles;
 use crate::runtime::workspace_session;
 
 use super::{
-    TuiModel, build_tui_session_sidebar, build_tui_workspace_sidebar, tui_header_summary,
-    tui_status_bar_with_run, tui_status_chips_line,
+    TuiModel, build_tui_session_sidebar, tui_header_summary, tui_status_bar_with_run,
+    tui_status_chips_line, workspace_sidebar_extra,
 };
 
 pub(super) struct TuiWorkspaceUiSwitch<'a> {
@@ -18,6 +19,7 @@ pub(super) struct TuiWorkspaceUiSwitch<'a> {
     pub(super) message_count: usize,
     pub(super) tool_count: usize,
     pub(super) cli_no_stream: bool,
+    pub(super) process_handles: &'a Arc<ProcessHandles>,
 }
 
 pub(super) async fn tui_event_workspace_switch(raw: String, ctx: TuiWorkspaceUiSwitch<'_>) {
@@ -29,6 +31,7 @@ pub(super) async fn tui_event_workspace_switch(raw: String, ctx: TuiWorkspaceUiS
         message_count,
         tool_count,
         cli_no_stream,
+        process_handles,
     } = ctx;
     if let Err(msg) = tui_apply_workspace_switch(
         raw,
@@ -40,6 +43,7 @@ pub(super) async fn tui_event_workspace_switch(raw: String, ctx: TuiWorkspaceUiS
             message_count,
             tool_count,
             cli_no_stream,
+            process_handles,
         },
     )
     .await
@@ -58,6 +62,7 @@ pub(super) struct TuiWorkspaceApplyParams<'a> {
     pub(super) message_count: usize,
     pub(super) tool_count: usize,
     pub(super) cli_no_stream: bool,
+    pub(super) process_handles: &'a Arc<ProcessHandles>,
 }
 
 pub(super) async fn tui_apply_workspace_switch(
@@ -72,6 +77,7 @@ pub(super) async fn tui_apply_workspace_switch(
         message_count,
         tool_count,
         cli_no_stream,
+        process_handles,
     } = p;
     let new_root = {
         let cfg = cfg_holder.read().await;
@@ -91,7 +97,15 @@ pub(super) async fn tui_apply_workspace_switch(
         message_count,
         sqlite_nav.as_deref(),
     );
-    let right = build_tui_workspace_sidebar(work_dir.as_path(), tool_count, cli_no_stream);
+    let right = workspace_sidebar_extra::build_tui_workspace_sidebar_extended(
+        work_dir.as_path(),
+        tool_count,
+        cli_no_stream,
+        process_handles,
+        cfg_holder,
+        sqlite_nav.as_deref(),
+    )
+    .await;
     let chips = tui_status_chips_line(cfg_holder, agent_role_owned).await;
     let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
     g.header_line = new_header;

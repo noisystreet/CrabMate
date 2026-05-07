@@ -25,9 +25,11 @@ mod render;
 mod session_loop;
 mod sqlite_session;
 mod sqlite_slash;
+mod sse_mirror;
 mod submit_ev;
 mod transcript;
 mod workspace_modal;
+mod workspace_sidebar_extra;
 mod workspace_switch;
 
 use std::collections::VecDeque;
@@ -44,6 +46,7 @@ use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::config::{AgentConfig, SharedAgentConfig};
+use crate::process_handles::ProcessHandles;
 use crate::runtime::cli::{
     CliMainInvocationCommon, ReplAfterUserMessageEnqueuedCb, ReplSlashFollowupCtx,
     ReplSlashHandled, ReplSlashSharedHandles, cli_effective_work_dir,
@@ -356,6 +359,8 @@ struct TuiModel {
     workspace_modal: Option<workspace_modal::TuiWorkspaceModalState>,
     /// 已启用 **`conversation_store_sqlite_path`** 时当前 **`conversation_id`**（左栏与会话命令同源）。
     sqlite_conversation_id: Option<String>,
+    /// 本轮 SSE 控制面镜像（无 HTTP 通道时与 Web `SsePayload` 对齐）。
+    control_plane_tail: String,
 }
 
 struct TuiSlashUiRefresh<'a> {
@@ -367,6 +372,7 @@ struct TuiSlashUiRefresh<'a> {
     tool_count: usize,
     cli_no_stream: bool,
     captured: Vec<String>,
+    process_handles: &'a Arc<ProcessHandles>,
 }
 
 pub(super) struct TuiSlashSubmit<'a> {
@@ -381,6 +387,7 @@ pub(super) struct TuiSlashSubmit<'a> {
     slash_handles: &'a ReplSlashSharedHandles,
     model: &'a Arc<Mutex<TuiModel>>,
     handoff_tx: &'a std::sync::mpsc::Sender<TuiTerminalHandoffOp>,
+    process_handles: &'a Arc<ProcessHandles>,
 }
 
 pub(super) async fn tui_try_consume_slash_submit(
@@ -436,6 +443,7 @@ pub(super) async fn tui_try_consume_slash_submit(
         tool_count: ctx.tools.len(),
         cli_no_stream: ctx.cli_no_stream,
         captured,
+        process_handles: ctx.process_handles,
     })
     .await;
     Ok(true)
@@ -451,6 +459,7 @@ async fn tui_refresh_after_slash_capture(p: TuiSlashUiRefresh<'_>) {
         tool_count,
         cli_no_stream,
         captured,
+        process_handles,
     } = p;
     let new_header = tui_header_summary(work_dir);
     let tui_load_nav = cfg_holder.read().await.session_ui.tui_load_session_on_start;
@@ -464,7 +473,15 @@ async fn tui_refresh_after_slash_capture(p: TuiSlashUiRefresh<'_>) {
         message_count,
         sqlite_nav.as_deref(),
     );
-    let right = build_tui_workspace_sidebar(work_dir, tool_count, cli_no_stream);
+    let right = workspace_sidebar_extra::build_tui_workspace_sidebar_extended(
+        work_dir,
+        tool_count,
+        cli_no_stream,
+        process_handles,
+        cfg_holder,
+        sqlite_nav.as_deref(),
+    )
+    .await;
     let chips = tui_status_chips_line(cfg_holder, agent_role_owned).await;
     let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
     if !captured.is_empty() {
@@ -492,6 +509,7 @@ pub(in crate::runtime::tui::run_session) struct TuiAfterChatRoundRefresh<'a> {
     pub tool_count: usize,
     pub cli_no_stream: bool,
     pub sqlite_persist: Option<&'a mut Option<&'a mut sqlite_session::TuiSqliteSessionState>>,
+    pub process_handles: &'a Arc<ProcessHandles>,
 }
 
 async fn tui_refresh_after_chat_round(p: TuiAfterChatRoundRefresh<'_>) {
@@ -504,6 +522,7 @@ async fn tui_refresh_after_chat_round(p: TuiAfterChatRoundRefresh<'_>) {
         tool_count,
         cli_no_stream,
         sqlite_persist,
+        process_handles,
     } = p;
     let persist_note = if let Some(sqlite_slot) = sqlite_persist
         && let Some(sess) = sqlite_slot.as_mut()
@@ -526,7 +545,15 @@ async fn tui_refresh_after_chat_round(p: TuiAfterChatRoundRefresh<'_>) {
         messages.len(),
         sqlite_nav.as_deref(),
     );
-    let right = build_tui_workspace_sidebar(work_dir, tool_count, cli_no_stream);
+    let right = workspace_sidebar_extra::build_tui_workspace_sidebar_extended(
+        work_dir,
+        tool_count,
+        cli_no_stream,
+        process_handles,
+        cfg_holder,
+        sqlite_nav.as_deref(),
+    )
+    .await;
     let chips = tui_status_chips_line(cfg_holder, agent_role_owned).await;
     let transcript = transcript::messages_to_transcript(messages);
     let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
@@ -653,7 +680,15 @@ pub async fn run_tui_session(
         messages.len(),
         sqlite_id_nav,
     );
-    let right_summary = build_tui_workspace_sidebar(work_dir.as_path(), tools.len(), cli_no_stream);
+    let right_summary = workspace_sidebar_extra::build_tui_workspace_sidebar_extended(
+        work_dir.as_path(),
+        tools.len(),
+        cli_no_stream,
+        &process_handles,
+        cfg_holder,
+        sqlite_id_nav,
+    )
+    .await;
     let status_chips = tui_status_chips_line(cfg_holder, &agent_role_owned).await;
     let status_line = tui_status_bar_with_run(&status_chips, "就绪");
 
@@ -680,6 +715,7 @@ pub async fn run_tui_session(
         workspace_path_buf: work_dir.clone(),
         workspace_modal: None,
         sqlite_conversation_id: sqlite_sess.as_ref().map(|s| s.conversation_id.clone()),
+        control_plane_tail: String::new(),
     }));
 
     let clarify_shared = TuiClarificationShared {
@@ -823,9 +859,12 @@ fn tui_dispatch_mouse(
             }
             let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
             let scratch = llm_scratch.lock().unwrap_or_else(|e| e.into_inner());
-            if let Some(hit) =
-                render::chat_scrollbar_hit(layout.chat, g.transcript.as_str(), &scratch)
-            {
+            if let Some(hit) = render::chat_scrollbar_hit(
+                layout.chat,
+                g.transcript.as_str(),
+                g.control_plane_tail.as_str(),
+                &scratch,
+            ) {
                 g.focus = TuiFocus::Chat;
                 g.chat_scroll_y = render::scrollbar_row_to_scroll_y(mouse.row, &hit);
             }
@@ -834,9 +873,12 @@ fn tui_dispatch_mouse(
             let consumed_by_scrollbar = {
                 let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
                 let scratch = llm_scratch.lock().unwrap_or_else(|e| e.into_inner());
-                if let Some(hit) =
-                    render::chat_scrollbar_hit(layout.chat, g.transcript.as_str(), &scratch)
-                {
+                if let Some(hit) = render::chat_scrollbar_hit(
+                    layout.chat,
+                    g.transcript.as_str(),
+                    g.control_plane_tail.as_str(),
+                    &scratch,
+                ) {
                     if rect_contains(hit.rect, mouse.column, mouse.row) {
                         g.chat_scrollbar_dragging = true;
                         g.focus = TuiFocus::Chat;

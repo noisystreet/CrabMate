@@ -67,6 +67,7 @@ pub(super) async fn tui_run_submit_ev(
             work_dir: ctx.work_dir.as_path(),
             tool_count: ctx.tools.len(),
             cli_no_stream: ctx.cli_no_stream,
+            process_handles: &ctx.process_handles,
         },
     )
     .await?
@@ -88,6 +89,7 @@ pub(super) async fn tui_run_submit_ev(
             slash_handles: ctx.slash_handles,
             model: ctx.model,
             handoff_tx: ctx.handoff_tx,
+            process_handles: &ctx.process_handles,
         },
     )
     .await?
@@ -98,6 +100,11 @@ pub(super) async fn tui_run_submit_ev(
         let mut s = ctx.llm_scratch.lock().unwrap_or_else(|e| e.into_inner());
         s.clear();
     }
+    {
+        let mut m = ctx.model.lock().unwrap_or_else(|e| e.into_inner());
+        m.control_plane_tail.clear();
+    }
+    let sse_mirror_hook = super::sse_mirror::tui_sse_control_mirror(Arc::clone(ctx.model));
     let (on_user_enqueued, tool_running_hook) = tui_make_submit_hooks(ctx.model);
     repl_dispatch_chat_round(ReplDispatchChatRoundParams {
         input: trimmed,
@@ -119,6 +126,7 @@ pub(super) async fn tui_run_submit_ev(
         process_handles: Arc::clone(&ctx.process_handles),
         clarify_answers_for_next_user_message: Some(&ctx.clarify_shared.answers_merge),
         clarification_questionnaire_hook: Some(Arc::clone(&ctx.clarification_questionnaire_hook)),
+        sse_control_mirror: Some(sse_mirror_hook),
     })
     .await?;
     {
@@ -134,6 +142,7 @@ pub(super) async fn tui_run_submit_ev(
         tool_count: ctx.tools.len(),
         cli_no_stream: ctx.cli_no_stream,
         sqlite_persist: Some(&mut ctx.sqlite_session),
+        process_handles: &ctx.process_handles,
     })
     .await;
     Ok(TuiSubmitHandled::RanRound)
