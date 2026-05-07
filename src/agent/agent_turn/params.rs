@@ -369,6 +369,32 @@ impl RunLoopParams<'_> {
                 .or_else(|| self.ctx.core.cfg.llm.planner_model.as_deref())
         }
     }
+
+    /// 发往模型前的同步裁剪 / 可选摘要 / changelist 注入；并驱动 **`messages_revision`** 与可选 **`PerCoordinator`** 层缓存失效。
+    ///
+    /// 将 [`crate::agent::context_window::prepare_messages_for_model`] 与 `turn.messages` + `turn.messages_revision` 挂钩集中在一处，避免调用点漏传 revision。
+    pub(crate) async fn prepare_turn_messages_for_model(
+        &mut self,
+        per_coord_layer_cache: Option<&mut crate::agent::per_coord::PerCoordinator>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        crate::agent::context_window::prepare_messages_for_model(
+            self.ctx.core.llm_backend,
+            self.ctx.core.client,
+            self.ctx.core.api_key,
+            self.ctx.core.cfg.as_ref(),
+            self.turn.messages,
+            self.ctx
+                .attach
+                .workspace_changelist
+                .as_ref()
+                .map(|a| a.as_ref()),
+            crate::agent::context_window::PrepareMessagesForModelHooks {
+                per_coord_layer_cache,
+                run_loop_messages_revision: Some(&mut self.turn.messages_revision),
+            },
+        )
+        .await
+    }
 }
 
 #[cfg(test)]

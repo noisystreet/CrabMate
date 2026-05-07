@@ -121,31 +121,16 @@ async fn outer_loop_prepare_planner_context(
             p.turn.messages,
         );
     }
-    crate::agent::context_window::prepare_messages_for_model(
-        p.ctx.core.llm_backend,
-        p.ctx.core.client,
-        p.ctx.core.api_key,
-        p.ctx.core.cfg.as_ref(),
-        p.turn.messages,
-        p.ctx
-            .attach
-            .workspace_changelist
-            .as_ref()
-            .map(|a| a.as_ref()),
-        crate::agent::context_window::PrepareMessagesForModelHooks {
-            per_coord_layer_cache: Some(per_coord),
-            run_loop_messages_revision: Some(&mut p.turn.messages_revision),
-        },
-    )
-    .await
-    .map_err(|e| {
-        p.turn
-            .retain_messages(|m| !is_intent_gate_ephemeral_system(m));
-        RunAgentTurnError::Other {
-            phase: AgentTurnSubPhase::Planner,
-            message: e.to_string(),
-        }
-    })
+    p.prepare_turn_messages_for_model(Some(per_coord))
+        .await
+        .map_err(|e| {
+            p.turn
+                .retain_messages(|m| !is_intent_gate_ephemeral_system(m));
+            RunAgentTurnError::Other {
+                phase: AgentTurnSubPhase::Planner,
+                message: e.to_string(),
+            }
+        })
 }
 
 #[derive(Debug)]

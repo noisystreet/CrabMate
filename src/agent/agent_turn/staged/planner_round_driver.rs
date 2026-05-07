@@ -145,27 +145,12 @@ where
     p.turn
         .push_message(make_step_user_message(staged_plan_nl_followup_user_body()));
     let result: Result<(), RunAgentTurnError> = async {
-        crate::agent::context_window::prepare_messages_for_model(
-            p.ctx.core.llm_backend,
-            p.ctx.core.client,
-            p.ctx.core.api_key,
-            p.ctx.core.cfg.as_ref(),
-            p.turn.messages,
-            p.ctx
-                .attach
-                .workspace_changelist
-                .as_ref()
-                .map(|a| a.as_ref()),
-            crate::agent::context_window::PrepareMessagesForModelHooks {
-                per_coord_layer_cache: Some(per_coord),
-                run_loop_messages_revision: Some(&mut p.turn.messages_revision),
-            },
-        )
-        .await
-        .map_err(|e| RunAgentTurnError::Other {
-            phase: AgentTurnSubPhase::Planner,
-            message: e.to_string(),
-        })?;
+        p.prepare_turn_messages_for_model(Some(per_coord))
+            .await
+            .map_err(|e| RunAgentTurnError::Other {
+                phase: AgentTurnSubPhase::Planner,
+                message: e.to_string(),
+            })?;
         let stripped = messages_for_api_stripping_reasoning_skip_ui_separators(
             p.turn.messages.as_slice(),
             kimi_k2_5_vendor_requires_tool_call_reasoning(p.ctx.core.cfg.as_ref()),
