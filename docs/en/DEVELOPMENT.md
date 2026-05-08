@@ -170,12 +170,39 @@ Conceptual layers for discussion; **not** a single struct in code.
 4. **Resume from disk**: **`workspace_session`** replaces first **`system`** with **current** config (see module docs).  
 5. **Each agent turn**: **L7** (if any) → **`prepare_turn_messages_for_model`** → **L8** when staged planning runs; **L9** per config.
 
+#### Workspace + user-query dynamic assembly: expected benefit vs risk
+
+**Relation to “better agent behavior”**: Often **yes**, when dynamic blocks **add relevance and remove noise**, avoid stale facts, and respect **P0** above—but **not** “more dynamic always wins.”
+
+**Potential benefits**
+
+- **Less irrelevant instruction mass**: Very long static **L0–L1** text dilutes focus; tailoring to **project shape** and **this turn’s intent** usually helps “do the right thing now.”
+- **Stronger grounding**: Workspace-specific conventions under token caps can reduce bogus paths/commands (still must match **`tool_registry`** allowlists and workspace trust boundaries—see **`security-sensitive-surface`**).
+- **Better budget use**: Under **`cursor_rules_max_chars`**, **`skills_*`**, **`context_*`**, replacing generic prose with turn-relevant snippets often beats stuffing everything into **`system`**.
+
+**Main risks**
+
+- **Wrong retrieval**: Bad intent or stale profile → wrong premises; need **degrade gracefully** (short fallback, don’t inject junk).
+- **Jitter / hard to reproduce**: Huge swing in first **`system`** every turn hurts stability and debugging.
+- **Latency & cost**: Extra disk/embeddings/full scans delay first tokens; long dynamic blocks squeeze history and **tool** payloads.
+- **Weakening stable discipline**: Rewriting the entire first **`system`** every turn can wash out safety/format/tool-boundary text—keep a **short stable base (L0 + needed L1)** and use **L5 / L6** for variability.
+
+**Mapping to L0–L9 today**
+
+- **Already workspace + user driven**: Web **L5** (**`skills_top_k`** over **`.crabmate/skills`** using the **current user message**, **`turn_build`** / **`builtin_skills`**); **L6** first-turn profile / living docs / deps as a **dedicated `user`** (**`conversation_turn_bootstrap`**); **L1** rules at **finalize** (**`.cursor/rules`**, optional **`AGENTS.md`**). **`POST /config/reload`** refreshes most fields (secrets excluded—see this file).
+- **Not provided**: A single “per-request user-defined hook” to rewrite first **`system`**; stronger dynamics belong in **Possible evolutions** or code around **`build_messages_for_turn`** / CLI first-**`system`** (same semantics).
+
+**Practice**
+
+- Keep **`system`** for stable persona, safety, and tool contracts; use **L6** and **L5** for volatile / retrieval-style content; avoid duplicating the same long facts in **`system`** and **L6 `user`**.
+
 #### Possible evolutions
 
 - Block **registry** (id → predicate → order) to centralize scattered coach strings.  
 - Explicit **template variables** for role id, workspace root hints, etc.  
 - **Version fingerprint** in logs when prompt files change.  
-- **Regression**: sanitized golden substrings for assembled prompts.
+- **Regression**: sanitized golden substrings for assembled prompts.  
+- **Unified entry for strong dynamics**: “workspace snapshot + user query → extra **`system` / `user`** blocks” should live in one layer shared by Web **`build_messages_for_turn`** and CLI first-**`system`**, with degrade paths and observability (see “Workspace + user-query dynamic assembly” above).
 
 For config keys and env vars, **`docs/en/CONFIGURATION.md`** remains authoritative.
 

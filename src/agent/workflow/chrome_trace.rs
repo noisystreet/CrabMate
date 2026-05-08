@@ -1,6 +1,6 @@
 //! 将 [`super::types::WorkflowTraceEvent`] 转为 Chrome **Trace Event Format**（JSON 数组），供 `chrome://tracing` 或 [Perfetto](https://ui.perfetto.dev/) 打开。
 //!
-//! 由环境变量 **`CRABMATE_WORKFLOW_CHROME_TRACE_DIR`**（或 **`CM_WORKFLOW_CHROME_TRACE_DIR`**）指定输出目录时，在每次 DAG 执行结束后写入 `workflow-{run_id}-{unix_ms}.json`。
+//! 由环境变量 **`CM_WORKFLOW_CHROME_TRACE_DIR`**（与其它 CrabMate 覆盖项同为 **`CM_*`**）指定输出目录时，在每次 DAG 执行结束后写入 `workflow-{run_id}-{unix_ms}.json`。
 //! **`ts` / `dur` 为微秒**（`displayTimeUnit: "us"`）；时间轴以首条 trace 事件的 `timestamp_ms` 为 0。
 
 use super::types::WorkflowTraceEvent;
@@ -8,8 +8,7 @@ use serde_json::{Value, json};
 use std::io::Write;
 use std::path::Path;
 
-const ENV_PRIMARY: &str = "CRABMATE_WORKFLOW_CHROME_TRACE_DIR";
-const ENV_ALIAS: &str = "CM_WORKFLOW_CHROME_TRACE_DIR";
+const ENV_WORKFLOW_CHROME_TRACE_DIR: &str = "CM_WORKFLOW_CHROME_TRACE_DIR";
 
 /// 若 `merge_into` 为 `Some`，将工作流事件追加到该缓冲并返回 **`None`**（不写独立 `workflow-*.json`）。
 /// 否则若环境变量设置了非空目录，则将 `trace` 写入该目录下的 JSON 文件。
@@ -22,16 +21,14 @@ pub(crate) fn maybe_write_workflow_chrome_trace(
         return None;
     }
 
-    let dir_raw = std::env::var_os(ENV_PRIMARY)
-        .or_else(|| std::env::var_os(ENV_ALIAS))
-        .and_then(|s| {
-            let t = s.to_string_lossy().trim().to_string();
-            if t.is_empty() {
-                None
-            } else {
-                Some(std::path::PathBuf::from(t))
-            }
-        })?;
+    let dir_raw = std::env::var_os(ENV_WORKFLOW_CHROME_TRACE_DIR).and_then(|s| {
+        let t = s.to_string_lossy().trim().to_string();
+        if t.is_empty() {
+            None
+        } else {
+            Some(std::path::PathBuf::from(t))
+        }
+    })?;
 
     let first = trace.first()?;
     let workflow_run_id = first.workflow_run_id;
