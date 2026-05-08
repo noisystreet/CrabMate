@@ -42,15 +42,38 @@ impl SectionPaint {
     }
 }
 
+/// 终态 Markdown：在同一同步段落写入 DOM，避免尾随后还需再等一帧；与后续 rAF 重复写入同内容无害。
+/// 若节点尚未挂载则返回 `false`，调用方应保留队列供 rAF 稍后绘制。
+fn flush_answer_body_html_now(answer_body_ref: &NodeRef<Div>, html: &str) -> bool {
+    let Some(node) = answer_body_ref.try_get_untracked().flatten() else {
+        return false;
+    };
+    if let Some(he) = node.dyn_ref::<web_sys::HtmlElement>() {
+        he.set_inner_html(html);
+        return true;
+    }
+    false
+}
+
+/// `stream_gen_gate = Some(expected)`：仅当互斥元内 `stream_throttle_gen == expected` 时写入队列（尾随定时器路径），
+/// 防止终态 Effect 已递增世代后仍用陈旧快照覆盖 Markdown。
+/// `None`：终态或非异步路径，不设门禁。
 fn enqueue_answer_body_paint(
     paint_arc: &Arc<Mutex<SectionPaint>>,
     answer_body_ref: &NodeRef<Div>,
     html: String,
+    stream_gen_gate: Option<u64>,
 ) {
     let paint_run = Arc::clone(paint_arc);
     let answer_body_ref = answer_body_ref.clone();
     {
         let mut g = paint_arc.lock().expect("answer paint mutex poisoned");
+        if let Some(expected) = stream_gen_gate {
+            if g.stream_throttle_gen != expected {
+                return;
+            }
+            g.last_stream_paint_ms = js_performance_now_ms();
+        }
         g.latest_html = html;
         if g.raf_scheduled {
             return;
@@ -63,6 +86,10 @@ fn enqueue_answer_body_paint(
             g.raf_scheduled = false;
             g.take_html()
         };
+        // 若已被终态同步 flush 清空队列，避免 `set_inner_html("")` 抹掉已渲染的 Markdown。
+        if html.is_empty() {
+            return;
+        }
         // rAF 可能在消息行已卸载后执行；此时 NodeRef 已 dispose，`get_untracked` 会 panic。
         let Some(node) = answer_body_ref.try_get_untracked().flatten() else {
             return;
@@ -127,7 +154,12 @@ pub fn assistant_markdown_collapsible_view(
 
             if !is_loading {
                 let html = fragment_to_chat_safe_html(&text_src, md_on);
-                enqueue_answer_body_paint(&paint_arc, &answer_body_ref, html);
+                enqueue_answer_body_paint(&paint_arc, &answer_body_ref, html.clone(), None);
+                if flush_answer_body_html_now(&answer_body_ref, html.as_str()) {
+                    // 避免同一帧稍后 rAF 再写一遍相同 HTML；节点未挂载时保留队列由 rAF 绘制。
+                    let mut g = paint_arc.lock().expect("answer paint mutex poisoned");
+                    let _ = g.take_html();
+                }
                 return;
             }
 
@@ -148,7 +180,7 @@ pub fn assistant_markdown_collapsible_view(
                     g.last_stream_paint_ms = now;
                 }
                 let html = fragment_to_chat_safe_html(&text_src, md_on);
-                enqueue_answer_body_paint(&paint_arc, &answer_body_ref, html);
+                enqueue_answer_body_paint(&paint_arc, &answer_body_ref, html, None);
                 return;
             }
 
@@ -167,6 +199,12 @@ pub fn assistant_markdown_collapsible_view(
 
             spawn_local(async move {
                 TimeoutFuture::new(wait_ms).await;
+                {
+                    let g = paint_arc_timer.lock().expect("answer paint mutex poisoned");
+                    if g.stream_throttle_gen != throttle_gen {
+                        return;
+                    }
+                }
                 let snap = sessions_t.with(|list| {
                     let aid = active_id_t.get_untracked();
                     let loc = locale_t.get_untracked();
@@ -179,23 +217,14 @@ pub fn assistant_markdown_collapsible_view(
                 if !s.is_loading {
                     return;
                 }
-                {
-                    let g = paint_arc_timer.lock().expect("answer paint mutex poisoned");
-                    if g.stream_throttle_gen != throttle_gen {
-                        return;
-                    }
-                }
                 let md_on_t = markdown_render_t.get_untracked() && !s.is_loading;
                 let html = fragment_to_chat_safe_html(&s.display_text, md_on_t);
-                let now_after = js_performance_now_ms();
-                {
-                    let mut g = paint_arc_timer.lock().expect("answer paint mutex poisoned");
-                    if g.stream_throttle_gen != throttle_gen {
-                        return;
-                    }
-                    g.last_stream_paint_ms = now_after;
-                }
-                enqueue_answer_body_paint(&paint_arc_timer, &answer_body_ref_timer, html);
+                enqueue_answer_body_paint(
+                    &paint_arc_timer,
+                    &answer_body_ref_timer,
+                    html,
+                    Some(throttle_gen),
+                );
             });
         }
     });
