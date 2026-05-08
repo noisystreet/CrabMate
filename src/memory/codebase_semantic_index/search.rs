@@ -256,6 +256,34 @@ fn search_index_fts_only_branch(
 }
 
 #[cfg(feature = "fastembed")]
+fn semantic_search_embed_query_vector(query: &str) -> Result<Vec<f32>, String> {
+    let mut embedder = ensure_embedder()?;
+    let q_emb = embedder
+        .embed(vec![format!("query: {}", query)], None)
+        .map_err(|e| format!("查询嵌入失败: {}", e))?;
+    q_emb
+        .into_iter()
+        .next()
+        .ok_or_else(|| "查询嵌入失败: 空结果".to_string())
+}
+
+#[cfg(feature = "fastembed")]
+fn semantic_heap_offer_top_k(
+    heap: &mut BinaryHeap<Reverse<ScoredChunk>>,
+    pool_k: usize,
+    item: ScoredChunk,
+) {
+    if heap.len() < pool_k {
+        heap.push(Reverse(item));
+    } else if let Some(Reverse(worst)) = heap.peek()
+        && item.score > worst.score
+    {
+        heap.pop();
+        heap.push(Reverse(item));
+    }
+}
+
+#[cfg(feature = "fastembed")]
 fn search_index_semantic_fastembed(
     conn: &Connection,
     ws_key: &str,
@@ -270,16 +298,9 @@ fn search_index_semantic_fastembed(
         q.top_k
     };
 
-    let mut embedder = match ensure_embedder() {
-        Ok(m) => m,
+    let qv = match semantic_search_embed_query_vector(query) {
+        Ok(v) => v,
         Err(e) => return e,
-    };
-    let q_emb = match embedder.embed(vec![format!("query: {}", query)], None) {
-        Ok(mut v) => v.pop(),
-        Err(e) => return format!("查询嵌入失败: {}", e),
-    };
-    let Some(qv) = q_emb else {
-        return "查询嵌入失败: 空结果".to_string();
     };
 
     let mut stmt = match conn.prepare_cached(&format!(
@@ -340,14 +361,7 @@ fn search_index_semantic_fastembed(
             text,
         };
 
-        if heap.len() < pool_k {
-            heap.push(Reverse(item));
-        } else if let Some(Reverse(worst)) = heap.peek()
-            && item.score > worst.score
-        {
-            heap.pop();
-            heap.push(Reverse(item));
-        }
+        semantic_heap_offer_top_k(&mut heap, pool_k, item);
     }
 
     let mut pool: Vec<ScoredChunk> = heap.into_iter().map(|r| r.0).collect();

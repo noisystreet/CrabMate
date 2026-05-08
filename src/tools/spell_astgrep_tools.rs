@@ -179,6 +179,41 @@ pub fn typos_check(args_json: &str, workspace_root: &Path, max_output_len: usize
     run_and_format(cmd, max_output_len, "typos")
 }
 
+fn codespell_apply_optional_cli_flags(
+    v: &serde_json::Value,
+    cmd: &mut Command,
+    base: &Path,
+    dictionary_paths: &[String],
+) -> Result<(), String> {
+    if let Some(skip) = v.get("skip").and_then(|x| x.as_str()).map(str::trim) {
+        if skip.len() > 512 || skip.contains("..") || skip.contains('\n') {
+            return Err("错误：skip 过长或含非法字符".to_string());
+        }
+        if !skip.is_empty() {
+            cmd.arg("--skip").arg(skip);
+        }
+    }
+    if let Some(list) = v
+        .get("ignore_words_list")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+    {
+        if list.len() > 512 || list.contains('\n') {
+            return Err("错误：ignore_words_list 过长或含非法字符".to_string());
+        }
+        if !list.is_empty() {
+            cmd.arg("-L").arg(list);
+        }
+    }
+    for dict in dictionary_paths {
+        if !base.join(dict).is_file() {
+            return Err(format!("错误：dictionary_paths 文件不存在：{}", dict));
+        }
+        cmd.arg("-I").arg(dict);
+    }
+    Ok(())
+}
+
 /// `codespell`：默认路径同 typos；**禁止**传入写回参数。使用 `-q 3` 减少噪音。
 pub fn codespell_check(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
     let parsed = match crate::tools::parse_args_json(args_json) {
@@ -211,31 +246,8 @@ pub fn codespell_check(args_json: &str, workspace_root: &Path, max_output_len: u
 
     let mut cmd = Command::new("codespell");
     cmd.arg("-q").arg("3").current_dir(&base);
-    if let Some(skip) = v.get("skip").and_then(|x| x.as_str()).map(str::trim) {
-        if skip.len() > 512 || skip.contains("..") || skip.contains('\n') {
-            return "错误：skip 过长或含非法字符".to_string();
-        }
-        if !skip.is_empty() {
-            cmd.arg("--skip").arg(skip);
-        }
-    }
-    if let Some(list) = v
-        .get("ignore_words_list")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-    {
-        if list.len() > 512 || list.contains('\n') {
-            return "错误：ignore_words_list 过长或含非法字符".to_string();
-        }
-        if !list.is_empty() {
-            cmd.arg("-L").arg(list);
-        }
-    }
-    for dict in &dictionary_paths {
-        if !base.join(dict).is_file() {
-            return format!("错误：dictionary_paths 文件不存在：{}", dict);
-        }
-        cmd.arg("-I").arg(dict);
+    if let Err(e) = codespell_apply_optional_cli_flags(&v, &mut cmd, &base, &dictionary_paths) {
+        return e;
     }
     for p in &paths {
         cmd.arg(p);
