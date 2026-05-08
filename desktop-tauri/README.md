@@ -21,7 +21,7 @@
 
 默认会执行 `crabmate` 命令启动后端。若命令不在 PATH，可设置：
 
-`CRABMATE_DESKTOP_BACKEND_BIN=/path/to/crabmate`
+`CM_DESKTOP_BACKEND_BIN=/path/to/crabmate`
 
 推荐的本地开发启动步骤：
 
@@ -36,7 +36,7 @@ cargo build
 
 ```bash
 cd /path/to/agent_demo/desktop-tauri/src-tauri
-CRABMATE_DESKTOP_BACKEND_BIN=/path/to/agent_demo/target/debug/crabmate cargo tauri dev
+CM_DESKTOP_BACKEND_BIN=/path/to/agent_demo/target/debug/crabmate cargo tauri dev
 ```
 
 若本机尚未安装 Tauri CLI，可先执行：

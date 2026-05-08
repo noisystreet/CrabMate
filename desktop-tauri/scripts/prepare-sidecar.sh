@@ -11,8 +11,8 @@ if [[ -z "${target_triple}" ]]; then
   exit 1
 fi
 
-if [[ -n "${CRABMATE_DESKTOP_BACKEND_BIN:-}" ]]; then
-  source_bin="${CRABMATE_DESKTOP_BACKEND_BIN}"
+if [[ -n "${CM_DESKTOP_BACKEND_BIN:-}" ]]; then
+  source_bin="${CM_DESKTOP_BACKEND_BIN}"
 else
   # Prefer release build, then gracefully fall back to debug for local packaging convenience.
   if [[ -f "${repo_root}/target/release/crabmate" ]]; then
@@ -23,7 +23,7 @@ else
     echo "backend binary not found in:" >&2
     echo "  - ${repo_root}/target/release/crabmate" >&2
     echo "  - ${repo_root}/target/debug/crabmate" >&2
-    echo "build backend first (cargo build or cargo build --release) or set CRABMATE_DESKTOP_BACKEND_BIN" >&2
+    echo "build backend first (cargo build or cargo build --release) or set CM_DESKTOP_BACKEND_BIN" >&2
     exit 1
   fi
 fi

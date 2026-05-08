@@ -29,7 +29,7 @@
 # sse_tool_call_include_arguments = false
 # 进程内工具统计 → 新会话 system 附录（默认关）：agent_tool_stats_enabled = true ；CM_TOOL_STATS_* 见 docs/配置说明.md
 # agent_tool_stats_enabled = false
-# 整请求 Chrome Trace：export CRABMATE_REQUEST_CHROME_TRACE_DIR=/tmp/crabmate-turns（见 docs/配置说明.md）
+# 整请求 Chrome Trace：export CM_REQUEST_CHROME_TRACE_DIR=/tmp/crabmate-turns（见 docs/配置说明.md）
 # 工作流 Chrome Trace：export CM_WORKFLOW_CHROME_TRACE_DIR=/tmp/crabmate-traces（与上项同时设则工作流事件并入 turn-*.json）
 # materialize_deepseek_dsml_tool_calls = true
 # 首条 system 末附思考纪律附录（默认 true）；正文默认文件 config/prompts/thinking_avoid_echo_appendix.md（与 system_prompt_file 同规则解析）

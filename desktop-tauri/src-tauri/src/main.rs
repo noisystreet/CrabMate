@@ -37,7 +37,7 @@ fn backend_binary_name() -> &'static str {
 }
 
 fn resolve_backend_workdir() -> PathBuf {
-    if let Ok(dir) = std::env::var("CRABMATE_DESKTOP_WORKDIR") {
+    if let Ok(dir) = std::env::var("CM_DESKTOP_WORKDIR") {
         if !dir.trim().is_empty() {
             return PathBuf::from(dir);
         }
@@ -70,7 +70,7 @@ fn try_spawn_backend(backend_workdir: &std::path::Path) -> Result<Child, String>
     let mut attempted = Vec::new();
     let mut last_err = String::new();
 
-    if let Ok(explicit) = std::env::var("CRABMATE_DESKTOP_BACKEND_BIN")
+    if let Ok(explicit) = std::env::var("CM_DESKTOP_BACKEND_BIN")
         && !explicit.trim().is_empty()
     {
         attempted.push(format!("env: {explicit}"));

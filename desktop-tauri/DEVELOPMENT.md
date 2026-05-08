@@ -27,14 +27,14 @@
 如果系统 PATH 中没有 `crabmate`，请设置环境变量：
 
 ```bash
-export CRABMATE_DESKTOP_BACKEND_BIN=/absolute/path/to/crabmate
+export CM_DESKTOP_BACKEND_BIN=/absolute/path/to/crabmate
 ```
 
 ### 1.4 后端路径解析优先级（env + sidecar + PATH）
 
 桌面端当前按以下顺序尝试拉起后端：
 
-1. `CRABMATE_DESKTOP_BACKEND_BIN`（环境变量显式路径）
+1. `CM_DESKTOP_BACKEND_BIN`（环境变量显式路径）
 2. sidecar 常见位置（相对桌面可执行文件目录）：
    - `<exe_dir>/crabmate`（Windows 为 `crabmate.exe`）
    - `<exe_dir>/sidecar/crabmate`
@@ -43,7 +43,7 @@ export CRABMATE_DESKTOP_BACKEND_BIN=/absolute/path/to/crabmate
 
 建议：
 
-- 开发环境优先使用 `CRABMATE_DESKTOP_BACKEND_BIN`，路径最明确
+- 开发环境优先使用 `CM_DESKTOP_BACKEND_BIN`，路径最明确
 - 打包发布时优先 sidecar 路径，避免依赖用户 PATH
 
 ### 1.5 常用开发命令
@@ -64,7 +64,7 @@ cargo check
 原因：
 
 - `crabmate` 不在 PATH
-- `CRABMATE_DESKTOP_BACKEND_BIN` 路径错误
+- `CM_DESKTOP_BACKEND_BIN` 路径错误
 - 可执行权限不足
 - sidecar 未随包或位置不符合预期
 
@@ -77,7 +77,7 @@ ls -l /absolute/path/to/crabmate
 
 并按“路径解析优先级”逐层确认：
 
-1. `echo $CRABMATE_DESKTOP_BACKEND_BIN`
+1. `echo $CM_DESKTOP_BACKEND_BIN`
 2. 检查 sidecar 位置是否存在后端可执行文件
 3. 再检查 PATH 里的 `crabmate`
 
@@ -191,7 +191,7 @@ export http_proxy=http://localhost:8118 && export https_proxy=http://localhost:8
   - Linux/macOS: `crabmate`
   - Windows: `crabmate.exe`
 - **三平台都能命中同一套回退顺序**
-  - env：`CRABMATE_DESKTOP_BACKEND_BIN`
+  - env：`CM_DESKTOP_BACKEND_BIN`
   - sidecar：`<exe_dir>/crabmate`、`<exe_dir>/sidecar/crabmate`、`<exe_dir>/resources/sidecar/crabmate`
   - PATH：`crabmate` / `crabmate.exe`
 - **打包产物内存在 sidecar 文件**
@@ -211,7 +211,7 @@ export http_proxy=http://localhost:8118 && export https_proxy=http://localhost:8
 
 脚本行为：
 
-1. 优先读取 `CRABMATE_DESKTOP_BACKEND_BIN`
+1. 优先读取 `CM_DESKTOP_BACKEND_BIN`
 2. 未设置时回退到 `<repo>/target/release/crabmate`
 3. 复制为 `desktop-tauri/binaries/crabmate-<host-target-triple>`
 

@@ -85,7 +85,7 @@ cargo build
 
 ```bash
 cd /path/to/agent_demo/desktop-tauri/src-tauri
-CRABMATE_DESKTOP_BACKEND_BIN=/path/to/agent_demo/target/debug/crabmate cargo tauri dev
+CM_DESKTOP_BACKEND_BIN=/path/to/agent_demo/target/debug/crabmate cargo tauri dev
 ```
 
 3. 若未安装 Tauri CLI，先安装：

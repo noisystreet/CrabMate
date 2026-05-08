@@ -95,7 +95,7 @@ pub(crate) struct RunLoopAttach<'a> {
 
 /// Chrome trace、结构化 tracing、HTTP 审计与进程级句柄。
 pub(crate) struct RunLoopObs {
-    /// 整请求 Chrome trace（`CRABMATE_REQUEST_CHROME_TRACE_DIR`）；`None` 关闭。
+    /// 整请求 Chrome trace（`CM_REQUEST_CHROME_TRACE_DIR`）；`None` 关闭。
     pub request_chrome_trace: Option<std::sync::Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     /// Web `/chat*`：结构化日志根 span（`job_id` / `conversation_id` / 外层轮次 / 当前工具）；CLI 等为 `None`。
     pub tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,

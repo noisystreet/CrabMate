@@ -76,7 +76,7 @@ mod tests {
 
     #[test]
     fn check_nonexistent_var() {
-        let out = run(r#"{"names":["CRABMATE_TEST_NONEXISTENT_VAR_XYZ"]}"#);
+        let out = run(r#"{"names":["CM_TEST_NONEXISTENT_VAR_XYZ"]}"#);
         assert!(out.contains("未设置"), "out={}", out);
         assert!(out.contains("0/1"));
     }

@@ -2,6 +2,8 @@
 
 **状态**：已实现最小可用路径；后续可扩展企微/钉钉等（见 **`docs/design/web_api_integration.md`**）。
 
+**环境变量命名**：与主仓库一致使用 **`CM_` 前缀** 连接 CrabMate（**`CM_BASE_URL`**、**`CM_WEB_API_BEARER_TOKEN`** 等）；旧名 **`CRABMATE_*`** 已不再读取。
+
 ## 作用
 
 独立二进制 **`crabmate-im-bridge`**（workspace crate **`crates/crabmate-im-bridge`**）：
@@ -19,8 +21,8 @@
 ```bash
 cargo build -p crabmate-im-bridge --release
 # 另一终端先启动 CrabMate serve，并配置好 web_api_bearer_token
-export CRABMATE_BASE_URL="http://127.0.0.1:8080"
-export CRABMATE_WEB_API_BEARER="YOUR_SHARED_BEARER"
+export CM_BASE_URL="http://127.0.0.1:8080"
+export CM_WEB_API_BEARER_TOKEN="YOUR_SHARED_BEARER"
 export FEISHU_APP_ID="cli_xxx"
 export FEISHU_APP_SECRET="YOUR_APP_SECRET"
 # 可选：与飞书「加密策略」中的 Encrypt Key 一致；**加密回调体解密**与 **`X-Lark-Signature`** 签名校验均依赖此值（URL 校验可能无签名头则跳过签名校验）

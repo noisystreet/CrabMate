@@ -22,7 +22,7 @@ fn default_command_timeout_secs() -> u64 {
     30
 }
 
-/// 由容器内 `crabmate tool-runner-internal` 读取（`CRABMATE_TOOL_RUNNER_CONFIG_FILE`）。
+/// 由容器内 `crabmate tool-runner-internal` 读取（`CM_TOOL_RUNNER_CONFIG_FILE`）。
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SandboxToolRunnerConfig {
     pub command_max_output_len: usize,
@@ -91,10 +91,10 @@ pub struct ToolInvocationLine {
     pub args_json: String,
 }
 
-/// 容器内入口：读 `CRABMATE_TOOL_RUNNER_CONFIG_FILE`，从 stdin 读一行 JSON，向 stdout 打印工具输出。
+/// 容器内入口：读 `CM_TOOL_RUNNER_CONFIG_FILE`，从 stdin 读一行 JSON，向 stdout 打印工具输出。
 pub fn tool_runner_internal_main() -> Result<(), String> {
-    let path = std::env::var("CRABMATE_TOOL_RUNNER_CONFIG_FILE")
-        .map_err(|_| "缺少环境变量 CRABMATE_TOOL_RUNNER_CONFIG_FILE".to_string())?;
+    let path = std::env::var("CM_TOOL_RUNNER_CONFIG_FILE")
+        .map_err(|_| "缺少环境变量 CM_TOOL_RUNNER_CONFIG_FILE".to_string())?;
     let raw = std::fs::read_to_string(&path)
         .map_err(|e| format!("读取工具运行器配置失败：{} ({})", e, path))?;
     let snap: SandboxToolRunnerConfig =

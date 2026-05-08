@@ -89,10 +89,7 @@ pub async fn run_tool_in_docker(
         ),
     ];
 
-    let env = vec![format!(
-        "CRABMATE_TOOL_RUNNER_CONFIG_FILE={}",
-        cfg_in_container
-    )];
+    let env = vec![format!("CM_TOOL_RUNNER_CONFIG_FILE={}", cfg_in_container)];
 
     let cmd = vec![
         crabmate_in_container.to_string(),

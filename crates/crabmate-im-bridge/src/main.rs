@@ -4,8 +4,9 @@
 //!
 //! | 变量 | 必填 | 说明 |
 //! |------|------|------|
-//! | `CRABMATE_BASE_URL` | 是 | CrabMate `serve` 根地址，如 `http://127.0.0.1:8080` |
-//! | `CRABMATE_WEB_API_BEARER` | 是 | 与 CrabMate **`web_api_bearer_token`** / **`CM_WEB_API_BEARER_TOKEN`** 相同 |
+//! | `CM_BASE_URL` | 是 | CrabMate `serve` 根地址，如 `http://127.0.0.1:8080` |
+//! | `CM_WEB_API_BEARER_TOKEN` | 是 | 与 CrabMate **`web_api_bearer_token`** / TOML **`web_api_bearer_token`** 相同 |
+//! | `CM_WEB_API_BEARER` | 否 | 若未设置 **`CM_WEB_API_BEARER_TOKEN`** 则读此项（二选一即可） |
 //! | `FEISHU_APP_ID` | 是 | 飞书应用 App ID |
 //! | `FEISHU_APP_SECRET` | 是 | 飞书应用 App Secret |
 //! | `FEISHU_ENCRYPT_KEY` | 否 | 事件订阅 Encrypt Key；若设置且请求带签名头则校验 |
@@ -67,8 +68,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 }
 
 fn feishu_bridge_config_from_env() -> Result<FeishuBridgeConfig, String> {
-    let crabmate_base = env_req("CRABMATE_BASE_URL")?;
-    let crabmate_bearer = env_req("CRABMATE_WEB_API_BEARER")?;
+    let crabmate_base = env_req("CM_BASE_URL")?;
+    let crabmate_bearer = env::var("CM_WEB_API_BEARER_TOKEN")
+        .or_else(|_| env::var("CM_WEB_API_BEARER"))
+        .map_err(|_| {
+            "缺少 CM_WEB_API_BEARER_TOKEN（或与 serve 相同的 Bearer；可选别名 CM_WEB_API_BEARER）"
+                .to_string()
+        })?;
     let app_id = env_req("FEISHU_APP_ID")?;
     let app_secret = env_req("FEISHU_APP_SECRET")?;
     let encrypt_key = env::var("FEISHU_ENCRYPT_KEY")

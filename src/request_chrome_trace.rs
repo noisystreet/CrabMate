@@ -4,7 +4,7 @@
 //!
 //! | 环境变量 | 说明 |
 //! |----------|------|
-//! | **`CRABMATE_REQUEST_CHROME_TRACE_DIR`** | 非空目录时，每轮 `run_agent_turn` 结束写入 **`turn-{unix_ms}.json`**。 |
+//! | **`CM_REQUEST_CHROME_TRACE_DIR`** | 非空目录时，每轮 `run_agent_turn` 结束写入 **`turn-{unix_ms}.json`**。 |
 //!
 //! 若同时设置 **`CM_WORKFLOW_CHROME_TRACE_DIR`**，工作流侧**不再单独写** `workflow-*.json`，事件并入本轮 **`turn-*.json`**（`workflow_execute_result.chrome_trace_path` 为 **null**）。
 
@@ -163,7 +163,7 @@ impl Drop for TraceSectionGuard {
 }
 
 pub(crate) fn request_trace_dir_from_env() -> Option<std::path::PathBuf> {
-    std::env::var_os("CRABMATE_REQUEST_CHROME_TRACE_DIR").and_then(|s| {
+    std::env::var_os("CM_REQUEST_CHROME_TRACE_DIR").and_then(|s| {
         let t = s.to_string_lossy().trim().to_string();
         if t.is_empty() {
             None
