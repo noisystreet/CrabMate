@@ -104,6 +104,17 @@ pub(in crate::tools) fn params_read_file() -> serde_json::Value {
             "encoding": {
                 "type": "string",
                 "description": "可选：文本编码。默认 utf-8（严格，非法 UTF-8 会报错）；另有 utf-8-sig（去 BOM）、gb18030、gbk、gb2312、big5、utf-16le、utf-16be、auto（BOM 优先，否则嗅探）。非法序列不静默替换。"
+            },
+            "anchor_line": {
+                "type": "integer",
+                "description": "可选：锚点行号（1-based）。与 context_lines 配合，在命中行附近对称取上下文（仍受 max_lines 封顶）。适用于 search_in_files / codebase_semantic_search 给出行号后精读。**禁止**与 start_line、end_line 同时使用。",
+                "minimum": 1
+            },
+            "context_lines": {
+                "type": "integer",
+                "description": "可选：锚点模式下在锚点行上下各取多少行上下文（对称）；默认 120。实际窗口受 max_lines 限制会自动收窄。",
+                "minimum": 1,
+                "maximum": 4000
             }
         },
         "required": ["path"],
