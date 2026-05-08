@@ -125,11 +125,19 @@ pub fn settings_theme_material(l: Locale) -> &'static str {
     }
 }
 
+pub fn settings_theme_high_contrast(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "高对比度",
+        Locale::En => "High contrast",
+    }
+}
+
 pub fn settings_theme_preset_label(l: Locale, slug: &str) -> &'static str {
     match slug {
         "dark" => settings_theme_dark(l),
         "light" => settings_theme_light(l),
         "material" => settings_theme_material(l),
+        "high-contrast" => settings_theme_high_contrast(l),
         _ => settings_theme_dark(l),
     }
 }

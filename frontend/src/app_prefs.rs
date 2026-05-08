@@ -12,7 +12,7 @@ pub const SIDE_PANEL_VIEW_KEY: &str = "agent-demo-side-panel-view";
 pub const STATUS_BAR_VISIBLE_KEY: &str = "agent-demo-status-bar-visible";
 pub const THEME_KEY: &str = "crabmate-theme";
 /// 合法 `data-theme` / [`THEME_KEY`] 取值（与 **`frontend/themes/*.css`**、`index.html` 链接顺序一致）。
-pub const THEME_SLUGS: &[&str] = &["dark", "light", "material"];
+pub const THEME_SLUGS: &[&str] = &["dark", "light", "material", "high-contrast"];
 
 #[must_use]
 pub fn normalize_theme_slug(raw: &str) -> String {
@@ -181,5 +181,10 @@ mod theme_slug_tests {
     #[test]
     fn material_accepted() {
         assert_eq!(normalize_theme_slug("material"), "material");
+    }
+
+    #[test]
+    fn high_contrast_accepted() {
+        assert_eq!(normalize_theme_slug("high-contrast"), "high-contrast");
     }
 }

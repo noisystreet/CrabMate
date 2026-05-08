@@ -25,5 +25,6 @@ Trunk 在 **`frontend/index.html`** 中于 **`styles/tokens.css` 之后** 链接
 |------|----------------|------|
 | `light.css` | `light` | 浅色纸灰 + 钢蓝点缀 |
 | `material.css` | `material` | Material 圆角 + 中性灰深色 |
+| `high-contrast.css` | `high-contrast` | 近黑底 + 白字 + 高饱和强调色（可读性优先） |
 
 **`dark`** 仍由根目录 **`styles/tokens.css`** 中 `:root` 提供，无需单独文件；若希望「深色也单独成文件」便于 fork，可从 `:root` 复制变量到 `dark.css` 并改用 `:root[data-theme="dark"]`（须与 `tokens.css` 避免重复定义）。

@@ -1,6 +1,6 @@
 /* 设计 token：颜色、间距、排版、动效时长（业务样式见各模块文件）。
  * 默认 `:root` = 深色冷石墨蓝（与 **`data-theme="dark"`** 一致；壳层写入该属性时不再额外覆盖）。
- * **`light` / `material`** 等离散预设见 **`frontend/themes/*.css`**（由 **`index.html`** 在本文之后加载）。
+ * **`light` / `material` / `high-contrast`** 等离散预设见 **`frontend/themes/*.css`**（由 **`index.html`** 在本文之后加载）。
  * 主题覆层变量（--selection-bg、--page-bg-decor-*、--nav-rail-bg 等）在各主题块内赋值；新增预设见 **`themes/README.md`**。
  */
 

@@ -23,7 +23,7 @@
 | **DOM** | `<html data-theme="...">` 由 `wire_sync_theme_to_storage_and_dom` 写入，与 `RwSignal<String>` 同步。 |
 | **色板** | **`tokens.css`** 中 `:root` 为默认深色语义；**`:root[data-theme="light"]`** 覆盖浅色变量（`--bg`、`--surface`、`--accent` 等）。 |
 | **局部补丁** | 多个样式文件中存在 **`:root[data-theme="light"]`** 下的组件级规则（如 `base.css`、`shell-ds.css`、`layout-chat.css`、`components.css`、`modal.css`、`status.css`），用于浅色下的细调。 |
-| **设置 UI** | 设置弹窗/设置页中主题下拉：**`dark`** / **`light`** / **`material`**（选项由 **`THEME_SLUGS`** 驱动），绑定 `appearance_theme`。 |
+| **设置 UI** | 设置弹窗/设置页中主题下拉：**`dark`** / **`light`** / **`material`** / **`high-contrast`**（选项由 **`THEME_SLUGS`** 驱动），绑定 `appearance_theme`。 |
 
 ### 1.2 问题
 
