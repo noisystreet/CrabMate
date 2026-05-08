@@ -1,5 +1,7 @@
 //! 消息行内部子视图：元信息、正文、子目标横幅、工具气泡与操作条。
 
+use std::sync::Arc;
+
 use leptos::prelude::*;
 
 use crate::assistant_body::assistant_markdown_collapsible_view;
@@ -340,9 +342,10 @@ fn build_non_assistant_message_body(p: NonAssistantMessageBodyParams) -> AnyView
 }
 
 pub(super) struct MessageActionsBarParams {
-    pub show_msg_action_bar: bool,
+    /// 是否渲染整条操作条（含用户再生成等）；流式保留 DOM 时需每次读会话快照。
+    pub actions_bar_visible: Arc<dyn Fn() -> bool + Send + Sync>,
     pub is_user_plain: bool,
-    pub err: bool,
+    pub retry_visible: Arc<dyn Fn() -> bool + Send + Sync>,
     pub msg_idx: usize,
     pub user_retry_id: String,
     pub user_branch_id: String,
@@ -355,9 +358,9 @@ pub(super) struct MessageActionsBarParams {
 
 pub(super) fn build_message_actions_bar(p: MessageActionsBarParams) -> AnyView {
     let MessageActionsBarParams {
-        show_msg_action_bar,
+        actions_bar_visible,
         is_user_plain,
-        err,
+        retry_visible,
         msg_idx,
         user_retry_id,
         user_branch_id,
@@ -367,12 +370,14 @@ pub(super) fn build_message_actions_bar(p: MessageActionsBarParams) -> AnyView {
         status_busy,
         locale,
     } = p;
-    if !show_msg_action_bar {
-        return ().into_any();
-    }
+
+    let bar_vis = StoredValue::new(actions_bar_visible);
+    let retry_check = StoredValue::new(retry_visible);
+    let mid_retry_go = StoredValue::new(mid_retry);
 
     view! {
-        <div class="msg-actions msg-actions-below" role="group" prop:aria-label=move || i18n::msg_actions_group_aria(locale.get())>
+        <Show when=move || bar_vis.get_value()()>
+            <div class="msg-actions msg-actions-below" role="group" prop:aria-label=move || i18n::msg_actions_group_aria(locale.get())>
             {is_user_plain.then(|| {
                 let idx = msg_idx;
                 let uid_r = user_retry_id.clone();
@@ -448,39 +453,37 @@ pub(super) fn build_message_actions_bar(p: MessageActionsBarParams) -> AnyView {
                     </button>
                 }
             })}
-            {err.then(move || {
-                let mid = mid_retry.clone();
-                view! {
-                    <button
-                        type="button"
-                        class="btn btn-secondary btn-sm msg-action-icon-btn"
-                        prop:title=move || i18n::msg_retry_title(locale.get())
-                        prop:aria-label=move || i18n::msg_retry_aria(locale.get())
-                        prop:disabled=move || status_busy.get()
-                        on:click=move |_| {
-                            retry_assistant_target.set(Some(mid.clone()));
-                        }
+            <Show when=move || retry_check.get_value()()>
+                <button
+                    type="button"
+                    class="btn btn-secondary btn-sm msg-action-icon-btn"
+                    prop:title=move || i18n::msg_retry_title(locale.get())
+                    prop:aria-label=move || i18n::msg_retry_aria(locale.get())
+                    prop:disabled=move || status_busy.get()
+                    on:click=move |_| {
+                        retry_assistant_target.set(Some(mid_retry_go.get_value()));
+                    }
+                >
+                    <svg
+                        class="msg-action-icon"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        xmlns="http://www.w3.org/2000/svg"
+                        aria-hidden="true"
                     >
-                        <svg
-                            class="msg-action-icon"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            xmlns="http://www.w3.org/2000/svg"
-                            aria-hidden="true"
-                        >
-                            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-                            <path d="M21 3v5h-5" />
-                            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-                            <path d="M8 16H3v5" />
-                        </svg>
-                    </button>
-                }
-            })}
-        </div>
+                        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                        <path d="M21 3v5h-5" />
+                        <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                        <path d="M8 16H3v5" />
+                    </svg>
+                </button>
+            </Show>
+            </div>
+        </Show>
     }
     .into_any()
 }

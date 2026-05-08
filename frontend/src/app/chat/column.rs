@@ -10,7 +10,7 @@ use wasm_bindgen::JsCast;
 
 use super::composer_input_stack::ComposerInputStack;
 use super::handles::ChatColumnShell;
-use super::message_chunks::{ChatChunk, chunk_messages};
+use super::message_chunks::{ChatChunk, chat_chunk_stable_key, chunk_messages};
 use super::message_group_views::{ToolRunGroupSignals, tool_run_group_view};
 use super::message_row::{ChatMessageRowSignals, chat_message_row};
 use super::timeline::timeline_panel_view;
@@ -125,71 +125,78 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
                     auto_scroll_chat,
                 )}
                 <div class="messages-inner">
-                    {move || {
-                        let id = active_id.get();
-                        sessions.with(|list| {
-                            // 勿 `messages.clone()`：流式每个 SSE 片段都会触发此处，整表克隆会放大主线程开销。
-                            let msgs: &[StoredMessage] = list
-                                .iter()
-                                .find(|s| s.id == id)
-                                .map(|s| s.messages.as_slice())
-                                .unwrap_or(&[]);
-                            if msgs.is_empty() {
-                                view! {
-                                    <div class="messages-empty" role="status">
-                                        <div class="messages-empty-card">
-                                            <p class="messages-empty-title">
-                                                {move || i18n::chat_empty_title(locale.get())}
-                                            </p>
-                                            <p class="messages-empty-lead">
-                                                {move || i18n::chat_empty_lead(locale.get())}
-                                            </p>
-                                            <ul class="messages-empty-tips">
-                                                <li>{move || i18n::chat_empty_tip1(locale.get())}</li>
-                                                <li>{move || i18n::chat_empty_tip2(locale.get())}</li>
-                                            </ul>
-                                        </div>
+                    <Show
+                        when=move || {
+                            let id = active_id.get();
+                            sessions.with(|list| {
+                                list.iter()
+                                    .find(|s| s.id == id)
+                                    .map(|s| !s.messages.is_empty())
+                                    .unwrap_or(false)
+                            })
+                        }
+                        fallback=move || {
+                            view! {
+                                <div class="messages-empty" role="status">
+                                    <div class="messages-empty-card">
+                                        <p class="messages-empty-title">
+                                            {move || i18n::chat_empty_title(locale.get())}
+                                        </p>
+                                        <p class="messages-empty-lead">
+                                            {move || i18n::chat_empty_lead(locale.get())}
+                                        </p>
+                                        <ul class="messages-empty-tips">
+                                            <li>{move || i18n::chat_empty_tip1(locale.get())}</li>
+                                            <li>{move || i18n::chat_empty_tip2(locale.get())}</li>
+                                        </ul>
                                     </div>
-                                }
-                                .into_any()
-                            } else {
-                                chunk_messages(msgs)
-                                    .into_iter()
-                                    .map(|chunk| match chunk {
-                                        ChatChunk::Single { idx, msg } => chat_message_row(
-                                            ChatMessageRowSignals {
-                                                msg_idx: idx,
-                                                m: msg,
-                                                chat,
-                                                collapsed_long_assistant_ids,
-                                                chat_find_query,
-                                                chat_find_match_ids,
-                                                chat_find_cursor,
-                                                auto_scroll_chat,
-                                                status_busy,
-                                                regen_stream_after_truncate,
-                                                retry_assistant_target,
-                                                status_err,
-                                                locale,
-                                                markdown_render,
-                                                apply_assistant_display_filters,
-                                            },
-                                        )
-                                        .into_any(),
-                                        ChatChunk::ToolGroup { head_id, items } => {
-                                            tool_run_group_view(
-                                                head_id,
-                                                items,
-                                                tool_run_group_signals,
-                                            )
-                                            .into_any()
-                                        }
-                                    })
-                                    .collect_view()
-                                    .into_any()
+                                </div>
                             }
-                        })
-                    }}
+                        }
+                    >
+                        <For
+                            each=move || {
+                                let id = active_id.get();
+                                sessions.with(|list| {
+                                    let msgs: &[StoredMessage] = list
+                                        .iter()
+                                        .find(|s| s.id == id)
+                                        .map(|s| s.messages.as_slice())
+                                        .unwrap_or(&[]);
+                                    chunk_messages(msgs)
+                                })
+                            }
+                            key=|chunk| chat_chunk_stable_key(chunk)
+                            children=move |chunk| match chunk {
+                                ChatChunk::Single { idx, msg } => chat_message_row(
+                                    ChatMessageRowSignals {
+                                        msg_idx: idx,
+                                        m: msg,
+                                        chat,
+                                        collapsed_long_assistant_ids,
+                                        chat_find_query,
+                                        chat_find_match_ids,
+                                        chat_find_cursor,
+                                        auto_scroll_chat,
+                                        status_busy,
+                                        regen_stream_after_truncate,
+                                        retry_assistant_target,
+                                        status_err,
+                                        locale,
+                                        markdown_render,
+                                        apply_assistant_display_filters,
+                                    },
+                                )
+                                .into_any(),
+                                ChatChunk::ToolGroup { head_id, items } => tool_run_group_view(
+                                    head_id,
+                                    items,
+                                    tool_run_group_signals,
+                                )
+                                .into_any(),
+                            }
+                        />
+                    </Show>
                 </div>
             </div>
         </div>

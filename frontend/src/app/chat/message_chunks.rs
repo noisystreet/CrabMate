@@ -6,6 +6,7 @@
 use crate::message_format::is_staged_timeline_bubble;
 use crate::storage::StoredMessage;
 
+#[derive(Clone)]
 pub(crate) enum ChatChunk {
     Single {
         idx: usize,
@@ -15,6 +16,21 @@ pub(crate) enum ChatChunk {
         head_id: String,
         items: Vec<(usize, StoredMessage)>,
     },
+}
+
+/// 供 [`leptos::prelude::For`] 使用的稳定键：单条用消息 id；工具组在追加工具消息时变化以刷新组内 DOM。
+pub(crate) fn chat_chunk_stable_key(chunk: &ChatChunk) -> String {
+    match chunk {
+        ChatChunk::Single { msg, .. } => format!("s:{}", msg.id),
+        ChatChunk::ToolGroup { items, .. } => {
+            let mut k = String::from("tg:");
+            for (_, m) in items {
+                k.push_str(&m.id);
+                k.push('/');
+            }
+            k
+        }
+    }
 }
 
 fn push_tool_run_chunk(out: &mut Vec<ChatChunk>, slice: Vec<(usize, StoredMessage)>) {

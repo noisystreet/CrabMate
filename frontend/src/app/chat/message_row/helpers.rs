@@ -3,6 +3,17 @@
 use crate::i18n::{self, Locale};
 use crate::storage::{ChatSession, StoredMessage, StoredMessageState};
 
+pub(super) fn stored_message_by_id<'a>(
+    sessions: &'a [ChatSession],
+    active_session_id: &str,
+    message_id: &str,
+) -> Option<&'a StoredMessage> {
+    sessions
+        .iter()
+        .find(|s| s.id == active_session_id)
+        .and_then(|s| s.messages.iter().find(|m| m.id == message_id))
+}
+
 pub(super) fn is_hierarchical_subgoal_state(state: Option<&StoredMessageState>) -> bool {
     state.is_some_and(|s| s.looks_like_hierarchical_subgoal())
 }

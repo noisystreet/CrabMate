@@ -4,6 +4,7 @@
 
 mod helpers;
 mod row;
+mod row_extras;
 mod views;
 
 use crate::chat_session_state::ChatSessionSignals;
