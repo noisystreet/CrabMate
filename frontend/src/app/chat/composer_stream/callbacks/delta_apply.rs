@@ -4,9 +4,9 @@ use std::rc::Rc;
 
 use super::super::context::ChatStreamCallbackCtx;
 use super::super::per_stream_accum::PerStreamAccum;
+use super::super::stream_turn_state::{StreamOutputLaneCell, lane_take_followup_rotation_pending};
 use super::helpers::rotate_streaming_assistant_for_followup_model_round;
 use super::stream_session_access::append_stream_assistant_chunk;
-use super::stream_turn_state::{StreamOutputLaneCell, lane_take_followup_rotation_pending};
 
 /// 将单块流式文本写入当前尾泡：必要时先轮换占位，再按车道写入正文或 `reasoning_text`。
 pub(super) fn apply_chat_stream_text_delta(
@@ -19,7 +19,7 @@ pub(super) fn apply_chat_stream_text_delta(
         rotate_streaming_assistant_for_followup_model_round(stream_ctx);
         accum.clear_answer_delta_chars();
     }
-    let mid = stream_ctx.tail.borrow_assistant_id();
+    let mid = stream_ctx.scratch.borrow_assistant_id();
     let lane = output_lane.get();
     if lane.in_answer_body_lane() {
         accum.add_answer_delta_chars(chunk.chars().count());

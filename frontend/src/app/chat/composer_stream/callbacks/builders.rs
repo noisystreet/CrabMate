@@ -17,12 +17,12 @@ use crate::timeline_scan::timeline_state_tool;
 use super::super::context::ChatStreamCallbackCtx;
 use super::super::per_stream_accum::PerStreamAccum;
 use super::super::shell_abort::{clear_abort_slot, user_cancelled_flag};
+use super::super::stream_turn_state::{
+    StreamOutputLaneCell, lane_clear_followup_pending, lane_take_followup_rotation_pending,
+};
 use super::done_session::apply_stream_done_to_loading_assistant;
 use super::helpers::*;
 use super::stream_session_access::with_active_session_mut;
-use super::stream_turn_state::{
-    StreamOutputLaneCell, lane_clear_followup_pending, lane_take_followup_rotation_pending,
-};
 
 pub(super) fn make_on_tool_result(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
@@ -37,7 +37,7 @@ pub(super) fn make_on_tool_result(
         let id = make_message_id();
         let tl_ok = info.ok.unwrap_or(true);
         let state = timeline_state_tool(&id, tl_ok);
-        let pending_queue = stream_ctx.tail.pending_tool_message_ids();
+        let pending_queue = stream_ctx.scratch.pending_tool_message_ids();
         let mut updated_existing = false;
         with_active_session_mut(stream_ctx.as_ref(), |s| {
             let tid = info
@@ -173,7 +173,7 @@ pub(super) fn chat_stream_on_tool_call_builder(
             finalize_loading_assistant_before_tool_and_tail_with_new_loading(&stream_ctx, &id);
             // 有 `tool_call_id` 时由 `tool_result` 按 id 命中占位气泡；否则保持 FIFO。
             if tcid.is_none() {
-                enqueue_pending_tool_message_id(&stream_ctx.tail.pending_tool_message_ids(), id);
+                enqueue_pending_tool_message_id(&stream_ctx.scratch.pending_tool_message_ids(), id);
             }
         },
     )
@@ -272,7 +272,7 @@ pub(super) fn chat_stream_on_done_builder(
         }
         let turn = accum.summarize_for_stream_done();
         let loc = stream_ctx.locale.get_untracked();
-        let mid = stream_ctx.tail.clone_assistant_id();
+        let mid = stream_ctx.scratch.clone_assistant_id();
         with_active_session_mut(stream_ctx.as_ref(), |s| {
             apply_stream_done_to_loading_assistant(
                 &mut s.messages,
@@ -297,7 +297,7 @@ pub(super) fn chat_stream_on_error_builder(
             return;
         }
         stream_ctx.chat.clear_stream_resume_handles();
-        let mid = stream_ctx.tail.clone_assistant_id();
+        let mid = stream_ctx.scratch.clone_assistant_id();
         let loc = stream_ctx.locale.get_untracked();
         let friendly = build_stream_error_with_suggestion(&msg, loc);
         with_active_session_mut(stream_ctx.as_ref(), |s| {

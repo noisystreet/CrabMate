@@ -18,20 +18,18 @@ use crate::timeline_scan::{timeline_state_staged_end, timeline_state_staged_star
 
 use super::super::context::ChatStreamCallbackCtx;
 use super::super::shell_abort::clear_abort_slot;
-use super::super::stream_sse_scratch::StreamSseScratch;
+use super::super::stream_turn_state::{StreamOutputLaneCell, lane_on_assistant_answer_phase};
 use super::builders::*;
 use super::delta_apply::chat_stream_on_delta_builder;
 use super::helpers::*;
 use super::stream_session_access::with_active_session_mut;
-use super::stream_turn_state::{StreamOutputLaneCell, lane_on_assistant_answer_phase};
 
 /// 由 [`super::super::make_attach_chat_stream`](super::super::make_attach_chat_stream) 调用；集中所有 `on_*` 闭包，降低父模块维护面。
 pub(crate) fn build_chat_stream_callbacks(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
-    scratch: StreamSseScratch,
 ) -> ChatStreamCallbacks {
-    let lane: StreamOutputLaneCell = scratch.lane.clone();
-    let accum = Rc::clone(&scratch.accum);
+    let lane: StreamOutputLaneCell = stream_ctx.scratch.lane();
+    let accum = stream_ctx.scratch.accum();
     let on_delta: Rc<dyn Fn(String)> =
         chat_stream_on_delta_builder(Rc::clone(&stream_ctx), Rc::clone(&lane), Rc::clone(&accum));
 

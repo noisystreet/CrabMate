@@ -2,7 +2,8 @@
 //!
 //! - [`context`]：单次流式共享的 `ChatStreamCallbackCtx`。
 //! - [`per_stream_accum`]：单轮流内的 `Cell`/`RefCell` 累计（正文增量计数、结束 reason 等），与 ctx 分层。
-//! - [`stream_sse_scratch`]：将 **lane + accum** 打一包，供 `build_chat_stream_callbacks` 单参传递。
+//! - [`stream_sse_scratch`]：单轮流 **lane + accum + 尾泡 FIFO** 的 `Cell`/`RefCell` 收口，挂在 [`context::ChatStreamCallbackCtx`] 上。
+//! - [`stream_turn_state`]：模型输出车道枚举与轮换辅助（与 `callbacks` 同层，避免模块循环依赖）。
 //! - `shell_abort`：`AbortController` 与用户取消 Mutex 的集中读写。
 //! - [`callbacks`]：装配 `ChatStreamCallbacks`（各 `on_*`），与 `send_chat_stream` 契约对齐；实现拆为 `callbacks/helpers`、`callbacks/builders`、`callbacks/assemble`。
 //! - 本文件：长生命周期句柄 [`ComposerStreamHandles`]、[`make_attach_chat_stream`]（发起请求 + `spawn_local`）。
@@ -12,7 +13,7 @@ mod context;
 mod per_stream_accum;
 mod shell_abort;
 mod stream_sse_scratch;
-mod streaming_tail;
+mod stream_turn_state;
 
 use std::rc::Rc;
 use std::sync::Arc;
@@ -30,7 +31,6 @@ use super::handles::ComposerStreamShell;
 use context::ChatStreamCallbackCtx;
 use shell_abort::{reset_abort_state_for_new_attach, store_abort_controller, user_cancelled_flag};
 use stream_sse_scratch::StreamSseScratch;
-use streaming_tail::StreamingAssistantTail;
 
 /// 长生命周期句柄：`attach` 闭包捕获，供每次发起流式请求复用。
 pub(super) struct ComposerStreamHandles {
@@ -77,13 +77,12 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                 chat,
                 locale: locale_sig,
                 active_session_id: bound_session_id,
-                tail: StreamingAssistantTail::new(asst_id.clone()),
+                scratch: StreamSseScratch::new(asst_id.clone()),
                 approval_session_store_id: appr_store.clone(),
                 shell: shell_outer.clone(),
             });
 
-            let scratch = StreamSseScratch::new();
-            let cbs = callbacks::build_chat_stream_callbacks(stream_ctx, scratch);
+            let cbs = callbacks::build_chat_stream_callbacks(Rc::clone(&stream_ctx));
 
             let shell_for_stream_err = shell_outer.clone();
             let on_error_spawn = cbs.on_error.clone();

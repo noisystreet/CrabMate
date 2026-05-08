@@ -198,7 +198,7 @@ pub(super) fn insert_before_streaming_assistant_or_append(
     stream_ctx: &ChatStreamCallbackCtx,
     msg: StoredMessage,
 ) {
-    let mid = stream_ctx.tail.clone_assistant_id();
+    let mid = stream_ctx.scratch.clone_assistant_id();
     with_active_session_mut(stream_ctx, |s| {
         insert_msg_before_streaming_assistant_tail(&mut s.messages, &mid, msg);
     });
@@ -331,7 +331,7 @@ pub(super) fn upsert_hierarchical_subgoal_bubble(
             tool_name: None,
             created_at: now,
         };
-        let mid = stream_ctx.tail.clone_assistant_id();
+        let mid = stream_ctx.scratch.clone_assistant_id();
         insert_msg_before_streaming_assistant_tail(&mut s.messages, &mid, msg);
     });
     ensure_streaming_assistant_tail_last(stream_ctx);
@@ -345,7 +345,7 @@ pub(super) fn upsert_hierarchical_subgoal_bubble(
 /// 避免 `assistant_answer_phase` 之前的思维链在工具调用时被误删。
 pub(super) fn finalize_current_loading_streaming_assistant_row(stream_ctx: &ChatStreamCallbackCtx) {
     with_active_session_mut(stream_ctx, |s| {
-        let mid = stream_ctx.tail.borrow_assistant_id();
+        let mid = stream_ctx.scratch.borrow_assistant_id();
         if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) {
             let m = &mut s.messages[idx];
             if m.role == "assistant" && m.state.as_ref().is_some_and(|s| s.is_loading()) {
@@ -398,8 +398,8 @@ pub(super) fn finalize_loading_assistant_before_tool_and_tail_with_new_loading(
         *new_tail_id.borrow_mut() = Some(new_asst_id);
     });
     if let Some(id) = new_tail_id.into_inner() {
-        stream_ctx.tail.replace_assistant_id(id);
-        stream_ctx.tail.post_tool_stream_tail_cell().set(true);
+        stream_ctx.scratch.replace_assistant_id(id);
+        stream_ctx.scratch.post_tool_stream_tail_cell().set(true);
     }
 }
 
@@ -429,18 +429,18 @@ pub(super) fn rotate_streaming_assistant_for_followup_model_round(
         *new_tail_id.borrow_mut() = Some(new_asst_id);
     });
     if let Some(id) = new_tail_id.into_inner() {
-        stream_ctx.tail.replace_assistant_id(id);
-        stream_ctx.tail.post_tool_stream_tail_cell().set(true);
+        stream_ctx.scratch.replace_assistant_id(id);
+        stream_ctx.scratch.post_tool_stream_tail_cell().set(true);
     }
     ensure_streaming_assistant_tail_last(stream_ctx);
 }
 
 /// 工具后续写段：分步/时间线等仍会 `push` 到列表末尾，需把当前 `loading` 占位再次移到最下方。
 pub(super) fn ensure_streaming_assistant_tail_last(stream_ctx: &ChatStreamCallbackCtx) {
-    if !stream_ctx.tail.post_tool_stream_tail_cell().get() {
+    if !stream_ctx.scratch.post_tool_stream_tail_cell().get() {
         return;
     }
-    let mid = stream_ctx.tail.clone_assistant_id();
+    let mid = stream_ctx.scratch.clone_assistant_id();
     with_active_session_mut(stream_ctx, |s| {
         let Some(idx) = s.messages.iter().position(|m| m.id == mid) else {
             return;
@@ -459,7 +459,7 @@ pub(super) fn ensure_streaming_assistant_tail_last(stream_ctx: &ChatStreamCallba
 }
 
 pub(super) fn remove_loading_assistant_placeholder(stream_ctx: &ChatStreamCallbackCtx) {
-    let mid = stream_ctx.tail.borrow_assistant_id();
+    let mid = stream_ctx.scratch.borrow_assistant_id();
     with_active_session_mut(stream_ctx, |s| {
         if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str())
             && s.messages[idx].role == "assistant"

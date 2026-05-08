@@ -1,5 +1,7 @@
 //! 流式回合内模型输出通道：将 `assistant_answer_phase` 与「多段正文需轮换气泡」收敛为单一枚举，
 //! 替代一对交叉读写的 `Cell<bool>`。
+//!
+//! 与 [`super::stream_sse_scratch::StreamSseScratch`] 同层，供 SSE 回调装配与单轮草稿共用，避免与 `callbacks` 子模块循环依赖。
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -30,7 +32,7 @@ pub(crate) fn new_stream_output_lane_cell() -> StreamOutputLaneCell {
     Rc::new(Cell::new(StreamModelOutputLane::default()))
 }
 
-/// [`ChatStreamCallbacks::on_assistant_answer_phase`]：首次进入正文相，或标记待轮换。
+/// [`crate::api::ChatStreamCallbacks::on_assistant_answer_phase`]：首次进入正文相，或标记待轮换。
 pub(super) fn lane_on_assistant_answer_phase(lane: &Cell<StreamModelOutputLane>) {
     lane.set(match lane.get() {
         StreamModelOutputLane::Reasoning => StreamModelOutputLane::Answering,
