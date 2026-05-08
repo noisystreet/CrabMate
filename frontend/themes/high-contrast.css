@@ -1,0 +1,67 @@
+/*
+ * 高对比度深色（data-theme="high-contrast"）：近黑底 + 白字 + 高饱和语义色，利于弱视与强光环境。
+ * 见 themes/README.md。
+ */
+:root[data-theme="high-contrast"] {
+  --bg: #000000;
+  --bg-elevated: #0a0a0a;
+  --surface: #121212;
+  --surface-hover: #1c1c1c;
+  --border: #ffffff;
+  --border-subtle: #6b6b6b;
+  --text: #ffffff;
+  --muted: #e0e0e0;
+  /* 强调：亮黄，与黑底对比极强 */
+  --accent: #ffff00;
+  --accent-dim: #333300;
+  --accent-glow: rgba(255, 255, 0, 0.35);
+
+  --info: #66d9ff;
+  --success: #00ff88;
+  --warn: #ffcc00;
+  --error: #ff4d6a;
+
+  --info-bg: #001a22;
+  --success-bg: #001a0f;
+  --warn-bg: #221a00;
+  --error-bg: #220008;
+
+  --danger: var(--error);
+  --danger-bg: var(--error-bg);
+  --ok: var(--success);
+
+  --shadow-raised:
+    0 0 0 1px var(--border) inset,
+    0 2px 0 rgba(255, 255, 255, 0.08) inset,
+    0 4px 12px rgba(0, 0, 0, 0.85);
+  --shadow-overlay:
+    0 0 0 1px var(--border) inset,
+    0 10px 40px rgba(0, 0, 0, 0.95);
+  --shadow-sm: var(--shadow-raised);
+  --shadow-md: var(--shadow-overlay);
+
+  --selection-bg: #ffff00;
+  --selection-color: #000000;
+  /* 弱化装饰渐变，避免干扰阅读 */
+  --page-bg-decor-html: none;
+  --page-bg-decor-body: none;
+  --nav-rail-bg: var(--bg-elevated);
+  --btn-primary-bg: linear-gradient(180deg, #ffff66 0%, #ffff00 45%, #e6e600 100%);
+  --btn-primary-border: #ffffff;
+  --modal-backdrop-bg: rgba(0, 0, 0, 0.85);
+  --status-agent-select-bg-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23e0e0e0' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
+  --composer-bar-box-shadow:
+    0 -1px 0 var(--border) inset,
+    0 -8px 28px rgba(0, 0, 0, 0.9);
+  --composer-ws-ref-bg: #1a1a00;
+  --composer-ws-ref-box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* 主按钮在亮黄渐变底上须用黑字，避免与白字对比不足 */
+:root[data-theme="high-contrast"] .btn-primary {
+  color: #000000;
+}
+
+:root[data-theme="high-contrast"] .btn-primary:disabled {
+  color: #404040;
+}
