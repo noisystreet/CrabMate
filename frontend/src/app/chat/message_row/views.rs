@@ -6,15 +6,11 @@ use leptos::prelude::*;
 
 use crate::assistant_body::assistant_markdown_collapsible_view;
 use crate::i18n::{self, Locale};
-use crate::message_format::message_text_for_display_ex;
 use crate::session_ops::message_role_label;
-use crate::session_search::{normalize_search_query, split_for_find_highlight};
 use crate::storage::{ChatSession, StoredMessage};
 
-use super::super::message_row_actions::{
-    MessageRowActionSignals, spawn_scroll_to_linked_user_message,
-};
-use super::helpers::tool_bubble_emoji;
+use super::super::message_row_actions::MessageRowActionSignals;
+use super::non_assistant_body::{NonAssistantMessageBodyParams, build_non_assistant_message_body};
 
 pub(super) fn chat_message_row_meta_view(
     locale: RwSignal<Locale>,
@@ -153,26 +149,6 @@ pub(super) fn chat_message_row_subgoal_exec_banner_view(
         .unwrap_or_else(|| ().into_any())
 }
 
-fn render_highlighted_message_text(
-    msg: &StoredMessage,
-    loc: Locale,
-    apply_filters: bool,
-    query: &str,
-) -> AnyView {
-    let disp = message_text_for_display_ex(msg, loc, apply_filters);
-    let segs = split_for_find_highlight(&disp, query);
-    segs.into_iter()
-        .map(|(s, hl)| {
-            if hl {
-                view! { <mark class="msg-find-inline">{s}</mark> }.into_any()
-            } else {
-                view! { {s} }.into_any()
-            }
-        })
-        .collect_view()
-        .into_any()
-}
-
 fn subgoal_exec_banner_icon_view(icon_key: &str) -> AnyView {
     match icon_key {
         "diagnose" => view! {
@@ -211,134 +187,115 @@ fn subgoal_exec_banner_icon_view(icon_key: &str) -> AnyView {
     }
 }
 
-struct NonAssistantMessageBodyParams {
-    m_for_body: StoredMessage,
-    is_tool_bubble: bool,
-    tool_detail_text: Option<String>,
-    tool_detail_open: RwSignal<bool>,
+fn user_line_regen_branch_buttons(
+    msg_idx: usize,
+    uid_r: String,
+    uid_b: String,
+    row_actions: MessageRowActionSignals,
+    status_busy: RwSignal<bool>,
     locale: RwSignal<Locale>,
-    chat_find_query: RwSignal<String>,
-    apply_assistant_display_filters: RwSignal<bool>,
-    jump_uid: Option<String>,
-    auto_scroll_chat: RwSignal<bool>,
+) -> impl IntoView {
+    view! {
+        <button
+            type="button"
+            class="btn btn-muted btn-sm msg-action-btn msg-action-icon-btn"
+            prop:title=move || i18n::msg_regen_title(locale.get())
+            prop:aria-label=move || i18n::msg_regen_aria(locale.get())
+            prop:disabled=move || status_busy.get()
+            on:click=move |_| {
+                if status_busy.get() {
+                    return;
+                }
+                row_actions.spawn_regenerate_from_user_line(msg_idx, uid_r.clone());
+            }
+        >
+            <svg
+                class="msg-action-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true"
+            >
+                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                <path d="M21 3v5h-5" />
+                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                <path d="M8 16H3v5" />
+            </svg>
+        </button>
+        <button
+            type="button"
+            class="btn btn-muted btn-sm msg-action-btn msg-action-icon-btn"
+            prop:title=move || i18n::msg_branch_title(locale.get())
+            prop:aria-label=move || i18n::msg_branch_aria(locale.get())
+            prop:disabled=move || status_busy.get()
+            on:click=move |_| {
+                if status_busy.get() {
+                    return;
+                }
+                row_actions.spawn_branch_at_user_line(msg_idx, uid_b.clone());
+            }
+        >
+            <svg
+                class="msg-action-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true"
+            >
+                <line x1="6" y1="3" x2="6" y2="15" fill="none" />
+                <circle cx="6" cy="3" r="2" fill="none" />
+                <path d="M6 15v-1a4 4 0 0 1 4-4h4a4 4 0 0 0 4-4V5" fill="none" />
+                <circle cx="18" cy="5" r="2" fill="none" />
+                <circle cx="18" cy="19" r="2" fill="none" />
+                <path d="M18 7v12" fill="none" />
+            </svg>
+        </button>
+    }
 }
 
-fn build_non_assistant_message_body(p: NonAssistantMessageBodyParams) -> AnyView {
-    let NonAssistantMessageBodyParams {
-        m_for_body,
-        is_tool_bubble,
-        tool_detail_text,
-        tool_detail_open,
-        locale,
-        chat_find_query,
-        apply_assistant_display_filters,
-        jump_uid,
-        auto_scroll_chat,
-    } = p;
-    if is_tool_bubble {
-        let detail_for_btn = tool_detail_text;
-        let tool_emoji = tool_bubble_emoji(&m_for_body);
-        return view! {
-            <div class="msg-tool-compact">
-                <Show when=move || detail_for_btn.as_deref().is_some_and(|s| !s.trim().is_empty())>
-                    <button
-                        type="button"
-                        class="msg-tool-drawer-btn msg-tool-drawer-icon-btn"
-                        prop:title=move || {
-                            if tool_detail_open.get() {
-                                i18n::msg_tool_detail_collapse_title(locale.get())
-                            } else {
-                                i18n::msg_tool_detail_expand_title(locale.get())
-                            }
-                        }
-                        prop:aria-label=move || {
-                            if tool_detail_open.get() {
-                                i18n::msg_tool_detail_collapse_title(locale.get())
-                            } else {
-                                i18n::msg_tool_detail_expand_title(locale.get())
-                            }
-                        }
-                        on:click=move |_| {
-                            tool_detail_open.update(|v| *v = !*v);
-                        }
-                    >
-                        <svg
-                            class=move || {
-                                if tool_detail_open.get() {
-                                    "msg-tool-drawer-icon is-open"
-                                } else {
-                                    "msg-tool-drawer-icon"
-                                }
-                            }
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            aria-hidden="true"
-                        >
-                            <polyline points="6 9 12 15 18 9" />
-                        </svg>
-                    </button>
-                </Show>
-                <span class="msg-tool-emoji" aria-hidden="true">{tool_emoji}</span>
-                <span class="msg-body msg-tool-summary">
-                    {move || {
-                        let apply = apply_assistant_display_filters.get();
-                        let loc = locale.get();
-                        let q = normalize_search_query(&chat_find_query.get());
-                        render_highlighted_message_text(&m_for_body, loc, apply, &q)
-                    }}
-                </span>
-            </div>
-        }
-        .into_any();
-    }
-
-    if let Some(uid) = jump_uid {
-        let uid_click = uid.clone();
-        let uid_key = uid.clone();
-        return view! {
-            <span
-                class="msg-body msg-tool-body-jump"
-                role="link"
-                tabindex="0"
-                prop:title=move || i18n::msg_jump_user_title(locale.get())
-                prop:aria-label=move || i18n::msg_jump_user_aria(locale.get())
-                on:click=move |_| {
-                    spawn_scroll_to_linked_user_message(&uid_click, auto_scroll_chat);
-                }
-                on:keydown=move |ev: web_sys::KeyboardEvent| {
-                    let k = ev.key();
-                    if k == "Enter" || k == " " {
-                        ev.prevent_default();
-                        spawn_scroll_to_linked_user_message(&uid_key, auto_scroll_chat);
-                    }
-                }
-            >
-                {move || {
-                    let apply = apply_assistant_display_filters.get();
-                    let loc = locale.get();
-                    let q = normalize_search_query(&chat_find_query.get());
-                    render_highlighted_message_text(&m_for_body, loc, apply, &q)
-                }}
-            </span>
-        }
-        .into_any();
-    }
-
+fn assistant_retry_icon_button(
+    retry_assistant_target: RwSignal<Option<String>>,
+    status_busy: RwSignal<bool>,
+    locale: RwSignal<Locale>,
+    mid_retry_go: StoredValue<String>,
+) -> impl IntoView {
     view! {
-        <span class="msg-body">
-            {move || {
-                let apply = apply_assistant_display_filters.get();
-                let loc = locale.get();
-                let q = normalize_search_query(&chat_find_query.get());
-                render_highlighted_message_text(&m_for_body, loc, apply, &q)
-            }}
-        </span>
+        <button
+            type="button"
+            class="btn btn-secondary btn-sm msg-action-icon-btn"
+            prop:title=move || i18n::msg_retry_title(locale.get())
+            prop:aria-label=move || i18n::msg_retry_aria(locale.get())
+            prop:disabled=move || status_busy.get()
+            on:click=move |_| {
+                retry_assistant_target.set(Some(mid_retry_go.get_value()));
+            }
+        >
+            <svg
+                class="msg-action-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true"
+            >
+                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                <path d="M21 3v5h-5" />
+                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                <path d="M8 16H3v5" />
+            </svg>
+        </button>
     }
-    .into_any()
 }
 
 pub(super) struct MessageActionsBarParams {
@@ -379,108 +336,22 @@ pub(super) fn build_message_actions_bar(p: MessageActionsBarParams) -> AnyView {
         <Show when=move || bar_vis.get_value()()>
             <div class="msg-actions msg-actions-below" role="group" prop:aria-label=move || i18n::msg_actions_group_aria(locale.get())>
             {is_user_plain.then(|| {
-                let idx = msg_idx;
-                let uid_r = user_retry_id.clone();
-                let uid_b = user_branch_id.clone();
-                view! {
-                    <button
-                        type="button"
-                        class="btn btn-muted btn-sm msg-action-btn msg-action-icon-btn"
-                        prop:title=move || i18n::msg_regen_title(locale.get())
-                        prop:aria-label=move || i18n::msg_regen_aria(locale.get())
-                        prop:disabled=move || status_busy.get()
-                        on:click=move |_| {
-                            if status_busy.get() {
-                                return;
-                            }
-                            row_actions.spawn_regenerate_from_user_line(
-                                idx,
-                                uid_r.clone(),
-                            );
-                        }
-                    >
-                        <svg
-                            class="msg-action-icon"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            xmlns="http://www.w3.org/2000/svg"
-                            aria-hidden="true"
-                        >
-                            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-                            <path d="M21 3v5h-5" />
-                            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-                            <path d="M8 16H3v5" />
-                        </svg>
-                    </button>
-                    <button
-                        type="button"
-                        class="btn btn-muted btn-sm msg-action-btn msg-action-icon-btn"
-                        prop:title=move || i18n::msg_branch_title(locale.get())
-                        prop:aria-label=move || i18n::msg_branch_aria(locale.get())
-                        prop:disabled=move || status_busy.get()
-                        on:click=move |_| {
-                            if status_busy.get() {
-                                return;
-                            }
-                            row_actions.spawn_branch_at_user_line(
-                                idx,
-                                uid_b.clone(),
-                            );
-                        }
-                    >
-                        <svg
-                            class="msg-action-icon"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            xmlns="http://www.w3.org/2000/svg"
-                            aria-hidden="true"
-                        >
-                            <line x1="6" y1="3" x2="6" y2="15" fill="none" />
-                            <circle cx="6" cy="3" r="2" fill="none" />
-                            <path d="M6 15v-1a4 4 0 0 1 4-4h4a4 4 0 0 0 4-4V5" fill="none" />
-                            <circle cx="18" cy="5" r="2" fill="none" />
-                            <circle cx="18" cy="19" r="2" fill="none" />
-                            <path d="M18 7v12" fill="none" />
-                        </svg>
-                    </button>
-                }
+                user_line_regen_branch_buttons(
+                    msg_idx,
+                    user_retry_id.clone(),
+                    user_branch_id.clone(),
+                    row_actions,
+                    status_busy,
+                    locale,
+                )
             })}
             <Show when=move || retry_check.get_value()()>
-                <button
-                    type="button"
-                    class="btn btn-secondary btn-sm msg-action-icon-btn"
-                    prop:title=move || i18n::msg_retry_title(locale.get())
-                    prop:aria-label=move || i18n::msg_retry_aria(locale.get())
-                    prop:disabled=move || status_busy.get()
-                    on:click=move |_| {
-                        retry_assistant_target.set(Some(mid_retry_go.get_value()));
-                    }
-                >
-                    <svg
-                        class="msg-action-icon"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        xmlns="http://www.w3.org/2000/svg"
-                        aria-hidden="true"
-                    >
-                        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-                        <path d="M21 3v5h-5" />
-                        <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-                        <path d="M8 16H3v5" />
-                    </svg>
-                </button>
+                {assistant_retry_icon_button(
+                    retry_assistant_target,
+                    status_busy,
+                    locale,
+                    mid_retry_go,
+                )}
             </Show>
             </div>
         </Show>

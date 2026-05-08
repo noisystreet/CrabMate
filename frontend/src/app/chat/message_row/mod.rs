@@ -3,6 +3,7 @@
 //! 与 `POST /chat/branch`、本地截断再生相关的副作用见 [`super::message_row_actions`]。
 
 mod helpers;
+mod non_assistant_body;
 mod row;
 mod row_extras;
 mod views;
