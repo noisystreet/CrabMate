@@ -129,7 +129,7 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | `CM_MEMORY_FILE_ENABLED` | Workspace memo file injection. |
 | `CM_MEMORY_FILE` | Memo path. |
 | `CM_MEMORY_FILE_MAX_CHARS` | Memo max chars. |
-| `CM_LIVING_DOCS_INJECT_ENABLED` | Prepend a short summary from **`.crabmate/living_docs/`** (`SUMMARY.md`, `map.md`, …) to the first-turn merged `user` block. |
+| `CM_LIVING_DOCS_INJECT_ENABLED` | Prepend a short summary from **`.crabmate/living_docs/`** (`SUMMARY.md`, `map.md`, …) to the first-turn merged `user` block; embedded default **on** (nothing is injected when no Markdown files qualify). |
 | `CM_LIVING_DOCS_RELATIVE_DIR` | Living-docs directory relative to workspace root (default `.crabmate/living_docs`). |
 | `CM_LIVING_DOCS_INJECT_MAX_CHARS` | Total char budget for living-docs injection; `0` disables. |
 | `CM_LIVING_DOCS_FILE_MAX_EACH_CHARS` | Per-file read budget under that directory. |
@@ -370,7 +370,7 @@ With **`planner_executor_mode = single_agent`**, each user message runs a no-too
 
 **`staged_plan_optimizer_round`** (default `true`): After first plan with ≥2 steps, optional no-tools round to merge read-only probes and parallelize per **`parallel_readonly_tools`** rules.
 
-**`staged_plan_optimizer_requires_parallel_tools`** (default `true`, **`CM_STAGED_PLAN_OPTIMIZER_REQUIRES_PARALLEL_TOOLS`**)**: When `true`, skip the optimizer round if this turn’s tool list has **no** built-in names eligible for same-turn parallel readonly batching (the optimizer prompt centers on that CSV). When `false`, keep the legacy behavior: run the optimizer whenever step count and **`staged_plan_optimizer_round`** allow it.
+**`staged_plan_optimizer_requires_parallel_tools`** (embedded default `false`, **`CM_STAGED_PLAN_OPTIMIZER_REQUIRES_PARALLEL_TOOLS`**)**: When `false`, run the optimizer whenever **`steps.len() >= 2`** and **`staged_plan_optimizer_round`** allow—even if no built-in parallel-readonly tools are available (helps sequential-only plans). When `true`, skip the optimizer if this turn’s tool list has **no** eligible parallel-readonly names (saves one planner-class API call when the CSV would be empty).
 
 **`staged_plan_ensemble_count`** (default `1`, clamp 1–3, **`CM_STAGED_PLAN_ENSEMBLE_COUNT`**)**: **`1`** off. **`2`/`3`**: extra serial no-tools “planner B/C” rounds (aux assistants **not** in history), then merge round—**significantly more API cost**.
 

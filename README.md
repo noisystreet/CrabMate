@@ -33,7 +33,7 @@
 
 - **项目画像**：侧栏摘要与可选首轮注入；模型可用 **`repo_overview_sweep`**（[docs/工具说明.md](docs/工具说明.md)）。
 
-- **活文档与长期记忆**：可在工作区 **`.crabmate/living_docs/`** 维护模块地图、常见坑、构建命令等 Markdown，首轮可选注入短摘要；长期记忆支持 TTL、显式 **`long_term_remember` / `long_term_forget`** 等（见 [docs/配置说明.md](docs/配置说明.md)、[docs/工具说明.md](docs/工具说明.md)）。
+- **活文档与长期记忆**：仓库嵌入默认在首轮合并 **`user`** 前尝试注入 **`.crabmate/living_docs/`** 短摘要（目录下无有效 Markdown 时不写入；可通过 **`living_docs_inject_enabled`** / **`CM_LIVING_DOCS_INJECT_ENABLED`** 关闭）；长期记忆支持 TTL、显式 **`long_term_remember` / `long_term_forget`** 等（见 [docs/配置说明.md](docs/配置说明.md)、[docs/工具说明.md](docs/工具说明.md)）。
 
 - **OpenAPI**：**`GET /openapi.json`**；流式控制面以 [docs/SSE协议.md](docs/SSE协议.md) 为准（含 **`client_sse_protocol`** 协商）。
 
@@ -91,7 +91,7 @@
 
 - **Docker 开发环境**（可选）：仓库 [Dockerfile](Dockerfile)（Ubuntu 24.04，Rust + trunk 等）。`docker build -t crabmate-dev .` 后 `docker run --rm -it -v "$(pwd)":/workspace -w /workspace crabmate-dev`；UID/GID 可用 `--build-arg DEV_UID` / `DEV_GID`。**未**预装 pre-commit / Node。
 
-- **环境变量**：**`API_KEY`**（bearer 时；`serve` / `repl` / `chat` 可先启动，对话前在 Web「设置」或 REPL **`/api-key set`**）；**`models` / `probe`** 在 bearer 下通常仍需环境变量里的 Key。**`CM_API_BASE`** / **`CM_MODEL`** 覆盖配置。skills 注入可用 **`CM_SKILLS_TOP_K`** 控制每轮按用户输入选取的 Top-K 数量（默认 3）；与工作区、首轮上下文等一同构成「动态选材」能力，分层与风险见 [docs/开发文档.md](docs/开发文档.md)「系统提示词动态组装」。分阶段规划：**`CM_STAGED_PLAN_FEEDBACK_MODE`**（`fail_fast` / `patch_planner`，嵌入默认见 **`config/planning.toml`**）、**`CM_STAGED_PLAN_PATCH_MAX_ATTEMPTS`**（补丁规划轮上限）；另可选 **`CM_STAGED_PLAN_TWO_PHASE_NL_DISPLAY`**（或 TOML **`staged_plan_two_phase_nl_display`**）：首轮 JSON 定稿不向用户侧流式输出，再追加一轮自然语言（默认关闭）；Web 侧可按 SSE **`staged_plan_step_*`** 在聊天区插入浅色「时间线」系统旁注（含可选 **`executor_kind`**，**不**进入模型上下文）。完整表见 [docs/配置说明.md](docs/配置说明.md#分阶段规划staged_plan_execution)。
+- **环境变量**：**`API_KEY`**（bearer 时；`serve` / `repl` / `chat` 可先启动，对话前在 Web「设置」或 REPL **`/api-key set`**）；**`models` / `probe`** 在 bearer 下通常仍需环境变量里的 Key。**`CM_API_BASE`** / **`CM_MODEL`** 覆盖配置。skills 注入可用 **`CM_SKILLS_TOP_K`** 控制每轮按用户输入选取的 Top-K 数量（默认 `4`）；与工作区、首轮上下文等一同构成「动态选材」能力，分层与风险见 [docs/开发文档.md](docs/开发文档.md)「系统提示词动态组装」。分阶段规划：**`CM_STAGED_PLAN_FEEDBACK_MODE`**（`fail_fast` / `patch_planner`，嵌入默认见 **`config/planning.toml`**）、**`CM_STAGED_PLAN_PATCH_MAX_ATTEMPTS`**（补丁规划轮上限）；另可选 **`CM_STAGED_PLAN_TWO_PHASE_NL_DISPLAY`**（或 TOML **`staged_plan_two_phase_nl_display`**）：首轮 JSON 定稿不向用户侧流式输出，再追加一轮自然语言（默认关闭）；Web 侧可按 SSE **`staged_plan_step_*`** 在聊天区插入浅色「时间线」系统旁注（含可选 **`executor_kind`**，**不**进入模型上下文）。完整表见 [docs/配置说明.md](docs/配置说明.md#分阶段规划staged_plan_execution)。
 
 ```bash
 # 可选：export CM_API_BASE=… CM_MODEL=… API_KEY=…（或 Web「设置」/ REPL /api-key set）

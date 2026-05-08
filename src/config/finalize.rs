@@ -775,7 +775,7 @@ fn finalize_agent_config(
         .skills_max_chars
         .unwrap_or(32_000)
         .clamp(1024, 1_000_000);
-    let skills_top_k = b.skills.skills_top_k.unwrap_or(3).clamp(1, 64) as usize;
+    let skills_top_k = b.skills.skills_top_k.unwrap_or(4).clamp(1, 64) as usize;
     let system_prompt = skills::merge_system_prompt_with_skills(
         system_prompt,
         skills_enabled,

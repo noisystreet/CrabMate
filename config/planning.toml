@@ -19,7 +19,8 @@ staged_plan_feedback_mode = "patch_planner"
 staged_plan_patch_max_attempts = 3
 staged_plan_cli_show_planner_stream = false
 staged_plan_optimizer_round = true
-staged_plan_optimizer_requires_parallel_tools = true
+# 默认可在无非行批内建工具时仍跑步骤优化轮（利于纯串行任务收紧/合并步骤）；介意多一次 LLM 可改 true。CM_STAGED_PLAN_OPTIMIZER_REQUIRES_PARALLEL_TOOLS
+staged_plan_optimizer_requires_parallel_tools = false
 staged_plan_ensemble_count = 1
 staged_plan_skip_ensemble_on_casual_prompt = true
 # 默认关：与 finalize 缺省及文档一致；若开 true，桥接 user 已标明「非用户提问」，避免模型把续问句误当用户原话。

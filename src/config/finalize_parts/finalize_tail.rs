@@ -355,7 +355,7 @@ fn derive_tail_staged_sandbox_web_scalars(
     let staged_plan_optimizer_round = b.staged_planning.staged_plan_optimizer_round.unwrap_or(true);
     let staged_plan_optimizer_requires_parallel_tools = b
         .staged_planning.staged_plan_optimizer_requires_parallel_tools
-        .unwrap_or(true);
+        .unwrap_or(false);
     let staged_plan_ensemble_count = b.staged_planning.staged_plan_ensemble_count.unwrap_or(1).clamp(1, 3) as u8;
     let staged_plan_skip_ensemble_on_casual_prompt =
         b.staged_planning.staged_plan_skip_ensemble_on_casual_prompt.unwrap_or(true);
@@ -572,7 +572,7 @@ fn tail_cursor_rules_and_skills_fields(
         .clone()
         .unwrap_or_else(|| ".crabmate/skills".to_string());
     let skills_max_chars = b.skills.skills_max_chars.unwrap_or(32_000).clamp(1024, 1_000_000);
-    let skills_top_k = b.skills.skills_top_k.unwrap_or(3).clamp(1, 64) as usize;
+    let skills_top_k = b.skills.skills_top_k.unwrap_or(4).clamp(1, 64) as usize;
     (
         cursor_rules_enabled,
         cursor_rules_dir,
