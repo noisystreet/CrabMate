@@ -110,20 +110,46 @@ fn begin_stream_shell_turn(shell: &ComposerStreamShell) {
     shell.approval.pending_approval.set(None);
 }
 
-fn finalize_loading_assistant_after_user_abort(chat: ChatSessionSignals, aid: String, loc: Locale) {
+/// 用户中止流式：收尾 **assistant** 与 **工具** 的 `Loading` 占位，避免时间线仍判为「工具执行中」。
+fn finalize_stream_loading_placeholders_after_user_abort(
+    chat: ChatSessionSignals,
+    aid: String,
+    loc: Locale,
+) {
+    let running_label = i18n::status_tool_running(loc);
+    let stopped_tool = i18n::status_tool_stopped_user(loc);
     chat.update_sessions_composer(|list| {
-        if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-            if let Some(m) =
-                s.messages.iter_mut().rev().find(|m| {
-                    m.role == "assistant" && m.state.as_ref().is_some_and(|s| s.is_loading())
-                })
-            {
-                m.state = None;
-                if m.text.trim().is_empty() {
-                    m.text = i18n::stream_stopped_inline(loc).to_string();
-                } else {
-                    m.text.push_str(i18n::stream_stopped_suffix(loc));
-                }
+        let Some(s) = list.iter_mut().find(|s| s.id == aid) else {
+            return;
+        };
+        if let Some(m) = s.messages.iter_mut().rev().find(|m| {
+            m.role == "assistant"
+                && !m.is_tool
+                && m.state.as_ref().is_some_and(|st| st.is_loading())
+        }) {
+            m.state = None;
+            if m.text.trim().is_empty() {
+                m.text = i18n::stream_stopped_inline(loc).to_string();
+            } else {
+                m.text.push_str(i18n::stream_stopped_suffix(loc));
+            }
+        }
+        for m in &mut s.messages {
+            if !m.is_tool || !m.state.as_ref().is_some_and(|st| st.is_loading()) {
+                continue;
+            }
+            m.state = None;
+            if m.reasoning_text.contains("status: running") {
+                m.reasoning_text = m
+                    .reasoning_text
+                    .replace("status: running", "status: stopped (user)");
+            }
+            if m.text.contains(running_label) {
+                m.text = m.text.replacen(running_label, stopped_tool, 1);
+            } else if m.text.trim().is_empty() {
+                m.text = i18n::stream_stopped_inline(loc).to_string();
+            } else {
+                m.text.push_str(i18n::stream_stopped_suffix(loc));
             }
         }
     });
@@ -255,8 +281,8 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
                 return;
             }
             let loc = locale.get_untracked();
-            let aid = chat.active_id.get();
-            finalize_loading_assistant_after_user_abort(chat, aid, loc);
+            let aid = chat.effective_stream_message_session_id();
+            finalize_stream_loading_placeholders_after_user_abort(chat, aid, loc);
             shell.stream.status_busy.set(false);
             shell.stream.tool_busy.set(false);
         }

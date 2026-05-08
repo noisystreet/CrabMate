@@ -82,6 +82,14 @@ pub fn status_tool_running(l: Locale) -> &'static str {
     }
 }
 
+/// 用户点击「停止」后，工具占位气泡上替代「执行中」的短标签。
+pub fn status_tool_stopped_user(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "已终止",
+        Locale::En => "Stopped",
+    }
+}
+
 pub fn status_model_running(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "模型生成中…",
