@@ -20,6 +20,7 @@ use super::super::context::ChatStreamCallbackCtx;
 use super::super::shell_abort::clear_abort_slot;
 use super::super::stream_sse_scratch::StreamSseScratch;
 use super::builders::*;
+use super::delta_apply::chat_stream_on_delta_builder;
 use super::helpers::*;
 use super::stream_session_access::with_active_session_mut;
 use super::stream_turn_state::{StreamOutputLaneCell, lane_on_assistant_answer_phase};

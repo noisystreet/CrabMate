@@ -1,4 +1,4 @@
-//! SSE 回调闭包工厂：`on_tool_result`、`on_timeline_log`、`on_delta`、`on_done`、`on_error`、`on_workspace_changed`、`on_tool_call`。
+//! SSE 回调闭包工厂：`on_tool_result`、`on_timeline_log`、`on_done`、`on_error`、`on_workspace_changed`、`on_tool_call`（`on_delta` 见 [`super::delta_apply`]）。
 
 use std::rc::Rc;
 
@@ -19,7 +19,7 @@ use super::super::per_stream_accum::PerStreamAccum;
 use super::super::shell_abort::{clear_abort_slot, user_cancelled_flag};
 use super::done_bubble::{DoneBubbleAction, DoneBubbleDecisionInputs, decide_done_bubble_action};
 use super::helpers::*;
-use super::stream_session_access::{append_stream_assistant_chunk, with_active_session_mut};
+use super::stream_session_access::with_active_session_mut;
 use super::stream_turn_state::{
     StreamOutputLaneCell, lane_clear_followup_pending, lane_take_followup_rotation_pending,
 };
@@ -250,27 +250,6 @@ pub(super) fn make_on_timeline_log(
             staged_timeline_system_message_body(&body),
             None,
         );
-    })
-}
-
-pub(super) fn chat_stream_on_delta_builder(
-    stream_ctx: Rc<ChatStreamCallbackCtx>,
-    output_lane: StreamOutputLaneCell,
-    accum: Rc<PerStreamAccum>,
-) -> Rc<dyn Fn(String)> {
-    Rc::new(move |chunk: String| {
-        if lane_take_followup_rotation_pending(output_lane.as_ref()) {
-            rotate_streaming_assistant_for_followup_model_round(stream_ctx.as_ref());
-            accum.clear_answer_delta_chars();
-        }
-        let mid = stream_ctx.tail.borrow_assistant_id();
-        let lane = output_lane.get();
-        if lane.in_answer_body_lane() {
-            accum.add_answer_delta_chars(chunk.chars().count());
-            append_stream_assistant_chunk(stream_ctx.as_ref(), mid.as_str(), &chunk, false);
-        } else {
-            append_stream_assistant_chunk(stream_ctx.as_ref(), mid.as_str(), &chunk, true);
-        }
     })
 }
 

@@ -70,6 +70,20 @@ impl SettingsDirtyBaselines {
     }
 }
 
+/// 将壳层已生效外观信号复制到设置草稿（**仅** `get_untracked` 读壳层，避免额外汇入 `Effect` 订阅）。
+pub(crate) fn sync_appearance_drafts_from_shell(
+    shell_locale: RwSignal<Locale>,
+    shell_theme: RwSignal<String>,
+    shell_bg_decor: RwSignal<bool>,
+    appearance_locale: RwSignal<Locale>,
+    appearance_theme: RwSignal<String>,
+    appearance_bg_decor: RwSignal<bool>,
+) {
+    appearance_locale.set(shell_locale.get_untracked());
+    appearance_theme.set(shell_theme.get_untracked());
+    appearance_bg_decor.set(shell_bg_decor.get_untracked());
+}
+
 #[derive(Clone)]
 pub(crate) struct SettingsFormCurrent {
     pub appearance_locale: Locale,
