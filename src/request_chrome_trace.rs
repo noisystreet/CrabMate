@@ -6,7 +6,7 @@
 //! |----------|------|
 //! | **`CRABMATE_REQUEST_CHROME_TRACE_DIR`** | 非空目录时，每轮 `run_agent_turn` 结束写入 **`turn-{unix_ms}.json`**。 |
 //!
-//! 若同时设置 **`CRABMATE_WORKFLOW_CHROME_TRACE_DIR`**（或 **`CM_WORKFLOW_CHROME_TRACE_DIR`**），工作流侧**不再单独写** `workflow-*.json`，事件并入本轮 **`turn-*.json`**（`workflow_execute_result.chrome_trace_path` 为 **null**）。
+//! 若同时设置 **`CM_WORKFLOW_CHROME_TRACE_DIR`**，工作流侧**不再单独写** `workflow-*.json`，事件并入本轮 **`turn-*.json`**（`workflow_execute_result.chrome_trace_path` 为 **null**）。
 
 use serde_json::{Value, json};
 use std::io::Write;

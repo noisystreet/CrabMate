@@ -224,6 +224,8 @@ Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`confi
 
 **`[agent]` TOML keys (tool stats)**: `agent_tool_stats_enabled`, `agent_tool_stats_window_events`, `agent_tool_stats_min_samples`, `agent_tool_stats_max_chars`, `agent_tool_stats_warn_below_success_ratio`. Stats are **per-process**, **global** (not bucketed by `conversation_id`); **no** tool args or full outputs stored. Web attaches the stats appendix only for **new** chats (no stored seed). CLI `chat` / `repl` and `workspace_session::initial_workspace_messages` attach on fresh first-`system` paths; sessions loaded from disk keep base system alignment **without** the stats appendix.
 
+**Workspace + user-query dynamic selection**: With **`skills_enabled`** and **`skills_top_k`** (**`CM_SKILLS_TOP_K`**), Web can merge Top-K snippets from **`.crabmate/skills`** into the first **`system`** each turn (**L5** in **`docs/en/DEVELOPMENT.md`** “Dynamic system prompt assembly”). First-turn project profile, living docs, and dependency brief use **`project_profile_*` / `living_docs_*` / `project_dependency_brief_*`** and land in a **dedicated `user`** (**L6**), separate from **`system`**. This can improve relevance but trades off retrieval error, latency, and **`CM_CONTEXT_*`** / **`CM_TOOL_MESSAGE_MAX_CHARS`** budgets; see **`docs/en/DEVELOPMENT.md`** “Workspace + user-query dynamic assembly” for P0, risks, and practice.
+
 ### CLI
 
 | Variable | Description |

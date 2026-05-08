@@ -1,4 +1,4 @@
-//! `workflow_execute` 在设置 `CRABMATE_WORKFLOW_CHROME_TRACE_DIR` 时写入 Chrome trace，并在报告 JSON 中带 `chrome_trace_path`。
+//! `workflow_execute` 在设置 `CM_WORKFLOW_CHROME_TRACE_DIR` 时写入 Chrome trace，并在报告 JSON 中带 `chrome_trace_path`。
 
 use crabmate::agent::workflow::{WorkflowApprovalMode, run_workflow_execute_tool};
 use crabmate::load_config;
@@ -19,10 +19,10 @@ impl<'a> ChromeTraceDirGuard<'a> {
         let _lock = CHROME_TRACE_ENV_LOCK
             .lock()
             .expect("workflow_chrome_trace tests must run serialized");
-        let prev = std::env::var_os("CRABMATE_WORKFLOW_CHROME_TRACE_DIR");
+        let prev = std::env::var_os("CM_WORKFLOW_CHROME_TRACE_DIR");
         // SAFETY: 持锁期间其它测试不会并发读写该键。
         unsafe {
-            std::env::set_var("CRABMATE_WORKFLOW_CHROME_TRACE_DIR", path.as_os_str());
+            std::env::set_var("CM_WORKFLOW_CHROME_TRACE_DIR", path.as_os_str());
         }
         Self { _lock, prev }
     }
@@ -33,8 +33,8 @@ impl Drop for ChromeTraceDirGuard<'_> {
         // SAFETY: 与 `new` 配对，仍持有 `_lock` 至本 guard 析构。
         unsafe {
             match self.prev.take() {
-                Some(v) => std::env::set_var("CRABMATE_WORKFLOW_CHROME_TRACE_DIR", v),
-                None => std::env::remove_var("CRABMATE_WORKFLOW_CHROME_TRACE_DIR"),
+                Some(v) => std::env::set_var("CM_WORKFLOW_CHROME_TRACE_DIR", v),
+                None => std::env::remove_var("CM_WORKFLOW_CHROME_TRACE_DIR"),
             }
         }
     }
