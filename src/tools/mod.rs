@@ -345,12 +345,17 @@ pub fn run_tool(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
     }
     match find_spec(name) {
         Some(spec) => {
+            let args_eff =
+                match tool_args_validate::effective_builtin_tool_args_json(name, args_json) {
+                    Ok(c) => c,
+                    Err(e) => return format!("错误：{e}"),
+                };
             if let Some(Err(e)) =
-                tool_args_validate::validate_parsed_str_for_builtin(name, args_json)
+                tool_args_validate::validate_parsed_str_for_builtin(name, args_eff.as_ref())
             {
                 return format!("错误：{e}");
             }
-            (spec.runner)(args_json, ctx)
+            (spec.runner)(args_eff.as_ref(), ctx)
         }
         None => format!("未知工具：{}", name),
     }
@@ -371,7 +376,10 @@ fn run_tool_dispatch(
     if find_spec(name).is_none() {
         return Err(ToolError::unknown_tool(name));
     }
-    if let Some(Err(e)) = tool_args_validate::validate_parsed_str_for_builtin(name, args_json) {
+    let args_eff = tool_args_validate::effective_builtin_tool_args_json(name, args_json)
+        .map_err(ToolError::invalid_args)?;
+    let args_ref = args_eff.as_ref();
+    if let Some(Err(e)) = tool_args_validate::validate_parsed_str_for_builtin(name, args_ref) {
         return Err(ToolError::invalid_args(e));
     }
     match name {
@@ -384,7 +392,7 @@ fn run_tool_dispatch(
                         workspace_root: ctx.working_dir,
                     });
             match command::run_try(
-                args_json,
+                args_ref,
                 ctx.command_max_output_len,
                 ctx.allowed_commands,
                 ctx.working_dir,
@@ -402,83 +410,84 @@ fn run_tool_dispatch(
             }
         }
         "cargo_check" => {
-            cargo_tools::cargo_check_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+            cargo_tools::cargo_check_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
                 .map(|output| finish_dispatch_parsed(name, output))
         }
         "cargo_test" => cargo_tools::cargo_test_try(
-            args_json,
+            args_ref,
             ctx.working_dir,
             ctx.command_max_output_len,
             Some(ctx),
         )
         .map(|output| finish_dispatch_parsed(name, output)),
         "cargo_clippy" => {
-            cargo_tools::cargo_clippy_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+            cargo_tools::cargo_clippy_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
                 .map(|output| finish_dispatch_parsed(name, output))
         }
         "cargo_metadata" => {
-            cargo_tools::cargo_metadata_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+            cargo_tools::cargo_metadata_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
                 .map(|output| finish_dispatch_parsed(name, output))
         }
         "cargo_tree" => {
-            cargo_tools::cargo_tree_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+            cargo_tools::cargo_tree_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
                 .map(|output| finish_dispatch_parsed(name, output))
         }
         "cargo_clean" => {
-            cargo_tools::cargo_clean_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+            cargo_tools::cargo_clean_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
                 .map(|output| finish_dispatch_parsed(name, output))
         }
         "cargo_doc" => {
-            cargo_tools::cargo_doc_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+            cargo_tools::cargo_doc_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
                 .map(|output| finish_dispatch_parsed(name, output))
         }
         "cargo_nextest" => {
-            cargo_tools::cargo_nextest_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+            cargo_tools::cargo_nextest_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
                 .map(|output| finish_dispatch_parsed(name, output))
         }
         "cargo_outdated" => {
-            cargo_tools::cargo_outdated_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+            cargo_tools::cargo_outdated_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
                 .map(|output| finish_dispatch_parsed(name, output))
         }
         "cargo_machete" => {
-            cargo_tools::cargo_machete_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+            cargo_tools::cargo_machete_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
                 .map(|output| finish_dispatch_parsed(name, output))
         }
         "cargo_udeps" => {
-            cargo_tools::cargo_udeps_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+            cargo_tools::cargo_udeps_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
                 .map(|output| finish_dispatch_parsed(name, output))
         }
         "cargo_publish_dry_run" => cargo_tools::cargo_publish_dry_run_try(
-            args_json,
+            args_ref,
             ctx.working_dir,
             ctx.command_max_output_len,
         )
         .map(|output| finish_dispatch_parsed(name, output)),
         "cargo_fix" => {
-            cargo_tools::cargo_fix_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+            cargo_tools::cargo_fix_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
                 .map(|output| finish_dispatch_parsed(name, output))
         }
         "cargo_run" => {
-            cargo_tools::cargo_run_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+            cargo_tools::cargo_run_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
                 .map(|output| finish_dispatch_parsed(name, output))
         }
         "rust_test_one" => cargo_tools::rust_test_one_try(
-            args_json,
+            args_ref,
             ctx.working_dir,
             ctx.command_max_output_len,
             Some(ctx),
         )
         .map(|output| finish_dispatch_parsed(name, output)),
         "rust_rustc" => {
-            cargo_tools::rust_rustc_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+            cargo_tools::rust_rustc_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
                 .map(|output| finish_dispatch_parsed(name, output))
         }
-        "read_file" => read_file_try_dispatch(args_json, ctx)
-            .map(|output| finish_dispatch_parsed(name, output)),
-        "search_in_files" => grep_try::search_in_files_try(args_json, ctx.working_dir)
+        "read_file" => {
+            read_file_try_dispatch(args_ref, ctx).map(|output| finish_dispatch_parsed(name, output))
+        }
+        "search_in_files" => grep_try::search_in_files_try(args_ref, ctx.working_dir)
             .map(|output| finish_dispatch_parsed(name, output)),
         _ => {
-            let output = run_tool(name, args_json, ctx);
+            let output = run_tool(name, args_ref, ctx);
             let parsed = crate::tool_result::parse_legacy_output(name, &output);
             if parsed.ok {
                 Ok((output, parsed))

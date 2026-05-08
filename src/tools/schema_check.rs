@@ -17,7 +17,11 @@ pub fn workflow_tool_args_satisfy_required(
             tool_name
         ));
     }
-    if let Some(r) = validate_parsed_value_if_known(tool_name, tool_args) {
+    let mut args = tool_args.clone();
+    if tool_name == "read_file" {
+        super::tool_args_validate::coerce_read_file_tool_args_value(&mut args);
+    }
+    if let Some(r) = validate_parsed_value_if_known(tool_name, &args) {
         return r;
     }
     // `cached_params_for_tool_name` 有值时验证器应已随 `tool_specs` 全量预编译；否则为内部不一致。
@@ -41,5 +45,14 @@ mod tests {
     fn unknown_tool_errors() {
         let r = workflow_tool_args_satisfy_required("not_a_real_tool_xyz", &serde_json::json!({}));
         assert!(r.is_err());
+    }
+
+    #[test]
+    fn read_file_workflow_accepts_string_line_numbers_after_coercion() {
+        let r = workflow_tool_args_satisfy_required(
+            "read_file",
+            &serde_json::json!({"path": "README.md", "start_line": "10"}),
+        );
+        assert!(r.is_ok(), "{r:?}");
     }
 }

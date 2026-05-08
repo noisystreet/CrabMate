@@ -15,20 +15,18 @@ fn extract_json_output(output: &str) -> Option<String> {
     Some(output_val.as_str()?.to_string())
 }
 
-/// 尝试从输出中解析 HTTP 状态码（用于 http_request/http_fetch 类工具）
-fn extract_http_status(tool_name: &str, output: &str) -> Option<u16> {
-    let normalized = extract_json_output(output).unwrap_or_else(|| output.to_string());
-
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&normalized) {
-        for field in ["status", "status_code", "http_status", "httpStatusCode"] {
-            if let Some(val) = v.get(field)
-                && let Some(code) = val.as_u64()
-            {
-                return Some(code as u16);
-            }
+fn http_status_from_json_object(v: &serde_json::Value) -> Option<u16> {
+    for field in ["status", "status_code", "http_status", "httpStatusCode"] {
+        if let Some(val) = v.get(field)
+            && let Some(code) = val.as_u64()
+        {
+            return Some(code as u16);
         }
     }
+    None
+}
 
+fn http_status_from_text_lines(normalized: &str) -> Option<u16> {
     for line in normalized.lines() {
         let line = line.trim();
         if line.starts_with("HTTP/")
@@ -47,6 +45,22 @@ fn extract_http_status(tool_name: &str, output: &str) -> Option<u16> {
                 return Some(code);
             }
         }
+    }
+    None
+}
+
+/// 尝试从输出中解析 HTTP 状态码（用于 http_request/http_fetch 类工具）
+fn extract_http_status(tool_name: &str, output: &str) -> Option<u16> {
+    let normalized = extract_json_output(output).unwrap_or_else(|| output.to_string());
+
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&normalized)
+        && let Some(code) = http_status_from_json_object(&v)
+    {
+        return Some(code);
+    }
+
+    if let Some(code) = http_status_from_text_lines(&normalized) {
+        return Some(code);
     }
 
     if tool_name.contains("http") && (output.contains("退出码：0") || output.contains("(exit=0)"))

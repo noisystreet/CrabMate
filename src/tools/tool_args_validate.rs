@@ -3,7 +3,11 @@
 //!
 //! 与 [`super::schema_check::workflow_tool_args_satisfy_required`] 的「必填键」粗检互补：
 //! 此模块还校验类型、枚举、数值范围、嵌套子对象、以及 `additionalProperties` 等。
+//!
+//! **`read_file`**：在 Schema 校验与 runner 执行前做**一轮**确定性参数纠错（常见为模型把整数写成字符串等），
+//! 见 [`coerce_read_file_tool_args_value`]、[`effective_builtin_tool_args_json`]。
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -36,6 +40,176 @@ fn build_validators_map() -> HashMap<&'static str, Validator> {
 }
 
 /// 将 `jsonschema` 的若干条错误合成为对用户与模型可读的**中文**短句（含 `instance path` 便于定位嵌套键）。
+fn json_number_to_u64(n: &serde_json::Number) -> Option<u64> {
+    n.as_u64().or_else(|| {
+        let f = n.as_f64()?;
+        if f.is_finite() && f >= 1.0 && f.fract() == 0.0 {
+            Some(f as u64)
+        } else {
+            None
+        }
+    })
+}
+
+fn coerce_read_file_path_field(path_val: &mut Value) -> bool {
+    match path_val {
+        Value::Number(n) => {
+            *path_val = Value::String(n.to_string());
+            true
+        }
+        Value::String(s) => {
+            let t = s.trim();
+            if t != s.as_str() {
+                *path_val = Value::String(t.to_string());
+                true
+            } else {
+                false
+            }
+        }
+        _ => false,
+    }
+}
+
+fn coerce_read_file_one_u64_line_field(val: &mut Value) -> bool {
+    match val {
+        Value::String(s) => {
+            let t = s.trim();
+            if let Ok(n) = t.parse::<u64>()
+                && n >= 1
+            {
+                *val = Value::Number(n.into());
+                true
+            } else {
+                false
+            }
+        }
+        Value::Number(n) => {
+            let Some(u) = json_number_to_u64(n) else {
+                return false;
+            };
+            if u < 1 {
+                return false;
+            }
+            let new_v = Value::Number(u.into());
+            if *val != new_v {
+                *val = new_v;
+                true
+            } else {
+                false
+            }
+        }
+        _ => false,
+    }
+}
+
+fn coerce_read_file_line_int_fields(map: &mut serde_json::Map<String, Value>) -> bool {
+    let mut changed = false;
+    for key in [
+        "start_line",
+        "end_line",
+        "max_lines",
+        "anchor_line",
+        "context_lines",
+    ] {
+        let Some(val) = map.get_mut(key) else {
+            continue;
+        };
+        if coerce_read_file_one_u64_line_field(val) {
+            changed = true;
+        }
+    }
+    changed
+}
+
+fn coerce_read_file_encoding_trim(map: &mut serde_json::Map<String, Value>) -> bool {
+    let Some(enc) = map.get_mut("encoding") else {
+        return false;
+    };
+    let Value::String(s) = enc else {
+        return false;
+    };
+    let t = s.trim();
+    if t == s.as_str() {
+        return false;
+    }
+    *enc = Value::String(t.to_string());
+    true
+}
+
+fn coerce_read_file_count_total_lines(map: &mut serde_json::Map<String, Value>) -> bool {
+    let Some(b) = map.get_mut("count_total_lines") else {
+        return false;
+    };
+    match b {
+        Value::String(s) => {
+            let t = s.trim().to_ascii_lowercase();
+            let nv = match t.as_str() {
+                "true" | "1" | "yes" => Some(Value::Bool(true)),
+                "false" | "0" | "no" => Some(Value::Bool(false)),
+                _ => None,
+            };
+            let Some(vv) = nv else {
+                return false;
+            };
+            *b = vv;
+            true
+        }
+        Value::Number(n) => {
+            let Some(u) = n.as_u64() else {
+                return false;
+            };
+            if !matches!(u, 0 | 1) {
+                return false;
+            }
+            *b = Value::Bool(u == 1);
+            true
+        }
+        _ => false,
+    }
+}
+
+/// 将 `read_file` 对象中的若干字段纠成 Schema / `parse_read_file_args` 可接受的形态。
+/// 返回是否发生过改写（用于决定是否重新 `to_string`）。
+pub(crate) fn coerce_read_file_tool_args_value(v: &mut Value) -> bool {
+    let Value::Object(map) = v else {
+        return false;
+    };
+    let mut changed = false;
+    if let Some(p) = map.get_mut("path")
+        && coerce_read_file_path_field(p)
+    {
+        changed = true;
+    }
+    if coerce_read_file_line_int_fields(map) {
+        changed = true;
+    }
+    if coerce_read_file_encoding_trim(map) {
+        changed = true;
+    }
+    if coerce_read_file_count_total_lines(map) {
+        changed = true;
+    }
+    changed
+}
+
+/// 内置工具入参 JSON：当前仅 **`read_file`** 会在解析成功后做一轮 [`coerce_read_file_tool_args_value`]，
+/// 若有改写则返回序列化后的字符串供校验与 runner 共用。
+pub(crate) fn effective_builtin_tool_args_json<'a>(
+    name: &str,
+    args_json: &'a str,
+) -> Result<Cow<'a, str>, String> {
+    if name != "read_file" {
+        return Ok(Cow::Borrowed(args_json));
+    }
+    let mut v = super::parse_args::parse_args_json(args_json)?;
+    if !coerce_read_file_tool_args_value(&mut v) {
+        return Ok(Cow::Borrowed(args_json));
+    }
+    serde_json::to_string(&v)
+        .map(Cow::Owned)
+        .map_err(|e| format!("read_file 参数纠错后 JSON 序列化失败: {e}"))
+}
+
 fn format_instance_errors(validator: &Validator, instance: &Value) -> String {
     let mut iter = validator.iter_errors(instance);
     let Some(e1) = iter.next() else {
@@ -108,5 +282,36 @@ mod tests {
         assert!(r.is_err());
         let msg = r.unwrap_err();
         assert!(msg.contains("参数与工具 JSON Schema"), "{}", msg);
+    }
+
+    #[test]
+    fn read_file_coerce_string_line_numbers_passes_schema() {
+        let mut v = json!({
+            "path": " README.md ",
+            "start_line": "2",
+            "end_line": "3",
+            "count_total_lines": "false"
+        });
+        assert!(coerce_read_file_tool_args_value(&mut v));
+        let r = validate_parsed_value_if_known("read_file", &v).expect("read_file registered");
+        assert!(r.is_ok(), "{r:?}");
+    }
+
+    #[test]
+    fn read_file_numeric_path_coerced_to_string() {
+        let mut v = json!({ "path": 42 });
+        assert!(coerce_read_file_tool_args_value(&mut v));
+        assert_eq!(v["path"], "42");
+        let r = validate_parsed_value_if_known("read_file", &v).expect("schema");
+        assert!(r.is_ok(), "{r:?}");
+    }
+
+    #[test]
+    fn effective_read_file_serializes_after_coercion() {
+        let raw = r#"{"path":"x.rs","start_line":"1","max_lines":"100"}"#;
+        let cow = effective_builtin_tool_args_json("read_file", raw).expect("ok");
+        assert!(matches!(cow, Cow::Owned(_)));
+        let r = validate_parsed_str_for_builtin("read_file", cow.as_ref()).expect("validator");
+        assert!(r.is_ok(), "{r:?}");
     }
 }
