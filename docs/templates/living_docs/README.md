@@ -1,6 +1,6 @@
 # 活文档模板（复制到工作区）
 
-将本目录下的文件复制到工作区 **`.crabmate/living_docs/`**（与 `.gitignore` 中的本机数据目录一致），然后在配置中开启 **`living_docs_inject_enabled`**（见 **`config/context_inject.toml`** / **`CM_LIVING_DOCS_*`**）。
+将本目录下的文件复制到工作区 **`.crabmate/living_docs/`**（与 `.gitignore` 中的本机数据目录一致）。仓库嵌入默认已开启 **`living_docs_inject_enabled`**（见 **`config/context_inject.toml`** / **`CM_LIVING_DOCS_*`**）；无需注入时可关。
 
 可选文件名（服务端按此顺序拼接摘要）：
 

@@ -83,7 +83,7 @@ pub(crate) struct RunLoopAttach<'a> {
     /// 本会话工作区变更集；`None` 时不记录/不注入（见 `session_workspace_changelist_*` 配置）。
     pub workspace_changelist: Option<Arc<WorkspaceChangelist>>,
     pub staged_plan_optimizer_round: bool,
-    /// 无「可同轮并行批处理」内建工具时是否跳过优化轮。见 `AgentConfig::staged_plan_optimizer_requires_parallel_tools`。
+    /// 无「可同轮并行批处理」内建工具时是否跳过步骤优化轮；`true` 省一次 LLM。嵌入默认 `false`（`config/planning.toml`）；finalize 缺省亦为 `false`。见 `AgentConfig::staged_plan_optimizer_requires_parallel_tools`。
     pub staged_plan_optimizer_requires_parallel_tools: bool,
     /// 逻辑多规划员：首轮后的独立规划份数上限（1=关闭）。见 `AgentConfig::staged_plan_ensemble_count`。
     pub staged_plan_ensemble_count: u8,
