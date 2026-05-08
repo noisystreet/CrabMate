@@ -44,19 +44,17 @@ pub(super) fn make_on_tool_result(
                 .tool_call_id
                 .as_deref()
                 .map(str::trim)
-                .filter(|s| !s.is_empty());
-            let idx_by_tid = tid.and_then(|tid| {
-                s.messages.iter().position(|m| {
-                    m.is_tool
-                        && m.tool_call_id.as_deref() == Some(tid)
-                        && m.state.as_ref().is_some_and(|s| s.is_loading())
-                })
+                .filter(|t| !t.is_empty());
+            let idx_by_tid = tid.and_then(|t| index_of_loading_tool_by_call_id(&s.messages, t));
+            let fifo_id = idx_by_tid
+                .is_none()
+                .then(|| take_pending_tool_message_id(&pending_queue))
+                .flatten();
+            let idx_opt = idx_by_tid.or_else(|| {
+                fifo_id
+                    .as_deref()
+                    .and_then(|pid| index_of_message_id(&s.messages, pid))
             });
-            let idx_by_fifo = idx_by_tid.is_none().then(|| {
-                take_pending_tool_message_id(&pending_queue)
-                    .and_then(|pid| s.messages.iter().position(|m| m.id == pid))
-            });
-            let idx_opt = idx_by_tid.or(idx_by_fifo.flatten());
             if let Some(idx) = idx_opt {
                 let m = &mut s.messages[idx];
                 m.text = t.clone();

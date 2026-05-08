@@ -5,7 +5,7 @@
 //! `Copy` / `Rc::clone` / `Arc::clone`）在 `*_view` 间传递即可。
 //!
 //! 根壳层 `wire_*` 的**注册顺序**影响隐式时序依赖；见 [`app_shell_wire_phases`](super::app_shell_wire_phases)
-//! 与 [`init_app_shell`](super::app_shell_init::init_app_shell)；聊天列内部顺序见 [`wire_chat_domain`](super::chat::wire_chat_domain)。
+//! 与 [`bootstrap_app_shell`](super::app_shell_bootstrap::bootstrap_app_shell)（[`init_app_shell`](super::app_shell_init::init_app_shell)）；聊天列内部顺序见 [`wire_chat_domain`](super::chat::wire_chat_domain)。
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -156,7 +156,8 @@ pub struct SideColumnViewSignals {
 /// 根壳 `App` 与侧栏、底栏、各模态之间共享的一组句柄（由 `App` 构造一次，按需 `clone()`）。
 ///
 /// **Step 1**：扁平字段已并入 [`AppSignals`]；此处仅保留初始化阶段构造的闭包与 [`ChatColumnShell`]，
-/// 新增全局 `RwSignal` 时只需改 [`AppSignals`] 与（按需）[`init_app_shell`](super::app_shell_init::init_app_shell) 中的 wire 实参，不必再维护超长「逐字段拷贝」列表。
+/// 新增全局 `RwSignal` 时只需改 [`AppSignals`] 与（按需）[`bootstrap_app_shell`](super::app_shell_bootstrap::bootstrap_app_shell) /
+/// [`init_app_shell`](super::app_shell_init::init_app_shell) 中的 wire 实参，不必再维护超长「逐字段拷贝」列表。
 #[derive(Clone)]
 pub struct AppShellCtx {
     pub signals: AppSignals,

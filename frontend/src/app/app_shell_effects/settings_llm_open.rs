@@ -3,12 +3,18 @@
 use leptos::prelude::*;
 
 use crate::api::{
-    client_llm_storage_has_api_key, load_client_llm_text_fields_from_storage,
+    StatusData, client_llm_storage_has_api_key, load_client_llm_text_fields_from_storage,
     load_execution_mode_from_storage,
 };
 
 use crate::app::app_signals::LLMSettingsSignals;
 use crate::app::status_tasks_state::StatusTasksSignals;
+
+/// 刻意 **不** 把 `status_data` 的变更订阅进设置填充 `Effect`：仅在设置 UI 打开时读取快照，
+/// 避免 `/status` 轮询导致草稿被反复重置。
+fn status_snapshot_for_llm_drafts(status_tasks: &StatusTasksSignals) -> Option<StatusData> {
+    status_tasks.status_data.get_untracked()
+}
 
 /// 打开设置弹窗或设置页面时，用 **`localStorage`** 与 **`/status`** 快照填充 LLM 草稿区（缩短 [`wire_settings_modal_llm_drafts_on_open`] 形参列表）。
 #[derive(Clone, Copy)]
@@ -52,7 +58,7 @@ pub fn wire_settings_modal_llm_drafts_on_open(s: WireSettingsModalLlmDraftsSigna
         }
         let (stored_base, stored_model, stored_temperature, stored_ctx_tokens, stored_thinking) =
             load_client_llm_text_fields_from_storage();
-        let sd = status_tasks.status_data.get_untracked();
+        let sd = status_snapshot_for_llm_drafts(&status_tasks);
         let base = if stored_base.trim().is_empty() {
             sd.as_ref().map(|d| d.api_base.clone()).unwrap_or_default()
         } else {

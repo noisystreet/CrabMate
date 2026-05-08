@@ -8,7 +8,7 @@
 //! - [`escape`]：`keydown` 回调内统一 **`get_untracked()`** 读面板开关，避免单个巨型 `Effect` 订阅全部 UI 状态。
 //! - [`settings_llm_open`]：仅在设置弹窗/页面打开时填充草稿；**`status_data` 用 `get_untracked`**，避免订阅 `/status` 刷新导致重复填充。
 //!
-//! **注册顺序**仍见 [`super::app_shell_init::init_app_shell`]。
+//! **注册顺序**仍见 [`super::app_shell_bootstrap::bootstrap_app_shell`]（及 [`super::app_shell_init::init_app_shell`]）。
 
 mod approval_follow;
 mod escape;

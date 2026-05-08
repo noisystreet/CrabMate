@@ -1,4 +1,5 @@
-//! App 壳层 `wire_*` 的**分阶段**注册：编号即 [`super::app_shell_init::init_app_shell`] 中的调用顺序，
+//! App 壳层 `wire_*` 的**分阶段**注册：编号即 [`super::app_shell_bootstrap::bootstrap_app_shell`] /
+//! [`super::app_shell_init::init_app_shell`] 中的调用顺序，
 //! 重排前须通读各阶段注释并跑前端 wasm 检查。
 //!
 //! | 阶段 | 职责 |
@@ -9,6 +10,8 @@
 //! | 4a | 工作区 / 变更集域（依赖 `refresh_workspace`）。 |
 //! | 4b | `/status`、`/tasks` 与侧栏任务面可见时的 `Effect`。 |
 //! | 4c | 工作区路径插入 composer、流式壳、聊天列 `wire_*`（与 4a 共用 `refresh_workspace`）。 |
+//!
+//! 调用顺序由 [`super::app_shell_bootstrap::bootstrap_app_shell`] 固定串联（见该模块内阶段注释）。
 
 use std::sync::Arc;
 
