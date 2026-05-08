@@ -5,8 +5,10 @@ use crabmate_sse_protocol::{
 
 use crate::i18n::Locale;
 use crate::sse_dispatch::{
-    CommandApprovalRequest, SseCallbacks, StagedPlanStepEndInfo, StagedPlanStepStartInfo,
-    ThinkingTraceInfo, TimelineLogInfo, ToolResultInfo, try_dispatch_sse_control_payload,
+    ClarificationQuestionnaireInfo, CommandApprovalRequest, SseClarifyTraceHooks, SseControlSink,
+    SseNoticeTimelineHooks, SseStagedPlanHooks, SseWorkspaceToolHooks, StagedPlanStepEndInfo,
+    StagedPlanStepStartInfo, ThinkingTraceInfo, TimelineLogInfo, ToolResultInfo,
+    try_dispatch_sse_control_payload,
 };
 
 use super::ChatStreamCallbacks;
@@ -109,29 +111,36 @@ pub(super) fn handle_sse_block(
     let mut on_staged_start =
         |info: StagedPlanStepStartInfo| (cbs.on_staged_plan_step_started)(info);
     let mut on_staged_end = |info: StagedPlanStepEndInfo| (cbs.on_staged_plan_step_finished)(info);
-    let mut on_clar = |info: crate::sse_dispatch::ClarificationQuestionnaireInfo| {
-        (cbs.on_clarification_questionnaire)(info)
-    };
+    let mut on_clar =
+        |info: ClarificationQuestionnaireInfo| (cbs.on_clarification_questionnaire)(info);
     let mut on_phase = || (cbs.on_assistant_answer_phase)();
     let mut on_thinking_trace = |info: ThinkingTraceInfo| (cbs.on_thinking_trace)(info);
     let mut on_timeline_log = |info: TimelineLogInfo| (cbs.on_timeline_log)(info);
 
-    let mut cbs2 = SseCallbacks {
+    let mut cbs2 = SseControlSink {
         user_locale: loc,
         on_error: &mut on_err,
-        on_workspace_changed: Some(&mut on_ws),
-        on_tool_call: Some(&mut on_tool_call),
-        on_tool_status_change: Some(&mut on_tool_status),
-        on_parsing_tool_calls_change: Some(&mut on_parse),
-        on_assistant_answer_phase: Some(&mut on_phase),
-        on_tool_result: Some(&mut on_tool_res),
-        on_command_approval_request: Some(&mut on_appr),
-        on_conversation_saved_revision: Some(&mut on_conv_rev),
-        on_staged_plan_step_started: Some(&mut on_staged_start),
-        on_staged_plan_step_finished: Some(&mut on_staged_end),
-        on_clarification_questionnaire: Some(&mut on_clar),
-        on_thinking_trace: Some(&mut on_thinking_trace),
-        on_timeline_log: Some(&mut on_timeline_log),
+        workspace_tool: SseWorkspaceToolHooks {
+            on_workspace_changed: Some(&mut on_ws),
+            on_tool_call: Some(&mut on_tool_call),
+            on_tool_status_change: Some(&mut on_tool_status),
+            on_parsing_tool_calls_change: Some(&mut on_parse),
+            on_tool_result: Some(&mut on_tool_res),
+            on_command_approval_request: Some(&mut on_appr),
+        },
+        staged_plan: SseStagedPlanHooks {
+            on_assistant_answer_phase: Some(&mut on_phase),
+            on_staged_plan_step_started: Some(&mut on_staged_start),
+            on_staged_plan_step_finished: Some(&mut on_staged_end),
+        },
+        clarify_trace: SseClarifyTraceHooks {
+            on_clarification_questionnaire: Some(&mut on_clar),
+            on_thinking_trace: Some(&mut on_thinking_trace),
+        },
+        notice_timeline: SseNoticeTimelineHooks {
+            on_conversation_saved_revision: Some(&mut on_conv_rev),
+            on_timeline_log: Some(&mut on_timeline_log),
+        },
     };
     match try_dispatch_sse_control_payload(&data, &mut cbs2) {
         crate::sse_dispatch::SseDispatch::Stop => Ok(true),

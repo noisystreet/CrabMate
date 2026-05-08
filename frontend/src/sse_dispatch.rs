@@ -21,11 +21,9 @@ pub enum SseDispatch {
     Plain,
 }
 
+/// 工作区与工具相关控制面回调（`tool_call` / `tool_running` / 审批等）。
 #[allow(clippy::type_complexity)]
-pub struct SseCallbacks<'a> {
-    /// 用户可见错误文案语言（如 SSE 协议版本不匹配提示）。
-    pub user_locale: Locale,
-    pub on_error: &'a mut dyn FnMut(String),
+pub struct SseWorkspaceToolHooks<'a> {
     pub on_workspace_changed: Option<&'a mut dyn FnMut()>,
     pub on_tool_call: Option<
         &'a mut dyn FnMut(
@@ -39,18 +37,41 @@ pub struct SseCallbacks<'a> {
     >,
     pub on_tool_status_change: Option<&'a mut dyn FnMut(bool)>,
     pub on_parsing_tool_calls_change: Option<&'a mut dyn FnMut(bool)>,
-    /// 后续 `on_delta` 为终答正文（此前为思维链）；无链时也会在首段正文前下发。
-    pub on_assistant_answer_phase: Option<&'a mut dyn FnMut()>,
     pub on_tool_result: Option<&'a mut dyn FnMut(ToolResultInfo)>,
     pub on_command_approval_request: Option<&'a mut dyn FnMut(CommandApprovalRequest)>,
-    /// `conversation_saved.revision`，供 `POST /chat/branch` 与冲突检测。
-    pub on_conversation_saved_revision: Option<&'a mut dyn FnMut(u64)>,
+}
+
+/// `assistant_answer_phase` 与分步规划时间线。
+pub struct SseStagedPlanHooks<'a> {
+    /// 后续 `on_delta` 为终答正文（此前为思维链）；无链时也会在首段正文前下发。
+    pub on_assistant_answer_phase: Option<&'a mut dyn FnMut()>,
     pub on_staged_plan_step_started: Option<&'a mut dyn FnMut(StagedPlanStepStartInfo)>,
     pub on_staged_plan_step_finished: Option<&'a mut dyn FnMut(StagedPlanStepEndInfo)>,
+}
+
+/// 澄清问卷与思维迹调试事件。
+pub struct SseClarifyTraceHooks<'a> {
     pub on_clarification_questionnaire: Option<&'a mut dyn FnMut(ClarificationQuestionnaireInfo)>,
     pub on_thinking_trace: Option<&'a mut dyn FnMut(ThinkingTraceInfo)>,
+}
+
+/// 会话落盘 revision、`timeline_log`、协议能力等尾部控制面。
+pub struct SseNoticeTimelineHooks<'a> {
+    /// `conversation_saved.revision`，供 `POST /chat/branch` 与冲突检测。
+    pub on_conversation_saved_revision: Option<&'a mut dyn FnMut(u64)>,
     /// `timeline_log` 事件：审批结果等旁注，写入时间线（不进聊天正文）。
     pub on_timeline_log: Option<&'a mut dyn FnMut(TimelineLogInfo)>,
+}
+
+/// SSE 控制面分发入口：按领域分组回调，与 [`try_dispatch_sse_control_payload`] 分支顺序对齐。
+pub struct SseControlSink<'a> {
+    /// 用户可见错误文案语言（如 SSE 协议版本不匹配提示）。
+    pub user_locale: Locale,
+    pub on_error: &'a mut dyn FnMut(String),
+    pub workspace_tool: SseWorkspaceToolHooks<'a>,
+    pub staged_plan: SseStagedPlanHooks<'a>,
+    pub clarify_trace: SseClarifyTraceHooks<'a>,
+    pub notice_timeline: SseNoticeTimelineHooks<'a>,
 }
 
 #[derive(Debug, Clone)]
@@ -137,7 +158,7 @@ pub struct TimelineLogInfo {
 
 fn handle_error_stop(
     obj: &serde_json::Map<String, Value>,
-    cbs: &mut SseCallbacks<'_>,
+    sink: &mut SseControlSink<'_>,
 ) -> Option<SseDispatch> {
     let Some(err) = extract_error_stop(obj) else {
         return None;
@@ -146,18 +167,18 @@ fn handle_error_stop(
         Some(r) => format!("{} ({}, reason_code={r})", err.message, err.code),
         None => format!("{} ({})", err.message, err.code),
     };
-    (cbs.on_error)(line);
+    (sink.on_error)(line);
     Some(SseDispatch::Stop)
 }
 
 fn handle_clarification_questionnaire(
     obj: &serde_json::Map<String, Value>,
-    cbs: &mut SseCallbacks<'_>,
+    sink: &mut SseControlSink<'_>,
 ) -> Option<SseDispatch> {
     let Some(q) = extract_clarification_questionnaire(obj) else {
         return None;
     };
-    if let Some(f) = cbs.on_clarification_questionnaire.as_mut() {
+    if let Some(f) = sink.clarify_trace.on_clarification_questionnaire.as_mut() {
         let fields: Vec<ClarificationFormField> = q
             .fields
             .into_iter()
@@ -179,12 +200,12 @@ fn handle_clarification_questionnaire(
 
 fn handle_thinking_trace(
     obj: &serde_json::Map<String, Value>,
-    cbs: &mut SseCallbacks<'_>,
+    sink: &mut SseControlSink<'_>,
 ) -> Option<SseDispatch> {
     let Some(tt) = extract_thinking_trace(obj) else {
         return None;
     };
-    if let Some(f) = cbs.on_thinking_trace.as_mut() {
+    if let Some(f) = sink.clarify_trace.on_thinking_trace.as_mut() {
         f(ThinkingTraceInfo {
             op: tt.op,
             node_id: tt.node_id,
@@ -199,12 +220,12 @@ fn handle_thinking_trace(
 
 fn handle_tool_call(
     obj: &serde_json::Map<String, Value>,
-    cbs: &mut SseCallbacks<'_>,
+    sink: &mut SseControlSink<'_>,
 ) -> Option<SseDispatch> {
     let Some(tc) = extract_tool_call(obj) else {
         return None;
     };
-    if let Some(f) = cbs.on_tool_call.as_mut() {
+    if let Some(f) = sink.workspace_tool.on_tool_call.as_mut() {
         f(
             tc.name,
             tc.summary,
@@ -219,7 +240,7 @@ fn handle_tool_call(
 
 fn handle_tool_result(
     obj: &serde_json::Map<String, Value>,
-    cbs: &mut SseCallbacks<'_>,
+    sink: &mut SseControlSink<'_>,
 ) -> Option<SseDispatch> {
     let Some(parsed) = extract_tool_result(obj) else {
         return None;
@@ -237,7 +258,7 @@ fn handle_tool_result(
         failure_category: parsed.failure_category,
         structured_preview: parsed.structured_preview,
     };
-    if let Some(f) = cbs.on_tool_result.as_mut() {
+    if let Some(f) = sink.workspace_tool.on_tool_result.as_mut() {
         f(info);
     }
     Some(SseDispatch::Handled)
@@ -245,12 +266,12 @@ fn handle_tool_result(
 
 fn handle_timeline_log(
     obj: &serde_json::Map<String, Value>,
-    cbs: &mut SseCallbacks<'_>,
+    sink: &mut SseControlSink<'_>,
 ) -> Option<SseDispatch> {
     let Some(log) = extract_timeline_log(obj) else {
         return None;
     };
-    if let Some(f) = cbs.on_timeline_log.as_mut() {
+    if let Some(f) = sink.notice_timeline.on_timeline_log.as_mut() {
         f(TimelineLogInfo {
             kind: log.kind,
             title: log.title,
@@ -262,7 +283,7 @@ fn handle_timeline_log(
 
 fn handle_sse_capabilities(
     obj: &serde_json::Map<String, Value>,
-    cbs: &mut SseCallbacks<'_>,
+    sink: &mut SseControlSink<'_>,
 ) -> Option<SseDispatch> {
     if !key_present_non_null(obj, "sse_capabilities") {
         return None;
@@ -282,8 +303,8 @@ fn handle_sse_capabilities(
             } else {
                 "SSE_SERVER_TOO_OLD"
             };
-            (cbs.on_error)(crate::i18n::sse_protocol_version_mismatch(
-                cbs.user_locale,
+            (sink.on_error)(crate::i18n::sse_protocol_version_mismatch(
+                sink.user_locale,
                 sv,
                 SSE_PROTOCOL_VERSION,
                 hint,
@@ -295,7 +316,7 @@ fn handle_sse_capabilities(
 }
 
 /// 解析 `data:` 行内容（已去掉 `data: ` 前缀）；非 JSON 或解析失败时返回 `Plain`。
-pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) -> SseDispatch {
+pub fn try_dispatch_sse_control_payload(data: &str, sink: &mut SseControlSink<'_>) -> SseDispatch {
     let Ok(v) = serde_json::from_str::<Value>(data) else {
         return SseDispatch::Plain;
     };
@@ -306,27 +327,27 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
         return SseDispatch::Plain;
     }
 
-    if let Some(d) = handle_error_stop(obj, cbs) {
+    if let Some(d) = handle_error_stop(obj, sink) {
         return d;
     }
 
-    if let Some(d) = dispatch_staged_plan_control(obj, cbs) {
+    if let Some(d) = dispatch_staged_plan_control(obj, sink) {
         return d;
     }
 
-    if let Some(d) = handle_clarification_questionnaire(obj, cbs) {
+    if let Some(d) = handle_clarification_questionnaire(obj, sink) {
         return d;
     }
 
-    if let Some(d) = handle_thinking_trace(obj, cbs) {
+    if let Some(d) = handle_thinking_trace(obj, sink) {
         return d;
     }
 
-    if let Some(d) = dispatch_workspace_tool_control(obj, cbs) {
+    if let Some(d) = dispatch_workspace_tool_control(obj, sink) {
         return d;
     }
 
-    if let Some(d) = dispatch_notice_timeline_tail(obj, cbs) {
+    if let Some(d) = dispatch_notice_timeline_tail(obj, sink) {
         return d;
     }
 
@@ -335,14 +356,14 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
 
 fn dispatch_staged_plan_control(
     obj: &serde_json::Map<String, Value>,
-    cbs: &mut SseCallbacks<'_>,
+    sink: &mut SseControlSink<'_>,
 ) -> Option<SseDispatch> {
     if obj.get("plan_required") == Some(&Value::Bool(true)) {
         return Some(SseDispatch::Handled);
     }
 
     if let Some(Value::Bool(b)) = obj.get("assistant_answer_phase") {
-        if *b && let Some(f) = cbs.on_assistant_answer_phase.as_mut() {
+        if *b && let Some(f) = sink.staged_plan.on_assistant_answer_phase.as_mut() {
             f();
         }
         return Some(SseDispatch::Handled);
@@ -353,7 +374,7 @@ fn dispatch_staged_plan_control(
     }
     if key_present_non_null(obj, "staged_plan_step_started") {
         if let Some(info) = extract_staged_plan_step_started(obj)
-            && let Some(f) = cbs.on_staged_plan_step_started.as_mut()
+            && let Some(f) = sink.staged_plan.on_staged_plan_step_started.as_mut()
         {
             f(StagedPlanStepStartInfo {
                 step_index: info.step_index,
@@ -366,7 +387,7 @@ fn dispatch_staged_plan_control(
     }
     if key_present_non_null(obj, "staged_plan_step_finished") {
         if let Some(info) = extract_staged_plan_step_finished(obj)
-            && let Some(f) = cbs.on_staged_plan_step_finished.as_mut()
+            && let Some(f) = sink.staged_plan.on_staged_plan_step_finished.as_mut()
         {
             f(StagedPlanStepEndInfo {
                 step_index: info.step_index,
@@ -385,33 +406,33 @@ fn dispatch_staged_plan_control(
 
 fn dispatch_workspace_tool_control(
     obj: &serde_json::Map<String, Value>,
-    cbs: &mut SseCallbacks<'_>,
+    sink: &mut SseControlSink<'_>,
 ) -> Option<SseDispatch> {
     if obj.get("workspace_changed") == Some(&Value::Bool(true)) {
-        if let Some(f) = cbs.on_workspace_changed.as_mut() {
+        if let Some(f) = sink.workspace_tool.on_workspace_changed.as_mut() {
             f();
         }
         return Some(SseDispatch::Handled);
     }
 
-    if let Some(d) = handle_tool_call(obj, cbs) {
+    if let Some(d) = handle_tool_call(obj, sink) {
         return Some(d);
     }
 
     if let Some(Value::Bool(b)) = obj.get("parsing_tool_calls") {
-        if let Some(f) = cbs.on_parsing_tool_calls_change.as_mut() {
+        if let Some(f) = sink.workspace_tool.on_parsing_tool_calls_change.as_mut() {
             f(*b);
         }
         return Some(SseDispatch::Handled);
     }
     if let Some(Value::Bool(b)) = obj.get("tool_running") {
-        if let Some(f) = cbs.on_tool_status_change.as_mut() {
+        if let Some(f) = sink.workspace_tool.on_tool_status_change.as_mut() {
             f(*b);
         }
         return Some(SseDispatch::Handled);
     }
 
-    if let Some(d) = handle_tool_result(obj, cbs) {
+    if let Some(d) = handle_tool_result(obj, sink) {
         return Some(d);
     }
 
@@ -433,7 +454,7 @@ fn dispatch_workspace_tool_control(
                     .and_then(|x| x.as_str())
                     .map(String::from),
             };
-            if let Some(f) = cbs.on_command_approval_request.as_mut() {
+            if let Some(f) = sink.workspace_tool.on_command_approval_request.as_mut() {
                 f(req);
             }
         }
@@ -444,7 +465,7 @@ fn dispatch_workspace_tool_control(
 
 fn dispatch_notice_timeline_tail(
     obj: &serde_json::Map<String, Value>,
-    cbs: &mut SseCallbacks<'_>,
+    sink: &mut SseControlSink<'_>,
 ) -> Option<SseDispatch> {
     if obj.get("staged_plan_notice").is_some_and(|x| x.is_string())
         || obj.get("staged_plan_notice_clear") == Some(&Value::Bool(true))
@@ -458,18 +479,18 @@ fn dispatch_notice_timeline_tail(
     if key_present_non_null(obj, "conversation_saved") {
         if let Some(Value::Object(saved)) = obj.get("conversation_saved")
             && let Some(rev) = saved.get("revision").and_then(|x| x.as_u64())
-            && let Some(f) = cbs.on_conversation_saved_revision.as_mut()
+            && let Some(f) = sink.notice_timeline.on_conversation_saved_revision.as_mut()
         {
             f(rev);
         }
         return Some(SseDispatch::Handled);
     }
 
-    if let Some(d) = handle_timeline_log(obj, cbs) {
+    if let Some(d) = handle_timeline_log(obj, sink) {
         return Some(d);
     }
 
-    if let Some(d) = handle_sse_capabilities(obj, cbs) {
+    if let Some(d) = handle_sse_capabilities(obj, sink) {
         return Some(d);
     }
     if key_present_non_null(obj, "stream_ended") {
@@ -488,7 +509,10 @@ mod sse_control_order_tests {
 
     use crate::i18n::Locale;
 
-    use super::{SseCallbacks, SseDispatch, try_dispatch_sse_control_payload};
+    use super::{
+        SseClarifyTraceHooks, SseControlSink, SseDispatch, SseNoticeTimelineHooks,
+        SseStagedPlanHooks, SseWorkspaceToolHooks, try_dispatch_sse_control_payload,
+    };
 
     #[test]
     fn single_space_sse_payload_is_plain_not_handled() {
@@ -497,24 +521,32 @@ mod sse_control_order_tests {
 
     fn dispatch_triage_string(data: &str) -> &'static str {
         let mut on_err = |_msg: String| {};
-        let mut cbs = SseCallbacks {
+        let mut sink = SseControlSink {
             user_locale: Locale::ZhHans,
             on_error: &mut on_err,
-            on_workspace_changed: None,
-            on_tool_call: None,
-            on_tool_status_change: None,
-            on_parsing_tool_calls_change: None,
-            on_assistant_answer_phase: None,
-            on_tool_result: None,
-            on_command_approval_request: None,
-            on_conversation_saved_revision: None,
-            on_staged_plan_step_started: None,
-            on_staged_plan_step_finished: None,
-            on_clarification_questionnaire: None,
-            on_thinking_trace: None,
-            on_timeline_log: None,
+            workspace_tool: SseWorkspaceToolHooks {
+                on_workspace_changed: None,
+                on_tool_call: None,
+                on_tool_status_change: None,
+                on_parsing_tool_calls_change: None,
+                on_tool_result: None,
+                on_command_approval_request: None,
+            },
+            staged_plan: SseStagedPlanHooks {
+                on_assistant_answer_phase: None,
+                on_staged_plan_step_started: None,
+                on_staged_plan_step_finished: None,
+            },
+            clarify_trace: SseClarifyTraceHooks {
+                on_clarification_questionnaire: None,
+                on_thinking_trace: None,
+            },
+            notice_timeline: SseNoticeTimelineHooks {
+                on_conversation_saved_revision: None,
+                on_timeline_log: None,
+            },
         };
-        match try_dispatch_sse_control_payload(data, &mut cbs) {
+        match try_dispatch_sse_control_payload(data, &mut sink) {
             SseDispatch::Stop => "stop",
             SseDispatch::Handled => "handled",
             SseDispatch::Plain => "plain",

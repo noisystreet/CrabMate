@@ -248,12 +248,12 @@ mod tests {
             main,
             "try_dispatch_sse_control_payload",
             &[
-                r#"if let Some(d) = handle_error_stop(obj, cbs) {"#,
-                r#"if let Some(d) = dispatch_staged_plan_control(obj, cbs) {"#,
-                r#"if let Some(d) = handle_clarification_questionnaire(obj, cbs) {"#,
-                r#"if let Some(d) = handle_thinking_trace(obj, cbs) {"#,
-                r#"if let Some(d) = dispatch_workspace_tool_control(obj, cbs) {"#,
-                r#"if let Some(d) = dispatch_notice_timeline_tail(obj, cbs) {"#,
+                r#"if let Some(d) = handle_error_stop(obj, sink) {"#,
+                r#"if let Some(d) = dispatch_staged_plan_control(obj, sink) {"#,
+                r#"if let Some(d) = handle_clarification_questionnaire(obj, sink) {"#,
+                r#"if let Some(d) = handle_thinking_trace(obj, sink) {"#,
+                r#"if let Some(d) = dispatch_workspace_tool_control(obj, sink) {"#,
+                r#"if let Some(d) = dispatch_notice_timeline_tail(obj, sink) {"#,
             ],
         );
 
@@ -279,10 +279,10 @@ mod tests {
             "dispatch_workspace_tool_control",
             &[
                 r#"if obj.get("workspace_changed") == Some(&Value::Bool(true))"#,
-                r#"if let Some(d) = handle_tool_call(obj, cbs) {"#,
+                r#"if let Some(d) = handle_tool_call(obj, sink) {"#,
                 r#"if let Some(Value::Bool(b)) = obj.get("parsing_tool_calls")"#,
                 r#"if let Some(Value::Bool(b)) = obj.get("tool_running")"#,
-                r#"if let Some(d) = handle_tool_result(obj, cbs) {"#,
+                r#"if let Some(d) = handle_tool_result(obj, sink) {"#,
                 r#"if key_present_non_null(obj, "command_approval_request")"#,
             ],
         );
@@ -296,8 +296,8 @@ mod tests {
                 r#"if obj.get("staged_plan_notice").is_some_and(|x| x.is_string())"#,
                 r#"if let Some(Value::Bool(_)) = obj.get("chat_ui_separator")"#,
                 r#"if key_present_non_null(obj, "conversation_saved")"#,
-                r#"if let Some(d) = handle_timeline_log(obj, cbs) {"#,
-                r#"if let Some(d) = handle_sse_capabilities(obj, cbs) {"#,
+                r#"if let Some(d) = handle_timeline_log(obj, sink) {"#,
+                r#"if let Some(d) = handle_sse_capabilities(obj, sink) {"#,
                 r#"if key_present_non_null(obj, "stream_ended")"#,
             ],
         );
