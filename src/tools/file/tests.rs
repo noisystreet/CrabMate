@@ -42,6 +42,42 @@ fn test_read_file_with_line_range() {
 }
 
 #[test]
+fn test_read_file_rejects_directory_with_directory_hint() {
+    let dir = make_test_dir();
+    std::fs::create_dir_all(dir.join("subdir")).unwrap();
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let err = read_file_try(r#"{"path":"subdir"}"#, &dir, &ctx).expect_err("expected dir error");
+    assert_eq!(err.code, "read_file_not_file");
+    assert!(
+        err.message.contains("目录") && err.message.contains("read_dir"),
+        "unexpected message: {}",
+        err.message
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_read_file_missing_file_includes_layout_hint() {
+    let dir = make_test_dir();
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = read_file(
+        r#"{"path":"definitely/missing/path.rs","start_line":1,"max_lines":5}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(
+        out.contains("glob_files") && out.contains("mod.rs"),
+        "expected Rust layout hint in error body: {}",
+        out
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn test_read_file_swaps_inverted_start_end() {
     let dir = make_test_dir();
     let file = dir.join("big.txt");

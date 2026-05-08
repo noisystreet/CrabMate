@@ -79,7 +79,7 @@ pub(in crate::tools) fn params_read_file() -> serde_json::Value {
         "properties": {
             "path": {
                 "type": "string",
-                "description": "相对工作目录的文件路径，如 src/main.rs。**必须先用 read_dir 确认文件存在**，禁止直接假设某个文件存在。"
+                "description": "相对工作目录的**常规文件**路径（须含文件名与扩展名，如 src/main.rs）；**不要**填目录路径（目录请用 read_dir / list_tree）。Rust 仓库里模块常为 `path/to/mod.rs`，不一定存在同级 `path/to.rs`；workspace 子 crate 入口可能在包根 `lib.rs`，未必在 `src/lib.rs`。不确定时先用 read_dir / glob_files / list_tree 确认。"
             },
             "start_line": {
                 "type": "integer",

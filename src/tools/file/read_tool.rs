@@ -15,6 +15,19 @@ use super::read_file_pipeline::{
     maybe_count_total_lines_for_read, resolve_read_end_line, sniff_opened_file_encoding,
 };
 
+/// 路径不存在或无法解析时追加，减少误猜 `foo.rs` / `src/lib.rs` 等布局。
+const READ_FILE_NOT_FOUND_LAYOUT_HINT: &str = "\n\n提示：若路径不存在，常见于误猜 Rust 布局——模块多为 `…/模块名/mod.rs` 而非同级 `…/模块名.rs`；workspace 子 crate 入口可能在包根 `lib.rs`（或 `Cargo.toml` 的 `[lib] path`），未必有 `src/lib.rs`。请先用 read_dir / glob_files / list_tree 确认真实路径后再 read_file。";
+
+fn read_file_missing_path_hint_eligible(e: &WorkspacePathError) -> bool {
+    match e {
+        WorkspacePathError::PathResolveFailed(io)
+        | WorkspacePathError::WorkspacePathInvalid(io)
+        | WorkspacePathError::NormalizationFailed(io) => io.kind() == std::io::ErrorKind::NotFound,
+        WorkspacePathError::NoExistingAncestor => true,
+        _ => false,
+    }
+}
+
 fn read_file_workspace_tool_error(e: WorkspacePathError) -> crate::tool_result::ToolError {
     let code: &'static str = match e.kind() {
         "empty_path" => "read_file_workspace_empty_path",
@@ -36,6 +49,17 @@ fn read_file_workspace_tool_error(e: WorkspacePathError) -> crate::tool_result::
         _ => "read_file_workspace_other",
     };
     crate::tool_result::ToolError::external_code(code, tool_user_error_from_workspace_path(e))
+}
+
+fn read_file_workspace_tool_error_maybe_hint(
+    e: WorkspacePathError,
+) -> crate::tool_result::ToolError {
+    let attach = read_file_missing_path_hint_eligible(&e);
+    let mut err = read_file_workspace_tool_error(e);
+    if attach {
+        err.message.push_str(READ_FILE_NOT_FOUND_LAYOUT_HINT);
+    }
+    err
 }
 
 fn prepend_read_file_output_header(body: &str, meta: &ReadFileOutputMeta<'_>) -> String {
@@ -232,12 +256,18 @@ pub fn read_file_try(
         count_total,
     } = parse_read_file_args(&v)?;
 
-    let opened =
-        resolve_for_read_open(working_dir, &path).map_err(read_file_workspace_tool_error)?;
+    let opened = resolve_for_read_open(working_dir, &path)
+        .map_err(read_file_workspace_tool_error_maybe_hint)?;
     if !opened.metadata.is_file() {
+        let msg = if opened.metadata.is_dir() {
+            "错误：路径指向目录而非文件，read_file 无法读取目录；请对该路径使用 read_dir，或读取目录内的具体文件（例如某个 .rs 文件或常见入口 mod.rs）。"
+                .to_string()
+        } else {
+            "错误：路径不是文件或不存在，无法读取".to_string()
+        };
         return Err(crate::tool_result::ToolError::external_code(
             "read_file_not_file",
-            "错误：路径不是文件或不存在，无法读取".to_string(),
+            msg,
         ));
     }
 

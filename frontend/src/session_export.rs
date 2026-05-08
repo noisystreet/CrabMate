@@ -166,7 +166,17 @@ fn message_text_for_export(
     loc: Locale,
     apply_assistant_display_filters: bool,
 ) -> String {
-    let body = message_text_for_display_ex(m, loc, apply_assistant_display_filters);
+    let body = if m.is_tool {
+        // 与聊天区工具卡「展开详情」一致：`reasoning_text` 为 `tool_card_text`（标题 + 摘要多段 + 部分工具的原始输出与失败说明）；`text` 仅为紧凑单行。
+        let detail = m.reasoning_text.trim();
+        if !detail.is_empty() {
+            detail.to_string()
+        } else {
+            message_text_for_display_ex(m, loc, apply_assistant_display_filters)
+        }
+    } else {
+        message_text_for_display_ex(m, loc, apply_assistant_display_filters)
+    };
     // 兼容旧会话：仅有“(无回复)”占位时，导出追加最小诊断摘要，便于离线排查。
     if m.role == "assistant"
         && (body.trim() == crate::i18n::stream_empty_reply(Locale::ZhHans)
@@ -449,5 +459,29 @@ mod tests {
         assert_eq!(file.messages[1].role, "tool");
         assert_eq!(file.messages[1].name.as_deref(), Some("tool"));
         assert_eq!(file.messages[2].role, "assistant");
+    }
+
+    #[test]
+    fn export_tool_message_prefers_reasoning_full_card_over_compact_text() {
+        let mut tool_msg = msg("3", "system", "读取目录 ｜ . ｜ 0 项", true);
+        tool_msg.reasoning_text =
+            "读取目录完成\n\n目录：foo\n\n总计遍历：1，展示：1\nfile: a.txt\n".to_string();
+        let session = ChatSession {
+            id: "s1".to_string(),
+            title: "t".to_string(),
+            draft: String::new(),
+            messages: vec![msg("1", "user", "hi", false), tool_msg],
+            updated_at: 0,
+            pinned: false,
+            starred: false,
+            server_conversation_id: None,
+            server_revision: None,
+        };
+        let md = session_to_markdown(&session, Locale::ZhHans, true);
+        assert!(md.contains("总计遍历：1"), "md={md}");
+        assert!(
+            md.contains("file: a.txt"),
+            "expected raw listing lines from tool_card_text: {md}"
+        );
     }
 }
