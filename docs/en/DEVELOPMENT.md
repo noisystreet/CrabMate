@@ -268,7 +268,7 @@ For config keys and env vars, **`docs/en/CONFIGURATION.md`** remains authoritati
 | `git.rs`, `github_cli/`, `grep.rs`, `symbol.rs`, `code_nav.rs`, `call_graph_sketch.rs`, `code_metrics.rs` | VCS, GitHub CLI wrappers, search, metrics |
 | `format.rs`, `lint.rs`, `quality_tools.rs`, `security_tools.rs`, `source_analysis_tools.rs` | Format/lint/quality/security scanners |
 | `structured_data.rs`, `table_text.rs`, `text_diff.rs`, `text_transform.rs`, `patch.rs`, `markdown_links.rs` | Structured data + diffs + patches + links |
-| `spell_astgrep_tools.rs`, `repo_overview.rs`, `docs_health_sweep.rs`, `release_docs.rs` | Docs / overview / changelog / license |
+| `spell_astgrep_tools.rs`, `repo_overview/` (`mod.rs`, `parse.rs`, `sweep.rs`), `docs_health_sweep.rs`, `release_docs.rs` | Docs / overview / changelog / license |
 | `dev_tag.rs`, `tool_params/`, `tool_specs_registry/`, `schema_check.rs`, `tool_summary.rs`, `tool_summary_args.rs`, `tool_summary_args/` | Tool metadata, schemas, workflow arg checks, typed dynamic summaries (**`include!`** fragments under **`tool_summary_args/`**) |
 | `debug_tools.rs`, `diagnostics.rs`, `error_playbook.rs`, `schedule.rs`, `process_tools.rs` | Debug, diagnostics, playbooks, reminders, process/port |
 

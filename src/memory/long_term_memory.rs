@@ -15,7 +15,7 @@ use log::{debug, warn};
 use rusqlite::Connection;
 
 use crate::config::{AgentConfig, LongTermMemoryVectorBackend};
-use crate::memory::long_term_memory_store;
+use crate::memory::long_term_memory_store::{self, MemoryRow};
 use crate::redact::preview_chars;
 use crate::types::{
     CRABMATE_LONG_TERM_MEMORY_NAME, Message, is_chat_ui_separator, is_long_term_memory_injection,
@@ -209,6 +209,38 @@ impl LongTermMemoryRuntime {
             return;
         }
 
+        let Some(picked) = self.pick_ranked_memory_chunks(cfg, rows, &q) else {
+            return;
+        };
+
+        let Some(body) = Self::format_ltm_injection_body(
+            &picked,
+            cfg.long_term_memory.long_term_memory_inject_max_chars,
+        ) else {
+            return;
+        };
+
+        let insert_at = system_insert_index(messages);
+        messages.insert(
+            insert_at,
+            Message {
+                role: "user".to_string(),
+                content: Some(body.into()),
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: None,
+                name: Some(CRABMATE_LONG_TERM_MEMORY_NAME.to_string()),
+                tool_call_id: None,
+            },
+        );
+    }
+
+    fn pick_ranked_memory_chunks(
+        &self,
+        cfg: &AgentConfig,
+        rows: Vec<MemoryRow>,
+        q: &str,
+    ) -> Option<Vec<(f32, String)>> {
         let mut picked: Vec<(f32, String)> = Vec::new();
         match cfg.long_term_memory.long_term_memory_vector_backend {
             LongTermMemoryVectorBackend::Fastembed => {
@@ -224,13 +256,8 @@ impl LongTermMemoryRuntime {
                         }
                     } else {
                         let q_emb = {
-                            let mut g = match self.embedder.lock() {
-                                Ok(x) => x,
-                                Err(_) => return,
-                            };
-                            let Some(ref mut model) = *g else {
-                                return;
-                            };
+                            let mut g = self.embedder.lock().ok()?;
+                            let model = (*g).as_mut()?;
                             let docs = vec![format!("query: {}", q)];
                             match model.embed(docs, None) {
                                 Ok(v) => v.into_iter().next(),
@@ -240,9 +267,7 @@ impl LongTermMemoryRuntime {
                                 }
                             }
                         };
-                        let Some(qv) = q_emb else {
-                            return;
-                        };
+                        let qv = q_emb?;
                         for row in rows {
                             let score = if let Some(ref b) = row.embedding {
                                 bytes_to_f32_slice(b)
@@ -290,12 +315,14 @@ impl LongTermMemoryRuntime {
                 }
             }
         }
+        Some(picked)
+    }
 
+    fn format_ltm_injection_body(picked: &[(f32, String)], budget: usize) -> Option<String> {
         let mut body = String::from(
             "以下为与当前问题可能相关的历史摘要（来自本会话长期记忆，供参考；若无关请忽略）：\n\n",
         );
         let mut used = 0usize;
-        let budget = cfg.long_term_memory.long_term_memory_inject_max_chars;
         for (i, (_s, t)) in picked.iter().enumerate() {
             if used >= budget {
                 break;
@@ -312,22 +339,32 @@ impl LongTermMemoryRuntime {
             used += entry.len();
         }
         if body.len() < 80 {
-            return;
+            return None;
         }
+        Some(body)
+    }
 
-        let insert_at = system_insert_index(messages);
-        messages.insert(
-            insert_at,
-            Message {
-                role: "user".to_string(),
-                content: Some(body.into()),
-                reasoning_content: None,
-                reasoning_details: None,
-                tool_calls: None,
-                name: Some(CRABMATE_LONG_TERM_MEMORY_NAME.to_string()),
-                tool_call_id: None,
-            },
-        );
+    #[cfg(feature = "fastembed")]
+    fn embed_auto_index_chunk_bytes(
+        rt: &LongTermMemoryRuntime,
+        text: &str,
+        role: &str,
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+        let mut g = rt
+            .embedder
+            .lock()
+            .map_err(|e| format!("embedder 锁失败: {e}"))?;
+        let model = g.as_mut().ok_or("embedder 未初始化")?;
+        let prefixed = if role == "user" {
+            format!("query: {}", text)
+        } else {
+            format!("passage: {}", text)
+        };
+        let v = model
+            .embed(vec![prefixed], None)
+            .map_err(|e| format!("嵌入失败: {e}"))?;
+        let vec = v.into_iter().next().ok_or("嵌入结果为空")?;
+        Ok(f32_slice_to_bytes(&vec))
     }
 
     /// 回合成功结束后异步索引本轮 user/assistant（不含 tool 正文）。
@@ -429,21 +466,7 @@ impl LongTermMemoryRuntime {
             let emb = if need_embed {
                 #[cfg(feature = "fastembed")]
                 {
-                    let mut g = rt
-                        .embedder
-                        .lock()
-                        .map_err(|e| format!("embedder 锁失败: {e}"))?;
-                    let model = g.as_mut().ok_or("embedder 未初始化")?;
-                    let prefixed = if role == "user" {
-                        format!("query: {}", text)
-                    } else {
-                        format!("passage: {}", text)
-                    };
-                    let v = model
-                        .embed(vec![prefixed], None)
-                        .map_err(|e| format!("嵌入失败: {e}"))?;
-                    let vec = v.into_iter().next().ok_or("嵌入结果为空")?;
-                    Some(f32_slice_to_bytes(&vec))
+                    Some(Self::embed_auto_index_chunk_bytes(rt, &text, role)?)
                 }
                 #[cfg(not(feature = "fastembed"))]
                 {

@@ -28,6 +28,85 @@ pub(crate) enum CodebaseSemanticInvalidation {
     RelScopes(Vec<RelScope>),
 }
 
+fn push_invalidation_scope(scopes: &mut Vec<RelScope>, s: Option<&str>, is_dir: bool) {
+    if let Some(t) = s.map(str::trim).filter(|x| !x.is_empty()) {
+        scopes.push(RelScope {
+            path: t.replace('\\', "/"),
+            is_dir,
+        });
+    }
+}
+
+enum InvalScopesFill {
+    Ok,
+    FullWorkspace,
+}
+
+fn fill_invalidation_scopes_for_tool(
+    name: &str,
+    v: &serde_json::Value,
+    scopes: &mut Vec<RelScope>,
+) -> InvalScopesFill {
+    match name {
+        "delete_dir" | "create_dir" => {
+            push_invalidation_scope(scopes, v.get("path").and_then(|p| p.as_str()), true);
+            InvalScopesFill::Ok
+        }
+        "create_file" | "modify_file" | "delete_file" | "append_file" | "search_replace"
+        | "chmod_file" | "format_file" | "format_check_file" | "extract_in_file"
+        | "read_binary_meta" | "hash_file" => {
+            push_invalidation_scope(scopes, v.get("path").and_then(|p| p.as_str()), false);
+            InvalScopesFill::Ok
+        }
+        "copy_file" | "move_file" => {
+            push_invalidation_scope(scopes, v.get("from").and_then(|p| p.as_str()), false);
+            push_invalidation_scope(scopes, v.get("to").and_then(|p| p.as_str()), false);
+            InvalScopesFill::Ok
+        }
+        "apply_patch" => {
+            if let Some(patch) = v.get("patch").and_then(|p| p.as_str()) {
+                for rel in patch_paths_from_unified_diff(patch) {
+                    push_invalidation_scope(scopes, Some(rel.as_str()), false);
+                }
+            }
+            if scopes.is_empty() {
+                InvalScopesFill::FullWorkspace
+            } else {
+                InvalScopesFill::Ok
+            }
+        }
+        "structured_patch" | "markdown_check_links" | "typos_check" | "codespell_check" => {
+            push_invalidation_scope(scopes, v.get("path").and_then(|p| p.as_str()), false);
+            if name == "markdown_check_links"
+                && let Some(roots) = v.get("roots").and_then(|r| r.as_array())
+            {
+                for x in roots {
+                    push_invalidation_scope(scopes, x.as_str(), false);
+                }
+            }
+            if matches!(name, "typos_check" | "codespell_check")
+                && let Some(ps) = v.get("paths").and_then(|p| p.as_array())
+            {
+                for x in ps {
+                    push_invalidation_scope(scopes, x.as_str(), false);
+                }
+            }
+            InvalScopesFill::Ok
+        }
+        "ast_grep_rewrite" => {
+            if let Some(ps) = v.get("paths").and_then(|p| p.as_array()) {
+                for x in ps {
+                    push_invalidation_scope(scopes, x.as_str(), false);
+                }
+                InvalScopesFill::Ok
+            } else {
+                InvalScopesFill::FullWorkspace
+            }
+        }
+        _ => InvalScopesFill::FullWorkspace,
+    }
+}
+
 /// 根据工具名与参数推断应失效的范围；**只读工具**返回 `None`。
 pub(crate) fn invalidation_for_tool_call(
     cfg: &AgentConfig,
@@ -59,67 +138,10 @@ pub(crate) fn invalidation_for_tool_call(
     let v: serde_json::Value = serde_json::from_str(args_json).ok()?;
 
     let mut scopes: Vec<RelScope> = Vec::new();
-    fn push_scope(scopes: &mut Vec<RelScope>, s: Option<&str>, is_dir: bool) {
-        if let Some(t) = s.map(str::trim).filter(|x| !x.is_empty()) {
-            scopes.push(RelScope {
-                path: t.replace('\\', "/"),
-                is_dir,
-            });
-        }
-    }
 
-    match name {
-        "delete_dir" | "create_dir" => {
-            push_scope(&mut scopes, v.get("path").and_then(|p| p.as_str()), true);
-        }
-        "create_file" | "modify_file" | "delete_file" | "append_file" | "search_replace"
-        | "chmod_file" | "format_file" | "format_check_file" | "extract_in_file"
-        | "read_binary_meta" | "hash_file" => {
-            push_scope(&mut scopes, v.get("path").and_then(|p| p.as_str()), false);
-        }
-        "copy_file" | "move_file" => {
-            push_scope(&mut scopes, v.get("from").and_then(|p| p.as_str()), false);
-            push_scope(&mut scopes, v.get("to").and_then(|p| p.as_str()), false);
-        }
-        "apply_patch" => {
-            if let Some(patch) = v.get("patch").and_then(|p| p.as_str()) {
-                for rel in patch_paths_from_unified_diff(patch) {
-                    push_scope(&mut scopes, Some(rel.as_str()), false);
-                }
-            }
-            if scopes.is_empty() {
-                return Some(CodebaseSemanticInvalidation::FullWorkspace);
-            }
-        }
-        "structured_patch" | "markdown_check_links" | "typos_check" | "codespell_check" => {
-            push_scope(&mut scopes, v.get("path").and_then(|p| p.as_str()), false);
-            if name == "markdown_check_links"
-                && let Some(roots) = v.get("roots").and_then(|r| r.as_array())
-            {
-                for x in roots {
-                    push_scope(&mut scopes, x.as_str(), false);
-                }
-            }
-            if matches!(name, "typos_check" | "codespell_check")
-                && let Some(ps) = v.get("paths").and_then(|p| p.as_array())
-            {
-                for x in ps {
-                    push_scope(&mut scopes, x.as_str(), false);
-                }
-            }
-        }
-        "ast_grep_rewrite" => {
-            if let Some(ps) = v.get("paths").and_then(|p| p.as_array()) {
-                for x in ps {
-                    push_scope(&mut scopes, x.as_str(), false);
-                }
-            } else {
-                return Some(CodebaseSemanticInvalidation::FullWorkspace);
-            }
-        }
-        _ => {
-            return Some(CodebaseSemanticInvalidation::FullWorkspace);
-        }
+    match fill_invalidation_scopes_for_tool(name, &v, &mut scopes) {
+        InvalScopesFill::Ok => {}
+        InvalScopesFill::FullWorkspace => return Some(CodebaseSemanticInvalidation::FullWorkspace),
     }
 
     scopes.sort_by(|a, b| a.path.cmp(&b.path));
