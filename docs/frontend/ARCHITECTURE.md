@@ -90,7 +90,7 @@
 阶段 | 目标 | 完成判据（建议）
 ------|------|------------------
 **A. 巩固聚合** | 新增长会话相关状态优先进入 **`ChatSessionSignals`**（或同类聚合），`App` 不再增加平行的会话 `RwSignal` | 新 PR 不扩大 `wire_chat_composer_streams` 参数列表
-**B. 壳与域分离** | `app/mod.rs` 仅保留布局组合 + 全局 `Effect`，会话/工作区/任务各自的 `Effect` 块可迁到对应子模块的 `wire_*`；**`init_app_shell()`** 返回 **`AppShellCtx`**：**内嵌一份 `AppSignals`**（避免与初始化块双重「逐字段拷贝」），另附 **`init` 阶段构造的闭包**（如 **`refresh_workspace`**）与 **`ChatColumnShell`**；**`ChatColumnShell`** 再内嵌同一 **`AppSignals`**（句柄廉价 **`Clone`**）+ **`ComposerStreamShell`** + **`wire_chat_composer_streams` 产出**，聊天列视图从 **`shell.app`** 读 **`chat_composer` / `shell_ui`**，不再复制一长串 `RwSignal`。**长 `view!` 实参**仍由 **`AppShellCtx`** 的 **`*_signals()`** 组装方法提供 | `mod.rs` 行数持续下降或由脚本统计不再增长；新增全局信号优先写进 **`AppSignals`** 子聚合体
+**B. 壳与域分离** | `app/mod.rs` 仅保留布局组合 + 全局 `Effect`，会话/工作区/任务各自的 `Effect` 块可迁到对应子模块的 `wire_*`；**`bootstrap_app_shell()`**（**`init_app_shell()`** 别名）返回 **`AppShellCtx`**：**内嵌一份 `AppSignals`**（避免与初始化块双重「逐字段拷贝」），另附 **`init` 阶段构造的闭包**（如 **`refresh_workspace`**）与 **`ChatColumnShell`**；**`ChatColumnShell`** 再内嵌同一 **`AppSignals`**（句柄廉价 **`Clone`**）+ **`ComposerStreamShell`** + **`wire_chat_composer_streams` 产出**，聊天列视图从 **`shell.app`** 读 **`chat_composer` / `shell_ui`**，不再复制一长串 `RwSignal`。**长 `view!` 实参**仍由 **`AppShellCtx`** 的 **`*_signals()`** 组装方法提供 | `mod.rs` 行数持续下降或由脚本统计不再增长；新增全局信号优先写进 **`AppSignals`** 子聚合体
 **C. 功能子目录** | `chat` 相关文件物理上归入 `app/chat/`（或等价命名），`mod` 再导出 | **已落地** `app/chat/`；`docs/开发文档.md` 已同步 |
 **D. 端口清晰** | `api.rs` 保持最薄；如需 mock，对 `fetch_*` 层包一层 trait 或测试桩（按需） | 关键 `fetch` 在 `wasm-bindgen-test` 或集成测试可替换
 

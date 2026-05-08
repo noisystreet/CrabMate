@@ -1,7 +1,12 @@
 //! 会话列表：首启从 `localStorage` 载入、`GET /web-ui` 一次同步、变更写回。
 //!
 //! **订阅**：`wire_persist_chat_sessions` 追踪 `sessions` 与 `active_id`——勿在同一 `Effect` 内混入流式高频写入路径以外的无关逻辑。
+//! 写盘经 **防抖**（[`PERSIST_SESSIONS_DEBOUNCE_MS`]）：流式正文高频更新时合并为单次 `save_sessions`，减轻主线程与 `localStorage` 压力。
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use gloo_timers::future::TimeoutFuture;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
@@ -72,21 +77,40 @@ pub fn wire_web_ui_config_once_after_init(
     });
 }
 
-/// 会话或活动 id 变化时写回 `localStorage`。
+/// 会话列表写回 `localStorage` 的防抖间隔（毫秒）。
+const PERSIST_SESSIONS_DEBOUNCE_MS: u32 = 400;
+
+/// 会话或活动 id 变化时写回 `localStorage`（防抖：安静窗口后落盘最新快照）。
 pub fn wire_persist_chat_sessions(
     initialized: RwSignal<bool>,
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
 ) {
+    let debounce_tick = StoredValue::new(Arc::new(AtomicU64::new(0)));
     Effect::new(move |_| {
         if !initialized.get() {
             return;
         }
-        let list = sessions.get();
-        let aid = active_id.get();
-        if aid.is_empty() {
-            return;
-        }
-        save_sessions(&list, Some(&aid));
+        let _ = sessions.get();
+        let _ = active_id.get();
+        let ctr = debounce_tick.get_value();
+        let prev = ctr.fetch_add(1, Ordering::Relaxed);
+        let tick = prev.wrapping_add(1);
+        let ctr2 = Arc::clone(&ctr);
+        spawn_local(async move {
+            TimeoutFuture::new(PERSIST_SESSIONS_DEBOUNCE_MS).await;
+            if ctr2.load(Ordering::Relaxed) != tick {
+                return;
+            }
+            if !initialized.get_untracked() {
+                return;
+            }
+            let list = sessions.get_untracked();
+            let aid = active_id.get_untracked();
+            if aid.is_empty() {
+                return;
+            }
+            save_sessions(&list, Some(&aid));
+        });
     });
 }
