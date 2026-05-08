@@ -4,15 +4,18 @@
 
 mod body_reader;
 mod http_request;
+mod send_helpers;
 mod sse_frame;
 
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::Response;
 
-use crabmate_sse_protocol::StreamEndReason;
-
 use crate::i18n::Locale;
+
+use send_helpers::{
+    ChatStreamRoundOutcome, chat_stream_fetch_retry_exhausted, run_chat_stream_http_round,
+};
 
 pub type OnToolCallFn = std::rc::Rc<
     dyn Fn(String, String, Option<String>, Option<String>, Option<String>, Option<String>),
@@ -132,7 +135,7 @@ pub async fn send_chat_stream(p: SendChatStreamParams<'_>) -> Result<(), String>
         let resp_val = match JsFuture::from(w.fetch_with_request(&req)).await {
             Ok(v) => v,
             Err(e) => {
-                if stream_resume_job_id.is_none() || attempt >= 6 {
+                if chat_stream_fetch_retry_exhausted(stream_resume_job_id, attempt) {
                     return Err(format!("fetch: {:?}", e));
                 }
                 attempt = attempt.saturating_add(1);
@@ -141,40 +144,18 @@ pub async fn send_chat_stream(p: SendChatStreamParams<'_>) -> Result<(), String>
             }
         };
         let resp: Response = resp_val.dyn_into().map_err(|_| "not Response")?;
-        http_request::apply_chat_stream_response_headers(&resp, &cbs, &mut stream_resume_job_id);
-        if resp.status() == 410 {
-            return Err(crate::i18n::api_err_stream_gone(loc).to_string());
-        }
-        if !resp.ok() {
-            let msg = http_request::chat_stream_read_error_body(&resp, loc).await?;
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&msg)
-                && let Some(m) = v.get("message").and_then(|x| x.as_str())
-                && !m.trim().is_empty()
-            {
-                return Err(m.to_string());
-            }
-            return Err(msg);
-        }
-        let Some(rb) = resp.body() else {
-            return Err(crate::i18n::api_err_no_response_body(loc).to_string());
-        };
-        let (stream_finished_normally, saw_stream_ended) =
-            body_reader::consume_chat_stream_response_body(
-                rb,
-                signal,
-                &mut last_event_id,
-                &cbs,
-                loc,
-                stream_resume_job_id,
-            )
-            .await?;
-        if stream_finished_normally {
-            if !saw_stream_ended {
-                // 某些后端/网络尾部场景可能未显式下发 `stream_ended`，前端按正常完结补齐。
-                (cbs.on_stream_ended)(StreamEndReason::Completed.to_string());
-            }
-            (cbs.on_done)();
-            return Ok(());
+        match run_chat_stream_http_round(
+            resp,
+            &cbs,
+            &mut stream_resume_job_id,
+            signal,
+            &mut last_event_id,
+            loc,
+        )
+        .await?
+        {
+            ChatStreamRoundOutcome::Completed => return Ok(()),
+            ChatStreamRoundOutcome::ResumeReconnect => {}
         }
         if stream_resume_job_id.is_none() {
             return Err(crate::i18n::api_err_no_response_body(loc).to_string());
