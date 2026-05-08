@@ -125,6 +125,15 @@ pub fn settings_theme_material(l: Locale) -> &'static str {
     }
 }
 
+pub fn settings_theme_preset_label(l: Locale, slug: &str) -> &'static str {
+    match slug {
+        "dark" => settings_theme_dark(l),
+        "light" => settings_theme_light(l),
+        "material" => settings_theme_material(l),
+        _ => settings_theme_dark(l),
+    }
+}
+
 pub fn settings_label_theme_preset(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "配色方案",

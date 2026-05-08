@@ -11,6 +11,18 @@ pub const TASKS_VISIBLE_KEY: &str = "agent-demo-tasks-visible";
 pub const SIDE_PANEL_VIEW_KEY: &str = "agent-demo-side-panel-view";
 pub const STATUS_BAR_VISIBLE_KEY: &str = "agent-demo-status-bar-visible";
 pub const THEME_KEY: &str = "crabmate-theme";
+/// 合法 `data-theme` / [`THEME_KEY`] 取值（与 **`frontend/themes/*.css`**、`index.html` 链接顺序一致）。
+pub const THEME_SLUGS: &[&str] = &["dark", "light", "material"];
+
+#[must_use]
+pub fn normalize_theme_slug(raw: &str) -> String {
+    let t = raw.trim();
+    if THEME_SLUGS.contains(&t) {
+        t.to_string()
+    } else {
+        "light".to_string()
+    }
+}
 /// 界面语言：`zh-Hans` | `en`（与 `<html lang>` 一致）。
 pub const LOCALE_KEY: &str = "crabmate-locale";
 /// 为 `true` 时显示页面径向渐变光晕；`false` 时仅纯色背景（`data-bg-decor="plain"`）。
@@ -149,5 +161,25 @@ pub fn store_bool_key(key: &str, v: bool) {
 pub fn store_f64_key(key: &str, v: f64) {
     if let Some(st) = local_storage() {
         let _ = st.set_item(key, &v.to_string());
+    }
+}
+
+#[cfg(test)]
+mod theme_slug_tests {
+    use super::normalize_theme_slug;
+
+    #[test]
+    fn unknown_theme_falls_back_to_light() {
+        assert_eq!(normalize_theme_slug("nope"), "light");
+    }
+
+    #[test]
+    fn trims_whitespace() {
+        assert_eq!(normalize_theme_slug(" dark \n"), "dark");
+    }
+
+    #[test]
+    fn material_accepted() {
+        assert_eq!(normalize_theme_slug("material"), "material");
     }
 }

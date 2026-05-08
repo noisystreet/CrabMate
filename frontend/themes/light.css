@@ -1,0 +1,64 @@
+/*
+ * 浅色主题（data-theme="light"）。
+ * 见 themes/README.md：增删预设时请同步 Rust 白名单（app_prefs::THEME_SLUGS）与 index.html 引用链。
+ */
+:root[data-theme="light"] {
+  /* 浅色：中性纸灰底 + 钢蓝主色；表面阶略拉开 */
+  --bg: #eceef2;
+  --bg-elevated: #f4f5f8;
+  --surface: #ffffff;
+  --surface-hover: #f1f3f6;
+  --border: #d8dce4;
+  --border-subtle: #e8ebf1;
+  --text: #16171c;
+  --muted: #5a616e;
+  --accent: #475e7a;
+  --accent-dim: color-mix(in srgb, var(--accent) 15%, var(--surface));
+  --accent-glow: color-mix(in srgb, var(--accent) 7%, transparent);
+
+  --info: #475e7a;
+  --success: #3a634d;
+  --warn: #885e30;
+  --error: #8c4049;
+
+  --info-bg: color-mix(in srgb, var(--info) 10%, var(--surface));
+  --success-bg: color-mix(in srgb, var(--success) 10%, var(--surface));
+  --warn-bg: color-mix(in srgb, var(--warn) 12%, var(--surface));
+  --error-bg: color-mix(in srgb, var(--error) 10%, var(--surface));
+
+  --danger: var(--error);
+  --danger-bg: var(--error-bg);
+  --ok: var(--success);
+  --shadow-raised:
+    0 1px 2px rgba(15, 23, 42, 0.028),
+    0 6px 22px rgba(15, 23, 42, 0.034);
+  --shadow-overlay:
+    0 10px 32px rgba(15, 23, 42, 0.055),
+    0 22px 52px rgba(15, 23, 42, 0.042);
+  --shadow-sm: var(--shadow-raised);
+  --shadow-md: var(--shadow-overlay);
+
+  /* 浅色覆层（与历史 [data-theme="light"] 组件分叉等价） */
+  --selection-bg: color-mix(in srgb, var(--accent) 18%, transparent);
+  --selection-color: var(--text);
+  --page-bg-decor-html:
+    radial-gradient(ellipse 120% 80% at 100% -20%, var(--accent-glow), transparent 58%),
+    radial-gradient(ellipse 80% 50% at -10% 100%, color-mix(in srgb, var(--accent) 3.5%, transparent), transparent 50%);
+  --page-bg-decor-body:
+    radial-gradient(ellipse 100% 60% at 100% 0%, var(--accent-glow), transparent 62%),
+    radial-gradient(ellipse 60% 40% at 0% 100%, color-mix(in srgb, var(--accent) 3%, transparent), transparent 54%);
+  --nav-rail-bg: color-mix(in srgb, var(--bg-elevated) 90%, var(--bg));
+  --btn-primary-bg: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 92%, #fff) 0%,
+    color-mix(in srgb, var(--accent) 94%, #0f172a) 100%
+  );
+  --btn-primary-border: color-mix(in srgb, var(--accent) 72%, #1e293b);
+  --modal-backdrop-bg: rgba(15, 23, 42, 0.33);
+  --status-agent-select-bg-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%235a616e' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
+  --composer-bar-box-shadow:
+    0 -1px 0 color-mix(in srgb, #fff 72%, transparent) inset,
+    0 -6px 26px color-mix(in srgb, var(--border) 10%, transparent);
+  --composer-ws-ref-bg: color-mix(in srgb, var(--accent) 10%, var(--bg));
+  --composer-ws-ref-box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, var(--border));
+}

@@ -1,0 +1,73 @@
+/*
+ * Material 深色（data-theme="material"）：炭黑层级 + Roboto + M3 圆角档。
+ * 见 themes/README.md。
+ */
+:root[data-theme="material"] {
+  --font-sans: "Roboto", "DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    "Helvetica Neue", Arial, sans-serif;
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-btn: 5px;
+
+  --bg: #0d0d0f;
+  --bg-elevated: #131315;
+  --surface: #1b1b1f;
+  --surface-hover: #242428;
+  --border: #323236;
+  --border-subtle: #151517;
+  --text: #ececee;
+  --muted: #97979f;
+  --accent: #c2c4cd;
+  --accent-dim: color-mix(in srgb, var(--accent) 20%, var(--surface));
+  --accent-glow: color-mix(in srgb, var(--accent) 6%, transparent);
+
+  --info: #959ead;
+  --success: #8eb49a;
+  --warn: #c29868;
+  --error: #bf8793;
+
+  --info-bg: color-mix(in srgb, var(--info) 14%, var(--surface));
+  --success-bg: color-mix(in srgb, var(--success) 13%, var(--surface));
+  --warn-bg: color-mix(in srgb, var(--warn) 14%, var(--surface));
+  --error-bg: color-mix(in srgb, var(--error) 12%, var(--surface));
+
+  --danger: var(--error);
+  --danger-bg: var(--error-bg);
+  --ok: var(--success);
+
+  --shadow-raised:
+    0 1px 0 rgba(255, 255, 255, 0.042) inset,
+    0 2px 8px rgba(0, 0, 0, 0.14),
+    0 12px 34px rgba(0, 0, 0, 0.2);
+  --shadow-overlay:
+    0 8px 28px rgba(0, 0, 0, 0.24),
+    0 26px 58px rgba(0, 0, 0, 0.32);
+  --shadow-sm: var(--shadow-raised);
+  --shadow-md: var(--shadow-overlay);
+
+  --selection-bg: color-mix(in srgb, var(--accent) 20%, var(--surface));
+  --selection-color: var(--text);
+  --page-bg-decor-html:
+    radial-gradient(ellipse 115% 75% at 95% -15%, var(--accent-glow), transparent 56%),
+    radial-gradient(ellipse 75% 48% at -8% 102%, color-mix(in srgb, var(--accent) 3%, transparent), transparent 50%);
+  --page-bg-decor-body:
+    radial-gradient(ellipse 100% 58% at 98% 2%, var(--accent-glow), transparent 60%),
+    radial-gradient(ellipse 58% 40% at 2% 98%, color-mix(in srgb, var(--accent) 2.5%, transparent), transparent 54%);
+  --nav-rail-bg: color-mix(in srgb, var(--bg) 88%, var(--surface));
+  --btn-primary-bg: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 78%, #fff) 0%,
+    color-mix(in srgb, var(--accent) 62%, #080809) 100%
+  );
+  --btn-primary-border: color-mix(in srgb, var(--accent) 42%, #000);
+  --modal-backdrop-bg: rgba(6, 6, 8, 0.56);
+  --status-agent-select-bg-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%2397979f' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
+  --composer-bar-box-shadow:
+    0 -1px 0 color-mix(in srgb, #fff 4.5%, transparent) inset,
+    0 -10px 38px color-mix(in srgb, var(--bg) 52%, transparent);
+  --composer-ws-ref-bg: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  --composer-ws-ref-box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 24%, var(--border));
+}

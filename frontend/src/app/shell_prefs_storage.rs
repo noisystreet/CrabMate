@@ -2,7 +2,7 @@
 //!
 //! # 与其它模块分工
 //!
-//! - **键名与通用读写**：[`crate::app_prefs`]（`THEME_KEY`、`store_bool_key`、侧栏视图等）；句柄经 [`super::local_storage_index`]。
+//! - **键名与通用读写**：[`crate::app_prefs`]（`THEME_KEY`、`THEME_SLUGS`、`normalize_theme_slug`、`store_bool_key`、侧栏视图等）；句柄经 [`super::local_storage_index`]。
 //! - **首屏壳 UI 快照**：[`read_shell_ui_initial_snapshot`] 聚合主题/语言/侧栏宽度等读路径，供 [`super::app_signals::ShellUISignals::new`] 单点消费。
 //! - **会话 JSON**：[`crate::storage`] / [`super::app_shell_effects::session_storage`]。
 //! - **`client_llm.*` / Bearer**：[`crate::api::client_llm_storage`]。
@@ -12,7 +12,7 @@
 use crate::app_prefs::{
     BG_DECOR_KEY, CM_ROLE_KEY, DEFAULT_SIDE_WIDTH, STATUS_BAR_VISIBLE_KEY, SidePanelView,
     THEME_KEY, WORKSPACE_WIDTH_KEY, load_bool_key, load_f64_key, load_side_panel_view,
-    store_bool_key,
+    normalize_theme_slug, store_bool_key,
 };
 use crate::i18n::Locale;
 
@@ -24,13 +24,6 @@ pub(crate) fn read_theme_initial() -> String {
         .and_then(|s| s.get_item(THEME_KEY).ok().flatten())
         .unwrap_or_else(|| "light".to_string());
     normalize_theme_slug(&raw)
-}
-
-fn normalize_theme_slug(raw: &str) -> String {
-    match raw.trim() {
-        "dark" | "light" | "material" => raw.trim().to_string(),
-        _ => "light".to_string(),
-    }
 }
 
 /// 首屏 [`super::app_signals::ShellUISignals`] 所需的 **`localStorage`** 域快照（单入口读键）。

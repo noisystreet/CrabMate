@@ -1,0 +1,16 @@
+/*
+ * 自定义主题模板（示例：勿直接命名为 custom.css 纳入构建，除非已在 index.html 声明）。
+ *
+ * 步骤：
+ * 1. 复制本文件为 themes/my-brand.css
+ * 2. 将选择器改为 :root[data-theme="my-brand"]
+ * 3. 覆写与 light.css 同名的变量（建议复制 light.css 全集再改色）
+ * 4. index.html 增加 link + app_prefs::THEME_SLUGS + i18n
+ */
+:root[data-theme="my-brand"] {
+  --bg: #1a1b26;
+  --surface: #24283b;
+  --text: #c0caf5;
+  --accent: #7aa2f7;
+  /* …按需补全 tokens.css 注释中列出的覆层变量（--selection-bg、--page-bg-decor-* 等）… */
+}

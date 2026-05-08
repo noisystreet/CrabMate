@@ -1,6 +1,7 @@
 use leptos::prelude::*;
 use leptos_dom::helpers::event_target_value;
 
+use crate::app_prefs::THEME_SLUGS;
 use crate::i18n::{self, Locale};
 use crate::settings_llm_fields::{
     LlmApiBasePresetSelect, LlmClientApiKeyField, LlmContextTokensField, LlmCustomApiBaseInput,
@@ -70,9 +71,13 @@ pub(crate) fn SettingsAppearanceBlock(
                     prop:value=move || appearance_theme.get()
                     on:change=move |ev| appearance_theme.set(event_target_value(&ev))
                 >
-                    <option value="dark">{move || i18n::settings_theme_dark(locale.get())}</option>
-                    <option value="light">{move || i18n::settings_theme_light(locale.get())}</option>
-                    <option value="material">{move || i18n::settings_theme_material(locale.get())}</option>
+                    {THEME_SLUGS.iter().copied().map(|slug| {
+                        view! {
+                            <option value=slug>
+                                {move || i18n::settings_theme_preset_label(locale.get(), slug)}
+                            </option>
+                        }
+                    }).collect_view()}
                 </select>
             </div>
         </div>
