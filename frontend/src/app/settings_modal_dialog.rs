@@ -14,6 +14,7 @@ use super::settings_sections::{
 };
 
 /// 设置弹窗 `view!` 所需的信号与回调（单参数入口，满足 fn-param 棘轮）。
+#[derive(Clone)]
 pub struct SettingsModalDialogInput {
     pub settings_modal: RwSignal<bool>,
     pub settings_dialog_ref: NodeRef<Div>,
@@ -43,18 +44,56 @@ pub struct SettingsModalDialogInput {
     pub readonly_tool_ttl_cache_follow_server: RwSignal<bool>,
 }
 
-/// 弹窗可见时的整棵 DOM（与原先一致：内含 `Show`）。
-pub fn settings_modal_dialog(input: SettingsModalDialogInput) -> impl IntoView {
+#[component]
+fn SettingsModalDialogHead(
+    appearance_locale: RwSignal<Locale>,
+    dirty: Memo<bool>,
+    discard: Arc<dyn Fn() + Send + Sync>,
+    close_modal: Arc<dyn Fn() + Send + Sync>,
+    save_all: Arc<dyn Fn() + Send + Sync>,
+) -> impl IntoView {
+    view! {
+        <div class="modal-head">
+            <h2 class="modal-title" id="settings-modal-title">{move || i18n::settings_title(appearance_locale.get())}</h2>
+            <span class="modal-badge">{move || i18n::settings_badge_local(appearance_locale.get())}</span>
+            <Show when=move || dirty.get()>
+                <span class="settings-unsaved-pill">{move || i18n::settings_unsaved_badge(appearance_locale.get())}</span>
+            </Show>
+            <span class="modal-head-spacer"></span>
+            <button type="button" class="btn btn-secondary btn-sm" prop:disabled=move || !dirty.get() on:click={
+                let discard = discard.clone();
+                move |_| discard()
+            }>
+                {move || i18n::settings_discard_changes(appearance_locale.get())}
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" prop:disabled=move || !dirty.get() on:click={
+                let save_all = save_all.clone();
+                move |_| save_all()
+            }>
+                {move || i18n::settings_save_all(appearance_locale.get())}
+            </button>
+            <button type="button" class="btn btn-ghost btn-sm" on:click={
+                let discard = discard.clone();
+                let close_modal = close_modal.clone();
+                move |_| {
+                    if dirty.get() {
+                        discard();
+                    }
+                    close_modal();
+                }
+            }>
+                {move || i18n::settings_close(appearance_locale.get())}
+            </button>
+        </div>
+    }
+}
+
+#[component]
+fn SettingsModalDialogBody(input: SettingsModalDialogInput) -> impl IntoView {
     let SettingsModalDialogInput {
-        settings_modal,
-        settings_dialog_ref,
         appearance_locale,
         appearance_theme,
         appearance_bg_decor,
-        dirty,
-        discard,
-        close_modal,
-        save_all,
         llm_settings_feedback,
         llm_api_base_draft,
         llm_api_base_preset_select,
@@ -72,6 +111,73 @@ pub fn settings_modal_dialog(input: SettingsModalDialogInput) -> impl IntoView {
         executor_llm_has_saved_key,
         clear_executor_key_intent,
         readonly_tool_ttl_cache_follow_server,
+        ..
+    } = input;
+
+    view! {
+        <div class="modal-body">
+            <p class="modal-hint">{move || i18n::settings_intro(appearance_locale.get())}</p>
+            <Show when=move || llm_settings_feedback.get().is_some()>
+                <p class="settings-save-feedback settings-save-feedback-global">{move || {
+                    llm_settings_feedback.get().unwrap_or_default()
+                }}</p>
+            </Show>
+            <SettingsAppearanceBlock
+                locale=appearance_locale
+                appearance_locale=appearance_locale
+                appearance_theme=appearance_theme
+                appearance_bg_decor=appearance_bg_decor
+                theme_select_id="settings-modal-appearance-theme"
+            />
+            <SettingsLlmBlock bundle=SettingsLlmBlockBundle {
+                locale: appearance_locale,
+                llm_api_base_draft,
+                llm_api_base_preset_select,
+                llm_model_draft,
+                llm_temperature_draft,
+                llm_context_tokens_draft,
+                llm_thinking_mode_draft,
+                execution_mode_draft: None,
+                llm_api_key_draft,
+                llm_has_saved_key,
+                clear_client_key_intent,
+                hint_class: "modal-hint settings-field-nested-hint",
+                llm_thinking_mode_select_id: "settings-modal-llm-thinking-mode",
+            } />
+            <SettingsExecutorLlmBlock
+                locale=appearance_locale
+                executor_llm_api_base_draft=executor_llm_api_base_draft
+                executor_llm_api_base_preset_select=executor_llm_api_base_preset_select
+                executor_llm_model_draft=executor_llm_model_draft
+                executor_llm_api_key_draft=executor_llm_api_key_draft
+                executor_llm_has_saved_key=executor_llm_has_saved_key
+                clear_executor_key_intent=clear_executor_key_intent
+                hint_class="modal-hint settings-field-nested-hint"
+            />
+            <SettingsToolsBlock
+                locale=appearance_locale
+                readonly_tool_ttl_cache_follow_server=readonly_tool_ttl_cache_follow_server
+            />
+            <SettingsShortcutsBlock
+                locale=appearance_locale
+                body_class="modal-hint"
+            />
+        </div>
+    }
+}
+
+/// 弹窗可见时的整棵 DOM（与原先一致：内含 `Show`）。
+pub fn settings_modal_dialog(input: SettingsModalDialogInput) -> impl IntoView {
+    let body_input = input.clone();
+    let SettingsModalDialogInput {
+        settings_modal,
+        settings_dialog_ref,
+        appearance_locale,
+        dirty,
+        discard,
+        close_modal,
+        save_all,
+        ..
     } = input;
 
     view! {
@@ -102,86 +208,14 @@ pub fn settings_modal_dialog(input: SettingsModalDialogInput) -> impl IntoView {
                         }
                     }
                 >
-                    <div class="modal-head">
-                        <h2 class="modal-title" id="settings-modal-title">{move || i18n::settings_title(appearance_locale.get())}</h2>
-                        <span class="modal-badge">{move || i18n::settings_badge_local(appearance_locale.get())}</span>
-                        <Show when=move || dirty.get()>
-                            <span class="settings-unsaved-pill">{move || i18n::settings_unsaved_badge(appearance_locale.get())}</span>
-                        </Show>
-                        <span class="modal-head-spacer"></span>
-                        <button type="button" class="btn btn-secondary btn-sm" prop:disabled=move || !dirty.get() on:click={
-                            let discard = discard.clone();
-                            move |_| discard()
-                        }>
-                            {move || i18n::settings_discard_changes(appearance_locale.get())}
-                        </button>
-                        <button type="button" class="btn btn-primary btn-sm" prop:disabled=move || !dirty.get() on:click={
-                            let save_all = save_all.clone();
-                            move |_| save_all()
-                        }>
-                            {move || i18n::settings_save_all(appearance_locale.get())}
-                        </button>
-                        <button type="button" class="btn btn-ghost btn-sm" on:click={
-                            let discard = discard.clone();
-                            let close_modal = close_modal.clone();
-                            move |_| {
-                                if dirty.get() {
-                                    discard();
-                                }
-                                close_modal();
-                            }
-                        }>
-                            {move || i18n::settings_close(appearance_locale.get())}
-                        </button>
-                    </div>
-                    <div class="modal-body">
-                        <p class="modal-hint">{move || i18n::settings_intro(appearance_locale.get())}</p>
-                        <Show when=move || llm_settings_feedback.get().is_some()>
-                            <p class="settings-save-feedback settings-save-feedback-global">{move || {
-                                llm_settings_feedback.get().unwrap_or_default()
-                            }}</p>
-                        </Show>
-                        <SettingsAppearanceBlock
-                            locale=appearance_locale
-                            appearance_locale=appearance_locale
-                            appearance_theme=appearance_theme
-                            appearance_bg_decor=appearance_bg_decor
-                            theme_select_id="settings-modal-appearance-theme"
-                        />
-                        <SettingsLlmBlock bundle=SettingsLlmBlockBundle {
-                            locale: appearance_locale,
-                            llm_api_base_draft,
-                            llm_api_base_preset_select,
-                            llm_model_draft,
-                            llm_temperature_draft,
-                            llm_context_tokens_draft,
-                            llm_thinking_mode_draft,
-                            execution_mode_draft: None,
-                            llm_api_key_draft,
-                            llm_has_saved_key,
-                            clear_client_key_intent,
-                            hint_class: "modal-hint settings-field-nested-hint",
-                            llm_thinking_mode_select_id: "settings-modal-llm-thinking-mode",
-                        } />
-                        <SettingsExecutorLlmBlock
-                            locale=appearance_locale
-                            executor_llm_api_base_draft=executor_llm_api_base_draft
-                            executor_llm_api_base_preset_select=executor_llm_api_base_preset_select
-                            executor_llm_model_draft=executor_llm_model_draft
-                            executor_llm_api_key_draft=executor_llm_api_key_draft
-                            executor_llm_has_saved_key=executor_llm_has_saved_key
-                            clear_executor_key_intent=clear_executor_key_intent
-                            hint_class="modal-hint settings-field-nested-hint"
-                        />
-                        <SettingsToolsBlock
-                            locale=appearance_locale
-                            readonly_tool_ttl_cache_follow_server=readonly_tool_ttl_cache_follow_server
-                        />
-                        <SettingsShortcutsBlock
-                            locale=appearance_locale
-                            body_class="modal-hint"
-                        />
-                    </div>
+                    <SettingsModalDialogHead
+                        appearance_locale
+                        dirty
+                        discard=discard.clone()
+                        close_modal=close_modal.clone()
+                        save_all=save_all.clone()
+                    />
+                    <SettingsModalDialogBody input=body_input.clone() />
                 </div>
             </div>
         </Show>
