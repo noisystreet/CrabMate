@@ -1,4 +1,4 @@
-//! 设置弹窗 DOM（与 `settings_modal.rs` 中的状态/副作用拆分以降低圈复杂度）。
+//! 设置弹窗 DOM（与 `settings_modal/` 中的状态与 `Effect` 拆分以降低圈复杂度）。
 
 use std::sync::Arc;
 
