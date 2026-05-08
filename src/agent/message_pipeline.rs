@@ -476,9 +476,9 @@ fn sanitize_assistant_tool_call_arguments_for_vendor_in_place(msgs: &mut [Messag
             } else if s == "{}" && serde_json::from_str::<serde_json::Value>(orig.trim()).is_err() {
                 log::warn!(
                     target: "crabmate",
-                    "tool_calls.function.arguments 非合法 JSON，已替换为 {{}} 以满足上游校验 tool_call_id={} preview={}",
+                    "tool_calls.function.arguments 无法解析为 JSON（已替换为 {{}} 以满足上游校验；常见原因：流式截断、字符串内未转义换行、模型输出非 JSON）。tool_call_id={} preview={}",
                     tc.id,
-                    crate::redact::preview_chars(orig, 80)
+                    crate::redact::single_line_preview(orig, 120)
                 );
             } else {
                 log::debug!(

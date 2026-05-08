@@ -553,4 +553,20 @@ mod sanitize_tool_call_arguments_tests {
             "{}"
         );
     }
+
+    #[test]
+    fn escapes_literal_newline_inside_json_string() {
+        let raw = concat!("{\"code\": \"def f():", "\n", "    pass\"}");
+        let out = sanitize_tool_call_arguments_for_openai_compat(raw);
+        let v: serde_json::Value = serde_json::from_str(&out).expect("sanitized must parse");
+        assert_eq!(v["code"], "def f():\n    pass");
+    }
+
+    #[test]
+    fn repairs_truncated_string_and_object() {
+        let raw = r#"{"code": "partial"#;
+        let out = sanitize_tool_call_arguments_for_openai_compat(raw);
+        let v: serde_json::Value = serde_json::from_str(&out).expect("sanitized must parse");
+        assert_eq!(v["code"], "partial");
+    }
 }

@@ -20,15 +20,111 @@ pub struct FunctionCall {
 ///
 /// 部分 OpenAI 兼容网关（如 DeepSeek）在错误响应中报告 **`invalid function arguments json string`**
 ///（常见内部码 2013）：**空串**、仅空白或非 JSON 片段（流式拼接未完成等）会在**下一轮**把整段历史发回时触发 HTTP 400。
+///
+/// 修复策略（按序）：合法 JSON 直接紧凑化；否则尝试把 **字符串值内未转义的控制字符**（常见为模型把多行代码直接写进 `"code": "…"`）写成 `\n` 等；再尝试 **截断补全**（流式停在未闭合引号时补上 `"` 与 `}`）。
 #[must_use]
 pub fn sanitize_tool_call_arguments_for_openai_compat(arguments: &str) -> String {
     let t = arguments.trim();
     if t.is_empty() {
         return "{}".to_string();
     }
-    serde_json::from_str::<serde_json::Value>(t)
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(t) {
+        return v.to_string();
+    }
+    let escaped = escape_raw_controls_inside_json_string_regions(t);
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&escaped) {
+        return v.to_string();
+    }
+    if let Some(s) = try_repair_truncated_tool_arguments_json(&escaped) {
+        return s;
+    }
+    if let Some(s) = try_repair_truncated_tool_arguments_json(t) {
+        return s;
+    }
+    "{}".to_string()
+}
+
+/// 按 JSON 字符串语义扫描：在 **双引号字符串内** 将未转义的 ASCII 控制字符写成 `\n` / `\uXXXX`，其余字节原样复制。
+fn escape_raw_controls_inside_json_string_regions(t: &str) -> String {
+    let mut out = String::with_capacity(t.len().saturating_add(16));
+    let mut in_string = false;
+    let mut escape = false;
+    for ch in t.chars() {
+        if escape {
+            out.push(ch);
+            escape = false;
+            continue;
+        }
+        if in_string {
+            match ch {
+                '\\' => {
+                    out.push('\\');
+                    escape = true;
+                }
+                '"' => {
+                    out.push('"');
+                    in_string = false;
+                }
+                '\n' => out.push_str("\\n"),
+                '\r' => out.push_str("\\r"),
+                '\t' => out.push_str("\\t"),
+                c if (c as u32) < 0x20 => {
+                    use std::fmt::Write;
+                    let _ = write!(&mut out, "\\u{:04x}", c as u32);
+                }
+                c => out.push(c),
+            }
+            continue;
+        }
+        if ch == '"' {
+            in_string = true;
+        }
+        out.push(ch);
+    }
+    out
+}
+
+/// 流式或拷贝不完整时，arguments 可能停在 **字符串未闭合**；补上闭合引号并平衡外层 `{`。
+fn try_repair_truncated_tool_arguments_json(t: &str) -> Option<String> {
+    if !t.starts_with('{') {
+        return None;
+    }
+    let mut out = String::with_capacity(t.len().saturating_add(8));
+    let mut brace_depth = 0i32;
+    let mut in_string = false;
+    let mut escape = false;
+    for ch in t.chars() {
+        out.push(ch);
+        if escape {
+            escape = false;
+            continue;
+        }
+        if in_string {
+            match ch {
+                '\\' => escape = true,
+                '"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
+            '{' => brace_depth += 1,
+            '}' => brace_depth = brace_depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    if !in_string || escape {
+        return None;
+    }
+    out.push('"');
+    while brace_depth > 0 {
+        out.push('}');
+        brace_depth -= 1;
+    }
+    serde_json::from_str::<serde_json::Value>(&out)
+        .ok()
         .map(|v| v.to_string())
-        .unwrap_or_else(|_| "{}".to_string())
 }
 
 // ---------- 消息与请求 ----------
