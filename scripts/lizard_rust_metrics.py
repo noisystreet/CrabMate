@@ -2,13 +2,15 @@
 """Rust 圈复杂度：单函数硬上限 + 两项棘轮基线（均不可恶化，降低时可自动写回）。
 
 - 全体函数中 **最大 CCN** 不得高于 `scripts/lizard_max_ccn_baseline.txt`（可降低并自动更新文件）。
-- **top10 CCN 之和** 不得高于 `scripts/lizard_top10_ccn_sum.txt`（可降低并自动更新文件）。
+- **CCN 大于阈值的全部函数：各函数 CCN 之和** 不得高于 `scripts/lizard_high_ccn_sum_baseline.txt`
+  （阈值默认 **15**，即统计 `CCN > 15`；可降低并自动更新文件）。
 
 环境变量：
-  LIZARD_CCN                  单函数 CCN 硬上限（默认 40），超过即失败
-  LIZARD_TOP10_BASELINE_FILE  top10 之和基线文件路径
-  LIZARD_MAX_BASELINE_FILE    最大 CCN 基线文件路径（默认 scripts/lizard_max_ccn_baseline.txt）
-  LIZARD_NO_UPDATE_BASELINE   设为 1/true 时不写回基线；CI（CI=true）默认不写回
+  LIZARD_CCN                         单函数 CCN 硬上限（默认 40），超过即失败
+  LIZARD_HIGH_CCN_SUM_THRESHOLD      高复杂度阈值（默认 15）；仅统计 **严格大于** 该值的函数的 CCN 并求和
+  LIZARD_HIGH_CCN_SUM_BASELINE_FILE  上述「高 CCN 之和」棘轮基线文件路径
+  LIZARD_MAX_BASELINE_FILE           最大 CCN 基线文件路径（默认 scripts/lizard_max_ccn_baseline.txt）
+  LIZARD_NO_UPDATE_BASELINE          设为 1/true 时不写回基线；CI（CI=true）默认不写回
 """
 from __future__ import annotations
 
@@ -24,7 +26,7 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parent.parent
 RUST_ROOTS = [ROOT / "src", ROOT / "crates", ROOT / "frontend" / "src"]
-DEFAULT_TOP10_BASELINE = ROOT / "scripts" / "lizard_top10_ccn_sum.txt"
+DEFAULT_HIGH_SUM_BASELINE = ROOT / "scripts" / "lizard_high_ccn_sum_baseline.txt"
 DEFAULT_MAX_BASELINE = ROOT / "scripts" / "lizard_max_ccn_baseline.txt"
 
 
@@ -44,8 +46,11 @@ def _truthy(s: str | None) -> bool:
 
 def main() -> int:
     max_cap = int(os.environ.get("LIZARD_CCN", "40"))
-    top10_baseline_path = Path(
-        os.environ.get("LIZARD_TOP10_BASELINE_FILE", str(DEFAULT_TOP10_BASELINE))
+    high_threshold = int(os.environ.get("LIZARD_HIGH_CCN_SUM_THRESHOLD", "15"))
+    high_sum_baseline_path = Path(
+        os.environ.get(
+            "LIZARD_HIGH_CCN_SUM_BASELINE_FILE", str(DEFAULT_HIGH_SUM_BASELINE)
+        )
     )
     max_baseline_path = Path(
         os.environ.get("LIZARD_MAX_BASELINE_FILE", str(DEFAULT_MAX_BASELINE))
@@ -74,26 +79,25 @@ def main() -> int:
         return 1
 
     overall_max = max(ccns)
-    ccns_sorted = sorted(ccns, reverse=True)
-    k = min(10, len(ccns_sorted))
-    top10_sum = sum(ccns_sorted[:k])
+    high_ccn_sum = sum(c for c in ccns if c > high_threshold)
+    high_ccn_count = sum(1 for c in ccns if c > high_threshold)
 
-    if top10_baseline_path.is_file():
+    if high_sum_baseline_path.is_file():
         try:
-            top10_baseline = int(top10_baseline_path.read_text().strip())
+            high_sum_baseline = int(high_sum_baseline_path.read_text().strip())
         except ValueError:
             print(
-                f"lizard: 无法解析 top10 基线文件（应为整数一行）: {top10_baseline_path}",
+                f"lizard: 无法解析高 CCN 之和基线文件（应为整数一行）: {high_sum_baseline_path}",
                 file=sys.stderr,
             )
             return 1
     else:
-        top10_baseline = top10_sum
+        high_sum_baseline = high_ccn_sum
         if not no_update:
-            top10_baseline_path.parent.mkdir(parents=True, exist_ok=True)
-            top10_baseline_path.write_text(f"{top10_sum}\n", encoding="utf-8")
+            high_sum_baseline_path.parent.mkdir(parents=True, exist_ok=True)
+            high_sum_baseline_path.write_text(f"{high_ccn_sum}\n", encoding="utf-8")
             print(
-                f"lizard: 已创建 top10 CCN 之和基线 {top10_sum} -> {top10_baseline_path}",
+                f"lizard: 已创建 CCN>{high_threshold} 之和基线 {high_ccn_sum} -> {high_sum_baseline_path}",
                 file=sys.stderr,
             )
 
@@ -119,7 +123,8 @@ def main() -> int:
     print(
         f"lizard Rust: 函数数={len(ccns)}, max CCN={overall_max} "
         f"(硬上限≤{max_cap}, 棘轮基线≤{max_baseline}), "
-        f"top{k} CCN 之和={top10_sum} (棘轮基线≤{top10_baseline})"
+        f"CCN>{high_threshold} 的函数数={high_ccn_count}, 其 CCN 之和={high_ccn_sum} "
+        f"(棘轮基线≤{high_sum_baseline})"
     )
 
     rc = 0
@@ -139,9 +144,10 @@ def main() -> int:
         )
         rc = 1
 
-    if top10_sum > top10_baseline:
+    if high_ccn_sum > high_sum_baseline:
         print(
-            f"lizard: top{k} CCN 之和 {top10_sum} 高于棘轮基线 {top10_baseline}（禁止增加复杂度预算）",
+            f"lizard: CCN>{high_threshold} 的函数 CCN 之和 {high_ccn_sum} "
+            f"高于棘轮基线 {high_sum_baseline}（禁止增加高复杂度代码预算）",
             file=sys.stderr,
         )
         rc = 1
@@ -152,10 +158,11 @@ def main() -> int:
             print(
                 f"lizard: 已收紧最大 CCN 棘轮基线 {max_baseline} -> {overall_max} ({max_baseline_path})"
             )
-        if top10_sum < top10_baseline:
-            top10_baseline_path.write_text(f"{top10_sum}\n", encoding="utf-8")
+        if high_ccn_sum < high_sum_baseline:
+            high_sum_baseline_path.write_text(f"{high_ccn_sum}\n", encoding="utf-8")
             print(
-                f"lizard: 已收紧 top10 CCN 之和棘轮基线 {top10_baseline} -> {top10_sum} ({top10_baseline_path})"
+                f"lizard: 已收紧 CCN>{high_threshold} 之和棘轮基线 "
+                f"{high_sum_baseline} -> {high_ccn_sum} ({high_sum_baseline_path})"
             )
 
     return rc
