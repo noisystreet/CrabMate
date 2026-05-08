@@ -131,6 +131,57 @@ fn test_read_file_respects_max_lines_without_end_line() {
 }
 
 #[test]
+fn test_read_file_anchor_line_symmetric_window() {
+    let dir = make_test_dir();
+    let file = dir.join("hit.rs");
+    let mut content = String::new();
+    for i in 1..=400 {
+        content.push_str(&format!("LINE{i}\n"));
+    }
+    std::fs::write(&file, &content).unwrap();
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = read_file(
+        r#"{"path":"hit.rs","anchor_line":200,"context_lines":10,"max_lines":500}"#,
+        &dir,
+        &ctx,
+    );
+    let out = strip_read_file_output_header_for_tests(&out);
+    assert!(out.contains("190|LINE190"), "应包含锚点上文: {}", out);
+    assert!(out.contains("200|LINE200"), "应包含锚点行: {}", out);
+    assert!(out.contains("210|LINE210"), "应包含锚点下文: {}", out);
+    assert!(
+        !out.contains("189|LINE189"),
+        "对称窗口不应包含过远上文: {}",
+        out
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_read_file_anchor_line_rejects_start_line_combo() {
+    let dir = make_test_dir();
+    std::fs::write(dir.join("x.txt"), "a\n").unwrap();
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let err = read_file_try(
+        r#"{"path":"x.txt","anchor_line":1,"start_line":1}"#,
+        &dir,
+        &ctx,
+    )
+    .expect_err("expected conflict");
+    assert_eq!(err.code, "invalid_args");
+    assert!(
+        err.message.contains("anchor_line") && err.message.contains("start_line"),
+        "{}",
+        err.message
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn test_read_binary_meta_prefix_hash() {
     let dir = make_test_dir();
     let file = dir.join("bin.dat");

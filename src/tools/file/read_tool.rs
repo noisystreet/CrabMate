@@ -131,6 +131,32 @@ fn read_file_logical_cache_key(canonical: &std::path::Path, v: &serde_json::Valu
 const READ_FILE_DEFAULT_MAX_LINES: usize = 500;
 /// read_file 允许的单次上限
 const READ_FILE_ABS_MAX_LINES: usize = 8000;
+/// `anchor_line` 模式下未指定 `context_lines` 时每侧默认行数（对称窗口，仍受 `max_lines` 封顶）。
+const READ_FILE_ANCHOR_CONTEXT_DEFAULT: usize = 120;
+
+#[must_use]
+fn compute_anchor_line_window(
+    anchor_line: usize,
+    context_lines: usize,
+    max_lines: usize,
+) -> (usize, usize) {
+    let ml = max_lines.max(1);
+    let max_half = ml.saturating_sub(1) / 2;
+    let ctx_eff = context_lines.min(max_half);
+    let span = (ctx_eff * 2 + 1).min(ml);
+    let half_down = span.saturating_sub(1) / 2;
+    let mut start_line = anchor_line.saturating_sub(half_down).max(1);
+    let mut end_line = start_line.saturating_add(span.saturating_sub(1));
+    if anchor_line > end_line {
+        end_line = anchor_line;
+        start_line = end_line.saturating_sub(span.saturating_sub(1)).max(1);
+    }
+    if anchor_line < start_line {
+        start_line = anchor_line.max(1);
+        end_line = start_line.saturating_add(span.saturating_sub(1));
+    }
+    (start_line, end_line)
+}
 
 struct ReadFileParsedArgs {
     path: String,
@@ -155,6 +181,50 @@ fn parse_read_file_args(
     };
     let enc_name = parse_text_encoding_name(v.get("encoding").and_then(|x| x.as_str()))
         .map_err(crate::tool_result::ToolError::invalid_args)?;
+
+    let max_lines = v
+        .get("max_lines")
+        .and_then(|n| n.as_u64())
+        .map(|n| n.max(1) as usize)
+        .unwrap_or(READ_FILE_DEFAULT_MAX_LINES)
+        .min(READ_FILE_ABS_MAX_LINES);
+
+    let count_total = v
+        .get("count_total_lines")
+        .and_then(|b| b.as_bool())
+        .unwrap_or(false);
+
+    if let Some(anchor_raw) = v.get("anchor_line") {
+        let anchor_line = match anchor_raw.as_u64() {
+            Some(n) if n >= 1 => n as usize,
+            _ => {
+                return Err(crate::tool_result::ToolError::invalid_args(
+                    "错误：anchor_line 必须是大于等于 1 的整数".to_string(),
+                ));
+            }
+        };
+        if v.get("start_line").is_some() || v.get("end_line").is_some() {
+            return Err(crate::tool_result::ToolError::invalid_args(
+                "错误：使用 anchor_line 时不要同时传 start_line/end_line（检索命中行号只用锚点即可对称取上下文）".to_string(),
+            ));
+        }
+        let context_lines = v
+            .get("context_lines")
+            .and_then(|n| n.as_u64())
+            .map(|n| n.max(1) as usize)
+            .unwrap_or(READ_FILE_ANCHOR_CONTEXT_DEFAULT);
+        let (start_line, end_line) =
+            compute_anchor_line_window(anchor_line, context_lines, max_lines);
+        return Ok(ReadFileParsedArgs {
+            path,
+            enc_name,
+            start_line,
+            end_line_opt: Some(end_line),
+            max_lines,
+            count_total,
+        });
+    }
+
     let mut start_line = match v.get("start_line") {
         Some(n) => match n.as_u64() {
             Some(v) if v >= 1 => v as usize,
@@ -177,17 +247,6 @@ fn parse_read_file_args(
         },
         None => None,
     };
-    let max_lines = v
-        .get("max_lines")
-        .and_then(|n| n.as_u64())
-        .map(|n| n.max(1) as usize)
-        .unwrap_or(READ_FILE_DEFAULT_MAX_LINES)
-        .min(READ_FILE_ABS_MAX_LINES);
-
-    let count_total = v
-        .get("count_total_lines")
-        .and_then(|b| b.as_bool())
-        .unwrap_or(false);
 
     if let Some(e) = end_line_opt.as_mut()
         && *e < start_line
@@ -237,7 +296,7 @@ fn read_file_build_empty_response(
 /// - `max_lines`：单次最多返回行数（默认 500，上限 8000）。若未指定 `end_line`，则读到 `start_line + max_lines - 1` 或 EOF。
 /// - 若同时指定 `end_line` 与 `max_lines`，实际返回行数不超过 `max_lines`；若区间更宽会截断并提示 `has_more`。
 /// - `count_total_lines=true` 时会再扫描一遍文件统计总行数（大文件较慢）；超过 32MiB 会拒绝（见 `read_file_count_total_too_large`）。
-/// - `encoding`：可选 `utf-8`（默认，严格）、`utf-8-sig`、`gb18030`、`gbk`、`gb2312`、`big5`、`utf-16le`、`utf-16be`、`auto`（BOM 优先，否则嗅探）；非法序列返回明确错误。
+/// - `anchor_line` + `context_lines`（可选，默认每侧 120 行）：以锚点行为中心对称取上下文，仍受 `max_lines` 封顶；适合 `search_in_files` / `codebase_semantic_search` 命中行号后直接精读。**不要**与 `start_line`/`end_line` 同传。
 /// - 若同时指定 `end_line` 与 `start_line` 且 **end_line 小于 start_line**（模型偶发起止写反），**自动交换**后再读，与单轮缓存键一致。
 #[allow(clippy::result_large_err)]
 pub fn read_file_try(
