@@ -1,8 +1,8 @@
 /* 设计 token：颜色、间距、排版、动效时长（业务样式见各模块文件）。
- * 主题覆层变量（--selection-bg、--page-bg-decor-*、--nav-rail-bg 等）供多套 data-theme 共用；
- * 新增浅色预设时复制 :root[data-theme="light"] 并覆写色板 + 覆层变量即可。
- * `material`：Material 圆角 + Roboto；色板为中性黑灰深色（与默认深色的钢蓝主色区分）。
- * 色调取向：深色冷石墨蓝、浅色中性纸灰 + 钢蓝点缀、Material 为黑灰深色 + 中性浅灰强调；压低饱和与光晕，阴影偏柔、层级靠表面阶差表达「高级感」。 */
+ * 默认 `:root` = 深色冷石墨蓝（与 **`data-theme="dark"`** 一致；壳层写入该属性时不再额外覆盖）。
+ * **`light` / `material`** 等离散预设见 **`frontend/themes/*.css`**（由 **`index.html`** 在本文之后加载）。
+ * 主题覆层变量（--selection-bg、--page-bg-decor-*、--nav-rail-bg 等）在各主题块内赋值；新增预设见 **`themes/README.md`**。
+ */
 
 :root {
   /* 间距（4px 基准） */
@@ -89,8 +89,7 @@
   --topbar-h: 52px;
 
   /*
-   * 主题敏感覆层（默认 = 深色；浅色仅在 :root[data-theme="light"] 覆盖）。
-   * 新增浅色预设时复制 light 块并改 slug，组件文件应只引用下列变量，避免分散写 [data-theme="light"]。
+   * 主题敏感覆层（默认深色；其它预设见 frontend/themes/*.css）。
    */
   --selection-bg: color-mix(in srgb, var(--accent) 22%, var(--surface));
   --selection-color: var(--text);
@@ -114,135 +113,3 @@
   --composer-ws-ref-box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 28%, var(--border));
 }
 
-:root[data-theme="light"] {
-  /* 浅色：中性纸灰底 + 钢蓝主色；表面阶略拉开 */
-  --bg: #eceef2;
-  --bg-elevated: #f4f5f8;
-  --surface: #ffffff;
-  --surface-hover: #f1f3f6;
-  --border: #d8dce4;
-  --border-subtle: #e8ebf1;
-  --text: #16171c;
-  --muted: #5a616e;
-  --accent: #475e7a;
-  --accent-dim: color-mix(in srgb, var(--accent) 15%, var(--surface));
-  --accent-glow: color-mix(in srgb, var(--accent) 7%, transparent);
-
-  --info: #475e7a;
-  --success: #3a634d;
-  --warn: #885e30;
-  --error: #8c4049;
-
-  --info-bg: color-mix(in srgb, var(--info) 10%, var(--surface));
-  --success-bg: color-mix(in srgb, var(--success) 10%, var(--surface));
-  --warn-bg: color-mix(in srgb, var(--warn) 12%, var(--surface));
-  --error-bg: color-mix(in srgb, var(--error) 10%, var(--surface));
-
-  --danger: var(--error);
-  --danger-bg: var(--error-bg);
-  --ok: var(--success);
-  --shadow-raised:
-    0 1px 2px rgba(15, 23, 42, 0.028),
-    0 6px 22px rgba(15, 23, 42, 0.034);
-  --shadow-overlay:
-    0 10px 32px rgba(15, 23, 42, 0.055),
-    0 22px 52px rgba(15, 23, 42, 0.042);
-  --shadow-sm: var(--shadow-raised);
-  --shadow-md: var(--shadow-overlay);
-
-  /* 浅色：与历史 [data-theme="light"] 组件分叉等价的覆层（新浅色预设在此一并覆盖） */
-  --selection-bg: color-mix(in srgb, var(--accent) 18%, transparent);
-  --selection-color: var(--text);
-  --page-bg-decor-html:
-    radial-gradient(ellipse 120% 80% at 100% -20%, var(--accent-glow), transparent 58%),
-    radial-gradient(ellipse 80% 50% at -10% 100%, color-mix(in srgb, var(--accent) 3.5%, transparent), transparent 50%);
-  --page-bg-decor-body:
-    radial-gradient(ellipse 100% 60% at 100% 0%, var(--accent-glow), transparent 62%),
-    radial-gradient(ellipse 60% 40% at 0% 100%, color-mix(in srgb, var(--accent) 3%, transparent), transparent 54%);
-  --nav-rail-bg: color-mix(in srgb, var(--bg-elevated) 90%, var(--bg));
-  --btn-primary-bg: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--accent) 92%, #fff) 0%,
-    color-mix(in srgb, var(--accent) 94%, #0f172a) 100%
-  );
-  --btn-primary-border: color-mix(in srgb, var(--accent) 72%, #1e293b);
-  --modal-backdrop-bg: rgba(15, 23, 42, 0.33);
-  --status-agent-select-bg-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%235a616e' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
-  --composer-bar-box-shadow:
-    0 -1px 0 color-mix(in srgb, #fff 72%, transparent) inset,
-    0 -6px 26px color-mix(in srgb, var(--border) 10%, transparent);
-  --composer-ws-ref-bg: color-mix(in srgb, var(--accent) 10%, var(--bg));
-  --composer-ws-ref-box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, var(--border));
-}
-
-/* Material 黑灰深色：炭黑层级 + 中性浅灰强调（非默认主题的钢蓝），Roboto + M3 圆角档 */
-:root[data-theme="material"] {
-  --font-sans: "Roboto", "DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
-    "Helvetica Neue", Arial, sans-serif;
-  --radius-xs: 4px;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 20px;
-  --radius-btn: 5px;
-
-  --bg: #0d0d0f;
-  --bg-elevated: #131315;
-  --surface: #1b1b1f;
-  --surface-hover: #242428;
-  --border: #323236;
-  --border-subtle: #151517;
-  --text: #ececee;
-  --muted: #97979f;
-  /* 强调：冷灰高光，避免与默认深色钢蓝撞味 */
-  --accent: #c2c4cd;
-  --accent-dim: color-mix(in srgb, var(--accent) 20%, var(--surface));
-  --accent-glow: color-mix(in srgb, var(--accent) 6%, transparent);
-
-  --info: #959ead;
-  --success: #8eb49a;
-  --warn: #c29868;
-  --error: #bf8793;
-
-  --info-bg: color-mix(in srgb, var(--info) 14%, var(--surface));
-  --success-bg: color-mix(in srgb, var(--success) 13%, var(--surface));
-  --warn-bg: color-mix(in srgb, var(--warn) 14%, var(--surface));
-  --error-bg: color-mix(in srgb, var(--error) 12%, var(--surface));
-
-  --danger: var(--error);
-  --danger-bg: var(--error-bg);
-  --ok: var(--success);
-
-  --shadow-raised:
-    0 1px 0 rgba(255, 255, 255, 0.042) inset,
-    0 2px 8px rgba(0, 0, 0, 0.14),
-    0 12px 34px rgba(0, 0, 0, 0.2);
-  --shadow-overlay:
-    0 8px 28px rgba(0, 0, 0, 0.24),
-    0 26px 58px rgba(0, 0, 0, 0.32);
-  --shadow-sm: var(--shadow-raised);
-  --shadow-md: var(--shadow-overlay);
-
-  --selection-bg: color-mix(in srgb, var(--accent) 20%, var(--surface));
-  --selection-color: var(--text);
-  --page-bg-decor-html:
-    radial-gradient(ellipse 115% 75% at 95% -15%, var(--accent-glow), transparent 56%),
-    radial-gradient(ellipse 75% 48% at -8% 102%, color-mix(in srgb, var(--accent) 3%, transparent), transparent 50%);
-  --page-bg-decor-body:
-    radial-gradient(ellipse 100% 58% at 98% 2%, var(--accent-glow), transparent 60%),
-    radial-gradient(ellipse 58% 40% at 2% 98%, color-mix(in srgb, var(--accent) 2.5%, transparent), transparent 54%);
-  --nav-rail-bg: color-mix(in srgb, var(--bg) 88%, var(--surface));
-  --btn-primary-bg: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--accent) 78%, #fff) 0%,
-    color-mix(in srgb, var(--accent) 62%, #080809) 100%
-  );
-  --btn-primary-border: color-mix(in srgb, var(--accent) 42%, #000);
-  --modal-backdrop-bg: rgba(6, 6, 8, 0.56);
-  --status-agent-select-bg-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%2397979f' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
-  --composer-bar-box-shadow:
-    0 -1px 0 color-mix(in srgb, #fff 4.5%, transparent) inset,
-    0 -10px 38px color-mix(in srgb, var(--bg) 52%, transparent);
-  --composer-ws-ref-bg: color-mix(in srgb, var(--accent) 12%, var(--surface));
-  --composer-ws-ref-box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 24%, var(--border));
-}

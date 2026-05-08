@@ -4,9 +4,9 @@
 **语言**：中文。  
 **关联**：
 
-- 现状与 token：**`frontend/styles/tokens.css`**
+- 现状与 token：**`frontend/styles/tokens.css`**（默认深色 `:root`）；离散预设：**`frontend/themes/*.css`**（见 **`frontend/themes/README.md`**）
 - 主题同步 DOM / 存储：**`frontend/src/app/app_shell_effects/sync_dom.rs`**（`wire_sync_theme_to_storage_and_dom`）
-- 偏好键：**`frontend/src/app_prefs.rs`**（`THEME_KEY` = `crabmate-theme`）
+- 偏好键与白名单：**`frontend/src/app_prefs.rs`**（`THEME_KEY`、`THEME_SLUGS`、`normalize_theme_slug`）
 - 设置 UI：**`frontend/src/app/settings_sections.rs`**、**`settings_modal.rs`**、**`settings_page.rs`**
 - 初始化：**`frontend/src/app/app_signals.rs`**
 - 界面美化总览：**`docs/Web界面美化设计.md`**（若与本设计交叉，以本设计为准定义「多预设」契约，实现后可在该文增加指针）
@@ -19,11 +19,11 @@
 
 | 层级 | 行为 |
 |------|------|
-| **持久化** | `localStorage["crabmate-theme"]` 存字符串，默认读不到时用 **`light`**（见 `app_signals.rs`）。 |
+| **持久化** | `localStorage["crabmate-theme"]` 存字符串，默认读不到时用 **`light`**（见 `app_signals.rs`）。合法取值见 **`frontend/src/app_prefs.rs`** 中 **`THEME_SLUGS`**（与 CSS 预设一致）。 |
 | **DOM** | `<html data-theme="...">` 由 `wire_sync_theme_to_storage_and_dom` 写入，与 `RwSignal<String>` 同步。 |
 | **色板** | **`tokens.css`** 中 `:root` 为默认深色语义；**`:root[data-theme="light"]`** 覆盖浅色变量（`--bg`、`--surface`、`--accent` 等）。 |
 | **局部补丁** | 多个样式文件中存在 **`:root[data-theme="light"]`** 下的组件级规则（如 `base.css`、`shell-ds.css`、`layout-chat.css`、`components.css`、`modal.css`、`status.css`），用于浅色下的细调。 |
-| **设置 UI** | 设置弹窗/设置页中两个选项：**`dark`** / **`light`**，绑定 `appearance_theme`。 |
+| **设置 UI** | 设置弹窗/设置页中主题下拉：**`dark`** / **`light`** / **`material`**（选项由 **`THEME_SLUGS`** 驱动），绑定 `appearance_theme`。 |
 
 ### 1.2 问题
 
@@ -81,7 +81,7 @@
 
 ### 3.4 文件组织（可选）
 
-- 预设较多时，可将各主题块拆到 **`frontend/styles/themes/*.css`**，在 **`index.html`** 的 `data-trunk` 链中 **置于 `tokens.css` 之后**，便于覆盖默认 token；须在 **`docs/开发文档.md`** 的样式链说明中同步路径。
+- 预设较多时，可将各主题块拆到 **`frontend/themes/*.css`**，在 **`index.html`** 的 `data-trunk` 链中 **置于 `styles/tokens.css` 之后**（当前仓库已采用：`light.css`、`material.css`；深色默认见 `tokens.css` 的 `:root`）；须在 **`docs/开发文档.md`** 的样式链说明中同步路径。
 
 ---
 
@@ -89,9 +89,9 @@
 
 | 区域 | 改动 |
 |------|------|
-| **`app_prefs.rs`** | 保留 `THEME_KEY`；可增加 **`pub const THEME_PRESETS: &[ThemePreset]`** 或 `&[&str]` + 显示名 i18n key（单一事实来源）。 |
+| **`app_prefs.rs`** | 保留 `THEME_KEY`；**`THEME_SLUGS`** 与 **`normalize_theme_slug`** 为单一事实来源（与 `themes/*.css`、`index.html` 同步）。 |
 | **`app_signals.rs`** | 读 `localStorage` 后 **`normalize_theme_slug(s)`**：非白名单 → 默认。 |
-| **`settings_sections.rs`** | 用预设列表驱动 UI（按钮组 / 下拉 / 网格），替代硬编码两个 `on:click`。 |
+| **`settings_sections.rs`** | 用 **`THEME_SLUGS`** 驱动 `<option>` 列表；显示名见 **`settings_theme_preset_label`**。 |
 | **`settings_modal.rs` / `settings_page.rs`** | 与设置区块 **同一套预设来源**；`apply_theme_preview_to_dom` 已通用，仅需传入合法 slug。 |
 | **`settings_form_state.rs` / `settings_commit.rs`** | 仍为 `String` 即可；提交时写入 `theme` signal。 |
 | **i18n** | `frontend/src/i18n/settings.rs`（或等价模块）：每个 slug 的 **用户可见名称**、设置页说明一句。 |
