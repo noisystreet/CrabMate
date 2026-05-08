@@ -1,15 +1,20 @@
 //! 设置页全屏视图（`SettingsPageView`）；路由与布局见同目录子模块。
 
+use std::rc::Rc;
+
 use leptos::prelude::*;
 
-use super::dom_preview::{apply_bg_decor_preview_to_dom, apply_theme_preview_to_dom};
+use super::effects::{
+    SettingsPageOpenBaselineWire, wire_settings_page_dom_preview_effect,
+    wire_settings_page_hash_section_effect, wire_settings_page_open_snapshot_effect,
+};
 use super::form_snapshot::{
     SettingsPageDraftSignals, form_current_tracked, form_current_untracked,
 };
 use super::hash_routing::{
-    SettingsSection, clear_settings_hash_if_present, read_settings_section_from_hash,
-    settings_page_install_hashchange_listener, write_settings_section_to_hash,
+    SettingsSection, read_settings_section_from_hash, settings_page_install_hashchange_listener,
 };
+use super::header::SettingsPageHeader;
 use super::layout::{SettingsPageContentPanels, SettingsPageNavRail, SettingsPagePanelDrafts};
 use super::page_actions::{
     DiscardToBaselinesCtx, SaveAllSettingsCtx, discard_to_baselines, try_save_all_settings,
@@ -115,61 +120,51 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
 
     let baselines = SettingsDirtyBaselines::from_form_current(&form_current_untracked(drafts));
 
-    let current_state_untracked = move || form_current_untracked(drafts);
-
     settings_page_install_hashchange_listener(active_section);
 
-    Effect::new(move |_| {
-        if !settings_page.get() {
-            clear_settings_hash_if_present();
-            return;
-        }
-        write_settings_section_to_hash(active_section.get());
-    });
-
-    Effect::new(move |_| {
-        if !settings_page.get() {
-            return;
-        }
-        appearance_locale.set(locale.get_untracked());
-        appearance_theme.set(theme.get_untracked());
-        appearance_bg_decor.set(bg_decor.get_untracked());
-        baselines.refresh_from_current(&current_state_untracked());
-        clear_client_key_intent.set(false);
-        clear_executor_key_intent.set(false);
-        llm_settings_feedback.set(None);
-        executor_llm_settings_feedback.set(None);
-    });
-
-    Effect::new(move |_| {
-        if !settings_page.get() {
-            apply_theme_preview_to_dom(theme.get().as_str());
-            apply_bg_decor_preview_to_dom(bg_decor.get());
-            return;
-        }
-        apply_theme_preview_to_dom(appearance_theme.get().as_str());
-        apply_bg_decor_preview_to_dom(appearance_bg_decor.get());
-    });
+    wire_settings_page_hash_section_effect(settings_page, active_section);
+    wire_settings_page_open_snapshot_effect(
+        SettingsPageOpenBaselineWire {
+            settings_page,
+            locale,
+            theme,
+            bg_decor,
+            appearance_locale,
+            appearance_theme,
+            appearance_bg_decor,
+            drafts,
+            clear_client_key_intent,
+            clear_executor_key_intent,
+            llm_settings_feedback,
+            executor_llm_settings_feedback,
+        },
+        baselines,
+    );
+    wire_settings_page_dom_preview_effect(
+        settings_page,
+        theme,
+        bg_decor,
+        appearance_theme,
+        appearance_bg_decor,
+    );
 
     let dirty = Memo::new(move |_| {
         let current: SettingsFormCurrent = form_current_tracked(drafts);
         baselines.is_dirty(&current)
     });
 
-    let discard = {
-        move |_| {
-            discard_to_baselines(DiscardToBaselinesCtx {
-                baselines,
-                drafts,
-                llm_settings_feedback,
-                executor_llm_settings_feedback,
-            });
-        }
-    };
+    let discard_rc: Rc<dyn Fn()> = Rc::new(move || {
+        discard_to_baselines(DiscardToBaselinesCtx {
+            baselines,
+            drafts,
+            llm_settings_feedback,
+            executor_llm_settings_feedback,
+        });
+    });
 
-    let save_all = {
+    let save_rc: Rc<dyn Fn()> = {
         let dirty = dirty;
-        move |_| {
+        Rc::new(move || {
             try_save_all_settings(SaveAllSettingsCtx {
                 dirty,
                 appearance_locale,
@@ -182,60 +177,29 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
                 client_llm_storage_tick,
                 baselines,
             });
-        }
+        })
+    };
+
+    let on_back: Rc<dyn Fn()> = {
+        let dirty = dirty;
+        let discard_rc = Rc::clone(&discard_rc);
+        Rc::new(move || {
+            if dirty.get() {
+                discard_rc();
+            }
+            settings_page.set(false);
+        })
     };
 
     view! {
         <div class="settings-page" class:settings-page-visible=move || settings_page.get()>
-            <div class="settings-page-header">
-                <button
-                    type="button"
-                    class="btn btn-ghost settings-page-back"
-                    on:click=move |_| {
-                        if dirty.get() {
-                            discard(());
-                        }
-                        settings_page.set(false);
-                    }
-                >
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        aria-hidden="true"
-                    >
-                        <polyline points="15 18 9 12 15 6" />
-                    </svg>
-                    <span>{move || i18n::settings_back(appearance_locale.get())}</span>
-                </button>
-                <h1 class="settings-page-title">{move || i18n::settings_title(appearance_locale.get())}</h1>
-                <span class="settings-page-badge">{move || i18n::settings_badge_local(appearance_locale.get())}</span>
-                <Show when=move || dirty.get()>
-                    <span class="settings-unsaved-pill">{move || i18n::settings_unsaved_badge(appearance_locale.get())}</span>
-                </Show>
-                <span class="settings-page-head-spacer"></span>
-                <div class="settings-page-header-actions">
-                    <button
-                        type="button"
-                        class="btn btn-secondary btn-sm"
-                        prop:disabled=move || !dirty.get()
-                        on:click=move |_| discard(())
-                    >
-                        {move || i18n::settings_discard_changes(appearance_locale.get())}
-                    </button>
-                    <button
-                        type="button"
-                        class="btn btn-primary btn-sm"
-                        prop:disabled=move || !dirty.get()
-                        on:click=move |_| save_all(())
-                    >
-                        {move || i18n::settings_save_all(appearance_locale.get())}
-                    </button>
-                </div>
-            </div>
+            <SettingsPageHeader
+                appearance_locale=appearance_locale
+                dirty=dirty
+                on_back=on_back
+                on_discard=discard_rc
+                on_save=save_rc
+            />
             <div class="settings-page-body">
                 <p class="settings-intro">{move || i18n::settings_intro(appearance_locale.get())}</p>
                 <Show when=move || llm_settings_feedback.get().is_some()>

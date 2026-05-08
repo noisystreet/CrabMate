@@ -11,7 +11,7 @@ use leptos::task::spawn_local;
 use std::sync::Arc;
 
 use super::app_shell_ctx::SettingsModalSignals;
-use super::settings_form_state::SettingsDirtyBaselines;
+use super::settings_form_state::{SettingsDirtyBaselines, sync_appearance_drafts_from_shell};
 use super::settings_modal_dialog::{SettingsModalDialogInput, settings_modal_dialog};
 use crate::a11y::focus_first_in_modal_container;
 use crate::app::settings_page::dom_preview::{
@@ -92,9 +92,14 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
             if !settings_modal.get_untracked() {
                 return;
             }
-            appearance_locale.set(locale.get_untracked());
-            appearance_theme.set(theme.get_untracked());
-            appearance_bg_decor.set(bg_decor.get_untracked());
+            sync_appearance_drafts_from_shell(
+                locale,
+                theme,
+                bg_decor,
+                appearance_locale,
+                appearance_theme,
+                appearance_bg_decor,
+            );
             baselines.refresh_from_current(&current_state_untracked());
             clear_client_key_intent.set(false);
             clear_executor_key_intent.set(false);
