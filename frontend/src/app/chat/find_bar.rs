@@ -17,6 +17,53 @@ pub struct ChatFindBarSignals {
     pub auto_scroll_chat: RwSignal<bool>,
 }
 
+enum ChatFindNavDir {
+    Prev,
+    Next,
+}
+
+fn chat_find_meta_line(locale: Locale, query: &str, match_ids: &[String], cursor: usize) -> String {
+    if query.trim().is_empty() {
+        return String::new();
+    }
+    let n = match_ids.len();
+    if n == 0 {
+        i18n::chat_find_no_match(locale).to_string()
+    } else {
+        format!("{} / {}", cursor + 1, n)
+    }
+}
+
+fn chat_find_nav_disabled(query: &str, match_ids: &[String]) -> bool {
+    query.trim().is_empty() || match_ids.is_empty()
+}
+
+fn scroll_adjacent_find_match(
+    ids: &[String],
+    dir: ChatFindNavDir,
+    chat_find_cursor: RwSignal<usize>,
+    auto_scroll_chat: RwSignal<bool>,
+) {
+    if ids.is_empty() {
+        return;
+    }
+    auto_scroll_chat.set(false);
+    chat_find_cursor.update(|i| match dir {
+        ChatFindNavDir::Prev => {
+            if *i == 0 {
+                *i = ids.len() - 1;
+            } else {
+                *i -= 1;
+            }
+        }
+        ChatFindNavDir::Next => {
+            *i = (*i + 1) % ids.len();
+        }
+    });
+    let idx = chat_find_cursor.get();
+    scroll_message_into_view(&ids[idx]);
+}
+
 #[component]
 pub fn ChatFindBar(signals: ChatFindBarSignals) -> impl IntoView {
     let ChatFindBarSignals {
@@ -43,17 +90,12 @@ pub fn ChatFindBar(signals: ChatFindBarSignals) -> impl IntoView {
                 />
                 <span class="chat-find-meta" aria-live="polite">
                     {move || {
-                        let q = chat_find_query.get();
-                        if q.trim().is_empty() {
-                            return String::new();
-                        }
-                        let n = chat_find_match_ids.with(|v| v.len());
-                        let c = chat_find_cursor.get();
-                        if n == 0 {
-                            i18n::chat_find_no_match(locale.get()).to_string()
-                        } else {
-                            format!("{} / {}", c + 1, n)
-                        }
+                        chat_find_meta_line(
+                            locale.get(),
+                            &chat_find_query.get(),
+                            &chat_find_match_ids.get(),
+                            chat_find_cursor.get(),
+                        )
                     }}
                 </span>
                 <button
@@ -61,24 +103,16 @@ pub fn ChatFindBar(signals: ChatFindBarSignals) -> impl IntoView {
                     class="btn btn-muted btn-sm chat-find-nav"
                     prop:title=move || i18n::chat_find_prev_title(locale.get())
                     prop:disabled=move || {
-                        chat_find_query.get().trim().is_empty()
-                            || chat_find_match_ids.with(|v| v.is_empty())
+                        chat_find_nav_disabled(&chat_find_query.get(), &chat_find_match_ids.get())
                     }
                     on:click=move |_| {
                         let ids = chat_find_match_ids.get();
-                        if ids.is_empty() {
-                            return;
-                        }
-                        auto_scroll_chat.set(false);
-                        chat_find_cursor.update(|i| {
-                            if *i == 0 {
-                                *i = ids.len() - 1;
-                            } else {
-                                *i -= 1;
-                            }
-                        });
-                        let idx = chat_find_cursor.get();
-                        scroll_message_into_view(&ids[idx]);
+                        scroll_adjacent_find_match(
+                            &ids,
+                            ChatFindNavDir::Prev,
+                            chat_find_cursor,
+                            auto_scroll_chat,
+                        );
                     }
                 >
                     "↑"
@@ -88,20 +122,16 @@ pub fn ChatFindBar(signals: ChatFindBarSignals) -> impl IntoView {
                     class="btn btn-muted btn-sm chat-find-nav"
                     prop:title=move || i18n::chat_find_next_title(locale.get())
                     prop:disabled=move || {
-                        chat_find_query.get().trim().is_empty()
-                            || chat_find_match_ids.with(|v| v.is_empty())
+                        chat_find_nav_disabled(&chat_find_query.get(), &chat_find_match_ids.get())
                     }
                     on:click=move |_| {
                         let ids = chat_find_match_ids.get();
-                        if ids.is_empty() {
-                            return;
-                        }
-                        auto_scroll_chat.set(false);
-                        chat_find_cursor.update(|i| {
-                            *i = (*i + 1) % ids.len();
-                        });
-                        let idx = chat_find_cursor.get();
-                        scroll_message_into_view(&ids[idx]);
+                        scroll_adjacent_find_match(
+                            &ids,
+                            ChatFindNavDir::Next,
+                            chat_find_cursor,
+                            auto_scroll_chat,
+                        );
                     }
                 >
                     "↓"

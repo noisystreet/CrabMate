@@ -303,54 +303,79 @@ fn trigger_download_via_tauri(
     Ok(())
 }
 
-fn trigger_download_via_anchor(filename: &str, mime: &str, body: &str) -> Result<(), String> {
+fn document_body_pair() -> Result<(web_sys::Document, web_sys::HtmlElement), String> {
     let window = web_sys::window().ok_or_else(|| "no window".to_string())?;
     let document = window.document().ok_or_else(|| "no document".to_string())?;
     let body_el = document.body().ok_or_else(|| "no body".to_string())?;
+    Ok((document, body_el))
+}
 
-    let make_anchor = || -> Result<web_sys::HtmlAnchorElement, String> {
-        let a = document
-            .create_element("a")
-            .map_err(|e| format!("create a: {:?}", e))?
-            .dyn_into::<web_sys::HtmlAnchorElement>()
-            .map_err(|_| "a element".to_string())?;
-        a.set_download(filename);
-        a.set_attribute("rel", "noopener")
-            .map_err(|e| format!("rel: {:?}", e))?;
-        a.style().set_property("display", "none").ok();
-        Ok(a)
-    };
+fn create_download_anchor(
+    document: &web_sys::Document,
+    filename: &str,
+) -> Result<web_sys::HtmlAnchorElement, String> {
+    let a = document
+        .create_element("a")
+        .map_err(|e| format!("create a: {:?}", e))?
+        .dyn_into::<web_sys::HtmlAnchorElement>()
+        .map_err(|_| "a element".to_string())?;
+    a.set_download(filename);
+    a.set_attribute("rel", "noopener")
+        .map_err(|e| format!("rel: {:?}", e))?;
+    a.style().set_property("display", "none").ok();
+    Ok(a)
+}
 
-    let click_anchor = |a: &web_sys::HtmlAnchorElement| -> Result<(), String> {
-        body_el
-            .append_child(a)
-            .map_err(|e| format!("append: {:?}", e))?;
-        a.click();
-        body_el.remove_child(a).ok();
-        Ok(())
-    };
+fn click_temp_anchor(
+    body_el: &web_sys::HtmlElement,
+    a: &web_sys::HtmlAnchorElement,
+) -> Result<(), String> {
+    body_el
+        .append_child(a)
+        .map_err(|e| format!("append: {:?}", e))?;
+    a.click();
+    body_el.remove_child(a).ok();
+    Ok(())
+}
 
-    // 首选 Blob URL（体积更稳，支持更大文件）；若 WebView 下载策略不接受，再回退 data URL。
+fn anchor_download_with_href(
+    document: &web_sys::Document,
+    body_el: &web_sys::HtmlElement,
+    filename: &str,
+    href: &str,
+) -> Result<(), String> {
+    let a = create_download_anchor(document, filename)?;
+    a.set_href(href);
+    click_temp_anchor(body_el, &a)
+}
+
+fn utf8_blob_for_download(body: &str, mime: &str) -> Result<web_sys::Blob, String> {
     let parts = js_sys::Array::new();
     parts.push(&wasm_bindgen::JsValue::from_str(body));
     let opts = web_sys::BlobPropertyBag::new();
     opts.set_type(mime);
-    let blob = web_sys::Blob::new_with_str_sequence_and_options(&parts, &opts)
-        .map_err(|e| format!("Blob: {:?}", e))?;
-    let blob_url = web_sys::Url::create_object_url_with_blob(&blob)
-        .map_err(|e| format!("object URL: {:?}", e))?;
+    web_sys::Blob::new_with_str_sequence_and_options(&parts, &opts)
+        .map_err(|e| format!("Blob: {:?}", e))
+}
 
-    let blob_attempt = (|| -> Result<(), String> {
-        let a = make_anchor()?;
-        a.set_href(&blob_url);
-        click_anchor(&a)
-    })();
-
-    let url_clone = blob_url.clone();
+fn schedule_revoke_object_url(blob_url: &str) {
+    let url_clone = blob_url.to_string();
     Timeout::new(0, move || {
         let _ = web_sys::Url::revoke_object_url(&url_clone);
     })
     .forget();
+}
+
+fn trigger_download_via_anchor(filename: &str, mime: &str, body: &str) -> Result<(), String> {
+    let (document, body_el) = document_body_pair()?;
+
+    // 首选 Blob URL（体积更稳，支持更大文件）；若 WebView 下载策略不接受，再回退 data URL。
+    let blob = utf8_blob_for_download(body, mime)?;
+    let blob_url = web_sys::Url::create_object_url_with_blob(&blob)
+        .map_err(|e| format!("object URL: {:?}", e))?;
+
+    let blob_attempt = anchor_download_with_href(&document, &body_el, filename, &blob_url);
+    schedule_revoke_object_url(&blob_url);
 
     if blob_attempt.is_ok() {
         return Ok(());
@@ -361,11 +386,7 @@ fn trigger_download_via_anchor(filename: &str, mime: &str, body: &str) -> Result
         mime,
         js_sys::encode_uri_component(body)
     );
-    let data_attempt = (|| -> Result<(), String> {
-        let a = make_anchor()?;
-        a.set_href(&data_uri);
-        click_anchor(&a)
-    })();
+    let data_attempt = anchor_download_with_href(&document, &body_el, filename, &data_uri);
 
     if data_attempt.is_ok() {
         return Ok(());
