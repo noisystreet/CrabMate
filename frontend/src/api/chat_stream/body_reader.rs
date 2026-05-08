@@ -46,6 +46,69 @@ const PRE_STREAM_ENDED_READ_STALL_TIMEOUT_MS: u32 = 300_000;
 /// 断线重连路径亦依赖此项（该路径不设单次 read 超时）。
 const SSE_MEANINGFUL_PAYLOAD_IDLE_TIMEOUT_MS: f64 = 180_000.0;
 
+enum ReadableChunkPoll {
+    Chunk(wasm_bindgen::JsValue),
+    /// 跳出读循环：`finished_normally` 与超时路径一致（`release_lock` 已在分支内执行）。
+    Break {
+        stream_finished_normally: bool,
+    },
+}
+
+async fn poll_readable_stream_chunk(
+    reader: &web_sys::ReadableStreamDefaultReader,
+    saw_stream_ended: bool,
+    stream_resume_job_id: Option<u64>,
+) -> Result<ReadableChunkPoll, String> {
+    if saw_stream_ended {
+        match select(
+            JsFuture::from(reader.read()),
+            TimeoutFuture::new(POST_STREAM_ENDED_READ_TIMEOUT_MS),
+        )
+        .await
+        {
+            Either::Left((Ok(c), _)) => Ok(ReadableChunkPoll::Chunk(c)),
+            Either::Left((Err(e), _)) => {
+                if stream_resume_job_id.is_none() {
+                    Err(crate::i18n::api_err_stream_read(&e))
+                } else {
+                    Ok(ReadableChunkPoll::Break {
+                        stream_finished_normally: false,
+                    })
+                }
+            }
+            Either::Right(((), _)) => {
+                reader.release_lock();
+                Ok(ReadableChunkPoll::Break {
+                    stream_finished_normally: true,
+                })
+            }
+        }
+    } else if stream_resume_job_id.is_none() {
+        match select(
+            JsFuture::from(reader.read()),
+            TimeoutFuture::new(PRE_STREAM_ENDED_READ_STALL_TIMEOUT_MS),
+        )
+        .await
+        {
+            Either::Left((Ok(c), _)) => Ok(ReadableChunkPoll::Chunk(c)),
+            Either::Left((Err(e), _)) => Err(crate::i18n::api_err_stream_read(&e)),
+            Either::Right(((), _)) => {
+                reader.release_lock();
+                Ok(ReadableChunkPoll::Break {
+                    stream_finished_normally: true,
+                })
+            }
+        }
+    } else {
+        match JsFuture::from(reader.read()).await {
+            Ok(c) => Ok(ReadableChunkPoll::Chunk(c)),
+            Err(_) => Ok(ReadableChunkPoll::Break {
+                stream_finished_normally: false,
+            }),
+        }
+    }
+}
+
 /// 消费 `/chat/stream` 响应体：UTF-8 重组、SSE 分帧与尾部 flush（与断线重连时的读失败语义一致）。
 pub(super) async fn consume_chat_stream_response_body(
     rb: web_sys::ReadableStream,
@@ -62,7 +125,7 @@ pub(super) async fn consume_chat_stream_response_body(
 
     let mut raw: Vec<u8> = Vec::new();
     let mut buffer = String::new();
-    let mut stream_finished_normally = false;
+    let mut stream_finished_normally;
     let mut saw_stream_ended = false;
     let mut last_meaningful_payload_ms = js_sys::Date::now();
     loop {
@@ -77,54 +140,18 @@ pub(super) async fn consume_chat_stream_response_body(
                 break;
             }
         }
-        let chunk: wasm_bindgen::JsValue = if saw_stream_ended {
-            match select(
-                JsFuture::from(reader.read()),
-                TimeoutFuture::new(POST_STREAM_ENDED_READ_TIMEOUT_MS),
-            )
-            .await
+        let chunk: wasm_bindgen::JsValue =
+            match poll_readable_stream_chunk(&reader, saw_stream_ended, stream_resume_job_id)
+                .await?
             {
-                Either::Left((Ok(c), _)) => c,
-                Either::Left((Err(e), _)) => {
-                    if stream_resume_job_id.is_none() {
-                        return Err(crate::i18n::api_err_stream_read(&e));
-                    }
+                ReadableChunkPoll::Chunk(c) => c,
+                ReadableChunkPoll::Break {
+                    stream_finished_normally: finished,
+                } => {
+                    stream_finished_normally = finished;
                     break;
                 }
-                Either::Right(((), _pending_read)) => {
-                    reader.release_lock();
-                    stream_finished_normally = true;
-                    break;
-                }
-            }
-        } else if stream_resume_job_id.is_none() {
-            match select(
-                JsFuture::from(reader.read()),
-                TimeoutFuture::new(PRE_STREAM_ENDED_READ_STALL_TIMEOUT_MS),
-            )
-            .await
-            {
-                Either::Left((Ok(c), _)) => c,
-                Either::Left((Err(e), _)) => {
-                    return Err(crate::i18n::api_err_stream_read(&e));
-                }
-                Either::Right(((), _)) => {
-                    reader.release_lock();
-                    stream_finished_normally = true;
-                    break;
-                }
-            }
-        } else {
-            match JsFuture::from(reader.read()).await {
-                Ok(c) => c,
-                Err(e) => {
-                    if stream_resume_job_id.is_none() {
-                        return Err(crate::i18n::api_err_stream_read(&e));
-                    }
-                    break;
-                }
-            }
-        };
+            };
         let done = js_sys::Reflect::get(&chunk, &JsValue::from_str("done"))
             .ok()
             .and_then(|v| v.as_bool())
