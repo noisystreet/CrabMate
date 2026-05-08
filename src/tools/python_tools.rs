@@ -1,7 +1,7 @@
 //! Python 生态工具：ruff、pytest、mypy、uv sync/run、可编辑安装（uv / pip）、临时脚本执行（`python_snippet_run`）。
 
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
@@ -296,6 +296,117 @@ pub fn python_install_editable(
     run_and_format(cmd, max_output_len, title)
 }
 
+/// `python_snippet_run`：临时脚本路径、命令参数等（`_tmp` 须存活至子进程结束）。
+struct PythonSnippetPrep {
+    base: PathBuf,
+    script_path: PathBuf,
+    _tmp: tempfile::NamedTempFile,
+    rel_display: String,
+    use_uv: bool,
+    wall_secs: u64,
+}
+
+fn python_snippet_parse_wall_timeout(v: &serde_json::Value, command_timeout_secs: u64) -> u64 {
+    v.get("timeout_secs")
+        .and_then(|x| x.as_u64())
+        .unwrap_or(command_timeout_secs)
+        .clamp(
+            MIN_PYTHON_SNIPPET_TIMEOUT_SECS,
+            MAX_PYTHON_SNIPPET_TIMEOUT_SECS,
+        )
+}
+
+fn python_snippet_prepare_temp_file(
+    v: &serde_json::Value,
+    code: &str,
+    workspace_root: &Path,
+    command_timeout_secs: u64,
+) -> Result<PythonSnippetPrep, String> {
+    let use_uv = v.get("use_uv").and_then(|x| x.as_bool()).unwrap_or(false);
+    let wall_secs = python_snippet_parse_wall_timeout(v, command_timeout_secs);
+
+    let base = match workspace_root.canonicalize() {
+        Ok(p) => p,
+        Err(e) => return Err(format!("工作区根目录无法解析: {}", e)),
+    };
+
+    if use_uv && !base.join("pyproject.toml").is_file() {
+        return Err(
+            "错误：use_uv 为 true 时需要工作区根存在 pyproject.toml（与 uv_run 一致）".to_string(),
+        );
+    }
+
+    let tmp = match tempfile::Builder::new()
+        .prefix(".crabmate_snippet_")
+        .suffix(".py")
+        .tempfile_in(&base)
+    {
+        Ok(t) => t,
+        Err(e) => return Err(format!("无法在工作区创建临时脚本: {}", e)),
+    };
+
+    let script_path = match tmp.path().canonicalize() {
+        Ok(p) => p,
+        Err(e) => return Err(format!("临时脚本路径无法解析: {}", e)),
+    };
+    if !script_path.starts_with(&base) {
+        return Err("错误：临时脚本路径超出工作区根（安全拒绝）".to_string());
+    }
+
+    let mut file = match tmp.reopen() {
+        Ok(f) => f,
+        Err(e) => return Err(format!("无法写入临时脚本: {}", e)),
+    };
+    if let Err(e) = file.write_all(code.as_bytes()) {
+        return Err(format!("无法写入临时脚本: {}", e));
+    }
+    if let Err(e) = file.sync_all() {
+        return Err(format!("无法落盘临时脚本: {}", e));
+    }
+    drop(file);
+
+    let rel_display = script_path
+        .strip_prefix(&base)
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_else(|_| script_path.to_string_lossy().into_owned());
+
+    Ok(PythonSnippetPrep {
+        base,
+        script_path,
+        _tmp: tmp,
+        rel_display,
+        use_uv,
+        wall_secs,
+    })
+}
+
+fn python_snippet_build_command(prep: &PythonSnippetPrep) -> (Command, String) {
+    let mut cmd = if prep.use_uv {
+        let mut c = Command::new("uv");
+        c.args(["run", "python"]);
+        c.arg(&prep.script_path);
+        c
+    } else {
+        let mut c = Command::new("python3");
+        c.arg(&prep.script_path);
+        c
+    };
+    cmd.current_dir(&prep.base);
+    if !prep.use_uv {
+        cmd.env("PYTHONPATH", pythonpath_with_workspace(&prep.base));
+    }
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let title = if prep.use_uv {
+        format!("uv run python ({})", prep.rel_display)
+    } else {
+        format!("python3 ({})", prep.rel_display)
+    };
+    (cmd, title)
+}
+
 /// 在工作区根目录写入**临时** `.py` 并执行（结束后删除）。允许 `import` 任意已安装的第三方包。
 ///
 /// - 默认：`python3 <脚本>`，`PYTHONPATH` 含工作区根（可 `import` 工作区内包）。
@@ -323,89 +434,18 @@ pub fn python_snippet_run(
         );
     }
 
-    let use_uv = v.get("use_uv").and_then(|x| x.as_bool()).unwrap_or(false);
-    let wall_secs = v
-        .get("timeout_secs")
-        .and_then(|x| x.as_u64())
-        .unwrap_or(command_timeout_secs)
-        .clamp(
-            MIN_PYTHON_SNIPPET_TIMEOUT_SECS,
-            MAX_PYTHON_SNIPPET_TIMEOUT_SECS,
-        );
+    let prep =
+        match python_snippet_prepare_temp_file(&v, code, workspace_root, command_timeout_secs) {
+            Ok(p) => p,
+            Err(e) => return e,
+        };
 
-    let base = match workspace_root.canonicalize() {
-        Ok(p) => p,
-        Err(e) => return format!("工作区根目录无法解析: {}", e),
-    };
-
-    if use_uv && !base.join("pyproject.toml").is_file() {
-        return "错误：use_uv 为 true 时需要工作区根存在 pyproject.toml（与 uv_run 一致）"
-            .to_string();
-    }
-
-    let tmp = match tempfile::Builder::new()
-        .prefix(".crabmate_snippet_")
-        .suffix(".py")
-        .tempfile_in(&base)
-    {
-        Ok(t) => t,
-        Err(e) => return format!("无法在工作区创建临时脚本: {}", e),
-    };
-
-    let script_path = match tmp.path().canonicalize() {
-        Ok(p) => p,
-        Err(e) => return format!("临时脚本路径无法解析: {}", e),
-    };
-    if !script_path.starts_with(&base) {
-        return "错误：临时脚本路径超出工作区根（安全拒绝）".to_string();
-    }
-
-    let mut file = match tmp.reopen() {
-        Ok(f) => f,
-        Err(e) => return format!("无法写入临时脚本: {}", e),
-    };
-    if let Err(e) = file.write_all(code.as_bytes()) {
-        return format!("无法写入临时脚本: {}", e);
-    }
-    if let Err(e) = file.sync_all() {
-        return format!("无法落盘临时脚本: {}", e);
-    }
-    drop(file);
-
-    let rel_display = script_path
-        .strip_prefix(&base)
-        .map(|p| p.to_string_lossy().replace('\\', "/"))
-        .unwrap_or_else(|_| script_path.to_string_lossy().into_owned());
-
-    let mut cmd = if use_uv {
-        let mut c = Command::new("uv");
-        c.args(["run", "python"]);
-        c.arg(&script_path);
-        c
-    } else {
-        let mut c = Command::new("python3");
-        c.arg(&script_path);
-        c
-    };
-    let mut cmd = cmd.current_dir(&base);
-    if !use_uv {
-        cmd = cmd.env("PYTHONPATH", pythonpath_with_workspace(&base));
-    }
-    let cmd = cmd
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    let title = if use_uv {
-        format!("uv run python ({})", rel_display)
-    } else {
-        format!("python3 ({})", rel_display)
-    };
+    let (mut cmd, title) = python_snippet_build_command(&prep);
 
     let child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
-            let prog = if use_uv { "uv" } else { "python3" };
+            let prog = if prep.use_uv { "uv" } else { "python3" };
             return output_util::format_spawn_error_with_program(
                 &title,
                 &e,
@@ -421,7 +461,7 @@ pub fn python_snippet_run(
         let _ = tx.send(child.wait_with_output());
     });
 
-    let deadline = Instant::now() + Duration::from_secs(wall_secs);
+    let deadline = Instant::now() + Duration::from_secs(prep.wall_secs);
     let output = match python_snippet_wait_child_output(child_pid, join, rx, deadline, &title) {
         Ok(o) => o,
         Err(SnippetWaitOutcome::Timeout) => {
@@ -430,7 +470,7 @@ pub fn python_snippet_run(
                 -1,
                 &format!(
                     "已超出墙上时钟上限（{} 秒）；子进程已发送终止信号。请在更小数据集上重试或调大 timeout_secs（上限 {}）。",
-                    wall_secs, MAX_PYTHON_SNIPPET_TIMEOUT_SECS
+                    prep.wall_secs, MAX_PYTHON_SNIPPET_TIMEOUT_SECS
                 ),
                 max_output_len,
                 MAX_OUTPUT_LINES,
@@ -439,12 +479,18 @@ pub fn python_snippet_run(
         Err(SnippetWaitOutcome::Err(msg)) => return msg,
     };
 
-    let code = output.status.code().unwrap_or(-1);
+    let status_code = output.status.code().unwrap_or(-1);
     let body = output_util::merge_process_output(
         &output,
         output_util::ProcessOutputMerge::StderrElseStdout,
     );
-    output_util::format_exited_command_output(&title, code, &body, max_output_len, MAX_OUTPUT_LINES)
+    output_util::format_exited_command_output(
+        &title,
+        status_code,
+        &body,
+        max_output_len,
+        MAX_OUTPUT_LINES,
+    )
 }
 
 enum SnippetWaitOutcome {

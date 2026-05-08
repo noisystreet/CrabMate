@@ -170,6 +170,51 @@ pub(crate) fn print_cli_playbook_healing_hint(
     w.flush()
 }
 
+fn tool_cli_compact_title_rest(name: &str, args: &str, summary: Option<&str>) -> Option<String> {
+    tool_result_header_detail(args, summary).map(|d| {
+        let compact = strip_redundant_tool_summary_prefix(name, &d);
+        if compact.is_empty() { d } else { compact }
+    })
+}
+
+fn write_tool_cli_heading_line(
+    w: &mut io::Stdout,
+    color: bool,
+    name: &str,
+    title_rest: Option<&str>,
+) -> io::Result<()> {
+    if color {
+        queue!(
+            w,
+            SetAttribute(Attribute::Bold),
+            SetForegroundColor(CLI_REPL_HELP_CMD_FG)
+        )?;
+    }
+    match title_rest {
+        Some(rest) => match terminal_tool_title_suffix_after_name(rest) {
+            Some(suffix) => writeln!(w, "\n### 工具 · {name}{suffix}")?,
+            None => writeln!(w, "\n### 工具 · {name}")?,
+        },
+        None => writeln!(w, "\n### 工具 · {name}")?,
+    }
+    if color {
+        queue!(w, SetAttribute(Attribute::Reset), ResetColor)?;
+        queue!(w, SetForegroundColor(CLI_REPL_HELP_DESC_FG))?;
+    }
+    Ok(())
+}
+
+fn format_tool_cli_body_truncated(raw_result: &str, max_chars: usize) -> String {
+    let mut body = tool_content_for_display_full(raw_result);
+    body = latex_math_to_unicode(&body);
+    let n = body.chars().count();
+    if n > max_chars {
+        let take: String = body.chars().take(max_chars.saturating_sub(1)).collect();
+        body = format!("{take}…\n[输出已截断，原约 {n} 字；完整内容已写入对话历史]");
+    }
+    body
+}
+
 /// 工具执行结束后打印名称与正文（正文用完整格式化，与聊天区「可省略实际输出」策略独立），过长按 `max_chars` 截断（近似字符数）。
 ///
 /// 标题行为 `### 工具 · {name}`；有详情时统一为 **`### 工具 · {name} : …`**（摘要已以 `:` 开头时不再重复冒号），例：`run_command` + `ls -la` → `### 工具 · run_command : ls -la`，`create_file` + 去重后 `: a.cpp` → `### 工具 · create_file : a.cpp`。
@@ -193,30 +238,8 @@ pub(crate) fn print_tool_result_terminal(
     );
     let mut w = io::stdout();
     let color = cli_repl_stdout_use_color();
-    let title_rest = tool_result_header_detail(args, summary).map(|d| {
-        let compact = strip_redundant_tool_summary_prefix(name, &d);
-        if compact.is_empty() { d } else { compact }
-    });
-    if color {
-        queue!(
-            w,
-            SetAttribute(Attribute::Bold),
-            SetForegroundColor(CLI_REPL_HELP_CMD_FG)
-        )?;
-    }
-    if let Some(rest) = title_rest.as_deref() {
-        if let Some(suffix) = terminal_tool_title_suffix_after_name(rest) {
-            writeln!(w, "\n### 工具 · {name}{suffix}")?;
-        } else {
-            writeln!(w, "\n### 工具 · {name}")?;
-        }
-    } else {
-        writeln!(w, "\n### 工具 · {name}")?;
-    }
-    if color {
-        queue!(w, SetAttribute(Attribute::Reset), ResetColor)?;
-        queue!(w, SetForegroundColor(CLI_REPL_HELP_DESC_FG))?;
-    }
+    let title_compact = tool_cli_compact_title_rest(name, args, summary);
+    write_tool_cli_heading_line(&mut w, color, name, title_compact.as_deref())?;
     if omit_body {
         writeln!(w, "（已省略输出正文；完整内容在对话上下文）")?;
         if color {
@@ -226,13 +249,7 @@ pub(crate) fn print_tool_result_terminal(
         return Ok(());
     }
 
-    let mut body = tool_content_for_display_full(raw_result);
-    body = latex_math_to_unicode(&body);
-    let n = body.chars().count();
-    if n > max_chars {
-        let take: String = body.chars().take(max_chars.saturating_sub(1)).collect();
-        body = format!("{take}…\n[输出已截断，原约 {n} 字；完整内容已写入对话历史]");
-    }
+    let body = format_tool_cli_body_truncated(raw_result, max_chars);
     writeln!(w, "{body}")?;
     if color {
         queue!(w, ResetColor)?;

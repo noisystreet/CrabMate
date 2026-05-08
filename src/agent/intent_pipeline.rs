@@ -424,98 +424,157 @@ fn map_execute_primary_intent(task: &str) -> &'static str {
     "execute.code_change"
 }
 
+fn push_secondary_keyword_hit(
+    intents: &mut Vec<String>,
+    normalized: &str,
+    keywords: &[&str],
+    id: &str,
+) {
+    if keywords.iter().any(|k| normalized.contains(k)) {
+        push_secondary_unique(intents, id);
+    }
+}
+
+fn push_secondary_unique(buf: &mut Vec<String>, v: &str) {
+    if !buf.iter().any(|x| x == v) {
+        buf.push(v.to_string());
+    }
+}
+
+fn push_secondary_dual_keyword_hit(
+    intents: &mut Vec<String>,
+    normalized: &str,
+    a: &[&str],
+    b: &[&str],
+    id: &str,
+) {
+    if a.iter().any(|k| normalized.contains(k)) && b.iter().any(|k| normalized.contains(k)) {
+        push_secondary_unique(intents, id);
+    }
+}
+
 fn map_secondary_intents(task: &str, kind: IntentKind, primary_intent: &str) -> Vec<String> {
     if kind != IntentKind::Execute {
         return Vec::new();
     }
     let normalized = task.to_lowercase();
-    let has_any = |keywords: &[&str]| keywords.iter().any(|k| normalized.contains(k));
     let mut intents = Vec::new();
-    let push_if_absent = |buf: &mut Vec<String>, v: &str| {
-        if !buf.iter().any(|x| x == v) {
-            buf.push(v.to_string());
-        }
-    };
 
-    if has_any(&[
-        "commit",
-        "提交",
-        "pr",
-        "pull request",
-        "cherry-pick",
-        "rebase",
-        "merge",
-        "branch",
-    ]) {
-        push_if_absent(&mut intents, "execute.git_ops");
-    }
-    if has_any(&[
-        "测试",
-        "test",
-        "cargo test",
-        "cargo build",
-        "构建",
-        "编译",
-        "build",
-        "run",
-        "运行",
-        "clippy",
-        "fmt",
-    ]) {
-        push_if_absent(&mut intents, "execute.run_test_build");
-    }
-    if has_any(&[
-        "报错", "error", "panic", "异常", "失败", "定位", "排查", "调试", "诊断", "修复", "bug",
-    ]) {
-        push_if_absent(&mut intents, "execute.debug_diagnose");
-    }
-    if has_any(&["文档", "readme", "docs/", "注释", "说明", "md"]) {
-        push_if_absent(&mut intents, "execute.docs_ops");
-    }
-    if has_any(&[
-        "改", "修改", "实现", "重构", "新增", "删除", ".rs", ".ts", ".tsx", ".py",
-    ]) {
-        push_if_absent(&mut intents, "execute.code_change");
-    }
-    if has_any(&["跑", "执行"]) && has_any(&["test", "pytest", "cargo", "构建", "编译"]) {
-        push_if_absent(&mut intents, "execute.run_test_build");
-    }
-    if has_any(&["定位", "排查", "分析"]) && has_any(&["报错", "异常", "panic", "error", "bug"])
-    {
-        push_if_absent(&mut intents, "execute.debug_diagnose");
-    }
-    if has_any(&["改", "修改", "重构", "实现"]) && has_any(&["函数", "文件", "模块", "代码"])
-    {
-        push_if_absent(&mut intents, "execute.code_change");
-    }
-    if has_any(&["更新", "补充", "完善", "编写"])
-        && has_any(&["readme", "文档", "docs", "注释", ".md"])
-    {
-        push_if_absent(&mut intents, "execute.docs_ops");
-    }
-    if has_any(&[
-        "当前目录",
-        "有哪些",
-        "有什么",
-        "有没有",
-        "有无",
-        "在不在",
-        "是否有",
-        "是否存在",
-        "列出",
-        "查看",
-        "清单",
-        "文件列表",
-        "源文件",
-        "源码",
-        "list",
-        "show files",
-    ]) {
-        push_if_absent(&mut intents, "execute.read_inspect");
-    }
+    push_secondary_keyword_hit(
+        &mut intents,
+        &normalized,
+        &[
+            "commit",
+            "提交",
+            "pr",
+            "pull request",
+            "cherry-pick",
+            "rebase",
+            "merge",
+            "branch",
+        ],
+        "execute.git_ops",
+    );
+    push_secondary_keyword_hit(
+        &mut intents,
+        &normalized,
+        &[
+            "测试",
+            "test",
+            "cargo test",
+            "cargo build",
+            "构建",
+            "编译",
+            "build",
+            "run",
+            "运行",
+            "clippy",
+            "fmt",
+        ],
+        "execute.run_test_build",
+    );
+    push_secondary_keyword_hit(
+        &mut intents,
+        &normalized,
+        &[
+            "报错", "error", "panic", "异常", "失败", "定位", "排查", "调试", "诊断", "修复", "bug",
+        ],
+        "execute.debug_diagnose",
+    );
+    push_secondary_keyword_hit(
+        &mut intents,
+        &normalized,
+        &["文档", "readme", "docs/", "注释", "说明", "md"],
+        "execute.docs_ops",
+    );
+    push_secondary_keyword_hit(
+        &mut intents,
+        &normalized,
+        &[
+            "改", "修改", "实现", "重构", "新增", "删除", ".rs", ".ts", ".tsx", ".py",
+        ],
+        "execute.code_change",
+    );
+
+    push_secondary_dual_keyword_hit(
+        &mut intents,
+        &normalized,
+        &["跑", "执行"],
+        &["test", "pytest", "cargo", "构建", "编译"],
+        "execute.run_test_build",
+    );
+    push_secondary_dual_keyword_hit(
+        &mut intents,
+        &normalized,
+        &["定位", "排查", "分析"],
+        &["报错", "异常", "panic", "error", "bug"],
+        "execute.debug_diagnose",
+    );
+    push_secondary_dual_keyword_hit(
+        &mut intents,
+        &normalized,
+        &["改", "修改", "重构", "实现"],
+        &["函数", "文件", "模块", "代码"],
+        "execute.code_change",
+    );
+    push_secondary_dual_keyword_hit(
+        &mut intents,
+        &normalized,
+        &["更新", "补充", "完善", "编写"],
+        &["readme", "文档", "docs", "注释", ".md"],
+        "execute.docs_ops",
+    );
+
+    push_secondary_keyword_hit(
+        &mut intents,
+        &normalized,
+        &[
+            "当前目录",
+            "有哪些",
+            "有什么",
+            "有没有",
+            "有无",
+            "在不在",
+            "是否有",
+            "是否存在",
+            "列出",
+            "查看",
+            "清单",
+            "文件列表",
+            "源文件",
+            "源码",
+            "list",
+            "show files",
+        ],
+        "execute.read_inspect",
+    );
 
     intents.retain(|it| it != primary_intent);
-    if has_any(&["先", "再", "然后", "并且"]) && intents.is_empty() && kind == IntentKind::Execute
+    if intents.is_empty()
+        && (normalized.contains("先")
+            || normalized.contains("再")
+            || normalized.contains("然后")
+            || normalized.contains("并且"))
     {
         intents.push("execute.code_change".to_string());
         intents.retain(|it| it != primary_intent);
