@@ -57,7 +57,7 @@
 | **`app/session_*` / 会话** | 会话列表 UI、列表模态、会话级水合 | `sidebar_nav`、`session_list_modal`、`session_hydrate` |
 | **`app/workspace_*`** | 工作区树与刷新 | **`workspace_panel_state`**（**`WorkspacePanelSignals`**）+ **`workspace_panel`**（**`make_refresh_workspace`** / **`make_insert_workspace_path_into_composer`**）；与根目录 **`workspace_shell`** 协同 |
 | **`app/status_tasks_*`** | `/status` 与侧栏任务 | **`status_tasks_state`**（**`StatusTasksSignals`**）+ **`status_tasks_wiring`**（拉取闭包；**`wire_status_tasks_domain_effects`** 集中注册初始化补拉与侧栏可见 **`Effect`**） |
-| **`app/*_modal`** | 模态与独立焦点陷阱 | `settings_modal`、`changelist_modal` 等 |
+| **`app/*_modal`** | 模态与独立焦点陷阱 | `settings_modal/`（`effects` / `view`）、`changelist_modal` 等 |
 | **根模块** | 跨功能复用、无 UI | `api`、`storage`、`session_sync`、`sse_dispatch`、`i18n` |
 
 **可选的下一步演进**（非必须一次完成）：

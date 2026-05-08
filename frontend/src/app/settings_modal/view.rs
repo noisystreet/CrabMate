@@ -1,22 +1,16 @@
-//! 设置：主题、背景、本机模型覆盖。
-//!
-//! **状态分层**（避免隐式混写）：**全局生效信号**（`locale` / `theme` / `bg_decor` / LLM drafts）由壳持有；
-//! **弹窗内预览副本**（`appearance_*`）仅在弹窗打开期间驱动 DOM 预览与 dirty 比较；**`StoredValue` baseline**
-//! 在打开时捕获，用于「放弃更改」回滚。关闭弹窗时 [`Effect`] 将预览重置回全局信号。
+//! 设置弹窗视图与业务闭包（壳级 `Effect` 见 [`super::effects`]）。
 
-use gloo_timers::future::TimeoutFuture;
 use leptos::html::Div;
 use leptos::prelude::*;
-use leptos::task::spawn_local;
 use std::sync::Arc;
 
-use super::app_shell_ctx::SettingsModalSignals;
-use super::settings_form_state::{SettingsDirtyBaselines, sync_appearance_drafts_from_shell};
-use super::settings_modal_dialog::{SettingsModalDialogInput, settings_modal_dialog};
-use crate::a11y::focus_first_in_modal_container;
-use crate::app::settings_page::dom_preview::{
-    apply_bg_decor_preview_to_dom, apply_theme_preview_to_dom,
+use super::effects::{
+    SettingsModalWireBundle, wire_settings_modal_appearance_preview_effect,
+    wire_settings_modal_focus_first_effect, wire_settings_modal_open_close_baseline_effect,
 };
+use crate::app::app_shell_ctx::SettingsModalSignals;
+use crate::app::settings_form_state::SettingsDirtyBaselines;
+use crate::app::settings_modal_dialog::{SettingsModalDialogInput, settings_modal_dialog};
 use crate::app::settings_page::form_snapshot::{
     SettingsPageDraftSignals, form_current_tracked, form_current_untracked,
 };
@@ -84,30 +78,6 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
 
     let baselines = SettingsDirtyBaselines::from_form_current(&form_current_untracked(drafts));
 
-    let current_state_untracked = move || form_current_untracked(drafts);
-
-    let capture_baselines_after_open = move || {
-        spawn_local(async move {
-            TimeoutFuture::new(0).await;
-            if !settings_modal.get_untracked() {
-                return;
-            }
-            sync_appearance_drafts_from_shell(
-                locale,
-                theme,
-                bg_decor,
-                appearance_locale,
-                appearance_theme,
-                appearance_bg_decor,
-            );
-            baselines.refresh_from_current(&current_state_untracked());
-            clear_client_key_intent.set(false);
-            clear_executor_key_intent.set(false);
-            llm_settings_feedback.set(None);
-            executor_llm_settings_feedback.set(None);
-        });
-    };
-
     let discard = {
         move || {
             discard_to_baselines(DiscardToBaselinesCtx {
@@ -119,42 +89,26 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
         }
     };
 
-    Effect::new({
-        let settings_modal = settings_modal;
-        move |_| {
-            if !settings_modal.get() {
-                discard();
-                apply_theme_preview_to_dom(theme.get().as_str());
-                apply_bg_decor_preview_to_dom(bg_decor.get());
-                return;
-            }
-            capture_baselines_after_open();
-        }
-    });
+    let bundle = SettingsModalWireBundle {
+        settings_modal,
+        locale,
+        theme,
+        bg_decor,
+        appearance_locale,
+        appearance_theme,
+        appearance_bg_decor,
+        baselines,
+        drafts,
+        clear_client_key_intent,
+        clear_executor_key_intent,
+        llm_settings_feedback,
+        executor_llm_settings_feedback,
+    };
 
-    Effect::new(move |_| {
-        if !settings_modal.get() {
-            return;
-        }
-        apply_theme_preview_to_dom(appearance_theme.get().as_str());
-        apply_bg_decor_preview_to_dom(appearance_bg_decor.get());
-    });
-
-    Effect::new({
-        let settings_dialog_ref = settings_dialog_ref.clone();
-        move |_| {
-            if !settings_modal.get() {
-                return;
-            }
-            let r = settings_dialog_ref.clone();
-            spawn_local(async move {
-                TimeoutFuture::new(0).await;
-                if let Some(el) = r.get() {
-                    focus_first_in_modal_container(el.as_ref());
-                }
-            });
-        }
-    });
+    let discard_arc: Arc<dyn Fn() + Send + Sync> = Arc::new(discard);
+    wire_settings_modal_open_close_baseline_effect(bundle, Arc::clone(&discard_arc));
+    wire_settings_modal_appearance_preview_effect(bundle);
+    wire_settings_modal_focus_first_effect(settings_modal, settings_dialog_ref.clone());
 
     let dirty = Memo::new(move |_| {
         let current = form_current_tracked(drafts);
@@ -186,7 +140,7 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
         }
     };
 
-    let discard_rc: Arc<dyn Fn() + Send + Sync> = Arc::new(discard);
+    let discard_rc: Arc<dyn Fn() + Send + Sync> = discard_arc;
     let close_modal_rc: Arc<dyn Fn() + Send + Sync> = Arc::new(close_modal);
     let save_all_rc: Arc<dyn Fn() + Send + Sync> = Arc::new(save_all);
 
