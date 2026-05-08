@@ -94,31 +94,23 @@ pub(crate) struct SettingsFormCurrent {
     pub readonly_tool_ttl_cache_follow_server: bool,
 }
 
-pub(crate) fn is_settings_dirty(
-    current: &SettingsFormCurrent,
-    baseline_appearance: &AppearanceBaseline,
-    baseline_llm: &LlmBaseline,
-    baseline_executor: &ExecutorBaseline,
-    baseline_readonly_tool_ttl_cache_follow_server: bool,
-) -> bool {
-    let (bl, bt, bbd) = baseline_appearance;
-    if current.appearance_locale != *bl
+fn appearance_dirty(current: &SettingsFormCurrent, baseline: &AppearanceBaseline) -> bool {
+    let (bl, bt, bbd) = baseline;
+    current.appearance_locale != *bl
         || current.appearance_theme != *bt
         || current.appearance_bg_decor != *bbd
-    {
-        return true;
-    }
-    if current.clear_client_key_intent || current.clear_executor_key_intent {
-        return true;
-    }
-    if !current.llm_api_key_draft.trim().is_empty()
-        || !current.executor_llm_api_key_draft.trim().is_empty()
-    {
-        return true;
-    }
+}
 
-    let (bb, bp, bm, bt, bct, btm, be, bh) = baseline_llm;
-    if current.llm_api_base_draft != *bb
+fn pending_key_drafts_or_clear_intent_dirty(current: &SettingsFormCurrent) -> bool {
+    current.clear_client_key_intent
+        || current.clear_executor_key_intent
+        || !current.llm_api_key_draft.trim().is_empty()
+        || !current.executor_llm_api_key_draft.trim().is_empty()
+}
+
+fn llm_baseline_dirty(current: &SettingsFormCurrent, baseline: &LlmBaseline) -> bool {
+    let (bb, bp, bm, bt, bct, btm, be, bh) = baseline;
+    current.llm_api_base_draft != *bb
         || current.llm_api_base_preset_select != *bp
         || current.llm_model_draft != *bm
         || current.llm_temperature_draft != *bt
@@ -126,20 +118,29 @@ pub(crate) fn is_settings_dirty(
         || current.llm_thinking_mode_draft != *btm
         || current.execution_mode_draft != *be
         || current.llm_has_saved_key != *bh
-    {
-        return true;
-    }
+}
 
-    let (eb, ep, em, eh) = baseline_executor;
-    if current.executor_llm_api_base_draft != *eb
+fn executor_baseline_dirty(current: &SettingsFormCurrent, baseline: &ExecutorBaseline) -> bool {
+    let (eb, ep, em, eh) = baseline;
+    current.executor_llm_api_base_draft != *eb
         || current.executor_llm_api_base_preset_select != *ep
         || current.executor_llm_model_draft != *em
         || current.executor_llm_has_saved_key != *eh
-    {
-        return true;
-    }
+}
 
-    current.readonly_tool_ttl_cache_follow_server != baseline_readonly_tool_ttl_cache_follow_server
+pub(crate) fn is_settings_dirty(
+    current: &SettingsFormCurrent,
+    baseline_appearance: &AppearanceBaseline,
+    baseline_llm: &LlmBaseline,
+    baseline_executor: &ExecutorBaseline,
+    baseline_readonly_tool_ttl_cache_follow_server: bool,
+) -> bool {
+    appearance_dirty(current, baseline_appearance)
+        || pending_key_drafts_or_clear_intent_dirty(current)
+        || llm_baseline_dirty(current, baseline_llm)
+        || executor_baseline_dirty(current, baseline_executor)
+        || current.readonly_tool_ttl_cache_follow_server
+            != baseline_readonly_tool_ttl_cache_follow_server
 }
 
 pub(crate) fn refresh_baselines(

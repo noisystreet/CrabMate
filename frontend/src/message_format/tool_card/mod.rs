@@ -19,19 +19,11 @@ fn strip_tool_status_prefix(line: &str) -> String {
     trimmed.to_string()
 }
 
-fn rewrite_legacy_tool_summary(sum: &str, loc: Locale) -> String {
-    let normalized = i18n::tool_summary_normalize_line_breaks(sum, loc);
-    let mut lines: Vec<String> = normalized
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .map(str::to_string)
-        .collect();
-    if lines.is_empty() {
-        return String::new();
-    }
-
-    let first_raw = lines.remove(0);
+fn legacy_tool_title_from_first_line(
+    first_raw: String,
+    loc: Locale,
+    remainder: &mut Vec<String>,
+) -> String {
     let first = strip_tool_status_prefix(&first_raw);
     let mut title = first.clone();
     if let Some((left, right)) = first.split_once(i18n::tool_cmd_success_sep(loc)) {
@@ -39,17 +31,20 @@ fn rewrite_legacy_tool_summary(sum: &str, loc: Locale) -> String {
         let rest = right.trim();
         title = i18n::tool_rewrite_title_done(loc, &i18n::tool_human_name(loc, tool));
         if !rest.is_empty() {
-            lines.insert(0, rest.to_string());
+            remainder.insert(0, rest.to_string());
         }
     } else if let Some((left, right)) = first.split_once(i18n::tool_cmd_fail_sep(loc)) {
         let tool = left.trim();
         let rest = right.trim();
         title = i18n::tool_rewrite_title_failed_run(loc, &i18n::tool_human_name(loc, tool));
         if !rest.is_empty() {
-            lines.insert(0, rest.to_string());
+            remainder.insert(0, rest.to_string());
         }
     }
+    title
+}
 
+fn collect_legacy_tool_extra_lines(lines: Vec<String>, loc: Locale) -> Vec<String> {
     let mut extras: Vec<String> = Vec::new();
     for line in lines {
         if line == i18n::tool_exit_line_zero(loc)
@@ -87,6 +82,24 @@ fn rewrite_legacy_tool_summary(sum: &str, loc: Locale) -> String {
         }
         extras.push(line);
     }
+    extras
+}
+
+fn rewrite_legacy_tool_summary(sum: &str, loc: Locale) -> String {
+    let normalized = i18n::tool_summary_normalize_line_breaks(sum, loc);
+    let mut lines: Vec<String> = normalized
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_string)
+        .collect();
+    if lines.is_empty() {
+        return String::new();
+    }
+
+    let first_raw = lines.remove(0);
+    let title = legacy_tool_title_from_first_line(first_raw, loc, &mut lines);
+    let extras = collect_legacy_tool_extra_lines(lines, loc);
 
     if extras.is_empty() {
         return title;
