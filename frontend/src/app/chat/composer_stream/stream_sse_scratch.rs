@@ -2,6 +2,7 @@
 //!
 //! 与 [`super::context::ChatStreamCallbackCtx`] 分工：ctx 绑定会话、tail、shell；本结构只承载「车道 + 单轮累计」，
 //! 由 [`super::callbacks::assemble::build_chat_stream_callbacks`] 一次性创建并传入各 `on_*` 工厂。
+//! 回合收尾请经 [`super::per_stream_accum::PerStreamAccum::summarize_for_stream_done`] 读取累计，避免闭包漏字段。
 
 use std::rc::Rc;
 

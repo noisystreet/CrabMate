@@ -11,7 +11,7 @@ use crate::message_format::staged_timeline_system_message_body;
 use crate::session_ops::{make_message_id, message_created_ms};
 use crate::sse_dispatch::{
     ClarificationQuestionnaireInfo, CommandApprovalRequest, StagedPlanStepEndInfo,
-    StagedPlanStepStartInfo,
+    StagedPlanStepStartInfo, ThinkingTraceInfo,
 };
 use crate::storage::StoredMessage;
 use crate::timeline_scan::{timeline_state_staged_end, timeline_state_staged_start};
@@ -94,7 +94,7 @@ pub(crate) fn build_chat_stream_callbacks(
         let stream_ctx = Rc::clone(&stream_ctx);
         let accum = Rc::clone(&accum);
         Rc::new(move |reason: String| {
-            *accum.stream_end_reason.borrow_mut() = Some(reason.clone());
+            accum.set_stream_end_reason(reason.clone());
             stream_ctx.chat.clear_stream_resume_handles();
             // `stream_ended` 表示服务端已结束本轮流式任务：无论 `reason` 是否能解析为已知枚举，
             // 都应回落 busy，避免状态栏长期停在「模型生成中」。（未知 reason 仍写入 stream_end_reason 供 diagnostics。）
@@ -203,9 +203,22 @@ pub(crate) fn build_chat_stream_callbacks(
         })
     };
 
-    // thinking_trace 保留在调试台，不再写入聊天正文，避免干扰时间线可读性。
-    let on_thinking_trace: Rc<dyn Fn(crate::sse_dispatch::ThinkingTraceInfo)> =
-        { Rc::new(move |_info: crate::sse_dispatch::ThinkingTraceInfo| {}) };
+    // thinking_trace 写入侧栏调试台（`thinking_trace_log`），不进聊天正文。
+    const MAX_THINKING_TRACE_ENTRIES: usize = 512;
+    let on_thinking_trace: Rc<dyn Fn(ThinkingTraceInfo)> = {
+        let stream_ctx = Rc::clone(&stream_ctx);
+        Rc::new(move |info: ThinkingTraceInfo| {
+            #[cfg(debug_assertions)]
+            web_sys::console::log_1(&format!("thinking_trace {:?}", info).into());
+            stream_ctx.shell.approval.thinking_trace_log.update(|v| {
+                v.push(info);
+                let overflow = v.len().saturating_sub(MAX_THINKING_TRACE_ENTRIES);
+                if overflow > 0 {
+                    v.drain(..overflow);
+                }
+            });
+        })
+    };
 
     ChatStreamCallbacks {
         on_delta,

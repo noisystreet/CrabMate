@@ -140,7 +140,7 @@ pub(super) fn chat_stream_on_tool_call_builder(
             let marker = goal_id
                 .as_deref()
                 .map(|g| format!("hierarchical-subgoal:{g}"))
-                .or_else(|| accum.current_subgoal_marker.borrow().clone());
+                .or_else(|| accum.current_subgoal_marker_cloned());
             let tcid = tool_call_id
                 .as_deref()
                 .map(str::trim)
@@ -188,19 +188,14 @@ pub(super) fn make_on_timeline_log(
     Rc::new(move |info: TimelineLogInfo| {
         web_sys::console::log_1(&format!("[TL] kind={} title={}", info.kind, info.title).into());
         if info.kind == "final_response" {
-            accum.saw_final_response_timeline.set(true);
+            accum.set_saw_final_response_timeline(true);
             stream_ctx.shell.stream.status_busy.set(false);
             let final_text = build_final_response_text(&info.title, info.detail.as_deref());
             if !final_text.is_empty() {
                 remove_loading_assistant_placeholder(&stream_ctx);
                 if !has_same_assistant_timeline_bubble(&stream_ctx, &final_text) {
                     push_assistant_timeline_bubble(&stream_ctx, final_text.clone(), None);
-                    accum.answer_delta_chars.set(
-                        accum
-                            .answer_delta_chars
-                            .get()
-                            .saturating_add(final_text.chars().count()),
-                    );
+                    accum.add_answer_delta_chars(final_text.chars().count());
                 }
             } else {
                 // 补偿收尾可能带空 final_response；若不撤 loading，on_done 会误报「未收到正文片段」。
@@ -215,12 +210,7 @@ pub(super) fn make_on_timeline_log(
                 return;
             }
             push_assistant_timeline_bubble(&stream_ctx, intent_text.clone(), None);
-            accum.answer_delta_chars.set(
-                accum
-                    .answer_delta_chars
-                    .get()
-                    .saturating_add(intent_text.chars().count()),
-            );
+            accum.add_answer_delta_chars(intent_text.chars().count());
             return;
         }
         if info.kind == "hierarchical_plan" {
@@ -230,12 +220,7 @@ pub(super) fn make_on_timeline_log(
                 return;
             }
             push_assistant_timeline_bubble(&stream_ctx, plan_text.clone(), None);
-            accum.answer_delta_chars.set(
-                accum
-                    .answer_delta_chars
-                    .get()
-                    .saturating_add(plan_text.chars().count()),
-            );
+            accum.add_answer_delta_chars(plan_text.chars().count());
             return;
         }
         if info.kind == "hierarchical_subgoal" || info.kind == "hierarchical_subgoal_started" {
@@ -244,15 +229,9 @@ pub(super) fn make_on_timeline_log(
             if text.is_empty() {
                 return;
             }
-            *accum.current_subgoal_marker.borrow_mut() =
-                extract_subgoal_marker_from_title(&info.title);
+            accum.set_current_subgoal_marker(extract_subgoal_marker_from_title(&info.title));
             upsert_hierarchical_subgoal_bubble(&stream_ctx, text.clone(), &info.title);
-            accum.answer_delta_chars.set(
-                accum
-                    .answer_delta_chars
-                    .get()
-                    .saturating_add(text.chars().count()),
-            );
+            accum.add_answer_delta_chars(text.chars().count());
             return;
         }
         if info.kind == "tool_step_started" || info.kind == "tool_step_finished" {
@@ -284,17 +263,12 @@ pub(super) fn chat_stream_on_delta_builder(
     Rc::new(move |chunk: String| {
         if lane_take_followup_rotation_pending(output_lane.as_ref()) {
             rotate_streaming_assistant_for_followup_model_round(stream_ctx.as_ref());
-            accum.answer_delta_chars.set(0);
+            accum.clear_answer_delta_chars();
         }
         let mid = stream_ctx.tail.borrow_assistant_id();
         let lane = output_lane.get();
         if lane.in_answer_body_lane() {
-            accum.answer_delta_chars.set(
-                accum
-                    .answer_delta_chars
-                    .get()
-                    .saturating_add(chunk.chars().count()),
-            );
+            accum.add_answer_delta_chars(chunk.chars().count());
             append_stream_assistant_chunk(stream_ctx.as_ref(), mid.as_str(), &chunk, false);
         } else {
             append_stream_assistant_chunk(stream_ctx.as_ref(), mid.as_str(), &chunk, true);
@@ -317,8 +291,9 @@ pub(super) fn chat_stream_on_done_builder(
         // 否则 `answer_delta_chars` 仍为上一轮时间轴累计，易误判「有输出却无正文」。
         if lane_take_followup_rotation_pending(output_lane.as_ref()) {
             rotate_streaming_assistant_for_followup_model_round(stream_ctx.as_ref());
-            accum.answer_delta_chars.set(0);
+            accum.clear_answer_delta_chars();
         }
+        let turn = accum.summarize_for_stream_done();
         let loc = stream_ctx.locale.get_untracked();
         let mid = stream_ctx.tail.clone_assistant_id();
         with_active_session_mut(stream_ctx.as_ref(), |s| {
@@ -337,18 +312,18 @@ pub(super) fn chat_stream_on_done_builder(
                 s.messages[idx].state = None;
                 let body_chars = s.messages[idx].text.chars().count()
                     + s.messages[idx].reasoning_text.chars().count();
-                let diag_chars = body_chars.max(accum.answer_delta_chars.get());
+                let diag_chars = body_chars.max(turn.answer_delta_chars);
                 let body_and_reasoning_empty = s.messages[idx].text.trim().is_empty()
                     && s.messages[idx].reasoning_text.trim().is_empty();
-                let end_reason = accum.stream_end_reason.borrow();
+                let end_reason = turn.stream_end_reason.as_deref();
                 let in_lane = output_lane.get().in_answer_body_lane();
                 match decide_done_bubble_action(DoneBubbleDecisionInputs {
                     body_and_reasoning_empty,
-                    end_reason_raw: end_reason.as_deref(),
+                    end_reason_raw: end_reason,
                     in_answer_body_lane: in_lane,
                     diag_chars,
                     has_hierarchical_or_tool,
-                    saw_final_response_timeline: accum.saw_final_response_timeline.get(),
+                    saw_final_response_timeline: turn.saw_final_response_timeline,
                 }) {
                     DoneBubbleAction::Keep => {}
                     DoneBubbleAction::RemoveBubble => {
@@ -361,20 +336,13 @@ pub(super) fn chat_stream_on_done_builder(
                             "{}\n\n{}",
                             i18n::stream_completed_missing_final_summary_hint(loc),
                             i18n::stream_empty_reply_diag_line(
-                                loc,
-                                end_reason.as_deref(),
-                                in_lane,
-                                diag_chars
+                                loc, end_reason, in_lane, diag_chars
                             )
                         );
                     }
                     DoneBubbleAction::FillDiagnostic => {
-                        s.messages[idx].text = build_empty_reply_with_diagnostic(
-                            loc,
-                            in_lane,
-                            diag_chars,
-                            end_reason.as_deref(),
-                        );
+                        s.messages[idx].text =
+                            build_empty_reply_with_diagnostic(loc, in_lane, diag_chars, end_reason);
                     }
                 }
             }
