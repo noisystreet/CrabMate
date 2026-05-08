@@ -1,5 +1,5 @@
 //! `on_done` 中对会话 **`messages`** 的尾泡收尾（读列表 → [`super::done_bubble::decide_done_bubble_action`] → 写回），
-//! 与 `with_active_session_mut` 解耦以便单测与降 [`super::builders::chat_stream_on_done_builder`] nloc。
+//! 与 `with_stream_write_session_mut` 解耦以便单测与降 [`super::builders::chat_stream_on_done_builder`] nloc。
 
 use crate::i18n::Locale;
 use crate::storage::StoredMessage;

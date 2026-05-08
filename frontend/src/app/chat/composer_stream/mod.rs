@@ -76,7 +76,7 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
             let stream_ctx = Rc::new(ChatStreamCallbackCtx {
                 chat,
                 locale: locale_sig,
-                active_session_id: bound_session_id,
+                bound_stream_session_id: bound_session_id,
                 scratch: StreamSseScratch::new(asst_id.clone()),
                 approval_session_store_id: appr_store.clone(),
                 shell: shell_outer.clone(),

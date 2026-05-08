@@ -22,7 +22,7 @@ use super::super::stream_turn_state::{
 };
 use super::done_session::apply_stream_done_to_loading_assistant;
 use super::helpers::*;
-use super::stream_session_access::with_active_session_mut;
+use super::stream_session_access::with_stream_write_session_mut;
 
 pub(super) fn make_on_tool_result(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
@@ -39,7 +39,7 @@ pub(super) fn make_on_tool_result(
         let state = timeline_state_tool(&id, tl_ok);
         let pending_queue = stream_ctx.scratch.pending_tool_message_ids();
         let mut updated_existing = false;
-        with_active_session_mut(stream_ctx.as_ref(), |s| {
+        with_stream_write_session_mut(stream_ctx.as_ref(), |s| {
             let tid = info
                 .tool_call_id
                 .as_deref()
@@ -144,7 +144,7 @@ pub(super) fn chat_stream_on_tool_call_builder(
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .map(str::to_string);
-            with_active_session_mut(stream_ctx.as_ref(), |s| {
+            with_stream_write_session_mut(stream_ctx.as_ref(), |s| {
                 let msg = StoredMessage {
                     id: id.clone(),
                     role: "system".to_string(),
@@ -273,7 +273,7 @@ pub(super) fn chat_stream_on_done_builder(
         let turn = accum.summarize_for_stream_done();
         let loc = stream_ctx.locale.get_untracked();
         let mid = stream_ctx.scratch.clone_assistant_id();
-        with_active_session_mut(stream_ctx.as_ref(), |s| {
+        with_stream_write_session_mut(stream_ctx.as_ref(), |s| {
             apply_stream_done_to_loading_assistant(
                 &mut s.messages,
                 mid.as_str(),
@@ -300,7 +300,7 @@ pub(super) fn chat_stream_on_error_builder(
         let mid = stream_ctx.scratch.clone_assistant_id();
         let loc = stream_ctx.locale.get_untracked();
         let friendly = build_stream_error_with_suggestion(&msg, loc);
-        with_active_session_mut(stream_ctx.as_ref(), |s| {
+        with_stream_write_session_mut(stream_ctx.as_ref(), |s| {
             if let Some(m) = s.messages.iter_mut().find(|m| m.id == mid) {
                 m.text = friendly.clone();
                 m.state = Some(StoredMessageState::Error);

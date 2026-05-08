@@ -4,7 +4,7 @@
 //!
 //! - **`sessions` / `active_id`**：侧栏、作曲器、持久化 `Effect`、工具/导出等；流式 delta 通过 [`Self::stream_bound_session_id`]（与 attach 时快照一致）写入对应会话，**不一定**等于当时的 [`Self::active_id`]。
 //! - **`stream_job_id` / `stream_last_event_seq`**：SSE 首包与 `id:` 行；应用 [`ChatSessionSignals::clear_stream_resume_handles`] 表示「放弃当前断线重连上下文」（错误、结束、`stream_ended`、会话切换等）。
-//! - **`stream_bound_session_id`**：与 [`crate::app::chat::composer_stream::context::ChatStreamCallbackCtx::active_session_id`] 同源——**发起 attach 时**的快照；可与 UI [`Self::active_id`] 对比以发现「侧栏已切会话但 SSE 仍写旧会话」。
+//! - **`stream_bound_session_id`**：与 [`crate::app::chat::composer_stream::context::ChatStreamCallbackCtx::bound_stream_session_id`] 同源——**发起 attach 时**的快照；可与 UI [`Self::active_id`] 对比以发现「侧栏已切会话但 SSE 仍写旧会话」。
 //! - **`session_sync`**：服务端 `conversation_id` / revision，与 `POST /chat/branch` 等对齐。
 //! - **`session_hydrate_nonce` / `reasoning_preserved`**：拉取会话正文与水合时的补偿字段。
 //!
@@ -29,12 +29,9 @@ use crate::storage::ChatSession;
 
 /// 是否存在仍处于 Loading 的工具时间线气泡（与 SSE `tool_running` / `tool_busy` 互补，避免状态栏已「就绪」但卡片仍在转圈）。
 ///
-/// 优先检查 [`ChatSessionSignals::stream_bound_session_id`]（与进行中 SSE 写入目标一致），否则回落到当前 [`ChatSessionSignals::active_id`]。
+/// 会话 id 取 [`Self::effective_stream_message_session_id`]（与进行中 SSE 写入目标一致，无流时回落 UI 当前会话）。
 pub fn session_has_loading_tool_message(chat: ChatSessionSignals) -> bool {
-    let sid = chat
-        .stream_bound_session_id
-        .get()
-        .unwrap_or_else(|| chat.active_id.get());
+    let sid = chat.effective_stream_message_session_id();
     chat.sessions.with(|sessions| {
         sessions.iter().any(|s| {
             s.id == sid
@@ -79,7 +76,7 @@ pub struct ChatSessionSignals {
     pub session_hydrate_nonce: RwSignal<u64>,
     pub stream_job_id: RwSignal<Option<u64>>,
     pub stream_last_event_seq: RwSignal<u64>,
-    /// 当前（或刚结束）`/chat/stream` 写入的目标会话 id；与闭包内 [`ChatStreamCallbackCtx::active_session_id`] 一致。
+    /// 当前（或刚结束）`/chat/stream` 写入的目标会话 id；与闭包内 [`ChatStreamCallbackCtx::bound_stream_session_id`] 一致。
     ///
     /// `None` 表示无进行中的流式绑定（或已调用 [`Self::clear_stream_resume_handles`]）。
     pub stream_bound_session_id: RwSignal<Option<String>>,
@@ -88,7 +85,16 @@ pub struct ChatSessionSignals {
 }
 
 impl ChatSessionSignals {
-    /// 记录本轮 attach 时 SSE 回调应写入的会话（须与 [`crate::app::chat::composer_stream::make_attach_chat_stream`] 内 `ChatStreamCallbackCtx` 使用同一字符串）。
+    /// 工具时间线 / 「哪条会话上有 loading 工具」等：有在途流时与 [`Self::stream_bound_session_id`] 一致，否则与侧栏 [`Self::active_id`] 一致。
+    #[must_use]
+    pub fn effective_stream_message_session_id(self) -> String {
+        self.stream_bound_session_id
+            .get()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| self.active_id.get())
+    }
+
+    /// 记录本轮 attach 时 SSE 回调应写入的会话（须与 [`crate::app::chat::composer_stream::make_attach_chat_stream`] 内 [`crate::app::chat::composer_stream::context::ChatStreamCallbackCtx::bound_stream_session_id`] 使用同一字符串）。
     #[inline]
     pub fn bind_stream_to_session(self, session_id: String) {
         self.stream_bound_session_id.set(Some(session_id));

@@ -3,7 +3,7 @@
 //! 将隐式状态机从闭包中剥离：`stream_end_reason`、输出车道、`diag_chars`、时间轴标记、
 //! 「正文/reasoning 是否皆空」等组合为 [`DoneBubbleDecisionInputs`]，
 //! 由 [`decide_done_bubble_action`] 返回 [`DoneBubbleAction`]；
-//! [`super::builders::chat_stream_on_done_builder`] 仅负责读信号、`with_active_session_mut`、执行动作。
+//! [`super::builders::chat_stream_on_done_builder`] 仅负责读信号、`with_stream_write_session_mut`、执行动作。
 
 use crabmate_sse_protocol::StreamEndReason;
 

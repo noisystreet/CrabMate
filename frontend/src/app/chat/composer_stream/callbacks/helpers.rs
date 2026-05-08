@@ -12,7 +12,7 @@ use crate::session_ops::{make_message_id, message_created_ms};
 use crate::storage::{StoredMessage, StoredMessageState};
 
 use super::super::context::ChatStreamCallbackCtx;
-use super::stream_session_access::{with_active_session_mut, with_active_session_ref};
+use super::stream_session_access::{with_stream_write_session_mut, with_stream_write_session_ref};
 
 pub(super) fn enqueue_pending_tool_message_id(
     queue: &Rc<RefCell<VecDeque<String>>>,
@@ -199,7 +199,7 @@ pub(super) fn insert_before_streaming_assistant_or_append(
     msg: StoredMessage,
 ) {
     let mid = stream_ctx.scratch.clone_assistant_id();
-    with_active_session_mut(stream_ctx, |s| {
+    with_stream_write_session_mut(stream_ctx, |s| {
         insert_msg_before_streaming_assistant_tail(&mut s.messages, &mid, msg);
     });
 }
@@ -233,7 +233,7 @@ pub(super) fn has_same_assistant_timeline_bubble(
     stream_ctx: &ChatStreamCallbackCtx,
     text: &str,
 ) -> bool {
-    with_active_session_ref(stream_ctx, |s| {
+    with_stream_write_session_ref(stream_ctx, |s| {
         s.messages
             .iter()
             .rev()
@@ -308,7 +308,7 @@ pub(super) fn upsert_hierarchical_subgoal_bubble(
     }
     let marker = marker.unwrap_or_default();
     let now = message_created_ms();
-    with_active_session_mut(stream_ctx, |s| {
+    with_stream_write_session_mut(stream_ctx, |s| {
         if let Some(existing) = s.messages.iter_mut().find(|m| {
             m.role == "assistant"
                 && m.state
@@ -344,7 +344,7 @@ pub(super) fn upsert_hierarchical_subgoal_bubble(
 /// **注意**：`reasoning_text` 非空时视为有内容，保留气泡并清除 loading state，
 /// 避免 `assistant_answer_phase` 之前的思维链在工具调用时被误删。
 pub(super) fn finalize_current_loading_streaming_assistant_row(stream_ctx: &ChatStreamCallbackCtx) {
-    with_active_session_mut(stream_ctx, |s| {
+    with_stream_write_session_mut(stream_ctx, |s| {
         let mid = stream_ctx.scratch.borrow_assistant_id();
         if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) {
             let m = &mut s.messages[idx];
@@ -365,7 +365,7 @@ pub(super) fn finalize_loading_assistant_before_tool_and_tail_with_new_loading(
     stream_ctx: &ChatStreamCallbackCtx,
     tool_message_id: &str,
 ) {
-    let tool_present = with_active_session_ref(stream_ctx, |s| {
+    let tool_present = with_stream_write_session_ref(stream_ctx, |s| {
         s.messages.iter().any(|m| m.id == tool_message_id)
     })
     .unwrap_or(false);
@@ -375,7 +375,7 @@ pub(super) fn finalize_loading_assistant_before_tool_and_tail_with_new_loading(
     finalize_current_loading_streaming_assistant_row(stream_ctx);
     let now = message_created_ms();
     let new_tail_id = RefCell::new(None::<String>);
-    with_active_session_mut(stream_ctx, |s| {
+    with_stream_write_session_mut(stream_ctx, |s| {
         let Some(tidx) = s.messages.iter().position(|m| m.id == tool_message_id) else {
             return;
         };
@@ -412,7 +412,7 @@ pub(super) fn rotate_streaming_assistant_for_followup_model_round(
     finalize_current_loading_streaming_assistant_row(stream_ctx);
     let now = message_created_ms();
     let new_tail_id = RefCell::new(None::<String>);
-    with_active_session_mut(stream_ctx, |s| {
+    with_stream_write_session_mut(stream_ctx, |s| {
         let new_asst_id = make_message_id();
         s.messages.push(StoredMessage {
             id: new_asst_id.clone(),
@@ -441,7 +441,7 @@ pub(super) fn ensure_streaming_assistant_tail_last(stream_ctx: &ChatStreamCallba
         return;
     }
     let mid = stream_ctx.scratch.clone_assistant_id();
-    with_active_session_mut(stream_ctx, |s| {
+    with_stream_write_session_mut(stream_ctx, |s| {
         let Some(idx) = s.messages.iter().position(|m| m.id == mid) else {
             return;
         };
@@ -460,7 +460,7 @@ pub(super) fn ensure_streaming_assistant_tail_last(stream_ctx: &ChatStreamCallba
 
 pub(super) fn remove_loading_assistant_placeholder(stream_ctx: &ChatStreamCallbackCtx) {
     let mid = stream_ctx.scratch.borrow_assistant_id();
-    with_active_session_mut(stream_ctx, |s| {
+    with_stream_write_session_mut(stream_ctx, |s| {
         if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str())
             && s.messages[idx].role == "assistant"
             && s.messages[idx]
