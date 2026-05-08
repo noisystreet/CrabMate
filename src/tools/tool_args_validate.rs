@@ -4,8 +4,9 @@
 //! 与 [`super::schema_check::workflow_tool_args_satisfy_required`] 的「必填键」粗检互补：
 //! 此模块还校验类型、枚举、数值范围、嵌套子对象、以及 `additionalProperties` 等。
 //!
-//! **`read_file`**：在 Schema 校验与 runner 执行前做**一轮**确定性参数纠错（常见为模型把整数写成字符串等），
-//! 见 [`coerce_read_file_tool_args_value`]、[`effective_builtin_tool_args_json`]。
+//! 内置工具：在 Schema 校验与 runner 执行前做**一轮**确定性参数纠错（如 `read_file` 行号字符串化、
+//! `path` 的常见别名 **`file_path`**、**`copy_file`** 的 **`src`/`dst`** 等），见 [`coerce_builtin_tool_args_value`]、
+//! [`effective_builtin_tool_args_json`]。
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -51,7 +52,7 @@ fn json_number_to_u64(n: &serde_json::Number) -> Option<u64> {
     })
 }
 
-fn coerce_read_file_path_field(path_val: &mut Value) -> bool {
+fn coerce_path_string_field(path_val: &mut Value) -> bool {
     match path_val {
         Value::Number(n) => {
             *path_val = Value::String(n.to_string());
@@ -168,18 +169,76 @@ fn coerce_read_file_count_total_lines(map: &mut serde_json::Map<String, Value>) 
     }
 }
 
-/// 将 `read_file` 对象中的若干字段纠成 Schema / `parse_read_file_args` 可接受的形态。
-/// 返回是否发生过改写（用于决定是否重新 `to_string`）。
-pub(crate) fn coerce_read_file_tool_args_value(v: &mut Value) -> bool {
-    let Value::Object(map) = v else {
+fn schema_has_top_level_prop(tool_name: &str, prop: &str) -> bool {
+    cached_params_for_tool_name(tool_name)
+        .and_then(|schema| schema.get("properties").cloned())
+        .and_then(|props| props.get(prop).cloned())
+        .is_some()
+}
+
+fn remap_path_aliases(map: &mut serde_json::Map<String, Value>) -> bool {
+    if map.contains_key("path") {
         return false;
-    };
-    let mut changed = false;
-    if let Some(p) = map.get_mut("path")
-        && coerce_read_file_path_field(p)
-    {
-        changed = true;
     }
+    const ALIASES: &[&str] = &["file_path", "filepath", "relative_path", "rel_path"];
+    for key in ALIASES {
+        if let Some(v) = map.remove(*key) {
+            map.insert("path".to_string(), v);
+            return true;
+        }
+    }
+    false
+}
+
+fn remap_content_aliases(map: &mut serde_json::Map<String, Value>) -> bool {
+    if map.contains_key("content") {
+        return false;
+    }
+    const ALIASES: &[&str] = &["file_content", "body", "text"];
+    for key in ALIASES {
+        if let Some(v) = map.remove(*key) {
+            map.insert("content".to_string(), v);
+            return true;
+        }
+    }
+    false
+}
+
+fn remap_from_to_aliases(map: &mut serde_json::Map<String, Value>) -> bool {
+    let mut changed = false;
+    if !map.contains_key("from") {
+        const FROM_KEYS: &[&str] = &["src", "source", "source_path", "old_path", "from_path"];
+        for key in FROM_KEYS {
+            if let Some(v) = map.remove(*key) {
+                map.insert("from".to_string(), v);
+                changed = true;
+                break;
+            }
+        }
+    }
+    if !map.contains_key("to") {
+        const TO_KEYS: &[&str] = &[
+            "dst",
+            "dest",
+            "destination",
+            "target",
+            "target_path",
+            "new_path",
+            "to_path",
+        ];
+        for key in TO_KEYS {
+            if let Some(v) = map.remove(*key) {
+                map.insert("to".to_string(), v);
+                changed = true;
+                break;
+            }
+        }
+    }
+    changed
+}
+
+fn coerce_read_file_extra_fields(map: &mut serde_json::Map<String, Value>) -> bool {
+    let mut changed = false;
     if coerce_read_file_line_int_fields(map) {
         changed = true;
     }
@@ -192,22 +251,66 @@ pub(crate) fn coerce_read_file_tool_args_value(v: &mut Value) -> bool {
     changed
 }
 
-/// 内置工具入参 JSON：当前仅 **`read_file`** 会在解析成功后做一轮 [`coerce_read_file_tool_args_value`]，
-/// 若有改写则返回序列化后的字符串供校验与 runner 共用。
+/// 对已知内置工具 JSON 对象做一轮纠错（顶层须为 object）。与各自 Schema 对齐：仅当 schema 含对应属性时才做路径别名等。
+pub(crate) fn coerce_builtin_tool_args_value(name: &str, v: &mut Value) -> bool {
+    let Value::Object(map) = v else {
+        return false;
+    };
+    let mut changed = false;
+
+    if schema_has_top_level_prop(name, "path") {
+        if remap_path_aliases(map) {
+            changed = true;
+        }
+        if let Some(p) = map.get_mut("path")
+            && coerce_path_string_field(p)
+        {
+            changed = true;
+        }
+    }
+
+    if matches!(name, "copy_file" | "move_file") {
+        if remap_from_to_aliases(map) {
+            changed = true;
+        }
+        for key in ["from", "to"] {
+            if let Some(x) = map.get_mut(key)
+                && coerce_path_string_field(x)
+            {
+                changed = true;
+            }
+        }
+    }
+
+    if matches!(name, "create_file" | "modify_file")
+        && schema_has_top_level_prop(name, "content")
+        && remap_content_aliases(map)
+    {
+        changed = true;
+    }
+
+    if name == "read_file" && coerce_read_file_extra_fields(map) {
+        changed = true;
+    }
+
+    changed
+}
+
+/// 内置工具入参 JSON：解析成功后做一轮 [`coerce_builtin_tool_args_value`]，若有改写则返回序列化字符串供校验与 runner 共用。
 pub(crate) fn effective_builtin_tool_args_json<'a>(
     name: &str,
     args_json: &'a str,
 ) -> Result<Cow<'a, str>, String> {
-    if name != "read_file" {
+    if !validators_map().contains_key(name) {
         return Ok(Cow::Borrowed(args_json));
     }
     let mut v = super::parse_args::parse_args_json(args_json)?;
-    if !coerce_read_file_tool_args_value(&mut v) {
+    if !coerce_builtin_tool_args_value(name, &mut v) {
         return Ok(Cow::Borrowed(args_json));
     }
     serde_json::to_string(&v)
         .map(Cow::Owned)
-        .map_err(|e| format!("read_file 参数纠错后 JSON 序列化失败: {e}"))
+        .map_err(|e| format!("工具 {name} 参数纠错后 JSON 序列化失败: {e}"))
 }
 
 fn format_instance_errors(validator: &Validator, instance: &Value) -> String {
@@ -292,7 +395,7 @@ mod tests {
             "end_line": "3",
             "count_total_lines": "false"
         });
-        assert!(coerce_read_file_tool_args_value(&mut v));
+        assert!(coerce_builtin_tool_args_value("read_file", &mut v));
         let r = validate_parsed_value_if_known("read_file", &v).expect("read_file registered");
         assert!(r.is_ok(), "{r:?}");
     }
@@ -300,9 +403,29 @@ mod tests {
     #[test]
     fn read_file_numeric_path_coerced_to_string() {
         let mut v = json!({ "path": 42 });
-        assert!(coerce_read_file_tool_args_value(&mut v));
+        assert!(coerce_builtin_tool_args_value("read_file", &mut v));
         assert_eq!(v["path"], "42");
         let r = validate_parsed_value_if_known("read_file", &v).expect("schema");
+        assert!(r.is_ok(), "{r:?}");
+    }
+
+    #[test]
+    fn create_file_file_path_and_body_aliases_pass_schema() {
+        let mut v = json!({"file_path": "x.txt", "body": "hi"});
+        assert!(coerce_builtin_tool_args_value("create_file", &mut v));
+        assert_eq!(v["path"], "x.txt");
+        assert_eq!(v["content"], "hi");
+        let r = validate_parsed_value_if_known("create_file", &v).expect("create_file");
+        assert!(r.is_ok(), "{r:?}");
+    }
+
+    #[test]
+    fn copy_file_src_dst_aliases_pass_schema() {
+        let mut v = json!({"src": "a.txt", "dst": "b.txt"});
+        assert!(coerce_builtin_tool_args_value("copy_file", &mut v));
+        assert_eq!(v["from"], "a.txt");
+        assert_eq!(v["to"], "b.txt");
+        let r = validate_parsed_value_if_known("copy_file", &v).expect("copy_file");
         assert!(r.is_ok(), "{r:?}");
     }
 
@@ -312,6 +435,15 @@ mod tests {
         let cow = effective_builtin_tool_args_json("read_file", raw).expect("ok");
         assert!(matches!(cow, Cow::Owned(_)));
         let r = validate_parsed_str_for_builtin("read_file", cow.as_ref()).expect("validator");
+        assert!(r.is_ok(), "{r:?}");
+    }
+
+    #[test]
+    fn effective_create_file_serializes_after_alias_coercion() {
+        let raw = r#"{"file_path":"n.txt","text":"z"}"#;
+        let cow = effective_builtin_tool_args_json("create_file", raw).expect("ok");
+        assert!(matches!(cow, Cow::Owned(_)));
+        let r = validate_parsed_str_for_builtin("create_file", cow.as_ref()).expect("validator");
         assert!(r.is_ok(), "{r:?}");
     }
 }

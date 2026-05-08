@@ -14,7 +14,7 @@ use std::sync::Arc;
 use leptos::html::Div;
 use leptos::prelude::*;
 
-use crate::chat_session_state::ChatSessionSignals;
+use crate::chat_session_state::{ChatSessionSignals, ChatStreamBusyMemos};
 use crate::i18n::Locale;
 use crate::session_ops::SessionContextAnchor;
 use crate::sse_dispatch::ThinkingTraceInfo;
@@ -92,7 +92,7 @@ pub struct StatusBarFooterSignals {
     pub status_bar_visible: RwSignal<bool>,
     pub status_tasks: StatusTasksSignals,
     pub status_err: RwSignal<Option<String>>,
-    pub tool_busy: RwSignal<bool>,
+    pub stream_busy_memos: ChatStreamBusyMemos,
     pub status_busy: RwSignal<bool>,
     pub client_llm_storage_tick: RwSignal<u64>,
     pub selected_agent_role: RwSignal<Option<String>>,
@@ -228,7 +228,7 @@ impl AppShellCtx {
             status_bar_visible: self.signals.shell_ui.status_bar_visible,
             status_tasks: self.signals.to_status_tasks(),
             status_err: self.signals.stream.status_err,
-            tool_busy: self.signals.stream.tool_busy,
+            stream_busy_memos: self.chat_column.stream_busy_memos,
             status_busy: self.signals.stream.status_busy,
             client_llm_storage_tick: self.signals.llm_settings.client_llm_storage_tick,
             selected_agent_role: self.signals.llm_settings.selected_agent_role,

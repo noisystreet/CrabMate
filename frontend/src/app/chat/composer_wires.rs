@@ -137,6 +137,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
         draft,
         selected_agent_role,
         stream_shell,
+        stream_turn_busy_ui,
         auto_scroll_chat,
         pending_images,
     } = args;
@@ -166,7 +167,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
             };
             if (user_line.is_empty() && imgs.is_empty() && clarify_json.is_none())
                 || !initialized.get()
-                || shell.stream.status_busy.get()
+                || stream_turn_busy_ui.get()
             {
                 return;
             }
@@ -201,7 +202,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
                 return;
             };
             retry_assistant_target.set(None);
-            if !initialized.get() || shell.stream.status_busy.get() {
+            if !initialized.get() || stream_turn_busy_ui.get() {
                 return;
             }
             let aid = chat.active_id.get();
@@ -228,7 +229,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
             };
             regen_stream_after_truncate.set(None);
             let init = initialized.get();
-            let busy = shell.stream.status_busy.get();
+            let busy = stream_turn_busy_ui.get();
             web_sys::console::log_1(
                 &format!(
                     "[effect] regen_stream consumed: init={}, busy={}, text={}, asst_id={}",

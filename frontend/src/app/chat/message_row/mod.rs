@@ -25,7 +25,7 @@ pub(crate) struct ChatMessageRowSignals {
     pub chat_find_match_ids: RwSignal<Vec<String>>,
     pub chat_find_cursor: RwSignal<usize>,
     pub auto_scroll_chat: RwSignal<bool>,
-    pub status_busy: RwSignal<bool>,
+    pub stream_turn_busy_ui: Memo<bool>,
     pub regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
     pub retry_assistant_target: RwSignal<Option<String>>,
     pub status_err: RwSignal<Option<String>>,

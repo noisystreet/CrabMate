@@ -7,7 +7,7 @@ use leptos_dom::helpers::event_target_value;
 
 use crate::api::load_client_llm_text_fields_from_storage;
 use crate::app_prefs::{status_bar_effective_api_base, status_bar_effective_model};
-use crate::chat_session_state::ChatSessionSignals;
+use crate::chat_session_state::{ChatSessionSignals, ChatStreamBusyMemos};
 
 use super::app_shell_ctx::StatusBarFooterSignals;
 use super::status_tasks_state::StatusTasksSignals;
@@ -202,7 +202,7 @@ fn StatusBarChipsRow(
 fn StatusBarRunIndicator(
     st: StatusTasksSignals,
     status_err: RwSignal<Option<String>>,
-    tool_busy: RwSignal<bool>,
+    stream_busy_memos: ChatStreamBusyMemos,
     status_busy: RwSignal<bool>,
     locale: RwSignal<Locale>,
 ) -> impl IntoView {
@@ -210,7 +210,7 @@ fn StatusBarRunIndicator(
         <span class=move || {
             let kind = if st.status_fetch_err.get().is_some() || status_err.get().is_some() {
                 "error"
-            } else if tool_busy.get() {
+            } else if stream_busy_memos.tool_timeline_busy_ui.get() {
                 "tool"
             } else if status_busy.get() {
                 "running"
@@ -226,7 +226,7 @@ fn StatusBarRunIndicator(
                     i18n::status_unavailable(loc).to_string()
                 } else if let Some(e) = status_err.get() {
                     format!("{}{e}", i18n::status_error_prefix(loc))
-                } else if tool_busy.get() {
+                } else if stream_busy_memos.tool_timeline_busy_ui.get() {
                     i18n::status_tool_running(loc).to_string()
                 } else if status_busy.get() {
                     i18n::status_model_running(loc).to_string()
@@ -242,7 +242,7 @@ fn StatusBarRunIndicator(
 fn StatusBarFooterBody(
     st: StatusTasksSignals,
     status_err: RwSignal<Option<String>>,
-    tool_busy: RwSignal<bool>,
+    stream_busy_memos: ChatStreamBusyMemos,
     status_busy: RwSignal<bool>,
     client_llm_storage_tick: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
@@ -269,7 +269,7 @@ fn StatusBarFooterBody(
             <StatusBarRunIndicator
                 st=st
                 status_err=status_err
-                tool_busy=tool_busy
+                stream_busy_memos=stream_busy_memos
                 status_busy=status_busy
                 locale=locale
             />
@@ -282,7 +282,7 @@ pub fn status_bar_footer_view(signals: StatusBarFooterSignals) -> impl IntoView 
         status_bar_visible,
         status_tasks: st,
         status_err,
-        tool_busy,
+        stream_busy_memos,
         status_busy,
         client_llm_storage_tick,
         selected_agent_role,
@@ -295,7 +295,7 @@ pub fn status_bar_footer_view(signals: StatusBarFooterSignals) -> impl IntoView 
             <StatusBarFooterBody
                 st=st
                 status_err=status_err
-                tool_busy=tool_busy
+                stream_busy_memos=stream_busy_memos
                 status_busy=status_busy
                 client_llm_storage_tick=client_llm_storage_tick
                 selected_agent_role=selected_agent_role

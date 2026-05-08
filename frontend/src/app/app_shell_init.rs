@@ -37,6 +37,7 @@ pub fn init_app_shell() -> AppShellCtx {
         insert_workspace_file_ref_sv,
         chat_stream_shell,
         chat_wires,
+        stream_busy_memos,
     ) = wire_phase4_workspace_status_and_chat_domain(&app_signals, Arc::clone(&refresh_workspace));
 
     let new_session = Rc::clone(&chat_wires.new_session);
@@ -52,6 +53,7 @@ pub fn init_app_shell() -> AppShellCtx {
         chat_column: ChatColumnShell {
             app: app_signals,
             stream_shell: chat_stream_shell.clone(),
+            stream_busy_memos,
             run_send_message: chat_wires.run_send_message.clone(),
             trigger_stop: Arc::clone(&chat_wires.cancel_stream),
             regen_stream_after_truncate: chat_wires.regen_stream_after_truncate,

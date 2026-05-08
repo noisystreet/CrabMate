@@ -37,7 +37,7 @@ struct ChatMessagesPaneSignals {
     chat_find_query: RwSignal<String>,
     chat_find_match_ids: RwSignal<Vec<String>>,
     chat_find_cursor: RwSignal<usize>,
-    status_busy: RwSignal<bool>,
+    stream_turn_busy_ui: Memo<bool>,
     regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
     retry_assistant_target: RwSignal<Option<String>>,
     status_err: RwSignal<Option<String>>,
@@ -60,7 +60,7 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
         chat_find_query,
         chat_find_match_ids,
         chat_find_cursor,
-        status_busy,
+        stream_turn_busy_ui,
         regen_stream_after_truncate,
         retry_assistant_target,
         status_err,
@@ -78,7 +78,7 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
         chat,
         collapsed_long_assistant_ids,
         chat_find_cursor,
-        status_busy,
+        stream_turn_busy_ui,
         regen_stream_after_truncate,
         retry_assistant_target,
         status_err,
@@ -178,7 +178,7 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
                                         chat_find_match_ids,
                                         chat_find_cursor,
                                         auto_scroll_chat,
-                                        status_busy,
+                                        stream_turn_busy_ui,
                                         regen_stream_after_truncate,
                                         retry_assistant_target,
                                         status_err,
@@ -209,7 +209,7 @@ struct ChatComposerPaneSignals {
     locale: RwSignal<crate::i18n::Locale>,
     pending_images: RwSignal<Vec<String>>,
     pending_clarification: RwSignal<Option<crate::clarification_form::PendingClarificationForm>>,
-    status_busy: RwSignal<bool>,
+    stream_turn_busy_ui: Memo<bool>,
     status_err: RwSignal<Option<String>>,
     run_send_message: Arc<dyn Fn() + Send + Sync>,
     run_send_clarify_sv: StoredValue<Arc<dyn Fn() + Send + Sync>>,
@@ -330,7 +330,7 @@ fn ComposerPendingImagesRow(
 fn ComposerClarificationPanel(
     locale: RwSignal<crate::i18n::Locale>,
     pending_clarification: RwSignal<Option<crate::clarification_form::PendingClarificationForm>>,
-    status_busy: RwSignal<bool>,
+    stream_turn_busy_ui: Memo<bool>,
     run_send_clarify_sv: StoredValue<Arc<dyn Fn() + Send + Sync>>,
 ) -> impl IntoView {
     view! {
@@ -416,7 +416,7 @@ fn ComposerClarificationPanel(
                             <button
                                 type="button"
                                 class="btn btn-muted btn-sm"
-                                prop:disabled=move || status_busy.get()
+                                prop:disabled=move || stream_turn_busy_ui.get()
                                 on:click=move |_| pending_clarification.set(None)
                             >
                                 {move || i18n::clarification_dismiss(locale.get())}
@@ -424,7 +424,7 @@ fn ComposerClarificationPanel(
                             <button
                                 type="button"
                                 class="btn btn-primary btn-sm"
-                                prop:disabled=move || status_busy.get()
+                                prop:disabled=move || stream_turn_busy_ui.get()
                                 on:click=move |_| run_send_clarify_sv.get_value()()
                             >
                                 {move || i18n::clarification_submit(locale.get())}
@@ -444,7 +444,7 @@ fn ChatComposerPane(signals: ChatComposerPaneSignals) -> impl IntoView {
         locale,
         pending_images,
         pending_clarification,
-        status_busy,
+        stream_turn_busy_ui,
         status_err,
         run_send_message,
         run_send_clarify_sv,
@@ -468,7 +468,7 @@ fn ChatComposerPane(signals: ChatComposerPaneSignals) -> impl IntoView {
                 <ComposerClarificationPanel
                     locale=locale
                     pending_clarification=pending_clarification
-                    status_busy=status_busy
+                    stream_turn_busy_ui=stream_turn_busy_ui
                     run_send_clarify_sv=run_send_clarify_sv
                 />
                 <div class="composer-input-row">
@@ -505,7 +505,7 @@ fn ChatComposerPane(signals: ChatComposerPaneSignals) -> impl IntoView {
                         <button
                             type="button"
                             class="btn btn-muted btn-sm"
-                            prop:disabled=move || !status_busy.get()
+                            prop:disabled=move || !stream_turn_busy_ui.get()
                             on:click={
                                 let t = Arc::clone(&trigger_stop);
                                 move |_| t()
@@ -515,7 +515,7 @@ fn ChatComposerPane(signals: ChatComposerPaneSignals) -> impl IntoView {
                             type="button"
                             class="btn btn-primary btn-send-icon"
                             data-testid="chat-send-button"
-                            prop:disabled=move || status_busy.get() || !initialized.get()
+                            prop:disabled=move || stream_turn_busy_ui.get() || !initialized.get()
                             on:click={
                                 let r = Arc::clone(&run_send_message);
                                 move |_| r()
@@ -549,6 +549,7 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
     let ChatColumnShell {
         app,
         stream_shell,
+        stream_busy_memos,
         run_send_message,
         trigger_stop,
         regen_stream_after_truncate,
@@ -576,7 +577,7 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
     let markdown_render = app.shell_ui.markdown_render;
     let apply_assistant_display_filters = app.shell_ui.apply_assistant_display_filters;
 
-    let status_busy = stream_shell.stream.status_busy;
+    let stream_turn_busy_ui = stream_busy_memos.stream_turn_busy_ui;
     let status_err = stream_shell.stream.status_err;
     let pending_clarification = stream_shell.approval.pending_clarification;
 
@@ -667,7 +668,7 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
                         chat_find_query,
                         chat_find_match_ids,
                         chat_find_cursor,
-                        status_busy,
+                        stream_turn_busy_ui,
                         regen_stream_after_truncate,
                         retry_assistant_target,
                         status_err,
@@ -678,7 +679,7 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
                         locale,
                         pending_images,
                         pending_clarification,
-                        status_busy,
+                        stream_turn_busy_ui,
                         status_err,
                         run_send_message: run_send_message.clone(),
                         run_send_clarify_sv,

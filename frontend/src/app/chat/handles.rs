@@ -9,7 +9,7 @@ use std::sync::Arc;
 use leptos::prelude::*;
 
 use crate::app::app_signals::{AppSignals, StreamControlSignals};
-use crate::chat_session_state::ChatSessionSignals;
+use crate::chat_session_state::{ChatSessionSignals, ChatStreamBusyMemos};
 use crate::clarification_form::PendingClarificationForm;
 use crate::i18n::Locale;
 use crate::sse_dispatch::ThinkingTraceInfo;
@@ -78,6 +78,8 @@ impl ComposerStreamShell {
 pub struct ChatColumnShell {
     pub app: AppSignals,
     pub stream_shell: ComposerStreamShell,
+    /// 流式回合「UI 忙」派生（[`ChatStreamBusyMemos`]）；与 SSE 原始 busy 信号同源接线，避免视图层重复拼规则。
+    pub stream_busy_memos: ChatStreamBusyMemos,
     pub run_send_message: Arc<dyn Fn() + Send + Sync>,
     pub trigger_stop: Arc<dyn Fn() + Send + Sync>,
     pub regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
@@ -102,6 +104,8 @@ pub struct WireComposerStreamsArgs {
     pub selected_agent_role: RwSignal<Option<String>>,
     /// 与 SSE 流式回调共享的壳层状态（见 [`ComposerStreamShell`]）。
     pub stream_shell: ComposerStreamShell,
+    /// 见 [`ChatStreamBusyMemos::stream_turn_busy_ui`]。
+    pub stream_turn_busy_ui: Memo<bool>,
     pub auto_scroll_chat: RwSignal<bool>,
     pub pending_images: RwSignal<Vec<String>>,
 }

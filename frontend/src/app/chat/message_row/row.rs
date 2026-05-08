@@ -35,7 +35,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
         chat_find_match_ids,
         chat_find_cursor,
         auto_scroll_chat,
-        status_busy,
+        stream_turn_busy_ui,
         regen_stream_after_truncate,
         retry_assistant_target,
         status_err,
@@ -199,7 +199,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
                     mid_retry: mid_retry.clone(),
                     row_actions,
                     retry_assistant_target,
-                    status_busy,
+                    stream_turn_busy_ui,
                     locale,
                 })}
             </div>

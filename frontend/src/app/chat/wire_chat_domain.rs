@@ -1,6 +1,6 @@
 //! 聊天域接线：会话切换、草稿同步、滚底、查找、composer 流式等 `wire_*` 从 `app/mod.rs` 迁出，落实 **`docs/frontend/ARCHITECTURE.md`** 阶段 **B（壳与域分离）**。
 //!
-//! `App` 仍负责 [`AppSignals`](crate::app::app_signals::AppSignals) 与 [`ComposerStreamShell::from_app_signals`](super::handles::ComposerStreamShell::from_app_signals)；本模块只注册聊天相关副作用并返回 [`ChatComposerWires`](super::handles::ChatComposerWires)。
+//! `App` 仍负责 [`AppSignals`](crate::app::app_signals::AppSignals) 与 [`ComposerStreamShell::from_app_signals`](super::handles::ComposerStreamShell::from_app_signals)；本模块只注册聊天相关副作用，并返回 [`ChatComposerWires`](super::handles::ChatComposerWires) 与 [`ChatStreamBusyMemos`](crate::chat_session_state::ChatStreamBusyMemos)（`Memo` 派生的回合忙状态，供底栏 / 作曲器 / 消息行共用）。
 //!
 //! # `wire_chat_domain_effects` 内顺序
 //!
@@ -16,7 +16,9 @@
 use leptos::html::Textarea;
 use leptos::prelude::*;
 
-use crate::chat_session_state::ChatSessionSignals;
+use crate::chat_session_state::{
+    ChatSessionSignals, ChatStreamBusyMemos, make_chat_stream_busy_memos,
+};
 use crate::clarification_form::PendingClarificationForm;
 use crate::i18n::Locale;
 use crate::storage::ChatSession;
@@ -55,8 +57,10 @@ pub(crate) struct WireChatDomainEffectsArgs {
     pub stream_shell: ComposerStreamShell,
 }
 
-/// 注册聊天列与输入/流式相关 `wire_*`，并返回 composer 侧闭包（`new_session` / `cancel_stream` 等）。
-pub(crate) fn wire_chat_domain_effects(args: WireChatDomainEffectsArgs) -> ChatComposerWires {
+/// 注册聊天列与输入/流式相关 `wire_*`，并返回 composer 侧闭包与 **`Memo` 派生的回合忙状态**（底栏 / 作曲器 / 消息行共用）。
+pub(crate) fn wire_chat_domain_effects(
+    args: WireChatDomainEffectsArgs,
+) -> (ChatComposerWires, ChatStreamBusyMemos) {
     let WireChatDomainEffectsArgs {
         initialized,
         chat_session,
@@ -81,6 +85,12 @@ pub(crate) fn wire_chat_domain_effects(args: WireChatDomainEffectsArgs) -> ChatC
         selected_agent_role,
         stream_shell,
     } = args;
+
+    let stream_busy_memos = make_chat_stream_busy_memos(
+        chat_session,
+        stream_shell.stream.status_busy,
+        stream_shell.stream.tool_busy,
+    );
 
     wire_session_switch_clears_chat_state(
         initialized,
@@ -119,14 +129,16 @@ pub(crate) fn wire_chat_domain_effects(args: WireChatDomainEffectsArgs) -> ChatC
 
     wire_focus_message_after_nav(focus_message_id_after_nav);
 
-    wire_chat_composer_streams(WireComposerStreamsArgs {
+    let wires = wire_chat_composer_streams(WireComposerStreamsArgs {
         initialized,
         chat: chat_session,
         locale,
         draft,
         selected_agent_role,
         stream_shell,
+        stream_turn_busy_ui: stream_busy_memos.stream_turn_busy_ui,
         auto_scroll_chat,
         pending_images,
-    })
+    });
+    (wires, stream_busy_memos)
 }

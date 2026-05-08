@@ -192,7 +192,7 @@ fn user_line_regen_branch_buttons(
     uid_r: String,
     uid_b: String,
     row_actions: MessageRowActionSignals,
-    status_busy: RwSignal<bool>,
+    stream_turn_busy_ui: Memo<bool>,
     locale: RwSignal<Locale>,
 ) -> impl IntoView {
     view! {
@@ -201,9 +201,9 @@ fn user_line_regen_branch_buttons(
             class="btn btn-muted btn-sm msg-action-btn msg-action-icon-btn"
             prop:title=move || i18n::msg_regen_title(locale.get())
             prop:aria-label=move || i18n::msg_regen_aria(locale.get())
-            prop:disabled=move || status_busy.get()
+            prop:disabled=move || stream_turn_busy_ui.get()
             on:click=move |_| {
-                if status_busy.get() {
+                if stream_turn_busy_ui.get() {
                     return;
                 }
                 row_actions.spawn_regenerate_from_user_line(msg_idx, uid_r.clone());
@@ -231,9 +231,9 @@ fn user_line_regen_branch_buttons(
             class="btn btn-muted btn-sm msg-action-btn msg-action-icon-btn"
             prop:title=move || i18n::msg_branch_title(locale.get())
             prop:aria-label=move || i18n::msg_branch_aria(locale.get())
-            prop:disabled=move || status_busy.get()
+            prop:disabled=move || stream_turn_busy_ui.get()
             on:click=move |_| {
-                if status_busy.get() {
+                if stream_turn_busy_ui.get() {
                     return;
                 }
                 row_actions.spawn_branch_at_user_line(msg_idx, uid_b.clone());
@@ -263,7 +263,7 @@ fn user_line_regen_branch_buttons(
 
 fn assistant_retry_icon_button(
     retry_assistant_target: RwSignal<Option<String>>,
-    status_busy: RwSignal<bool>,
+    stream_turn_busy_ui: Memo<bool>,
     locale: RwSignal<Locale>,
     mid_retry_go: StoredValue<String>,
 ) -> impl IntoView {
@@ -273,7 +273,7 @@ fn assistant_retry_icon_button(
             class="btn btn-secondary btn-sm msg-action-icon-btn"
             prop:title=move || i18n::msg_retry_title(locale.get())
             prop:aria-label=move || i18n::msg_retry_aria(locale.get())
-            prop:disabled=move || status_busy.get()
+            prop:disabled=move || stream_turn_busy_ui.get()
             on:click=move |_| {
                 retry_assistant_target.set(Some(mid_retry_go.get_value()));
             }
@@ -309,7 +309,7 @@ pub(super) struct MessageActionsBarParams {
     pub mid_retry: String,
     pub row_actions: MessageRowActionSignals,
     pub retry_assistant_target: RwSignal<Option<String>>,
-    pub status_busy: RwSignal<bool>,
+    pub stream_turn_busy_ui: Memo<bool>,
     pub locale: RwSignal<Locale>,
 }
 
@@ -324,7 +324,7 @@ pub(super) fn build_message_actions_bar(p: MessageActionsBarParams) -> AnyView {
         mid_retry,
         row_actions,
         retry_assistant_target,
-        status_busy,
+        stream_turn_busy_ui,
         locale,
     } = p;
 
@@ -341,14 +341,14 @@ pub(super) fn build_message_actions_bar(p: MessageActionsBarParams) -> AnyView {
                     user_retry_id.clone(),
                     user_branch_id.clone(),
                     row_actions,
-                    status_busy,
+                    stream_turn_busy_ui,
                     locale,
                 )
             })}
             <Show when=move || retry_check.get_value()()>
                 {assistant_retry_icon_button(
                     retry_assistant_target,
-                    status_busy,
+                    stream_turn_busy_ui,
                     locale,
                     mid_retry_go,
                 )}

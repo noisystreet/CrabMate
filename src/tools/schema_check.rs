@@ -18,9 +18,7 @@ pub fn workflow_tool_args_satisfy_required(
         ));
     }
     let mut args = tool_args.clone();
-    if tool_name == "read_file" {
-        super::tool_args_validate::coerce_read_file_tool_args_value(&mut args);
-    }
+    let _ = super::tool_args_validate::coerce_builtin_tool_args_value(tool_name, &mut args);
     if let Some(r) = validate_parsed_value_if_known(tool_name, &args) {
         return r;
     }

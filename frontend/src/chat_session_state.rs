@@ -27,6 +27,49 @@ use leptos::prelude::*;
 use crate::session_sync::SessionSyncState;
 use crate::storage::ChatSession;
 
+/// 是否存在仍处于 Loading 的工具时间线气泡（与 SSE `tool_running` / `tool_busy` 互补，避免状态栏已「就绪」但卡片仍在转圈）。
+///
+/// 优先检查 [`ChatSessionSignals::stream_bound_session_id`]（与进行中 SSE 写入目标一致），否则回落到当前 [`ChatSessionSignals::active_id`]。
+pub fn session_has_loading_tool_message(chat: ChatSessionSignals) -> bool {
+    let sid = chat
+        .stream_bound_session_id
+        .get()
+        .unwrap_or_else(|| chat.active_id.get());
+    chat.sessions.with(|sessions| {
+        sessions.iter().any(|s| {
+            s.id == sid
+                && s.messages
+                    .iter()
+                    .any(|m| m.is_tool && m.state.as_ref().is_some_and(|st| st.is_loading()))
+        })
+    })
+}
+
+/// Web 流式：`tool_busy` ∨ 时间线 Loading 工具占位（状态栏「工具执行中」与此对齐）。
+///
+/// 与 [`ChatStreamBusyMemos::stream_turn_busy_ui`] 组合即为「整回合 UI 忙」，规则集中在一处构造，避免多处手写相同 OR。
+#[derive(Clone, Copy)]
+pub struct ChatStreamBusyMemos {
+    pub stream_turn_busy_ui: Memo<bool>,
+    pub tool_timeline_busy_ui: Memo<bool>,
+}
+
+/// 在 [`crate::app::chat::wire_chat_domain::wire_chat_domain_effects`] 内**单次**构造，经 [`crate::app::chat::handles::ChatColumnShell`] 下发到底栏 / 作曲器 / 消息行。
+#[must_use]
+pub fn make_chat_stream_busy_memos(
+    chat: ChatSessionSignals,
+    status_busy: RwSignal<bool>,
+    tool_busy: RwSignal<bool>,
+) -> ChatStreamBusyMemos {
+    let tool_timeline_busy_ui =
+        Memo::new(move |_| tool_busy.get() || session_has_loading_tool_message(chat));
+    let stream_turn_busy_ui = Memo::new(move |_| status_busy.get() || tool_timeline_busy_ui.get());
+    ChatStreamBusyMemos {
+        stream_turn_busy_ui,
+        tool_timeline_busy_ui,
+    }
+}
+
 /// 与单会话聊天、流式 `/chat/stream`、服务端快照对齐相关的响应式句柄。
 #[derive(Clone, Copy)]
 pub struct ChatSessionSignals {

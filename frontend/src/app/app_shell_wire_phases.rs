@@ -35,6 +35,7 @@ use super::status_tasks_wiring::{
 };
 use super::wire_workspace_domain::{WireWorkspaceDomainEffectsArgs, wire_workspace_domain_effects};
 use super::workspace_panel::{make_insert_workspace_path_into_composer, make_refresh_workspace};
+use crate::chat_session_state::ChatStreamBusyMemos;
 
 /// 阶段 1：会话列表 / 活动会话 / 水合与本地草稿等（必须在其它壳级 `Effect` 之前注册）。
 pub(super) fn wire_phase1_chat_session_lifecycle(app: &AppSignals) {
@@ -147,6 +148,7 @@ pub(super) fn wire_phase4c_chat_and_workspace_chrome(
     StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
     ComposerStreamShell,
     ChatComposerWires,
+    ChatStreamBusyMemos,
 ) {
     let insert_workspace_file_ref: Arc<dyn Fn(String) + Send + Sync> =
         make_insert_workspace_path_into_composer(
@@ -160,7 +162,7 @@ pub(super) fn wire_phase4c_chat_and_workspace_chrome(
     let chat_stream_shell =
         ComposerStreamShell::from_app_signals(app, Arc::clone(refresh_workspace));
 
-    let chat_wires = wire_chat_domain_effects(WireChatDomainEffectsArgs {
+    let (chat_wires, stream_busy_memos) = wire_chat_domain_effects(WireChatDomainEffectsArgs {
         initialized: app.initialized,
         chat_session: app.chat,
         draft: app.chat_composer.draft,
@@ -185,7 +187,12 @@ pub(super) fn wire_phase4c_chat_and_workspace_chrome(
         stream_shell: chat_stream_shell.clone(),
     });
 
-    (insert_workspace_file_ref_sv, chat_stream_shell, chat_wires)
+    (
+        insert_workspace_file_ref_sv,
+        chat_stream_shell,
+        chat_wires,
+        stream_busy_memos,
+    )
 }
 
 /// 阶段 4：依次调用 4a → 4b → 4c（须在 [`make_refresh_workspace_for_shell`] 之后）。
@@ -199,10 +206,11 @@ pub(super) fn wire_phase4_workspace_status_and_chat_domain(
     StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
     ComposerStreamShell,
     ChatComposerWires,
+    ChatStreamBusyMemos,
 ) {
     wire_phase4a_workspace_domain(app, &refresh_workspace);
     let (refresh_status, refresh_tasks, toggle_task) = wire_phase4b_status_tasks_domain(app);
-    let (insert_workspace_file_ref_sv, chat_stream_shell, chat_wires) =
+    let (insert_workspace_file_ref_sv, chat_stream_shell, chat_wires, stream_busy_memos) =
         wire_phase4c_chat_and_workspace_chrome(app, &refresh_workspace);
 
     (
@@ -212,6 +220,7 @@ pub(super) fn wire_phase4_workspace_status_and_chat_domain(
         insert_workspace_file_ref_sv,
         chat_stream_shell,
         chat_wires,
+        stream_busy_memos,
     )
 }
 
