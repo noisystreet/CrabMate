@@ -120,7 +120,7 @@
 ## 8. 可观测性与协议
 
 1. **Tracing**：统一 `target`（建议 `crabmate::audience` 或与 `crabmate::per` 并列的子 span），携带 `conversation_id` / `job_id` / `plan_id` / `step_id`（若可得）。  
-2. **SSE（若需要 UI）**：新控制面事件须更新 **`docs/SSE协议.md`**、**`frontend/src/sse_dispatch.rs`**、**`fixtures/sse_control_golden.jsonl`** 与 **`crates/crabmate-sse-protocol`**（见仓库 **api-sse-chat-protocol** 维护清单）。  
+2. **SSE（若需要 UI）**：新控制面事件须更新 **`docs/SSE协议.md`**、**`frontend/src/sse_dispatch/dispatch.rs`**、**`fixtures/sse_control_golden.jsonl`** 与 **`crates/crabmate-sse-protocol`**（见仓库 **api-sse-chat-protocol** 维护清单）。  
 3. **会话消息**：默认建议**旁路**（仅日志 + SSE），**不**写入上送模型的 `messages`；若产品要求写入时间线，应使用与现有「分阶段旁注 system」一致的模式，并评估 token 膨胀。
 
 ---

@@ -2,7 +2,7 @@
 
 # Agent SSE control-plane protocol (`/chat/stream`)
 
-This document describes **control-plane JSON** sent by the CrabMate server on SSE `data:` lines, distinct from **plain-text model deltas**. **Payload shapes** are defined in Rust `src/sse/protocol.rs`; the **numeric protocol version** is shared with the Leptos UI via workspace crate **`crabmate-sse-protocol`** (constant **`SSE_PROTOCOL_VERSION`**, re-exported from `sse::protocol`). The browser consumes via `frontend/src/sse_dispatch.rs` (called by `frontend/src/api.rs`). Rust line classification: `src/sse/line.rs` (`classify_agent_sse_line`), semantics must match this doc.
+This document describes **control-plane JSON** sent by the CrabMate server on SSE `data:` lines, distinct from **plain-text model deltas**. **Payload shapes** are defined in Rust `src/sse/protocol.rs`; the **numeric protocol version** is shared with the Leptos UI via workspace crate **`crabmate-sse-protocol`** (constant **`SSE_PROTOCOL_VERSION`**, re-exported from `sse::protocol`). The browser consumes via `frontend/src/sse_dispatch/dispatch.rs` (called by `frontend/src/api.rs`). Rust line classification: `src/sse/line.rs` (`classify_agent_sse_line`), semantics must match this doc.
 
 ## Protocol version `v` and negotiation
 
@@ -196,7 +196,7 @@ When changing any of:
 
 1. **`crates/crabmate-sse-protocol`**: **`SSE_PROTOCOL_VERSION`**; `src/sse/protocol.rs`: `SsePayload`, `SseErrorBody`, `ToolResultBody` (version from the crate, re-exported in `protocol`)
 2. **`crates/crabmate-sse-protocol`**: `sse_frame.rs` (`parse_sse_event_id` / `join_sse_data_lines` / `is_sse_done_sentinel` / `extract_stream_ended_reason`) and `control_extract.rs` (`extract_*`) whenever frontend consumption semantics change
-3. `frontend/src/sse_dispatch.rs` and `frontend/src/api.rs`: classification order and **`client_sse_protocol`** in the request body
+3. `frontend/src/sse_dispatch/dispatch.rs` and `frontend/src/api.rs`: classification order and **`client_sse_protocol`** in the request body
 4. `src/sse/line.rs`: `classify_agent_sse_line`
 5. New `encode_message(SsePayload::…)` call sites
 
@@ -204,11 +204,11 @@ When changing any of:
 
 ## Contract tests (control-plane classification)
 
-After parsing one merged `data:` string as JSON, the frontend applies a **fixed order** to decide `stop` / `handled` / `plain` (`frontend/src/sse_dispatch.rs`). The **single source of truth** is **`classify_sse_control_outcome`** in workspace crate **`crates/crabmate-sse-protocol`** (`control_classify.rs`), aligned with the same golden file; Leptos also runs **`golden_sse_control_leptos_dispatch_matches_shared_classify`** to catch drift.
+After parsing one merged `data:` string as JSON, the frontend applies a **fixed order** to decide `stop` / `handled` / `plain` (`frontend/src/sse_dispatch/dispatch.rs`). The **single source of truth** is **`classify_sse_control_outcome`** in workspace crate **`crates/crabmate-sse-protocol`** (`control_classify.rs`), aligned with the same golden file; Leptos also runs **`golden_sse_control_leptos_dispatch_matches_shared_classify`** to catch drift.
 
 - **`fixtures/sse_control_golden.jsonl`**: each line `description<TAB>JSON<TAB>expected-class` (`#` lines are comments).
 - **Rust**: `cargo test golden_sse_control` (runs **`crabmate-sse-protocol`** golden tests plus **frontend** alignment).
-When adding a new top-level key consumed by the Web UI: update `frontend/src/sse_dispatch.rs`, **`crates/crabmate-sse-protocol/control_classify.rs`**, and golden lines.
+When adding a new top-level key consumed by the Web UI: update `frontend/src/sse_dispatch/dispatch.rs`, **`crates/crabmate-sse-protocol/control_classify.rs`**, and golden lines.
 
 ## Contract tests (`crabmate_tool` history envelope)
 
@@ -217,4 +217,4 @@ When adding a new top-level key consumed by the Web UI: update `frontend/src/sse
 
 ---
 
-Maintainers: tables should match code; if they drift, treat **`protocol.rs` + `frontend/src/sse_dispatch.rs`** as authoritative and fix this doc.
+Maintainers: tables should match code; if they drift, treat **`protocol.rs` + `frontend/src/sse_dispatch/dispatch.rs`** as authoritative and fix this doc.

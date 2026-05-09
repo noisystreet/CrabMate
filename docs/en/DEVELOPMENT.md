@@ -337,7 +337,7 @@ Shared client; separate connect vs request timeout; pool tuning for keep-alive.
 
 ### `src/sse/protocol.rs` / `line.rs`
 
-**`SsePayload`** encoding; **`SSE_PROTOCOL_VERSION`** from **`crates/crabmate-sse-protocol`** (re-exported in `protocol`); consumer classification aligned with **`frontend/src/sse_dispatch.rs`** / **`api.rs`**.
+**`SsePayload`** encoding; **`SSE_PROTOCOL_VERSION`** from **`crates/crabmate-sse-protocol`** (re-exported in `protocol`); consumer classification aligned with **`frontend/src/sse_dispatch/dispatch.rs`** / **`api.rs`**.
 
 ### `src/types.rs`
 
@@ -357,8 +357,8 @@ Aggregated in **`file/mod.rs`**; glob/tree limits; **`resolve_for_read`** for ot
 
 ## Frontend (`frontend/`)
 
-- **`src/api.rs`**: `fetch` + **`send_chat_stream`**（**`client_sse_protocol`** 与 **`crabmate_sse_protocol::SSE_PROTOCOL_VERSION`**）等。
-- **`src/sse_dispatch.rs`**: 控制面 JSON 分类（含 **`sse_capabilities`** 版本核对）。
+- **`frontend/src/api.rs`**: `fetch` + **`send_chat_stream`**（**`client_sse_protocol`** 与 **`crabmate_sse_protocol::SSE_PROTOCOL_VERSION`**）等。
+- **`frontend/src/sse_dispatch/dispatch.rs`**: 控制面 JSON 分类（含 **`sse_capabilities`** 版本核对）。
 - 其余 UI 模块：`app/` 等（CSR WASM）。
 - **E2E (`e2e/`)**: Playwright smoke tests with stubbed **`/chat/stream`** and **`/workspace`**; see the Chinese **[docs/开发文档.md](DEVELOPMENT.md)** § “E2E” for commands (`npm ci`, `npx playwright install chromium`, `npm test`).
 

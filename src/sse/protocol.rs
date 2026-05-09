@@ -2,7 +2,7 @@
 //!
 //! 统一带版本字段 `v`，键名与现有前端 `frontend/src/api.rs` 兼容；新增事件通过新键扩展。
 //!
-//! **完整契约**（版本、`error`/`code` 与 `tool_result.error_code` 枚举、双端对齐清单）见仓库 **`docs/SSE协议.md`**（与 `frontend/src/sse_dispatch.rs` 对齐）。
+//! **完整契约**（版本、`error`/`code` 与 `tool_result.error_code` 枚举、双端对齐清单）见仓库 **`docs/SSE协议.md`**（与 `frontend/src/sse_dispatch/dispatch.rs` 对齐）。
 
 pub use crabmate_sse_protocol::{SSE_PROTOCOL_VERSION, StreamEndReason};
 

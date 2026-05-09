@@ -25,7 +25,7 @@ Includes (non-exhaustive):
 - **`lizard-rust`**: Rust cyclomatic complexity (requires **`pip install lizard`**; **`scripts/lizard-rust.sh`** / **`scripts/lizard_rust_metrics.py`**: per-function cap **`LIZARD_CCN`** (default 40), ratchet files **`scripts/lizard_max_ccn_baseline.txt`** and **`scripts/lizard_high_ccn_sum_baseline.txt`** (sum of CCN for functions with **CCN > 15** by default, via **`LIZARD_HIGH_CCN_SUM_THRESHOLD`**))
 - **`fn-nloc-ratchet`**: Rust function-body **`nloc`** (lizard) plus **physical `.rs` file line counts** (same script **`scripts/fn-nloc-ratchet.sh`** / **`scripts/fn_nloc_rust_metrics.py`**); function ratchets **`scripts/fn_nloc_max_baseline.txt`**, **`scripts/fn_nloc_top10_sum_baseline.txt`**; optional hard cap **`FN_NLOC_CAP`**; file ratchets **`scripts/rust_file_max_lines_baseline.txt`**, **`scripts/rust_file_top10_lines_sum_baseline.txt`**; optional hard cap **`RUST_FILE_LINES_MAX_CAP`**; runs in **`.github/workflows/code-complexity.yml`**
 - **Coverage**: **`.github/workflows/code-coverage.yml`** is **manual-only** (`workflow_dispatch`); locally you can still run `cargo llvm-cov` + **`scripts/check_coverage_ratchet.py`**
-- **`cargo test golden_sse_control`** (conditional hook when `fixtures/sse_control_golden.jsonl`, `crates/crabmate-sse-protocol/control_classify.rs`, or `frontend/src/sse_dispatch.rs` change)
+- **`cargo test golden_sse_control`** (conditional hook when `fixtures/sse_control_golden.jsonl`, `crates/crabmate-sse-protocol/control_classify.rs`, or any file under `frontend/src/sse_dispatch/` change)
 
 Without pre-commit installed, run at least:
 
