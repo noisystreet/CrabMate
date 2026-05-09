@@ -10,6 +10,7 @@ use crate::i18n;
 use crate::i18n::Locale;
 use crate::session_ops::{make_message_id, message_created_ms};
 use crate::storage::{StoredMessage, StoredMessageState};
+use crate::stream_text_overlay::stream_overlay_take_into_stored_message;
 
 use super::super::context::ChatStreamCallbackCtx;
 use super::stream_session_access::{with_stream_write_session_mut, with_stream_write_session_ref};
@@ -344,11 +345,21 @@ pub(super) fn upsert_hierarchical_subgoal_bubble(
 /// **注意**：`reasoning_text` 非空时视为有内容，保留气泡并清除 loading state，
 /// 避免 `assistant_answer_phase` 之前的思维链在工具调用时被误删。
 pub(super) fn finalize_current_loading_streaming_assistant_row(stream_ctx: &ChatStreamCallbackCtx) {
+    let sid = stream_ctx.bound_stream_session_id.clone();
     with_stream_write_session_mut(stream_ctx, |s| {
+        let mid_owned = stream_ctx.scratch.clone_assistant_id();
+        if let Some(idx) = s.messages.iter().position(|m| m.id == mid_owned.as_str()) {
+            stream_overlay_take_into_stored_message(
+                stream_ctx.chat.stream_text_overlay,
+                sid.as_str(),
+                mid_owned.as_str(),
+                &mut s.messages[idx],
+            );
+        }
         let mid = stream_ctx.scratch.borrow_assistant_id();
         if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) {
             let m = &mut s.messages[idx];
-            if m.role == "assistant" && m.state.as_ref().is_some_and(|s| s.is_loading()) {
+            if m.role == "assistant" && m.state.as_ref().is_some_and(|st| st.is_loading()) {
                 if m.text.trim().is_empty() && m.reasoning_text.trim().is_empty() {
                     s.messages.remove(idx);
                 } else {
@@ -459,15 +470,22 @@ pub(super) fn ensure_streaming_assistant_tail_last(stream_ctx: &ChatStreamCallba
 }
 
 pub(super) fn remove_loading_assistant_placeholder(stream_ctx: &ChatStreamCallbackCtx) {
-    let mid = stream_ctx.scratch.borrow_assistant_id();
+    let sid = stream_ctx.bound_stream_session_id.clone();
+    let mid_owned = stream_ctx.scratch.clone_assistant_id();
     with_stream_write_session_mut(stream_ctx, |s| {
-        if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str())
+        if let Some(idx) = s.messages.iter().position(|m| m.id == mid_owned.as_str())
             && s.messages[idx].role == "assistant"
             && s.messages[idx]
                 .state
                 .as_ref()
                 .is_some_and(|st| st.is_loading())
         {
+            stream_overlay_take_into_stored_message(
+                stream_ctx.chat.stream_text_overlay,
+                sid.as_str(),
+                mid_owned.as_str(),
+                &mut s.messages[idx],
+            );
             s.messages.remove(idx);
         }
     });

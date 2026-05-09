@@ -96,6 +96,13 @@ fn api_base_looks_minimax(base: &str) -> bool {
     b.contains("minimax")
 }
 
+/// 火山引擎方舟 / OpenAI 兼容端（域名 **`volces.com`**）：模型名可能含 **`Kimi-*`** 等，但并非 Moonshot **`api.moonshot.cn`** 托管；
+/// 若仍走 [`MoonshotKimiVendor`]，会带去 **`thinking`** / Kimi 专用规则，网关常以 HTTP **400 InvalidParameter** 拒绝。
+#[inline]
+fn api_base_looks_volcano_engine_openai_compat(base: &str) -> bool {
+    base.to_ascii_lowercase().contains("volces.com")
+}
+
 /// TOML/环境变量均未设置 **`llm_reasoning_split`** 时的默认值：**MiniMax** 网关为 **`true`**，否则 **`false`**。
 #[inline]
 pub(crate) fn default_llm_reasoning_split_for_gateway(model: &str, api_base: &str) -> bool {
@@ -276,6 +283,10 @@ static MINIMAX: MiniMaxVendor = MiniMaxVendor;
 /// 按 **`model`** 与 **`api_base`** 选择适配器（**`model` 族优先**，避免误用 `api_base` 覆盖 Kimi 等明确 ID）。
 #[inline]
 pub fn llm_vendor_adapter(cfg: &AgentConfig) -> &'static dyn LlmVendorAdapter {
+    // Volcano Ark：`model` 常为 `Kimi-K2.x` 等，但与 Moonshot 官方网关语义不同；必须先于 Kimi 前缀判定。
+    if api_base_looks_volcano_engine_openai_compat(&cfg.llm.api_base) {
+        return &GENERIC;
+    }
     if is_moonshot_kimi_family_model_id(&cfg.llm.model) {
         return &KIMI;
     }
@@ -511,5 +522,18 @@ mod tests {
         cfg.llm.api_base = "https://api.minimaxi.com/v1".to_string();
         cfg.llm.model = "deepseek-chat".to_string();
         assert!(!super::deepseek_json_output_eligible(&cfg));
+    }
+
+    #[test]
+    fn api_base_volcano_ark_routes_kimi_like_model_to_generic_vendor() {
+        let mut cfg = cfg_neutral_deepseek_base();
+        cfg.llm.api_base = "https://ark.cn-beijing.volces.com/api/coding/v3".to_string();
+        cfg.llm.model = "Kimi-K2.6".to_string();
+        cfg.llm_vendor_flags.llm_bigmodel_thinking = true;
+        let v = llm_vendor_adapter(&cfg);
+        assert!(
+            v.thinking_field(&cfg).is_none(),
+            "Volcano must not receive Moonshot Kimi thinking/thinking_field JSON"
+        );
     }
 }

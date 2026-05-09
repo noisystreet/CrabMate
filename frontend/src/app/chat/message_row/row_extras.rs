@@ -5,10 +5,12 @@ use std::sync::Arc;
 use leptos::prelude::*;
 
 use crate::i18n::Locale;
-use crate::message_format::message_text_for_display_ex;
 use crate::session_ops::write_clipboard_text;
 use crate::session_search::normalize_search_query;
 use crate::storage::ChatSession;
+use crate::stream_text_overlay::{
+    StreamTextOverlay, message_text_for_display_including_stream_overlay,
+};
 
 use super::helpers::{
     hierarchical_subgoal_banner_is_active, message_row_loading_and_error,
@@ -111,6 +113,7 @@ pub(super) fn message_row_inline_copy_button(
     apply_assistant_display_filters: RwSignal<bool>,
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
+    stream_text_overlay: RwSignal<Option<StreamTextOverlay>>,
     copy_id: String,
 ) -> impl IntoView {
     view! {
@@ -122,12 +125,21 @@ pub(super) fn message_row_inline_copy_button(
             on:click=move |_| {
                 let loc = locale.get_untracked();
                 let apply = apply_assistant_display_filters.get_untracked();
+                let ov = stream_text_overlay.get_untracked();
                 let t = sessions.with(|list| {
                     let aid = active_id.get_untracked();
                     list.iter()
                         .find(|s| s.id == aid)
                         .and_then(|s| s.messages.iter().find(|msg| msg.id == copy_id))
-                        .map(|msg| message_text_for_display_ex(msg, loc, apply))
+                        .map(|msg| {
+                            message_text_for_display_including_stream_overlay(
+                                msg,
+                                ov.as_ref(),
+                                aid.as_str(),
+                                loc,
+                                apply,
+                            )
+                        })
                         .unwrap_or_default()
                 });
                 write_clipboard_text(&t, loc);

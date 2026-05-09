@@ -314,6 +314,10 @@ llm_http_auth_mode = "bearer"
 # llm_kimi_thinking_disabled = true   # optional: disable k2.5 default thinking
 ```
 
+## Volcano Engine Ark (OpenAI-compatible, incl. Coding Plan)
+
+If **`api_base`** uses a Volcano host (**`*.volces.com`**, e.g. **`https://ark.cn-beijing.volces.com/api/coding/v3`**), CrabMate **does not apply Moonshot-hosted Kimi request shaping**, so it **does not emit Moonshot-only fields** like **`thinking`** that Ark rejects with HTTP **400 InvalidParameter**. Set **`model`** exactly as the console shows (e.g. **`Kimi-K2.6`**). Use your Ark **`API_KEY`** with **`llm_http_auth_mode = bearer`**.
+
 ## DeepSeek (OpenAI-compatible)
 
 **`api_base`** containing **`deepseek`** (e.g. **`https://api.deepseek.com/v1`**) selects the DeepSeek vendor adapter (after Kimi/MiniMax/Zhipu routing). Per [DeepSeek thinking mode](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode), CrabMate may send **`thinking: {"type":"enabled"|"disabled"}`** and, when explicitly enabling, **`reasoning_effort: "high"`** on **`chat/completions`** requests.

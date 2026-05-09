@@ -8,6 +8,7 @@ use crate::assistant_body::assistant_markdown_collapsible_view;
 use crate::i18n::{self, Locale};
 use crate::session_ops::message_role_label;
 use crate::storage::{ChatSession, StoredMessage};
+use crate::stream_text_overlay::StreamTextOverlay;
 
 use super::super::message_row_actions::MessageRowActionSignals;
 use super::non_assistant_body::{NonAssistantMessageBodyParams, build_non_assistant_message_body};
@@ -50,6 +51,7 @@ pub(super) struct ChatMessageRowBodyCoreParams {
     pub m: StoredMessage,
     pub sessions: RwSignal<Vec<ChatSession>>,
     pub active_id: RwSignal<String>,
+    pub stream_text_overlay: RwSignal<Option<StreamTextOverlay>>,
     pub collapsed_long_assistant_ids: RwSignal<Vec<String>>,
     pub locale: RwSignal<Locale>,
     pub markdown_render: RwSignal<bool>,
@@ -67,6 +69,7 @@ pub(super) fn chat_message_row_body_core(p: ChatMessageRowBodyCoreParams) -> Any
         m,
         sessions,
         active_id,
+        stream_text_overlay,
         collapsed_long_assistant_ids,
         locale,
         markdown_render,
@@ -87,6 +90,7 @@ pub(super) fn chat_message_row_body_core(p: ChatMessageRowBodyCoreParams) -> Any
             locale,
             markdown_render,
             apply_assistant_display_filters,
+            stream_text_overlay,
         )
         .into_any();
     }

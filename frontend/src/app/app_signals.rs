@@ -438,6 +438,7 @@ impl AppSignals {
             stream_last_event_seq: RwSignal::new(0),
             stream_bound_session_id: RwSignal::new(None),
             reasoning_preserved: RwSignal::new(HashMap::new()),
+            stream_text_overlay: RwSignal::new(None),
         };
 
         Self {

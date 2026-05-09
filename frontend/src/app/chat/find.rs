@@ -5,15 +5,14 @@ use leptos::task::spawn_local;
 
 use gloo_timers::future::TimeoutFuture;
 
+use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::Locale;
-use crate::message_format::message_text_for_display_ex;
 use crate::session_search::{normalize_search_query, scroll_message_into_view};
-use crate::storage::ChatSession;
+use crate::stream_text_overlay::message_text_for_display_including_stream_overlay;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn wire_chat_find_matches(
-    sessions: RwSignal<Vec<ChatSession>>,
-    active_id: RwSignal<String>,
+    chat: ChatSessionSignals,
     chat_find_query: RwSignal<String>,
     chat_find_match_ids: RwSignal<Vec<String>>,
     chat_find_cursor: RwSignal<usize>,
@@ -24,8 +23,9 @@ pub(crate) fn wire_chat_find_matches(
     // 上一次用于生成匹配列表的 `(规范化查询, 活动会话 id)`；非响应式，仅避免同键重复重置光标。
     let chat_find_prev_key = StoredValue::new((String::new(), String::new()));
     Effect::new({
-        let sessions = sessions;
-        let active_id = active_id;
+        let sessions = chat.sessions;
+        let active_id = chat.active_id;
+        let stream_text_overlay = chat.stream_text_overlay;
         let chat_find_query = chat_find_query;
         let chat_find_match_ids = chat_find_match_ids;
         let chat_find_cursor = chat_find_cursor;
@@ -37,6 +37,7 @@ pub(crate) fn wire_chat_find_matches(
             let loc = locale.get();
             let apply = apply_assistant_display_filters.get();
             let q = normalize_search_query(&chat_find_query.get());
+            let overlay = stream_text_overlay.get();
             let ids = if q.is_empty() {
                 Vec::new()
             } else {
@@ -47,9 +48,15 @@ pub(crate) fn wire_chat_find_matches(
                             s.messages
                                 .iter()
                                 .filter(|m| {
-                                    message_text_for_display_ex(m, loc, apply)
-                                        .to_lowercase()
-                                        .contains(&q)
+                                    message_text_for_display_including_stream_overlay(
+                                        m,
+                                        overlay.as_ref(),
+                                        aid.as_str(),
+                                        loc,
+                                        apply,
+                                    )
+                                    .to_lowercase()
+                                    .contains(&q)
                                 })
                                 .map(|m| m.id.clone())
                                 .collect::<Vec<_>>()

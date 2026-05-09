@@ -8,6 +8,7 @@ use leptos::task::spawn_local;
 
 use gloo_timers::future::TimeoutFuture;
 
+use crate::chat_session_state::ChatSessionSignals;
 use crate::session_ops::messages_scroller_has_non_collapsed_selection;
 use crate::session_search::scroll_message_into_view;
 use crate::storage::ChatSession;
@@ -56,15 +57,18 @@ fn scroll_messages_to_bottom_if_allowed(mref: &NodeRef<Div>, follow: &RwSignal<b
 
 /// 消息列表指纹变化且开启自动跟底时，将滚动条置底（必要时二次对齐以覆盖换行后高度变化）。
 pub(crate) fn wire_messages_auto_scroll(
-    sessions: RwSignal<Vec<ChatSession>>,
-    active_id: RwSignal<String>,
+    chat: ChatSessionSignals,
     messages_scroller: NodeRef<Div>,
     auto_scroll_chat: RwSignal<bool>,
     messages_scroll_from_effect: RwSignal<bool>,
 ) {
+    let sessions = chat.sessions;
+    let active_id = chat.active_id;
+    let stream_text_overlay = chat.stream_text_overlay;
     Effect::new(move |_| {
         let aid = active_id.get();
         let _fingerprint = sessions.with(|list| active_session_tail_scroll_fingerprint(list, &aid));
+        let _overlay = stream_text_overlay.get();
 
         if !auto_scroll_chat.get() {
             return;

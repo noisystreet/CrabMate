@@ -12,6 +12,7 @@ use crate::message_format::{
 use crate::session_ops::{make_message_id, message_created_ms};
 use crate::sse_dispatch::{TimelineLogInfo, ToolResultInfo};
 use crate::storage::{StoredMessage, StoredMessageState};
+use crate::stream_text_overlay::stream_overlay_take_into_stored_message;
 use crate::timeline_scan::timeline_state_tool;
 
 use super::super::context::ChatStreamCallbackCtx;
@@ -275,6 +276,15 @@ pub(super) fn chat_stream_on_done_builder(
         let loc = stream_ctx.locale.get_untracked();
         let mid = stream_ctx.scratch.clone_assistant_id();
         with_stream_write_session_mut(stream_ctx.as_ref(), |s| {
+            let sid = stream_ctx.bound_stream_session_id.as_str();
+            if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) {
+                stream_overlay_take_into_stored_message(
+                    stream_ctx.chat.stream_text_overlay,
+                    sid,
+                    mid.as_str(),
+                    &mut s.messages[idx],
+                );
+            }
             apply_stream_done_to_loading_assistant(
                 &mut s.messages,
                 mid.as_str(),
@@ -302,6 +312,15 @@ pub(super) fn chat_stream_on_error_builder(
         let loc = stream_ctx.locale.get_untracked();
         let friendly = build_stream_error_with_suggestion(&msg, loc);
         with_stream_write_session_mut(stream_ctx.as_ref(), |s| {
+            let sid = stream_ctx.bound_stream_session_id.as_str();
+            if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) {
+                stream_overlay_take_into_stored_message(
+                    stream_ctx.chat.stream_text_overlay,
+                    sid,
+                    mid.as_str(),
+                    &mut s.messages[idx],
+                );
+            }
             apply_stream_error_to_assistant_message(&mut s.messages, mid.as_str(), friendly);
         });
         stream_ctx.shell.stream.status_busy.set(false);

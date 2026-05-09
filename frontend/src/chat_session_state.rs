@@ -2,11 +2,12 @@
 //!
 //! # 写入关系（简表）
 //!
-//! - **`sessions` / `active_id`**：侧栏、作曲器、持久化 `Effect`、工具/导出等；流式 delta 通过 [`Self::stream_bound_session_id`]（与 attach 时快照一致）写入对应会话，**不一定**等于当时的 [`Self::active_id`]。
+//! - **`sessions` / `active_id`**：侧栏、作曲器、持久化 `Effect`、工具/导出等；流式助手正文增量默认进 [`Self::stream_text_overlay`]，收尾时合并回会话，**不一定**每 token 触发 `sessions` 无效化。
+//! - **`stream_bound_session_id`**：与 [`crate::app::chat::composer_stream::context::ChatStreamCallbackCtx::bound_stream_session_id`] 同源（**发起 attach 时**快照），决定 SSE 写哪条会话，**不一定**等于当时的 [`Self::active_id`]。
 //! - **`stream_job_id` / `stream_last_event_seq`**：SSE 首包与 `id:` 行；应用 [`ChatSessionSignals::clear_stream_resume_handles`] 表示「放弃当前断线重连上下文」（错误、结束、`stream_ended`、会话切换等）。
-//! - **`stream_bound_session_id`**：与 [`crate::app::chat::composer_stream::context::ChatStreamCallbackCtx::bound_stream_session_id`] 同源——**发起 attach 时**的快照；可与 UI [`Self::active_id`] 对比以发现「侧栏已切会话但 SSE 仍写旧会话」。
 //! - **`session_sync`**：服务端 `conversation_id` / revision，与 `POST /chat/branch` 等对齐。
 //! - **`session_hydrate_nonce` / `reasoning_preserved`**：拉取会话正文与水合时的补偿字段。
+//! - **`stream_text_overlay`**：尾条 `loading` 助手消息的流式正文/思维链旁路缓冲（字段见 [`ChatSessionSignals`]）。
 //!
 //! # `sessions` 向量的写入通道（命名封装）
 //!
@@ -26,6 +27,7 @@ use leptos::prelude::*;
 
 use crate::session_sync::SessionSyncState;
 use crate::storage::ChatSession;
+use crate::stream_text_overlay::StreamTextOverlay;
 
 /// 是否存在仍处于 Loading 的工具时间线气泡（与 SSE `tool_running` / `tool_busy` 互补，避免状态栏已「就绪」但卡片仍在转圈）。
 ///
@@ -82,6 +84,8 @@ pub struct ChatSessionSignals {
     pub stream_bound_session_id: RwSignal<Option<String>>,
     /// 流式 SSE 累积的 `reasoning_text`（服务端不存），hydration 覆盖后从此恢复。
     pub reasoning_preserved: RwSignal<HashMap<String, String>>,
+    /// 当前尾条 `loading` 助手消息的流式正文/思维链增量；**不**写入 [`Self::sessions`]，减少历史行重算。
+    pub stream_text_overlay: RwSignal<Option<StreamTextOverlay>>,
 }
 
 impl ChatSessionSignals {

@@ -10,6 +10,7 @@ use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n;
 use crate::i18n::Locale;
 use crate::storage::StoredMessage;
+use crate::stream_text_overlay::stream_overlay_take_into_stored_message;
 
 use super::composer_stream::user_cancel_in_flight_stream;
 use super::handles::ComposerStreamShell;
@@ -46,8 +47,22 @@ fn finalize_loading_placeholders_after_user_abort_on_session(
         let Some(s) = list.iter_mut().find(|s| s.id == session_id) else {
             return;
         };
+        if let Some(m) = s.messages.iter_mut().rev().find(|m| {
+            m.role == "assistant"
+                && !m.is_tool
+                && m.state.as_ref().is_some_and(|st| st.is_loading())
+        }) {
+            let mid_flush = m.id.clone();
+            stream_overlay_take_into_stored_message(
+                chat.stream_text_overlay,
+                session_id,
+                mid_flush.as_str(),
+                m,
+            );
+        }
         apply_abort_finalization_to_messages(&mut s.messages, loc);
     });
+    chat.stream_text_overlay.set(None);
 }
 
 fn apply_abort_finalization_to_messages(messages: &mut Vec<StoredMessage>, loc: Locale) {

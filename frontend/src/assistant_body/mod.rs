@@ -9,12 +9,13 @@
 //! - 在 **`sessions.with(|list| …)`** 内对 `active_id` / `locale` / `apply_*` 使用 **`get_untracked`**，
 //!   避免在同一响应式子作用域内重复登记与外层相同的依赖（减少冗余追踪边）；取值仍与本次 Effect 调度一致。
 //! - **`request_animation_frame`**：合并同一帧内多次内容更新；写入回调里对 **`NodeRef`** 使用 **`get_untracked`**，DOM 写入不进入信号依赖图。
-//! - **流式节流**：助手仍处于 **`is_loading`** 时，两次写入回答区 DOM 至少相隔约 **72ms**（常量见 **`view.rs`**），高频 SSE 片段由尾随定时器刷新；世代门禁防止尾随回调覆盖终态 Markdown。**终态**在同一段同步逻辑内 **`innerHTML` 刷新**并清空队列，避免再等一帧或遭陈旧 rAF 干扰。
+//! - **流式节流**：助手仍处于 **`is_loading`** 时，两次写入回答区 DOM 至少相隔约 **72ms**（常量见 **`md_answer_effect`**），高频 SSE 片段由尾随定时器刷新；世代门禁防止尾随回调覆盖终态 Markdown。**终态**在同一段同步逻辑内 **`innerHTML` 刷新**并清空队列，避免再等一帧或遭陈旧 rAF 干扰。
 //!
 //! 当前活动会话中按 `message_id` 取展示快照见 [`helpers::snapshot_assistant_message_for_mid`]，
 //! 与折叠条、`class=` 分支共用，避免多处重复 `find`。
 
 mod helpers;
+mod md_answer_effect;
 mod view;
 
 pub use view::assistant_markdown_collapsible_view;

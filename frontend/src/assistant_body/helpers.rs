@@ -3,6 +3,7 @@
 use crate::i18n::Locale;
 use crate::message_format::message_text_for_display_ex;
 use crate::storage::{ChatSession, StoredMessage};
+use crate::stream_text_overlay::{StreamTextOverlay, stored_message_with_overlay_merged};
 
 /// 超过该字符数的已完成助手消息可手动折叠（作用于整条消息，含思考区）。
 pub(super) const LONG_ASSISTANT_COLLAPSE_THRESHOLD: usize = 2400;
@@ -36,6 +37,7 @@ pub(super) fn snapshot_assistant_message_for_mid(
     message_id: &str,
     locale: Locale,
     apply_assistant_display_filters: bool,
+    stream_overlay: Option<&StreamTextOverlay>,
 ) -> Option<AssistantMsgSnapshot> {
     let msg = sessions
         .iter()
@@ -43,8 +45,9 @@ pub(super) fn snapshot_assistant_message_for_mid(
         .messages
         .iter()
         .find(|m| m.id == message_id)?;
+    let merged = stored_message_with_overlay_merged(msg, stream_overlay, active_session_id);
     Some(snapshot_from_message(
-        msg,
+        &merged,
         locale,
         apply_assistant_display_filters,
     ))

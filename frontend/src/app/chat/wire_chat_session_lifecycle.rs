@@ -78,5 +78,5 @@ pub(crate) fn wire_chat_session_lifecycle_effects(args: WireChatSessionLifecycle
         selected_agent_role,
     );
 
-    wire_persist_chat_sessions(initialized, sessions, active_id);
+    wire_persist_chat_sessions(initialized, chat_session);
 }

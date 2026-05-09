@@ -1,6 +1,6 @@
 //! 会话列表：首启从 `localStorage` 载入、`GET /web-ui` 一次同步、变更写回。
 //!
-//! **订阅**：`wire_persist_chat_sessions` 追踪 `sessions` 与 `active_id`——勿在同一 `Effect` 内混入流式高频写入路径以外的无关逻辑。
+//! **订阅**：`wire_persist_chat_sessions` 追踪 `sessions`、`active_id` 与 [`crate::chat_session_state::ChatSessionSignals::stream_text_overlay`]（落盘前合并尾段，与内存展示一致）。
 //! 写盘经 **防抖**（[`PERSIST_SESSIONS_DEBOUNCE_MS`]）：流式正文高频更新时合并为单次 `save_sessions`，减轻主线程与 `localStorage` 压力。
 
 use std::sync::Arc;
@@ -11,11 +11,13 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use crate::api::fetch_web_ui_config;
+use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::{self, Locale};
 use crate::storage::{
     ChatSession, clear_stale_assistant_loading_states, ensure_at_least_one, load_sessions,
     save_sessions,
 };
+use crate::stream_text_overlay::sessions_snapshot_with_stream_overlay_merged;
 
 /// 首次渲染时从 `localStorage` 加载会话列表并设活动会话与草稿。
 pub fn wire_initial_sessions_from_storage(
@@ -81,11 +83,10 @@ pub fn wire_web_ui_config_once_after_init(
 const PERSIST_SESSIONS_DEBOUNCE_MS: u32 = 400;
 
 /// 会话或活动 id 变化时写回 `localStorage`（防抖：安静窗口后落盘最新快照）。
-pub fn wire_persist_chat_sessions(
-    initialized: RwSignal<bool>,
-    sessions: RwSignal<Vec<ChatSession>>,
-    active_id: RwSignal<String>,
-) {
+pub fn wire_persist_chat_sessions(initialized: RwSignal<bool>, chat: ChatSessionSignals) {
+    let sessions = chat.sessions;
+    let active_id = chat.active_id;
+    let stream_text_overlay = chat.stream_text_overlay;
     let debounce_tick = StoredValue::new(Arc::new(AtomicU64::new(0)));
     Effect::new(move |_| {
         if !initialized.get() {
@@ -93,6 +94,7 @@ pub fn wire_persist_chat_sessions(
         }
         let _ = sessions.get();
         let _ = active_id.get();
+        let _ = stream_text_overlay.get();
         let ctr = debounce_tick.get_value();
         let prev = ctr.fetch_add(1, Ordering::Relaxed);
         let tick = prev.wrapping_add(1);
@@ -110,7 +112,11 @@ pub fn wire_persist_chat_sessions(
             if aid.is_empty() {
                 return;
             }
-            save_sessions(&list, Some(&aid));
+            let merged = sessions_snapshot_with_stream_overlay_merged(
+                list.as_slice(),
+                stream_text_overlay.get_untracked().as_ref(),
+            );
+            save_sessions(&merged, Some(&aid));
         });
     });
 }

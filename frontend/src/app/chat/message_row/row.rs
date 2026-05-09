@@ -90,6 +90,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
         m: m.clone(),
         sessions,
         active_id,
+        stream_text_overlay: chat.stream_text_overlay,
         collapsed_long_assistant_ids,
         locale,
         markdown_render,
@@ -146,6 +147,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
                             apply_assistant_display_filters,
                             sessions,
                             active_id,
+                            chat.stream_text_overlay,
                             copy_id.clone(),
                         )
                     })}

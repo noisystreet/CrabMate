@@ -66,16 +66,14 @@ fn wire_chat_domain_auxiliary_sequence(a: &WireChatDomainEffectsArgs) {
     );
 
     wire_messages_auto_scroll(
-        d.chat.sessions,
-        d.chat.active_id,
+        d.chat,
         d.composer.messages_scroller,
         d.composer.auto_scroll_chat,
         d.composer.messages_scroll_from_effect,
     );
 
     wire_chat_find_matches(
-        d.chat.sessions,
-        d.chat.active_id,
+        d.chat,
         d.composer.chat_find_query,
         d.composer.chat_find_match_ids,
         d.composer.chat_find_cursor,

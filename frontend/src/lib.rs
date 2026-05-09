@@ -31,6 +31,7 @@ mod session_sync;
 mod settings_llm_fields;
 mod sse_dispatch;
 mod storage;
+mod stream_text_overlay;
 mod timeline_scan;
 mod workspace_shell;
 mod workspace_tree;

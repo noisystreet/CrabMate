@@ -1,0 +1,188 @@
+//! 流式助手正文/思维链的 **旁路缓冲**：SSE `on_delta` 只更新本信号，不触碰 [`crate::chat_session_state::ChatSessionSignals::sessions`]，
+//! 避免长会话下每条历史消息随 token 反复参与 Leptos 追踪与 `<For>` 重算。
+//!
+//! 在收尾路径（`on_done` / `on_error` / 工具前后轮换 / 用户中止等）经 [`stream_overlay_take_into_stored_message`]
+//! 合并回 `StoredMessage` 并清空缓冲；[`sessions_snapshot_with_stream_overlay_merged`] 供持久化防抖落盘时与内存一致。
+
+use leptos::prelude::*;
+
+use crate::i18n::Locale;
+use crate::message_format::message_text_for_display_ex;
+use crate::storage::{ChatSession, StoredMessage};
+
+/// 当前 attach 内、尾条 `loading` 助手消息的流式增量（与 `sessions` 中的该条 id 对齐）。
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
+pub struct StreamTextOverlay {
+    pub session_id: String,
+    pub message_id: String,
+    pub answer: String,
+    pub reasoning: String,
+}
+
+/// SSE 热路径：仅 bump `stream_text_overlay`，**不** `sessions.update`。
+pub fn stream_overlay_append(
+    overlay: RwSignal<Option<StreamTextOverlay>>,
+    session_id: &str,
+    message_id: &str,
+    chunk: &str,
+    to_reasoning: bool,
+) {
+    overlay.update(|opt| {
+        let mut next = match opt.take() {
+            Some(o) if o.session_id == session_id && o.message_id == message_id => o,
+            Some(_) | None => StreamTextOverlay {
+                session_id: session_id.to_string(),
+                message_id: message_id.to_string(),
+                answer: String::new(),
+                reasoning: String::new(),
+            },
+        };
+        if to_reasoning {
+            next.reasoning.push_str(chunk);
+        } else {
+            next.answer.push_str(chunk);
+        }
+        *opt = Some(next);
+    });
+}
+
+/// 将缓冲合并进 `msg`（仅当 `session_id` / `message_id` 一致），并清空 overlay。
+pub fn stream_overlay_take_into_stored_message(
+    overlay: RwSignal<Option<StreamTextOverlay>>,
+    session_id: &str,
+    message_id: &str,
+    msg: &mut StoredMessage,
+) {
+    overlay.update(|opt| {
+        let taken = opt.take();
+        let Some(o) = taken else {
+            return;
+        };
+        if o.session_id == session_id && o.message_id == message_id {
+            msg.text.push_str(&o.answer);
+            msg.reasoning_text.push_str(&o.reasoning);
+        } else {
+            *opt = Some(o);
+        }
+    });
+}
+
+/// 供展示/查找：在 `loading` 且 id 命中时把 overlay 拼到克隆体上（不修改 `sessions` 内原文）。
+#[must_use]
+pub fn stored_message_with_overlay_merged(
+    msg: &StoredMessage,
+    overlay: Option<&StreamTextOverlay>,
+    active_session_id: &str,
+) -> StoredMessage {
+    let mut m = msg.clone();
+    if let Some(o) = overlay {
+        if o.session_id == active_session_id
+            && o.message_id == m.id
+            && m.state.as_ref().is_some_and(|s| s.is_loading())
+        {
+            m.text.push_str(&o.answer);
+            m.reasoning_text.push_str(&o.reasoning);
+        }
+    }
+    m
+}
+
+/// 与 [`message_text_for_display_ex`] 一致，但合并当前流式 overlay（若适用）。
+#[must_use]
+pub fn message_text_for_display_including_stream_overlay(
+    m: &StoredMessage,
+    overlay: Option<&StreamTextOverlay>,
+    active_session_id: &str,
+    locale: Locale,
+    apply_assistant_display_filters: bool,
+) -> String {
+    let merged = stored_message_with_overlay_merged(m, overlay, active_session_id);
+    message_text_for_display_ex(&merged, locale, apply_assistant_display_filters)
+}
+
+/// 持久化前把 overlay 合并进克隆列表，避免落盘缺尾段。
+#[must_use]
+pub fn sessions_snapshot_with_stream_overlay_merged(
+    sessions: &[ChatSession],
+    overlay: Option<&StreamTextOverlay>,
+) -> Vec<ChatSession> {
+    let mut out = sessions.to_vec();
+    let Some(o) = overlay else {
+        return out;
+    };
+    let Some(s) = out.iter_mut().find(|session| session.id == o.session_id) else {
+        return out;
+    };
+    let Some(m) = s.messages.iter_mut().find(|msg| msg.id == o.message_id) else {
+        return out;
+    };
+    if m.state.as_ref().is_some_and(|st| st.is_loading()) {
+        m.text.push_str(&o.answer);
+        m.reasoning_text.push_str(&o.reasoning);
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::{ChatSession, StoredMessage, StoredMessageState};
+
+    #[test]
+    fn append_then_take_merges_into_message() {
+        let overlay = RwSignal::new(None::<StreamTextOverlay>);
+        stream_overlay_append(overlay, "s1", "m1", "hello", false);
+        stream_overlay_append(overlay, "s1", "m1", " world", false);
+        let mut msg = StoredMessage {
+            id: "m1".into(),
+            role: "assistant".into(),
+            text: String::new(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(StoredMessageState::Loading),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        stream_overlay_take_into_stored_message(overlay, "s1", "m1", &mut msg);
+        assert_eq!(msg.text, "hello world");
+        assert!(overlay.get().is_none());
+    }
+
+    #[test]
+    fn persist_snapshot_merges_overlay() {
+        let session = ChatSession {
+            id: "s1".into(),
+            title: "t".into(),
+            draft: String::new(),
+            messages: vec![StoredMessage {
+                id: "m1".into(),
+                role: "assistant".into(),
+                text: String::new(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: Some(StoredMessageState::Loading),
+                is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
+                created_at: 0,
+            }],
+            updated_at: 0,
+            pinned: false,
+            starred: false,
+            server_conversation_id: None,
+            server_revision: None,
+        };
+        let o = StreamTextOverlay {
+            session_id: "s1".into(),
+            message_id: "m1".into(),
+            answer: "x".into(),
+            reasoning: String::new(),
+        };
+        let merged =
+            sessions_snapshot_with_stream_overlay_merged(std::slice::from_ref(&session), Some(&o));
+        assert_eq!(merged[0].messages[0].text, "x");
+        assert_eq!(session.messages[0].text, "");
+    }
+}
