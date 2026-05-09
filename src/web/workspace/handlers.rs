@@ -11,6 +11,10 @@ use serde_json;
 
 use crate::AppState;
 use crate::text_encoding::{decode_bytes_strict, parse_text_encoding_name};
+use crate::web::http_types::validation::{
+    clamp_workspace_search_max_results, validate_workspace_file_write_request,
+    workspace_search_pattern_or_error,
+};
 use crate::web::http_types::workspace::{
     WorkspaceEntry, WorkspaceFileDeleteResponse, WorkspaceFileQuery, WorkspaceFileReadResponse,
     WorkspaceFileWriteBody, WorkspaceFileWriteResponse, WorkspacePickResponse,
@@ -36,6 +40,54 @@ use nix::fcntl::AtFlags;
 use nix::sys::stat::fstatat;
 
 const WORKSPACE_FILE_READ_MAX_BYTES: u64 = 1_048_576;
+
+async fn workspace_file_read_resolve(
+    state: &Arc<AppState>,
+    query: &WorkspaceFileQuery,
+) -> Result<
+    (
+        std::path::PathBuf,
+        std::path::PathBuf,
+        crate::text_encoding::TextEncodingName,
+    ),
+    Json<WorkspaceFileReadResponse>,
+> {
+    let base_canonical = match effective_workspace_base_canonical(state).await {
+        Ok(p) => p,
+        Err(e) => {
+            return Err(Json(WorkspaceFileReadResponse {
+                content: String::new(),
+                error: Some(e.user_message()),
+            }));
+        }
+    };
+    let path = query.path.trim();
+    if path.is_empty() {
+        return Err(Json(WorkspaceFileReadResponse {
+            content: String::new(),
+            error: Some("path 不能为空".to_string()),
+        }));
+    }
+    let canonical = match resolve_web_workspace_read_path(&base_canonical, Some(path)) {
+        Ok(p) => p,
+        Err(e) => {
+            return Err(Json(WorkspaceFileReadResponse {
+                content: String::new(),
+                error: Some(e.user_message()),
+            }));
+        }
+    };
+    let enc_name = match parse_text_encoding_name(query.encoding.as_deref()) {
+        Ok(n) => n,
+        Err(msg) => {
+            return Err(Json(WorkspaceFileReadResponse {
+                content: String::new(),
+                error: Some(msg),
+            }));
+        }
+    };
+    Ok((base_canonical, canonical, enc_name))
+}
 
 /// 解析当前会话工作区根为 canonical 路径，并校验仍在 `workspace_allowed_roots` 内、非敏感目录。
 async fn effective_workspace_base_canonical(
@@ -237,13 +289,15 @@ pub async fn workspace_search_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<WorkspaceSearchBody>,
 ) -> Json<WorkspaceSearchResponse> {
-    let pattern = body.pattern.trim();
-    if pattern.is_empty() {
-        return Json(WorkspaceSearchResponse {
-            output: String::new(),
-            error: Some("pattern 不能为空".to_string()),
-        });
-    }
+    let pattern = match workspace_search_pattern_or_error(&body) {
+        Ok(p) => p,
+        Err(e) => {
+            return Json(WorkspaceSearchResponse {
+                output: String::new(),
+                error: Some(e),
+            });
+        }
+    };
     let base_canonical = match effective_workspace_base_canonical(&state).await {
         Ok(p) => p,
         Err(e) => {
@@ -277,7 +331,7 @@ pub async fn workspace_search_handler(
     if let Some(p) = rel_path {
         args["path"] = serde_json::Value::String(p);
     }
-    if let Some(m) = body.max_results {
+    if let Some(m) = clamp_workspace_search_max_results(body.max_results) {
         args["max_results"] = serde_json::json!(m);
     }
     if let Some(ci) = body.case_insensitive {
@@ -327,40 +381,11 @@ pub async fn workspace_file_read_handler(
     State(state): State<Arc<AppState>>,
     Query(query): Query<WorkspaceFileQuery>,
 ) -> Json<WorkspaceFileReadResponse> {
-    let base_canonical = match effective_workspace_base_canonical(&state).await {
-        Ok(p) => p,
-        Err(e) => {
-            return Json(WorkspaceFileReadResponse {
-                content: String::new(),
-                error: Some(e.user_message()),
-            });
-        }
-    };
-    let path = query.path.trim();
-    if path.is_empty() {
-        return Json(WorkspaceFileReadResponse {
-            content: String::new(),
-            error: Some("path 不能为空".to_string()),
-        });
-    }
-    let canonical = match resolve_web_workspace_read_path(&base_canonical, Some(path)) {
-        Ok(p) => p,
-        Err(e) => {
-            return Json(WorkspaceFileReadResponse {
-                content: String::new(),
-                error: Some(e.user_message()),
-            });
-        }
-    };
-    let enc_name = match parse_text_encoding_name(query.encoding.as_deref()) {
-        Ok(n) => n,
-        Err(msg) => {
-            return Json(WorkspaceFileReadResponse {
-                content: String::new(),
-                error: Some(msg),
-            });
-        }
-    };
+    let (base_canonical, canonical, enc_name) =
+        match workspace_file_read_resolve(&state, &query).await {
+            Ok(x) => x,
+            Err(e) => return e,
+        };
 
     #[cfg(unix)]
     {
@@ -570,6 +595,9 @@ pub async fn workspace_file_write_handler(
             });
         }
     };
+    if let Err(e) = validate_workspace_file_write_request(&body) {
+        return Json(WorkspaceFileWriteResponse { error: Some(e) });
+    }
     let path = body.path.trim();
     if path.is_empty() {
         return Json(WorkspaceFileWriteResponse {

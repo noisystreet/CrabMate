@@ -2,4 +2,5 @@
 
 pub mod chat;
 pub mod tasks;
+pub(crate) mod validation;
 pub mod workspace;

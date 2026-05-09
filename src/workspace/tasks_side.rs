@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct TaskItem {
     pub id: String,
     pub title: String,
@@ -14,6 +15,7 @@ pub struct TaskItem {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(deny_unknown_fields)]
 pub struct TasksData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
