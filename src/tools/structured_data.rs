@@ -588,6 +588,63 @@ fn json_type_name(v: &JsonValue) -> &'static str {
     }
 }
 
+fn structured_diff_prepare_pair(
+    working_dir: &Path,
+    path_a: &str,
+    path_b: &str,
+    fmt_override: Option<&str>,
+    has_header: bool,
+) -> Result<(JsonValue, JsonValue, DataFormat, DataFormat), String> {
+    let abs_a =
+        file::resolve_for_read(working_dir, path_a).map_err(|e| format!("错误 path_a: {}", e))?;
+    let abs_b =
+        file::resolve_for_read(working_dir, path_b).map_err(|e| format!("错误 path_b: {}", e))?;
+
+    let fmt_a = detect_format(path_a, fmt_override)?;
+    let fmt_b = if fmt_override.is_some() {
+        fmt_a
+    } else {
+        detect_format(path_b, None).map_err(|e| format!("错误 path_b 格式: {}", e))?
+    };
+
+    let text_a = read_limited(&abs_a).map_err(|e| format!("错误：{}", e))?;
+    let text_b = read_limited(&abs_b).map_err(|e| format!("错误：{}", e))?;
+
+    let jv_a = parse_to_json(&text_a, fmt_a, has_header)
+        .map_err(|e| format!("解析 path_a 失败: {}", e))?;
+    let jv_b = parse_to_json(&text_b, fmt_b, has_header)
+        .map_err(|e| format!("解析 path_b 失败: {}", e))?;
+    Ok((jv_a, jv_b, fmt_a, fmt_b))
+}
+
+fn structured_diff_format_report(
+    path_a: &str,
+    path_b: &str,
+    fmt_a: DataFormat,
+    fmt_b: DataFormat,
+    lines: &[String],
+    max_lines: usize,
+) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "结构化 diff: {} vs {}\n格式: A={:?} B={:?}\n",
+        path_a, path_b, fmt_a, fmt_b
+    ));
+    if lines.is_empty() {
+        out.push_str("结论: 解析后结构一致（或仅标量相同）。\n");
+    } else {
+        out.push_str(&format!("差异条目（最多 {} 行）:\n", max_lines));
+        for line in lines {
+            out.push_str(line);
+            out.push('\n');
+        }
+        if lines.len() >= max_lines {
+            out.push_str("…（已达 max_diff_lines 上限，请缩小文件或提高上限）\n");
+        }
+    }
+    out.trim_end().to_string()
+}
+
 /// 将两份文件解析为同一 JSON 模型后做键级差异（非文本 diff）。
 /// 参数：`path_a`，`path_b`，`format?`（对两边使用同一解释；若 auto 则分别按扩展名推断），`has_header?`（仅 CSV/TSV；默认 true），`max_diff_lines?` 默认 200，上限 2000
 pub fn structured_diff(args_json: &str, working_dir: &Path) -> String {
@@ -612,67 +669,16 @@ pub fn structured_diff(args_json: &str, working_dir: &Path) -> String {
         .clamp(1, ABS_DIFF_MAX_LINES);
     let has_header = args.has_header;
 
-    let abs_a = match file::resolve_for_read(working_dir, path_a) {
-        Ok(p) => p,
-        Err(e) => return format!("错误 path_a: {}", e),
-    };
-    let abs_b = match file::resolve_for_read(working_dir, path_b) {
-        Ok(p) => p,
-        Err(e) => return format!("错误 path_b: {}", e),
-    };
-
-    let fmt_a = match detect_format(path_a, fmt_override) {
-        Ok(f) => f,
-        Err(e) => return format!("错误：{}", e),
-    };
-    let fmt_b = if fmt_override.is_some() {
-        fmt_a
-    } else {
-        match detect_format(path_b, None) {
-            Ok(f) => f,
-            Err(e) => return format!("错误 path_b 格式: {}", e),
-        }
-    };
-
-    let text_a = match read_limited(&abs_a) {
-        Ok(t) => t,
-        Err(e) => return format!("错误：{}", e),
-    };
-    let text_b = match read_limited(&abs_b) {
-        Ok(t) => t,
-        Err(e) => return format!("错误：{}", e),
-    };
-
-    let jv_a = match parse_to_json(&text_a, fmt_a, has_header) {
-        Ok(j) => j,
-        Err(e) => return format!("解析 path_a 失败: {}", e),
-    };
-    let jv_b = match parse_to_json(&text_b, fmt_b, has_header) {
-        Ok(j) => j,
-        Err(e) => return format!("解析 path_b 失败: {}", e),
-    };
+    let (jv_a, jv_b, fmt_a, fmt_b) =
+        match structured_diff_prepare_pair(working_dir, path_a, path_b, fmt_override, has_header) {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
 
     let mut lines = Vec::new();
     diff_recursive("", &jv_a, &jv_b, &mut lines, max_lines);
 
-    let mut out = String::new();
-    out.push_str(&format!(
-        "结构化 diff: {} vs {}\n格式: A={:?} B={:?}\n",
-        path_a, path_b, fmt_a, fmt_b
-    ));
-    if lines.is_empty() {
-        out.push_str("结论: 解析后结构一致（或仅标量相同）。\n");
-    } else {
-        out.push_str(&format!("差异条目（最多 {} 行）:\n", max_lines));
-        for line in &lines {
-            out.push_str(line);
-            out.push('\n');
-        }
-        if lines.len() >= max_lines {
-            out.push_str("…（已达 max_diff_lines 上限，请缩小文件或提高上限）\n");
-        }
-    }
-    out.trim_end().to_string()
+    structured_diff_format_report(path_a, path_b, fmt_a, fmt_b, &lines, max_lines)
 }
 
 #[path = "structured_data_patch.rs"]

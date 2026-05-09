@@ -25,6 +25,13 @@ use crate::web::http_types::validation::validate_chat_request_payload_limits;
 
 use super::builtin_skills::merge_system_prompt_with_workspace_skills_for_web;
 
+type ChatPayloadError = (StatusCode, Json<ApiError>);
+
+#[inline]
+pub(super) fn bad_request(code: &'static str, message: impl Into<String>) -> ChatPayloadError {
+    (StatusCode::BAD_REQUEST, Json(ApiError::new(code, message)))
+}
+
 pub(super) fn reject_if_client_sse_protocol_invalid(
     client_sse_protocol: Option<u8>,
 ) -> Result<(), (StatusCode, Json<ApiError>)> {
@@ -83,133 +90,54 @@ pub(super) struct ChatStreamRequestParsed {
 pub(super) fn parse_chat_stream_request(
     state: &Arc<AppState>,
     body: &ChatRequestBody,
-) -> Result<ChatStreamRequestParsed, (StatusCode, Json<ApiError>)> {
+) -> Result<ChatStreamRequestParsed, ChatPayloadError> {
     validate_chat_request_payload_limits(body)?;
     let resume = body.stream_resume.clone();
-    let image_urls = normalize_chat_image_urls(&body.image_urls).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "INVALID_IMAGE_URLS",
-                message: e,
-                reason_code: None,
-            }),
-        )
-    })?;
+    let image_urls = normalize_chat_image_urls(&body.image_urls)
+        .map_err(|e| bad_request("INVALID_IMAGE_URLS", e))?;
     let clarify = if let Some(ref c) = body.clarify_questionnaire_answers {
         normalize_clarify_questionnaire_answers_raw(c.questionnaire_id.clone(), c.answers.clone())
-            .map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    code: "INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS",
-                    message: e,
-                    reason_code: None,
-                }),
-            )
-        })?
+            .map_err(|e| bad_request("INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS", e))?
     } else {
         None
     };
     let user_trim = body.message.trim().to_string();
     if user_trim.is_empty() && resume.is_none() && image_urls.is_empty() && clarify.is_none() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "EMPTY_MESSAGE",
-                message: "提问内容不能为空（若仅发图须至少附带一张图片；澄清问卷作答可单独提交）"
-                    .to_string(),
-                reason_code: None,
-            }),
+        return Err(bad_request(
+            "EMPTY_MESSAGE",
+            "提问内容不能为空（若仅发图须至少附带一张图片；澄清问卷作答可单独提交）",
         ));
     }
     reject_if_client_sse_protocol_invalid(body.client_sse_protocol)?;
+    parse_chat_stream_request_tail(state, body, resume, image_urls, clarify, user_trim)
+}
+
+fn parse_chat_stream_request_tail(
+    state: &Arc<AppState>,
+    body: &ChatRequestBody,
+    resume: Option<StreamResumeBody>,
+    image_urls: Vec<String>,
+    clarify: Option<crate::clarification_questionnaire::ClarifyAnswersNormalized>,
+    user_trim: String,
+) -> Result<ChatStreamRequestParsed, ChatPayloadError> {
     let conversation_id = normalize_client_conversation_id(body.conversation_id.as_deref())
-        .map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    code: "INVALID_CONVERSATION_ID",
-                    message: e,
-                    reason_code: None,
-                }),
-            )
-        })?
+        .map_err(|e| bad_request("INVALID_CONVERSATION_ID", e))?
         .unwrap_or_else(|| state.next_conversation_id());
-    let agent_role = normalize_agent_role(body.agent_role.as_deref()).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "INVALID_AGENT_ROLE",
-                message: e,
-                reason_code: None,
-            }),
-        )
-    })?;
-    let temperature_override = parse_optional_chat_temperature(body.temperature).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "INVALID_TEMPERATURE",
-                message: e,
-                reason_code: None,
-            }),
-        )
-    })?;
+    let agent_role = normalize_agent_role(body.agent_role.as_deref())
+        .map_err(|e| bad_request("INVALID_AGENT_ROLE", e))?;
+    let temperature_override = parse_optional_chat_temperature(body.temperature)
+        .map_err(|e| bad_request("INVALID_TEMPERATURE", e))?;
     let seed_override = parse_seed_override_from_body(body.seed, body.seed_policy.clone())
-        .map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    code: "INVALID_SEED",
-                    message: e,
-                    reason_code: None,
-                }),
-            )
-        })?;
-    let llm_override = parse_client_llm_override(body.client_llm.clone()).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "INVALID_CLIENT_LLM",
-                message: e,
-                reason_code: None,
-            }),
-        )
-    })?;
-    let executor_llm_override =
-        parse_executor_llm_override(body.executor_llm.clone()).map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    code: "INVALID_EXECUTOR_LLM",
-                    message: e,
-                    reason_code: None,
-                }),
-            )
-        })?;
+        .map_err(|e| bad_request("INVALID_SEED", e))?;
+    let llm_override = parse_client_llm_override(body.client_llm.clone())
+        .map_err(|e| bad_request("INVALID_CLIENT_LLM", e))?;
+    let executor_llm_override = parse_executor_llm_override(body.executor_llm.clone())
+        .map_err(|e| bad_request("INVALID_EXECUTOR_LLM", e))?;
     let execution_mode_override = parse_execution_mode_override(body.execution_mode.clone())
-        .map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    code: "INVALID_EXECUTION_MODE",
-                    message: e,
-                    reason_code: None,
-                }),
-            )
-        })?;
+        .map_err(|e| bad_request("INVALID_EXECUTION_MODE", e))?;
     let readonly_tool_ttl_cache_secs =
-        parse_readonly_tool_ttl_cache_secs(body.readonly_tool_ttl_cache_secs).map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    code: "INVALID_READONLY_TOOL_TTL_CACHE_SECS",
-                    message: e,
-                    reason_code: None,
-                }),
-            )
-        })?;
+        parse_readonly_tool_ttl_cache_secs(body.readonly_tool_ttl_cache_secs)
+            .map_err(|e| bad_request("INVALID_READONLY_TOOL_TTL_CACHE_SECS", e))?;
     Ok(ChatStreamRequestParsed {
         resume,
         image_urls,
