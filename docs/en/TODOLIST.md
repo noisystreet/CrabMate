@@ -122,7 +122,7 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 
 ## `frontend/`
 
-**Summary**: `api.rs`, `sse_dispatch.rs`, panels, session state, `session_export`.
+**Summary**: `api.rs`, `sse_dispatch/dispatch.rs`, panels, session state, `session_export`.
 
 - [ ] Browser session state (follow-up): optional **encrypted** local cache. Implemented: `ChatSession` persists **`server_conversation_id` / `server_revision`** and **`GET /conversation/messages`** hydration after stream saves; tab-local model remains **`frontend/src/session_sync.rs`** (`SessionSyncState`).
 - [ ] Virtualize long chat lists.

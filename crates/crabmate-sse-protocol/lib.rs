@@ -1,7 +1,7 @@
 //! CrabMate **`POST /chat/stream`** 控制面 JSON 的**协议版本**常量与 **`stop`/`handled`/`plain`** 分类。
 //!
 //! - **`SSE_PROTOCOL_VERSION`**：与 `docs/SSE协议.md` 中的 **`v`** / `sse_capabilities.supported_sse_v` 一致。
-//! - **[`classify_sse_control_outcome`]**：与 Leptos **`frontend/src/sse_dispatch.rs`** 同序；金样 **`fixtures/sse_control_golden.jsonl`**。
+//! - **[`classify_sse_control_outcome`]**：与 Leptos **`frontend/src/sse_dispatch/dispatch.rs`** 同序；金样 **`fixtures/sse_control_golden.jsonl`**。
 
 mod control_classify;
 mod control_extract;

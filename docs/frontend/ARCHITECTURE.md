@@ -36,7 +36,7 @@
 ├─────────────────────────────────────────────────────────┤
 │  领域与工具（session_ops、session_sync、storage、i18n）  │  尽量不依赖具体组件路径；用户可见文案集中在 **`i18n/`**（如 **`stream`**、**`tool_cards`**、**`diag_sections`**、**`export_download`**、**`settings`** 等分片），SSE 控制面用户错误经 **`SseControlSink.user_locale`** 与流式 **`Locale`** 对齐
 ├─────────────────────────────────────────────────────────┤
-│  端口：api、sse_dispatch、conversation_hydrate（**`conversation_hydrate_timeline`**：时间线系统消息解析）           │  HTTP/SSE 与后端对齐；可 mock 便于未来单测
+│  端口：api、**`sse_dispatch/`**（`types` / **`dispatch`**）、conversation_hydrate（**`conversation_hydrate_timeline`**：时间线系统消息解析）           │  HTTP/SSE 与后端对齐；可 mock 便于未来单测
 └─────────────────────────────────────────────────────────┘
 ```
 

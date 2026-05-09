@@ -124,7 +124,7 @@ cd frontend && trunk build --release
 
 - **架构与前端位置**：**`docs/开发文档.md`**（总览中的 Web 前端一节）。
 - **开发与构建**：**`AGENTS.md`**、**`.cursor/rules/frontend.mdc`**。
-- **SSE 与 UI 逻辑**：样式变更一般不触及 **`frontend/src/sse_dispatch.rs`**；若同时改协议消费路径，遵守 **`.cursor/rules/api-sse-chat-protocol.mdc`**。
+- **SSE 与 UI 逻辑**：样式变更一般不触及 **`frontend/src/sse_dispatch/dispatch.rs`**；若同时改协议消费路径，遵守 **`.cursor/rules/api-sse-chat-protocol.mdc`**。
 
 ---
 

@@ -168,7 +168,7 @@ pub fn crate_contract_map(args_json: &str, ctx: &ToolContext<'_>) -> String {
     section_file(
         ctx.working_dir,
         "Leptos SSE 控制面分发",
-        "frontend/src/sse_dispatch.rs",
+        "frontend/src/sse_dispatch/dispatch.rs",
         head_lines,
         &["dispatch", "staged_plan", "Handled", "control"],
         keyword_hits,

@@ -1,6 +1,6 @@
 //! 控制面 JSON 的 **`stop` / `handled` / `plain`** 分类（与 Leptos `try_dispatch_sse_control_payload` 分支顺序同源）。
 //!
-//! **单一事实来源**：修改分支顺序时须同步 **`frontend/src/sse_dispatch.rs`**、本模块与
+//! **单一事实来源**：修改分支顺序时须同步 **`frontend/src/sse_dispatch/dispatch.rs`**、本模块与
 //! **`fixtures/sse_control_golden.jsonl`**；并跑 **`cargo test golden_sse_control`**。
 //! 前端在 `sse_capabilities` 上可能因协议版本不匹配额外返回 `Stop`（本分类仍视为 `handled`，见
 //! `try_dispatch` 内注释）；金样仅覆盖版本一致情形。
@@ -179,7 +179,7 @@ mod tests {
     #[test]
     fn leptos_dispatch_branch_order_snapshot_stays_aligned() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let path = root.join("../../frontend/src/sse_dispatch.rs");
+        let path = root.join("../../frontend/src/sse_dispatch/dispatch.rs");
         let full_src =
             fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
 
