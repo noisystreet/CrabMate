@@ -39,14 +39,13 @@
 
 use std::env;
 use std::net::SocketAddr;
-use std::sync::Arc;
-use std::time::Duration;
 
-use crabmate_im_bridge::{
-    CrabmateClient, FeishuBridgeConfig, FeishuBridgeState, FeishuToolApprovalMode, build_router,
-};
+use crabmate_im_bridge::{FeishuBridgeState, build_router};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
+
+mod env_config;
+use env_config::feishu_bridge_config_from_env;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -65,150 +64,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tracing::info!(%listen, "crabmate-im-bridge listening");
     axum::serve(listener, app.into_make_service()).await?;
     Ok(())
-}
-
-fn feishu_bridge_config_from_env() -> Result<FeishuBridgeConfig, String> {
-    let crabmate_base = env_req("CM_BASE_URL")?;
-    let crabmate_bearer = env::var("CM_WEB_API_BEARER_TOKEN")
-        .or_else(|_| env::var("CM_WEB_API_BEARER"))
-        .map_err(|_| {
-            "缺少 CM_WEB_API_BEARER_TOKEN（或与 serve 相同的 Bearer；可选别名 CM_WEB_API_BEARER）"
-                .to_string()
-        })?;
-    let app_id = env_req("FEISHU_APP_ID")?;
-    let app_secret = env_req("FEISHU_APP_SECRET")?;
-    let encrypt_key = env::var("FEISHU_ENCRYPT_KEY")
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-    let verification_token = env::var("FEISHU_VERIFICATION_TOKEN")
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-    let verify_sig = !matches!(
-        env::var("FEISHU_VERIFY_SIGNATURE").as_deref(),
-        Ok("0") | Ok("false") | Ok("no")
-    );
-    let replay_max_skew = env_u64("FEISHU_REPLAY_MAX_SKEW_SECS", 600)? as i64;
-    let nonce_dedup_secs = env_u64("FEISHU_NONCE_DEDUP_SECS", 900)?;
-    let group_require_bot_mention = matches!(
-        env::var("FEISHU_GROUP_REQUIRE_BOT_MENTION").as_deref(),
-        Ok("1") | Ok("true") | Ok("yes")
-    );
-    let bot_open_id = env::var("FEISHU_BOT_OPEN_ID")
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-    let tool_decision_secret = env::var("FEISHU_TOOL_DECISION_SECRET")
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-    let tool_approval_mode = parse_tool_approval_mode(
-        env::var("FEISHU_TOOL_APPROVAL_MODE")
-            .unwrap_or_else(|_| "wait_message".into())
-            .as_str(),
-    )?;
-    if tool_approval_mode == FeishuToolApprovalMode::WaitHttp && tool_decision_secret.is_none() {
-        return Err(
-            "FEISHU_TOOL_APPROVAL_MODE=wait_http requires FEISHU_TOOL_DECISION_SECRET".to_string(),
-        );
-    }
-    let tool_decision_timeout_secs = env_u64("FEISHU_TOOL_DECISION_TIMEOUT_SECS", 600)?.max(5);
-    let sqlite_queue_path = env::var("FEISHU_EVENT_QUEUE_SQLITE")
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-    let sqlite_max_retries = env_u64("FEISHU_SQLITE_QUEUE_MAX_RETRIES", 5)?.max(1) as u32;
-    let sqlite_poll_ms = env_u64("FEISHU_SQLITE_QUEUE_POLL_MS", 200)?.max(50);
-    let sqlite_lease_secs = env_u64("FEISHU_SQLITE_QUEUE_LEASE_SECS", 600)? as i64;
-
-    let crabmate =
-        Arc::new(CrabmateClient::new(crabmate_base, crabmate_bearer).map_err(|e| e.to_string())?);
-    Ok(FeishuBridgeConfig {
-        app_id,
-        app_secret,
-        encrypt_key,
-        verify_signature_when_possible: verify_sig,
-        verification_token,
-        replay_timestamp_max_skew_secs: replay_max_skew,
-        nonce_dedup_ttl: Duration::from_secs(nonce_dedup_secs),
-        group_require_bot_mention,
-        bot_open_id,
-        crabmate,
-        dedup_ttl: Duration::from_secs(600),
-        max_message_content_json_chars: env_u64("FEISHU_MAX_MESSAGE_JSON_CHARS", 12000)?.max(256)
-            as usize,
-        async_worker: env_bool("FEISHU_ASYNC_WORKER", true)?,
-        event_queue_capacity: env_u64("FEISHU_EVENT_QUEUE_CAPACITY", 100)?.max(1) as usize,
-        workspace_root_template: env::var("FEISHU_WORKSPACE_ROOT_TEMPLATE")
-            .ok()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty()),
-        tool_approval_mode,
-        tool_decision_secret,
-        tool_decision_timeout_secs,
-        quiet_sse_status: env_bool("FEISHU_QUIET_SSE_STATUS", false)?,
-        result_card_max_body_chars: env_u64("FEISHU_RESULT_CARD_MAX_CHARS", 3500)?.max(200)
-            as usize,
-        in_place_progress_card: env_bool("FEISHU_IN_PLACE_PROGRESS_CARD", false)?,
-        event_queue_sqlite_path: sqlite_queue_path,
-        sqlite_queue_max_retries: sqlite_max_retries,
-        sqlite_queue_poll_ms: sqlite_poll_ms,
-        sqlite_queue_lease_secs: sqlite_lease_secs.max(30),
-    })
-}
-
-fn env_req(name: &str) -> Result<String, String> {
-    let s = env::var(name).map_err(|_| format!("missing environment variable {name}"))?;
-    let t = s.trim().to_string();
-    if t.is_empty() {
-        return Err(format!("environment variable {name} is empty"));
-    }
-    Ok(t)
-}
-
-fn env_u64(name: &str, default: u64) -> Result<u64, String> {
-    match env::var(name) {
-        Err(_) => Ok(default),
-        Ok(s) => {
-            let t = s.trim();
-            if t.is_empty() {
-                Ok(default)
-            } else {
-                t.parse::<u64>()
-                    .map_err(|_| format!("invalid unsigned integer for {name}: {s}"))
-            }
-        }
-    }
-}
-
-fn env_bool(name: &str, default: bool) -> Result<bool, String> {
-    match env::var(name) {
-        Err(_) => Ok(default),
-        Ok(s) => {
-            let t = s.trim().to_ascii_lowercase();
-            if t.is_empty() {
-                return Ok(default);
-            }
-            match t.as_str() {
-                "1" | "true" | "yes" | "on" => Ok(true),
-                "0" | "false" | "no" | "off" => Ok(false),
-                _ => Err(format!("invalid boolean for {name}: {s}")),
-            }
-        }
-    }
-}
-
-fn parse_tool_approval_mode(raw: &str) -> Result<FeishuToolApprovalMode, String> {
-    match raw.trim().to_ascii_lowercase().as_str() {
-        "" | "wait_message" => Ok(FeishuToolApprovalMode::WaitMessage),
-        "deny_all" | "deny" => Ok(FeishuToolApprovalMode::DenyAll),
-        "default_allow_once" | "auto_allow_once" | "allow_once_auto" => {
-            Ok(FeishuToolApprovalMode::DefaultAllowOnce)
-        }
-        "wait_http" | "http" => Ok(FeishuToolApprovalMode::WaitHttp),
-        other => Err(format!(
-            "invalid FEISHU_TOOL_APPROVAL_MODE: {other} (deny_all | default_allow_once | wait_http | wait_message)"
-        )),
-    }
 }

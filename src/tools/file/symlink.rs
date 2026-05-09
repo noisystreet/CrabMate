@@ -39,13 +39,7 @@ pub fn symlink_info(args_json: &str, working_dir: &Path) -> String {
         return format!(
             "{} 不是符号链接（类型：{}）",
             path,
-            if meta.is_dir() {
-                "目录"
-            } else if meta.is_file() {
-                "文件"
-            } else {
-                "其他"
-            }
+            non_symlink_kind_label(&meta)
         );
     }
 
@@ -64,7 +58,27 @@ pub fn symlink_info(args_json: &str, working_dir: &Path) -> String {
         .map(|c| !c.starts_with(&base_canonical))
         .unwrap_or(true);
 
-    let mut out = format!("符号链接：{}\n", path);
+    format_symlink_report(&path, &link_target, &resolved, dangling, outside_workspace)
+}
+
+fn non_symlink_kind_label(meta: &std::fs::Metadata) -> &'static str {
+    if meta.is_dir() {
+        "目录"
+    } else if meta.is_file() {
+        "文件"
+    } else {
+        "其他"
+    }
+}
+
+fn format_symlink_report(
+    path: &str,
+    link_target: &Path,
+    resolved: &Path,
+    dangling: bool,
+    outside_workspace: bool,
+) -> String {
+    let mut out = format!("符号链接：{path}\n");
     out.push_str(&format!("  目标：{}\n", link_target.display()));
     out.push_str(&format!(
         "  状态：{}\n",
