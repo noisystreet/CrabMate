@@ -478,3 +478,35 @@ impl Default for AppSignals {
         Self::new()
     }
 }
+
+/// 聊天列 `wire_chat_domain_effects` 所需信号的**单点切片**（[`AppSignals`] 子域组合）。
+///
+/// 目的：壳层初始化只调用 [`ChatDomainWiringSignals::from_app_signals`]，避免向
+/// [`super::chat::wire_chat_domain::WireChatDomainEffectsArgs`] 重复传入与 [`ChatSessionSignals`] 同源的
+/// `sessions` / `active_id`；接线内部一律经 [`Self::chat`] 访问会话向量与活动 id。
+#[derive(Clone)]
+pub struct ChatDomainWiringSignals {
+    pub initialized: RwSignal<bool>,
+    pub chat: ChatSessionSignals,
+    pub composer: ChatComposerSignals,
+    pub pending_clarification: RwSignal<Option<PendingClarificationForm>>,
+    pub locale: RwSignal<Locale>,
+    pub apply_assistant_display_filters: RwSignal<bool>,
+    pub selected_agent_role: RwSignal<Option<String>>,
+}
+
+impl ChatDomainWiringSignals {
+    /// 从整份 [`AppSignals`] 抽取聊天域接线子集（与 [`ComposerStreamShell::from_app_signals`] 对称的「单点组装」）。
+    #[must_use]
+    pub fn from_app_signals(app: &AppSignals) -> Self {
+        Self {
+            initialized: app.initialized,
+            chat: app.chat,
+            composer: app.chat_composer.clone(),
+            pending_clarification: app.approval.pending_clarification,
+            locale: app.shell_ui.locale,
+            apply_assistant_display_filters: app.shell_ui.apply_assistant_display_filters,
+            selected_agent_role: app.llm_settings.selected_agent_role,
+        }
+    }
+}
