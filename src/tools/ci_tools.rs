@@ -56,6 +56,37 @@ impl CiPipelineOpts {
     }
 }
 
+struct ReleaseReadyOpts {
+    run_ci: bool,
+    run_audit: bool,
+    run_deny: bool,
+    require_clean: bool,
+    fail_fast: bool,
+    summary_only: bool,
+}
+
+impl ReleaseReadyOpts {
+    fn from_json(v: &serde_json::Value) -> Self {
+        Self {
+            run_ci: v.get("run_ci").and_then(|x| x.as_bool()).unwrap_or(true),
+            run_audit: v.get("run_audit").and_then(|x| x.as_bool()).unwrap_or(true),
+            run_deny: v.get("run_deny").and_then(|x| x.as_bool()).unwrap_or(true),
+            require_clean: v
+                .get("require_clean_worktree")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(true),
+            fail_fast: v
+                .get("fail_fast")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false),
+            summary_only: v
+                .get("summary_only")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(true),
+        }
+    }
+}
+
 pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
     let parsed = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
@@ -144,7 +175,13 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
         &mut sections,
     );
 
-    build_output(&summary, &sections, o.summary_only, false)
+    build_named_pipeline_summary_output(
+        "ci_pipeline_local",
+        &summary,
+        &sections,
+        o.summary_only,
+        false,
+    )
 }
 
 fn ci_run_fmt(
@@ -173,7 +210,13 @@ fn ci_run_fmt(
                 o.run_pytest,
                 o.run_mypy,
             );
-            return Some(build_output(summary, sections, o.summary_only, true));
+            return Some(build_named_pipeline_summary_output(
+                "ci_pipeline_local",
+                summary,
+                sections,
+                o.summary_only,
+                true,
+            ));
         }
     } else {
         summary.push(("cargo fmt --check".to_string(), "skipped"));
@@ -208,7 +251,13 @@ fn ci_run_clippy(
                 o.run_pytest,
                 o.run_mypy,
             );
-            return Some(build_output(summary, sections, o.summary_only, true));
+            return Some(build_named_pipeline_summary_output(
+                "ci_pipeline_local",
+                summary,
+                sections,
+                o.summary_only,
+                true,
+            ));
         }
     } else {
         summary.push(("cargo clippy".to_string(), "skipped"));
@@ -242,7 +291,13 @@ fn ci_run_cargo_test(
                 o.run_pytest,
                 o.run_mypy,
             );
-            return Some(build_output(summary, sections, o.summary_only, true));
+            return Some(build_named_pipeline_summary_output(
+                "ci_pipeline_local",
+                summary,
+                sections,
+                o.summary_only,
+                true,
+            ));
         }
     } else {
         summary.push(("cargo test".to_string(), "skipped"));
@@ -277,7 +332,13 @@ fn ci_run_frontend_lint(
                 o.run_pytest,
                 o.run_mypy,
             );
-            return Some(build_output(summary, sections, o.summary_only, true));
+            return Some(build_named_pipeline_summary_output(
+                "ci_pipeline_local",
+                summary,
+                sections,
+                o.summary_only,
+                true,
+            ));
         }
     } else {
         summary.push(("frontend lint".to_string(), "skipped"));
@@ -312,7 +373,13 @@ fn ci_run_frontend_build(
                 o.run_pytest,
                 o.run_mypy,
             );
-            return Some(build_output(summary, sections, o.summary_only, true));
+            return Some(build_named_pipeline_summary_output(
+                "ci_pipeline_local",
+                summary,
+                sections,
+                o.summary_only,
+                true,
+            ));
         }
     } else {
         summary.push(("frontend build".to_string(), "skipped"));
@@ -342,7 +409,13 @@ fn ci_run_ruff(
             if o.run_mypy {
                 summary.push(("mypy".to_string(), "skipped"));
             }
-            return Some(build_output(summary, sections, o.summary_only, true));
+            return Some(build_named_pipeline_summary_output(
+                "ci_pipeline_local",
+                summary,
+                sections,
+                o.summary_only,
+                true,
+            ));
         }
     } else {
         summary.push(("ruff check".to_string(), "skipped"));
@@ -369,7 +442,13 @@ fn ci_run_pytest(
             if o.run_mypy {
                 summary.push(("mypy".to_string(), "skipped"));
             }
-            return Some(build_output(summary, sections, o.summary_only, true));
+            return Some(build_named_pipeline_summary_output(
+                "ci_pipeline_local",
+                summary,
+                sections,
+                o.summary_only,
+                true,
+            ));
         }
     } else {
         summary.push(("pytest".to_string(), "skipped"));
@@ -411,26 +490,63 @@ pub fn release_ready_check(
         Ok(v) => v,
         Err(e) => return format!("参数序列化错误: {e}"),
     };
-    let run_ci = v.get("run_ci").and_then(|x| x.as_bool()).unwrap_or(true);
-    let run_audit = v.get("run_audit").and_then(|x| x.as_bool()).unwrap_or(true);
-    let run_deny = v.get("run_deny").and_then(|x| x.as_bool()).unwrap_or(true);
-    let require_clean = v
-        .get("require_clean_worktree")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(true);
-    let fail_fast = v
-        .get("fail_fast")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
-    let summary_only = v
-        .get("summary_only")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(true);
+    let o = ReleaseReadyOpts::from_json(&v);
 
     let mut sections = Vec::new();
     let mut summary: Vec<(String, &'static str)> = Vec::new();
 
-    if run_ci {
+    if let Some(out) = release_ready_try_ci_pipeline(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    ) {
+        return out;
+    }
+    if let Some(out) = release_ready_try_audit(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    ) {
+        return out;
+    }
+    if let Some(out) = release_ready_try_deny(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    ) {
+        return out;
+    }
+    release_ready_append_git_clean(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    );
+
+    build_named_pipeline_summary_output(
+        "release_ready_check",
+        &summary,
+        &sections,
+        o.summary_only,
+        false,
+    )
+}
+
+fn release_ready_try_ci_pipeline(
+    o: &ReleaseReadyOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) -> Option<String> {
+    if o.run_ci {
         let r = ci_pipeline_local(
             r#"{"run_fmt":true,"run_clippy":true,"run_test":true,"run_frontend_lint":true,"fail_fast":false,"summary_only":false}"#,
             workspace_root,
@@ -442,15 +558,30 @@ pub fn release_ready_check(
             if failed { "failed" } else { "passed" },
         ));
         sections.push(r);
-        if fail_fast && failed {
-            push_release_skipped(&mut summary, run_audit, run_deny, require_clean);
-            return build_release_output(&summary, &sections, summary_only, true);
+        if o.fail_fast && failed {
+            push_release_skipped(summary, o.run_audit, o.run_deny, o.require_clean);
+            return Some(build_named_pipeline_summary_output(
+                "release_ready_check",
+                summary,
+                sections,
+                o.summary_only,
+                true,
+            ));
         }
     } else {
         summary.push(("ci_pipeline_local".to_string(), "skipped"));
     }
+    None
+}
 
-    if run_audit {
+fn release_ready_try_audit(
+    o: &ReleaseReadyOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) -> Option<String> {
+    if o.run_audit {
         let r = security_tools::cargo_audit("{}", workspace_root, max_output_len);
         let failed = section_failed(&r);
         summary.push((
@@ -458,15 +589,30 @@ pub fn release_ready_check(
             if failed { "failed" } else { "passed" },
         ));
         sections.push(r);
-        if fail_fast && failed {
-            push_release_skipped(&mut summary, false, run_deny, require_clean);
-            return build_release_output(&summary, &sections, summary_only, true);
+        if o.fail_fast && failed {
+            push_release_skipped(summary, false, o.run_deny, o.require_clean);
+            return Some(build_named_pipeline_summary_output(
+                "release_ready_check",
+                summary,
+                sections,
+                o.summary_only,
+                true,
+            ));
         }
     } else {
         summary.push(("cargo_audit".to_string(), "skipped"));
     }
+    None
+}
 
-    if run_deny {
+fn release_ready_try_deny(
+    o: &ReleaseReadyOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) -> Option<String> {
+    if o.run_deny {
         let r = security_tools::cargo_deny("{}", workspace_root, max_output_len);
         let failed = section_failed(&r);
         summary.push((
@@ -474,15 +620,30 @@ pub fn release_ready_check(
             if failed { "failed" } else { "passed" },
         ));
         sections.push(r);
-        if fail_fast && failed {
-            push_release_skipped(&mut summary, false, false, require_clean);
-            return build_release_output(&summary, &sections, summary_only, true);
+        if o.fail_fast && failed {
+            push_release_skipped(summary, false, false, o.require_clean);
+            return Some(build_named_pipeline_summary_output(
+                "release_ready_check",
+                summary,
+                sections,
+                o.summary_only,
+                true,
+            ));
         }
     } else {
         summary.push(("cargo_deny".to_string(), "skipped"));
     }
+    None
+}
 
-    if require_clean {
+fn release_ready_append_git_clean(
+    o: &ReleaseReadyOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) {
+    if o.require_clean {
         let r = git_clean_check(workspace_root, max_output_len);
         let failed = section_failed(&r);
         summary.push((
@@ -493,8 +654,6 @@ pub fn release_ready_check(
     } else {
         summary.push(("git_clean_check".to_string(), "skipped"));
     }
-
-    build_release_output(&summary, &sections, summary_only, false)
 }
 
 fn push_release_skipped(
@@ -511,41 +670,6 @@ fn push_release_skipped(
     }
     if clean {
         summary.push(("git_clean_check".to_string(), "skipped"));
-    }
-}
-
-fn build_release_output(
-    summary: &[(String, &'static str)],
-    sections: &[String],
-    summary_only: bool,
-    fail_fast_triggered: bool,
-) -> String {
-    let passed = summary.iter().filter(|(_, s)| *s == "passed").count();
-    let failed = summary.iter().filter(|(_, s)| *s == "failed").count();
-    let skipped = summary.iter().filter(|(_, s)| *s == "skipped").count();
-    let mut summary_text = String::new();
-    summary_text.push_str("release_ready_check summary:\n");
-    for (name, status) in summary {
-        summary_text.push_str(&format!("- {}: {}\n", name, status));
-    }
-    summary_text.push_str(&format!(
-        "统计：passed={}, failed={}, skipped={}",
-        passed, failed, skipped
-    ));
-    if fail_fast_triggered {
-        summary_text.push_str("\n已启用 fail_fast，出现失败后已停止后续步骤");
-    }
-    if summary_only {
-        return summary_text;
-    }
-    if sections.is_empty() {
-        summary_text
-    } else {
-        format!(
-            "{}\n\n====================\n\n{}",
-            summary_text,
-            sections.join("\n\n====================\n\n")
-        )
     }
 }
 
@@ -627,7 +751,8 @@ fn push_skipped(
     }
 }
 
-fn build_output(
+fn build_named_pipeline_summary_output(
+    pipeline_name: &str,
     summary: &[(String, &'static str)],
     sections: &[String],
     summary_only: bool,
@@ -637,7 +762,7 @@ fn build_output(
     let failed = summary.iter().filter(|(_, s)| *s == "failed").count();
     let skipped = summary.iter().filter(|(_, s)| *s == "skipped").count();
     let mut summary_text = String::new();
-    summary_text.push_str("ci_pipeline_local summary:\n");
+    summary_text.push_str(&format!("{pipeline_name} summary:\n"));
     for (name, status) in summary {
         summary_text.push_str(&format!("- {}: {}\n", name, status));
     }
