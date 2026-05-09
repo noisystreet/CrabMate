@@ -19,6 +19,7 @@ mod message_row_user_layout;
 mod scroll;
 #[cfg(test)]
 mod staged_plan_todo;
+mod stream_user_abort;
 mod timeline;
 pub(crate) mod wire_chat_domain;
 pub(crate) mod wire_chat_session_lifecycle;
