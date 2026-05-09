@@ -82,44 +82,53 @@ fn rewrite_serve_subcommand(prog: String, rest: &[String]) -> Option<Vec<String>
     Some(out)
 }
 
+/// `--name` 或 `--name=value`（`value` 非空），不含 `--namefoo` 这类前缀误匹配。
+#[inline]
+fn flag_or_eq_value(arg: &str, base: &str) -> bool {
+    arg == base
+        || (arg.len() > base.len()
+            && arg.starts_with(base)
+            && arg.as_bytes().get(base.len()) == Some(&b'='))
+}
+
+/// 同时支持 `flag` 与 `flag=<value>` 的历史平铺项。
+const LEGACY_BENCH_FLAG_BASES: &[&str] = &[
+    "--benchmark",
+    "--batch",
+    "--batch-output",
+    "--task-timeout",
+    "--max-tool-rounds",
+    "--bench-system-prompt",
+];
+
 fn rest_has_legacy_bench_flag(rest: &[String]) -> bool {
     rest.iter().any(|a| {
-        a == "--benchmark"
-            || a.starts_with("--benchmark=")
-            || a == "--batch"
-            || a.starts_with("--batch=")
-            || a == "--batch-output"
-            || a.starts_with("--batch-output=")
-            || a == "--task-timeout"
-            || a.starts_with("--task-timeout=")
-            || a == "--max-tool-rounds"
-            || a.starts_with("--max-tool-rounds=")
-            || a == "--resume"
-            || a == "--bench-system-prompt"
-            || a.starts_with("--bench-system-prompt=")
+        a.as_str() == "--resume"
+            || LEGACY_BENCH_FLAG_BASES
+                .iter()
+                .any(|base| flag_or_eq_value(a, base))
     })
 }
 
+const LEGACY_CHAT_FLAG_BASES: &[&str] = &[
+    "--query",
+    "--output",
+    "--system-prompt-file",
+    "--user-prompt-file",
+    "--messages-json-file",
+    "--message-file",
+    "--approve-commands",
+    "--agent-role",
+];
+
 fn rest_has_legacy_chat_flag(rest: &[String]) -> bool {
     rest.iter().any(|a| {
-        a == "--query"
-            || a.starts_with("--query=")
-            || a == "--stdin"
-            || a == "--output"
-            || a.starts_with("--output=")
-            || a == "--system-prompt-file"
-            || a.starts_with("--system-prompt-file=")
-            || a == "--user-prompt-file"
-            || a.starts_with("--user-prompt-file=")
-            || a == "--messages-json-file"
-            || a.starts_with("--messages-json-file=")
-            || a == "--message-file"
-            || a.starts_with("--message-file=")
+        let a = a.as_str();
+        a == "--stdin"
             || a == "--yes"
-            || a == "--approve-commands"
-            || a.starts_with("--approve-commands=")
-            || a == "--agent-role"
-            || a.starts_with("--agent-role=")
+            || LEGACY_CHAT_FLAG_BASES
+                .iter()
+                .any(|b| flag_or_eq_value(a, b))
     })
 }
 
