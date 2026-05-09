@@ -3,6 +3,7 @@
 use leptos::prelude::*;
 
 use super::super::settings_form_state::SettingsFormCurrent;
+use crate::api::SavedModelPreset;
 use crate::i18n::Locale;
 
 /// 设置页「草稿」相关 `RwSignal`（`Copy`），用于组装 [`SettingsFormCurrent`]。
@@ -28,6 +29,7 @@ pub(crate) struct SettingsPageDraftSignals {
     pub llm_api_key_draft: RwSignal<String>,
     pub executor_llm_api_key_draft: RwSignal<String>,
     pub readonly_tool_ttl_cache_follow_server: RwSignal<bool>,
+    pub saved_model_presets: RwSignal<Vec<SavedModelPreset>>,
 }
 
 pub(crate) fn form_current_tracked(s: SettingsPageDraftSignals) -> SettingsFormCurrent {
@@ -52,6 +54,7 @@ pub(crate) fn form_current_tracked(s: SettingsPageDraftSignals) -> SettingsFormC
         llm_api_key_draft: s.llm_api_key_draft.get(),
         executor_llm_api_key_draft: s.executor_llm_api_key_draft.get(),
         readonly_tool_ttl_cache_follow_server: s.readonly_tool_ttl_cache_follow_server.get(),
+        saved_model_presets: s.saved_model_presets.get(),
     }
 }
 
@@ -79,5 +82,6 @@ pub(crate) fn form_current_untracked(s: SettingsPageDraftSignals) -> SettingsFor
         readonly_tool_ttl_cache_follow_server: s
             .readonly_tool_ttl_cache_follow_server
             .get_untracked(),
+        saved_model_presets: s.saved_model_presets.get_untracked(),
     }
 }

@@ -1,10 +1,16 @@
 //! 设置页导航轨与内容区（从 `settings_page` 拆出以降低 `SettingsPageView` 的 nloc 棘轮）。
 
+use std::vec::Vec;
+
 use leptos::prelude::*;
 
+use crate::api::{ExecutorLlmDraftSignals, MainLlmDraftSignals};
+
 use super::super::settings_sections::{
-    SettingsAppearanceBlock, SettingsExecutorLlmBlock, SettingsLlmBlock, SettingsLlmBlockBundle,
-    SettingsShortcutsBlock, SettingsToolsBlock,
+    SettingsAppearanceBlock, SettingsExecutorLlmBlock, SettingsExecutorSavedPresetBundle,
+    SettingsExecutorSavedPresetPicker, SettingsLlmBlock, SettingsLlmBlockBundle,
+    SettingsSavedModelsPresetsBundle, SettingsSavedModelsPresetsPanel, SettingsShortcutsBlock,
+    SettingsToolsBlock,
 };
 use super::hash_routing::{SettingsSection, write_settings_section_to_hash};
 use super::section_copy::{section_desc, section_title};
@@ -94,6 +100,7 @@ pub(super) struct SettingsPagePanelDrafts {
     pub executor_llm_model_draft: RwSignal<String>,
     pub executor_llm_api_key_draft: RwSignal<String>,
     pub executor_llm_has_saved_key: RwSignal<bool>,
+    pub saved_model_presets: RwSignal<Vec<crate::api::SavedModelPreset>>,
 }
 
 #[component]
@@ -122,6 +129,7 @@ pub(super) fn SettingsPageContentPanels(
         executor_llm_model_draft,
         executor_llm_api_key_draft,
         executor_llm_has_saved_key,
+        saved_model_presets,
     } = drafts;
 
     view! {
@@ -141,6 +149,19 @@ pub(super) fn SettingsPageContentPanels(
             </Show>
 
             <Show when=move || active_section.get() == SettingsSection::Llm>
+                <SettingsSavedModelsPresetsPanel bundle=SettingsSavedModelsPresetsBundle {
+                    locale: appearance_locale,
+                    saved_model_presets,
+                    main_select_id: "settings-page-saved-preset-main",
+                    main: MainLlmDraftSignals {
+                        llm_api_base_draft,
+                        llm_api_base_preset_select,
+                        llm_model_draft,
+                        llm_temperature_draft,
+                        llm_context_tokens_draft,
+                        llm_thinking_mode_draft,
+                    },
+                } />
                 <SettingsLlmBlock bundle=SettingsLlmBlockBundle {
                     locale: appearance_locale,
                     llm_api_base_draft,
@@ -159,6 +180,16 @@ pub(super) fn SettingsPageContentPanels(
             </Show>
 
             <Show when=move || active_section.get() == SettingsSection::ExecutorLlm>
+                <SettingsExecutorSavedPresetPicker bundle=SettingsExecutorSavedPresetBundle {
+                    locale: appearance_locale,
+                    saved_model_presets,
+                    select_id: "settings-page-saved-preset-executor-apply",
+                    exec: ExecutorLlmDraftSignals {
+                        executor_llm_api_base_draft,
+                        executor_llm_api_base_preset_select,
+                        executor_llm_model_draft,
+                    },
+                } />
                 <SettingsExecutorLlmBlock
                     locale=appearance_locale
                     executor_llm_api_base_draft=executor_llm_api_base_draft

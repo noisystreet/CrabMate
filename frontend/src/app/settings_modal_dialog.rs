@@ -1,16 +1,20 @@
 //! 设置弹窗 DOM（与 `settings_modal/` 中的状态与 `Effect` 拆分以降低圈复杂度）。
 
 use std::sync::Arc;
+use std::vec::Vec;
 
 use leptos::html::Div;
 use leptos::prelude::*;
 
 use crate::a11y::trap_tab_in_container;
+use crate::api::{ExecutorLlmDraftSignals, MainLlmDraftSignals};
 use crate::i18n::{self, Locale};
 
 use super::settings_sections::{
-    SettingsAppearanceBlock, SettingsExecutorLlmBlock, SettingsLlmBlock, SettingsLlmBlockBundle,
-    SettingsShortcutsBlock, SettingsToolsBlock,
+    SettingsAppearanceBlock, SettingsExecutorLlmBlock, SettingsExecutorSavedPresetBundle,
+    SettingsExecutorSavedPresetPicker, SettingsLlmBlock, SettingsLlmBlockBundle,
+    SettingsSavedModelsPresetsBundle, SettingsSavedModelsPresetsPanel, SettingsShortcutsBlock,
+    SettingsToolsBlock,
 };
 
 /// 设置弹窗 `view!` 所需的信号与回调（单参数入口，满足 fn-param 棘轮）。
@@ -42,6 +46,7 @@ pub struct SettingsModalDialogInput {
     pub executor_llm_has_saved_key: RwSignal<bool>,
     pub clear_executor_key_intent: RwSignal<bool>,
     pub readonly_tool_ttl_cache_follow_server: RwSignal<bool>,
+    pub saved_model_presets: RwSignal<Vec<crate::api::SavedModelPreset>>,
 }
 
 #[component]
@@ -111,6 +116,7 @@ fn SettingsModalDialogBody(input: SettingsModalDialogInput) -> impl IntoView {
         executor_llm_has_saved_key,
         clear_executor_key_intent,
         readonly_tool_ttl_cache_follow_server,
+        saved_model_presets,
         ..
     } = input;
 
@@ -129,6 +135,19 @@ fn SettingsModalDialogBody(input: SettingsModalDialogInput) -> impl IntoView {
                 appearance_bg_decor=appearance_bg_decor
                 theme_select_id="settings-modal-appearance-theme"
             />
+            <SettingsSavedModelsPresetsPanel bundle=SettingsSavedModelsPresetsBundle {
+                locale: appearance_locale,
+                saved_model_presets,
+                main_select_id: "settings-modal-saved-preset-main",
+                main: MainLlmDraftSignals {
+                    llm_api_base_draft,
+                    llm_api_base_preset_select,
+                    llm_model_draft,
+                    llm_temperature_draft,
+                    llm_context_tokens_draft,
+                    llm_thinking_mode_draft,
+                },
+            } />
             <SettingsLlmBlock bundle=SettingsLlmBlockBundle {
                 locale: appearance_locale,
                 llm_api_base_draft,
@@ -143,6 +162,16 @@ fn SettingsModalDialogBody(input: SettingsModalDialogInput) -> impl IntoView {
                 clear_client_key_intent,
                 hint_class: "modal-hint settings-field-nested-hint",
                 llm_thinking_mode_select_id: "settings-modal-llm-thinking-mode",
+            } />
+            <SettingsExecutorSavedPresetPicker bundle=SettingsExecutorSavedPresetBundle {
+                locale: appearance_locale,
+                saved_model_presets,
+                select_id: "settings-modal-saved-preset-executor-apply",
+                exec: ExecutorLlmDraftSignals {
+                    executor_llm_api_base_draft,
+                    executor_llm_api_base_preset_select,
+                    executor_llm_model_draft,
+                },
             } />
             <SettingsExecutorLlmBlock
                 locale=appearance_locale

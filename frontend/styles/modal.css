@@ -187,6 +187,32 @@
   margin-bottom: var(--space-1);
 }
 
+.settings-saved-models-list {
+  margin: 0 14px var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.settings-saved-models-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.settings-saved-models-item:last-child {
+  border-bottom: none;
+}
+
+.settings-saved-models-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .settings-text-input {
   width: 100%;
   box-sizing: border-box;

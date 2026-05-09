@@ -7,6 +7,7 @@ use crate::api::{
     client_llm_storage_has_api_key, executor_llm_storage_has_api_key,
     persist_client_llm_to_storage, persist_execution_mode_to_storage,
     persist_executor_llm_to_storage, persist_readonly_tool_ttl_cache_follow_server,
+    persist_saved_model_presets_to_storage,
 };
 use crate::i18n::{Locale, store_locale_slug};
 
@@ -46,6 +47,63 @@ fn validate_llm_thinking_mode_override(raw: &str, loc: Locale) -> Result<(), Str
     Err(crate::i18n::settings_err_thinking_mode_invalid(loc).to_string())
 }
 
+fn api_key_update_from_clear_and_draft<'a>(clear: bool, draft: &'a str) -> Option<&'a str> {
+    match (clear, draft.trim().is_empty()) {
+        (true, _) => Some(""),
+        (false, true) => None,
+        (false, false) => Some(draft),
+    }
+}
+
+/// 校验并写入 LLM / 执行模式 / TTL / 已保存模型列表（不含外观信号）。
+fn persist_settings_storage_payload(p: &CommitAllSettingsInput<'_>) -> Result<(), String> {
+    validate_temperature_override(p.client_temperature, p.ui_locale)?;
+    validate_llm_context_tokens_override(p.client_llm_context_tokens, p.ui_locale)?;
+    validate_llm_thinking_mode_override(p.client_llm_thinking_mode, p.ui_locale)?;
+    persist_saved_model_presets_to_storage(p.saved_model_presets, p.ui_locale)?;
+
+    let client_key_upd =
+        api_key_update_from_clear_and_draft(p.clear_client_llm_key, p.client_api_key_draft);
+    persist_client_llm_to_storage(
+        p.client_base,
+        p.client_model,
+        p.client_temperature,
+        p.client_llm_context_tokens,
+        p.client_llm_thinking_mode,
+        client_key_upd,
+        p.ui_locale,
+    )?;
+
+    let executor_key_upd =
+        api_key_update_from_clear_and_draft(p.clear_executor_llm_key, p.executor_api_key_draft);
+    persist_executor_llm_to_storage(
+        p.executor_base,
+        p.executor_model,
+        executor_key_upd,
+        p.ui_locale,
+    )?;
+    persist_execution_mode_to_storage(p.execution_mode, p.ui_locale)?;
+    persist_readonly_tool_ttl_cache_follow_server(
+        p.readonly_tool_ttl_cache_follow_server,
+        p.ui_locale,
+    )?;
+    Ok(())
+}
+
+fn sync_shell_ui_after_settings_commit(p: &CommitAllSettingsInput<'_>) {
+    p.locale.set(p.appearance_locale);
+    store_locale_slug(p.appearance_locale.storage_slug());
+    p.theme.set(p.appearance_theme.clone());
+    p.bg_decor.set(p.appearance_bg_decor);
+
+    p.llm_api_key_draft.set(String::new());
+    p.executor_llm_api_key_draft.set(String::new());
+    p.llm_has_saved_key.set(client_llm_storage_has_api_key());
+    p.executor_llm_has_saved_key
+        .set(executor_llm_storage_has_api_key());
+    p.client_llm_storage_tick.update(|n| *n = n.wrapping_add(1));
+}
+
 /// 一次「保存全部设置」所需的表单快照与 UI 信号（避免长参数列表）。
 pub struct CommitAllSettingsInput<'a> {
     pub ui_locale: Locale,
@@ -73,6 +131,8 @@ pub struct CommitAllSettingsInput<'a> {
     pub executor_llm_api_key_draft: RwSignal<String>,
     pub executor_llm_has_saved_key: RwSignal<bool>,
     pub client_llm_storage_tick: RwSignal<u64>,
+    /// 与主/执行器草稿分离存储的「已保存模型」列表（`localStorage` JSON）。
+    pub saved_model_presets: &'a [crate::api::SavedModelPreset],
 }
 
 /// 将语言 / 主题 / 背景与（可选）LLM 覆盖写入 `localStorage`，并更新全局 UI 信号。
@@ -86,56 +146,9 @@ pub fn commit_all_settings(p: CommitAllSettingsInput<'_>) -> Result<(), String> 
         clear_executor_llm_api_key_storage(p.ui_locale)?;
     }
 
-    let client_key_upd = if p.clear_client_llm_key {
-        Some("")
-    } else if p.client_api_key_draft.trim().is_empty() {
-        None
-    } else {
-        Some(p.client_api_key_draft)
-    };
-    validate_temperature_override(p.client_temperature, p.ui_locale)?;
-    validate_llm_context_tokens_override(p.client_llm_context_tokens, p.ui_locale)?;
-    validate_llm_thinking_mode_override(p.client_llm_thinking_mode, p.ui_locale)?;
-    persist_client_llm_to_storage(
-        p.client_base,
-        p.client_model,
-        p.client_temperature,
-        p.client_llm_context_tokens,
-        p.client_llm_thinking_mode,
-        client_key_upd,
-        p.ui_locale,
-    )?;
+    persist_settings_storage_payload(&p)?;
 
-    let executor_key_upd = if p.clear_executor_llm_key {
-        Some("")
-    } else if p.executor_api_key_draft.trim().is_empty() {
-        None
-    } else {
-        Some(p.executor_api_key_draft)
-    };
-    persist_executor_llm_to_storage(
-        p.executor_base,
-        p.executor_model,
-        executor_key_upd,
-        p.ui_locale,
-    )?;
-    persist_execution_mode_to_storage(p.execution_mode, p.ui_locale)?;
-    persist_readonly_tool_ttl_cache_follow_server(
-        p.readonly_tool_ttl_cache_follow_server,
-        p.ui_locale,
-    )?;
-
-    p.locale.set(p.appearance_locale);
-    store_locale_slug(p.appearance_locale.storage_slug());
-    p.theme.set(p.appearance_theme);
-    p.bg_decor.set(p.appearance_bg_decor);
-
-    p.llm_api_key_draft.set(String::new());
-    p.executor_llm_api_key_draft.set(String::new());
-    p.llm_has_saved_key.set(client_llm_storage_has_api_key());
-    p.executor_llm_has_saved_key
-        .set(executor_llm_storage_has_api_key());
-    p.client_llm_storage_tick.update(|n| *n = n.wrapping_add(1));
+    sync_shell_ui_after_settings_commit(&p);
 
     Ok(())
 }

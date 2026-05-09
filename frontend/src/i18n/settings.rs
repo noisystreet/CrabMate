@@ -640,3 +640,56 @@ pub fn settings_shortcuts_body(l: Locale) -> &'static str {
         }
     }
 }
+
+pub fn settings_saved_models_block_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "已保存模型",
+        Locale::En => "Saved models",
+    }
+}
+
+pub fn settings_saved_models_hint(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => {
+            "将常用网关与模型存为快捷项；主模型与执行器可从列表一键套用。保存全部后写入本机列表。"
+        }
+        Locale::En => {
+            "Store common endpoints and models as quick picks; apply them to the main or executor profile. Use “Save all” to persist the list."
+        }
+    }
+}
+
+pub fn settings_saved_models_add_from_main(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "将当前主模型配置加入列表",
+        Locale::En => "Add current main profile to list",
+    }
+}
+
+pub fn settings_saved_models_remove(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "移除",
+        Locale::En => "Remove",
+    }
+}
+
+pub fn settings_saved_models_select_main(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "从已保存项套用主模型",
+        Locale::En => "Apply saved preset to main model",
+    }
+}
+
+pub fn settings_saved_models_select_executor(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "从已保存项套用执行器",
+        Locale::En => "Apply saved preset to executor",
+    }
+}
+
+pub fn settings_saved_models_pick_placeholder(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "选择快捷项…",
+        Locale::En => "Choose a preset…",
+    }
+}

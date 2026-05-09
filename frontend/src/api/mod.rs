@@ -18,6 +18,7 @@ mod browser;
 mod chat_stream;
 mod client_llm_storage;
 mod http;
+mod saved_models;
 
 #[allow(unused_imports)]
 pub use api_client::{ApiClient, RealApiClient};
@@ -37,4 +38,10 @@ pub use http::{
     WorkspaceChangelogResponse, WorkspaceData, WorkspaceEntry, fetch_conversation_messages,
     fetch_status, fetch_tasks, fetch_web_ui_config, fetch_workspace, fetch_workspace_changelog,
     post_chat_branch, post_workspace_set, save_tasks, submit_chat_approval, upload_files_multipart,
+};
+pub use saved_models::{
+    ExecutorLlmDraftSignals, MainLlmDraftSignals, SavedModelPreset,
+    apply_saved_model_preset_to_executor_fields, apply_saved_model_preset_to_main_fields,
+    load_saved_model_presets_from_storage, persist_saved_model_presets_to_storage,
+    saved_model_preset_from_main_drafts,
 };

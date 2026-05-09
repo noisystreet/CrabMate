@@ -51,6 +51,10 @@ pub(crate) fn discard_to_baselines(ctx: DiscardToBaselinesCtx) {
         .readonly_tool_ttl_cache_follow_server
         .set(baselines.readonly_tool_ttl_cache_follow_server.get_value());
 
+    drafts
+        .saved_model_presets
+        .set(baselines.saved_model_presets.get_value());
+
     drafts.clear_client_key_intent.set(false);
     drafts.clear_executor_key_intent.set(false);
     llm_settings_feedback.set(None);
@@ -95,6 +99,7 @@ pub(crate) fn try_save_all_settings(ctx: SaveAllSettingsCtx) {
         return;
     }
     let ui_locale = appearance_locale.get();
+    let saved_presets = drafts.saved_model_presets.get();
     match commit_all_settings(CommitAllSettingsInput {
         ui_locale,
         appearance_locale: drafts.appearance_locale.get(),
@@ -121,6 +126,7 @@ pub(crate) fn try_save_all_settings(ctx: SaveAllSettingsCtx) {
         executor_llm_api_key_draft: drafts.executor_llm_api_key_draft,
         executor_llm_has_saved_key: drafts.executor_llm_has_saved_key,
         client_llm_storage_tick,
+        saved_model_presets: saved_presets.as_slice(),
     }) {
         Ok(()) => {
             baselines.refresh_from_current(&form_current_untracked(drafts));

@@ -14,7 +14,7 @@ use leptos::html::Div;
 use leptos::prelude::*;
 use leptos_dom::helpers::WindowListenerHandle;
 
-use crate::api::{StatusData, TasksData, WorkspaceData};
+use crate::api::{StatusData, TasksData, WorkspaceData, load_saved_model_presets_from_storage};
 use crate::app::shell_prefs_storage;
 use crate::app_prefs::{SIDEBAR_RAIL_COLLAPSED_KEY, SidePanelView, load_bool_key};
 use crate::clarification_form::PendingClarificationForm;
@@ -264,6 +264,8 @@ pub struct LLMSettingsSignals {
     /// **`true`**：聊天请求不附带 **`readonly_tool_ttl_cache_secs`**，跟随服务端；**`false`**：附带 **`0`** 关闭只读 **`run_command`** 短时缓存。
     pub readonly_tool_ttl_cache_follow_server: RwSignal<bool>,
     pub selected_agent_role: RwSignal<Option<String>>,
+    /// 本机已保存的多条模型预设（与扁平 `client_llm` 并存；用于设置页下拉选用）。
+    pub saved_model_presets: RwSignal<Vec<crate::api::SavedModelPreset>>,
 }
 
 impl LLMSettingsSignals {
@@ -290,6 +292,7 @@ impl LLMSettingsSignals {
                 crate::api::load_readonly_tool_ttl_cache_follow_server_from_storage(),
             ),
             selected_agent_role: RwSignal::new(shell_prefs_storage::read_agent_role_initial()),
+            saved_model_presets: RwSignal::new(load_saved_model_presets_from_storage()),
         }
     }
 }

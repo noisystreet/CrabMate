@@ -1,6 +1,13 @@
 use leptos::prelude::*;
 use leptos_dom::helpers::event_target_value;
 
+use std::vec::Vec;
+
+use crate::api::{
+    ExecutorLlmDraftSignals, MainLlmDraftSignals, SavedModelPreset,
+    apply_saved_model_preset_to_executor_fields, apply_saved_model_preset_to_main_fields,
+    saved_model_preset_from_main_drafts,
+};
 use crate::app_prefs::THEME_SLUGS;
 use crate::i18n::{self, Locale};
 use crate::settings_llm_fields::{
@@ -204,6 +211,195 @@ pub(crate) fn SettingsExecutorLlmBlock(
                 clear_key_intent=clear_executor_key_intent
                 hint_class
             />
+        </div>
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct SettingsSavedModelsPresetsBundle {
+    pub locale: RwSignal<Locale>,
+    pub saved_model_presets: RwSignal<Vec<SavedModelPreset>>,
+    /// `<select id=…>`：设置页与弹窗分区须区分。
+    pub main_select_id: &'static str,
+    pub main: MainLlmDraftSignals,
+}
+
+fn preset_list_index_from_select_value(raw: &str) -> Option<usize> {
+    if raw.is_empty() {
+        return None;
+    }
+    raw.parse().ok()
+}
+
+#[component]
+pub(crate) fn SettingsSavedModelsPresetsPanel(
+    bundle: SettingsSavedModelsPresetsBundle,
+) -> impl IntoView {
+    let SettingsSavedModelsPresetsBundle {
+        locale,
+        saved_model_presets,
+        main_select_id,
+        main,
+    } = bundle;
+    let hint_class = "settings-field-nested-hint";
+    let pick_main = RwSignal::new(String::new());
+
+    view! {
+        <div class="settings-block">
+            <h3 class="settings-block-title">{move || i18n::settings_saved_models_block_title(locale.get())}</h3>
+            <p class=hint_class>{move || i18n::settings_saved_models_hint(locale.get())}</p>
+            <div class="settings-field">
+                <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    on:click=move |_| {
+                        let p = saved_model_preset_from_main_drafts(
+                            main.llm_api_base_draft.get().as_str(),
+                            main.llm_api_base_preset_select.get().as_str(),
+                            main.llm_model_draft.get().as_str(),
+                            main.llm_temperature_draft.get().as_str(),
+                            main.llm_context_tokens_draft.get().as_str(),
+                            main.llm_thinking_mode_draft.get().as_str(),
+                        );
+                        saved_model_presets.update(|v| v.push(p));
+                    }
+                >
+                    {move || i18n::settings_saved_models_add_from_main(locale.get())}
+                </button>
+            </div>
+            <ul class="settings-saved-models-list" role="list">
+                <For
+                    each=move || {
+                        saved_model_presets
+                            .get()
+                            .into_iter()
+                            .enumerate()
+                            .collect::<Vec<(usize, SavedModelPreset)>>()
+                    }
+                    key=|(i, p)| format!("saved-model-{i}-{}", p.label)
+                    children=move |(i, preset)| {
+                        let label = preset.label.clone();
+                        view! {
+                            <li class="settings-saved-models-item">
+                                <span class="settings-saved-models-label">{label}</span>
+                                <button
+                                    type="button"
+                                    class="btn btn-ghost btn-sm"
+                                    on:click=move |_| {
+                                        saved_model_presets.update(|v| {
+                                            if i < v.len() {
+                                                v.remove(i);
+                                            }
+                                        });
+                                    }
+                                >
+                                    {move || i18n::settings_saved_models_remove(locale.get())}
+                                </button>
+                            </li>
+                        }
+                    }
+                />
+            </ul>
+            <div class="settings-field">
+                <label class="settings-field-label" for=main_select_id>
+                    {move || i18n::settings_saved_models_select_main(locale.get())}
+                </label>
+                <select
+                    id=main_select_id
+                    class="settings-select"
+                    prop:value=move || pick_main.get()
+                    on:change=move |ev| {
+                        let raw = event_target_value(&ev);
+                        pick_main.set(String::new());
+                        let Some(idx) = preset_list_index_from_select_value(raw.as_str()) else {
+                            return;
+                        };
+                        let presets = saved_model_presets.get();
+                        let Some(p) = presets.get(idx) else {
+                            return;
+                        };
+                        apply_saved_model_preset_to_main_fields(p, main);
+                    }
+                >
+                    <option value="">{move || i18n::settings_saved_models_pick_placeholder(locale.get())}</option>
+                    {move || {
+                        saved_model_presets
+                            .get()
+                            .into_iter()
+                            .enumerate()
+                            .map(|(i, p)| {
+                                let v = i.to_string();
+                                let lab = p.label.clone();
+                                view! {
+                                    <option value=v>{lab}</option>
+                                }
+                            })
+                            .collect_view()
+                    }}
+                </select>
+            </div>
+        </div>
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct SettingsExecutorSavedPresetBundle {
+    pub locale: RwSignal<Locale>,
+    pub saved_model_presets: RwSignal<Vec<SavedModelPreset>>,
+    pub select_id: &'static str,
+    pub exec: ExecutorLlmDraftSignals,
+}
+
+#[component]
+pub(crate) fn SettingsExecutorSavedPresetPicker(
+    bundle: SettingsExecutorSavedPresetBundle,
+) -> impl IntoView {
+    let SettingsExecutorSavedPresetBundle {
+        locale,
+        saved_model_presets,
+        select_id,
+        exec,
+    } = bundle;
+    let pick_ex = RwSignal::new(String::new());
+
+    view! {
+        <div class="settings-field">
+            <label class="settings-field-label" for=select_id>
+                {move || i18n::settings_saved_models_select_executor(locale.get())}
+            </label>
+            <select
+                id=select_id
+                class="settings-select"
+                prop:value=move || pick_ex.get()
+                on:change=move |ev| {
+                    let raw = event_target_value(&ev);
+                    pick_ex.set(String::new());
+                    let Some(idx) = preset_list_index_from_select_value(raw.as_str()) else {
+                        return;
+                    };
+                    let presets = saved_model_presets.get();
+                    let Some(p) = presets.get(idx) else {
+                        return;
+                    };
+                    apply_saved_model_preset_to_executor_fields(p, exec);
+                }
+            >
+                <option value="">{move || i18n::settings_saved_models_pick_placeholder(locale.get())}</option>
+                {move || {
+                    saved_model_presets
+                        .get()
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, p)| {
+                            let v = i.to_string();
+                            let lab = p.label.clone();
+                            view! {
+                                <option value=v>{lab}</option>
+                            }
+                        })
+                        .collect_view()
+                }}
+            </select>
         </div>
     }
 }

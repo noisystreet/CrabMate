@@ -4,7 +4,7 @@ use leptos::prelude::*;
 
 use crate::api::{
     StatusData, client_llm_storage_has_api_key, load_client_llm_text_fields_from_storage,
-    load_execution_mode_from_storage,
+    load_execution_mode_from_storage, load_saved_model_presets_from_storage,
 };
 
 use crate::app::app_signals::LLMSettingsSignals;
@@ -49,6 +49,7 @@ pub fn wire_settings_modal_llm_drafts_on_open(s: WireSettingsModalLlmDraftsSigna
                 executor_llm_has_saved_key,
                 executor_llm_settings_feedback,
                 execution_mode_draft,
+                saved_model_presets,
                 ..
             },
     } = s;
@@ -132,5 +133,6 @@ pub fn wire_settings_modal_llm_drafts_on_open(s: WireSettingsModalLlmDraftsSigna
                 execution_mode_draft.set("rolling_planning".to_string());
             }
         }
+        saved_model_presets.set(load_saved_model_presets_from_storage());
     });
 }
