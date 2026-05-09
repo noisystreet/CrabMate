@@ -14,6 +14,7 @@ mod scheduled_agent_task;
 pub(crate) mod skills;
 mod source;
 mod types;
+mod user_config_layers;
 mod validate;
 mod workspace_roots;
 

@@ -13,11 +13,8 @@
 //! 9. 可选 **`agent_roles.toml`**（与主配置同目录，或仓库 **`config/agent_roles.toml`**）
 //! 10. **`CM_*` 环境变量**（在 `config/env_overrides.rs` 的 `apply_env_overrides` 中应用，本模块不负责）
 
-use std::path::{Path, PathBuf};
-
-use super::agent_roles;
-use super::builder::{ConfigBuilder, override_opt_string_non_empty};
-use super::source::{parse_agent_section, parse_config_file_roles, parse_tools_config_bundle};
+use super::builder::ConfigBuilder;
+use super::source::{parse_agent_section, parse_tools_config_bundle};
 
 /// 编译时嵌入（与 `mod.rs` 中常量一致，仅在此集中说明顺序）
 const DEFAULT_CONFIG: &str = include_str!("../../config/default_config.toml");
@@ -72,89 +69,4 @@ pub(super) fn apply_embedded_config_shards(b: &mut ConfigBuilder) -> Result<(), 
     Ok(())
 }
 
-/// 合并用户 TOML（步骤 8–9），返回 `system_prompt_file` 相对路径解析用的配置目录栈（先发现者在前，后加载在后）。
-pub(super) fn merge_user_config_layers(
-    config_path: Option<&str>,
-    b: &mut ConfigBuilder,
-) -> Result<Vec<PathBuf>, String> {
-    let config_paths: Vec<&str> = match config_path {
-        Some(p) => {
-            let p = p.trim();
-            if p.is_empty() { vec![] } else { vec![p] }
-        }
-        None => vec!["config.toml", ".agent_demo.toml"],
-    };
-
-    let mut system_prompt_search_bases: Vec<PathBuf> = Vec::new();
-
-    for path in &config_paths {
-        if Path::new(path).exists() {
-            system_prompt_search_bases.push(directory_containing_config_file(path));
-            let s = std::fs::read_to_string(path)
-                .map_err(|e| format!("无法读取配置文件 \"{}\": {}", path, e))?;
-            let (agent_opt, role_rows, tr_opt, sched_rows) = parse_config_file_roles(&s)
-                .map_err(|e| format!("配置文件 \"{}\" TOML 解析失败: {}", path, e))?;
-            if let Some(agent) = agent_opt {
-                b.apply_section(agent);
-            }
-            b.merge_agent_role_rows(&role_rows);
-            b.merge_scheduled_agent_task_rows(&sched_rows);
-            if let Some(tr) = tr_opt {
-                b.apply_tool_registry(tr);
-            }
-            if config_path.is_some() {
-                break;
-            }
-        } else if config_path.is_some() {
-            return Err(format!("配置文件 \"{}\" 不存在", path));
-        }
-    }
-
-    if let Some(p) = config_path
-        .as_ref()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-    {
-        let sidecar = Path::new(p)
-            .parent()
-            .map(|dir| dir.join("agent_roles.toml"));
-        if let Some(sc) = sidecar.filter(|x| x.exists()) {
-            let s = std::fs::read_to_string(&sc)
-                .map_err(|e| format!("无法读取角色配置文件 \"{}\": {}", sc.display(), e))?;
-            let mut default_slot: Option<String> = None;
-            agent_roles::merge_agent_roles_file_into_builder(
-                &s,
-                &mut default_slot,
-                &mut b.agent_role_entries,
-            )?;
-            override_opt_string_non_empty(&mut b.roles_prompts.default_agent_role_id, default_slot);
-        }
-    } else {
-        let sc = Path::new("config/agent_roles.toml");
-        if sc.exists() {
-            let s = std::fs::read_to_string(sc)
-                .map_err(|e| format!("无法读取角色配置文件 \"{}\": {}", sc.display(), e))?;
-            let mut default_slot: Option<String> = None;
-            agent_roles::merge_agent_roles_file_into_builder(
-                &s,
-                &mut default_slot,
-                &mut b.agent_role_entries,
-            )?;
-            override_opt_string_non_empty(&mut b.roles_prompts.default_agent_role_id, default_slot);
-        }
-    }
-
-    Ok(system_prompt_search_bases)
-}
-
-/// `system_prompt_file` 相对路径解析：与 `foo.toml` 同目录下的 `config/prompts/...` 等可被找到。
-fn directory_containing_config_file(config_path: &str) -> PathBuf {
-    let p = Path::new(config_path);
-    match p.parent() {
-        None => std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-        Some(parent) if parent.as_os_str().is_empty() => {
-            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-        }
-        Some(parent) => parent.to_path_buf(),
-    }
-}
+pub(super) use super::user_config_layers::merge_user_config_layers;
