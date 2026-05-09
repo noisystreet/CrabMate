@@ -23,6 +23,23 @@ pub(crate) use crate::conversation_store::CONVERSATION_ID_MAX_LEN;
 
 const CONVERSATION_STORE_TTL: Duration = Duration::from_secs(CONVERSATION_STORE_TTL_SECS);
 
+/// Web **`POST /chat/stream`** 携带 `approval_session_id` 时注册的 **`POST /chat/approval`** 投递通道；带创建时刻以便惰性淘汰陈旧条目。
+pub(crate) struct ApprovalSessionSlot {
+    pub(crate) tx: mpsc::Sender<CommandApprovalDecision>,
+    pub(crate) created_at: std::time::Instant,
+}
+
+/// 未完成审批决策的会话在内存中的保留时长（与 worker 结束时 `remove` 互补）。
+pub(crate) const APPROVAL_SESSION_TTL: Duration = Duration::from_secs(3600);
+
+pub(crate) fn purge_expired_approval_sessions(
+    map: &mut HashMap<String, ApprovalSessionSlot>,
+    ttl: Duration,
+) {
+    let now = std::time::Instant::now();
+    map.retain(|_, slot| now.duration_since(slot.created_at) <= ttl);
+}
+
 #[derive(Clone)]
 pub(crate) struct MemoryConversationEntry {
     messages: Vec<Message>,
@@ -71,8 +88,7 @@ pub(crate) struct AppStateConversationRuntime {
 /// 审批表、任务侧栏、SSE hub、异步作业等 Web 辅助状态。
 #[derive(Clone)]
 pub(crate) struct AppStateWebAux {
-    pub(crate) approval_sessions:
-        Arc<tokio::sync::RwLock<HashMap<String, mpsc::Sender<CommandApprovalDecision>>>>,
+    pub(crate) approval_sessions: Arc<tokio::sync::RwLock<HashMap<String, ApprovalSessionSlot>>>,
     pub(crate) long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     pub(crate) llm_models_health_cache:
         Arc<std::sync::Mutex<Option<crate::health::CachedLlmModelsHealthProbe>>>,

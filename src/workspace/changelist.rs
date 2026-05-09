@@ -131,6 +131,18 @@ fn format_inner(inner: &ChangelistInner, max_total_chars: usize) -> Option<Strin
             .context_radius(3)
             .header(&format!("a/{p}"), &format!("b/{p}"))
             .to_string();
+        const MAX_UNIFIED_BLOCK_CHARS: usize = 6000;
+        let unified = if unified.chars().count() > MAX_UNIFIED_BLOCK_CHARS {
+            format!(
+                "{}…\n（该文件 diff 已截断；请以 read_file 为准）",
+                unified
+                    .chars()
+                    .take(MAX_UNIFIED_BLOCK_CHARS)
+                    .collect::<String>()
+            )
+        } else {
+            unified
+        };
         let block = if header_note.is_empty() {
             format!("#### `{p}`\n```diff\n{unified}\n```\n")
         } else {

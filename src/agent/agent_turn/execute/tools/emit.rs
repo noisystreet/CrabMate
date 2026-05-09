@@ -290,6 +290,13 @@ pub(super) async fn emit_tool_result_sse_and_append(
         tool_summary.clone(),
         envelope_ctx.as_ref(),
     );
+    tool_outcome_recorder.record_tool_execution_trace(
+        name,
+        id,
+        args,
+        parsed_for_timeline.ok,
+        tool_t0.elapsed().as_millis() as u64,
+    );
 
     let content_for_model = if tool_result_envelope_v1 {
         let parsed = parse_legacy_output(name, &result);

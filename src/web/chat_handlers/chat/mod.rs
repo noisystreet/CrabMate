@@ -92,7 +92,7 @@ pub(crate) async fn chat_approval_handler(
     };
     let tx = {
         let guard = state.aux.approval_sessions.read().await;
-        guard.get(&session_id).cloned()
+        guard.get(&session_id).map(|s| s.tx.clone())
     }
     .ok_or((
         StatusCode::NOT_FOUND,

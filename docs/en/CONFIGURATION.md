@@ -163,6 +163,8 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | `CM_LONG_TERM_MEMORY_MAX_ENTRIES` | Max entries. |
 | `CM_LONG_TERM_MEMORY_INJECT_MAX_CHARS` | Max chars injected into model context. |
 
+Injected lines are prefixed with **`[memory #id]`** where **`id`** is the SQLite **`crabmate_long_term_memory`** primary key—align with **`long_term_memory_list`** or debugging.
+
 Expired rows are purged on read/write. Built-in tools **`long_term_remember`**, **`long_term_forget`**, **`long_term_memory_list`** are registered when **`long_term_memory_enabled`** (do not store secrets).
 
 With Web `conversation_store_sqlite_path`, session and memory may share one SQLite; pure in-memory sessions need **`long_term_memory_store_sqlite_path`** for persistence. CLI default: `run_command_working_dir/.crabmate/long_term_memory.db`. If enabled but DB open fails: one **stderr** warning, process continues without injection.

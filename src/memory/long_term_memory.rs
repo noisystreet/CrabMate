@@ -214,7 +214,7 @@ impl LongTermMemoryRuntime {
         };
 
         let Some(body) = Self::format_ltm_injection_body(
-            &picked,
+            picked.as_slice(),
             cfg.long_term_memory.long_term_memory_inject_max_chars,
         ) else {
             return;
@@ -240,8 +240,8 @@ impl LongTermMemoryRuntime {
         cfg: &AgentConfig,
         rows: Vec<MemoryRow>,
         q: &str,
-    ) -> Option<Vec<(f32, String)>> {
-        let mut picked: Vec<(f32, String)> = Vec::new();
+    ) -> Option<Vec<(f32, i64, String)>> {
+        let mut picked: Vec<(f32, i64, String)> = Vec::new();
         match cfg.long_term_memory.long_term_memory_vector_backend {
             LongTermMemoryVectorBackend::Fastembed => {
                 #[cfg(feature = "fastembed")]
@@ -252,7 +252,7 @@ impl LongTermMemoryRuntime {
                             .iter()
                             .take(cfg.long_term_memory.long_term_memory_top_k)
                         {
-                            picked.push((0.0, row.chunk_text.clone()));
+                            picked.push((0.0, row.id, row.chunk_text.clone()));
                         }
                     } else {
                         let q_emb = {
@@ -276,7 +276,7 @@ impl LongTermMemoryRuntime {
                             } else {
                                 0.0
                             };
-                            picked.push((score, row.chunk_text));
+                            picked.push((score, row.id, row.chunk_text));
                         }
                         picked.sort_by(|a, b| {
                             b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
@@ -294,7 +294,7 @@ impl LongTermMemoryRuntime {
                         .iter()
                         .take(cfg.long_term_memory.long_term_memory_top_k)
                     {
-                        picked.push((0.0, row.chunk_text.clone()));
+                        picked.push((0.0, row.id, row.chunk_text.clone()));
                     }
                 }
             }
@@ -311,23 +311,23 @@ impl LongTermMemoryRuntime {
                     .iter()
                     .take(cfg.long_term_memory.long_term_memory_top_k)
                 {
-                    picked.push((0.0, row.chunk_text.clone()));
+                    picked.push((0.0, row.id, row.chunk_text.clone()));
                 }
             }
         }
         Some(picked)
     }
 
-    fn format_ltm_injection_body(picked: &[(f32, String)], budget: usize) -> Option<String> {
+    fn format_ltm_injection_body(picked: &[(f32, i64, String)], budget: usize) -> Option<String> {
         let mut body = String::from(
-            "以下为与当前问题可能相关的历史摘要（来自本会话长期记忆，供参考；若无关请忽略）：\n\n",
+            "以下为与当前问题可能相关的历史摘要（来自本会话长期记忆；条目前缀 `[记忆 #id]` 对应 SQLite `crabmate_long_term_memory.id`，可用 `long_term_memory_list` 核对；若无关请忽略）：\n\n",
         );
         let mut used = 0usize;
-        for (i, (_s, t)) in picked.iter().enumerate() {
+        for (_score, id, t) in picked.iter() {
             if used >= budget {
                 break;
             }
-            let entry = format!("{}. {}\n\n", i + 1, t);
+            let entry = format!("[记忆 #{}] {}\n\n", id, t);
             if used + entry.len() > budget {
                 let remain = budget.saturating_sub(used);
                 if remain > 8 {

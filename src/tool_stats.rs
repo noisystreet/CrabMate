@@ -3,9 +3,12 @@
 //!
 //! 状态存放在 [`ToolOutcomeRecorder`] 中，由 Web/CLI 入口构造并经 [`crate::RunAgentTurnParams`] 与
 //! [`crate::process_handles::ProcessHandles`] 显式传递，**不**使用模块级 `static`。
+//!
+//! 另维护环形 **[`ToolExecutionLogEntry`]**（与模型可见 `role: tool` 正文独立），供调试与未来的回放/统计。
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::config::AgentConfig;
 use crate::tool_result::{NormalizedToolEnvelope, ToolEnvelopeContext, parse_legacy_output};
@@ -17,16 +20,67 @@ struct ToolStatEvent {
     error_code: Option<String>,
 }
 
+/// 单次工具执行摘要（**非**模型上下文；环形缓冲，不落盘）。
+#[derive(Debug, Clone)]
+pub struct ToolExecutionLogEntry {
+    pub seq: u64,
+    pub tool_name: String,
+    pub tool_call_id: String,
+    pub args_preview: String,
+    pub ok: bool,
+    pub wall_ms: u64,
+}
+
+const EXECUTION_LOG_CAP: usize = 512;
+
 /// 与 Web `AppState` / CLI 进程句柄一起持有；多实例测试可各用独立记录器。
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ToolOutcomeRecorder {
     events: Mutex<VecDeque<ToolStatEvent>>,
+    execution_seq: AtomicU64,
+    execution_log: Mutex<VecDeque<ToolExecutionLogEntry>>,
 }
 
 impl ToolOutcomeRecorder {
     pub fn new() -> Self {
         Self {
             events: Mutex::new(VecDeque::new()),
+            execution_seq: AtomicU64::new(0),
+            execution_log: Mutex::new(VecDeque::new()),
+        }
+    }
+
+    /// 进程内环形缓冲的快照（按 `seq` 递增）；用于排障或后续接入诊断接口。
+    #[must_use]
+    pub fn tool_execution_log_snapshot(&self) -> Vec<ToolExecutionLogEntry> {
+        let Ok(q) = self.execution_log.lock() else {
+            return Vec::new();
+        };
+        q.iter().cloned().collect()
+    }
+
+    /// 每次工具结果定稿时写入（与 [`Self::record_tool_outcome`] 同在 emit 路径）。
+    pub(crate) fn record_tool_execution_trace(
+        &self,
+        tool_name: &str,
+        tool_call_id: &str,
+        args: &str,
+        ok: bool,
+        wall_ms: u64,
+    ) {
+        let seq = self.execution_seq.fetch_add(1, Ordering::Relaxed);
+        let args_preview = crate::redact::preview_chars(args, 800);
+        let mut q = self.execution_log.lock().unwrap_or_else(|e| e.into_inner());
+        q.push_back(ToolExecutionLogEntry {
+            seq,
+            tool_name: tool_name.to_string(),
+            tool_call_id: tool_call_id.to_string(),
+            args_preview,
+            ok,
+            wall_ms,
+        });
+        while q.len() > EXECUTION_LOG_CAP {
+            q.pop_front();
         }
     }
 
@@ -232,5 +286,18 @@ mod tests {
         let out = rec.augment_system_prompt("S", &c);
         assert!(out.contains("run_command"));
         assert!(out.contains("失败"));
+    }
+
+    #[test]
+    fn execution_log_records_sequence() {
+        let rec = ToolOutcomeRecorder::new();
+        rec.record_tool_execution_trace("read_file", "tc1", r#"{"path":"README.md"}"#, true, 42);
+        let v = rec.tool_execution_log_snapshot();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].seq, 0);
+        assert_eq!(v[0].tool_name, "read_file");
+        assert_eq!(v[0].tool_call_id, "tc1");
+        assert!(v[0].ok);
+        assert_eq!(v[0].wall_ms, 42);
     }
 }

@@ -54,9 +54,13 @@ mod llm_seed_tests {
 
 mod chat_api;
 mod message;
+mod message_lineage;
 
 pub use chat_api::*;
 pub use message::*;
+// 供宿主/调试引用 [`message_lineage`]；库内尚未全覆盖调用点，`cargo check` 下会呈现未使用。
+#[allow(unused_imports)]
+pub use message_lineage::{ContextInjectionKind, MessageLineage, message_lineage};
 #[cfg(test)]
 mod api_messages_strip_tests {
     use super::*;
@@ -568,5 +572,19 @@ mod sanitize_tool_call_arguments_tests {
         let out = sanitize_tool_call_arguments_for_openai_compat(raw);
         let v: serde_json::Value = serde_json::from_str(&out).expect("sanitized must parse");
         assert_eq!(v["code"], "partial");
+    }
+}
+
+#[cfg(test)]
+mod message_lineage_pub_smoke {
+    use crate::types::Message;
+    use crate::types::message_lineage::{MessageLineage, message_lineage};
+
+    #[test]
+    fn pub_exports_resolve_for_embedding_hosts() {
+        assert!(matches!(
+            message_lineage(&Message::user_only("x")),
+            MessageLineage::UserNatural
+        ));
     }
 }

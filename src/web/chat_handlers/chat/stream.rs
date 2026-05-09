@@ -22,7 +22,9 @@ use crate::web::http_types::chat::{ApiError, ChatRequestBody};
 
 use crate::clarification_questionnaire::merge_user_text_with_clarification_answers;
 use crate::redact;
-use crate::web::app_state::AppState;
+use crate::web::app_state::{
+    APPROVAL_SESSION_TTL, AppState, ApprovalSessionSlot, purge_expired_approval_sessions,
+};
 use crate::web::audit;
 
 use super::super::parse::{ensure_bearer_api_key_for_chat, normalize_approval_session_id};
@@ -203,12 +205,15 @@ pub(crate) async fn chat_stream_handler(
     let mut web_approval_session = None;
     if let Some(session_id) = approval_session_id.as_ref() {
         let (approval_tx, approval_rx) = mpsc::channel::<CommandApprovalDecision>(8);
-        state
-            .aux
-            .approval_sessions
-            .write()
-            .await
-            .insert(session_id.clone(), approval_tx);
+        let mut guard = state.aux.approval_sessions.write().await;
+        purge_expired_approval_sessions(&mut guard, APPROVAL_SESSION_TTL);
+        guard.insert(
+            session_id.clone(),
+            ApprovalSessionSlot {
+                tx: approval_tx,
+                created_at: std::time::Instant::now(),
+            },
+        );
         web_approval_session = Some(chat_job_queue::WebApprovalSession {
             session_id: session_id.clone(),
             approval_rx,
