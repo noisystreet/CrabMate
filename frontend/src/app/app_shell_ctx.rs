@@ -77,6 +77,38 @@ pub struct SettingsModalSignals {
     pub readonly_tool_ttl_cache_follow_server: RwSignal<bool>,
 }
 
+impl SettingsModalSignals {
+    /// 与 [`SettingsPageFormSignals::from_app_signals`] 同源 LLM / 外观草稿，另附弹层开关。
+    #[must_use]
+    pub fn from_app_signals(app: &AppSignals) -> Self {
+        let form = SettingsPageFormSignals::from_app_signals(app);
+        Self {
+            settings_modal: app.modal.settings_modal,
+            locale: form.locale,
+            theme: form.theme,
+            bg_decor: form.bg_decor,
+            llm_api_base_draft: form.llm_api_base_draft,
+            llm_api_base_preset_select: form.llm_api_base_preset_select,
+            llm_model_draft: form.llm_model_draft,
+            llm_temperature_draft: form.llm_temperature_draft,
+            llm_context_tokens_draft: form.llm_context_tokens_draft,
+            llm_thinking_mode_draft: form.llm_thinking_mode_draft,
+            llm_api_key_draft: form.llm_api_key_draft,
+            llm_has_saved_key: form.llm_has_saved_key,
+            llm_settings_feedback: form.llm_settings_feedback,
+            executor_llm_api_base_draft: form.executor_llm_api_base_draft,
+            executor_llm_api_base_preset_select: form.executor_llm_api_base_preset_select,
+            executor_llm_model_draft: form.executor_llm_model_draft,
+            executor_llm_api_key_draft: form.executor_llm_api_key_draft,
+            executor_llm_has_saved_key: form.executor_llm_has_saved_key,
+            executor_llm_settings_feedback: form.executor_llm_settings_feedback,
+            execution_mode_draft: form.execution_mode_draft,
+            client_llm_storage_tick: form.client_llm_storage_tick,
+            readonly_tool_ttl_cache_follow_server: form.readonly_tool_ttl_cache_follow_server,
+        }
+    }
+}
+
 /// 会话列表模态所需句柄（阶段 B：避免向 `session_list_modal_view` 传递整份 [`AppShellCtx`]）。
 #[derive(Clone)]
 pub struct SessionListModalSignals {
@@ -85,6 +117,19 @@ pub struct SessionListModalSignals {
     pub chat: ChatSessionSignals,
     pub draft: RwSignal<String>,
     pub apply_assistant_display_filters: RwSignal<bool>,
+}
+
+impl SessionListModalSignals {
+    #[must_use]
+    pub fn from_app_signals(app: &AppSignals) -> Self {
+        Self {
+            session_modal: app.modal.session_modal,
+            locale: app.shell_ui.locale,
+            chat: app.chat,
+            draft: app.chat_composer.draft,
+            apply_assistant_display_filters: app.shell_ui.apply_assistant_display_filters,
+        }
+    }
 }
 
 /// 底栏状态条所需句柄（阶段 B：避免向 `status_bar_footer_view` 传递整份 [`AppShellCtx`]）。
@@ -216,13 +261,7 @@ impl AppShellCtx {
     }
 
     pub fn session_list_modal_signals(&self) -> SessionListModalSignals {
-        SessionListModalSignals {
-            session_modal: self.signals.modal.session_modal,
-            locale: self.signals.shell_ui.locale,
-            chat: self.signals.chat,
-            draft: self.signals.chat_composer.draft,
-            apply_assistant_display_filters: self.signals.shell_ui.apply_assistant_display_filters,
-        }
+        SessionListModalSignals::from_app_signals(&self.signals)
     }
 
     pub fn status_bar_footer_signals(&self) -> StatusBarFooterSignals {
@@ -241,39 +280,7 @@ impl AppShellCtx {
     }
 
     pub fn settings_modal_signals(&self) -> SettingsModalSignals {
-        SettingsModalSignals {
-            settings_modal: self.signals.modal.settings_modal,
-            locale: self.signals.shell_ui.locale,
-            theme: self.signals.shell_ui.theme,
-            bg_decor: self.signals.shell_ui.bg_decor,
-            llm_api_base_draft: self.signals.llm_settings.llm_api_base_draft,
-            llm_api_base_preset_select: self.signals.llm_settings.llm_api_base_preset_select,
-            llm_model_draft: self.signals.llm_settings.llm_model_draft,
-            llm_temperature_draft: self.signals.llm_settings.llm_temperature_draft,
-            llm_context_tokens_draft: self.signals.llm_settings.llm_context_tokens_draft,
-            llm_thinking_mode_draft: self.signals.llm_settings.llm_thinking_mode_draft,
-            llm_api_key_draft: self.signals.llm_settings.llm_api_key_draft,
-            llm_has_saved_key: self.signals.llm_settings.llm_has_saved_key,
-            llm_settings_feedback: self.signals.llm_settings.llm_settings_feedback,
-            executor_llm_api_base_draft: self.signals.llm_settings.executor_llm_api_base_draft,
-            executor_llm_api_base_preset_select: self
-                .signals
-                .llm_settings
-                .executor_llm_api_base_preset_select,
-            executor_llm_model_draft: self.signals.llm_settings.executor_llm_model_draft,
-            executor_llm_api_key_draft: self.signals.llm_settings.executor_llm_api_key_draft,
-            executor_llm_has_saved_key: self.signals.llm_settings.executor_llm_has_saved_key,
-            executor_llm_settings_feedback: self
-                .signals
-                .llm_settings
-                .executor_llm_settings_feedback,
-            execution_mode_draft: self.signals.llm_settings.execution_mode_draft,
-            client_llm_storage_tick: self.signals.llm_settings.client_llm_storage_tick,
-            readonly_tool_ttl_cache_follow_server: self
-                .signals
-                .llm_settings
-                .readonly_tool_ttl_cache_follow_server,
-        }
+        SettingsModalSignals::from_app_signals(&self.signals)
     }
 
     pub fn changelist_modal_signals(&self) -> ChangelistModalSignals {
@@ -313,49 +320,11 @@ impl AppShellCtx {
 
     /// 主区会话内查找条（阶段 B：避免在 `App` 中逐项传 `RwSignal`）。
     pub fn chat_find_bar_signals(&self) -> ChatFindBarSignals {
-        ChatFindBarSignals {
-            chat_find_panel_open: self.signals.chat_composer.chat_find_panel_open,
-            locale: self.signals.shell_ui.locale,
-            chat_find_query: self.signals.chat_composer.chat_find_query,
-            chat_find_match_ids: self.signals.chat_composer.chat_find_match_ids,
-            chat_find_cursor: self.signals.chat_composer.chat_find_cursor,
-            auto_scroll_chat: self.signals.chat_composer.auto_scroll_chat,
-        }
+        ChatFindBarSignals::from_app_signals(&self.signals)
     }
 
     /// 设置页表单所需 `RwSignal` 聚合（阶段 B：避免在 `App` 的 `view!` 中重复罗列字段）。
     pub fn settings_page_form_signals(&self) -> SettingsPageFormSignals {
-        SettingsPageFormSignals {
-            locale: self.signals.shell_ui.locale,
-            theme: self.signals.shell_ui.theme,
-            bg_decor: self.signals.shell_ui.bg_decor,
-            llm_api_base_draft: self.signals.llm_settings.llm_api_base_draft,
-            llm_api_base_preset_select: self.signals.llm_settings.llm_api_base_preset_select,
-            llm_model_draft: self.signals.llm_settings.llm_model_draft,
-            llm_temperature_draft: self.signals.llm_settings.llm_temperature_draft,
-            llm_context_tokens_draft: self.signals.llm_settings.llm_context_tokens_draft,
-            llm_thinking_mode_draft: self.signals.llm_settings.llm_thinking_mode_draft,
-            llm_api_key_draft: self.signals.llm_settings.llm_api_key_draft,
-            llm_has_saved_key: self.signals.llm_settings.llm_has_saved_key,
-            llm_settings_feedback: self.signals.llm_settings.llm_settings_feedback,
-            executor_llm_api_base_draft: self.signals.llm_settings.executor_llm_api_base_draft,
-            executor_llm_api_base_preset_select: self
-                .signals
-                .llm_settings
-                .executor_llm_api_base_preset_select,
-            executor_llm_model_draft: self.signals.llm_settings.executor_llm_model_draft,
-            executor_llm_api_key_draft: self.signals.llm_settings.executor_llm_api_key_draft,
-            executor_llm_has_saved_key: self.signals.llm_settings.executor_llm_has_saved_key,
-            executor_llm_settings_feedback: self
-                .signals
-                .llm_settings
-                .executor_llm_settings_feedback,
-            execution_mode_draft: self.signals.llm_settings.execution_mode_draft,
-            client_llm_storage_tick: self.signals.llm_settings.client_llm_storage_tick,
-            readonly_tool_ttl_cache_follow_server: self
-                .signals
-                .llm_settings
-                .readonly_tool_ttl_cache_follow_server,
-        }
+        SettingsPageFormSignals::from_app_signals(&self.signals)
     }
 }

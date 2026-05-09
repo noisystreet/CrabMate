@@ -48,6 +48,40 @@ pub struct SettingsPageFormSignals {
     pub readonly_tool_ttl_cache_follow_server: RwSignal<bool>,
 }
 
+impl SettingsPageFormSignals {
+    /// 从 [`crate::app::app_signals::AppSignals`] 组装 LLM / 外观草稿信号（壳层设置页与弹窗共用）。
+    #[must_use]
+    pub fn from_app_signals(app: &crate::app::app_signals::AppSignals) -> Self {
+        Self {
+            locale: app.shell_ui.locale,
+            theme: app.shell_ui.theme,
+            bg_decor: app.shell_ui.bg_decor,
+            llm_api_base_draft: app.llm_settings.llm_api_base_draft,
+            llm_api_base_preset_select: app.llm_settings.llm_api_base_preset_select,
+            llm_model_draft: app.llm_settings.llm_model_draft,
+            llm_temperature_draft: app.llm_settings.llm_temperature_draft,
+            llm_context_tokens_draft: app.llm_settings.llm_context_tokens_draft,
+            llm_thinking_mode_draft: app.llm_settings.llm_thinking_mode_draft,
+            llm_api_key_draft: app.llm_settings.llm_api_key_draft,
+            llm_has_saved_key: app.llm_settings.llm_has_saved_key,
+            llm_settings_feedback: app.llm_settings.llm_settings_feedback,
+            executor_llm_api_base_draft: app.llm_settings.executor_llm_api_base_draft,
+            executor_llm_api_base_preset_select: app
+                .llm_settings
+                .executor_llm_api_base_preset_select,
+            executor_llm_model_draft: app.llm_settings.executor_llm_model_draft,
+            executor_llm_api_key_draft: app.llm_settings.executor_llm_api_key_draft,
+            executor_llm_has_saved_key: app.llm_settings.executor_llm_has_saved_key,
+            executor_llm_settings_feedback: app.llm_settings.executor_llm_settings_feedback,
+            execution_mode_draft: app.llm_settings.execution_mode_draft,
+            client_llm_storage_tick: app.llm_settings.client_llm_storage_tick,
+            readonly_tool_ttl_cache_follow_server: app
+                .llm_settings
+                .readonly_tool_ttl_cache_follow_server,
+        }
+    }
+}
+
 /// 设置页全屏视图入参（阶段 B：`App` 单行传入）。
 #[derive(Clone, Copy)]
 pub struct SettingsPageViewInput {

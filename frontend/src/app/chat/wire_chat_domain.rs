@@ -40,7 +40,7 @@ impl WireChatDomainEffectsArgs {
         stream_shell: ComposerStreamShell,
     ) -> Self {
         Self {
-            domain: ChatDomainWiringSignals::from_app_signals(app),
+            domain: app.chat_domain_wiring(),
             stream_shell,
         }
     }

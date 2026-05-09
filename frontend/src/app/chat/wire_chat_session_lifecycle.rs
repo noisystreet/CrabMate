@@ -4,15 +4,14 @@
 
 use leptos::prelude::*;
 
-use crate::chat_session_state::ChatSessionSignals;
-use crate::i18n::Locale;
-use crate::storage::ChatSession;
-
 use crate::app::app_shell_effects::{
     wire_initial_sessions_from_storage, wire_persist_chat_sessions,
     wire_web_ui_config_once_after_init,
 };
 use crate::app::session_hydrate::wire_session_hydration;
+use crate::chat_session_state::ChatSessionSignals;
+use crate::i18n::Locale;
+use crate::storage::ChatSession;
 
 /// `wire_chat_session_lifecycle_effects` 的输入（聚合壳级 RwSignal，避免长参数列表）。
 pub(crate) struct WireChatSessionLifecycleEffectsArgs {
@@ -26,6 +25,25 @@ pub(crate) struct WireChatSessionLifecycleEffectsArgs {
     pub apply_assistant_display_filters: RwSignal<bool>,
     pub chat_session: ChatSessionSignals,
     pub selected_agent_role: RwSignal<Option<String>>,
+}
+
+impl WireChatSessionLifecycleEffectsArgs {
+    /// 从 [`crate::app::app_signals::AppSignals`] 单点组装；`sessions` / `active_id` 与 [`ChatSessionSignals`] 同源字段一致。
+    #[must_use]
+    pub fn from_app_signals(app: &crate::app::app_signals::AppSignals) -> Self {
+        Self {
+            initialized: app.initialized,
+            sessions: app.chat.sessions,
+            active_id: app.chat.active_id,
+            draft: app.chat_composer.draft,
+            locale: app.shell_ui.locale,
+            web_ui_config_loaded: app.shell_ui.web_ui_config_loaded,
+            markdown_render: app.shell_ui.markdown_render,
+            apply_assistant_display_filters: app.shell_ui.apply_assistant_display_filters,
+            chat_session: app.chat,
+            selected_agent_role: app.llm_settings.selected_agent_role,
+        }
+    }
 }
 
 /// 注册与「会话生命周期 + 展示偏好」相关的壳级 `wire_*`（不含纯主题/侧栏宽度等）。

@@ -406,6 +406,13 @@ pub struct AppSignals {
 }
 
 impl AppSignals {
+    /// 聊天域接线用信号切片（[`ChatDomainWiringSignals`]）；含一份 [`ChatComposerSignals`] 克隆，**仅**宜在初始化等低频路径调用。
+    #[inline]
+    #[must_use]
+    pub fn chat_domain_wiring(&self) -> ChatDomainWiringSignals {
+        ChatDomainWiringSignals::from_app_signals(self)
+    }
+
     pub fn new() -> Self {
         let shell_ui = ShellUISignals::new();
         let chat_composer = ChatComposerSignals::new();

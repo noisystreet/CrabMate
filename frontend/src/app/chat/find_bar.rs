@@ -17,6 +17,21 @@ pub struct ChatFindBarSignals {
     pub auto_scroll_chat: RwSignal<bool>,
 }
 
+impl ChatFindBarSignals {
+    /// 从 [`crate::app::app_signals::AppSignals`] 组装查找条句柄。
+    #[must_use]
+    pub fn from_app_signals(app: &crate::app::app_signals::AppSignals) -> Self {
+        Self {
+            chat_find_panel_open: app.chat_composer.chat_find_panel_open,
+            locale: app.shell_ui.locale,
+            chat_find_query: app.chat_composer.chat_find_query,
+            chat_find_match_ids: app.chat_composer.chat_find_match_ids,
+            chat_find_cursor: app.chat_composer.chat_find_cursor,
+            auto_scroll_chat: app.chat_composer.auto_scroll_chat,
+        }
+    }
+}
+
 enum ChatFindNavDir {
     Prev,
     Next,
