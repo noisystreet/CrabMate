@@ -13,7 +13,7 @@ use crate::AppState;
 use crate::text_encoding::{decode_bytes_strict, parse_text_encoding_name};
 use crate::web::http_types::validation::{
     clamp_workspace_search_max_results, validate_workspace_file_write_request,
-    workspace_search_pattern_or_error,
+    validate_workspace_query_encoding_optional, workspace_search_pattern_or_error,
 };
 use crate::web::http_types::workspace::{
     WorkspaceEntry, WorkspaceFileDeleteResponse, WorkspaceFileQuery, WorkspaceFileReadResponse,
@@ -52,6 +52,12 @@ async fn workspace_file_read_resolve(
     ),
     Json<WorkspaceFileReadResponse>,
 > {
+    if let Err(e) = validate_workspace_query_encoding_optional(query.encoding.as_deref()) {
+        return Err(Json(WorkspaceFileReadResponse {
+            content: String::new(),
+            error: Some(e),
+        }));
+    }
     let base_canonical = match effective_workspace_base_canonical(state).await {
         Ok(p) => p,
         Err(e) => {
@@ -68,15 +74,16 @@ async fn workspace_file_read_resolve(
             error: Some("path 不能为空".to_string()),
         }));
     }
-    let canonical = match resolve_web_workspace_read_path(&base_canonical, Some(path)) {
-        Ok(p) => p,
-        Err(e) => {
-            return Err(Json(WorkspaceFileReadResponse {
-                content: String::new(),
-                error: Some(e.user_message()),
-            }));
-        }
-    };
+    let canonical =
+        match resolve_web_workspace_read_path(&base_canonical, Some(query.path.as_str())) {
+            Ok(p) => p,
+            Err(e) => {
+                return Err(Json(WorkspaceFileReadResponse {
+                    content: String::new(),
+                    error: Some(e.user_message()),
+                }));
+            }
+        };
     let enc_name = match parse_text_encoding_name(query.encoding.as_deref()) {
         Ok(n) => n,
         Err(msg) => {
@@ -307,25 +314,26 @@ pub async fn workspace_search_handler(
             });
         }
     };
-    let rel_path = match body
-        .path
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
+    let rel_path = match body.path.as_deref() {
         None => None,
-        Some(p) => match resolve_web_workspace_read_path(&base_canonical, Some(p)) {
-            Ok(canonical) => match canonical.strip_prefix(&base_canonical) {
-                Ok(r) => Some(r.to_string_lossy().to_string()),
-                Err(_) => None,
-            },
-            Err(e) => {
-                return Json(WorkspaceSearchResponse {
-                    output: String::new(),
-                    error: Some(e.user_message()),
-                });
+        Some(raw) => {
+            if raw.trim().is_empty() {
+                None
+            } else {
+                match resolve_web_workspace_read_path(&base_canonical, Some(raw)) {
+                    Ok(canonical) => match canonical.strip_prefix(&base_canonical) {
+                        Ok(r) => Some(r.to_string_lossy().to_string()),
+                        Err(_) => None,
+                    },
+                    Err(e) => {
+                        return Json(WorkspaceSearchResponse {
+                            output: String::new(),
+                            error: Some(e.user_message()),
+                        });
+                    }
+                }
             }
-        },
+        }
     };
     let mut args = serde_json::json!({ "pattern": pattern });
     if let Some(p) = rel_path {
@@ -491,20 +499,24 @@ pub async fn workspace_file_delete_handler(
             });
         }
     };
+    if let Err(e) = validate_workspace_query_encoding_optional(query.encoding.as_deref()) {
+        return Json(WorkspaceFileDeleteResponse { error: Some(e) });
+    }
     let path = query.path.trim();
     if path.is_empty() {
         return Json(WorkspaceFileDeleteResponse {
             error: Some("path 不能为空".to_string()),
         });
     }
-    let canonical = match resolve_web_workspace_read_path(&base_canonical, Some(path)) {
-        Ok(p) => p,
-        Err(e) => {
-            return Json(WorkspaceFileDeleteResponse {
-                error: Some(e.user_message()),
-            });
-        }
-    };
+    let canonical =
+        match resolve_web_workspace_read_path(&base_canonical, Some(query.path.as_str())) {
+            Ok(p) => p,
+            Err(e) => {
+                return Json(WorkspaceFileDeleteResponse {
+                    error: Some(e.user_message()),
+                });
+            }
+        };
 
     #[cfg(unix)]
     {

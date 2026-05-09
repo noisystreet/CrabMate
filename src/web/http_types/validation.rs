@@ -1,14 +1,134 @@
 //! HTTP JSON 语义上限（字段长度、条数），与传输层请求体大小限制配合。
 //!
-//! 根级 [`super::chat::ChatRequestBody`] 未使用 `deny_unknown_fields`：异步接口
-//! [`super::chat::ChatAsyncRequestBody`] 使用 `flatten` 与同层 `webhook_*` 字段共存，
-//! serde 无法在根对象上稳定拒绝未知键；未知嵌套键由子结构体的 `deny_unknown_fields` 拦截。
+//! [`super::chat::ChatRequestBody`] / [`super::chat::ChatAsyncRequestBody`] 顶层键白名单见
+//! [`CHAT_REQUEST_BODY_ALLOWED_KEYS`]（自定义 `Deserialize`）；嵌套对象仍由对应结构的
+//! `deny_unknown_fields` 拦截。
 
 use axum::Json;
 use axum::http::StatusCode;
+use serde_json::Value;
 
 use super::chat::{ApiError, ChatRequestBody};
 use super::workspace::{WorkspaceFileWriteBody, WorkspaceSearchBody};
+
+/// `POST /chat*`、流式请求 JSON 顶层允许的键（字母序，供二分查找）。
+pub(crate) const CHAT_REQUEST_BODY_ALLOWED_KEYS: &[&str] = &[
+    "agent_role",
+    "approval_session_id",
+    "client_llm",
+    "client_sse_protocol",
+    "clarify_questionnaire_answers",
+    "conversation_id",
+    "execution_mode",
+    "executor_llm",
+    "image_urls",
+    "message",
+    "readonly_tool_ttl_cache_secs",
+    "seed",
+    "seed_policy",
+    "stream_resume",
+    "temperature",
+];
+
+/// `POST /chat/async` 除对话字段外允许的顶层键。
+pub(crate) const CHAT_ASYNC_EXTRA_KEYS: &[&str] = &["webhook_secret", "webhook_url"];
+
+/// `clarify_questionnaire_answers.answers` JSON 预算（防畸形嵌套占内存）。
+const CLARIFY_ANSWERS_JSON_MAX_DEPTH: usize = 24;
+const CLARIFY_ANSWERS_JSON_MAX_NODES: usize = 8192;
+
+/// `encoding` 查询参数字节上限。
+pub(crate) const WORKSPACE_QUERY_ENCODING_MAX_BYTES: usize = 64;
+
+pub(crate) fn reject_unknown_chat_body_keys(
+    obj: &serde_json::Map<String, Value>,
+) -> Result<(), String> {
+    for k in obj.keys() {
+        if CHAT_REQUEST_BODY_ALLOWED_KEYS
+            .binary_search(&k.as_str())
+            .is_err()
+        {
+            return Err(format!("未知的请求字段: {k}"));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn reject_unknown_async_chat_body_keys(
+    obj: &serde_json::Map<String, Value>,
+) -> Result<(), String> {
+    for k in obj.keys() {
+        if CHAT_REQUEST_BODY_ALLOWED_KEYS
+            .binary_search(&k.as_str())
+            .is_ok()
+        {
+            continue;
+        }
+        if CHAT_ASYNC_EXTRA_KEYS.binary_search(&k.as_str()).is_ok() {
+            continue;
+        }
+        return Err(format!("未知的请求字段: {k}"));
+    }
+    Ok(())
+}
+
+fn clarify_answers_walk(
+    v: &Value,
+    depth: usize,
+    max_depth: usize,
+    nodes: &mut usize,
+    max_nodes: usize,
+) -> Result<(), String> {
+    if depth > max_depth {
+        return Err(format!(
+            "clarify_questionnaire_answers.answers 嵌套过深（上限 {max_depth}）"
+        ));
+    }
+    *nodes += 1;
+    if *nodes > max_nodes {
+        return Err(format!(
+            "clarify_questionnaire_answers.answers 过大（节点上限 {max_nodes}）"
+        ));
+    }
+    match v {
+        Value::Array(a) => {
+            for x in a {
+                clarify_answers_walk(x, depth + 1, max_depth, nodes, max_nodes)?;
+            }
+        }
+        Value::Object(o) => {
+            for (_, x) in o {
+                clarify_answers_walk(x, depth + 1, max_depth, nodes, max_nodes)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_clarify_answers_json_budget(v: &Value) -> Result<(), String> {
+    let mut nodes = 0usize;
+    clarify_answers_walk(
+        v,
+        0,
+        CLARIFY_ANSWERS_JSON_MAX_DEPTH,
+        &mut nodes,
+        CLARIFY_ANSWERS_JSON_MAX_NODES,
+    )
+}
+
+pub(crate) fn validate_workspace_query_encoding_optional(raw: Option<&str>) -> Result<(), String> {
+    let Some(s) = raw else {
+        return Ok(());
+    };
+    if s.len() > WORKSPACE_QUERY_ENCODING_MAX_BYTES {
+        return Err(format!(
+            "encoding 过长（上限 {} 字节）",
+            WORKSPACE_QUERY_ENCODING_MAX_BYTES
+        ));
+    }
+    Ok(())
+}
 
 /// 单条用户 `message` 字符串的字节上限（UTF-8）。
 pub(crate) const CHAT_USER_MESSAGE_MAX_BYTES: usize = 16 * 1024 * 1024;
@@ -36,16 +156,22 @@ pub(crate) fn validate_chat_request_payload_limits(
             )),
         ));
     }
-    if let Some(ref c) = body.clarify_questionnaire_answers
-        && c.questionnaire_id.len() > CLARIFY_QUESTIONNAIRE_ID_MAX_BYTES
-    {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(ApiError::new(
-                "INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS",
-                "questionnaire_id 过长".to_string(),
-            )),
-        ));
+    if let Some(ref c) = body.clarify_questionnaire_answers {
+        if c.questionnaire_id.len() > CLARIFY_QUESTIONNAIRE_ID_MAX_BYTES {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ApiError::new(
+                    "INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS",
+                    "questionnaire_id 过长".to_string(),
+                )),
+            ));
+        }
+        validate_clarify_answers_json_budget(&c.answers).map_err(|msg| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError::new("INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS", msg)),
+            )
+        })?;
     }
     Ok(())
 }
@@ -95,7 +221,45 @@ pub(crate) fn validate_workspace_file_write_payload(content: &[u8]) -> Result<()
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use serde_json::{Map, Value, json};
+
+    use super::super::chat::ChatRequestBody;
+    use super::super::workspace::WorkspaceSearchBody;
+    use super::{
+        WORKSPACE_SEARCH_MAX_RESULTS_CAP, WORKSPACE_SEARCH_PATTERN_MAX_BYTES,
+        clamp_workspace_search_max_results, reject_unknown_chat_body_keys,
+        validate_clarify_answers_json_budget, validate_workspace_query_encoding_optional,
+        validate_workspace_search_pattern, workspace_search_pattern_or_error,
+    };
+
+    #[test]
+    fn deserialize_chat_request_body_rejects_unknown_top_level_key() {
+        let j = r#"{"message":"hi","not_a_valid_field":1}"#;
+        assert!(serde_json::from_str::<ChatRequestBody>(j).is_err());
+    }
+
+    #[test]
+    fn reject_unknown_chat_body_keys_errors_on_extra() {
+        let mut m = Map::new();
+        m.insert("message".into(), json!("x"));
+        m.insert("typo_field".into(), Value::Null);
+        assert!(reject_unknown_chat_body_keys(&m).is_err());
+    }
+
+    #[test]
+    fn clarify_answers_budget_rejects_deep_nesting() {
+        let mut inner = json!(true);
+        for _ in 0..40 {
+            inner = json!([inner]);
+        }
+        assert!(validate_clarify_answers_json_budget(&inner).is_err());
+    }
+
+    #[test]
+    fn workspace_query_encoding_optional_rejects_long() {
+        let s = "x".repeat(super::WORKSPACE_QUERY_ENCODING_MAX_BYTES + 1);
+        assert!(validate_workspace_query_encoding_optional(Some(&s)).is_err());
+    }
 
     #[test]
     fn clamp_workspace_search_max_results_bounds() {
