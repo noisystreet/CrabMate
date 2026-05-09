@@ -28,7 +28,9 @@ use crate::web::audit;
 use crate::web::http_types::chat::{ApiError, ChatRequestBody};
 use crate::web::http_types::validation::validate_chat_request_payload_limits;
 
-use super::turn_build::{build_messages_for_turn, reject_if_client_sse_protocol_invalid};
+use super::turn_build::{
+    bad_request, build_messages_for_turn, reject_if_client_sse_protocol_invalid,
+};
 
 /// 与 `chat_handler` 共用的 JSON 入队：解析 `@`、组装首轮消息、选定工作目录。
 pub(crate) struct PreparedJsonChatEnqueue {
@@ -50,30 +52,16 @@ pub(crate) async fn prepare_json_chat_enqueue(
     let eff_ws_raw = state.effective_workspace_path().await;
     let eff_ws = eff_ws_raw.trim().to_string();
     if eff_ws.is_empty() && user_trim.contains('@') {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "WORKSPACE_NOT_SET",
-                message: "未设置工作区：无法在消息中使用 `@` 引用工作区内文件。请先在侧栏工作区面板选择或提交目录。"
-                    .to_string(),
-                reason_code: None,
-            }),
+        return Err(bad_request(
+            "WORKSPACE_NOT_SET",
+            "未设置工作区：无法在消息中使用 `@` 引用工作区内文件。请先在侧栏工作区面板选择或提交目录。",
         ));
     }
     let work_dir_for_expand = std::path::PathBuf::from(eff_ws_raw.clone());
     let msg = {
         let cfg = state.http.cfg.read().await;
         expand_at_file_refs_in_user_message(user_trim, work_dir_for_expand.as_path(), &cfg)
-            .map_err(|e| {
-                (
-                    StatusCode::BAD_REQUEST,
-                    Json(ApiError {
-                        code: "INVALID_AT_FILE_REF",
-                        message: e,
-                        reason_code: None,
-                    }),
-                )
-            })?
+            .map_err(|e| bad_request("INVALID_AT_FILE_REF", e))?
     };
     let msg = merge_user_text_with_clarification_answers(msg, clarify);
     let turn_seed = build_messages_for_turn(
@@ -84,16 +72,7 @@ pub(crate) async fn prepare_json_chat_enqueue(
         agent_role.as_deref(),
     )
     .await
-    .map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "INVALID_AGENT_ROLE",
-                message: e,
-                reason_code: None,
-            }),
-        )
-    })?;
+    .map_err(|e| bad_request("INVALID_AGENT_ROLE", e))?;
     let workspace_is_set = state.workspace_is_set().await;
     let work_dir_for_job = if eff_ws.is_empty() {
         let cfg = state.http.cfg.read().await;
@@ -130,131 +109,52 @@ pub(crate) async fn parse_chat_request_for_enqueue(
     body: &ChatRequestBody,
 ) -> Result<ParsedChatRequestForEnqueue, (StatusCode, Json<ApiError>)> {
     validate_chat_request_payload_limits(body)?;
-    let image_urls = normalize_chat_image_urls(&body.image_urls).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "INVALID_IMAGE_URLS",
-                message: e,
-                reason_code: None,
-            }),
-        )
-    })?;
+    let image_urls = normalize_chat_image_urls(&body.image_urls)
+        .map_err(|e| bad_request("INVALID_IMAGE_URLS", e))?;
     let clarify = if let Some(ref c) = body.clarify_questionnaire_answers {
         normalize_clarify_questionnaire_answers_raw(c.questionnaire_id.clone(), c.answers.clone())
-            .map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    code: "INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS",
-                    message: e,
-                    reason_code: None,
-                }),
-            )
-        })?
+            .map_err(|e| bad_request("INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS", e))?
     } else {
         None
     };
     let user_trim = body.message.trim();
     if user_trim.is_empty() && image_urls.is_empty() && clarify.is_none() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "EMPTY_MESSAGE",
-                message: "提问内容不能为空（若仅发图须至少附带一张图片；澄清问卷作答可单独提交）"
-                    .to_string(),
-                reason_code: None,
-            }),
+        return Err(bad_request(
+            "EMPTY_MESSAGE",
+            "提问内容不能为空（若仅发图须至少附带一张图片；澄清问卷作答可单独提交）",
         ));
     }
     reject_if_client_sse_protocol_invalid(body.client_sse_protocol)?;
+    let parsed = parse_chat_request_for_enqueue_tail(state, body, image_urls, clarify, user_trim)?;
+    ensure_bearer_api_key_for_chat(state, &parsed.llm_override).await?;
+    Ok(parsed)
+}
+
+fn parse_chat_request_for_enqueue_tail(
+    state: &Arc<AppState>,
+    body: &ChatRequestBody,
+    image_urls: Vec<String>,
+    clarify: Option<ClarifyAnswersNormalized>,
+    user_trim: &str,
+) -> Result<ParsedChatRequestForEnqueue, (StatusCode, Json<ApiError>)> {
     let conversation_id = normalize_client_conversation_id(body.conversation_id.as_deref())
-        .map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    code: "INVALID_CONVERSATION_ID",
-                    message: e,
-                    reason_code: None,
-                }),
-            )
-        })?
+        .map_err(|e| bad_request("INVALID_CONVERSATION_ID", e))?
         .unwrap_or_else(|| state.next_conversation_id());
-    let agent_role = normalize_agent_role(body.agent_role.as_deref()).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "INVALID_AGENT_ROLE",
-                message: e,
-                reason_code: None,
-            }),
-        )
-    })?;
-    let temperature_override = parse_optional_chat_temperature(body.temperature).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "INVALID_TEMPERATURE",
-                message: e,
-                reason_code: None,
-            }),
-        )
-    })?;
+    let agent_role = normalize_agent_role(body.agent_role.as_deref())
+        .map_err(|e| bad_request("INVALID_AGENT_ROLE", e))?;
+    let temperature_override = parse_optional_chat_temperature(body.temperature)
+        .map_err(|e| bad_request("INVALID_TEMPERATURE", e))?;
     let seed_override = parse_seed_override_from_body(body.seed, body.seed_policy.clone())
-        .map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    code: "INVALID_SEED",
-                    message: e,
-                    reason_code: None,
-                }),
-            )
-        })?;
-    let llm_override = parse_client_llm_override(body.client_llm.clone()).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "INVALID_CLIENT_LLM",
-                message: e,
-                reason_code: None,
-            }),
-        )
-    })?;
-    let executor_llm_override =
-        parse_executor_llm_override(body.executor_llm.clone()).map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    code: "INVALID_EXECUTOR_LLM",
-                    message: e,
-                    reason_code: None,
-                }),
-            )
-        })?;
+        .map_err(|e| bad_request("INVALID_SEED", e))?;
+    let llm_override = parse_client_llm_override(body.client_llm.clone())
+        .map_err(|e| bad_request("INVALID_CLIENT_LLM", e))?;
+    let executor_llm_override = parse_executor_llm_override(body.executor_llm.clone())
+        .map_err(|e| bad_request("INVALID_EXECUTOR_LLM", e))?;
     let execution_mode_override = parse_execution_mode_override(body.execution_mode.clone())
-        .map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    code: "INVALID_EXECUTION_MODE",
-                    message: e,
-                    reason_code: None,
-                }),
-            )
-        })?;
+        .map_err(|e| bad_request("INVALID_EXECUTION_MODE", e))?;
     let readonly_tool_ttl_cache_secs =
-        parse_readonly_tool_ttl_cache_secs(body.readonly_tool_ttl_cache_secs).map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    code: "INVALID_READONLY_TOOL_TTL_CACHE_SECS",
-                    message: e,
-                    reason_code: None,
-                }),
-            )
-        })?;
-    ensure_bearer_api_key_for_chat(state, &llm_override).await?;
+        parse_readonly_tool_ttl_cache_secs(body.readonly_tool_ttl_cache_secs)
+            .map_err(|e| bad_request("INVALID_READONLY_TOOL_TTL_CACHE_SECS", e))?;
     Ok(ParsedChatRequestForEnqueue {
         image_urls,
         clarify,
