@@ -34,6 +34,9 @@ use crate::types::{
     is_long_term_memory_injection, resolved_llm_seed,
 };
 
+/// 分层 Manager / 动态分解器 JSON 输出的 `max_tokens` 下限（与配置中的 `max_tokens` 取较大值）。
+const HIERARCHICAL_MANAGER_MIN_COMPLETION_TOKENS: u32 = 6144;
+
 pub use backend::{
     ChatCompletionsBackend, OPENAI_COMPAT_BACKEND, OpenAiCompatBackend,
     default_chat_completions_backend,
@@ -176,6 +179,8 @@ pub fn no_tools_chat_request_from_messages(
 ///
 /// 当 **`api_base`** 指向 DeepSeek 官方兼容端点时，自动设置 **`response_format: {"type":"json_object"}`**（见 [DeepSeek JSON Output](https://api-docs.deepseek.com/zh-cn/guides/json_mode)）；其它网关行为不变。
 /// 仅以 hostname 判定，避免在 MiniMax 等使用 `deepseek-chat` 模型 ID 时误发不兼容字段。
+///
+/// **输出长度**：分解 JSON（含多条 `sub_goals` 长 `description`）易超过全局默认 `max_tokens`（如 2048），会触发 `finish_reason=length` 导致无法解析。本路径对 **`max_tokens` 设下限**（仍尊重用户配置的更大值）。
 pub fn no_tools_chat_request_for_hierarchical_manager(
     cfg: &AgentConfig,
     messages: &[Message],
@@ -190,6 +195,9 @@ pub fn no_tools_chat_request_for_hierarchical_manager(
         model_override,
         seed_override,
     );
+    req.max_tokens = req
+        .max_tokens
+        .max(HIERARCHICAL_MANAGER_MIN_COMPLETION_TOKENS);
     if vendor::deepseek_json_output_eligible(cfg) {
         req.vendor.response_format = Some(serde_json::json!({ "type": "json_object" }));
         debug!(
@@ -478,5 +486,28 @@ mod tests {
             LlmSeedOverride::FromConfig,
         );
         assert!(req_local.vendor.response_format.is_none());
+    }
+
+    #[test]
+    fn hierarchical_manager_raises_max_tokens_floor_when_global_low() {
+        let mut cfg = load_config(None).expect("default embedded config");
+        cfg.llm_sampling.max_tokens = 2048;
+        let req = super::no_tools_chat_request_for_hierarchical_manager(
+            &cfg,
+            &[Message::user_only("x")],
+            None,
+            None,
+            LlmSeedOverride::FromConfig,
+        );
+        assert_eq!(req.max_tokens, 6144);
+        cfg.llm_sampling.max_tokens = 8192;
+        let req_hi = super::no_tools_chat_request_for_hierarchical_manager(
+            &cfg,
+            &[Message::user_only("x")],
+            None,
+            None,
+            LlmSeedOverride::FromConfig,
+        );
+        assert_eq!(req_hi.max_tokens, 8192);
     }
 }
