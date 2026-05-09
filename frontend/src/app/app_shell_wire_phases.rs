@@ -6,7 +6,7 @@
 //! |------|------|
 //! | 1 | 会话生命周期、首启与水合相关 `Effect`（须最先）。 |
 //! | 2 | 本机偏好持久化、审批条展开跟随、主题/语言/bg DOM、设置打开时 LLM 草稿。 |
-//! | 3 | `Escape` 分层关闭（依赖阶段 2 已挂接的弹层/菜单信号）。 |
+//! | 3 | `Escape` 分层关闭；当前选中会话 **`Delete` / `Shift+Delete`** 删除（依赖阶段 2 已挂接的弹层/菜单信号）。 |
 //! | 4a | 工作区 / 变更集域（依赖 `refresh_workspace`）。 |
 //! | 4b | `/status`、`/tasks` 与侧栏任务面可见时的 `Effect`。 |
 //! | 4c | 工作区路径插入 composer、流式壳、聊天列 `wire_*`（与 4a 共用 `refresh_workspace`）。 |
@@ -18,11 +18,13 @@ use std::sync::Arc;
 use leptos::prelude::*;
 
 use super::app_shell_effects::{
-    ShellEscapeSignals, WireSettingsModalLlmDraftsSignals, wire_approval_expanded_follows_pending,
-    wire_escape_key_layered_dismiss, wire_persist_agent_role, wire_persist_side_panel_view_flags,
-    wire_persist_side_width, wire_persist_sidebar_rail_collapsed, wire_persist_status_bar_visible,
-    wire_settings_modal_llm_drafts_on_open, wire_sync_bg_decor_to_storage_and_dom,
-    wire_sync_locale_html_lang, wire_sync_theme_to_storage_and_dom,
+    SessionDeleteHotkeySignals, ShellEscapeSignals, WireSettingsModalLlmDraftsSignals,
+    wire_approval_expanded_follows_pending, wire_escape_key_layered_dismiss,
+    wire_persist_agent_role, wire_persist_side_panel_view_flags, wire_persist_side_width,
+    wire_persist_sidebar_rail_collapsed, wire_persist_status_bar_visible,
+    wire_session_delete_hotkey, wire_settings_modal_llm_drafts_on_open,
+    wire_sync_bg_decor_to_storage_and_dom, wire_sync_locale_html_lang,
+    wire_sync_theme_to_storage_and_dom,
 };
 use super::app_signals::AppSignals;
 use super::chat::ChatComposerWires;
@@ -82,6 +84,14 @@ pub(super) fn wire_phase3_escape_layered_dismiss(app: &AppSignals) {
         session_modal: app.modal.session_modal,
     };
     wire_escape_key_layered_dismiss(shell_escape);
+    wire_session_delete_hotkey(SessionDeleteHotkeySignals {
+        chat: app.chat,
+        draft: app.chat_composer.draft,
+        locale: app.shell_ui.locale,
+        session_modal: app.modal.session_modal,
+        settings_modal: app.modal.settings_modal,
+        changelist_modal_open: app.modal.changelist_modal_open,
+    });
 }
 
 /// 阶段 4a：工作区 / 变更集（须在 [`make_refresh_workspace_for_shell`] 之后）。

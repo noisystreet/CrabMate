@@ -13,6 +13,7 @@
 mod approval_follow;
 mod escape;
 mod persist_prefs;
+mod session_delete_hotkey;
 mod session_storage;
 mod settings_llm_open;
 mod sync_dom;
@@ -23,6 +24,7 @@ pub use persist_prefs::{
     wire_persist_agent_role, wire_persist_side_panel_view_flags, wire_persist_side_width,
     wire_persist_sidebar_rail_collapsed, wire_persist_status_bar_visible,
 };
+pub use session_delete_hotkey::{SessionDeleteHotkeySignals, wire_session_delete_hotkey};
 pub use session_storage::{
     wire_initial_sessions_from_storage, wire_persist_chat_sessions,
     wire_web_ui_config_once_after_init,

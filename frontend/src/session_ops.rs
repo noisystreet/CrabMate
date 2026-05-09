@@ -519,6 +519,18 @@ pub fn delete_session_after_confirm(
     apply_delete_session(sessions, active_id, draft, session_sync, id, locale);
 }
 
+/// 不经确认框删除会话（状态迁移与 [`delete_session_after_confirm`] 在用户确认后一致）。
+pub fn delete_session_immediate(
+    sessions: RwSignal<Vec<ChatSession>>,
+    active_id: RwSignal<String>,
+    draft: RwSignal<String>,
+    session_sync: RwSignal<crate::session_sync::SessionSyncState>,
+    id: &str,
+    locale: crate::i18n::Locale,
+) {
+    apply_delete_session(sessions, active_id, draft, session_sync, id, locale);
+}
+
 /// 左栏会话右键菜单锚点（`position: fixed` 使用视口坐标）。
 #[derive(Clone)]
 pub struct SessionContextAnchor {

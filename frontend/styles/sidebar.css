@@ -103,6 +103,7 @@
 .workspace-side-card-scroll {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   overflow: auto;
   padding: 10px 10px 8px;
 }
@@ -253,6 +254,7 @@
   margin-bottom: 12px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--border-subtle);
+  min-width: 0;
 }
 
 .workspace-set-label {
@@ -266,14 +268,19 @@
 
 .workspace-set-input-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   align-items: stretch;
   margin-bottom: 8px;
+  min-width: 0;
 }
 
 .workspace-set-input-row .workspace-set-input {
-  flex: 1;
+  /* `width: 100%`（见下）在 flex 行内会变成「至少占满一行」，易把「浏览」挤出栏外；此处收回宽度交给 flex */
+  flex: 1 1 9rem;
   min-width: 0;
+  width: auto;
+  max-width: 100%;
   margin-bottom: 0;
 }
 

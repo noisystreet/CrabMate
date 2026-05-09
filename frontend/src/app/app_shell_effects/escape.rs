@@ -20,7 +20,8 @@ pub struct ShellEscapeSignals {
     pub session_modal: RwSignal<bool>,
 }
 
-fn escape_event_target_is_text_entry(ev: &web_sys::KeyboardEvent) -> bool {
+/// 焦点在可编辑控件上时不应触发全局快捷键（与 [`super::session_delete_hotkey`] 共用）。
+pub(crate) fn keyboard_event_target_is_text_entry(ev: &web_sys::KeyboardEvent) -> bool {
     let Some(t) = ev.target() else {
         return false;
     };
@@ -83,7 +84,7 @@ pub fn wire_escape_key_layered_dismiss(shell: ShellEscapeSignals) {
             if ev.key() != "Escape" {
                 return;
             }
-            if escape_event_target_is_text_entry(&ev) {
+            if keyboard_event_target_is_text_entry(&ev) {
                 return;
             }
             ev.prevent_default();
