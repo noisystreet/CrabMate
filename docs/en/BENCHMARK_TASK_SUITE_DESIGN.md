@@ -70,7 +70,7 @@ Example **tags**: `readonly`, `patch`, `test_runner`, `workflow`, `staged_plan`,
 | **Exported session JSON** (`save-session` / Web) | Full transcript | Mine new tasks; diff regressions |
 | **`tool-replay`** | Deterministic tool replay | Decouple tool reliability from the LLM |
 | **Logs** (`RUST_LOG`, `--log`) | Textual trace | Triage and coarse cost signals |
-| **`GET /status`** | Queue, pipeline counters, `per_active_jobs` | Runtime mirrors; **final `plan_rewrite`** vs **staged patch** counters (see **`docs/en/DEVELOPMENT.md`**) |
+| **`GET /status`** | Queue, pipeline counters, `per_active_jobs` | Runtime mirrors; **final `plan_rewrite`** vs **staged patch** counters (see **`docs/en/PLAN_EXECUTE_VERIFY_ARCHITECTURE.md`** §2.4) |
 | **Optional `thinking_trace`** | Phase/thinking events | Deep tuning (watch size & redaction) |
 
 Suggested aggregates: group by `model` × `tags` × key config (e.g. `staged_plan_feedback_mode`)—success rate, mean rounds, rewrite exhaustion rate, patch-budget exhaustion rate, top `error_code`s.

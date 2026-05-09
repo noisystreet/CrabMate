@@ -133,14 +133,14 @@ cargo tauri build
 
 ### Maintainer QA
 
-- **Cargo features / slim binaries**: defaults **`mcp` + `docker_sandbox` + `fastembed`**; side effects when disabling: **[docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md)**.
+- **Cargo features / slim binaries**: defaults **`mcp` + `docker_sandbox` + `fastembed`**; interaction with **`finalize`** and optional deps: root **`Cargo.toml`** **`[features]`** and the **Lint / Test / Build** table in **`AGENTS.md`**.
 - **fmt / clippy / test, pre-commit, SSE script, E2E**: **[docs/en/TESTING.md](docs/en/TESTING.md)** (includes **`./scripts/check-sse-protocol.sh`**).
 
 ## Documentation index
 
 | Document | Contents | 中文 |
 | --- | --- | --- |
-| [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md) | Architecture, `src/` index, protocols | [zh](docs/开发文档.md) |
+| [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md) | Architecture overview, main modules, data flow | [zh](docs/开发文档.md) |
 | [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md) | Env vars, `CM_*`, Web/TOML | [zh](docs/配置说明.md) |
 | [docs/en/TOOLS.md](docs/en/TOOLS.md) | Built-in tools and examples | [zh](docs/工具说明.md) |
 | [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md) | `/chat/stream` control JSON | [zh](docs/SSE协议.md) |
@@ -187,6 +187,6 @@ Other **`CM_*`** (including **`CM_TUI_CONVERSATION_ID`**, skills, staged plannin
 
 ## Project structure
 
-Module map, **`GET /status`**, and **`src/`** index: [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md).
+Layering and main modules: [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md). **`GET /status`** and debugging: [docs/en/DEBUG.md](docs/en/DEBUG.md).
 
 - **Workspace crates**: `crates/crabmate-sse-protocol` (SSE control-plane contract); **`crates/crabmate-im-bridge`** (optional **IM bridge**: Feishu webhook → **`POST /chat`** → reply). See [docs/design/feishu_bridge_mvp.md](docs/design/feishu_bridge_mvp.md).

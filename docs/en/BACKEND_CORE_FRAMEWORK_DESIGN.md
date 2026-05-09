@@ -2,7 +2,7 @@
 
 # Backend core frameworkization and cross-language embedding: current state and gaps
 
-This document captures a **design analysis** (not an implementation commitment) for evolving CrabMate’s backend core into a reusable framework, and for enabling future hosting from **Python or other languages**. For exact module ownership, use **`docs/en/DEVELOPMENT.md`** as the source of truth.
+This document captures a **design analysis** (not an implementation commitment) for evolving CrabMate’s backend core into a reusable framework, and for enabling future hosting from **Python or other languages**. For current module responsibilities and layering, see **`docs/en/DEVELOPMENT.md`** (architecture overview).
 
 ## 1. Background and goals
 
@@ -76,10 +76,10 @@ This document captures a **design analysis** (not an implementation commitment) 
 
 ## 5. Related docs
 
-- **`docs/en/DEVELOPMENT.md`**: module index, layering, and contract maintenance guidance.
+- **`docs/en/DEVELOPMENT.md`**: high-level module map, layering, and where to update when contracts change.
 - **`.cursor/rules/cli-tui-web-shared-logic.mdc`**: avoid diverging business rules across interfaces.
 - **`docs/en/SSE_PROTOCOL.md`**: streaming contract; any new non-HTTP embedding API should define mapping rules explicitly.
 
 ---
 
-If crate split or new FFI/RPC layers are implemented, update this document and synchronize architecture/module sections in **`docs/en/DEVELOPMENT.md`**.
+If crate split or new FFI/RPC layers are implemented, update this document and keep the architecture sections in **`docs/开发文档.md`** / **`docs/en/DEVELOPMENT.md`** in sync.

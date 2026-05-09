@@ -1,379 +1,123 @@
 **Languages / 语言:** [中文](../开发文档.md) · English (this page)
 
-# Developer guide (architecture and modules)
+# Developer guide (architecture overview)
 
-For **maintainers and contributors**: module responsibilities, key mechanisms, and extension points.  
-End-user features: **`README.md`**; env/config: **`docs/en/CONFIGURATION.md`**; CLI + HTTP: **`docs/en/CLI.md`**; `chat` exit codes and `--output json`: **`docs/en/CLI_CONTRACT.md`** (cross-ref **`docs/en/SSE_PROTOCOL.md`**). Testing commands: **`docs/en/TESTING.md`** (Chinese **`docs/测试指南.md`**).
+For **contributors and maintainers**: **major modules and data flow** in CrabMate; **no** per-file source tree listing. End-user usage: **`README.md`**; configuration and environment variables: **`docs/en/CONFIGURATION.md`**; CLI and HTTP routes: **`docs/en/CLI.md`**; SSE contract: **`docs/en/SSE_PROTOCOL.md`**; built-in tools: **`docs/en/TOOLS.md`**.
 
-## TODOLIST and documentation conventions
+## Documentation and collaboration (summary)
 
-- **`docs/待办清单.md`**: **Open items only**; global P0–P5 plus per-module sections. **Delete** a line when done (no permanent `[x]`); drop empty section headers. History lives in Git.
-- **User-visible changes** (new CLI flags, HTTP routes, config keys, tool names, Web/CLI behavior): update **`README.md`** and/or this file; **built-in tools** live in **`docs/en/TOOLS.md`**. Pure refactors: `DEVELOPMENT` and/or comments may suffice.
-- **Cursor rules**: `.cursor/rules/todolist-and-documentation.mdc`; architecture/module moves: `.cursor/rules/architecture-docs-sync.mdc` (keep § Architecture + module index + Mermaid in sync). Web UI (Leptos): `frontend.mdc`; tools: `tools-registry.mdc`; SSE/chat: `api-sse-chat-protocol.mdc`; security surfaces: `security-sensitive-surface.mdc`; deps/licenses: `dependencies-licenses.mdc`.
-- **PR/Issue templates**: `.github/pull_request_template.md`, `.github/ISSUE_TEMPLATE/`.
-- **Pre-commit**: `.pre-commit-config.yaml` (`cargo fmt`, `cargo clippy -D warnings`, `lizard-rust` / `scripts/lizard-rust.sh` for Rust CCN, `fn-param-ratchet` / `scripts/fn-param-ratchet.sh` for parameter-count + `too_many_arguments` allow ratchet, `fn-nloc-ratchet` / `scripts/fn-nloc-ratchet.sh` for function `nloc` + per-file physical line-count ratchets, Conventional Commits on `commit-msg`). Install: `pip install pre-commit lizard && pre-commit install` (add `--hook-type commit-msg` if needed). Agent rule: `.cursor/rules/pre-commit-before-commit.mdc`. Rust tests/error handling: `rust-clippy-and-tests.mdc`, `rust-error-handling.mdc`.
-- **Commits**: Conventional Commits (`.cursor/rules/conventional-commits.mdc`).
-- **Root `crabmate` Cargo features**: **`default = ["mcp", "docker_sandbox", "fastembed"]`** (matches full product builds). **`mcp`** gates **`rmcp`** (MCP client + `mcp serve`); **`docker_sandbox`** gates **`bollard`** (`sync_default_tool_sandbox_mode = docker`); **`fastembed`** gates the **`fastembed`** crate (long-term memory vectors + `codebase_semantic_search` embeddings). Use **`cargo build --no-default-features`** or feature subsets to trim; if **`docker_sandbox`** is off, **`finalize`** rejects **`sync_default_tool_sandbox_mode = docker`**; if **`fastembed`** is off, **`finalize`** coerces **`long_term_memory_vector_backend=fastembed`** to **`disabled`** when long-term memory is enabled, and **`codebase_semantic_search_enabled`** becomes **`false`**. See **`docs/后端核心框架设计.md`**.
-- **Dependency security**: GitHub Actions **`.github/workflows/dependency-security.yml`** runs **`cargo audit`** and **`cargo deny check licenses bans sources`** (see root **`deny.toml`**). Locally: `cargo install cargo-audit cargo-deny`, then the same commands. Full **`cargo deny check`** includes advisory lints that overlap with audit warnings; CI uses the subset above on purpose.
+- **`docs/待办清单.md`** (**`docs/en/TODOLIST.md`**): open items only; remove entries when done; history lives in Git.
+- **User-visible changes**: update **`README.md`**; when protocol or architecture boundaries change, update this guide and **`docs/en/SSE_PROTOCOL.md`** (when relevant).
+- **Architecture-level changes**: if you add/remove top-level modules in **`src/lib.rs`** or change layering, update the **“Main modules”** section and the **Mermaid** diagram, and follow **`.cursor/rules/architecture-docs-sync.mdc`**.
+- **Commits and quality**: root **`.pre-commit-config.yaml`** (`cargo fmt`, `cargo clippy -D warnings`, complexity ratchets, etc.); commit messages **Conventional Commits** — **`.cursor/rules/conventional-commits.mdc`**.
+- **Dependencies and licenses**: when changing **`Cargo.toml`** / **`Cargo.lock`**, align with **`deny.toml`** and CI — **`.cursor/rules/dependencies-licenses.mdc`**.
 
-## System overview
+## Overview: system composition
 
-- **Rust backend (`src/`)**: OpenAI-compatible **`chat/completions`** to configured **`api_base`**; agent loop, HTTP + SSE, tools, workspace/tasks/upload.
-- **Web frontend (`frontend/`)**: Leptos (CSR) + WASM, **Trunk** build; static assets served from **`frontend/dist`**. Chat UI, workspace browser/editor, tasks, status bar, SSE consumer.
+- **Rust backend (`src/`)**: OpenAI-compatible **`chat/completions`**, Agent main loop, HTTP API (including SSE), tool execution, workspace and sessions.
+- **Web frontend (`frontend/`)**: Leptos + WASM, Trunk build; static assets served by the backend. Interaction and SSE consumption: **`frontend/README.md`**, **`docs/frontend/ARCHITECTURE.md`** (when present in the repo).
+- **CLI (`runtime/cli`, etc.)**: REPL / `chat` / `serve` and **`run_agent_turn`** share the same orchestration and tools.
 
 ## Architecture
 
-### Overall
+### Process and layers
 
-Single **Tokio** process: **Axum** HTTP, **`runtime/`** CLI (interactive + one-shot `chat`), shared **`run_agent_turn` → `agent::agent_turn`**, **`tools`**, **`AgentConfig`**.
+Single **Tokio** process: **Axum** serves HTTP; **`runtime/`** powers the CLI; shared **`AgentConfig`**, **`tools`**, **`run_agent_turn`** (implementation mainly in **`agent::agent_turn`**).
 
-### Layers (outside → in)
+**Outside → inside:**
 
-1. **Ingress**: HTTP handlers (`web/server`, `web/chat_handlers/`), `serve`, CLI parsing (`config::cli`, `runtime/cli`).
-2. **Orchestration**: `chat_job_queue`, agent loop, context/PER/workflow (`agent/`).
-3. **Model**: `http_client`, `llm` request/retry, **`llm::api::stream_chat`**; upstream bodies redacted before logs.
-4. **Tools & workflow**: table-driven tools (`tools/mod.rs`), `tool_registry` dispatch/timeouts, DAG workflows (`agent::workflow`). **`workflow_execute`** validates **`tool_name`** and required JSON keys (see `tools/schema_check.rs`); results carry **`workflow_run_id`**, **`trace`**, **`completion_order`**; **`max_retries`** only for retryable infra errors (see **`docs/en/TOOLS.md`**).
-5. **Contracts**: `types`, SSE (`sse/protocol`, `line`, `mpsc_send`), `tool_result`, `config`, `web/*`.
+1. **Ingress**: HTTP routes and handlers (**`web/`**), **`serve`** / **`cli_run`**.
+2. **Orchestration**: chat queue (**`chat_job_queue`**), Agent turns (**`agent/`**: **`agent_turn`**, context and message pipeline, **`per_coord`**, optional layered **hierarchy**, **workflow**).
+3. **Model**: shared **`http_client`**, **`llm`** (**`complete_chat_retrying`** → default **`OpenAiCompatBackend`** → **`api::stream_chat`**), vendor adapters **vendor**.
+4. **Tools**: table-driven **tools**, dispatch by name **tool_registry**, optional Docker sandbox **tool_sandbox**, structured results **tool_result**.
+5. **Contracts**: **types** (OpenAI-shaped messages), **sse** (control plane and version **`crabmate-sse-protocol`**), **config**.
 
 ```mermaid
 flowchart TB
   subgraph entry [Ingress]
-    WEB["Axum HTTP\n(web/)"]
-    CLI["CLI\n(runtime)"]
+    WEB["HTTP · web/"]
+    CLI["CLI · runtime"]
   end
-  subgraph agent [Agent orchestration]
+  subgraph agent [Agent · agent/]
     Q[chat_job_queue]
     AT[agent_turn]
-    CW["context_window +\nmessage_pipeline"]
-    PC["per_coord +\nplan_artifact"]
-    WRC[workflow_reflection_controller]
+    LL[llm]
   end
-  subgraph model [Model]
-    HC[http_client]
-    LLM[llm]
-    BE[llm::backend]
-    API[llm::api]
-  end
-  subgraph exec [Tools & workflow]
+  subgraph exec [Execution]
     TR[tool_registry]
     TS[tools]
-    WF[agent::workflow]
   end
-  WEB --> Q
-  Q --> AT
+  WEB --> Q --> AT
   CLI --> AT
-  AT --> CW
-  AT --> PC
-  AT --> LLM
-  LLM --> BE
-  BE --> API
-  API --> HC
-  AT --> TR
-  TR --> TS
-  TR --> WF
+  AT --> LL
+  AT --> TR --> TS
 ```
 
-### Workflow orchestration extensions (design)
+### Configuration
 
-For **state-machine-style configuration**, **conditional branching**, and **bounded loops**—how they relate to today’s **`workflow_execute` DAG**, **staged planning**, and **`agent_reply_plan` / workflow reflection**—see **`docs/工作流编排架构.md`** (Chinese design doc).  
-For the **plan → execute → verify** closed loop (explicit subtasks, deterministic acceptance, boundaries vs **`plan_rewrite` / workflow reflection / `final_plan_semantic_check`**), see **`docs/规划执行验证架构.md`**.  
-For **backend core as an embeddable framework** and **cross-language hosting** (today’s single-crate layout, public API surface, and Python-style integration boundaries), see **`docs/后端核心框架设计.md`** (Chinese design doc).  
-If you extend **`src/agent/workflow/`** or **`plan_artifact` / `per_coord` / staged`** semantics, update those design docs, **`docs/工具说明.md`**, and (if needed) this chapter’s architecture/module index; SSE changes must follow **`.cursor/rules/api-sse-chat-protocol.mdc`**.
+Runtime **`AgentConfig`** merges TOML shards / environment variables and is validated in **`finalize`**; **`POST /config/reload`** hot-reloads most fields (exceptions such as session DB paths — see **`config/hot_reload`**).
 
-### `agent_turn` vs `llm`: single entrypoint and anti-patterns
+### Agent main loop (mental model)
 
-This section records **maintainer rules** (aligned with `src/llm/mod.rs`): **one** OpenAI-compatible **`chat/completions`** round-trip—transport, parsing, and backoff—lives in **`llm`**; **multi-step orchestration** (when to call the model again, how `messages` evolve, tools, PER) lives in **`agent`**.
+- **Calling the model**: call **`llm::complete_chat_retrying`** from business code; **do not** bypass it with **`api::stream_chat`** from **`agent`** (except tests and **`llm`** internals).
+- **P / R / E**: **P** = one model round; **R** = reflection / final-answer gating after an assistant message (**`reflect`**, **`per_coord`**); **E** = **tool execution** (**`execute_tools`** → **tool_registry** / **workflow**).
+- **Message transforms**: stripping / normalization before the vendor body lives in **`message_pipeline`** / **`context_window`**, aligned with **`llm::api`** last-mile behavior.
 
-#### Single entrypoint for model calls (production)
+### Web streaming chat (summary)
 
-| Entry | Role |
-|-------|------|
-| **`llm::complete_chat_retrying`** | **Only** supported way to perform a `chat/completions` round with **`CompleteChatRetryingParams`** (prefer **`CompleteChatRetryingParams::new`** + **`LlmRetryingTransportOpts`** for `out` / streaming / cancel flags). Internally **`ChatCompletionsBackend::stream_chat`** → default **`llm::api::stream_chat`**. **Exponential backoff** applies only when **`LlmCallError`** is **`retryable`** (e.g. **408/429/5xx** and some transport errors; **401/400** fail fast). **DSML materialization** runs **after** a successful return from **`complete_chat_retrying`**, not inside `stream_chat`. |
-| **`llm::tool_chat_request` / `llm::no_tools_chat_request`** (and similar) | **Request builders** for **`ChatRequest`** (`tools`, `tool_choice`, sampling); they **do not** perform HTTP. **`agent`** fills `messages` then calls **`complete_chat_retrying`**. |
+`POST /chat/stream` → **`ChatJobQueue`** → **`run_agent_turn`** → **`llm`** SSE → if **`tool_calls`**, run tools (**serial or parallel read-only batch**) → append **`role: tool`** → control-plane events via **`sse::protocol`**. Event keys and error codes are authoritative in **`docs/en/SSE_PROTOCOL.md`**; Rust / frontend / **`crabmate-sse-protocol`** must stay aligned.
 
-**`agent` paths that call `complete_chat_retrying`** (keep this pattern when adding calls): **`agent/context_window.rs`** (**`LlmRetryingTransportOpts::headless_no_stream`**), **`agent/agent_turn/plan/plan_call.rs`** (main-loop **P**), **`agent/agent_turn/staged/mod.rs`** (**`AgentLlmCall`** + **`RunLoopParams::llm_transport_opts`**, planner rounds may override `out` / `render_to_terminal`), **`agent/per_plan_semantic_check.rs`** (side LLM for final-plan consistency). Other modules (e.g. **`per_coord`**, **`outer_loop`**) reach the model **through** these paths—do not open a parallel HTTP stack.
+### Observability (summary)
 
-#### Anti-patterns (do not do)
+**`observability`**: tracing setup; Web jobs may use **`TracingChatTurn`** (**`chat_turn`** span: **`job_id`**, **`conversation_id`**, **`outer_loop_iteration`**, short **`tool_call_id`** labels for tools). JSON logs: **`CM_LOG_JSON`**.
 
-- Under **`agent/`**: **do not** call **`llm::api::stream_chat`** or **`reqwest`** for `chat/completions` directly (**tests** and **`llm` itself** excepted). You would fork retry semantics, error typing, and `out`/terminal rendering from **`complete_chat_retrying`**.
-- **`llm`**: **no** ownership of agent-round state (“which plan step”, “rewrite count”, “tools executed”); **no** **`tool_registry`** dispatch. Vendor shaping (temperature, `thinking`, preserving **`reasoning_content`** on tool rounds) stays in **`llm::vendor`** (**`llm_vendor_adapter`**, etc.) and request construction / normalize paths.
-- **Session-side `messages` transforms** (tool compression, trim, injection strip, …): **`agent::message_pipeline`** / **`agent::context_window`**—not **`llm::api`** (`stream_chat` may still run **`conversation_messages_to_vendor_body`** as a **last-mile** normalize before HTTP).
+---
 
-#### P/R/E mapping (read-only mental model)
+## Main modules (by responsibility, not a file index)
 
-- **P**: one **`complete_chat_retrying`** (usually **`per_plan_call_model_retrying`** → **`plan::plan_call`**).
-- **R**: **`per_reflect_after_assistant`**; **`StopTurnPendingPlanConsistencyLlm`** → **`per_plan_semantic_check::evaluate_plan_consistency_with_recent_tools_llm`** → another **`complete_chat_retrying`** (no tools).
-- **E**: **`per_execute_tools_*`**, not **`llm`**.
+| Area | Responsibility |
+|------|----------------|
+| **`agent/`** | Single- and multi-turn orchestration: **`agent_turn`** (outer loop, **staged** planning, intent gating, **`execute_tools`**), **`context_window`** / **`message_pipeline`**, **`per_coord`** (final answer and workflow coordination), **`workflow`** (DAG), optional **`hierarchy`** (layered Manager/Operator). |
+| **`llm/`** | **`complete_chat_retrying`**, request construction, **vendor** quirks, **`api`** HTTP/SSE. |
+| **`tools/`** | Function-calling implementations, **`run_tool`**, schemas and **tool_specs_registry**. |
+| **`tool_registry/`** | Dispatch by tool name, parallelism policy, Web/CLI approvals and timeouts. |
+| **`sse/`** | **`SsePayload`**, encoding, stream hub, control-plane classification aligned with the protocol crate. |
+| **`web/`** | Axum routes, **`AppState`**, chat / workspace / tasks / upload / status handlers. |
+| **`chat_job_queue/`** | Queue and worker for `/chat` and `/chat/stream`. |
+| **`config/`** | Load, merge, **finalize**, hot reload. |
+| **`workspace/`** | Workspace path policy and safe opens (consistent with tools and Web). |
+| **`memory/`** | Long-term memory, optional semantic index, etc. |
+| **`runtime/`** | REPL, one-shot `chat`, **`chat_export`**, TUI bridge, benchmark helpers, etc. |
+| **`tool_result/`** | Tool output envelopes, aligned with SSE **`tool_result`**. |
+| **`types/`** | OpenAI-compatible messages and request types. |
+| **`observability.rs`** | Tracing init and **`TracingChatTurn`**. |
 
-**`llm::LlmRetryingTransportOpts`** and **`CompleteChatRetryingParams::new`** dedupe boilerplate; **`agent_turn::plan::AgentLlmCall`** wraps **`request_chrome_trace`** and **`complete_chat_retrying`** when **`RunLoopParams`** is in scope—it must still **delegate to `complete_chat_retrying`** (single HTTP entrypoint).
+For **sub-paths** (e.g. **`agent_turn/staged`**, **`tools/file`**), browse or search the repo; this guide does **not** maintain a per-file index table (it duplicates **`lib.rs`** `mod` lists and goes stale).
 
-#### Error and observability layering (`llm` → `agent_turn` → SSE)
-
-- **`llm::complete_chat_retrying`** surfaces **`llm::LlmCompleteError`**: wraps **`LlmCallError`** (**`retryable`**, **`http_status`**, redacted **`user_message`**), cancellation, and other **`Other`** cases—**without** orchestration text like “plan step N failed”.
-- **`agent_turn`** maps those failures (and orchestration early stops) to **`RunAgentTurnError`** (**`agent_turn::errors`**), tracking **`sub_phase`** (**`planner` / `executor` / `reflect`**, aligned with P/R/E). Web uses **`TracingChatTurn::job_id`** as **`turn_id`** (same as **`x-stream-job-id`**).
-- **`chat_job_queue`** encodes **`RunAgentTurnError`** into SSE **`SsePayload::Error`** (**`code`**, optional **`turn_id` / `sub_phase` / `reason_code`**); see **`docs/en/SSE_PROTOCOL.md`**. JSON **`POST /chat`** uses **`RunAgentTurnError::http_api_error`** (**`ApiError.reason_code`** only for **`INTERNAL_ERROR`**); worker/handler logs use **`RunAgentTurnError::diag_log_kv()`**.
-
-### Web streaming flow (summary)
-
-1. `POST /chat/stream` → **`ChatJobQueue`**.
-2. **`run_agent_turn`** with `messages` + tool defs.
-3. **`llm`** (default **`OpenAiCompatBackend`** → **`stream_chat`**) to `/chat/completions` (SSE) until text or **`tool_calls`** (injectable **`ChatCompletionsBackend`**).
-4. Tools → **`per_execute_tools_common`**: if **`tool_calls_allow_parallel_sync_batch`**, parallel **`spawn_blocking`** for safe read-only, non-locking tools ( **`SyncDefault`**, **`http_fetch`**, weather, search; **`prefetch_http_fetch_parallel_approvals`** serializes HTTP approval first; cap **`parallel_readonly_tools_max`**); else serial **`dispatch_tool` → `run_tool`**. **`read_file`** may use **`ReadFileTurnCache`**; cleared on writes / **`workspace_changed`**.
-5. Control plane → **`sse::protocol`** SSE lines.
-6. With `conversation_id` (or server-assigned), persist `messages` (memory or SQLite); strip **`crabmate_long_term_memory`** and **`crabmate_workspace_changelist`** before save; changelist refreshed each P-step end. Optional **`agent_memory_file`** first-turn injection.
-
-### Context pipeline (observability)
-
-**`message_pipeline::apply_session_sync_pipeline`** runs before each **P** step; stage order = `message_pipeline.rs` docs vs **`MessagePipelineStage`**.
-
-- **`GET /status`**: **`message_pipeline_trim_*`**, **`message_pipeline_tool_compress_hits`**, **`message_pipeline_orphan_tool_drops`** — **process-lifetime** counters (not per-session).
-- **Logs**: `RUST_LOG=crabmate=debug` → one **`message_pipeline session_sync`** line per model call; `crabmate::message_pipeline=trace` → per-stage **`session_sync_step`**.
-- **Warnings**: **`config::finalize`** warns if **`context_char_budget > 0`** and **`context_min_messages_after_system >= max_message_history`** (see **`docs/en/CONFIGURATION.md`**).
-
-### Dynamic system prompt assembly (target design vs current behavior)
-
-This section describes **how CrabMate composes the first `system` message and related injections** into `messages`: a **maintainer mental model** and a **target layering** for future refactors. Logic spans **`config/finalize`**, **`AgentConfig::system_prompt_for_new_conversation`**, Web **`chat_handlers/chat/turn_build`**, **`context_bootstrap/conversation_turn_bootstrap`**, **`tool_stats::ToolOutcomeRecorder::augment_system_prompt`**, **`agent_turn`** (intent gate, staged planning), etc. **Web / CLI / TUI** should share the **same semantics** (thin adapter differences at the edge are fine).
-
-#### Design principles
-
-1. **P0 — Priority / conflict resolution**: safety / irreversibility → explicit user instruction → **orchestration** hints (intent gate, planner coaches) → Cursor-like project rules + Skills → runtime statistical appendix (tool outcome hints). **Any clash during dynamic assembly must follow this order (P0).**
-2. **Split `system` vs injected messages**: **Stable** role text and project rules → session **first `system`**. **Easy to confuse with user text or only valid this turn** → separate **server-injected** messages (special `user` prefixes, `system_intent_gate_hint`, staged planning planning-`system` / ensemble **`user`** bodies), same rationale as **`staged_plan_nl_followup_user_body`** (see **`agent_turn/staged/sse.rs`** comments).
-3. **Isolation from user/tool content**: user input and tool results are **not** written back into the first `system` by default; workspace rules / Skills are trusted appendix material—still treat the workspace as a trust boundary per **`security-sensitive-surface`**.
-4. **Align with tool contracts**: anything `system` / coaches claim about tools must match **`tool_registry`**, JSON Schema, and **`sub_agent_policy` / `executor_kind`** narrowing.
-5. **Budget**: **`cursor_rules_max_chars`**, **`skills_max_chars` / `skills_top_k`**, **`context_char_budget` / `max_message_history`** jointly bound what the model sees; truncated rules already append a “do not assume unseen rules” notice (**`config/cursor_rules.rs`**).
-6. **Observability**: use **`GET /status`**, **`message_pipeline` / `context_window`** logs; when debugging model bias, inspect the **vendor-bound `messages` slice** (**`conversation_messages_to_vendor_body`**), not only persisted session JSON.
-
-#### Logical blocks (L0–L9)
-
-Conceptual layers for discussion; **not** a single struct in code.
-
-| Block | Typical source | When assembled | Code anchor |
-|-------|----------------|----------------|-------------|
-| **L0 Global base** | **`system_prompt` / `system_prompt_file`** | **`config::finalize`** | **`config/finalize.rs`** |
-| **L1 Project rules** | **`.cursor/rules/*.mdc`**, optional **`AGENTS.md`** | **`finalize`**: **`merge_system_prompt_with_cursor_rules`** | **`config/cursor_rules.rs`** |
-| **L2 Global Skills** | **`.crabmate/skills`** | **`finalize`**: **`merge_system_prompt_with_skills`** | **`config/skills.rs`** |
-| **L3 Named roles** | **`config/agent_roles.toml`** per-role file / inline | **`finalize_agent_role_catalog`**: L1+L2 per role (**`merge_system_prompt_with_skills_selected`**, empty query placeholder) | **`config/agent_roles.rs`** |
-| **L4 Runtime appendix** | **`thinking_avoid_echo_appendix`** (or embedded fallback); **`agent_tool_stats`** | **At runtime** when building first `system`: **`ToolOutcomeRecorder::augment_system_prompt`** | **`tool_stats.rs`** |
-| **L5 Web turn Skills** | Workspace Skills + **current user message** top-k | Web **`build_messages_for_turn`** | **`web/chat_handlers/chat/turn_build.rs`**, **`builtin_skills.rs`** |
-| **L6 First-turn workspace context** | Project profile / living docs / dependency brief | **Dedicated first `user`**, **`compose_new_conversation_messages`** | **`context_bootstrap/conversation_turn_bootstrap.rs`**, **`project_profile`** |
-| **L7 Intent gate** | **`intent_turn_gate_hint`** | Before outer-loop **P**: **`Message::system_intent_gate_hint`** | **`agent_turn/intent/at_turn_start.rs`**, **`agent_turn/outer_loop.rs`** |
-| **L8 Staged planning** | **`staged_plan_phase_instruction`** or **`staged_plan_phase_instruction_default`**; **`plan_ensemble`** coaches | **No-tools planner rounds** | **`agent_turn/staged/mod.rs`**, **`staged/sse.rs`**, **`plan_ensemble.rs`** |
-| **L9 Memory & other** | LTM strip, changelist, etc. | Around **`prepare_messages_for_model` / pipeline** | **`memory`**, **`agent_turn`**, **`message_pipeline`** |
-
-**Runtime selection**: **`AgentConfig::system_prompt_for_new_conversation`** (**`src/config/types/mod.rs`**) picks resolved role text (**L3**) vs global **`roles_prompts.system_prompt`**; callers then apply **L4** (and Web **L5**).
-
-#### Lifecycle ordering (summary)
-
-1. **Load config**: L0 → L1 → L2 → L3 per role.  
-2. **New session**: **`system`** = `system_prompt_for_new_conversation(role)` + **L4** (+ Web **L5**); optional **L6** `user`; then real user `user`.  
-3. **Continue (Web)**: **`maybe_apply_mid_session_agent_role_switch`** may rewrite first **`system`** (**`agent_role_turn.rs`**), then **L4** / **L5**.  
-4. **Resume from disk**: **`workspace_session`** replaces first **`system`** with **current** config (see module docs).  
-5. **Each agent turn**: **L7** (if any) → **`prepare_turn_messages_for_model`** → **L8** when staged planning runs; **L9** per config.
-
-#### Workspace + user-query dynamic assembly: expected benefit vs risk
-
-**Relation to “better agent behavior”**: Often **yes**, when dynamic blocks **add relevance and remove noise**, avoid stale facts, and respect **P0** above—but **not** “more dynamic always wins.”
-
-**Potential benefits**
-
-- **Less irrelevant instruction mass**: Very long static **L0–L1** text dilutes focus; tailoring to **project shape** and **this turn’s intent** usually helps “do the right thing now.”
-- **Stronger grounding**: Workspace-specific conventions under token caps can reduce bogus paths/commands (still must match **`tool_registry`** allowlists and workspace trust boundaries—see **`security-sensitive-surface`**).
-- **Better budget use**: Under **`cursor_rules_max_chars`**, **`skills_*`**, **`context_*`**, replacing generic prose with turn-relevant snippets often beats stuffing everything into **`system`**.
-
-**Main risks**
-
-- **Wrong retrieval**: Bad intent or stale profile → wrong premises; need **degrade gracefully** (short fallback, don’t inject junk).
-- **Jitter / hard to reproduce**: Huge swing in first **`system`** every turn hurts stability and debugging.
-- **Latency & cost**: Extra disk/embeddings/full scans delay first tokens; long dynamic blocks squeeze history and **tool** payloads.
-- **Weakening stable discipline**: Rewriting the entire first **`system`** every turn can wash out safety/format/tool-boundary text—keep a **short stable base (L0 + needed L1)** and use **L5 / L6** for variability.
-
-**Mapping to L0–L9 today**
-
-- **Already workspace + user driven**: Web **L5** (**`skills_top_k`** over **`.crabmate/skills`** using the **current user message**, **`turn_build`** / **`builtin_skills`**); **L6** first-turn profile / living docs / deps as a **dedicated `user`** (**`conversation_turn_bootstrap`**); **L1** rules at **finalize** (**`.cursor/rules`**, optional **`AGENTS.md`**). **`POST /config/reload`** refreshes most fields (secrets excluded—see this file).
-- **Not provided**: A single “per-request user-defined hook” to rewrite first **`system`**; stronger dynamics belong in **Possible evolutions** or code around **`build_messages_for_turn`** / CLI first-**`system`** (same semantics).
-
-**Practice**
-
-- Keep **`system`** for stable persona, safety, and tool contracts; use **L6** and **L5** for volatile / retrieval-style content; avoid duplicating the same long facts in **`system`** and **L6 `user`**.
-
-#### Possible evolutions
-
-- Block **registry** (id → predicate → order) to centralize scattered coach strings.  
-- Explicit **template variables** for role id, workspace root hints, etc.  
-- **Version fingerprint** in logs when prompt files change.  
-- **Regression**: sanitized golden substrings for assembled prompts.  
-- **Unified entry for strong dynamics**: “workspace snapshot + user query → extra **`system` / `user`** blocks” should live in one layer shared by Web **`build_messages_for_turn`** and CLI first-**`system`**, with degrade paths and observability (see “Workspace + user-query dynamic assembly” above).
-
-For config keys and env vars, **`docs/en/CONFIGURATION.md`** remains authoritative.
-
-## `src/` module index
-
-> When you add/remove `lib.rs` mods or change call chains, update this table and the Mermaid diagram (`.cursor/rules/architecture-docs-sync.mdc`).
-
-### Top-level modules (match `src/lib.rs`)
-
-| Path | Responsibility (summary) |
-|------|---------------------------|
-| `agent/` | **`agent_turn/`**: main loop; **`errors`**, **`plan`** (**P**: **`plan/plan_call`**, **`plan/agent_llm_call`**, **`plan/planner_sse_gate`**; symbols re-exported at **`agent_turn`**), **`execute`** (**E**: implementation **`execute/tools`**, same **`agent_turn::execute_tools`**), **`reflect`** (**R**: **`reflect/reflect_impl`**), **`staged`** (staged planning: **`staged/mod`**, **`staged/sse`**, **`staged/orchestrator`**, **`staged/patch_planner`**), **`intent`** (turn-start gate: **`intent/user`**, **`intent/at_turn_start`**; paths **`agent_turn::intent_user`** / **`agent_turn::intent_at_turn_start`**), **`params`** (**`RunLoopParams`**: **`RunLoopCtx`**（**`RunLoopCore` / `RunLoopIo` / `RunLoopAttach` / `RunLoopObs`**）**+ `RunLoopTurnState`**, **`llm_transport_opts`**); **`message_pipeline`**, **`context_window`**, **`reflection/plan_rewrite`**, **`per_coord`**, **`per_plan_semantic_check`**, **`plan_artifact`**, **`workflow/`**, tool execution, reflection, planner. |
-| `chat_job_queue.rs` | Bounded queue for `/chat` + `/chat/stream`; **`per_active_jobs`** for `/status`. |
-| `workspace/` | **Directory** (top-level `mod workspace`): path policy, Unix open-under-root, session changelist; see **`workspace/path.rs`**, **`workspace/fs.rs`**, **`workspace/changelist.rs`**. Use `crate::workspace::{path, fs, changelist}`. |
-| `context_bootstrap/` | **Directory** (top-level `mod context_bootstrap`): first-turn living docs, project profile, dependency brief, **`conversation_turn_bootstrap`**. |
-| `memory/` | **Directory** (top-level `mod memory`): memo snippet, semantic index/invalidation, long-term memory + store. |
-| `memory/codebase_semantic_index.rs` | **`codebase_semantic_search`**: **fastembed** + SQLite **FTS5** (**`crabmate_codebase_chunks_fts`** external content + triggers) per workspace; **`crabmate_codebase_files`** stores per-file **`size` / `mtime_ns` / `content_sha256`** for **workspace-wide** incremental rebuild (**`codebase_semantic_rebuild_incremental`**, tool **`incremental:false`** for full); subtree **`path`** replaces that prefix. Rust **symbol hints** before embed. **`query`** default **hybrid** (BM25 + cosine, **`codebase_semantic_hybrid_alpha`**); **`retrieve_mode`** **`semantic_only`** / **`fts_only`**. Schema **v4**; removed from tool list when disabled. |
-| `config/` | **`AgentConfig`**, embedded TOML shards + user file + optional **`config/agent_roles.toml`** (or sibling of **`--config`**) + env, CLI parsing (**`ParsedCliArgs::agent_role_cli`**), secrets as **`SecretString`**, cursor rules merge, **`agent_roles` / `default_agent_role_id`** (**`system_prompt_for_new_conversation`**), long-term memory keys (`finalize` rejects external vector backends not wired). **`config/finalize.rs`** loads tail + build via **`include!`** from **`config/finalize_parts/`**. |
-| `observability.rs` | **`init_tracing_subscriber`**: process logging (**`RUST_LOG`**, **`--log` stderr+file mirror**, optional **`CM_LOG_JSON`**). **`TracingChatTurn`**: Web **`chat_turn`** span fields (**`job_id` / `conversation_id` / `outer_loop_iteration` / `tool_call_id`**) for correlating logs with HTTP/SSE. |
-| `http_client.rs` | Shared `reqwest::Client`. |
-| `redact.rs` | Log previews for long HTTP bodies. |
-| `text_encoding.rs` | Shared decoding for **`read_file`**, **`extract_in_file`**, **`GET /workspace/file`** (`encoding`, `auto`, strict UTF-8 errors). |
-| `text_sanitize.rs` | DSML materialization for DeepSeek-style tool calls (`materialize_deepseek_dsml_tool_calls_*`). |
-| `tool_stats.rs` | In-process global tool-outcome stats (`ok` / `error_code`); **`record_tool_outcome`** from **`execute_tools::emit_tool_result_sse_and_append`**; **`augment_system_prompt`** for new-chat first `system` (Web / CLI / REPL; disk-resumed sessions use base system only). Config **`agent_tool_stats_*`** / **`CM_TOOL_STATS_*`**. |
-| `health.rs` | **`build_health_report`** for **`GET /health`**; optional **`append_llm_models_endpoint_probe`** (**GET …/models** via **`llm::fetch_models_report`**, cached per **`health_llm_models_probe_cache_secs`** when **`health_llm_models_probe`** is enabled). Optional CLI checks include **`dep_gh`**. |
-| `llm/` | **`complete_chat_retrying`** (returns **`LlmCompleteError`**; **`LlmRetryingTransportOpts`**, **`CompleteChatRetryingParams::new`**), **`ChatCompletionsBackend`**, **`api::stream_chat`**, vendor quirks (reasoning_split, GLM thinking, Kimi temperature/thinking), CLI terminal rendering, **`openai_models`**. |
-| `workspace/path.rs` | Canonical workspace resolution, allowlist validation, web read/write path helpers. Works with **`workspace/fs.rs`** on **Unix** to open under a root fd (**`openat2` `RESOLVE_IN_ROOT`** on Linux). Residual risks: see module docs; **README** / **CONFIGURATION.md** (workspace). |
-| `workspace/fs.rs` | Unix helpers to open files/directories for reads/writes/deletes under the workspace root (**nix** + **`openat2`** on Linux). |
-| `runtime/` | CLI: `chat`, interactive REPL, **`save-session`**, **`tool-replay`**, slash commands, doctor/probe/models, reedline completion, **`CliExitError`**, **`CliToolRuntime`**, transcripts, benchmark, export. Benchmark planning/testing: **`docs/基准测试规划.md`**; task suite design: **`docs/评测任务集设计.md`** / **`docs/en/BENCHMARK_TASK_SUITE_DESIGN.md`**. |
-| `sse/` | **`protocol`** (incl. **`ToolCallSummary`**: **`arguments_preview`** + optional redacted **`arguments`** when **`sse_tool_call_include_arguments`**), **`line`**, test mirror + golden fixtures, **`final_response_terminal`** (`send_final_response_timeline_then_answer_phase`), **`web_approval`**. |
-| `tool_approval/` | Single source for Web + CLI approval (`SensitiveCapability`, dialoguer / pipe fallback). |
-| `tool_registry.rs` | Macro-built dispatch map, readonly/parallel rules, Docker sandbox dispatch for selected tools, **`CliToolRuntime`**. |
-| `tool_sandbox/` | Docker runner config + bollard backend. |
-| `tool_call_explain.rs` | Explain-card strip/annotate for mutating tools. |
-| `tool_result/` | **`crabmate_tool`** payload version **`v`** (see **`NormalizedToolEnvelope`**, **`fixtures/tool_result_envelope_golden.jsonl`**) + SSE **`result_version`** alignment + compression helpers; **`failure_category_for_error_code`** maps **`error_code`** to stable strings matching **`ToolFailureCategory::as_str`** ( **`crabmate_tool.failure_category`**, SSE **`tool_result.failure_category`**). |
-| `tools/` | All tool specs, **`run_tool`**, **`ToolContext`**, summaries (see sub-table below). |
-| `types.rs` | OpenAI-shaped messages/tools/chunks; normalization for vendor requests. |
-| `conversation_store.rs` | Optional SQLite conversations + revision updates. |
-| `memory/long_term_memory_store.rs` / `memory/long_term_memory.rs` | Long-term memory SQLite (`expires_at_unix`, `tags_json`, `source_kind`) + injection (`crabmate_long_term_memory`, filtered upstream) + optional auto-index TTL; explicit tools **`long_term_remember` / `long_term_forget` / `long_term_memory_list`**. |
-| `context_bootstrap/living_docs.rs` | Optional first-turn summary from **`.crabmate/living_docs/`** Markdown files. |
-| `mcp/mod.rs` | MCP: **client** (stdio child, `mcp__` prefix, session reuse by fingerprint); **server** (`mcp/server.rs`, **`crabmate mcp serve`**, stdio `serve_server` → `tools::run_tool`, no transport auth). |
-| `memory/agent_memory.rs` / `context_bootstrap/project_profile.rs` / `context_bootstrap/project_dependency_brief.rs` | Workspace memo + living-docs snippet + project profile + dependency brief for first-turn context. |
-| `read_file_turn_cache.rs` | Per-turn **`read_file`** cache. |
-| `workspace/changelist.rs` | Session write tracking + injected changelist user message; Web **`GET /workspace/changelog`** returns the same Markdown for UI preview. |
-| `web/` | Axum **`AppState`**, chat handlers (including **`GET /workspace/changelog`**), **`GET /openapi.json`** (OpenAPI 3.0 spec), workspace, tasks (in-memory per workspace), static **`frontend/dist`**, config reload path alignment. |
-
-### `lib.rs` responsibilities
-
-- **`run()`**: builds **`AppState`**, **`web::server::build_app`**, listeners, cleanup.
-- **`AppState`**: shared config `Arc<RwLock<AgentConfig>>`, HTTP client, conversation backing, task map, upload dirs; queue clones config snapshot per turn.
-- **`RunAgentTurnParams`**: split into **transport** (**`AgentTurnTransport`**: `out`, `cancel`, `per_flight`, Web/CLI tool runtime, `plain_terminal_stream`, **`llm_backend`**) and **LLM overrides** (**`AgentTurnLlmOverrides`**: temperature/model/api_base/api_key, `seed_override`); see Chinese **`docs/开发文档.md`**.
-- **`CliExitError`**: mapped in `main` to exit codes (see **`README.md`** / **`tests/cli_contract.rs`**).
-
-### `src/tools/` files (keep in sync with `tools/mod.rs`)
-
-| File | Area |
-|------|------|
-| `calc.rs`, `unit_convert.rs`, `time.rs`, `weather.rs`, `web_search.rs`, `http_fetch.rs` | Basic utilities + HTTP tools (`http_fetch` / `http_request`: charset / meta / sniff, optional **`html_text`** via **`scraper`**, **`User-Agent: crabmate/<version>`**) |
-| `command.rs`, `exec.rs`, `test_result_cache.rs`, `package_query.rs` | Process execution + package query |
-| `file/` | Workspace file ops (path safety in `path.rs`); **`read_tool`** (`read_file` / `read_file_try`) + **`read_file_pipeline`** (encoding sniff, line streaming, `count_total_lines` size guard) |
-| `cargo_tools.rs`, `ci_tools.rs`, `rust_ide.rs`, `frontend_tools.rs` | Rust / CI / RA / npm |
-| `python_tools.rs`, `precommit_tools.rs`, `go_tools.rs`, `jvm_tools.rs`, `container_tools.rs`, `nodejs_tools.rs` | Language/ecosystem tools |
-| `git.rs`, `github_cli/`, `grep.rs`, `symbol.rs`, `code_nav.rs`, `call_graph_sketch.rs`, `code_metrics.rs` | VCS, GitHub CLI wrappers, search, metrics |
-| `format.rs`, `lint.rs`, `quality_tools.rs`, `security_tools.rs`, `source_analysis_tools.rs` | Format/lint/quality/security scanners |
-| `structured_data.rs`, `table_text.rs`, `text_diff.rs`, `text_transform.rs`, `patch.rs`, `markdown_links.rs` | Structured data + diffs + patches + links |
-| `spell_astgrep_tools.rs`, `repo_overview/` (`mod.rs`, `parse.rs`, `sweep.rs`), `docs_health_sweep.rs`, `release_docs.rs` | Docs / overview / changelog / license |
-| `dev_tag.rs`, `tool_params/`, `tool_specs_registry/`, `schema_check.rs`, `tool_summary.rs`, `tool_summary_args.rs`, `tool_summary_args/` | Tool metadata, schemas, workflow arg checks, typed dynamic summaries (**`include!`** fragments under **`tool_summary_args/`**) |
-| `debug_tools.rs`, `diagnostics.rs`, `error_playbook.rs`, `schedule.rs`, `process_tools.rs` | Debug, diagnostics, playbooks, reminders, process/port |
-
-*(For line-by-line Chinese prose matching upstream commits, see [`../开发文档.md`](../开发文档.md).)*
-
-## Core mechanism: agent loop and tools
-
-Entry: **`run_agent_turn`** → **`run_agent_turn_common`** (`src/agent/agent_turn/mod.rs`; mode dispatch in **`run_dispatch.rs`**).
-
-- **Optional MCP** at turn start (`mcp_enabled` + `mcp_command`); merged tools in **`tools_defs`**.
-- **P step**: one `stream_chat` via **`per_plan_call_model_retrying`** (not a separate planner process).
-- **Model**: default OpenAI-compatible SSE; **`--no-stream`** uses JSON response path. **DSML materialization** after successful stream in **`complete_chat_retrying`**. **Custom `ChatCompletionsBackend`** via **`RunAgentTurnParams.transport.llm_backend`**.
-- **Staged planning** (`staged_plan_execution`, `staged_plan_optimizer_round`, `staged_plan_optimizer_requires_parallel_tools`, `staged_plan_ensemble_count`, `staged_plan_skip_ensemble_on_casual_prompt`, `staged_plan_feedback_mode`, `staged_plan_cli_show_planner_stream`, `staged_plan_two_phase_nl_display`, …): planner rounds without tools; default planner **system** is `staged_plan_phase_instruction_default()` and embeds **`PLAN_V1_SCHEMA_RULES`** only (no extra casual `no_task` prose). **`staged_plan_allow_no_task` / `CM_STAGED_PLAN_ALLOW_NO_TASK`** remain in config for **compat** and are **ignored** at runtime. Optional optimizer/ensemble (with cost-saving gates), patch feedback with max attempts, CLI option to hide planner stream text; when **`staged_plan_two_phase_nl_display`** is on, finalized planner JSON is not streamed to the user, then a no-tools NL follow-up round runs (see Chinese **`docs/开发文档.md`**); invalid JSON handling preserves legacy error types for tests. **Per-step sub-agent roles**: optional **`steps[].executor_kind`** in **`agent_reply_plan` v1** (`review_readonly` / `patch_write` / `test_runner`) narrows the tool list for that staged step and rejects out-of-role tool calls at execution time with a short allowed-tool-name hint (see **`agent_turn::sub_agent_policy`**). **`test_runner`** defaults to allowing **`run_command`** as well as built-in test runners; executable commands remain restricted by **`allowed_commands`**. **`[tool_registry] sub_agent_*`** extends default patch/test allowlists or adds readonly-step denials. SSE **`staged_plan_step_started`** / **`staged_plan_step_finished`** may include optional **`executor_kind`** (finished mirrors started). **`merge_staged_plan_steps_after_step_failure`** backfills missing `executor_kind` from same-index base steps (with `debug!` when applied). **Leptos** appends prefixed `role: system` timeline rows on step start/finish (local UI only; **not** sent to the model). **Optional future cap: at most one planner `step` per plan JSON, with replan toward a single-agent tool loop** — design only: [`分阶段规划单步设计.md`](../分阶段规划单步设计.md).
-- **`planner_executor_mode`**: `single_agent` vs `logical_dual_agent` (dual planner context stripping); **`Hierarchical`** uses **`hierarchy::run_hierarchical_agent`** (intent gate + optional discourse fallback to **`run_agent_outer_loop`**). **`HierarchyRunnerParams`** for **`hierarchy::runner::run_hierarchical`** is built via **`RunLoopParams::hierarchy_runner_params`** (including Web approval channel clones from **`web_tool_ctx`**).
-- **P/R/E matrix**: see Chinese **`docs/开发文档.md`** table *配置与 P/R/E 路径对照* for exact routing (`run_logical_dual_agent_then_execute_steps` vs `run_staged_plan_then_execute_steps` vs `run_agent_outer_loop`).
-- **Context window**: **`apply_session_sync_pipeline`** then optional LLM summarization; tool compression, **`tool_result_envelope_v1`**, **`session_workspace_changelist`** injection after summary; vendor message normalization via **`conversation_messages_to_vendor_body`**.
-- **Cursor rules injection** (on by default): `.cursor/rules/*.mdc` + optional `AGENTS.md` append to system prompt; disable with `cursor_rules_enabled = false` / `CM_CURSOR_RULES_ENABLED=0`.
-- **Long-term memory**: SQLite + optional fastembed; injection tag filtered from upstream requests.
-- **Finish reasons**: tool_calls → execute tools and continue; else final assistant text.
-- **SSE** (`/chat/stream`): deltas + control JSON (`tool_running`, `tool_result`, `workspace_changed`, `error`+`code`, approvals, staged plan events). Protocol version **`v`** in **`sse::protocol`**.
-
-### PER and `agent_reply_plan` enforcement
-
-**`PerCoordinator`** (from **`PerCoordinatorInit`**, typically **`PerCoordinatorInit::from_agent_config`** in production so **`run_agent_turn_common`** and the hierarchical discourse fallback share the same reflection / final-plan fields from **`AgentConfig`**) ties workflow reflection to final-answer plan validation; caches **`workflow_validate_result` layer_count** scans; optional **`final_plan_require_strict_workflow_node_coverage`** and **`final_plan_semantic_check_*`** (side LLM via **`per_plan_semantic_check`**); **`plan_rewrite_max_attempts`**; SSE **`plan_rewrite_exhausted`** with optional **`reason_code`** (**`PlanRewriteExhaustedReason`**, see **`docs/en/SSE_PROTOCOL.md`**). Step **`id`** / optional **`workflow_node_id`** rules as in Chinese doc; after **`workflow_validate_only`**, when **`nodes`** is non-empty, **`validate_plan_binds_workflow_validate_nodes`** enforces a **1:1 multiset bind** to **`nodes[].id`** (see Chinese **`docs/开发文档.md`**); **`per_reflect_after_assistant`** is **`async`**. CLI logging target **`crabmate::print`** for transcript-style debug.
-
-```mermaid
-flowchart LR
-  subgraph E[Tool batch E]
-    WF[workflow_execute]
-  end
-  subgraph PER[per_coord]
-    PRE[prepare_workflow_execute]
-    FLAG[require_plan_in_final_content]
-    AFA[after_final_assistant]
-  end
-  WF --> PRE
-  PRE -->|"WorkflowReflection + plan_next"| FLAG
-  AFA -->|"fails + retries left"| REW[Append rewrite user]
-  AFA -->|"retries exhausted"| ERR[SSE error plan_rewrite_exhausted]
-  AFA -->|"ok or no requirement"| STOP[End outer loop]
-```
-
-## Backend topics (`src/`)
-
-**Module tables above are canonical;** this section adds topic notes.
-
-### `src/lib.rs` / `src/main.rs`
-
-Crate root exports **`run`**, **`load_config`**, tool builders, **`dev_tag`**, etc. **`main`** is thin `crabmate::run().await`. CLI contract tests in **`tests/cli_contract.rs`**. Subcommands: `serve`, `repl` (default), `tui` (experimental full-screen UI; loads config like `repl`; chat via `repl_dispatch_chat_round` with stdout rendering suppressed; respects `--no-stream`; `/api-key` wired), `chat`, `bench`, `config`, `doctor`, `save-session`/`export-session`, `tool-replay`, `models`, `probe`; legacy argv normalization unless explicit subcommand present. Logging defaults: `serve` info, others warn without `RUST_LOG`. Non-loopback serve requires auth (see **`README.md`**).
-
-### Web routes (summary)
-
-`POST /chat`, `POST /chat/stream`, `POST /chat/approval`, `POST /chat/branch`, `GET /status`, `GET /health`, workspace + file APIs (1 MiB read cap, **`encoding`** query), `/tasks`, `/upload`. **`ChatJobQueue`**: 503 when full; cooperative cancel → **`STREAM_CANCELLED`** when possible (see **`docs/en/SSE_PROTOCOL.md`**).
-
-### `src/llm/*`
-
-**`tool_chat_request` / `no_tools_chat_request`**, folding via **`llm::fold_system_into_user_for_config`** (MiniMax auto), Kimi reasoning preservation flags, **`complete_chat_retrying`** backoff. **`openai_models`**: `GET /models` with optional Bearer.
-
-### `src/http_client.rs`
-
-Shared client; separate connect vs request timeout; pool tuning for keep-alive.
-
-### `src/llm/api/` (`mod.rs` + `sse_parser` / `terminal_render` / `error_handler`)
-
-**`stream_chat`** orchestrates HTTP + branches. **`sse_parser`**: SSE line scan, delta ingest, tail-frame flush; vendor fields (`reasoning_split`, `reasoning_details`). **`error_handler`**: non-2xx bodies and non-stream JSON parse errors (retry remains in **`complete_chat_retrying`**). **`terminal_render`**: CLI Markdown/ANSI and plain streaming; defer ANSI until complete assistant message when streaming; **`terminal_cli_transcript`** for staged notices and tool output; no full-screen redraw (avoids clobbering subprocess output). GLM `thinking`, Kimi `thinking` disable + temperature clamps unchanged in behavior.
-
-### `src/sse/protocol.rs` / `line.rs`
-
-**`SsePayload`** encoding; **`SSE_PROTOCOL_VERSION`** from **`crates/crabmate-sse-protocol`** (re-exported in `protocol`); consumer classification aligned with **`frontend/src/sse_dispatch/dispatch.rs`** / **`api.rs`**.
-
-### `src/types.rs`
-
-**`ChatRequest`** extras (`reasoning_split`, `thinking`); **`Message`** reasoning fields; outbound normalization pipeline.
-
-### `src/tools/file/`
-
-Aggregated in **`file/mod.rs`**; glob/tree limits; **`resolve_for_read`** for other read-only tools.
-
-### `src/tools/mod.rs` (table-driven hub)
-
-**`ToolCategory`**: **`Basic`** vs **`Development`**. **`dev_tag`**: filter **`Development`** tools via `build_tools_with_options`. Extension steps: new module, `mod` + `params_*` + `runner_*` + `ToolSpec` + **`dev_tag`** mapping.
-
-### `src/web/*` and `src/runtime/*`
-
-**`web`**: handlers matching UI. **`runtime`**: CLI session file (`.crabmate/tui_session.json`), optional background **`initial_workspace_messages`** gated by **`repl_initial_workspace_messages_enabled`**, benchmark runner, MCP list, config reload, tool replay exit code 6 on mismatch. Product differences vs Web: **`docs/en/CLI.md`** § CLI vs Web.
+---
 
 ## Frontend (`frontend/`)
 
-- **`frontend/src/api.rs`**: `fetch` + **`send_chat_stream`**（**`client_sse_protocol`** 与 **`crabmate_sse_protocol::SSE_PROTOCOL_VERSION`**）等。
-- **`frontend/src/sse_dispatch/dispatch.rs`**: 控制面 JSON 分类（含 **`sse_capabilities`** 版本核对）。
-- 其余 UI 模块：`app/` 等（CSR WASM）。
-- **E2E (`e2e/`)**: Playwright smoke tests with stubbed **`/chat/stream`** and **`/workspace`**; see the Chinese **[docs/开发文档.md](DEVELOPMENT.md)** § “E2E” for commands (`npm ci`, `npx playwright install chromium`, `npm test`).
+Leptos CSR: **`api`** / **`sse_dispatch`** consume SSE; **`app/`** chat and workspace UI; **`message_format`** and rendering pipeline. Component layout and dependencies: **`docs/frontend/ARCHITECTURE.md`** when present. Build: **`cd frontend && trunk build`**.
 
-## Persistence notes
+---
 
-- **Tasks**: in-process only (`/tasks`), not workspace files.
-- **`.crabmate/`**: reminders/events JSON.
-- **`localStorage`**: workspace path choice, input height.
+## Data and persistence (summary)
 
-## Extension points and safety
+- **Sessions**: in-memory or SQLite (**`conversation_store`**); rules for omitting entries from vendor requests live in **`message_pipeline`**.
+- **Workspace**: tools and **`POST /workspace`** share the current working directory; **`.crabmate/`** may hold reminders, exports, etc. (see **`README`** / **`docs/en/CONFIGURATION.md`**).
+- **Browser**: **`localStorage`** for session list, theme, partial LLM drafts (not server-side secrets).
 
-- Register tools in the table-driven pipeline (schema + runner + category + dev_tag).
-- **`run_command`**: allowlist only; workspace programs → **`run_executable`**.
-- Enforce path canonicalization on file/exec tools.
-- Workspace switch affects tool CWD—document UX implications.
-- Never log secrets; follow **`.cursor/rules/secrets-and-logging.mdc`**.
-- Open security/protocol debt: **`docs/待办清单.md`**; Web identity stays out-of-process—**`docs/未来规划功能.md`** / **`docs/en/FUTURE_PLANS.md`**.
-- SSE changes: update **`docs/en/SSE_PROTOCOL.md`**, **`crates/crabmate-sse-protocol`** (`SSE_PROTOCOL_VERSION` / **`control_classify`**), Leptos **`sse_dispatch`**, `fixtures/sse_control_golden.jsonl`, run **`cargo test golden_sse_control --workspace`**.
+---
+
+## Common extension points
+
+- **New tools**: register in the tools table + schema + **`docs/en/TOOLS.md`**; register execution policy in **tool_registry** when non-trivial; follow **`.cursor/rules/security-sensitive-surface.mdc`**.
+- **SSE / API changes**: keep Rust routes, **`crabmate-sse-protocol`**, frontend dispatch, and **`docs/en/SSE_PROTOCOL.md`** in sync — **`.cursor/rules/api-sse-chat-protocol.mdc`**.
+- **New HTTP routes or config keys**: update **`README.md`**, **`docs/en/CONFIGURATION.md`**, and this guide when architecture narrative is affected.
+
+---
+
+## Further reading (design notes and topics)
+
+Staged planning, workflow orchestration, context trimming, Web theming, and other **topic designs** remain in **`docs/`** (and **`docs/en/`** where mirrored); this page is an **entry-level index**, not a full copy of those documents.

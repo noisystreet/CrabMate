@@ -133,14 +133,14 @@ cargo tauri build
 
 ### 开发与质检（维护者）
 
-- **Cargo features / 裁剪二进制**：默认 **`mcp` + `docker_sandbox` + `fastembed`**；关闭某项时的联动见 **[docs/开发文档.md](docs/开发文档.md)**。
+- **Cargo features / 裁剪二进制**：默认 **`mcp` + `docker_sandbox` + `fastembed`**；关闭某项时与 **`finalize`**、可选依赖的联动见根目录 **`Cargo.toml`** **`[features]`** 与 **`AGENTS.md`**（Lint / Test / Build）摘要。
 - **fmt / clippy / test、pre-commit、SSE 回归脚本、E2E**：命令汇总见 **[docs/测试指南.md](docs/测试指南.md)**（含 **`./scripts/check-sse-protocol.sh`**）。
 
 ## 文档索引
 
 | 文档 | 内容 | English |
 | --- | --- | --- |
-| [docs/开发文档.md](docs/开发文档.md) | 架构、`src/` 索引、协议与扩展点 | [en](docs/en/DEVELOPMENT.md) |
+| [docs/开发文档.md](docs/开发文档.md) | 架构概要、主要模块与数据流 | [en](docs/en/DEVELOPMENT.md) |
 | [docs/配置说明.md](docs/配置说明.md) | 环境变量、`CM_*`、Web/TOML 详解 | [en](docs/en/CONFIGURATION.md) |
 | [docs/工具说明.md](docs/工具说明.md) | 内置工具与调用示例 | [en](docs/en/TOOLS.md) |
 | [docs/SSE协议.md](docs/SSE协议.md) | `/chat/stream` 控制面 JSON | [en](docs/en/SSE_PROTOCOL.md) |
@@ -187,6 +187,6 @@ cargo tauri build
 
 ## 项目结构
 
-模块与调用链、**`GET /status` 观测**、**`src/`** 索引见 [docs/开发文档.md](docs/开发文档.md)。
+架构分层、主要模块与数据流概要见 [docs/开发文档.md](docs/开发文档.md)；**`GET /status`** 等观测见 [docs/调试指南.md](docs/调试指南.md)。
 
 - **Workspace 成员**：`crates/crabmate-sse-protocol`（SSE 控制面契约）；**`crates/crabmate-im-bridge`**（可选 **IM 桥**：飞书 Webhook → **`POST /chat`** → 回复）。说明见 [docs/design/feishu_bridge_mvp.md](docs/design/feishu_bridge_mvp.md)。
