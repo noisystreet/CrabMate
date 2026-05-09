@@ -42,18 +42,7 @@ use crate::chat_session_state::ChatStreamBusyMemos;
 
 /// 阶段 1：会话列表 / 活动会话 / 水合与本地草稿等（必须在其它壳级 `Effect` 之前注册）。
 pub(super) fn wire_phase1_chat_session_lifecycle(app: &AppSignals) {
-    wire_chat_session_lifecycle_effects(WireChatSessionLifecycleEffectsArgs {
-        initialized: app.initialized,
-        sessions: app.chat.sessions,
-        active_id: app.chat.active_id,
-        draft: app.chat_composer.draft,
-        locale: app.shell_ui.locale,
-        web_ui_config_loaded: app.shell_ui.web_ui_config_loaded,
-        markdown_render: app.shell_ui.markdown_render,
-        apply_assistant_display_filters: app.shell_ui.apply_assistant_display_filters,
-        chat_session: app.chat,
-        selected_agent_role: app.llm_settings.selected_agent_role,
-    });
+    wire_chat_session_lifecycle_effects(WireChatSessionLifecycleEffectsArgs::from_app_signals(app));
 }
 
 /// 阶段 2：偏好写入 `localStorage`、与 `document` 同步、设置弹窗 LLM 草稿打开时填充。
