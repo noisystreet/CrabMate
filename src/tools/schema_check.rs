@@ -53,4 +53,13 @@ mod tests {
         );
         assert!(r.is_ok(), "{r:?}");
     }
+
+    #[test]
+    fn create_file_workflow_accepts_path_alias_and_default_content() {
+        let r = workflow_tool_args_satisfy_required(
+            "create_file",
+            &serde_json::json!({"filename": "a/b.txt"}),
+        );
+        assert!(r.is_ok(), "{r:?}");
+    }
 }

@@ -10,10 +10,10 @@ pub(in crate::tools) fn params_file_write() -> serde_json::Value {
             },
             "content": {
                 "type": "string",
-                "description": "要写入的文件内容。**JSON 中字符串须正确转义**：换行用 `\\n`，制表用 `\\t`，双引号用 `\\\"`，反斜杠用 `\\\\`。大文件可分多次写入。"
+                "description": "要写入的文件内容。**JSON 中字符串须正确转义**：换行用 `\\n`，制表用 `\\t`，双引号用 `\\\"`，反斜杠用 `\\\\`。大文件可分多次写入。创建空文件可传 `\"\"`；若调用方省略该键，服务端在执行前会按空串归一。"
             }
         },
-        "required": ["path"],
+        "required": ["path", "content"],
         "additionalProperties": false
     })
 }

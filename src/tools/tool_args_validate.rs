@@ -5,7 +5,8 @@
 //! 此模块还校验类型、枚举、数值范围、嵌套子对象、以及 `additionalProperties` 等。
 //!
 //! 内置工具：在 Schema 校验与 runner 执行前做**一轮**确定性参数纠错（如 `read_file` 行号字符串化、
-//! `path` 的常见别名 **`file_path`**、**`copy_file`** 的 **`src`/`dst`** 等），见 [`coerce_builtin_tool_args_value`]、
+//! `path` 的常见别名（**`file_path`** / **`filename`** / **`output_path`** 等）、**`copy_file`** 的 **`src`/`dst`**、
+//! **`create_file`** 的 **`content`** 别名与缺省空串等），见 [`coerce_builtin_tool_args_value`]、
 //! [`effective_builtin_tool_args_json`]。
 
 use std::borrow::Cow;
@@ -180,7 +181,19 @@ fn remap_path_aliases(map: &mut serde_json::Map<String, Value>) -> bool {
     if map.contains_key("path") {
         return false;
     }
-    const ALIASES: &[&str] = &["file_path", "filepath", "relative_path", "rel_path"];
+    const ALIASES: &[&str] = &[
+        "file_path",
+        "filepath",
+        "relative_path",
+        "rel_path",
+        "filename",
+        "file_name",
+        "output_path",
+        "write_path",
+        "target_file",
+        "dest_path",
+        "destination_path",
+    ];
     for key in ALIASES {
         if let Some(v) = map.remove(*key) {
             map.insert("path".to_string(), v);
@@ -251,13 +264,8 @@ fn coerce_read_file_extra_fields(map: &mut serde_json::Map<String, Value>) -> bo
     changed
 }
 
-/// 对已知内置工具 JSON 对象做一轮纠错（顶层须为 object）。与各自 Schema 对齐：仅当 schema 含对应属性时才做路径别名等。
-pub(crate) fn coerce_builtin_tool_args_value(name: &str, v: &mut Value) -> bool {
-    let Value::Object(map) = v else {
-        return false;
-    };
+fn apply_path_coercions(name: &str, map: &mut serde_json::Map<String, Value>) -> bool {
     let mut changed = false;
-
     if schema_has_top_level_prop(name, "path") {
         if remap_path_aliases(map) {
             changed = true;
@@ -268,7 +276,6 @@ pub(crate) fn coerce_builtin_tool_args_value(name: &str, v: &mut Value) -> bool 
             changed = true;
         }
     }
-
     if matches!(name, "copy_file" | "move_file") {
         if remap_from_to_aliases(map) {
             changed = true;
@@ -281,18 +288,42 @@ pub(crate) fn coerce_builtin_tool_args_value(name: &str, v: &mut Value) -> bool 
             }
         }
     }
+    changed
+}
 
+fn apply_write_content_coercions(name: &str, map: &mut serde_json::Map<String, Value>) -> bool {
+    let mut changed = false;
     if matches!(name, "create_file" | "modify_file")
         && schema_has_top_level_prop(name, "content")
         && remap_content_aliases(map)
     {
         changed = true;
     }
+    if name == "create_file" && schema_has_top_level_prop(name, "content") {
+        let needs_empty_default = matches!(map.get("content"), None | Some(Value::Null));
+        if needs_empty_default {
+            map.insert("content".to_string(), Value::String(String::new()));
+            changed = true;
+        }
+    }
+    changed
+}
 
+/// 对已知内置工具 JSON 对象做一轮纠错（顶层须为 object）。与各自 Schema 对齐：仅当 schema 含对应属性时才做路径别名等。
+pub(crate) fn coerce_builtin_tool_args_value(name: &str, v: &mut Value) -> bool {
+    let Value::Object(map) = v else {
+        return false;
+    };
+    let mut changed = false;
+    if apply_path_coercions(name, map) {
+        changed = true;
+    }
+    if apply_write_content_coercions(name, map) {
+        changed = true;
+    }
     if name == "read_file" && coerce_read_file_extra_fields(map) {
         changed = true;
     }
-
     changed
 }
 
@@ -420,6 +451,25 @@ mod tests {
     }
 
     #[test]
+    fn create_file_filename_alias_passes_schema() {
+        let mut v = json!({"filename": "dir/n.txt", "content": "x"});
+        assert!(coerce_builtin_tool_args_value("create_file", &mut v));
+        assert_eq!(v["path"], "dir/n.txt");
+        assert_eq!(v["content"], "x");
+        let r = validate_parsed_value_if_known("create_file", &v).expect("create_file");
+        assert!(r.is_ok(), "{r:?}");
+    }
+
+    #[test]
+    fn create_file_path_only_gets_default_empty_content_for_schema() {
+        let mut v = json!({"path": "only.txt"});
+        assert!(coerce_builtin_tool_args_value("create_file", &mut v));
+        assert_eq!(v["content"], "");
+        let r = validate_parsed_value_if_known("create_file", &v).expect("create_file");
+        assert!(r.is_ok(), "{r:?}");
+    }
+
+    #[test]
     fn copy_file_src_dst_aliases_pass_schema() {
         let mut v = json!({"src": "a.txt", "dst": "b.txt"});
         assert!(coerce_builtin_tool_args_value("copy_file", &mut v));
@@ -443,6 +493,20 @@ mod tests {
         let raw = r#"{"file_path":"n.txt","text":"z"}"#;
         let cow = effective_builtin_tool_args_json("create_file", raw).expect("ok");
         assert!(matches!(cow, Cow::Owned(_)));
+        let r = validate_parsed_str_for_builtin("create_file", cow.as_ref()).expect("validator");
+        assert!(r.is_ok(), "{r:?}");
+    }
+
+    #[test]
+    fn effective_create_file_path_only_includes_empty_content() {
+        let raw = r#"{"output_path":"x"}"#;
+        let cow = effective_builtin_tool_args_json("create_file", raw).expect("ok");
+        assert!(matches!(cow, Cow::Owned(_)));
+        assert!(
+            cow.as_ref().contains("\"content\":\"\""),
+            "{}",
+            cow.as_ref()
+        );
         let r = validate_parsed_str_for_builtin("create_file", cow.as_ref()).expect("validator");
         assert!(r.is_ok(), "{r:?}");
     }
