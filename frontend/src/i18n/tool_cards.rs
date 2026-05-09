@@ -432,3 +432,11 @@ pub fn tool_card_compact_skip_headings(l: Locale) -> [&'static str; 3] {
         Locale::En => ["What was done", "What was produced", "What next"],
     }
 }
+
+/// 工具卡展开详情中「完整原文输出」小标题（置于服务端下发的 `output` 正文前）。
+pub fn tool_detail_full_output_heading(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "完整输出",
+        Locale::En => "Full output",
+    }
+}

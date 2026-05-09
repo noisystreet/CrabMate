@@ -248,7 +248,8 @@ pub fn tool_card_text(info: &ToolResultInfo, loc: Locale) -> String {
         merged.push_str("\n\n");
         merged.push_str(&body);
     }
-    // SSE 的 `summary` 仅为短摘要；`output` 含「命令：」「路径：」「从→到：」「搜索：」等结构化首行与正文，展开详情时一并展示。
+    // SSE 的 `summary` 仅为短摘要；`output` 含「命令：」「路径：」「从→到：」「搜索：」等结构化首行与正文。
+    // 成功：下列工具在详情中附带完整 `output`。失败：见文末「完整输出」（白名单工具在此处已附带则不重复）。
     const TOOLS_APPEND_RAW_OUTPUT: &[&str] = &[
         "run_command",
         "create_file",
@@ -257,16 +258,22 @@ pub fn tool_card_text(info: &ToolResultInfo, loc: Locale) -> String {
         "move_file",
         "search_in_files",
     ];
-    if TOOLS_APPEND_RAW_OUTPUT.contains(&info.name.trim()) {
-        let raw = info.output.trim();
-        if !raw.is_empty() {
-            merged.push_str("\n\n");
-            merged.push_str(raw);
-        }
+    let raw_trimmed = info.output.trim();
+    let name_trim = info.name.trim();
+    let whitelist_tool = TOOLS_APPEND_RAW_OUTPUT.contains(&name_trim);
+    if whitelist_tool && !raw_trimmed.is_empty() {
+        merged.push_str("\n\n");
+        merged.push_str(raw_trimmed);
     }
     if let Some(block) = build_tool_failure_block(info, loc, &out) {
         merged.push_str("\n\n");
         merged.push_str(&block);
+    }
+    if !info.ok.unwrap_or(true) && !raw_trimmed.is_empty() && !whitelist_tool {
+        merged.push_str("\n\n");
+        merged.push_str(i18n::tool_detail_full_output_heading(loc));
+        merged.push_str("\n");
+        merged.push_str(raw_trimmed);
     }
     merged
 }
@@ -316,6 +323,23 @@ mod tests {
         assert!(out.contains("发生了什么"));
         assert!(out.contains("影响范围"));
         assert!(out.contains("建议下一步"));
+    }
+
+    #[test]
+    fn failed_non_whitelist_tool_appends_full_output_block() {
+        let mut info = mk("");
+        info.name = "http_fetch".to_string();
+        info.summary = Some("❌ http_fetch 失败: timeout".to_string());
+        info.ok = Some(false);
+        info.output = "connection reset\nGET https://example.com failed".to_string();
+        info.error_code = Some("timeout".to_string());
+        let out = tool_card_text(&info, Locale::ZhHans);
+        assert!(
+            out.contains("完整输出"),
+            "expected heading in detail text: {out}"
+        );
+        assert!(out.contains("connection reset"));
+        assert!(out.contains("GET https://example.com failed"));
     }
 
     #[test]
