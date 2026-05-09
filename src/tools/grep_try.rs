@@ -222,12 +222,9 @@ fn prepend_search_header(body: &str, h: SearchOutputHeader<'_>) -> String {
     format!("{}\n{}", header, body)
 }
 
-/// 与 [`super::grep::run`] 行为一致，失败返回显式 [`ToolError`]。
 #[allow(clippy::result_large_err)]
-pub fn search_in_files_try(args_json: &str, workspace_root: &Path) -> Result<String, ToolError> {
-    let params = parse_params(args_json)?;
-
-    let re = RegexBuilder::new(&params.pattern)
+fn compile_regex_for_search(params: &SearchParams) -> Result<regex::Regex, ToolError> {
+    RegexBuilder::new(&params.pattern)
         .case_insensitive(params.case_insensitive)
         .build()
         .map_err(|e| {
@@ -235,33 +232,41 @@ pub fn search_in_files_try(args_json: &str, workspace_root: &Path) -> Result<Str
                 "search_in_files_invalid_regex",
                 format!("错误：无效的正则表达式：{}", e),
             )
-        })?;
+        })
+}
 
-    let file_glob_pat = match params.file_glob.as_deref() {
-        None => None,
-        Some(g) => Some(glob::Pattern::new(g).map_err(|e| {
-            ToolError::external_code(
-                "search_in_files_invalid_glob",
-                format!("错误：file_glob 不是合法 glob 模式: {}", e),
-            )
-        })?),
+#[allow(clippy::result_large_err)]
+fn compile_optional_glob_pat(
+    raw: Option<&str>,
+    label: &'static str,
+) -> Result<Option<glob::Pattern>, ToolError> {
+    let Some(g) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(None);
     };
-    let exclude_glob_pat = match params.exclude_glob.as_deref() {
-        None => None,
-        Some(g) => Some(glob::Pattern::new(g).map_err(|e| {
-            ToolError::external_code(
-                "search_in_files_invalid_glob",
-                format!("错误：exclude_glob 不是合法 glob 模式: {}", e),
-            )
-        })?),
-    };
+    glob::Pattern::new(g).map(Some).map_err(|e| {
+        ToolError::external_code(
+            "search_in_files_invalid_glob",
+            format!("错误：{label} 不是合法 glob 模式: {e}"),
+        )
+    })
+}
 
-    let root = resolve_search_root(workspace_root, params.sub_path.as_deref())?;
+struct WalkSearchOutcome {
+    results: Vec<(PathBuf, usize, String)>,
+    visited: usize,
+}
 
+fn walk_search_matches(
+    root: &Path,
+    params: &SearchParams,
+    re: &regex::Regex,
+    file_glob_pat: Option<&glob::Pattern>,
+    exclude_glob_pat: Option<&glob::Pattern>,
+) -> WalkSearchOutcome {
     let mut results: Vec<(PathBuf, usize, String)> = Vec::new();
     let mut visited = 0usize;
 
-    let walker = WalkBuilder::new(&root)
+    let walker = WalkBuilder::new(root)
         .hidden(!params.ignore_hidden)
         .git_ignore(true)
         .git_global(false)
@@ -282,12 +287,12 @@ pub fn search_in_files_try(args_json: &str, workspace_root: &Path) -> Result<Str
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        if let Some(ref pat) = file_glob_pat
+        if let Some(pat) = file_glob_pat
             && !pat.matches(&name)
         {
             continue;
         }
-        if let Some(ref pat) = exclude_glob_pat
+        if let Some(pat) = exclude_glob_pat
             && pat.matches(&name)
         {
             continue;
@@ -295,7 +300,7 @@ pub fn search_in_files_try(args_json: &str, workspace_root: &Path) -> Result<Str
 
         search_in_file(
             path,
-            &re,
+            re,
             &mut results,
             &mut visited,
             params.max_results,
@@ -307,15 +312,68 @@ pub fn search_in_files_try(args_json: &str, workspace_root: &Path) -> Result<Str
         }
     }
 
+    WalkSearchOutcome { results, visited }
+}
+
+fn format_search_body_empty(
+    params: &SearchParams,
+    workspace_root: &Path,
+    root: &Path,
+    visited: usize,
+) -> String {
+    let rel = path_under_workspace_display(workspace_root, root);
+    format!(
+        "搜索：\"{}\"\n范围：{}\n未找到匹配（共遍历 {} 个文件）",
+        params.pattern, rel, visited,
+    )
+}
+
+fn format_search_body_matches(
+    params: &SearchParams,
+    workspace_root: &Path,
+    root: &Path,
+    results: &[(PathBuf, usize, String)],
+) -> String {
+    let rel = path_under_workspace_display(workspace_root, root);
+    let mut out = String::new();
+    out.push_str(&format!(
+        "搜索：\"{}\"\n范围：{}\n匹配结果（最多 {} 条，实际 {} 条）：\n\n",
+        params.pattern,
+        rel,
+        params.max_results,
+        results.len()
+    ));
+    for (path, line_no, line) in results.iter() {
+        out.push_str(&format!("{}:{}: {}\n", path.display(), line_no, line));
+    }
+    out
+}
+
+/// 与 [`super::grep::run`] 行为一致，失败返回显式 [`ToolError`]。
+#[allow(clippy::result_large_err)]
+pub fn search_in_files_try(args_json: &str, workspace_root: &Path) -> Result<String, ToolError> {
+    let params = parse_params(args_json)?;
+
+    let re = compile_regex_for_search(&params)?;
+    let file_glob_pat = compile_optional_glob_pat(params.file_glob.as_deref(), "file_glob")?;
+    let exclude_glob_pat =
+        compile_optional_glob_pat(params.exclude_glob.as_deref(), "exclude_glob")?;
+
+    let root = resolve_search_root(workspace_root, params.sub_path.as_deref())?;
+
+    let WalkSearchOutcome { results, visited } = walk_search_matches(
+        &root,
+        &params,
+        &re,
+        file_glob_pat.as_ref(),
+        exclude_glob_pat.as_ref(),
+    );
+
     let truncated = results.len() >= params.max_results;
     let match_count = results.len();
 
     if results.is_empty() {
-        let rel = path_under_workspace_display(workspace_root, &root);
-        let body = format!(
-            "搜索：\"{}\"\n范围：{}\n未找到匹配（共遍历 {} 个文件）",
-            params.pattern, rel, visited,
-        );
+        let body = format_search_body_empty(&params, workspace_root, &root, visited);
         return Ok(prepend_search_header(
             &body,
             SearchOutputHeader {
@@ -330,20 +388,11 @@ pub fn search_in_files_try(args_json: &str, workspace_root: &Path) -> Result<Str
         ));
     }
 
-    let rel = path_under_workspace_display(workspace_root, &root);
-    let mut out = String::new();
-    out.push_str(&format!(
-        "搜索：\"{}\"\n范围：{}\n匹配结果（最多 {} 条，实际 {} 条）：\n\n",
-        params.pattern,
-        rel,
-        params.max_results,
-        results.len()
-    ));
-    for (path, line_no, line) in results {
-        out.push_str(&format!("{}:{}: {}\n", path.display(), line_no, line));
-    }
+    let body = format_search_body_matches(&params, workspace_root, &root, &results)
+        .trim_end()
+        .to_string();
     Ok(prepend_search_header(
-        out.trim_end(),
+        &body,
         SearchOutputHeader {
             pattern: params.pattern.as_str(),
             working_dir: workspace_root,

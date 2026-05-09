@@ -75,27 +75,54 @@ pub fn pytest_run(args_json: &str, workspace_root: &Path, max_output_len: usize)
         Err(e) => return format!("工作区根目录无法解析: {}", e),
     };
 
-    if let Some(p) = v.get("test_path").and_then(|x| x.as_str()).map(str::trim)
-        && !p.is_empty()
-        && !is_safe_rel_path(p)
-    {
-        return "错误：test_path 必须是工作区内相对路径且不能包含 ..".to_string();
+    if let Some(err) = pytest_validate_test_path(&v) {
+        return err;
     }
 
     let mut cmd = Command::new("python3");
     cmd.arg("-m").arg("pytest").current_dir(&base);
 
+    pytest_append_test_path_arg(&v, &mut cmd);
+
+    if let Some(err) = pytest_append_keyword_and_marker_args(&v, &mut cmd) {
+        return err;
+    }
+
+    pytest_append_common_pytest_cli_flags(&v, &mut cmd);
+
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    run_and_format(cmd, max_output_len, "python3 -m pytest")
+}
+
+fn pytest_validate_test_path(v: &serde_json::Value) -> Option<String> {
+    if let Some(p) = v.get("test_path").and_then(|x| x.as_str()).map(str::trim)
+        && !p.is_empty()
+        && !is_safe_rel_path(p)
+    {
+        return Some("错误：test_path 必须是工作区内相对路径且不能包含 ..".to_string());
+    }
+    None
+}
+
+fn pytest_append_test_path_arg(v: &serde_json::Value, cmd: &mut Command) {
     if let Some(p) = v.get("test_path").and_then(|x| x.as_str()).map(str::trim)
         && !p.is_empty()
     {
         cmd.arg(p);
     }
+}
 
+fn pytest_append_keyword_and_marker_args(
+    v: &serde_json::Value,
+    cmd: &mut Command,
+) -> Option<String> {
     if let Some(k) = v.get("keyword").and_then(|x| x.as_str()).map(str::trim)
         && !k.is_empty()
     {
         if !is_safe_py_expr(k) {
-            return "错误：keyword（-k）含不允许字符（禁止 shell 元字符与换行）".to_string();
+            return Some("错误：keyword（-k）含不允许字符（禁止 shell 元字符与换行）".to_string());
         }
         cmd.arg("-k").arg(k);
     }
@@ -103,10 +130,14 @@ pub fn pytest_run(args_json: &str, workspace_root: &Path, max_output_len: usize)
         && !m.is_empty()
     {
         if !is_safe_py_expr(m) {
-            return "错误：markers（-m）含不允许字符".to_string();
+            return Some("错误：markers（-m）含不允许字符".to_string());
         }
         cmd.arg("-m").arg(m);
     }
+    None
+}
+
+fn pytest_append_common_pytest_cli_flags(v: &serde_json::Value, cmd: &mut Command) {
     if v.get("quiet").and_then(|x| x.as_bool()).unwrap_or(true) {
         cmd.arg("-q");
     }
@@ -119,11 +150,6 @@ pub fn pytest_run(args_json: &str, workspace_root: &Path, max_output_len: usize)
     {
         cmd.arg("--capture=no");
     }
-
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    run_and_format(cmd, max_output_len, "python3 -m pytest")
 }
 
 /// `mypy`：可选相对路径列表（默认 `["."]`）。
