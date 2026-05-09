@@ -39,6 +39,61 @@ const CLIENT_LLM_API_BASE_MAX: usize = 2048;
 const CLIENT_LLM_MODEL_MAX: usize = 512;
 const CLIENT_LLM_API_KEY_MAX: usize = 16384;
 
+fn validate_web_override_api_base(raw: &str) -> Result<(), String> {
+    let t = raw.trim();
+    if t.is_empty() {
+        return Err("api_base 不能为空".to_string());
+    }
+    let u = reqwest::Url::parse(t).map_err(|_| "api_base URL 格式无效".to_string())?;
+    match u.scheme() {
+        "http" | "https" => {}
+        _ => return Err("api_base 仅支持 http 或 https".to_string()),
+    }
+    let host = u
+        .host_str()
+        .filter(|h| !h.is_empty())
+        .ok_or_else(|| "api_base 须包含主机名".to_string())?;
+    let host_lc = host.to_ascii_lowercase();
+    if host_lc == "169.254.169.254"
+        || host_lc == "metadata.google.internal"
+        || host_lc == "metadata.goog"
+    {
+        return Err("api_base 主机不被允许".to_string());
+    }
+    Ok(())
+}
+
+fn validate_optional_web_api_base(
+    api_base: &Option<String>,
+    prefix: &'static str,
+) -> Result<(), String> {
+    let Some(s) = api_base else {
+        return Ok(());
+    };
+    validate_web_override_api_base(s)?;
+    if s.len() > CLIENT_LLM_API_BASE_MAX {
+        return Err(format!(
+            "{prefix}.api_base 过长（上限 {} 字符）",
+            CLIENT_LLM_API_BASE_MAX
+        ));
+    }
+    Ok(())
+}
+
+fn validate_optional_field_max_len(
+    value: &Option<String>,
+    max: usize,
+    prefix: &'static str,
+    field: &'static str,
+) -> Result<(), String> {
+    if let Some(s) = value
+        && s.len() > max
+    {
+        return Err(format!("{prefix}.{field} 过长（上限 {max} 字符）",));
+    }
+    Ok(())
+}
+
 pub(super) fn parse_client_llm_override(
     raw: Option<ClientLlmBody>,
 ) -> Result<Option<chat_job_queue::WebChatLlmOverride>, String> {
@@ -96,30 +151,9 @@ pub(super) fn parse_client_llm_override(
     {
         return Ok(None);
     }
-    if let Some(ref s) = api_base
-        && s.len() > CLIENT_LLM_API_BASE_MAX
-    {
-        return Err(format!(
-            "client_llm.api_base 过长（上限 {} 字符）",
-            CLIENT_LLM_API_BASE_MAX
-        ));
-    }
-    if let Some(ref s) = model
-        && s.len() > CLIENT_LLM_MODEL_MAX
-    {
-        return Err(format!(
-            "client_llm.model 过长（上限 {} 字符）",
-            CLIENT_LLM_MODEL_MAX
-        ));
-    }
-    if let Some(ref s) = api_key
-        && s.len() > CLIENT_LLM_API_KEY_MAX
-    {
-        return Err(format!(
-            "client_llm.api_key 过长（上限 {} 字符）",
-            CLIENT_LLM_API_KEY_MAX
-        ));
-    }
+    validate_optional_web_api_base(&api_base, "client_llm")?;
+    validate_optional_field_max_len(&model, CLIENT_LLM_MODEL_MAX, "client_llm", "model")?;
+    validate_optional_field_max_len(&api_key, CLIENT_LLM_API_KEY_MAX, "client_llm", "api_key")?;
     Ok(Some(chat_job_queue::WebChatLlmOverride {
         api_base,
         model,
@@ -156,30 +190,9 @@ pub(super) fn parse_executor_llm_override(
     if api_base.is_none() && model.is_none() && api_key.is_none() {
         return Ok(None);
     }
-    if let Some(ref s) = api_base
-        && s.len() > CLIENT_LLM_API_BASE_MAX
-    {
-        return Err(format!(
-            "executor_llm.api_base 过长（上限 {} 字符）",
-            CLIENT_LLM_API_BASE_MAX
-        ));
-    }
-    if let Some(ref s) = model
-        && s.len() > CLIENT_LLM_MODEL_MAX
-    {
-        return Err(format!(
-            "executor_llm.model 过长（上限 {} 字符）",
-            CLIENT_LLM_MODEL_MAX
-        ));
-    }
-    if let Some(ref s) = api_key
-        && s.len() > CLIENT_LLM_API_KEY_MAX
-    {
-        return Err(format!(
-            "executor_llm.api_key 过长（上限 {} 字符）",
-            CLIENT_LLM_API_KEY_MAX
-        ));
-    }
+    validate_optional_web_api_base(&api_base, "executor_llm")?;
+    validate_optional_field_max_len(&model, CLIENT_LLM_MODEL_MAX, "executor_llm", "model")?;
+    validate_optional_field_max_len(&api_key, CLIENT_LLM_API_KEY_MAX, "executor_llm", "api_key")?;
     Ok(Some(chat_job_queue::WebChatLlmOverride {
         api_base,
         model,
@@ -345,4 +358,30 @@ pub(crate) fn normalize_client_conversation_id(
         return Err("conversation_id 仅允许字母、数字、- _ . :".to_string());
     }
     Ok(Some(id.to_string()))
+}
+
+#[cfg(test)]
+mod web_llm_api_base_tests {
+    use crate::web::http_types::chat::{ClientLlmBody, ExecutorLlmBody};
+
+    use super::{parse_client_llm_override, parse_executor_llm_override};
+
+    #[test]
+    fn client_llm_rejects_metadata_ip_host() {
+        let err = parse_client_llm_override(Some(ClientLlmBody {
+            api_base: Some("http://169.254.169.254/latest/meta-data/".into()),
+            ..Default::default()
+        }))
+        .unwrap_err();
+        assert!(err.contains("主机"), "{err}");
+    }
+
+    #[test]
+    fn executor_llm_accepts_localhost_gateways() {
+        let ok = parse_executor_llm_override(Some(ExecutorLlmBody {
+            api_base: Some("http://127.0.0.1:11434/v1".into()),
+            ..Default::default()
+        }));
+        assert!(ok.is_ok(), "{:?}", ok.err());
+    }
 }

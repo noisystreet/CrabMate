@@ -1,5 +1,7 @@
 //! `POST /chat*`、`/upload*`、`POST /config/reload` 等 JSON 体；路由表见 [`crate::web::routes::chat::router`]。
-//! 根级 `ChatRequestBody` 的字段长度与条数上限见 [`super::validation`]。
+//! 根级 [`ChatRequestBody`] 字段长度与条数上限见 [`super::validation`]。
+
+use serde::Deserialize;
 
 /// 用户对澄清问卷的作答；与 SSE `clarification_questionnaire.questionnaire_id` 及题目 `id` 对齐。
 #[derive(serde::Deserialize, Clone)]
@@ -11,63 +13,32 @@ pub(crate) struct ClarifyQuestionnaireAnswersBody {
     pub(crate) answers: serde_json::Value,
 }
 
-/// 同步/流式对话共有字段。根对象不设 `deny_unknown_fields`，以便 [`ChatAsyncRequestBody`] 与同层
-/// `webhook_*` 通过 `flatten` 共存；嵌套对象单独拒绝未知键。
-#[derive(serde::Deserialize)]
+/// 同步/流式对话共有字段。顶层 JSON 键白名单见 [`super::validation::CHAT_REQUEST_BODY_ALLOWED_KEYS`]；
+/// 未知顶层键在自定义 [`Deserialize`] 中拒绝。
 pub(crate) struct ChatRequestBody {
     pub(crate) message: String,
-    #[serde(default)]
     pub(crate) conversation_id: Option<String>,
-    /// 命名角色 id（须与配置一致）。**新会话**建立首条 `system`；**已有会话**若与上次不同则刷新首条 `system` 并更新持久化 `active_agent_role`。
-    #[serde(default, rename = "agent_role")]
     pub(crate) agent_role: Option<String>,
-    #[serde(default)]
     pub(crate) approval_session_id: Option<String>,
-    /// 覆盖本回合 `chat/completions` 的 **`temperature`**（0～2）；省略则用服务端配置。
-    #[serde(default)]
     pub(crate) temperature: Option<f64>,
-    /// 写入请求 JSON 的整数 **`seed`**（OpenAI 兼容）；与 `seed_policy: "omit"` 互斥。
-    #[serde(default)]
     pub(crate) seed: Option<i64>,
-    /// `omit` / `none`：本回合请求**不**带 `seed`（即使配置了默认 `llm_seed`）。
-    #[serde(default)]
     pub(crate) seed_policy: Option<String>,
-    /// 可选：浏览器侧覆盖本回合 LLM 网关 `api_base` / `model` / `api_key`（不写服务端配置）。
-    #[serde(default)]
     pub(crate) client_llm: Option<ClientLlmBody>,
-    /// 可选：浏览器侧覆盖执行阶段 LLM 网关 `api_base` / `model` / `api_key`。
-    #[serde(default)]
     pub(crate) executor_llm: Option<ExecutorLlmBody>,
-    /// 可选：执行模式覆盖（`rolling_planning` / `hierarchical`），仅作用于本回合。
-    #[serde(default)]
     pub(crate) execution_mode: Option<String>,
-    /// 可选：本回合覆盖只读类 **`run_command`** 进程内 TTL 缓存秒数（`0` 关闭；上限 **3600**；省略则跟随服务端 **[agent] readonly_tool_ttl_cache_secs**）。
-    #[serde(default)]
     pub(crate) readonly_tool_ttl_cache_secs: Option<u64>,
-    /// 断线重连：挂接到进行中的 `job_id`；`after_seq` 与请求头 **`Last-Event-ID`** 取较大值后从环形缓冲重放。
-    #[serde(default)]
     pub(crate) stream_resume: Option<StreamResumeBody>,
-    /// 客户端实现的 SSE 控制面版本（与 `crabmate_sse_protocol::SSE_PROTOCOL_VERSION` 对齐）。省略表示不声明，服务端不据此拒绝；若 **大于** 服务端版本则 **400**（`SSE_CLIENT_TOO_NEW`）。
-    #[serde(default, rename = "client_sse_protocol")]
     pub(crate) client_sse_protocol: Option<u8>,
-    /// 本回合附带的图片 URL 列表（须为先前 `POST /upload` 返回的 **`/uploads/...`** 相对路径）；服务端组装 OpenAI 兼容多模态 `user.content`。
-    #[serde(default)]
     pub(crate) image_urls: Vec<String>,
-    /// 可选：回应上一轮 SSE **`clarification_questionnaire`**；合并进本回合 user 正文（在 `@` 文件引用展开之后）。
-    #[serde(default)]
     pub(crate) clarify_questionnaire_answers: Option<ClarifyQuestionnaireAnswersBody>,
 }
 
-/// `POST /chat/async` 请求体：与 [`ChatRequestBody`] 相同字段，外加可选 Webhook（完成后 **POST** JSON）。
-#[derive(serde::Deserialize)]
+/// `POST /chat/async`：与 [`ChatRequestBody`] 同形，另可选 `webhook_url` / `webhook_secret`（自定义反序列化）。
 pub(crate) struct ChatAsyncRequestBody {
-    #[serde(flatten)]
     pub(crate) chat: ChatRequestBody,
     /// 非空时：任务进入 **`completed`** / **`failed`** 后向该 URL **POST** JSON（`Content-Type: application/json`）；须为 **http** 或 **https**。
-    #[serde(default)]
     pub(crate) webhook_url: Option<String>,
     /// 可选：与 Webhook 一并发送 **`X-Crabmate-Webhook-Secret`**（集成方自行校验；**勿**在日志中输出完整值）。
-    #[serde(default)]
     pub(crate) webhook_secret: Option<String>,
 }
 
@@ -129,6 +100,63 @@ pub(crate) struct ExecutorLlmBody {
     pub(crate) model: Option<String>,
     #[serde(default)]
     pub(crate) api_key: Option<String>,
+}
+
+/// 与 [`ChatRequestBody`] 同形的 serde 助手（顶层键另由 [`crate::web::http_types::validation`] 校验）。
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChatRequestBodySerde {
+    pub(crate) message: String,
+    #[serde(default)]
+    pub(crate) conversation_id: Option<String>,
+    #[serde(default, rename = "agent_role")]
+    pub(crate) agent_role: Option<String>,
+    #[serde(default)]
+    pub(crate) approval_session_id: Option<String>,
+    #[serde(default)]
+    pub(crate) temperature: Option<f64>,
+    #[serde(default)]
+    pub(crate) seed: Option<i64>,
+    #[serde(default)]
+    pub(crate) seed_policy: Option<String>,
+    #[serde(default)]
+    pub(crate) client_llm: Option<ClientLlmBody>,
+    #[serde(default)]
+    pub(crate) executor_llm: Option<ExecutorLlmBody>,
+    #[serde(default)]
+    pub(crate) execution_mode: Option<String>,
+    #[serde(default)]
+    pub(crate) readonly_tool_ttl_cache_secs: Option<u64>,
+    #[serde(default)]
+    pub(crate) stream_resume: Option<StreamResumeBody>,
+    #[serde(default, rename = "client_sse_protocol")]
+    pub(crate) client_sse_protocol: Option<u8>,
+    #[serde(default)]
+    pub(crate) image_urls: Vec<String>,
+    #[serde(default)]
+    pub(crate) clarify_questionnaire_answers: Option<ClarifyQuestionnaireAnswersBody>,
+}
+
+impl From<ChatRequestBodySerde> for ChatRequestBody {
+    fn from(s: ChatRequestBodySerde) -> Self {
+        ChatRequestBody {
+            message: s.message,
+            conversation_id: s.conversation_id,
+            agent_role: s.agent_role,
+            approval_session_id: s.approval_session_id,
+            temperature: s.temperature,
+            seed: s.seed,
+            seed_policy: s.seed_policy,
+            client_llm: s.client_llm,
+            executor_llm: s.executor_llm,
+            execution_mode: s.execution_mode,
+            readonly_tool_ttl_cache_secs: s.readonly_tool_ttl_cache_secs,
+            stream_resume: s.stream_resume,
+            client_sse_protocol: s.client_sse_protocol,
+            image_urls: s.image_urls,
+            clarify_questionnaire_answers: s.clarify_questionnaire_answers,
+        }
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -244,6 +272,65 @@ impl ApiError {
             message: message.into(),
             reason_code: Some(reason_code.into()),
         }
+    }
+}
+
+fn chat_request_body_from_json(v: serde_json::Value) -> Result<ChatRequestBody, String> {
+    let obj = v
+        .as_object()
+        .ok_or_else(|| "expected JSON object".to_string())?;
+    super::validation::reject_unknown_chat_body_keys(obj)?;
+    let inner: ChatRequestBodySerde = serde_json::from_value(v).map_err(|e| e.to_string())?;
+    Ok(inner.into())
+}
+
+fn chat_async_request_body_from_json(v: serde_json::Value) -> Result<ChatAsyncRequestBody, String> {
+    let mut map = match v.as_object().cloned() {
+        Some(m) => m,
+        None => return Err("expected JSON object".to_string()),
+    };
+    super::validation::reject_unknown_async_chat_body_keys(&map)?;
+    let webhook_url = take_async_webhook_string(&mut map, "webhook_url")?;
+    let webhook_secret = take_async_webhook_string(&mut map, "webhook_secret")?;
+    let chat_val = serde_json::Value::Object(map);
+    let inner: ChatRequestBodySerde =
+        serde_json::from_value(chat_val).map_err(|e| e.to_string())?;
+    Ok(ChatAsyncRequestBody {
+        chat: inner.into(),
+        webhook_url,
+        webhook_secret,
+    })
+}
+
+fn take_async_webhook_string(
+    map: &mut serde_json::Map<String, serde_json::Value>,
+    key: &'static str,
+) -> Result<Option<String>, String> {
+    match map.remove(key) {
+        None => Ok(None),
+        Some(v) if v.is_null() => Ok(None),
+        Some(serde_json::Value::String(s)) => Ok(Some(s)),
+        Some(_) => Err(format!("{key} 须为 JSON 字符串或省略")),
+    }
+}
+
+impl<'de> Deserialize<'de> for ChatRequestBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let v = serde_json::Value::deserialize(deserializer)?;
+        chat_request_body_from_json(v).map_err(serde::de::Error::custom)
+    }
+}
+
+impl<'de> Deserialize<'de> for ChatAsyncRequestBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let v = serde_json::Value::deserialize(deserializer)?;
+        chat_async_request_body_from_json(v).map_err(serde::de::Error::custom)
     }
 }
 

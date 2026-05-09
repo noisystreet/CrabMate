@@ -22,6 +22,9 @@ use thiserror::Error;
 
 use crate::config::AgentConfig;
 
+/// Web 与工作区根组合的相对 `path` 参数允许的最大字节数（原始字符串，trim 前测量）。
+pub(crate) const WEB_WORKSPACE_REL_SUBPATH_MAX_BYTES: usize = 8192;
+
 /// 工作区路径解析与策略校验失败（可判别类别，供日志与调用方分支；对用户展示用 [`Display`] / [`WorkspacePathError::user_message`]）。
 #[derive(Debug, Error)]
 pub enum WorkspacePathError {
@@ -67,6 +70,9 @@ pub enum WorkspacePathError {
     /// 规范化后路径越过工作区根（`..` 逃逸或 Web 子路径越界）。
     #[error("路径不能超出工作目录")]
     OutsideWorkspaceRoot,
+    /// Web 查询参数中的相对路径字节过长（参见 [`WEB_WORKSPACE_REL_SUBPATH_MAX_BYTES`]）。
+    #[error("path 过长（上限 {max} 字节）")]
+    WebRelSubpathTooLong { max: usize },
     /// `path_absolutize` 词法规范化失败（`absolutize` / `absolutize_from` 的 IO 错误）。
     #[error("路径规范化失败: {0}")]
     NormalizationFailed(#[source] std::io::Error),
@@ -96,6 +102,7 @@ impl WorkspacePathError {
                 "effective_root_outside_allowed"
             }
             WorkspacePathError::OutsideWorkspaceRoot => "outside_workspace_root",
+            WorkspacePathError::WebRelSubpathTooLong { .. } => "web_rel_subpath_too_long",
             WorkspacePathError::NormalizationFailed(_) => "path_normalize_failed",
             WorkspacePathError::NoExistingAncestor => "no_existing_ancestor",
         }
@@ -286,16 +293,23 @@ pub(crate) fn absolutize_workspace_subpath(
     Ok(normalized.into_owned())
 }
 
-/// Web：在已 canonical 的工作区根下解析只读路径；`sub` 缺省或空则返回根本身。
+/// Web：在已 canonical 的工作区根下解析只读路径；`sub` 缺省或空（trim 后）则返回根本身。
 pub(crate) fn resolve_web_workspace_read_path(
     base_canonical: &Path,
     sub: Option<&str>,
 ) -> Result<PathBuf, WorkspacePathError> {
-    let sub = match sub {
+    if let Some(s) = sub
+        && s.len() > WEB_WORKSPACE_REL_SUBPATH_MAX_BYTES
+    {
+        return Err(WorkspacePathError::WebRelSubpathTooLong {
+            max: WEB_WORKSPACE_REL_SUBPATH_MAX_BYTES,
+        });
+    }
+    let sub_trimmed = match sub {
         Some(s) if !s.trim().is_empty() => s.trim(),
         _ => return Ok(base_canonical.to_path_buf()),
     };
-    let normalized = absolutize_workspace_subpath(base_canonical, sub)?;
+    let normalized = absolutize_workspace_subpath(base_canonical, sub_trimmed)?;
     let canonical = normalized
         .canonicalize()
         .map_err(WorkspacePathError::PathResolveFailed)?;
@@ -353,6 +367,17 @@ mod tests {
     fn outside_workspace_root_kind() {
         let e = WorkspacePathError::OutsideWorkspaceRoot;
         assert_eq!(e.kind(), "outside_workspace_root");
+    }
+
+    #[test]
+    fn resolve_web_rejects_oversized_subpath() {
+        use tempfile::tempdir;
+
+        let dir = tempdir().expect("tempdir");
+        let base = dir.path().canonicalize().expect("canon");
+        let long = "a".repeat(WEB_WORKSPACE_REL_SUBPATH_MAX_BYTES + 1);
+        let e = resolve_web_workspace_read_path(&base, Some(&long)).expect_err("oversized");
+        assert!(matches!(e, WorkspacePathError::WebRelSubpathTooLong { .. }));
     }
 }
 
