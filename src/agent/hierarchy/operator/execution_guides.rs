@@ -1,6 +1,6 @@
 //! 分层算子 ReAct：按任务描述关键词选用的执行指导长文案（与 `prompt.rs` 中 `build_execution_guide` 配套）。
 
-pub(super) const DEFAULT: &str = "分析任务需求，选择合适的工具，逐步执行并验证结果。";
+pub(super) const DEFAULT: &str = "分析任务需求；在首次调用工具前完成系统提示中的首轮复述（除非用户免去或属于无需工具的极简问答）；再选择合适的工具，逐步执行并验证结果。";
 
 pub(super) const BUILD: &str = r#"这是一个编译/构建任务，请按以下步骤执行：
 
