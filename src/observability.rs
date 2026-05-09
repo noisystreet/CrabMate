@@ -17,8 +17,8 @@ pub(crate) const CHAT_TURN_SPAN_NAME: &str = "chat_turn";
 
 /// `chat_turn` span 内 `conversation_id` 字段最大 Unicode 标量（超出则 `…(truncated)`，避免每行 INFO 被会话 id 撑满）。
 pub(crate) const CHAT_TURN_CONVERSATION_ID_FIELD_MAX_CHARS: usize = 56;
-/// `tool_call_id` 写入 span / `parallel_tool` 子 span 时的上限（模型可能返回较长 id）。
-pub(crate) const CHAT_TURN_TOOL_CALL_ID_FIELD_MAX_CHARS: usize = 72;
+/// `chat_turn` span 内 **`tool_call_id`** 展示串（**`#序号·…尾部`**）里尾部片段的最大 Unicode 标量数（超出则只保留尾部并加 **`…`** 前缀）。
+pub(crate) const CHAT_TURN_TOOL_CALL_LOG_TAIL_MAX_CHARS: usize = 12;
 
 static LOGGING_INIT: OnceLock<Result<(), String>> = OnceLock::new();
 
@@ -199,27 +199,49 @@ pub(crate) fn chat_turn_span(job_id: u64, conversation_id: &str) -> Span {
         conversation_id = %conversation_id_field,
         conversation_id_len = conversation_id.trim().chars().count(),
         outer_loop_iteration = tracing::field::Empty,
+        tool_call_seq = tracing::field::Empty,
         tool_call_id = tracing::field::Empty,
     )
+}
+
+fn tool_call_id_suffix_for_log(raw: &str) -> String {
+    let t = raw.trim();
+    let cs: Vec<char> = t.chars().collect();
+    if t.is_empty() {
+        return "?".to_string();
+    }
+    if cs.len() <= CHAT_TURN_TOOL_CALL_LOG_TAIL_MAX_CHARS {
+        return t.to_string();
+    }
+    let start = cs.len() - CHAT_TURN_TOOL_CALL_LOG_TAIL_MAX_CHARS;
+    format!("…{}", cs[start..].iter().collect::<String>())
 }
 
 pub(crate) fn record_outer_loop_iteration(span: &Span, iteration: u32) {
     span.record("outer_loop_iteration", iteration);
 }
 
-pub(crate) fn record_tool_call_id(span: &Span, tool_call_id: &str) {
-    let s =
-        crate::redact::preview_chars(tool_call_id.trim(), CHAT_TURN_TOOL_CALL_ID_FIELD_MAX_CHARS);
-    span.record("tool_call_id", s.as_str());
+/// 将 **`tool_call_seq`**（本轮工具调用单调序号，从 1 起）与 **`tool_call_id`**（`#n·…尾部`，便于扫读）写入 `chat_turn` span。
+/// 返回与写入字段一致的展示标签，供 **`parallel_tool`** 子 span 等同款缩短，避免嵌套 span 仍打出完整上游 id。
+pub(crate) fn record_tool_call_seq_and_label(
+    span: &Span,
+    seq: u32,
+    raw_tool_call_id: &str,
+) -> String {
+    let label = format!("#{seq}·{}", tool_call_id_suffix_for_log(raw_tool_call_id));
+    span.record("tool_call_seq", seq);
+    span.record("tool_call_id", label.as_str());
+    label
 }
 
-/// Web `/chat*` 单任务：`job_id` / `conversation_id` 根 span + 可递增的外层轮次；工具日志前更新 **`tool_call_id`**。
+/// Web `/chat*` 单任务：`job_id` / `conversation_id` 根 span + 可递增的外层轮次；工具日志前更新 **`tool_call_seq`** / **`tool_call_id`**（展示标签，协议层仍以原始 id 为准）。
 #[derive(Debug)]
 pub struct TracingChatTurn {
     /// 与 HTTP **`x-stream-job-id`**、SSE **`sse_capabilities.job_id`** 一致（CLI 等无 Web 任务时为占位，通常不用于观测）。
     pub job_id: u64,
     pub span: Span,
     outer_iteration: AtomicU32,
+    tool_call_seq: AtomicU32,
 }
 
 impl TracingChatTurn {
@@ -228,6 +250,7 @@ impl TracingChatTurn {
             job_id,
             span: chat_turn_span(job_id, conversation_id),
             outer_iteration: AtomicU32::new(0),
+            tool_call_seq: AtomicU32::new(0),
         })
     }
 
@@ -237,7 +260,23 @@ impl TracingChatTurn {
         record_outer_loop_iteration(&self.span, v);
     }
 
-    pub fn record_tool_call_id_for_log(&self, tool_call_id: &str) {
-        record_tool_call_id(&self.span, tool_call_id);
+    /// 返回与 **`chat_turn`** / **`parallel_tool`** 字段一致的短标签（`#序号·…尾部`）。
+    pub fn record_tool_call_id_for_log(&self, tool_call_id: &str) -> String {
+        let seq = self.tool_call_seq.fetch_add(1, Ordering::Relaxed) + 1;
+        record_tool_call_seq_and_label(&self.span, seq, tool_call_id)
+    }
+}
+
+#[cfg(test)]
+mod tool_call_log_tests {
+    use super::tool_call_id_suffix_for_log;
+
+    #[test]
+    fn suffix_short_or_tail() {
+        assert_eq!(tool_call_id_suffix_for_log(""), "?");
+        assert_eq!(tool_call_id_suffix_for_log("ab"), "ab");
+        let long = "call_00_BkY0VJ0b9ntl4djhm6ji1935";
+        assert!(tool_call_id_suffix_for_log(long).starts_with('…'));
+        assert!(tool_call_id_suffix_for_log(long).contains("ji1935"));
     }
 }

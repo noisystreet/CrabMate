@@ -152,6 +152,9 @@ fn classify_error_code(first_line: &str, tool_name: &str) -> String {
     if first_line.contains("参数解析错误") {
         return "invalid_args".to_string();
     }
+    if first_line.contains("参数与工具 JSON Schema") {
+        return "invalid_args".to_string();
+    }
     if first_line.contains("不允许的命令") {
         return "command_not_allowed".to_string();
     }
