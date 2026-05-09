@@ -230,7 +230,8 @@ pub(crate) fn record_tool_call_seq_and_label(
 ) -> String {
     let label = format!("#{seq}·{}", tool_call_id_suffix_for_log(raw_tool_call_id));
     span.record("tool_call_seq", seq);
-    span.record("tool_call_id", label.as_str());
+    // `display` + `clone`：确保格式化层持有副本（勿在 `label` 析构后仍借用 `as_str()`）。
+    span.record("tool_call_id", tracing::field::display(label.clone()));
     label
 }
 
