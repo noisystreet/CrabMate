@@ -6,6 +6,7 @@
 //!
 //! 根壳层 `wire_*` 的**注册顺序**影响隐式时序依赖；见 [`app_shell_wire_phases`](super::app_shell_wire_phases)
 //! 与 [`bootstrap_app_shell`](super::app_shell_bootstrap::bootstrap_app_shell)（[`init_app_shell`](super::app_shell_init::init_app_shell)）；聊天列内部顺序见 [`wire_chat_domain`](super::chat::wire_chat_domain)。
+//! 聊天域信号切片见 [`ChatDomainWiringSignals`](super::app_signals::ChatDomainWiringSignals)（与 [`AppSignals`] 同源，供接线单点组装）。
 
 use std::cell::RefCell;
 use std::rc::Rc;

@@ -165,30 +165,9 @@ pub(super) fn wire_phase4c_chat_and_workspace_chrome(
     let chat_stream_shell =
         ComposerStreamShell::from_app_signals(app, Arc::clone(refresh_workspace));
 
-    let (chat_wires, stream_busy_memos) = wire_chat_domain_effects(WireChatDomainEffectsArgs {
-        initialized: app.initialized,
-        chat_session: app.chat,
-        draft: app.chat_composer.draft,
-        pending_images: app.chat_composer.pending_images,
-        pending_clarification: app.approval.pending_clarification,
-        collapsed_long_assistant_ids: app.chat_composer.collapsed_long_assistant_ids,
-        composer_mirror_html: app.chat_composer.composer_mirror_html,
-        composer_mirror_scroll_top: app.chat_composer.composer_mirror_scroll_top,
-        composer_input_ref: app.chat_composer.composer_input_ref.clone(),
-        sessions: app.chat.sessions,
-        active_id: app.chat.active_id,
-        messages_scroller: app.chat_composer.messages_scroller,
-        auto_scroll_chat: app.chat_composer.auto_scroll_chat,
-        messages_scroll_from_effect: app.chat_composer.messages_scroll_from_effect,
-        chat_find_query: app.chat_composer.chat_find_query,
-        chat_find_match_ids: app.chat_composer.chat_find_match_ids,
-        chat_find_cursor: app.chat_composer.chat_find_cursor,
-        locale: app.shell_ui.locale,
-        apply_assistant_display_filters: app.shell_ui.apply_assistant_display_filters,
-        focus_message_id_after_nav: app.chat_composer.focus_message_id_after_nav,
-        selected_agent_role: app.llm_settings.selected_agent_role,
-        stream_shell: chat_stream_shell.clone(),
-    });
+    let (chat_wires, stream_busy_memos) = wire_chat_domain_effects(
+        WireChatDomainEffectsArgs::from_app_and_stream_shell(app, chat_stream_shell.clone()),
+    );
 
     (
         insert_workspace_file_ref_sv,

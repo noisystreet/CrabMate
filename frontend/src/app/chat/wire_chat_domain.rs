@@ -1,5 +1,7 @@
 //! 聊天域接线：会话切换、草稿同步、滚底、查找、composer 流式等 `wire_*` 从 `app/mod.rs` 迁出，落实 **`docs/frontend/ARCHITECTURE.md`** 阶段 **B（壳与域分离）**。
 //!
+//! 会话列表与活动 id 仅经 [`ChatDomainWiringSignals::chat`]（[`ChatSessionSignals`]）传递，**不**在 [`WireChatDomainEffectsArgs`] 中重复平铺 `sessions` / `active_id`。
+//!
 //! `App` 仍负责 [`AppSignals`](crate::app::app_signals::AppSignals) 与 [`ComposerStreamShell::from_app_signals`](super::handles::ComposerStreamShell::from_app_signals)；本模块只注册聊天相关副作用，并返回 [`ChatComposerWires`](super::handles::ChatComposerWires) 与 [`ChatStreamBusyMemos`](crate::chat_session_state::ChatStreamBusyMemos)（`Memo` 派生的回合忙状态，供底栏 / 作曲器 / 消息行共用）。
 //!
 //! # `wire_chat_domain_effects` 内顺序
@@ -13,15 +15,8 @@
 //!
 //! 调整顺序前须确认：会话切换与草稿同步应先于依赖 `draft` / `active_id` 的发送闭包稳定注册。
 
-use leptos::html::Textarea;
-use leptos::prelude::*;
-
-use crate::chat_session_state::{
-    ChatSessionSignals, ChatStreamBusyMemos, make_chat_stream_busy_memos,
-};
-use crate::clarification_form::PendingClarificationForm;
-use crate::i18n::Locale;
-use crate::storage::ChatSession;
+use crate::app::app_signals::ChatDomainWiringSignals;
+use crate::chat_session_state::{ChatStreamBusyMemos, make_chat_stream_busy_memos};
 
 use super::composer::{
     wire_chat_composer_streams, wire_draft_sync_to_mirror_and_textarea,
@@ -31,70 +26,65 @@ use super::find::wire_chat_find_matches;
 use super::handles::{ChatComposerWires, ComposerStreamShell, WireComposerStreamsArgs};
 use super::scroll::{wire_focus_message_after_nav, wire_messages_auto_scroll};
 
-/// 注册 `wire_chat_domain_effects` 所需的信号与句柄（避免长形参列表）。
+/// 注册 `wire_chat_domain_effects` 所需的信号与句柄：[`ChatDomainWiringSignals`] + 流式壳。
+#[derive(Clone)]
 pub(crate) struct WireChatDomainEffectsArgs {
-    pub initialized: RwSignal<bool>,
-    pub chat_session: ChatSessionSignals,
-    pub draft: RwSignal<String>,
-    pub pending_images: RwSignal<Vec<String>>,
-    pub pending_clarification: RwSignal<Option<PendingClarificationForm>>,
-    pub collapsed_long_assistant_ids: RwSignal<Vec<String>>,
-    pub composer_mirror_html: RwSignal<String>,
-    pub composer_mirror_scroll_top: RwSignal<f64>,
-    pub composer_input_ref: NodeRef<Textarea>,
-    pub sessions: RwSignal<Vec<ChatSession>>,
-    pub active_id: RwSignal<String>,
-    pub messages_scroller: NodeRef<leptos::html::Div>,
-    pub auto_scroll_chat: RwSignal<bool>,
-    pub messages_scroll_from_effect: RwSignal<bool>,
-    pub chat_find_query: RwSignal<String>,
-    pub chat_find_match_ids: RwSignal<Vec<String>>,
-    pub chat_find_cursor: RwSignal<usize>,
-    pub locale: RwSignal<Locale>,
-    pub apply_assistant_display_filters: RwSignal<bool>,
-    pub focus_message_id_after_nav: RwSignal<Option<String>>,
-    pub selected_agent_role: RwSignal<Option<String>>,
+    pub domain: ChatDomainWiringSignals,
     pub stream_shell: ComposerStreamShell,
+}
+
+impl WireChatDomainEffectsArgs {
+    #[must_use]
+    pub fn from_app_and_stream_shell(
+        app: &crate::app::app_signals::AppSignals,
+        stream_shell: ComposerStreamShell,
+    ) -> Self {
+        Self {
+            domain: ChatDomainWiringSignals::from_app_signals(app),
+            stream_shell,
+        }
+    }
 }
 
 /// 会话切换、草稿、滚动、查找、焦点（须在 [`wire_chat_composer_streams`] 之前注册）。
 fn wire_chat_domain_auxiliary_sequence(a: &WireChatDomainEffectsArgs) {
+    let d = &a.domain;
     wire_session_switch_clears_chat_state(
-        a.initialized,
-        a.chat_session,
-        a.draft,
-        a.pending_images,
-        a.pending_clarification,
-        a.collapsed_long_assistant_ids,
+        d.initialized,
+        d.chat,
+        d.composer.draft,
+        d.composer.pending_images,
+        d.pending_clarification,
+        d.composer.collapsed_long_assistant_ids,
     );
 
     wire_draft_sync_to_mirror_and_textarea(
-        a.draft,
-        a.composer_input_ref.clone(),
-        a.composer_mirror_html,
-        a.composer_mirror_scroll_top,
+        d.composer.draft,
+        d.composer.composer_input_ref.clone(),
+        d.composer.composer_mirror_html,
+        d.composer.composer_mirror_scroll_top,
     );
 
     wire_messages_auto_scroll(
-        a.sessions,
-        a.active_id,
-        a.messages_scroller,
-        a.auto_scroll_chat,
-        a.messages_scroll_from_effect,
+        d.chat.sessions,
+        d.chat.active_id,
+        d.composer.messages_scroller,
+        d.composer.auto_scroll_chat,
+        d.composer.messages_scroll_from_effect,
     );
 
     wire_chat_find_matches(
-        a.sessions,
-        a.active_id,
-        a.chat_find_query,
-        a.chat_find_match_ids,
-        a.chat_find_cursor,
-        a.auto_scroll_chat,
-        a.locale,
-        a.apply_assistant_display_filters,
+        d.chat.sessions,
+        d.chat.active_id,
+        d.composer.chat_find_query,
+        d.composer.chat_find_match_ids,
+        d.composer.chat_find_cursor,
+        d.composer.auto_scroll_chat,
+        d.locale,
+        d.apply_assistant_display_filters,
     );
 
-    wire_focus_message_after_nav(a.focus_message_id_after_nav);
+    wire_focus_message_after_nav(d.composer.focus_message_id_after_nav);
 }
 
 /// 注册聊天列与输入/流式相关 `wire_*`，并返回 composer 侧闭包与 **`Memo` 派生的回合忙状态**（底栏 / 作曲器 / 消息行共用）。
@@ -102,23 +92,24 @@ pub(crate) fn wire_chat_domain_effects(
     args: WireChatDomainEffectsArgs,
 ) -> (ChatComposerWires, ChatStreamBusyMemos) {
     let stream_busy_memos = make_chat_stream_busy_memos(
-        args.chat_session,
+        args.domain.chat,
         args.stream_shell.stream.status_busy,
         args.stream_shell.stream.tool_busy,
     );
 
     wire_chat_domain_auxiliary_sequence(&args);
 
+    let d = &args.domain;
     let wires = wire_chat_composer_streams(WireComposerStreamsArgs {
-        initialized: args.initialized,
-        chat: args.chat_session,
-        locale: args.locale,
-        draft: args.draft,
-        selected_agent_role: args.selected_agent_role,
+        initialized: d.initialized,
+        chat: d.chat,
+        locale: d.locale,
+        draft: d.composer.draft,
+        selected_agent_role: d.selected_agent_role,
         stream_shell: args.stream_shell,
         stream_turn_busy_ui: stream_busy_memos.stream_turn_busy_ui,
-        auto_scroll_chat: args.auto_scroll_chat,
-        pending_images: args.pending_images,
+        auto_scroll_chat: d.composer.auto_scroll_chat,
+        pending_images: d.composer.pending_images,
     });
     (wires, stream_busy_memos)
 }
