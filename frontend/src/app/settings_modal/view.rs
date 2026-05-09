@@ -42,6 +42,7 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
         execution_mode_draft,
         client_llm_storage_tick,
         readonly_tool_ttl_cache_follow_server,
+        saved_model_presets,
     } = signals;
 
     let settings_dialog_ref = NodeRef::<Div>::new();
@@ -74,6 +75,7 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
         llm_api_key_draft,
         executor_llm_api_key_draft,
         readonly_tool_ttl_cache_follow_server,
+        saved_model_presets,
     };
 
     let baselines = SettingsDirtyBaselines::from_form_current(&form_current_untracked(drafts));
@@ -171,5 +173,6 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
         executor_llm_has_saved_key,
         clear_executor_key_intent,
         readonly_tool_ttl_cache_follow_server,
+        saved_model_presets,
     })
 }

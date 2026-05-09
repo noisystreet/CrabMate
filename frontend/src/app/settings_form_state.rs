@@ -3,6 +3,7 @@
 
 use leptos::prelude::*;
 
+use crate::api::SavedModelPreset;
 use crate::i18n::Locale;
 
 pub(crate) type AppearanceBaseline = (Locale, String, bool);
@@ -15,6 +16,7 @@ pub(crate) struct SettingsDirtyBaselines {
     pub appearance: StoredValue<AppearanceBaseline>,
     pub llm: StoredValue<LlmBaseline>,
     pub executor: StoredValue<ExecutorBaseline>,
+    pub saved_model_presets: StoredValue<Vec<SavedModelPreset>>,
     pub readonly_tool_ttl_cache_follow_server: StoredValue<bool>,
 }
 
@@ -46,6 +48,7 @@ impl SettingsDirtyBaselines {
             readonly_tool_ttl_cache_follow_server: StoredValue::new(
                 current.readonly_tool_ttl_cache_follow_server,
             ),
+            saved_model_presets: StoredValue::new(current.saved_model_presets.clone()),
         }
     }
 
@@ -54,6 +57,7 @@ impl SettingsDirtyBaselines {
             self.appearance,
             self.llm,
             self.executor,
+            self.saved_model_presets,
             self.readonly_tool_ttl_cache_follow_server,
             current,
         );
@@ -65,6 +69,7 @@ impl SettingsDirtyBaselines {
             &self.appearance.get_value(),
             &self.llm.get_value(),
             &self.executor.get_value(),
+            &self.saved_model_presets.get_value(),
             self.readonly_tool_ttl_cache_follow_server.get_value(),
         )
     }
@@ -105,6 +110,7 @@ pub(crate) struct SettingsFormCurrent {
     pub clear_executor_key_intent: bool,
     pub llm_api_key_draft: String,
     pub executor_llm_api_key_draft: String,
+    pub saved_model_presets: Vec<SavedModelPreset>,
     pub readonly_tool_ttl_cache_follow_server: bool,
 }
 
@@ -142,17 +148,23 @@ fn executor_baseline_dirty(current: &SettingsFormCurrent, baseline: &ExecutorBas
         || current.executor_llm_has_saved_key != *eh
 }
 
+fn saved_model_presets_dirty(current: &SettingsFormCurrent, baseline: &[SavedModelPreset]) -> bool {
+    current.saved_model_presets.as_slice() != baseline
+}
+
 pub(crate) fn is_settings_dirty(
     current: &SettingsFormCurrent,
     baseline_appearance: &AppearanceBaseline,
     baseline_llm: &LlmBaseline,
     baseline_executor: &ExecutorBaseline,
+    baseline_saved_model_presets: &[SavedModelPreset],
     baseline_readonly_tool_ttl_cache_follow_server: bool,
 ) -> bool {
     appearance_dirty(current, baseline_appearance)
         || pending_key_drafts_or_clear_intent_dirty(current)
         || llm_baseline_dirty(current, baseline_llm)
         || executor_baseline_dirty(current, baseline_executor)
+        || saved_model_presets_dirty(current, baseline_saved_model_presets)
         || current.readonly_tool_ttl_cache_follow_server
             != baseline_readonly_tool_ttl_cache_follow_server
 }
@@ -161,6 +173,7 @@ pub(crate) fn refresh_baselines(
     baseline_appearance: StoredValue<AppearanceBaseline>,
     baseline_llm: StoredValue<LlmBaseline>,
     baseline_executor: StoredValue<ExecutorBaseline>,
+    baseline_saved_model_presets: StoredValue<Vec<SavedModelPreset>>,
     baseline_readonly_tool_ttl_cache_follow_server: StoredValue<bool>,
     current: &SettingsFormCurrent,
 ) {
@@ -190,6 +203,9 @@ pub(crate) fn refresh_baselines(
             current.executor_llm_model_draft.clone(),
             current.executor_llm_has_saved_key,
         );
+    });
+    let _ = baseline_saved_model_presets.try_update_value(|v| {
+        *v = current.saved_model_presets.clone();
     });
     let _ = baseline_readonly_tool_ttl_cache_follow_server.try_update_value(|v| {
         *v = current.readonly_tool_ttl_cache_follow_server;

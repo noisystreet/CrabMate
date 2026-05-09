@@ -75,6 +75,7 @@ pub struct SettingsModalSignals {
     pub execution_mode_draft: RwSignal<String>,
     pub client_llm_storage_tick: RwSignal<u64>,
     pub readonly_tool_ttl_cache_follow_server: RwSignal<bool>,
+    pub saved_model_presets: RwSignal<Vec<crate::api::SavedModelPreset>>,
 }
 
 impl SettingsModalSignals {
@@ -105,6 +106,7 @@ impl SettingsModalSignals {
             execution_mode_draft: form.execution_mode_draft,
             client_llm_storage_tick: form.client_llm_storage_tick,
             readonly_tool_ttl_cache_follow_server: form.readonly_tool_ttl_cache_follow_server,
+            saved_model_presets: form.saved_model_presets,
         }
     }
 }

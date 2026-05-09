@@ -46,6 +46,7 @@ pub struct SettingsPageFormSignals {
     pub execution_mode_draft: RwSignal<String>,
     pub client_llm_storage_tick: RwSignal<u64>,
     pub readonly_tool_ttl_cache_follow_server: RwSignal<bool>,
+    pub saved_model_presets: RwSignal<Vec<crate::api::SavedModelPreset>>,
 }
 
 impl SettingsPageFormSignals {
@@ -78,6 +79,7 @@ impl SettingsPageFormSignals {
             readonly_tool_ttl_cache_follow_server: app
                 .llm_settings
                 .readonly_tool_ttl_cache_follow_server,
+            saved_model_presets: app.llm_settings.saved_model_presets,
         }
     }
 }
@@ -117,6 +119,7 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
         execution_mode_draft,
         client_llm_storage_tick,
         readonly_tool_ttl_cache_follow_server,
+        saved_model_presets,
     } = form;
 
     let active_section =
@@ -150,6 +153,7 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
         llm_api_key_draft,
         executor_llm_api_key_draft,
         readonly_tool_ttl_cache_follow_server,
+        saved_model_presets,
     };
 
     let baselines = SettingsDirtyBaselines::from_form_current(&form_current_untracked(drafts));
@@ -262,6 +266,7 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
                             executor_llm_model_draft,
                             executor_llm_api_key_draft,
                             executor_llm_has_saved_key,
+                            saved_model_presets,
                         }
                         clear_client_key_intent=clear_client_key_intent
                         clear_executor_key_intent=clear_executor_key_intent
