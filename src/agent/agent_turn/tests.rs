@@ -540,6 +540,37 @@ mod staged_intent_gate_tests {
             other => panic!("unexpected gate outcome: {:?}", other),
         }
     }
+
+    #[test]
+    fn advisory_refactor_consultation_bypasses_staged_planning() {
+        let mut cfg = test_cfg();
+        // 默认 L1 对该句常为 ConfirmThenExecute（不进入分阶段）；下调高阈值以稳定得到 Execute，从而专门验证「咨询启发式」分支。
+        cfg.intent_routing.intent_non_hier_execute_high_threshold = 0.35;
+        let messages = vec![Message::user_only(
+            "我想对它进行重构，哪些地方隐式状态比较严重，需要重构",
+        )];
+        let gate = assess_staged_planning_gate(&messages, &cfg);
+        assert!(
+            !gate.allows_staged_planning(),
+            "架构/重构咨询在 Execute 路径下不应进入滚动分阶段规划"
+        );
+        match gate {
+            StagedPlanningGateOutcome::Deny {
+                reason: StagedPlanningDenyReason::AdvisoryExecuteBypassStaged,
+                task_preview: Some(_),
+                intent_decision: Some(d),
+            } => {
+                assert!(
+                    matches!(
+                        d.action,
+                        crate::agent::intent_pipeline::IntentAction::Execute
+                    ),
+                    "门控拒绝分阶段但仍保留 Execute 决策，便于单 Agent 外循环继续"
+                );
+            }
+            other => panic!("unexpected gate outcome: {:?}", other),
+        }
+    }
 }
 
 mod staged_workflow_binding_context_tests {

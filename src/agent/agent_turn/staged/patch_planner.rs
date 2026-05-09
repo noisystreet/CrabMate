@@ -50,7 +50,10 @@ pub(super) fn staged_plan_step_failure_feedback_user_body(
          **补丁规则**：`steps` 数组表示从**本步起**的后续计划（可替换原剩余步骤、在末尾增加一步、或合并/拆分步骤）；须 **非空** 且 **不得** 使用 `no_task`。\n\
          已完成的前缀步（下标 0..{}）已由服务端保留，你**不要**在 `steps` 中重复列出。\n\n\
          Schema 须满足：{}\n\
-         示例：\n```json\n{}\n```{}",
+         示例：\n```json\n{}\n```\n\n\
+         ### 补丁规划补充（咨询/架构类用户问题）\n\
+         若用户请求**主要是**架构意见、重构方向、隐式状态/风险点列举，而**不是**明确的代码落地、跑测或文档交付：后续 `steps` 应让用户尽快看到**直接结论**；避免再规划「仅为通读大量源文件」或「未经用户要求新建长篇设计文档」。可把剩余工作收口为**少量** `review_readonly` 步并在 `description` 中限定关键路径；**勿**在补丁 JSON 中使用 `no_task`（补丁规则要求非空 `steps`）。\n\
+         {}",
         meta.plan_id,
         meta.plan_patch_attempt_one_based,
         meta.plan_patch_budget,

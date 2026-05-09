@@ -31,7 +31,7 @@ pub(crate) enum StagedPlanningGateOutcome {
         confidence: f32,
         decision: IntentDecision,
     },
-    /// 无可路由的有效 user 任务句，或管线未给出 Execute。
+    /// 无可路由的有效 user 任务句，或管线未给出 Execute，或命中「架构/重构咨询」启发式而跳过滚动分阶段规划。
     Deny {
         reason: StagedPlanningDenyReason,
         task_preview: Option<String>,
@@ -46,6 +46,8 @@ pub(crate) enum StagedPlanningDenyReason {
     EmptyEffectiveTask,
     /// 管线已跑通，但 `action != Execute`（直接回复 / 澄清 / 确认等）。
     IntentPipelineNotExecute,
+    /// 管线判定为 **Execute**，但正文命中「架构/重构咨询」启发式：不进入滚动分阶段规划，改走单 Agent 外循环（避免无工具规划轮把咨询拆成大量读文件步）。
+    AdvisoryExecuteBypassStaged,
 }
 
 impl StagedPlanningDenyReason {
@@ -53,6 +55,7 @@ impl StagedPlanningDenyReason {
         match self {
             Self::EmptyEffectiveTask => "empty_effective_task",
             Self::IntentPipelineNotExecute => "intent_pipeline_not_execute",
+            Self::AdvisoryExecuteBypassStaged => "advisory_execute_bypass_staged",
         }
     }
 }
@@ -72,12 +75,109 @@ fn intent_action_discriminant(action: &IntentAction) -> &'static str {
     }
 }
 
+/// 是否因「架构/重构类咨询」跳过滚动分阶段规划（在 **`IntentAction::Execute`** 前提下）。
+fn should_bypass_staged_for_advisory_execute_task(task: &str, decision: &IntentDecision) -> bool {
+    if !matches!(decision.action, IntentAction::Execute) {
+        return false;
+    }
+    let lower = task.trim().to_lowercase();
+    if lower.is_empty() {
+        return false;
+    }
+
+    let impl_strength = [
+        "请修改",
+        "请实现",
+        "请添加",
+        "请删除",
+        "帮我改",
+        "帮我写",
+        "帮我删",
+        "直接改",
+        "直接写",
+        "运行 cargo",
+        "cargo test",
+        "cargo build",
+        "cargo fmt",
+        "提交",
+        "开 pr",
+        "pull request",
+        "cherry-pick",
+        "rebase",
+        "fix bug",
+        "implement ",
+        "add feature",
+        "apply_patch",
+    ];
+    if impl_strength.iter().any(|k| lower.contains(k)) {
+        return false;
+    }
+
+    let arch = [
+        "重构",
+        "架构",
+        "隐式状态",
+        "技术债",
+        "耦合",
+        "模块边界",
+        "解耦",
+        "分层",
+        "implicit state",
+        "architecture",
+        "refactoring strategy",
+        "refactor plan",
+    ];
+    let consult = [
+        "哪里",
+        "哪些",
+        "如何",
+        "怎么",
+        "建议",
+        "分析",
+        "说明",
+        "介绍",
+        "严重",
+        "痛点",
+        "值得",
+        "要不要",
+        "哪些方面",
+        "有何问题",
+        "什么问题",
+        "where ",
+        "what parts",
+        "which areas",
+        "how should",
+        "suggest",
+        "recommend",
+    ];
+
+    let has_arch = arch.iter().any(|k| lower.contains(k));
+    let has_consult = consult.iter().any(|k| lower.contains(k));
+    (lower.contains("隐式") || has_arch) && has_consult
+}
+
+/// 在 **`IntentAction::Execute`** 且未命中咨询启发式时返回 `Ok`；否则返回对应 **Deny** 原因（含非 Execute）。
+fn staged_plan_eligibility_for_intent(
+    task: &str,
+    decision: &IntentDecision,
+) -> Result<(), StagedPlanningDenyReason> {
+    if !matches!(decision.action, IntentAction::Execute) {
+        return Err(StagedPlanningDenyReason::IntentPipelineNotExecute);
+    }
+    if should_bypass_staged_for_advisory_execute_task(task, decision) {
+        return Err(StagedPlanningDenyReason::AdvisoryExecuteBypassStaged);
+    }
+    Ok(())
+}
+
 fn log_staged_gate_outcome(
-    allowed: bool,
     task: &str,
     decision: &IntentDecision,
     sse_tag: &'static str,
+    eligibility: Result<(), StagedPlanningDenyReason>,
 ) {
+    let allowed = eligibility.is_ok();
+    let deny_reason = eligibility.err().map(StagedPlanningDenyReason::as_str);
     log::info!(
         target: "crabmate",
         "{sse_tag} outcome={} reason={} task_preview={} kind={:?} primary={} action_discriminant={} confidence={:.3}",
@@ -85,7 +185,7 @@ fn log_staged_gate_outcome(
         if allowed {
             "execute_intent"
         } else {
-            "intent_pipeline_not_execute"
+            deny_reason.unwrap_or("deny")
         },
         crate::redact::preview_chars(task, 80),
         decision.kind,
@@ -173,23 +273,22 @@ pub(crate) async fn assess_staged_planning_gate_full_pipeline(
         emit_intent_timeline_gate_only(p.ctx.io.out, sse_log_tag, &decision, &merge_meta).await;
     }
 
-    let allowed = matches!(decision.action, IntentAction::Execute);
-    log_staged_gate_outcome(allowed, task.as_str(), &decision, sse_log_tag);
+    let eligibility = staged_plan_eligibility_for_intent(task.as_str(), &decision);
+    log_staged_gate_outcome(task.as_str(), &decision, sse_log_tag, eligibility);
 
-    if allowed {
-        StagedPlanningGateOutcome::Allow {
+    match eligibility {
+        Ok(()) => StagedPlanningGateOutcome::Allow {
             task_preview: task,
             intent_kind: decision.kind,
             primary_intent: decision.primary_intent.clone(),
             confidence: decision.confidence,
             decision,
-        }
-    } else {
-        StagedPlanningGateOutcome::Deny {
-            reason: StagedPlanningDenyReason::IntentPipelineNotExecute,
+        },
+        Err(reason) => StagedPlanningGateOutcome::Deny {
+            reason,
             task_preview: Some(task),
             intent_decision: Some(decision),
-        }
+        },
     }
 }
 
@@ -223,28 +322,26 @@ pub(crate) fn assess_staged_planning_gate(
         },
     );
     let decision = assess_and_route(task.as_str(), &intent_ctx);
-    let allowed = matches!(decision.action, IntentAction::Execute);
-
+    let eligibility = staged_plan_eligibility_for_intent(task.as_str(), &decision);
     log_staged_gate_outcome(
-        allowed,
         task.as_str(),
         &decision,
         "staged_plan_intent_gate_sync",
+        eligibility,
     );
 
-    if allowed {
-        StagedPlanningGateOutcome::Allow {
+    match eligibility {
+        Ok(()) => StagedPlanningGateOutcome::Allow {
             task_preview: task,
             intent_kind: decision.kind,
             primary_intent: decision.primary_intent.clone(),
             confidence: decision.confidence,
             decision,
-        }
-    } else {
-        StagedPlanningGateOutcome::Deny {
-            reason: StagedPlanningDenyReason::IntentPipelineNotExecute,
+        },
+        Err(reason) => StagedPlanningGateOutcome::Deny {
+            reason,
             task_preview: Some(task),
             intent_decision: Some(decision),
-        }
+        },
     }
 }

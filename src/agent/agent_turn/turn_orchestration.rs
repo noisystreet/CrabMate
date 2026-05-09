@@ -258,4 +258,32 @@ mod tests {
         );
         assert!(r.single_agent_outer_loop_because.is_none());
     }
+
+    #[test]
+    fn entry_resolution_advisory_bypass_carries_reason() {
+        let cfg = cfg_with(PlannerExecutorMode::SingleAgent, true);
+        use crate::agent::intent_pipeline::{IntentAction, IntentDecision};
+        use crate::agent::intent_router::IntentKind;
+        let gate = StagedPlanningGateOutcome::Deny {
+            reason: StagedPlanningDenyReason::AdvisoryExecuteBypassStaged,
+            task_preview: Some("t".into()),
+            intent_decision: Some(IntentDecision {
+                kind: IntentKind::Execute,
+                primary_intent: "execute.code_change".into(),
+                secondary_intents: Vec::new(),
+                confidence: 0.9,
+                abstain: false,
+                need_clarification: false,
+                action: IntentAction::Execute,
+            }),
+        };
+        let r = NonHierarchicalEntryResolution::resolve(&cfg, &gate);
+        assert_eq!(r.main_route, NonHierarchicalMainRoute::SingleAgentOuterLoop);
+        assert_eq!(
+            r.single_agent_outer_loop_because,
+            Some(SingleAgentOuterLoopBecause::StagedIntentGateDenied(
+                StagedPlanningDenyReason::AdvisoryExecuteBypassStaged
+            ))
+        );
+    }
 }

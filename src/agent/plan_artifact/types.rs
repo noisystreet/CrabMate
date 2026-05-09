@@ -208,7 +208,8 @@ pub const PLAN_V1_SCHEMA_RULES: &str = "\
 - 可选 \"acceptance\"（对象）：确定性验收条件，可包含 \"expect_exit_code\" (整数，期待的退出码)、\"expect_stdout_contains\" (字符串) 和 \"expect_file_exists\" (字符串，期望存在的文件路径)。当设定该字段时，系统会硬断言工具执行结果，不满足条件直接判定失败。
 - 可选 \"max_step_retries\" (整数)：指定本步骤失败后允许的局部重试（打补丁）次数上限。
 - 可选 \"transitions\" (数组)：状态机控制流，用于循环重试。对象含 \"condition\" (如 \"on_verify_fail\" 或 \"always\"), \"target_step_id\" (跳转目标的步骤id), \"max_loops\" (整数，最大循环次数)。触发跳转时，系统会附加一段历史记录并在界面上动态追加回退的后续步骤。
-- **推荐**：有「先读后写再测」类任务时，为相应步显式设置 `executor_kind`（审阅步 `review_readonly` → 改代码步 `patch_write` → 跑测步 `test_runner`），以便每步仅暴露必要工具；合并/优化规划时**须保留**各步的 `executor_kind` 意图（可改写 `description`/`id`，勿无故清空该字段）";
+- **推荐**：有「先读后写再测」类任务时，为相应步显式设置 `executor_kind`（审阅步 `review_readonly` → 改代码步 `patch_write` → 跑测步 `test_runner`），以便每步仅暴露必要工具；合并/优化规划时**须保留**各步的 `executor_kind` 意图（可改写 `description`/`id`，勿无故清空该字段）
+- **咨询/架构类**（用户主要求分析与建议、未授权写仓库）：若仍产出可执行步，应优先 `review_readonly`；避免在单步中混用写文件意图而未设 `patch_write`（执行层会拒识越权工具）";
 
 /// Plan v1 的 JSON 示例。
 pub const PLAN_V1_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"next-step","description":"完成下一步最关键动作","executor_kind":"patch_write","step_kind":"implement","acceptance":{"expect_exit_code":0}}]}"#;
