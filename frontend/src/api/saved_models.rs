@@ -16,6 +16,9 @@ pub struct SavedModelPreset {
     pub temperature: String,
     pub llm_context_tokens: String,
     pub llm_thinking_mode: String,
+    /// 可选；旧版列表无该字段时反序列化为空串。
+    #[serde(default)]
+    pub api_key: String,
 }
 
 #[must_use]
@@ -97,7 +100,7 @@ pub struct ExecutorLlmDraftSignals {
     pub executor_llm_model_draft: RwSignal<String>,
 }
 
-/// 从当前主 LLM 草稿生成一条可入库的预设（标签可与模型名对齐）。
+/// 从当前主 LLM 草稿生成一条可入库的预设（标签可与模型名对齐）；`api_key` 取当前主模型密钥草稿。
 #[must_use]
 pub fn saved_model_preset_from_main_drafts(
     llm_api_base_draft: &str,
@@ -106,6 +109,7 @@ pub fn saved_model_preset_from_main_drafts(
     llm_temperature_draft: &str,
     llm_context_tokens_draft: &str,
     llm_thinking_mode_draft: &str,
+    api_key: &str,
 ) -> SavedModelPreset {
     let model = llm_model_draft.trim();
     let label = if model.is_empty() {
@@ -121,5 +125,6 @@ pub fn saved_model_preset_from_main_drafts(
         temperature: llm_temperature_draft.trim().to_string(),
         llm_context_tokens: llm_context_tokens_draft.trim().to_string(),
         llm_thinking_mode: llm_thinking_mode_draft.trim().to_string(),
+        api_key: api_key.to_string(),
     }
 }

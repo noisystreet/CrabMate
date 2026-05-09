@@ -20,6 +20,7 @@ mod settings_commit;
 mod settings_form_state;
 mod settings_modal;
 mod settings_modal_dialog;
+mod settings_models_registry;
 mod settings_page;
 mod settings_sections;
 pub(crate) mod shell_prefs_storage;

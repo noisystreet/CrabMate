@@ -651,10 +651,10 @@ pub fn settings_saved_models_block_title(l: Locale) -> &'static str {
 pub fn settings_saved_models_hint(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => {
-            "将常用网关与模型存为快捷项；主模型与执行器可从列表一键套用。保存全部后写入本机列表。"
+            "用「+」手工录入网关与模型，或保留从旧版导入的项；每项可一键套用到主模型或执行器。保存全部后写入本机。"
         }
         Locale::En => {
-            "Store common endpoints and models as quick picks; apply them to the main or executor profile. Use “Save all” to persist the list."
+            "Use “+” to add an endpoint and model, or keep items imported from older builds; each row can apply to the main or executor profile. Use “Save all” to persist."
         }
     }
 }
@@ -673,23 +673,93 @@ pub fn settings_saved_models_remove(l: Locale) -> &'static str {
     }
 }
 
-pub fn settings_saved_models_select_main(l: Locale) -> &'static str {
+pub fn settings_models_add_expand_aria(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "从已保存项套用主模型",
-        Locale::En => "Apply saved preset to main model",
+        Locale::ZhHans => "展开或收起新增已保存模型表单",
+        Locale::En => "Expand or collapse add saved model form",
     }
 }
 
-pub fn settings_saved_models_select_executor(l: Locale) -> &'static str {
+pub fn settings_models_label_name(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "从已保存项套用执行器",
-        Locale::En => "Apply saved preset to executor",
+        Locale::ZhHans => "显示名称",
+        Locale::En => "Display name",
     }
 }
 
-pub fn settings_saved_models_pick_placeholder(l: Locale) -> &'static str {
+pub fn settings_models_label_base_url(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "选择快捷项…",
-        Locale::En => "Choose a preset…",
+        Locale::ZhHans => "API Base URL",
+        Locale::En => "API base URL",
+    }
+}
+
+pub fn settings_models_label_model_id(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "模型 ID",
+        Locale::En => "Model ID",
+    }
+}
+
+pub fn settings_models_ph_model_id(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "留空则与显示名称相同",
+        Locale::En => "Leave empty to match display name",
+    }
+}
+
+pub fn settings_models_label_api_key(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "API 密钥（可选，仅存本机列表）",
+        Locale::En => "API key (optional, stored in local list only)",
+    }
+}
+
+pub fn settings_models_label_context_tokens(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "上下文 token（可选）",
+        Locale::En => "Context tokens (optional)",
+    }
+}
+
+pub fn settings_models_validation_required(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "请填写 Base URL 与显示名称。",
+        Locale::En => "Please fill in base URL and display name.",
+    }
+}
+
+pub fn settings_models_add_submit(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "加入列表",
+        Locale::En => "Add to list",
+    }
+}
+
+pub fn settings_models_cancel_form(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "取消",
+        Locale::En => "Cancel",
+    }
+}
+
+pub fn settings_models_ctx_line(l: Locale, ctx: &str) -> String {
+    match l {
+        Locale::ZhHans => format!("上下文 {ctx}"),
+        Locale::En => format!("Context {ctx}"),
+    }
+}
+
+pub fn settings_models_apply_main_btn(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "套用主模型",
+        Locale::En => "Apply to main",
+    }
+}
+
+pub fn settings_models_apply_executor_btn(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "套用执行器",
+        Locale::En => "Apply to executor",
     }
 }
