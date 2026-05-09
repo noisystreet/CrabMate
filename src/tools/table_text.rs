@@ -612,6 +612,91 @@ fn table_text_args_to_json_value(args: &TableTextArgs) -> Value {
     v
 }
 
+fn table_text_run_preview_action(v: &Value, bytes: &[u8], delim: u8, has_header: bool) -> String {
+    let pr = match parse_usize(v, "preview_rows", DEFAULT_PREVIEW_ROWS, MAX_PREVIEW_ROWS) {
+        Ok(n) => n,
+        Err(e) => return e,
+    };
+    match run_preview(bytes, delim, has_header, pr) {
+        Ok(s) => truncate_str(&s),
+        Err(e) => e,
+    }
+}
+
+fn table_text_run_validate_action(v: &Value, bytes: &[u8], delim: u8) -> String {
+    let max_scan = match parse_usize(v, "max_rows_scan", MAX_ROWS_SCAN, MAX_ROWS_SCAN) {
+        Ok(n) => n,
+        Err(e) => return e,
+    };
+    match run_validate(bytes, delim, max_scan) {
+        Ok(s) => s,
+        Err(e) => e,
+    }
+}
+
+fn table_text_run_select_columns_action(
+    v: &Value,
+    bytes: &[u8],
+    delim: u8,
+    has_header: bool,
+) -> String {
+    let cols = match parse_column_indices(v) {
+        Ok(c) => c,
+        Err(e) => return e,
+    };
+    let max_out = match parse_usize(v, "max_output_rows", DEFAULT_OUTPUT_ROWS, MAX_OUTPUT_ROWS) {
+        Ok(n) => n,
+        Err(e) => return e,
+    };
+    match run_select_columns(bytes, delim, &cols, has_header, max_out) {
+        Ok(s) => s,
+        Err(e) => e,
+    }
+}
+
+fn table_text_run_filter_rows_action(
+    v: &Value,
+    bytes: &[u8],
+    delim: u8,
+    has_header: bool,
+) -> String {
+    let col = match v.get("column").and_then(|x| x.as_u64()) {
+        Some(n) => n as usize,
+        None => return "filter_rows 需要 column（非负整数，0 起）".to_string(),
+    };
+    let equals = v.get("equals").and_then(|x| x.as_str());
+    let contains = v.get("contains").and_then(|x| x.as_str());
+    let max_out = match parse_usize(v, "max_output_rows", DEFAULT_OUTPUT_ROWS, MAX_OUTPUT_ROWS) {
+        Ok(n) => n,
+        Err(e) => return e,
+    };
+    match run_filter_rows(bytes, delim, col, equals, contains, has_header, max_out) {
+        Ok(s) => s,
+        Err(e) => e,
+    }
+}
+
+fn table_text_run_aggregate_action(v: &Value, bytes: &[u8], delim: u8, has_header: bool) -> String {
+    let col = match v.get("column").and_then(|x| x.as_u64()) {
+        Some(n) => n as usize,
+        None => return "aggregate 需要 column（非负整数，0 起）".to_string(),
+    };
+    let op = match v.get("op").and_then(|x| x.as_str()) {
+        Some(s) => s,
+        None => {
+            return "aggregate 需要 op（如 sum、mean、min、max、count_non_empty）".to_string();
+        }
+    };
+    let max_scan = match parse_usize(v, "max_rows_scan", MAX_ROWS_SCAN, MAX_ROWS_SCAN) {
+        Ok(n) => n,
+        Err(e) => return e,
+    };
+    match run_aggregate(bytes, delim, col, op, has_header, max_scan) {
+        Ok(s) => s,
+        Err(e) => e,
+    }
+}
+
 fn run_table_text_from_value(v: &Value, workspace_root: &Path) -> String {
     let action = match v.get("action").and_then(|x| x.as_str()) {
         Some(s) => s,
@@ -642,79 +727,11 @@ fn run_table_text_from_value(v: &Value, workspace_root: &Path) -> String {
         .unwrap_or(true);
 
     match action {
-        "preview" => {
-            let pr = match parse_usize(v, "preview_rows", DEFAULT_PREVIEW_ROWS, MAX_PREVIEW_ROWS) {
-                Ok(n) => n,
-                Err(e) => return e,
-            };
-            match run_preview(&bytes, delim, has_header, pr) {
-                Ok(s) => truncate_str(&s),
-                Err(e) => e,
-            }
-        }
-        "validate" => {
-            let max_scan = match parse_usize(v, "max_rows_scan", MAX_ROWS_SCAN, MAX_ROWS_SCAN) {
-                Ok(n) => n,
-                Err(e) => return e,
-            };
-            match run_validate(&bytes, delim, max_scan) {
-                Ok(s) => s,
-                Err(e) => e,
-            }
-        }
-        "select_columns" => {
-            let cols = match parse_column_indices(v) {
-                Ok(c) => c,
-                Err(e) => return e,
-            };
-            let max_out =
-                match parse_usize(v, "max_output_rows", DEFAULT_OUTPUT_ROWS, MAX_OUTPUT_ROWS) {
-                    Ok(n) => n,
-                    Err(e) => return e,
-                };
-            match run_select_columns(&bytes, delim, &cols, has_header, max_out) {
-                Ok(s) => s,
-                Err(e) => e,
-            }
-        }
-        "filter_rows" => {
-            let col = match v.get("column").and_then(|x| x.as_u64()) {
-                Some(n) => n as usize,
-                None => return "filter_rows 需要 column（非负整数，0 起）".to_string(),
-            };
-            let equals = v.get("equals").and_then(|x| x.as_str());
-            let contains = v.get("contains").and_then(|x| x.as_str());
-            let max_out =
-                match parse_usize(v, "max_output_rows", DEFAULT_OUTPUT_ROWS, MAX_OUTPUT_ROWS) {
-                    Ok(n) => n,
-                    Err(e) => return e,
-                };
-            match run_filter_rows(&bytes, delim, col, equals, contains, has_header, max_out) {
-                Ok(s) => s,
-                Err(e) => e,
-            }
-        }
-        "aggregate" => {
-            let col = match v.get("column").and_then(|x| x.as_u64()) {
-                Some(n) => n as usize,
-                None => return "aggregate 需要 column（非负整数，0 起）".to_string(),
-            };
-            let op = match v.get("op").and_then(|x| x.as_str()) {
-                Some(s) => s,
-                None => {
-                    return "aggregate 需要 op（如 sum、mean、min、max、count_non_empty）"
-                        .to_string();
-                }
-            };
-            let max_scan = match parse_usize(v, "max_rows_scan", MAX_ROWS_SCAN, MAX_ROWS_SCAN) {
-                Ok(n) => n,
-                Err(e) => return e,
-            };
-            match run_aggregate(&bytes, delim, col, op, has_header, max_scan) {
-                Ok(s) => s,
-                Err(e) => e,
-            }
-        }
+        "preview" => table_text_run_preview_action(v, &bytes, delim, has_header),
+        "validate" => table_text_run_validate_action(v, &bytes, delim),
+        "select_columns" => table_text_run_select_columns_action(v, &bytes, delim, has_header),
+        "filter_rows" => table_text_run_filter_rows_action(v, &bytes, delim, has_header),
+        "aggregate" => table_text_run_aggregate_action(v, &bytes, delim, has_header),
         _ => "内部错误：未知 action".to_string(),
     }
 }
