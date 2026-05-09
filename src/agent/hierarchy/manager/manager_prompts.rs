@@ -158,6 +158,11 @@ impl ManagerAgent {
         // 生成失败信息摘要
         let failures_summary = self.format_failures_summary(previous_results);
 
+        let pre_snapshot = super::pre_decompose_snapshot::gather_pre_decompose_snapshots(
+            working_dir,
+            original_task,
+        );
+
         format!(
             r#"## 任务
 你是一个任务分解专家。原始任务需要重新规划。
@@ -175,6 +180,8 @@ impl ManagerAgent {
 - **禁止在子目标描述中使用不存在的路径**，如 `src/`、`include/`、`build/` 等，除非已确认存在
 - 如果需要读取某个目录，**必须先用 read_dir 确认它存在**，才能在后续子目标中使用
 - 如果需要操作某个文件（如 search_replace、modify_file），**必须先确认文件存在**
+
+{}
 
 ## 已完成的产物（可供后续子目标使用）
 {}
@@ -248,6 +255,7 @@ impl ManagerAgent {
             original_task,
             Self::DECOMPOSITION_RULES_1_TO_10,
             workspace_context,
+            pre_snapshot,
             artifacts_summary,
             failures_summary,
             tools_description,
@@ -318,6 +326,9 @@ impl ManagerAgent {
         // 识别任务类型并添加特定指导
         let task_type_guidance = self.get_task_type_guidance(task);
 
+        let pre_snapshot =
+            super::pre_decompose_snapshot::gather_pre_decompose_snapshots(working_dir, task);
+
         format!(
             r#"## 任务
 你是一个任务分解专家。请将以下用户任务分解为可执行的子目标。
@@ -344,6 +355,8 @@ impl ManagerAgent {
 - **禁止在子目标描述中使用不存在的路径**，如 `src/`、`include/`、`build/` 等，除非已确认存在
 - 如果需要读取某个目录，**必须先用 read_dir 确认它存在**，才能在后续子目标中使用
 - 如果需要操作某个文件（如 search_replace、modify_file），**必须先确认文件存在**
+
+{}
 
 ## 工具定义（完整参数 schema）
 {}
@@ -392,6 +405,7 @@ impl ManagerAgent {
             task_type_guidance,
             Self::DECOMPOSITION_RULES_1_TO_10,
             workspace_context,
+            pre_snapshot,
             tools_description,
             Self::manager_tool_invariants(),
             Self::manager_output_schema_contract(),

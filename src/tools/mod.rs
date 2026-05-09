@@ -26,6 +26,7 @@ pub(crate) use exec::{
 };
 mod file;
 pub(crate) use file::canonical_workspace_root;
+pub(crate) use file::list_tree;
 mod format;
 mod frontend_tools;
 mod git;

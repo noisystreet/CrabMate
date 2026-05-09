@@ -6,6 +6,7 @@ mod agent_tests;
 mod manager_prompts;
 mod manager_tail;
 mod output_parse;
+mod pre_decompose_snapshot;
 mod reflect;
 mod session_compile;
 mod types;
