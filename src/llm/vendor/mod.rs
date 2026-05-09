@@ -99,7 +99,7 @@ fn api_base_looks_minimax(base: &str) -> bool {
 /// 火山引擎方舟 / OpenAI 兼容端（域名 **`volces.com`**）：模型名可能含 **`Kimi-*`** 等，但并非 Moonshot **`api.moonshot.cn`** 托管；
 /// 若仍走 [`MoonshotKimiVendor`]，会带去 **`thinking`** / Kimi 专用规则，网关常以 HTTP **400 InvalidParameter** 拒绝。
 #[inline]
-fn api_base_looks_volcano_engine_openai_compat(base: &str) -> bool {
+pub(crate) fn api_base_looks_volcano_engine_openai_compat(base: &str) -> bool {
     base.to_ascii_lowercase().contains("volces.com")
 }
 

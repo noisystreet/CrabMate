@@ -74,8 +74,15 @@ pub(crate) fn chat_request_vendor_extensions_for_agent(
     cfg: &AgentConfig,
 ) -> ChatRequestVendorExtensions {
     let v = llm_vendor_adapter(cfg);
+    // 方舟等网关会将 MiniMax 扩展键 **`reasoning_split`** 视为非法参数（HTTP 400），即便配置或环境变量曾打开。
+    let reasoning_split = if vendor::api_base_looks_volcano_engine_openai_compat(&cfg.llm.api_base)
+    {
+        None
+    } else {
+        cfg.llm_vendor_flags.llm_reasoning_split.then_some(true)
+    };
     ChatRequestVendorExtensions {
-        reasoning_split: cfg.llm_vendor_flags.llm_reasoning_split.then_some(true),
+        reasoning_split,
         thinking: v.thinking_field(cfg),
         reasoning_effort: vendor::deepseek_reasoning_effort_for_request(cfg),
         response_format: None,
@@ -509,5 +516,15 @@ mod tests {
             LlmSeedOverride::FromConfig,
         );
         assert_eq!(req_hi.max_tokens, 8192);
+    }
+
+    #[test]
+    fn volcano_api_base_omits_reasoning_split_even_when_flag_true() {
+        let mut cfg = load_config(None).expect("default embedded config");
+        cfg.llm.api_base = "https://ark.cn-beijing.volces.com/api/coding/v3".to_string();
+        cfg.llm.model = "Kimi-K2.6".to_string();
+        cfg.llm_vendor_flags.llm_reasoning_split = true;
+        let ext = super::chat_request_vendor_extensions_for_agent(&cfg);
+        assert!(ext.reasoning_split.is_none());
     }
 }

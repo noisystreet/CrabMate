@@ -316,7 +316,7 @@ llm_http_auth_mode = "bearer"
 
 ## Volcano Engine Ark (OpenAI-compatible, incl. Coding Plan)
 
-If **`api_base`** uses a Volcano host (**`*.volces.com`**, e.g. **`https://ark.cn-beijing.volces.com/api/coding/v3`**), CrabMate **does not apply Moonshot-hosted Kimi request shaping**, so it **does not emit Moonshot-only fields** like **`thinking`** that Ark rejects with HTTP **400 InvalidParameter**. Set **`model`** exactly as the console shows (e.g. **`Kimi-K2.6`**). Use your Ark **`API_KEY`** with **`llm_http_auth_mode = bearer`**.
+If **`api_base`** uses a Volcano host (**`*.volces.com`**, e.g. **`https://ark.cn-beijing.volces.com/api/coding/v3`**), CrabMate **does not apply Moonshot-hosted Kimi request shaping**, so it **does not emit Moonshot-only fields** like **`thinking`** that Ark rejects with HTTP **400 InvalidParameter**, and it **omits MiniMax-only `reasoning_split`** even if **`CM_LLM_REASONING_SPLIT`** / **`llm_reasoning_split`** were enabled elsewhere. Set **`model`** exactly as the console shows (e.g. **`Kimi-K2.6`**). Use your Ark **`API_KEY`** with **`llm_http_auth_mode = bearer`**.
 
 ## DeepSeek (OpenAI-compatible)
 
