@@ -2,6 +2,7 @@
 //!
 //! - [`helpers`]：文本拼接、时间线插入、子目标合并等辅助逻辑。
 //! - [`done_session`]：`on_done` 对会话 `messages` 的尾泡写回。
+//! - [`error_session`]：`on_error` 对会话 `messages` 的尾助手泡写回。
 //! - [`delta_apply`]：`on_delta` 车道轮换与正文/思维链写入。
 //! - [`builders`]：`on_tool_result` / `on_timeline_log` / `on_done` / `on_error` / `on_ws` / `on_tool_call` 等闭包工厂。
 //! - [`done_bubble`]：`on_done` 尾泡收尾的纯函数决策与单测。
@@ -13,6 +14,7 @@ mod builders;
 mod delta_apply;
 mod done_bubble;
 mod done_session;
+mod error_session;
 mod helpers;
 mod stream_session_access;
 
