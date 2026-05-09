@@ -21,6 +21,7 @@ use super::super::stream_turn_state::{
     StreamOutputLaneCell, lane_clear_followup_pending, lane_take_followup_rotation_pending,
 };
 use super::done_session::apply_stream_done_to_loading_assistant;
+use super::error_session::apply_stream_error_to_assistant_message;
 use super::helpers::*;
 use super::stream_session_access::with_stream_write_session_mut;
 
@@ -301,10 +302,7 @@ pub(super) fn chat_stream_on_error_builder(
         let loc = stream_ctx.locale.get_untracked();
         let friendly = build_stream_error_with_suggestion(&msg, loc);
         with_stream_write_session_mut(stream_ctx.as_ref(), |s| {
-            if let Some(m) = s.messages.iter_mut().find(|m| m.id == mid) {
-                m.text = friendly.clone();
-                m.state = Some(StoredMessageState::Error);
-            }
+            apply_stream_error_to_assistant_message(&mut s.messages, mid.as_str(), friendly);
         });
         stream_ctx.shell.stream.status_busy.set(false);
         stream_ctx.shell.stream.tool_busy.set(false);
