@@ -21,6 +21,7 @@ use crate::context_bootstrap::conversation_turn_bootstrap::{
 use crate::memory::agent_memory::load_memory_snippet;
 use crate::types::{Message, message_user_with_images};
 use crate::web::http_types::chat::{ApiError, ChatRequestBody, StreamResumeBody};
+use crate::web::http_types::validation::validate_chat_request_payload_limits;
 
 use super::builtin_skills::merge_system_prompt_with_workspace_skills_for_web;
 
@@ -83,6 +84,7 @@ pub(super) fn parse_chat_stream_request(
     state: &Arc<AppState>,
     body: &ChatRequestBody,
 ) -> Result<ChatStreamRequestParsed, (StatusCode, Json<ApiError>)> {
+    validate_chat_request_payload_limits(body)?;
     let resume = body.stream_resume.clone();
     let image_urls = normalize_chat_image_urls(&body.image_urls).map_err(|e| {
         (

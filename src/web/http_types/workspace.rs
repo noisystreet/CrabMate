@@ -1,4 +1,5 @@
 //! `/workspace*` JSON 体；路由表见 [`crate::web::routes::workspace::router`]。
+//! 各请求体使用 `deny_unknown_fields` 拒绝拼写错误的额外键。
 
 use serde::{Deserialize, Serialize};
 
@@ -14,6 +15,7 @@ pub struct WorkspaceEntry {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WorkspaceQuery {
     pub path: Option<String>,
 }
@@ -27,11 +29,13 @@ pub struct WorkspaceResponse {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WorkspaceSetBody {
     pub path: Option<String>,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WorkspaceSearchBody {
     pub pattern: String,
     #[serde(default)]
@@ -60,6 +64,7 @@ pub struct WorkspaceProfileResponse {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WorkspaceFileQuery {
     pub path: String,
     /// 可选：`utf-8`（默认）、`utf-8-sig`、`gb18030`、`gbk`、`big5`、`utf-16le`、`utf-16be`、`auto`（与 `read_file` 一致）。
@@ -68,6 +73,7 @@ pub struct WorkspaceFileQuery {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WorkspaceFileWriteBody {
     pub path: String,
     pub content: String,
@@ -100,6 +106,7 @@ pub struct WorkspaceFileReadResponse {
 
 /// `GET /workspace/changelog`：本会话工作区变更集 Markdown（与 **`session_workspace_changelist`** 注入正文同源）。
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WorkspaceChangelogQuery {
     #[serde(default)]
     pub conversation_id: Option<String>,

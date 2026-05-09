@@ -1,7 +1,9 @@
 //! `POST /chat*`、`/upload*`、`POST /config/reload` 等 JSON 体；路由表见 [`crate::web::routes::chat::router`]。
+//! 根级 `ChatRequestBody` 的字段长度与条数上限见 [`super::validation`]。
 
 /// 用户对澄清问卷的作答；与 SSE `clarification_questionnaire.questionnaire_id` 及题目 `id` 对齐。
 #[derive(serde::Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ClarifyQuestionnaireAnswersBody {
     pub(crate) questionnaire_id: String,
     /// 键为题目的 `id`，值为字符串（或 JSON 数字/布尔，服务端会规范为字符串）。
@@ -9,6 +11,8 @@ pub(crate) struct ClarifyQuestionnaireAnswersBody {
     pub(crate) answers: serde_json::Value,
 }
 
+/// 同步/流式对话共有字段。根对象不设 `deny_unknown_fields`，以便 [`ChatAsyncRequestBody`] 与同层
+/// `webhook_*` 通过 `flatten` 共存；嵌套对象单独拒绝未知键。
 #[derive(serde::Deserialize)]
 pub(crate) struct ChatRequestBody {
     pub(crate) message: String,
@@ -89,6 +93,7 @@ pub(crate) struct ChatJobStatusResponseBody {
 }
 
 #[derive(serde::Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct StreamResumeBody {
     pub(crate) job_id: u64,
     /// 已收到的最大 SSE `id`（无则 0）；可与 `Last-Event-ID` 合并取 max。
@@ -98,6 +103,7 @@ pub(crate) struct StreamResumeBody {
 
 /// `ChatRequestBody::client_llm` 的 JSON 形状（与前端 `client_llm` 对象一致）。
 #[derive(serde::Deserialize, Default, Clone)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ClientLlmBody {
     #[serde(default)]
     pub(crate) api_base: Option<String>,
@@ -115,6 +121,7 @@ pub(crate) struct ClientLlmBody {
 
 /// `ChatRequestBody::executor_llm` 的 JSON 形状（与前端 `executor_llm` 对象一致）。
 #[derive(serde::Deserialize, Default, Clone)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ExecutorLlmBody {
     #[serde(default)]
     pub(crate) api_base: Option<String>,
@@ -125,6 +132,7 @@ pub(crate) struct ExecutorLlmBody {
 }
 
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ChatApprovalRequestBody {
     pub(crate) approval_session_id: String,
     pub(crate) decision: String,
@@ -137,6 +145,7 @@ pub(crate) struct ChatApprovalResponseBody {
 
 /// Web：将会话在服务端截断到第 `before_user_ordinal` 条**普通**用户消息之前（0-based，与前端用户气泡序号一致；不含未展示之注入类 `user`）。
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ChatBranchRequestBody {
     pub(crate) conversation_id: String,
     /// 从此序号对应的用户消息起（含）全部丢弃；例如 `1` 表示保留第 0 条用户及之前上下文。
@@ -166,6 +175,7 @@ pub(crate) struct UploadResponseBody {
 }
 
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct DeleteUploadsBody {
     pub(crate) urls: Vec<String>,
 }
@@ -187,6 +197,7 @@ pub(crate) struct ChatResponseBody {
 
 /// `GET /conversation/messages` 查询串。
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ConversationMessagesQuery {
     pub(crate) conversation_id: String,
 }

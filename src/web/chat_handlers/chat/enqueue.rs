@@ -26,6 +26,7 @@ use crate::user_message_file_refs::expand_at_file_refs_in_user_message;
 use crate::web::app_state::{AppState, ConversationTurnSeed};
 use crate::web::audit;
 use crate::web::http_types::chat::{ApiError, ChatRequestBody};
+use crate::web::http_types::validation::validate_chat_request_payload_limits;
 
 use super::turn_build::{build_messages_for_turn, reject_if_client_sse_protocol_invalid};
 
@@ -128,6 +129,7 @@ pub(crate) async fn parse_chat_request_for_enqueue(
     state: &Arc<AppState>,
     body: &ChatRequestBody,
 ) -> Result<ParsedChatRequestForEnqueue, (StatusCode, Json<ApiError>)> {
+    validate_chat_request_payload_limits(body)?;
     let image_urls = normalize_chat_image_urls(&body.image_urls).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
