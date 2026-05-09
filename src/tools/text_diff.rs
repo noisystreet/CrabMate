@@ -76,6 +76,56 @@ fn diff_unified(left: &str, right: &str, header_a: &str, header_b: &str, context
         .to_string()
 }
 
+fn load_inline_diff_sources(v: &Value) -> Result<(String, String, String, String), String> {
+    let left = match v.get("left").and_then(|x| x.as_str()) {
+        Some(s) => s,
+        None => return Err("inline 模式需要 left（字符串）".to_string()),
+    };
+    let right = match v.get("right").and_then(|x| x.as_str()) {
+        Some(s) => s,
+        None => return Err("inline 模式需要 right（字符串）".to_string()),
+    };
+    if left.len() > MAX_INLINE_BYTES {
+        return Err(format!(
+            "left 过长：{} 字节，上限 {}",
+            left.len(),
+            MAX_INLINE_BYTES
+        ));
+    }
+    if right.len() > MAX_INLINE_BYTES {
+        return Err(format!(
+            "right 过长：{} 字节，上限 {}",
+            right.len(),
+            MAX_INLINE_BYTES
+        ));
+    }
+    Ok((
+        left.to_string(),
+        right.to_string(),
+        "inline/left".to_string(),
+        "inline/right".to_string(),
+    ))
+}
+
+fn load_paths_diff_sources(
+    v: &Value,
+    workspace_root: &Path,
+) -> Result<(String, String, String, String), String> {
+    let pa = match v.get("left_path").and_then(|x| x.as_str()) {
+        Some(s) if !s.trim().is_empty() => s.trim(),
+        _ => return Err("paths 模式需要 left_path（相对工作区的非空路径）".to_string()),
+    };
+    let pb = match v.get("right_path").and_then(|x| x.as_str()) {
+        Some(s) if !s.trim().is_empty() => s.trim(),
+        _ => return Err("paths 模式需要 right_path（相对工作区的非空路径）".to_string()),
+    };
+    let left = read_workspace_text(pa, workspace_root)?;
+    let right = read_workspace_text(pb, workspace_root)?;
+    let ha = format!("a/{}", pa.replace('\\', "/"));
+    let hb = format!("b/{}", pb.replace('\\', "/"));
+    Ok((left, right, ha, hb))
+}
+
 /// 执行 `text_diff` 工具。
 pub fn run(args_json: &str, workspace_root: &Path) -> String {
     let parsed = match crate::tools::parse_args_json(args_json) {
@@ -106,55 +156,14 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
         Err(e) => return e,
     };
 
-    let (left, right, ha, hb) = match mode {
-        "inline" => {
-            let left = match v.get("left").and_then(|x| x.as_str()) {
-                Some(s) => s,
-                None => return "inline 模式需要 left（字符串）".to_string(),
-            };
-            let right = match v.get("right").and_then(|x| x.as_str()) {
-                Some(s) => s,
-                None => return "inline 模式需要 right（字符串）".to_string(),
-            };
-            if left.len() > MAX_INLINE_BYTES {
-                return format!("left 过长：{} 字节，上限 {}", left.len(), MAX_INLINE_BYTES);
-            }
-            if right.len() > MAX_INLINE_BYTES {
-                return format!(
-                    "right 过长：{} 字节，上限 {}",
-                    right.len(),
-                    MAX_INLINE_BYTES
-                );
-            }
-            (
-                left.to_string(),
-                right.to_string(),
-                "inline/left".to_string(),
-                "inline/right".to_string(),
-            )
-        }
-        "paths" => {
-            let pa = match v.get("left_path").and_then(|x| x.as_str()) {
-                Some(s) if !s.trim().is_empty() => s.trim(),
-                _ => return "paths 模式需要 left_path（相对工作区的非空路径）".to_string(),
-            };
-            let pb = match v.get("right_path").and_then(|x| x.as_str()) {
-                Some(s) if !s.trim().is_empty() => s.trim(),
-                _ => return "paths 模式需要 right_path（相对工作区的非空路径）".to_string(),
-            };
-            let left = match read_workspace_text(pa, workspace_root) {
-                Ok(s) => s,
-                Err(e) => return e,
-            };
-            let right = match read_workspace_text(pb, workspace_root) {
-                Ok(s) => s,
-                Err(e) => return e,
-            };
-            let ha = format!("a/{}", pa.replace('\\', "/"));
-            let hb = format!("b/{}", pb.replace('\\', "/"));
-            (left, right, ha, hb)
-        }
+    let resolved = match mode {
+        "inline" => load_inline_diff_sources(&v),
+        "paths" => load_paths_diff_sources(&v, workspace_root),
         _ => unreachable!(),
+    };
+    let (left, right, ha, hb) = match resolved {
+        Ok(x) => x,
+        Err(e) => return e,
     };
 
     let unified = diff_unified(&left, &right, &ha, &hb, context);

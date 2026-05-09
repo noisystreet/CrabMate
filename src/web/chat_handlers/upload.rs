@@ -13,6 +13,40 @@ use crate::web::http_types::chat::{
     ApiError, DeleteUploadsBody, DeleteUploadsResponseBody, UploadResponseBody, UploadedFileInfo,
 };
 
+type UploadErr = (StatusCode, Json<ApiError>);
+
+fn upload_api_error(
+    status: StatusCode,
+    code: &'static str,
+    message: impl Into<String>,
+) -> UploadErr {
+    (status, Json(ApiError::new(code, message)))
+}
+
+fn upload_max_single_bytes(file_name: &str, mime: &str) -> Result<u64, UploadErr> {
+    let ext = ext_lower(file_name).unwrap_or_default();
+    let is_image = mime.starts_with("image/")
+        && matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp" | "gif");
+    let is_audio = mime.starts_with("audio/")
+        && matches!(ext.as_str(), "mp3" | "wav" | "m4a" | "aac" | "ogg" | "webm");
+    let is_video =
+        mime.starts_with("video/") && matches!(ext.as_str(), "mp4" | "webm" | "mov" | "mkv");
+    if !(is_image || is_audio || is_video) {
+        return Err(upload_api_error(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "UPLOAD_UNSUPPORTED_TYPE",
+            "不支持的文件类型（仅支持常见图片/音频/视频）",
+        ));
+    }
+    Ok(if is_image {
+        8 * 1024 * 1024
+    } else if is_audio {
+        25 * 1024 * 1024
+    } else {
+        80 * 1024 * 1024
+    })
+}
+
 pub(crate) async fn delete_uploads_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<DeleteUploadsBody>,
@@ -140,7 +174,7 @@ fn ext_lower(file_name: &str) -> Option<String> {
 pub(crate) async fn upload_handler(
     State(state): State<Arc<AppState>>,
     mut multipart: Multipart,
-) -> Result<Json<UploadResponseBody>, (StatusCode, Json<ApiError>)> {
+) -> Result<Json<UploadResponseBody>, UploadErr> {
     let mut out: Vec<UploadedFileInfo> = Vec::new();
     let max_total: u64 = 200 * 1024 * 1024; // 200MB total
     let max_files: usize = 20;
@@ -149,23 +183,17 @@ pub(crate) async fn upload_handler(
     static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
     while let Some(field) = multipart.next_field().await.map_err(|e| {
-        (
+        upload_api_error(
             StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "MULTIPART_ERROR",
-                message: format!("上传解析失败：{}", e),
-                reason_code: None,
-            }),
+            "MULTIPART_ERROR",
+            format!("上传解析失败：{}", e),
         )
     })? {
         if out.len() >= max_files {
-            return Err((
+            return Err(upload_api_error(
                 StatusCode::PAYLOAD_TOO_LARGE,
-                Json(ApiError {
-                    code: "UPLOAD_TOO_MANY_FILES",
-                    message: "上传文件数量过多".to_string(),
-                    reason_code: None,
-                }),
+                "UPLOAD_TOO_MANY_FILES",
+                "上传文件数量过多",
             ));
         }
 
@@ -176,34 +204,9 @@ pub(crate) async fn upload_handler(
             .map(|s| s.to_string())
             .unwrap_or_else(|| "application/octet-stream".to_string());
 
-        // 白名单：MIME 前缀 + 扩展名
+        let max_single = upload_max_single_bytes(&file_name, &mime)?;
+
         let ext = ext_lower(&file_name).unwrap_or_default();
-        let is_image = mime.starts_with("image/")
-            && matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp" | "gif");
-        let is_audio = mime.starts_with("audio/")
-            && matches!(ext.as_str(), "mp3" | "wav" | "m4a" | "aac" | "ogg" | "webm");
-        let is_video =
-            mime.starts_with("video/") && matches!(ext.as_str(), "mp4" | "webm" | "mov" | "mkv");
-        if !(is_image || is_audio || is_video) {
-            return Err((
-                StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                Json(ApiError {
-                    code: "UPLOAD_UNSUPPORTED_TYPE",
-                    message: "不支持的文件类型（仅支持常见图片/音频/视频）".to_string(),
-                    reason_code: None,
-                }),
-            ));
-        }
-
-        // 单文件大小限制（与前端保持同量级）
-        let max_single: u64 = if is_image {
-            8 * 1024 * 1024
-        } else if is_audio {
-            25 * 1024 * 1024
-        } else {
-            80 * 1024 * 1024
-        };
-
         let ext_with_dot = if ext.is_empty() {
             "".to_string()
         } else {
@@ -219,13 +222,10 @@ pub(crate) async fn upload_handler(
         let path = state.http.uploads_dir.join(&safe_name);
 
         let mut f = tokio::fs::File::create(&path).await.map_err(|e| {
-            (
+            upload_api_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError {
-                    code: "UPLOAD_WRITE_ERROR",
-                    message: format!("无法写入上传文件：{}", e),
-                    reason_code: None,
-                }),
+                "UPLOAD_WRITE_ERROR",
+                format!("无法写入上传文件：{}", e),
             )
         })?;
 
@@ -236,13 +236,10 @@ pub(crate) async fn upload_handler(
                 Ok(v) => v,
                 Err(e) => {
                     let _ = tokio::fs::remove_file(&path).await;
-                    return Err((
+                    return Err(upload_api_error(
                         StatusCode::BAD_REQUEST,
-                        Json(ApiError {
-                            code: "UPLOAD_READ_ERROR",
-                            message: format!("读取上传内容失败：{}", e),
-                            reason_code: None,
-                        }),
+                        "UPLOAD_READ_ERROR",
+                        format!("读取上传内容失败：{}", e),
                     ));
                 }
             };
@@ -254,34 +251,25 @@ pub(crate) async fn upload_handler(
             total += chunk_len;
             if size > max_single {
                 let _ = tokio::fs::remove_file(&path).await;
-                return Err((
+                return Err(upload_api_error(
                     StatusCode::PAYLOAD_TOO_LARGE,
-                    Json(ApiError {
-                        code: "UPLOAD_FILE_TOO_LARGE",
-                        message: "单个文件过大".to_string(),
-                        reason_code: None,
-                    }),
+                    "UPLOAD_FILE_TOO_LARGE",
+                    "单个文件过大",
                 ));
             }
             if total > max_total {
                 let _ = tokio::fs::remove_file(&path).await;
-                return Err((
+                return Err(upload_api_error(
                     StatusCode::PAYLOAD_TOO_LARGE,
-                    Json(ApiError {
-                        code: "UPLOAD_TOO_LARGE",
-                        message: "上传内容过大".to_string(),
-                        reason_code: None,
-                    }),
+                    "UPLOAD_TOO_LARGE",
+                    "上传内容过大",
                 ));
             }
             f.write_all(&chunk).await.map_err(|e| {
-                (
+                upload_api_error(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ApiError {
-                        code: "UPLOAD_WRITE_ERROR",
-                        message: format!("写入上传内容失败：{}", e),
-                        reason_code: None,
-                    }),
+                    "UPLOAD_WRITE_ERROR",
+                    format!("写入上传内容失败：{}", e),
                 )
             })?;
         }
