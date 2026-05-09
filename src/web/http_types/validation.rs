@@ -15,9 +15,9 @@ use super::workspace::{WorkspaceFileWriteBody, WorkspaceSearchBody};
 pub(crate) const CHAT_REQUEST_BODY_ALLOWED_KEYS: &[&str] = &[
     "agent_role",
     "approval_session_id",
+    "clarify_questionnaire_answers",
     "client_llm",
     "client_sse_protocol",
-    "clarify_questionnaire_answers",
     "conversation_id",
     "execution_mode",
     "executor_llm",
@@ -231,6 +231,26 @@ mod tests {
         validate_clarify_answers_json_budget, validate_workspace_query_encoding_optional,
         validate_workspace_search_pattern, workspace_search_pattern_or_error,
     };
+
+    #[test]
+    fn chat_request_body_allowed_keys_stay_sorted_for_binary_search() {
+        let keys = super::CHAT_REQUEST_BODY_ALLOWED_KEYS;
+        for w in keys.windows(2) {
+            assert!(
+                w[0] < w[1],
+                "CHAT_REQUEST_BODY_ALLOWED_KEYS must be sorted: {:?} >= {:?}",
+                w[0],
+                w[1]
+            );
+        }
+    }
+
+    #[test]
+    fn deserialize_chat_request_body_accepts_client_llm_object() {
+        let j = r#"{"message":"hi","client_llm":{"api_base":"https://x","model":"m"}}"#;
+        let b: ChatRequestBody = serde_json::from_str(j).expect("deserialize");
+        assert!(b.client_llm.is_some());
+    }
 
     #[test]
     fn deserialize_chat_request_body_rejects_unknown_top_level_key() {

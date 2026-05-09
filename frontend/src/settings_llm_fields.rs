@@ -130,6 +130,7 @@ pub(crate) fn LlmContextTokensField(
                 min="0"
                 max="10000000"
                 step="1"
+                inputmode="numeric"
                 prop:placeholder=move || i18n::settings_ph_llm_context_tokens(locale.get())
                 prop:value=move || llm_context_tokens_draft.get()
                 on:input=move |ev| llm_context_tokens_draft.set(leptos_dom::helpers::event_target_value(&ev))
@@ -156,7 +157,8 @@ pub(crate) fn LlmTemperatureField(
                 class="settings-text-input"
                 min="0"
                 max="2"
-                step="0.1"
+                step="any"
+                inputmode="decimal"
                 prop:placeholder=move || i18n::settings_ph_temperature(locale.get())
                 prop:value=move || temperature_draft.get()
                 on:input=move |ev| temperature_draft.set(event_target_value(&ev))
