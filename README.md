@@ -29,7 +29,7 @@
 
 ## 功能概览
 
-- **对话与工具**：OpenAI 兼容 `chat/completions`；内置文件/工作区、**`run_command`**（白名单）、HTTP/搜索、工作区**代码检索**（关键字 + 可选语义/向量）等；完整列表见 [docs/工具说明.md](docs/工具说明.md)。
+- **对话与工具**：OpenAI 兼容 `chat/completions`；内置文件/工作区、**`run_command`**（白名单；默认含 **`bash`/`sh`**，复合命令用 **`bash -c`/`sh -c`**）、HTTP/搜索、工作区**代码检索**（关键字 + 可选语义/向量）等；完整列表见 [docs/工具说明.md](docs/工具说明.md)。
 - **Web UI**：侧栏会话与工作区；须**显式选择工作区**后工具与 **`@相对路径`** 才生效；助手 **Markdown**；支持 **`@` 引用**、图片附件（须视觉模型）、会话导出等。详细路由与行为见 [docs/命令行与路由.md](docs/命令行与路由.md)。
 - **终端**：**`repl`**（交互）、**`chat`**（单次）、**`serve`**（HTTP + 静态 UI）、**`tui`**（实验性**全屏**，须真实 TTY，见下文）。流式 **SSE**、工具审批与取消约定见 [docs/SSE协议.md](docs/SSE协议.md)。
 - **会话与导出**：Web 或 CLI **`save-session`**（别名 **`export-session`**）导出 JSON/Markdown，形状见 [docs/命令行与路由.md](docs/命令行与路由.md)。

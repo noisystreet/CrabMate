@@ -29,7 +29,7 @@ It includes **function calling**, workspace command and file tools, plus a **Web
 
 ## Overview
 
-- **Chat and tools**: OpenAI-compatible `chat/completions`; built-in workspace files, **`run_command`** (allowlist), HTTP/search, workspace **code search** (keyword + optional semantic/embeddings); full list in [docs/en/TOOLS.md](docs/en/TOOLS.md).
+- **Chat and tools**: OpenAI-compatible `chat/completions`; built-in workspace files, **`run_command`** (allowlist; defaults include **`bash`/`sh`** for **`bash -c`/`sh -c`** compound scripts), HTTP/search, workspace **code search** (keyword + optional semantic/embeddings); full list in [docs/en/TOOLS.md](docs/en/TOOLS.md).
 - **Web UI**: sidebar sessions and workspace; tools and **`@relative-path`** only apply after you **pick a workspace**; assistant **Markdown**; **`@` references**, image attachments (vision-capable models), session export, etc. Routes and behavior: [docs/en/CLI.md](docs/en/CLI.md).
 - **Terminal**: **`repl`** (interactive), **`chat`** (one-shot), **`serve`** (HTTP + static UI), **`tui`** (experimental **full-screen**, real TTY required—see below). Streaming **SSE**, tool approval/cancel: [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md).
 - **Sessions and export**: Web or CLI **`save-session`** (alias **`export-session`**) to JSON/Markdown; shape in [docs/en/CLI.md](docs/en/CLI.md).

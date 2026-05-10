@@ -47,6 +47,9 @@ allowed_commands = [
     "npm",
     "podman",
     "python3",
+    # POSIX shell（复合命令：`bash -c` / `sh -c` 传入整段脚本；能力等同任意命令执行，仅可信工作区）
+    "bash",
+    "sh",
     # 容器 CLI（与 SyncDefault Docker 沙盒的 Engine API 不同；供内置 docker_* / podman_* 工具）
     "docker",
     # 搜索与路径解析

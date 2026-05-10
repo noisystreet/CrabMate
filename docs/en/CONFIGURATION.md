@@ -105,7 +105,7 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 
 | Variable | Description |
 | --- | --- |
-| `CM_ALLOWED_COMMANDS` | Comma-separated `run_command` allowlist. Embedded defaults also include **`docker`**, **`podman`**, **`mvn`**, **`gradle`** (JVM/container built-ins and manual `run_command`); full list **`config/tools.toml`**. |
+| `CM_ALLOWED_COMMANDS` | Comma-separated allowlist for **`run_command`** and the first **`terminal_session` `exec`**. Embedded defaults also include **`bash`** / **`sh`** (for **`bash -c` / `sh -c`** compound one-liners), **`docker`**, **`podman`**, **`mvn`**, **`gradle`**, …; full list **`config/tools.toml`**. |
 | `CM_MCP_ENABLED` | Enable MCP. |
 | `CM_MCP_COMMAND` | MCP stdio launch command. |
 | `CM_MCP_TOOL_TIMEOUT_SECS` | MCP tool timeout; one stdio session per fingerprint; **`crabmate mcp list`** needs no `API_KEY`; **`mcp list --probe`** spawns subprocess. |
