@@ -63,7 +63,6 @@ fn test_is_tool_allowed() {
             tools_defs: vec![],
             enable_compile_error_recovery: true,
             compile_error_max_retries: 3,
-            attempted_configs: Vec::new(),
             enable_dynamic_decomposition: true,
             dynamic_decomposition_threshold: 40,
         },

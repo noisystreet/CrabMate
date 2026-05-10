@@ -122,6 +122,7 @@ impl super::types::OperatorAgent {
             phase: SubgoalPhase::Diagnose,
             progress: ConvergenceProgress::default(),
             last_reported_phase: None,
+            attempted_compile_configs: Vec::new(),
         };
         let convergence_goal = super::compile::is_convergence_compile_fix_goal(goal);
 
@@ -525,6 +526,7 @@ impl super::types::OperatorAgent {
         &self,
         result: &ToolExecutionResult,
         tool_call: &crate::types::ToolCall,
+        state: &mut ReactState,
     ) -> (Option<String>, Option<CompileErrorType>) {
         if result.success
             || !self.config.policy.enable_compile_error_recovery
@@ -538,6 +540,20 @@ impl super::types::OperatorAgent {
         if !error_info.retryable {
             return (None, None);
         }
+        let max = self.config.policy.compile_error_max_retries;
+        if max == 0 || state.attempted_compile_configs.len() >= max {
+            return (None, Some(error_info.error_type.clone()));
+        }
+        let attempt_key = error_info.alternative_config.clone().unwrap_or_else(|| {
+            format!(
+                "{:?}|{}",
+                error_info.error_type, tool_call.function.arguments
+            )
+        });
+        if state.attempted_compile_configs.contains(&attempt_key) {
+            return (None, Some(error_info.error_type.clone()));
+        }
+        state.attempted_compile_configs.push(attempt_key);
         (
             Some(super::compile::build_compile_error_recovery_hint(
                 &error_info,
@@ -689,7 +705,7 @@ impl super::types::OperatorAgent {
         };
         state.observations.push(observation);
         let (error_recovery_hint, current_error_type) =
-            self.compile_error_recovery_fields(result, tool_call);
+            self.compile_error_recovery_fields(result, tool_call, state);
         if convergence_goal
             && super::compile::is_compile_command(&result.tool_name, &tool_call.function.arguments)
         {

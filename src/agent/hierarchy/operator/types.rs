@@ -54,10 +54,8 @@ pub struct OperatorPolicy {
     pub tools_defs: Vec<Tool>,
     /// 是否启用编译错误自动修复
     pub enable_compile_error_recovery: bool,
-    /// 编译错误重试次数
+    /// 编译错误重试次数上限（计数与已尝试配置见 [`super::state::ReactState`]）
     pub compile_error_max_retries: usize,
-    /// 已尝试的配置模板（用于避免重复尝试）
-    pub attempted_configs: Vec<String>,
     /// 是否启用动态子目标分解
     pub enable_dynamic_decomposition: bool,
     /// 动态分解复杂度阈值（达到此分数触发分解）
@@ -72,7 +70,6 @@ impl Default for OperatorPolicy {
             tools_defs: Vec::new(),
             enable_compile_error_recovery: true,
             compile_error_max_retries: 3,
-            attempted_configs: Vec::new(),
             enable_dynamic_decomposition: true,
             dynamic_decomposition_threshold: 40,
         }

@@ -430,7 +430,6 @@ impl<'a> super::HierarchicalExecutor<'a> {
                 tools_defs: tools_defs_for_llm.clone(),
                 enable_compile_error_recovery: true,
                 compile_error_max_retries: 3,
-                attempted_configs: Vec::new(),
                 enable_dynamic_decomposition: true,
                 dynamic_decomposition_threshold: 40,
             },

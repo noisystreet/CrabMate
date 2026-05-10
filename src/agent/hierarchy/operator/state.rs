@@ -44,6 +44,8 @@ pub(crate) struct ReactState {
     pub progress: ConvergenceProgress,
     /// 上次已上报到时间线的阶段（避免重复刷屏）
     pub last_reported_phase: Option<SubgoalPhase>,
+    /// 本轮 ReAct 已尝试的编译配置模板（避免重复尝试；与 `OperatorPolicy::compile_error_max_retries` 配合）
+    pub attempted_compile_configs: Vec<String>,
 }
 
 /// 工具执行结果分析
