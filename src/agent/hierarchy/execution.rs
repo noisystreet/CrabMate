@@ -1,8 +1,6 @@
 //! 分层执行器：按依赖层级执行子目标
 
-use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use tokio::sync::mpsc::Sender;
 
@@ -10,14 +8,9 @@ use crate::config::AgentConfig;
 use crate::llm::backend::ChatCompletionsBackend;
 use crate::sse;
 
-use super::artifact_store::ArtifactStore;
-use super::build_state::BuildState;
-use super::events;
-use super::execution_helpers::{Dag, summarize_subgoal_evidence, trim_for_detail};
-use super::manager::{ManagerOutput, handle_failure};
-use super::task::{ExecutionStrategy, TaskResult, TaskStatus};
+use super::execution_helpers::{summarize_subgoal_evidence, trim_for_detail};
+use super::task::{TaskResult, TaskStatus};
 use crate::types::{CommandApprovalDecision, Tool};
-use log::{error, info, warn};
 use tokio::sync::Mutex as TokioMutex;
 use tokio::sync::mpsc::Receiver;
 
@@ -273,261 +266,12 @@ impl<'a> HierarchicalExecutor<'a> {
         self.tool_approval_rx = Some(approval_rx);
         self
     }
-
-    /// 执行并返回详细结果
-    pub async fn execute_with_result(
-        &self,
-        manager_output: ManagerOutput,
-    ) -> Result<HierarchicalExecutionResult, ExecutionError> {
-        let start_time = Instant::now();
-        let sub_goals = manager_output.sub_goals;
-        let strategy = manager_output.execution_strategy;
-        let goal_expected_outputs: HashMap<String, Vec<String>> = sub_goals
-            .iter()
-            .map(|g| {
-                let hints = g
-                    .acceptance
-                    .as_ref()
-                    .map(|a| {
-                        a.expect_output_contains
-                            .iter()
-                            .map(|s| s.trim())
-                            .filter(|s| !s.is_empty())
-                            .map(|s| s.to_string())
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default();
-                (g.goal_id.clone(), hints)
-            })
-            .collect();
-
-        info!(
-            target: "crabmate",
-            "Hierarchical execution started: {} goals, strategy={:?}",
-            sub_goals.len(),
-            strategy
-        );
-
-        // 发射 SSE 事件：分层执行开始
-        if let Some(ref sse_out) = self.sse_out {
-            let trace = events::build_hierarchical_started_trace(
-                sub_goals.len(),
-                &format!("{:?}", strategy),
-            );
-            let _ = sse::send_string_logged(
-                sse_out,
-                sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace }),
-                "hierarchical::started",
-            )
-            .await;
-        }
-
-        if sub_goals.is_empty() {
-            return Ok(HierarchicalExecutionResult {
-                results: Vec::new(),
-                total_duration_ms: start_time.elapsed().as_millis() as u64,
-                total_completed: 0,
-                total_failed: 0,
-                goal_expected_outputs: HashMap::new(),
-            });
-        }
-
-        // 构建 DAG
-        let dag = Dag::build(&sub_goals)?;
-
-        // 计算拓扑层级
-        let levels = dag.topological_levels()?;
-
-        info!(
-            target: "crabmate",
-            "Hierarchical execution: {} goals in {} levels",
-            sub_goals.len(),
-            levels.len()
-        );
-
-        let mut artifact_store = ArtifactStore::new();
-        // 尝试从磁盘加载之前的构建状态（用于增量编译）
-        let mut build_state = if let Some(ref working_dir) = self.working_dir {
-            BuildState::load_or_create(working_dir)
-        } else {
-            BuildState::default()
-        };
-        info!(
-            target: "crabmate",
-            "Loaded build state: {} source files tracked, {} artifacts cached",
-            build_state.source_files.len(),
-            build_state.artifact_cache.len()
-        );
-        let mut all_results: Vec<TaskResult> = Vec::new();
-        let mut answer_phase_emitted = false;
-
-        // 按层级执行
-        for (level_idx, level) in levels.iter().enumerate() {
-            info!(target: "crabmate", "Executing level {} with {} goals", level_idx, level.len());
-
-            // 发射 SSE 事件：层级开始
-            if let Some(ref sse_out) = self.sse_out {
-                let trace = events::build_level_started_trace(level_idx, level);
-                let _ = sse::send_string_logged(
-                    sse_out,
-                    sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace }),
-                    "hierarchical::level_started",
-                )
-                .await;
-            }
-
-            // 获取该层级的子目标
-            let level_goals: Vec<_> = level
-                .iter()
-                .filter_map(|id| sub_goals.iter().find(|g| &g.goal_id == id))
-                .collect();
-
-            // 按策略执行（传递 artifact_store 和 build_state；`all_results` 供同层/后续层补全 I/O 契约与步摘要）
-            let level_results = match strategy {
-                ExecutionStrategy::Sequential => {
-                    self.execute_sequential(
-                        &level_goals,
-                        &all_results,
-                        &mut artifact_store,
-                        &mut build_state,
-                    )
-                    .await
-                }
-                ExecutionStrategy::Parallel | ExecutionStrategy::Hybrid => {
-                    self.execute_parallel(
-                        &level_goals,
-                        &all_results,
-                        &mut artifact_store,
-                        &mut build_state,
-                    )
-                    .await
-                }
-            }?;
-
-            // 更新 artifact store 和 build_state
-            for result in &level_results {
-                if matches!(result.status, TaskStatus::Completed) {
-                    artifact_store.store_result(result);
-                    // 从结果中提取构建产物并更新 build_state
-                    self.update_build_state_from_result(&mut build_state, result);
-                }
-                all_results.push(result.clone());
-                if let Some((title, detail)) = Self::progress_line_for_task_result(result) {
-                    self.emit_assistant_progress_delta_sse(
-                        &mut answer_phase_emitted,
-                        title,
-                        Some(detail),
-                    )
-                    .await;
-                }
-            }
-
-            // 发射 SSE 事件：层级完成
-            if let Some(ref sse_out) = self.sse_out {
-                let level_completed = level_results
-                    .iter()
-                    .filter(|r| matches!(r.status, TaskStatus::Completed))
-                    .count();
-                let level_failed = level_results
-                    .iter()
-                    .filter(|r| matches!(r.status, TaskStatus::Failed { .. }))
-                    .count();
-                let trace =
-                    events::build_level_finished_trace(level_idx, level_completed, level_failed);
-                let _ = sse::send_string_logged(
-                    sse_out,
-                    sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace }),
-                    "hierarchical::level_finished",
-                )
-                .await;
-            }
-
-            // 检查失败
-            let (_, failed, decision) = handle_failure(&all_results, self.max_failures);
-
-            // 如果有失败，记录可供重新规划的上下文信息
-            if !failed.is_empty() {
-                let artifacts: Vec<_> = artifact_store.all().into_iter().cloned().collect();
-                info!(
-                    target: "crabmate",
-                    "[HIERARCHICAL] {} failures at level {}. Artifacts available for replan: {}, original_task: {}",
-                    failed.len(),
-                    level_idx,
-                    artifacts.len(),
-                    self.original_task.as_deref().unwrap_or("N/A")
-                );
-                // 失败时的重新规划逻辑已准备好，当 Manager.replan_with_artifacts 被调用时会使用这些信息
-            }
-
-            if !failed.is_empty()
-                && let super::manager::FailureDecision::Abort { .. } = decision
-            {
-                error!(
-                    target: "crabmate",
-                    "Max failures reached at level {}, aborting",
-                    level_idx
-                );
-                return Err(ExecutionError::MaxFailuresReached(format!(
-                    "Failed {} goals, exceeding threshold",
-                    failed.len()
-                )));
-            }
-        }
-
-        let total_duration_ms = start_time.elapsed().as_millis() as u64;
-        let total_completed = all_results
-            .iter()
-            .filter(|r| matches!(r.status, TaskStatus::Completed))
-            .count();
-        let total_failed = all_results
-            .iter()
-            .filter(|r| matches!(r.status, TaskStatus::Failed { .. }))
-            .count();
-
-        info!(
-            target: "crabmate",
-            "Hierarchical execution finished: {} completed, {} failed, {}ms",
-            total_completed,
-            total_failed,
-            total_duration_ms
-        );
-
-        // 保存 BuildState 到磁盘（用于增量编译）
-        if let Some(ref working_dir) = self.working_dir
-            && let Err(e) = build_state.save_to_disk(working_dir)
-        {
-            warn!(
-                target: "crabmate",
-                "Failed to save build state: {}",
-                e
-            );
-        }
-
-        // 发射 SSE 事件：分层执行完成
-        if let Some(ref sse_out) = self.sse_out {
-            let trace = events::build_hierarchical_finished_trace(
-                total_completed,
-                total_failed,
-                total_duration_ms,
-            );
-            let _ = sse::send_string_logged(
-                sse_out,
-                sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace }),
-                "hierarchical::finished",
-            )
-            .await;
-        }
-
-        Ok(HierarchicalExecutionResult {
-            results: all_results,
-            total_duration_ms,
-            total_completed,
-            total_failed,
-            goal_expected_outputs,
-        })
-    }
 }
 
 /// 子目标顺序/并行执行、验证重试与 `BuildState` 更新（原 `execution_body.inc.rs`，现为独立模块以便导航）。
 #[path = "execution_impl.rs"]
 mod execution_impl;
+
+/// `execute_with_result` 实现拆至此模块以降低圈复杂度。
+#[path = "execution_with_result.rs"]
+mod execution_with_result;
