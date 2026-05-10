@@ -7,23 +7,38 @@ use crate::config::{AgentConfig, PlannerExecutorMode};
 use super::intent::StagedPlanningGateOutcome;
 use super::intent::staged_planning_gate::StagedPlanningDenyReason;
 
+/// 非分层滚动视界 vs 整轮外循环：`Staged` 内区分逻辑双代理 / 单 Agent 规划上下文（与 `rolling_horizon_facade` 对齐）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NonHierarchicalStagedKind {
+    /// `planner_executor_mode == LogicalDualAgent` 且门控放行。
+    LogicalDual,
+    /// `staged_plan_execution` 且门控放行（单 Agent 规划消息构造）。
+    SingleAgentStaged,
+}
+
+impl NonHierarchicalStagedKind {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::LogicalDual => "logical_dual_agent_staged",
+            Self::SingleAgentStaged => "staged_plan_execution",
+        }
+    }
+}
+
 /// 非分层、且 **`intent_at_turn_start` 已通过** 且已知 **`staged_plan_intent_gate`** 是否放行时，
-/// 主执行路径的**显式枚举**（与 `run_dispatch::dispatch_non_hierarchical_turn` 的 `if` 链一一对应）。
+/// 主执行路径的**显式枚举**（与 `run_dispatch::execute_non_hierarchical_main_route` 顶层二分对齐）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NonHierarchicalMainRoute {
-    /// `planner_executor_mode == LogicalDualAgent` 且门控放行。
-    LogicalDualAgentStaged,
-    /// `staged_plan_execution` 且门控放行。
-    StagedPlanExecution,
-    /// 默认：`run_agent_outer_loop`。
+    /// 无工具规划壳 + 滚动视界步循环（逻辑双代理或单 Agent 分阶段）。
+    Staged(NonHierarchicalStagedKind),
+    /// 默认：整轮仅 `run_agent_outer_loop`。
     SingleAgentOuterLoop,
 }
 
 impl NonHierarchicalMainRoute {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
-            Self::LogicalDualAgentStaged => "logical_dual_agent_staged",
-            Self::StagedPlanExecution => "staged_plan_execution",
+            Self::Staged(k) => k.as_str(),
             Self::SingleAgentOuterLoop => "single_agent_outer_loop",
         }
     }
@@ -37,9 +52,9 @@ pub(crate) fn resolve_non_hierarchical_main_route(
     if cfg.per_plan_policy.planner_executor_mode == PlannerExecutorMode::LogicalDualAgent
         && staged_intent_gate_allow
     {
-        NonHierarchicalMainRoute::LogicalDualAgentStaged
+        NonHierarchicalMainRoute::Staged(NonHierarchicalStagedKind::LogicalDual)
     } else if cfg.staged_planning.staged_plan_execution && staged_intent_gate_allow {
-        NonHierarchicalMainRoute::StagedPlanExecution
+        NonHierarchicalMainRoute::Staged(NonHierarchicalStagedKind::SingleAgentStaged)
     } else {
         NonHierarchicalMainRoute::SingleAgentOuterLoop
     }
@@ -100,8 +115,12 @@ impl NonHierarchicalEntryResolution {
 impl From<NonHierarchicalMainRoute> for TurnOrchestrationMode {
     fn from(r: NonHierarchicalMainRoute) -> Self {
         match r {
-            NonHierarchicalMainRoute::LogicalDualAgentStaged => Self::LogicalDualAgentStaged,
-            NonHierarchicalMainRoute::StagedPlanExecution => Self::StagedPlanExecution,
+            NonHierarchicalMainRoute::Staged(NonHierarchicalStagedKind::LogicalDual) => {
+                Self::LogicalDualAgentStaged
+            }
+            NonHierarchicalMainRoute::Staged(NonHierarchicalStagedKind::SingleAgentStaged) => {
+                Self::StagedPlanExecution
+            }
             NonHierarchicalMainRoute::SingleAgentOuterLoop => Self::SingleAgentOuterLoop,
         }
     }
@@ -150,7 +169,7 @@ mod tests {
         let cfg = cfg_with(PlannerExecutorMode::LogicalDualAgent, true);
         assert_eq!(
             resolve_non_hierarchical_main_route(&cfg, true),
-            NonHierarchicalMainRoute::LogicalDualAgentStaged
+            NonHierarchicalMainRoute::Staged(NonHierarchicalStagedKind::LogicalDual)
         );
         assert_eq!(
             TurnOrchestrationMode::from(resolve_non_hierarchical_main_route(&cfg, true)),
@@ -163,7 +182,7 @@ mod tests {
         let cfg = cfg_with(PlannerExecutorMode::SingleAgent, true);
         assert_eq!(
             resolve_non_hierarchical_main_route(&cfg, true),
-            NonHierarchicalMainRoute::StagedPlanExecution
+            NonHierarchicalMainRoute::Staged(NonHierarchicalStagedKind::SingleAgentStaged)
         );
     }
 
@@ -254,7 +273,7 @@ mod tests {
         let r = NonHierarchicalEntryResolution::resolve(&cfg, &gate);
         assert_eq!(
             r.main_route,
-            NonHierarchicalMainRoute::LogicalDualAgentStaged
+            NonHierarchicalMainRoute::Staged(NonHierarchicalStagedKind::LogicalDual)
         );
         assert!(r.single_agent_outer_loop_because.is_none());
     }

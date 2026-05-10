@@ -1,4 +1,4 @@
-//! 回合执行模式分发：分层 vs 非分层，以及非分层下的逻辑双代理 / 分阶段规划 / 单 Agent 外循环。
+//! 回合执行模式分发：分层 vs 非分层；非分层下 **`execute_non_hierarchical_main_route`** 顶层二分：**`Staged(kind)`**（滚动视界）vs **`SingleAgentOuterLoop`**。
 //!
 //! 从 [`super::run_agent_turn_common`] 抽离，使 `mod.rs` 仅保留入口日志、分隔线与 `PerCoordinator` 构造等接线。
 //!
@@ -14,9 +14,7 @@ use super::intent::{StagedPlanningGateOutcome, assess_staged_planning_gate_full_
 use super::intent_at_turn_start;
 use super::outer_loop::run_agent_outer_loop;
 use super::params::RunLoopParams;
-use super::staged::{
-    run_logical_dual_agent_then_execute_steps, run_staged_plan_then_execute_steps,
-};
+use super::staged::run_non_hierarchical_staged_route;
 use super::turn_orchestration::{
     NonHierarchicalEntryResolution, NonHierarchicalMainRoute, TurnOrchestrationMode,
 };
@@ -28,13 +26,13 @@ pub(crate) async fn execute_non_hierarchical_main_route(
     per_coord: &mut PerCoordinator,
 ) -> Result<(), RunAgentTurnError> {
     match main_route {
-        NonHierarchicalMainRoute::LogicalDualAgentStaged => {
-            log::info!(target: "crabmate", "run_agent_turn: using LogicalDualAgent mode");
-            run_logical_dual_agent_then_execute_steps(p, per_coord).await
-        }
-        NonHierarchicalMainRoute::StagedPlanExecution => {
-            log::info!(target: "crabmate", "run_agent_turn: using staged_plan mode");
-            run_staged_plan_then_execute_steps(p, per_coord).await
+        NonHierarchicalMainRoute::Staged(kind) => {
+            log::info!(
+                target: "crabmate",
+                "run_agent_turn: using staged rolling horizon ({})",
+                kind.as_str()
+            );
+            run_non_hierarchical_staged_route(kind, p, per_coord).await
         }
         NonHierarchicalMainRoute::SingleAgentOuterLoop => {
             log::info!(target: "crabmate", "run_agent_turn: using single_agent mode");
