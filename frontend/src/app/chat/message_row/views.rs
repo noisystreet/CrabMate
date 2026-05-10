@@ -20,6 +20,7 @@ pub(super) fn chat_message_row_meta_view(
     m_role: StoredMessage,
     time_str: String,
 ) -> impl IntoView {
+    let is_tool = m_role.is_tool;
     let role_lbl = move || {
         if is_staged_timeline {
             i18n::msg_staged_timeline_role_meta(locale.get())
@@ -42,7 +43,9 @@ pub(super) fn chat_message_row_meta_view(
                     </span>
                 </Show>
             </span>
-            <span class="msg-meta-time">{time_str.clone()}</span>
+            {(!is_tool).then(|| {
+                view! { <span class="msg-meta-time">{time_str.clone()}</span> }
+            })}
         </div>
     }
 }
