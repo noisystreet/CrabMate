@@ -57,7 +57,7 @@ pub async fn classify_intent_l2_with_llm(
 
 fn build_l2_prompt(merged_routing_text: &str, current_user_line: &str) -> String {
     format!(
-        r#"你是 CrabMate 的意图分类器。只输出**一段** JSON 对象，不要解释；若必须包在代码块，请用 ```json ... ``` 包裹该 JSON。
+        r#"你是 CrabMate 的意图分类器。只输出**一段** JSON 对象，不要解释、不要推理过程；若必须包在代码块，请用 ```json ... ``` 包裹该 JSON。
 
 【合并后的路由文本】（可能含前序+续接；用于消歧义）
 {merged}

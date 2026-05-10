@@ -8,6 +8,7 @@
 mod display;
 mod plain;
 mod staged_timeline;
+mod strip_ansi;
 mod tool_card;
 
 #[cfg(test)]
@@ -20,4 +21,5 @@ pub(crate) use display::{
 pub(crate) use staged_timeline::{
     STAGED_TIMELINE_SYSTEM_PREFIX, is_staged_timeline_bubble, staged_timeline_system_message_body,
 };
+pub(crate) use strip_ansi::strip_ansi_codes;
 pub(crate) use tool_card::{tool_card_compact_text, tool_card_text};

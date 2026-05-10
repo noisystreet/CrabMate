@@ -5,8 +5,8 @@ use crate::agent::per_coord::PerCoordinator;
 use crate::clarification_questionnaire::clarification_questionnaire_body_if_tool_ok;
 use crate::config::AgentConfig;
 use crate::sse::{
-    SsePayload, ThinkingTraceBody, ToolCallSummary, ToolResultBody, encode_message,
-    send_sse_control_payload_optional,
+    SsePayload, ThinkingTraceBody, ToolCallSummary, ToolOutputChunkBody, ToolResultBody,
+    encode_message, send_sse_control_payload_optional,
 };
 use crate::tool_result::{self, NormalizedToolEnvelope, ToolEnvelopeContext, parse_legacy_output};
 use crate::tools;
@@ -137,6 +137,27 @@ pub(super) async fn emit_sse_tool_running(
         tx,
         encode_message(SsePayload::ToolRunning { tool_running }),
         log_label,
+    )
+    .await;
+}
+
+/// SSE：`SsePayload::ToolOutputChunk`（长耗时工具 / PTY 输出增量；最终以 `tool_result` 收束）。
+///
+/// 供将来 **`terminal_session`** 等接入；当前仓库尚无调用方，保留 API 并允许未使用（避免 `-D warnings` 阻塞）。
+#[allow(dead_code)]
+pub(super) async fn emit_sse_tool_output_chunk(
+    out: Option<&mpsc::Sender<String>>,
+    sse_control_mirror: Option<&crate::sse::SseControlMirror>,
+    body: ToolOutputChunkBody,
+) {
+    let payload = SsePayload::ToolOutputChunk {
+        tool_output_chunk: body,
+    };
+    let _ = send_sse_control_payload_optional(
+        out,
+        sse_control_mirror,
+        payload,
+        "execute_tools::tool_output_chunk",
     )
     .await;
 }

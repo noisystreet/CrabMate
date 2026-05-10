@@ -1221,15 +1221,44 @@
   color: var(--error);
 }
 
+/* 工具执行中：浅绿边框 + 外晕呼吸灯（气泡内不再显示三点动画） */
+.msg-tool.msg-loading {
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--success) 34%, var(--border-subtle));
+  background: color-mix(in srgb, var(--surface) 93%, var(--success) 7%);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--success) 12%, transparent),
+    0 2px 10px color-mix(in srgb, var(--success) 10%, transparent);
+  animation: msg-tool-exec-border-breathe 2.2s ease-in-out infinite;
+}
+
+@keyframes msg-tool-exec-border-breathe {
+  0%,
+  100% {
+    border-color: color-mix(in srgb, var(--success) 26%, var(--border-subtle));
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--success) 8%, transparent),
+      0 1px 6px color-mix(in srgb, var(--success) 6%, transparent);
+  }
+
+  50% {
+    border-color: color-mix(in srgb, var(--success) 52%, var(--border-subtle));
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--success) 28%, transparent),
+      0 0 16px color-mix(in srgb, var(--success) 22%, transparent),
+      0 2px 12px color-mix(in srgb, var(--success) 14%, transparent);
+  }
+}
+
 .msg-with-select:has(.msg-assistant) > .msg-stack > .msg-assistant:hover,
-.msg-with-select:has(.msg-tool) > .msg-stack > .msg-tool:hover {
+.msg-with-select:has(.msg-tool) > .msg-stack > .msg-tool:not(.msg-loading):hover {
   border-color: color-mix(in srgb, var(--accent) 36%, var(--border));
   box-shadow:
     0 1px 0 color-mix(in srgb, #fff 8%, transparent) inset,
     0 6px 18px color-mix(in srgb, var(--bg) 42%, transparent);
 }
 
-.msg-with-select:has(.msg-tool) > .msg-stack > .msg-tool:hover {
+.msg-with-select:has(.msg-tool) > .msg-stack > .msg-tool:not(.msg-loading):hover {
   border-color: transparent;
   box-shadow: none;
 }
@@ -1359,6 +1388,37 @@
   line-height: 1.35;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* terminal_session：类 IDE 嵌入终端（Cursor / Trae 式深色块 + 等宽 scrollback） */
+.msg-tool-drawer-terminal {
+  max-height: min(50vh, 420px);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--terminal-panel-border);
+  background: var(--terminal-panel-bg);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.35) inset,
+    0 4px 18px rgba(0, 0, 0, 0.28);
+}
+
+.msg-tool-drawer-pre-terminal {
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--terminal-panel-fg);
+  tab-size: 4;
+  -moz-tab-size: 4;
+}
+
+.msg-tool-drawer-pre-terminal::selection {
+  background: var(--terminal-panel-selection-bg);
+  color: var(--terminal-panel-selection-fg);
+}
+
+.msg-tool-drawer-pre-terminal::-moz-selection {
+  background: var(--terminal-panel-selection-bg);
+  color: var(--terminal-panel-selection-fg);
 }
 
 .msg-subgoal-phase-chip {
@@ -1526,23 +1586,29 @@
 }
 
 .typing-dots span {
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* 模型加载：圆点 + 纵向弹跳 + accent */
+.typing-dots--model span {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--accent);
   opacity: 0.35;
-  animation: typing-bounce 1.2s ease-in-out infinite;
+  animation: typing-bounce-model 1.2s ease-in-out infinite;
 }
 
-.typing-dots span:nth-child(2) {
+.typing-dots--model span:nth-child(2) {
   animation-delay: 0.15s;
 }
 
-.typing-dots span:nth-child(3) {
+.typing-dots--model span:nth-child(3) {
   animation-delay: 0.3s;
 }
 
-@keyframes typing-bounce {
+@keyframes typing-bounce-model {
   0%,
   80%,
   100% {

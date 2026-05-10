@@ -107,6 +107,7 @@ fn builtin_write_effect_tools() -> &'static HashSet<String> {
             "long_term_remember",
             "long_term_forget",
             "run_command",
+            "terminal_session",
             "playbook_run_commands",
             "python_snippet_run",
             "run_executable",

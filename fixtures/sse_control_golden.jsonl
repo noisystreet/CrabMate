@@ -21,6 +21,9 @@ tool_call 仅有 arguments（脱敏后）	{"v":1,"tool_call":{"name":"http_fetch
 tool_call 无 summary 当正文	{"v":1,"tool_call":{"name":"read_file"}}	plain
 parsing_tool_calls	{"v":1,"parsing_tool_calls":true}	handled
 tool_running	{"v":1,"tool_running":false}	handled
+tool_output_chunk	{"v":1,"tool_output_chunk":{"tool_call_id":"tc1","seq":1,"chunk":"hi","name":"terminal_session","stream":"combined"}}	handled
+tool_output_chunk 缺 seq 当正文	{"v":1,"tool_output_chunk":{"tool_call_id":"tc1","chunk":"x"}}	plain
+tool_output_chunk 缺 tool_call_id 当正文	{"v":1,"tool_output_chunk":{"seq":1,"chunk":"x"}}	plain
 tool_result	{"v":1,"tool_result":{"name":"run_command","result_version":1,"summary":"ls","output":"退出码：0","ok":true,"retryable":false,"tool_call_id":"tc1","execution_mode":"serial","stdout":"","stderr":""}}	handled
 tool_result 仅有 structured_preview（无 output）	{"v":1,"tool_result":{"name":"read_file","result_version":1,"structured_preview":{"kind":"crabmate_tool_output","tool":"read_file","version":1,"path":"a.rs"}}}	handled
 command_approval_request	{"v":1,"command_approval_request":{"command":"git","args":"status","allowlist_key":"git"}}	handled

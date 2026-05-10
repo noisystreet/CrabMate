@@ -8,6 +8,14 @@ ToolSpec {
             summary: ToolSummaryKind::Dynamic(ts::summary_run_command),
         },
 ToolSpec {
+            name: "terminal_session",
+            description: "**Linux 专用**：伪终端（PTY）交互会话。与 **`run_command`** 共用 **`allowed_commands`** 审批与白名单；输出通过 SSE **`tool_output_chunk`** 流式增量下发（最终以 **`tool_result`** 收束正文）。\n\n- **exec**：无 **`session_id`** 时启动新会话（必填 **`command`** + 可选 **`args`**）；已存在会话则写入 **`input`** 并读取一轮输出直至短时静默。\n- **list** / **close** / **resize** / **send_signal**：会话列举、关闭、窗口尺寸、`kill` 信号。\n\n受限：同时活跃会话 ≤8；超时与输出上限继承 **`command_exec`**（`command_timeout_secs`、`command_max_output_len`）。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_terminal_session,
+            runner: runner_terminal_session,
+            summary: ToolSummaryKind::Dynamic(ts::summary_terminal_session),
+        },
+ToolSpec {
             name: "package_query",
             description: "只读查询 Linux 包信息（apt/rpm 统一抽象）：是否安装、版本、来源。默认 manager=auto（优先 dpkg-query，再尝试 rpm）；不执行安装/卸载操作。",
             category: ToolCategory::Development,

@@ -1,5 +1,7 @@
 //! 消息行样式与分层子目标（hierarchical subgoal）相关的纯辅助逻辑。
 
+use leptos::prelude::{Get, RwSignal, With};
+
 use crate::i18n::{self, Locale};
 use crate::storage::{ChatSession, StoredMessage, StoredMessageState};
 
@@ -12,6 +14,20 @@ pub(super) fn stored_message_by_id<'a>(
         .iter()
         .find(|s| s.id == active_session_id)
         .and_then(|s| s.messages.iter().find(|m| m.id == message_id))
+}
+
+/// 当前活跃会话中指定消息 id 的 `reasoning_text`（工具详情 / SSE chunk / `tool_result` 写入）。
+pub(super) fn live_message_reasoning_text(
+    sessions: RwSignal<Vec<ChatSession>>,
+    active_id: RwSignal<String>,
+    message_id: &str,
+) -> String {
+    sessions.with(|list| {
+        let aid = active_id.get();
+        stored_message_by_id(list, aid.as_str(), message_id)
+            .map(|m| m.reasoning_text.clone())
+            .unwrap_or_default()
+    })
 }
 
 pub(super) fn is_hierarchical_subgoal_state(state: Option<&StoredMessageState>) -> bool {

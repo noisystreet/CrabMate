@@ -48,6 +48,8 @@ pub struct DispatchToolParams<'a> {
     pub workspace_is_set: bool,
     pub name: &'a str,
     pub args: &'a str,
+    pub sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
+    pub sse_control_mirror: Option<&'a crate::sse::SseControlMirror>,
     pub tc: &'a ToolCall,
     pub read_file_turn_cache:
         Option<std::sync::Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
@@ -160,6 +162,7 @@ async fn approve_external_read_dir_if_needed(
 
 include!("execute_dispatch_body.inc.rs");
 include!("execute_run_command.inc.rs");
+include!("execute_terminal_session.inc.rs");
 include!("execute_http_tools.inc.rs");
 
 #[cfg(test)]

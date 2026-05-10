@@ -50,6 +50,11 @@ pub enum SsePayload {
     ToolRunning {
         tool_running: bool,
     },
+    /// 工具执行中的输出片段（如 PTY / 长命令）；**不**进入模型上下文；最终以 [`ToolResult`] 收束。
+    ToolOutputChunk {
+        #[serde(rename = "tool_output_chunk")]
+        tool_output_chunk: ToolOutputChunkBody,
+    },
     /// 模型正在流式输出 tool_calls（选工具 / 解析参数），尚未进入本地工具执行
     ParsingToolCalls {
         parsing_tool_calls: bool,
@@ -186,6 +191,20 @@ pub struct ToolCallSummary {
     /// 配置 `sse_tool_call_include_arguments` 为真时下发；经 `redact::tool_arguments_redacted_for_sse` 脱敏后截断。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arguments: Option<String>,
+}
+
+/// [`SsePayload::ToolOutputChunk`] 内层体：与 `tool_call` / `tool_result` 共用 **`tool_call_id`**。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ToolOutputChunkBody {
+    pub tool_call_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    pub seq: u64,
+    #[serde(default)]
+    pub chunk: String,
+    /// `stdout` / `stderr` / `combined`（PTY 常为合并流，省略或 `combined`）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream: Option<String>,
 }
 
 fn default_tool_result_payload_version() -> u32 {
@@ -410,6 +429,30 @@ mod tests {
             m.payload,
             SsePayload::ToolRunning { tool_running: true }
         ));
+    }
+
+    #[test]
+    fn roundtrip_tool_output_chunk() {
+        let s = encode_message(SsePayload::ToolOutputChunk {
+            tool_output_chunk: ToolOutputChunkBody {
+                tool_call_id: "tc1".into(),
+                name: Some("terminal_session".into()),
+                seq: 3,
+                chunk: "hello\n".into(),
+                stream: Some("combined".into()),
+            },
+        });
+        assert!(s.contains("\"tool_output_chunk\""));
+        let m: SseMessage = serde_json::from_str(&s).unwrap();
+        match m.payload {
+            SsePayload::ToolOutputChunk { tool_output_chunk } => {
+                assert_eq!(tool_output_chunk.tool_call_id, "tc1");
+                assert_eq!(tool_output_chunk.seq, 3);
+                assert_eq!(tool_output_chunk.chunk, "hello\n");
+                assert_eq!(tool_output_chunk.stream.as_deref(), Some("combined"));
+            }
+            _ => panic!("expected tool_output_chunk payload"),
+        }
     }
 
     #[test]

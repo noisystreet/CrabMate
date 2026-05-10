@@ -7,10 +7,10 @@ use leptos::prelude::*;
 use crate::api::OnToolCallFn;
 use crate::i18n;
 use crate::message_format::{
-    staged_timeline_system_message_body, tool_card_compact_text, tool_card_text,
+    staged_timeline_system_message_body, strip_ansi_codes, tool_card_compact_text, tool_card_text,
 };
 use crate::session_ops::{make_message_id, message_created_ms};
-use crate::sse_dispatch::{TimelineLogInfo, ToolResultInfo};
+use crate::sse_dispatch::{TimelineLogInfo, ToolOutputChunkInfo, ToolResultInfo};
 use crate::storage::{StoredMessage, StoredMessageState};
 use crate::stream_text_overlay::stream_overlay_take_into_stored_message;
 use crate::timeline_scan::timeline_state_tool;
@@ -23,6 +23,29 @@ use super::done_session::apply_stream_done_to_loading_assistant;
 use super::error_session::apply_stream_error_to_assistant_message;
 use super::helpers::*;
 use super::stream_session_access::with_stream_write_session_mut;
+
+pub(super) fn make_on_tool_output_chunk(
+    stream_ctx: Rc<ChatStreamCallbackCtx>,
+) -> Rc<dyn Fn(ToolOutputChunkInfo)> {
+    Rc::new(move |info: ToolOutputChunkInfo| {
+        let tid = info.tool_call_id.trim();
+        if tid.is_empty() {
+            return;
+        }
+        with_stream_write_session_mut(stream_ctx.as_ref(), |s| {
+            let idx_opt = index_of_tool_message_by_call_id_latest(&s.messages, tid);
+            if let Some(idx) = idx_opt {
+                if info.name.as_deref() == Some("terminal_session") {
+                    s.messages[idx]
+                        .reasoning_text
+                        .push_str(&strip_ansi_codes(&info.chunk));
+                } else {
+                    s.messages[idx].reasoning_text.push_str(&info.chunk);
+                }
+            }
+        });
+    })
+}
 
 pub(super) fn make_on_tool_result(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
@@ -125,10 +148,13 @@ pub(super) fn chat_stream_on_tool_call_builder(
             } else {
                 i18n::tool_card_fallback(loc).to_string()
             };
-            let text = to_single_line(
-                &format!("{} · {}", core, i18n::status_tool_running(loc)),
-                140,
-            );
+            let running = i18n::status_tool_running(loc);
+            let text = if name.trim() == "terminal_session" {
+                // 终端卡已有深色「运行中」样式与流式输出；省略「· 工具执行中」以免与摘要重复刷屏。
+                to_single_line(&core, 140)
+            } else {
+                to_single_line(&format!("{} · {}", core, running), 140)
+            };
             let detail = if !name.trim().is_empty() {
                 format!("tool: {name}\nstatus: running")
             } else {

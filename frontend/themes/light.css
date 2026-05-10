@@ -61,4 +61,8 @@
     0 -6px 26px color-mix(in srgb, var(--border) 10%, transparent);
   --composer-ws-ref-bg: color-mix(in srgb, var(--accent) 10%, var(--bg));
   --composer-ws-ref-box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, var(--border));
+
+  --terminal-panel-bg: #0c0e12;
+  --terminal-panel-border: #30363d;
+  --terminal-panel-fg: #c8d1dc;
 }

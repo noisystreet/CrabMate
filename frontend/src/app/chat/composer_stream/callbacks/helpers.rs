@@ -30,6 +30,21 @@ pub(super) fn index_of_loading_tool_by_call_id(
     })
 }
 
+/// 按 `tool_call_id` 查找**最近一条**工具时间线（loading 或已有状态），供流式输出增量追加。
+#[must_use]
+pub(super) fn index_of_tool_message_by_call_id_latest(
+    messages: &[StoredMessage],
+    tool_call_id: &str,
+) -> Option<usize> {
+    let tid = tool_call_id.trim();
+    if tid.is_empty() {
+        return None;
+    }
+    messages
+        .iter()
+        .rposition(|m| m.is_tool && m.tool_call_id.as_deref().map(str::trim) == Some(tid))
+}
+
 /// 按本地消息 `id` 查找行（FIFO 占位 id 与 `tool_result` 配对）。
 #[must_use]
 pub(super) fn index_of_message_id(messages: &[StoredMessage], message_id: &str) -> Option<usize> {

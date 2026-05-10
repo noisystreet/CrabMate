@@ -5,10 +5,10 @@ use leptos::prelude::*;
 use crate::i18n::{self, Locale};
 use crate::message_format::message_text_for_display_ex;
 use crate::session_search::{normalize_search_query, split_for_find_highlight};
-use crate::storage::StoredMessage;
+use crate::storage::{ChatSession, StoredMessage};
 
 use super::super::message_row_actions::spawn_scroll_to_linked_user_message;
-use super::helpers::tool_bubble_emoji;
+use super::helpers::{live_message_reasoning_text, tool_bubble_emoji};
 
 fn render_highlighted_message_text(
     msg: &StoredMessage,
@@ -46,7 +46,8 @@ fn highlighted_body_span(
 
 fn tool_compact_body_view(
     m_for_body: StoredMessage,
-    detail_for_btn: Option<String>,
+    detail_snapshot: Option<String>,
+    reasoning_live: Option<(RwSignal<Vec<ChatSession>>, RwSignal<String>, String)>,
     tool_detail_open: RwSignal<bool>,
     locale: RwSignal<Locale>,
     chat_find_query: RwSignal<String>,
@@ -55,7 +56,17 @@ fn tool_compact_body_view(
     let tool_emoji = tool_bubble_emoji(&m_for_body);
     view! {
         <div class="msg-tool-compact">
-            <Show when=move || detail_for_btn.as_deref().is_some_and(|s| !s.trim().is_empty())>
+            <Show when=move || {
+                let live_ok = reasoning_live.as_ref().is_some_and(|(sess, aid, mid)| {
+                    !live_message_reasoning_text(*sess, *aid, mid.as_str())
+                        .trim()
+                        .is_empty()
+                });
+                let snap_ok = detail_snapshot
+                    .as_deref()
+                    .is_some_and(|s| !s.trim().is_empty());
+                live_ok || snap_ok
+            }>
                 <button
                     type="button"
                     class="msg-tool-drawer-btn msg-tool-drawer-icon-btn"
@@ -173,6 +184,8 @@ pub(super) struct NonAssistantMessageBodyParams {
     pub m_for_body: StoredMessage,
     pub is_tool_bubble: bool,
     pub tool_detail_text: Option<String>,
+    /// 与 [`crate::app::chat::message_row::helpers::live_message_reasoning_text`] 对齐：工具气泡挂载时 `reasoning_text` 常为空，须订阅会话更新。
+    pub tool_reasoning_live: Option<(RwSignal<Vec<ChatSession>>, RwSignal<String>, String)>,
     pub tool_detail_open: RwSignal<bool>,
     pub locale: RwSignal<Locale>,
     pub chat_find_query: RwSignal<String>,
@@ -186,6 +199,7 @@ pub(super) fn build_non_assistant_message_body(p: NonAssistantMessageBodyParams)
         m_for_body,
         is_tool_bubble,
         tool_detail_text,
+        tool_reasoning_live,
         tool_detail_open,
         locale,
         chat_find_query,
@@ -197,6 +211,7 @@ pub(super) fn build_non_assistant_message_body(p: NonAssistantMessageBodyParams)
         return tool_compact_body_view(
             m_for_body,
             tool_detail_text,
+            tool_reasoning_live,
             tool_detail_open,
             locale,
             chat_find_query,

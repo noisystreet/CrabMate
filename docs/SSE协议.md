@@ -55,6 +55,7 @@
 | `tool_call` | 工具调用摘要（执行前）；体含 **`name`**、**`summary`**（与 `summarize_tool_call` 同源）、可选 **`tool_call_id`**（与本轮 `tool_calls[].id` / `tool_result.tool_call_id` 一致，供 Web 将结果写回正确占位气泡）、可选 **`arguments_preview`**（单行截断，与 `execute_tools` 日志同源）、可选 **`arguments`**（配置 **`sse_tool_call_include_arguments`** / **`CM_SSE_TOOL_CALL_INCLUDE_ARGUMENTS`** 为真时：启发式脱敏后更长截断） | `onToolCall`（**`summary`**、**`arguments_preview`**、**`arguments`** 至少一项非空则 **handled**） |
 | `parsing_tool_calls` | 模型正在流式输出 tool_calls | `onParsingToolCallsChange` |
 | `tool_running` | 工具执行中状态 | `onToolStatusChange` |
+| `tool_output_chunk` | 工具执行中的输出片段（如 PTY）；**不**进入模型上下文；体内须含非空 **`tool_call_id`**、非负整数 **`seq`**；可选 **`name`**、**`chunk`**（UTF-8 文本，可多次下发由前端拼接）、**`stream`**（`stdout` / `stderr` / `combined`）；最终以 **`tool_result`** 收束 | Web：**handled**，`onToolOutputChunk` 追加至对应 `tool_call_id` 的工具气泡详情；TUI：控制面镜像展示截断摘要 |
 | `tool_result` | 工具结束；含 `output` 等 | `onToolResult` |
 | `command_approval_request` | `run_command` / 工作流等需用户审批 | `onCommandApprovalRequest` |
 | `staged_plan_notice` / `staged_plan_notice_clear` | 规划进度文本（TUI 等）；Web **吞掉**不当下文 | `handled`，不 `onDelta` |
@@ -82,6 +83,16 @@
 | `execution_mode` | string? | `serial`（串行或含写/审批路径）或 `parallel_readonly_batch`（同轮只读并行批） |
 | `parallel_batch_id` | string? | 仅 `parallel_readonly_batch`；同批内多工具共享（形如 `prb-<n>`） |
 | `structured_preview` | object? | 可选；**`read_file`** / **`read_dir`** / **`list_tree`**：与输出首行 **`crabmate_tool_output`** JSON **同源**的小型副本（**不含**文件正文）；**`run_command`** / **`cargo_*`** / **`rust_rustc`** / **`http_fetch`** / **`http_request`**：与历史 **`crabmate_tool.structured_payload`**（对应 **`schema`**）同源或与之合并；若首行预览与 **`structured_payload`** 同时存在，则为合并对象（**`tool_output_header`** + **`structured_payload`**） |
+
+### `tool_output_chunk` 体内字段
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `tool_call_id` | string | 必填非空；与对应 **`tool_call`** / **`tool_result`** 对齐 |
+| `seq` | number | 必填；单调序号（`u64`），便于客户端去乱序 |
+| `chunk` | string | 可选；本帧增量文本（缺省按空串处理） |
+| `name` | string? | 可选；工具名（如 `terminal_session`） |
+| `stream` | string? | 可选；`stdout` / `stderr` / `combined` |
 
 ### `command_approval_request`
 

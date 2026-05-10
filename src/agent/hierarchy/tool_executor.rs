@@ -10,11 +10,7 @@ use tokio::sync::Mutex as TokioMutex;
 
 use crate::config::AgentConfig;
 use crate::tool_registry::{self, ToolRuntime};
-use crate::types::{CommandApprovalDecision, FunctionCall, ToolCall};
-
-use std::sync::atomic::{AtomicU64, Ordering};
-
-static TOOL_CALL_COUNTER: AtomicU64 = AtomicU64::new(1);
+use crate::types::{CommandApprovalDecision, ToolCall};
 
 /// 工具执行器上下文
 pub struct ToolExecutorContext {
@@ -127,7 +123,7 @@ impl ToolExecutor {
         log::info!(target: "crabmate", "[HIERARCHICAL] Executing tool: {} with args={}", name, truncate_args(args));
 
         // 使用 tool_registry::dispatch_tool 以支持审批流程
-        let output = self.dispatch_tool_internal(name, args).await;
+        let output = self.dispatch_tool_internal(tool_call).await;
 
         // 判断工具执行是否成功
         let success = Self::check_execution_success(name, &output);
@@ -199,7 +195,9 @@ impl ToolExecutor {
         }
     }
 
-    async fn dispatch_tool_internal(&self, name: &str, args: &str) -> String {
+    async fn dispatch_tool_internal(&self, tool_call: &ToolCall) -> String {
+        let name = tool_call.function.name.as_str();
+        let args = tool_call.function.arguments.as_str();
         if let Some(suppress_key) = duplicate_suppress_key(name, args)
             && self.ctx.dedupe_cache.lock().await.contains(&suppress_key)
         {
@@ -256,18 +254,6 @@ impl ToolExecutor {
             }
         };
 
-        let tc = ToolCall {
-            id: format!(
-                "hierarchical_{}",
-                TOOL_CALL_COUNTER.fetch_add(1, Ordering::Relaxed)
-            ),
-            typ: "function".to_string(),
-            function: FunctionCall {
-                name: name.to_string(),
-                arguments: args.to_string(),
-            },
-        };
-
         let (output, _) = tool_registry::dispatch_tool(tool_registry::DispatchToolParams {
             runtime,
             cfg: &self.ctx.cfg,
@@ -275,7 +261,9 @@ impl ToolExecutor {
             workspace_is_set: true,
             name,
             args,
-            tc: &tc,
+            sse_out_tx: self.ctx.web_tool_runtime.as_ref().map(|w| &w.out_tx),
+            sse_control_mirror: None,
+            tc: tool_call,
             read_file_turn_cache: None,
             workspace_changelist: None,
             mcp_session: None,
@@ -317,55 +305,54 @@ impl ToolExecutor {
     /// - 编译/构建命令：允许警告（warning），只检查致命错误
     /// - 其他命令：检查是否包含错误关键词
     fn check_execution_success(tool_name: &str, output: &str) -> bool {
-        // 首先检查是否有明确的失败标记
-        let has_explicit_error = output.contains("错误：")
-            || output.contains("error:")
-            || output.contains("Error:")
-            || output.contains("致命错误")
-            || output.contains("fatal error");
-
-        // 检查是否是编译/构建相关命令
-        let is_build_command = matches!(tool_name, "run_command" | "cmake" | "make")
-            || output.contains("make:")
-            || output.contains("g++")
-            || output.contains("gcc")
-            || output.contains("cmake");
+        let has_explicit_error = Self::output_has_explicit_error_markers(output);
+        let is_build_command = Self::infer_build_like_command(tool_name, output);
 
         if is_build_command {
-            // 对于编译命令，需要更智能的判断：
-            // 1. 如果有致命错误，则失败
             if has_explicit_error {
                 return false;
             }
-
-            // 2. 检查是否有编译器错误（不是警告）
-            // 编译器错误通常包含 "error:" 且不在注释中
-            let lines: Vec<&str> = output.lines().collect();
-            for line in &lines {
-                let line_lower = line.to_lowercase();
-                // 真正的编译错误（不是警告）
-                if line_lower.contains("error:") &&
-                    !line_lower.contains("warning:") &&
-                    !line_lower.contains("note:") &&
-                    // 排除一些常见的非错误情况
-                    !line_lower.contains("0 errors") &&
-                    !line_lower.contains("no errors")
-                {
-                    return false;
-                }
+            if Self::build_output_has_compiler_errors(output) {
+                return false;
             }
-
-            // 3. 检查 make 的错误
             if output.contains("make: ***") && output.contains("停止") {
                 return false;
             }
-
-            // 4. 其他情况（包括有警告但无错误）视为成功
             return true;
         }
 
-        // 非编译命令：使用严格的错误检查
         !has_explicit_error
+    }
+
+    fn output_has_explicit_error_markers(output: &str) -> bool {
+        output.contains("错误：")
+            || output.contains("error:")
+            || output.contains("Error:")
+            || output.contains("致命错误")
+            || output.contains("fatal error")
+    }
+
+    fn infer_build_like_command(tool_name: &str, output: &str) -> bool {
+        matches!(tool_name, "run_command" | "cmake" | "make")
+            || output.contains("make:")
+            || output.contains("g++")
+            || output.contains("gcc")
+            || output.contains("cmake")
+    }
+
+    fn build_output_has_compiler_errors(output: &str) -> bool {
+        for line in output.lines() {
+            let line_lower = line.to_lowercase();
+            if line_lower.contains("error:")
+                && !line_lower.contains("warning:")
+                && !line_lower.contains("note:")
+                && !line_lower.contains("0 errors")
+                && !line_lower.contains("no errors")
+            {
+                return true;
+            }
+        }
+        false
     }
 }
 

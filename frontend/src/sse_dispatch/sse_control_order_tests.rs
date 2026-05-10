@@ -26,6 +26,7 @@ fn dispatch_triage_string(data: &str) -> &'static str {
             on_tool_call: None,
             on_tool_status_change: None,
             on_parsing_tool_calls_change: None,
+            on_tool_output_chunk: None,
             on_tool_result: None,
             on_command_approval_request: None,
         },

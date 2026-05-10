@@ -143,6 +143,7 @@ pub fn tool_kind_emoji(name: &str) -> &'static str {
         "workflow_execute" => "⚙️",
         "ci_pipeline_local" => "🛤️",
         "release_ready_check" => "🚀",
+        "terminal_session" => "⌨️",
         _ => tool_kind_emoji_hashed(n),
     }
 }
@@ -156,6 +157,7 @@ pub fn tool_human_name(l: Locale, name: &str) -> String {
         (Locale::ZhHans, "search_in_files") => "全文检索".to_string(),
         (Locale::ZhHans, "list_files") => "列出文件".to_string(),
         (Locale::ZhHans, "archive_unpack") => "解压缩".to_string(),
+        (Locale::ZhHans, "terminal_session") => "交互终端".to_string(),
         (Locale::En, "run_command") => "Command run".to_string(),
         (Locale::En, "read_file") => "Read file".to_string(),
         (Locale::En, "create_file") => "Create file".to_string(),
@@ -163,6 +165,7 @@ pub fn tool_human_name(l: Locale, name: &str) -> String {
         (Locale::En, "search_in_files") => "Search files".to_string(),
         (Locale::En, "list_files") => "List files".to_string(),
         (Locale::En, "archive_unpack") => "Unpack archive".to_string(),
+        (Locale::En, "terminal_session") => "Terminal".to_string(),
         _ => name.to_string(),
     }
 }

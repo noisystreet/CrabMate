@@ -163,7 +163,7 @@ pub(super) async fn prepare_staged_planner_no_tools_request(
         .preserve_assistant_tool_call_reasoning(p.ctx.core.cfg.as_ref());
     let preserve_deepseek =
         crate::llm::vendor::deepseek_json_output_eligible(p.ctx.core.cfg.as_ref());
-    Ok(no_tools_chat_request_from_messages(
+    let mut req = no_tools_chat_request_from_messages(
         p.ctx.core.cfg.as_ref(),
         build_planner_messages(
             p.turn.messages(),
@@ -174,7 +174,11 @@ pub(super) async fn prepare_staged_planner_no_tools_request(
         p.turn.temperature_override,
         p.effective_model(),
         p.turn.seed_override,
-    ))
+    );
+    req.max_tokens = req
+        .max_tokens
+        .max(crate::llm::STAGED_PLANNER_MIN_COMPLETION_TOKENS);
+    Ok(req)
 }
 
 /// 首轮解析成功后 **`PreparedPlannerRoute::ContinueWithPlan`** 的后续管线（no_task / full-pipeline）参聚合。

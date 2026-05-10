@@ -15,6 +15,10 @@ pub(super) fn summary_run_command(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<RunCommandSummaryArgs>(v)
 }
 
+pub(super) fn summary_terminal_session(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<TerminalSessionSummaryArgs>(v)
+}
+
 pub(super) fn summary_rust_analyzer_goto_definition(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<RustAnalyzerGotoDefSummaryArgs>(v)
 }

@@ -87,7 +87,7 @@
 # web_api_bearer_token = "YOUR_STRONG_RANDOM_TOKEN"
 # web_api_require_bearer = true    # 默认 true：未配置密钥则 serve 拒绝启动（含 127.0.0.1）；本地纯匿名调试用 false
 # allow_insecure_no_auth_for_non_loopback = false
-# max_tokens = 2048
+# max_tokens = 4096
 # temperature = 0.7
 # llm_seed = 42   # 可选；写入 chat/completions 的 seed；省略则不带该字段
 # api_timeout_secs = 60
@@ -138,7 +138,7 @@ sub_agent_review_readonly_deny_tools = ["risky_readonly_tool"]
 # intent_mode_bias_enabled = true   # 是否启用基于 primary/secondary intent 的执行模式偏置
 # intent_l2_enabled = false   # 默认 true；设为 false 可关闭 L2（省一次无工具意图分类 chat，失败仍无 L2）
 # intent_l2_min_confidence = 0.7
-# intent_l2_max_tokens = 220
+# intent_l2_max_tokens = 384
 # 首轮意图路由执行阈值：low 触发“确认后执行”，high 触发“直接执行”
 # intent_execute_low_threshold = 0.2
 # intent_execute_high_threshold = 0.45

@@ -7,8 +7,8 @@ use crate::i18n::Locale;
 use crate::sse_dispatch::{
     ClarificationQuestionnaireInfo, CommandApprovalRequest, SseClarifyTraceHooks, SseControlSink,
     SseNoticeTimelineHooks, SseStagedPlanHooks, SseWorkspaceToolHooks, StagedPlanStepEndInfo,
-    StagedPlanStepStartInfo, ThinkingTraceInfo, TimelineLogInfo, ToolResultInfo,
-    try_dispatch_sse_control_payload,
+    StagedPlanStepStartInfo, ThinkingTraceInfo, TimelineLogInfo, ToolOutputChunkInfo,
+    ToolResultInfo, try_dispatch_sse_control_payload,
 };
 
 use super::ChatStreamCallbacks;
@@ -105,6 +105,7 @@ pub(super) fn handle_sse_block(
     };
     let mut on_tool_status = |b: bool| (cbs.on_tool_status)(b);
     let mut on_parse = |_b: bool| {};
+    let mut on_tool_chunk = |info: ToolOutputChunkInfo| (cbs.on_tool_output_chunk)(info);
     let mut on_tool_res = |info: ToolResultInfo| (cbs.on_tool_result)(info);
     let mut on_appr = |req: CommandApprovalRequest| (cbs.on_approval)(req);
     let mut on_conv_rev = |rev: u64| (cbs.on_conversation_revision)(rev);
@@ -125,6 +126,7 @@ pub(super) fn handle_sse_block(
             on_tool_call: Some(&mut on_tool_call),
             on_tool_status_change: Some(&mut on_tool_status),
             on_parsing_tool_calls_change: Some(&mut on_parse),
+            on_tool_output_chunk: Some(&mut on_tool_chunk),
             on_tool_result: Some(&mut on_tool_res),
             on_command_approval_request: Some(&mut on_appr),
         },
@@ -176,6 +178,7 @@ mod tests {
             on_error: Rc::new(|_e| {}),
             on_workspace_changed: Rc::new(|| {}),
             on_tool_status: Rc::new(|_b| {}),
+            on_tool_output_chunk: Rc::new(|_info| {}),
             on_tool_result: Rc::new(|_info| {}),
             on_approval: Rc::new(|_req| {}),
             on_conversation_id: Rc::new(|_id| {}),
@@ -245,6 +248,7 @@ mod tests {
             on_error: Rc::new(|_e| {}),
             on_workspace_changed: Rc::new(|| {}),
             on_tool_status: Rc::new(|_b| {}),
+            on_tool_output_chunk: Rc::new(|_info| {}),
             on_tool_result: Rc::new(|_info| {}),
             on_approval: Rc::new(|_req| {}),
             on_conversation_id: Rc::new(|_id| {}),

@@ -17,6 +17,15 @@ pub struct SseToolCall {
     pub tool_call_id: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SseToolOutputChunk {
+    pub tool_call_id: String,
+    pub name: Option<String>,
+    pub seq: u64,
+    pub chunk: String,
+    pub stream: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SseToolResult {
     pub name: String,
@@ -113,6 +122,40 @@ pub fn extract_tool_call(obj: &serde_json::Map<String, Value>) -> Option<SseTool
             .and_then(|x| x.as_str())
             .filter(|s| !s.is_empty())
             .map(String::from),
+    })
+}
+
+pub fn extract_tool_output_chunk(
+    obj: &serde_json::Map<String, Value>,
+) -> Option<SseToolOutputChunk> {
+    let ch = obj.get("tool_output_chunk")?.as_object()?;
+    let tool_call_id = ch
+        .get("tool_call_id")
+        .and_then(|x| x.as_str())
+        .filter(|s| !s.trim().is_empty())?
+        .to_string();
+    let seq = ch.get("seq").and_then(|x| x.as_u64())?;
+    let chunk = ch
+        .get("chunk")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
+    let name = ch
+        .get("name")
+        .and_then(|x| x.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .map(String::from);
+    let stream = ch
+        .get("stream")
+        .and_then(|x| x.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .map(String::from);
+    Some(SseToolOutputChunk {
+        tool_call_id,
+        name,
+        seq,
+        chunk,
+        stream,
     })
 }
 
@@ -379,7 +422,7 @@ mod tests {
     use super::{
         extract_clarification_questionnaire, extract_error_stop, extract_staged_plan_step_finished,
         extract_staged_plan_step_started, extract_thinking_trace, extract_timeline_log,
-        extract_tool_call, extract_tool_result,
+        extract_tool_call, extract_tool_output_chunk, extract_tool_result,
     };
     use serde_json::json;
 
@@ -391,6 +434,22 @@ mod tests {
         let v = json!({"tool_call":{"name":"read_file","summary":"ok"}});
         let obj = v.as_object().unwrap();
         assert_eq!(extract_tool_call(obj).unwrap().name, "read_file");
+    }
+
+    #[test]
+    fn extract_tool_output_chunk_requires_id_and_seq() {
+        let v = json!({"tool_output_chunk":{"seq":1,"chunk":"x"}});
+        let obj = v.as_object().unwrap();
+        assert!(extract_tool_output_chunk(obj).is_none());
+        let v = json!({"tool_output_chunk":{"tool_call_id":"tc","chunk":"x"}});
+        let obj = v.as_object().unwrap();
+        assert!(extract_tool_output_chunk(obj).is_none());
+        let v = json!({"tool_output_chunk":{"tool_call_id":"tc","seq":2,"chunk":"ab"}});
+        let obj = v.as_object().unwrap();
+        let o = extract_tool_output_chunk(obj).unwrap();
+        assert_eq!(o.chunk, "ab");
+        assert_eq!(o.seq, 2);
+        assert_eq!(o.tool_call_id, "tc");
     }
 
     #[test]

@@ -37,6 +37,9 @@ use crate::types::{
 /// 分层 Manager / 动态分解器 JSON 输出的 `max_tokens` 下限（与配置中的 `max_tokens` 取较大值）。
 const HIERARCHICAL_MANAGER_MIN_COMPLETION_TOKENS: u32 = 6144;
 
+/// 分阶段规划轮（无工具 JSON）的 `max_tokens` 下限；推理字段易占满较小完成额度。
+pub(crate) const STAGED_PLANNER_MIN_COMPLETION_TOKENS: u32 = 3072;
+
 pub use backend::{
     ChatCompletionsBackend, OPENAI_COMPAT_BACKEND, OpenAiCompatBackend,
     default_chat_completions_backend,
@@ -187,7 +190,7 @@ pub fn no_tools_chat_request_from_messages(
 /// 当 **`api_base`** 指向 DeepSeek 官方兼容端点时，自动设置 **`response_format: {"type":"json_object"}`**（见 [DeepSeek JSON Output](https://api-docs.deepseek.com/zh-cn/guides/json_mode)）；其它网关行为不变。
 /// 仅以 hostname 判定，避免在 MiniMax 等使用 `deepseek-chat` 模型 ID 时误发不兼容字段。
 ///
-/// **输出长度**：分解 JSON（含多条 `sub_goals` 长 `description`）易超过全局默认 `max_tokens`（如 2048），会触发 `finish_reason=length` 导致无法解析。本路径对 **`max_tokens` 设下限**（仍尊重用户配置的更大值）。
+/// **输出长度**：分解 JSON（含多条 `sub_goals` 长 `description`）易超过全局默认 `max_tokens`（嵌入默认现为 4096），仍可能触发 `finish_reason=length` 导致无法解析。本路径对 **`max_tokens` 设下限**（仍尊重用户配置的更大值）。
 pub fn no_tools_chat_request_for_hierarchical_manager(
     cfg: &AgentConfig,
     messages: &[Message],

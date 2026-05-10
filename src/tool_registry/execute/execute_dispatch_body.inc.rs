@@ -201,6 +201,8 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
         name,
         args,
         tc,
+        sse_out_tx,
+        sse_control_mirror,
         read_file_turn_cache,
         workspace_changelist,
         mcp_session,
@@ -284,6 +286,44 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
                     name,
                     args,
                 )
+                .await
+            }
+        },
+        HandlerId::TerminalSession => match runtime {
+            ToolRuntime::Web {
+                workspace_changed,
+                ctx,
+            } => {
+                execute_terminal_session_impl(TerminalSessionExecInvoke {
+                    env: &env,
+                    effective_working_dir,
+                    workspace_is_set,
+                    workspace_changed,
+                    web_ctx: ctx,
+                    cli_ctx: None,
+                    args,
+                    sse_out_tx,
+                    sse_control_mirror,
+                    tool_call_id: tc.id.as_str(),
+                })
+                .await
+            }
+            ToolRuntime::Cli {
+                workspace_changed,
+                ctx,
+            } => {
+                execute_terminal_session_impl(TerminalSessionExecInvoke {
+                    env: &env,
+                    effective_working_dir,
+                    workspace_is_set,
+                    workspace_changed,
+                    web_ctx: None,
+                    cli_ctx: Some(ctx),
+                    args,
+                    sse_out_tx,
+                    sse_control_mirror,
+                    tool_call_id: tc.id.as_str(),
+                })
                 .await
             }
         },

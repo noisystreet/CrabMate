@@ -11,10 +11,10 @@ mod stream_end_reason;
 pub use control_classify::{classify_sse_control_outcome, key_present_non_null};
 pub use control_extract::{
     SseClarificationField, SseClarificationQuestionnaire, SseErrorStop, SseStagedPlanStepEnd,
-    SseStagedPlanStepStart, SseThinkingTrace, SseTimelineLog, SseToolCall, SseToolResult,
-    extract_clarification_questionnaire, extract_error_stop, extract_staged_plan_step_finished,
-    extract_staged_plan_step_started, extract_thinking_trace, extract_timeline_log,
-    extract_tool_call, extract_tool_result,
+    SseStagedPlanStepStart, SseThinkingTrace, SseTimelineLog, SseToolCall, SseToolOutputChunk,
+    SseToolResult, extract_clarification_questionnaire, extract_error_stop,
+    extract_staged_plan_step_finished, extract_staged_plan_step_started, extract_thinking_trace,
+    extract_timeline_log, extract_tool_call, extract_tool_output_chunk, extract_tool_result,
 };
 pub use sse_frame::{
     extract_stream_ended_reason, is_sse_done_sentinel, join_sse_data_lines, parse_sse_event_id,

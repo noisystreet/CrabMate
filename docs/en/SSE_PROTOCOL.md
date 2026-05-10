@@ -55,6 +55,7 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `tool_call` | Tool call summary (before run); body has **`name`**, **`summary`** (same source as `summarize_tool_call`), optional **`tool_call_id`** (same as this turn’s `tool_calls[].id` / `tool_result.tool_call_id`, so the Web UI can route results to the right placeholder bubble), optional **`arguments_preview`** (single-line truncation, aligned with `execute_tools` logs), optional **`arguments`** when **`sse_tool_call_include_arguments`** / **`CM_SSE_TOOL_CALL_INCLUDE_ARGUMENTS`** is on (heuristically redacted, longer cap) | `onToolCall` (**handled** if any of **`summary`**, **`arguments_preview`**, **`arguments`** is non-empty) |
 | `parsing_tool_calls` | Model streaming tool_calls | `onParsingToolCallsChange` |
 | `tool_running` | Tool running | `onToolStatusChange` |
+| `tool_output_chunk` | Incremental tool output (e.g. PTY); **not** model context; body requires non-empty **`tool_call_id`** and **`seq`** (`u64`); optional **`name`**, **`chunk`** (UTF-8; may repeat), **`stream`** (`stdout` / `stderr` / `combined`); ends with **`tool_result`** | Web: **handled**, `onToolOutputChunk` appends to the tool bubble for that `tool_call_id`; TUI: control-plane mirror shows a truncated line |
 | `tool_result` | Tool finished; includes `output` | `onToolResult` |
 | `command_approval_request` | Approval for `run_command` / workflow | `onCommandApprovalRequest` |
 | `staged_plan_notice` / `staged_plan_notice_clear` | Plan progress text; Web **swallows** | `handled`, not `onDelta` |
@@ -82,6 +83,16 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `execution_mode` | string? | `serial` or `parallel_readonly_batch` |
 | `parallel_batch_id` | string? | Shared id for parallel readonly batch |
 | `structured_preview` | object? | Optional; **`read_file`** / **`read_dir`** / **`list_tree`**: small copy of first-line **`crabmate_tool_output`** JSON (**no** file body); **`run_command`**, **`cargo_*`**, **`rust_rustc`**, **`http_fetch`**, **`http_request`**: mirrors or merges with **`crabmate_tool.structured_payload`** (see schema in **TOOLS** doc). When both a header preview and **`structured_payload`** exist, merged object with **`tool_output_header`** + **`structured_payload`** |
+
+### `tool_output_chunk` body fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tool_call_id` | string | Required non-empty; aligns with **`tool_call`** / **`tool_result`** |
+| `seq` | number | Required monotonic sequence (`u64`) |
+| `chunk` | string | Optional incremental text (empty if omitted) |
+| `name` | string? | Optional tool name |
+| `stream` | string? | Optional `stdout` / `stderr` / `combined` |
 
 ### `command_approval_request`
 

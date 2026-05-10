@@ -24,5 +24,6 @@ pub use protocol::{
     ClarificationQuestionField, ClarificationQuestionnaireBody, CommandApprovalBody,
     ConversationSavedBody, SseCapabilitiesBody, SseErrorBody, SsePayload, StagedPlanFinishedBody,
     StagedPlanStartedBody, StagedPlanStepFinishedBody, StagedPlanStepStartedBody, StreamEndedBody,
-    ThinkingTraceBody, TimelineLogBody, ToolCallSummary, ToolResultBody, encode_message,
+    ThinkingTraceBody, TimelineLogBody, ToolCallSummary, ToolOutputChunkBody, ToolResultBody,
+    encode_message,
 };

@@ -29,7 +29,7 @@ pub const DOCKER: &str = "docker";
 pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
     match name {
         // --- 语言无关 / 工作区 ---
-        "run_command" | "run_executable" => &[GENERAL, CPP],
+        "run_command" | "run_executable" | "terminal_session" => &[GENERAL, CPP],
         // 编排入口：`workflow_execute` 常与 Rust CI DAG 模板叠用；归入 rust+quality 便于 `build_tools_with_options` 栈裁剪。
         "workflow_execute" => &[GENERAL, RUST, QUALITY],
         "package_query" => &[GENERAL],

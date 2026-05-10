@@ -25,6 +25,7 @@ pub struct ToolDispatchMeta {
 pub(crate) enum HandlerId {
     Workflow,
     RunCommand,
+    TerminalSession,
     GetWeather,
     WebSearch,
     HttpFetch,
@@ -58,6 +59,7 @@ macro_rules! tool_dispatch_registry {
 tool_dispatch_registry! {
     ("workflow_execute", false, Workflow, Workflow),
     ("run_command", true, CommandSpawnTimeout, RunCommand),
+    ("terminal_session", true, CommandSpawnTimeout, TerminalSession),
     ("get_weather", false, WeatherSpawnTimeout, GetWeather),
     ("web_search", false, WebSearchSpawnTimeout, WebSearch),
     ("http_fetch", false, HttpFetchSpawnTimeout, HttpFetch),

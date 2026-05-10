@@ -324,7 +324,7 @@ fn derive_intent_fields(b: &ConfigBuilder) -> Result<IntentDerived, String> {
         intent_l2_max_tokens: b
             .intent_routing
             .intent_l2_max_tokens
-            .unwrap_or(220)
+            .unwrap_or(384)
             .clamp(32, 1024) as u32,
         intent_at_turn_start_enabled: b
             .intent_routing

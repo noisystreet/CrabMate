@@ -84,6 +84,16 @@ fn sse_control_handled_tool_lifecycle(obj: &serde_json::Map<String, Value>) -> b
     if let Some(Value::Bool(_)) = obj.get("tool_running") {
         return true;
     }
+    if let Some(Value::Object(ch)) = obj.get("tool_output_chunk") {
+        let tid_ok = ch
+            .get("tool_call_id")
+            .and_then(|x| x.as_str())
+            .is_some_and(|s| !s.trim().is_empty());
+        let seq_ok = ch.get("seq").and_then(|x| x.as_u64()).is_some();
+        if tid_ok && seq_ok {
+            return true;
+        }
+    }
     if let Some(Value::Object(tr)) = obj.get("tool_result")
         && (tr.get("output").is_some()
             || tr.get("structured_preview").is_some_and(|v| !v.is_null()))
@@ -282,6 +292,7 @@ mod tests {
                 r#"if let Some(d) = handle_tool_call(obj, sink) {"#,
                 r#"if let Some(Value::Bool(b)) = obj.get("parsing_tool_calls")"#,
                 r#"if let Some(Value::Bool(b)) = obj.get("tool_running")"#,
+                r#"if let Some(d) = handle_tool_output_chunk(obj, sink) {"#,
                 r#"if let Some(d) = handle_tool_result(obj, sink) {"#,
                 r#"if key_present_non_null(obj, "command_approval_request")"#,
             ],

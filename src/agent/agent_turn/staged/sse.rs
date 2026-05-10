@@ -27,16 +27,16 @@ pub(crate) fn staged_plan_nl_followup_user_body() -> String {
 pub(crate) fn staged_plan_phase_instruction_default() -> String {
     format!(
         "### 分阶段规划 · 规划轮\n\
+         **长度纪律**：若推理/思维链计入本轮完成额度，勿在其中长篇展开；可省略或仅一两句提纲，**优先**尽快给出下方 fenced JSON（`agent_reply_plan`）。附言保持简短。\n\
          请仅根据用户消息做任务拆解，不要调用任何工具，不要执行命令或读写文件。\n\
-         `steps` 的描述须与用户原文意图及粒度一致：用户只要概览、梳理或只读分析时，勿擅自收窄为单一文件的深层修复路径，除非用户明确授权。\n\
-         **咨询类（架构意见、重构方向、风险/隐式状态列举、优劣对比）且用户未明确要求改仓库、新建文档或跑构建/测试时**：优先输出 `no_task: true` 且 `steps: []`，把结论交给后续自然语言回合直接回答；**不要**用多轮单步把任务拆成「通读大量源文件」或「未经用户要求撰写长篇设计稿」。\n\
-         若仍需一步辅助：单条 `steps[0].description` 须写清**给用户的可验收结论**（条目化模块/风险点），并写明**只读探查上限**（例如至多 N 个关键路径或文件）；此类步**必须**设置 `executor_kind` 为 `review_readonly`，**勿**在未授权步使用 `patch_write`/`test_runner` 去新建文档或改代码。\n\
-         `steps[].description` 宜写出可验收的具体动作；用户明确要求多项交付物时勿擅自合并为单一步骤。\n\
-         若信息不足以可靠规划，宁可 `no_task` 或在附言中请求澄清，勿编造仓库路径或接口细节。\n\
-         在回复正文中必须用 Markdown 代码围栏（语言标记为 json）给出一个合法 JSON 对象，且满足：\n\
+         `steps` 须与用户意图及粒度一致：用户只要概览、梳理或只读分析时，勿擅自收窄为单一文件的深层修复路径，除非用户明确授权。\n\
+         **咨询类**（架构意见、风险列举、优劣对比等）且用户未要求改仓库、新建文档或跑构建/测试：优先 `no_task: true`、`steps: []`，由后续自然语言直接作答；勿拆成多轮「通读大量源文件」或未经要求的长篇设计稿。\n\
+         若仍需一步辅助：`steps[0].description` 须写清**可验收结论**（条目化模块/风险点）与**只读探查上限**（如至多 N 个路径/文件）；此类步须 `executor_kind=review_readonly`，勿在未授权步使用 `patch_write`/`test_runner`。\n\
+         `steps[].description` 宜具体可验收；用户明确要求多项交付物时勿擅自合并。\n\
+         信息不足时宁可 `no_task` 或请求澄清，勿编造路径或接口细节。\n\
+         正文中须用 Markdown 代码围栏（语言标记为 json）给出合法 JSON，且满足：\n\
          {}\n\
-         可辅以简短自然语言说明；有具体任务时后续系统将按 steps 顺序逐步下发执行指令。\n\
-         涉及「先审读、再改代码、再跑测」时，请为相应步设置 `executor_kind`（`review_readonly` → `patch_write` → `test_runner`），以收窄每步可见工具。",
+         涉及「先审读→再改→再测」时，为相应步设置 `executor_kind`（`review_readonly` → `patch_write` → `test_runner`）。",
         crate::agent::plan_artifact::PLAN_V1_SCHEMA_RULES,
     )
 }

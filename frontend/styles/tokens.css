@@ -111,5 +111,13 @@
     0 -10px 40px color-mix(in srgb, var(--bg) 55%, transparent);
   --composer-ws-ref-bg: color-mix(in srgb, var(--accent) 14%, var(--surface));
   --composer-ws-ref-box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 28%, var(--border));
+
+  /* 聊天内嵌终端面板（与深色 IDE 终端块一致；浅色主题亦保留深色沉浸区） */
+  --terminal-panel-bg: #0c0e12;
+  --terminal-panel-border: #30363d;
+  --terminal-panel-fg: #c8d1dc;
+  /* 终端内文字选中：须不透明高对比；勿沿用全局 ::selection（浅色主题多为半透明底 + 深色字，叠在深色终端上会「选中即消失」） */
+  --terminal-panel-selection-bg: color-mix(in srgb, var(--accent) 52%, #d5dde8);
+  --terminal-panel-selection-fg: #070b10;
 }
 

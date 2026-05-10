@@ -4,6 +4,7 @@ use crate::i18n::{self, Locale};
 use crate::sse_dispatch::ToolResultInfo;
 
 use super::plain::collapse_duplicate_summary_lines;
+use super::strip_ansi_codes;
 
 mod compact_key;
 
@@ -239,7 +240,30 @@ pub fn tool_card_compact_text(info: &ToolResultInfo, loc: Locale) -> String {
     out
 }
 
+fn terminal_session_shell_line_from_summary(summary: Option<&str>) -> Option<String> {
+    let s = summary?.trim();
+    const PREFIX: &str = "terminal_session exec ";
+    let rest = s.strip_prefix(PREFIX)?.trim();
+    (!rest.is_empty()).then(|| rest.to_string())
+}
+
 pub fn tool_card_text(info: &ToolResultInfo, loc: Locale) -> String {
+    let raw_trimmed_early = info.output.trim();
+    let name_trim_early = info.name.trim();
+    // terminal_session：展开区第一行 `$ <command + args>`（来自 SSE summary），随后为捕获输出。
+    if name_trim_early == "terminal_session" && info.ok.unwrap_or(true) {
+        let raw = strip_ansi_codes(raw_trimmed_early);
+        if let Some(cmd) = terminal_session_shell_line_from_summary(info.summary.as_deref()) {
+            if raw.is_empty() {
+                return format!("$ {cmd}\n");
+            }
+            return format!("$ {cmd}\n\n{raw}");
+        }
+        if !raw.is_empty() {
+            return raw;
+        }
+    }
+
     let out = normalized_tool_summary(info, loc);
     let title = render_tool_title(info, loc);
     let body = summary_without_redundant_title(&title, &out);
@@ -252,6 +276,7 @@ pub fn tool_card_text(info: &ToolResultInfo, loc: Locale) -> String {
     // 成功：下列工具在详情中附带完整 `output`。失败：见文末「完整输出」（白名单工具在此处已附带则不重复）。
     const TOOLS_APPEND_RAW_OUTPUT: &[&str] = &[
         "run_command",
+        "terminal_session",
         "create_file",
         "modify_file",
         "copy_file",
@@ -263,7 +288,11 @@ pub fn tool_card_text(info: &ToolResultInfo, loc: Locale) -> String {
     let whitelist_tool = TOOLS_APPEND_RAW_OUTPUT.contains(&name_trim);
     if whitelist_tool && !raw_trimmed.is_empty() {
         merged.push_str("\n\n");
-        merged.push_str(raw_trimmed);
+        if name_trim == "terminal_session" {
+            merged.push_str(&strip_ansi_codes(raw_trimmed));
+        } else {
+            merged.push_str(raw_trimmed);
+        }
     }
     if let Some(block) = build_tool_failure_block(info, loc, &out) {
         merged.push_str("\n\n");
@@ -272,8 +301,12 @@ pub fn tool_card_text(info: &ToolResultInfo, loc: Locale) -> String {
     if !info.ok.unwrap_or(true) && !raw_trimmed.is_empty() && !whitelist_tool {
         merged.push_str("\n\n");
         merged.push_str(i18n::tool_detail_full_output_heading(loc));
-        merged.push_str("\n");
-        merged.push_str(raw_trimmed);
+        merged.push('\n');
+        if name_trim == "terminal_session" {
+            merged.push_str(&strip_ansi_codes(raw_trimmed));
+        } else {
+            merged.push_str(raw_trimmed);
+        }
     }
     merged
 }
@@ -298,6 +331,23 @@ mod tests {
             failure_category: None,
             structured_preview: None,
         }
+    }
+
+    #[test]
+    fn terminal_session_success_detail_shows_command_and_capture() {
+        let mut info = mk("✅ terminal_session 成功: terminal_session exec python3");
+        info.name = "terminal_session".to_string();
+        info.summary =
+            Some("terminal_session exec python3 -c \"print('Hello, World!')\"".to_string());
+        info.output = "Hello, World!\n".to_string();
+        let out = tool_card_text(&info, Locale::ZhHans);
+        assert!(
+            out.starts_with("$ python3 -c \"print('Hello, World!')\""),
+            "unexpected detail head: {out:?}"
+        );
+        assert!(out.contains("Hello, World!"));
+        assert!(!out.contains("交互终端"));
+        assert!(!out.contains("terminal_session exec"));
     }
 
     #[test]

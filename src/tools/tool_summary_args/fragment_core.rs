@@ -110,6 +110,85 @@ impl ToolSummaryLine for RunCommandSummaryArgs {
     }
 }
 
+fn terminal_session_arg_display_token(arg: &str) -> String {
+    let arg = arg.trim();
+    if arg.is_empty() {
+        return "''".to_string();
+    }
+    let safe_unquoted = arg.chars().all(|c| {
+        c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/' | ':' | '=' | ',' | '@')
+    }) && !arg.contains('\'');
+    if safe_unquoted {
+        return arg.to_string();
+    }
+    let mut s = String::with_capacity(arg.len().saturating_add(2));
+    s.push('"');
+    for ch in arg.chars() {
+        if ch == '"' || ch == '\\' {
+            s.push('\\');
+        }
+        s.push(ch);
+    }
+    s.push('"');
+    s
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct TerminalSessionSummaryArgs {
+    action: String,
+    #[serde(default)]
+    session_id: Option<String>,
+    #[serde(default)]
+    command: Option<String>,
+    /// 与工具 JSON 一致；摘要里拼接为类 shell 命令行，供 Web 终端卡展示。
+    #[serde(default)]
+    args: Vec<serde_json::Value>,
+}
+
+impl ToolSummaryLine for TerminalSessionSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        let a = self.action.trim().to_ascii_lowercase();
+        match a.as_str() {
+            "list" => Some("terminal_session list".to_string()),
+            "close" => Some(format!(
+                "terminal_session close {}",
+                self.session_id.as_deref().unwrap_or("?")
+            )),
+            "resize" => Some(format!(
+                "terminal_session resize {}",
+                self.session_id.as_deref().unwrap_or("?")
+            )),
+            "send_signal" => Some(format!(
+                "terminal_session signal {}",
+                self.session_id.as_deref().unwrap_or("?")
+            )),
+            "exec" => {
+                let sid = self.session_id.as_deref().unwrap_or("").trim();
+                let cmd = self.command.as_deref().unwrap_or("").trim();
+                if !sid.is_empty() {
+                    Some(format!("terminal_session exec sid={sid}"))
+                } else if !cmd.is_empty() {
+                    let tail = self
+                        .args
+                        .iter()
+                        .filter_map(|x| x.as_str())
+                        .map(terminal_session_arg_display_token)
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    if tail.is_empty() {
+                        Some(format!("terminal_session exec {cmd}"))
+                    } else {
+                        Some(format!("terminal_session exec {cmd} {tail}"))
+                    }
+                } else {
+                    Some("terminal_session exec".to_string())
+                }
+            }
+            _ => Some(format!("terminal_session {}", self.action)),
+        }
+    }
+}
+
 // ── rust_analyzer * ───────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]

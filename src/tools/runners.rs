@@ -68,6 +68,11 @@ pub(crate) fn runner_http_request(args: &str, ctx: &ToolContext<'_>) -> String {
     http_fetch::run_request_direct(args, ctx)
 }
 
+pub(crate) fn runner_terminal_session(args: &str, _ctx: &ToolContext<'_>) -> String {
+    let _ = args;
+    "错误：terminal_session 须由服务端异步调度执行（不走同步 run_tool）。".to_string()
+}
+
 pub(crate) fn runner_run_command(args: &str, ctx: &ToolContext<'_>) -> String {
     let test_cache = ctx
         .test_result_cache_enabled

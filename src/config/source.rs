@@ -285,7 +285,7 @@ pub(super) struct AgentSection {
     pub(super) intent_l2_enabled: Option<bool>,
     /// L2 语义分类覆盖 L1 的最小置信度（0.0..=1.0，默认 0.7）。
     pub(super) intent_l2_min_confidence: Option<f64>,
-    /// L2 语义分类请求 `max_tokens`（默认 220）。
+    /// L2 语义分类请求 `max_tokens`（默认 384）。
     pub(super) intent_l2_max_tokens: Option<u64>,
     /// 非分层路径是否在主循环前跑 L0/L1/可选 L2 门控（缺省为 false，与 `finalize` 一致）。
     pub(super) intent_at_turn_start_enabled: Option<bool>,

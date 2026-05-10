@@ -5,15 +5,15 @@
 use crabmate_sse_protocol::{
     SSE_PROTOCOL_VERSION, classify_sse_control_outcome, extract_clarification_questionnaire,
     extract_error_stop, extract_staged_plan_step_finished, extract_staged_plan_step_started,
-    extract_thinking_trace, extract_timeline_log, extract_tool_call, extract_tool_result,
-    key_present_non_null,
+    extract_thinking_trace, extract_timeline_log, extract_tool_call, extract_tool_output_chunk,
+    extract_tool_result, key_present_non_null,
 };
 use serde_json::Value;
 
 use super::types::{
     ClarificationFormField, ClarificationQuestionnaireInfo, CommandApprovalRequest, SseControlSink,
     SseDispatch, StagedPlanStepEndInfo, StagedPlanStepStartInfo, ThinkingTraceInfo,
-    TimelineLogInfo, ToolResultInfo,
+    TimelineLogInfo, ToolOutputChunkInfo, ToolResultInfo,
 };
 
 fn handle_error_stop(
@@ -94,6 +94,26 @@ fn handle_tool_call(
             tc.goal_id,
             tc.tool_call_id,
         );
+    }
+    Some(SseDispatch::Handled)
+}
+
+fn handle_tool_output_chunk(
+    obj: &serde_json::Map<String, Value>,
+    sink: &mut SseControlSink<'_>,
+) -> Option<SseDispatch> {
+    let Some(parsed) = extract_tool_output_chunk(obj) else {
+        return None;
+    };
+    let info = ToolOutputChunkInfo {
+        tool_call_id: parsed.tool_call_id,
+        name: parsed.name,
+        seq: parsed.seq,
+        chunk: parsed.chunk,
+        stream: parsed.stream,
+    };
+    if let Some(f) = sink.workspace_tool.on_tool_output_chunk.as_mut() {
+        f(info);
     }
     Some(SseDispatch::Handled)
 }
@@ -290,6 +310,10 @@ fn dispatch_workspace_tool_control(
             f(*b);
         }
         return Some(SseDispatch::Handled);
+    }
+
+    if let Some(d) = handle_tool_output_chunk(obj, sink) {
+        return Some(d);
     }
 
     if let Some(d) = handle_tool_result(obj, sink) {

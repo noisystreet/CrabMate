@@ -27,6 +27,8 @@ pub struct SseWorkspaceToolHooks<'a> {
     >,
     pub on_tool_status_change: Option<&'a mut dyn FnMut(bool)>,
     pub on_parsing_tool_calls_change: Option<&'a mut dyn FnMut(bool)>,
+    /// `tool_output_chunk`：工具执行中的输出片段（如 PTY）；最终以 `tool_result` 收束。
+    pub on_tool_output_chunk: Option<&'a mut dyn FnMut(ToolOutputChunkInfo)>,
     pub on_tool_result: Option<&'a mut dyn FnMut(ToolResultInfo)>,
     pub on_command_approval_request: Option<&'a mut dyn FnMut(CommandApprovalRequest)>,
 }
@@ -62,6 +64,16 @@ pub struct SseControlSink<'a> {
     pub staged_plan: SseStagedPlanHooks<'a>,
     pub clarify_trace: SseClarifyTraceHooks<'a>,
     pub notice_timeline: SseNoticeTimelineHooks<'a>,
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)] // 与后端 JSON 同形；UI 当前仅消费 `chunk` 追加详情。
+pub struct ToolOutputChunkInfo {
+    pub tool_call_id: String,
+    pub name: Option<String>,
+    pub seq: u64,
+    pub chunk: String,
+    pub stream: Option<String>,
 }
 
 #[derive(Debug, Clone)]

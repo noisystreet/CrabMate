@@ -62,6 +62,7 @@ mod structured_data;
 pub(crate) mod structured_preview;
 mod symbol;
 mod table_text;
+pub(crate) mod terminal_session;
 mod test_result_cache;
 mod text_diff;
 mod text_transform;
@@ -384,6 +385,9 @@ fn run_tool_dispatch(
         return Err(ToolError::invalid_args(e));
     }
     match name {
+        "terminal_session" => Err(ToolError::invalid_args(
+            "terminal_session 须由服务端异步调度执行。".to_string(),
+        )),
         "run_command" => {
             let test_cache =
                 ctx.test_result_cache_enabled

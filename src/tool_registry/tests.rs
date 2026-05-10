@@ -90,6 +90,7 @@ fn handler_map_resolves_known_tools() {
     let table = default_lookup();
     assert_eq!(table.id_for("workflow_execute"), HandlerId::Workflow);
     assert_eq!(table.id_for("run_command"), HandlerId::RunCommand);
+    assert_eq!(table.id_for("terminal_session"), HandlerId::TerminalSession);
     assert_eq!(table.id_for("web_search"), HandlerId::WebSearch);
     assert_eq!(table.id_for("http_request"), HandlerId::HttpRequest);
     assert_eq!(table.id_for("unknown_xyz"), HandlerId::SyncDefault);
@@ -121,6 +122,9 @@ fn meta_fields_and_default_class() {
     let rc = try_dispatch_meta("run_command").unwrap();
     assert!(rc.requires_workspace);
     assert_eq!(rc.class, ToolExecutionClass::CommandSpawnTimeout);
+    let ts = try_dispatch_meta("terminal_session").unwrap();
+    assert!(ts.requires_workspace);
+    assert_eq!(ts.class, ToolExecutionClass::CommandSpawnTimeout);
     assert_eq!(
         execution_class_for_tool("calc"),
         ToolExecutionClass::BlockingSync

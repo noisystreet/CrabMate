@@ -54,6 +54,8 @@ This document describes built-in tools, common function-calling JSON examples, a
 
 ## Built-in tools (model-callable)
 
+**Choosing `run_command` vs `terminal_session`:** Prefer **`run_command`** for non-interactive, one-shot commands (builds, queries, scripts that exit when done). Use **`terminal_session`** only when the program needs a **TTY** (full-screen interaction, raw terminal control, or multiple rounds of input/output in the **same** pseudo-terminal). **`terminal_session`** is **Linux PTY only** and is unavailable when **`sync_default_tool_sandbox_mode = docker`**. Do not use **`terminal_session`** for ordinary batch commands.
+
 - **Many built-in tools; the model picks as needed**:
   - `get_current_time`: Current date/time.
   - `calc`: Math via Linux `bc -l` (arithmetic, `^`, sqrt/sin/cos/tan/ln/exp, pi/e, …).

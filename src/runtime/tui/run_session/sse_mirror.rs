@@ -52,6 +52,11 @@ fn format_sse_payload_one_line(p: &SsePayload) -> Option<String> {
             "· 工具执行中… {}",
             if *tool_running { "开始" } else { "结束" }
         )),
+        SsePayload::ToolOutputChunk { tool_output_chunk } => Some(format!(
+            "· 工具输出 seq={} {}",
+            tool_output_chunk.seq,
+            truncate_chars_with_ellipsis(&tool_output_chunk.chunk, 120)
+        )),
         SsePayload::ParsingToolCalls { parsing_tool_calls } => Some(format!(
             "· 解析 tool_calls … {}",
             if *parsing_tool_calls {

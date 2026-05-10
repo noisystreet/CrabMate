@@ -49,6 +49,8 @@ pub(crate) fn build_chat_stream_callbacks(
 
     let on_tool_result = make_on_tool_result(Rc::clone(&stream_ctx));
 
+    let on_tool_output_chunk = make_on_tool_output_chunk(Rc::clone(&stream_ctx));
+
     let on_approval: Rc<dyn Fn(CommandApprovalRequest)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |req: CommandApprovalRequest| {
@@ -223,6 +225,7 @@ pub(crate) fn build_chat_stream_callbacks(
         on_error: on_error.clone(),
         on_workspace_changed: on_ws,
         on_tool_status,
+        on_tool_output_chunk,
         on_tool_result,
         on_tool_call,
         on_approval,

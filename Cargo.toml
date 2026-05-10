@@ -147,7 +147,7 @@ schemars = { version = "0.8", features = ["derive"] }
 ratatui = { version = "0.29", default-features = false, features = ["crossterm"] }
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.31", default-features = false, features = ["fs", "dir", "signal"] }
+nix = { version = "0.31", default-features = false, features = ["fs", "dir", "signal", "term", "process"] }
 
 [[bin]]
 name = "crabmate-gen-man"

@@ -240,11 +240,23 @@ fn cargo_test_argv_cache_eligible(cmd_args: &[String]) -> bool {
     true
 }
 
-struct PreparedRunCommand {
-    cmd_raw: String,
-    cmd_name: String,
-    exec_path: Option<PathBuf>,
-    cmd_args: Vec<String>,
+pub(crate) struct PreparedRunCommand {
+    pub(crate) cmd_raw: String,
+    pub(crate) cmd_name: String,
+    pub(crate) exec_path: Option<PathBuf>,
+    pub(crate) cmd_args: Vec<String>,
+}
+
+/// `terminal_session`（PTY）等路径：复用 `run_command` 同级别校验与白名单逻辑（不经 `Command::output`）。
+pub(crate) fn prepare_run_command_for_pty_spawn(
+    args_json: &str,
+    working_dir: &Path,
+    allowed_commands: &[String],
+) -> Result<PreparedRunCommand, RunCommandError> {
+    let args = parse_run_command_args_with_repair(args_json)?;
+    let p = prepare_run_command_invocation(&args, working_dir, allowed_commands)?;
+    check_rate_limit()?;
+    Ok(p)
 }
 
 fn prepare_run_command_invocation(

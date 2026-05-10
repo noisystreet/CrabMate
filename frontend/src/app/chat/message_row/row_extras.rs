@@ -240,30 +240,36 @@ pub(super) fn typing_dots_when_loading(
     active_id: RwSignal<String>,
     mid_typing: String,
 ) -> impl IntoView {
+    let mid_sv = StoredValue::new(mid_typing);
     view! {
         <Show when=move || {
             sessions.with(|list| {
                 stored_message_by_id(
                     list,
                     active_id.get_untracked().as_str(),
-                    mid_typing.as_str(),
+                    mid_sv.get_value().as_str(),
                 )
                 .map(|msg| {
-                    message_row_loading_and_error(
+                    let loading = message_row_loading_and_error(
                         msg.is_tool,
                         msg.role.as_str(),
                         msg.state.as_ref(),
                     )
-                    .0
+                    .0;
+                    loading && !msg.is_tool
                 })
                 .unwrap_or(false)
             })
         }>
-            <span class="typing-dots" aria-hidden="true">
-                <span></span>
-                <span></span>
-                <span></span>
-            </span>
+            {move || {
+                view! {
+                    <span class="typing-dots typing-dots--model" aria-hidden="true">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </span>
+                }
+            }}
         </Show>
     }
 }

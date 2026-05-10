@@ -260,6 +260,8 @@ async fn parallel_collect_unique_results(
                             workspace_is_set: true,
                             name: &name,
                             args: &args,
+                            sse_out_tx: None,
+                            sse_control_mirror: None,
                             tc: &tc_owned,
                             read_file_turn_cache: rfc.clone(),
                             workspace_changelist: wcl.clone(),

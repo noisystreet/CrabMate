@@ -826,6 +826,8 @@ pub(super) async fn execute_tools_serial(
                     workspace_is_set,
                     name: &name,
                     args: &args,
+                    sse_out_tx: out,
+                    sse_control_mirror: sse_mirror_for_emit.as_ref(),
                     tc,
                     read_file_turn_cache: read_file_turn_cache.clone(),
                     workspace_changelist: workspace_changelist.cloned(),

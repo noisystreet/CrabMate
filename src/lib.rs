@@ -508,6 +508,15 @@ impl<'a> RunAgentTurnParams<'a> {
     }
 }
 
+fn resolved_turn_llm_backend<'a>(
+    llm_backend: Option<&'a (dyn llm::ChatCompletionsBackend + 'static)>,
+) -> &'a (dyn llm::ChatCompletionsBackend + 'static) {
+    match llm_backend {
+        Some(b) => b,
+        None => llm::default_chat_completions_backend(),
+    }
+}
+
 /// 执行一轮 Agent：发请求、若遇 tool_calls 则执行工具并继续，直到模型返回最终回复。
 /// `cfg` 建议使用 [`Arc`] 共享（与进程内 Web 服务状态一致），以便工具在 `spawn_blocking` 路径中复用同一份配置而不反复深拷贝。
 /// 若提供 transport.out，则流式 content 会通过 out 发送（供 SSE 等使用）；`transport.no_stream` 为 true 时 API 使用 `stream: false`，
@@ -571,10 +580,7 @@ pub async fn run_agent_turn<'a>(
     let turn_dump_scope_id = long_term_memory_scope_id.clone();
     let turn_dump_model_override = model_override.clone();
     let turn_dump_executor_model_override = executor_model_override.clone();
-    let llm_backend: &(dyn llm::ChatCompletionsBackend + 'static) = match llm_backend {
-        Some(b) => b,
-        None => llm::default_chat_completions_backend(),
-    };
+    let llm_backend = resolved_turn_llm_backend(llm_backend);
 
     let read_file_turn_cache =
         crate::agent_turn_prep::resolve_read_file_turn_cache_for_turn(cfg, read_file_turn_cache);

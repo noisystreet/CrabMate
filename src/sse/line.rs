@@ -151,7 +151,8 @@ pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
             | super::protocol::SsePayload::TimelineLog { .. }
             | super::protocol::SsePayload::ThinkingTrace { .. }
             | super::protocol::SsePayload::SseCapabilities { .. }
-            | super::protocol::SsePayload::ClarificationQuestionnaire { .. } => {
+            | super::protocol::SsePayload::ClarificationQuestionnaire { .. }
+            | super::protocol::SsePayload::ToolOutputChunk { .. } => {
                 return AgentLineKind::Ignore;
             }
             super::protocol::SsePayload::StreamEnded { ended } => {

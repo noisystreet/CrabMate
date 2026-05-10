@@ -3,10 +3,7 @@
 //! 响应正文解码：`Content-Type` 的 **`charset`**、HTML **`<meta charset>`** / **http-equiv**、**BOM**，否则 **`chardetng`** 嗅探；与异步 LLM 客户端一致使用 **`crabmate/<版本>`** `User-Agent`。
 //! 可选 **`text_format: html_text`**：用 **`scraper`（html5ever）** 将 HTML 转为可读纯文本（跳过 `script`/`style`/`noscript`，优先抽取 `main` / `article` / `[role=main]`，否则 `body`）。
 
-use std::ops::Deref;
-use std::sync::{Arc, LazyLock, Mutex};
-use std::time::Duration;
-
+use super::ToolContext;
 use chardetng::EncodingDetector;
 use ego_tree::NodeRef;
 use encoding_rs::Encoding;
@@ -17,8 +14,9 @@ use reqwest::redirect::Policy;
 use schemars::JsonSchema;
 use scraper::{Html, Node, Selector};
 use serde::Deserialize;
-
-use super::ToolContext;
+use std::ops::Deref;
+use std::sync::{Arc, LazyLock, Mutex};
+use std::time::Duration;
 
 /// `http_fetch` 工具入参（与发给模型的 `parameters` 同源，见 `tool_params::params_http_fetch`）。
 #[derive(Debug, Deserialize, JsonSchema)]

@@ -79,10 +79,16 @@
     animation: none;
   }
 
-  .typing-dots span {
+  .typing-dots--model span {
     animation: none;
     opacity: 0.6;
     transform: none;
+  }
+
+  .msg-tool.msg-loading {
+    animation: none;
+    border-color: color-mix(in srgb, var(--success) 38%, var(--border-subtle));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--success) 14%, transparent);
   }
 
   .status-run-running .status-run-dot,
