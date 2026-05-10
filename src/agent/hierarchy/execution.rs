@@ -275,3 +275,15 @@ mod execution_impl;
 /// `execute_with_result` 实现拆至此模块以降低圈复杂度。
 #[path = "execution_with_result.rs"]
 mod execution_with_result;
+
+/// 单子目标 `execute_single`（验证/反思/Manager）拆分。
+#[path = "execution_execute_single.rs"]
+mod execution_execute_single;
+
+/// `TaskResult` → `BuildState` 增量更新。
+#[path = "execution_build_state_apply.rs"]
+mod execution_build_state_apply;
+
+/// `try_replan` 预留实现。
+#[path = "execution_try_replan.rs"]
+mod execution_try_replan;
