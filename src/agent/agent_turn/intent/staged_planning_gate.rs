@@ -31,7 +31,7 @@ pub(crate) enum StagedPlanningGateOutcome {
         confidence: f32,
         decision: IntentDecision,
     },
-    /// 无可路由的有效 user 任务句，或管线未给出 Execute，或命中「架构/重构咨询」启发式而跳过滚动分阶段规划。
+    /// 无可路由的有效 user 任务句，或管线未给出 Execute，或在开启 **`staged_plan_intent_gate_advisory_bypass`** 时命中「架构/重构咨询」启发式而跳过滚动分阶段规划。
     Deny {
         reason: StagedPlanningDenyReason,
         task_preview: Option<String>,
@@ -46,7 +46,7 @@ pub(crate) enum StagedPlanningDenyReason {
     EmptyEffectiveTask,
     /// 管线已跑通，但 `action != Execute`（直接回复 / 澄清 / 确认等）。
     IntentPipelineNotExecute,
-    /// 管线判定为 **Execute**，但正文命中「架构/重构咨询」启发式：不进入滚动分阶段规划，改走单 Agent 外循环（避免无工具规划轮把咨询拆成大量读文件步）。
+    /// 管线判定为 **Execute**，且 **`staged_plan_intent_gate_advisory_bypass`** 为真时正文命中「架构/重构咨询」启发式：不进入滚动分阶段规划，改走单 Agent 外循环（避免无工具规划轮把咨询拆成大量读文件步）。
     AdvisoryExecuteBypassStaged,
 }
 
@@ -156,15 +156,16 @@ fn should_bypass_staged_for_advisory_execute_task(task: &str, decision: &IntentD
     (lower.contains("隐式") || has_arch) && has_consult
 }
 
-/// 在 **`IntentAction::Execute`** 且未命中咨询启发式时返回 `Ok`；否则返回对应 **Deny** 原因（含非 Execute）。
+/// 在 **`IntentAction::Execute`** 且（若启用）未命中咨询启发式时返回 `Ok`；否则返回对应 **Deny** 原因（含非 Execute）。
 fn staged_plan_eligibility_for_intent(
     task: &str,
     decision: &IntentDecision,
+    advisory_bypass_enabled: bool,
 ) -> Result<(), StagedPlanningDenyReason> {
     if !matches!(decision.action, IntentAction::Execute) {
         return Err(StagedPlanningDenyReason::IntentPipelineNotExecute);
     }
-    if should_bypass_staged_for_advisory_execute_task(task, decision) {
+    if advisory_bypass_enabled && should_bypass_staged_for_advisory_execute_task(task, decision) {
         return Err(StagedPlanningDenyReason::AdvisoryExecuteBypassStaged);
     }
     Ok(())
@@ -273,7 +274,15 @@ pub(crate) async fn assess_staged_planning_gate_full_pipeline(
         emit_intent_timeline_gate_only(p.ctx.io.out, sse_log_tag, &decision, &merge_meta).await;
     }
 
-    let eligibility = staged_plan_eligibility_for_intent(task.as_str(), &decision);
+    let eligibility = staged_plan_eligibility_for_intent(
+        task.as_str(),
+        &decision,
+        p.ctx
+            .core
+            .cfg
+            .staged_planning
+            .staged_plan_intent_gate_advisory_bypass,
+    );
     log_staged_gate_outcome(task.as_str(), &decision, sse_log_tag, eligibility);
 
     match eligibility {
@@ -322,7 +331,11 @@ pub(crate) fn assess_staged_planning_gate(
         },
     );
     let decision = assess_and_route(task.as_str(), &intent_ctx);
-    let eligibility = staged_plan_eligibility_for_intent(task.as_str(), &decision);
+    let eligibility = staged_plan_eligibility_for_intent(
+        task.as_str(),
+        &decision,
+        cfg.staged_planning.staged_plan_intent_gate_advisory_bypass,
+    );
     log_staged_gate_outcome(
         task.as_str(),
         &decision,

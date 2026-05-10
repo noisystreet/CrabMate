@@ -71,6 +71,16 @@ pub(crate) enum StagedStepToolPhaseRoute {
     AttemptToolFailurePatches,
 }
 
+/// 单次 `run_staged_plan_steps_loop` 迭代结束方式（不含墙钟：由外层检查）。
+pub(crate) enum StagedStepIterationCtl {
+    /// 补丁重规划后重试当前下标（`i` 不变）。
+    RetryCurrentStep { n: usize },
+    /// 本步已完结（transition 或成功），调用方将 `i += 1`。
+    AdvanceToNextStep { n: usize, completed_steps: usize },
+    /// 本步成功后检测到取消（与历史：先发 `step_finished(cancelled)` 再 `break`）。
+    CancelledAfterOuterOk,
+}
+
 pub(crate) fn staged_step_tool_phase_route(
     tools_ok: bool,
     patch_planner_enabled: bool,

@@ -29,6 +29,7 @@ mod prepared_post_parse_fsm;
 mod rolling_horizon_facade;
 mod sse;
 mod staged_step_fsm;
+mod step_after_outer;
 mod step_iteration_fsm;
 mod step_loop_fsm;
 mod steps_loop;
@@ -129,6 +130,11 @@ pub(super) async fn prepare_staged_planner_no_tools_request(
             message: e.to_string(),
         })?;
 
+    let immutable_appendix = p
+        .turn
+        .staged_immutable_user_goal_snapshot()
+        .map(crate::agent::plan_optimizer::staged_rolling_immutable_plan_system_appendix);
+
     let instr = p
         .ctx
         .core
@@ -136,11 +142,14 @@ pub(super) async fn prepare_staged_planner_no_tools_request(
         .staged_planning
         .staged_plan_phase_instruction
         .trim();
-    let plan_system = if instr.is_empty() {
+    let mut plan_system = if instr.is_empty() {
         staged_plan_phase_instruction_default()
     } else {
         instr.to_string()
     };
+    if let Some(app) = immutable_appendix {
+        plan_system.push_str(&app);
+    }
     let preserve_kimi = crate::llm::llm_vendor_adapter(p.ctx.core.cfg.as_ref())
         .preserve_assistant_tool_call_reasoning(p.ctx.core.cfg.as_ref());
     let preserve_deepseek =
@@ -827,6 +836,14 @@ mod staged_plan_prepare_fixture_tests {
                     && message_content_as_str(&m.content).is_some_and(|c| c.contains("分阶段规划"))
             }),
             "末尾规划 system 应进入 ChatRequest"
+        );
+        assert!(
+            req.messages.iter().any(|m| {
+                m.role == "system"
+                    && message_content_as_str(&m.content)
+                        .is_some_and(|c| c.contains("不变层（系统持有"))
+            }),
+            "规划 system 应附带滚动不变层附录"
         );
     }
 }

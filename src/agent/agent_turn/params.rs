@@ -118,11 +118,14 @@ pub(crate) struct RunLoopCtx<'a> {
 /// - **意图时间线去重**：`intent_at_turn_start` 与 `staged_plan_intent_gate` 衔接时跳过重复 `intent_analysis`。
 /// - **门控临时 system**：澄清/确认/只读路径在首轮 P 前注入（见 [`crate::types::Message::system_intent_gate_hint`]）。
 /// - **分步子代理**：当前步 `executor_kind` 收窄可见工具（常规外环为 `None`）。
+/// - **滚动分阶段不变层**：[`Self::staged_immutable_user_goal`] 为本轮用户原文快照（懒填充），供每次无工具规划与分步执行注入。
 #[derive(Debug, Clone, Default)]
 pub(crate) struct TurnPlannerHints {
     pub(crate) suppress_duplicate_intent_timeline_once: bool,
     pub(crate) intent_turn_gate_hint: Option<String>,
     pub(crate) step_executor_constraint: Option<PlanStepExecutorKind>,
+    /// 分阶段滚动视界：时间序上**第一条**合格 user 正文（跳过注入类 user）；仅首次写入。
+    pub(crate) staged_immutable_user_goal: Option<String>,
 }
 
 /// 单 Agent [`super::outer_loop::run_agent_outer_loop`] 内每次 **P** 调用对应的模型端点角色。
@@ -166,6 +169,18 @@ impl TurnPlannerHints {
     /// 首轮 P 前注入的意图门控临时 system（消费后即清空）。
     pub(crate) fn take_intent_turn_gate_hint(&mut self) -> Option<String> {
         self.intent_turn_gate_hint.take()
+    }
+
+    /// 分阶段滚动规划：懒填充本轮「不变层」用户原文（缓冲区内**时间序第一条**合格 user），仅首次写入。
+    pub(crate) fn ensure_staged_immutable_user_goal_from_messages(&mut self, messages: &[Message]) {
+        if self.staged_immutable_user_goal.is_some() {
+            return;
+        }
+        if let Some(g) =
+            crate::agent::plan_optimizer::staged_plan_turn_anchor_user_content(messages)
+        {
+            self.staged_immutable_user_goal = Some(g.to_string());
+        }
     }
 
     /// `intent_at_turn_start` 与 `staged_plan_intent_gate` 衔接：读取并清除「跳过重复时间线」标志。
@@ -288,6 +303,16 @@ impl<'a> RunLoopTurnState<'a> {
     pub(crate) fn take_suppress_duplicate_intent_timeline_once(&mut self) -> bool {
         self.turn_planner_hints
             .take_suppress_duplicate_intent_timeline_once()
+    }
+
+    /// 分阶段滚动不变层：基于当前缓冲懒填充 [`TurnPlannerHints::staged_immutable_user_goal`] 并返回只读引用。
+    pub(crate) fn staged_immutable_user_goal_snapshot(&mut self) -> Option<&str> {
+        let msgs = self.messages_buf.as_slice();
+        self.turn_planner_hints
+            .ensure_staged_immutable_user_goal_from_messages(msgs);
+        self.turn_planner_hints
+            .staged_immutable_user_goal
+            .as_deref()
     }
 }
 

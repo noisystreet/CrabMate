@@ -25,6 +25,8 @@ staged_plan_ensemble_count = 1
 staged_plan_skip_ensemble_on_casual_prompt = true
 # 默认关：与 finalize 缺省及文档一致；若开 true，桥接 user 已标明「非用户提问」，避免模型把续问句误当用户原话。
 staged_plan_two_phase_nl_display = false   # CM_STAGED_PLAN_TWO_PHASE_NL_DISPLAY
+# 为 true 时：架构/咨询类 Execute 命中启发式则绕过分阶段、走单 Agent 外循环；默认 false 仍走滚动分阶段。
+staged_plan_intent_gate_advisory_bypass = false
 
 # 分层模式意图管线（L0 + L1 规则 + L2 无工具 LLM，默认开启；见 CONFIGURATION/DEVELOPMENT）
 # intent_l2_enabled = true

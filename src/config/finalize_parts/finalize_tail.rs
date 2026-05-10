@@ -57,6 +57,7 @@ struct FinalizeTailScalars {
     staged_plan_ensemble_count: u8,
     staged_plan_skip_ensemble_on_casual_prompt: bool,
     staged_plan_two_phase_nl_display: bool,
+    staged_plan_intent_gate_advisory_bypass: bool,
     sync_default_tool_sandbox_mode: types::SyncDefaultToolSandboxMode,
     sync_default_tool_sandbox_docker_image: String,
     sync_default_tool_sandbox_docker_network: String,
@@ -327,6 +328,7 @@ struct TailStagedSandboxWebScalars {
     staged_plan_ensemble_count: u8,
     staged_plan_skip_ensemble_on_casual_prompt: bool,
     staged_plan_two_phase_nl_display: bool,
+    staged_plan_intent_gate_advisory_bypass: bool,
     sync_default_tool_sandbox_mode: types::SyncDefaultToolSandboxMode,
     sync_default_tool_sandbox_docker_image: String,
     sync_default_tool_sandbox_docker_network: String,
@@ -360,6 +362,8 @@ fn derive_tail_staged_sandbox_web_scalars(
     let staged_plan_skip_ensemble_on_casual_prompt =
         b.staged_planning.staged_plan_skip_ensemble_on_casual_prompt.unwrap_or(true);
     let staged_plan_two_phase_nl_display = b.staged_planning.staged_plan_two_phase_nl_display.unwrap_or(false);
+    let staged_plan_intent_gate_advisory_bypass =
+        b.staged_planning.staged_plan_intent_gate_advisory_bypass.unwrap_or(false);
     let sync_default_tool_sandbox_mode = match b.sync_tool_sandbox.sync_default_tool_sandbox_mode_str.as_deref() {
         Some(s) => types::SyncDefaultToolSandboxMode::parse(s)?,
         None => types::SyncDefaultToolSandboxMode::default(),
@@ -413,6 +417,7 @@ fn derive_tail_staged_sandbox_web_scalars(
         staged_plan_ensemble_count,
         staged_plan_skip_ensemble_on_casual_prompt,
         staged_plan_two_phase_nl_display,
+        staged_plan_intent_gate_advisory_bypass,
         sync_default_tool_sandbox_mode,
         sync_default_tool_sandbox_docker_image,
         sync_default_tool_sandbox_docker_network,
@@ -670,6 +675,7 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
         staged_plan_ensemble_count,
         staged_plan_skip_ensemble_on_casual_prompt,
         staged_plan_two_phase_nl_display,
+        staged_plan_intent_gate_advisory_bypass,
         sync_default_tool_sandbox_mode,
         sync_default_tool_sandbox_docker_image,
         sync_default_tool_sandbox_docker_network,
@@ -767,6 +773,7 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
         staged_plan_ensemble_count,
         staged_plan_skip_ensemble_on_casual_prompt,
         staged_plan_two_phase_nl_display,
+        staged_plan_intent_gate_advisory_bypass,
         sync_default_tool_sandbox_mode,
         sync_default_tool_sandbox_docker_image,
         sync_default_tool_sandbox_docker_network,

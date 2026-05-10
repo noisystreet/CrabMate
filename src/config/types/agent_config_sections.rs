@@ -211,6 +211,8 @@ pub struct StagedPlanningConfig {
     pub staged_plan_ensemble_count: u8,
     pub staged_plan_skip_ensemble_on_casual_prompt: bool,
     pub staged_plan_two_phase_nl_display: bool,
+    /// 为 **`true`** 时，非分层下 `staged_plan_intent_gate` 对命中架构/咨询启发式的 **`Execute`** 任务**绕过分阶段**；**`false`**（默认）时仍走滚动分阶段。
+    pub staged_plan_intent_gate_advisory_bypass: bool,
 }
 
 #[derive(Debug, Clone)]

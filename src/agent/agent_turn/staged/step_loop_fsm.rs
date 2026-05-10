@@ -86,11 +86,18 @@ pub(crate) fn try_apply_staged_plan_control_flow_jump(
 use crate::agent::step_executor_policy::executor_kind_user_label;
 
 /// 注入执行器的单步 **user** 正文（与 `run_staged_plan_steps_loop` 内 `format!` 对齐）。
+///
+/// `immutable_user_goal`：系统持有的本轮用户原文（不变层）；有则置于分步说明之前以减少步内漂移。
 pub(crate) fn staged_injected_step_user_body(
     step_index: usize,
     n: usize,
     step: &PlanStepV1,
+    immutable_user_goal: Option<&str>,
 ) -> String {
+    let immutable_prefix = immutable_user_goal
+        .filter(|g| !g.trim().is_empty())
+        .map(crate::agent::plan_optimizer::staged_rolling_immutable_step_user_prefix)
+        .unwrap_or_default();
     let summary_hint = if step_index == n && n > 1 {
         format!(
             "\n本步为最后一步，终答中请简要列出本轮全部 {} 个步骤的完成情况（可对每步附简短说明）。",
@@ -108,7 +115,7 @@ pub(crate) fn staged_injected_step_user_body(
         None => String::new(),
     };
     format!(
-        "### 分步 {}/{}\n{}{}{}\n- id: {}\n- 描述: {}",
+        "{immutable_prefix}### 分步 {}/{}\n{}{}{}\n- id: {}\n- 描述: {}",
         step_index,
         n,
         crate::runtime::plan_section::STAGED_STEP_USER_BOILERPLATE,
@@ -258,10 +265,28 @@ mod tests {
             max_step_retries: None,
             transitions: None,
         };
-        let body = staged_injected_step_user_body(1, 3, &step);
+        let body = staged_injected_step_user_body(1, 3, &step, None);
         assert!(body.contains("### 分步 1/3"));
         assert!(body.contains("sid"));
         assert!(body.contains("desc"));
         assert!(body.contains("review_readonly"));
+    }
+
+    #[test]
+    fn injected_body_prefixes_immutable_goal_when_present() {
+        let step = PlanStepV1 {
+            id: "sid".into(),
+            description: "desc".into(),
+            workflow_node_id: None,
+            executor_kind: None,
+            step_kind: None,
+            acceptance: None,
+            max_step_retries: None,
+            transitions: None,
+        };
+        let body = staged_injected_step_user_body(1, 2, &step, Some("用户总问句"));
+        assert!(body.contains("【不变层·本轮用户总目标】"));
+        assert!(body.contains("用户总问句"));
+        assert!(body.contains("### 分步 1/2"));
     }
 }

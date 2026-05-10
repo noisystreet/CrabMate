@@ -21,48 +21,25 @@ use super::patch_planner::{
     run_staged_plan_patch_planner_round, staged_plan_step_failure_feedback_user_body,
 };
 use super::sse::{
-    StagedStepOkNoticeParams, emit_chat_ui_separator_sse, send_staged_plan_finished,
-    send_staged_plan_notice, send_staged_plan_step_finished, send_staged_plan_step_started,
+    StagedStepOkNoticeParams, emit_chat_ui_separator_sse, finish_staged_plan_step_sse,
+    send_staged_plan_finished, send_staged_plan_notice, send_staged_plan_step_started,
     staged_plan_queue_summary_text, staged_step_emit_ok_step_and_queue_notice,
 };
 use super::staged_step_fsm::{
     staged_patch_budget_after_step_failure, staged_patch_budget_tool_messages_not_ok,
     staged_step_patch_planner_enabled,
 };
+use super::step_after_outer::{
+    CfJumpMeta, CfJumpMut, staged_step_maybe_return_on_control_flow_jump,
+};
 use super::step_iteration_fsm::{
     STAGED_STEP_OUTER_LOOP_FAIL_DETAIL, STAGED_STEP_TOOL_MSG_FAIL_DETAIL, StagedStepAfterOuterLoop,
-    StagedStepToolPhaseRoute, staged_step_after_outer_loop,
+    StagedStepIterationCtl, StagedStepToolPhaseRoute, staged_step_after_outer_loop,
     staged_step_failure_retry_exhausted_message, staged_step_tool_phase_route,
     staged_step_verify_fail_patch_detail, staged_step_wall_clock_exceeded,
 };
-use super::step_loop_fsm::{
-    staged_injected_step_user_body, try_apply_staged_plan_control_flow_jump,
-};
+use super::step_loop_fsm::staged_injected_step_user_body;
 use super::{StagedPlanRunLabels, StagedPlanRunOutcome};
-/// 发送单步结束 SSE（`failed` / `cancelled` / `ok`）。
-#[allow(clippy::too_many_arguments)]
-async fn finish_staged_plan_step_sse(
-    out: Option<&mpsc::Sender<String>>,
-    plan_id: &str,
-    step_id_trim: &str,
-    step_index: usize,
-    n: usize,
-    status: &'static str,
-    executor_kind: Option<crate::agent::plan_artifact::PlanStepExecutorKind>,
-    verify_fail_reason: Option<&str>,
-) {
-    send_staged_plan_step_finished(
-        out,
-        plan_id,
-        step_id_trim,
-        step_index,
-        n,
-        status,
-        executor_kind.map(|k| k.as_snake_case_str()),
-        verify_fail_reason,
-    )
-    .await;
-}
 
 /// 执行步失败早退：`step_finished(failed)` + `plan_finished(failed)`，避免漏发 `staged_plan_finished`。
 struct StagedPlanStepFailedExit<'a> {
@@ -150,16 +127,6 @@ async fn push_patch_replan_assistant_json_and_notice(
     Ok(())
 }
 
-/// 单次 `run_staged_plan_steps_loop` 迭代结束方式（不含墙钟：由外层检查）。
-enum StagedStepIterationCtl {
-    /// 补丁重规划后重试当前下标（`i` 不变）。
-    RetryCurrentStep { n: usize },
-    /// 本步已完结（transition 或成功），调用方将 `i += 1`。
-    AdvanceToNextStep { n: usize, completed_steps: usize },
-    /// 本步成功后检测到取消（与历史：先发 `step_finished(cancelled)` 再 `break`）。
-    CancelledAfterOuterOk,
-}
-
 /// outer_loop 与验收之后、transition / 补丁 / 工具检查 / 成功收尾 之前的数据（**AfterOuterLoop** 阶段入参）。
 struct StagedStepOuterHalfResult {
     step: PlanStepV1,
@@ -210,7 +177,8 @@ where
     )
     .await;
 
-    let body = staged_injected_step_user_body(step_index, n, &step);
+    let immutable = patch_ctx.p.turn.staged_immutable_user_goal_snapshot();
+    let body = staged_injected_step_user_body(step_index, n, &step, immutable);
     debug!(
         target: "crabmate",
         "{} step={}/{} body_len={} body_preview={}",
@@ -465,7 +433,7 @@ where
         outer,
         plan_id,
         i,
-        mut n,
+        n,
         completed_steps,
         plan_steps,
         original_steps,
@@ -483,54 +451,28 @@ where
 
     let out = patch_ctx.p.ctx.io.out;
 
-    if let Some((fb, step_status)) = try_apply_staged_plan_control_flow_jump(
+    if let Some(ctl) = staged_step_maybe_return_on_control_flow_jump(
+        CfJumpMut {
+            patch_ctx,
+            plan_steps,
+            transition_counters,
+        },
         &step,
-        i,
-        plan_steps,
-        original_steps,
-        transition_counters,
-        run_step.is_err() || step_verify_failed_reason.is_some(),
-        &step_verify_failed_reason,
-    ) {
-        n = plan_steps.len();
-
-        patch_ctx.p.turn.push_message(Message::user_only(fb));
-
-        let replan = AgentReplyPlanV1 {
-            plan_type: "agent_reply_plan".to_string(),
-            version: 1,
-            steps: plan_steps.clone(),
-            no_task: false,
-        };
-        send_staged_plan_notice(
-            out,
-            echo_terminal_staged,
-            true,
-            staged_plan_queue_summary_text(&replan, completed_steps),
-        )
-        .await;
-
-        let step_verify_fail_reason = step_verify_failed_reason.as_deref();
-        finish_staged_plan_step_sse(
+        CfJumpMeta {
+            original_steps,
+            step_loop_index: i,
+            step_display_index: step_index,
+            completed_steps,
+            run_step: &run_step,
+            step_verify_failed_reason: &step_verify_failed_reason,
             out,
             plan_id,
-            step.id.trim(),
-            step_index,
-            n,
-            step_status,
-            step.executor_kind,
-            step_verify_fail_reason,
-        )
-        .await;
-        patch_ctx
-            .p
-            .turn
-            .push_message(Message::chat_ui_separator(true));
-        emit_chat_ui_separator_sse(out, true).await;
-        return Ok(StagedStepIterationCtl::AdvanceToNextStep {
-            n,
-            completed_steps: step_index,
-        });
+            echo_terminal_staged,
+        },
+    )
+    .await
+    {
+        return Ok(ctl);
     }
 
     match staged_step_after_outer_loop(&run_step, &step_verify_failed_reason) {

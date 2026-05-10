@@ -203,6 +203,8 @@ pub(super) struct AgentSection {
     pub(super) staged_plan_skip_ensemble_on_casual_prompt: Option<bool>,
     /// 分阶段规划：先 JSON（对用户不可见流）再 NL 补全。`CM_STAGED_PLAN_TWO_PHASE_NL_DISPLAY`
     pub(super) staged_plan_two_phase_nl_display: Option<bool>,
+    /// 咨询类 **`Execute`** 是否绕过分阶段意图门控；默认 **`false`**（仍走滚动分阶段）。
+    pub(super) staged_plan_intent_gate_advisory_bypass: Option<bool>,
     /// `none` | `docker`；`CM_SYNC_DEFAULT_TOOL_SANDBOX_MODE`
     pub(super) sync_default_tool_sandbox_mode: Option<String>,
     /// Docker 沙盒镜像。`CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE`

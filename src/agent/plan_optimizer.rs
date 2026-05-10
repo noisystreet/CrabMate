@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use crate::agent::plan_artifact::{self, AgentReplyPlanV1, PlanStepV1};
 use crate::config::AgentConfig;
 use crate::types::{
-    Message, Tool, is_long_term_memory_injection,
+    Message, Tool, is_first_turn_workspace_context_injection, is_long_term_memory_injection,
     is_message_excluded_from_llm_context_except_memory, is_workspace_changelist_injection,
 };
 
@@ -28,25 +28,58 @@ pub(crate) fn parallel_batchable_tool_names_csv_from_defs(
     names.into_iter().collect::<Vec<_>>().join(", ")
 }
 
+#[inline]
+fn user_task_line_visible(m: &Message, skip_workspace_bootstrap: bool) -> Option<&str> {
+    if m.role != "user" {
+        return None;
+    }
+    if is_message_excluded_from_llm_context_except_memory(m)
+        || is_long_term_memory_injection(m)
+        || is_workspace_changelist_injection(m)
+        || (skip_workspace_bootstrap && is_first_turn_workspace_context_injection(m))
+    {
+        return None;
+    }
+    let t = crate::types::message_content_as_str(&m.content)?.trim();
+    (!t.is_empty()).then_some(t)
+}
+
+/// 从会话缓冲**从旧到新**扫描，取第一条计入模型的真实 user 正文（通常为本轮用户初始诉求）。
+///
+/// 与 [`staged_plan_trigger_user_content`] 相对：后者取**最新**一条 user；滚动重规划后缓冲末尾常为分步注入或教练句，
+/// 不宜作为「不变层」锚点。跳过首轮工作区画像等 `user.name` 注入。
+pub(crate) fn staged_plan_turn_anchor_user_content(messages: &[Message]) -> Option<&str> {
+    messages
+        .iter()
+        .find_map(|m| user_task_line_visible(m, true))
+}
+
 /// 在规划轮 assistant 尚未入史时，从 `messages` 末尾回溯，取**触发本轮分阶段规划**的用户正文（跳过注入类 user）。
 pub(crate) fn staged_plan_trigger_user_content(messages: &[Message]) -> Option<&str> {
-    for m in messages.iter().rev() {
-        if m.role != "user" {
-            continue;
-        }
-        if is_message_excluded_from_llm_context_except_memory(m)
-            || is_long_term_memory_injection(m)
-            || is_workspace_changelist_injection(m)
-        {
-            continue;
-        }
-        let t = crate::types::message_content_as_str(&m.content)?.trim();
-        if t.is_empty() {
-            continue;
-        }
-        return Some(t);
-    }
-    None
+    messages
+        .iter()
+        .rev()
+        .find_map(|m| user_task_line_visible(m, false))
+}
+
+/// 无工具规划轮 system 末尾追加：不变层用户原文 + 少量硬约束。
+pub(crate) fn staged_rolling_immutable_plan_system_appendix(goal: &str) -> String {
+    format!(
+        "\n\n### 不变层（系统持有·本轮用户原文）\n{}\n\n\
+         ### 不变层约束（硬；每次滚动重规划须自检）\n\
+         - 上文用户原文为本轮**终极目标**；仅步骤、顺序与实现细节可调，**不得**用过程中涌现的子话题、中间小结或「扩展分析」替代或架空该目标。\n\
+         - 若新信息与总目标冲突或无法同时满足：优先在规划中请求澄清或收敛到总目标，**勿擅自改题**。\n\
+         - 遵守工作区与工具安全边界；不得索取或输出密钥、token。\n",
+        goal.trim()
+    )
+}
+
+/// 分步执行注入 user 开头：短锚定，避免步内工具链漂移。
+pub(crate) fn staged_rolling_immutable_step_user_prefix(goal: &str) -> String {
+    format!(
+        "【不变层·本轮用户总目标】（本步工具与终答须对齐，勿偏题）\n{}\n\n",
+        goal.trim()
+    )
 }
 
 /// 启发式：是否像闲聊/极短输入，适合跳过逻辑多规划员（ensemble）以省 API。
@@ -210,5 +243,44 @@ mod tests {
             },
         ];
         assert_eq!(staged_plan_trigger_user_content(&msgs), Some("plain ask"));
+    }
+
+    #[test]
+    fn anchor_user_prefers_chronological_first_not_latest() {
+        use crate::types::Message;
+        let msgs = vec![
+            Message::user_only("总目标：修 A"),
+            Message::assistant_only("ok"),
+            Message::user_only("### 分步 1/2\n子步"),
+        ];
+        assert_eq!(
+            staged_plan_turn_anchor_user_content(&msgs),
+            Some("总目标：修 A")
+        );
+        assert_eq!(
+            staged_plan_trigger_user_content(&msgs),
+            Some("### 分步 1/2\n子步")
+        );
+    }
+
+    #[test]
+    fn anchor_skips_first_turn_workspace_injection() {
+        use crate::types::{CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME, Message, MessageContent};
+        let msgs = vec![
+            Message {
+                role: "user".into(),
+                content: Some(MessageContent::Text("bootstrap".into())),
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: None,
+                name: Some(CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME.into()),
+                tool_call_id: None,
+            },
+            Message::user_only("真实问题"),
+        ];
+        assert_eq!(
+            staged_plan_turn_anchor_user_content(&msgs),
+            Some("真实问题")
+        );
     }
 }

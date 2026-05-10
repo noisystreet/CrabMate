@@ -214,6 +214,31 @@ pub(crate) async fn send_staged_plan_step_finished(
     .await;
 }
 
+/// 发送单步结束 SSE（`failed` / `cancelled` / `ok`）。
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn finish_staged_plan_step_sse(
+    out: Option<&mpsc::Sender<String>>,
+    plan_id: &str,
+    step_id_trim: &str,
+    step_index: usize,
+    n: usize,
+    status: &'static str,
+    executor_kind: Option<crate::agent::plan_artifact::PlanStepExecutorKind>,
+    verify_fail_reason: Option<&str>,
+) {
+    send_staged_plan_step_finished(
+        out,
+        plan_id,
+        step_id_trim,
+        step_index,
+        n,
+        status,
+        executor_kind.map(|k| k.as_snake_case_str()),
+        verify_fail_reason,
+    )
+    .await;
+}
+
 pub(crate) async fn send_staged_plan_finished(
     out: Option<&mpsc::Sender<String>>,
     plan_id: &str,

@@ -542,17 +542,18 @@ mod staged_intent_gate_tests {
     }
 
     #[test]
-    fn advisory_refactor_consultation_bypasses_staged_planning() {
+    fn advisory_refactor_consultation_bypasses_staged_when_advisory_bypass_enabled() {
         let mut cfg = test_cfg();
         // 默认 L1 对该句常为 ConfirmThenExecute（不进入分阶段）；下调高阈值以稳定得到 Execute，从而专门验证「咨询启发式」分支。
         cfg.intent_routing.intent_non_hier_execute_high_threshold = 0.35;
+        cfg.staged_planning.staged_plan_intent_gate_advisory_bypass = true;
         let messages = vec![Message::user_only(
             "我想对它进行重构，哪些地方隐式状态比较严重，需要重构",
         )];
         let gate = assess_staged_planning_gate(&messages, &cfg);
         assert!(
             !gate.allows_staged_planning(),
-            "架构/重构咨询在 Execute 路径下不应进入滚动分阶段规划"
+            "开启咨询绕过时，架构/重构咨询在 Execute 路径下不应进入滚动分阶段规划"
         );
         match gate {
             StagedPlanningGateOutcome::Deny {
@@ -570,6 +571,20 @@ mod staged_intent_gate_tests {
             }
             other => panic!("unexpected gate outcome: {:?}", other),
         }
+    }
+
+    #[test]
+    fn advisory_refactor_consultation_allows_staged_planning_by_default() {
+        let mut cfg = test_cfg();
+        cfg.intent_routing.intent_non_hier_execute_high_threshold = 0.35;
+        let messages = vec![Message::user_only(
+            "我想对它进行重构，哪些地方隐式状态比较严重，需要重构",
+        )];
+        let gate = assess_staged_planning_gate(&messages, &cfg);
+        assert!(
+            gate.allows_staged_planning(),
+            "默认关闭咨询绕过时，Execute + 咨询启发式仍应进入分阶段"
+        );
     }
 }
 

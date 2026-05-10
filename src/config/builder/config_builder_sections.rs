@@ -200,6 +200,7 @@ pub(crate) struct ConfigBuilderStagedPlanning {
     pub(crate) staged_plan_ensemble_count: Option<u64>,
     pub(crate) staged_plan_skip_ensemble_on_casual_prompt: Option<bool>,
     pub(crate) staged_plan_two_phase_nl_display: Option<bool>,
+    pub(crate) staged_plan_intent_gate_advisory_bypass: Option<bool>,
 }
 
 #[derive(Default)]

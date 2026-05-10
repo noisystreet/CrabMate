@@ -263,6 +263,7 @@ fn finalize_section_staged_planning(tail: &FinalizeTailScalars) -> types::Staged
         staged_plan_ensemble_count: tail.staged_plan_ensemble_count,
         staged_plan_skip_ensemble_on_casual_prompt: tail.staged_plan_skip_ensemble_on_casual_prompt,
         staged_plan_two_phase_nl_display: tail.staged_plan_two_phase_nl_display,
+        staged_plan_intent_gate_advisory_bypass: tail.staged_plan_intent_gate_advisory_bypass,
     }
 }
 

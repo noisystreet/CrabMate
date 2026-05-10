@@ -334,6 +334,9 @@ impl ConfigBuilder {
         sp.staged_plan_two_phase_nl_display = agent
             .staged_plan_two_phase_nl_display
             .or(sp.staged_plan_two_phase_nl_display);
+        sp.staged_plan_intent_gate_advisory_bypass = agent
+            .staged_plan_intent_gate_advisory_bypass
+            .or(sp.staged_plan_intent_gate_advisory_bypass);
     }
 
     /// 同步工具沙盒、Web API 审计与会话持久化路径合并。
