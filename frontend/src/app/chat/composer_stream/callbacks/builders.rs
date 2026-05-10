@@ -18,9 +18,7 @@ use crate::timeline_scan::timeline_state_tool;
 use super::super::context::ChatStreamCallbackCtx;
 use super::super::per_stream_accum::PerStreamAccum;
 use super::super::shell_abort::{clear_abort_slot, user_cancelled_flag};
-use super::super::stream_turn_state::{
-    StreamOutputLaneCell, lane_clear_followup_pending, lane_take_followup_rotation_pending,
-};
+use super::super::stream_turn_scratch_state::pending_queue_take;
 use super::done_session::apply_stream_done_to_loading_assistant;
 use super::error_session::apply_stream_error_to_assistant_message;
 use super::helpers::*;
@@ -50,7 +48,7 @@ pub(super) fn make_on_tool_result(
             let idx_by_tid = tid.and_then(|t| index_of_loading_tool_by_call_id(&s.messages, t));
             let fifo_id = idx_by_tid
                 .is_none()
-                .then(|| take_pending_tool_message_id(&pending_queue))
+                .then(|| pending_queue_take(&pending_queue))
                 .flatten();
             let idx_opt = idx_by_tid.or_else(|| {
                 fifo_id
@@ -175,7 +173,7 @@ pub(super) fn chat_stream_on_tool_call_builder(
             finalize_loading_assistant_before_tool_and_tail_with_new_loading(&stream_ctx, &id);
             // 有 `tool_call_id` 时由 `tool_result` 按 id 命中占位气泡；否则保持 FIFO。
             if tcid.is_none() {
-                enqueue_pending_tool_message_id(&stream_ctx.scratch.pending_tool_message_ids(), id);
+                stream_ctx.scratch.enqueue_pending_tool_message_id(id);
             }
         },
     )
@@ -257,18 +255,17 @@ pub(super) fn make_on_timeline_log(
 
 pub(super) fn chat_stream_on_done_builder(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
-    output_lane: StreamOutputLaneCell,
     accum: Rc<PerStreamAccum>,
 ) -> Rc<dyn Fn()> {
     Rc::new(move || {
         if user_cancelled_flag(&stream_ctx.shell) {
-            lane_clear_followup_pending(output_lane.as_ref());
+            stream_ctx.scratch.clear_followup_pending();
             clear_abort_slot(&stream_ctx.shell);
             return;
         }
         // 第二次 `assistant_answer_phase` 后若再无正文增量，须在此补做轮换并清零计数器；
         // 否则 `answer_delta_chars` 仍为上一轮时间轴累计，易误判「有输出却无正文」。
-        if lane_take_followup_rotation_pending(output_lane.as_ref()) {
+        if stream_ctx.scratch.take_followup_rotation_pending() {
             rotate_streaming_assistant_for_followup_model_round(stream_ctx.as_ref());
             accum.clear_answer_delta_chars();
         }
@@ -289,7 +286,10 @@ pub(super) fn chat_stream_on_done_builder(
                 &mut s.messages,
                 mid.as_str(),
                 &turn,
-                output_lane.get().in_answer_body_lane(),
+                stream_ctx
+                    .scratch
+                    .current_output_lane()
+                    .in_answer_body_lane(),
                 loc,
             );
         });

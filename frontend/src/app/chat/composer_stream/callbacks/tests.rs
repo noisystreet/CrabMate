@@ -1,11 +1,13 @@
 #[cfg(test)]
 mod tests {
+    use super::super::super::stream_turn_scratch_state::{
+        pending_queue_enqueue, pending_queue_take,
+    };
     use super::super::helpers::{
         build_empty_reply_with_diagnostic, build_final_response_text,
         build_hierarchical_plan_main_bubble_text, build_hierarchical_subgoal_main_bubble_text,
         build_intent_analysis_main_bubble_text, build_stream_error_with_suggestion,
-        enqueue_pending_tool_message_id, has_same_assistant_timeline_bubble,
-        merge_subgoal_text_preserving_target, take_pending_tool_message_id,
+        has_same_assistant_timeline_bubble, merge_subgoal_text_preserving_target,
     };
     use crate::i18n::{self, Locale};
     use std::{cell::RefCell, collections::VecDeque, rc::Rc};
@@ -13,20 +15,20 @@ mod tests {
     #[test]
     fn pending_tool_message_queue_is_fifo() {
         let q = Rc::new(RefCell::new(VecDeque::new()));
-        enqueue_pending_tool_message_id(&q, "m1".to_string());
-        enqueue_pending_tool_message_id(&q, "m2".to_string());
-        enqueue_pending_tool_message_id(&q, "m3".to_string());
+        pending_queue_enqueue(&q, "m1".to_string());
+        pending_queue_enqueue(&q, "m2".to_string());
+        pending_queue_enqueue(&q, "m3".to_string());
 
-        assert_eq!(take_pending_tool_message_id(&q).as_deref(), Some("m1"));
-        assert_eq!(take_pending_tool_message_id(&q).as_deref(), Some("m2"));
-        assert_eq!(take_pending_tool_message_id(&q).as_deref(), Some("m3"));
-        assert_eq!(take_pending_tool_message_id(&q), None);
+        assert_eq!(pending_queue_take(&q).as_deref(), Some("m1"));
+        assert_eq!(pending_queue_take(&q).as_deref(), Some("m2"));
+        assert_eq!(pending_queue_take(&q).as_deref(), Some("m3"));
+        assert_eq!(pending_queue_take(&q), None);
     }
 
     #[test]
     fn pending_tool_message_queue_empty_returns_none() {
         let q = Rc::new(RefCell::new(VecDeque::new()));
-        assert_eq!(take_pending_tool_message_id(&q), None);
+        assert_eq!(pending_queue_take(&q), None);
     }
 
     #[test]

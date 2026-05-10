@@ -18,7 +18,6 @@ use crate::timeline_scan::{timeline_state_staged_end, timeline_state_staged_star
 
 use super::super::context::ChatStreamCallbackCtx;
 use super::super::shell_abort::clear_abort_slot;
-use super::super::stream_turn_state::{StreamOutputLaneCell, lane_on_assistant_answer_phase};
 use super::builders::*;
 use super::delta_apply::chat_stream_on_delta_builder;
 use super::helpers::*;
@@ -28,13 +27,12 @@ use super::stream_session_access::with_stream_write_session_mut;
 pub(crate) fn build_chat_stream_callbacks(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
 ) -> ChatStreamCallbacks {
-    let lane: StreamOutputLaneCell = stream_ctx.scratch.lane();
     let accum = stream_ctx.scratch.accum();
     let on_delta: Rc<dyn Fn(String)> =
-        chat_stream_on_delta_builder(Rc::clone(&stream_ctx), Rc::clone(&lane), Rc::clone(&accum));
+        chat_stream_on_delta_builder(Rc::clone(&stream_ctx), Rc::clone(&accum));
 
     let on_done: Rc<dyn Fn()> =
-        chat_stream_on_done_builder(Rc::clone(&stream_ctx), Rc::clone(&lane), Rc::clone(&accum));
+        chat_stream_on_done_builder(Rc::clone(&stream_ctx), Rc::clone(&accum));
 
     let on_error: Rc<dyn Fn(String)> = chat_stream_on_error_builder(Rc::clone(&stream_ctx));
 
@@ -117,10 +115,10 @@ pub(crate) fn build_chat_stream_callbacks(
     };
 
     let on_assistant_answer_phase: Rc<dyn Fn()> = {
-        let lane = Rc::clone(&lane);
+        let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move || {
             // 重复 answer_phase 将车道切入 PendingFollowup；轮换由 `on_delta` / `on_done` 消费。
-            lane_on_assistant_answer_phase(lane.as_ref());
+            stream_ctx.scratch.on_assistant_answer_phase();
         })
     };
 

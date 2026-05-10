@@ -1,8 +1,6 @@
 //! 时间线/气泡/子目标等辅助函数（供 [`super::builders`] 与 [`build_chat_stream_callbacks`] 使用）。
 
 use std::cell::RefCell;
-use std::collections::VecDeque;
-use std::rc::Rc;
 
 use crabmate_sse_protocol::StreamEndReason;
 
@@ -14,19 +12,6 @@ use crate::stream_text_overlay::stream_overlay_take_into_stored_message;
 
 use super::super::context::ChatStreamCallbackCtx;
 use super::stream_session_access::{with_stream_write_session_mut, with_stream_write_session_ref};
-
-pub(super) fn enqueue_pending_tool_message_id(
-    queue: &Rc<RefCell<VecDeque<String>>>,
-    message_id: String,
-) {
-    queue.borrow_mut().push_back(message_id);
-}
-
-pub(super) fn take_pending_tool_message_id(
-    queue: &Rc<RefCell<VecDeque<String>>>,
-) -> Option<String> {
-    queue.borrow_mut().pop_front()
-}
 
 /// 按 OpenAI `tool_call_id` 查找仍处于 loading 的工具行（供 `tool_result` 命中占位气泡）。
 #[must_use]
@@ -409,8 +394,9 @@ pub(super) fn finalize_loading_assistant_before_tool_and_tail_with_new_loading(
         *new_tail_id.borrow_mut() = Some(new_asst_id);
     });
     if let Some(id) = new_tail_id.into_inner() {
-        stream_ctx.scratch.replace_assistant_id(id);
-        stream_ctx.scratch.post_tool_stream_tail_cell().set(true);
+        stream_ctx
+            .scratch
+            .adopt_new_assistant_tail_after_rotation(id);
     }
 }
 
@@ -440,15 +426,16 @@ pub(super) fn rotate_streaming_assistant_for_followup_model_round(
         *new_tail_id.borrow_mut() = Some(new_asst_id);
     });
     if let Some(id) = new_tail_id.into_inner() {
-        stream_ctx.scratch.replace_assistant_id(id);
-        stream_ctx.scratch.post_tool_stream_tail_cell().set(true);
+        stream_ctx
+            .scratch
+            .adopt_new_assistant_tail_after_rotation(id);
     }
     ensure_streaming_assistant_tail_last(stream_ctx);
 }
 
 /// 工具后续写段：分步/时间线等仍会 `push` 到列表末尾，需把当前 `loading` 占位再次移到最下方。
 pub(super) fn ensure_streaming_assistant_tail_last(stream_ctx: &ChatStreamCallbackCtx) {
-    if !stream_ctx.scratch.post_tool_stream_tail_cell().get() {
+    if !stream_ctx.scratch.post_tool_stream_tail_active() {
         return;
     }
     let mid = stream_ctx.scratch.clone_assistant_id();

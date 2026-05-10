@@ -1,7 +1,6 @@
 //! 流式回合内模型输出通道：将 `assistant_answer_phase` 与「多段正文需轮换气泡」收敛为单一枚举，
-//! 替代一对交叉读写的 `Cell<bool>`。
-//!
-//! 与 [`super::stream_sse_scratch::StreamSseScratch`] 同层，供 SSE 回调装配与单轮草稿共用，避免与 `callbacks` 子模块循环依赖。
+//! 替代一对交叉读写的 `Cell<bool>`。**车道转移函数**由 [`super::stream_turn_scratch_state::StreamTurnScratchState`] 统一调用；
+//! 本模块仍保留底层 `lane_*` 与单测，供该状态类型复用。
 
 use std::cell::Cell;
 use std::rc::Rc;

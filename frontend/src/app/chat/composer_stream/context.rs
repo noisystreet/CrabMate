@@ -8,7 +8,7 @@
 //!
 //! # 可变草稿
 //!
-//! [`ChatStreamCallbackCtx::scratch`] 承载本轮 attach 的 lane / 累计 / 尾泡 id（[`super::stream_sse_scratch::StreamSseScratch`]），与 Leptos `RwSignal` 解耦。
+//! [`ChatStreamCallbackCtx::scratch`] 承载本轮 attach 的可变草稿（[`super::stream_sse_scratch::StreamSseScratch`] → [`super::stream_turn_scratch_state::StreamTurnScratchState`]），与 Leptos `RwSignal` 解耦。
 
 use leptos::prelude::*;
 
