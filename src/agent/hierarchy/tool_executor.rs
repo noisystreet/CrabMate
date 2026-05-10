@@ -305,54 +305,7 @@ impl ToolExecutor {
     /// - 编译/构建命令：允许警告（warning），只检查致命错误
     /// - 其他命令：检查是否包含错误关键词
     fn check_execution_success(tool_name: &str, output: &str) -> bool {
-        let has_explicit_error = Self::output_has_explicit_error_markers(output);
-        let is_build_command = Self::infer_build_like_command(tool_name, output);
-
-        if is_build_command {
-            if has_explicit_error {
-                return false;
-            }
-            if Self::build_output_has_compiler_errors(output) {
-                return false;
-            }
-            if output.contains("make: ***") && output.contains("停止") {
-                return false;
-            }
-            return true;
-        }
-
-        !has_explicit_error
-    }
-
-    fn output_has_explicit_error_markers(output: &str) -> bool {
-        output.contains("错误：")
-            || output.contains("error:")
-            || output.contains("Error:")
-            || output.contains("致命错误")
-            || output.contains("fatal error")
-    }
-
-    fn infer_build_like_command(tool_name: &str, output: &str) -> bool {
-        matches!(tool_name, "run_command" | "cmake" | "make")
-            || output.contains("make:")
-            || output.contains("g++")
-            || output.contains("gcc")
-            || output.contains("cmake")
-    }
-
-    fn build_output_has_compiler_errors(output: &str) -> bool {
-        for line in output.lines() {
-            let line_lower = line.to_lowercase();
-            if line_lower.contains("error:")
-                && !line_lower.contains("warning:")
-                && !line_lower.contains("note:")
-                && !line_lower.contains("0 errors")
-                && !line_lower.contains("no errors")
-            {
-                return true;
-            }
-        }
-        false
+        exec_check::check_execution_success(tool_name, output)
     }
 }
 
@@ -657,3 +610,6 @@ fn resolve_path(path: &str, working_dir: &std::path::Path) -> std::path::PathBuf
         working_dir.join(p)
     }
 }
+
+#[path = "tool_executor_exec_check.rs"]
+mod exec_check;
