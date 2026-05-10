@@ -58,6 +58,7 @@ struct FinalizeTailScalars {
     staged_plan_skip_ensemble_on_casual_prompt: bool,
     staged_plan_two_phase_nl_display: bool,
     staged_plan_intent_gate_advisory_bypass: bool,
+    staged_plan_baseline_mode: StagedPlanBaselineMode,
     sync_default_tool_sandbox_mode: types::SyncDefaultToolSandboxMode,
     sync_default_tool_sandbox_docker_image: String,
     sync_default_tool_sandbox_docker_network: String,
@@ -329,6 +330,7 @@ struct TailStagedSandboxWebScalars {
     staged_plan_skip_ensemble_on_casual_prompt: bool,
     staged_plan_two_phase_nl_display: bool,
     staged_plan_intent_gate_advisory_bypass: bool,
+    staged_plan_baseline_mode: StagedPlanBaselineMode,
     sync_default_tool_sandbox_mode: types::SyncDefaultToolSandboxMode,
     sync_default_tool_sandbox_docker_image: String,
     sync_default_tool_sandbox_docker_network: String,
@@ -364,6 +366,10 @@ fn derive_tail_staged_sandbox_web_scalars(
     let staged_plan_two_phase_nl_display = b.staged_planning.staged_plan_two_phase_nl_display.unwrap_or(false);
     let staged_plan_intent_gate_advisory_bypass =
         b.staged_planning.staged_plan_intent_gate_advisory_bypass.unwrap_or(false);
+    let staged_plan_baseline_mode = match b.staged_planning.staged_plan_baseline_mode_str.as_deref() {
+        Some(s) => StagedPlanBaselineMode::parse(s)?,
+        None => StagedPlanBaselineMode::default(),
+    };
     let sync_default_tool_sandbox_mode = match b.sync_tool_sandbox.sync_default_tool_sandbox_mode_str.as_deref() {
         Some(s) => types::SyncDefaultToolSandboxMode::parse(s)?,
         None => types::SyncDefaultToolSandboxMode::default(),
@@ -418,6 +424,7 @@ fn derive_tail_staged_sandbox_web_scalars(
         staged_plan_skip_ensemble_on_casual_prompt,
         staged_plan_two_phase_nl_display,
         staged_plan_intent_gate_advisory_bypass,
+        staged_plan_baseline_mode,
         sync_default_tool_sandbox_mode,
         sync_default_tool_sandbox_docker_image,
         sync_default_tool_sandbox_docker_network,
@@ -558,9 +565,19 @@ fn derive_tail_storage_inject_net_scalars(
     })
 }
 
-fn tail_cursor_rules_and_skills_fields(
-    b: &ConfigBuilder,
-) -> (bool, String, bool, u64, bool, String, u64, usize) {
+#[allow(clippy::struct_excessive_bools)]
+struct TailCursorSkillsPack {
+    cursor_rules_enabled: bool,
+    cursor_rules_dir: String,
+    cursor_rules_include_agents_md: bool,
+    cursor_rules_max_chars: u64,
+    skills_enabled: bool,
+    skills_dir: String,
+    skills_max_chars: u64,
+    skills_top_k: usize,
+}
+
+fn tail_cursor_rules_and_skills_fields(b: &ConfigBuilder) -> TailCursorSkillsPack {
     let cursor_rules_enabled = b.cursor_rules.cursor_rules_enabled.unwrap_or(true);
     let cursor_rules_dir = b
         .cursor_rules.cursor_rules_dir
@@ -578,7 +595,7 @@ fn tail_cursor_rules_and_skills_fields(
         .unwrap_or_else(|| ".crabmate/skills".to_string());
     let skills_max_chars = b.skills.skills_max_chars.unwrap_or(32_000).clamp(1024, 1_000_000);
     let skills_top_k = b.skills.skills_top_k.unwrap_or(4).clamp(1, 64) as usize;
-    (
+    TailCursorSkillsPack {
         cursor_rules_enabled,
         cursor_rules_dir,
         cursor_rules_include_agents_md,
@@ -587,20 +604,17 @@ fn tail_cursor_rules_and_skills_fields(
         skills_dir,
         skills_max_chars,
         skills_top_k,
-    )
+    }
 }
 
-fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTailScalars, String> {
-    let FinalizeAfterRoles {
-        ref b,
-        command_timeout_secs,
-        max_message_history,
-        ref system_prompt_search_bases,
-        ref run_command_working_dir,
-        ..
-    } = *mid;
-
-    let (
+fn assemble_finalize_tail_scalars(
+    pack: TailCursorSkillsPack,
+    ptt: TailPlanToolThinkingScalars,
+    cqs: TailContextQueuesSessionScalars,
+    ssw: TailStagedSandboxWebScalars,
+    sin: TailStorageInjectNetScalars,
+) -> FinalizeTailScalars {
+    let TailCursorSkillsPack {
         cursor_rules_enabled,
         cursor_rules_dir,
         cursor_rules_include_agents_md,
@@ -609,17 +623,7 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
         skills_dir,
         skills_max_chars,
         skills_top_k,
-    ) = tail_cursor_rules_and_skills_fields(b);
-
-    let ptt = derive_tail_plan_tool_thinking_scalars(
-        b,
-        system_prompt_search_bases,
-        run_command_working_dir.as_path(),
-    )?;
-    let cqs = derive_tail_context_queues_session_scalars(b, max_message_history);
-    let ssw = derive_tail_staged_sandbox_web_scalars(b)?;
-    let sin = derive_tail_storage_inject_net_scalars(b, command_timeout_secs)?;
-
+    } = pack;
     let TailPlanToolThinkingScalars {
         final_plan_requirement,
         plan_rewrite_max_attempts,
@@ -641,7 +645,6 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
         thinking_avoid_echo_system_prompt,
         thinking_avoid_echo_appendix,
     } = ptt;
-
     let TailContextQueuesSessionScalars {
         context_char_budget,
         context_min_messages_after_system,
@@ -662,7 +665,6 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
         session_workspace_changelist_enabled,
         session_workspace_changelist_max_chars,
     } = cqs;
-
     let TailStagedSandboxWebScalars {
         staged_plan_execution,
         staged_plan_phase_instruction,
@@ -676,6 +678,7 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
         staged_plan_skip_ensemble_on_casual_prompt,
         staged_plan_two_phase_nl_display,
         staged_plan_intent_gate_advisory_bypass,
+        staged_plan_baseline_mode,
         sync_default_tool_sandbox_mode,
         sync_default_tool_sandbox_docker_image,
         sync_default_tool_sandbox_docker_network,
@@ -687,7 +690,6 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
         web_audit_trust_x_forwarded_for,
         allow_insecure_no_auth_for_non_loopback,
     } = ssw;
-
     let TailStorageInjectNetScalars {
         conversation_store_sqlite_path,
         agent_memory_file_enabled,
@@ -716,7 +718,7 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
         http_fetch_max_response_bytes,
     } = sin;
 
-    Ok(FinalizeTailScalars {
+    FinalizeTailScalars {
         cursor_rules_enabled,
         cursor_rules_dir,
         cursor_rules_include_agents_md,
@@ -774,6 +776,7 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
         staged_plan_skip_ensemble_on_casual_prompt,
         staged_plan_two_phase_nl_display,
         staged_plan_intent_gate_advisory_bypass,
+        staged_plan_baseline_mode,
         sync_default_tool_sandbox_mode,
         sync_default_tool_sandbox_docker_image,
         sync_default_tool_sandbox_docker_network,
@@ -809,6 +812,28 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
         http_fetch_allowed_prefixes,
         http_fetch_timeout_secs,
         http_fetch_max_response_bytes,
-    })
+    }
+}
+
+fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTailScalars, String> {
+    let FinalizeAfterRoles {
+        ref b,
+        command_timeout_secs,
+        max_message_history,
+        ref system_prompt_search_bases,
+        ref run_command_working_dir,
+        ..
+    } = *mid;
+
+    let pack = tail_cursor_rules_and_skills_fields(b);
+    let ptt = derive_tail_plan_tool_thinking_scalars(
+        b,
+        system_prompt_search_bases,
+        run_command_working_dir.as_path(),
+    )?;
+    let cqs = derive_tail_context_queues_session_scalars(b, max_message_history);
+    let ssw = derive_tail_staged_sandbox_web_scalars(b)?;
+    let sin = derive_tail_storage_inject_net_scalars(b, command_timeout_secs)?;
+    Ok(assemble_finalize_tail_scalars(pack, ptt, cqs, ssw, sin))
 }
 

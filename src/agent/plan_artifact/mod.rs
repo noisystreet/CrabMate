@@ -13,7 +13,7 @@ pub use types::{
 pub(crate) use types::{
     STAGED_PLAN_INVALID_RUN_AGENT_TURN_ERROR_PREFIX, agent_reply_plan_v1_to_json_string,
     is_staged_plan_invalid_run_agent_turn_error, merge_staged_plan_steps_after_step_failure,
-    plan_artifact_error_log_summary,
+    plan_artifact_error_log_summary, validate_staged_patch_merged_strict_baseline_ids,
 };
 
 /// 仅测试与其它 `#[cfg(test)]` 模块引用；避免在非 test 的 lib 目标上产生未使用重导出告警。
@@ -126,6 +126,38 @@ mod tests {
         assert_eq!(merged[0].id, "s0");
         assert_eq!(merged[1].id, "s1b");
         assert_eq!(merged[2].id, "s2b");
+    }
+
+    #[test]
+    fn validate_staged_patch_merged_strict_baseline_ids_ok_and_mismatch() {
+        let baseline = vec![step_v1("a", "1"), step_v1("b", "2"), step_v1("c", "3")];
+        let patch = AgentReplyPlanV1 {
+            plan_type: "agent_reply_plan".into(),
+            version: 1,
+            steps: vec![step_v1("b2", "retry")],
+            no_task: false,
+        };
+        let merged = merge_staged_plan_steps_after_step_failure(&baseline, &patch, 1).unwrap();
+        validate_staged_patch_merged_strict_baseline_ids(&baseline, &merged, 1).unwrap();
+
+        let merged_corrupt_prefix = vec![step_v1("a_wrong", "1"), step_v1("x", "patch")];
+        assert!(
+            validate_staged_patch_merged_strict_baseline_ids(&baseline, &merged_corrupt_prefix, 1)
+                .is_err()
+        );
+    }
+
+    fn step_v1(id: &str, desc: &str) -> PlanStepV1 {
+        PlanStepV1 {
+            id: id.into(),
+            description: desc.into(),
+            workflow_node_id: None,
+            executor_kind: None,
+            step_kind: None,
+            acceptance: None,
+            max_step_retries: None,
+            transitions: None,
+        }
     }
 
     #[test]

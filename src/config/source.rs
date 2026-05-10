@@ -205,6 +205,8 @@ pub(super) struct AgentSection {
     pub(super) staged_plan_two_phase_nl_display: Option<bool>,
     /// 咨询类 **`Execute`** 是否绕过分阶段意图门控；默认 **`false`**（仍走滚动分阶段）。
     pub(super) staged_plan_intent_gate_advisory_bypass: Option<bool>,
+    /// `immutable_goal_only` | `goal_plus_baseline_plan` | `strict_baseline_steps`；`CM_STAGED_PLAN_BASELINE_MODE`
+    pub(super) staged_plan_baseline_mode: Option<String>,
     /// `none` | `docker`；`CM_SYNC_DEFAULT_TOOL_SANDBOX_MODE`
     pub(super) sync_default_tool_sandbox_mode: Option<String>,
     /// Docker 沙盒镜像。`CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE`

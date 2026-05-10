@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 
 use crate::agent::plan_artifact::{self, AgentReplyPlanV1, PlanStepV1};
 use crate::config::AgentConfig;
+use crate::config::StagedPlanBaselineMode;
 use crate::types::{
     Message, Tool, is_first_turn_workspace_context_injection, is_long_term_memory_injection,
     is_message_excluded_from_llm_context_except_memory, is_workspace_changelist_injection,
@@ -80,6 +81,51 @@ pub(crate) fn staged_rolling_immutable_step_user_prefix(goal: &str) -> String {
         "【不变层·本轮用户总目标】（本步工具与终答须对齐，勿偏题）\n{}\n\n",
         goal.trim()
     )
+}
+
+const STAGED_BASELINE_PLAN_MD_MAX_CHARS: usize = 6000;
+
+/// 首轮定稿计划的紧凑 Markdown，供无工具规划 **system** 锚定（控制长度）。
+pub(crate) fn format_baseline_plan_v1_compact_md(plan: &AgentReplyPlanV1) -> String {
+    let mut s = String::from("### 首轮定稿计划（蓝图快照）\n");
+    for (i, st) in plan.steps.iter().enumerate() {
+        let desc_short: String = st.description.trim().chars().take(220).collect();
+        s.push_str(&format!("{}. `{}` — {}\n", i + 1, st.id.trim(), desc_short));
+    }
+    if s.len() > STAGED_BASELINE_PLAN_MD_MAX_CHARS {
+        s.truncate(STAGED_BASELINE_PLAN_MD_MAX_CHARS);
+        s.push_str("\n…（截断）\n");
+    }
+    s
+}
+
+/// 滚动重规划 / 补丁规划轮：在 **system** 末尾附加冻结蓝图与自检约束（[`StagedPlanBaselineMode::ImmutableGoalOnly`] 为空串）。
+pub(crate) fn staged_baseline_plan_planner_system_appendix(
+    baseline: &AgentReplyPlanV1,
+    mode: StagedPlanBaselineMode,
+) -> String {
+    match mode {
+        StagedPlanBaselineMode::ImmutableGoalOnly => String::new(),
+        StagedPlanBaselineMode::GoalPlusBaselinePlan
+        | StagedPlanBaselineMode::StrictBaselineSteps => {
+            let md = format_baseline_plan_v1_compact_md(baseline);
+            let strict_note = if mode == StagedPlanBaselineMode::StrictBaselineSteps {
+                "\n### 严格模式（`strict_baseline_steps`）\n\
+                 - **`patch_planner` 合并结果**：在「尚未被补丁替换的前缀」上，每一步的 `id` 必须与上述蓝图中**同一下标**的 `id` 完全一致。\n"
+            } else {
+                ""
+            };
+            format!(
+                "\n\n### 蓝图锚点（服务端冻结·须在后续规划中自检）\n\
+                 下文为首轮进入分步执行前定稿的 `agent_reply_plan` v1 摘要。**不得**用新话题替代用户不变层总目标；若须调整步骤，请在正文中**简要说明**相对该蓝图保留、合并或替换哪些意图。\n\n\
+                 {md}\
+                 {strict_note}\
+                 ### 硬约束\n\
+                 - 仍须遵守上文「不变层」用户总目标与工具安全边界。\n\
+                 - 若新信息与蓝图或总目标冲突：优先请求澄清或收敛，**勿擅自改题**。\n"
+            )
+        }
+    }
 }
 
 /// 启发式：是否像闲聊/极短输入，适合跳过逻辑多规划员（ensemble）以省 API。

@@ -126,6 +126,8 @@ pub(crate) struct TurnPlannerHints {
     pub(crate) step_executor_constraint: Option<PlanStepExecutorKind>,
     /// 分阶段滚动视界：时间序上**第一条**合格 user 正文（跳过注入类 user）；仅首次写入。
     pub(crate) staged_immutable_user_goal: Option<String>,
+    /// 首轮进入分步循环前定稿的 `agent_reply_plan` v1（仅 [`crate::config::StagedPlanBaselineMode`] 非 `immutable_goal_only` 时写入一次）。
+    pub(crate) staged_baseline_plan: Option<crate::agent::plan_artifact::AgentReplyPlanV1>,
 }
 
 /// 单 Agent [`super::outer_loop::run_agent_outer_loop`] 内每次 **P** 调用对应的模型端点角色。

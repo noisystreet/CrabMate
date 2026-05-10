@@ -159,6 +159,22 @@ where
         failed_step_zero_based,
     ) {
         Ok(merged) => {
+            if p.ctx.core.cfg.staged_planning.staged_plan_baseline_mode
+                == crate::config::StagedPlanBaselineMode::StrictBaselineSteps
+                && let Some(ref baseline) = p.turn.turn_planner_hints.staged_baseline_plan
+                && let Err(e) = plan_artifact::validate_staged_patch_merged_strict_baseline_ids(
+                    &baseline.steps,
+                    &merged,
+                    failed_step_zero_based,
+                )
+            {
+                warn!(
+                    target: "crabmate",
+                    "staged_plan_patch_strict_baseline_rejected err={}",
+                    plan_artifact::plan_artifact_error_log_summary(&e)
+                );
+                return Ok(None);
+            }
             per_coord.record_staged_plan_patch_planner_round_completed();
             debug!(
                 target: "crabmate",

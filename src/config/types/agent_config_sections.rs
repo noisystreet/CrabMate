@@ -9,7 +9,7 @@ use crate::agent::per_coord::FinalPlanRequirementMode;
 use super::{
     AgentRoleCatalog, LlmHttpAuthMode, LongTermMemoryScopeMode, LongTermMemoryVectorBackend,
     PlannerExecutorMode, SandboxDockerContainerUser, ScheduledAgentTask, SecretString,
-    StagedPlanFeedbackMode, SyncDefaultToolSandboxMode, WebSearchProvider,
+    StagedPlanBaselineMode, StagedPlanFeedbackMode, SyncDefaultToolSandboxMode, WebSearchProvider,
 };
 
 /// LLM 网关连接与认证。
@@ -213,6 +213,8 @@ pub struct StagedPlanningConfig {
     pub staged_plan_two_phase_nl_display: bool,
     /// 为 **`true`** 时，非分层下 `staged_plan_intent_gate` 对命中架构/咨询启发式的 **`Execute`** 任务**绕过分阶段**；**`false`**（默认）时仍走滚动分阶段。
     pub staged_plan_intent_gate_advisory_bypass: bool,
+    /// 首轮定稿计划是否作为后续滚动重规划的蓝图锚点（见 [`StagedPlanBaselineMode`]）。
+    pub staged_plan_baseline_mode: StagedPlanBaselineMode,
 }
 
 #[derive(Debug, Clone)]

@@ -12,7 +12,7 @@ use super::cursor_rules;
 use super::skills;
 use super::types::{
     self, AgentConfig, LongTermMemoryScopeMode, LongTermMemoryVectorBackend, PlannerExecutorMode,
-    ScheduledAgentTask, StagedPlanFeedbackMode, WebSearchProvider,
+    ScheduledAgentTask, StagedPlanBaselineMode, StagedPlanFeedbackMode, WebSearchProvider,
 };
 use super::validate;
 use super::workspace_roots;

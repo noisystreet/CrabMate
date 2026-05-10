@@ -224,6 +224,33 @@ pub(crate) fn agent_reply_plan_v1_to_json_string(
     serde_json::to_string(plan)
 }
 
+/// `strict_baseline_steps`：`patch_planner` 合并结果在 `[0, failed_step_index)` 上与冻结蓝图逐步 `id` 一致。
+pub(crate) fn validate_staged_patch_merged_strict_baseline_ids(
+    baseline_steps: &[PlanStepV1],
+    merged: &[PlanStepV1],
+    failed_step_index: usize,
+) -> Result<(), PlanArtifactError> {
+    for i in 0..failed_step_index {
+        let b = baseline_steps
+            .get(i)
+            .ok_or(PlanArtifactError::InvalidStep {
+                index: i,
+                reason: "staged_strict_baseline_prefix_missing",
+            })?;
+        let m = merged.get(i).ok_or(PlanArtifactError::InvalidStep {
+            index: i,
+            reason: "staged_strict_merged_prefix_missing",
+        })?;
+        if b.id.trim() != m.id.trim() {
+            return Err(PlanArtifactError::InvalidStep {
+                index: i,
+                reason: "staged_strict_baseline_step_id_mismatch",
+            });
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn merge_staged_plan_steps_after_step_failure(
     base: &[PlanStepV1],
     patch: &AgentReplyPlanV1,

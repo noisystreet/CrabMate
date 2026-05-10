@@ -185,6 +185,40 @@ impl StagedPlanFeedbackMode {
     }
 }
 
+/// 分阶段滚动重规划时，首轮定稿的 `agent_reply_plan` v1 是否作为「蓝图」锚点参与后续无工具规划（与不变层用户原文并列）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StagedPlanBaselineMode {
+    /// 与历史一致：仅 [`crate::agent::agent_turn::TurnPlannerHints::staged_immutable_user_goal`] 作为硬锚；计划可自由滚动修订。
+    #[default]
+    ImmutableGoalOnly,
+    /// 在进入分步循环时冻结一份首轮定稿计划；后续规划轮在 system 中附带该蓝图摘要，并要求模型说明相对初版的变更意图。
+    GoalPlusBaselinePlan,
+    /// 在 [`Self::GoalPlusBaselinePlan`] 基础上，`patch_planner` 合并后的步骤须与冻结计划在**已完成前缀**上逐步 `id` 一致。
+    StrictBaselineSteps,
+}
+
+impl StagedPlanBaselineMode {
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "immutable_goal_only" | "goal_only" => Ok(Self::ImmutableGoalOnly),
+            "goal_plus_baseline_plan" | "baseline_plan" => Ok(Self::GoalPlusBaselinePlan),
+            "strict_baseline_steps" | "strict" => Ok(Self::StrictBaselineSteps),
+            _ => Err(format!(
+                "未知的 staged_plan_baseline_mode: {:?}（支持 immutable_goal_only、goal_plus_baseline_plan、strict_baseline_steps）",
+                s.trim()
+            )),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ImmutableGoalOnly => "immutable_goal_only",
+            Self::GoalPlusBaselinePlan => "goal_plus_baseline_plan",
+            Self::StrictBaselineSteps => "strict_baseline_steps",
+        }
+    }
+}
+
 /// 对 OpenAI 兼容 **`POST …/chat/completions`**（及同基址 **`GET …/models`**）的 HTTP 鉴权方式。
 ///
 /// 本地 **Ollama** 等默认无需密钥时可设为 [`Self::None`]，进程可不设 **`API_KEY`** 且不发送 `Authorization`。

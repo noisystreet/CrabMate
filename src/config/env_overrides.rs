@@ -538,6 +538,11 @@ fn env_override_staged_plan_execution_flags(b: &mut ConfigBuilder) {
 }
 
 fn apply_env_staged_planning_overrides_part_8(b: &mut ConfigBuilder) {
+    apply_env_staged_planning_overrides_part_8a(b);
+    apply_env_staged_planning_overrides_part_8b(b);
+}
+
+fn apply_env_staged_planning_overrides_part_8a(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_STAGED_PLAN_PHASE_INSTRUCTION") {
         b.staged_planning.staged_plan_phase_instruction = Some(v);
     }
@@ -573,6 +578,9 @@ fn apply_env_staged_planning_overrides_part_8(b: &mut ConfigBuilder) {
     {
         b.staged_planning.staged_plan_ensemble_count = Some(n);
     }
+}
+
+fn apply_env_staged_planning_overrides_part_8b(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_STAGED_PLAN_SKIP_ENSEMBLE_ON_CASUAL_PROMPT")
         && let Some(val) = parse_bool_like(&v)
     {
@@ -582,6 +590,12 @@ fn apply_env_staged_planning_overrides_part_8(b: &mut ConfigBuilder) {
         && let Some(val) = parse_bool_like(&v)
     {
         b.staged_planning.staged_plan_two_phase_nl_display = Some(val);
+    }
+    if let Ok(s) = std::env::var("CM_STAGED_PLAN_BASELINE_MODE") {
+        let s = s.trim().to_string();
+        if !s.is_empty() {
+            b.staged_planning.staged_plan_baseline_mode_str = Some(s);
+        }
     }
 }
 

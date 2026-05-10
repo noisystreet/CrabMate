@@ -84,6 +84,8 @@ struct StatusResponse {
     staged_plan_ensemble_count: u8,
     /// 寒暄/极短用户输入时是否跳过逻辑多规划员（默认 true）。
     staged_plan_skip_ensemble_on_casual_prompt: bool,
+    /// 首轮定稿计划蓝图模式：`immutable_goal_only` | `goal_plus_baseline_plan` | `strict_baseline_steps`。
+    staged_plan_baseline_mode: String,
     /// SyncDefault 工具沙盒：`none` | `docker`。
     sync_default_tool_sandbox_mode: String,
     /// `docker` 模式下的镜像名（可能为空表示未启用或未配置）。
@@ -207,6 +209,11 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         staged_plan_skip_ensemble_on_casual_prompt: cfg
             .staged_planning
             .staged_plan_skip_ensemble_on_casual_prompt,
+        staged_plan_baseline_mode: cfg
+            .staged_planning
+            .staged_plan_baseline_mode
+            .as_str()
+            .to_string(),
         sync_default_tool_sandbox_mode: cfg
             .sync_tool_sandbox
             .sync_default_tool_sandbox_mode

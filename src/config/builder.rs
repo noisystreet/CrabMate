@@ -337,6 +337,10 @@ impl ConfigBuilder {
         sp.staged_plan_intent_gate_advisory_bypass = agent
             .staged_plan_intent_gate_advisory_bypass
             .or(sp.staged_plan_intent_gate_advisory_bypass);
+        override_opt_string_non_empty(
+            &mut sp.staged_plan_baseline_mode_str,
+            agent.staged_plan_baseline_mode.clone(),
+        );
     }
 
     /// 同步工具沙盒、Web API 审计与会话持久化路径合并。

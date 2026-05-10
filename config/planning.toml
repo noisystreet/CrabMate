@@ -28,6 +28,9 @@ staged_plan_two_phase_nl_display = false   # CM_STAGED_PLAN_TWO_PHASE_NL_DISPLAY
 # 为 true 时：架构/咨询类 Execute 命中启发式则绕过分阶段、走单 Agent 外循环；默认 false 仍走滚动分阶段。
 staged_plan_intent_gate_advisory_bypass = false
 
+# 首轮定稿 agent_reply_plan 是否作为后续滚动/补丁规划的蓝图锚点：immutable_goal_only（默认）| goal_plus_baseline_plan | strict_baseline_steps；CM_STAGED_PLAN_BASELINE_MODE
+staged_plan_baseline_mode = "immutable_goal_only"
+
 # 分层模式意图管线（L0 + L1 规则 + L2 无工具 LLM，默认开启；见 CONFIGURATION/DEVELOPMENT）
 # intent_l2_enabled = true
 # intent_l2_min_confidence = 0.7

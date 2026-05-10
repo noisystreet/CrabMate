@@ -151,6 +151,14 @@ pub(super) async fn prepare_staged_planner_no_tools_request(
     if let Some(app) = immutable_appendix {
         plan_system.push_str(&app);
     }
+    let baseline_mode = p.ctx.core.cfg.staged_planning.staged_plan_baseline_mode;
+    if baseline_mode != crate::config::StagedPlanBaselineMode::ImmutableGoalOnly
+        && let Some(ref baseline) = p.turn.turn_planner_hints.staged_baseline_plan
+    {
+        plan_system.push_str(
+            &plan_optimizer::staged_baseline_plan_planner_system_appendix(baseline, baseline_mode),
+        );
+    }
     let preserve_kimi = crate::llm::llm_vendor_adapter(p.ctx.core.cfg.as_ref())
         .preserve_assistant_tool_call_reasoning(p.ctx.core.cfg.as_ref());
     let preserve_deepseek =
@@ -509,6 +517,19 @@ where
     fp_phase = next_fp;
 
     debug_staged_full_pipeline_transition(fp_phase, None);
+
+    let baseline_mode = p.ctx.core.cfg.staged_planning.staged_plan_baseline_mode;
+    if baseline_mode != crate::config::StagedPlanBaselineMode::ImmutableGoalOnly
+        && p.turn.turn_planner_hints.staged_baseline_plan.is_none()
+    {
+        p.turn.turn_planner_hints.staged_baseline_plan = Some(plan.clone());
+        tracing::debug!(
+            target: "crabmate::staged",
+            staged_baseline_mode = ?baseline_mode,
+            baseline_steps = plan.steps.len(),
+            "staged: frozen baseline agent_reply_plan v1 before steps loop"
+        );
+    }
 
     let plan_id = next_staged_plan_id();
     let plan_steps = plan.steps;

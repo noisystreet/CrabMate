@@ -34,11 +34,11 @@ pub use types::{
     LlmHttpAuthMode, LlmHttpRetryConfig, LlmSamplingConfig, LlmVendorFlagsConfig,
     LongTermMemoryConfig, LongTermMemoryScopeMode, LongTermMemoryVectorBackend, McpClientConfig,
     PerPlanPolicyConfig, PlannerExecutorMode, RolesPromptsConfig, ScheduledAgentTask,
-    SessionUiConfig, SessionWorkspaceChangelistConfig, SkillsConfigSection, StagedPlanFeedbackMode,
-    StagedPlanningConfig, SyncDefaultToolSandboxMode, SyncToolSandboxConfig, ThinkingEchoConfig,
-    ToolCallExplainConfig, ToolRegistryPolicyConfig, ToolTranscriptConfig, TurnBudgetConfig,
-    WeatherToolConfig, WebApiConfig, WebSearchConfigSection, WebSearchProvider,
-    WorkspaceRootsConfig,
+    SessionUiConfig, SessionWorkspaceChangelistConfig, SkillsConfigSection, StagedPlanBaselineMode,
+    StagedPlanFeedbackMode, StagedPlanningConfig, SyncDefaultToolSandboxMode,
+    SyncToolSandboxConfig, ThinkingEchoConfig, ToolCallExplainConfig, ToolRegistryPolicyConfig,
+    ToolTranscriptConfig, TurnBudgetConfig, WeatherToolConfig, WebApiConfig,
+    WebSearchConfigSection, WebSearchProvider, WorkspaceRootsConfig,
 };
 
 /// 进程内共享的 [`AgentConfig`]（`serve` / `repl` / `chat` / `bench`）；热重载时 `write` 更新，回合开始时 `read`+`clone` 得快照传入 `run_agent_turn`。

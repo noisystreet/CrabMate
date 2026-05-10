@@ -154,6 +154,7 @@ sub_agent_review_readonly_deny_tools = ["risky_readonly_tool"]
 # staged_plan_skip_ensemble_on_casual_prompt = true   # 寒暄/极短用户输入时跳过 ensemble；false=不跳过；CM_STAGED_PLAN_SKIP_ENSEMBLE_ON_CASUAL_PROMPT
 # staged_plan_two_phase_nl_display = false   # true：JSON 定稿后不向用户流式输出，再追加一轮 NL；桥接 user 在源码中标明「非用户提问」；CM_STAGED_PLAN_TWO_PHASE_NL_DISPLAY
 # staged_plan_intent_gate_advisory_bypass = false   # true：咨询类 Execute 命中启发式时绕过分阶段；默认 false
+# staged_plan_baseline_mode = "immutable_goal_only"   # immutable_goal_only | goal_plus_baseline_plan | strict_baseline_steps；CM_STAGED_PLAN_BASELINE_MODE
 # Docker 工具沙盒：嵌入默认注释示例见 config/sandbox.toml；完整说明见 docs/配置说明.md「SyncDefault 工具 Docker 沙盒」
 # sync_default_tool_sandbox_mode = "none"   # none | docker；CM_SYNC_DEFAULT_TOOL_SANDBOX_MODE
 # sync_default_tool_sandbox_docker_image = ""   # docker 模式必填：自建镜像名；CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE
