@@ -69,7 +69,7 @@ Runtime **`AgentConfig`** merges TOML shards / environment variables and is vali
 
 ### Observability (summary)
 
-**`observability`**: tracing setup; Web jobs may use **`TracingChatTurn`** (**`chat_turn`** span: **`job_id`**, **`conversation_id`**, **`outer_loop_iteration`**, short **`tool_call_id`** labels for tools). JSON logs: **`CM_LOG_JSON`**.
+**`observability`**: tracing setup; default log timestamps use local timezone (RFC3339). Web jobs may use **`TracingChatTurn`** (**`chat_turn`** span: **`job_id`**, **`conversation_id`**, **`outer_loop_iteration`**, short **`tool_call_id`** labels for tools). JSON logs: **`CM_LOG_JSON`**.
 
 ---
 

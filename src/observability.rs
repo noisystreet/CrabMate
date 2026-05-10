@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use tracing::Span;
 use tracing_log::LogTracer;
 use tracing_subscriber::EnvFilter;
-use tracing_subscriber::fmt::time::SystemTime;
+use tracing_subscriber::fmt::time::LocalTime;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
@@ -99,6 +99,8 @@ fn default_env_filter(quiet_cli_default: bool, log_file: Option<&Path>) -> Strin
 /// 与历史 `init_logging` 行为对齐：**`RUST_LOG`** 优先；未设置时按 `quiet_cli_default` / `--log` 给默认过滤器；默认均带 **`tokei=error`**。
 ///
 /// 设 **`CM_LOG_JSON=1`**（或 **`true`** / **`yes`** / **`on`**）时，日志行为 **JSON 行**（便于 `jq` / 日志平台）；否则为紧凑人类可读格式（含 span 字段上下文）。
+///
+/// 行首时间戳默认**本机本地时区**（`tracing_subscriber::fmt::time::LocalTime::rfc_3339`，RFC3339 且带与 UTC 的偏移），由系统 `TZ` / `/etc/localtime` 决定。
 pub fn init_tracing_subscriber(log_file: Option<&Path>, quiet_cli_default: bool) -> io::Result<()> {
     let result = LOGGING_INIT.get_or_init(|| {
         let filter_str = default_env_filter(quiet_cli_default, log_file);
@@ -125,6 +127,7 @@ pub fn init_tracing_subscriber(log_file: Option<&Path>, quiet_cli_default: bool)
                             tracing_subscriber::fmt::layer()
                                 .json()
                                 .with_target(true)
+                                .with_timer(LocalTime::rfc_3339())
                                 .with_writer(std::io::stderr),
                         )
                         .init();
@@ -134,7 +137,7 @@ pub fn init_tracing_subscriber(log_file: Option<&Path>, quiet_cli_default: bool)
                         .with(
                             tracing_subscriber::fmt::layer()
                                 .with_target(true)
-                                .with_timer(SystemTime)
+                                .with_timer(LocalTime::rfc_3339())
                                 .with_ansi(ansi_stderr)
                                 .compact()
                                 .with_writer(std::io::stderr),
@@ -157,6 +160,7 @@ pub fn init_tracing_subscriber(log_file: Option<&Path>, quiet_cli_default: bool)
                             tracing_subscriber::fmt::layer()
                                 .json()
                                 .with_target(true)
+                                .with_timer(LocalTime::rfc_3339())
                                 .with_writer(move || StderrFilePipeWriter(Arc::clone(&wj))),
                         )
                         .init();
@@ -167,7 +171,7 @@ pub fn init_tracing_subscriber(log_file: Option<&Path>, quiet_cli_default: bool)
                         .with(
                             tracing_subscriber::fmt::layer()
                                 .with_target(true)
-                                .with_timer(SystemTime)
+                                .with_timer(LocalTime::rfc_3339())
                                 .with_ansi(false)
                                 .compact()
                                 .with_writer(move || StderrFilePipeWriter(Arc::clone(&wc))),
