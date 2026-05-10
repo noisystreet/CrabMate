@@ -298,18 +298,26 @@ fn run_exec_subgoal_excluded_check_only(d: &str) -> bool {
         && !d.contains("运行")
 }
 
-fn run_exec_subgoal_positive_signals(d: &str) -> bool {
-    let has_run_verb = d.contains("运行")
+fn run_exec_subgoal_positive_run_verbs(d: &str) -> bool {
+    d.contains("运行")
         || d.contains("并运行")
         || d.contains("跑")
         || d.contains("run the")
-        || d.contains("run ");
-    let has_target = d.contains("可执行")
+        || d.contains("run ")
+}
+
+fn run_exec_subgoal_positive_targets(d: &str) -> bool {
+    d.contains("可执行")
         || d.contains("executable")
         || d.contains("可执行文件")
         || (d.contains("编译")
             && d.contains("生成")
-            && (d.contains("运行") || d.contains("执行") || d.contains("验证")));
+            && (d.contains("运行") || d.contains("执行") || d.contains("验证")))
+}
+
+fn run_exec_subgoal_positive_signals(d: &str) -> bool {
+    let has_run_verb = run_exec_subgoal_positive_run_verbs(d);
+    let has_target = run_exec_subgoal_positive_targets(d);
     (has_run_verb && (has_target || d.contains("产物")))
         || (d.contains("验证") && d.contains("输出") && (d.contains("运行") || d.contains("程序")))
         || (d.contains("验证") && d.contains("hello"))

@@ -147,40 +147,12 @@ where
                 push_feedback_user,
             } => {
                 phase = next_phase;
-                if let Some(u) = push_feedback_user {
-                    if let Some(ref snap) = snapshot {
-                        if let Err(e) = snap.restore() {
-                            tracing::warn!(
-                                target: "crabmate::staged",
-                                staged_fsm = "rolling_horizon",
-                                rolling_horizon_kind = ?kind,
-                                summary = kind.snapshot_rollback_warn_summary(),
-                                error = %e,
-                                sub_phase = "planner",
-                                "workspace snapshot rollback failed"
-                            );
-                        } else {
-                            tracing::info!(
-                                target: "crabmate::staged",
-                                staged_fsm = "rolling_horizon",
-                                rolling_horizon_kind = ?kind,
-                                sub_phase = "planner",
-                                "global replan triggered; workspace snapshot restored"
-                            );
-                        }
+                match push_feedback_user {
+                    Some(u) => {
+                        rolling_horizon_try_restore_snapshot(kind, &snapshot);
+                        p.turn.push_message(u);
                     }
-                    p.turn.push_message(u);
-                } else if matches!(phase, StagedTurnPhase::AfterStepExecutionRound) {
-                    tracing::debug!(
-                        target: "crabmate::staged",
-                        staged_fsm = "rolling_horizon",
-                        rolling_horizon_kind = ?kind,
-                        staged_round = staged_rounds,
-                        staged_turn_phase = ?phase,
-                        outcome = "continue_after_step",
-                        sub_phase = "planner",
-                        "step execution round completed; next no-tools planner round"
-                    );
+                    None => rolling_horizon_debug_after_step_round(kind, staged_rounds, phase),
                 }
                 continue;
             }
@@ -190,6 +162,53 @@ where
             }
             StagedTurnAdvance::Propagate(e) => return Err(e),
         }
+    }
+}
+
+fn rolling_horizon_try_restore_snapshot(
+    kind: StagedRollingHorizonKind,
+    snapshot: &Option<crate::agent::workspace_snapshot::WorkspaceSnapshot>,
+) {
+    let Some(snap) = snapshot else {
+        return;
+    };
+    if let Err(e) = snap.restore() {
+        tracing::warn!(
+            target: "crabmate::staged",
+            staged_fsm = "rolling_horizon",
+            rolling_horizon_kind = ?kind,
+            summary = kind.snapshot_rollback_warn_summary(),
+            error = %e,
+            sub_phase = "planner",
+            "workspace snapshot rollback failed"
+        );
+    } else {
+        tracing::info!(
+            target: "crabmate::staged",
+            staged_fsm = "rolling_horizon",
+            rolling_horizon_kind = ?kind,
+            sub_phase = "planner",
+            "global replan triggered; workspace snapshot restored"
+        );
+    }
+}
+
+fn rolling_horizon_debug_after_step_round(
+    kind: StagedRollingHorizonKind,
+    staged_rounds: usize,
+    phase: StagedTurnPhase,
+) {
+    if matches!(phase, StagedTurnPhase::AfterStepExecutionRound) {
+        tracing::debug!(
+            target: "crabmate::staged",
+            staged_fsm = "rolling_horizon",
+            rolling_horizon_kind = ?kind,
+            staged_round = staged_rounds,
+            staged_turn_phase = ?phase,
+            outcome = "continue_after_step",
+            sub_phase = "planner",
+            "step execution round completed; next no-tools planner round"
+        );
     }
 }
 

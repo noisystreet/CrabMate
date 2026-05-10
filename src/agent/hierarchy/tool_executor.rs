@@ -641,32 +641,23 @@ fn extract_generic_files(
 /// 根据文件扩展名分类
 fn classify_file_by_extension(path: &str) -> ExtractedArtifactKind {
     let path_lower = path.to_lowercase();
-    if path_lower.ends_with(".cpp")
-        || path_lower.ends_with(".c")
-        || path_lower.ends_with(".h")
-        || path_lower.ends_with(".hpp")
-        || path_lower.ends_with(".rs")
-        || path_lower.ends_with(".py")
-        || path_lower.ends_with(".js")
-        || path_lower.ends_with(".ts")
-        || path_lower.ends_with(".java")
-        || path_lower.ends_with(".go")
-    {
-        ExtractedArtifactKind::SourceFile
-    } else if path_lower.ends_with(".o") || path_lower.ends_with(".obj") {
-        ExtractedArtifactKind::ObjectFile
-    } else if path_lower.ends_with(".a") || path_lower.ends_with(".lib") {
-        ExtractedArtifactKind::StaticLibrary
-    } else if path_lower.ends_with(".so")
-        || path_lower.ends_with(".dll")
-        || path_lower.ends_with(".dylib")
-    {
-        ExtractedArtifactKind::DynamicLibrary
-    } else if path_lower.ends_with("/") || !path_lower.contains('.') {
-        // 目录或没有扩展名的可执行文件
-        ExtractedArtifactKind::Executable
-    } else {
-        ExtractedArtifactKind::Other
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    match ext.as_str() {
+        "cpp" | "c" | "h" | "hpp" | "rs" | "py" | "js" | "ts" | "java" | "go" => {
+            ExtractedArtifactKind::SourceFile
+        }
+        "o" | "obj" => ExtractedArtifactKind::ObjectFile,
+        "a" | "lib" => ExtractedArtifactKind::StaticLibrary,
+        "so" | "dll" | "dylib" => ExtractedArtifactKind::DynamicLibrary,
+        "" if path_lower.ends_with('/') || !path_lower.contains('.') => {
+            ExtractedArtifactKind::Executable
+        }
+        _ => ExtractedArtifactKind::Other,
     }
 }
 
