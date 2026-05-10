@@ -29,3 +29,5 @@
 {"id":"medium_confidence_code_change_confirm","task":"帮我改下这个","expect":{"kind":"Execute","primary_intent":"execute.code_change","action":"ConfirmThenExecute","need_clarification":true,"abstain":false}}
 {"id":"high_confidence_tauri_markdown_error","task":"帮我修复 tauri 导出 markdown 报错","expect":{"kind":"Execute","primary_intent":"execute.debug_diagnose","action":"Execute"}}
 {"id":"clarification_short_followup_after_readonly_style_prior","task":"再试一次","ctx":{"in_clarification_flow":true,"recent_user_messages":["请看 src/main.rs 编译失败输出"]},"expect":{"kind":"Execute","primary_intent":"execute.code_change","action":"Execute"}}
+{"id":"qa_frontend_implicit_state_where","task":"当前项目前端代码中哪里隐式状态比较严重？","expect":{"kind":"Ambiguous","primary_intent":"unknown","action":"ClarifyThenExecute","need_clarification":true,"abstain":true}}
+{"id":"meta_recall_last_user_question","task":"我刚才的提问是什么","expect":{"kind":"Qa","primary_intent":"qa.meta","action":"DirectReply"}}

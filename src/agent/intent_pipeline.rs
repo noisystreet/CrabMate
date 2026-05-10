@@ -340,6 +340,19 @@ fn map_primary_intent(task: &str, kind: IntentKind) -> &'static str {
 fn map_qa_primary_intent(task: &str) -> &'static str {
     let n = task.to_lowercase();
     let raw = task.trim();
+    if (raw.contains("我刚才")
+        || raw.contains("我上一条")
+        || raw.contains("上一句")
+        || raw.contains("上一条"))
+        && (raw.contains("什么")
+            || raw.contains("问了")
+            || raw.contains("说的")
+            || raw.contains("提问")
+            || raw.contains("问题")
+            || raw.contains("原文"))
+    {
+        return "qa.meta";
+    }
     if raw.contains("你会") && raw.contains('吗') && !raw.contains("帮我") {
         return "qa.meta";
     }

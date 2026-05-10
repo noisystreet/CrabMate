@@ -111,6 +111,13 @@ async fn outer_loop_prepare_planner_context(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
 ) -> Result<(), RunAgentTurnError> {
+    {
+        let turn = &mut p.turn;
+        crate::meta_dialogue::merge_meta_dialogue_into_intent_gate_hint(
+            &mut turn.turn_planner_hints,
+            turn.messages_buf.as_slice(),
+        );
+    }
     if let Some(hint) = p.turn.take_intent_turn_gate_hint() {
         p.turn.push_message(Message::system_intent_gate_hint(hint));
     }

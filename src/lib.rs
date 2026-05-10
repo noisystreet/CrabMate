@@ -29,6 +29,8 @@ mod llm;
 mod mcp;
 /// 长期记忆、备忘片段、代码语义索引（SQLite + fastembed）。
 mod memory;
+/// 元对话门控补充（如「我刚才问了什么」类追问）。
+mod meta_dialogue;
 mod observability;
 mod process_handles;
 pub use process_handles::ProcessHandles;
@@ -37,6 +39,7 @@ pub use process_handles::ProcessHandles;
 #[cfg(test)]
 pub fn reset_process_tool_globals_for_tests() {
     crate::tools::reset_process_tool_globals_for_tests();
+    crate::turn_replay_dump::reset_turn_replay_globals_for_tests();
 }
 
 mod read_file_turn_cache;
