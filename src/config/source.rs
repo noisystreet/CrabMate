@@ -220,7 +220,7 @@ pub(super) struct AgentSection {
     /// Web 工作区可选根目录；省略或空则仅允许 `run_command_working_dir` 及其子目录
     pub(super) workspace_allowed_roots: Option<Vec<String>>,
     pub(super) web_api_bearer_token: Option<String>,
-    /// `CM_WEB_API_REQUIRE_BEARER`；未在 TOML/环境显式设置时，finalize 默认 **true**（须配 `web_api_bearer_token` 后 `serve` 才启动）；显式 `false` 时允许无密钥启动（仅可信环境）。
+    /// `CM_WEB_API_REQUIRE_BEARER`；未在 TOML/环境显式设置时，finalize 默认 **false**（允许无密钥启动 `serve`）；显式 **`true`** 时须配非空 `web_api_bearer_token` 后 `serve` 才启动。
     pub(super) web_api_require_bearer: Option<bool>,
     pub(super) allow_insecure_no_auth_for_non_loopback: Option<bool>,
     /// `CM_WEB_AUDIT_LOG_WRITE_TOOLS`；默认 true：成功执行的写副作用工具记一行结构化审计日志。

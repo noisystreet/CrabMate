@@ -15,7 +15,7 @@ use tower_http::set_header::SetResponseHeaderLayer;
 const PROTECTED_API_BODY_LIMIT_BYTES: usize = 220 * 1024 * 1024;
 
 /// `web_api_bearer_layer_enabled`：启动时是否对受保护 API 挂 Web API 鉴权中间件（`Authorization: Bearer` / `X-API-Key`；热重载改密钥后须重启 `serve` 才能切换该层）。
-/// 另见 **`AgentConfig::web_api_require_bearer`**：为 true 时 **`lib::run` 的 `serve` 分支**在启动前强制 **`web_api_bearer_token` 非空**，避免无意以匿名方式暴露 `/chat*` 等。
+/// 另见 **`AgentConfig::web_api_require_bearer`**：为 **`true`** 时 **`serve`** 在启动前强制 **`web_api_bearer_token` 非空**；默认 **`false`** 允许先起服务，由非空密钥决定是否挂载 Bearer 中间件。
 pub(crate) fn build_app(
     state: std::sync::Arc<crate::AppState>,
     no_web: bool,

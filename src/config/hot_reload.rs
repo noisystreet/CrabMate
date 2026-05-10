@@ -9,7 +9,7 @@ use super::types::AgentConfig;
 /// - **`conversation_store_sqlite_path`**：**不**热更（会话 SQLite 连接在启动时打开；改路径须重启 `serve`）。
 /// - **`api_base` / `model` / `llm_http_auth_mode`**：从磁盘+环境变量**重新应用**（与 [`load_config`] 一致），**下一轮** LLM 请求起生效；共享 `reqwest::Client` 的连接池可能短暂保留旧主机空闲连接，直至池超时。
 /// - **`scheduled_agent_tasks`**：热更可更新内存中的列表；**cron 注册仅在 `serve` 启动时完成**，改表达式或增减任务需重启进程生效。
-/// - **`web_api_require_bearer`**：热更后字段与 **`web_api_bearer_token`** 一并更新；与「密钥非空」的**启动级**强制组合仅在下次 **`serve`** 启动时校验（中间件是否挂载仍仅由启动时 token 是否非空决定）。
+/// - **`web_api_require_bearer`**：热更后字段与 **`web_api_bearer_token`** 一并更新；**`true`** 时与「非空密钥」的**启动级**强制组合仅在下次 **`serve`** 启动时校验（中间件是否挂载仍仅由启动时 token 是否非空决定）。
 /// - **`system_prompt`**（含 **`system_prompt_file`** 重读）：从 `src` 写入，下一轮起生效。
 /// - **`agent_tool_stats_*`**：热更后影响**下一轮起**附加段内容；已打开会话的 `system` 不会自动改写。
 /// - **MCP**：`mcp_enabled` / `mcp_command` / `mcp_tool_timeout_secs` 会更新；调用方应在提交前 [`crate::mcp::clear_mcp_process_cache`].

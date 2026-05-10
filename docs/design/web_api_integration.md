@@ -41,7 +41,7 @@
 **原则**：
 
 1. **验签、幂等、限流、卡片渲染** 放在桥接层；CrabMate 保持「对话引擎 + 工具 + 工作区策略」。
-2. CrabMate 进程应部署在**可信网络**；`web_api_require_bearer` 与 **`CM_WEB_API_BEARER_TOKEN`** / **`web_api_bearer_token`** 为默认安全基线（见 **`README.md`**、**`docs/配置说明.md`**）。
+2. CrabMate 进程应部署在**可信网络**；对外建议 **`web_api_require_bearer=true`** 并配置 **`CM_WEB_API_BEARER_TOKEN`** / **`web_api_bearer_token`**（嵌入默认 **`web_api_require_bearer=false`**，见 **`README.md`**、**`docs/配置说明.md`**）。
 3. 使用 **`conversation_id`**（及可选 SQLite 会话存储）将同一 IM 线程映射到稳定会话；**`GET /conversation/messages`** 可用于桥接侧恢复或对账。
 
 ---

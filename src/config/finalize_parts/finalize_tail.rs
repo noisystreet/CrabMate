@@ -405,8 +405,8 @@ fn derive_tail_staged_sandbox_web_scalars(
     )?;
     let web_api_bearer_token =
         types::SecretString::new(b.web_api.web_api_bearer_token.clone().unwrap_or_default().into());
-    // 默认 **true**：未显式关闭时 `serve` 须配置非空 `web_api_bearer_token`，避免 HTTP API 匿名可用（P0）。
-    let web_api_require_bearer = b.web_api.web_api_require_bearer.unwrap_or(true);
+    // 默认 **false**：允许无密钥启动 `serve`；生产环境请显式 `web_api_require_bearer = true` 并配置非空密钥。
+    let web_api_require_bearer = b.web_api.web_api_require_bearer.unwrap_or(false);
     let web_audit_log_write_tools = b.web_api.web_audit_log_write_tools.unwrap_or(true);
     let web_audit_trust_x_forwarded_for = b.web_api.web_audit_trust_x_forwarded_for.unwrap_or(false);
     let allow_insecure_no_auth_for_non_loopback =

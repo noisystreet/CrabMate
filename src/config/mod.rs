@@ -99,7 +99,7 @@ mod web_api_require_bearer_defaults_tests {
     }
 
     #[test]
-    fn embedded_default_requires_bearer_without_env_override() {
+    fn embedded_default_does_not_require_bearer_without_env_override() {
         without_cm_web_api_require_bearer_env(|| {
             let dir = tempfile::tempdir().expect("tempdir");
             let path = dir.path().join("minimal.toml");
@@ -113,14 +113,14 @@ model = "deepseek-chat"
             .expect("write");
             let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
             assert!(
-                cfg.web_api.web_api_require_bearer,
-                "embedded default should require Web API bearer secret before serve"
+                !cfg.web_api.web_api_require_bearer,
+                "embedded default should allow serve without forcing non-empty web_api_bearer_token"
             );
         });
     }
 
     #[test]
-    fn explicit_false_allows_opt_out() {
+    fn explicit_true_requires_bearer_secret_at_serve() {
         without_cm_web_api_require_bearer_env(|| {
             let dir = tempfile::tempdir().expect("tempdir");
             let path = dir.path().join("minimal.toml");
@@ -129,12 +129,12 @@ model = "deepseek-chat"
                 r#"[agent]
 api_base = "https://api.deepseek.com/v1"
 model = "deepseek-chat"
-web_api_require_bearer = false
+web_api_require_bearer = true
 "#,
             )
             .expect("write");
             let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
-            assert!(!cfg.web_api.web_api_require_bearer);
+            assert!(cfg.web_api.web_api_require_bearer);
         });
     }
 }
