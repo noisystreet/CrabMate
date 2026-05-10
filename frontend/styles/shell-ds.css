@@ -825,6 +825,8 @@
   background: transparent;
   padding: 6px 4px;
   border-radius: 0;
+  text-align: left;
+  direction: ltr;
 }
 
 .app-shell-ds .composer-input:focus {
@@ -837,6 +839,8 @@
 
 .app-shell-ds .composer-input-stack .composer-input-highlight-inner {
   padding: 6px 4px;
+  text-align: left;
+  direction: ltr;
 }
 
 .app-shell-ds .composer-ws-ref {

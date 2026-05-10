@@ -44,6 +44,7 @@ pub fn ComposerInputStack(
             <textarea
                 class="composer-input composer-input--mirror-overlay"
                 data-testid="chat-composer-input"
+                dir="ltr"
                 node_ref=composer_input_ref
                 on:input=move |ev| {
                     let v = event_target_value(&ev);

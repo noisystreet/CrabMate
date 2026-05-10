@@ -1693,6 +1693,9 @@
   display: block;
   width: 100%;
   min-width: 0;
+  /* 与底层镜像层一致：避免多行在部分引擎下继承错误 bidi/对齐，出现「首行左、续行右」 */
+  text-align: left;
+  direction: ltr;
 }
 
 .composer-input-stack .composer-input-highlight {
@@ -1717,6 +1720,8 @@
   font-size: 13px;
   line-height: 1.45;
   color: var(--text);
+  text-align: left;
+  direction: ltr;
 }
 
 .composer-input--mirror-overlay {
@@ -1747,6 +1752,7 @@
   -webkit-box-decoration-break: clone;
   background: var(--composer-ws-ref-bg);
   box-shadow: var(--composer-ws-ref-box-shadow);
+}
 
 .composer-actions {
   display: flex;
