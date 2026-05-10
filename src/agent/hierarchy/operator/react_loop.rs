@@ -23,6 +23,41 @@ impl super::types::OperatorAgent {
         cache.get(&key).cloned()
     }
 
+    /// 非 `run_command` 的 `cat`/`ls` 实际执行可能改变工作区或观测语义，需丢弃 `cat`/`ls` 缓存。
+    #[inline]
+    pub(super) fn should_invalidate_lightweight_command_cache_after_run(
+        reused_lightweight_result: bool,
+        lightweight_dedupe_key: Option<&str>,
+    ) -> bool {
+        !reused_lightweight_result && lightweight_dedupe_key.is_none()
+    }
+
+    /// 更新或清空 `lightweight_command_cache`（与 [`Self::should_invalidate_lightweight_command_cache_after_run`] 配套）。
+    fn apply_lightweight_run_command_cache_update(
+        cache: &mut std::collections::HashMap<String, ToolExecutionResult>,
+        reused_lightweight_result: bool,
+        dedupe_key: &Option<String>,
+        result: &ToolExecutionResult,
+    ) {
+        if !reused_lightweight_result
+            && result.success
+            && let Some(key) = dedupe_key.as_ref()
+        {
+            cache.insert(key.clone(), result.clone());
+        }
+        if Self::should_invalidate_lightweight_command_cache_after_run(
+            reused_lightweight_result,
+            dedupe_key.as_deref(),
+        ) && !cache.is_empty()
+        {
+            log::debug!(
+                target: "crabmate",
+                "[HIERARCHICAL] Operator: clearing lightweight_command_cache after non-cat/ls tool run"
+            );
+            cache.clear();
+        }
+    }
+
     pub(super) fn lightweight_dedupe_signature_for_run_command(
         tool_name: &str,
         tool_args_json: &str,
@@ -427,14 +462,12 @@ impl super::types::OperatorAgent {
         };
         state.tool_names_chron.push(result.tool_name.clone());
         state.tools_used.insert(result.tool_name.clone());
-        if !reused_lightweight_result
-            && result.success
-            && let Some(key) = dedupe_key.as_ref()
-        {
-            state
-                .lightweight_command_cache
-                .insert(key.clone(), result.clone());
-        }
+        Self::apply_lightweight_run_command_cache_update(
+            &mut state.lightweight_command_cache,
+            reused_lightweight_result,
+            &dedupe_key,
+            &result,
+        );
         if let Some(new_dir) =
             super::inject::detect_working_dir_change(&injected_tool_call, &result)
         {

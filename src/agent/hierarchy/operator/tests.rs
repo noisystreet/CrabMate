@@ -237,6 +237,24 @@ fn test_lightweight_dedupe_signature_for_ls_same_directory() {
 }
 
 #[test]
+fn test_should_invalidate_lightweight_command_cache_after_run() {
+    assert!(
+        !OperatorAgent::should_invalidate_lightweight_command_cache_after_run(
+            true,
+            Some("run_command:cat:x"),
+        )
+    );
+    assert!(
+        !OperatorAgent::should_invalidate_lightweight_command_cache_after_run(
+            false,
+            Some("run_command:ls:."),
+        )
+    );
+    assert!(OperatorAgent::should_invalidate_lightweight_command_cache_after_run(false, None));
+    assert!(!OperatorAgent::should_invalidate_lightweight_command_cache_after_run(true, None));
+}
+
+#[test]
 fn test_lightweight_cache_hit_for_repeated_cat_in_same_subgoal() {
     use crate::agent::hierarchy::tool_executor::ToolExecutionResult;
     use std::collections::HashMap;
