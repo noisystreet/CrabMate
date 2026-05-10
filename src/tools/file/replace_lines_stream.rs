@@ -7,6 +7,10 @@ use std::path::Path;
 use serde_json::Value;
 
 use crate::tools::ToolContext;
+use crate::tools::write_sse_preview::{
+    WORKSPACE_WRITE_DIFF_BUDGET_CHARS, WriteDiffFileState,
+    format_tool_output_with_write_diff_preview,
+};
 use crate::workspace::changelist::record_file_state_after_write;
 
 #[inline]
@@ -187,8 +191,14 @@ pub(super) fn modify_file_replace_lines(
         return e;
     }
 
-    record_file_state_after_write(ctx.workspace_changelist, working_dir, rel_path, original);
-    tool_output_prepend_path(
+    record_file_state_after_write(
+        ctx.workspace_changelist,
+        working_dir,
+        rel_path,
+        original.clone(),
+    );
+    let after = std::fs::read_to_string(target).ok();
+    let body = tool_output_prepend_path(
         display_path,
         format!(
             "已按行替换（行 {}-{}，共删除 {} 行，写入新内容 {} 字节）",
@@ -197,5 +207,15 @@ pub(super) fn modify_file_replace_lines(
             end_line - start_line + 1,
             new_body.len()
         ),
+    );
+    format_tool_output_with_write_diff_preview(
+        "modify_file",
+        body,
+        vec![WriteDiffFileState {
+            rel_path: rel_path.to_string(),
+            before: original,
+            after,
+        }],
+        WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
     )
 }

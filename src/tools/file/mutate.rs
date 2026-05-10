@@ -13,6 +13,10 @@ use crate::tools::ToolContext;
 use crate::tools::tool_param_types::{
     AppendFileArgs, CreateDirArgs, DeleteDirArgs, DeleteFileArgs, SearchReplaceArgs,
 };
+use crate::tools::write_sse_preview::{
+    WORKSPACE_WRITE_DIFF_BUDGET_CHARS, WriteDiffFileState,
+    format_tool_output_with_write_diff_preview,
+};
 use crate::workspace::changelist::record_file_state_after_write;
 
 pub fn delete_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
@@ -46,12 +50,23 @@ pub fn delete_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
     let before = std::fs::read_to_string(&target).ok();
     match std::fs::remove_file(&target) {
         Ok(()) => {
+            let body = format!(
+                "已删除文件：{}",
+                path_for_tool_display(working_dir, &target, Some(&path))
+            );
+            let preview_before = before.clone();
             if let Some(c) = ctx.workspace_changelist {
                 c.record_mutation(&path, before, None);
             }
-            format!(
-                "已删除文件：{}",
-                path_for_tool_display(working_dir, &target, Some(&path))
+            format_tool_output_with_write_diff_preview(
+                "delete_file",
+                body,
+                vec![WriteDiffFileState {
+                    rel_path: path.clone(),
+                    before: preview_before,
+                    after: None,
+                }],
+                WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
             )
         }
         Err(e) => format!("删除文件失败：{}", e),
@@ -169,13 +184,24 @@ pub fn append_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
     };
     match file.write_all(content.as_bytes()) {
         Ok(()) => {
+            let after = std::fs::read_to_string(&target).ok();
             if let Some(c) = ctx.workspace_changelist {
-                c.record_mutation(&path, before, std::fs::read_to_string(&target).ok());
+                c.record_mutation(&path, before.clone(), after.clone());
             }
-            format!(
+            let body = format!(
                 "已追加 {} 字节到 {}",
                 content.len(),
                 path_for_tool_display(working_dir, &target, Some(&path))
+            );
+            format_tool_output_with_write_diff_preview(
+                "append_file",
+                body,
+                vec![WriteDiffFileState {
+                    rel_path: path.clone(),
+                    before,
+                    after,
+                }],
+                WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
             )
         }
         Err(e) => format!("写入失败：{}", e),
@@ -382,11 +408,21 @@ pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>
                 ctx.workspace_changelist,
                 working_dir,
                 &path,
-                Some(before),
+                Some(before.clone()),
             );
-            format!(
+            let body = format!(
                 "已替换 {} 处匹配（\"{}\" → \"{}\"）：{}",
                 count, search, replace, display
+            );
+            format_tool_output_with_write_diff_preview(
+                "search_replace",
+                body,
+                vec![WriteDiffFileState {
+                    rel_path: path,
+                    before: Some(before),
+                    after: Some(new_content),
+                }],
+                WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
             )
         }
         Err(e) => format!("写入文件失败：{}", e),

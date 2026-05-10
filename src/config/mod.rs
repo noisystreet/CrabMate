@@ -143,6 +143,53 @@ web_api_require_bearer = false
 mod llm_reasoning_split_default_tests {
     use super::load_config;
     use std::fs;
+    use std::sync::Mutex;
+
+    /// `load_config` 会读 `CM_LLM_REASONING_SPLIT`；本机/CI 若导出 `0` 会覆盖「省略键时按网关推断」的断言。
+    static CM_LLM_REASONING_SPLIT_LOCK: Mutex<()> = Mutex::new(());
+
+    /// 临时清除 `CM_LLM_REASONING_SPLIT`，避免本机/CI 导出干扰；结束或 panic 后恢复原值。
+    ///
+    /// 使用 `catch_unwind`：断言失败时仍释放 [`Mutex`]，避免毒化导致后续用例 `PoisonError`。
+    fn without_cm_llm_reasoning_split_env<F, R>(f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        let result = {
+            let _guard = CM_LLM_REASONING_SPLIT_LOCK
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let prev = std::env::var("CM_LLM_REASONING_SPLIT").ok();
+            // SAFETY: `remove_var`/`set_var` are unsafe in Rust 2024.
+            unsafe {
+                std::env::remove_var("CM_LLM_REASONING_SPLIT");
+            }
+            struct RestoreEnv(Option<String>);
+            impl Drop for RestoreEnv {
+                fn drop(&mut self) {
+                    unsafe {
+                        match self.0.take() {
+                            Some(v) => std::env::set_var("CM_LLM_REASONING_SPLIT", v),
+                            None => std::env::remove_var("CM_LLM_REASONING_SPLIT"),
+                        }
+                    }
+                }
+            }
+            let _restore = RestoreEnv(prev);
+            let mut f_opt = Some(f);
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let fun = f_opt
+                    .take()
+                    .expect("without_cm_llm_reasoning_split_env closure");
+                fun()
+            }))
+        };
+
+        match result {
+            Ok(v) => v,
+            Err(payload) => std::panic::resume_unwind(payload),
+        }
+    }
 
     #[test]
     fn finalize_respects_omitted_reasoning_split_for_non_minimax() {
@@ -156,42 +203,46 @@ mod llm_reasoning_split_default_tests {
 
     #[test]
     fn minimax_user_toml_without_key_defaults_true() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("agent.toml");
-        fs::write(
-            &path,
-            r#"[agent]
+        without_cm_llm_reasoning_split_env(|| {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("agent.toml");
+            fs::write(
+                &path,
+                r#"[agent]
 api_base = "https://api.minimaxi.com/v1"
 model = "MiniMax-M2.7"
 "#,
-        )
-        .expect("write");
-        let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
-        assert!(
-            cfg.llm_vendor_flags.llm_reasoning_split,
-            "MiniMax 网关未写 llm_reasoning_split 时应默认 true"
-        );
-        assert!(
-            crate::llm::fold_system_into_user_for_config(&cfg),
-            "MiniMax 应自动折叠 system→user"
-        );
+            )
+            .expect("write");
+            let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
+            assert!(
+                cfg.llm_vendor_flags.llm_reasoning_split,
+                "MiniMax 网关未写 llm_reasoning_split 时应默认 true"
+            );
+            assert!(
+                crate::llm::fold_system_into_user_for_config(&cfg),
+                "MiniMax 应自动折叠 system→user"
+            );
+        });
     }
 
     #[test]
     fn minimax_user_toml_explicit_false() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("agent.toml");
-        fs::write(
-            &path,
-            r#"[agent]
+        without_cm_llm_reasoning_split_env(|| {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("agent.toml");
+            fs::write(
+                &path,
+                r#"[agent]
 api_base = "https://api.minimaxi.com/v1"
 model = "MiniMax-M2.7"
 llm_reasoning_split = false
 "#,
-        )
-        .expect("write");
-        let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
-        assert!(!cfg.llm_vendor_flags.llm_reasoning_split);
+            )
+            .expect("write");
+            let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
+            assert!(!cfg.llm_vendor_flags.llm_reasoning_split);
+        });
     }
 }
 

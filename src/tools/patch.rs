@@ -8,6 +8,10 @@
 //! - 禁止 `..` 路径穿越
 //! - 必须落在工作区根目录下
 
+use crate::tools::write_sse_preview::{
+    WORKSPACE_WRITE_DIFF_BUDGET_CHARS, WriteDiffFileState,
+    format_tool_output_with_write_diff_preview,
+};
 use crate::workspace::changelist::WorkspaceChangelist;
 use crate::workspace::path::{
     absolutize_relative_under_root, ensure_existing_ancestor_within_root,
@@ -56,6 +60,7 @@ fn apply_unified_patch(
         return format!("解析 unified diff 失败: {}", e);
     }
 
+    let mut preview_files: Vec<WriteDiffFileState> = Vec::new();
     let mut applied_files = Vec::new();
     let mut errors = Vec::new();
 
@@ -65,12 +70,19 @@ fn apply_unified_patch(
             root,
             strip,
             changelist,
+            &mut preview_files,
             &mut applied_files,
             &mut errors,
         );
     }
 
-    unified_patch_format_outcome(&applied_files, &errors)
+    let outcome = unified_patch_format_outcome(&applied_files, &errors);
+    format_tool_output_with_write_diff_preview(
+        "apply_patch",
+        outcome,
+        preview_files,
+        WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
+    )
 }
 
 fn unified_patch_format_outcome(applied_files: &[String], errors: &[String]) -> String {
@@ -96,6 +108,7 @@ fn apply_single_unified_hunk(
     root: &Path,
     strip: usize,
     changelist: Option<&Arc<WorkspaceChangelist>>,
+    preview_files: &mut Vec<WriteDiffFileState>,
     applied_files: &mut Vec<String>,
     errors: &mut Vec<String>,
 ) {
@@ -114,13 +127,21 @@ fn apply_single_unified_hunk(
                 root,
                 &file_path,
                 changelist,
+                preview_files,
                 applied_files,
                 errors,
             );
             return;
         }
         if file_path == "/dev/null" {
-            unified_hunk_delete_file(root, &original_path, changelist, applied_files, errors);
+            unified_hunk_delete_file(
+                root,
+                &original_path,
+                changelist,
+                preview_files,
+                applied_files,
+                errors,
+            );
         }
         return;
     }
@@ -148,8 +169,13 @@ fn apply_single_unified_hunk(
                 errors.push(format!("{}: 写入失败: {}", file_path, e));
             } else {
                 if let Some(cl) = changelist {
-                    cl.record_mutation(&file_path, Some(original.clone()), Some(patched));
+                    cl.record_mutation(&file_path, Some(original.clone()), Some(patched.clone()));
                 }
+                preview_files.push(WriteDiffFileState {
+                    rel_path: file_path.clone(),
+                    before: Some(original),
+                    after: Some(patched),
+                });
                 applied_files.push(file_path);
             }
         }
@@ -162,6 +188,7 @@ fn unified_hunk_create_new_file(
     root: &Path,
     file_path: &str,
     changelist: Option<&Arc<WorkspaceChangelist>>,
+    preview_files: &mut Vec<WriteDiffFileState>,
     applied_files: &mut Vec<String>,
     errors: &mut Vec<String>,
 ) {
@@ -183,8 +210,13 @@ fn unified_hunk_create_new_file(
                 errors.push(format!("{}: 创建文件失败: {}", file_path, e));
             } else {
                 if let Some(cl) = changelist {
-                    cl.record_mutation(file_path, None, Some(content));
+                    cl.record_mutation(file_path, None, Some(content.clone()));
                 }
+                preview_files.push(WriteDiffFileState {
+                    rel_path: file_path.to_string(),
+                    before: None,
+                    after: Some(content),
+                });
                 applied_files.push(format!("新建: {}", file_path));
             }
         }
@@ -196,6 +228,7 @@ fn unified_hunk_delete_file(
     root: &Path,
     original_path: &str,
     changelist: Option<&Arc<WorkspaceChangelist>>,
+    preview_files: &mut Vec<WriteDiffFileState>,
     applied_files: &mut Vec<String>,
     errors: &mut Vec<String>,
 ) {
@@ -208,8 +241,13 @@ fn unified_hunk_delete_file(
         errors.push(format!("{}: 删除失败: {}", original_path, e));
     } else {
         if let Some(cl) = changelist {
-            cl.record_mutation(original_path, before, None);
+            cl.record_mutation(original_path, before.clone(), None);
         }
+        preview_files.push(WriteDiffFileState {
+            rel_path: original_path.to_string(),
+            before,
+            after: None,
+        });
         applied_files.push(format!("删除: {}", original_path));
     }
 }

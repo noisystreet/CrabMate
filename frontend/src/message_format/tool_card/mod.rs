@@ -6,9 +6,85 @@ use crate::sse_dispatch::ToolResultInfo;
 use super::plain::collapse_duplicate_summary_lines;
 use super::strip_ansi_codes;
 
+use serde_json::Value;
+
 mod compact_key;
 
 const COMPACT_SEPARATOR: &str = " ｜ ";
+
+fn strip_leading_workspace_write_json_header(raw: &str) -> String {
+    let first = raw.lines().next().map(str::trim).unwrap_or("");
+    if first.is_empty() || !first.starts_with('{') {
+        return raw.to_string();
+    }
+    let Ok(v) = serde_json::from_str::<Value>(first) else {
+        return raw.to_string();
+    };
+    if v.get("kind").and_then(|k| k.as_str()) != Some("crabmate_tool_output") {
+        return raw.to_string();
+    }
+    if v.get("preview").and_then(|p| p.as_str()) != Some("workspace_write_diff") {
+        return raw.to_string();
+    }
+    raw.lines().skip(1).collect::<Vec<&str>>().join("\n")
+}
+
+fn structured_preview_write_diff_root(sp: &Value) -> Option<&Value> {
+    if let Some(h) = sp.get("tool_output_header") {
+        return (h.get("preview").and_then(|p| p.as_str()) == Some("workspace_write_diff"))
+            .then_some(h);
+    }
+    (sp.get("preview").and_then(|p| p.as_str()) == Some("workspace_write_diff")).then_some(sp)
+}
+
+fn workspace_write_diff_section(info: &ToolResultInfo, loc: Locale) -> Option<String> {
+    let sp = info.structured_preview.as_ref()?;
+    let root = structured_preview_write_diff_root(sp)?;
+    let files = root.get("files")?.as_array()?;
+    if files.is_empty() {
+        return None;
+    }
+    let mut blocks: Vec<String> = Vec::new();
+    blocks.push(i18n::tool_workspace_write_diff_heading(loc).to_string());
+    let mut any = false;
+    for f in files {
+        let path = f.get("path").and_then(|p| p.as_str()).unwrap_or("?");
+        let udiff = f.get("unified_diff").and_then(|u| u.as_str()).unwrap_or("");
+        if udiff.is_empty() {
+            continue;
+        }
+        any = true;
+        blocks.push(format!("`{path}`\n```diff\n{udiff}\n```"));
+    }
+    if !any {
+        return None;
+    }
+    if root
+        .get("preview_truncated")
+        .and_then(|b| b.as_bool())
+        .unwrap_or(false)
+    {
+        blocks.push(i18n::tool_workspace_write_diff_truncated_note(loc).to_string());
+    }
+    Some(blocks.join("\n\n"))
+}
+
+fn should_strip_write_preview_header(tool_name: &str, raw: &str) -> bool {
+    const NAMES: &[&str] = &[
+        "create_file",
+        "modify_file",
+        "copy_file",
+        "search_replace",
+        "delete_file",
+        "append_file",
+        "apply_patch",
+    ];
+    NAMES.contains(&tool_name)
+        && raw
+            .lines()
+            .next()
+            .is_some_and(|l| l.trim_start().starts_with('{'))
+}
 
 fn strip_tool_status_prefix(line: &str) -> String {
     let trimmed = line.trim();
@@ -247,21 +323,93 @@ fn terminal_session_shell_line_from_summary(summary: Option<&str>) -> Option<Str
     (!rest.is_empty()).then(|| rest.to_string())
 }
 
+/// `terminal_session` 成功：展开区 `$ <cmd>` + 捕获输出；无可展示内容则 `None` 走通用路径。
+fn tool_card_text_terminal_session_early(info: &ToolResultInfo) -> Option<String> {
+    if info.name.trim() != "terminal_session" || !info.ok.unwrap_or(true) {
+        return None;
+    }
+    let raw = strip_ansi_codes(info.output.trim());
+    if let Some(cmd) = terminal_session_shell_line_from_summary(info.summary.as_deref()) {
+        return Some(if raw.is_empty() {
+            format!("$ {cmd}\n")
+        } else {
+            format!("$ {cmd}\n\n{raw}")
+        });
+    }
+    (!raw.is_empty()).then_some(raw)
+}
+
+const TOOLS_APPEND_RAW_OUTPUT: &[&str] = &[
+    "run_command",
+    "terminal_session",
+    "create_file",
+    "modify_file",
+    "copy_file",
+    "move_file",
+    "search_replace",
+    "delete_file",
+    "append_file",
+    "apply_patch",
+    "search_in_files",
+];
+
+fn append_workspace_diff_and_whitelist_raw(
+    merged: &mut String,
+    info: &ToolResultInfo,
+    loc: Locale,
+    raw_trimmed: &str,
+    name_trim: &str,
+    whitelist_tool: bool,
+) {
+    if let Some(block) = workspace_write_diff_section(info, loc) {
+        merged.push_str("\n\n");
+        merged.push_str(&block);
+    }
+    if !(whitelist_tool && !raw_trimmed.is_empty()) {
+        return;
+    }
+    merged.push_str("\n\n");
+    let raw_show = if should_strip_write_preview_header(name_trim, raw_trimmed) {
+        strip_leading_workspace_write_json_header(raw_trimmed)
+    } else {
+        raw_trimmed.to_string()
+    };
+    if name_trim == "terminal_session" {
+        merged.push_str(&strip_ansi_codes(&raw_show));
+    } else {
+        merged.push_str(&raw_show);
+    }
+}
+
+fn append_failure_block_and_full_output_on_fail(
+    merged: &mut String,
+    info: &ToolResultInfo,
+    loc: Locale,
+    summary_normalized: &str,
+    raw_trimmed: &str,
+    name_trim: &str,
+    whitelist_tool: bool,
+) {
+    if let Some(block) = build_tool_failure_block(info, loc, summary_normalized) {
+        merged.push_str("\n\n");
+        merged.push_str(&block);
+    }
+    if info.ok.unwrap_or(true) || raw_trimmed.is_empty() || whitelist_tool {
+        return;
+    }
+    merged.push_str("\n\n");
+    merged.push_str(i18n::tool_detail_full_output_heading(loc));
+    merged.push('\n');
+    if name_trim == "terminal_session" {
+        merged.push_str(&strip_ansi_codes(raw_trimmed));
+    } else {
+        merged.push_str(raw_trimmed);
+    }
+}
+
 pub fn tool_card_text(info: &ToolResultInfo, loc: Locale) -> String {
-    let raw_trimmed_early = info.output.trim();
-    let name_trim_early = info.name.trim();
-    // terminal_session：展开区第一行 `$ <command + args>`（来自 SSE summary），随后为捕获输出。
-    if name_trim_early == "terminal_session" && info.ok.unwrap_or(true) {
-        let raw = strip_ansi_codes(raw_trimmed_early);
-        if let Some(cmd) = terminal_session_shell_line_from_summary(info.summary.as_deref()) {
-            if raw.is_empty() {
-                return format!("$ {cmd}\n");
-            }
-            return format!("$ {cmd}\n\n{raw}");
-        }
-        if !raw.is_empty() {
-            return raw;
-        }
+    if let Some(early) = tool_card_text_terminal_session_early(info) {
+        return early;
     }
 
     let out = normalized_tool_summary(info, loc);
@@ -272,42 +420,26 @@ pub fn tool_card_text(info: &ToolResultInfo, loc: Locale) -> String {
         merged.push_str("\n\n");
         merged.push_str(&body);
     }
-    // SSE 的 `summary` 仅为短摘要；`output` 含「命令：」「路径：」「从→到：」「搜索：」等结构化首行与正文。
-    // 成功：下列工具在详情中附带完整 `output`。失败：见文末「完整输出」（白名单工具在此处已附带则不重复）。
-    const TOOLS_APPEND_RAW_OUTPUT: &[&str] = &[
-        "run_command",
-        "terminal_session",
-        "create_file",
-        "modify_file",
-        "copy_file",
-        "move_file",
-        "search_in_files",
-    ];
     let raw_trimmed = info.output.trim();
     let name_trim = info.name.trim();
     let whitelist_tool = TOOLS_APPEND_RAW_OUTPUT.contains(&name_trim);
-    if whitelist_tool && !raw_trimmed.is_empty() {
-        merged.push_str("\n\n");
-        if name_trim == "terminal_session" {
-            merged.push_str(&strip_ansi_codes(raw_trimmed));
-        } else {
-            merged.push_str(raw_trimmed);
-        }
-    }
-    if let Some(block) = build_tool_failure_block(info, loc, &out) {
-        merged.push_str("\n\n");
-        merged.push_str(&block);
-    }
-    if !info.ok.unwrap_or(true) && !raw_trimmed.is_empty() && !whitelist_tool {
-        merged.push_str("\n\n");
-        merged.push_str(i18n::tool_detail_full_output_heading(loc));
-        merged.push('\n');
-        if name_trim == "terminal_session" {
-            merged.push_str(&strip_ansi_codes(raw_trimmed));
-        } else {
-            merged.push_str(raw_trimmed);
-        }
-    }
+    append_workspace_diff_and_whitelist_raw(
+        &mut merged,
+        info,
+        loc,
+        raw_trimmed,
+        name_trim,
+        whitelist_tool,
+    );
+    append_failure_block_and_full_output_on_fail(
+        &mut merged,
+        info,
+        loc,
+        &out,
+        raw_trimmed,
+        name_trim,
+        whitelist_tool,
+    );
     merged
 }
 
@@ -316,6 +448,7 @@ mod tests {
     use super::{tool_card_compact_text, tool_card_text};
     use crate::i18n::Locale;
     use crate::sse_dispatch::ToolResultInfo;
+    use serde_json::json;
 
     fn mk(summary: &str) -> ToolResultInfo {
         ToolResultInfo {
@@ -348,6 +481,32 @@ mod tests {
         assert!(out.contains("Hello, World!"));
         assert!(!out.contains("交互终端"));
         assert!(!out.contains("terminal_session exec"));
+    }
+
+    #[test]
+    fn create_file_detail_shows_write_diff_and_strips_json_line_from_raw() {
+        let mut info = mk("✅ create_file 成功");
+        info.name = "create_file".to_string();
+        let header = json!({
+            "kind": "crabmate_tool_output",
+            "tool": "create_file",
+            "version": 1,
+            "preview": "workspace_write_diff",
+            "files": [{
+                "path": "a.rs",
+                "unified_diff": "--- a/a.rs\n+++ b/a.rs\n+fn x() {}\n",
+                "truncated": false
+            }],
+            "preview_truncated": false
+        });
+        let line1 = serde_json::to_string(&header).unwrap();
+        info.structured_preview = Some(header);
+        info.output = format!("{line1}\n路径：a.rs\n已创建");
+        let out = tool_card_text(&info, Locale::ZhHans);
+        assert!(out.contains("变更预览"));
+        assert!(out.contains("```diff"));
+        assert!(!out.contains("crabmate_tool_output"));
+        assert!(out.contains("路径：a.rs"));
     }
 
     #[test]

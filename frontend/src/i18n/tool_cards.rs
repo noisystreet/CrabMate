@@ -443,3 +443,18 @@ pub fn tool_detail_full_output_heading(l: Locale) -> &'static str {
         Locale::En => "Full output",
     }
 }
+
+/// 工具卡详情：写操作 Web diff 预览区块标题（来自 SSE `structured_preview.workspace_write_diff`）。
+pub fn tool_workspace_write_diff_heading(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "变更预览（unified diff）",
+        Locale::En => "Change preview (unified diff)",
+    }
+}
+
+pub fn tool_workspace_write_diff_truncated_note(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "（尚有文件或 diff 因体积上限未完整展示）",
+        Locale::En => "(Some files or diff content omitted due to size limits)",
+    }
+}

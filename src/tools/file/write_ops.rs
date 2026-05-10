@@ -8,6 +8,10 @@ use super::path::{
     tool_user_error_from_workspace_path,
 };
 use crate::tools::ToolContext;
+use crate::tools::write_sse_preview::{
+    WORKSPACE_WRITE_DIFF_BUDGET_CHARS, WriteDiffFileState,
+    format_tool_output_with_write_diff_preview,
+};
 use crate::workspace::changelist::record_file_state_after_write;
 
 /// 工具正文首行统一 `路径：…`，便于 Web 紧凑条与模型扫读（与 `run_command` 的 `命令：` 同理）。
@@ -51,7 +55,17 @@ pub fn create_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
         Ok(()) => {
             record_file_state_after_write(ctx.workspace_changelist, working_dir, &path, None);
             let disp = path_for_tool_display(working_dir, &target, Some(&path));
-            tool_output_prepend_path(&disp, format!("已创建文件: {}", disp))
+            let body = tool_output_prepend_path(&disp, format!("已创建文件: {}", disp));
+            format_tool_output_with_write_diff_preview(
+                "create_file",
+                body,
+                vec![WriteDiffFileState {
+                    rel_path: path.clone(),
+                    before: None,
+                    after: Some(content.clone()),
+                }],
+                WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
+            )
         }
         Err(e) => format!("写入文件失败: {}", e),
     }
@@ -155,7 +169,18 @@ pub fn copy_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> 
     match std::fs::copy(&src, &dst) {
         Ok(n) => {
             record_file_state_after_write(ctx.workspace_changelist, working_dir, &to, None);
-            tool_output_prepend_from_to(&from, &to, format!("已复制（{} 字节）", n))
+            let body = tool_output_prepend_from_to(&from, &to, format!("已复制（{} 字节）", n));
+            let after = std::fs::read_to_string(&dst).ok();
+            format_tool_output_with_write_diff_preview(
+                "copy_file",
+                body,
+                vec![WriteDiffFileState {
+                    rel_path: to.clone(),
+                    before: None,
+                    after,
+                }],
+                WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
+            )
         }
         Err(e) => format!("复制失败: {}", e),
     }
@@ -252,9 +277,21 @@ pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
         let before = std::fs::read_to_string(&target).ok();
         match std::fs::write(&target, content.as_bytes()) {
             Ok(()) => {
+                let before_preview = before.clone();
                 record_file_state_after_write(ctx.workspace_changelist, working_dir, &path, before);
                 let disp = path_for_tool_display(working_dir, &target, Some(&path));
-                tool_output_prepend_path(&disp, format!("已整文件覆盖: {}", disp))
+                let body = tool_output_prepend_path(&disp, format!("已整文件覆盖: {}", disp));
+                let after = std::fs::read_to_string(&target).ok();
+                format_tool_output_with_write_diff_preview(
+                    "modify_file",
+                    body,
+                    vec![WriteDiffFileState {
+                        rel_path: path.clone(),
+                        before: before_preview,
+                        after,
+                    }],
+                    WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
+                )
             }
             Err(e) => format!("写入文件失败: {}", e),
         }

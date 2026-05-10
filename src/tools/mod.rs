@@ -78,6 +78,7 @@ mod tool_summary_args;
 mod unit_convert;
 mod weather;
 mod web_search;
+mod write_sse_preview;
 
 pub mod dev_tag;
 
