@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use leptos::prelude::*;
 
-use crate::assistant_body::assistant_markdown_collapsible_view;
+use crate::assistant_body::{
+    AssistantMarkdownCollapsibleWire, assistant_markdown_collapsible_view,
+};
 use crate::i18n::{self, Locale};
 use crate::session_ops::message_role_label;
 use crate::storage::{ChatSession, StoredMessage};
@@ -87,16 +89,16 @@ pub(super) fn chat_message_row_body_core(p: ChatMessageRowBodyCoreParams) -> Any
         auto_scroll_chat,
     } = p;
     if m.role == "assistant" && !m.is_tool {
-        return assistant_markdown_collapsible_view(
+        return assistant_markdown_collapsible_view(AssistantMarkdownCollapsibleWire {
             sessions,
             active_id,
-            m.id.clone(),
+            message_id: m.id.clone(),
             collapsed_long_assistant_ids,
             locale,
             markdown_render,
             apply_assistant_display_filters,
             stream_text_overlay,
-        )
+        })
         .into_any();
     }
     let body_inner = build_non_assistant_message_body(NonAssistantMessageBodyParams {

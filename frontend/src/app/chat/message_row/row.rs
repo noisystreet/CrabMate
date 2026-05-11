@@ -20,7 +20,8 @@ use super::helpers::{
 use super::row_extras::{
     BubbleClassLiveCtx, SubgoalBannerReactiveCtx, arc_actions_bar_visible,
     arc_retry_visible_for_message, bubble_css_classes_live, message_row_inline_copy_button,
-    staged_timeline_exec_banner_when, subgoal_exec_banner_reactive_view, typing_dots_when_loading,
+    staged_timeline_exec_banner_when, subgoal_exec_banner_reactive_view,
+    typing_dots_tail_assistant_row,
 };
 use super::views::{
     ChatMessageRowBodyCoreParams, MessageActionsBarParams, build_message_actions_bar,
@@ -59,6 +60,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
         chat_find_cursor,
         auto_scroll_chat,
         stream_turn_busy_ui,
+        tail_loading_assistant_mid,
         regen_stream_after_truncate,
         retry_assistant_target,
         status_err,
@@ -190,11 +192,12 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
                     })}
                     {subgoal_metrics_line_view(subgoal_metrics_line.as_ref())}
                     {msg_core}
-                    {typing_dots_when_loading(
-                        sessions,
-                        active_id,
-                        mid_highlight.clone(),
-                    )}
+                    {(!is_tool_bubble).then(|| {
+                        typing_dots_tail_assistant_row(
+                            tail_loading_assistant_mid,
+                            mid_highlight.clone(),
+                        )
+                    })}
                 </div>
                 <Show
                     when=move || {

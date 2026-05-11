@@ -9,38 +9,56 @@ use crate::i18n::{self, Locale};
 use crate::storage::ChatSession;
 use crate::stream_text_overlay::StreamTextOverlay;
 
-use super::helpers::{LONG_ASSISTANT_COLLAPSE_THRESHOLD, snapshot_assistant_message_for_mid};
+use super::helpers::{LONG_ASSISTANT_COLLAPSE_THRESHOLD, assistant_markdown_display_memo};
 use super::md_answer_effect::{
     AssistantMarkdownAnswerEffectBundle, SectionPaint, install_assistant_markdown_answer_effect,
 };
 
+/// 供 [`assistant_markdown_collapsible_view`] 入参聚合（避免形参个数棘轮与 `clippy::too_many_arguments`）。
+#[derive(Clone)]
+pub struct AssistantMarkdownCollapsibleWire {
+    pub sessions: RwSignal<Vec<ChatSession>>,
+    pub active_id: RwSignal<String>,
+    pub message_id: String,
+    pub collapsed_long_assistant_ids: RwSignal<Vec<String>>,
+    pub locale: RwSignal<Locale>,
+    pub markdown_render: RwSignal<bool>,
+    pub apply_assistant_display_filters: RwSignal<bool>,
+    pub stream_text_overlay: RwSignal<Option<StreamTextOverlay>>,
+}
+
 /// 助手非工具消息：Markdown → 净化 HTML；思维链独立区域 + 终答区。
-pub fn assistant_markdown_collapsible_view(
-    sessions: RwSignal<Vec<ChatSession>>,
-    active_id: RwSignal<String>,
-    message_id: String,
-    collapsed_long_assistant_ids: RwSignal<Vec<String>>,
-    locale: RwSignal<Locale>,
-    markdown_render: RwSignal<bool>,
-    apply_assistant_display_filters: RwSignal<bool>,
-    stream_text_overlay: RwSignal<Option<StreamTextOverlay>>,
-) -> impl IntoView {
-    let answer_body_ref = NodeRef::<Div>::new();
-    let mid_for_btn = message_id.clone();
-
-    let answer_paint = StoredValue::new(Arc::new(Mutex::new(SectionPaint::default())));
-
-    install_assistant_markdown_answer_effect(AssistantMarkdownAnswerEffectBundle {
+pub fn assistant_markdown_collapsible_view(w: AssistantMarkdownCollapsibleWire) -> impl IntoView {
+    let AssistantMarkdownCollapsibleWire {
         sessions,
         active_id,
+        message_id,
         collapsed_long_assistant_ids,
         locale,
         markdown_render,
         apply_assistant_display_filters,
         stream_text_overlay,
+    } = w;
+    let answer_body_ref = NodeRef::<Div>::new();
+    let mid_for_btn = message_id.clone();
+
+    let answer_paint = StoredValue::new(Arc::new(Mutex::new(SectionPaint::default())));
+
+    let snapshot_memo = assistant_markdown_display_memo(
+        sessions,
+        active_id,
+        message_id.clone(),
+        stream_text_overlay,
+        locale,
+        apply_assistant_display_filters,
+    );
+
+    install_assistant_markdown_answer_effect(AssistantMarkdownAnswerEffectBundle {
+        snapshot_memo,
+        collapsed_long_assistant_ids,
+        markdown_render,
         answer_body_ref: answer_body_ref.clone(),
         answer_paint: answer_paint.clone(),
-        mid: message_id,
     });
 
     let mid_stored = StoredValue::new(mid_for_btn.clone());
@@ -56,22 +74,10 @@ pub fn assistant_markdown_collapsible_view(
             {/* 回答区 */}
             <div
                 class=move || {
-                    let loc = locale.get();
-                    let apply = apply_assistant_display_filters.get();
-                    let ov = stream_text_overlay.get();
-                    let (is_loading, raw_len) = sessions.with(|list| {
-                        let aid = active_id.get();
-                        snapshot_assistant_message_for_mid(
-                            list,
-                            &aid,
-                            mid_stored.get_value().as_str(),
-                            loc,
-                            apply,
-                            ov.as_ref(),
-                        )
+                    let (is_loading, raw_len) = snapshot_memo
+                        .get()
                         .map(|s| (s.is_loading, s.display_char_len))
-                        .unwrap_or((false, 0))
-                    });
+                        .unwrap_or((false, 0));
                     let long =
                         !is_loading && raw_len >= LONG_ASSISTANT_COLLAPSE_THRESHOLD;
                     let mid = mid_stored.get_value();
@@ -92,22 +98,8 @@ pub fn assistant_markdown_collapsible_view(
 
             {/* 整条折叠按钮（作用于整个 msg-md-split，含思考区） */}
             <Show when=move || {
-                let loc = locale.get();
-                let apply = apply_assistant_display_filters.get();
-                let ov = stream_text_overlay.get();
-                sessions.with(|list| {
-                    let aid = active_id.get();
-                    snapshot_assistant_message_for_mid(
-                        list,
-                        &aid,
-                        mid_stored.get_value().as_str(),
-                        loc,
-                        apply,
-                        ov.as_ref(),
-                    )
-                    .is_some_and(|s| {
-                        !s.is_loading && s.display_char_len >= LONG_ASSISTANT_COLLAPSE_THRESHOLD
-                    })
+                snapshot_memo.get().is_some_and(|s| {
+                    !s.is_loading && s.display_char_len >= LONG_ASSISTANT_COLLAPSE_THRESHOLD
                 })
             }>
                 <button

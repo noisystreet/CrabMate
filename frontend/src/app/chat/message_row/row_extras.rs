@@ -235,31 +235,14 @@ pub(super) fn subgoal_exec_banner_reactive_view(ctx: SubgoalBannerReactiveCtx) -
     }
 }
 
-pub(super) fn typing_dots_when_loading(
-    sessions: RwSignal<Vec<ChatSession>>,
-    active_id: RwSignal<String>,
-    mid_typing: String,
+pub(super) fn typing_dots_tail_assistant_row(
+    tail_loading_assistant_mid: Memo<Option<String>>,
+    row_message_id: String,
 ) -> impl IntoView {
-    let mid_sv = StoredValue::new(mid_typing);
+    let mid_sv = StoredValue::new(row_message_id);
     view! {
         <Show when=move || {
-            sessions.with(|list| {
-                stored_message_by_id(
-                    list,
-                    active_id.get_untracked().as_str(),
-                    mid_sv.get_value().as_str(),
-                )
-                .map(|msg| {
-                    let loading = message_row_loading_and_error(
-                        msg.is_tool,
-                        msg.role.as_str(),
-                        msg.state.as_ref(),
-                    )
-                    .0;
-                    loading && !msg.is_tool
-                })
-                .unwrap_or(false)
-            })
+            tail_loading_assistant_mid.get().as_deref() == Some(mid_sv.get_value().as_str())
         }>
             {move || {
                 view! {
