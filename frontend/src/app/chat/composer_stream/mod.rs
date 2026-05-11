@@ -2,9 +2,9 @@
 //!
 //! - [`context`]：单次流式共享的 `ChatStreamCallbackCtx`。
 //! - [`per_stream_accum`]：单轮流内的 `Cell`/`RefCell` 累计（正文增量计数、结束 reason 等），与 ctx 分层。
-//! - [`stream_turn_scratch_state`]：单轮流 **lane + 尾泡 + FIFO** 的状态方法与事件表（与 `stream_turn_state` 配合）。
+//! - [`stream_turn_scratch_state`]：单轮流 **lane + 尾泡 + FIFO** 收进 **单一 `RefCell` 快照**（与 `stream_turn_state` 枚举语义对齐）。
 //! - [`stream_sse_scratch`]：[`StreamSseScratch`] 句柄，委托 [`stream_turn_scratch_state::StreamTurnScratchState`]。
-//! - [`stream_turn_state`]：模型输出车道枚举与底层 `lane_*` 转移（供 `stream_turn_scratch_state` 调用）。
+//! - [`stream_turn_state`]：模型输出车道 [`StreamModelOutputLane`] 及 `lane_*` 的 `Cell` 薄封装（单测与热路径）。
 //! - `shell_abort`：`AbortController` 与用户取消 Mutex 的集中读写。
 //! - [`callbacks`]：装配 `ChatStreamCallbacks`（各 `on_*`），与 `send_chat_stream` 契约对齐；实现拆为 `callbacks/helpers`、`callbacks/builders`、`callbacks/assemble`。
 //! - 本文件：长生命周期句柄 [`ComposerStreamHandles`]、[`make_attach_chat_stream`]（发起请求 + `spawn_local`）。

@@ -1,8 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use super::super::super::stream_turn_scratch_state::{
-        pending_queue_enqueue, pending_queue_take,
-    };
+    use super::super::super::stream_turn_scratch_state::StreamTurnScratchState;
     use super::super::helpers::{
         build_empty_reply_with_diagnostic, build_final_response_text,
         build_hierarchical_plan_main_bubble_text, build_hierarchical_subgoal_main_bubble_text,
@@ -10,25 +8,24 @@ mod tests {
         has_same_assistant_timeline_bubble, merge_subgoal_text_preserving_target,
     };
     use crate::i18n::{self, Locale};
-    use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
     #[test]
     fn pending_tool_message_queue_is_fifo() {
-        let q = Rc::new(RefCell::new(VecDeque::new()));
-        pending_queue_enqueue(&q, "m1".to_string());
-        pending_queue_enqueue(&q, "m2".to_string());
-        pending_queue_enqueue(&q, "m3".to_string());
+        let s = StreamTurnScratchState::new("x".into());
+        s.enqueue_pending_tool_message_id("m1".to_string());
+        s.enqueue_pending_tool_message_id("m2".to_string());
+        s.enqueue_pending_tool_message_id("m3".to_string());
 
-        assert_eq!(pending_queue_take(&q).as_deref(), Some("m1"));
-        assert_eq!(pending_queue_take(&q).as_deref(), Some("m2"));
-        assert_eq!(pending_queue_take(&q).as_deref(), Some("m3"));
-        assert_eq!(pending_queue_take(&q), None);
+        assert_eq!(s.take_pending_tool_fifo_head().as_deref(), Some("m1"));
+        assert_eq!(s.take_pending_tool_fifo_head().as_deref(), Some("m2"));
+        assert_eq!(s.take_pending_tool_fifo_head().as_deref(), Some("m3"));
+        assert_eq!(s.take_pending_tool_fifo_head(), None);
     }
 
     #[test]
     fn pending_tool_message_queue_empty_returns_none() {
-        let q = Rc::new(RefCell::new(VecDeque::new()));
-        assert_eq!(pending_queue_take(&q), None);
+        let s = StreamTurnScratchState::new("x".into());
+        assert_eq!(s.take_pending_tool_fifo_head(), None);
     }
 
     #[test]
