@@ -1,7 +1,11 @@
 //! 代码理解与导航：符号引用搜索、Rust 单文件结构大纲。
 
+#[path = "code_nav_outline.rs"]
+mod code_nav_outline;
+
 use crate::tools::symbol;
 use crate::tools::tool_param_types::FindReferencesArgs;
+use code_nav_outline::collect_outline;
 use regex::Regex;
 use std::fs;
 use std::io::Read;
@@ -237,20 +241,7 @@ fn walk_rs(root: &Path, ctx: &mut RsWalkCtx<'_>) -> Result<(), String> {
         return Ok(());
     }
     if root.is_file() {
-        if root.extension().and_then(|e| e.to_str()) != Some("rs") {
-            return Ok(());
-        }
-        *ctx.visited_files += 1;
-        search_refs_in_file(
-            root,
-            ctx.ref_re,
-            ctx.symbol,
-            ctx.exclude_definitions,
-            ctx.case_insensitive,
-            ctx.results,
-            ctx.max_results,
-        )?;
-        return Ok(());
+        return walk_rs_one_file(root, ctx);
     }
     for entry in fs::read_dir(root).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
@@ -265,22 +256,29 @@ fn walk_rs(root: &Path, ctx: &mut RsWalkCtx<'_>) -> Result<(), String> {
                 break;
             }
         } else if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("rs") {
-            *ctx.visited_files += 1;
-            search_refs_in_file(
-                &path,
-                ctx.ref_re,
-                ctx.symbol,
-                ctx.exclude_definitions,
-                ctx.case_insensitive,
-                ctx.results,
-                ctx.max_results,
-            )?;
+            walk_rs_one_file(&path, ctx)?;
             if ctx.results.len() >= ctx.max_results {
                 break;
             }
         }
     }
     Ok(())
+}
+
+fn walk_rs_one_file(path: &Path, ctx: &mut RsWalkCtx<'_>) -> Result<(), String> {
+    if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+        return Ok(());
+    }
+    *ctx.visited_files += 1;
+    search_refs_in_file(
+        path,
+        ctx.ref_re,
+        ctx.symbol,
+        ctx.exclude_definitions,
+        ctx.case_insensitive,
+        ctx.results,
+        ctx.max_results,
+    )
 }
 
 fn search_refs_in_file(
@@ -313,86 +311,6 @@ fn search_refs_in_file(
         }
     }
     Ok(())
-}
-
-fn collect_outline(content: &str, include_use: bool, max_items: usize) -> Vec<(usize, String)> {
-    // 预编译常见顶层结构（非完整语法树，仅辅助导航）。
-    let re_mod = Regex::new(r"^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\b").unwrap();
-    let re_fn = Regex::new(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+(\w+)\b").unwrap();
-    let re_struct = Regex::new(r"^\s*(?:pub(?:\([^)]*\))?\s+)?struct\s+(\w+)\b").unwrap();
-    let re_enum = Regex::new(r"^\s*(?:pub(?:\([^)]*\))?\s+)?enum\s+(\w+)\b").unwrap();
-    let re_trait = Regex::new(r"^\s*(?:pub(?:\([^)]*\))?\s+)?trait\s+(\w+)\b").unwrap();
-    let re_type = Regex::new(r"^\s*(?:pub(?:\([^)]*\))?\s+)?type\s+(\w+)\b").unwrap();
-    let re_const = Regex::new(r"^\s*(?:pub(?:\([^)]*\))?\s+)?const\s+(\w+)\b").unwrap();
-    let re_static = Regex::new(r"^\s*(?:pub(?:\([^)]*\))?\s+)?static\s+(\w+)\b").unwrap();
-    let re_macro = Regex::new(r"^\s*macro_rules!\s+(\w+)\b").unwrap();
-    let re_impl = Regex::new(r"^\s*(?:unsafe\s+)?impl\b").unwrap();
-    let re_use = Regex::new(r"^\s*(?:pub(?:\([^)]*\))?\s+)?use\s+").unwrap();
-
-    let mut out = Vec::new();
-    for (idx, line) in content.lines().enumerate() {
-        if out.len() >= max_items {
-            break;
-        }
-        let line_no = idx + 1;
-        let t = line.trim_start();
-        if t.starts_with("//") || t.starts_with("//!") {
-            continue;
-        }
-        if let Some(c) = re_mod.captures(line) {
-            out.push((line_no, format!("mod {}", &c[1])));
-            continue;
-        }
-        if re_fn.is_match(line) {
-            out.push((line_no, truncate_one_line(line, 100)));
-            continue;
-        }
-        if let Some(c) = re_struct.captures(line) {
-            out.push((line_no, format!("struct {}", &c[1])));
-            continue;
-        }
-        if let Some(c) = re_enum.captures(line) {
-            out.push((line_no, format!("enum {}", &c[1])));
-            continue;
-        }
-        if let Some(c) = re_trait.captures(line) {
-            out.push((line_no, format!("trait {}", &c[1])));
-            continue;
-        }
-        if re_type.is_match(line) {
-            out.push((line_no, truncate_one_line(line, 100)));
-            continue;
-        }
-        if let Some(c) = re_const.captures(line) {
-            out.push((line_no, format!("const {}", &c[1])));
-            continue;
-        }
-        if let Some(c) = re_static.captures(line) {
-            out.push((line_no, format!("static {}", &c[1])));
-            continue;
-        }
-        if let Some(c) = re_macro.captures(line) {
-            out.push((line_no, format!("macro_rules! {}", &c[1])));
-            continue;
-        }
-        if re_impl.is_match(line) {
-            out.push((line_no, truncate_one_line(line, 120)));
-            continue;
-        }
-        if include_use && re_use.is_match(line) {
-            out.push((line_no, truncate_one_line(line, 100)));
-        }
-    }
-    out
-}
-
-fn truncate_one_line(s: &str, max: usize) -> String {
-    let t = s.trim_end();
-    let mut out: String = t.chars().take(max).collect();
-    if t.chars().count() > max {
-        out.push('…');
-    }
-    out
 }
 
 fn truncate_line(s: &str, max_chars: usize) -> String {
