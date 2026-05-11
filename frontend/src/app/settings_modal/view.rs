@@ -80,6 +80,10 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
 
     let baselines = SettingsDirtyBaselines::from_form_current(&form_current_untracked(drafts));
 
+    let sync_saved_presets_baseline: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+        baselines.refresh_from_current(&form_current_untracked(drafts));
+    });
+
     let discard = {
         move || {
             discard_to_baselines(DiscardToBaselinesCtx {
@@ -174,5 +178,6 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
         clear_executor_key_intent,
         readonly_tool_ttl_cache_follow_server,
         saved_model_presets,
+        sync_saved_presets_baseline: sync_saved_presets_baseline.clone(),
     })
 }

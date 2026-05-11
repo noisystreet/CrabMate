@@ -1,6 +1,7 @@
 //! 设置页全屏视图（`SettingsPageView`）；路由与布局见同目录子模块。
 
 use std::rc::Rc;
+use std::sync::Arc;
 
 use leptos::prelude::*;
 
@@ -15,12 +16,15 @@ use super::hash_routing::{
     SettingsSection, read_settings_section_from_hash, settings_page_install_hashchange_listener,
 };
 use super::header::SettingsPageHeader;
-use super::layout::{SettingsPageContentPanels, SettingsPageNavRail, SettingsPagePanelDrafts};
+use super::layout::{
+    SettingsPageContentPanels, SettingsPageContentRegistryWire, SettingsPageNavRail,
+    SettingsPagePanelDrafts,
+};
 use super::page_actions::{
     DiscardToBaselinesCtx, SaveAllSettingsCtx, discard_to_baselines, try_save_all_settings,
 };
 use crate::app::settings_form_state::{SettingsDirtyBaselines, SettingsFormCurrent};
-use crate::i18n::{self, Locale};
+use crate::i18n::Locale;
 
 /// 设置页中与 LLM / 外观相关的 `RwSignal` 聚合（缩短 `SettingsPageView` 形参列表）。
 #[derive(Clone, Copy)]
@@ -158,6 +162,10 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
 
     let baselines = SettingsDirtyBaselines::from_form_current(&form_current_untracked(drafts));
 
+    let sync_saved_presets_baseline: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+        baselines.refresh_from_current(&form_current_untracked(drafts));
+    });
+
     settings_page_install_hashchange_listener(active_section);
 
     wire_settings_page_hash_section_effect(settings_page, active_section);
@@ -239,7 +247,6 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
                 on_save=save_rc
             />
             <div class="settings-page-body">
-                <p class="settings-intro">{move || i18n::settings_intro(appearance_locale.get())}</p>
                 <Show when=move || llm_settings_feedback.get().is_some()>
                     <p class="settings-save-feedback settings-save-feedback-global">{move || {
                         llm_settings_feedback.get().unwrap_or_default()
@@ -272,6 +279,10 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
                         clear_executor_key_intent=clear_executor_key_intent
                         execution_mode_draft=execution_mode_draft
                         readonly_tool_ttl_cache_follow_server=readonly_tool_ttl_cache_follow_server
+                        registry_wire=SettingsPageContentRegistryWire {
+                            sync_saved_presets_baseline: sync_saved_presets_baseline.clone(),
+                            llm_settings_feedback,
+                        }
                     />
                 </div>
             </div>

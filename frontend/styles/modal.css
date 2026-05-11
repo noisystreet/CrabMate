@@ -44,6 +44,11 @@
   animation: fade-in 0.2s ease;
 }
 
+/* 嵌在设置弹窗等之上，避免与全局 z-index 50 的遮罩叠在同一层 */
+.settings-model-add-dialog-backdrop.modal-backdrop {
+  z-index: 55;
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -226,30 +231,151 @@
   margin: 0;
 }
 
+.settings-model-registry-head .settings-model-registry-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.75rem;
+  padding-left: 0.45rem;
+  padding-right: 0.45rem;
+}
+
+.settings-model-registry-head .settings-model-registry-add svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
 .settings-model-registry-item {
   flex-direction: column;
   align-items: stretch;
+  justify-content: flex-start;
+  gap: 2px;
+}
+
+.settings-model-registry-primary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+.settings-model-registry-primary .settings-saved-models-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-model-registry-inline-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+
+.settings-model-registry-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
   gap: var(--space-2);
 }
 
-.settings-model-registry-item-main {
+.settings-model-registry-meta-block {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-2);
   min-width: 0;
+  flex: 1;
+}
+
+.settings-model-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: inherit;
+  line-height: 1;
+}
+
+.settings-model-toggle:focus-visible {
+  outline: none;
+}
+
+.settings-model-toggle:focus-visible .settings-model-toggle-track {
+  box-shadow: 0 0 0 var(--focus-ring-width) color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.settings-model-toggle-track {
+  position: relative;
+  display: block;
+  width: 2.35em;
+  height: 1.2em;
+  border-radius: 0.6em;
+  background: color-mix(in srgb, var(--muted) 38%, var(--border));
+  transition: background 0.15s ease;
+}
+
+.settings-model-toggle-on .settings-model-toggle-track {
+  background: color-mix(in srgb, var(--accent) 68%, var(--border));
+}
+
+.settings-model-toggle-thumb {
+  position: absolute;
+  top: calc((1.2em - 0.95em) / 2);
+  left: 0.125em;
+  width: 0.95em;
+  height: 0.95em;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 18%);
+  transition: transform 0.15s ease;
+}
+
+.settings-model-toggle-on .settings-model-toggle-thumb {
+  transform: translateX(calc(2.35em - 0.25em - 0.95em));
+}
+
+.settings-model-registry-edit {
+  flex-shrink: 0;
+  box-sizing: content-box;
+  width: 1em;
+  height: 1em;
+  min-width: 1em;
+  min-height: 1em;
+  padding: 2px;
+  margin: 0;
+  line-height: 1;
+  font-size: inherit;
+  border-width: 0;
+}
+
+.settings-model-registry-edit svg {
+  width: 1em;
+  height: 1em;
+  display: block;
+}
+
+.settings-model-registry-trash {
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--muted) 78%, var(--error));
+}
+
+.settings-model-registry-trash:hover:not(:disabled) {
+  color: var(--error);
 }
 
 .settings-model-registry-meta {
   font-size: 12px;
   color: var(--muted);
   word-break: break-all;
-}
-
-.settings-model-registry-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
 }
 
 .settings-text-input {

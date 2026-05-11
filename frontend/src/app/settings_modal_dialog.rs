@@ -7,13 +7,12 @@ use leptos::html::Div;
 use leptos::prelude::*;
 
 use crate::a11y::trap_tab_in_container;
-use crate::api::{ExecutorLlmDraftSignals, MainLlmDraftSignals};
 use crate::i18n::{self, Locale};
 
 use super::settings_models_registry::{SettingsModelsRegistryBundle, SettingsModelsRegistryPanel};
 use super::settings_sections::{
-    SettingsAppearanceBlock, SettingsExecutorLlmBlock, SettingsLlmBlock, SettingsLlmBlockBundle,
-    SettingsShortcutsBlock, SettingsToolsBlock,
+    SettingsAppearanceBlock, SettingsExecutorLlmBlock, SettingsExecutorLlmBlockBundle,
+    SettingsLlmBlock, SettingsLlmBlockBundle, SettingsShortcutsBlock, SettingsToolsBlock,
 };
 
 /// 设置弹窗 `view!` 所需的信号与回调（单参数入口，满足 fn-param 棘轮）。
@@ -46,6 +45,7 @@ pub struct SettingsModalDialogInput {
     pub clear_executor_key_intent: RwSignal<bool>,
     pub readonly_tool_ttl_cache_follow_server: RwSignal<bool>,
     pub saved_model_presets: RwSignal<Vec<crate::api::SavedModelPreset>>,
+    pub sync_saved_presets_baseline: Arc<dyn Fn() + Send + Sync>,
 }
 
 #[component]
@@ -116,12 +116,12 @@ fn SettingsModalDialogBody(input: SettingsModalDialogInput) -> impl IntoView {
         clear_executor_key_intent,
         readonly_tool_ttl_cache_follow_server,
         saved_model_presets,
+        sync_saved_presets_baseline,
         ..
     } = input;
 
     view! {
         <div class="modal-body">
-            <p class="modal-hint">{move || i18n::settings_intro(appearance_locale.get())}</p>
             <Show when=move || llm_settings_feedback.get().is_some()>
                 <p class="settings-save-feedback settings-save-feedback-global">{move || {
                     llm_settings_feedback.get().unwrap_or_default()
@@ -137,25 +137,13 @@ fn SettingsModalDialogBody(input: SettingsModalDialogInput) -> impl IntoView {
             <SettingsModelsRegistryPanel bundle=SettingsModelsRegistryBundle {
                 locale: appearance_locale,
                 saved_model_presets,
-                main: MainLlmDraftSignals {
-                    llm_api_base_draft,
-                    llm_api_base_preset_select,
-                    llm_model_draft,
-                    llm_temperature_draft,
-                    llm_context_tokens_draft,
-                    llm_thinking_mode_draft,
-                },
-                main_api_key_draft: llm_api_key_draft,
-                exec: ExecutorLlmDraftSignals {
-                    executor_llm_api_base_draft,
-                    executor_llm_api_base_preset_select,
-                    executor_llm_model_draft,
-                },
-                exec_api_key_draft: executor_llm_api_key_draft,
                 form_id_prefix: "settings-modal",
+                sync_saved_presets_baseline,
+                llm_settings_feedback,
             } />
             <SettingsLlmBlock bundle=SettingsLlmBlockBundle {
                 locale: appearance_locale,
+                saved_model_presets,
                 llm_api_base_draft,
                 llm_api_base_preset_select,
                 llm_model_draft,
@@ -166,19 +154,20 @@ fn SettingsModalDialogBody(input: SettingsModalDialogInput) -> impl IntoView {
                 llm_api_key_draft,
                 llm_has_saved_key,
                 clear_client_key_intent,
-                hint_class: "modal-hint settings-field-nested-hint",
                 llm_thinking_mode_select_id: "settings-modal-llm-thinking-mode",
+                llm_saved_preset_select_id: "settings-modal-llm-saved-preset",
             } />
-            <SettingsExecutorLlmBlock
-                locale=appearance_locale
-                executor_llm_api_base_draft=executor_llm_api_base_draft
-                executor_llm_api_base_preset_select=executor_llm_api_base_preset_select
-                executor_llm_model_draft=executor_llm_model_draft
-                executor_llm_api_key_draft=executor_llm_api_key_draft
-                executor_llm_has_saved_key=executor_llm_has_saved_key
-                clear_executor_key_intent=clear_executor_key_intent
-                hint_class="modal-hint settings-field-nested-hint"
-            />
+            <SettingsExecutorLlmBlock bundle=SettingsExecutorLlmBlockBundle {
+                locale: appearance_locale,
+                saved_model_presets,
+                executor_llm_api_base_draft,
+                executor_llm_api_base_preset_select,
+                executor_llm_model_draft,
+                executor_llm_api_key_draft,
+                executor_llm_has_saved_key,
+                clear_executor_key_intent,
+                executor_saved_preset_select_id: "settings-modal-executor-saved-preset",
+            } />
             <SettingsToolsBlock
                 locale=appearance_locale
                 readonly_tool_ttl_cache_follow_server=readonly_tool_ttl_cache_follow_server

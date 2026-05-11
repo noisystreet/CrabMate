@@ -1,15 +1,15 @@
 //! 设置页导航轨与内容区（从 `settings_page` 拆出以降低 `SettingsPageView` 的 nloc 棘轮）。
 
-use leptos::prelude::*;
+use std::sync::Arc;
 
-use crate::api::{ExecutorLlmDraftSignals, MainLlmDraftSignals};
+use leptos::prelude::*;
 
 use super::super::settings_models_registry::{
     SettingsModelsRegistryBundle, SettingsModelsRegistryPanel,
 };
 use super::super::settings_sections::{
-    SettingsAppearanceBlock, SettingsExecutorLlmBlock, SettingsLlmBlock, SettingsLlmBlockBundle,
-    SettingsShortcutsBlock, SettingsToolsBlock,
+    SettingsAppearanceBlock, SettingsExecutorLlmBlock, SettingsExecutorLlmBlockBundle,
+    SettingsLlmBlock, SettingsLlmBlockBundle, SettingsShortcutsBlock, SettingsToolsBlock,
 };
 use super::hash_routing::{SettingsSection, write_settings_section_to_hash};
 use super::section_copy::{section_desc, section_title};
@@ -102,6 +102,13 @@ pub(super) struct SettingsPagePanelDrafts {
     pub saved_model_presets: RwSignal<Vec<crate::api::SavedModelPreset>>,
 }
 
+/// 已保存模型列表与本机持久化回调 + 顶栏 LLM 反馈（缩短 `SettingsPageContentPanels` 形参，满足 fn-param 棘轮）。
+#[derive(Clone)]
+pub(super) struct SettingsPageContentRegistryWire {
+    pub sync_saved_presets_baseline: Arc<dyn Fn() + Send + Sync>,
+    pub llm_settings_feedback: RwSignal<Option<String>>,
+}
+
 #[component]
 pub(super) fn SettingsPageContentPanels(
     active_section: RwSignal<SettingsSection>,
@@ -111,7 +118,12 @@ pub(super) fn SettingsPageContentPanels(
     clear_executor_key_intent: RwSignal<bool>,
     execution_mode_draft: RwSignal<String>,
     readonly_tool_ttl_cache_follow_server: RwSignal<bool>,
+    registry_wire: SettingsPageContentRegistryWire,
 ) -> impl IntoView {
+    let SettingsPageContentRegistryWire {
+        sync_saved_presets_baseline,
+        llm_settings_feedback,
+    } = registry_wire;
     let SettingsPagePanelDrafts {
         appearance_theme,
         appearance_bg_decor,
@@ -131,11 +143,19 @@ pub(super) fn SettingsPageContentPanels(
         saved_model_presets,
     } = drafts;
 
+    let sync_saved_presets_line = StoredValue::new(sync_saved_presets_baseline);
+
     view! {
         <section class="settings-content">
             <header class="settings-content-header">
                 <h2 class="settings-content-title">{move || section_title(active_section.get(), appearance_locale.get())}</h2>
-                <p class="settings-content-desc">{move || section_desc(active_section.get(), appearance_locale.get())}</p>
+                <Show when=move || {
+                    !section_desc(active_section.get(), appearance_locale.get()).is_empty()
+                }>
+                    <p class="settings-content-desc">{move || {
+                        section_desc(active_section.get(), appearance_locale.get())
+                    }}</p>
+                </Show>
             </header>
             <Show when=move || active_section.get() == SettingsSection::Appearance>
                 <SettingsAppearanceBlock
@@ -151,25 +171,13 @@ pub(super) fn SettingsPageContentPanels(
                 <SettingsModelsRegistryPanel bundle=SettingsModelsRegistryBundle {
                     locale: appearance_locale,
                     saved_model_presets,
-                    main: MainLlmDraftSignals {
-                        llm_api_base_draft,
-                        llm_api_base_preset_select,
-                        llm_model_draft,
-                        llm_temperature_draft,
-                        llm_context_tokens_draft,
-                        llm_thinking_mode_draft,
-                    },
-                    main_api_key_draft: llm_api_key_draft,
-                    exec: ExecutorLlmDraftSignals {
-                        executor_llm_api_base_draft,
-                        executor_llm_api_base_preset_select,
-                        executor_llm_model_draft,
-                    },
-                    exec_api_key_draft: executor_llm_api_key_draft,
                     form_id_prefix: "settings-page",
+                    sync_saved_presets_baseline: sync_saved_presets_line.get_value().clone(),
+                    llm_settings_feedback,
                 } />
                 <SettingsLlmBlock bundle=SettingsLlmBlockBundle {
                     locale: appearance_locale,
+                    saved_model_presets,
                     llm_api_base_draft,
                     llm_api_base_preset_select,
                     llm_model_draft,
@@ -180,22 +188,30 @@ pub(super) fn SettingsPageContentPanels(
                     llm_api_key_draft,
                     llm_has_saved_key,
                     clear_client_key_intent,
-                    hint_class: "settings-field-nested-hint",
                     llm_thinking_mode_select_id: "settings-page-llm-thinking-mode",
+                    llm_saved_preset_select_id: "settings-page-llm-saved-preset",
                 } />
             </Show>
 
             <Show when=move || active_section.get() == SettingsSection::ExecutorLlm>
-                <SettingsExecutorLlmBlock
-                    locale=appearance_locale
-                    executor_llm_api_base_draft=executor_llm_api_base_draft
-                    executor_llm_api_base_preset_select=executor_llm_api_base_preset_select
-                    executor_llm_model_draft=executor_llm_model_draft
-                    executor_llm_api_key_draft=executor_llm_api_key_draft
-                    executor_llm_has_saved_key=executor_llm_has_saved_key
-                    clear_executor_key_intent=clear_executor_key_intent
-                    hint_class="settings-field-nested-hint"
-                />
+                <SettingsModelsRegistryPanel bundle=SettingsModelsRegistryBundle {
+                    locale: appearance_locale,
+                    saved_model_presets,
+                    form_id_prefix: "settings-page-exec-models",
+                    sync_saved_presets_baseline: sync_saved_presets_line.get_value().clone(),
+                    llm_settings_feedback,
+                } />
+                <SettingsExecutorLlmBlock bundle=SettingsExecutorLlmBlockBundle {
+                    locale: appearance_locale,
+                    saved_model_presets,
+                    executor_llm_api_base_draft,
+                    executor_llm_api_base_preset_select,
+                    executor_llm_model_draft,
+                    executor_llm_api_key_draft,
+                    executor_llm_has_saved_key,
+                    clear_executor_key_intent,
+                    executor_saved_preset_select_id: "settings-page-executor-saved-preset",
+                } />
             </Show>
 
             <Show when=move || active_section.get() == SettingsSection::Tools>

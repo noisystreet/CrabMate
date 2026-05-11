@@ -47,10 +47,6 @@ pub const CLIENT_LLM_API_BASE_PRESETS: &[ClientLlmApiBasePreset] = &[
     },
 ];
 
-pub fn preset_by_id(id: &str) -> Option<&'static ClientLlmApiBasePreset> {
-    CLIENT_LLM_API_BASE_PRESETS.iter().find(|p| p.id == id)
-}
-
 /// 当前草稿对应的 `<select>` value：`preset.id`，或与任一预设 `url` 完全一致时取该预设 id，否则 `custom`。
 pub fn api_base_select_value_for_draft(draft: &str) -> &'static str {
     let t = draft.trim();

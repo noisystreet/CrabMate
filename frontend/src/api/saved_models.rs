@@ -7,6 +7,10 @@ use super::browser::local_storage;
 
 const STORAGE_KEY: &str = "crabmate-web-saved-model-presets-v1";
 
+fn default_preset_enabled() -> bool {
+    true
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavedModelPreset {
     pub label: String,
@@ -19,6 +23,9 @@ pub struct SavedModelPreset {
     /// 可选；旧版列表无该字段时反序列化为空串。
     #[serde(default)]
     pub api_key: String,
+    /// 禁用后不出现在主/执行器下拉的可选项中，且无法被选中套用。
+    #[serde(default = "default_preset_enabled")]
+    pub enabled: bool,
 }
 
 #[must_use]
@@ -100,31 +107,18 @@ pub struct ExecutorLlmDraftSignals {
     pub executor_llm_model_draft: RwSignal<String>,
 }
 
-/// 从当前主 LLM 草稿生成一条可入库的预设（标签可与模型名对齐）；`api_key` 取当前主模型密钥草稿。
+/// 查找与给定 `api_base` / `api_base_preset_select` / `model` 完全一致的首条已保存预设下标。
 #[must_use]
-pub fn saved_model_preset_from_main_drafts(
-    llm_api_base_draft: &str,
-    llm_api_base_preset_select: &str,
-    llm_model_draft: &str,
-    llm_temperature_draft: &str,
-    llm_context_tokens_draft: &str,
-    llm_thinking_mode_draft: &str,
-    api_key: &str,
-) -> SavedModelPreset {
-    let model = llm_model_draft.trim();
-    let label = if model.is_empty() {
-        "model".to_string()
-    } else {
-        model.to_string()
-    };
-    SavedModelPreset {
-        label,
-        api_base: llm_api_base_draft.trim().to_string(),
-        api_base_preset_select: llm_api_base_preset_select.trim().to_string(),
-        model: llm_model_draft.trim().to_string(),
-        temperature: llm_temperature_draft.trim().to_string(),
-        llm_context_tokens: llm_context_tokens_draft.trim().to_string(),
-        llm_thinking_mode: llm_thinking_mode_draft.trim().to_string(),
-        api_key: api_key.to_string(),
-    }
+pub fn matching_saved_preset_index(
+    presets: &[SavedModelPreset],
+    api_base: &str,
+    api_base_preset_select: &str,
+    model: &str,
+) -> Option<usize> {
+    presets.iter().position(|p| {
+        p.enabled
+            && p.api_base.trim() == api_base.trim()
+            && p.api_base_preset_select.trim() == api_base_preset_select.trim()
+            && p.model.trim() == model.trim()
+    })
 }

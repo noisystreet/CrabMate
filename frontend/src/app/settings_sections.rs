@@ -1,18 +1,19 @@
 use leptos::prelude::*;
 use leptos_dom::helpers::event_target_value;
 
+use crate::api::MainLlmDraftSignals;
 use crate::app_prefs::THEME_SLUGS;
 use crate::i18n::{self, Locale};
 use crate::settings_llm_fields::{
-    LlmApiBasePresetSelect, LlmClientApiKeyField, LlmContextTokensField, LlmCustomApiBaseInput,
-    LlmExecutorApiKeyField, LlmModelField, LlmTemperatureField, LlmThinkingModeField,
-    OptionalLlmExecutionModeField,
+    LlmContextTokensField, LlmSavedPresetApplyTarget, LlmSavedPresetPicker, LlmTemperatureField,
+    LlmThinkingModeField, OptionalLlmExecutionModeField,
 };
 
 /// 设置页「主 LLM」区块所需信号（缩短 [`SettingsLlmBlock`] 形参列表；勿命名为 `*Props`，与 Leptos 组件宏生成类型冲突）。
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub(crate) struct SettingsLlmBlockBundle {
     pub locale: RwSignal<Locale>,
+    pub saved_model_presets: RwSignal<Vec<crate::api::SavedModelPreset>>,
     pub llm_api_base_draft: RwSignal<String>,
     pub llm_api_base_preset_select: RwSignal<String>,
     pub llm_model_draft: RwSignal<String>,
@@ -23,9 +24,10 @@ pub(crate) struct SettingsLlmBlockBundle {
     pub llm_api_key_draft: RwSignal<String>,
     pub llm_has_saved_key: RwSignal<bool>,
     pub clear_client_key_intent: RwSignal<bool>,
-    pub hint_class: &'static str,
     /// `<select id=…>`：设置页与弹窗可能同时挂载，须用不同 id。
     pub llm_thinking_mode_select_id: &'static str,
+    /// 已保存模型下拉：设置页与弹窗须不同 id。
+    pub llm_saved_preset_select_id: &'static str,
 }
 
 #[component]
@@ -99,6 +101,7 @@ pub(crate) fn SettingsAppearanceBlock(
 pub(crate) fn SettingsLlmBlock(bundle: SettingsLlmBlockBundle) -> impl IntoView {
     let SettingsLlmBlockBundle {
         locale,
+        saved_model_presets,
         llm_api_base_draft,
         llm_api_base_preset_select,
         llm_model_draft,
@@ -109,100 +112,88 @@ pub(crate) fn SettingsLlmBlock(bundle: SettingsLlmBlockBundle) -> impl IntoView 
         llm_api_key_draft,
         llm_has_saved_key,
         clear_client_key_intent,
-        hint_class,
         llm_thinking_mode_select_id,
+        llm_saved_preset_select_id,
     } = bundle;
+    let main_drafts = MainLlmDraftSignals {
+        llm_api_base_draft,
+        llm_api_base_preset_select,
+        llm_model_draft,
+        llm_temperature_draft,
+        llm_context_tokens_draft,
+        llm_thinking_mode_draft,
+    };
     view! {
         <div class="settings-block">
             <h3 class="settings-block-title">{move || i18n::settings_block_llm(locale.get())}</h3>
-            <p class=hint_class>{move || i18n::settings_llm_hint(locale.get())}</p>
-            <LlmApiBasePresetSelect
+            <LlmSavedPresetPicker
                 locale
-                api_base_draft=llm_api_base_draft
-                api_base_preset_select=llm_api_base_preset_select
-                model_draft=llm_model_draft
-                select_id="settings-llm-api-base-preset"
+                saved_model_presets=saved_model_presets
+                pick_target=LlmSavedPresetApplyTarget::Main(
+                    main_drafts,
+                    llm_api_key_draft,
+                    llm_has_saved_key,
+                    clear_client_key_intent,
+                )
+                select_id=llm_saved_preset_select_id
             />
-            <LlmCustomApiBaseInput
-                locale
-                api_base_draft=llm_api_base_draft
-                api_base_preset_select=llm_api_base_preset_select
-                label_fn=i18n::settings_label_api_base
-                placeholder_fn=i18n::settings_ph_api_base
-                input_id="settings-llm-api-base"
-            />
-            <LlmModelField
-                locale
-                model_draft=llm_model_draft
-                label_fn=i18n::settings_label_model
-                placeholder_fn=i18n::settings_ph_model
-                input_id="settings-llm-model"
-            />
-            <LlmTemperatureField locale temperature_draft=llm_temperature_draft hint_class />
-            <LlmContextTokensField locale llm_context_tokens_draft hint_class />
+            <LlmTemperatureField locale temperature_draft=llm_temperature_draft />
+            <LlmContextTokensField locale llm_context_tokens_draft />
             <LlmThinkingModeField
                 locale
                 thinking_mode_draft=llm_thinking_mode_draft
-                hint_class
                 select_id=llm_thinking_mode_select_id
             />
-            <OptionalLlmExecutionModeField locale execution_mode_draft hint_class />
-            <LlmClientApiKeyField
-                locale
-                api_key_draft=llm_api_key_draft
-                has_saved_key=llm_has_saved_key
-                clear_key_intent=clear_client_key_intent
-                hint_class
-                saved_note_fn=i18n::settings_key_saved_note
-                clear_label_fn=i18n::settings_clear_key
-            />
+            <OptionalLlmExecutionModeField locale execution_mode_draft=execution_mode_draft />
         </div>
     }
 }
 
+/// 设置页「执行器 LLM」区块信号。
+#[derive(Clone, Copy)]
+pub(crate) struct SettingsExecutorLlmBlockBundle {
+    pub locale: RwSignal<Locale>,
+    pub saved_model_presets: RwSignal<Vec<crate::api::SavedModelPreset>>,
+    pub executor_llm_api_base_draft: RwSignal<String>,
+    pub executor_llm_api_base_preset_select: RwSignal<String>,
+    pub executor_llm_model_draft: RwSignal<String>,
+    pub executor_llm_api_key_draft: RwSignal<String>,
+    pub executor_llm_has_saved_key: RwSignal<bool>,
+    pub clear_executor_key_intent: RwSignal<bool>,
+    pub executor_saved_preset_select_id: &'static str,
+}
+
 #[component]
-pub(crate) fn SettingsExecutorLlmBlock(
-    locale: RwSignal<Locale>,
-    executor_llm_api_base_draft: RwSignal<String>,
-    executor_llm_api_base_preset_select: RwSignal<String>,
-    executor_llm_model_draft: RwSignal<String>,
-    executor_llm_api_key_draft: RwSignal<String>,
-    executor_llm_has_saved_key: RwSignal<bool>,
-    clear_executor_key_intent: RwSignal<bool>,
-    hint_class: &'static str,
-) -> impl IntoView {
+pub(crate) fn SettingsExecutorLlmBlock(bundle: SettingsExecutorLlmBlockBundle) -> impl IntoView {
+    let SettingsExecutorLlmBlockBundle {
+        locale,
+        saved_model_presets,
+        executor_llm_api_base_draft,
+        executor_llm_api_base_preset_select,
+        executor_llm_model_draft,
+        executor_llm_api_key_draft,
+        executor_llm_has_saved_key,
+        clear_executor_key_intent,
+        executor_saved_preset_select_id,
+    } = bundle;
+    let exec_drafts = crate::api::ExecutorLlmDraftSignals {
+        executor_llm_api_base_draft,
+        executor_llm_api_base_preset_select,
+        executor_llm_model_draft,
+    };
     view! {
         <div class="settings-block">
             <h3 class="settings-block-title">{move || i18n::settings_block_executor_llm(locale.get())}</h3>
-            <p class=hint_class>{move || i18n::settings_executor_llm_hint(locale.get())}</p>
-            <LlmApiBasePresetSelect
+            <LlmSavedPresetPicker
                 locale
-                api_base_draft=executor_llm_api_base_draft
-                api_base_preset_select=executor_llm_api_base_preset_select
-                model_draft=executor_llm_model_draft
-                select_id="settings-executor-llm-api-base-preset"
-            />
-            <LlmCustomApiBaseInput
-                locale
-                api_base_draft=executor_llm_api_base_draft
-                api_base_preset_select=executor_llm_api_base_preset_select
-                label_fn=i18n::settings_label_executor_api_base
-                placeholder_fn=i18n::settings_ph_api_base
-                input_id="settings-executor-llm-api-base"
-            />
-            <LlmModelField
-                locale
-                model_draft=executor_llm_model_draft
-                label_fn=i18n::settings_label_executor_model
-                placeholder_fn=i18n::settings_ph_model
-                input_id="settings-executor-llm-model"
-            />
-            <LlmExecutorApiKeyField
-                locale
-                api_key_draft=executor_llm_api_key_draft
-                has_saved_key=executor_llm_has_saved_key
-                clear_key_intent=clear_executor_key_intent
-                hint_class
+                saved_model_presets=saved_model_presets
+                pick_target=LlmSavedPresetApplyTarget::Executor(
+                    exec_drafts,
+                    executor_llm_api_key_draft,
+                    executor_llm_has_saved_key,
+                    clear_executor_key_intent,
+                )
+                select_id=executor_saved_preset_select_id
             />
         </div>
     }
@@ -216,7 +207,6 @@ pub(crate) fn SettingsToolsBlock(
     view! {
         <div class="settings-block">
             <h3 class="settings-block-title">{move || i18n::settings_tools_readonly_ttl_block_title(locale.get())}</h3>
-            <p class="settings-field-nested-hint">{move || i18n::settings_tools_readonly_ttl_cache_hint(locale.get())}</p>
             <label class="settings-checkbox-label">
                 <input
                     type="checkbox"

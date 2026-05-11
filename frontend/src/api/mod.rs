@@ -42,6 +42,6 @@ pub use http::{
 pub use saved_models::{
     ExecutorLlmDraftSignals, MainLlmDraftSignals, SavedModelPreset,
     apply_saved_model_preset_to_executor_fields, apply_saved_model_preset_to_main_fields,
-    load_saved_model_presets_from_storage, persist_saved_model_presets_to_storage,
-    saved_model_preset_from_main_drafts,
+    load_saved_model_presets_from_storage, matching_saved_preset_index,
+    persist_saved_model_presets_to_storage,
 };
