@@ -2,7 +2,7 @@
 //!
 //! 会话列表与活动 id 仅经 [`ChatDomainWiringSignals::chat`]（[`ChatSessionSignals`]）传递，**不**在 [`WireChatDomainEffectsArgs`] 中重复平铺 `sessions` / `active_id`。
 //!
-//! `App` 仍负责 [`AppSignals`](crate::app::app_signals::AppSignals) 与 [`ComposerStreamShell::from_app_signals`](super::handles::ComposerStreamShell::from_app_signals)；本模块只注册聊天相关副作用，并返回 [`ChatComposerWires`](super::handles::ChatComposerWires) 与 [`ChatStreamBusyMemos`](crate::chat_session_state::ChatStreamBusyMemos)（`Memo` 派生的回合忙状态，供底栏 / 作曲器 / 消息行共用）。
+//! `App` 仍负责 [`AppSignals`](crate::app::app_signals::AppSignals) 与 [`ComposerStreamShell::from_app_signals`](super::handles::ComposerStreamShell::from_app_signals)；本模块只注册聊天相关副作用，并返回 [`ChatComposerWires`](super::handles::ChatComposerWires) 与 [`ChatStreamBusyMemos`](crate::chat_session_state::ChatStreamBusyMemos)（`Memo` 派生的回合忙状态，供底栏 / 合成器 / 消息行共用）。
 //!
 //! # `wire_chat_domain_effects` 内顺序
 //!
@@ -86,7 +86,7 @@ fn wire_chat_domain_auxiliary_sequence(a: &WireChatDomainEffectsArgs) {
     wire_focus_message_after_nav(d.composer.focus_message_id_after_nav);
 }
 
-/// 注册聊天列与输入/流式相关 `wire_*`，并返回 composer 侧闭包与 **`Memo` 派生的回合忙状态**（底栏 / 作曲器 / 消息行共用）。
+/// 注册聊天列与输入/流式相关 `wire_*`，并返回 composer 侧闭包与 **`Memo` 派生的回合忙状态**（底栏 / 合成器 / 消息行共用）。
 pub(crate) fn wire_chat_domain_effects(
     args: WireChatDomainEffectsArgs,
 ) -> (ChatComposerWires, ChatStreamBusyMemos) {

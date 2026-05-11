@@ -364,7 +364,7 @@ pub fn flush_active_composer_draft(
     flush_composer_draft_to_session(sessions, &prev, &draft.get_untracked());
 }
 
-/// 切换当前活跃会话：**先**将作曲器草稿写入当前会话，再激活 `next_session_id` 并从会话条目载入草稿。
+/// 切换当前活跃会话：**先**将合成器草稿写入当前会话，再激活 `next_session_id` 并从会话条目载入草稿。
 ///
 /// `reset_sync_to_local_only`：侧栏 /「管理会话」点选时为 `true`（与历史行为一致，`session_sync` 回到仅本地语义）。
 pub fn switch_active_session_after_composer_flush(

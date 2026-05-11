@@ -2,7 +2,7 @@
 //!
 //! # 写入关系（简表）
 //!
-//! - **`sessions` / `active_id`**：侧栏、作曲器、持久化 `Effect`、工具/导出等；流式助手正文增量默认进 [`Self::stream_text_overlay`]，收尾时合并回会话，**不一定**每 token 触发 `sessions` 无效化。
+//! - **`sessions` / `active_id`**：侧栏、合成器、持久化 `Effect`、工具/导出等；流式助手正文增量默认进 [`Self::stream_text_overlay`]，收尾时合并回会话，**不一定**每 token 触发 `sessions` 无效化。
 //! - **`stream_bound_session_id`**：与 [`crate::app::chat::composer_stream::context::ChatStreamCallbackCtx::bound_stream_session_id`] 同源（**发起 attach 时**快照），决定 SSE 写哪条会话，**不一定**等于当时的 [`Self::active_id`]。
 //! - **`stream_job_id` / `stream_last_event_seq`**：SSE 首包与 `id:` 行；应用 [`ChatSessionSignals::clear_stream_resume_handles`] 表示「放弃当前断线重连上下文」（错误、结束、`stream_ended`、会话切换等）。上述四槽位亦经 [`ChatStreamSessionLane`] / [`ChatSessionSignals::stream_session_lane`] 成组访问。
 //! - **`session_sync`**：服务端 `conversation_id` / revision，与 `POST /chat/branch` 等对齐。
@@ -65,7 +65,7 @@ pub struct ChatStreamBusyMemos {
     pub tool_timeline_busy_ui: Memo<bool>,
 }
 
-/// 在 [`crate::app::chat::wire_chat_domain::wire_chat_domain_effects`] 内**单次**构造，经 [`crate::app::chat::handles::ChatColumnShell`] 下发到底栏 / 作曲器 / 消息行。
+/// 在 [`crate::app::chat::wire_chat_domain::wire_chat_domain_effects`] 内**单次**构造，经 [`crate::app::chat::handles::ChatColumnShell`] 下发到底栏 / 合成器 / 消息行。
 #[must_use]
 pub fn make_chat_stream_busy_memos(
     chat: ChatSessionSignals,
@@ -144,7 +144,7 @@ impl ChatSessionSignals {
         self.sessions.update(f);
     }
 
-    /// 作曲器：发送、重试、取消流、新建会话等。
+    /// 合成器：发送、重试、取消流、新建会话等。
     #[inline]
     pub fn update_sessions_composer(self, f: impl FnOnce(&mut Vec<ChatSession>)) {
         self.sessions.update(f);

@@ -23,7 +23,7 @@ pub(crate) use super::composer_wires::wire_chat_composer_streams;
 ///
 /// `sessions_snapshot` **必须**由调用方通过 [`RwSignal::get_untracked`]（或等价「不订阅」快照）提供；
 /// 若在响应式 `Effect` 内改为 `sessions.with`/`get`，effect 会订阅每条流式消息写入并反复执行本逻辑，
-/// 覆盖作曲器缓冲。
+/// 覆盖合成器缓冲。
 fn apply_shell_after_active_session_changed(
     chat: &ChatSessionSignals,
     draft: RwSignal<String>,
