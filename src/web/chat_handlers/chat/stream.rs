@@ -23,7 +23,8 @@ use crate::web::http_types::chat::{ApiError, ChatRequestBody};
 use crate::clarification_questionnaire::merge_user_text_with_clarification_answers;
 use crate::redact;
 use crate::web::app_state::{
-    APPROVAL_SESSION_TTL, AppState, ApprovalSessionSlot, purge_expired_approval_sessions,
+    APPROVAL_SESSION_TTL, AppState, ApprovalSessionSlot, ConversationTurnSeed,
+    purge_expired_approval_sessions,
 };
 use crate::web::audit;
 
@@ -112,31 +113,12 @@ async fn chat_stream_resume_response(
     Ok(Some(resp))
 }
 
-/// 流式 chat：返回 SSE，每个 event 的 **`id`** 为单调序号（断线重连与 **`Last-Event-ID`** / **`stream_resume`**），`data` 为控制面 JSON 或正文 delta。
-pub(crate) async fn chat_stream_handler(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
-    Json(body): Json<ChatRequestBody>,
-) -> Result<Response, (StatusCode, Json<ApiError>)> {
-    let p = parse_chat_stream_request(&state, &body)?;
-    ensure_bearer_api_key_for_chat(&state, &p.llm_override).await?;
-    if let Some(reply) = run_web_builtin_command(&state, p.user_trim.as_str()).await {
-        let stream =
-            stream::iter(vec![(1_u64, reply)]).map(|(seq, data)| sse_event_with_id(seq, data));
-        let mut resp = Sse::new(stream)
-            .keep_alive(KeepAlive::default())
-            .into_response();
-        if let Ok(v) = HeaderValue::from_str(&p.conversation_id) {
-            resp.headers_mut().insert("x-conversation-id", v);
-        }
-        return Ok(resp);
-    }
+type ChatStreamHttpError = (StatusCode, Json<ApiError>);
 
-    if let Some(resp) = chat_stream_resume_response(&state, &headers, &p).await? {
-        return Ok(resp);
-    }
-
+async fn chat_stream_expand_at_files_and_clarify(
+    state: &Arc<AppState>,
+    p: &ChatStreamRequestParsed,
+) -> Result<String, ChatStreamHttpError> {
     let eff_ws_raw = state.effective_workspace_path().await;
     let eff_ws = eff_ws_raw.trim().to_string();
     if eff_ws.is_empty() && p.user_trim.contains('@') {
@@ -150,7 +132,7 @@ pub(crate) async fn chat_stream_handler(
             }),
         ));
     }
-    let work_dir_for_expand = std::path::PathBuf::from(eff_ws_raw.clone());
+    let work_dir_for_expand = std::path::PathBuf::from(eff_ws_raw);
     let msg = {
         let cfg = state.http.cfg.read().await;
         expand_at_file_refs_in_user_message(&p.user_trim, work_dir_for_expand.as_path(), &cfg)
@@ -165,11 +147,21 @@ pub(crate) async fn chat_stream_handler(
                 )
             })?
     };
-    let msg = merge_user_text_with_clarification_answers(msg, p.clarify);
-    let turn_seed = build_messages_for_turn(
-        &state,
+    Ok(merge_user_text_with_clarification_answers(
+        msg,
+        p.clarify.clone(),
+    ))
+}
+
+async fn chat_stream_build_turn_seed(
+    state: &Arc<AppState>,
+    p: &ChatStreamRequestParsed,
+    msg: &str,
+) -> Result<ConversationTurnSeed, ChatStreamHttpError> {
+    build_messages_for_turn(
+        state,
         &p.conversation_id,
-        &msg,
+        msg,
         &p.image_urls,
         p.agent_role.as_deref(),
     )
@@ -183,14 +175,13 @@ pub(crate) async fn chat_stream_handler(
                 reason_code: None,
             }),
         )
-    })?;
-    let workspace_is_set = state.workspace_is_set().await;
-    let work_dir_for_job = if eff_ws.is_empty() {
-        let cfg = state.http.cfg.read().await;
-        std::path::PathBuf::from(cfg.command_exec.run_command_working_dir.clone())
-    } else {
-        std::path::PathBuf::from(eff_ws.clone())
-    };
+    })
+}
+
+async fn chat_stream_open_approval_session_if_requested(
+    state: &Arc<AppState>,
+    body: &ChatRequestBody,
+) -> Result<(Option<String>, Option<chat_job_queue::WebApprovalSession>), ChatStreamHttpError> {
     let approval_session_id = match body.approval_session_id.as_deref() {
         Some(v) => Some(normalize_approval_session_id(v).ok_or((
             StatusCode::BAD_REQUEST,
@@ -219,6 +210,42 @@ pub(crate) async fn chat_stream_handler(
             approval_rx,
         });
     }
+    Ok((approval_session_id, web_approval_session))
+}
+
+struct ChatStreamEnqueueCtx<'a> {
+    state: &'a Arc<AppState>,
+    headers: &'a HeaderMap,
+    peer: SocketAddr,
+    p: &'a ChatStreamRequestParsed,
+    msg: &'a str,
+    turn_seed: ConversationTurnSeed,
+    eff_ws: &'a str,
+    approval_session_id: Option<String>,
+    web_approval_session: Option<chat_job_queue::WebApprovalSession>,
+}
+
+async fn chat_stream_try_enqueue_job(
+    ctx: ChatStreamEnqueueCtx<'_>,
+) -> Result<(u64, mpsc::Receiver<(u64, String)>), ChatStreamHttpError> {
+    let ChatStreamEnqueueCtx {
+        state,
+        headers,
+        peer,
+        p,
+        msg,
+        turn_seed,
+        eff_ws,
+        approval_session_id,
+        web_approval_session,
+    } = ctx;
+    let workspace_is_set = state.workspace_is_set().await;
+    let work_dir_for_job = if eff_ws.is_empty() {
+        let cfg = state.http.cfg.read().await;
+        std::path::PathBuf::from(cfg.command_exec.run_command_working_dir.clone())
+    } else {
+        std::path::PathBuf::from(eff_ws.to_string())
+    };
     let job_id = state.chat.chat_queue.next_job_id();
     let (tx, rx) = mpsc::channel::<(u64, String)>(1024);
     debug!(
@@ -226,12 +253,12 @@ pub(crate) async fn chat_stream_handler(
         "chat stream 请求摘要 job_id={} user_len={} user_preview={}",
         job_id,
         msg.len(),
-        redact::preview_chars(&msg, redact::MESSAGE_LOG_PREVIEW_CHARS)
+        redact::preview_chars(msg, redact::MESSAGE_LOG_PREVIEW_CHARS)
     );
     info!(target: "crabmate", "chat stream 任务入队 job_id={}", job_id);
     let request_audit = {
         let cfg = state.http.cfg.read().await;
-        audit::web_request_audit_from_http(&cfg, &headers, peer)
+        audit::web_request_audit_from_http(&cfg, headers, peer)
     };
     if let Err(e) = state
         .chat
@@ -250,8 +277,8 @@ pub(crate) async fn chat_stream_handler(
                 workspace_is_set,
                 temperature_override: p.temperature_override,
                 seed_override: p.seed_override,
-                llm_override: p.llm_override,
-                executor_llm_override: p.executor_llm_override,
+                llm_override: p.llm_override.clone(),
+                executor_llm_override: p.executor_llm_override.clone(),
                 execution_mode_override: p.execution_mode_override,
                 readonly_tool_ttl_cache_secs: p.readonly_tool_ttl_cache_secs,
                 request_audit,
@@ -280,6 +307,14 @@ pub(crate) async fn chat_stream_handler(
             }),
         ));
     }
+    Ok((job_id, rx))
+}
+
+fn chat_stream_sse_response_with_meta(
+    rx: mpsc::Receiver<(u64, String)>,
+    p: &ChatStreamRequestParsed,
+    job_id: u64,
+) -> Response {
     let stream = ReceiverStream::new(rx).map(|(seq, data)| sse_event_with_id(seq, data));
     let mut resp = Sse::new(stream)
         .keep_alive(KeepAlive::default())
@@ -290,5 +325,51 @@ pub(crate) async fn chat_stream_handler(
     if let Ok(v) = HeaderValue::from_str(&job_id.to_string()) {
         resp.headers_mut().insert("x-stream-job-id", v);
     }
-    Ok(resp)
+    resp
+}
+
+/// 流式 chat：返回 SSE，每个 event 的 **`id`** 为单调序号（断线重连与 **`Last-Event-ID`** / **`stream_resume`**），`data` 为控制面 JSON 或正文 delta。
+pub(crate) async fn chat_stream_handler(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Json(body): Json<ChatRequestBody>,
+) -> Result<Response, (StatusCode, Json<ApiError>)> {
+    let p = parse_chat_stream_request(&state, &body)?;
+    ensure_bearer_api_key_for_chat(&state, &p.llm_override).await?;
+    if let Some(reply) = run_web_builtin_command(&state, p.user_trim.as_str()).await {
+        let stream =
+            stream::iter(vec![(1_u64, reply)]).map(|(seq, data)| sse_event_with_id(seq, data));
+        let mut resp = Sse::new(stream)
+            .keep_alive(KeepAlive::default())
+            .into_response();
+        if let Ok(v) = HeaderValue::from_str(&p.conversation_id) {
+            resp.headers_mut().insert("x-conversation-id", v);
+        }
+        return Ok(resp);
+    }
+
+    if let Some(resp) = chat_stream_resume_response(&state, &headers, &p).await? {
+        return Ok(resp);
+    }
+
+    let msg = chat_stream_expand_at_files_and_clarify(&state, &p).await?;
+    let turn_seed = chat_stream_build_turn_seed(&state, &p, &msg).await?;
+    let eff_ws = state.effective_workspace_path().await;
+    let eff_ws = eff_ws.trim();
+    let (approval_session_id, web_approval_session) =
+        chat_stream_open_approval_session_if_requested(&state, &body).await?;
+    let (job_id, rx) = chat_stream_try_enqueue_job(ChatStreamEnqueueCtx {
+        state: &state,
+        headers: &headers,
+        peer,
+        p: &p,
+        msg: &msg,
+        turn_seed,
+        eff_ws,
+        approval_session_id,
+        web_approval_session,
+    })
+    .await?;
+    Ok(chat_stream_sse_response_with_meta(rx, &p, job_id))
 }

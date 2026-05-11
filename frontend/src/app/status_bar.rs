@@ -51,6 +51,122 @@ struct StatusBarChipsSignals {
 }
 
 #[component]
+fn StatusBarChipsSkeleton(locale: RwSignal<Locale>) -> impl IntoView {
+    view! {
+        <div
+            class="status-chips-skeleton"
+            aria-busy="true"
+            prop:aria-label=move || i18n::status_loading_aria(locale.get())
+        >
+            <span class="status-chip status-chip-skeleton">
+                <span class="skeleton skeleton-chip-label"></span>
+                <span class="skeleton skeleton-chip-value skeleton-chip-model"></span>
+            </span>
+            <span class="status-chip status-chip-skeleton status-chip-url">
+                <span class="skeleton skeleton-chip-label"></span>
+                <span class="skeleton skeleton-chip-value skeleton-chip-url-bar"></span>
+            </span>
+            <span class="status-chip status-chip-skeleton status-chip-role">
+                <span class="skeleton skeleton-chip-label"></span>
+                <span class="skeleton skeleton-chip-value skeleton-chip-role-select"></span>
+            </span>
+        </div>
+    }
+}
+
+#[component]
+fn StatusBarChipsLoaded(
+    st: StatusTasksSignals,
+    client_llm_storage_tick: RwSignal<u64>,
+    selected_agent_role: RwSignal<Option<String>>,
+    chat: ChatSessionSignals,
+    locale: RwSignal<Locale>,
+) -> impl IntoView {
+    view! {
+        <>
+            <span class="status-chip">
+                <span class="status-chip-label">
+                    {move || i18n::status_chip_model(locale.get())}
+                </span>
+                <span class="status-chip-value">{move || {
+                    let _tick = client_llm_storage_tick.get();
+                    let sd = st.status_data.get();
+                    let (_, stored_model, _, _, _) = load_client_llm_text_fields_from_storage();
+                    status_bar_effective_model(sd.as_ref(), stored_model.as_str())
+                }}</span>
+            </span>
+            <span class="status-chip status-chip-url" title=move || {
+                let _tick = client_llm_storage_tick.get();
+                let sd = st.status_data.get();
+                let (stored_base, _, _, _, _) = load_client_llm_text_fields_from_storage();
+                status_bar_effective_api_base(sd.as_ref(), stored_base.as_str())
+            }>
+                <span class="status-chip-label">
+                    {move || i18n::status_chip_base_url(locale.get())}
+                </span>
+                <span class="status-chip-value">{move || {
+                    let _tick = client_llm_storage_tick.get();
+                    let sd = st.status_data.get();
+                    let (stored_base, _stored_model, _, _, _) =
+                        load_client_llm_text_fields_from_storage();
+                    status_bar_effective_api_base(sd.as_ref(), stored_base.as_str())
+                }}</span>
+            </span>
+            <label
+                class="status-chip status-chip-role"
+                prop:title=move || i18n::status_role_title_attr(locale.get())
+            >
+                <span class="status-chip-label">
+                    {move || i18n::status_role_label(locale.get())}
+                </span>
+                <select
+                    class="status-agent-select"
+                    prop:value=move || {
+                        selected_agent_role
+                            .get()
+                            .unwrap_or_else(|| "__default__".to_string())
+                    }
+                    on:change=move |ev| {
+                        let v = event_target_value(&ev);
+                        let t = v.trim();
+                        if t.is_empty() || t == "__default__" {
+                            selected_agent_role.set(None);
+                        } else {
+                            selected_agent_role.set(Some(t.to_string()));
+                        }
+                        chat.clear_stream_resume_handles();
+                    }
+                >
+                    <option value="__default__">{move || {
+                        let loc = locale.get();
+                        match st
+                            .status_data
+                            .get()
+                            .and_then(|d| d.default_agent_role_id.clone())
+                        {
+                            Some(id) => i18n::status_default_option(loc, Some(id.as_str())),
+                            None => i18n::status_default_option(loc, None),
+                        }
+                    }}</option>
+                    {move || {
+                        st.status_data
+                            .get()
+                            .map(|d| d.agent_role_ids)
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|id| {
+                                let label = id.clone();
+                                view! { <option value=id>{label}</option> }
+                            })
+                            .collect_view()
+                    }}
+                </select>
+            </label>
+        </>
+    }
+}
+
+#[component]
 fn StatusBarChipsRow(
     chips: StatusBarChipsSignals,
     refresh_status: Arc<dyn Fn() + Send + Sync>,
@@ -66,27 +182,7 @@ fn StatusBarChipsRow(
         <div class="status-chips">
             {move || {
                 if st.status_loading.get() {
-                    view! {
-                        <div
-                            class="status-chips-skeleton"
-                            aria-busy="true"
-                            prop:aria-label=move || i18n::status_loading_aria(locale.get())
-                        >
-                            <span class="status-chip status-chip-skeleton">
-                                <span class="skeleton skeleton-chip-label"></span>
-                                <span class="skeleton skeleton-chip-value skeleton-chip-model"></span>
-                            </span>
-                            <span class="status-chip status-chip-skeleton status-chip-url">
-                                <span class="skeleton skeleton-chip-label"></span>
-                                <span class="skeleton skeleton-chip-value skeleton-chip-url-bar"></span>
-                            </span>
-                            <span class="status-chip status-chip-skeleton status-chip-role">
-                                <span class="skeleton skeleton-chip-label"></span>
-                                <span class="skeleton skeleton-chip-value skeleton-chip-role-select"></span>
-                            </span>
-                        </div>
-                    }
-                    .into_any()
+                    view! { <StatusBarChipsSkeleton locale=locale /> }.into_any()
                 } else if let Some(fetch_err) = st.status_fetch_err.get() {
                     view! {
                         <StatusFetchErrorPanel
@@ -98,98 +194,13 @@ fn StatusBarChipsRow(
                     .into_any()
                 } else {
                     view! {
-                        <>
-                            <span class="status-chip">
-                                <span class="status-chip-label">
-                                    {move || i18n::status_chip_model(locale.get())}
-                                </span>
-                                <span class="status-chip-value">{move || {
-                                    let _tick = client_llm_storage_tick.get();
-                                    let sd = st.status_data.get();
-                                    let (_, stored_model, _, _, _) =
-                                        load_client_llm_text_fields_from_storage();
-                                    status_bar_effective_model(
-                                        sd.as_ref(),
-                                        stored_model.as_str(),
-                                    )
-                                }}</span>
-                            </span>
-                            <span class="status-chip status-chip-url" title=move || {
-                                let _tick = client_llm_storage_tick.get();
-                                let sd = st.status_data.get();
-                                let (stored_base, _, _, _, _) =
-                                    load_client_llm_text_fields_from_storage();
-                                status_bar_effective_api_base(
-                                    sd.as_ref(),
-                                    stored_base.as_str(),
-                                )
-                            }>
-                                <span class="status-chip-label">
-                                    {move || i18n::status_chip_base_url(locale.get())}
-                                </span>
-                                <span class="status-chip-value">{move || {
-                                    let _tick = client_llm_storage_tick.get();
-                                    let sd = st.status_data.get();
-                                    let (stored_base, _stored_model, _, _, _) =
-                                        load_client_llm_text_fields_from_storage();
-                                    status_bar_effective_api_base(
-                                        sd.as_ref(),
-                                        stored_base.as_str(),
-                                    )
-                                }}</span>
-                            </span>
-                            <label
-                                class="status-chip status-chip-role"
-                                prop:title=move || i18n::status_role_title_attr(locale.get())
-                            >
-                                <span class="status-chip-label">
-                                    {move || i18n::status_role_label(locale.get())}
-                                </span>
-                                <select
-                                    class="status-agent-select"
-                                    prop:value=move || {
-                                        selected_agent_role
-                                            .get()
-                                            .unwrap_or_else(|| "__default__".to_string())
-                                    }
-                                    on:change=move |ev| {
-                                        let v = event_target_value(&ev);
-                                        let t = v.trim();
-                                        if t.is_empty() || t == "__default__" {
-                                            selected_agent_role.set(None);
-                                        } else {
-                                            selected_agent_role.set(Some(t.to_string()));
-                                        }
-                                        chat.clear_stream_resume_handles();
-                                    }
-                                >
-                                    <option value="__default__">{move || {
-                                        let loc = locale.get();
-                                        match st.status_data
-                                            .get()
-                                            .and_then(|d| d.default_agent_role_id.clone())
-                                        {
-                                            Some(id) => {
-                                                i18n::status_default_option(loc, Some(id.as_str()))
-                                            }
-                                            None => i18n::status_default_option(loc, None),
-                                        }
-                                    }}</option>
-                                    {move || {
-                                        st.status_data
-                                            .get()
-                                            .map(|d| d.agent_role_ids)
-                                            .unwrap_or_default()
-                                            .into_iter()
-                                            .map(|id| {
-                                                let label = id.clone();
-                                                view! { <option value=id>{label}</option> }
-                                            })
-                                            .collect_view()
-                                    }}
-                                </select>
-                            </label>
-                        </>
+                        <StatusBarChipsLoaded
+                            st=st
+                            client_llm_storage_tick=client_llm_storage_tick
+                            selected_agent_role=selected_agent_role
+                            chat=chat
+                            locale=locale
+                        />
                     }
                     .into_any()
                 }
