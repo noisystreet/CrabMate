@@ -2,23 +2,26 @@
 //!
 //! 均在**工作区根**执行外部 CLI，路径参数须为相对路径且不含 `..`；全部为只读分析，不修改文件。
 
+#[path = "source_analysis_tools_bandit.rs"]
+mod source_analysis_tools_bandit;
+#[path = "source_analysis_tools_lizard.rs"]
+mod source_analysis_tools_lizard;
 #[path = "source_analysis_tools_semgrep.rs"]
 mod source_analysis_tools_semgrep;
 #[path = "source_analysis_tools_shellcheck.rs"]
 mod source_analysis_tools_shellcheck;
 
+pub use source_analysis_tools_bandit::bandit_scan;
+pub use source_analysis_tools_lizard::lizard_complexity;
 pub use source_analysis_tools_semgrep::semgrep_scan;
 pub use source_analysis_tools_shellcheck::shellcheck_check;
 
-use std::io::ErrorKind;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
 use super::output_util;
 use super::tool_param_types::{
-    BanditConfidenceArg, BanditOutputFormat, BanditScanArgs, BanditSeverityArg,
     CppcheckAnalyzeArgs, CppcheckPlatform, HadolintCheckArgs, HadolintOutputFormat,
-    LizardComplexityArgs, LizardSortKind,
 };
 
 const MAX_OUTPUT_LINES: usize = 800;
@@ -221,216 +224,6 @@ pub fn hadolint_check(args_json: &str, workspace_root: &Path, max_output_len: us
 
     cmd.arg(path_raw);
     run_and_format(cmd, max_output_len, "hadolint")
-}
-
-// ── Bandit ──────────────────────────────────────────────────
-
-pub fn bandit_scan(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v = match crate::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: BanditScanArgs = match serde_json::from_value(v) {
-        Ok(a) => a,
-        Err(e) => return format!("参数 JSON 与 bandit_scan 形状不一致: {e}"),
-    };
-    let base = match workspace_root.canonicalize() {
-        Ok(p) => p,
-        Err(e) => return format!("工作区根目录无法解析: {e}"),
-    };
-    let paths = match parse_rel_paths_from_slice(&args.paths, "paths", &["."], MAX_PATHS) {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
-    let paths = filter_existing(&base, &paths);
-
-    let mut cmd = Command::new("bandit");
-    cmd.arg("-r").current_dir(&base);
-
-    if let Some(sev) = args.severity {
-        match sev {
-            BanditSeverityArg::Low => {
-                cmd.arg("-ll");
-            }
-            BanditSeverityArg::Medium => {
-                cmd.arg("-ll");
-            }
-            BanditSeverityArg::High => {
-                cmd.arg("-lll");
-            }
-        }
-    }
-
-    if let Some(conf) = args.confidence {
-        match conf {
-            BanditConfidenceArg::Low => {
-                cmd.arg("-i");
-            }
-            BanditConfidenceArg::Medium => {
-                cmd.arg("-ii");
-            }
-            BanditConfidenceArg::High => {
-                cmd.arg("-iii");
-            }
-        }
-    }
-
-    if let Some(skip) = args
-        .skip
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        if skip.len() > 512 || skip.contains('\n') || skip.contains("..") {
-            return "错误：skip 值过长或含非法字符".to_string();
-        }
-        cmd.arg("--skip").arg(skip);
-    }
-
-    if let Some(fmt) = args.format {
-        let s = match fmt {
-            BanditOutputFormat::Txt => "txt",
-            BanditOutputFormat::Json => "json",
-            BanditOutputFormat::Csv => "csv",
-            BanditOutputFormat::Xml => "xml",
-            BanditOutputFormat::Html => "html",
-            BanditOutputFormat::Yaml => "yaml",
-            BanditOutputFormat::Screen => "screen",
-            BanditOutputFormat::Custom => "custom",
-        };
-        cmd.arg("-f").arg(s);
-    }
-
-    for p in &paths {
-        cmd.arg(p);
-    }
-    run_and_format(cmd, max_output_len, "bandit")
-}
-
-// ── Lizard ──────────────────────────────────────────────────
-
-fn push_lizard_cli_args(
-    cmd: &mut Command,
-    args: &LizardComplexityArgs,
-    paths: &[String],
-) -> Result<(), String> {
-    if let Some(threshold) = args.threshold
-        && threshold > 0
-        && threshold <= 200
-    {
-        cmd.arg("-C").arg(threshold.to_string());
-    }
-
-    if let Some(lang) = args
-        .language
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        if lang.len() > 40 || lang.chars().any(|c| !c.is_alphanumeric() && c != ',') {
-            return Err(format!("错误：language 值非法：{lang}"));
-        }
-        cmd.arg("-l").arg(lang);
-    }
-
-    if let Some(sort) = args.sort {
-        let s = match sort {
-            LizardSortKind::CyclomaticComplexity => "cyclomatic_complexity",
-            LizardSortKind::Length => "length",
-            LizardSortKind::TokenCount => "token_count",
-            LizardSortKind::ParameterCount => "parameter_count",
-            LizardSortKind::Nloc => "nloc",
-        };
-        cmd.arg("--sort").arg(s);
-    }
-
-    if args.warnings_only {
-        cmd.arg("-w");
-    }
-
-    for ex in &args.exclude {
-        let ex = ex.trim();
-        if ex.is_empty() || ex.len() > 160 || ex.contains("..") {
-            continue;
-        }
-        cmd.arg("-x").arg(format!("*/{ex}/*"));
-    }
-
-    for p in paths {
-        cmd.arg(p);
-    }
-    Ok(())
-}
-
-pub fn lizard_complexity(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v = match crate::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: LizardComplexityArgs = match serde_json::from_value(v) {
-        Ok(a) => a,
-        Err(e) => return format!("参数 JSON 与 lizard_complexity 形状不一致: {e}"),
-    };
-    let base = match workspace_root.canonicalize() {
-        Ok(p) => p,
-        Err(e) => return format!("工作区根目录无法解析: {e}"),
-    };
-    let paths = match parse_rel_paths_from_slice(&args.paths, "paths", &["."], MAX_PATHS) {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
-    let paths = filter_existing(&base, &paths);
-
-    let mut cmd = Command::new("lizard");
-    cmd.current_dir(&base)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if let Err(msg) = push_lizard_cli_args(&mut cmd, &args, &paths) {
-        return msg;
-    }
-
-    let output = match cmd.output() {
-        Ok(o) => o,
-        Err(e) if e.kind() == ErrorKind::NotFound => {
-            let mut cmd_py = Command::new("python3");
-            cmd_py
-                .arg("-m")
-                .arg("lizard")
-                .current_dir(&base)
-                .stdin(Stdio::null())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped());
-            if let Err(msg) = push_lizard_cli_args(&mut cmd_py, &args, &paths) {
-                return msg;
-            }
-            match cmd_py.output() {
-                Ok(o) => o,
-                Err(e2) => {
-                    return format!(
-                        "lizard: 未找到命令 `lizard`（{e}），且 `python3 -m lizard` 亦失败（{e2}）。\
-请安装：`pip install lizard` 或 `pip install --user lizard`，将 `lizard` 所在目录加入 PATH（`pip install --user` 时常见为 ~/.local/bin）；\
-验证：`lizard --version` 或 `python3 -m lizard --version`。"
-                    );
-                }
-            }
-        }
-        Err(e) => {
-            return format!("lizard: 无法启动（{e}）。请确认已安装对应 CLI 且在 PATH 中。");
-        }
-    };
-    let code = output.status.code().unwrap_or(-1);
-    let body = output_util::merge_process_output(
-        &output,
-        output_util::ProcessOutputMerge::ConcatStdoutStderr,
-    );
-    output_util::format_exited_command_output(
-        "lizard",
-        code,
-        &body,
-        max_output_len,
-        MAX_OUTPUT_LINES,
-    )
 }
 
 #[cfg(test)]
