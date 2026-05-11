@@ -3,7 +3,8 @@
 //! 热路径 **[`append_stream_assistant_chunk`]** 仅 bump [`crate::chat_session_state::ChatSessionSignals::stream_text_overlay`]，
 //! 避免每个 SSE 片段 `sessions.update`；合并回 [`crate::storage::StoredMessage`] 见收尾路径中的 [`crate::stream_text_overlay::stream_overlay_take_into_stored_message`]。
 //! **调试构建**下校验 [`crate::chat_session_state::ChatSessionSignals::stream_bound_session_id`] 与 `sid` 一致（若已设置）。
-//! 与 [`super::super::per_stream_accum::PerStreamAccum`] 分工：`append_stream_assistant_chunk` 只 bump overlay；会话 `messages` 写入走 **[`with_stream_write_session_mut`]** 或等价的 **[`ChatStreamCallbackCtx::update_bound_session`]**（`callbacks` 内优先后者以显式「绑定会话写」语义）。
+//! 与 [`super::super::per_stream_accum::PerStreamAccum`] 分工：**[`append_stream_assistant_chunk`]** / **[`ChatStreamCallbackCtx::append_assistant_chunk`]**
+//! 只 bump overlay；会话 `messages` 写入走 **[`with_stream_write_session_mut`]** 或等价的 **[`ChatStreamCallbackCtx::update_bound_session`]**（`callbacks` 内优先后者以显式「绑定会话写」语义）。
 
 use leptos::prelude::*;
 
@@ -79,5 +80,11 @@ impl ChatStreamCallbackCtx {
     #[inline]
     pub(super) fn read_bound_session<R>(&self, f: impl FnOnce(&ChatSession) -> R) -> Option<R> {
         with_stream_write_session_ref(self, f)
+    }
+
+    /// 向绑定会话中正在生成的 assistant 气泡追加流式片段（与 [`append_stream_assistant_chunk`] 等价）。
+    #[inline]
+    pub(super) fn append_assistant_chunk(&self, message_id: &str, chunk: &str, to_reasoning: bool) {
+        append_stream_assistant_chunk(self, message_id, chunk, to_reasoning);
     }
 }
