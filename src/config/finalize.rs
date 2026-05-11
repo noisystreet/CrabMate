@@ -581,6 +581,8 @@ fn canonical_run_command_working_dir(b: &ConfigBuilder) -> Result<PathBuf, Strin
     Ok(p)
 }
 
+include!("finalize_parts/finalize_agent_layers.inc.rs");
+
 /// 验证、clamp 并组装最终 `AgentConfig`（实现体；`finalize` 为薄包装以降低圈复杂度扫描中的函数 CCN）。
 fn finalize_agent_config(
     mut b: ConfigBuilder,
@@ -592,132 +594,8 @@ fn finalize_agent_config(
     let intent = derive_intent_fields(&b)?;
     let ltm = derive_ltm(&b)?;
     let sem = derive_codebase_semantic(&b);
-    let max_message_history = b
-        .session_ui
-        .max_message_history
-        .unwrap_or(32)
-        .clamp(1, 1024) as usize;
-    let tui_load_session_on_start = b.session_ui.tui_load_session_on_start.unwrap_or(false);
-    let tui_session_max_messages = b
-        .session_ui
-        .tui_session_max_messages
-        .unwrap_or(400)
-        .clamp(2, 50_000) as usize;
-    let repl_initial_workspace_messages_enabled = b
-        .session_ui
-        .repl_initial_workspace_messages_enabled
-        .unwrap_or(false);
-    let command_timeout_secs = b.command_exec.command_timeout_secs.unwrap_or(30).max(1);
-    let command_max_output_len = b
-        .command_exec
-        .command_max_output_len
-        .unwrap_or(8192)
-        .clamp(1024, 131072) as usize;
-    let max_tokens = b.llm_sampling.max_tokens.unwrap_or(4096).clamp(256, 32768) as u32;
-    let llm_context_tokens = b
-        .llm_sampling
-        .llm_context_tokens
-        .unwrap_or(0)
-        .min(10_000_000) as u32;
-    let temperature = b.llm_sampling.temperature.unwrap_or(0.3).clamp(0.0, 2.0) as f32;
-    let api_timeout_secs = b.llm_http_retry.api_timeout_secs.unwrap_or(60).max(1);
-    let api_max_retries = b.llm_http_retry.api_max_retries.unwrap_or(2).min(10) as u32;
-    let api_retry_delay_secs = b.llm_http_retry.api_retry_delay_secs.unwrap_or(2).max(1);
-    let weather_timeout_secs = b.weather_tool.weather_timeout_secs.unwrap_or(15).max(1);
-    let reflection_default_max_rounds = b
-        .per_plan_policy
-        .reflection_default_max_rounds
-        .unwrap_or(5)
-        .max(1) as usize;
-
-    let allowed_commands_vec = b.command_exec.allowed_commands.clone().unwrap_or_else(|| {
-        vec![
-            "aclocal".into(),
-            "ar".into(),
-            "autoconf".into(),
-            "automake".into(),
-            "autoreconf".into(),
-            "basename".into(),
-            "bzcat".into(),
-            "c++filt".into(),
-            "cargo".into(),
-            "cat".into(),
-            "clang".into(),
-            "clang++".into(),
-            "cmake".into(),
-            "cmp".into(),
-            "column".into(),
-            "cut".into(),
-            "date".into(),
-            "df".into(),
-            "diff".into(),
-            "dirname".into(),
-            "du".into(),
-            "echo".into(),
-            "egrep".into(),
-            "env".into(),
-            "expand".into(),
-            "fgrep".into(),
-            "file".into(),
-            "find".into(),
-            "fmt".into(),
-            "fold".into(),
-            "free".into(),
-            "g++".into(),
-            "gcc".into(),
-            "git".into(),
-            "grep".into(),
-            "head".into(),
-            "hexdump".into(),
-            "hostname".into(),
-            "id".into(),
-            "join".into(),
-            "jq".into(),
-            "ld".into(),
-            "ldd".into(),
-            "ls".into(),
-            "lsblk".into(),
-            "lscpu".into(),
-            "make".into(),
-            "ninja".into(),
-            "nl".into(),
-            "nm".into(),
-            "nproc".into(),
-            "objdump".into(),
-            "od".into(),
-            "paste".into(),
-            "pkg-config".into(),
-            "printenv".into(),
-            "ps".into(),
-            "pwd".into(),
-            "readelf".into(),
-            "readlink".into(),
-            "realpath".into(),
-            "rev".into(),
-            "rustc".into(),
-            "seq".into(),
-            "size".into(),
-            "sort".into(),
-            "stat".into(),
-            "strings".into(),
-            "tac".into(),
-            "tail".into(),
-            "tr".into(),
-            "tree".into(),
-            "uname".into(),
-            "unexpand".into(),
-            "uniq".into(),
-            "uptime".into(),
-            "wc".into(),
-            "whereis".into(),
-            "which".into(),
-            "whoami".into(),
-            "xxd".into(),
-            "xzcat".into(),
-            "zcat".into(),
-        ]
-    });
-    let allowed_commands: Arc<[String]> = allowed_commands_vec.into();
+    let mid = clamp_finalize_mid_layer_scalars(&b);
+    let allowed_commands = allowed_commands_arc_from_builder(&b);
 
     let run_command_working_dir = canonical_run_command_working_dir(&b)?;
 
@@ -726,61 +604,10 @@ fn finalize_agent_config(
         run_command_working_dir.as_path(),
     )?;
 
-    let system_prompt = if let Some(ref path) = b.roles_prompts.system_prompt_file {
-        read_system_prompt_file_resolved(
-            path,
-            &system_prompt_search_bases,
-            run_command_working_dir.as_path(),
-        )?
-    } else if !b.roles_prompts.system_prompt.trim().is_empty() {
-        b.roles_prompts.system_prompt.clone()
-    } else {
-        return Err(
-            "配置错误：未设置 system_prompt_file 或内联 system_prompt（请在 config/default_config.toml、config.toml、环境变量 CM_SYSTEM_PROMPT / CM_SYSTEM_PROMPT_FILE 中配置）".to_string(),
-        );
-    };
-    if system_prompt.trim().is_empty() {
-        return Err("配置错误：system_prompt 从文件或内联加载后为空".to_string());
-    }
-    let cursor_rules_enabled = b.cursor_rules.cursor_rules_enabled.unwrap_or(true);
-    let cursor_rules_dir = b
-        .cursor_rules
-        .cursor_rules_dir
-        .clone()
-        .unwrap_or_else(|| ".cursor/rules".to_string());
-    let cursor_rules_include_agents_md = b
-        .cursor_rules
-        .cursor_rules_include_agents_md
-        .unwrap_or(true);
-    let cursor_rules_max_chars = b
-        .cursor_rules
-        .cursor_rules_max_chars
-        .unwrap_or(48_000)
-        .clamp(1024, 1_000_000);
-    let system_prompt = cursor_rules::merge_system_prompt_with_cursor_rules(
-        system_prompt,
-        cursor_rules_enabled,
-        &cursor_rules_dir,
-        cursor_rules_include_agents_md,
-        cursor_rules_max_chars as usize,
-    )?;
-    let skills_enabled = b.skills.skills_enabled.unwrap_or(true);
-    let skills_dir = b
-        .skills
-        .skills_dir
-        .clone()
-        .unwrap_or_else(|| ".crabmate/skills".to_string());
-    let skills_max_chars = b
-        .skills
-        .skills_max_chars
-        .unwrap_or(32_000)
-        .clamp(1024, 1_000_000);
-    let skills_top_k = b.skills.skills_top_k.unwrap_or(4).clamp(1, 64) as usize;
-    let system_prompt = skills::merge_system_prompt_with_skills(
-        system_prompt,
-        skills_enabled,
-        &skills_dir,
-        skills_max_chars as usize,
+    let pm = merge_system_prompt_layers_for_finalize(
+        &mut b,
+        &system_prompt_search_bases,
+        run_command_working_dir.as_path(),
     )?;
 
     let default_agent_role_id = b
@@ -793,17 +620,17 @@ fn finalize_agent_config(
         agent_roles::finalize_agent_role_catalog(agent_roles::FinalizeAgentRoleCatalogParams {
             entries: std::mem::take(&mut b.agent_role_entries),
             default_role_id: default_agent_role_id,
-            global_effective_system_prompt: system_prompt.as_str(),
+            global_effective_system_prompt: pm.system_prompt.as_str(),
             system_prompt_search_bases: &system_prompt_search_bases,
             run_command_working_dir: run_command_working_dir.as_path(),
-            cursor_rules_enabled,
-            cursor_rules_dir: &cursor_rules_dir,
-            cursor_rules_include_agents_md,
-            cursor_rules_max_chars: cursor_rules_max_chars as usize,
-            skills_enabled,
-            skills_dir: &skills_dir,
-            skills_max_chars: skills_max_chars as usize,
-            skills_top_k,
+            cursor_rules_enabled: pm.cursor_rules_enabled,
+            cursor_rules_dir: &pm.cursor_rules_dir,
+            cursor_rules_include_agents_md: pm.cursor_rules_include_agents_md,
+            cursor_rules_max_chars: pm.cursor_rules_max_chars as usize,
+            skills_enabled: pm.skills_enabled,
+            skills_dir: &pm.skills_dir,
+            skills_max_chars: pm.skills_max_chars as usize,
+            skills_top_k: pm.skills_top_k,
         })?;
 
     let scheduled_agent_tasks = super::scheduled_agent_task::finalize_scheduled_agent_tasks(
@@ -817,23 +644,23 @@ fn finalize_agent_config(
         intent,
         ltm,
         sem,
-        max_message_history,
-        tui_load_session_on_start,
-        tui_session_max_messages,
-        repl_initial_workspace_messages_enabled,
-        command_timeout_secs,
-        command_max_output_len,
-        max_tokens,
-        llm_context_tokens,
-        temperature,
-        api_timeout_secs,
-        api_max_retries,
-        api_retry_delay_secs,
-        weather_timeout_secs,
-        reflection_default_max_rounds,
+        max_message_history: mid.max_message_history,
+        tui_load_session_on_start: mid.tui_load_session_on_start,
+        tui_session_max_messages: mid.tui_session_max_messages,
+        repl_initial_workspace_messages_enabled: mid.repl_initial_workspace_messages_enabled,
+        command_timeout_secs: mid.command_timeout_secs,
+        command_max_output_len: mid.command_max_output_len,
+        max_tokens: mid.max_tokens,
+        llm_context_tokens: mid.llm_context_tokens,
+        temperature: mid.temperature,
+        api_timeout_secs: mid.api_timeout_secs,
+        api_max_retries: mid.api_max_retries,
+        api_retry_delay_secs: mid.api_retry_delay_secs,
+        weather_timeout_secs: mid.weather_timeout_secs,
+        reflection_default_max_rounds: mid.reflection_default_max_rounds,
         allowed_commands,
         workspace_allowed_roots,
-        system_prompt,
+        system_prompt: pm.system_prompt,
         default_agent_role_id,
         agent_roles,
         system_prompt_search_bases,

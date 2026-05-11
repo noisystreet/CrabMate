@@ -256,6 +256,46 @@ pub(super) struct IngestSseState<'a> {
     pub(super) tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
 }
 
+async fn ingest_sse_residual_buffer_if_needed(
+    stream_done: bool,
+    buf: &[u8],
+    state: IngestSseState<'_>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if stream_done || buf.is_empty() {
+        return Ok(());
+    }
+    let line = String::from_utf8_lossy(buf);
+    let line = line.trim();
+    if !line.starts_with("data: ") {
+        return Ok(());
+    }
+    let payload = line.strip_prefix("data: ").unwrap_or("").trim();
+    if payload == "[DONE]" {
+        return Ok(());
+    }
+    ingest_sse_data_payload(payload, state)
+        .await
+        .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })?;
+    Ok(())
+}
+
+/// 处理已 trim 的一行 SSE；返回 `true` 表示该行宣告 `[DONE]`。
+async fn ingest_openai_sse_trimmed_line(
+    line: &str,
+    state: IngestSseState<'_>,
+) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+    let Some(payload) = line.strip_prefix("data: ").map(str::trim) else {
+        return Ok(false);
+    };
+    if payload == "[DONE]" {
+        return Ok(true);
+    }
+    ingest_sse_data_payload(payload, state)
+        .await
+        .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })?;
+    Ok(false)
+}
+
 struct IngestSseReasoningFrame<'a> {
     delta: &'a StreamDelta,
     reasoning_acc: &'a mut String,
@@ -610,31 +650,29 @@ where
                 .unwrap_or("")
                 .trim();
             consumed = pos + 1;
-            if let Some(payload) = line.strip_prefix("data: ").map(str::trim) {
-                if payload == "[DONE]" {
-                    stream_done = true;
-                    break;
-                }
-                ingest_sse_data_payload(
-                    payload,
-                    IngestSseState {
-                        out,
-                        pending_sse_delta: &mut pending_sse_delta,
-                        reasoning_acc: &mut reasoning_acc,
-                        content_acc: &mut content_acc,
-                        finish_reason: &mut finish_reason,
-                        tool_calls_acc: &mut tool_calls_acc,
-                        parsing_tool_calls_notified: &mut parsing_tool_calls_notified,
-                        cli_terminal_plain,
-                        cli_plain_prefix_emitted: &mut cli_plain_prefix_emitted,
-                        cli_plain_reasoning_style_active: &mut cli_plain_reasoning_style_active,
-                        minimax_reasoning_snaps: &mut minimax_reasoning_snaps,
-                        coop_cancel: cancel,
-                        thinking_trace_enabled,
-                        tui_llm_stream_scratch: tui_llm_stream_scratch.clone(),
-                    },
-                )
-                .await?;
+            if ingest_openai_sse_trimmed_line(
+                line,
+                IngestSseState {
+                    out,
+                    pending_sse_delta: &mut pending_sse_delta,
+                    reasoning_acc: &mut reasoning_acc,
+                    content_acc: &mut content_acc,
+                    finish_reason: &mut finish_reason,
+                    tool_calls_acc: &mut tool_calls_acc,
+                    parsing_tool_calls_notified: &mut parsing_tool_calls_notified,
+                    cli_terminal_plain,
+                    cli_plain_prefix_emitted: &mut cli_plain_prefix_emitted,
+                    cli_plain_reasoning_style_active: &mut cli_plain_reasoning_style_active,
+                    minimax_reasoning_snaps: &mut minimax_reasoning_snaps,
+                    coop_cancel: cancel,
+                    thinking_trace_enabled,
+                    tui_llm_stream_scratch: tui_llm_stream_scratch.clone(),
+                },
+            )
+            .await?
+            {
+                stream_done = true;
+                break;
             }
         }
         if consumed > 0 {
@@ -645,35 +683,27 @@ where
         }
     }
 
-    if !stream_done && !buf.is_empty() {
-        let line = String::from_utf8_lossy(&buf);
-        let line = line.trim();
-        if line.starts_with("data: ") {
-            let payload = line.strip_prefix("data: ").unwrap_or("").trim();
-            if payload != "[DONE]" {
-                ingest_sse_data_payload(
-                    payload,
-                    IngestSseState {
-                        out,
-                        pending_sse_delta: &mut pending_sse_delta,
-                        reasoning_acc: &mut reasoning_acc,
-                        content_acc: &mut content_acc,
-                        finish_reason: &mut finish_reason,
-                        tool_calls_acc: &mut tool_calls_acc,
-                        parsing_tool_calls_notified: &mut parsing_tool_calls_notified,
-                        cli_terminal_plain,
-                        cli_plain_prefix_emitted: &mut cli_plain_prefix_emitted,
-                        cli_plain_reasoning_style_active: &mut cli_plain_reasoning_style_active,
-                        minimax_reasoning_snaps: &mut minimax_reasoning_snaps,
-                        coop_cancel: cancel,
-                        thinking_trace_enabled,
-                        tui_llm_stream_scratch: tui_llm_stream_scratch.clone(),
-                    },
-                )
-                .await?;
-            }
-        }
-    }
+    ingest_sse_residual_buffer_if_needed(
+        stream_done,
+        buf.as_slice(),
+        IngestSseState {
+            out,
+            pending_sse_delta: &mut pending_sse_delta,
+            reasoning_acc: &mut reasoning_acc,
+            content_acc: &mut content_acc,
+            finish_reason: &mut finish_reason,
+            tool_calls_acc: &mut tool_calls_acc,
+            parsing_tool_calls_notified: &mut parsing_tool_calls_notified,
+            cli_terminal_plain,
+            cli_plain_prefix_emitted: &mut cli_plain_prefix_emitted,
+            cli_plain_reasoning_style_active: &mut cli_plain_reasoning_style_active,
+            minimax_reasoning_snaps: &mut minimax_reasoning_snaps,
+            coop_cancel: cancel,
+            thinking_trace_enabled,
+            tui_llm_stream_scratch: tui_llm_stream_scratch.clone(),
+        },
+    )
+    .await?;
 
     flush_sse_delta_buffer(&mut pending_sse_delta, out, cancel).await;
 

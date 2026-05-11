@@ -341,6 +341,8 @@ where
     for_each_decoded_line_from_file(file, hint, on_line)
 }
 
+include!("text_encoding/for_each_decoded_head.inc.rs");
+
 /// 与 [`for_each_decoded_line_from_file`] 相同，但 `head` 已由调用方从 `file` 读出且文件指针位于 `head` 之后（与 `read_file` 嗅探阶段一致）。
 pub fn for_each_decoded_line_from_file_with_head<F>(
     mut file: File,
@@ -373,23 +375,7 @@ where
     };
     feed_decoder_strict(&mut decoder, first, &mut pending, false, label)?;
 
-    let mut drain_lines =
-        |pending: &mut String, on_line: &mut F| -> Result<std::ops::ControlFlow<()>, String> {
-            while let Some(pos) = pending.find('\n') {
-                line_no += 1;
-                let mut line = pending[..pos].to_string();
-                if line.ends_with('\r') {
-                    line.pop();
-                }
-                pending.drain(..=pos);
-                if on_line(line_no, &line).is_break() {
-                    return Ok(std::ops::ControlFlow::Break(()));
-                }
-            }
-            Ok(std::ops::ControlFlow::Continue(()))
-        };
-
-    if drain_lines(&mut pending, &mut on_line)?.is_break() {
+    if drain_pending_decoder_lines(&mut line_no, &mut pending, &mut on_line)?.is_break() {
         return Ok((line_no, note));
     }
 
@@ -403,19 +389,12 @@ where
             break;
         }
         feed_decoder_strict(&mut decoder, &chunk[..n], &mut pending, false, label)?;
-        if drain_lines(&mut pending, &mut on_line)?.is_break() {
+        if drain_pending_decoder_lines(&mut line_no, &mut pending, &mut on_line)?.is_break() {
             return Ok((line_no, note));
         }
     }
 
-    if !pending.is_empty() {
-        line_no += 1;
-        let mut line = pending;
-        if line.ends_with('\r') {
-            line.pop();
-        }
-        let _ = on_line(line_no, &line);
-    }
+    emit_decoder_pending_tail_line(&mut line_no, pending, &mut on_line);
 
     Ok((line_no, note))
 }

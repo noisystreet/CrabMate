@@ -237,6 +237,95 @@ struct ScanRebuildFileLoopState<'a> {
 }
 
 #[cfg(feature = "fastembed")]
+fn scan_rebuild_handle_missing_fingerprint(
+    p: &ScanRebuildFilesParams<'_>,
+    rel: &str,
+    st: &mut ScanRebuildFileLoopState<'_>,
+) {
+    if p.incremental && !p.subtree {
+        let _ = delete_rows_for_rel(
+            p.tx,
+            p.ws_key,
+            rel,
+            "删除不可索引文件的旧块失败",
+            "删除不可索引文件目录行失败",
+        );
+    }
+    *st.skipped_files = st.skipped_files.saturating_add(1);
+}
+
+#[cfg(feature = "fastembed")]
+fn scan_rebuild_incremental_unchanged(
+    p: &ScanRebuildFilesParams<'_>,
+    rel: &str,
+    size: u64,
+    mtime_ns: i64,
+    sha_hex: &str,
+    st: &mut ScanRebuildFileLoopState<'_>,
+) -> bool {
+    if p.incremental
+        && !p.subtree
+        && let Some((sz, mt, sh)) = p.catalog.get(rel)
+        && *sz == size
+        && *mt == mtime_ns
+        && *sh == sha_hex
+    {
+        *st.files_unchanged += 1;
+        return true;
+    }
+    false
+}
+
+#[cfg(feature = "fastembed")]
+fn scan_rebuild_collect_file_chunks(
+    rel: String,
+    text: &str,
+    ext: &str,
+    p: &ScanRebuildFilesParams<'_>,
+    st: &mut ScanRebuildFileLoopState<'_>,
+) -> usize {
+    let mut file_chunks = 0usize;
+    for (sl, el, chunk) in chunk_text_lines(text, p.chunk_max_chars) {
+        if chunk.chars().count() < 8 {
+            continue;
+        }
+        let h = hash_chunk(&rel, &chunk);
+        st.embed_batches
+            .push((rel.clone(), h, sl, el, chunk, ext.to_string()));
+        file_chunks += 1;
+    }
+    file_chunks
+}
+
+#[cfg(feature = "fastembed")]
+fn scan_rebuild_finalize_chunks_outcome(
+    p: &ScanRebuildFilesParams<'_>,
+    rel: String,
+    size: u64,
+    mtime_ns: i64,
+    sha_hex: String,
+    file_chunks: usize,
+    st: &mut ScanRebuildFileLoopState<'_>,
+) -> Result<(), String> {
+    if file_chunks > 0 {
+        *st.files_indexed += 1;
+        st.file_rows.push((rel, size, mtime_ns, sha_hex));
+        return Ok(());
+    }
+    if p.incremental && !p.subtree {
+        let _ = delete_rows_for_rel(
+            p.tx,
+            p.ws_key,
+            rel.as_str(),
+            "删除空块文件旧块失败",
+            "删除空块文件目录行失败",
+        );
+    }
+    *st.skipped_files = st.skipped_files.saturating_add(1);
+    Ok(())
+}
+
+#[cfg(feature = "fastembed")]
 fn scan_rebuild_process_one_file(
     p: &ScanRebuildFilesParams<'_>,
     path: &Path,
@@ -245,26 +334,10 @@ fn scan_rebuild_process_one_file(
     st: &mut ScanRebuildFileLoopState<'_>,
 ) -> Result<(), String> {
     let Some((size, mtime_ns, text, sha_hex)) = file_fingerprint(path, p.max_file_bytes) else {
-        if p.incremental && !p.subtree {
-            let _ = delete_rows_for_rel(
-                p.tx,
-                p.ws_key,
-                rel.as_str(),
-                "删除不可索引文件的旧块失败",
-                "删除不可索引文件目录行失败",
-            );
-        }
-        *st.skipped_files = st.skipped_files.saturating_add(1);
+        scan_rebuild_handle_missing_fingerprint(p, rel.as_str(), st);
         return Ok(());
     };
-    if p.incremental
-        && !p.subtree
-        && let Some((sz, mt, sh)) = p.catalog.get(&rel)
-        && *sz == size
-        && *mt == mtime_ns
-        && *sh == sha_hex
-    {
-        *st.files_unchanged += 1;
+    if scan_rebuild_incremental_unchanged(p, rel.as_str(), size, mtime_ns, &sha_hex, st) {
         return Ok(());
     }
     if p.incremental && !p.subtree {
@@ -280,32 +353,8 @@ fn scan_rebuild_process_one_file(
         *st.skipped_files = st.skipped_files.saturating_add(1);
         return Ok(());
     }
-    let mut file_chunks = 0usize;
-    for (sl, el, chunk) in chunk_text_lines(&text, p.chunk_max_chars) {
-        if chunk.chars().count() < 8 {
-            continue;
-        }
-        let h = hash_chunk(&rel, &chunk);
-        st.embed_batches
-            .push((rel.clone(), h, sl, el, chunk, ext.to_string()));
-        file_chunks += 1;
-    }
-    if file_chunks > 0 {
-        *st.files_indexed += 1;
-        st.file_rows.push((rel, size, mtime_ns, sha_hex));
-    } else {
-        if p.incremental && !p.subtree {
-            let _ = delete_rows_for_rel(
-                p.tx,
-                p.ws_key,
-                rel.as_str(),
-                "删除空块文件旧块失败",
-                "删除空块文件目录行失败",
-            );
-        }
-        *st.skipped_files = st.skipped_files.saturating_add(1);
-    }
-    Ok(())
+    let file_chunks = scan_rebuild_collect_file_chunks(rel.clone(), &text, ext, p, st);
+    scan_rebuild_finalize_chunks_outcome(p, rel, size, mtime_ns, sha_hex, file_chunks, st)
 }
 
 #[cfg(feature = "fastembed")]
