@@ -1,11 +1,14 @@
 //! 单条聊天消息行的根视图 [`chat_message_row`]。
 
+use std::collections::HashSet;
+
 use leptos::prelude::*;
 
 use crate::message_format::{
     is_staged_timeline_bubble, stored_message_is_staged_planner_round, strip_ansi_codes,
 };
 use crate::session_ops::format_msg_time_label;
+use crate::storage::ChatSession;
 
 use super::super::message_row_actions::MessageRowActionSignals;
 use super::super::message_row_user_layout::{
@@ -49,6 +52,68 @@ fn subgoal_metrics_line_view(line: Option<&String>) -> Option<AnyView> {
     })
 }
 
+#[derive(Clone, Copy)]
+struct ToolReasoningDrawerWire {
+    is_tool_bubble: bool,
+    tool_detail_expanded_ids: RwSignal<HashSet<String>>,
+    sessions: RwSignal<Vec<ChatSession>>,
+    active_id: RwSignal<String>,
+    mid_drawer_sv: StoredValue<String>,
+    is_terminal_tool: bool,
+    drawer_panel_class: &'static str,
+    drawer_pre_class: &'static str,
+}
+
+fn tool_reasoning_drawer_below_card(w: ToolReasoningDrawerWire) -> impl IntoView {
+    let ToolReasoningDrawerWire {
+        is_tool_bubble,
+        tool_detail_expanded_ids,
+        sessions,
+        active_id,
+        mid_drawer_sv,
+        is_terminal_tool,
+        drawer_panel_class,
+        drawer_pre_class,
+    } = w;
+    view! {
+        <Show
+            when=move || {
+                if !is_tool_bubble
+                    || !tool_detail_expanded_ids.with(|s| {
+                        s.contains(mid_drawer_sv.get_value().as_str())
+                    })
+                {
+                    return false;
+                }
+                !live_message_reasoning_text(
+                    sessions,
+                    active_id,
+                    mid_drawer_sv.get_value().as_str(),
+                )
+                .trim()
+                .is_empty()
+            }
+        >
+            <div class=drawer_panel_class>
+                <pre class=drawer_pre_class>
+                    {move || {
+                        let body = live_message_reasoning_text(
+                            sessions,
+                            active_id,
+                            mid_drawer_sv.get_value().as_str(),
+                        );
+                        if is_terminal_tool {
+                            strip_ansi_codes(&body)
+                        } else {
+                            body
+                        }
+                    }}
+                </pre>
+            </div>
+        </Show>
+    }
+}
+
 pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
     let ChatMessageRowSignals {
         msg_idx,
@@ -67,6 +132,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
         locale,
         markdown_render,
         apply_assistant_display_filters,
+        tool_detail_expanded_ids,
     } = s;
     let sessions = chat.sessions;
     let active_id = chat.active_id;
@@ -88,7 +154,6 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
     let is_tool_bubble = m.is_tool;
     let (wrap_class, user_row_outer_style, user_row_stack_style, user_row_bubble_style) =
         chat_row_wrap_and_user_styles(m.role.as_str(), is_tool_bubble);
-    let tool_detail_open = RwSignal::new(false);
     let (tool_detail_text, jump_uid) = tool_bubble_detail_and_jump_uid(
         is_tool_bubble,
         m.reasoning_text.clone(),
@@ -96,6 +161,24 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
         active_id,
         msg_idx,
     );
+    let msg_core = chat_message_row_body_core(ChatMessageRowBodyCoreParams {
+        m: m.clone(),
+        sessions,
+        active_id,
+        stream_text_overlay: chat.stream_text_overlay,
+        collapsed_long_assistant_ids,
+        locale,
+        markdown_render,
+        apply_assistant_display_filters,
+        chat_find_query,
+        is_tool_bubble,
+        tool_detail_text,
+        tool_reasoning_live: is_tool_bubble.then(|| (sessions, active_id, mid_highlight.clone())),
+        tool_detail_expanded_ids,
+        tool_mid: mid_highlight.clone(),
+        jump_uid,
+        auto_scroll_chat,
+    });
     let retry_visible_rc =
         arc_retry_visible_for_message(sessions, active_id, mid_highlight.clone());
     let actions_bar_visible_rc =
@@ -111,23 +194,6 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
         build_subgoal_exec_banner_text(loc_ut, phase_for_banner_sl, subgoal_target_line.as_deref());
     let subgoal_exec_banner_icon_key =
         build_subgoal_exec_banner_icon_key(loc_ut, phase_for_banner_sl);
-    let msg_core = chat_message_row_body_core(ChatMessageRowBodyCoreParams {
-        m: m.clone(),
-        sessions,
-        active_id,
-        stream_text_overlay: chat.stream_text_overlay,
-        collapsed_long_assistant_ids,
-        locale,
-        markdown_render,
-        apply_assistant_display_filters,
-        chat_find_query,
-        is_tool_bubble,
-        tool_detail_text: tool_detail_text.clone(),
-        tool_reasoning_live: is_tool_bubble.then(|| (sessions, active_id, mid_highlight.clone())),
-        tool_detail_open,
-        jump_uid,
-        auto_scroll_chat,
-    });
     let mid_dom = m.id.clone();
     let is_terminal_tool = m.tool_name.as_deref() == Some("terminal_session");
     let (drawer_panel_class, drawer_pre_class) = terminal_session_drawer_classes(is_terminal_tool);
@@ -199,37 +265,16 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
                         )
                     })}
                 </div>
-                <Show
-                    when=move || {
-                        if !is_tool_bubble || !tool_detail_open.get() {
-                            return false;
-                        }
-                        !live_message_reasoning_text(
-                            sessions,
-                            active_id,
-                            mid_drawer_sv.get_value().as_str(),
-                        )
-                        .trim()
-                        .is_empty()
-                    }
-                >
-                    <div class=drawer_panel_class>
-                        <pre class=drawer_pre_class>
-                            {move || {
-                                let body = live_message_reasoning_text(
-                                    sessions,
-                                    active_id,
-                                    mid_drawer_sv.get_value().as_str(),
-                                );
-                                if is_terminal_tool {
-                                    strip_ansi_codes(&body)
-                                } else {
-                                    body
-                                }
-                            }}
-                        </pre>
-                    </div>
-                </Show>
+                {tool_reasoning_drawer_below_card(ToolReasoningDrawerWire {
+                    is_tool_bubble,
+                    tool_detail_expanded_ids,
+                    sessions,
+                    active_id,
+                    mid_drawer_sv,
+                    is_terminal_tool,
+                    drawer_panel_class,
+                    drawer_pre_class,
+                })}
                 {build_message_actions_bar(MessageActionsBarParams {
                     actions_bar_visible: actions_bar_visible_rc,
                     is_user_plain,

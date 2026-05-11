@@ -35,6 +35,7 @@ struct ChatMessagesPaneSignals {
     chat: ChatSessionSignals,
     collapsed_long_assistant_ids: RwSignal<Vec<String>>,
     collapsed_tool_run_heads: RwSignal<std::collections::HashSet<String>>,
+    tool_detail_expanded_ids: RwSignal<std::collections::HashSet<String>>,
     chat_find_query: RwSignal<String>,
     chat_find_match_ids: RwSignal<Vec<String>>,
     chat_find_cursor: RwSignal<usize>,
@@ -58,6 +59,7 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
         chat,
         collapsed_long_assistant_ids,
         collapsed_tool_run_heads,
+        tool_detail_expanded_ids,
         chat_find_query,
         chat_find_match_ids,
         chat_find_cursor,
@@ -75,6 +77,7 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
 
     let tool_run_group_signals = ToolRunGroupSignals {
         collapsed_tool_run_heads,
+        tool_detail_expanded_ids,
         chat_find_query,
         chat_find_match_ids,
         chat,
@@ -189,6 +192,7 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
                                         locale,
                                         markdown_render,
                                         apply_assistant_display_filters,
+                                        tool_detail_expanded_ids,
                                     },
                                 )
                                 .into_any(),
@@ -569,6 +573,7 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
     let chat = app.chat;
     let collapsed_long_assistant_ids = app.chat_composer.collapsed_long_assistant_ids;
     let collapsed_tool_run_heads = app.chat_composer.collapsed_tool_run_heads;
+    let tool_detail_expanded_ids = app.chat_composer.tool_detail_expanded_ids;
     let chat_find_query = app.chat_composer.chat_find_query;
     let chat_find_match_ids = app.chat_composer.chat_find_match_ids;
     let chat_find_cursor = app.chat_composer.chat_find_cursor;
@@ -669,6 +674,7 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
                         chat,
                         collapsed_long_assistant_ids,
                         collapsed_tool_run_heads,
+                        tool_detail_expanded_ids,
                         chat_find_query,
                         chat_find_match_ids,
                         chat_find_cursor,

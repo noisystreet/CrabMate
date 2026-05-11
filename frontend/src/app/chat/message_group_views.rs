@@ -15,6 +15,7 @@ use crate::storage::StoredMessage;
 #[derive(Clone, Copy)]
 pub(crate) struct ToolRunGroupSignals {
     pub collapsed_tool_run_heads: RwSignal<HashSet<String>>,
+    pub tool_detail_expanded_ids: RwSignal<HashSet<String>>,
     pub chat_find_query: RwSignal<String>,
     pub chat_find_match_ids: RwSignal<Vec<String>>,
     pub chat: ChatSessionSignals,
@@ -53,6 +54,7 @@ fn chat_row_for_tool_group(
         locale: g.locale,
         markdown_render: g.markdown_render,
         apply_assistant_display_filters: g.apply_assistant_display_filters,
+        tool_detail_expanded_ids: g.tool_detail_expanded_ids,
     })
 }
 

@@ -1,5 +1,7 @@
 //! 非助手气泡正文（工具摘要、跳转用户消息、纯文本高亮）。
 
+use std::collections::HashSet;
+
 use leptos::prelude::*;
 
 use crate::i18n::{self, Locale};
@@ -48,12 +50,14 @@ fn tool_compact_body_view(
     m_for_body: StoredMessage,
     detail_snapshot: Option<String>,
     reasoning_live: Option<(RwSignal<Vec<ChatSession>>, RwSignal<String>, String)>,
-    tool_detail_open: RwSignal<bool>,
+    tool_detail_expanded_ids: RwSignal<HashSet<String>>,
+    tool_mid: String,
     locale: RwSignal<Locale>,
     chat_find_query: RwSignal<String>,
     apply_assistant_display_filters: RwSignal<bool>,
 ) -> AnyView {
     let tool_emoji = tool_bubble_emoji(&m_for_body);
+    let mid_store = StoredValue::new(tool_mid);
     view! {
         <div class="msg-tool-compact">
             <Show when=move || {
@@ -71,26 +75,36 @@ fn tool_compact_body_view(
                     type="button"
                     class="msg-tool-drawer-btn msg-tool-drawer-icon-btn"
                     prop:title=move || {
-                        if tool_detail_open.get() {
+                        let mid = mid_store.get_value();
+                        if tool_detail_expanded_ids.with(|s| s.contains(mid.as_str())) {
                             i18n::msg_tool_detail_collapse_title(locale.get())
                         } else {
                             i18n::msg_tool_detail_expand_title(locale.get())
                         }
                     }
                     prop:aria-label=move || {
-                        if tool_detail_open.get() {
+                        let mid = mid_store.get_value();
+                        if tool_detail_expanded_ids.with(|s| s.contains(mid.as_str())) {
                             i18n::msg_tool_detail_collapse_title(locale.get())
                         } else {
                             i18n::msg_tool_detail_expand_title(locale.get())
                         }
                     }
                     on:click=move |_| {
-                        tool_detail_open.update(|v| *v = !*v);
+                        let id = mid_store.get_value().clone();
+                        tool_detail_expanded_ids.update(|set| {
+                            if set.contains(&id) {
+                                set.remove(&id);
+                            } else {
+                                set.insert(id);
+                            }
+                        });
                     }
                 >
                     <svg
                         class=move || {
-                            if tool_detail_open.get() {
+                            let mid = mid_store.get_value();
+                            if tool_detail_expanded_ids.with(|s| s.contains(mid.as_str())) {
                                 "msg-tool-drawer-icon is-open"
                             } else {
                                 "msg-tool-drawer-icon"
@@ -186,7 +200,8 @@ pub(super) struct NonAssistantMessageBodyParams {
     pub tool_detail_text: Option<String>,
     /// 与 [`crate::app::chat::message_row::helpers::live_message_reasoning_text`] 对齐：工具气泡挂载时 `reasoning_text` 常为空，须订阅会话更新。
     pub tool_reasoning_live: Option<(RwSignal<Vec<ChatSession>>, RwSignal<String>, String)>,
-    pub tool_detail_open: RwSignal<bool>,
+    pub tool_detail_expanded_ids: RwSignal<HashSet<String>>,
+    pub tool_mid: String,
     pub locale: RwSignal<Locale>,
     pub chat_find_query: RwSignal<String>,
     pub apply_assistant_display_filters: RwSignal<bool>,
@@ -200,7 +215,8 @@ pub(super) fn build_non_assistant_message_body(p: NonAssistantMessageBodyParams)
         is_tool_bubble,
         tool_detail_text,
         tool_reasoning_live,
-        tool_detail_open,
+        tool_detail_expanded_ids,
+        tool_mid,
         locale,
         chat_find_query,
         apply_assistant_display_filters,
@@ -212,7 +228,8 @@ pub(super) fn build_non_assistant_message_body(p: NonAssistantMessageBodyParams)
             m_for_body,
             tool_detail_text,
             tool_reasoning_live,
-            tool_detail_open,
+            tool_detail_expanded_ids,
+            tool_mid,
             locale,
             chat_find_query,
             apply_assistant_display_filters,

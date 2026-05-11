@@ -1,5 +1,6 @@
 //! 消息行内部子视图：元信息、正文、子目标横幅、工具气泡与操作条。
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use leptos::prelude::*;
@@ -65,7 +66,8 @@ pub(super) struct ChatMessageRowBodyCoreParams {
     pub is_tool_bubble: bool,
     pub tool_detail_text: Option<String>,
     pub tool_reasoning_live: Option<(RwSignal<Vec<ChatSession>>, RwSignal<String>, String)>,
-    pub tool_detail_open: RwSignal<bool>,
+    pub tool_detail_expanded_ids: RwSignal<HashSet<String>>,
+    pub tool_mid: String,
     pub jump_uid: Option<String>,
     pub auto_scroll_chat: RwSignal<bool>,
 }
@@ -84,7 +86,8 @@ pub(super) fn chat_message_row_body_core(p: ChatMessageRowBodyCoreParams) -> Any
         is_tool_bubble,
         tool_detail_text,
         tool_reasoning_live,
-        tool_detail_open,
+        tool_detail_expanded_ids,
+        tool_mid,
         jump_uid,
         auto_scroll_chat,
     } = p;
@@ -106,7 +109,8 @@ pub(super) fn chat_message_row_body_core(p: ChatMessageRowBodyCoreParams) -> Any
         is_tool_bubble,
         tool_detail_text: tool_detail_text.clone(),
         tool_reasoning_live,
-        tool_detail_open,
+        tool_detail_expanded_ids,
+        tool_mid,
         locale,
         chat_find_query,
         apply_assistant_display_filters,

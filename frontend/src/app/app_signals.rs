@@ -76,6 +76,8 @@ pub struct ChatComposerSignals {
     pub collapsed_long_assistant_ids: RwSignal<Vec<String>>,
     /// 连续工具组中用户手动**收起**为仅显示最后一条的分组 head（message id）；默认空 = 全部展开。
     pub collapsed_tool_run_heads: RwSignal<HashSet<String>>,
+    /// 工具气泡「详情抽屉」展开中的消息 id（与 `StoredMessage::id` 一致）；避免 `For` 重挂行时丢失本地 `RwSignal<bool>`。
+    pub tool_detail_expanded_ids: RwSignal<HashSet<String>>,
     pub auto_scroll_chat: RwSignal<bool>,
     pub messages_scroll_from_effect: RwSignal<bool>,
     pub last_messages_scroll_top: RwSignal<i32>,
@@ -98,6 +100,7 @@ impl ChatComposerSignals {
             composer_input_ref: NodeRef::new(),
             collapsed_long_assistant_ids: RwSignal::new(Vec::new()),
             collapsed_tool_run_heads: RwSignal::new(HashSet::new()),
+            tool_detail_expanded_ids: RwSignal::new(HashSet::new()),
             auto_scroll_chat: RwSignal::new(true),
             messages_scroll_from_effect: RwSignal::new(false),
             last_messages_scroll_top: RwSignal::new(0),

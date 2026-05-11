@@ -8,6 +8,8 @@ mod row;
 mod row_extras;
 mod views;
 
+use std::collections::HashSet;
+
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::Locale;
 use crate::storage::StoredMessage;
@@ -34,6 +36,8 @@ pub(crate) struct ChatMessageRowSignals {
     pub locale: RwSignal<Locale>,
     pub markdown_render: RwSignal<bool>,
     pub apply_assistant_display_filters: RwSignal<bool>,
+    /// 工具气泡详情抽屉展开状态（按消息 id，跨 `For` 重挂保留）。
+    pub tool_detail_expanded_ids: RwSignal<HashSet<String>>,
 }
 
 pub(crate) use row::chat_message_row;

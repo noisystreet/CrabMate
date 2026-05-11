@@ -56,6 +56,7 @@ fn wire_chat_domain_auxiliary_sequence(a: &WireChatDomainEffectsArgs) {
         d.composer.pending_images,
         d.pending_clarification,
         d.composer.collapsed_long_assistant_ids,
+        d.composer.tool_detail_expanded_ids,
     );
 
     wire_draft_sync_to_mirror_and_textarea(
