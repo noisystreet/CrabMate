@@ -80,6 +80,19 @@ async fn emit_sse_tool_result(
         envelope_ctx.as_ref(),
         structured_payload,
     );
+    let mut structured_preview = crate::tools::structured_preview::structured_preview_for_tool_sse(
+        name,
+        result,
+        norm.structured_payload.as_ref(),
+    );
+    if name == "run_command" {
+        structured_preview =
+            crate::tools::structured_preview::augment_run_command_preview_with_git_diff(
+                structured_preview,
+                result,
+                parsed.stdout.as_str(),
+            );
+    }
     let stdout = if parsed.stdout.is_empty() {
         None
     } else {
@@ -90,11 +103,6 @@ async fn emit_sse_tool_result(
     } else {
         Some(parsed.stderr)
     };
-    let structured_preview = crate::tools::structured_preview::structured_preview_for_tool_sse(
-        name,
-        result,
-        norm.structured_payload.as_ref(),
-    );
     let payload = SsePayload::ToolResult {
         tool_result: ToolResultBody {
             name: norm.name,

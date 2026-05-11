@@ -5,8 +5,9 @@
 use serde_json::{Value, json};
 use similar::TextDiff;
 
-/// 与 [`crate::workspace::changelist`] 单文件块上限同量级。
-const MAX_UNIFIED_PER_FILE_CHARS: usize = 6000;
+/// 与 [`crate::workspace::changelist`] 单文件块上限同量级；**`structured_preview`** 中 **`git diff`**
+/// 等单段 stdout 预览与写工具共用该上限。
+pub(crate) const MAX_UNIFIED_PREVIEW_FILE_CHARS: usize = 6000;
 
 /// 单次工具结果内所有文件 diff 文本总预算（字符数，近似 UTF-8 标量）。
 pub const WORKSPACE_WRITE_DIFF_BUDGET_CHARS: usize = 24 * 1024;
@@ -28,10 +29,13 @@ fn one_unified_diff(rel_path: &str, before: Option<&str>, after: Option<&str>) -
         .header(&format!("a/{rel_path}"), &format!("b/{rel_path}"))
         .to_string();
     let n = unified.chars().count();
-    if n <= MAX_UNIFIED_PER_FILE_CHARS {
+    if n <= MAX_UNIFIED_PREVIEW_FILE_CHARS {
         return (unified, false);
     }
-    let truncated: String = unified.chars().take(MAX_UNIFIED_PER_FILE_CHARS).collect();
+    let truncated: String = unified
+        .chars()
+        .take(MAX_UNIFIED_PREVIEW_FILE_CHARS)
+        .collect();
     (format!("{truncated}…\n（该文件 diff 已截断）"), true)
 }
 
