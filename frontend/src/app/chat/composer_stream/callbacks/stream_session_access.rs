@@ -3,13 +3,12 @@
 //! 热路径 **[`append_stream_assistant_chunk`]** 仅 bump [`crate::chat_session_state::ChatSessionSignals::stream_text_overlay`]，
 //! 避免每个 SSE 片段 `sessions.update`；合并回 [`crate::storage::StoredMessage`] 见收尾路径中的 [`crate::stream_text_overlay::stream_overlay_take_into_stored_message`]。
 //! **调试构建**下校验 [`crate::chat_session_state::ChatSessionSignals::stream_bound_session_id`] 与 `sid` 一致（若已设置）。
-//! 与 [`super::super::per_stream_accum::PerStreamAccum`] 分工：`append_stream_assistant_chunk` 只 bump overlay；`with_stream_write_session_mut` 仍写 `sessions`（工具/时间线等）。
+//! 与 [`super::super::per_stream_accum::PerStreamAccum`] 分工：`append_stream_assistant_chunk` 只 bump overlay；会话 `messages` 写入走 **[`with_stream_write_session_mut`]** 或等价的 **[`ChatStreamCallbackCtx::update_bound_session`]**（`callbacks` 内优先后者以显式「绑定会话写」语义）。
 
 use leptos::prelude::*;
 
-use crate::stream_text_overlay::stream_overlay_append;
-
 use crate::storage::ChatSession;
+use crate::stream_text_overlay::stream_overlay_append;
 
 use super::super::context::ChatStreamCallbackCtx;
 
@@ -67,4 +66,18 @@ pub(super) fn with_stream_write_session_ref<R>(
         .chat
         .sessions
         .with(|list| list.iter().find(|s| s.id == sid).map(f))
+}
+
+impl ChatStreamCallbackCtx {
+    /// 对本轮 SSE 绑定会话做可变访问（与 [`with_stream_write_session_mut`] 等价；`callbacks` 内优先用本方法表达意图）。
+    #[inline]
+    pub(super) fn update_bound_session(&self, f: impl FnOnce(&mut ChatSession)) {
+        with_stream_write_session_mut(self, f);
+    }
+
+    /// 对本轮 SSE 绑定会话做只读访问（与 [`with_stream_write_session_ref`] 等价）。
+    #[inline]
+    pub(super) fn read_bound_session<R>(&self, f: impl FnOnce(&ChatSession) -> R) -> Option<R> {
+        with_stream_write_session_ref(self, f)
+    }
 }

@@ -11,7 +11,6 @@ use crate::storage::{StoredMessage, StoredMessageState};
 use crate::stream_text_overlay::stream_overlay_take_into_stored_message;
 
 use super::super::context::ChatStreamCallbackCtx;
-use super::stream_session_access::{with_stream_write_session_mut, with_stream_write_session_ref};
 
 /// 按 OpenAI `tool_call_id` 查找仍处于 loading 的工具行（供 `tool_result` 命中占位气泡）。
 #[must_use]
@@ -200,7 +199,7 @@ pub(super) fn insert_before_streaming_assistant_or_append(
     msg: StoredMessage,
 ) {
     let mid = stream_ctx.scratch.clone_assistant_id();
-    with_stream_write_session_mut(stream_ctx, |s| {
+    stream_ctx.update_bound_session(|s| {
         insert_msg_before_streaming_assistant_tail(&mut s.messages, &mid, msg);
     });
 }
@@ -234,14 +233,15 @@ pub(super) fn has_same_assistant_timeline_bubble(
     stream_ctx: &ChatStreamCallbackCtx,
     text: &str,
 ) -> bool {
-    with_stream_write_session_ref(stream_ctx, |s| {
-        s.messages
-            .iter()
-            .rev()
-            .find(|m| m.role == "assistant" && !m.is_tool && m.state.is_none())
-            .is_some_and(|m| m.text.trim() == text.trim())
-    })
-    .unwrap_or(false)
+    stream_ctx
+        .read_bound_session(|s| {
+            s.messages
+                .iter()
+                .rev()
+                .find(|m| m.role == "assistant" && !m.is_tool && m.state.is_none())
+                .is_some_and(|m| m.text.trim() == text.trim())
+        })
+        .unwrap_or(false)
 }
 
 pub(super) fn extract_subgoal_marker_from_title(title: &str) -> Option<String> {
@@ -309,7 +309,7 @@ pub(super) fn upsert_hierarchical_subgoal_bubble(
     }
     let marker = marker.unwrap_or_default();
     let now = message_created_ms();
-    with_stream_write_session_mut(stream_ctx, |s| {
+    stream_ctx.update_bound_session(|s| {
         if let Some(existing) = s.messages.iter_mut().find(|m| {
             m.role == "assistant"
                 && m.state
@@ -346,7 +346,7 @@ pub(super) fn upsert_hierarchical_subgoal_bubble(
 /// 避免 `assistant_answer_phase` 之前的思维链在工具调用时被误删。
 pub(super) fn finalize_current_loading_streaming_assistant_row(stream_ctx: &ChatStreamCallbackCtx) {
     let sid = stream_ctx.bound_stream_session_id.clone();
-    with_stream_write_session_mut(stream_ctx, |s| {
+    stream_ctx.update_bound_session(|s| {
         let mid_owned = stream_ctx.scratch.clone_assistant_id();
         if let Some(idx) = s.messages.iter().position(|m| m.id == mid_owned.as_str()) {
             stream_overlay_take_into_stored_message(
@@ -376,17 +376,16 @@ pub(super) fn finalize_loading_assistant_before_tool_and_tail_with_new_loading(
     stream_ctx: &ChatStreamCallbackCtx,
     tool_message_id: &str,
 ) {
-    let tool_present = with_stream_write_session_ref(stream_ctx, |s| {
-        s.messages.iter().any(|m| m.id == tool_message_id)
-    })
-    .unwrap_or(false);
+    let tool_present = stream_ctx
+        .read_bound_session(|s| s.messages.iter().any(|m| m.id == tool_message_id))
+        .unwrap_or(false);
     if !tool_present {
         return;
     }
     finalize_current_loading_streaming_assistant_row(stream_ctx);
     let now = message_created_ms();
     let new_tail_id = RefCell::new(None::<String>);
-    with_stream_write_session_mut(stream_ctx, |s| {
+    stream_ctx.update_bound_session(|s| {
         let Some(tidx) = s.messages.iter().position(|m| m.id == tool_message_id) else {
             return;
         };
@@ -424,7 +423,7 @@ pub(super) fn rotate_streaming_assistant_for_followup_model_round(
     finalize_current_loading_streaming_assistant_row(stream_ctx);
     let now = message_created_ms();
     let new_tail_id = RefCell::new(None::<String>);
-    with_stream_write_session_mut(stream_ctx, |s| {
+    stream_ctx.update_bound_session(|s| {
         let new_asst_id = make_message_id();
         s.messages.push(StoredMessage {
             id: new_asst_id.clone(),
@@ -454,7 +453,7 @@ pub(super) fn ensure_streaming_assistant_tail_last(stream_ctx: &ChatStreamCallba
         return;
     }
     let mid = stream_ctx.scratch.clone_assistant_id();
-    with_stream_write_session_mut(stream_ctx, |s| {
+    stream_ctx.update_bound_session(|s| {
         let Some(idx) = s.messages.iter().position(|m| m.id == mid) else {
             return;
         };
@@ -474,7 +473,7 @@ pub(super) fn ensure_streaming_assistant_tail_last(stream_ctx: &ChatStreamCallba
 pub(super) fn remove_loading_assistant_placeholder(stream_ctx: &ChatStreamCallbackCtx) {
     let sid = stream_ctx.bound_stream_session_id.clone();
     let mid_owned = stream_ctx.scratch.clone_assistant_id();
-    with_stream_write_session_mut(stream_ctx, |s| {
+    stream_ctx.update_bound_session(|s| {
         if let Some(idx) = s.messages.iter().position(|m| m.id == mid_owned.as_str())
             && s.messages[idx].role == "assistant"
             && s.messages[idx]
