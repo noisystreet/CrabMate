@@ -1,364 +1,57 @@
 //! 工具 JSON 参数 schema（按领域拆分；由 `tool_params` 再导出）。
 
+use crate::tools::tool_json_schema::tool_parameters_schema_value;
+use crate::tools::tool_param_types::{
+    ChangelogDraftArgs, CrateContractMapArgs, DiagnosticSummaryArgs, ErrorOutputPlaybookArgs,
+    LicenseNoticeArgs, LongTermForgetArgs, LongTermMemoryListArgs, LongTermRememberArgs,
+    PlaybookRunCommandsArgs, PresentClarificationQuestionnaireArgs, RepoOverviewSweepArgs,
+    SummarizeExperienceArgs,
+};
+
 pub(in crate::tools) fn params_changelog_draft() -> serde_json::Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "since": {
-                "type": "string",
-                "description": "可选：范围起点（tag/提交/分支）；与 until 组成 since..until"
-            },
-            "until": {
-                "type": "string",
-                "description": "可选：范围终点；默认与 HEAD 组合见 since；都空则从 HEAD 回溯"
-            },
-            "max_commits": {
-                "type": "integer",
-                "description": "最多纳入多少条提交，默认 500，上限 2000",
-                "minimum": 1,
-                "maximum": 2000
-            },
-            "group_by": {
-                "type": "string",
-                "description": "聚合方式：date=按提交日；flat=平铺列表；tag_ranges 或 tags=按相邻 tag 区间（semver 降序，需至少 2 个 tag）",
-                "enum": ["date", "flat", "tag_ranges", "tags"]
-            },
-            "max_tag_sections": {
-                "type": "integer",
-                "description": "tag_ranges 时最多几段区间（每段一对相邻 tag），默认 25，上限 100",
-                "minimum": 1,
-                "maximum": 100
-            }
-        },
-        "required": [],
-        "additionalProperties": false
-    })
+    tool_parameters_schema_value::<ChangelogDraftArgs>()
 }
 
 pub(in crate::tools) fn params_license_notice() -> serde_json::Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "workspace_only": {
-                "type": "boolean",
-                "description": "仅列出工作区成员包（默认 false：含解析图中的传递依赖）"
-            },
-            "max_crates": {
-                "type": "integer",
-                "description": "表格最多多少行（按 crate 名去重后），默认 500，上限 3000",
-                "minimum": 1,
-                "maximum": 3000
-            }
-        },
-        "required": [],
-        "additionalProperties": false
-    })
+    tool_parameters_schema_value::<LicenseNoticeArgs>()
 }
 
 pub(in crate::tools) fn params_present_clarification_questionnaire() -> serde_json::Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "questionnaire_id": {
-                "type": "string",
-                "description": "问卷实例 id（字母数字与 -_，≤128）；须与用户下一条 POST /chat* 中 clarify_questionnaire_answers.questionnaire_id 一致"
-            },
-            "intro": {
-                "type": "string",
-                "description": "向用户展示的简短说明（≤2000 字符）"
-            },
-            "questions": {
-                "type": "array",
-                "minItems": 1,
-                "maxItems": 12,
-                "items": {
-                    "type": "object",
-                    "required": ["id", "label"],
-                    "properties": {
-                        "id": { "type": "string", "description": "题目键（字母数字与 -_，≤64），须唯一" },
-                        "label": { "type": "string", "description": "题面（≤512 字符）" },
-                        "hint": { "type": "string", "description": "可选提示（≤512 字符）" },
-                        "required": { "type": "boolean", "description": "是否必填；前端可标星" },
-                        "kind": {
-                            "type": "string",
-                            "enum": ["text", "choice"],
-                            "description": "text=单行文本；choice 预留（当前仍文本提交）"
-                        }
-                    },
-                    "additionalProperties": false
-                }
-            }
-        },
-        "required": ["questionnaire_id", "intro", "questions"],
-        "additionalProperties": false
-    })
+    tool_parameters_schema_value::<PresentClarificationQuestionnaireArgs>()
 }
 
 pub(in crate::tools) fn params_diagnostic_summary() -> serde_json::Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "include_toolchain": {
-                "type": "boolean",
-                "description": "是否输出 rustc/cargo/rustup/bc 与 OS 架构，默认 true"
-            },
-            "include_workspace_paths": {
-                "type": "boolean",
-                "description": "是否检查工作区 target/、Cargo.toml、frontend 等路径，默认 true"
-            },
-            "include_env": {
-                "type": "boolean",
-                "description": "是否列出关键环境变量仅状态（永不输出取值），默认 true"
-            },
-            "extra_env_vars": {
-                "type": "array",
-                "items": { "type": "string" },
-                "description": "额外变量名，须为大写 [A-Z0-9_]+（如 CI）；与内置列表合并且去重"
-            }
-        },
-        "required": []
-    })
+    tool_parameters_schema_value::<DiagnosticSummaryArgs>()
 }
 
 pub(in crate::tools) fn params_repo_overview_sweep() -> serde_json::Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "doc_paths": {
-                "type": "array",
-                "items": { "type": "string" },
-                "description": "可选：要预览的文档相对路径列表；默认 README.md、AGENTS.md、docs/开发文档.md、docs/配置说明.md、docs/命令行与路由.md（存在则读，不存在则跳过）"
-            },
-            "source_roots": {
-                "type": "array",
-                "items": { "type": "string" },
-                "description": "可选：list_tree 的起始相对目录；默认 [\"src\"]"
-            },
-            "build_globs": {
-                "type": "array",
-                "items": { "type": "string" },
-                "description": "可选：glob 模式列表，用于收集 Cargo.toml、package.json、CI 等工作流文件；内置一组常见模式"
-            },
-            "doc_preview_max_lines": {
-                "type": "integer",
-                "description": "每个文档文件最多预览行数，默认 80，范围 10～500",
-                "minimum": 10,
-                "maximum": 500
-            },
-            "list_tree_max_depth": {
-                "type": "integer",
-                "description": "list_tree 最大深度，默认 4，范围 1～20",
-                "minimum": 1,
-                "maximum": 20
-            },
-            "list_tree_max_entries": {
-                "type": "integer",
-                "description": "list_tree 最多条目，默认 400，范围 50～5000",
-                "minimum": 50,
-                "maximum": 5000
-            },
-            "list_tree_include_hidden": {
-                "type": "boolean",
-                "description": "list_tree 是否包含隐藏文件/目录，默认 false"
-            },
-            "build_glob_max_results": {
-                "type": "integer",
-                "description": "每个 glob 模式最多匹配路径数，默认 120，范围 10～2000",
-                "minimum": 10,
-                "maximum": 2000
-            },
-            "build_glob_max_depth": {
-                "type": "integer",
-                "description": "glob 扫描最大深度，默认 25，范围 1～100",
-                "minimum": 1,
-                "maximum": 100
-            },
-            "include_project_profile": {
-                "type": "boolean",
-                "description": "是否附加「项目画像」Markdown（与 Web `GET /workspace/profile` 及首轮注入同源：`Cargo.toml`/workspace、`package.json`、顶层目录、tokei 语言占比、可选 `cargo metadata --no-deps` 等）。默认 true"
-            },
-            "project_profile_max_chars": {
-                "type": "integer",
-                "description": "项目画像正文最大 Unicode 标量字符数；0 表示不生成画像节（等同关闭）。默认 6000，上限 50000",
-                "minimum": 0,
-                "maximum": 50000
-            }
-        },
-        "required": [],
-        "additionalProperties": false
-    })
+    tool_parameters_schema_value::<RepoOverviewSweepArgs>()
 }
 
 pub(in crate::tools) fn params_crate_contract_map() -> serde_json::Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "head_lines_per_file": {
-                "type": "integer",
-                "description": "每个锚点文件头预览最大行数，默认 24，范围 5～120",
-                "minimum": 5,
-                "maximum": 120
-            },
-            "keyword_hits_per_file": {
-                "type": "integer",
-                "description": "关键字匹配行每文件最多条数，默认 40，范围 5～200",
-                "minimum": 5,
-                "maximum": 200
-            },
-            "extra_paths": {
-                "type": "array",
-                "items": { "type": "string" },
-                "description": "可选：额外相对路径（须在工作区内），仅做文件头预览，无关键字筛选"
-            },
-            "max_extra_paths": {
-                "type": "integer",
-                "description": "extra_paths 最多处理几条，默认 12，范围 0～40",
-                "minimum": 0,
-                "maximum": 40
-            }
-        },
-        "required": [],
-        "additionalProperties": false
-    })
+    tool_parameters_schema_value::<CrateContractMapArgs>()
 }
 
 pub(in crate::tools) fn params_error_output_playbook() -> serde_json::Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "error_text": {
-                "type": "string",
-                "description": "已脱敏的构建/测试错误输出全文或片段（勿含 API Key、token、完整 URL 凭证等）"
-            },
-            "ecosystem": {
-                "type": "string",
-                "description": "生态提示：auto（默认，从文本推断）、rust、node、python、generic"
-            },
-            "max_chars": {
-                "type": "integer",
-                "description": "最多处理字符数，默认 24000，上限 100000；超出截断",
-                "minimum": 1,
-                "maximum": 100000
-            }
-        },
-        "required": ["error_text"],
-        "additionalProperties": false
-    })
+    tool_parameters_schema_value::<ErrorOutputPlaybookArgs>()
 }
 
 pub(in crate::tools) fn params_long_term_remember() -> serde_json::Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {
-                "type": "string",
-                "description": "要写入本会话长期记忆的短文本（勿含密钥）；受 long_term_memory_max_chars_per_chunk 截断"
-            },
-            "tags": {
-                "type": "array",
-                "items": { "type": "string" },
-                "description": "可选标签（JSON 数组），便于筛选"
-            },
-            "ttl_secs": {
-                "type": "integer",
-                "description": "存活秒数；0 或省略表示永不过期（仍受 long_term_memory_max_entries 淘汰）",
-                "minimum": 0
-            }
-        },
-        "required": ["text"],
-        "additionalProperties": false
-    })
+    tool_parameters_schema_value::<LongTermRememberArgs>()
 }
 
 pub(in crate::tools) fn params_long_term_forget() -> serde_json::Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "memory_id": {
-                "type": "integer",
-                "description": "long_term_memory_list 返回的 id；与 memory_text 二选一"
-            },
-            "memory_text": {
-                "type": "string",
-                "description": "与存储正文完全匹配时删除；与 memory_id 二选一"
-            },
-            "explicit_only": {
-                "type": "boolean",
-                "description": "为 true 时仅删除显式记忆（long_term_remember），默认 false"
-            }
-        },
-        "required": [],
-        "additionalProperties": false
-    })
+    tool_parameters_schema_value::<LongTermForgetArgs>()
 }
 
 pub(in crate::tools) fn params_long_term_memory_list() -> serde_json::Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "limit": {
-                "type": "integer",
-                "description": "最多列出几条（从新到旧），默认 16，范围 1～64",
-                "minimum": 1,
-                "maximum": 64
-            }
-        },
-        "required": [],
-        "additionalProperties": false
-    })
+    tool_parameters_schema_value::<LongTermMemoryListArgs>()
 }
 
 pub(in crate::tools) fn params_summarize_experience() -> serde_json::Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "experience": {
-                "type": "string",
-                "description": "从本轮对话中提炼的核心经验（由模型生成）。应简洁、通用、可复用。避免复述原问题，聚焦解法和原理。长度至少 20 字符。"
-            },
-            "tags": {
-                "type": "array",
-                "items": { "type": "string" },
-                "description": "经验分类标签，如 rust、debug、git、performance。用于后续检索过滤。",
-                "default": []
-            },
-            "ttl_secs": {
-                "type": "integer",
-                "description": "过期秒数；0 或省略表示永不过期（仍受 long_term_memory_max_entries 淘汰）。",
-                "default": 0
-            }
-        },
-        "required": ["experience"],
-        "additionalProperties": false
-    })
+    tool_parameters_schema_value::<SummarizeExperienceArgs>()
 }
 
 pub(in crate::tools) fn params_playbook_run_commands() -> serde_json::Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "error_text": {
-                "type": "string",
-                "description": "与 error_output_playbook 相同：已脱敏的错误输出（勿含密钥）"
-            },
-            "ecosystem": {
-                "type": "string",
-                "description": "auto（默认）/ rust / node / python / generic"
-            },
-            "max_chars": {
-                "type": "integer",
-                "description": "分析用最大字符数，默认 24000，上限 100000",
-                "minimum": 1,
-                "maximum": 100000
-            },
-            "max_commands": {
-                "type": "integer",
-                "description": "实际执行的 run_command 条数上限，默认 3，范围 1～3",
-                "minimum": 1,
-                "maximum": 3
-            }
-        },
-        "required": ["error_text"],
-        "additionalProperties": false
-    })
+    tool_parameters_schema_value::<PlaybookRunCommandsArgs>()
 }
