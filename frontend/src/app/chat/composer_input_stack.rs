@@ -1,4 +1,4 @@
-//! 带工作区 `@引用` 镜像高亮的输入栈（底层 HTML + 透明文字 textarea）。
+//! 带工作区 `@引用` 镜像高亮的输入栈（底层 HTML + 假占位提示 + 透明字色 textarea）。
 
 use std::sync::Arc;
 
@@ -34,6 +34,12 @@ pub fn ComposerInputStack(
         <div class="composer-input-stack">
             <div class="composer-input-highlight" aria-hidden="true">
                 <div
+                    class="composer-input-fake-ph"
+                    class:composer-input-fake-ph--off=move || !draft.get().is_empty()
+                >
+                    {move || i18n::composer_ph(locale.get())}
+                </div>
+                <div
                     class="composer-input-highlight-inner"
                     node_ref=mirror_inner_ref
                     prop:style=move || {
@@ -45,6 +51,8 @@ pub fn ComposerInputStack(
                 class="composer-input composer-input--mirror-overlay"
                 data-testid="chat-composer-input"
                 dir="ltr"
+                placeholder=""
+                prop:aria-label=move || i18n::composer_ph(locale.get())
                 node_ref=composer_input_ref
                 on:input=move |ev| {
                     let v = event_target_value(&ev);
@@ -68,7 +76,6 @@ pub fn ComposerInputStack(
                     };
                     composer_mirror_scroll_top.set(ta.scroll_top() as f64);
                 }
-                prop:placeholder=move || i18n::composer_ph(locale.get())
                 rows="3"
             ></textarea>
         </div>

@@ -837,6 +837,10 @@
   outline: none;
 }
 
+.app-shell-ds .composer-input-stack .composer-input-fake-ph {
+  padding: 6px 4px;
+}
+
 .app-shell-ds .composer-input-stack .composer-input-highlight-inner {
   padding: 6px 4px;
   text-align: left;

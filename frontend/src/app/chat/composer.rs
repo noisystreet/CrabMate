@@ -8,6 +8,7 @@ use leptos::task::spawn_local;
 
 use gloo_timers::future::TimeoutFuture;
 use std::collections::HashSet;
+use web_sys::HtmlTextAreaElement;
 
 use crate::chat_session_state::ChatSessionSignals;
 use crate::clarification_form::PendingClarificationForm;
@@ -90,7 +91,42 @@ pub(crate) fn wire_session_switch_clears_chat_state(
     });
 }
 
-/// `draft` 变更时同步 `@引用` 镜像与 textarea（用户输入亦写入同一 `draft`，与 DOM 不等时再 `set_value`，避免误伤光标）。
+/// `draft` 变更时同步 `@引用` 镜像与 textarea。
+///
+/// 用户输入走 `on:input` → `draft`，浏览器会先更新 textarea 的 `value`；同一轮里 `Effect` 若立刻
+/// `set_value` 会与尚未提交的 DOM 产生竞态。此处先 `0ms` 再 `1ms` 延迟比对，多数情况可跳过 `set_value`。
+///
+/// **重要**：每次 `draft` 变化都会 `spawn_local` 新任务；快速输入时旧任务若仍用当时的 `d_for_dom`
+/// 去 `set_value`，会截断正文并重置选区（光标卡死）。故在每次 `await` 之后、`set_value` 之前须用
+/// `draft.get_untracked() == d_for_dom` 判定任务是否仍代表「当前」草稿，否则直接放弃。
+fn sync_textarea_dom_from_draft_if_still_stale(ta: &HtmlTextAreaElement, new_val: &str) {
+    if ta.value() == new_val {
+        return;
+    }
+    let old_v = ta.value();
+    let old_u16 = old_v.encode_utf16().count() as u32;
+    let new_u16 = new_val.encode_utf16().count() as u32;
+    let raw_start = ta.selection_start().ok().flatten().unwrap_or(old_u16);
+    let raw_end = ta.selection_end().ok().flatten().unwrap_or(raw_start);
+    let start = raw_start.min(old_u16);
+    let end = raw_end.min(old_u16).max(start);
+    ta.set_value(new_val);
+    // `"".starts_with("")` 为真；空串作「旧 DOM」时勿走前缀分支，否则选区映射易错（甚至表现为跳到行首）。
+    let (s, e) = if !old_v.is_empty() && new_val.starts_with(&old_v) {
+        let map = |p: u32| {
+            let p = p.min(old_u16);
+            if p == old_u16 { new_u16 } else { p }
+        };
+        let s = map(start);
+        (s, map(end).max(s))
+    } else {
+        (new_u16, new_u16)
+    };
+    let s = s.min(new_u16);
+    let e = e.min(new_u16).max(s);
+    let _ = ta.set_selection_range(s, e);
+}
+
 pub(crate) fn wire_draft_sync_to_mirror_and_textarea(
     draft: RwSignal<String>,
     composer_input_ref: NodeRef<Textarea>,
@@ -99,19 +135,35 @@ pub(crate) fn wire_draft_sync_to_mirror_and_textarea(
 ) {
     Effect::new({
         let composer_input_ref = composer_input_ref.clone();
+        let draft_for_stale = draft;
         move |_| {
-            let d = draft.get();
+            let d = draft_for_stale.get();
             composer_mirror_html.set(composer_workspace_at_refs_html(&d));
             composer_mirror_scroll_top.set(0.0);
             let d_for_dom = d.clone();
             let cref = composer_input_ref.clone();
             spawn_local(async move {
                 TimeoutFuture::new(0).await;
-                if let Some(el) = cref.get_untracked() {
-                    if el.value() != d_for_dom {
-                        el.set_value(&d_for_dom);
-                    }
+                if draft_for_stale.get_untracked() != d_for_dom {
+                    return;
                 }
+                let Some(el) = cref.get_untracked() else {
+                    return;
+                };
+                if el.value() == d_for_dom {
+                    return;
+                }
+                TimeoutFuture::new(1).await;
+                if draft_for_stale.get_untracked() != d_for_dom {
+                    return;
+                }
+                let Some(el) = cref.get_untracked() else {
+                    return;
+                };
+                if el.value() == d_for_dom {
+                    return;
+                }
+                sync_textarea_dom_from_draft_if_still_stale(&el, &d_for_dom);
             });
         }
     });

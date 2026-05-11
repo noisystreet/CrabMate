@@ -1707,7 +1707,37 @@
   border-radius: inherit;
 }
 
+/* 假占位：避免原生 placeholder 与透明字色 textarea 叠字，且勿用 JS 反复改 placeholder（部分引擎会重置选区） */
+.composer-input-stack .composer-input-fake-ph {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100%;
+  padding: 11px 14px;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+  opacity: 0.85;
+  text-align: left;
+  direction: ltr;
+  pointer-events: none;
+  user-select: none;
+}
+
+.composer-input-stack .composer-input-fake-ph--off {
+  visibility: hidden;
+}
+
 .composer-input-stack .composer-input-highlight-inner {
+  position: relative;
+  z-index: 1;
   box-sizing: border-box;
   width: 100%;
   min-height: 100%;
@@ -1729,11 +1759,6 @@
   z-index: 1;
   color: transparent;
   caret-color: var(--text);
-}
-
-.composer-input--mirror-overlay::placeholder {
-  color: var(--muted);
-  opacity: 0.85;
 }
 
 /* 镜像层与透明 textarea 叠放：任何 padding/border/异化字号或字重都会改变视觉宽度，
