@@ -9,3 +9,7 @@ include!("part_basic.inc.rs");
 include!("part_ecosystem.inc.rs");
 include!("part_schedule.inc.rs");
 include!("part_structured.inc.rs");
+include!("part_tool_params_git.inc.rs");
+include!("part_tool_params_exec_file.inc.rs");
+include!("part_tool_params_diagnostics.inc.rs");
+include!("part_tool_params_cargo_gh_py.inc.rs");

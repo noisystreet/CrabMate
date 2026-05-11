@@ -21,10 +21,11 @@ mod tests {
         AddReminderArgs, ArchivePackArgs, AstGrepRunArgs, BacktraceAnalyzeArgs, CalcArgs,
         CallGraphSketchArgs, ChmodFileArgs, CiPipelineLocalArgs, CodeStatsArgs, CoverageReportArgs,
         DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs,
-        FormatOnePathArgs, GoBuildArgs, GolangciLintArgs, GradleTasksArgs, ListRemindersArgs,
-        MarkdownCheckLinksArgs, MavenCompileArgs, NpmRunArgs, PackageQueryArgs, PortCheckArgs,
-        ProcessListArgs, QualityWorkspaceArgs, RunLintsArgs, ShellcheckCheckArgs,
-        StructuredValidateArgs, SymlinkInfoArgs, TableTextArgs, TodoScanArgs, WorkflowExecuteArgs,
+        FormatOnePathArgs, GitStatusArgs, GoBuildArgs, GolangciLintArgs, GradleTasksArgs,
+        ListRemindersArgs, MarkdownCheckLinksArgs, MavenCompileArgs, NpmRunArgs, PackageQueryArgs,
+        PortCheckArgs, ProcessListArgs, QualityWorkspaceArgs, RunCommandArgs, RunLintsArgs,
+        ShellcheckCheckArgs, StructuredValidateArgs, SymlinkInfoArgs, TableTextArgs, TodoScanArgs,
+        WorkflowExecuteArgs,
     };
     use serde_json::json;
 
@@ -356,6 +357,24 @@ mod tests {
             .expect("required");
         assert!(req.iter().any(|x| x == "path"));
         assert!(v.pointer("/properties/path").is_some());
+    }
+
+    #[test]
+    fn run_command_schema_requires_command() {
+        let v = tool_parameters_schema_value::<RunCommandArgs>();
+        let req = v
+            .pointer("/required")
+            .and_then(|r| r.as_array())
+            .expect("required array");
+        assert!(req.iter().any(|x| x == "command"));
+    }
+
+    #[test]
+    fn git_status_schema_optional_flags() {
+        let v = tool_parameters_schema_value::<GitStatusArgs>();
+        assert_eq!(v.get("type"), Some(&json!("object")));
+        assert!(v.pointer("/properties/porcelain").is_some());
+        assert!(v.pointer("/properties/branch").is_some());
     }
 
     #[test]
