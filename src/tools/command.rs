@@ -264,10 +264,26 @@ fn prepare_run_command_invocation(
     working_dir: &Path,
     allowed_commands: &[String],
 ) -> Result<PreparedRunCommand, RunCommandError> {
-    let cmd_raw = match args.get("command").and_then(|c| c.as_str()) {
+    let mut cmd_raw = match args.get("command").and_then(|c| c.as_str()) {
         Some(s) => s.trim().to_string(),
         None => return Err(RunCommandError::MissingCommand),
     };
+
+    let mut cmd_args: Vec<String> = match args.get("args") {
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect(),
+        Some(_) => return Err(RunCommandError::ArgsNotArray),
+        None => vec![],
+    };
+    cmd_args = cmd_args
+        .into_iter()
+        .map(|a| normalize_workspace_absolute_arg(&a, working_dir))
+        .collect();
+
+    split_command_prefix_if_embedded(&mut cmd_raw, &mut cmd_args);
+
     let cmd_name = cmd_raw.to_lowercase();
 
     let is_workspace_executable = cmd_raw.starts_with("./") || cmd_raw.contains('/');
@@ -288,19 +304,6 @@ fn prepare_run_command_invocation(
         });
     }
 
-    let mut cmd_args: Vec<String> = match args.get("args") {
-        Some(serde_json::Value::Array(arr)) => arr
-            .iter()
-            .filter_map(|v| v.as_str().map(String::from))
-            .collect(),
-        Some(_) => return Err(RunCommandError::ArgsNotArray),
-        None => vec![],
-    };
-    cmd_args = cmd_args
-        .into_iter()
-        .map(|a| normalize_workspace_absolute_arg(&a, working_dir))
-        .collect();
-
     if exec_path.is_some() {
         for a in &cmd_args {
             if a.contains("..") || a.trim_start().starts_with('/') {
@@ -320,6 +323,28 @@ fn prepare_run_command_invocation(
         exec_path,
         cmd_args,
     })
+}
+
+/// 将 `command` 写成 `prog arg1 arg2` 整段而 `args` 为空（或需前缀拼接）的常见误用，规范为
+/// `prog` + `["arg1","arg2", …原 args…]`，以便 [`Command::new`] 能解析到真实可执行文件。
+///
+/// 含 `/` 的值视为路径（含 `./` 与 `subdir/tool`），不做拆分，避免误伤带空格的可执行路径。
+fn split_command_prefix_if_embedded(cmd_raw: &mut String, cmd_args: &mut Vec<String>) {
+    if cmd_raw.contains('/') {
+        return;
+    }
+    let parts: Vec<&str> = cmd_raw.split_whitespace().collect();
+    if parts.len() <= 1 {
+        return;
+    }
+    let head = parts[0].to_string();
+    if head.is_empty() {
+        return;
+    }
+    let mut prefix: Vec<String> = parts[1..].iter().map(|s| (*s).to_string()).collect();
+    prefix.append(cmd_args);
+    *cmd_args = prefix;
+    *cmd_raw = head;
 }
 
 fn run_command_execute_workspace_binary(
@@ -715,6 +740,47 @@ mod tests {
             None,
         );
         assert!(out.contains("退出码：0"), "{out}");
+    }
+
+    #[test]
+    fn prepare_splits_embedded_command_prefix() {
+        let v = serde_json::from_str::<serde_json::Value>(
+            r#"{"command":"pre-commit run --all-files","args":[]}"#,
+        )
+        .expect("json");
+        let p = prepare_run_command_invocation(&v, Path::new("."), &["pre-commit".to_string()])
+            .expect("prep");
+        assert_eq!(p.cmd_name, "pre-commit");
+        assert_eq!(
+            p.cmd_args,
+            vec!["run".to_string(), "--all-files".to_string()]
+        );
+    }
+
+    #[test]
+    fn run_command_embedded_args_in_command_field() {
+        let out = run(
+            r#"{"command":"echo hello world","args":[]}"#,
+            TEST_MAX_OUTPUT_LEN,
+            &test_allowed(),
+            test_work_dir(),
+            None,
+        );
+        assert!(out.contains("退出码：0"), "{out}");
+        assert!(out.contains("hello world"), "{out}");
+    }
+
+    #[test]
+    fn run_command_embedded_prefix_then_json_args_order() {
+        let out = run(
+            r#"{"command":"echo a","args":["b"]}"#,
+            TEST_MAX_OUTPUT_LEN,
+            &test_allowed(),
+            test_work_dir(),
+            None,
+        );
+        assert!(out.contains("退出码：0"), "{out}");
+        assert!(out.contains("a b"), "{out}");
     }
 
     #[test]

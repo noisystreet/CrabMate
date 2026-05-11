@@ -116,7 +116,6 @@ if [[ "$SKIP_TAR" -eq 0 ]]; then
   chmod 755 "$STAGE_DIR/crabmate"
   [[ -f LICENSE ]] && cp LICENSE "$STAGE_DIR/"
   [[ -f README.md ]] && cp README.md "$STAGE_DIR/"
-  cp config.toml.example "$STAGE_DIR/"
   cp -R config "$STAGE_DIR/"
   mkdir -p "$STAGE_DIR/man"
   cp man/crabmate.1 "$STAGE_DIR/man/"

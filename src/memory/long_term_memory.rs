@@ -300,7 +300,7 @@ impl LongTermMemoryRuntime {
         &self,
         cfg: &AgentConfig,
         rows: Vec<MemoryRow>,
-        q: &str,
+        _q: &str,
     ) -> Option<Vec<(f32, i64, String)>> {
         let mut picked: Vec<(f32, i64, String)> = Vec::new();
         match cfg.long_term_memory.long_term_memory_vector_backend {
@@ -319,7 +319,7 @@ impl LongTermMemoryRuntime {
                         let q_emb = {
                             let mut g = self.embedder.lock().ok()?;
                             let model = (*g).as_mut()?;
-                            let docs = vec![format!("query: {}", q)];
+                            let docs = vec![format!("query: {}", _q)];
                             match model.embed(docs, None) {
                                 Ok(v) => v.into_iter().next(),
                                 Err(e) => {
