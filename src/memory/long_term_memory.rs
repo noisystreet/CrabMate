@@ -108,6 +108,28 @@ fn bytes_to_f32_slice(b: &[u8]) -> Option<Vec<f32>> {
     Some(out)
 }
 
+fn validate_explicit_remember_scope_and_text<'a>(
+    cfg: &AgentConfig,
+    scope_id: &'a str,
+    text: &str,
+) -> Result<(&'a str, String), String> {
+    if !cfg.long_term_memory.long_term_memory_enabled {
+        return Err("长期记忆未启用（long_term_memory_enabled = false）".to_string());
+    }
+    let scope = scope_id.trim();
+    if scope.is_empty() {
+        return Err("长期记忆作用域为空（无会话 id）".to_string());
+    }
+    let text = clamp_text(
+        text,
+        cfg.long_term_memory.long_term_memory_max_chars_per_chunk,
+    );
+    if text.is_empty() {
+        return Err("记忆正文为空".to_string());
+    }
+    Ok((scope, text))
+}
+
 /// 进程内共享：SQLite 连接 + 可选 fastembed（首次 embed 时初始化；未编译 **`fastembed`** feature 时无嵌入器）。
 pub struct LongTermMemoryRuntime {
     conn: Arc<Mutex<Connection>>,
@@ -161,6 +183,45 @@ impl LongTermMemoryRuntime {
             *g = Some(model);
         }
         Ok(())
+    }
+
+    #[cfg(feature = "fastembed")]
+    fn explicit_chunk_embedding_bytes(
+        &self,
+        cfg: &AgentConfig,
+        passage: &str,
+    ) -> Result<Option<Vec<u8>>, String> {
+        let need_embed = matches!(
+            cfg.long_term_memory.long_term_memory_vector_backend,
+            LongTermMemoryVectorBackend::Fastembed
+        );
+        if !need_embed {
+            return Ok(None);
+        }
+        Self::ensure_embedder(&self.embedder).map_err(|e| e.to_string())?;
+        let mut g = self
+            .embedder
+            .lock()
+            .map_err(|e| format!("embedder 锁失败: {e}"))?;
+        let model = g.as_mut().ok_or_else(|| "embedder 未初始化".to_string())?;
+        let prefixed = format!("passage: {}", passage);
+        let v = model
+            .embed(vec![prefixed], None)
+            .map_err(|e| format!("嵌入失败: {e}"))?;
+        let vec = v
+            .into_iter()
+            .next()
+            .ok_or_else(|| "嵌入结果为空".to_string())?;
+        Ok(Some(f32_slice_to_bytes(&vec)))
+    }
+
+    #[cfg(not(feature = "fastembed"))]
+    fn explicit_chunk_embedding_bytes(
+        &self,
+        _cfg: &AgentConfig,
+        _passage: &str,
+    ) -> Result<Option<Vec<u8>>, String> {
+        Ok(None)
     }
 
     /// 在 `prepare_messages_for_model` 之前调用：按配置注入一条 `user`（或跳过）。
@@ -501,20 +562,7 @@ impl LongTermMemoryRuntime {
         tags: &[String],
         ttl_secs: Option<u64>,
     ) -> Result<i64, String> {
-        if !cfg.long_term_memory.long_term_memory_enabled {
-            return Err("长期记忆未启用（long_term_memory_enabled = false）".to_string());
-        }
-        let scope = scope_id.trim();
-        if scope.is_empty() {
-            return Err("长期记忆作用域为空（无会话 id）".to_string());
-        }
-        let text = clamp_text(
-            text,
-            cfg.long_term_memory.long_term_memory_max_chars_per_chunk,
-        );
-        if text.is_empty() {
-            return Err("记忆正文为空".to_string());
-        }
+        let (scope, text) = validate_explicit_remember_scope_and_text(cfg, scope_id, text)?;
         let tags_json = serde_json::to_string(tags).map_err(|e| format!("tags 序列化失败: {e}"))?;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -522,41 +570,7 @@ impl LongTermMemoryRuntime {
             .as_secs() as i64;
         let expires_at = ttl_secs.map(|s| now + s as i64);
 
-        let need_embed = cfg!(feature = "fastembed")
-            && matches!(
-                cfg.long_term_memory.long_term_memory_vector_backend,
-                LongTermMemoryVectorBackend::Fastembed
-            );
-        if need_embed {
-            #[cfg(feature = "fastembed")]
-            Self::ensure_embedder(&self.embedder).map_err(|e| e.to_string())?;
-        }
-
-        let emb = if need_embed {
-            #[cfg(feature = "fastembed")]
-            {
-                let mut g = self
-                    .embedder
-                    .lock()
-                    .map_err(|e| format!("embedder 锁失败: {e}"))?;
-                let model = g.as_mut().ok_or_else(|| "embedder 未初始化".to_string())?;
-                let prefixed = format!("passage: {}", text);
-                let v = model
-                    .embed(vec![prefixed], None)
-                    .map_err(|e| format!("嵌入失败: {e}"))?;
-                let vec = v
-                    .into_iter()
-                    .next()
-                    .ok_or_else(|| "嵌入结果为空".to_string())?;
-                Some(f32_slice_to_bytes(&vec))
-            }
-            #[cfg(not(feature = "fastembed"))]
-            {
-                None::<Vec<u8>>
-            }
-        } else {
-            None
-        };
+        let emb = self.explicit_chunk_embedding_bytes(cfg, text.as_str())?;
 
         let conn = self
             .conn
