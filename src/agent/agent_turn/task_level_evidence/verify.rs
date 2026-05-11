@@ -9,16 +9,9 @@ use super::common::{
     is_program_build_run_request,
 };
 
-fn per_result_verify_flags(
-    r: &TaskResult,
-    combined_lower: &str,
-    combined_full: &str,
-    expected_outputs: &[String],
-) -> (bool, bool, bool) {
+fn artifact_evidence_flags(r: &TaskResult) -> (bool, bool) {
     let mut wrote_source = false;
     let mut compiled = false;
-    let mut ran_program = false;
-
     for a in &r.artifacts {
         match a.kind {
             ArtifactKind::File => {
@@ -34,37 +27,53 @@ fn per_result_verify_flags(
             _ => {}
         }
     }
+    (wrote_source, compiled)
+}
 
-    if r.tools_invoked.iter().any(|n| n == "run_executable")
+fn combined_text_build_flags(combined_lower: &str) -> (bool, bool) {
+    const WRITE_HINTS: &[&str] = &[
+        "create_file",
+        "已创建文件",
+        "created file",
+        "write_file",
+        "apply_patch",
+        ".cpp",
+    ];
+    const COMPILE_HINTS: &[&str] = &["g++", "clang++", "编译", "cmake", "make", "build"];
+    let wrote_source = WRITE_HINTS.iter().any(|hint| combined_lower.contains(hint));
+    let compiled = COMPILE_HINTS
+        .iter()
+        .any(|hint| combined_lower.contains(hint));
+    (wrote_source, compiled)
+}
+
+fn ran_program_from_tools_and_output(
+    r: &TaskResult,
+    combined_full: &str,
+    expected_outputs: &[String],
+) -> bool {
+    r.tools_invoked.iter().any(|n| n == "run_executable")
         || (r.tools_invoked.iter().any(|n| n == "run_command")
             && goal_verifier::run_command_invocation_matches_expected_output(
                 combined_full,
                 expected_outputs,
             ))
-    {
-        ran_program = true;
-    }
+}
 
-    if combined_lower.contains("create_file")
-        || combined_lower.contains("已创建文件")
-        || combined_lower.contains("created file")
-        || combined_lower.contains("write_file")
-        || combined_lower.contains("apply_patch")
-        || combined_lower.contains(".cpp")
-    {
-        wrote_source = true;
-    }
-    if combined_lower.contains("g++")
-        || combined_lower.contains("clang++")
-        || combined_lower.contains("编译")
-        || combined_lower.contains("cmake")
-        || combined_lower.contains("make")
-        || combined_lower.contains("build")
-    {
-        compiled = true;
-    }
-
-    (wrote_source, compiled, ran_program)
+fn per_result_verify_flags(
+    r: &TaskResult,
+    combined_lower: &str,
+    combined_full: &str,
+    expected_outputs: &[String],
+) -> (bool, bool, bool) {
+    let (art_write, art_compile) = artifact_evidence_flags(r);
+    let (text_write, text_compile) = combined_text_build_flags(combined_lower);
+    let ran_program = ran_program_from_tools_and_output(r, combined_full, expected_outputs);
+    (
+        art_write || text_write,
+        art_compile || text_compile,
+        ran_program,
+    )
 }
 
 /// 对「写 C++ + 编译 + 运行」类任务做轻量证据核对；缺项时返回说明字符串。
