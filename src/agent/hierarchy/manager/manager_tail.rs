@@ -89,6 +89,22 @@ pub fn is_unsafe_verify_command(cmd: &str) -> bool {
         return true;
     }
     let t = cmd.trim();
+    if verify_cmd_has_shell_metachar(t) {
+        return true;
+    }
+    let parts: Vec<&str> = t.split_whitespace().collect();
+    if verify_cmd_is_shell_minus_c(&parts) {
+        return true;
+    }
+    for w in t.split_whitespace() {
+        if verify_cmd_unsafe_token(w) {
+            return true;
+        }
+    }
+    t.chars().count() > 512
+}
+
+fn verify_cmd_has_shell_metachar(t: &str) -> bool {
     for ch in [
         ';', '&', '|', '>', '<', '\n', '\r', '\t', '`', '$', '(', ')', '*', '?', '[', ']',
     ] {
@@ -96,37 +112,37 @@ pub fn is_unsafe_verify_command(cmd: &str) -> bool {
             return true;
         }
     }
-    let parts: Vec<&str> = t.split_whitespace().collect();
-    if parts.len() >= 2
+    false
+}
+
+fn verify_cmd_is_shell_minus_c(parts: &[&str]) -> bool {
+    parts.len() >= 2
         && parts[1] == "-c"
         && matches!(
             parts[0].to_lowercase().as_str(),
             "sh" | "bash" | "dash" | "zsh" | "cmd" | "ksh" | "fish" | "pwsh"
         )
+}
+
+fn verify_cmd_unsafe_token(w: &str) -> bool {
+    if w.contains("..") {
+        return true;
+    }
+    if w == "/" || w.starts_with('/') {
+        return true;
+    }
+    if w == "\\" {
+        return true;
+    }
+    if w.contains(':')
+        && w.len() == 2
+        && let Some(first) = w.chars().next()
+        && w.ends_with(':')
+        && first.is_ascii_alphabetic()
     {
         return true;
     }
-    for w in t.split_whitespace() {
-        if w.contains("..") {
-            return true;
-        }
-        if w == "/" || w.starts_with('/') {
-            return true;
-        }
-        if w == "\\" {
-            return true;
-        }
-        if w.contains(':')
-            && w.len() == 2
-            && let Some(first) = w.chars().next()
-            && w.ends_with(':')
-            && first.is_ascii_alphabetic()
-        {
-            return true;
-        }
-    }
-    // 过长的单条可能是不慎粘贴的 shell 串
-    t.chars().count() > 512
+    false
 }
 
 /// Manager 输出
