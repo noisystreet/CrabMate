@@ -1,13 +1,21 @@
-async fn handle_im_message_receive(
-    st: &FeishuBridgeState,
-    envelope: &Value,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+/// 单条用户 IM 消息的解析结果（不含正文抽取）；用于拆分 `handle_im_message_receive` 以降低圈复杂度。
+struct FeishuImUserTextContext {
+    message: Value,
+    message_id: String,
+    chat_id: String,
+    chat_type: String,
+    msg_type: String,
+    content_raw: String,
+}
+
+/// 若非 user 发送、或缺 `message_id` / `chat_id`，返回 `None`（静默忽略）。
+fn parse_feishu_im_user_text_context(envelope: &Value) -> Option<FeishuImUserTextContext> {
     let sender_type = envelope
         .pointer("/event/sender/sender_type")
         .and_then(|x| x.as_str())
         .unwrap_or("");
     if sender_type != "user" {
-        return Ok(());
+        return None;
     }
 
     let message = envelope
@@ -20,11 +28,7 @@ async fn handle_im_message_receive(
         .unwrap_or("")
         .to_string();
     if message_id.is_empty() {
-        return Ok(());
-    }
-
-    if is_duplicate(&st.seen_message_ids, &message_id, st.cfg.dedup_ttl) {
-        return Ok(());
+        return None;
     }
 
     let chat_id = message
@@ -33,61 +37,198 @@ async fn handle_im_message_receive(
         .unwrap_or("")
         .to_string();
     if chat_id.is_empty() {
-        return Ok(());
+        return None;
     }
 
     let chat_type = message
         .get("chat_type")
         .and_then(|x| x.as_str())
-        .unwrap_or("");
-
-    if st.cfg.group_require_bot_mention && chat_type == "group" {
-        let Some(bot_id) = st
-            .cfg
-            .bot_open_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-        else {
-            warn!(
-                "FEISHU_GROUP_REQUIRE_BOT_MENTION=1 but FEISHU_BOT_OPEN_ID empty; skip group message"
-            );
-            return Ok(());
-        };
-        if !message_mentions_bot_open_id(&message, bot_id) {
-            return Ok(());
-        }
-    }
-
+        .unwrap_or("")
+        .to_string();
     let msg_type = message
         .get("message_type")
         .and_then(|x| x.as_str())
-        .unwrap_or("");
+        .unwrap_or("")
+        .to_string();
     let content_raw = message
         .get("content")
         .and_then(|x| x.as_str())
-        .unwrap_or("{}");
+        .unwrap_or("{}")
+        .to_string();
 
-    if st.cfg.tool_approval_mode == FeishuToolApprovalMode::WaitMessage
-        && let Some(session_id) = st
-            .pending_tool_session_by_chat
-            .get(&chat_id)
-            .map(|e| e.value().clone())
-        && msg_type == "text"
-        && let Ok(c) = serde_json::from_str::<Value>(content_raw)
-        && let Some(plain) = c.get("text").and_then(|x| x.as_str())
-        && let Some(dec) = feishu_message_command_decision(plain)
-        && let Some((_, pending)) = st.pending_tool_decisions.remove(&session_id)
+    Some(FeishuImUserTextContext {
+        message,
+        message_id,
+        chat_id,
+        chat_type,
+        msg_type,
+        content_raw,
+    })
+}
+
+/// 群聊 @ 机器人门控：返回 `true` 表示应停止处理本条（已打日志或无需日志）。
+fn group_bot_mention_stops_im_processing(
+    st: &FeishuBridgeState,
+    chat_type: &str,
+    message: &Value,
+) -> bool {
+    if !st.cfg.group_require_bot_mention || chat_type != "group" {
+        return false;
+    }
+    let Some(bot_id) = st
+        .cfg
+        .bot_open_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
+        warn!(
+            "FEISHU_GROUP_REQUIRE_BOT_MENTION=1 but FEISHU_BOT_OPEN_ID empty; skip group message"
+        );
+        return true;
+    };
+    !message_mentions_bot_open_id(message, bot_id)
+}
+
+/// `WaitMessage` 下将用户文本解析为审批指令并投递；返回 `true` 表示已消费且上层应直接 `Ok(())`。
+async fn try_consume_pending_tool_decision_from_im_text(
+    st: &FeishuBridgeState,
+    ctx: &FeishuImUserTextContext,
+) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+    if st.cfg.tool_approval_mode != FeishuToolApprovalMode::WaitMessage {
+        return Ok(false);
+    }
+    let Some(session_id) = st
+        .pending_tool_session_by_chat
+        .get(&ctx.chat_id)
+        .map(|e| e.value().clone())
+    else {
+        return Ok(false);
+    };
+    if ctx.msg_type != "text" {
+        return Ok(false);
+    }
+    let Ok(c) = serde_json::from_str::<Value>(&ctx.content_raw) else {
+        return Ok(false);
+    };
+    let Some(plain) = c.get("text").and_then(|x| x.as_str()) else {
+        return Ok(false);
+    };
+    let Some(dec) = feishu_message_command_decision(plain) else {
+        return Ok(false);
+    };
+    let Some((_, pending)) = st.pending_tool_decisions.remove(&session_id) else {
+        return Ok(false);
+    };
+    let _ = pending.reply_tx.send(dec.to_string());
+    st.pending_tool_session_by_chat.remove(&ctx.chat_id);
+    reply_text_message(st, &ctx.message_id, "已收到审批，正在继续执行…").await?;
+    Ok(true)
+}
+
+/// 开始处理时的进度提示：原地卡片或纯文本；返回可 PATCH 的进度卡片 `message_id`（若有）。
+async fn feishu_send_progress_ack(
+    st: &FeishuBridgeState,
+    message_id: &str,
+    follow_idx: &mut u64,
+) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
+    const FALLBACK_AFTER_CARD: &str = "⏳ 已开始处理：CrabMate 正在执行（若含工具可能耗时数分钟）。完成后将发送结果摘要。";
+    const FALLBACK_NO_CARD: &str = "⏳ 已开始处理：CrabMate 正在执行（若含工具可能耗时数分钟）。完成后将发送结果摘要卡片。";
+
+    if !st.cfg.in_place_progress_card {
+        *follow_idx = follow_idx.saturating_add(1);
+        reply_followup_text_message(st, message_id, *follow_idx, FALLBACK_NO_CARD).await?;
+        return Ok(None);
+    }
+
+    *follow_idx = follow_idx.saturating_add(1);
+    let uuid = format!("{message_id}-prog-{follow_idx}");
+    let card = feishu_tool_card::progress_placeholder_card();
+    match reply_interactive_card(st, message_id, &uuid, &card).await {
+        Ok(Some(mid)) if !mid.is_empty() => Ok(Some(mid)),
+        Ok(_) => {
+            warn!("feishu progress card sent but no message_id in reply; fallback text");
+            *follow_idx = follow_idx.saturating_add(1);
+            reply_followup_text_message(st, message_id, *follow_idx, FALLBACK_AFTER_CARD).await?;
+            Ok(None)
+        }
+        Err(e) => {
+            warn!(?e, "feishu progress placeholder card failed; fallback text");
+            *follow_idx = follow_idx.saturating_add(1);
+            reply_followup_text_message(st, message_id, *follow_idx, FALLBACK_AFTER_CARD).await?;
+            Ok(None)
+        }
+    }
+}
+
+/// 调用 CrabMate 流式接口；失败时已向飞书发说明并返回 `Ok(None)`。
+async fn crabmate_post_chat_stream_with_user_errors(
+    st: &FeishuBridgeState,
+    message_id: &str,
+    user_text: &str,
+    conv: &str,
+    approval_session_id: Option<&str>,
+    follow_idx: &mut u64,
+) -> Result<Option<reqwest::Response>, Box<dyn std::error::Error + Send + Sync>> {
+    match st
+        .cfg
+        .crabmate
+        .post_chat_stream(user_text, Some(conv), approval_session_id)
+        .await
     {
-        let _ = pending.reply_tx.send(dec.to_string());
-        st.pending_tool_session_by_chat.remove(&chat_id);
-        reply_text_message(st, &message_id, "已收到审批，正在继续执行…").await?;
+        Ok(r) => Ok(Some(r)),
+        Err(CrabmateError::HttpStatus {
+            status,
+            body_preview,
+        }) => {
+            warn!(status, %body_preview, "CrabMate /chat/stream error");
+            *follow_idx = follow_idx.saturating_add(1);
+            reply_followup_text_message(
+                st,
+                message_id,
+                *follow_idx,
+                &format!("（CrabMate 返回 HTTP {status}，请检查服务与密钥。）"),
+            )
+            .await?;
+            Ok(None)
+        }
+        Err(e) => {
+            warn!(?e, "CrabMate /chat/stream request failed");
+            *follow_idx = follow_idx.saturating_add(1);
+            reply_followup_text_message(
+                st,
+                message_id,
+                *follow_idx,
+                &format!("（调用 CrabMate 失败：{e}）"),
+            )
+            .await?;
+            Ok(None)
+        }
+    }
+}
+
+async fn handle_im_message_receive(
+    st: &FeishuBridgeState,
+    envelope: &Value,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let Some(ctx) = parse_feishu_im_user_text_context(envelope) else {
+        return Ok(());
+    };
+    if is_duplicate(&st.seen_message_ids, &ctx.message_id, st.cfg.dedup_ttl) {
+        return Ok(());
+    }
+    if group_bot_mention_stops_im_processing(st, &ctx.chat_type, &ctx.message) {
+        return Ok(());
+    }
+    if try_consume_pending_tool_decision_from_im_text(st, &ctx).await? {
         return Ok(());
     }
 
-    let Some(text) =
-        incoming_content_as_user_text(msg_type, content_raw, st.cfg.max_message_content_json_chars)
-    else {
+    let Some(text) = incoming_content_as_user_text(
+        &ctx.msg_type,
+        &ctx.content_raw,
+        st.cfg.max_message_content_json_chars,
+    ) else {
         return Ok(());
     };
     let text = strip_feishu_mention_placeholders(&text);
@@ -98,10 +239,10 @@ async fn handle_im_message_receive(
 
     {
         let _turn = st.turn_lock.lock().await;
-        ensure_workspace_for_chat(st, &chat_id).await?;
+        ensure_workspace_for_chat(st, &ctx.chat_id).await?;
     }
 
-    crabmate_turn_with_feishu(st, &message_id, &chat_id, text).await?;
+    crabmate_turn_with_feishu(st, &ctx.message_id, &ctx.chat_id, text).await?;
     Ok(())
 }
 
@@ -118,81 +259,20 @@ async fn crabmate_turn_with_feishu(
     };
 
     let mut follow_idx: u64 = 0;
-    let mut progress_card_message_id: Option<String> = None;
-    if st.cfg.in_place_progress_card {
-        follow_idx = follow_idx.saturating_add(1);
-        let uuid = format!("{message_id}-prog-{follow_idx}");
-        let card = feishu_tool_card::progress_placeholder_card();
-        match reply_interactive_card(st, message_id, &uuid, &card).await {
-            Ok(Some(mid)) if !mid.is_empty() => progress_card_message_id = Some(mid),
-            Ok(_) => {
-                warn!("feishu progress card sent but no message_id in reply; fallback text");
-                follow_idx = follow_idx.saturating_add(1);
-                reply_followup_text_message(
-                    st,
-                    message_id,
-                    follow_idx,
-                    "⏳ 已开始处理：CrabMate 正在执行（若含工具可能耗时数分钟）。完成后将发送结果摘要。",
-                )
-                .await?;
-            }
-            Err(e) => {
-                warn!(?e, "feishu progress placeholder card failed; fallback text");
-                follow_idx = follow_idx.saturating_add(1);
-                reply_followup_text_message(
-                    st,
-                    message_id,
-                    follow_idx,
-                    "⏳ 已开始处理：CrabMate 正在执行（若含工具可能耗时数分钟）。完成后将发送结果摘要。",
-                )
-                .await?;
-            }
-        }
-    } else {
-        follow_idx = follow_idx.saturating_add(1);
-        reply_followup_text_message(
-            st,
-            message_id,
-            follow_idx,
-            "⏳ 已开始处理：CrabMate 正在执行（若含工具可能耗时数分钟）。完成后将发送结果摘要卡片。",
-        )
-        .await?;
-    }
+    let progress_card_message_id =
+        feishu_send_progress_ack(st, message_id, &mut follow_idx).await?;
 
-    let resp = match st
-        .cfg
-        .crabmate
-        .post_chat_stream(user_text, Some(&conv), approval_session_id.as_deref())
-        .await
-    {
-        Ok(r) => r,
-        Err(CrabmateError::HttpStatus {
-            status,
-            body_preview,
-        }) => {
-            warn!(status, %body_preview, "CrabMate /chat/stream error");
-            follow_idx = follow_idx.saturating_add(1);
-            reply_followup_text_message(
-                st,
-                message_id,
-                follow_idx,
-                &format!("（CrabMate 返回 HTTP {status}，请检查服务与密钥。）"),
-            )
-            .await?;
-            return Ok(());
-        }
-        Err(e) => {
-            warn!(?e, "CrabMate /chat/stream request failed");
-            follow_idx = follow_idx.saturating_add(1);
-            reply_followup_text_message(
-                st,
-                message_id,
-                follow_idx,
-                &format!("（调用 CrabMate 失败：{e}）"),
-            )
-            .await?;
-            return Ok(());
-        }
+    let Some(resp) = crabmate_post_chat_stream_with_user_errors(
+        st,
+        message_id,
+        user_text,
+        &conv,
+        approval_session_id.as_deref(),
+        &mut follow_idx,
+    )
+    .await?
+    else {
+        return Ok(());
     };
 
     let mut acc = StreamAccum::default();
@@ -207,7 +287,6 @@ async fn crabmate_turn_with_feishu(
     )
     .await?;
 
-    let card_cap = st.cfg.result_card_max_body_chars.max(200);
     if acc.saw_error && acc.answer.trim().is_empty() {
         follow_idx = follow_idx.saturating_add(1);
         reply_followup_text_message(
@@ -230,6 +309,7 @@ async fn crabmate_turn_with_feishu(
     } else {
         "CrabMate 执行完成"
     };
+    let card_cap = st.cfg.result_card_max_body_chars.max(200);
     reply_turn_result_card_and_remainder(
         st,
         message_id,
