@@ -1,5 +1,5 @@
 //! 壳层 `*_view` 聚合为 [`AppShellCtx`]，压缩 `App` 内 `view!` 的长实参列表。
-//! 阶段 B：对「仅由壳已持有的一组 `RwSignal` 拼出的子组件入参」提供 **`settings_page_form_signals()`**、**`chat_find_bar_signals()`** 等组装方法，避免在 **`App`** 中重复罗列字段。
+//! 阶段 B：对「仅由壳已持有的一组 `RwSignal` 拼出的子组件入参」提供 **`settings_page_form_signals()`** 等组装方法，避免在 **`App`** 中重复罗列字段。
 //! **未使用** Leptos `Context` / `<Provider>` 承载整份壳层：状态含 `Rc<RefCell<…>>`、`Rc<dyn Fn()>` 等，
 //! 不满足 `provide_context` 的 `Send + Sync + 'static` 约束；以结构体 **`Clone`**（内部多为
 //! `Copy` / `Rc::clone` / `Arc::clone`）在 `*_view` 间传递即可。
@@ -17,7 +17,7 @@ use std::sync::Arc;
 use leptos::html::Div;
 use leptos::prelude::*;
 
-use crate::chat_session_state::{ChatSessionSignals, ChatStreamBusyMemos};
+use crate::chat_session_state::ChatStreamBusyMemos;
 use crate::i18n::Locale;
 use crate::session_ops::SessionContextAnchor;
 use crate::sse_dispatch::ThinkingTraceInfo;
@@ -25,7 +25,7 @@ use crate::sse_dispatch::ThinkingTraceInfo;
 use crate::app_prefs::SidePanelView;
 
 use super::app_signals::AppSignals;
-use super::chat::{ChatColumnShell, ChatFindBarSignals};
+use super::chat::ChatColumnShell;
 use super::settings_page::{SettingsPageFormSignals, SettingsPageViewInput};
 use super::status_tasks_state::StatusTasksSignals;
 use super::workspace_panel_state::WorkspacePanelSignals;
@@ -114,13 +114,10 @@ impl SettingsModalSignals {
 }
 
 /// 会话列表模态所需句柄（阶段 B：避免向 `session_list_modal_view` 传递整份 [`AppShellCtx`]）。
-#[derive(Clone)]
+/// 会话 / 草稿 / 语言 / 过滤开关经 [`super::shell_runtime_context::ChatShellLeptosContext`]。
+#[derive(Clone, Copy)]
 pub struct SessionListModalSignals {
     pub session_modal: RwSignal<bool>,
-    pub locale: RwSignal<Locale>,
-    pub chat: ChatSessionSignals,
-    pub draft: RwSignal<String>,
-    pub apply_assistant_display_filters: RwSignal<bool>,
 }
 
 impl SessionListModalSignals {
@@ -128,15 +125,12 @@ impl SessionListModalSignals {
     pub fn from_app_signals(app: &AppSignals) -> Self {
         Self {
             session_modal: app.modal.session_modal,
-            locale: app.shell_ui.locale,
-            chat: app.chat,
-            draft: app.chat_composer.draft,
-            apply_assistant_display_filters: app.shell_ui.apply_assistant_display_filters,
         }
     }
 }
 
 /// 底栏状态条所需句柄（阶段 B：避免向 `status_bar_footer_view` 传递整份 [`AppShellCtx`]）。
+/// 会话句柄与界面语言经 [`super::shell_runtime_context::ChatShellLeptosContext`]（角色切换时清流式句柄等）。
 #[derive(Clone)]
 pub struct StatusBarFooterSignals {
     pub status_bar_visible: RwSignal<bool>,
@@ -146,9 +140,7 @@ pub struct StatusBarFooterSignals {
     pub status_busy: RwSignal<bool>,
     pub client_llm_storage_tick: RwSignal<u64>,
     pub selected_agent_role: RwSignal<Option<String>>,
-    pub chat: ChatSessionSignals,
     pub refresh_status: Arc<dyn Fn() + Send + Sync>,
-    pub locale: RwSignal<Locale>,
 }
 
 type SideResizeHandlesCell = Rc<
@@ -270,9 +262,7 @@ impl AppShellCtx {
             status_busy: self.signals.stream.status_busy,
             client_llm_storage_tick: self.signals.llm_settings.client_llm_storage_tick,
             selected_agent_role: self.signals.llm_settings.selected_agent_role,
-            chat: self.signals.chat,
             refresh_status: Arc::clone(&self.refresh_status),
-            locale: self.signals.shell_ui.locale,
         }
     }
 
@@ -313,11 +303,6 @@ impl AppShellCtx {
             settings_page: self.signals.modal.settings_page,
             form: self.settings_page_form_signals(),
         }
-    }
-
-    /// 主区会话内查找条（阶段 B：避免在 `App` 中逐项传 `RwSignal`）。
-    pub fn chat_find_bar_signals(&self) -> ChatFindBarSignals {
-        ChatFindBarSignals::from_app_signals(&self.signals)
     }
 
     /// 设置页表单所需 `RwSignal` 聚合（阶段 B：避免在 `App` 的 `view!` 中重复罗列字段）。

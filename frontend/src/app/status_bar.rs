@@ -7,9 +7,10 @@ use leptos_dom::helpers::event_target_value;
 
 use crate::api::load_client_llm_text_fields_from_storage;
 use crate::app_prefs::{status_bar_effective_api_base, status_bar_effective_model};
-use crate::chat_session_state::{ChatSessionSignals, ChatStreamBusyMemos};
+use crate::chat_session_state::ChatStreamBusyMemos;
 
 use super::app_shell_ctx::StatusBarFooterSignals;
+use super::shell_runtime_context::expect_chat_shell_ctx;
 use super::status_tasks_state::StatusTasksSignals;
 use crate::i18n::{self, Locale};
 
@@ -46,7 +47,6 @@ struct StatusBarChipsSignals {
     st: StatusTasksSignals,
     client_llm_storage_tick: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
-    chat: ChatSessionSignals,
     locale: RwSignal<Locale>,
 }
 
@@ -79,9 +79,9 @@ fn StatusBarChipsLoaded(
     st: StatusTasksSignals,
     client_llm_storage_tick: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
-    chat: ChatSessionSignals,
     locale: RwSignal<Locale>,
 ) -> impl IntoView {
+    let chat = expect_chat_shell_ctx().chat;
     view! {
         <>
             <span class="status-chip">
@@ -175,7 +175,6 @@ fn StatusBarChipsRow(
         st,
         client_llm_storage_tick,
         selected_agent_role,
-        chat,
         locale,
     } = chips;
     view! {
@@ -198,7 +197,6 @@ fn StatusBarChipsRow(
                             st=st
                             client_llm_storage_tick=client_llm_storage_tick
                             selected_agent_role=selected_agent_role
-                            chat=chat
                             locale=locale
                         />
                     }
@@ -257,15 +255,13 @@ fn StatusBarFooterBody(
     status_busy: RwSignal<bool>,
     client_llm_storage_tick: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
-    chat: ChatSessionSignals,
     refresh_status: Arc<dyn Fn() + Send + Sync>,
-    locale: RwSignal<Locale>,
 ) -> impl IntoView {
+    let locale = expect_chat_shell_ctx().locale;
     let chips = StatusBarChipsSignals {
         st,
         client_llm_storage_tick,
         selected_agent_role,
-        chat,
         locale,
     };
     view! {
@@ -297,9 +293,7 @@ pub fn status_bar_footer_view(signals: StatusBarFooterSignals) -> impl IntoView 
         status_busy,
         client_llm_storage_tick,
         selected_agent_role,
-        chat,
         refresh_status,
-        locale,
     } = signals;
     view! {
         <Show when=move || status_bar_visible.get()>
@@ -310,9 +304,7 @@ pub fn status_bar_footer_view(signals: StatusBarFooterSignals) -> impl IntoView 
                 status_busy=status_busy
                 client_llm_storage_tick=client_llm_storage_tick
                 selected_agent_role=selected_agent_role
-                chat=chat
                 refresh_status=refresh_status.clone()
-                locale=locale
             />
         </Show>
     }

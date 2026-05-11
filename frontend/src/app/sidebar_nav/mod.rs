@@ -135,13 +135,9 @@ pub fn sidebar_nav_view(signals: SidebarNavSignals) -> impl IntoView {
         </aside>
 
         <SessionContextMenuLayer
-            locale=locale
             session_context_menu=session_context_menu
             session_modal=session_modal
             mobile_nav_open=mobile_nav_open
-            chat=chat
-            draft=draft
-            apply_assistant_display_filters=apply_assistant_display_filters
         />
 
         <RailContextMenuLayer

@@ -1,36 +1,11 @@
-//! 当前会话内查找工具条。
+//! 当前会话内查找工具条（句柄来自 [`crate::app::shell_runtime_context::ChatShellLeptosContext`]）。
 
 use leptos::prelude::*;
 use leptos_dom::helpers::event_target_value;
 
+use crate::app::shell_runtime_context::expect_chat_shell_ctx;
 use crate::i18n::{self, Locale};
 use crate::session_search::scroll_message_into_view;
-
-/// 查找条所需 `RwSignal` 聚合（阶段 B：压缩 `App` 的 `view!` 实参）。
-#[derive(Clone, Copy)]
-pub struct ChatFindBarSignals {
-    pub chat_find_panel_open: RwSignal<bool>,
-    pub locale: RwSignal<Locale>,
-    pub chat_find_query: RwSignal<String>,
-    pub chat_find_match_ids: RwSignal<Vec<String>>,
-    pub chat_find_cursor: RwSignal<usize>,
-    pub auto_scroll_chat: RwSignal<bool>,
-}
-
-impl ChatFindBarSignals {
-    /// 从 [`crate::app::app_signals::AppSignals`] 组装查找条句柄。
-    #[must_use]
-    pub fn from_app_signals(app: &crate::app::app_signals::AppSignals) -> Self {
-        Self {
-            chat_find_panel_open: app.chat_composer.chat_find_panel_open,
-            locale: app.shell_ui.locale,
-            chat_find_query: app.chat_composer.chat_find_query,
-            chat_find_match_ids: app.chat_composer.chat_find_match_ids,
-            chat_find_cursor: app.chat_composer.chat_find_cursor,
-            auto_scroll_chat: app.chat_composer.auto_scroll_chat,
-        }
-    }
-}
 
 enum ChatFindNavDir {
     Prev,
@@ -80,15 +55,15 @@ fn scroll_adjacent_find_match(
 }
 
 #[component]
-pub fn ChatFindBar(signals: ChatFindBarSignals) -> impl IntoView {
-    let ChatFindBarSignals {
-        chat_find_panel_open,
-        locale,
-        chat_find_query,
-        chat_find_match_ids,
-        chat_find_cursor,
-        auto_scroll_chat,
-    } = signals;
+pub fn ChatFindBar() -> impl IntoView {
+    let shell = expect_chat_shell_ctx();
+    let locale = shell.locale;
+    let c = shell.composer;
+    let chat_find_panel_open = c.chat_find_panel_open;
+    let chat_find_query = c.chat_find_query;
+    let chat_find_match_ids = c.chat_find_match_ids;
+    let chat_find_cursor = c.chat_find_cursor;
+    let auto_scroll_chat = c.auto_scroll_chat;
     view! {
         <div class="chat-find-wrap">
             <div class="chat-find-bar" role="search" prop:aria-label=move || i18n::chat_find_region(locale.get())>

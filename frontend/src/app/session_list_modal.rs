@@ -6,20 +6,20 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use crate::a11y::{focus_first_in_modal_container, trap_tab_in_container};
-use crate::chat_session_state::ChatSessionSignals;
-use crate::i18n::{self, Locale};
+use crate::i18n;
 use crate::session_modal_row::{SessionModalRow, SessionModalRowBundle};
 use crate::session_sort::sorted_sessions_clone;
 
 use super::app_shell_ctx::SessionListModalSignals;
+use super::shell_runtime_context::expect_chat_shell_ctx;
+
 #[component]
-fn SessionListModalPanel(
-    session_modal: RwSignal<bool>,
-    locale: RwSignal<Locale>,
-    chat: ChatSessionSignals,
-    draft: RwSignal<String>,
-    apply_assistant_display_filters: RwSignal<bool>,
-) -> impl IntoView {
+fn SessionListModalPanel(session_modal: RwSignal<bool>) -> impl IntoView {
+    let shell = expect_chat_shell_ctx();
+    let chat = shell.chat;
+    let draft = shell.composer.draft;
+    let locale = shell.locale;
+    let apply_assistant_display_filters = shell.apply_assistant_display_filters;
     let dialog_ref = NodeRef::<Div>::new();
 
     Effect::new({
@@ -101,43 +101,19 @@ fn SessionListModalPanel(
 
 /// 避免 `view!` 中 backdrop 子树闭包捕获移动导致 `FnOnce`。
 #[component]
-fn SessionListModalBackdrop(
-    session_modal: RwSignal<bool>,
-    locale: RwSignal<Locale>,
-    chat: ChatSessionSignals,
-    draft: RwSignal<String>,
-    apply_assistant_display_filters: RwSignal<bool>,
-) -> impl IntoView {
+fn SessionListModalBackdrop(session_modal: RwSignal<bool>) -> impl IntoView {
     view! {
         <div class="modal-backdrop" on:click=move |_| session_modal.set(false)>
-            <SessionListModalPanel
-                session_modal=session_modal
-                locale=locale
-                chat=chat
-                draft=draft
-                apply_assistant_display_filters=apply_assistant_display_filters
-            />
+            <SessionListModalPanel session_modal=session_modal />
         </div>
     }
 }
 
 pub fn session_list_modal_view(signals: SessionListModalSignals) -> impl IntoView {
-    let SessionListModalSignals {
-        session_modal,
-        locale,
-        chat,
-        draft,
-        apply_assistant_display_filters,
-    } = signals;
+    let SessionListModalSignals { session_modal } = signals;
     view! {
         <Show when=move || session_modal.get()>
-            <SessionListModalBackdrop
-                session_modal=session_modal
-                locale=locale
-                chat=chat
-                draft=draft
-                apply_assistant_display_filters=apply_assistant_display_filters
-            />
+            <SessionListModalBackdrop session_modal=session_modal />
         </Show>
     }
 }

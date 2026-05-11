@@ -1,22 +1,24 @@
 use leptos::prelude::*;
 
-use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n;
 use crate::session_ops::{
     SessionContextAnchor, delete_session_after_confirm, export_session_json_for_id,
     export_session_markdown_for_id, set_session_pinned, set_session_starred,
 };
 
+use crate::app::shell_runtime_context::expect_chat_shell_ctx;
+
 #[component]
 pub(super) fn SessionContextMenuLayer(
-    locale: RwSignal<crate::i18n::Locale>,
     session_context_menu: RwSignal<Option<SessionContextAnchor>>,
     session_modal: RwSignal<bool>,
     mobile_nav_open: RwSignal<bool>,
-    chat: ChatSessionSignals,
-    draft: RwSignal<String>,
-    apply_assistant_display_filters: RwSignal<bool>,
 ) -> impl IntoView {
+    let shell = expect_chat_shell_ctx();
+    let chat = shell.chat;
+    let draft = shell.composer.draft;
+    let locale = shell.locale;
+    let apply_assistant_display_filters = shell.apply_assistant_display_filters;
     view! {
         <Show when=move || session_context_menu.get().is_some()>
             <div class="session-ctx-layer">
