@@ -270,6 +270,73 @@ struct RunChatBatchJsonlParams<'a> {
     process_handles: Arc<ProcessHandles>,
 }
 
+/// 将 JSONL 单行对象合并进 `messages`（`user` 或 `messages` 分支）；从 `run_chat_batch_jsonl` 拆出以降低圈复杂度。
+async fn chat_batch_jsonl_merge_line_value(
+    cfg_holder: &SharedAgentConfig,
+    work_dir: &Path,
+    system_seed: &str,
+    messages: &mut Vec<Message>,
+    path: &str,
+    line_no: usize,
+    v: &serde_json::Value,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(u) = v.get("user").and_then(|x| x.as_str()) {
+        let u = u.trim();
+        if u.is_empty() {
+            return Err(CliExitError::new(
+                EXIT_USAGE,
+                format!("{path} 第 {line_no} 行：user 为空"),
+            )
+            .into());
+        }
+        let cfg_snap = {
+            let g = cfg_holder.read().await;
+            Arc::new(g.clone())
+        };
+        let u_exp = expand_at_file_refs_in_user_message(u, work_dir, cfg_snap.as_ref())
+            .map_err(|e| CliExitError::new(EXIT_USAGE, e))?;
+        if messages.is_empty() {
+            let system_selected = crate::config::skills::merge_system_prompt_with_skills_selected(
+                system_seed.to_string(),
+                cfg_snap.skills.skills_enabled,
+                cfg_snap.skills.skills_dir.as_str(),
+                cfg_snap.skills.skills_max_chars,
+                work_dir,
+                &u_exp,
+                cfg_snap.skills.skills_top_k,
+            )
+            .unwrap_or_else(|_| system_seed.to_string());
+            *messages = messages_chat_seed(&system_selected, &u_exp);
+            prepend_cli_first_turn_injection(cfg_holder, work_dir, messages).await;
+        } else {
+            messages.push(Message::user_only(u_exp));
+        }
+        return Ok(());
+    }
+    if let Some(m) = v.get("messages") {
+        let parsed: Vec<Message> = serde_json::from_value(m.clone()).map_err(|e| {
+            CliExitError::new(
+                EXIT_USAGE,
+                format!("{path} 第 {line_no} 行：messages 非法: {e}"),
+            )
+        })?;
+        if parsed.is_empty() {
+            return Err(CliExitError::new(
+                EXIT_USAGE,
+                format!("{path} 第 {line_no} 行：messages 为空"),
+            )
+            .into());
+        }
+        *messages = normalize_messages_for_openai_compatible_request(parsed);
+        return Ok(());
+    }
+    Err(CliExitError::new(
+        EXIT_USAGE,
+        format!("{path} 第 {line_no} 行：需要字段 `user`（字符串）或 `messages`（数组）"),
+    )
+    .into())
+}
+
 async fn run_chat_batch_jsonl(
     p: RunChatBatchJsonlParams<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -321,66 +388,16 @@ async fn run_chat_batch_jsonl(
                 format!("{path} 第 {line_no} 行 JSON 解析失败: {e}"),
             )
         })?;
-        if let Some(u) = v.get("user").and_then(|x| x.as_str()) {
-            let u = u.trim();
-            if u.is_empty() {
-                return Err(CliExitError::new(
-                    EXIT_USAGE,
-                    format!("{path} 第 {line_no} 行：user 为空"),
-                )
-                .into());
-            }
-            if messages.is_empty() {
-                let cfg_snap = {
-                    let g = cfg_holder.read().await;
-                    Arc::new(g.clone())
-                };
-                let u_exp = expand_at_file_refs_in_user_message(u, work_dir, cfg_snap.as_ref())
-                    .map_err(|e| CliExitError::new(EXIT_USAGE, e))?;
-                let system_selected =
-                    crate::config::skills::merge_system_prompt_with_skills_selected(
-                        system_seed.clone(),
-                        cfg_snap.skills.skills_enabled,
-                        cfg_snap.skills.skills_dir.as_str(),
-                        cfg_snap.skills.skills_max_chars,
-                        work_dir,
-                        &u_exp,
-                        cfg_snap.skills.skills_top_k,
-                    )
-                    .unwrap_or_else(|_| system_seed.clone());
-                messages = messages_chat_seed(&system_selected, &u_exp);
-                prepend_cli_first_turn_injection(cfg_holder, work_dir, &mut messages).await;
-            } else {
-                let cfg_snap = {
-                    let g = cfg_holder.read().await;
-                    Arc::new(g.clone())
-                };
-                let u_exp = expand_at_file_refs_in_user_message(u, work_dir, cfg_snap.as_ref())
-                    .map_err(|e| CliExitError::new(EXIT_USAGE, e))?;
-                messages.push(Message::user_only(u_exp));
-            }
-        } else if let Some(m) = v.get("messages") {
-            let parsed: Vec<Message> = serde_json::from_value(m.clone()).map_err(|e| {
-                CliExitError::new(
-                    EXIT_USAGE,
-                    format!("{path} 第 {line_no} 行：messages 非法: {e}"),
-                )
-            })?;
-            if parsed.is_empty() {
-                return Err(CliExitError::new(
-                    EXIT_USAGE,
-                    format!("{path} 第 {line_no} 行：messages 为空"),
-                )
-                .into());
-            }
-            messages = normalize_messages_for_openai_compatible_request(parsed);
-        } else {
-            return Err(CliExitError::new(
-                EXIT_USAGE,
-                format!("{path} 第 {line_no} 行：需要字段 `user`（字符串）或 `messages`（数组）"),
-            )
-            .into());
-        }
+        chat_batch_jsonl_merge_line_value(
+            cfg_holder,
+            work_dir,
+            &system_seed,
+            &mut messages,
+            path,
+            line_no,
+            &v,
+        )
+        .await?;
 
         let cfg_snap = {
             let g = cfg_holder.read().await;

@@ -93,6 +93,136 @@ pub(super) fn clamped_chat_vertical_scroll(
     }
 }
 
+struct TuiChatPanePrep {
+    chat_body: String,
+    streaming_nonempty: bool,
+}
+
+fn tui_prepare_chat_body_and_stream_flags(
+    model: &TuiModel,
+    scratch: &TuiLlmStreamScratch,
+) -> TuiChatPanePrep {
+    let streaming_nonempty =
+        !scratch.reasoning.trim().is_empty() || !scratch.content.trim().is_empty();
+    let mut transcript_display = model.transcript.clone();
+    if !model.control_plane_tail.is_empty() {
+        transcript_display.push_str("\n\n[SSE 控制面]\n");
+        transcript_display.push_str(model.control_plane_tail.as_str());
+    }
+    let chat_body = append_tui_streaming_tail(transcript_display.as_str(), scratch);
+    TuiChatPanePrep {
+        chat_body,
+        streaming_nonempty,
+    }
+}
+
+fn tui_chat_stick_mode_after_snap_clear(
+    model: &mut TuiModel,
+    streaming_nonempty: bool,
+) -> ChatVerticalStickMode {
+    let snap_bottom_this_frame = model.chat_snap_bottom_next_draw;
+    if snap_bottom_this_frame {
+        model.chat_snap_bottom_next_draw = false;
+    }
+    if snap_bottom_this_frame {
+        ChatVerticalStickMode::SnapAfterRefreshStickBottom
+    } else if streaming_nonempty {
+        ChatVerticalStickMode::StreamStickBottom
+    } else {
+        ChatVerticalStickMode::Manual
+    }
+}
+
+fn render_tui_chat_pane(
+    frame: &mut Frame<'_>,
+    model: &mut TuiModel,
+    chat_pane: Rect,
+    prep: TuiChatPanePrep,
+    color: bool,
+) {
+    let TuiChatPanePrep {
+        chat_body,
+        streaming_nonempty,
+    } = prep;
+    let chat_block = panel_block(" 聊天 ", color, model.focus == TuiFocus::Chat);
+    let chat_inner = chat_block_inner_area(chat_pane);
+    let (text_rect, scrollbar_rect) = chat_inner_split_text_and_scrollbar(chat_inner);
+    let tw = text_rect.width.max(1);
+    let th = text_rect.height.max(1);
+    let rows_base = estimate_wrapped_line_rows(chat_body.as_str(), tw);
+    let vis_lines = th as usize;
+    let stick_mode = tui_chat_stick_mode_after_snap_clear(model, streaming_nonempty);
+    let chat_scroll_y =
+        clamped_chat_vertical_scroll(chat_body.as_str(), tw, th, stick_mode, model.chat_scroll_y);
+    model.chat_scroll_y = chat_scroll_y;
+
+    frame.render_widget(chat_block, chat_pane);
+    let center_body = Paragraph::new(chat_body)
+        .wrap(Wrap { trim: false })
+        .scroll((chat_scroll_y, 0));
+    frame.render_widget(center_body, text_rect);
+
+    if scrollbar_rect.width > 0 && rows_base > vis_lines {
+        let bar_style = scrollbar_track_style(color, model.focus == TuiFocus::Chat);
+        let max_thumb = rows_base.saturating_sub(vis_lines).min(u16::MAX as usize) as u16;
+        let thumb_y = chat_scroll_y.min(max_thumb);
+        let mut sb_state =
+            ScrollbarState::new(rows_base.saturating_sub(vis_lines).saturating_add(1))
+                .position(usize::from(thumb_y))
+                .viewport_content_length(vis_lines);
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(None)
+            .end_symbol(None)
+            .symbols(scrollbar::VERTICAL)
+            .style(bar_style);
+        frame.render_stateful_widget(scrollbar, scrollbar_rect, &mut sb_state);
+    }
+}
+
+fn render_tui_composer_row(
+    frame: &mut Frame<'_>,
+    composer_pane: Rect,
+    model: &TuiModel,
+    color: bool,
+) {
+    let composer_block = panel_block(" 撰写 ", color, model.focus == TuiFocus::Composer);
+    let composer_inner = composer_block.inner(composer_pane);
+    let (composer_text, cursor_rel) =
+        super::composer_visible_and_cursor_rel(composer_inner, model.input.as_str());
+    let composer_style = if color && model.focus == TuiFocus::Composer {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default()
+    };
+    let input_par = Paragraph::new(composer_text)
+        .style(composer_style)
+        .block(composer_block);
+    frame.render_widget(input_par, composer_pane);
+    if model.approval_modal.is_none()
+        && model.clarification_modal.is_none()
+        && model.workspace_modal.is_none()
+        && model.focus == TuiFocus::Composer
+        && let Some((cx, cy)) = cursor_rel
+    {
+        frame.set_cursor_position(Position::new(
+            composer_inner.x.saturating_add(cx),
+            composer_inner.y.saturating_add(cy),
+        ));
+    }
+}
+
+fn render_tui_modal_stack(frame: &mut Frame<'_>, area: Rect, model: &TuiModel, color: bool) {
+    if let Some(ref modal) = model.approval_modal {
+        approval::render_approval_modal(frame, area, modal, color);
+    }
+    if let Some(ref cq) = model.clarification_modal {
+        super::clarify_modal::render_clarification_modal(frame, area, cq, color);
+    }
+    if let Some(ref ws) = model.workspace_modal {
+        super::workspace_modal::render_workspace_modal(frame, area, ws, color);
+    }
+}
+
 pub(super) fn render_full(
     frame: &mut Frame<'_>,
     model: &mut TuiModel,
@@ -123,87 +253,12 @@ pub(super) fn render_full(
         model.focus == TuiFocus::NavLeft,
     );
 
-    // 「撰写」块含四边边框 + 标题，高度若仅 1 行会导致内层为 0。
     let scratch_guard = llm_scratch.lock().unwrap_or_else(|e| e.into_inner());
-    let streaming_nonempty =
-        !scratch_guard.reasoning.trim().is_empty() || !scratch_guard.content.trim().is_empty();
-    let mut transcript_display = model.transcript.clone();
-    if !model.control_plane_tail.is_empty() {
-        transcript_display.push_str("\n\n[SSE 控制面]\n");
-        transcript_display.push_str(model.control_plane_tail.as_str());
-    }
-    let chat_body = append_tui_streaming_tail(transcript_display.as_str(), &scratch_guard);
+    let chat_prep = tui_prepare_chat_body_and_stream_flags(model, &scratch_guard);
     drop(scratch_guard);
-    let chat_block = panel_block(" 聊天 ", color, model.focus == TuiFocus::Chat);
-    let chat_inner = chat_block_inner_area(panes.chat);
-    let (text_rect, scrollbar_rect) = chat_inner_split_text_and_scrollbar(chat_inner);
-    let tw = text_rect.width.max(1);
-    let th = text_rect.height.max(1);
-    let rows_base = estimate_wrapped_line_rows(chat_body.as_str(), tw);
-    let vis_lines = th as usize;
-    let snap_bottom_this_frame = model.chat_snap_bottom_next_draw;
-    if snap_bottom_this_frame {
-        model.chat_snap_bottom_next_draw = false;
-    }
-    // 流式贴底与回合结束 snap 贴底分开：`StreamStickBottom` 不加 slack；`SnapAfterRefreshStickBottom` 加 slack 防裁底。
-    let stick_mode = if snap_bottom_this_frame {
-        ChatVerticalStickMode::SnapAfterRefreshStickBottom
-    } else if streaming_nonempty {
-        ChatVerticalStickMode::StreamStickBottom
-    } else {
-        ChatVerticalStickMode::Manual
-    };
-    let chat_scroll_y =
-        clamped_chat_vertical_scroll(chat_body.as_str(), tw, th, stick_mode, model.chat_scroll_y);
-    // Manual 也须写回：否则 snap 后用过大 scroll_y 会在下一帧被错误沿用；与 max_loose 一致的写回可稳定贴底。
-    model.chat_scroll_y = chat_scroll_y;
+    render_tui_chat_pane(frame, model, panes.chat, chat_prep, color);
 
-    frame.render_widget(chat_block, panes.chat);
-    let center_body = Paragraph::new(chat_body)
-        .wrap(Wrap { trim: false })
-        .scroll((chat_scroll_y, 0));
-    frame.render_widget(center_body, text_rect);
-
-    if scrollbar_rect.width > 0 && rows_base > vis_lines {
-        let bar_style = scrollbar_track_style(color, model.focus == TuiFocus::Chat);
-        let max_thumb = rows_base.saturating_sub(vis_lines).min(u16::MAX as usize) as u16;
-        let thumb_y = chat_scroll_y.min(max_thumb);
-        let mut sb_state =
-            ScrollbarState::new(rows_base.saturating_sub(vis_lines).saturating_add(1))
-                .position(usize::from(thumb_y))
-                .viewport_content_length(vis_lines);
-        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-            .begin_symbol(None)
-            .end_symbol(None)
-            .symbols(scrollbar::VERTICAL)
-            .style(bar_style);
-        frame.render_stateful_widget(scrollbar, scrollbar_rect, &mut sb_state);
-    }
-
-    let composer_block = panel_block(" 撰写 ", color, model.focus == TuiFocus::Composer);
-    let composer_inner = composer_block.inner(panes.composer);
-    let (composer_text, cursor_rel) =
-        super::composer_visible_and_cursor_rel(composer_inner, model.input.as_str());
-    let composer_style = if color && model.focus == TuiFocus::Composer {
-        Style::default().fg(Color::Yellow)
-    } else {
-        Style::default()
-    };
-    let input_par = Paragraph::new(composer_text)
-        .style(composer_style)
-        .block(composer_block);
-    frame.render_widget(input_par, panes.composer);
-    if model.approval_modal.is_none()
-        && model.clarification_modal.is_none()
-        && model.workspace_modal.is_none()
-        && model.focus == TuiFocus::Composer
-        && let Some((cx, cy)) = cursor_rel
-    {
-        frame.set_cursor_position(Position::new(
-            composer_inner.x.saturating_add(cx),
-            composer_inner.y.saturating_add(cy),
-        ));
-    }
+    render_tui_composer_row(frame, panes.composer, model, color);
 
     render_side_panel(
         frame,
@@ -229,15 +284,7 @@ pub(super) fn render_full(
     let status = Paragraph::new(status_line).block(status_block);
     frame.render_widget(status, vertical[2]);
 
-    if let Some(ref modal) = model.approval_modal {
-        approval::render_approval_modal(frame, area, modal, color);
-    }
-    if let Some(ref cq) = model.clarification_modal {
-        super::clarify_modal::render_clarification_modal(frame, area, cq, color);
-    }
-    if let Some(ref ws) = model.workspace_modal {
-        super::workspace_modal::render_workspace_modal(frame, area, ws, color);
-    }
+    render_tui_modal_stack(frame, area, model, color);
 }
 
 fn render_top_bar(frame: &mut Frame<'_>, area: Rect, header: &str, color: bool) {
