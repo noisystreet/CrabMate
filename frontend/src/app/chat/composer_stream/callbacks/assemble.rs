@@ -21,7 +21,6 @@ use super::super::shell_abort::clear_abort_slot;
 use super::builders::*;
 use super::delta_apply::chat_stream_on_delta_builder;
 use super::helpers::*;
-use super::stream_session_access::with_stream_write_session_mut;
 
 /// 由 [`super::super::make_attach_chat_stream`](super::super::make_attach_chat_stream) 调用；集中所有 `on_*` 闭包，降低父模块维护面。
 pub(crate) fn build_chat_stream_callbacks(
@@ -69,7 +68,7 @@ pub(crate) fn build_chat_stream_callbacks(
                 .chat
                 .session_sync
                 .update(|s| s.apply_stream_conversation_id(id.clone()));
-            with_stream_write_session_mut(stream_ctx.as_ref(), |s| {
+            stream_ctx.update_bound_session(|s| {
                 s.server_conversation_id = Some(id);
                 s.server_revision = None;
             });
@@ -83,7 +82,7 @@ pub(crate) fn build_chat_stream_callbacks(
                 .chat
                 .session_sync
                 .update(|s| s.apply_saved_revision(rev));
-            with_stream_write_session_mut(stream_ctx.as_ref(), |s| {
+            stream_ctx.update_bound_session(|s| {
                 s.server_revision = Some(rev);
             });
         })
@@ -138,7 +137,7 @@ pub(crate) fn build_chat_stream_callbacks(
             let id = make_message_id();
             let now = message_created_ms();
             let state = timeline_state_staged_start(&id, info.step_index, info.total_steps);
-            with_stream_write_session_mut(stream_ctx.as_ref(), |s| {
+            stream_ctx.update_bound_session(|s| {
                 s.messages.push(StoredMessage {
                     id,
                     role: "system".to_string(),
@@ -184,7 +183,7 @@ pub(crate) fn build_chat_stream_callbacks(
             let now = message_created_ms();
             let state =
                 timeline_state_staged_end(&id, info.step_index, info.total_steps, &info.status);
-            with_stream_write_session_mut(stream_ctx.as_ref(), |s| {
+            stream_ctx.update_bound_session(|s| {
                 s.messages.push(StoredMessage {
                     id,
                     role: "system".to_string(),

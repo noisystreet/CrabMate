@@ -21,7 +21,6 @@ use super::super::shell_abort::{clear_abort_slot, user_cancelled_flag};
 use super::done_session::apply_stream_done_to_loading_assistant;
 use super::error_session::apply_stream_error_to_assistant_message;
 use super::helpers::*;
-use super::stream_session_access::with_stream_write_session_mut;
 
 pub(super) fn make_on_tool_output_chunk(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
@@ -31,7 +30,7 @@ pub(super) fn make_on_tool_output_chunk(
         if tid.is_empty() {
             return;
         }
-        with_stream_write_session_mut(stream_ctx.as_ref(), |s| {
+        stream_ctx.update_bound_session(|s| {
             let idx_opt = index_of_tool_message_by_call_id_latest(&s.messages, tid);
             if let Some(idx) = idx_opt {
                 if info.name.as_deref() == Some("terminal_session") {
@@ -61,7 +60,7 @@ pub(super) fn make_on_tool_result(
         let state = timeline_state_tool(&id, tl_ok);
         let stream_ctx_rc = Rc::clone(&stream_ctx);
         let mut updated_existing = false;
-        with_stream_write_session_mut(stream_ctx.as_ref(), |s| {
+        stream_ctx.update_bound_session(|s| {
             let tid = info
                 .tool_call_id
                 .as_deref()
@@ -169,7 +168,7 @@ pub(super) fn chat_stream_on_tool_call_builder(
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .map(str::to_string);
-            with_stream_write_session_mut(stream_ctx.as_ref(), |s| {
+            stream_ctx.update_bound_session(|s| {
                 let msg = StoredMessage {
                     id: id.clone(),
                     role: "system".to_string(),
@@ -297,7 +296,7 @@ pub(super) fn chat_stream_on_done_builder(
         let turn = accum.summarize_for_stream_done();
         let loc = stream_ctx.locale.get_untracked();
         let mid = stream_ctx.scratch.clone_assistant_id();
-        with_stream_write_session_mut(stream_ctx.as_ref(), |s| {
+        stream_ctx.update_bound_session(|s| {
             let sid = stream_ctx.bound_stream_session_id.as_str();
             if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) {
                 stream_overlay_take_into_stored_message(
@@ -336,7 +335,7 @@ pub(super) fn chat_stream_on_error_builder(
         let mid = stream_ctx.scratch.clone_assistant_id();
         let loc = stream_ctx.locale.get_untracked();
         let friendly = build_stream_error_with_suggestion(&msg, loc);
-        with_stream_write_session_mut(stream_ctx.as_ref(), |s| {
+        stream_ctx.update_bound_session(|s| {
             let sid = stream_ctx.bound_stream_session_id.as_str();
             if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) {
                 stream_overlay_take_into_stored_message(
