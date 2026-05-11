@@ -18,7 +18,6 @@ use crate::timeline_scan::timeline_state_tool;
 use super::super::context::ChatStreamCallbackCtx;
 use super::super::per_stream_accum::PerStreamAccum;
 use super::super::shell_abort::{clear_abort_slot, user_cancelled_flag};
-use super::super::stream_turn_scratch_state::pending_queue_take;
 use super::done_session::apply_stream_done_to_loading_assistant;
 use super::error_session::apply_stream_error_to_assistant_message;
 use super::helpers::*;
@@ -60,7 +59,7 @@ pub(super) fn make_on_tool_result(
         let id = make_message_id();
         let tl_ok = info.ok.unwrap_or(true);
         let state = timeline_state_tool(&id, tl_ok);
-        let pending_queue = stream_ctx.scratch.pending_tool_message_ids();
+        let stream_ctx_rc = Rc::clone(&stream_ctx);
         let mut updated_existing = false;
         with_stream_write_session_mut(stream_ctx.as_ref(), |s| {
             let tid = info
@@ -71,7 +70,7 @@ pub(super) fn make_on_tool_result(
             let idx_by_tid = tid.and_then(|t| index_of_loading_tool_by_call_id(&s.messages, t));
             let fifo_id = idx_by_tid
                 .is_none()
-                .then(|| pending_queue_take(&pending_queue))
+                .then(|| stream_ctx_rc.scratch.take_pending_tool_fifo_head())
                 .flatten();
             let idx_opt = idx_by_tid.or_else(|| {
                 fifo_id

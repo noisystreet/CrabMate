@@ -7,72 +7,79 @@
 //!
 //! | 来源 | 方法 | lane / 其它 |
 //! |------|------|----------------|
-//! | `on_assistant_answer_phase` | `on_assistant_answer_phase` | 见 `stream_turn_state::lane_on_assistant_answer_phase` |
+//! | `on_assistant_answer_phase` | `on_assistant_answer_phase` | [`StreamModelOutputLane::apply_assistant_answer_phase`] |
 //! | `on_delta`（写入前） | `take_followup_rotation_pending` | 若 `true` 须先轮换尾泡（见 `callbacks::helpers`） |
 //! | 用户取消 / `on_done` 早退 | `clear_followup_pending` | 丢弃 PendingFollowup |
 //! | 工具后 / 多轮正文 | `adopt_new_assistant_tail_after_rotation` | 更新尾泡 id + `post_tool_stream_tail` |
+//!
+//! # 单 `RefCell` 内聚
+//!
+//! [`StreamTurnScratchInner`] 将 **lane + 尾泡 id + post_tool 标记 + FIFO** 收进一处可变快照，由 **单个**
+//! [`RefCell`] 保护，避免多 `Cell`/`RefCell` 交叉借用；车道语义见 [`super::stream_turn_state::StreamModelOutputLane`]。
 
-use std::cell::{Cell, Ref, RefCell};
+use std::cell::{Ref, RefCell};
 use std::collections::VecDeque;
 use std::rc::Rc;
 
 use super::per_stream_accum::PerStreamAccum;
-use super::stream_turn_state::{
-    StreamModelOutputLane, StreamOutputLaneCell, lane_clear_followup_pending,
-    lane_on_assistant_answer_phase, lane_take_followup_rotation_pending,
-    new_stream_output_lane_cell,
-};
+use super::stream_turn_state::StreamModelOutputLane;
 
-/// 工具占位 FIFO：`tool_result` 在缺少 `tool_call_id` 时按队列匹配。
-pub(super) fn pending_queue_enqueue(q: &Rc<RefCell<VecDeque<String>>>, id: String) {
-    q.borrow_mut().push_back(id);
+/// 单轮流可变快照（仅由 [`StreamTurnScratchState`] 的 `RefCell` 持有）。
+struct StreamTurnScratchInner {
+    lane: StreamModelOutputLane,
+    assistant_message_id: String,
+    post_tool_stream_tail: bool,
+    pending_tool_message_ids: VecDeque<String>,
 }
 
-/// 弹出 FIFO 队首（若无则 `None`）。
-pub(super) fn pending_queue_take(q: &Rc<RefCell<VecDeque<String>>>) -> Option<String> {
-    q.borrow_mut().pop_front()
+impl StreamTurnScratchInner {
+    fn new(initial_asst_id: String) -> Self {
+        Self {
+            lane: StreamModelOutputLane::default(),
+            assistant_message_id: initial_asst_id,
+            post_tool_stream_tail: false,
+            pending_tool_message_ids: VecDeque::new(),
+        }
+    }
 }
 
 /// 单轮流可变草稿（`Clone` 仅为共享 `Rc` 句柄）。
 #[derive(Clone)]
 pub(super) struct StreamTurnScratchState {
-    lane: StreamOutputLaneCell,
+    inner: Rc<RefCell<StreamTurnScratchInner>>,
     accum: Rc<PerStreamAccum>,
-    assistant_message_id: RefCell<String>,
-    post_tool_stream_tail: Cell<bool>,
-    pending_tool_message_ids: Rc<RefCell<VecDeque<String>>>,
 }
 
 impl StreamTurnScratchState {
     #[must_use]
     pub(super) fn new(initial_asst_id: String) -> Self {
         Self {
-            lane: new_stream_output_lane_cell(),
+            inner: Rc::new(RefCell::new(StreamTurnScratchInner::new(initial_asst_id))),
             accum: PerStreamAccum::new_rc(),
-            assistant_message_id: RefCell::new(initial_asst_id),
-            post_tool_stream_tail: Cell::new(false),
-            pending_tool_message_ids: Rc::new(RefCell::new(VecDeque::new())),
         }
     }
 
     #[inline]
     pub(super) fn on_assistant_answer_phase(&self) {
-        lane_on_assistant_answer_phase(self.lane.as_ref());
+        self.inner.borrow_mut().lane.apply_assistant_answer_phase();
     }
 
     #[inline]
     pub(super) fn take_followup_rotation_pending(&self) -> bool {
-        lane_take_followup_rotation_pending(self.lane.as_ref())
+        self.inner
+            .borrow_mut()
+            .lane
+            .take_followup_rotation_if_pending()
     }
 
     #[inline]
     pub(super) fn clear_followup_pending(&self) {
-        lane_clear_followup_pending(self.lane.as_ref());
+        self.inner.borrow_mut().lane.clear_followup_pending_lane();
     }
 
     #[inline]
     pub(super) fn current_output_lane(&self) -> StreamModelOutputLane {
-        self.lane.get()
+        self.inner.borrow().lane
     }
 
     #[inline]
@@ -82,33 +89,38 @@ impl StreamTurnScratchState {
 
     #[inline]
     pub(super) fn borrow_assistant_id(&self) -> Ref<'_, String> {
-        self.assistant_message_id.borrow()
+        Ref::map(self.inner.borrow(), |i| &i.assistant_message_id)
     }
 
     #[inline]
     pub(super) fn clone_assistant_id(&self) -> String {
-        self.assistant_message_id.borrow().clone()
+        self.inner.borrow().assistant_message_id.clone()
     }
 
     #[inline]
     pub(super) fn adopt_new_assistant_tail_after_rotation(&self, id: String) {
-        self.assistant_message_id.replace(id);
-        self.post_tool_stream_tail.set(true);
+        let mut g = self.inner.borrow_mut();
+        g.assistant_message_id = id;
+        g.post_tool_stream_tail = true;
     }
 
     #[inline]
     pub(super) fn post_tool_stream_tail_active(&self) -> bool {
-        self.post_tool_stream_tail.get()
+        self.inner.borrow().post_tool_stream_tail
     }
 
+    /// 工具占位 FIFO：弹出队首（`tool_result` 在缺少 `tool_call_id` 时按队列匹配）。
     #[inline]
-    pub(super) fn pending_tool_ids(&self) -> Rc<RefCell<VecDeque<String>>> {
-        Rc::clone(&self.pending_tool_message_ids)
+    pub(super) fn take_pending_tool_fifo_head(&self) -> Option<String> {
+        self.inner.borrow_mut().pending_tool_message_ids.pop_front()
     }
 
     #[inline]
     pub(super) fn enqueue_pending_tool_message_id(&self, id: String) {
-        pending_queue_enqueue(&self.pending_tool_message_ids, id);
+        self.inner
+            .borrow_mut()
+            .pending_tool_message_ids
+            .push_back(id);
     }
 }
 
@@ -159,9 +171,8 @@ mod tests {
         let s = StreamTurnScratchState::new("x".into());
         s.enqueue_pending_tool_message_id("m1".into());
         s.enqueue_pending_tool_message_id("m2".into());
-        let q = s.pending_tool_ids();
-        assert_eq!(pending_queue_take(&q).as_deref(), Some("m1"));
-        assert_eq!(pending_queue_take(&q).as_deref(), Some("m2"));
-        assert_eq!(pending_queue_take(&q), None);
+        assert_eq!(s.take_pending_tool_fifo_head().as_deref(), Some("m1"));
+        assert_eq!(s.take_pending_tool_fifo_head().as_deref(), Some("m2"));
+        assert_eq!(s.take_pending_tool_fifo_head(), None);
     }
 }

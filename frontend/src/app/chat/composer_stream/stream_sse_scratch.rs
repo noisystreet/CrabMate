@@ -4,8 +4,7 @@
 //! 与 [`super::context::ChatStreamCallbackCtx`] 分工：ctx 绑定会话、shell、本 scratch；回合收尾仍经
 //! [`super::per_stream_accum::PerStreamAccum::summarize_for_stream_done`]。
 
-use std::cell::{Ref, RefCell};
-use std::collections::VecDeque;
+use std::cell::Ref;
 use std::rc::Rc;
 
 use super::per_stream_accum::PerStreamAccum;
@@ -72,8 +71,8 @@ impl StreamSseScratch {
     }
 
     #[inline]
-    pub(super) fn pending_tool_message_ids(&self) -> Rc<RefCell<VecDeque<String>>> {
-        self.state.pending_tool_ids()
+    pub(super) fn take_pending_tool_fifo_head(&self) -> Option<String> {
+        self.state.take_pending_tool_fifo_head()
     }
 
     #[inline]
