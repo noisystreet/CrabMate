@@ -13,6 +13,7 @@ use super::handles::ChatColumnShell;
 use super::message_chunks::{ChatChunk, chat_chunk_stable_key, chunk_messages};
 use super::message_group_views::{ToolRunGroupSignals, tool_run_group_view};
 use super::message_row::{ChatMessageRowSignals, chat_message_row};
+use super::tail_loading_memo::tail_loading_assistant_mid_memo;
 use super::timeline::timeline_panel_view;
 use crate::api::upload_files_multipart;
 use crate::app::scroll_guard::MessagesScrollFromEffectGuard;
@@ -70,6 +71,7 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
 
     let sessions = chat.sessions;
     let active_id = chat.active_id;
+    let tail_loading_assistant_mid = tail_loading_assistant_mid_memo(chat);
 
     let tool_run_group_signals = ToolRunGroupSignals {
         collapsed_tool_run_heads,
@@ -79,6 +81,7 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
         collapsed_long_assistant_ids,
         chat_find_cursor,
         stream_turn_busy_ui,
+        tail_loading_assistant_mid,
         regen_stream_after_truncate,
         retry_assistant_target,
         status_err,
@@ -179,6 +182,7 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
                                         chat_find_cursor,
                                         auto_scroll_chat,
                                         stream_turn_busy_ui,
+                                        tail_loading_assistant_mid,
                                         regen_stream_after_truncate,
                                         retry_assistant_target,
                                         status_err,

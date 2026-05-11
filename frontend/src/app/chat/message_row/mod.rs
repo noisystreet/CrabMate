@@ -26,6 +26,8 @@ pub(crate) struct ChatMessageRowSignals {
     pub chat_find_cursor: RwSignal<usize>,
     pub auto_scroll_chat: RwSignal<bool>,
     pub stream_turn_busy_ui: Memo<bool>,
+    /// 当前活动会话尾部 loading 助手消息 id；仅该行显示打字点，避免每行 `sessions.with`。
+    pub tail_loading_assistant_mid: Memo<Option<String>>,
     pub regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
     pub retry_assistant_target: RwSignal<Option<String>>,
     pub status_err: RwSignal<Option<String>>,

@@ -1,5 +1,7 @@
 //! 从会话列表解析当前助手气泡展示数据，供 [`super::view`] 与 `Effect` 共用，避免三处重复 `find` 逻辑。
 
+use leptos::prelude::*;
+
 use crate::i18n::Locale;
 use crate::message_format::message_text_for_display_ex;
 use crate::storage::{ChatSession, StoredMessage};
@@ -9,6 +11,7 @@ use crate::stream_text_overlay::{StreamTextOverlay, stored_message_with_overlay_
 pub(super) const LONG_ASSISTANT_COLLAPSE_THRESHOLD: usize = 2400;
 
 /// 单条助手消息在 UI 上用于上色 / 折叠判断的快照（已由 `message_format` 做过滤与拼接）。
+#[derive(Clone, PartialEq)]
 pub(super) struct AssistantMsgSnapshot {
     pub(super) display_text: String,
     pub(super) is_loading: bool,
@@ -51,4 +54,33 @@ pub(super) fn snapshot_assistant_message_for_mid(
         locale,
         apply_assistant_display_filters,
     ))
+}
+
+/// 单条助手 Markdown 气泡：合并 overlay 后的展示快照，供 `Effect` 与 `class=` / `Show` **共享同一 Memo**，减少重复 `sessions.with`。
+#[must_use]
+pub(super) fn assistant_markdown_display_memo(
+    sessions: RwSignal<Vec<ChatSession>>,
+    active_id: RwSignal<String>,
+    message_id: String,
+    stream_text_overlay: RwSignal<Option<StreamTextOverlay>>,
+    locale: RwSignal<Locale>,
+    apply_assistant_display_filters: RwSignal<bool>,
+) -> Memo<Option<AssistantMsgSnapshot>> {
+    let mid = message_id;
+    Memo::new(move |_| {
+        let aid = active_id.get();
+        let loc = locale.get();
+        let apply = apply_assistant_display_filters.get();
+        let ov = stream_text_overlay.get();
+        sessions.with(|list| {
+            snapshot_assistant_message_for_mid(
+                list,
+                aid.as_str(),
+                mid.as_str(),
+                loc,
+                apply,
+                ov.as_ref(),
+            )
+        })
+    })
 }

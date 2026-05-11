@@ -9,12 +9,8 @@ use leptos::task::spawn_local;
 use leptos_dom::helpers::request_animation_frame;
 use wasm_bindgen::JsCast;
 
-use crate::i18n::Locale;
+use super::helpers::AssistantMsgSnapshot;
 use crate::message_render::fragment_to_chat_safe_html;
-use crate::storage::ChatSession;
-use crate::stream_text_overlay::StreamTextOverlay;
-
-use super::helpers::snapshot_assistant_message_for_mid;
 
 /// 流式生成阶段两次写入助手回答区 DOM 的最小间隔（毫秒）。
 pub(super) const STREAM_ASSISTANT_DOM_MIN_INTERVAL_MS: u32 = 72;
@@ -92,18 +88,18 @@ fn enqueue_answer_body_paint(
     });
 }
 
+fn snapshot_pair(snap: Option<AssistantMsgSnapshot>) -> (String, bool) {
+    snap.map(|s| (s.display_text, s.is_loading))
+        .unwrap_or_default()
+}
+
 /// [`super::view::assistant_markdown_collapsible_view`] 挂载回答区 `Effect` 所需的信号与节点。
 pub(super) struct AssistantMarkdownAnswerEffectBundle {
-    pub(super) sessions: RwSignal<Vec<ChatSession>>,
-    pub(super) active_id: RwSignal<String>,
+    pub(super) snapshot_memo: Memo<Option<AssistantMsgSnapshot>>,
     pub(super) collapsed_long_assistant_ids: RwSignal<Vec<String>>,
-    pub(super) locale: RwSignal<Locale>,
     pub(super) markdown_render: RwSignal<bool>,
-    pub(super) apply_assistant_display_filters: RwSignal<bool>,
-    pub(super) stream_text_overlay: RwSignal<Option<StreamTextOverlay>>,
     pub(super) answer_body_ref: NodeRef<Div>,
     pub(super) answer_paint: StoredValue<Arc<Mutex<SectionPaint>>>,
-    pub(super) mid: String,
 }
 
 /// 供 [`super::view::assistant_markdown_collapsible_view`] 挂载：回答区 `Effect` 与流式节流。
@@ -111,30 +107,20 @@ pub(super) fn install_assistant_markdown_answer_effect(
     bundle: AssistantMarkdownAnswerEffectBundle,
 ) {
     let AssistantMarkdownAnswerEffectBundle {
-        sessions,
-        active_id,
+        snapshot_memo,
         collapsed_long_assistant_ids,
-        locale,
         markdown_render,
-        apply_assistant_display_filters,
-        stream_text_overlay,
         answer_body_ref,
         answer_paint,
-        mid,
     } = bundle;
 
     Effect::new({
         let answer_body_ref = answer_body_ref.clone();
         let answer_paint = answer_paint.clone();
-        let mid = mid.clone();
         move |_| {
-            let _ = sessions.get();
-            let _ = active_id.get();
+            let snap = snapshot_memo.get();
             let _ = collapsed_long_assistant_ids.get();
-            let _ = locale.get();
             let _ = markdown_render.get();
-            let _ = apply_assistant_display_filters.get();
-            let overlay_snap = stream_text_overlay.get();
 
             let throttle_gen = {
                 let paint_arc = answer_paint.get_value();
@@ -143,21 +129,7 @@ pub(super) fn install_assistant_markdown_answer_effect(
                 g.stream_throttle_gen
             };
 
-            let (text_src, is_loading) = sessions.with(|list| {
-                let aid = active_id.get_untracked();
-                let loc = locale.get_untracked();
-                let apply = apply_assistant_display_filters.get_untracked();
-                snapshot_assistant_message_for_mid(
-                    list,
-                    &aid,
-                    &mid,
-                    loc,
-                    apply,
-                    overlay_snap.as_ref(),
-                )
-                .map(|s| (s.display_text, s.is_loading))
-                .unwrap_or_default()
-            });
+            let (text_src, is_loading) = snapshot_pair(snap);
 
             let md_on = markdown_render.get_untracked() && !is_loading;
             let paint_arc = answer_paint.get_value();
@@ -198,13 +170,8 @@ pub(super) fn install_assistant_markdown_answer_effect(
 
             let paint_arc_timer = Arc::clone(&paint_arc);
             let answer_body_ref_timer = answer_body_ref.clone();
-            let sessions_t = sessions;
-            let active_id_t = active_id;
-            let stream_overlay_t = stream_text_overlay;
-            let locale_t = locale;
-            let apply_t = apply_assistant_display_filters;
+            let snapshot_memo_t = snapshot_memo;
             let markdown_render_t = markdown_render;
-            let mid_t = mid.clone();
 
             spawn_local(async move {
                 TimeoutFuture::new(wait_ms).await;
@@ -214,13 +181,7 @@ pub(super) fn install_assistant_markdown_answer_effect(
                         return;
                     }
                 }
-                let snap = sessions_t.with(|list| {
-                    let aid = active_id_t.get_untracked();
-                    let loc = locale_t.get_untracked();
-                    let apply = apply_t.get_untracked();
-                    let ov = stream_overlay_t.get_untracked();
-                    snapshot_assistant_message_for_mid(list, &aid, &mid_t, loc, apply, ov.as_ref())
-                });
+                let snap = snapshot_memo_t.get_untracked();
                 let Some(s) = snap else {
                     return;
                 };
