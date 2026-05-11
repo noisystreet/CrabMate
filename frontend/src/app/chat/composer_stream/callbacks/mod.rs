@@ -9,7 +9,7 @@
 //! - [`assemble`]：装配完整的 [`crate::api::ChatStreamCallbacks`]。
 //! - [`super::stream_turn_scratch_state`]：单轮流 lane / 尾泡 / 工具 FIFO 的状态方法（语义见 **`StreamModelOutputLane`**）。
 //! - [`super::stream_turn_state`]：模型输出车道枚举与底层 `lane_*`（供 `stream_turn_scratch_state` 使用）。
-//! - [`stream_session_access`]：**`append_stream_assistant_chunk`**、绑定会话读写（**`with_stream_write_session_*`** 与 **`ChatStreamCallbackCtx::update_bound_session` / `read_bound_session`**）。
+//! - [`stream_session_access`]：**`append_stream_assistant_chunk`** / **`ChatStreamCallbackCtx::append_assistant_chunk`**、绑定会话读写（**`with_stream_write_session_*`** 与 **`ChatStreamCallbackCtx::update_bound_session` / `read_bound_session`**）。
 
 mod assemble;
 mod builders;

@@ -13,7 +13,7 @@ use crate::sse_dispatch::{
     ClarificationQuestionnaireInfo, CommandApprovalRequest, StagedPlanStepEndInfo,
     StagedPlanStepStartInfo, ThinkingTraceInfo,
 };
-use crate::storage::StoredMessage;
+use crate::storage::{StoredMessage, StoredMessageState};
 use crate::timeline_scan::{timeline_state_staged_end, timeline_state_staged_start};
 
 use super::super::context::ChatStreamCallbackCtx;
@@ -21,6 +21,30 @@ use super::super::shell_abort::clear_abort_slot;
 use super::builders::*;
 use super::delta_apply::chat_stream_on_delta_builder;
 use super::helpers::*;
+
+fn push_timeline_system_bubble_with_tail(
+    stream_ctx: &ChatStreamCallbackCtx,
+    msg_id: String,
+    text: String,
+    state: StoredMessageState,
+) {
+    let now = message_created_ms();
+    stream_ctx.update_bound_session(|s| {
+        s.messages.push(StoredMessage {
+            id: msg_id,
+            role: "system".to_string(),
+            text,
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(state),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: now,
+        });
+    });
+    ensure_streaming_assistant_tail_last(stream_ctx);
+}
 
 /// 由 [`super::super::make_attach_chat_stream`](super::super::make_attach_chat_stream) 调用；集中所有 `on_*` 闭包，降低父模块维护面。
 pub(crate) fn build_chat_stream_callbacks(
@@ -135,23 +159,8 @@ pub(crate) fn build_chat_stream_callbacks(
                 info.executor_kind.as_deref(),
             ));
             let id = make_message_id();
-            let now = message_created_ms();
             let state = timeline_state_staged_start(&id, info.step_index, info.total_steps);
-            stream_ctx.update_bound_session(|s| {
-                s.messages.push(StoredMessage {
-                    id,
-                    role: "system".to_string(),
-                    text,
-                    reasoning_text: String::new(),
-                    image_urls: vec![],
-                    state: Some(state),
-                    is_tool: false,
-                    tool_call_id: None,
-                    tool_name: None,
-                    created_at: now,
-                });
-            });
-            ensure_streaming_assistant_tail_last(&stream_ctx);
+            push_timeline_system_bubble_with_tail(&stream_ctx, id, text, state);
         })
     };
 
@@ -180,24 +189,9 @@ pub(crate) fn build_chat_stream_callbacks(
                 info.executor_kind.as_deref(),
             ));
             let id = make_message_id();
-            let now = message_created_ms();
             let state =
                 timeline_state_staged_end(&id, info.step_index, info.total_steps, &info.status);
-            stream_ctx.update_bound_session(|s| {
-                s.messages.push(StoredMessage {
-                    id,
-                    role: "system".to_string(),
-                    text,
-                    reasoning_text: String::new(),
-                    image_urls: vec![],
-                    state: Some(state),
-                    is_tool: false,
-                    tool_call_id: None,
-                    tool_name: None,
-                    created_at: now,
-                });
-            });
-            ensure_streaming_assistant_tail_last(&stream_ctx);
+            push_timeline_system_bubble_with_tail(&stream_ctx, id, text, state);
         })
     };
 
