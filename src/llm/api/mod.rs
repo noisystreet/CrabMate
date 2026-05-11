@@ -115,6 +115,74 @@ fn stream_end_reason_from_finish_and_message(
     }
 }
 
+async fn non_stream_emit_sse_for_assistant(
+    msg: &Message,
+    tx: &tokio::sync::mpsc::Sender<String>,
+    plain_terminal_stream: bool,
+    cancel: Option<&AtomicBool>,
+) {
+    if plain_terminal_stream {
+        let sse_plain = crate::runtime::message_display::assistant_streaming_plain_concat(msg);
+        if !sse_plain.is_empty() {
+            let _ = sse_out_send(
+                tx,
+                sse_plain,
+                "llm::stream_chat non-stream assistant plain",
+                cancel,
+            )
+            .await;
+        }
+    } else {
+        let r = msg.reasoning_content.as_deref().unwrap_or("");
+        let c = crate::types::message_content_as_str(&msg.content).unwrap_or("");
+        if !r.is_empty() {
+            let _ = sse_out_send(
+                tx,
+                r.to_string(),
+                "llm::stream_chat non-stream assistant reasoning",
+                cancel,
+            )
+            .await;
+        }
+        if !c.is_empty() {
+            let _ = sse_out_send(
+                tx,
+                crate::sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
+                    assistant_answer_phase: true,
+                }),
+                "llm::stream_chat non-stream assistant_answer_phase",
+                cancel,
+            )
+            .await;
+            let _ = sse_out_send(
+                tx,
+                c.to_string(),
+                "llm::stream_chat non-stream assistant content",
+                cancel,
+            )
+            .await;
+        }
+    }
+}
+
+async fn non_stream_emit_parsing_tool_calls_if_needed(
+    msg: &Message,
+    tx: &tokio::sync::mpsc::Sender<String>,
+    cancel: Option<&AtomicBool>,
+) {
+    if msg.tool_calls.as_ref().is_some_and(|t| !t.is_empty()) {
+        let _ = sse_out_send(
+            tx,
+            crate::sse::encode_message(crate::sse::SsePayload::ParsingToolCalls {
+                parsing_tool_calls: true,
+            }),
+            "llm::stream_chat non-stream parsing_tool_calls",
+            cancel,
+        )
+        .await;
+    }
+}
+
 async fn non_stream_chat_response(
     res: reqwest::Response,
     out: Option<&tokio::sync::mpsc::Sender<String>>,
@@ -144,65 +212,13 @@ async fn non_stream_chat_response(
     crate::types::merge_reasoning_details_into_reasoning_content(&mut msg);
 
     if let Some(tx) = out {
-        if plain_terminal_stream {
-            let sse_plain = crate::runtime::message_display::assistant_streaming_plain_concat(&msg);
-            if !sse_plain.is_empty() {
-                let _ = sse_out_send(
-                    tx,
-                    sse_plain,
-                    "llm::stream_chat non-stream assistant plain",
-                    cancel,
-                )
-                .await;
-            }
-        } else {
-            let r = msg.reasoning_content.as_deref().unwrap_or("");
-            let c = crate::types::message_content_as_str(&msg.content).unwrap_or("");
-            if !r.is_empty() {
-                let _ = sse_out_send(
-                    tx,
-                    r.to_string(),
-                    "llm::stream_chat non-stream assistant reasoning",
-                    cancel,
-                )
-                .await;
-            }
-            if !c.is_empty() {
-                let _ = sse_out_send(
-                    tx,
-                    crate::sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
-                        assistant_answer_phase: true,
-                    }),
-                    "llm::stream_chat non-stream assistant_answer_phase",
-                    cancel,
-                )
-                .await;
-                let _ = sse_out_send(
-                    tx,
-                    c.to_string(),
-                    "llm::stream_chat non-stream assistant content",
-                    cancel,
-                )
-                .await;
-            }
-        }
+        non_stream_emit_sse_for_assistant(&msg, tx, plain_terminal_stream, cancel).await;
     }
     if render_to_terminal {
         render_non_stream_assistant_terminal(&msg, plain_terminal_stream, out.is_none())?;
     }
-    if let Some(ref tcs) = msg.tool_calls
-        && !tcs.is_empty()
-        && let Some(tx) = out
-    {
-        let _ = sse_out_send(
-            tx,
-            crate::sse::encode_message(crate::sse::SsePayload::ParsingToolCalls {
-                parsing_tool_calls: true,
-            }),
-            "llm::stream_chat non-stream parsing_tool_calls",
-            cancel,
-        )
-        .await;
+    if let Some(tx) = out {
+        non_stream_emit_parsing_tool_calls_if_needed(&msg, tx, cancel).await;
     }
     debug!(
         target: "crabmate",

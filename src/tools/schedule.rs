@@ -288,6 +288,29 @@ pub fn complete_reminder(args_json: &str, working_dir: &Path) -> String {
     format!("已完成提醒：{}（id={}）", title, id)
 }
 
+fn apply_update_reminder_fields(
+    r: &mut Reminder,
+    title: &Option<String>,
+    due_at: &Option<String>,
+    done: Option<bool>,
+) {
+    if let Some(t) = title.clone() {
+        r.title = t;
+    }
+    if let Some(raw) = due_at.as_deref() {
+        let d = raw.trim();
+        if d.is_empty() {
+            r.due_at = None;
+        } else {
+            r.due_at = parse_datetime_to_rfc3339(d).or_else(|| Some(d.to_string()));
+        }
+    }
+    if let Some(done) = done {
+        r.done = done;
+    }
+    r.updated_at = Some(now_rfc3339());
+}
+
 pub fn update_reminder(args_json: &str, working_dir: &Path) -> String {
     let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
@@ -322,21 +345,7 @@ pub fn update_reminder(args_json: &str, working_dir: &Path) -> String {
     let mut found = None;
     for r in &mut data.items {
         if r.id == id {
-            if let Some(t) = title.clone() {
-                r.title = t;
-            }
-            if let Some(d) = due_at.as_deref() {
-                let d = d.trim();
-                if d.is_empty() {
-                    r.due_at = None;
-                } else {
-                    r.due_at = parse_datetime_to_rfc3339(d).or_else(|| Some(d.to_string()));
-                }
-            }
-            if let Some(done) = done {
-                r.done = done;
-            }
-            r.updated_at = Some(now_rfc3339());
+            apply_update_reminder_fields(&mut *r, &title, &due_at, done);
             found = Some(r.title.clone());
             break;
         }

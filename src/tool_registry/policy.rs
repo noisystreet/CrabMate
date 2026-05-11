@@ -162,23 +162,26 @@ fn builtin_parallel_sync_denied_exact() -> &'static HashSet<String> {
 }
 
 fn builtin_parallel_sync_prefix_hit(name: &str) -> bool {
-    name.starts_with("cargo_")
-        || name.starts_with("npm_")
-        || name.starts_with("frontend_")
-        || name.starts_with("go_")
-        || name.starts_with("maven_")
-        || name.starts_with("gradle_")
-        || name.starts_with("docker_")
-        || name.starts_with("podman_")
-        || name.starts_with("ruff_")
-        || name.starts_with("pytest")
-        || name.starts_with("mypy_")
-        || name.starts_with("uv_")
-        || name.starts_with("pre_commit")
-        || name.starts_with("python_")
-        || name.starts_with("typos_")
-        || name.starts_with("codespell_")
-        || name.starts_with("gh_")
+    const PREFIXES: &[&str] = &[
+        "cargo_",
+        "npm_",
+        "frontend_",
+        "go_",
+        "maven_",
+        "gradle_",
+        "docker_",
+        "podman_",
+        "ruff_",
+        "pytest",
+        "mypy_",
+        "uv_",
+        "pre_commit",
+        "python_",
+        "typos_",
+        "codespell_",
+        "gh_",
+    ];
+    PREFIXES.iter().any(|p| name.starts_with(p))
 }
 
 /// 即使 [`is_readonly_tool`] 为真，并行 `spawn_blocking` 仍可能争抢 cargo/npm 等构建锁或缓存；勿与同批其它工具并行。

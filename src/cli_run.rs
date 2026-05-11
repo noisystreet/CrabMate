@@ -3,6 +3,9 @@
 #[path = "cli_run_serve.rs"]
 mod cli_run_serve;
 
+#[path = "cli_run_session.rs"]
+mod cli_run_session;
+
 use std::collections::HashMap;
 use std::env;
 use std::net::SocketAddr;
@@ -22,8 +25,6 @@ use crate::config::cli::{
 use crate::http_client;
 use crate::observability;
 use crate::runtime;
-use crate::tool_call_explain;
-use crate::tools;
 use crate::web;
 use crate::web_static_dir;
 
@@ -218,7 +219,7 @@ async fn run_models_or_probe(
     Ok(())
 }
 
-struct ServeBranchArgs<'a> {
+pub(super) struct ServeBranchArgs<'a> {
     cfg_holder: &'a config::SharedAgentConfig,
     config_path: &'a Option<String>,
     client: reqwest::Client,
@@ -231,7 +232,9 @@ struct ServeBranchArgs<'a> {
     process_handles: Arc<crate::process_handles::ProcessHandles>,
 }
 
-async fn run_serve_branch(args: ServeBranchArgs<'_>) -> Result<(), Box<dyn std::error::Error>> {
+pub(super) async fn run_serve_branch(
+    args: ServeBranchArgs<'_>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let ServeBranchArgs {
         cfg_holder,
         config_path,
@@ -383,7 +386,7 @@ async fn run_serve_branch(args: ServeBranchArgs<'_>) -> Result<(), Box<dyn std::
 }
 
 /// `--benchmark` / `--batch`：跑批量评测后返回 `true`（调用方应结束进程）。
-async fn run_benchmark_batch_if_requested(
+pub(super) async fn run_benchmark_batch_if_requested(
     cfg_holder: &config::SharedAgentConfig,
     client: &reqwest::Client,
     api_key: &str,
@@ -497,106 +500,20 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let api_key = read_llm_api_key_from_env_lenient(&cfg);
+    let session = cli_run_session::init_cli_session_start(cfg, no_tools).await?;
 
-    let cfg_holder: config::SharedAgentConfig = std::sync::Arc::new(tokio::sync::RwLock::new(cfg));
-    {
-        let g = cfg_holder.read().await;
-        info!(
-            target: "crabmate",
-            "配置已加载 api_base={} model={}",
-            g.llm.api_base,
-            g.llm.model
-        );
-    }
-    let client = {
-        let g = cfg_holder.read().await;
-        http_client::build_shared_api_client(&g)?
-    };
-    let mut all_tools = tools::build_tools();
-    {
-        let g = cfg_holder.read().await;
-        tool_call_explain::annotate_tool_defs_for_explain_card(&mut all_tools, &g);
-    }
-    let tools = if no_tools { Vec::new() } else { all_tools };
-
-    let cli_process_handles = crate::process_handles::ProcessHandles::new_arc(
-        Arc::new(crate::workspace::changelist::WorkspaceChangelistRegistry::default()),
-        Arc::new(crate::tool_stats::ToolOutcomeRecorder::new()),
-        crate::tool_registry::HandlerLookupTable::default_dispatch(),
-        crate::tool_sandbox::default_sync_default_sandbox_backend(),
-    );
-
-    if let Some(port) = serve_port {
-        run_serve_branch(ServeBranchArgs {
-            cfg_holder: &cfg_holder,
-            config_path: &config_path,
-            client,
-            tools,
-            api_key,
-            workspace_cli: &workspace_cli,
-            port,
-            http_bind_host: &http_bind_host,
-            no_web,
-            process_handles: Arc::clone(&cli_process_handles),
-        })
-        .await?;
-        return Ok(());
-    }
-
-    if run_benchmark_batch_if_requested(&cfg_holder, &client, &api_key, &tools, &bench_args).await?
-    {
-        return Ok(());
-    }
-
-    if chat_cli.wants_chat() {
-        crate::runtime::cli::run_chat_invocation(
-            crate::runtime::cli::CliMainInvocationCommon {
-                cfg_holder: &cfg_holder,
-                config_path: config_path.as_deref(),
-                client: &client,
-                api_key: &api_key,
-                tools: &tools,
-                workspace_cli: &workspace_cli,
-                agent_role: agent_role_cli.as_deref(),
-                process_handles: Arc::clone(&cli_process_handles),
-            },
-            &chat_cli,
-        )
-        .await?;
-        return Ok(());
-    }
-
-    if tui {
-        crate::runtime::tui::run_tui_session(
-            crate::runtime::cli::CliMainInvocationCommon {
-                cfg_holder: &cfg_holder,
-                config_path: config_path.as_deref(),
-                client: &client,
-                api_key: &api_key,
-                tools: &tools,
-                workspace_cli: &workspace_cli,
-                agent_role: agent_role_cli.as_deref(),
-                process_handles: Arc::clone(&cli_process_handles),
-            },
-            no_stream,
-        )
-        .await?;
-        return Ok(());
-    }
-
-    crate::runtime::cli::run_repl(
-        crate::runtime::cli::CliMainInvocationCommon {
-            cfg_holder: &cfg_holder,
-            config_path: config_path.as_deref(),
-            client: &client,
-            api_key: &api_key,
-            tools: &tools,
-            workspace_cli: &workspace_cli,
-            agent_role: agent_role_cli.as_deref(),
-            process_handles: Arc::clone(&cli_process_handles),
-        },
+    cli_run_session::run_cli_main_routes(cli_run_session::CliDispatchArgs {
+        session,
+        config_path,
+        serve_port,
+        http_bind_host,
+        workspace_cli,
+        no_web,
+        bench_args,
+        chat_cli,
+        tui,
         no_stream,
-    )
+        agent_role_cli,
+    })
     .await
 }
