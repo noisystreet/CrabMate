@@ -65,7 +65,7 @@ impl Default for ShellUISignals {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct ChatComposerSignals {
     pub draft: RwSignal<String>,
     pub pending_images: RwSignal<Vec<String>>,
@@ -513,7 +513,7 @@ impl ChatDomainWiringSignals {
         Self {
             initialized: app.initialized,
             chat: app.chat,
-            composer: app.chat_composer.clone(),
+            composer: app.chat_composer,
             pending_clarification: app.approval.pending_clarification,
             locale: app.shell_ui.locale,
             apply_assistant_display_filters: app.shell_ui.apply_assistant_display_filters,

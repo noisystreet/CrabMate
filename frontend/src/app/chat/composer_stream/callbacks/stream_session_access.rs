@@ -15,7 +15,8 @@ use super::super::context::ChatStreamCallbackCtx;
 
 #[cfg(debug_assertions)]
 fn debug_assert_sse_session_binding(stream_ctx: &ChatStreamCallbackCtx, sid: &str) {
-    if let Some(ref bound) = stream_ctx.chat.stream_bound_session_id.get() {
+    let lane = stream_ctx.chat.stream_session_lane();
+    if let Some(ref bound) = lane.bound_session_id.get() {
         debug_assert_eq!(
             bound.as_str(),
             sid,
@@ -31,8 +32,9 @@ pub(super) fn append_stream_assistant_chunk(
     chunk: &str,
     to_reasoning: bool,
 ) {
+    let lane = stream_ctx.chat.stream_session_lane();
     stream_overlay_append(
-        stream_ctx.chat.stream_text_overlay,
+        lane.text_overlay,
         stream_ctx.bound_stream_session_id.as_str(),
         message_id,
         chunk,

@@ -2,7 +2,8 @@
 //!
 //! # 接线顺序
 //!
-//! 单一事实来源为 [`bootstrap_app_shell`](super::app_shell_bootstrap::bootstrap_app_shell)；
+//! 单一事实来源为 [`bootstrap_app_shell`](super::app_shell_bootstrap::bootstrap_app_shell) 内的
+//! [`run_shell_wiring_in_order`](super::app_shell_wire_phases::run_shell_wiring_in_order)；
 //! 阶段表见 [`super::app_shell_wire_phases`]。
 
 pub use super::app_shell_bootstrap::bootstrap_app_shell;

@@ -2,6 +2,7 @@
 //! 替代一对交叉读写的 `Cell<bool>`。车道转移语义见 [`StreamModelOutputLane`] 的 `apply_*` / `take_*` / `clear_*`；
 //! 单测与 `Cell` 热路径仍通过 [`lane_on_assistant_answer_phase`] 等薄封装读写。
 
+#[cfg(test)]
 use std::cell::Cell;
 
 /// 当前 `delta` 写入 reasoning 还是正文，以及是否需在下一片段前轮换助手气泡。
@@ -51,6 +52,7 @@ impl StreamModelOutputLane {
 }
 
 /// [`crate::api::ChatStreamCallbacks::on_assistant_answer_phase`]：首次进入正文相，或标记待轮换。
+#[cfg(test)]
 pub(super) fn lane_on_assistant_answer_phase(lane: &Cell<StreamModelOutputLane>) {
     let mut v = lane.get();
     v.apply_assistant_answer_phase();
@@ -58,6 +60,7 @@ pub(super) fn lane_on_assistant_answer_phase(lane: &Cell<StreamModelOutputLane>)
 }
 
 /// 若处于「待轮换」状态，返回 `true` 并回落到 [`StreamModelOutputLane::Answering`]。
+#[cfg(test)]
 pub(super) fn lane_take_followup_rotation_pending(lane: &Cell<StreamModelOutputLane>) -> bool {
     let mut v = lane.get();
     let out = v.take_followup_rotation_if_pending();
@@ -66,6 +69,7 @@ pub(super) fn lane_take_followup_rotation_pending(lane: &Cell<StreamModelOutputL
 }
 
 /// 用户取消等路径：丢弃「待轮换」，保留是否已在正文相。
+#[cfg(test)]
 pub(super) fn lane_clear_followup_pending(lane: &Cell<StreamModelOutputLane>) {
     let mut v = lane.get();
     v.clear_followup_pending_lane();

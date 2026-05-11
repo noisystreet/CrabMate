@@ -4,7 +4,7 @@
 //!
 //! - **`sessions` / `active_id`**：侧栏、作曲器、持久化 `Effect`、工具/导出等；流式助手正文增量默认进 [`Self::stream_text_overlay`]，收尾时合并回会话，**不一定**每 token 触发 `sessions` 无效化。
 //! - **`stream_bound_session_id`**：与 [`crate::app::chat::composer_stream::context::ChatStreamCallbackCtx::bound_stream_session_id`] 同源（**发起 attach 时**快照），决定 SSE 写哪条会话，**不一定**等于当时的 [`Self::active_id`]。
-//! - **`stream_job_id` / `stream_last_event_seq`**：SSE 首包与 `id:` 行；应用 [`ChatSessionSignals::clear_stream_resume_handles`] 表示「放弃当前断线重连上下文」（错误、结束、`stream_ended`、会话切换等）。
+//! - **`stream_job_id` / `stream_last_event_seq`**：SSE 首包与 `id:` 行；应用 [`ChatSessionSignals::clear_stream_resume_handles`] 表示「放弃当前断线重连上下文」（错误、结束、`stream_ended`、会话切换等）。上述四槽位亦经 [`ChatStreamSessionLane`] / [`ChatSessionSignals::stream_session_lane`] 成组访问。
 //! - **`session_sync`**：服务端 `conversation_id` / revision，与 `POST /chat/branch` 等对齐。
 //! - **`session_hydrate_nonce` / `reasoning_preserved`**：拉取会话正文与水合时的补偿字段。
 //! - **`stream_text_overlay`**：尾条 `loading` 助手消息的流式正文/思维链旁路缓冲（字段见 [`ChatSessionSignals`]）。
@@ -28,6 +28,18 @@ use leptos::prelude::*;
 use crate::session_sync::SessionSyncState;
 use crate::storage::ChatSession;
 use crate::stream_text_overlay::StreamTextOverlay;
+
+/// 与单轮 `/chat/stream` 绑定的 **RwSignal 槽位**（`job_id` / SSE 序号 / 绑定会话 / 尾条 overlay）。
+///
+/// 与 [`ChatSessionSignals`] 上平铺字段同源；用于把「流式侧」多槽位收拢为单处传递/解构，减少
+/// `stream_bound_session_id` / `stream_job_id` / `stream_text_overlay` 分散读写的心智负担。
+#[derive(Clone, Copy, Debug)]
+pub struct ChatStreamSessionLane {
+    pub bound_session_id: RwSignal<Option<String>>,
+    pub job_id: RwSignal<Option<u64>>,
+    pub last_event_seq: RwSignal<u64>,
+    pub text_overlay: RwSignal<Option<StreamTextOverlay>>,
+}
 
 /// 是否存在仍处于 Loading 的工具时间线气泡（与 SSE `tool_running` / `tool_busy` 互补，避免状态栏已「就绪」但卡片仍在转圈）。
 ///
@@ -89,6 +101,17 @@ pub struct ChatSessionSignals {
 }
 
 impl ChatSessionSignals {
+    /// 流式写入通道：与 [`Self::stream_bound_session_id`] 等字段一一对应，便于热路径单参传递。
+    #[must_use]
+    pub const fn stream_session_lane(self) -> ChatStreamSessionLane {
+        ChatStreamSessionLane {
+            bound_session_id: self.stream_bound_session_id,
+            job_id: self.stream_job_id,
+            last_event_seq: self.stream_last_event_seq,
+            text_overlay: self.stream_text_overlay,
+        }
+    }
+
     /// 工具时间线 / 「哪条会话上有 loading 工具」等：有在途流时与 [`Self::stream_bound_session_id`] 一致，否则与侧栏 [`Self::active_id`] 一致。
     #[must_use]
     pub fn effective_stream_message_session_id(self) -> String {
@@ -109,9 +132,10 @@ impl ChatSessionSignals {
     /// 与「重置 `sessions` 向量」无关；会话切换、流结束、致命错误等路径应调用此处而非散落两处 `set`。
     /// 同时清空 [`Self::stream_bound_session_id`]，与「无进行中的流式写会话」语义一致。
     pub fn clear_stream_resume_handles(self) {
-        self.stream_job_id.set(None);
-        self.stream_last_event_seq.set(0);
-        self.stream_bound_session_id.set(None);
+        let lane = self.stream_session_lane();
+        lane.job_id.set(None);
+        lane.last_event_seq.set(0);
+        lane.bound_session_id.set(None);
     }
 
     /// [`GET /conversation/messages`] 水合合并与 reasoning 恢复。

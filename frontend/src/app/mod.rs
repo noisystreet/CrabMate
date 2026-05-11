@@ -24,6 +24,7 @@ mod settings_models_registry;
 mod settings_page;
 mod settings_sections;
 pub(crate) mod shell_prefs_storage;
+mod shell_runtime_context;
 mod side_column;
 mod side_column_toolbar;
 mod side_column_workspace_scroll;
@@ -44,6 +45,7 @@ use mobile_shell_header::mobile_shell_header_view;
 use session_list_modal::session_list_modal_view;
 use settings_modal::settings_modal_view;
 use settings_page::SettingsPageView;
+use shell_runtime_context::ChatShellLeptosContext;
 use side_column::side_column_view;
 use sidebar_nav::sidebar_nav_view;
 use status_bar::status_bar_footer_view;
@@ -55,6 +57,7 @@ use leptos::prelude::*;
 #[component]
 pub fn App() -> impl IntoView {
     let app_ctx = init_app_shell();
+    provide_context(ChatShellLeptosContext::from_app_signals(&app_ctx.signals));
 
     // `AppShellCtx` 含 `Rc` 等，不满足 `Send`；子组件闭包不得捕获整 ctx（见 Leptos `ToChildren` 约束）。
     let chat_find_bar_signals = app_ctx.chat_find_bar_signals();

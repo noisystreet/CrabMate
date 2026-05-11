@@ -1,8 +1,10 @@
 //! 壳层 `*_view` 聚合为 [`AppShellCtx`]，压缩 `App` 内 `view!` 的长实参列表。
 //! 阶段 B：对「仅由壳已持有的一组 `RwSignal` 拼出的子组件入参」提供 **`settings_page_form_signals()`**、**`chat_find_bar_signals()`** 等组装方法，避免在 **`App`** 中重复罗列字段。
-//! **未使用** Leptos `Context` / `<Provider>`：壳层状态含 `Rc<RefCell<…>>`、`Rc<dyn Fn()>` 等，
+//! **未使用** Leptos `Context` / `<Provider>` 承载整份壳层：状态含 `Rc<RefCell<…>>`、`Rc<dyn Fn()>` 等，
 //! 不满足 `provide_context` 的 `Send + Sync + 'static` 约束；以结构体 **`Clone`**（内部多为
 //! `Copy` / `Rc::clone` / `Arc::clone`）在 `*_view` 间传递即可。
+//! 聊天域中已满足边界的切片见 [`super::shell_runtime_context::ChatShellLeptosContext`]（由 [`super::App`] 根
+//! [`provide_context`]，侧栏等用 [`super::shell_runtime_context::expect_chat_shell_ctx`] 读取）。
 //!
 //! 根壳层 `wire_*` 的**注册顺序**影响隐式时序依赖；见 [`app_shell_wire_phases`](super::app_shell_wire_phases)
 //! 与 [`bootstrap_app_shell`](super::app_shell_bootstrap::bootstrap_app_shell)（[`init_app_shell`](super::app_shell_init::init_app_shell)）；聊天列内部顺序见 [`wire_chat_domain`](super::chat::wire_chat_domain)。
@@ -159,6 +161,7 @@ type SideResizeHandlesCell = Rc<
 >;
 
 /// 左侧导航轨所需句柄（阶段 B：避免向 `sidebar_nav_view` 传递整份 [`AppShellCtx`]）。
+/// 会话列表 / 草稿 / 查找后焦点等经 [`super::shell_runtime_context::ChatShellLeptosContext`] 注入子树。
 #[derive(Clone)]
 pub struct SidebarNavSignals {
     pub locale: RwSignal<Locale>,
@@ -170,11 +173,7 @@ pub struct SidebarNavSignals {
     pub sidebar_search_panel_open: RwSignal<bool>,
     pub sidebar_rail_ctx_menu: RwSignal<Option<(f64, f64)>>,
     pub chat_find_panel_open: RwSignal<bool>,
-    pub chat: ChatSessionSignals,
-    pub draft: RwSignal<String>,
-    pub focus_message_id_after_nav: RwSignal<Option<String>>,
     pub session_context_menu: RwSignal<Option<SessionContextAnchor>>,
-    pub apply_assistant_display_filters: RwSignal<bool>,
     pub sidebar_rail_collapsed: RwSignal<bool>,
 }
 
@@ -230,11 +229,7 @@ impl AppShellCtx {
             sidebar_search_panel_open: self.signals.sidebar.sidebar_search_panel_open,
             sidebar_rail_ctx_menu: self.signals.sidebar.sidebar_rail_ctx_menu,
             chat_find_panel_open: self.signals.chat_composer.chat_find_panel_open,
-            chat: self.signals.chat,
-            draft: self.signals.chat_composer.draft,
-            focus_message_id_after_nav: self.signals.chat_composer.focus_message_id_after_nav,
             session_context_menu: self.signals.sidebar.session_context_menu,
-            apply_assistant_display_filters: self.signals.shell_ui.apply_assistant_display_filters,
             sidebar_rail_collapsed: self.signals.sidebar.sidebar_rail_collapsed,
         }
     }

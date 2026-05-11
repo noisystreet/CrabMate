@@ -15,6 +15,8 @@ use crate::session_ops::clamp_session_ctx_menu_pos;
 
 use super::app_shell_ctx::SidebarNavSignals;
 
+use super::shell_runtime_context::expect_chat_shell_ctx;
+
 use context_menus::{RailContextMenuLayer, SessionContextMenuLayer};
 use debounce::{
     GLOBAL_MESSAGE_SEARCH_DEBOUNCE_MS, SIDEBAR_SESSION_FILTER_DEBOUNCE_MS,
@@ -34,13 +36,14 @@ pub fn sidebar_nav_view(signals: SidebarNavSignals) -> impl IntoView {
         sidebar_search_panel_open,
         sidebar_rail_ctx_menu,
         chat_find_panel_open,
-        chat,
-        draft,
-        focus_message_id_after_nav,
         session_context_menu,
-        apply_assistant_display_filters,
         sidebar_rail_collapsed,
     } = signals;
+    let shell_chat = expect_chat_shell_ctx();
+    let chat = shell_chat.chat;
+    let draft = shell_chat.composer.draft;
+    let focus_message_id_after_nav = shell_chat.composer.focus_message_id_after_nav;
+    let apply_assistant_display_filters = shell_chat.apply_assistant_display_filters;
     let sidebar_filter_debounced = RwSignal::new(String::new());
     let global_message_filter_debounced = RwSignal::new(String::new());
     debounce_signal_to_effect(
