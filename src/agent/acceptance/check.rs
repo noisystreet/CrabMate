@@ -171,7 +171,10 @@ fn verify_combined_output_contains(
         };
         if !haystack.contains(&needle) {
             return Some(VerifyOutcome::Fail {
-                reason: format!("输出不包含期望内容: '{}'", expected),
+                reason: format!(
+                    "combined_output_missing: expected to contain '{}'",
+                    expected
+                ),
             });
         }
     }
@@ -197,7 +200,7 @@ fn verify_expected_files(
                         Err(_) => format!("file_path_invalid: '{}'", file_path),
                     }
                 }
-                FileResolveKind::WorkspaceJoin => format!("期望文件不存在: {}", file_path),
+                FileResolveKind::WorkspaceJoin => format!("file_not_found: '{}'", file_path),
             };
             return Some(VerifyOutcome::Fail { reason });
         }

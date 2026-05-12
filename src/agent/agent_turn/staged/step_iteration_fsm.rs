@@ -114,8 +114,85 @@ pub(crate) fn staged_step_verify_fail_patch_detail(
         "### 偏差结构化（验证失败）\n\
          {reference_line}\
          - **观测 / 偏差（step_verifier）**：{verify_reason}\n\
-         若 `观测` 行以 `exit_code_mismatch:`、`stdout_missing:`、`stderr_missing:` 等键开头，请对症调整命令、工具选择或 `acceptance` 锚点。\n\
+         若 `观测` 行以 `exit_code_mismatch:`、`stdout_missing:`、`stderr_missing:`、`combined_output_missing:`、`file_not_found:`、`json_path_mismatch:` 等键开头，请对症调整命令、工具选择或 `acceptance` 锚点。\n\
          请根据对话历史缩短或调整后续步骤，并在补丁中修复此问题。"
+    )
+}
+
+/// 本分步内未全部成功的 `role: tool` 摘要，供补丁规划 **user** 的「观测 y」段落。
+pub(crate) fn staged_step_tool_failure_patch_detail(
+    messages: &[crate::types::Message],
+    step_user_index: usize,
+    acceptance_ref: Option<&crate::agent::plan_artifact::PlanStepAcceptance>,
+) -> String {
+    const PREVIEW_CHARS: usize = 240;
+    const MAX_TOOL_LINES: usize = 6;
+
+    let reference_line = acceptance_ref
+        .and_then(|a| a.compact_reference_for_planner_feedback())
+        .map(|line| format!("- **参考验收（acceptance，r）**：{line}\n"))
+        .unwrap_or_default();
+
+    if step_user_index >= messages.len() {
+        return format!(
+            "### 偏差结构化（工具未全部成功）\n\
+             {reference_line}\
+             - **观测**：`step_user_index` 越界；请直接阅读对话历史中本分步内的 `role: tool`。\n\
+             {STAGED_STEP_TOOL_MSG_FAIL_DETAIL}"
+        );
+    }
+
+    let mut lines: Vec<String> = Vec::new();
+    let mut i = step_user_index.saturating_add(1);
+    while i < messages.len() {
+        let m = &messages[i];
+        if m.role == "user" {
+            break;
+        }
+        if m.role == "tool" {
+            let name = m.name.as_deref().unwrap_or("");
+            let content = crate::types::message_content_as_str(&m.content).unwrap_or("");
+            if !crate::tool_result::tool_message_content_ok_for_model(content, name) {
+                let parsed = crate::tool_result::parse_legacy_output(name, content);
+                let ec = parsed
+                    .error_code
+                    .as_deref()
+                    .filter(|s| !s.is_empty())
+                    .map(|s| format!("error_code={s}"))
+                    .unwrap_or_else(|| "error_code=(none_or_unparsed)".to_string());
+                let preview =
+                    crate::redact::preview_chars(content, PREVIEW_CHARS).replace('`', "'");
+                lines.push(format!("- **工具 `{name}`**：{ec}；输出摘要：{preview}"));
+                if lines.len() >= MAX_TOOL_LINES {
+                    lines.push(
+                        "- **…**：更多失败工具已省略；请读取完整 `role: tool` 历史。".to_string(),
+                    );
+                    break;
+                }
+            }
+        }
+        i += 1;
+    }
+
+    let obs_block = if lines.is_empty() {
+        format!(
+            "### 偏差结构化（工具未全部成功）\n\
+             {reference_line}\
+             - **观测**：未解析到具体失败工具条目；请扫本分步内全部 `role: tool`。\n"
+        )
+    } else {
+        format!(
+            "### 偏差结构化（工具未全部成功）\n\
+             {reference_line}\
+             {}\n",
+            lines.join("\n")
+        )
+    };
+
+    format!(
+        "{obs_block}\
+         若 `error_code=` 可对应 `invalid_args` / `timeout` / `not_found` 等，请在补丁中调整工具入参、白名单或前置只读步。\n\
+         {STAGED_STEP_TOOL_MSG_FAIL_DETAIL}"
     )
 }
 
@@ -227,6 +304,57 @@ mod tests {
         let d = staged_step_verify_fail_patch_detail("no tool result", None);
         assert!(d.contains("no tool result"));
         assert!(!d.contains("参考验收"));
+    }
+
+    #[test]
+    fn tool_fail_patch_detail_summarizes_failed_tools() {
+        use crate::types::{Message, MessageContent};
+
+        let tool_fail = Message {
+            role: "tool".to_string(),
+            content: Some(MessageContent::Text("退出码：1\n标准错误：\nfail\n".into())),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: Some("read_file".to_string()),
+            tool_call_id: None,
+        };
+        let messages = vec![
+            Message::user_only("step"),
+            tool_fail,
+            Message::user_only("next"),
+        ];
+        let d = staged_step_tool_failure_patch_detail(&messages, 0, None);
+        assert!(d.contains("read_file"));
+        assert!(d.contains("偏差结构化"));
+    }
+
+    #[test]
+    fn tool_fail_patch_detail_includes_acceptance_reference() {
+        use crate::agent::plan_artifact::PlanStepAcceptance;
+        use crate::types::{Message, MessageContent};
+
+        let acc = PlanStepAcceptance {
+            expect_exit_code: Some(0),
+            expect_stdout_contains: Some("ok".into()),
+            expect_stderr_contains: None,
+            expect_file_exists: None,
+            expect_json_path_equals: None,
+            expect_http_status: None,
+        };
+        let tool_fail = Message {
+            role: "tool".to_string(),
+            content: Some(MessageContent::Text("退出码：1\n".into())),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: Some("run_command".to_string()),
+            tool_call_id: None,
+        };
+        let messages = vec![Message::user_only("step"), tool_fail];
+        let d = staged_step_tool_failure_patch_detail(&messages, 0, Some(&acc));
+        assert!(d.contains("expect_exit_code=0"));
+        assert!(d.contains("run_command"));
     }
 
     #[test]

@@ -33,9 +33,9 @@ use super::step_after_outer::{
     CfJumpMeta, CfJumpMut, staged_step_maybe_return_on_control_flow_jump,
 };
 use super::step_iteration_fsm::{
-    STAGED_STEP_OUTER_LOOP_FAIL_DETAIL, STAGED_STEP_TOOL_MSG_FAIL_DETAIL, StagedStepAfterOuterLoop,
-    StagedStepIterationCtl, StagedStepToolPhaseRoute, staged_step_after_outer_loop,
-    staged_step_exec_fail_patch_detail, staged_step_failure_retry_exhausted_message,
+    STAGED_STEP_OUTER_LOOP_FAIL_DETAIL, StagedStepAfterOuterLoop, StagedStepIterationCtl,
+    StagedStepToolPhaseRoute, staged_step_after_outer_loop, staged_step_exec_fail_patch_detail,
+    staged_step_failure_retry_exhausted_message, staged_step_tool_failure_patch_detail,
     staged_step_tool_phase_route, staged_step_verify_fail_patch_detail,
     staged_step_wall_clock_exceeded,
 };
@@ -357,6 +357,7 @@ struct StagedToolFailurePatchRecoverParams<'a, 'b, 'c, F> {
     plan_steps: &'a mut Vec<PlanStepV1>,
     echo_terminal_staged: bool,
     patch_ctx: &'a mut StagedPlanPatchPlannerCtx<'b, 'c, F>,
+    step_user_index: usize,
     step: &'a PlanStepV1,
 }
 
@@ -374,6 +375,7 @@ where
         plan_steps,
         echo_terminal_staged,
         patch_ctx,
+        step_user_index,
         step,
     } = p;
     let mut recovered = false;
@@ -391,6 +393,11 @@ where
         .staged_plan_patch_vs_plan_rewrite_counters_footer();
     for (attempt_idx, _) in (0..tool_patch_budget).enumerate() {
         let attempt_1based = attempt_idx.saturating_add(1);
+        let detail_owned = staged_step_tool_failure_patch_detail(
+            patch_ctx.p.turn.messages(),
+            step_user_index,
+            step.acceptance.as_ref(),
+        );
         let meta = StagedPlanStepFailureFeedbackMeta {
             plan_id,
             step_zero_based: i,
@@ -398,7 +405,7 @@ where
             plan_patch_attempt_one_based: attempt_1based,
             plan_patch_budget: tool_patch_budget,
             reason_zh: "本步内工具调用未全部成功",
-            detail: STAGED_STEP_TOOL_MSG_FAIL_DETAIL,
+            detail: detail_owned.as_str(),
             audit_counters_footer: &audit_footer,
         };
         let feedback = staged_plan_step_failure_feedback_user_body(&meta, step);
@@ -574,6 +581,7 @@ where
                     plan_steps,
                     echo_terminal_staged,
                     patch_ctx,
+                    step_user_index: step_user_idx,
                     step: &step,
                 })
                 .await?
