@@ -10,7 +10,7 @@ use crate::session_search::{normalize_search_query, split_for_find_highlight};
 use crate::storage::{ChatSession, StoredMessage};
 
 use super::super::message_row_actions::spawn_scroll_to_linked_user_message;
-use super::helpers::{live_message_reasoning_text, tool_bubble_emoji};
+use super::helpers::{tool_bubble_emoji, tool_detail_drawer_body, tool_drawer_has_visible_body};
 
 fn render_highlighted_message_text(
     msg: &StoredMessage,
@@ -58,17 +58,19 @@ fn tool_compact_body_view(
 ) -> AnyView {
     let tool_emoji = tool_bubble_emoji(&m_for_body);
     let mid_store = StoredValue::new(tool_mid);
+    let tool_name_for_drawer_btn = m_for_body.tool_name.clone();
+    let tool_text_for_drawer_btn = m_for_body.text.clone();
     view! {
         <div class="msg-tool-compact">
             <Show when=move || {
+                let term = tool_name_for_drawer_btn.as_deref() == Some("terminal_session");
+                let compact = tool_text_for_drawer_btn.trim();
                 let live_ok = reasoning_live.as_ref().is_some_and(|(sess, aid, mid)| {
-                    !live_message_reasoning_text(*sess, *aid, mid.as_str())
-                        .trim()
-                        .is_empty()
+                    tool_drawer_has_visible_body(*sess, *aid, mid.as_str(), compact, term)
                 });
-                let snap_ok = detail_snapshot
-                    .as_deref()
-                    .is_some_and(|s| !s.trim().is_empty());
+                let snap_ok = detail_snapshot.as_deref().is_some_and(|snap| {
+                    !tool_detail_drawer_body(compact, snap, term).trim().is_empty()
+                });
                 live_ok || snap_ok
             }>
                 <button

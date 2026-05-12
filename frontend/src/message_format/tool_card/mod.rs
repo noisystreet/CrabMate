@@ -313,6 +313,20 @@ fn normalized_tool_summary(info: &ToolResultInfo, loc: Locale) -> String {
     strip_placeholder_tool_running_suffix(&out)
 }
 
+/// 紧凑条右侧「信号」与左侧标题仅下划线/空格差异时视为同一信息（如 `git_status` 与 `git status`），不拼 `｜`。
+#[inline]
+fn compact_title_signal_redundant(title: &str, signal: &str) -> bool {
+    let t = title.trim();
+    let s = signal.trim();
+    if s.is_empty() {
+        return true;
+    }
+    if s == t {
+        return true;
+    }
+    t.replace('_', " ").eq_ignore_ascii_case(s) || s.replace(' ', "_").eq_ignore_ascii_case(t)
+}
+
 /// 摘要首行若与紧凑标题相同（重写摘要已含工具人类名），合并为详情时去掉重复前缀。
 fn summary_without_redundant_title(title: &str, summary: &str) -> String {
     let s = summary.trim();
@@ -337,6 +351,7 @@ pub fn tool_card_compact_text(info: &ToolResultInfo, loc: Locale) -> String {
     if let Some(c) = candidate.as_deref()
         && !c.is_empty()
         && c != title
+        && !compact_title_signal_redundant(&title, c)
         && !skip_compact.contains(&c)
     {
         out.push_str(COMPACT_SEPARATOR);
@@ -375,19 +390,41 @@ fn tool_card_text_terminal_session_early(info: &ToolResultInfo) -> Option<String
     (!raw.is_empty()).then_some(raw)
 }
 
-const TOOLS_APPEND_RAW_OUTPUT: &[&str] = &[
-    "run_command",
-    "terminal_session",
-    "create_file",
-    "modify_file",
-    "copy_file",
-    "move_file",
-    "search_replace",
-    "delete_file",
-    "append_file",
-    "apply_patch",
-    "search_in_files",
+/// 不拼接 `info.output` 全文的工具：多为首行 **`crabmate_tool_output`** 的结构化结果、
+/// 目录/语义检索体量过大、日程 CRUD 短文、问卷 JSON 等（展开区仍以摘要/结构化预览为主）。
+const TOOLS_SKIP_APPEND_RAW_OUTPUT: &[&str] = &[
+    "read_file",
+    "read_dir",
+    "list_tree",
+    "glob_files",
+    "file_exists",
+    "read_binary_meta",
+    "hash_file",
+    "extract_in_file",
+    "codebase_semantic_search",
+    "present_clarification_questionnaire",
+    "add_reminder",
+    "list_reminders",
+    "complete_reminder",
+    "delete_reminder",
+    "update_reminder",
+    "add_event",
+    "list_events",
+    "delete_event",
+    "update_event",
+    "long_term_remember",
+    "long_term_forget",
+    "long_term_memory_list",
 ];
+
+/// 详情区是否拼接 `info.output` 全文（供展开抽屉 `<pre>` 展示；服务端仍会做长度截断）。
+///
+/// 默认 **拼接**（与 `run_command` 一致），仅 [`TOOLS_SKIP_APPEND_RAW_OUTPUT`] 中的工具例外，
+/// 以免列表类/结构化工具在 UI 重复巨量正文。
+#[inline]
+fn tool_should_append_raw_output(name_trim: &str) -> bool {
+    !TOOLS_SKIP_APPEND_RAW_OUTPUT.contains(&name_trim)
+}
 
 /// 从 `run_command` 正文首行 `命令：…` 或（回退）单行摘要取「调用串」，供详情卡标题 `$ …` 与去重用。
 fn run_command_invocation_for_display(info: &ToolResultInfo, summary_norm: &str) -> Option<String> {
@@ -519,6 +556,11 @@ pub fn tool_card_text(info: &ToolResultInfo, loc: Locale) -> String {
         }
     }
     let body = summary_without_redundant_title(&title, &out);
+    let body = if compact_title_signal_redundant(&title, body.trim()) {
+        String::new()
+    } else {
+        body
+    };
     let mut merged = title;
     if !body.is_empty() {
         merged.push_str("\n\n");
@@ -526,7 +568,7 @@ pub fn tool_card_text(info: &ToolResultInfo, loc: Locale) -> String {
     }
     let raw_trimmed = info.output.trim();
     let name_trim = info.name.trim();
-    let whitelist_tool = TOOLS_APPEND_RAW_OUTPUT.contains(&name_trim);
+    let whitelist_tool = tool_should_append_raw_output(name_trim);
     append_workspace_diff_and_whitelist_raw(
         &mut merged,
         info,
@@ -637,6 +679,44 @@ mod tests {
     }
 
     #[test]
+    fn git_status_success_detail_appends_raw_stdout() {
+        let mut info = mk("✅ git_status 成功");
+        info.name = "git_status".to_string();
+        info.summary = Some("git status".to_string());
+        info.output = "On branch main\nnothing to commit, working tree clean\n".to_string();
+        let out = tool_card_text(&info, Locale::ZhHans);
+        assert!(out.contains("On branch main"), "{out}");
+        assert!(out.contains("working tree clean"), "{out}");
+    }
+
+    #[test]
+    fn compact_git_status_skips_pipe_when_signal_is_cli_spelling_of_tool_id() {
+        let mut info = mk("");
+        info.name = "git_status".to_string();
+        info.summary = Some("git status".to_string());
+        let out = tool_card_compact_text(&info, Locale::ZhHans);
+        assert!(
+            !out.contains("｜"),
+            "不应拼出 tool_id 与摘要 CLI 的重复两段: {out:?}"
+        );
+        assert_eq!(out, "git_status");
+    }
+
+    #[test]
+    fn git_status_detail_skips_redundant_summary_body_before_raw() {
+        let mut info = mk("");
+        info.name = "git_status".to_string();
+        info.summary = Some("git status".to_string());
+        info.output = "On branch main\n".to_string();
+        let out = tool_card_text(&info, Locale::ZhHans);
+        assert!(
+            !out.contains("git_status\n\ngit status"),
+            "详情不应叠两行同义: {out:?}"
+        );
+        assert!(out.contains("On branch main"), "{out}");
+    }
+
+    #[test]
     fn rewrite_raw_success_summary_to_readable_text() {
         let s = "✅ run_command 成功: 退出码：0 标准输出： build CMakeLists.txt main.cpp";
         let out = tool_card_text(&mk(s), Locale::ZhHans);
@@ -664,18 +744,30 @@ mod tests {
     #[test]
     fn failed_non_whitelist_tool_appends_full_output_block() {
         let mut info = mk("");
-        info.name = "http_fetch".to_string();
-        info.summary = Some("❌ http_fetch 失败: timeout".to_string());
+        // read_file 在跳过列表中：失败时走「完整输出」标题块，而非先整段拼接 output。
+        info.name = "read_file".to_string();
+        info.summary = Some("❌ read_file 失败: not found".to_string());
         info.ok = Some(false);
-        info.output = "connection reset\nGET https://example.com failed".to_string();
-        info.error_code = Some("timeout".to_string());
+        info.output = "no such path: missing.rs".to_string();
+        info.error_code = Some("not_found".to_string());
         let out = tool_card_text(&info, Locale::ZhHans);
         assert!(
             out.contains("完整输出"),
             "expected heading in detail text: {out}"
         );
-        assert!(out.contains("connection reset"));
-        assert!(out.contains("GET https://example.com failed"));
+        assert!(out.contains("no such path: missing.rs"));
+    }
+
+    #[test]
+    fn cargo_check_success_detail_appends_raw_stdout() {
+        let mut info = mk("✅ cargo_check 成功");
+        info.name = "cargo_check".to_string();
+        info.summary = Some("cargo check --message-format=short".to_string());
+        info.output =
+            "    Checking foo v0.1.0\n    Finished dev [unoptimized] target(s)\n".to_string();
+        let out = tool_card_text(&info, Locale::ZhHans);
+        assert!(out.contains("Checking foo"), "{out}");
+        assert!(out.contains("Finished dev"), "{out}");
     }
 
     #[test]

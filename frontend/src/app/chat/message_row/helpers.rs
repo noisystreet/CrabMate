@@ -3,6 +3,7 @@
 use leptos::prelude::{Get, RwSignal, With};
 
 use crate::i18n::{self, Locale};
+use crate::message_format::strip_ansi_codes;
 use crate::storage::{ChatSession, StoredMessage, StoredMessageState};
 
 pub(super) fn stored_message_by_id<'a>(
@@ -28,6 +29,43 @@ pub(super) fn live_message_reasoning_text(
             .map(|m| m.reasoning_text.clone())
             .unwrap_or_default()
     })
+}
+
+/// 工具气泡紧凑行（`m.text`）与详情全文（`reasoning_text`）常以前缀重复；展开区只展示「多出来的部分」。
+pub(super) fn tool_detail_drawer_body(
+    compact_one_line: &str,
+    reasoning_full: &str,
+    terminal_strip_ansi: bool,
+) -> String {
+    let body = if terminal_strip_ansi {
+        strip_ansi_codes(reasoning_full.trim())
+    } else {
+        reasoning_full.trim().to_string()
+    };
+    let pfx = compact_one_line.trim();
+    if pfx.is_empty() {
+        return body;
+    }
+    if !body.starts_with(pfx) {
+        return body;
+    }
+    body[pfx.len()..]
+        .trim_start_matches(|ch: char| ch == '\n' || ch == '\r')
+        .trim_start()
+        .to_string()
+}
+
+pub(super) fn tool_drawer_has_visible_body(
+    sessions: RwSignal<Vec<ChatSession>>,
+    active_id: RwSignal<String>,
+    message_id: &str,
+    compact_one_line: &str,
+    terminal_strip_ansi: bool,
+) -> bool {
+    let full = live_message_reasoning_text(sessions, active_id, message_id);
+    !tool_detail_drawer_body(compact_one_line, &full, terminal_strip_ansi)
+        .trim()
+        .is_empty()
 }
 
 pub(super) fn is_hierarchical_subgoal_state(state: Option<&StoredMessageState>) -> bool {
@@ -187,4 +225,21 @@ pub(super) fn hierarchical_subgoal_banner_is_active(
         })
         .map(|msg| msg.id == current_msg_id)
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tool_drawer_body_tests {
+    use super::tool_detail_drawer_body;
+
+    #[test]
+    fn strips_compact_prefix_before_stdout() {
+        let out = tool_detail_drawer_body("git_status", "git_status\n\nOn branch x\n", false);
+        assert_eq!(out, "On branch x");
+    }
+
+    #[test]
+    fn no_strip_when_detail_does_not_start_with_compact() {
+        let s = "命令执行\n\n命令：ls\n";
+        assert_eq!(tool_detail_drawer_body("读取文件", s, false), s.trim());
+    }
 }

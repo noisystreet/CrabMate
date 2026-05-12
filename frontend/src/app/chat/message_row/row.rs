@@ -4,9 +4,7 @@ use std::collections::HashSet;
 
 use leptos::prelude::*;
 
-use crate::message_format::{
-    is_staged_timeline_bubble, stored_message_is_staged_planner_round, strip_ansi_codes,
-};
+use crate::message_format::{is_staged_timeline_bubble, stored_message_is_staged_planner_round};
 use crate::session_ops::format_msg_time_label;
 use crate::storage::ChatSession;
 
@@ -19,6 +17,7 @@ use super::helpers::{
     build_subgoal_exec_banner_icon_key, build_subgoal_exec_banner_text,
     extract_hierarchical_goal_target, extract_hierarchical_metrics,
     extract_hierarchical_phase_chip, live_message_reasoning_text, message_row_shell_class,
+    tool_detail_drawer_body, tool_drawer_has_visible_body,
 };
 use super::row_extras::{
     BubbleClassLiveCtx, SubgoalBannerReactiveCtx, arc_actions_bar_visible,
@@ -59,6 +58,7 @@ struct ToolReasoningDrawerWire {
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
     mid_drawer_sv: StoredValue<String>,
+    tool_compact_line: StoredValue<String>,
     is_terminal_tool: bool,
     drawer_panel_class: &'static str,
     drawer_pre_class: &'static str,
@@ -71,6 +71,7 @@ fn tool_reasoning_drawer_below_card(w: ToolReasoningDrawerWire) -> impl IntoView
         sessions,
         active_id,
         mid_drawer_sv,
+        tool_compact_line,
         is_terminal_tool,
         drawer_panel_class,
         drawer_pre_class,
@@ -85,28 +86,28 @@ fn tool_reasoning_drawer_below_card(w: ToolReasoningDrawerWire) -> impl IntoView
                 {
                     return false;
                 }
-                !live_message_reasoning_text(
+                tool_drawer_has_visible_body(
                     sessions,
                     active_id,
                     mid_drawer_sv.get_value().as_str(),
+                    tool_compact_line.get_value().as_str(),
+                    is_terminal_tool,
                 )
-                .trim()
-                .is_empty()
             }
         >
             <div class=drawer_panel_class>
                 <pre class=drawer_pre_class>
                     {move || {
-                        let body = live_message_reasoning_text(
+                        let raw = live_message_reasoning_text(
                             sessions,
                             active_id,
                             mid_drawer_sv.get_value().as_str(),
                         );
-                        if is_terminal_tool {
-                            strip_ansi_codes(&body)
-                        } else {
-                            body
-                        }
+                        tool_detail_drawer_body(
+                            tool_compact_line.get_value().as_str(),
+                            &raw,
+                            is_terminal_tool,
+                        )
                     }}
                 </pre>
             </div>
@@ -198,6 +199,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
     let is_terminal_tool = m.tool_name.as_deref() == Some("terminal_session");
     let (drawer_panel_class, drawer_pre_class) = terminal_session_drawer_classes(is_terminal_tool);
     let mid_drawer_sv = StoredValue::new(mid_highlight.clone());
+    let tool_compact_line_sv = StoredValue::new(m.text.clone());
     view! {
         <div class=wrap_class style=user_row_outer_style>
             <div class="msg-stack" style=user_row_stack_style>
@@ -271,6 +273,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
                     sessions,
                     active_id,
                     mid_drawer_sv,
+                    tool_compact_line: tool_compact_line_sv,
                     is_terminal_tool,
                     drawer_panel_class,
                     drawer_pre_class,
