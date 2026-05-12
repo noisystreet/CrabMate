@@ -35,8 +35,9 @@ use super::step_after_outer::{
 use super::step_iteration_fsm::{
     STAGED_STEP_OUTER_LOOP_FAIL_DETAIL, STAGED_STEP_TOOL_MSG_FAIL_DETAIL, StagedStepAfterOuterLoop,
     StagedStepIterationCtl, StagedStepToolPhaseRoute, staged_step_after_outer_loop,
-    staged_step_failure_retry_exhausted_message, staged_step_tool_phase_route,
-    staged_step_verify_fail_patch_detail, staged_step_wall_clock_exceeded,
+    staged_step_exec_fail_patch_detail, staged_step_failure_retry_exhausted_message,
+    staged_step_tool_phase_route, staged_step_verify_fail_patch_detail,
+    staged_step_wall_clock_exceeded,
 };
 use super::step_loop_fsm::staged_injected_step_user_body;
 use super::{StagedPlanRunLabels, StagedPlanRunOutcome};
@@ -250,6 +251,8 @@ struct StagedOuterExecFailureRecoverParams<'a, 'b, 'c, F> {
     patch_ctx: &'a mut StagedPlanPatchPlannerCtx<'b, 'c, F>,
     step: &'a PlanStepV1,
     step_verify_failed_reason: &'a Option<String>,
+    /// `run_agent_outer_loop` 返回 `Err` 时的 `to_string()`，供补丁规划 user 闭环反馈。
+    outer_loop_error_text: Option<String>,
 }
 
 async fn staged_step_try_recover_outer_execution_failure<F>(
@@ -268,6 +271,7 @@ where
         patch_ctx,
         step,
         step_verify_failed_reason,
+        outer_loop_error_text,
     } = p;
     if !staged_step_patch_planner_enabled(
         patch_ctx
@@ -296,32 +300,30 @@ where
         .staged_plan_patch_vs_plan_rewrite_counters_footer();
     for (attempt_idx, _) in (0..patch_budget).enumerate() {
         let attempt_1based = attempt_idx.saturating_add(1);
-        let feedback = if let Some(vr) = step_verify_failed_reason {
-            let detail_verify = staged_step_verify_fail_patch_detail(vr);
-            let meta = StagedPlanStepFailureFeedbackMeta {
-                plan_id,
-                step_zero_based: i,
-                n_steps_total: n,
-                plan_patch_attempt_one_based: attempt_1based,
-                plan_patch_budget: patch_budget,
-                reason_zh: "本步确定性验证失败 (Step Verification Failed)",
-                detail: detail_verify.as_str(),
-                audit_counters_footer: &audit_footer,
-            };
-            staged_plan_step_failure_feedback_user_body(&meta, step)
+        let detail_owned = if let Some(vr) = step_verify_failed_reason {
+            staged_step_verify_fail_patch_detail(vr)
         } else {
-            let meta = StagedPlanStepFailureFeedbackMeta {
-                plan_id,
-                step_zero_based: i,
-                n_steps_total: n,
-                plan_patch_attempt_one_based: attempt_1based,
-                plan_patch_budget: patch_budget,
-                reason_zh: "执行子循环返回错误",
-                detail: STAGED_STEP_OUTER_LOOP_FAIL_DETAIL,
-                audit_counters_footer: &audit_footer,
-            };
-            staged_plan_step_failure_feedback_user_body(&meta, step)
+            outer_loop_error_text
+                .as_deref()
+                .map(staged_step_exec_fail_patch_detail)
+                .unwrap_or_else(|| STAGED_STEP_OUTER_LOOP_FAIL_DETAIL.to_string())
         };
+        let reason_zh = if step_verify_failed_reason.is_some() {
+            "本步确定性验证失败 (Step Verification Failed)"
+        } else {
+            "执行子循环返回错误"
+        };
+        let meta = StagedPlanStepFailureFeedbackMeta {
+            plan_id,
+            step_zero_based: i,
+            n_steps_total: n,
+            plan_patch_attempt_one_based: attempt_1based,
+            plan_patch_budget: patch_budget,
+            reason_zh,
+            detail: detail_owned.as_str(),
+            audit_counters_footer: &audit_footer,
+        };
+        let feedback = staged_plan_step_failure_feedback_user_body(&meta, step);
         if let Some(merged) =
             run_staged_plan_patch_planner_round(patch_ctx, feedback, plan_steps.as_slice(), i)
                 .await?
@@ -488,6 +490,7 @@ where
                     patch_ctx,
                     step: &step,
                     step_verify_failed_reason: &step_verify_failed_reason,
+                    outer_loop_error_text: run_step.as_ref().err().map(|e| e.to_string()),
                 },
             )
             .await?

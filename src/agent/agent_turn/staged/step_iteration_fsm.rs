@@ -109,6 +109,16 @@ pub(crate) fn staged_step_verify_fail_patch_detail(verify_reason: &str) -> Strin
     )
 }
 
+/// 执行子循环 `Err` 时写入补丁规划 **user** 的详情（截断，避免撑爆上下文）。
+pub(crate) fn staged_step_exec_fail_patch_detail(outer_loop_error: &str) -> String {
+    const MAX_ERR_CHARS: usize = 1200;
+    let tail = crate::redact::preview_chars(outer_loop_error, MAX_ERR_CHARS);
+    format!(
+        "{}\n- 执行子循环错误摘要：{}",
+        STAGED_STEP_OUTER_LOOP_FAIL_DETAIL, tail
+    )
+}
+
 pub(crate) const STAGED_STEP_OUTER_LOOP_FAIL_DETAIL: &str =
     "请根据对话历史缩短或调整后续步骤；若属环境/权限问题请在补丁中显式增加修复步。";
 
@@ -180,6 +190,13 @@ mod tests {
             staged_step_failure_retry_exhausted_message(&ok, &None),
             "局部修复耗尽上限"
         );
+    }
+
+    #[test]
+    fn exec_fail_patch_detail_includes_error_tail() {
+        let d = staged_step_exec_fail_patch_detail("context canceled");
+        assert!(d.contains(STAGED_STEP_OUTER_LOOP_FAIL_DETAIL));
+        assert!(d.contains("context canceled"));
     }
 
     #[test]
