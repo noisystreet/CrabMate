@@ -504,6 +504,18 @@ mod tests {
     }
 
     #[test]
+    fn plan_v1_example_json_is_single_test_runner_with_acceptance() {
+        let p = parse_agent_reply_plan_v1(PLAN_V1_EXAMPLE_JSON).expect("PLAN_V1_EXAMPLE_JSON");
+        assert_eq!(p.steps.len(), 1);
+        let step = &p.steps[0];
+        assert_eq!(step.id, "verify-cargo-check");
+        assert_eq!(step.executor_kind, Some(PlanStepExecutorKind::TestRunner));
+        let acc = step.acceptance.as_ref().expect("acceptance");
+        assert_eq!(acc.expect_exit_code, Some(0));
+        assert_eq!(acc.expect_stdout_contains.as_deref(), Some("Finished"));
+    }
+
+    #[test]
     fn rejects_legacy_heading() {
         let content = "## 规划\n- step one";
         assert!(parse_agent_reply_plan_v1(content).is_err());
