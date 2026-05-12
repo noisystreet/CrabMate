@@ -44,6 +44,9 @@ pub(crate) use validate::{
 };
 
 #[cfg(test)]
+pub(crate) use validate::validate_agent_reply_plan_v1_with_validate_only_binding_ids;
+
+#[cfg(test)]
 mod tests {
     use super::types::staged_plan_invalid_run_agent_turn_error;
     use super::*;

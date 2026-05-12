@@ -197,7 +197,7 @@ fn validate_single_plan_step_v1(
     Ok(())
 }
 
-pub(super) fn validate_agent_reply_plan_v1_with_validate_only_binding_ids(
+pub(crate) fn validate_agent_reply_plan_v1_with_validate_only_binding_ids(
     p: &AgentReplyPlanV1,
     validate_only_binding_ids: Option<&[String]>,
 ) -> Result<(), PlanArtifactError> {

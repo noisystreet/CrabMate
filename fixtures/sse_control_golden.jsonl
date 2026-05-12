@@ -35,3 +35,7 @@ conversation_saved 前端消费并静默处理	{"v":1,"conversation_saved":{"rev
 sse_capabilities	{"v":1,"sse_capabilities":{"supported_sse_v":1,"resume_ring_cap":512,"job_id":99}}	handled
 stream_ended	{"v":1,"stream_ended":{"job_id":99,"reason":"completed"}}	handled
 timeline_log	{"v":1,"timeline_log":{"kind":"k","title":"t"}}	handled
+tool_result 无 output 且无 structured_preview 当正文	{"v":1,"tool_result":{"name":"read_file","result_version":1,"summary":"x"}}	plain
+tool_result output 空串仍 handled	{"v":1,"tool_result":{"name":"read_file","result_version":1,"summary":"x","output":""}}	handled
+thinking_trace op 仅空白当正文	{"v":1,"thinking_trace":{"op":"   ","chunk":"x"}}	plain
+error 为 null 有 code 当正文	{"v":1,"error":null,"code":"E"}	plain
