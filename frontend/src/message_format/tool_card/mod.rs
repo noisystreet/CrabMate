@@ -244,6 +244,42 @@ fn build_tool_failure_block(info: &ToolResultInfo, loc: Locale, body: &str) -> O
     ))
 }
 
+/// 去掉流式占位曾拼接的「· 工具执行中…」类后缀，避免终态工具卡仍带加载文案。
+fn strip_placeholder_tool_running_suffix(s: &str) -> String {
+    const SUFFIXES: &[&str] = &[
+        " · 工具执行中…",
+        " · 工具执行中",
+        " · Running tools…",
+        " · Running tools",
+    ];
+    fn strip_line(line: &str) -> String {
+        let mut t = line.trim_end();
+        loop {
+            let mut stripped = None;
+            for sfx in SUFFIXES {
+                if let Some(rest) = t.strip_suffix(sfx) {
+                    stripped = Some(rest.trim_end());
+                    break;
+                }
+            }
+            match stripped {
+                Some(r) => t = r,
+                None => break,
+            }
+        }
+        t.to_string()
+    }
+    if !s.contains('\n') {
+        return strip_line(s);
+    }
+    s.lines()
+        .map(strip_line)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim_end()
+        .to_string()
+}
+
 fn normalized_tool_summary(info: &ToolResultInfo, loc: Locale) -> String {
     let sum = info.summary.as_deref().unwrap_or("").trim();
     if sum.is_empty() {
@@ -274,7 +310,7 @@ fn normalized_tool_summary(info: &ToolResultInfo, loc: Locale) -> String {
     if !rewritten.is_empty() {
         out = rewritten;
     }
-    out
+    strip_placeholder_tool_running_suffix(&out)
 }
 
 /// 摘要首行若与紧凑标题相同（重写摘要已含工具人类名），合并为详情时去掉重复前缀。
@@ -313,7 +349,7 @@ pub fn tool_card_compact_text(info: &ToolResultInfo, loc: Locale) -> String {
             out.push_str(&format!(" ({ec})"));
         }
     }
-    out
+    strip_placeholder_tool_running_suffix(&out)
 }
 
 fn terminal_session_shell_line_from_summary(summary: Option<&str>) -> Option<String> {
@@ -746,5 +782,26 @@ mod tests {
         let out = tool_card_compact_text(&info, Locale::ZhHans);
         assert!(out.contains("全文检索"));
         assert!(out.contains("关键词 TODO ｜ 命中 7 处"));
+    }
+
+    #[test]
+    fn compact_strips_stream_placeholder_running_suffix_zh() {
+        let mut info = mk("");
+        info.name = "git_log".to_string();
+        info.summary = Some("git log · 工具执行中…".to_string());
+        let out = tool_card_compact_text(&info, Locale::ZhHans);
+        assert!(!out.contains("工具执行中"), "不应保留流式占位后缀: {out:?}");
+    }
+
+    #[test]
+    fn compact_strips_stream_placeholder_running_suffix_en() {
+        let mut info = mk("");
+        info.name = "git_log".to_string();
+        info.summary = Some("git log · Running tools…".to_string());
+        let out = tool_card_compact_text(&info, Locale::En);
+        assert!(
+            !out.contains("Running tools"),
+            "should not keep stream placeholder suffix: {out:?}"
+        );
     }
 }

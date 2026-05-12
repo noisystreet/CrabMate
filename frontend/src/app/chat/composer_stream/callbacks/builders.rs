@@ -146,13 +146,8 @@ pub(super) fn chat_stream_on_tool_call_builder(
             } else {
                 i18n::tool_card_fallback(loc).to_string()
             };
-            let running = i18n::status_tool_running(loc);
-            let text = if name.trim() == "terminal_session" {
-                // 终端卡已有深色「运行中」样式与流式输出；省略「· 工具执行中」以免与摘要重复刷屏。
-                to_single_line(&core, 140)
-            } else {
-                to_single_line(&format!("{} · {}", core, running), 140)
-            };
+            // 工具占位气泡已有 `msg-loading` 呼吸边框；不再拼接「· 工具执行中…」，避免终态摘要重复该文案。
+            let text = to_single_line(&core, 140);
             let detail = if !name.trim().is_empty() {
                 format!("tool: {name}\nstatus: running")
             } else {
