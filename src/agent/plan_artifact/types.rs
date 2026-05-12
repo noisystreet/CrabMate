@@ -76,6 +76,59 @@ pub struct PlanStepAcceptance {
     pub expect_http_status: Option<u16>,
 }
 
+impl PlanStepAcceptance {
+    /// 补丁规划 **user** 用：列出非空验收字段作为「参考 r」，子串/路径截断以免撑爆上下文。
+    pub(crate) fn compact_reference_for_planner_feedback(&self) -> Option<String> {
+        const SUB_PREVIEW: usize = 48;
+        const PATH_PREVIEW: usize = 64;
+        let mut parts: Vec<String> = Vec::new();
+        if let Some(c) = self.expect_exit_code {
+            parts.push(format!("expect_exit_code={c}"));
+        }
+        if let Some(ref s) = self.expect_stdout_contains
+            && !s.trim().is_empty()
+        {
+            parts.push(format!(
+                "expect_stdout_contains={}",
+                crate::redact::preview_chars(s, SUB_PREVIEW)
+            ));
+        }
+        if let Some(ref s) = self.expect_stderr_contains
+            && !s.trim().is_empty()
+        {
+            parts.push(format!(
+                "expect_stderr_contains={}",
+                crate::redact::preview_chars(s, SUB_PREVIEW)
+            ));
+        }
+        if let Some(ref p) = self.expect_file_exists
+            && !p.trim().is_empty()
+        {
+            parts.push(format!(
+                "expect_file_exists={}",
+                crate::redact::preview_chars(p.trim(), PATH_PREVIEW)
+            ));
+        }
+        if let Some(ref rule) = self.expect_json_path_equals
+            && !rule.path.trim().is_empty()
+        {
+            let p = rule.path.trim();
+            parts.push(format!(
+                "expect_json_path_equals.path={}",
+                crate::redact::preview_chars(p, PATH_PREVIEW)
+            ));
+        }
+        if let Some(h) = self.expect_http_status {
+            parts.push(format!("expect_http_status={h}"));
+        }
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join("；"))
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct JsonPathEqualsRule {
     /// JSON path 表达式（Legacy `$…` 或 RFC 6901 Pointer `/…`，见 `expect_json_path_equals` 文档）。

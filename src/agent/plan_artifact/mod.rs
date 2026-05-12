@@ -504,6 +504,36 @@ mod tests {
     }
 
     #[test]
+    fn plan_step_acceptance_compact_reference_skips_empty() {
+        let a = PlanStepAcceptance {
+            expect_exit_code: None,
+            expect_stdout_contains: None,
+            expect_stderr_contains: None,
+            expect_file_exists: None,
+            expect_json_path_equals: None,
+            expect_http_status: None,
+        };
+        assert!(a.compact_reference_for_planner_feedback().is_none());
+    }
+
+    #[test]
+    fn plan_step_acceptance_compact_reference_joins_fields() {
+        let a = PlanStepAcceptance {
+            expect_exit_code: Some(0),
+            expect_stdout_contains: Some("ok".into()),
+            expect_stderr_contains: None,
+            expect_file_exists: Some("p.md".into()),
+            expect_json_path_equals: None,
+            expect_http_status: Some(200),
+        };
+        let s = a.compact_reference_for_planner_feedback().expect("ref");
+        assert!(s.contains("expect_exit_code=0"));
+        assert!(s.contains("expect_stdout_contains=ok"));
+        assert!(s.contains("expect_file_exists=p.md"));
+        assert!(s.contains("expect_http_status=200"));
+    }
+
+    #[test]
     fn plan_v1_example_json_is_single_test_runner_with_acceptance() {
         let p = parse_agent_reply_plan_v1(PLAN_V1_EXAMPLE_JSON).expect("PLAN_V1_EXAMPLE_JSON");
         assert_eq!(p.steps.len(), 1);
