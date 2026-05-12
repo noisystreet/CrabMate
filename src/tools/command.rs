@@ -329,7 +329,7 @@ fn prepare_run_command_invocation(
 /// `prog` + `["arg1","arg2", …原 args…]`，以便 [`Command::new`] 能解析到真实可执行文件。
 ///
 /// 含 `/` 的值视为路径（含 `./` 与 `subdir/tool`），不做拆分，避免误伤带空格的可执行路径。
-fn split_command_prefix_if_embedded(cmd_raw: &mut String, cmd_args: &mut Vec<String>) {
+pub(crate) fn split_command_prefix_if_embedded(cmd_raw: &mut String, cmd_args: &mut Vec<String>) {
     if cmd_raw.contains('/') {
         return;
     }

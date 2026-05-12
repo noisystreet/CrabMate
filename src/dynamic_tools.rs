@@ -9,6 +9,7 @@ use std::process::Command;
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::tools::split_command_prefix_if_embedded;
 use crate::types::{FunctionDef, Tool};
 
 const DYNAMIC_TOOL_PREFIX: &str = "dyn__";
@@ -169,20 +170,24 @@ pub(crate) fn run_dynamic_tool(
     command_max_output_len: usize,
     allowed_commands: &[String],
 ) -> String {
-    let cmd = def.command.trim().to_ascii_lowercase();
+    let mut prog = def.command.trim().to_string();
+    let mut merged_args = def.args.clone();
+    split_command_prefix_if_embedded(&mut prog, &mut merged_args);
+
+    let cmd_key = prog.to_ascii_lowercase();
     let allowed = allowed_commands
         .iter()
-        .any(|c| c.eq_ignore_ascii_case(cmd.as_str()));
+        .any(|c| c.eq_ignore_ascii_case(cmd_key.as_str()));
     if !allowed {
         return format!(
-            "错误：动态工具命令 `{}` 不在 allowed_commands 白名单中",
-            def.command
+            "错误：动态工具可执行名 `{}`（来自 command 字段 `{}`）不在 allowed_commands 白名单中",
+            prog, def.command
         );
     }
 
-    let mut command = Command::new(def.command.trim());
+    let mut command = Command::new(&prog);
     command.current_dir(working_dir);
-    for a in &def.args {
+    for a in &merged_args {
         command.arg(a);
     }
     if def.pass_args_json {
@@ -206,6 +211,6 @@ pub(crate) fn run_dynamic_tool(
     let exit = output.status.code().unwrap_or(-1);
     format!(
         "{} (exit={exit})\n标准输出：\n{}\n标准错误：\n{}",
-        def.command, stdout, stderr
+        prog, stdout, stderr
     )
 }

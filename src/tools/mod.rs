@@ -10,6 +10,7 @@ mod ci_tools;
 mod code_metrics;
 mod code_nav;
 mod command;
+pub(crate) use command::split_command_prefix_if_embedded;
 mod container_tools;
 mod contract_map;
 mod date_calc;
