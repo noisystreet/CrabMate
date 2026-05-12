@@ -1,67 +1,68 @@
 /*
- * 高对比度深色（data-theme="high-contrast"）：近黑底 + 白字 + 高饱和语义色，利于弱视与强光环境。
+ * 高对比度深色（data-theme="high-contrast"）：浅于纯黑的底 + 白/灰字 + 无彩色强调（黑白灰），可读性仍高、避免荧光黄。
  * 见 themes/README.md。
  */
 :root[data-theme="high-contrast"] {
-  --bg: #000000;
-  --bg-elevated: #0a0a0a;
-  --surface: #121212;
-  --surface-hover: #1c1c1c;
-  --border: #ffffff;
-  --border-subtle: #6b6b6b;
-  --text: #ffffff;
-  --muted: #e0e0e0;
-  /* 强调：亮黄，与黑底对比极强 */
-  --accent: #ffff00;
-  --accent-dim: #333300;
-  --accent-glow: rgba(255, 255, 0, 0.35);
+  --bg: #161616;
+  --bg-elevated: #1c1c1c;
+  --surface: #242424;
+  --surface-hover: #2c2c2c;
+  --border: #e8e8e8;
+  --border-subtle: #6e6e6e;
+  --text: #fafafa;
+  --muted: #b8b8b8;
+  /* 强调：近白描边/高亮，与底形成强对比 */
+  --accent: #f5f5f5;
+  --accent-dim: #3a3a3a;
+  --accent-glow: rgba(255, 255, 255, 0.22);
 
-  --info: #66d9ff;
-  --success: #00ff88;
-  --warn: #ffcc00;
-  --error: #ff4d6a;
+  /* 语义色：仅用明度区分，无色相 */
+  --info: #d0d0d0;
+  --success: #e2e2e2;
+  --warn: #c6c6c6;
+  --error: #ffffff;
 
-  --info-bg: #001a22;
-  --success-bg: #001a0f;
-  --warn-bg: #221a00;
-  --error-bg: #220008;
+  --info-bg: #232323;
+  --success-bg: #262626;
+  --warn-bg: #282828;
+  --error-bg: #2a2a2a;
 
   --danger: var(--error);
   --danger-bg: var(--error-bg);
   --ok: var(--success);
 
   --shadow-raised:
-    0 0 0 1px var(--border) inset,
-    0 2px 0 rgba(255, 255, 255, 0.08) inset,
-    0 4px 12px rgba(0, 0, 0, 0.85);
+    0 0 0 1px color-mix(in srgb, var(--border) 55%, transparent) inset,
+    0 2px 0 rgba(255, 255, 255, 0.06) inset,
+    0 4px 12px rgba(0, 0, 0, 0.55);
   --shadow-overlay:
-    0 0 0 1px var(--border) inset,
-    0 10px 40px rgba(0, 0, 0, 0.95);
+    0 0 0 1px color-mix(in srgb, var(--border) 50%, transparent) inset,
+    0 10px 40px rgba(0, 0, 0, 0.65);
   --shadow-sm: var(--shadow-raised);
   --shadow-md: var(--shadow-overlay);
 
-  --selection-bg: #ffff00;
-  --selection-color: #000000;
+  --selection-bg: #f0f0f0;
+  --selection-color: #0a0a0a;
   /* 弱化装饰渐变，避免干扰阅读 */
   --page-bg-decor-html: none;
   --page-bg-decor-body: none;
   --nav-rail-bg: var(--bg-elevated);
-  --btn-primary-bg: linear-gradient(180deg, #ffff66 0%, #ffff00 45%, #e6e600 100%);
+  --btn-primary-bg: linear-gradient(180deg, #ffffff 0%, #ececec 48%, #d6d6d6 100%);
   --btn-primary-border: #ffffff;
-  --modal-backdrop-bg: rgba(0, 0, 0, 0.85);
-  --status-agent-select-bg-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23e0e0e0' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
+  --modal-backdrop-bg: rgba(0, 0, 0, 0.72);
+  --status-agent-select-bg-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23c8c8c8' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
   --composer-bar-box-shadow:
-    0 -1px 0 var(--border) inset,
-    0 -8px 28px rgba(0, 0, 0, 0.9);
-  --composer-ws-ref-bg: #1a1a00;
+    0 -1px 0 color-mix(in srgb, var(--border) 45%, transparent) inset,
+    0 -8px 28px rgba(0, 0, 0, 0.55);
+  --composer-ws-ref-bg: #2a2a2a;
   --composer-ws-ref-box-shadow: 0 0 0 2px var(--accent);
 }
 
-/* 主按钮在亮黄渐变底上须用黑字，避免与白字对比不足 */
+/* 主按钮浅灰白底上用黑字 */
 :root[data-theme="high-contrast"] .btn-primary {
-  color: #000000;
+  color: #0a0a0a;
 }
 
 :root[data-theme="high-contrast"] .btn-primary:disabled {
-  color: #404040;
+  color: #737373;
 }
