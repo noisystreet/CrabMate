@@ -226,6 +226,54 @@ pub fn move_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> 
     }
 }
 
+fn full_overwrite_shrink_heuristic_warn(old_b: usize, new_b: usize) -> bool {
+    if old_b < 400 {
+        return false;
+    }
+    if new_b == 0 {
+        return old_b >= 200;
+    }
+    new_b.saturating_mul(4) < old_b
+}
+
+fn modify_file_write_full_overwrite(
+    path: &str,
+    target: &Path,
+    working_dir: &Path,
+    ctx: &ToolContext<'_>,
+    content: String,
+) -> String {
+    let before = std::fs::read_to_string(target).ok();
+    match std::fs::write(target, content.as_bytes()) {
+        Ok(()) => {
+            let before_preview = before.clone();
+            record_file_state_after_write(ctx.workspace_changelist, working_dir, path, before);
+            let disp = path_for_tool_display(working_dir, target, Some(path));
+            let old_b = before_preview.as_ref().map(String::len).unwrap_or(0);
+            let shrink_warn = full_overwrite_shrink_heuristic_warn(old_b, content.len());
+            let mut body = tool_output_prepend_path(&disp, format!("已整文件覆盖: {}", disp));
+            if shrink_warn {
+                body.push_str(
+                    "\n\n警告：新正文显著短于原文件，疑似未传完整全文（整文件覆盖不可逆）。\
+若非有意清空/大幅缩短，请尽快用 Git 或备份恢复原内容；后续局部改动请使用 mode=replace_lines。",
+                );
+            }
+            let after = std::fs::read_to_string(target).ok();
+            format_tool_output_with_write_diff_preview(
+                "modify_file",
+                body,
+                vec![WriteDiffFileState {
+                    rel_path: path.to_string(),
+                    before: before_preview,
+                    after,
+                }],
+                WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
+            )
+        }
+        Err(e) => format!("写入文件失败: {}", e),
+    }
+}
+
 /// 修改文件：仅在文件已存在时写入。
 /// - 默认 `mode`=`full`：整文件覆盖（`content` 为全文）。
 /// - `mode`=`replace_lines`：`start_line`..=`end_line`（1-based，含边界）替换为 `content`（流式读写，适合大文件）。
@@ -258,7 +306,8 @@ pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
         return "错误：路径不是文件或不存在，无法仅修改".to_string();
     }
 
-    if mode == "replace_lines" || mode == "lines" {
+    // 兼容历史 schema 误生成的字面量 `replacelines`（无下划线）；规范取值为 `replace_lines`。
+    if mode == "replace_lines" || mode == "lines" || mode == "replacelines" {
         let display = path_for_tool_display(working_dir, &target, Some(&path));
         super::replace_lines_stream::modify_file_replace_lines(
             &v,
@@ -274,27 +323,7 @@ pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
             .and_then(|c| c.as_str())
             .map(String::from)
             .unwrap_or_default();
-        let before = std::fs::read_to_string(&target).ok();
-        match std::fs::write(&target, content.as_bytes()) {
-            Ok(()) => {
-                let before_preview = before.clone();
-                record_file_state_after_write(ctx.workspace_changelist, working_dir, &path, before);
-                let disp = path_for_tool_display(working_dir, &target, Some(&path));
-                let body = tool_output_prepend_path(&disp, format!("已整文件覆盖: {}", disp));
-                let after = std::fs::read_to_string(&target).ok();
-                format_tool_output_with_write_diff_preview(
-                    "modify_file",
-                    body,
-                    vec![WriteDiffFileState {
-                        rel_path: path.clone(),
-                        before: before_preview,
-                        after,
-                    }],
-                    WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
-                )
-            }
-            Err(e) => format!("写入文件失败: {}", e),
-        }
+        modify_file_write_full_overwrite(&path, &target, working_dir, ctx, content)
     } else {
         format!("错误：mode 仅支持 full 或 replace_lines（收到 {:?}）", mode)
     }

@@ -262,6 +262,51 @@ fn test_modify_file_replace_lines() {
 }
 
 #[test]
+fn test_modify_file_full_emits_shrink_warning() {
+    let dir = make_test_dir();
+    let file = dir.join("big.txt");
+    let old = "a".repeat(500);
+    std::fs::write(&file, &old).unwrap();
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = modify_file(
+        r#"{"path":"big.txt","mode":"full","content":"xx"}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("已整文件覆盖"), "{}", out);
+    assert!(
+        out.contains("警告"),
+        "expected shrink warning in output: {}",
+        out
+    );
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "xx");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_modify_file_full_no_shrink_warning_when_size_similar() {
+    let dir = make_test_dir();
+    let file = dir.join("mid.txt");
+    let old = "a".repeat(500);
+    std::fs::write(&file, &old).unwrap();
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let new_body = "b".repeat(200);
+    let args = serde_json::json!({
+        "path": "mid.txt",
+        "mode": "full",
+        "content": new_body
+    });
+    let out = modify_file(&args.to_string(), &dir, &ctx);
+    assert!(out.contains("已整文件覆盖"), "{}", out);
+    assert!(!out.contains("警告"), "unexpected shrink warning: {}", out);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn test_read_file_reject_invalid_range() {
     let dir = make_test_dir();
     let file = dir.join("a.txt");

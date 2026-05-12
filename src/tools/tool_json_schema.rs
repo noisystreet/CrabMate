@@ -22,10 +22,10 @@ mod tests {
         CallGraphSketchArgs, ChmodFileArgs, CiPipelineLocalArgs, CodeStatsArgs, CoverageReportArgs,
         DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs,
         FormatOnePathArgs, GitStatusArgs, GoBuildArgs, GolangciLintArgs, GradleTasksArgs,
-        ListRemindersArgs, MarkdownCheckLinksArgs, MavenCompileArgs, NpmRunArgs, PackageQueryArgs,
-        PortCheckArgs, ProcessListArgs, QualityWorkspaceArgs, RunCommandArgs, RunLintsArgs,
-        ShellcheckCheckArgs, StructuredValidateArgs, SymlinkInfoArgs, TableTextArgs, TodoScanArgs,
-        WorkflowExecuteArgs,
+        ListRemindersArgs, MarkdownCheckLinksArgs, MavenCompileArgs, ModifyFileArgs, NpmRunArgs,
+        PackageQueryArgs, PortCheckArgs, ProcessListArgs, QualityWorkspaceArgs, RunCommandArgs,
+        RunLintsArgs, ShellcheckCheckArgs, StructuredValidateArgs, SymlinkInfoArgs, TableTextArgs,
+        TodoScanArgs, WorkflowExecuteArgs,
     };
     use serde_json::json;
 
@@ -386,5 +386,20 @@ mod tests {
             .expect("required");
         assert!(req.iter().any(|x| x == "path"));
         assert!(req.iter().any(|x| x == "mode"));
+    }
+
+    #[test]
+    fn modify_file_mode_schema_enum_includes_replace_lines_snake_case() {
+        let v = tool_parameters_schema_value::<ModifyFileArgs>();
+        let defs = v.get("definitions").expect("definitions");
+        let e = defs
+            .pointer("/ModifyFileMode/enum")
+            .and_then(|x| x.as_array())
+            .expect("ModifyFileMode enum array");
+        assert!(
+            e.iter().any(|x| x == "replace_lines"),
+            "schema should expose replace_lines (not legacy replacelines): {e:?}"
+        );
+        assert!(e.iter().any(|x| x == "full"), "{e:?}");
     }
 }

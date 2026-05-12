@@ -158,6 +158,7 @@ fn test_run_tool_typos_check_invokes_cli() {
 
 #[test]
 fn test_run_tool_run_command_pwd() {
+    crate::tools::command::reset_run_command_rate_limit_for_tests();
     let allowed = test_allowed_commands();
     let ctx = test_ctx(&allowed);
     let out = run_tool("run_command", r#"{"command":"pwd"}"#, &ctx);
@@ -167,6 +168,7 @@ fn test_run_tool_run_command_pwd() {
 
 #[test]
 fn test_run_tool_run_command_find_maxdepth() {
+    crate::tools::command::reset_run_command_rate_limit_for_tests();
     let allowed = test_allowed_commands();
     let ctx = test_ctx(&allowed);
     let out = run_tool(

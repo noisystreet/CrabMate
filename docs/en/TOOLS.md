@@ -456,10 +456,11 @@ Typical `release_ready_check` / `cargo_deny` / `cargo_audit` issues:
   {"path":"src/main.rs","start_line":1,"max_lines":200}
   ```
   Use **`encoding`** for legacy/BOM/unknown: `gb18030`, `utf-8-sig`, `auto`, …. Default **UTF-8 strict** (errors on invalid bytes). After search hits, prefer **`anchor_line`** + optional **`context_lines`** (default ±120 lines each side, capped by **`max_lines`**) instead of hand-calculated ranges; **do not** combine with `start_line`/`end_line`. Response hints next `start_line`. `"count_total_lines": true` rescans for totals. `start_line`+`end_line` still respect `max_lines`. On **success**, the **first line** is a single JSON object **`{"kind":"crabmate_tool_output","tool":"read_file","version":1,…}`** (machine-readable summary); the legacy human-readable block follows. Failures use stable **`error_code`** values (e.g. `read_file_workspace_*`, `read_file_invalid_range`) in the `crabmate_tool` envelope.
-- `modify_file` (large files, `replace_lines`):
+- `modify_file` (prefer **`replace_lines`** for partial edits: 1-based inclusive line range + `content`, streamed):
   ```json
   {"path":"src/huge.rs","mode":"replace_lines","start_line":120,"end_line":135,"content":"// new chunk\n"}
   ```
+  **`mode=full` replaces the entire file** with `content`. If `content` is incomplete, the rest is **lost permanently** (no automatic backup). Use `full` only when `content` is the complete new file body. Valid `mode` strings are **`full`** and **`replace_lines`** (not legacy `replacelines`).
 - `read_dir`:
   ```json
   {"path":"src","max_entries":50,"include_hidden":false}

@@ -4,7 +4,8 @@
 //! 与 [`super::schema_check::workflow_tool_args_satisfy_required`] 的「必填键」粗检互补：
 //! 此模块还校验类型、枚举、数值范围、嵌套子对象、以及 `additionalProperties` 等。
 //!
-//! 内置工具：在 Schema 校验与 runner 执行前做**一轮**确定性参数纠错（如 `read_file` 行号字符串化、
+//! 内置工具：在 Schema 校验与 runner 执行前做**一轮**确定性参数纠错（如 `read_file` / **`modify_file`**
+//! 的 **`start_line` / `end_line`** 字符串与整型 JSON 数字、`modify_file` 的 **`mode`** 大小写/同义词、
 //! `path` 的常见别名（**`file_path`** / **`filename`** / **`output_path`** 等）、**`copy_file`** 的 **`src`/`dst`**、
 //! **`create_file`** 的 **`content`** 别名与缺省空串等），见 [`coerce_builtin_tool_args_value`]、
 //! [`effective_builtin_tool_args_json`]。
@@ -170,6 +171,48 @@ fn coerce_read_file_count_total_lines(map: &mut serde_json::Map<String, Value>) 
     }
 }
 
+/// `modify_file` 的 `replace_lines` 与 `read_file` 一样常用字符串行号；`mode` 常被写成大小写变体或 `lines`。
+fn coerce_modify_file_extra_fields(map: &mut serde_json::Map<String, Value>) -> bool {
+    let mut changed = false;
+    for key in ["start_line", "end_line"] {
+        let Some(val) = map.get_mut(key) else {
+            continue;
+        };
+        if coerce_read_file_one_u64_line_field(val) {
+            changed = true;
+        }
+    }
+    let Some(mode_val) = map.get_mut("mode") else {
+        return changed;
+    };
+    let Value::String(s) = mode_val else {
+        return changed;
+    };
+    let norm: String = s
+        .trim()
+        .chars()
+        .map(|c| {
+            if c.is_whitespace() {
+                '_'
+            } else {
+                c.to_ascii_lowercase()
+            }
+        })
+        .collect();
+    let mapped = match norm.as_str() {
+        "lines" | "line" | "line_replace" | "replace" | "partial" => "replace_lines".to_string(),
+        "replacelines" => "replace_lines".to_string(),
+        "full" | "overwrite" | "whole" | "whole_file" => "full".to_string(),
+        other if other == "replace_lines" || other == "full" => other.to_string(),
+        _ => norm,
+    };
+    if mapped.as_str() != s.as_str() {
+        *mode_val = Value::String(mapped);
+        changed = true;
+    }
+    changed
+}
+
 fn schema_has_top_level_prop(tool_name: &str, prop: &str) -> bool {
     cached_params_for_tool_name(tool_name)
         .and_then(|schema| schema.get("properties").cloned())
@@ -322,6 +365,9 @@ pub(crate) fn coerce_builtin_tool_args_value(name: &str, v: &mut Value) -> bool 
         changed = true;
     }
     if name == "read_file" && coerce_read_file_extra_fields(map) {
+        changed = true;
+    }
+    if name == "modify_file" && coerce_modify_file_extra_fields(map) {
         changed = true;
     }
     changed
@@ -494,6 +540,38 @@ mod tests {
         let cow = effective_builtin_tool_args_json("create_file", raw).expect("ok");
         assert!(matches!(cow, Cow::Owned(_)));
         let r = validate_parsed_str_for_builtin("create_file", cow.as_ref()).expect("validator");
+        assert!(r.is_ok(), "{r:?}");
+    }
+
+    #[test]
+    fn modify_file_coerce_string_line_numbers_and_mode_passes_schema() {
+        let mut v = json!({
+            "path": "src/lib.rs",
+            "mode": "REPLACE_LINES",
+            "start_line": "10",
+            "end_line": "12",
+            "content": "fn x() {}\n"
+        });
+        assert!(coerce_builtin_tool_args_value("modify_file", &mut v));
+        assert_eq!(v["mode"], "replace_lines");
+        assert_eq!(v["start_line"].as_u64(), Some(10));
+        assert_eq!(v["end_line"].as_u64(), Some(12));
+        let r = validate_parsed_value_if_known("modify_file", &v).expect("modify_file registered");
+        assert!(r.is_ok(), "{r:?}");
+    }
+
+    #[test]
+    fn modify_file_mode_lines_synonym_passes_schema() {
+        let mut v = json!({
+            "path": "a.txt",
+            "mode": "lines",
+            "start_line": 1,
+            "end_line": 1,
+            "content": ""
+        });
+        assert!(coerce_builtin_tool_args_value("modify_file", &mut v));
+        assert_eq!(v["mode"], "replace_lines");
+        let r = validate_parsed_value_if_known("modify_file", &v).expect("modify_file");
         assert!(r.is_ok(), "{r:?}");
     }
 

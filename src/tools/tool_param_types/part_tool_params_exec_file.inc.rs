@@ -42,7 +42,7 @@ pub struct FileWriteArgs {
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum ModifyFileMode {
     Full,
     ReplaceLines,
