@@ -7,8 +7,12 @@ use super::source::parse_bool_like;
 mod env_overrides_chat_queue;
 #[path = "env_overrides_intent.rs"]
 mod env_overrides_intent;
+#[path = "env_overrides_mcp_codebase.rs"]
+mod env_overrides_mcp_codebase;
 #[path = "env_overrides_part9.rs"]
 mod env_overrides_part9;
+#[path = "env_overrides_per_plan_policy.rs"]
+mod env_overrides_per_plan_policy;
 
 /// 从 `CM_*` 环境变量覆盖 `ConfigBuilder` 字段。
 pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
@@ -26,7 +30,7 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     apply_env_overrides_part_11(b);
     apply_env_overrides_part_12(b);
     apply_env_overrides_part_13(b);
-    apply_env_overrides_part_14(b);
+    env_overrides_mcp_codebase::apply_env_overrides_part_14(b);
     apply_env_overrides_part_15(b);
 }
 
@@ -221,7 +225,7 @@ fn env_override_web_search_keys(b: &mut ConfigBuilder) {
 fn apply_env_overrides_part_3(b: &mut ConfigBuilder) {
     env_override_web_search_limits_part_3(b);
     env_override_http_fetch_limits(b);
-    env_override_reflection_and_final_plan(b);
+    env_overrides_per_plan_policy::env_override_reflection_and_final_plan(b);
 }
 
 fn env_override_web_search_limits_part_3(b: &mut ConfigBuilder) {
@@ -257,53 +261,6 @@ fn env_override_http_fetch_limits(b: &mut ConfigBuilder) {
         && let Ok(n) = v.trim().parse::<u64>()
     {
         b.http_fetch.http_fetch_max_response_bytes = Some(n);
-    }
-}
-
-fn env_override_reflection_and_final_plan(b: &mut ConfigBuilder) {
-    if let Ok(v) = std::env::var("CM_REFLECTION_DEFAULT_MAX_ROUNDS")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.per_plan_policy.reflection_default_max_rounds = Some(n);
-    }
-    if let Ok(s) = std::env::var("CM_FINAL_PLAN_REQUIREMENT") {
-        let s = s.trim().to_string();
-        if !s.is_empty() {
-            b.per_plan_policy.final_plan_requirement_str = Some(s);
-        }
-    }
-    if let Ok(v) = std::env::var("CM_PLAN_REWRITE_MAX_ATTEMPTS")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.per_plan_policy.plan_rewrite_max_attempts = Some(n);
-    }
-    if let Ok(v) = std::env::var("CM_FINAL_PLAN_REQUIRE_STRICT_WORKFLOW_NODE_COVERAGE")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.per_plan_policy
-            .final_plan_require_strict_workflow_node_coverage = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_FINAL_PLAN_SEMANTIC_CHECK_ENABLED")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.per_plan_policy.final_plan_semantic_check_enabled = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_FINAL_PLAN_SEMANTIC_CHECK_MAX_NON_READONLY_TOOLS")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.per_plan_policy
-            .final_plan_semantic_check_max_non_readonly_tools = Some(n);
-    }
-    if let Ok(v) = std::env::var("CM_FINAL_PLAN_SEMANTIC_CHECK_MAX_TOKENS")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.per_plan_policy.final_plan_semantic_check_max_tokens = Some(n);
-    }
-    if let Ok(s) = std::env::var("CM_PLANNER_EXECUTOR_MODE") {
-        let s = s.trim().to_string();
-        if !s.is_empty() {
-            b.per_plan_policy.planner_executor_mode_str = Some(s);
-        }
     }
 }
 
@@ -757,52 +714,6 @@ fn apply_env_overrides_part_13(b: &mut ConfigBuilder) {
         && let Ok(n) = v.trim().parse::<u64>()
     {
         b.long_term_memory.long_term_memory_default_ttl_secs = Some(n);
-    }
-}
-
-fn apply_env_overrides_part_14(b: &mut ConfigBuilder) {
-    if let Ok(v) = std::env::var("CM_MCP_ENABLED")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.mcp_client.mcp_enabled = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_MCP_COMMAND") {
-        let v = v.trim().to_string();
-        if !v.is_empty() {
-            b.mcp_client.mcp_command = Some(v);
-        }
-    }
-    if let Ok(v) = std::env::var("CM_MCP_TOOL_TIMEOUT_SECS")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.mcp_client.mcp_tool_timeout_secs = Some(n);
-    }
-    if let Ok(v) = std::env::var("CM_CODEBASE_SEMANTIC_SEARCH_ENABLED")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.codebase_semantic.codebase_semantic_search_enabled = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_CODEBASE_SEMANTIC_INVALIDATE_ON_WORKSPACE_CHANGE")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.codebase_semantic
-            .codebase_semantic_invalidate_on_workspace_change = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_CODEBASE_SEMANTIC_INDEX_SQLITE_PATH") {
-        let v = v.trim().to_string();
-        if !v.is_empty() {
-            b.codebase_semantic.codebase_semantic_index_sqlite_path = Some(v);
-        }
-    }
-    if let Ok(v) = std::env::var("CM_CODEBASE_SEMANTIC_MAX_FILE_BYTES")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.codebase_semantic.codebase_semantic_max_file_bytes = Some(n);
-    }
-    if let Ok(v) = std::env::var("CM_CODEBASE_SEMANTIC_CHUNK_MAX_CHARS")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.codebase_semantic.codebase_semantic_chunk_max_chars = Some(n);
     }
 }
 
