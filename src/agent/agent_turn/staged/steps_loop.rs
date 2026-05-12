@@ -301,7 +301,7 @@ where
     for (attempt_idx, _) in (0..patch_budget).enumerate() {
         let attempt_1based = attempt_idx.saturating_add(1);
         let detail_owned = if let Some(vr) = step_verify_failed_reason {
-            staged_step_verify_fail_patch_detail(vr)
+            staged_step_verify_fail_patch_detail(vr, step.acceptance.as_ref())
         } else {
             outer_loop_error_text
                 .as_deref()

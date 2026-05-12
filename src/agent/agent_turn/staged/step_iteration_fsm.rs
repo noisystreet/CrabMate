@@ -102,10 +102,20 @@ pub(crate) fn staged_step_wall_clock_exceeded(
     crate::agent::turn_budget::turn_wall_clock_exceeded(max_turn_duration_seconds, elapsed_secs)
 }
 
-pub(crate) fn staged_step_verify_fail_patch_detail(verify_reason: &str) -> String {
+pub(crate) fn staged_step_verify_fail_patch_detail(
+    verify_reason: &str,
+    acceptance_ref: Option<&crate::agent::plan_artifact::PlanStepAcceptance>,
+) -> String {
+    let reference_line = acceptance_ref
+        .and_then(|a| a.compact_reference_for_planner_feedback())
+        .map(|line| format!("- **参考验收（acceptance，r）**：{line}\n"))
+        .unwrap_or_default();
     format!(
-        "验证闸门报告失败: {}\n请根据对话历史缩短或调整后续步骤，并在补丁中修复此问题。",
-        verify_reason
+        "### 偏差结构化（验证失败）\n\
+         {reference_line}\
+         - **观测 / 偏差（step_verifier）**：{verify_reason}\n\
+         若 `观测` 行以 `exit_code_mismatch:`、`stdout_missing:`、`stderr_missing:` 等键开头，请对症调整命令、工具选择或 `acceptance` 锚点。\n\
+         请根据对话历史缩短或调整后续步骤，并在补丁中修复此问题。"
     )
 }
 
@@ -190,6 +200,33 @@ mod tests {
             staged_step_failure_retry_exhausted_message(&ok, &None),
             "局部修复耗尽上限"
         );
+    }
+
+    #[test]
+    fn verify_fail_patch_detail_includes_acceptance_reference() {
+        use crate::agent::plan_artifact::PlanStepAcceptance;
+        let acc = PlanStepAcceptance {
+            expect_exit_code: Some(0),
+            expect_stdout_contains: Some("needle".into()),
+            expect_stderr_contains: None,
+            expect_file_exists: None,
+            expect_json_path_equals: None,
+            expect_http_status: None,
+        };
+        let d = staged_step_verify_fail_patch_detail(
+            "exit_code_mismatch: expected 0, got 1",
+            Some(&acc),
+        );
+        assert!(d.contains("expect_exit_code=0"));
+        assert!(d.contains("expect_stdout_contains=needle"));
+        assert!(d.contains("exit_code_mismatch"));
+    }
+
+    #[test]
+    fn verify_fail_patch_detail_without_acceptance_reference() {
+        let d = staged_step_verify_fail_patch_detail("no tool result", None);
+        assert!(d.contains("no tool result"));
+        assert!(!d.contains("参考验收"));
     }
 
     #[test]
