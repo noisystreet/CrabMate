@@ -32,6 +32,9 @@ pub(super) fn chat_stream_on_delta_builder(
     accum: Rc<PerStreamAccum>,
 ) -> Rc<dyn Fn(String)> {
     Rc::new(move |chunk: String| {
+        if stream_ctx.is_stale() {
+            return;
+        }
         apply_chat_stream_text_delta(stream_ctx.as_ref(), accum.as_ref(), &chunk);
     })
 }

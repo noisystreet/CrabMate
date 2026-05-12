@@ -5,6 +5,7 @@
 //! - **`sessions` / `active_id`**：侧栏、合成器、持久化 `Effect`、工具/导出等；流式助手正文增量默认进 [`Self::stream_text_overlay`]，收尾时合并回会话，**不一定**每 token 触发 `sessions` 无效化。
 //! - **`stream_bound_session_id`**：与 [`crate::app::chat::composer_stream::context::ChatStreamCallbackCtx::bound_stream_session_id`] 同源（**发起 attach 时**快照），决定 SSE 写哪条会话，**不一定**等于当时的 [`Self::active_id`]。
 //! - **`stream_job_id` / `stream_last_event_seq`**：SSE 首包与 `id:` 行；应用 [`ChatSessionSignals::clear_stream_resume_handles`] 表示「放弃当前断线重连上下文」（错误、结束、`stream_ended`、会话切换等）。上述四槽位亦经 [`ChatStreamSessionLane`] / [`ChatSessionSignals::stream_session_lane`] 成组访问。
+//! - **`stream_attach_generation`**：每次发起新 `/chat/stream` attach 递增；[`crate::app::chat::composer_stream::context::ChatStreamCallbackCtx`] 捕获代际，回调内若与当前值不一致则视为陈旧（上一轮 `abort` 后仍可能排队执行），避免写全局句柄/旁路缓冲。
 //! - **`session_sync`**：服务端 `conversation_id` / revision，与 `POST /chat/branch` 等对齐。
 //! - **`session_hydrate_nonce` / `reasoning_preserved`**：拉取会话正文与水合时的补偿字段。
 //! - **`stream_text_overlay`**：尾条 `loading` 助手消息的流式正文/思维链旁路缓冲（字段见 [`ChatSessionSignals`]）。
@@ -90,6 +91,8 @@ pub struct ChatSessionSignals {
     pub session_hydrate_nonce: RwSignal<u64>,
     pub stream_job_id: RwSignal<Option<u64>>,
     pub stream_last_event_seq: RwSignal<u64>,
+    /// 每次发起新 `/chat/stream` attach 时递增，与 [`crate::app::chat::composer_stream::context::ChatStreamCallbackCtx::attach_generation`] 比对以丢弃陈旧 SSE 回调。
+    pub stream_attach_generation: RwSignal<u64>,
     /// 当前（或刚结束）`/chat/stream` 写入的目标会话 id；与闭包内 [`ChatStreamCallbackCtx::bound_stream_session_id`] 一致。
     ///
     /// `None` 表示无进行中的流式绑定（或已调用 [`Self::clear_stream_resume_handles`]）。
@@ -125,6 +128,17 @@ impl ChatSessionSignals {
     #[inline]
     pub fn bind_stream_to_session(self, session_id: String) {
         self.stream_bound_session_id.set(Some(session_id));
+    }
+
+    /// 发起新一轮流式 attach 时调用，返回**本轮**代际值（写入 [`crate::app::chat::composer_stream::context::ChatStreamCallbackCtx::attach_generation`]）。
+    #[inline]
+    pub fn bump_stream_attach_generation(self) -> u64 {
+        let next = self
+            .stream_attach_generation
+            .get_untracked()
+            .wrapping_add(1);
+        self.stream_attach_generation.set(next);
+        next
     }
 
     /// 清空断线重连用的服务端流句柄（响应头 `x-stream-job-id` 与 SSE `id:` 序号）。

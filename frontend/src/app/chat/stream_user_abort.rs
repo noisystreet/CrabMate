@@ -15,6 +15,45 @@ use crate::stream_text_overlay::stream_overlay_take_into_stored_message;
 use super::composer_stream::user_cancel_in_flight_stream;
 use super::handles::ComposerStreamShell;
 
+/// 新一轮 `/chat/stream` 已排队且已 `push` 新尾条 `loading` 助手时，将**同会话内**其它仍处 `loading` 的助手占位收口为「已中断」，
+/// 避免上一轮被 `abort` 后迟到回调与 [`crate::chat_session_state::ChatSessionSignals::stream_attach_generation`] 门闩叠加留下僵尸尾泡。
+pub(crate) fn finalize_superseded_assistant_loading_rows_except(
+    chat: ChatSessionSignals,
+    session_id: &str,
+    keep_asst_id: &str,
+    loc: Locale,
+) {
+    chat.update_sessions_composer(|list| {
+        let Some(session) = list.iter_mut().find(|s| s.id == session_id) else {
+            return;
+        };
+        for m in session.messages.iter_mut() {
+            if m.role != "assistant" || m.is_tool {
+                continue;
+            }
+            if !m.state.as_ref().is_some_and(|st| st.is_loading()) {
+                continue;
+            }
+            if m.id == keep_asst_id {
+                continue;
+            }
+            let mid = m.id.clone();
+            stream_overlay_take_into_stored_message(
+                chat.stream_text_overlay,
+                session_id,
+                mid.as_str(),
+                m,
+            );
+            m.state = None;
+            if m.text.trim().is_empty() && m.reasoning_text.trim().is_empty() {
+                m.text = i18n::stream_stopped_inline(loc).to_string();
+            } else {
+                m.text.push_str(i18n::stream_stopped_suffix(loc));
+            }
+        }
+    });
+}
+
 /// 用户从 Web 主列点击「停止」时的**唯一**收口（`cancel_stream` 闭包仅调用此处）。
 ///
 /// 1. 若有在途流：`abort` 并置取消标志（见 [`user_cancel_in_flight_stream`]）。

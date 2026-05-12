@@ -29,6 +29,7 @@ use crate::i18n::Locale;
 use crate::session_ops::approval_session_id;
 
 use super::handles::ComposerStreamShell;
+use super::stream_user_abort::finalize_superseded_assistant_loading_rows_except;
 
 use context::ChatStreamCallbackCtx;
 use shell_abort::{reset_abort_state_for_new_attach, store_abort_controller, user_cancelled_flag};
@@ -64,9 +65,16 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
               clarify_json: Option<serde_json::Value>| {
             let conv = chat.session_sync.with(|s| s.stream_conversation_id());
             chat.clear_stream_resume_handles();
+            let attach_generation = chat.bump_stream_attach_generation();
             shell_outer.approval.thinking_trace_log.set(Vec::new());
             reset_abort_state_for_new_attach(&shell_outer);
             let bound_session_id = chat.active_id.get();
+            finalize_superseded_assistant_loading_rows_except(
+                chat,
+                bound_session_id.as_str(),
+                asst_id.as_str(),
+                locale_sig.get_untracked(),
+            );
             chat.bind_stream_to_session(bound_session_id.clone());
             let ac = web_sys::AbortController::new().expect("AbortController");
             let signal = ac.signal();
@@ -79,6 +87,7 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                 chat,
                 locale: locale_sig,
                 bound_stream_session_id: bound_session_id,
+                attach_generation,
                 scratch: StreamSseScratch::new(asst_id.clone()),
                 approval_session_store_id: appr_store.clone(),
                 shell: shell_outer.clone(),
@@ -86,6 +95,7 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
 
             let cbs = callbacks::build_chat_stream_callbacks(Rc::clone(&stream_ctx));
 
+            let gen_snapshot = attach_generation;
             let shell_for_stream_err = shell_outer.clone();
             let on_error_spawn = cbs.on_error.clone();
             spawn_local(async move {
@@ -103,6 +113,9 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                     clarify_questionnaire_answers: clarify_json,
                 })
                 .await;
+                if chat.stream_attach_generation.get_untracked() != gen_snapshot {
+                    return;
+                }
                 // HTTP 读取结束后必须回落 busy：正常路径已由 `on_done` / `on_stream_ended` / `on_error` 清理；
                 // 若连接悬挂、取消分支提前 return、或回调遗漏，避免状态栏永久「模型生成中」。
                 shell_for_stream_err.stream.status_busy.set(false);

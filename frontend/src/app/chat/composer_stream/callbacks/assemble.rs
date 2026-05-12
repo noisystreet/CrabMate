@@ -28,6 +28,9 @@ fn push_timeline_system_bubble_with_tail(
     text: String,
     state: StoredMessageState,
 ) {
+    if stream_ctx.is_stale() {
+        return;
+    }
     let now = message_created_ms();
     stream_ctx.update_bound_session(|s| {
         s.messages.push(StoredMessage {
@@ -66,6 +69,9 @@ pub(crate) fn build_chat_stream_callbacks(
     let on_tool_status: Rc<dyn Fn(bool)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |b: bool| {
+            if stream_ctx.is_stale() {
+                return;
+            }
             stream_ctx.shell.stream.tool_busy.set(b);
         })
     };
@@ -77,6 +83,9 @@ pub(crate) fn build_chat_stream_callbacks(
     let on_approval: Rc<dyn Fn(CommandApprovalRequest)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |req: CommandApprovalRequest| {
+            if stream_ctx.is_stale() {
+                return;
+            }
             stream_ctx.shell.approval.pending_approval.set(Some((
                 stream_ctx.approval_session_store_id.clone(),
                 req.command,
@@ -88,6 +97,9 @@ pub(crate) fn build_chat_stream_callbacks(
     let on_cid: Rc<dyn Fn(String)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |id: String| {
+            if stream_ctx.is_stale() {
+                return;
+            }
             stream_ctx
                 .chat
                 .session_sync
@@ -102,6 +114,9 @@ pub(crate) fn build_chat_stream_callbacks(
     let on_conv_rev: Rc<dyn Fn(u64)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |rev: u64| {
+            if stream_ctx.is_stale() {
+                return;
+            }
             stream_ctx
                 .chat
                 .session_sync
@@ -116,6 +131,9 @@ pub(crate) fn build_chat_stream_callbacks(
         let stream_ctx = Rc::clone(&stream_ctx);
         let accum = Rc::clone(&accum);
         Rc::new(move |reason: String| {
+            if stream_ctx.is_stale() {
+                return;
+            }
             accum.set_stream_end_reason(reason.clone());
             stream_ctx.chat.clear_stream_resume_handles();
             // `stream_ended` 表示服务端已结束本轮流式任务：无论 `reason` 是否能解析为已知枚举，
@@ -128,6 +146,9 @@ pub(crate) fn build_chat_stream_callbacks(
     let on_stream_job_id: Rc<dyn Fn(u64)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |jid: u64| {
+            if stream_ctx.is_stale() {
+                return;
+            }
             stream_ctx.chat.stream_job_id.set(Some(jid));
         })
     };
@@ -135,6 +156,9 @@ pub(crate) fn build_chat_stream_callbacks(
     let on_last_sse_event_id: Rc<dyn Fn(u64)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |seq: u64| {
+            if stream_ctx.is_stale() {
+                return;
+            }
             stream_ctx.chat.stream_last_event_seq.set(seq);
         })
     };
@@ -142,6 +166,9 @@ pub(crate) fn build_chat_stream_callbacks(
     let on_assistant_answer_phase: Rc<dyn Fn()> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move || {
+            if stream_ctx.is_stale() {
+                return;
+            }
             // 重复 answer_phase 将车道切入 PendingFollowup；轮换由 `on_delta` / `on_done` 消费。
             stream_ctx.scratch.on_assistant_answer_phase();
         })
@@ -150,6 +177,9 @@ pub(crate) fn build_chat_stream_callbacks(
     let on_staged_step_started: Rc<dyn Fn(StagedPlanStepStartInfo)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |info: StagedPlanStepStartInfo| {
+            if stream_ctx.is_stale() {
+                return;
+            }
             let loc = stream_ctx.locale.get_untracked();
             let text = staged_timeline_system_message_body(&i18n::timeline_staged_step_started(
                 loc,
@@ -167,6 +197,9 @@ pub(crate) fn build_chat_stream_callbacks(
     let on_clarification: Rc<dyn Fn(ClarificationQuestionnaireInfo)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |info: ClarificationQuestionnaireInfo| {
+            if stream_ctx.is_stale() {
+                return;
+            }
             stream_ctx
                 .shell
                 .approval
@@ -180,6 +213,9 @@ pub(crate) fn build_chat_stream_callbacks(
     let on_staged_step_finished: Rc<dyn Fn(StagedPlanStepEndInfo)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |info: StagedPlanStepEndInfo| {
+            if stream_ctx.is_stale() {
+                return;
+            }
             let loc = stream_ctx.locale.get_untracked();
             let text = staged_timeline_system_message_body(&i18n::timeline_staged_step_finished(
                 loc,
@@ -200,6 +236,9 @@ pub(crate) fn build_chat_stream_callbacks(
     let on_thinking_trace: Rc<dyn Fn(ThinkingTraceInfo)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |info: ThinkingTraceInfo| {
+            if stream_ctx.is_stale() {
+                return;
+            }
             #[cfg(debug_assertions)]
             web_sys::console::log_1(&format!("thinking_trace {:?}", info).into());
             stream_ctx.shell.approval.thinking_trace_log.update(|v| {

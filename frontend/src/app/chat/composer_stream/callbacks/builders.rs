@@ -26,6 +26,9 @@ pub(super) fn make_on_tool_output_chunk(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
 ) -> Rc<dyn Fn(ToolOutputChunkInfo)> {
     Rc::new(move |info: ToolOutputChunkInfo| {
+        if stream_ctx.is_stale() {
+            return;
+        }
         let tid = info.tool_call_id.trim();
         if tid.is_empty() {
             return;
@@ -49,6 +52,9 @@ pub(super) fn make_on_tool_result(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
 ) -> Rc<dyn Fn(ToolResultInfo)> {
     Rc::new(move |info: ToolResultInfo| {
+        if stream_ctx.is_stale() {
+            return;
+        }
         let loc = stream_ctx.locale.get_untracked();
         let result_text = tool_card_text(&info, loc);
         let compact = tool_card_compact_text(&info, loc);
@@ -134,6 +140,9 @@ pub(super) fn chat_stream_on_tool_call_builder(
               full: Option<String>,
               goal_id: Option<String>,
               tool_call_id: Option<String>| {
+            if stream_ctx.is_stale() {
+                return;
+            }
             let _ = (preview, full);
             // 与后端 `tool_running` 帧互补：tool_call 往往先于或并列到达，此处立即置位可避免
             // 长耗时工具（如 git_commit）期间状态栏仍误显「模型生成中」。
@@ -198,77 +207,83 @@ pub(super) fn chat_stream_on_tool_call_builder(
     )
 }
 
+fn timeline_log_dispatch_body(
+    stream_ctx: &ChatStreamCallbackCtx,
+    accum: &PerStreamAccum,
+    info: TimelineLogInfo,
+) {
+    web_sys::console::log_1(&format!("[TL] kind={} title={}", info.kind, info.title).into());
+    if info.kind == "final_response" {
+        accum.set_saw_final_response_timeline(true);
+        stream_ctx.shell.stream.status_busy.set(false);
+        let final_text = build_final_response_text(&info.title, info.detail.as_deref());
+        if !final_text.is_empty() {
+            remove_loading_assistant_placeholder(stream_ctx);
+            if !has_same_assistant_timeline_bubble(stream_ctx, &final_text) {
+                push_assistant_timeline_bubble(stream_ctx, final_text.clone(), None);
+                accum.add_answer_delta_chars(final_text.chars().count());
+            }
+        } else {
+            // 补偿收尾可能带空 final_response；若不撤 loading，on_done 会误报「未收到正文片段」。
+            remove_loading_assistant_placeholder(stream_ctx);
+        }
+        return;
+    }
+    if info.kind == "intent_analysis" {
+        let intent_text =
+            build_intent_analysis_main_bubble_text(&info.title, info.detail.as_deref());
+        if intent_text.is_empty() {
+            return;
+        }
+        push_assistant_timeline_bubble(stream_ctx, intent_text.clone(), None);
+        accum.add_answer_delta_chars(intent_text.chars().count());
+        return;
+    }
+    if info.kind == "hierarchical_plan" {
+        let plan_text =
+            build_hierarchical_plan_main_bubble_text(&info.title, info.detail.as_deref());
+        if plan_text.is_empty() {
+            return;
+        }
+        push_assistant_timeline_bubble(stream_ctx, plan_text.clone(), None);
+        accum.add_answer_delta_chars(plan_text.chars().count());
+        return;
+    }
+    if info.kind == "hierarchical_subgoal" || info.kind == "hierarchical_subgoal_started" {
+        let text = build_hierarchical_subgoal_main_bubble_text(&info.title, info.detail.as_deref());
+        if text.is_empty() {
+            return;
+        }
+        accum.set_current_subgoal_marker(extract_subgoal_marker_from_title(&info.title));
+        upsert_hierarchical_subgoal_bubble(stream_ctx, text.clone(), &info.title);
+        accum.add_answer_delta_chars(text.chars().count());
+        return;
+    }
+    if info.kind == "tool_step_started" || info.kind == "tool_step_finished" {
+        return;
+    }
+    let mut body = info.title.trim().to_string();
+    if let Some(detail) = info.detail.as_deref().map(str::trim)
+        && !detail.is_empty()
+    {
+        body.push('\n');
+        body.push_str(detail);
+    }
+    if body.is_empty() {
+        return;
+    }
+    push_assistant_timeline_bubble(stream_ctx, staged_timeline_system_message_body(&body), None);
+}
+
 pub(super) fn make_on_timeline_log(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
     accum: Rc<PerStreamAccum>,
 ) -> Rc<dyn Fn(TimelineLogInfo)> {
     Rc::new(move |info: TimelineLogInfo| {
-        web_sys::console::log_1(&format!("[TL] kind={} title={}", info.kind, info.title).into());
-        if info.kind == "final_response" {
-            accum.set_saw_final_response_timeline(true);
-            stream_ctx.shell.stream.status_busy.set(false);
-            let final_text = build_final_response_text(&info.title, info.detail.as_deref());
-            if !final_text.is_empty() {
-                remove_loading_assistant_placeholder(&stream_ctx);
-                if !has_same_assistant_timeline_bubble(&stream_ctx, &final_text) {
-                    push_assistant_timeline_bubble(&stream_ctx, final_text.clone(), None);
-                    accum.add_answer_delta_chars(final_text.chars().count());
-                }
-            } else {
-                // 补偿收尾可能带空 final_response；若不撤 loading，on_done 会误报「未收到正文片段」。
-                remove_loading_assistant_placeholder(&stream_ctx);
-            }
+        if stream_ctx.is_stale() {
             return;
         }
-        if info.kind == "intent_analysis" {
-            let intent_text =
-                build_intent_analysis_main_bubble_text(&info.title, info.detail.as_deref());
-            if intent_text.is_empty() {
-                return;
-            }
-            push_assistant_timeline_bubble(&stream_ctx, intent_text.clone(), None);
-            accum.add_answer_delta_chars(intent_text.chars().count());
-            return;
-        }
-        if info.kind == "hierarchical_plan" {
-            let plan_text =
-                build_hierarchical_plan_main_bubble_text(&info.title, info.detail.as_deref());
-            if plan_text.is_empty() {
-                return;
-            }
-            push_assistant_timeline_bubble(&stream_ctx, plan_text.clone(), None);
-            accum.add_answer_delta_chars(plan_text.chars().count());
-            return;
-        }
-        if info.kind == "hierarchical_subgoal" || info.kind == "hierarchical_subgoal_started" {
-            let text =
-                build_hierarchical_subgoal_main_bubble_text(&info.title, info.detail.as_deref());
-            if text.is_empty() {
-                return;
-            }
-            accum.set_current_subgoal_marker(extract_subgoal_marker_from_title(&info.title));
-            upsert_hierarchical_subgoal_bubble(&stream_ctx, text.clone(), &info.title);
-            accum.add_answer_delta_chars(text.chars().count());
-            return;
-        }
-        if info.kind == "tool_step_started" || info.kind == "tool_step_finished" {
-            return;
-        }
-        let mut body = info.title.trim().to_string();
-        if let Some(detail) = info.detail.as_deref().map(str::trim)
-            && !detail.is_empty()
-        {
-            body.push('\n');
-            body.push_str(detail);
-        }
-        if body.is_empty() {
-            return;
-        }
-        push_assistant_timeline_bubble(
-            &stream_ctx,
-            staged_timeline_system_message_body(&body),
-            None,
-        );
+        timeline_log_dispatch_body(&stream_ctx, accum.as_ref(), info);
     })
 }
 
@@ -280,6 +295,9 @@ pub(super) fn chat_stream_on_done_builder(
         if user_cancelled_flag(&stream_ctx.shell) {
             stream_ctx.scratch.clear_followup_pending();
             clear_abort_slot(&stream_ctx.shell);
+            return;
+        }
+        if stream_ctx.is_stale() {
             return;
         }
         // 第二次 `assistant_answer_phase` 后若再无正文增量，须在此补做轮换并清零计数器；
@@ -326,6 +344,9 @@ pub(super) fn chat_stream_on_error_builder(
             clear_abort_slot(&stream_ctx.shell);
             return;
         }
+        if stream_ctx.is_stale() {
+            return;
+        }
         stream_ctx.chat.clear_stream_resume_handles();
         let mid = stream_ctx.scratch.clone_assistant_id();
         let loc = stream_ctx.locale.get_untracked();
@@ -353,6 +374,9 @@ pub(super) fn chat_stream_on_error_builder(
 
 pub(super) fn chat_stream_on_ws_builder(stream_ctx: Rc<ChatStreamCallbackCtx>) -> Rc<dyn Fn()> {
     Rc::new(move || {
+        if stream_ctx.is_stale() {
+            return;
+        }
         (stream_ctx.shell.refresh_workspace)();
         if stream_ctx.shell.modal.changelist_modal_open.get_untracked() {
             stream_ctx
