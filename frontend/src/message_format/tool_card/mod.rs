@@ -353,6 +353,62 @@ const TOOLS_APPEND_RAW_OUTPUT: &[&str] = &[
     "search_in_files",
 ];
 
+/// 从 `run_command` 正文首行 `命令：…` 或（回退）单行摘要取「调用串」，供详情卡标题 `$ …` 与去重用。
+fn run_command_invocation_for_display(info: &ToolResultInfo, summary_norm: &str) -> Option<String> {
+    if info.name.trim() != "run_command" {
+        return None;
+    }
+    for line in info.output.lines().map(str::trim) {
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(inv) = line.strip_prefix("命令：") {
+            let inv = inv.trim();
+            if !inv.is_empty() {
+                return Some(inv.to_string());
+            }
+        }
+        break;
+    }
+    let s = summary_norm.trim();
+    if s.is_empty() || s.contains('\n') {
+        return None;
+    }
+    let t = strip_tool_status_prefix(s);
+    if t.contains("成功") || t.contains("失败") {
+        return None;
+    }
+    (!t.is_empty()).then_some(t)
+}
+
+/// 去掉与调用串完全相同的摘要行，避免标题 `$ …` 下再重复一行。
+fn strip_summary_lines_matching_invocation(out: &str, inv: &str) -> String {
+    let inv = inv.trim();
+    let kept: Vec<&str> = out
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && *l != inv)
+        .collect();
+    kept.join("\n\n")
+}
+
+/// 若正文首行 `命令：<inv>` 与标题已展示的 inv 相同，则去掉该行（保留退出码与 stdio）。
+fn strip_run_command_dup_cmd_header(raw: &str, inv: &str) -> String {
+    let inv = inv.trim();
+    let mut it = raw.lines();
+    let Some(first) = it.next() else {
+        return raw.to_string();
+    };
+    if first.trim().strip_prefix("命令：").map(str::trim) == Some(inv) {
+        let rest: Vec<&str> = it.collect();
+        if rest.is_empty() {
+            return String::new();
+        }
+        return rest.join("\n");
+    }
+    raw.to_string()
+}
+
 fn append_workspace_diff_and_whitelist_raw(
     merged: &mut String,
     info: &ToolResultInfo,
@@ -360,20 +416,24 @@ fn append_workspace_diff_and_whitelist_raw(
     raw_trimmed: &str,
     name_trim: &str,
     whitelist_tool: bool,
+    run_command_shell_inv: Option<&str>,
 ) {
     if let Some(block) = workspace_write_diff_section(info, loc) {
         merged.push_str("\n\n");
         merged.push_str(&block);
     }
-    if !(whitelist_tool && !raw_trimmed.is_empty()) {
+    if !whitelist_tool || raw_trimmed.is_empty() {
         return;
     }
     merged.push_str("\n\n");
-    let raw_show = if should_strip_write_preview_header(name_trim, raw_trimmed) {
+    let mut raw_show = if should_strip_write_preview_header(name_trim, raw_trimmed) {
         strip_leading_workspace_write_json_header(raw_trimmed)
     } else {
         raw_trimmed.to_string()
     };
+    if let Some(inv) = run_command_shell_inv {
+        raw_show = strip_run_command_dup_cmd_header(&raw_show, inv);
+    }
     if name_trim == "terminal_session" {
         merged.push_str(&strip_ansi_codes(&raw_show));
     } else {
@@ -412,8 +472,16 @@ pub fn tool_card_text(info: &ToolResultInfo, loc: Locale) -> String {
         return early;
     }
 
-    let out = normalized_tool_summary(info, loc);
-    let title = render_tool_title(info, loc);
+    let mut title = render_tool_title(info, loc);
+    let mut out = normalized_tool_summary(info, loc);
+    let mut run_shell_inv: Option<String> = None;
+    if info.name.trim() == "run_command" && info.ok.unwrap_or(true) {
+        if let Some(inv) = run_command_invocation_for_display(info, &out) {
+            run_shell_inv = Some(inv.clone());
+            title = format!("$ {inv}");
+            out = strip_summary_lines_matching_invocation(&out, &inv);
+        }
+    }
     let body = summary_without_redundant_title(&title, &out);
     let mut merged = title;
     if !body.is_empty() {
@@ -430,6 +498,7 @@ pub fn tool_card_text(info: &ToolResultInfo, loc: Locale) -> String {
         raw_trimmed,
         name_trim,
         whitelist_tool,
+        run_shell_inv.as_deref(),
     );
     append_failure_block_and_full_output_on_fail(
         &mut merged,
@@ -507,6 +576,28 @@ mod tests {
         assert!(out.contains("```diff"));
         assert!(!out.contains("crabmate_tool_output"));
         assert!(out.contains("路径：a.rs"));
+    }
+
+    #[test]
+    fn run_command_success_detail_shell_title_skips_dup_cmd_line() {
+        let mut info = mk("git diff --cached --stat");
+        info.output =
+            "命令：git diff --cached --stat\n退出码：0\n标准输出：\n  foo.rs | 1 +\n".to_string();
+        let out = tool_card_text(&info, Locale::ZhHans);
+        assert!(
+            out.starts_with("$ git diff --cached --stat"),
+            "unexpected head: {out:?}"
+        );
+        assert!(
+            !out.contains("命令执行"),
+            "should not use generic title: {out}"
+        );
+        assert!(
+            !out.contains("命令：git diff"),
+            "should drop duplicate 命令 line: {out}"
+        );
+        assert!(out.contains("退出码：0"), "{out}");
+        assert!(out.contains("foo.rs"), "{out}");
     }
 
     #[test]
