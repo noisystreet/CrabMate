@@ -57,6 +57,7 @@ fn embedded_default_allowed_command_names() -> Vec<String> {
         "od".into(),
         "paste".into(),
         "pkg-config".into(),
+        "pre-commit".into(),
         "printenv".into(),
         "ps".into(),
         "pwd".into(),
