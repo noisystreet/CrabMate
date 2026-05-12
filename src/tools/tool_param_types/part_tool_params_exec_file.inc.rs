@@ -44,7 +44,10 @@ pub struct FileWriteArgs {
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ModifyFileMode {
+    /// 整文件覆盖（`content` 为全文）；与 `Overwrite` 变体语义相同。
     Full,
+    /// 与 `full` 相同，仅名称强调「整文件覆盖」语义。
+    Overwrite,
     ReplaceLines,
 }
 
@@ -58,6 +61,10 @@ pub struct ModifyFileArgs {
     pub start_line: Option<u32>,
     #[schemars(range(min = 1))]
     pub end_line: Option<u32>,
+    /// 为 `true` 时只返回 unified diff 预览，**不写盘**（与 `search_replace` 的 `dry_run` 一致）。
+    pub dry_run: Option<bool>,
+    /// 当整文件覆盖被判定为高危（大幅缩短、大量删行、清空非空文件）时须显式 `true` 才执行写入。
+    pub confirm_full_overwrite: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]

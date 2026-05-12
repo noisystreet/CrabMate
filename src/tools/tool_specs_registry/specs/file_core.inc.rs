@@ -9,7 +9,7 @@ ToolSpec {
         },
         ToolSpec {
             name: "modify_file",
-            description: "在工作区内修改已有文件。**局部改动优先** `mode=replace_lines`（1-based 闭区间 `start_line`..=`end_line` + `content`，流式改写）。**`mode=full`（默认）会删除磁盘上原文件全文并以 `content` 替换**：若 `content` 不完整或被截断，将**不可逆地丢失**未写入部分；工具不会自动备份。仅在已持有**完整**新全文时使用 `full`。`mode` 合法字符串为 **`full`** 与 **`replace_lines`**（勿写旧式 `replacelines`）。",
+            description: "在工作区内修改已有文件。**局部改动优先** `mode=replace_lines`（1-based 闭区间 `start_line`..=`end_line` + `content`，流式改写）。**`mode=full`（默认）或 `mode=overwrite`：整文件覆盖**，`content` 为磁盘上的**全部**新正文；若不完整将**不可逆**丢失未写入部分。高危缩短/删行/清空时须 `confirm_full_overwrite=true` 才写入；任意模式均可 `dry_run=true` 先拿 diff 预览不写盘。`mode` 合法值为 **`full`**、**`overwrite`**、**`replace_lines`**。",
             category: ToolCategory::Development,
             parameters: tool_params::params_modify_file,
             runner: runner_modify_file,

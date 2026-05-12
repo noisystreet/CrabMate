@@ -271,7 +271,7 @@ fn test_modify_file_full_emits_shrink_warning() {
     let ctx =
         crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = modify_file(
-        r#"{"path":"big.txt","mode":"full","content":"xx"}"#,
+        r#"{"path":"big.txt","mode":"full","content":"xx","confirm_full_overwrite":true}"#,
         &dir,
         &ctx,
     );
@@ -303,6 +303,100 @@ fn test_modify_file_full_no_shrink_warning_when_size_similar() {
     let out = modify_file(&args.to_string(), &dir, &ctx);
     assert!(out.contains("已整文件覆盖"), "{}", out);
     assert!(!out.contains("警告"), "unexpected shrink warning: {}", out);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_modify_file_full_shrink_rejected_without_confirm() {
+    let dir = make_test_dir();
+    let file = dir.join("big.txt");
+    let old = "a".repeat(500);
+    std::fs::write(&file, &old).unwrap();
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = modify_file(
+        r#"{"path":"big.txt","mode":"full","content":"xx"}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("未写盘"), "{}", out);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), old);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_modify_file_overwrite_mode_writes_like_full() {
+    let dir = make_test_dir();
+    let file = dir.join("x.txt");
+    std::fs::write(&file, "old").unwrap();
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = modify_file(
+        r#"{"path":"x.txt","mode":"overwrite","content":"new"}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("已整文件覆盖"), "{}", out);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "new");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_modify_file_full_dry_run_leaves_disk_unchanged() {
+    let dir = make_test_dir();
+    let file = dir.join("d.txt");
+    std::fs::write(&file, "keep").unwrap();
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = modify_file(
+        r#"{"path":"d.txt","mode":"full","content":"gone","dry_run":true}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("dry_run"), "{}", out);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "keep");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_modify_file_replace_lines_dry_run_unchanged() {
+    let dir = make_test_dir();
+    let file = dir.join("m.txt");
+    std::fs::write(&file, "L1\nL2\nL3\n").unwrap();
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = modify_file(
+        r#"{"path":"m.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"Z","dry_run":true}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("dry_run"), "{}", out);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "L1\nL2\nL3\n");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_modify_file_full_clear_nonempty_requires_confirm() {
+    let dir = make_test_dir();
+    let file = dir.join("e.txt");
+    std::fs::write(&file, "x").unwrap();
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let blocked = modify_file(r#"{"path":"e.txt","mode":"full","content":""}"#, &dir, &ctx);
+    assert!(blocked.contains("未写盘"), "{}", blocked);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "x");
+    let ok = modify_file(
+        r#"{"path":"e.txt","mode":"full","content":"","confirm_full_overwrite":true}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(ok.contains("已整文件覆盖"), "{}", ok);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

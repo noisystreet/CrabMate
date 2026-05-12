@@ -203,7 +203,9 @@ fn coerce_modify_file_extra_fields(map: &mut serde_json::Map<String, Value>) -> 
         "lines" | "line" | "line_replace" | "replace" | "partial" => "replace_lines".to_string(),
         "replacelines" => "replace_lines".to_string(),
         "full" | "overwrite" | "whole" | "whole_file" => "full".to_string(),
-        other if other == "replace_lines" || other == "full" => other.to_string(),
+        other if other == "replace_lines" || other == "full" || other == "overwrite" => {
+            other.to_string()
+        }
         _ => norm,
     };
     if mapped.as_str() != s.as_str() {

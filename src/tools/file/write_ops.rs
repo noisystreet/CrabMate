@@ -236,19 +236,61 @@ fn full_overwrite_shrink_heuristic_warn(old_b: usize, new_b: usize) -> bool {
     new_b.saturating_mul(4) < old_b
 }
 
+/// 整文件覆盖前须用户显式确认的高危情形（与字节缩短启发式 `full_overwrite_shrink_heuristic_warn` 叠加）。
+fn full_overwrite_requires_user_confirm(before: &str, content: &str) -> bool {
+    let old_b = before.len();
+    let new_b = content.len();
+    if full_overwrite_shrink_heuristic_warn(old_b, new_b) {
+        return true;
+    }
+    if !before.is_empty() && content.is_empty() {
+        return true;
+    }
+    let old_lines = before.lines().count().max(1);
+    let new_lines = content.lines().count().max(1);
+    old_lines >= 30 && new_lines.saturating_mul(3) < old_lines
+}
+
 fn modify_file_write_full_overwrite(
     path: &str,
     target: &Path,
     working_dir: &Path,
     ctx: &ToolContext<'_>,
     content: String,
+    dry_run: bool,
+    confirm_full_overwrite: bool,
 ) -> String {
     let before = std::fs::read_to_string(target).ok();
+    let before_str = before.as_deref().unwrap_or("");
+    let disp = path_for_tool_display(working_dir, target, Some(path));
+
+    if dry_run {
+        let body = tool_output_prepend_path(
+            &disp,
+            "预览（dry_run=true）：整文件覆盖未写盘。设置 dry_run=false 以执行；若工具提示须确认，再附带 confirm_full_overwrite=true。",
+        );
+        return format_tool_output_with_write_diff_preview(
+            "modify_file",
+            body,
+            vec![WriteDiffFileState {
+                rel_path: path.to_string(),
+                before: before.clone(),
+                after: Some(content.clone()),
+            }],
+            WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
+        );
+    }
+
+    if full_overwrite_requires_user_confirm(before_str, &content) && !confirm_full_overwrite {
+        return "错误：本次整文件覆盖将大幅缩短、删去大量行或清空非空文件。**未写盘**。\
+请先 dry_run=true 核对 diff，确认后使用 confirm_full_overwrite=true 再次调用；或改用 mode=replace_lines / search_replace 做局部修改。"
+            .to_string();
+    }
+
     match std::fs::write(target, content.as_bytes()) {
         Ok(()) => {
             let before_preview = before.clone();
             record_file_state_after_write(ctx.workspace_changelist, working_dir, path, before);
-            let disp = path_for_tool_display(working_dir, target, Some(path));
             let old_b = before_preview.as_ref().map(String::len).unwrap_or(0);
             let shrink_warn = full_overwrite_shrink_heuristic_warn(old_b, content.len());
             let mut body = tool_output_prepend_path(&disp, format!("已整文件覆盖: {}", disp));
@@ -275,13 +317,21 @@ fn modify_file_write_full_overwrite(
 }
 
 /// 修改文件：仅在文件已存在时写入。
-/// - 默认 `mode`=`full`：整文件覆盖（`content` 为全文）。
+/// - 默认 `mode`=`full`：整文件覆盖（`content` 为全文）；`mode`=`overwrite` 与 `full` 等价。
 /// - `mode`=`replace_lines`：`start_line`..=`end_line`（1-based，含边界）替换为 `content`（流式读写，适合大文件）。
+/// - `dry_run=true`：仅返回 diff 预览，不写盘（`replace_lines` 与整文件覆盖均支持）。
+/// - 整文件覆盖若命中高危启发式，须 `confirm_full_overwrite=true`（`dry_run` 不受此限）。
 pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
     let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
         Err(e) => return e,
     };
+    let dry_run = v.get("dry_run").and_then(|x| x.as_bool()).unwrap_or(false);
+    let confirm_full_overwrite = v
+        .get("confirm_full_overwrite")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+
     let path = match v
         .get("path")
         .and_then(|p| p.as_str())
@@ -317,14 +367,25 @@ pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
             working_dir,
             &path,
         )
-    } else if mode == "full" || mode.is_empty() {
+    } else if mode == "full" || mode == "overwrite" || mode.is_empty() {
         let content = v
             .get("content")
             .and_then(|c| c.as_str())
             .map(String::from)
             .unwrap_or_default();
-        modify_file_write_full_overwrite(&path, &target, working_dir, ctx, content)
+        modify_file_write_full_overwrite(
+            &path,
+            &target,
+            working_dir,
+            ctx,
+            content,
+            dry_run,
+            confirm_full_overwrite,
+        )
     } else {
-        format!("错误：mode 仅支持 full 或 replace_lines（收到 {:?}）", mode)
+        format!(
+            "错误：mode 仅支持 full、overwrite 或 replace_lines（收到 {:?}）",
+            mode
+        )
     }
 }

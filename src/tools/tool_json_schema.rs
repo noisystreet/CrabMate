@@ -389,17 +389,31 @@ mod tests {
     }
 
     #[test]
-    fn modify_file_mode_schema_enum_includes_replace_lines_snake_case() {
+    fn modify_file_mode_schema_includes_expected_modes() {
         let v = tool_parameters_schema_value::<ModifyFileArgs>();
-        let defs = v.get("definitions").expect("definitions");
-        let e = defs
-            .pointer("/ModifyFileMode/enum")
-            .and_then(|x| x.as_array())
-            .expect("ModifyFileMode enum array");
         assert!(
-            e.iter().any(|x| x == "replace_lines"),
-            "schema should expose replace_lines (not legacy replacelines): {e:?}"
+            v.pointer("/properties/mode").is_some(),
+            "schema should expose properties.mode"
         );
-        assert!(e.iter().any(|x| x == "full"), "{e:?}");
+        let mode_def = v
+            .pointer("/definitions/ModifyFileMode")
+            .expect("definitions.ModifyFileMode");
+        let mut flat: Vec<&str> = Vec::new();
+        if let Some(en) = mode_def.get("enum").and_then(|e| e.as_array()) {
+            flat.extend(en.iter().filter_map(|x| x.as_str()));
+        }
+        if let Some(branches) = mode_def.get("oneOf").and_then(|o| o.as_array()) {
+            for branch in branches {
+                if let Some(en) = branch.get("enum").and_then(|e| e.as_array()) {
+                    flat.extend(en.iter().filter_map(|x| x.as_str()));
+                }
+            }
+        }
+        for needle in ["full", "overwrite", "replace_lines"] {
+            assert!(
+                flat.contains(&needle),
+                "ModifyFileMode schema should include {needle}: collected={flat:?}"
+            );
+        }
     }
 }
