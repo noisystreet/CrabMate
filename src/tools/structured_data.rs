@@ -681,7 +681,7 @@ pub fn structured_diff(args_json: &str, working_dir: &Path) -> String {
     structured_diff_format_report(path_a, path_b, fmt_a, fmt_b, &lines, max_lines)
 }
 
-#[path = "structured_data_patch.rs"]
+#[path = "structured_data_patch/mod.rs"]
 mod structured_data_patch;
 
 /// 结构化补丁：对 JSON/YAML/TOML 进行 set/remove（默认 dry-run，写入需 confirm=true）。
