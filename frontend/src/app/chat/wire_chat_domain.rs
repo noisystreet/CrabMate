@@ -90,10 +90,14 @@ fn wire_chat_domain_auxiliary_sequence(a: &WireChatDomainEffectsArgs) {
 pub(crate) fn wire_chat_domain_effects(
     args: WireChatDomainEffectsArgs,
 ) -> (ChatComposerWires, ChatStreamBusyMemos) {
+    let stream_shell = args.stream_shell.clone();
+    let abort_cell = stream_shell.stream.abort_cell.clone();
     let stream_busy_memos = make_chat_stream_busy_memos(
         args.domain.chat,
-        args.stream_shell.stream.status_busy,
-        args.stream_shell.stream.tool_busy,
+        stream_shell.stream.status_busy,
+        stream_shell.stream.tool_busy,
+        stream_shell.stream.stream_abort_epoch,
+        std::sync::Arc::new(move || abort_cell.lock().unwrap().is_some()),
     );
 
     wire_chat_domain_auxiliary_sequence(&args);

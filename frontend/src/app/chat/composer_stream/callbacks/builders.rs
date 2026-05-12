@@ -19,7 +19,7 @@ use super::super::context::ChatStreamCallbackCtx;
 use super::super::per_stream_accum::PerStreamAccum;
 use super::super::shell_abort::{clear_abort_slot, user_cancelled_flag};
 use super::done_session::apply_stream_done_to_loading_assistant;
-use super::error_session::apply_stream_error_to_assistant_message;
+use super::error_session::apply_stream_error_on_messages;
 use super::helpers::*;
 
 pub(super) fn make_on_tool_output_chunk(
@@ -361,7 +361,7 @@ pub(super) fn chat_stream_on_error_builder(
                     &mut s.messages[idx],
                 );
             }
-            apply_stream_error_to_assistant_message(&mut s.messages, mid.as_str(), friendly);
+            apply_stream_error_on_messages(&mut s.messages, mid.as_str(), friendly, loc);
         });
         stream_ctx.shell.stream.status_busy.set(false);
         stream_ctx.shell.stream.tool_busy.set(false);

@@ -155,6 +155,9 @@ pub struct StreamControlSignals {
     pub status_busy: RwSignal<bool>,
     pub status_err: RwSignal<Option<String>>,
     pub tool_busy: RwSignal<bool>,
+    /// `AbortController` 槽位在 `Mutex` 中，Leptos 无法订阅；每次槽位变更时递增，供
+    /// [`crate::chat_session_state::make_chat_stream_busy_memos`] 与「整轮 UI 忙」`Memo` 失效并重算。
+    pub stream_abort_epoch: RwSignal<u32>,
     pub abort_cell: Arc<Mutex<Option<web_sys::AbortController>>>,
     pub user_cancelled_stream: Arc<Mutex<bool>>,
 }
@@ -165,6 +168,7 @@ impl StreamControlSignals {
             status_busy: RwSignal::new(false),
             status_err: RwSignal::new(None),
             tool_busy: RwSignal::new(false),
+            stream_abort_epoch: RwSignal::new(0),
             abort_cell: Arc::new(Mutex::new(None)),
             user_cancelled_stream: Arc::new(Mutex::new(false)),
         }

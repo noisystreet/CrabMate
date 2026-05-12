@@ -3,22 +3,38 @@
 //! 槽位定义见 **[`crate::app::app_signals::StreamControlSignals`]**（**`abort_cell`** / **`user_cancelled_stream`**）；此处仅封装业务语义。
 //! `spawn_local` 尾逻辑请用 [`user_cancelled_flag`]，勿在闭包外再 `Arc::clone`  Mutex 手动锁。
 
+use leptos::prelude::Update;
+
 use super::super::handles::ComposerStreamShell;
+
+fn bump_stream_abort_epoch(shell: &ComposerStreamShell) {
+    shell.stream.stream_abort_epoch.update(|n| {
+        *n = n.wrapping_add(1);
+    });
+}
 
 /// 发起新流前：中止上一控制器、清除「用户取消」标记（随后应 [`store_abort_controller`]）。
 pub(super) fn reset_abort_state_for_new_attach(shell: &ComposerStreamShell) {
-    if let Some(prev) = shell.stream.abort_cell.lock().unwrap().take() {
-        prev.abort();
+    let prev = shell.stream.abort_cell.lock().unwrap().take();
+    if prev.is_some() {
+        bump_stream_abort_epoch(shell);
+    }
+    if let Some(ac) = prev {
+        ac.abort();
     }
     *shell.stream.user_cancelled_stream.lock().unwrap() = false;
 }
 
 pub(super) fn store_abort_controller(shell: &ComposerStreamShell, ac: web_sys::AbortController) {
     *shell.stream.abort_cell.lock().unwrap() = Some(ac);
+    bump_stream_abort_epoch(shell);
 }
 
-pub(super) fn clear_abort_slot(shell: &ComposerStreamShell) {
-    *shell.stream.abort_cell.lock().unwrap() = None;
+pub(crate) fn clear_abort_slot(shell: &ComposerStreamShell) {
+    let taken = shell.stream.abort_cell.lock().unwrap().take();
+    if taken.is_some() {
+        bump_stream_abort_epoch(shell);
+    }
 }
 
 pub(super) fn user_cancelled_flag(shell: &ComposerStreamShell) -> bool {
@@ -33,6 +49,7 @@ pub(crate) fn user_cancel_in_flight_stream(shell: &ComposerStreamShell) -> bool 
     *shell.stream.user_cancelled_stream.lock().unwrap() = true;
     if let Some(ac) = shell.stream.abort_cell.lock().unwrap().take() {
         ac.abort();
+        bump_stream_abort_epoch(shell);
     }
     true
 }

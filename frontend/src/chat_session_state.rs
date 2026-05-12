@@ -23,6 +23,7 @@
 //! | [`Self::update_sessions_message_row`] | `message_row_actions`（再生/分支截断） |
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use leptos::prelude::*;
 
@@ -57,9 +58,43 @@ pub fn session_has_loading_tool_message(chat: ChatSessionSignals) -> bool {
     })
 }
 
+/// 当前流式目标会话是否存在仍处于 `Loading` 的助手或工具占位（订阅 `sessions`）。
+#[must_use]
+pub fn session_has_stream_loading_placeholders(chat: ChatSessionSignals) -> bool {
+    let sid = chat.effective_stream_message_session_id();
+    chat.sessions.with(|sessions| {
+        sessions.iter().find(|s| s.id == sid).is_some_and(|s| {
+            s.messages.iter().any(|m| {
+                let row = matches!(
+                    (m.role.as_str(), m.is_tool),
+                    ("assistant", false) | (_, true)
+                );
+                m.state.as_ref().is_some_and(|st| st.is_loading()) && row
+            })
+        })
+    })
+}
+
+/// 当前流式目标会话是否存在仍处于 `Loading` 的助手或工具占位（**不**订阅 `sessions`）。
+#[must_use]
+pub(crate) fn session_has_stream_loading_placeholders_untracked(chat: ChatSessionSignals) -> bool {
+    let sid = chat.effective_stream_message_session_id_untracked();
+    chat.sessions.with_untracked(|sessions| {
+        sessions.iter().find(|s| s.id == sid).is_some_and(|s| {
+            s.messages.iter().any(|m| {
+                let row = matches!(
+                    (m.role.as_str(), m.is_tool),
+                    ("assistant", false) | (_, true)
+                );
+                m.state.as_ref().is_some_and(|st| st.is_loading()) && row
+            })
+        })
+    })
+}
+
 /// Web 流式：`tool_busy` ∨ 时间线 Loading 工具占位（状态栏「工具执行中」与此对齐）。
 ///
-/// 与 [`ChatStreamBusyMemos::stream_turn_busy_ui`] 组合即为「整回合 UI 忙」，规则集中在一处构造，避免多处手写相同 OR。
+/// **`stream_turn_busy_ui`** 另见 [`make_chat_stream_busy_memos`]：与「停止」门闩同源，不再手写第二套 OR。
 #[derive(Clone, Copy)]
 pub struct ChatStreamBusyMemos {
     pub stream_turn_busy_ui: Memo<bool>,
@@ -67,15 +102,27 @@ pub struct ChatStreamBusyMemos {
 }
 
 /// 在 [`crate::app::chat::wire_chat_domain::wire_chat_domain_effects`] 内**单次**构造，经 [`crate::app::chat::handles::ChatColumnShell`] 下发到底栏 / 合成器 / 消息行。
+///
+/// **`stream_turn_busy_ui`**：`status_busy` ∨ 工具时间线忙 ∨ 助手 Loading 占位 ∨ **`AbortController` 槽位已占用**，
+/// 与 [`crate::app::chat::stream_user_abort::stream_ui_inflight_untracked`] 使用同一套 OR，避免「停止」门闩与忙状态分裂。
 #[must_use]
 pub fn make_chat_stream_busy_memos(
     chat: ChatSessionSignals,
     status_busy: RwSignal<bool>,
     tool_busy: RwSignal<bool>,
+    stream_abort_epoch: RwSignal<u32>,
+    abort_present: Arc<dyn Fn() -> bool + Send + Sync>,
 ) -> ChatStreamBusyMemos {
     let tool_timeline_busy_ui =
         Memo::new(move |_| tool_busy.get() || session_has_loading_tool_message(chat));
-    let stream_turn_busy_ui = Memo::new(move |_| status_busy.get() || tool_timeline_busy_ui.get());
+    let ap = Arc::clone(&abort_present);
+    let stream_turn_busy_ui = Memo::new(move |_| {
+        let _ = stream_abort_epoch.get();
+        status_busy.get()
+            || tool_busy.get()
+            || session_has_stream_loading_placeholders(chat)
+            || ap()
+    });
     ChatStreamBusyMemos {
         stream_turn_busy_ui,
         tool_timeline_busy_ui,
@@ -122,6 +169,15 @@ impl ChatSessionSignals {
             .get()
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| self.active_id.get())
+    }
+
+    /// 与 [`Self::effective_stream_message_session_id`] 相同规则，用于「停止」等不得订阅 UI 的快照路径。
+    #[must_use]
+    pub fn effective_stream_message_session_id_untracked(self) -> String {
+        self.stream_bound_session_id
+            .get_untracked()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| self.active_id.get_untracked())
     }
 
     /// 记录本轮 attach 时 SSE 回调应写入的会话（须与 [`crate::app::chat::composer_stream::make_attach_chat_stream`] 内 [`crate::app::chat::composer_stream::context::ChatStreamCallbackCtx::bound_stream_session_id`] 使用同一字符串）。

@@ -116,8 +116,9 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                 if chat.stream_attach_generation.get_untracked() != gen_snapshot {
                     return;
                 }
-                // HTTP 读取结束后必须回落 busy：正常路径已由 `on_done` / `on_stream_ended` / `on_error` 清理；
-                // 若连接悬挂、取消分支提前 return、或回调遗漏，避免状态栏永久「模型生成中」。
+                // HTTP 读取结束后强制回落壳层 busy，避免悬挂连接或回调提前 return 时状态栏卡死。
+                // 会话内 Loading 工具占位仅在 `on_error` / 用户中止等路径于 `messages` 上收口；本层不改时间线。
+                // 正常路径仍由 `on_done` / `on_stream_ended` / `on_error` 与上述收口协同清理。
                 shell_for_stream_err.stream.status_busy.set(false);
                 shell_for_stream_err.stream.tool_busy.set(false);
                 if let Err(e) = stream_result {
@@ -135,4 +136,4 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
     })
 }
 
-pub(crate) use shell_abort::user_cancel_in_flight_stream;
+pub(crate) use shell_abort::{clear_abort_slot, user_cancel_in_flight_stream};
