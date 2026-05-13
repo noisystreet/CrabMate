@@ -75,6 +75,48 @@ pub fn session_has_stream_loading_placeholders(chat: ChatSessionSignals) -> bool
     })
 }
 
+/// 在 `sid` 会话中是否存在**与即将发起的 `/chat/stream` attach**相冲突的 Loading：
+/// 任意工具 Loading，或 **非** `except_plain_assistant_id` 的普通助手 Loading。
+///
+/// 用于「截断后再生」路径：`truncate_at_user_message_and_prepare_regenerate` 会先插入一条 **Loading**
+/// 尾条助手；若此处仍用 [`session_has_stream_loading_placeholders`] 与 `status_busy` 做 OR，
+/// 会把自身当成「整轮忙」而**永远**无法触发 `attach`。
+#[must_use]
+pub(crate) fn session_has_conflicting_stream_loading_in_messages(
+    sessions: &[ChatSession],
+    sid: &str,
+    except_plain_assistant_id: &str,
+) -> bool {
+    let Some(s) = sessions.iter().find(|sess| sess.id == sid) else {
+        return false;
+    };
+    s.messages.iter().any(|m| {
+        if !m.state.as_ref().is_some_and(|st| st.is_loading()) {
+            return false;
+        }
+        if m.is_tool {
+            return true;
+        }
+        m.role == "assistant" && m.id != except_plain_assistant_id
+    })
+}
+
+/// [`session_has_conflicting_stream_loading_in_messages`] 的会话信号封装（订阅 `sessions`）。
+#[must_use]
+pub fn session_has_conflicting_stream_loading_placeholders(
+    chat: ChatSessionSignals,
+    except_plain_assistant_id: &str,
+) -> bool {
+    let sid = chat.effective_stream_message_session_id();
+    chat.sessions.with(|sessions| {
+        session_has_conflicting_stream_loading_in_messages(
+            sessions,
+            &sid,
+            except_plain_assistant_id,
+        )
+    })
+}
+
 /// 当前流式目标会话是否存在仍处于 `Loading` 的助手或工具占位（**不**订阅 `sessions`）。
 #[must_use]
 pub(crate) fn session_has_stream_loading_placeholders_untracked(chat: ChatSessionSignals) -> bool {
@@ -236,5 +278,108 @@ impl ChatSessionSignals {
     #[inline]
     pub fn update_sessions_message_row(self, f: impl FnOnce(&mut Vec<ChatSession>)) {
         self.sessions.update(f);
+    }
+}
+
+#[cfg(test)]
+mod conflict_loading_tests {
+    use super::session_has_conflicting_stream_loading_in_messages;
+    use crate::storage::{ChatSession, StoredMessage, StoredMessageState};
+
+    fn plain_assistant(id: &str, state: Option<StoredMessageState>) -> StoredMessage {
+        StoredMessage {
+            id: id.to_string(),
+            role: "assistant".to_string(),
+            text: String::new(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        }
+    }
+
+    fn loading_tool(id: &str) -> StoredMessage {
+        StoredMessage {
+            id: id.to_string(),
+            role: "assistant".to_string(),
+            text: String::new(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(StoredMessageState::Loading),
+            is_tool: true,
+            tool_call_id: Some("tc1".into()),
+            tool_name: Some("read_file".into()),
+            created_at: 0,
+        }
+    }
+
+    #[test]
+    fn except_assistant_loading_does_not_conflict() {
+        let sid = "s1";
+        let keep = "asst_new";
+        let sessions = vec![ChatSession {
+            id: sid.to_string(),
+            title: String::new(),
+            draft: String::new(),
+            messages: vec![plain_assistant(keep, Some(StoredMessageState::Loading))],
+            updated_at: 0,
+            pinned: false,
+            starred: false,
+            server_conversation_id: None,
+            server_revision: None,
+            workspace_root: None,
+        }];
+        assert!(!session_has_conflicting_stream_loading_in_messages(
+            &sessions, sid, keep
+        ));
+    }
+
+    #[test]
+    fn other_assistant_loading_conflicts() {
+        let sid = "s1";
+        let sessions = vec![ChatSession {
+            id: sid.to_string(),
+            title: String::new(),
+            draft: String::new(),
+            messages: vec![
+                plain_assistant("old", Some(StoredMessageState::Loading)),
+                plain_assistant("new", None),
+            ],
+            updated_at: 0,
+            pinned: false,
+            starred: false,
+            server_conversation_id: None,
+            server_revision: None,
+            workspace_root: None,
+        }];
+        assert!(session_has_conflicting_stream_loading_in_messages(
+            &sessions, sid, "new"
+        ));
+    }
+
+    #[test]
+    fn loading_tool_conflicts_even_when_except_matches_assistant() {
+        let sid = "s1";
+        let sessions = vec![ChatSession {
+            id: sid.to_string(),
+            title: String::new(),
+            draft: String::new(),
+            messages: vec![
+                loading_tool("t1"),
+                plain_assistant("asst_new", Some(StoredMessageState::Loading)),
+            ],
+            updated_at: 0,
+            pinned: false,
+            starred: false,
+            server_conversation_id: None,
+            server_revision: None,
+            workspace_root: None,
+        }];
+        assert!(session_has_conflicting_stream_loading_in_messages(
+            &sessions, sid, "asst_new"
+        ));
     }
 }

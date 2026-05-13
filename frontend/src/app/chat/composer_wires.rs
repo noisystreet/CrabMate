@@ -109,6 +109,34 @@ fn begin_stream_shell_turn(shell: &ComposerStreamShell) {
     shell.approval.pending_approval.set(None);
 }
 
+/// 截断后再生：是否因「真在跑的流 / 工具 / abort / 其它助手 Loading」应暂缓 `attach`（**不计** `asst_id` 自身占位）。
+fn regen_stream_blocked_for_attach(
+    shell: &ComposerStreamShell,
+    chat: ChatSessionSignals,
+    asst_id: &str,
+    user_text_len: usize,
+) -> bool {
+    let status_busy = shell.stream.status_busy.get();
+    let tool_busy = shell.stream.tool_busy.get();
+    let abort_present = shell
+        .stream
+        .abort_cell
+        .lock()
+        .map(|g| g.is_some())
+        .unwrap_or(false);
+    let conflict_loading =
+        crate::chat_session_state::session_has_conflicting_stream_loading_placeholders(
+            chat, asst_id,
+        );
+    web_sys::console::log_1(
+        &format!(
+            "[effect] regen_stream: status_busy={status_busy}, tool_busy={tool_busy}, abort={abort_present}, conflict_loading={conflict_loading}, text_len={user_text_len}, asst_id={asst_id}",
+        )
+        .into(),
+    );
+    status_busy || tool_busy || abort_present || conflict_loading
+}
+
 pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatComposerWires {
     let WireComposerStreamsArgs {
         initialized,
@@ -181,10 +209,10 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
             let Some(failed_asst_id) = retry_assistant_target.get() else {
                 return;
             };
-            retry_assistant_target.set(None);
             if !initialized.get() || stream_turn_busy_ui.get() {
                 return;
             }
+            retry_assistant_target.set(None);
             let aid = chat.active_id.get();
             let mut prepared: Option<(String, Vec<String>, String)> = None;
             chat.update_sessions_composer(|list| {
@@ -200,6 +228,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
     });
 
     Effect::new({
+        let chat = chat;
         let attach = Arc::clone(&attach_chat_stream);
         let auto_scroll_chat = auto_scroll_chat;
         let shell = stream_shell.clone();
@@ -207,19 +236,13 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
             let Some((user_text, user_imgs, asst_id)) = regen_stream_after_truncate.get() else {
                 return;
             };
-            regen_stream_after_truncate.set(None);
-            let init = initialized.get();
-            let busy = stream_turn_busy_ui.get();
-            web_sys::console::log_1(
-                &format!(
-                    "[effect] regen_stream consumed: init={}, busy={}, text={}, asst_id={}",
-                    init, busy, user_text, asst_id
-                )
-                .into(),
-            );
-            if !init || busy {
+            if !initialized.get() {
                 return;
             }
+            if regen_stream_blocked_for_attach(&shell, chat, asst_id.as_str(), user_text.len()) {
+                return;
+            }
+            regen_stream_after_truncate.set(None);
             auto_scroll_chat.set(true);
             begin_stream_shell_turn(&shell);
             attach(user_text, user_imgs, asst_id, None);

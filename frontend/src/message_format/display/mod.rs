@@ -257,6 +257,18 @@ mod tests {
     }
 
     #[test]
+    fn assistant_text_renders_plan_summary_json_fence_as_prose() {
+        let raw = "```json\n{\n  \"plan_summary\": \"摘要说明。\",\n  \"steps\": [\n    \"步骤甲\",\n    \"步骤乙\"\n  ],\n  \"no_new_tool_calls\": true\n}\n```";
+        let out = assistant_text_for_display(raw, false, Locale::ZhHans, true);
+        assert!(out.contains("摘要说明"));
+        assert!(out.contains("1. 步骤甲"));
+        assert!(out.contains("2. 步骤乙"));
+        assert!(out.contains("本轮不调用新工具") || out.contains("不调用新工具"));
+        assert!(!out.contains("```"));
+        assert!(!out.contains("plan_summary"));
+    }
+
+    #[test]
     fn stored_message_is_staged_planner_round_detects_plan_in_text() {
         let m = StoredMessage {
             id: "1".into(),

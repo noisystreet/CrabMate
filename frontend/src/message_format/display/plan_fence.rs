@@ -54,6 +54,45 @@ fn format_agent_reply_plan_json_for_display(
     Some(lines.join("\n"))
 }
 
+/// 执行器输出的紧凑规划：`plan_summary` + `steps`（**字符串**数组）+ 可选 `no_new_tool_calls`。
+fn format_plan_summary_steps_json_for_display(json_text: &str, loc: Locale) -> Option<String> {
+    let v: Value = serde_json::from_str(json_text).ok()?;
+    let obj = v.as_object()?;
+    let summary = obj.get("plan_summary")?.as_str()?.trim();
+    if summary.is_empty() {
+        return None;
+    }
+    let steps = obj.get("steps")?.as_array()?;
+    for step in steps {
+        if !step.is_string() {
+            return None;
+        }
+    }
+    let mut lines: Vec<String> = vec![summary.to_string()];
+    if !steps.is_empty() {
+        lines.push(String::new());
+        for (idx, step) in steps.iter().enumerate() {
+            let text = step.as_str().unwrap_or("").trim();
+            if text.is_empty() {
+                continue;
+            }
+            let n = idx + 1;
+            lines.push(format!("{n}. {text}"));
+        }
+    }
+    if obj.get("no_new_tool_calls").and_then(|x| x.as_bool()) == Some(true) {
+        lines.push(String::new());
+        lines.push(crate::i18n::plan_no_new_tool_calls_note(loc).to_string());
+    }
+    Some(lines.join("\n"))
+}
+
+fn formatted_structured_plan_from_json_body(body: &str, loc: Locale) -> Option<String> {
+    let b = body.trim();
+    format_plan_summary_steps_json_for_display(b, loc)
+        .or_else(|| format_agent_reply_plan_json_for_display(b, "", loc))
+}
+
 fn fenced_body_after_optional_jsonish_lang_label(inner: &str) -> Option<&str> {
     let s = inner.trim_start_matches(['\n', '\r', ' ', '\t']);
     if s.is_empty() {
@@ -142,7 +181,7 @@ fn prose_before_first_fence(s: &str) -> String {
     s.split("```").next().unwrap_or("").trim().to_string()
 }
 
-fn fence_inner_should_hide_agent_reply_plan_json(inner: &str) -> bool {
+fn fence_inner_body_is_agent_reply_plan_blob(inner: &str) -> bool {
     let raw = inner.trim();
     let body = fenced_body_after_optional_jsonish_lang_label(raw)
         .unwrap_or(raw)
@@ -159,6 +198,18 @@ fn fence_inner_should_hide_agent_reply_plan_json(inner: &str) -> bool {
     serde_json::from_str::<Value>(body).is_ok()
 }
 
+/// 围栏内为可展示的「结构化规划」JSON（`agent_reply_plan` 或 `plan_summary` 紧凑块）时返回格式化正文。
+fn try_fence_inner_structured_plan_display(inner: &str, loc: Locale) -> Option<String> {
+    let raw = inner.trim();
+    let body = fenced_body_after_optional_jsonish_lang_label(raw)
+        .unwrap_or(raw)
+        .trim();
+    if !body.starts_with('{') {
+        return None;
+    }
+    formatted_structured_plan_from_json_body(body, loc)
+}
+
 /// 首段围栏前文本是否可视为「仅规划说明」从而省略，避免误删「大段正文 + 文末 plan 围栏」。
 fn drop_first_segment_before_hidden_agent_reply_plan_fence(segment: &str) -> bool {
     let t = segment.trim();
@@ -172,7 +223,7 @@ fn drop_first_segment_before_hidden_agent_reply_plan_fence(segment: &str) -> boo
     true
 }
 
-fn strip_agent_reply_plan_fence_blocks_for_display(content: &str) -> String {
+fn strip_agent_reply_plan_fence_blocks_for_display(content: &str, loc: Locale) -> String {
     let parts: Vec<&str> = content.split("```").collect();
     let unclosed_trailing_fence = parts.len().is_multiple_of(2);
     let mut out = String::new();
@@ -187,11 +238,17 @@ fn strip_agent_reply_plan_fence_blocks_for_display(content: &str) -> String {
         }
         let inner = parts[i];
         i += 1;
-        if fence_inner_should_hide_agent_reply_plan_json(inner) {
+        if let Some(disp) = try_fence_inner_structured_plan_display(inner, loc) {
             let skip_segment = is_first_code_fence
                 && drop_first_segment_before_hidden_agent_reply_plan_fence(segment);
             if !skip_segment {
                 out.push_str(segment);
+            }
+            if !disp.trim().is_empty() {
+                if !out.is_empty() && !out.ends_with('\n') {
+                    out.push('\n');
+                }
+                out.push_str(disp.trim());
             }
             is_first_code_fence = false;
             continue;
@@ -236,10 +293,13 @@ fn assistant_text_for_display_inner(
         );
     }
 
-    if let Some(display) = format_agent_reply_plan_json_for_display(trimmed, "", loc)
+    if let Some(display) = formatted_structured_plan_from_json_body(trimmed, loc)
         && !display.trim().is_empty()
     {
-        return display;
+        return filter_assistant_thinking_markers_for_display(
+            &display,
+            is_streaming_last_assistant,
+        );
     }
 
     // 无围栏但以前缀 JSON 输出规划：去掉前缀规划对象，保留后续终答正文。
@@ -262,11 +322,13 @@ fn assistant_text_for_display_inner(
         }
     }
 
-    // 再做一次全量围栏剥离兜底：无论 `agent_reply_plan` 围栏出现在第几个代码块，都不回显原始 JSON。
-    let stripped_fences = strip_agent_reply_plan_fence_blocks_for_display(raw);
+    // 再做一次全量围栏剥离兜底：无论 `agent_reply_plan` / `plan_summary` 围栏出现在第几个代码块，都不回显原始 JSON。
+    let stripped_fences = strip_agent_reply_plan_fence_blocks_for_display(raw, loc);
     let stripped_trim = stripped_fences.trim();
     if stripped_trim != trimmed {
-        if stripped_trim.is_empty() && raw.contains("\"agent_reply_plan\"") {
+        if stripped_trim.is_empty()
+            && (raw.contains("\"agent_reply_plan\"") || raw.contains("\"plan_summary\""))
+        {
             return crate::i18n::plan_generated(loc).to_string();
         }
         return stripped_trim.to_string();
@@ -305,7 +367,7 @@ fn collect_agent_reply_plan_json_blobs(raw: &str) -> Vec<String> {
     let mut i = 1usize;
     while i < parts.len() {
         let inner = parts[i];
-        if fence_inner_should_hide_agent_reply_plan_json(inner) {
+        if fence_inner_body_is_agent_reply_plan_blob(inner) {
             let body = fenced_body_after_optional_jsonish_lang_label(inner.trim())
                 .unwrap_or(inner.trim())
                 .trim();

@@ -23,6 +23,14 @@ pub fn plan_generated(l: Locale) -> &'static str {
     }
 }
 
+/// 紧凑规划 JSON（`no_new_tool_calls`）在正文中的附注。
+pub fn plan_no_new_tool_calls_note(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "（本轮不调用新工具）",
+        Locale::En => "(No new tool calls this turn)",
+    }
+}
+
 pub fn plan_step_no_desc(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "(未提供描述)",

@@ -1,3 +1,4 @@
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 fn load_cursor_rule_documents(
@@ -31,15 +32,9 @@ fn load_cursor_rule_documents(
             files.push(agents);
         }
     }
-    if dir_path.is_dir() {
-        let mut mdc_files: Vec<PathBuf> = std::fs::read_dir(&dir_path)
-            .map_err(|e| {
-                format!(
-                    "无法读取 cursor_rules_dir \"{}\": {}",
-                    dir_path.display(),
-                    e
-                )
-            })?
+    // 避免 `is_dir` 与 `read_dir` 之间的 TOCTOU：并行测试里可能临时删掉 cwd 下的规则目录。
+    let mut mdc_files: Vec<PathBuf> = match std::fs::read_dir(&dir_path) {
+        Ok(entries) => entries
             .filter_map(Result::ok)
             .map(|e| e.path())
             .filter(|p| p.is_file())
@@ -48,10 +43,18 @@ fn load_cursor_rule_documents(
                     .and_then(|s| s.to_str())
                     .is_some_and(|ext| ext.eq_ignore_ascii_case("mdc"))
             })
-            .collect();
-        mdc_files.sort();
-        files.extend(mdc_files);
-    }
+            .collect(),
+        Err(e) if e.kind() == ErrorKind::NotFound => Vec::new(),
+        Err(e) => {
+            return Err(format!(
+                "无法读取 cursor_rules_dir \"{}\": {}",
+                dir_path.display(),
+                e
+            ));
+        }
+    };
+    mdc_files.sort();
+    files.extend(mdc_files);
 
     let mut out: Vec<(String, String)> = Vec::new();
     for path in files {
@@ -170,16 +173,17 @@ mod tests {
         std::fs::create_dir_all(&rules_dir).expect("mkdir rules");
         std::fs::write(rules_dir.join("b_rule.mdc"), "b-rule").expect("write b");
         std::fs::write(rules_dir.join("a_rule.mdc"), "a-rule").expect("write a");
-        let _cwd = CwdGuard::change_to(&ws);
-
-        let merged = merge_system_prompt_with_cursor_rules(
-            "BASE_PROMPT".to_string(),
-            true,
-            ".cursor/rules",
-            true,
-            20_000,
-        )
-        .expect("merge ok");
+        let merged = {
+            let _cwd = CwdGuard::change_to(&ws);
+            merge_system_prompt_with_cursor_rules(
+                "BASE_PROMPT".to_string(),
+                true,
+                ".cursor/rules",
+                true,
+                20_000,
+            )
+            .expect("merge ok")
+        };
 
         assert!(merged.starts_with("BASE_PROMPT"));
         let p_agents = merged.find("规则文件: AGENTS.md").expect("agents marker");
@@ -203,16 +207,17 @@ mod tests {
         let rules_dir = ws.join(".cursor/rules");
         std::fs::create_dir_all(&rules_dir).expect("mkdir rules");
         std::fs::write(rules_dir.join("rule.mdc"), "x".repeat(4096)).expect("write rule");
-        let _cwd = CwdGuard::change_to(&ws);
-
-        let merged = merge_system_prompt_with_cursor_rules(
-            "BASE_PROMPT".to_string(),
-            true,
-            ".cursor/rules",
-            false,
-            180,
-        )
-        .expect("merge ok");
+        let merged = {
+            let _cwd = CwdGuard::change_to(&ws);
+            merge_system_prompt_with_cursor_rules(
+                "BASE_PROMPT".to_string(),
+                true,
+                ".cursor/rules",
+                false,
+                180,
+            )
+            .expect("merge ok")
+        };
 
         assert!(merged.contains("BASE_PROMPT"));
         assert!(merged.contains("规则内容已按 cursor_rules_max_chars 截断"));
