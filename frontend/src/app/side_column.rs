@@ -11,6 +11,7 @@ use super::app_shell_ctx::SideColumnViewSignals;
 use super::side_column_toolbar::{SideColumnResizeAndShellToolbar, SideColumnResizeToolbarSignals};
 use super::side_column_workspace_scroll::WorkspaceSideCardScrollInner;
 use super::workspace_panel_state::WorkspacePanelSignals;
+use crate::chat_session_state::ChatSessionSignals;
 
 #[component]
 fn SideColumnTasksLoadedPane(
@@ -195,6 +196,7 @@ fn SideColumnDebugConsoleCard(
 #[component]
 fn SideColumnWorkspaceCard(
     locale: RwSignal<Locale>,
+    chat: ChatSessionSignals,
     ws: WorkspacePanelSignals,
     refresh_workspace: Arc<dyn Fn() + Send + Sync>,
     changelist_modal_open: RwSignal<bool>,
@@ -228,6 +230,7 @@ fn SideColumnWorkspaceCard(
                     <div class="workspace-side-card-scroll">
                         <WorkspaceSideCardScrollInner
                             locale=locale
+                            chat=chat
                             ws=ws
                             insert_workspace_file_ref=insert_workspace_file_ref
                         />
@@ -273,6 +276,7 @@ pub fn side_column_view(signals: SideColumnViewSignals) -> impl IntoView {
         view_menu_open,
         status_bar_visible,
         settings_page,
+        chat,
         workspace_panel: ws,
         status_tasks,
         refresh_workspace,
@@ -303,6 +307,7 @@ pub fn side_column_view(signals: SideColumnViewSignals) -> impl IntoView {
                 <Show when=move || matches!(side_panel_view.get(), SidePanelView::Workspace)>
                     <SideColumnWorkspaceCard
                         locale=locale
+                        chat=chat
                         ws=ws
                         refresh_workspace=refresh_workspace.clone()
                         changelist_modal_open=changelist_modal_open

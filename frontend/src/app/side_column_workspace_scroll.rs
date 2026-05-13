@@ -7,8 +7,10 @@ use std::sync::Arc;
 use web_sys::KeyboardEvent;
 
 use crate::api::post_workspace_set;
+use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::{self, Locale};
 use crate::session_export::{tauri_pick_workspace_folder, tauri_shell_available};
+use crate::session_workspace_bind::patch_active_session_workspace_root;
 use crate::workspace_shell::reload_workspace_panel;
 use crate::workspace_tree::WorkspaceFilesystemTree;
 
@@ -18,9 +20,17 @@ fn workspace_inputs_blocked(ws: WorkspacePanelSignals) -> bool {
     ws.workspace_set_busy.get() || ws.workspace_pick_busy.get() || ws.workspace_loading.get()
 }
 
-async fn commit_workspace_root(ws: WorkspacePanelSignals, path: String, loc: Locale) {
+async fn commit_workspace_root(
+    chat: ChatSessionSignals,
+    ws: WorkspacePanelSignals,
+    path: String,
+    loc: Locale,
+) {
+    let path_for_bind = path.clone();
     match post_workspace_set(Some(path), loc).await {
         Ok(_) => {
+            let aid = chat.active_id.get_untracked();
+            patch_active_session_workspace_root(chat.sessions, &aid, path_for_bind);
             reload_workspace_panel(
                 ws.workspace_loading,
                 ws.workspace_err,
@@ -57,7 +67,11 @@ fn WorkspaceSideCardScrollSkeleton(locale: RwSignal<Locale>) -> impl IntoView {
 }
 
 #[component]
-fn WorkspaceRootPathField(locale: RwSignal<Locale>, ws: WorkspacePanelSignals) -> impl IntoView {
+fn WorkspaceRootPathField(
+    locale: RwSignal<Locale>,
+    chat: ChatSessionSignals,
+    ws: WorkspacePanelSignals,
+) -> impl IntoView {
     view! {
         <input
             type="text"
@@ -92,7 +106,7 @@ fn WorkspaceRootPathField(locale: RwSignal<Locale>, ws: WorkspacePanelSignals) -
                 ws.workspace_set_busy.set(true);
                 let loc = locale.get_untracked();
                 spawn_local(async move {
-                    commit_workspace_root(ws, p, loc).await;
+                    commit_workspace_root(chat, ws, p, loc).await;
                 });
             }
         />
@@ -100,7 +114,11 @@ fn WorkspaceRootPathField(locale: RwSignal<Locale>, ws: WorkspacePanelSignals) -
 }
 
 #[component]
-fn WorkspaceRootBrowseButton(locale: RwSignal<Locale>, ws: WorkspacePanelSignals) -> impl IntoView {
+fn WorkspaceRootBrowseButton(
+    locale: RwSignal<Locale>,
+    chat: ChatSessionSignals,
+    ws: WorkspacePanelSignals,
+) -> impl IntoView {
     view! {
         <Show when=move || tauri_shell_available()>
             <button
@@ -130,7 +148,7 @@ fn WorkspaceRootBrowseButton(locale: RwSignal<Locale>, ws: WorkspacePanelSignals
                                 if !p.is_empty() {
                                     ws.workspace_path_draft.set(p.clone());
                                     ws.workspace_set_busy.set(true);
-                                    commit_workspace_root(ws, p, loc).await;
+                                    commit_workspace_root(chat, ws, p, loc).await;
                                 }
                             }
                             Err(e) => {
@@ -150,6 +168,7 @@ fn WorkspaceRootBrowseButton(locale: RwSignal<Locale>, ws: WorkspacePanelSignals
 #[component]
 fn WorkspaceSideCardLoaded(
     locale: RwSignal<Locale>,
+    chat: ChatSessionSignals,
     ws: WorkspacePanelSignals,
     insert_workspace_file_ref: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
 ) -> impl IntoView {
@@ -158,8 +177,8 @@ fn WorkspaceSideCardLoaded(
             <div class="workspace-set">
                 <div class="workspace-set-label">{move || i18n::ws_root_label(locale.get())}</div>
                 <div class="workspace-set-input-row">
-                    <WorkspaceRootPathField locale=locale ws=ws />
-                    <WorkspaceRootBrowseButton locale=locale ws=ws />
+                    <WorkspaceRootPathField locale=locale chat=chat ws=ws />
+                    <WorkspaceRootBrowseButton locale=locale chat=chat ws=ws />
                 </div>
                 <Show when=move || ws.workspace_set_err.get().is_some()>
                     <div class="msg-error workspace-set-error">{move || {
@@ -195,6 +214,7 @@ fn WorkspaceSideCardLoaded(
 #[component]
 pub(super) fn WorkspaceSideCardScrollInner(
     locale: RwSignal<Locale>,
+    chat: ChatSessionSignals,
     ws: WorkspacePanelSignals,
     insert_workspace_file_ref: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
 ) -> impl IntoView {
@@ -206,6 +226,7 @@ pub(super) fn WorkspaceSideCardScrollInner(
                 view! {
                     <WorkspaceSideCardLoaded
                         locale=locale
+                        chat=chat
                         ws=ws
                         insert_workspace_file_ref=insert_workspace_file_ref
                     />

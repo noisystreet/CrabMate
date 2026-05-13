@@ -22,6 +22,7 @@ use crate::i18n::Locale;
 use crate::session_ops::SessionContextAnchor;
 use crate::session_sync::SessionSyncState;
 use crate::sse_dispatch::ThinkingTraceInfo;
+use crate::storage::SESSIONS_KEY_LEGACY;
 
 pub use super::status_tasks_state::StatusTasksSignals;
 pub use super::workspace_panel_state::WorkspacePanelSignals;
@@ -413,6 +414,8 @@ pub struct AppSignals {
     pub resize: ResizeSignals,
     pub workspace: WorkspaceSignals,
     pub status: StatusSignals,
+    /// 当前写入 `localStorage` 的会话 JSON 键（随工作区分桶变化）。
+    pub session_sessions_storage_key: RwSignal<String>,
 }
 
 impl AppSignals {
@@ -462,6 +465,7 @@ impl AppSignals {
             resize,
             workspace,
             status,
+            session_sessions_storage_key: RwSignal::new(SESSIONS_KEY_LEGACY.to_string()),
         }
     }
 

@@ -240,6 +240,12 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
         let chat = chat;
         move || {
             flush_active_composer_draft(chat.sessions, chat.active_id, draft);
+            let prev_id = chat.active_id.get_untracked();
+            let inherited_ws = chat.sessions.with_untracked(|list| {
+                list.iter()
+                    .find(|s| s.id == prev_id)
+                    .and_then(|s| s.workspace_root.clone())
+            });
             let now = js_sys::Date::now() as i64;
             let s = ChatSession {
                 id: make_session_id(),
@@ -251,6 +257,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
                 starred: false,
                 server_conversation_id: None,
                 server_revision: None,
+                workspace_root: inherited_ws,
             };
             let id = s.id.clone();
             chat.update_sessions_composer(|list| {

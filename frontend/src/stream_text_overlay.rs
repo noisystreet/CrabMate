@@ -173,6 +173,7 @@ mod tests {
             starred: false,
             server_conversation_id: None,
             server_revision: None,
+            workspace_root: None,
         };
         let o = StreamTextOverlay {
             session_id: "s1".into(),

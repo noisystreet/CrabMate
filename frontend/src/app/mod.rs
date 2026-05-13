@@ -34,7 +34,7 @@ mod status_tasks_state;
 mod status_tasks_wiring;
 mod wire_workspace_domain;
 mod workspace_panel;
-mod workspace_panel_state;
+pub(crate) mod workspace_panel_state;
 
 use app_shell_init::init_app_shell;
 use approval_modal::ApprovalModal;

@@ -224,6 +224,24 @@ fn wire_phase4c_chat_and_workspace_chrome(
         WireChatDomainEffectsArgs::from_app_and_stream_shell(app, chat_stream_shell.clone()),
     );
 
+    crate::session_workspace_partition::wire_workspace_session_storage_partition(
+        crate::session_workspace_partition::WireWorkspaceSessionPartitionArgs {
+            initialized: app.initialized,
+            workspace_data: app.workspace.workspace_data,
+            chat: app.chat,
+            draft: app.chat_composer.draft,
+            locale: app.shell_ui.locale,
+            session_sessions_storage_key: app.session_sessions_storage_key,
+        },
+    );
+
+    crate::session_workspace_bind::wire_session_bound_workspace_effects(
+        app.initialized,
+        app.chat,
+        app.to_workspace_panel(),
+        app.shell_ui.locale,
+    );
+
     ChatColumnWiringPack {
         insert_workspace_file_ref: insert_workspace_file_ref_sv,
         chat_stream_shell,

@@ -25,6 +25,7 @@ pub(crate) struct WireChatSessionLifecycleEffectsArgs {
     pub apply_assistant_display_filters: RwSignal<bool>,
     pub chat_session: ChatSessionSignals,
     pub selected_agent_role: RwSignal<Option<String>>,
+    pub session_sessions_storage_key: RwSignal<String>,
 }
 
 impl WireChatSessionLifecycleEffectsArgs {
@@ -42,6 +43,7 @@ impl WireChatSessionLifecycleEffectsArgs {
             apply_assistant_display_filters: app.shell_ui.apply_assistant_display_filters,
             chat_session: app.chat,
             selected_agent_role: app.llm_settings.selected_agent_role,
+            session_sessions_storage_key: app.session_sessions_storage_key,
         }
     }
 }
@@ -59,6 +61,7 @@ pub(crate) fn wire_chat_session_lifecycle_effects(args: WireChatSessionLifecycle
         apply_assistant_display_filters,
         chat_session,
         selected_agent_role,
+        session_sessions_storage_key,
     } = args;
 
     wire_initial_sessions_from_storage(initialized, sessions, active_id, draft, locale);
@@ -78,5 +81,5 @@ pub(crate) fn wire_chat_session_lifecycle_effects(args: WireChatSessionLifecycle
         selected_agent_role,
     );
 
-    wire_persist_chat_sessions(initialized, chat_session);
+    wire_persist_chat_sessions(initialized, chat_session, session_sessions_storage_key);
 }

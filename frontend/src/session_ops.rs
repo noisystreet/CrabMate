@@ -707,6 +707,7 @@ mod message_branch_tests {
             starred: false,
             server_conversation_id: None,
             server_revision: None,
+            workspace_root: None,
             messages: vec![
                 StoredMessage {
                     id: "u0".into(),

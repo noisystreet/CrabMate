@@ -17,7 +17,7 @@ use std::sync::Arc;
 use leptos::html::Div;
 use leptos::prelude::*;
 
-use crate::chat_session_state::ChatStreamBusyMemos;
+use crate::chat_session_state::{ChatSessionSignals, ChatStreamBusyMemos};
 use crate::i18n::Locale;
 use crate::session_ops::SessionContextAnchor;
 use crate::sse_dispatch::ThinkingTraceInfo;
@@ -181,6 +181,7 @@ pub struct SideColumnViewSignals {
     pub view_menu_open: RwSignal<bool>,
     pub status_bar_visible: RwSignal<bool>,
     pub settings_page: RwSignal<bool>,
+    pub chat: ChatSessionSignals,
     pub workspace_panel: WorkspacePanelSignals,
     pub status_tasks: StatusTasksSignals,
     pub refresh_workspace: Arc<dyn Fn() + Send + Sync>,
@@ -237,6 +238,7 @@ impl AppShellCtx {
             view_menu_open: self.signals.shell_ui.view_menu_open,
             status_bar_visible: self.signals.shell_ui.status_bar_visible,
             settings_page: self.signals.modal.settings_page,
+            chat: self.signals.chat,
             workspace_panel: self.signals.to_workspace_panel(),
             status_tasks: self.signals.to_status_tasks(),
             refresh_workspace: Arc::clone(&self.refresh_workspace),
