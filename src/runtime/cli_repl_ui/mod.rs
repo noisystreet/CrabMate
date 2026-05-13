@@ -2,6 +2,7 @@
 //!
 //! **捕获模式**：[`CliReplStyle::new_tui_capture`] 将本应写入终端的行追加到缓冲区（纯文本、无 ANSI），供全屏 TUI 写入 transcript。
 
+mod banner_highlights_section;
 mod config_summary;
 mod tables;
 
@@ -15,7 +16,7 @@ use tables::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::agent::per_coord::FinalPlanRequirementMode;
-use crate::config::{AgentConfig, LlmHttpAuthMode, PlannerExecutorMode};
+use crate::config::{AgentConfig, LlmHttpAuthMode};
 
 use crossterm::{
     QueueableCommand, queue,
@@ -371,61 +372,9 @@ impl CliReplStyle {
         w: &mut W,
         cfg: &AgentConfig,
     ) -> io::Result<()> {
-        self.write_banner_subheading(w, "要点配置")?;
-        self.write_banner_item(w, "max_tokens", &cfg.llm_sampling.max_tokens.to_string())?;
-        self.write_banner_item(
-            w,
-            "max_message_history",
-            &format!(
-                "保留最近 {} 轮（user+assistant 计一轮）",
-                cfg.session_ui.max_message_history
-            ),
-        )?;
-        self.write_banner_item(
-            w,
-            "API",
-            &format!(
-                "超时 {}s · 失败重试 {} 次",
-                cfg.llm_http_retry.api_timeout_secs, cfg.llm_http_retry.api_max_retries
-            ),
-        )?;
-        self.write_banner_item(
-            w,
-            "run_command",
-            &format!(
-                "超时 {}s · 输出上限 {} 字",
-                cfg.command_exec.command_timeout_secs, cfg.command_exec.command_max_output_len
-            ),
-        )?;
-        let staged = if cfg.staged_planning.staged_plan_execution {
-            format!(
-                "开启（{}）",
-                cfg.staged_planning.staged_plan_feedback_mode.as_str()
-            )
-        } else {
-            "关闭".to_string()
-        };
-        self.write_banner_item(w, "staged_plan_execution", &staged)?;
-        if cfg.per_plan_policy.planner_executor_mode != PlannerExecutorMode::SingleAgent {
-            self.write_banner_item(
-                w,
-                "planner_executor_mode",
-                cfg.per_plan_policy.planner_executor_mode.as_str(),
-            )?;
-        }
-        if cfg.session_ui.tui_load_session_on_start {
-            self.write_banner_item(
-                w,
-                "会话恢复",
-                "启动时加载 .crabmate/tui_session.json（若存在）",
-            )?;
-        }
-        if cfg.mcp_client.mcp_enabled && !cfg.mcp_client.mcp_command.trim().is_empty() {
-            self.write_banner_item(w, "MCP", "已启用（stdio）")?;
-        }
-        if cfg.long_term_memory.long_term_memory_enabled {
-            self.write_banner_item(w, "long_term_memory", "已启用")?;
-        }
+        banner_highlights_section::write_banner_highlights_core_limits(self, w, cfg)?;
+        banner_highlights_section::write_banner_highlights_staged_and_planner(self, w, cfg)?;
+        banner_highlights_section::write_banner_highlights_optional_flags(self, w, cfg)?;
         Ok(())
     }
 
