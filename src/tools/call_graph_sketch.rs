@@ -187,6 +187,18 @@ fn line_is_use_import(line: &str) -> bool {
         || t.starts_with("pub(self) use ")
 }
 
+/// `i` 指向 `/*` 的首个 `'/'`；返回越过闭合 `*/` 后的下标（未闭合则停在 `chars.len()`）。
+fn skip_rust_block_comment(chars: &[char], mut i: usize) -> usize {
+    i = i.saturating_add(2);
+    while i + 1 < chars.len() {
+        if chars[i] == '*' && chars[i + 1] == '/' {
+            return i + 2;
+        }
+        i += 1;
+    }
+    chars.len()
+}
+
 fn strip_line_comment_code(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut in_string: Option<char> = None;
@@ -209,14 +221,7 @@ fn strip_line_comment_code(s: &str) -> String {
                 break;
             }
             if chars[i + 1] == '*' {
-                i += 2;
-                while i + 1 < chars.len() {
-                    if chars[i] == '*' && chars[i + 1] == '/' {
-                        i += 2;
-                        break;
-                    }
-                    i += 1;
-                }
+                i = skip_rust_block_comment(&chars, i);
                 continue;
             }
         }
@@ -232,6 +237,15 @@ fn strip_line_comment_code(s: &str) -> String {
         i += 1;
     }
     out
+}
+
+fn use_import_clause_rest(trimmed: &str) -> Option<&str> {
+    trimmed
+        .strip_prefix("use ")
+        .or_else(|| trimmed.strip_prefix("pub use "))
+        .or_else(|| trimmed.strip_prefix("pub(crate) use "))
+        .or_else(|| trimmed.strip_prefix("pub(super) use "))
+        .or_else(|| trimmed.strip_prefix("pub(self) use "))
 }
 
 fn scan_file_for_edges(
@@ -256,13 +270,7 @@ fn scan_file_for_edges(
         }
 
         if line_is_use_import(trimmed) {
-            if let Some(rest) = trimmed
-                .strip_prefix("use ")
-                .or_else(|| trimmed.strip_prefix("pub use "))
-                .or_else(|| trimmed.strip_prefix("pub(crate) use "))
-                .or_else(|| trimmed.strip_prefix("pub(super) use "))
-                .or_else(|| trimmed.strip_prefix("pub(self) use "))
-            {
+            if let Some(rest) = use_import_clause_rest(trimmed) {
                 let rest = rest.trim().trim_end_matches(';').trim();
                 for (sym, _) in symbol_res {
                     if use_clause_touches_symbol(rest, sym) {
@@ -279,21 +287,32 @@ fn scan_file_for_edges(
             continue;
         }
 
-        for (sym, re) in symbol_res {
-            if !re.is_match(&code) {
-                continue;
-            }
-            if crate::tools::symbol::line_looks_like_rust_definition(trimmed, sym, false) {
-                continue;
-            }
-            edges.push(Edge {
-                file_rel: rel_path.to_string(),
-                line_no,
-                kind: "reference",
-                line_trim: truncate(trimmed, 200),
-            });
-            break;
+        push_first_reference_edge(rel_path, line_no, trimmed, &code, symbol_res, edges);
+    }
+}
+
+fn push_first_reference_edge(
+    rel_path: &str,
+    line_no: usize,
+    trimmed: &str,
+    code: &str,
+    symbol_res: &[(String, Regex)],
+    edges: &mut Vec<Edge>,
+) {
+    for (sym, re) in symbol_res {
+        if !re.is_match(code) {
+            continue;
         }
+        if crate::tools::symbol::line_looks_like_rust_definition(trimmed, sym, false) {
+            continue;
+        }
+        edges.push(Edge {
+            file_rel: rel_path.to_string(),
+            line_no,
+            kind: "reference",
+            line_trim: truncate(trimmed, 200),
+        });
+        break;
     }
 }
 

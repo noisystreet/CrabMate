@@ -168,6 +168,38 @@ struct PluginCheckJsonRow {
     errors: Vec<String>,
 }
 
+fn print_plugin_validate_machine_output(
+    cli: &PluginValidateCli,
+    rows: &[PluginCheckJsonRow],
+    ok_count: usize,
+    fail_count: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if cli.jsonl {
+        for row in rows {
+            println!("{}", serde_json::to_string(row)?);
+        }
+        println!(
+            "{}",
+            serde_json::to_string(&serde_json::json!({
+                "type": "crabmate_plugin_validate_summary",
+                "ok_count": ok_count,
+                "failed_count": fail_count,
+            }))?
+        );
+    } else if cli.json {
+        let payload = serde_json::json!({
+            "type": "crabmate_plugin_validate_result",
+            "ok_count": ok_count,
+            "failed_count": fail_count,
+            "rows": rows,
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        println!("校验完成：ok={ok_count}, failed={fail_count}");
+    }
+    Ok(())
+}
+
 fn collect_plugin_paths(
     workspace: &std::path::Path,
     file: Option<&str>,
@@ -355,29 +387,7 @@ pub fn run_plugin_validate_command(
             errors: checked.errors,
         });
     }
-    if cli.jsonl {
-        for row in &rows {
-            println!("{}", serde_json::to_string(row)?);
-        }
-        println!(
-            "{}",
-            serde_json::to_string(&serde_json::json!({
-                "type": "crabmate_plugin_validate_summary",
-                "ok_count": ok_count,
-                "failed_count": fail_count,
-            }))?
-        );
-    } else if cli.json {
-        let payload = serde_json::json!({
-            "type": "crabmate_plugin_validate_result",
-            "ok_count": ok_count,
-            "failed_count": fail_count,
-            "rows": rows,
-        });
-        println!("{}", serde_json::to_string_pretty(&payload)?);
-    } else {
-        println!("校验完成：ok={ok_count}, failed={fail_count}");
-    }
+    print_plugin_validate_machine_output(&cli, &rows, ok_count, fail_count)?;
     if fail_count > 0 {
         return Err(CliExitError::new(EXIT_USAGE, "存在动态工具校验失败").into());
     }

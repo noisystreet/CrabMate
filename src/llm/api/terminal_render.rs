@@ -91,6 +91,57 @@ pub fn terminal_render_agent_markdown(content_acc: &str) -> io::Result<()> {
     stdout.flush()
 }
 
+fn non_stream_plain_tail_has_newline(msg: &Message) -> bool {
+    crate::types::message_content_as_str(&msg.content)
+        .map(|s| s.ends_with('\n'))
+        .unwrap_or(false)
+        || msg
+            .reasoning_content
+            .as_deref()
+            .map(|s| s.ends_with('\n'))
+            .unwrap_or(false)
+}
+
+fn render_non_stream_assistant_plain(msg: &Message) -> io::Result<()> {
+    let mut prefix_emitted = false;
+    let mut reasoning_style_active = false;
+    if let Some(r) = msg.reasoning_content.as_deref().filter(|s| !s.is_empty()) {
+        cli_terminal_write_plain_fragment(
+            r,
+            &mut prefix_emitted,
+            true,
+            &mut reasoning_style_active,
+        )?;
+    }
+    if let Some(c) = crate::types::message_content_as_str(&msg.content).filter(|s| !s.is_empty()) {
+        cli_terminal_write_plain_fragment(
+            c,
+            &mut prefix_emitted,
+            false,
+            &mut reasoning_style_active,
+        )?;
+    }
+    if prefix_emitted {
+        let mut lock = io::stdout().lock();
+        if reasoning_style_active {
+            crate::runtime::terminal_labels::queue_cli_plain_body_reset(&mut lock)?;
+        }
+        if !non_stream_plain_tail_has_newline(msg) {
+            writeln!(lock)?;
+        }
+        lock.flush()?;
+    }
+    Ok(())
+}
+
+fn render_non_stream_assistant_markdown_path(msg: &Message) -> io::Result<()> {
+    let md = crate::runtime::message_display::assistant_raw_markdown_body_for_message(msg);
+    if !md.is_empty() {
+        terminal_render_agent_markdown(&md)?;
+    }
+    Ok(())
+}
+
 /// 非流式：在已合并 `reasoning_details` 的 `msg` 上输出 CLI（纯文本分色或 Markdown）。
 pub(super) fn render_non_stream_assistant_terminal(
     msg: &Message,
@@ -98,51 +149,10 @@ pub(super) fn render_non_stream_assistant_terminal(
     out_is_none: bool,
 ) -> io::Result<()> {
     if plain_terminal_stream && out_is_none {
-        let mut prefix_emitted = false;
-        let mut reasoning_style_active = false;
-        if let Some(r) = msg.reasoning_content.as_deref().filter(|s| !s.is_empty()) {
-            cli_terminal_write_plain_fragment(
-                r,
-                &mut prefix_emitted,
-                true,
-                &mut reasoning_style_active,
-            )?;
-        }
-        if let Some(c) =
-            crate::types::message_content_as_str(&msg.content).filter(|s| !s.is_empty())
-        {
-            cli_terminal_write_plain_fragment(
-                c,
-                &mut prefix_emitted,
-                false,
-                &mut reasoning_style_active,
-            )?;
-        }
-        if prefix_emitted {
-            let mut lock = io::stdout().lock();
-            if reasoning_style_active {
-                crate::runtime::terminal_labels::queue_cli_plain_body_reset(&mut lock)?;
-            }
-            let ends_nl = crate::types::message_content_as_str(&msg.content)
-                .map(|s| s.ends_with('\n'))
-                .unwrap_or(false)
-                || msg
-                    .reasoning_content
-                    .as_deref()
-                    .map(|s| s.ends_with('\n'))
-                    .unwrap_or(false);
-            if !ends_nl {
-                writeln!(lock)?;
-            }
-            lock.flush()?;
-        }
+        render_non_stream_assistant_plain(msg)
     } else {
-        let md = crate::runtime::message_display::assistant_raw_markdown_body_for_message(msg);
-        if !md.is_empty() {
-            terminal_render_agent_markdown(&md)?;
-        }
+        render_non_stream_assistant_markdown_path(msg)
     }
-    Ok(())
 }
 
 /// 流式纯文本：ingest 已写完正文，此处复位样式并补末尾换行。
