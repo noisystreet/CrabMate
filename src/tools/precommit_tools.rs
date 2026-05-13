@@ -13,50 +13,25 @@ fn has_precommit_config(root: &Path) -> bool {
     root.join(".pre-commit-config.yaml").is_file() || root.join(".pre-commit-config.yml").is_file()
 }
 
-/// 在工作区根运行 `pre-commit run`。
-///
-/// - 无 `hook`：检查**暂存**文件（与 CLI 默认一致）。
-/// - `all_files: true`：追加 `--all-files`。
-/// - `files`：非空时追加 `--files` + 若干相对路径（与 `all_files` 同时出现时以 `files` 为准，不传 `--all-files`）。
-/// - `hook`：指定 hook id（仅允许字母数字、`.`、`_`、`-`）。
-pub fn pre_commit_run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    if !has_precommit_config(workspace_root) {
-        return "pre-commit run: 跳过（未找到 .pre-commit-config.yaml / .pre-commit-config.yml）"
-            .to_string();
-    }
-    let parsed = match crate::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: PreCommitRunArgs = match serde_json::from_value(parsed) {
-        Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
-    };
-    let v = match serde_json::to_value(&args) {
-        Ok(v) => v,
-        Err(e) => return format!("参数序列化错误: {e}"),
-    };
+fn parse_pre_commit_json(args_json: &str) -> Result<(PreCommitRunArgs, serde_json::Value), String> {
+    let parsed = crate::tools::parse_args_json(args_json)?;
+    let args: PreCommitRunArgs =
+        serde_json::from_value(parsed).map_err(|e| format!("参数解析错误: {e}"))?;
+    let v = serde_json::to_value(&args).map_err(|e| format!("参数序列化错误: {e}"))?;
+    Ok((args, v))
+}
 
+fn validate_pre_commit_hook_id(args: &PreCommitRunArgs) -> Result<(), String> {
     if let Some(h) = args.hook.as_deref().map(str::trim)
         && !h.is_empty()
         && !is_safe_hook_id(h)
     {
-        return "错误：hook 仅允许字母数字与 ._-，且须以字母或数字开头".to_string();
+        return Err("错误：hook 仅允许字母数字与 ._-，且须以字母或数字开头".to_string());
     }
+    Ok(())
+}
 
-    let files = match parse_files_array(&v) {
-        Ok(f) => f,
-        Err(e) => return e,
-    };
-
-    let base = match workspace_root.canonicalize() {
-        Ok(p) => p,
-        Err(e) => return format!("工作区根目录无法解析: {}", e),
-    };
-
-    let mut cmd = Command::new("pre-commit");
-    cmd.arg("run").current_dir(&base);
-
+fn apply_pre_commit_cli_flags(cmd: &mut Command, v: &serde_json::Value, files: &[String]) {
     if let Some(h) = v.get("hook").and_then(|x| x.as_str()).map(str::trim)
         && !h.is_empty()
     {
@@ -73,12 +48,46 @@ pub fn pre_commit_run(args_json: &str, workspace_root: &Path, max_output_len: us
         .unwrap_or(false);
     if !files.is_empty() {
         cmd.arg("--files");
-        for p in &files {
+        for p in files {
             cmd.arg(p);
         }
     } else if all_files {
         cmd.arg("--all-files");
     }
+}
+
+/// 在工作区根运行 `pre-commit run`。
+///
+/// - 无 `hook`：检查**暂存**文件（与 CLI 默认一致）。
+/// - `all_files: true`：追加 `--all-files`。
+/// - `files`：非空时追加 `--files` + 若干相对路径（与 `all_files` 同时出现时以 `files` 为准，不传 `--all-files`）。
+/// - `hook`：指定 hook id（仅允许字母数字、`.`、`_`、`-`）。
+pub fn pre_commit_run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
+    if !has_precommit_config(workspace_root) {
+        return "pre-commit run: 跳过（未找到 .pre-commit-config.yaml / .pre-commit-config.yml）"
+            .to_string();
+    }
+    let (args, v) = match parse_pre_commit_json(args_json) {
+        Ok(x) => x,
+        Err(e) => return e,
+    };
+    if let Err(e) = validate_pre_commit_hook_id(&args) {
+        return e;
+    }
+
+    let files = match parse_files_array(&v) {
+        Ok(f) => f,
+        Err(e) => return e,
+    };
+
+    let base = match workspace_root.canonicalize() {
+        Ok(p) => p,
+        Err(e) => return format!("工作区根目录无法解析: {}", e),
+    };
+
+    let mut cmd = Command::new("pre-commit");
+    cmd.arg("run").current_dir(&base);
+    apply_pre_commit_cli_flags(&mut cmd, &v, &files);
 
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
