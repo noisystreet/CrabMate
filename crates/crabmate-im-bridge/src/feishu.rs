@@ -15,5 +15,6 @@
 include!("feishu_parts/router_state.rs");
 include!("feishu_parts/handlers_util.inc.rs");
 include!("feishu_parts/handlers_reply.inc.rs");
+include!("feishu_parts/handlers_tool_approval.inc.rs");
 include!("feishu_parts/handlers_flow.inc.rs");
 include!("feishu_parts/handlers_tests.inc.rs");

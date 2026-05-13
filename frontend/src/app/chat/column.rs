@@ -2,12 +2,12 @@
 
 use std::sync::Arc;
 
-use gloo_timers::future::TimeoutFuture;
 use leptos::prelude::{StoredValue, *};
 use leptos::task::spawn_local;
 use leptos_dom::helpers::event_target_value;
 use wasm_bindgen::JsCast;
 
+use super::column_keyboard::ChatColumnHomeEndNav;
 use super::composer_input_stack::ComposerInputStack;
 use super::handles::ChatColumnShell;
 use super::message_chunks::{ChatChunk, chat_chunk_stable_key, chunk_messages};
@@ -16,11 +16,9 @@ use super::message_row::{ChatMessageRowSignals, chat_message_row};
 use super::tail_loading_memo::tail_loading_assistant_mid_memo;
 use super::timeline::timeline_panel_view;
 use crate::api::upload_files_multipart;
-use crate::app::scroll_guard::MessagesScrollFromEffectGuard;
 use crate::app_prefs::AUTO_SCROLL_RESUME_GAP_PX;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n;
-use crate::session_ops::messages_scroller_has_non_collapsed_selection;
 use crate::storage::StoredMessage;
 
 /// 消息列表区所需信号（缩短 `ChatMessagesPane` 形参列表；勿命名为 `*Props`，与 Leptos 组件宏生成类型冲突）。
@@ -591,78 +589,15 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
     let pending_clarification = stream_shell.approval.pending_clarification;
 
     let run_send_clarify_sv = StoredValue::new(run_send_message.clone());
+    let home_end_nav = ChatColumnHomeEndNav {
+        messages_scroller,
+        messages_scroll_from_effect,
+        auto_scroll_chat,
+    };
     view! {
                 <div
                     class="chat-column"
-                    on:keydown=move |ev: web_sys::KeyboardEvent| {
-                        let key = ev.key();
-                        if key != "End" && key != "Home" {
-                            return;
-                        }
-                        let Some(t) = ev.target() else {
-                            return;
-                        };
-                        let Ok(he) = t.dyn_into::<web_sys::HtmlElement>() else {
-                            return;
-                        };
-                        let tag = he.tag_name();
-                        if tag.eq_ignore_ascii_case("TEXTAREA")
-                            || tag.eq_ignore_ascii_case("INPUT")
-                            || tag.eq_ignore_ascii_case("SELECT")
-                            || tag.eq_ignore_ascii_case("OPTION")
-                        {
-                            return;
-                        }
-                        if he.is_content_editable() {
-                            return;
-                        }
-                        // 若用户正在消息区选中文字，不劫持 Home/End，尊重文本选择。
-                        let mref = messages_scroller;
-                        if let Some(el) = mref.get() {
-                            if messages_scroller_has_non_collapsed_selection(&el) {
-                                return;
-                            }
-                        }
-                        ev.prevent_default();
-                        let scroll_from_effect = messages_scroll_from_effect;
-                        let mref = messages_scroller;
-                        if key == "Home" {
-                            auto_scroll_chat.set(false);
-                            spawn_local(async move {
-                                let _guard = MessagesScrollFromEffectGuard::new(scroll_from_effect);
-                                TimeoutFuture::new(0).await;
-                                if let Some(el) = mref.get() {
-                                    el.set_scroll_top(0);
-                                }
-                                TimeoutFuture::new(0).await;
-                                if let Some(el) = mref.get() {
-                                    el.set_scroll_top(0);
-                                }
-                                TimeoutFuture::new(16).await;
-                                if let Some(el) = mref.get() {
-                                    el.set_scroll_top(0);
-                                }
-                            });
-                            return;
-                        }
-                        // End：滚到当前会话最新消息并恢复自动跟底。
-                        auto_scroll_chat.set(true);
-                        spawn_local(async move {
-                            let _guard = MessagesScrollFromEffectGuard::new(scroll_from_effect);
-                            TimeoutFuture::new(0).await;
-                            if let Some(el) = mref.get() {
-                                el.set_scroll_top(el.scroll_height());
-                            }
-                            TimeoutFuture::new(0).await;
-                            if let Some(el) = mref.get() {
-                                el.set_scroll_top(el.scroll_height());
-                            }
-                            TimeoutFuture::new(16).await;
-                            if let Some(el) = mref.get() {
-                                el.set_scroll_top(el.scroll_height());
-                            }
-                        });
-                    }
+                    on:keydown=home_end_nav.keydown_handler()
                 >
                     <ChatMessagesPane signals=ChatMessagesPaneSignals {
                         locale,

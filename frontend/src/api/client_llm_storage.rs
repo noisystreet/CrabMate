@@ -31,6 +31,71 @@ pub const EXECUTION_MODE_STORAGE_KEY: &str = "crabmate-execution-mode";
 pub const DISABLE_READONLY_TOOL_TTL_CACHE_STORAGE_KEY: &str =
     "crabmate-disable-readonly-tool-ttl-cache";
 
+/// `remove_when(trimmed)` 为真时 `remove_item`，否则 `set_item(trimmed)`。
+fn persist_storage_trimmed<E: Fn() -> String>(
+    st: &web_sys::Storage,
+    key: &'static str,
+    raw: &str,
+    remove_when: impl FnOnce(&str) -> bool,
+    on_write_err: E,
+) -> Result<(), String> {
+    let t = raw.trim();
+    if remove_when(t) {
+        let _ = st.remove_item(key);
+    } else {
+        st.set_item(key, t).map_err(|_| on_write_err())?;
+    }
+    Ok(())
+}
+
+/// 写入 `client_llm` 中不含密钥的字段（侧栏「本机模型」）。
+fn persist_client_llm_non_secret_fields(
+    st: &web_sys::Storage,
+    api_base: &str,
+    model: &str,
+    temperature: &str,
+    llm_context_tokens: &str,
+    llm_thinking_mode: &str,
+    loc: Locale,
+) -> Result<(), String> {
+    persist_storage_trimmed(
+        st,
+        CLIENT_LLM_API_BASE_STORAGE_KEY,
+        api_base,
+        |t| t.is_empty(),
+        || crate::i18n::api_err_write_api_base(loc).to_string(),
+    )?;
+    persist_storage_trimmed(
+        st,
+        CLIENT_LLM_MODEL_STORAGE_KEY,
+        model,
+        |t| t.is_empty(),
+        || crate::i18n::api_err_write_model(loc).to_string(),
+    )?;
+    persist_storage_trimmed(
+        st,
+        CLIENT_LLM_TEMPERATURE_STORAGE_KEY,
+        temperature,
+        |t| t.is_empty(),
+        || crate::i18n::api_err_write_model(loc).to_string(),
+    )?;
+    persist_storage_trimmed(
+        st,
+        CLIENT_LLM_CONTEXT_TOKENS_STORAGE_KEY,
+        llm_context_tokens,
+        |t| t.is_empty(),
+        || crate::i18n::api_err_write_model(loc).to_string(),
+    )?;
+    persist_storage_trimmed(
+        st,
+        CLIENT_LLM_THINKING_MODE_STORAGE_KEY,
+        llm_thinking_mode,
+        |t| t.is_empty() || t == "server",
+        || crate::i18n::api_err_write_model(loc).to_string(),
+    )?;
+    Ok(())
+}
+
 fn storage_trimmed_item(key: &str) -> Option<String> {
     let st = local_storage()?;
     let s = st.get_item(key).ok().flatten()?;
@@ -75,49 +140,23 @@ pub fn persist_client_llm_to_storage(
 ) -> Result<(), String> {
     let st =
         local_storage().ok_or_else(|| crate::i18n::api_err_no_local_storage(loc).to_string())?;
-    let b = api_base.trim();
-    let m = model.trim();
-    if b.is_empty() {
-        let _ = st.remove_item(CLIENT_LLM_API_BASE_STORAGE_KEY);
-    } else {
-        st.set_item(CLIENT_LLM_API_BASE_STORAGE_KEY, b)
-            .map_err(|_| crate::i18n::api_err_write_api_base(loc).to_string())?;
-    }
-    if m.is_empty() {
-        let _ = st.remove_item(CLIENT_LLM_MODEL_STORAGE_KEY);
-    } else {
-        st.set_item(CLIENT_LLM_MODEL_STORAGE_KEY, m)
-            .map_err(|_| crate::i18n::api_err_write_model(loc).to_string())?;
-    }
-    let t = temperature.trim();
-    if t.is_empty() {
-        let _ = st.remove_item(CLIENT_LLM_TEMPERATURE_STORAGE_KEY);
-    } else {
-        st.set_item(CLIENT_LLM_TEMPERATURE_STORAGE_KEY, t)
-            .map_err(|_| crate::i18n::api_err_write_model(loc).to_string())?;
-    }
-    let ct = llm_context_tokens.trim();
-    if ct.is_empty() {
-        let _ = st.remove_item(CLIENT_LLM_CONTEXT_TOKENS_STORAGE_KEY);
-    } else {
-        st.set_item(CLIENT_LLM_CONTEXT_TOKENS_STORAGE_KEY, ct)
-            .map_err(|_| crate::i18n::api_err_write_model(loc).to_string())?;
-    }
-    let tm = llm_thinking_mode.trim();
-    if tm.is_empty() || tm == "server" {
-        let _ = st.remove_item(CLIENT_LLM_THINKING_MODE_STORAGE_KEY);
-    } else {
-        st.set_item(CLIENT_LLM_THINKING_MODE_STORAGE_KEY, tm)
-            .map_err(|_| crate::i18n::api_err_write_model(loc).to_string())?;
-    }
+    persist_client_llm_non_secret_fields(
+        &st,
+        api_base,
+        model,
+        temperature,
+        llm_context_tokens,
+        llm_thinking_mode,
+        loc,
+    )?;
     if let Some(k) = api_key_update {
-        let t = k.trim();
-        if t.is_empty() {
-            let _ = st.remove_item(CLIENT_LLM_API_KEY_STORAGE_KEY);
-        } else {
-            st.set_item(CLIENT_LLM_API_KEY_STORAGE_KEY, t)
-                .map_err(|_| crate::i18n::api_err_write_api_key(loc).to_string())?;
-        }
+        persist_storage_trimmed(
+            &st,
+            CLIENT_LLM_API_KEY_STORAGE_KEY,
+            k,
+            |t| t.is_empty(),
+            || crate::i18n::api_err_write_api_key(loc).to_string(),
+        )?;
     }
     Ok(())
 }
@@ -209,28 +248,28 @@ pub fn persist_executor_llm_to_storage(
 ) -> Result<(), String> {
     let st =
         local_storage().ok_or_else(|| crate::i18n::api_err_no_local_storage(loc).to_string())?;
-    let b = api_base.trim();
-    let m = model.trim();
-    if b.is_empty() {
-        let _ = st.remove_item(EXECUTOR_LLM_API_BASE_STORAGE_KEY);
-    } else {
-        st.set_item(EXECUTOR_LLM_API_BASE_STORAGE_KEY, b)
-            .map_err(|_| crate::i18n::api_err_write_api_base(loc).to_string())?;
-    }
-    if m.is_empty() {
-        let _ = st.remove_item(EXECUTOR_LLM_MODEL_STORAGE_KEY);
-    } else {
-        st.set_item(EXECUTOR_LLM_MODEL_STORAGE_KEY, m)
-            .map_err(|_| crate::i18n::api_err_write_model(loc).to_string())?;
-    }
+    persist_storage_trimmed(
+        &st,
+        EXECUTOR_LLM_API_BASE_STORAGE_KEY,
+        api_base,
+        |t| t.is_empty(),
+        || crate::i18n::api_err_write_api_base(loc).to_string(),
+    )?;
+    persist_storage_trimmed(
+        &st,
+        EXECUTOR_LLM_MODEL_STORAGE_KEY,
+        model,
+        |t| t.is_empty(),
+        || crate::i18n::api_err_write_model(loc).to_string(),
+    )?;
     if let Some(k) = api_key_update {
-        let t = k.trim();
-        if t.is_empty() {
-            let _ = st.remove_item(EXECUTOR_LLM_API_KEY_STORAGE_KEY);
-        } else {
-            st.set_item(EXECUTOR_LLM_API_KEY_STORAGE_KEY, t)
-                .map_err(|_| crate::i18n::api_err_write_api_key(loc).to_string())?;
-        }
+        persist_storage_trimmed(
+            &st,
+            EXECUTOR_LLM_API_KEY_STORAGE_KEY,
+            k,
+            |t| t.is_empty(),
+            || crate::i18n::api_err_write_api_key(loc).to_string(),
+        )?;
     }
     Ok(())
 }
@@ -239,13 +278,13 @@ pub fn persist_executor_llm_to_storage(
 pub fn persist_execution_mode_to_storage(mode: &str, loc: Locale) -> Result<(), String> {
     let st =
         local_storage().ok_or_else(|| crate::i18n::api_err_no_local_storage(loc).to_string())?;
-    let t = mode.trim();
-    if t.is_empty() {
-        let _ = st.remove_item(EXECUTION_MODE_STORAGE_KEY);
-    } else {
-        st.set_item(EXECUTION_MODE_STORAGE_KEY, t)
-            .map_err(|_| crate::i18n::api_err_write_model(loc).to_string())?;
-    }
+    persist_storage_trimmed(
+        &st,
+        EXECUTION_MODE_STORAGE_KEY,
+        mode,
+        |t| t.is_empty(),
+        || crate::i18n::api_err_write_model(loc).to_string(),
+    )?;
     Ok(())
 }
 

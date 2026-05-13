@@ -9,6 +9,54 @@ use crabmate_sse_protocol::StreamEndReason;
 
 use super::helpers::should_show_missing_final_summary_hint;
 
+fn done_bubble_parsed_end_reason(raw: Option<&str>) -> Option<StreamEndReason> {
+    raw.map(str::trim)
+        .filter(|s| !s.is_empty())
+        .and_then(|s| s.parse().ok())
+}
+
+fn done_remove_completed_with_visible_delta(
+    parsed: Option<StreamEndReason>,
+    inp: &DoneBubbleDecisionInputs<'_>,
+) -> bool {
+    parsed == Some(StreamEndReason::Completed) && inp.in_answer_body_lane && inp.diag_chars > 0
+}
+
+fn done_remove_completed_plain_empty(
+    parsed: Option<StreamEndReason>,
+    inp: &DoneBubbleDecisionInputs<'_>,
+) -> bool {
+    parsed == Some(StreamEndReason::Completed)
+        && inp.diag_chars == 0
+        && !inp.has_hierarchical_or_tool
+}
+
+fn done_remove_empty_main_after_tool_like_turn(
+    parsed: Option<StreamEndReason>,
+    inp: &DoneBubbleDecisionInputs<'_>,
+) -> bool {
+    let Some(r) = parsed else {
+        return false;
+    };
+    matches!(
+        r,
+        StreamEndReason::Completed
+            | StreamEndReason::Fallback
+            | StreamEndReason::Cancelled
+            | StreamEndReason::NoOutput
+    ) && inp.has_hierarchical_or_tool
+        && (!inp.in_answer_body_lane || inp.diag_chars == 0)
+}
+
+fn done_remove_redundant_empty_after_fallback_timeline(
+    parsed: Option<StreamEndReason>,
+    inp: &DoneBubbleDecisionInputs<'_>,
+) -> bool {
+    (parsed == Some(StreamEndReason::Fallback) || inp.saw_final_response_timeline)
+        && inp.in_answer_body_lane
+        && inp.diag_chars == 0
+}
+
 /// 决策输入：须与 `chat_stream_on_done_builder` 里收集的信号一致，便于对照协议语义。
 #[derive(Clone, Copy)]
 pub(super) struct DoneBubbleDecisionInputs<'a> {
@@ -35,50 +83,19 @@ pub(super) fn decide_done_bubble_action(inp: DoneBubbleDecisionInputs<'_>) -> Do
     if !inp.body_and_reasoning_empty {
         return DoneBubbleAction::Keep;
     }
-
-    let parsed = inp
-        .end_reason_raw
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .and_then(|s| s.parse::<StreamEndReason>().ok());
-
-    let completed_with_visible_delta = parsed.is_some_and(|r| r == StreamEndReason::Completed)
-        && inp.in_answer_body_lane
-        && inp.diag_chars > 0;
-    if completed_with_visible_delta {
+    let parsed = done_bubble_parsed_end_reason(inp.end_reason_raw);
+    if done_remove_completed_with_visible_delta(parsed, &inp) {
         return DoneBubbleAction::RemoveBubble;
     }
-
-    // completed 且无正文增量、无工具/分层时，空泡直接删除（无需诊断说明）。
-    let completed_plain_empty = parsed == Some(StreamEndReason::Completed)
-        && inp.diag_chars == 0
-        && !inp.has_hierarchical_or_tool;
-    if completed_plain_empty {
+    if done_remove_completed_plain_empty(parsed, &inp) {
         return DoneBubbleAction::RemoveBubble;
     }
-
-    let drop_empty_main_after_tool_like_turn = parsed.is_some_and(|r| {
-        matches!(
-            r,
-            StreamEndReason::Completed
-                | StreamEndReason::Fallback
-                | StreamEndReason::Cancelled
-                | StreamEndReason::NoOutput
-        )
-    }) && inp.has_hierarchical_or_tool
-        && (!inp.in_answer_body_lane || inp.diag_chars == 0);
-    if drop_empty_main_after_tool_like_turn {
+    if done_remove_empty_main_after_tool_like_turn(parsed, &inp) {
         return DoneBubbleAction::RemoveBubble;
     }
-
-    let drop_redundant_empty_after_fallback_timeline = (parsed == Some(StreamEndReason::Fallback)
-        || inp.saw_final_response_timeline)
-        && inp.in_answer_body_lane
-        && inp.diag_chars == 0;
-    if drop_redundant_empty_after_fallback_timeline {
+    if done_remove_redundant_empty_after_fallback_timeline(parsed, &inp) {
         return DoneBubbleAction::RemoveBubble;
     }
-
     if should_show_missing_final_summary_hint(
         inp.end_reason_raw,
         inp.in_answer_body_lane,

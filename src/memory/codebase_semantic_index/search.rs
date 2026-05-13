@@ -284,46 +284,87 @@ fn semantic_heap_offer_top_k(
 }
 
 #[cfg(feature = "fastembed")]
-fn search_index_semantic_fastembed(
-    conn: &Connection,
-    ws_key: &str,
-    query: &str,
-    q: &SearchQueryParams,
-    fts_by_id: &HashMap<i64, f32>,
-    fts_rows_fetched: usize,
-) -> String {
-    let pool_k = if q.mode == RetrieveMode::Hybrid {
+fn semantic_fastembed_pool_k(q: &SearchQueryParams) -> usize {
+    if q.mode == RetrieveMode::Hybrid {
         q.hybrid_semantic_pool.max(q.top_k)
     } else {
         q.top_k
-    };
+    }
+}
 
-    let qv = match semantic_search_embed_query_vector(query) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
+#[cfg(feature = "fastembed")]
+struct SemanticChunkRow {
+    id: i64,
+    rel: String,
+    sl: i64,
+    el: i64,
+    text: String,
+    blob: Vec<u8>,
+}
 
-    let mut stmt = match conn.prepare_cached(&format!(
-        "SELECT id, rel_path, start_line, end_line, chunk_text, embedding FROM {TABLE} WHERE workspace_root = ?1"
-    )) {
-        Ok(s) => s,
-        Err(e) => return format!("读取索引失败: {}", e),
+#[cfg(feature = "fastembed")]
+fn semantic_fastembed_scored_chunk(
+    qv: &[f32],
+    row: SemanticChunkRow,
+    q: &SearchQueryParams,
+    fts_by_id: &HashMap<i64, f32>,
+) -> ScoredChunk {
+    let SemanticChunkRow {
+        id,
+        rel,
+        sl,
+        el,
+        text,
+        blob,
+    } = row;
+    let cosine = bytes_to_f32_slice(&blob)
+        .map(|ev| cosine_sim(qv, &ev))
+        .unwrap_or(0.0);
+    let fts_n = *fts_by_id.get(&id).unwrap_or(&0.0);
+    let (score, fts_for_row) = if q.mode == RetrieveMode::SemanticOnly {
+        (cosine, 0.0f32)
+    } else {
+        let s = q.hybrid_alpha * cosine + (1.0 - q.hybrid_alpha) * fts_n;
+        (s, fts_n)
     };
+    ScoredChunk {
+        id,
+        score,
+        cosine,
+        fts: fts_for_row,
+        rel,
+        sl,
+        el,
+        text,
+    }
+}
 
-    let rows = match stmt.query_map(params![ws_key], |r| {
-        Ok((
-            r.get::<_, i64>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, i64>(2)?,
-            r.get::<_, i64>(3)?,
-            r.get::<_, String>(4)?,
-            r.get::<_, Vec<u8>>(5)?,
+#[cfg(feature = "fastembed")]
+fn semantic_fastembed_scan_into_heap(
+    conn: &Connection,
+    ws_key: &str,
+    qv: &[f32],
+    q: &SearchQueryParams,
+    fts_by_id: &HashMap<i64, f32>,
+    pool_k: usize,
+) -> Result<(usize, BinaryHeap<Reverse<ScoredChunk>>), String> {
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT id, rel_path, start_line, end_line, chunk_text, embedding FROM {TABLE} WHERE workspace_root = ?1"
         ))
-    }) {
-        Ok(it) => it,
-        Err(e) => return format!("遍历索引失败: {}", e),
-    };
-
+        .map_err(|e| format!("读取索引失败: {}", e))?;
+    let rows = stmt
+        .query_map(params![ws_key], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, i64>(3)?,
+                r.get::<_, String>(4)?,
+                r.get::<_, Vec<u8>>(5)?,
+            ))
+        })
+        .map_err(|e| format!("遍历索引失败: {}", e))?;
     let mut heap: BinaryHeap<Reverse<ScoredChunk>> = BinaryHeap::new();
     let mut scanned = 0usize;
     let limit_active = q.query_max_chunks > 0;
@@ -336,45 +377,53 @@ fn search_index_semantic_fastembed(
             Err(_) => continue,
         };
         scanned = scanned.saturating_add(1);
-
-        let cosine = bytes_to_f32_slice(&blob)
-            .map(|ev| cosine_sim(&qv, &ev))
-            .unwrap_or(0.0);
-
-        let fts_n = *fts_by_id.get(&id).unwrap_or(&0.0);
-
-        let (score, fts_for_row) = if q.mode == RetrieveMode::SemanticOnly {
-            (cosine, 0.0f32)
-        } else {
-            let s = q.hybrid_alpha * cosine + (1.0 - q.hybrid_alpha) * fts_n;
-            (s, fts_n)
-        };
-
-        let item = ScoredChunk {
-            id,
-            score,
-            cosine,
-            fts: fts_for_row,
-            rel,
-            sl,
-            el,
-            text,
-        };
-
+        let item = semantic_fastembed_scored_chunk(
+            qv,
+            SemanticChunkRow {
+                id,
+                rel,
+                sl,
+                el,
+                text,
+                blob,
+            },
+            q,
+            fts_by_id,
+        );
         semantic_heap_offer_top_k(&mut heap, pool_k, item);
     }
+    Ok((scanned, heap))
+}
 
+#[cfg(feature = "fastembed")]
+fn search_index_semantic_fastembed(
+    conn: &Connection,
+    ws_key: &str,
+    query: &str,
+    q: &SearchQueryParams,
+    fts_by_id: &HashMap<i64, f32>,
+    fts_rows_fetched: usize,
+) -> String {
+    let pool_k = semantic_fastembed_pool_k(q);
+    let qv = match semantic_search_embed_query_vector(query) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let (scanned, heap) =
+        match semantic_fastembed_scan_into_heap(conn, ws_key, &qv, q, fts_by_id, pool_k) {
+            Ok(x) => x,
+            Err(e) => return e,
+        };
     let mut pool: Vec<ScoredChunk> = heap.into_iter().map(|r| r.0).collect();
     pool.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
     let scored: Vec<ScoredChunk> = pool.into_iter().take(q.top_k).collect();
-
     if scored.is_empty() {
         return format!(
             "索引中无匹配条目（workspace_root={}）。请先使用 rebuild_index=true 构建索引；若为 fts_only 且无分词命中，可换关键词或改用 hybrid/semantic_only。",
             ws_key
         );
     }
-
+    let limit_active = q.query_max_chunks > 0;
     let hdr = SearchOutputHeader {
         mode: q.mode,
         top_k: q.top_k,

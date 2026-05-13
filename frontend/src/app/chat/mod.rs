@@ -3,6 +3,7 @@
 //! 对应 `docs/frontend/ARCHITECTURE.md` 中 **`app/chat_*`** 域；[`ChatSessionSignals`](crate::chat_session_state::ChatSessionSignals) 仍在 crate 根以便与会话模态等共用。
 
 mod column;
+mod column_keyboard;
 mod composer;
 mod composer_input_stack;
 mod composer_mirror;

@@ -130,6 +130,12 @@ fn validate_explicit_remember_scope_and_text<'a>(
     Ok((scope, text))
 }
 
+/// 回合索引写入的单条分块（正文 + 角色标识）。
+type LongTermIndexTurnChunk = (String, &'static str);
+/// [`LongTermMemoryRuntime::index_turn_chunks_to_store`] 的返回值。
+type LongTermIndexTurnChunks =
+    Result<Option<Vec<LongTermIndexTurnChunk>>, Box<dyn std::error::Error + Send + Sync>>;
+
 /// 进程内共享：SQLite 连接 + 可选 fastembed（首次 embed 时初始化；未编译 **`fastembed`** feature 时无嵌入器）。
 pub struct LongTermMemoryRuntime {
     conn: Arc<Mutex<Connection>>,
@@ -464,62 +470,24 @@ impl LongTermMemoryRuntime {
         scope_id: &str,
         messages: &[Message],
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        if !cfg.long_term_memory.long_term_memory_auto_index_turns {
-            return Ok(());
-        }
-        let Some((user_t, asst_t)) = last_user_assistant_final_pair(messages) else {
+        let Some(to_store) = Self::index_turn_chunks_to_store(cfg, messages)? else {
             return Ok(());
         };
-        let user_t = clamp_text(
-            user_t,
-            cfg.long_term_memory.long_term_memory_max_chars_per_chunk,
-        );
-        let asst_t = clamp_text(
-            asst_t,
-            cfg.long_term_memory.long_term_memory_max_chars_per_chunk,
-        );
-        if user_t.len() < cfg.long_term_memory.long_term_memory_min_chars_to_index
-            && asst_t.len() < cfg.long_term_memory.long_term_memory_min_chars_to_index
-        {
-            return Ok(());
-        }
-
-        let mut to_store: Vec<(String, &'static str)> = Vec::new();
-        for part in chunk_text(
-            &user_t,
-            cfg.long_term_memory.long_term_memory_max_chars_per_chunk,
-        ) {
-            to_store.push((part, "user"));
-        }
-        for part in chunk_text(
-            &asst_t,
-            cfg.long_term_memory.long_term_memory_max_chars_per_chunk,
-        ) {
-            to_store.push((part, "assistant"));
-        }
-
-        let need_embed = cfg!(feature = "fastembed")
-            && matches!(
-                cfg.long_term_memory.long_term_memory_vector_backend,
-                LongTermMemoryVectorBackend::Fastembed
-            );
+        let need_embed = Self::index_turn_needs_fastembed_embedding(cfg);
         if need_embed {
             #[cfg(feature = "fastembed")]
             LongTermMemoryRuntime::ensure_embedder(&rt.embedder)?;
         }
-
         let conn = rt
             .conn
             .lock()
             .map_err(|e| format!("长期记忆 SQLite 锁失败: {e}"))?;
-
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
         let auto_expires = (cfg.long_term_memory.long_term_memory_default_ttl_secs > 0)
             .then_some(now + cfg.long_term_memory.long_term_memory_default_ttl_secs as i64);
-
         for (text, role) in to_store {
             if long_term_memory_store::has_duplicate_text(&conn, scope_id, &text)? {
                 continue;
@@ -551,6 +519,49 @@ impl LongTermMemoryRuntime {
             )?;
         }
         Ok(())
+    }
+
+    /// 若本回合无需写入长期记忆，返回 `Ok(None)`。
+    fn index_turn_chunks_to_store(
+        cfg: &AgentConfig,
+        messages: &[Message],
+    ) -> LongTermIndexTurnChunks {
+        if !cfg.long_term_memory.long_term_memory_auto_index_turns {
+            return Ok(None);
+        }
+        let Some((user_t, asst_t)) = last_user_assistant_final_pair(messages) else {
+            return Ok(None);
+        };
+        let user_t = clamp_text(
+            user_t,
+            cfg.long_term_memory.long_term_memory_max_chars_per_chunk,
+        );
+        let asst_t = clamp_text(
+            asst_t,
+            cfg.long_term_memory.long_term_memory_max_chars_per_chunk,
+        );
+        if user_t.len() < cfg.long_term_memory.long_term_memory_min_chars_to_index
+            && asst_t.len() < cfg.long_term_memory.long_term_memory_min_chars_to_index
+        {
+            return Ok(None);
+        }
+        let max = cfg.long_term_memory.long_term_memory_max_chars_per_chunk;
+        let mut to_store: Vec<LongTermIndexTurnChunk> = Vec::new();
+        for part in chunk_text(&user_t, max) {
+            to_store.push((part, "user"));
+        }
+        for part in chunk_text(&asst_t, max) {
+            to_store.push((part, "assistant"));
+        }
+        Ok(Some(to_store))
+    }
+
+    fn index_turn_needs_fastembed_embedding(cfg: &AgentConfig) -> bool {
+        cfg!(feature = "fastembed")
+            && matches!(
+                cfg.long_term_memory.long_term_memory_vector_backend,
+                LongTermMemoryVectorBackend::Fastembed
+            )
     }
 
     /// 显式写入长期记忆（工具 `long_term_remember`）；`ttl_secs` 为 `None` 表示永不过期（仍受条数上限淘汰）。
