@@ -7,7 +7,9 @@
 use leptos::prelude::*;
 
 use crate::i18n::Locale;
-use crate::message_format::message_text_for_display_ex;
+use crate::message_format::{
+    assistant_message_text_for_display_ex_with_body_strings, message_text_for_display_ex,
+};
 use crate::storage::{ChatSession, StoredMessage};
 
 /// 当前 attach 内、尾条 `loading` 助手消息的流式增量（与 `sessions` 中的该条 id 对齐）。
@@ -67,24 +69,28 @@ pub fn stream_overlay_take_into_stored_message(
     });
 }
 
-/// 供展示/查找：在 `loading` 且 id 命中时把 overlay 拼到克隆体上（不修改 `sessions` 内原文）。
+/// 若 `overlay` 命中本条 **loading** 助手消息，返回合并后的 `text` / `reasoning_text`（各一次分配 + `push_str`），
+/// 避免为展示克隆整条 [`StoredMessage`]。
 #[must_use]
-pub fn stored_message_with_overlay_merged(
+pub fn stream_overlay_merged_text_reasoning_owned(
     msg: &StoredMessage,
     overlay: Option<&StreamTextOverlay>,
     active_session_id: &str,
-) -> StoredMessage {
-    let mut m = msg.clone();
-    if let Some(o) = overlay {
-        if o.session_id == active_session_id
-            && o.message_id == m.id
-            && m.state.as_ref().is_some_and(|s| s.is_loading())
-        {
-            m.text.push_str(&o.answer);
-            m.reasoning_text.push_str(&o.reasoning);
-        }
+) -> Option<(String, String)> {
+    let o = overlay?;
+    if o.session_id != active_session_id || o.message_id != msg.id {
+        return None;
     }
-    m
+    if !msg.state.as_ref().is_some_and(|s| s.is_loading()) {
+        return None;
+    }
+    let mut text = String::with_capacity(msg.text.len() + o.answer.len());
+    text.push_str(&msg.text);
+    text.push_str(&o.answer);
+    let mut reasoning = String::with_capacity(msg.reasoning_text.len() + o.reasoning.len());
+    reasoning.push_str(&msg.reasoning_text);
+    reasoning.push_str(&o.reasoning);
+    Some((text, reasoning))
 }
 
 /// 与 [`message_text_for_display_ex`] 一致，但合并当前流式 overlay（若适用）。
@@ -96,8 +102,20 @@ pub fn message_text_for_display_including_stream_overlay(
     locale: Locale,
     apply_assistant_display_filters: bool,
 ) -> String {
-    let merged = stored_message_with_overlay_merged(m, overlay, active_session_id);
-    message_text_for_display_ex(&merged, locale, apply_assistant_display_filters)
+    if m.role == "assistant" {
+        if let Some((text, reasoning)) =
+            stream_overlay_merged_text_reasoning_owned(m, overlay, active_session_id)
+        {
+            return assistant_message_text_for_display_ex_with_body_strings(
+                text.as_str(),
+                reasoning.as_str(),
+                m.state.as_ref(),
+                locale,
+                apply_assistant_display_filters,
+            );
+        }
+    }
+    message_text_for_display_ex(m, locale, apply_assistant_display_filters)
 }
 
 /// 持久化前把 overlay 合并进克隆列表，避免落盘缺尾段。
@@ -148,6 +166,32 @@ mod tests {
         stream_overlay_take_into_stored_message(overlay, "s1", "m1", &mut msg);
         assert_eq!(msg.text, "hello world");
         assert!(overlay.get().is_none());
+    }
+
+    #[test]
+    fn merged_text_reasoning_matches_push_str_semantics() {
+        let msg = StoredMessage {
+            id: "m1".into(),
+            role: "assistant".into(),
+            text: "base ".into(),
+            reasoning_text: "r0 ".into(),
+            image_urls: vec!["/u/x.png".into()],
+            state: Some(StoredMessageState::Loading),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        let o = StreamTextOverlay {
+            session_id: "s1".into(),
+            message_id: "m1".into(),
+            answer: "tail".into(),
+            reasoning: "r1".into(),
+        };
+        let (t, r) = stream_overlay_merged_text_reasoning_owned(&msg, Some(&o), "s1")
+            .expect("overlay should apply");
+        assert_eq!(t, "base tail");
+        assert_eq!(r, "r0 r1");
     }
 
     #[test]

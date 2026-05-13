@@ -6,7 +6,9 @@ mod message_ex;
 mod plan_fence;
 mod thinking_strip;
 
-pub(crate) use message_ex::message_text_for_display_ex;
+pub(crate) use message_ex::{
+    assistant_message_text_for_display_ex_with_body_strings, message_text_for_display_ex,
+};
 #[cfg(test)]
 pub(crate) use plan_fence::agent_reply_plan_step_descriptions_from_assistant;
 pub(crate) use plan_fence::{assistant_text_for_display, stored_message_is_staged_planner_round};

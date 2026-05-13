@@ -4,7 +4,7 @@ use std::borrow::Cow;
 
 use crate::i18n::Locale;
 use crate::message_format::staged_timeline::STAGED_TIMELINE_SYSTEM_PREFIX;
-use crate::storage::StoredMessage;
+use crate::storage::{StoredMessage, StoredMessageState};
 
 use super::super::plan_fence::assistant_text_for_display;
 use super::super::thinking_strip::{
@@ -17,22 +17,39 @@ pub(super) fn assistant_message_text_for_display_ex(
     loc: Locale,
     apply_assistant_display_filters: bool,
 ) -> String {
-    let is_streaming_last_assistant = m.state.as_ref().is_some_and(|s| s.is_loading());
+    assistant_message_text_for_display_ex_with_body(
+        m.text.as_str(),
+        m.reasoning_text.as_str(),
+        m.state.as_ref(),
+        loc,
+        apply_assistant_display_filters,
+    )
+}
+
+/// 与 [`assistant_message_text_for_display_ex`] 相同语义，但正文/思维链来自调用方字符串（例如 Web 流式 overlay 合并），避免为展示克隆整条 [`StoredMessage`]。
+pub(super) fn assistant_message_text_for_display_ex_with_body(
+    text: &str,
+    reasoning_text: &str,
+    state: Option<&StoredMessageState>,
+    loc: Locale,
+    apply_assistant_display_filters: bool,
+) -> String {
+    let is_streaming_last_assistant = state.as_ref().is_some_and(|s| s.is_loading());
     let reasoning_for_split: Cow<str> = if apply_assistant_display_filters {
         Cow::Owned(filter_assistant_thinking_markers_for_display(
-            m.reasoning_text.as_str(),
+            reasoning_text,
             is_streaming_last_assistant,
         ))
     } else {
-        Cow::Borrowed(m.reasoning_text.as_str())
+        Cow::Borrowed(reasoning_text)
     };
     let text_for_split: Cow<str> = if apply_assistant_display_filters {
         Cow::Owned(filter_assistant_thinking_markers_for_display(
-            m.text.as_str(),
+            text,
             is_streaming_last_assistant,
         ))
     } else {
-        Cow::Borrowed(m.text.as_str())
+        Cow::Borrowed(text)
     };
     // `timeline_log` 的 tool_step_* 写入助手气泡但带分步前缀：与 `system` 旁注同形，走 system 剥前缀逻辑。
     if text_for_split
@@ -54,14 +71,21 @@ pub(super) fn assistant_message_text_for_display_ex(
         apply_assistant_display_filters,
     );
     if apply_assistant_display_filters {
-        assistant_body_with_filters(m, loc, is_streaming_last_assistant, r_body, t_body, answer)
+        assistant_body_with_filters(
+            state,
+            loc,
+            is_streaming_last_assistant,
+            r_body,
+            t_body,
+            answer,
+        )
     } else {
-        assistant_body_without_filters(m, r_body, answer)
+        assistant_body_without_filters(state, r_body, answer)
     }
 }
 
 fn assistant_body_with_filters(
-    m: &StoredMessage,
+    state: Option<&StoredMessageState>,
     loc: Locale,
     is_streaming_last_assistant: bool,
     r_body: &str,
@@ -94,10 +118,14 @@ fn assistant_body_with_filters(
     } else {
         format!("{r}\n\n{answer}")
     };
-    maybe_trim_hierarchical_subgoal_redundant_lines(m.state.as_ref(), out, true)
+    maybe_trim_hierarchical_subgoal_redundant_lines(state, out, true)
 }
 
-fn assistant_body_without_filters(m: &StoredMessage, r_body: &str, answer: String) -> String {
+fn assistant_body_without_filters(
+    state: Option<&StoredMessageState>,
+    r_body: &str,
+    answer: String,
+) -> String {
     let r_empty = r_body.trim().is_empty();
     let a_empty = answer.trim().is_empty();
     let out = if r_empty {
@@ -107,5 +135,5 @@ fn assistant_body_without_filters(m: &StoredMessage, r_body: &str, answer: Strin
     } else {
         format!("{r_body}\n\n{answer}")
     };
-    maybe_trim_hierarchical_subgoal_redundant_lines(m.state.as_ref(), out, false)
+    maybe_trim_hierarchical_subgoal_redundant_lines(state, out, false)
 }

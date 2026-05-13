@@ -4,12 +4,14 @@ mod assistant;
 mod parts;
 
 use crate::i18n::Locale;
-use crate::storage::StoredMessage;
+use crate::storage::{StoredMessage, StoredMessageState};
 
 #[cfg(test)]
 pub(crate) use parts::STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX;
 
-use assistant::assistant_message_text_for_display_ex;
+use assistant::{
+    assistant_message_text_for_display_ex, assistant_message_text_for_display_ex_with_body,
+};
 use parts::{system_text_for_chat_display, user_text_for_chat_display};
 
 /// `apply_assistant_display_filters == false` 时助手消息按存储原文输出（不剥 `agent_reply_plan`、不拆内联思维链标记）。
@@ -27,4 +29,21 @@ pub fn message_text_for_display_ex(
     } else {
         m.text.clone()
     }
+}
+
+/// 助手展示管道：与 [`assistant_message_text_for_display_ex`] 一致，但允许调用方传入合并后的正文/思维链（如 Web SSE overlay），避免克隆整条消息。
+pub(crate) fn assistant_message_text_for_display_ex_with_body_strings(
+    text: &str,
+    reasoning_text: &str,
+    state: Option<&StoredMessageState>,
+    loc: Locale,
+    apply_assistant_display_filters: bool,
+) -> String {
+    assistant_message_text_for_display_ex_with_body(
+        text,
+        reasoning_text,
+        state,
+        loc,
+        apply_assistant_display_filters,
+    )
 }
