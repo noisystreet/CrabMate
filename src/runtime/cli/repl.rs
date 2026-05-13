@@ -503,6 +503,104 @@ pub(crate) async fn repl_prepare_messages_and_editor(
     Ok((messages, initial_pending, repl_editor))
 }
 
+enum ReplMainIterationCtl {
+    BreakRepl,
+    Continue,
+}
+
+struct ReplIterationCtx<'a> {
+    cfg_holder: &'a SharedAgentConfig,
+    config_path: Option<&'a str>,
+    client: &'a reqwest::Client,
+    tools: &'a [crate::types::Tool],
+    messages: &'a mut Vec<Message>,
+    work_dir: &'a mut PathBuf,
+    style: &'a CliReplStyle,
+    no_stream: bool,
+    agent_role_owned: &'a mut Option<String>,
+    slash_handles: &'a ReplSlashSharedHandles,
+    api_key_holder: &'a Arc<StdMutex<String>>,
+    cli_rt: &'a CliToolRuntime,
+    initial_pending: Option<&'a Arc<StdMutex<Option<Vec<Message>>>>>,
+    process_handles: Arc<ProcessHandles>,
+}
+
+async fn repl_iteration_reply_to_read_line(
+    read_res: ReplReadLine,
+    ctx: &mut ReplIterationCtx<'_>,
+) -> Result<ReplMainIterationCtl, Box<dyn std::error::Error>> {
+    match read_res {
+        ReplReadLine::Eof => Ok(ReplMainIterationCtl::BreakRepl),
+        ReplReadLine::Empty => Ok(ReplMainIterationCtl::Continue),
+        ReplReadLine::Shell(opt_cmd) => {
+            let wd = ctx.work_dir.clone();
+            let sty = ctx.style.clone();
+            match tokio::task::spawn_blocking(move || {
+                repl_execute_shell(opt_cmd.as_deref(), wd.as_path(), &sty)
+            })
+            .await
+            {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    let _ = ctx.style.eprint_error(&e.to_string());
+                }
+                Err(e) => {
+                    let _ = ctx.style.eprint_error(&e.to_string());
+                }
+            }
+            Ok(ReplMainIterationCtl::Continue)
+        }
+        ReplReadLine::Chat(input) => {
+            if input.eq_ignore_ascii_case("quit") || input.eq_ignore_ascii_case("exit") {
+                return Ok(ReplMainIterationCtl::BreakRepl);
+            }
+
+            if repl_slash_branch_continue_loop(ReplSlashBranchContinueLoopParams {
+                input: input.as_str(),
+                cfg_holder: ctx.cfg_holder,
+                config_path: ctx.config_path,
+                tools: ctx.tools,
+                messages: ctx.messages,
+                work_dir: ctx.work_dir,
+                style: ctx.style,
+                no_stream: ctx.no_stream,
+                agent_role_owned: ctx.agent_role_owned,
+                slash_handles: ctx.slash_handles,
+                client: ctx.client,
+            })
+            .await?
+            {
+                return Ok(ReplMainIterationCtl::Continue);
+            }
+
+            repl_dispatch_chat_round(ReplDispatchChatRoundParams {
+                input,
+                cfg_holder: ctx.cfg_holder,
+                tools: ctx.tools,
+                messages: ctx.messages,
+                work_dir: ctx.work_dir,
+                style: ctx.style,
+                no_stream: ctx.no_stream,
+                suppress_stdout_render: false,
+                tui_llm_stream_scratch: None,
+                tool_running_hook: None,
+                after_user_message_enqueued: None,
+                agent_role_owned: ctx.agent_role_owned,
+                api_key_holder: ctx.api_key_holder,
+                client: ctx.client,
+                cli_rt: ctx.cli_rt,
+                initial_pending: ctx.initial_pending,
+                process_handles: Arc::clone(&ctx.process_handles),
+                clarify_answers_for_next_user_message: None,
+                clarification_questionnaire_hook: None,
+                sse_control_mirror: None,
+            })
+            .await?;
+            Ok(ReplMainIterationCtl::Continue)
+        }
+    }
+}
+
 /// 交互式 REPL 模式
 pub async fn run_repl(
     common: CliMainInvocationCommon<'_>,
@@ -581,75 +679,25 @@ pub async fn run_repl(
         .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?
         .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
 
-        match read_res {
-            ReplReadLine::Eof => break,
-            ReplReadLine::Empty => continue,
-            ReplReadLine::Shell(opt_cmd) => {
-                let wd = work_dir.clone();
-                let sty = style.clone();
-                match tokio::task::spawn_blocking(move || {
-                    repl_execute_shell(opt_cmd.as_deref(), wd.as_path(), &sty)
-                })
-                .await
-                {
-                    Ok(Ok(())) => continue,
-                    Ok(Err(e)) => {
-                        let _ = style.eprint_error(&e.to_string());
-                        continue;
-                    }
-                    Err(e) => {
-                        let _ = style.eprint_error(&e.to_string());
-                        continue;
-                    }
-                }
-            }
-            ReplReadLine::Chat(input) => {
-                if input.eq_ignore_ascii_case("quit") || input.eq_ignore_ascii_case("exit") {
-                    break;
-                }
-
-                if repl_slash_branch_continue_loop(ReplSlashBranchContinueLoopParams {
-                    input: input.as_str(),
-                    cfg_holder,
-                    config_path,
-                    tools,
-                    messages: &mut messages,
-                    work_dir: &mut work_dir,
-                    style: &style,
-                    no_stream,
-                    agent_role_owned: &mut agent_role_owned,
-                    slash_handles: &slash_handles,
-                    client,
-                })
-                .await?
-                {
-                    continue;
-                }
-
-                repl_dispatch_chat_round(ReplDispatchChatRoundParams {
-                    input,
-                    cfg_holder,
-                    tools,
-                    messages: &mut messages,
-                    work_dir: &mut work_dir,
-                    style: &style,
-                    no_stream,
-                    suppress_stdout_render: false,
-                    tui_llm_stream_scratch: None,
-                    tool_running_hook: None,
-                    after_user_message_enqueued: None,
-                    agent_role_owned: &mut agent_role_owned,
-                    api_key_holder: &api_key_holder,
-                    client,
-                    cli_rt: &cli_rt,
-                    initial_pending: initial_pending.as_ref(),
-                    process_handles: Arc::clone(&process_handles),
-                    clarify_answers_for_next_user_message: None,
-                    clarification_questionnaire_hook: None,
-                    sse_control_mirror: None,
-                })
-                .await?;
-            }
+        let mut iter_ctx = ReplIterationCtx {
+            cfg_holder,
+            config_path,
+            client,
+            tools,
+            messages: &mut messages,
+            work_dir: &mut work_dir,
+            style: &style,
+            no_stream,
+            agent_role_owned: &mut agent_role_owned,
+            slash_handles: &slash_handles,
+            api_key_holder: &api_key_holder,
+            cli_rt: &cli_rt,
+            initial_pending: initial_pending.as_ref(),
+            process_handles: Arc::clone(&process_handles),
+        };
+        match repl_iteration_reply_to_read_line(read_res, &mut iter_ctx).await? {
+            ReplMainIterationCtl::BreakRepl => break,
+            ReplMainIterationCtl::Continue => {}
         }
     }
 
