@@ -20,6 +20,42 @@ fn mk(summary: &str) -> ToolResultInfo {
 }
 
 #[test]
+fn compact_snake_tool_skips_pipe_when_summary_hyphen_cli_dup() {
+    let mut info = mk("");
+    info.name = "pre_commit_run".to_string();
+    info.summary = Some("pre_commit_run\n\npre-commit run".to_string());
+    let compact = tool_card_compact_text(&info, Locale::ZhHans);
+    assert!(
+        !compact.contains('｜'),
+        "不应拼出 snake 与 CLI 同义的两段: {compact:?}"
+    );
+    let detail = tool_card_text(&info, Locale::ZhHans);
+    assert!(
+        !detail.contains("pre_commit_run\n\npre-commit run"),
+        "详情不应叠两行同义: {detail:?}"
+    );
+}
+
+#[test]
+fn compact_git_diff_keeps_paren_suffix_without_dup_cli_head() {
+    let mut info = mk("");
+    info.name = "git_diff".to_string();
+    info.summary =
+        Some("git diff (working): frontend/src/message_format/tool_card/mod.rs".to_string());
+    let out = tool_card_compact_text(&info, Locale::ZhHans);
+    assert!(out.contains('｜'), "应保留参数后缀: {out:?}");
+    assert!(
+        out.contains("(working): frontend/src/message_format/tool_card/mod.rs"),
+        "compact={out:?}"
+    );
+    assert!(
+        !out.contains("git diff (working)"),
+        "不应重复整段 CLI 头: {out:?}"
+    );
+    assert!(out.starts_with("git_diff"), "compact={out:?}");
+}
+
+#[test]
 fn terminal_session_success_detail_shows_command_and_capture() {
     let mut info = mk("✅ terminal_session 成功: terminal_session exec python3");
     info.name = "terminal_session".to_string();

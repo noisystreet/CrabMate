@@ -9,6 +9,11 @@ use super::strip_ansi_codes;
 use serde_json::Value;
 
 mod compact_key;
+mod title_signal_dedup;
+
+use title_signal_dedup::{
+    tool_compact_signal_paren_suffix_after_redundant_head, tool_compact_signal_redundant_with_title,
+};
 
 const COMPACT_SEPARATOR: &str = " ｜ ";
 
@@ -294,9 +299,16 @@ fn normalized_tool_summary(info: &ToolResultInfo, loc: Locale) -> String {
     if first.is_empty() {
         return String::new();
     }
-    let rest: Vec<&str> = lines
+    let rest: Vec<String> = lines
         .map(str::trim)
         .filter(|l| !l.is_empty() && *l != first.as_str())
+        .filter_map(|l| {
+            if tool_compact_signal_redundant_with_title(first.as_str(), l) {
+                tool_compact_signal_paren_suffix_after_redundant_head(first.as_str(), l)
+            } else {
+                Some(l.to_string())
+            }
+        })
         .collect();
     let mut out = if rest.is_empty() {
         first
@@ -311,20 +323,6 @@ fn normalized_tool_summary(info: &ToolResultInfo, loc: Locale) -> String {
         out = rewritten;
     }
     strip_placeholder_tool_running_suffix(&out)
-}
-
-/// 紧凑条右侧「信号」与左侧标题仅下划线/空格差异时视为同一信息（如 `git_status` 与 `git status`），不拼 `｜`。
-#[inline]
-fn compact_title_signal_redundant(title: &str, signal: &str) -> bool {
-    let t = title.trim();
-    let s = signal.trim();
-    if s.is_empty() {
-        return true;
-    }
-    if s == t {
-        return true;
-    }
-    t.replace('_', " ").eq_ignore_ascii_case(s) || s.replace(' ', "_").eq_ignore_ascii_case(t)
 }
 
 /// 摘要首行若与紧凑标题相同（重写摘要已含工具人类名），合并为详情时去掉重复前缀。
@@ -351,11 +349,17 @@ pub fn tool_card_compact_text(info: &ToolResultInfo, loc: Locale) -> String {
     if let Some(c) = candidate.as_deref()
         && !c.is_empty()
         && c != title
-        && !compact_title_signal_redundant(&title, c)
         && !skip_compact.contains(&c)
     {
-        out.push_str(COMPACT_SEPARATOR);
-        out.push_str(c);
+        if tool_compact_signal_redundant_with_title(&title, c) {
+            if let Some(tail) = tool_compact_signal_paren_suffix_after_redundant_head(&title, c) {
+                out.push_str(COMPACT_SEPARATOR);
+                out.push_str(&tail);
+            }
+        } else {
+            out.push_str(COMPACT_SEPARATOR);
+            out.push_str(c);
+        }
     }
     if !info.ok.unwrap_or(true) {
         if let Some(code) = info.exit_code {
@@ -556,7 +560,7 @@ pub fn tool_card_text(info: &ToolResultInfo, loc: Locale) -> String {
         }
     }
     let body = summary_without_redundant_title(&title, &out);
-    let body = if compact_title_signal_redundant(&title, body.trim()) {
+    let body = if tool_compact_signal_redundant_with_title(&title, body.trim()) {
         String::new()
     } else {
         body
