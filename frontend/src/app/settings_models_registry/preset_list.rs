@@ -1,4 +1,4 @@
-//! 已保存模型列表行与 `For` 列表（从 `mod` 拆出以降低单文件行数棘轮）。
+//! 已保存模型列表行与 `ForEnumerate` 列表（从 `mod` 拆出以降低单文件行数棘轮）。
 
 use std::sync::Arc;
 
@@ -11,6 +11,22 @@ use super::RegistryPresetDialogKind;
 use super::persist::{
     try_persist_saved_presets_with_feedback, window_confirm_delete_saved_model_preset,
 };
+
+/// `<ForEnumerate>` 的 `key`：须稳定且尽量唯一（完全相同的重复项仍可能冲突）。
+fn saved_preset_row_key(p: &SavedModelPreset) -> String {
+    format!(
+        "{}\x1f{}\x1f{}\x1f{}\x1f{}\x1f{}\x1f{}\x1f{}\x1f{}",
+        p.label,
+        p.api_base,
+        p.api_base_preset_select,
+        p.model,
+        p.temperature,
+        p.llm_context_tokens,
+        p.llm_thinking_mode,
+        p.api_key,
+        p.enabled
+    )
+}
 
 #[derive(Clone)]
 struct RegistryPresetRowSignals {
@@ -31,7 +47,8 @@ struct RegistryPresetRowSignals {
 
 #[derive(Clone)]
 struct RegistryPresetRowModel {
-    index: usize,
+    /// 列表重排后仍与 `saved_model_presets` 下标一致（勿用手动 `enumerate` 的固定 `usize`）。
+    row_index: ReadSignal<usize>,
     preset: SavedModelPreset,
 }
 
@@ -57,7 +74,7 @@ fn SettingsModelsRegistryPresetRow(
     } = s;
     let sync_for_toggle = sync_saved_presets_baseline.clone();
     let sync_for_delete = sync_saved_presets_baseline.clone();
-    let RegistryPresetRowModel { index, preset } = row;
+    let RegistryPresetRowModel { row_index, preset } = row;
     let label = preset.label.clone();
     let base_short = preset.api_base.clone();
     let trimmed = preset.llm_context_tokens.trim().to_string();
@@ -79,23 +96,26 @@ fn SettingsModelsRegistryPresetRow(
                     class="settings-model-toggle"
                     role="switch"
                     class:settings-model-toggle-on=move || {
+                        let idx = row_index.get();
                         saved_model_presets
                             .get()
-                            .get(index)
+                            .get(idx)
                             .is_some_and(|p| p.enabled)
                     }
                     prop:aria-checked=move || {
+                        let idx = row_index.get();
                         saved_model_presets
                             .get()
-                            .get(index)
+                            .get(idx)
                             .is_some_and(|p| p.enabled)
                     }
                     prop:aria-label=move || i18n::settings_models_row_enabled_aria(locale.get())
                     prop:title=move || i18n::settings_models_row_enabled_short(locale.get())
                     on:click=move |_| {
                         let loc = locale.get_untracked();
+                        let idx = row_index.get_untracked();
                         let mut next = saved_model_presets.with_untracked(|v| v.clone());
-                        if let Some(p) = next.get_mut(index) {
+                        if let Some(p) = next.get_mut(idx) {
                             p.enabled = !p.enabled;
                         } else {
                             return;
@@ -119,7 +139,8 @@ fn SettingsModelsRegistryPresetRow(
                     prop:aria-label=move || i18n::settings_models_row_edit_aria(locale.get())
                     prop:title=move || i18n::settings_models_row_edit_btn(locale.get())
                     on:click=move |_| {
-                        let Some(p) = saved_model_presets.with_untracked(|v| v.get(index).cloned())
+                        let idx = row_index.get_untracked();
+                        let Some(p) = saved_model_presets.with_untracked(|v| v.get(idx).cloned())
                         else {
                             return;
                         };
@@ -130,7 +151,7 @@ fn SettingsModelsRegistryPresetRow(
                         new_ctx_tokens.set(p.llm_context_tokens);
                         new_temperature.set(p.temperature);
                         new_thinking_mode.set(p.llm_thinking_mode);
-                        dialog_mode.set(Some(RegistryPresetDialogKind::Edit(index)));
+                        dialog_mode.set(Some(RegistryPresetDialogKind::Edit(idx)));
                         form_error.set(None);
                     }
                 >
@@ -157,11 +178,12 @@ fn SettingsModelsRegistryPresetRow(
                         if !window_confirm_delete_saved_model_preset(loc) {
                             return;
                         }
+                        let idx = row_index.get_untracked();
                         let mut next = saved_model_presets.with_untracked(|v| v.clone());
-                        if index >= next.len() {
+                        if idx >= next.len() {
                             return;
                         }
-                        next.remove(index);
+                        next.remove(idx);
                         let _ = try_persist_saved_presets_with_feedback(
                             next,
                             loc,
@@ -237,20 +259,14 @@ pub(crate) fn SettingsModelsRegistryPresetList(s: RegistryPresetListSignals) -> 
     };
     view! {
         <ul class="settings-saved-models-list" role="list">
-            <For
-                each=move || {
-                    saved_model_presets
-                        .get()
-                        .into_iter()
-                        .enumerate()
-                        .collect::<Vec<(usize, SavedModelPreset)>>()
-                }
-                key=|(i, p)| format!("saved-model-{i}-{}-{}-{}", p.label, p.api_base, p.enabled)
-                children=move |(i, preset)| {
+            <ForEnumerate
+                each=move || saved_model_presets.get()
+                key=|p| saved_preset_row_key(p)
+                children=move |row_index, preset| {
                     view! {
                         <SettingsModelsRegistryPresetRow
                             s=row_sig.clone()
-                            row=RegistryPresetRowModel { index: i, preset }
+                            row=RegistryPresetRowModel { row_index, preset }
                         />
                     }
                 }
