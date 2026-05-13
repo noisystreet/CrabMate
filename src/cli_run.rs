@@ -88,6 +88,66 @@ struct EarlyCliDispatch<'a> {
     plugin_list: Option<PluginListCli>,
 }
 
+fn try_early_save_session(
+    d: &EarlyCliDispatch<'_>,
+    tokens: Option<u32>,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let Some(ss) = d.save_session.clone() else {
+        return Ok(false);
+    };
+    let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+    crate::runtime::cli::run_save_session_command(&cfg, d.workspace_cli, ss)?;
+    Ok(true)
+}
+
+fn try_early_tool_replay(
+    d: &EarlyCliDispatch<'_>,
+    tokens: Option<u32>,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let Some(tr) = d.tool_replay.clone() else {
+        return Ok(false);
+    };
+    let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+    crate::runtime::cli::run_tool_replay_command(&cfg, d.workspace_cli, tr)?;
+    Ok(true)
+}
+
+fn try_early_plugin_init(
+    d: &EarlyCliDispatch<'_>,
+    tokens: Option<u32>,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let Some(pi) = d.plugin_init.clone() else {
+        return Ok(false);
+    };
+    let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+    crate::runtime::cli::run_plugin_init_command(&cfg, d.workspace_cli, pi)?;
+    Ok(true)
+}
+
+fn try_early_plugin_validate(
+    d: &EarlyCliDispatch<'_>,
+    tokens: Option<u32>,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let Some(pv) = d.plugin_validate.clone() else {
+        return Ok(false);
+    };
+    let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+    crate::runtime::cli::run_plugin_validate_command(&cfg, d.workspace_cli, pv)?;
+    Ok(true)
+}
+
+fn try_early_plugin_list(
+    d: &EarlyCliDispatch<'_>,
+    tokens: Option<u32>,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let Some(pl) = d.plugin_list.clone() else {
+        return Ok(false);
+    };
+    let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+    crate::runtime::cli::run_plugin_list_command(&cfg, d.workspace_cli, pl)?;
+    Ok(true)
+}
+
 /// `doctor` / `mcp list` / `mcp serve`：由 [`ExtraCliCommand`] 分流。
 async fn try_dispatch_early_extra_cli(
     d: &EarlyCliDispatch<'_>,
@@ -120,29 +180,19 @@ fn try_dispatch_early_workspace_commands(
     d: &EarlyCliDispatch<'_>,
     tokens: Option<u32>,
 ) -> Result<Option<bool>, Box<dyn std::error::Error>> {
-    if let Some(ss) = d.save_session.clone() {
-        let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
-        crate::runtime::cli::run_save_session_command(&cfg, d.workspace_cli, ss)?;
+    if try_early_save_session(d, tokens)? {
         return Ok(Some(true));
     }
-    if let Some(tr) = d.tool_replay.clone() {
-        let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
-        crate::runtime::cli::run_tool_replay_command(&cfg, d.workspace_cli, tr)?;
+    if try_early_tool_replay(d, tokens)? {
         return Ok(Some(true));
     }
-    if let Some(pi) = d.plugin_init.clone() {
-        let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
-        crate::runtime::cli::run_plugin_init_command(&cfg, d.workspace_cli, pi)?;
+    if try_early_plugin_init(d, tokens)? {
         return Ok(Some(true));
     }
-    if let Some(pv) = d.plugin_validate.clone() {
-        let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
-        crate::runtime::cli::run_plugin_validate_command(&cfg, d.workspace_cli, pv)?;
+    if try_early_plugin_validate(d, tokens)? {
         return Ok(Some(true));
     }
-    if let Some(pl) = d.plugin_list.clone() {
-        let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
-        crate::runtime::cli::run_plugin_list_command(&cfg, d.workspace_cli, pl)?;
+    if try_early_plugin_list(d, tokens)? {
         return Ok(Some(true));
     }
     Ok(None)

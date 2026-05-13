@@ -29,22 +29,9 @@ struct QualityFlags {
 
 impl QualityFlags {
     fn any_step_enabled(self) -> bool {
-        self.run_cargo_fmt_check
-            || self.run_cargo_check
-            || self.run_cargo_clippy
-            || self.run_cargo_test
-            || self.run_frontend_lint
-            || self.run_frontend_build
-            || self.run_frontend_prettier_check
-            || self.run_ruff_check
-            || self.run_pytest
-            || self.run_mypy
-            || self.run_maven_compile
-            || self.run_maven_test
-            || self.run_gradle_compile
-            || self.run_gradle_test
-            || self.run_docker_compose_ps
-            || self.run_podman_images
+        QualityStep::ORDER
+            .into_iter()
+            .any(|step| step.enabled(self))
     }
 }
 

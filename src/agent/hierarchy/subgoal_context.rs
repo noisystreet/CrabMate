@@ -123,38 +123,40 @@ fn only_kinds_means_all(only: &Option<Vec<String>>) -> bool {
     })
 }
 
-/// 在「默认排冗长」下省略构建日志、纯正文命令输出
-pub(crate) fn should_include_artifact_for_injection(
+fn artifact_matches_only_kind_token(a: &Artifact, ak: &str, want_lower: &str) -> bool {
+    if ak.contains(want_lower) {
+        return true;
+    }
+    if want_lower == "executable"
+        && let ArtifactKind::BuildArtifact(bk) = a.kind
+        && bk == BuildArtifactKind::Executable
+    {
+        return true;
+    }
+    if want_lower == "source"
+        && let ArtifactKind::BuildArtifact(bk) = a.kind
+        && bk == BuildArtifactKind::SourceFile
+    {
+        return true;
+    }
+    false
+}
+
+fn only_kinds_filter_includes_artifact(
     a: &Artifact,
     c: &DependencyContractEntry,
+    kinds: &[String],
 ) -> bool {
-    if let Some(ref kinds) = c.only_kinds
-        && !kinds.is_empty()
-    {
-        if only_kinds_means_all(&c.only_kinds) {
-            return true;
-        }
-        let ak = kind_lowercase(a);
-        for want in kinds {
-            let w = want.to_lowercase();
-            if ak.contains(&w) {
-                return true;
-            }
-            if w == "executable"
-                && let ArtifactKind::BuildArtifact(bk) = a.kind
-                && bk == BuildArtifactKind::Executable
-            {
-                return true;
-            }
-            if w == "source"
-                && let ArtifactKind::BuildArtifact(bk) = a.kind
-                && bk == BuildArtifactKind::SourceFile
-            {
-                return true;
-            }
-        }
-        return false;
+    if only_kinds_means_all(&c.only_kinds) {
+        return true;
     }
+    let ak = kind_lowercase(a);
+    kinds
+        .iter()
+        .any(|want| artifact_matches_only_kind_token(a, &ak, &want.to_lowercase()))
+}
+
+fn default_include_artifact_for_injection(a: &Artifact) -> bool {
     if let ArtifactKind::BuildArtifact(bk) = a.kind
         && bk == BuildArtifactKind::BuildLog
     {
@@ -170,6 +172,19 @@ pub(crate) fn should_include_artifact_for_injection(
         return a.path.is_some();
     }
     true
+}
+
+/// 在「默认排冗长」下省略构建日志、纯正文命令输出
+pub(crate) fn should_include_artifact_for_injection(
+    a: &Artifact,
+    c: &DependencyContractEntry,
+) -> bool {
+    if let Some(ref kinds) = c.only_kinds
+        && !kinds.is_empty()
+    {
+        return only_kinds_filter_includes_artifact(a, c, kinds);
+    }
+    default_include_artifact_for_injection(a)
 }
 
 pub(crate) fn build_step_result_summary(r: &TaskResult) -> String {
