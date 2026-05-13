@@ -7,6 +7,7 @@ use regex::Regex;
 use serde_json::Value;
 use std::sync::LazyLock;
 
+use crate::text_sanitize_dsml_vendor::normalize_deepseek_dsml_vendor_variants;
 use crate::types::{FunctionCall, Message, MessageContent, ToolCall};
 
 /// 流式聚合等场景下 API 可能留下 **`function.name` 全空** 的占位 `tool_calls`，与「无 tool_calls」等价，不应阻止从正文 DSML 物化。
@@ -93,10 +94,11 @@ fn collapse_blank_runs(s: &str) -> String {
 /// 去掉 DeepSeek **DSML**（`<｜DSML｜…>` / `<|DSML|…>` 等结构化片段，常见于 `function_calls` / `invoke` / `parameter`），
 /// 避免规划与对话区出现标记而非自然语言。
 pub fn strip_deepseek_dsml_for_display(s: &str) -> String {
+    let s = normalize_deepseek_dsml_vendor_variants(s);
     if !s.contains("DSML") {
-        return s.to_string();
+        return s;
     }
-    let mut out = s.to_string();
+    let mut out = s;
 
     /// 编译期固定的 DSML 块正则；若失败说明模式字符串损坏，应在 CI 暴露。
     static ORDERED: LazyLock<Vec<Regex>> = LazyLock::new(|| {
@@ -155,6 +157,7 @@ pub fn strip_deepseek_dsml_for_display(s: &str) -> String {
 
 /// 全角 `｜` 与 ASCII `|` 混用的 DSML 统一成 ASCII 尖括号形式，便于正则解析。
 fn normalize_deepseek_dsml_brackets(s: &str) -> String {
+    let s = normalize_deepseek_dsml_vendor_variants(s);
     s.replace("<｜DSML｜", "<|DSML|")
         .replace("</｜DSML｜", "</|DSML|")
 }
@@ -604,13 +607,11 @@ mod tests {
         let raw = r#"{"id":"a","description":"读取配置并汇总"}"#;
         assert_eq!(naturalize_plan_step_description(raw), "读取配置并汇总");
     }
-
     #[test]
     fn naturalize_step_flattens_markdown_list() {
         let s = "- 查日志\n- 修配置";
         assert_eq!(naturalize_plan_step_description(s), "查日志；修配置");
     }
-
     #[test]
     fn strips_nested_dsml_fullwidth() {
         let s = "前言<｜DSML｜function_calls><｜DSML｜invoke name=\"f\"><｜DSML｜parameter name=\"x\" string=\"true\">v</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜function_calls>后记";
@@ -619,7 +620,6 @@ mod tests {
         assert!(t.contains("前言"));
         assert!(t.contains("后记"));
     }
-
     #[test]
     fn strips_ascii_pipe_variant() {
         let s = "a <|DSML|function_calls></|DSML|function_calls> b";
@@ -628,20 +628,17 @@ mod tests {
         assert!(t.contains('a'));
         assert!(t.contains('b'));
     }
-
     #[test]
     fn noop_without_dsml() {
         let s = "普通中文与 English\n第二行";
         assert_eq!(strip_deepseek_dsml_for_display(s), s);
     }
-
     #[test]
     fn naturalize_plan_prose_dedupes_adjacent_identical_lines() {
         let line = "我将帮您编写 Hello World，并先规划任务步骤：";
         let raw = format!("{line}\n{line}");
         assert_eq!(naturalize_assistant_plan_prose_tail(&raw), line);
     }
-
     #[test]
     fn naturalize_plan_prose_dedupes_fullwidth_colon_variant() {
         let a = "我将帮您编写步骤：";
@@ -649,7 +646,6 @@ mod tests {
         let raw = format!("{a}\n{b}");
         assert_eq!(naturalize_assistant_plan_prose_tail(&raw), a);
     }
-
     #[test]
     fn naturalize_plan_prose_dedupes_terminal_punctuation_variant() {
         let a = "我将先拆解任务步骤：";
@@ -657,14 +653,12 @@ mod tests {
         let raw = format!("{a}\n{b}");
         assert_eq!(naturalize_assistant_plan_prose_tail(&raw), a);
     }
-
     #[test]
     fn dedupe_plain_preamble_collapses_space_joined_duplicate() {
         let line = "我将帮您编写 Hello World 并规划步骤。";
         let raw = format!("{line} {line}");
         assert_eq!(dedupe_plain_assistant_preamble(&raw), line);
     }
-
     #[test]
     fn materialize_dsml_populates_tool_calls_and_strips_markup() {
         let dsml = r#"将更新文件。
@@ -694,7 +688,6 @@ mod tests {
         assert!(prose.contains("将更新"));
         assert!(!prose.contains("DSML"));
     }
-
     #[test]
     fn materialize_dsml_skipped_when_disabled() {
         let dsml = r#"<|DSML|invoke name="read_file">
@@ -717,7 +710,6 @@ mod tests {
                 .contains("DSML")
         );
     }
-
     #[test]
     fn materialize_dsml_spaced_tags_and_multiline_parameter() {
         let dsml = r#"将写入。
@@ -747,7 +739,6 @@ mod tests {
                 .is_some_and(|s| s.contains("第二行"))
         );
     }
-
     #[test]
     fn materialize_dsml_single_quoted_names() {
         let dsml = r#"<|DSML|invoke name='read_file'>
@@ -766,7 +757,6 @@ mod tests {
         let tcs = msg.tool_calls.as_ref().expect("tool_calls");
         assert_eq!(tcs[0].function.name, "read_file");
     }
-
     #[test]
     fn materialize_dsml_json_array_parameter_for_run_command_args() {
         let dsml = r#"让我用 cat。
@@ -797,7 +787,6 @@ mod tests {
         assert_eq!(args.len(), 1);
         assert_eq!(args[0].as_str(), Some("1.md"));
     }
-
     #[test]
     fn materialize_dsml_from_reasoning_when_content_empty() {
         let dsml = r#"<|DSML|invoke name="read_file">
@@ -823,7 +812,6 @@ mod tests {
                 .is_empty()
         );
     }
-
     #[test]
     fn materialize_dsml_replaces_nameless_native_tool_call_placeholders() {
         let dsml = r#"说明文字。
@@ -863,7 +851,6 @@ Line2</|DSML|parameter>
                 .is_some_and(|s| s.contains("Line2"))
         );
     }
-
     #[test]
     fn materialize_dsml_fullwidth_brackets_create_file_like_cli() {
         // 与部分模型在规划轮输出的全角 `｜` DSML 一致（分阶段路径须先物化再执行工具）。
@@ -895,7 +882,6 @@ Line2</|DSML|parameter>
                 .contains("DSML")
         );
     }
-
     #[test]
     fn materialize_dsml_skipped_when_native_tool_call_has_name() {
         let dsml = r#"<|DSML|invoke name="modify_file">

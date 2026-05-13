@@ -50,6 +50,7 @@ mod runtime;
 mod sse;
 mod text_encoding;
 mod text_sanitize;
+mod text_sanitize_dsml_vendor;
 mod text_util;
 mod tool_approval;
 mod tool_call_explain;
