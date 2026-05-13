@@ -14,8 +14,8 @@ use super::manager_tail::{ManagerOutput, truncate_for_log, truncate_task};
 use super::types::{ManagerAgent, ManagerConfig, ManagerDecision, ManagerError, ManagerLlmContext};
 
 impl ManagerAgent {
-    /// 初次分解与重规划共用的「分解硬性规则」第 1～10 条（单源维护，避免两处 prompt 漂移）。
-    pub(super) const DECOMPOSITION_RULES_1_TO_10: &'static str = r#"1. 子目标必须**单一职责**，禁止跨步执行。
+    /// 初次分解与重规划共用的「分解硬性规则」（第 1～10 条为基线，第 11～13 条为验证与滚动规划；单源维护，避免两处 prompt 漂移）。
+    pub(super) const DECOMPOSITION_RULES_HIERARCHICAL: &'static str = r#"1. 子目标必须**单一职责**，禁止跨步执行。
 2. 每个子目标只允许执行其描述中的动作，禁止提前执行后续步骤。
 3. 产物命名必须全程一致；一旦确定名称（如可执行文件名），后续不得改名或混用。
 4. `depends_on` 必须准确，后续步骤不得绕过依赖。
@@ -24,7 +24,10 @@ impl ManagerAgent {
 7. 若某步是“配置构建”，描述中只允许配置动作，不得包含编译或运行动作。
 8. 若某步是“编译”，描述中只允许编译与产物核验，不得运行程序。
 9. 若某步是“运行验证”，描述中只允许运行与输出核验。
-10. 若任务涉及 C++ + CMake，默认采用稳定链路：检查目录 → 写 `main.cpp` → 写 `CMakeLists.txt` → `cmake -S . -B build` → `cmake --build build` → 运行产物；且可执行文件名需在 `CMakeLists.txt` 与后续子目标中保持一致（与 `add_executable` 目标名一致，勿随意改名）。"#;
+10. 若任务涉及 C++ + CMake，默认采用稳定链路：检查目录 → 写 `main.cpp` → 写 `CMakeLists.txt` → `cmake -S . -B build` → `cmake --build build` → 运行产物；且可执行文件名需在 `CMakeLists.txt` 与后续子目标中保持一致（与 `add_executable` 目标名一致，勿随意改名）。
+11. **子目标收口须有一次可观测验证（与项目栈一致）**：对会改动工作区、或断言「可构建/无错误/测试通过」的 **`goal_type: "fix"`** 子目标，须在描述与（如有）`acceptance` 中写清**本步要跑的具体验证**（通常是一次 `run_command` 或等价工具）；验证命令须匹配实际技术栈与仓库约定（如 Rust 常用 `cargo check` / `cargo test`、Node 常用 `npm test` / `npm run lint`、Python 常用 `pytest` / `ruff check`、Java 常用 `mvn test` 等——**仅作示例，不得照搬**），**禁止**把「只 `read_file` 看一眼」当作唯一验证。
+12. **`goal_type: "analyze"`** 若仅为只读收集事实、不改变产物，可不强制外挂命令验证；但若该步隐含「工程已健康」类结论，须说明依据（引用哪条命令/哪份输出）或将验证拆到后续 `fix` 子目标。
+13. **滚动规划（MPC 思路）**：可一次列出多条子目标，但执行层每轮只推进**下一步**；**下一步**须在描述末尾或 `acceptance` 中显式包含**本步专属验证节点**（与第 11 条一致）；勿把多步修改与多种验证混写在同一条 `description` 里。"#;
 
     /// Manager 分解/重规划输出的强约束 schema（提示词用）。
     pub(super) fn manager_output_schema_contract() -> &'static str {

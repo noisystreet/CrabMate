@@ -253,7 +253,7 @@ impl ManagerAgent {
 - 尽量复用已有的 artifacts，避免重复创建相同的文件
 "#,
             original_task,
-            Self::DECOMPOSITION_RULES_1_TO_10,
+            Self::DECOMPOSITION_RULES_HIERARCHICAL,
             workspace_context,
             pre_snapshot,
             artifacts_summary,
@@ -403,7 +403,7 @@ impl ManagerAgent {
 "#,
             task,
             task_type_guidance,
-            Self::DECOMPOSITION_RULES_1_TO_10,
+            Self::DECOMPOSITION_RULES_HIERARCHICAL,
             workspace_context,
             pre_snapshot,
             tools_description,
