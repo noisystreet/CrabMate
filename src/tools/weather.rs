@@ -55,10 +55,15 @@ fn weather_code_text(code: f64) -> &'static str {
 
 /// 根据城市名（或地区名）获取当前天气，返回格式化的简短描述。`timeout_secs` 为 HTTP 请求超时（秒）。
 pub fn run(args_json: &str, timeout_secs: u64) -> String {
-    let args: super::tool_param_types::GetWeatherArgs = match serde_json::from_str(args_json) {
-        Ok(a) => a,
-        Err(e) => return format!("参数 JSON 无效: {e}"),
-    };
+    match run_inner(args_json, timeout_secs) {
+        Ok(s) => s,
+        Err(e) => e,
+    }
+}
+
+fn parse_weather_city(args_json: &str) -> Result<String, String> {
+    let args: super::tool_param_types::GetWeatherArgs =
+        serde_json::from_str(args_json).map_err(|e| format!("参数 JSON 无效: {e}"))?;
     let city = args
         .city
         .as_deref()
@@ -70,40 +75,47 @@ pub fn run(args_json: &str, timeout_secs: u64) -> String {
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
         });
-    let city = match city {
-        Some(s) if s.len() >= 2 => s.to_string(),
-        _ => return "错误：请提供 city 或 location 参数（至少 2 个字符）".to_string(),
-    };
+    match city {
+        Some(s) if s.len() >= 2 => Ok(s.to_string()),
+        _ => Err("错误：请提供 city 或 location 参数（至少 2 个字符）".to_string()),
+    }
+}
 
-    let client = match reqwest::blocking::Client::builder()
+fn build_blocking_http_client(timeout_secs: u64) -> Result<reqwest::blocking::Client, String> {
+    reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(timeout_secs))
         .build()
-    {
-        Ok(c) => c,
-        Err(e) => return format!("请求客户端创建失败：{}", e),
-    };
+        .map_err(|e| format!("请求客户端创建失败：{}", e))
+}
 
+fn geocode_city_blocking(
+    client: &reqwest::blocking::Client,
+    city: &str,
+) -> Result<GeoResult, String> {
     let geo: GeocodingResponse = match client
         .get(GEOCODING_URL)
-        .query(&[("name", city.as_str()), ("count", "1"), ("language", "zh")])
+        .query(&[("name", city), ("count", "1"), ("language", "zh")])
         .send()
     {
         Ok(res) if res.status().is_success() => match res.json() {
             Ok(j) => j,
-            Err(e) => return format!("解析地理编码结果失败：{}", e),
+            Err(e) => return Err(format!("解析地理编码结果失败：{}", e)),
         },
-        Ok(res) => return format!("地理编码请求失败：{}", res.status()),
-        Err(e) => return format!("网络请求失败：{}", e),
+        Ok(res) => return Err(format!("地理编码请求失败：{}", res.status())),
+        Err(e) => return Err(format!("网络请求失败：{}", e)),
     };
+    geo.results
+        .and_then(|r| r.into_iter().next())
+        .ok_or_else(|| format!("未找到与「{}」匹配的地点，请换一个城市或地区名重试。", city))
+}
 
-    let loc = match geo.results.and_then(|r| r.into_iter().next()) {
-        Some(l) => l,
-        None => return format!("未找到与「{}」匹配的地点，请换一个城市或地区名重试。", city),
-    };
-
+fn forecast_blocking(
+    client: &reqwest::blocking::Client,
+    loc: &GeoResult,
+) -> Result<ForecastResponse, String> {
     let lat = loc.latitude.to_string();
     let lon = loc.longitude.to_string();
-    let forecast: ForecastResponse = match client
+    match client
         .get(FORECAST_URL)
         .query(&[
             ("latitude", lat.as_str()),
@@ -117,18 +129,15 @@ pub fn run(args_json: &str, timeout_secs: u64) -> String {
         .send()
     {
         Ok(res) if res.status().is_success() => match res.json() {
-            Ok(j) => j,
-            Err(e) => return format!("解析天气结果失败：{}", e),
+            Ok(j) => Ok(j),
+            Err(e) => Err(format!("解析天气结果失败：{}", e)),
         },
-        Ok(res) => return format!("天气请求失败：{}", res.status()),
-        Err(e) => return format!("网络请求失败：{}", e),
-    };
+        Ok(res) => Err(format!("天气请求失败：{}", res.status())),
+        Err(e) => Err(format!("网络请求失败：{}", e)),
+    }
+}
 
-    let cur = match forecast.current {
-        Some(c) => c,
-        None => return "未获取到当前天气数据".to_string(),
-    };
-
+fn format_weather_line(loc: &GeoResult, cur: &CurrentWeather) -> String {
     let desc = cur.weather_code.map(weather_code_text).unwrap_or("—");
     let hum = cur
         .relative_humidity_2m
@@ -145,7 +154,7 @@ pub fn run(args_json: &str, timeout_secs: u64) -> String {
         .join("，");
 
     let location_name = if loc.country.is_empty() {
-        loc.name
+        loc.name.clone()
     } else {
         format!("{}（{}）", loc.name, loc.country)
     };
@@ -157,6 +166,17 @@ pub fn run(args_json: &str, timeout_secs: u64) -> String {
         if extra.is_empty() { "" } else { "，" },
         extra
     )
+}
+
+fn run_inner(args_json: &str, timeout_secs: u64) -> Result<String, String> {
+    let city = parse_weather_city(args_json)?;
+    let client = build_blocking_http_client(timeout_secs)?;
+    let loc = geocode_city_blocking(&client, &city)?;
+    let forecast = forecast_blocking(&client, &loc)?;
+    let cur = forecast
+        .current
+        .ok_or_else(|| "未获取到当前天气数据".to_string())?;
+    Ok(format_weather_line(&loc, &cur))
 }
 
 #[cfg(test)]

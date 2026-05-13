@@ -64,6 +64,32 @@ pub(crate) fn tool_result_header_detail(args: &str, summary: Option<&str>) -> Op
     }
 }
 
+fn write_staged_plan_title_line(w: &mut io::Stdout, color: bool, t: &str) -> io::Result<()> {
+    if color {
+        queue!(
+            w,
+            SetAttribute(Attribute::Bold),
+            SetForegroundColor(CLI_REPL_HELP_TITLE_FG)
+        )?;
+    }
+    writeln!(w, "{t}")?;
+    if color {
+        queue!(w, SetAttribute(Attribute::Reset), ResetColor)?;
+    }
+    Ok(())
+}
+
+fn write_staged_plan_desc_line(w: &mut io::Stdout, color: bool, t: &str) -> io::Result<()> {
+    if color {
+        queue!(w, SetForegroundColor(CLI_REPL_HELP_DESC_FG))?;
+        writeln!(w, "{t}")?;
+        queue!(w, ResetColor)?;
+    } else {
+        writeln!(w, "{t}")?;
+    }
+    Ok(())
+}
+
 /// 与 TUI 聊天区展示一致：正文经 **`user_message_for_chat_display`**（含分步注入 user 长句压缩、LaTeX），再按行打印到 stdout。
 ///
 /// `clear_before` 时先空一行，并对**首条非空行**加粗 + [`CLI_REPL_HELP_TITLE_FG`]（与 **`/help`** 节标题同级）；其余非空行用 [`CLI_REPL_HELP_DESC_FG`]。
@@ -89,23 +115,9 @@ pub(crate) fn print_staged_plan_notice(clear_before: bool, text: &str) -> io::Re
         }
         if highlight_first_nonempty {
             highlight_first_nonempty = false;
-            if color {
-                queue!(
-                    w,
-                    SetAttribute(Attribute::Bold),
-                    SetForegroundColor(CLI_REPL_HELP_TITLE_FG)
-                )?;
-            }
-            writeln!(w, "{t}")?;
-            if color {
-                queue!(w, SetAttribute(Attribute::Reset), ResetColor)?;
-            }
-        } else if color {
-            queue!(w, SetForegroundColor(CLI_REPL_HELP_DESC_FG))?;
-            writeln!(w, "{t}")?;
-            queue!(w, ResetColor)?;
+            write_staged_plan_title_line(&mut w, color, t)?;
         } else {
-            writeln!(w, "{t}")?;
+            write_staged_plan_desc_line(&mut w, color, t)?;
         }
     }
     w.flush()
@@ -113,36 +125,24 @@ pub(crate) fn print_staged_plan_notice(clear_before: bool, text: &str) -> io::Re
 
 const PLAYBOOK_HINT_SNIPPET_MAX: usize = 12_000;
 
-/// 工具失败时于 CLI stdout 提示可一键诊断（`playbook_run_commands`）；**不**自动执行。
-pub(crate) fn print_cli_playbook_healing_hint(
-    tool_name: &str,
-    raw_result: &str,
-    parsed: &ParsedLegacyOutput,
-) -> io::Result<()> {
-    if matches!(
+fn playbook_healing_hint_suppressed(tool_name: &str) -> bool {
+    matches!(
         tool_name,
         "playbook_run_commands" | "error_output_playbook" | "diagnostic_summary"
     ) || tool_name.starts_with("mcp__")
-    {
-        return Ok(());
-    }
-    let body = if !parsed.stderr.trim().is_empty() {
+}
+
+fn playbook_hint_body_snippet<'a>(raw_result: &'a str, parsed: &'a ParsedLegacyOutput) -> &'a str {
+    if !parsed.stderr.trim().is_empty() {
         parsed.stderr.as_str()
     } else if !parsed.stdout.trim().is_empty() {
         parsed.stdout.as_str()
     } else {
         raw_result
-    };
-    let body = body.trim();
-    if body.is_empty() {
-        return Ok(());
     }
-    let take = body.len().min(PLAYBOOK_HINT_SNIPPET_MAX);
-    let snippet = &body[..take];
-    let json_snippet = serde_json::to_string(snippet).unwrap_or_else(|_| "\"\"".to_string());
+}
 
-    let mut w = io::stdout();
-    let color = cli_repl_stdout_use_color();
+fn begin_playbook_hint_block(w: &mut io::Stdout, color: bool) -> io::Result<()> {
     if color {
         queue!(
             w,
@@ -155,6 +155,36 @@ pub(crate) fn print_cli_playbook_healing_hint(
         queue!(w, SetAttribute(Attribute::Reset), ResetColor)?;
         queue!(w, SetForegroundColor(CLI_REPL_HELP_DESC_FG))?;
     }
+    Ok(())
+}
+
+fn end_playbook_hint_block(w: &mut io::Stdout, color: bool) -> io::Result<()> {
+    if color {
+        queue!(w, ResetColor)?;
+    }
+    Ok(())
+}
+
+/// 工具失败时于 CLI stdout 提示可一键诊断（`playbook_run_commands`）；**不**自动执行。
+pub(crate) fn print_cli_playbook_healing_hint(
+    tool_name: &str,
+    raw_result: &str,
+    parsed: &ParsedLegacyOutput,
+) -> io::Result<()> {
+    if playbook_healing_hint_suppressed(tool_name) {
+        return Ok(());
+    }
+    let body = playbook_hint_body_snippet(raw_result, parsed).trim();
+    if body.is_empty() {
+        return Ok(());
+    }
+    let take = body.len().min(PLAYBOOK_HINT_SNIPPET_MAX);
+    let snippet = &body[..take];
+    let json_snippet = serde_json::to_string(snippet).unwrap_or_else(|_| "\"\"".to_string());
+
+    let mut w = io::stdout();
+    let color = cli_repl_stdout_use_color();
+    begin_playbook_hint_block(&mut w, color)?;
     writeln!(
         w,
         "可将下方整行交给模型调用工具 **playbook_run_commands**（参数 JSON 内 `error_text` 已转义）；或自行拆分 `run_command`。\n\
@@ -164,9 +194,7 @@ pub(crate) fn print_cli_playbook_healing_hint(
         w,
         "{{\"error_text\":{json_snippet},\"ecosystem\":\"auto\"}}"
     )?;
-    if color {
-        queue!(w, ResetColor)?;
-    }
+    end_playbook_hint_block(&mut w, color)?;
     w.flush()
 }
 
