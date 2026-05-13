@@ -1161,7 +1161,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "crabmate-web-leptos"
+name = "crabmate-web"
 version = "0.1.0"
 dependencies = [
  "ammonia",

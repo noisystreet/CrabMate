@@ -39,7 +39,7 @@ The user is asking "你是谁" (Who are you?). I should respond as the CrabMate 
 **技术栈**
 
 - 后端：Rust (Axum Web 服务、Leptos 前端)
-- 主要 crate：`crabmate`、`crabmate-sse-protocol`、`crabmate-web-leptos`
+- 主要 crate：`crabmate`、`crabmate-sse-protocol`、`crabmate-web`
 - 遵循 Conventional Commits（中英双语 commit message）
 
 **我的工作方式**

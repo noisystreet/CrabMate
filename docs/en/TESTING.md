@@ -41,7 +41,7 @@ Note: `pre-commit run --all-files` does **not** run `commit-msg`; message format
 
 ## Rust: workspace tests
 
-From the **repo root** (workspace members: `crabmate`, `crabmate-web-leptos`, `crabmate-sse-protocol`):
+From the **repo root** (workspace members: `crabmate`, `crabmate-web`, `crabmate-sse-protocol`):
 
 ```bash
 cargo test
@@ -53,7 +53,7 @@ cargo test
 | --- | --- | --- |
 | Main binary + backend | `cargo test -p crabmate` | Most `src/` and `tests/` tests |
 | SSE protocol crate | `cargo test -p crabmate-sse-protocol` | Version / doc marker self-checks, etc. |
-| Web UI crate | `cargo test -p crabmate-web-leptos` | See **Frontend (Leptos)** below |
+| Web UI crate | `cargo test -p crabmate-web` | See **Frontend (Leptos)** below |
 
 ### Filter by test name (examples)
 
@@ -78,7 +78,7 @@ cargo +nightly test
 From repo root:
 
 ```bash
-cargo test -p crabmate-web-leptos
+cargo test -p crabmate-web
 ```
 
 Or:
@@ -96,7 +96,7 @@ Covers Markdown sanitization, session helpers, `debounce_schedule`, etc. (no bro
 ```bash
 cargo install wasm-bindgen-cli --version 0.2.114 --locked
 CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner \
-  cargo test --target wasm32-unknown-unknown -p crabmate-web-leptos
+  cargo test --target wasm32-unknown-unknown -p crabmate-web
 ```
 
 If `wasm-bindgen` is bumped in the lockfile, use that version in the install command.
