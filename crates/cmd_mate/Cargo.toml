@@ -1,0 +1,11 @@
+[package]
+name = "cmd_mate"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Quote-aware splitting of a command line into argv words (no shell, for CrabMate run_command)"
+
+[lib]
+path = "lib.rs"
+
+[dependencies]

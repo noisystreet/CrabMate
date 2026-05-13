@@ -333,15 +333,15 @@ pub(crate) fn split_command_prefix_if_embedded(cmd_raw: &mut String, cmd_args: &
     if cmd_raw.contains('/') {
         return;
     }
-    let parts: Vec<&str> = cmd_raw.split_whitespace().collect();
+    let parts = cmd_mate::split_command_line(cmd_raw);
     if parts.len() <= 1 {
         return;
     }
-    let head = parts[0].to_string();
+    let head = parts[0].clone();
     if head.is_empty() {
         return;
     }
-    let mut prefix: Vec<String> = parts[1..].iter().map(|s| (*s).to_string()).collect();
+    let mut prefix: Vec<String> = parts[1..].to_vec();
     prefix.append(cmd_args);
     *cmd_args = prefix;
     *cmd_raw = head;

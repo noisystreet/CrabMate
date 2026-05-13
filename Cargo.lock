@@ -806,6 +806,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmd_mate"
+version = "0.1.0"
+
+[[package]]
 name = "codee"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1068,6 +1072,7 @@ dependencies = [
  "chrono",
  "clap",
  "clap_mangen",
+ "cmd_mate",
  "crabmate-sse-protocol",
  "crossterm 0.29.0",
  "csv",

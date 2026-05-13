@@ -1,5 +1,11 @@
 [workspace]
-members = [".", "frontend", "crates/crabmate-sse-protocol", "crates/crabmate-im-bridge"]
+members = [
+    ".",
+    "frontend",
+    "crates/cmd_mate",
+    "crates/crabmate-sse-protocol",
+    "crates/crabmate-im-bridge",
+]
 resolver = "2"
 
 [package]
@@ -50,6 +56,7 @@ docker_sandbox = ["dep:bollard"]
 fastembed = ["dep:fastembed"]
 
 [dependencies]
+cmd_mate = { path = "crates/cmd_mate" }
 crabmate-sse-protocol = { path = "crates/crabmate-sse-protocol" }
 reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
