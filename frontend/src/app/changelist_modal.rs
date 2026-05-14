@@ -90,6 +90,71 @@ pub(super) fn wire_changelist_body_inner_html(
     });
 }
 
+fn changelist_modal_head(
+    locale: RwSignal<i18n::Locale>,
+    changelist_modal_rev: RwSignal<u64>,
+    changelist_modal_loading: RwSignal<bool>,
+    changelist_fetch_nonce: RwSignal<u64>,
+    changelist_modal_open: RwSignal<bool>,
+) -> impl IntoView {
+    view! {
+        <div class="changelist-modal-head">
+            <h2 id="changelist-modal-title" class="changelist-modal-title">
+                {move || i18n::changelist_title(locale.get())}
+            </h2>
+            <span class="changelist-modal-rev">{move || {
+                let n = changelist_modal_rev.get();
+                if n > 0 {
+                    i18n::changelist_rev(locale.get(), n)
+                } else {
+                    String::new()
+                }
+            }}</span>
+            <div class="changelist-modal-actions">
+                <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    prop:disabled=move || changelist_modal_loading.get()
+                    on:click=move |_| {
+                        changelist_fetch_nonce.update(|x| *x = x.wrapping_add(1));
+                    }
+                >
+                    {move || i18n::changelist_refresh(locale.get())}
+                </button>
+                <button
+                    type="button"
+                    class="btn btn-muted btn-sm"
+                    on:click=move |_| changelist_modal_open.set(false)
+                >
+                    {move || i18n::settings_close(locale.get())}
+                </button>
+            </div>
+        </div>
+    }
+}
+
+fn changelist_modal_body(
+    locale: RwSignal<i18n::Locale>,
+    changelist_modal_loading: RwSignal<bool>,
+    changelist_modal_err: RwSignal<Option<String>>,
+    changelist_body_ref: NodeRef<Div>,
+) -> impl IntoView {
+    view! {
+        <div class="changelist-modal-body">
+            <Show when=move || changelist_modal_loading.get()>
+                <p class="changelist-modal-status">{move || i18n::changelist_loading(locale.get())}</p>
+            </Show>
+            <Show when=move || changelist_modal_err.get().is_some()>
+                <p class="msg-error">{move || changelist_modal_err.get().unwrap_or_default()}</p>
+            </Show>
+            <div
+                class="changelist-modal-prose msg-md-prose"
+                node_ref=changelist_body_ref
+            ></div>
+        </div>
+    }
+}
+
 pub fn changelist_modal_view(signals: ChangelistModalSignals) -> impl IntoView {
     let ChangelistModalSignals {
         changelist_modal_open,
@@ -143,52 +208,19 @@ pub fn changelist_modal_view(signals: ChangelistModalSignals) -> impl IntoView {
                             }
                         }
                     >
-                        <div class="changelist-modal-head">
-                            <h2 id="changelist-modal-title" class="changelist-modal-title">
-                                {move || i18n::changelist_title(locale.get())}
-                            </h2>
-                            <span class="changelist-modal-rev">{move || {
-                                let n = changelist_modal_rev.get();
-                                if n > 0 {
-                                    i18n::changelist_rev(locale.get(), n)
-                                } else {
-                                    String::new()
-                                }
-                            }}</span>
-                            <div class="changelist-modal-actions">
-                                <button
-                                    type="button"
-                                    class="btn btn-secondary btn-sm"
-                                    prop:disabled=move || changelist_modal_loading.get()
-                                    on:click=move |_| {
-                                        changelist_fetch_nonce.update(|x| *x = x.wrapping_add(1));
-                                    }
-                                >
-                                    {move || i18n::changelist_refresh(locale.get())}
-                                </button>
-                                <button
-                                    type="button"
-                                    class="btn btn-muted btn-sm"
-                                    on:click=move |_| changelist_modal_open.set(false)
-                                >
-                                    {move || i18n::settings_close(locale.get())}
-                                </button>
-                            </div>
-                        </div>
-                        <div class="changelist-modal-body">
-                            <Show when=move || changelist_modal_loading.get()>
-                                <p class="changelist-modal-status">{move || i18n::changelist_loading(locale.get())}</p>
-                            </Show>
-                            <Show when=move || changelist_modal_err.get().is_some()>
-                                <p class="msg-error">{move || {
-                                    changelist_modal_err.get().unwrap_or_default()
-                                }}</p>
-                            </Show>
-                            <div
-                                class="changelist-modal-prose msg-md-prose"
-                                node_ref=changelist_body_ref
-                            ></div>
-                        </div>
+                        {changelist_modal_head(
+                            locale,
+                            changelist_modal_rev,
+                            changelist_modal_loading,
+                            changelist_fetch_nonce,
+                            changelist_modal_open,
+                        )}
+                        {changelist_modal_body(
+                            locale,
+                            changelist_modal_loading,
+                            changelist_modal_err,
+                            changelist_body_ref,
+                        )}
                     </div>
                 </div>
             </Show>

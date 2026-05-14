@@ -78,6 +78,42 @@ fn text_from_content(content: &Option<Value>) -> (String, Vec<String>) {
     }
 }
 
+/// 返回 `true` 表示该条已由分支消费（外层应 `continue`）。
+fn hydrate_try_special_cases(
+    parsed: &ApiMessage,
+    role: &str,
+    name: &str,
+    text: &str,
+    reasoning: &str,
+    base_ms: i64,
+    out: &mut Vec<StoredMessage>,
+    t: &mut i64,
+) -> bool {
+    if role == "system" && name == "crabmate_ui_sep" {
+        return true;
+    }
+    if role == "user" && name == CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME {
+        return true;
+    }
+    if role == "system" && name == "crabmate_timeline" {
+        append_crabmate_timeline_system_message(text, base_ms, out, t);
+        return true;
+    }
+    if role == "assistant"
+        && text.trim().is_empty()
+        && reasoning.trim().is_empty()
+        && let Some(ref tc) = parsed.tool_calls
+    {
+        append_assistant_tool_calls_timeline_card(tc, base_ms, out, t);
+        return true;
+    }
+    if role == "tool" {
+        append_tool_role_timeline_row(name, text, base_ms, out, t);
+        return true;
+    }
+    false
+}
+
 /// 将会话快照转为 UI 消息列表（新 id；`created_at` 从 `base_ms` 递增以保证顺序）。
 pub fn stored_messages_from_conversation_api_with_base(
     msgs: &[Value],
@@ -95,33 +131,12 @@ pub fn stored_messages_from_conversation_api_with_base(
             continue;
         }
         let (text, image_urls) = text_from_content(&parsed.content);
-        let reasoning = parsed.reasoning_content.unwrap_or_default();
+        let reasoning = parsed.reasoning_content.clone().unwrap_or_default();
         let name = parsed.name.as_deref().unwrap_or("").trim();
 
-        if role == "system" && name == "crabmate_ui_sep" {
-            continue;
-        }
-
-        if role == "user" && name == CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME {
-            continue;
-        }
-
-        if role == "system" && name == "crabmate_timeline" {
-            append_crabmate_timeline_system_message(&text, base_ms, &mut out, &mut t);
-            continue;
-        }
-
-        if role == "assistant"
-            && text.trim().is_empty()
-            && reasoning.trim().is_empty()
-            && let Some(ref tc) = parsed.tool_calls
-        {
-            append_assistant_tool_calls_timeline_card(tc, base_ms, &mut out, &mut t);
-            continue;
-        }
-
-        if role == "tool" {
-            append_tool_role_timeline_row(name, &text, base_ms, &mut out, &mut t);
+        if hydrate_try_special_cases(
+            &parsed, &role, name, &text, &reasoning, base_ms, &mut out, &mut t,
+        ) {
             continue;
         }
 

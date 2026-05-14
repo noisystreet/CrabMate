@@ -58,6 +58,68 @@ fn chat_row_for_tool_group(
     })
 }
 
+fn tool_run_group_expanded_block(
+    entries: &[(usize, StoredMessage)],
+    g: ToolRunGroupSignals,
+    n: usize,
+    fold_on_click: String,
+) -> impl IntoView {
+    view! {
+        {
+            entries
+                .iter()
+                .map(|(msg_idx, m)| chat_row_for_tool_group(*msg_idx, m.clone(), g))
+                .collect_view()
+        }
+        <div class="msg-tool-run-head" role="group" prop:aria-label=move || i18n::msg_tool_run_group_aria(g.locale.get())>
+            <span class="msg-tool-run-count">{move || i18n::msg_tool_run_count(g.locale.get(), n)}</span>
+            <button
+                type="button"
+                class="btn btn-muted btn-sm msg-tool-run-toggle"
+                prop:title=move || i18n::msg_tool_collapse_title(g.locale.get())
+                prop:aria-label=move || i18n::msg_tool_collapse_aria(g.locale.get())
+                on:click=move |_| {
+                    let k = fold_on_click.clone();
+                    g.collapsed_tool_run_heads.update(|s| {
+                        s.insert(k);
+                    });
+                }
+            >
+                {move || i18n::msg_tool_collapse_btn(g.locale.get())}
+            </button>
+        </div>
+    }
+}
+
+fn tool_run_group_collapsed_last_block(
+    msg_idx: usize,
+    last: StoredMessage,
+    g: ToolRunGroupSignals,
+    n: usize,
+    expand_on_click: String,
+) -> impl IntoView {
+    view! {
+        {chat_row_for_tool_group(msg_idx, last, g)}
+        <div class="msg-tool-run-head" role="group" prop:aria-label=move || i18n::msg_tool_run_group_aria(g.locale.get())>
+            <span class="msg-tool-run-count">{move || i18n::msg_tool_run_count(g.locale.get(), n)}</span>
+            <button
+                type="button"
+                class="btn btn-muted btn-sm msg-tool-run-toggle"
+                prop:title=move || i18n::msg_tool_expand_title(g.locale.get())
+                prop:aria-label=move || i18n::msg_tool_expand_aria(g.locale.get())
+                on:click=move |_| {
+                    let h = expand_on_click.clone();
+                    g.collapsed_tool_run_heads.update(|s| {
+                        s.remove(&h);
+                    });
+                }
+            >
+                {move || i18n::msg_tool_expand_btn(g.locale.get())}
+            </button>
+        </div>
+    }
+}
+
 pub(crate) fn tool_run_group_view(
     head_key: String,
     items: Vec<(usize, StoredMessage)>,
@@ -92,56 +154,9 @@ pub(crate) fn tool_run_group_view(
                 let fold_on_click = fold_head.clone();
                 let expand_on_click = head_for_expand_hint.clone();
                 if show_all {
-                    view! {
-                        {
-                            entries
-                                .iter()
-                                .map(|(msg_idx, m)| {
-                                    chat_row_for_tool_group(*msg_idx, m.clone(), g)
-                                })
-                                .collect_view()
-                        }
-                        <div class="msg-tool-run-head" role="group" prop:aria-label=move || i18n::msg_tool_run_group_aria(g.locale.get())>
-                            <span class="msg-tool-run-count">{move || i18n::msg_tool_run_count(g.locale.get(), n)}</span>
-                            <button
-                                type="button"
-                                class="btn btn-muted btn-sm msg-tool-run-toggle"
-                                prop:title=move || i18n::msg_tool_collapse_title(g.locale.get())
-                                prop:aria-label=move || i18n::msg_tool_collapse_aria(g.locale.get())
-                                on:click=move |_| {
-                                    let k = fold_on_click.clone();
-                                    g.collapsed_tool_run_heads.update(|s| {
-                                        s.insert(k);
-                                    });
-                                }
-                            >
-                                {move || i18n::msg_tool_collapse_btn(g.locale.get())}
-                            </button>
-                        </div>
-                    }
-                    .into_any()
+                    tool_run_group_expanded_block(&entries, g, n, fold_on_click).into_any()
                 } else if let Some((msg_idx, last)) = entries.last().cloned() {
-                    view! {
-                        {chat_row_for_tool_group(msg_idx, last, g)}
-                        <div class="msg-tool-run-head" role="group" prop:aria-label=move || i18n::msg_tool_run_group_aria(g.locale.get())>
-                            <span class="msg-tool-run-count">{move || i18n::msg_tool_run_count(g.locale.get(), n)}</span>
-                            <button
-                                type="button"
-                                class="btn btn-muted btn-sm msg-tool-run-toggle"
-                                prop:title=move || i18n::msg_tool_expand_title(g.locale.get())
-                                prop:aria-label=move || i18n::msg_tool_expand_aria(g.locale.get())
-                                on:click=move |_| {
-                                    let h = expand_on_click.clone();
-                                    g.collapsed_tool_run_heads.update(|s| {
-                                        s.remove(&h);
-                                    });
-                                }
-                            >
-                                {move || i18n::msg_tool_expand_btn(g.locale.get())}
-                            </button>
-                        </div>
-                    }
-                    .into_any()
+                    tool_run_group_collapsed_last_block(msg_idx, last, g, n, expand_on_click).into_any()
                 } else {
                     view! { <div class="msg-tool-run-empty"></div> }.into_any()
                 }
