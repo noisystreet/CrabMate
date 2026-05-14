@@ -148,21 +148,14 @@ fn SidePanelViewPickerMenu(props: SidePanelViewPickerProps) -> impl IntoView {
 }
 
 #[component]
-pub(super) fn SideColumnResizeAndShellToolbar(
-    toolbar: SideColumnResizeToolbarSignals,
-    children: Children,
+fn SideColumnResizeDragHandle(
+    locale: RwSignal<Locale>,
+    side_panel_view: RwSignal<SidePanelView>,
+    side_width: RwSignal<f64>,
+    side_resize_dragging: RwSignal<bool>,
+    side_resize_session: Rc<RefCell<Option<(f64, f64)>>>,
+    side_resize_handles: SideResizeHandlesCell,
 ) -> impl IntoView {
-    let SideColumnResizeToolbarSignals {
-        locale,
-        side_resize_dragging,
-        side_panel_view,
-        side_width,
-        side_resize_session,
-        side_resize_handles,
-        view_menu_open,
-        status_bar_visible,
-        settings_page,
-    } = toolbar;
     view! {
         <div
             class="column-resize-handle"
@@ -187,7 +180,93 @@ pub(super) fn SideColumnResizeAndShellToolbar(
                 }
             }
         ></div>
+    }
+}
 
+#[component]
+fn SideColumnShellToolbarIcons(
+    locale: RwSignal<Locale>,
+    side_panel_view: RwSignal<SidePanelView>,
+    view_menu_open: RwSignal<bool>,
+    status_bar_visible: RwSignal<bool>,
+    settings_page: RwSignal<bool>,
+) -> impl IntoView {
+    view! {
+        <div class="shell-main-toolbar" role="toolbar" prop:aria-label=move || i18n::side_toolbar_aria(locale.get())>
+            <div class="toolbar-view-wrap">
+                <Show when=move || view_menu_open.get()>
+                    <div
+                        class="toolbar-view-backdrop"
+                        on:click=move |_| view_menu_open.set(false)
+                    ></div>
+                </Show>
+                <SidePanelViewPickerTrigger props=SidePanelViewPickerProps {
+                    locale,
+                    side_panel_view,
+                    view_menu_open,
+                } />
+                <Show when=move || view_menu_open.get()>
+                    <SidePanelViewPickerMenu props=SidePanelViewPickerProps {
+                        locale,
+                        side_panel_view,
+                        view_menu_open,
+                    } />
+                </Show>
+            </div>
+            <button
+                type="button"
+                class="btn btn-secondary btn-sm shell-toolbar-icon-btn"
+                class:active=move || status_bar_visible.get()
+                on:click=move |_| status_bar_visible.update(|v| *v = !*v)
+                prop:title=move || i18n::side_status_btn_title(locale.get())
+                prop:aria-label=move || i18n::side_status_btn_title(locale.get())
+            >
+                <svg
+                    class="shell-toolbar-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                </svg>
+            </button>
+            <button
+                type="button"
+                class="btn btn-secondary btn-sm shell-toolbar-icon-btn"
+                on:click=move |_| settings_page.set(true)
+                prop:title=move || i18n::side_settings_title(locale.get())
+                prop:aria-label=move || i18n::side_settings_title(locale.get())
+            >
+                <svg
+                    class="shell-toolbar-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                    <circle cx="12" cy="12" r="3" />
+                </svg>
+            </button>
+        </div>
+    }
+}
+
+#[component]
+fn SideColumnShellColumn(
+    side_resize_dragging: RwSignal<bool>,
+    side_panel_view: RwSignal<SidePanelView>,
+    side_width: RwSignal<f64>,
+    children: Children,
+) -> impl IntoView {
+    view! {
         <div
             class:side-column-resizing=move || side_resize_dragging.get()
             class=move || {
@@ -205,71 +284,49 @@ pub(super) fn SideColumnResizeAndShellToolbar(
                 }
             }
         >
-            <div class="shell-main-toolbar" role="toolbar" prop:aria-label=move || i18n::side_toolbar_aria(locale.get())>
-                <div class="toolbar-view-wrap">
-                    <Show when=move || view_menu_open.get()>
-                        <div
-                            class="toolbar-view-backdrop"
-                            on:click=move |_| view_menu_open.set(false)
-                        ></div>
-                    </Show>
-                    <SidePanelViewPickerTrigger props=SidePanelViewPickerProps {
-                        locale,
-                        side_panel_view,
-                        view_menu_open,
-                    } />
-                    <Show when=move || view_menu_open.get()>
-                        <SidePanelViewPickerMenu props=SidePanelViewPickerProps {
-                            locale,
-                            side_panel_view,
-                            view_menu_open,
-                        } />
-                    </Show>
-                </div>
-                <button
-                    type="button"
-                    class="btn btn-secondary btn-sm shell-toolbar-icon-btn"
-                    class:active=move || status_bar_visible.get()
-                    on:click=move |_| status_bar_visible.update(|v| *v = !*v)
-                    prop:title=move || i18n::side_status_btn_title(locale.get())
-                    prop:aria-label=move || i18n::side_status_btn_title(locale.get())
-                >
-                    <svg
-                        class="shell-toolbar-icon"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        aria-hidden="true"
-                    >
-                        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-                    </svg>
-                </button>
-                <button
-                    type="button"
-                    class="btn btn-secondary btn-sm shell-toolbar-icon-btn"
-                    on:click=move |_| settings_page.set(true)
-                    prop:title=move || i18n::side_settings_title(locale.get())
-                    prop:aria-label=move || i18n::side_settings_title(locale.get())
-                >
-                    <svg
-                        class="shell-toolbar-icon"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        aria-hidden="true"
-                    >
-                        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-                        <circle cx="12" cy="12" r="3" />
-                    </svg>
-                </button>
-            </div>
             {children()}
         </div>
+    }
+}
+
+#[component]
+pub(super) fn SideColumnResizeAndShellToolbar(
+    toolbar: SideColumnResizeToolbarSignals,
+    children: Children,
+) -> impl IntoView {
+    let SideColumnResizeToolbarSignals {
+        locale,
+        side_resize_dragging,
+        side_panel_view,
+        side_width,
+        side_resize_session,
+        side_resize_handles,
+        view_menu_open,
+        status_bar_visible,
+        settings_page,
+    } = toolbar;
+    view! {
+        <SideColumnResizeDragHandle
+            locale
+            side_panel_view
+            side_width
+            side_resize_dragging
+            side_resize_session
+            side_resize_handles
+        />
+        <SideColumnShellColumn
+            side_resize_dragging
+            side_panel_view
+            side_width
+        >
+            <SideColumnShellToolbarIcons
+                locale
+                side_panel_view
+                view_menu_open
+                status_bar_visible
+                settings_page
+            />
+            {children()}
+        </SideColumnShellColumn>
     }
 }

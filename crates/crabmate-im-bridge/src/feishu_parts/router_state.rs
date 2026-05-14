@@ -508,31 +508,36 @@ async fn feishu_im_message_receive_v1_response(st: &Arc<FeishuBridgeState>, v: &
     }
 }
 
-async fn feishu_events(
-    State(st): State<Arc<FeishuBridgeState>>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> impl IntoResponse {
-    let body_str = match std::str::from_utf8(&body) {
-        Ok(s) => s,
-        Err(_) => {
-            return (
+type FeishuEventReject = Box<Response>;
+
+fn feishu_event_body_utf8(body: &[u8]) -> Result<&str, FeishuEventReject> {
+    std::str::from_utf8(body).map_err(|_| {
+        Box::new(
+            (
                 StatusCode::BAD_REQUEST,
                 Json(json!({ "error": "body is not valid UTF-8" })),
             )
-                .into_response();
-        }
-    };
+                .into_response(),
+        )
+    })
+}
 
-    let signature_verified = match verify_lark_signature_if_needed(&st.cfg, &headers, body_str) {
+fn feishu_prepare_verified_event_json(
+    st: &FeishuBridgeState,
+    headers: &HeaderMap,
+    body_str: &str,
+) -> Result<Value, FeishuEventReject> {
+    let signature_verified = match verify_lark_signature_if_needed(&st.cfg, headers, body_str) {
         Ok(v) => v,
         Err(e) => {
             warn!(?e, "feishu signature verification failed");
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "error": "invalid signature" })),
-            )
-                .into_response();
+            return Err(Box::new(
+                (
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!({ "error": "invalid signature" })),
+                )
+                    .into_response(),
+            ));
         }
     };
 
@@ -540,16 +545,18 @@ async fn feishu_events(
         && let Err(e) = check_lark_replay_after_signature(
             &st.cfg,
             &st.seen_lark_nonces,
-            &headers,
+            headers,
             time_unix_secs(),
         )
     {
         warn!(?e, "feishu replay protection rejected request");
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "error": e.to_string() })),
-        )
-            .into_response();
+        return Err(Box::new(
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({ "error": e.to_string() })),
+            )
+                .into_response(),
+        ));
     }
 
     let payload_str = match maybe_decrypt_event_json(st.cfg.encrypt_key.as_deref(), body_str) {
@@ -563,32 +570,45 @@ async fn feishu_events(
                 }
                 _ => e.to_string(),
             };
-            return (StatusCode::BAD_REQUEST, Json(json!({ "error": msg }))).into_response();
+            return Err(Box::new(
+                (StatusCode::BAD_REQUEST, Json(json!({ "error": msg }))).into_response(),
+            ));
         }
     };
 
     let v: Value = match serde_json::from_str(&payload_str) {
         Ok(v) => v,
         Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": format!("invalid json after decrypt: {e}") })),
-            )
-                .into_response();
+            return Err(Box::new(
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": format!("invalid json after decrypt: {e}") })),
+                )
+                    .into_response(),
+            ));
         }
     };
 
     if let Err(msg) = verify_event_verification_token(&st.cfg, &v) {
         warn!(%msg, "feishu verification token mismatch");
-        return (StatusCode::UNAUTHORIZED, Json(json!({ "error": msg }))).into_response();
+        return Err(Box::new(
+            (StatusCode::UNAUTHORIZED, Json(json!({ "error": msg }))).into_response(),
+        ));
     }
 
-    if feishu_tool_card::is_card_action_trigger_payload(&v) {
-        return handle_card_action_trigger(&st, &v).await;
+    Ok(v)
+}
+
+async fn feishu_route_verified_event(
+    st: &Arc<FeishuBridgeState>,
+    v: &Value,
+) -> Response {
+    if feishu_tool_card::is_card_action_trigger_payload(v) {
+        return handle_card_action_trigger(st, v).await;
     }
 
     // URL 校验（常见两种载荷）
-    if let Some(ch) = url_verification_challenge(&v) {
+    if let Some(ch) = url_verification_challenge(v) {
         return Json(json!({ "challenge": ch })).into_response();
     }
 
@@ -599,7 +619,7 @@ async fn feishu_events(
         .or_else(|| v.get("type").and_then(|x| x.as_str()));
 
     match event_type {
-        Some("im.message.receive_v1") => feishu_im_message_receive_v1_response(&st, &v).await,
+        Some("im.message.receive_v1") => feishu_im_message_receive_v1_response(st, v).await,
         Some(other) => {
             warn!(event_type = other, "ignored feishu event type");
             (StatusCode::OK, Json(json!({}))).into_response()
@@ -609,6 +629,24 @@ async fn feishu_events(
             (StatusCode::OK, Json(json!({}))).into_response()
         }
     }
+}
+
+async fn feishu_events(
+    State(st): State<Arc<FeishuBridgeState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> impl IntoResponse {
+    let body_str = match feishu_event_body_utf8(&body) {
+        Ok(s) => s,
+        Err(resp) => return *resp,
+    };
+
+    let v = match feishu_prepare_verified_event_json(st.as_ref(), &headers, body_str) {
+        Ok(v) => v,
+        Err(resp) => return *resp,
+    };
+
+    feishu_route_verified_event(&st, &v).await
 }
 
 fn url_verification_challenge(v: &Value) -> Option<String> {
