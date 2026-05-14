@@ -5,6 +5,7 @@ use std::collections::HashSet;
 
 use leptos::prelude::*;
 
+use super::composer_follow_up::ComposerStreamFollowUp;
 use super::message_row::{ChatMessageRowSignals, chat_message_row};
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::{self, Locale};
@@ -23,8 +24,7 @@ pub(crate) struct ToolRunGroupSignals {
     pub chat_find_cursor: RwSignal<usize>,
     pub stream_turn_busy_ui: Memo<bool>,
     pub tail_loading_assistant_mid: Memo<Option<String>>,
-    pub regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
-    pub retry_assistant_target: RwSignal<Option<String>>,
+    pub stream_follow_up: RwSignal<ComposerStreamFollowUp>,
     pub status_err: RwSignal<Option<String>>,
     pub auto_scroll_chat: RwSignal<bool>,
     pub locale: RwSignal<Locale>,
@@ -48,8 +48,7 @@ fn chat_row_for_tool_group(
         auto_scroll_chat: g.auto_scroll_chat,
         stream_turn_busy_ui: g.stream_turn_busy_ui,
         tail_loading_assistant_mid: g.tail_loading_assistant_mid,
-        regen_stream_after_truncate: g.regen_stream_after_truncate,
-        retry_assistant_target: g.retry_assistant_target,
+        stream_follow_up: g.stream_follow_up,
         status_err: g.status_err,
         locale: g.locale,
         markdown_render: g.markdown_render,

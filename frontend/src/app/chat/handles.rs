@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use leptos::prelude::*;
 
+use super::composer_follow_up::ComposerStreamFollowUp;
 use crate::app::app_signals::{AppSignals, StreamControlSignals};
 use crate::chat_session_state::{ChatSessionSignals, ChatStreamBusyMemos};
 use crate::clarification_form::PendingClarificationForm;
@@ -82,14 +83,13 @@ pub struct ChatColumnShell {
     pub stream_busy_memos: ChatStreamBusyMemos,
     pub run_send_message: Arc<dyn Fn() + Send + Sync>,
     pub trigger_stop: Arc<dyn Fn() + Send + Sync>,
-    pub regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
-    pub retry_assistant_target: RwSignal<Option<String>>,
+    /// 截断再生 / 失败助手重试：由 [`super::composer_wires::wire_chat_composer_streams`] 单 Effect 消费。
+    pub stream_follow_up: RwSignal<ComposerStreamFollowUp>,
 }
 
-/// `wire_chat_composer_streams` 的返回值：重试 / 截断再生目标与发送、停止、新会话句柄。
+/// `wire_chat_composer_streams` 的返回值：待发流式后续动作与发送、停止、新会话句柄。
 pub(crate) struct ChatComposerWires {
-    pub retry_assistant_target: RwSignal<Option<String>>,
-    pub regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
+    pub stream_follow_up: RwSignal<ComposerStreamFollowUp>,
     pub run_send_message: Arc<dyn Fn() + Send + Sync>,
     pub cancel_stream: Arc<dyn Fn() + Send + Sync>,
     pub new_session: Rc<dyn Fn()>,

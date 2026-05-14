@@ -31,8 +31,7 @@ pub fn bootstrap_app_shell() -> AppShellCtx {
             stream_busy_memos: wiring.stream_busy_memos,
             run_send_message: wiring.chat_wires.run_send_message.clone(),
             trigger_stop: Arc::clone(&wiring.chat_wires.cancel_stream),
-            regen_stream_after_truncate: wiring.chat_wires.regen_stream_after_truncate,
-            retry_assistant_target: wiring.chat_wires.retry_assistant_target,
+            stream_follow_up: wiring.chat_wires.stream_follow_up,
         },
     }
 }

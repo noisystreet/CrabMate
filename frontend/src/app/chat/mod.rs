@@ -5,6 +5,7 @@
 mod column;
 mod column_keyboard;
 mod composer;
+mod composer_follow_up;
 mod composer_input_stack;
 mod composer_mirror;
 mod composer_stream;

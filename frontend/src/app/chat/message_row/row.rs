@@ -127,8 +127,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
         auto_scroll_chat,
         stream_turn_busy_ui,
         tail_loading_assistant_mid,
-        regen_stream_after_truncate,
-        retry_assistant_target,
+        stream_follow_up,
         status_err,
         locale,
         markdown_render,
@@ -139,7 +138,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
     let active_id = chat.active_id;
     let row_actions = MessageRowActionSignals {
         chat,
-        regen_stream_after_truncate,
+        stream_follow_up,
         status_err,
         locale,
     };
@@ -287,7 +286,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
                     user_branch_id: user_branch_id.clone(),
                     mid_retry: mid_retry.clone(),
                     row_actions,
-                    retry_assistant_target,
+                    stream_follow_up,
                     stream_turn_busy_ui,
                     locale,
                 })}

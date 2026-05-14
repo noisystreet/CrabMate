@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use leptos::prelude::*;
 
+use super::composer_follow_up::ComposerStreamFollowUp;
 use super::composer_stream::{ComposerStreamHandles, make_attach_chat_stream};
 use super::handles::{ChatComposerWires, ComposerStreamShell, WireComposerStreamsArgs};
 use super::stream_user_abort::apply_user_abort_of_inflight_stream;
@@ -197,8 +198,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
         }
     });
 
-    let retry_assistant_target = RwSignal::new(None::<String>);
-    let regen_stream_after_truncate = RwSignal::new(None::<(String, Vec<String>, String)>);
+    let stream_follow_up = RwSignal::new(ComposerStreamFollowUp::Idle);
 
     Effect::new({
         let chat = chat;
@@ -206,46 +206,48 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
         let auto_scroll_chat = auto_scroll_chat;
         let shell = stream_shell.clone();
         move |_| {
-            let Some(failed_asst_id) = retry_assistant_target.get() else {
-                return;
-            };
-            if !initialized.get() || stream_turn_busy_ui.get() {
-                return;
+            let pending = stream_follow_up.get();
+            match pending {
+                ComposerStreamFollowUp::Idle => {}
+                ComposerStreamFollowUp::RetryFailedAssistant { failed_asst_id } => {
+                    if !initialized.get() || stream_turn_busy_ui.get() {
+                        return;
+                    }
+                    stream_follow_up.set(ComposerStreamFollowUp::Idle);
+                    let aid = chat.active_id.get();
+                    let mut prepared: Option<(String, Vec<String>, String)> = None;
+                    chat.update_sessions_composer(|list| {
+                        prepared = prepare_retry_failed_assistant_turn(list, &aid, &failed_asst_id);
+                    });
+                    let Some((user_text, user_imgs, asst_id)) = prepared else {
+                        return;
+                    };
+                    auto_scroll_chat.set(true);
+                    begin_stream_shell_turn(&shell);
+                    attach(user_text, user_imgs, asst_id, None);
+                }
+                ComposerStreamFollowUp::RegenerateAfterTruncate {
+                    user_text,
+                    user_imgs,
+                    asst_id,
+                } => {
+                    if !initialized.get() {
+                        return;
+                    }
+                    if regen_stream_blocked_for_attach(
+                        &shell,
+                        chat,
+                        asst_id.as_str(),
+                        user_text.len(),
+                    ) {
+                        return;
+                    }
+                    stream_follow_up.set(ComposerStreamFollowUp::Idle);
+                    auto_scroll_chat.set(true);
+                    begin_stream_shell_turn(&shell);
+                    attach(user_text, user_imgs, asst_id, None);
+                }
             }
-            retry_assistant_target.set(None);
-            let aid = chat.active_id.get();
-            let mut prepared: Option<(String, Vec<String>, String)> = None;
-            chat.update_sessions_composer(|list| {
-                prepared = prepare_retry_failed_assistant_turn(list, &aid, &failed_asst_id);
-            });
-            let Some((user_text, user_imgs, asst_id)) = prepared else {
-                return;
-            };
-            auto_scroll_chat.set(true);
-            begin_stream_shell_turn(&shell);
-            attach(user_text, user_imgs, asst_id, None);
-        }
-    });
-
-    Effect::new({
-        let chat = chat;
-        let attach = Arc::clone(&attach_chat_stream);
-        let auto_scroll_chat = auto_scroll_chat;
-        let shell = stream_shell.clone();
-        move |_| {
-            let Some((user_text, user_imgs, asst_id)) = regen_stream_after_truncate.get() else {
-                return;
-            };
-            if !initialized.get() {
-                return;
-            }
-            if regen_stream_blocked_for_attach(&shell, chat, asst_id.as_str(), user_text.len()) {
-                return;
-            }
-            regen_stream_after_truncate.set(None);
-            auto_scroll_chat.set(true);
-            begin_stream_shell_turn(&shell);
-            attach(user_text, user_imgs, asst_id, None);
         }
     });
 
@@ -293,8 +295,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
     });
 
     ChatComposerWires {
-        retry_assistant_target,
-        regen_stream_after_truncate,
+        stream_follow_up,
         run_send_message,
         cancel_stream,
         new_session,

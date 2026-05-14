@@ -13,6 +13,7 @@ use crate::session_ops::message_role_label;
 use crate::storage::{ChatSession, StoredMessage};
 use crate::stream_text_overlay::StreamTextOverlay;
 
+use super::super::composer_follow_up::ComposerStreamFollowUp;
 use super::super::message_row_actions::MessageRowActionSignals;
 use super::non_assistant_body::{NonAssistantMessageBodyParams, build_non_assistant_message_body};
 
@@ -278,7 +279,7 @@ fn user_line_regen_branch_buttons(
 }
 
 fn assistant_retry_icon_button(
-    retry_assistant_target: RwSignal<Option<String>>,
+    stream_follow_up: RwSignal<ComposerStreamFollowUp>,
     stream_turn_busy_ui: Memo<bool>,
     locale: RwSignal<Locale>,
     mid_retry_go: StoredValue<String>,
@@ -291,7 +292,9 @@ fn assistant_retry_icon_button(
             prop:aria-label=move || i18n::msg_retry_aria(locale.get())
             prop:disabled=move || stream_turn_busy_ui.get()
             on:click=move |_| {
-                retry_assistant_target.set(Some(mid_retry_go.get_value()));
+                stream_follow_up.set(ComposerStreamFollowUp::RetryFailedAssistant {
+                    failed_asst_id: mid_retry_go.get_value(),
+                });
             }
         >
             <svg
@@ -324,7 +327,7 @@ pub(super) struct MessageActionsBarParams {
     pub user_branch_id: String,
     pub mid_retry: String,
     pub row_actions: MessageRowActionSignals,
-    pub retry_assistant_target: RwSignal<Option<String>>,
+    pub stream_follow_up: RwSignal<ComposerStreamFollowUp>,
     pub stream_turn_busy_ui: Memo<bool>,
     pub locale: RwSignal<Locale>,
 }
@@ -339,7 +342,7 @@ pub(super) fn build_message_actions_bar(p: MessageActionsBarParams) -> AnyView {
         user_branch_id,
         mid_retry,
         row_actions,
-        retry_assistant_target,
+        stream_follow_up,
         stream_turn_busy_ui,
         locale,
     } = p;
@@ -363,7 +366,7 @@ pub(super) fn build_message_actions_bar(p: MessageActionsBarParams) -> AnyView {
             })}
             <Show when=move || retry_check.get_value()()>
                 {assistant_retry_icon_button(
-                    retry_assistant_target,
+                    stream_follow_up,
                     stream_turn_busy_ui,
                     locale,
                     mid_retry_go,

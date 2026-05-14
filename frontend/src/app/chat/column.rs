@@ -8,6 +8,7 @@ use leptos_dom::helpers::event_target_value;
 use wasm_bindgen::JsCast;
 
 use super::column_keyboard::ChatColumnHomeEndNav;
+use super::composer_follow_up::ComposerStreamFollowUp;
 use super::composer_input_stack::ComposerInputStack;
 use super::handles::ChatColumnShell;
 use super::message_chunks::{ChatChunk, chat_chunk_stable_key, chunk_messages};
@@ -38,8 +39,7 @@ struct ChatMessagesPaneSignals {
     chat_find_match_ids: RwSignal<Vec<String>>,
     chat_find_cursor: RwSignal<usize>,
     stream_turn_busy_ui: Memo<bool>,
-    regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
-    retry_assistant_target: RwSignal<Option<String>>,
+    stream_follow_up: RwSignal<ComposerStreamFollowUp>,
     status_err: RwSignal<Option<String>>,
     markdown_render: RwSignal<bool>,
     apply_assistant_display_filters: RwSignal<bool>,
@@ -100,8 +100,7 @@ fn ChatMessagesThreadBody(
         chat_find_match_ids,
         chat_find_cursor,
         stream_turn_busy_ui,
-        regen_stream_after_truncate,
-        retry_assistant_target,
+        stream_follow_up,
         status_err,
         markdown_render,
         apply_assistant_display_filters,
@@ -179,8 +178,7 @@ fn ChatMessagesThreadBody(
                                     auto_scroll_chat,
                                     stream_turn_busy_ui,
                                     tail_loading_assistant_mid,
-                                    regen_stream_after_truncate,
-                                    retry_assistant_target,
+                                    stream_follow_up,
                                     status_err,
                                     locale,
                                     markdown_render,
@@ -220,8 +218,7 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
         chat_find_match_ids,
         chat_find_cursor,
         stream_turn_busy_ui,
-        regen_stream_after_truncate,
-        retry_assistant_target,
+        stream_follow_up,
         status_err,
         markdown_render,
         apply_assistant_display_filters,
@@ -239,8 +236,7 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
         chat_find_cursor,
         stream_turn_busy_ui,
         tail_loading_assistant_mid,
-        regen_stream_after_truncate,
-        retry_assistant_target,
+        stream_follow_up,
         status_err,
         auto_scroll_chat,
         locale,
@@ -609,8 +605,7 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
         stream_busy_memos,
         run_send_message,
         trigger_stop,
-        regen_stream_after_truncate,
-        retry_assistant_target,
+        stream_follow_up,
     } = shell;
 
     let locale = app.shell_ui.locale;
@@ -665,8 +660,7 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
                         chat_find_match_ids,
                         chat_find_cursor,
                         stream_turn_busy_ui,
-                        regen_stream_after_truncate,
-                        retry_assistant_target,
+                        stream_follow_up,
                         status_err,
                         markdown_render,
                         apply_assistant_display_filters,

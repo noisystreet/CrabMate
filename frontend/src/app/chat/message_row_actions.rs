@@ -13,6 +13,8 @@ use crate::session_ops::{
     user_ordinal_for_message_index,
 };
 
+use super::composer_follow_up::ComposerStreamFollowUp;
+
 fn dbg_log(msg: &str) {
     web_sys::console::log_1(&format!("[regen] {msg}").into());
 }
@@ -25,7 +27,7 @@ fn dbg_log_with(msg: &str, val: &str) {
 #[derive(Clone, Copy)]
 pub(crate) struct MessageRowActionSignals {
     pub chat: ChatSessionSignals,
-    pub regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
+    pub stream_follow_up: RwSignal<ComposerStreamFollowUp>,
     pub status_err: RwSignal<Option<String>>,
     pub locale: RwSignal<Locale>,
 }
@@ -41,11 +43,11 @@ pub(crate) fn spawn_scroll_to_linked_user_message(uid: &str, auto_scroll_chat: R
 }
 
 impl MessageRowActionSignals {
-    /// 「在用户消息后重新生成」：`POST /chat/branch`（若有会话 revision）或仅本地截断并触发 `regen_stream_after_truncate`。
+    /// 「在用户消息后重新生成」：`POST /chat/branch`（若有会话 revision）或仅本地截断并排队 [`ComposerStreamFollowUp::RegenerateAfterTruncate`]。
     pub(crate) fn spawn_regenerate_from_user_line(self, msg_idx: usize, user_message_id: String) {
         let MessageRowActionSignals {
             chat,
-            regen_stream_after_truncate,
+            stream_follow_up,
             status_err,
             locale,
         } = self;
@@ -82,7 +84,13 @@ impl MessageRowActionSignals {
                             });
                             if let Some((ut, uimg, aid)) = prep {
                                 dbg_log_with("PATH A prep set regen_stream", &ut);
-                                regen_stream_after_truncate.set(Some((ut, uimg, aid)));
+                                stream_follow_up.set(
+                                    ComposerStreamFollowUp::RegenerateAfterTruncate {
+                                        user_text: ut,
+                                        user_imgs: uimg,
+                                        asst_id: aid,
+                                    },
+                                );
                             } else {
                                 dbg_log("PATH A prep was None");
                             }
@@ -102,7 +110,13 @@ impl MessageRowActionSignals {
                                     });
                                     if let Some((ut, uimg, aid)) = prep {
                                         dbg_log_with("NotFound PATH B prep set regen_stream", &ut);
-                                        regen_stream_after_truncate.set(Some((ut, uimg, aid)));
+                                        stream_follow_up.set(
+                                            ComposerStreamFollowUp::RegenerateAfterTruncate {
+                                                user_text: ut,
+                                                user_imgs: uimg,
+                                                asst_id: aid,
+                                            },
+                                        );
                                     }
                                 }
                                 ChatBranchError::Conflict => {
@@ -132,7 +146,11 @@ impl MessageRowActionSignals {
                 });
                 if let Some((ut, uimg, aid)) = prep {
                     dbg_log_with("PATH B prep set regen_stream", &ut);
-                    regen_stream_after_truncate.set(Some((ut, uimg, aid)));
+                    stream_follow_up.set(ComposerStreamFollowUp::RegenerateAfterTruncate {
+                        user_text: ut,
+                        user_imgs: uimg,
+                        asst_id: aid,
+                    });
                 } else {
                     dbg_log("PATH B prep was None");
                 }
@@ -144,7 +162,7 @@ impl MessageRowActionSignals {
     pub(crate) fn spawn_branch_at_user_line(self, msg_idx: usize, user_message_id: String) {
         let MessageRowActionSignals {
             chat,
-            regen_stream_after_truncate: _,
+            stream_follow_up: _,
             status_err,
             locale,
         } = self;

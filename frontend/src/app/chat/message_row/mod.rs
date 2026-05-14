@@ -10,6 +10,7 @@ mod views;
 
 use std::collections::HashSet;
 
+use super::composer_follow_up::ComposerStreamFollowUp;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::Locale;
 use crate::storage::StoredMessage;
@@ -30,8 +31,7 @@ pub(crate) struct ChatMessageRowSignals {
     pub stream_turn_busy_ui: Memo<bool>,
     /// 当前活动会话尾部 loading 助手消息 id；仅该行显示打字点，避免每行 `sessions.with`。
     pub tail_loading_assistant_mid: Memo<Option<String>>,
-    pub regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
-    pub retry_assistant_target: RwSignal<Option<String>>,
+    pub stream_follow_up: RwSignal<ComposerStreamFollowUp>,
     pub status_err: RwSignal<Option<String>>,
     pub locale: RwSignal<Locale>,
     pub markdown_render: RwSignal<bool>,
