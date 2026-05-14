@@ -3,7 +3,7 @@
 
 use regex::RegexBuilder;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::path::{
     canonical_workspace_root, path_for_tool_display, resolve_for_read, resolve_for_write,
@@ -342,22 +342,51 @@ fn search_replace_dry_run_preview(
     preview
 }
 
-pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    let v = match crate::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: SearchReplaceArgs = match serde_json::from_value(v) {
-        Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
-    };
+fn parse_search_replace_args(args_json: &str) -> Result<SearchReplaceArgs, String> {
+    let v = crate::tools::parse_args_json(args_json)?;
+    serde_json::from_value(v).map_err(|e| format!("参数解析错误: {e}"))
+}
+
+fn search_replace_path_and_query(args: &SearchReplaceArgs) -> Result<(String, String), String> {
     let path = match args.path.trim() {
         s if !s.is_empty() => s.to_string(),
-        _ => return "缺少 path 参数".to_string(),
+        _ => return Err("缺少 path 参数".to_string()),
     };
     let search = match args.search.trim() {
         s if !s.is_empty() => s.to_string(),
-        _ => return "缺少 search 参数".to_string(),
+        _ => return Err("缺少 search 参数".to_string()),
+    };
+    Ok((path, search))
+}
+
+fn load_search_replace_file_bytes(
+    working_dir: &Path,
+    path: &str,
+) -> Result<(PathBuf, String), String> {
+    let target =
+        resolve_for_read(working_dir, path).map_err(tool_user_error_from_workspace_path)?;
+    if !target.is_file() {
+        return Err(format!("错误：{} 不是文件", path));
+    }
+    let content = std::fs::read_to_string(&target).map_err(|e| format!("读取文件失败：{}", e))?;
+    const MAX_FILE_SIZE: usize = 4 * 1024 * 1024;
+    if content.len() > MAX_FILE_SIZE {
+        return Err(format!(
+            "错误：文件过大（{} 字节，上限 4MiB）",
+            content.len()
+        ));
+    }
+    Ok((target, content))
+}
+
+pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
+    let args = match parse_search_replace_args(args_json) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
+    let (path, search) = match search_replace_path_and_query(&args) {
+        Ok(p) => p,
+        Err(e) => return e,
     };
     let replace = args.replace;
     let is_regex = args.regex;
@@ -365,22 +394,10 @@ pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>
     let confirm = args.confirm;
     let max_replacements = args.max_replacements.unwrap_or(0) as usize;
 
-    let target = match resolve_for_read(working_dir, &path) {
-        Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
+    let (target, content) = match load_search_replace_file_bytes(working_dir, &path) {
+        Ok(x) => x,
+        Err(e) => return e,
     };
-    if !target.is_file() {
-        return format!("错误：{} 不是文件", path);
-    }
-
-    let content = match std::fs::read_to_string(&target) {
-        Ok(c) => c,
-        Err(e) => return format!("读取文件失败：{}", e),
-    };
-    const MAX_FILE_SIZE: usize = 4 * 1024 * 1024;
-    if content.len() > MAX_FILE_SIZE {
-        return format!("错误：文件过大（{} 字节，上限 4MiB）", content.len());
-    }
 
     let (new_content, count) =
         match apply_search_replace_inner(&content, &search, &replace, is_regex, max_replacements) {

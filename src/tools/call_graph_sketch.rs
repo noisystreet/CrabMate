@@ -199,6 +199,14 @@ fn skip_rust_block_comment(chars: &[char], mut i: usize) -> usize {
     chars.len()
 }
 
+/// 在字符串字面量内追加 `c` 并更新 `prev_escape`；若遇未转义的闭合引号返回 `true`。
+fn strip_push_quoted_char(out: &mut String, c: char, quote: char, prev_escape: &mut bool) -> bool {
+    out.push(c);
+    let closes = !*prev_escape && c == quote;
+    *prev_escape = c == '\\' && !*prev_escape;
+    closes
+}
+
 fn strip_line_comment_code(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut in_string: Option<char> = None;
@@ -207,12 +215,10 @@ fn strip_line_comment_code(s: &str) -> String {
     let mut i = 0;
     while i < chars.len() {
         let c = chars[i];
-        if let Some(q) = in_string {
-            out.push(c);
-            if !prev_escape && c == q {
+        if let Some(quote) = in_string {
+            if strip_push_quoted_char(&mut out, c, quote, &mut prev_escape) {
                 in_string = None;
             }
-            prev_escape = c == '\\' && !prev_escape;
             i += 1;
             continue;
         }
@@ -269,26 +275,41 @@ fn scan_file_for_edges(
             continue;
         }
 
-        if line_is_use_import(trimmed) {
-            if let Some(rest) = use_import_clause_rest(trimmed) {
-                let rest = rest.trim().trim_end_matches(';').trim();
-                for (sym, _) in symbol_res {
-                    if use_clause_touches_symbol(rest, sym) {
-                        edges.push(Edge {
-                            file_rel: rel_path.to_string(),
-                            line_no,
-                            kind: "use",
-                            line_trim: truncate(trimmed, 200),
-                        });
-                        break;
-                    }
-                }
-            }
+        if try_push_use_import_edge(rel_path, line_no, trimmed, symbol_res, edges) {
             continue;
         }
 
         push_first_reference_edge(rel_path, line_no, trimmed, &code, symbol_res, edges);
     }
+}
+
+/// `use` / `pub use` 行若触及任一符号则写入一条 `use` 边；返回是否应跳过后续引用扫描。
+fn try_push_use_import_edge(
+    rel_path: &str,
+    line_no: usize,
+    trimmed: &str,
+    symbol_res: &[(String, Regex)],
+    edges: &mut Vec<Edge>,
+) -> bool {
+    if !line_is_use_import(trimmed) {
+        return false;
+    }
+    let Some(rest) = use_import_clause_rest(trimmed) else {
+        return true;
+    };
+    let rest = rest.trim().trim_end_matches(';').trim();
+    for (sym, _) in symbol_res {
+        if use_clause_touches_symbol(rest, sym) {
+            edges.push(Edge {
+                file_rel: rel_path.to_string(),
+                line_no,
+                kind: "use",
+                line_trim: truncate(trimmed, 200),
+            });
+            break;
+        }
+    }
+    true
 }
 
 fn push_first_reference_edge(

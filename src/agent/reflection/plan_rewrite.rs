@@ -299,6 +299,66 @@ fn tool_name_is_high_risk(name: &str) -> bool {
     SEMANTIC_CHECK_HIGH_RISK_TOOLS.contains(&name) || name.starts_with("mcp__")
 }
 
+fn semantic_check_tool_name_body_for_message(
+    messages: &[Message],
+    tool_idx: usize,
+) -> Option<(&str, &str)> {
+    let m = &messages[tool_idx];
+    let tid = m.tool_call_id.as_deref()?;
+    let aidx = assistant_index_for_tool_call(messages, tool_idx, tid)?;
+    let assistant = &messages[aidx];
+    let tc = assistant
+        .tool_calls
+        .as_ref()?
+        .iter()
+        .find(|c| c.id == tid)?;
+    let name = tc.function.name.as_str();
+    let body = crate::types::message_content_as_str(&m.content).unwrap_or("");
+    Some((name, body))
+}
+
+/// 只读工具不计入 `non_ro_used`；非只读且已达上限且非高风险则返回 `false`（跳过该条）。
+fn semantic_check_include_tool_line(
+    cfg: &AgentConfig,
+    name: &str,
+    non_ro_used: &mut usize,
+    max_non_readonly_tools: usize,
+) -> bool {
+    let is_ro = tool_registry::is_readonly_tool(cfg, name);
+    let is_risky = tool_name_is_high_risk(name);
+    if is_ro {
+        return true;
+    }
+    if *non_ro_used >= max_non_readonly_tools && !is_risky {
+        return false;
+    }
+    *non_ro_used += 1;
+    true
+}
+
+fn semantic_check_format_tool_summary_line(name: &str, body: &str, max_chars_per: usize) -> String {
+    let mut line = if let Some(env) = crate::tool_result::normalize_tool_message_content(body) {
+        let out_head = crate::redact::preview_chars(env.output.as_str(), 320);
+        format!(
+            "- {} ok={} summary={} out_preview={}",
+            env.name,
+            env.ok,
+            crate::redact::single_line_preview(env.summary.as_str(), 160),
+            out_head
+        )
+    } else {
+        format!(
+            "- {} legacy_preview={}",
+            name,
+            crate::redact::preview_chars(body, max_chars_per)
+        )
+    };
+    if line.chars().count() > max_chars_per {
+        line = crate::redact::preview_chars(&line, max_chars_per);
+    }
+    line
+}
+
 /// 自尾向前收集最近若干条 `role: tool` 的短摘要，供终答规划侧向 LLM 使用；无工具则 `None`。
 pub(crate) fn summarize_messages_for_final_plan_semantic_check(
     messages: &[Message],
@@ -315,52 +375,18 @@ pub(crate) fn summarize_messages_for_final_plan_semantic_check(
         if lines.len() >= MAX_LINES {
             break;
         }
-        let m = &messages[i];
-        if m.role != "tool" {
+        if messages[i].role != "tool" {
             continue;
         }
-        let tid = m.tool_call_id.as_deref()?;
-        let aidx = assistant_index_for_tool_call(messages, i, tid)?;
-        let assistant = &messages[aidx];
-        let tc = assistant
-            .tool_calls
-            .as_ref()?
-            .iter()
-            .find(|c| c.id == tid)?;
-        let name = tc.function.name.as_str();
-        let body = crate::types::message_content_as_str(&m.content).unwrap_or("");
-
-        let is_ro = tool_registry::is_readonly_tool(cfg, name);
-        let is_risky = tool_name_is_high_risk(name);
-        if !is_ro {
-            if non_ro_used >= max_non_readonly_tools && !is_risky {
-                continue;
-            }
-            if !is_ro {
-                non_ro_used += 1;
-            }
+        let (name, body) = semantic_check_tool_name_body_for_message(messages, i)?;
+        if !semantic_check_include_tool_line(cfg, name, &mut non_ro_used, max_non_readonly_tools) {
+            continue;
         }
-
-        let mut line = if let Some(env) = crate::tool_result::normalize_tool_message_content(body) {
-            let out_head = crate::redact::preview_chars(env.output.as_str(), 320);
-            format!(
-                "- {} ok={} summary={} out_preview={}",
-                env.name,
-                env.ok,
-                crate::redact::single_line_preview(env.summary.as_str(), 160),
-                out_head
-            )
-        } else {
-            format!(
-                "- {} legacy_preview={}",
-                name,
-                crate::redact::preview_chars(body, MAX_CHARS_PER)
-            )
-        };
-        if line.chars().count() > MAX_CHARS_PER {
-            line = crate::redact::preview_chars(&line, MAX_CHARS_PER);
-        }
-        lines.push(line);
+        lines.push(semantic_check_format_tool_summary_line(
+            name,
+            body,
+            MAX_CHARS_PER,
+        ));
     }
 
     if lines.is_empty() {
