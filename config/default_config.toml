@@ -79,8 +79,8 @@ thinking_avoid_echo_system_prompt = true
 # 附录正文默认文件（与 system_prompt_file 相同路径解析）；亦可 thinking_avoid_echo_appendix 内联。CM_THINKING_AVOID_ECHO_APPENDIX_FILE
 thinking_avoid_echo_appendix_file = "config/prompts/thinking_avoid_echo_appendix.md"
 
-# 8. Web 服务安全与会话持久（可选，默认注释）
-# conversation_store_sqlite_path = ".crabmate/conversations.db"
+# 8. Web 服务安全与会话持久（默认将会话 transcript 落盘到工作区 .crabmate/）
+conversation_store_sqlite_path = ".crabmate/conversations.db"
 # 受保护 API（/chat*、/workspace* 等）：非空时要求 Authorization: Bearer <本值> 或 X-API-Key: <本值>（二选一）
 # web_api_bearer_token = ""
 # 为 true（默认）时 serve 启动前必须配置非空的 web_api_bearer_token（含仅监听 127.0.0.1）。本地纯匿名调试可设为 false。CM_WEB_API_REQUIRE_BEARER

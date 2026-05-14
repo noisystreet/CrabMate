@@ -120,7 +120,7 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | `CM_CODEBASE_SEMANTIC_HYBRID_ALPHA` | Default **`retrieve_mode: hybrid`** vector weight **α** (0–1): **α×cosine + (1-α)×fts_norm** (SQLite **FTS5** BM25 normalized). |
 | `CM_CODEBASE_SEMANTIC_FTS_TOP_N` | Max FTS rows for hybrid / **`fts_only`** (BM25); **1–10000**, default **400**. |
 | `CM_CODEBASE_SEMANTIC_HYBRID_SEMANTIC_POOL` | Hybrid: vector candidate pool size (≥ **`top_k`**); **1–10000**, default **256**. |
-| `CM_CONVERSATION_STORE_SQLITE_PATH` | Conversation SQLite path. |
+| `CM_CONVERSATION_STORE_SQLITE_PATH` | Conversation SQLite path. Embedded default **`.crabmate/conversations.db`** (relative to the active workspace); set to empty to disable server-side transcript persistence (in-memory mode). |
 
 ### First-turn injection
 
@@ -167,7 +167,7 @@ Injected lines are prefixed with **`[memory #id]`** where **`id`** is the SQLite
 
 Expired rows are purged on read/write. Built-in tools **`long_term_remember`**, **`long_term_forget`**, **`long_term_memory_list`** are registered when **`long_term_memory_enabled`** (do not store secrets).
 
-With Web `conversation_store_sqlite_path`, session and memory may share one SQLite; pure in-memory sessions need **`long_term_memory_store_sqlite_path`** for persistence. CLI default: `run_command_working_dir/.crabmate/long_term_memory.db`. If enabled but DB open fails: one **stderr** warning, process continues without injection.
+Embedded defaults set **`conversation_store_sqlite_path`** to **`.crabmate/conversations.db`**, so **Web `serve`** (and **`tui`** with the same path) persist transcripts and can resume a **`conversation_id`** after restart; clear the path to revert to in-memory sessions. Session and memory **may** share one SQLite; long-term memory still defaults to **`run_command_working_dir/.crabmate/long_term_memory.db`**. If long-term memory is enabled but the DB cannot open: one **stderr** warning, process continues without injection.
 
 ### Web search & `http_fetch`
 
