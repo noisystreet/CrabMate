@@ -211,7 +211,7 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
         auto_scroll_chat,
         messages_scroll_from_effect,
         last_messages_scroll_top,
-        timeline_panel_expanded,
+        timeline_panel_expanded: _,
         chat,
         collapsed_long_assistant_ids,
         collapsed_tool_run_heads,
@@ -227,8 +227,6 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
         apply_assistant_display_filters,
     } = signals;
 
-    let sessions = chat.sessions;
-    let active_id = chat.active_id;
     let tail_loading_assistant_mid = tail_loading_assistant_mid_memo(chat);
 
     let tool_run_group_signals = ToolRunGroupSignals {
