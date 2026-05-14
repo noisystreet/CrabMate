@@ -206,6 +206,51 @@ impl FeishuBridgeState {
     }
 }
 
+async fn sqlite_queue_process_claimed(
+    state: Arc<FeishuBridgeState>,
+    queue: Arc<FeishuImEventSqliteQueue>,
+    id: i64,
+    json: String,
+) {
+    let envelope: Value = match serde_json::from_str(&json) {
+        Ok(v) => v,
+        Err(e) => {
+            error!(
+                ?e,
+                queue_id = id,
+                "feishu sqlite queue envelope json corrupt"
+            );
+            let q = Arc::clone(&queue);
+            let _ = tokio::task::spawn_blocking(move || q.mark_done(id)).await;
+            return;
+        }
+    };
+
+    let st = Arc::clone(&state);
+    match handle_im_message_receive(&st, &envelope).await {
+        Ok(()) => {
+            let q = Arc::clone(&queue);
+            if let Err(e) = tokio::task::spawn_blocking(move || q.mark_done(id)).await {
+                error!(?e, queue_id = id, "feishu sqlite mark_done join failed");
+            }
+        }
+        Err(e) => {
+            error!(?e, queue_id = id, "feishu sqlite queue handler failed");
+            let msg = e.to_string();
+            let q = Arc::clone(&queue);
+            if let Err(join_e) =
+                tokio::task::spawn_blocking(move || q.mark_retry_or_fail(id, &msg)).await
+            {
+                error!(
+                    ?join_e,
+                    queue_id = id,
+                    "feishu sqlite mark_retry join failed"
+                );
+            }
+        }
+    }
+}
+
 async fn run_sqlite_im_queue_consumer(
     state: Arc<FeishuBridgeState>,
     queue: std::sync::Arc<FeishuImEventSqliteQueue>,
@@ -240,43 +285,7 @@ async fn run_sqlite_im_queue_consumer(
             continue;
         };
 
-        let envelope: Value = match serde_json::from_str(&json) {
-            Ok(v) => v,
-            Err(e) => {
-                error!(
-                    ?e,
-                    queue_id = id,
-                    "feishu sqlite queue envelope json corrupt"
-                );
-                let q = std::sync::Arc::clone(&queue);
-                let _ = tokio::task::spawn_blocking(move || q.mark_done(id)).await;
-                continue;
-            }
-        };
-
-        let st = Arc::clone(&state);
-        match handle_im_message_receive(&st, &envelope).await {
-            Ok(()) => {
-                let q = std::sync::Arc::clone(&queue);
-                if let Err(e) = tokio::task::spawn_blocking(move || q.mark_done(id)).await {
-                    error!(?e, queue_id = id, "feishu sqlite mark_done join failed");
-                }
-            }
-            Err(e) => {
-                error!(?e, queue_id = id, "feishu sqlite queue handler failed");
-                let msg = e.to_string();
-                let q = std::sync::Arc::clone(&queue);
-                if let Err(join_e) =
-                    tokio::task::spawn_blocking(move || q.mark_retry_or_fail(id, &msg)).await
-                {
-                    error!(
-                        ?join_e,
-                        queue_id = id,
-                        "feishu sqlite mark_retry join failed"
-                    );
-                }
-            }
-        }
+        sqlite_queue_process_claimed(state.clone(), queue.clone(), id, json).await;
     }
 }
 
