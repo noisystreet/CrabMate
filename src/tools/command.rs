@@ -15,6 +15,10 @@ use super::test_result_cache::{
 };
 use crate::tool_result::{ParsedLegacyOutput, ToolError, ToolFailureCategory};
 
+use super::command_line_prepare::{
+    CdPeelError, is_arg_safe, peel_workspace_cd_prefix, split_command_prefix_if_embedded,
+};
+
 /// `run_command` 在参数校验、限流、启动进程前的失败原因（可判别；成功路径仍返回带退出码的 `String` 正文）。
 #[derive(Debug, Error)]
 pub enum RunCommandError {
@@ -28,6 +32,9 @@ pub enum RunCommandError {
     ArgsNotArray,
     #[error("错误：参数不允许包含 \"..\" 或绝对路径（以 / 开头）")]
     UnsafeArg,
+    /// `cd` 在无 shell 下不可直接 `exec`；仅支持前缀 `cd <相对目录> && <命令…>`（可多次串联），见 `command_line_prepare::peel_workspace_cd_prefix`.
+    #[error("错误：`cd` 前缀无效：{detail}（当前工作目录：{work_dir}）")]
+    CdPrefixInvalid { detail: String, work_dir: String },
     #[error("命令调用过于频繁：每秒最多允许 {max_per_sec} 次，请稍后再试")]
     RateLimited { max_per_sec: u32 },
     #[error("错误：命令 \"{cmd}\" 不存在或在当前环境中不可用（工作目录：{work_dir}）")]
@@ -75,9 +82,9 @@ impl RunCommandError {
                 },
             },
             RunCommandError::DisallowedCommand { .. } => ToolError::approval_required(msg),
-            RunCommandError::ArgsNotArray | RunCommandError::UnsafeArg => {
-                ToolError::invalid_args(msg)
-            }
+            RunCommandError::ArgsNotArray
+            | RunCommandError::UnsafeArg
+            | RunCommandError::CdPrefixInvalid { .. } => ToolError::invalid_args(msg),
             RunCommandError::RateLimited { .. } => ToolError::rate_limited(msg),
             RunCommandError::CommandNotFound { .. } => ToolError {
                 category: ToolFailureCategory::External,
@@ -130,6 +137,7 @@ impl RunCommandError {
             RunCommandError::DisallowedCommand { .. } => "disallowed_command",
             RunCommandError::ArgsNotArray => "args_not_array",
             RunCommandError::UnsafeArg => "unsafe_arg",
+            RunCommandError::CdPrefixInvalid { .. } => "cd_prefix_invalid",
             RunCommandError::RateLimited { .. } => "rate_limited",
             RunCommandError::CommandNotFound { .. } => "command_not_found",
             RunCommandError::PermissionDenied { .. } => "permission_denied",
@@ -154,6 +162,19 @@ impl RunCommandError {
             s.push_str(h);
         }
         s
+    }
+}
+
+impl From<CdPeelError> for RunCommandError {
+    fn from(e: CdPeelError) -> Self {
+        match e {
+            CdPeelError::CdPrefixInvalid { detail, work_dir } => {
+                RunCommandError::CdPrefixInvalid { detail, work_dir }
+            }
+            CdPeelError::UnsafeArg => RunCommandError::UnsafeArg,
+            CdPeelError::MissingCommand => RunCommandError::MissingCommand,
+            CdPeelError::SpawnOther { cmd, source } => RunCommandError::SpawnOther { cmd, source },
+        }
     }
 }
 
@@ -191,20 +212,6 @@ static RATE_LIMIT: Mutex<RateLimitState> = Mutex::new(RateLimitState {
 });
 
 const MAX_OUTPUT_LINES: usize = 500;
-
-fn is_arg_safe(cmd_name: &str, arg: &str) -> bool {
-    let a = arg.trim();
-    // cd 允许相对路径（禁止 .. 和绝对路径）
-    if cmd_name == "cd" {
-        return !a.contains("..") && !a.starts_with('/');
-    }
-    // cmake 允许 .. (用于 cmake .. 从 build 目录配置源目录)
-    if cmd_name == "cmake" {
-        return !a.starts_with('/');
-    }
-    // 其他命令禁止 .. 和绝对路径
-    !a.contains("..") && !a.starts_with('/')
-}
 
 fn normalize_workspace_absolute_arg(arg: &str, working_dir: &Path) -> String {
     let a = arg.trim();
@@ -245,6 +252,8 @@ pub(crate) struct PreparedRunCommand {
     pub(crate) cmd_name: String,
     pub(crate) exec_path: Option<PathBuf>,
     pub(crate) cmd_args: Vec<String>,
+    /// `cd rel && …` 前缀展开后的进程工作目录（默认等于调用方传入的 `working_dir`）。
+    pub(crate) effective_working_dir: PathBuf,
 }
 
 /// `terminal_session`（PTY）等路径：复用 `run_command` 同级别校验与白名单逻辑（不经 `Command::output`）。
@@ -284,11 +293,19 @@ fn prepare_run_command_invocation(
 
     split_command_prefix_if_embedded(&mut cmd_raw, &mut cmd_args);
 
+    let mut effective_working_dir = working_dir.to_path_buf();
+    peel_workspace_cd_prefix(
+        working_dir,
+        &mut effective_working_dir,
+        &mut cmd_raw,
+        &mut cmd_args,
+    )?;
+
     let cmd_name = cmd_raw.to_lowercase();
 
     let is_workspace_executable = cmd_raw.starts_with("./") || cmd_raw.contains('/');
     let exec_path = if is_workspace_executable {
-        crate::tools::resolve_workspace_executable(working_dir, &cmd_raw).ok()
+        crate::tools::resolve_workspace_executable(&effective_working_dir, &cmd_raw).ok()
     } else {
         None
     };
@@ -322,29 +339,8 @@ fn prepare_run_command_invocation(
         cmd_name,
         exec_path,
         cmd_args,
+        effective_working_dir,
     })
-}
-
-/// 将 `command` 写成 `prog arg1 arg2` 整段而 `args` 为空（或需前缀拼接）的常见误用，规范为
-/// `prog` + `["arg1","arg2", …原 args…]`，以便 [`Command::new`] 能解析到真实可执行文件。
-///
-/// 含 `/` 的值视为路径（含 `./` 与 `subdir/tool`），不做拆分，避免误伤带空格的可执行路径。
-pub(crate) fn split_command_prefix_if_embedded(cmd_raw: &mut String, cmd_args: &mut Vec<String>) {
-    if cmd_raw.contains('/') {
-        return;
-    }
-    let parts = cmd_mate::split_command_line(cmd_raw);
-    if parts.len() <= 1 {
-        return;
-    }
-    let head = parts[0].clone();
-    if head.is_empty() {
-        return;
-    }
-    let mut prefix: Vec<String> = parts[1..].to_vec();
-    prefix.append(cmd_args);
-    *cmd_args = prefix;
-    *cmd_raw = head;
 }
 
 fn run_command_execute_workspace_binary(
@@ -474,7 +470,7 @@ fn run_impl(
         return run_command_execute_workspace_binary(
             &prepared.cmd_raw,
             &prepared.cmd_args,
-            working_dir,
+            prepared.effective_working_dir.as_path(),
             target_path,
             max_output_len,
         );
@@ -482,7 +478,7 @@ fn run_impl(
 
     if let Some(cached) = run_cargo_test_with_optional_cache(
         &prepared,
-        working_dir,
+        prepared.effective_working_dir.as_path(),
         &invocation,
         max_output_len,
         test_cache.as_ref(),
@@ -492,9 +488,15 @@ fn run_impl(
 
     let output = Command::new(&prepared.cmd_name)
         .args(&prepared.cmd_args)
-        .current_dir(working_dir)
+        .current_dir(&prepared.effective_working_dir)
         .output()
-        .map_err(|e| map_spawn_error(&prepared.cmd_name, working_dir, e))?;
+        .map_err(|e| {
+            map_spawn_error(
+                &prepared.cmd_name,
+                prepared.effective_working_dir.as_path(),
+                e,
+            )
+        })?;
     Ok(format_command_output(&invocation, output, max_output_len))
 }
 
@@ -616,6 +618,7 @@ mod tests {
         "automake",
         "aclocal",
         "make",
+        "cargo",
     ];
 
     fn test_allowed() -> Vec<String> {
@@ -740,6 +743,31 @@ mod tests {
             None,
         );
         assert!(out.contains("退出码：0"), "{out}");
+    }
+
+    #[test]
+    fn prepare_peels_cd_prefix_into_effective_workdir() {
+        let v: serde_json::Value =
+            serde_json::from_str(r#"{"command":"cd","args":["src","&&","echo","peeled"]}"#)
+                .expect("json");
+        let p = prepare_run_command_invocation(&v, Path::new("."), &test_allowed()).expect("prep");
+        assert_eq!(p.cmd_name, "echo");
+        assert_eq!(p.cmd_args, vec!["peeled".to_string()]);
+        assert!(
+            p.effective_working_dir.ends_with("src"),
+            "{:?}",
+            p.effective_working_dir
+        );
+    }
+
+    #[test]
+    fn prepare_cd_without_and_is_rejected() {
+        let v: serde_json::Value =
+            serde_json::from_str(r#"{"command":"cd","args":["src"]}"#).expect("json");
+        let e = prepare_run_command_invocation(&v, Path::new("."), &test_allowed())
+            .err()
+            .expect("cd alone");
+        assert_eq!(e.kind(), "cd_prefix_invalid");
     }
 
     #[test]

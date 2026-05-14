@@ -307,7 +307,6 @@ async fn drain_until_idle(
 }
 
 fn fork_pty_session(
-    workspace: &Path,
     prepared: &PreparedRunCommand,
     cols: u16,
     rows: u16,
@@ -325,7 +324,7 @@ fn fork_pty_session(
 
     match pair {
         ForkptyResult::Child => {
-            let _ = chdir(workspace);
+            let _ = chdir(prepared.effective_working_dir.as_path());
             let _ = execvp(&prog, &argv);
             unsafe { libc::_exit(127) };
         }
@@ -509,7 +508,7 @@ async fn spawn_initial_write_failed_cleanup(sid: &str) -> Result<(), ()> {
 }
 
 fn terminal_spawn_fork_session(
-    workspace: &Path,
+    _workspace: &Path,
     prepared: &PreparedRunCommand,
     cols: u16,
     rows: u16,
@@ -520,7 +519,7 @@ fn terminal_spawn_fork_session(
             "错误：交互式会话已达上限（{MAX_SESSIONS}），请先 close。"
         ));
     }
-    let (child, master) = fork_pty_session(workspace, prepared, cols, rows)?;
+    let (child, master) = fork_pty_session(prepared, cols, rows)?;
     let sid = alloc_session_id();
     guard.insert(
         sid.clone(),

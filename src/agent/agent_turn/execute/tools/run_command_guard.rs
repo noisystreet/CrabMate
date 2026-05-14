@@ -21,7 +21,8 @@ pub(super) fn classify_run_command_failure_family_from_invocation(
     command: &str,
     args: &[String],
 ) -> Option<&'static str> {
-    if command == "cd" {
+    // `run_command` 不经 shell：`cd` 不可 exec。支持 `cd <相对> && <cmd…>` 由实现换目录，勿归为「cd 不可用」。
+    if command == "cd" && !(args.len() >= 3 && args.get(1).is_some_and(|s| s == "&&")) {
         return Some("shell_builtin_cd_unavailable");
     }
     if args.iter().any(|a| a.contains("..") || a.starts_with('/')) {
@@ -35,6 +36,9 @@ pub(super) fn classify_run_command_failure_family_from_result(
 ) -> Option<&'static str> {
     if result.contains("参数不允许包含 \"..\" 或绝对路径（以 / 开头）") {
         return Some("path_parent_or_absolute_forbidden");
+    }
+    if result.contains("`cd` 前缀无效") {
+        return Some("cd_prefix_invalid");
     }
     if result.contains("命令 \"cd\" 不存在或在当前环境中不可用") {
         return Some("shell_builtin_cd_unavailable");
@@ -171,6 +175,17 @@ mod tests {
             Some("shell_builtin_cd_unavailable")
         );
 
+        let cd_peel = vec![
+            "frontend".to_string(),
+            "&&".to_string(),
+            "cargo".to_string(),
+            "check".to_string(),
+        ];
+        assert_eq!(
+            classify_run_command_failure_family_from_invocation("cd", cd_peel.as_slice()),
+            None
+        );
+
         let bad_args = vec![
             "-c".to_string(),
             "cd build && ../configure Linux_Serial".to_string(),
@@ -194,6 +209,12 @@ mod tests {
                 "错误：命令 \"cd\" 不存在或在当前环境中不可用（工作目录：/tmp）"
             ),
             Some("shell_builtin_cd_unavailable")
+        );
+        assert_eq!(
+            classify_run_command_failure_family_from_result(
+                "错误：`cd` 前缀无效：…（当前工作目录：/tmp）"
+            ),
+            Some("cd_prefix_invalid")
         );
         assert_eq!(
             classify_run_command_failure_family_from_result(
