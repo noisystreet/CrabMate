@@ -79,36 +79,38 @@ fn text_from_content(content: &Option<Value>) -> (String, Vec<String>) {
 }
 
 /// 返回 `true` 表示该条已由分支消费（外层应 `continue`）。
-fn hydrate_try_special_cases(
-    parsed: &ApiMessage,
-    role: &str,
-    name: &str,
-    text: &str,
-    reasoning: &str,
+struct HydrateSpecialLine<'a> {
+    parsed: &'a ApiMessage,
+    role: &'a str,
+    name: &'a str,
+    text: &'a str,
+    reasoning: &'a str,
     base_ms: i64,
-    out: &mut Vec<StoredMessage>,
-    t: &mut i64,
-) -> bool {
-    if role == "system" && name == "crabmate_ui_sep" {
+    out: &'a mut Vec<StoredMessage>,
+    t: &'a mut i64,
+}
+
+fn hydrate_try_special_cases(line: HydrateSpecialLine<'_>) -> bool {
+    if line.role == "system" && line.name == "crabmate_ui_sep" {
         return true;
     }
-    if role == "user" && name == CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME {
+    if line.role == "user" && line.name == CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME {
         return true;
     }
-    if role == "system" && name == "crabmate_timeline" {
-        append_crabmate_timeline_system_message(text, base_ms, out, t);
+    if line.role == "system" && line.name == "crabmate_timeline" {
+        append_crabmate_timeline_system_message(line.text, line.base_ms, line.out, line.t);
         return true;
     }
-    if role == "assistant"
-        && text.trim().is_empty()
-        && reasoning.trim().is_empty()
-        && let Some(ref tc) = parsed.tool_calls
+    if line.role == "assistant"
+        && line.text.trim().is_empty()
+        && line.reasoning.trim().is_empty()
+        && let Some(ref tc) = line.parsed.tool_calls
     {
-        append_assistant_tool_calls_timeline_card(tc, base_ms, out, t);
+        append_assistant_tool_calls_timeline_card(tc, line.base_ms, line.out, line.t);
         return true;
     }
-    if role == "tool" {
-        append_tool_role_timeline_row(name, text, base_ms, out, t);
+    if line.role == "tool" {
+        append_tool_role_timeline_row(line.name, line.text, line.base_ms, line.out, line.t);
         return true;
     }
     false
@@ -134,9 +136,16 @@ pub fn stored_messages_from_conversation_api_with_base(
         let reasoning = parsed.reasoning_content.clone().unwrap_or_default();
         let name = parsed.name.as_deref().unwrap_or("").trim();
 
-        if hydrate_try_special_cases(
-            &parsed, &role, name, &text, &reasoning, base_ms, &mut out, &mut t,
-        ) {
+        if hydrate_try_special_cases(HydrateSpecialLine {
+            parsed: &parsed,
+            role: role.as_str(),
+            name,
+            text: text.as_str(),
+            reasoning: reasoning.as_str(),
+            base_ms,
+            out: &mut out,
+            t: &mut t,
+        }) {
             continue;
         }
 

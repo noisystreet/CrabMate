@@ -113,7 +113,7 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                     clarify_questionnaire_answers: clarify_json,
                 })
                 .await;
-                if chat.stream_attach_generation.get_untracked() != gen_snapshot {
+                if chat.stream_attach_generation_untracked() != gen_snapshot {
                     return;
                 }
                 // HTTP 读取结束后强制回落壳层 busy，避免悬挂连接或回调提前 return 时状态栏卡死。

@@ -48,13 +48,13 @@ mod tests {
 
     #[test]
     fn strip_csi_color() {
-        let s = format!("a\x1b[31mred\x1b[0mb");
+        let s = "a\x1b[31mred\x1b[0mb".to_string();
         assert_eq!(strip_ansi_codes(&s), "aredb");
     }
 
     #[test]
     fn strip_osc_title_bel() {
-        let s = format!("x\x1b]0;title\x07y");
+        let s = "x\x1b]0;title\x07y".to_string();
         assert_eq!(strip_ansi_codes(&s), "xy");
     }
 

@@ -46,7 +46,7 @@ fn highlighted_body_span(
     }
 }
 
-fn tool_compact_body_view(
+struct ToolCompactBodyArgs {
     m_for_body: StoredMessage,
     detail_snapshot: Option<String>,
     reasoning_live: Option<(RwSignal<Vec<ChatSession>>, RwSignal<String>, String)>,
@@ -55,7 +55,19 @@ fn tool_compact_body_view(
     locale: RwSignal<Locale>,
     chat_find_query: RwSignal<String>,
     apply_assistant_display_filters: RwSignal<bool>,
-) -> AnyView {
+}
+
+fn tool_compact_body_view(p: ToolCompactBodyArgs) -> AnyView {
+    let ToolCompactBodyArgs {
+        m_for_body,
+        detail_snapshot,
+        reasoning_live,
+        tool_detail_expanded_ids,
+        tool_mid,
+        locale,
+        chat_find_query,
+        apply_assistant_display_filters,
+    } = p;
     let tool_emoji = tool_bubble_emoji(&m_for_body);
     let mid_store = StoredValue::new(tool_mid);
     let tool_name_for_drawer_btn = m_for_body.tool_name.clone();
@@ -226,16 +238,16 @@ pub(super) fn build_non_assistant_message_body(p: NonAssistantMessageBodyParams)
         auto_scroll_chat,
     } = p;
     if is_tool_bubble {
-        return tool_compact_body_view(
+        return tool_compact_body_view(ToolCompactBodyArgs {
             m_for_body,
-            tool_detail_text,
-            tool_reasoning_live,
+            detail_snapshot: tool_detail_text,
+            reasoning_live: tool_reasoning_live,
             tool_detail_expanded_ids,
             tool_mid,
             locale,
             chat_find_query,
             apply_assistant_display_filters,
-        );
+        });
     }
     if let Some(uid) = jump_uid {
         return jump_uid_body_view(

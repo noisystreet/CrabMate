@@ -4,6 +4,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use leptos::prelude::*;
 use leptos_dom::helpers::WindowListenerHandle;
@@ -12,6 +13,9 @@ use leptos_dom::helpers::window_event_listener;
 use crate::api::{WorkspaceData, fetch_workspace};
 use crate::app_prefs::{SidePanelView, clamp_side_width_for_viewport};
 use crate::i18n::Locale;
+
+/// 并发 `GET /workspace` 的世代号：新刷新递增，仅「仍为最新」的异步结果写回 UI，避免首屏多路刷新互相覆盖造成路径闪烁。
+static WORKSPACE_PANEL_FETCH_GEN: AtomicU32 = AtomicU32::new(0);
 
 /// 工作区列表中「文件」行的图标类别（目录单独用文件夹图标）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,24 +130,30 @@ fn svg_common() -> (
     )
 }
 
+fn workspace_dir_row_svg() -> AnyView {
+    let (cls, vb, fill, xmlns, stroke, sw) = svg_common();
+    view! {
+        <svg class=cls viewBox=vb fill=fill xmlns=xmlns aria-hidden="true">
+            <path
+                d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
+                stroke=stroke
+                stroke-width=sw
+                stroke-linecap="round"
+                stroke-linejoin="round"
+            />
+        </svg>
+    }
+    .into_any()
+}
+
 /// 与 `workspace_list_row_class` 配对的图标视图（目录为文件夹，文件按后缀）。
 pub fn workspace_list_row_icon(is_dir: bool, name: &str) -> AnyView {
     let kind = workspace_list_row_kind(is_dir, name);
-    let (cls, vb, fill, xmlns, stroke, sw) = svg_common();
     match kind {
-        WorkspaceListRowKind::Dir => view! {
-            <svg class=cls viewBox=vb fill=fill xmlns=xmlns aria-hidden="true">
-                <path
-                    d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
-                    stroke=stroke
-                    stroke-width=sw
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                />
-            </svg>
-        }
-        .into_any(),
-        WorkspaceListRowKind::File(fk) => match fk {
+        WorkspaceListRowKind::Dir => workspace_dir_row_svg(),
+        WorkspaceListRowKind::File(fk) => {
+            let (cls, vb, fill, xmlns, stroke, sw) = svg_common();
+            match fk {
             WorkspaceFileKind::Generic => view! {
                 <svg class=cls viewBox=vb fill=fill xmlns=xmlns aria-hidden="true">
                     <path
@@ -326,7 +336,8 @@ pub fn workspace_list_row_icon(is_dir: bool, name: &str) -> AnyView {
                 </svg>
             }
             .into_any(),
-        },
+            }
+        }
     }
 }
 
@@ -341,11 +352,18 @@ pub async fn reload_workspace_panel(
     workspace_subtree_loading: RwSignal<HashSet<String>>,
     locale: Locale,
 ) {
+    let prev = WORKSPACE_PANEL_FETCH_GEN.fetch_add(1, Ordering::AcqRel);
+    let my_gen = prev.wrapping_add(1);
+
     workspace_subtree_expanded.set(HashSet::new());
     workspace_subtree_cache.set(HashMap::new());
     workspace_subtree_loading.set(HashSet::new());
     workspace_loading.set(true);
-    match fetch_workspace(None, locale).await {
+    let outcome = fetch_workspace(None, locale).await;
+    if WORKSPACE_PANEL_FETCH_GEN.load(Ordering::Acquire) != my_gen {
+        return;
+    }
+    match outcome {
         Ok(d) => {
             workspace_err.set(None);
             workspace_path_draft.set(d.path.clone());

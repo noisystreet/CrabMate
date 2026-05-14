@@ -10,7 +10,7 @@ use crate::storage::{StoredMessage, StoredMessageState};
 
 /// 将 `assistant_message_id` 对应消息设为错误态并覆盖正文（若存在该 id）。
 pub(super) fn apply_stream_error_to_assistant_message(
-    messages: &mut Vec<StoredMessage>,
+    messages: &mut [StoredMessage],
     assistant_message_id: &str,
     friendly_error: String,
 ) {
@@ -22,7 +22,7 @@ pub(super) fn apply_stream_error_to_assistant_message(
 
 /// 流式 `on_error` 对绑定会话 **`messages`** 的完整写回：尾助手错误态 + 仍 **`Loading`** 的工具行收口。
 pub(super) fn apply_stream_error_on_messages(
-    messages: &mut Vec<StoredMessage>,
+    messages: &mut [StoredMessage],
     assistant_message_id: &str,
     friendly_error: String,
     loc: Locale,

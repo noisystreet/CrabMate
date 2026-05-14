@@ -22,6 +22,7 @@ Includes (non-exhaustive):
 
 - **`cargo fmt --all`**
 - **`cargo clippy --all-targets --all-features -- -D warnings`**
+- **`frontend-wasm-check`** / **`frontend-clippy`**: when the staged set includes **`frontend/`**, run **`cd frontend && cargo check --target wasm32-unknown-unknown`** and **`cd frontend && cargo clippy --all-targets --all-features -- -D warnings`** respectively
 - **`lizard-rust`**: Rust cyclomatic complexity (requires **`pip install lizard`**; **`scripts/lizard-rust.sh`** / **`scripts/lizard_rust_metrics.py`**: per-function CCN hard cap **15**)
 - **`fn-nloc-ratchet`**: Rust function-body **`nloc`** (lizard) plus **physical `.rs` file line counts** (same script **`scripts/fn-nloc-ratchet.sh`** / **`scripts/fn_nloc_rust_metrics.py`**); function ratchets **`scripts/fn_nloc_max_baseline.txt`**, **`scripts/fn_nloc_top10_sum_baseline.txt`**; optional hard cap **`FN_NLOC_CAP`**; file ratchets **`scripts/rust_file_max_lines_baseline.txt`**, **`scripts/rust_file_top10_lines_sum_baseline.txt`**; optional hard cap **`RUST_FILE_LINES_MAX_CAP`**; runs in **`.github/workflows/code-complexity.yml`**
 - **Coverage**: **`.github/workflows/code-coverage.yml`** is **manual-only** (`workflow_dispatch`); locally you can still run `cargo llvm-cov` + **`scripts/check_coverage_ratchet.py`**
@@ -32,6 +33,7 @@ Without pre-commit installed, run at least:
 ```bash
 cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
+cd frontend && cargo clippy --all-targets --all-features -- -D warnings
 bash scripts/lizard-rust.sh
 bash scripts/fn-param-ratchet.sh
 bash scripts/fn-nloc-ratchet.sh

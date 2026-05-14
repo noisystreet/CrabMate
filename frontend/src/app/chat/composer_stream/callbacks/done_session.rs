@@ -50,7 +50,6 @@ pub(super) fn apply_stream_done_to_loading_assistant(
         DoneBubbleAction::Keep => {}
         DoneBubbleAction::RemoveBubble => {
             messages.remove(idx);
-            return;
         }
         DoneBubbleAction::FillMissingFinalHint => {
             messages[idx].text = format!(

@@ -20,15 +20,15 @@ pub(crate) fn strip_hierarchical_kv<'a>(
     None
 }
 
-pub(crate) fn hierarchical_phase_value_raw<'a>(line: &'a str) -> Option<&'a str> {
+pub(crate) fn hierarchical_phase_value_raw(line: &str) -> Option<&str> {
     strip_hierarchical_kv(line, &["- 阶段：", "阶段："], &["- Phase: ", "Phase: "])
 }
 
-pub(crate) fn hierarchical_goal_target_raw<'a>(line: &'a str) -> Option<&'a str> {
+pub(crate) fn hierarchical_goal_target_raw(line: &str) -> Option<&str> {
     strip_hierarchical_kv(line, &["- 目标：", "目标："], &["- Goal: ", "Goal: "])
 }
 
-pub(crate) fn hierarchical_error_count_raw<'a>(line: &'a str) -> Option<&'a str> {
+pub(crate) fn hierarchical_error_count_raw(line: &str) -> Option<&str> {
     strip_hierarchical_kv(
         line,
         &["- 错误数：", "错误数："],
@@ -36,7 +36,7 @@ pub(crate) fn hierarchical_error_count_raw<'a>(line: &'a str) -> Option<&'a str>
     )
 }
 
-pub(crate) fn hierarchical_stagnant_rounds_raw<'a>(line: &'a str) -> Option<&'a str> {
+pub(crate) fn hierarchical_stagnant_rounds_raw(line: &str) -> Option<&str> {
     strip_hierarchical_kv(
         line,
         &["- 无进展轮次：", "无进展轮次："],

@@ -28,7 +28,7 @@ fn compact_title_signal_redundant(title: &str, signal: &str) -> bool {
     if t.replace('_', " ").eq_ignore_ascii_case(s) || s.replace(' ', "_").eq_ignore_ascii_case(t) {
         return true;
     }
-    return normalize_tool_label_for_dedup(t) == normalize_tool_label_for_dedup(s);
+    normalize_tool_label_for_dedup(t) == normalize_tool_label_for_dedup(s)
 }
 
 /// 紧凑「信号」整段或其 **`(` 前** 的学名人部分是否与标题同义（如 `git_diff` vs `git diff (working): …`）。

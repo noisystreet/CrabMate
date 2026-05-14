@@ -9,7 +9,7 @@ For **contributors and maintainers**: **major modules and data flow** in CrabMat
 - **`docs/待办清单.md`** (**`docs/en/TODOLIST.md`**): open items only; remove entries when done; history lives in Git.
 - **User-visible changes**: update **`README.md`**; when protocol or architecture boundaries change, update this guide and **`docs/en/SSE_PROTOCOL.md`** (when relevant).
 - **Architecture-level changes**: if you add/remove top-level modules in **`src/lib.rs`** or change layering, update the **“Main modules”** section and the **Mermaid** diagram, and follow **`.cursor/rules/architecture-docs-sync.mdc`**.
-- **Commits and quality**: root **`.pre-commit-config.yaml`** (`cargo fmt`, `cargo clippy -D warnings`, complexity ratchets, etc.); commit messages **Conventional Commits** — **`.cursor/rules/conventional-commits.mdc`**.
+- **Commits and quality**: root **`.pre-commit-config.yaml`** (`cargo fmt`, root + conditional **`frontend/`** `cargo clippy -D warnings`, complexity ratchets, etc.); commit messages **Conventional Commits** — **`.cursor/rules/conventional-commits.mdc`**.
 - **Dependencies and licenses**: when changing **`Cargo.toml`** / **`Cargo.lock`**, align with **`deny.toml`** and CI — **`.cursor/rules/dependencies-licenses.mdc`**.
 
 ## Overview: system composition

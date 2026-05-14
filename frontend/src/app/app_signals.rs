@@ -439,13 +439,10 @@ impl AppSignals {
             active_id: RwSignal::new(String::new()),
             session_sync,
             session_hydrate_nonce: RwSignal::new(0),
-            stream_job_id: RwSignal::new(None),
-            stream_last_event_seq: RwSignal::new(0),
-            stream_attach_generation: RwSignal::new(0),
-            chat_transport_lifecycle: RwSignal::new(
-                crate::chat_session_state::ChatTransportLifecycle::default(),
+            stream_transport: RwSignal::new(
+                crate::chat_session_state::ChatStreamTransport::default(),
             ),
-            stream_bound_session_id: RwSignal::new(None),
+            stream_last_sse_event_seq: RwSignal::new(0),
             reasoning_preserved: RwSignal::new(HashMap::new()),
             stream_text_overlay: RwSignal::new(None),
         };

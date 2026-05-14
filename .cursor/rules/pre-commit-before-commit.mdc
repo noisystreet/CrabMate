@@ -21,6 +21,7 @@ alwaysApply: true
    ```bash
    cargo fmt --all
    cargo clippy --all-targets --all-features -- -D warnings
+   cd frontend && cargo clippy --all-targets --all-features -- -D warnings
    bash scripts/lizard-rust.sh
    bash scripts/fn-param-ratchet.sh
    bash scripts/fn-nloc-ratchet.sh
@@ -36,5 +37,5 @@ alwaysApply: true
 
 ## 与本仓库的对应关系
 
-- 钩子定义见仓库根目录 **`.pre-commit-config.yaml`**（含 **`cargo fmt`**、**`cargo clippy -D warnings`**、**`lizard-rust`**（**`scripts/lizard-rust.sh`**）、**`fn-param-ratchet`**（**`scripts/fn-param-ratchet.sh`**，形参棘轮）、**`fn-nloc-ratchet`**（**`scripts/fn-nloc-ratchet.sh`**，函数 `nloc` + 源文件物理行数棘轮）、**`commit-msg`：Conventional Commits** 等）；新增语言/工具时同步更新该文件与本规则中的说明（若有必要）。
+- 钩子定义见仓库根目录 **`.pre-commit-config.yaml`**（含 **`cargo fmt`**、**`cargo clippy -D warnings`**、**`frontend-wasm-check`**（**`cd frontend && cargo check --target wasm32-unknown-unknown`**，暂存含 `frontend/` 时）、**`frontend-clippy`**（**`cd frontend && cargo clippy --all-targets --all-features -- -D warnings`**，暂存含 `frontend/` 时）、**`lizard-rust`**（**`scripts/lizard-rust.sh`**）、**`fn-param-ratchet`**（**`scripts/fn-param-ratchet.sh`**，形参棘轮）、**`fn-nloc-ratchet`**（**`scripts/fn-nloc-ratchet.sh`**，函数 `nloc` + 源文件物理行数棘轮）、**`commit-msg`：Conventional Commits** 等）；新增语言/工具时同步更新该文件与本规则中的说明（若有必要）。
 - 安装后须能拦截非法提交说明：若 `git commit` 未触发说明校验，执行 **`pre-commit install --hook-type commit-msg`**（或重新 **`pre-commit install`**）。

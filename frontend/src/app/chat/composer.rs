@@ -24,16 +24,28 @@ pub(crate) use super::composer_wires::wire_chat_composer_streams;
 /// `sessions_snapshot` **必须**由调用方通过 [`RwSignal::get_untracked`]（或等价「不订阅」快照）提供；
 /// 若在响应式 `Effect` 内改为 `sessions.with`/`get`，effect 会订阅每条流式消息写入并反复执行本逻辑，
 /// 覆盖合成器缓冲。
-fn apply_shell_after_active_session_changed(
-    chat: &ChatSessionSignals,
+struct ApplyShellAfterActiveSessionChanged<'a> {
+    chat: &'a ChatSessionSignals,
     draft: RwSignal<String>,
     pending_images: RwSignal<Vec<String>>,
     pending_clarification: RwSignal<Option<PendingClarificationForm>>,
     collapsed_long_assistant_ids: RwSignal<Vec<String>>,
     tool_detail_expanded_ids: RwSignal<HashSet<String>>,
-    sessions_snapshot: &[ChatSession],
-    active_id: &str,
-) {
+    sessions_snapshot: &'a [ChatSession],
+    active_id: &'a str,
+}
+
+fn apply_shell_after_active_session_changed(arg: ApplyShellAfterActiveSessionChanged<'_>) {
+    let ApplyShellAfterActiveSessionChanged {
+        chat,
+        draft,
+        pending_images,
+        pending_clarification,
+        collapsed_long_assistant_ids,
+        tool_detail_expanded_ids,
+        sessions_snapshot,
+        active_id,
+    } = arg;
     let active = sessions_snapshot.iter().find(|s| s.id == active_id);
     let d = active.map(|s| s.draft.clone()).unwrap_or_default();
     draft.set(d);
@@ -78,16 +90,16 @@ pub(crate) fn wire_session_switch_clears_chat_state(
             return;
         }
         let list = chat.sessions.get_untracked();
-        apply_shell_after_active_session_changed(
-            &chat,
+        apply_shell_after_active_session_changed(ApplyShellAfterActiveSessionChanged {
+            chat: &chat,
             draft,
             pending_images,
             pending_clarification,
             collapsed_long_assistant_ids,
             tool_detail_expanded_ids,
-            list.as_slice(),
-            id.as_str(),
-        );
+            sessions_snapshot: list.as_slice(),
+            active_id: id.as_str(),
+        });
     });
 }
 

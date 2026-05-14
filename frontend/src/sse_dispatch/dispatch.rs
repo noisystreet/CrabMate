@@ -20,9 +20,7 @@ fn handle_error_stop(
     obj: &serde_json::Map<String, Value>,
     sink: &mut SseControlSink<'_>,
 ) -> Option<SseDispatch> {
-    let Some(err) = extract_error_stop(obj) else {
-        return None;
-    };
+    let err = extract_error_stop(obj)?;
     let line = match err.reason_code {
         Some(r) => format!("{} ({}, reason_code={r})", err.message, err.code),
         None => format!("{} ({})", err.message, err.code),
@@ -35,9 +33,7 @@ fn handle_clarification_questionnaire(
     obj: &serde_json::Map<String, Value>,
     sink: &mut SseControlSink<'_>,
 ) -> Option<SseDispatch> {
-    let Some(q) = extract_clarification_questionnaire(obj) else {
-        return None;
-    };
+    let q = extract_clarification_questionnaire(obj)?;
     if let Some(f) = sink.clarify_trace.on_clarification_questionnaire.as_mut() {
         let fields: Vec<ClarificationFormField> = q
             .fields
@@ -62,9 +58,7 @@ fn handle_thinking_trace(
     obj: &serde_json::Map<String, Value>,
     sink: &mut SseControlSink<'_>,
 ) -> Option<SseDispatch> {
-    let Some(tt) = extract_thinking_trace(obj) else {
-        return None;
-    };
+    let tt = extract_thinking_trace(obj)?;
     if let Some(f) = sink.clarify_trace.on_thinking_trace.as_mut() {
         f(ThinkingTraceInfo {
             op: tt.op,
@@ -82,9 +76,7 @@ fn handle_tool_call(
     obj: &serde_json::Map<String, Value>,
     sink: &mut SseControlSink<'_>,
 ) -> Option<SseDispatch> {
-    let Some(tc) = extract_tool_call(obj) else {
-        return None;
-    };
+    let tc = extract_tool_call(obj)?;
     if let Some(f) = sink.workspace_tool.on_tool_call.as_mut() {
         f(
             tc.name,
@@ -102,9 +94,7 @@ fn handle_tool_output_chunk(
     obj: &serde_json::Map<String, Value>,
     sink: &mut SseControlSink<'_>,
 ) -> Option<SseDispatch> {
-    let Some(parsed) = extract_tool_output_chunk(obj) else {
-        return None;
-    };
+    let parsed = extract_tool_output_chunk(obj)?;
     let info = ToolOutputChunkInfo {
         tool_call_id: parsed.tool_call_id,
         name: parsed.name,
@@ -122,9 +112,7 @@ fn handle_tool_result(
     obj: &serde_json::Map<String, Value>,
     sink: &mut SseControlSink<'_>,
 ) -> Option<SseDispatch> {
-    let Some(parsed) = extract_tool_result(obj) else {
-        return None;
-    };
+    let parsed = extract_tool_result(obj)?;
     let info = ToolResultInfo {
         name: parsed.name,
         goal_id: parsed.goal_id,
@@ -148,9 +136,7 @@ fn handle_timeline_log(
     obj: &serde_json::Map<String, Value>,
     sink: &mut SseControlSink<'_>,
 ) -> Option<SseDispatch> {
-    let Some(log) = extract_timeline_log(obj) else {
-        return None;
-    };
+    let log = extract_timeline_log(obj)?;
     if let Some(f) = sink.notice_timeline.on_timeline_log.as_mut() {
         f(TimelineLogInfo {
             kind: log.kind,

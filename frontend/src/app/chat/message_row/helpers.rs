@@ -50,7 +50,7 @@ pub(super) fn tool_detail_drawer_body(
         return body;
     }
     body[pfx.len()..]
-        .trim_start_matches(|ch: char| ch == '\n' || ch == '\r')
+        .trim_start_matches(['\n', '\r'])
         .trim_start()
         .to_string()
 }

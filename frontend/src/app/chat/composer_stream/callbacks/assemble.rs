@@ -150,7 +150,10 @@ pub(crate) fn build_chat_stream_callbacks(
             if stream_ctx.is_stale() {
                 return;
             }
-            stream_ctx.chat.stream_job_id.set(Some(jid));
+            stream_ctx
+                .chat
+                .stream_transport
+                .update(|t| t.set_stream_job_id(jid));
         })
     };
 
@@ -160,7 +163,7 @@ pub(crate) fn build_chat_stream_callbacks(
             if stream_ctx.is_stale() {
                 return;
             }
-            stream_ctx.chat.stream_last_event_seq.set(seq);
+            stream_ctx.chat.stream_last_sse_event_seq.set(seq);
         })
     };
 

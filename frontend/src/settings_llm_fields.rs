@@ -88,6 +88,7 @@ pub(crate) fn LlmExecutionModeField(
     }
 }
 
+#[allow(clippy::unit_arg)]
 #[component]
 pub(crate) fn OptionalLlmExecutionModeField(
     locale: RwSignal<Locale>,

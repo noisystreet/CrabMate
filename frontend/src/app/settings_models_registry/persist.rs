@@ -11,10 +11,10 @@ pub(crate) fn window_confirm_delete_saved_model_preset(locale: Locale) -> bool {
     let Some(win) = web_sys::window() else {
         return false;
     };
-    match win.confirm_with_message(i18n::settings_models_delete_confirm(locale)) {
-        Ok(true) => true,
-        _ => false,
-    }
+    matches!(
+        win.confirm_with_message(i18n::settings_models_delete_confirm(locale)),
+        Ok(true)
+    )
 }
 
 /// 将完整列表写入本机并刷新 dirty baseline；失败时写 `llm_settings_feedback`、**不**修改 `saved_model_presets`。

@@ -47,7 +47,7 @@ fn validate_llm_thinking_mode_override(raw: &str, loc: Locale) -> Result<(), Str
     Err(crate::i18n::settings_err_thinking_mode_invalid(loc).to_string())
 }
 
-fn api_key_update_from_clear_and_draft<'a>(clear: bool, draft: &'a str) -> Option<&'a str> {
+fn api_key_update_from_clear_and_draft(clear: bool, draft: &str) -> Option<&str> {
     match (clear, draft.trim().is_empty()) {
         (true, _) => Some(""),
         (false, true) => None,

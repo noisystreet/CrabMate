@@ -2,7 +2,7 @@
 //! 统一 `find(|s| s.id == sid)`，避免 `builders` / `helpers` / `assemble` 各处重复拼条件。
 //! 热路径 **[`append_stream_assistant_chunk`]** 仅 bump [`crate::chat_session_state::ChatSessionSignals::stream_text_overlay`]，
 //! 避免每个 SSE 片段 `sessions.update`；合并回 [`crate::storage::StoredMessage`] 见收尾路径中的 [`crate::stream_text_overlay::stream_overlay_take_into_stored_message`]。
-//! **调试构建**下校验 [`crate::chat_session_state::ChatSessionSignals::stream_bound_session_id`] 与 `sid` 一致（若已设置）。
+//! **调试构建**下校验 [`crate::chat_session_state::ChatSessionSignals::stream_transport`] 内 Bound 会话与 `sid` 一致（若已设置）。
 //! 与 [`super::super::per_stream_accum::PerStreamAccum`] 分工：**[`append_stream_assistant_chunk`]** / **[`ChatStreamCallbackCtx::append_assistant_chunk`]**
 //! 只 bump overlay；会话 `messages` 写入走 **[`with_stream_write_session_mut`]** 或等价的 **[`ChatStreamCallbackCtx::update_bound_session`]**（`callbacks` 内优先后者以显式「绑定会话写」语义）。
 
@@ -15,12 +15,12 @@ use super::super::context::ChatStreamCallbackCtx;
 
 #[cfg(debug_assertions)]
 fn debug_assert_sse_session_binding(stream_ctx: &ChatStreamCallbackCtx, sid: &str) {
-    let lane = stream_ctx.chat.stream_session_lane();
-    if let Some(ref bound) = lane.bound_session_id.get() {
+    let transport = stream_ctx.chat.stream_transport.get();
+    let bound = transport.bound_session_id();
+    if let Some(bound) = bound {
         debug_assert_eq!(
-            bound.as_str(),
-            sid,
-            "stream_bound_session_id 应与 ChatStreamCallbackCtx.bound_stream_session_id 一致"
+            bound, sid,
+            "stream_transport Bound session_id 应与 ChatStreamCallbackCtx.bound_stream_session_id 一致"
         );
     }
 }

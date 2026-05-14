@@ -21,7 +21,7 @@ use super::composer_stream::{clear_abort_slot, user_cancel_in_flight_stream};
 use super::handles::ComposerStreamShell;
 
 /// 新一轮 `/chat/stream` 已排队且已 `push` 新尾条 `loading` 助手时，将**同会话内**其它仍处 `loading` 的助手占位收口为「已中断」，
-/// 避免上一轮被 `abort` 后迟到回调与 [`crate::chat_session_state::ChatSessionSignals::stream_attach_generation`] 门闩叠加留下僵尸尾泡。
+/// 避免上一轮被 `abort` 后迟到回调与 [`crate::chat_session_state::ChatSessionSignals::stream_attach_generation_untracked`] 门闩叠加留下僵尸尾泡。
 pub(crate) fn finalize_superseded_assistant_loading_rows_except(
     chat: ChatSessionSignals,
     session_id: &str,
