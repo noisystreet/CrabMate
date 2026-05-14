@@ -45,7 +45,7 @@ Standard commands from `README.md`:
 - **Rust nightly** is pre-installed in the environment. You can use `cargo +nightly test` and similar commands directly.
 - System libraries `libssl-dev` and `libssh2-1-dev` are required for the Rust build (installed by the VM snapshot).
 - **长期记忆（fastembed）**：依赖 ONNX Runtime 与 **libstdc++**；仓库根 **`.cargo/config.toml`** 在 Linux x86_64 上将链接器设为 **`gcc`**，以便正确解析 `-lstdc++`。若你在极简环境中链接失败，请安装 **`g++`**（或等价的 `libstdc++` 开发包）后再 `cargo build` / `cargo test`。
-- Web **optional** SQLite session store uses **`rusqlite` with the `bundled` feature** (ships SQLite via `libsqlite3-sys`); no system `libsqlite3` install is required for that path.
+- Web 会话默认落盘到工作区 **`.crabmate/conversations.db`**（**`conversation_store_sqlite_path`**；可在配置中清空以关闭）；**`rusqlite` bundled** 特性（经 **`libsqlite3-sys`** 自带 SQLite）；无需系统 **`libsqlite3`**。
 - The `bc` command-line calculator is used by the `calc` tool at runtime. It may not be pre-installed; this causes `/health` to report `dep_bc` as degraded, but does not block the server from starting.
 - `clang-format` is used by `format_file` / `format_check_file` for C/C++ sources. If missing, `/health` may report `dep_clang_format` as degraded; C/C++ formatting tools will return an explanatory error.
 - `cmake` and `ctest` are on the `run_command` allowlist for configuring/building/testing CMake projects. If missing, `/health` may report `dep_cmake` / `dep_ctest` as degraded. `mkdir` is also allowlisted for script-style directory creation (same argument rules as other `run_command` invocations). Note: `run_command` rejects any arg containing `..` or starting with `/`, so prefer relative `-S`/`-B` and `--build` paths (avoid absolute `-D` values in args).

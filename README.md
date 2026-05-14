@@ -32,7 +32,7 @@
 - **对话与工具**：OpenAI 兼容 `chat/completions`；内置文件/工作区、**`run_command`**（白名单；默认含 **`bash`/`sh`**，复合命令用 **`bash -c`/`sh -c`**）、HTTP/搜索、工作区**代码检索**（关键字 + 可选语义/向量）等；完整列表见 [docs/工具说明.md](docs/工具说明.md)。
 - **Web UI**：侧栏会话与工作区；须**显式选择工作区**后工具与 **`@相对路径`** 才生效；浏览器内会话列表按**当前工作区根路径**分桶保存在 `localStorage`，切换工作区会加载该路径下曾保存的会话（未设置工作区前仍使用与旧版相同的默认键）。助手 **Markdown**；支持 **`@` 引用**、图片附件（须视觉模型）、会话导出等。详细路由与行为见 [docs/命令行与路由.md](docs/命令行与路由.md)。
 - **终端**：**`repl`**（交互）、**`chat`**（单次）、**`serve`**（HTTP + 静态 UI）、**`tui`**（实验性**全屏**，须真实 TTY，见下文）。流式 **SSE**、工具审批与取消约定见 [docs/SSE协议.md](docs/SSE协议.md)。
-- **会话与导出**：Web 或 CLI **`save-session`**（别名 **`export-session`**）导出 JSON/Markdown，形状见 [docs/命令行与路由.md](docs/命令行与路由.md)。
+- **会话与导出**：嵌入默认在**当前工作区** **`.crabmate/conversations.db`** 持久化 **Web `serve`**（及配置了同路径的 **`tui`**）对话，**`serve` 重启**后仍可按 **`conversation_id`** 续聊；不需要时在配置里将 **`conversation_store_sqlite_path`** 置空。Web 或 CLI **`save-session`**（别名 **`export-session`**）导出 JSON/Markdown，形状见 [docs/命令行与路由.md](docs/命令行与路由.md)。
 - **进阶（默认不必读）**：分阶段规划时间线、澄清问卷、调试台 **`thinking_trace`**、长期记忆、活文档注入、**MCP**、工作区 **`plugins/*.json`** 等见 [docs/配置说明.md](docs/配置说明.md)、[docs/工具说明.md](docs/工具说明.md)。
 
 ## 常用子命令
