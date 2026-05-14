@@ -207,61 +207,67 @@ pub(super) fn chat_stream_on_tool_call_builder(
     )
 }
 
-fn timeline_log_dispatch_body(
+fn timeline_log_dispatch_final_response(
     stream_ctx: &ChatStreamCallbackCtx,
     accum: &PerStreamAccum,
-    info: TimelineLogInfo,
+    info: &TimelineLogInfo,
 ) {
-    web_sys::console::log_1(&format!("[TL] kind={} title={}", info.kind, info.title).into());
-    if info.kind == "final_response" {
-        accum.set_saw_final_response_timeline(true);
-        stream_ctx.shell.stream.status_busy.set(false);
-        let final_text = build_final_response_text(&info.title, info.detail.as_deref());
-        if !final_text.is_empty() {
-            remove_loading_assistant_placeholder(stream_ctx);
-            if !has_same_assistant_timeline_bubble(stream_ctx, &final_text) {
-                push_assistant_timeline_bubble(stream_ctx, final_text.clone(), None);
-                accum.add_answer_delta_chars(final_text.chars().count());
-            }
-        } else {
-            // 补偿收尾可能带空 final_response；若不撤 loading，on_done 会误报「未收到正文片段」。
-            remove_loading_assistant_placeholder(stream_ctx);
+    accum.set_saw_final_response_timeline(true);
+    stream_ctx.shell.stream.status_busy.set(false);
+    let final_text = build_final_response_text(&info.title, info.detail.as_deref());
+    if !final_text.is_empty() {
+        remove_loading_assistant_placeholder(stream_ctx);
+        if !has_same_assistant_timeline_bubble(stream_ctx, &final_text) {
+            push_assistant_timeline_bubble(stream_ctx, final_text.clone(), None);
+            accum.add_answer_delta_chars(final_text.chars().count());
         }
+    } else {
+        // 补偿收尾可能带空 final_response；若不撤 loading，on_done 会误报「未收到正文片段」。
+        remove_loading_assistant_placeholder(stream_ctx);
+    }
+}
+
+fn timeline_log_dispatch_intent_analysis(
+    stream_ctx: &ChatStreamCallbackCtx,
+    accum: &PerStreamAccum,
+    info: &TimelineLogInfo,
+) {
+    let intent_text = build_intent_analysis_main_bubble_text(&info.title, info.detail.as_deref());
+    if intent_text.is_empty() {
         return;
     }
-    if info.kind == "intent_analysis" {
-        let intent_text =
-            build_intent_analysis_main_bubble_text(&info.title, info.detail.as_deref());
-        if intent_text.is_empty() {
-            return;
-        }
-        push_assistant_timeline_bubble(stream_ctx, intent_text.clone(), None);
-        accum.add_answer_delta_chars(intent_text.chars().count());
+    push_assistant_timeline_bubble(stream_ctx, intent_text.clone(), None);
+    accum.add_answer_delta_chars(intent_text.chars().count());
+}
+
+fn timeline_log_dispatch_hierarchical_plan(
+    stream_ctx: &ChatStreamCallbackCtx,
+    accum: &PerStreamAccum,
+    info: &TimelineLogInfo,
+) {
+    let plan_text = build_hierarchical_plan_main_bubble_text(&info.title, info.detail.as_deref());
+    if plan_text.is_empty() {
         return;
     }
-    if info.kind == "hierarchical_plan" {
-        let plan_text =
-            build_hierarchical_plan_main_bubble_text(&info.title, info.detail.as_deref());
-        if plan_text.is_empty() {
-            return;
-        }
-        push_assistant_timeline_bubble(stream_ctx, plan_text.clone(), None);
-        accum.add_answer_delta_chars(plan_text.chars().count());
+    push_assistant_timeline_bubble(stream_ctx, plan_text.clone(), None);
+    accum.add_answer_delta_chars(plan_text.chars().count());
+}
+
+fn timeline_log_dispatch_hierarchical_subgoal(
+    stream_ctx: &ChatStreamCallbackCtx,
+    accum: &PerStreamAccum,
+    info: &TimelineLogInfo,
+) {
+    let text = build_hierarchical_subgoal_main_bubble_text(&info.title, info.detail.as_deref());
+    if text.is_empty() {
         return;
     }
-    if info.kind == "hierarchical_subgoal" || info.kind == "hierarchical_subgoal_started" {
-        let text = build_hierarchical_subgoal_main_bubble_text(&info.title, info.detail.as_deref());
-        if text.is_empty() {
-            return;
-        }
-        accum.set_current_subgoal_marker(extract_subgoal_marker_from_title(&info.title));
-        upsert_hierarchical_subgoal_bubble(stream_ctx, text.clone(), &info.title);
-        accum.add_answer_delta_chars(text.chars().count());
-        return;
-    }
-    if info.kind == "tool_step_started" || info.kind == "tool_step_finished" {
-        return;
-    }
+    accum.set_current_subgoal_marker(extract_subgoal_marker_from_title(&info.title));
+    upsert_hierarchical_subgoal_bubble(stream_ctx, text.clone(), &info.title);
+    accum.add_answer_delta_chars(text.chars().count());
+}
+
+fn timeline_log_dispatch_default_body(stream_ctx: &ChatStreamCallbackCtx, info: &TimelineLogInfo) {
     let mut body = info.title.trim().to_string();
     if let Some(detail) = info.detail.as_deref().map(str::trim)
         && !detail.is_empty()
@@ -273,6 +279,24 @@ fn timeline_log_dispatch_body(
         return;
     }
     push_assistant_timeline_bubble(stream_ctx, staged_timeline_system_message_body(&body), None);
+}
+
+fn timeline_log_dispatch_body(
+    stream_ctx: &ChatStreamCallbackCtx,
+    accum: &PerStreamAccum,
+    info: TimelineLogInfo,
+) {
+    web_sys::console::log_1(&format!("[TL] kind={} title={}", info.kind, info.title).into());
+    match info.kind.as_str() {
+        "final_response" => timeline_log_dispatch_final_response(stream_ctx, accum, &info),
+        "intent_analysis" => timeline_log_dispatch_intent_analysis(stream_ctx, accum, &info),
+        "hierarchical_plan" => timeline_log_dispatch_hierarchical_plan(stream_ctx, accum, &info),
+        "hierarchical_subgoal" | "hierarchical_subgoal_started" => {
+            timeline_log_dispatch_hierarchical_subgoal(stream_ctx, accum, &info);
+        }
+        "tool_step_started" | "tool_step_finished" => {}
+        _ => timeline_log_dispatch_default_body(stream_ctx, &info),
+    }
 }
 
 pub(super) fn make_on_timeline_log(

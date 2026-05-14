@@ -46,6 +46,164 @@ struct ChatMessagesPaneSignals {
 }
 
 #[component]
+fn ChatMessagesScrollShell(
+    messages_scroller: NodeRef<leptos::html::Div>,
+    auto_scroll_chat: RwSignal<bool>,
+    messages_scroll_from_effect: RwSignal<bool>,
+    last_messages_scroll_top: RwSignal<i32>,
+    children: Children,
+) -> impl IntoView {
+    view! {
+        <div
+            class="messages"
+            node_ref=messages_scroller
+            on:wheel=move |ev: web_sys::WheelEvent| {
+                if ev.delta_y() < 0.0 {
+                    auto_scroll_chat.set(false);
+                }
+            }
+            on:scroll=move |ev: web_sys::Event| {
+                if let Some(t) = ev.target()
+                    && let Ok(el) = t.dyn_into::<web_sys::HtmlElement>()
+                {
+                    let top = el.scroll_top();
+                    let prev_top = last_messages_scroll_top.get_untracked();
+                    last_messages_scroll_top.set(top);
+                    if messages_scroll_from_effect.get_untracked() {
+                        return;
+                    }
+                    let gap = el.scroll_height() - top - el.client_height();
+                    if gap > AUTO_SCROLL_RESUME_GAP_PX {
+                        auto_scroll_chat.set(false);
+                    } else if !auto_scroll_chat.get_untracked() && top >= prev_top {
+                        auto_scroll_chat.set(true);
+                    }
+                }
+            }
+        >
+            {children()}
+        </div>
+    }
+}
+
+#[component]
+fn ChatMessagesThreadBody(
+    pane: ChatMessagesPaneSignals,
+    tool_run_group_signals: ToolRunGroupSignals,
+) -> impl IntoView {
+    let ChatMessagesPaneSignals {
+        locale,
+        timeline_panel_expanded,
+        chat,
+        collapsed_long_assistant_ids,
+        chat_find_query,
+        chat_find_match_ids,
+        chat_find_cursor,
+        stream_turn_busy_ui,
+        regen_stream_after_truncate,
+        retry_assistant_target,
+        status_err,
+        markdown_render,
+        apply_assistant_display_filters,
+        tool_detail_expanded_ids,
+        ..
+    } = pane;
+
+    let sessions = chat.sessions;
+    let active_id = chat.active_id;
+    let auto_scroll_chat = tool_run_group_signals.auto_scroll_chat;
+    let tail_loading_assistant_mid = tool_run_group_signals.tail_loading_assistant_mid;
+
+    view! {
+        <div class="chat-thread">
+            {timeline_panel_view(
+                locale,
+                sessions,
+                active_id,
+                timeline_panel_expanded,
+                auto_scroll_chat,
+            )}
+            <div class="messages-inner">
+                <Show
+                    when=move || {
+                        let id = active_id.get();
+                        sessions.with(|list| {
+                            list.iter()
+                                .find(|s| s.id == id)
+                                .map(|s| !s.messages.is_empty())
+                                .unwrap_or(false)
+                        })
+                    }
+                    fallback=move || {
+                        view! {
+                            <div class="messages-empty" role="status">
+                                <div class="messages-empty-card">
+                                    <p class="messages-empty-title">
+                                        {move || i18n::chat_empty_title(locale.get())}
+                                    </p>
+                                    <p class="messages-empty-lead">
+                                        {move || i18n::chat_empty_lead(locale.get())}
+                                    </p>
+                                    <ul class="messages-empty-tips">
+                                        <li>{move || i18n::chat_empty_tip1(locale.get())}</li>
+                                        <li>{move || i18n::chat_empty_tip2(locale.get())}</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        }
+                    }
+                >
+                    <For
+                        each=move || {
+                            let id = active_id.get();
+                            sessions.with(|list| {
+                                let msgs: &[StoredMessage] = list
+                                    .iter()
+                                    .find(|s| s.id == id)
+                                    .map(|s| s.messages.as_slice())
+                                    .unwrap_or(&[]);
+                                chunk_messages(msgs)
+                            })
+                        }
+                        key=|chunk| chat_chunk_stable_key(chunk)
+                        children=move |chunk| match chunk {
+                            ChatChunk::Single { idx, msg } => chat_message_row(
+                                ChatMessageRowSignals {
+                                    msg_idx: idx,
+                                    m: msg,
+                                    chat,
+                                    collapsed_long_assistant_ids,
+                                    chat_find_query,
+                                    chat_find_match_ids,
+                                    chat_find_cursor,
+                                    auto_scroll_chat,
+                                    stream_turn_busy_ui,
+                                    tail_loading_assistant_mid,
+                                    regen_stream_after_truncate,
+                                    retry_assistant_target,
+                                    status_err,
+                                    locale,
+                                    markdown_render,
+                                    apply_assistant_display_filters,
+                                    tool_detail_expanded_ids,
+                                },
+                            )
+                            .into_any(),
+                            ChatChunk::ToolGroup { head_id, items } => tool_run_group_view(
+                                head_id,
+                                items,
+                                tool_run_group_signals,
+                            )
+                            .into_any(),
+                        }
+                    />
+                </Show>
+            </div>
+        </div>
+    }
+}
+
+#[component]
 fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
     let ChatMessagesPaneSignals {
         locale,
@@ -93,119 +251,14 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
     };
 
     view! {
-        <div
-            class="messages"
-            node_ref=messages_scroller
-            on:wheel=move |ev: web_sys::WheelEvent| {
-                if ev.delta_y() < 0.0 {
-                    auto_scroll_chat.set(false);
-                }
-            }
-            on:scroll=move |ev: web_sys::Event| {
-                if let Some(t) = ev.target()
-                    && let Ok(el) = t.dyn_into::<web_sys::HtmlElement>()
-                {
-                    let top = el.scroll_top();
-                    let prev_top = last_messages_scroll_top.get_untracked();
-                    last_messages_scroll_top.set(top);
-                    if messages_scroll_from_effect.get_untracked() {
-                        return;
-                    }
-                    let gap = el.scroll_height() - top - el.client_height();
-                    if gap > AUTO_SCROLL_RESUME_GAP_PX {
-                        auto_scroll_chat.set(false);
-                    } else if !auto_scroll_chat.get_untracked() && top >= prev_top {
-                        auto_scroll_chat.set(true);
-                    }
-                }
-            }
+        <ChatMessagesScrollShell
+            messages_scroller
+            auto_scroll_chat
+            messages_scroll_from_effect
+            last_messages_scroll_top
         >
-            <div class="chat-thread">
-                {timeline_panel_view(
-                    locale,
-                    sessions,
-                    active_id,
-                    timeline_panel_expanded,
-                    auto_scroll_chat,
-                )}
-                <div class="messages-inner">
-                    <Show
-                        when=move || {
-                            let id = active_id.get();
-                            sessions.with(|list| {
-                                list.iter()
-                                    .find(|s| s.id == id)
-                                    .map(|s| !s.messages.is_empty())
-                                    .unwrap_or(false)
-                            })
-                        }
-                        fallback=move || {
-                            view! {
-                                <div class="messages-empty" role="status">
-                                    <div class="messages-empty-card">
-                                        <p class="messages-empty-title">
-                                            {move || i18n::chat_empty_title(locale.get())}
-                                        </p>
-                                        <p class="messages-empty-lead">
-                                            {move || i18n::chat_empty_lead(locale.get())}
-                                        </p>
-                                        <ul class="messages-empty-tips">
-                                            <li>{move || i18n::chat_empty_tip1(locale.get())}</li>
-                                            <li>{move || i18n::chat_empty_tip2(locale.get())}</li>
-                                        </ul>
-                                    </div>
-                                </div>
-                            }
-                        }
-                    >
-                        <For
-                            each=move || {
-                                let id = active_id.get();
-                                sessions.with(|list| {
-                                    let msgs: &[StoredMessage] = list
-                                        .iter()
-                                        .find(|s| s.id == id)
-                                        .map(|s| s.messages.as_slice())
-                                        .unwrap_or(&[]);
-                                    chunk_messages(msgs)
-                                })
-                            }
-                            key=|chunk| chat_chunk_stable_key(chunk)
-                            children=move |chunk| match chunk {
-                                ChatChunk::Single { idx, msg } => chat_message_row(
-                                    ChatMessageRowSignals {
-                                        msg_idx: idx,
-                                        m: msg,
-                                        chat,
-                                        collapsed_long_assistant_ids,
-                                        chat_find_query,
-                                        chat_find_match_ids,
-                                        chat_find_cursor,
-                                        auto_scroll_chat,
-                                        stream_turn_busy_ui,
-                                        tail_loading_assistant_mid,
-                                        regen_stream_after_truncate,
-                                        retry_assistant_target,
-                                        status_err,
-                                        locale,
-                                        markdown_render,
-                                        apply_assistant_display_filters,
-                                        tool_detail_expanded_ids,
-                                    },
-                                )
-                                .into_any(),
-                                ChatChunk::ToolGroup { head_id, items } => tool_run_group_view(
-                                    head_id,
-                                    items,
-                                    tool_run_group_signals,
-                                )
-                                .into_any(),
-                            }
-                        />
-                    </Show>
-                </div>
-            </div>
-        </div>
+            <ChatMessagesThreadBody pane=signals tool_run_group_signals />
+        </ChatMessagesScrollShell>
     }
 }
 
