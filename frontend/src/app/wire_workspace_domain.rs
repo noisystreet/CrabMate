@@ -8,6 +8,8 @@ use leptos::prelude::*;
 use crate::app_prefs::SidePanelView;
 use crate::session_sync::SessionSyncState;
 
+use super::changelist_modal::ChangelistModalBodyState;
+
 use super::changelist_modal::{wire_changelist_body_inner_html, wire_changelist_fetch_effects};
 use super::workspace_panel::wire_workspace_refresh_when_visible;
 
@@ -16,10 +18,7 @@ use super::workspace_panel::wire_workspace_refresh_when_visible;
 pub(crate) struct WireWorkspaceDomainEffectsArgs {
     pub session_sync: RwSignal<SessionSyncState>,
     pub changelist_fetch_nonce: RwSignal<u64>,
-    pub changelist_modal_loading: RwSignal<bool>,
-    pub changelist_modal_err: RwSignal<Option<String>>,
-    pub changelist_modal_html: RwSignal<String>,
-    pub changelist_modal_rev: RwSignal<u64>,
+    pub changelist_modal_body: RwSignal<ChangelistModalBodyState>,
     pub markdown_render: RwSignal<bool>,
     pub changelist_body_ref: NodeRef<Div>,
     pub side_panel_view: RwSignal<SidePanelView>,
@@ -32,10 +31,7 @@ pub(crate) fn wire_workspace_domain_effects(args: WireWorkspaceDomainEffectsArgs
     let WireWorkspaceDomainEffectsArgs {
         session_sync,
         changelist_fetch_nonce,
-        changelist_modal_loading,
-        changelist_modal_err,
-        changelist_modal_html,
-        changelist_modal_rev,
+        changelist_modal_body,
         markdown_render,
         changelist_body_ref,
         side_panel_view,
@@ -45,13 +41,10 @@ pub(crate) fn wire_workspace_domain_effects(args: WireWorkspaceDomainEffectsArgs
     wire_changelist_fetch_effects(
         session_sync,
         changelist_fetch_nonce,
-        changelist_modal_loading,
-        changelist_modal_err,
-        changelist_modal_html,
-        changelist_modal_rev,
+        changelist_modal_body,
         markdown_render,
     );
-    wire_changelist_body_inner_html(changelist_modal_html, changelist_body_ref);
+    wire_changelist_body_inner_html(changelist_modal_body, changelist_body_ref);
 
     wire_workspace_refresh_when_visible(
         side_panel_view,

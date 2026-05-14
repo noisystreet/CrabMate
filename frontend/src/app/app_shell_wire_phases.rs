@@ -166,10 +166,7 @@ fn wire_phase4a_workspace_domain(app: &AppSignals, refresh_workspace: &RefreshWo
     wire_workspace_domain_effects(WireWorkspaceDomainEffectsArgs {
         session_sync: app.chat.session_sync,
         changelist_fetch_nonce: app.modal.changelist_fetch_nonce,
-        changelist_modal_loading: app.modal.changelist_modal_loading,
-        changelist_modal_err: app.modal.changelist_modal_err,
-        changelist_modal_html: app.modal.changelist_modal_html,
-        changelist_modal_rev: app.modal.changelist_modal_rev,
+        changelist_modal_body: app.modal.changelist_modal_body,
         markdown_render: app.shell_ui.markdown_render,
         changelist_body_ref: app.modal.changelist_body_ref,
         side_panel_view: app.shell_ui.side_panel_view,

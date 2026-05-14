@@ -31,6 +31,7 @@ use super::status_tasks_state::StatusTasksSignals;
 use super::workspace_panel_state::WorkspacePanelSignals;
 
 use super::approval_modal::ApprovalModalSignals;
+use super::changelist_modal::ChangelistModalBodyState;
 
 /// 窄屏顶栏所需句柄（阶段 B：避免向 `mobile_shell_header_view` 传递整份 [`AppShellCtx`]）。
 #[derive(Clone)]
@@ -45,9 +46,7 @@ pub struct MobileShellHeaderSignals {
 pub struct ChangelistModalSignals {
     pub changelist_modal_open: RwSignal<bool>,
     pub locale: RwSignal<Locale>,
-    pub changelist_modal_loading: RwSignal<bool>,
-    pub changelist_modal_err: RwSignal<Option<String>>,
-    pub changelist_modal_rev: RwSignal<u64>,
+    pub changelist_modal_body: RwSignal<ChangelistModalBodyState>,
     pub changelist_fetch_nonce: RwSignal<u64>,
     pub changelist_body_ref: NodeRef<Div>,
 }
@@ -276,9 +275,7 @@ impl AppShellCtx {
         ChangelistModalSignals {
             changelist_modal_open: self.signals.modal.changelist_modal_open,
             locale: self.signals.shell_ui.locale,
-            changelist_modal_loading: self.signals.modal.changelist_modal_loading,
-            changelist_modal_err: self.signals.modal.changelist_modal_err,
-            changelist_modal_rev: self.signals.modal.changelist_modal_rev,
+            changelist_modal_body: self.signals.modal.changelist_modal_body,
             changelist_fetch_nonce: self.signals.modal.changelist_fetch_nonce,
             changelist_body_ref: self.signals.modal.changelist_body_ref,
         }

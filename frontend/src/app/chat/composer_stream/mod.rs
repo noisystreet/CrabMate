@@ -75,7 +75,7 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                 asst_id.as_str(),
                 locale_sig.get_untracked(),
             );
-            chat.bind_stream_to_session(bound_session_id.clone());
+            chat.bind_stream_to_session(bound_session_id.clone(), attach_generation);
             let ac = web_sys::AbortController::new().expect("AbortController");
             let signal = ac.signal();
             store_abort_controller(&shell_outer, ac);
