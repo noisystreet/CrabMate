@@ -9,11 +9,11 @@ alwaysApply: true
 
 ## 必须执行的命令
 
-1. **优先**（仓库根目录）：
+1. **优先**（仓库根目录；**`cargo-clippy` / `frontend-wasm-check` / `frontend-clippy` 对工作区全量执行，不依赖暂存区**）：
    ```bash
    pre-commit run --all-files
    ```
-   若当前改动已暂存、且希望与 hook 默认行为一致，可使用：
+   也可在改动已暂存后使用：
    ```bash
    pre-commit run
    ```
@@ -37,5 +37,5 @@ alwaysApply: true
 
 ## 与本仓库的对应关系
 
-- 钩子定义见仓库根目录 **`.pre-commit-config.yaml`**（含 **`cargo fmt`**、**`cargo clippy -D warnings`**、**`frontend-wasm-check`**（**`cd frontend && cargo check --target wasm32-unknown-unknown`**，暂存含 `frontend/` 时）、**`frontend-clippy`**（**`cd frontend && cargo clippy --all-targets --all-features -- -D warnings`**，暂存含 `frontend/` 时）、**`lizard-rust`**（**`scripts/lizard-rust.sh`**）、**`fn-param-ratchet`**（**`scripts/fn-param-ratchet.sh`**，形参棘轮）、**`fn-nloc-ratchet`**（**`scripts/fn-nloc-ratchet.sh`**，函数 `nloc` + 源文件物理行数棘轮）、**`commit-msg`：Conventional Commits** 等）；新增语言/工具时同步更新该文件与本规则中的说明（若有必要）。
+- 钩子定义见仓库根目录 **`.pre-commit-config.yaml`**（含 **`cargo fmt`**、**`cargo clippy -D warnings`**（工作区全量，**不**再按暂存区跳过）、**`frontend-wasm-check`**（**`cd frontend && cargo check --target wasm32-unknown-unknown`**，每次均跑）、**`frontend-clippy`**（**`cd frontend && cargo clippy --all-targets --all-features -- -D warnings`**，每次均跑）、**`lizard-rust`**（**`scripts/lizard-rust.sh`**）、**`fn-param-ratchet`**（**`scripts/fn-param-ratchet.sh`**，形参棘轮）、**`fn-nloc-ratchet`**（**`scripts/fn-nloc-ratchet.sh`**，函数 `nloc` + 源文件物理行数棘轮）、**`commit-msg`：Conventional Commits** 等）；新增语言/工具时同步更新该文件与本规则中的说明（若有必要）。
 - 安装后须能拦截非法提交说明：若 `git commit` 未触发说明校验，执行 **`pre-commit install --hook-type commit-msg`**（或重新 **`pre-commit install`**）。

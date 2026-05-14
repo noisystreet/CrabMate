@@ -46,4 +46,4 @@ pub use saved_models::{
     load_saved_model_presets_from_storage, matching_saved_preset_index,
     persist_saved_model_presets_to_storage,
 };
-pub use session_store::{SessionConversationStoreResponse, post_session_conversation_store};
+pub use session_store::post_session_conversation_store;

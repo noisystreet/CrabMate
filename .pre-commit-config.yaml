@@ -1,7 +1,7 @@
 # https://pre-commit.com
 # 安装：pip install pre-commit && pre-commit install
 #   （本配置含 default_install_hook_types，会同时安装 pre-commit + commit-msg；旧环境可补：pre-commit install --hook-type commit-msg）
-# 手动跑文件检查：pre-commit run --all-files（不含 commit-msg；说明校验见 conventional-commits 规则中的手动命令）
+# 手动跑检查：pre-commit run --all-files（不含 commit-msg；说明校验见 conventional-commits 规则中的手动命令）。workspace / frontend 的 clippy 与 wasm check 为全量，不依赖暂存区。
 default_install_hook_types:
   - pre-commit
   - commit-msg
@@ -17,7 +17,7 @@ repos:
         always_run: true
       - id: cargo-clippy
         name: cargo clippy (-D warnings)
-        entry: bash -c 'staged=$(git diff --cached --name-only -- "*.rs" | wc -l); if [ "$staged" -gt 0 ]; then cargo clippy --all-targets --all-features -- -D warnings; else exit 0; fi'
+        entry: cargo clippy --all-targets --all-features -- -D warnings
         language: system
         pass_filenames: false
         always_run: true
@@ -45,14 +45,14 @@ repos:
         stages: [pre-commit]
       - id: frontend-wasm-check
         name: frontend wasm check
-        entry: bash -c 'staged=$(git diff --cached --name-only -- "frontend/" | wc -l); if [ "$staged" -gt 0 ]; then cd frontend && cargo check --target wasm32-unknown-unknown; else exit 0; fi'
+        entry: bash -c 'cd frontend && cargo check --target wasm32-unknown-unknown'
         language: system
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
       - id: frontend-clippy
         name: frontend clippy (-D warnings)
-        entry: bash -c 'staged=$(git diff --cached --name-only -- "frontend/" | wc -l); if [ "$staged" -gt 0 ]; then cd frontend && cargo clippy --all-targets --all-features -- -D warnings; else exit 0; fi'
+        entry: bash -c 'cd frontend && cargo clippy --all-targets --all-features -- -D warnings'
         language: system
         pass_filenames: false
         always_run: true
