@@ -19,6 +19,86 @@ use crate::tools::write_sse_preview::{
 };
 use crate::workspace::changelist::record_file_state_after_write;
 
+fn parse_delete_dir_args(args_json: &str) -> Result<DeleteDirArgs, String> {
+    let v = crate::tools::parse_args_json(args_json)?;
+    serde_json::from_value(v).map_err(|e| format!("参数解析错误: {e}"))
+}
+
+fn parse_append_file_args(args_json: &str) -> Result<AppendFileArgs, String> {
+    let v = crate::tools::parse_args_json(args_json)?;
+    serde_json::from_value(v).map_err(|e| format!("参数解析错误: {e}"))
+}
+
+fn delete_dir_validate_target(working_dir: &Path, path: &str) -> Result<PathBuf, String> {
+    let target =
+        resolve_for_read(working_dir, path).map_err(tool_user_error_from_workspace_path)?;
+    if !target.is_dir() {
+        return Err(format!(
+            "错误：{} 不是目录",
+            path_for_tool_display(working_dir, &target, Some(path))
+        ));
+    }
+    let base_canonical =
+        canonical_workspace_root(working_dir).map_err(tool_user_error_from_workspace_path)?;
+    if target == base_canonical {
+        return Err("错误：不能删除工作区根目录".to_string());
+    }
+    Ok(target)
+}
+
+fn delete_dir_result_message(
+    recursive: bool,
+    working_dir: &Path,
+    target: &Path,
+    path: &str,
+    result: std::io::Result<()>,
+) -> String {
+    match result {
+        Ok(()) => format!(
+            "已删除目录{}：{}",
+            if recursive { "（递归）" } else { "" },
+            path_for_tool_display(working_dir, target, Some(path))
+        ),
+        Err(e) => {
+            if !recursive && e.kind() == std::io::ErrorKind::DirectoryNotEmpty {
+                "删除失败：目录非空，需要 recursive=true 才能删除非空目录".to_string()
+            } else {
+                format!("删除目录失败：{}", e)
+            }
+        }
+    }
+}
+
+fn append_resolve_target_path(
+    working_dir: &Path,
+    path: &str,
+    create_if_missing: bool,
+) -> Result<PathBuf, String> {
+    if create_if_missing {
+        resolve_for_write(working_dir, path).map_err(tool_user_error_from_workspace_path)
+    } else {
+        match resolve_for_read(working_dir, path) {
+            Ok(p) => Ok(p),
+            Err(e) => Err(format!(
+                "文件不存在（可设置 create_if_missing=true）：{}",
+                e
+            )),
+        }
+    }
+}
+
+fn append_create_parent_if_needed(create_if_missing: bool, target: &Path) -> Result<(), String> {
+    if !create_if_missing {
+        return Ok(());
+    }
+    if let Some(parent) = target.parent()
+        && !parent.exists()
+    {
+        std::fs::create_dir_all(parent).map_err(|e| format!("创建父目录失败：{}", e))?;
+    }
+    Ok(())
+}
+
 pub fn delete_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
     let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
@@ -76,13 +156,9 @@ pub fn delete_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
 // ── delete_dir ──────────────────────────────────────────────
 
 pub fn delete_dir(args_json: &str, working_dir: &Path) -> String {
-    let v = match crate::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: DeleteDirArgs = match serde_json::from_value(v) {
+    let args = match parse_delete_dir_args(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+        Err(e) => return e,
     };
     let path = match args.path.trim() {
         s if !s.is_empty() => s.to_string(),
@@ -94,55 +170,25 @@ pub fn delete_dir(args_json: &str, working_dir: &Path) -> String {
     }
     let recursive = args.recursive;
 
-    let target = match resolve_for_read(working_dir, &path) {
+    let target = match delete_dir_validate_target(working_dir, &path) {
         Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
+        Err(e) => return e,
     };
-    if !target.is_dir() {
-        return format!(
-            "错误：{} 不是目录",
-            path_for_tool_display(working_dir, &target, Some(&path))
-        );
-    }
-    let base_canonical = match canonical_workspace_root(working_dir) {
-        Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
-    };
-    if target == base_canonical {
-        return "错误：不能删除工作区根目录".to_string();
-    }
 
     let result = if recursive {
         std::fs::remove_dir_all(&target)
     } else {
         std::fs::remove_dir(&target)
     };
-    match result {
-        Ok(()) => format!(
-            "已删除目录{}：{}",
-            if recursive { "（递归）" } else { "" },
-            path_for_tool_display(working_dir, &target, Some(&path))
-        ),
-        Err(e) => {
-            if !recursive && e.kind() == std::io::ErrorKind::DirectoryNotEmpty {
-                "删除失败：目录非空，需要 recursive=true 才能删除非空目录".to_string()
-            } else {
-                format!("删除目录失败：{}", e)
-            }
-        }
-    }
+    delete_dir_result_message(recursive, working_dir, &target, &path, result)
 }
 
 // ── append_file ─────────────────────────────────────────────
 
 pub fn append_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    let v = match crate::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: AppendFileArgs = match serde_json::from_value(v) {
+    let args = match parse_append_file_args(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+        Err(e) => return e,
     };
     let path = match args.path.trim() {
         s if !s.is_empty() => s.to_string(),
@@ -151,26 +197,13 @@ pub fn append_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
     let content = args.content;
     let create_if_missing = args.create_if_missing;
 
-    let target = if create_if_missing {
-        match resolve_for_write(working_dir, &path) {
-            Ok(p) => p,
-            Err(e) => return tool_user_error_from_workspace_path(e),
-        }
-    } else {
-        match resolve_for_read(working_dir, &path) {
-            Ok(p) => p,
-            Err(e) => {
-                return format!("文件不存在（可设置 create_if_missing=true）：{}", e);
-            }
-        }
+    let target = match append_resolve_target_path(working_dir, &path, create_if_missing) {
+        Ok(p) => p,
+        Err(e) => return e,
     };
 
-    if create_if_missing
-        && let Some(parent) = target.parent()
-        && !parent.exists()
-        && let Err(e) = std::fs::create_dir_all(parent)
-    {
-        return format!("创建父目录失败：{}", e);
+    if let Err(e) = append_create_parent_if_needed(create_if_missing, &target) {
+        return e;
     }
 
     let before = std::fs::read_to_string(&target).ok();
