@@ -1,6 +1,6 @@
 //! 会话首启、Web UI 展示偏好、服务端水合、会话列表持久化（从 `app/mod.rs` 迁入，阶段 B）。
 //!
-//! 调用顺序与原先在 `App` 内一致：**首启会话 → Web UI 一次配置 → 水合 → 持久化**。
+//! 调用顺序与原先在 `App` 内一致：**首启会话 → Web UI 一次配置 → 水合 → 持久化**。与 [`crate::app::app_bootstrap_phase::AppBootstrapPhase`] 对应的门闸见 [`crate::app::session_hydrate::wire_session_hydration`] 等处的 `derive` 检查。
 
 use leptos::prelude::*;
 

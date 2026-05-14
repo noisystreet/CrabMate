@@ -5,6 +5,7 @@
 //! - **`sessions` / `active_id`**：侧栏、合成器、持久化 `Effect`、工具/导出等；流式助手正文增量默认进 [`Self::stream_text_overlay`]，收尾时合并回会话，**不一定**每 token 触发 `sessions` 无效化。
 //! - **`stream_bound_session_id`**：与 [`crate::app::chat::composer_stream::context::ChatStreamCallbackCtx::bound_stream_session_id`] 同源（**发起 attach 时**快照），决定 SSE 写哪条会话，**不一定**等于当时的 [`Self::active_id`]。
 //! - **`stream_job_id` / `stream_last_event_seq`**：SSE 首包与 `id:` 行；应用 [`ChatSessionSignals::clear_stream_resume_handles`] 表示「放弃当前断线重连上下文」（错误、结束、`stream_ended`、会话切换等）。上述四槽位亦经 [`ChatStreamSessionLane`] / [`ChatSessionSignals::stream_session_lane`] 成组访问。
+//! - **`chat_transport_lifecycle`**：[`ChatTransportLifecycle`] 与 `stream_bound_session_id` / attach 代际同步转移（[`ChatSessionSignals::bind_stream_to_session`] / [`ChatSessionSignals::clear_stream_resume_handles`]），便于调试与断言「无隐式非法组合」。
 //! - **`stream_attach_generation`**：每次发起新 `/chat/stream` attach 递增；[`crate::app::chat::composer_stream::context::ChatStreamCallbackCtx`] 捕获代际，回调内若与当前值不一致则视为陈旧（上一轮 `abort` 后仍可能排队执行），避免写全局句柄/旁路缓冲。
 //! - **`session_sync`**：服务端 `conversation_id` / revision，与 `POST /chat/branch` 等对齐。
 //! - **`session_hydrate_nonce` / `reasoning_preserved`**：拉取会话正文与水合时的补偿字段。
@@ -30,6 +31,19 @@ use leptos::prelude::*;
 use crate::session_sync::SessionSyncState;
 use crate::storage::ChatSession;
 use crate::stream_text_overlay::StreamTextOverlay;
+
+/// `/chat/stream` 在**传输层**相对 UI 会话列表的绑定阶段（与 `stream_bound_session_id` + attach 代际一致更新）。
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub enum ChatTransportLifecycle {
+    /// 无进行中的流式写绑定（或已 [`ChatSessionSignals::clear_stream_resume_handles`]）。
+    #[default]
+    Idle,
+    /// 已 [`ChatSessionSignals::bind_stream_to_session`]；SSE 回调应写入 `session_id` 且仅当 `attach_generation` 仍匹配时生效。
+    StreamBound {
+        session_id: String,
+        attach_generation: u64,
+    },
+}
 
 /// 与单轮 `/chat/stream` 绑定的 **RwSignal 槽位**（`job_id` / SSE 序号 / 绑定会话 / 尾条 overlay）。
 ///
@@ -182,6 +196,8 @@ pub struct ChatSessionSignals {
     pub stream_last_event_seq: RwSignal<u64>,
     /// 每次发起新 `/chat/stream` attach 时递增，与 [`crate::app::chat::composer_stream::context::ChatStreamCallbackCtx::attach_generation`] 比对以丢弃陈旧 SSE 回调。
     pub stream_attach_generation: RwSignal<u64>,
+    /// 与 [`Self::stream_bound_session_id`] / attach 代际同步更新的传输层阶段。
+    pub chat_transport_lifecycle: RwSignal<ChatTransportLifecycle>,
     /// 当前（或刚结束）`/chat/stream` 写入的目标会话 id；与闭包内 [`ChatStreamCallbackCtx::bound_stream_session_id`] 一致。
     ///
     /// `None` 表示无进行中的流式绑定（或已调用 [`Self::clear_stream_resume_handles`]）。
@@ -223,9 +239,16 @@ impl ChatSessionSignals {
     }
 
     /// 记录本轮 attach 时 SSE 回调应写入的会话（须与 [`crate::app::chat::composer_stream::make_attach_chat_stream`] 内 [`crate::app::chat::composer_stream::context::ChatStreamCallbackCtx::bound_stream_session_id`] 使用同一字符串）。
+    ///
+    /// `attach_generation` **必须**为同轮 [`Self::bump_stream_attach_generation`] 的返回值，以保证 [`Self::chat_transport_lifecycle`] 与代际一致。
     #[inline]
-    pub fn bind_stream_to_session(self, session_id: String) {
-        self.stream_bound_session_id.set(Some(session_id));
+    pub fn bind_stream_to_session(self, session_id: String, attach_generation: u64) {
+        self.stream_bound_session_id.set(Some(session_id.clone()));
+        self.chat_transport_lifecycle
+            .set(ChatTransportLifecycle::StreamBound {
+                session_id,
+                attach_generation,
+            });
     }
 
     /// 发起新一轮流式 attach 时调用，返回**本轮**代际值（写入 [`crate::app::chat::composer_stream::context::ChatStreamCallbackCtx::attach_generation`]）。
@@ -248,6 +271,8 @@ impl ChatSessionSignals {
         lane.job_id.set(None);
         lane.last_event_seq.set(0);
         lane.bound_session_id.set(None);
+        self.chat_transport_lifecycle
+            .set(ChatTransportLifecycle::Idle);
     }
 
     /// [`GET /conversation/messages`] 水合合并与 reasoning 恢复。

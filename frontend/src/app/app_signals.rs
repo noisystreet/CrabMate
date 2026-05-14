@@ -14,6 +14,7 @@ use leptos::html::Div;
 use leptos::prelude::*;
 use leptos_dom::helpers::WindowListenerHandle;
 
+use super::changelist_modal::ChangelistModalBodyState;
 use crate::api::{StatusData, TasksData, WorkspaceData, load_saved_model_presets_from_storage};
 use crate::app::shell_prefs_storage;
 use crate::app_prefs::{SIDEBAR_RAIL_COLLAPSED_KEY, SidePanelView, load_bool_key};
@@ -219,10 +220,7 @@ pub struct ModalSignals {
     pub settings_modal: RwSignal<bool>,
     pub settings_page: RwSignal<bool>,
     pub changelist_modal_open: RwSignal<bool>,
-    pub changelist_modal_loading: RwSignal<bool>,
-    pub changelist_modal_err: RwSignal<Option<String>>,
-    pub changelist_modal_html: RwSignal<String>,
-    pub changelist_modal_rev: RwSignal<u64>,
+    pub changelist_modal_body: RwSignal<ChangelistModalBodyState>,
     pub changelist_body_ref: NodeRef<Div>,
     pub changelist_fetch_nonce: RwSignal<u64>,
 }
@@ -234,10 +232,7 @@ impl ModalSignals {
             settings_modal: RwSignal::new(false),
             settings_page: RwSignal::new(false),
             changelist_modal_open: RwSignal::new(false),
-            changelist_modal_loading: RwSignal::new(false),
-            changelist_modal_err: RwSignal::new(None),
-            changelist_modal_html: RwSignal::new(String::new()),
-            changelist_modal_rev: RwSignal::new(0),
+            changelist_modal_body: RwSignal::new(ChangelistModalBodyState::default()),
             changelist_body_ref: NodeRef::new(),
             changelist_fetch_nonce: RwSignal::new(0),
         }
@@ -447,6 +442,9 @@ impl AppSignals {
             stream_job_id: RwSignal::new(None),
             stream_last_event_seq: RwSignal::new(0),
             stream_attach_generation: RwSignal::new(0),
+            chat_transport_lifecycle: RwSignal::new(
+                crate::chat_session_state::ChatTransportLifecycle::default(),
+            ),
             stream_bound_session_id: RwSignal::new(None),
             reasoning_preserved: RwSignal::new(HashMap::new()),
             stream_text_overlay: RwSignal::new(None),

@@ -17,6 +17,8 @@ use crate::storage::{ChatSession, StoredMessage};
 
 use crate::chat_session_state::ChatSessionSignals;
 
+use super::app_bootstrap_phase::AppBootstrapPhase;
+
 fn count_user_role_bubbles(messages: &[StoredMessage]) -> usize {
     messages.iter().filter(|m| m.role == "user").count()
 }
@@ -59,6 +61,25 @@ fn local_messages_preserved_after_hydrate(
         .collect()
 }
 
+/// 将服务端快照合并进当前会话时的守卫结果（原 `merge_*` 各 `return false` 路径的显式命名）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SessionHydrationMergeOutcome {
+    Applied,
+    SkippedActiveSessionMismatch,
+    SkippedLoadingPlaceholders,
+    SkippedConversationIdMismatch,
+    SkippedHydrateNonceMismatch,
+    SkippedEmptyHydrateAgainstLocalMessages,
+    SkippedHydratedUserRegression,
+}
+
+impl SessionHydrationMergeOutcome {
+    #[must_use]
+    pub(crate) const fn is_applied(self) -> bool {
+        matches!(self, Self::Applied)
+    }
+}
+
 /// 合并水合快照时的标识与会话状态（避免 `merge_*` 长参数列表）。
 struct MergeHydrationIntoActiveSessionArgs<'a> {
     session: &'a mut ChatSession,
@@ -72,8 +93,10 @@ struct MergeHydrationIntoActiveSessionArgs<'a> {
     selected_agent_role: RwSignal<Option<String>>,
 }
 
-/// 将 `GET /conversation/messages` 结果合并进当前会话；成功时返回 `true`（已写 `messages` / `server_revision` 等）。
-fn merge_hydration_into_active_session(args: MergeHydrationIntoActiveSessionArgs<'_>) -> bool {
+/// 将 `GET /conversation/messages` 结果合并进当前会话；[`SessionHydrationMergeOutcome::Applied`] 表示已写 `messages` / `server_revision` 等。
+fn merge_hydration_into_active_session(
+    args: MergeHydrationIntoActiveSessionArgs<'_>,
+) -> SessionHydrationMergeOutcome {
     let MergeHydrationIntoActiveSessionArgs {
         session,
         aid,
@@ -86,25 +109,25 @@ fn merge_hydration_into_active_session(args: MergeHydrationIntoActiveSessionArgs
         selected_agent_role,
     } = args;
     if active_id != aid {
-        return false;
+        return SessionHydrationMergeOutcome::SkippedActiveSessionMismatch;
     }
     if messages_contain_loading(&session.messages) {
-        return false;
+        return SessionHydrationMergeOutcome::SkippedLoadingPlaceholders;
     }
     let still = trimmed_server_conversation_id(session);
     if still != Some(cid) {
-        return false;
+        return SessionHydrationMergeOutcome::SkippedConversationIdMismatch;
     }
     if current_nonce != nonce_at_start {
-        return false;
+        return SessionHydrationMergeOutcome::SkippedHydrateNonceMismatch;
     }
     let local_users = count_user_role_bubbles(&session.messages);
     let hydrated_users = count_user_role_bubbles(&hydrated);
     if !session.messages.is_empty() && hydrated.is_empty() {
-        return false;
+        return SessionHydrationMergeOutcome::SkippedEmptyHydrateAgainstLocalMessages;
     }
     if local_users > 0 && hydrated_users < local_users {
-        return false;
+        return SessionHydrationMergeOutcome::SkippedHydratedUserRegression;
     }
     let mut new_messages = hydrated;
     let preserved = local_messages_preserved_after_hydrate(&new_messages, &session.messages);
@@ -125,7 +148,7 @@ fn merge_hydration_into_active_session(args: MergeHydrationIntoActiveSessionArgs
             session.title = title_from_user_prompt(&u.text);
         }
     }
-    true
+    SessionHydrationMergeOutcome::Applied
 }
 
 fn restore_reasoning_after_hydration(chat: &ChatSessionSignals, aid: &str, nonce_at_start: u64) {
@@ -174,6 +197,8 @@ fn apply_saved_revision_if_same_conversation(chat: &ChatSessionSignals, cid: &st
 }
 
 /// 订阅 `chat.session_hydrate_nonce`：流结束后由 composer 递增，拉取服务端快照并写回当前会话。
+///
+/// 门闸与 [`super::app_bootstrap_phase::AppBootstrapPhase::hydration_effects_enabled`] 一致（`initialized` + `web_ui_config_loaded`）。
 pub fn wire_session_hydration(
     initialized: RwSignal<bool>,
     web_ui_config_loaded: RwSignal<bool>,
@@ -184,7 +209,9 @@ pub fn wire_session_hydration(
     Effect::new({
         let chat = chat;
         move |_| {
-            if !initialized.get() || !web_ui_config_loaded.get() {
+            if !AppBootstrapPhase::derive(initialized.get(), web_ui_config_loaded.get())
+                .hydration_effects_enabled()
+            {
                 return;
             }
             let aid = chat.active_id.get();
@@ -221,7 +248,7 @@ pub fn wire_session_hydration(
                     let Some(s) = list.iter_mut().find(|x| x.id == aid) else {
                         return;
                     };
-                    applied_hydration |=
+                    let merge_outcome =
                         merge_hydration_into_active_session(MergeHydrationIntoActiveSessionArgs {
                             session: s,
                             aid: &aid,
@@ -233,6 +260,7 @@ pub fn wire_session_hydration(
                             active_id: &active,
                             selected_agent_role,
                         });
+                    applied_hydration |= merge_outcome.is_applied();
                 });
                 if !applied_hydration {
                     return;
