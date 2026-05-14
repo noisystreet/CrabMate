@@ -79,6 +79,54 @@ pub(crate) fn plan_rewrite_user_text_base() -> String {
     )
 }
 
+fn exhausted_layer_count_mismatch(
+    plan: &plan_artifact::AgentReplyPlanV1,
+    layer_need: Option<usize>,
+    apply_layer_semantics: bool,
+) -> bool {
+    matches!(
+        layer_need,
+        Some(n) if n > 0 && apply_layer_semantics && plan.steps.len() < n
+    )
+}
+
+fn exhausted_workflow_subset_mismatch(
+    plan: &plan_artifact::AgentReplyPlanV1,
+    wf_ids: Option<&Vec<String>>,
+) -> bool {
+    wf_ids
+        .map(|ids| plan_artifact::validate_plan_workflow_node_ids_subset(plan, ids).is_err())
+        .unwrap_or(false)
+}
+
+fn exhausted_workflow_coverage_mismatch(
+    plan: &plan_artifact::AgentReplyPlanV1,
+    wf_ids: Option<&Vec<String>>,
+    strict_workflow_node_coverage: bool,
+) -> bool {
+    strict_workflow_node_coverage
+        && wf_ids
+            .map(|ids| {
+                plan_artifact::validate_plan_covers_all_workflow_node_ids(plan, ids).is_err()
+            })
+            .unwrap_or(false)
+}
+
+fn exhausted_validate_only_binding_mismatch(
+    plan: &plan_artifact::AgentReplyPlanV1,
+    messages: &[Message],
+    apply_layer_semantics: bool,
+) -> bool {
+    apply_layer_semantics
+        && last_workflow_validate_binding_plan_node_ids(messages)
+            .filter(|ids| !ids.is_empty())
+            .map(|ids| {
+                plan_artifact::validate_plan_binds_workflow_validate_nodes(plan, ids.as_slice())
+                    .is_err()
+            })
+            .unwrap_or(false)
+}
+
 pub(crate) fn classify_exhausted_reason(
     msg: &Message,
     messages: &[Message],
@@ -98,83 +146,71 @@ pub(crate) fn classify_exhausted_reason(
     ) else {
         return PlanRewriteExhaustedReason::PlanMissing;
     };
-    let layers_ok = match layer_need {
-        Some(n) if n > 0 && apply_layer_semantics => plan.steps.len() >= n,
-        _ => true,
-    };
-    if !layers_ok {
+    if exhausted_layer_count_mismatch(&plan, layer_need, apply_layer_semantics) {
         return PlanRewriteExhaustedReason::PlanLayerCountMismatch;
     }
     let wf_ids = last_workflow_tool_node_ids(messages);
-    let workflow_subset_ok = match wf_ids.as_ref() {
-        Some(ids) => plan_artifact::validate_plan_workflow_node_ids_subset(&plan, ids).is_ok(),
-        None => true,
-    };
-    if !workflow_subset_ok {
+    if exhausted_workflow_subset_mismatch(&plan, wf_ids.as_ref()) {
         return PlanRewriteExhaustedReason::PlanWorkflowNodeIdsInvalid;
     }
-    let workflow_cover_ok = if strict_workflow_node_coverage {
-        match wf_ids.as_ref() {
-            Some(ids) => {
-                plan_artifact::validate_plan_covers_all_workflow_node_ids(&plan, ids).is_ok()
-            }
-            None => true,
-        }
-    } else {
-        true
-    };
-    if !workflow_cover_ok {
+    if exhausted_workflow_coverage_mismatch(&plan, wf_ids.as_ref(), strict_workflow_node_coverage) {
         return PlanRewriteExhaustedReason::PlanWorkflowNodeCoverageIncomplete;
     }
-    if apply_layer_semantics
-        && let Some(ids) = last_workflow_validate_binding_plan_node_ids(messages)
-        && !ids.is_empty()
-        && plan_artifact::validate_plan_binds_workflow_validate_nodes(&plan, &ids).is_err()
-    {
+    if exhausted_validate_only_binding_mismatch(&plan, messages, apply_layer_semantics) {
         return PlanRewriteExhaustedReason::PlanValidateOnlyNodeBindingMismatch;
     }
     PlanRewriteExhaustedReason::ExhaustedOther
 }
 
+// 解析单条 `role: tool` 消息：若为 `workflow_execute` 且报告类型与 `nodes` 合法则返回 id 列表。
+fn try_node_ids_from_workflow_execute_tool_message(
+    messages: &[Message],
+    tool_idx: usize,
+) -> Option<Vec<String>> {
+    let m = &messages[tool_idx];
+    let tid = m.tool_call_id.as_deref()?;
+    let aidx = assistant_index_for_tool_call(messages, tool_idx, tid)?;
+    let assistant = &messages[aidx];
+    let name = assistant
+        .tool_calls
+        .as_ref()?
+        .iter()
+        .find(|c| c.id == tid)
+        .map(|c| c.function.name.as_str())?;
+    if name != "workflow_execute" {
+        return None;
+    }
+    let body = crate::types::message_content_as_str(&m.content)?;
+    let payload = crate::tool_result::tool_message_payload_for_inner_parse(body);
+    let v: Value = serde_json::from_str(payload.as_ref()).ok()?;
+    let rt = v.get("report_type").and_then(|x| x.as_str());
+    if !matches!(
+        rt,
+        Some("workflow_validate_result") | Some("workflow_execute_result")
+    ) {
+        return None;
+    }
+    let nodes = v.get("nodes").and_then(|x| x.as_array())?;
+    let mut ids = Vec::new();
+    for n in nodes {
+        let id = n.get("id").and_then(|x| x.as_str())?;
+        ids.push(id.to_string());
+    }
+    if ids.is_empty() {
+        return None;
+    }
+    Some(ids)
+}
+
 /// 从对话历史中取**最近一次** `workflow_execute` 工具结果中的 `nodes[].id`（`workflow_validate_result` / `workflow_execute_result`）。
 pub(crate) fn last_workflow_tool_node_ids(messages: &[Message]) -> Option<Vec<String>> {
     for i in (0..messages.len()).rev() {
-        let m = &messages[i];
-        if m.role != "tool" {
+        if messages[i].role != "tool" {
             continue;
         }
-        let tid = m.tool_call_id.as_deref()?;
-        let aidx = assistant_index_for_tool_call(messages, i, tid)?;
-        let assistant = &messages[aidx];
-        let name = assistant
-            .tool_calls
-            .as_ref()?
-            .iter()
-            .find(|c| c.id == tid)
-            .map(|c| c.function.name.as_str())?;
-        if name != "workflow_execute" {
-            continue;
+        if let Some(ids) = try_node_ids_from_workflow_execute_tool_message(messages, i) {
+            return Some(ids);
         }
-        let body = crate::types::message_content_as_str(&m.content)?;
-        let payload = crate::tool_result::tool_message_payload_for_inner_parse(body);
-        let v: Value = serde_json::from_str(payload.as_ref()).ok()?;
-        let rt = v.get("report_type").and_then(|x| x.as_str());
-        if !matches!(
-            rt,
-            Some("workflow_validate_result") | Some("workflow_execute_result")
-        ) {
-            continue;
-        }
-        let nodes = v.get("nodes").and_then(|x| x.as_array())?;
-        let mut ids = Vec::new();
-        for n in nodes {
-            let id = n.get("id").and_then(|x| x.as_str())?;
-            ids.push(id.to_string());
-        }
-        if ids.is_empty() {
-            continue;
-        }
-        return Some(ids);
     }
     None
 }

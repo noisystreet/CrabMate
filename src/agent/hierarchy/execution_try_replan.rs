@@ -7,6 +7,10 @@ use super::super::task::{SubGoal, TaskResult};
 use crate::config::AgentConfig;
 use crate::llm::backend::ChatCompletionsBackend;
 
+fn require_replan_field<T>(value: Option<T>, missing: &'static str) -> Result<T, ExecutionError> {
+    value.ok_or_else(|| ExecutionError::MaxFailuresReached(missing.to_string()))
+}
+
 struct ReplanInputs<'a> {
     manager: &'a ManagerAgent,
     original_task: &'a str,
@@ -19,35 +23,32 @@ struct ReplanInputs<'a> {
 
 impl<'a> super::HierarchicalExecutor<'a> {
     fn gather_replan_inputs(&'a self) -> Result<ReplanInputs<'a>, ExecutionError> {
-        let err = |msg: &'static str| ExecutionError::MaxFailuresReached(msg.to_string());
         Ok(ReplanInputs {
-            manager: self
-                .manager
-                .as_ref()
-                .ok_or_else(|| err("No manager available for replanning"))?,
-            original_task: self
-                .original_task
-                .as_ref()
-                .ok_or_else(|| err("No original task available for replanning"))?,
-            working_dir: self
-                .working_dir
-                .as_ref()
-                .ok_or_else(|| err("No working_dir available for replanning"))?,
-            cfg: self
-                .cfg
-                .as_ref()
-                .ok_or_else(|| err("No cfg available for replanning"))?,
-            llm_backend: self
-                .llm_backend
-                .ok_or_else(|| err("No llm_backend available for replanning"))?,
-            client: self
-                .client
-                .as_ref()
-                .ok_or_else(|| err("No client available for replanning"))?,
-            api_key: self
-                .api_key
-                .as_ref()
-                .ok_or_else(|| err("No api_key available for replanning"))?,
+            manager: require_replan_field(
+                self.manager.as_ref(),
+                "No manager available for replanning",
+            )?,
+            original_task: require_replan_field(
+                self.original_task.as_ref(),
+                "No original task available for replanning",
+            )?,
+            working_dir: require_replan_field(
+                self.working_dir.as_ref(),
+                "No working_dir available for replanning",
+            )?,
+            cfg: require_replan_field(self.cfg.as_ref(), "No cfg available for replanning")?,
+            llm_backend: require_replan_field(
+                self.llm_backend,
+                "No llm_backend available for replanning",
+            )?,
+            client: require_replan_field(
+                self.client.as_ref(),
+                "No client available for replanning",
+            )?,
+            api_key: require_replan_field(
+                self.api_key.as_ref(),
+                "No api_key available for replanning",
+            )?,
         })
     }
 

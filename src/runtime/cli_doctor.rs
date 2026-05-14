@@ -54,11 +54,7 @@ fn path_status_line(label: &str, p: &Path) {
     println!("  {}: {} ({})", label, st, p.display());
 }
 
-/// 同步打印一页诊断（不要求 API_KEY）。
-pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
-    println!("CrabMate doctor（人读摘要；密钥与令牌永不打印）");
-    println!("版本: {}", env!("CARGO_PKG_VERSION"));
-    println!();
+fn print_doctor_config_block(cfg: &AgentConfig) {
     println!("【配置摘要】");
     println!("  api_base: {}", cfg.llm.api_base.trim());
     println!("  model: {}", cfg.llm.model.trim());
@@ -119,25 +115,23 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
             "false"
         }
     );
-    println!();
-    println!("【密钥状态】");
-    println!("  {}", api_key_line(cfg));
-    println!();
+}
 
-    let ws = resolve_workspace_dir(cfg, workspace_cli);
+fn print_doctor_workspace_block(ws: &Path) {
     println!("【工作区路径】");
     println!("  当前目录: {}", ws.display());
     path_status_line("Cargo.toml", &ws.join("Cargo.toml"));
     path_status_line("frontend/Trunk.toml", &ws.join("frontend/Trunk.toml"));
     path_status_line("frontend/dist", &ws.join("frontend/dist"));
     path_status_line("target", &ws.join("target"));
-    if let Ok(root) = canonical_workspace_root(&ws)
-        && root != ws
+    if let Ok(root) = canonical_workspace_root(ws)
+        && root != *ws
     {
         println!("  （解析到的仓库根）: {}", root.display());
     }
-    println!();
+}
 
+fn print_doctor_rust_toolchain_block() {
     println!("【Rust 工具链】");
     if let Some(s) = capture_trimmed("rustc", &["-V"]) {
         println!("  rustc -V: {}", s);
@@ -155,8 +149,9 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
     } else {
         println!("  rustup default: 不可用或未安装");
     }
-    println!();
+}
 
+fn print_doctor_frontend_block(ws: &Path) {
     println!("【Web 前端构建（frontend）】");
     if ws.join("frontend/Trunk.toml").is_file() {
         if let Some(s) = capture_trimmed("trunk", &["--version"]) {
@@ -167,8 +162,9 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
     } else {
         println!("  （跳过：无 frontend/Trunk.toml）");
     }
-    println!();
+}
 
+fn print_doctor_tty_approval_block(cfg: &AgentConfig) {
     println!(
         "【说明】模型侧自动排障请用工具 **diagnostic_summary**（与本命令互补）。\
          **models** / **probe**：`llm_http_auth_mode=bearer` 时需有效 **API_KEY**；`none` 时可不设。部分网关不提供 OpenAI 兼容 GET /models。"
@@ -202,6 +198,30 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
     println!(
         "  退出码与 JSON 行协议摘要：**docs/命令行契约.md**；SSE 流错误码：**docs/SSE协议.md**。"
     );
+}
+
+/// 同步打印一页诊断（不要求 API_KEY）。
+pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
+    println!("CrabMate doctor（人读摘要；密钥与令牌永不打印）");
+    println!("版本: {}", env!("CARGO_PKG_VERSION"));
+    println!();
+    print_doctor_config_block(cfg);
+    println!();
+    println!("【密钥状态】");
+    println!("  {}", api_key_line(cfg));
+    println!();
+
+    let ws = resolve_workspace_dir(cfg, workspace_cli);
+    print_doctor_workspace_block(&ws);
+    println!();
+
+    print_doctor_rust_toolchain_block();
+    println!();
+
+    print_doctor_frontend_block(&ws);
+    println!();
+
+    print_doctor_tty_approval_block(cfg);
 }
 
 /// `crabmate models`：打印模型 id 列表。
