@@ -9,7 +9,8 @@ use super::super::settings_models_registry::{
 };
 use super::super::settings_sections::{
     SettingsAppearanceBlock, SettingsExecutorLlmBlock, SettingsExecutorLlmBlockBundle,
-    SettingsLlmBlock, SettingsLlmBlockBundle, SettingsShortcutsBlock, SettingsToolsBlock,
+    SettingsLlmBlock, SettingsLlmBlockBundle, SettingsSessionBlock, SettingsShortcutsBlock,
+    SettingsToolsBlock,
 };
 use super::hash_routing::{SettingsSection, write_settings_section_to_hash};
 use super::section_copy::{section_desc, section_title};
@@ -69,6 +70,17 @@ pub(super) fn SettingsPageNavRail(
             <button
                 type="button"
                 class="settings-nav-item"
+                class:active=move || active_section.get() == SettingsSection::Session
+                on:click=move |_| {
+                    active_section.set(SettingsSection::Session);
+                    write_settings_section_to_hash(SettingsSection::Session);
+                }
+            >
+                {move || i18n::settings_section_session_title(appearance_locale.get())}
+            </button>
+            <button
+                type="button"
+                class="settings-nav-item"
                 class:active=move || active_section.get() == SettingsSection::Shortcuts
                 on:click=move |_| {
                     active_section.set(SettingsSection::Shortcuts);
@@ -102,11 +114,15 @@ pub(super) struct SettingsPagePanelDrafts {
     pub saved_model_presets: RwSignal<Vec<crate::api::SavedModelPreset>>,
 }
 
-/// 已保存模型列表与本机持久化回调 + 顶栏 LLM 反馈（缩短 `SettingsPageContentPanels` 形参，满足 fn-param 棘轮）。
+/// 已保存模型列表与本机持久化回调 + 顶栏 LLM 反馈 + 会话存储切换句柄（缩短 `SettingsPageContentPanels` 形参，满足 fn-param 棘轮）。
 #[derive(Clone)]
 pub(super) struct SettingsPageContentRegistryWire {
     pub sync_saved_presets_baseline: Arc<dyn Fn() + Send + Sync>,
     pub llm_settings_feedback: RwSignal<Option<String>>,
+    pub status_data: RwSignal<Option<crate::api::StatusData>>,
+    pub refresh_status: Arc<dyn Fn() + Send + Sync>,
+    pub session_switch_feedback: RwSignal<Option<String>>,
+    pub session_switch_busy: RwSignal<bool>,
 }
 
 #[component]
@@ -123,7 +139,12 @@ pub(super) fn SettingsPageContentPanels(
     let SettingsPageContentRegistryWire {
         sync_saved_presets_baseline,
         llm_settings_feedback,
+        status_data,
+        refresh_status,
+        session_switch_feedback,
+        session_switch_busy,
     } = registry_wire;
+    let refresh_status_cell = StoredValue::new(refresh_status);
     let SettingsPagePanelDrafts {
         appearance_theme,
         appearance_bg_decor,
@@ -218,6 +239,16 @@ pub(super) fn SettingsPageContentPanels(
                 <SettingsToolsBlock
                     locale=appearance_locale
                     readonly_tool_ttl_cache_follow_server=readonly_tool_ttl_cache_follow_server
+                />
+            </Show>
+
+            <Show when=move || active_section.get() == SettingsSection::Session>
+                <SettingsSessionBlock
+                    locale=appearance_locale
+                    status_data=status_data
+                    refresh_status=refresh_status_cell.get_value()
+                    session_switch_feedback=session_switch_feedback
+                    session_switch_busy=session_switch_busy
                 />
             </Show>
 

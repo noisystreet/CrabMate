@@ -1,5 +1,9 @@
+use std::sync::Arc;
+
 use leptos::prelude::*;
+use leptos::task::spawn_local;
 use leptos_dom::helpers::event_target_value;
+use wasm_bindgen::JsCast;
 
 use crate::api::MainLlmDraftSignals;
 use crate::app_prefs::THEME_SLUGS;
@@ -217,6 +221,79 @@ pub(crate) fn SettingsToolsBlock(
                 />
                 <span>{move || i18n::settings_tools_readonly_ttl_cache_label(locale.get())}</span>
             </label>
+        </div>
+    }
+}
+
+#[component]
+pub(crate) fn SettingsSessionBlock(
+    locale: RwSignal<Locale>,
+    status_data: RwSignal<Option<crate::api::StatusData>>,
+    refresh_status: Arc<dyn Fn() + Send + Sync>,
+    session_switch_feedback: RwSignal<Option<String>>,
+    session_switch_busy: RwSignal<bool>,
+) -> impl IntoView {
+    view! {
+        <div class="settings-block">
+            <h3 class="settings-block-title">{move || i18n::settings_block_session_storage(locale.get())}</h3>
+            <label class="settings-checkbox-label">
+                <input
+                    type="checkbox"
+                    prop:disabled=move || {
+                        session_switch_busy.get()
+                            || !status_data
+                                .get()
+                                .map(|s| s.conversation_store_sqlite_path_configured)
+                                .unwrap_or(false)
+                    }
+                    prop:checked=move || {
+                        status_data
+                            .get()
+                            .map(|s| s.conversation_store_sqlite_active)
+                            .unwrap_or(false)
+                    }
+                    on:change=move |ev: leptos::ev::Event| {
+                        let checked = ev
+                            .target()
+                            .and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok())
+                            .map(|el| el.checked())
+                            .unwrap_or(false);
+                        let loc = locale.get_untracked();
+                        let refresh = Arc::clone(&refresh_status);
+                        spawn_local(async move {
+                            session_switch_busy.set(true);
+                            session_switch_feedback.set(None);
+                            match crate::api::post_session_conversation_store(checked, loc).await {
+                                Ok(r) => {
+                                    session_switch_feedback.set(Some(r.message));
+                                    refresh();
+                                }
+                                Err(e) => session_switch_feedback.set(Some(e)),
+                            }
+                            session_switch_busy.set(false);
+                        });
+                    }
+                />
+                <span>{move || i18n::settings_session_sqlite_toggle_label(locale.get())}</span>
+            </label>
+            <Show when=move || {
+                !status_data
+                    .get()
+                    .map(|s| s.conversation_store_sqlite_path_configured)
+                    .unwrap_or(false)
+            }>
+                <p class="settings-intro">{move || {
+                    i18n::settings_session_sqlite_unconfigured_hint(locale.get())
+                }}</p>
+            </Show>
+            <Show when=move || session_switch_busy.get()>
+                <p class="settings-intro">{move || i18n::settings_session_switch_busy(locale.get())}</p>
+            </Show>
+            <Show when=move || session_switch_feedback.get().is_some()>
+                <p class="settings-save-feedback">{move || {
+                    session_switch_feedback.get().unwrap_or_default()
+                }}</p>
+            </Show>
         </div>
     }
 }

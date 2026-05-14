@@ -339,3 +339,16 @@ pub(crate) struct ConfigReloadResponseBody {
     pub(crate) ok: bool,
     pub(crate) message: String,
 }
+
+/// `POST /config/session/conversation-store`：在进程内切换 Web 会话存储后端（内存 ↔ SQLite）。
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SessionConversationStoreRequestBody {
+    pub(crate) sqlite: bool,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct SessionConversationStoreResponseBody {
+    pub(crate) ok: bool,
+    pub(crate) message: String,
+}

@@ -61,6 +61,12 @@ pub struct StatusData {
     pub executor_api_base: String,
     #[serde(default)]
     pub planner_executor_mode: String,
+    /// 服务端是否配置了非空的 `conversation_store_sqlite_path`。
+    #[serde(default)]
+    pub conversation_store_sqlite_path_configured: bool,
+    /// 当前进程是否使用 SQLite 作为 Web 会话后端。
+    #[serde(default)]
+    pub conversation_store_sqlite_active: bool,
 }
 
 fn default_markdown_render_true() -> bool {

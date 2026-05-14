@@ -301,6 +301,8 @@ impl AppShellCtx {
         SettingsPageViewInput {
             settings_page: self.signals.modal.settings_page,
             form: self.settings_page_form_signals(),
+            status_data: self.signals.status.status_data,
+            refresh_status: Arc::clone(&self.refresh_status),
         }
     }
 

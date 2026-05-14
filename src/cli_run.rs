@@ -347,7 +347,9 @@ pub(super) async fn run_serve_branch(
             chat_queue_job_deps,
         },
         conversation: web::AppStateConversationRuntime {
-            conversation_backing,
+            conversation_backing: std::sync::Arc::new(tokio::sync::RwLock::new(
+                conversation_backing,
+            )),
             conversation_id_counter: std::sync::Arc::new(AtomicU64::new(1)),
         },
         aux: web::AppStateWebAux {

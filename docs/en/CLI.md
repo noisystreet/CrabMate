@@ -190,6 +190,7 @@ Static assets are served from `frontend/dist`.
 | GET | `/openapi.json` | OpenAPI 3.0 spec (`application/json`); aligns with routes below; SSE line semantics in **`docs/SSE协议.md`** |
 | GET | `/` | Frontend |
 | POST | `/config/reload` | Hot-reload in-memory `AgentConfig` (not SQLite path); body `{}` ok; see **`docs/配置说明.md`** |
+| POST | `/config/session/conversation-store` | Switch Web session backing for **this `serve` process** only: **`{"sqlite":true}`** opens SQLite from configured **`conversation_store_sqlite_path`**; **`{"sqlite":false}`** uses **in-memory** storage (**does not** rewrite config files; **restart `serve`** still follows TOML). Same auth as **`/config/reload`**. Success body **`ok`**, **`message`**; failure **400** `SESSION_STORE_SWITCH_FAILED` (e.g. SQLite requested but path empty). |
 | POST | `/chat` | JSON chat; optional `conversation_id`, `agent_role` (new server-side session only), `temperature`, `seed`, `seed_policy` |
 | POST | `/chat/stream` | SSE; each event has **`id:`**; headers **`x-conversation-id`**, **`x-stream-job-id`**; optional JSON **`stream_resume`** (`job_id`, `after_seq`) and **`Last-Event-ID`** for reconnect; **410** `STREAM_JOB_GONE` if the job is gone; optional `approval_session_id`, `agent_role` (same) |
 | POST | `/chat/approval` | Approval: `approval_session_id`, `decision` |

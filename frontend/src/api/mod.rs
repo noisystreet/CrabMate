@@ -19,6 +19,7 @@ mod chat_stream;
 mod client_llm_storage;
 mod http;
 mod saved_models;
+mod session_store;
 
 #[allow(unused_imports)]
 pub use api_client::{ApiClient, RealApiClient};
@@ -45,3 +46,4 @@ pub use saved_models::{
     load_saved_model_presets_from_storage, matching_saved_preset_index,
     persist_saved_model_presets_to_storage,
 };
+pub use session_store::{SessionConversationStoreResponse, post_session_conversation_store};
