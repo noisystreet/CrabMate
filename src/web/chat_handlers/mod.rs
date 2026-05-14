@@ -13,6 +13,7 @@
 //! | [`workspace_changelog`] | `GET /workspace/changelog` |
 //! | [`health_status`] | `GET /health`、`GET /status`、`GET /web-ui` |
 //! | [`config_reload`] | `POST /config/reload` |
+//! | [`session_conversation_store`] | `POST /config/session/conversation-store` |
 
 mod auth;
 mod chat;
@@ -20,6 +21,7 @@ mod config_reload;
 mod conflict;
 mod health_status;
 mod parse;
+mod session_conversation_store;
 mod upload;
 mod workspace_changelog;
 
@@ -35,5 +37,6 @@ pub(crate) use health_status::{health_handler, status_handler, web_ui_config_han
 pub(crate) use parse::normalize_agent_role;
 #[cfg(test)]
 pub(crate) use parse::normalize_client_conversation_id;
+pub(crate) use session_conversation_store::session_conversation_store_handler;
 pub(crate) use upload::{cleanup_uploads_dir, delete_uploads_handler, upload_handler};
 pub(crate) use workspace_changelog::workspace_changelog_handler;

@@ -387,6 +387,16 @@ fn openapi_components_schemas_workspace_tasks_config() -> Value {
                     "message": { "type": "string" }
                 }
             },
+            "SessionConversationStoreRequestBody": {
+                "type": "object",
+                "required": ["sqlite"],
+                "properties": {
+                    "sqlite": {
+                        "type": "boolean",
+                        "description": "true：使用配置中的 SQLite 路径；false：本进程改用内存会话存储"
+                    }
+                }
+            },
             "ApiError": {
                 "type": "object",
                 "properties": {

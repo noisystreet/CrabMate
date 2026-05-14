@@ -80,8 +80,9 @@ pub(crate) struct AppStateChatRuntime {
 /// 会话持久化与默认 `conversation_id` 生成。
 #[derive(Clone)]
 pub(crate) struct AppStateConversationRuntime {
-    /// `conversation_id` → 消息与 revision：内存或 SQLite（见配置 `conversation_store_sqlite_path`）
-    pub(crate) conversation_backing: ConversationBacking,
+    /// `conversation_id` → 消息与 revision：内存或 SQLite（见配置 `conversation_store_sqlite_path`）。
+    /// 外层 `RwLock` 供 Web **`POST /config/session/conversation-store`** 在进程内切换后端（与配置热重载不同轨）。
+    pub(crate) conversation_backing: Arc<tokio::sync::RwLock<ConversationBacking>>,
     pub(crate) conversation_id_counter: Arc<AtomicU64>,
 }
 
@@ -115,6 +116,10 @@ pub(crate) enum ConversationBacking {
 impl ConversationBacking {
     pub(crate) fn memory_default() -> Self {
         Self::Memory(Arc::new(tokio::sync::RwLock::new(HashMap::new())))
+    }
+
+    pub(crate) fn is_sqlite(&self) -> bool {
+        matches!(self, Self::Sqlite(_))
     }
 }
 
@@ -197,7 +202,8 @@ impl AppState {
         &self,
         conversation_id: &str,
     ) -> Option<ConversationTurnSeed> {
-        match &self.conversation.conversation_backing {
+        let backing = self.conversation.conversation_backing.read().await;
+        match &*backing {
             ConversationBacking::Memory(map) => {
                 let mut guard = map.write().await;
                 let entry = guard.get_mut(conversation_id)?;
@@ -285,7 +291,8 @@ impl AppState {
         active_agent_role: Option<&str>,
         expected_revision: Option<u64>,
     ) -> SaveConversationOutcome {
-        match &self.conversation.conversation_backing {
+        let backing = self.conversation.conversation_backing.read().await;
+        match &*backing {
             ConversationBacking::Memory(map) => {
                 let mut guard = map.write().await;
                 let now = std::time::Instant::now();
@@ -348,7 +355,8 @@ impl AppState {
         user_ordinal: usize,
         expected_revision: u64,
     ) -> SaveConversationOutcome {
-        match &self.conversation.conversation_backing {
+        let backing = self.conversation.conversation_backing.read().await;
+        match &*backing {
             ConversationBacking::Memory(map) => {
                 let mut guard = map.write().await;
                 let Some(entry) = guard.get_mut(&conversation_id) else {
@@ -400,7 +408,8 @@ impl AppState {
     }
 
     pub(crate) async fn conversation_count(&self) -> usize {
-        match &self.conversation.conversation_backing {
+        let backing = self.conversation.conversation_backing.read().await;
+        match &*backing {
             ConversationBacking::Memory(map) => map.read().await.len(),
             ConversationBacking::Sqlite(conn) => {
                 let c = Arc::clone(conn);
@@ -415,6 +424,37 @@ impl AppState {
                 .unwrap_or(0)
             }
         }
+    }
+
+    /// Web：在进程内切换会话存储后端（**不**改写磁盘配置；重启 `serve` 后仍以 TOML 为准）。
+    pub(crate) async fn set_web_conversation_store_sqlite(
+        &self,
+        sqlite: bool,
+    ) -> Result<(), String> {
+        if sqlite {
+            let path = {
+                let g = self.http.cfg.read().await;
+                g.conversation_persistence
+                    .conversation_store_sqlite_path
+                    .clone()
+            };
+            if path.trim().is_empty() {
+                return Err(
+                    "未配置 conversation_store_sqlite_path，无法启用 SQLite 会话存储。".into(),
+                );
+            }
+            let new_backing = {
+                let conn =
+                    open_conversation_sqlite(Path::new(path.trim())).map_err(|e| e.to_string())?;
+                ConversationBacking::Sqlite(conn)
+            };
+            let mut w = self.conversation.conversation_backing.write().await;
+            *w = new_backing;
+        } else {
+            let mut w = self.conversation.conversation_backing.write().await;
+            *w = ConversationBacking::memory_default();
+        }
+        Ok(())
     }
 }
 

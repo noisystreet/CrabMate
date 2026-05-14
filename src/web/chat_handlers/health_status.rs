@@ -117,8 +117,12 @@ struct StatusResponse {
     per_active_jobs: Vec<chat_job_queue::PerFlightStatusEntry>,
     /// Web `POST /workspace` 允许的工作区根目录个数（未配置 `workspace_allowed_roots` 时为 1，即仅 `run_command_working_dir`）。
     workspace_allowed_roots_count: usize,
-    /// 当前内存会话存储中的会话数量（按 `conversation_id`）。
+    /// 当前会话存储中的条目数（按 `conversation_id`；SQLite 或内存后端均计入）。
     conversation_store_entries: usize,
+    /// 配置中是否配置了非空的 `conversation_store_sqlite_path`（与当前进程实际后端可不同）。
+    conversation_store_sqlite_path_configured: bool,
+    /// 当前进程是否使用 SQLite 作为 Web 会话后端（可被 `POST /config/session/conversation-store` 切换）。
+    conversation_store_sqlite_active: bool,
     /// 长期记忆是否启用（配置）。
     long_term_memory_enabled: bool,
     /// 向量后端：`disabled` / `fastembed` 等。
@@ -157,6 +161,15 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
     let cfg = state.http.cfg.read().await;
     let mp = MESSAGE_PIPELINE_COUNTERS.snapshot();
     let conversation_store_entries = state.conversation_count().await;
+    let conversation_store_sqlite_path_configured = !cfg
+        .conversation_persistence
+        .conversation_store_sqlite_path
+        .trim()
+        .is_empty();
+    let conversation_store_sqlite_active = {
+        let b = state.conversation.conversation_backing.read().await;
+        b.is_sqlite()
+    };
     let (ltm_ready, ltm_idx_err) = match state.aux.long_term_memory.as_ref() {
         Some(l) => (
             true,
@@ -252,6 +265,8 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         per_active_jobs: state.chat.chat_queue.active_per_jobs(),
         workspace_allowed_roots_count: cfg.workspace_roots.workspace_allowed_roots.len(),
         conversation_store_entries,
+        conversation_store_sqlite_path_configured,
+        conversation_store_sqlite_active,
         long_term_memory_enabled: cfg.long_term_memory.long_term_memory_enabled,
         long_term_memory_vector_backend: cfg
             .long_term_memory

@@ -354,6 +354,56 @@ pub fn settings_section_tools_desc(_l: Locale) -> &'static str {
     ""
 }
 
+pub fn settings_block_session_storage(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "会话存储",
+        Locale::En => "Session storage",
+    }
+}
+
+pub fn settings_section_session_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "会话",
+        Locale::En => "Session",
+    }
+}
+
+pub fn settings_section_session_desc(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => {
+            "控制当前浏览器连接到的服务端进程是否把 Web 会话写入 SQLite（仅本进程；重启 serve 后仍以配置文件为准）。"
+        }
+        Locale::En => {
+            "Control whether this server process persists Web chat to SQLite (this process only; restart serve still follows config files)."
+        }
+    }
+}
+
+pub fn settings_session_sqlite_toggle_label(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "使用 SQLite 保存会话（当前进程）",
+        Locale::En => "Persist sessions with SQLite (this process)",
+    }
+}
+
+pub fn settings_session_sqlite_unconfigured_hint(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => {
+            "服务端未配置 conversation_store_sqlite_path，无法启用 SQLite；请在配置中设置后重启 serve。"
+        }
+        Locale::En => {
+            "Server has no conversation_store_sqlite_path; set it in config and restart serve to enable SQLite."
+        }
+    }
+}
+
+pub fn settings_session_switch_busy(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "正在切换…",
+        Locale::En => "Switching…",
+    }
+}
+
 pub fn settings_tools_readonly_ttl_block_title(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "只读命令结果缓存",

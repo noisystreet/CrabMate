@@ -89,10 +89,12 @@ impl SettingsPageFormSignals {
 }
 
 /// 设置页全屏视图入参（阶段 B：`App` 单行传入）。
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct SettingsPageViewInput {
     pub settings_page: RwSignal<bool>,
     pub form: SettingsPageFormSignals,
+    pub status_data: RwSignal<Option<crate::api::StatusData>>,
+    pub refresh_status: std::sync::Arc<dyn Fn() + Send + Sync>,
 }
 
 #[component]
@@ -100,6 +102,8 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
     let SettingsPageViewInput {
         settings_page,
         form,
+        status_data,
+        refresh_status,
     } = input;
     let SettingsPageFormSignals {
         locale,
@@ -161,6 +165,9 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
     };
 
     let baselines = SettingsDirtyBaselines::from_form_current(&form_current_untracked(drafts));
+
+    let session_switch_feedback = RwSignal::new(None::<String>);
+    let session_switch_busy = RwSignal::new(false);
 
     let sync_saved_presets_baseline: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
         baselines.refresh_from_current(&form_current_untracked(drafts));
@@ -282,6 +289,10 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
                         registry_wire=SettingsPageContentRegistryWire {
                             sync_saved_presets_baseline: sync_saved_presets_baseline.clone(),
                             llm_settings_feedback,
+                            status_data,
+                            refresh_status,
+                            session_switch_feedback,
+                            session_switch_busy,
                         }
                     />
                 </div>

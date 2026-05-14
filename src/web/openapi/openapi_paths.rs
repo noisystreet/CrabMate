@@ -417,7 +417,7 @@ fn openapi_paths_fragment_workspace_list() -> Value {
     })
 }
 
-fn openapi_paths_fragment_workspace_rest() -> Value {
+fn openapi_paths_fragment_workspace_file_meta() -> Value {
     json!({
         "/workspace/file": {
             "get": {
@@ -533,6 +533,11 @@ fn openapi_paths_fragment_workspace_rest() -> Value {
                 }
             }
         },
+    })
+}
+
+fn openapi_paths_fragment_workspace_tasks_and_config() -> Value {
+    json!({
         "/tasks": {
             "get": {
                 "tags": ["tasks"],
@@ -598,7 +603,39 @@ fn openapi_paths_fragment_workspace_rest() -> Value {
                 }
             }
         },
+        "/config/session/conversation-store": {
+            "post": {
+                "tags": ["config"],
+                "summary": "切换 Web 会话存储后端（内存 / SQLite，仅当前进程）",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/SessionConversationStoreRequestBody" }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "切换结果",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/ConfigReloadResponseBody" }
+                            }
+                        }
+                    }
+                }
+            }
+        },
     })
+}
+
+fn openapi_paths_fragment_workspace_rest() -> Value {
+    merge_path_fragments(&[
+        openapi_paths_fragment_workspace_file_meta(),
+        openapi_paths_fragment_workspace_tasks_and_config(),
+    ])
 }
 
 pub(super) fn openapi_paths_value() -> Value {
