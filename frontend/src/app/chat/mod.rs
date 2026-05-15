@@ -21,6 +21,7 @@ mod message_row_user_layout;
 mod scroll;
 #[cfg(test)]
 mod staged_plan_todo;
+mod stream_follow_up_gates;
 mod stream_user_abort;
 mod tail_loading_memo;
 mod timeline;
