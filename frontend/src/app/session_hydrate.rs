@@ -1,6 +1,6 @@
 //! `GET /conversation/messages` 与本地 [`crate::storage::ChatSession`] 对齐（水合）。
 //!
-//! 从 `app/mod.rs` 抽出，避免根组件既管布局又实现同步语义。
+//! 从 `app/mod.rs` 抽出，避免根组件既管布局又实现同步语义。接线入口为 [`wire_session_hydration`]：Effect **同步段**用 [`try_hydration_wire_snapshot`] 生成 [`HydrationWireSnapshot`]，再 `spawn_local` 进入 [`run_conversation_hydration_cycle`]，与流式写入 nonce 门闩对齐。
 
 use std::collections::HashSet;
 
@@ -35,6 +35,14 @@ fn trimmed_server_conversation_id(session: &ChatSession) -> Option<&str> {
         .as_deref()
         .map(str::trim)
         .filter(|x| !x.is_empty())
+}
+
+/// 当前会话是否允许发起「拉取服务端消息」水合：已绑定 `conversation_id` 且无 `Loading` 占位。
+fn conversation_server_id_if_hydratable_for_wire(s: &ChatSession) -> Option<String> {
+    if messages_contain_loading(&s.messages) {
+        return None;
+    }
+    trimmed_server_conversation_id(s).map(str::to_string)
 }
 
 /// 服务端快照中不存在的本地消息：工具卡与 TimelineLog，须保留并与快照合并。
@@ -222,6 +230,88 @@ fn apply_saved_revision_if_same_conversation(chat: &ChatSessionSignals, cid: &st
     });
 }
 
+/// [`wire_session_hydration`] 的 Effect **同步段**解析结果：进入 `spawn_local` 后只读此快照与信号句柄，避免与响应式订阅交错。
+struct HydrationWireSnapshot {
+    aid: String,
+    cid: String,
+    nonce_at_start: u64,
+    locale: Locale,
+}
+
+fn try_hydration_wire_snapshot(
+    chat: ChatSessionSignals,
+    locale: Locale,
+) -> Option<HydrationWireSnapshot> {
+    let aid = chat.active_id.get();
+    if aid.is_empty() {
+        return None;
+    }
+    let nonce_at_start = chat.session_hydrate_nonce.get();
+    let cid = chat.sessions.with_untracked(|list| {
+        list.iter()
+            .find(|s| s.id == aid)
+            .and_then(conversation_server_id_if_hydratable_for_wire)
+    })?;
+    Some(HydrationWireSnapshot {
+        aid,
+        cid,
+        nonce_at_start,
+        locale,
+    })
+}
+
+async fn run_conversation_hydration_cycle(
+    snap: HydrationWireSnapshot,
+    chat: ChatSessionSignals,
+    selected_agent_role: RwSignal<Option<String>>,
+) {
+    let HydrationWireSnapshot {
+        aid,
+        cid,
+        nonce_at_start,
+        locale,
+    } = snap;
+    let Ok(resp) = fetch_conversation_messages(&cid, locale).await else {
+        return;
+    };
+    if chat.session_hydrate_nonce.get_untracked() != nonce_at_start {
+        return;
+    }
+    let msgs = stored_messages_from_conversation_api(&resp.messages);
+    if msgs.is_empty() && !resp.messages.is_empty() {
+        return;
+    }
+    let mut applied_hydration = false;
+    chat.update_sessions_hydration(|list| {
+        let active = chat.active_id.get_untracked();
+        let cur_nonce = chat.session_hydrate_nonce.get_untracked();
+        let Some(s) = list.iter_mut().find(|x| x.id == aid) else {
+            return;
+        };
+        let merge_outcome =
+            merge_hydration_into_active_session(MergeHydrationIntoActiveSessionArgs {
+                session: s,
+                aid: &aid,
+                cid: cid.as_str(),
+                hydrated: msgs,
+                resp: &resp,
+                nonce_at_start,
+                current_nonce: cur_nonce,
+                active_id: &active,
+                selected_agent_role,
+            });
+        applied_hydration |= merge_outcome.is_applied();
+    });
+    if !applied_hydration {
+        return;
+    }
+    if chat.session_hydrate_nonce.get_untracked() != nonce_at_start {
+        return;
+    }
+    restore_reasoning_after_hydration(&chat, &aid, nonce_at_start);
+    apply_saved_revision_if_same_conversation(&chat, cid.as_str(), resp.revision);
+}
+
 /// 订阅 `chat.session_hydrate_nonce`：流结束后由 composer 递增，拉取服务端快照并写回当前会话。
 ///
 /// 门闸与 [`super::app_bootstrap_phase::AppBootstrapPhase::hydration_effects_enabled`] 一致（`initialized` + `web_ui_config_loaded`）。
@@ -234,69 +324,78 @@ pub fn wire_session_hydration(
 ) {
     Effect::new({
         let chat = chat;
+        let locale_sig = locale;
+        let selected_agent_role = selected_agent_role;
         move |_| {
             if !AppBootstrapPhase::derive(initialized.get(), web_ui_config_loaded.get())
                 .hydration_effects_enabled()
             {
                 return;
             }
-            let aid = chat.active_id.get();
-            if aid.is_empty() {
-                return;
-            }
-            let nonce_at_start = chat.session_hydrate_nonce.get();
-            let Some(cid) = chat.sessions.with_untracked(|list| {
-                list.iter().find(|s| s.id == aid).and_then(|s| {
-                    if messages_contain_loading(&s.messages) {
-                        return None;
-                    }
-                    trimmed_server_conversation_id(s).map(|c| c.to_string())
-                })
-            }) else {
+            let loc = locale_sig.get_untracked();
+            let Some(snap) = try_hydration_wire_snapshot(chat, loc) else {
                 return;
             };
-            let loc = locale.get_untracked();
-            spawn_local(async move {
-                let Ok(resp) = fetch_conversation_messages(&cid, loc).await else {
-                    return;
-                };
-                if chat.session_hydrate_nonce.get_untracked() != nonce_at_start {
-                    return;
-                }
-                let msgs = stored_messages_from_conversation_api(&resp.messages);
-                if msgs.is_empty() && !resp.messages.is_empty() {
-                    return;
-                }
-                let mut applied_hydration = false;
-                chat.update_sessions_hydration(|list| {
-                    let active = chat.active_id.get_untracked();
-                    let cur_nonce = chat.session_hydrate_nonce.get_untracked();
-                    let Some(s) = list.iter_mut().find(|x| x.id == aid) else {
-                        return;
-                    };
-                    let merge_outcome =
-                        merge_hydration_into_active_session(MergeHydrationIntoActiveSessionArgs {
-                            session: s,
-                            aid: &aid,
-                            cid: cid.as_str(),
-                            hydrated: msgs,
-                            resp: &resp,
-                            nonce_at_start,
-                            current_nonce: cur_nonce,
-                            active_id: &active,
-                            selected_agent_role,
-                        });
-                    applied_hydration |= merge_outcome.is_applied();
-                });
-                if !applied_hydration {
-                    return;
-                }
-                if chat.session_hydrate_nonce.get_untracked() != nonce_at_start {
-                    return;
-                }
-                restore_reasoning_after_hydration(&chat, &aid, nonce_at_start);
-                apply_saved_revision_if_same_conversation(&chat, cid.as_str(), resp.revision);
-            });
+            spawn_local(run_conversation_hydration_cycle(
+                snap,
+                chat,
+                selected_agent_role,
+            ));
         }
     });
+}
+
+#[cfg(test)]
+mod conversation_server_id_for_hydrate_tests {
+    use super::conversation_server_id_if_hydratable_for_wire;
+    use crate::storage::{ChatSession, StoredMessage, StoredMessageState};
+
+    fn base_session() -> ChatSession {
+        ChatSession {
+            id: "sid".into(),
+            title: "t".into(),
+            draft: String::new(),
+            messages: vec![],
+            updated_at: 0,
+            pinned: false,
+            starred: false,
+            server_conversation_id: Some("  srv-9  ".into()),
+            server_revision: None,
+            workspace_root: None,
+        }
+    }
+
+    #[test]
+    fn returns_trimmed_id_without_loading() {
+        let s = base_session();
+        assert_eq!(
+            conversation_server_id_if_hydratable_for_wire(&s).as_deref(),
+            Some("srv-9")
+        );
+    }
+
+    #[test]
+    fn returns_none_when_any_loading_placeholder() {
+        let mut s = base_session();
+        s.messages.push(StoredMessage {
+            id: "m1".into(),
+            role: "assistant".into(),
+            text: String::new(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(StoredMessageState::Loading),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        });
+        assert!(conversation_server_id_if_hydratable_for_wire(&s).is_none());
+    }
+
+    #[test]
+    fn returns_none_without_server_conversation_id() {
+        let mut s = base_session();
+        s.server_conversation_id = None;
+        assert!(conversation_server_id_if_hydratable_for_wire(&s).is_none());
+    }
 }
