@@ -2,10 +2,9 @@
 //!
 //! 用于 Web 气泡在 **`assistant_text_for_display`** 路径上剥掉 DeepSeek DSML 噪声，避免与 CLI/TUI 已剥内容不一致。
 
-const DSML_OPEN_FW: &str = "<｜DSML｜";
-const DSML_CLOSE_FW: &str = "</｜DSML｜";
-const DSML_OPEN_ASCII: &str = "<|DSML|";
-const DSML_CLOSE_ASCII: &str = "</|DSML|";
+mod tags;
+
+use tags::{DSML_CLOSE_ASCII, DSML_CLOSE_FW, DSML_OPEN_ASCII, DSML_OPEN_FW};
 
 fn normalize_deepseek_dsml_vendor_variants(s: &str) -> String {
     s.replace("<｜｜DSML｜｜", "<｜DSML｜")
