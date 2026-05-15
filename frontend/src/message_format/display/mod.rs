@@ -93,6 +93,31 @@ mod tests {
     }
 
     #[test]
+    fn strips_trailing_standalone_agent_reply_plan_after_numbered_list() {
+        let list = "1. `run-cargo-test`: 运行 cargo test 全量测试，验证工作区改动后测试是否通过";
+        let json = concat!(
+            r#"{"type":"agent_reply_plan","version":1,"steps":["#,
+            r#"{"id":"run-cargo-test","description":"运行 cargo test 全量测试，验证工作区改动后测试是否通过","#,
+            r#""executor_kind":"test_runner","acceptance":{"expect_exit_code":0,"#,
+            r#""expect_stdout_contains":"test result: ok"}}],"no_task":false}"#,
+        );
+        let raw = format!("{list}\n\n{json}");
+        let out = assistant_text_for_display(&raw, false, Locale::ZhHans, true);
+        assert!(
+            out.contains("run-cargo-test"),
+            "numbered prose should remain: {out}"
+        );
+        assert!(
+            !out.contains("agent_reply_plan"),
+            "trailing raw json should be stripped: {out}"
+        );
+        assert!(
+            !out.contains("\"executor_kind\""),
+            "structured json fields should not leak: {out}"
+        );
+    }
+
+    #[test]
     fn drops_prose_before_first_agent_reply_plan_fence() {
         let preamble = "模型规划说明（不应展示）\n\n";
         let raw = format!(

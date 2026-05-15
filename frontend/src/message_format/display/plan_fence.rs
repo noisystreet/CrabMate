@@ -181,6 +181,48 @@ fn prose_before_first_fence(s: &str) -> String {
     s.split("```").next().unwrap_or("").trim().to_string()
 }
 
+/// `{"type":"agent_reply_plan",...}` 独占行尾（前有换行、后无其它正文）时返回去掉该 JSON 后的前缀。
+///
+/// 模型常见形态：先输出 `1. \`id\`: 描述` 列表，再单独输出一行裸 JSON；整段不以 `{` 开头时
+/// 须在此剥离，避免气泡回显原始 JSON。
+fn strip_trailing_standalone_agent_reply_plan_blob(s: &str) -> Option<String> {
+    let trimmed = s.trim_end();
+    let bytes = trimmed.as_bytes();
+    let mut starts: Vec<usize> = Vec::new();
+    for (i, _) in trimmed.match_indices('{') {
+        if i == 0 {
+            starts.push(0);
+        } else if matches!(bytes.get(i - 1), Some(b'\n') | Some(b'\r')) {
+            starts.push(i);
+        }
+    }
+    for &start in starts.iter().rev() {
+        let tail = &trimmed[start..];
+        let mut de = serde_json::Deserializer::from_str(tail).into_iter::<Value>();
+        let Some(Ok(v)) = de.next() else {
+            continue;
+        };
+        if v.as_object()
+            .and_then(|o| o.get("type"))
+            .and_then(|x| x.as_str())
+            != Some("agent_reply_plan")
+        {
+            continue;
+        }
+        let consumed = de.byte_offset();
+        let after = trimmed.get(start + consumed..).unwrap_or("").trim();
+        if !after.is_empty() {
+            continue;
+        }
+        let prefix = trimmed[..start].trim_end();
+        if prefix.is_empty() {
+            continue;
+        }
+        return Some(prefix.to_string());
+    }
+    None
+}
+
 fn fence_inner_body_is_agent_reply_plan_blob(inner: &str) -> bool {
     let raw = inner.trim();
     let body = fenced_body_after_optional_jsonish_lang_label(raw)
@@ -284,6 +326,7 @@ fn assistant_text_for_display_inner(
     loc: Locale,
 ) -> String {
     let content = crate::message_format::dsml_strip::strip_deepseek_dsml_for_display(raw);
+    let content = strip_trailing_standalone_agent_reply_plan_blob(&content).unwrap_or(content);
     let trimmed = content.trim();
 
     if is_streaming_last_assistant && should_buffer_agent_reply_plan_stream(trimmed) {
