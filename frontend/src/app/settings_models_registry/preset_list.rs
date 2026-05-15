@@ -1,5 +1,3 @@
-//! 已保存模型列表行与 `ForEnumerate` 列表（从 `mod` 拆出以降低单文件行数棘轮）。
-
 use std::sync::Arc;
 
 use leptos::prelude::*;
@@ -8,12 +6,11 @@ use crate::api::SavedModelPreset;
 use crate::i18n::{self, Locale};
 
 use super::RegistryPresetDialogKind;
-use super::persist::{
-    try_persist_saved_presets_with_feedback, window_confirm_delete_saved_model_preset,
-};
+use super::delete_confirm::SettingsModelsDeleteConfirm;
+use super::persist::try_persist_saved_presets_with_feedback;
 
 /// `<ForEnumerate>` 的 `key`：须稳定且尽量唯一（完全相同的重复项仍可能冲突）。
-fn saved_preset_row_key(p: &SavedModelPreset) -> String {
+pub(super) fn saved_preset_row_key(p: &SavedModelPreset) -> String {
     format!(
         "{}\x1f{}\x1f{}\x1f{}\x1f{}\x1f{}\x1f{}\x1f{}\x1f{}",
         p.label,
@@ -43,6 +40,7 @@ struct RegistryPresetRowSignals {
     pub(crate) new_thinking_mode: RwSignal<String>,
     pub(crate) sync_saved_presets_baseline: Arc<dyn Fn() + Send + Sync>,
     pub(crate) llm_settings_feedback: RwSignal<Option<String>>,
+    pub(crate) pending_delete_row_key: RwSignal<Option<String>>,
 }
 
 #[derive(Clone)]
@@ -71,10 +69,18 @@ fn SettingsModelsRegistryPresetRow(
         new_thinking_mode,
         sync_saved_presets_baseline,
         llm_settings_feedback,
+        pending_delete_row_key,
     } = s;
+    let sync_baseline_sv = StoredValue::new(sync_saved_presets_baseline.clone());
     let sync_for_toggle = sync_saved_presets_baseline.clone();
-    let sync_for_delete = sync_saved_presets_baseline.clone();
     let RegistryPresetRowModel { row_index, preset } = row;
+    let show_delete_confirm = Memo::new(move |_| {
+        let pending = pending_delete_row_key.get();
+        let i = row_index.get();
+        let v = saved_model_presets.get();
+        let rk = v.get(i).map(saved_preset_row_key);
+        matches!((pending, rk), (Some(pk), Some(rk)) if pk == rk)
+    });
     let label = preset.label.clone();
     let base_short = preset.api_base.clone();
     let trimmed = preset.llm_context_tokens.trim().to_string();
@@ -112,6 +118,7 @@ fn SettingsModelsRegistryPresetRow(
                     prop:aria-label=move || i18n::settings_models_row_enabled_aria(locale.get())
                     prop:title=move || i18n::settings_models_row_enabled_short(locale.get())
                     on:click=move |_| {
+                        pending_delete_row_key.set(None);
                         let loc = locale.get_untracked();
                         let idx = row_index.get_untracked();
                         let mut next = saved_model_presets.with_untracked(|v| v.clone());
@@ -139,6 +146,7 @@ fn SettingsModelsRegistryPresetRow(
                     prop:aria-label=move || i18n::settings_models_row_edit_aria(locale.get())
                     prop:title=move || i18n::settings_models_row_edit_btn(locale.get())
                     on:click=move |_| {
+                        pending_delete_row_key.set(None);
                         let idx = row_index.get_untracked();
                         let Some(p) = saved_model_presets.with_untracked(|v| v.get(idx).cloned())
                         else {
@@ -168,29 +176,26 @@ fn SettingsModelsRegistryPresetRow(
                         <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L8 18l-4 1 1-4Z" />
                     </svg>
                 </button>
+                <Show
+                    when=move || show_delete_confirm.get()
+                    fallback=move || {
+                        let loc_fb = locale;
+                        let row_index_fb = row_index;
+                        let saved_fb = saved_model_presets;
+                        let pending_fb = pending_delete_row_key;
+                        view! {
                 <button
                     type="button"
                     class="btn btn-ghost settings-model-registry-edit settings-model-registry-trash"
-                    prop:aria-label=move || i18n::settings_saved_models_remove(locale.get())
-                    prop:title=move || i18n::settings_saved_models_remove(locale.get())
+                    prop:aria-label=move || i18n::settings_saved_models_remove(loc_fb.get())
+                    prop:title=move || i18n::settings_models_delete_confirm(loc_fb.get())
                     on:click=move |_| {
-                        let loc = locale.get_untracked();
-                        if !window_confirm_delete_saved_model_preset(loc) {
+                        let i = row_index_fb.get_untracked();
+                        let Some(k) = saved_fb.with_untracked(|v| v.get(i).map(saved_preset_row_key))
+                        else {
                             return;
-                        }
-                        let idx = row_index.get_untracked();
-                        let mut next = saved_model_presets.with_untracked(|v| v.clone());
-                        if idx >= next.len() {
-                            return;
-                        }
-                        next.remove(idx);
-                        let _ = try_persist_saved_presets_with_feedback(
-                            next,
-                            loc,
-                            saved_model_presets,
-                            &sync_for_delete,
-                            llm_settings_feedback,
-                        );
+                        };
+                        pending_fb.set(Some(k));
                     }
                 >
                     <svg
@@ -208,6 +213,18 @@ fn SettingsModelsRegistryPresetRow(
                         <path d="M10 11v6M14 11v6" />
                     </svg>
                 </button>
+                        }
+                    }
+                >
+                    <SettingsModelsDeleteConfirm
+                        locale
+                        saved_model_presets
+                        row_index
+                        sync_saved_presets_baseline={sync_baseline_sv.get_value().clone()}
+                        llm_settings_feedback
+                        pending_delete_row_key
+                    />
+                </Show>
                 </div>
             </div>
             <div class="settings-model-registry-secondary">
@@ -237,6 +254,7 @@ pub(crate) struct RegistryPresetListSignals {
     pub(crate) new_thinking_mode: RwSignal<String>,
     pub(crate) sync_saved_presets_baseline: Arc<dyn Fn() + Send + Sync>,
     pub(crate) llm_settings_feedback: RwSignal<Option<String>>,
+    pub(crate) pending_delete_row_key: RwSignal<Option<String>>,
 }
 
 #[component]
@@ -256,6 +274,7 @@ pub(crate) fn SettingsModelsRegistryPresetList(s: RegistryPresetListSignals) -> 
         new_thinking_mode: s.new_thinking_mode,
         sync_saved_presets_baseline: s.sync_saved_presets_baseline.clone(),
         llm_settings_feedback: s.llm_settings_feedback,
+        pending_delete_row_key: s.pending_delete_row_key,
     };
     view! {
         <ul class="settings-saved-models-list" role="list">

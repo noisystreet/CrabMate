@@ -372,6 +372,13 @@
   color: var(--error);
 }
 
+.settings-model-delete-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
 .settings-model-registry-meta {
   font-size: 12px;
   color: var(--muted);

@@ -463,6 +463,14 @@ pub fn settings_models_delete_confirm(l: Locale) -> &'static str {
     }
 }
 
+/// 行内「确认移除」按钮（替代部分环境下无响应的 `window.confirm`）。
+pub fn settings_models_delete_apply_btn(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "确认移除",
+        Locale::En => "Confirm remove",
+    }
+}
+
 pub fn settings_models_presets_persist_failed(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "无法保存已保存模型列表（本机存储不可用或写入失败）。",

@@ -1,5 +1,6 @@
 //! 设置页「模型列表」：新增/编辑预设、启用开关、持久化 `SavedModelPreset`（`persist` 子模块见同目录）。
 
+mod delete_confirm;
 mod persist;
 
 use gloo_timers::future::TimeoutFuture;
@@ -41,6 +42,7 @@ struct RegistryToolbarSignals {
     dialog_mode: RwSignal<Option<RegistryPresetDialogKind>>,
     form_error: RwSignal<Option<String>>,
     clear_form_for_add: Arc<dyn Fn() + Send + Sync>,
+    pending_delete_row_key: RwSignal<Option<String>>,
 }
 
 #[component]
@@ -50,6 +52,7 @@ fn SettingsModelsRegistryToolbar(s: RegistryToolbarSignals) -> impl IntoView {
         dialog_mode,
         form_error,
         clear_form_for_add,
+        pending_delete_row_key,
     } = s;
     view! {
         <div class="settings-model-registry-head">
@@ -61,6 +64,7 @@ fn SettingsModelsRegistryToolbar(s: RegistryToolbarSignals) -> impl IntoView {
                 prop:title=move || i18n::settings_models_add_open_aria(locale.get())
                 on:click=move |_| {
                     clear_form_for_add();
+                    pending_delete_row_key.set(None);
                     dialog_mode.set(Some(RegistryPresetDialogKind::Add));
                     form_error.set(None);
                 }
@@ -657,6 +661,7 @@ pub(crate) fn SettingsModelsRegistryPanel(bundle: SettingsModelsRegistryBundle) 
 
     let dialog_mode = RwSignal::new(None::<RegistryPresetDialogKind>);
     let form_error = RwSignal::new(Option::<String>::None);
+    let pending_delete_row_key = RwSignal::new(Option::<String>::None);
     let new_api_base = RwSignal::new(String::new());
     let new_label = RwSignal::new(String::new());
     let new_model_id = RwSignal::new(String::new());
@@ -701,6 +706,7 @@ pub(crate) fn SettingsModelsRegistryPanel(bundle: SettingsModelsRegistryBundle) 
                 dialog_mode,
                 form_error,
                 clear_form_for_add: clear_form_for_add.clone(),
+                pending_delete_row_key,
             } />
             <SettingsModelsRegistryAddModelDialog s=RegistryAddFormSignals {
                 locale,
@@ -739,6 +745,7 @@ pub(crate) fn SettingsModelsRegistryPanel(bundle: SettingsModelsRegistryBundle) 
                 new_thinking_mode,
                 sync_saved_presets_baseline,
                 llm_settings_feedback,
+                pending_delete_row_key,
             } />
         </div>
     }

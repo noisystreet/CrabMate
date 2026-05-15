@@ -1,5 +1,7 @@
 //! 设置弹窗壳级 `Effect`（从 `view` 拆出以降低 `settings_modal_view` nloc）。
 
+use std::cell::Cell;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use gloo_timers::future::TimeoutFuture;
@@ -37,11 +39,22 @@ pub(super) fn wire_settings_modal_open_close_baseline_effect(
     b: SettingsModalWireBundle,
     discard: Arc<dyn Fn() + Send + Sync>,
 ) {
+    // 弹窗与全页设置各有一份 `SettingsDirtyBaselines`；若在「仅弹窗 baseline 仍旧」时反复
+    // `discard()`（例如壳层主题变更也会跑本 Effect），会把共享的 `saved_model_presets` 拉回旧快照，
+    // 表现为设置页里已删的模型「删不掉」。
+    let prev_modal_open = Rc::new(Cell::new(false));
     Effect::new({
         let discard = Arc::clone(&discard);
+        let prev_modal_open = Rc::clone(&prev_modal_open);
         move |_| {
-            if !b.settings_modal.get() {
+            let modal_open = b.settings_modal.get();
+            let was_open = prev_modal_open.get();
+            if was_open && !modal_open {
                 discard();
+            }
+            prev_modal_open.set(modal_open);
+
+            if !modal_open {
                 apply_theme_preview_to_dom(b.theme.get().as_str());
                 apply_bg_decor_preview_to_dom(b.bg_decor.get());
                 return;
