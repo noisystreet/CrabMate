@@ -29,8 +29,9 @@ fn collapse_blank_runs(s: &str) -> String {
 fn strip_dsml_named_blocks_fullwidth(s: &str) -> String {
     let mut out = s.to_string();
     loop {
-        let Some(start) = out.find(DSML_OPEN_FW) else {
-            break;
+        let start = match out.find(DSML_OPEN_FW) {
+            Some(s) => s,
+            None => break,
         };
         let rest = &out[start + DSML_OPEN_FW.len()..];
         let tag_end = rest
@@ -58,8 +59,9 @@ fn strip_dsml_named_blocks_fullwidth(s: &str) -> String {
 fn strip_dsml_named_blocks_ascii(s: &str) -> String {
     let mut out = s.to_string();
     loop {
-        let Some(start) = out.find(DSML_OPEN_ASCII) else {
-            break;
+        let start = match out.find(DSML_OPEN_ASCII) {
+            Some(s) => s,
+            None => break,
         };
         let rest = &out[start + DSML_OPEN_ASCII.len()..];
         let tag_end = rest
@@ -104,20 +106,27 @@ fn strip_tagged_blocks_both_widths(mut s: String, tag: &str) -> String {
 fn strip_one_delimited_block_family(s: &str, open_prefix: &str, close_tag: &str) -> String {
     let mut out = s.to_string();
     loop {
-        let Some(start) = out.find(open_prefix) else {
-            break;
+        let start = match out.find(open_prefix) {
+            Some(s) => s,
+            None => break,
         };
         let after_open = &out[start + open_prefix.len()..];
-        let Some(rel_gt) = after_open.find('>') else {
-            let ch = out[start..].chars().next().unwrap_or('\u{fffd}');
-            out.replace_range(start..start + ch.len_utf8(), "");
-            continue;
+        let rel_gt = match after_open.find('>') {
+            Some(r) => r,
+            None => {
+                let ch = out[start..].chars().next().unwrap_or('\u{fffd}');
+                out.replace_range(start..start + ch.len_utf8(), "");
+                continue;
+            }
         };
         let inner_start = start + open_prefix.len() + rel_gt + 1;
         let tail = &out[inner_start..];
-        let Some(rel_close) = tail.find(close_tag) else {
-            out.replace_range(start..inner_start, "");
-            continue;
+        let rel_close = match tail.find(close_tag) {
+            Some(r) => r,
+            None => {
+                out.replace_range(start..inner_start, "");
+                continue;
+            }
         };
         let end = inner_start + rel_close + close_tag.len();
         out.replace_range(start..end, "");
@@ -129,8 +138,9 @@ fn strip_orphan_open_fw(s: &str) -> String {
     let mut out = s.to_string();
     let mut scan = 0usize;
     while scan < out.len() {
-        let Some(rel) = out[scan..].find(DSML_OPEN_FW) else {
-            break;
+        let rel = match out[scan..].find(DSML_OPEN_FW) {
+            Some(r) => r,
+            None => break,
         };
         let start = scan + rel;
         let after = &out[start + DSML_OPEN_FW.len()..];
@@ -172,8 +182,9 @@ fn strip_orphan_close_fw(s: &str) -> String {
     let mut out = s.to_string();
     let mut scan = 0usize;
     while scan < out.len() {
-        let Some(rel) = out[scan..].find(DSML_CLOSE_FW) else {
-            break;
+        let rel = match out[scan..].find(DSML_CLOSE_FW) {
+            Some(r) => r,
+            None => break,
         };
         let start = scan + rel;
         let after = &out[start + DSML_CLOSE_FW.len()..];
@@ -215,8 +226,9 @@ fn strip_orphan_open_ascii(s: &str) -> String {
     let mut out = s.to_string();
     let mut scan = 0usize;
     while scan < out.len() {
-        let Some(rel) = out[scan..].find(DSML_OPEN_ASCII) else {
-            break;
+        let rel = match out[scan..].find(DSML_OPEN_ASCII) {
+            Some(r) => r,
+            None => break,
         };
         let start = scan + rel;
         let after = &out[start + DSML_OPEN_ASCII.len()..];
@@ -258,8 +270,9 @@ fn strip_orphan_close_ascii(s: &str) -> String {
     let mut out = s.to_string();
     let mut scan = 0usize;
     while scan < out.len() {
-        let Some(rel) = out[scan..].find(DSML_CLOSE_ASCII) else {
-            break;
+        let rel = match out[scan..].find(DSML_CLOSE_ASCII) {
+            Some(r) => r,
+            None => break,
         };
         let start = scan + rel;
         let after = &out[start + DSML_CLOSE_ASCII.len()..];
