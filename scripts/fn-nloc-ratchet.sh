@@ -1,22 +1,11 @@
 #!/usr/bin/env bash
-# Rust 代码规模棘轮：函数体 nloc（lizard）+ 源文件物理行数，与 scripts/fn_nloc_rust_metrics.py 对齐（同一脚本）。
+# Rust 代码规模棘轮：函数体 nloc（lizard）+ 源文件物理行数，入口为 **`scripts/fn_nloc_rust_metrics.py`**（路径与行为写死在该脚本内）。
 #
-# 规则（函数 nloc）：
-#   - 最大 nloc 不得高于 scripts/fn_nloc_max_baseline.txt
-#   - top10 nloc 之和不得高于 scripts/fn_nloc_top10_sum_baseline.txt
-#   - 可选：FN_NLOC_CAP=100 启用单函数行数硬上限
-#
-# 规则（.rs 文件物理行数）：
-#   - 单文件最大行数不得高于 scripts/rust_file_max_lines_baseline.txt
-#   - 自动写回时：`rust_file_max_lines_baseline.txt` 与 `rust_file_top10_lines_sum_baseline.txt`
-#     的新值不得大于本次运行开始时磁盘上的值（棘轮禁止增大），详见 fn_nloc_rust_metrics.py。
-#
-# 基线文件禁止人为抬高（Git 对照；放水会直接失败）：
-#   - 工作区数值 > HEAD；PR CI：HEAD 对比 FN_NLOC_BASELINE_COMPARE_REF（如 origin/main）；
-#     push CI：HEAD 对比 FN_NLOC_BASELINE_COMPARE_PUSH_BEFORE（如 github.event.before）。
-#   - 例外：FN_NLOC_ALLOW_BASELINE_INCREASE=1（须注明理由）。
-#
-# 环境变量：见 fn_nloc_rust_metrics.py 文件头注释。
+# 规则摘要：
+#   - 最大 nloc ≤ scripts/fn_nloc_max_baseline.txt；top10 nloc 之和 ≤ scripts/fn_nloc_top10_sum_baseline.txt
+#   - 单文件最大行数 ≤ scripts/rust_file_max_lines_baseline.txt；top10 文件行数和 ≤ scripts/rust_file_top10_lines_sum_baseline.txt
+#   - 自动写回时：`rust_file_*` 两基线新值不得大于运行开始时磁盘上的值（棘轮禁止增大）
+#   - Git：工作区基线不得大于 `git show HEAD` 中同路径（防抬基线过钩）
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"

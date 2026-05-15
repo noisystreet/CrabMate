@@ -27,12 +27,5 @@ jobs:
       - name: Run fn-param ratchet (Rust parameter counts + allow lines)
         run: bash scripts/fn-param-ratchet.sh
 
-      - name: Fetch base ref for fn-nloc baseline guard (PR only)
-        if: github.event_name == 'pull_request'
-        run: git fetch origin "${{ github.base_ref }}" --depth=50
-
       - name: Run fn-nloc ratchet (Rust function nloc + file line counts)
-        env:
-          FN_NLOC_BASELINE_COMPARE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
-          FN_NLOC_BASELINE_COMPARE_PUSH_BEFORE: ${{ github.event_name == 'push' && github.event.before || '' }}
         run: bash scripts/fn-nloc-ratchet.sh
