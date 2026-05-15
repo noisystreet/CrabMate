@@ -216,6 +216,7 @@ pub fn staged_coach_injection_fallback(l: Locale, ordinal: usize) -> &'static st
 }
 
 /// 与分层子目标顶栏同构：单条分步时间线气泡的横幅文案。
+#[expect(dead_code)]
 pub fn msg_staged_timeline_exec_banner(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "分步执行",

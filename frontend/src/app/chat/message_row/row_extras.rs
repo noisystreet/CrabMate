@@ -171,29 +171,6 @@ pub(super) fn message_row_inline_copy_button(
     }
 }
 
-pub(super) fn staged_timeline_exec_banner_when(locale: RwSignal<Locale>) -> impl IntoView {
-    view! {
-        <div class="msg-subgoal-exec-banner phase-run">
-            <span class="msg-subgoal-exec-banner-icon" aria-hidden="true">
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2.2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                >
-                    <circle cx="12" cy="12" r="9"></circle>
-                    <path d="M12 7v5l3 2"></path>
-                </svg>
-            </span>
-            <span class="msg-subgoal-exec-banner-text">
-                {move || crate::i18n::msg_staged_timeline_exec_banner(locale.get())}
-            </span>
-        </div>
-    }
-}
-
 pub(super) struct SubgoalBannerReactiveCtx {
     pub locale: RwSignal<Locale>,
     pub sessions: RwSignal<Vec<ChatSession>>,

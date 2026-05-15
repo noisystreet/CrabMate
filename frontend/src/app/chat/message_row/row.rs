@@ -4,7 +4,8 @@ use std::collections::HashSet;
 
 use leptos::prelude::*;
 
-use crate::message_format::{is_staged_timeline_bubble, stored_message_is_staged_planner_round};
+use crate::message_format::is_staged_timeline_bubble;
+use crate::message_format::stored_message_is_staged_planner_round;
 use crate::session_ops::format_msg_time_label;
 use crate::storage::ChatSession;
 
@@ -22,8 +23,7 @@ use super::helpers::{
 use super::row_extras::{
     BubbleClassLiveCtx, SubgoalBannerReactiveCtx, arc_actions_bar_visible,
     arc_retry_visible_for_message, bubble_css_classes_live, message_row_inline_copy_button,
-    staged_timeline_exec_banner_when, subgoal_exec_banner_reactive_view,
-    typing_dots_tail_assistant_row,
+    subgoal_exec_banner_reactive_view, typing_dots_tail_assistant_row,
 };
 use super::views::{
     ChatMessageRowBodyCoreParams, MessageActionsBarParams, build_message_actions_bar,
@@ -142,7 +142,6 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
         status_err,
         locale,
     };
-    let is_staged_timeline = is_staged_timeline_bubble(&m);
     let cls = message_row_shell_class(&m);
     let mid_highlight = m.id.clone();
     let time_str = format_msg_time_label(m.created_at).unwrap_or_default();
@@ -184,6 +183,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
     let actions_bar_visible_rc =
         arc_actions_bar_visible(is_tool_bubble, is_user_plain, retry_visible_rc.clone());
     let show_planner_round_badge = stored_message_is_staged_planner_round(&m);
+    let is_staged_timeline = is_staged_timeline_bubble(&m);
     let loc_ut = locale.get_untracked();
     let subgoal_phase_chip = extract_hierarchical_phase_chip(&m, loc_ut);
     let subgoal_metrics_line = extract_hierarchical_metrics(&m, loc_ut);
@@ -245,9 +245,6 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
                             copy_id.clone(),
                         )
                     })}
-                    <Show when=move || is_staged_timeline>
-                        {staged_timeline_exec_banner_when(locale)}
-                    </Show>
                     {subgoal_exec_banner_reactive_view(SubgoalBannerReactiveCtx {
                         locale,
                         sessions,
