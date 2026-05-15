@@ -364,7 +364,7 @@ pub(super) fn chat_stream_on_done_builder(
         stream_ctx
             .shell
             .stream
-            .apply_busy_op(StreamShellBusyOp::ReleaseTurnShellBusy);
+            .apply_release_turn_and_stream_run(stream_ctx.attach_generation);
         clear_abort_slot(&stream_ctx.shell);
     })
 }
@@ -399,7 +399,7 @@ pub(super) fn chat_stream_on_error_builder(
         stream_ctx
             .shell
             .stream
-            .apply_busy_op(StreamShellBusyOp::ReleaseTurnShellBusy);
+            .apply_release_turn_and_stream_run(stream_ctx.attach_generation);
         stream_ctx.shell.stream.status_err.set(Some(
             i18n::chat_failed_banner(stream_ctx.locale.get_untracked()).to_string(),
         ));

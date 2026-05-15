@@ -44,6 +44,12 @@ impl StreamControlSignals {
         self.status_busy.set(s);
         self.tool_busy.set(t);
     }
+
+    /// 回落壳层整轮双忙，并在 attach 代际仍匹配时结束 [`super::stream_run_phase::StreamRunPhase::Running`]。
+    pub(crate) fn apply_release_turn_and_stream_run(&self, attach_generation: u64) {
+        self.end_stream_run_if_current(attach_generation);
+        self.apply_busy_op(StreamShellBusyOp::ReleaseTurnShellBusy);
+    }
 }
 
 #[cfg(test)]

@@ -145,7 +145,7 @@ pub(crate) fn build_chat_stream_callbacks(
             stream_ctx
                 .shell
                 .stream
-                .apply_busy_op(StreamShellBusyOp::ReleaseTurnShellBusy);
+                .apply_release_turn_and_stream_run(stream_ctx.attach_generation);
             clear_abort_slot(&stream_ctx.shell);
         })
     };

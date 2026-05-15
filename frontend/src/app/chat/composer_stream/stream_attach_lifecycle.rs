@@ -64,6 +64,8 @@ pub(crate) fn prepare_stream_attach(
         shell: shell.clone(),
     });
 
+    shell.stream.begin_stream_run(attach_generation);
+
     StreamAttachPrepared {
         stream_ctx,
         attach_generation,

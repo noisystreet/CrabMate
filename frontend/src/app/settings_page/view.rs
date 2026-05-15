@@ -23,7 +23,9 @@ use super::layout::{
 use super::page_actions::{
     DiscardToBaselinesCtx, SaveAllSettingsCtx, discard_to_baselines, try_save_all_settings,
 };
-use crate::app::settings_form_state::{SettingsDirtyBaselines, SettingsFormCurrent};
+use crate::app::settings_form_state::{
+    SettingsDirtyBaselines, SettingsFormCurrent, SettingsFormUiPhase, derive_settings_form_ui_phase,
+};
 use crate::i18n::Locale;
 
 /// 设置页中与 LLM / 外观相关的 `RwSignal` 聚合（缩短 `SettingsPageView` 形参列表）。
@@ -203,7 +205,10 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
 
     let dirty = Memo::new(move |_| {
         let current: SettingsFormCurrent = form_current_tracked(drafts);
-        baselines.is_dirty(&current)
+        matches!(
+            derive_settings_form_ui_phase(&current, &baselines),
+            SettingsFormUiPhase::Dirty
+        )
     });
 
     let discard_rc: Rc<dyn Fn()> = Rc::new(move || {

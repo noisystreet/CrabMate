@@ -3,7 +3,7 @@
 //! # 写入关系（简表）
 //!
 //! - **`sessions` / `active_id`**：侧栏、合成器、持久化 `Effect`、工具/导出等；流式助手正文增量默认进 [`Self::stream_text_overlay`]，收尾时合并回会话，**不一定**每 token 触发 `sessions` 无效化。
-//! - **`stream_transport`**：[`ChatStreamTransport`] 单 **`RwSignal`** 收敛 **attach 代际** + **Idle / 已绑定会话**（内含 **`job_id`**）；[`ChatSessionSignals::clear_stream_resume_handles`] 将车道置回 Idle 并重置 [`Self::stream_last_sse_event_seq`]；[`ChatSessionSignals::bind_stream_to_session`] 在 bump 后写入 Bound。SSE `id:` 序号单独为 **`stream_last_sse_event_seq`**，避免热路径上整包传输状态无效化。
+//! - **`stream_transport`**：[`ChatStreamTransport`] 单 **`RwSignal`** 收敛 **attach 代际** + **Idle / 已绑定会话**（内含 **`job_id`**）；[`ChatSessionSignals::clear_stream_resume_handles`] 将车道置回 Idle 并重置 [`Self::stream_last_sse_event_seq`]；[`ChatSessionSignals::bind_stream_to_session`] 在 bump 后写入 Bound。SSE `id:` 序号单独为 **`stream_last_sse_event_seq`**，避免热路径上整包传输状态无效化。与 **`stream_text_overlay`** 的联合象限见 [`StreamLaneOverlayPhase`] / [`ChatSessionSignals::stream_lane_overlay_phase_untracked`]。
 //! - **代际门闩**：每次发起新 `/chat/stream` attach 时递增 [`ChatStreamTransport::attach_generation`]；[`crate::app::chat::composer_stream::context::ChatStreamCallbackCtx`] 捕获该值，回调内若与当前不一致则视为陈旧。
 //! - **`session_sync`**：服务端 `conversation_id` / revision，与 `POST /chat/branch` 等对齐。
 //! - **`session_hydrate_nonce` / `reasoning_preserved`**：拉取会话正文与水合时的补偿字段。
@@ -79,6 +79,15 @@ impl ChatStreamTransport {
             *job_id = Some(jid);
         }
     }
+}
+
+/// [`ChatStreamTransportLane`] 与尾条 [`StreamTextOverlay`] 的联合象限（只读快照；调试与水合守卫用）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StreamLaneOverlayPhase {
+    IdleClear,
+    IdleWithOverlay,
+    BoundClear,
+    BoundWithOverlay,
 }
 
 /// 与单轮 `/chat/stream` 尾条 overlay 相关的 **`RwSignal`**（热路径仅 bump overlay，不克隆整块 [`ChatStreamTransport`]）。
@@ -238,6 +247,29 @@ impl ChatSessionSignals {
     pub const fn stream_session_lane(self) -> ChatStreamSessionLane {
         ChatStreamSessionLane {
             text_overlay: self.stream_text_overlay,
+        }
+    }
+
+    /// [`ChatStreamTransportLane`] 与 [`Self::stream_text_overlay`] 的联合象限（**不**订阅 UI）。
+    #[must_use]
+    pub fn stream_lane_overlay_phase_untracked(self) -> StreamLaneOverlayPhase {
+        let transport = self.stream_transport.get_untracked();
+        let overlay_present = self.stream_text_overlay.get_untracked().is_some();
+        match &transport.lane {
+            ChatStreamTransportLane::Idle => {
+                if overlay_present {
+                    StreamLaneOverlayPhase::IdleWithOverlay
+                } else {
+                    StreamLaneOverlayPhase::IdleClear
+                }
+            }
+            ChatStreamTransportLane::Bound { .. } => {
+                if overlay_present {
+                    StreamLaneOverlayPhase::BoundWithOverlay
+                } else {
+                    StreamLaneOverlayPhase::BoundClear
+                }
+            }
         }
     }
 

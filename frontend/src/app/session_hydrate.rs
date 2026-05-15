@@ -1,16 +1,13 @@
 //! `GET /conversation/messages` 与本地 [`crate::storage::ChatSession`] 对齐（水合）。
 //!
-//! 从 `app/mod.rs` 抽出，避免根组件既管布局又实现同步语义。接线入口为 [`wire_session_hydration`]：Effect **同步段**用 [`try_hydration_wire_snapshot`] 生成 [`HydrationWireSnapshot`]，再 `spawn_local` 进入 [`run_conversation_hydration_cycle`]，与流式写入 nonce 门闩对齐。
+//! 从 `app/mod.rs` 抽出，避免根组件既管布局又实现同步语义。接线入口为 [`wire_session_hydration`]：Effect **同步段**用 [`try_hydration_wire_snapshot`] 生成 [`HydrationWireSnapshot`]，再 `spawn_local` 进入 [`conversation_hydration_cycle::run`]（经 [`run_conversation_hydration_cycle`] 薄包装），与流式写入 nonce 门闩对齐。
 
 use std::collections::HashSet;
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
-use crate::api::fetch_conversation_messages;
-use crate::conversation_hydrate::{
-    ConversationMessagesResponse, stored_messages_from_conversation_api,
-};
+use crate::conversation_hydrate::ConversationMessagesResponse;
 use crate::i18n::{self, Locale};
 use crate::session_ops::title_from_user_prompt;
 use crate::storage::{ChatSession, StoredMessage};
@@ -231,7 +228,7 @@ fn apply_saved_revision_if_same_conversation(chat: &ChatSessionSignals, cid: &st
 }
 
 /// [`wire_session_hydration`] 的 Effect **同步段**解析结果：进入 `spawn_local` 后只读此快照与信号句柄，避免与响应式订阅交错。
-struct HydrationWireSnapshot {
+pub(crate) struct HydrationWireSnapshot {
     aid: String,
     cid: String,
     nonce_at_start: u64,
@@ -260,56 +257,85 @@ fn try_hydration_wire_snapshot(
     })
 }
 
+/// 将 [`run_conversation_hydration_cycle`] 主体收拢为可单测对照的 FSM 式模块。
+pub(crate) mod conversation_hydration_cycle {
+    use leptos::prelude::*;
+
+    use crate::api::fetch_conversation_messages;
+    use crate::chat_session_state::ChatSessionSignals;
+    use crate::conversation_hydrate::stored_messages_from_conversation_api;
+
+    use super::{
+        HydrationWireSnapshot, MergeHydrationIntoActiveSessionArgs,
+        apply_saved_revision_if_same_conversation, merge_hydration_into_active_session,
+        restore_reasoning_after_hydration,
+    };
+
+    pub(crate) async fn run(
+        snap: HydrationWireSnapshot,
+        chat: ChatSessionSignals,
+        selected_agent_role: RwSignal<Option<String>>,
+    ) {
+        let HydrationWireSnapshot {
+            aid,
+            cid,
+            nonce_at_start,
+            locale,
+        } = snap;
+        let Ok(resp) = fetch_conversation_messages(&cid, locale).await else {
+            return;
+        };
+
+        if chat.session_hydrate_nonce.get_untracked() != nonce_at_start {
+            return;
+        }
+
+        let msgs = stored_messages_from_conversation_api(&resp.messages);
+        if msgs.is_empty() && !resp.messages.is_empty() {
+            return;
+        }
+
+        let mut applied_hydration = false;
+        chat.update_sessions_hydration(|list| {
+            let active = chat.active_id.get_untracked();
+            let cur_nonce = chat.session_hydrate_nonce.get_untracked();
+            let Some(s) = list.iter_mut().find(|x| x.id == aid) else {
+                return;
+            };
+            let merge_outcome =
+                merge_hydration_into_active_session(MergeHydrationIntoActiveSessionArgs {
+                    session: s,
+                    aid: &aid,
+                    cid: cid.as_str(),
+                    hydrated: msgs,
+                    resp: &resp,
+                    nonce_at_start,
+                    current_nonce: cur_nonce,
+                    active_id: &active,
+                    selected_agent_role,
+                });
+            applied_hydration |= merge_outcome.is_applied();
+        });
+
+        if !applied_hydration {
+            return;
+        }
+        if chat.session_hydrate_nonce.get_untracked() != nonce_at_start {
+            return;
+        }
+
+        restore_reasoning_after_hydration(&chat, &aid, nonce_at_start);
+        apply_saved_revision_if_same_conversation(&chat, cid.as_str(), resp.revision);
+    }
+}
+
 async fn run_conversation_hydration_cycle(
     snap: HydrationWireSnapshot,
     chat: ChatSessionSignals,
     selected_agent_role: RwSignal<Option<String>>,
 ) {
-    let HydrationWireSnapshot {
-        aid,
-        cid,
-        nonce_at_start,
-        locale,
-    } = snap;
-    let Ok(resp) = fetch_conversation_messages(&cid, locale).await else {
-        return;
-    };
-    if chat.session_hydrate_nonce.get_untracked() != nonce_at_start {
-        return;
-    }
-    let msgs = stored_messages_from_conversation_api(&resp.messages);
-    if msgs.is_empty() && !resp.messages.is_empty() {
-        return;
-    }
-    let mut applied_hydration = false;
-    chat.update_sessions_hydration(|list| {
-        let active = chat.active_id.get_untracked();
-        let cur_nonce = chat.session_hydrate_nonce.get_untracked();
-        let Some(s) = list.iter_mut().find(|x| x.id == aid) else {
-            return;
-        };
-        let merge_outcome =
-            merge_hydration_into_active_session(MergeHydrationIntoActiveSessionArgs {
-                session: s,
-                aid: &aid,
-                cid: cid.as_str(),
-                hydrated: msgs,
-                resp: &resp,
-                nonce_at_start,
-                current_nonce: cur_nonce,
-                active_id: &active,
-                selected_agent_role,
-            });
-        applied_hydration |= merge_outcome.is_applied();
-    });
-    if !applied_hydration {
-        return;
-    }
-    if chat.session_hydrate_nonce.get_untracked() != nonce_at_start {
-        return;
-    }
-    restore_reasoning_after_hydration(&chat, &aid, nonce_at_start);
-    apply_saved_revision_if_same_conversation(&chat, cid.as_str(), resp.revision);
+    let _stream_lane = chat.stream_lane_overlay_phase_untracked();
+    conversation_hydration_cycle::run(snap, chat, selected_agent_role).await;
 }
 
 /// 订阅 `chat.session_hydrate_nonce`：流结束后由 composer 递增，拉取服务端快照并写回当前会话。
