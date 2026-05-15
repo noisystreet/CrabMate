@@ -107,7 +107,7 @@ fn push_user_and_loading_assistant(
 fn begin_stream_shell_turn(shell: &ComposerStreamShell) {
     shell.stream.status_busy.set(true);
     shell.stream.status_err.set(None);
-    shell.approval.pending_approval.set(None);
+    shell.approval.clear_pending_user_interactions();
 }
 
 /// 截断后再生：是否因「真在跑的流 / 工具 / abort / 其它助手 Loading」应暂缓 `attach`（**不计** `asst_id` 自身占位）。
