@@ -101,6 +101,8 @@ struct StatusResponse {
     context_char_budget: usize,
     /// 会话同步管道实际采用的近似字符预算（`context_char_budget` 与按 `llm_context_tokens` 推导值取更小）。
     effective_context_char_budget: usize,
+    /// `tiktoken-rs` 计数时采用的 OpenAI 模型 id（配置 `model` 无法识别时回落 `gpt-4` / `gpt-4o`）。
+    tiktoken_prompt_counting_model: String,
     context_summary_trigger_chars: usize,
     chat_queue_max_concurrent: usize,
     chat_queue_max_pending: usize,
@@ -252,6 +254,10 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         tool_message_max_chars: cfg.tool_transcript.tool_message_max_chars,
         context_char_budget: cfg.context_pipeline.context_char_budget,
         effective_context_char_budget: cfg.effective_context_char_budget_for_pipeline(),
+        tiktoken_prompt_counting_model:
+            crate::agent::tiktoken_prompt_tokens::tiktoken_model_id_for_config_model(
+                cfg.llm.model.as_str(),
+            ),
         context_summary_trigger_chars: cfg.context_pipeline.context_summary_trigger_chars,
         chat_queue_max_concurrent: state.chat.chat_queue.max_concurrent(),
         chat_queue_max_pending: state.chat.chat_queue.max_pending(),

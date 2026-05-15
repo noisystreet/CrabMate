@@ -222,6 +222,14 @@ fn openapi_components_schemas_chat_messages_uploads() -> Value {
                     "conversation_id": { "type": "string" },
                     "revision": { "type": "integer", "format": "int64" },
                     "active_agent_role": { "type": "string", "description": "非空时与配置中 agent_roles 对齐" },
+                    "tiktoken_prompt_tokens": {
+                        "type": "object",
+                        "description": "与会话落盘消息经出站规则后的 tiktoken prompt 粗估；不含 tools JSON",
+                        "properties": {
+                            "prompt_tokens": { "type": "integer", "format": "int64" },
+                            "tiktoken_model": { "type": "string" }
+                        }
+                    },
                     "messages": {
                         "type": "array",
                         "description": "OpenAI 兼容 Message 数组（已剔除长期记忆/变更集注入、普通 system 系统提示与 UI 分隔；保留 name=crabmate_timeline 时间线旁注）",

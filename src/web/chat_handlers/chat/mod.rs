@@ -268,10 +268,17 @@ pub(crate) async fn conversation_messages_handler(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string);
+    let cfg = state.http.cfg.read().await;
+    let tiktoken_prompt_tokens =
+        crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
+            &cfg,
+            &seed.messages,
+        );
     Ok(Json(ConversationMessagesResponseBody {
         conversation_id: cid,
         revision,
         active_agent_role,
+        tiktoken_prompt_tokens,
         messages,
     }))
 }

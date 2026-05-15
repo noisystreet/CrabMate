@@ -238,6 +238,10 @@ pub(crate) struct ConversationMessagesResponseBody {
     /// 与会话存储列 `active_agent_role` 一致；空串时省略。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) active_agent_role: Option<String>,
+    /// 与供应商出站 `messages` 对齐的 tiktoken prompt token 粗估；失败或未启用时省略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) tiktoken_prompt_tokens:
+        Option<crate::agent::tiktoken_prompt_tokens::TiktokenPromptTokensSnapshot>,
     pub(crate) messages: Vec<crate::types::Message>,
 }
 

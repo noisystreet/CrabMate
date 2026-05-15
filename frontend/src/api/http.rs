@@ -55,6 +55,10 @@ pub struct StatusData {
     #[serde(default)]
     #[allow(dead_code)]
     pub effective_context_char_budget: usize,
+    /// 与后端 `GET /status` 的 `tiktoken_prompt_counting_model` 一致。
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub tiktoken_prompt_counting_model: String,
     #[serde(default)]
     pub executor_model: String,
     #[serde(default)]
