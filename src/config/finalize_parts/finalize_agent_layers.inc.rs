@@ -136,7 +136,7 @@ fn clamp_finalize_mid_layer_scalars(b: &ConfigBuilder) -> FinalizeMidLayerScalar
             .command_exec
             .command_max_output_len
             .unwrap_or(8192)
-            .clamp(1024, 131072) as usize,
+            .clamp(1024, 8 * 1024 * 1024) as usize,
         max_tokens: b.llm_sampling.max_tokens.unwrap_or(4096).clamp(256, 32768) as u32,
         llm_context_tokens: b
             .llm_sampling

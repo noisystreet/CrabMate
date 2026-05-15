@@ -143,7 +143,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
         locale,
     };
     let is_staged_timeline = is_staged_timeline_bubble(&m);
-    let cls = message_row_shell_class(is_staged_timeline, &m);
+    let cls = message_row_shell_class(&m);
     let mid_highlight = m.id.clone();
     let time_str = format_msg_time_label(m.created_at).unwrap_or_default();
     let mid_retry = m.id.clone();

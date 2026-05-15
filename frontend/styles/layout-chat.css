@@ -422,7 +422,6 @@
 }
 
 .msg-with-select:has(.msg-assistant) .msg-meta,
-.msg-with-select:has(.msg-staged-timeline) .msg-meta,
 .msg-with-select:has(.msg-system) .msg-meta {
   justify-content: flex-start;
 }
@@ -862,29 +861,6 @@
   border: 1px solid var(--border-subtle);
   border-left: 3px solid color-mix(in srgb, var(--muted) 65%, var(--border));
   box-shadow: none;
-}
-
-/* 分步时间线：宽度与助手/分层子目标卡片一致，左强调色与分层顶栏同系 */
-.msg-staged-timeline {
-  align-self: stretch;
-  width: 100%;
-  max-width: min(92%, 100%);
-  box-sizing: border-box;
-  background: linear-gradient(
-    168deg,
-    color-mix(in srgb, var(--surface) 96%, var(--muted)) 0%,
-    color-mix(in srgb, var(--surface) 97%, var(--bg-elevated)) 55%,
-    color-mix(in srgb, var(--surface) 95%, var(--bg-elevated)) 100%
-  );
-  border: 1px solid color-mix(in srgb, var(--border) 42%, var(--muted));
-  border-left: 3px solid color-mix(in srgb, var(--accent) 55%, var(--border));
-  box-shadow:
-    0 1px 0 color-mix(in srgb, #fff 6%, transparent) inset,
-    0 2px 10px color-mix(in srgb, var(--bg) 38%, transparent);
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--text);
-  border-radius: calc(var(--radius-md) / 2);
 }
 
 /* 规划 / 工具：聊天列顶部可折叠索引 */

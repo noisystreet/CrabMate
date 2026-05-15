@@ -638,18 +638,6 @@
   border-radius: var(--radius-md);
 }
 
-.app-shell-ds .msg.msg-staged-timeline {
-  background: linear-gradient(
-    168deg,
-    color-mix(in srgb, var(--surface) 96%, var(--bg)) 0%,
-    color-mix(in srgb, var(--surface) 98%, var(--bg-elevated)) 100%
-  );
-  border: 1px solid color-mix(in srgb, var(--border-subtle) 72%, var(--surface));
-  box-shadow: var(--shadow-sm);
-  border-left-width: 3px;
-  border-left-color: color-mix(in srgb, var(--accent) 52%, var(--border-subtle));
-}
-
 /* —— 底部一体输入条 —— */
 .composer-ds {
   border-top: 1px solid var(--border-subtle);

@@ -6,6 +6,7 @@
 //! - [`display`]：助手/用户/系统正文管道（内分 `plan_fence` / `thinking_strip` / `message_ex`）
 
 mod display;
+mod dsml_strip;
 mod plain;
 mod staged_timeline;
 mod strip_ansi;

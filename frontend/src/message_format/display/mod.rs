@@ -388,6 +388,33 @@ mod tests {
     }
 
     #[test]
+    fn system_display_formats_standalone_agent_reply_plan_after_timeline_prefix() {
+        use crate::message_format::staged_timeline::STAGED_TIMELINE_SYSTEM_PREFIX;
+        let json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"pre-commit-check-v4","description":"运行 pre-commit","executor_kind":"test_runner","acceptance":{"expect_exit_code":0,"expect_stdout_contains":"pre-commit"}}],"no_task":false}"#;
+        let m = StoredMessage {
+            id: "st".into(),
+            role: "system".into(),
+            text: format!("{STAGED_TIMELINE_SYSTEM_PREFIX}{json}"),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
+        assert!(
+            !out.contains("agent_reply_plan"),
+            "raw plan json should not appear: {out:?}"
+        );
+        assert!(
+            out.contains("pre-commit-check-v4") && out.contains("运行 pre-commit"),
+            "out={out:?}"
+        );
+    }
+
+    #[test]
     fn splits_inline_thinking_from_assistant_content_when_no_reasoning_field() {
         let raw = concat!(
             "<",

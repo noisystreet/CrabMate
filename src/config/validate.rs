@@ -77,7 +77,7 @@ fn u64_range_rows_a1() -> &'static [U64RangeRow] {
             "command_max_output_len",
             |b| b.command_exec.command_max_output_len,
             1024,
-            131_072,
+            8 * 1024 * 1024,
         ),
         ("max_tokens", |b| b.llm_sampling.max_tokens, 256, 32_768),
         (

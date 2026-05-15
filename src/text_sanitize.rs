@@ -103,6 +103,9 @@ pub fn strip_deepseek_dsml_for_display(s: &str) -> String {
     /// 编译期固定的 DSML 块正则；若失败说明模式字符串损坏，应在 CI 暴露。
     static ORDERED: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         const PATTERNS: &[&str] = &[
+            // 外层 `tool_calls`（DeepSeek 常见；先于内层块移除）
+            r"(?s)<｜DSML｜tool_calls\b[^>]*>.*?</｜DSML｜tool_calls>",
+            r"(?s)<\|DSML\|tool_calls\b[^>]*>.*?</\|DSML\|tool_calls>",
             r"(?s)<｜DSML｜parameter\b[^>]*>.*?</｜DSML｜parameter>",
             r"(?s)<｜DSML｜invoke\b[^>]*>.*?</｜DSML｜invoke>",
             r"(?s)<｜DSML｜function_calls\b[^>]*>.*?</｜DSML｜function_calls>",
@@ -612,6 +615,15 @@ mod tests {
         let s = "- 查日志\n- 修配置";
         assert_eq!(naturalize_plan_step_description(s), "查日志；修配置");
     }
+    #[test]
+    fn strips_tool_calls_dsml_double_fullwidth_pipe() {
+        let s = "说明。\n<｜｜DSML｜｜tool_calls>\n<｜｜DSML｜｜invoke name=\"run_command\">\n</｜｜DSML｜｜invoke>\n</｜｜DSML｜｜tool_calls>\n尾部";
+        let t = strip_deepseek_dsml_for_display(s);
+        assert!(!t.contains("DSML"));
+        assert!(t.contains("说明"));
+        assert!(t.contains("尾部"));
+    }
+
     #[test]
     fn strips_nested_dsml_fullwidth() {
         let s = "前言<｜DSML｜function_calls><｜DSML｜invoke name=\"f\"><｜DSML｜parameter name=\"x\" string=\"true\">v</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜function_calls>后记";

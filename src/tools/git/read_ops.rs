@@ -7,6 +7,9 @@ use super::helpers::{
 };
 use crate::tools::output_util;
 
+/// `git diff` 正文常大于默认 `command_max_output_len`；在配置值之上保证至少本题字节预算，避免工具结果过早按字节截断。
+const GIT_DIFF_MIN_CAP_BYTES: usize = 512 * 1024;
+
 pub fn status(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
     let v = match parse_args(args_json) {
         Ok(v) => v,
@@ -49,9 +52,10 @@ pub fn diff(args_json: &str, max_output_len: usize, working_dir: &Path) -> Strin
         return e;
     }
     let context = v.get("context_lines").and_then(|x| x.as_u64()).unwrap_or(3);
+    let cap = max_output_len.max(GIT_DIFF_MIN_CAP_BYTES);
     run_diff_mode(
         &v,
-        max_output_len,
+        cap,
         working_dir,
         &[],
         Some(format!("-U{}", context)),
@@ -148,7 +152,8 @@ pub fn diff_base(args_json: &str, max_output_len: usize, working_dir: &Path) -> 
         .arg(format!("{}...HEAD", base))
         .arg(format!("-U{}", context))
         .current_dir(working_dir);
-    run_and_format(cmd, max_output_len, &format!("git diff {}...HEAD", base))
+    let cap = max_output_len.max(GIT_DIFF_MIN_CAP_BYTES);
+    run_and_format(cmd, cap, &format!("git diff {}...HEAD", base))
 }
 
 pub fn log(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {

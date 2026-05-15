@@ -1,6 +1,7 @@
 //! 角色正文管道的共用片段（剥前缀、用户过滤、层级子目标裁剪）。
 
 use crate::i18n::Locale;
+use crate::message_format::display::plan_fence::assistant_text_for_display;
 use crate::message_format::staged_timeline::STAGED_TIMELINE_SYSTEM_PREFIX;
 /// 须与主仓 `src/runtime/plan_section.rs` 中 `STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX` 同步。
 pub(crate) const STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX: &str = "### CrabMate·NL补全\n";
@@ -53,11 +54,34 @@ fn strip_staged_plan_system_coach_header(body_after_timeline: &str) -> Option<(u
     Some((ord, rest))
 }
 
+/// 时间线或 `timeline_log` 若误把整段 `agent_reply_plan` JSON 当作正文，按助手管道转成可读列表，避免气泡回显原始 JSON。
+fn maybe_format_timeline_standalone_agent_reply_plan(body: &str, loc: Locale) -> String {
+    let t = body.trim();
+    if !t.starts_with('{') {
+        return body.to_string();
+    }
+    if !(t.contains("\"agent_reply_plan\"")
+        || (t.contains("\"type\"") && t.contains("\"steps\"") && t.contains("\"version\"")))
+    {
+        return body.to_string();
+    }
+    let formatted = assistant_text_for_display(t, false, loc, true);
+    let f = formatted.trim();
+    if f.starts_with('{') && (f.contains("agent_reply_plan") || f.contains("\"type\"")) {
+        return body.to_string();
+    }
+    if f.is_empty() {
+        return body.to_string();
+    }
+    formatted
+}
+
 pub(super) fn system_text_for_chat_display(raw: &str, loc: Locale) -> String {
     let after_timeline = raw
         .strip_prefix(STAGED_TIMELINE_SYSTEM_PREFIX)
         .unwrap_or(raw);
-    if let Some((ord, rest)) = strip_staged_plan_system_coach_header(after_timeline) {
+    let after_timeline = maybe_format_timeline_standalone_agent_reply_plan(after_timeline, loc);
+    if let Some((ord, rest)) = strip_staged_plan_system_coach_header(&after_timeline) {
         let rest = rest.trim_start();
         if rest.is_empty() {
             let hint = crate::i18n::staged_coach_injection_fallback(loc, ord);

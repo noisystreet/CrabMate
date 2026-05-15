@@ -283,7 +283,8 @@ fn assistant_text_for_display_inner(
     is_streaming_last_assistant: bool,
     loc: Locale,
 ) -> String {
-    let trimmed = raw.trim();
+    let content = crate::message_format::dsml_strip::strip_deepseek_dsml_for_display(raw);
+    let trimmed = content.trim();
 
     if is_streaming_last_assistant && should_buffer_agent_reply_plan_stream(trimmed) {
         // 须与 `assistant_text_for_display` 外套的 `filter_assistant_thinking_markers_for_display` 一致。
@@ -303,7 +304,7 @@ fn assistant_text_for_display_inner(
     }
 
     // 无围栏但以前缀 JSON 输出规划：去掉前缀规划对象，保留后续终答正文。
-    let t = raw.trim_start();
+    let t = content.trim_start();
     if t.starts_with('{') && t.contains("\"agent_reply_plan\"") {
         let mut de = serde_json::Deserializer::from_str(t).into_iter::<Value>();
         if let Some(Ok(v)) = de.next()
@@ -323,18 +324,18 @@ fn assistant_text_for_display_inner(
     }
 
     // 再做一次全量围栏剥离兜底：无论 `agent_reply_plan` / `plan_summary` 围栏出现在第几个代码块，都不回显原始 JSON。
-    let stripped_fences = strip_agent_reply_plan_fence_blocks_for_display(raw, loc);
+    let stripped_fences = strip_agent_reply_plan_fence_blocks_for_display(&content, loc);
     let stripped_trim = stripped_fences.trim();
     if stripped_trim != trimmed {
         if stripped_trim.is_empty()
-            && (raw.contains("\"agent_reply_plan\"") || raw.contains("\"plan_summary\""))
+            && (content.contains("\"agent_reply_plan\"") || content.contains("\"plan_summary\""))
         {
             return crate::i18n::plan_generated(loc).to_string();
         }
         return stripped_trim.to_string();
     }
 
-    raw.to_string()
+    content
 }
 
 // 仅 `staged_plan_todo` 单测调用；主界面已改为逐条分步气泡，不再做聚合待办解析。

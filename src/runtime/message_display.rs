@@ -501,6 +501,7 @@ fn assistant_markdown_from_stripped(stripped: &str) -> String {
 /// 若仅围栏内为规划 JSON（含解析失败但形状明显的块），从展示串中移除围栏，**不**把原始 JSON 打到终端/气泡；`Message.content` 与日志不变。
 pub(crate) fn assistant_markdown_source_for_display(raw: &str) -> String {
     let stripped = strip_assistant_echo_label(raw);
+    let stripped = crate::text_sanitize::strip_deepseek_dsml_for_display(&stripped);
     let stripped = preprocess_unfenced_assistant_prose_dedup(&stripped);
     assistant_markdown_from_stripped(&stripped)
 }
@@ -508,6 +509,7 @@ pub(crate) fn assistant_markdown_source_for_display(raw: &str) -> String {
 /// TUI 流式：仅对**最后一条助手**且仍处生成中时调用；`agent_reply_plan` 相关输出缓冲为占位，收齐后由普通路径一次性剥 JSON 再展示。
 pub(crate) fn assistant_markdown_source_for_display_streaming_last(raw: &str) -> String {
     let stripped = strip_assistant_echo_label(raw);
+    let stripped = crate::text_sanitize::strip_deepseek_dsml_for_display(&stripped);
     if should_buffer_agent_reply_plan_stream(&stripped) {
         return latex_math_to_unicode(&staged_plan_streaming_chat_body(&stripped));
     }
@@ -575,6 +577,15 @@ fn preprocess_unfenced_assistant_prose_dedup(stripped: &str) -> String {
 mod tests {
     use super::*;
     use crate::types::{FunctionCall, Message, ToolCall};
+
+    #[test]
+    fn assistant_markdown_strips_dsml_tool_calls_markup() {
+        let raw = "前言\n<｜｜DSML｜｜tool_calls>\n<｜｜DSML｜｜invoke name=\"plan\">\n</｜｜DSML｜｜invoke>\n</｜｜DSML｜｜tool_calls>\n后记";
+        let out = assistant_markdown_source_for_display(raw);
+        assert!(!out.contains("DSML"));
+        assert!(out.contains("前言"));
+        assert!(out.contains("后记"));
+    }
 
     #[test]
     fn tool_json_human_summary_then_result_block() {

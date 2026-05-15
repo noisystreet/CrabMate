@@ -29,12 +29,14 @@ pub(crate) fn staged_plan_phase_instruction_default() -> String {
         "### 分阶段规划 · 规划轮\n\
          **长度纪律**：若推理/思维链计入本轮完成额度，勿在其中长篇展开；可省略或仅一两句提纲，**优先**尽快给出下方 fenced JSON（`agent_reply_plan`）。附言保持简短。\n\
          请仅根据用户消息做任务拆解，不要调用任何工具，不要执行命令或读写文件。\n\
+         **输出形态**：除简短自然语言与 fenced JSON 外，**禁止**输出 DeepSeek/Microsoft 式 `<…DSML…>`、`tool_calls`/`invoke`/`parameter` 等伪 XML 或非 OpenAI 兼容的「伪工具调用」正文；本回合也**不得**使用 API 的 `tool_calls` 字段（否则会被服务端拒绝并重写）。\n\
+         **JSON 形状**：顶层须为合法 v1 对象，字段包含 `type`（字符串 `agent_reply_plan`）、`version`、`steps`、`no_task` 等（见下方 schema）；**禁止**把整份计划包在 `\"agent_reply_plan\": {{ ... }}` 嵌套键下。\n\
          `steps` 须与用户意图及粒度一致：用户只要概览、梳理或只读分析时，勿擅自收窄为单一文件的深层修复路径，除非用户明确授权。\n\
          **咨询类**（架构意见、风险列举、优劣对比等）且用户未要求改仓库、新建文档或跑构建/测试：优先 `no_task: true`、`steps: []`，由后续自然语言直接作答；勿拆成多轮「通读大量源文件」或未经要求的长篇设计稿。\n\
          若仍需一步辅助：`steps[0].description` 须写清**可验收结论**（条目化模块/风险点）与**只读探查上限**（如至多 N 个路径/文件）；此类步须 `executor_kind=review_readonly`，勿在未授权步使用 `patch_write`/`test_runner`。\n\
          `steps[].description` 宜具体可验收；用户明确要求多项交付物时勿擅自合并。\n\
          信息不足时宁可 `no_task` 或请求澄清，勿编造路径或接口细节。\n\
-         **单步滚动 + 验收**：每轮 JSON 通常仅 **1** 条 `steps`。「先读后写再测」靠**多轮规划**切换 `executor_kind`（`review_readonly` → `patch_write` → `test_runner`），勿在一轮内堆多步（`workflow_validate_only` 绑定等多步例外见下方 schema）。当本步为 **`test_runner`**（如 `cargo_check` / `cargo_test` / 同类）时，除非用户明示无需硬验收，**须在 `acceptance` 中至少给出 `expect_exit_code`，并推荐再加与命令输出一致的短字符串 `expect_stdout_contains` 或 `expect_stderr_contains`**，否则步末难以触发有意义的确定性验收与补丁重规划。\n\
+         **单步滚动 + 验收**：每轮 JSON 通常仅 **1** 条 `steps`。「先读后写再测」靠**多轮规划**切换 `executor_kind`（`review_readonly` → `patch_write` → `test_runner`），勿在一轮内堆多步（`workflow_validate_only` 绑定等多步例外见下方 schema）。当本步为 **`test_runner`**（如 `cargo_check` / `cargo_test` / 同类）时，除非用户明示无需硬验收，**须在 `acceptance` 中至少给出 `expect_exit_code`，并推荐再加与命令输出一致的短字符串 `expect_stdout_contains` 或 `expect_stderr_contains`**（须为真实 CLI 日志里**会出现**的子串，勿填抽象描述），否则步末难以触发有意义的确定性验收与补丁重规划。\n\
          正文中须用 Markdown 代码围栏（语言标记为 json）给出合法 JSON，且满足：\n\
          {}\n\
          涉及「先审读→再改→再测」时，为相应步设置 `executor_kind`（`review_readonly` → `patch_write` → `test_runner`）。",

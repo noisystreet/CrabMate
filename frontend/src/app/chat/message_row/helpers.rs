@@ -169,17 +169,13 @@ pub(super) fn is_running_subgoal_phase(loc: Locale, phase: Option<&str>) -> bool
     i18n::hierarchical_subgoal_phase_key(phase).is_some()
 }
 
-pub(super) fn message_row_shell_class(is_staged_timeline: bool, m: &StoredMessage) -> &'static str {
-    if is_staged_timeline {
-        "msg msg-staged-timeline"
-    } else {
-        match m.role.as_str() {
-            "user" => "msg msg-user",
-            "assistant" if m.is_tool => "msg msg-tool",
-            "assistant" => "msg msg-assistant",
-            _ if m.is_tool => "msg msg-tool",
-            _ => "msg msg-system",
-        }
+pub(super) fn message_row_shell_class(m: &StoredMessage) -> &'static str {
+    match m.role.as_str() {
+        "user" => "msg msg-user",
+        "assistant" if m.is_tool => "msg msg-tool",
+        "assistant" => "msg msg-assistant",
+        _ if m.is_tool => "msg msg-tool",
+        _ => "msg msg-system",
     }
 }
 
