@@ -5,6 +5,7 @@ use std::rc::Rc;
 use leptos::prelude::*;
 
 use crate::api::OnToolCallFn;
+use crate::app::stream_shell_busy::StreamShellBusyOp;
 use crate::i18n;
 use crate::message_format::{
     staged_timeline_system_message_body, strip_ansi_codes, tool_card_compact_text, tool_card_text,
@@ -146,7 +147,10 @@ pub(super) fn chat_stream_on_tool_call_builder(
             let _ = (preview, full);
             // 与后端 `tool_running` 帧互补：tool_call 往往先于或并列到达，此处立即置位可避免
             // 长耗时工具（如 git_commit）期间状态栏仍误显「模型生成中」。
-            stream_ctx.shell.stream.tool_busy.set(true);
+            stream_ctx
+                .shell
+                .stream
+                .apply_busy_op(StreamShellBusyOp::MirrorToolRunning(true));
             let loc = stream_ctx.locale.get_untracked();
             let core = if !summary.trim().is_empty() {
                 summary.trim().to_string()
@@ -213,7 +217,10 @@ fn timeline_log_dispatch_final_response(
     info: &TimelineLogInfo,
 ) {
     accum.set_saw_final_response_timeline(true);
-    stream_ctx.shell.stream.status_busy.set(false);
+    stream_ctx
+        .shell
+        .stream
+        .apply_busy_op(StreamShellBusyOp::ReleaseStreamingStatusAfterTimelineFinal);
     let final_text = build_final_response_text(&info.title, info.detail.as_deref());
     if !final_text.is_empty() {
         remove_loading_assistant_placeholder(stream_ctx);
@@ -354,8 +361,10 @@ pub(super) fn chat_stream_on_done_builder(
                 loc,
             );
         });
-        stream_ctx.shell.stream.status_busy.set(false);
-        stream_ctx.shell.stream.tool_busy.set(false);
+        stream_ctx
+            .shell
+            .stream
+            .apply_busy_op(StreamShellBusyOp::ReleaseTurnShellBusy);
         clear_abort_slot(&stream_ctx.shell);
     })
 }
@@ -387,8 +396,10 @@ pub(super) fn chat_stream_on_error_builder(
             }
             apply_stream_error_on_messages(&mut s.messages, mid.as_str(), friendly, loc);
         });
-        stream_ctx.shell.stream.status_busy.set(false);
-        stream_ctx.shell.stream.tool_busy.set(false);
+        stream_ctx
+            .shell
+            .stream
+            .apply_busy_op(StreamShellBusyOp::ReleaseTurnShellBusy);
         stream_ctx.shell.stream.status_err.set(Some(
             i18n::chat_failed_banner(stream_ctx.locale.get_untracked()).to_string(),
         ));

@@ -4,13 +4,14 @@
 //!
 //! **与其它收尾路径的关系**（与 [`crate::chat_session_state::make_chat_stream_busy_memos`] 同源）：
 //! - **正常结束**：`tool_busy` 与工具时间线占位通常已由 SSE（如 `tool_result`）消化；`on_done` 再回落壳层 busy。
-//! - **用户中止**：本模块 [`apply_user_abort_of_inflight_stream`] 同时收口助手/工具 **`Loading`** 行并 `tool_busy.set(false)`。
+//! - **用户中止**：本模块 [`apply_user_abort_of_inflight_stream`] 同时收口助手/工具 **`Loading`** 行并回落壳层双忙（`StreamShellBusyOp::ReleaseTurnShellBusy`）。
 //! - **SSE/HTTP 错误**：`on_error` 对会话 `messages` 的写回应经 `callbacks::error_session::apply_stream_error_on_messages`（助手尾泡 + **`Loading`** 工具行），不能只清 `tool_busy`，否则时间线卡与谓词长期不一致。
 //!
 //! 会话目标与 SSE 写入一致：使用 [`crate::chat_session_state::ChatSessionSignals::effective_stream_message_session_id`]。
 
 use leptos::prelude::{GetUntracked, Set};
 
+use crate::app::stream_shell_busy::StreamShellBusyOp;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n;
 use crate::i18n::Locale;
@@ -93,8 +94,9 @@ pub(crate) fn apply_user_abort_of_inflight_stream(
     let _ = user_cancel_in_flight_stream(shell);
     let sid = chat.effective_stream_message_session_id();
     finalize_loading_placeholders_after_user_abort_on_session(chat, &sid, loc);
-    shell.stream.status_busy.set(false);
-    shell.stream.tool_busy.set(false);
+    shell
+        .stream
+        .apply_busy_op(StreamShellBusyOp::ReleaseTurnShellBusy);
     clear_abort_slot(shell);
     true
 }

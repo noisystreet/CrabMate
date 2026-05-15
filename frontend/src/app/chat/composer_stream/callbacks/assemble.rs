@@ -5,6 +5,7 @@ use std::rc::Rc;
 use leptos::prelude::*;
 
 use crate::api::ChatStreamCallbacks;
+use crate::app::stream_shell_busy::StreamShellBusyOp;
 use crate::clarification_form::PendingClarificationForm;
 use crate::i18n;
 use crate::message_format::staged_timeline_system_message_body;
@@ -72,7 +73,10 @@ pub(crate) fn build_chat_stream_callbacks(
             if stream_ctx.is_stale() {
                 return;
             }
-            stream_ctx.shell.stream.tool_busy.set(b);
+            stream_ctx
+                .shell
+                .stream
+                .apply_busy_op(StreamShellBusyOp::MirrorToolRunning(b));
         })
     };
 
@@ -138,8 +142,10 @@ pub(crate) fn build_chat_stream_callbacks(
             stream_ctx.chat.clear_stream_resume_handles();
             // `stream_ended` 表示服务端已结束本轮流式任务：无论 `reason` 是否能解析为已知枚举，
             // 都应回落 busy，避免状态栏长期停在「模型生成中」。（未知 reason 仍写入 stream_end_reason 供 diagnostics。）
-            stream_ctx.shell.stream.status_busy.set(false);
-            stream_ctx.shell.stream.tool_busy.set(false);
+            stream_ctx
+                .shell
+                .stream
+                .apply_busy_op(StreamShellBusyOp::ReleaseTurnShellBusy);
             clear_abort_slot(&stream_ctx.shell);
         })
     };

@@ -10,6 +10,7 @@ use super::composer_stream::{ComposerStreamHandles, make_attach_chat_stream};
 use super::handles::{ChatComposerWires, ComposerStreamShell, WireComposerStreamsArgs};
 use super::stream_follow_up_gates::{RegenAttachGate, compose_user_send_allowed};
 use super::stream_user_abort::apply_user_abort_of_inflight_stream;
+use crate::app::stream_shell_busy::StreamShellBusyOp;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n;
 use crate::i18n::Locale;
@@ -106,7 +107,9 @@ fn push_user_and_loading_assistant(
 }
 
 fn begin_stream_shell_turn(shell: &ComposerStreamShell) {
-    shell.stream.status_busy.set(true);
+    shell
+        .stream
+        .apply_busy_op(StreamShellBusyOp::EnterStreamingStatus);
     shell.stream.status_err.set(None);
     shell.approval.clear_pending_user_interactions();
 }

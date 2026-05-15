@@ -8,6 +8,7 @@
 //! - `shell_abort`：`AbortController` 与用户取消 Mutex 的集中读写。
 //! - [`callbacks`]：装配 `ChatStreamCallbacks`（各 `on_*`），与 `send_chat_stream` 契约对齐；实现拆为 `callbacks/helpers`、`callbacks/builders`、`callbacks/assemble`。
 //! - [`stream_attach_lifecycle`]：单次 attach 在 `spawn_local` 前的同步步骤（[`prepare_stream_attach`]、[`stream_attach_lifecycle::StreamAttachPrepared`]）。
+//! - 壳层 **`status_busy` / `tool_busy`** 迁移见 **[`crate::app::stream_shell_busy`]**（[`crate::app::stream_shell_busy::StreamShellBusyOp`] + [`crate::app::app_signals::StreamControlSignals::apply_busy_op`]），SSE/HTTP/中止路径统一调用。
 
 mod callbacks;
 mod context;
@@ -25,6 +26,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use crate::api::{SendChatStreamParams, send_chat_stream};
+use crate::app::stream_shell_busy::StreamShellBusyOp;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::Locale;
 
@@ -90,8 +92,9 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                 // HTTP 读取结束后强制回落壳层 busy，避免悬挂连接或回调提前 return 时状态栏卡死。
                 // 会话内 Loading 工具占位仅在 `on_error` / 用户中止等路径于 `messages` 上收口；本层不改时间线。
                 // 正常路径仍由 `on_done` / `on_stream_ended` / `on_error` 与上述收口协同清理。
-                shell_for_stream_err.stream.status_busy.set(false);
-                shell_for_stream_err.stream.tool_busy.set(false);
+                shell_for_stream_err
+                    .stream
+                    .apply_busy_op(StreamShellBusyOp::ReleaseTurnShellBusy);
                 if let Err(e) = stream_result {
                     if user_cancelled_flag(&shell_for_stream_err) {
                         return;
