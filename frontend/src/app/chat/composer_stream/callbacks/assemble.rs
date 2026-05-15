@@ -86,11 +86,11 @@ pub(crate) fn build_chat_stream_callbacks(
             if stream_ctx.is_stale() {
                 return;
             }
-            stream_ctx.shell.approval.pending_approval.set(Some((
+            stream_ctx.shell.approval.replace_with_pending_approval((
                 stream_ctx.approval_session_store_id.clone(),
                 req.command,
                 req.args,
-            )));
+            ));
         })
     };
 
@@ -207,8 +207,7 @@ pub(crate) fn build_chat_stream_callbacks(
             stream_ctx
                 .shell
                 .approval
-                .pending_clarification
-                .set(Some(PendingClarificationForm::from_sse(info)));
+                .replace_with_pending_clarification(PendingClarificationForm::from_sse(info));
         })
     };
 

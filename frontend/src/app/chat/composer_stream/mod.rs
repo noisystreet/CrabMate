@@ -7,12 +7,13 @@
 //! - [`stream_turn_state`]：模型输出车道 [`StreamModelOutputLane`] 及 `lane_*` 的 `Cell` 薄封装（单测与热路径）。
 //! - `shell_abort`：`AbortController` 与用户取消 Mutex 的集中读写。
 //! - [`callbacks`]：装配 `ChatStreamCallbacks`（各 `on_*`），与 `send_chat_stream` 契约对齐；实现拆为 `callbacks/helpers`、`callbacks/builders`、`callbacks/assemble`。
-//! - 本文件：长生命周期句柄 [`ComposerStreamHandles`]、[`make_attach_chat_stream`]（发起请求 + `spawn_local`）。
+//! - [`stream_attach_lifecycle`]：单次 attach 在 `spawn_local` 前的同步步骤（[`prepare_stream_attach`]、[`stream_attach_lifecycle::StreamAttachPrepared`]）。
 
 mod callbacks;
 mod context;
 mod per_stream_accum;
 mod shell_abort;
+mod stream_attach_lifecycle;
 mod stream_sse_scratch;
 mod stream_turn_scratch_state;
 mod stream_turn_state;
@@ -26,14 +27,10 @@ use leptos::task::spawn_local;
 use crate::api::{SendChatStreamParams, send_chat_stream};
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::Locale;
-use crate::session_ops::approval_session_id;
 
 use super::handles::ComposerStreamShell;
-use super::stream_user_abort::finalize_superseded_assistant_loading_rows_except;
-
-use context::ChatStreamCallbackCtx;
-use shell_abort::{reset_abort_state_for_new_attach, store_abort_controller, user_cancelled_flag};
-use stream_sse_scratch::StreamSseScratch;
+use shell_abort::user_cancelled_flag;
+use stream_attach_lifecycle::prepare_stream_attach;
 
 /// 长生命周期句柄：`attach` 闭包捕获，供每次发起流式请求复用。
 pub(super) struct ComposerStreamHandles {
@@ -64,50 +61,24 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
               asst_id: String,
               clarify_json: Option<serde_json::Value>| {
             let conv = chat.session_sync.with(|s| s.stream_conversation_id());
-            chat.clear_stream_resume_handles();
-            let attach_generation = chat.bump_stream_attach_generation();
-            shell_outer.approval.thinking_trace_log.set(Vec::new());
-            reset_abort_state_for_new_attach(&shell_outer);
-            let bound_session_id = chat.active_id.get();
-            finalize_superseded_assistant_loading_rows_except(
-                chat,
-                bound_session_id.as_str(),
-                asst_id.as_str(),
-                locale_sig.get_untracked(),
-            );
-            chat.bind_stream_to_session(bound_session_id.clone(), attach_generation);
-            let ac = web_sys::AbortController::new().expect("AbortController");
-            let signal = ac.signal();
-            store_abort_controller(&shell_outer, ac);
+            let prepared = prepare_stream_attach(chat, &shell_outer, locale_sig, asst_id.clone());
             let agent_role = selected_agent_role.get();
-            let appr_for_stream = approval_session_id();
-            let appr_store = appr_for_stream.clone();
+            let cbs = callbacks::build_chat_stream_callbacks(Rc::clone(&prepared.stream_ctx));
 
-            let stream_ctx = Rc::new(ChatStreamCallbackCtx {
-                chat,
-                locale: locale_sig,
-                bound_stream_session_id: bound_session_id,
-                attach_generation,
-                scratch: StreamSseScratch::new(asst_id.clone()),
-                approval_session_store_id: appr_store.clone(),
-                shell: shell_outer.clone(),
-            });
-
-            let cbs = callbacks::build_chat_stream_callbacks(Rc::clone(&stream_ctx));
-
-            let gen_snapshot = attach_generation;
+            let gen_snapshot = prepared.attach_generation;
             let shell_for_stream_err = shell_outer.clone();
             let on_error_spawn = cbs.on_error.clone();
+            let appr = prepared.approval_session_id.clone();
             spawn_local(async move {
                 let stream_result = send_chat_stream(SendChatStreamParams {
                     message: user_text,
                     image_urls,
                     conversation_id: conv,
                     agent_role,
-                    approval_session_id: Some(appr_for_stream),
+                    approval_session_id: Some(appr),
                     stream_resume_job_id: None,
                     stream_resume_after_seq: None,
-                    signal: &signal,
+                    signal: &prepared.abort_signal,
                     cbs: cbs.clone(),
                     loc: locale_sig.get_untracked(),
                     clarify_questionnaire_answers: clarify_json,

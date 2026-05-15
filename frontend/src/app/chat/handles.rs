@@ -24,6 +24,29 @@ pub struct ComposerStreamApprovalSignals {
     pub thinking_trace_log: RwSignal<Vec<ThinkingTraceInfo>>,
 }
 
+impl ComposerStreamApprovalSignals {
+    /// 发起新一轮 `/chat/stream` 前：清空「待审批 / 待澄清」，避免与流式壳层状态打架。
+    #[inline]
+    pub(crate) fn clear_pending_user_interactions(self) {
+        self.pending_approval.set(None);
+        self.pending_clarification.set(None);
+    }
+
+    /// 收到 SSE 审批请求：与澄清表单**互斥**（后到的覆盖先到的语义由调用方保证顺序）。
+    #[inline]
+    pub(crate) fn replace_with_pending_approval(self, triple: (String, String, String)) {
+        self.pending_clarification.set(None);
+        self.pending_approval.set(Some(triple));
+    }
+
+    /// 收到 SSE 澄清问卷：与待审批**互斥**。
+    #[inline]
+    pub(crate) fn replace_with_pending_clarification(self, form: PendingClarificationForm) {
+        self.pending_approval.set(None);
+        self.pending_clarification.set(Some(form));
+    }
+}
+
 /// 流式与工作区刷新联动的变更集模态信号子集（与 [`AppSignals::modal`] 同源句柄）。
 #[derive(Clone, Copy)]
 pub struct ComposerStreamModalSignals {

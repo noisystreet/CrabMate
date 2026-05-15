@@ -1,182 +1,16 @@
-//! 时间线/气泡/子目标等辅助函数（供 [`super::builders`] 与 [`build_chat_stream_callbacks`] 使用）。
+//! 时间线插入、流式尾泡轮换与助手行收尾。
 
 use std::cell::RefCell;
 
-use crabmate_sse_protocol::StreamEndReason;
-
 use crate::i18n;
-use crate::i18n::Locale;
 use crate::session_ops::{make_message_id, message_created_ms};
 use crate::storage::{StoredMessage, StoredMessageState};
 use crate::stream_text_overlay::stream_overlay_take_into_stored_message;
 
-use super::super::context::ChatStreamCallbackCtx;
-
-/// 按 OpenAI `tool_call_id` 查找仍处于 loading 的工具行（供 `tool_result` 命中占位气泡）。
-#[must_use]
-pub(super) fn index_of_loading_tool_by_call_id(
-    messages: &[StoredMessage],
-    tool_call_id: &str,
-) -> Option<usize> {
-    let tid = tool_call_id.trim();
-    if tid.is_empty() {
-        return None;
-    }
-    messages.iter().position(|m| {
-        m.is_tool
-            && m.tool_call_id.as_deref() == Some(tid)
-            && m.state.as_ref().is_some_and(|s| s.is_loading())
-    })
-}
-
-/// 按 `tool_call_id` 查找**最近一条**工具时间线（loading 或已有状态），供流式输出增量追加。
-#[must_use]
-pub(super) fn index_of_tool_message_by_call_id_latest(
-    messages: &[StoredMessage],
-    tool_call_id: &str,
-) -> Option<usize> {
-    let tid = tool_call_id.trim();
-    if tid.is_empty() {
-        return None;
-    }
-    messages
-        .iter()
-        .rposition(|m| m.is_tool && m.tool_call_id.as_deref().map(str::trim) == Some(tid))
-}
-
-/// 按本地消息 `id` 查找行（FIFO 占位 id 与 `tool_result` 配对）。
-#[must_use]
-pub(super) fn index_of_message_id(messages: &[StoredMessage], message_id: &str) -> Option<usize> {
-    let mid = message_id.trim();
-    if mid.is_empty() {
-        return None;
-    }
-    messages.iter().position(|m| m.id == mid)
-}
-
-pub(super) fn non_empty_trimmed_tool_name(s: &str) -> Option<String> {
-    let t = s.trim();
-    (!t.is_empty()).then(|| t.to_string())
-}
-
-pub(super) fn build_final_response_text(title: &str, detail: Option<&str>) -> String {
-    let mut final_text = title.trim().to_string();
-    if let Some(detail) = detail.map(str::trim)
-        && !detail.is_empty()
-    {
-        if !final_text.is_empty() {
-            final_text.push_str("\n\n");
-        }
-        final_text.push_str(detail);
-    }
-    final_text
-}
-
-pub(super) fn build_intent_analysis_main_bubble_text(title: &str, detail: Option<&str>) -> String {
-    let title = title.trim();
-    let detail = detail.map(str::trim).unwrap_or("");
-    let mut out = String::new();
-    if !title.is_empty() {
-        out.push_str(title);
-    }
-    if !detail.is_empty() {
-        let mut confidence = String::new();
-        let mut primary = String::new();
-        let mut clarification = String::new();
-        let mut l2 = String::new();
-        for line in detail.lines().map(str::trim) {
-            match i18n::classify_intent_detail_line(line) {
-                Some(i18n::IntentDetailLineKind::Confidence) => confidence = line.to_string(),
-                Some(i18n::IntentDetailLineKind::PrimaryIntent) => primary = line.to_string(),
-                Some(i18n::IntentDetailLineKind::NeedClarification) => {
-                    clarification = line.to_string();
-                }
-                Some(i18n::IntentDetailLineKind::L2Result) => l2 = line.to_string(),
-                None => {}
-            }
-        }
-        let concise = [confidence, primary, clarification, l2]
-            .into_iter()
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>()
-            .join("\n");
-        if !concise.is_empty() {
-            if !out.is_empty() {
-                out.push('\n');
-            }
-            out.push_str(&concise);
-        }
-    }
-    if out.is_empty() {
-        String::new()
-    } else {
-        format!("{out}\n\n")
-    }
-}
-
-pub(super) fn build_hierarchical_plan_main_bubble_text(
-    title: &str,
-    detail: Option<&str>,
-) -> String {
-    let mut out = String::new();
-    let title = title.trim();
-    if !title.is_empty() {
-        out.push_str(title);
-    }
-    if let Some(detail) = detail.map(str::trim)
-        && !detail.is_empty()
-    {
-        if !out.is_empty() {
-            out.push('\n');
-        }
-        out.push_str(detail);
-    }
-    if out.is_empty() {
-        String::new()
-    } else {
-        format!("{out}\n\n")
-    }
-}
-
-pub(super) fn build_hierarchical_subgoal_main_bubble_text(
-    title: &str,
-    detail: Option<&str>,
-) -> String {
-    let mut out = title.trim().to_string();
-    if let Some(detail) = detail.map(str::trim)
-        && !detail.is_empty()
-    {
-        if !out.is_empty() {
-            out.push('\n');
-        }
-        out.push_str(detail);
-    }
-    if out.is_empty() {
-        String::new()
-    } else {
-        format!("{out}\n\n")
-    }
-}
-
-pub(super) fn to_single_line(s: &str, max_chars: usize) -> String {
-    let compact = s
-        .split_whitespace()
-        .filter(|seg| !seg.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ");
-    if compact.chars().count() <= max_chars {
-        return compact;
-    }
-    let mut out = String::new();
-    for ch in compact.chars().take(max_chars.saturating_sub(1)) {
-        out.push(ch);
-    }
-    out.push('…');
-    out
-}
+use crate::app::chat::composer_stream::context::ChatStreamCallbackCtx;
 
 /// 将旁注插在**当前流式 `loading` 助手气泡之前**；若无占位则追加到末尾。
-pub(super) fn insert_msg_before_streaming_assistant_tail(
+pub(crate) fn insert_msg_before_streaming_assistant_tail(
     messages: &mut Vec<StoredMessage>,
     streaming_assistant_id: &str,
     msg: StoredMessage,
@@ -194,7 +28,7 @@ pub(super) fn insert_msg_before_streaming_assistant_tail(
 
 /// 管理器时间线（意图分析、规划摘要等）在服务端往往早于正文 `delta`，
 /// 须插在**当前流式 `loading` 助手气泡之前**，否则会跑到已流出的计划文字下面。
-pub(super) fn insert_before_streaming_assistant_or_append(
+pub(crate) fn insert_before_streaming_assistant_or_append(
     stream_ctx: &ChatStreamCallbackCtx,
     msg: StoredMessage,
 ) {
@@ -204,7 +38,7 @@ pub(super) fn insert_before_streaming_assistant_or_append(
     });
 }
 
-pub(super) fn push_assistant_timeline_bubble(
+pub(crate) fn push_assistant_timeline_bubble(
     stream_ctx: &ChatStreamCallbackCtx,
     text: String,
     state: Option<StoredMessageState>,
@@ -229,7 +63,7 @@ pub(super) fn push_assistant_timeline_bubble(
     ensure_streaming_assistant_tail_last(stream_ctx);
 }
 
-pub(super) fn has_same_assistant_timeline_bubble(
+pub(crate) fn has_same_assistant_timeline_bubble(
     stream_ctx: &ChatStreamCallbackCtx,
     text: &str,
 ) -> bool {
@@ -244,7 +78,7 @@ pub(super) fn has_same_assistant_timeline_bubble(
         .unwrap_or(false)
 }
 
-pub(super) fn extract_subgoal_marker_from_title(title: &str) -> Option<String> {
+pub(crate) fn extract_subgoal_marker_from_title(title: &str) -> Option<String> {
     let title = title.trim();
     for prefix in i18n::hierarchical_subgoal_title_prefixes() {
         if !title.starts_with(prefix) {
@@ -260,13 +94,13 @@ pub(super) fn extract_subgoal_marker_from_title(title: &str) -> Option<String> {
     None
 }
 
-pub(super) fn extract_subgoal_target_line(text: &str) -> Option<String> {
+pub(crate) fn extract_subgoal_target_line(text: &str) -> Option<String> {
     text.lines()
         .map(str::trim)
         .find_map(|line| i18n::hierarchical_goal_target_raw(line).map(|_| line.to_string()))
 }
 
-pub(super) fn merge_subgoal_text_preserving_target(existing: &str, incoming: &str) -> String {
+pub(crate) fn merge_subgoal_text_preserving_target(existing: &str, incoming: &str) -> String {
     if extract_subgoal_target_line(incoming).is_some() {
         return incoming.to_string();
     }
@@ -294,7 +128,7 @@ pub(super) fn merge_subgoal_text_preserving_target(existing: &str, incoming: &st
     out
 }
 
-pub(super) fn upsert_hierarchical_subgoal_bubble(
+pub(crate) fn upsert_hierarchical_subgoal_bubble(
     stream_ctx: &ChatStreamCallbackCtx,
     text: String,
     title: &str,
@@ -344,7 +178,7 @@ pub(super) fn upsert_hierarchical_subgoal_bubble(
 ///
 /// **注意**：`reasoning_text` 非空时视为有内容，保留气泡并清除 loading state，
 /// 避免 `assistant_answer_phase` 之前的思维链在工具调用时被误删。
-pub(super) fn finalize_current_loading_streaming_assistant_row(stream_ctx: &ChatStreamCallbackCtx) {
+pub(crate) fn finalize_current_loading_streaming_assistant_row(stream_ctx: &ChatStreamCallbackCtx) {
     let sid = stream_ctx.bound_stream_session_id.clone();
     stream_ctx.update_bound_session(|s| {
         let mid_owned = stream_ctx.scratch.clone_assistant_id();
@@ -372,7 +206,7 @@ pub(super) fn finalize_current_loading_streaming_assistant_row(stream_ctx: &Chat
 
 /// 工具卡片插入前：结束当前流式段（开场白等保留在工具与时间线**之上**），
 /// 并在本条工具消息之后挂新的 `loading` 占位，供工具结束后的续写。
-pub(super) fn finalize_loading_assistant_before_tool_and_tail_with_new_loading(
+pub(crate) fn finalize_loading_assistant_before_tool_and_tail_with_new_loading(
     stream_ctx: &ChatStreamCallbackCtx,
     tool_message_id: &str,
 ) {
@@ -417,7 +251,7 @@ pub(super) fn finalize_loading_assistant_before_tool_and_tail_with_new_loading(
 /// 同一轮 `run_agent_turn` 内可能多次调用模型（如外层 `continue 'outer` 规划改写），每次首段正文前都会再发
 /// `assistant_answer_phase`。若仍写入同一 `assistant_message_id`，多段可见输出会挤在一个气泡里「不断刷新」。
 /// 工具轮之间已有 [`finalize_loading_assistant_before_tool_and_tail_with_new_loading`]；此处补齐**无工具**的多轮。
-pub(super) fn rotate_streaming_assistant_for_followup_model_round(
+pub(crate) fn rotate_streaming_assistant_for_followup_model_round(
     stream_ctx: &ChatStreamCallbackCtx,
 ) {
     finalize_current_loading_streaming_assistant_row(stream_ctx);
@@ -448,7 +282,7 @@ pub(super) fn rotate_streaming_assistant_for_followup_model_round(
 }
 
 /// 工具后续写段：分步/时间线等仍会 `push` 到列表末尾，需把当前 `loading` 占位再次移到最下方。
-pub(super) fn ensure_streaming_assistant_tail_last(stream_ctx: &ChatStreamCallbackCtx) {
+pub(crate) fn ensure_streaming_assistant_tail_last(stream_ctx: &ChatStreamCallbackCtx) {
     if !stream_ctx.scratch.post_tool_stream_tail_active() {
         return;
     }
@@ -470,7 +304,7 @@ pub(super) fn ensure_streaming_assistant_tail_last(stream_ctx: &ChatStreamCallba
     });
 }
 
-pub(super) fn remove_loading_assistant_placeholder(stream_ctx: &ChatStreamCallbackCtx) {
+pub(crate) fn remove_loading_assistant_placeholder(stream_ctx: &ChatStreamCallbackCtx) {
     let sid = stream_ctx.bound_stream_session_id.clone();
     let mid_owned = stream_ctx.scratch.clone_assistant_id();
     stream_ctx.update_bound_session(|s| {
@@ -490,130 +324,4 @@ pub(super) fn remove_loading_assistant_placeholder(stream_ctx: &ChatStreamCallba
             s.messages.remove(idx);
         }
     });
-}
-
-pub(super) fn build_empty_reply_with_diagnostic(
-    loc: Locale,
-    answer_phase_entered: bool,
-    answer_delta_chars: usize,
-    stream_end_reason: Option<&str>,
-) -> String {
-    // 兜底保护：已有终答阶段且收到不少增量，但缺失 `stream_ended`，
-    // 这更像“收尾中断”而非“无回复”，避免误导用户。
-    let reason_unknown = stream_end_reason
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .is_none_or(|s| s.eq_ignore_ascii_case("unknown"));
-    if answer_phase_entered && answer_delta_chars > 0 && reason_unknown {
-        let hint = i18n::stream_partial_finalize_missing_hint(loc);
-        return format!(
-            "{hint}\n\n{}",
-            i18n::stream_empty_reply_diag_line(
-                loc,
-                stream_end_reason,
-                answer_phase_entered,
-                answer_delta_chars
-            )
-        );
-    }
-    let base = if !answer_phase_entered {
-        i18n::stream_empty_reply_no_answer_phase(loc)
-    } else if answer_delta_chars == 0 {
-        i18n::stream_empty_reply_no_delta(loc)
-    } else {
-        i18n::stream_empty_reply(loc)
-    };
-    format!(
-        "{base}\n\n{}",
-        i18n::stream_empty_reply_diag_line(
-            loc,
-            stream_end_reason,
-            answer_phase_entered,
-            answer_delta_chars
-        )
-    )
-}
-
-pub(super) fn build_stream_error_with_suggestion(raw: &str, loc: Locale) -> String {
-    let msg = raw.trim();
-    if msg.is_empty() {
-        return raw.to_string();
-    }
-    let low = msg.to_lowercase();
-    let (impact, hint) = if low.contains("llm_api_key_required")
-        || low.contains("api key")
-        || low.contains("unauthorized")
-        || low.contains("401")
-    {
-        (
-            i18n::stream_err_impact_api_key(loc),
-            i18n::stream_err_hint_api_key(loc),
-        )
-    } else if low.contains("timeout") || low.contains("timed out") || low.contains("408") {
-        (
-            i18n::stream_err_impact_timeout(loc),
-            i18n::stream_err_hint_timeout(loc),
-        )
-    } else {
-        (
-            i18n::stream_err_impact_generic(loc),
-            i18n::stream_err_hint_generic(loc),
-        )
-    };
-    i18n::format_error_three_part(loc, msg, impact, hint)
-}
-
-pub(super) fn should_show_missing_final_summary_hint(
-    end_reason: Option<&str>,
-    in_answer_phase: bool,
-    has_hierarchical_or_tool: bool,
-    saw_final_response_timeline: bool,
-) -> bool {
-    // 须已收到 `assistant_answer_phase`：否则 `answer_delta_chars` 可能仅来自分层时间轴/子目标更新，
-    // 与主气泡 `text` 无关，易误判「最终总结缺失」（见 issue：stream_ended=completed, answer_phase=false）。
-    end_reason
-        .and_then(|s| s.parse::<StreamEndReason>().ok())
-        .is_some_and(|r| r == StreamEndReason::Completed)
-        && in_answer_phase
-        && has_hierarchical_or_tool
-        && !saw_final_response_timeline
-}
-
-#[cfg(test)]
-mod tool_call_index_tests {
-    use super::{index_of_loading_tool_by_call_id, index_of_message_id};
-    use crate::storage::{StoredMessage, StoredMessageState};
-
-    fn tool_loading(id: &str, tool_call_id: Option<&str>) -> StoredMessage {
-        StoredMessage {
-            id: id.to_string(),
-            role: "system".to_string(),
-            text: String::new(),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: Some(StoredMessageState::Loading),
-            is_tool: true,
-            tool_call_id: tool_call_id.map(String::from),
-            tool_name: None,
-            created_at: 0,
-        }
-    }
-
-    #[test]
-    fn index_by_tool_call_id() {
-        let msgs = [tool_loading("a", None), tool_loading("b", Some("tid-1"))];
-        assert_eq!(index_of_loading_tool_by_call_id(&msgs, "tid-1"), Some(1));
-    }
-
-    #[test]
-    fn index_by_message_id() {
-        let msgs = [tool_loading("x", None), tool_loading("y", None)];
-        assert_eq!(index_of_message_id(&msgs, "y"), Some(1));
-    }
-
-    #[test]
-    fn empty_tool_call_id_returns_none() {
-        let msgs = [tool_loading("a", None)];
-        assert_eq!(index_of_loading_tool_by_call_id(&msgs, "  "), None);
-    }
 }
