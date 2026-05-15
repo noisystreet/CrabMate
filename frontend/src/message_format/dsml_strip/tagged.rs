@@ -19,11 +19,7 @@ pub(super) fn strip_tagged_blocks_both_widths(mut s: String, tag: &str) -> Strin
 
 fn strip_one_delimited_block_family(s: &str, open_prefix: &str, close_tag: &str) -> String {
     let mut out = s.to_string();
-    loop {
-        let start = match out.find(open_prefix) {
-            Some(s) => s,
-            None => break,
-        };
+    while let Some(start) = out.find(open_prefix) {
         let after_open = &out[start + open_prefix.len()..];
         let rel_gt = match after_open.find('>') {
             Some(r) => r,

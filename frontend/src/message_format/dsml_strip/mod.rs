@@ -2,13 +2,15 @@
 //!
 //! 用于 Web 气泡在 **`assistant_text_for_display`** 路径上剥掉 DeepSeek DSML 噪声，避免与 CLI/TUI 已剥内容不一致。
 
-mod named;
+mod named_ascii;
+mod named_fw;
 mod normalize;
 mod orphans;
-mod tags;
 mod tagged;
+mod tags;
 
-use named::{strip_dsml_named_blocks_ascii, strip_dsml_named_blocks_fullwidth};
+use named_ascii::strip_dsml_named_blocks_ascii;
+use named_fw::strip_dsml_named_blocks_fullwidth;
 use normalize::{collapse_blank_runs, normalize_deepseek_dsml_vendor_variants};
 use orphans::{
     strip_orphan_close_ascii, strip_orphan_close_fw, strip_orphan_open_ascii, strip_orphan_open_fw,
