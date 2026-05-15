@@ -33,6 +33,7 @@ mod sidebar_nav;
 mod status_bar;
 mod status_tasks_state;
 mod status_tasks_wiring;
+mod stream_run_phase;
 mod stream_shell_busy;
 mod wire_workspace_domain;
 mod workspace_panel;

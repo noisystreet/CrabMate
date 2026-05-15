@@ -211,3 +211,71 @@ pub(crate) fn refresh_baselines(
         *v = current.readonly_tool_ttl_cache_follow_server;
     });
 }
+
+/// 设置草稿相对 baseline 的 UI 生命期相（不含网络「保存中」态；保存中仍以既有 `RwSignal` 为准）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SettingsFormUiPhase {
+    /// 草稿与已提交 baseline 一致且无未决密钥草稿/清除意图
+    BaselineClean,
+    /// 存在未保存变更或待提交 API 密钥草稿
+    Dirty,
+}
+
+#[must_use]
+pub(crate) fn derive_settings_form_ui_phase(
+    current: &SettingsFormCurrent,
+    baselines: &SettingsDirtyBaselines,
+) -> SettingsFormUiPhase {
+    if baselines.is_dirty(current) {
+        SettingsFormUiPhase::Dirty
+    } else {
+        SettingsFormUiPhase::BaselineClean
+    }
+}
+
+#[cfg(test)]
+mod settings_form_ui_phase_tests {
+    use super::{
+        SettingsDirtyBaselines, SettingsFormCurrent, SettingsFormUiPhase,
+        derive_settings_form_ui_phase,
+    };
+
+    fn sample_current(llm_model_draft: &str) -> SettingsFormCurrent {
+        SettingsFormCurrent {
+            appearance_locale: crate::i18n::Locale::ZhHans,
+            appearance_theme: "dark".into(),
+            appearance_bg_decor: false,
+            llm_api_base_draft: String::new(),
+            llm_api_base_preset_select: "server".into(),
+            llm_model_draft: llm_model_draft.into(),
+            llm_temperature_draft: String::new(),
+            llm_context_tokens_draft: String::new(),
+            llm_thinking_mode_draft: "server".into(),
+            execution_mode_draft: "rolling_planning".into(),
+            llm_has_saved_key: false,
+            executor_llm_api_base_draft: String::new(),
+            executor_llm_api_base_preset_select: "server".into(),
+            executor_llm_model_draft: String::new(),
+            executor_llm_has_saved_key: false,
+            clear_client_key_intent: false,
+            clear_executor_key_intent: false,
+            llm_api_key_draft: String::new(),
+            executor_llm_api_key_draft: String::new(),
+            saved_model_presets: vec![],
+            readonly_tool_ttl_cache_follow_server: true,
+        }
+    }
+
+    #[test]
+    fn derive_phase_matches_dirty_semantics() {
+        let baselines = SettingsDirtyBaselines::from_form_current(&sample_current(""));
+        assert_eq!(
+            derive_settings_form_ui_phase(&sample_current(""), &baselines),
+            SettingsFormUiPhase::BaselineClean
+        );
+        assert_eq!(
+            derive_settings_form_ui_phase(&sample_current("m"), &baselines),
+            SettingsFormUiPhase::Dirty
+        );
+    }
+}

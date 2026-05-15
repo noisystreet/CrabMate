@@ -11,7 +11,6 @@
 
 use leptos::prelude::{GetUntracked, Set};
 
-use crate::app::stream_shell_busy::StreamShellBusyOp;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n;
 use crate::i18n::Locale;
@@ -94,9 +93,8 @@ pub(crate) fn apply_user_abort_of_inflight_stream(
     let _ = user_cancel_in_flight_stream(shell);
     let sid = chat.effective_stream_message_session_id();
     finalize_loading_placeholders_after_user_abort_on_session(chat, &sid, loc);
-    shell
-        .stream
-        .apply_busy_op(StreamShellBusyOp::ReleaseTurnShellBusy);
+    let attach_gen = chat.stream_attach_generation_untracked();
+    shell.stream.apply_release_turn_and_stream_run(attach_gen);
     clear_abort_slot(shell);
     true
 }

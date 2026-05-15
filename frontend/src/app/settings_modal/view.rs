@@ -9,7 +9,9 @@ use super::effects::{
     wire_settings_modal_focus_first_effect, wire_settings_modal_open_close_baseline_effect,
 };
 use crate::app::app_shell_ctx::SettingsModalSignals;
-use crate::app::settings_form_state::SettingsDirtyBaselines;
+use crate::app::settings_form_state::{
+    SettingsDirtyBaselines, SettingsFormUiPhase, derive_settings_form_ui_phase,
+};
 use crate::app::settings_modal_dialog::{SettingsModalDialogInput, settings_modal_dialog};
 use crate::app::settings_page::form_snapshot::{
     SettingsPageDraftSignals, form_current_tracked, form_current_untracked,
@@ -118,7 +120,10 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
 
     let dirty = Memo::new(move |_| {
         let current = form_current_tracked(drafts);
-        baselines.is_dirty(&current)
+        matches!(
+            derive_settings_form_ui_phase(&current, &baselines),
+            SettingsFormUiPhase::Dirty
+        )
     });
 
     let close_modal = {
