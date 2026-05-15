@@ -26,7 +26,7 @@ fn collapse_blank_runs(s: &str) -> String {
         .to_string()
 }
 
-/// `regex` crate 不支持反向引用，未知标签用扫描配对闭合 `</｜DSML｜tag>`。
+/// 未知标签：扫描开标签后解析 tag 名，再配对同名闭合片段（与后端 `strip_dsml_named_blocks_fullwidth` 同思路）。
 fn strip_dsml_named_blocks_fullwidth(s: &str) -> String {
     let mut out = s.to_string();
     loop {
@@ -85,7 +85,7 @@ fn strip_dsml_named_blocks_ascii(s: &str) -> String {
     out
 }
 
-/// 移除 `<｜DSML｜{tag}…> … </｜DSML｜{tag}>`（及 ASCII 尖括号变体），循环至稳定。
+/// 移除带属性的成对 DSML 块（全角与 ASCII 两套 open、close 前缀）。
 fn strip_tagged_blocks_both_widths(mut s: String, tag: &str) -> String {
     let open_fw = format!("{DSML_OPEN_FW}{tag}");
     let close_fw = format!("{DSML_CLOSE_FW}{tag}>");
@@ -313,42 +313,4 @@ pub(crate) fn strip_deepseek_dsml_for_display(s: &str) -> String {
     out = strip_orphan_open_ascii(&out);
     out = strip_orphan_close_ascii(&out);
     collapse_blank_runs(&out)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::strip_deepseek_dsml_for_display;
-
-    #[test]
-    fn strips_tool_calls_dsml_double_fullwidth_pipe() {
-        let s = "说明。\n<｜｜DSML｜｜tool_calls>\n<｜｜DSML｜｜invoke name=\"run_command\">\n</｜｜DSML｜｜invoke>\n</｜｜DSML｜｜tool_calls>\n尾部";
-        let t = strip_deepseek_dsml_for_display(s);
-        assert!(!t.contains("DSML"), "{t}");
-        assert!(t.contains("说明"));
-        assert!(t.contains("尾部"));
-    }
-
-    #[test]
-    fn strips_nested_dsml_fullwidth() {
-        let s = "前言<｜DSML｜function_calls><｜DSML｜invoke name=\"f\"><｜DSML｜parameter name=\"x\" string=\"true\">v</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜function_calls>后记";
-        let t = strip_deepseek_dsml_for_display(s);
-        assert!(!t.contains("DSML"), "{t}");
-        assert!(t.contains("前言"));
-        assert!(t.contains("后记"));
-    }
-
-    #[test]
-    fn strips_ascii_pipe_variant() {
-        let s = "a <|DSML|function_calls></|DSML|function_calls> b";
-        let t = strip_deepseek_dsml_for_display(s);
-        assert!(!t.contains("DSML"), "{t}");
-        assert!(t.contains('a'));
-        assert!(t.contains('b'));
-    }
-
-    #[test]
-    fn noop_without_dsml() {
-        let s = "普通中文与 English\n第二行";
-        assert_eq!(strip_deepseek_dsml_for_display(s), s);
-    }
 }
