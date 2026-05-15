@@ -20,7 +20,19 @@ pub struct ConversationMessagesResponse {
     pub revision: u64,
     #[serde(default)]
     pub active_agent_role: Option<String>,
+    /// 服务端可选返回；水合路径当前未消费，保留供 UI/调试读取。
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub tiktoken_prompt_tokens: Option<TiktokenPromptTokensSnapshot>,
     pub messages: Vec<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TiktokenPromptTokensSnapshot {
+    #[allow(dead_code)]
+    pub prompt_tokens: u32,
+    #[allow(dead_code)]
+    pub tiktoken_model: String,
 }
 
 #[derive(Debug, Deserialize)]

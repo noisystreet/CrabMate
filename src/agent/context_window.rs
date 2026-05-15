@@ -78,10 +78,22 @@ pub fn prepare_messages_before_model_call_sync(messages: &mut Vec<Message>, cfg:
             cfg,
             Some(&mut report),
         );
+        let tiktoken_note =
+            crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
+                cfg, messages,
+            )
+            .map(|t| {
+                format!(
+                    " | tiktoken_prompt_tokens≈{} (tiktoken_model={})",
+                    t.prompt_tokens, t.tiktoken_model
+                )
+            })
+            .unwrap_or_default();
         log::debug!(
             target: "crabmate",
-            "message_pipeline session_sync: {}",
-            report.format_for_log()
+            "message_pipeline session_sync: {}{}",
+            report.format_for_log(),
+            tiktoken_note
         );
     } else {
         crate::agent::message_pipeline::apply_session_sync_pipeline(messages, cfg, None);

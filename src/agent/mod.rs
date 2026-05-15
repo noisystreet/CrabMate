@@ -30,6 +30,8 @@ pub mod reflection;
 /// 分阶段 `executor_kind` 与 DAG `node_tool_role` 共用的工具允许表。
 pub(crate) mod step_executor_policy;
 pub mod step_verifier;
+/// OpenAI 兼容会话的 **tiktoken** prompt token 粗估（与 `message_pipeline::conversation_messages_to_vendor_body` 对齐）。
+pub mod tiktoken_prompt_tokens;
 /// 单轮墙钟预算判定与文案（`agent_turn` / `staged` / `hierarchy` 共用）。
 pub mod turn_budget;
 pub mod workflow;
