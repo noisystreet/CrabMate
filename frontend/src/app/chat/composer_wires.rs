@@ -8,6 +8,7 @@ use leptos::prelude::*;
 use super::composer_follow_up::ComposerStreamFollowUp;
 use super::composer_stream::{ComposerStreamHandles, make_attach_chat_stream};
 use super::handles::{ChatComposerWires, ComposerStreamShell, WireComposerStreamsArgs};
+use super::stream_follow_up_gates::{RegenAttachGate, compose_user_send_allowed};
 use super::stream_user_abort::apply_user_abort_of_inflight_stream;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n;
@@ -110,34 +111,6 @@ fn begin_stream_shell_turn(shell: &ComposerStreamShell) {
     shell.approval.clear_pending_user_interactions();
 }
 
-/// 截断后再生：是否因「真在跑的流 / 工具 / abort / 其它助手 Loading」应暂缓 `attach`（**不计** `asst_id` 自身占位）。
-fn regen_stream_blocked_for_attach(
-    shell: &ComposerStreamShell,
-    chat: ChatSessionSignals,
-    asst_id: &str,
-    user_text_len: usize,
-) -> bool {
-    let status_busy = shell.stream.status_busy.get();
-    let tool_busy = shell.stream.tool_busy.get();
-    let abort_present = shell
-        .stream
-        .abort_cell
-        .lock()
-        .map(|g| g.is_some())
-        .unwrap_or(false);
-    let conflict_loading =
-        crate::chat_session_state::session_has_conflicting_stream_loading_placeholders(
-            chat, asst_id,
-        );
-    web_sys::console::log_1(
-        &format!(
-            "[effect] regen_stream: status_busy={status_busy}, tool_busy={tool_busy}, abort={abort_present}, conflict_loading={conflict_loading}, text_len={user_text_len}, asst_id={asst_id}",
-        )
-        .into(),
-    );
-    status_busy || tool_busy || abort_present || conflict_loading
-}
-
 pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatComposerWires {
     let WireComposerStreamsArgs {
         initialized,
@@ -174,10 +147,13 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
             else {
                 return;
             };
-            if (user_line.is_empty() && imgs.is_empty() && clarify_json.is_none())
-                || !initialized.get()
-                || stream_turn_busy_ui.get()
-            {
+            if !compose_user_send_allowed(
+                initialized.get(),
+                stream_turn_busy_ui.get(),
+                user_line.is_empty(),
+                imgs.is_empty(),
+                clarify_json.is_none(),
+            ) {
                 return;
             }
             auto_scroll_chat.set(true);
@@ -234,12 +210,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
                     if !initialized.get() {
                         return;
                     }
-                    if regen_stream_blocked_for_attach(
-                        &shell,
-                        chat,
-                        asst_id.as_str(),
-                        user_text.len(),
-                    ) {
+                    if RegenAttachGate::capture(&shell, chat, asst_id.as_str()).is_blocked() {
                         return;
                     }
                     stream_follow_up.set(ComposerStreamFollowUp::Idle);

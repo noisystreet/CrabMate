@@ -93,6 +93,40 @@ struct MergeHydrationIntoActiveSessionArgs<'a> {
     selected_agent_role: RwSignal<Option<String>>,
 }
 
+/// 水合合并前的**有序守卫**：返回 `Err(skip)` 时调用方应直接返回对应 [`SessionHydrationMergeOutcome`]。
+fn try_hydration_merge_precheck(
+    session: &ChatSession,
+    aid: &str,
+    cid: &str,
+    hydrated: &[StoredMessage],
+    nonce_at_start: u64,
+    current_nonce: u64,
+    active_id: &str,
+) -> Result<(), SessionHydrationMergeOutcome> {
+    if active_id != aid {
+        return Err(SessionHydrationMergeOutcome::SkippedActiveSessionMismatch);
+    }
+    if messages_contain_loading(&session.messages) {
+        return Err(SessionHydrationMergeOutcome::SkippedLoadingPlaceholders);
+    }
+    let still = trimmed_server_conversation_id(session);
+    if still != Some(cid) {
+        return Err(SessionHydrationMergeOutcome::SkippedConversationIdMismatch);
+    }
+    if current_nonce != nonce_at_start {
+        return Err(SessionHydrationMergeOutcome::SkippedHydrateNonceMismatch);
+    }
+    let local_users = count_user_role_bubbles(&session.messages);
+    let hydrated_users = count_user_role_bubbles(hydrated);
+    if !session.messages.is_empty() && hydrated.is_empty() {
+        return Err(SessionHydrationMergeOutcome::SkippedEmptyHydrateAgainstLocalMessages);
+    }
+    if local_users > 0 && hydrated_users < local_users {
+        return Err(SessionHydrationMergeOutcome::SkippedHydratedUserRegression);
+    }
+    Ok(())
+}
+
 /// 将 `GET /conversation/messages` 结果合并进当前会话；[`SessionHydrationMergeOutcome::Applied`] 表示已写 `messages` / `server_revision` 等。
 fn merge_hydration_into_active_session(
     args: MergeHydrationIntoActiveSessionArgs<'_>,
@@ -108,26 +142,16 @@ fn merge_hydration_into_active_session(
         active_id,
         selected_agent_role,
     } = args;
-    if active_id != aid {
-        return SessionHydrationMergeOutcome::SkippedActiveSessionMismatch;
-    }
-    if messages_contain_loading(&session.messages) {
-        return SessionHydrationMergeOutcome::SkippedLoadingPlaceholders;
-    }
-    let still = trimmed_server_conversation_id(session);
-    if still != Some(cid) {
-        return SessionHydrationMergeOutcome::SkippedConversationIdMismatch;
-    }
-    if current_nonce != nonce_at_start {
-        return SessionHydrationMergeOutcome::SkippedHydrateNonceMismatch;
-    }
-    let local_users = count_user_role_bubbles(&session.messages);
-    let hydrated_users = count_user_role_bubbles(&hydrated);
-    if !session.messages.is_empty() && hydrated.is_empty() {
-        return SessionHydrationMergeOutcome::SkippedEmptyHydrateAgainstLocalMessages;
-    }
-    if local_users > 0 && hydrated_users < local_users {
-        return SessionHydrationMergeOutcome::SkippedHydratedUserRegression;
+    if let Err(out) = try_hydration_merge_precheck(
+        session,
+        aid,
+        cid,
+        &hydrated,
+        nonce_at_start,
+        current_nonce,
+        active_id,
+    ) {
+        return out;
     }
     let mut new_messages = hydrated;
     let preserved = local_messages_preserved_after_hydrate(&new_messages, &session.messages);
@@ -156,6 +180,7 @@ fn restore_reasoning_after_hydration(chat: &ChatSessionSignals, aid: &str, nonce
         return;
     }
     let preserved = chat.reasoning_preserved.get_untracked();
+    #[cfg(debug_assertions)]
     web_sys::console::log_1(
         &format!(
             "[hydration] restoring {} reasoning_text entries, aid={}",
@@ -171,6 +196,7 @@ fn restore_reasoning_after_hydration(chat: &ChatSessionSignals, aid: &str, nonce
         if let Some(s) = list.iter_mut().find(|x| x.id == aid) {
             for m in s.messages.iter_mut() {
                 if let Some(rt) = preserved.get(&m.id) {
+                    #[cfg(debug_assertions)]
                     web_sys::console::log_1(
                         &format!(
                             "[hydration] restored reasoning_text len={} for mid={}",
