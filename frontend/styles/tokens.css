@@ -11,7 +11,7 @@
   --space-3: 12px;
   --space-4: 16px;
   --space-5: 20px;
-  --space-inset-msg: var(--space-4);
+  --space-inset-msg: var(--space-5);
   --space-gap-msg: 14px;
 
   /* 排版 */
@@ -20,8 +20,7 @@
   --font-weight-label: 650;
   --line-tight: 1.35;
   /* 正文默认行高（base.css body）；略放大以利长文阅读 */
-  --line-body: 1.52;
-
+  --line-body: 1.55;
   /* 动效 */
   --dur-fast: 0.15s;
   --dur-sidebar: 0.26s;
@@ -84,6 +83,10 @@
     0 26px 60px rgba(0, 0, 0, 0.34);
   --shadow-sm: var(--shadow-raised);
   --shadow-md: var(--shadow-overlay);
+  /* 卡片级极浅阴影，比 raised 更轻，用于侧栏卡片等次要层级 */
+  --shadow-card:
+    0 1px 2px rgba(0, 0, 0, 0.06),
+    0 1px 1px rgba(0, 0, 0, 0.03);
   --font-sans: "DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
   --topbar-h: 52px;

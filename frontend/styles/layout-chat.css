@@ -431,7 +431,7 @@
 }
 
 .msg {
-  border-radius: calc(var(--radius-md) / 2);
+  border-radius: 12px;
   padding: var(--space-2) var(--space-inset-msg);
   min-width: 0;
   flex-shrink: 0;

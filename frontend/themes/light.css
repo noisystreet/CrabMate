@@ -3,23 +3,24 @@
  * 见 themes/README.md：增删预设时请同步 Rust 白名单（app_prefs::THEME_SLUGS）与 index.html 引用链。
  */
 :root[data-theme="light"] {
-  /* 浅色：中性纸灰底 + 钢蓝主色；表面阶略拉开 */
-  --bg: #eceef2;
-  --bg-elevated: #f4f5f8;
+  /* 暖白底：米灰基调，告别冷灰工具感 */
+  --bg: #f5f2ed;
+  --bg-elevated: #faf8f5;
   --surface: #ffffff;
-  --surface-hover: #f1f3f6;
-  --border: #d8dce4;
-  --border-subtle: #e8ebf1;
-  --text: #16171c;
-  --muted: #5a616e;
-  --accent: #475e7a;
+  --surface-hover: #f3f0eb;
+  --border: #e2ddd6;
+  --border-subtle: #ede9e3;
+  --text: #1e1b16;
+  --muted: #8a8278;
+  /* 主色：鼠尾草绿，低饱和高级感 */
+  --accent: #7a8c7a;
   --accent-dim: color-mix(in srgb, var(--accent) 15%, var(--surface));
   --accent-glow: color-mix(in srgb, var(--accent) 7%, transparent);
 
-  --info: #475e7a;
-  --success: #3a634d;
-  --warn: #885e30;
-  --error: #8c4049;
+  --info: #7a8c7a;
+  --success: #6b8f6b;
+  --warn: #9a8b5a;
+  --error: #b06a6a;
 
   --info-bg: color-mix(in srgb, var(--info) 10%, var(--surface));
   --success-bg: color-mix(in srgb, var(--success) 10%, var(--surface));
@@ -29,16 +30,21 @@
   --danger: var(--error);
   --danger-bg: var(--error-bg);
   --ok: var(--success);
+  /* 暖调柔和阴影，避免冷蓝灰 */
   --shadow-raised:
-    0 1px 2px rgba(15, 23, 42, 0.028),
-    0 6px 22px rgba(15, 23, 42, 0.034);
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 4px 12px rgba(0, 0, 0, 0.04);
   --shadow-overlay:
-    0 10px 32px rgba(15, 23, 42, 0.055),
-    0 22px 52px rgba(15, 23, 42, 0.042);
+    0 8px 30px rgba(0, 0, 0, 0.08),
+    0 24px 60px rgba(0, 0, 0, 0.06);
   --shadow-sm: var(--shadow-raised);
   --shadow-md: var(--shadow-overlay);
+  /* 卡片级极浅阴影，让层级更细腻 */
+  --shadow-card:
+    0 1px 3px rgba(0, 0, 0, 0.03),
+    0 1px 2px rgba(0, 0, 0, 0.02);
 
-  /* 浅色覆层（与历史 [data-theme="light"] 组件分叉等价） */
+  /* 浅色覆层 */
   --selection-bg: color-mix(in srgb, var(--accent) 18%, transparent);
   --selection-color: var(--text);
   --page-bg-decor-html:
@@ -54,8 +60,8 @@
     color-mix(in srgb, var(--accent) 94%, #0f172a) 100%
   );
   --btn-primary-border: color-mix(in srgb, var(--accent) 72%, #1e293b);
-  --modal-backdrop-bg: rgba(15, 23, 42, 0.33);
-  --status-agent-select-bg-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%235a616e' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
+  --modal-backdrop-bg: rgba(30, 27, 22, 0.30);
+  --status-agent-select-bg-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%238a8278' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
   --composer-bar-box-shadow:
     0 -1px 0 color-mix(in srgb, #fff 72%, transparent) inset,
     0 -6px 26px color-mix(in srgb, var(--border) 10%, transparent);

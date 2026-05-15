@@ -5,7 +5,7 @@
   min-height: 0;
   flex-shrink: 0;
   background: color-mix(in srgb, var(--bg) 78%, var(--bg-elevated));
-  border-left: 1px solid var(--border-subtle);
+  /* 去掉 border-left，靠背景色差自然分隔 */
   overflow: hidden;
   box-sizing: border-box;
   transition:
@@ -72,7 +72,7 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--bg-elevated) 78%, var(--bg));
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-card);
 }
 
 .side-card-head {
