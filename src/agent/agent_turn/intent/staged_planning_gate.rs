@@ -16,6 +16,7 @@ use crate::config::AgentConfig;
 #[cfg(test)]
 use crate::types::Message;
 
+use super::advisory_bypass;
 use super::at_turn_start::emit_intent_timeline_gate_only;
 use super::build_intent_routing_context;
 use super::intent_user;
@@ -75,97 +76,16 @@ fn intent_action_discriminant(action: &IntentAction) -> &'static str {
     }
 }
 
-/// 是否因「架构/重构类咨询」跳过滚动分阶段规划（在 **`IntentAction::Execute`** 前提下）。
-fn should_bypass_staged_for_advisory_execute_task(task: &str, decision: &IntentDecision) -> bool {
-    if !matches!(decision.action, IntentAction::Execute) {
-        return false;
-    }
-    let lower = task.trim().to_lowercase();
-    if lower.is_empty() {
-        return false;
-    }
-
-    let impl_strength = [
-        "请修改",
-        "请实现",
-        "请添加",
-        "请删除",
-        "帮我改",
-        "帮我写",
-        "帮我删",
-        "直接改",
-        "直接写",
-        "运行 cargo",
-        "cargo test",
-        "cargo build",
-        "cargo fmt",
-        "提交",
-        "开 pr",
-        "pull request",
-        "cherry-pick",
-        "rebase",
-        "fix bug",
-        "implement ",
-        "add feature",
-        "apply_patch",
-    ];
-    if impl_strength.iter().any(|k| lower.contains(k)) {
-        return false;
-    }
-
-    let arch = [
-        "重构",
-        "架构",
-        "隐式状态",
-        "技术债",
-        "耦合",
-        "模块边界",
-        "解耦",
-        "分层",
-        "implicit state",
-        "architecture",
-        "refactoring strategy",
-        "refactor plan",
-    ];
-    let consult = [
-        "哪里",
-        "哪些",
-        "如何",
-        "怎么",
-        "建议",
-        "分析",
-        "说明",
-        "介绍",
-        "严重",
-        "痛点",
-        "值得",
-        "要不要",
-        "哪些方面",
-        "有何问题",
-        "什么问题",
-        "where ",
-        "what parts",
-        "which areas",
-        "how should",
-        "suggest",
-        "recommend",
-    ];
-
-    let has_arch = arch.iter().any(|k| lower.contains(k));
-    let has_consult = consult.iter().any(|k| lower.contains(k));
-    (lower.contains("隐式") || has_arch) && has_consult
-}
-
 /// 在 **`IntentAction::Execute`** 且（若启用）未命中咨询启发式时返回 `Ok`；否则返回对应 **Deny** 原因（含非 Execute）。
 fn staged_plan_eligibility_for_intent(
     task: &str,
     decision: &IntentDecision,
-    advisory_bypass_enabled: bool,
+    staged: &crate::config::StagedPlanningConfig,
 ) -> Result<(), StagedPlanningDenyReason> {
     if !matches!(decision.action, IntentAction::Execute) {
         return Err(StagedPlanningDenyReason::IntentPipelineNotExecute);
     }
-    if advisory_bypass_enabled && should_bypass_staged_for_advisory_execute_task(task, decision) {
+    if advisory_bypass::should_bypass_staged_for_advisory_execute_task(task, decision, staged) {
         return Err(StagedPlanningDenyReason::AdvisoryExecuteBypassStaged);
     }
     Ok(())
@@ -277,11 +197,7 @@ pub(crate) async fn assess_staged_planning_gate_full_pipeline(
     let eligibility = staged_plan_eligibility_for_intent(
         task.as_str(),
         &decision,
-        p.ctx
-            .core
-            .cfg
-            .staged_planning
-            .staged_plan_intent_gate_advisory_bypass,
+        &p.ctx.core.cfg.staged_planning,
     );
     log_staged_gate_outcome(task.as_str(), &decision, sse_log_tag, eligibility);
 
@@ -331,11 +247,8 @@ pub(crate) fn assess_staged_planning_gate(
         },
     );
     let decision = assess_and_route(task.as_str(), &intent_ctx);
-    let eligibility = staged_plan_eligibility_for_intent(
-        task.as_str(),
-        &decision,
-        cfg.staged_planning.staged_plan_intent_gate_advisory_bypass,
-    );
+    let eligibility =
+        staged_plan_eligibility_for_intent(task.as_str(), &decision, &cfg.staged_planning);
     log_staged_gate_outcome(
         task.as_str(),
         &decision,

@@ -58,6 +58,9 @@ struct FinalizeTailScalars {
     staged_plan_skip_ensemble_on_casual_prompt: bool,
     staged_plan_two_phase_nl_display: bool,
     staged_plan_intent_gate_advisory_bypass: bool,
+    staged_plan_advisory_bypass_extra_impl_blockers: Vec<String>,
+    staged_plan_advisory_bypass_extra_arch_markers: Vec<String>,
+    staged_plan_advisory_bypass_extra_consult_markers: Vec<String>,
     staged_plan_baseline_mode: StagedPlanBaselineMode,
     sync_default_tool_sandbox_mode: types::SyncDefaultToolSandboxMode,
     sync_default_tool_sandbox_docker_image: String,
@@ -330,6 +333,9 @@ struct TailStagedSandboxWebScalars {
     staged_plan_skip_ensemble_on_casual_prompt: bool,
     staged_plan_two_phase_nl_display: bool,
     staged_plan_intent_gate_advisory_bypass: bool,
+    staged_plan_advisory_bypass_extra_impl_blockers: Vec<String>,
+    staged_plan_advisory_bypass_extra_arch_markers: Vec<String>,
+    staged_plan_advisory_bypass_extra_consult_markers: Vec<String>,
     staged_plan_baseline_mode: StagedPlanBaselineMode,
     sync_default_tool_sandbox_mode: types::SyncDefaultToolSandboxMode,
     sync_default_tool_sandbox_docker_image: String,
@@ -366,6 +372,29 @@ fn derive_tail_staged_sandbox_web_scalars(
     let staged_plan_two_phase_nl_display = b.staged_planning.staged_plan_two_phase_nl_display.unwrap_or(false);
     let staged_plan_intent_gate_advisory_bypass =
         b.staged_planning.staged_plan_intent_gate_advisory_bypass.unwrap_or(false);
+    let advisory_extra_keywords = |v: Option<Vec<String>>| -> Vec<String> {
+        v.unwrap_or_default()
+            .into_iter()
+            .map(|s| s.trim().to_lowercase())
+            .filter(|s| !s.is_empty())
+            .take(48)
+            .collect()
+    };
+    let staged_plan_advisory_bypass_extra_impl_blockers = advisory_extra_keywords(
+        b.staged_planning
+            .staged_plan_advisory_bypass_extra_impl_blockers
+            .clone(),
+    );
+    let staged_plan_advisory_bypass_extra_arch_markers = advisory_extra_keywords(
+        b.staged_planning
+            .staged_plan_advisory_bypass_extra_arch_markers
+            .clone(),
+    );
+    let staged_plan_advisory_bypass_extra_consult_markers = advisory_extra_keywords(
+        b.staged_planning
+            .staged_plan_advisory_bypass_extra_consult_markers
+            .clone(),
+    );
     let staged_plan_baseline_mode = match b.staged_planning.staged_plan_baseline_mode_str.as_deref() {
         Some(s) => StagedPlanBaselineMode::parse(s)?,
         None => StagedPlanBaselineMode::default(),
@@ -424,6 +453,9 @@ fn derive_tail_staged_sandbox_web_scalars(
         staged_plan_skip_ensemble_on_casual_prompt,
         staged_plan_two_phase_nl_display,
         staged_plan_intent_gate_advisory_bypass,
+        staged_plan_advisory_bypass_extra_impl_blockers,
+        staged_plan_advisory_bypass_extra_arch_markers,
+        staged_plan_advisory_bypass_extra_consult_markers,
         staged_plan_baseline_mode,
         sync_default_tool_sandbox_mode,
         sync_default_tool_sandbox_docker_image,
@@ -665,31 +697,6 @@ fn assemble_finalize_tail_scalars(
         session_workspace_changelist_enabled,
         session_workspace_changelist_max_chars,
     } = cqs;
-    let TailStagedSandboxWebScalars {
-        staged_plan_execution,
-        staged_plan_phase_instruction,
-        staged_plan_allow_no_task,
-        staged_plan_feedback_mode,
-        staged_plan_patch_max_attempts,
-        staged_plan_cli_show_planner_stream,
-        staged_plan_optimizer_round,
-        staged_plan_optimizer_requires_parallel_tools,
-        staged_plan_ensemble_count,
-        staged_plan_skip_ensemble_on_casual_prompt,
-        staged_plan_two_phase_nl_display,
-        staged_plan_intent_gate_advisory_bypass,
-        staged_plan_baseline_mode,
-        sync_default_tool_sandbox_mode,
-        sync_default_tool_sandbox_docker_image,
-        sync_default_tool_sandbox_docker_network,
-        sync_default_tool_sandbox_docker_timeout_secs,
-        sync_default_tool_sandbox_docker_user,
-        web_api_bearer_token,
-        web_api_require_bearer,
-        web_audit_log_write_tools,
-        web_audit_trust_x_forwarded_for,
-        allow_insecure_no_auth_for_non_loopback,
-    } = ssw;
     let TailStorageInjectNetScalars {
         conversation_store_sqlite_path,
         agent_memory_file_enabled,
@@ -764,29 +771,38 @@ fn assemble_finalize_tail_scalars(
         test_result_cache_max_entries,
         session_workspace_changelist_enabled,
         session_workspace_changelist_max_chars,
-        staged_plan_execution,
-        staged_plan_phase_instruction,
-        staged_plan_allow_no_task,
-        staged_plan_feedback_mode,
-        staged_plan_patch_max_attempts,
-        staged_plan_cli_show_planner_stream,
-        staged_plan_optimizer_round,
-        staged_plan_optimizer_requires_parallel_tools,
-        staged_plan_ensemble_count,
-        staged_plan_skip_ensemble_on_casual_prompt,
-        staged_plan_two_phase_nl_display,
-        staged_plan_intent_gate_advisory_bypass,
-        staged_plan_baseline_mode,
-        sync_default_tool_sandbox_mode,
-        sync_default_tool_sandbox_docker_image,
-        sync_default_tool_sandbox_docker_network,
-        sync_default_tool_sandbox_docker_timeout_secs,
-        sync_default_tool_sandbox_docker_user,
-        web_api_bearer_token,
-        web_api_require_bearer,
-        web_audit_log_write_tools,
-        web_audit_trust_x_forwarded_for,
-        allow_insecure_no_auth_for_non_loopback,
+        staged_plan_execution: ssw.staged_plan_execution,
+        staged_plan_phase_instruction: ssw.staged_plan_phase_instruction.clone(),
+        staged_plan_allow_no_task: ssw.staged_plan_allow_no_task,
+        staged_plan_feedback_mode: ssw.staged_plan_feedback_mode,
+        staged_plan_patch_max_attempts: ssw.staged_plan_patch_max_attempts,
+        staged_plan_cli_show_planner_stream: ssw.staged_plan_cli_show_planner_stream,
+        staged_plan_optimizer_round: ssw.staged_plan_optimizer_round,
+        staged_plan_optimizer_requires_parallel_tools: ssw.staged_plan_optimizer_requires_parallel_tools,
+        staged_plan_ensemble_count: ssw.staged_plan_ensemble_count,
+        staged_plan_skip_ensemble_on_casual_prompt: ssw.staged_plan_skip_ensemble_on_casual_prompt,
+        staged_plan_two_phase_nl_display: ssw.staged_plan_two_phase_nl_display,
+        staged_plan_intent_gate_advisory_bypass: ssw.staged_plan_intent_gate_advisory_bypass,
+        staged_plan_advisory_bypass_extra_impl_blockers: ssw
+            .staged_plan_advisory_bypass_extra_impl_blockers
+            .clone(),
+        staged_plan_advisory_bypass_extra_arch_markers: ssw
+            .staged_plan_advisory_bypass_extra_arch_markers
+            .clone(),
+        staged_plan_advisory_bypass_extra_consult_markers: ssw
+            .staged_plan_advisory_bypass_extra_consult_markers
+            .clone(),
+        staged_plan_baseline_mode: ssw.staged_plan_baseline_mode,
+        sync_default_tool_sandbox_mode: ssw.sync_default_tool_sandbox_mode,
+        sync_default_tool_sandbox_docker_image: ssw.sync_default_tool_sandbox_docker_image.clone(),
+        sync_default_tool_sandbox_docker_network: ssw.sync_default_tool_sandbox_docker_network.clone(),
+        sync_default_tool_sandbox_docker_timeout_secs: ssw.sync_default_tool_sandbox_docker_timeout_secs,
+        sync_default_tool_sandbox_docker_user: ssw.sync_default_tool_sandbox_docker_user,
+        web_api_bearer_token: ssw.web_api_bearer_token.clone(),
+        web_api_require_bearer: ssw.web_api_require_bearer,
+        web_audit_log_write_tools: ssw.web_audit_log_write_tools,
+        web_audit_trust_x_forwarded_for: ssw.web_audit_trust_x_forwarded_for,
+        allow_insecure_no_auth_for_non_loopback: ssw.allow_insecure_no_auth_for_non_loopback,
         conversation_store_sqlite_path,
         agent_memory_file_enabled,
         agent_memory_file,

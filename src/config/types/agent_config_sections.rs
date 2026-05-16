@@ -215,6 +215,12 @@ pub struct StagedPlanningConfig {
     pub staged_plan_intent_gate_advisory_bypass: bool,
     /// 首轮定稿计划是否作为后续滚动重规划的蓝图锚点（见 [`StagedPlanBaselineMode`]）。
     pub staged_plan_baseline_mode: StagedPlanBaselineMode,
+    /// 追加到内置「落地强度」词表（子串匹配，**小写**）；命中则**不**因咨询启发式绕过分阶段。
+    pub staged_plan_advisory_bypass_extra_impl_blockers: Vec<String>,
+    /// 追加到内置「架构/技术债」词表（子串匹配，**小写**）。
+    pub staged_plan_advisory_bypass_extra_arch_markers: Vec<String>,
+    /// 追加到内置「征询语气」词表（子串匹配，**小写**）。
+    pub staged_plan_advisory_bypass_extra_consult_markers: Vec<String>,
 }
 
 #[derive(Debug, Clone)]

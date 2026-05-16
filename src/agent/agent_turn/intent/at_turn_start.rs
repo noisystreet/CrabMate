@@ -285,11 +285,15 @@ async fn run_intent_l0_l1_l2_gate(
         IntentAction::ClarifyThenExecute(_) => {
             p.turn.turn_planner_hints.intent_turn_gate_hint =
                 Some(GATE_HINT_CLARIFY_ZH.to_string());
+            p.turn.turn_planner_hints.step_executor_constraint =
+                Some(PlanStepExecutorKind::ReviewReadonly);
             return Ok(IntentGateResult::ProceedExecute { assessment });
         }
         IntentAction::ConfirmThenExecute(_) => {
             p.turn.turn_planner_hints.intent_turn_gate_hint =
                 Some(GATE_HINT_CONFIRM_ZH.to_string());
+            p.turn.turn_planner_hints.step_executor_constraint =
+                Some(PlanStepExecutorKind::ReviewReadonly);
             return Ok(IntentGateResult::ProceedExecute { assessment });
         }
         _ => {}

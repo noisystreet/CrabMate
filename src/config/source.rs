@@ -205,6 +205,10 @@ pub(super) struct AgentSection {
     pub(super) staged_plan_two_phase_nl_display: Option<bool>,
     /// 咨询类 **`Execute`** 是否绕过分阶段意图门控；默认 **`false`**（仍走滚动分阶段）。
     pub(super) staged_plan_intent_gate_advisory_bypass: Option<bool>,
+    /// 追加到咨询 bypass「落地强度」词表（子串，小写存储）；非空时覆盖合并链中该列表。
+    pub(super) staged_plan_advisory_bypass_extra_impl_blockers: Option<Vec<String>>,
+    pub(super) staged_plan_advisory_bypass_extra_arch_markers: Option<Vec<String>>,
+    pub(super) staged_plan_advisory_bypass_extra_consult_markers: Option<Vec<String>>,
     /// `immutable_goal_only` | `goal_plus_baseline_plan` | `strict_baseline_steps`；`CM_STAGED_PLAN_BASELINE_MODE`
     pub(super) staged_plan_baseline_mode: Option<String>,
     /// `none` | `docker`；`CM_SYNC_DEFAULT_TOOL_SANDBOX_MODE`

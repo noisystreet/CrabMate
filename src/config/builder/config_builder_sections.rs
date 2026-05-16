@@ -201,6 +201,9 @@ pub(crate) struct ConfigBuilderStagedPlanning {
     pub(crate) staged_plan_skip_ensemble_on_casual_prompt: Option<bool>,
     pub(crate) staged_plan_two_phase_nl_display: Option<bool>,
     pub(crate) staged_plan_intent_gate_advisory_bypass: Option<bool>,
+    pub(crate) staged_plan_advisory_bypass_extra_impl_blockers: Option<Vec<String>>,
+    pub(crate) staged_plan_advisory_bypass_extra_arch_markers: Option<Vec<String>>,
+    pub(crate) staged_plan_advisory_bypass_extra_consult_markers: Option<Vec<String>>,
     pub(crate) staged_plan_baseline_mode_str: Option<String>,
 }
 

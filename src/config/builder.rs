@@ -337,6 +337,27 @@ impl ConfigBuilder {
         sp.staged_plan_intent_gate_advisory_bypass = agent
             .staged_plan_intent_gate_advisory_bypass
             .or(sp.staged_plan_intent_gate_advisory_bypass);
+        if let Some(v) = agent
+            .staged_plan_advisory_bypass_extra_impl_blockers
+            .as_ref()
+            && !v.is_empty()
+        {
+            sp.staged_plan_advisory_bypass_extra_impl_blockers = Some(v.clone());
+        }
+        if let Some(v) = agent
+            .staged_plan_advisory_bypass_extra_arch_markers
+            .as_ref()
+            && !v.is_empty()
+        {
+            sp.staged_plan_advisory_bypass_extra_arch_markers = Some(v.clone());
+        }
+        if let Some(v) = agent
+            .staged_plan_advisory_bypass_extra_consult_markers
+            .as_ref()
+            && !v.is_empty()
+        {
+            sp.staged_plan_advisory_bypass_extra_consult_markers = Some(v.clone());
+        }
         override_opt_string_non_empty(
             &mut sp.staged_plan_baseline_mode_str,
             agent.staged_plan_baseline_mode.clone(),
