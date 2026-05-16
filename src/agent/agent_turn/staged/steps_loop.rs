@@ -202,7 +202,7 @@ where
     let mut step_verify_failed_reason: Option<String> = None;
     if run_step.is_ok() {
         #[allow(clippy::collapsible_if)]
-        if let Some(ref acceptance) = step.acceptance {
+        if let Some(acceptance) = step.acceptance.as_ref().filter(|a| a.is_effective()) {
             let verify_result = crate::agent::step_verifier::verify_step_execution(
                 acceptance,
                 patch_ctx.p.turn.messages(),

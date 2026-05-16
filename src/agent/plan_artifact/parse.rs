@@ -1,5 +1,7 @@
 use super::fence::strip_optional_json_fence_label;
-use super::types::{AgentReplyPlanV1, PlanArtifactError};
+use super::types::{
+    AgentReplyPlanV1, PlanArtifactError, normalize_agent_reply_plan_v1_acceptance_in_place,
+};
 use super::validate::{
     validate_agent_reply_plan_v1, validate_agent_reply_plan_v1_with_validate_only_binding_ids,
 };
@@ -14,6 +16,8 @@ pub fn parse_agent_reply_plan_v1(content: &str) -> Result<AgentReplyPlanV1, Plan
             continue;
         };
         if validate_agent_reply_plan_v1(&plan).is_ok() {
+            let mut plan = plan;
+            normalize_agent_reply_plan_v1_acceptance_in_place(&mut plan);
             return Ok(plan);
         }
     }
@@ -36,6 +40,8 @@ pub(crate) fn parse_agent_reply_plan_v1_with_validate_only_binding_ids(
         )
         .is_ok()
         {
+            let mut plan = plan;
+            normalize_agent_reply_plan_v1_acceptance_in_place(&mut plan);
             return Ok(plan);
         }
     }

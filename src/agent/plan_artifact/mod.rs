@@ -504,6 +504,26 @@ mod tests {
     }
 
     #[test]
+    fn parse_normalizes_empty_acceptance_object_to_none() {
+        let json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"do","acceptance":{}}]}"#;
+        let p = parse_agent_reply_plan_v1(json).expect("parse");
+        assert!(p.steps[0].acceptance.is_none());
+    }
+
+    #[test]
+    fn plan_step_acceptance_is_effective_false_for_empty_object_fields() {
+        let a = PlanStepAcceptance {
+            expect_exit_code: None,
+            expect_stdout_contains: None,
+            expect_stderr_contains: None,
+            expect_file_exists: None,
+            expect_json_path_equals: None,
+            expect_http_status: None,
+        };
+        assert!(!a.is_effective());
+    }
+
+    #[test]
     fn plan_step_acceptance_compact_reference_skips_empty() {
         let a = PlanStepAcceptance {
             expect_exit_code: None,

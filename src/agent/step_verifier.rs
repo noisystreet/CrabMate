@@ -1,7 +1,7 @@
 //! 确定性验证闸门（StepVerifier）：根据 `PlanStepV1` 中的 `acceptance` 对执行结果进行硬断言。
 //!
-//! **分阶段**路径下，验收只针对**当前步**：自该步分步 `user` 消息下标之后、**下一条** `user` 或会话末尾之前，取**最后一条** `role: tool` 消息（与
-//! 分阶段对「步内工具是否成功」的扫描范围一致）。若一步内调用了多种工具，通常应将验收条件对准**本步最后一条**工具输出，或拆成多步、每步一次工具加验收。
+//! **分阶段**路径下，验收针对当前分步的 **`acceptance`**（步界：分步 `user` 之后至下一条 `user` 或末尾）。
+//! 空规范直接 **Pass**；仅 **`expect_file_exists`** 时查工作区、**不要求**本步 `role: tool`；其余规则取本步**最后一条** `role: tool`。
 //!
 //! 核心判定逻辑见 [`crate::agent::acceptance`]。
 //!
@@ -50,6 +50,26 @@ pub fn verify_step_execution(
     step_user_index: usize,
     workspace_root: &std::path::Path,
 ) -> VerifyResult {
+    let spec = AcceptanceSpec::from(acceptance);
+    if spec.is_empty() {
+        return VerifyOutcome::Pass;
+    }
+
+    if !spec.requires_tool_evidence() {
+        let ev = AcceptanceEvidence {
+            tool_name: "",
+            tool_output: "",
+            stdout: "",
+            stderr: "",
+            tool_error: None,
+            fallback_exit_code: None,
+            workspace_root,
+            file_resolve: spec.file_resolve,
+            combined_text_override: None,
+        };
+        return crate::agent::acceptance::verify_against_spec(&spec, &ev);
+    }
+
     let last_tool_msg = last_tool_message_in_staged_step(messages, step_user_index);
     let (tool_name, tool_output) = if let Some(tool_msg) = last_tool_msg {
         let name = tool_msg.name.as_deref().unwrap_or("");
@@ -464,6 +484,67 @@ mod tests {
         };
         let r = verify_step_execution(&acceptance, &messages, 0, std::path::Path::new("/tmp"));
         assert!(r.is_pass());
+    }
+
+    #[test]
+    fn verify_step_empty_acceptance_passes_without_tool() {
+        let acceptance = PlanStepAcceptance {
+            expect_exit_code: None,
+            expect_stdout_contains: None,
+            expect_stderr_contains: None,
+            expect_file_exists: None,
+            expect_json_path_equals: None,
+            expect_http_status: None,
+        };
+        let messages = vec![
+            Message::user_only("### 分步 1/1"),
+            Message::assistant_only("仅文字结论，无工具"),
+        ];
+        let r = verify_step_execution(&acceptance, &messages, 0, std::path::Path::new("/tmp"));
+        assert!(r.is_pass());
+    }
+
+    #[test]
+    fn verify_step_file_exists_only_without_tool() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("微积分.rst");
+        std::fs::write(&file, "ok").expect("write");
+
+        let acceptance = PlanStepAcceptance {
+            expect_exit_code: None,
+            expect_stdout_contains: None,
+            expect_stderr_contains: None,
+            expect_file_exists: Some("微积分.rst".to_string()),
+            expect_json_path_equals: None,
+            expect_http_status: None,
+        };
+        let messages = vec![
+            Message::user_only("### 分步 1/1"),
+            Message::assistant_only("结论"),
+        ];
+        let r = verify_step_execution(&acceptance, &messages, 0, dir.path());
+        assert!(r.is_pass());
+    }
+
+    #[test]
+    fn verify_step_exit_code_requires_tool_in_step_window() {
+        let acceptance = PlanStepAcceptance {
+            expect_exit_code: Some(0),
+            expect_stdout_contains: None,
+            expect_stderr_contains: None,
+            expect_file_exists: None,
+            expect_json_path_equals: None,
+            expect_http_status: None,
+        };
+        let messages = vec![
+            Message::user_only("### 分步 1/1"),
+            Message::assistant_only("无工具"),
+        ];
+        let r = verify_step_execution(&acceptance, &messages, 0, std::path::Path::new("/tmp"));
+        assert!(!r.is_pass());
+        if let VerifyOutcome::Fail { reason } = r {
+            assert!(reason.contains("no tool result"));
+        }
     }
 
     #[test]

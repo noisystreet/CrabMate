@@ -70,6 +70,21 @@ impl AcceptanceSpec {
             && self.expect_json_path_equals.is_none()
             && self.expect_http_status.is_none()
     }
+
+    /// 是否须在本步窗口内存在 `role: tool` 证据（仅 `expect_file_exists` 等盘内检查时为 false）。
+    pub fn requires_tool_evidence(&self) -> bool {
+        self.expect_exit_code.is_some()
+            || self
+                .expect_stdout_contains
+                .as_ref()
+                .is_some_and(|s| !s.trim().is_empty())
+            || self
+                .expect_stderr_contains
+                .as_ref()
+                .is_some_and(|s| !s.trim().is_empty())
+            || self.expect_json_path_equals.is_some()
+            || self.expect_http_status.is_some()
+    }
 }
 
 impl From<&crate::agent::plan_artifact::PlanStepAcceptance> for AcceptanceSpec {

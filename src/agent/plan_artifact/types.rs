@@ -77,6 +77,11 @@ pub struct PlanStepAcceptance {
 }
 
 impl PlanStepAcceptance {
+    /// 是否含至少一条可执行的验收规则（空对象 `{}` 为 false）。
+    pub fn is_effective(&self) -> bool {
+        !crate::agent::acceptance::AcceptanceSpec::from(self).is_empty()
+    }
+
     /// 补丁规划 **user** 用：列出非空验收字段作为「参考 r」，子串/路径截断以免撑爆上下文。
     pub(crate) fn compact_reference_for_planner_feedback(&self) -> Option<String> {
         const SUB_PREVIEW: usize = 48;
@@ -167,6 +172,20 @@ pub struct PlanStepV1 {
     /// 可选：状态机控制流，用于定义执行完毕后的跳转规则。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transitions: Option<Vec<PlanStepControlFlow>>,
+}
+
+/// 将无实质字段的 `acceptance`（如 `{}`）规范为 `None`，避免误触发步级验收。
+pub fn normalize_plan_step_acceptance_in_place(step: &mut PlanStepV1) {
+    if step.acceptance.as_ref().is_some_and(|a| !a.is_effective()) {
+        step.acceptance = None;
+    }
+}
+
+/// 对规划中每一步执行 [`normalize_plan_step_acceptance_in_place`]。
+pub fn normalize_agent_reply_plan_v1_acceptance_in_place(plan: &mut AgentReplyPlanV1) {
+    for step in &mut plan.steps {
+        normalize_plan_step_acceptance_in_place(step);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -329,6 +348,9 @@ pub(crate) fn merge_staged_plan_steps_after_step_failure(
     out.extend_from_slice(&base[..failed_step_index]);
     out.extend(patch.steps.iter().cloned());
     backfill_executor_kinds_after_staged_patch(base, &mut out, failed_step_index);
+    for step in &mut out {
+        normalize_plan_step_acceptance_in_place(step);
+    }
     Ok(out)
 }
 
