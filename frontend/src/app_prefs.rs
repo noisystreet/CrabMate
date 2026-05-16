@@ -120,6 +120,23 @@ pub fn status_bar_effective_api_base(server: Option<&StatusData>, stored_api_bas
     }
 }
 
+/// 状态栏「上下文窗口 token 上限」：本机 `client_llm.llm_context_tokens` 非空且可解析为正数时优先，否则用 `/status`。
+#[must_use]
+pub fn status_bar_effective_llm_context_tokens(
+    server: Option<&StatusData>,
+    stored_llm_context_tokens: &str,
+) -> u32 {
+    let t = stored_llm_context_tokens.trim();
+    if !t.is_empty() {
+        if let Ok(n) = t.parse::<u32>() {
+            if n > 0 {
+                return n;
+            }
+        }
+    }
+    server.map(|d| d.llm_context_tokens).unwrap_or(0)
+}
+
 pub fn clamp_side_width_for_viewport(w: f64) -> f64 {
     let win = web_sys::window()
         .and_then(|win| win.inner_width().ok())

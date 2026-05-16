@@ -34,6 +34,25 @@ pub fn status_chip_base_url(_l: Locale) -> &'static str {
     "base_url"
 }
 
+pub fn status_chip_context(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "上下文",
+        Locale::En => "Context",
+    }
+}
+
+/// 状态栏「上下文」芯片 `title`：说明 tiktoken 粗估与上限含义。
+pub fn status_chip_context_tooltip(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => {
+            "当前会话消息体的 prompt tokens（tiktoken 粗估，与出站消息一致）相对 llm_context_tokens 上限；不含工具 JSON，与网关真实计费可能有偏差。"
+        }
+        Locale::En => {
+            "Prompt tokens for stored message bodies (tiktoken estimate, aligned with outbound messages) vs llm_context_tokens cap; excludes tool JSON and may differ from provider billing."
+        }
+    }
+}
+
 pub fn status_role_label(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "角色",

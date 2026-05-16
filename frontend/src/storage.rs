@@ -180,6 +180,17 @@ pub struct ChatSession {
     pub workspace_root: Option<String>,
 }
 
+impl ChatSession {
+    /// 非空且 trim 后的 `server_conversation_id`；与 `GET /conversation/messages` 路径参数对齐。
+    #[must_use]
+    pub fn trimmed_server_conversation_id(&self) -> Option<&str> {
+        self.server_conversation_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|x| !x.is_empty())
+    }
+}
+
 /// 进程重启后不再有挂起的 SSE；本地持久化的助手 `loading` 占位若不清理会永久显示「生成中」。
 /// 在从 `localStorage` 恢复会话列表时调用（见 `wire_initial_sessions_from_storage`）。
 pub fn clear_stale_assistant_loading_states(messages: &mut [StoredMessage]) {

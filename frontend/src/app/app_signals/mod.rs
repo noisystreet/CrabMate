@@ -91,6 +91,7 @@ impl AppSignals {
             stream_last_sse_event_seq: RwSignal::new(0),
             reasoning_preserved: RwSignal::new(HashMap::new()),
             stream_text_overlay: RwSignal::new(None),
+            conversation_prompt_tokens: RwSignal::new(None),
         };
 
         Self {

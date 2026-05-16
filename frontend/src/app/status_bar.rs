@@ -6,8 +6,11 @@ use leptos::prelude::*;
 use leptos_dom::helpers::event_target_value;
 
 use crate::api::load_client_llm_text_fields_from_storage;
-use crate::app_prefs::{status_bar_effective_api_base, status_bar_effective_model};
-use crate::chat_session_state::ChatStreamBusyMemos;
+use crate::app_prefs::{
+    status_bar_effective_api_base, status_bar_effective_llm_context_tokens,
+    status_bar_effective_model,
+};
+use crate::chat_session_state::{ChatSessionSignals, ChatStreamBusyMemos};
 
 use super::app_shell_ctx::StatusBarFooterSignals;
 use super::shell_runtime_context::expect_chat_shell_ctx;
@@ -48,6 +51,115 @@ struct StatusBarChipsSignals {
     client_llm_storage_tick: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
     locale: RwSignal<Locale>,
+}
+
+fn status_bar_context_chip_visible(chat: ChatSessionSignals) -> bool {
+    let Some(snap) = chat.conversation_prompt_tokens.get() else {
+        return false;
+    };
+    let aid = chat.active_id.get();
+    chat.sessions.with(|list| {
+        list.iter().find(|s| s.id == aid).is_some_and(|s| {
+            s.trimmed_server_conversation_id()
+                .is_some_and(|c| c == snap.conversation_id.as_str())
+        })
+    })
+}
+
+fn status_bar_context_cap_and_used(
+    chat: ChatSessionSignals,
+    st: StatusTasksSignals,
+    client_llm_storage_tick: RwSignal<u64>,
+) -> (u32, Option<u32>) {
+    let _tick = client_llm_storage_tick.get();
+    let sd = st.status_data.get();
+    let (_, _, _, stored_ctx, _) = load_client_llm_text_fields_from_storage();
+    let cap = status_bar_effective_llm_context_tokens(sd.as_ref(), stored_ctx.as_str());
+    let used = chat
+        .conversation_prompt_tokens
+        .get()
+        .and_then(|s| s.tiktoken.as_ref().map(|t| t.prompt_tokens));
+    (cap, used)
+}
+
+fn status_bar_context_value_text(cap: u32, used: Option<u32>) -> String {
+    match (used, cap > 0) {
+        (Some(u), true) => {
+            let pct = (u as f64 / cap as f64) * 100.0;
+            format!("{u} / {cap} ({:.1}%)", pct.min(999.9))
+        }
+        (Some(u), false) => format!("{u}"),
+        (None, true) => format!("— / {cap}"),
+        (None, false) => "—".to_string(),
+    }
+}
+
+#[component]
+fn StatusBarContextChip(
+    st: StatusTasksSignals,
+    chat: ChatSessionSignals,
+    client_llm_storage_tick: RwSignal<u64>,
+    locale: RwSignal<Locale>,
+) -> impl IntoView {
+    view! {
+        <Show when=move || status_bar_context_chip_visible(chat)>
+            <span
+                class="status-chip status-chip-context"
+                prop:title=move || i18n::status_chip_context_tooltip(locale.get())
+            >
+                <span class="status-chip-context-row">
+                    <span class="status-chip-label">
+                        {move || i18n::status_chip_context(locale.get())}
+                    </span>
+                    <span class="status-chip-value">{move || {
+                        let (cap, used) = status_bar_context_cap_and_used(
+                            chat,
+                            st,
+                            client_llm_storage_tick,
+                        );
+                        status_bar_context_value_text(cap, used)
+                    }}</span>
+                </span>
+                <Show when=move || {
+                    let (cap, used) = status_bar_context_cap_and_used(
+                        chat,
+                        st,
+                        client_llm_storage_tick,
+                    );
+                    cap > 0 && used.is_some()
+                }>
+                    <div
+                        class="status-context-meter"
+                        style=move || {
+                            let (cap, used) = status_bar_context_cap_and_used(
+                                chat,
+                                st,
+                                client_llm_storage_tick,
+                            );
+                            let u = used.unwrap_or(0);
+                            let pct = ((u as f64 / cap as f64) * 100.0).min(100.0);
+                            format!("--status-context-pct: {pct:.2}%")
+                        }
+                    >
+                        <div class=move || {
+                            let (cap, used) = status_bar_context_cap_and_used(
+                                chat,
+                                st,
+                                client_llm_storage_tick,
+                            );
+                            let u = used.unwrap_or(0);
+                            let pct = (u as f64 / cap as f64) * 100.0;
+                            if pct >= 90.0 {
+                                "status-context-meter-fill status-context-meter-fill--warn"
+                            } else {
+                                "status-context-meter-fill"
+                            }
+                        }></div>
+                    </div>
+                </Show>
+            </span>
+        </Show>
+    }
 }
 
 #[component]
@@ -162,6 +274,12 @@ fn StatusBarChipsLoaded(
                     }}
                 </select>
             </label>
+            <StatusBarContextChip
+                st=st
+                chat=chat
+                client_llm_storage_tick=client_llm_storage_tick
+                locale=locale
+            />
         </>
     }
 }
