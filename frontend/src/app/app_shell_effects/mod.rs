@@ -30,6 +30,7 @@ pub use settings_llm_open::{
     WireSettingsModalLlmDraftsSignals, wire_settings_modal_llm_drafts_on_open,
 };
 pub use sync_dom::{
-    wire_sync_bg_decor_to_storage_and_dom, wire_sync_locale_html_lang, wire_sync_tauri_shell_dom,
+    wire_sync_bg_decor_to_storage_and_dom, wire_sync_locale_html_lang,
+    wire_sync_session_typography_to_storage_and_dom, wire_sync_tauri_shell_dom,
     wire_sync_theme_to_storage_and_dom,
 };

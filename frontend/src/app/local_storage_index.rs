@@ -4,7 +4,7 @@
 //!
 //! | 主题 | 模块 |
 //! |------|------|
-//! | 主题、背景、侧栏宽度、`agent-demo-*` 等壳布局 | [`crate::app_prefs`]、[`super::shell_prefs_storage`] |
+//! | 主题、背景、侧栏宽度、`agent-demo-*`、**会话模式 UI/聊天字体**（`crabmate-session-*-font`）等壳布局 | [`crate::app_prefs`]、[`super::shell_prefs_storage`]、[`crate::session_typography_prefs`] |
 //! | `crabmate-locale` | [`crate::i18n::locale_storage`] |
 //! | `crabmate-client-llm-*`、`crabmate-executor-*`、执行模式 | [`crate::api::client_llm_storage`] |
 //! | 会话 JSON、`active_id` | [`crate::storage`] |

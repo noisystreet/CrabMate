@@ -8,6 +8,7 @@ use wasm_bindgen::JsCast;
 use crate::api::MainLlmDraftSignals;
 use crate::app_prefs::THEME_SLUGS;
 use crate::i18n::{self, Locale};
+use crate::session_typography_prefs::{SESSION_CHAT_FONT_SLUGS, SESSION_UI_FONT_SLUGS};
 use crate::settings_llm_fields::{
     LlmContextTokensField, LlmSavedPresetApplyTarget, LlmSavedPresetPicker, LlmTemperatureField,
     LlmThinkingModeField, OptionalLlmExecutionModeField,
@@ -225,8 +226,38 @@ pub(crate) fn SettingsToolsBlock(
     }
 }
 
+/// 设置页「会话」区块中的字体下拉绑定（`id` 须与弹窗等非冲突）。
+#[derive(Clone, Copy)]
+pub(crate) struct SettingsSessionTypographyBundle {
+    pub session_ui_font: RwSignal<String>,
+    pub session_chat_font: RwSignal<String>,
+    pub ui_select_id: &'static str,
+    pub chat_select_id: &'static str,
+}
+
+fn spawn_session_sqlite_toggle(
+    checked: bool,
+    locale: Locale,
+    refresh_status: Arc<dyn Fn() + Send + Sync>,
+    session_switch_busy: RwSignal<bool>,
+    session_switch_feedback: RwSignal<Option<String>>,
+) {
+    spawn_local(async move {
+        session_switch_busy.set(true);
+        session_switch_feedback.set(None);
+        match crate::api::post_session_conversation_store(checked, locale).await {
+            Ok(r) => {
+                session_switch_feedback.set(Some(r.message));
+                refresh_status();
+            }
+            Err(e) => session_switch_feedback.set(Some(e)),
+        }
+        session_switch_busy.set(false);
+    });
+}
+
 #[component]
-pub(crate) fn SettingsSessionBlock(
+fn SettingsSessionStorageBlock(
     locale: RwSignal<Locale>,
     status_data: RwSignal<Option<crate::api::StatusData>>,
     refresh_status: Arc<dyn Fn() + Send + Sync>,
@@ -260,18 +291,13 @@ pub(crate) fn SettingsSessionBlock(
                             .unwrap_or(false);
                         let loc = locale.get_untracked();
                         let refresh = Arc::clone(&refresh_status);
-                        spawn_local(async move {
-                            session_switch_busy.set(true);
-                            session_switch_feedback.set(None);
-                            match crate::api::post_session_conversation_store(checked, loc).await {
-                                Ok(r) => {
-                                    session_switch_feedback.set(Some(r.message));
-                                    refresh();
-                                }
-                                Err(e) => session_switch_feedback.set(Some(e)),
-                            }
-                            session_switch_busy.set(false);
-                        });
+                        spawn_session_sqlite_toggle(
+                            checked,
+                            loc,
+                            refresh,
+                            session_switch_busy,
+                            session_switch_feedback,
+                        );
                     }
                 />
                 <span>{move || i18n::settings_session_sqlite_toggle_label(locale.get())}</span>
@@ -295,6 +321,113 @@ pub(crate) fn SettingsSessionBlock(
                 }}</p>
             </Show>
         </div>
+    }
+}
+
+#[derive(Clone, Copy)]
+enum SessionFontFieldKind {
+    Ui,
+    Chat,
+}
+
+impl SessionFontFieldKind {
+    const fn slugs(self) -> &'static [&'static str] {
+        match self {
+            Self::Ui => SESSION_UI_FONT_SLUGS,
+            Self::Chat => SESSION_CHAT_FONT_SLUGS,
+        }
+    }
+
+    fn label(self, l: Locale) -> &'static str {
+        match self {
+            Self::Ui => i18n::settings_session_ui_font_label(l),
+            Self::Chat => i18n::settings_session_chat_font_label(l),
+        }
+    }
+}
+
+#[component]
+fn SettingsSessionFontSelectRow(
+    locale: RwSignal<Locale>,
+    kind: SessionFontFieldKind,
+    value: RwSignal<String>,
+    select_id: &'static str,
+) -> impl IntoView {
+    let slugs = kind.slugs();
+    view! {
+        <div class="settings-field">
+            <label class="settings-field-label" for=select_id>
+                {move || kind.label(locale.get())}
+            </label>
+            <select
+                id=select_id
+                class="settings-select"
+                prop:value=move || value.get()
+                on:change=move |ev| {
+                    value.set(event_target_value(&ev));
+                }
+            >
+                {slugs.iter().copied().map(|slug| {
+                    view! {
+                        <option value=slug>
+                            {move || i18n::settings_session_font_slug_label(locale.get(), slug)}
+                        </option>
+                    }
+                }).collect_view()}
+            </select>
+        </div>
+    }
+}
+
+#[component]
+fn SettingsSessionTypographyBlock(
+    locale: RwSignal<Locale>,
+    typography: SettingsSessionTypographyBundle,
+) -> impl IntoView {
+    let SettingsSessionTypographyBundle {
+        session_ui_font,
+        session_chat_font,
+        ui_select_id,
+        chat_select_id,
+    } = typography;
+    view! {
+        <div class="settings-block">
+            <h3 class="settings-block-title">{move || i18n::settings_block_session_typography(locale.get())}</h3>
+            <p class="settings-intro">{move || i18n::settings_session_typography_hint(locale.get())}</p>
+            <SettingsSessionFontSelectRow
+                locale=locale
+                kind=SessionFontFieldKind::Ui
+                value=session_ui_font
+                select_id=ui_select_id
+            />
+            <SettingsSessionFontSelectRow
+                locale=locale
+                kind=SessionFontFieldKind::Chat
+                value=session_chat_font
+                select_id=chat_select_id
+            />
+        </div>
+    }
+}
+
+#[component]
+pub(crate) fn SettingsSessionBlock(
+    locale: RwSignal<Locale>,
+    status_data: RwSignal<Option<crate::api::StatusData>>,
+    refresh_status: Arc<dyn Fn() + Send + Sync>,
+    session_switch_feedback: RwSignal<Option<String>>,
+    session_switch_busy: RwSignal<bool>,
+    typography: SettingsSessionTypographyBundle,
+) -> impl IntoView {
+    view! {
+        <SettingsSessionStorageBlock
+            locale=locale
+            status_data=status_data
+            refresh_status=refresh_status
+            session_switch_feedback=session_switch_feedback
+            session_switch_busy=session_switch_busy
+        />
+        <SettingsSessionTypographyBlock locale=locale typography=typography />
     }
 }
 

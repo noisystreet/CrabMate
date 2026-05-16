@@ -35,7 +35,7 @@ html,
 body {
   margin: 0;
   height: 100%;
-  font-family: var(--font-sans);
+  font-family: var(--crabmate-ui-font-family, var(--font-sans));
   background: var(--bg);
   background-attachment: fixed;
   color: var(--text);

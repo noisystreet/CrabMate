@@ -25,6 +25,18 @@ pub fn wire_sync_bg_decor_to_storage_and_dom(bg_decor: RwSignal<bool>) {
     });
 }
 
+pub fn wire_sync_session_typography_to_storage_and_dom(
+    session_ui_font: RwSignal<String>,
+    session_chat_font: RwSignal<String>,
+) {
+    Effect::new(move |_| {
+        shell_prefs_storage::persist_session_typography_to_storage_and_dom(
+            &session_ui_font.get(),
+            &session_chat_font.get(),
+        );
+    });
+}
+
 /// `<html>` 布局标记；Tauri 下始终无边框（Web 顶栏不受影响）。
 pub fn wire_sync_tauri_shell_dom(editor_layout_mode: RwSignal<bool>) {
     Effect::new(move |_| {

@@ -9,8 +9,8 @@ use super::super::settings_models_registry::{
 };
 use super::super::settings_sections::{
     SettingsAppearanceBlock, SettingsExecutorLlmBlock, SettingsExecutorLlmBlockBundle,
-    SettingsLlmBlock, SettingsLlmBlockBundle, SettingsSessionBlock, SettingsShortcutsBlock,
-    SettingsToolsBlock,
+    SettingsLlmBlock, SettingsLlmBlockBundle, SettingsSessionBlock,
+    SettingsSessionTypographyBundle, SettingsShortcutsBlock, SettingsToolsBlock,
 };
 use super::hash_routing::{SettingsSection, write_settings_section_to_hash};
 use super::section_copy::{section_desc, section_title};
@@ -112,6 +112,8 @@ pub(super) struct SettingsPagePanelDrafts {
     pub executor_llm_api_key_draft: RwSignal<String>,
     pub executor_llm_has_saved_key: RwSignal<bool>,
     pub saved_model_presets: RwSignal<Vec<crate::api::SavedModelPreset>>,
+    pub session_ui_font: RwSignal<String>,
+    pub session_chat_font: RwSignal<String>,
 }
 
 /// 已保存模型列表与本机持久化回调 + 顶栏 LLM 反馈 + 会话存储切换句柄（缩短 `SettingsPageContentPanels` 形参，满足 fn-param 棘轮）。
@@ -162,6 +164,8 @@ pub(super) fn SettingsPageContentPanels(
         executor_llm_api_key_draft,
         executor_llm_has_saved_key,
         saved_model_presets,
+        session_ui_font,
+        session_chat_font,
     } = drafts;
 
     let sync_saved_presets_line = StoredValue::new(sync_saved_presets_baseline);
@@ -249,6 +253,12 @@ pub(super) fn SettingsPageContentPanels(
                     refresh_status=refresh_status_cell.get_value()
                     session_switch_feedback=session_switch_feedback
                     session_switch_busy=session_switch_busy
+                    typography=SettingsSessionTypographyBundle {
+                        session_ui_font,
+                        session_chat_font,
+                        ui_select_id: "settings-page-session-ui-font",
+                        chat_select_id: "settings-page-session-chat-font",
+                    }
                 />
             </Show>
 
