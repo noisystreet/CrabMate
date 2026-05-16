@@ -20,5 +20,8 @@ pub(super) trait ToolSummaryLine {
 
 include!("tool_summary_args/fragment_core.rs");
 include!("tool_summary_args/fragment_read_file.rs");
-include!("tool_summary_args/fragment_git_files.rs");
+include!("tool_summary_args/fragment_git_files_diff.rs");
+include!("tool_summary_args/fragment_git_files_file_ops.rs");
+include!("tool_summary_args/fragment_git_files_git_write.rs");
+include!("tool_summary_args/fragment_git_files_tail.rs");
 include!("tool_summary_args/fragment_gh_archive.rs");
