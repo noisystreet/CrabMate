@@ -2,6 +2,7 @@
 
 mod json_job;
 mod stream_job;
+mod stream_job_setup;
 
 use super::QueuedChatJob;
 

@@ -1,40 +1,47 @@
 //! Web `/chat/stream` 队列任务执行体（从 `worker/mod.rs` 拆出以降低单文件行数）。
 
-use std::collections::HashSet;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-
 use log::{debug, info};
-use tokio::sync::mpsc;
-
-use crate::agent_role_turn::{filter_tools_for_agent_role, turn_allow_for_web_or_cli_job};
 
 use super::super::stream_finish::{
     StreamJobOutcomeCtx, emit_stream_cancelled_terminal, emit_stream_ended_once,
     stream_job_outcome_after_agent_turn,
 };
-use super::super::{
-    PerTurnFlight, WebApprovalSession, WebChatJobEnvelope, resolve_executor_llm_for_job,
-    resolve_web_llm_for_job,
-};
+use super::super::{WebApprovalSession, WebChatJobEnvelope};
 use super::JobOutcome;
+use super::stream_job_setup::{StreamJobSetupParams, stream_job_setup_runtime};
 
 /// `run_stream_queued_job` 入参（[`WebChatJobEnvelope`] + SSE / 审批）。
 pub(super) struct StreamQueuedJobParams {
     pub(super) envelope: WebChatJobEnvelope,
-    pub(super) stream_event_tx: mpsc::Sender<(u64, String)>,
+    pub(super) stream_event_tx: tokio::sync::mpsc::Sender<(u64, String)>,
     pub(super) web_approval_session: Option<WebApprovalSession>,
 }
 
 pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcome {
-    let StreamQueuedJobParams {
-        envelope,
-        stream_event_tx,
-        web_approval_session,
-    } = p;
-    let WebChatJobEnvelope {
+    let job_id = p.envelope.job_id;
+    info!(
+        target: "crabmate",
+        "chat stream 任务开始执行 job_id={}",
+        job_id
+    );
+    debug!(
+        target: "crabmate",
+        "chat stream 执行上下文 job_id={} message_count={} last_user_preview={}",
         job_id,
-        queue_deps,
+        p.envelope.messages.len(),
+        crate::redact::last_user_message_preview_for_log(&p.envelope.messages)
+    );
+
+    let queue_deps = p.envelope.queue_deps.clone();
+    let (rt, cancel_watcher) = stream_job_setup_runtime(StreamJobSetupParams {
+        envelope: &p.envelope,
+        stream_event_tx: p.stream_event_tx,
+        web_approval_session: p.web_approval_session,
+        queue_deps: queue_deps.as_ref(),
+    })
+    .await;
+
+    let WebChatJobEnvelope {
         app,
         conversation_id,
         mut messages,
@@ -45,167 +52,60 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         workspace_is_set,
         temperature_override,
         seed_override,
-        llm_override,
-        executor_llm_override,
-        execution_mode_override,
-        readonly_tool_ttl_cache_secs,
         request_audit,
-    } = envelope;
-    queue_deps.sse_stream_hub.register_job(job_id);
-    let hub_bridge = queue_deps.sse_stream_hub.clone();
-    let bridge_job = job_id;
-    let http_tx = stream_event_tx;
-    let (sse_tx, mut sse_rx) = mpsc::channel::<String>(1024);
-    tokio::spawn(async move {
-        while let Some(line) = sse_rx.recv().await {
-            if let Some(pair) = hub_bridge.publish(bridge_job, line) {
-                let _ = http_tx.send(pair).await;
-            }
-        }
-    });
-    info!(
-        target: "crabmate",
-        "chat stream 任务开始执行 job_id={}",
-        job_id
-    );
-    debug!(
-        target: "crabmate",
-        "chat stream 执行上下文 job_id={} message_count={} last_user_preview={}",
-        job_id,
-        messages.len(),
-        crate::redact::last_user_message_preview_for_log(&messages)
-    );
-    let flight = Arc::new(PerTurnFlight::default());
-    let _per_guard = queue_deps
-        .chat_queue
-        .begin_per_flight_job(job_id, flight.clone());
-    let caps_line = crate::sse::encode_message(crate::sse::SsePayload::SseCapabilities {
-        caps: crate::sse::SseCapabilitiesBody {
-            supported_sse_v: crate::sse::protocol::SSE_PROTOCOL_VERSION,
-            resume_ring_cap: crate::sse::protocol::SSE_RESUME_RING_CAP,
-            job_id,
-        },
-    });
-    let _ = crate::sse::send_string_logged(
-        &sse_tx,
-        caps_line,
-        "chat_job_queue::stream sse_capabilities",
-    )
-    .await;
-    let (web_tool_ctx, approval_session_id) = if let Some(session) = web_approval_session {
-        (
-            Some(crate::tool_registry::WebToolRuntime {
-                out_tx: sse_tx.clone(),
-                approval_rx_shared: Arc::new(tokio::sync::Mutex::new(session.approval_rx)),
-                approval_request_guard: Arc::new(tokio::sync::Mutex::new(())),
-                persistent_allowlist_shared: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
-            }),
-            Some(session.session_id),
-        )
-    } else {
-        (None, None)
-    };
-    let cancel = Arc::new(AtomicBool::new(false));
-    let cancel_watcher = {
-        let tx_for_watch = sse_tx.clone();
-        let cancel_for_watch = Arc::clone(&cancel);
-        let job_id_watch = job_id;
-        tokio::spawn(async move {
-            tx_for_watch.closed().await;
-            cancel_for_watch.store(true, Ordering::SeqCst);
-            info!(
-                target: "crabmate",
-                "chat stream SSE 接收端关闭，已请求取消 job_id={}",
-                job_id_watch
-            );
-        })
-    };
+        ..
+    } = p.envelope;
+
     let cfg_snap = {
         let g = queue_deps.cfg.read().await;
         std::sync::Arc::new(g.clone())
     };
-    let (mut cfg_turn, api_key_turn) = resolve_web_llm_for_job(
-        queue_deps.as_ref(),
-        cfg_snap.clone(),
-        llm_override.as_ref(),
-        execution_mode_override,
-    );
-    if let Some(secs) = readonly_tool_ttl_cache_secs {
-        let mut c = (*cfg_turn).clone();
-        c.chat_queues_cache.readonly_tool_ttl_cache_secs = secs;
-        cfg_turn = Arc::new(c);
-    }
-    let turn_allow = turn_allow_for_web_or_cli_job(
-        &cfg_turn,
-        persisted_active_agent_role.as_deref(),
-        request_agent_role.as_deref(),
-    );
-    let tools_for_job =
-        filter_tools_for_agent_role(&queue_deps.tools, turn_allow.as_ref().map(|a| a.as_ref()));
-    let executor_override = resolve_executor_llm_for_job(
-        &queue_deps,
-        Arc::clone(&cfg_turn),
-        executor_llm_override.as_ref(),
-    );
-    let (executor_api_base, executor_api_key, executor_model_override) = match executor_override {
-        Some((executor_cfg, executor_key)) => {
-            let base = if executor_cfg.llm.api_base != cfg_turn.llm.api_base {
-                Some(executor_cfg.llm.api_base.clone())
-            } else {
-                None
-            };
-            let model = if executor_cfg.llm.model != cfg_turn.llm.model {
-                Some(executor_cfg.llm.model.clone())
-            } else {
-                None
-            };
-            (base, Some(executor_key), model)
-        }
-        None => (None, None, None),
-    };
+
     let r = crate::run_agent_turn(crate::RunAgentTurnParams::web_chat_stream(
         crate::WebChatStreamBuildArgs {
             shared: crate::RunAgentTurnSharedInputs {
                 client: &queue_deps.client,
-                api_key: api_key_turn.as_str(),
-                cfg: &cfg_turn,
-                tools: tools_for_job.as_slice(),
+                api_key: rt.api_key_turn.as_str(),
+                cfg: &rt.cfg_turn,
+                tools: rt.tools_for_job.as_slice(),
             },
             messages: &mut messages,
             effective_working_dir: &work_dir,
             workspace_is_set,
-            cancel: Arc::clone(&cancel),
-            per_flight: flight,
-            web_tool_ctx: web_tool_ctx.as_ref(),
+            cancel: rt.cancel.clone(),
+            per_flight: rt.flight,
+            web_tool_ctx: rt.web_tool_ctx.as_ref(),
             temperature_override,
-            model_override: None, // planner 阶段不使用前端传来的 executor model
-            use_executor_model: false, // first iteration is always planner round
-            executor_model_override, // 前端传来的 executor_llm.model
-            executor_api_base,
-            executor_api_key,
+            model_override: None,
+            use_executor_model: false,
+            executor_model_override: rt.executor_model_override,
+            executor_api_base: rt.executor_api_base,
+            executor_api_key: rt.executor_api_key,
             seed_override,
             long_term_memory: queue_deps.long_term_memory.clone(),
             job_id,
             conversation_id: conversation_id.as_str(),
-            out: &sse_tx,
-            turn_allowed_tool_names: turn_allow,
+            out: &rt.sse_tx,
+            turn_allowed_tool_names: rt.turn_allow,
             request_audit: std::sync::Arc::new(request_audit),
-            process_handles: Arc::clone(&app.aux.process_handles),
+            process_handles: std::sync::Arc::clone(&app.aux.process_handles),
         },
     ))
     .await;
+
     cancel_watcher.abort();
-    if let Some(session_id) = approval_session_id.as_deref() {
+    if let Some(session_id) = rt.approval_session_id.as_deref() {
         app.aux.approval_sessions.write().await.remove(session_id);
     }
-    let cancelled_by_signal = cancel.load(Ordering::SeqCst);
+
+    let cancelled_by_signal = rt.cancel.load(std::sync::atomic::Ordering::SeqCst);
     let mut stream_ended_sent = false;
     let (ok, cancelled, err, stream_end_reason) =
         stream_job_outcome_after_agent_turn(StreamJobOutcomeCtx {
             r,
             cancelled_by_signal,
             queue_deps: queue_deps.as_ref(),
-            sse_tx: &sse_tx,
+            sse_tx: &rt.sse_tx,
             job_id,
             messages: &mut messages,
             cfg_snap: &cfg_snap,
@@ -217,12 +117,13 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
             stream_ended_sent: &mut stream_ended_sent,
         })
         .await;
+
     if cancelled {
-        emit_stream_cancelled_terminal(&sse_tx, job_id).await;
+        emit_stream_cancelled_terminal(&rt.sse_tx, job_id).await;
     }
     if !stream_ended_sent {
         emit_stream_ended_once(
-            &sse_tx,
+            &rt.sse_tx,
             job_id,
             stream_end_reason,
             &mut stream_ended_sent,
@@ -230,7 +131,7 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         )
         .await;
     }
-    drop(sse_tx);
+    drop(rt.sse_tx);
     queue_deps.sse_stream_hub.remove_job(job_id);
     JobOutcome::Stream { ok, cancelled, err }
 }

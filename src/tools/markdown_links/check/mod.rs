@@ -6,7 +6,10 @@ use reqwest::blocking::Client;
 
 use super::core::*;
 
+mod links_collect;
+mod links_format;
 mod links_inner;
+mod links_scan;
 
 pub(super) struct TextReportSummary<'a> {
     ws_canonical: &'a Path,

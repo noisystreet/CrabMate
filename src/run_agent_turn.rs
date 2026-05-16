@@ -104,7 +104,7 @@ pub async fn run_agent_turn<'a>(
     .await;
 
     let request_chrome_trace = crate::request_chrome_trace::request_trace_dir_from_env()
-        .map(|_| std::sync::Arc::new(crate::request_chrome_trace::RequestTurnTrace::new()));
+        .map(|_| Arc::new(crate::request_chrome_trace::RequestTurnTrace::new()));
     let wall_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
@@ -187,14 +187,42 @@ pub async fn run_agent_turn<'a>(
         },
     };
 
+    let res = run_agent_turn_common_with_optional_trace(&mut loop_params, wall_ms).await;
+    write_agent_turn_replay_dump(crate::turn_replay_dump::TurnReplayDumpParams {
+        wall_ms,
+        long_term_memory_scope_id: turn_dump_scope_id.as_deref(),
+        tracing_job_id: tracing_chat_turn.as_ref().map(|t| t.job_id),
+        result: &res,
+        messages: loop_params.turn.messages(),
+        tools: tools_for_turn.as_slice(),
+        cfg: loop_params.ctx.core.cfg,
+        no_stream,
+        render_to_terminal,
+        plain_terminal_stream,
+        effective_working_dir,
+        workspace_is_set,
+        temperature_override,
+        model_override: turn_dump_model_override,
+        use_executor_model,
+        executor_model_override: turn_dump_executor_model_override,
+        seed_override,
+    });
+    res
+}
+
+async fn run_agent_turn_common_with_optional_trace(
+    loop_params: &mut crate::agent::agent_turn::RunLoopParams<'_>,
+    wall_ms: u64,
+) -> Result<(), crate::agent::agent_turn::RunAgentTurnError> {
     let trace_span = loop_params
         .ctx
         .obs
         .tracing_chat_turn
         .as_ref()
         .map(|t| t.span.clone());
-    let run_common = crate::agent::agent_turn::run_agent_turn_common(&mut loop_params);
-    let res = match (trace_span, request_chrome_trace) {
+    let request_chrome_trace = loop_params.ctx.obs.request_chrome_trace.clone();
+    let run_common = crate::agent::agent_turn::run_agent_turn_common(loop_params);
+    match (trace_span, request_chrome_trace) {
         (Some(span), Some(t)) => {
             crate::request_chrome_trace::with_turn_trace(t, wall_ms, run_common.instrument(span))
                 .await
@@ -204,36 +232,20 @@ pub async fn run_agent_turn<'a>(
             crate::request_chrome_trace::with_turn_trace(t, wall_ms, run_common).await
         }
         (None, None) => run_common.await,
-    };
-    crate::turn_replay_dump::write_turn_replay_dump_if_configured(
-        crate::turn_replay_dump::TurnReplayDumpParams {
-            wall_ms,
-            long_term_memory_scope_id: turn_dump_scope_id.as_deref(),
-            tracing_job_id: tracing_chat_turn.as_ref().map(|t| t.job_id),
-            result: &res,
-            messages: loop_params.turn.messages(),
-            tools: tools_for_turn.as_slice(),
-            cfg: loop_params.ctx.core.cfg,
-            no_stream,
-            render_to_terminal,
-            plain_terminal_stream,
-            effective_working_dir,
-            workspace_is_set,
-            temperature_override,
-            model_override: turn_dump_model_override,
-            use_executor_model,
-            executor_model_override: turn_dump_executor_model_override,
-            seed_override,
-        },
-    );
+    }
+}
+
+fn write_agent_turn_replay_dump(params: crate::turn_replay_dump::TurnReplayDumpParams<'_>) {
+    let wall_ms = params.wall_ms;
+    let ok = params.result.is_ok();
+    crate::turn_replay_dump::write_turn_replay_dump_if_configured(params);
     crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
         "turn_finished",
         "run_agent_turn",
         Some(&serde_json::json!({
-            "text": format!("wall_start_ms={wall_ms}, ok={}", res.is_ok()),
+            "text": format!("wall_start_ms={wall_ms}, ok={ok}"),
             "phase": "turn"
         })),
     );
     crate::turn_replay_dump::clear_turn_replay_event_context();
-    res
 }

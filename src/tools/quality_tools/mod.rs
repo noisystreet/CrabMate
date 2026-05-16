@@ -37,7 +37,7 @@ impl QualityFlags {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum QualityStep {
     CargoFmtCheck,
     CargoCheck,
@@ -264,79 +264,6 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
     build_output(&summary, &sections, flags.summary_only)
 }
 
-fn skip_jvm_container_steps(
-    summary: &mut Vec<(&'static str, &'static str)>,
-    maven_compile: bool,
-    maven_test: bool,
-    gradle_compile: bool,
-    gradle_test: bool,
-    docker_ps: bool,
-    podman_img: bool,
-) {
-    if maven_compile {
-        summary.push(("maven compile", "skipped"));
-    }
-    if maven_test {
-        summary.push(("maven test", "skipped"));
-    }
-    if gradle_compile {
-        summary.push(("gradle compile", "skipped"));
-    }
-    if gradle_test {
-        summary.push(("gradle test", "skipped"));
-    }
-    if docker_ps {
-        summary.push(("docker compose ps", "skipped"));
-    }
-    if podman_img {
-        summary.push(("podman images", "skipped"));
-    }
-}
-
-fn skip_jvm_container_tail(
-    summary: &mut Vec<(&'static str, &'static str)>,
-    maven_test: bool,
-    gradle_compile: bool,
-    gradle_test: bool,
-    docker_ps: bool,
-    podman_img: bool,
-) {
-    skip_jvm_container_steps(
-        summary,
-        false,
-        maven_test,
-        gradle_compile,
-        gradle_test,
-        docker_ps,
-        podman_img,
-    );
-}
-
-fn skip_gradle_test_docker(
-    summary: &mut Vec<(&'static str, &'static str)>,
-    gradle_test: bool,
-    docker_ps: bool,
-    podman_img: bool,
-) {
-    skip_jvm_container_steps(
-        summary,
-        false,
-        false,
-        false,
-        gradle_test,
-        docker_ps,
-        podman_img,
-    );
-}
-
-fn skip_docker_podman_only(
-    summary: &mut Vec<(&'static str, &'static str)>,
-    docker_ps: bool,
-    podman_img: bool,
-) {
-    skip_jvm_container_steps(summary, false, false, false, false, docker_ps, podman_img);
-}
-
 fn section_failed(text: &str) -> bool {
     section_failed_execution_markers(text)
         || section_failed_first_line_exit_patterns(text)
@@ -407,52 +334,6 @@ fn parse_exit_nonzero(s: &str) -> bool {
         .and_then(|x| x.trim_end_matches(')').parse::<i32>().ok())
         .unwrap_or(-1);
     code != 0
-}
-
-fn push_skipped(
-    summary: &mut Vec<(&'static str, &'static str)>,
-    cargo_check: bool,
-    clippy: bool,
-    test: bool,
-    fe_lint: bool,
-    fe_build: bool,
-    fe_fmt: bool,
-) {
-    if cargo_check {
-        summary.push(("cargo check", "skipped"));
-    }
-    if clippy {
-        summary.push(("cargo clippy", "skipped"));
-    }
-    if test {
-        summary.push(("cargo test", "skipped"));
-    }
-    if fe_lint {
-        summary.push(("frontend lint", "skipped"));
-    }
-    if fe_build {
-        summary.push(("frontend build", "skipped"));
-    }
-    if fe_fmt {
-        summary.push(("frontend prettier --check", "skipped"));
-    }
-}
-
-fn skip_python_steps(
-    summary: &mut Vec<(&'static str, &'static str)>,
-    ruff: bool,
-    pytest: bool,
-    mypy: bool,
-) {
-    if ruff {
-        summary.push(("ruff check", "skipped"));
-    }
-    if pytest {
-        summary.push(("pytest", "skipped"));
-    }
-    if mypy {
-        summary.push(("mypy", "skipped"));
-    }
 }
 
 fn build_output(
