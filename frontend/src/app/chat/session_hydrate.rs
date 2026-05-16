@@ -24,20 +24,11 @@ fn messages_contain_loading(messages: &[StoredMessage]) -> bool {
         .any(|m| m.state.as_ref().is_some_and(|s| s.is_loading()))
 }
 
-fn trimmed_server_conversation_id(session: &ChatSession) -> Option<&str> {
-    session
-        .server_conversation_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|x| !x.is_empty())
-}
-
-/// 当前会话是否允许发起「拉取服务端消息」水合：已绑定 `conversation_id` 且无 `Loading` 占位。
 fn conversation_server_id_if_hydratable_for_wire(s: &ChatSession) -> Option<String> {
     if messages_contain_loading(&s.messages) {
         return None;
     }
-    trimmed_server_conversation_id(s).map(str::to_string)
+    s.trimmed_server_conversation_id().map(str::to_string)
 }
 
 /// 服务端快照中不存在的本地消息：工具卡与 TimelineLog，须保留并与快照合并。
@@ -112,7 +103,7 @@ fn try_hydration_merge_precheck(
     if messages_contain_loading(&session.messages) {
         return Err(SessionHydrationMergeOutcome::SkippedLoadingPlaceholders);
     }
-    let still = trimmed_server_conversation_id(session);
+    let still = session.trimmed_server_conversation_id();
     if still != Some(cid) {
         return Err(SessionHydrationMergeOutcome::SkippedConversationIdMismatch);
     }
@@ -260,7 +251,7 @@ pub(crate) mod conversation_hydration_cycle {
     use leptos::prelude::*;
 
     use crate::api::fetch_conversation_messages;
-    use crate::chat_session_state::ChatSessionSignals;
+    use crate::chat_session_state::{ChatSessionSignals, ConversationPromptTokenHydrate};
     use crate::conversation_hydrate::stored_messages_from_conversation_api;
 
     use super::{
@@ -322,6 +313,12 @@ pub(crate) mod conversation_hydration_cycle {
             return;
         }
 
+        chat.conversation_prompt_tokens
+            .set(Some(ConversationPromptTokenHydrate {
+                conversation_id: cid.clone(),
+                tiktoken: resp.tiktoken_prompt_tokens.clone(),
+            }));
+
         restore_reasoning_after_hydration(&chat, &aid, nonce_at_start);
         apply_saved_revision_if_same_conversation(&chat, cid.as_str(), resp.revision);
     }
@@ -334,6 +331,27 @@ async fn run_conversation_hydration_cycle(
 ) {
     let _stream_lane = chat.stream_lane_overlay_phase_untracked();
     conversation_hydration_cycle::run(snap, chat, selected_agent_role).await;
+}
+
+fn clear_conversation_prompt_tokens_if_no_server_conversation(chat: ChatSessionSignals) {
+    let aid = chat.active_id.get_untracked();
+    if aid.is_empty() {
+        chat.conversation_prompt_tokens.set(None);
+        return;
+    }
+    let Some(sess) = chat
+        .sessions
+        .with_untracked(|list| list.iter().find(|s| s.id == aid).cloned())
+    else {
+        chat.conversation_prompt_tokens.set(None);
+        return;
+    };
+    if messages_contain_loading(&sess.messages) {
+        return;
+    }
+    if sess.trimmed_server_conversation_id().is_none() {
+        chat.conversation_prompt_tokens.set(None);
+    }
 }
 
 /// 订阅 `chat.session_hydrate_nonce`：流结束后由 composer 递增，拉取服务端快照并写回当前会话。
@@ -358,6 +376,7 @@ pub fn wire_session_hydration(
             }
             let loc = locale_sig.get_untracked();
             let Some(snap) = try_hydration_wire_snapshot(chat, loc) else {
+                clear_conversation_prompt_tokens_if_no_server_conversation(chat);
                 return;
             };
             spawn_local(run_conversation_hydration_cycle(

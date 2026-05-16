@@ -6,7 +6,7 @@
 //! - **`stream_transport`**：[`ChatStreamTransport`] 单 **`RwSignal`** 收敛 **attach 代际** + **Idle / 已绑定会话**（内含 **`job_id`**）；[`ChatSessionSignals::clear_stream_resume_handles`] 将车道置回 Idle 并重置 [`Self::stream_last_sse_event_seq`]；[`ChatSessionSignals::bind_stream_to_session`] 在 bump 后写入 Bound。SSE `id:` 序号单独为 **`stream_last_sse_event_seq`**，避免热路径上整包传输状态无效化。与 **`stream_text_overlay`** 的联合象限见 [`StreamLaneOverlayPhase`] / [`ChatSessionSignals::stream_lane_overlay_phase_untracked`]。
 //! - **代际门闩**：每次发起新 `/chat/stream` attach 时递增 [`ChatStreamTransport::attach_generation`]；[`crate::app::chat::composer_stream::context::ChatStreamCallbackCtx`] 捕获该值，回调内若与当前不一致则视为陈旧。
 //! - **`session_sync`**：服务端 `conversation_id` / revision，与 `POST /chat/branch` 等对齐。
-//! - **`session_hydrate_nonce` / `reasoning_preserved`**：拉取会话正文与水合时的补偿字段。
+//! - **`session_hydrate_nonce` / `reasoning_preserved` / `conversation_prompt_tokens`**：拉取会话正文与水合时的补偿字段；后者供底栏展示 prompt token 粗估。
 //! - **`stream_text_overlay`**：尾条 `loading` 助手消息的流式正文/思维链旁路缓冲（字段见 [`ChatSessionSignals`]）。
 //!
 //! # `sessions` 向量的写入通道（命名封装）
@@ -26,9 +26,17 @@ use std::sync::Arc;
 
 use leptos::prelude::*;
 
+use crate::conversation_hydrate::TiktokenPromptTokensSnapshot;
 use crate::session_sync::SessionSyncState;
 use crate::storage::ChatSession;
 use crate::stream_text_overlay::StreamTextOverlay;
+
+/// 水合成功后与会话绑定的 tiktoken prompt 粗估（见 `GET /conversation/messages`）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConversationPromptTokenHydrate {
+    pub conversation_id: String,
+    pub tiktoken: Option<TiktokenPromptTokensSnapshot>,
+}
 
 /// `/chat/stream` 传输层：单调 **`attach_generation`** 与 **`lane`**（Idle | 已绑定会话及重连句柄）。
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -239,6 +247,8 @@ pub struct ChatSessionSignals {
     pub reasoning_preserved: RwSignal<HashMap<String, String>>,
     /// 当前尾条 `loading` 助手消息的流式正文/思维链增量；**不**写入 [`Self::sessions`]，减少历史行重算。
     pub stream_text_overlay: RwSignal<Option<StreamTextOverlay>>,
+    /// 最近一次成功水合的 tiktoken prompt 计数（与 [`ConversationPromptTokenHydrate::conversation_id`] 对齐，防串会话）。
+    pub conversation_prompt_tokens: RwSignal<Option<ConversationPromptTokenHydrate>>,
 }
 
 impl ChatSessionSignals {
