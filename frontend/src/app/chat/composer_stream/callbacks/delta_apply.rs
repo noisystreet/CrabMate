@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use super::super::context::ChatStreamCallbackCtx;
 use super::super::per_stream_accum::PerStreamAccum;
+use super::super::stream_control_reducer::StreamControlEvent;
 use super::helpers::rotate_streaming_assistant_for_followup_model_round;
 
 /// 将单块流式文本写入当前尾泡：必要时先轮换占位，再按车道写入正文或 `reasoning_text`。
@@ -35,6 +36,9 @@ pub(super) fn chat_stream_on_delta_builder(
         if stream_ctx.is_stale() {
             return;
         }
+        stream_ctx
+            .scratch
+            .apply_stream_control_event(StreamControlEvent::ModelTextDelta);
         apply_chat_stream_text_delta(stream_ctx.as_ref(), accum.as_ref(), &chunk);
     })
 }

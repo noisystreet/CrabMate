@@ -3,11 +3,13 @@
 //!
 //! 与 [`super::context::ChatStreamCallbackCtx`] 分工：ctx 绑定会话、shell、本 scratch；回合收尾仍经
 //! [`super::per_stream_accum::PerStreamAccum::summarize_for_stream_done`]。
+//! 与 [`super::stream_control_reducer::StreamControlReducerState`] 分工：后者仅归约粗粒度阶段，不参与正文写入。
 
-use std::cell::Ref;
+use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
 use super::per_stream_accum::PerStreamAccum;
+use super::stream_control_reducer::{StreamControlEvent, StreamControlReducerState};
 use super::stream_turn_scratch_state::StreamTurnScratchState;
 use super::stream_turn_state::StreamModelOutputLane;
 
@@ -15,6 +17,7 @@ use super::stream_turn_state::StreamModelOutputLane;
 #[derive(Clone)]
 pub(super) struct StreamSseScratch {
     state: Rc<StreamTurnScratchState>,
+    control: Rc<RefCell<StreamControlReducerState>>,
 }
 
 impl StreamSseScratch {
@@ -22,7 +25,14 @@ impl StreamSseScratch {
     pub(super) fn new(initial_asst_id: String) -> Self {
         Self {
             state: Rc::new(StreamTurnScratchState::new(initial_asst_id)),
+            control: Rc::new(RefCell::new(StreamControlReducerState::new())),
         }
+    }
+
+    /// 同步 [`super::stream_control_reducer`] 阶段（须在 `stream_ctx.is_stale()` 为假时调用）。
+    #[inline]
+    pub(super) fn apply_stream_control_event(&self, ev: StreamControlEvent) {
+        self.control.borrow_mut().apply(ev);
     }
 
     #[inline]

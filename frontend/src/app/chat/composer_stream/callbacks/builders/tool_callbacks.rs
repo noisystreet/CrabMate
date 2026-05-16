@@ -15,6 +15,7 @@ use crate::timeline_scan::timeline_state_tool;
 
 use super::super::super::context::ChatStreamCallbackCtx;
 use super::super::super::per_stream_accum::PerStreamAccum;
+use super::super::super::stream_control_reducer::StreamControlEvent;
 use super::super::helpers::*;
 
 pub(in super::super) fn make_on_tool_output_chunk(
@@ -24,6 +25,9 @@ pub(in super::super) fn make_on_tool_output_chunk(
         if stream_ctx.is_stale() {
             return;
         }
+        stream_ctx
+            .scratch
+            .apply_stream_control_event(StreamControlEvent::ToolOutputChunk);
         let tid = info.tool_call_id.trim();
         if tid.is_empty() {
             return;
@@ -50,6 +54,9 @@ pub(in super::super) fn make_on_tool_result(
         if stream_ctx.is_stale() {
             return;
         }
+        stream_ctx
+            .scratch
+            .apply_stream_control_event(StreamControlEvent::ToolResult);
         let loc = stream_ctx.locale.get_untracked();
         let result_text = tool_card_text(&info, loc);
         let compact = tool_card_compact_text(&info, loc);
@@ -138,6 +145,9 @@ pub(in super::super) fn chat_stream_on_tool_call_builder(
             if stream_ctx.is_stale() {
                 return;
             }
+            stream_ctx
+                .scratch
+                .apply_stream_control_event(StreamControlEvent::ToolCallDeclared);
             let _ = (preview, full);
             // 与后端 `tool_running` 帧互补：tool_call 往往先于或并列到达，此处立即置位可避免
             // 长耗时工具（如 git_commit）期间状态栏仍误显「模型生成中」。

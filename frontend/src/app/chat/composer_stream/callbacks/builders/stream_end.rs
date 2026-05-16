@@ -10,6 +10,7 @@ use crate::stream_text_overlay::stream_overlay_take_into_stored_message;
 use super::super::super::context::ChatStreamCallbackCtx;
 use super::super::super::per_stream_accum::PerStreamAccum;
 use super::super::super::shell_abort::{clear_abort_slot, user_cancelled_flag};
+use super::super::super::stream_control_reducer::StreamControlEvent;
 use super::super::done_session::apply_stream_done_to_loading_assistant;
 use super::super::error_session::apply_stream_error_on_messages;
 use super::super::helpers::*;
@@ -22,6 +23,9 @@ pub(in super::super) fn chat_stream_on_done_builder(
         if user_cancelled_flag(&stream_ctx.shell) {
             stream_ctx.scratch.clear_followup_pending();
             clear_abort_slot(&stream_ctx.shell);
+            stream_ctx
+                .scratch
+                .apply_stream_control_event(StreamControlEvent::StreamUserAbort);
             return;
         }
         if stream_ctx.is_stale() {
@@ -62,6 +66,9 @@ pub(in super::super) fn chat_stream_on_done_builder(
             .stream
             .apply_release_turn_and_stream_run(stream_ctx.attach_generation);
         clear_abort_slot(&stream_ctx.shell);
+        stream_ctx
+            .scratch
+            .apply_stream_control_event(StreamControlEvent::StreamDone);
     })
 }
 
@@ -71,6 +78,9 @@ pub(in super::super) fn chat_stream_on_error_builder(
     Rc::new(move |msg: String| {
         if user_cancelled_flag(&stream_ctx.shell) {
             clear_abort_slot(&stream_ctx.shell);
+            stream_ctx
+                .scratch
+                .apply_stream_control_event(StreamControlEvent::StreamUserAbort);
             return;
         }
         if stream_ctx.is_stale() {
@@ -100,6 +110,9 @@ pub(in super::super) fn chat_stream_on_error_builder(
             i18n::chat_failed_banner(stream_ctx.locale.get_untracked()).to_string(),
         ));
         clear_abort_slot(&stream_ctx.shell);
+        stream_ctx
+            .scratch
+            .apply_stream_control_event(StreamControlEvent::StreamError);
     })
 }
 

@@ -5,7 +5,6 @@ use std::rc::Rc;
 use leptos::prelude::*;
 
 use crate::api::ChatStreamCallbacks;
-use crate::app::stream_shell_busy::StreamShellBusyOp;
 use crate::clarification_form::PendingClarificationForm;
 use crate::i18n;
 use crate::message_format::staged_timeline_system_message_body;
@@ -18,7 +17,6 @@ use crate::storage::{StoredMessage, StoredMessageState};
 use crate::timeline_scan::{timeline_state_staged_end, timeline_state_staged_start};
 
 use super::super::context::ChatStreamCallbackCtx;
-use super::super::shell_abort::clear_abort_slot;
 use super::builders::*;
 use super::delta_apply::chat_stream_on_delta_builder;
 use super::helpers::*;
@@ -67,18 +65,7 @@ pub(crate) fn build_chat_stream_callbacks(
 
     let on_tool_call = chat_stream_on_tool_call_builder(Rc::clone(&stream_ctx), Rc::clone(&accum));
 
-    let on_tool_status: Rc<dyn Fn(bool)> = {
-        let stream_ctx = Rc::clone(&stream_ctx);
-        Rc::new(move |b: bool| {
-            if stream_ctx.is_stale() {
-                return;
-            }
-            stream_ctx
-                .shell
-                .stream
-                .apply_busy_op(StreamShellBusyOp::MirrorToolRunning(b));
-        })
-    };
+    let on_tool_status = make_on_tool_status_with_stream_phase(Rc::clone(&stream_ctx));
 
     let on_tool_result = make_on_tool_result(Rc::clone(&stream_ctx));
 
@@ -131,24 +118,8 @@ pub(crate) fn build_chat_stream_callbacks(
         })
     };
 
-    let on_stream_ended: Rc<dyn Fn(String)> = {
-        let stream_ctx = Rc::clone(&stream_ctx);
-        let accum = Rc::clone(&accum);
-        Rc::new(move |reason: String| {
-            if stream_ctx.is_stale() {
-                return;
-            }
-            accum.set_stream_end_reason(reason.clone());
-            stream_ctx.chat.clear_stream_resume_handles();
-            // `stream_ended` 表示服务端已结束本轮流式任务：无论 `reason` 是否能解析为已知枚举，
-            // 都应回落 busy，避免状态栏长期停在「模型生成中」。（未知 reason 仍写入 stream_end_reason 供 diagnostics。）
-            stream_ctx
-                .shell
-                .stream
-                .apply_release_turn_and_stream_run(stream_ctx.attach_generation);
-            clear_abort_slot(&stream_ctx.shell);
-        })
-    };
+    let on_stream_ended =
+        make_on_stream_ended_with_stream_phase(Rc::clone(&stream_ctx), Rc::clone(&accum));
 
     let on_stream_job_id: Rc<dyn Fn(u64)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
@@ -173,16 +144,8 @@ pub(crate) fn build_chat_stream_callbacks(
         })
     };
 
-    let on_assistant_answer_phase: Rc<dyn Fn()> = {
-        let stream_ctx = Rc::clone(&stream_ctx);
-        Rc::new(move || {
-            if stream_ctx.is_stale() {
-                return;
-            }
-            // 重复 answer_phase 将车道切入 PendingFollowup；轮换由 `on_delta` / `on_done` 消费。
-            stream_ctx.scratch.on_assistant_answer_phase();
-        })
-    };
+    let on_assistant_answer_phase =
+        make_on_assistant_answer_phase_with_stream_phase(Rc::clone(&stream_ctx));
 
     let on_staged_step_started: Rc<dyn Fn(StagedPlanStepStartInfo)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
