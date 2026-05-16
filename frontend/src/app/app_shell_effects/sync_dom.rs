@@ -24,3 +24,12 @@ pub fn wire_sync_bg_decor_to_storage_and_dom(bg_decor: RwSignal<bool>) {
         shell_prefs_storage::persist_bg_decor_to_storage_and_dom(bg_decor.get());
     });
 }
+
+/// IDE 布局：`<html>` 标记；**仅 Tauri** 切换系统窗口装饰（Web 顶栏不受影响）。
+pub fn wire_sync_ide_layout_dom_and_tauri_chrome(editor_layout_mode: RwSignal<bool>) {
+    Effect::new(move |_| {
+        let ide = editor_layout_mode.get();
+        shell_prefs_storage::apply_shell_layout_dom_flags(ide);
+        crate::tauri_shell::tauri_apply_ide_layout_window_chrome(ide);
+    });
+}

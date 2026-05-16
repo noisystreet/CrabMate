@@ -247,6 +247,42 @@ async fn pick_workspace_folder_via_dialog(
     })
 }
 
+fn main_webview_window(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, String> {
+    app.get_webview_window("main")
+        .ok_or_else(|| "main window not found".into())
+}
+
+#[tauri::command]
+fn set_main_window_decorations(app: tauri::AppHandle, decorations: bool) -> Result<(), String> {
+    main_webview_window(&app)?
+        .set_decorations(decorations)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn main_window_minimize(app: tauri::AppHandle) -> Result<(), String> {
+    main_webview_window(&app)?
+        .minimize()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn main_window_toggle_maximize(app: tauri::AppHandle) -> Result<(), String> {
+    let win = main_webview_window(&app)?;
+    if win.is_maximized().map_err(|e| e.to_string())? {
+        win.unmaximize().map_err(|e| e.to_string())
+    } else {
+        win.maximize().map_err(|e| e.to_string())
+    }
+}
+
+#[tauri::command]
+fn main_window_close(app: tauri::AppHandle) -> Result<(), String> {
+    main_webview_window(&app)?
+        .close()
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 async fn confirm_delete_session_via_dialog(
     app: tauri::AppHandle,
@@ -278,7 +314,11 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             save_text_file_via_dialog,
             pick_workspace_folder_via_dialog,
-            confirm_delete_session_via_dialog
+            confirm_delete_session_via_dialog,
+            set_main_window_decorations,
+            main_window_minimize,
+            main_window_toggle_maximize,
+            main_window_close
         ])
         .setup(move |app| {
             let (child, ready_url) = match spawn_backend_and_wait_ready() {

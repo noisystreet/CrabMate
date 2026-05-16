@@ -1,0 +1,107 @@
+/* IDE Rust 语法高亮（镜像层 token 色，随主题继承前景） */
+
+.ide-editor-stack--rust .ide-editor-textarea {
+  color: transparent;
+  caret-color: var(--text);
+  background: transparent;
+}
+
+.ide-editor-highlight {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  box-sizing: border-box;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+  font-family: var(--ide-editor-font-family, var(--font-mono, "JetBrains Mono", ui-monospace, monospace));
+  font-size: var(--ide-editor-font-size, 14px);
+  line-height: 1.45;
+  tab-size: var(--ide-editor-tab-size, 4);
+  white-space: pre;
+  background: var(--surface-editor, transparent);
+}
+
+.ide-editor-pane--wrap .ide-editor-highlight {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ide-editor-highlight code {
+  display: block;
+  font: inherit;
+  white-space: inherit;
+  tab-size: inherit;
+}
+
+.ide-editor-stack {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+.ide-editor-stack .ide-editor-textarea {
+  position: relative;
+  z-index: 1;
+}
+
+.ide-editor-code-col {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+.hl-plain {
+  color: var(--text);
+}
+
+.hl-kw {
+  color: var(--ide-hl-keyword, #7c3aed);
+  font-weight: 500;
+}
+
+.hl-str {
+  color: var(--ide-hl-string, #0d9488);
+}
+
+.hl-com {
+  color: var(--ide-hl-comment, var(--muted));
+  font-style: italic;
+}
+
+.hl-num {
+  color: var(--ide-hl-number, #b45309);
+}
+
+.hl-type {
+  color: var(--ide-hl-type, #2563eb);
+}
+
+.hl-attr {
+  color: var(--ide-hl-attribute, #c026d3);
+}
+
+.hl-mac {
+  color: var(--ide-hl-macro, #ea580c);
+}
+
+[data-theme="dark"] .hl-kw {
+  color: var(--ide-hl-keyword, #c4b5fd);
+}
+
+[data-theme="dark"] .hl-str {
+  color: var(--ide-hl-string, #5eead4);
+}
+
+[data-theme="dark"] .hl-num {
+  color: var(--ide-hl-number, #fdba74);
+}
+
+[data-theme="dark"] .hl-type {
+  color: var(--ide-hl-type, #93c5fd);
+}

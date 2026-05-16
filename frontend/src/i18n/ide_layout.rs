@@ -44,24 +44,10 @@ pub fn ide_open_hint(l: Locale) -> &'static str {
     }
 }
 
-pub fn ide_editor_title(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "编辑",
-        Locale::En => "Editor",
-    }
-}
-
 pub fn ide_no_file(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "请从左侧选择文件。",
         Locale::En => "Pick a file from the tree.",
-    }
-}
-
-pub fn ide_save(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "保存",
-        Locale::En => "Save",
     }
 }
 

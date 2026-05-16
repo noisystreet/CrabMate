@@ -34,6 +34,16 @@ pub const TIMELINE_PANEL_EXPANDED_KEY: &str = "crabmate-timeline-panel-expanded"
 pub const SIDEBAR_RAIL_COLLAPSED_KEY: &str = "crabmate-sidebar-rail-collapsed";
 /// 为 `true` 时主区展示「工作区树 + 文本编辑器」布局（与对话列互斥）。
 pub const EDITOR_LAYOUT_MODE_KEY: &str = "crabmate-editor-layout-mode";
+/// IDE 编辑器字体族 slug（见 [`crate::ide_editor_prefs::IDE_EDITOR_FONT_SLUGS`]）。
+pub const IDE_EDITOR_FONT_KEY: &str = "crabmate-ide-editor-font";
+/// IDE 编辑器字号（px，10–28）。
+pub const IDE_EDITOR_FONT_SIZE_KEY: &str = "crabmate-ide-editor-font-size";
+/// IDE 编辑器是否显示行号栏。
+pub const IDE_EDITOR_LINE_NUMBERS_KEY: &str = "crabmate-ide-editor-line-numbers";
+/// IDE 编辑器是否自动换行。
+pub const IDE_EDITOR_WORD_WRAP_KEY: &str = "crabmate-ide-editor-word-wrap";
+/// IDE 编辑器 Tab 宽度（空格数，2–8）。
+pub const IDE_EDITOR_TAB_SIZE_KEY: &str = "crabmate-ide-editor-tab-size";
 pub const DEFAULT_SIDE_WIDTH: f64 = 280.0;
 pub const MIN_SIDE_WIDTH: f64 = 200.0;
 pub const MAX_SIDE_WIDTH: f64 = 560.0;

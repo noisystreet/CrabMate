@@ -14,9 +14,11 @@ pub struct ShellEscapeSignals {
     pub chat_find_panel_open: RwSignal<bool>,
     pub sidebar_search_panel_open: RwSignal<bool>,
     pub view_menu_open: RwSignal<bool>,
+    pub ide_menubar_dropdown_open: RwSignal<bool>,
     pub mobile_nav_open: RwSignal<bool>,
     pub changelist_modal_open: RwSignal<bool>,
     pub settings_modal: RwSignal<bool>,
+    pub ide_settings_page: RwSignal<bool>,
     pub session_modal: RwSignal<bool>,
 }
 
@@ -60,6 +62,10 @@ fn dismiss_one_escape_layer(shell: ShellEscapeSignals) {
         shell.view_menu_open.set(false);
         return;
     }
+    if shell.ide_menubar_dropdown_open.get_untracked() {
+        shell.ide_menubar_dropdown_open.set(false);
+        return;
+    }
     if shell.mobile_nav_open.get_untracked() {
         shell.mobile_nav_open.set(false);
         return;
@@ -70,6 +76,10 @@ fn dismiss_one_escape_layer(shell: ShellEscapeSignals) {
     }
     if shell.settings_modal.get_untracked() {
         shell.settings_modal.set(false);
+        return;
+    }
+    if shell.ide_settings_page.get_untracked() {
+        shell.ide_settings_page.set(false);
         return;
     }
     if shell.session_modal.get_untracked() {

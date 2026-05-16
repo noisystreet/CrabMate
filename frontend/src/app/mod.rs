@@ -12,7 +12,11 @@ mod app_signals;
 mod approval_modal;
 mod changelist_modal;
 mod chat;
+mod ide_editor_pane;
 mod ide_layout;
+mod ide_menu_bar;
+mod ide_settings_page;
+mod ide_tauri_window_controls;
 pub(crate) mod local_storage_index;
 mod mobile_shell_header;
 pub mod scroll_guard;
@@ -44,7 +48,8 @@ use approval_modal::ApprovalModal;
 use changelist_modal::changelist_modal_view;
 use chat::ChatFindBar;
 use chat::chat_column_view;
-use ide_layout::IdeLayoutView;
+use ide_layout::{IdeLayoutShellSignals, IdeLayoutView};
+use ide_settings_page::IdeSettingsPageView;
 use mobile_shell_header::mobile_shell_header_view;
 use session_list_modal::session_list_modal_view;
 use settings_modal::settings_modal_view;
@@ -66,6 +71,7 @@ pub fn App() -> impl IntoView {
     // `AppShellCtx` 含 `Rc` 等，不满足 `Send`；子组件闭包不得捕获整 ctx（见 Leptos `ToChildren` 约束）。
     let approval_modal_signals = app_ctx.approval_modal_signals();
     let settings_page_view_input = app_ctx.settings_page_view_input();
+    let ide_settings_page_view_input = app_ctx.ide_settings_page_view_input();
     let mobile_shell_header_signals = app_ctx.mobile_shell_header_signals();
     let changelist_modal_signals = app_ctx.changelist_modal_signals();
     let settings_modal_signals = app_ctx.settings_modal_signals();
@@ -78,6 +84,7 @@ pub fn App() -> impl IntoView {
         <div
             class="app-root app-shell-ds"
             class:sidebar-rail-collapsed=move || app_ctx.signals.sidebar.sidebar_rail_collapsed.get()
+            class:app-root--ide-layout=move || app_ctx.signals.shell_ui.editor_layout_mode.get()
         >
             {sidebar_nav_view(sidebar_nav_signals)}
 
@@ -94,7 +101,10 @@ pub fn App() -> impl IntoView {
 
             <div
                 class="shell-main"
-                class:settings-page-hidden=move || app_ctx.signals.modal.settings_page.get()
+                class:settings-page-hidden=move || {
+                    app_ctx.signals.modal.settings_page.get()
+                        || app_ctx.signals.modal.ide_settings_page.get()
+                }
                 class:shell-main--ide-layout=move || app_ctx.signals.shell_ui.editor_layout_mode.get()
             >
                 {mobile_shell_header_view(mobile_shell_header_signals)}
@@ -122,18 +132,22 @@ pub fn App() -> impl IntoView {
                             !app_ctx.signals.shell_ui.editor_layout_mode.get()
                         }
                     >
-                        <IdeLayoutView
-                            locale=app_ctx.signals.shell_ui.locale
-                            chat=app_ctx.signals.chat
-                            workspace_panel=app_ctx.signals.to_workspace_panel()
-                            refresh_workspace=app_ctx.refresh_workspace.clone()
-                            initialized=app_ctx.signals.initialized
-                            editor_visible=app_ctx.signals.shell_ui.editor_layout_mode
-                        />
+                        <IdeLayoutView shell=IdeLayoutShellSignals {
+                            locale: app_ctx.signals.shell_ui.locale,
+                            editor: app_ctx.signals.ide_editor,
+                            editor_layout_mode: app_ctx.signals.shell_ui.editor_layout_mode,
+                            ide_settings_page: app_ctx.signals.modal.ide_settings_page,
+                            ide_menubar_dropdown_open: app_ctx.signals.shell_ui.ide_menubar_dropdown_open,
+                            chat: app_ctx.signals.chat,
+                            workspace_panel: app_ctx.signals.to_workspace_panel(),
+                            refresh_workspace: app_ctx.refresh_workspace.clone(),
+                            initialized: app_ctx.signals.initialized,
+                            editor_visible: app_ctx.signals.shell_ui.editor_layout_mode,
+                        } />
                     </div>
                 </div>
 
-                {status_bar_footer_view(status_bar_footer_signals)}
+                {status_bar_footer_view(status_bar_footer_signals.clone())}
             </div>
 
             {session_list_modal_view(session_list_modal_signals)}
@@ -145,6 +159,7 @@ pub fn App() -> impl IntoView {
             <ApprovalModal signals=approval_modal_signals />
 
             <SettingsPageView input=settings_page_view_input />
+            <IdeSettingsPageView input=ide_settings_page_view_input />
         </div>
     }
 }

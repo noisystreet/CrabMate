@@ -9,8 +9,9 @@ use web_sys::KeyboardEvent;
 use crate::api::post_workspace_set;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::{self, Locale};
-use crate::session_export::{tauri_pick_workspace_folder, tauri_shell_available};
+use crate::session_export::tauri_pick_workspace_folder;
 use crate::session_workspace_bind::patch_active_session_workspace_root;
+use crate::tauri_shell::tauri_shell_available;
 use crate::workspace_shell::reload_workspace_panel;
 use crate::workspace_tree::WorkspaceFilesystemTree;
 

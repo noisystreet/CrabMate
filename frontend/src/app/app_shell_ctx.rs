@@ -26,6 +26,7 @@ use crate::app_prefs::SidePanelView;
 
 use super::app_signals::AppSignals;
 use super::chat::ChatColumnShell;
+use super::ide_settings_page::IdeSettingsPageViewInput;
 use super::settings_page::{SettingsPageFormSignals, SettingsPageViewInput};
 use super::status_tasks_state::StatusTasksSignals;
 use super::workspace_panel_state::WorkspacePanelSignals;
@@ -313,5 +314,14 @@ impl AppShellCtx {
     /// 设置页表单所需 `RwSignal` 聚合（阶段 B：避免在 `App` 的 `view!` 中重复罗列字段）。
     pub fn settings_page_form_signals(&self) -> SettingsPageFormSignals {
         SettingsPageFormSignals::from_app_signals(&self.signals)
+    }
+
+    /// IDE 编辑器设置全屏页入参。
+    pub fn ide_settings_page_view_input(&self) -> IdeSettingsPageViewInput {
+        IdeSettingsPageViewInput {
+            ide_settings_page: self.signals.modal.ide_settings_page,
+            locale: self.signals.shell_ui.locale,
+            editor: self.signals.ide_editor,
+        }
     }
 }

@@ -12,6 +12,8 @@ pub struct ShellUISignals {
     pub bg_decor: RwSignal<bool>,
     pub locale: RwSignal<Locale>,
     pub view_menu_open: RwSignal<bool>,
+    /// IDE 菜单栏任一下拉打开时为 `true`（供全局 Escape 关闭）。
+    pub ide_menubar_dropdown_open: RwSignal<bool>,
     pub status_bar_visible: RwSignal<bool>,
     pub side_panel_view: RwSignal<SidePanelView>,
     pub side_width: RwSignal<f64>,
@@ -30,6 +32,7 @@ impl ShellUISignals {
             bg_decor: RwSignal::new(s.bg_decor),
             locale: RwSignal::new(s.locale),
             view_menu_open: RwSignal::new(false),
+            ide_menubar_dropdown_open: RwSignal::new(false),
             status_bar_visible: RwSignal::new(s.status_bar_visible),
             side_panel_view: RwSignal::new(s.side_panel_view),
             side_width: RwSignal::new(s.side_width),

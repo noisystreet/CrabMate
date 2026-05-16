@@ -20,12 +20,14 @@ use leptos::prelude::*;
 
 use super::app_shell_effects::{
     SessionDeleteHotkeySignals, ShellEscapeSignals, WireSettingsModalLlmDraftsSignals,
-    wire_approval_expanded_follows_pending, wire_escape_key_layered_dismiss,
-    wire_persist_agent_role, wire_persist_editor_layout_mode, wire_persist_side_panel_view_flags,
-    wire_persist_side_width, wire_persist_sidebar_rail_collapsed, wire_persist_status_bar_visible,
+    wire_approval_expanded_follows_pending, wire_close_shell_chrome_when_ide_layout,
+    wire_collapse_sidebar_rail_when_ide_layout, wire_escape_key_layered_dismiss,
+    wire_persist_agent_role, wire_persist_editor_layout_mode, wire_persist_ide_editor_prefs,
+    wire_persist_side_panel_view_flags, wire_persist_side_width,
+    wire_persist_sidebar_rail_collapsed, wire_persist_status_bar_visible,
     wire_session_delete_hotkey, wire_settings_modal_llm_drafts_on_open,
-    wire_sync_bg_decor_to_storage_and_dom, wire_sync_locale_html_lang,
-    wire_sync_theme_to_storage_and_dom,
+    wire_sync_bg_decor_to_storage_and_dom, wire_sync_ide_layout_dom_and_tauri_chrome,
+    wire_sync_locale_html_lang, wire_sync_theme_to_storage_and_dom,
 };
 use super::app_signals::AppSignals;
 use super::chat::ChatComposerWires;
@@ -122,6 +124,16 @@ fn wire_phase2_persisted_prefs_dom_and_settings_hooks(app: &AppSignals) {
     wire_persist_side_width(app.shell_ui.side_width);
     wire_persist_sidebar_rail_collapsed(app.sidebar.sidebar_rail_collapsed);
     wire_persist_editor_layout_mode(app.shell_ui.editor_layout_mode);
+    wire_collapse_sidebar_rail_when_ide_layout(
+        app.shell_ui.editor_layout_mode,
+        app.sidebar.sidebar_rail_collapsed,
+    );
+    wire_close_shell_chrome_when_ide_layout(
+        app.shell_ui.editor_layout_mode,
+        app.sidebar.mobile_nav_open,
+        app.chat_composer.chat_find_panel_open,
+    );
+    wire_persist_ide_editor_prefs(app.ide_editor);
     wire_approval_expanded_follows_pending(
         app.approval.pending_approval,
         app.approval.last_approval_sid,
@@ -130,6 +142,7 @@ fn wire_phase2_persisted_prefs_dom_and_settings_hooks(app: &AppSignals) {
     wire_sync_theme_to_storage_and_dom(app.shell_ui.theme);
     wire_sync_locale_html_lang(app.shell_ui.locale);
     wire_sync_bg_decor_to_storage_and_dom(app.shell_ui.bg_decor);
+    wire_sync_ide_layout_dom_and_tauri_chrome(app.shell_ui.editor_layout_mode);
     wire_settings_modal_llm_drafts_on_open(WireSettingsModalLlmDraftsSignals {
         settings_modal: app.modal.settings_modal,
         settings_page: app.modal.settings_page,
@@ -146,9 +159,11 @@ fn wire_phase3_escape_layered_dismiss(app: &AppSignals) {
         chat_find_panel_open: app.chat_composer.chat_find_panel_open,
         sidebar_search_panel_open: app.sidebar.sidebar_search_panel_open,
         view_menu_open: app.shell_ui.view_menu_open,
+        ide_menubar_dropdown_open: app.shell_ui.ide_menubar_dropdown_open,
         mobile_nav_open: app.sidebar.mobile_nav_open,
         changelist_modal_open: app.modal.changelist_modal_open,
         settings_modal: app.modal.settings_modal,
+        ide_settings_page: app.modal.ide_settings_page,
         session_modal: app.modal.session_modal,
     };
     wire_escape_key_layered_dismiss(shell_escape);

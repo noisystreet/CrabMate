@@ -48,3 +48,41 @@ pub fn wire_persist_editor_layout_mode(editor_layout_mode: RwSignal<bool>) {
         store_bool_key(EDITOR_LAYOUT_MODE_KEY, editor_layout_mode.get());
     });
 }
+
+/// 进入 IDE（编辑器）主区布局时自动收起桌面端左侧会话栏。
+pub fn wire_persist_ide_editor_prefs(editor: crate::app::app_signals::IdeEditorSignals) {
+    Effect::new(move |_| {
+        editor.font_slug.get();
+        editor.font_size_px.get();
+        editor.line_numbers.get();
+        editor.word_wrap.get();
+        editor.tab_size.get();
+        editor.persist_from_signals();
+    });
+}
+
+pub fn wire_collapse_sidebar_rail_when_ide_layout(
+    editor_layout_mode: RwSignal<bool>,
+    sidebar_rail_collapsed: RwSignal<bool>,
+) {
+    Effect::new(move |_| {
+        if editor_layout_mode.get() {
+            sidebar_rail_collapsed.set(true);
+        }
+    });
+}
+
+/// 进入 IDE 布局时关闭窄屏侧栏抽屉与聊天查找条（不隐藏 Web 顶栏）。
+pub fn wire_close_shell_chrome_when_ide_layout(
+    editor_layout_mode: RwSignal<bool>,
+    mobile_nav_open: RwSignal<bool>,
+    chat_find_panel_open: RwSignal<bool>,
+) {
+    Effect::new(move |_| {
+        if !editor_layout_mode.get() {
+            return;
+        }
+        mobile_nav_open.set(false);
+        chat_find_panel_open.set(false);
+    });
+}

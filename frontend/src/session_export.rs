@@ -12,12 +12,6 @@ use crate::message_format::{STAGED_TIMELINE_SYSTEM_PREFIX, message_text_for_disp
 use crate::storage::{ChatSession, StoredMessage};
 
 #[wasm_bindgen(inline_js = r#"
-export function hasTauriInvoke() {
-  const direct = globalThis.__TAURI__ && globalThis.__TAURI__.core && globalThis.__TAURI__.core.invoke;
-  const internal = globalThis.__TAURI_INTERNALS__ && globalThis.__TAURI_INTERNALS__.invoke;
-  return typeof direct === "function" || typeof internal === "function";
-}
-
 export function invokeTauriSaveTextFile(defaultName, body) {
   const invoke =
     (globalThis.__TAURI__ && globalThis.__TAURI__.core && globalThis.__TAURI__.core.invoke) ||
@@ -43,17 +37,10 @@ export function invokeTauriPickWorkspaceFolder() {
 }
 "#)]
 extern "C" {
-    #[wasm_bindgen(js_name = hasTauriInvoke)]
-    fn has_tauri_invoke() -> bool;
     #[wasm_bindgen(js_name = invokeTauriSaveTextFile)]
     fn invoke_tauri_save_text_file(default_name: &str, body: &str) -> js_sys::Promise;
     #[wasm_bindgen(js_name = invokeTauriPickWorkspaceFolder)]
     fn invoke_tauri_pick_workspace_folder() -> js_sys::Promise;
-}
-
-/// CrabMate Desktop（Tauri WebView）内嵌时可调用 `invoke`（含对话框保存等）。
-pub(crate) fn tauri_shell_available() -> bool {
-    has_tauri_invoke()
 }
 
 /// 打开系统文件夹对话框；取消返回 `Ok(None)`。
@@ -268,7 +255,7 @@ pub fn trigger_download(
     body: &str,
     loc: crate::i18n::Locale,
 ) -> Result<(), String> {
-    if tauri_shell_available() {
+    if crate::tauri_shell::tauri_shell_available() {
         return trigger_download_via_tauri(filename, body, loc);
     }
     trigger_download_via_anchor(filename, mime, body)

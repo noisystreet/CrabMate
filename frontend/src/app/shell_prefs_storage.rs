@@ -95,6 +95,26 @@ pub(crate) fn read_agent_role_initial() -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// Tauri 壳标记与 IDE 布局标记（`data-tauri-shell` / `data-ide-layout`：窗口装饰与菜单栏拖拽，不隐藏 Web 顶栏）。
+pub(crate) fn apply_shell_layout_dom_flags(editor_layout_mode: bool) {
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    let Some(root) = doc.document_element() else {
+        return;
+    };
+    if crate::tauri_shell::tauri_shell_available() {
+        let _ = root.set_attribute("data-tauri-shell", "");
+    } else {
+        let _ = root.remove_attribute("data-tauri-shell");
+    }
+    if editor_layout_mode {
+        let _ = root.set_attribute("data-ide-layout", "");
+    } else {
+        let _ = root.remove_attribute("data-ide-layout");
+    }
+}
+
 /// 经纪人角色：非空则 `set_item`，否则 `remove_item`。
 pub(crate) fn persist_agent_role_trimmed(selected: Option<&str>) {
     let Some(st) = local_storage_index::handle() else {

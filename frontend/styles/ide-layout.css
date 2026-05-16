@@ -30,13 +30,208 @@
   display: flex;
 }
 
+/* Tauri 无系统装饰时：菜单区可拖拽，窗口按钮与菜单项不可拖 */
+html[data-tauri-shell][data-ide-layout] .ide-menu-bar-menus,
+html[data-tauri-shell][data-ide-layout] .ide-menu-bar-status {
+  -webkit-app-region: drag;
+}
+
+html[data-tauri-shell][data-ide-layout] .ide-menu-bar button,
+html[data-tauri-shell][data-ide-layout] .ide-menu-bar .ide-menu-trigger,
+html[data-tauri-shell][data-ide-layout] .ide-menu-dropdown,
+html[data-tauri-shell][data-ide-layout] .ide-menu-item,
+html[data-tauri-shell][data-ide-layout] .ide-tauri-window-controls {
+  -webkit-app-region: no-drag;
+}
+
+.ide-tauri-window-controls {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  margin-left: 0.35rem;
+  border-left: 1px solid var(--shell-border, rgba(0, 0, 0, 0.08));
+}
+
+.ide-win-ctrl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  min-height: 2rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.ide-win-ctrl:hover {
+  background: var(--surface-hover, rgba(0, 0, 0, 0.06));
+}
+
+.ide-win-ctrl-close:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+
+.ide-win-ctrl-glyph {
+  font-size: 0.85rem;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.ide-win-ctrl-close .ide-win-ctrl-glyph {
+  font-size: 1rem;
+}
+
+/* 窄屏 IDE：会话抽屉默认收起（由菜单「返回对话」退出 IDE） */
+@media (max-width: 768px) {
+  .app-root.app-shell-ds.app-root--ide-layout.sidebar-rail-collapsed .nav-rail {
+    width: 0 !important;
+    min-width: 0;
+    opacity: 0;
+    pointer-events: none;
+    border-right-color: transparent;
+    overflow: hidden;
+  }
+}
+
 .ide-layout-root {
   display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
   min-height: 0;
   gap: 0;
-  border-top: 1px solid var(--shell-border, rgba(0, 0, 0, 0.08));
+}
+
+.ide-menu-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  min-height: 2rem;
+  padding: 0 0.35rem;
+  border-bottom: 1px solid var(--shell-border, rgba(0, 0, 0, 0.08));
+  background: var(--surface-0, transparent);
+  position: relative;
+  z-index: 5;
+}
+
+.ide-menu-bar-menus {
+  display: flex;
+  align-items: stretch;
+  gap: 0.1rem;
+  flex-shrink: 0;
+}
+
+.ide-menu-wrap {
+  position: relative;
+}
+
+.ide-menu-trigger {
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.35rem 0.55rem;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.ide-menu-trigger:hover,
+.ide-menu-trigger-open {
+  background: var(--surface-hover, rgba(0, 0, 0, 0.06));
+}
+
+.ide-menu-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 30;
+  min-width: 11rem;
+  margin-top: 2px;
+  padding: 0.25rem 0;
+  border: 1px solid var(--shell-border, rgba(0, 0, 0, 0.1));
+  border-radius: 6px;
+  background: var(--bg, #fff);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+}
+
+.ide-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.4rem 0.75rem;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.ide-menu-item:hover:not(:disabled) {
+  background: var(--surface-hover, rgba(0, 0, 0, 0.06));
+}
+
+.ide-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ide-menu-item-check {
+  padding-left: 0.5rem;
+}
+
+.ide-menu-check {
+  display: inline-block;
+  width: 1rem;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 0.75rem;
+}
+
+.ide-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.ide-menu-bar-status {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  flex: 1;
+  justify-content: flex-end;
+  padding-right: 0.5rem;
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+
+.ide-menu-bar-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.ide-layout-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
 }
 
 .ide-layout-left {
@@ -81,31 +276,6 @@
   min-height: 0;
 }
 
-.ide-editor-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.45rem 0.65rem;
-  border-bottom: 1px solid var(--shell-border, rgba(0, 0, 0, 0.08));
-  background: var(--surface-0, transparent);
-}
-
-.ide-editor-toolbar-title {
-  font-size: 0.85rem;
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ide-editor-toolbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  flex-shrink: 0;
-}
-
 .ide-dirty-dot {
   color: var(--accent-warn, #c27a00);
   font-size: 0.75rem;
@@ -121,20 +291,56 @@
   opacity: 0.7;
 }
 
-.ide-editor-textarea {
+.ide-editor-pane {
   flex: 1;
   min-height: 12rem;
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ide-line-gutter {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0.65rem 0.55rem 0.65rem 0.75rem;
+  border: none;
+  border-right: 1px solid var(--shell-border, rgba(0, 0, 0, 0.08));
+  background: var(--surface-1, rgba(0, 0, 0, 0.02));
+  color: var(--muted, rgba(0, 0, 0, 0.45));
+  font-family: var(--ide-editor-font-family, var(--font-mono, "JetBrains Mono", ui-monospace, monospace));
+  font-size: var(--ide-editor-font-size, 14px);
+  line-height: 1.45;
+  tab-size: var(--ide-editor-tab-size, 4);
+  text-align: right;
+  white-space: pre;
+  overflow: hidden;
+  user-select: none;
+  min-width: 2.5rem;
+}
+
+.ide-editor-textarea {
+  flex: 1;
+  min-height: 0;
   width: 100%;
   box-sizing: border-box;
   margin: 0;
   padding: 0.65rem 0.75rem;
   border: none;
   resize: none;
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
-  font-size: 0.85rem;
+  font-family: var(--ide-editor-font-family, var(--font-mono, "JetBrains Mono", ui-monospace, monospace));
+  font-size: var(--ide-editor-font-size, 14px);
   line-height: 1.45;
+  tab-size: var(--ide-editor-tab-size, 4);
   background: var(--surface-editor, transparent);
   color: inherit;
+  white-space: pre;
+  overflow: auto;
+}
+
+.ide-editor-pane--wrap .ide-editor-textarea {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .ide-editor-textarea:focus {
