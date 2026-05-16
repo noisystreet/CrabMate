@@ -488,7 +488,15 @@
   max-width: 100%;
 }
 
-/* 关闭 Markdown（环境变量 CM_WEB_DISABLE_MARKDOWN）：等宽便于对照上游原文 */
+/* 会话模式：聊天列正文字体（Markdown 关闭为纯文本时由下方规则覆盖为等宽） */
+.chat-column .msg-body,
+.chat-column .msg-md-prose,
+.chat-column .composer-input {
+  font-family: var(--crabmate-chat-font-family, inherit);
+}
+
+/* 纯文本气泡 / 关闭 Markdown（CM_WEB_DISABLE_MARKDOWN）：等宽，覆盖上一段 chat 字体 */
+.chat-column .msg-md-wrap--plaintext .msg-md-prose,
 .msg-md-wrap--plaintext .msg-md-prose {
   font-family: var(--font-mono);
   font-size: 0.92em;

@@ -361,6 +361,66 @@ pub fn settings_block_session_storage(l: Locale) -> &'static str {
     }
 }
 
+pub fn settings_block_session_typography(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "界面与聊天字体",
+        Locale::En => "UI & chat fonts",
+    }
+}
+
+pub fn settings_session_typography_hint(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => {
+            "以下选项仅存于本机浏览器并立即生效；代码块与行内代码仍使用主题的等宽字体。"
+        }
+        Locale::En => {
+            "These choices are stored in this browser only and apply immediately; code blocks still use the theme monospace stack."
+        }
+    }
+}
+
+pub fn settings_session_ui_font_label(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "界面字体（侧栏、顶栏、设置等）",
+        Locale::En => "UI font (sidebar, chrome, settings)",
+    }
+}
+
+pub fn settings_session_chat_font_label(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "聊天消息与输入框字体",
+        Locale::En => "Chat message & composer font",
+    }
+}
+
+pub fn settings_session_font_slug_label(l: Locale, slug: &str) -> &'static str {
+    match slug {
+        "default" => match l {
+            Locale::ZhHans => "主题默认",
+            Locale::En => "Theme default",
+        },
+        "dm_sans" => "DM Sans",
+        "system" => match l {
+            Locale::ZhHans => "系统无衬线",
+            Locale::En => "System UI sans-serif",
+        },
+        "roboto" => "Roboto",
+        "serif" => match l {
+            Locale::ZhHans => "衬线体",
+            Locale::En => "Serif",
+        },
+        "jetbrains" => "JetBrains Mono",
+        "mono_system" => match l {
+            Locale::ZhHans => "系统等宽",
+            Locale::En => "System monospace",
+        },
+        _ => match l {
+            Locale::ZhHans => "主题默认",
+            Locale::En => "Theme default",
+        },
+    }
+}
+
 pub fn settings_section_session_title(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "会话",
@@ -371,10 +431,10 @@ pub fn settings_section_session_title(l: Locale) -> &'static str {
 pub fn settings_section_session_desc(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => {
-            "控制当前浏览器连接到的服务端进程是否把 Web 会话写入 SQLite（仅本进程；重启 serve 后仍以配置文件为准）。"
+            "控制当前浏览器连接到的服务端进程是否把 Web 会话写入 SQLite（仅本进程；重启 serve 后仍以配置文件为准）。界面与聊天字体可在下方单独设置，仅存本机并即时生效。"
         }
         Locale::En => {
-            "Control whether this server process persists Web chat to SQLite (this process only; restart serve still follows config files)."
+            "Control whether this server process persists Web chat to SQLite (this process only; restart serve still follows config files). UI and chat fonts below are browser-only and apply immediately."
         }
     }
 }

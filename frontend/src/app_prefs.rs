@@ -44,6 +44,11 @@ pub const IDE_EDITOR_LINE_NUMBERS_KEY: &str = "crabmate-ide-editor-line-numbers"
 pub const IDE_EDITOR_WORD_WRAP_KEY: &str = "crabmate-ide-editor-word-wrap";
 /// IDE 编辑器 Tab 宽度（空格数，2–8）。
 pub const IDE_EDITOR_TAB_SIZE_KEY: &str = "crabmate-ide-editor-tab-size";
+
+/// 会话模式：壳层界面字体（`--crabmate-ui-font-family`）；`default` 表示随主题 `--font-sans`。
+pub const SESSION_UI_FONT_KEY: &str = "crabmate-session-ui-font";
+/// 会话模式：聊天列消息与输入框正文字体（`--crabmate-chat-font-family`）。
+pub const SESSION_CHAT_FONT_KEY: &str = "crabmate-session-chat-font";
 pub const DEFAULT_SIDE_WIDTH: f64 = 280.0;
 pub const MIN_SIDE_WIDTH: f64 = 200.0;
 pub const MAX_SIDE_WIDTH: f64 = 560.0;

@@ -22,6 +22,10 @@ pub struct ShellUISignals {
     pub apply_assistant_display_filters: RwSignal<bool>,
     /// `true` 时主区为 IDE 式（工作区树 + 编辑器），隐藏对话列与右列。
     pub editor_layout_mode: RwSignal<bool>,
+    /// 会话模式壳层 UI 字体 slug（`default` 表示随主题 `--font-sans`）。
+    pub session_ui_font: RwSignal<String>,
+    /// 聊天列消息与输入框正文字体 slug（`code`/`pre` 仍用 `--font-mono`）。
+    pub session_chat_font: RwSignal<String>,
 }
 
 impl ShellUISignals {
@@ -40,6 +44,8 @@ impl ShellUISignals {
             markdown_render: RwSignal::new(true),
             apply_assistant_display_filters: RwSignal::new(true),
             editor_layout_mode: RwSignal::new(s.editor_layout_mode),
+            session_ui_font: RwSignal::new(s.session_ui_font),
+            session_chat_font: RwSignal::new(s.session_chat_font),
         }
     }
 }

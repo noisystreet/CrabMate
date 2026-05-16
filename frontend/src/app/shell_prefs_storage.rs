@@ -9,12 +9,18 @@
 //!
 //! 新增「首屏就读 / Effect 里写磁盘或改 DOM」的壳偏好时，优先在本模块加函数，避免在多个 `wire_*` 文件里散落 `set_item`。
 
+use wasm_bindgen::JsCast;
+
 use crate::app_prefs::{
-    BG_DECOR_KEY, CM_ROLE_KEY, DEFAULT_SIDE_WIDTH, EDITOR_LAYOUT_MODE_KEY, STATUS_BAR_VISIBLE_KEY,
-    SidePanelView, THEME_KEY, WORKSPACE_WIDTH_KEY, load_bool_key, load_f64_key,
-    load_side_panel_view, normalize_theme_slug, store_bool_key,
+    BG_DECOR_KEY, CM_ROLE_KEY, DEFAULT_SIDE_WIDTH, EDITOR_LAYOUT_MODE_KEY, SESSION_CHAT_FONT_KEY,
+    SESSION_UI_FONT_KEY, STATUS_BAR_VISIBLE_KEY, SidePanelView, THEME_KEY, WORKSPACE_WIDTH_KEY,
+    load_bool_key, load_f64_key, load_side_panel_view, normalize_theme_slug, store_bool_key,
 };
 use crate::i18n::Locale;
+use crate::session_typography_prefs::{
+    read_session_chat_font_initial, read_session_ui_font_initial, session_chat_font_stack_css,
+    session_ui_font_stack_css,
+};
 
 use super::local_storage_index;
 
@@ -36,6 +42,8 @@ pub(crate) struct ShellUiInitialSnapshot {
     pub side_panel_view: SidePanelView,
     pub side_width: f64,
     pub editor_layout_mode: bool,
+    pub session_ui_font: String,
+    pub session_chat_font: String,
 }
 
 #[must_use]
@@ -48,6 +56,44 @@ pub(crate) fn read_shell_ui_initial_snapshot() -> ShellUiInitialSnapshot {
         side_panel_view: load_side_panel_view(),
         side_width: load_f64_key(WORKSPACE_WIDTH_KEY, DEFAULT_SIDE_WIDTH),
         editor_layout_mode: load_bool_key(EDITOR_LAYOUT_MODE_KEY, false),
+        session_ui_font: read_session_ui_font_initial(),
+        session_chat_font: read_session_chat_font_initial(),
+    }
+}
+
+/// 会话模式界面 / 聊天列字体：写入本机并在 `<html>` 上维护 `--crabmate-ui-font-family` / `--crabmate-chat-font-family`。
+pub(crate) fn persist_session_typography_to_storage_and_dom(ui_slug: &str, chat_slug: &str) {
+    let ui = crate::session_typography_prefs::normalize_session_ui_font(ui_slug);
+    let chat = crate::session_typography_prefs::normalize_session_chat_font(chat_slug);
+    if let Some(st) = local_storage_index::handle() {
+        let _ = st.set_item(SESSION_UI_FONT_KEY, &ui);
+        let _ = st.set_item(SESSION_CHAT_FONT_KEY, &chat);
+    }
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    let Some(root) = doc.document_element() else {
+        return;
+    };
+    let Some(html_root) = root.dyn_ref::<web_sys::HtmlElement>() else {
+        return;
+    };
+    let style = html_root.style();
+    match session_ui_font_stack_css(&ui) {
+        Some(stack) => {
+            let _ = style.set_property("--crabmate-ui-font-family", stack);
+        }
+        None => {
+            let _ = style.remove_property("--crabmate-ui-font-family");
+        }
+    }
+    match session_chat_font_stack_css(&chat) {
+        Some(stack) => {
+            let _ = style.set_property("--crabmate-chat-font-family", stack);
+        }
+        None => {
+            let _ = style.remove_property("--crabmate-chat-font-family");
+        }
     }
 }
 

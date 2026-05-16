@@ -4,7 +4,7 @@ use leptos::prelude::*;
 use leptos_dom::helpers::window_event_listener;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum SettingsSection {
+pub(crate) enum SettingsSection {
     Appearance,
     Llm,
     ExecutorLlm,
