@@ -147,6 +147,7 @@ cargo tauri build
 | [docs/命令行与路由.md](docs/命令行与路由.md) | 子命令、HTTP 路由、deb 打包 | [en](docs/en/CLI.md) |
 | [docs/命令行契约.md](docs/命令行契约.md) | `chat` 退出码与 **`--output json`** | [en](docs/en/CLI_CONTRACT.md) |
 | [docs/调试指南.md](docs/调试指南.md) | 日志、`doctor`、`GET /web-ui` 等 | [en](docs/en/DEBUG.md) |
+| [docs/个人VPS部署指南.md](docs/个人VPS部署指南.md) | 个人自用：本机 `serve` + TLS 反代 + Bearer | — |
 | [docs/测试指南.md](docs/测试指南.md) | 测试、pre-commit、审计命令 | [en](docs/en/TESTING.md) |
 | [docs/基准测试规划.md](docs/基准测试规划.md) | **`bench`** 规划与开源基准衔接 | — |
 | [benchmark/README.md](benchmark/README.md) | HumanEval 转换、执行与冒烟 | — |
@@ -184,6 +185,7 @@ cargo tauri build
 - **监听**：默认 **`127.0.0.1`**；监听 **`0.0.0.0`** 须 **`web_api_bearer_token`** 或显式不安全开关（见 [docs/配置说明.md](docs/配置说明.md)）。
 - **Web API**：嵌入默认 **`web_api_require_bearer = false`**，允许无共享密钥启动 **`serve`**；若设为 **`true`**，则启动前须配置非空 **`CM_WEB_API_BEARER_TOKEN`**（或 TOML **`web_api_bearer_token`**）。密钥非空时会挂载 Bearer 层，请求须带 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**。前端可存 **`localStorage["crabmate-api-bearer-token"]`**。对外或不可信网络建议 **`web_api_require_bearer = true`** 并配置密钥。
 - **其它**：Web 侧栏「设置」须 **「保存全部」** 才写入浏览器；工作区须在允许根内（路径校验见 [docs/配置说明.md](docs/配置说明.md)）。调试变量与 **`GET /web-ui`** 见 [docs/调试指南.md](docs/调试指南.md)。
+- **个人 VPS（反代 TLS）**：见 [docs/个人VPS部署指南.md](docs/个人VPS部署指南.md)（**`127.0.0.1` + `CM_WEB_API_BEARER_TOKEN` + Caddy/Nginx**）。
 
 ## 项目结构
 
