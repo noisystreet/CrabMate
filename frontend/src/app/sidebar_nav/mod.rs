@@ -6,6 +6,7 @@
 
 mod context_menus;
 mod debounce;
+mod editor_layout_toggle;
 mod search_panel;
 mod session_rail;
 
@@ -22,6 +23,7 @@ use debounce::{
     GLOBAL_MESSAGE_SEARCH_DEBOUNCE_MS, SIDEBAR_SESSION_FILTER_DEBOUNCE_MS,
     debounce_signal_to_effect, rail_context_menu_target_is_session_row_or_hit,
 };
+use editor_layout_toggle::NavRailEditorLayoutToggle;
 use search_panel::nav_rail_search_panel;
 use session_rail::{NavRailSessionScrollSignals, nav_rail_session_scroll_inner};
 
@@ -38,6 +40,7 @@ pub fn sidebar_nav_view(signals: SidebarNavSignals) -> impl IntoView {
         chat_find_panel_open,
         session_context_menu,
         sidebar_rail_collapsed,
+        editor_layout_mode,
     } = signals;
     let shell_chat = expect_chat_shell_ctx();
     let chat = shell_chat.chat;
@@ -97,6 +100,7 @@ pub fn sidebar_nav_view(signals: SidebarNavSignals) -> impl IntoView {
             >
                 {move || crate::i18n::nav_new_chat(locale.get())}
             </button>
+            <NavRailEditorLayoutToggle locale=locale editor_layout_mode=editor_layout_mode />
             {nav_rail_search_panel(
                 locale,
                 sidebar_search_panel_open,

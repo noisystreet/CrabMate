@@ -93,12 +93,17 @@ fn WorkspaceTreeFileRow(
     name: String,
     rel: String,
     on_file_double_click: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
+    on_file_single_click: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
 ) -> impl IntoView {
     let rel_dbl = rel.clone();
+    let rel_click = rel.clone();
     view! {
         <li
             class=row_class
             style=format!("--list-stagger: {stagger}")
+            on:click=move |_| {
+                (on_file_single_click.get_value())(rel_click.clone());
+            }
             on:dblclick=move |_| {
                 (on_file_double_click.get_value())(rel_dbl.clone());
             }
@@ -117,6 +122,7 @@ fn WorkspaceTreeDirectoryNode(
     rel: String,
     subtree: WorkspaceSubtreeSignals,
     on_file_double_click: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
+    on_file_single_click: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
 ) -> impl IntoView {
     let WorkspaceSubtreeSignals {
         subtree_expanded,
@@ -203,6 +209,7 @@ fn WorkspaceTreeDirectoryNode(
                                         base_stagger=0
                                         subtree=subtree
                                         on_file_double_click=on_file_double_click
+                                        on_file_single_click=on_file_single_click
                                     />
                                 </ul>
                             }
@@ -227,6 +234,8 @@ pub fn WorkspaceFilesystemTree(
     locale: RwSignal<Locale>,
     /// 双击工作区树中的**文件**行时回调相对路径（POSIX）；目录行不触发。
     on_file_double_click: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
+    /// 单击文件行时回调（IDE 布局打开编辑器；侧栏可传 no-op）。
+    on_file_single_click: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
 ) -> impl IntoView {
     view! {
         <ul
@@ -263,6 +272,7 @@ pub fn WorkspaceFilesystemTree(
                                 locale,
                             }
                             on_file_double_click=on_file_double_click
+                            on_file_single_click=on_file_single_click
                         />
                     }
                     .into_any()
@@ -280,6 +290,7 @@ fn WorkspaceTreeNodes(
     base_stagger: u32,
     subtree: WorkspaceSubtreeSignals,
     on_file_double_click: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
+    on_file_single_click: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
 ) -> impl IntoView {
     entries
         .into_iter()
@@ -298,6 +309,7 @@ fn WorkspaceTreeNodes(
                         name=name
                         rel=rel
                         on_file_double_click=on_file_double_click
+                        on_file_single_click=on_file_single_click
                     />
                 }
                 .into_any()
@@ -310,6 +322,7 @@ fn WorkspaceTreeNodes(
                         rel=rel
                         subtree=subtree
                         on_file_double_click=on_file_double_click
+                        on_file_single_click=on_file_single_click
                     />
                 }
                 .into_any()

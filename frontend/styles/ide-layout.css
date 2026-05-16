@@ -1,0 +1,156 @@
+/* IDE 布局：主区内工作区 + 编辑器 */
+
+/* 与 `SideColumnViewSignals` 内 `Rc` 等非 Send 类型兼容：两态同挂载，用 CSS 切换可见性（勿用 `Show` 包裹含侧栏的子视图）。 */
+.main-row-chat-layer {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  align-items: stretch;
+}
+
+.main-row-chat-layer--hidden {
+  display: none !important;
+}
+
+.main-row-ide-layer {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.main-row-ide-layer--hidden {
+  display: none !important;
+}
+
+.shell-main--ide-layout .main-row {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.ide-layout-root {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  gap: 0;
+  border-top: 1px solid var(--shell-border, rgba(0, 0, 0, 0.08));
+}
+
+.ide-layout-left {
+  width: min(360px, 38vw);
+  min-width: 220px;
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--shell-border, rgba(0, 0, 0, 0.08));
+  background: var(--surface-1, rgba(0, 0, 0, 0.02));
+}
+
+.ide-layout-left-head {
+  padding: 0.65rem 0.75rem 0.35rem;
+  border-bottom: 1px solid var(--shell-border, rgba(0, 0, 0, 0.06));
+}
+
+.ide-pane-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.ide-open-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  opacity: 0.78;
+  line-height: 1.35;
+}
+
+.ide-workspace-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.35rem 0.5rem 0.75rem;
+}
+
+.ide-layout-right {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ide-editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.65rem;
+  border-bottom: 1px solid var(--shell-border, rgba(0, 0, 0, 0.08));
+  background: var(--surface-0, transparent);
+}
+
+.ide-editor-toolbar-title {
+  font-size: 0.85rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ide-editor-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.ide-dirty-dot {
+  color: var(--accent-warn, #c27a00);
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.ide-editor-err {
+  margin: 0.35rem 0.65rem;
+}
+
+.ide-editor-loading {
+  margin: 0.35rem 0.65rem;
+  opacity: 0.7;
+}
+
+.ide-editor-textarea {
+  flex: 1;
+  min-height: 12rem;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border: none;
+  resize: none;
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  background: var(--surface-editor, transparent);
+  color: inherit;
+}
+
+.ide-editor-textarea:focus {
+  outline: none;
+}
+
+.ide-editor-textarea:disabled {
+  opacity: 0.55;
+}
+
+.nav-rail .btn-new-chat-ds + .btn-new-chat-ds {
+  margin-top: 0.45rem;
+}
+
+.shell-main-header-mobile-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}

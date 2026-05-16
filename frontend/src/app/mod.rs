@@ -12,6 +12,7 @@ mod app_signals;
 mod approval_modal;
 mod changelist_modal;
 mod chat;
+mod ide_layout;
 pub(crate) mod local_storage_index;
 mod mobile_shell_header;
 pub mod scroll_guard;
@@ -43,6 +44,7 @@ use approval_modal::ApprovalModal;
 use changelist_modal::changelist_modal_view;
 use chat::ChatFindBar;
 use chat::chat_column_view;
+use ide_layout::IdeLayoutView;
 use mobile_shell_header::mobile_shell_header_view;
 use session_list_modal::session_list_modal_view;
 use settings_modal::settings_modal_view;
@@ -90,7 +92,11 @@ pub fn App() -> impl IntoView {
                 </button>
             </Show>
 
-            <div class="shell-main" class:settings-page-hidden=move || app_ctx.signals.modal.settings_page.get()>
+            <div
+                class="shell-main"
+                class:settings-page-hidden=move || app_ctx.signals.modal.settings_page.get()
+                class:shell-main--ide-layout=move || app_ctx.signals.shell_ui.editor_layout_mode.get()
+            >
                 {mobile_shell_header_view(mobile_shell_header_signals)}
 
                 <Show when=move || app_ctx.signals.chat_composer.chat_find_panel_open.get()>
@@ -101,9 +107,30 @@ pub fn App() -> impl IntoView {
                     class:main-row-resizing=move || app_ctx.signals.resize.side_resize_dragging.get()
                     class="main-row"
                 >
-                    {chat_column_view(app_ctx.chat_column.clone())}
-
-                    {side_column_view(side_column_view_signals)}
+                    <div
+                        class="main-row-chat-layer"
+                        class:main-row-chat-layer--hidden=move || {
+                            app_ctx.signals.shell_ui.editor_layout_mode.get()
+                        }
+                    >
+                        {chat_column_view(app_ctx.chat_column.clone())}
+                        {side_column_view(side_column_view_signals.clone())}
+                    </div>
+                    <div
+                        class="main-row-ide-layer"
+                        class:main-row-ide-layer--hidden=move || {
+                            !app_ctx.signals.shell_ui.editor_layout_mode.get()
+                        }
+                    >
+                        <IdeLayoutView
+                            locale=app_ctx.signals.shell_ui.locale
+                            chat=app_ctx.signals.chat
+                            workspace_panel=app_ctx.signals.to_workspace_panel()
+                            refresh_workspace=app_ctx.refresh_workspace.clone()
+                            initialized=app_ctx.signals.initialized
+                            editor_visible=app_ctx.signals.shell_ui.editor_layout_mode
+                        />
+                    </div>
                 </div>
 
                 {status_bar_footer_view(status_bar_footer_signals)}

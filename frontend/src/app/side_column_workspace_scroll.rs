@@ -171,6 +171,7 @@ fn WorkspaceSideCardLoaded(
     chat: ChatSessionSignals,
     ws: WorkspacePanelSignals,
     insert_workspace_file_ref: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
+    on_file_single_click: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
 ) -> impl IntoView {
     view! {
         <>
@@ -206,17 +207,19 @@ fn WorkspaceSideCardLoaded(
                 subtree_loading=ws.workspace_subtree_loading
                 locale=locale
                 on_file_double_click=insert_workspace_file_ref
+                on_file_single_click=on_file_single_click
             />
         </>
     }
 }
 
 #[component]
-pub(super) fn WorkspaceSideCardScrollInner(
+pub(crate) fn WorkspaceSideCardScrollInner(
     locale: RwSignal<Locale>,
     chat: ChatSessionSignals,
     ws: WorkspacePanelSignals,
     insert_workspace_file_ref: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
+    on_file_single_click: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
 ) -> impl IntoView {
     view! {
         {move || {
@@ -229,6 +232,7 @@ pub(super) fn WorkspaceSideCardScrollInner(
                         chat=chat
                         ws=ws
                         insert_workspace_file_ref=insert_workspace_file_ref
+                        on_file_single_click=on_file_single_click
                     />
                 }
                 .into_any()

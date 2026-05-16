@@ -10,9 +10,9 @@
 //! 新增「首屏就读 / Effect 里写磁盘或改 DOM」的壳偏好时，优先在本模块加函数，避免在多个 `wire_*` 文件里散落 `set_item`。
 
 use crate::app_prefs::{
-    BG_DECOR_KEY, CM_ROLE_KEY, DEFAULT_SIDE_WIDTH, STATUS_BAR_VISIBLE_KEY, SidePanelView,
-    THEME_KEY, WORKSPACE_WIDTH_KEY, load_bool_key, load_f64_key, load_side_panel_view,
-    normalize_theme_slug, store_bool_key,
+    BG_DECOR_KEY, CM_ROLE_KEY, DEFAULT_SIDE_WIDTH, EDITOR_LAYOUT_MODE_KEY, STATUS_BAR_VISIBLE_KEY,
+    SidePanelView, THEME_KEY, WORKSPACE_WIDTH_KEY, load_bool_key, load_f64_key,
+    load_side_panel_view, normalize_theme_slug, store_bool_key,
 };
 use crate::i18n::Locale;
 
@@ -35,6 +35,7 @@ pub(crate) struct ShellUiInitialSnapshot {
     pub status_bar_visible: bool,
     pub side_panel_view: SidePanelView,
     pub side_width: f64,
+    pub editor_layout_mode: bool,
 }
 
 #[must_use]
@@ -46,6 +47,7 @@ pub(crate) fn read_shell_ui_initial_snapshot() -> ShellUiInitialSnapshot {
         status_bar_visible: load_bool_key(STATUS_BAR_VISIBLE_KEY, true),
         side_panel_view: load_side_panel_view(),
         side_width: load_f64_key(WORKSPACE_WIDTH_KEY, DEFAULT_SIDE_WIDTH),
+        editor_layout_mode: load_bool_key(EDITOR_LAYOUT_MODE_KEY, false),
     }
 }
 
