@@ -39,7 +39,7 @@ Without `RUST_LOG`: `serve` defaults to **info**; `repl` / `chat` / `tui` / `ben
 
 ## Message pipeline debug logs
 
-With `RUST_LOG=crabmate=debug`, each model call prints **`message_pipeline session_sync`** summary; finer: `RUST_LOG=crabmate::message_pipeline=trace`. See **`docs/开发文档.md`** § Architecture → **Context pipeline (observability)** and `GET /status` counters; implementation in `src/agent/message_pipeline.rs`.
+With `RUST_LOG=crabmate=debug`, each model call prints **`message_pipeline session_sync`** summary; finer: `RUST_LOG=crabmate::message_pipeline=trace`. See **`docs/开发文档.md`** § Architecture → **Context pipeline (observability)** and `GET /status` counters; implementation in `src/agent/message_pipeline/`（see `mod.rs` / `sync_pipeline.rs` / `transforms.rs` / `vendor.rs`）.
 
 ## Legacy usage
 
