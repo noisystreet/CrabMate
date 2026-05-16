@@ -4,7 +4,7 @@
 //!
 //! - **键名与通用读写**：[`crate::app_prefs`]（`THEME_KEY`、`THEME_SLUGS`、`normalize_theme_slug`、`store_bool_key`、侧栏视图等）；句柄经 [`super::local_storage_index`]。
 //! - **首屏壳 UI 快照**：[`read_shell_ui_initial_snapshot`] 聚合主题/语言/侧栏宽度等读路径，供 [`super::app_signals::ShellUISignals::new`] 单点消费。
-//! - **会话 JSON**：[`crate::storage`] / [`super::app_shell_effects::session_storage`]。
+//! - **会话 JSON**：[`crate::storage`] / [`crate::app::chat::session_storage`]。
 //! - **`client_llm.*` / Bearer**：[`crate::api::client_llm_storage`]。
 //!
 //! 新增「首屏就读 / Effect 里写磁盘或改 DOM」的壳偏好时，优先在本模块加函数，避免在多个 `wire_*` 文件里散落 `set_item`。

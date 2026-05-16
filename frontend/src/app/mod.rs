@@ -15,7 +15,6 @@ mod chat;
 pub(crate) mod local_storage_index;
 mod mobile_shell_header;
 pub mod scroll_guard;
-mod session_hydrate;
 mod session_list_modal;
 mod settings_commit;
 mod settings_form_state;

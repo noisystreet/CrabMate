@@ -19,6 +19,8 @@ mod message_row;
 mod message_row_actions;
 mod message_row_user_layout;
 mod scroll;
+mod session_hydrate;
+mod session_storage;
 #[cfg(test)]
 mod staged_plan_todo;
 mod stream_follow_up_gates;

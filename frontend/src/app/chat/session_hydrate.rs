@@ -1,20 +1,18 @@
 //! `GET /conversation/messages` 与本地 [`crate::storage::ChatSession`] 对齐（水合）。
 //!
-//! 从 `app/mod.rs` 抽出，避免根组件既管布局又实现同步语义。接线入口为 [`wire_session_hydration`]：Effect **同步段**用 [`try_hydration_wire_snapshot`] 生成 [`HydrationWireSnapshot`]，再 `spawn_local` 进入 [`conversation_hydration_cycle::run`]（经 [`run_conversation_hydration_cycle`] 薄包装），与流式写入 nonce 门闩对齐。
+//! 位于 **`app/chat/`**，与 [`super::wire_chat_session_lifecycle`] 顺序接线；Effect **同步段**用 [`try_hydration_wire_snapshot`] 生成 [`HydrationWireSnapshot`]，再 `spawn_local` 进入 [`conversation_hydration_cycle::run`]（经 [`run_conversation_hydration_cycle`] 薄包装），与流式写入 nonce 门闩对齐。
 
 use std::collections::HashSet;
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
+use crate::app::app_bootstrap_phase::AppBootstrapPhase;
+use crate::chat_session_state::ChatSessionSignals;
 use crate::conversation_hydrate::ConversationMessagesResponse;
 use crate::i18n::{self, Locale};
 use crate::session_ops::title_from_user_prompt;
 use crate::storage::{ChatSession, StoredMessage};
-
-use crate::chat_session_state::ChatSessionSignals;
-
-use super::app_bootstrap_phase::AppBootstrapPhase;
 
 fn count_user_role_bubbles(messages: &[StoredMessage]) -> usize {
     messages.iter().filter(|m| m.role == "user").count()
@@ -340,7 +338,7 @@ async fn run_conversation_hydration_cycle(
 
 /// 订阅 `chat.session_hydrate_nonce`：流结束后由 composer 递增，拉取服务端快照并写回当前会话。
 ///
-/// 门闸与 [`super::app_bootstrap_phase::AppBootstrapPhase::hydration_effects_enabled`] 一致（`initialized` + `web_ui_config_loaded`）。
+/// 门闸与 [`crate::app::app_bootstrap_phase::AppBootstrapPhase::hydration_effects_enabled`] 一致（`initialized` + `web_ui_config_loaded`）。
 pub fn wire_session_hydration(
     initialized: RwSignal<bool>,
     web_ui_config_loaded: RwSignal<bool>,
