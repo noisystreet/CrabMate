@@ -3,6 +3,7 @@
 //! 不引入整份壳层 Leptos Context；[`super::shell_runtime_context::ChatShellLeptosContext`] 承载可 `Copy` 的聊天切片。
 //! 仍为显式结构体传递 [`super::app_shell_ctx::AppShellCtx`]，便于跳转与类型检查（同因 `Rc` 等未走整包 `provide_context`）。
 
+use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -92,6 +93,47 @@ impl ComposerStreamShell {
     }
 }
 
+/// 消息列表区所需信号（缩短 `ChatMessagesPane` 形参列表；勿命名为 `*Props`，与 Leptos 组件宏生成类型冲突）。
+#[derive(Clone, Copy)]
+pub(crate) struct ChatMessagesPaneSignals {
+    pub locale: RwSignal<crate::i18n::Locale>,
+    pub messages_scroller: NodeRef<leptos::html::Div>,
+    pub auto_scroll_chat: RwSignal<bool>,
+    pub messages_scroll_from_effect: RwSignal<bool>,
+    pub last_messages_scroll_top: RwSignal<i32>,
+    pub timeline_panel_expanded: RwSignal<bool>,
+    pub chat: ChatSessionSignals,
+    pub collapsed_long_assistant_ids: RwSignal<Vec<String>>,
+    pub collapsed_tool_run_heads: RwSignal<HashSet<String>>,
+    pub tool_detail_expanded_ids: RwSignal<HashSet<String>>,
+    pub chat_find_query: RwSignal<String>,
+    pub chat_find_match_ids: RwSignal<Vec<String>>,
+    pub chat_find_cursor: RwSignal<usize>,
+    pub stream_turn_busy_ui: Memo<bool>,
+    pub stream_follow_up: RwSignal<ComposerStreamFollowUp>,
+    pub status_err: RwSignal<Option<String>>,
+    pub markdown_render: RwSignal<bool>,
+    pub apply_assistant_display_filters: RwSignal<bool>,
+}
+
+/// 输入区与发送条所需信号（与 [`ChatMessagesPaneSignals`] 对称，由 [`ChatColumnShell`] 单点组装）。
+#[derive(Clone)]
+pub(crate) struct ChatComposerPaneSignals {
+    pub locale: RwSignal<crate::i18n::Locale>,
+    pub pending_images: RwSignal<Vec<String>>,
+    pub pending_clarification: RwSignal<Option<PendingClarificationForm>>,
+    pub stream_turn_busy_ui: Memo<bool>,
+    pub status_err: RwSignal<Option<String>>,
+    pub run_send_message: Arc<dyn Fn() + Send + Sync>,
+    pub run_send_clarify_sv: StoredValue<Arc<dyn Fn() + Send + Sync>>,
+    pub trigger_stop: Arc<dyn Fn() + Send + Sync>,
+    pub initialized: RwSignal<bool>,
+    pub composer_input_ref: NodeRef<leptos::html::Textarea>,
+    pub draft: RwSignal<String>,
+    pub composer_mirror_html: RwSignal<String>,
+    pub composer_mirror_scroll_top: RwSignal<f64>,
+}
+
 /// 中部聊天列：`messages` 滚动区、时间线、消息列表与输入区所需的信号与闭包。
 ///
 /// **不再**逐字段复制 [`AppSignals::chat_composer`] / [`AppSignals::shell_ui`]：视图从 [`Self::app`] 读取，
@@ -106,8 +148,63 @@ pub struct ChatColumnShell {
     pub stream_busy_memos: ChatStreamBusyMemos,
     pub run_send_message: Arc<dyn Fn() + Send + Sync>,
     pub trigger_stop: Arc<dyn Fn() + Send + Sync>,
-    /// 截断再生 / 失败助手重试：由 [`super::composer_wires::wire_chat_composer_streams`] 单 Effect 消费。
+    /// 截断再生 / 失败助手重试：由 **`composer_wires::follow_up`** 侧 `Effect` 消费（与主发送路径分离审阅）。
     pub stream_follow_up: RwSignal<ComposerStreamFollowUp>,
+}
+
+impl ChatColumnShell {
+    /// 从 [`AppSignals`] 子域与流式壳组出消息列表 `view!` 所需句柄（替代在 [`super::column::chat_column_view`] 内逐字段解构）。
+    #[must_use]
+    pub(crate) fn messages_pane_signals(&self) -> ChatMessagesPaneSignals {
+        let app = &self.app;
+        let cc = app.chat_composer;
+        let su = app.shell_ui;
+        ChatMessagesPaneSignals {
+            locale: su.locale,
+            messages_scroller: cc.messages_scroller,
+            auto_scroll_chat: cc.auto_scroll_chat,
+            messages_scroll_from_effect: cc.messages_scroll_from_effect,
+            last_messages_scroll_top: cc.last_messages_scroll_top,
+            timeline_panel_expanded: cc.timeline_panel_expanded,
+            chat: app.chat,
+            collapsed_long_assistant_ids: cc.collapsed_long_assistant_ids,
+            collapsed_tool_run_heads: cc.collapsed_tool_run_heads,
+            tool_detail_expanded_ids: cc.tool_detail_expanded_ids,
+            chat_find_query: cc.chat_find_query,
+            chat_find_match_ids: cc.chat_find_match_ids,
+            chat_find_cursor: cc.chat_find_cursor,
+            stream_turn_busy_ui: self.stream_busy_memos.stream_turn_busy_ui,
+            stream_follow_up: self.stream_follow_up,
+            status_err: self.stream_shell.stream.status_err,
+            markdown_render: su.markdown_render,
+            apply_assistant_display_filters: su.apply_assistant_display_filters,
+        }
+    }
+
+    /// 组出输入区 `view!` 所需句柄；[`StoredValue`] 由调用方持有（澄清面板与主发送共用同一 `Arc`）。
+    #[must_use]
+    pub(crate) fn composer_pane_signals(
+        &self,
+        run_send_clarify_sv: StoredValue<Arc<dyn Fn() + Send + Sync>>,
+    ) -> ChatComposerPaneSignals {
+        let app = &self.app;
+        let cc = app.chat_composer;
+        ChatComposerPaneSignals {
+            locale: app.shell_ui.locale,
+            pending_images: cc.pending_images,
+            pending_clarification: self.stream_shell.approval.pending_clarification,
+            stream_turn_busy_ui: self.stream_busy_memos.stream_turn_busy_ui,
+            status_err: self.stream_shell.stream.status_err,
+            run_send_message: self.run_send_message.clone(),
+            run_send_clarify_sv,
+            trigger_stop: self.trigger_stop.clone(),
+            initialized: app.initialized,
+            composer_input_ref: cc.composer_input_ref.clone(),
+            draft: cc.draft,
+            composer_mirror_html: cc.composer_mirror_html,
+            composer_mirror_scroll_top: cc.composer_mirror_scroll_top,
+        }
+    }
 }
 
 /// `wire_chat_composer_streams` 的返回值：待发流式后续动作与发送、停止、新会话句柄。
