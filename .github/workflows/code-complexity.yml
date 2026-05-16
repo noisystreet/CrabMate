@@ -1,4 +1,4 @@
-# 圈复杂度（lizard CCN）、函数形参棘轮（fn-param）与代码行数棘轮（fn-nloc：函数 nloc + 源文件行数），与 scripts/*.sh / pre-commit 对齐；另含 fixtures/intent_regression.jsonl 金样测试（`cargo test golden_intent_regression`）。
+# 圈复杂度（lizard CCN）、函数形参上限（fn-param：≤ 9）、函数 nloc + 源文件行数上限（fn-nloc：nloc ≤ 200、单文件 ≤ 920），与 scripts/*.sh / pre-commit 对齐；另含 fixtures/intent_regression.jsonl 金样测试（`cargo test golden_intent_regression`）。
 name: code-complexity
 
 on:
@@ -24,10 +24,10 @@ jobs:
       - name: Run lizard (Rust, CCN threshold from repo script)
         run: bash scripts/lizard-rust.sh
 
-      - name: Run fn-param ratchet (Rust parameter counts + allow lines)
+      - name: Run fn-param cap (Rust max function params ≤ 9)
         run: bash scripts/fn-param-ratchet.sh
 
-      - name: Run fn-nloc ratchet (Rust function nloc + file line counts)
+      - name: Run fn-nloc (nloc ≤ 200, file lines ≤ 920)
         run: bash scripts/fn-nloc-ratchet.sh
 
   intent-golden:

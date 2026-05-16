@@ -30,14 +30,14 @@ repos:
         always_run: true
         stages: [pre-commit]
       - id: fn-param-ratchet
-        name: fn param count ratchet (lizard + allow lines)
+        name: fn param cap (lizard max params ≤ 9)
         entry: bash scripts/fn-param-ratchet.sh
         language: system
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
       - id: fn-nloc-ratchet
-        name: fn nloc + file lines ratchet (lizard nloc + per-file line counts)
+        name: fn nloc + rust file lines (nloc ≤ 200, file ≤ 920)
         entry: bash scripts/fn-nloc-ratchet.sh
         language: system
         pass_filenames: false
