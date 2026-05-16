@@ -60,7 +60,7 @@ pub fn rust_backtrace_analyze(args_json: &str) -> String {
 
     let first = frame_hits.first().cloned().unwrap_or_default();
     let mut top_modules = module_count.into_iter().collect::<Vec<_>>();
-    top_modules.sort_by(|a, b| b.1.cmp(&a.1));
+    top_modules.sort_by_key(|b| std::cmp::Reverse(b.1));
 
     let mut out = String::new();
     out.push_str("backtrace 分析结果:\n");

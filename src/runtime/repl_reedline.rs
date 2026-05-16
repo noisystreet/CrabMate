@@ -173,13 +173,7 @@ impl EditMode for DollarToggleEmacs {
 /// 行首 **`$`** 或全角 **`＄`**：`Some(None)` 表示仅美元符一行（切换 **我:/bash#:**）；`Some(Some(cmd))` 为待执行的 shell 一行；`None` 表示非美元行。
 pub(crate) fn parse_repl_dollar_shell_line(input: &str) -> Option<Option<&str>> {
     let t = input.trim_start();
-    let after = if let Some(r) = t.strip_prefix('$') {
-        r
-    } else if let Some(r) = t.strip_prefix('\u{ff04}') {
-        r
-    } else {
-        return None;
-    };
+    let after = t.strip_prefix('$').or_else(|| t.strip_prefix('\u{ff04}'))?;
     let rest = after.trim();
     if rest.is_empty() {
         Some(None)

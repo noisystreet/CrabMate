@@ -212,7 +212,7 @@ pub async fn workspace_handler(
                 types_hint.push(ent.file_type());
             }
             let mut entries = Vec::new();
-            for (name, hint) in names.into_iter().zip(types_hint.into_iter()) {
+            for (name, hint) in names.into_iter().zip(types_hint) {
                 let is_dir = match hint {
                     Some(Type::Directory) => true,
                     Some(Type::Symlink) | None => {

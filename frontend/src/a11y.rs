@@ -91,12 +91,11 @@ pub fn trap_tab_in_container(ev: &web_sys::KeyboardEvent, container: &web_sys::E
         None => {
             let _ = els[0].focus();
         }
-        Some(idx) if !shift => {
-            if idx + 1 < els.len() {
-                let _ = els[idx + 1].focus();
-            } else {
-                let _ = els[0].focus();
-            }
+        Some(idx) if !shift && idx + 1 < els.len() => {
+            let _ = els[idx + 1].focus();
+        }
+        Some(_) if !shift => {
+            let _ = els[0].focus();
         }
         Some(idx) => {
             if idx > 0 {

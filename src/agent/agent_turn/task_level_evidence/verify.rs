@@ -14,10 +14,8 @@ fn artifact_evidence_flags(r: &TaskResult) -> (bool, bool) {
     let mut compiled = false;
     for a in &r.artifacts {
         match a.kind {
-            ArtifactKind::File => {
-                if cpp_source_path(a.path.as_deref()) {
-                    wrote_source = true;
-                }
+            ArtifactKind::File if cpp_source_path(a.path.as_deref()) => {
+                wrote_source = true;
             }
             ArtifactKind::BuildArtifact(kind) => match kind {
                 BuildArtifactKind::SourceFile => wrote_source = true,

@@ -519,6 +519,13 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     cli_run::run().await
 }
 
+/// 已解析 CLI 参数后的入口；[`main`](crate::main) 在 `block_on` 时优先调用本函数以减小 future 嵌套深度。
+pub async fn run_cli_from_parsed(
+    args: config::cli::ParsedCliArgs,
+) -> Result<(), Box<dyn std::error::Error>> {
+    Box::pin(cli_run::run_cli_from_parsed(args)).await
+}
+
 pub use config::{
     AgentConfig, ExposeSecret, LlmHttpAuthMode, PlannerExecutorMode, SharedAgentConfig,
     load_config, load_config_for_cli,

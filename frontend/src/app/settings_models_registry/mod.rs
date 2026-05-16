@@ -448,13 +448,10 @@ fn SettingsModelsRegistryAddFormActions(s: RegistryAddFormActionSignals) -> impl
                     let mut next = saved_model_presets.with_untracked(|v| v.clone());
                     match mode {
                         Some(RegistryPresetDialogKind::Add) => next.push(preset),
-                        Some(RegistryPresetDialogKind::Edit(i)) => {
-                            if i < next.len() {
-                                next[i] = preset;
-                            } else {
-                                return;
-                            }
+                        Some(RegistryPresetDialogKind::Edit(i)) if i < next.len() => {
+                            next[i] = preset;
                         }
+                        Some(RegistryPresetDialogKind::Edit(_)) => return,
                         None => return,
                     }
                     if try_persist_saved_presets_with_feedback(

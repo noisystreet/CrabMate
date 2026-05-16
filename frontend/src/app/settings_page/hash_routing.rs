@@ -41,14 +41,9 @@ impl SettingsSection {
 pub(super) fn read_settings_section_from_hash() -> Option<SettingsSection> {
     let win = web_sys::window()?;
     let hash = win.location().hash().ok()?;
-    let slug = if let Some(v) = hash.strip_prefix("#settings/") {
-        v
-    } else if let Some(v) = hash.strip_prefix("#settings=") {
-        // Backward compatibility with previous hash format.
-        v
-    } else {
-        return None;
-    };
+    let slug = hash
+        .strip_prefix("#settings/")
+        .or_else(|| hash.strip_prefix("#settings="))?;
     SettingsSection::from_slug(slug)
 }
 

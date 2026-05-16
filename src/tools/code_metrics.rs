@@ -51,7 +51,7 @@ pub fn code_stats(args_json: &str, workspace_root: &Path, max_output_len: usize)
         .iter()
         .filter(|(_, lang)| lang.code > 0 || lang.comments > 0 || lang.blanks > 0)
         .collect();
-    sorted.sort_by(|a, b| b.1.code.cmp(&a.1.code));
+    sorted.sort_by_key(|b| std::cmp::Reverse(b.1.code));
 
     if sorted.is_empty() {
         return format!("路径 {} 下未找到可识别的源码文件", path);

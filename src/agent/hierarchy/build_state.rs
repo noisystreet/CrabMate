@@ -186,25 +186,21 @@ impl BuildState {
             if let Some(ext) = cmd.output.extension() {
                 let path = cmd.output.clone();
                 match ext.to_str() {
-                    Some("o") | Some("obj") => {
-                        if !self.object_files.contains(&path) {
-                            self.object_files.push(path);
-                        }
+                    Some("o") | Some("obj") if !self.object_files.contains(&path) => {
+                        self.object_files.push(path);
                     }
-                    Some("exe") | Some("") if path.extension().is_none() => {
-                        if !self.executables.contains(&path) {
-                            self.executables.push(path);
-                        }
+                    Some("exe") | Some("")
+                        if path.extension().is_none() && !self.executables.contains(&path) =>
+                    {
+                        self.executables.push(path);
                     }
-                    Some("a") | Some("lib") => {
-                        if !self.static_libraries.contains(&path) {
-                            self.static_libraries.push(path);
-                        }
+                    Some("a") | Some("lib") if !self.static_libraries.contains(&path) => {
+                        self.static_libraries.push(path);
                     }
-                    Some("so") | Some("dll") | Some("dylib") => {
-                        if !self.dynamic_libraries.contains(&path) {
-                            self.dynamic_libraries.push(path);
-                        }
+                    Some("so") | Some("dll") | Some("dylib")
+                        if !self.dynamic_libraries.contains(&path) =>
+                    {
+                        self.dynamic_libraries.push(path);
                     }
                     _ => {}
                 }

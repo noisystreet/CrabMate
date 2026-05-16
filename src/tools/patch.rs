@@ -327,13 +327,9 @@ fn validate_patch_paths(patch_text: &str, root: &Path) -> Result<(), String> {
 }
 
 fn parse_header_path(line: &str) -> Option<&str> {
-    let body = if let Some(rest) = line.strip_prefix("--- ") {
-        rest
-    } else if let Some(rest) = line.strip_prefix("+++ ") {
-        rest
-    } else {
-        return None;
-    };
+    let body = line
+        .strip_prefix("--- ")
+        .or_else(|| line.strip_prefix("+++ "))?;
     body.split_whitespace().next()
 }
 

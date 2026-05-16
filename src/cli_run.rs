@@ -491,81 +491,88 @@ pub(super) async fn run_benchmark_batch_if_requested(
 
 /// CLI 入口逻辑（与历史二进制 `main` 等价）：解析参数、加载配置、启动 Web / REPL 等。
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let ParsedCliArgs {
-        config_path,
-        agent_role_cli,
-        chat_cli,
-        serve_port,
-        http_bind_host,
-        workspace_cli,
-        no_tools,
-        no_web,
-        dry_run,
-        no_stream,
-        log_file,
-        bench_args,
-        extra_cli,
-        save_session,
-        tool_replay,
-        plugin_init,
-        plugin_validate,
-        plugin_list,
-        llm_context_tokens_cli,
-        tui,
-    } = parse_args()?;
+    run_cli_from_parsed(parse_args()?).await
+}
 
+/// 已解析 argv：初始化日志并处理 `doctor` / `save-session` 等早退子命令。
+pub(super) async fn run_cli_from_parsed(
+    args: ParsedCliArgs,
+) -> Result<(), Box<dyn std::error::Error>> {
     observability::init_tracing_subscriber(
-        log_file.as_deref().map(std::path::Path::new),
-        serve_port.is_none(),
+        args.log_file.as_deref().map(std::path::Path::new),
+        args.serve_port.is_none(),
     )?;
 
     if run_early_commands(
         EarlyCliDispatch {
-            config_path: &config_path,
-            workspace_cli: &workspace_cli,
-            extra_cli,
-            save_session,
-            tool_replay,
-            plugin_init,
-            plugin_validate,
-            plugin_list,
+            config_path: &args.config_path,
+            workspace_cli: &args.workspace_cli,
+            extra_cli: args.extra_cli,
+            save_session: args.save_session.clone(),
+            tool_replay: args.tool_replay.clone(),
+            plugin_init: args.plugin_init.clone(),
+            plugin_validate: args.plugin_validate.clone(),
+            plugin_list: args.plugin_list.clone(),
         },
-        llm_context_tokens_cli,
+        args.llm_context_tokens_cli,
     )
     .await?
     {
         return Ok(());
     }
 
-    if dry_run {
-        run_dry_run(&config_path, llm_context_tokens_cli).await?;
+    Box::pin(run_cli_default_main(args)).await
+}
+
+/// 默认主路径：`--dry-run`、`models`/`probe`，或 `serve` / `repl` / `chat` / `tui`。
+async fn run_cli_default_main(args: ParsedCliArgs) -> Result<(), Box<dyn std::error::Error>> {
+    if args.dry_run {
+        run_dry_run(&args.config_path, args.llm_context_tokens_cli).await?;
         return Ok(());
     }
 
     let cfg = apply_cli_llm_context_tokens_override(
-        config::load_config_for_cli(config_path.as_deref())?,
-        llm_context_tokens_cli,
+        config::load_config_for_cli(args.config_path.as_deref())?,
+        args.llm_context_tokens_cli,
     );
 
-    if matches!(extra_cli, ExtraCliCommand::Models | ExtraCliCommand::Probe) {
-        run_models_or_probe(&config_path, extra_cli, llm_context_tokens_cli).await?;
+    if matches!(
+        args.extra_cli,
+        ExtraCliCommand::Models | ExtraCliCommand::Probe
+    ) {
+        run_models_or_probe(
+            &args.config_path,
+            args.extra_cli,
+            args.llm_context_tokens_cli,
+        )
+        .await?;
         return Ok(());
     }
 
-    let session = cli_run_session::init_cli_session_start(cfg, no_tools).await?;
+    Box::pin(run_cli_interactive_session(args, cfg)).await
+}
 
-    cli_run_session::run_cli_main_routes(cli_run_session::CliDispatchArgs {
-        session,
-        config_path,
-        serve_port,
-        http_bind_host,
-        workspace_cli,
-        no_web,
-        bench_args,
-        chat_cli,
-        tui,
-        no_stream,
-        agent_role_cli,
-    })
+/// 载入配置并进入 `serve` / `bench` / `chat` / `tui` / `repl` 分发。
+async fn run_cli_interactive_session(
+    args: ParsedCliArgs,
+    cfg: config::AgentConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let session = cli_run_session::init_cli_session_start(cfg, args.no_tools).await?;
+
+    Box::pin(cli_run_session::run_cli_main_routes(
+        cli_run_session::CliDispatchArgs {
+            session,
+            config_path: args.config_path,
+            serve_port: args.serve_port,
+            http_bind_host: args.http_bind_host,
+            workspace_cli: args.workspace_cli,
+            no_web: args.no_web,
+            bench_args: args.bench_args,
+            chat_cli: args.chat_cli,
+            tui: args.tui,
+            no_stream: args.no_stream,
+            agent_role_cli: args.agent_role_cli,
+        },
+    ))
     .await
 }

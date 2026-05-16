@@ -22,7 +22,14 @@ fn main() {
             std::process::exit(1);
         }
     };
-    if let Err(e) = rt.block_on(crabmate::run()) {
+    let args = match crabmate::parse_args() {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("{}", e);
+            std::process::exit(1);
+        }
+    };
+    if let Err(e) = rt.block_on(crabmate::run_cli_from_parsed(args)) {
         if let Some(cli) = e.downcast_ref::<crabmate::CliExitError>() {
             eprintln!("{}", cli.message);
             std::process::exit(cli.code);

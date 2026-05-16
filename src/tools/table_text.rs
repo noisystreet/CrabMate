@@ -273,10 +273,8 @@ fn run_validate(data: &[u8], delim: u8, max_scan: usize) -> Result<String, Strin
         let n = rec.len();
         match expected {
             None => expected = Some(n),
-            Some(e) if e != n => {
-                if mismatches.len() < MAX_MISMATCH_REPORT {
-                    mismatches.push(format!("行 {}：期望 {} 列，实际 {} 列", row_num, e, n));
-                }
+            Some(e) if e != n && mismatches.len() < MAX_MISMATCH_REPORT => {
+                mismatches.push(format!("行 {}：期望 {} 列，实际 {} 列", row_num, e, n));
             }
             _ => {}
         }

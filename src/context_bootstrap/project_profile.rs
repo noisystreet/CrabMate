@@ -157,7 +157,7 @@ fn section_code_stats(root: &Path) -> Option<String> {
     if sorted.is_empty() {
         return Some("### 语言与规模（tokei）\n- （未识别到源码文件）\n".to_string());
     }
-    sorted.sort_by(|a, b| b.1.code.cmp(&a.1.code));
+    sorted.sort_by_key(|b| std::cmp::Reverse(b.1.code));
 
     let total_code: usize = sorted.iter().map(|(_, l)| l.code).sum();
     let total_files: usize = sorted.iter().map(|(_, l)| l.reports.len()).sum();
@@ -169,11 +169,11 @@ fn section_code_stats(root: &Path) -> Option<String> {
     ));
     let mut labels: Vec<String> = Vec::new();
     for (lang_type, lang) in sorted.iter().take(8) {
-        let pct = if total_code > 0 {
-            (lang.code * 100) / total_code
-        } else {
-            0
-        };
+        let pct = lang
+            .code
+            .saturating_mul(100)
+            .checked_div(total_code)
+            .unwrap_or(0);
         labels.push(format!("{} {}%", language_label(**lang_type), pct));
     }
     out.push_str(&format!(

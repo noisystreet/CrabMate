@@ -75,6 +75,7 @@ fn inject_string_placeholders(s: &mut String, resolver: &ArtifactResolver<'_>) -
 }
 
 /// 递归地将产物路径注入到 JSON 值中
+#[allow(clippy::collapsible_match)] // `String` 分支需可变借用，不能与 `match` guard 合并
 pub(crate) fn inject_paths_into_value(
     value: &mut serde_json::Value,
     resolver: &ArtifactResolver<'_>,

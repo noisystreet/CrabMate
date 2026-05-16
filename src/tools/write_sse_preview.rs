@@ -67,7 +67,7 @@ pub fn format_tool_output_with_write_diff_preview(
         let cost = udiff.chars().count();
         if cost > remaining {
             preview_truncated = true;
-            let take = remaining.saturating_sub(80).max(0);
+            let take = remaining.saturating_sub(80);
             let partial: String = udiff.chars().take(take).collect();
             out_files.push(json!({
                 "path": rel,
