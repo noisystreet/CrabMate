@@ -8,6 +8,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{Manager, RunEvent, Theme, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt, FilePath, MessageDialogButtons, MessageDialogKind};
+use tauri_plugin_opener::OpenerExt;
+use url::Url;
 
 #[derive(Debug)]
 struct BackendHandle {
@@ -247,6 +249,23 @@ async fn pick_workspace_folder_via_dialog(
     })
 }
 
+/// 是否在系统默认浏览器中打开（不留在 WebView 内导航）。
+fn should_open_link_externally(app_origin: &url::Origin, target: &Url) -> bool {
+    match target.scheme() {
+        "http" | "https" | "mailto" => {}
+        _ => return false,
+    }
+    target.origin() != *app_origin
+}
+
+#[tauri::command]
+fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    let parsed = Url::parse(&url).map_err(|e| format!("invalid url: {e}"))?;
+    app.opener()
+        .open_url(parsed.as_str(), None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
 fn main_webview_window(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, String> {
     app.get_webview_window("main")
         .ok_or_else(|| "main window not found".into())
@@ -311,10 +330,12 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             save_text_file_via_dialog,
             pick_workspace_folder_via_dialog,
             confirm_delete_session_via_dialog,
+            open_external_url,
             set_main_window_decorations,
             main_window_minimize,
             main_window_toggle_maximize,
@@ -344,16 +365,29 @@ fn main() {
                 child: Arc::clone(&backend_state_for_setup),
             });
 
-            let parsed_url = ready_url
+            let parsed_url: Url = ready_url
                 .parse()
                 .map_err(|e| format!("invalid backend ready url `{ready_url}`: {e}"))?;
+            let app_origin = parsed_url.origin();
+            let app_handle = app.handle().clone();
 
-            if let Err(e) = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(parsed_url))
+            if let Err(e) = WebviewWindowBuilder::new(
+                app,
+                "main",
+                WebviewUrl::External(parsed_url.clone()),
+            )
                 .title("CrabMate Desktop")
                 .inner_size(1280.0, 840.0)
                 .resizable(true)
                 .decorations(false)
                 .theme(Some(Theme::Light))
+                .on_navigation(move |url| {
+                    if should_open_link_externally(&app_origin, url) {
+                        let _ = app_handle.opener().open_url(url.as_str(), None::<&str>);
+                        return false;
+                    }
+                    true
+                })
                 .build()
             {
                 let msg = format!("failed to create main window: {e}");

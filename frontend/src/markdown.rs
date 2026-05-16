@@ -338,7 +338,21 @@ pub fn to_safe_html(md: &str) -> String {
     });
     let mut body = String::new();
     html::push_html(&mut body, parser);
-    ammonia::clean(&body)
+    let mut builder = ammonia::Builder::default();
+    builder.link_rel(Some("noopener noreferrer"));
+    let cleaned = builder.clean(&body).to_string();
+    chat_links_open_in_new_tab(cleaned)
+}
+
+/// 浏览器中聊天链接默认新标签打开；Tauri 内由壳层拦截为系统浏览器。
+fn chat_links_open_in_new_tab(mut html: String) -> String {
+    if html.contains("<a ") && !html.contains("target=") {
+        html = html.replace(
+            "<a href=",
+            r#"<a target="_blank" rel="noopener noreferrer" href="#,
+        );
+    }
+    html
 }
 
 /// 调试：不做 Markdown 解析，将纯文本转义为可安全写入 `innerHTML` 的片段（换行 → `<br />`）。
@@ -400,6 +414,14 @@ mod tests {
             h.contains("<table"),
             "glued header+delimiter should become a table, got {h:?}"
         );
+    }
+
+    #[test]
+    fn chat_links_get_target_blank() {
+        let h = to_safe_html("see [site](https://example.com/path)");
+        assert!(h.contains("target=\"_blank\""));
+        assert!(h.contains("rel=\"noopener noreferrer\""));
+        assert!(h.contains("https://example.com/path"));
     }
 
     #[test]
