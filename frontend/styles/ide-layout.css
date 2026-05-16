@@ -40,49 +40,13 @@ html[data-tauri-shell][data-ide-layout] .ide-menu-bar button,
 html[data-tauri-shell][data-ide-layout] .ide-menu-bar .ide-menu-trigger,
 html[data-tauri-shell][data-ide-layout] .ide-menu-dropdown,
 html[data-tauri-shell][data-ide-layout] .ide-menu-item,
-html[data-tauri-shell][data-ide-layout] .ide-tauri-window-controls {
+html[data-tauri-shell][data-ide-layout] .ide-menu-bar .tauri-window-controls {
   -webkit-app-region: no-drag;
 }
 
-.ide-tauri-window-controls {
-  display: flex;
-  align-items: stretch;
-  flex-shrink: 0;
+html[data-tauri-shell][data-ide-layout] .ide-menu-bar .tauri-window-controls {
   margin-left: 0.35rem;
   border-left: 1px solid var(--shell-border, rgba(0, 0, 0, 0.08));
-}
-
-.ide-win-ctrl {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.75rem;
-  min-height: 2rem;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-}
-
-.ide-win-ctrl:hover {
-  background: var(--surface-hover, rgba(0, 0, 0, 0.06));
-}
-
-.ide-win-ctrl-close:hover {
-  background: #c42b1c;
-  color: #fff;
-}
-
-.ide-win-ctrl-glyph {
-  font-size: 0.85rem;
-  line-height: 1;
-  pointer-events: none;
-}
-
-.ide-win-ctrl-close .ide-win-ctrl-glyph {
-  font-size: 1rem;
 }
 
 /* 窄屏 IDE：会话抽屉默认收起（由菜单「返回对话」退出 IDE） */

@@ -14,7 +14,7 @@ use leptos::prelude::*;
 use menu_id::IdeMenuId;
 use view_menu::IdeMenuViewSection;
 
-use crate::app::ide_tauri_window_controls::IdeTauriWindowControls;
+use crate::app::tauri_window_controls::TauriWindowControls;
 use crate::i18n;
 
 #[component]
@@ -76,7 +76,7 @@ pub fn IdeMenuBar(signals: IdeMenuBarSignals) -> impl IntoView {
                 </Show>
                 <span class="ide-menu-bar-path">{move || ide_path.get().unwrap_or_default()}</span>
             </div>
-            <IdeTauriWindowControls locale=locale />
+            <TauriWindowControls locale=locale />
             <Show when=move || open_menu.get().is_some()>
                 <button
                     type="button"

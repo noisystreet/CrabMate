@@ -16,7 +16,6 @@ mod ide_editor_pane;
 mod ide_layout;
 mod ide_menu_bar;
 mod ide_settings_page;
-mod ide_tauri_window_controls;
 pub(crate) mod local_storage_index;
 mod mobile_shell_header;
 pub mod scroll_guard;
@@ -39,6 +38,8 @@ mod status_tasks_state;
 mod status_tasks_wiring;
 mod stream_run_phase;
 mod stream_shell_busy;
+mod tauri_chat_titlebar;
+mod tauri_window_controls;
 mod wire_workspace_domain;
 mod workspace_panel;
 pub(crate) mod workspace_panel_state;
@@ -58,6 +59,7 @@ use shell_runtime_context::ChatShellLeptosContext;
 use side_column::side_column_view;
 use sidebar_nav::sidebar_nav_view;
 use status_bar::status_bar_footer_view;
+use tauri_chat_titlebar::TauriChatTitlebar;
 
 use crate::i18n;
 
@@ -86,6 +88,10 @@ pub fn App() -> impl IntoView {
             class:sidebar-rail-collapsed=move || app_ctx.signals.sidebar.sidebar_rail_collapsed.get()
             class:app-root--ide-layout=move || app_ctx.signals.shell_ui.editor_layout_mode.get()
         >
+            <TauriChatTitlebar
+                locale=app_ctx.signals.shell_ui.locale
+                editor_layout_mode=app_ctx.signals.shell_ui.editor_layout_mode
+            />
             {sidebar_nav_view(sidebar_nav_signals)}
 
             <Show when=move || app_ctx.signals.sidebar.sidebar_rail_collapsed.get()>

@@ -62,19 +62,18 @@ async fn tauri_invoke_void(promise: js_sys::Promise) -> Result<(), String> {
         .map_err(|e| format!("{e:?}"))
 }
 
-/// IDE 布局下隐藏系统标题栏（保留自定义窗口按钮）；对话布局恢复装饰。
+/// 隐藏系统标题栏（保留应用内最小化/最大化/关闭按钮）。
 pub async fn tauri_set_main_window_decorations(decorations: bool) -> Result<(), String> {
     tauri_invoke_void(invoke_tauri_set_main_window_decorations(decorations)).await
 }
 
-/// 根据 IDE 布局切换 Tauri 窗口装饰（异步，忽略错误以免阻塞 UI）。
-pub fn tauri_apply_ide_layout_window_chrome(editor_layout_mode: bool) {
+/// Tauri 启动后始终使用无边框主窗口（会话与 IDE 模式一致）。
+pub fn tauri_apply_frameless_window_chrome() {
     if !tauri_shell_available() {
         return;
     }
-    let decorations = !editor_layout_mode;
     spawn_local(async move {
-        let _ = tauri_set_main_window_decorations(decorations).await;
+        let _ = tauri_set_main_window_decorations(false).await;
     });
 }
 

@@ -7,13 +7,6 @@ pub fn app_shell_title(_l: Locale) -> &'static str {
     "CrabMate"
 }
 
-pub fn brand_sub(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "本地 Agent",
-        Locale::En => "Local agent",
-    }
-}
-
 pub fn nav_new_chat(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "新对话",

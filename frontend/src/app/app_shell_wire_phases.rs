@@ -26,8 +26,8 @@ use super::app_shell_effects::{
     wire_persist_side_panel_view_flags, wire_persist_side_width,
     wire_persist_sidebar_rail_collapsed, wire_persist_status_bar_visible,
     wire_session_delete_hotkey, wire_settings_modal_llm_drafts_on_open,
-    wire_sync_bg_decor_to_storage_and_dom, wire_sync_ide_layout_dom_and_tauri_chrome,
-    wire_sync_locale_html_lang, wire_sync_theme_to_storage_and_dom,
+    wire_sync_bg_decor_to_storage_and_dom, wire_sync_locale_html_lang, wire_sync_tauri_shell_dom,
+    wire_sync_theme_to_storage_and_dom,
 };
 use super::app_signals::AppSignals;
 use super::chat::ChatComposerWires;
@@ -142,7 +142,7 @@ fn wire_phase2_persisted_prefs_dom_and_settings_hooks(app: &AppSignals) {
     wire_sync_theme_to_storage_and_dom(app.shell_ui.theme);
     wire_sync_locale_html_lang(app.shell_ui.locale);
     wire_sync_bg_decor_to_storage_and_dom(app.shell_ui.bg_decor);
-    wire_sync_ide_layout_dom_and_tauri_chrome(app.shell_ui.editor_layout_mode);
+    wire_sync_tauri_shell_dom(app.shell_ui.editor_layout_mode);
     wire_settings_modal_llm_drafts_on_open(WireSettingsModalLlmDraftsSignals {
         settings_modal: app.modal.settings_modal,
         settings_page: app.modal.settings_page,

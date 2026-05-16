@@ -352,6 +352,7 @@ fn main() {
                 .title("CrabMate Desktop")
                 .inner_size(1280.0, 840.0)
                 .resizable(true)
+                .decorations(false)
                 .theme(Some(Theme::Light))
                 .build()
             {

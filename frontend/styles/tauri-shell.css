@@ -1,0 +1,100 @@
+/* CrabMate Desktop（Tauri）：无边框窗口与自定义标题栏控件 */
+
+.tauri-window-controls {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+}
+
+.tauri-win-ctrl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  min-height: 2rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.tauri-win-ctrl:hover {
+  background: var(--surface-hover, rgba(0, 0, 0, 0.06));
+}
+
+.tauri-win-ctrl-close:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+
+.tauri-win-ctrl-glyph {
+  font-size: 0.85rem;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.tauri-win-ctrl-close .tauri-win-ctrl-glyph {
+  font-size: 1rem;
+}
+
+/* 会话模式：仅右上角窗口按钮（勿铺满顶栏，避免挡住侧栏「设置」等） */
+html[data-tauri-shell]:not([data-ide-layout]) .tauri-chat-titlebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 90;
+  display: flex;
+  align-items: stretch;
+  pointer-events: none;
+}
+
+html[data-tauri-shell]:not([data-ide-layout]) .tauri-chat-titlebar .tauri-window-controls {
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border-subtle);
+  border-left: 1px solid var(--shell-border, rgba(0, 0, 0, 0.08));
+}
+
+/* 会话模式：可拖拽区域（按钮区域 no-drag，不拦截点击） */
+html[data-tauri-shell]:not([data-ide-layout]) .nav-rail-brand {
+  -webkit-app-region: drag;
+}
+
+html[data-tauri-shell]:not([data-ide-layout]) .nav-rail-brand .nav-rail-brand-main,
+html[data-tauri-shell]:not([data-ide-layout]) .nav-rail-brand button {
+  -webkit-app-region: no-drag;
+}
+
+html[data-tauri-shell]:not([data-ide-layout]) .side-column .shell-main-toolbar {
+  -webkit-app-region: drag;
+  padding-right: calc(3 * 2.75rem + 4px);
+}
+
+html[data-tauri-shell]:not([data-ide-layout]) .side-column .shell-main-toolbar button,
+html[data-tauri-shell]:not([data-ide-layout]) .side-column .shell-main-toolbar .toolbar-view-wrap {
+  -webkit-app-region: no-drag;
+}
+
+/* 侧栏收起时：浮动工具条避开右上角窗口按钮 */
+html[data-tauri-shell]:not([data-ide-layout]) .side-column.side-column-rail-only .shell-main-toolbar {
+  top: calc(2rem + max(10px, env(safe-area-inset-top, 0px)));
+}
+
+/* 为右上角窗口按钮留出空间，避免与窄屏顶栏操作区重叠 */
+html[data-tauri-shell]:not([data-ide-layout]) .shell-main-header-mobile {
+  padding-right: calc(3 * 2.75rem);
+  -webkit-app-region: drag;
+}
+
+html[data-tauri-shell]:not([data-ide-layout]) .shell-main-header-mobile button {
+  -webkit-app-region: no-drag;
+}
+
+/* 会话模式 Tauri：隐藏顶栏标题文字（保留菜单与新对话等控件） */
+html[data-tauri-shell]:not([data-ide-layout]) .shell-main-header-title {
+  display: none;
+}

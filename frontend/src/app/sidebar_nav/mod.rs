@@ -74,7 +74,6 @@ pub fn sidebar_nav_view(signals: SidebarNavSignals) -> impl IntoView {
                     <span class="brand-mark" aria-hidden="true"></span>
                     <div class="nav-rail-brand-text">
                         <h1>"CrabMate"</h1>
-                        <span class="brand-sub">{move || crate::i18n::brand_sub(locale.get())}</span>
                     </div>
                 </div>
                 <button
