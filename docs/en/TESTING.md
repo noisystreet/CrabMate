@@ -10,6 +10,16 @@ This page lists **automated tests and common checks** for the CrabMate repo (run
 - **E2E**: Node.js and npm; install Playwright’s Chromium once.
 - **Web assets**: E2E and `serve` need **`frontend/dist/index.html`** — build with **`cd frontend && trunk build`** (use **`trunk build --release`** for production-sized WASM).
 
+## GitHub Actions (main CI)
+
+Push / pull request to **`main`** runs [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml):
+
+- **`cargo check`**: workspace `--all-targets --all-features` + frontend **`wasm32-unknown-unknown`**
+- **`cargo clippy`**: workspace and **`frontend/`**, **`-D warnings`**
+- **`cargo test --workspace --all-features`**
+
+Complexity, dependency security, and coverage use separate workflows (**`code-complexity.yml`**, **`dependency-security.yml`**, **`code-coverage.yml`**).
+
 ## Pre-commit
 
 Aligned with [`.pre-commit-config.yaml`](../../.pre-commit-config.yaml):

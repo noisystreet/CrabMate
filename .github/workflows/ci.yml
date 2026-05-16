@@ -1,0 +1,51 @@
+# 主 CI：编译检查、Clippy（-D warnings）与工作区测试，防止错误合入 main。
+# 与 pre-commit 的 cargo clippy / frontend-wasm-check / cargo-test 对齐；复杂度与安全见其它 workflow。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check-clippy-test:
+    name: check · clippy · test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps (OpenSSL / libssh2 / Wayland)
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev libssh2-1-dev libwayland-dev
+
+      # edition 2024 需 Rust 1.85+；stable 满足即可。
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Add wasm32 target (frontend)
+        run: rustup target add wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo check (workspace, all targets)
+        run: cargo check --workspace --all-targets --all-features
+
+      - name: cargo check (frontend wasm32)
+        run: cargo check --manifest-path frontend/Cargo.toml --target wasm32-unknown-unknown --all-targets
+
+      - name: cargo clippy (workspace, -D warnings)
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: cargo clippy (frontend, -D warnings)
+        run: cargo clippy --manifest-path frontend/Cargo.toml --all-targets --all-features -- -D warnings
+
+      - name: cargo test (workspace)
+        run: cargo test --workspace --all-features --no-fail-fast
