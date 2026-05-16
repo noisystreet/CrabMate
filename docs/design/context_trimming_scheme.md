@@ -2,7 +2,7 @@
 
 **状态**：与当前实现同步的设计说明（会话同步管道以源码为准；分层 ReAct 专用裁剪另见下文关联文档）。  
 **受众**：维护 `agent::message_pipeline`、`agent::context_window` 与 Agent 主循环的开发者。  
-**权威实现**：`src/agent/message_pipeline.rs`（**`apply_session_sync_pipeline`** 顺序契约）、`src/agent/context_window.rs`（**`prepare_messages_for_model`**、**`maybe_summarize_with_llm`**）。  
+**权威实现**：`src/agent/message_pipeline/`（**`sync_pipeline.rs`**：`apply_session_sync_pipeline` 顺序契约；**`transforms.rs`** / **`vendor.rs`**）、`src/agent/context_window.rs`（**`prepare_messages_for_model`**、**`maybe_summarize_with_llm`**）。  
 **单轮墙钟预算**（**`max_turn_duration_seconds`**；与 messages 体积裁剪正交）：**`src/agent/turn_budget.rs`**（**`agent_turn` / `staged` / `hierarchy` Operator** 共用判定与文案）。  
 **配置与环境变量**：键名与默认值以 **`docs/配置说明.md`**、`config/default_config.toml` 为准。
 
@@ -24,7 +24,7 @@
 
 ### 1.3 非目标
 
-本文件**不**替代 `message_pipeline.rs` 模块内注释；步骤顺序以源码 **`MessagePipelineStage`** 与 **`apply_session_sync_pipeline`** 为准。
+本文件**不**替代 `src/agent/message_pipeline/` 目录内注释；步骤顺序以源码 **`MessagePipelineStage`** 与 **`apply_session_sync_pipeline`** 为准。
 
 ---
 
@@ -49,7 +49,7 @@
 
 ### 3.2 供应商出站（Vendor body）
 
-- **入口**：**`conversation_messages_to_vendor_body`** / **`normalize_stripped_messages_for_vendor_body`** 等（见 `message_pipeline.rs`）。  
+- **入口**：**`conversation_messages_to_vendor_body`** / **`normalize_stripped_messages_for_vendor_body`** 等（见 **`message_pipeline/vendor.rs`**）。  
 - **作用对象**：从会话切片构造 **`ChatRequest.messages`**，**不写回**会话 `Vec`。  
 - **典型处理**：跳过 UI 分隔线 / 长期记忆注入展示条、按网关处理 **`reasoning_content`**、OpenAI 兼容 **normalize**、可选 **system→user** 折叠。
 
@@ -62,7 +62,7 @@
 以下顺序**固定**，实现见 **`apply_session_sync_pipeline`**；新增步骤须同步更新：
 
 1. **`MessagePipelineStage`** 枚举  
-2. **`message_pipeline.rs` 模块文档**编号列表  
+2. **`message_pipeline/mod.rs` 模块文档**编号列表  
 3. **`docs/开发文档.md`**「上下文窗口策略」  
 
 当前顺序（与源码一致）：

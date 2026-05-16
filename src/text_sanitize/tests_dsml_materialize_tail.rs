@@ -1,4 +1,4 @@
-//! DSML 物化相关单元测试（从主 `tests.rs` 拆出）：`r#"` 内若含 `# …` 等片段，部分静态分析器会误解析后续 `#[test]`，故单独成文件。
+//! DSML 物化相关单元测试（从主 `tests.rs` 拆出）：`r#"` 内若含 `# …` 等片段，部分静态分析器会误解析后续 `#[test]`，故单独成文件。主文件仅保留 strip / naturalize / dedupe 等用例，避免与物化用例混排抬高 `fn-nloc` 误报。
 
 use super::materialize_deepseek_dsml_tool_calls_in_message;
 use crate::types::{FunctionCall, Message, ToolCall};
@@ -98,4 +98,158 @@ fn materialize_dsml_skipped_when_native_tool_call_has_name() {
     materialize_deepseek_dsml_tool_calls_in_message(&mut msg, true);
     let tcs = msg.tool_calls.as_ref().expect("tool_calls");
     assert_eq!(tcs[0].function.name, "read_file");
+}
+
+#[test]
+fn materialize_dsml_populates_tool_calls_and_strips_markup() {
+    let dsml = r#"将更新文件。
+<|DSML|function_calls>
+<|DSML|invoke name="modify_file">
+<|DSML|parameter name="path">1.md</|DSML|parameter>
+<|DSML|parameter name="content"># 标题</|DSML|parameter>
+</|DSML|invoke>
+</|DSML|function_calls>"#;
+    let mut msg = Message {
+        role: "assistant".to_string(),
+        content: Some(dsml.into()),
+        reasoning_content: None,
+        reasoning_details: None,
+        tool_calls: None,
+        name: None,
+        tool_call_id: None,
+    };
+    materialize_deepseek_dsml_tool_calls_in_message(&mut msg, true);
+    let tcs = msg.tool_calls.as_ref().expect("tool_calls");
+    assert_eq!(tcs.len(), 1);
+    assert_eq!(tcs[0].function.name, "modify_file");
+    let v: Value = serde_json::from_str(&tcs[0].function.arguments).unwrap();
+    assert_eq!(v.get("path").and_then(|x| x.as_str()), Some("1.md"));
+    assert_eq!(v.get("content").and_then(|x| x.as_str()), Some("# 标题"));
+    let prose = crate::types::message_content_as_str(&msg.content).unwrap_or("");
+    assert!(prose.contains("将更新"));
+    assert!(!prose.contains("DSML"));
+}
+#[test]
+fn materialize_dsml_skipped_when_disabled() {
+    let dsml = r#"<|DSML|invoke name="read_file">
+<|DSML|parameter name="path">x.txt</|DSML|parameter>
+</|DSML|invoke>"#;
+    let mut msg = Message {
+        role: "assistant".to_string(),
+        content: Some(dsml.into()),
+        reasoning_content: None,
+        reasoning_details: None,
+        tool_calls: None,
+        name: None,
+        tool_call_id: None,
+    };
+    materialize_deepseek_dsml_tool_calls_in_message(&mut msg, false);
+    assert!(msg.tool_calls.is_none());
+    assert!(
+        crate::types::message_content_as_str(&msg.content)
+            .unwrap_or("")
+            .contains("DSML")
+    );
+}
+#[test]
+fn materialize_dsml_spaced_tags_and_multiline_parameter() {
+    let dsml = r#"将写入。
+< | DSML | invoke name="modify_file" >
+<|DSML|parameter name="path">note.md</|DSML|parameter>
+<|DSML|parameter name="content"># 标题
+第二行</|DSML|parameter>
+</|DSML|invoke>"#;
+    let mut msg = Message {
+        role: "assistant".to_string(),
+        content: Some(dsml.into()),
+        reasoning_content: None,
+        reasoning_details: None,
+        tool_calls: None,
+        name: None,
+        tool_call_id: None,
+    };
+    materialize_deepseek_dsml_tool_calls_in_message(&mut msg, true);
+    let tcs = msg.tool_calls.as_ref().expect("tool_calls");
+    assert_eq!(tcs.len(), 1);
+    assert_eq!(tcs[0].function.name, "modify_file");
+    let v: Value = serde_json::from_str(&tcs[0].function.arguments).unwrap();
+    assert_eq!(v.get("path").and_then(|x| x.as_str()), Some("note.md"));
+    assert!(
+        v.get("content")
+            .and_then(|x| x.as_str())
+            .is_some_and(|s| s.contains("第二行"))
+    );
+}
+#[test]
+fn materialize_dsml_single_quoted_names() {
+    let dsml = r#"<|DSML|invoke name='read_file'>
+<|DSML|parameter name='path'>x.txt</|DSML|parameter>
+</|DSML|invoke>"#;
+    let mut msg = Message {
+        role: "assistant".to_string(),
+        content: Some(dsml.into()),
+        reasoning_content: None,
+        reasoning_details: None,
+        tool_calls: None,
+        name: None,
+        tool_call_id: None,
+    };
+    materialize_deepseek_dsml_tool_calls_in_message(&mut msg, true);
+    let tcs = msg.tool_calls.as_ref().expect("tool_calls");
+    assert_eq!(tcs[0].function.name, "read_file");
+}
+#[test]
+fn materialize_dsml_json_array_parameter_for_run_command_args() {
+    let dsml = r#"让我用 cat。
+<|DSML|function_calls>
+<|DSML|invoke name="run_command">
+<|DSML|parameter name="command" string="true">cat</|DSML|parameter>
+<|DSML|parameter name="args" string="true">["1.md"]</|DSML|parameter>
+</|DSML|invoke>
+</|DSML|function_calls>"#;
+    let mut msg = Message {
+        role: "assistant".to_string(),
+        content: Some(dsml.into()),
+        reasoning_content: None,
+        reasoning_details: None,
+        tool_calls: None,
+        name: None,
+        tool_call_id: None,
+    };
+    materialize_deepseek_dsml_tool_calls_in_message(&mut msg, true);
+    let tcs = msg.tool_calls.as_ref().expect("tool_calls");
+    assert_eq!(tcs[0].function.name, "run_command");
+    let v: Value = serde_json::from_str(&tcs[0].function.arguments).unwrap();
+    assert_eq!(v.get("command").and_then(|x| x.as_str()), Some("cat"));
+    let args = v
+        .get("args")
+        .and_then(|x| x.as_array())
+        .expect("args array");
+    assert_eq!(args.len(), 1);
+    assert_eq!(args[0].as_str(), Some("1.md"));
+}
+#[test]
+fn materialize_dsml_from_reasoning_when_content_empty() {
+    let dsml = r#"<|DSML|invoke name="read_file">
+<|DSML|parameter name="path">z.txt</|DSML|parameter>
+</|DSML|invoke>"#;
+    let mut msg = Message {
+        role: "assistant".to_string(),
+        content: None,
+        reasoning_content: Some(dsml.to_string()),
+        reasoning_details: None,
+        tool_calls: None,
+        name: None,
+        tool_call_id: None,
+    };
+    materialize_deepseek_dsml_tool_calls_in_message(&mut msg, true);
+    let tcs = msg.tool_calls.as_ref().expect("tool_calls");
+    assert_eq!(tcs[0].function.name, "read_file");
+    assert!(
+        msg.reasoning_content
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .is_empty()
+    );
 }
