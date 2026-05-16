@@ -379,6 +379,39 @@ mod tests {
         let e = resolve_web_workspace_read_path(&base, Some(&long)).expect_err("oversized");
         assert!(matches!(e, WorkspacePathError::WebRelSubpathTooLong { .. }));
     }
+
+    #[test]
+    fn is_policy_denied_true_for_boundary_and_sensitive_variants() {
+        assert!(WorkspacePathError::SensitivePathDenied.is_policy_denied());
+        assert!(WorkspacePathError::EffectiveRootSensitive.is_policy_denied());
+        assert!(WorkspacePathError::OutsideWorkspaceRoot.is_policy_denied());
+        assert!(WorkspacePathError::AbsolutePathNotAllowed.is_policy_denied());
+        assert!(
+            WorkspacePathError::OutsideAllowedRoots {
+                roots_display: "/tmp".into(),
+            }
+            .is_policy_denied()
+        );
+        assert!(
+            WorkspacePathError::EffectiveRootOutsideAllowed {
+                roots_display: "/tmp".into(),
+            }
+            .is_policy_denied()
+        );
+    }
+
+    #[test]
+    fn is_policy_denied_false_for_input_shape_errors() {
+        assert!(!WorkspacePathError::EmptyPath.is_policy_denied());
+        assert!(!WorkspacePathError::WorkspaceSetPathEmpty.is_policy_denied());
+        assert!(!WorkspacePathError::WebEffectiveWorkspaceUnset.is_policy_denied());
+        assert!(
+            !WorkspacePathError::WebRelSubpathTooLong {
+                max: WEB_WORKSPACE_REL_SUBPATH_MAX_BYTES,
+            }
+            .is_policy_denied()
+        );
+    }
 }
 
 /// 路径策略与属性测试（与 golden 互补：随机探索分量边界）。

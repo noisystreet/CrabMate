@@ -32,3 +32,46 @@ pub(crate) async fn send_timeline_approval_decision(
     });
     let _ = send_string_logged(out_tx, line, log_tag).await;
 }
+
+#[cfg(test)]
+mod tests {
+    use tokio::sync::mpsc;
+
+    use crate::types::CommandApprovalDecision;
+
+    use super::*;
+
+    #[test]
+    fn command_approval_decision_labels_zh() {
+        assert_eq!(
+            command_approval_decision_label_zh(CommandApprovalDecision::Deny),
+            "拒绝"
+        );
+        assert_eq!(
+            command_approval_decision_label_zh(CommandApprovalDecision::AllowOnce),
+            "本次允许"
+        );
+        assert_eq!(
+            command_approval_decision_label_zh(CommandApprovalDecision::AllowAlways),
+            "永久允许"
+        );
+    }
+
+    #[tokio::test]
+    async fn send_timeline_approval_decision_encodes_timeline_log() {
+        let (tx, mut rx) = mpsc::channel::<String>(2);
+        send_timeline_approval_decision(
+            &tx,
+            "审批：",
+            Some("git status".to_string()),
+            CommandApprovalDecision::AllowOnce,
+            "test_tag",
+        )
+        .await;
+        drop(tx);
+        let line = rx.recv().await.expect("line");
+        assert!(line.contains("approval_decision"));
+        assert!(line.contains("本次允许"));
+        assert!(line.contains("git status"));
+    }
+}

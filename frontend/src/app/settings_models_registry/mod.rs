@@ -36,6 +36,37 @@ pub(crate) enum RegistryPresetDialogKind {
     Edit(usize),
 }
 
+/// 模型注册表 UI 顶层阶段（弹窗与行内删除确认互斥语义集中于此，供 `data-*` / 调试挂钩）。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum RegistrySurfacePhase {
+    Idle,
+    DialogOpen,
+    PendingDelete,
+}
+
+#[inline]
+pub(crate) fn derive_registry_surface_phase(
+    dialog_mode: Option<RegistryPresetDialogKind>,
+    pending_delete_row_key: Option<&str>,
+) -> RegistrySurfacePhase {
+    if pending_delete_row_key.is_some_and(|k| !k.trim().is_empty()) {
+        RegistrySurfacePhase::PendingDelete
+    } else if dialog_mode.is_some() {
+        RegistrySurfacePhase::DialogOpen
+    } else {
+        RegistrySurfacePhase::Idle
+    }
+}
+
+#[inline]
+pub(crate) fn registry_surface_phase_data_attr(phase: RegistrySurfacePhase) -> &'static str {
+    match phase {
+        RegistrySurfacePhase::Idle => "idle",
+        RegistrySurfacePhase::DialogOpen => "dialog",
+        RegistrySurfacePhase::PendingDelete => "pending-delete",
+    }
+}
+
 #[derive(Clone)]
 struct RegistryToolbarSignals {
     locale: RwSignal<Locale>,
@@ -699,8 +730,17 @@ pub(crate) fn SettingsModelsRegistryPanel(bundle: SettingsModelsRegistryBundle) 
         }) as Arc<dyn Fn() + Send + Sync>
     };
 
+    let registry_surface = Memo::new(move |_| {
+        derive_registry_surface_phase(dialog_mode.get(), pending_delete_row_key.get().as_deref())
+    });
+
     view! {
-        <div class="settings-block">
+        <div
+            class="settings-block"
+            prop:data-crabmate-registry-surface=move || {
+                registry_surface_phase_data_attr(registry_surface.get())
+            }
+        >
             <SettingsModelsRegistryToolbar s=RegistryToolbarSignals {
                 locale,
                 dialog_mode,
@@ -748,5 +788,34 @@ pub(crate) fn SettingsModelsRegistryPanel(bundle: SettingsModelsRegistryBundle) 
                 pending_delete_row_key,
             } />
         </div>
+    }
+}
+
+#[cfg(test)]
+mod registry_surface_phase_tests {
+    use super::*;
+
+    #[test]
+    fn pending_delete_wins_over_dialog_open() {
+        assert_eq!(
+            derive_registry_surface_phase(Some(RegistryPresetDialogKind::Add), Some("row-key"),),
+            RegistrySurfacePhase::PendingDelete
+        );
+    }
+
+    #[test]
+    fn dialog_without_pending_maps_open() {
+        assert_eq!(
+            derive_registry_surface_phase(Some(RegistryPresetDialogKind::Edit(0)), None),
+            RegistrySurfacePhase::DialogOpen
+        );
+    }
+
+    #[test]
+    fn empty_pending_key_ignored_for_phase() {
+        assert_eq!(
+            derive_registry_surface_phase(None, Some("   ")),
+            RegistrySurfacePhase::Idle
+        );
     }
 }
