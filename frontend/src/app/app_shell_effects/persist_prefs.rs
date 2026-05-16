@@ -4,8 +4,8 @@ use leptos::prelude::*;
 
 use crate::app::shell_prefs_storage;
 use crate::app_prefs::{
-    SIDEBAR_RAIL_COLLAPSED_KEY, STATUS_BAR_VISIBLE_KEY, SidePanelView, TASKS_VISIBLE_KEY,
-    WORKSPACE_VISIBLE_KEY, WORKSPACE_WIDTH_KEY, store_bool_key, store_f64_key,
+    EDITOR_LAYOUT_MODE_KEY, SIDEBAR_RAIL_COLLAPSED_KEY, STATUS_BAR_VISIBLE_KEY, SidePanelView,
+    TASKS_VISIBLE_KEY, WORKSPACE_VISIBLE_KEY, WORKSPACE_WIDTH_KEY, store_bool_key, store_f64_key,
     store_side_panel_view,
 };
 
@@ -40,5 +40,11 @@ pub fn wire_persist_side_width(side_width: RwSignal<f64>) {
 pub fn wire_persist_sidebar_rail_collapsed(sidebar_rail_collapsed: RwSignal<bool>) {
     Effect::new(move |_| {
         store_bool_key(SIDEBAR_RAIL_COLLAPSED_KEY, sidebar_rail_collapsed.get());
+    });
+}
+
+pub fn wire_persist_editor_layout_mode(editor_layout_mode: RwSignal<bool>) {
+    Effect::new(move |_| {
+        store_bool_key(EDITOR_LAYOUT_MODE_KEY, editor_layout_mode.get());
     });
 }

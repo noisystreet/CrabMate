@@ -39,6 +39,7 @@ pub struct MobileShellHeaderSignals {
     pub mobile_nav_open: RwSignal<bool>,
     pub locale: RwSignal<Locale>,
     pub new_session: Rc<dyn Fn()>,
+    pub editor_layout_mode: RwSignal<bool>,
 }
 
 /// 变更集预览模态所需句柄（阶段 B：避免向 `changelist_modal_view` 传递整份 [`AppShellCtx`]）。
@@ -166,6 +167,7 @@ pub struct SidebarNavSignals {
     pub chat_find_panel_open: RwSignal<bool>,
     pub session_context_menu: RwSignal<Option<SessionContextAnchor>>,
     pub sidebar_rail_collapsed: RwSignal<bool>,
+    pub editor_layout_mode: RwSignal<bool>,
 }
 
 /// 右列侧栏所需句柄（阶段 B：避免向 `side_column_view` 传递整份 [`AppShellCtx`]）。
@@ -223,6 +225,7 @@ impl AppShellCtx {
             chat_find_panel_open: self.signals.chat_composer.chat_find_panel_open,
             session_context_menu: self.signals.sidebar.session_context_menu,
             sidebar_rail_collapsed: self.signals.sidebar.sidebar_rail_collapsed,
+            editor_layout_mode: self.signals.shell_ui.editor_layout_mode,
         }
     }
 
@@ -286,6 +289,7 @@ impl AppShellCtx {
             mobile_nav_open: self.signals.sidebar.mobile_nav_open,
             locale: self.signals.shell_ui.locale,
             new_session: self.new_session.clone(),
+            editor_layout_mode: self.signals.shell_ui.editor_layout_mode,
         }
     }
 

@@ -18,6 +18,8 @@ pub struct ShellUISignals {
     pub web_ui_config_loaded: RwSignal<bool>,
     pub markdown_render: RwSignal<bool>,
     pub apply_assistant_display_filters: RwSignal<bool>,
+    /// `true` 时主区为 IDE 式（工作区树 + 编辑器），隐藏对话列与右列。
+    pub editor_layout_mode: RwSignal<bool>,
 }
 
 impl ShellUISignals {
@@ -34,6 +36,7 @@ impl ShellUISignals {
             web_ui_config_loaded: RwSignal::new(false),
             markdown_render: RwSignal::new(true),
             apply_assistant_display_filters: RwSignal::new(true),
+            editor_layout_mode: RwSignal::new(s.editor_layout_mode),
         }
     }
 }

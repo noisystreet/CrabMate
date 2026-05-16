@@ -100,6 +100,54 @@ pub async fn fetch_workspace(path: Option<&str>, loc: Locale) -> Result<Workspac
     fetch_json("GET", &url, None, loc).await
 }
 
+/// `GET /workspace/file?path=…`：读取工作区内文本文件（与后端 `WorkspaceFileReadResponse` 一致）。
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorkspaceFileReadData {
+    pub content: String,
+    pub error: Option<String>,
+}
+
+pub async fn fetch_workspace_file(
+    path: &str,
+    encoding: Option<&str>,
+    loc: Locale,
+) -> Result<WorkspaceFileReadData, String> {
+    let mut url = format!("/workspace/file?path={}", urlencoding::encode(path));
+    if let Some(enc) = encoding.filter(|e| !e.trim().is_empty()) {
+        url.push_str("&encoding=");
+        url.push_str(&urlencoding::encode(enc.trim()));
+    }
+    fetch_json("GET", &url, None, loc).await
+}
+
+#[derive(Serialize)]
+struct WorkspaceFileWritePayload {
+    path: String,
+    content: String,
+}
+
+/// `POST /workspace/file` 写入响应。
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorkspaceFileWriteData {
+    pub error: Option<String>,
+}
+
+/// 保存工作区文件（创建或覆盖；与后端 `WorkspaceFileWriteBody` 默认语义一致）。
+pub async fn post_workspace_file_write(
+    path: String,
+    content: String,
+    loc: Locale,
+) -> Result<(), String> {
+    let body = serde_json::to_string(&WorkspaceFileWritePayload { path, content })
+        .map_err(|e| e.to_string())?;
+    let r: WorkspaceFileWriteData =
+        fetch_json_with_body("POST", "/workspace/file", &body, loc).await?;
+    if let Some(e) = r.error {
+        return Err(e);
+    }
+    Ok(())
+}
+
 /// 与 **`session_workspace_changelist`** 注入模型正文同源（Markdown）。
 #[derive(Debug, Deserialize)]
 pub struct WorkspaceChangelogResponse {

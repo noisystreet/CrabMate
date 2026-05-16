@@ -21,8 +21,8 @@ use leptos::prelude::*;
 use super::app_shell_effects::{
     SessionDeleteHotkeySignals, ShellEscapeSignals, WireSettingsModalLlmDraftsSignals,
     wire_approval_expanded_follows_pending, wire_escape_key_layered_dismiss,
-    wire_persist_agent_role, wire_persist_side_panel_view_flags, wire_persist_side_width,
-    wire_persist_sidebar_rail_collapsed, wire_persist_status_bar_visible,
+    wire_persist_agent_role, wire_persist_editor_layout_mode, wire_persist_side_panel_view_flags,
+    wire_persist_side_width, wire_persist_sidebar_rail_collapsed, wire_persist_status_bar_visible,
     wire_session_delete_hotkey, wire_settings_modal_llm_drafts_on_open,
     wire_sync_bg_decor_to_storage_and_dom, wire_sync_locale_html_lang,
     wire_sync_theme_to_storage_and_dom,
@@ -121,6 +121,7 @@ fn wire_phase2_persisted_prefs_dom_and_settings_hooks(app: &AppSignals) {
     wire_persist_agent_role(app.llm_settings.selected_agent_role);
     wire_persist_side_width(app.shell_ui.side_width);
     wire_persist_sidebar_rail_collapsed(app.sidebar.sidebar_rail_collapsed);
+    wire_persist_editor_layout_mode(app.shell_ui.editor_layout_mode);
     wire_approval_expanded_follows_pending(
         app.approval.pending_approval,
         app.approval.last_approval_sid,

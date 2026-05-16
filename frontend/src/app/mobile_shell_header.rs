@@ -11,6 +11,7 @@ pub fn mobile_shell_header_view(signals: MobileShellHeaderSignals) -> impl IntoV
         mobile_nav_open,
         locale,
         new_session,
+        editor_layout_mode,
     } = signals;
     view! {
         <div class="shell-main-header-mobile">
@@ -23,19 +24,44 @@ pub fn mobile_shell_header_view(signals: MobileShellHeaderSignals) -> impl IntoV
                 "☰"
             </button>
             <span class="shell-main-header-title">{move || i18n::app_shell_title(locale.get())}</span>
-            <button
-                type="button"
-                class="btn btn-secondary btn-sm"
-                on:click={
-                    let new_session = new_session.clone();
-                    move |_| {
-                        new_session();
-                        mobile_nav_open.set(false);
+            <div class="shell-main-header-mobile-actions">
+                <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    prop:title=move || {
+                        if editor_layout_mode.get() {
+                            i18n::ide_toggle_chat_aria(locale.get())
+                        } else {
+                            i18n::ide_toggle_editor_aria(locale.get())
+                        }
                     }
-                }
-            >
-                {move || i18n::nav_new_chat(locale.get())}
-            </button>
+                    prop:aria-pressed=move || editor_layout_mode.get().to_string()
+                    on:click=move |_| {
+                        editor_layout_mode.update(|m| *m = !*m);
+                    }
+                >
+                    {move || {
+                        if editor_layout_mode.get() {
+                            i18n::ide_toggle_chat(locale.get())
+                        } else {
+                            i18n::ide_toggle_editor(locale.get())
+                        }
+                    }}
+                </button>
+                <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    on:click={
+                        let new_session = new_session.clone();
+                        move |_| {
+                            new_session();
+                            mobile_nav_open.set(false);
+                        }
+                    }
+                >
+                    {move || i18n::nav_new_chat(locale.get())}
+                </button>
+            </div>
         </div>
     }
 }

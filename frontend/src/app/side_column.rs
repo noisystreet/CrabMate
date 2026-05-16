@@ -203,6 +203,8 @@ fn SideColumnWorkspaceCard(
     changelist_fetch_nonce: RwSignal<u64>,
     insert_workspace_file_ref: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
 ) -> impl IntoView {
+    let ws_file_single_noop =
+        StoredValue::new(Arc::new(|_: String| {}) as Arc<dyn Fn(String) + Send + Sync>);
     view! {
         <div class="side-pane" style:flex="1" style:min-width="0">
             <div class="side-card">
@@ -233,6 +235,7 @@ fn SideColumnWorkspaceCard(
                             chat=chat
                             ws=ws
                             insert_workspace_file_ref=insert_workspace_file_ref
+                            on_file_single_click=ws_file_single_noop
                         />
                     </div>
                     <div class="workspace-list-refresh workspace-list-refresh-row">
