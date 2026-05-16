@@ -4,7 +4,7 @@
 //! - [`done_session`]：`on_done` 对会话 `messages` 的尾泡写回。
 //! - [`error_session`]：`on_error` 对会话 `messages` 的尾助手泡写回。
 //! - [`delta_apply`]：`on_delta` 车道轮换与正文/思维链写入。
-//! - [`builders`]：`on_tool_result` / `on_timeline_log` / `on_done` / `on_error` / `on_ws` / `on_tool_call` 等闭包工厂。
+//! - [`builders/`]：`on_tool_result` / `on_timeline_log` / `on_done` / `on_error` / `on_ws` / `on_tool_call` 等闭包工厂。
 //! - [`done_bubble`]：`on_done` 尾泡收尾的纯函数决策与单测。
 //! - [`assemble`]：装配完整的 [`crate::api::ChatStreamCallbacks`]。
 //! - [`super::stream_turn_scratch_state`]：单轮流 lane / 尾泡 / 工具 FIFO 的状态方法（语义见 **`StreamModelOutputLane`**）。

@@ -54,3 +54,51 @@ pub async fn send_string_logged_cooperative_cancel(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use tokio::sync::mpsc;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn send_string_logged_ok_when_receiver_alive() {
+        let (tx, mut rx) = mpsc::channel::<String>(2);
+        assert!(send_string_logged(&tx, "hello".to_string(), "ctx_ok").await);
+        assert_eq!(rx.recv().await.expect("recv"), "hello");
+    }
+
+    #[tokio::test]
+    async fn send_string_logged_false_when_receiver_dropped() {
+        let (tx, rx) = mpsc::channel::<String>(1);
+        drop(rx);
+        assert!(!send_string_logged(&tx, "x".to_string(), "ctx_drop").await);
+    }
+
+    #[tokio::test]
+    async fn cooperative_cancel_flips_on_send_failure() {
+        let (tx, rx) = mpsc::channel::<String>(1);
+        drop(rx);
+        let cancel = AtomicBool::new(false);
+        assert!(
+            !send_string_logged_cooperative_cancel(
+                &tx,
+                "y".to_string(),
+                "ctx_coop",
+                Some(&cancel),
+            )
+            .await
+        );
+        assert!(cancel.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn cooperative_cancel_no_flag_without_atomic() {
+        let (tx, rx) = mpsc::channel::<String>(1);
+        drop(rx);
+        assert!(
+            !send_string_logged_cooperative_cancel(&tx, "z".to_string(), "ctx_no_atomic", None,)
+                .await
+        );
+    }
+}

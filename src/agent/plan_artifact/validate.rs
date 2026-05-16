@@ -243,3 +243,54 @@ pub(crate) fn validate_agent_reply_plan_v1_with_validate_only_binding_ids(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod validate_workflow_binding_tests {
+    use super::super::types::{AgentReplyPlanV1, PlanArtifactError, PlanStepV1};
+
+    use super::{
+        validate_plan_binds_workflow_validate_nodes, validate_plan_workflow_node_ids_subset,
+    };
+
+    fn step(id: &str, desc: &str, wf: Option<&str>) -> PlanStepV1 {
+        PlanStepV1 {
+            id: id.into(),
+            description: desc.into(),
+            workflow_node_id: wf.map(str::to_string),
+            executor_kind: None,
+            step_kind: None,
+            acceptance: None,
+            max_step_retries: None,
+            transitions: None,
+        }
+    }
+
+    #[test]
+    fn validate_subset_trims_workflow_node_id_in_plan() {
+        let plan = AgentReplyPlanV1 {
+            plan_type: "agent_reply_plan".into(),
+            version: 1,
+            steps: vec![step("s1", "x", Some("  n1  "))],
+            no_task: false,
+        };
+        assert!(validate_plan_workflow_node_ids_subset(&plan, &["n1".into()]).is_ok());
+    }
+
+    #[test]
+    fn validate_only_binding_multiset_mismatch_detail() {
+        let plan = AgentReplyPlanV1 {
+            plan_type: "agent_reply_plan".into(),
+            version: 1,
+            steps: vec![step("a", "1", Some("x")), step("b", "2", Some("y"))],
+            no_task: false,
+        };
+        let err = validate_plan_binds_workflow_validate_nodes(&plan, &["x".into(), "x".into()])
+            .expect_err("multiset mismatch");
+        assert!(matches!(
+            err,
+            PlanArtifactError::ValidateOnlyPlanNodeBindingMismatch {
+                detail: "workflow_node_id_multiset_must_match_nodes"
+            }
+        ));
+    }
+}

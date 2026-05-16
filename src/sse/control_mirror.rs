@@ -48,3 +48,69 @@ pub async fn send_sse_control_payload_cooperative_cancel_optional(
     };
     send_string_logged_cooperative_cancel(tx, encode_message(payload), context, cancel).await
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use tokio::sync::mpsc;
+
+    use super::super::protocol::SsePayload;
+    use super::*;
+
+    #[tokio::test]
+    async fn mirror_optional_invokes_callback_when_some() {
+        let seen = Arc::new(Mutex::new(Vec::<SsePayload>::new()));
+        let seen_cb = Arc::clone(&seen);
+        let mirror: SseControlMirror = Arc::new(move |p| {
+            seen_cb.lock().expect("lock").push(p);
+        });
+        let p = SsePayload::WorkspaceChanged {
+            workspace_changed: true,
+        };
+        mirror_sse_control_optional(Some(&mirror), &p);
+        let v = seen.lock().expect("lock");
+        assert_eq!(v.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn send_sse_control_payload_optional_without_tx_still_ok() {
+        let p = SsePayload::ToolRunning {
+            tool_running: false,
+        };
+        assert!(send_sse_control_payload_optional(None, None, p, "test_ctx").await);
+    }
+
+    #[tokio::test]
+    async fn send_sse_control_payload_optional_with_tx_delivers() {
+        let (tx, mut rx) = mpsc::channel::<String>(4);
+        let p = SsePayload::ParsingToolCalls {
+            parsing_tool_calls: true,
+        };
+        assert!(send_sse_control_payload_optional(Some(&tx), None, p, "test_ctx").await);
+        drop(tx);
+        let line = rx.recv().await.expect("line");
+        assert!(line.contains("parsing_tool_calls"));
+    }
+
+    #[tokio::test]
+    async fn send_sse_control_cooperative_cancel_sets_flag_when_send_fails() {
+        let (tx, rx) = mpsc::channel::<String>(1);
+        drop(rx);
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let p = SsePayload::AssistantAnswerPhase {
+            assistant_answer_phase: true,
+        };
+        assert!(
+            !send_sse_control_payload_cooperative_cancel_optional(
+                Some(&tx),
+                None,
+                p,
+                "test_ctx",
+                Some(&cancel),
+            )
+            .await
+        );
+        assert!(cancel.load(std::sync::atomic::Ordering::SeqCst));
+    }
+}
