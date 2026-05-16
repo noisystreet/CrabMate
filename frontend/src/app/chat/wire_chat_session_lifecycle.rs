@@ -1,14 +1,14 @@
 //! 会话首启、Web UI 展示偏好、服务端水合、会话列表持久化（从 `app/mod.rs` 迁入，阶段 B）。
 //!
-//! 调用顺序与原先在 `App` 内一致：**首启会话 → Web UI 一次配置 → 水合 → 持久化**。与 [`crate::app::app_bootstrap_phase::AppBootstrapPhase`] 对应的门闸见 [`crate::app::session_hydrate::wire_session_hydration`] 等处的 `derive` 检查。
+//! 调用顺序与原先在 `App` 内一致：**首启会话 → Web UI 一次配置 → 水合 → 持久化**。与 [`crate::app::app_bootstrap_phase::AppBootstrapPhase`] 对应的门闸见 [`super::session_hydrate::wire_session_hydration`] 等处的 `derive` 检查。
 
 use leptos::prelude::*;
 
-use crate::app::app_shell_effects::{
+use super::session_hydrate::wire_session_hydration;
+use super::session_storage::{
     wire_initial_sessions_from_storage, wire_persist_chat_sessions,
     wire_web_ui_config_once_after_init,
 };
-use crate::app::session_hydrate::wire_session_hydration;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::Locale;
 use crate::storage::ChatSession;

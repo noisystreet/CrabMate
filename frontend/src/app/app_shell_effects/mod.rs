@@ -4,7 +4,7 @@
 //!
 //! ## 子模块与「隐式订阅」边界
 //!
-//! - [`session_storage`]：`sessions` / `active_id` 持久化与首启加载——与聊天流式正文高频更新同信号域，勿在此处叠加无关逻辑。
+//! - **会话 JSON / 首启 / `GET /web-ui`**：已迁至 **`crate::app::chat::session_storage`**，由 **`chat::wire_chat_session_lifecycle`** 按序注册。
 //! - [`escape`]：`keydown` 回调内统一 **`get_untracked()`** 读面板开关，避免单个巨型 `Effect` 订阅全部 UI 状态。
 //! - [`settings_llm_open`]：仅在设置弹窗/页面打开时填充草稿；**`status_data` 用 `get_untracked`**，避免订阅 `/status` 刷新导致重复填充。
 //!
@@ -14,7 +14,6 @@ mod approval_follow;
 mod escape;
 mod persist_prefs;
 mod session_delete_hotkey;
-mod session_storage;
 mod settings_llm_open;
 mod sync_dom;
 
@@ -25,10 +24,6 @@ pub use persist_prefs::{
     wire_persist_sidebar_rail_collapsed, wire_persist_status_bar_visible,
 };
 pub use session_delete_hotkey::{SessionDeleteHotkeySignals, wire_session_delete_hotkey};
-pub use session_storage::{
-    wire_initial_sessions_from_storage, wire_persist_chat_sessions,
-    wire_web_ui_config_once_after_init,
-};
 pub use settings_llm_open::{
     WireSettingsModalLlmDraftsSignals, wire_settings_modal_llm_drafts_on_open,
 };

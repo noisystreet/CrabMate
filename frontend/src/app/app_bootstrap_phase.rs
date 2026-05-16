@@ -8,11 +8,11 @@
 /// 从 `localStorage` 首载到可安全跑会话水合等壳级 `Effect` 的粗粒度阶段。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum AppBootstrapPhase {
-    /// 尚未执行 [`crate::app::app_shell_effects::session_storage::wire_initial_sessions_from_storage`] 完成首帧。
+    /// 尚未执行 [`crate::app::chat::session_storage::wire_initial_sessions_from_storage`] 完成首帧。
     Cold,
     /// `initialized == true`：`sessions` / `active_id` / 草稿已从本地桶物化。
     SessionsMaterialized,
-    /// `initialized && web_ui_config_loaded`：已走过 [`crate::app::app_shell_effects::session_storage::wire_web_ui_config_once_after_init`] 的门闸（`GET /web-ui` 可能仍在飞行）。
+    /// `initialized && web_ui_config_loaded`：已走过 [`crate::app::chat::session_storage::wire_web_ui_config_once_after_init`] 的门闸（`GET /web-ui` 可能仍在飞行）。
     ShellBootstrapComplete,
 }
 
@@ -28,7 +28,7 @@ impl AppBootstrapPhase {
         }
     }
 
-    /// 与 [`crate::app::session_hydrate::wire_session_hydration`] 历史条件一致：仅在此阶段订阅并拉取服务端快照。
+    /// 与 [`crate::app::chat::session_hydrate::wire_session_hydration`] 历史条件一致：仅在此阶段订阅并拉取服务端快照。
     #[must_use]
     pub(crate) const fn hydration_effects_enabled(self) -> bool {
         matches!(self, Self::ShellBootstrapComplete)

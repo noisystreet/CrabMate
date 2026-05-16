@@ -1,5 +1,6 @@
 //! 会话列表：首启从 `localStorage` 载入、`GET /web-ui` 一次同步、变更写回。
 //!
+//! 位于 **`app/chat/`**，由 [`super::wire_chat_session_lifecycle`] 与 [`wire_session_hydration`](super::session_hydrate::wire_session_hydration) 按固定顺序注册。
 //! **订阅**：`wire_persist_chat_sessions` 追踪 `sessions`、`active_id`、[`crate::chat_session_state::ChatSessionSignals::stream_text_overlay`] 与 **当前工作区对应的 `localStorage` 桶键**（落盘前合并尾段，与内存展示一致）。
 //! 写盘经 **防抖**（[`PERSIST_SESSIONS_DEBOUNCE_MS`]）：流式正文高频更新时合并为单次 `save_sessions`，减轻主线程与 `localStorage` 压力。
 

@@ -23,7 +23,10 @@ use super::composer::{
     wire_session_switch_clears_chat_state,
 };
 use super::find::wire_chat_find_matches;
-use super::handles::{ChatComposerWires, ComposerStreamShell, WireComposerStreamsArgs};
+use super::handles::{
+    ChatComposerWires, ComposerStreamShell, WireComposerStreamsArgs,
+    WireComposerStreamsSessionSlice, WireComposerStreamsStreamSlice,
+};
 use super::scroll::{wire_focus_message_after_nav, wire_messages_auto_scroll};
 
 /// 注册 `wire_chat_domain_effects` 所需的信号与句柄：[`ChatDomainWiringSignals`] + 流式壳。
@@ -104,15 +107,19 @@ pub(crate) fn wire_chat_domain_effects(
 
     let d = &args.domain;
     let wires = wire_chat_composer_streams(WireComposerStreamsArgs {
-        initialized: d.initialized,
-        chat: d.chat,
-        locale: d.locale,
-        draft: d.composer.draft,
-        selected_agent_role: d.selected_agent_role,
-        stream_shell: args.stream_shell,
-        stream_turn_busy_ui: stream_busy_memos.stream_turn_busy_ui,
-        auto_scroll_chat: d.composer.auto_scroll_chat,
-        pending_images: d.composer.pending_images,
+        session: WireComposerStreamsSessionSlice {
+            initialized: d.initialized,
+            chat: d.chat,
+            locale: d.locale,
+            draft: d.composer.draft,
+            selected_agent_role: d.selected_agent_role,
+        },
+        stream: WireComposerStreamsStreamSlice {
+            stream_shell: args.stream_shell,
+            stream_turn_busy_ui: stream_busy_memos.stream_turn_busy_ui,
+            auto_scroll_chat: d.composer.auto_scroll_chat,
+            pending_images: d.composer.pending_images,
+        },
     });
     (wires, stream_busy_memos)
 }

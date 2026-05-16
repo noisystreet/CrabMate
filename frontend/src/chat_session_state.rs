@@ -15,7 +15,7 @@
 //!
 //! | 方法 | 典型调用方 |
 //! |------|-----------|
-//! | [`Self::update_sessions_hydration`] | `app::session_hydrate` |
+//! | [`Self::update_sessions_hydration`] | `app::chat::session_hydrate` |
 //! | [`Self::update_sessions_composer`] | `app::chat::composer_wires`、`session_ops::patch_active_session`（经 `sessions`） |
 //! | [`Self::update_sessions_stream_sse`] | `composer_stream::callbacks::stream_session_access` |
 //! | [`Self::update_sessions_branch`] | `chat_actions`、`POST /chat/branch` 成功后 revision |

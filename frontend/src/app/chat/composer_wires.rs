@@ -7,7 +7,10 @@ use leptos::prelude::*;
 
 use super::composer_follow_up::ComposerStreamFollowUp;
 use super::composer_stream::{ComposerStreamHandles, make_attach_chat_stream};
-use super::handles::{ChatComposerWires, ComposerStreamShell, WireComposerStreamsArgs};
+use super::handles::{
+    ChatComposerWires, ComposerStreamShell, WireComposerStreamsArgs,
+    WireComposerStreamsSessionSlice, WireComposerStreamsStreamSlice,
+};
 use super::stream_follow_up_gates::{RegenAttachGate, compose_user_send_allowed};
 use super::stream_user_abort::apply_user_abort_of_inflight_stream;
 use crate::app::stream_shell_busy::StreamShellBusyOp;
@@ -115,17 +118,20 @@ fn begin_stream_shell_turn(shell: &ComposerStreamShell) {
 }
 
 pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatComposerWires {
-    let WireComposerStreamsArgs {
+    let WireComposerStreamsArgs { session, stream } = args;
+    let WireComposerStreamsSessionSlice {
         initialized,
         chat,
         locale,
         draft,
         selected_agent_role,
+    } = session;
+    let WireComposerStreamsStreamSlice {
         stream_shell,
         stream_turn_busy_ui,
         auto_scroll_chat,
         pending_images,
-    } = args;
+    } = stream;
 
     let stream_shell_for_attach = stream_shell.clone();
     let attach_chat_stream = make_attach_chat_stream(ComposerStreamHandles {

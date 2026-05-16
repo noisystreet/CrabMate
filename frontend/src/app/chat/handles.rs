@@ -59,8 +59,8 @@ pub struct ComposerStreamModalSignals {
 /// 字段按 **`stream` / `approval` / `modal`** 与 `AppSignals` 子域对齐，并通过 [`ComposerStreamShell::from_app_signals`] **单点组装**，
 /// 避免在壳初始化处手写逐字段拷贝导致漏接。
 ///
-/// 从 [`WireComposerStreamsArgs`] 与 `composer_stream` 子模块的 **`ComposerStreamHandles`** 成组传入，
-/// 避免 `composer_stream` 与 `App` 之间重复罗列同一批字段，并作为流式回调上下文的子聚合。
+/// 从 [`WireComposerStreamsArgs`]（[`WireComposerStreamsSessionSlice`] + [`WireComposerStreamsStreamSlice`]）与
+/// `composer_stream` 子模块的 **`ComposerStreamHandles`** 成组传入，避免 `composer_stream` 与 `App` 之间重复罗列同一批字段。
 #[derive(Clone)]
 pub struct ComposerStreamShell {
     pub stream: StreamControlSignals,
@@ -118,17 +118,30 @@ pub(crate) struct ChatComposerWires {
     pub new_session: Rc<dyn Fn()>,
 }
 
-/// `wire_chat_composer_streams` 的输入：流式、草稿、审批与工作区刷新等接线句柄。
-pub struct WireComposerStreamsArgs {
+/// `wire_chat_composer_streams` 的会话侧切片（初始化、活动会话、语言、草稿、角色）。
+#[derive(Clone, Copy)]
+pub struct WireComposerStreamsSessionSlice {
     pub initialized: RwSignal<bool>,
     pub chat: ChatSessionSignals,
     pub locale: RwSignal<Locale>,
     pub draft: RwSignal<String>,
     pub selected_agent_role: RwSignal<Option<String>>,
+}
+
+/// 流式发送路径的壳层与 UI 派生切片（与 SSE 回调、滚底、待发图共享）。
+#[derive(Clone)]
+pub struct WireComposerStreamsStreamSlice {
     /// 与 SSE 流式回调共享的壳层状态（见 [`ComposerStreamShell`]）。
     pub stream_shell: ComposerStreamShell,
     /// 见 [`ChatStreamBusyMemos::stream_turn_busy_ui`]。
     pub stream_turn_busy_ui: Memo<bool>,
     pub auto_scroll_chat: RwSignal<bool>,
     pub pending_images: RwSignal<Vec<String>>,
+}
+
+/// `wire_chat_composer_streams` 的输入：按会话 / 流式两簇拆分，避免单结构体字段无序膨胀。
+#[derive(Clone)]
+pub struct WireComposerStreamsArgs {
+    pub session: WireComposerStreamsSessionSlice,
+    pub stream: WireComposerStreamsStreamSlice,
 }
