@@ -1,35 +1,12 @@
-//! 澄清问卷：模型经内置工具 `present_clarification_questionnaire` 触发 Web SSE，用户下一回合用 `clarify_questionnaire_answers` 回传。
-
 use serde::Deserialize;
-use serde_json::{Map, Value};
 
 use crate::sse::{ClarificationQuestionField, ClarificationQuestionnaireBody};
 
-const MAX_QUESTIONNAIRE_ID_LEN: usize = 128;
-const MAX_INTRO_CHARS: usize = 2000;
-const MAX_QUESTIONS: usize = 12;
-const MIN_QUESTIONS: usize = 1;
-const MAX_QUESTION_ID_LEN: usize = 64;
-const MAX_LABEL_CHARS: usize = 512;
-const MAX_HINT_CHARS: usize = 512;
-const MAX_ANSWER_VALUE_CHARS: usize = 4000;
-const MAX_ANSWER_KEYS: usize = 32;
-
-pub(crate) type ClarifyAnswersNormalized = (String, Map<String, Value>);
-
-fn valid_questionnaire_id(s: &str) -> bool {
-    !s.is_empty()
-        && s.len() <= MAX_QUESTIONNAIRE_ID_LEN
-        && s.chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-}
-
-fn valid_question_id(s: &str) -> bool {
-    !s.is_empty()
-        && s.len() <= MAX_QUESTION_ID_LEN
-        && s.chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-}
+use super::{
+    MAX_HINT_CHARS, MAX_INTRO_CHARS, MAX_LABEL_CHARS, MAX_QUESTION_ID_LEN, MAX_QUESTIONS,
+    MIN_QUESTIONS,
+    id_validation::{valid_question_id, valid_questionnaire_id},
+};
 
 #[derive(Debug, Deserialize)]
 struct PresentArgs {
@@ -169,100 +146,4 @@ pub(crate) fn clarification_questionnaire_body_if_tool_ok(
         return None;
     }
     parse_present_clarification_body(args_json).ok()
-}
-
-/// 规范化 `POST /chat*` 中的 `clarify_questionnaire_answers`；非法则 Err（HTTP 400）。
-pub(crate) fn normalize_clarify_questionnaire_answers_raw(
-    questionnaire_id: String,
-    answers: Value,
-) -> Result<Option<ClarifyAnswersNormalized>, String> {
-    let qid = questionnaire_id.trim().to_string();
-    if qid.is_empty() {
-        return Ok(None);
-    }
-    if !valid_questionnaire_id(&qid) {
-        return Err("clarify_questionnaire_answers.questionnaire_id 非法".to_string());
-    }
-    let Some(obj) = answers.as_object().cloned() else {
-        return Err("clarify_questionnaire_answers.answers 须为 JSON 对象".to_string());
-    };
-    if obj.len() > MAX_ANSWER_KEYS {
-        return Err(format!(
-            "clarify_questionnaire_answers.answers 键过多（上限 {MAX_ANSWER_KEYS}）"
-        ));
-    }
-    let mut out = Map::new();
-    for (k, v) in obj {
-        let kid = k.trim().to_string();
-        if !valid_question_id(&kid) {
-            return Err(format!(
-                "clarify_questionnaire_answers 中含非法字段名 `{kid}`"
-            ));
-        }
-        let s = match v {
-            Value::String(t) => t,
-            Value::Number(n) => n.to_string(),
-            Value::Bool(b) => b.to_string(),
-            _ => {
-                return Err(format!(
-                    "clarify_questionnaire_answers[`{kid}`] 须为字符串、数字或布尔"
-                ));
-            }
-        };
-        if s.chars().count() > MAX_ANSWER_VALUE_CHARS {
-            return Err(format!(
-                "clarify_questionnaire_answers[`{kid}`] 过长（上限 {MAX_ANSWER_VALUE_CHARS} 字符）"
-            ));
-        }
-        out.insert(kid, Value::String(s));
-    }
-    Ok(Some((qid, out)))
-}
-
-/// 将用户输入与澄清答案合并为送入模型的单条 user 文本（在 `@` 展开之后调用）。
-pub(crate) fn merge_user_text_with_clarification_answers(
-    expanded_user_text: String,
-    clarify: Option<ClarifyAnswersNormalized>,
-) -> String {
-    let Some((qid, map)) = clarify else {
-        return expanded_user_text;
-    };
-    if map.is_empty() {
-        return expanded_user_text;
-    }
-    let mut keys: Vec<&String> = map.keys().collect();
-    keys.sort();
-    let mut block = String::from("\n\n---\n**澄清问卷回答**（`questionnaire_id=");
-    block.push_str(&qid);
-    block.push_str("`）\n\n");
-    for k in keys {
-        let v = map.get(k).and_then(|x| x.as_str()).unwrap_or("");
-        block.push_str("- `");
-        block.push_str(k);
-        block.push_str("`: ");
-        block.push_str(v);
-        block.push('\n');
-    }
-    if expanded_user_text.trim().is_empty() {
-        block.trim_start().to_string()
-    } else {
-        format!("{expanded_user_text}{block}")
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn merge_prepends_block_after_text() {
-        let m = serde_json::json!({"a": "x", "b": "y"});
-        let obj = m.as_object().unwrap().clone();
-        let out =
-            merge_user_text_with_clarification_answers("hello".into(), Some(("q1".into(), obj)));
-        assert!(out.starts_with("hello"));
-        assert!(out.contains("questionnaire_id=q1"));
-        assert!(out.contains("`a`: x"));
-        assert!(out.contains("`b`: y"));
-    }
 }
