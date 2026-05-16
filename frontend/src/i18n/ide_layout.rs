@@ -39,8 +39,22 @@ pub fn ide_workspace_title(l: Locale) -> &'static str {
 
 pub fn ide_open_hint(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "单击文件打开；须先在侧栏设置工作区根路径。",
-        Locale::En => "Click a file to open it; set the workspace root in the sidebar first.",
+        Locale::ZhHans => "单击文件在新标签页打开；已打开的文件可再次单击切换。",
+        Locale::En => "Click a file to open a tab; click again to switch to an open file.",
+    }
+}
+
+pub fn ide_tabs_aria(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "已打开文件",
+        Locale::En => "Open files",
+    }
+}
+
+pub fn ide_tab_close_aria(l: Locale, name: &str) -> String {
+    match l {
+        Locale::ZhHans => format!("关闭 {name}"),
+        Locale::En => format!("Close {name}"),
     }
 }
 

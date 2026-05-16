@@ -16,6 +16,7 @@ mod ide_editor_pane;
 mod ide_layout;
 mod ide_menu_bar;
 mod ide_settings_page;
+mod ide_tabs_bar;
 pub(crate) mod local_storage_index;
 mod mobile_shell_header;
 pub mod scroll_guard;

@@ -1,5 +1,7 @@
 //! 轻量 Rust 语法高亮（HTML span + CSS），供 IDE 编辑器镜像层使用。
 
+use crate::ide_highlight_common::push_span;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum State {
     Normal,
@@ -21,14 +23,6 @@ const BUILTIN_TYPES: &[&str] = &[
     "bool", "char", "str", "String", "Option", "Result", "Vec", "Box", "Rc", "Arc", "usize",
     "isize", "u8", "u16", "u32", "u64", "u128", "i8", "i16", "i32", "i64", "i128", "f32", "f64",
 ];
-
-#[must_use]
-pub fn ide_path_looks_like_rust(path: Option<&str>) -> bool {
-    path.is_some_and(|p| {
-        let lower = p.to_ascii_lowercase();
-        lower.ends_with(".rs") || lower.ends_with(".rs.in")
-    })
-}
 
 #[must_use]
 pub fn highlight_rust_to_html(source: &str) -> String {
@@ -290,37 +284,9 @@ fn number_end(chars: &[char], start: usize) -> usize {
     i
 }
 
-fn push_span(out: &mut String, class: &str, text: &str) {
-    out.push_str("<span class=\"");
-    out.push_str(class);
-    out.push_str("\">");
-    out.push_str(&escape_html(text));
-    out.push_str("</span>");
-}
-
-fn escape_html(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            _ => out.push(c),
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn rust_path_detection() {
-        assert!(ide_path_looks_like_rust(Some("src/lib.rs")));
-        assert!(!ide_path_looks_like_rust(Some("readme.md")));
-    }
 
     #[test]
     fn highlights_keywords_and_comments() {

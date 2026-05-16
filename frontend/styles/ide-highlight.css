@@ -1,6 +1,6 @@
-/* IDE Rust 语法高亮（镜像层 token 色，随主题继承前景） */
+/* IDE 语法高亮（镜像层 token 色，随主题继承前景） */
 
-.ide-editor-stack--rust .ide-editor-textarea {
+.ide-editor-stack--highlight .ide-editor-textarea {
   color: transparent;
   caret-color: var(--text);
   background: transparent;
@@ -90,6 +90,11 @@
   color: var(--ide-hl-macro, #ea580c);
 }
 
+.hl-key {
+  color: var(--ide-hl-key, #0369a1);
+  font-weight: 500;
+}
+
 [data-theme="dark"] .hl-kw {
   color: var(--ide-hl-keyword, #c4b5fd);
 }
@@ -104,4 +109,8 @@
 
 [data-theme="dark"] .hl-type {
   color: var(--ide-hl-type, #93c5fd);
+}
+
+[data-theme="dark"] .hl-key {
+  color: var(--ide-hl-key, #7dd3fc);
 }

@@ -42,6 +42,7 @@ pub(super) fn IdeMenuFileSection(
         ide_load_busy,
         ide_save_busy,
         ide_err,
+        tabs,
         ..
     } = signals;
 
@@ -80,7 +81,15 @@ pub(super) fn IdeMenuFileSection(
                                 match post_workspace_file_write(p, body, loc).await {
                                     Ok(()) => {
                                         let snap = ide_text.get_untracked();
-                                        ide_baseline.set(snap);
+                                        ide_baseline.set(snap.clone());
+                                        if let Some(i) = tabs.active.get_untracked() {
+                                            tabs.tabs.update(|list| {
+                                                if let Some(tab) = list.get_mut(i) {
+                                                    tab.text = snap.clone();
+                                                    tab.baseline = snap;
+                                                }
+                                            });
+                                        }
                                     }
                                     Err(e) => ide_err.set(Some(e)),
                                 }

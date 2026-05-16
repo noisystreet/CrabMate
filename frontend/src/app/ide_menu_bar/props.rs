@@ -4,6 +4,7 @@ use leptos::prelude::*;
 
 use crate::app::app_signals::IdeEditorSignals;
 use crate::i18n::Locale;
+use crate::ide_tabs::IdeTabsHandle;
 
 #[derive(Clone, Copy)]
 pub struct IdeMenuBarSignals {
@@ -19,4 +20,5 @@ pub struct IdeMenuBarSignals {
     pub ide_save_busy: RwSignal<bool>,
     pub ide_err: RwSignal<Option<String>>,
     pub textarea_ref: NodeRef<leptos::html::Textarea>,
+    pub tabs: IdeTabsHandle,
 }

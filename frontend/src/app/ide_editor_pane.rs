@@ -1,4 +1,4 @@
-//! IDE 文本编辑区：行号栏、Rust 语法高亮镜像层。
+//! IDE 文本编辑区：行号栏、Rust/TOML/YAML 语法高亮镜像层。
 
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
@@ -6,7 +6,7 @@ use wasm_bindgen::JsCast;
 use crate::app::app_signals::IdeEditorSignals;
 use crate::i18n::{self, Locale};
 use crate::ide_editor_prefs::ide_editor_font_family_css;
-use crate::ide_rust_highlight::{highlight_rust_to_html, ide_path_looks_like_rust};
+use crate::ide_syntax_highlight::{highlight_source_for_path, ide_path_has_syntax_highlight};
 
 fn ide_line_gutter_text(text: &str) -> String {
     let n = text.lines().count().max(1);
@@ -31,21 +31,19 @@ pub fn IdeEditorPane(
 
     let gutter_text = Memo::new(move |_| ide_line_gutter_text(&ide_text.get()));
 
-    let rust_highlight = Memo::new(move |_| {
+    let syntax_highlight = Memo::new(move |_| {
         let path = ide_path.get();
-        if !ide_path_looks_like_rust(path.as_deref()) {
-            return String::new();
-        }
-        highlight_rust_to_html(&ide_text.get())
+        highlight_source_for_path(path.as_deref(), &ide_text.get())
     });
 
-    let is_rust = Memo::new(move |_| ide_path_looks_like_rust(ide_path.get().as_deref()));
+    let has_syntax_highlight =
+        Memo::new(move |_| ide_path_has_syntax_highlight(ide_path.get().as_deref()));
 
     Effect::new({
         let highlight_code_ref = highlight_code_ref.clone();
-        let rust_highlight = rust_highlight;
+        let syntax_highlight = syntax_highlight;
         move |_| {
-            let html = rust_highlight.get();
+            let html = syntax_highlight.get();
             if let Some(el) = highlight_code_ref.get() {
                 el.set_inner_html(&html);
             }
@@ -77,6 +75,7 @@ pub fn IdeEditorPane(
 
     view! {
         <div
+            id="ide-editor-panel"
             class="ide-editor-pane"
             class:ide-editor-pane--line-numbers=move || editor.line_numbers.get()
             class:ide-editor-pane--wrap=move || editor.word_wrap.get()
@@ -94,7 +93,7 @@ pub fn IdeEditorPane(
             <div class="ide-editor-code-col">
                 <div
                     class="ide-editor-stack"
-                    class:ide-editor-stack--rust=move || is_rust.get()
+                    class:ide-editor-stack--highlight=move || has_syntax_highlight.get()
                 >
                     <pre class="ide-editor-highlight" aria-hidden="true">
                         <code
