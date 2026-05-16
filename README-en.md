@@ -147,6 +147,7 @@ cargo tauri build
 | [docs/en/CLI.md](docs/en/CLI.md) | Subcommands, HTTP routes, deb | [zh](docs/命令行与路由.md) |
 | [docs/en/CLI_CONTRACT.md](docs/en/CLI_CONTRACT.md) | `chat` exit codes, **`--output json`** | [zh](docs/命令行契约.md) |
 | [docs/en/DEBUG.md](docs/en/DEBUG.md) | Logging, `doctor`, `GET /web-ui`, … | [zh](docs/调试指南.md) |
+| [docs/个人VPS部署指南.md](docs/个人VPS部署指南.md) | Personal VPS: loopback `serve` + TLS reverse proxy + Bearer (Chinese) | — |
 | [docs/en/TESTING.md](docs/en/TESTING.md) | Tests, pre-commit, audits | [zh](docs/测试指南.md) |
 | [docs/基准测试规划.md](docs/基准测试规划.md) | **`bench`** roadmap & benchmarks | — |
 | [benchmark/README.md](benchmark/README.md) | HumanEval convert/run/smoke | — |
@@ -184,6 +185,7 @@ Other **`CM_*`** (including **`CM_TUI_CONVERSATION_ID`**, skills, staged plannin
 - **Listen**: default **`127.0.0.1`**; **`0.0.0.0`** needs **`web_api_bearer_token`** or an explicit insecure switch ([docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md)).
 - **Web API**: embedded default **`web_api_require_bearer = false`**—**`serve`** may start without a shared secret; with **`true`**, a non-empty **`CM_WEB_API_BEARER_TOKEN`** (or TOML **`web_api_bearer_token`**) is required before start. When the token is non-empty, the Bearer layer is mounted; send **`Authorization: Bearer …`** or **`X-API-Key: …`**. The UI may store **`localStorage["crabmate-api-bearer-token"]`**. For exposed or untrusted networks, prefer **`web_api_require_bearer = true`** plus a configured secret.
 - **Other**: Web sidebar **Settings** needs **Save all** to persist in the browser; workspace must stay under allowed roots (path checks: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md)). Debug env vars and **`GET /web-ui`**: [docs/en/DEBUG.md](docs/en/DEBUG.md).
+- **Personal VPS (reverse-proxy TLS)**: walkthrough (Chinese) in [docs/个人VPS部署指南.md](docs/个人VPS部署指南.md) (**`127.0.0.1` + `CM_WEB_API_BEARER_TOKEN` + Caddy/Nginx**).
 
 ## Project structure
 
