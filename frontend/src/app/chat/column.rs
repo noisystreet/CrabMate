@@ -8,9 +8,8 @@ use leptos_dom::helpers::event_target_value;
 use wasm_bindgen::JsCast;
 
 use super::column_keyboard::ChatColumnHomeEndNav;
-use super::composer_follow_up::ComposerStreamFollowUp;
 use super::composer_input_stack::ComposerInputStack;
-use super::handles::ChatColumnShell;
+use super::handles::{ChatColumnShell, ChatComposerPaneSignals, ChatMessagesPaneSignals};
 use super::message_chunks::{ChatChunk, chat_chunk_stable_key, chunk_messages};
 use super::message_group_views::{ToolRunGroupSignals, tool_run_group_view};
 use super::message_row::{ChatMessageRowSignals, chat_message_row};
@@ -18,32 +17,8 @@ use super::tail_loading_memo::tail_loading_assistant_mid_memo;
 use super::timeline::timeline_panel_view;
 use crate::api::upload_files_multipart;
 use crate::app_prefs::AUTO_SCROLL_RESUME_GAP_PX;
-use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n;
 use crate::storage::StoredMessage;
-
-/// 消息列表区所需信号（缩短 `ChatMessagesPane` 形参列表；勿命名为 `*Props`，与 Leptos 组件宏生成类型冲突）。
-#[derive(Clone, Copy)]
-struct ChatMessagesPaneSignals {
-    locale: RwSignal<crate::i18n::Locale>,
-    messages_scroller: NodeRef<leptos::html::Div>,
-    auto_scroll_chat: RwSignal<bool>,
-    messages_scroll_from_effect: RwSignal<bool>,
-    last_messages_scroll_top: RwSignal<i32>,
-    timeline_panel_expanded: RwSignal<bool>,
-    chat: ChatSessionSignals,
-    collapsed_long_assistant_ids: RwSignal<Vec<String>>,
-    collapsed_tool_run_heads: RwSignal<std::collections::HashSet<String>>,
-    tool_detail_expanded_ids: RwSignal<std::collections::HashSet<String>>,
-    chat_find_query: RwSignal<String>,
-    chat_find_match_ids: RwSignal<Vec<String>>,
-    chat_find_cursor: RwSignal<usize>,
-    stream_turn_busy_ui: Memo<bool>,
-    stream_follow_up: RwSignal<ComposerStreamFollowUp>,
-    status_err: RwSignal<Option<String>>,
-    markdown_render: RwSignal<bool>,
-    apply_assistant_display_filters: RwSignal<bool>,
-}
 
 #[component]
 fn ChatMessagesScrollShell(
@@ -254,24 +229,6 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
             <ChatMessagesThreadBody pane=signals tool_run_group_signals />
         </ChatMessagesScrollShell>
     }
-}
-
-/// 输入区所需信号与闭包（勿命名为 `*Props`，与 Leptos 组件宏生成类型冲突）。
-#[derive(Clone)]
-struct ChatComposerPaneSignals {
-    locale: RwSignal<crate::i18n::Locale>,
-    pending_images: RwSignal<Vec<String>>,
-    pending_clarification: RwSignal<Option<crate::clarification_form::PendingClarificationForm>>,
-    stream_turn_busy_ui: Memo<bool>,
-    status_err: RwSignal<Option<String>>,
-    run_send_message: Arc<dyn Fn() + Send + Sync>,
-    run_send_clarify_sv: StoredValue<Arc<dyn Fn() + Send + Sync>>,
-    trigger_stop: Arc<dyn Fn() + Send + Sync>,
-    initialized: RwSignal<bool>,
-    composer_input_ref: NodeRef<leptos::html::Textarea>,
-    draft: RwSignal<String>,
-    composer_mirror_html: RwSignal<String>,
-    composer_mirror_scroll_top: RwSignal<f64>,
 }
 
 fn handle_composer_image_input_change(
@@ -599,87 +556,19 @@ fn ChatComposerPane(signals: ChatComposerPaneSignals) -> impl IntoView {
 }
 
 pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
-    let ChatColumnShell {
-        app,
-        stream_shell,
-        stream_busy_memos,
-        run_send_message,
-        trigger_stop,
-        stream_follow_up,
-    } = shell;
-
-    let locale = app.shell_ui.locale;
-    let messages_scroller = app.chat_composer.messages_scroller;
-    let auto_scroll_chat = app.chat_composer.auto_scroll_chat;
-    let messages_scroll_from_effect = app.chat_composer.messages_scroll_from_effect;
-    let last_messages_scroll_top = app.chat_composer.last_messages_scroll_top;
-    let timeline_panel_expanded = app.chat_composer.timeline_panel_expanded;
-    let chat = app.chat;
-    let collapsed_long_assistant_ids = app.chat_composer.collapsed_long_assistant_ids;
-    let collapsed_tool_run_heads = app.chat_composer.collapsed_tool_run_heads;
-    let tool_detail_expanded_ids = app.chat_composer.tool_detail_expanded_ids;
-    let chat_find_query = app.chat_composer.chat_find_query;
-    let chat_find_match_ids = app.chat_composer.chat_find_match_ids;
-    let chat_find_cursor = app.chat_composer.chat_find_cursor;
-    let draft = app.chat_composer.draft;
-    let composer_mirror_html = app.chat_composer.composer_mirror_html;
-    let composer_mirror_scroll_top = app.chat_composer.composer_mirror_scroll_top;
-    let composer_input_ref = app.chat_composer.composer_input_ref.clone();
-    let pending_images = app.chat_composer.pending_images;
-    let initialized = app.initialized;
-    let markdown_render = app.shell_ui.markdown_render;
-    let apply_assistant_display_filters = app.shell_ui.apply_assistant_display_filters;
-
-    let stream_turn_busy_ui = stream_busy_memos.stream_turn_busy_ui;
-    let status_err = stream_shell.stream.status_err;
-    let pending_clarification = stream_shell.approval.pending_clarification;
-
-    let run_send_clarify_sv = StoredValue::new(run_send_message.clone());
     let home_end_nav = ChatColumnHomeEndNav {
-        messages_scroller,
-        messages_scroll_from_effect,
-        auto_scroll_chat,
+        messages_scroller: shell.app.chat_composer.messages_scroller,
+        messages_scroll_from_effect: shell.app.chat_composer.messages_scroll_from_effect,
+        auto_scroll_chat: shell.app.chat_composer.auto_scroll_chat,
     };
+    let run_send_clarify_sv = StoredValue::new(shell.run_send_message.clone());
     view! {
                 <div
                     class="chat-column"
                     on:keydown=home_end_nav.keydown_handler()
                 >
-                    <ChatMessagesPane signals=ChatMessagesPaneSignals {
-                        locale,
-                        messages_scroller,
-                        auto_scroll_chat,
-                        messages_scroll_from_effect,
-                        last_messages_scroll_top,
-                        timeline_panel_expanded,
-                        chat,
-                        collapsed_long_assistant_ids,
-                        collapsed_tool_run_heads,
-                        tool_detail_expanded_ids,
-                        chat_find_query,
-                        chat_find_match_ids,
-                        chat_find_cursor,
-                        stream_turn_busy_ui,
-                        stream_follow_up,
-                        status_err,
-                        markdown_render,
-                        apply_assistant_display_filters,
-                    } />
-                    <ChatComposerPane signals=ChatComposerPaneSignals {
-                        locale,
-                        pending_images,
-                        pending_clarification,
-                        stream_turn_busy_ui,
-                        status_err,
-                        run_send_message: run_send_message.clone(),
-                        run_send_clarify_sv,
-                        trigger_stop,
-                        initialized,
-                        composer_input_ref,
-                        draft,
-                        composer_mirror_html,
-                        composer_mirror_scroll_top,
-                    } />
+                    <ChatMessagesPane signals=shell.messages_pane_signals() />
+                    <ChatComposerPane signals=shell.composer_pane_signals(run_send_clarify_sv) />
                 </div>
     }
 }

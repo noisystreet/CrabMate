@@ -8,7 +8,7 @@
 - 主题同步 DOM / 存储：**`frontend/src/app/app_shell_effects/sync_dom.rs`**（`wire_sync_theme_to_storage_and_dom`）
 - 偏好键与白名单：**`frontend/src/app_prefs.rs`**（`THEME_KEY`、`THEME_SLUGS`、`normalize_theme_slug`）
 - 设置 UI：**`frontend/src/app/settings_sections.rs`**、**`settings_modal.rs`**、**`settings_page.rs`**
-- 初始化：**`frontend/src/app/app_signals.rs`**
+- 初始化：**`frontend/src/app/app_signals/shell_ui.rs`**（`ShellUISignals::new` → `shell_prefs_storage::read_shell_ui_initial_snapshot`）
 - 界面美化总览：**`docs/Web界面美化设计.md`**（若与本设计交叉，以本设计为准定义「多预设」契约，实现后可在该文增加指针）
 
 ---
@@ -19,7 +19,7 @@
 
 | 层级 | 行为 |
 |------|------|
-| **持久化** | `localStorage["crabmate-theme"]` 存字符串，默认读不到时用 **`light`**（见 `app_signals.rs`）。合法取值见 **`frontend/src/app_prefs.rs`** 中 **`THEME_SLUGS`**（与 CSS 预设一致）。 |
+| **持久化** | `localStorage["crabmate-theme"]` 存字符串，默认读不到时用 **`light`**（见 `app_signals/shell_ui.rs`）。合法取值见 **`frontend/src/app_prefs.rs`** 中 **`THEME_SLUGS`**（与 CSS 预设一致）。 |
 | **DOM** | `<html data-theme="...">` 由 `wire_sync_theme_to_storage_and_dom` 写入，与 `RwSignal<String>` 同步。 |
 | **色板** | **`tokens.css`** 中 `:root` 为默认深色语义；**`:root[data-theme="light"]`** 覆盖浅色变量（`--bg`、`--surface`、`--accent` 等）。 |
 | **局部补丁** | 多个样式文件中存在 **`:root[data-theme="light"]`** 下的组件级规则（如 `base.css`、`shell-ds.css`、`layout-chat.css`、`components.css`、`modal.css`、`status.css`），用于浅色下的细调。 |
@@ -90,7 +90,7 @@
 | 区域 | 改动 |
 |------|------|
 | **`app_prefs.rs`** | 保留 `THEME_KEY`；**`THEME_SLUGS`** 与 **`normalize_theme_slug`** 为单一事实来源（与 `themes/*.css`、`index.html` 同步）。 |
-| **`app_signals.rs`** | 读 `localStorage` 后 **`normalize_theme_slug(s)`**：非白名单 → 默认。 |
+| **`app_signals/shell_ui.rs`** | 读 `localStorage` 后 **`normalize_theme_slug(s)`**：非白名单 → 默认。 |
 | **`settings_sections.rs`** | 用 **`THEME_SLUGS`** 驱动 `<option>` 列表；显示名见 **`settings_theme_preset_label`**。 |
 | **`settings_modal.rs` / `settings_page.rs`** | 与设置区块 **同一套预设来源**；`apply_theme_preview_to_dom` 已通用，仅需传入合法 slug。 |
 | **`settings_form_state.rs` / `settings_commit.rs`** | 仍为 `String` 即可；提交时写入 `theme` signal。 |

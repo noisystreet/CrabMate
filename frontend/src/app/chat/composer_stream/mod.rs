@@ -47,7 +47,9 @@ pub(super) struct ComposerStreamHandles {
 type AttachChatStreamFn =
     dyn Fn(String, Vec<String>, String, Option<serde_json::Value>) + Send + Sync;
 
-pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachChatStreamFn> {
+pub(super) type AttachChatStreamArc = Arc<AttachChatStreamFn>;
+
+pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> AttachChatStreamArc {
     let ComposerStreamHandles {
         chat,
         locale: locale_sig,
