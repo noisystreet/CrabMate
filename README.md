@@ -16,6 +16,7 @@
 - [常用子命令](#常用子命令)
   - [TUI（全屏终端）](#tui全屏终端)
 - [编译运行与打包](#编译运行与打包)
+  - [Makefile（推荐）](#makefile推荐)
   - [后端](#后端)
   - [前端 Web](#前端-web)
   - [桌面 Tauri](#桌面-tauri)
@@ -68,6 +69,22 @@
 ## 编译运行与打包
 
 **前置**：**Rust 1.85+**（edition 2024）；带 Web 时需安装 [**Trunk**](https://trunkrs.dev/) 并添加目标 **`wasm32-unknown-unknown`**（**`rustup target add wasm32-unknown-unknown`**）。更多环境说明见 [AGENTS.md](AGENTS.md)。
+
+### Makefile（推荐）
+
+仓库根目录提供 **`Makefile`**，可统一构建后端、前端、桌面与工作区，并支持清理：
+
+```bash
+make help              # 列出全部目标
+make all-dev           # 后端 + 前端（debug，本地 serve 常用）
+make all               # 后端 + 前端 + 桌面（均为 release）
+make backend           # cargo build -p crabmate
+make frontend-release  # cd frontend && trunk build --release
+make desktop-dev       # Tauri 开发（需 cargo install tauri-cli --version "^2"）
+make clean             # 清理 target、frontend/dist、桌面产物与 dist/
+```
+
+桌面构建会自动设置 **`CM_DESKTOP_BACKEND_BIN`**，并将 **`frontend/dist`** 同步到 **`desktop-tauri/dist`**。发布用 **`make all`** 与下文分步命令等价；一键 tar.gz 仍可用 **`./scripts/package-release.sh`**。
 
 ### 后端
 
