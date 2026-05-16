@@ -283,6 +283,28 @@ pub(crate) fn runner_rust_analyzer_document_symbol(args: &str, ctx: &ToolContext
     rust_ide::rust_analyzer_document_symbol(args, ctx.working_dir)
 }
 
+pub(crate) fn runner_rust_analyzer_goto_implementation(
+    args: &str,
+    ctx: &ToolContext<'_>,
+) -> String {
+    rust_ide::rust_analyzer_goto_implementation(args, ctx.working_dir)
+}
+
+pub(crate) fn runner_rust_analyzer_goto_type_definition(
+    args: &str,
+    ctx: &ToolContext<'_>,
+) -> String {
+    rust_ide::rust_analyzer_goto_type_definition(args, ctx.working_dir)
+}
+
+pub(crate) fn runner_rust_analyzer_document_highlight(args: &str, ctx: &ToolContext<'_>) -> String {
+    rust_ide::rust_analyzer_document_highlight(args, ctx.working_dir)
+}
+
+pub(crate) fn runner_rust_analyzer_workspace_symbol(args: &str, ctx: &ToolContext<'_>) -> String {
+    rust_ide::rust_analyzer_workspace_symbol(args, ctx.working_dir)
+}
+
 pub(crate) fn runner_cargo_fix(args: &str, ctx: &ToolContext<'_>) -> String {
     cargo_tools::cargo_fix(args, ctx.working_dir, ctx.command_max_output_len)
 }

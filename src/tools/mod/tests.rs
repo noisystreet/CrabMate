@@ -365,6 +365,10 @@ fn test_build_tools_names() {
     assert!(names.contains(&"rust_analyzer_find_references"));
     assert!(names.contains(&"rust_analyzer_hover"));
     assert!(names.contains(&"rust_analyzer_document_symbol"));
+    assert!(names.contains(&"rust_analyzer_goto_implementation"));
+    assert!(names.contains(&"rust_analyzer_goto_type_definition"));
+    assert!(names.contains(&"rust_analyzer_document_highlight"));
+    assert!(names.contains(&"rust_analyzer_workspace_symbol"));
     assert!(names.contains(&"cargo_fix"));
     assert!(names.contains(&"rust_test_one"));
     assert!(names.contains(&"ruff_check"));

@@ -238,6 +238,14 @@ Structured function-calling JSON examples:
   ```json
   {"path":"src/lib.rs","max_symbols":200}
   ```
+- `rust_analyzer_goto_implementation` / `rust_analyzer_goto_type_definition` / `rust_analyzer_document_highlight` (same stdio session; **0-based** line/char; LSP `textDocument/implementation`, `textDocument/typeDefinition`, `textDocument/documentHighlight`):
+  ```json
+  {"path":"src/agent/mod.rs","line":40,"character":8}
+  ```
+- `rust_analyzer_workspace_symbol` (`workspace/symbol`; **path** primes `didOpen` on a Rust file; **query** string; **max_results** default 64, max 500):
+  ```json
+  {"path":"src/lib.rs","query":"run_agent_turn","max_results":32}
+  ```
 - `cargo_fix` (controlled write):
   ```json
   {"confirm":true,"broken_code":false}

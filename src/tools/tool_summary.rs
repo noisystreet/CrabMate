@@ -35,6 +35,22 @@ pub(super) fn summary_rust_analyzer_document_symbol(v: &serde_json::Value) -> Op
     summarize_from_value::<RustAnalyzerDocSymbolSummaryArgs>(v)
 }
 
+pub(super) fn summary_rust_analyzer_goto_implementation(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<RustAnalyzerGotoImplSummaryArgs>(v)
+}
+
+pub(super) fn summary_rust_analyzer_goto_type_definition(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<RustAnalyzerGotoTypeDefSummaryArgs>(v)
+}
+
+pub(super) fn summary_rust_analyzer_document_highlight(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<RustAnalyzerDocHighlightSummaryArgs>(v)
+}
+
+pub(super) fn summary_rust_analyzer_workspace_symbol(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<RustAnalyzerWorkspaceSymbolSummaryArgs>(v)
+}
+
 pub(super) fn summary_python_install_editable(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<PythonInstallEditableSummaryArgs>(v)
 }

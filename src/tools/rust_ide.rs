@@ -1,6 +1,6 @@
 //! Rust 编译器 JSON 诊断（`cargo --message-format=json`）与可选的 **rust-analyzer** LSP（stdio）。
 //!
-//! rust-analyzer 需已安装并在 PATH 中（或由 `server_path` 指定）。LSP 为最小实现：initialize → didOpen → 单次请求（definition / references / hover / documentSymbol）。
+//! rust-analyzer 需已安装并在 PATH 中（或由 `server_path` 指定）。LSP 为最小实现：initialize → didOpen → 单次请求（definition / references / hover / documentSymbol / implementation / typeDefinition / documentHighlight / workspace/symbol）。
 
 use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Write};
@@ -30,6 +30,10 @@ enum RaLspOp {
     References,
     Hover,
     DocumentSymbol,
+    Implementation,
+    TypeDefinition,
+    DocumentHighlight,
+    WorkspaceSymbol,
 }
 
 // ---------- cargo / rustc JSON（compiler-message）----------
@@ -133,7 +137,10 @@ pub fn rust_compiler_json(args_json: &str, workspace_root: &Path, max_output_len
     ));
     if !stderr.trim().is_empty() {
         out.push_str("--- cargo/stderr ---\n");
-        out.push_str(&truncate_str(stderr.trim(), max_output_len.min(8192)));
+        out.push_str(&lsp_response_format::truncate_str(
+            stderr.trim(),
+            max_output_len.min(8192),
+        ));
         out.push_str("\n---\n");
     }
     if diags.is_empty() {
@@ -149,7 +156,7 @@ pub fn rust_compiler_json(args_json: &str, workspace_root: &Path, max_output_len
         }
     }
 
-    truncate_str(&out, max_output_len).to_string()
+    lsp_response_format::truncate_str(&out, max_output_len).to_string()
 }
 
 fn format_compiler_message(m: &Value) -> String {
@@ -209,13 +216,8 @@ fn format_compiler_message(m: &Value) -> String {
     s.trim_end().to_string()
 }
 
-fn truncate_str(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        s.to_string()
-    } else {
-        format!("{}\n\n... (已截断，共 {} 字节)", &s[..max], s.len())
-    }
-}
+#[path = "rust_ide_lsp_response_format.rs"]
+mod lsp_response_format;
 
 #[path = "rust_ide_lsp_request.rs"]
 mod lsp_request;
@@ -249,6 +251,38 @@ pub fn rust_analyzer_hover(args_json: &str, workspace_root: &Path) -> String {
 /// `textDocument/documentSymbol`：整文件符号树（或 `SymbolInformation` 列表），条数由 `max_symbols` 限制。
 pub fn rust_analyzer_document_symbol(args_json: &str, workspace_root: &Path) -> String {
     match lsp_rust_analyzer_request(args_json, workspace_root, RaLspOp::DocumentSymbol) {
+        Ok(s) => s,
+        Err(e) => e,
+    }
+}
+
+/// `textDocument/implementation`：path + 0-based line/character（trait 实现等跳转）。
+pub fn rust_analyzer_goto_implementation(args_json: &str, workspace_root: &Path) -> String {
+    match lsp_rust_analyzer_request(args_json, workspace_root, RaLspOp::Implementation) {
+        Ok(s) => s,
+        Err(e) => e,
+    }
+}
+
+/// `textDocument/typeDefinition`：path + 0-based line/character。
+pub fn rust_analyzer_goto_type_definition(args_json: &str, workspace_root: &Path) -> String {
+    match lsp_rust_analyzer_request(args_json, workspace_root, RaLspOp::TypeDefinition) {
+        Ok(s) => s,
+        Err(e) => e,
+    }
+}
+
+/// `textDocument/documentHighlight`：path + 0-based line/character（同一符号在文件内的读/写高亮）。
+pub fn rust_analyzer_document_highlight(args_json: &str, workspace_root: &Path) -> String {
+    match lsp_rust_analyzer_request(args_json, workspace_root, RaLspOp::DocumentHighlight) {
+        Ok(s) => s,
+        Err(e) => e,
+    }
+}
+
+/// `workspace/symbol`：按名称模糊查工作区符号。`path` 须为工作区内一 `.rs` 源（用于 `didOpen` 与现有会话一致），`query` 为搜索串。
+pub fn rust_analyzer_workspace_symbol(args_json: &str, workspace_root: &Path) -> String {
+    match lsp_rust_analyzer_request(args_json, workspace_root, RaLspOp::WorkspaceSymbol) {
         Ok(s) => s,
         Err(e) => e,
     }
@@ -288,6 +322,35 @@ fn ra_lsp_request_method_params(
             "textDocument/documentSymbol",
             json!({ "textDocument": { "uri": uri } }),
         ),
+        RaLspOp::Implementation => (
+            "textDocument/implementation",
+            json!({
+                "textDocument": { "uri": uri },
+                "position": { "line": line, "character": character }
+            }),
+        ),
+        RaLspOp::TypeDefinition => (
+            "textDocument/typeDefinition",
+            json!({
+                "textDocument": { "uri": uri },
+                "position": { "line": line, "character": character }
+            }),
+        ),
+        RaLspOp::DocumentHighlight => (
+            "textDocument/documentHighlight",
+            json!({
+                "textDocument": { "uri": uri },
+                "position": { "line": line, "character": character }
+            }),
+        ),
+        RaLspOp::WorkspaceSymbol => {
+            let q = args
+                .get("query")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .trim();
+            ("workspace/symbol", json!({ "query": q }))
+        }
     }
 }
 
@@ -319,9 +382,12 @@ fn lsp_rust_analyzer_handshake(
                     "definition": { "linkSupport": true },
                     "references": {},
                     "hover": { "contentFormat": ["markdown", "plaintext"] },
-                    "documentSymbol": { "hierarchicalDocumentSymbolSupport": true }
+                    "documentSymbol": { "hierarchicalDocumentSymbolSupport": true },
+                    "implementation": { "linkSupport": true },
+                    "typeDefinition": { "linkSupport": true },
+                    "documentHighlight": {}
                 },
-                "workspace": {}
+                "workspace": { "symbol": { "dynamicRegistration": false } }
             },
             "workspaceFolders": [{
                 "uri": h.root_uri,
@@ -359,10 +425,26 @@ fn lsp_rust_analyzer_handshake(
 
 fn lsp_rust_analyzer_run(op: RaLspOp, resp: &Value, max_symbols: usize) -> Result<String, String> {
     match op {
-        RaLspOp::Definition => format_lsp_locations(resp, true),
-        RaLspOp::References => format_lsp_locations(resp, false),
-        RaLspOp::Hover => format_lsp_hover(resp),
-        RaLspOp::DocumentSymbol => format_lsp_document_symbols(resp, max_symbols),
+        RaLspOp::Definition => {
+            lsp_response_format::format_lsp_locations(resp, "rust_analyzer goto definition")
+        }
+        RaLspOp::References => {
+            lsp_response_format::format_lsp_locations(resp, "rust_analyzer find references")
+        }
+        RaLspOp::Hover => lsp_response_format::format_lsp_hover(resp),
+        RaLspOp::DocumentSymbol => {
+            lsp_response_format::format_lsp_document_symbols(resp, max_symbols)
+        }
+        RaLspOp::Implementation => {
+            lsp_response_format::format_lsp_locations(resp, "rust_analyzer goto implementation")
+        }
+        RaLspOp::TypeDefinition => {
+            lsp_response_format::format_lsp_locations(resp, "rust_analyzer goto type definition")
+        }
+        RaLspOp::DocumentHighlight => lsp_response_format::format_lsp_document_highlights(resp),
+        RaLspOp::WorkspaceSymbol => {
+            lsp_response_format::format_workspace_symbols(resp, max_symbols)
+        }
     }
 }
 
@@ -372,264 +454,6 @@ fn lsp_rust_analyzer_request(
     op: RaLspOp,
 ) -> Result<String, String> {
     lsp_request::lsp_rust_analyzer_request(args_json, workspace_root, op)
-}
-
-fn format_lsp_locations(resp: &Value, definition: bool) -> Result<String, String> {
-    let title = if definition {
-        "rust_analyzer goto definition"
-    } else {
-        "rust_analyzer find references"
-    };
-
-    if let Some(err) = resp.get("error") {
-        return Err(format!("{}: LSP error: {}", title, err));
-    }
-
-    let result = resp.get("result");
-    let Some(result) = result else {
-        return Ok(format!("{}: (空结果)", title));
-    };
-
-    if result.is_null() {
-        return Ok(format!("{}: (无目标)", title));
-    }
-
-    let mut lines = vec![format!("{}:", title)];
-    if let Some(arr) = result.as_array() {
-        for loc in arr {
-            lines.push(format_one_location(loc));
-        }
-    } else {
-        lines.push(format_one_location(result));
-    }
-    Ok(lines.join("\n"))
-}
-
-fn format_lsp_hover(resp: &Value) -> Result<String, String> {
-    const TITLE: &str = "rust_analyzer hover";
-    if let Some(err) = resp.get("error") {
-        return Err(format!("{TITLE}: LSP error: {err}"));
-    }
-    let Some(result) = resp.get("result") else {
-        return Ok(format!("{TITLE}: (空结果)"));
-    };
-    if result.is_null() {
-        return Ok(format!("{TITLE}: (无内容)"));
-    }
-    let mut out = format!("{TITLE}:\n");
-    if let Some(contents) = result.get("contents") {
-        out.push_str(&format_hover_contents(contents));
-    } else {
-        out.push_str("(无 contents 字段)\n");
-    }
-    if let Some(range) = result.get("range")
-        && let Some(pos) = range_start_1based_line_col(range)
-    {
-        out.push_str(&format!("\n--- range 起始（1-based 行:列）: {pos}\n"));
-    }
-    Ok(out.trim_end().to_string())
-}
-
-fn format_hover_contents(v: &Value) -> String {
-    match v {
-        Value::Array(a) => a
-            .iter()
-            .map(format_hover_piece)
-            .collect::<Vec<_>>()
-            .join("\n---\n"),
-        _ => format_hover_piece(v),
-    }
-}
-
-fn format_hover_piece(v: &Value) -> String {
-    match v {
-        Value::String(s) => s.clone(),
-        Value::Object(o) => {
-            if let Some(kind) = o.get("kind").and_then(|x| x.as_str()) {
-                let val = o.get("value").and_then(|x| x.as_str()).unwrap_or("");
-                format!("[{kind}]\n{val}")
-            } else if let Some(lang) = o.get("language").and_then(|x| x.as_str()) {
-                let val = o.get("value").and_then(|x| x.as_str()).unwrap_or("");
-                format!("```{lang}\n{val}\n```")
-            } else {
-                truncate_str(&v.to_string(), 4000)
-            }
-        }
-        _ => truncate_str(&v.to_string(), 4000),
-    }
-}
-
-fn format_lsp_document_symbols(resp: &Value, max_symbols: usize) -> Result<String, String> {
-    const TITLE: &str = "rust_analyzer document_symbol";
-    if let Some(err) = resp.get("error") {
-        return Err(format!("{TITLE}: LSP error: {err}"));
-    }
-    let result = resp.get("result");
-    let Some(result) = result else {
-        return Ok(format!("{TITLE}: (空结果)"));
-    };
-    let Some(arr) = result.as_array() else {
-        return Ok(format!(
-            "{TITLE}: (非数组: {})",
-            truncate_str(&result.to_string(), 160)
-        ));
-    };
-    if arr.is_empty() {
-        return Ok(format!("{TITLE}: (无符号)"));
-    }
-    let mut lines = vec![format!("{TITLE}:")];
-    let mut rem = max_symbols;
-    if arr.first().is_some_and(|x| x.get("location").is_some()) {
-        for s in arr {
-            if rem == 0 {
-                lines.push("  ... (已达 max_symbols)".to_string());
-                break;
-            }
-            lines.push(format_symbol_information(s));
-            rem -= 1;
-        }
-    } else {
-        let mut truncated = false;
-        for s in arr {
-            append_document_symbol_lines(s, 0, &mut lines, &mut rem);
-            if rem == 0 {
-                truncated = true;
-                break;
-            }
-        }
-        if truncated {
-            lines.push("  ... (已达 max_symbols)".to_string());
-        }
-    }
-    Ok(lines.join("\n"))
-}
-
-fn format_symbol_information(v: &Value) -> String {
-    let name = v.get("name").and_then(|x| x.as_str()).unwrap_or("?");
-    let kind = v
-        .get("kind")
-        .and_then(|x| x.as_u64())
-        .map(lsp_symbol_kind_name)
-        .unwrap_or("?");
-    let loc = v.get("location");
-    let uri = loc
-        .and_then(|l| l.get("uri"))
-        .and_then(|x| x.as_str())
-        .unwrap_or("?");
-    let pos = loc
-        .and_then(|l| l.get("range"))
-        .and_then(range_start_1based_line_col)
-        .unwrap_or_else(|| "?".to_string());
-    format!("  {} [{}] {} @ {}", name, kind, uri_to_brief_path(uri), pos)
-}
-
-fn append_document_symbol_lines(
-    sym: &Value,
-    depth: usize,
-    lines: &mut Vec<String>,
-    rem: &mut usize,
-) {
-    if *rem == 0 {
-        return;
-    }
-    let name = sym.get("name").and_then(|x| x.as_str()).unwrap_or("?");
-    let kind = sym
-        .get("kind")
-        .and_then(|x| x.as_u64())
-        .map(lsp_symbol_kind_name)
-        .unwrap_or("?");
-    let range = sym.get("selectionRange").or_else(|| sym.get("range"));
-    let pos = range
-        .and_then(range_start_1based_line_col)
-        .unwrap_or_else(|| "?".to_string());
-    let indent = "  ".repeat(depth);
-    lines.push(format!("{indent}{name} [{kind}] @ {pos}"));
-    *rem -= 1;
-    if let Some(children) = sym.get("children").and_then(|x| x.as_array()) {
-        for ch in children {
-            append_document_symbol_lines(ch, depth + 1, lines, rem);
-            if *rem == 0 {
-                break;
-            }
-        }
-    }
-}
-
-fn range_start_1based_line_col(v: &Value) -> Option<String> {
-    let s = v.get("start")?;
-    let l = s.get("line").and_then(|x| x.as_u64()).unwrap_or(0) + 1;
-    let c = s.get("character").and_then(|x| x.as_u64()).unwrap_or(0) + 1;
-    Some(format!("{l}:{c}"))
-}
-
-fn lsp_symbol_kind_name(k: u64) -> &'static str {
-    match k {
-        1 => "File",
-        2 => "Module",
-        3 => "Namespace",
-        4 => "Package",
-        5 => "Class",
-        6 => "Method",
-        7 => "Property",
-        8 => "Field",
-        9 => "Constructor",
-        10 => "Enum",
-        11 => "Interface",
-        12 => "Function",
-        13 => "Variable",
-        14 => "Constant",
-        15 => "String",
-        16 => "Number",
-        17 => "Boolean",
-        18 => "Array",
-        19 => "Object",
-        20 => "Key",
-        21 => "Null",
-        22 => "EnumMember",
-        23 => "Struct",
-        24 => "Event",
-        25 => "Operator",
-        26 => "TypeParameter",
-        _ => "Unknown",
-    }
-}
-
-fn format_one_location(v: &Value) -> String {
-    if let Some(target_uri) = v.get("uri").and_then(|x| x.as_str()) {
-        let range = v.get("range");
-        let pos = range
-            .and_then(|r| r.get("start"))
-            .map(|s| {
-                let l = s.get("line").and_then(|x| x.as_u64()).unwrap_or(0);
-                let c = s.get("character").and_then(|x| x.as_u64()).unwrap_or(0);
-                format!("{}:{}", l + 1, c + 1)
-            })
-            .unwrap_or_else(|| "?".to_string());
-        format!("  {} @ {}", uri_to_brief_path(target_uri), pos)
-    } else if let Some(target) = v.get("targetUri").and_then(|x| x.as_str()) {
-        let range = v
-            .get("targetRange")
-            .or_else(|| v.get("targetSelectionRange"));
-        let pos = range
-            .and_then(|r| r.get("start"))
-            .map(|s| {
-                let l = s.get("line").and_then(|x| x.as_u64()).unwrap_or(0);
-                let c = s.get("character").and_then(|x| x.as_u64()).unwrap_or(0);
-                format!("{}:{}", l + 1, c + 1)
-            })
-            .unwrap_or_else(|| "?".to_string());
-        format!("  {} @ {} (link)", uri_to_brief_path(target), pos)
-    } else {
-        format!("  {}", v.to_string().chars().take(200).collect::<String>())
-    }
-}
-
-fn uri_to_brief_path(uri: &str) -> String {
-    if let Some(rest) = uri.strip_prefix("file://") {
-        rest.to_string()
-    } else {
-        uri.to_string()
-    }
 }
 
 fn resolve_rel_file(root: &Path, rel: &str) -> Result<PathBuf, String> {
@@ -748,7 +572,7 @@ mod tests {
                 "contents": { "kind": "markdown", "value": "`x`: i32" }
             }
         });
-        let s = format_lsp_hover(&resp).unwrap();
+        let s = lsp_response_format::format_lsp_hover(&resp).unwrap();
         assert!(s.contains("markdown"));
         assert!(s.contains("`x`"));
     }
@@ -770,7 +594,43 @@ mod tests {
                 "children": []
             }]
         });
-        let s = format_lsp_document_symbols(&resp, 10).unwrap();
+        let s = lsp_response_format::format_lsp_document_symbols(&resp, 10).unwrap();
+        assert!(s.contains("foo"));
+        assert!(s.contains("Function"));
+    }
+
+    #[test]
+    fn format_lsp_document_highlight_smoke() {
+        let resp = json!({
+            "result": [{
+                "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 3 }
+                },
+                "kind": 2
+            }]
+        });
+        let s = lsp_response_format::format_lsp_document_highlights(&resp).unwrap();
+        assert!(s.contains("Read"));
+        assert!(s.contains("1:1"));
+    }
+
+    #[test]
+    fn format_workspace_symbols_smoke() {
+        let resp = json!({
+            "result": [{
+                "name": "foo",
+                "kind": 12,
+                "location": {
+                    "uri": "file:///tmp/a.rs",
+                    "range": {
+                        "start": { "line": 1, "character": 0 },
+                        "end": { "line": 1, "character": 3 }
+                    }
+                }
+            }]
+        });
+        let s = lsp_response_format::format_workspace_symbols(&resp, 10).unwrap();
         assert!(s.contains("foo"));
         assert!(s.contains("Function"));
     }

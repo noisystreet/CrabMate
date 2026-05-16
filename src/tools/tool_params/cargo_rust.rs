@@ -6,8 +6,8 @@ use crate::tools::tool_param_types::{
     CargoMacheteArgs, CargoMetadataArgs, CargoNextestArgs, CargoOutdatedArgs,
     CargoPublishDryRunArgs, CargoRunArgs, CargoTestArgs, CargoTreeArgs, CargoUdepsArgs,
     EmptyToolArgs, RustAnalyzerDocumentSymbolArgs, RustAnalyzerPositionArgs,
-    RustAnalyzerReferencesArgs, RustCompilerJsonArgs, RustFileOutlineArgs, RustRustcArgs,
-    RustTestOneArgs,
+    RustAnalyzerReferencesArgs, RustAnalyzerWorkspaceSymbolArgs, RustCompilerJsonArgs,
+    RustFileOutlineArgs, RustRustcArgs, RustTestOneArgs,
 };
 
 pub(in crate::tools) fn params_cargo_common() -> serde_json::Value {
@@ -88,6 +88,10 @@ pub(in crate::tools) fn params_rust_analyzer_hover() -> serde_json::Value {
 
 pub(in crate::tools) fn params_rust_analyzer_document_symbol() -> serde_json::Value {
     tool_parameters_schema_value::<RustAnalyzerDocumentSymbolArgs>()
+}
+
+pub(in crate::tools) fn params_rust_analyzer_workspace_symbol() -> serde_json::Value {
+    tool_parameters_schema_value::<RustAnalyzerWorkspaceSymbolArgs>()
 }
 
 pub(in crate::tools) fn params_cargo_fix() -> serde_json::Value {

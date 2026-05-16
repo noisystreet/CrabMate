@@ -170,6 +170,18 @@ pub struct RustAnalyzerDocumentSymbolArgs {
     pub wait_after_open_ms: Option<u32>,
 }
 
+/// `workspace/symbol`：仍须 `path` 指向工作区内一 Rust 源以触发 `didOpen`（与现有 LSP 会话一致），`query` 为符号名/模糊串。
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct RustAnalyzerWorkspaceSymbolArgs {
+    pub path: String,
+    pub query: String,
+    #[schemars(range(min = 1, max = 500))]
+    pub max_results: Option<u32>,
+    pub server_path: Option<String>,
+    #[schemars(range(min = 0, max = 5000))]
+    pub wait_after_open_ms: Option<u32>,
+}
+
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(default)]
 pub struct CargoFixArgs {

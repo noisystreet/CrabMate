@@ -269,6 +269,86 @@ impl ToolSummaryLine for RustAnalyzerDocSymbolSummaryArgs {
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub(super) struct RustAnalyzerGotoImplSummaryArgs {
+    path: String,
+    #[serde(default)]
+    line: Option<u64>,
+}
+
+impl ToolSummaryLine for RustAnalyzerGotoImplSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        let path = self.path.trim();
+        if path.is_empty() {
+            return None;
+        }
+        Some(format!(
+            "rust-analyzer goto implementation {}:{}",
+            path,
+            self.line.unwrap_or(0)
+        ))
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct RustAnalyzerGotoTypeDefSummaryArgs {
+    path: String,
+    #[serde(default)]
+    line: Option<u64>,
+}
+
+impl ToolSummaryLine for RustAnalyzerGotoTypeDefSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        let path = self.path.trim();
+        if path.is_empty() {
+            return None;
+        }
+        Some(format!(
+            "rust-analyzer goto type definition {}:{}",
+            path,
+            self.line.unwrap_or(0)
+        ))
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct RustAnalyzerDocHighlightSummaryArgs {
+    path: String,
+    #[serde(default)]
+    line: Option<u64>,
+}
+
+impl ToolSummaryLine for RustAnalyzerDocHighlightSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        let path = self.path.trim();
+        if path.is_empty() {
+            return None;
+        }
+        Some(format!(
+            "rust-analyzer document highlight {}:{}",
+            path,
+            self.line.unwrap_or(0)
+        ))
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct RustAnalyzerWorkspaceSymbolSummaryArgs {
+    path: String,
+    query: String,
+}
+
+impl ToolSummaryLine for RustAnalyzerWorkspaceSymbolSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        let path = self.path.trim();
+        let q = self.query.trim();
+        if path.is_empty() || q.is_empty() {
+            return None;
+        }
+        Some(format!("rust-analyzer workspace/symbol {q} (prime {path})"))
+    }
+}
+
 // ── python / uv / pre-commit / ast-grep ───────────────────────
 
 #[derive(Debug, Deserialize)]

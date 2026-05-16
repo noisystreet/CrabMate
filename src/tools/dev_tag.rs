@@ -98,7 +98,11 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "rust_analyzer_goto_definition"
         | "rust_analyzer_find_references"
         | "rust_analyzer_hover"
-        | "rust_analyzer_document_symbol" => &[GENERAL, RUST],
+        | "rust_analyzer_document_symbol"
+        | "rust_analyzer_goto_implementation"
+        | "rust_analyzer_goto_type_definition"
+        | "rust_analyzer_document_highlight"
+        | "rust_analyzer_workspace_symbol" => &[GENERAL, RUST],
         "cargo_check" | "cargo_test" | "cargo_clippy" | "cargo_fmt_check" | "cargo_outdated"
         | "cargo_machete" | "cargo_udeps" | "rust_compiler_json" | "rust_rustc" | "cargo_audit"
         | "cargo_deny" => &[GENERAL, RUST, QUALITY],

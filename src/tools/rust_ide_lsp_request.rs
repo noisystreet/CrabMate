@@ -89,7 +89,7 @@ fn parse_ra_lsp_json_inputs(v: &Value, op: RaLspOp) -> Result<ParsedRaLspInputs,
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .ok_or_else(|| "缺少 path".to_string())?;
-    let (line, character) = if matches!(op, RaLspOp::DocumentSymbol) {
+    let (line, character) = if matches!(op, RaLspOp::DocumentSymbol | RaLspOp::WorkspaceSymbol) {
         (0u32, 0u32)
     } else {
         let line = v
@@ -99,13 +99,27 @@ fn parse_ra_lsp_json_inputs(v: &Value, op: RaLspOp) -> Result<ParsedRaLspInputs,
         let character = v.get("character").and_then(|x| x.as_u64()).unwrap_or(0) as u32;
         (line, character)
     };
-    let max_symbols = if matches!(op, RaLspOp::DocumentSymbol) {
-        v.get("max_symbols")
+    let max_symbols = match op {
+        RaLspOp::DocumentSymbol => v
+            .get("max_symbols")
             .and_then(|x| x.as_u64())
             .unwrap_or(DEFAULT_MAX_DOCUMENT_SYMBOLS)
-            .clamp(1, 5000) as usize
-    } else {
-        0usize
+            .clamp(1, 5000) as usize,
+        RaLspOp::WorkspaceSymbol => {
+            if v.get("query")
+                .and_then(|x| x.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .is_none()
+            {
+                return Err("缺少 query（workspace/symbol 搜索串）".to_string());
+            }
+            v.get("max_results")
+                .and_then(|x| x.as_u64())
+                .unwrap_or(64)
+                .clamp(1, 500) as usize
+        }
+        _ => 0usize,
     };
     let server_path = v
         .get("server_path")
