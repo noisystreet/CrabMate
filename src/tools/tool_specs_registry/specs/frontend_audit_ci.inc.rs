@@ -57,7 +57,7 @@ ToolSpec {
         },
         ToolSpec {
             name: "workflow_execute",
-            description: "执行 DAG 工作流：并行/串行调度 + 人工审批节点 + SLA 超时 + 失败补偿。\n\n【内置模板】**`workflow.workflow_template`**：当前支持 **`rust_ci_light`**（展开为 **`cargo_fmt_check` → `cargo_check` → `cargo_clippy` → `cargo_test`** 串行 DAG，可与手写 **`nodes`** 二选一；合并规则见 **`docs/工具说明.md`**）。",
+            description: "执行 DAG 工作流：并行/串行调度 + 人工审批节点 + SLA 超时 + 失败补偿。\n\n【内置模板】**`workflow.workflow_template`**：**`rust_ci_light`**（fmt→check→clippy→test）、**`code_review`**（git diff→风险检索→clippy）、**`refactor_precheck`**（须 **`refactor_symbol`**：call_graph→find_references）。可与手写 **`nodes`** 二选一；见 **`docs/工具说明.md`**。",
             category: ToolCategory::Development,
             parameters: tool_params::params_workflow_execute,
             runner: runner_workflow_execute,

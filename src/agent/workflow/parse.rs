@@ -5,7 +5,12 @@ use crate::tools::workflow_tool_args_satisfy_required;
 use super::dag::topo_layers;
 use super::model::{WorkflowNodeSpec, WorkflowSpec};
 use super::node_tool_role::WorkflowNodeToolRole;
-use super::workflow_templates::{merge_workflow_template_overlay, workflow_template_rust_ci_light};
+use super::workflow_templates::{
+    SUPPORTED_WORKFLOW_TEMPLATES, apply_code_review_search_pattern,
+    apply_refactor_symbol_to_workflow, merge_workflow_template_overlay,
+    workflow_template_code_review, workflow_template_refactor_precheck,
+    workflow_template_rust_ci_light,
+};
 
 fn resolve_workflow_template(spec_v: serde_json::Value) -> Result<serde_json::Value, String> {
     let template_key = spec_v
@@ -20,23 +25,65 @@ fn resolve_workflow_template(spec_v: serde_json::Value) -> Result<serde_json::Va
 
     let base = match key {
         "rust_ci_light" => workflow_template_rust_ci_light(),
+        "code_review" => workflow_template_code_review(),
+        "refactor_precheck" => workflow_template_refactor_precheck(),
         other => {
             return Err(format!(
-                "未知 workflow_template: {other}（当前支持：rust_ci_light）"
+                "未知 workflow_template: {other}（当前支持：{}）",
+                SUPPORTED_WORKFLOW_TEMPLATES.join("、")
             ));
         }
     };
 
+    let refactor_symbol = spec_v
+        .get("refactor_symbol")
+        .or_else(|| spec_v.get("symbol"))
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+
+    let review_pattern = spec_v
+        .get("review_search_pattern")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+
     let overlay = spec_v.as_object().map(|m| {
         serde_json::Value::Object(
             m.iter()
-                .filter(|(k, _)| *k != "workflow_template")
+                .filter(|(k, _)| {
+                    !matches!(
+                        k.as_str(),
+                        "workflow_template"
+                            | "refactor_symbol"
+                            | "symbol"
+                            | "review_search_pattern"
+                    )
+                })
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
         )
     });
 
-    Ok(merge_workflow_template_overlay(base, overlay.as_ref()))
+    let mut merged = merge_workflow_template_overlay(base, overlay.as_ref());
+
+    if key == "refactor_precheck" {
+        let sym = refactor_symbol.ok_or_else(|| {
+            "workflow_template=refactor_precheck 须提供 refactor_symbol（或 symbol）非空字符串"
+                .to_string()
+        })?;
+        apply_refactor_symbol_to_workflow(&mut merged, &sym)?;
+    }
+
+    if key == "code_review"
+        && let Some(pat) = review_pattern
+    {
+        apply_code_review_search_pattern(&mut merged, &pat)?;
+    }
+
+    Ok(merged)
 }
 
 pub(crate) fn parse_workflow_spec(args_json: &str) -> Result<WorkflowSpec, String> {

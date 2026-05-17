@@ -32,6 +32,50 @@ fn test_parse_unknown_workflow_template_errors() {
     let json = r#"{"workflow":{"workflow_template":"unknown_xyz"}}"#;
     let err = parse_workflow_spec(json).unwrap_err();
     assert!(err.contains("未知 workflow_template"), "got {err}");
+    assert!(err.contains("code_review"), "got {err}");
+}
+
+#[test]
+fn test_parse_workflow_template_code_review() {
+    let json = r#"{"workflow":{"workflow_template":"code_review"}}"#;
+    let spec = parse_workflow_spec(json).unwrap();
+    assert_eq!(spec.nodes.len(), 4);
+    assert!(!spec.fail_fast);
+    assert_eq!(spec.nodes[0].tool_name, "git_diff_names");
+    assert_eq!(spec.nodes[1].tool_name, "git_diff");
+    assert_eq!(spec.nodes[2].tool_name, "search_in_files");
+    assert_eq!(spec.nodes[3].tool_name, "cargo_clippy");
+}
+
+#[test]
+fn test_parse_workflow_template_refactor_precheck_requires_symbol() {
+    let json = r#"{"workflow":{"workflow_template":"refactor_precheck"}}"#;
+    let err = parse_workflow_spec(json).unwrap_err();
+    assert!(err.contains("refactor_symbol"), "got {err}");
+}
+
+#[test]
+fn test_parse_workflow_template_refactor_precheck_with_symbol() {
+    let json =
+        r#"{"workflow":{"workflow_template":"refactor_precheck","refactor_symbol":"MyService"}}"#;
+    let spec = parse_workflow_spec(json).unwrap();
+    assert_eq!(spec.nodes.len(), 2);
+    assert_eq!(spec.nodes[0].tool_name, "call_graph_sketch");
+    assert_eq!(spec.nodes[1].tool_name, "find_references");
+    assert_eq!(
+        spec.nodes[0]
+            .tool_args
+            .get("symbol")
+            .and_then(|x| x.as_str()),
+        Some("MyService")
+    );
+    assert_eq!(
+        spec.nodes[1]
+            .tool_args
+            .get("symbol")
+            .and_then(|x| x.as_str()),
+        Some("MyService")
+    );
 }
 
 #[test]
