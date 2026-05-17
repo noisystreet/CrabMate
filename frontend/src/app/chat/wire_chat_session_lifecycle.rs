@@ -64,7 +64,14 @@ pub(crate) fn wire_chat_session_lifecycle_effects(args: WireChatSessionLifecycle
         session_sessions_storage_key,
     } = args;
 
-    wire_initial_sessions_from_storage(initialized, sessions, active_id, draft, locale);
+    wire_initial_sessions_from_storage(
+        initialized,
+        sessions,
+        active_id,
+        draft,
+        locale,
+        chat_session,
+    );
     wire_web_ui_config_once_after_init(
         initialized,
         web_ui_config_loaded,

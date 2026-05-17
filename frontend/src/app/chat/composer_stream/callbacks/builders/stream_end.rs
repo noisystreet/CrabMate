@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use leptos::prelude::*;
 
+use crate::app::chat::session_hydrate::bump_session_hydrate_nonce;
 use crate::i18n;
 use crate::stream_text_overlay::stream_overlay_take_into_stored_message;
 
@@ -69,6 +70,7 @@ pub(in super::super) fn chat_stream_on_done_builder(
         stream_ctx
             .scratch
             .apply_stream_control_event(StreamControlEvent::StreamDone);
+        bump_session_hydrate_nonce(stream_ctx.chat);
     })
 }
 
@@ -113,6 +115,7 @@ pub(in super::super) fn chat_stream_on_error_builder(
         stream_ctx
             .scratch
             .apply_stream_control_event(StreamControlEvent::StreamError);
+        bump_session_hydrate_nonce(stream_ctx.chat);
     })
 }
 

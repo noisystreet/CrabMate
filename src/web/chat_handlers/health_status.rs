@@ -103,6 +103,10 @@ struct StatusResponse {
     effective_context_char_budget: usize,
     /// `tiktoken-rs` 计数时采用的 OpenAI 模型 id（配置 `model` 无法识别时回落 `gpt-4` / `gpt-4o`）。
     tiktoken_prompt_counting_model: String,
+    /// 新会话仅 `system` 时的 prompt token 粗估（与首轮出站一致；**不含**项目画像 `user`、工具 JSON）。
+    /// 键为命名角色 id；空字符串表示未选角色 / 全局默认 `system_prompt`。
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    tiktoken_new_session_baseline_by_agent_role: std::collections::BTreeMap<String, u32>,
     context_summary_trigger_chars: usize,
     chat_queue_max_concurrent: usize,
     chat_queue_max_pending: usize,
@@ -187,6 +191,36 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         .collect();
     let mut agent_role_ids: Vec<String> = cfg.roles_prompts.agent_roles.keys().cloned().collect();
     agent_role_ids.sort();
+    let tool_recorder = &state.aux.process_handles.tool_outcome_recorder;
+    let mut tiktoken_new_session_baseline_by_agent_role = std::collections::BTreeMap::new();
+    let push_baseline = |map: &mut std::collections::BTreeMap<String, u32>,
+                         key: String,
+                         role: Option<&str>| {
+        let system = crate::context_bootstrap::conversation_turn_bootstrap::augmented_system_for_new_conversation_lenient(
+            &cfg,
+            role,
+            tool_recorder,
+        );
+        if let Some(snap) =
+            crate::agent::tiktoken_prompt_tokens::prompt_token_count_new_session_system_baseline(
+                &cfg, &system,
+            )
+        {
+            map.insert(key, snap.prompt_tokens);
+        }
+    };
+    push_baseline(
+        &mut tiktoken_new_session_baseline_by_agent_role,
+        String::new(),
+        None,
+    );
+    for id in &agent_role_ids {
+        push_baseline(
+            &mut tiktoken_new_session_baseline_by_agent_role,
+            id.clone(),
+            Some(id.as_str()),
+        );
+    }
     Json(StatusResponse {
         status: "ok",
         model: cfg.llm.model.clone(),
@@ -258,6 +292,7 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
             crate::agent::tiktoken_prompt_tokens::tiktoken_model_id_for_config_model(
                 cfg.llm.model.as_str(),
             ),
+        tiktoken_new_session_baseline_by_agent_role,
         context_summary_trigger_chars: cfg.context_pipeline.context_summary_trigger_chars,
         chat_queue_max_concurrent: state.chat.chat_queue.max_concurrent(),
         chat_queue_max_pending: state.chat.chat_queue.max_pending(),

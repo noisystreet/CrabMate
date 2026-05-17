@@ -59,6 +59,9 @@ pub struct StatusData {
     #[serde(default)]
     #[allow(dead_code)]
     pub tiktoken_prompt_counting_model: String,
+    /// 新会话仅 `system` 时的 prompt token 粗估（键为角色 id，空串为默认）。
+    #[serde(default)]
+    pub tiktoken_new_session_baseline_by_agent_role: std::collections::BTreeMap<String, u32>,
     #[serde(default)]
     pub executor_model: String,
     #[serde(default)]

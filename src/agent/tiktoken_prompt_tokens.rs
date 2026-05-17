@@ -130,6 +130,17 @@ pub fn count_prompt_tokens_openai_compat_vendor_slice(
     None
 }
 
+/// 新会话仅含一条 `system`（正文与 [`crate::context_bootstrap::conversation_turn_bootstrap::augmented_system_for_new_conversation_lenient`] 一致）时的 prompt token 粗估。
+pub fn prompt_token_count_new_session_system_baseline(
+    cfg: &AgentConfig,
+    system_for_turn: &str,
+) -> Option<TiktokenPromptTokensSnapshot> {
+    prompt_token_count_vendor_shaped_for_session(
+        cfg,
+        &[Message::system_only(system_for_turn.to_string())],
+    )
+}
+
 /// 从**会话内存态** `messages` 出发：先按当前 [`AgentConfig`] 做供应商出站切片，再 tiktoken 计数。
 pub fn prompt_token_count_vendor_shaped_for_session(
     cfg: &AgentConfig,
@@ -158,6 +169,16 @@ mod tests {
         assert!(snap.prompt_tokens > 0);
         assert!(snap.prompt_tokens < 64);
         assert_eq!(snap.tiktoken_model, "gpt-4");
+    }
+
+    #[test]
+    fn new_session_system_baseline_positive() {
+        let msgs = vec![Message::system_only(
+            "You are a helpful assistant.".to_string(),
+        )];
+        let snap = count_prompt_tokens_openai_compat_vendor_slice("gpt-4", &msgs)
+            .expect("gpt-4 tokenizer must work in unit tests");
+        assert!(snap.prompt_tokens > 0);
     }
 
     #[test]

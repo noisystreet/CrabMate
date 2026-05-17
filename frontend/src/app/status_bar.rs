@@ -8,7 +8,7 @@ use leptos_dom::helpers::event_target_value;
 use crate::api::load_client_llm_text_fields_from_storage;
 use crate::app_prefs::{
     status_bar_effective_api_base, status_bar_effective_llm_context_tokens,
-    status_bar_effective_model,
+    status_bar_effective_model, status_bar_new_session_baseline_prompt_tokens,
 };
 use crate::chat_session_state::{ChatSessionSignals, ChatStreamBusyMemos};
 
@@ -53,32 +53,64 @@ struct StatusBarChipsSignals {
     locale: RwSignal<Locale>,
 }
 
+/// 有活动会话即展示「上下文」芯片；用量在水合完成前显示 `— / 上限`。
 fn status_bar_context_chip_visible(chat: ChatSessionSignals) -> bool {
-    let Some(snap) = chat.conversation_prompt_tokens.get() else {
-        return false;
-    };
-    let aid = chat.active_id.get();
-    chat.sessions.with(|list| {
-        list.iter().find(|s| s.id == aid).is_some_and(|s| {
+    !chat.active_id.get().is_empty()
+}
+
+fn status_bar_context_used_for_active_session(chat: ChatSessionSignals) -> Option<u32> {
+    let snap = chat.conversation_prompt_tokens.get()?;
+    let aid = chat.active_id.get_untracked();
+    let cid_matches = chat.sessions.with_untracked(|list| {
+        list.iter().find(|s| s.id == aid).and_then(|s| {
             s.trimmed_server_conversation_id()
-                .is_some_and(|c| c == snap.conversation_id.as_str())
+                .map(|c| c == snap.conversation_id.as_str())
         })
+    });
+    if cid_matches != Some(true) {
+        return None;
+    }
+    snap.tiktoken.as_ref().map(|t| t.prompt_tokens)
+}
+
+fn active_session_has_server_conversation_id(chat: ChatSessionSignals) -> bool {
+    let aid = chat.active_id.get_untracked();
+    chat.sessions.with_untracked(|list| {
+        list.iter()
+            .find(|s| s.id == aid)
+            .and_then(|s| s.trimmed_server_conversation_id())
+            .is_some()
     })
+}
+
+fn status_bar_context_effective_used(
+    chat: ChatSessionSignals,
+    st: StatusTasksSignals,
+    selected_agent_role: Option<&str>,
+) -> Option<u32> {
+    if let Some(n) = status_bar_context_used_for_active_session(chat) {
+        return Some(n);
+    }
+    if active_session_has_server_conversation_id(chat) {
+        return None;
+    }
+    let role = selected_agent_role.map(str::trim).filter(|s| !s.is_empty());
+    status_bar_new_session_baseline_prompt_tokens(st.status_data.get().as_ref(), role)
 }
 
 fn status_bar_context_cap_and_used(
     chat: ChatSessionSignals,
     st: StatusTasksSignals,
     client_llm_storage_tick: RwSignal<u64>,
+    selected_agent_role: RwSignal<Option<String>>,
 ) -> (u32, Option<u32>) {
     let _tick = client_llm_storage_tick.get();
     let sd = st.status_data.get();
     let (_, _, _, stored_ctx, _) = load_client_llm_text_fields_from_storage();
     let cap = status_bar_effective_llm_context_tokens(sd.as_ref(), stored_ctx.as_str());
-    let used = chat
-        .conversation_prompt_tokens
-        .get()
-        .and_then(|s| s.tiktoken.as_ref().map(|t| t.prompt_tokens));
+    let role_sel = selected_agent_role.get();
+    let role = role_sel.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let used = status_bar_context_effective_used(chat, st, role);
     (cap, used)
 }
 
@@ -99,6 +131,7 @@ fn StatusBarContextChip(
     st: StatusTasksSignals,
     chat: ChatSessionSignals,
     client_llm_storage_tick: RwSignal<u64>,
+    selected_agent_role: RwSignal<Option<String>>,
     locale: RwSignal<Locale>,
 ) -> impl IntoView {
     view! {
@@ -116,6 +149,7 @@ fn StatusBarContextChip(
                             chat,
                             st,
                             client_llm_storage_tick,
+                            selected_agent_role,
                         );
                         status_bar_context_value_text(cap, used)
                     }}</span>
@@ -125,6 +159,7 @@ fn StatusBarContextChip(
                         chat,
                         st,
                         client_llm_storage_tick,
+                        selected_agent_role,
                     );
                     cap > 0 && used.is_some()
                 }>
@@ -135,6 +170,7 @@ fn StatusBarContextChip(
                                 chat,
                                 st,
                                 client_llm_storage_tick,
+                                selected_agent_role,
                             );
                             let u = used.unwrap_or(0);
                             let pct = ((u as f64 / cap as f64) * 100.0).min(100.0);
@@ -146,6 +182,7 @@ fn StatusBarContextChip(
                                 chat,
                                 st,
                                 client_llm_storage_tick,
+                                selected_agent_role,
                             );
                             let u = used.unwrap_or(0);
                             let pct = (u as f64 / cap as f64) * 100.0;
@@ -181,6 +218,10 @@ fn StatusBarChipsSkeleton(locale: RwSignal<Locale>) -> impl IntoView {
             <span class="status-chip status-chip-skeleton status-chip-role">
                 <span class="skeleton skeleton-chip-label"></span>
                 <span class="skeleton skeleton-chip-value skeleton-chip-role-select"></span>
+            </span>
+            <span class="status-chip status-chip-skeleton status-chip-context">
+                <span class="skeleton skeleton-chip-label"></span>
+                <span class="skeleton skeleton-context-bar"></span>
             </span>
         </div>
     }
@@ -278,6 +319,7 @@ fn StatusBarChipsLoaded(
                 st=st
                 chat=chat
                 client_llm_storage_tick=client_llm_storage_tick
+                selected_agent_role=selected_agent_role
                 locale=locale
             />
         </>

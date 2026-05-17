@@ -154,6 +154,35 @@ pub fn status_bar_effective_llm_context_tokens(
     server.map(|d| d.llm_context_tokens).unwrap_or(0)
 }
 
+/// 新会话（尚无服务端 `conversation_id`）时状态栏用的 system-only prompt token 粗估。
+#[must_use]
+pub fn status_bar_new_session_baseline_prompt_tokens(
+    server: Option<&StatusData>,
+    selected_agent_role: Option<&str>,
+) -> Option<u32> {
+    let sd = server?;
+    let map = &sd.tiktoken_new_session_baseline_by_agent_role;
+    if map.is_empty() {
+        return None;
+    }
+    if let Some(role) = selected_agent_role.map(str::trim).filter(|s| !s.is_empty()) {
+        if let Some(&n) = map.get(role) {
+            return Some(n);
+        }
+    }
+    if let Some(role) = sd
+        .default_agent_role_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        if let Some(&n) = map.get(role) {
+            return Some(n);
+        }
+    }
+    map.get("").copied()
+}
+
 pub fn clamp_side_width_for_viewport(w: f64) -> f64 {
     let win = web_sys::window()
         .and_then(|win| win.inner_width().ok())

@@ -13,6 +13,8 @@ use leptos::task::spawn_local;
 
 use crate::api::fetch_web_ui_config;
 use crate::chat_session_state::ChatSessionSignals;
+
+use super::session_hydrate::bump_session_hydrate_nonce;
 use crate::i18n::{self, Locale};
 use crate::storage::{
     ChatSession, clear_stale_assistant_loading_states, ensure_at_least_one, load_sessions,
@@ -27,6 +29,7 @@ pub fn wire_initial_sessions_from_storage(
     active_id: RwSignal<String>,
     draft: RwSignal<String>,
     locale: RwSignal<Locale>,
+    chat: ChatSessionSignals,
 ) {
     Effect::new(move |_| {
         if initialized.get() {
@@ -52,6 +55,7 @@ pub fn wire_initial_sessions_from_storage(
         active_id.set(pick);
         draft.set(d);
         initialized.set(true);
+        bump_session_hydrate_nonce(chat);
     });
 }
 

@@ -354,7 +354,13 @@ fn clear_conversation_prompt_tokens_if_no_server_conversation(chat: ChatSessionS
     }
 }
 
-/// 订阅 `chat.session_hydrate_nonce`：流结束后由 composer 递增，拉取服务端快照并写回当前会话。
+/// 递增水合触发计数（会话列表就绪、流式收尾等），驱动下方 Effect 拉取 `GET /conversation/messages`。
+pub(crate) fn bump_session_hydrate_nonce(chat: ChatSessionSignals) {
+    chat.session_hydrate_nonce
+        .update(|n| *n = n.wrapping_add(1));
+}
+
+/// 订阅 `session_hydrate_nonce` 与 `sessions`：拉取服务端快照并写回当前会话（含 tiktoken 用量）。
 ///
 /// 门闸与 [`crate::app::app_bootstrap_phase::AppBootstrapPhase::hydration_effects_enabled`] 一致（`initialized` + `web_ui_config_loaded`）。
 pub fn wire_session_hydration(
@@ -374,6 +380,8 @@ pub fn wire_session_hydration(
             {
                 return;
             }
+            let _ = chat.sessions.get();
+            let _ = chat.session_hydrate_nonce.get();
             let loc = locale_sig.get_untracked();
             let Some(snap) = try_hydration_wire_snapshot(chat, loc) else {
                 clear_conversation_prompt_tokens_if_no_server_conversation(chat);
