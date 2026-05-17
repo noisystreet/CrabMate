@@ -1,0 +1,27 @@
+{
+  "workflow": {
+    "fail_fast": true,
+    "max_parallelism": 4,
+    "nodes": [
+      {
+        "id": "diff",
+        "tool": "git_diff",
+        "tool_args": { "mode": "all" },
+        "deps": []
+      },
+      {
+        "id": "clippy",
+        "tool": "cargo_clippy",
+        "tool_args": { "all_targets": true },
+        "deps": ["diff"]
+      },
+      {
+        "id": "test",
+        "tool": "cargo_test",
+        "tool_args": {},
+        "deps": ["clippy"]
+      }
+    ]
+  },
+  "_compile_notes": "labels 进入 trace display_name 扩展，不出现在 nodes JSON；实现 compile_spec 时单测对照此文件。"
+}

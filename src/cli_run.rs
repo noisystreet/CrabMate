@@ -20,7 +20,7 @@ use crate::chat_job_queue;
 use crate::config;
 use crate::config::cli::{
     ExtraCliCommand, ParsedCliArgs, PluginInitCli, PluginListCli, PluginValidateCli,
-    SaveSessionCli, parse_args,
+    SaveSessionCli, WorkflowFileCli, parse_args,
 };
 use crate::http_client;
 use crate::observability;
@@ -86,6 +86,9 @@ struct EarlyCliDispatch<'a> {
     plugin_init: Option<PluginInitCli>,
     plugin_validate: Option<PluginValidateCli>,
     plugin_list: Option<PluginListCli>,
+    workflow_validate: Option<WorkflowFileCli>,
+    workflow_compile: Option<WorkflowFileCli>,
+    workflow_run: Option<WorkflowFileCli>,
 }
 
 fn try_early_save_session(
@@ -148,6 +151,42 @@ fn try_early_plugin_list(
     Ok(true)
 }
 
+fn try_early_workflow_validate(
+    d: &EarlyCliDispatch<'_>,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let Some(wv) = d.workflow_validate.clone() else {
+        return Ok(false);
+    };
+    crate::runtime::cli_workflow::run_workflow_validate_command(&wv)
+        .map_err(|e| Box::new(crate::CliExitError::new(2, e)) as Box<dyn std::error::Error>)?;
+    Ok(true)
+}
+
+fn try_early_workflow_compile(
+    d: &EarlyCliDispatch<'_>,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let Some(wc) = d.workflow_compile.clone() else {
+        return Ok(false);
+    };
+    crate::runtime::cli_workflow::run_workflow_compile_command(&wc)
+        .map_err(|e| Box::new(crate::CliExitError::new(2, e)) as Box<dyn std::error::Error>)?;
+    Ok(true)
+}
+
+async fn try_early_workflow_run(
+    d: &EarlyCliDispatch<'_>,
+    tokens: Option<u32>,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let Some(wr) = d.workflow_run.clone() else {
+        return Ok(false);
+    };
+    let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+    crate::runtime::cli_workflow::run_workflow_run_command(&cfg, d.workspace_cli, wr)
+        .await
+        .map_err(|e| Box::new(crate::CliExitError::new(2, e)) as Box<dyn std::error::Error>)?;
+    Ok(true)
+}
+
 /// `doctor` / `mcp list` / `mcp serve`：由 [`ExtraCliCommand`] 分流。
 async fn try_dispatch_early_extra_cli(
     d: &EarlyCliDispatch<'_>,
@@ -195,6 +234,12 @@ fn try_dispatch_early_workspace_commands(
     if try_early_plugin_list(d, tokens)? {
         return Ok(Some(true));
     }
+    if try_early_workflow_validate(d)? {
+        return Ok(Some(true));
+    }
+    if try_early_workflow_compile(d)? {
+        return Ok(Some(true));
+    }
     Ok(None)
 }
 
@@ -206,6 +251,9 @@ async fn run_early_commands(
         return Ok(true);
     }
     if let Some(true) = try_dispatch_early_workspace_commands(&d, llm_context_tokens_cli)? {
+        return Ok(true);
+    }
+    if try_early_workflow_run(&d, llm_context_tokens_cli).await? {
         return Ok(true);
     }
     Ok(false)
@@ -514,6 +562,9 @@ pub(super) async fn run_cli_from_parsed(
             plugin_init: args.plugin_init.clone(),
             plugin_validate: args.plugin_validate.clone(),
             plugin_list: args.plugin_list.clone(),
+            workflow_validate: args.workflow_validate.clone(),
+            workflow_compile: args.workflow_compile.clone(),
+            workflow_run: args.workflow_run.clone(),
         },
         args.llm_context_tokens_cli,
     )

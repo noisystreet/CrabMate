@@ -1,0 +1,22 @@
+# for_each：对 diff 结果中的 .rs 路径逐项 outline（有界）
+version: 2
+workflow:
+  fail_fast: true
+  max_parallelism: 2
+steps:
+  - id: diff
+    tool: git_diff
+    args:
+      mode: all
+
+  - id: outline_each
+    tool: rust_file_outline
+    after: [diff]
+    for_each:
+      from: diff
+      json_path: "/changed_rs_paths"
+      item_var: path
+      max_items: 10
+      parallel: false
+    args:
+      path: "{{path}}"

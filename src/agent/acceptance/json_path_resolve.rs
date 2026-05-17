@@ -6,7 +6,7 @@ use serde_json::Value;
 
 /// JSON 路径解析失败原因（供验收失败文案区分）。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum JsonPathResolveError {
+pub(crate) enum JsonPathResolveError {
     /// `tool_output` 不是合法 JSON。
     JsonParse(String),
     /// 路径表达式本身非法（未闭合 `[`、非数字下标、括号后多余文本等）。
@@ -16,7 +16,7 @@ pub(super) enum JsonPathResolveError {
 }
 
 impl JsonPathResolveError {
-    pub(super) fn user_reason(&self) -> String {
+    pub(crate) fn user_reason(&self) -> String {
         match self {
             Self::JsonParse(e) => format!("invalid_json: {}", e),
             Self::PathSyntax(msg) => format!("invalid_path_syntax: {}", msg),
@@ -26,7 +26,7 @@ impl JsonPathResolveError {
 }
 
 /// 提取路径指向的值；成功时克隆该子树（与历史行为一致）。
-pub(super) fn resolve_json_path_value(
+pub(crate) fn resolve_json_path_value(
     json_str: &str,
     path: &str,
 ) -> Result<Value, JsonPathResolveError> {

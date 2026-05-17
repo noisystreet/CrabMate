@@ -21,7 +21,23 @@ pub async fn dispatch_workflow_execute_tool(
     args: &str,
     request_chrome_merge: Option<Arc<RequestTurnTrace>>,
 ) -> (String, Option<serde_json::Value>) {
-    let prep = per_coord.prepare_workflow_execute(args);
+    let args = match workflow::resolve_workflow_execute_args(
+        args,
+        effective_working_dir,
+        workspace_is_set,
+    ) {
+        Ok(resolved) => resolved,
+        Err(e) => {
+            let report = serde_json::json!({
+                "type": "workflow_execute_error",
+                "status": "failed",
+                "workspace_changed": false,
+                "human_summary": format!("workflow_file 解析失败：{e}")
+            });
+            return (report.to_string(), None);
+        }
+    };
+    let prep = per_coord.prepare_workflow_execute(&args);
     let reflection_inject = prep.reflection_inject.clone();
 
     let result = if prep.execute {

@@ -80,6 +80,7 @@ fn resolve_placeholder(
             "status" => match r.status {
                 NodeRunStatus::Passed => "passed".to_string(),
                 NodeRunStatus::Failed => "failed".to_string(),
+                NodeRunStatus::Skipped => "skipped".to_string(),
             },
             "stdout_first_line" => r
                 .output

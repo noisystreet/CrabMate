@@ -1,0 +1,33 @@
+# kind: choice — 编译期展开为带 when 的 steps
+version: 2
+workflow:
+  fail_fast: false
+steps:
+  - id: lint
+    tool: cargo_clippy
+    args:
+      all_targets: true
+
+  - id: route
+    kind: choice
+    after: [lint]
+    branches:
+      - when:
+          from: lint
+          branch: success
+        steps:
+          - id: ship
+            tool: git_diff
+            args:
+              mode: staged
+      - when:
+          from: lint
+          branch: failure
+        steps:
+          - id: fix
+            tool: cargo_fmt_check
+            args: {}
+          - id: retest
+            tool: cargo_test
+            after: [fix]
+            args: {}

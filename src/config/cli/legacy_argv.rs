@@ -18,6 +18,7 @@ fn is_known_subcommand(s: &str) -> bool {
             | "export-session"
             | "tool-replay"
             | "plugin"
+            | "workflow"
     )
 }
 
@@ -216,6 +217,25 @@ mod legacy_argv_tests {
     fn explicit_doctor_subcommand_not_prefixed_with_repl() {
         let v = norm(&["crabmate", "doctor"]);
         assert_eq!(v, vec!["crabmate", "doctor"]);
+    }
+
+    #[test]
+    fn explicit_workflow_validate_not_prefixed_with_repl() {
+        let v = norm(&[
+            "crabmate",
+            "workflow",
+            "validate",
+            "fixtures/workflows/01_serial_after.yaml",
+        ]);
+        assert_eq!(
+            v,
+            vec![
+                "crabmate",
+                "workflow",
+                "validate",
+                "fixtures/workflows/01_serial_after.yaml",
+            ]
+        );
     }
 
     #[test]

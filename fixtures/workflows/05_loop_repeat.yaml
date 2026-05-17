@@ -1,0 +1,12 @@
+# repeat：最多 3 次 cargo_test，任一轮成功则停止展开后续节点
+version: 2
+workflow:
+  fail_fast: false
+steps:
+  - id: flaky_test
+    label: 有界重试测试
+    tool: cargo_test
+    repeat:
+      count: 3
+      stop_on: success
+    args: {}

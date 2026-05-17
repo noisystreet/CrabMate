@@ -45,8 +45,6 @@ use trace::{WorkflowTracePush, workflow_trace_push};
 pub(crate) use report::truncate_for_summary;
 #[cfg(test)]
 pub(crate) use retry::workflow_node_failure_retryable;
-#[cfg(test)]
-pub(crate) use schedule::node_ready;
 
 #[derive(Debug, Clone)]
 pub enum WorkflowApprovalMode {

@@ -287,13 +287,22 @@ mod tests {
     }
 
     #[test]
-    fn workflow_execute_schema_requires_workflow() {
+    fn workflow_execute_schema_exposes_workflow_or_file() {
         let v = tool_parameters_schema_value::<WorkflowExecuteArgs>();
-        let req = v
+        let props = v
+            .pointer("/properties")
+            .and_then(|p| p.as_object())
+            .expect("properties");
+        assert!(props.contains_key("workflow"));
+        assert!(props.contains_key("workflow_file"));
+        let has_required_workflow_key = v
             .pointer("/required")
             .and_then(|r| r.as_array())
-            .expect("required");
-        assert!(req.iter().any(|x| x == "workflow"));
+            .is_some_and(|req| req.iter().any(|x| x == "workflow" || x == "workflow_file"));
+        assert!(
+            !has_required_workflow_key,
+            "runtime resolves workflow vs workflow_file; schema keeps both optional: {v}"
+        );
         assert_eq!(
             v.pointer("/additionalProperties"),
             Some(&json!(false)),

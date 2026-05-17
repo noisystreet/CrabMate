@@ -3,7 +3,7 @@
 use super::definitions::{
     BenchmarkCliArgs, ChatCliArgs, Commands, ExtraCliCommand, GlobalOpts, McpSubCmd, ParsedCliArgs,
     PluginInitCli, PluginListCli, PluginSubCmd, PluginValidateCli, RootCli, SaveSessionCli,
-    ToolReplayCli, ToolReplaySubCmd,
+    ToolReplayCli, ToolReplaySubCmd, WorkflowFileCli, WorkflowSubCmd,
 };
 use super::legacy_argv::normalize_legacy_argv;
 use clap::Parser;
@@ -95,6 +95,9 @@ impl CliParseCtx {
             plugin_init: None,
             plugin_validate: None,
             plugin_list: None,
+            workflow_validate: None,
+            workflow_compile: None,
+            workflow_run: None,
             tui: false,
         }
     }
@@ -267,6 +270,26 @@ fn build_parsed_cli_args(
             b.plugin_validate = plugin_validate;
             b.plugin_list = plugin_list;
         }
+        Commands::Workflow(w) => match w.sub {
+            WorkflowSubCmd::Validate(v) => {
+                b.workflow_validate = Some(WorkflowFileCli {
+                    file: v.file,
+                    json: v.json,
+                });
+            }
+            WorkflowSubCmd::Compile(c) => {
+                b.workflow_compile = Some(WorkflowFileCli {
+                    file: c.file,
+                    json: c.json,
+                });
+            }
+            WorkflowSubCmd::Run(r) => {
+                b.workflow_run = Some(WorkflowFileCli {
+                    file: r.file,
+                    json: r.json,
+                });
+            }
+        },
     }
 
     Ok(b)

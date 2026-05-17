@@ -8,6 +8,7 @@ mod check;
 mod json_path_resolve;
 
 pub use check::verify_against_spec;
+pub(crate) use json_path_resolve::resolve_json_path_value;
 
 /// 与历史 `step_verifier::VerifyResult` 一致，便于分阶段路径零改动引用。
 #[derive(Debug, Clone, PartialEq, Eq)]

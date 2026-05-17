@@ -35,6 +35,10 @@ pub(super) fn build_workflow_node_reports(
                     failed += 1;
                     "failed"
                 }
+                NodeRunStatus::Skipped => {
+                    skipped += 1;
+                    "skipped"
+                }
             };
             node_reports.push(WorkflowExecutionNodeReport {
                 id: n.id.clone(),
@@ -151,6 +155,7 @@ pub(super) fn format_main_summary(
             match r.status {
                 NodeRunStatus::Passed => passed += 1,
                 NodeRunStatus::Failed => failed += 1,
+                NodeRunStatus::Skipped => skipped += 1,
             }
         } else if started.contains(&node.id) {
             // started 但未落在 completed 的情况理论上不会发生（我们会等待 inflight 全部完成）
@@ -190,6 +195,7 @@ pub(super) fn format_main_summary(
                 match r.status {
                     NodeRunStatus::Passed => "passed",
                     NodeRunStatus::Failed => "failed",
+                    NodeRunStatus::Skipped => "skipped",
                 }
             ));
             out.push_str(&format!(
@@ -206,10 +212,10 @@ pub(super) fn format_main_summary(
             out.push_str(&format!(
                 "  - {}: {}\n",
                 r.id,
-                if r.status == NodeRunStatus::Passed {
-                    "passed"
-                } else {
-                    "failed"
+                match r.status {
+                    NodeRunStatus::Passed => "passed",
+                    NodeRunStatus::Failed => "failed",
+                    NodeRunStatus::Skipped => "skipped",
                 }
             ));
             out.push_str(&format!(

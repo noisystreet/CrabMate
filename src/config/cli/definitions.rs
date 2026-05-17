@@ -199,6 +199,39 @@ pub struct McpServeCmd {
     pub no_tools: bool,
 }
 
+/// 工作流作者层：YAML / Markdown → `workflow.nodes` 编译与校验（**不要**求 API_KEY）
+#[derive(Parser, Debug, Clone)]
+pub struct WorkflowCmd {
+    #[command(subcommand)]
+    pub sub: WorkflowSubCmd,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum WorkflowSubCmd {
+    /// 编译作者层 YAML 为 `workflow_execute` JSON（stdout）
+    Compile(WorkflowFileCmd),
+    /// 编译并校验 DAG（拓扑层、工具参数 schema）
+    Validate(WorkflowFileCmd),
+    /// 编译并执行 DAG（与 Agent 调 `workflow_execute` + `workflow_file` 相同；**不要**求 API_KEY）
+    Run(WorkflowFileCmd),
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct WorkflowFileCmd {
+    /// `.yaml` / `.yml` 或含 `` ```crabmate-workflow `` 的 `.md`
+    pub file: String,
+    /// `validate` 时以 JSON 打印层与节点摘要
+    #[arg(long)]
+    pub json: bool,
+}
+
+/// `workflow validate|compile` 解析结果
+#[derive(Debug, Clone)]
+pub struct WorkflowFileCli {
+    pub file: String,
+    pub json: bool,
+}
+
 /// 动态工具模板与校验
 #[derive(Parser, Debug, Clone)]
 pub struct PluginCmd {
@@ -408,6 +441,8 @@ pub enum Commands {
     Mcp(McpCmd),
     /// 动态工具模板与校验（工作区 `plugins/*.json`）
     Plugin(PluginCmd),
+    /// 工作流作者层 YAML/Markdown 编译与校验（**不要**求 API_KEY）
+    Workflow(WorkflowCmd),
 }
 
 #[derive(Parser, Debug)]
@@ -471,6 +506,12 @@ pub struct ParsedCliArgs {
     pub plugin_validate: Option<PluginValidateCli>,
     /// `Some` 时执行动态工具列表后退出（不要求 API_KEY）
     pub plugin_list: Option<PluginListCli>,
+    /// `Some` 时执行 `workflow validate` 后退出（不要求 API_KEY）
+    pub workflow_validate: Option<WorkflowFileCli>,
+    /// `Some` 时执行 `workflow compile` 后退出（不要求 API_KEY）
+    pub workflow_compile: Option<WorkflowFileCli>,
+    /// `Some` 时执行 `workflow run` 后退出（不要求 API_KEY）
+    pub workflow_run: Option<WorkflowFileCli>,
     /// 全局 `--llm-context-tokens`：非零时覆盖已加载配置中的 `llm_context_tokens`
     pub llm_context_tokens_cli: Option<u32>,
     /// 是否执行 **`crabmate tui`** 全屏界面（与默认 **`repl`** 互斥）

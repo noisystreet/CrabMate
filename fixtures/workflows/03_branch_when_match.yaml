@@ -1,0 +1,36 @@
+# when.match：多路分支（前驱须输出 { "branch": "..." }）
+version: 2
+workflow:
+  fail_fast: false
+steps:
+  - id: classify
+    label: 路由（示例：diagnostic_summary 占位）
+    tool: diagnostic_summary
+    args: {}
+
+  - id: hotfix_flow
+    tool: git_diff
+    after: [classify]
+    when:
+      from: classify
+      match:
+        field: branch
+        equals: hotfix
+
+  - id: feature_flow
+    tool: cargo_test
+    after: [classify]
+    when:
+      from: classify
+      match:
+        field: branch
+        equals: feature
+
+  - id: noop_skip
+    tool: diagnostic_summary
+    after: [classify]
+    when:
+      from: classify
+      match:
+        field: branch
+        in: [skip, none]

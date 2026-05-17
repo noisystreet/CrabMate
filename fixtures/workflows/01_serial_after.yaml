@@ -1,0 +1,22 @@
+# workflow_spec v2 — 串行 after（编译为 deps）
+version: 2
+workflow:
+  fail_fast: true
+  max_parallelism: 4
+steps:
+  - id: diff
+    label: 查看改动
+    tool: git_diff
+    args:
+      mode: all
+  - id: clippy
+    label: Clippy
+    tool: cargo_clippy
+    after: [diff]
+    args:
+      all_targets: true
+  - id: test
+    label: 测试
+    tool: cargo_test
+    after: [clippy]
+    args: {}

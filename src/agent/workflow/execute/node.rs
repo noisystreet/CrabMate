@@ -163,6 +163,7 @@ pub(crate) async fn run_node(
     let st = match res.status {
         NodeRunStatus::Passed => "passed",
         NodeRunStatus::Failed => "failed",
+        NodeRunStatus::Skipped => "skipped",
     };
     workflow_trace_push(WorkflowTracePush {
         trace: &tool_exec_ctx.trace_events,
@@ -471,6 +472,7 @@ async fn run_workflow_node_tool_with_retries(
         let st = match res.status {
             NodeRunStatus::Passed => "passed",
             NodeRunStatus::Failed => "failed",
+            NodeRunStatus::Skipped => "skipped",
         };
         workflow_trace_push(WorkflowTracePush {
             trace: &tool_exec_ctx.trace_events,

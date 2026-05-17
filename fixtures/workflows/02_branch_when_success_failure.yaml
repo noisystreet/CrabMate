@@ -1,0 +1,26 @@
+# when.branch：clippy 失败才 test，成功才 diagnostic_summary
+version: 2
+workflow:
+  fail_fast: false
+steps:
+  - id: clippy
+    label: Clippy
+    tool: cargo_clippy
+    args:
+      all_targets: true
+
+  - id: test_on_fail
+    label: 仅 clippy 失败时跑测试
+    tool: cargo_test
+    after: [clippy]
+    when:
+      from: clippy
+      branch: failure
+
+  - id: notify_ok
+    label: 仅 clippy 通过时
+    tool: diagnostic_summary
+    after: [clippy]
+    when:
+      from: clippy
+      branch: success

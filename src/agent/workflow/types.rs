@@ -8,6 +8,8 @@ use std::sync::atomic::AtomicU64;
 pub(crate) enum NodeRunStatus {
     Passed,
     Failed,
+    /// choice / `run_if` 未选中，未调用工具。
+    Skipped,
 }
 
 #[derive(Debug, Clone)]

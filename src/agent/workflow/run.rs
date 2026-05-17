@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::Ordering;
 
+use super::author_load::resolve_workflow_execute_args;
 use super::dag::{topo_layers, validate_dag};
 use super::execute::{
     WorkflowApprovalMode, WorkflowToolExecCtx, execute_workflow_dag, truncate_for_summary,
@@ -282,9 +283,22 @@ pub async fn run_workflow_execute_tool(
         workflow_run_id,
         workspace_is_set
     );
+    let resolved_args =
+        match resolve_workflow_execute_args(args_json, effective_working_dir, workspace_is_set) {
+            Ok(s) => s,
+            Err(e) => {
+                let report = serde_json::json!({
+                    "type": "workflow_execute_error",
+                    "status": "failed",
+                    "workspace_changed": false,
+                    "human_summary": format!("workflow_file 解析失败：{e}")
+                });
+                return (report.to_string(), false);
+            }
+        };
     // 支持反思阶段的“done=true”：运行时应跳过 DAG 执行，
     // 只返回一个明确的结果，避免模型误触发重复执行。
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v: serde_json::Value = match serde_json::from_str(&resolved_args) {
         Ok(v) => v,
         Err(_) => {
             warn!(
@@ -337,14 +351,14 @@ pub async fn run_workflow_execute_tool(
             "workflow_validate_only start workflow_run_id={}",
             workflow_run_id
         );
-        return match workflow_validate_only_finish(args_json, workflow_run_id) {
+        return match workflow_validate_only_finish(&resolved_args, workflow_run_id) {
             Ok(json) => (json, false),
             Err(err_json) => (err_json, false),
         };
     }
 
     workflow_execute_dag_body(WorkflowExecuteDagParams {
-        args_json,
+        args_json: &resolved_args,
         workflow_run_id,
         cfg,
         effective_working_dir,

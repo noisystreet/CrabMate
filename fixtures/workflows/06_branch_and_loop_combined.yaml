@@ -1,0 +1,47 @@
+# 组合：for_each 扫描 → clippy → 失败分支 test → repeat
+version: 2
+workflow:
+  fail_fast: false
+  max_parallelism: 4
+steps:
+  - id: diff
+    tool: git_diff
+    args:
+      mode: all
+
+  - id: scan_each
+    tool: search_in_files
+    after: [diff]
+    for_each:
+      from: diff
+      json_path: "/changed_files"
+      item_var: item
+      max_items: 20
+    args:
+      path: "{{item}}"
+      pattern: "TODO|FIXME"
+      max_matches: 50
+
+  - id: clippy
+    tool: cargo_clippy
+    after: [scan_each]
+    args:
+      all_targets: true
+
+  - id: test_if_clippy_failed
+    tool: cargo_test
+    after: [clippy]
+    when:
+      from: clippy
+      branch: failure
+
+  - id: retry_test
+    tool: cargo_test
+    after: [test_if_clippy_failed]
+    when:
+      from: test_if_clippy_failed
+      branch: failure
+    repeat:
+      count: 2
+      stop_on: success
+    args: {}

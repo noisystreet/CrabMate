@@ -1,0 +1,14 @@
+# 今日 parse_workflow_spec 可直接消费（无 when / for_each）
+workflow:
+  fail_fast: false
+  max_parallelism: 4
+  nodes:
+    - id: check
+      tool: cargo_clippy
+      tool_args:
+        all_targets: true
+      deps: []
+    - id: test
+      tool: cargo_test
+      tool_args: {}
+      deps: [check]
