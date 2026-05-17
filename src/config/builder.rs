@@ -493,6 +493,9 @@ impl ConfigBuilder {
         ltm.long_term_memory_auto_summarize_experience = agent
             .long_term_memory_auto_summarize_experience
             .or(ltm.long_term_memory_auto_summarize_experience);
+        ltm.long_term_memory_prioritize_experience_recall = agent
+            .long_term_memory_prioritize_experience_recall
+            .or(ltm.long_term_memory_prioritize_experience_recall);
         ltm.long_term_memory_default_ttl_secs = agent
             .long_term_memory_default_ttl_secs
             .or(ltm.long_term_memory_default_ttl_secs);

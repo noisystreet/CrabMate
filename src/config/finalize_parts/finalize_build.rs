@@ -337,6 +337,8 @@ fn finalize_section_long_term_memory(mid: &FinalizeAfterRoles) -> types::LongTer
         long_term_memory_auto_index_turns: ltm.long_term_memory_auto_index_turns,
         long_term_memory_auto_summarize_experience: ltm
             .long_term_memory_auto_summarize_experience,
+        long_term_memory_prioritize_experience_recall: ltm
+            .long_term_memory_prioritize_experience_recall,
         long_term_memory_default_ttl_secs: ltm.long_term_memory_default_ttl_secs,
     }
 }

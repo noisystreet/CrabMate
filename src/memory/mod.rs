@@ -5,4 +5,5 @@ pub mod auto_summarize_experience;
 pub mod codebase_semantic_index;
 pub mod codebase_semantic_invalidation;
 pub mod long_term_memory;
+pub mod long_term_memory_recall;
 pub mod long_term_memory_store;

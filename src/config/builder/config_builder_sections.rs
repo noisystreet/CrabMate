@@ -257,6 +257,7 @@ pub(crate) struct ConfigBuilderLongTermMemory {
     pub(crate) long_term_memory_async_index: Option<bool>,
     pub(crate) long_term_memory_auto_index_turns: Option<bool>,
     pub(crate) long_term_memory_auto_summarize_experience: Option<bool>,
+    pub(crate) long_term_memory_prioritize_experience_recall: Option<bool>,
     pub(crate) long_term_memory_default_ttl_secs: Option<u64>,
 }
 

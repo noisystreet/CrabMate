@@ -306,26 +306,25 @@ impl LongTermMemoryRuntime {
         &self,
         cfg: &AgentConfig,
         rows: Vec<MemoryRow>,
-        _q: &str,
-    ) -> Option<Vec<(f32, i64, String)>> {
-        let mut picked: Vec<(f32, i64, String)> = Vec::new();
-        match cfg.long_term_memory.long_term_memory_vector_backend {
+        query: &str,
+    ) -> Option<Vec<crate::memory::long_term_memory_recall::RecallPick>> {
+        let top_k = cfg.long_term_memory.long_term_memory_top_k;
+        let prioritize = cfg
+            .long_term_memory
+            .long_term_memory_prioritize_experience_recall;
+
+        let vector_picked = match cfg.long_term_memory.long_term_memory_vector_backend {
             LongTermMemoryVectorBackend::Fastembed => {
                 #[cfg(feature = "fastembed")]
                 {
                     if let Err(e) = Self::ensure_embedder(&self.embedder) {
-                        warn!(target: "crabmate", "长期记忆嵌入不可用，跳过向量检索: {}", e);
-                        for row in rows
-                            .iter()
-                            .take(cfg.long_term_memory.long_term_memory_top_k)
-                        {
-                            picked.push((0.0, row.id, row.chunk_text.clone()));
-                        }
+                        warn!(target: "crabmate", "长期记忆嵌入不可用，回退关键词检索: {}", e);
+                        None
                     } else {
                         let q_emb = {
                             let mut g = self.embedder.lock().ok()?;
                             let model = (*g).as_mut()?;
-                            let docs = vec![format!("query: {}", _q)];
+                            let docs = vec![format!("query: {}", query)];
                             match model.embed(docs, None) {
                                 Ok(v) => v.into_iter().next(),
                                 Err(e) => {
@@ -335,34 +334,32 @@ impl LongTermMemoryRuntime {
                             }
                         };
                         let qv = q_emb?;
-                        for row in rows {
-                            let score = if let Some(ref b) = row.embedding {
+                        let mut scored: Vec<(f32, MemoryRow)> = Vec::with_capacity(rows.len());
+                        for row in &rows {
+                            let base = if let Some(ref b) = row.embedding {
                                 bytes_to_f32_slice(b)
                                     .map(|ev| cosine_sim(&qv, &ev))
                                     .unwrap_or(0.0)
                             } else {
                                 0.0
                             };
-                            picked.push((score, row.id, row.chunk_text));
+                            let score = crate::memory::long_term_memory_recall::score_row(
+                                base, row, query, prioritize,
+                            );
+                            scored.push((score, row.clone()));
                         }
-                        picked.sort_by(|a, b| {
-                            b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
-                        });
-                        picked.truncate(cfg.long_term_memory.long_term_memory_top_k);
+                        Some(crate::memory::long_term_memory_recall::pick_recall_chunks(
+                            top_k, query, scored, prioritize,
+                        ))
                     }
                 }
                 #[cfg(not(feature = "fastembed"))]
                 {
                     warn!(
                         target: "crabmate",
-                        "长期记忆向量后端为 fastembed 但本构建未启用 `fastembed` feature，按时间倒序取用"
+                        "长期记忆向量后端为 fastembed 但本构建未启用 `fastembed` feature，回退关键词检索"
                     );
-                    for row in rows
-                        .iter()
-                        .take(cfg.long_term_memory.long_term_memory_top_k)
-                    {
-                        picked.push((0.0, row.id, row.chunk_text.clone()));
-                    }
+                    None
                 }
             }
             LongTermMemoryVectorBackend::Disabled
@@ -372,29 +369,37 @@ impl LongTermMemoryRuntime {
                     cfg.long_term_memory.long_term_memory_vector_backend,
                     LongTermMemoryVectorBackend::Qdrant | LongTermMemoryVectorBackend::Pgvector
                 ) {
-                    debug!(target: "crabmate", "长期记忆向量后端 {:?} 未接外部服务，按时间倒序取用", cfg.long_term_memory.long_term_memory_vector_backend);
+                    debug!(target: "crabmate", "长期记忆向量后端 {:?} 未接外部服务，回退关键词检索", cfg.long_term_memory.long_term_memory_vector_backend);
                 }
-                for row in rows
-                    .iter()
-                    .take(cfg.long_term_memory.long_term_memory_top_k)
-                {
-                    picked.push((0.0, row.id, row.chunk_text.clone()));
-                }
+                None
             }
+        };
+
+        let picked = vector_picked.unwrap_or_else(|| {
+            crate::memory::long_term_memory_recall::keyword_rank_rows(
+                top_k, rows, query, prioritize,
+            )
+        });
+        if picked.is_empty() {
+            None
+        } else {
+            Some(picked)
         }
-        Some(picked)
     }
 
-    fn format_ltm_injection_body(picked: &[(f32, i64, String)], budget: usize) -> Option<String> {
+    fn format_ltm_injection_body(
+        picked: &[crate::memory::long_term_memory_recall::RecallPick],
+        budget: usize,
+    ) -> Option<String> {
         let mut body = String::from(
-            "以下为与当前问题可能相关的历史摘要（来自本会话长期记忆；条目前缀 `[记忆 #id]` 对应 SQLite `crabmate_long_term_memory.id`，可用 `long_term_memory_list` 核对；若无关请忽略）：\n\n",
+            "以下为与当前问题可能相关的长期记忆（【经验 #id】为可复用提炼；[记忆 #id] 为回合摘要；可用 long_term_memory_list 核对；若无关请忽略）：\n\n",
         );
         let mut used = 0usize;
-        for (_score, id, t) in picked.iter() {
+        for (_score, id, t, role) in picked.iter() {
             if used >= budget {
                 break;
             }
-            let entry = format!("[记忆 #{}] {}\n\n", id, t);
+            let entry = crate::memory::long_term_memory_recall::format_recall_entry(*id, role, t);
             if used + entry.len() > budget {
                 let remain = budget.saturating_sub(used);
                 if remain > 8 {

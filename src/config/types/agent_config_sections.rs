@@ -275,6 +275,8 @@ pub struct LongTermMemoryConfig {
     pub long_term_memory_auto_index_turns: bool,
     /// 回合结束后若检测到构建/验证类工具「先失败后成功」，自动写入提炼经验。
     pub long_term_memory_auto_summarize_experience: bool,
+    /// 注入前召回时优先 `summarize_experience` / 自动沉淀等经验条，并做标签与关键词加分。
+    pub long_term_memory_prioritize_experience_recall: bool,
     pub long_term_memory_default_ttl_secs: u64,
 }
 

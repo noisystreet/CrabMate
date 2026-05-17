@@ -260,6 +260,7 @@ pub(super) struct AgentSection {
     pub(super) long_term_memory_async_index: Option<bool>,
     pub(super) long_term_memory_auto_index_turns: Option<bool>,
     pub(super) long_term_memory_auto_summarize_experience: Option<bool>,
+    pub(super) long_term_memory_prioritize_experience_recall: Option<bool>,
     pub(super) long_term_memory_default_ttl_secs: Option<u64>,
     pub(super) mcp_enabled: Option<bool>,
     pub(super) mcp_command: Option<String>,
