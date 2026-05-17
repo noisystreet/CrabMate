@@ -321,6 +321,37 @@ fn test_run_if_branch_success_failure() {
 }
 
 #[test]
+fn test_compile_repeat_stop_on_success() {
+    let yaml = r#"
+version: 2
+steps:
+  - id: flaky
+    tool: cargo_test
+    repeat:
+      count: 2
+      stop_on: success
+    args: {}
+"#;
+    let compiled = super::compile_spec::compile_workflow_author_yaml(yaml).unwrap();
+    let nodes = compiled["workflow"]["nodes"].as_array().unwrap();
+    assert_eq!(nodes.len(), 2);
+    assert_eq!(nodes[0]["id"], "flaky_1");
+    assert_eq!(nodes[1]["id"], "flaky_2");
+    assert_eq!(nodes[1]["run_if"]["branch"], "failure");
+    assert_eq!(nodes[1]["run_if"]["from"], "flaky_1");
+}
+
+#[test]
+fn test_author_validate_rejects_steps_without_version() {
+    let root = serde_json::json!({
+        "workflow": { "fail_fast": true },
+        "steps": [{"id": "a", "tool": "calc", "args": {}}]
+    });
+    let err = super::author_validate::validate_workflow_author_document(&root).unwrap_err();
+    assert!(err.contains("version"));
+}
+
+#[test]
 fn test_compile_static_for_each() {
     let yaml = r#"
 version: 2
@@ -347,6 +378,7 @@ steps:
 #[test]
 fn test_parse_workflow_spec_accepts_inline_steps_json() {
     let json = r#"{
+        "version": 2,
         "workflow": { "fail_fast": true },
         "steps": [
             {"id":"a","tool":"git_diff","args":{"mode":"all"}},
@@ -361,9 +393,9 @@ fn test_parse_workflow_spec_accepts_inline_steps_json() {
 #[test]
 fn test_resolve_workflow_execute_args_from_file() {
     let dir = tempfile::tempdir().unwrap();
-    let wf_dir = dir.path().join(".crabmate/workflows");
+    let wf_dir = dir.path().join("examples/workflows");
     std::fs::create_dir_all(&wf_dir).unwrap();
-    let wf_path = wf_dir.join("ci.yaml");
+    let wf_path = wf_dir.join("minimal.yaml");
     std::fs::write(
         &wf_path,
         r#"version: 2
@@ -375,7 +407,7 @@ steps:
 "#,
     )
     .unwrap();
-    let args = r#"{"workflow_file":".crabmate/workflows/ci.yaml"}"#;
+    let args = r#"{"workflow_file":"examples/workflows/minimal.yaml"}"#;
     let resolved =
         super::author_load::resolve_workflow_execute_args(args, dir.path(), true).unwrap();
     let v: serde_json::Value = serde_json::from_str(&resolved).unwrap();

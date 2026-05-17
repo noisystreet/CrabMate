@@ -1,0 +1,33 @@
+{
+  "workflow": {
+    "fail_fast": true,
+    "for_each_pending": [
+      {
+        "base_id": "outline_each",
+        "extra_deps": [
+          "diff"
+        ],
+        "from": "diff",
+        "item_var": "path",
+        "json_path": "/changed_rs_paths",
+        "max_items": 10,
+        "parallel": false,
+        "tool": "rust_file_outline",
+        "tool_args": {
+          "path": "{{path}}"
+        }
+      }
+    ],
+    "max_parallelism": 2,
+    "nodes": [
+      {
+        "deps": [],
+        "id": "diff",
+        "tool": "git_diff",
+        "tool_args": {
+          "mode": "all"
+        }
+      }
+    ]
+  }
+}

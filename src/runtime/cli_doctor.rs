@@ -124,11 +124,84 @@ fn print_doctor_workspace_block(ws: &Path) {
     path_status_line("frontend/Trunk.toml", &ws.join("frontend/Trunk.toml"));
     path_status_line("frontend/dist", &ws.join("frontend/dist"));
     path_status_line("target", &ws.join("target"));
+    path_status_line(".crabmate/workflows", &ws.join(".crabmate/workflows"));
     if let Ok(root) = canonical_workspace_root(ws)
         && root != *ws
     {
         println!("  （解析到的仓库根）: {}", root.display());
     }
+}
+
+fn doctor_validate_workflow_file(path: &Path) -> Result<(), String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("读取失败: {e}"))?;
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let yaml = if ext == "md" || ext == "markdown" {
+        crate::agent::workflow::extract_first_crabmate_workflow_block(&text)?
+    } else {
+        text
+    };
+    let compiled = crate::agent::workflow::compile_workflow_author_yaml(&yaml)?;
+    let args_json =
+        serde_json::to_string(&compiled).map_err(|e| format!("JSON 序列化失败: {e}"))?;
+    let spec = crate::agent::workflow::parse_workflow_spec_from_json(&args_json)?;
+    crate::agent::workflow::workflow_topo_layers(&spec.nodes)?;
+    Ok(())
+}
+
+fn print_doctor_workflows_block(ws: &Path) {
+    println!("【工作流作者层（.crabmate/workflows）】");
+    let wf_dir = ws.join(".crabmate/workflows");
+    if !wf_dir.is_dir() {
+        println!("  目录不存在（可选；可添加 .crabmate/workflows/*.yaml，见 docs/工具说明.md）");
+        return;
+    }
+
+    let mut files: Vec<PathBuf> = match std::fs::read_dir(&wf_dir) {
+        Ok(rd) => rd
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| {
+                p.is_file()
+                    && p.extension()
+                        .and_then(|x| x.to_str())
+                        .is_some_and(|ext| matches!(ext, "yaml" | "yml" | "md"))
+            })
+            .collect(),
+        Err(e) => {
+            println!("  无法读取目录: {e}");
+            return;
+        }
+    };
+    files.sort();
+
+    if files.is_empty() {
+        println!("  （目录为空）");
+        return;
+    }
+
+    let mut ok = 0usize;
+    let mut fail = 0usize;
+    for path in &files {
+        let rel = path
+            .strip_prefix(ws)
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| path.display().to_string());
+        match doctor_validate_workflow_file(path) {
+            Ok(()) => {
+                ok += 1;
+                println!("  OK  {rel}");
+            }
+            Err(e) => {
+                fail += 1;
+                println!("  FAIL {rel}: {e}");
+            }
+        }
+    }
+    println!("  合计: {ok} 通过, {fail} 失败（compile + DAG 校验）");
 }
 
 fn print_doctor_rust_toolchain_block() {
@@ -213,6 +286,9 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
 
     let ws = resolve_workspace_dir(cfg, workspace_cli);
     print_doctor_workspace_block(&ws);
+    println!();
+
+    print_doctor_workflows_block(&ws);
     println!();
 
     print_doctor_rust_toolchain_block();

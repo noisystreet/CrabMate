@@ -1,0 +1,21 @@
+# for_each 编译期展开：对静态文件列表逐项 read_file（演示用）
+version: 2
+workflow:
+  fail_fast: true
+steps:
+  - id: prep
+    tool: diagnostic_summary
+    args: {}
+
+  - id: read_each
+    tool: read_file
+    after: [prep]
+    for_each:
+      from: prep
+      static_items:
+        - README.md
+        - Cargo.toml
+      item_var: path
+      max_items: 5
+    args:
+      path: "{{path}}"

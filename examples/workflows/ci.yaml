@@ -1,0 +1,6 @@
+# 内置 CI 模板 rust_ci_light
+# 用法：cargo run -- workflow validate examples/workflows/ci.yaml
+version: 2
+workflow:
+  fail_fast: true
+  workflow_template: rust_ci_light

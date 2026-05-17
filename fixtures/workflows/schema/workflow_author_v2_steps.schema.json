@@ -1,0 +1,124 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://crabmate.dev/schemas/workflow_author_v2_steps.json",
+  "title": "CrabMate workflow_author v2 — steps 模式",
+  "description": "作者层 steps + after/when/for_each/repeat；编译为 workflow.nodes。须 version: 2。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 2,
+      "description": "workflow_author 规范版本，当前仅支持 2"
+    },
+    "workflow": { "$ref": "#/$defs/workflow_meta" },
+    "steps": { "$ref": "#/$defs/steps_array" }
+  },
+  "oneOf": [
+    {
+      "required": ["workflow", "steps"],
+      "properties": {
+        "workflow": { "not": { "required": ["nodes", "steps"] } }
+      }
+    },
+    {
+      "required": ["workflow"],
+      "not": { "required": ["steps"] },
+      "properties": {
+        "workflow": {
+          "type": "object",
+          "required": ["steps"],
+          "not": { "required": ["nodes"] },
+          "properties": {
+            "steps": { "$ref": "#/$defs/steps_array" }
+          }
+        }
+      }
+    },
+    {
+      "required": ["steps"],
+      "not": { "required": ["workflow"] }
+    }
+  ],
+  "$defs": {
+    "workflow_meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "not": { "required": ["nodes"] },
+      "properties": {
+        "fail_fast": { "type": "boolean" },
+        "max_parallelism": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "compensate_on_failure": { "type": "boolean" },
+        "output_inject_max_chars": { "type": "integer", "minimum": 1 },
+        "summary_preview_max_chars": { "type": "integer", "minimum": 1 },
+        "compensation_preview_max_chars": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "steps_array": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/step" }
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "label": { "type": "string" },
+        "tool": { "type": "string", "minLength": 1 },
+        "tool_name": { "type": "string", "minLength": 1 },
+        "args": { "type": "object" },
+        "tool_args": { "type": "object" },
+        "after": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "when": { "type": "object" },
+        "for_each": { "type": "object" },
+        "repeat": { "$ref": "#/$defs/repeat" },
+        "kind": { "type": "string", "enum": ["choice"] },
+        "branches": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "object" }
+        },
+        "requires_approval": { "type": "boolean" },
+        "timeout_secs": { "type": "integer", "minimum": 1 },
+        "compensate_with": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "max_retries": { "type": "integer", "minimum": 0, "maximum": 5 },
+        "node_tool_role": { "type": "string" },
+        "executor_kind": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "kind": { "const": "choice" } },
+            "required": ["kind"]
+          },
+          "then": { "required": ["branches"] },
+          "else": {
+            "required": ["id"],
+            "anyOf": [
+              { "required": ["tool"] },
+              { "required": ["tool_name"] }
+            ]
+          }
+        }
+      ]
+    },
+    "repeat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count"],
+      "properties": {
+        "count": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "stop_on": { "type": "string", "enum": ["success", "never"] }
+      }
+    }
+  }
+}

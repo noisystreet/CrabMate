@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://crabmate.dev/schemas/workflow_author_v2_nodes.json",
+  "title": "CrabMate workflow_author v2 — nodes 模式",
+  "description": "直接 workflow.nodes 或 workflow.workflow_template；须 version: 2；不含 steps。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "workflow"],
+  "not": { "required": ["steps"] },
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 2,
+      "description": "workflow_author 规范版本，当前仅支持 2"
+    },
+    "workflow": { "$ref": "#/$defs/workflow_body" }
+  },
+  "$defs": {
+    "workflow_body": {
+      "type": "object",
+      "additionalProperties": false,
+      "not": { "required": ["steps"] },
+      "oneOf": [
+        { "required": ["nodes"] },
+        { "required": ["workflow_template"] }
+      ],
+      "properties": {
+        "fail_fast": { "type": "boolean" },
+        "max_parallelism": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "compensate_on_failure": { "type": "boolean" },
+        "output_inject_max_chars": { "type": "integer", "minimum": 1 },
+        "summary_preview_max_chars": { "type": "integer", "minimum": 1 },
+        "compensation_preview_max_chars": { "type": "integer", "minimum": 1 },
+        "workflow_template": {
+          "type": "string",
+          "minLength": 1,
+          "enum": ["rust_ci_light", "code_review", "refactor_precheck"]
+        },
+        "refactor_symbol": { "type": "string", "minLength": 1 },
+        "symbol": { "type": "string", "minLength": 1 },
+        "review_search_pattern": { "type": "string", "minLength": 1 },
+        "nodes": {
+          "oneOf": [
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/node" }
+            },
+            {
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": { "$ref": "#/$defs/node" }
+            }
+          ]
+        },
+        "for_each_pending": {
+          "type": "array",
+          "items": { "type": "object" }
+        }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "tool": { "type": "string", "minLength": 1 },
+        "tool_name": { "type": "string", "minLength": 1 },
+        "tool_args": { "type": "object" },
+        "args": { "type": "object" },
+        "deps": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "requires_approval": { "type": "boolean" },
+        "timeout_secs": { "type": "integer", "minimum": 1 },
+        "compensate_with": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "max_retries": { "type": "integer", "minimum": 0, "maximum": 5 },
+        "node_tool_role": { "type": "string" },
+        "executor_kind": { "type": "string" },
+        "run_if": { "type": "object" }
+      },
+      "anyOf": [{ "required": ["tool"] }, { "required": ["tool_name"] }]
+    }
+  }
+}

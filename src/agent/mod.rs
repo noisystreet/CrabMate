@@ -35,6 +35,8 @@ pub mod tiktoken_prompt_tokens;
 /// 单轮墙钟预算判定与文案（`agent_turn` / `staged` / `hierarchy` 共用）。
 pub mod turn_budget;
 pub mod workflow;
+#[cfg(test)]
+mod workflow_compile_golden;
 pub mod workflow_reflection_controller;
 #[cfg(test)]
 mod workflow_reflection_golden;

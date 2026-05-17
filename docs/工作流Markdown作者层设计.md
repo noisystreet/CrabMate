@@ -70,7 +70,7 @@ flowchart TB
 
 ### 3.1 形态
 
-工作区或仓库内文件，例如 `.crabmate/workflows/ci.md`：
+工作区或仓库内文件，例如 `examples/workflows/ci_from_markdown.md`（或工作区 `.crabmate/workflows/ci.md`）：
 
 ```markdown
 # Rust 轻量 CI

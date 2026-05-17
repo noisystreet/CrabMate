@@ -1,4 +1,5 @@
-# 今日 parse_workflow_spec 可直接消费（无 when / for_each）
+# nodes 模式：parse_workflow_spec 可直接消费（无 when / for_each）
+version: 2
 workflow:
   fail_fast: false
   max_parallelism: 4

@@ -1,0 +1,81 @@
+{
+  "workflow": {
+    "fail_fast": false,
+    "for_each_pending": [
+      {
+        "base_id": "scan_each",
+        "extra_deps": [
+          "diff"
+        ],
+        "from": "diff",
+        "item_var": "item",
+        "json_path": "/changed_files",
+        "max_items": 20,
+        "parallel": false,
+        "tool": "search_in_files",
+        "tool_args": {
+          "max_matches": 50,
+          "path": "{{item}}",
+          "pattern": "TODO|FIXME"
+        }
+      }
+    ],
+    "max_parallelism": 4,
+    "nodes": [
+      {
+        "deps": [],
+        "id": "diff",
+        "tool": "git_diff",
+        "tool_args": {
+          "mode": "all"
+        }
+      },
+      {
+        "deps": [
+          "scan_each"
+        ],
+        "id": "clippy",
+        "tool": "cargo_clippy",
+        "tool_args": {
+          "all_targets": true
+        }
+      },
+      {
+        "deps": [
+          "clippy"
+        ],
+        "id": "test_if_clippy_failed",
+        "run_if": {
+          "branch": "failure",
+          "from": "clippy"
+        },
+        "tool": "cargo_test",
+        "tool_args": {}
+      },
+      {
+        "deps": [
+          "test_if_clippy_failed"
+        ],
+        "id": "retry_test_1",
+        "run_if": {
+          "branch": "failure",
+          "from": "test_if_clippy_failed"
+        },
+        "tool": "cargo_test",
+        "tool_args": {}
+      },
+      {
+        "deps": [
+          "retry_test_1"
+        ],
+        "id": "retry_test_2",
+        "run_if": {
+          "branch": "failure",
+          "from": "retry_test_1"
+        },
+        "tool": "cargo_test",
+        "tool_args": {}
+      }
+    ]
+  }
+}

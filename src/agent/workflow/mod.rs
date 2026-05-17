@@ -6,6 +6,7 @@
 //! `placeholders`（`{{node.output}}` 等注入）、`execute/`（**`trace`** / **`retry`** / **`node`** / **`schedule`** / **`report`** / **`compensation`**；DAG 调度与单节点执行）、`run`（`workflow_execute` 工具入口）、`chrome_trace`（可选 Chrome Trace JSON 导出）。
 
 mod author_load;
+mod author_validate;
 mod chrome_trace;
 mod compile_spec;
 mod dag;
@@ -23,6 +24,9 @@ mod workflow_templates;
 
 use std::path::Path;
 
+pub use author_validate::{
+    AuthorDocumentMode, WORKFLOW_AUTHOR_SPEC_VERSION, validate_workflow_author_document,
+};
 pub use execute::WorkflowApprovalMode;
 pub use node_tool_role::WorkflowNodeToolRole;
 pub use run::run_workflow_execute_tool;

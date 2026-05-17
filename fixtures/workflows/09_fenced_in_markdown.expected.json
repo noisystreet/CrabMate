@@ -1,0 +1,7 @@
+{
+  "version": 2,
+  "workflow": {
+    "fail_fast": true,
+    "workflow_template": "rust_ci_light"
+  }
+}

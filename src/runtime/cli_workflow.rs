@@ -39,6 +39,11 @@ pub fn run_workflow_compile_command(cli: &WorkflowFileCli) -> Result<(), String>
 pub fn run_workflow_validate_command(cli: &WorkflowFileCli) -> Result<(), String> {
     let path = Path::new(&cli.file);
     let yaml = load_author_yaml_source(path)?;
+    let root: serde_json::Value =
+        serde_yaml::from_str(&yaml).map_err(|e| format!("workflow_spec YAML 解析失败: {e}"))?;
+    let author_mode = crate::agent::workflow::validate_workflow_author_document(&root)?
+        .as_str()
+        .to_string();
     let compiled = compile_workflow_author_yaml(&yaml)?;
     let args_json =
         serde_json::to_string(&compiled).map_err(|e| format!("JSON 序列化失败: {e}"))?;
@@ -49,6 +54,8 @@ pub fn run_workflow_validate_command(cli: &WorkflowFileCli) -> Result<(), String
         let payload = serde_json::json!({
             "ok": true,
             "source": path.display().to_string(),
+            "author_spec_version": crate::agent::workflow::WORKFLOW_AUTHOR_SPEC_VERSION,
+            "author_mode": author_mode,
             "nodes_count": spec.nodes.len(),
             "layer_count": layers.len(),
             "execution_layers": layers,
@@ -62,6 +69,11 @@ pub fn run_workflow_validate_command(cli: &WorkflowFileCli) -> Result<(), String
     } else {
         println!("workflow validate: OK");
         println!("  source: {}", path.display());
+        println!(
+            "  author: version {} mode {}",
+            crate::agent::workflow::WORKFLOW_AUTHOR_SPEC_VERSION,
+            author_mode
+        );
         println!("  nodes: {}", spec.nodes.len());
         if !spec.for_each_pending.is_empty() {
             println!("  for_each_pending: {}", spec.for_each_pending.len());

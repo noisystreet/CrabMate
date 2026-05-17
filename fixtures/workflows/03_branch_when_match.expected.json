@@ -1,0 +1,61 @@
+{
+  "workflow": {
+    "fail_fast": false,
+    "nodes": [
+      {
+        "deps": [],
+        "id": "classify",
+        "tool": "diagnostic_summary",
+        "tool_args": {}
+      },
+      {
+        "deps": [
+          "classify"
+        ],
+        "id": "hotfix_flow",
+        "run_if": {
+          "from": "classify",
+          "match": {
+            "equals": "hotfix",
+            "field": "branch"
+          }
+        },
+        "tool": "git_diff",
+        "tool_args": {}
+      },
+      {
+        "deps": [
+          "classify"
+        ],
+        "id": "feature_flow",
+        "run_if": {
+          "from": "classify",
+          "match": {
+            "equals": "feature",
+            "field": "branch"
+          }
+        },
+        "tool": "cargo_test",
+        "tool_args": {}
+      },
+      {
+        "deps": [
+          "classify"
+        ],
+        "id": "noop_skip",
+        "run_if": {
+          "from": "classify",
+          "match": {
+            "field": "branch",
+            "in": [
+              "skip",
+              "none"
+            ]
+          }
+        },
+        "tool": "diagnostic_summary",
+        "tool_args": {}
+      }
+    ]
+  }
+}

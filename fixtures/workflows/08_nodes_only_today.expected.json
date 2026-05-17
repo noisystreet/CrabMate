@@ -1,21 +1,12 @@
 {
+  "version": 2,
   "workflow": {
-    "fail_fast": true,
+    "fail_fast": false,
     "max_parallelism": 4,
     "nodes": [
       {
         "deps": [],
-        "id": "diff",
-        "tool": "git_diff",
-        "tool_args": {
-          "mode": "all"
-        }
-      },
-      {
-        "deps": [
-          "diff"
-        ],
-        "id": "clippy",
+        "id": "check",
         "tool": "cargo_clippy",
         "tool_args": {
           "all_targets": true
@@ -23,7 +14,7 @@
       },
       {
         "deps": [
-          "clippy"
+          "check"
         ],
         "id": "test",
         "tool": "cargo_test",

@@ -137,7 +137,7 @@ pub struct WorkflowExecuteArgs {
     /// 内联 DAG / `steps` / `workflow_template`（与 `workflow_file` 二选一或叠加覆盖）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workflow: Option<JsonValue>,
-    /// 工作区相对路径：`.yaml` / `.yml`，或含 `` ```crabmate-workflow `` 的 `.md`（如 `.crabmate/workflows/ci.yaml`）。
+    /// 工作区相对路径：`.yaml` / `.yml`，或含 `` ```crabmate-workflow `` 的 `.md`（如 `examples/workflows/ci.yaml` 或工作区内 `.crabmate/workflows/ci.yaml`）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workflow_file: Option<String>,
 }

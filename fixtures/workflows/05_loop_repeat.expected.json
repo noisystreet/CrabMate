@@ -1,0 +1,37 @@
+{
+  "workflow": {
+    "fail_fast": false,
+    "nodes": [
+      {
+        "deps": [],
+        "id": "flaky_test_1",
+        "tool": "cargo_test",
+        "tool_args": {}
+      },
+      {
+        "deps": [
+          "flaky_test_1"
+        ],
+        "id": "flaky_test_2",
+        "run_if": {
+          "branch": "failure",
+          "from": "flaky_test_1"
+        },
+        "tool": "cargo_test",
+        "tool_args": {}
+      },
+      {
+        "deps": [
+          "flaky_test_2"
+        ],
+        "id": "flaky_test_3",
+        "run_if": {
+          "branch": "failure",
+          "from": "flaky_test_2"
+        },
+        "tool": "cargo_test",
+        "tool_args": {}
+      }
+    ]
+  }
+}

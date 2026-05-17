@@ -1,0 +1,5 @@
+# 代码审查模板：diff 文件名 → diff → 检索 → clippy（fail_fast: false）
+version: 2
+workflow:
+  fail_fast: false
+  workflow_template: code_review

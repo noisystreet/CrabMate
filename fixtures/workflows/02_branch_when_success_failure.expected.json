@@ -1,0 +1,39 @@
+{
+  "workflow": {
+    "fail_fast": false,
+    "nodes": [
+      {
+        "deps": [],
+        "id": "clippy",
+        "tool": "cargo_clippy",
+        "tool_args": {
+          "all_targets": true
+        }
+      },
+      {
+        "deps": [
+          "clippy"
+        ],
+        "id": "test_on_fail",
+        "run_if": {
+          "branch": "failure",
+          "from": "clippy"
+        },
+        "tool": "cargo_test",
+        "tool_args": {}
+      },
+      {
+        "deps": [
+          "clippy"
+        ],
+        "id": "notify_ok",
+        "run_if": {
+          "branch": "success",
+          "from": "clippy"
+        },
+        "tool": "diagnostic_summary",
+        "tool_args": {}
+      }
+    ]
+  }
+}

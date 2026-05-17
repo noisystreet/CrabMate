@@ -1,0 +1,53 @@
+{
+  "workflow": {
+    "fail_fast": false,
+    "nodes": [
+      {
+        "deps": [],
+        "id": "lint",
+        "tool": "cargo_clippy",
+        "tool_args": {
+          "all_targets": true
+        }
+      },
+      {
+        "deps": [
+          "lint"
+        ],
+        "id": "ship",
+        "run_if": {
+          "branch": "success",
+          "from": "lint"
+        },
+        "tool": "git_diff",
+        "tool_args": {
+          "mode": "staged"
+        }
+      },
+      {
+        "deps": [
+          "lint"
+        ],
+        "id": "fix",
+        "run_if": {
+          "branch": "failure",
+          "from": "lint"
+        },
+        "tool": "cargo_fmt_check",
+        "tool_args": {}
+      },
+      {
+        "deps": [
+          "fix"
+        ],
+        "id": "retest",
+        "run_if": {
+          "branch": "failure",
+          "from": "lint"
+        },
+        "tool": "cargo_test",
+        "tool_args": {}
+      }
+    ]
+  }
+}

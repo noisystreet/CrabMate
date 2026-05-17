@@ -1,0 +1,19 @@
+# 仅当 Clippy 失败时补跑测试（成功则跳过 test 节点）
+version: 2
+workflow:
+  fail_fast: false
+steps:
+  - id: clippy
+    label: Clippy
+    tool: cargo_clippy
+    args:
+      all_targets: true
+
+  - id: test_on_fail
+    label: 仅 clippy 失败时测试
+    tool: cargo_test
+    after: [clippy]
+    when:
+      from: clippy
+      branch: failure
+    args: {}

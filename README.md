@@ -53,6 +53,7 @@
 | **`bench`** | 批量测评（JSONL）；用法见 [benchmark/README.md](benchmark/README.md)、[docs/基准测试规划.md](docs/基准测试规划.md)。 |
 | **`mcp`** | **`mcp list`** / **`mcp list --probe`**；**`mcp serve`** 对外暴露内置工具（stdio，无传输鉴权）。 |
 | **`plugin`** | **`init`** / **`list`** / **`validate`**：工作区 **`plugins/*.json`** 动态工具（**`dyn__`** 前缀）。 |
+| **`workflow`** | **`compile`** / **`validate`** / **`run`**：工作区 YAML/Markdown 工作流（**不要**求 `API_KEY`）；见 [docs/工作流编写教程.md](docs/工作流编写教程.md)。 |
 | **`tool-replay`** | 从会话导出工具 fixture 或重放（**不要**求 `API_KEY`，须在可信工作区）。 |
 
 完整参数、HTTP 路由与 **`man crabmate`**：[docs/命令行与路由.md](docs/命令行与路由.md)。
@@ -160,6 +161,7 @@ cargo tauri build
 | [docs/开发文档.md](docs/开发文档.md) | 架构概要、主要模块与数据流 | [en](docs/en/DEVELOPMENT.md) |
 | [docs/配置说明.md](docs/配置说明.md) | 环境变量、`CM_*`、Web/TOML 详解 | [en](docs/en/CONFIGURATION.md) |
 | [docs/工具说明.md](docs/工具说明.md) | 内置工具与调用示例 | [en](docs/en/TOOLS.md) |
+| [docs/工作流编写教程.md](docs/工作流编写教程.md) | 工作流 YAML/steps 编写与示例 | — |
 | [docs/SSE协议.md](docs/SSE协议.md) | `/chat/stream` 控制面 JSON | [en](docs/en/SSE_PROTOCOL.md) |
 | [docs/命令行与路由.md](docs/命令行与路由.md) | 子命令、HTTP 路由、deb 打包 | [en](docs/en/CLI.md) |
 | [docs/命令行契约.md](docs/命令行契约.md) | `chat` 退出码与 **`--output json`** | [en](docs/en/CLI_CONTRACT.md) |
