@@ -152,7 +152,14 @@ pub fn summarize_experience(args_json: &str, ctx: &ToolContext<'_>) -> String {
     } else {
         Some(args.ttl_secs)
     };
-    match rt.explicit_remember_blocking(cfg, scope.as_str(), text, &args.tags, ttl) {
+    match rt.summarize_experience_remember_blocking(
+        cfg,
+        scope.as_str(),
+        text,
+        &args.tags,
+        ttl,
+        "summarize_experience",
+    ) {
         Ok(id) => format!("已将经验写入长期记忆 id={id}（tags={:?}）", args.tags),
         Err(e) => format!("错误：{e}"),
     }

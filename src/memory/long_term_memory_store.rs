@@ -167,11 +167,12 @@ pub fn insert_chunk(
     Ok(())
 }
 
-/// 显式记忆（工具 `long_term_remember`）；`tags_json` 为 JSON 数组字符串。
+/// 显式记忆（`long_term_remember` / `summarize_experience` / 自动沉淀等）；`source_kind` 固定为 `explicit`。
 pub fn insert_explicit_chunk(
     conn: &Connection,
     scope_id: &str,
     chunk_text: &str,
+    source_role: &str,
     tags_json: &str,
     expires_at_unix: Option<i64>,
     embedding: Option<&[u8]>,
@@ -181,9 +182,17 @@ pub fn insert_explicit_chunk(
     conn.execute(
         &format!(
             "INSERT INTO {TABLE} (scope_id, chunk_text, source_role, created_at_unix, expires_at_unix, tags_json, source_kind, embedding) \
-             VALUES (?1, ?2, 'explicit', ?3, ?4, ?5, 'explicit', ?6)"
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'explicit', ?7)"
         ),
-        params![scope_id, chunk_text, now, expires_at_unix, tags_json, embedding],
+        params![
+            scope_id,
+            chunk_text,
+            source_role,
+            now,
+            expires_at_unix,
+            tags_json,
+            embedding
+        ],
     )?;
     Ok(conn.last_insert_rowid())
 }
@@ -316,7 +325,7 @@ mod tests {
         let rows = list_for_scope(&conn, "s1", 10).unwrap();
         assert!(rows.is_empty());
 
-        insert_explicit_chunk(&conn, "s1", "remember me", "[]", None, None).unwrap();
+        insert_explicit_chunk(&conn, "s1", "remember me", "explicit", "[]", None, None).unwrap();
         let rows2 = list_for_scope(&conn, "s1", 10).unwrap();
         assert_eq!(rows2.len(), 1);
         assert_eq!(rows2[0].chunk_text, "remember me");

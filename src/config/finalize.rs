@@ -349,6 +349,7 @@ struct LtmDerived {
     long_term_memory_min_chars_to_index: usize,
     long_term_memory_async_index: bool,
     long_term_memory_auto_index_turns: bool,
+    long_term_memory_auto_summarize_experience: bool,
     long_term_memory_default_ttl_secs: u64,
 }
 
@@ -420,6 +421,10 @@ fn derive_ltm(b: &ConfigBuilder) -> Result<LtmDerived, String> {
         long_term_memory_auto_index_turns: b
             .long_term_memory
             .long_term_memory_auto_index_turns
+            .unwrap_or(true),
+        long_term_memory_auto_summarize_experience: b
+            .long_term_memory
+            .long_term_memory_auto_summarize_experience
             .unwrap_or(true),
         long_term_memory_default_ttl_secs: b
             .long_term_memory

@@ -710,6 +710,12 @@ fn apply_env_overrides_part_13(b: &mut ConfigBuilder) {
     {
         b.long_term_memory.long_term_memory_auto_index_turns = Some(val);
     }
+    if let Ok(v) = std::env::var("CM_LONG_TERM_MEMORY_AUTO_SUMMARIZE_EXPERIENCE")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.long_term_memory
+            .long_term_memory_auto_summarize_experience = Some(val);
+    }
     if let Ok(v) = std::env::var("CM_LONG_TERM_MEMORY_DEFAULT_TTL_SECS")
         && let Ok(n) = v.trim().parse::<u64>()
     {

@@ -33,7 +33,7 @@ pub(super) async fn post_turn_web_prepare_and_save(
         cfg_snap.long_term_memory.long_term_memory_enabled,
     ) {
         ltm.clone()
-            .spawn_index_turn(Arc::clone(cfg_snap), scope, to_index);
+            .spawn_turn_memory_postprocess(Arc::clone(cfg_snap), scope, to_index);
     }
     crate::memory::long_term_memory::strip_long_term_memory_injections(messages);
     crate::workspace::changelist::strip_workspace_changelist_injections(messages);

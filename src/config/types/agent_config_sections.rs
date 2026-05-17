@@ -273,6 +273,8 @@ pub struct LongTermMemoryConfig {
     pub long_term_memory_min_chars_to_index: usize,
     pub long_term_memory_async_index: bool,
     pub long_term_memory_auto_index_turns: bool,
+    /// 回合结束后若检测到构建/验证类工具「先失败后成功」，自动写入提炼经验。
+    pub long_term_memory_auto_summarize_experience: bool,
     pub long_term_memory_default_ttl_secs: u64,
 }
 

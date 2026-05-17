@@ -102,15 +102,19 @@ pub(crate) async fn run_agent_turn_for_cli(
             tool_running_hook,
             clarification_questionnaire_hook,
             cli_tool_ctx,
-            long_term_memory: ltm,
-            long_term_memory_scope_id: scope,
+            long_term_memory: ltm.clone(),
+            long_term_memory_scope_id: scope.clone(),
             turn_allowed_tool_names: turn_allow,
             process_handles,
             sse_control_mirror,
         },
     ))
     .await
-    .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })
+    .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })?;
+    if let (Some(rt), Some(scope_id)) = (ltm, scope) {
+        rt.spawn_turn_memory_postprocess(Arc::clone(cfg), scope_id, messages.clone());
+    }
+    Ok(())
 }
 
 fn map_turn_err(e: Box<dyn std::error::Error + Send + Sync>) -> Box<dyn std::error::Error> {

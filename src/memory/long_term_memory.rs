@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 
 #[cfg(feature = "fastembed")]
 use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
-use log::{debug, warn};
+use log::{debug, info, warn};
 use rusqlite::Connection;
 
 use crate::config::{AgentConfig, LongTermMemoryVectorBackend};
@@ -434,8 +434,8 @@ impl LongTermMemoryRuntime {
         Ok(f32_slice_to_bytes(&vec))
     }
 
-    /// 回合成功结束后异步索引本轮 user/assistant（不含 tool 正文）。
-    pub fn spawn_index_turn(
+    /// 回合成功结束后异步索引本轮 user/assistant，并按配置尝试自动沉淀经验。
+    pub fn spawn_turn_memory_postprocess(
         self: Arc<Self>,
         cfg: Arc<AgentConfig>,
         scope_id: String,
@@ -451,17 +451,70 @@ impl LongTermMemoryRuntime {
             return;
         }
         tokio::spawn(async move {
-            if let Err(e) = Self::index_turn_blocking(&self, &cfg, &scope_id, &messages) {
+            let rt = Arc::clone(&self);
+            if let Err(e) = Self::turn_memory_postprocess_blocking(rt, &cfg, &scope_id, &messages) {
                 self.index_errors
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 warn!(
                     target: "crabmate",
-                    "长期记忆索引失败 scope_len={} error={}",
+                    "长期记忆回合后处理失败 scope_len={} error={}",
                     scope_id.len(),
                     e
                 );
             }
         });
+    }
+
+    fn turn_memory_postprocess_blocking(
+        rt: Arc<LongTermMemoryRuntime>,
+        cfg: &AgentConfig,
+        scope_id: &str,
+        messages: &[Message],
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        Self::index_turn_blocking(rt.as_ref(), cfg, scope_id, messages)?;
+        if cfg
+            .long_term_memory
+            .long_term_memory_auto_summarize_experience
+        {
+            Self::auto_summarize_experience_blocking(Arc::clone(&rt), cfg, scope_id, messages)?;
+        }
+        Ok(())
+    }
+
+    fn auto_summarize_experience_blocking(
+        rt: Arc<LongTermMemoryRuntime>,
+        cfg: &AgentConfig,
+        scope_id: &str,
+        messages: &[Message],
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let Some((experience, tags)) =
+            crate::memory::auto_summarize_experience::draft_auto_experience_from_turn(messages)
+        else {
+            return Ok(());
+        };
+        match rt.summarize_experience_remember_blocking(
+            cfg,
+            scope_id,
+            &experience,
+            &tags,
+            None,
+            "auto_summarize_experience",
+        ) {
+            Ok(id) => {
+                info!(
+                    target: "crabmate",
+                    "长期记忆：已自动沉淀经验 memory_id={id} scope_len={}",
+                    scope_id.len()
+                );
+            }
+            Err(e) => {
+                debug!(
+                    target: "crabmate",
+                    "长期记忆：自动沉淀跳过或失败 error={e}"
+                );
+            }
+        }
+        Ok(())
     }
 
     fn index_turn_blocking(
@@ -529,7 +582,7 @@ impl LongTermMemoryRuntime {
         if !cfg.long_term_memory.long_term_memory_auto_index_turns {
             return Ok(None);
         }
-        let Some((user_t, asst_t)) = last_user_assistant_final_pair(messages) else {
+        let Some((user_t, asst_t)) = last_user_assistant_final_pair_for_turn(messages) else {
             return Ok(None);
         };
         let user_t = clamp_text(
@@ -573,6 +626,19 @@ impl LongTermMemoryRuntime {
         tags: &[String],
         ttl_secs: Option<u64>,
     ) -> Result<i64, String> {
+        self.summarize_experience_remember_blocking(cfg, scope_id, text, tags, ttl_secs, "explicit")
+    }
+
+    /// 经验写入（`summarize_experience` 工具或回合后自动沉淀）；`source_role` 区分来源。
+    pub fn summarize_experience_remember_blocking(
+        self: &Arc<Self>,
+        cfg: &AgentConfig,
+        scope_id: &str,
+        text: &str,
+        tags: &[String],
+        ttl_secs: Option<u64>,
+        source_role: &str,
+    ) -> Result<i64, String> {
         let (scope, text) = validate_explicit_remember_scope_and_text(cfg, scope_id, text)?;
         let tags_json = serde_json::to_string(tags).map_err(|e| format!("tags 序列化失败: {e}"))?;
         let now = std::time::SystemTime::now()
@@ -580,17 +646,23 @@ impl LongTermMemoryRuntime {
             .unwrap_or_default()
             .as_secs() as i64;
         let expires_at = ttl_secs.map(|s| now + s as i64);
-
         let emb = self.explicit_chunk_embedding_bytes(cfg, text.as_str())?;
 
         let conn = self
             .conn
             .lock()
             .map_err(|e| format!("长期记忆 SQLite 锁失败: {e}"))?;
+        if long_term_memory_store::has_duplicate_text(&conn, scope, &text)
+            .map_err(|e| format!("去重检查失败: {e}"))?
+        {
+            return Err("与已有记忆正文重复，已跳过写入".to_string());
+        }
+
         let id = long_term_memory_store::insert_explicit_chunk(
             &conn,
             scope,
             &text,
+            source_role,
             &tags_json,
             expires_at,
             emb.as_deref(),
@@ -712,7 +784,9 @@ fn last_user_query_for_memory(messages: &[Message]) -> Option<&str> {
 }
 
 /// 最后一轮「用户提问 → 助手终答」（无 `tool_calls`）的正文对。
-fn last_user_assistant_final_pair(messages: &[Message]) -> Option<(&str, &str)> {
+pub(crate) fn last_user_assistant_final_pair_for_turn(
+    messages: &[Message],
+) -> Option<(&str, &str)> {
     let mut i = messages.len();
     while i > 0 {
         i -= 1;
