@@ -194,11 +194,27 @@ pub fn diagnostic_summary(args_json: &str, working_dir: &Path) -> String {
         out.push_str("【Rust 工具链】\n");
         if let Some(s) = capture_trimmed("rustc", &["-V"]) {
             out.push_str(&format!("  rustc -V: {}\n", s));
+            if let Some(msg) = crate::health_dep_compat::validate_dep_version(
+                crate::health_dep_compat::DepCompatKind::Rustc,
+                &s,
+            ) {
+                out.push_str(&format!(
+                    "    ⚠ {msg}（GET /health → dep_toolchain_rustc）\n"
+                ));
+            }
         } else {
             out.push_str("  rustc -V: 无法执行或失败\n");
         }
         if let Some(s) = capture_trimmed("cargo", &["-V"]) {
             out.push_str(&format!("  cargo -V: {}\n", s));
+            if let Some(msg) = crate::health_dep_compat::validate_dep_version(
+                crate::health_dep_compat::DepCompatKind::Cargo,
+                &s,
+            ) {
+                out.push_str(&format!(
+                    "    ⚠ {msg}（GET /health → dep_toolchain_cargo）\n"
+                ));
+            }
         } else {
             out.push_str("  cargo -V: 无法执行或失败\n");
         }

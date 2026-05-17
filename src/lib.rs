@@ -24,6 +24,7 @@ mod context_bootstrap;
 mod conversation_store;
 mod dynamic_tools;
 mod health;
+mod health_dep_compat;
 mod http_client;
 mod llm;
 mod mcp;

@@ -236,6 +236,9 @@ pub async fn build_health_report(
 
         let mut m = BTreeMap::new();
 
+        m.insert("rustc", check_cmd("rustc", &["-V"]));
+        m.insert("cargo", check_cmd("cargo", &["-V"]));
+
         let bc = check_cmd("bc", &["--version"])
             .or_else(|_| check_cmd("bc", &["-v"]))
             .or_else(|_| check_cmd("bc", &["-V"]));
@@ -287,6 +290,8 @@ pub async fn build_health_report(
 
     for (k, v) in deps {
         let key = match k {
+            "rustc" => "dep_toolchain_rustc",
+            "cargo" => "dep_toolchain_cargo",
             "bc" => "dep_bc",
             "rustfmt" => "dep_rustfmt",
             "clang_format" => "dep_clang_format",
@@ -319,32 +324,131 @@ pub async fn build_health_report(
             "lizard" => "dep_lizard",
             _ => continue,
         };
-        match v {
-            Ok(detail) => {
-                checks.insert(
-                    key.to_string(),
-                    HealthCheckItem {
-                        ok: true,
-                        detail: Some(detail),
-                    },
-                );
-            }
-            Err(err) => {
-                checks.insert(
-                    key.to_string(),
-                    HealthCheckItem {
-                        ok: false,
-                        detail: Some(err),
-                    },
-                );
-            }
-        }
+        checks.insert(
+            key.to_string(),
+            crate::health_dep_compat::health_item_from_cmd_result(k, v),
+        );
     }
 
     HealthReport {
         status: health_report_status(&checks),
         checks,
     }
+}
+
+fn dep_check_label(check_key: &str) -> String {
+    let name = check_key.strip_prefix("dep_").unwrap_or(check_key);
+    match name {
+        "toolchain_rustc" => "rustc".to_string(),
+        "toolchain_cargo" => "cargo".to_string(),
+        "clang_format" => "clang-format".to_string(),
+        "strings_binutils" => "strings".to_string(),
+        "docker_cli" => "docker".to_string(),
+        "ast_grep" => "ast-grep".to_string(),
+        "cargo_machete" => "cargo machete".to_string(),
+        "cargo_udeps" => "cargo udeps".to_string(),
+        other => other.replace('_', "-"),
+    }
+}
+
+fn is_missing_cli_detail(detail: &str) -> bool {
+    detail.contains("No such file") || detail.contains("not found") || detail.starts_with("exit=")
+}
+
+fn is_version_incompat_detail(detail: &str) -> bool {
+    detail.contains("低于建议最低")
+}
+
+fn startup_config_failure_line(check_key: &str, detail: &str) -> String {
+    if check_key == "api_key" && detail.contains("未设置 API_KEY") && detail.contains("bearer") {
+        return format!(
+            "{detail}（Web 侧栏「设置」可填 client_llm.api_key，或设置环境变量 API_KEY）"
+        );
+    }
+    format!("{check_key}: {detail}")
+}
+
+/// 将未通过的检查项整理为可读摘要（供 `serve` 启动日志与测试复用）。
+pub fn format_startup_health_summary(report: &HealthReport) -> String {
+    let mut config: Vec<String> = Vec::new();
+    let mut workspace: Vec<String> = Vec::new();
+    let mut toolchain: Vec<String> = Vec::new();
+    let mut optional_missing: Vec<String> = Vec::new();
+    let mut other: Vec<String> = Vec::new();
+
+    for (check_key, item) in &report.checks {
+        if item.ok {
+            continue;
+        }
+        let detail = item.detail.as_deref().unwrap_or("未通过");
+        if check_key == "api_key" || check_key == "frontend_static_dir" {
+            config.push(startup_config_failure_line(check_key, detail));
+            continue;
+        }
+        if check_key == "workspace_writable" {
+            workspace.push(format!("{check_key}: {detail}"));
+            continue;
+        }
+        if check_key.starts_with("dep_toolchain_") {
+            toolchain.push(format!("{} — {detail}", dep_check_label(check_key)));
+            continue;
+        }
+        if check_key.starts_with("dep_") {
+            if is_version_incompat_detail(detail) {
+                toolchain.push(format!("{} — {detail}", dep_check_label(check_key)));
+            } else if is_missing_cli_detail(detail) {
+                optional_missing.push(dep_check_label(check_key));
+            } else {
+                other.push(format!("{} — {detail}", dep_check_label(check_key)));
+            }
+            continue;
+        }
+        other.push(format!("{check_key}: {detail}"));
+    }
+
+    optional_missing.sort_unstable();
+    optional_missing.dedup();
+
+    let mut sections: Vec<String> = Vec::new();
+    if !config.is_empty() {
+        sections.push(format!("【配置】{}", config.join("；")));
+    }
+    if !workspace.is_empty() {
+        sections.push(format!("【工作区】{}", workspace.join("；")));
+    }
+    if !toolchain.is_empty() {
+        sections.push(format!("【工具链】{}", toolchain.join("；")));
+    }
+    if !optional_missing.is_empty() {
+        sections.push(format!(
+            "【可选 CLI 未安装 {} 项】{}",
+            optional_missing.len(),
+            optional_missing.join("、")
+        ));
+    }
+    if !other.is_empty() {
+        sections.push(format!("【其他】{}", other.join("；")));
+    }
+
+    if sections.is_empty() {
+        "存在未通过的检查项（详情见 GET /health）".to_string()
+    } else {
+        sections.join("；")
+    }
+}
+
+/// `serve` 启动时记录依赖与工具链兼容性（与 `GET /health` 同源逻辑）。
+pub fn log_startup_dep_compat_summary(report: &HealthReport) {
+    if report.status == "ok" {
+        tracing::info!(target: "crabmate", "启动健康检查: 全部通过 (status=ok)");
+        return;
+    }
+    let summary = format_startup_health_summary(report);
+    tracing::warn!(
+        target: "crabmate",
+        status = %report.status,
+        "启动健康检查未通过: {summary}（完整项见 GET /health）"
+    );
 }
 
 /// 终端多行展示用（多行纯文本）；当前无调用方，保留供后续 CLI/TUI 复用。
@@ -372,7 +476,9 @@ pub fn format_health_report_terminal(report: &HealthReport) -> String {
 
 #[cfg(test)]
 mod health_status_tests {
-    use super::{HealthCheckItem, health_report_status};
+    use super::{
+        HealthCheckItem, HealthReport, format_startup_health_summary, health_report_status,
+    };
     use std::collections::BTreeMap;
 
     #[test]
@@ -427,5 +533,80 @@ mod health_status_tests {
             },
         );
         assert_eq!(health_report_status(&checks), "degraded");
+    }
+
+    #[test]
+    fn startup_summary_groups_optional_missing_and_config() {
+        let mut checks = BTreeMap::new();
+        checks.insert(
+            "api_key".into(),
+            HealthCheckItem {
+                ok: false,
+                detail: Some("未设置 API_KEY（llm_http_auth_mode=bearer）".into()),
+            },
+        );
+        checks.insert(
+            "workspace_writable".into(),
+            HealthCheckItem {
+                ok: true,
+                detail: None,
+            },
+        );
+        checks.insert(
+            "dep_bandit".into(),
+            HealthCheckItem {
+                ok: false,
+                detail: Some("No such file or directory (os error 2)".into()),
+            },
+        );
+        checks.insert(
+            "dep_shellcheck".into(),
+            HealthCheckItem {
+                ok: false,
+                detail: Some("No such file or directory (os error 2)".into()),
+            },
+        );
+        let summary = format_startup_health_summary(&HealthReport {
+            status: "degraded".into(),
+            checks,
+        });
+        assert!(summary.contains("【配置】"));
+        assert!(summary.contains("client_llm.api_key"));
+        assert!(summary.contains("【可选 CLI 未安装 2 项】"));
+        assert!(summary.contains("bandit"));
+        assert!(summary.contains("shellcheck"));
+    }
+
+    #[test]
+    fn startup_summary_shows_toolchain_version_reason() {
+        let mut checks = BTreeMap::new();
+        checks.insert(
+            "api_key".into(),
+            HealthCheckItem {
+                ok: true,
+                detail: None,
+            },
+        );
+        checks.insert(
+            "workspace_writable".into(),
+            HealthCheckItem {
+                ok: true,
+                detail: None,
+            },
+        );
+        checks.insert(
+            "dep_toolchain_rustc".into(),
+            HealthCheckItem {
+                ok: false,
+                detail: Some("rustc 1.84.0 (abc)（版本 1.84.0 低于建议最低 1.85.0）".into()),
+            },
+        );
+        let summary = format_startup_health_summary(&HealthReport {
+            status: "degraded".into(),
+            checks,
+        });
+        assert!(summary.contains("【工具链】"));
+        assert!(summary.contains("rustc"));
+        assert!(summary.contains("1.85.0"));
     }
 }

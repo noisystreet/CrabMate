@@ -395,6 +395,7 @@ pub(super) async fn run_serve_branch(
         .into());
     }
     let addr = std::net::SocketAddr::from((bind_ip, port));
+    cli_run_serve::serve_log_startup_health(cfg_holder, workspace_cli, &api_key).await;
     println!("Web 服务已启动");
     println!("  监听: http://{}/", addr);
     if bind_ip.is_unspecified() && !auth_enabled {

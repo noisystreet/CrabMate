@@ -100,3 +100,24 @@ pub(super) async fn serve_bind_auth_flags(cfg_holder: &SharedAgentConfig) -> (bo
         g.web_api.allow_insecure_no_auth_for_non_loopback,
     )
 }
+
+/// `serve` 启动前：与 `GET /health` 同源的可选依赖与工具链检查，并写启动日志。
+pub(super) async fn serve_log_startup_health(
+    cfg_holder: &SharedAgentConfig,
+    workspace_cli: &Option<String>,
+    api_key: &str,
+) {
+    let (work_dir, auth_mode) = {
+        let g = cfg_holder.read().await;
+        let wd = workspace_cli
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::PathBuf::from(g.command_exec.run_command_working_dir.clone())
+            });
+        (wd, g.llm.llm_http_auth_mode)
+    };
+    let report = crate::health::build_health_report(&work_dir, api_key, auth_mode, true).await;
+    crate::health::log_startup_dep_compat_summary(&report);
+}
