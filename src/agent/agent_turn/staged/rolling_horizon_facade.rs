@@ -266,7 +266,7 @@ pub(crate) async fn run_logical_dual_agent_then_execute_steps(
         labels,
         render_to_terminal,
         echo_terminal_staged,
-        Message::user_only,
+        Message::user_staged_orchestration_injection,
     )
     .await
 }

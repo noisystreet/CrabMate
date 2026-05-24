@@ -55,9 +55,13 @@ mod llm_seed_tests {
 mod chat_api;
 mod message;
 mod message_lineage;
+pub mod server_injected_user;
 
 pub use chat_api::*;
 pub use message::*;
+pub use server_injected_user::{
+    is_ephemeral_staged_coach_user_message, is_server_injected_user_message,
+};
 // 供宿主/调试引用 [`message_lineage`]；库内尚未全覆盖调用点，`cargo check` 下会呈现未使用。
 #[allow(unused_imports)]
 pub use message_lineage::{ContextInjectionKind, MessageLineage, message_lineage};
@@ -95,6 +99,50 @@ mod api_messages_strip_tests {
         let out = filter_messages_for_web_client_snapshot(&v);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0], plain);
+    }
+
+    #[test]
+    fn web_snapshot_hides_registered_server_injected_users() {
+        let plain = Message::user_only("真实用户提问");
+        let cases: Vec<(Message, bool)> = vec![
+            (plain.clone(), true),
+            (
+                Message::user_staged_step_injection("### 分步 1/2\n- id: s1\n- 描述: 运行检查"),
+                false,
+            ),
+            (
+                Message::user_staged_orchestration_injection(format!(
+                    "{}\n请优化",
+                    crabmate_display_rules::STAGED_PLAN_OPTIMIZER_COACH_MARK
+                )),
+                false,
+            ),
+            (
+                Message::user_plan_rewrite_injection(
+                    "你的最终回答缺少**结构化规划**。请加入 agent_reply_plan JSON",
+                ),
+                false,
+            ),
+            (
+                Message::user_server_injection(
+                    CRABMATE_STAGED_PATCH_FEEDBACK_NAME,
+                    "### 分阶段规划 · 步级反馈（plan_id=x）\n补丁",
+                ),
+                false,
+            ),
+        ];
+        for (msg, expect_visible) in cases {
+            let out = filter_messages_for_web_client_snapshot(std::slice::from_ref(&msg));
+            assert_eq!(
+                out.len() == 1,
+                expect_visible,
+                "visible={expect_visible} name={:?}",
+                msg.name
+            );
+            if expect_visible {
+                assert_eq!(out[0], msg);
+            }
+        }
     }
 
     #[test]

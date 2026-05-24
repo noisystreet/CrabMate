@@ -227,10 +227,7 @@ fn is_system_role_hidden_from_web_transcript(m: &Message) -> bool {
 /// 省略：普通 **`system`**（含系统提示词）、长期记忆 / 工作区变更集 / 首轮工作区画像等 **`user.name`** 注入；保留 **`crabmate_timeline`** 等时间线 **`system`**。
 #[inline]
 pub fn is_message_visible_in_chat_transcript(m: &Message) -> bool {
-    !is_long_term_memory_injection(m)
-        && !is_workspace_changelist_injection(m)
-        && !is_first_turn_workspace_context_injection(m)
-        && !is_planner_tool_call_reject_injection(m)
+    !crate::types::server_injected_user::is_server_injected_user_message(m)
         && !is_system_role_hidden_from_web_transcript(m)
 }
 
@@ -246,6 +243,21 @@ pub const CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME: &str =
 
 /// 分阶段无工具规划轮：模型违规输出 `tool_calls` 后的一次性重写约束（`user.name`）；送模型，**不向** Web 快照与聊天水合展示。
 pub const CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME: &str = "crabmate_planner_tool_call_reject";
+
+/// 分阶段单步执行注入（`user.name`）；送模型，聊天区与快照过滤。
+pub const CRABMATE_STAGED_STEP_INJECTION_NAME: &str = "crabmate_staged_step_injection";
+
+/// 分阶段规划 coach / ensemble / 优化轮等（`user.name`）。
+pub const CRABMATE_STAGED_PLAN_COACH_NAME: &str = "crabmate_staged_plan_coach";
+
+/// 两阶段 NL 展示桥接（`user.name`）。
+pub const CRABMATE_STAGED_NL_FOLLOWUP_NAME: &str = "crabmate_staged_nl_followup";
+
+/// 分阶段步失败补丁规划反馈（`user.name`）。
+pub const CRABMATE_STAGED_PATCH_FEEDBACK_NAME: &str = "crabmate_staged_patch_feedback";
+
+/// 终答 `plan_rewrite` / 侧向语义反馈（`user.name`）。
+pub const CRABMATE_PLAN_REWRITE_NAME: &str = "crabmate_plan_rewrite";
 
 /// 规划轮拒绝重写 user 正文首行；兼容未带 `name` 的历史落盘。
 pub const STAGED_PLANNER_TOOL_CALL_REJECT_CONTENT_PREFIX: &str =
@@ -293,11 +305,7 @@ pub fn is_planner_tool_call_reject_injection(m: &Message) -> bool {
 /// `POST /chat/branch` 等按序截断时计入的「真实用户发言」：排除各类 `user.name` 注入条。
 #[inline]
 pub fn user_message_counts_for_branch_truncation(m: &Message) -> bool {
-    m.role == "user"
-        && !is_long_term_memory_injection(m)
-        && !is_workspace_changelist_injection(m)
-        && !is_first_turn_workspace_context_injection(m)
-        && !is_planner_tool_call_reject_injection(m)
+    m.role == "user" && !crate::types::server_injected_user::is_server_injected_user_message(m)
 }
 
 /// `message.content` 为纯文本时的借用；多模态 [`MessageContent::Parts`] 返回 `None`。
@@ -499,15 +507,38 @@ impl Message {
 
     /// 规划轮 tool_calls 拒绝后的一次性重写约束（[`CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME`]）；Web 快照过滤。
     pub fn user_planner_tool_call_reject_injection(content: impl Into<String>) -> Self {
+        Self::user_server_injection(CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME, content)
+    }
+
+    /// 服务端编排注入 user（`user.name` 须为 [`CRABMATE_*`] 注册名）。
+    pub fn user_server_injection(name: &'static str, content: impl Into<String>) -> Self {
         Self {
             role: "user".to_string(),
             content: Some(MessageContent::Text(content.into())),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
-            name: Some(CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME.to_string()),
+            name: Some(name.to_string()),
             tool_call_id: None,
         }
+    }
+
+    /// 分阶段单步执行注入。
+    pub fn user_staged_step_injection(content: impl Into<String>) -> Self {
+        Self::user_server_injection(CRABMATE_STAGED_STEP_INJECTION_NAME, content)
+    }
+
+    /// 终答规划重写 / 语义反馈 user。
+    pub fn user_plan_rewrite_injection(content: impl Into<String>) -> Self {
+        Self::user_server_injection(CRABMATE_PLAN_REWRITE_NAME, content)
+    }
+
+    /// 分阶段路径：按正文特征选择 [`CRABMATE_STAGED_*`] `name`。
+    pub fn user_staged_orchestration_injection(content: impl Into<String>) -> Self {
+        let body = content.into();
+        let name =
+            crate::types::server_injected_user::staged_injection_user_name_for_content(&body);
+        Self::user_server_injection(name, body)
     }
 
     /// 无 `tool_calls` 的 `assistant` 消息（如分阶段规划补丁合并后的 JSON 快照）。

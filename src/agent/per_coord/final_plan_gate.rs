@@ -443,15 +443,9 @@ fn outcome_after_semantics_failure(args: FinalPlanGateArgs<'_>) -> FinalPlanGate
     );
     FinalPlanGateStepOutcome {
         route: FinalPlanGateRoute::SemanticsFailedRequestRewrite,
-        after: AfterFinalAssistant::RequestPlanRewrite(Message {
-            role: "user".to_string(),
-            content: Some(rewrite_text.into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        }),
+        after: AfterFinalAssistant::RequestPlanRewrite(Message::user_plan_rewrite_injection(
+            rewrite_text,
+        )),
         next_plan_rewrite_count: Some(next_attempt),
     }
 }

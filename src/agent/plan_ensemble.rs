@@ -16,13 +16,6 @@ pub(crate) const STAGED_PLAN_ENSEMBLE_C_COACH_MARK: &str =
 pub(crate) const STAGED_PLAN_ENSEMBLE_MERGE_COACH_MARK: &str =
     "### 分阶段规划 · 合并多规划（服务端注入）";
 
-/// 是否为逻辑多规划员流程中注入的临时 user（取消或解析失败时弹出）。
-pub(crate) fn is_ensemble_injected_user_content(content: &str) -> bool {
-    content.contains(STAGED_PLAN_ENSEMBLE_B_COACH_MARK)
-        || content.contains(STAGED_PLAN_ENSEMBLE_C_COACH_MARK)
-        || content.contains(STAGED_PLAN_ENSEMBLE_MERGE_COACH_MARK)
-}
-
 fn format_planner_label(idx: usize) -> String {
     let name = match idx {
         1 => "规划员 A（首轮）",

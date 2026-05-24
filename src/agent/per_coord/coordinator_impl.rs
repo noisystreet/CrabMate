@@ -65,18 +65,9 @@ impl PerCoordinator {
         violation_codes: &[String],
         rationale: Option<&str>,
     ) -> Message {
-        Message {
-            role: "user".to_string(),
-            content: Some(
-                plan_rewrite::user_text_semantic_mismatch_with_feedback(violation_codes, rationale)
-                    .into(),
-            ),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        }
+        Message::user_plan_rewrite_injection(
+            plan_rewrite::user_text_semantic_mismatch_with_feedback(violation_codes, rationale),
+        )
     }
 
     /// 下一回模型若以非 `tool_calls` 结束，是否必须嵌入可解析的 `agent_reply_plan`（工作流反思路径下由工具结果置位）。

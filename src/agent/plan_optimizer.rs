@@ -6,8 +6,8 @@ use crate::agent::plan_artifact::{self, AgentReplyPlanV1, PlanStepV1};
 use crate::config::AgentConfig;
 use crate::config::StagedPlanBaselineMode;
 use crate::types::{
-    Message, Tool, is_first_turn_workspace_context_injection, is_long_term_memory_injection,
-    is_message_excluded_from_llm_context_except_memory, is_workspace_changelist_injection,
+    Message, Tool, is_first_turn_workspace_context_injection,
+    is_message_excluded_from_llm_context_except_memory, is_server_injected_user_message,
 };
 
 /// 步骤优化轮注入的 user 正文标记（取消/失败时弹出临时 user）。
@@ -35,9 +35,7 @@ fn user_task_line_visible(m: &Message, skip_workspace_bootstrap: bool) -> Option
         return None;
     }
     if is_message_excluded_from_llm_context_except_memory(m)
-        || is_long_term_memory_injection(m)
-        || is_workspace_changelist_injection(m)
-        || crate::types::is_planner_tool_call_reject_injection(m)
+        || is_server_injected_user_message(m)
         || (skip_workspace_bootstrap && is_first_turn_workspace_context_injection(m))
     {
         return None;
