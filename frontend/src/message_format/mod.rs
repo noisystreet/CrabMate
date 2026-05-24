@@ -11,6 +11,7 @@ mod plain;
 mod staged_timeline;
 mod strip_ansi;
 mod tool_card;
+mod tool_envelope;
 
 #[cfg(test)]
 pub(crate) use display::agent_reply_plan_step_descriptions_from_assistant;
@@ -24,3 +25,7 @@ pub(crate) use staged_timeline::{
 };
 pub(crate) use strip_ansi::strip_ansi_codes;
 pub(crate) use tool_card::{tool_card_compact_text, tool_card_text};
+pub(crate) use tool_envelope::{
+    format_tool_role_content_for_stored_message, stored_tool_message_compact_text,
+    stored_tool_message_detail_text, tool_result_info_from_stored_content,
+};

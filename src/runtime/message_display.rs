@@ -223,18 +223,24 @@ pub(crate) const SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT: bool = false;
 pub(crate) const SHOW_STAGED_STEP_USER_BOILERPLATE_IN_CHAT: bool = false;
 
 /// 与 `run_staged_plan_then_execute_steps` 注入的 user 正文同形（宽松匹配，避免误伤普通用户输入）。
+/// 滚动不变层前缀 [`plan_optimizer::staged_rolling_immutable_step_user_prefix`] 置于 `### 分步` 之前，故用 `contains` 而非 `starts_with`。
 fn is_staged_step_injection_user_content(s: &str) -> bool {
     let t = s.trim_start();
     if !(t.contains("\n- id:") && t.contains("\n- 描述:")) {
         return false;
     }
-    t.starts_with("### 分步 ") || t.starts_with("【分步执行")
+    t.contains("### 分步 ") || t.starts_with("【分步执行")
+}
+
+/// 分阶段规划轮注入的 coach / 步级补丁 **user**（首行含 `### 分阶段规划 ·`）；优化/ensemble 成功路径亦可能留在历史中。
+fn is_staged_plan_coach_injected_user_content(s: &str) -> bool {
+    s.trim_start().contains("### 分阶段规划 ·")
 }
 
 /// 与 `staged_plan_nl_followup_user_body` 注入正文首行一致；整段在展示层隐藏。
 fn is_staged_nl_followup_bridge_user_content(s: &str) -> bool {
     s.trim_start()
-        .starts_with(crate::runtime::plan_section::STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX)
+        .contains(crate::runtime::plan_section::STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX)
 }
 
 /// `user` 气泡 / CLI 用户侧展示。
@@ -243,6 +249,9 @@ pub(crate) fn user_message_for_chat_display(raw: &str) -> String {
         return String::new();
     }
     if is_staged_nl_followup_bridge_user_content(raw) {
+        return String::new();
+    }
+    if is_staged_plan_coach_injected_user_content(raw) {
         return String::new();
     }
     latex_math_to_unicode(raw)
@@ -882,6 +891,11 @@ mod tests {
             crate::runtime::plan_section::STAGED_STEP_USER_BOILERPLATE
         );
         assert_eq!(user_message_for_chat_display(&legacy), "");
+        let with_immutable = format!(
+            "【不变层·本轮用户总目标】（本步工具与终答须对齐，勿偏题）\n分析当前项目\n\n### 分步 1/1\n{}\n- **子代理角色**（本步 `tools` 已按策略表收窄）：`test_runner` — x\n- id: pre-commit-check\n- 描述: 运行 pre-commit",
+            crate::runtime::plan_section::STAGED_STEP_USER_BOILERPLATE
+        );
+        assert_eq!(user_message_for_chat_display(&with_immutable), "");
     }
 
     #[test]
@@ -891,5 +905,13 @@ mod tests {
             crate::runtime::plan_section::STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX
         );
         assert_eq!(user_message_for_chat_display(&raw), "");
+    }
+
+    #[test]
+    fn user_hides_staged_plan_coach_injection() {
+        let opt = "### 分阶段规划 · 步骤优化（服务端注入）\noptimize".to_string();
+        assert_eq!(user_message_for_chat_display(&opt), "");
+        let patch = "### 分阶段规划 · 步级反馈（plan_id=p1）\n补丁".to_string();
+        assert_eq!(user_message_for_chat_display(&patch), "");
     }
 }

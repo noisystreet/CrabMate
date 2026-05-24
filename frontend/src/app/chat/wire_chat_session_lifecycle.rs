@@ -9,6 +9,7 @@ use super::session_storage::{
     wire_initial_sessions_from_storage, wire_persist_chat_sessions,
     wire_web_ui_config_once_after_init,
 };
+use crate::app::status_tasks_state::StatusTasksSignals;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::Locale;
 use crate::storage::ChatSession;
@@ -25,6 +26,7 @@ pub(crate) struct WireChatSessionLifecycleEffectsArgs {
     pub apply_assistant_display_filters: RwSignal<bool>,
     pub chat_session: ChatSessionSignals,
     pub selected_agent_role: RwSignal<Option<String>>,
+    pub status_tasks: StatusTasksSignals,
     pub session_sessions_storage_key: RwSignal<String>,
 }
 
@@ -43,6 +45,7 @@ impl WireChatSessionLifecycleEffectsArgs {
             apply_assistant_display_filters: app.shell_ui.apply_assistant_display_filters,
             chat_session: app.chat,
             selected_agent_role: app.llm_settings.selected_agent_role,
+            status_tasks: app.to_status_tasks(),
             session_sessions_storage_key: app.session_sessions_storage_key,
         }
     }
@@ -61,6 +64,7 @@ pub(crate) fn wire_chat_session_lifecycle_effects(args: WireChatSessionLifecycle
         apply_assistant_display_filters,
         chat_session,
         selected_agent_role,
+        status_tasks,
         session_sessions_storage_key,
     } = args;
 
@@ -86,6 +90,7 @@ pub(crate) fn wire_chat_session_lifecycle_effects(args: WireChatSessionLifecycle
         chat_session,
         locale,
         selected_agent_role,
+        status_tasks,
     );
 
     wire_persist_chat_sessions(initialized, chat_session, session_sessions_storage_key);

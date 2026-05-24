@@ -71,17 +71,23 @@ fn tool_compact_body_view(p: ToolCompactBodyArgs) -> AnyView {
     let tool_emoji = tool_bubble_emoji(&m_for_body);
     let mid_store = StoredValue::new(tool_mid);
     let tool_name_for_drawer_btn = m_for_body.tool_name.clone();
-    let tool_text_for_drawer_btn = m_for_body.text.clone();
+    let m_for_drawer_snap = m_for_body.clone();
     view! {
         <div class="msg-tool-compact">
             <Show when=move || {
                 let term = tool_name_for_drawer_btn.as_deref() == Some("terminal_session");
-                let compact = tool_text_for_drawer_btn.trim();
+                let loc = locale.get();
                 let live_ok = reasoning_live.as_ref().is_some_and(|(sess, aid, mid)| {
-                    tool_drawer_has_visible_body(*sess, *aid, mid.as_str(), compact, term)
+                    tool_drawer_has_visible_body(*sess, *aid, mid.as_str(), loc, term)
                 });
                 let snap_ok = detail_snapshot.as_deref().is_some_and(|snap| {
-                    !tool_detail_drawer_body(compact, snap, term).trim().is_empty()
+                    let compact = crate::message_format::stored_tool_message_compact_text(
+                        &m_for_drawer_snap,
+                        loc,
+                    );
+                    !tool_detail_drawer_body(compact.as_str(), snap, term)
+                        .trim()
+                        .is_empty()
                 });
                 live_ok || snap_ok
             }>
@@ -212,7 +218,7 @@ pub(super) struct NonAssistantMessageBodyParams {
     pub m_for_body: StoredMessage,
     pub is_tool_bubble: bool,
     pub tool_detail_text: Option<String>,
-    /// 与 [`crate::app::chat::message_row::helpers::live_message_reasoning_text`] 对齐：工具气泡挂载时 `reasoning_text` 常为空，须订阅会话更新。
+    /// 与 [`crate::app::chat::message_row::helpers::live_tool_message_detail_text`] 对齐：工具气泡挂载时 `reasoning_text` 常为空，须订阅会话更新。
     pub tool_reasoning_live: Option<(RwSignal<Vec<ChatSession>>, RwSignal<String>, String)>,
     pub tool_detail_expanded_ids: RwSignal<HashSet<String>>,
     pub tool_mid: String,

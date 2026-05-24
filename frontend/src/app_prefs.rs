@@ -183,6 +183,24 @@ pub fn status_bar_new_session_baseline_prompt_tokens(
     map.get("").copied()
 }
 
+/// Web 状态栏「default」选项对应 `None`。
+///
+/// 服务端 `active_agent_role` 与配置 `default_agent_role_id` 相同时，语义上是默认档而非用户显式点选的下拉项。
+#[must_use]
+pub fn status_bar_selected_agent_role_from_persisted(
+    persisted: Option<&str>,
+    default_agent_role_id: Option<&str>,
+) -> Option<String> {
+    let p = persisted?.trim();
+    if p.is_empty() {
+        return None;
+    }
+    if default_agent_role_id.is_some_and(|d| d == p) {
+        return None;
+    }
+    Some(p.to_string())
+}
+
 pub fn clamp_side_width_for_viewport(w: f64) -> f64 {
     let win = web_sys::window()
         .and_then(|win| win.inner_width().ok())
@@ -249,5 +267,26 @@ mod theme_slug_tests {
     #[test]
     fn high_contrast_accepted() {
         assert_eq!(normalize_theme_slug("high-contrast"), "high-contrast");
+    }
+}
+
+#[cfg(test)]
+mod status_bar_agent_role_tests {
+    use super::status_bar_selected_agent_role_from_persisted;
+
+    #[test]
+    fn default_role_id_maps_to_ui_none() {
+        assert_eq!(
+            status_bar_selected_agent_role_from_persisted(Some("main"), Some("main")),
+            None
+        );
+    }
+
+    #[test]
+    fn explicit_named_role_preserved() {
+        assert_eq!(
+            status_bar_selected_agent_role_from_persisted(Some("coder"), Some("main")).as_deref(),
+            Some("coder")
+        );
     }
 }

@@ -37,20 +37,8 @@ pub(super) async fn post_turn_web_prepare_and_save(
     }
     crate::memory::long_term_memory::strip_long_term_memory_injections(messages);
     crate::workspace::changelist::strip_workspace_changelist_injections(messages);
-    let mut active_save =
+    let active_save =
         persisted_agent_role_after_turn(persisted_active_agent_role, request_agent_role);
-    if active_save.is_none()
-        && expected_revision.is_none()
-        && let Some(id) = cfg_snap
-            .roles_prompts
-            .default_agent_role_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-        && cfg_snap.roles_prompts.agent_roles.contains_key(id)
-    {
-        active_save = Some(id.to_string());
-    }
     app.save_conversation_messages_if_revision(
         conversation_id.to_string(),
         messages.clone(),

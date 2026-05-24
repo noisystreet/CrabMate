@@ -7,6 +7,7 @@ use leptos::task::spawn_local;
 
 use crate::api::{fetch_status, fetch_tasks, save_tasks};
 use crate::app_prefs::SidePanelView;
+use crate::app_prefs::status_bar_selected_agent_role_from_persisted;
 use crate::i18n::Locale;
 
 use super::status_tasks_state::StatusTasksSignals;
@@ -23,10 +24,16 @@ pub fn make_refresh_status(
             match fetch_status(locale).await {
                 Ok(d) => {
                     st.status_fetch_err.set(None);
-                    if let Some(cur) = selected_agent_role.get_untracked()
-                        && !d.agent_role_ids.iter().any(|id| id == &cur)
-                    {
-                        selected_agent_role.set(None);
+                    let default_id = d.default_agent_role_id.as_deref();
+                    if let Some(cur) = selected_agent_role.get_untracked() {
+                        let next = status_bar_selected_agent_role_from_persisted(
+                            Some(cur.as_str()),
+                            default_id,
+                        )
+                        .filter(|id| d.agent_role_ids.iter().any(|known| known == id));
+                        if selected_agent_role.get_untracked().as_ref() != next.as_ref() {
+                            selected_agent_role.set(next);
+                        }
                     }
                     st.status_data.set(Some(d));
                 }
@@ -80,6 +87,8 @@ pub fn make_toggle_task(
 /// 初始化后若尚无 `/status` 快照则拉取一次。
 ///
 /// **勿**订阅 `status_data`：失败路径会 `status_data.set(None)`，若 Effect 追踪该信号会在服务端不可达时反复重试。
+/// **勿**用 `status_loading` 作门闸：`StatusSignals::new` 里 loading 默认为 `true`（首屏骨架），
+/// 若在 loading 时跳过拉取会导致永远不触发 `refresh_status`。
 pub fn wire_status_fetch_if_missing_after_init(
     initialized: RwSignal<bool>,
     st: StatusTasksSignals,
@@ -91,7 +100,7 @@ pub fn wire_status_fetch_if_missing_after_init(
             if !initialized.get() {
                 return;
             }
-            if st.status_data.get_untracked().is_none() && !st.status_loading.get_untracked() {
+            if st.status_data.get_untracked().is_none() {
                 refresh_status();
             }
         }

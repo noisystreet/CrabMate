@@ -37,7 +37,11 @@ fn first_tool_call_function_name(tool_calls: &Value) -> Option<String> {
     }
 }
 
+use crate::i18n::load_locale_from_storage;
 use crate::message_format::staged_timeline_system_message_body;
+use crate::message_format::{
+    format_tool_role_content_for_stored_message, tool_result_info_from_stored_content,
+};
 use crate::storage::StoredMessage;
 use crate::timeline_scan::{
     timeline_state_staged_end, timeline_state_staged_start, timeline_state_tool,
@@ -233,17 +237,43 @@ pub(crate) fn append_tool_role_timeline_row(
 ) {
     let id = format!("h_{}_{}", base_ms, out.len());
     *t = t.saturating_add(1);
-    let state = timeline_state_tool(&id, true);
-    let tool_name = (!name.is_empty()).then(|| name.to_string());
+    let fallback_name = name.trim();
+    let fallback_name = (!fallback_name.is_empty()).then_some(fallback_name);
+    let loc = load_locale_from_storage();
+    let parsed = format_tool_role_content_for_stored_message(text, fallback_name, loc);
+    let tl_ok = tool_result_info_from_stored_content(text, fallback_name)
+        .and_then(|info| info.ok)
+        .unwrap_or(true);
+    let state = timeline_state_tool(&id, tl_ok);
+    let (display_text, reasoning_text, tool_call_id, tool_name) = match parsed {
+        Some((compact, detail)) => {
+            let info = tool_result_info_from_stored_content(text, fallback_name);
+            (
+                compact,
+                detail,
+                info.as_ref()
+                    .and_then(|i| i.tool_call_id.clone())
+                    .filter(|x| !x.trim().is_empty()),
+                info.map(|i| i.name)
+                    .or_else(|| fallback_name.map(String::from)),
+            )
+        }
+        None => (
+            text.to_string(),
+            String::new(),
+            None,
+            fallback_name.map(String::from),
+        ),
+    };
     out.push(StoredMessage {
         id,
         role: "system".into(),
-        text: text.to_string(),
-        reasoning_text: String::new(),
+        text: display_text,
+        reasoning_text,
         image_urls: vec![],
         state: Some(state),
         is_tool: true,
-        tool_call_id: None,
+        tool_call_id,
         tool_name,
         created_at: *t,
     });

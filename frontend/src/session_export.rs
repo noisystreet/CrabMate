@@ -8,7 +8,9 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
 
 use crate::i18n::Locale;
-use crate::message_format::{STAGED_TIMELINE_SYSTEM_PREFIX, message_text_for_display_ex};
+use crate::message_format::{
+    STAGED_TIMELINE_SYSTEM_PREFIX, message_text_for_display_ex, stored_tool_message_detail_text,
+};
 use crate::storage::{ChatSession, StoredMessage};
 
 #[wasm_bindgen(inline_js = r#"
@@ -154,13 +156,7 @@ fn message_text_for_export(
     apply_assistant_display_filters: bool,
 ) -> String {
     let body = if m.is_tool {
-        // 与聊天区工具卡「展开详情」一致：`reasoning_text` 为 `tool_card_text`（标题 + 摘要多段 + 部分工具的原始输出与失败说明）；`text` 仅为紧凑单行。
-        let detail = m.reasoning_text.trim();
-        if !detail.is_empty() {
-            detail.to_string()
-        } else {
-            message_text_for_display_ex(m, loc, apply_assistant_display_filters)
-        }
+        stored_tool_message_detail_text(m, loc)
     } else {
         message_text_for_display_ex(m, loc, apply_assistant_display_filters)
     };

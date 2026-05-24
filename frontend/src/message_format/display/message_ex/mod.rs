@@ -4,6 +4,7 @@ mod assistant;
 mod parts;
 
 use crate::i18n::Locale;
+use crate::message_format::stored_tool_message_compact_text;
 use crate::storage::{StoredMessage, StoredMessageState};
 
 #[cfg(test)]
@@ -20,6 +21,9 @@ pub fn message_text_for_display_ex(
     loc: Locale,
     apply_assistant_display_filters: bool,
 ) -> String {
+    if m.is_tool {
+        return stored_tool_message_compact_text(m, loc);
+    }
     if m.role == "assistant" {
         assistant_message_text_for_display_ex(m, loc, apply_assistant_display_filters)
     } else if m.role == "user" {

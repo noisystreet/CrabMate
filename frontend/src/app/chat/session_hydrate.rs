@@ -8,6 +8,8 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use crate::app::app_bootstrap_phase::AppBootstrapPhase;
+use crate::app::status_tasks_state::StatusTasksSignals;
+use crate::app_prefs::status_bar_selected_agent_role_from_persisted;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::conversation_hydrate::ConversationMessagesResponse;
 use crate::i18n::{self, Locale};
@@ -88,6 +90,7 @@ struct MergeHydrationIntoActiveSessionArgs<'a> {
     current_nonce: u64,
     active_id: &'a str,
     selected_agent_role: RwSignal<Option<String>>,
+    default_agent_role_id: Option<&'a str>,
 }
 
 /// 水合合并前的**有序守卫**：返回 `Err(skip)` 时调用方应直接返回对应 [`SessionHydrationMergeOutcome`]。
@@ -138,6 +141,7 @@ fn merge_hydration_into_active_session(
         current_nonce,
         active_id,
         selected_agent_role,
+        default_agent_role_id,
     } = args;
     if let Err(out) = try_hydration_merge_precheck(
         session,
@@ -161,7 +165,10 @@ fn merge_hydration_into_active_session(
         .map(str::trim)
         .filter(|r| !r.is_empty())
     {
-        selected_agent_role.set(Some(role.to_string()));
+        selected_agent_role.set(status_bar_selected_agent_role_from_persisted(
+            Some(role),
+            default_agent_role_id,
+        ));
     }
     let user_count = session.messages.iter().filter(|m| m.role == "user").count();
     if user_count == 1 && i18n::is_default_session_title(&session.title) {
@@ -267,6 +274,7 @@ pub(crate) mod conversation_hydration_cycle {
         snap: HydrationWireSnapshot,
         chat: ChatSessionSignals,
         selected_agent_role: RwSignal<Option<String>>,
+        default_agent_role_id: Option<String>,
     ) {
         let HydrationWireSnapshot {
             aid,
@@ -305,6 +313,7 @@ pub(crate) mod conversation_hydration_cycle {
                     current_nonce: cur_nonce,
                     active_id: &active,
                     selected_agent_role,
+                    default_agent_role_id: default_agent_role_id.as_deref(),
                 });
             applied_hydration |= merge_outcome.is_applied();
         });
@@ -331,9 +340,10 @@ async fn run_conversation_hydration_cycle(
     snap: HydrationWireSnapshot,
     chat: ChatSessionSignals,
     selected_agent_role: RwSignal<Option<String>>,
+    default_agent_role_id: Option<String>,
 ) {
     let _stream_lane = chat.stream_lane_overlay_phase_untracked();
-    conversation_hydration_cycle::run(snap, chat, selected_agent_role).await;
+    conversation_hydration_cycle::run(snap, chat, selected_agent_role, default_agent_role_id).await;
 }
 
 fn clear_conversation_prompt_tokens_if_no_server_conversation(chat: ChatSessionSignals) {
@@ -374,11 +384,13 @@ pub fn wire_session_hydration(
     chat: ChatSessionSignals,
     locale: RwSignal<Locale>,
     selected_agent_role: RwSignal<Option<String>>,
+    status_tasks: StatusTasksSignals,
 ) {
     Effect::new({
         let chat = chat;
         let locale_sig = locale;
         let selected_agent_role = selected_agent_role;
+        let status_tasks = status_tasks;
         move |_| {
             if !AppBootstrapPhase::derive(initialized.get(), web_ui_config_loaded.get())
                 .hydration_effects_enabled()
@@ -388,6 +400,10 @@ pub fn wire_session_hydration(
             let _ = chat.active_id.get();
             let _ = chat.session_hydrate_nonce.get();
             let loc = locale_sig.get_untracked();
+            let default_agent_role_id = status_tasks
+                .status_data
+                .get_untracked()
+                .and_then(|d| d.default_agent_role_id.clone());
             let Some(snap) = try_hydration_wire_snapshot(chat, loc) else {
                 clear_conversation_prompt_tokens_if_no_server_conversation(chat);
                 return;
@@ -396,6 +412,7 @@ pub fn wire_session_hydration(
                 snap,
                 chat,
                 selected_agent_role,
+                default_agent_role_id,
             ));
         }
     });

@@ -3,7 +3,9 @@
 use leptos::prelude::{Get, RwSignal, With};
 
 use crate::i18n::{self, Locale};
-use crate::message_format::strip_ansi_codes;
+use crate::message_format::{
+    stored_tool_message_compact_text, stored_tool_message_detail_text, strip_ansi_codes,
+};
 use crate::storage::{ChatSession, StoredMessage, StoredMessageState};
 
 pub(super) fn stored_message_by_id<'a>(
@@ -17,16 +19,32 @@ pub(super) fn stored_message_by_id<'a>(
         .and_then(|s| s.messages.iter().find(|m| m.id == message_id))
 }
 
-/// 当前活跃会话中指定消息 id 的 `reasoning_text`（工具详情 / SSE chunk / `tool_result` 写入）。
-pub(super) fn live_message_reasoning_text(
+/// 工具详情展示用全文（含水合后的 `crabmate_tool` 信封解析）。
+pub(super) fn live_tool_message_detail_text(
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
     message_id: &str,
+    loc: Locale,
 ) -> String {
     sessions.with(|list| {
         let aid = active_id.get();
         stored_message_by_id(list, aid.as_str(), message_id)
-            .map(|m| m.reasoning_text.clone())
+            .map(|m| stored_tool_message_detail_text(m, loc))
+            .unwrap_or_default()
+    })
+}
+
+/// 工具气泡紧凑行（含水合后的 `crabmate_tool` 信封解析）。
+pub(super) fn live_tool_message_compact_text(
+    sessions: RwSignal<Vec<ChatSession>>,
+    active_id: RwSignal<String>,
+    message_id: &str,
+    loc: Locale,
+) -> String {
+    sessions.with(|list| {
+        let aid = active_id.get();
+        stored_message_by_id(list, aid.as_str(), message_id)
+            .map(|m| stored_tool_message_compact_text(m, loc))
             .unwrap_or_default()
     })
 }
@@ -59,11 +77,12 @@ pub(super) fn tool_drawer_has_visible_body(
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
     message_id: &str,
-    compact_one_line: &str,
+    loc: Locale,
     terminal_strip_ansi: bool,
 ) -> bool {
-    let full = live_message_reasoning_text(sessions, active_id, message_id);
-    !tool_detail_drawer_body(compact_one_line, &full, terminal_strip_ansi)
+    let compact = live_tool_message_compact_text(sessions, active_id, message_id, loc);
+    let full = live_tool_message_detail_text(sessions, active_id, message_id, loc);
+    !tool_detail_drawer_body(&compact, &full, terminal_strip_ansi)
         .trim()
         .is_empty()
 }

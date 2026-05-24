@@ -4,8 +4,10 @@ use std::collections::HashSet;
 
 use leptos::prelude::*;
 
+use crate::i18n::Locale;
 use crate::message_format::is_staged_timeline_bubble;
 use crate::message_format::stored_message_is_staged_planner_round;
+use crate::message_format::stored_tool_message_detail_text;
 use crate::session_ops::format_msg_time_label;
 use crate::storage::ChatSession;
 
@@ -17,8 +19,8 @@ use super::ChatMessageRowSignals;
 use super::helpers::{
     build_subgoal_exec_banner_icon_key, build_subgoal_exec_banner_text,
     extract_hierarchical_goal_target, extract_hierarchical_metrics,
-    extract_hierarchical_phase_chip, live_message_reasoning_text, message_row_shell_class,
-    tool_detail_drawer_body, tool_drawer_has_visible_body,
+    extract_hierarchical_phase_chip, live_tool_message_compact_text, live_tool_message_detail_text,
+    message_row_shell_class, tool_detail_drawer_body, tool_drawer_has_visible_body,
 };
 use super::row_extras::{
     BubbleClassLiveCtx, SubgoalBannerReactiveCtx, arc_actions_bar_visible,
@@ -58,7 +60,7 @@ struct ToolReasoningDrawerWire {
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
     mid_drawer_sv: StoredValue<String>,
-    tool_compact_line: StoredValue<String>,
+    locale: RwSignal<Locale>,
     is_terminal_tool: bool,
     drawer_panel_class: &'static str,
     drawer_pre_class: &'static str,
@@ -71,7 +73,7 @@ fn tool_reasoning_drawer_below_card(w: ToolReasoningDrawerWire) -> impl IntoView
         sessions,
         active_id,
         mid_drawer_sv,
-        tool_compact_line,
+        locale,
         is_terminal_tool,
         drawer_panel_class,
         drawer_pre_class,
@@ -90,7 +92,7 @@ fn tool_reasoning_drawer_below_card(w: ToolReasoningDrawerWire) -> impl IntoView
                     sessions,
                     active_id,
                     mid_drawer_sv.get_value().as_str(),
-                    tool_compact_line.get_value().as_str(),
+                    locale.get(),
                     is_terminal_tool,
                 )
             }
@@ -98,16 +100,21 @@ fn tool_reasoning_drawer_below_card(w: ToolReasoningDrawerWire) -> impl IntoView
             <div class=drawer_panel_class>
                 <pre class=drawer_pre_class>
                     {move || {
-                        let raw = live_message_reasoning_text(
+                        let mid = mid_drawer_sv.get_value();
+                        let loc = locale.get();
+                        let raw = live_tool_message_detail_text(
                             sessions,
                             active_id,
-                            mid_drawer_sv.get_value().as_str(),
+                            mid.as_str(),
+                            loc,
                         );
-                        tool_detail_drawer_body(
-                            tool_compact_line.get_value().as_str(),
-                            &raw,
-                            is_terminal_tool,
-                        )
+                        let compact = live_tool_message_compact_text(
+                            sessions,
+                            active_id,
+                            mid.as_str(),
+                            loc,
+                        );
+                        tool_detail_drawer_body(compact.as_str(), &raw, is_terminal_tool)
                     }}
                 </pre>
             </div>
@@ -153,9 +160,10 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
     let is_tool_bubble = m.is_tool;
     let (wrap_class, user_row_outer_style, user_row_stack_style, user_row_bubble_style) =
         chat_row_wrap_and_user_styles(m.role.as_str(), is_tool_bubble);
+    let loc_ut = locale.get_untracked();
     let (tool_detail_text, jump_uid) = tool_bubble_detail_and_jump_uid(
         is_tool_bubble,
-        m.reasoning_text.clone(),
+        stored_tool_message_detail_text(&m, loc_ut),
         sessions,
         active_id,
         msg_idx,
@@ -184,7 +192,6 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
         arc_actions_bar_visible(is_tool_bubble, is_user_plain, retry_visible_rc.clone());
     let show_planner_round_badge = stored_message_is_staged_planner_round(&m);
     let is_staged_timeline = is_staged_timeline_bubble(&m);
-    let loc_ut = locale.get_untracked();
     let subgoal_phase_chip = extract_hierarchical_phase_chip(&m, loc_ut);
     let subgoal_metrics_line = extract_hierarchical_metrics(&m, loc_ut);
     let subgoal_target_line = extract_hierarchical_goal_target(&m);
@@ -198,7 +205,6 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
     let is_terminal_tool = m.tool_name.as_deref() == Some("terminal_session");
     let (drawer_panel_class, drawer_pre_class) = terminal_session_drawer_classes(is_terminal_tool);
     let mid_drawer_sv = StoredValue::new(mid_highlight.clone());
-    let tool_compact_line_sv = StoredValue::new(m.text.clone());
     view! {
         <div class=wrap_class style=user_row_outer_style>
             <div class="msg-stack" style=user_row_stack_style>
@@ -269,7 +275,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
                     sessions,
                     active_id,
                     mid_drawer_sv,
-                    tool_compact_line: tool_compact_line_sv,
+                    locale,
                     is_terminal_tool,
                     drawer_panel_class,
                     drawer_pre_class,
