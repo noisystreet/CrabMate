@@ -230,6 +230,7 @@ pub fn is_message_visible_in_chat_transcript(m: &Message) -> bool {
     !is_long_term_memory_injection(m)
         && !is_workspace_changelist_injection(m)
         && !is_first_turn_workspace_context_injection(m)
+        && !is_planner_tool_call_reject_injection(m)
         && !is_system_role_hidden_from_web_transcript(m)
 }
 
@@ -242,6 +243,13 @@ pub const CRABMATE_WORKSPACE_CHANGELIST_NAME: &str = "crabmate_workspace_changel
 /// 新会话首轮「工作区 / 项目画像」等上下文注入（`user.name`）；供模型读取，**不向** Web 快照与聊天水合展示。
 pub const CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME: &str =
     "crabmate_first_turn_workspace_context";
+
+/// 分阶段无工具规划轮：模型违规输出 `tool_calls` 后的一次性重写约束（`user.name`）；送模型，**不向** Web 快照与聊天水合展示。
+pub const CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME: &str = "crabmate_planner_tool_call_reject";
+
+/// 规划轮拒绝重写 user 正文首行；兼容未带 `name` 的历史落盘。
+pub const STAGED_PLANNER_TOOL_CALL_REJECT_CONTENT_PREFIX: &str =
+    "### 规划轮约束提醒（code=PLANNER_TOOL_CALL_REJECTED）";
 
 /// 意图门控将 canned 改为走主模型时，首轮 P 前临时插入的 `system.name`；调用后须从会话中剔除，避免落盘污染。
 pub const CRABMATE_INTENT_GATE_HINT_NAME: &str = "crabmate_intent_gate_hint";
@@ -266,6 +274,22 @@ pub fn is_first_turn_workspace_context_injection(m: &Message) -> bool {
     m.role == "user" && m.name.as_deref() == Some(CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME)
 }
 
+#[inline]
+pub fn is_planner_tool_call_reject_injection(m: &Message) -> bool {
+    if m.role != "user" {
+        return false;
+    }
+    if m.name.as_deref() == Some(CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME) {
+        return true;
+    }
+    message_content_as_str(&m.content)
+        .map(|c| {
+            c.trim_start()
+                .starts_with(STAGED_PLANNER_TOOL_CALL_REJECT_CONTENT_PREFIX)
+        })
+        .unwrap_or(false)
+}
+
 /// `POST /chat/branch` 等按序截断时计入的「真实用户发言」：排除各类 `user.name` 注入条。
 #[inline]
 pub fn user_message_counts_for_branch_truncation(m: &Message) -> bool {
@@ -273,6 +297,7 @@ pub fn user_message_counts_for_branch_truncation(m: &Message) -> bool {
         && !is_long_term_memory_injection(m)
         && !is_workspace_changelist_injection(m)
         && !is_first_turn_workspace_context_injection(m)
+        && !is_planner_tool_call_reject_injection(m)
 }
 
 /// `message.content` 为纯文本时的借用；多模态 [`MessageContent::Parts`] 返回 `None`。
@@ -468,6 +493,19 @@ impl Message {
             reasoning_details: None,
             tool_calls: None,
             name: Some(CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME.to_string()),
+            tool_call_id: None,
+        }
+    }
+
+    /// 规划轮 tool_calls 拒绝后的一次性重写约束（[`CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME`]）；Web 快照过滤。
+    pub fn user_planner_tool_call_reject_injection(content: impl Into<String>) -> Self {
+        Self {
+            role: "user".to_string(),
+            content: Some(MessageContent::Text(content.into())),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: Some(CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME.to_string()),
             tool_call_id: None,
         }
     }

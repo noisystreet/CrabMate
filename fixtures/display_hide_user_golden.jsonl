@@ -4,5 +4,6 @@
 NL 桥接 hide	### CrabMate·NL补全\n请继续	hide
 分步注入 hide	### 分步 1\n- id: a\n- 描述: b	hide
 coach user hide	### 分阶段规划 · 步骤优化\n反馈	hide
+规划轮拒绝重写 hide	### 规划轮约束提醒（code=PLANNER_TOOL_CALL_REJECTED）\n请重写	hide
 普通 user show	你好，请帮我看一下代码	show
 分步前缀在段中 hide	前缀\n### 分步 2\n- id: x\n- 描述: y	hide

@@ -35,6 +35,9 @@ mod step_loop_fsm;
 mod steps_loop;
 mod turn_fsm;
 
+#[cfg(test)]
+mod planner_tool_call_reject_regression_tests;
+
 use sse as staged_sse;
 
 use ensemble_fsm::{EnsembleMergeOutcome, ensemble_merge_outcome_from_parsed_steps};

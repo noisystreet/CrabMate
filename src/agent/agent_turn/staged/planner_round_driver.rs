@@ -50,9 +50,10 @@ fn staged_first_planner_round_tool_call_total_after_materialize(
 
 fn staged_planner_tool_call_reject_user_body(tool_call_count: usize) -> String {
     format!(
-        "### 规划轮约束提醒（code=PLANNER_TOOL_CALL_REJECTED）\n\
+        "{}\n\
          你在无工具规划轮中输出了 {tool_call_count} 条 tool_calls，但本轮严格禁止工具调用。\n\
-         请立即重写并仅输出一段可解析的 `agent_reply_plan` v1 JSON（可用 ```json 围栏），不要包含 tool_calls、DSML 或任何函数调用片段。"
+         请立即重写并仅输出一段可解析的 `agent_reply_plan` v1 JSON（可用 ```json 围栏），不要包含 tool_calls、DSML 或任何函数调用片段。",
+        crate::types::STAGED_PLANNER_TOOL_CALL_REJECT_CONTENT_PREFIX
     )
 }
 
@@ -377,7 +378,7 @@ pub(super) async fn complete_first_planner_round_maybe_retry_tool_reject<F>(
     req: &crate::types::ChatRequest,
     planner_render_to_terminal: bool,
     labels: StagedPlanRunLabels,
-    make_step_user_message: &F,
+    _make_step_user_message: &F,
 ) -> Result<(Message, String), RunAgentTurnError>
 where
     F: Fn(String) -> Message,
@@ -400,17 +401,21 @@ where
                 first_total
             );
             emit_staged_planner_tool_call_rejected_timeline(p.ctx.io.out, first_total).await;
-            p.turn.push_message(make_step_user_message(
-                staged_planner_tool_call_reject_user_body(first_total),
-            ));
+            p.turn
+                .push_message(Message::user_planner_tool_call_reject_injection(
+                    staged_planner_tool_call_reject_user_body(first_total),
+                ));
             let retry_req = prepare_staged_planner_no_tools_request(
                 p,
                 per_coord,
                 labels.build_planner_messages,
             )
             .await?;
-            complete_planner_no_tools_chat_retrying(p, &retry_req, planner_render_to_terminal)
-                .await?
+            let retry_out =
+                complete_planner_no_tools_chat_retrying(p, &retry_req, planner_render_to_terminal)
+                    .await?;
+            p.turn.pop_last_planner_tool_call_reject_user_if_present();
+            retry_out
         } else {
             (first_msg, first_finish)
         }

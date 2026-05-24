@@ -59,3 +59,12 @@ pub(crate) fn pop_last_staged_planner_coach_user_if_present(messages: &mut Vec<M
         messages.pop();
     }
 }
+
+/// 规划轮 tool_calls 拒绝重写约束 user：重写 LLM 调用完成后弹出，避免落盘/Web 水合污染真实用户气泡。
+pub(crate) fn pop_last_planner_tool_call_reject_user_if_present(messages: &mut Vec<Message>) {
+    if let Some(last) = messages.last()
+        && crate::types::is_planner_tool_call_reject_injection(last)
+    {
+        messages.pop();
+    }
+}

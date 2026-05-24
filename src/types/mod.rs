@@ -88,7 +88,10 @@ mod api_messages_strip_tests {
         let inj_ctx = Message::user_first_turn_workspace_context("profile");
         let sys = Message::system_only("do not leak to web list");
         let plain = Message::user_only("hi");
-        let v = vec![sys, inj_mem, inj_cl, inj_ctx, plain.clone()];
+        let reject = Message::user_planner_tool_call_reject_injection(format!(
+            "{STAGED_PLANNER_TOOL_CALL_REJECT_CONTENT_PREFIX}\n请重写"
+        ));
+        let v = vec![sys, inj_mem, inj_cl, inj_ctx, plain.clone(), reject];
         let out = filter_messages_for_web_client_snapshot(&v);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0], plain);

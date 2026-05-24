@@ -26,7 +26,8 @@ use tokio::sync::mpsc;
 
 use super::errors::AgentTurnSubPhase;
 use super::messages::{
-    insert_separator_after_last_user_for_turn, pop_last_staged_planner_coach_user_if_present,
+    insert_separator_after_last_user_for_turn, pop_last_planner_tool_call_reject_user_if_present,
+    pop_last_staged_planner_coach_user_if_present,
     push_assistant_merging_trailing_empty_placeholder,
 };
 use crate::agent::hierarchy::HierarchyRunnerParams;
@@ -296,6 +297,15 @@ impl<'a> RunLoopTurnState<'a> {
         }
     }
 
+    /// 规划轮 tool_calls 拒绝重写约束 user：重写 LLM 完成后弹出，避免持久化污染用户消息。
+    pub(crate) fn pop_last_planner_tool_call_reject_user_if_present(&mut self) {
+        let n = self.messages_buf.len();
+        pop_last_planner_tool_call_reject_user_if_present(self.messages_buf);
+        if self.messages_buf.len() != n {
+            self.bump_messages_revision();
+        }
+    }
+
     /// 首轮 P 前注入的意图门控临时 system（消费后即清空）。
     pub(crate) fn take_intent_turn_gate_hint(&mut self) -> Option<String> {
         self.turn_planner_hints.take_intent_turn_gate_hint()
@@ -540,6 +550,35 @@ mod turn_planner_hints_tests {
             seed_override: LlmSeedOverride::FromConfig,
         };
         turn.pop_last_staged_planner_coach_user_if_present();
+        assert_eq!(turn.messages().len(), 1);
+        assert_eq!(turn.messages_buffer_revision(), 1);
+    }
+
+    #[test]
+    fn messages_revision_increments_when_planner_reject_user_popped() {
+        use crate::agent::agent_turn::errors::AgentTurnSubPhase;
+        use crate::types::{
+            LlmSeedOverride, Message, STAGED_PLANNER_TOOL_CALL_REJECT_CONTENT_PREFIX,
+        };
+
+        let reject = Message::user_planner_tool_call_reject_injection(format!(
+            "{STAGED_PLANNER_TOOL_CALL_REJECT_CONTENT_PREFIX}\n请重写"
+        ));
+        let mut storage = vec![Message::user_only("u"), reject];
+        let mut turn = super::RunLoopTurnState {
+            messages_buf: &mut storage,
+            messages_revision: 0,
+            sub_phase: AgentTurnSubPhase::Planner,
+            turn_planner_hints: TurnPlannerHints::default(),
+            temperature_override: None,
+            model_override: None,
+            use_executor_model: false,
+            executor_model_override: None,
+            executor_api_base: None,
+            executor_api_key: None,
+            seed_override: LlmSeedOverride::FromConfig,
+        };
+        turn.pop_last_planner_tool_call_reject_user_if_present();
         assert_eq!(turn.messages().len(), 1);
         assert_eq!(turn.messages_buffer_revision(), 1);
     }

@@ -37,6 +37,7 @@ fn user_task_line_visible(m: &Message, skip_workspace_bootstrap: bool) -> Option
     if is_message_excluded_from_llm_context_except_memory(m)
         || is_long_term_memory_injection(m)
         || is_workspace_changelist_injection(m)
+        || crate::types::is_planner_tool_call_reject_injection(m)
         || (skip_workspace_bootstrap && is_first_turn_workspace_context_injection(m))
     {
         return None;
