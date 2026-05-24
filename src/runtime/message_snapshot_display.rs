@@ -3,10 +3,11 @@
 use serde::Serialize;
 
 use crate::runtime::message_display::{
-    assistant_markdown_source_for_message, tool_content_for_display_for_message,
-    user_message_for_chat_display,
+    assistant_markdown_source_for_message, user_message_for_chat_display,
 };
+use crate::tool_result::normalize_tool_message_content;
 use crate::types::{Message, message_content_as_str};
+use crabmate_tool_card::{NormalizedToolSnapshotFields, ToolCardLocale, tool_stored_text};
 
 /// 客户端快照单条消息：`Message` 字段 + 可选展示层正文。
 #[derive(Debug, Clone, Serialize)]
@@ -19,12 +20,14 @@ pub struct WebClientSnapshotMessage {
     pub display_reasoning_content: Option<String>,
 }
 
-/// 过滤后的会话消息转为带 `display_*` 的快照行（模型上下文仍用 `message.content`）。
-pub(crate) fn web_client_snapshot_messages(messages: &[Message]) -> Vec<WebClientSnapshotMessage> {
+/// 过滤后的会话消息转为带 `display_*` 的快照行（与 Web SSE/水合 [`tool_stored_text`] 同源）。
+pub(crate) fn web_client_snapshot_messages(
+    messages: &[Message],
+    locale: ToolCardLocale,
+) -> Vec<WebClientSnapshotMessage> {
     messages
         .iter()
-        .enumerate()
-        .map(|(idx, m)| {
+        .map(|m| {
             let mut display_content = None;
             let mut display_reasoning_content = None;
             let raw = message_content_as_str(&m.content).unwrap_or("").to_string();
@@ -33,9 +36,24 @@ pub(crate) fn web_client_snapshot_messages(messages: &[Message]) -> Vec<WebClien
                     display_content = Some(user_message_for_chat_display(&raw));
                 }
                 "tool" => {
-                    let detail = tool_content_for_display_for_message(&raw, messages, idx);
-                    display_reasoning_content = Some(detail.clone());
-                    display_content = Some(compact_tool_display_line(&detail));
+                    if let Some(env) = normalize_tool_message_content(&raw) {
+                        let input = crabmate_tool_card::ToolCardInput::from_normalized_fields(
+                            NormalizedToolSnapshotFields {
+                                name: env.name,
+                                summary: env.summary,
+                                output: env.output,
+                                ok: env.ok,
+                                exit_code: env.exit_code,
+                                error_code: env.error_code,
+                                failure_category: env.failure_category,
+                                tool_call_id: env.tool_call_id,
+                                structured_payload: env.structured_payload,
+                            },
+                        );
+                        let stored = tool_stored_text(&input, locale);
+                        display_content = Some(stored.compact);
+                        display_reasoning_content = Some(stored.detail);
+                    }
                 }
                 "assistant" => {
                     display_content = Some(assistant_markdown_source_for_message(m));
@@ -55,20 +73,9 @@ pub(crate) fn web_client_snapshot_messages(messages: &[Message]) -> Vec<WebClien
         .collect()
 }
 
-fn compact_tool_display_line(detail: &str) -> String {
-    const MAX: usize = 180;
-    let compact = detail
-        .split_whitespace()
-        .filter(|seg| !seg.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ");
-    if compact.chars().count() <= MAX {
-        return compact;
-    }
-    let mut out = String::new();
-    for ch in compact.chars().take(MAX.saturating_sub(1)) {
-        out.push(ch);
-    }
-    out.push('…');
-    out
+/// 默认 zh-Hans 快照（与 Web 默认语言一致）。
+pub(crate) fn web_client_snapshot_messages_default_zh(
+    messages: &[Message],
+) -> Vec<WebClientSnapshotMessage> {
+    web_client_snapshot_messages(messages, ToolCardLocale::ZhHans)
 }

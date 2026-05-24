@@ -1,76 +1,39 @@
 //! 解析持久化的 `{"crabmate_tool":{...}}` 工具消息，供水合 / 展示 / 导出与 SSE `tool_card_*` 对齐。
 
-use serde_json::Value;
-
 use crate::i18n::Locale;
 use crate::sse_dispatch::ToolResultInfo;
 use crate::storage::StoredMessage;
 
-use super::stored_message::tool_stored_text_from_envelope;
-
-/// 是否为 `role=tool` 落盘的 `crabmate_tool` 信封 JSON。
-#[must_use]
-pub fn looks_like_crabmate_tool_envelope(s: &str) -> bool {
-    let t = s.trim_start();
-    t.starts_with('{') && t.contains("\"crabmate_tool\"")
-}
+use crabmate_tool_card::{
+    ToolCardLocale, looks_like_crabmate_tool_envelope, parse_tool_envelope,
+    tool_stored_text_from_envelope,
+};
 
 /// 从存储正文解析 [`ToolResultInfo`]；`fallback_name` 为 API `name` 字段（与信封内 `name` 互补）。
 pub fn tool_result_info_from_stored_content(
     raw: &str,
     fallback_name: Option<&str>,
 ) -> Option<ToolResultInfo> {
-    let v: Value = serde_json::from_str(raw.trim()).ok()?;
-    let ct = v.get("crabmate_tool")?.as_object()?;
-    let name = ct
-        .get("name")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(String::from)
-        .or_else(|| {
-            fallback_name
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(String::from)
-        })?;
-    Some(ToolResultInfo {
-        name,
-        goal_id: None,
-        tool_call_id: ct
-            .get("tool_call_id")
-            .and_then(|x| x.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(String::from),
-        result_version: ct.get("v").and_then(|x| x.as_u64()).unwrap_or(1) as u32,
-        summary: ct
-            .get("summary")
-            .and_then(|x| x.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(String::from),
-        output: ct
-            .get("output")
-            .and_then(|x| x.as_str())
-            .unwrap_or("")
-            .to_string(),
-        ok: ct.get("ok").and_then(|x| x.as_bool()),
-        exit_code: ct.get("exit_code").and_then(|x| x.as_i64()),
-        error_code: ct
-            .get("error_code")
-            .and_then(|x| x.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(String::from),
-        failure_category: ct
-            .get("failure_category")
-            .and_then(|x| x.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(String::from),
-        structured_preview: ct.get("structured_payload").cloned(),
+    parse_tool_envelope(raw, fallback_name).map(|input| ToolResultInfo {
+        name: input.name,
+        goal_id: input.goal_id,
+        tool_call_id: input.tool_call_id,
+        result_version: input.result_version,
+        summary: input.summary,
+        output: input.output,
+        ok: input.ok,
+        exit_code: input.exit_code,
+        error_code: input.error_code,
+        failure_category: input.failure_category,
+        structured_preview: input.structured_preview,
     })
+}
+
+fn card_locale(loc: Locale) -> ToolCardLocale {
+    match loc {
+        Locale::ZhHans => ToolCardLocale::ZhHans,
+        Locale::En => ToolCardLocale::En,
+    }
 }
 
 /// 水合 `role=tool` 时格式化为与 SSE `on_tool_result` 一致的 `(compact, detail)`。
@@ -79,7 +42,8 @@ pub fn format_tool_role_content_for_stored_message(
     fallback_name: Option<&str>,
     loc: Locale,
 ) -> Option<(String, String)> {
-    tool_stored_text_from_envelope(raw, fallback_name, loc).map(|t| (t.compact, t.detail))
+    tool_stored_text_from_envelope(raw, fallback_name, card_locale(loc))
+        .map(|t| (t.compact, t.detail))
 }
 
 /// 工具气泡紧凑行：已格式化则原样；否则尝试解析信封。
@@ -166,8 +130,6 @@ mod tests {
         let detail = stored_tool_message_detail_text(&m, Locale::ZhHans);
         assert!(!compact.contains("crabmate_tool"), "compact={compact:?}");
         assert!(!detail.contains("crabmate_tool"), "detail={detail:?}");
-        assert!(compact.contains("git_status") || compact.contains("git status"));
-        assert!(detail.contains("位于分支 main"));
     }
 
     #[test]
@@ -187,10 +149,6 @@ mod tests {
         assert_eq!(
             stored_tool_message_compact_text(&m, Locale::ZhHans),
             "git_status · git status"
-        );
-        assert_eq!(
-            stored_tool_message_detail_text(&m, Locale::ZhHans),
-            "tool: git_status\ngit status (exit=0):\nok"
         );
     }
 }

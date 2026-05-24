@@ -1,7 +1,7 @@
 //! 工具卡片「紧凑副标题」：从 `tool_output` / 摘要行提取单行信号。
 
-use crate::i18n::{self, Locale};
-use crate::sse_dispatch::ToolResultInfo;
+use crate::ToolCardInput;
+use crate::locale::{self, ToolCardLocale};
 
 const COMPACT_SEPARATOR: &str = " ｜ ";
 
@@ -25,12 +25,12 @@ fn first_nonempty_line_with_prefix<'a>(output: &'a str, prefix: &str) -> Option<
     None
 }
 
-fn compact_path_prefix_from_output(info: &ToolResultInfo) -> Option<String> {
+fn compact_path_prefix_from_output(info: &ToolCardInput) -> Option<String> {
     let v = first_nonempty_line_with_prefix(&info.output, "路径：")?;
     Some(v.to_string())
 }
 
-fn compact_from_to_from_output(info: &ToolResultInfo) -> Option<String> {
+fn compact_from_to_from_output(info: &ToolCardInput) -> Option<String> {
     for line in info.output.lines().map(str::trim) {
         if line.is_empty() {
             continue;
@@ -46,7 +46,7 @@ fn compact_from_to_from_output(info: &ToolResultInfo) -> Option<String> {
     None
 }
 
-fn compact_search_from_tool_output(output: &str, loc: Locale) -> Option<String> {
+fn compact_search_from_tool_output(output: &str, loc: ToolCardLocale) -> Option<String> {
     let trimmed = output.trim();
     if trimmed.is_empty() {
         return None;
@@ -61,13 +61,12 @@ fn compact_search_from_tool_output(output: &str, loc: Locale) -> Option<String> 
     }
     let mut idx = 0usize;
     let mut match_count: Option<u64> = None;
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(lines[0]) {
-        if v.get("kind").and_then(|x| x.as_str()) == Some("crabmate_tool_output")
-            && v.get("tool").and_then(|x| x.as_str()) == Some("search_in_files")
-        {
-            match_count = v.get("match_count").and_then(|x| x.as_u64());
-            idx = 1;
-        }
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(lines[0])
+        && v.get("kind").and_then(|x| x.as_str()) == Some("crabmate_tool_output")
+        && v.get("tool").and_then(|x| x.as_str()) == Some("search_in_files")
+    {
+        match_count = v.get("match_count").and_then(|x| x.as_u64());
+        idx = 1;
     }
     let mut pat: Option<String> = None;
     let mut scope: Option<String> = None;
@@ -83,10 +82,10 @@ fn compact_search_from_tool_output(output: &str, loc: Locale) -> Option<String> 
     let mut right = format!("{pat} · {sc}");
     if let Some(n) = match_count.filter(|&n| n > 0) {
         right.push_str(" · ");
-        right.push_str(&i18n::tool_search_compact_hits_suffix(loc, n as usize));
+        right.push_str(&locale::tool_search_compact_hits_suffix(loc, n as usize));
     }
     Some(join_compact_parts(
-        i18n::tool_search_compact_header_label(loc),
+        locale::tool_search_compact_header_label(loc),
         &right,
     ))
 }
@@ -110,7 +109,7 @@ fn path_from_summary_read_file_english(joined: &str) -> Option<String> {
     }
 }
 
-fn compact_read_file_from_output(output: &str, loc: Locale) -> Option<String> {
+fn compact_read_file_from_output(output: &str, loc: ToolCardLocale) -> Option<String> {
     let trimmed = output.trim();
     if trimmed.is_empty() {
         return None;
@@ -136,12 +135,12 @@ fn compact_read_file_from_output(output: &str, loc: Locale) -> Option<String> {
         _ => None,
     };
     Some(match line_count {
-        Some(n) => join_compact_parts(path, &i18n::tool_read_file_lines_suffix(loc, n)),
+        Some(n) => join_compact_parts(path, &locale::tool_read_file_lines_suffix(loc, n)),
         None => path.to_string(),
     })
 }
 
-fn compact_from_named_output(info: &ToolResultInfo, loc: Locale) -> Option<String> {
+fn compact_from_named_output(info: &ToolCardInput, loc: ToolCardLocale) -> Option<String> {
     match info.name.trim() {
         "run_command" => {
             for line in info.output.lines().map(str::trim) {
@@ -182,21 +181,21 @@ fn compact_from_named_output(info: &ToolResultInfo, loc: Locale) -> Option<Strin
     None
 }
 
-fn compact_read_dir_from_summary_lines(lines: &[&str], loc: Locale) -> Option<String> {
+fn compact_read_dir_from_summary_lines(lines: &[&str], loc: ToolCardLocale) -> Option<String> {
     let joined = lines.join(" ");
     let dir = joined
-        .split(i18n::tool_read_dir_label_dir(loc))
+        .split(locale::tool_read_dir_label_dir(loc))
         .nth(1)
         .and_then(|rest| rest.split_whitespace().next())
         .or_else(|| {
             joined
-                .split(i18n::tool_read_dir_label_dir(Locale::ZhHans))
+                .split(locale::tool_read_dir_label_dir(ToolCardLocale::ZhHans))
                 .nth(1)
                 .and_then(|rest| rest.split_whitespace().next())
         })
         .unwrap_or(".");
     let shown = joined
-        .split(i18n::tool_read_dir_label_shown(loc))
+        .split(locale::tool_read_dir_label_shown(loc))
         .nth(1)
         .and_then(|rest| {
             rest.chars()
@@ -209,23 +208,23 @@ fn compact_read_dir_from_summary_lines(lines: &[&str], loc: Locale) -> Option<St
         .unwrap_or(0);
     Some(join_compact_parts(
         dir,
-        &i18n::tool_read_dir_compact_entries(loc, shown),
+        &locale::tool_read_dir_compact_entries(loc, shown),
     ))
 }
 
-fn compact_read_file_from_summary_lines(lines: &[&str], loc: Locale) -> Option<String> {
+fn compact_read_file_from_summary_lines(lines: &[&str], loc: ToolCardLocale) -> Option<String> {
     let joined = lines.join(" ");
     let path = path_from_summary_read_file_english(&joined)
         .or_else(|| {
             joined
-                .split(i18n::tool_read_file_label_path(loc))
+                .split(locale::tool_read_file_label_path(loc))
                 .nth(1)
                 .and_then(|rest| rest.split_whitespace().next())
                 .map(str::to_string)
         })
         .or_else(|| {
             joined
-                .split(i18n::tool_read_file_label_path(Locale::ZhHans))
+                .split(locale::tool_read_file_label_path(ToolCardLocale::ZhHans))
                 .nth(1)
                 .and_then(|rest| rest.split_whitespace().next())
                 .map(str::to_string)
@@ -237,9 +236,9 @@ fn compact_read_file_from_summary_lines(lines: &[&str], loc: Locale) -> Option<S
                 .and_then(|rest| rest.split_whitespace().next())
                 .map(str::to_string)
         })
-        .unwrap_or_else(|| i18n::tool_read_file_default_path(loc).to_string());
+        .unwrap_or_else(|| locale::tool_read_file_default_path(loc).to_string());
     let line_count = joined
-        .split(i18n::tool_read_file_label_lines(loc))
+        .split(locale::tool_read_file_label_lines(loc))
         .nth(1)
         .and_then(|rest| {
             rest.chars()
@@ -261,7 +260,7 @@ fn compact_read_file_from_summary_lines(lines: &[&str], loc: Locale) -> Option<S
         })
         .or_else(|| {
             joined
-                .split(i18n::tool_read_file_label_lines(Locale::ZhHans))
+                .split(locale::tool_read_file_label_lines(ToolCardLocale::ZhHans))
                 .nth(1)
                 .and_then(|rest| {
                     rest.chars()
@@ -273,20 +272,20 @@ fn compact_read_file_from_summary_lines(lines: &[&str], loc: Locale) -> Option<S
                 })
         });
     Some(match line_count {
-        Some(n) => join_compact_parts(&path, &i18n::tool_read_file_lines_suffix(loc, n)),
+        Some(n) => join_compact_parts(&path, &locale::tool_read_file_lines_suffix(loc, n)),
         None => path,
     })
 }
 
-fn compact_search_from_summary_lines(lines: &[&str], loc: Locale) -> Option<String> {
+fn compact_search_from_summary_lines(lines: &[&str], loc: ToolCardLocale) -> Option<String> {
     let joined = lines.join(" ");
     let keyword = joined
-        .split(i18n::tool_search_label_keyword(loc))
+        .split(locale::tool_search_label_keyword(loc))
         .nth(1)
         .and_then(|rest| rest.split_whitespace().next())
         .or_else(|| {
             joined
-                .split(i18n::tool_search_label_keyword(Locale::ZhHans))
+                .split(locale::tool_search_label_keyword(ToolCardLocale::ZhHans))
                 .nth(1)
                 .and_then(|rest| rest.split_whitespace().next())
         })
@@ -296,9 +295,9 @@ fn compact_search_from_summary_lines(lines: &[&str], loc: Locale) -> Option<Stri
                 .nth(1)
                 .and_then(|rest| rest.split_whitespace().next())
         })
-        .unwrap_or(i18n::tool_search_default_keyword(loc));
+        .unwrap_or(locale::tool_search_default_keyword(loc));
     let hit_count = joined
-        .split(i18n::tool_search_label_hits(loc))
+        .split(locale::tool_search_label_hits(loc))
         .nth(1)
         .and_then(|rest| {
             rest.chars()
@@ -320,7 +319,7 @@ fn compact_search_from_summary_lines(lines: &[&str], loc: Locale) -> Option<Stri
         })
         .or_else(|| {
             joined
-                .split(i18n::tool_search_label_hits(Locale::ZhHans))
+                .split(locale::tool_search_label_hits(ToolCardLocale::ZhHans))
                 .nth(1)
                 .and_then(|rest| {
                     rest.chars()
@@ -333,17 +332,23 @@ fn compact_search_from_summary_lines(lines: &[&str], loc: Locale) -> Option<Stri
         });
     Some(match hit_count {
         Some(n) => join_compact_parts(
-            &format!("{} {keyword}", i18n::tool_search_compact_keyword_word(loc)),
-            &i18n::tool_search_compact_hits_suffix(loc, n),
+            &format!(
+                "{} {keyword}",
+                locale::tool_search_compact_keyword_word(loc)
+            ),
+            &locale::tool_search_compact_hits_suffix(loc, n),
         ),
-        None => format!("{} {keyword}", i18n::tool_search_compact_keyword_word(loc)),
+        None => format!(
+            "{} {keyword}",
+            locale::tool_search_compact_keyword_word(loc)
+        ),
     })
 }
 
 pub(super) fn compact_key_signal(
-    info: &ToolResultInfo,
+    info: &ToolCardInput,
     summary: &str,
-    loc: Locale,
+    loc: ToolCardLocale,
 ) -> Option<String> {
     if let Some(s) = compact_from_named_output(info, loc) {
         return Some(s);
@@ -369,7 +374,7 @@ pub(super) fn compact_key_signal(
     }
     lines
         .iter()
-        .find(|l| i18n::summary_line_looks_like_compact_signal(l, loc))
+        .find(|l| locale::summary_line_looks_like_compact_signal(l, loc))
         .map(|s| s.to_string())
         .or_else(|| lines.first().map(|s| (*s).to_string()))
 }
