@@ -14,6 +14,7 @@ use crate::chat_session_state::{ChatSessionSignals, ChatStreamBusyMemos};
 
 use super::app_shell_ctx::StatusBarFooterSignals;
 use super::shell_runtime_context::expect_chat_shell_ctx;
+use super::status_fetch_state::status_bar_should_show_skeleton;
 use super::status_tasks_state::StatusTasksSignals;
 use crate::i18n::{self, Locale};
 
@@ -340,7 +341,10 @@ fn StatusBarChipsRow(
     view! {
         <div class="status-chips">
             {move || {
-                if st.status_loading.get() {
+                let phase = st.status_fetch_phase.get();
+                let has_data = st.status_data.get().is_some();
+                let has_error = st.status_fetch_err.get().is_some();
+                if status_bar_should_show_skeleton(phase, has_data, has_error) {
                     view! { <StatusBarChipsSkeleton locale=locale /> }.into_any()
                 } else if let Some(fetch_err) = st.status_fetch_err.get() {
                     view! {

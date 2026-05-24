@@ -1074,6 +1074,7 @@ dependencies = [
  "clap",
  "clap_mangen",
  "cmd_mate",
+ "crabmate-display-rules",
  "crabmate-sse-protocol",
  "crossterm 0.29.0",
  "csv",
@@ -1133,6 +1134,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabmate-display-rules"
+version = "0.1.0"
+
+[[package]]
 name = "crabmate-im-bridge"
 version = "0.1.0"
 dependencies = [
@@ -1174,6 +1179,7 @@ dependencies = [
  "ammonia",
  "async-trait",
  "console_error_panic_hook",
+ "crabmate-display-rules",
  "crabmate-sse-protocol",
  "futures-util",
  "gloo-timers",

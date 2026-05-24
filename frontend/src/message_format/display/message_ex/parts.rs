@@ -1,13 +1,12 @@
 //! 角色正文管道的共用片段（剥前缀、用户过滤、层级子目标裁剪）。
 
+use crabmate_display_rules::{
+    STAGED_PLAN_SYSTEM_COACH_PREFIX, user_message_should_hide_for_chat_display,
+};
+
 use crate::i18n::Locale;
 use crate::message_format::display::plan_fence::assistant_text_for_display;
 use crate::message_format::staged_timeline::STAGED_TIMELINE_SYSTEM_PREFIX;
-/// 须与主仓 `src/runtime/plan_section.rs` 中 `STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX` 同步。
-pub(crate) const STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX: &str = "### CrabMate·NL补全\n";
-
-/// 与 `src/agent/agent_turn/staged/sse.rs`、`plan_optimizer.rs`、`plan_ensemble.rs` 等注入的 **system** 首行对齐；聊天区展示时剥除，避免「分阶段 ·」原样进气泡。
-pub(super) const STAGED_PLAN_SYSTEM_COACH_PREFIX: &str = "### 分阶段规划 ·";
 
 fn coach_ordinal_from_injection_header(first_line: &str) -> usize {
     let s = first_line.trim();
@@ -96,20 +95,7 @@ pub(super) fn system_text_for_chat_display(raw: &str, loc: Locale) -> String {
 }
 
 pub(super) fn user_text_for_chat_display(raw: &str) -> String {
-    let t = raw.trim_start();
-    // 过滤 NL 补全桥接消息（首行可能在不变层等前缀之后，用 contains）
-    if t.contains(STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX) {
-        return String::new();
-    }
-    // 过滤分步注入的 user 消息（与后端 is_staged_step_injection_user_content 一致）
-    if t.contains("\n- id:")
-        && t.contains("\n- 描述:")
-        && (t.contains("### 分步 ") || t.starts_with("【分步执行"))
-    {
-        return String::new();
-    }
-    // 分阶段 coach / 补丁 feedback user（优化轮、ensemble、步级反馈等）
-    if t.contains(STAGED_PLAN_SYSTEM_COACH_PREFIX) {
+    if user_message_should_hide_for_chat_display(raw) {
         return String::new();
     }
     raw.to_string()

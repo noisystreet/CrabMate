@@ -120,6 +120,7 @@ impl AppSignals {
         StatusTasksSignals {
             status_data: self.status.status_data,
             status_loading: self.status.status_loading,
+            status_fetch_phase: self.status.status_fetch_phase,
             status_fetch_err: self.status.status_fetch_err,
             tasks_data: self.status.tasks_data,
             tasks_err: self.status.tasks_err,

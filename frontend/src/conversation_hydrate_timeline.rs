@@ -231,6 +231,8 @@ pub(crate) fn append_assistant_tool_calls_timeline_card(
 pub(crate) fn append_tool_role_timeline_row(
     name: &str,
     text: &str,
+    display_content: Option<&str>,
+    display_reasoning: Option<&str>,
     base_ms: i64,
     out: &mut Vec<StoredMessage>,
     t: &mut i64,
@@ -239,8 +241,12 @@ pub(crate) fn append_tool_role_timeline_row(
     *t = t.saturating_add(1);
     let fallback_name = name.trim();
     let fallback_name = (!fallback_name.is_empty()).then_some(fallback_name);
-    let loc = load_locale_from_storage();
-    let parsed = format_tool_role_content_for_stored_message(text, fallback_name, loc);
+    let parsed = if display_content.is_some() || display_reasoning.is_some() {
+        display_content.map(|c| (c.to_string(), display_reasoning.unwrap_or("").to_string()))
+    } else {
+        let loc = load_locale_from_storage();
+        format_tool_role_content_for_stored_message(text, fallback_name, loc)
+    };
     let tl_ok = tool_result_info_from_stored_content(text, fallback_name)
         .and_then(|info| info.ok)
         .unwrap_or(true);

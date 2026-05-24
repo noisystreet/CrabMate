@@ -9,4 +9,4 @@ pub const STAGED_STEP_USER_BOILERPLATE: &str =
     "请只专注完成下列规划步骤，本步完成后以非 tool_calls 的终答结束；不要提前执行后续步骤。";
 
 /// 两轮 NL 展示（`staged_plan_two_phase_nl_display`）桥接 **user** 正文首行；与分步注入一致，**展示层整段隐藏**（`message_display` / 前端 `message_format`），仅模型与持久化可见。
-pub const STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX: &str = "### CrabMate·NL补全\n";
+pub use crabmate_display_rules::STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX;

@@ -1,0 +1,9 @@
+[package]
+name = "crabmate-display-rules"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Shared chat display hide/match rules for CrabMate (Rust server + Leptos WASM)"
+
+[lib]
+path = "lib.rs"

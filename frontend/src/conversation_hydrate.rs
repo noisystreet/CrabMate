@@ -44,6 +44,10 @@ struct ApiMessage {
     #[allow(dead_code)]
     #[serde(default)]
     tool_call_id: Option<String>,
+    #[serde(default)]
+    display_content: Option<String>,
+    #[serde(default)]
+    display_reasoning_content: Option<String>,
 }
 
 fn text_from_content(content: &Option<Value>) -> (String, Vec<String>) {
@@ -93,6 +97,8 @@ struct HydrateSpecialLine<'a> {
     name: &'a str,
     text: &'a str,
     reasoning: &'a str,
+    display_content: Option<&'a str>,
+    display_reasoning: Option<&'a str>,
     base_ms: i64,
     out: &'a mut Vec<StoredMessage>,
     t: &'a mut i64,
@@ -118,7 +124,15 @@ fn hydrate_try_special_cases(line: HydrateSpecialLine<'_>) -> bool {
         return true;
     }
     if line.role == "tool" {
-        append_tool_role_timeline_row(line.name, line.text, line.base_ms, line.out, line.t);
+        append_tool_role_timeline_row(
+            line.name,
+            line.text,
+            line.display_content,
+            line.display_reasoning,
+            line.base_ms,
+            line.out,
+            line.t,
+        );
         return true;
     }
     false
@@ -143,6 +157,16 @@ pub fn stored_messages_from_conversation_api_with_base(
         let (text, image_urls) = text_from_content(&parsed.content);
         let reasoning = parsed.reasoning_content.clone().unwrap_or_default();
         let name = parsed.name.as_deref().unwrap_or("").trim();
+        let display_content = parsed
+            .display_content
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        let display_reasoning = parsed
+            .display_reasoning_content
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
 
         if hydrate_try_special_cases(HydrateSpecialLine {
             parsed: &parsed,
@@ -150,6 +174,8 @@ pub fn stored_messages_from_conversation_api_with_base(
             name,
             text: text.as_str(),
             reasoning: reasoning.as_str(),
+            display_content,
+            display_reasoning,
             base_ms,
             out: &mut out,
             t: &mut t,
@@ -160,11 +186,17 @@ pub fn stored_messages_from_conversation_api_with_base(
         let id = format!("h_{}_{}", base_ms, out.len());
         t = t.saturating_add(1);
         let is_user = role == "user";
+        let display_text = display_content.unwrap_or(text.as_str()).to_string();
+        let display_reasoning_text = if !reasoning.trim().is_empty() {
+            reasoning.clone()
+        } else {
+            display_reasoning.unwrap_or("").to_string()
+        };
         out.push(StoredMessage {
             id,
             role,
-            text,
-            reasoning_text: reasoning,
+            text: display_text,
+            reasoning_text: display_reasoning_text,
             image_urls: if is_user { image_urls } else { vec![] },
             state: None,
             is_tool: false,
@@ -207,5 +239,21 @@ mod tests {
         let out = stored_messages_from_conversation_api_with_base(&msgs, 0);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].text, "real");
+    }
+
+    #[test]
+    fn prefers_snapshot_display_fields_for_tool() {
+        let msgs = vec![json!({
+            "role":"tool",
+            "name":"git_status",
+            "content": r#"{"crabmate_tool":{"v":1,"name":"git_status","ok":true,"output":"x"}}"#,
+            "display_content": "git_status · ok",
+            "display_reasoning_content": "tool: git_status\nok"
+        })];
+        let out = stored_messages_from_conversation_api_with_base(&msgs, 0);
+        assert_eq!(out.len(), 1);
+        assert!(out[0].is_tool);
+        assert_eq!(out[0].text, "git_status · ok");
+        assert_eq!(out[0].reasoning_text, "tool: git_status\nok");
     }
 }

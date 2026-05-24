@@ -35,6 +35,7 @@ mod side_column_toolbar;
 mod side_column_workspace_scroll;
 mod sidebar_nav;
 mod status_bar;
+mod status_fetch_state;
 mod status_tasks_state;
 mod status_tasks_wiring;
 mod stream_run_phase;

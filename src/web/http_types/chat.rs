@@ -242,7 +242,7 @@ pub(crate) struct ConversationMessagesResponseBody {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) tiktoken_prompt_tokens:
         Option<crate::agent::tiktoken_prompt_tokens::TiktokenPromptTokensSnapshot>,
-    pub(crate) messages: Vec<crate::types::Message>,
+    pub(crate) messages: Vec<crate::runtime::message_snapshot_display::WebClientSnapshotMessage>,
 }
 
 /// 统一的 API 错误结构：包含错误码与面向用户的友好提示

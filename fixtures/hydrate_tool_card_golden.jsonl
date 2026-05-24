@@ -1,0 +1,5 @@
+# 工具卡水合/SSE 单入口金样：标签<TAB>信封 JSON<TAB>compact 子串(逗号分隔)<TAB>detail 子串
+# 运行 `cargo test -p crabmate-web hydrate_tool_card_golden`
+
+git_status	{"crabmate_tool":{"v":1,"name":"git_status","summary":"git status","ok":true,"output":"git status (exit=0):\n位于分支 main","tool_call_id":"c1","execution_mode":"parallel_readonly_batch","parallel_batch_id":"pb-1","exit_code":0}}	git_status	位于分支 main
+read_file	{"crabmate_tool":{"v":1,"name":"read_file","summary":"读：a.rs","ok":true,"output":"content"}}	读取文件	读：a.rs

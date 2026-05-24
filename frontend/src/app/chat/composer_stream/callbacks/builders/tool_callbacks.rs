@@ -7,7 +7,7 @@ use leptos::prelude::*;
 use crate::api::OnToolCallFn;
 use crate::app::stream_shell_busy::StreamShellBusyOp;
 use crate::i18n;
-use crate::message_format::{strip_ansi_codes, tool_card_compact_text, tool_card_text};
+use crate::message_format::{strip_ansi_codes, tool_stored_text_from_result_info};
 use crate::session_ops::{make_message_id, message_created_ms};
 use crate::sse_dispatch::{ToolOutputChunkInfo, ToolResultInfo};
 use crate::storage::{StoredMessage, StoredMessageState};
@@ -58,10 +58,9 @@ pub(in super::super) fn make_on_tool_result(
             .scratch
             .apply_stream_control_event(StreamControlEvent::ToolResult);
         let loc = stream_ctx.locale.get_untracked();
-        let result_text = tool_card_text(&info, loc);
-        let compact = tool_card_compact_text(&info, loc);
-        let t = to_single_line(&compact, 180);
-        let detail = result_text.clone();
+        let stored = tool_stored_text_from_result_info(&info, loc);
+        let t = stored.compact.clone();
+        let detail = stored.detail.clone();
 
         let id = make_message_id();
         let tl_ok = info.ok.unwrap_or(true);

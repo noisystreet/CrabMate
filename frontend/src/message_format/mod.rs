@@ -9,6 +9,7 @@ mod display;
 mod dsml_strip;
 mod plain;
 mod staged_timeline;
+mod stored_message;
 mod strip_ansi;
 mod tool_card;
 mod tool_envelope;
@@ -23,8 +24,8 @@ pub(crate) use display::{
 pub(crate) use staged_timeline::{
     STAGED_TIMELINE_SYSTEM_PREFIX, is_staged_timeline_bubble, staged_timeline_system_message_body,
 };
+pub(crate) use stored_message::tool_stored_text_from_result_info;
 pub(crate) use strip_ansi::strip_ansi_codes;
-pub(crate) use tool_card::{tool_card_compact_text, tool_card_text};
 pub(crate) use tool_envelope::{
     format_tool_role_content_for_stored_message, stored_tool_message_compact_text,
     stored_tool_message_detail_text, tool_result_info_from_stored_content,

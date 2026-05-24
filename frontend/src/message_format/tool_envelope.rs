@@ -6,9 +6,7 @@ use crate::i18n::Locale;
 use crate::sse_dispatch::ToolResultInfo;
 use crate::storage::StoredMessage;
 
-use super::{tool_card_compact_text, tool_card_text};
-
-const COMPACT_MAX_CHARS: usize = 180;
+use super::stored_message::tool_stored_text_from_envelope;
 
 /// 是否为 `role=tool` 落盘的 `crabmate_tool` 信封 JSON。
 #[must_use]
@@ -75,33 +73,13 @@ pub fn tool_result_info_from_stored_content(
     })
 }
 
-fn compact_one_line(s: &str) -> String {
-    let compact = s
-        .split_whitespace()
-        .filter(|seg| !seg.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ");
-    if compact.chars().count() <= COMPACT_MAX_CHARS {
-        return compact;
-    }
-    let mut out = String::new();
-    for ch in compact.chars().take(COMPACT_MAX_CHARS.saturating_sub(1)) {
-        out.push(ch);
-    }
-    out.push('…');
-    out
-}
-
 /// 水合 `role=tool` 时格式化为与 SSE `on_tool_result` 一致的 `(compact, detail)`。
 pub fn format_tool_role_content_for_stored_message(
     raw: &str,
     fallback_name: Option<&str>,
     loc: Locale,
 ) -> Option<(String, String)> {
-    let info = tool_result_info_from_stored_content(raw, fallback_name)?;
-    let detail = tool_card_text(&info, loc);
-    let compact = compact_one_line(&tool_card_compact_text(&info, loc));
-    Some((compact, detail))
+    tool_stored_text_from_envelope(raw, fallback_name, loc).map(|t| (t.compact, t.detail))
 }
 
 /// 工具气泡紧凑行：已格式化则原样；否则尝试解析信封。

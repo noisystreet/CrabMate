@@ -7,11 +7,15 @@ use leptos::prelude::*;
 
 use crate::api::{StatusData, TasksData};
 
+use super::status_fetch_state::StatusFetchPhase;
+
 /// 服务端状态快照 + 任务列表的响应式句柄（不含「流式对话错误」`status_err`，仍单独传递）。
 #[derive(Clone, Copy)]
 pub struct StatusTasksSignals {
     pub status_data: RwSignal<Option<StatusData>>,
+    /// 兼容旧订阅；等价于 `status_fetch_phase == Fetching`。
     pub status_loading: RwSignal<bool>,
+    pub status_fetch_phase: RwSignal<StatusFetchPhase>,
     pub status_fetch_err: RwSignal<Option<String>>,
     pub tasks_data: RwSignal<TasksData>,
     pub tasks_err: RwSignal<Option<String>>,

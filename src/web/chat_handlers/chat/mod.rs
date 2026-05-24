@@ -261,7 +261,9 @@ pub(crate) async fn conversation_messages_handler(
             }),
         ));
     };
-    let messages = filter_messages_for_web_client_snapshot(&seed.messages);
+    let filtered = filter_messages_for_web_client_snapshot(&seed.messages);
+    let messages =
+        crate::runtime::message_snapshot_display::web_client_snapshot_messages(&filtered);
     let active_agent_role = seed
         .persisted_active_agent_role
         .as_deref()

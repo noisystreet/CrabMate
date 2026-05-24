@@ -13,6 +13,7 @@ pub(crate) mod config_reload;
 pub mod latex_unicode;
 pub(crate) mod message_display;
 pub(crate) mod message_display_parts;
+pub(crate) mod message_snapshot_display;
 pub(crate) mod plan_section;
 pub(crate) mod repl_reedline;
 pub(crate) mod repl_slash_complete;

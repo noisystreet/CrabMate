@@ -3,6 +3,7 @@ members = [
     ".",
     "frontend",
     "crates/cmd_mate",
+    "crates/crabmate-display-rules",
     "crates/crabmate-sse-protocol",
     "crates/crabmate-im-bridge",
 ]
@@ -57,6 +58,7 @@ fastembed = ["dep:fastembed"]
 
 [dependencies]
 cmd_mate = { path = "crates/cmd_mate" }
+crabmate-display-rules = { path = "crates/crabmate-display-rules" }
 crabmate-sse-protocol = { path = "crates/crabmate-sse-protocol" }
 reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }

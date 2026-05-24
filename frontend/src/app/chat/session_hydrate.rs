@@ -1,6 +1,18 @@
 //! `GET /conversation/messages` 与本地 [`crate::storage::ChatSession`] 对齐（水合）。
 //!
-//! 位于 **`app/chat/`**，与 [`super::wire_chat_session_lifecycle`] 顺序接线；Effect **同步段**用 [`try_hydration_wire_snapshot`] 生成 [`HydrationWireSnapshot`]，再 `spawn_local` 进入 [`conversation_hydration_cycle::run`]（经 [`run_conversation_hydration_cycle`] 薄包装），与流式写入 nonce 门闩对齐。
+//! 位于 **`app/chat/`**，与 [`super::wire_chat_session_lifecycle`] 顺序接线。
+//!
+//! ## Effect 订阅纪律
+//!
+//! - **只订阅** `session_hydrate_nonce` + `active_id`（及门闸 `AppBootstrapPhase::hydration_effects_enabled`）。
+//! - **勿**订阅 `sessions` 或会被水合写回的信号，否则会在合并后再次触发并叠加重复行。
+//! - 异步段经 [`conversation_hydration_cycle::run`]；同步段用 [`try_hydration_wire_snapshot`]。
+//!
+//! ## 本地行保留（[`local_messages_preserved_after_hydrate`]）
+//!
+//! - 流式中（存在 loading 占位）：保留服务端快照里没有 id 的 **SSE 工具行**。
+//! - 保留 `is_local_timeline_snapshot_row` 的 Timeline 快照行。
+//! - 回合结束后以服务端的 `role=tool` / `display_*` 水合为准，丢弃仅 SSE 占位 id 的工具行。
 
 use std::collections::HashSet;
 
@@ -461,6 +473,28 @@ mod local_messages_preserved_after_hydrate_tests {
         let kept = local_messages_preserved_after_hydrate(&server, &local);
         assert_eq!(kept.len(), 1);
         assert_eq!(kept[0].id, "sse-1");
+    }
+
+    #[test]
+    fn preserves_local_timeline_snapshot_rows() {
+        let server: Vec<StoredMessage> = vec![];
+        let local = vec![StoredMessage {
+            id: "tl-local".into(),
+            role: "system".into(),
+            text: "timeline".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(StoredMessageState::TimelineUiJson(
+                r#"{"k":"cm_tl","id":"tl-local"}"#.into(),
+            )),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 1,
+        }];
+        let kept = local_messages_preserved_after_hydrate(&server, &local);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].id, "tl-local");
     }
 
     #[test]

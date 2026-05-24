@@ -1,0 +1,8 @@
+# 每行：标签<TAB>正文<TAB>hide|show
+# 运行 `cargo test -p crabmate-display-rules display_hide_user_golden`
+
+NL 桥接 hide	### CrabMate·NL补全\n请继续	hide
+分步注入 hide	### 分步 1\n- id: a\n- 描述: b	hide
+coach user hide	### 分阶段规划 · 步骤优化\n反馈	hide
+普通 user show	你好，请帮我看一下代码	show
+分步前缀在段中 hide	前缀\n### 分步 2\n- id: x\n- 描述: y	hide

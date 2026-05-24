@@ -8,6 +8,7 @@ description = "CrabMate Web UI (Leptos CSR + WASM)"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+crabmate-display-rules = { path = "../crates/crabmate-display-rules" }
 crabmate-sse-protocol = { path = "../crates/crabmate-sse-protocol" }
 ammonia = "4"
 async-trait = "0.1"
