@@ -14,7 +14,7 @@
 use crate::agent::plan_artifact::{AgentReplyPlanV1, PlanArtifactError};
 use crate::types::Message;
 
-use super::planner_parse_fsm::{StagedPlannerParseRoute, staged_planner_parse_route};
+use super::planner_parse_fsm::StagedPlannerParseRoute;
 
 /// 首轮规划解析完成后，对 **`run_staged_plan_with_prepared_request`** 的三向路由（**不含** assistant `Message`；
 /// 调用方保留单次 LLM 返回的 `msg` 供 `push` / `outer_loop`）。
@@ -24,6 +24,8 @@ pub(crate) enum PreparedPlannerRoute {
     QuietFinish,
     /// 解析失败或非结构化回复 → 降级 **`run_agent_outer_loop`**。
     DegradeToOuterLoop,
+    /// 首轮 `NotFound` 且已有实质只读概览终答 → 落盘 assistant 后结束本分阶段回合（**不**外循环）。
+    FinishWithDirectPlannerAnswer,
     /// 已得合法 **`AgentReplyPlanV1`** → **`prepared_post_parse_schedule`** 及后续管线。
     ContinueWithPlan { plan: AgentReplyPlanV1 },
 }
@@ -33,6 +35,7 @@ impl PreparedPlannerRoute {
         match self {
             Self::QuietFinish => "quiet_finish",
             Self::DegradeToOuterLoop => "degrade_to_outer_loop",
+            Self::FinishWithDirectPlannerAnswer => "finish_with_direct_planner_answer",
             Self::ContinueWithPlan { .. } => "continue_with_plan",
         }
     }
@@ -47,16 +50,27 @@ pub(crate) fn resolve_prepared_planner_route(
     merged_for_log: String,
     parse_err_detail: Option<String>,
     degrade_like_not_found: bool,
+    user_task: Option<&str>,
 ) -> PreparedPlannerRoute {
     match resolve_parse_with_assistant(
         parse_result,
         entered_from_step_execution_round,
+        merged_for_log.as_str(),
+        user_task,
         assistant_msg.clone(),
     ) {
         PreparedPlannerParseOutcome::ContinueWithPlan { plan } => {
             PreparedPlannerRoute::ContinueWithPlan { plan }
         }
         PreparedPlannerParseOutcome::QuietFinish => PreparedPlannerRoute::QuietFinish,
+        PreparedPlannerParseOutcome::FinishWithDirectPlannerAnswer => {
+            log::info!(
+                target: "crabmate",
+                "分阶段规划：首轮无 agent_reply_plan JSON，但已产出只读概览类实质终答（merged_len={}）；跳过外循环降级",
+                merged_for_log.chars().count(),
+            );
+            PreparedPlannerRoute::FinishWithDirectPlannerAnswer
+        }
         PreparedPlannerParseOutcome::DegradeToOuterLoop => {
             if degrade_like_not_found {
                 log::debug!(
@@ -94,20 +108,32 @@ pub(crate) enum PreparedPlannerParseOutcome {
     QuietFinish,
     /// 降级到常规 **`run_agent_outer_loop`**；调用方使用外层已持有的 **`msg`** 写入历史。
     DegradeToOuterLoop,
+    /// 首轮只读概览已直接作答：调用方将 assistant 写入历史后结束。
+    FinishWithDirectPlannerAnswer,
 }
 
 /// 表驱动：对等旧实现中 **`parse_result` + `staged_planner_parse_route`** 分支。
 pub(crate) fn resolve_parse_with_assistant(
     parse_result: Result<AgentReplyPlanV1, PlanArtifactError>,
     entered_from_step_execution_round: bool,
+    merged_answer_text: &str,
+    user_task: Option<&str>,
     _assistant_msg_for_api_compat: Message,
 ) -> PreparedPlannerParseOutcome {
     match parse_result {
         Ok(plan) => PreparedPlannerParseOutcome::ContinueWithPlan { plan },
         Err(parse_err) => {
-            match staged_planner_parse_route(&parse_err, entered_from_step_execution_round) {
+            match super::planner_parse_fsm::staged_planner_parse_route(
+                &parse_err,
+                entered_from_step_execution_round,
+                merged_answer_text,
+                user_task,
+            ) {
                 StagedPlannerParseRoute::QuietFinishOnPlanNotFound => {
                     PreparedPlannerParseOutcome::QuietFinish
+                }
+                StagedPlannerParseRoute::FinishOnDirectPlannerAnswer => {
+                    PreparedPlannerParseOutcome::FinishWithDirectPlannerAnswer
                 }
                 StagedPlannerParseRoute::DegradeToOuterLoop => {
                     PreparedPlannerParseOutcome::DegradeToOuterLoop
@@ -143,7 +169,13 @@ mod tests {
     #[test]
     fn ok_parse_continues() {
         let plan = minimal_plan();
-        let o = resolve_parse_with_assistant(Ok(plan.clone()), false, Message::user_only("u"));
+        let o = resolve_parse_with_assistant(
+            Ok(plan.clone()),
+            false,
+            "",
+            None,
+            Message::user_only("u"),
+        );
         match o {
             PreparedPlannerParseOutcome::ContinueWithPlan { plan: p } => {
                 assert_eq!(p.steps.len(), plan.steps.len());
@@ -157,6 +189,8 @@ mod tests {
         let o = resolve_parse_with_assistant(
             Err(PlanArtifactError::NotFound),
             true,
+            "",
+            None,
             Message::user_only("u"),
         );
         assert!(matches!(o, PreparedPlannerParseOutcome::QuietFinish));
@@ -173,6 +207,7 @@ mod tests {
             String::new(),
             None,
             false,
+            None,
         );
         assert!(matches!(r, PreparedPlannerRoute::ContinueWithPlan { .. }));
         assert_eq!(r.as_static_str(), "continue_with_plan");
@@ -188,6 +223,7 @@ mod tests {
             String::new(),
             None,
             true,
+            None,
         );
         assert!(matches!(r, PreparedPlannerRoute::QuietFinish));
         assert_eq!(r.as_static_str(), "quiet_finish");
@@ -200,11 +236,32 @@ mod tests {
             Err(PlanArtifactError::NotFound),
             false,
             &msg,
-            "merged".to_string(),
+            "short".to_string(),
             Some("nf".into()),
             true,
+            Some("分析当前项目"),
         );
         assert!(matches!(r, PreparedPlannerRoute::DegradeToOuterLoop));
         assert_eq!(r.as_static_str(), "degrade_to_outer_loop");
+    }
+
+    #[test]
+    fn resolve_prepared_route_not_found_substantive_readonly_finishes() {
+        let msg = Message::user_only("u");
+        let merged = "好的，我来分析当前项目。\n\n## 项目总览\n\n".repeat(20);
+        let r = resolve_prepared_planner_route(
+            Err(PlanArtifactError::NotFound),
+            false,
+            &msg,
+            merged,
+            Some("nf".into()),
+            true,
+            Some("分析当前项目"),
+        );
+        assert!(matches!(
+            r,
+            PreparedPlannerRoute::FinishWithDirectPlannerAnswer
+        ));
+        assert_eq!(r.as_static_str(), "finish_with_direct_planner_answer");
     }
 }

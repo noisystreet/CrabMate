@@ -6,6 +6,7 @@
 pub(crate) mod advisory_bypass;
 pub(crate) mod at_turn_start;
 pub(crate) mod context;
+pub(crate) mod readonly_overview_bypass;
 pub(crate) mod staged_planning_gate;
 pub(crate) mod user;
 

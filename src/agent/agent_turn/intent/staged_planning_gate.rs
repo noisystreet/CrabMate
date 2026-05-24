@@ -20,6 +20,7 @@ use super::advisory_bypass;
 use super::at_turn_start::emit_intent_timeline_gate_only;
 use super::build_intent_routing_context;
 use super::intent_user;
+use super::readonly_overview_bypass;
 
 /// 非分层路径下，是否允许进入分阶段 / 逻辑双代理编排（仅 `IntentAction::Execute` 为 true）。
 #[derive(Debug, Clone, PartialEq)]
@@ -49,6 +50,8 @@ pub(crate) enum StagedPlanningDenyReason {
     IntentPipelineNotExecute,
     /// 管线判定为 **Execute**，且 **`staged_plan_intent_gate_advisory_bypass`** 为真时正文命中「架构/重构咨询」启发式：不进入滚动分阶段规划，改走单 Agent 外循环（避免无工具规划轮把咨询拆成大量读文件步）。
     AdvisoryExecuteBypassStaged,
+    /// 只读概览/探查类 Execute（如 `execute.read_inspect` 或「分析当前项目」）：不进入分阶段规划，避免规划 Markdown 终答后再降级外循环重复作答。
+    ReadonlyOverviewBypassStaged,
 }
 
 impl StagedPlanningDenyReason {
@@ -57,6 +60,7 @@ impl StagedPlanningDenyReason {
             Self::EmptyEffectiveTask => "empty_effective_task",
             Self::IntentPipelineNotExecute => "intent_pipeline_not_execute",
             Self::AdvisoryExecuteBypassStaged => "advisory_execute_bypass_staged",
+            Self::ReadonlyOverviewBypassStaged => "readonly_overview_bypass_staged",
         }
     }
 }
@@ -84,6 +88,10 @@ fn staged_plan_eligibility_for_intent(
 ) -> Result<(), StagedPlanningDenyReason> {
     if !matches!(decision.action, IntentAction::Execute) {
         return Err(StagedPlanningDenyReason::IntentPipelineNotExecute);
+    }
+    if readonly_overview_bypass::should_bypass_staged_for_readonly_overview_execute(task, decision)
+    {
+        return Err(StagedPlanningDenyReason::ReadonlyOverviewBypassStaged);
     }
     if advisory_bypass::should_bypass_staged_for_advisory_execute_task(task, decision, staged) {
         return Err(StagedPlanningDenyReason::AdvisoryExecuteBypassStaged);

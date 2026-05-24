@@ -77,6 +77,16 @@ fn contains_any(lower: &str, defaults: &[&str], extras: &[String]) -> bool {
             .any(|k| !k.is_empty() && lower.contains(k.as_str()))
 }
 
+/// 是否命中「落地强度」词（改代码/跑构建/提交等）；供 [`super::readonly_overview_bypass`] 复用。
+pub(crate) fn task_has_impl_strength_markers(lower: &str, extra_blockers: &[String]) -> bool {
+    contains_any(lower, DEFAULT_IMPL_STRENGTH, extra_blockers)
+}
+
+/// 是否命中咨询/说明类词。
+pub(crate) fn task_has_consult_markers(lower: &str, extra_markers: &[String]) -> bool {
+    contains_any(lower, DEFAULT_CONSULT, extra_markers)
+}
+
 /// 在 **`IntentAction::Execute`** 且开启 **`staged_plan_intent_gate_advisory_bypass`** 时：
 /// 若命中「架构/咨询」启发式且未命中「落地强度」词，则**绕过分阶段**（由门控返回 [`super::StagedPlanningDenyReason::AdvisoryExecuteBypassStaged`]）。
 pub(crate) fn should_bypass_staged_for_advisory_execute_task(
@@ -95,9 +105,8 @@ pub(crate) fn should_bypass_staged_for_advisory_execute_task(
         return false;
     }
 
-    if contains_any(
+    if task_has_impl_strength_markers(
         lower.as_str(),
-        DEFAULT_IMPL_STRENGTH,
         &staged.staged_plan_advisory_bypass_extra_impl_blockers,
     ) {
         return false;
@@ -109,9 +118,8 @@ pub(crate) fn should_bypass_staged_for_advisory_execute_task(
             DEFAULT_ARCH,
             &staged.staged_plan_advisory_bypass_extra_arch_markers,
         );
-    let has_consult = contains_any(
+    let has_consult = task_has_consult_markers(
         lower.as_str(),
-        DEFAULT_CONSULT,
         &staged.staged_plan_advisory_bypass_extra_consult_markers,
     );
     has_arch && has_consult

@@ -33,6 +33,7 @@ pub(crate) fn staged_plan_phase_instruction_default() -> String {
          **JSON 形状**：顶层须为合法 v1 对象，字段包含 `type`（字符串 `agent_reply_plan`）、`version`、`steps`、`no_task` 等（见下方 schema）；**禁止**把整份计划包在 `\"agent_reply_plan\": {{ ... }}` 嵌套键下。\n\
          `steps` 须与用户意图及粒度一致：用户只要概览、梳理或只读分析时，勿擅自收窄为单一文件的深层修复路径，除非用户明确授权。\n\
          **咨询类**（架构意见、风险列举、优劣对比等）且用户未要求改仓库、新建文档或跑构建/测试：优先 `no_task: true`、`steps: []`，由后续自然语言直接作答；勿拆成多轮「通读大量源文件」或未经要求的长篇设计稿。\n\
+         **只读概览**（如「分析当前项目/仓库」、介绍技术栈与目录）：**必须**在 fenced JSON 中设 `no_task: true`、`steps: []`，正文一次性给出结论；**勿**在文末写「如需进一步深入请告诉我方向」等续问句（易触发重复终答）。\n\
          若仍需一步辅助：`steps[0].description` 须写清**可验收结论**（条目化模块/风险点）与**只读探查上限**（如至多 N 个路径/文件）；此类步须 `executor_kind=review_readonly`，勿在未授权步使用 `patch_write`/`test_runner`。\n\
          `steps[].description` 宜具体可验收；用户明确要求多项交付物时勿擅自合并。\n\
          信息不足时宁可 `no_task` 或请求澄清，勿编造路径或接口细节。\n\

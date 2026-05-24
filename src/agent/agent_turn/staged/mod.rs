@@ -618,6 +618,10 @@ where
         Some(crate::agent::plan_artifact::PlanArtifactError::NotFound)
     );
 
+    let user_task = p
+        .turn
+        .staged_immutable_user_goal_snapshot()
+        .map(str::to_string);
     let route = resolve_prepared_planner_route(
         parse_result,
         entered_from_step_execution_round,
@@ -625,6 +629,7 @@ where
         merged_for_log,
         parse_err_detail,
         degrade_like_not_found,
+        user_task.as_deref(),
     );
     tracing::debug!(
         target: "crabmate::staged",
@@ -640,6 +645,14 @@ where
             debug!(
                 target: "crabmate",
                 "分阶段重规划：检测到分步执行后重入且本轮未产出结构化计划，视为收敛完成，直接结束（避免重复总结）"
+            );
+            Ok(StagedPlanRunOutcome::Finished)
+        }
+        PreparedPlannerRoute::FinishWithDirectPlannerAnswer => {
+            p.turn.push_assistant_merging_trailing_empty(msg.clone());
+            debug!(
+                target: "crabmate",
+                "分阶段规划：只读概览类实质终答已落盘，跳过外循环（避免重复回答）"
             );
             Ok(StagedPlanRunOutcome::Finished)
         }
@@ -674,33 +687,27 @@ mod staged_not_found_convergence_tests {
     };
 
     #[test]
-    fn not_found_does_not_finish_for_plain_qa_round() {
+    fn not_found_does_not_quiet_finish_for_plain_first_round() {
         assert!(
             !entered_implies_finish_on_plan_not_found(false),
-            "普通问答轮（未进入步后重规划）遇到 NotFound 不应直接收敛结束"
+            "普通首轮（未进入步后重规划）遇到 NotFound 不应走 QuietFinishOnPlanNotFound"
         );
-        assert!(
-            !matches!(
-                staged_planner_parse_route(&PlanArtifactError::NotFound, false),
-                StagedPlannerParseRoute::QuietFinishOnPlanNotFound
-            ),
-            "路由应与 entered 标记一致"
-        );
+        assert!(!matches!(
+            staged_planner_parse_route(&PlanArtifactError::NotFound, false, "x", None),
+            StagedPlannerParseRoute::QuietFinishOnPlanNotFound
+        ),);
     }
 
     #[test]
     fn not_found_finishes_only_after_step_execution_reentry() {
         assert!(
             entered_implies_finish_on_plan_not_found(true),
-            "仅在同 turn 的步后重规划轮，NotFound 才应触发收敛结束"
+            "仅在同 turn 的步后重规划轮，NotFound 才应触发 QuietFinishOnPlanNotFound"
         );
-        assert!(
-            matches!(
-                staged_planner_parse_route(&PlanArtifactError::NotFound, true),
-                StagedPlannerParseRoute::QuietFinishOnPlanNotFound
-            ),
-            "路由应与 entered 标记一致"
-        );
+        assert!(matches!(
+            staged_planner_parse_route(&PlanArtifactError::NotFound, true, "x", None),
+            StagedPlannerParseRoute::QuietFinishOnPlanNotFound
+        ),);
     }
 }
 
