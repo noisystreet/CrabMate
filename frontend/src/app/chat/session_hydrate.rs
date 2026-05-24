@@ -28,6 +28,64 @@ use crate::i18n::{self, Locale};
 use crate::session_ops::title_from_user_prompt;
 use crate::storage::{ChatSession, StoredMessage};
 
+/// 本地真实 user 气泡（非展示层隐藏的编排注入文案）。
+fn is_plain_user_bubble(m: &StoredMessage) -> bool {
+    m.role == "user"
+        && !m.is_tool
+        && !crabmate_display_rules::user_message_should_hide_for_chat_display(m.text.as_str())
+}
+
+/// 服务端快照未包含、或误含注入类 user 时，保留本地真实 user 气泡（防水合覆盖）。
+fn local_plain_user_bubbles_preserved(
+    server_msgs: &[StoredMessage],
+    local_msgs: &[StoredMessage],
+) -> Vec<StoredMessage> {
+    local_msgs
+        .iter()
+        .filter(|m| {
+            if !is_plain_user_bubble(m) {
+                return false;
+            }
+            let t = m.text.trim();
+            if t.is_empty() {
+                return false;
+            }
+            !server_msgs
+                .iter()
+                .any(|s| s.role == "user" && s.text.trim() == t)
+        })
+        .cloned()
+        .collect()
+}
+
+/// 合并水合快照：去掉服务端注入类 user（历史脏数据），并插回本地真实 user。
+fn merge_hydrated_messages_with_local_plain_users(
+    hydrated: Vec<StoredMessage>,
+    local_msgs: &[StoredMessage],
+) -> Vec<StoredMessage> {
+    let preserved = local_plain_user_bubbles_preserved(&hydrated, local_msgs);
+    if preserved.is_empty() {
+        return hydrated;
+    }
+    let mut out: Vec<StoredMessage> = hydrated
+        .into_iter()
+        .filter(|m| {
+            !(m.role == "user"
+                && crabmate_display_rules::user_message_should_hide_for_chat_display(
+                    m.text.as_str(),
+                ))
+        })
+        .collect();
+    if let Some(pos) = out.iter().position(|m| m.role == "user") {
+        for (i, u) in preserved.iter().enumerate() {
+            out.insert(pos + i, u.clone());
+        }
+    } else {
+        out.extend(preserved);
+    }
+    out
+}
+
 fn count_user_role_bubbles(messages: &[StoredMessage]) -> usize {
     messages.iter().filter(|m| m.role == "user").count()
 }
@@ -166,7 +224,8 @@ fn merge_hydration_into_active_session(
     ) {
         return out;
     }
-    let mut new_messages = hydrated;
+    let mut new_messages =
+        merge_hydrated_messages_with_local_plain_users(hydrated, &session.messages);
     let preserved = local_messages_preserved_after_hydrate(&new_messages, &session.messages);
     new_messages.extend(preserved);
     session.messages = new_messages;
@@ -428,6 +487,68 @@ pub fn wire_session_hydration(
             ));
         }
     });
+}
+
+#[cfg(test)]
+mod merge_hydrated_plain_user_tests {
+    use super::merge_hydrated_messages_with_local_plain_users;
+    use crate::storage::StoredMessage;
+
+    fn user_msg(id: &str, text: &str) -> StoredMessage {
+        StoredMessage {
+            id: id.into(),
+            role: "user".into(),
+            text: text.into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        }
+    }
+
+    #[test]
+    fn restores_local_plain_user_when_server_has_injection_user() {
+        const REAL: &str = "用户真实诉求";
+        let reject = format!(
+            "{} 请仅输出 JSON",
+            crabmate_display_rules::STAGED_PLANNER_TOOL_CALL_REJECT_PREFIX
+        );
+        let server = vec![
+            user_msg("srv-inj", &reject),
+            StoredMessage {
+                id: "a1".into(),
+                role: "assistant".into(),
+                text: "ok".into(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: None,
+                is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
+                created_at: 1,
+            },
+        ];
+        let local = vec![user_msg("local-u", REAL)];
+        let merged = merge_hydrated_messages_with_local_plain_users(server, &local);
+        assert!(
+            merged
+                .iter()
+                .any(|m| m.role == "user" && m.text.contains(REAL)),
+            "应保留本地真实 user"
+        );
+        assert!(
+            !merged.iter().any(|m| {
+                m.role == "user"
+                    && crabmate_display_rules::is_planner_tool_call_reject_injected_user_content(
+                        m.text.as_str(),
+                    )
+            }),
+            "应去掉服务端注入 user"
+        );
+    }
 }
 
 #[cfg(test)]

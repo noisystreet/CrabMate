@@ -9,9 +9,9 @@ use crate::agent::context_window::{PrepareMessagesForModelHooks, prepare_message
 use crate::agent::per_coord::{PerCoordinator, PerCoordinatorInit};
 use crate::llm::{ChatCompletionsBackend, StreamChatParams};
 use crate::types::{
-    FunctionCall, LlmSeedOverride, Message, STAGED_PLANNER_TOOL_CALL_REJECT_CONTENT_PREFIX,
-    ToolCall, filter_messages_for_web_client_snapshot, is_planner_tool_call_reject_injection,
-    message_content_as_str,
+    CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME, FunctionCall, LlmSeedOverride, Message,
+    STAGED_PLANNER_TOOL_CALL_REJECT_CONTENT_PREFIX, ToolCall,
+    filter_messages_for_web_client_snapshot, message_content_as_str,
 };
 
 use super::super::errors::AgentTurnSubPhase;
@@ -218,8 +218,10 @@ async fn reject_user_ephemeral_after_first_planner_tool_calls_retry() {
         "真实用户诉求应仍在缓冲中"
     );
     assert!(
-        !messages.iter().any(is_planner_tool_call_reject_injection),
-        "重写约束 user 应在 LLM 重试完成后弹出，不得留在 messages 缓冲"
+        !messages
+            .iter()
+            .any(|m| { m.name.as_deref() == Some(CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME) }),
+        "重写约束 user 仅进入重试 ChatRequest，不得写入 messages 缓冲"
     );
     assert!(
         !messages.iter().any(|m| {

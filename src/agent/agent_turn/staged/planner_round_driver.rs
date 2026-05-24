@@ -401,21 +401,28 @@ where
                 first_total
             );
             emit_staged_planner_tool_call_rejected_timeline(p.ctx.io.out, first_total).await;
-            p.turn
-                .push_message(Message::user_planner_tool_call_reject_injection(
-                    staged_planner_tool_call_reject_user_body(first_total),
-                ));
-            let retry_req = prepare_staged_planner_no_tools_request(
+            let retry_base = prepare_staged_planner_no_tools_request(
                 p,
                 per_coord,
                 labels.build_planner_messages,
             )
             .await?;
-            let retry_out =
-                complete_planner_no_tools_chat_retrying(p, &retry_req, planner_render_to_terminal)
-                    .await?;
-            p.turn.pop_last_planner_tool_call_reject_user_if_present();
-            retry_out
+            let mut retry_messages = retry_base.messages.clone();
+            retry_messages.push(Message::user_planner_tool_call_reject_injection(
+                staged_planner_tool_call_reject_user_body(first_total),
+            ));
+            let mut retry_req = crate::llm::no_tools_chat_request_from_messages(
+                p.ctx.core.cfg.as_ref(),
+                retry_messages,
+                p.turn.temperature_override,
+                p.effective_model(),
+                p.turn.seed_override,
+            );
+            retry_req.max_tokens = retry_req
+                .max_tokens
+                .max(crate::llm::STAGED_PLANNER_MIN_COMPLETION_TOKENS);
+            complete_planner_no_tools_chat_retrying(p, &retry_req, planner_render_to_terminal)
+                .await?
         } else {
             (first_msg, first_finish)
         }

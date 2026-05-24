@@ -286,22 +286,6 @@ pub fn is_first_turn_workspace_context_injection(m: &Message) -> bool {
     m.role == "user" && m.name.as_deref() == Some(CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME)
 }
 
-#[inline]
-pub fn is_planner_tool_call_reject_injection(m: &Message) -> bool {
-    if m.role != "user" {
-        return false;
-    }
-    if m.name.as_deref() == Some(CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME) {
-        return true;
-    }
-    message_content_as_str(&m.content)
-        .map(|c| {
-            c.trim_start()
-                .starts_with(STAGED_PLANNER_TOOL_CALL_REJECT_CONTENT_PREFIX)
-        })
-        .unwrap_or(false)
-}
-
 /// `POST /chat/branch` 等按序截断时计入的「真实用户发言」：排除各类 `user.name` 注入条。
 #[inline]
 pub fn user_message_counts_for_branch_truncation(m: &Message) -> bool {
