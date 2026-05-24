@@ -61,10 +61,36 @@ pub use chat_api::*;
 pub use message::*;
 pub use server_injected_user::{
     is_ephemeral_staged_coach_user_message, is_server_injected_user_message,
+    strip_orchestration_injected_users_for_conversation_store,
 };
 // 供宿主/调试引用 [`message_lineage`]；库内尚未全覆盖调用点，`cargo check` 下会呈现未使用。
 #[allow(unused_imports)]
 pub use message_lineage::{ContextInjectionKind, MessageLineage, message_lineage};
+#[cfg(test)]
+mod server_injected_user_store_tests {
+    use super::*;
+
+    #[test]
+    fn strip_orchestration_injected_users_keeps_real_user_and_workspace_profile() {
+        let mut v = vec![
+            Message::user_only("真实用户"),
+            Message::user_staged_step_injection("### 分步 1/1\n- id: a\n- 描述: b"),
+            Message::user_plan_rewrite_injection("你的最终回答缺少**结构化规划**"),
+            Message::user_first_turn_workspace_context("工作区画像"),
+            Message::assistant_only("ok"),
+        ];
+        strip_orchestration_injected_users_for_conversation_store(&mut v);
+        assert_eq!(v.len(), 3);
+        assert!(v.iter().any(|m| {
+            message_content_as_str(&m.content).is_some_and(|c| c.contains("真实用户"))
+        }));
+        assert!(
+            v.iter()
+                .any(crate::types::is_first_turn_workspace_context_injection)
+        );
+    }
+}
+
 #[cfg(test)]
 mod api_messages_strip_tests {
     use super::*;

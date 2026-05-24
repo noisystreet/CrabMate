@@ -37,6 +37,18 @@ fn is_server_injected_user_by_name(m: &Message) -> bool {
     )
 }
 
+/// 落盘前剥离：编排类注入 user（保留首轮工作区画像等仍须持久化的注入）。
+pub fn strip_orchestration_injected_users_for_conversation_store(messages: &mut Vec<Message>) {
+    messages.retain(|m| !should_strip_user_before_conversation_store(m));
+}
+
+#[inline]
+fn should_strip_user_before_conversation_store(m: &Message) -> bool {
+    m.role == "user"
+        && is_server_injected_user_message(m)
+        && !crate::types::is_first_turn_workspace_context_injection(m)
+}
+
 /// 分阶段 / 补丁 / ensemble 等临时 coach user（取消或失败时弹出）。
 #[inline]
 pub fn is_ephemeral_staged_coach_user_message(m: &Message) -> bool {
