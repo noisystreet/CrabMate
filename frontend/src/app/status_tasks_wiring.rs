@@ -78,6 +78,8 @@ pub fn make_toggle_task(
 }
 
 /// 初始化后若尚无 `/status` 快照则拉取一次。
+///
+/// **勿**订阅 `status_data`：失败路径会 `status_data.set(None)`，若 Effect 追踪该信号会在服务端不可达时反复重试。
 pub fn wire_status_fetch_if_missing_after_init(
     initialized: RwSignal<bool>,
     st: StatusTasksSignals,
@@ -86,7 +88,10 @@ pub fn wire_status_fetch_if_missing_after_init(
     Effect::new({
         let refresh_status = Arc::clone(&refresh_status);
         move |_| {
-            if initialized.get() && st.status_data.get().is_none() {
+            if !initialized.get() {
+                return;
+            }
+            if st.status_data.get_untracked().is_none() && !st.status_loading.get_untracked() {
                 refresh_status();
             }
         }

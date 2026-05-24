@@ -31,17 +31,20 @@ fn conversation_server_id_if_hydratable_for_wire(s: &ChatSession) -> Option<Stri
     s.trimmed_server_conversation_id().map(str::to_string)
 }
 
-/// 服务端快照中不存在的本地消息：工具卡与 TimelineLog，须保留并与快照合并。
+/// 服务端快照中不存在的本地消息：流式中的工具卡与 TimelineLog，须保留并与快照合并。
+///
+/// 回合已结束（无 loading 占位）时，工具卡以服务端 `role=tool` 水合为准，避免与 SSE 占位 id 重复叠加。
 fn local_messages_preserved_after_hydrate(
     server_msgs: &[StoredMessage],
     local_msgs: &[StoredMessage],
 ) -> Vec<StoredMessage> {
+    let preserve_streaming_tools = messages_contain_loading(local_msgs);
     let server_msg_ids: HashSet<_> = server_msgs.iter().map(|m| m.id.as_str()).collect();
     local_msgs
         .iter()
         .filter(|m| {
             if m.is_tool && !server_msg_ids.contains(m.id.as_str()) {
-                return true;
+                return preserve_streaming_tools;
             }
             if let Some(ref state) = m.state {
                 if state.is_local_timeline_snapshot_row() && !server_msg_ids.contains(m.id.as_str())
@@ -360,7 +363,9 @@ pub(crate) fn bump_session_hydrate_nonce(chat: ChatSessionSignals) {
         .update(|n| *n = n.wrapping_add(1));
 }
 
-/// 订阅 `session_hydrate_nonce` 与 `sessions`：拉取服务端快照并写回当前会话（含 tiktoken 用量）。
+/// 订阅 `session_hydrate_nonce` 与 `active_id`：拉取服务端快照并写回当前会话（含 tiktoken 用量）。
+///
+/// **勿**订阅 `sessions`：水合写回会更新消息列表，若再触发本 Effect 会在每轮生成新 `h_*` id 并重复追加工具行。
 ///
 /// 门闸与 [`crate::app::app_bootstrap_phase::AppBootstrapPhase::hydration_effects_enabled`] 一致（`initialized` + `web_ui_config_loaded`）。
 pub fn wire_session_hydration(
@@ -380,7 +385,7 @@ pub fn wire_session_hydration(
             {
                 return;
             }
-            let _ = chat.sessions.get();
+            let _ = chat.active_id.get();
             let _ = chat.session_hydrate_nonce.get();
             let loc = locale_sig.get_untracked();
             let Some(snap) = try_hydration_wire_snapshot(chat, loc) else {
@@ -394,6 +399,60 @@ pub fn wire_session_hydration(
             ));
         }
     });
+}
+
+#[cfg(test)]
+mod local_messages_preserved_after_hydrate_tests {
+    use super::local_messages_preserved_after_hydrate;
+    use crate::storage::{StoredMessage, StoredMessageState};
+    use crate::timeline_scan::timeline_state_tool;
+
+    fn tool_msg(id: &str) -> StoredMessage {
+        StoredMessage {
+            id: id.into(),
+            role: "system".into(),
+            text: "list_tree".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(timeline_state_tool(id, true)),
+            is_tool: true,
+            tool_call_id: None,
+            tool_name: Some("list_tree".into()),
+            created_at: 1,
+        }
+    }
+
+    fn loading_assistant() -> StoredMessage {
+        StoredMessage {
+            id: "a1".into(),
+            role: "assistant".into(),
+            text: String::new(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(StoredMessageState::Loading),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        }
+    }
+
+    #[test]
+    fn preserves_streaming_tool_rows_while_loading() {
+        let server = vec![tool_msg("h_0_0")];
+        let local = vec![loading_assistant(), tool_msg("sse-1")];
+        let kept = local_messages_preserved_after_hydrate(&server, &local);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].id, "sse-1");
+    }
+
+    #[test]
+    fn drops_local_tool_rows_after_turn_complete() {
+        let server = vec![tool_msg("h_0_0")];
+        let local = vec![tool_msg("sse-1"), tool_msg("h_99_1")];
+        let kept = local_messages_preserved_after_hydrate(&server, &local);
+        assert!(kept.is_empty());
+    }
 }
 
 #[cfg(test)]
