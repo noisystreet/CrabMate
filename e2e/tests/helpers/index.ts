@@ -1,4 +1,5 @@
 export * from './composer';
+export * from './sidebar';
 export * from './conversation-api';
 export * from './conversation-messages-stub';
 export * from './fix-chat-stream';

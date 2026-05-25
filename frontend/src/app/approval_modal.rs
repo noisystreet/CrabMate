@@ -73,6 +73,7 @@ pub fn ApprovalModal(signals: ApprovalModalSignals) -> impl IntoView {
                     role="dialog"
                     aria-modal="true"
                     aria-labelledby="approval-modal-title"
+                    data-testid="approval-modal"
                     on:click=|ev: leptos::ev::MouseEvent| ev.stop_propagation()
                 >
                     <div class="modal-head">

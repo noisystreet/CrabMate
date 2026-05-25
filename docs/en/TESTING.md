@@ -131,7 +131,7 @@ cd frontend && trunk build
 
 ## Browser E2E (Playwright)
 
-Directory: **`e2e/`**. Stubs **`POST /chat/stream`** and **`/workspace`** routes — **no real LLM**. Tests under **`e2e/tests/`**; shared helpers in **`e2e/tests/helpers/`**. Prefer **`data-testid`** selectors.
+Directory: **`e2e/`**. Stubs **`POST /chat/stream`** and **`/workspace`** — **no real LLM**. Specs include pagination (incl. **load older** click), **SSE control** (error / approval), **theme prefs**, and **session list** modal. Helpers in **`e2e/tests/helpers/`**. Prefer **`data-testid`** (e.g. **`chat-load-older`**, **`session-list-modal`**).
 
 ```bash
 cd frontend && trunk build

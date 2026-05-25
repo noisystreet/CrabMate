@@ -70,12 +70,10 @@ test.describe('conversation messages pagination and hydration', () => {
     await expect(page.getByRole('heading', { name: 'CrabMate' })).toBeVisible();
 
     // 须 exact：否则「e2e-msg-0」会子串命中 e2e-msg-10 / e2e-msg-20 …
-    await expect(
-      page.getByRole('button', { name: /加载更早的消息|Load older messages/i }),
-    ).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText(`e2e-msg-${PAGINATE_TOTAL - 1}`, { exact: true })).toBeVisible({
       timeout: 30_000,
     });
+    await expect(page.getByTestId('chat-load-older')).toBeVisible();
     await expect(page.getByText('e2e-msg-0', { exact: true })).not.toBeVisible();
   });
 });

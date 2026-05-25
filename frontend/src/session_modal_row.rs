@@ -98,6 +98,7 @@ fn SessionModalRowOpenButton(bundle: SessionModalRowBundle) -> impl IntoView {
         <button
             type="button"
             class="session-open"
+            data-testid=format!("session-modal-open-{id}")
             on:click={
                 let id = id.clone();
                 move |_| {

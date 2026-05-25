@@ -45,6 +45,7 @@ fn SessionListModalPanel(session_modal: RwSignal<bool>) -> impl IntoView {
             role="dialog"
             aria-modal="true"
             aria-labelledby="session-list-modal-title"
+            data-testid="session-list-modal"
             tabindex="-1"
             on:click=|ev: leptos::ev::MouseEvent| ev.stop_propagation()
             on:keydown=move |ev: web_sys::KeyboardEvent| {

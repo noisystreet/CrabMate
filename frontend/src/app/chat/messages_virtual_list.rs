@@ -114,6 +114,7 @@ pub(crate) fn ChatMessagesVirtualList(signals: ChatMessagesVirtualListSignals) -
                                 <button
                                     type="button"
                                     class="btn btn-ghost btn-sm"
+                                    data-testid="chat-load-older"
                                     on:click=move |_| {
                                         try_load_older_messages_for_active_session(
                                             chat,
