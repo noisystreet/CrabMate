@@ -39,24 +39,27 @@ pub(crate) fn build_app(
     let mut app = Router::new()
         .merge(protected_api)
         .route("/openapi.json", get(super::openapi::openapi_json_handler))
-        .merge(super::routes::system::router())
-        .nest_service(
-            "/uploads",
-            ServiceBuilder::new()
-                .layer(SetResponseHeaderLayer::if_not_present(
-                    header::CACHE_CONTROL,
-                    HeaderValue::from_static("public, max-age=31536000, immutable"),
-                ))
-                .layer(SetResponseHeaderLayer::if_not_present(
-                    header::X_CONTENT_TYPE_OPTIONS,
-                    HeaderValue::from_static("nosniff"),
-                ))
-                .layer(SetResponseHeaderLayer::if_not_present(
-                    header::HeaderName::from_static("cross-origin-resource-policy"),
-                    HeaderValue::from_static("same-site"),
-                ))
-                .service(ServeDir::new(uploads_dir_for_static)),
-        );
+        .merge(super::routes::system::router());
+    if let Some(e2e) = super::routes::e2e_fixtures::router() {
+        app = app.merge(e2e);
+    }
+    app = app.nest_service(
+        "/uploads",
+        ServiceBuilder::new()
+            .layer(SetResponseHeaderLayer::if_not_present(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("public, max-age=31536000, immutable"),
+            ))
+            .layer(SetResponseHeaderLayer::if_not_present(
+                header::X_CONTENT_TYPE_OPTIONS,
+                HeaderValue::from_static("nosniff"),
+            ))
+            .layer(SetResponseHeaderLayer::if_not_present(
+                header::HeaderName::from_static("cross-origin-resource-policy"),
+                HeaderValue::from_static("same-site"),
+            ))
+            .service(ServeDir::new(uploads_dir_for_static)),
+    );
     if !no_web {
         app = app.nest_service("/", ServeDir::new(static_dir));
     }

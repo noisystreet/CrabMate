@@ -35,7 +35,6 @@ pub(crate) use config_reload::config_reload_handler;
 pub(crate) use conflict::conversation_conflict_sse_line;
 pub(crate) use health_status::{health_handler, status_handler, web_ui_config_handler};
 pub(crate) use parse::normalize_agent_role;
-#[cfg(test)]
 pub(crate) use parse::normalize_client_conversation_id;
 pub(crate) use session_conversation_store::session_conversation_store_handler;
 pub(crate) use upload::{cleanup_uploads_dir, delete_uploads_handler, upload_handler};

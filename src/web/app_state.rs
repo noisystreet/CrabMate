@@ -426,6 +426,27 @@ impl AppState {
         }
     }
 
+    /// 删除持久化会话行（仅 E2E 夹具 `replace` 等；不存在时视为成功）。
+    pub(crate) async fn delete_conversation_record(&self, conversation_id: &str) {
+        let backing = self.conversation.conversation_backing.read().await;
+        match &*backing {
+            ConversationBacking::Memory(map) => {
+                let mut guard = map.write().await;
+                guard.remove(conversation_id);
+            }
+            ConversationBacking::Sqlite(conn) => {
+                let id = conversation_id.to_string();
+                let c = Arc::clone(conn);
+                let _ = tokio::task::spawn_blocking(move || {
+                    if let Ok(g) = c.lock() {
+                        let _ = conversation_store::delete_by_id(&g, &id);
+                    }
+                })
+                .await;
+            }
+        }
+    }
+
     /// Web：在进程内切换会话存储后端（**不**改写磁盘配置；重启 `serve` 后仍以 TOML 为准）。
     pub(crate) async fn set_web_conversation_store_sqlite(
         &self,

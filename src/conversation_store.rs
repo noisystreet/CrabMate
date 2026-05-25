@@ -203,6 +203,12 @@ pub fn save_if_revision(
     Ok(SaveConversationOutcome::Saved)
 }
 
+/// 按 id 删除一行（E2E 夹具 `replace` 等；不存在时静默成功）。
+pub fn delete_by_id(conn: &Connection, id: &str) -> Result<(), rusqlite::Error> {
+    conn.execute(&format!("DELETE FROM {TABLE} WHERE id = ?1"), params![id])?;
+    Ok(())
+}
+
 /// 删除过期行并按条数淘汰最旧记录。
 pub fn prune(conn: &Connection, ttl_secs: u64, max_entries: usize) -> Result<(), rusqlite::Error> {
     let now = now_unix();

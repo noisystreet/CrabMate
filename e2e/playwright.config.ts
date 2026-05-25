@@ -1,5 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -45,6 +46,7 @@ export default defineConfig({
     env: {
       ...webServerEnv(),
       CM_CRABMATE_USER_DATA_DIR: e2eUserDataDir,
+      CM_E2E_FIXTURES: '1',
     },
     url: `${baseURL}/health`,
     reuseExistingServer: !process.env.CI,

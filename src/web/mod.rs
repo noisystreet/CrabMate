@@ -14,7 +14,6 @@ pub(crate) use app_state::{
 };
 pub(crate) use chat_handlers::{cleanup_uploads_dir, conversation_conflict_sse_line};
 
-#[cfg(test)]
 pub(crate) use chat_handlers::normalize_client_conversation_id;
 
 pub mod openapi;
