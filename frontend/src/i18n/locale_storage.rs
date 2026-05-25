@@ -1,6 +1,4 @@
-use crate::app_prefs::{LOCALE_KEY, local_storage};
-
-/// 界面语言（与 `<html lang>` 对齐）。
+/// 界面语言（与 `<html lang>` 对齐；持久化在 **`/user-data/prefs.locale`**）。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Locale {
     ZhHans,
@@ -30,15 +28,11 @@ impl Locale {
     }
 }
 
+#[must_use]
 pub fn load_locale_from_storage() -> Locale {
-    local_storage()
-        .and_then(|s| s.get_item(LOCALE_KEY).ok().flatten())
-        .map(|v| Locale::from_storage_slug(&v))
-        .unwrap_or(Locale::ZhHans)
+    Locale::ZhHans
 }
 
-pub fn store_locale_slug(slug: &str) {
-    if let Some(st) = local_storage() {
-        let _ = st.set_item(LOCALE_KEY, slug);
-    }
+pub fn store_locale_slug(_slug: &str) {
+    // 由 [`crate::user_prefs_sync`] 写入 `/user-data/prefs`。
 }

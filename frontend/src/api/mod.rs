@@ -16,10 +16,12 @@
 mod api_client;
 mod browser;
 mod chat_stream;
-mod client_llm_storage;
+pub(crate) mod client_llm_cache;
+pub(crate) mod client_llm_storage;
 mod http;
 mod saved_models;
 mod session_store;
+pub mod user_data;
 
 #[allow(unused_imports)]
 pub use api_client::{ApiClient, RealApiClient};

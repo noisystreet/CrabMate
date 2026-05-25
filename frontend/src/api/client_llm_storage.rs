@@ -1,104 +1,19 @@
-//! 侧栏「本机模型」：`client_llm.*` 在 `localStorage` 中的读写（不含 HTTP）。
+//! 侧栏「本机模型」：进程内缓存 + **`/user-data/llm-overrides`** / **`secrets/*`**。
 
 use serde_json::Value;
 
 use crate::i18n::Locale;
 
-use super::browser::local_storage;
+use super::client_llm_cache::{self, with_mem, with_mem_mut};
+use super::user_data::{
+    LlmOverridesDto, put_llm_overrides, put_secret_client_llm, put_secret_executor_llm,
+};
 
-/// Web 设置中保存的 LLM 网关基址（`client_llm.api_base`）。
-pub const CLIENT_LLM_API_BASE_STORAGE_KEY: &str = "crabmate-client-llm-api-base";
-/// Web 设置中保存的模型名（`client_llm.model`）。
-pub const CLIENT_LLM_MODEL_STORAGE_KEY: &str = "crabmate-client-llm-model";
-/// Web 设置中保存的温度覆盖（`temperature`）。
-pub const CLIENT_LLM_TEMPERATURE_STORAGE_KEY: &str = "crabmate-client-llm-temperature";
-/// Web 设置中保存的模型上下文窗口 token 上限（`llm_context_tokens`，与后端 `[agent] llm_context_tokens` 一致）。
-pub const CLIENT_LLM_CONTEXT_TOKENS_STORAGE_KEY: &str = "crabmate-client-llm-context-tokens";
-/// Web 设置中保存的 **`thinking`** 策略覆盖（`llm_thinking_mode`：`server` / `on` / `off`，与 `POST /chat` 的 `client_llm` 字段一致）。
-pub const CLIENT_LLM_THINKING_MODE_STORAGE_KEY: &str = "crabmate-client-llm-thinking-mode";
-/// Web 设置中保存的云端 API 密钥（`client_llm.api_key`）；**仅存本机**。
-pub const CLIENT_LLM_API_KEY_STORAGE_KEY: &str = "crabmate-client-llm-api-key";
-
-/// Web 设置中保存的 Executor LLM 网关基址（`executor_llm.api_base`）。
-pub const EXECUTOR_LLM_API_BASE_STORAGE_KEY: &str = "crabmate-executor-llm-api-base";
-/// Web 设置中保存的 Executor 模型名（`executor_llm.model`）。
-pub const EXECUTOR_LLM_MODEL_STORAGE_KEY: &str = "crabmate-executor-llm-model";
-/// Web 设置中保存的 Executor 云端 API 密钥（`executor_llm.api_key`）；**仅存本机**。
-pub const EXECUTOR_LLM_API_KEY_STORAGE_KEY: &str = "crabmate-executor-llm-api-key";
-/// Web 设置中保存的执行模式覆盖（`rolling_planning` / `hierarchical`）。
-pub const EXECUTION_MODE_STORAGE_KEY: &str = "crabmate-execution-mode";
-/// 存在且为 **`1`** 时：浏览器在每条 `/chat/stream` 请求中附带 **`readonly_tool_ttl_cache_secs: 0`**，禁用只读类 **`run_command`** 短时缓存。
-pub const DISABLE_READONLY_TOOL_TTL_CACHE_STORAGE_KEY: &str =
-    "crabmate-disable-readonly-tool-ttl-cache";
-
-/// `remove_when(trimmed)` 为真时 `remove_item`，否则 `set_item(trimmed)`。
-fn persist_storage_trimmed<E: Fn() -> String>(
-    st: &web_sys::Storage,
-    key: &'static str,
-    raw: &str,
-    remove_when: impl FnOnce(&str) -> bool,
-    on_write_err: E,
-) -> Result<(), String> {
-    let t = raw.trim();
-    if remove_when(t) {
-        let _ = st.remove_item(key);
-    } else {
-        st.set_item(key, t).map_err(|_| on_write_err())?;
-    }
-    Ok(())
+pub async fn hydrate_client_llm_from_server(loc: Locale) {
+    client_llm_cache::hydrate_from_server(loc).await;
 }
 
-/// 写入 `client_llm` 中不含密钥的字段（侧栏「本机模型」）。
-fn persist_client_llm_non_secret_fields(
-    st: &web_sys::Storage,
-    api_base: &str,
-    model: &str,
-    temperature: &str,
-    llm_context_tokens: &str,
-    llm_thinking_mode: &str,
-    loc: Locale,
-) -> Result<(), String> {
-    persist_storage_trimmed(
-        st,
-        CLIENT_LLM_API_BASE_STORAGE_KEY,
-        api_base,
-        |t| t.is_empty(),
-        || crate::i18n::api_err_write_api_base(loc).to_string(),
-    )?;
-    persist_storage_trimmed(
-        st,
-        CLIENT_LLM_MODEL_STORAGE_KEY,
-        model,
-        |t| t.is_empty(),
-        || crate::i18n::api_err_write_model(loc).to_string(),
-    )?;
-    persist_storage_trimmed(
-        st,
-        CLIENT_LLM_TEMPERATURE_STORAGE_KEY,
-        temperature,
-        |t| t.is_empty(),
-        || crate::i18n::api_err_write_model(loc).to_string(),
-    )?;
-    persist_storage_trimmed(
-        st,
-        CLIENT_LLM_CONTEXT_TOKENS_STORAGE_KEY,
-        llm_context_tokens,
-        |t| t.is_empty(),
-        || crate::i18n::api_err_write_model(loc).to_string(),
-    )?;
-    persist_storage_trimmed(
-        st,
-        CLIENT_LLM_THINKING_MODE_STORAGE_KEY,
-        llm_thinking_mode,
-        |t| t.is_empty() || t == "server",
-        || crate::i18n::api_err_write_model(loc).to_string(),
-    )?;
-    Ok(())
-}
-
-fn storage_trimmed_item(key: &str) -> Option<String> {
-    let st = local_storage()?;
-    let s = st.get_item(key).ok().flatten()?;
+fn opt_trim(s: &str) -> Option<String> {
     let t = s.trim();
     if t.is_empty() {
         None
@@ -107,28 +22,61 @@ fn storage_trimmed_item(key: &str) -> Option<String> {
     }
 }
 
-/// 是否已在 localStorage 保存过 `client_llm.api_key`（不返回密钥内容）。
+/// 将当前进程内 LLM 缓存写入 `/user-data/llm-overrides`。
+pub fn flush_llm_overrides_to_server(loc: Locale) {
+    sync_llm_to_server_async(loc);
+}
+
+fn sync_llm_to_server_async(loc: Locale) {
+    leptos::task::spawn_local(async move {
+        let snap = with_mem(|m| {
+            (
+                m.api_base.clone(),
+                m.model.clone(),
+                m.temperature.clone(),
+                m.llm_context_tokens.clone(),
+                m.llm_thinking_mode.clone(),
+                m.executor_api_base.clone(),
+                m.executor_model.clone(),
+                m.execution_mode.clone(),
+                m.saved_models.clone(),
+            )
+        });
+        let mut file = LlmOverridesDto::default();
+        file.client_llm.api_base = opt_trim(&snap.0);
+        file.client_llm.model = opt_trim(&snap.1);
+        file.client_llm.temperature = opt_trim(&snap.2);
+        file.client_llm.llm_context_tokens = opt_trim(&snap.3);
+        file.client_llm.llm_thinking_mode = opt_trim(&snap.4);
+        file.executor_llm.api_base = opt_trim(&snap.5);
+        file.executor_llm.model = opt_trim(&snap.6);
+        file.execution_mode = opt_trim(&snap.7);
+        file.saved_models = snap.8;
+        let _ = put_llm_overrides(&file, loc).await;
+    });
+}
+
+/// 是否已配置主模型 API Key（磁盘或本进程内存）。
 pub fn client_llm_storage_has_api_key() -> bool {
-    storage_trimmed_item(CLIENT_LLM_API_KEY_STORAGE_KEY).is_some()
+    with_mem(|m| m.client_key_on_server || !m.api_key.trim().is_empty())
 }
 
-/// 供设置弹窗加载：`api_base` / `model` / `temperature` / `llm_context_tokens` / `llm_thinking_mode` 的已存值（无则空串）。
 pub fn load_client_llm_text_fields_from_storage() -> (String, String, String, String, String) {
-    (
-        storage_trimmed_item(CLIENT_LLM_API_BASE_STORAGE_KEY).unwrap_or_default(),
-        storage_trimmed_item(CLIENT_LLM_MODEL_STORAGE_KEY).unwrap_or_default(),
-        storage_trimmed_item(CLIENT_LLM_TEMPERATURE_STORAGE_KEY).unwrap_or_default(),
-        storage_trimmed_item(CLIENT_LLM_CONTEXT_TOKENS_STORAGE_KEY).unwrap_or_default(),
-        storage_trimmed_item(CLIENT_LLM_THINKING_MODE_STORAGE_KEY).unwrap_or_default(),
-    )
+    with_mem(|m| {
+        (
+            m.api_base.clone(),
+            m.model.clone(),
+            m.temperature.clone(),
+            m.llm_context_tokens.clone(),
+            m.llm_thinking_mode.clone(),
+        )
+    })
 }
 
-/// 读取本地执行模式；无值时返回空串，表示跟随服务端默认。
 pub fn load_execution_mode_from_storage() -> String {
-    storage_trimmed_item(EXECUTION_MODE_STORAGE_KEY).unwrap_or_default()
+    with_mem(|m| m.execution_mode.clone())
 }
 
-/// 将模型相关设置写入 localStorage。`api_key` 为 `None` 时不改已存密钥；为 `Some("")` 可配合调用方在「清除」时 `remove_item`。
 pub fn persist_client_llm_to_storage(
     api_base: &str,
     model: &str,
@@ -138,197 +86,186 @@ pub fn persist_client_llm_to_storage(
     api_key_update: Option<&str>,
     loc: Locale,
 ) -> Result<(), String> {
-    let st =
-        local_storage().ok_or_else(|| crate::i18n::api_err_no_local_storage(loc).to_string())?;
-    persist_client_llm_non_secret_fields(
-        &st,
-        api_base,
-        model,
-        temperature,
-        llm_context_tokens,
-        llm_thinking_mode,
-        loc,
-    )?;
+    with_mem_mut(|m| {
+        m.api_base = api_base.trim().to_string();
+        m.model = model.trim().to_string();
+        m.temperature = temperature.trim().to_string();
+        m.llm_context_tokens = llm_context_tokens.trim().to_string();
+        m.llm_thinking_mode = llm_thinking_mode.trim().to_string();
+        if let Some(k) = api_key_update {
+            m.api_key = k.trim().to_string();
+            m.client_key_on_server = !m.api_key.is_empty();
+        }
+    });
+    sync_llm_to_server_async(loc);
     if let Some(k) = api_key_update {
-        persist_storage_trimmed(
-            &st,
-            CLIENT_LLM_API_KEY_STORAGE_KEY,
-            k,
-            |t| t.is_empty(),
-            || crate::i18n::api_err_write_api_key(loc).to_string(),
-        )?;
+        let key = k.trim().to_string();
+        leptos::task::spawn_local(async move {
+            let _ = put_secret_client_llm(&key, loc).await;
+        });
     }
     Ok(())
 }
 
 pub fn clear_client_llm_api_key_storage(loc: Locale) -> Result<(), String> {
-    let st =
-        local_storage().ok_or_else(|| crate::i18n::api_err_no_local_storage(loc).to_string())?;
-    let _ = st.remove_item(CLIENT_LLM_API_KEY_STORAGE_KEY);
+    with_mem_mut(|m| {
+        m.api_key.clear();
+        m.client_key_on_server = false;
+    });
+    leptos::task::spawn_local(async move {
+        let _ = put_secret_client_llm("", loc).await;
+    });
     Ok(())
 }
 
-/// 合并进 `/chat/stream` 请求体的 `client_llm` 对象（省略未配置的字段）。
 pub fn client_llm_json_for_chat_body() -> Option<Value> {
-    let mut m = serde_json::Map::new();
-    if let Some(v) = storage_trimmed_item(CLIENT_LLM_API_BASE_STORAGE_KEY) {
-        m.insert("api_base".into(), Value::String(v));
-    }
-    if let Some(v) = storage_trimmed_item(CLIENT_LLM_MODEL_STORAGE_KEY) {
-        m.insert("model".into(), Value::String(v));
-    }
-    if let Some(v) = storage_trimmed_item(CLIENT_LLM_CONTEXT_TOKENS_STORAGE_KEY) {
-        if let Ok(n) = v.parse::<u64>() {
-            m.insert("llm_context_tokens".into(), Value::Number(n.into()));
+    with_mem(|m| {
+        let mut map = serde_json::Map::new();
+        if !m.api_base.trim().is_empty() {
+            map.insert("api_base".into(), Value::String(m.api_base.clone()));
         }
-    }
-    if let Some(v) = storage_trimmed_item(CLIENT_LLM_THINKING_MODE_STORAGE_KEY) {
-        if v == "on" || v == "off" {
-            m.insert("llm_thinking_mode".into(), Value::String(v));
+        if !m.model.trim().is_empty() {
+            map.insert("model".into(), Value::String(m.model.clone()));
         }
-    }
-    if let Some(v) = storage_trimmed_item(CLIENT_LLM_API_KEY_STORAGE_KEY) {
-        m.insert("api_key".into(), Value::String(v));
-    }
-    if m.is_empty() {
-        None
-    } else {
-        Some(Value::Object(m))
-    }
+        if let Ok(n) = m.llm_context_tokens.trim().parse::<u64>() {
+            if n > 0 {
+                map.insert("llm_context_tokens".into(), Value::Number(n.into()));
+            }
+        }
+        let tm = m.llm_thinking_mode.trim();
+        if tm == "on" || tm == "off" {
+            map.insert("llm_thinking_mode".into(), Value::String(tm.to_string()));
+        }
+        if !m.api_key.trim().is_empty() {
+            map.insert("api_key".into(), Value::String(m.api_key.clone()));
+        }
+        if map.is_empty() {
+            None
+        } else {
+            Some(Value::Object(map))
+        }
+    })
 }
 
-/// 从本机设置读取 `/chat/stream` 的 `temperature` 覆盖（0～2）。
 pub fn chat_temperature_override_from_storage() -> Option<f64> {
-    let raw = storage_trimmed_item(CLIENT_LLM_TEMPERATURE_STORAGE_KEY)?;
-    let parsed = raw.parse::<f64>().ok()?;
+    let raw = with_mem(|m| m.temperature.clone());
+    let parsed = raw.trim().parse::<f64>().ok()?;
     if !parsed.is_finite() || !(0.0..=2.0).contains(&parsed) {
         return None;
     }
     Some(parsed)
 }
 
-/// 合并进 `/chat/stream` 请求体的 `executor_llm` 对象（省略未配置的字段）。
 pub fn executor_llm_json_for_chat_body() -> Option<Value> {
-    let mut m = serde_json::Map::new();
-    if let Some(v) = storage_trimmed_item(EXECUTOR_LLM_API_BASE_STORAGE_KEY) {
-        m.insert("api_base".into(), Value::String(v));
-    }
-    if let Some(v) = storage_trimmed_item(EXECUTOR_LLM_MODEL_STORAGE_KEY) {
-        m.insert("model".into(), Value::String(v));
-    }
-    if let Some(v) = storage_trimmed_item(EXECUTOR_LLM_API_KEY_STORAGE_KEY) {
-        m.insert("api_key".into(), Value::String(v));
-    }
-    if m.is_empty() {
-        None
-    } else {
-        Some(Value::Object(m))
-    }
+    with_mem(|m| {
+        let mut map = serde_json::Map::new();
+        if !m.executor_api_base.trim().is_empty() {
+            map.insert(
+                "api_base".into(),
+                Value::String(m.executor_api_base.clone()),
+            );
+        }
+        if !m.executor_model.trim().is_empty() {
+            map.insert("model".into(), Value::String(m.executor_model.clone()));
+        }
+        if !m.executor_api_key.trim().is_empty() {
+            map.insert("api_key".into(), Value::String(m.executor_api_key.clone()));
+        }
+        if map.is_empty() {
+            None
+        } else {
+            Some(Value::Object(map))
+        }
+    })
 }
 
-/// 是否已在 localStorage 保存过 `executor_llm.api_key`（不返回密钥内容）。
 pub fn executor_llm_storage_has_api_key() -> bool {
-    storage_trimmed_item(EXECUTOR_LLM_API_KEY_STORAGE_KEY).is_some()
+    with_mem(|m| m.executor_key_on_server || !m.executor_api_key.trim().is_empty())
 }
 
-/// 供设置弹窗加载：`api_base` / `model` 的已存值（无则空串）。
 pub fn load_executor_llm_text_fields_from_storage() -> (String, String) {
-    (
-        storage_trimmed_item(EXECUTOR_LLM_API_BASE_STORAGE_KEY).unwrap_or_default(),
-        storage_trimmed_item(EXECUTOR_LLM_MODEL_STORAGE_KEY).unwrap_or_default(),
-    )
+    with_mem(|m| (m.executor_api_base.clone(), m.executor_model.clone()))
 }
 
-/// 将 Executor 模型相关设置写入 localStorage。`api_key` 为 `None` 时不改已存密钥；为 `Some("")` 可配合调用方在「清除」时 `remove_item`。
 pub fn persist_executor_llm_to_storage(
     api_base: &str,
     model: &str,
     api_key_update: Option<&str>,
     loc: Locale,
 ) -> Result<(), String> {
-    let st =
-        local_storage().ok_or_else(|| crate::i18n::api_err_no_local_storage(loc).to_string())?;
-    persist_storage_trimmed(
-        &st,
-        EXECUTOR_LLM_API_BASE_STORAGE_KEY,
-        api_base,
-        |t| t.is_empty(),
-        || crate::i18n::api_err_write_api_base(loc).to_string(),
-    )?;
-    persist_storage_trimmed(
-        &st,
-        EXECUTOR_LLM_MODEL_STORAGE_KEY,
-        model,
-        |t| t.is_empty(),
-        || crate::i18n::api_err_write_model(loc).to_string(),
-    )?;
+    with_mem_mut(|m| {
+        m.executor_api_base = api_base.trim().to_string();
+        m.executor_model = model.trim().to_string();
+        if let Some(k) = api_key_update {
+            m.executor_api_key = k.trim().to_string();
+            m.executor_key_on_server = !m.executor_api_key.is_empty();
+        }
+    });
+    sync_llm_to_server_async(loc);
     if let Some(k) = api_key_update {
-        persist_storage_trimmed(
-            &st,
-            EXECUTOR_LLM_API_KEY_STORAGE_KEY,
-            k,
-            |t| t.is_empty(),
-            || crate::i18n::api_err_write_api_key(loc).to_string(),
-        )?;
+        let key = k.trim().to_string();
+        leptos::task::spawn_local(async move {
+            let _ = put_secret_executor_llm(&key, loc).await;
+        });
     }
     Ok(())
 }
 
-/// 将执行模式写入 localStorage；空字符串表示清除覆盖并跟随服务端默认。
-pub fn persist_execution_mode_to_storage(mode: &str, loc: Locale) -> Result<(), String> {
-    let st =
-        local_storage().ok_or_else(|| crate::i18n::api_err_no_local_storage(loc).to_string())?;
-    persist_storage_trimmed(
-        &st,
-        EXECUTION_MODE_STORAGE_KEY,
-        mode,
-        |t| t.is_empty(),
-        || crate::i18n::api_err_write_model(loc).to_string(),
-    )?;
+pub fn clear_executor_llm_api_key_storage(loc: Locale) -> Result<(), String> {
+    with_mem_mut(|m| {
+        m.executor_api_key.clear();
+        m.executor_key_on_server = false;
+    });
+    leptos::task::spawn_local(async move {
+        let _ = put_secret_executor_llm("", loc).await;
+    });
     Ok(())
 }
 
-/// 合并进 `/chat/stream` 请求体的 `execution_mode`（仅两种受支持值）。
+pub fn persist_execution_mode_to_storage(mode: &str, loc: Locale) -> Result<(), String> {
+    with_mem_mut(|m| m.execution_mode = mode.trim().to_string());
+    sync_llm_to_server_async(loc);
+    Ok(())
+}
+
 pub fn execution_mode_for_chat_body() -> Option<String> {
-    match storage_trimmed_item(EXECUTION_MODE_STORAGE_KEY).as_deref() {
-        Some("rolling_planning") => Some("rolling_planning".to_string()),
-        Some("hierarchical") => Some("hierarchical".to_string()),
+    let mode = with_mem(|m| m.execution_mode.clone());
+    match mode.trim() {
+        "rolling_planning" => Some("rolling_planning".to_string()),
+        "hierarchical" => Some("hierarchical".to_string()),
         _ => None,
     }
 }
 
-/// **`true`**：跟随服务端 **`readonly_tool_ttl_cache_secs`**；**`false`**：每条聊天请求显式关闭该缓存。
+pub fn load_readonly_tool_ttl_cache_follow_server_from_memory() -> bool {
+    with_mem(|m| m.readonly_ttl_follow_server)
+}
+
+pub fn set_readonly_tool_ttl_cache_follow_server_in_memory(follow: bool) {
+    with_mem_mut(|m| m.readonly_ttl_follow_server = follow);
+}
+
+pub fn persist_readonly_tool_ttl_cache_follow_server(follow: bool, loc: Locale) {
+    set_readonly_tool_ttl_cache_follow_server_in_memory(follow);
+    leptos::task::spawn_local(async move {
+        let mut prefs = super::user_data::fetch_user_data_prefs(loc)
+            .await
+            .unwrap_or_default();
+        prefs.disable_readonly_tool_ttl_cache = Some(!follow);
+        let _ = super::user_data::put_user_data_prefs(&prefs, loc).await;
+    });
+}
+
+/// 兼容旧名。
 pub fn load_readonly_tool_ttl_cache_follow_server_from_storage() -> bool {
-    storage_trimmed_item(DISABLE_READONLY_TOOL_TTL_CACHE_STORAGE_KEY).as_deref() != Some("1")
+    load_readonly_tool_ttl_cache_follow_server_from_memory()
 }
 
-pub fn persist_readonly_tool_ttl_cache_follow_server(
-    follow_server: bool,
-    loc: Locale,
-) -> Result<(), String> {
-    let st =
-        local_storage().ok_or_else(|| crate::i18n::api_err_no_local_storage(loc).to_string())?;
-    if follow_server {
-        let _ = st.remove_item(DISABLE_READONLY_TOOL_TTL_CACHE_STORAGE_KEY);
-    } else {
-        st.set_item(DISABLE_READONLY_TOOL_TTL_CACHE_STORAGE_KEY, "1")
-            .map_err(|_| crate::i18n::api_err_write_model(loc).to_string())?;
-    }
-    Ok(())
-}
-
-/// 写入 **`POST /chat/stream`** JSON：**`None`** 表示不覆盖；**`Some(0)`** 关闭该缓存。
+/// 合并进 `/chat/stream` 的 `readonly_tool_ttl_cache_secs`（关闭时返回 `Some(0)`）。
 pub fn readonly_tool_ttl_cache_secs_for_chat_body() -> Option<u64> {
-    if load_readonly_tool_ttl_cache_follow_server_from_storage() {
+    if load_readonly_tool_ttl_cache_follow_server_from_memory() {
         None
     } else {
         Some(0)
     }
-}
-
-pub fn clear_executor_llm_api_key_storage(loc: Locale) -> Result<(), String> {
-    let st =
-        local_storage().ok_or_else(|| crate::i18n::api_err_no_local_storage(loc).to_string())?;
-    let _ = st.remove_item(EXECUTOR_LLM_API_KEY_STORAGE_KEY);
-    Ok(())
 }

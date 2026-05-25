@@ -1,28 +1,34 @@
-//! 浏览器侧共享：`window` / `localStorage` / 受保护 API 的鉴权头。
+//! 浏览器侧共享：`window` / 受保护 API 的鉴权头（Bearer 仅存进程内存 + 服务端 `secrets/`）。
+
+use std::cell::RefCell;
 
 use web_sys::{Headers, Window};
 
-const WEB_API_BEARER_TOKEN_KEY: &str = "crabmate-api-bearer-token";
+thread_local! {
+    static WEB_API_BEARER: RefCell<String> = const { RefCell::new(String::new()) };
+}
 
 pub fn window() -> Option<Window> {
     web_sys::window()
 }
 
-pub fn local_storage() -> Option<web_sys::Storage> {
-    crate::app_prefs::local_storage()
+/// 设置本进程内访问 CrabMate HTTP API 的 Bearer（并应 `PUT /user-data/secrets/web-api-bearer`）。
+#[allow(dead_code)]
+pub fn set_web_api_bearer_token(token: &str) {
+    WEB_API_BEARER.with(|c| *c.borrow_mut() = token.trim().to_string());
+}
+
+#[must_use]
+pub fn web_api_bearer_token() -> String {
+    WEB_API_BEARER.with(|c| c.borrow().clone())
 }
 
 pub fn auth_headers() -> Headers {
     let h = Headers::new().expect("Headers::new");
-    if let Some(st) = local_storage() {
-        if let Ok(Some(t)) = st.get_item(WEB_API_BEARER_TOKEN_KEY) {
-            let t = t.trim();
-            if !t.is_empty() {
-                let _ = h.set("Authorization", &format!("Bearer {t}"));
-                // 与后端 `require_web_api_bearer_auth` 一致：亦接受 X-API-Key（网关/脚本常用）
-                let _ = h.set("X-API-Key", t);
-            }
-        }
+    let t = web_api_bearer_token();
+    if !t.is_empty() {
+        let _ = h.set("Authorization", &format!("Bearer {t}"));
+        let _ = h.set("X-API-Key", &t);
     }
     h
 }

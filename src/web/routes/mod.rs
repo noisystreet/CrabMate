@@ -6,10 +6,12 @@
 //! | [`config`] | `/config/reload` | 配置热重载 |
 //! | [`workspace`] | `/workspace*` | 工作区浏览、文件、changelog |
 //! | [`tasks`] | `/tasks` | 侧栏任务清单（内存） |
+//! | [`user_data`] | `/user-data/*` | 本机用户数据（prefs、会话桶、LLM 覆盖、secrets） |
 //! | [`system`] | `/health`、`/status` | 探活与运行态摘要 |
 
 pub(crate) mod chat;
 pub(crate) mod config;
 pub(crate) mod system;
 pub(crate) mod tasks;
+pub(crate) mod user_data;
 pub(crate) mod workspace;

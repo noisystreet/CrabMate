@@ -2,34 +2,6 @@ use super::Locale;
 
 // --- API / 存储错误（设置、分支、审批等回显）---
 
-pub fn api_err_no_local_storage(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "无 localStorage",
-        Locale::En => "localStorage is unavailable",
-    }
-}
-
-pub fn api_err_write_api_base(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "无法写入 api_base",
-        Locale::En => "Could not save api_base",
-    }
-}
-
-pub fn api_err_write_model(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "无法写入 model",
-        Locale::En => "Could not save model",
-    }
-}
-
-pub fn api_err_write_api_key(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "无法写入 api_key",
-        Locale::En => "Could not save api_key",
-    }
-}
-
 pub fn api_err_workspace_set_failed(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "设置失败",

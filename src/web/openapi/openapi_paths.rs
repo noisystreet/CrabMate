@@ -4,6 +4,8 @@
 
 use serde_json::{Map, Value, json};
 
+use super::openapi_paths_user_data;
+
 fn merge_path_fragments(fragments: &[Value]) -> Value {
     let mut map = Map::new();
     for fragment in fragments {
@@ -646,5 +648,6 @@ pub(super) fn openapi_paths_value() -> Value {
         openapi_paths_fragment_chat_extras(),
         openapi_paths_fragment_workspace_list(),
         openapi_paths_fragment_workspace_rest(),
+        openapi_paths_user_data::openapi_paths_fragment_user_data(),
     ])
 }

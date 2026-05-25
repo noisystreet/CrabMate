@@ -1,6 +1,4 @@
-//! 会话模式 Web UI：界面字体与聊天消息字体的本机偏好（`localStorage` + `--crabmate-*` CSS 变量）。
-
-use crate::app_prefs::{SESSION_CHAT_FONT_KEY, SESSION_UI_FONT_KEY, local_storage};
+//! 会话模式 Web UI：界面字体与聊天消息字体（slug 规范化 + `--crabmate-*` CSS 变量）。
 
 /// 界面字体（侧栏、顶栏、设置页等）可选 slug。
 pub const SESSION_UI_FONT_SLUGS: &[&str] = &["default", "dm_sans", "system", "roboto", "serif"];
@@ -37,22 +35,6 @@ pub fn normalize_session_chat_font(raw: &str) -> String {
     } else {
         DEFAULT_SESSION_CHAT_FONT.to_string()
     }
-}
-
-#[must_use]
-pub fn read_session_ui_font_initial() -> String {
-    local_storage()
-        .and_then(|st| st.get_item(SESSION_UI_FONT_KEY).ok().flatten())
-        .map(|s| normalize_session_ui_font(&s))
-        .unwrap_or_else(|| DEFAULT_SESSION_UI_FONT.to_string())
-}
-
-#[must_use]
-pub fn read_session_chat_font_initial() -> String {
-    local_storage()
-        .and_then(|st| st.get_item(SESSION_CHAT_FONT_KEY).ok().flatten())
-        .map(|s| normalize_session_chat_font(&s))
-        .unwrap_or_else(|| DEFAULT_SESSION_CHAT_FONT.to_string())
 }
 
 /// `None` 表示使用主题默认（不设置自定义属性）。

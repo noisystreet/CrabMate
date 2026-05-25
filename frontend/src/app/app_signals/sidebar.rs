@@ -2,7 +2,6 @@
 
 use leptos::prelude::*;
 
-use crate::app_prefs::{EDITOR_LAYOUT_MODE_KEY, SIDEBAR_RAIL_COLLAPSED_KEY, load_bool_key};
 use crate::session_ops::SessionContextAnchor;
 
 #[derive(Clone, Copy)]
@@ -19,11 +18,7 @@ pub struct SidebarSignals {
 impl SidebarSignals {
     pub fn new() -> Self {
         Self {
-            sidebar_rail_collapsed: RwSignal::new({
-                let collapsed = load_bool_key(SIDEBAR_RAIL_COLLAPSED_KEY, false);
-                let ide = load_bool_key(EDITOR_LAYOUT_MODE_KEY, false);
-                collapsed || ide
-            }),
+            sidebar_rail_collapsed: RwSignal::new(false),
             sidebar_session_query: RwSignal::new(String::new()),
             global_message_query: RwSignal::new(String::new()),
             sidebar_search_panel_open: RwSignal::new(false),

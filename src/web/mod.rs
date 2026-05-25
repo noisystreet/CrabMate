@@ -20,4 +20,5 @@ pub mod openapi;
 pub mod routes;
 pub mod server;
 pub mod task;
+mod user_data;
 pub mod workspace;

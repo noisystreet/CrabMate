@@ -12,14 +12,9 @@ use super::session_storage::{
 use crate::app::status_tasks_state::StatusTasksSignals;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::Locale;
-use crate::storage::ChatSession;
-
 /// `wire_chat_session_lifecycle_effects` 的输入（聚合壳级 RwSignal，避免长参数列表）。
 pub(crate) struct WireChatSessionLifecycleEffectsArgs {
     pub initialized: RwSignal<bool>,
-    pub sessions: RwSignal<Vec<ChatSession>>,
-    pub active_id: RwSignal<String>,
-    pub draft: RwSignal<String>,
     pub locale: RwSignal<Locale>,
     pub web_ui_config_loaded: RwSignal<bool>,
     pub markdown_render: RwSignal<bool>,
@@ -27,18 +22,15 @@ pub(crate) struct WireChatSessionLifecycleEffectsArgs {
     pub chat_session: ChatSessionSignals,
     pub selected_agent_role: RwSignal<Option<String>>,
     pub status_tasks: StatusTasksSignals,
-    pub session_sessions_storage_key: RwSignal<String>,
+    pub app: crate::app::app_signals::AppSignals,
 }
 
 impl WireChatSessionLifecycleEffectsArgs {
-    /// 从 [`crate::app::app_signals::AppSignals`] 单点组装；`sessions` / `active_id` 与 [`ChatSessionSignals`] 同源字段一致。
+    /// 从 [`crate::app::app_signals::AppSignals`] 单点组装。
     #[must_use]
     pub fn from_app_signals(app: &crate::app::app_signals::AppSignals) -> Self {
         Self {
             initialized: app.initialized,
-            sessions: app.chat.sessions,
-            active_id: app.chat.active_id,
-            draft: app.chat_composer.draft,
             locale: app.shell_ui.locale,
             web_ui_config_loaded: app.shell_ui.web_ui_config_loaded,
             markdown_render: app.shell_ui.markdown_render,
@@ -46,7 +38,7 @@ impl WireChatSessionLifecycleEffectsArgs {
             chat_session: app.chat,
             selected_agent_role: app.llm_settings.selected_agent_role,
             status_tasks: app.to_status_tasks(),
-            session_sessions_storage_key: app.session_sessions_storage_key,
+            app: app.clone(),
         }
     }
 }
@@ -55,9 +47,6 @@ impl WireChatSessionLifecycleEffectsArgs {
 pub(crate) fn wire_chat_session_lifecycle_effects(args: WireChatSessionLifecycleEffectsArgs) {
     let WireChatSessionLifecycleEffectsArgs {
         initialized,
-        sessions,
-        active_id,
-        draft,
         locale,
         web_ui_config_loaded,
         markdown_render,
@@ -65,17 +54,10 @@ pub(crate) fn wire_chat_session_lifecycle_effects(args: WireChatSessionLifecycle
         chat_session,
         selected_agent_role,
         status_tasks,
-        session_sessions_storage_key,
+        app,
     } = args;
 
-    wire_initial_sessions_from_storage(
-        initialized,
-        sessions,
-        active_id,
-        draft,
-        locale,
-        chat_session,
-    );
+    wire_initial_sessions_from_storage(app);
     wire_web_ui_config_once_after_init(
         initialized,
         web_ui_config_loaded,
@@ -93,5 +75,5 @@ pub(crate) fn wire_chat_session_lifecycle_effects(args: WireChatSessionLifecycle
         status_tasks,
     );
 
-    wire_persist_chat_sessions(initialized, chat_session, session_sessions_storage_key);
+    wire_persist_chat_sessions(initialized, chat_session, locale);
 }

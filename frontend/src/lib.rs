@@ -44,6 +44,8 @@ mod storage;
 mod stream_text_overlay;
 mod tauri_shell;
 mod timeline_scan;
+mod user_data_bootstrap;
+mod user_prefs_sync;
 mod workspace_shell;
 mod workspace_tree;
 

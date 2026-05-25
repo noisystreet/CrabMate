@@ -86,7 +86,7 @@ fn persist_settings_storage_payload(p: &CommitAllSettingsInput<'_>) -> Result<()
     persist_readonly_tool_ttl_cache_follow_server(
         p.readonly_tool_ttl_cache_follow_server,
         p.ui_locale,
-    )?;
+    );
     Ok(())
 }
 

@@ -4,6 +4,8 @@
 
 use serde_json::{Map, Value, json};
 
+use super::openapi_components_user_data;
+
 fn merge_component_objects(fragments: &[Value]) -> Value {
     let mut map = Map::new();
     for fragment in fragments {
@@ -424,6 +426,7 @@ pub(super) fn openapi_components_value() -> Value {
     let schemas_merged = merge_component_objects(&[
         openapi_components_schemas_chat_core(),
         openapi_components_schemas_workspace_tasks_config(),
+        openapi_components_user_data::openapi_components_schemas_user_data(),
     ]);
     let Value::Object(sec_root) = openapi_components_security_schemes() else {
         panic!("openapi security fragment must be a JSON object");

@@ -146,10 +146,14 @@ fn parse_chat_request_for_enqueue_tail(
         .map_err(|e| bad_request("INVALID_TEMPERATURE", e))?;
     let seed_override = parse_seed_override_from_body(body.seed, body.seed_policy.clone())
         .map_err(|e| bad_request("INVALID_SEED", e))?;
-    let llm_override = parse_client_llm_override(body.client_llm.clone())
-        .map_err(|e| bad_request("INVALID_CLIENT_LLM", e))?;
-    let executor_llm_override = parse_executor_llm_override(body.executor_llm.clone())
-        .map_err(|e| bad_request("INVALID_EXECUTOR_LLM", e))?;
+    let llm_override = parse_client_llm_override(crate::user_data::merge_client_llm_body(
+        body.client_llm.clone(),
+    ))
+    .map_err(|e| bad_request("INVALID_CLIENT_LLM", e))?;
+    let executor_llm_override = parse_executor_llm_override(
+        crate::user_data::merge_executor_llm_body(body.executor_llm.clone()),
+    )
+    .map_err(|e| bad_request("INVALID_EXECUTOR_LLM", e))?;
     let execution_mode_override = parse_execution_mode_override(body.execution_mode.clone())
         .map_err(|e| bad_request("INVALID_EXECUTION_MODE", e))?;
     let readonly_tool_ttl_cache_secs =

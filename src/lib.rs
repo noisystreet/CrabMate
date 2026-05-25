@@ -63,6 +63,7 @@ mod tool_stats;
 mod tools;
 mod turn_replay_dump;
 mod types;
+mod user_data;
 mod user_message_file_refs;
 mod web;
 mod web_static_dir;

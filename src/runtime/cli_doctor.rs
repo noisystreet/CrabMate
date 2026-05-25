@@ -297,7 +297,55 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
     print_doctor_frontend_block(&ws);
     println!();
 
+    print_doctor_user_data_block();
+    println!();
+
     print_doctor_tty_approval_block(cfg);
+}
+
+fn print_doctor_user_data_block() {
+    use crate::user_data::{load_meta, secrets_status, user_data_root};
+    println!("【本机用户数据】");
+    let root = user_data_root();
+    println!("  根目录: {}", root.display());
+    let meta = load_meta();
+    if meta.migrated_from.is_empty() {
+        println!(
+            "  meta: schema_version={}（尚未记录迁移来源）",
+            meta.schema_version
+        );
+    } else {
+        println!(
+            "  meta: schema_version={} migrated_from={:?}",
+            meta.schema_version, meta.migrated_from
+        );
+    }
+    let st = secrets_status();
+    println!(
+        "  secrets/client_llm: {}",
+        if st.client_llm.set {
+            "已设置（值已隐藏）"
+        } else {
+            "未设置"
+        }
+    );
+    println!(
+        "  secrets/executor_llm: {}",
+        if st.executor_llm.set {
+            "已设置（值已隐藏）"
+        } else {
+            "未设置"
+        }
+    );
+    println!(
+        "  secrets/web_api_bearer: {}",
+        if st.web_api_bearer.set {
+            "已设置（值已隐藏）"
+        } else {
+            "未设置"
+        }
+    );
+    println!("  详见 docs/design/user_data_dir.md");
 }
 
 /// `crabmate models`：打印模型 id 列表。

@@ -21,9 +21,6 @@ pub use approval_follow::wire_approval_expanded_follows_pending;
 pub use escape::{ShellEscapeSignals, wire_escape_key_layered_dismiss};
 pub use persist_prefs::{
     wire_close_shell_chrome_when_ide_layout, wire_collapse_sidebar_rail_when_ide_layout,
-    wire_persist_agent_role, wire_persist_editor_layout_mode, wire_persist_ide_editor_prefs,
-    wire_persist_side_panel_view_flags, wire_persist_side_width,
-    wire_persist_sidebar_rail_collapsed, wire_persist_status_bar_visible,
 };
 pub use session_delete_hotkey::{SessionDeleteHotkeySignals, wire_session_delete_hotkey};
 pub use settings_llm_open::{

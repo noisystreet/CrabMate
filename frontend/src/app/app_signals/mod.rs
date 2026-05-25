@@ -41,7 +41,6 @@ pub use crate::chat_session_state::ChatSessionSignals;
 use crate::clarification_form::PendingClarificationForm;
 use crate::i18n::Locale;
 use crate::session_sync::SessionSyncState;
-use crate::storage::SESSIONS_KEY_LEGACY;
 
 #[derive(Clone)]
 pub struct AppSignals {
@@ -58,8 +57,6 @@ pub struct AppSignals {
     pub resize: ResizeSignals,
     pub workspace: WorkspaceSignals,
     pub status: StatusSignals,
-    /// 当前写入 `localStorage` 的会话 JSON 键（随工作区分桶变化）。
-    pub session_sessions_storage_key: RwSignal<String>,
 }
 
 impl AppSignals {
@@ -112,7 +109,6 @@ impl AppSignals {
             resize,
             workspace,
             status,
-            session_sessions_storage_key: RwSignal::new(SESSIONS_KEY_LEGACY.to_string()),
         }
     }
 

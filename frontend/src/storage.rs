@@ -1,10 +1,4 @@
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-
-/// 未设置工作区（或尚未从 `GET /workspace` 得到根路径）时使用的会话 JSON 键（与旧版一致）。
-pub const SESSIONS_KEY_LEGACY: &str = "agent-demo-sessions-v1";
-/// 与 [`SESSIONS_KEY_LEGACY`] 配对的当前活动会话 id 键。
-pub const ACTIVE_ID_KEY_LEGACY: &str = "agent-demo-active-session-id";
 
 /// 新建会话默认标题（**存储用**，与语言无关）；界面展示用 [`crate::i18n::session_title_for_display`]。
 pub const DEFAULT_CHAT_SESSION_TITLE: &str = "New chat";
@@ -201,95 +195,10 @@ pub fn clear_stale_assistant_loading_states(messages: &mut [StoredMessage]) {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct SessionsFile {
-    sessions: Vec<ChatSession>,
-}
-
-pub fn window_storage() -> Option<web_sys::Storage> {
-    crate::app_prefs::local_storage()
-}
-
-/// 与 `GET /workspace` 返回的 `path` 对齐的规范化字符串，用于派生存储桶键（仅本地，不上传）。
+/// 与 `GET /workspace` 返回的 `path` 对齐的规范化字符串（与服务端分桶一致）。
 #[must_use]
 pub fn normalize_workspace_partition_path(path: &str) -> String {
     path.trim().trim_end_matches('/').to_string()
-}
-
-/// 给定工作区根路径（空表示未设置），返回本会话列表在 `localStorage` 中的 JSON 键。
-#[must_use]
-pub fn sessions_json_storage_key(workspace_root: &str) -> String {
-    let n = normalize_workspace_partition_path(workspace_root);
-    if n.is_empty() {
-        return SESSIONS_KEY_LEGACY.to_string();
-    }
-    let digest = Sha256::digest(n.as_bytes());
-    let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
-    format!("{SESSIONS_KEY_LEGACY}::ws::{hex}")
-}
-
-#[must_use]
-pub fn active_id_storage_key_for_sessions_json(sessions_json_key: &str) -> String {
-    if sessions_json_key == SESSIONS_KEY_LEGACY {
-        ACTIVE_ID_KEY_LEGACY.to_string()
-    } else {
-        format!("{ACTIVE_ID_KEY_LEGACY}##{sessions_json_key}")
-    }
-}
-
-/// 从指定存储桶读取会话列表与活动 id。
-pub fn load_sessions_at_storage_key(sessions_json_key: &str) -> (Vec<ChatSession>, Option<String>) {
-    let Some(st) = window_storage() else {
-        return (Vec::new(), None);
-    };
-    let active_key = active_id_storage_key_for_sessions_json(sessions_json_key);
-    let active = st.get_item(&active_key).ok().flatten();
-    let raw = match st.get_item(sessions_json_key).ok().flatten() {
-        Some(r) => r,
-        None => return (Vec::new(), active),
-    };
-    let parsed: SessionsFile = match serde_json::from_str(&raw) {
-        Ok(p) => p,
-        Err(_) => return (Vec::new(), active),
-    };
-    (parsed.sessions, active)
-}
-
-/// 将会话列表与活动 id 写入指定存储桶。
-pub fn save_sessions_at_storage_key(
-    sessions_json_key: &str,
-    sessions: &[ChatSession],
-    active_id: Option<&str>,
-) {
-    let Some(st) = window_storage() else {
-        return;
-    };
-    let file = SessionsFile {
-        sessions: sessions.to_vec(),
-    };
-    if let Ok(json) = serde_json::to_string(&file) {
-        let _ = st.set_item(sessions_json_key, &json);
-    }
-    let active_key = active_id_storage_key_for_sessions_json(sessions_json_key);
-    match active_id {
-        Some(id) if !id.is_empty() => {
-            let _ = st.set_item(&active_key, id);
-        }
-        _ => {
-            let _ = st.remove_item(&active_key);
-        }
-    }
-}
-
-/// 与旧版一致：读写未分桶的默认键（未设置工作区时）。
-pub fn load_sessions() -> (Vec<ChatSession>, Option<String>) {
-    load_sessions_at_storage_key(SESSIONS_KEY_LEGACY)
-}
-
-/// 与旧版一致：写入未分桶的默认键（未设置工作区时）；新逻辑使用 [`save_sessions_at_storage_key`]。
-#[allow(dead_code)]
-pub fn save_sessions(sessions: &[ChatSession], active_id: Option<&str>) {
-    save_sessions_at_storage_key(SESSIONS_KEY_LEGACY, sessions, active_id);
 }
 
 pub fn make_session_id() -> String {
@@ -390,23 +299,7 @@ mod tests {
     }
 
     #[test]
-    fn sessions_json_storage_key_empty_is_legacy() {
-        assert_eq!(
-            sessions_json_storage_key(""),
-            SESSIONS_KEY_LEGACY.to_string()
-        );
-        assert_eq!(
-            sessions_json_storage_key("   "),
-            SESSIONS_KEY_LEGACY.to_string()
-        );
-    }
-
-    #[test]
-    fn sessions_json_storage_key_stable_for_path() {
-        let a = sessions_json_storage_key("/home/foo/proj");
-        let b = sessions_json_storage_key("/home/foo/proj/");
-        assert_eq!(a, b);
-        assert!(a.starts_with(SESSIONS_KEY_LEGACY));
-        assert_ne!(a, SESSIONS_KEY_LEGACY);
+    fn normalize_workspace_partition_trims_slash() {
+        assert_eq!(normalize_workspace_partition_path("/tmp/ws/"), "/tmp/ws");
     }
 }

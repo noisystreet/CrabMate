@@ -7,6 +7,9 @@ const distIndex = path.join(repoRoot, 'frontend', 'dist', 'index.html');
 const defaultPort = 18081;
 const port = Number(process.env.E2E_PORT || defaultPort);
 const baseURL = `http://127.0.0.1:${port}`;
+const e2eUserDataDir =
+  process.env.CM_CRABMATE_USER_DATA_DIR ||
+  fs.mkdtempSync(path.join(os.tmpdir(), 'crabmate-e2e-user-data-'));
 
 /** `NO_COLOR=1` breaks some Cargo/Trunk CLIs that expect `--no-color true|false`. */
 function webServerEnv(): NodeJS.ProcessEnv {
@@ -39,7 +42,10 @@ export default defineConfig({
   webServer: {
     command: `cargo run --quiet -- serve --port ${port}`,
     cwd: repoRoot,
-    env: webServerEnv(),
+    env: {
+      ...webServerEnv(),
+      CM_CRABMATE_USER_DATA_DIR: e2eUserDataDir,
+    },
     url: `${baseURL}/health`,
     reuseExistingServer: !process.env.CI,
     timeout: 240_000,

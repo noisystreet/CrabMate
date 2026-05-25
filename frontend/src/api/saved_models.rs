@@ -1,11 +1,10 @@
-//! 侧栏「已保存模型」快捷列表：与现有扁平 `client_llm.*` 并存，用于下拉框填充草稿。
+//! 侧栏「已保存模型」：存在 **`llm_overrides.saved_models`**（`/user-data/llm-overrides`）。
 
 use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use super::browser::local_storage;
-
-const STORAGE_KEY: &str = "crabmate-web-saved-model-presets-v1";
+use super::client_llm_cache::{with_mem, with_mem_mut};
+use super::client_llm_storage;
 
 fn default_preset_enabled() -> bool {
     true
@@ -20,38 +19,33 @@ pub struct SavedModelPreset {
     pub temperature: String,
     pub llm_context_tokens: String,
     pub llm_thinking_mode: String,
-    /// 可选；旧版列表无该字段时反序列化为空串。
     #[serde(default)]
     pub api_key: String,
-    /// 禁用后不出现在主/执行器下拉的可选项中，且无法被选中套用。
     #[serde(default = "default_preset_enabled")]
     pub enabled: bool,
 }
 
 #[must_use]
 pub fn load_saved_model_presets_from_storage() -> Vec<SavedModelPreset> {
-    let Some(st) = local_storage() else {
-        return Vec::new();
-    };
-    let Ok(Some(raw)) = st.get_item(STORAGE_KEY) else {
-        return Vec::new();
-    };
-    let t = raw.trim();
-    if t.is_empty() {
-        return Vec::new();
-    }
-    serde_json::from_str::<Vec<SavedModelPreset>>(t).unwrap_or_default()
+    with_mem(|m| {
+        m.saved_models
+            .iter()
+            .filter_map(|v| serde_json::from_value::<SavedModelPreset>(v.clone()).ok())
+            .collect()
+    })
 }
 
 pub fn persist_saved_model_presets_to_storage(
     presets: &[SavedModelPreset],
     loc: crate::i18n::Locale,
 ) -> Result<(), String> {
-    let st =
-        local_storage().ok_or_else(|| crate::i18n::api_err_no_local_storage(loc).to_string())?;
-    let json = serde_json::to_string(presets).map_err(|e| e.to_string())?;
-    st.set_item(STORAGE_KEY, &json)
-        .map_err(|_| "写入已保存模型列表失败".to_string())
+    let vals: Vec<serde_json::Value> = presets
+        .iter()
+        .filter_map(|p| serde_json::to_value(p).ok())
+        .collect();
+    with_mem_mut(|m| m.saved_models = vals);
+    client_llm_storage::flush_llm_overrides_to_server(loc);
+    Ok(())
 }
 
 /// 将一条已保存预设应用到「主 LLM」草稿（不含 API Key）。

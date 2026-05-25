@@ -4,7 +4,6 @@ use gloo_timers::future::TimeoutFuture;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
-use crate::app_prefs::{TIMELINE_PANEL_EXPANDED_KEY, load_bool_key, store_bool_key};
 use crate::i18n::{self, Locale};
 use crate::session_search::scroll_message_into_view;
 use crate::storage::ChatSession;
@@ -55,9 +54,7 @@ fn timeline_panel_toggle(
             prop:title=move || i18n::timeline_panel_toggle_title(locale.get())
             prop:aria-label=move || i18n::timeline_panel_toggle_aria(locale.get())
             on:click=move |_| {
-                let next = !timeline_panel_expanded.get();
-                timeline_panel_expanded.set(next);
-                store_bool_key(TIMELINE_PANEL_EXPANDED_KEY, next);
+                timeline_panel_expanded.update(|v| *v = !*v);
             }
         >
             <svg
@@ -226,6 +223,7 @@ pub fn timeline_panel_view(
     }
 }
 
+/// 首屏默认；真实值由 [`crate::user_prefs_sync`] 从 `/user-data/prefs` 覆盖。
 pub fn load_timeline_panel_expanded_default() -> bool {
-    load_bool_key(TIMELINE_PANEL_EXPANDED_KEY, false)
+    false
 }

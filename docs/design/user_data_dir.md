@@ -10,7 +10,7 @@
 
 **工作区内**数据（`conversations.db`、导出、`repl_history.txt` 等）已落在 **`<workspace>/.crabmate/`**，与本设计**互补**，不合并。
 
-**状态**：本文档为**设计稿**；实现前行为仍以 `localStorage` + 工作区 `.crabmate/` 为准。
+**状态**：**已实现（P0–P4）**；Web 经 **`/user-data/*`** 读写 **`~/.local/share/crabmate`**，**不再**使用浏览器 `localStorage` 存会话/偏好/LLM 覆盖。
 
 ---
 
@@ -22,7 +22,7 @@
 |------|------|
 | **单一真源** | 用户级 UI 状态与 LLM 本机覆盖集中至 **`~/.local/share/crabmate`**（可配置根目录） |
 | **三端共用** | Web、Tauri（经本机 `serve`）、CLI/TUI（Rust 直读或同一 HTTP API）共用同一套文件 |
-| **可迁移** | 首次启用时从 `localStorage` / Tauri WebKit 存储导入 |
+| **可迁移** | （已移除）旧版 `localStorage` 导入；新装直接使用磁盘目录 |
 | **安全分级** | 非机密进 JSON；API Key 等进 **`secrets/`** 且 HTTP 不回传明文 |
 
 ### 2.2 非目标（本阶段不替代）
@@ -204,8 +204,6 @@ flowchart TB
 | `GET` | `/user-data/workspaces/current/sessions` | 按当前 `workspace_override` 解析桶 |
 | `PUT` | `/user-data/workspaces/current/sessions` | 写 `web_sessions.json` |
 | `GET` | `/user-data/workspaces` | 列出 `manifest.json` |
-| `POST` | `/user-data/migrate` | 从 `localStorage` 条目一次性导入 |
-
 **工作区未设置**：`current` 映射到 `global/web_sessions.json`。
 
 ---
@@ -224,12 +222,9 @@ flowchart TB
 
 ---
 
-## 9. 迁移
+## 9. 迁移（已废弃）
 
-1. 若不存在 `meta.json` 且前端检测到 `localStorage` 含 `agent-demo-sessions-v1*`，调用 `POST /user-data/migrate`。
-2. 导入项：各 `::ws::<hash>` 桶 → `workspaces/<hash>/web_sessions.json`；legacy 桶 → `global/web_sessions.json`；`prefs` / `llm_overrides` / `secrets` 自各键拆分。
-3. Tauri：迁移完成后业务键不再写入 WebKit `localstorage/`（该目录可仅保留缓存）。
-4. 过渡期可实现 **双写**（HTTP + `localStorage`），再 **只读 HTTP**，最后停写 `localStorage`。
+不再提供 `POST /user-data/migrate` 与 `localStorage` 回退；请直接使用 **`~/.local/share/crabmate`** 或设置 **`CM_CRABMATE_USER_DATA_DIR`**。
 
 ---
 
@@ -259,11 +254,9 @@ flowchart TB
 | **P3** | `secrets/` + 脱敏 API；CLI 可选读 secrets；TUI 读 `prefs` | 三端 LLM URL/模型/密钥策略一致 |
 | **P4** | OpenAPI、`docs/配置说明.md`、e2e 使用临时 `CM_CRABMATE_USER_DATA_DIR` | 可测、可文档化 |
 
-建议代码位置：
+实现位置：
 
-- `src/user_data/` 或 crate `crabmate-user-data`；
-- `src/web/user_data/` 路由与 handler；
-- 前端 `UserDataStore` trait（`HttpUserDataStore` + `LocalStorageUserDataStore` 降级）。
+- `src/user_data/`、`src/web/user_data/`、`frontend/src/api/user_data.rs`、`frontend/src/user_prefs_sync.rs`
 
 ---
 

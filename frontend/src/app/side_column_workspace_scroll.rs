@@ -7,11 +7,14 @@ use std::sync::Arc;
 use web_sys::KeyboardEvent;
 
 use crate::api::post_workspace_set;
+use crate::api::user_data::put_current_web_sessions;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::{self, Locale};
 use crate::session_export::tauri_pick_workspace_folder;
 use crate::session_workspace_bind::patch_active_session_workspace_root;
+use crate::stream_text_overlay::sessions_snapshot_with_stream_overlay_merged;
 use crate::tauri_shell::tauri_shell_available;
+use crate::user_data_bootstrap::persist_last_workspace_root;
 use crate::workspace_shell::reload_workspace_panel;
 use crate::workspace_tree::WorkspaceFilesystemTree;
 
@@ -28,8 +31,18 @@ async fn commit_workspace_root(
     loc: Locale,
 ) {
     let path_for_bind = path.clone();
-    match post_workspace_set(Some(path), loc).await {
+    let aid = chat.active_id.get_untracked();
+    if !aid.is_empty() {
+        let list = chat.sessions.get_untracked();
+        let merged = sessions_snapshot_with_stream_overlay_merged(
+            list.as_slice(),
+            chat.stream_text_overlay.get_untracked().as_ref(),
+        );
+        let _ = put_current_web_sessions(&merged, Some(aid.as_str()), loc).await;
+    }
+    match post_workspace_set(Some(path.clone()), loc).await {
         Ok(_) => {
+            persist_last_workspace_root(&path, loc).await;
             let aid = chat.active_id.get_untracked();
             patch_active_session_workspace_root(chat.sessions, &aid, path_for_bind);
             reload_workspace_panel(

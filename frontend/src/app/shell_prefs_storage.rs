@@ -1,38 +1,23 @@
-//! 壳级偏好写入 **`localStorage`** 与 **`document.documentElement`** 的收口（主题、背景装饰、`<html lang>`、角色键）。
+//! 壳级偏好与 **`document.documentElement`** 同步（持久化在 **`/user-data/prefs`**，见 [`crate::user_prefs_sync`]）。
 //!
 //! # 与其它模块分工
 //!
-//! - **键名与通用读写**：[`crate::app_prefs`]（`THEME_KEY`、`THEME_SLUGS`、`normalize_theme_slug`、`store_bool_key`、侧栏视图等）；句柄经 [`super::local_storage_index`]。
+//! - **主题 slug 白名单**：[`crate::app_prefs::THEME_SLUGS`] / [`normalize_theme_slug`]（加载偏好时在 [`crate::user_prefs_sync`] 中规范化）。
 //! - **首屏壳 UI 快照**：[`read_shell_ui_initial_snapshot`] 聚合主题/语言/侧栏宽度等读路径，供 [`super::app_signals::ShellUISignals::new`] 单点消费。
 //! - **会话 JSON**：[`crate::storage`] / [`crate::app::chat::session_storage`]。
 //! - **`client_llm.*` / Bearer**：[`crate::api::client_llm_storage`]。
 //!
 //! 新增「首屏就读 / Effect 里写磁盘或改 DOM」的壳偏好时，优先在本模块加函数，避免在多个 `wire_*` 文件里散落 `set_item`。
 
+use leptos::prelude::GetUntracked;
 use wasm_bindgen::JsCast;
 
-use crate::app_prefs::{
-    BG_DECOR_KEY, CM_ROLE_KEY, DEFAULT_SIDE_WIDTH, EDITOR_LAYOUT_MODE_KEY, SESSION_CHAT_FONT_KEY,
-    SESSION_UI_FONT_KEY, STATUS_BAR_VISIBLE_KEY, SidePanelView, THEME_KEY, WORKSPACE_WIDTH_KEY,
-    load_bool_key, load_f64_key, load_side_panel_view, normalize_theme_slug, store_bool_key,
-};
+use crate::app::app_signals::AppSignals;
+use crate::app_prefs::{DEFAULT_SIDE_WIDTH, SidePanelView};
 use crate::i18n::Locale;
-use crate::session_typography_prefs::{
-    read_session_chat_font_initial, read_session_ui_font_initial, session_chat_font_stack_css,
-    session_ui_font_stack_css,
-};
+use crate::session_typography_prefs::{session_chat_font_stack_css, session_ui_font_stack_css};
 
-use super::local_storage_index;
-
-#[must_use]
-pub(crate) fn read_theme_initial() -> String {
-    let raw = local_storage_index::handle()
-        .and_then(|s| s.get_item(THEME_KEY).ok().flatten())
-        .unwrap_or_else(|| "light".to_string());
-    normalize_theme_slug(&raw)
-}
-
-/// 首屏 [`super::app_signals::ShellUISignals`] 所需的 **`localStorage`** 域快照（单入口读键）。
+/// 首屏默认（真实偏好由 [`crate::user_prefs_sync::wire_load_user_prefs_from_server`] 异步覆盖）。
 #[derive(Clone)]
 pub(crate) struct ShellUiInitialSnapshot {
     pub theme: String,
@@ -49,26 +34,34 @@ pub(crate) struct ShellUiInitialSnapshot {
 #[must_use]
 pub(crate) fn read_shell_ui_initial_snapshot() -> ShellUiInitialSnapshot {
     ShellUiInitialSnapshot {
-        theme: read_theme_initial(),
-        bg_decor: load_bool_key(BG_DECOR_KEY, true),
-        locale: crate::i18n::load_locale_from_storage(),
-        status_bar_visible: load_bool_key(STATUS_BAR_VISIBLE_KEY, true),
-        side_panel_view: load_side_panel_view(),
-        side_width: load_f64_key(WORKSPACE_WIDTH_KEY, DEFAULT_SIDE_WIDTH),
-        editor_layout_mode: load_bool_key(EDITOR_LAYOUT_MODE_KEY, false),
-        session_ui_font: read_session_ui_font_initial(),
-        session_chat_font: read_session_chat_font_initial(),
+        theme: "light".to_string(),
+        bg_decor: true,
+        locale: Locale::ZhHans,
+        status_bar_visible: true,
+        side_panel_view: SidePanelView::Workspace,
+        side_width: DEFAULT_SIDE_WIDTH,
+        editor_layout_mode: false,
+        session_ui_font: "default".to_string(),
+        session_chat_font: "default".to_string(),
     }
 }
 
-/// 会话模式界面 / 聊天列字体：写入本机并在 `<html>` 上维护 `--crabmate-ui-font-family` / `--crabmate-chat-font-family`。
+/// `GET /user-data/prefs` 灌入信号后，将主题/语言/字体等反映到 DOM。
+pub(crate) fn apply_loaded_prefs_to_dom(app: &AppSignals) {
+    persist_theme_to_storage_and_dom(&app.shell_ui.theme.get_untracked());
+    apply_locale_html_lang(app.shell_ui.locale.get_untracked());
+    persist_bg_decor_to_storage_and_dom(app.shell_ui.bg_decor.get_untracked());
+    persist_session_typography_to_storage_and_dom(
+        &app.shell_ui.session_ui_font.get_untracked(),
+        &app.shell_ui.session_chat_font.get_untracked(),
+    );
+    apply_shell_layout_dom_flags(app.shell_ui.editor_layout_mode.get_untracked());
+}
+
+/// 会话模式界面 / 聊天列字体：在 `<html>` 上维护 `--crabmate-ui-font-family` / `--crabmate-chat-font-family`。
 pub(crate) fn persist_session_typography_to_storage_and_dom(ui_slug: &str, chat_slug: &str) {
     let ui = crate::session_typography_prefs::normalize_session_ui_font(ui_slug);
     let chat = crate::session_typography_prefs::normalize_session_chat_font(chat_slug);
-    if let Some(st) = local_storage_index::handle() {
-        let _ = st.set_item(SESSION_UI_FONT_KEY, &ui);
-        let _ = st.set_item(SESSION_CHAT_FONT_KEY, &chat);
-    }
     let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
         return;
     };
@@ -97,11 +90,8 @@ pub(crate) fn persist_session_typography_to_storage_and_dom(ui_slug: &str, chat_
     }
 }
 
-/// 将主题写入本机并设置 `data-theme`（与 [`super::app_shell_effects::sync_dom::wire_sync_theme_to_storage_and_dom`] 语义一致）。
+/// 设置 `data-theme`（持久化由 [`crate::user_prefs_sync`] 负责）。
 pub(crate) fn persist_theme_to_storage_and_dom(theme: &str) {
-    if let Some(st) = local_storage_index::handle() {
-        let _ = st.set_item(THEME_KEY, theme);
-    }
     if let Some(doc) = web_sys::window().and_then(|w| w.document())
         && let Some(root) = doc.document_element()
     {
@@ -119,9 +109,8 @@ pub(crate) fn apply_locale_html_lang(locale: Locale) {
     }
 }
 
-/// 背景装饰：布尔写入 `localStorage` 并维护 `data-bg-decor`。
+/// 背景装饰：维护 `data-bg-decor`。
 pub(crate) fn persist_bg_decor_to_storage_and_dom(bg_decor: bool) {
-    store_bool_key(BG_DECOR_KEY, bg_decor);
     if let Some(doc) = web_sys::window().and_then(|w| w.document())
         && let Some(root) = doc.document_element()
     {
@@ -135,10 +124,7 @@ pub(crate) fn persist_bg_decor_to_storage_and_dom(bg_decor: bool) {
 
 #[must_use]
 pub(crate) fn read_agent_role_initial() -> Option<String> {
-    local_storage_index::handle()
-        .and_then(|s| s.get_item(CM_ROLE_KEY).ok().flatten())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
+    None
 }
 
 /// Tauri 壳标记与 IDE 布局标记（`data-tauri-shell` / `data-ide-layout`：窗口装饰与菜单栏拖拽，不隐藏 Web 顶栏）。
@@ -158,20 +144,5 @@ pub(crate) fn apply_shell_layout_dom_flags(editor_layout_mode: bool) {
         let _ = root.set_attribute("data-ide-layout", "");
     } else {
         let _ = root.remove_attribute("data-ide-layout");
-    }
-}
-
-/// 经纪人角色：非空则 `set_item`，否则 `remove_item`。
-pub(crate) fn persist_agent_role_trimmed(selected: Option<&str>) {
-    let Some(st) = local_storage_index::handle() else {
-        return;
-    };
-    match selected.map(str::trim).filter(|s| !s.is_empty()) {
-        Some(role) => {
-            let _ = st.set_item(CM_ROLE_KEY, role);
-        }
-        None => {
-            let _ = st.remove_item(CM_ROLE_KEY);
-        }
     }
 }
