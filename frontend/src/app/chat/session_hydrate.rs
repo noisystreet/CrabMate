@@ -454,11 +454,19 @@ pub(crate) mod conversation_hydration_cycle {
             return;
         }
 
-        chat.conversation_prompt_tokens
-            .set(Some(ConversationPromptTokenHydrate {
-                conversation_id: cid.clone(),
-                tiktoken: resp.tiktoken_prompt_tokens.clone(),
-            }));
+        if let Some(snap) = resp.tiktoken_prompt_tokens.clone() {
+            crate::conversation_prompt_tokens_apply::apply_conversation_prompt_tokens_from_sse(
+                chat,
+                cid.as_str(),
+                snap,
+            );
+        } else {
+            chat.conversation_prompt_tokens
+                .set(Some(ConversationPromptTokenHydrate {
+                    conversation_id: cid.clone(),
+                    tiktoken: None,
+                }));
+        }
 
         restore_reasoning_after_hydration(&chat, &aid, nonce_at_start);
         apply_saved_revision_if_same_conversation(&chat, cid.as_str(), resp.revision);

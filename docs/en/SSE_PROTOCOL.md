@@ -60,9 +60,9 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `command_approval_request` | Approval for `run_command` / workflow | `onCommandApprovalRequest` |
 | `staged_plan_notice` / `staged_plan_notice_clear` | Plan progress text; Web **swallows** | `handled`, not `onDelta` |
 | `chat_ui_separator` | UI separator; `true` short, `false` long | `onChatUiSeparator` |
-| `conversation_saved` | Session persisted; `revision` for branching/conflict | `onConversationSaved` |
+| `conversation_saved` | Session persisted; `revision` for branching/conflict; optional **`tiktoken_prompt_tokens`** | Updates `revision` and context meter |
 | `sse_capabilities` | First frame: `supported_sse_v`, `resume_ring_cap`, `job_id` (matches `x-stream-job-id`) | Official Web: compare to local **`SSE_PROTOCOL_VERSION`**; if match, **swallow**; else **`onError`** and stop. Integrations can persist `job_id` for resume |
-| `stream_ended` | End of stream; `job_id`, `reason` (`completed` / `cancelled` / `conflict` / `fallback` / `no_output` / `gone`) | Web: **extract and swallow independently first** (not gated by other control branches); clients may stop auto-reconnect |
+| `stream_ended` | End of stream; `job_id`, `reason`; optional **`tiktoken_prompt_tokens`** | Web: extract first; update context meter; stop auto-reconnect |
 | `timeline_log` | Timeline annotation; **not** in model context | `onTimelineLog` |
 
 ### `tool_result` common fields

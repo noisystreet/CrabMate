@@ -351,7 +351,10 @@ fn dispatch_notice_timeline_tail(
             && let Some(rev) = saved.get("revision").and_then(|x| x.as_u64())
             && let Some(f) = sink.notice_timeline.on_conversation_saved_revision.as_mut()
         {
-            f(rev);
+            let tiktoken = saved.get("tiktoken_prompt_tokens").and_then(
+                crate::conversation_prompt_tokens_apply::parse_tiktoken_prompt_tokens_value,
+            );
+            f(rev, tiktoken);
         }
         return Some(SseDispatch::Handled);
     }

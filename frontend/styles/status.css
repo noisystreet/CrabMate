@@ -103,6 +103,12 @@
   background: color-mix(in srgb, var(--warn) 75%, var(--text));
 }
 
+.status-context-meter-fill--estimate {
+  background: color-mix(in srgb, var(--info) 48%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--info) 65%, var(--border));
+  box-sizing: border-box;
+}
+
 .status-agent-select {
   appearance: none;
   height: 24px;

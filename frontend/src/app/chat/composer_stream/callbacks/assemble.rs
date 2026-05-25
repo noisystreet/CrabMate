@@ -6,6 +6,8 @@ use leptos::prelude::*;
 
 use crate::api::ChatStreamCallbacks;
 use crate::clarification_form::PendingClarificationForm;
+use crate::conversation_hydrate::TiktokenPromptTokensSnapshot;
+use crate::conversation_prompt_tokens_apply::apply_conversation_prompt_tokens_from_sse;
 use crate::i18n;
 use crate::message_format::staged_timeline_system_message_body;
 use crate::session_ops::{make_message_id, message_created_ms};
@@ -102,20 +104,27 @@ pub(crate) fn build_chat_stream_callbacks(
         })
     };
 
-    let on_conv_rev: Rc<dyn Fn(u64)> = {
+    let on_conv_rev: Rc<dyn Fn(u64, Option<TiktokenPromptTokensSnapshot>)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
-        Rc::new(move |rev: u64| {
-            if stream_ctx.is_stale() {
-                return;
-            }
-            stream_ctx
-                .chat
-                .session_sync
-                .update(|s| s.apply_saved_revision(rev));
-            stream_ctx.update_bound_session(|s| {
-                s.server_revision = Some(rev);
-            });
-        })
+        Rc::new(
+            move |rev: u64, tiktoken: Option<TiktokenPromptTokensSnapshot>| {
+                if stream_ctx.is_stale() {
+                    return;
+                }
+                stream_ctx
+                    .chat
+                    .session_sync
+                    .update(|s| s.apply_saved_revision(rev));
+                stream_ctx.update_bound_session(|s| {
+                    s.server_revision = Some(rev);
+                });
+                if let (Some(snap), Some(cid)) =
+                    (tiktoken, stream_ctx.server_conversation_id_for_tokens())
+                {
+                    apply_conversation_prompt_tokens_from_sse(stream_ctx.chat, &cid, snap);
+                }
+            },
+        )
     };
 
     let on_stream_ended =

@@ -31,10 +31,13 @@ pub struct ChatStreamCallbacks {
     pub on_tool_result: std::rc::Rc<dyn Fn(crate::sse_dispatch::ToolResultInfo)>,
     pub on_approval: std::rc::Rc<dyn Fn(crate::sse_dispatch::CommandApprovalRequest)>,
     pub on_conversation_id: std::rc::Rc<dyn Fn(String)>,
-    /// SSE `conversation_saved.revision`，供 `POST /chat/branch`。
-    pub on_conversation_revision: std::rc::Rc<dyn Fn(u64)>,
+    /// SSE `conversation_saved.revision` 与可选 tiktoken，供 `POST /chat/branch` 与底栏用量。
+    pub on_conversation_revision:
+        std::rc::Rc<dyn Fn(u64, Option<crate::conversation_hydrate::TiktokenPromptTokensSnapshot>)>,
     /// 收到 `stream_ended` 控制面时调用（如 `completed` / `cancelled` / `conflict` 等）。
-    pub on_stream_ended: std::rc::Rc<dyn Fn(String)>,
+    pub on_stream_ended: std::rc::Rc<
+        dyn Fn(String, Option<crate::conversation_hydrate::TiktokenPromptTokensSnapshot>),
+    >,
     /// 响应头 **`x-stream-job-id`**（新流首包；用于断线重连）。
     pub on_stream_job_id: std::rc::Rc<dyn Fn(u64)>,
     /// 每条 SSE 事件的 **`id:`**（单调序号），供断线后 `stream_resume.after_seq` / `Last-Event-ID`。

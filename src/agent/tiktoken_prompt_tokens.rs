@@ -13,7 +13,7 @@ use crate::llm::{
 use crate::types::{Message, message_content_into_text_lossy};
 
 /// 与 `GET /conversation/messages` 等 API 对齐的 tiktoken 统计快照。
-#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct TiktokenPromptTokensSnapshot {
     /// 近似 prompt token 数（**不含**本轮 `tools` 定义、**不含** `max_tokens` 预留）。
     pub prompt_tokens: u32,

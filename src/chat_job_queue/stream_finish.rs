@@ -88,12 +88,19 @@ pub(crate) async fn emit_stream_ended_once(
     reason: StreamEndReason,
     stream_ended_sent: &mut bool,
     log_context: &'static str,
+    tiktoken_prompt_tokens: Option<
+        crate::agent::tiktoken_prompt_tokens::TiktokenPromptTokensSnapshot,
+    >,
 ) {
     if *stream_ended_sent {
         return;
     }
     let end_line = crate::sse::encode_message(crate::sse::SsePayload::StreamEnded {
-        ended: crate::sse::StreamEndedBody { job_id, reason },
+        ended: crate::sse::StreamEndedBody {
+            job_id,
+            reason,
+            tiktoken_prompt_tokens,
+        },
     });
     let _ = crate::sse::send_string_logged(sse_tx, end_line, log_context).await;
     *stream_ended_sent = true;
@@ -256,6 +263,10 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
             } else {
                 StreamEndReason::NoOutput
             };
+            let tiktoken_prompt_tokens =
+                crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
+                    cfg_snap, messages,
+                );
             // 先发 stream_ended 解除前端 busy，再做可能耗时的落盘/revision 同步，
             // 避免后处理阶段卡住导致 Web 长时间停在“模型生成中”。
             emit_stream_ended_once(
@@ -264,6 +275,7 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                 end_reason,
                 stream_ended_sent,
                 "chat_job_queue::stream stream_ended_early",
+                tiktoken_prompt_tokens.clone(),
             )
             .await;
             match post_turn_web_prepare_and_save(
@@ -285,7 +297,10 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                     {
                         let line =
                             crate::sse::encode_message(crate::sse::SsePayload::ConversationSaved {
-                                saved: crate::sse::ConversationSavedBody { revision: new_rev },
+                                saved: crate::sse::ConversationSavedBody {
+                                    revision: new_rev,
+                                    tiktoken_prompt_tokens: tiktoken_prompt_tokens.clone(),
+                                },
                             });
                         let _ = crate::sse::send_string_logged(
                             sse_tx,

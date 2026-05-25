@@ -133,10 +133,14 @@ async fn stream_ended_emits_before_followup_saved_event() {
         StreamEndReason::Completed,
         &mut sent,
         "chat_job_queue::tests stream_ended_first",
+        None,
     )
     .await;
     let saved = crate::sse::encode_message(crate::sse::SsePayload::ConversationSaved {
-        saved: crate::sse::ConversationSavedBody { revision: 7 },
+        saved: crate::sse::ConversationSavedBody {
+            revision: 7,
+            tiktoken_prompt_tokens: None,
+        },
     });
     let _ = crate::sse::send_string_logged(
         &tx,

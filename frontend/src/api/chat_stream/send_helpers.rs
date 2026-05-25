@@ -96,7 +96,7 @@ pub(super) async fn run_chat_stream_http_round(
         ChatStreamConsumeOutcome::Finished { saw_stream_ended } => {
             if !saw_stream_ended {
                 // 某些后端/网络尾部场景可能未显式下发 `stream_ended`，前端按正常完结补齐。
-                (cbs.on_stream_ended)(StreamEndReason::Completed.to_string());
+                (cbs.on_stream_ended)(StreamEndReason::Completed.to_string(), None);
             }
             (cbs.on_done)();
             Ok(ChatStreamRoundOutcome::Completed)

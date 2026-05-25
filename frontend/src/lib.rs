@@ -18,6 +18,7 @@ mod client_llm_presets;
 mod conversation_hydrate;
 mod conversation_hydrate_timeline;
 mod conversation_messages_page;
+mod conversation_prompt_tokens_apply;
 mod debounce_schedule;
 mod i18n;
 mod ide_editor_prefs;

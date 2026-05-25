@@ -37,4 +37,22 @@ impl ChatStreamCallbackCtx {
     pub(super) fn is_stale(&self) -> bool {
         self.chat.stream_transport.get_untracked().attach_generation != self.attach_generation
     }
+
+    /// 绑定会话的服务端 `conversation_id`（流式写回侧栏会话优先，其次 `session_sync`）。
+    pub(super) fn server_conversation_id_for_tokens(&self) -> Option<String> {
+        if self.is_stale() {
+            return None;
+        }
+        let sid = self.bound_stream_session_id.as_str();
+        let from_session = self.chat.sessions.with_untracked(|list| {
+            list.iter()
+                .find(|s| s.id == sid)
+                .and_then(|s| s.trimmed_server_conversation_id().map(str::to_string))
+        });
+        from_session.or_else(|| {
+            self.chat
+                .session_sync
+                .with_untracked(|s| s.conversation_id.clone())
+        })
+    }
 }

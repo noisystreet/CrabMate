@@ -45,10 +45,10 @@ pub fn status_chip_context(l: Locale) -> &'static str {
 pub fn status_chip_context_tooltip(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => {
-            "prompt tokens（tiktoken 粗估）相对 llm_context_tokens 上限。新会话在落盘前显示当前 system 预估值；已有会话为水合后的消息体合计。均不含工具 JSON，与网关计费可能有偏差。"
+            "prompt tokens（tiktoken 粗估）相对 llm_context_tokens 上限。新会话在落盘前为 system 预估值（~）；流式结束或水合后为消息体实测。均不含工具 JSON，与网关计费可能有偏差。"
         }
         Locale::En => {
-            "Prompt tokens (tiktoken estimate) vs llm_context_tokens cap. New sessions show a system-only baseline until persisted; existing sessions use hydrated message bodies. Excludes tool JSON; may differ from provider billing."
+            "Prompt tokens (tiktoken estimate) vs llm_context_tokens cap. New sessions show a system-only baseline (~) until measured; after stream end or hydrate, message-body totals. Excludes tool JSON; may differ from provider billing."
         }
     }
 }

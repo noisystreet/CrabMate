@@ -99,6 +99,13 @@ fn status_bar_context_effective_used(
     status_bar_new_session_baseline_prompt_tokens(st.status_data.get().as_ref(), role)
 }
 
+/// 新会话、尚无服务端实测 tiktoken 时，展示 `GET /status` 的 system 基线（带 `~` 前缀）。
+fn status_bar_context_is_baseline_estimate(chat: ChatSessionSignals, used: Option<u32>) -> bool {
+    used.is_some()
+        && status_bar_context_used_for_active_session(chat).is_none()
+        && !active_session_has_server_conversation_id(chat)
+}
+
 fn status_bar_context_cap_and_used(
     chat: ChatSessionSignals,
     st: StatusTasksSignals,
@@ -115,13 +122,14 @@ fn status_bar_context_cap_and_used(
     (cap, used)
 }
 
-fn status_bar_context_value_text(cap: u32, used: Option<u32>) -> String {
+fn status_bar_context_value_text(cap: u32, used: Option<u32>, baseline_estimate: bool) -> String {
+    let prefix = if baseline_estimate { "~" } else { "" };
     match (used, cap > 0) {
         (Some(u), true) => {
             let pct = (u as f64 / cap as f64) * 100.0;
-            format!("{u} / {cap} ({:.1}%)", pct.min(999.9))
+            format!("{prefix}{u} / {cap} ({:.1}%)", pct.min(999.9))
         }
-        (Some(u), false) => format!("{u}"),
+        (Some(u), false) => format!("{prefix}{u}"),
         (None, true) => format!("— / {cap}"),
         (None, false) => "—".to_string(),
     }
@@ -152,7 +160,8 @@ fn StatusBarContextChip(
                             client_llm_storage_tick,
                             selected_agent_role,
                         );
-                        status_bar_context_value_text(cap, used)
+                        let baseline = status_bar_context_is_baseline_estimate(chat, used);
+                        status_bar_context_value_text(cap, used, baseline)
                     }}</span>
                 </span>
                 <Show when=move || {
@@ -187,10 +196,14 @@ fn StatusBarContextChip(
                             );
                             let u = used.unwrap_or(0);
                             let pct = (u as f64 / cap as f64) * 100.0;
-                            if pct >= 90.0 {
-                                "status-context-meter-fill status-context-meter-fill--warn"
+                            let baseline =
+                                status_bar_context_is_baseline_estimate(chat, used);
+                            if baseline {
+                                "status-context-meter-fill status-context-meter-fill--estimate".to_string()
+                            } else if pct >= 90.0 {
+                                "status-context-meter-fill status-context-meter-fill--warn".to_string()
                             } else {
-                                "status-context-meter-fill"
+                                "status-context-meter-fill".to_string()
                             }
                         }></div>
                     </div>

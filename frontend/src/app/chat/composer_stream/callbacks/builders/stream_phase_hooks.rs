@@ -3,6 +3,8 @@
 use std::rc::Rc;
 
 use crate::app::stream_shell_busy::StreamShellBusyOp;
+use crate::conversation_hydrate::TiktokenPromptTokensSnapshot;
+use crate::conversation_prompt_tokens_apply::apply_conversation_prompt_tokens_from_sse;
 
 use super::super::super::context::ChatStreamCallbackCtx;
 use super::super::super::per_stream_accum::PerStreamAccum;
@@ -29,24 +31,31 @@ pub(in super::super) fn make_on_tool_status_with_stream_phase(
 pub(in super::super) fn make_on_stream_ended_with_stream_phase(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
     accum: Rc<PerStreamAccum>,
-) -> Rc<dyn Fn(String)> {
-    Rc::new(move |reason: String| {
-        if stream_ctx.is_stale() {
-            return;
-        }
-        stream_ctx
-            .scratch
-            .apply_stream_control_event(StreamControlEvent::StreamEnded);
-        accum.set_stream_end_reason(reason.clone());
-        stream_ctx.chat.clear_stream_resume_handles();
-        // `stream_ended` 表示服务端已结束本轮流式任务：无论 `reason` 是否能解析为已知枚举，
-        // 都应回落 busy，避免状态栏长期停在「模型生成中」。（未知 reason 仍写入 stream_end_reason 供 diagnostics。）
-        stream_ctx
-            .shell
-            .stream
-            .apply_release_turn_and_stream_run(stream_ctx.attach_generation);
-        clear_abort_slot(&stream_ctx.shell);
-    })
+) -> Rc<dyn Fn(String, Option<TiktokenPromptTokensSnapshot>)> {
+    Rc::new(
+        move |reason: String, tiktoken: Option<TiktokenPromptTokensSnapshot>| {
+            if stream_ctx.is_stale() {
+                return;
+            }
+            stream_ctx
+                .scratch
+                .apply_stream_control_event(StreamControlEvent::StreamEnded);
+            accum.set_stream_end_reason(reason.clone());
+            stream_ctx.chat.clear_stream_resume_handles();
+            if let (Some(snap), Some(cid)) =
+                (tiktoken, stream_ctx.server_conversation_id_for_tokens())
+            {
+                apply_conversation_prompt_tokens_from_sse(stream_ctx.chat, &cid, snap);
+            }
+            // `stream_ended` 表示服务端已结束本轮流式任务：无论 `reason` 是否能解析为已知枚举，
+            // 都应回落 busy，避免状态栏长期停在「模型生成中」。（未知 reason 仍写入 stream_end_reason 供 diagnostics。）
+            stream_ctx
+                .shell
+                .stream
+                .apply_release_turn_and_stream_run(stream_ctx.attach_generation);
+            clear_abort_slot(&stream_ctx.shell);
+        },
+    )
 }
 
 pub(in super::super) fn make_on_assistant_answer_phase_with_stream_phase(

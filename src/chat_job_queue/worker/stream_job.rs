@@ -122,12 +122,17 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         emit_stream_cancelled_terminal(&rt.sse_tx, job_id).await;
     }
     if !stream_ended_sent {
+        let tiktoken_prompt_tokens =
+            crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
+                &cfg_snap, &messages,
+            );
         emit_stream_ended_once(
             &rt.sse_tx,
             job_id,
             stream_end_reason,
             &mut stream_ended_sent,
             "chat_job_queue::stream stream_ended",
+            tiktoken_prompt_tokens,
         )
         .await;
     }

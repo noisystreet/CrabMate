@@ -13,6 +13,17 @@ use crate::sse_dispatch::{
 
 use super::ChatStreamCallbacks;
 
+fn stream_ended_tiktoken_from_data(
+    data: &str,
+) -> Option<crate::conversation_hydrate::TiktokenPromptTokensSnapshot> {
+    let v = serde_json::from_str::<serde_json::Value>(data).ok()?;
+    v.get("stream_ended").and_then(|ended| {
+        ended
+            .get("tiktoken_prompt_tokens")
+            .and_then(crate::conversation_prompt_tokens_apply::parse_tiktoken_prompt_tokens_value)
+    })
+}
+
 pub(super) fn process_sse_buffer(
     buffer: &mut String,
     last_event_id: &mut u64,
@@ -71,7 +82,8 @@ pub(super) fn handle_sse_block(
     }
     if let Some(reason) = extract_stream_ended_reason(&data) {
         *saw_stream_ended = true;
-        (cbs.on_stream_ended)(reason);
+        let tiktoken = stream_ended_tiktoken_from_data(&data);
+        (cbs.on_stream_ended)(reason, tiktoken);
         return Ok(true);
     }
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(&data)
@@ -85,7 +97,10 @@ pub(super) fn handle_sse_block(
             .map(str::to_string)
             .unwrap_or_else(|| StreamEndReason::Completed.to_string());
         *saw_stream_ended = true;
-        (cbs.on_stream_ended)(reason);
+        let tiktoken = ended
+            .get("tiktoken_prompt_tokens")
+            .and_then(crate::conversation_prompt_tokens_apply::parse_tiktoken_prompt_tokens_value);
+        (cbs.on_stream_ended)(reason, tiktoken);
         return Ok(true);
     }
 
@@ -108,7 +123,10 @@ pub(super) fn handle_sse_block(
     let mut on_tool_chunk = |info: ToolOutputChunkInfo| (cbs.on_tool_output_chunk)(info);
     let mut on_tool_res = |info: ToolResultInfo| (cbs.on_tool_result)(info);
     let mut on_appr = |req: CommandApprovalRequest| (cbs.on_approval)(req);
-    let mut on_conv_rev = |rev: u64| (cbs.on_conversation_revision)(rev);
+    let mut on_conv_rev =
+        |rev: u64, tiktoken: Option<crate::conversation_hydrate::TiktokenPromptTokensSnapshot>| {
+            (cbs.on_conversation_revision)(rev, tiktoken);
+        };
     let mut on_staged_start =
         |info: StagedPlanStepStartInfo| (cbs.on_staged_plan_step_started)(info);
     let mut on_staged_end = |info: StagedPlanStepEndInfo| (cbs.on_staged_plan_step_finished)(info);
@@ -182,8 +200,8 @@ mod tests {
             on_tool_result: Rc::new(|_info| {}),
             on_approval: Rc::new(|_req| {}),
             on_conversation_id: Rc::new(|_id| {}),
-            on_conversation_revision: Rc::new(|_rev| {}),
-            on_stream_ended: Rc::new(move |reason| {
+            on_conversation_revision: Rc::new(|_rev, _tik| {}),
+            on_stream_ended: Rc::new(move |reason, _tik| {
                 *ended.borrow_mut() = Some(reason);
             }),
             on_stream_job_id: Rc::new(|_jid| {}),
@@ -252,8 +270,8 @@ mod tests {
             on_tool_result: Rc::new(|_info| {}),
             on_approval: Rc::new(|_req| {}),
             on_conversation_id: Rc::new(|_id| {}),
-            on_conversation_revision: Rc::new(|_rev| {}),
-            on_stream_ended: Rc::new(|_reason| {}),
+            on_conversation_revision: Rc::new(|_rev, _tik| {}),
+            on_stream_ended: Rc::new(|_reason, _tik| {}),
             on_stream_job_id: Rc::new(|_jid| {}),
             on_last_sse_event_id: Rc::new(|_seq| {}),
             on_assistant_answer_phase: Rc::new(|| {}),

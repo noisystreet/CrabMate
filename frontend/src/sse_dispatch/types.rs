@@ -2,6 +2,7 @@
 
 use serde_json::Value;
 
+use crate::conversation_hydrate::TiktokenPromptTokensSnapshot;
 use crate::i18n::Locale;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,8 +50,9 @@ pub struct SseClarifyTraceHooks<'a> {
 
 /// 会话落盘 revision、`timeline_log`、协议能力等尾部控制面。
 pub struct SseNoticeTimelineHooks<'a> {
-    /// `conversation_saved.revision`，供 `POST /chat/branch` 与冲突检测。
-    pub on_conversation_saved_revision: Option<&'a mut dyn FnMut(u64)>,
+    /// `conversation_saved.revision` 与可选 tiktoken；供 `POST /chat/branch` 与底栏上下文用量。
+    pub on_conversation_saved_revision:
+        Option<&'a mut dyn FnMut(u64, Option<TiktokenPromptTokensSnapshot>)>,
     /// `timeline_log` 事件：审批结果等旁注，写入时间线（不进聊天正文）。
     pub on_timeline_log: Option<&'a mut dyn FnMut(TimelineLogInfo)>,
 }
