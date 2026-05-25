@@ -1,48 +1,18 @@
 import { expect, test } from '@playwright/test';
-import { installChatStreamStub } from './fix-chat-stream';
 
-const GIT_TOOL_ENVELOPE = JSON.stringify({
-  crabmate_tool: {
-    v: 1,
-    name: 'git_status',
-    summary: 'git status',
-    ok: true,
-    output: 'git status (exit=0):\n位于分支 main',
-    tool_call_id: 'e2e-call',
-  },
-});
-
-/**
- * Stub conversation snapshot so refresh/hydrate shows a formatted tool card (not raw JSON).
- */
-async function installConversationMessagesStub(page: import('@playwright/test').Page): Promise<void> {
-  await page.route('**/conversation/messages?**', async (route) => {
-    if (route.request().method() !== 'GET') {
-      await route.continue();
-      return;
-    }
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        conversation_id: 'e2e-conv',
-        revision: 1,
-        messages: [
-          { role: 'user', content: 'e2e hydrate' },
-          {
-            role: 'tool',
-            name: 'git_status',
-            content: GIT_TOOL_ENVELOPE,
-            display_content: 'git_status · git status',
-            display_reasoning_content: 'tool: git_status\ngit status (exit=0):\n位于分支 main',
-          },
-        ],
-      }),
-    });
-  });
-}
+import {
+  fillComposerDraft,
+  installChatStreamStub,
+  installConversationMessagesStub,
+  putActiveSessionWithServerConversation,
+  putFreshLocalSession,
+} from './helpers';
 
 test.describe('Web UI smoke', () => {
+  test.beforeEach(async ({ request }) => {
+    await putFreshLocalSession(request, 's_e2e_smoke');
+  });
+
   test('GET /health returns JSON with status and checks', async ({ request }) => {
     const res = await request.get('/health');
     expect(res.ok()).toBeTruthy();
@@ -59,8 +29,7 @@ test.describe('Web UI smoke', () => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'CrabMate' })).toBeVisible();
 
-    const input = page.getByTestId('chat-composer-input');
-    await input.fill('e2e ping');
+    await fillComposerDraft(page, 'e2e ping');
     await page.getByTestId('chat-send-button').click();
 
     await expect(page.locator('.msg-assistant .msg-body').filter({ hasText: 'Hello from E2E stub' })).toBeVisible({
@@ -69,17 +38,23 @@ test.describe('Web UI smoke', () => {
     await expect(page.getByTestId('chat-tool-card').first()).toBeVisible();
   });
 
-  test('hydrated tool card after reload is not raw JSON', async ({ page }) => {
+  test('hydrated tool card after reload is not raw JSON', async ({ page, request }) => {
     await installChatStreamStub(page);
-    await installConversationMessagesStub(page);
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'CrabMate' })).toBeVisible();
 
-    const input = page.getByTestId('chat-composer-input');
-    await input.fill('e2e hydrate reload');
+    await fillComposerDraft(page, 'e2e hydrate reload');
     await page.getByTestId('chat-send-button').click();
-    await expect(page.getByTestId('chat-tool-card').first()).toBeVisible({ timeout: 30_000 });
+    await expect(
+      page.locator('.msg-assistant .msg-body').filter({ hasText: 'Hello from E2E stub' }),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('chat-tool-card').first()).toBeVisible();
 
+    // 绑定服务端会话 id，刷新后走 GET 桩（git_status 工具卡）。
+    await putActiveSessionWithServerConversation(request, 's_e2e_smoke', 'e2e-conv', {
+      title: 'E2E smoke',
+    });
+    await installConversationMessagesStub(page);
     await page.reload();
     const toolCard = page.getByTestId('chat-tool-card').first();
     await expect(toolCard).toBeVisible({ timeout: 30_000 });

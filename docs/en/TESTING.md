@@ -14,9 +14,8 @@ This page lists **automated tests and common checks** for the CrabMate repo (run
 
 Push / pull request to **`main`** runs [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml):
 
-- **`cargo check`**: workspace `--all-targets --all-features` + frontend **`wasm32-unknown-unknown`**
-- **`cargo clippy`**: workspace and **`frontend/`**, **`-D warnings`**
-- **`cargo test --workspace --all-features`**
+- **`check-clippy-test`**: **`cargo check`**, **`cargo clippy`** (**`-D warnings`**), **`cargo test --workspace --all-features`**
+- **`e2e`**: **`trunk build`**, **`cargo build --release -p crabmate`**, then Playwright in **`e2e/`** (**`CM_E2E_FIXTURES=1`**, no real LLM); uploads **`playwright-report`** on failure
 
 Complexity, dependency security, and coverage use separate workflows (**`code-complexity.yml`**, **`dependency-security.yml`**, **`code-coverage.yml`**).
 
@@ -132,7 +131,7 @@ cd frontend && trunk build
 
 ## Browser E2E (Playwright)
 
-Directory: **`e2e/`**. Stubs **`POST /chat/stream`** and **`/workspace`** routes — **no real LLM**. Tests live under **`e2e/tests/`** (e.g. **`smoke.spec.ts`**); prefer **`data-testid`** selectors.
+Directory: **`e2e/`**. Stubs **`POST /chat/stream`** and **`/workspace`** routes — **no real LLM**. Tests under **`e2e/tests/`**; shared helpers in **`e2e/tests/helpers/`**. Prefer **`data-testid`** selectors.
 
 ```bash
 cd frontend && trunk build

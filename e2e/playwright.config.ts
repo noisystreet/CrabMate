@@ -5,9 +5,16 @@ import * as path from 'path';
 
 const repoRoot = path.resolve(__dirname, '..');
 const distIndex = path.join(repoRoot, 'frontend', 'dist', 'index.html');
+const releaseBinary = path.join(repoRoot, 'target', 'release', 'crabmate');
 const defaultPort = 18081;
 const port = Number(process.env.E2E_PORT || defaultPort);
 const baseURL = `http://127.0.0.1:${port}`;
+
+/** CI 预编译 release 二进制时避免 webServer 再跑完整 `cargo run` 编译。 */
+const serveCommand =
+  process.env.CI && fs.existsSync(releaseBinary)
+    ? `${releaseBinary} serve --port ${port}`
+    : `cargo run --quiet -- serve --port ${port}`;
 const e2eUserDataDir =
   process.env.CM_CRABMATE_USER_DATA_DIR ||
   fs.mkdtempSync(path.join(os.tmpdir(), 'crabmate-e2e-user-data-'));
@@ -30,7 +37,8 @@ if (!fs.existsSync(distIndex)) {
 
 export default defineConfig({
   testDir: './tests',
-  fullyParallel: true,
+  // 共享 webServer 与 CM_CRABMATE_USER_DATA_DIR；串行避免会话 prefs 交叉污染。
+  fullyParallel: !process.env.CI,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
@@ -41,7 +49,7 @@ export default defineConfig({
     ...devices['Desktop Chrome'],
   },
   webServer: {
-    command: `cargo run --quiet -- serve --port ${port}`,
+    command: serveCommand,
     cwd: repoRoot,
     env: {
       ...webServerEnv(),

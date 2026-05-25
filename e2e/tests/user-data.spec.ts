@@ -1,14 +1,9 @@
 import { expect, test } from '@playwright/test';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
+
+import { resetWorkspaceToDefault } from './helpers';
 
 test.describe('user-data API', () => {
-  test('GET/PUT prefs round-trip on isolated CM_CRABMATE_USER_DATA_DIR', async ({ request }) => {
-    const root = process.env.CM_CRABMATE_USER_DATA_DIR;
-    expect(root, 'playwright webServer must set CM_CRABMATE_USER_DATA_DIR').toBeTruthy();
-    expect(fs.existsSync(root!)).toBeTruthy();
-
+  test('GET/PUT prefs round-trip (isolated user-data dir via webServer)', async ({ request }) => {
     const get0 = await request.get('/user-data/prefs');
     expect(get0.ok()).toBeTruthy();
 
@@ -31,9 +26,7 @@ test.describe('user-data API', () => {
   });
 
   test('PUT/GET current workspace sessions', async ({ request }) => {
-    await request.post('/workspace', {
-      data: { path: null },
-    });
+    await resetWorkspaceToDefault(request);
 
     const put = await request.put('/user-data/workspaces/current/sessions', {
       data: {
