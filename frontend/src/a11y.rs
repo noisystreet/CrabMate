@@ -1,6 +1,25 @@
 //! 无障碍辅助：模态内焦点、Tab 循环。
 
+use leptos::ev::MouseEvent;
 use wasm_bindgen::JsCast;
+
+/// 是否为「直接点在遮罩层上」（非对话框面板或子节点）。
+#[must_use]
+pub fn mouse_event_target_is_current_target(ev: &MouseEvent) -> bool {
+    let Some(target) = ev.target() else {
+        return false;
+    };
+    let Some(current) = ev.current_target() else {
+        return false;
+    };
+    let Ok(t) = target.dyn_into::<web_sys::Element>() else {
+        return false;
+    };
+    let Ok(c) = current.dyn_into::<web_sys::Element>() else {
+        return false;
+    };
+    t == c
+}
 
 /// 在容器内聚焦第一个可 Tab 停驻的子节点（若无则聚焦容器自身）。
 pub fn focus_first_in_modal_container(container: &web_sys::Element) {

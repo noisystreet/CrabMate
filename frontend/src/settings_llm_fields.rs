@@ -35,29 +35,43 @@ pub(crate) fn LlmContextTokensField(
     }
 }
 
+/// 温度草稿：`type="text"` + `inputmode="decimal"`，避免受控 `number` 输入时光标/字符顺序异常。
+#[component]
+pub(crate) fn LlmTemperatureFieldWithId(
+    locale: RwSignal<Locale>,
+    temperature_draft: RwSignal<String>,
+    input_id: String,
+) -> impl IntoView {
+    view! {
+        <div class="settings-field">
+            <label class="settings-field-label" for=input_id.clone()>
+                {move || i18n::settings_label_temperature(locale.get())}
+            </label>
+            <input
+                type="text"
+                id=input_id.clone()
+                class="settings-text-input"
+                inputmode="decimal"
+                autocomplete="off"
+                prop:placeholder=move || i18n::settings_ph_temperature(locale.get())
+                prop:value=move || temperature_draft.get()
+                on:input=move |ev| temperature_draft.set(event_target_value(&ev))
+            />
+        </div>
+    }
+}
+
 #[component]
 pub(crate) fn LlmTemperatureField(
     locale: RwSignal<Locale>,
     temperature_draft: RwSignal<String>,
 ) -> impl IntoView {
     view! {
-        <div class="settings-field">
-            <label class="settings-field-label" for="settings-llm-temperature">
-                {move || i18n::settings_label_temperature(locale.get())}
-            </label>
-            <input
-                type="number"
-                id="settings-llm-temperature"
-                class="settings-text-input"
-                min="0"
-                max="2"
-                step="any"
-                inputmode="decimal"
-                prop:placeholder=move || i18n::settings_ph_temperature(locale.get())
-                prop:value=move || temperature_draft.get()
-                on:input=move |ev| temperature_draft.set(event_target_value(&ev))
-            />
-        </div>
+        <LlmTemperatureFieldWithId
+            locale
+            temperature_draft
+            input_id="settings-llm-temperature".to_string()
+        />
     }
 }
 

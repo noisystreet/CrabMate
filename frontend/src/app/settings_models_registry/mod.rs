@@ -10,7 +10,10 @@ use leptos::task::spawn_local;
 use leptos_dom::helpers::event_target_value;
 use std::sync::Arc;
 
-use crate::a11y::{focus_first_in_modal_container, trap_tab_in_container};
+use crate::a11y::{
+    focus_first_in_modal_container, mouse_event_target_is_current_target, trap_tab_in_container,
+};
+use crate::settings_llm_fields::LlmTemperatureFieldWithId;
 
 use crate::api::SavedModelPreset;
 use crate::i18n::{self, Locale};
@@ -257,39 +260,38 @@ fn SettingsModelsRegistryAddFormPrimaryFields(s: RegistryAddFormPrimarySignals) 
 }
 
 #[derive(Clone)]
-struct RegistryAddFormSecondarySignals {
+struct RegistryAddFormDetailSignals {
     locale: RwSignal<Locale>,
     new_api_key: RwSignal<String>,
     new_ctx_tokens: RwSignal<String>,
+    new_temperature: RwSignal<String>,
+    new_thinking_mode: RwSignal<String>,
     id_key: String,
     id_ctx: String,
+    id_temp: String,
+    id_thinking: String,
 }
 
+/// 与主设置页 LLM 区块一致：温度 → 上下文 → 思维链 → API Key。
 #[component]
-fn SettingsModelsRegistryAddFormSecondaryFields(
-    s: RegistryAddFormSecondarySignals,
-) -> impl IntoView {
-    let RegistryAddFormSecondarySignals {
+fn SettingsModelsRegistryAddFormDetailFields(s: RegistryAddFormDetailSignals) -> impl IntoView {
+    let RegistryAddFormDetailSignals {
         locale,
         new_api_key,
         new_ctx_tokens,
+        new_temperature,
+        new_thinking_mode,
         id_key,
         id_ctx,
+        id_temp,
+        id_thinking,
     } = s;
     view! {
-        <div class="settings-field">
-            <label class="settings-field-label" for=id_key.clone()>
-                {move || i18n::settings_models_label_api_key(locale.get())}
-            </label>
-            <input
-                type="password"
-                class="settings-text-input"
-                autocomplete="off"
-                id=id_key.clone()
-                prop:value=move || new_api_key.get()
-                on:input=move |ev| new_api_key.set(event_target_value(&ev))
-            />
-        </div>
+        <LlmTemperatureFieldWithId
+            locale
+            temperature_draft=new_temperature
+            input_id=id_temp.clone()
+        />
         <div class="settings-field">
             <label class="settings-field-label" for=id_ctx.clone()>
                 {move || i18n::settings_models_label_context_tokens(locale.get())}
@@ -300,45 +302,6 @@ fn SettingsModelsRegistryAddFormSecondaryFields(
                 id=id_ctx.clone()
                 prop:value=move || new_ctx_tokens.get()
                 on:input=move |ev| new_ctx_tokens.set(event_target_value(&ev))
-            />
-        </div>
-    }
-}
-
-#[derive(Clone)]
-struct RegistryAddFormExtraSignals {
-    locale: RwSignal<Locale>,
-    new_temperature: RwSignal<String>,
-    new_thinking_mode: RwSignal<String>,
-    id_temp: String,
-    id_thinking: String,
-}
-
-#[component]
-fn SettingsModelsRegistryPresetFormExtraFields(s: RegistryAddFormExtraSignals) -> impl IntoView {
-    let RegistryAddFormExtraSignals {
-        locale,
-        new_temperature,
-        new_thinking_mode,
-        id_temp,
-        id_thinking,
-    } = s;
-    view! {
-        <div class="settings-field">
-            <label class="settings-field-label" for=id_temp.clone()>
-                {move || i18n::settings_label_temperature(locale.get())}
-            </label>
-            <input
-                type="number"
-                class="settings-text-input"
-                id=id_temp.clone()
-                min="0"
-                max="2"
-                step="any"
-                inputmode="decimal"
-                prop:placeholder=move || i18n::settings_ph_temperature(locale.get())
-                prop:value=move || new_temperature.get()
-                on:input=move |ev| new_temperature.set(event_target_value(&ev))
             />
         </div>
         <div class="settings-field">
@@ -361,6 +324,19 @@ fn SettingsModelsRegistryPresetFormExtraFields(s: RegistryAddFormExtraSignals) -
                     {move || i18n::settings_thinking_mode_off(locale.get())}
                 </option>
             </select>
+        </div>
+        <div class="settings-field">
+            <label class="settings-field-label" for=id_key.clone()>
+                {move || i18n::settings_models_label_api_key(locale.get())}
+            </label>
+            <input
+                type="password"
+                class="settings-text-input"
+                autocomplete="off"
+                id=id_key.clone()
+                prop:value=move || new_api_key.get()
+                on:input=move |ev| new_api_key.set(event_target_value(&ev))
+            />
         </div>
     }
 }
@@ -528,17 +504,14 @@ fn SettingsModelsRegistryAddForm(s: RegistryAddFormSignals) -> impl IntoView {
                 id_base_url: id_base_url.clone(),
                 id_model: id_model.clone(),
             } />
-            <SettingsModelsRegistryAddFormSecondaryFields s=RegistryAddFormSecondarySignals {
+            <SettingsModelsRegistryAddFormDetailFields s=RegistryAddFormDetailSignals {
                 locale,
                 new_api_key,
                 new_ctx_tokens,
-                id_key: id_key.clone(),
-                id_ctx: id_ctx.clone(),
-            } />
-            <SettingsModelsRegistryPresetFormExtraFields s=RegistryAddFormExtraSignals {
-                locale,
                 new_temperature,
                 new_thinking_mode,
+                id_key: id_key.clone(),
+                id_ctx: id_ctx.clone(),
                 id_temp: id_temp.clone(),
                 id_thinking: id_thinking.clone(),
             } />
@@ -615,8 +588,10 @@ fn SettingsModelsRegistryAddModelDialog(s: RegistryAddFormSignals) -> impl IntoV
         <Show when=move || dialog_mode.get().is_some()>
             <div
                 class="modal-backdrop settings-model-add-dialog-backdrop"
-                on:click=move |_| {
-                    reset_fields();
+                on:click=move |ev: leptos::ev::MouseEvent| {
+                    if !mouse_event_target_is_current_target(&ev) {
+                        return;
+                    }
                     close_dialog();
                 }
             >
@@ -627,6 +602,7 @@ fn SettingsModelsRegistryAddModelDialog(s: RegistryAddFormSignals) -> impl IntoV
                     aria-modal="true"
                     aria-labelledby=title_id_for_aria.clone()
                     tabindex="-1"
+                    on:pointerdown=|ev: leptos::ev::PointerEvent| ev.stop_propagation()
                     on:click=|ev: leptos::ev::MouseEvent| ev.stop_propagation()
                     on:keydown=move |ev: web_sys::KeyboardEvent| {
                         if ev.key() == "Tab" {
