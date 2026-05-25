@@ -419,6 +419,9 @@ mod tests {
             server_conversation_id: None,
             server_revision: None,
             workspace_root: None,
+            history_total: None,
+            history_window_start: None,
+            history_has_older: None,
         };
         let md = stored_messages_by_ids_to_markdown(
             &session.messages,
@@ -455,6 +458,9 @@ mod tests {
             server_conversation_id: None,
             server_revision: None,
             workspace_root: None,
+            history_total: None,
+            history_window_start: None,
+            history_has_older: None,
         };
         let file = session_to_export_file(&session, Locale::ZhHans, true);
         assert_eq!(file.schema, CHAT_EXPORT_SCHEMA_ID);
@@ -483,6 +489,9 @@ mod tests {
             server_conversation_id: None,
             server_revision: None,
             workspace_root: None,
+            history_total: None,
+            history_window_start: None,
+            history_has_older: None,
         };
         let md = session_to_markdown(&session, Locale::ZhHans, true);
         assert!(md.contains("总计遍历：1"), "md={md}");

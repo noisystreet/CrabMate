@@ -64,6 +64,7 @@ pub trait ApiClient {
     async fn fetch_conversation_messages(
         &self,
         conversation_id: &str,
+        params: crate::conversation_messages_page::ConversationMessagesFetchParams,
         loc: Locale,
     ) -> Result<ConversationMessagesResponse, String>;
 
@@ -142,9 +143,10 @@ impl ApiClient for RealApiClient {
     async fn fetch_conversation_messages(
         &self,
         conversation_id: &str,
+        params: crate::conversation_messages_page::ConversationMessagesFetchParams,
         loc: Locale,
     ) -> Result<ConversationMessagesResponse, String> {
-        super::http::fetch_conversation_messages(conversation_id, loc).await
+        super::http::fetch_conversation_messages(conversation_id, params, loc).await
     }
 
     async fn post_chat_branch(

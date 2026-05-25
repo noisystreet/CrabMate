@@ -228,6 +228,12 @@ pub(crate) struct ChatResponseBody {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ConversationMessagesQuery {
     pub(crate) conversation_id: String,
+    /// 分页：每页条数；省略或 `0` 表示返回过滤后的全量（兼容旧客户端）。
+    #[serde(default)]
+    pub(crate) limit: Option<u32>,
+    /// 分页：取该下标**之前**的更早消息（与 [`crate::web::conversation_messages_window`] 一致）；省略表示取尾部一页。
+    #[serde(default)]
+    pub(crate) before_index: Option<u32>,
 }
 
 /// `GET /conversation/messages?conversation_id=`：只读拉取服务端已落盘会话（供 Web 刷新后与存储对齐）。
@@ -243,6 +249,15 @@ pub(crate) struct ConversationMessagesResponseBody {
     pub(crate) tiktoken_prompt_tokens:
         Option<crate::agent::tiktoken_prompt_tokens::TiktokenPromptTokensSnapshot>,
     pub(crate) messages: Vec<crate::runtime::message_snapshot_display::WebClientSnapshotMessage>,
+    /// 过滤后可见消息总数；全量模式与 `messages.len()` 一致。
+    #[serde(default)]
+    pub(crate) total_count: u32,
+    /// 本页第一条在过滤后数组中的下标。
+    #[serde(default)]
+    pub(crate) window_start_index: u32,
+    /// 是否还有更早消息可拉取。
+    #[serde(default)]
+    pub(crate) has_older: bool,
 }
 
 /// 统一的 API 错误结构：包含错误码与面向用户的友好提示

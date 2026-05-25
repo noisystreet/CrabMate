@@ -93,6 +93,7 @@ impl AppSignals {
             reasoning_preserved: RwSignal::new(HashMap::new()),
             stream_text_overlay: RwSignal::new(None),
             conversation_prompt_tokens: RwSignal::new(None),
+            history_loading_older: RwSignal::new(false),
         };
 
         Self {

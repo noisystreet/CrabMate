@@ -268,6 +268,20 @@ pub fn timeline_panel_approval_decision(l: Locale, kind: &str) -> String {
 
 // --- 聊天列空态 ---
 
+pub fn chat_history_load_older(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "加载更早的消息",
+        Locale::En => "Load older messages",
+    }
+}
+
+pub fn chat_history_loading_older(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "正在加载更早的消息…",
+        Locale::En => "Loading older messages…",
+    }
+}
+
 pub fn chat_empty_title(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "开始对话",

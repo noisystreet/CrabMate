@@ -262,9 +262,14 @@ pub(crate) async fn conversation_messages_handler(
         ));
     };
     let filtered = filter_messages_for_web_client_snapshot(&seed.messages);
+    let window = crate::web::conversation_messages_window::slice_messages_for_client_window(
+        &filtered,
+        q.limit,
+        q.before_index,
+    );
     let messages =
         crate::runtime::message_snapshot_display::web_client_snapshot_messages_default_zh(
-            &filtered,
+            &window.messages,
         );
     let active_agent_role = seed
         .persisted_active_agent_role
@@ -284,5 +289,8 @@ pub(crate) async fn conversation_messages_handler(
         active_agent_role,
         tiktoken_prompt_tokens,
         messages,
+        total_count: window.meta.total_count,
+        window_start_index: window.meta.window_start_index,
+        has_older: window.meta.has_older,
     }))
 }

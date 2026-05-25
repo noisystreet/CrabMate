@@ -13,6 +13,7 @@ use crate::session_ops::messages_scroller_has_non_collapsed_selection;
 use crate::session_search::scroll_message_into_view;
 use crate::storage::ChatSession;
 
+use crate::app::chat::message_virtual_viewport::sync_virtual_scroll_signals_from_element;
 use crate::app::scroll_guard;
 
 /// 流式增量计数：两次滚底之间若仍在持续增长，则跳过第二次 `scroll_height`（减少布局抖动）。
@@ -41,7 +42,12 @@ fn active_session_tail_scroll_fingerprint(list: &[ChatSession], aid: &str) -> u6
     fp
 }
 
-fn scroll_messages_to_bottom_if_allowed(mref: &NodeRef<Div>, follow: &RwSignal<bool>) -> bool {
+fn scroll_messages_to_bottom_if_allowed(
+    mref: &NodeRef<Div>,
+    follow: &RwSignal<bool>,
+    virtual_scroll_top: Option<RwSignal<i32>>,
+    virtual_viewport_height: Option<RwSignal<i32>>,
+) -> bool {
     if !follow.get_untracked() {
         return false;
     }
@@ -52,7 +58,25 @@ fn scroll_messages_to_bottom_if_allowed(mref: &NodeRef<Div>, follow: &RwSignal<b
         return false;
     }
     el.set_scroll_top(el.scroll_height());
+    if let (Some(top_sig), Some(vh_sig)) = (virtual_scroll_top, virtual_viewport_height) {
+        sync_virtual_scroll_signals_from_element(&el, top_sig, vh_sig);
+    }
     true
+}
+
+/// 测量消息列视口高度（供流式跟底时的尾部虚拟窗口；避免默认 600px 偏差）。
+pub(crate) fn wire_messages_virtual_viewport_measure(
+    messages_scroller: NodeRef<Div>,
+    virtual_viewport_height: RwSignal<i32>,
+) {
+    Effect::new(move |_| {
+        if let Some(el) = messages_scroller.get() {
+            let h = el.client_height();
+            if h > 0 {
+                virtual_viewport_height.set(h);
+            }
+        }
+    });
 }
 
 /// 消息列表指纹变化且开启自动跟底时，将滚动条置底（必要时二次对齐以覆盖换行后高度变化）。
@@ -61,6 +85,8 @@ pub(crate) fn wire_messages_auto_scroll(
     messages_scroller: NodeRef<Div>,
     auto_scroll_chat: RwSignal<bool>,
     messages_scroll_from_effect: RwSignal<bool>,
+    virtual_scroll_top: RwSignal<i32>,
+    virtual_viewport_height: RwSignal<i32>,
 ) {
     let sessions = chat.sessions;
     let active_id = chat.active_id;
@@ -82,6 +108,8 @@ pub(crate) fn wire_messages_auto_scroll(
         let mref = messages_scroller;
         let follow = auto_scroll_chat;
         let scroll_from_effect = messages_scroll_from_effect;
+        let vtop = virtual_scroll_top;
+        let vvh = virtual_viewport_height;
         spawn_local(async move {
             let _scroll_from_effect_guard =
                 scroll_guard::MessagesScrollFromEffectGuard::new(scroll_from_effect);
@@ -96,7 +124,7 @@ pub(crate) fn wire_messages_auto_scroll(
             }
 
             let gen_after_yield = MESSAGES_AUTO_SCROLL_GEN.load(Ordering::Relaxed);
-            if !scroll_messages_to_bottom_if_allowed(&mref, &follow) {
+            if !scroll_messages_to_bottom_if_allowed(&mref, &follow, Some(vtop), Some(vvh)) {
                 clear_task_pending();
                 return;
             }
@@ -111,7 +139,7 @@ pub(crate) fn wire_messages_auto_scroll(
             if !follow.get_untracked() {
                 return;
             }
-            let _ = scroll_messages_to_bottom_if_allowed(&mref, &follow);
+            let _ = scroll_messages_to_bottom_if_allowed(&mref, &follow, Some(vtop), Some(vvh));
         });
     });
 }

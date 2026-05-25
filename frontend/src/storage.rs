@@ -172,9 +172,23 @@ pub struct ChatSession {
     /// 本会话绑定的 Web 工作区根（与 `POST /workspace` 一致）；切换到此会话时自动应用。旧数据缺省为不绑定。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_root: Option<String>,
+    /// 服务端过滤后消息总数（分页水合时写入）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history_total: Option<u32>,
+    /// 当前 `messages[0]` 在服务端过滤数组中的下标。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history_window_start: Option<u32>,
+    /// 是否还有更早消息（`GET /conversation/messages?before_index=`）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history_has_older: Option<bool>,
 }
 
 impl ChatSession {
+    #[must_use]
+    pub fn history_has_older_flag(&self) -> bool {
+        self.history_has_older.unwrap_or(false)
+    }
+
     /// 非空且 trim 后的 `server_conversation_id`；与 `GET /conversation/messages` 路径参数对齐。
     #[must_use]
     pub fn trimmed_server_conversation_id(&self) -> Option<&str> {
@@ -229,6 +243,9 @@ pub fn ensure_at_least_one(
         server_conversation_id: None,
         server_revision: None,
         workspace_root: None,
+        history_total: None,
+        history_window_start: None,
+        history_has_older: None,
     };
     let id = s.id.clone();
     sessions.push(s);

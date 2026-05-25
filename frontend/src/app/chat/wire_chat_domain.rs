@@ -27,7 +27,9 @@ use super::handles::{
     ChatComposerWires, ComposerStreamShell, WireComposerStreamsArgs,
     WireComposerStreamsSessionSlice, WireComposerStreamsStreamSlice,
 };
-use super::scroll::{wire_focus_message_after_nav, wire_messages_auto_scroll};
+use super::scroll::{
+    wire_focus_message_after_nav, wire_messages_auto_scroll, wire_messages_virtual_viewport_measure,
+};
 
 /// 注册 `wire_chat_domain_effects` 所需的信号与句柄：[`ChatDomainWiringSignals`] + 流式壳。
 #[derive(Clone)]
@@ -69,11 +71,18 @@ fn wire_chat_domain_auxiliary_sequence(a: &WireChatDomainEffectsArgs) {
         d.composer.composer_mirror_scroll_top,
     );
 
+    wire_messages_virtual_viewport_measure(
+        d.composer.messages_scroller,
+        d.composer.virtual_viewport_height,
+    );
+
     wire_messages_auto_scroll(
         d.chat,
         d.composer.messages_scroller,
         d.composer.auto_scroll_chat,
         d.composer.messages_scroll_from_effect,
+        d.composer.virtual_scroll_top,
+        d.composer.virtual_viewport_height,
     );
 
     wire_chat_find_matches(

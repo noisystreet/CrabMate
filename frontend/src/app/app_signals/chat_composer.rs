@@ -21,6 +21,9 @@ pub struct ChatComposerSignals {
     pub auto_scroll_chat: RwSignal<bool>,
     pub messages_scroll_from_effect: RwSignal<bool>,
     pub last_messages_scroll_top: RwSignal<i32>,
+    /// 消息列 `scrollTop` / `clientHeight`（虚拟窗口与 prepend 后滚动补偿）。
+    pub virtual_scroll_top: RwSignal<i32>,
+    pub virtual_viewport_height: RwSignal<i32>,
     pub messages_scroller: NodeRef<Div>,
     pub timeline_panel_expanded: RwSignal<bool>,
     pub chat_find_query: RwSignal<String>,
@@ -44,6 +47,8 @@ impl ChatComposerSignals {
             auto_scroll_chat: RwSignal::new(true),
             messages_scroll_from_effect: RwSignal::new(false),
             last_messages_scroll_top: RwSignal::new(0),
+            virtual_scroll_top: RwSignal::new(0),
+            virtual_viewport_height: RwSignal::new(600),
             messages_scroller: NodeRef::new(),
             timeline_panel_expanded: RwSignal::new(
                 crate::app::chat::load_timeline_panel_expanded_default(),

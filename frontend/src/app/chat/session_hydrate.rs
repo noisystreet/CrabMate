@@ -23,7 +23,9 @@ use crate::app::app_bootstrap_phase::AppBootstrapPhase;
 use crate::app::status_tasks_state::StatusTasksSignals;
 use crate::app_prefs::status_bar_selected_agent_role_from_persisted;
 use crate::chat_session_state::ChatSessionSignals;
-use crate::conversation_hydrate::ConversationMessagesResponse;
+use crate::conversation_hydrate::{
+    ConversationMessagesResponse, stored_messages_from_conversation_api,
+};
 use crate::i18n::{self, Locale};
 use crate::session_ops::title_from_user_prompt;
 use crate::storage::{ChatSession, StoredMessage};
@@ -198,6 +200,58 @@ fn try_hydration_merge_precheck(
 }
 
 /// 将 `GET /conversation/messages` 结果合并进当前会话；[`SessionHydrationMergeOutcome::Applied`] 表示已写 `messages` / `server_revision` 等。
+fn apply_history_meta_from_response(
+    session: &mut ChatSession,
+    resp: &ConversationMessagesResponse,
+) {
+    if resp.total_count > 0 || !resp.messages.is_empty() {
+        session.history_total = Some(resp.total_count);
+        session.history_window_start = Some(resp.window_start_index);
+        session.history_has_older = Some(resp.has_older);
+    }
+}
+
+/// 尾部水合：保留已加载的更早前缀，仅替换与服务器尾部重叠段。
+fn merge_tail_page_into_session_messages(
+    session: &ChatSession,
+    hydrated: Vec<StoredMessage>,
+    resp: &ConversationMessagesResponse,
+) -> Vec<StoredMessage> {
+    let preserved = local_messages_preserved_after_hydrate(&hydrated, &session.messages);
+    let tail_start = resp.window_start_index;
+    if let Some(local_start) = session.history_window_start {
+        if tail_start >= local_start {
+            let keep = (tail_start - local_start) as usize;
+            let keep = keep.min(session.messages.len());
+            let mut out: Vec<StoredMessage> = session.messages[..keep].to_vec();
+            let merged_tail =
+                merge_hydrated_messages_with_local_plain_users(hydrated, &session.messages[keep..]);
+            out.extend(merged_tail);
+            out.extend(preserved);
+            return out;
+        }
+    }
+    let mut out = merge_hydrated_messages_with_local_plain_users(hydrated, &session.messages);
+    out.extend(preserved);
+    out
+}
+
+fn prepend_older_page_into_session(
+    session: &mut ChatSession,
+    hydrated: Vec<StoredMessage>,
+    resp: &ConversationMessagesResponse,
+) {
+    let existing_ids: HashSet<_> = session.messages.iter().map(|m| m.id.as_str()).collect();
+    let older: Vec<StoredMessage> = hydrated
+        .into_iter()
+        .filter(|m| !existing_ids.contains(m.id.as_str()))
+        .collect();
+    let mut combined = older;
+    combined.append(&mut session.messages);
+    session.messages = combined;
+    apply_history_meta_from_response(session, resp);
+}
+
 fn merge_hydration_into_active_session(
     args: MergeHydrationIntoActiveSessionArgs<'_>,
 ) -> SessionHydrationMergeOutcome {
@@ -224,11 +278,9 @@ fn merge_hydration_into_active_session(
     ) {
         return out;
     }
-    let mut new_messages =
-        merge_hydrated_messages_with_local_plain_users(hydrated, &session.messages);
-    let preserved = local_messages_preserved_after_hydrate(&new_messages, &session.messages);
-    new_messages.extend(preserved);
+    let new_messages = merge_tail_page_into_session_messages(session, hydrated, resp);
     session.messages = new_messages;
+    apply_history_meta_from_response(session, resp);
     session.server_revision = Some(resp.revision);
     if let Some(role) = resp
         .active_agent_role
@@ -353,7 +405,13 @@ pub(crate) mod conversation_hydration_cycle {
             nonce_at_start,
             locale,
         } = snap;
-        let Ok(resp) = fetch_conversation_messages(&cid, locale).await else {
+        let Ok(resp) = fetch_conversation_messages(
+            &cid,
+            crate::conversation_messages_page::ConversationMessagesFetchParams::tail_page(),
+            locale,
+        )
+        .await
+        else {
             return;
         };
 
@@ -436,6 +494,67 @@ fn clear_conversation_prompt_tokens_if_no_server_conversation(chat: ChatSessionS
     if sess.trimmed_server_conversation_id().is_none() {
         chat.conversation_prompt_tokens.set(None);
     }
+}
+
+/// 滚动到顶附近时拉取更早一页（须已绑定 `server_conversation_id` 且 `history_has_older`）。
+pub(crate) fn try_load_older_messages_for_active_session(
+    chat: ChatSessionSignals,
+    locale: Locale,
+    scroll_ctx: super::messages_scroll_compensate::LoadOlderScrollContext,
+) {
+    if chat.history_loading_older.get_untracked() {
+        return;
+    }
+    let Some(snap) = try_hydration_wire_snapshot(chat, locale) else {
+        return;
+    };
+    let Some(window_start) = chat.sessions.with_untracked(|list| {
+        list.iter()
+            .find(|s| s.id == snap.aid)
+            .and_then(|s| s.history_window_start)
+    }) else {
+        return;
+    };
+    let has_older = chat.sessions.with_untracked(|list| {
+        list.iter()
+            .find(|s| s.id == snap.aid)
+            .is_some_and(|s| s.history_has_older_flag())
+    });
+    if !has_older {
+        return;
+    }
+    chat.history_loading_older.set(true);
+    let chat2 = chat;
+    spawn_local(async move {
+        let Ok(resp) = crate::api::fetch_conversation_messages(
+            &snap.cid,
+            crate::conversation_messages_page::ConversationMessagesFetchParams::older_before(
+                window_start,
+            ),
+            snap.locale,
+        )
+        .await
+        else {
+            chat2.history_loading_older.set(false);
+            return;
+        };
+        if chat2.session_hydrate_nonce.get_untracked() != snap.nonce_at_start {
+            chat2.history_loading_older.set(false);
+            return;
+        }
+        let msgs = stored_messages_from_conversation_api(&resp.messages);
+        chat2.update_sessions_hydration(|list| {
+            let Some(s) = list.iter_mut().find(|x| x.id == snap.aid) else {
+                return;
+            };
+            if s.trimmed_server_conversation_id() != Some(snap.cid.as_str()) {
+                return;
+            }
+            prepend_older_page_into_session(s, msgs, &resp);
+        });
+        super::messages_scroll_compensate::compensate_messages_scroll_after_prepend(scroll_ctx);
+        chat2.history_loading_older.set(false);
+    });
 }
 
 /// 递增水合触发计数（会话列表就绪、流式收尾等），驱动下方 Effect 拉取 `GET /conversation/messages`。
@@ -644,6 +763,9 @@ mod conversation_server_id_for_hydrate_tests {
             server_conversation_id: Some("  srv-9  ".into()),
             server_revision: None,
             workspace_root: None,
+            history_total: None,
+            history_window_start: None,
+            history_has_older: None,
         }
     }
 

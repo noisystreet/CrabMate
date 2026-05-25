@@ -236,6 +236,20 @@ fn openapi_components_schemas_chat_messages_uploads() -> Value {
                         "type": "array",
                         "description": "OpenAI 兼容 Message 数组（已剔除长期记忆/变更集注入、普通 system 系统提示与 UI 分隔；保留 name=crabmate_timeline 时间线旁注）",
                         "items": { "type": "object", "additionalProperties": true }
+                    },
+                    "total_count": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "过滤后可见消息总数；全量模式与 messages.len 一致"
+                    },
+                    "window_start_index": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "本页第一条在过滤后数组中的下标"
+                    },
+                    "has_older": {
+                        "type": "boolean",
+                        "description": "是否还有更早消息可拉取"
                     }
                 }
             },

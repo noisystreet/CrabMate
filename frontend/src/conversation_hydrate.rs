@@ -23,6 +23,14 @@ pub struct ConversationMessagesResponse {
     #[serde(default)]
     pub tiktoken_prompt_tokens: Option<TiktokenPromptTokensSnapshot>,
     pub messages: Vec<Value>,
+    /// 过滤后可见消息总数。
+    #[serde(default)]
+    pub total_count: u32,
+    /// 本页第一条在过滤后数组中的下标。
+    #[serde(default)]
+    pub window_start_index: u32,
+    #[serde(default)]
+    pub has_older: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]

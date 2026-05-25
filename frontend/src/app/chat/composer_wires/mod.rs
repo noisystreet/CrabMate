@@ -136,6 +136,9 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
                 server_conversation_id: None,
                 server_revision: None,
                 workspace_root: inherited_ws,
+                history_total: None,
+                history_window_start: None,
+                history_has_older: None,
             };
             let id = s.id.clone();
             chat.update_sessions_composer(|list| {

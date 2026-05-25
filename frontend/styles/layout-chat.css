@@ -233,10 +233,29 @@
   align-items: stretch;
   gap: var(--space-gap-msg);
   min-height: min-content;
+  overflow-anchor: auto;
   /* 有消息时按内容增高，滚动交给 .messages */
   flex: 0 0 auto;
   /* 气泡宽度百分比以此列为参照，随中部聊天区伸缩 */
   min-width: 0;
+}
+
+.messages-history-load {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-2) 0 var(--space-1);
+}
+
+.messages-history-load-busy {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.messages-virtual-top,
+.messages-virtual-bottom {
+  flex-shrink: 0;
+  width: 100%;
+  pointer-events: none;
 }
 
 /* 空会话：在可视区内垂直居中占位，避免大片留白 */

@@ -114,6 +114,8 @@ pub(crate) struct ChatMessagesPaneSignals {
     pub status_err: RwSignal<Option<String>>,
     pub markdown_render: RwSignal<bool>,
     pub apply_assistant_display_filters: RwSignal<bool>,
+    pub virtual_scroll_top: RwSignal<i32>,
+    pub virtual_viewport_height: RwSignal<i32>,
 }
 
 /// 输入区与发送条所需信号（与 [`ChatMessagesPaneSignals`] 对称，由 [`ChatColumnShell`] 单点组装）。
@@ -178,6 +180,8 @@ impl ChatColumnShell {
             status_err: self.stream_shell.stream.status_err,
             markdown_render: su.markdown_render,
             apply_assistant_display_filters: su.apply_assistant_display_filters,
+            virtual_scroll_top: cc.virtual_scroll_top,
+            virtual_viewport_height: cc.virtual_viewport_height,
         }
     }
 

@@ -3,6 +3,7 @@ mod app_state;
 mod async_chat_job;
 pub(crate) mod audit;
 mod chat_handlers;
+mod conversation_messages_window;
 pub(crate) mod cron_scheduler;
 pub(crate) mod http_types;
 pub(crate) mod web_ui_env;

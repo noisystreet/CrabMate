@@ -257,6 +257,20 @@ fn openapi_paths_fragment_chat_extras() -> Value {
                         "in": "query",
                         "required": true,
                         "schema": { "type": "string" }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "description": "分页每页条数；省略或 0 表示返回过滤后的全量（兼容旧客户端）",
+                        "schema": { "type": "integer", "format": "int32", "minimum": 0 }
+                    },
+                    {
+                        "name": "before_index",
+                        "in": "query",
+                        "required": false,
+                        "description": "取该下标之前的更早消息；省略表示尾部一页",
+                        "schema": { "type": "integer", "format": "int32", "minimum": 0 }
                     }
                 ],
                 "responses": {

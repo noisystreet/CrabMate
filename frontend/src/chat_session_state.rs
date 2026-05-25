@@ -249,6 +249,8 @@ pub struct ChatSessionSignals {
     pub stream_text_overlay: RwSignal<Option<StreamTextOverlay>>,
     /// 最近一次成功水合的 tiktoken prompt 计数（与 [`ConversationPromptTokenHydrate::conversation_id`] 对齐，防串会话）。
     pub conversation_prompt_tokens: RwSignal<Option<ConversationPromptTokenHydrate>>,
+    /// 正在拉取更早一页历史（`GET /conversation/messages?before_index=`）。
+    pub history_loading_older: RwSignal<bool>,
 }
 
 impl ChatSessionSignals {
@@ -429,6 +431,9 @@ mod conflict_loading_tests {
             server_conversation_id: None,
             server_revision: None,
             workspace_root: None,
+            history_total: None,
+            history_window_start: None,
+            history_has_older: None,
         }];
         assert!(!session_has_conflicting_stream_loading_in_messages(
             &sessions, sid, keep
@@ -452,6 +457,9 @@ mod conflict_loading_tests {
             server_conversation_id: None,
             server_revision: None,
             workspace_root: None,
+            history_total: None,
+            history_window_start: None,
+            history_has_older: None,
         }];
         assert!(session_has_conflicting_stream_loading_in_messages(
             &sessions, sid, "new"
@@ -475,6 +483,9 @@ mod conflict_loading_tests {
             server_conversation_id: None,
             server_revision: None,
             workspace_root: None,
+            history_total: None,
+            history_window_start: None,
+            history_has_older: None,
         }];
         assert!(session_has_conflicting_stream_loading_in_messages(
             &sessions, sid, "asst_new"

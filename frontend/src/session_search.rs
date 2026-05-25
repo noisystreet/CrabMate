@@ -203,6 +203,9 @@ mod tests {
             server_conversation_id: None,
             server_revision: None,
             workspace_root: None,
+            history_total: None,
+            history_window_start: None,
+            history_has_older: None,
         }
     }
 

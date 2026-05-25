@@ -434,10 +434,17 @@ impl std::error::Error for ChatBranchError {}
 /// `GET /conversation/messages`：拉取服务端已持久化会话（与 `conversation_id` + `revision` 对齐）。
 pub async fn fetch_conversation_messages(
     conversation_id: &str,
+    params: crate::conversation_messages_page::ConversationMessagesFetchParams,
     loc: Locale,
 ) -> Result<crate::conversation_hydrate::ConversationMessagesResponse, String> {
     let enc = urlencoding::encode(conversation_id);
-    let url = format!("/conversation/messages?conversation_id={enc}");
+    let mut url = format!("/conversation/messages?conversation_id={enc}");
+    if let Some(limit) = params.limit.filter(|&n| n > 0) {
+        url.push_str(&format!("&limit={limit}"));
+        if let Some(before) = params.before_index {
+            url.push_str(&format!("&before_index={before}"));
+        }
+    }
     fetch_json("GET", &url, None, loc).await
 }
 
