@@ -57,7 +57,7 @@
         },
         ToolSpec {
             name: "crate_contract_map",
-            description: "只读**契约地图**：对工作区内 `src/lib.rs`、`docs/SSE协议.md`、`frontend/src/api.rs` / `frontend/src/sse_dispatch/dispatch.rs`、`crates/crabmate-sse-protocol/control_classify.rs`、`fixtures/sse_control_golden.jsonl`、`config/default_config.toml`、`docs/配置说明.md`、`docs/命令行与路由.md` 等锚点做**短文件头**与少量**关键字行节选**（不执行命令、不联网、不读 `.env`）。用于复杂任务前快速对齐 HTTP/SSE/配置入口；细节仍请 `read_file`。可选 `extra_paths` 追加更多相对路径。",
+            description: "只读**契约地图**：对工作区内 `src/lib.rs`、`docs/SSE协议.md`、`frontend/src/api/mod.rs` / `frontend/src/sse_dispatch/dispatch.rs`、`crates/crabmate-sse-protocol/control_classify.rs`、`fixtures/sse_control_golden.jsonl`、`config/default_config.toml`、`docs/配置说明.md`、`docs/命令行与路由.md` 等锚点做**短文件头**与少量**关键字行节选**（不执行命令、不联网、不读 `.env`）。用于复杂任务前快速对齐 HTTP/SSE/配置入口；细节仍请 `read_file`。可选 `extra_paths` 追加更多相对路径。",
             category: ToolCategory::Development,
             parameters: tool_params::params_crate_contract_map,
             runner: runner_crate_contract_map,

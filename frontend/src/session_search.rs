@@ -6,8 +6,9 @@ use wasm_bindgen::JsCast;
 use std::mem;
 
 use crate::i18n::Locale;
-use crate::message_format::message_text_for_display_ex;
 use crate::storage::ChatSession;
+use crate::stream_text_overlay::StreamTextOverlay;
+use crate::stream_text_overlay::message_text_for_display_including_stream_overlay;
 
 /// 规范化查询：小写、折叠空白。
 pub fn normalize_search_query(raw: &str) -> String {
@@ -92,12 +93,16 @@ const SNIPPET_CONTEXT: usize = 28;
 pub const MESSAGE_SEARCH_MAX_HITS: usize = 80;
 
 /// 在所有本地会话的消息展示文本中搜索（大小写不敏感）。
+///
+/// `stream_overlay`：与 [`crate::chat_session_state::ChatSessionSignals::stream_text_overlay`] 当前快照一致时，
+/// 尾条 `loading` 助手的流式增量会参与匹配（与主列气泡、会话内查找同源）。
 pub fn collect_message_search_hits(
     sessions: &[ChatSession],
     needle_lower: &str,
     max_hits: usize,
     loc: Locale,
     apply_assistant_display_filters: bool,
+    stream_overlay: Option<&StreamTextOverlay>,
 ) -> Vec<MessageSearchHit> {
     if needle_lower.is_empty() || max_hits == 0 {
         return Vec::new();
@@ -105,7 +110,13 @@ pub fn collect_message_search_hits(
     let mut out = Vec::new();
     for s in sessions {
         for m in &s.messages {
-            let display = message_text_for_display_ex(m, loc, apply_assistant_display_filters);
+            let display = message_text_for_display_including_stream_overlay(
+                m,
+                stream_overlay,
+                s.id.as_str(),
+                loc,
+                apply_assistant_display_filters,
+            );
             let lower = display.to_lowercase();
             if lower.contains(needle_lower) {
                 out.push(MessageSearchHit {
@@ -281,10 +292,55 @@ mod tests {
                 }],
             ),
         ];
-        let hits = collect_message_search_hits(&sessions, "beta", 10, Locale::ZhHans, true);
+        let hits = collect_message_search_hits(&sessions, "beta", 10, Locale::ZhHans, true, None);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].session_id, "s1");
         assert_eq!(hits[0].message_id, "m1");
         assert!(hits[0].snippet.to_lowercase().contains("beta"));
+    }
+
+    #[test]
+    fn message_hits_merge_stream_overlay_for_loading_assistant() {
+        use crate::storage::StoredMessageState;
+
+        let sessions = vec![sess(
+            "s1",
+            "Stream",
+            vec![StoredMessage {
+                id: "m1".into(),
+                role: "assistant".into(),
+                text: String::new(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: Some(StoredMessageState::Loading),
+                is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
+                created_at: 0,
+            }],
+        )];
+        let overlay = StreamTextOverlay {
+            session_id: "s1".into(),
+            message_id: "m1".into(),
+            answer: "partial streamed token".into(),
+            reasoning: String::new(),
+        };
+        let hits = collect_message_search_hits(
+            &sessions,
+            "streamed",
+            10,
+            Locale::ZhHans,
+            true,
+            Some(&overlay),
+        );
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].message_id, "m1");
+
+        let no_overlay =
+            collect_message_search_hits(&sessions, "streamed", 10, Locale::ZhHans, true, None);
+        assert!(
+            no_overlay.is_empty(),
+            "without overlay, stored message has no searchable text yet"
+        );
     }
 }

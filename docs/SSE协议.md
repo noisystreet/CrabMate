@@ -2,7 +2,7 @@
 
 # Agent SSE 控制面协议（`/chat/stream`）
 
-本文档描述 **CrabMate 服务端经 SSE `data:` 行下发的控制面 JSON**，与模型正文的 **纯文本 delta** 区分。**控制面载荷形状**的单一事实来源为 Rust `src/sse/protocol.rs`；**协议版本号**与 Leptos 前端共用 workspace crate **`crabmate-sse-protocol`**（常量 **`SSE_PROTOCOL_VERSION`**，`protocol.rs` 再导出同名常量）。浏览器消费逻辑在 `frontend/src/sse_dispatch/dispatch.rs`（由 `frontend/src/api.rs` 调用）。Rust 侧行分类见 `src/sse/line.rs`（`classify_agent_sse_line`），须与本表语义一致。
+本文档描述 **CrabMate 服务端经 SSE `data:` 行下发的控制面 JSON**，与模型正文的 **纯文本 delta** 区分。**控制面载荷形状**的单一事实来源为 Rust `src/sse/protocol.rs`；**协议版本号**与 Leptos 前端共用 workspace crate **`crabmate-sse-protocol`**（常量 **`SSE_PROTOCOL_VERSION`**，`protocol.rs` 再导出同名常量）。浏览器消费逻辑在 `frontend/src/sse_dispatch/dispatch.rs`（由 **`frontend/src/api/chat_stream/`** 等调用）。Rust 侧行分类见 `src/sse/line.rs`（`classify_agent_sse_line`），须与本表语义一致。
 
 ## 协议版本 `v` 与协商
 
@@ -207,7 +207,7 @@
 
 1. **`crates/crabmate-sse-protocol`**：`SSE_PROTOCOL_VERSION`；`src/sse/protocol.rs`：`SsePayload`、`SseErrorBody`、`ToolResultBody`（版本常量由 crate 提供并在 `protocol` 再导出）
 2. **`crates/crabmate-sse-protocol`**：`sse_frame.rs`（`parse_sse_event_id` / `join_sse_data_lines` / `is_sse_done_sentinel` / `extract_stream_ended_reason`）与 `control_extract.rs`（`extract_*` 家族）在前端消费语义变更时同步
-3. `frontend/src/sse_dispatch/dispatch.rs` 与 `frontend/src/api.rs`：控制面分类与分发分支顺序、请求体中的 **`client_sse_protocol`**
+3. `frontend/src/sse_dispatch/dispatch.rs` 与 **`frontend/src/api/`**（**`chat_stream/`** 等）：控制面分类与分发分支顺序、请求体中的 **`client_sse_protocol`**
 4. `src/sse/line.rs`：`classify_agent_sse_line`（与前端分支语义一致）
 5. 新增 `encode_message(SsePayload::…)` 的调用点
 
