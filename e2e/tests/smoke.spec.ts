@@ -1,11 +1,13 @@
 import { expect, test } from '@playwright/test';
 
 import {
-  fillComposerDraft,
+  expectAssistantText,
+  expectToolCardVisible,
   installChatStreamStub,
   installConversationMessagesStub,
   putActiveSessionWithServerConversation,
   putFreshLocalSession,
+  sendStubMessage,
 } from './helpers';
 
 test.describe('Web UI smoke', () => {
@@ -29,13 +31,9 @@ test.describe('Web UI smoke', () => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'CrabMate' })).toBeVisible();
 
-    await fillComposerDraft(page, 'e2e ping');
-    await page.getByTestId('chat-send-button').click();
-
-    await expect(page.locator('.msg-assistant .msg-body').filter({ hasText: 'Hello from E2E stub' })).toBeVisible({
-      timeout: 30_000,
-    });
-    await expect(page.getByTestId('chat-tool-card').first()).toBeVisible();
+    await sendStubMessage(page, 'e2e ping');
+    await expectAssistantText(page, 'Hello from E2E stub');
+    await expectToolCardVisible(page);
   });
 
   test('hydrated tool card after reload is not raw JSON', async ({ page, request }) => {
@@ -43,21 +41,16 @@ test.describe('Web UI smoke', () => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'CrabMate' })).toBeVisible();
 
-    await fillComposerDraft(page, 'e2e hydrate reload');
-    await page.getByTestId('chat-send-button').click();
-    await expect(
-      page.locator('.msg-assistant .msg-body').filter({ hasText: 'Hello from E2E stub' }),
-    ).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByTestId('chat-tool-card').first()).toBeVisible();
+    await sendStubMessage(page, 'e2e hydrate reload');
+    await expectToolCardVisible(page);
 
-    // 绑定服务端会话 id，刷新后走 GET 桩（git_status 工具卡）。
     await putActiveSessionWithServerConversation(request, 's_e2e_smoke', 'e2e-conv', {
       title: 'E2E smoke',
     });
     await installConversationMessagesStub(page);
     await page.reload();
     const toolCard = page.getByTestId('chat-tool-card').first();
-    await expect(toolCard).toBeVisible({ timeout: 30_000 });
+    await expect(toolCard).toBeVisible();
     await expect(toolCard).toContainText('git status');
     await expect(toolCard).not.toContainText('crabmate_tool');
   });

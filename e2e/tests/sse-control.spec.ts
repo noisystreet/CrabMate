@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test';
 
 import {
-  fillComposerDraft,
   installChatApprovalStub,
   installChatStreamStub,
   putFreshLocalSession,
+  sendStubMessage,
 } from './helpers';
 
 test.describe('SSE control plane (stub stream)', () => {
@@ -17,12 +17,9 @@ test.describe('SSE control plane (stub stream)', () => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'CrabMate' })).toBeVisible();
 
-    await fillComposerDraft(page, 'e2e error');
-    await page.getByTestId('chat-send-button').click();
+    await sendStubMessage(page, 'e2e error');
 
-    await expect(page.locator('.status-bar')).toContainText(/对话失败|Chat failed/i, {
-      timeout: 30_000,
-    });
+    await expect(page.locator('.status-bar')).toContainText(/对话失败|Chat failed/i);
   });
 
   test('command_approval_request opens approval modal with command preview', async ({ page }) => {
@@ -31,11 +28,10 @@ test.describe('SSE control plane (stub stream)', () => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'CrabMate' })).toBeVisible();
 
-    await fillComposerDraft(page, 'e2e approval');
-    await page.getByTestId('chat-send-button').click();
+    await sendStubMessage(page, 'e2e approval');
 
     const modal = page.getByTestId('approval-modal');
-    await expect(modal).toBeVisible({ timeout: 30_000 });
+    await expect(modal).toBeVisible();
     await expect(modal).toContainText(/命令审批|Command Approval/i);
     await expect(modal.locator('.approval-modal-command')).toContainText('git status');
 

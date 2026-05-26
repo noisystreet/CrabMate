@@ -68,6 +68,15 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Cache frontend dist (Leptos)
+        id: frontend-dist
+        uses: actions/cache@v4
+        with:
+          path: frontend/dist
+          key: frontend-dist-${{ runner.os }}-${{ hashFiles('frontend/src/**', 'frontend/index.html', 'frontend/Cargo.toml', 'frontend/Cargo.lock') }}
+          restore-keys: |
+            frontend-dist-${{ runner.os }}-
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -78,10 +87,14 @@ jobs:
         run: cargo install trunk --locked
 
       - name: Build frontend (Leptos dist)
+        if: steps.frontend-dist.outputs.cache-hit != 'true'
         run: |
           unset NO_COLOR
           unset CARGO_TERM_COLOR
           cd frontend && trunk build
+
+      - name: Verify frontend dist present
+        run: test -f frontend/dist/index.html
 
       - name: Build release binary (faster webServer in Playwright)
         run: cargo build --release -p crabmate

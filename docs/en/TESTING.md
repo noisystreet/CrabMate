@@ -15,7 +15,7 @@ This page lists **automated tests and common checks** for the CrabMate repo (run
 Push / pull request to **`main`** runs [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml):
 
 - **`check-clippy-test`**: **`cargo check`**, **`cargo clippy`** (**`-D warnings`**), **`cargo test --workspace --all-features`**
-- **`e2e`**: **`trunk build`**, **`cargo build --release -p crabmate`**, then Playwright in **`e2e/`** (**`CM_E2E_FIXTURES=1`**, no real LLM); uploads **`playwright-report`** on failure
+- **`e2e`**: **`trunk build`** when **`frontend/dist`** cache misses, then **`cargo build --release -p crabmate`**, then Playwright in **`e2e/`** (**`CM_E2E_FIXTURES=1`**, no real LLM); uploads **`playwright-report`** on failure
 
 Complexity, dependency security, and coverage use separate workflows (**`code-complexity.yml`**, **`dependency-security.yml`**, **`code-coverage.yml`**).
 
@@ -131,7 +131,7 @@ cd frontend && trunk build
 
 ## Browser E2E (Playwright)
 
-Directory: **`e2e/`**. Stubs **`POST /chat/stream`** and **`/workspace`** — **no real LLM**. Specs include pagination (incl. **load older** click), **SSE control** (error / approval), **theme prefs**, and **session list** modal. Helpers in **`e2e/tests/helpers/`**. Prefer **`data-testid`** (e.g. **`chat-load-older`**, **`session-list-modal`**).
+Directory: **`e2e/`**. Stubs **`POST /chat/stream`** and **`/workspace`** — **no real LLM**. Specs cover pagination (**load older**), **SSE control** (error / approval / clarification / **staged plan timeline**), **prefs** (theme / side panel), **session list**. Helpers in **`e2e/tests/helpers/`** (`assertions`, `sendStubMessage`, `expandTimelinePanel`). Run **`./scripts/e2e.sh`** locally. Prefer **`data-testid`**.
 
 ```bash
 cd frontend && trunk build
@@ -146,6 +146,7 @@ Notes:
 - Override port with **`E2E_PORT`**, e.g. `E2E_PORT=19090 npm test`.
 - Locally (non-CI), an existing server on that port may be **reused** (`reuseExistingServer`).
 - Debug UI: `cd e2e && npm run test:ui`.
+- Script: `./scripts/e2e.sh` (builds `frontend/dist` if missing; uses release `crabmate` when present).
 
 On Linux, if `cargo` fails on **wayland** native deps, see the E2E note in [`DEVELOPMENT.md`](DEVELOPMENT.md) (**`libwayland-dev`**).
 

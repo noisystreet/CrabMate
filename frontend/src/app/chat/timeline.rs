@@ -50,6 +50,7 @@ fn timeline_panel_toggle(
         <button
             type="button"
             class="timeline-panel-toggle btn btn-muted btn-sm"
+            data-testid="timeline-panel-toggle"
             aria-expanded=move || timeline_panel_expanded.get()
             prop:title=move || i18n::timeline_panel_toggle_title(locale.get())
             prop:aria-label=move || i18n::timeline_panel_toggle_aria(locale.get())
@@ -153,6 +154,7 @@ fn timeline_panel_expanded_region(
             <div
                 class="timeline-panel"
                 role="region"
+                data-testid="timeline-panel"
                 prop:aria-label=move || i18n::timeline_panel_region_aria(locale.get())
             >
                 {move || {

@@ -37,6 +37,8 @@ if (!fs.existsSync(distIndex)) {
 
 export default defineConfig({
   testDir: './tests',
+  timeout: 60_000,
+  expect: { timeout: 15_000 },
   // 共享 webServer 与 CM_CRABMATE_USER_DATA_DIR；串行避免会话 prefs 交叉污染。
   fullyParallel: !process.env.CI,
   forbidOnly: !!process.env.CI,
@@ -46,6 +48,8 @@ export default defineConfig({
   use: {
     baseURL,
     trace: 'on-first-retry',
+    screenshot: 'only-on-failure',
+    actionTimeout: 20_000,
     ...devices['Desktop Chrome'],
   },
   webServer: {

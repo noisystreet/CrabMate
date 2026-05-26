@@ -5,6 +5,7 @@ import {
   PAGINATE_TOTAL,
   putActiveSessionWithServerConversation,
   seedPaginatedConversation,
+  waitForConversationMessages,
 } from './helpers';
 
 test.describe('conversation load older (UI click)', () => {
@@ -17,11 +18,11 @@ test.describe('conversation load older (UI click)', () => {
       title: 'E2E load older click',
     });
 
+    const hydrate = waitForConversationMessages(page, PAGINATE_CONV_ID);
     await page.goto('/');
+    await hydrate;
     await expect(page.getByRole('heading', { name: 'CrabMate' })).toBeVisible();
-    await expect(page.getByText(`e2e-msg-${PAGINATE_TOTAL - 1}`, { exact: true })).toBeVisible({
-      timeout: 30_000,
-    });
+    await expect(page.getByText(`e2e-msg-${PAGINATE_TOTAL - 1}`, { exact: true })).toBeVisible();
 
     const loadOlder = page.getByTestId('chat-load-older');
     await expect(loadOlder).toBeVisible();

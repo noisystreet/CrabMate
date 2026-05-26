@@ -413,6 +413,7 @@ fn ComposerClarificationPanel(
                                             <input
                                                 type="text"
                                                 class="composer-clarification-input"
+                                                data-testid="composer-clarification-input"
                                                 prop:value=move || {
                                                     pc2.with(|opt| {
                                                         opt.as_ref()
@@ -450,6 +451,7 @@ fn ComposerClarificationPanel(
                             <button
                                 type="button"
                                 class="btn btn-primary btn-sm"
+                                data-testid="composer-clarification-submit"
                                 prop:disabled=move || stream_turn_busy_ui.get()
                                 on:click=move |_| run_send_clarify_sv.get_value()()
                             >
