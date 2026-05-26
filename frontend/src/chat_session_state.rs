@@ -7,7 +7,7 @@
 //! - **代际门闩**：每次发起新 `/chat/stream` attach 时递增 [`ChatStreamTransport::attach_generation`]；[`crate::app::chat::composer_stream::context::ChatStreamCallbackCtx`] 捕获该值，回调内若与当前不一致则视为陈旧。
 //! - **`session_sync`**：服务端 `conversation_id` / revision，与 `POST /chat/branch` 等对齐。
 //! - **`session_hydrate_nonce` / `reasoning_preserved` / `conversation_prompt_tokens`**：拉取会话正文与水合时的补偿字段；后者供底栏展示 prompt token 粗估。
-//! - **`stream_text_overlay`**：尾条 `loading` 助手消息的流式正文/思维链旁路缓冲（字段见 [`ChatSessionSignals`]）。
+//! - **`stream_text_overlay`**：尾条 `loading` 助手消息的流式正文/思维链旁路缓冲（字段见 [`ChatSessionSignals`]）。**只读展示**须经 [`crate::stream_text_overlay::message_text_for_display_including_stream_overlay`]（`parent_session_id` 为该消息所在会话 id），勿仅对 `StoredMessage` 调 [`crate::message_format::message_text_for_display_ex`]。
 //!
 //! # `sessions` 向量的写入通道（命名封装）
 //!

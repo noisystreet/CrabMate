@@ -2,7 +2,7 @@
 
 # Agent SSE control-plane protocol (`/chat/stream`)
 
-This document describes **control-plane JSON** sent by the CrabMate server on SSE `data:` lines, distinct from **plain-text model deltas**. **Payload shapes** are defined in Rust `src/sse/protocol.rs`; the **numeric protocol version** is shared with the Leptos UI via workspace crate **`crabmate-sse-protocol`** (constant **`SSE_PROTOCOL_VERSION`**, re-exported from `sse::protocol`). The browser consumes via `frontend/src/sse_dispatch/dispatch.rs` (called by `frontend/src/api.rs`). Rust line classification: `src/sse/line.rs` (`classify_agent_sse_line`), semantics must match this doc.
+This document describes **control-plane JSON** sent by the CrabMate server on SSE `data:` lines, distinct from **plain-text model deltas**. **Payload shapes** are defined in Rust `src/sse/protocol.rs`; the **numeric protocol version** is shared with the Leptos UI via workspace crate **`crabmate-sse-protocol`** (constant **`SSE_PROTOCOL_VERSION`**, re-exported from `sse::protocol`). The browser consumes via `frontend/src/sse_dispatch/dispatch.rs` (wired from **`frontend/src/api/chat_stream/`**). Rust line classification: `src/sse/line.rs` (`classify_agent_sse_line`), semantics must match this doc.
 
 ## Protocol version `v` and negotiation
 
@@ -207,7 +207,7 @@ When changing any of:
 
 1. **`crates/crabmate-sse-protocol`**: **`SSE_PROTOCOL_VERSION`**; `src/sse/protocol.rs`: `SsePayload`, `SseErrorBody`, `ToolResultBody` (version from the crate, re-exported in `protocol`)
 2. **`crates/crabmate-sse-protocol`**: `sse_frame.rs` (`parse_sse_event_id` / `join_sse_data_lines` / `is_sse_done_sentinel` / `extract_stream_ended_reason`) and `control_extract.rs` (`extract_*`) whenever frontend consumption semantics change
-3. `frontend/src/sse_dispatch/dispatch.rs` and `frontend/src/api.rs`: classification order and **`client_sse_protocol`** in the request body
+3. `frontend/src/sse_dispatch/dispatch.rs` and **`frontend/src/api/`** (**`chat_stream/`**, etc.): classification order and **`client_sse_protocol`** in the request body
 4. `src/sse/line.rs`: `classify_agent_sse_line`
 5. New `encode_message(SsePayload::…)` call sites
 

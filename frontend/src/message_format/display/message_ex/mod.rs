@@ -16,6 +16,9 @@ use assistant::{
 use parts::{system_text_for_chat_display, user_text_for_chat_display};
 
 /// `apply_assistant_display_filters == false` 时助手消息按存储原文输出（不剥 `agent_reply_plan`、不拆内联思维链标记）。
+///
+/// 仅反映已落盘到 [`StoredMessage`] 的正文；若助手仍处于 `loading` 且增量在 **SSE 旁路 overlay** 中，须改用
+/// [`crate::stream_text_overlay::message_text_for_display_including_stream_overlay`]，否则会与气泡所见不一致。
 pub fn message_text_for_display_ex(
     m: &StoredMessage,
     loc: Locale,

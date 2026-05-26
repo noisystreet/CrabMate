@@ -85,6 +85,7 @@ pub(super) fn nav_rail_session_scroll_inner(s: NavRailSessionScrollSignals) -> i
         let hits = if msg_needle.is_empty() {
             Vec::new()
         } else {
+            let overlay = chat.stream_text_overlay.get();
             sessions.with(|list| {
                 collect_message_search_hits(
                     list,
@@ -92,6 +93,7 @@ pub(super) fn nav_rail_session_scroll_inner(s: NavRailSessionScrollSignals) -> i
                     MESSAGE_SEARCH_MAX_HITS,
                     locale.get(),
                     apply_assistant_display_filters.get(),
+                    overlay.as_ref(),
                 )
             })
         };

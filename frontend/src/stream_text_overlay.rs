@@ -1,6 +1,13 @@
 //! 流式助手正文/思维链的 **旁路缓冲**：SSE `on_delta` 只更新本信号，不触碰 [`crate::chat_session_state::ChatSessionSignals::sessions`]，
 //! 避免长会话下每条历史消息随 token 反复参与 Leptos 追踪与 `<For>` 重算。
 //!
+//! # 展示层「单一真源」读取
+//!
+//! 对**任意**可能处于 `loading` 的助手气泡，凡需与用户所见一致的字符串（侧栏全局搜索、会话内查找、复制、Markdown 快照等），
+//! 应调用 [`message_text_for_display_including_stream_overlay`]，并把 `parent_session_id` 设为**承载该消息的会话 id**
+//!（即 [`crate::storage::ChatSession::id`]；跨会话遍历时每条的父会话 id，**不必**等于 UI 当前 `active_id`）。
+//! 勿仅对 `StoredMessage` 调 [`crate::message_format::message_text_for_display_ex`]，否则会漏掉仍仅在 overlay 中的尾段正文。
+//!
 //! 在收尾路径（`on_done` / `on_error` / 工具前后轮换 / 用户中止等）经 [`stream_overlay_take_into_stored_message`]
 //! 合并回 `StoredMessage` 并清空缓冲；[`sessions_snapshot_with_stream_overlay_merged`] 供持久化防抖落盘时与内存一致。
 
@@ -75,10 +82,10 @@ pub fn stream_overlay_take_into_stored_message(
 pub fn stream_overlay_merged_text_reasoning_owned(
     msg: &StoredMessage,
     overlay: Option<&StreamTextOverlay>,
-    active_session_id: &str,
+    parent_session_id: &str,
 ) -> Option<(String, String)> {
     let o = overlay?;
-    if o.session_id != active_session_id || o.message_id != msg.id {
+    if o.session_id != parent_session_id || o.message_id != msg.id {
         return None;
     }
     if !msg.state.as_ref().is_some_and(|s| s.is_loading()) {
@@ -94,17 +101,19 @@ pub fn stream_overlay_merged_text_reasoning_owned(
 }
 
 /// 与 [`message_text_for_display_ex`] 一致，但合并当前流式 overlay（若适用）。
+///
+/// `parent_session_id`：本条 `m` 所属会话的 id（与 [`StreamTextOverlay::session_id`] 对齐时才会合并 overlay）。
 #[must_use]
 pub fn message_text_for_display_including_stream_overlay(
     m: &StoredMessage,
     overlay: Option<&StreamTextOverlay>,
-    active_session_id: &str,
+    parent_session_id: &str,
     locale: Locale,
     apply_assistant_display_filters: bool,
 ) -> String {
     if m.role == "assistant" {
         if let Some((text, reasoning)) =
-            stream_overlay_merged_text_reasoning_owned(m, overlay, active_session_id)
+            stream_overlay_merged_text_reasoning_owned(m, overlay, parent_session_id)
         {
             return assistant_message_text_for_display_ex_with_body_strings(
                 text.as_str(),

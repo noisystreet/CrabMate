@@ -159,7 +159,7 @@ pub fn crate_contract_map(args_json: &str, ctx: &ToolContext<'_>) -> String {
     section_file(
         ctx.working_dir,
         "Leptos 前端 API 与流式请求",
-        "frontend/src/api.rs",
+        "frontend/src/api/mod.rs",
         head_lines,
         &["chat", "stream", "SSE", "/chat"],
         keyword_hits,

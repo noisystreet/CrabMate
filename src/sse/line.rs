@@ -1,6 +1,6 @@
 //! 对经 SSE `data:` 下发的一行字符串做分类（与 `super::protocol` 及历史兼容键名对齐）。
 //!
-//! Web 前端在 `frontend/src/api.rs` 的 `sendChatStream` 中做等价解析；此处为 **Rust 侧** 单一实现，供后续终端 UI 等与 Web 语义对齐复用。
+//! Web 前端在 **`frontend/src/api/chat_stream/`** 的流式读取路径中做等价解析；此处为 **Rust 侧** 单一实现，供后续终端 UI 等与 Web 语义对齐复用。
 #![allow(dead_code)]
 
 use crabmate_sse_protocol::StreamEndReason;
