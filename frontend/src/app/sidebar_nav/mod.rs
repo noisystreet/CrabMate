@@ -89,6 +89,7 @@ pub fn sidebar_nav_view(signals: SidebarNavSignals) -> impl IntoView {
             <button
                 type="button"
                 class="btn btn-primary btn-new-chat-ds"
+                data-testid="nav-new-chat"
                 on:click={
                     let new_session = new_session.clone();
                     move |_| {

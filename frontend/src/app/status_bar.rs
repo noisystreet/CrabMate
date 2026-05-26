@@ -442,7 +442,9 @@ fn StatusBarFooterBody(
         locale,
     };
     view! {
-        <footer class=move || {
+        <footer
+            data-testid="status-bar"
+            class=move || {
             if st.status_fetch_err.get().is_some() {
                 "status-bar status-bar-fetch-error"
             } else {

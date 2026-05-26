@@ -237,6 +237,7 @@ fn SideColumnShellToolbarIcons(
             <button
                 type="button"
                 class="btn btn-secondary btn-sm shell-toolbar-icon-btn"
+                data-testid="settings-open"
                 on:click=move |_| settings_page.set(true)
                 prop:title=move || i18n::side_settings_title(locale.get())
                 prop:aria-label=move || i18n::side_settings_title(locale.get())

@@ -62,6 +62,54 @@ pub(crate) fn LlmTemperatureFieldWithId(
 }
 
 #[component]
+pub(crate) fn LlmModelIdField(
+    locale: RwSignal<Locale>,
+    model_draft: RwSignal<String>,
+) -> impl IntoView {
+    view! {
+        <div class="settings-field">
+            <label class="settings-field-label" for="settings-llm-model">
+                {move || i18n::settings_models_label_model_id(locale.get())}
+            </label>
+            <input
+                type="text"
+                id="settings-llm-model"
+                class="settings-text-input"
+                data-testid="settings-llm-model"
+                autocomplete="off"
+                prop:placeholder=move || i18n::settings_models_ph_model_id(locale.get())
+                prop:value=move || model_draft.get()
+                on:input=move |ev| model_draft.set(event_target_value(&ev))
+            />
+        </div>
+    }
+}
+
+#[component]
+pub(crate) fn LlmClientApiKeyField(
+    locale: RwSignal<Locale>,
+    api_key_draft: RwSignal<String>,
+) -> impl IntoView {
+    view! {
+        <div class="settings-field">
+            <label class="settings-field-label" for="settings-client-api-key">
+                {move || i18n::settings_models_label_api_key(locale.get())}
+            </label>
+            <input
+                type="password"
+                id="settings-client-api-key"
+                class="settings-text-input"
+                data-testid="settings-client-api-key"
+                autocomplete="off"
+                prop:placeholder=move || i18n::settings_models_label_api_key(locale.get())
+                prop:value=move || api_key_draft.get()
+                on:input=move |ev| api_key_draft.set(event_target_value(&ev))
+            />
+        </div>
+    }
+}
+
+#[component]
 pub(crate) fn LlmTemperatureField(
     locale: RwSignal<Locale>,
     temperature_draft: RwSignal<String>,

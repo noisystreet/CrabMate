@@ -101,6 +101,7 @@ pub fn ApprovalModal(signals: ApprovalModalSignals) -> impl IntoView {
                         <button
                             type="button"
                             class="btn btn-danger"
+                            data-testid="approval-deny"
                             on:click=deny
                         >
                             {move || i18n::approval_deny(locale.get())}
@@ -108,6 +109,7 @@ pub fn ApprovalModal(signals: ApprovalModalSignals) -> impl IntoView {
                         <button
                             type="button"
                             class="btn btn-secondary"
+                            data-testid="approval-allow-once"
                             on:click=allow_once
                         >
                             {move || i18n::approval_allow_once(locale.get())}
@@ -115,6 +117,7 @@ pub fn ApprovalModal(signals: ApprovalModalSignals) -> impl IntoView {
                         <button
                             type="button"
                             class="btn btn-primary"
+                            data-testid="approval-allow-always"
                             on:click=allow_always
                         >
                             {move || i18n::approval_allow_always(locale.get())}

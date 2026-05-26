@@ -131,7 +131,7 @@ cd frontend && trunk build
 
 ## Browser E2E (Playwright)
 
-Directory: **`e2e/`**. Stubs **`POST /chat/stream`** and **`/workspace`** — **no real LLM**. Specs cover pagination (**load older**), **SSE control** (error / approval / clarification / **staged plan timeline**), **prefs** (theme / side panel), **session list**. Helpers in **`e2e/tests/helpers/`** (`assertions`, `sendStubMessage`, `expandTimelinePanel`). Run **`./scripts/e2e.sh`** locally. Prefer **`data-testid`**.
+Directory: **`e2e/`**. Stubs **`POST /chat/stream`** and **`/workspace`** — **no real LLM**. Specs cover pagination, **SSE** (control / clarification / staged plan / approval actions), **prefs**, **settings page** (theme / model / API key), **keyboard shortcuts**, **session CRUD**, **status bar**. Helpers in **`e2e/tests/helpers/`**. Run **`./scripts/e2e.sh`** locally. Prefer **`data-testid`**.
 
 ```bash
 cd frontend && trunk build

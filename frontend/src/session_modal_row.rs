@@ -138,6 +138,7 @@ fn SessionModalRowActions(bundle: SessionModalRowBundle) -> impl IntoView {
             <button
                 type="button"
                 class="btn btn-ghost btn-sm"
+                data-testid=format!("session-modal-star-{id}")
                 prop:title=move || session_star_action_title(locale.get(), starred)
                 prop:aria-pressed=starred
                 on:click={
@@ -151,6 +152,7 @@ fn SessionModalRowActions(bundle: SessionModalRowBundle) -> impl IntoView {
             <button
                 type="button"
                 class="btn btn-ghost btn-sm"
+                data-testid=format!("session-modal-pin-{id}")
                 prop:title=move || session_pin_action_title(locale.get(), pinned)
                 prop:aria-pressed=pinned
                 on:click={
@@ -216,6 +218,7 @@ fn SessionModalRowActions(bundle: SessionModalRowBundle) -> impl IntoView {
             <button
                 type="button"
                 class="btn btn-danger btn-sm"
+                data-testid=format!("session-modal-delete-{id}")
                 prop:title=move || i18n::session_row_delete_title(locale.get())
                 on:click={
                     let sessions = chat.sessions;

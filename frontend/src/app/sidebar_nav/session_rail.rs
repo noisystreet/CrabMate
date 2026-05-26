@@ -174,6 +174,7 @@ fn nav_session_row_button(s: ChatSession, nav: NavRailHitRowNavSignals) -> impl 
     } = nav;
     let active_id = chat.active_id;
     let session_id_class = s.id.clone();
+    let session_id_testid = s.id.clone();
     let session_id_click = s.id.clone();
     let session_id_ctx = s.id.clone();
     let title = s.title.clone();
@@ -183,6 +184,7 @@ fn nav_session_row_button(s: ChatSession, nav: NavRailHitRowNavSignals) -> impl 
     view! {
         <button
             type="button"
+            data-testid=format!("nav-session-{session_id_testid}")
             class=move || {
                 let mut c = String::from("nav-session-item");
                 if active_id.get() == session_id_class {

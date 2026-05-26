@@ -134,7 +134,11 @@ pub(super) fn SettingsPageChrome(ctx: SettingsPageChromeCtx) -> impl IntoView {
     };
 
     view! {
-        <div class="settings-page" class:settings-page-visible=move || settings_page.get()>
+        <div
+            class="settings-page"
+            class:settings-page-visible=move || settings_page.get()
+            data-testid="settings-page"
+        >
             <SettingsPageHeader
                 appearance_locale=appearance_locale
                 dirty=dirty

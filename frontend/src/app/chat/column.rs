@@ -38,6 +38,7 @@ fn ChatMessagesScrollShell(
     view! {
         <div
             class="messages"
+            data-testid="chat-messages-scroller"
             node_ref=messages_scroller
             on:wheel=move |ev: web_sys::WheelEvent| {
                 if ev.delta_y() < 0.0 {

@@ -10,8 +10,8 @@ use crate::app_prefs::THEME_SLUGS;
 use crate::i18n::{self, Locale};
 use crate::session_typography_prefs::{SESSION_CHAT_FONT_SLUGS, SESSION_UI_FONT_SLUGS};
 use crate::settings_llm_fields::{
-    LlmContextTokensField, LlmSavedPresetApplyTarget, LlmSavedPresetPicker, LlmTemperatureField,
-    LlmThinkingModeField, OptionalLlmExecutionModeField,
+    LlmClientApiKeyField, LlmContextTokensField, LlmModelIdField, LlmSavedPresetApplyTarget,
+    LlmSavedPresetPicker, LlmTemperatureField, LlmThinkingModeField, OptionalLlmExecutionModeField,
 };
 
 /// 设置页「主 LLM」区块所需信号（缩短 [`SettingsLlmBlock`] 形参列表；勿命名为 `*Props`，与 Leptos 组件宏生成类型冲突）。
@@ -142,6 +142,8 @@ pub(crate) fn SettingsLlmBlock(bundle: SettingsLlmBlockBundle) -> impl IntoView 
                 )
                 select_id=llm_saved_preset_select_id
             />
+            <LlmModelIdField locale model_draft=llm_model_draft />
+            <LlmClientApiKeyField locale api_key_draft=llm_api_key_draft />
             <LlmTemperatureField locale temperature_draft=llm_temperature_draft />
             <LlmContextTokensField locale llm_context_tokens_draft />
             <LlmThinkingModeField

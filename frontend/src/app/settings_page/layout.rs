@@ -26,6 +26,7 @@ pub(super) fn SettingsPageNavRail(
             <button
                 type="button"
                 class="settings-nav-item"
+                data-testid="settings-nav-appearance"
                 class:active=move || active_section.get() == SettingsSection::Appearance
                 on:click=move |_| {
                     active_section.set(SettingsSection::Appearance);
@@ -37,6 +38,7 @@ pub(super) fn SettingsPageNavRail(
             <button
                 type="button"
                 class="settings-nav-item"
+                data-testid="settings-nav-llm"
                 class:active=move || active_section.get() == SettingsSection::Llm
                 on:click=move |_| {
                     active_section.set(SettingsSection::Llm);

@@ -19,6 +19,7 @@ pub(super) fn SettingsPageHeader(
             <button
                 type="button"
                 class="btn btn-ghost settings-page-back"
+                data-testid="settings-back"
                 on:click=move |_| on_back()
             >
                 <svg
@@ -52,6 +53,7 @@ pub(super) fn SettingsPageHeader(
                 <button
                     type="button"
                     class="btn btn-primary btn-sm"
+                    data-testid="settings-save-all"
                     prop:disabled=move || !dirty.get()
                     on:click=move |_| on_save()
                 >

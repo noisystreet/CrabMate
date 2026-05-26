@@ -1,5 +1,7 @@
 export * from './assertions';
 export * from './composer';
+export * from './keyboard';
+export * from './settings';
 export * from './sidebar';
 export * from './conversation-api';
 export * from './conversation-messages-stub';
