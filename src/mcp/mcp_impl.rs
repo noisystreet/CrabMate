@@ -1,14 +1,16 @@
 //! [Model Context Protocol](https://modelcontextprotocol.io/)：**客户端**（stdio 子进程）与可选 **服务端**（`mcp serve`，stdio）。
 //!
-//! - **客户端**：同一进程内按配置指纹**复用**一条连接，将远端 `tools/list` 合并进 OpenAI 兼容工具表，经 `tools/call` 执行。
+//! - **客户端**：同一进程内按服务器 id + command **复用**连接，将远端 `tools/list` 合并进 OpenAI 兼容工具表，经 `tools/call` 执行。
 //! - **服务端**（[`server`]）：将 CrabMate 内置 `tools::run_tool` 暴露给外部 MCP 客户端；**无传输层鉴权**，与 `run_command` / 工作区策略一致。
 //!
-//! **安全**：`mcp_command` 由配置显式指定，等效于允许启动任意子进程；仅应在信任的配置源下启用。输出与错误信息经截断，避免过大响应撑爆上下文。
+//! **安全**：`command` 由 user-data 显式指定，等效于允许启动任意子进程；仅应在信任的配置源下启用。输出与错误信息经截断，避免过大响应撑爆上下文。
 
 pub mod server;
 
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use tokio::sync::Mutex as TokioMutex;
@@ -26,6 +28,10 @@ use tokio::sync::Mutex;
 
 use crate::config::AgentConfig;
 use crate::types::{FunctionDef, Tool};
+use crate::user_data::McpRemoteToolSummary;
+
+use super::resolve::{ResolvedMcpConfig, ResolvedMcpServer};
+use super::turn_handle::{McpTurnHandle, McpTurnSessions};
 
 const MCP_TOOL_PREFIX: &str = "mcp__";
 
@@ -38,41 +44,29 @@ pub fn is_mcp_proxy_tool(name: &str) -> bool {
 /// 单轮持有的 MCP 客户端（`rmcp` 在 Drop 时会清理子进程）。
 pub type McpClientSession = RunningService<RoleClient, ClientInfo>;
 
-fn mcp_tool_openai_name(server_slug: &str, tool_name: &str) -> String {
+pub fn mcp_tool_openai_name(server_slug: &str, tool_name: &str) -> String {
     format!("{MCP_TOOL_PREFIX}{server_slug}__{tool_name}")
 }
 
-fn slug_from_command(cmd: &str) -> String {
-    let token = cmd.split_whitespace().next().unwrap_or("mcp");
-    let base = std::path::Path::new(token)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or(token);
-    let mut s: String = base
-        .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '_' })
-        .collect();
-    while s.contains("__") {
-        s = s.replace("__", "_");
+/// 解析 `mcp__{slug}__{remote}`；`slug` 与 `remote` 均非空时返回。
+pub fn parse_mcp_openai_tool_name(openai_name: &str) -> Option<(String, String)> {
+    if !openai_name.starts_with(MCP_TOOL_PREFIX) {
+        return None;
     }
-    let s = s.trim_matches('_').to_string();
-    if s.is_empty() { "mcp".to_string() } else { s }
-}
-
-/// 解析 `mcp_command`：支持 `program arg1 arg2`（不含引号转义；复杂场景请用包装脚本）。
-fn parse_command_line(line: &str) -> Option<Vec<String>> {
-    let parts: Vec<String> = line
-        .split_whitespace()
-        .map(|s| s.to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-    if parts.is_empty() { None } else { Some(parts) }
+    let rest = openai_name.strip_prefix(MCP_TOOL_PREFIX)?;
+    let (slug, remote) = rest.split_once("__")?;
+    if slug.is_empty() || remote.is_empty() {
+        return None;
+    }
+    Some((slug.to_string(), remote.to_string()))
 }
 
 /// 连接 MCP server（stdio）。失败时返回 `Err`；调用方可降级为不启用 MCP。
 pub async fn connect_stdio_client(cmdline: &str) -> Result<McpClientSession, String> {
-    let parts =
-        parse_command_line(cmdline).ok_or_else(|| "mcp_command 为空或仅空白".to_string())?;
+    let parts = cmd_mate::split_command_line(cmdline.trim());
+    if parts.is_empty() {
+        return Err("MCP command 为空或仅空白".to_string());
+    }
     let program = parts[0].clone();
     let args: Vec<String> = parts[1..].to_vec();
 
@@ -122,6 +116,16 @@ pub fn mcp_tools_as_openai(server_slug: &str, mcp_tools: &[rmcp::model::Tool]) -
     out
 }
 
+fn remote_tool_summaries(mcp_tools: &[rmcp::model::Tool]) -> Vec<McpRemoteToolSummary> {
+    mcp_tools
+        .iter()
+        .map(|t| McpRemoteToolSummary {
+            name: t.name.to_string(),
+            description: t.description.as_ref().map(|c| c.to_string()),
+        })
+        .collect()
+}
+
 /// 合并内建工具与 MCP 工具（MCP 名冲突时跳过并打日志）。
 pub fn merge_tool_lists(base: Vec<Tool>, extra: Vec<Tool>) -> Vec<Tool> {
     use std::collections::HashSet;
@@ -140,22 +144,6 @@ pub fn merge_tool_lists(base: Vec<Tool>, extra: Vec<Tool>) -> Vec<Tool> {
         merged.push(t);
     }
     merged
-}
-
-fn strip_mcp_prefix<'a>(openai_name: &'a str, server_slug: &str) -> Option<Cow<'a, str>> {
-    let prefix = format!("{MCP_TOOL_PREFIX}{server_slug}__");
-    openai_name
-        .strip_prefix(&prefix)
-        .map(|s| Cow::Owned(s.to_string()))
-}
-
-/// 若 `openai_name` 为本配置下的 MCP 工具名，返回远端 `tools/call` 的 `name`。
-pub fn try_mcp_tool_name(cfg: &AgentConfig, openai_name: &str) -> Option<String> {
-    if !cfg.mcp_client.mcp_enabled || cfg.mcp_client.mcp_command.trim().is_empty() {
-        return None;
-    }
-    let slug = slug_from_command(cfg.mcp_client.mcp_command.trim());
-    strip_mcp_prefix(openai_name, &slug).map(|c| c.into_owned())
 }
 
 fn truncate_str(s: &str, max_chars: usize) -> String {
@@ -274,158 +262,240 @@ pub async fn call_mcp_tool(
     }
 }
 
-struct McpProcessCache {
+struct McpServerCacheEntry {
     fingerprint: String,
+    slug: String,
     session: Arc<Mutex<McpClientSession>>,
     mcp_tools: Vec<Tool>,
+    remote_tools: Vec<McpRemoteToolSummary>,
+    last_error: Option<String>,
 }
 
-/// 与配置对应的 MCP 连接指纹；变更 `mcp_command` / 开关后应视为新会话。
-fn mcp_connection_fingerprint(cfg: &AgentConfig) -> Option<String> {
-    if !cfg.mcp_client.mcp_enabled {
-        return None;
+impl Clone for McpServerCacheEntry {
+    fn clone(&self) -> Self {
+        Self {
+            fingerprint: self.fingerprint.clone(),
+            slug: self.slug.clone(),
+            session: Arc::clone(&self.session),
+            mcp_tools: self.mcp_tools.clone(),
+            remote_tools: self.remote_tools.clone(),
+            last_error: self.last_error.clone(),
+        }
     }
-    let cmd = cfg.mcp_client.mcp_command.trim();
-    if cmd.is_empty() {
-        return None;
-    }
-    Some(format!("v1\0{cmd}"))
 }
 
-static MCP_PROCESS_CACHE: TokioMutex<Option<McpProcessCache>> = TokioMutex::const_new(None);
+fn server_fingerprint(server: &ResolvedMcpServer) -> String {
+    format!("v2\0{}\0{}", server.id, server.command.trim())
+}
 
-/// 丢弃进程内 MCP stdio 缓存（配置热重载或 `mcp_command` 变更后调用，避免沿用旧子进程）。
+static MCP_MULTI_CACHE: LazyLock<TokioMutex<HashMap<String, McpServerCacheEntry>>> =
+    LazyLock::new(|| TokioMutex::new(HashMap::new()));
+
+/// 丢弃进程内 MCP stdio 缓存（user-data 变更或配置热重载后调用）。
 pub async fn clear_mcp_process_cache() {
-    let mut guard = MCP_PROCESS_CACHE.lock().await;
-    *guard = None;
+    let mut guard = MCP_MULTI_CACHE.lock().await;
+    guard.clear();
 }
 
-/// 新建 stdio 会话并 `tools/list`（不经进程内缓存；供缓存未命中时调用）。
-async fn open_mcp_session_fresh(
-    cfg: &AgentConfig,
-) -> Option<(Arc<Mutex<McpClientSession>>, Vec<Tool>)> {
-    if !cfg.mcp_client.mcp_enabled {
-        return None;
-    }
-    let cmd = cfg.mcp_client.mcp_command.trim();
+async fn open_server_fresh(server: &ResolvedMcpServer) -> Result<McpServerCacheEntry, String> {
+    let cmd = server.command.trim();
     if cmd.is_empty() {
-        log::warn!(target: "crabmate", "mcp_enabled 为 true 但 mcp_command 为空，跳过 MCP");
-        return None;
+        return Err("command 为空".to_string());
     }
-    let slug = slug_from_command(cmd);
-    match connect_stdio_client(cmd).await {
-        Ok(client) => {
-            let list = match client.list_all_tools().await {
-                Ok(t) => t,
-                Err(e) => {
-                    log::warn!(
-                        target: "crabmate",
-                        "MCP tools/list 失败，本回合不使用 MCP 工具: {}",
-                        e
-                    );
-                    return None;
-                }
-            };
-            if list.is_empty() {
-                log::info!(
-                    target: "crabmate",
-                    "MCP 已连接但 tools/list 为空，关闭连接 slug={}",
-                    slug
-                );
-                return None;
-            }
-            let extra = mcp_tools_as_openai(&slug, &list);
-            log::info!(
-                target: "crabmate",
-                "MCP 已连接 slug={} tools={}",
-                slug,
-                list.len()
-            );
-            Some((Arc::new(Mutex::new(client)), extra))
-        }
-        Err(e) => {
-            log::warn!(target: "crabmate", "MCP 连接失败，本回合不使用 MCP: {}", e);
-            None
-        }
+    log::info!(
+        target: "crabmate",
+        "MCP 启动 id={} slug={} command={}",
+        server.id,
+        server.slug,
+        crate::redact::mcp_command_line_for_log(cmd),
+    );
+    let client = connect_stdio_client(cmd).await?;
+    let list = client
+        .list_all_tools()
+        .await
+        .map_err(|e| format!("tools/list 失败: {e}"))?;
+    if list.is_empty() {
+        return Err("tools/list 为空".to_string());
     }
+    let extra = mcp_tools_as_openai(&server.slug, &list);
+    log::info!(
+        target: "crabmate",
+        "MCP 已连接 id={} slug={} tools={}",
+        server.id,
+        server.slug,
+        list.len()
+    );
+    Ok(McpServerCacheEntry {
+        fingerprint: server_fingerprint(server),
+        slug: server.slug.clone(),
+        session: Arc::new(Mutex::new(client)),
+        mcp_tools: extra,
+        remote_tools: remote_tool_summaries(&list),
+        last_error: None,
+    })
 }
 
-/// 打开会话并拉取工具列表；失败返回 `None`（调用方继续使用仅内建工具）。
-///
-/// 同一进程内按 **`mcp_enabled` + `mcp_command` 指纹** 复用一条 stdio 连接（REPL / serve 多轮共用），避免每轮重启 MCP 子进程。
-pub async fn try_open_session_and_tools(
-    cfg: &AgentConfig,
-) -> Option<(Arc<Mutex<McpClientSession>>, Vec<Tool>)> {
-    let fp = mcp_connection_fingerprint(cfg)?;
+async fn get_or_open_cached(server: &ResolvedMcpServer) -> Result<McpServerCacheEntry, String> {
+    let fp = server_fingerprint(server);
     {
-        let guard = MCP_PROCESS_CACHE.lock().await;
-        if let Some(cached) = guard.as_ref()
+        let guard = MCP_MULTI_CACHE.lock().await;
+        if let Some(cached) = guard.get(&server.id)
             && cached.fingerprint == fp
         {
-            return Some((Arc::clone(&cached.session), cached.mcp_tools.clone()));
-        }
-    }
-    let opened = open_mcp_session_fresh(cfg).await;
-    let mut guard = MCP_PROCESS_CACHE.lock().await;
-    match opened {
-        Some((sess, tools)) => {
-            *guard = Some(McpProcessCache {
-                fingerprint: fp,
-                session: Arc::clone(&sess),
-                mcp_tools: tools.clone(),
+            return Ok(McpServerCacheEntry {
+                fingerprint: cached.fingerprint.clone(),
+                slug: cached.slug.clone(),
+                session: Arc::clone(&cached.session),
+                mcp_tools: cached.mcp_tools.clone(),
+                remote_tools: cached.remote_tools.clone(),
+                last_error: cached.last_error.clone(),
             });
-            Some((sess, tools))
         }
-        None => {
-            // 新连接失败时丢弃缓存，避免配置已改仍保留旧 stdio 会话或误导 `mcp list`。
-            *guard = None;
-            None
+    }
+    match open_server_fresh(server).await {
+        Ok(entry) => {
+            let mut guard = MCP_MULTI_CACHE.lock().await;
+            guard.insert(server.id.clone(), entry.clone());
+            Ok(entry)
+        }
+        Err(e) => {
+            let mut guard = MCP_MULTI_CACHE.lock().await;
+            guard.remove(&server.id);
+            Err(e)
         }
     }
 }
 
-/// 运维用：当前进程内 MCP 缓存状态（不发起连接）。
+/// 打开多 server 会话并拉取合并工具列表；失败的服务器跳过。
+pub async fn try_open_turn_handle(
+    resolved: &ResolvedMcpConfig,
+) -> Option<(McpTurnHandle, Vec<Tool>)> {
+    if !resolved.global_enabled {
+        return None;
+    }
+    let enabled: Vec<&ResolvedMcpServer> = resolved.enabled_servers().collect();
+    if enabled.is_empty() {
+        return None;
+    }
+    let mut sessions = HashMap::new();
+    let mut all_tools = Vec::new();
+    for srv in enabled {
+        match get_or_open_cached(srv).await {
+            Ok(entry) => {
+                sessions.insert(entry.slug.clone(), Arc::clone(&entry.session));
+                all_tools.extend(entry.mcp_tools);
+            }
+            Err(e) => {
+                log::warn!(
+                    target: "crabmate",
+                    "MCP 服务器跳过 id={} name={}: {}",
+                    srv.id,
+                    srv.name,
+                    e
+                );
+            }
+        }
+    }
+    if sessions.is_empty() {
+        return None;
+    }
+    Some((
+        Arc::new(McpTurnSessions::new(
+            resolved.tool_timeout_secs.max(1),
+            sessions,
+        )),
+        all_tools,
+    ))
+}
+
+/// 按当前 `AgentConfig` 解析 user-data 并打开 MCP 回合句柄。
+pub async fn try_open_session_and_tools(cfg: &AgentConfig) -> Option<(McpTurnHandle, Vec<Tool>)> {
+    let resolved = crate::mcp::resolve_mcp_config(cfg);
+    try_open_turn_handle(&resolved).await
+}
+
+/// 运维用：单 server 缓存状态（不发起新连接）。
 #[derive(Debug, Clone)]
-pub struct McpCachedStatus {
-    pub fingerprint_matches_config: bool,
-    pub slug: Option<String>,
+pub struct McpServerRuntimeStatus {
+    pub id: String,
+    pub name: String,
+    pub slug: String,
+    pub enabled: bool,
+    pub connected: bool,
     pub openai_tool_names: Vec<String>,
+    pub remote_tools: Vec<McpRemoteToolSummary>,
+    pub last_error: Option<String>,
 }
 
-/// 若缓存与当前配置的连接指纹一致，返回已缓存的工具 OpenAI 名列表（`mcp__…`）。
-pub async fn cached_mcp_status(cfg: &AgentConfig) -> McpCachedStatus {
-    let fp = mcp_connection_fingerprint(cfg);
-    let guard = MCP_PROCESS_CACHE.lock().await;
-    let Some(fp) = fp.as_ref() else {
-        return McpCachedStatus {
-            fingerprint_matches_config: false,
-            slug: None,
+pub async fn mcp_servers_runtime_status(
+    resolved: &ResolvedMcpConfig,
+) -> Vec<McpServerRuntimeStatus> {
+    let guard = MCP_MULTI_CACHE.lock().await;
+    resolved
+        .servers
+        .iter()
+        .map(|srv| {
+            let fp = server_fingerprint(srv);
+            if let Some(cached) = guard.get(&srv.id)
+                && cached.fingerprint == fp
+            {
+                return McpServerRuntimeStatus {
+                    id: srv.id.clone(),
+                    name: srv.name.clone(),
+                    slug: cached.slug.clone(),
+                    enabled: srv.enabled,
+                    connected: true,
+                    openai_tool_names: cached
+                        .mcp_tools
+                        .iter()
+                        .map(|t| t.function.name.clone())
+                        .collect(),
+                    remote_tools: cached.remote_tools.clone(),
+                    last_error: cached.last_error.clone(),
+                };
+            }
+            McpServerRuntimeStatus {
+                id: srv.id.clone(),
+                name: srv.name.clone(),
+                slug: srv.slug.clone(),
+                enabled: srv.enabled,
+                connected: false,
+                openai_tool_names: Vec::new(),
+                remote_tools: Vec::new(),
+                last_error: None,
+            }
+        })
+        .collect()
+}
+
+/// 探测单条 server（刷新缓存）；返回运行时状态。
+pub async fn probe_mcp_server(server: &ResolvedMcpServer) -> McpServerRuntimeStatus {
+    let result = get_or_open_cached(server).await;
+    match result {
+        Ok(entry) => McpServerRuntimeStatus {
+            id: server.id.clone(),
+            name: server.name.clone(),
+            slug: entry.slug,
+            enabled: server.enabled,
+            connected: true,
+            openai_tool_names: entry
+                .mcp_tools
+                .iter()
+                .map(|t| t.function.name.clone())
+                .collect(),
+            remote_tools: entry.remote_tools,
+            last_error: None,
+        },
+        Err(e) => McpServerRuntimeStatus {
+            id: server.id.clone(),
+            name: server.name.clone(),
+            slug: server.slug.clone(),
+            enabled: server.enabled,
+            connected: false,
             openai_tool_names: Vec::new(),
-        };
-    };
-    let Some(cached) = guard.as_ref() else {
-        return McpCachedStatus {
-            fingerprint_matches_config: false,
-            slug: None,
-            openai_tool_names: Vec::new(),
-        };
-    };
-    if &cached.fingerprint != fp {
-        return McpCachedStatus {
-            fingerprint_matches_config: false,
-            slug: None,
-            openai_tool_names: Vec::new(),
-        };
-    }
-    let slug = Some(slug_from_command(cfg.mcp_client.mcp_command.trim()));
-    McpCachedStatus {
-        fingerprint_matches_config: true,
-        slug,
-        openai_tool_names: cached
-            .mcp_tools
-            .iter()
-            .map(|t| t.function.name.clone())
-            .collect(),
+            remote_tools: Vec::new(),
+            last_error: Some(e),
+        },
     }
 }
 
@@ -434,16 +504,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn slug_from_command_strips_path() {
-        assert_eq!(slug_from_command("/usr/bin/npx -y foo"), "npx");
-        assert_eq!(slug_from_command("uvx mcp-server"), "uvx");
+    fn parse_openai_tool_name_roundtrip() {
+        let slug = "filesystem";
+        let remote = "read_file";
+        let openai = mcp_tool_openai_name(slug, remote);
+        assert_eq!(
+            parse_mcp_openai_tool_name(&openai),
+            Some((slug.to_string(), remote.to_string()))
+        );
     }
 
     #[test]
-    fn mcp_tool_name_roundtrip() {
-        let slug = "npx";
-        let remote = "add";
-        let openai = mcp_tool_openai_name(slug, remote);
-        assert_eq!(strip_mcp_prefix(&openai, slug).unwrap(), remote);
+    fn split_sh_c_mcp_json_import_cmdline() {
+        let line = "sh -c 'cd /tmp/ws && export RUST_LOG=warn; /bin/mcp-server mcp serve --profile summary'";
+        let parts = cmd_mate::split_command_line(line);
+        assert_eq!(parts.len(), 3);
+        assert_eq!(parts[0], "sh");
+        assert_eq!(parts[1], "-c");
+        assert!(parts[2].contains("mcp-server"));
+        assert!(parts[2].contains("cd /tmp/ws"));
     }
 }

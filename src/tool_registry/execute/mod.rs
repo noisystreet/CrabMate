@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use log::error;
-use tokio::sync::Mutex;
 
 use crate::config::{AgentConfig, SyncDefaultToolSandboxMode};
 use crate::tool_approval::{
@@ -55,7 +54,7 @@ pub struct DispatchToolParams<'a> {
         Option<std::sync::Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
     pub workspace_changelist:
         Option<std::sync::Arc<crate::workspace::changelist::WorkspaceChangelist>>,
-    pub mcp_session: Option<&'a Arc<Mutex<crate::mcp::McpClientSession>>>,
+    pub mcp_turn: Option<&'a crate::mcp::McpTurnHandle>,
     /// 多角色工具白名单；`None` 不限制。
     pub turn_allow: Option<&'a HashSet<String>>,
     pub long_term_memory: Option<Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,

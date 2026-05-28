@@ -10,50 +10,68 @@ mod full {
     use crate::config::AgentConfig;
     use crate::runtime::cli::cli_effective_work_dir;
 
-    /// 执行 `mcp list`（`probe` 为 true 时按配置尝试建立/刷新进程内 MCP 缓存）。
+    /// 执行 `mcp list`（`probe` 为 true 时按 user-data 尝试建立/刷新进程内 MCP 缓存）。
     ///
     /// `repl_context`：来自 REPL **`/mcp`** 时为 true，无缓存时的提示语指向 **`/mcp probe`** 与「输入用户消息跑一轮」。
     pub async fn run_mcp_list(cfg: &AgentConfig, probe: bool, repl_context: bool) {
+        let resolved = crate::mcp::resolve_mcp_config(cfg);
         if probe {
-            let _ = crate::mcp::try_open_session_and_tools(cfg).await;
+            let _ = crate::mcp::try_open_turn_handle(&resolved).await;
         }
-        let st = crate::mcp::cached_mcp_status(cfg).await;
-        if !cfg.mcp_client.mcp_enabled {
-            println!("MCP：配置中未启用 (mcp_enabled=false)。本进程无 MCP 会话缓存。");
+        if !resolved.global_enabled {
+            println!("MCP：user-data 中 global_enabled=false，本进程无 MCP 工具。");
             return;
         }
-        if cfg.mcp_client.mcp_command.trim().is_empty() {
-            println!("MCP：已启用但 mcp_command 为空，无法建立 stdio 会话。");
+        let enabled: Vec<_> = resolved.enabled_servers().collect();
+        if enabled.is_empty() {
+            println!(
+                "MCP：未配置已启用的 stdio 服务器（见 ~/.local/share/crabmate/mcp_servers.json 或 Web 设置 → MCP）。"
+            );
             return;
         }
-        if !st.fingerprint_matches_config {
+        let runtime = crate::mcp::mcp_servers_runtime_status(&resolved).await;
+        let connected: Vec<_> = runtime.iter().filter(|s| s.connected).collect();
+        if connected.is_empty() {
             if probe {
                 println!(
-                    "MCP：已尝试按配置连接，但未在进程内留下可用会话（见日志 target=crabmate）。\
+                    "MCP：已尝试连接，但无可用缓存会话（见日志 target=crabmate）。\
                      常见原因：子进程启动失败、握手失败或 tools/list 为空。"
                 );
             } else if repl_context {
                 println!(
-                    "MCP：本进程内尚无与当前配置匹配的已缓存 stdio 会话。\
-                     可先输入任意用户消息跑一轮以建立连接，或执行 **/mcp probe** 立即尝试连接（会启动 mcp_command 子进程）。"
+                    "MCP：本进程内尚无已缓存 stdio 会话。\
+                     可先输入任意用户消息跑一轮，或执行 **/mcp probe** 立即尝试连接。"
                 );
             } else {
                 println!(
-                    "MCP：本进程内尚无与当前配置匹配的已缓存 stdio 会话。\
+                    "MCP：本进程内尚无已缓存 stdio 会话。\
                      请先在本进程中执行至少一轮对话（`repl` / `chat` / Web `/chat`），\
-                     或使用 `crabmate mcp list --probe` 尝试立即连接一次。"
+                     或使用 `crabmate mcp list --probe` 尝试立即连接。"
                 );
+            }
+            for st in &runtime {
+                if st.enabled {
+                    println!("  [{}] {} (slug={}) — 未连接", st.id, st.name, st.slug);
+                }
             }
             return;
         }
-        let slug = st.slug.as_deref().unwrap_or("?");
-        println!("MCP：本进程内已缓存 stdio 会话（slug={slug}）");
         println!(
-            "合并后的 OpenAI 工具名（{} 个）：",
-            st.openai_tool_names.len()
+            "MCP：本进程内已缓存 {}/{} 个已启用服务器",
+            connected.len(),
+            enabled.len()
         );
-        for name in &st.openai_tool_names {
-            println!("  {name}");
+        for st in connected {
+            println!(
+                "  [{}] {} slug={} tools={}",
+                st.id,
+                st.name,
+                st.slug,
+                st.openai_tool_names.len()
+            );
+            for name in &st.openai_tool_names {
+                println!("    {name}");
+            }
         }
     }
 

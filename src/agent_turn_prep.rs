@@ -11,7 +11,7 @@ use crate::workspace::changelist::WorkspaceChangelist;
 
 pub(crate) struct ToolsForTurnPrepared {
     pub tools_for_turn: Vec<Tool>,
-    pub mcp_session: Option<Arc<tokio::sync::Mutex<crate::mcp::McpClientSession>>>,
+    pub mcp_turn: Option<crate::mcp::McpTurnHandle>,
 }
 
 pub(crate) fn resolve_read_file_turn_cache_for_turn(
@@ -62,10 +62,10 @@ pub(crate) async fn prepare_tools_for_turn(
         tools_for_turn,
         crate::dynamic_tools::load_dynamic_tools(effective_working_dir),
     );
-    let mcp_session = match crate::mcp::try_open_session_and_tools(cfg.as_ref()).await {
-        Some((sess, extra)) => {
+    let mcp_turn = match crate::mcp::try_open_session_and_tools(cfg.as_ref()).await {
+        Some((handle, extra)) => {
             tools_for_turn = crate::mcp::merge_tool_lists(tools_for_turn, extra);
-            Some(sess)
+            Some(handle)
         }
         None => None,
     };
@@ -92,6 +92,6 @@ pub(crate) async fn prepare_tools_for_turn(
     }
     ToolsForTurnPrepared {
         tools_for_turn,
-        mcp_session,
+        mcp_turn,
     }
 }

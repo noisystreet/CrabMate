@@ -137,3 +137,132 @@ pub struct SecretsStatusResponse {
     pub executor_llm: SecretSlotStatus,
     pub web_api_bearer: SecretSlotStatus,
 }
+
+/// `mcp_servers.json` 单条 stdio MCP 服务器（用户数据目录，非 TOML）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServerEntry {
+    pub id: String,
+    pub name: String,
+    pub slug: String,
+    #[serde(default)]
+    pub command: String,
+    pub enabled: bool,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+}
+
+/// Web `GET /user-data/mcp-servers`：不返回 `command`（仅 `has_command`）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServerEntryPublic {
+    pub id: String,
+    pub name: String,
+    pub slug: String,
+    pub enabled: bool,
+    pub has_command: bool,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+}
+
+/// Web `GET /user-data/mcp-servers` 响应体。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServersFilePublic {
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
+    #[serde(default = "default_mcp_global_enabled")]
+    pub global_enabled: bool,
+    #[serde(default = "default_mcp_tool_timeout_secs")]
+    pub tool_timeout_secs: u64,
+    #[serde(default)]
+    pub servers: Vec<McpServerEntryPublic>,
+}
+
+impl From<&McpServersFile> for McpServersFilePublic {
+    fn from(file: &McpServersFile) -> Self {
+        Self {
+            schema_version: file.schema_version,
+            global_enabled: file.global_enabled,
+            tool_timeout_secs: file.tool_timeout_secs,
+            servers: file
+                .servers
+                .iter()
+                .map(|s| McpServerEntryPublic {
+                    id: s.id.clone(),
+                    name: s.name.clone(),
+                    slug: s.slug.clone(),
+                    enabled: s.enabled,
+                    has_command: !s.command.trim().is_empty(),
+                    created_at_ms: s.created_at_ms,
+                    updated_at_ms: s.updated_at_ms,
+                })
+                .collect(),
+        }
+    }
+}
+
+/// `POST /user-data/mcp-servers/import` 响应。
+#[derive(Debug, Clone, Serialize)]
+pub struct McpServersImportResponse {
+    pub file: McpServersFilePublic,
+    pub imported_count: usize,
+    pub warnings: Vec<String>,
+    pub skipped_remote: Vec<String>,
+}
+
+/// `~/.local/share/crabmate/mcp_servers.json`。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServersFile {
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
+    #[serde(default = "default_mcp_global_enabled")]
+    pub global_enabled: bool,
+    #[serde(default = "default_mcp_tool_timeout_secs")]
+    pub tool_timeout_secs: u64,
+    #[serde(default)]
+    pub servers: Vec<McpServerEntry>,
+}
+
+fn default_mcp_global_enabled() -> bool {
+    true
+}
+
+fn default_mcp_tool_timeout_secs() -> u64 {
+    60
+}
+
+impl Default for McpServersFile {
+    fn default() -> Self {
+        Self {
+            schema_version: SCHEMA_VERSION,
+            global_enabled: default_mcp_global_enabled(),
+            tool_timeout_secs: default_mcp_tool_timeout_secs(),
+            servers: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpRemoteToolSummary {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServerStatusEntry {
+    pub id: String,
+    pub name: String,
+    pub slug: String,
+    pub enabled: bool,
+    pub connected: bool,
+    pub openai_tool_names: Vec<String>,
+    pub remote_tools: Vec<McpRemoteToolSummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServersStatusResponse {
+    pub global_enabled: bool,
+    pub tool_timeout_secs: u64,
+    pub servers: Vec<McpServerStatusEntry>,
+}

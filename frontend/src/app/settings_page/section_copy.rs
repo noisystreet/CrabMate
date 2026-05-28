@@ -10,6 +10,7 @@ pub(super) fn section_title(section: SettingsSection, locale: Locale) -> &'stati
         SettingsSection::Llm => i18n::settings_section_llm_title(locale),
         SettingsSection::ExecutorLlm => i18n::settings_section_executor_llm_title(locale),
         SettingsSection::Tools => i18n::settings_section_tools_title(locale),
+        SettingsSection::Mcp => i18n::settings_section_mcp_title(locale),
         SettingsSection::Session => i18n::settings_section_session_title(locale),
         SettingsSection::Shortcuts => i18n::settings_section_shortcuts_title(locale),
     }
@@ -21,6 +22,7 @@ pub(super) fn section_desc(section: SettingsSection, locale: Locale) -> &'static
         SettingsSection::Llm => i18n::settings_section_llm_desc(locale),
         SettingsSection::ExecutorLlm => i18n::settings_section_executor_llm_desc(locale),
         SettingsSection::Tools => i18n::settings_section_tools_desc(locale),
+        SettingsSection::Mcp => i18n::settings_section_mcp_desc(locale),
         SettingsSection::Session => i18n::settings_section_session_desc(locale),
         SettingsSection::Shortcuts => i18n::settings_section_shortcuts_desc(locale),
     }

@@ -76,8 +76,8 @@ pub(crate) struct RunLoopAttach<'a> {
     pub long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     /// `conversation_id` 或 CLI 固定 `cli`；`None` 时不按会话隔离（跳过记忆）。
     pub long_term_memory_scope_id: Option<String>,
-    /// MCP stdio 会话；`None` 时不处理 `mcp__*` 工具名。
-    pub mcp_session: Option<Arc<tokio::sync::Mutex<crate::mcp::McpClientSession>>>,
+    /// MCP stdio 多服务器回合句柄；`None` 时不处理 `mcp__*` 工具名。
+    pub mcp_turn: Option<crate::mcp::McpTurnHandle>,
     /// 单轮内 `read_file` 磁盘缓存；`None` 且配置启用时由 `run_agent_turn` 创建。
     pub read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
     /// 本会话工作区变更集；`None` 时不记录/不注入（见 `session_workspace_changelist_*` 配置）。

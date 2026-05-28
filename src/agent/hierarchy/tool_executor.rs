@@ -266,7 +266,7 @@ impl ToolExecutor {
             tc: tool_call,
             read_file_turn_cache: None,
             workspace_changelist: None,
-            mcp_session: None,
+            mcp_turn: None,
             turn_allow: None,
             long_term_memory: None,
             long_term_memory_scope_id: None,

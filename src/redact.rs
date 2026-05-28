@@ -157,6 +157,27 @@ pub fn tool_arguments_redacted_for_sse(args: &str) -> String {
     single_line_preview(&s, TOOL_CALL_ARGUMENTS_SSE_REDACTED_MAX_CHARS)
 }
 
+static RE_EXPORT_ASSIGN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\bexport\s+([A-Za-z_][A-Za-z0-9_]*)=([^\s;]+)")
+        .expect("export env redact pattern")
+});
+
+/// MCP stdio 启动命令日志预览：折叠单行、脱敏 `export VAR=…` / Bearer / sk- 样例，并截断。
+pub fn mcp_command_line_for_log(cmdline: &str) -> String {
+    if cmdline.trim().is_empty() {
+        return String::new();
+    }
+    let mut s = cmdline.to_string();
+    s = RE_EXPORT_ASSIGN
+        .replace_all(&s, |caps: &regex::Captures<'_>| {
+            format!("export {}=<redacted>", &caps[1])
+        })
+        .to_string();
+    s = RE_SK_API_LIKE.replace_all(&s, "sk-<redacted>").to_string();
+    s = RE_BEARER.replace_all(&s, "Bearer <redacted>").to_string();
+    single_line_preview(&s, 320)
+}
+
 /// 对**整段 JSON 文本**做与 [`tool_arguments_redacted_for_sse`] 同源的启发式脱敏，供**落盘**回合重放/调试（非密码学级保证，仅降低误写入明显密钥形态）。
 pub fn redact_secrets_in_json_str(s: &str) -> String {
     if s.is_empty() {
@@ -230,6 +251,14 @@ mod tests {
         let sk = r#"{"k":"sk-1234567890abcdef"}"#;
         let r2 = tool_arguments_redacted_for_sse(sk);
         assert!(r2.contains("sk-<redacted>"));
+    }
+
+    #[test]
+    fn mcp_command_line_for_log_redacts_export() {
+        let cmd = "sh -c 'export API_KEY=secret; /usr/bin/mcp'";
+        let r = mcp_command_line_for_log(cmd);
+        assert!(r.contains("export API_KEY=<redacted>"));
+        assert!(!r.contains("secret"));
     }
 
     #[test]

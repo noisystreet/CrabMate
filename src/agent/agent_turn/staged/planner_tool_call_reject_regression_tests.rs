@@ -104,7 +104,7 @@ fn make_run_loop_params<'a>(
                 per_flight: None,
                 long_term_memory: None,
                 long_term_memory_scope_id: None,
-                mcp_session: None,
+                mcp_turn: None,
                 read_file_turn_cache: None,
                 workspace_changelist: None,
                 staged_plan_optimizer_round: cfg.staged_planning.staged_plan_optimizer_round,

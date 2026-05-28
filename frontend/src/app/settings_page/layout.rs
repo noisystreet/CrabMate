@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use leptos::prelude::*;
 
+use super::super::settings_mcp_block::SettingsMcpBlock;
 use super::super::settings_models_registry::{
     SettingsModelsRegistryBundle, SettingsModelsRegistryPanel,
 };
@@ -17,80 +18,84 @@ use super::section_copy::{section_desc, section_title};
 use crate::i18n::{self, Locale};
 
 #[component]
+fn SettingsNavItem(
+    active_section: RwSignal<SettingsSection>,
+    section: SettingsSection,
+    testid: Option<&'static str>,
+    children: Children,
+) -> impl IntoView {
+    view! {
+        <button
+            type="button"
+            class="settings-nav-item"
+            data-testid=testid
+            class:active=move || active_section.get() == section
+            on:click=move |_| {
+                active_section.set(section);
+                write_settings_section_to_hash(section);
+            }
+        >
+            {children()}
+        </button>
+    }
+}
+
+#[component]
 pub(super) fn SettingsPageNavRail(
     active_section: RwSignal<SettingsSection>,
     appearance_locale: RwSignal<Locale>,
 ) -> impl IntoView {
     view! {
         <nav class="settings-nav" prop:aria-label=move || i18n::settings_nav_aria(appearance_locale.get())>
-            <button
-                type="button"
-                class="settings-nav-item"
-                data-testid="settings-nav-appearance"
-                class:active=move || active_section.get() == SettingsSection::Appearance
-                on:click=move |_| {
-                    active_section.set(SettingsSection::Appearance);
-                    write_settings_section_to_hash(SettingsSection::Appearance);
-                }
+            <SettingsNavItem
+                active_section=active_section
+                section=SettingsSection::Appearance
+                testid=Some("settings-nav-appearance")
             >
                 {move || i18n::settings_section_appearance_title(appearance_locale.get())}
-            </button>
-            <button
-                type="button"
-                class="settings-nav-item"
-                data-testid="settings-nav-llm"
-                class:active=move || active_section.get() == SettingsSection::Llm
-                on:click=move |_| {
-                    active_section.set(SettingsSection::Llm);
-                    write_settings_section_to_hash(SettingsSection::Llm);
-                }
+            </SettingsNavItem>
+            <SettingsNavItem
+                active_section=active_section
+                section=SettingsSection::Llm
+                testid=Some("settings-nav-llm")
             >
                 {move || i18n::settings_section_llm_title(appearance_locale.get())}
-            </button>
-            <button
-                type="button"
-                class="settings-nav-item"
-                class:active=move || active_section.get() == SettingsSection::ExecutorLlm
-                on:click=move |_| {
-                    active_section.set(SettingsSection::ExecutorLlm);
-                    write_settings_section_to_hash(SettingsSection::ExecutorLlm);
-                }
+            </SettingsNavItem>
+            <SettingsNavItem
+                active_section=active_section
+                section=SettingsSection::ExecutorLlm
+                testid=None
             >
                 {move || i18n::settings_section_executor_llm_title(appearance_locale.get())}
-            </button>
-            <button
-                type="button"
-                class="settings-nav-item"
-                class:active=move || active_section.get() == SettingsSection::Tools
-                on:click=move |_| {
-                    active_section.set(SettingsSection::Tools);
-                    write_settings_section_to_hash(SettingsSection::Tools);
-                }
+            </SettingsNavItem>
+            <SettingsNavItem
+                active_section=active_section
+                section=SettingsSection::Tools
+                testid=Some("settings-nav-tools")
             >
                 {move || i18n::settings_section_tools_title(appearance_locale.get())}
-            </button>
-            <button
-                type="button"
-                class="settings-nav-item"
-                class:active=move || active_section.get() == SettingsSection::Session
-                on:click=move |_| {
-                    active_section.set(SettingsSection::Session);
-                    write_settings_section_to_hash(SettingsSection::Session);
-                }
+            </SettingsNavItem>
+            <SettingsNavItem
+                active_section=active_section
+                section=SettingsSection::Mcp
+                testid=Some("settings-nav-mcp")
+            >
+                {move || i18n::settings_section_mcp_title(appearance_locale.get())}
+            </SettingsNavItem>
+            <SettingsNavItem
+                active_section=active_section
+                section=SettingsSection::Session
+                testid=Some("settings-nav-session")
             >
                 {move || i18n::settings_section_session_title(appearance_locale.get())}
-            </button>
-            <button
-                type="button"
-                class="settings-nav-item"
-                class:active=move || active_section.get() == SettingsSection::Shortcuts
-                on:click=move |_| {
-                    active_section.set(SettingsSection::Shortcuts);
-                    write_settings_section_to_hash(SettingsSection::Shortcuts);
-                }
+            </SettingsNavItem>
+            <SettingsNavItem
+                active_section=active_section
+                section=SettingsSection::Shortcuts
+                testid=None
             >
                 {move || i18n::settings_section_shortcuts_title(appearance_locale.get())}
-            </button>
+            </SettingsNavItem>
         </nav>
     }
 }
@@ -246,6 +251,10 @@ pub(super) fn SettingsPageContentPanels(
                     locale=appearance_locale
                     readonly_tool_ttl_cache_follow_server=readonly_tool_ttl_cache_follow_server
                 />
+            </Show>
+
+            <Show when=move || active_section.get() == SettingsSection::Mcp>
+                <SettingsMcpBlock locale=appearance_locale />
             </Show>
 
             <Show when=move || active_section.get() == SettingsSection::Session>

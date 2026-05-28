@@ -94,7 +94,7 @@ pub async fn run_agent_turn<'a>(
 
     let crate::agent_turn_prep::ToolsForTurnPrepared {
         tools_for_turn,
-        mcp_session,
+        mcp_turn,
     } = crate::agent_turn_prep::prepare_tools_for_turn(
         cfg,
         tools,
@@ -152,7 +152,7 @@ pub async fn run_agent_turn<'a>(
                 per_flight,
                 long_term_memory,
                 long_term_memory_scope_id,
-                mcp_session,
+                mcp_turn,
                 read_file_turn_cache,
                 workspace_changelist,
                 staged_plan_optimizer_round: cfg.staged_planning.staged_plan_optimizer_round,

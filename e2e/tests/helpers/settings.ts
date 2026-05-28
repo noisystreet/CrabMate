@@ -14,7 +14,7 @@ export async function openSettingsPage(page: Page): Promise<void> {
 
 export async function openSettingsSection(
   page: Page,
-  section: 'appearance' | 'llm',
+  section: 'appearance' | 'llm' | 'mcp' | 'tools' | 'session' | 'shortcuts' | 'executor-llm',
 ): Promise<void> {
   await page.getByTestId(`settings-nav-${section}`).click();
 }

@@ -48,6 +48,7 @@ CM_CRABMATE_USER_DATA_DIR  → 若设置且非空，使用该路径
 ├── meta.json                         # schema_version、migrated_from、updated_at_ms
 ├── prefs.json                        # 全局非机密偏好（见 §4.1）
 ├── llm_overrides.json                # LLM 非机密覆盖（见 §4.2）；可与 prefs 合并为一文件
+├── mcp_servers.json                  # MCP stdio 多服务器（见 §4.5）；Web 设置 → MCP
 ├── global/
 │   └── web_sessions.json             # 未设置 Web 工作区时的会话桶（现 agent-demo-sessions-v1）
 ├── workspaces/
@@ -130,7 +131,34 @@ CM_CRABMATE_USER_DATA_DIR  → 若设置且非空，使用该路径
 
 对应现 `frontend/src/api/client_llm_storage.rs` 中非密钥字段。
 
-### 4.5 `secrets/`（机密）
+### 4.5 `mcp_servers.json`（MCP stdio 多服务器）
+
+仅存本机 user-data（**不**写 TOML / 工作区）。`slug` 由 **`name` 自动生成**（小写字母数字与下划线；冲突时追加 `_2` 等），OpenAI 工具名为 `mcp__{slug}__{remote}`。
+
+```json
+{
+  "schema_version": 1,
+  "global_enabled": true,
+  "tool_timeout_secs": 60,
+  "servers": [
+    {
+      "id": "mcp_1730000000000",
+      "name": "Filesystem",
+      "slug": "filesystem",
+      "command": "npx -y @modelcontextprotocol/server-filesystem /path",
+      "enabled": true,
+      "created_at_ms": 0,
+      "updated_at_ms": 0
+    }
+  ]
+}
+```
+
+若文件为空且 TOML 仍启用 legacy 单条 `mcp_command`，**一次性**导入为单服务器；之后以本文件为准。HTTP：`GET/PUT /user-data/mcp-servers`（**GET 响应**不含 `command`，仅 `has_command`）、`POST …/import`（JSON 解析并追加）、`GET …/status`、`POST …/{id}/probe`。
+
+Web **设置 → MCP → 从 MCP JSON 导入**：粘贴含 **`mcpServers`** 的配置（可为整份 **`mcp.json`** 或其中一段），解析后追加到列表（`name` 取自键名，`command` 由 `command`+`args`+`env`+`cwd` 合成；`slug` 仍于保存时由 `name` 生成）。仅 **stdio**（含 `command`）；仅 `url` 的远程 MCP 会跳过。含 `${env:…}` / `${workspaceFolder}` 等占位符时保留原文并提示手动改路径或环境变量。
+
+### 4.6 `secrets/`（机密）
 
 | 文件 | 内容 |
 |------|------|

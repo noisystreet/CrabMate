@@ -50,22 +50,22 @@ async fn try_dispatch_dynamic_tool(
 
 async fn try_dispatch_mcp_proxy_tool(
     cfg: &Arc<AgentConfig>,
-    mcp_session: Option<&Arc<Mutex<crate::mcp::McpClientSession>>>,
+    mcp_turn: Option<&crate::mcp::McpTurnHandle>,
     name: &str,
     args: &str,
 ) -> Option<(String, Option<serde_json::Value>)> {
     if !crate::mcp::is_mcp_proxy_tool(name) {
         return None;
     }
-    let Some(remote) = crate::mcp::try_mcp_tool_name(cfg.as_ref(), name) else {
+    let Some(turn) = mcp_turn else {
         return Some((
-            "错误：无法将工具名解析为 MCP 远端名（请检查 mcp_command 与命名前缀）".to_string(),
+            "错误：MCP 会话未建立（连接或 tools/list 失败）".to_string(),
             None,
         ));
     };
-    let Some(sess) = mcp_session else {
+    let Some((sess, remote)) = turn.session_for_openai_tool(name) else {
         return Some((
-            "错误：MCP 会话未建立（连接或 tools/list 失败）".to_string(),
+            "错误：无法将工具名解析为 MCP 远端名（请检查 MCP 服务器 slug 与命名前缀）".to_string(),
             None,
         ));
     };
@@ -75,7 +75,7 @@ async fn try_dispatch_mcp_proxy_tool(
         &guard,
         remote.as_str(),
         mcp_args.as_str(),
-        Duration::from_secs(cfg.mcp_client.mcp_tool_timeout_secs.max(1)),
+        Duration::from_secs(turn.tool_timeout_secs.max(1)),
         cfg.command_exec.command_max_output_len,
     )
     .await;
@@ -205,7 +205,7 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
         sse_control_mirror,
         read_file_turn_cache,
         workspace_changelist,
-        mcp_session,
+        mcp_turn,
         turn_allow,
         long_term_memory,
         long_term_memory_scope_id,
@@ -226,7 +226,7 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
         return out;
     }
 
-    if let Some(out) = try_dispatch_mcp_proxy_tool(cfg, mcp_session, name, args).await {
+    if let Some(out) = try_dispatch_mcp_proxy_tool(cfg, mcp_turn, name, args).await {
         return out;
     }
 

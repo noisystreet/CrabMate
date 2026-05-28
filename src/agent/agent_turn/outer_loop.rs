@@ -237,7 +237,7 @@ async fn outer_loop_execute_tools_round(
             web_tool_ctx: p.ctx.attach.web_tool_ctx,
             cli_tool_ctx: p.ctx.attach.cli_tool_ctx,
             echo_terminal_transcript,
-            mcp_session: p.ctx.attach.mcp_session.as_ref(),
+            mcp_turn: p.ctx.attach.mcp_turn.as_ref(),
             workspace_changelist: p.ctx.attach.workspace_changelist.as_ref(),
             request_chrome_trace: p.ctx.obs.request_chrome_trace.clone(),
             step_executor_constraint,
