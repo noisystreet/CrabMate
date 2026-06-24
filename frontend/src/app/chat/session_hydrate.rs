@@ -125,6 +125,11 @@ fn local_messages_preserved_after_hydrate(
                 {
                     return true;
                 }
+                if state.looks_like_hierarchical_subgoal()
+                    && !server_msg_ids.contains(m.id.as_str())
+                {
+                    return true;
+                }
             }
             false
         })
@@ -751,6 +756,28 @@ mod local_messages_preserved_after_hydrate_tests {
         let local = vec![tool_msg("sse-1"), tool_msg("h_99_1")];
         let kept = local_messages_preserved_after_hydrate(&server, &local);
         assert!(kept.is_empty());
+    }
+
+    #[test]
+    fn preserves_local_hierarchical_subgoal_rows() {
+        let server: Vec<StoredMessage> = vec![];
+        let local = vec![StoredMessage {
+            id: "sg-local".into(),
+            role: "assistant".into(),
+            text: "子目标执行中".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(StoredMessageState::HierarchicalSubgoal(
+                "hierarchical-subgoal:goal-1".into(),
+            )),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 1,
+        }];
+        let kept = local_messages_preserved_after_hydrate(&server, &local);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].id, "sg-local");
     }
 }
 

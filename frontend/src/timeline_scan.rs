@@ -195,6 +195,17 @@ pub fn timeline_state_tool(msg_id: &str, ok: bool) -> StoredMessageState {
     )
 }
 
+/// 本地时间线快照（仅用于 hydrate 保留；不会进入侧栏时间线条目）。
+pub fn timeline_state_local_snapshot() -> StoredMessageState {
+    StoredMessageState::TimelineUiJson(
+        json!({
+            "k": TIMELINE_UI_STATE_KEY,
+            "t": "local_snapshot",
+        })
+        .to_string(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

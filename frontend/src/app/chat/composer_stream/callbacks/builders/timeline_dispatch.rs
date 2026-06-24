@@ -5,6 +5,7 @@ use std::rc::Rc;
 use crate::app::stream_shell_busy::StreamShellBusyOp;
 use crate::message_format::staged_timeline_system_message_body;
 use crate::sse_dispatch::TimelineLogInfo;
+use crate::timeline_scan::timeline_state_local_snapshot;
 
 use super::super::super::context::ChatStreamCallbackCtx;
 use super::super::super::per_stream_accum::PerStreamAccum;
@@ -24,7 +25,8 @@ fn timeline_log_dispatch_final_response(
     if !final_text.is_empty() {
         remove_loading_assistant_placeholder(stream_ctx);
         if !has_same_assistant_timeline_bubble(stream_ctx, &final_text) {
-            push_assistant_timeline_bubble(stream_ctx, final_text.clone(), None);
+            let state = Some(timeline_state_local_snapshot());
+            push_assistant_timeline_bubble(stream_ctx, final_text.clone(), state);
             accum.add_answer_delta_chars(final_text.chars().count());
         }
     } else {
@@ -42,7 +44,8 @@ fn timeline_log_dispatch_intent_analysis(
     if intent_text.is_empty() {
         return;
     }
-    push_assistant_timeline_bubble(stream_ctx, intent_text.clone(), None);
+    let state = Some(timeline_state_local_snapshot());
+    push_assistant_timeline_bubble(stream_ctx, intent_text.clone(), state);
     accum.add_answer_delta_chars(intent_text.chars().count());
 }
 
@@ -55,7 +58,8 @@ fn timeline_log_dispatch_hierarchical_plan(
     if plan_text.is_empty() {
         return;
     }
-    push_assistant_timeline_bubble(stream_ctx, plan_text.clone(), None);
+    let state = Some(timeline_state_local_snapshot());
+    push_assistant_timeline_bubble(stream_ctx, plan_text.clone(), state);
     accum.add_answer_delta_chars(plan_text.chars().count());
 }
 
@@ -84,7 +88,12 @@ fn timeline_log_dispatch_default_body(stream_ctx: &ChatStreamCallbackCtx, info: 
     if body.is_empty() {
         return;
     }
-    push_assistant_timeline_bubble(stream_ctx, staged_timeline_system_message_body(&body), None);
+    let state = Some(timeline_state_local_snapshot());
+    push_assistant_timeline_bubble(
+        stream_ctx,
+        staged_timeline_system_message_body(&body),
+        state,
+    );
 }
 
 fn timeline_log_dispatch_body(
