@@ -7,7 +7,7 @@ use std::sync::Arc;
 use crate::config::AgentConfig;
 use crate::context_bootstrap::prompt_compose::{
     FirstSystemComposeOpts, RoleSystemResolution, compose_first_system_for_turn,
-    resolve_skills_base_dir,
+    resolve_agent_role_for_prompt_compose, resolve_skills_base_dir,
 };
 use crate::types::{Message, ToolCall};
 
@@ -84,14 +84,15 @@ pub(crate) fn apply_agent_role_switch_to_messages(
         .filter(|s| !s.is_empty())
         .or(last_user_owned.as_deref());
     let skills_base = workspace_root.map(resolve_skills_base_dir);
+    let resolved_role = resolve_agent_role_for_prompt_compose(cfg, role_id, None)?;
     let sys = compose_first_system_for_turn(
         cfg,
         tool_recorder,
         FirstSystemComposeOpts {
-            agent_role: role_id,
+            agent_role: resolved_role.as_deref(),
             user_msg_for_skills: skills_user,
             skills_base_dir: skills_base,
-            role_resolution: RoleSystemResolution::Lenient,
+            role_resolution: RoleSystemResolution::Strict,
         },
     )?;
     let mut found_system = false;

@@ -343,18 +343,35 @@ pub(crate) async fn repl_dispatch_chat_round(
         if let Some(first) = messages.first_mut()
             && first.role == "system"
         {
-            let (merged, diag) = crate::context_bootstrap::prompt_compose::compose_first_system_for_turn_with_diagnostics(
+            let role = match crate::context_bootstrap::prompt_compose::resolve_agent_role_for_prompt_compose(
                 &g,
-                &process_handles.tool_outcome_recorder,
-                crate::context_bootstrap::prompt_compose::FirstSystemComposeOpts {
-                    agent_role: agent_role_owned.as_deref(),
-                    user_msg_for_skills: Some(user_body.as_str()),
-                    skills_base_dir: Some(work_dir.to_path_buf()),
-                    role_resolution:
-                        crate::context_bootstrap::prompt_compose::RoleSystemResolution::Lenient,
-                },
-            )
-            .expect("lenient role resolution cannot fail");
+                None,
+                agent_role_owned.as_deref(),
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    let _ = style.eprint_error(&e);
+                    return Ok(());
+                }
+            };
+            let (merged, diag) =
+                match crate::context_bootstrap::prompt_compose::compose_first_system_for_turn_with_diagnostics(
+                    &g,
+                    &process_handles.tool_outcome_recorder,
+                    crate::context_bootstrap::prompt_compose::FirstSystemComposeOpts {
+                        agent_role: role.as_deref(),
+                        user_msg_for_skills: Some(user_body.as_str()),
+                        skills_base_dir: Some(work_dir.to_path_buf()),
+                        role_resolution:
+                            crate::context_bootstrap::prompt_compose::RoleSystemResolution::Strict,
+                    },
+                ) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        let _ = style.eprint_error(&e);
+                        return Ok(());
+                    }
+                };
             debug!(
                 target: "crabmate",
                 "first_system_compose path=repl_turn_refresh layers={:?} chars_l3={} chars_l4={} chars_final={} skills_total={} skills_selected={:?}",

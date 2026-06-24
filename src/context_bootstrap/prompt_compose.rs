@@ -5,16 +5,49 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use tracing::warn;
+
 use crate::config::AgentConfig;
 use crate::tool_stats::ToolOutcomeRecorder;
 
-/// 未知 `agent_role` 时如何解析 L3 基底。
+/// 保留占位：组装路径恒为 Strict；角色容错见 [`resolve_agent_role_for_prompt_compose`]。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RoleSystemResolution {
-    /// 须在 [`AgentConfig::roles_prompts.agent_roles`] 中存在，否则 `Err`。
     Strict,
-    /// 未知 id 时退回全局 [`AgentConfig::roles_prompts.system_prompt`].
-    Lenient,
+}
+
+fn resolve_role_system_base(cfg: &AgentConfig, agent_role: Option<&str>) -> Result<String, String> {
+    cfg.system_prompt_for_new_conversation(agent_role)
+        .map(|s| s.to_string())
+        .map_err(|e| e.to_string())
+}
+
+/// 解析本回合用于组装的命名 `agent_role`。
+///
+/// - **显式请求**（`request_role` 非空）：未知 id → `Err`（Web/CLI/REPL `/agent set` 与三端对齐）。
+/// - **仅持久化**（`request_role` 为空、`persisted_role` 非空）：配置已删除该 id 时 `warn` 并退回 `None`（默认人格）。
+pub fn resolve_agent_role_for_prompt_compose(
+    cfg: &AgentConfig,
+    request_role: Option<&str>,
+    persisted_role: Option<&str>,
+) -> Result<Option<String>, String> {
+    if let Some(id) = request_role.map(str::trim).filter(|s| !s.is_empty()) {
+        cfg.system_prompt_for_new_conversation(Some(id))
+            .map_err(|e| e.to_string())?;
+        return Ok(Some(id.to_string()));
+    }
+    if let Some(id) = persisted_role.map(str::trim).filter(|s| !s.is_empty()) {
+        if cfg.system_prompt_for_new_conversation(Some(id)).is_ok() {
+            return Ok(Some(id.to_string()));
+        }
+        warn!(
+            target: "crabmate",
+            agent_role = %id,
+            "persisted agent_role no longer in config; using default persona for prompt compose"
+        );
+        return Ok(None);
+    }
+    Ok(None)
 }
 
 /// L5：按当前用户输入从工作区 skills 目录选材时的上下文。
@@ -43,20 +76,6 @@ pub fn resolve_skills_base_dir(workspace_root: &Path) -> PathBuf {
     }
 }
 
-fn resolve_role_system_base(
-    cfg: &AgentConfig,
-    agent_role: Option<&str>,
-    mode: RoleSystemResolution,
-) -> Result<String, String> {
-    match cfg.system_prompt_for_new_conversation(agent_role) {
-        Ok(s) => Ok(s.to_string()),
-        Err(e) => match mode {
-            RoleSystemResolution::Strict => Err(e),
-            RoleSystemResolution::Lenient => Ok(cfg.roles_prompts.system_prompt.clone()),
-        },
-    }
-}
-
 /// 在已解析的 L3 基底上叠加 L4（思维链附录、工具统计）与可选 L5（Skills top-k）。
 pub fn compose_system_from_base(
     base_system: &str,
@@ -74,17 +93,18 @@ pub fn compose_system_for_turn(
     agent_role: Option<&str>,
     tool_recorder: &ToolOutcomeRecorder,
     skills: Option<SkillsComposeContext<'_>>,
-    role_resolution: RoleSystemResolution,
+    _role_resolution: RoleSystemResolution,
 ) -> Result<String, String> {
-    let base = resolve_role_system_base(cfg, agent_role, role_resolution)?;
+    let base = resolve_role_system_base(cfg, agent_role)?;
     Ok(compose_system_from_base(&base, cfg, tool_recorder, skills))
 }
 
-/// 首条 `system` 组装参数（L3 基底 + L4 + 可选 L5）。
+/// 首条 `system` 组装参数（L3 基底 + L4 + 可选 L5）。`agent_role` 须经 [`resolve_agent_role_for_prompt_compose`] 解析后再传入。
 pub struct FirstSystemComposeOpts<'a> {
     pub agent_role: Option<&'a str>,
     pub user_msg_for_skills: Option<&'a str>,
     pub skills_base_dir: Option<PathBuf>,
+    /// 保留字段；实现恒按 [`RoleSystemResolution::Strict`] 解析已传入的 `agent_role`。
     pub role_resolution: RoleSystemResolution,
 }
 
@@ -103,6 +123,11 @@ pub fn compose_first_system_for_turn_with_diagnostics(
     tool_recorder: &Arc<ToolOutcomeRecorder>,
     opts: FirstSystemComposeOpts<'_>,
 ) -> Result<(String, FirstSystemComposeDiagnostics), String> {
+    debug_assert_eq!(
+        opts.role_resolution,
+        RoleSystemResolution::Strict,
+        "pass pre-resolved agent_role via resolve_agent_role_for_prompt_compose"
+    );
     let skills_ctx = opts
         .skills_base_dir
         .as_ref()
@@ -111,7 +136,7 @@ pub fn compose_first_system_for_turn_with_diagnostics(
             base_dir: base.as_path(),
             user_text: user,
         });
-    let base = resolve_role_system_base(cfg, opts.agent_role, opts.role_resolution)?;
+    let base = resolve_role_system_base(cfg, opts.agent_role)?;
     let augmented = tool_recorder.augment_system_prompt(&base, cfg);
     let chars_l4_augmented = augmented.chars().count();
     let (merged, skills_meta) = merge_skills_into_system_with_meta(augmented, cfg, skills_ctx);
@@ -190,37 +215,52 @@ mod tests {
     use std::io::Write;
 
     #[test]
+    fn resolve_persisted_unknown_role_falls_back_to_default() {
+        let cfg = crate::config::load_config(None).expect("embed default");
+        let role =
+            resolve_agent_role_for_prompt_compose(&cfg, None, Some("nonexistent_role_id_xyz"))
+                .expect("persisted unknown should not error");
+        assert_eq!(role, None);
+    }
+
+    #[test]
+    fn resolve_explicit_unknown_role_errors() {
+        let cfg = crate::config::load_config(None).expect("embed default");
+        let err =
+            resolve_agent_role_for_prompt_compose(&cfg, Some("nonexistent_role_id_xyz"), None)
+                .expect_err("explicit unknown");
+        assert!(err.contains("未知的 agent_role"));
+    }
+
+    #[test]
     fn compose_lenient_unknown_role_falls_back_to_global_system() {
         let cfg = crate::config::load_config(None).expect("embed default");
         let rec = ToolOutcomeRecorder::new();
+        let role =
+            resolve_agent_role_for_prompt_compose(&cfg, None, Some("nonexistent_role_id_xyz"))
+                .expect("persisted");
         let out = compose_system_for_turn(
             &cfg,
-            Some("nonexistent_role_id_xyz"),
+            role.as_deref(),
             &rec,
             None,
-            RoleSystemResolution::Lenient,
+            RoleSystemResolution::Strict,
         )
-        .expect("lenient");
+        .expect("compose");
         assert!(!out.trim().is_empty());
         let global = cfg.roles_prompts.system_prompt.trim();
         assert!(
             out.contains(global),
-            "lenient compose should include global system prompt"
+            "resolved default compose should include global system prompt"
         );
     }
 
     #[test]
     fn compose_strict_unknown_role_errors() {
         let cfg = crate::config::load_config(None).expect("embed default");
-        let rec = ToolOutcomeRecorder::new();
-        let err = compose_system_for_turn(
-            &cfg,
-            Some("nonexistent_role_id_xyz"),
-            &rec,
-            None,
-            RoleSystemResolution::Strict,
-        )
-        .expect_err("strict");
+        let err =
+            resolve_agent_role_for_prompt_compose(&cfg, Some("nonexistent_role_id_xyz"), None)
+                .expect_err("strict resolve");
         assert!(err.contains("未知的 agent_role"));
     }
 
@@ -245,7 +285,7 @@ mod tests {
                 agent_role: None,
                 user_msg_for_skills: None,
                 skills_base_dir: None,
-                role_resolution: RoleSystemResolution::Lenient,
+                role_resolution: RoleSystemResolution::Strict,
             },
         )
         .expect("compose");
@@ -283,7 +323,7 @@ mod tests {
                 agent_role: None,
                 user_msg_for_skills: Some("请帮我跑 cargo test"),
                 skills_base_dir: Some(tmp.path().to_path_buf()),
-                role_resolution: RoleSystemResolution::Lenient,
+                role_resolution: RoleSystemResolution::Strict,
             },
         )
         .expect("compose");

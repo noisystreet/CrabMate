@@ -209,11 +209,15 @@ fn resolve_system_prompt_for_chat(
             },
         ));
     }
+    let role = crate::context_bootstrap::prompt_compose::resolve_agent_role_for_prompt_compose(
+        cfg, agent_role, None,
+    )
+    .map_err(|e| CliExitError::new(EXIT_USAGE, e))?;
     crate::context_bootstrap::prompt_compose::compose_first_system_for_turn_with_diagnostics(
         cfg,
         tool_recorder,
         crate::context_bootstrap::prompt_compose::FirstSystemComposeOpts {
-            agent_role,
+            agent_role: role.as_deref(),
             user_msg_for_skills: user_text_for_skills,
             skills_base_dir: Some(work_dir.to_path_buf()),
             role_resolution: crate::context_bootstrap::prompt_compose::RoleSystemResolution::Strict,
