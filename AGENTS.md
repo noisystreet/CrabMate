@@ -6,6 +6,14 @@
 
 CrabMate is a Rust-based AI Agent that calls **OpenAI-compatible** `chat/completions` backends (e.g. **DeepSeek**, **MiniMax**, **Zhipu GLM**, **Moonshot Kimi**, **Ollama**). It provides Web UI (Axum + Leptos) and CLI (interactive terminal / `chat` single-shot / `serve`; experimental full-screen **`tui`** (minimal chat loop; loads config like **`repl`**)). See `README.md` for quick start and feature overview; `docs/配置说明.md` for env vars and TOML; `docs/命令行与路由.md` for subcommands and routes; `docs/工具说明.md` for built-in tools; `docs/开发文档.md` for architecture overview (main modules and data flow). If you change module layout or layering, update `docs/开发文档.md` per `.cursor/rules/architecture-docs-sync.mdc`.
 
+### GitHub Flow workflow
+
+- Use **GitHub Flow** as the default delivery model: branch from `main` for each change, open a PR, and merge back to `main` after checks pass and review is done.
+- Keep `main` always releasable: avoid direct pushes to `main` for feature work; prefer short-lived branches and small PRs.
+- Before opening or merging PRs, run required local checks (at least `pre-commit run --all-files`) and ensure GitHub Actions CI is green.
+- Commit messages must follow repository rules (Conventional Commits + bilingual subject); do not bypass hooks unless explicitly approved.
+- Prefer **rebase on latest `origin/main`** before push/merge to minimize drift and conflict risk.
+
 ### Environment variable `API_KEY`
 
 - **Default (`llm_http_auth_mode = bearer` in config)**：`API_KEY` is the cloud vendor Bearer token. **`serve` / `repl` / `chat` / `bench` 可在未设置 `API_KEY` 时启动**；实际调用 `chat/completions` 前须有关密钥：**Web** 侧栏「设置」中的 **`client_llm.api_key`**（仅存浏览器）或 **`API_KEY` 环境变量**；**REPL** 可用 **`/api-key set <密钥>`**（仅本进程内存）；**`crabmate tui`** supports the same **`/api-key`** commands (transcript feedback; no other slash commands yet). **`crabmate models` / `crabmate probe`** 在 `bearer` 下仍要求环境变量 **`API_KEY`** 非空。 **`config`（`cargo run -- config` / `--dry-run`）、`doctor` 与 `save-session`（别名 `export-session`）不要求 `API_KEY`**。
