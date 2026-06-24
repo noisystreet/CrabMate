@@ -226,6 +226,7 @@ Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`confi
 | `CM_TOOL_STATS_MAX_CHARS` | Max Unicode scalars for the appendix (64–32768; truncated if longer). |
 | `CM_TOOL_STATS_WARN_BELOW_SUCCESS_RATIO` | Hint if success rate is below this (0.0–1.0) and `min_samples` is met; failures always qualify. |
 | `CM_MATERIALIZE_DEEPSEEK_DSML_TOOL_CALLS` | Materialize DeepSeek DSML tool calls. |
+| `CM_DSML_STREAM_STRIP_ENABLED` | Strip DSML markers from streaming SSE/CLI/TUI deltas before display; defaults to the materialize flag when unset. TOML: `dsml_stream_strip_enabled`. |
 | `CM_THINKING_AVOID_ECHO_SYSTEM_PROMPT` | Append the thinking-discipline appendix to the first `system` message; defaults to on. |
 | `CM_THINKING_AVOID_ECHO_APPENDIX` | Inline appendix body (non-empty clears the file path; if **`…_FILE`** is set afterward, **file wins**). |
 | `CM_THINKING_AVOID_ECHO_APPENDIX_FILE` | Path to appendix Markdown (same resolution as **`system_prompt_file`**). |

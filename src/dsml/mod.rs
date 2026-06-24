@@ -6,6 +6,7 @@ mod adapter;
 mod normalizer;
 mod parser;
 mod staged_policy;
+mod stream;
 mod strip;
 mod strip_scan;
 mod types;
@@ -15,6 +16,7 @@ pub use adapter::DsmlToolCallAdapter;
 pub use adapter::materialize_deepseek_dsml_tool_calls_in_message;
 #[allow(unused_imports)]
 pub use parser::{DsmlParseOutcome, ParsedDsmlInvoke, parse_combined_assistant_text};
+pub use stream::StreamingDsmlContentFilter;
 pub use strip::strip_deepseek_dsml_for_display;
 #[allow(unused_imports)]
 pub use types::{DsmlMaterializePolicy, StagedDsmlHandling, StagedDsmlScanResult};

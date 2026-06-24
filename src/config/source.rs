@@ -164,6 +164,8 @@ pub(super) struct AgentSection {
     pub(super) agent_tool_stats_max_chars: Option<u64>,
     pub(super) agent_tool_stats_warn_below_success_ratio: Option<f64>,
     pub(super) materialize_deepseek_dsml_tool_calls: Option<bool>,
+    /// 流式下发前剥离 DSML；省略时与 `materialize_deepseek_dsml_tool_calls` 同默认。
+    pub(super) dsml_stream_strip_enabled: Option<bool>,
     /// 默认 true：首条 system 末尾附思考纪律附录；`false` 关闭。
     pub(super) thinking_avoid_echo_system_prompt: Option<bool>,
     /// 附录内联正文（在 `finalize` 中：若 `thinking_avoid_echo_appendix_file` 非空则读盘优先，否则用内联）。

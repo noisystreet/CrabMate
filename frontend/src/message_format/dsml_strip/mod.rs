@@ -1,4 +1,4 @@
-//! 与后端 `text_sanitize::strip_deepseek_dsml_for_display` 对齐的展示剥离（WASM 无 `regex` 依赖）。
+//! 与后端 `dsml::strip_deepseek_dsml_for_display` 对齐的展示剥离（WASM 无 `regex` 依赖）。
 //!
 //! 用于 Web 气泡在 **`assistant_text_for_display`** 路径上剥掉 DeepSeek DSML 噪声，避免与 CLI/TUI 已剥内容不一致。
 
