@@ -104,7 +104,10 @@ pub fn App() -> impl IntoView {
             />
             {sidebar_nav_view(sidebar_nav_signals)}
 
-            <Show when=move || app_ctx.signals.sidebar.sidebar_rail_collapsed.get()>
+            <Show when=move || {
+                app_ctx.signals.sidebar.sidebar_rail_collapsed.get()
+                    && !app_ctx.signals.shell_ui.editor_layout_mode.get()
+            }>
                 <button
                     type="button"
                     class="btn btn-secondary sidebar-rail-reveal-btn"

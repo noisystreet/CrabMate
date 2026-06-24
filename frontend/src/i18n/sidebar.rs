@@ -14,6 +14,13 @@ pub fn nav_new_chat(l: Locale) -> &'static str {
     }
 }
 
+pub fn nav_new_chat_aria(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "新建对话",
+        Locale::En => "New conversation",
+    }
+}
+
 pub fn nav_sidebar_collapse_aria(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "收起会话栏",

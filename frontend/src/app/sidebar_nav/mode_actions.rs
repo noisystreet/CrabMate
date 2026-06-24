@@ -1,4 +1,4 @@
-//! 侧栏：布局模式分段 +（仅对话模式）新建会话。
+//! 侧栏：布局分段 + 紧凑「新建对话」图标按钮（仅对话模式）。
 
 use std::rc::Rc;
 
@@ -23,26 +23,30 @@ pub(super) fn NavRailModeActions(
     };
     view! {
         <div class="nav-rail-mode-actions">
-            <LayoutModeSegment
-                locale=locale
-                editor_layout_mode=editor_layout_mode
-                extra_class="nav-rail-layout-segment"
-            />
-            <button
-                type="button"
-                class="btn btn-primary btn-new-chat-ds"
-                data-testid="nav-new-chat"
-                prop:style:display=move || {
-                    if editor_layout_mode.get() {
-                        "none"
-                    } else {
-                        ""
+            <div class="nav-rail-mode-toolbar">
+                <LayoutModeSegment
+                    locale=locale
+                    editor_layout_mode=editor_layout_mode
+                    extra_class="nav-rail-layout-segment"
+                />
+                <button
+                    type="button"
+                    class="btn btn-primary btn-icon btn-nav-new-chat"
+                    data-testid="nav-new-chat"
+                    prop:title=move || i18n::nav_new_chat(locale.get())
+                    prop:aria-label=move || i18n::nav_new_chat_aria(locale.get())
+                    prop:style:display=move || {
+                        if editor_layout_mode.get() {
+                            "none"
+                        } else {
+                            ""
+                        }
                     }
-                }
-                on:click=on_new_chat
-            >
-                {move || i18n::nav_new_chat(locale.get())}
-            </button>
+                    on:click=on_new_chat
+                >
+                    <span aria-hidden="true">"+"</span>
+                </button>
+            </div>
         </div>
     }
 }

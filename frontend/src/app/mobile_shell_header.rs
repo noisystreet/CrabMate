@@ -39,7 +39,9 @@ pub fn mobile_shell_header_view(signals: MobileShellHeaderSignals) -> impl IntoV
                 />
                 <button
                     type="button"
-                    class="btn btn-secondary btn-sm shell-mobile-new-chat"
+                    class="btn btn-primary btn-icon btn-sm shell-mobile-new-chat"
+                    prop:title=move || i18n::nav_new_chat(locale.get())
+                    prop:aria-label=move || i18n::nav_new_chat_aria(locale.get())
                     prop:style:display=move || {
                         if editor_layout_mode.get() {
                             "none"
@@ -54,9 +56,9 @@ pub fn mobile_shell_header_view(signals: MobileShellHeaderSignals) -> impl IntoV
                             mobile_nav_open.set(false);
                         }
                     }
-                    >
-                        {move || i18n::nav_new_chat(locale.get())}
-                    </button>
+                >
+                    <span aria-hidden="true">"+"</span>
+                </button>
             </div>
         </div>
     }
