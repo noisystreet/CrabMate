@@ -1,10 +1,14 @@
 //! Web/CLI 多角色工作台：按回合解析 `agent_role`、会话内切换时刷新首条 system、按角色裁剪工具列表并在执行层拒绝越权调用。
 
 use std::collections::HashSet;
+use std::path::Path;
 use std::sync::Arc;
 
 use crate::config::AgentConfig;
-use crate::context_bootstrap::conversation_turn_bootstrap::augmented_system_for_new_conversation_lenient;
+use crate::context_bootstrap::prompt_compose::{
+    FirstSystemComposeOpts, RoleSystemResolution, compose_first_system_for_turn,
+    resolve_skills_base_dir,
+};
 use crate::types::{Message, ToolCall};
 
 /// 本回合生效的角色 id：`request` 非空时优先，否则沿用 `persisted_active`（Web 会话存储 / REPL 内存）。
@@ -55,14 +59,41 @@ pub(crate) fn persisted_agent_role_after_turn(
         .map(str::to_string)
 }
 
-/// 将首条 `system` 更新为新角色正文（保留后续 transcript）。
+fn last_user_message_text(messages: &[Message]) -> Option<String> {
+    messages
+        .iter()
+        .rev()
+        .find(|m| m.role.trim().eq_ignore_ascii_case("user"))
+        .map(|m| crate::types::message_content_into_text_lossy(m.content.clone()))
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// 将首条 `system` 更新为新角色正文（保留后续 transcript）；含 L4 与可选 L5（skills top-k）。
 pub(crate) fn apply_agent_role_switch_to_messages(
     cfg: &AgentConfig,
     messages: &mut [Message],
     role_id: Option<&str>,
-    tool_recorder: &std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder>,
+    tool_recorder: &Arc<crate::tool_stats::ToolOutcomeRecorder>,
+    workspace_root: Option<&Path>,
+    user_msg_for_skills: Option<&str>,
 ) -> Result<(), String> {
-    let sys = augmented_system_for_new_conversation_lenient(cfg, role_id, tool_recorder);
+    let last_user_owned = last_user_message_text(messages);
+    let skills_user = user_msg_for_skills
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .or(last_user_owned.as_deref());
+    let skills_base = workspace_root.map(resolve_skills_base_dir);
+    let sys = compose_first_system_for_turn(
+        cfg,
+        tool_recorder,
+        FirstSystemComposeOpts {
+            agent_role: role_id,
+            user_msg_for_skills: skills_user,
+            skills_base_dir: skills_base,
+            role_resolution: RoleSystemResolution::Lenient,
+        },
+    )?;
     let mut found_system = false;
     for m in messages.iter_mut() {
         if m.role == "system" {
@@ -95,7 +126,9 @@ pub(crate) fn maybe_apply_mid_session_agent_role_switch(
     messages: &mut [Message],
     persisted_active: Option<&str>,
     request_agent_role: Option<&str>,
-    tool_recorder: &std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder>,
+    tool_recorder: &Arc<crate::tool_stats::ToolOutcomeRecorder>,
+    workspace_root: Option<&Path>,
+    user_msg_for_skills: &str,
 ) -> Result<(), String> {
     if messages.is_empty() {
         return Ok(());
@@ -107,7 +140,14 @@ pub(crate) fn maybe_apply_mid_session_agent_role_switch(
     if normalized_role_key(Some(req_id), persisted_active) {
         return Ok(());
     }
-    apply_agent_role_switch_to_messages(cfg, messages, Some(req_id), tool_recorder)
+    apply_agent_role_switch_to_messages(
+        cfg,
+        messages,
+        Some(req_id),
+        tool_recorder,
+        workspace_root,
+        Some(user_msg_for_skills),
+    )
 }
 
 /// 按角色 `allowed_tools` 过滤 `tools`（`None` 表示不限制）。`mcp__` 前缀工具仅在允许集合显式包含 `"mcp"` 时保留。

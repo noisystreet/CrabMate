@@ -70,6 +70,37 @@ pub fn compose_system_for_turn(
     Ok(compose_system_from_base(&base, cfg, tool_recorder, skills))
 }
 
+/// 首条 `system` 组装参数（L3 基底 + L4 + 可选 L5）。
+pub struct FirstSystemComposeOpts<'a> {
+    pub agent_role: Option<&'a str>,
+    pub user_msg_for_skills: Option<&'a str>,
+    pub skills_base_dir: Option<PathBuf>,
+    pub role_resolution: RoleSystemResolution,
+}
+
+/// Web / CLI 续聊刷新首条 `system` 的统一入口（L3 + L4 + 可选 L5）。
+pub fn compose_first_system_for_turn(
+    cfg: &AgentConfig,
+    tool_recorder: &Arc<ToolOutcomeRecorder>,
+    opts: FirstSystemComposeOpts<'_>,
+) -> Result<String, String> {
+    let skills_ctx = opts
+        .skills_base_dir
+        .as_ref()
+        .zip(opts.user_msg_for_skills)
+        .map(|(base, user)| SkillsComposeContext {
+            base_dir: base.as_path(),
+            user_text: user,
+        });
+    compose_system_for_turn_arc(
+        cfg,
+        opts.agent_role,
+        tool_recorder,
+        skills_ctx,
+        opts.role_resolution,
+    )
+}
+
 /// 与 [`compose_system_for_turn`] 相同，但 `tool_recorder` 为 `Arc`（Web handler 常用）。
 pub fn compose_system_for_turn_arc(
     cfg: &AgentConfig,

@@ -114,6 +114,7 @@ pub(super) async fn dispatch_repl_slash_builtin<'a>(
                 agent_role,
                 style,
                 &handles.process_handles.tool_outcome_recorder,
+                work_dir.as_path(),
             )
             .await
         }
@@ -458,6 +459,7 @@ async fn slash_agent_set(
     agent_role: &mut Option<String>,
     style: &CliReplStyle,
     tool_recorder: &Arc<crate::tool_stats::ToolOutcomeRecorder>,
+    work_dir: &std::path::Path,
 ) -> ReplSlashHandled {
     let cfg = cfg_holder.read().await;
     if cfg.roles_prompts.agent_roles.is_empty() {
@@ -468,7 +470,14 @@ async fn slash_agent_set(
         drop(cfg);
         *agent_role = None;
         let cfg = cfg_holder.read().await.clone();
-        if let Err(e) = apply_agent_role_switch_to_messages(&cfg, messages, None, tool_recorder) {
+        if let Err(e) = apply_agent_role_switch_to_messages(
+            &cfg,
+            messages,
+            None,
+            tool_recorder,
+            Some(work_dir),
+            None,
+        ) {
             let _ = style.eprint_error(&e);
         } else {
             let _ = style.print_success(&format!(
@@ -488,6 +497,8 @@ async fn slash_agent_set(
             messages,
             Some(role_label.as_str()),
             tool_recorder,
+            Some(work_dir),
+            None,
         ) {
             let _ = style.eprint_error(&e);
         } else {

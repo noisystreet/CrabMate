@@ -21,6 +21,8 @@ pub(crate) struct ConfigBuilderRolesPrompts {
     pub(crate) system_prompt: String,
     pub(crate) system_prompt_file: Option<String>,
     pub(crate) default_agent_role_id: Option<String>,
+    pub(crate) coding_workbench_enabled: Option<bool>,
+    pub(crate) coding_workbench_increment_file: Option<String>,
 }
 
 #[derive(Default)]

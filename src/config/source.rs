@@ -81,6 +81,9 @@ pub(super) struct AgentRoleRow {
     pub(super) system_prompt_file: Option<String>,
     #[serde(default)]
     pub(super) allowed_tools: Option<Vec<String>>,
+    /// 为 false 时不叠加编程工作台层；省略时默认 true（仍受全局 `coding_workbench_enabled` 约束）。
+    #[serde(default)]
+    pub(super) prepend_coding_workbench: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -140,6 +143,10 @@ pub(super) struct AgentSection {
     pub(super) system_prompt_file: Option<String>,
     /// 未指定 Web/CLI `agent_role` 时使用的默认角色 id（须存在于角色表）
     pub(super) default_agent_role: Option<String>,
+    /// 默认全局会话是否叠加 `coding_workbench_increment`；`CM_CODING_WORKBENCH_ENABLED`
+    pub(super) coding_workbench_enabled: Option<bool>,
+    /// 编程工作台增量 Markdown 路径；`CM_CODING_WORKBENCH_INCREMENT_FILE`
+    pub(super) coding_workbench_increment_file: Option<String>,
     pub(super) cursor_rules_enabled: Option<bool>,
     pub(super) cursor_rules_dir: Option<String>,
     pub(super) cursor_rules_include_agents_md: Option<bool>,

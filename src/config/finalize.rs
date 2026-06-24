@@ -80,6 +80,35 @@ pub(crate) fn embedded_coding_workbench_increment() -> &'static str {
     EMBEDDED_CODING_WORKBENCH_INCREMENT.trim()
 }
 
+/// 读盘解析编程工作台增量；禁用时或读盘失败（回退嵌入默认）返回空或默认正文。
+pub(crate) fn resolve_coding_workbench_increment(
+    enabled: bool,
+    file: &str,
+    config_bases: &[PathBuf],
+    run_command_working_dir: &Path,
+) -> Result<String, String> {
+    if !enabled {
+        return Ok(String::new());
+    }
+    let file = file.trim();
+    let path = if file.is_empty() {
+        "config/prompts/coding_workbench_increment.md"
+    } else {
+        file
+    };
+    match read_system_prompt_file_resolved(path, config_bases, run_command_working_dir) {
+        Ok(raw) => {
+            let t = raw.trim().to_string();
+            if t.is_empty() {
+                Ok(embedded_coding_workbench_increment().to_string())
+            } else {
+                Ok(t)
+            }
+        }
+        Err(_) => Ok(embedded_coding_workbench_increment().to_string()),
+    }
+}
+
 fn resolve_thinking_avoid_echo_appendix(
     enabled: bool,
     inline: Option<&str>,
@@ -559,6 +588,8 @@ struct FinalizeAfterRoles {
     system_prompt: String,
     default_agent_role_id: Option<String>,
     agent_roles: agent_roles::AgentRoleCatalogBuilt,
+    coding_workbench_enabled: bool,
+    coding_workbench_increment_file: String,
     system_prompt_search_bases: Vec<PathBuf>,
     run_command_working_dir: PathBuf,
     scheduled_agent_tasks: Vec<ScheduledAgentTask>,
@@ -641,7 +672,8 @@ fn finalize_agent_config(
             default_role_id: default_agent_role_id,
             global_effective_system_prompt: pm.system_prompt.as_str(),
             universal_l0_system_prompt: pm.universal_l0_system_prompt.as_str(),
-            coding_workbench_increment: super::finalize::embedded_coding_workbench_increment(),
+            coding_workbench_increment: pm.coding_workbench_increment.as_str(),
+            coding_workbench_enabled: pm.coding_workbench_enabled,
             system_prompt_search_bases: &system_prompt_search_bases,
             run_command_working_dir: run_command_working_dir.as_path(),
             cursor_rules_enabled: pm.cursor_rules_enabled,
@@ -684,6 +716,8 @@ fn finalize_agent_config(
         system_prompt: pm.system_prompt,
         default_agent_role_id,
         agent_roles,
+        coding_workbench_enabled: pm.coding_workbench_enabled,
+        coding_workbench_increment_file: pm.coding_workbench_increment_file,
         system_prompt_search_bases,
         run_command_working_dir,
         scheduled_agent_tasks,

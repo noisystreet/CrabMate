@@ -160,6 +160,9 @@ fn clamp_finalize_mid_layer_scalars(b: &ConfigBuilder) -> FinalizeMidLayerScalar
 struct PromptMergeForRoles {
     /// 通用 L0（`base_system_prompt.md` 等），未叠加编程层 / cursor rules / skills。
     universal_l0_system_prompt: String,
+    coding_workbench_enabled: bool,
+    coding_workbench_increment_file: String,
+    coding_workbench_increment: String,
     system_prompt: String,
     cursor_rules_enabled: bool,
     cursor_rules_dir: String,
@@ -193,10 +196,26 @@ fn merge_system_prompt_layers_for_finalize(
         return Err("配置错误：system_prompt 从文件或内联加载后为空".to_string());
     }
     let universal_l0_system_prompt = system_prompt.clone();
-    let system_prompt = super::agent_roles::prepend_l0_base_to_role_body(
-        &universal_l0_system_prompt,
-        embedded_coding_workbench_increment(),
-    );
+    let coding_workbench_enabled = b.roles_prompts.coding_workbench_enabled.unwrap_or(true);
+    let coding_workbench_increment_file = b
+        .roles_prompts
+        .coding_workbench_increment_file
+        .clone()
+        .unwrap_or_else(|| "config/prompts/coding_workbench_increment.md".to_string());
+    let coding_workbench_increment = resolve_coding_workbench_increment(
+        coding_workbench_enabled,
+        &coding_workbench_increment_file,
+        system_prompt_search_bases,
+        run_command_working_dir,
+    )?;
+    let system_prompt = if coding_workbench_increment.trim().is_empty() {
+        universal_l0_system_prompt.clone()
+    } else {
+        super::agent_roles::prepend_l0_base_to_role_body(
+            &universal_l0_system_prompt,
+            &coding_workbench_increment,
+        )
+    };
     let cursor_rules_enabled = b.cursor_rules.cursor_rules_enabled.unwrap_or(true);
     let cursor_rules_dir = b
         .cursor_rules
@@ -239,6 +258,9 @@ fn merge_system_prompt_layers_for_finalize(
     )?;
     Ok(PromptMergeForRoles {
         universal_l0_system_prompt,
+        coding_workbench_enabled,
+        coding_workbench_increment_file,
+        coding_workbench_increment,
         system_prompt,
         cursor_rules_enabled,
         cursor_rules_dir,

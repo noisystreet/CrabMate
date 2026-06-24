@@ -141,6 +141,8 @@ fn finalize_section_roles_prompts(mid: &FinalizeAfterRoles) -> types::RolesPromp
         system_prompt: mid.system_prompt.clone(),
         default_agent_role_id: mid.default_agent_role_id.clone(),
         agent_roles: mid.agent_roles.clone(),
+        coding_workbench_enabled: mid.coding_workbench_enabled,
+        coding_workbench_increment_file: mid.coding_workbench_increment_file.clone(),
     }
 }
 

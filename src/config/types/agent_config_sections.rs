@@ -102,6 +102,10 @@ pub struct RolesPromptsConfig {
     pub system_prompt: String,
     pub default_agent_role_id: Option<String>,
     pub agent_roles: AgentRoleCatalog,
+    /// 是否为默认全局会话与角色叠加编程工作台层（`coding_workbench_increment`）。
+    pub coding_workbench_enabled: bool,
+    /// 编程层 Markdown 路径（与 `system_prompt_file` 相同解析规则）；`finalize` 读盘。
+    pub coding_workbench_increment_file: String,
 }
 
 #[derive(Debug, Clone)]

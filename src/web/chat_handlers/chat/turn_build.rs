@@ -24,7 +24,7 @@ use crate::web::http_types::chat::{ApiError, ChatRequestBody, StreamResumeBody};
 use crate::web::http_types::validation::validate_chat_request_payload_limits;
 
 use crate::context_bootstrap::prompt_compose::{
-    RoleSystemResolution, SkillsComposeContext, compose_system_for_turn_arc,
+    FirstSystemComposeOpts, RoleSystemResolution, compose_first_system_for_turn,
     resolve_skills_base_dir,
 };
 
@@ -161,6 +161,53 @@ fn parse_chat_stream_request_tail(
     })
 }
 
+fn refresh_existing_turn_system(
+    cfg: &crate::config::AgentConfig,
+    seed: &mut ConversationTurnSeed,
+    agent_role: Option<&str>,
+    user_msg: &str,
+    workspace_root: Option<&std::path::Path>,
+    tool_recorder: &Arc<crate::tool_stats::ToolOutcomeRecorder>,
+) -> Result<(), String> {
+    let persisted = seed.persisted_active_agent_role.clone();
+    if let Some(id) = agent_role.map(str::trim).filter(|s| !s.is_empty()) {
+        cfg.system_prompt_for_new_conversation(Some(id))
+            .map_err(|e| e.to_string())?;
+    }
+    maybe_apply_mid_session_agent_role_switch(
+        cfg,
+        &mut seed.messages,
+        persisted.as_deref(),
+        agent_role,
+        tool_recorder,
+        workspace_root,
+        user_msg,
+    )?;
+    let role_for_turn = agent_role
+        .and_then(|s| {
+            let t = s.trim();
+            if t.is_empty() { None } else { Some(t) }
+        })
+        .or(persisted.as_deref());
+    let skills_base = workspace_root.map(resolve_skills_base_dir);
+    let system_for_turn = compose_first_system_for_turn(
+        cfg,
+        tool_recorder,
+        FirstSystemComposeOpts {
+            agent_role: role_for_turn,
+            user_msg_for_skills: Some(user_msg),
+            skills_base_dir: skills_base,
+            role_resolution: RoleSystemResolution::Strict,
+        },
+    )?;
+    if let Some(first) = seed.messages.first_mut()
+        && first.role == "system"
+    {
+        first.content = Some(crate::types::MessageContent::Text(system_for_turn));
+    }
+    Ok(())
+}
+
 pub(super) async fn build_messages_for_turn(
     state: &Arc<AppState>,
     conversation_id: &str,
@@ -177,59 +224,32 @@ pub(super) async fn build_messages_for_turn(
         message_user_with_images(user_msg, image_urls)
     };
     if let Some(mut seed) = state.load_conversation_seed(conversation_id).await {
-        let persisted = seed.persisted_active_agent_role.clone();
+        let workspace_root = workspace_is_set.then_some(root.as_path());
         {
             let cfg = state.http.cfg.read().await;
-            if let Some(id) = agent_role.map(str::trim).filter(|s| !s.is_empty()) {
-                cfg.system_prompt_for_new_conversation(Some(id))
-                    .map_err(|e| e.to_string())?;
-            }
-            maybe_apply_mid_session_agent_role_switch(
+            refresh_existing_turn_system(
                 &cfg,
-                &mut seed.messages,
-                persisted.as_deref(),
+                &mut seed,
                 agent_role,
+                user_msg,
+                workspace_root,
                 &state.aux.process_handles.tool_outcome_recorder,
             )?;
-            let role_for_turn = agent_role
-                .and_then(|s| {
-                    let t = s.trim();
-                    if t.is_empty() { None } else { Some(t) }
-                })
-                .or(persisted.as_deref());
-            let skills_base = workspace_is_set.then(|| resolve_skills_base_dir(root.as_path()));
-            let skills_ctx = skills_base.as_ref().map(|base| SkillsComposeContext {
-                base_dir: base.as_path(),
-                user_text: user_msg,
-            });
-            let system_for_turn = compose_system_for_turn_arc(
-                &cfg,
-                role_for_turn,
-                &state.aux.process_handles.tool_outcome_recorder,
-                skills_ctx,
-                RoleSystemResolution::Strict,
-            )?;
-            if let Some(first) = seed.messages.first_mut()
-                && first.role == "system"
-            {
-                first.content = Some(crate::types::MessageContent::Text(system_for_turn));
-            }
         }
         seed.messages.push(last_user);
         return Ok(seed);
     }
     let cfg = state.http.cfg.read().await;
     let skills_base = workspace_is_set.then(|| resolve_skills_base_dir(root.as_path()));
-    let skills_ctx = skills_base.as_ref().map(|base| SkillsComposeContext {
-        base_dir: base.as_path(),
-        user_text: user_msg,
-    });
-    let system_for_turn = compose_system_for_turn_arc(
+    let system_for_turn = compose_first_system_for_turn(
         &cfg,
-        agent_role,
         &state.aux.process_handles.tool_outcome_recorder,
-        skills_ctx,
-        RoleSystemResolution::Strict,
+        FirstSystemComposeOpts {
+            agent_role,
+            user_msg_for_skills: Some(user_msg),
+            skills_base_dir: skills_base,
+            role_resolution: RoleSystemResolution::Strict,
+        },
     )?;
     let memory_snippet =
         if workspace_is_set && cfg.context_bootstrap_inject.agent_memory_file_enabled {

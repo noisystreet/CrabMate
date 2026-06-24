@@ -17,6 +17,8 @@ pub(super) type AgentRoleCatalogBuilt = Arc<HashMap<String, AgentRoleSpec>>;
 pub(super) struct AgentRoleEntryBuilder {
     pub(super) system_prompt: Option<String>,
     pub(super) system_prompt_file: Option<String>,
+    /// 非 `false` 时在通用 L0 之后叠加编程工作台层（仍受全局 `coding_workbench_enabled` 约束）。
+    pub(super) prepend_coding_workbench: Option<bool>,
     /// 非空：仅允许列出的工具；含字面量 **`mcp`** 表示允许所有 `mcp__*`。空数组表示不允许任何内置工具（仍可按上条规则放行 MCP）。
     pub(super) allowed_tools: Option<Vec<String>>,
 }
@@ -39,7 +41,10 @@ struct AgentRolesSection {
 struct AgentRoleEntryToml {
     system_prompt: Option<String>,
     system_prompt_file: Option<String>,
+    #[serde(default)]
     allowed_tools: Option<Vec<String>>,
+    #[serde(default)]
+    prepend_coding_workbench: Option<bool>,
 }
 
 /// 将 `config/agent_roles.toml` 合并进 [`super::builder::ConfigBuilder`]（多文件时后加载的覆盖同 id 字段）。
@@ -80,6 +85,9 @@ pub(super) fn merge_agent_roles_file_into_builder(
             }
             if let Some(list) = row.allowed_tools {
                 slot.allowed_tools = Some(list);
+            }
+            if let Some(v) = row.prepend_coding_workbench {
+                slot.prepend_coding_workbench = Some(v);
             }
         }
     }
@@ -154,21 +162,30 @@ fn read_system_prompt_file_resolved(
     ))
 }
 
-/// 与 [`crate::config::embedded_coding_workbench_increment`] 相对：不叠加编程工作台层的命名角色 id。
-fn is_non_coding_agent_role(role_id: &str) -> bool {
-    matches!(role_id, "companion" | "philosopher" | "literary")
+/// 与 [`crate::config::embedded_coding_workbench_increment`] 相对：角色是否叠加编程层。
+fn role_should_prepend_coding_workbench(
+    global_enabled: bool,
+    role_prepend: Option<bool>,
+    coding_increment_nonempty: bool,
+) -> bool {
+    global_enabled && coding_increment_nonempty && role_prepend.unwrap_or(true)
 }
 
 fn l0_stack_before_role_delta(
     universal_l0: &str,
     coding_workbench_increment: &str,
-    role_id: &str,
+    role_prepend: Option<bool>,
+    global_coding_enabled: bool,
     role_delta: &str,
 ) -> String {
-    let with_coding = if is_non_coding_agent_role(role_id) {
-        universal_l0.to_string()
-    } else {
+    let with_coding = if role_should_prepend_coding_workbench(
+        global_coding_enabled,
+        role_prepend,
+        !coding_workbench_increment.trim().is_empty(),
+    ) {
         prepend_l0_base_to_role_body(universal_l0, coding_workbench_increment)
+    } else {
+        universal_l0.to_string()
     };
     prepend_l0_base_to_role_body(&with_coding, role_delta)
 }
@@ -192,8 +209,9 @@ pub(super) struct FinalizeAgentRoleCatalogParams<'a> {
     pub global_effective_system_prompt: &'a str,
     /// 通用 L0（`system_prompt_file`，默认 `base_system_prompt.md`），尚未合并编程层 / cursor rules / skills。
     pub universal_l0_system_prompt: &'a str,
-    /// 编程工作台增量（`coding_workbench_increment.md`）；非陪聊/哲学/文学角色与默认全局会话叠加。
+    /// 编程工作台增量正文（已解析）；空串表示不叠加。
     pub coding_workbench_increment: &'a str,
+    pub coding_workbench_enabled: bool,
     pub system_prompt_search_bases: &'a [PathBuf],
     pub run_command_working_dir: &'a Path,
     pub cursor_rules_enabled: bool,
@@ -215,6 +233,7 @@ pub(super) fn finalize_agent_role_catalog(
         global_effective_system_prompt,
         universal_l0_system_prompt,
         coding_workbench_increment,
+        coding_workbench_enabled,
         system_prompt_search_bases,
         run_command_working_dir,
         cursor_rules_enabled,
@@ -243,7 +262,8 @@ pub(super) fn finalize_agent_role_catalog(
             let combined = l0_stack_before_role_delta(
                 universal_l0_system_prompt,
                 coding_workbench_increment,
-                id.as_str(),
+                b.prepend_coding_workbench,
+                coding_workbench_enabled,
                 raw.trim(),
             );
             let with_rules = cursor_rules::merge_system_prompt_with_cursor_rules(
@@ -269,7 +289,8 @@ pub(super) fn finalize_agent_role_catalog(
                 let combined = l0_stack_before_role_delta(
                     universal_l0_system_prompt,
                     coding_workbench_increment,
-                    id.as_str(),
+                    b.prepend_coding_workbench,
+                    coding_workbench_enabled,
                     s.trim(),
                 );
                 let with_rules = cursor_rules::merge_system_prompt_with_cursor_rules(
@@ -334,16 +355,22 @@ mod tests {
     }
 
     #[test]
-    fn l0_stack_omits_coding_for_companion() {
-        let out = super::l0_stack_before_role_delta("UNI", "CODE", "companion", "ROLE");
+    fn l0_stack_omits_coding_when_role_prepends_false() {
+        let out = super::l0_stack_before_role_delta("UNI", "CODE", Some(false), true, "ROLE");
         assert_eq!(out, "UNI\n\nROLE");
         assert!(!out.contains("CODE"));
     }
 
     #[test]
-    fn l0_stack_includes_coding_for_engineer() {
-        let out = super::l0_stack_before_role_delta("UNI", "CODE", "engineer", "ROLE");
+    fn l0_stack_includes_coding_when_role_prepends_true() {
+        let out = super::l0_stack_before_role_delta("UNI", "CODE", Some(true), true, "ROLE");
         assert!(out.starts_with("UNI\n\nCODE"));
         assert!(out.ends_with("ROLE"));
+    }
+
+    #[test]
+    fn l0_stack_omits_coding_when_globally_disabled() {
+        let out = super::l0_stack_before_role_delta("UNI", "CODE", Some(true), false, "ROLE");
+        assert_eq!(out, "UNI\n\nROLE");
     }
 }

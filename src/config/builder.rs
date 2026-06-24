@@ -79,6 +79,13 @@ impl ConfigBuilder {
             &mut rp.default_agent_role_id,
             agent.default_agent_role.clone(),
         );
+        rp.coding_workbench_enabled = agent
+            .coding_workbench_enabled
+            .or(rp.coding_workbench_enabled);
+        override_opt_string_non_empty(
+            &mut rp.coding_workbench_increment_file,
+            agent.coding_workbench_increment_file.clone(),
+        );
         if no_system_prompt_file_in_section && inline_system_prompt_nonempty {
             rp.system_prompt_file = None;
         }
@@ -589,6 +596,9 @@ impl ConfigBuilder {
             }
             if let Some(list) = row.allowed_tools.clone() {
                 slot.allowed_tools = Some(list);
+            }
+            if let Some(v) = row.prepend_coding_workbench {
+                slot.prepend_coding_workbench = Some(v);
             }
         }
     }

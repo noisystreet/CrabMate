@@ -289,6 +289,17 @@ fn env_override_system_prompt_and_default_role(b: &mut ConfigBuilder) {
             b.roles_prompts.default_agent_role_id = Some(s);
         }
     }
+    if let Ok(v) = std::env::var("CM_CODING_WORKBENCH_ENABLED")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.roles_prompts.coding_workbench_enabled = Some(val);
+    }
+    if let Ok(p) = std::env::var("CM_CODING_WORKBENCH_INCREMENT_FILE") {
+        let p = p.trim().to_string();
+        if !p.is_empty() {
+            b.roles_prompts.coding_workbench_increment_file = Some(p);
+        }
+    }
 }
 
 fn apply_env_overrides_part_5(b: &mut ConfigBuilder) {
