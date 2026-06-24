@@ -17,8 +17,8 @@ use crate::chat_session_state::ChatSessionSignals;
 use crate::session_ops::messages_scroller_has_non_collapsed_selection;
 use crate::storage::ChatSession;
 
-/// 跟底 Effect 程序化 `set_scroll_top` 期间合并为单条在飞任务，避免每个 SSE chunk 各起一个脉冲。
-static CONTENT_FOLLOW_PULSE_PENDING: AtomicBool = AtomicBool::new(false);
+/// 滚底脉冲合并：发送 / End / 流式 Effect 共用单条在飞任务。
+static FOLLOW_PULSE_TO_BOTTOM_PENDING: AtomicBool = AtomicBool::new(false);
 
 /// 流式增量布局对齐：与 End 键共享的三次脉冲间隔（ms）。
 const PULSE_DELAYS_MS: [u32; 3] = [0, 0, 16];
@@ -43,17 +43,32 @@ fn scroll_element_to_top(shell: ChatScrollShellSignals) {
     }
 }
 
-/// 三次脉冲滚底或滚顶（覆盖 WebView / 换行后 `scroll_height` 延迟变化）。
-fn spawn_pulse_scroll(shell: ChatScrollShellSignals, to_bottom: bool) {
+/// 三次脉冲滚底（发送、流式、End 共用调度器）。
+fn schedule_pulse_to_bottom(shell: ChatScrollShellSignals) {
+    if FOLLOW_PULSE_TO_BOTTOM_PENDING.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    spawn_local(async move {
+        let clear_pending = || FOLLOW_PULSE_TO_BOTTOM_PENDING.store(false, Ordering::Release);
+        let _guard = MessagesScrollFromEffectGuard::new(shell.messages_scroll_from_effect);
+        for delay in PULSE_DELAYS_MS {
+            TimeoutFuture::new(delay).await;
+            if !shell.auto_scroll_chat.get_untracked() {
+                clear_pending();
+                return;
+            }
+            let _ = scroll_element_to_bottom_if_allowed(shell);
+        }
+        clear_pending();
+    });
+}
+
+fn schedule_pulse_to_top(shell: ChatScrollShellSignals) {
     spawn_local(async move {
         let _guard = MessagesScrollFromEffectGuard::new(shell.messages_scroll_from_effect);
         for delay in PULSE_DELAYS_MS {
             TimeoutFuture::new(delay).await;
-            if to_bottom {
-                let _ = scroll_element_to_bottom_if_allowed(shell);
-            } else {
-                scroll_element_to_top(shell);
-            }
+            scroll_element_to_top(shell);
         }
     });
 }
@@ -61,13 +76,13 @@ fn spawn_pulse_scroll(shell: ChatScrollShellSignals, to_bottom: bool) {
 /// **入口 B**：开启跟底并脉冲滚到底（发送、流式再生、End 键等）。
 pub(crate) fn engage_follow_and_scroll_bottom(shell: ChatScrollShellSignals) {
     shell.auto_scroll_chat.set(true);
-    spawn_pulse_scroll(shell, true);
+    schedule_pulse_to_bottom(shell);
 }
 
 /// Home 键：关闭跟底并脉冲滚到顶。
 pub(crate) fn disengage_follow_and_scroll_top(shell: ChatScrollShellSignals) {
     shell.auto_scroll_chat.set(false);
-    spawn_pulse_scroll(shell, false);
+    schedule_pulse_to_top(shell);
 }
 
 /// 跟底指纹：只看活跃会话尾部若干条，避免流式时对整页消息 `fold` 全文长度。
@@ -103,22 +118,6 @@ pub(crate) fn wire_content_follow_scroll(chat: ChatSessionSignals, shell: ChatSc
         if !shell.auto_scroll_chat.get() {
             return;
         }
-        if CONTENT_FOLLOW_PULSE_PENDING.swap(true, Ordering::AcqRel) {
-            return;
-        }
-
-        spawn_local(async move {
-            let clear_pending = || CONTENT_FOLLOW_PULSE_PENDING.store(false, Ordering::Release);
-            let _guard = MessagesScrollFromEffectGuard::new(shell.messages_scroll_from_effect);
-            for delay in PULSE_DELAYS_MS {
-                TimeoutFuture::new(delay).await;
-                if !shell.auto_scroll_chat.get_untracked() {
-                    clear_pending();
-                    return;
-                }
-                let _ = scroll_element_to_bottom_if_allowed(shell);
-            }
-            clear_pending();
-        });
+        schedule_pulse_to_bottom(shell);
     });
 }
