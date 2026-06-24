@@ -22,6 +22,7 @@ mod message_virtual_viewport;
 mod messages_scroll_compensate;
 mod messages_virtual_list;
 mod scroll;
+mod scroll_follow;
 mod session_hydrate;
 mod session_storage;
 #[cfg(test)]

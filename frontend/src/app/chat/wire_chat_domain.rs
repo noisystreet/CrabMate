@@ -8,7 +8,7 @@
 //!
 //! 1. [`wire_session_switch_clears_chat_state`](super::composer::wire_session_switch_clears_chat_state) — 切会话时加载草稿与 `session_sync`。  
 //! 2. [`wire_draft_sync_to_mirror_and_textarea`](super::composer::wire_draft_sync_to_mirror_and_textarea) — `draft` → 镜像层与 textarea。  
-//! 3. [`wire_messages_auto_scroll`](super::scroll::wire_messages_auto_scroll)。  
+//! 3. [`wire_content_follow_scroll`](super::scroll_follow::wire_content_follow_scroll)。  
 //! 4. [`wire_chat_find_matches`](super::find::wire_chat_find_matches)。  
 //! 5. [`wire_focus_message_after_nav`](super::scroll::wire_focus_message_after_nav)。  
 //! 6. [`wire_chat_composer_streams`](super::composer::wire_chat_composer_streams)。  
@@ -27,9 +27,8 @@ use super::handles::{
     ChatComposerWires, ComposerStreamShell, WireComposerStreamsArgs,
     WireComposerStreamsSessionSlice, WireComposerStreamsStreamSlice,
 };
-use super::scroll::{
-    wire_focus_message_after_nav, wire_messages_auto_scroll, wire_messages_virtual_viewport_measure,
-};
+use super::scroll::{wire_focus_message_after_nav, wire_messages_virtual_viewport_measure};
+use super::scroll_follow::{ChatScrollFollowAnchors, wire_content_follow_scroll};
 
 /// 注册 `wire_chat_domain_effects` 所需的信号与句柄：[`ChatDomainWiringSignals`] + 流式壳。
 #[derive(Clone)]
@@ -76,14 +75,14 @@ fn wire_chat_domain_auxiliary_sequence(a: &WireChatDomainEffectsArgs) {
         d.composer.virtual_viewport_height,
     );
 
-    wire_messages_auto_scroll(
-        d.chat,
-        d.composer.messages_scroller,
-        d.composer.auto_scroll_chat,
-        d.composer.messages_scroll_from_effect,
-        d.composer.virtual_scroll_top,
-        d.composer.virtual_viewport_height,
-    );
+    let scroll_follow = ChatScrollFollowAnchors {
+        messages_scroller: d.composer.messages_scroller,
+        auto_scroll_chat: d.composer.auto_scroll_chat,
+        messages_scroll_from_effect: d.composer.messages_scroll_from_effect,
+        virtual_scroll_top: d.composer.virtual_scroll_top,
+        virtual_viewport_height: d.composer.virtual_viewport_height,
+    };
+    wire_content_follow_scroll(d.chat, scroll_follow);
 
     wire_chat_find_matches(
         d.chat,
@@ -126,7 +125,13 @@ pub(crate) fn wire_chat_domain_effects(
         stream: WireComposerStreamsStreamSlice {
             stream_shell: args.stream_shell,
             stream_turn_busy_ui: stream_busy_memos.stream_turn_busy_ui,
-            auto_scroll_chat: d.composer.auto_scroll_chat,
+            scroll_follow: ChatScrollFollowAnchors {
+                messages_scroller: d.composer.messages_scroller,
+                auto_scroll_chat: d.composer.auto_scroll_chat,
+                messages_scroll_from_effect: d.composer.messages_scroll_from_effect,
+                virtual_scroll_top: d.composer.virtual_scroll_top,
+                virtual_viewport_height: d.composer.virtual_viewport_height,
+            },
             pending_images: d.composer.pending_images,
         },
     });
