@@ -150,15 +150,6 @@ pub fn compose_system_for_turn_arc(
     )
 }
 
-/// 在已有 L3+L4 的 `system` 上仅叠加 L5（Skills top-k）。
-pub fn merge_skills_for_turn(
-    system_prompt: String,
-    cfg: &AgentConfig,
-    skills: SkillsComposeContext<'_>,
-) -> String {
-    merge_skills_into_system(system_prompt, cfg, Some(skills))
-}
-
 fn merge_skills_into_system(
     system_prompt: String,
     cfg: &AgentConfig,

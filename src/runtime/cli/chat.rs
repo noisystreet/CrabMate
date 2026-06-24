@@ -148,27 +148,95 @@ fn resolve_system_prompt_for_chat(
     chat: &ChatCliArgs,
     agent_role: Option<&str>,
     tool_recorder: &std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder>,
-) -> Result<String, Box<dyn std::error::Error>> {
-    let base = if let Some(p) = chat.system_prompt_file.as_deref() {
-        std::fs::read_to_string(p).map_err(|e| {
+    work_dir: &Path,
+    user_text_for_skills: Option<&str>,
+) -> Result<
+    (
+        String,
+        crate::context_bootstrap::prompt_compose::FirstSystemComposeDiagnostics,
+    ),
+    Box<dyn std::error::Error>,
+> {
+    if let Some(p) = chat.system_prompt_file.as_deref() {
+        let base = std::fs::read_to_string(p).map_err(|e| {
             CliExitError::new(
                 EXIT_GENERAL,
                 format!("无法读取 --system-prompt-file {p}: {e}"),
             )
-        })?
-    } else {
-        cfg.system_prompt_for_new_conversation(agent_role)
-            .map_err(|e| CliExitError::new(EXIT_USAGE, e))?
-            .to_string()
-    };
-    Ok(
-        crate::context_bootstrap::prompt_compose::compose_system_from_base(
+        })?;
+        let l4 = crate::context_bootstrap::prompt_compose::compose_system_from_base(
             &base,
             cfg,
             tool_recorder,
             None,
-        ),
+        );
+        let (final_prompt, skills_meta) = if let Some(user_text) = user_text_for_skills
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            crate::config::skills::merge_system_prompt_with_skills_selected_with_meta(
+                l4.clone(),
+                cfg.skills.skills_enabled,
+                cfg.skills.skills_dir.as_str(),
+                cfg.skills.skills_max_chars,
+                work_dir,
+                user_text,
+                cfg.skills.skills_top_k,
+            )
+            .unwrap_or((
+                l4.clone(),
+                crate::config::skills::SkillsSelectionMeta::default(),
+            ))
+        } else {
+            (
+                l4.clone(),
+                crate::config::skills::SkillsSelectionMeta::default(),
+            )
+        };
+        let mut layers = vec!["L3".to_string(), "L4".to_string()];
+        if !skills_meta.selected_labels.is_empty() {
+            layers.push("L5".to_string());
+        }
+        return Ok((
+            final_prompt.clone(),
+            crate::context_bootstrap::prompt_compose::FirstSystemComposeDiagnostics {
+                layers_applied: layers,
+                chars_l3_base: base.chars().count(),
+                chars_l4_augmented: l4.chars().count(),
+                chars_final: final_prompt.chars().count(),
+                skills_total_docs: skills_meta.total_docs,
+                skills_selected_labels: skills_meta.selected_labels,
+            },
+        ));
+    }
+    crate::context_bootstrap::prompt_compose::compose_first_system_for_turn_with_diagnostics(
+        cfg,
+        tool_recorder,
+        crate::context_bootstrap::prompt_compose::FirstSystemComposeOpts {
+            agent_role,
+            user_msg_for_skills: user_text_for_skills,
+            skills_base_dir: Some(work_dir.to_path_buf()),
+            role_resolution: crate::context_bootstrap::prompt_compose::RoleSystemResolution::Strict,
+        },
     )
+    .map_err(|e| CliExitError::new(EXIT_USAGE, e).into())
+}
+
+fn log_first_system_diagnostics(
+    path: &str,
+    diag: &crate::context_bootstrap::prompt_compose::FirstSystemComposeDiagnostics,
+) {
+    debug!(
+        target: "crabmate",
+        "first_system_compose path={} layers={:?} chars_l3={} chars_l4={} chars_final={} skills_total={} skills_selected={:?}",
+        path,
+        diag.layers_applied,
+        diag.chars_l3_base,
+        diag.chars_l4_augmented,
+        diag.chars_final,
+        diag.skills_total_docs,
+        diag.skills_selected_labels
+    );
 }
 
 fn resolve_user_body(chat: &ChatCliArgs) -> Result<String, Box<dyn std::error::Error>> {
@@ -281,16 +349,30 @@ struct RunChatBatchJsonlParams<'a> {
     process_handles: Arc<ProcessHandles>,
 }
 
+struct ChatBatchLineMergeCtx<'a> {
+    cfg_holder: &'a SharedAgentConfig,
+    chat: &'a ChatCliArgs,
+    agent_role: Option<&'a str>,
+    process_handles: &'a ProcessHandles,
+    work_dir: &'a Path,
+    path: &'a str,
+}
+
 /// 将 JSONL 单行对象合并进 `messages`（`user` 或 `messages` 分支）；从 `run_chat_batch_jsonl` 拆出以降低圈复杂度。
 async fn chat_batch_jsonl_merge_line_value(
-    cfg_holder: &SharedAgentConfig,
-    work_dir: &Path,
-    system_seed: &str,
+    ctx: &ChatBatchLineMergeCtx<'_>,
     messages: &mut Vec<Message>,
-    path: &str,
     line_no: usize,
     v: &serde_json::Value,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let ChatBatchLineMergeCtx {
+        cfg_holder,
+        chat,
+        agent_role,
+        process_handles,
+        work_dir,
+        path,
+    } = *ctx;
     if let Some(u) = v.get("user").and_then(|x| x.as_str()) {
         let u = u.trim();
         if u.is_empty() {
@@ -307,14 +389,15 @@ async fn chat_batch_jsonl_merge_line_value(
         let u_exp = expand_at_file_refs_in_user_message(u, work_dir, cfg_snap.as_ref())
             .map_err(|e| CliExitError::new(EXIT_USAGE, e))?;
         if messages.is_empty() {
-            let system_selected = crate::context_bootstrap::prompt_compose::merge_skills_for_turn(
-                system_seed.to_string(),
-                cfg_snap.as_ref(),
-                crate::context_bootstrap::prompt_compose::SkillsComposeContext {
-                    base_dir: work_dir,
-                    user_text: &u_exp,
-                },
-            );
+            let (system_selected, diag) = resolve_system_prompt_for_chat(
+                &cfg_snap,
+                chat,
+                agent_role,
+                &process_handles.tool_outcome_recorder,
+                work_dir,
+                Some(u_exp.as_str()),
+            )?;
+            log_first_system_diagnostics("cli_chat_batch_first_turn", &diag);
             *messages = messages_chat_seed(&system_selected, &u_exp);
             prepend_cli_first_turn_injection(cfg_holder, work_dir, messages).await;
         } else {
@@ -368,17 +451,16 @@ async fn run_chat_batch_jsonl(
         CliExitError::new(EXIT_GENERAL, format!("无法打开 --message-file {path}: {e}"))
     })?;
     let reader = std::io::BufReader::new(file);
-    let system_seed = {
-        let g = cfg_holder.read().await;
-        resolve_system_prompt_for_chat(
-            &Arc::new(g.clone()),
-            chat,
-            agent_role,
-            &process_handles.tool_outcome_recorder,
-        )?
-    };
     let mut messages: Vec<Message> = Vec::new();
     let mut line_no: usize = 0;
+    let merge_ctx = ChatBatchLineMergeCtx {
+        cfg_holder,
+        chat,
+        agent_role,
+        process_handles: process_handles.as_ref(),
+        work_dir,
+        path,
+    };
     for line in reader.lines() {
         line_no += 1;
         let line = line.map_err(|e| {
@@ -397,16 +479,7 @@ async fn run_chat_batch_jsonl(
                 format!("{path} 第 {line_no} 行 JSON 解析失败: {e}"),
             )
         })?;
-        chat_batch_jsonl_merge_line_value(
-            cfg_holder,
-            work_dir,
-            &system_seed,
-            &mut messages,
-            path,
-            line_no,
-            &v,
-        )
-        .await?;
+        chat_batch_jsonl_merge_line_value(&merge_ctx, &mut messages, line_no, &v).await?;
 
         let cfg_snap = {
             let g = cfg_holder.read().await;
@@ -517,15 +590,6 @@ async fn chat_invocation_via_messages_json_file(
 async fn chat_invocation_via_cli_query(
     ctx: ChatInvocationTurnCtx<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let system = {
-        let g = ctx.cfg_holder.read().await;
-        resolve_system_prompt_for_chat(
-            &Arc::new(g.clone()),
-            ctx.chat,
-            ctx.agent_role,
-            &ctx.process_handles.tool_outcome_recorder,
-        )?
-    };
     let user = resolve_user_body(ctx.chat)?;
     let cfg_for_expand = {
         let g = ctx.cfg_holder.read().await;
@@ -533,14 +597,15 @@ async fn chat_invocation_via_cli_query(
     };
     let user = expand_at_file_refs_in_user_message(&user, ctx.work_dir, cfg_for_expand.as_ref())
         .map_err(|e| CliExitError::new(EXIT_USAGE, e))?;
-    let system = crate::context_bootstrap::prompt_compose::merge_skills_for_turn(
-        system,
-        cfg_for_expand.as_ref(),
-        crate::context_bootstrap::prompt_compose::SkillsComposeContext {
-            base_dir: ctx.work_dir,
-            user_text: &user,
-        },
-    );
+    let (system, diag) = resolve_system_prompt_for_chat(
+        &cfg_for_expand,
+        ctx.chat,
+        ctx.agent_role,
+        &ctx.process_handles.tool_outcome_recorder,
+        ctx.work_dir,
+        Some(user.as_str()),
+    )?;
+    log_first_system_diagnostics("cli_chat_query_first_turn", &diag);
     let mut messages = messages_chat_seed(&system, &user);
     prepend_cli_first_turn_injection(ctx.cfg_holder, ctx.work_dir, &mut messages).await;
     debug!(
