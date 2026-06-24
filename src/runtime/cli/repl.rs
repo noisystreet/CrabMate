@@ -343,7 +343,7 @@ pub(crate) async fn repl_dispatch_chat_round(
         if let Some(first) = messages.first_mut()
             && first.role == "system"
         {
-            let merged = crate::context_bootstrap::prompt_compose::compose_first_system_for_turn(
+            let (merged, diag) = crate::context_bootstrap::prompt_compose::compose_first_system_for_turn_with_diagnostics(
                 &g,
                 &process_handles.tool_outcome_recorder,
                 crate::context_bootstrap::prompt_compose::FirstSystemComposeOpts {
@@ -355,6 +355,16 @@ pub(crate) async fn repl_dispatch_chat_round(
                 },
             )
             .expect("lenient role resolution cannot fail");
+            debug!(
+                target: "crabmate",
+                "first_system_compose path=repl_turn_refresh layers={:?} chars_l3={} chars_l4={} chars_final={} skills_total={} skills_selected={:?}",
+                diag.layers_applied,
+                diag.chars_l3_base,
+                diag.chars_l4_augmented,
+                diag.chars_final,
+                diag.skills_total_docs,
+                diag.skills_selected_labels
+            );
             first.content = Some(crate::types::MessageContent::Text(merged));
         }
     }

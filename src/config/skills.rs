@@ -7,6 +7,12 @@ pub(crate) struct SkillDoc {
     pub name: Option<String>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct SkillsSelectionMeta {
+    pub total_docs: usize,
+    pub selected_labels: Vec<String>,
+}
+
 fn is_markdown_file(path: &Path) -> bool {
     path.extension()
         .and_then(|s| s.to_str())
@@ -234,7 +240,7 @@ pub(crate) fn select_skills_top_k(
     }
 }
 
-pub(crate) fn merge_system_prompt_with_skills_selected(
+pub(crate) fn merge_system_prompt_with_skills_selected_with_meta(
     system_prompt: String,
     skills_enabled: bool,
     skills_dir: &str,
@@ -242,23 +248,41 @@ pub(crate) fn merge_system_prompt_with_skills_selected(
     base_dir: &Path,
     user_text: &str,
     top_k: usize,
-) -> Result<String, String> {
+) -> Result<(String, SkillsSelectionMeta), String> {
     if !skills_enabled {
-        return Ok(system_prompt);
+        return Ok((system_prompt, SkillsSelectionMeta::default()));
     }
     let docs = list_skills_from_base(base_dir, skills_dir)?;
     if docs.is_empty() {
-        return Ok(system_prompt);
+        return Ok((system_prompt, SkillsSelectionMeta::default()));
     }
+    let mut meta = SkillsSelectionMeta {
+        total_docs: docs.len(),
+        selected_labels: Vec::new(),
+    };
     let selected = select_skills_top_k(&docs, user_text, top_k);
     if selected.is_empty() {
-        return Ok(system_prompt);
+        return Ok((system_prompt, meta));
     }
+    meta.selected_labels = selected
+        .iter()
+        .map(|d| {
+            d.name
+                .as_deref()
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .map(|n| format!("{n} ({})", d.display_path))
+                .unwrap_or_else(|| d.display_path.clone())
+        })
+        .collect();
     let appendix = render_skills_appendix(&selected, skills_max_chars);
     if appendix.is_empty() {
-        return Ok(system_prompt);
+        return Ok((system_prompt, meta));
     }
-    Ok(format!("{}\n\n{}", system_prompt.trim_end(), appendix))
+    Ok((
+        format!("{}\n\n{}", system_prompt.trim_end(), appendix),
+        meta,
+    ))
 }
 
 pub(crate) fn merge_system_prompt_with_skills_index(

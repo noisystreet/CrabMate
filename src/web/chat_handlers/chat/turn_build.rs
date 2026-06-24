@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::http::StatusCode;
+use tracing::debug;
 
 use super::super::super::app_state::{AppState, ConversationTurnSeed};
 use super::super::parse::{
@@ -24,7 +25,7 @@ use crate::web::http_types::chat::{ApiError, ChatRequestBody, StreamResumeBody};
 use crate::web::http_types::validation::validate_chat_request_payload_limits;
 
 use crate::context_bootstrap::prompt_compose::{
-    FirstSystemComposeOpts, RoleSystemResolution, compose_first_system_for_turn,
+    FirstSystemComposeOpts, RoleSystemResolution, compose_first_system_for_turn_with_diagnostics,
     resolve_skills_base_dir,
 };
 
@@ -190,7 +191,7 @@ fn refresh_existing_turn_system(
         })
         .or(persisted.as_deref());
     let skills_base = workspace_root.map(resolve_skills_base_dir);
-    let system_for_turn = compose_first_system_for_turn(
+    let (system_for_turn, diag) = compose_first_system_for_turn_with_diagnostics(
         cfg,
         tool_recorder,
         FirstSystemComposeOpts {
@@ -200,6 +201,16 @@ fn refresh_existing_turn_system(
             role_resolution: RoleSystemResolution::Strict,
         },
     )?;
+    debug!(
+        target: "crabmate",
+        "first_system_compose path=web_existing conversation_id_refresh=true layers={:?} chars_l3={} chars_l4={} chars_final={} skills_total={} skills_selected={:?}",
+        diag.layers_applied,
+        diag.chars_l3_base,
+        diag.chars_l4_augmented,
+        diag.chars_final,
+        diag.skills_total_docs,
+        diag.skills_selected_labels
+    );
     if let Some(first) = seed.messages.first_mut()
         && first.role == "system"
     {
@@ -241,7 +252,7 @@ pub(super) async fn build_messages_for_turn(
     }
     let cfg = state.http.cfg.read().await;
     let skills_base = workspace_is_set.then(|| resolve_skills_base_dir(root.as_path()));
-    let system_for_turn = compose_first_system_for_turn(
+    let (system_for_turn, diag) = compose_first_system_for_turn_with_diagnostics(
         &cfg,
         &state.aux.process_handles.tool_outcome_recorder,
         FirstSystemComposeOpts {
@@ -251,6 +262,16 @@ pub(super) async fn build_messages_for_turn(
             role_resolution: RoleSystemResolution::Strict,
         },
     )?;
+    debug!(
+        target: "crabmate",
+        "first_system_compose path=web_new conversation_id_refresh=false layers={:?} chars_l3={} chars_l4={} chars_final={} skills_total={} skills_selected={:?}",
+        diag.layers_applied,
+        diag.chars_l3_base,
+        diag.chars_l4_augmented,
+        diag.chars_final,
+        diag.skills_total_docs,
+        diag.skills_selected_labels
+    );
     let memory_snippet =
         if workspace_is_set && cfg.context_bootstrap_inject.agent_memory_file_enabled {
             load_memory_snippet(
