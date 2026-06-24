@@ -3,36 +3,7 @@
 use std::sync::Arc;
 
 use super::super::super::app_state::AppState;
-
-pub(super) fn merge_system_prompt_with_workspace_skills_for_web(
-    system_prompt: String,
-    skills_enabled: bool,
-    skills_dir: &str,
-    skills_max_chars: usize,
-    skills_top_k: usize,
-    workspace_root: &std::path::Path,
-    user_text: &str,
-) -> String {
-    let base_dir = resolve_skills_base_dir(workspace_root);
-    crate::config::skills::merge_system_prompt_with_skills_selected(
-        system_prompt.clone(),
-        skills_enabled,
-        skills_dir,
-        skills_max_chars,
-        base_dir.as_path(),
-        user_text,
-        skills_top_k,
-    )
-    .unwrap_or(system_prompt)
-}
-
-fn resolve_skills_base_dir(workspace_root: &std::path::Path) -> std::path::PathBuf {
-    if workspace_root.as_os_str().is_empty() {
-        std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
-    } else {
-        workspace_root.to_path_buf()
-    }
-}
+use crate::context_bootstrap::prompt_compose::resolve_skills_base_dir;
 
 fn resolve_skills_dir_path(
     base_dir: &std::path::Path,

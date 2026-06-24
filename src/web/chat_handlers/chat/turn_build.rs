@@ -23,7 +23,10 @@ use crate::types::{Message, message_user_with_images};
 use crate::web::http_types::chat::{ApiError, ChatRequestBody, StreamResumeBody};
 use crate::web::http_types::validation::validate_chat_request_payload_limits;
 
-use super::builtin_skills::merge_system_prompt_with_workspace_skills_for_web;
+use crate::context_bootstrap::prompt_compose::{
+    RoleSystemResolution, SkillsComposeContext, compose_system_for_turn_arc,
+    resolve_skills_base_dir,
+};
 
 type ChatPayloadError = (StatusCode, Json<ApiError>);
 
@@ -194,28 +197,18 @@ pub(super) async fn build_messages_for_turn(
                     if t.is_empty() { None } else { Some(t) }
                 })
                 .or(persisted.as_deref());
-            let system_for_turn = cfg
-                .system_prompt_for_new_conversation(role_for_turn)
-                .map_err(|e| e.to_string())?
-                .to_string();
-            let system_for_turn = state
-                .aux
-                .process_handles
-                .tool_outcome_recorder
-                .augment_system_prompt(&system_for_turn, &cfg);
-            let system_for_turn = if workspace_is_set {
-                merge_system_prompt_with_workspace_skills_for_web(
-                    system_for_turn,
-                    cfg.skills.skills_enabled,
-                    cfg.skills.skills_dir.as_str(),
-                    cfg.skills.skills_max_chars,
-                    cfg.skills.skills_top_k,
-                    root.as_path(),
-                    user_msg,
-                )
-            } else {
-                system_for_turn
-            };
+            let skills_base = workspace_is_set.then(|| resolve_skills_base_dir(root.as_path()));
+            let skills_ctx = skills_base.as_ref().map(|base| SkillsComposeContext {
+                base_dir: base.as_path(),
+                user_text: user_msg,
+            });
+            let system_for_turn = compose_system_for_turn_arc(
+                &cfg,
+                role_for_turn,
+                &state.aux.process_handles.tool_outcome_recorder,
+                skills_ctx,
+                RoleSystemResolution::Strict,
+            )?;
             if let Some(first) = seed.messages.first_mut()
                 && first.role == "system"
             {
@@ -226,28 +219,18 @@ pub(super) async fn build_messages_for_turn(
         return Ok(seed);
     }
     let cfg = state.http.cfg.read().await;
-    let system_for_turn = cfg
-        .system_prompt_for_new_conversation(agent_role)
-        .map_err(|e| e.to_string())?
-        .to_string();
-    let system_for_turn = state
-        .aux
-        .process_handles
-        .tool_outcome_recorder
-        .augment_system_prompt(&system_for_turn, &cfg);
-    let system_for_turn = if workspace_is_set {
-        merge_system_prompt_with_workspace_skills_for_web(
-            system_for_turn,
-            cfg.skills.skills_enabled,
-            cfg.skills.skills_dir.as_str(),
-            cfg.skills.skills_max_chars,
-            cfg.skills.skills_top_k,
-            root.as_path(),
-            user_msg,
-        )
-    } else {
-        system_for_turn
-    };
+    let skills_base = workspace_is_set.then(|| resolve_skills_base_dir(root.as_path()));
+    let skills_ctx = skills_base.as_ref().map(|base| SkillsComposeContext {
+        base_dir: base.as_path(),
+        user_text: user_msg,
+    });
+    let system_for_turn = compose_system_for_turn_arc(
+        &cfg,
+        agent_role,
+        &state.aux.process_handles.tool_outcome_recorder,
+        skills_ctx,
+        RoleSystemResolution::Strict,
+    )?;
     let memory_snippet =
         if workspace_is_set && cfg.context_bootstrap_inject.agent_memory_file_enabled {
             load_memory_snippet(

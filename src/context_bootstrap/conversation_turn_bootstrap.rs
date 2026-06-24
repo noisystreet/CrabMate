@@ -87,11 +87,14 @@ pub(crate) fn augmented_system_for_new_conversation_lenient(
     agent_role: Option<&str>,
     tool_recorder: &std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder>,
 ) -> String {
-    let base = match cfg.system_prompt_for_new_conversation(agent_role) {
-        Ok(s) => s.to_string(),
-        Err(_) => cfg.roles_prompts.system_prompt.clone(),
-    };
-    tool_recorder.augment_system_prompt(&base, cfg)
+    super::prompt_compose::compose_system_for_turn_arc(
+        cfg,
+        agent_role,
+        tool_recorder,
+        None,
+        super::prompt_compose::RoleSystemResolution::Lenient,
+    )
+    .expect("lenient role resolution cannot fail")
 }
 
 /// 新会话首轮：`system` + 可选项目上下文 `user` + 可选本轮用户 `user`（与 Web 新会话、`messages_chat_seed` 组合一致）。

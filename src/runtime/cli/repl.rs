@@ -343,22 +343,20 @@ pub(crate) async fn repl_dispatch_chat_round(
         if let Some(first) = messages.first_mut()
             && first.role == "system"
         {
-            let base_system =
-                crate::context_bootstrap::conversation_turn_bootstrap::augmented_system_for_new_conversation_lenient(
-                    &g,
-                    agent_role_owned.as_deref(),
-                    &process_handles.tool_outcome_recorder,
-                );
-            let merged = crate::config::skills::merge_system_prompt_with_skills_selected(
-                base_system.clone(),
-                g.skills.skills_enabled,
-                g.skills.skills_dir.as_str(),
-                g.skills.skills_max_chars,
-                work_dir,
-                user_body.as_str(),
-                g.skills.skills_top_k,
+            let skills_ctx = Some(
+                crate::context_bootstrap::prompt_compose::SkillsComposeContext {
+                    base_dir: work_dir,
+                    user_text: user_body.as_str(),
+                },
+            );
+            let merged = crate::context_bootstrap::prompt_compose::compose_system_for_turn_arc(
+                &g,
+                agent_role_owned.as_deref(),
+                &process_handles.tool_outcome_recorder,
+                skills_ctx,
+                crate::context_bootstrap::prompt_compose::RoleSystemResolution::Lenient,
             )
-            .unwrap_or(base_system);
+            .expect("lenient role resolution cannot fail");
             first.content = Some(crate::types::MessageContent::Text(merged));
         }
     }
