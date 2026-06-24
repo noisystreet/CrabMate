@@ -254,7 +254,7 @@ pub async fn complete_chat_retrying(
         match p.llm_backend.stream_chat(&stream, &mut req).await {
             Ok(r) => {
                 let (mut msg, finish_reason) = r;
-                crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
+                crate::dsml::materialize_deepseek_dsml_tool_calls_in_message(
                     &mut msg,
                     p.cfg.dsml_materialize.materialize_deepseek_dsml_tool_calls,
                 );

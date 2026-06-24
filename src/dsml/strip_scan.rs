@@ -1,6 +1,5 @@
 // 按标签名配对剥除 DSML 片段。独立成文件并避免 `let … else`：部分静态分析器（lizard）在相邻正则字面量场景下会误合并函数体 nloc。
 
-// 用 `concat!` 拼出含 `</` 与 `<|` 的片段，避免 lizard 等工具误把后续 `fn` 并入同一函数体。
 pub(super) const DSML_OPEN_FW: &str = concat!("<", "\u{ff5c}", "DSML", "\u{ff5c}");
 pub(super) const DSML_CLOSE_FW: &str = concat!("</", "\u{ff5c}", "DSML", "\u{ff5c}");
 pub(super) const DSML_OPEN_ASCII: &str = concat!("<|", "DSML|");

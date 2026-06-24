@@ -2,7 +2,7 @@ use regex::Regex;
 use serde_json::Value;
 use std::sync::LazyLock;
 
-use super::dsml::strip_deepseek_dsml_for_display;
+use crate::dsml::strip_deepseek_dsml_for_display;
 
 fn strip_markdown_fenced_blocks(s: &str) -> String {
     let parts: Vec<&str> = s.split("```").collect();

@@ -22,6 +22,8 @@ mod config;
 mod context_bootstrap;
 /// Web `conversation_id` 持久化（可选 SQLite）与 `SaveConversationOutcome`。
 mod conversation_store;
+/// DeepSeek DSML 解析、物化与分阶段无工具轮策略。
+mod dsml;
 mod dynamic_tools;
 mod health;
 mod health_dep_compat;
@@ -52,7 +54,6 @@ mod runtime;
 mod sse;
 mod text_encoding;
 mod text_sanitize;
-mod text_sanitize_dsml_vendor;
 mod text_util;
 mod tool_approval;
 mod tool_call_explain;

@@ -51,7 +51,6 @@ use planner_round_driver::{
     complete_first_planner_round_maybe_retry_tool_reject,
     complete_one_staged_planner_assistant_round, emit_staged_planner_tool_call_rejected_timeline,
     maybe_run_staged_plan_ensemble_then_merge, run_staged_plan_nl_followup_round,
-    strip_staged_planner_message_tool_calls,
 };
 use post_parse_pipeline_fsm::{
     ensemble_merge_should_invoke, ensemble_merge_skip_for_casual_prompt,
@@ -301,33 +300,29 @@ async fn strip_non_tool_planner_assistant_after_first_round(
     msg: &mut Message,
     p: &RunLoopParams<'_>,
 ) {
-    let raw_tool_calls = msg.tool_calls.as_ref().map(|c| c.len()).unwrap_or(0);
-    if raw_tool_calls > 0 {
+    let dsml_enabled = p
+        .ctx
+        .core
+        .cfg
+        .dsml_materialize
+        .materialize_deepseek_dsml_tool_calls;
+    let scan = crate::dsml::staged_no_tools_scan(msg, dsml_enabled, "·重写后");
+    if scan.raw_native_count > 0 {
         warn!(
             target: "crabmate",
             "分阶段规划轮重写后仍返回 {} 条原生 tool_calls，严格无工具模式下将其忽略",
-            raw_tool_calls
+            scan.raw_native_count
         );
     }
-    msg.tool_calls = None;
-    crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
-        msg,
-        p.ctx
-            .core
-            .cfg
-            .dsml_materialize
-            .materialize_deepseek_dsml_tool_calls,
-    );
-    let dsml_tool_calls = msg.tool_calls.as_ref().map(|c| c.len()).unwrap_or(0);
-    if dsml_tool_calls > 0 {
-        emit_staged_planner_tool_call_rejected_timeline(p.ctx.io.out, dsml_tool_calls).await;
+    if scan.materialized_count > 0 {
+        emit_staged_planner_tool_call_rejected_timeline(p.ctx.io.out, scan.materialized_count)
+            .await;
         warn!(
             target: "crabmate",
             "分阶段规划轮重写后仍检测到 {} 条 DSML tool_calls；严格无工具模式下将其忽略",
-            dsml_tool_calls
+            scan.materialized_count
         );
     }
-    msg.tool_calls = None;
 }
 
 async fn run_no_task_branch_then_outer<F>(
@@ -399,7 +394,7 @@ where
         p.turn.pop_last_staged_planner_coach_user_if_present();
         return Ok(ControlFlow::Break(StagedPlanRunOutcome::Finished));
     }
-    strip_staged_planner_message_tool_calls(
+    crate::dsml::strip_staged_planner_message_tool_calls(
         &mut opt_msg,
         "优化轮",
         p.ctx
