@@ -32,7 +32,21 @@
     "linux": {
       "deb": {
         "files": {
-          "usr/share/applications/crabmate.desktop": "bundle/deb/crabmate.desktop"
+          "usr/share/applications/crabmate.desktop": "bundle/deb/crabmate.desktop",
+          "etc/crabmate/config.toml": "bundle/deb/config.toml",
+          "etc/crabmate/default_config.toml": "../../config/default_config.toml",
+          "etc/crabmate/session.toml": "../../config/session.toml",
+          "etc/crabmate/context_inject.toml": "../../config/context_inject.toml",
+          "etc/crabmate/tools.toml": "../../config/tools.toml",
+          "etc/crabmate/sandbox.toml": "../../config/sandbox.toml",
+          "etc/crabmate/planning.toml": "../../config/planning.toml",
+          "etc/crabmate/memory.toml": "../../config/memory.toml",
+          "etc/crabmate/prompts/base_system_prompt.md": "../../config/prompts/base_system_prompt.md",
+          "etc/crabmate/prompts/coding_workbench_increment.md": "../../config/prompts/coding_workbench_increment.md",
+          "etc/crabmate/prompts/thinking_avoid_echo_appendix.md": "../../config/prompts/thinking_avoid_echo_appendix.md",
+          "usr/share/doc/crabmate/config/prompts/base_system_prompt.md": "../../config/prompts/base_system_prompt.md",
+          "usr/share/doc/crabmate/config/prompts/coding_workbench_increment.md": "../../config/prompts/coding_workbench_increment.md",
+          "usr/share/doc/crabmate/config/prompts/thinking_avoid_echo_appendix.md": "../../config/prompts/thinking_avoid_echo_appendix.md"
         }
       }
     }

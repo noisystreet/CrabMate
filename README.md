@@ -147,7 +147,7 @@ cd desktop-tauri/src-tauri
 cargo tauri build
 ```
 
-说明：**`prepare-sidecar.sh`** 会把 **`target/release/crabmate`**（或环境变量 **`CM_DESKTOP_BACKEND_BIN`**）复制到 **`desktop-tauri/binaries/`**，供应用作为 **sidecar** 启动后端。构建完成后安装包一般在 **`desktop-tauri/src-tauri/target/release/bundle/deb/`**（具体文件名随 **`productName`** / 版本变化）。跨平台 **`bundle.targets`**、代理与 **`GDK_BACKEND`** 等见 [**desktop-tauri/DEVELOPMENT.md**](desktop-tauri/DEVELOPMENT.md)。
+说明：**`prepare-sidecar.sh`** 会把 **`target/release/crabmate`**（或环境变量 **`CM_DESKTOP_BACKEND_BIN`**）复制到 **`desktop-tauri/binaries/`**，供应用作为 **sidecar** 启动后端。桌面 `.deb` 还会安装 `/etc/crabmate/config.toml` 与配套 `/etc/crabmate/prompts/*.md`，应用启动后端时若检测到该文件会自动追加 `--config /etc/crabmate/config.toml`。构建完成后安装包一般在 **`desktop-tauri/src-tauri/target/release/bundle/deb/`**（具体文件名随 **`productName`** / 版本变化）。跨平台 **`bundle.targets`**、代理与 **`GDK_BACKEND`** 等见 [**desktop-tauri/DEVELOPMENT.md**](desktop-tauri/DEVELOPMENT.md)。
 
 ### 开发与质检（维护者）
 

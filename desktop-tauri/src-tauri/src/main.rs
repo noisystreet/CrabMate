@@ -68,9 +68,19 @@ fn sidecar_backend_candidates() -> Vec<PathBuf> {
     candidates
 }
 
+fn resolve_backend_config_path() -> Option<PathBuf> {
+    let candidate = PathBuf::from("/etc/crabmate/config.toml");
+    if candidate.exists() {
+        Some(candidate)
+    } else {
+        None
+    }
+}
+
 fn try_spawn_backend(backend_workdir: &std::path::Path) -> Result<Child, String> {
     let mut attempted = Vec::new();
     let mut last_err = String::new();
+    let backend_config_path = resolve_backend_config_path();
 
     if let Ok(explicit) = std::env::var("CM_DESKTOP_BACKEND_BIN")
         && !explicit.trim().is_empty()
@@ -82,7 +92,11 @@ fn try_spawn_backend(backend_workdir: &std::path::Path) -> Result<Child, String>
             .arg("--host")
             .arg("127.0.0.1")
             .arg("--port")
-            .arg("3000")
+            .arg("3000");
+        if let Some(config_path) = backend_config_path.as_ref() {
+            command.arg("--config").arg(config_path);
+        }
+        command
             .current_dir(backend_workdir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -102,7 +116,11 @@ fn try_spawn_backend(backend_workdir: &std::path::Path) -> Result<Child, String>
             .arg("--host")
             .arg("127.0.0.1")
             .arg("--port")
-            .arg("3000")
+            .arg("3000");
+        if let Some(config_path) = backend_config_path.as_ref() {
+            command.arg("--config").arg(config_path);
+        }
+        command
             .current_dir(backend_workdir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -122,7 +140,11 @@ fn try_spawn_backend(backend_workdir: &std::path::Path) -> Result<Child, String>
         .arg("--host")
         .arg("127.0.0.1")
         .arg("--port")
-        .arg("3000")
+        .arg("3000");
+    if let Some(config_path) = backend_config_path.as_ref() {
+        command.arg("--config").arg(config_path);
+    }
+    command
         .current_dir(backend_workdir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

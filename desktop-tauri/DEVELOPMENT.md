@@ -19,6 +19,7 @@
 当前桌面壳逻辑会在启动时执行：
 
 - `crabmate serve --host 127.0.0.1 --port 0 --desktop-ready-json`
+- 若存在 `/etc/crabmate/config.toml`，自动追加 `--config /etc/crabmate/config.toml`
 
 并等待后端输出 `web_ready` JSON，再加载 WebView URL。
 
@@ -124,7 +125,14 @@ crabmate serve --host 127.0.0.1 --port 0 --desktop-ready-json
 
 在 **Wayland** 会话里，GTK/WebKitGTK（Tauri 嵌入页）对输入法支持仍可能不完整，表现为候选窗不显示或无法内联输入。若在终端中设置 **`GDK_BACKEND=x11`** 后正常，说明走 **X11（XWayland）后端** 可规避。
 
-打包的 **deb** 在 `bundle > linux > deb > files` 中**覆盖** `usr/share/applications/crabmate.desktop`（见 `src-tauri/bundle/deb/crabmate.desktop`），在 `Exec=` 中注入 `GDK_BACKEND=x11`。该步骤在 Tauri 生成默认桌面文件**之后**执行，不依赖 Handlebars 模板是否生效。若修改 `productName` 或二进制名，请同步该文件名与条目的 `Name` / `Exec` / `Icon`。
+打包的 **deb** 在 `bundle > linux > deb > files` 中**覆盖** `usr/share/applications/crabmate.desktop`（见 `src-tauri/bundle/deb/crabmate.desktop`），在 `Exec=` 中注入 `GDK_BACKEND=x11`。该步骤在 Tauri 生成默认桌面文件**之后**执行，不依赖 Handlebars 模板是否生效。若修改 `productName` 或二进制名，请同步该文件名与条目的 `Name` / `Exec` / `Icon`。同一段映射里还会把后端默认配置打入安装包：
+
+- `/etc/crabmate/config.toml`
+- `/etc/crabmate/*.toml`
+- `/etc/crabmate/prompts/*.md`
+- `/usr/share/doc/crabmate/config/prompts/*.md`
+
+这样桌面包与根仓库 `cargo deb` 在默认配置资产上保持一致，便于排障与离线查阅。
 
 本地调试可：
 

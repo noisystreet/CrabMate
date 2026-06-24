@@ -1,0 +1,4 @@
+[agent]
+# Desktop .deb 默认使用系统级配置入口。其余键继续走内嵌默认或环境变量覆盖。
+# 这里仅保留兼容性最稳的键，避免旧版本二进制在 `deny_unknown_fields` 下启动失败。
+system_prompt_file = "prompts/base_system_prompt.md"
