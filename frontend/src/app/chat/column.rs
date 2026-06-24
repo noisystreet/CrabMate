@@ -11,99 +11,29 @@ use super::column_keyboard::ChatColumnHomeEndNav;
 use super::composer_input_stack::ComposerInputStack;
 use super::handles::{ChatColumnShell, ChatComposerPaneSignals, ChatMessagesPaneSignals};
 use super::message_group_views::ToolRunGroupSignals;
-use super::message_virtual_viewport::{
-    EST_CHUNK_HEIGHT_PX, should_request_load_older, should_virtualize_chunks_for_stream_follow,
-    sync_virtual_scroll_signals_from_element,
+use super::messages_list::{ChatMessagesList, ChatMessagesListSignals};
+use super::scroll_shell::{
+    ChatScrollShellSignals, on_messages_scroll_event, on_messages_wheel_follow_intent,
 };
-use super::messages_scroll_compensate::LoadOlderScrollContext;
-use super::messages_virtual_list::{ChatMessagesVirtualList, ChatMessagesVirtualListSignals};
-use super::session_hydrate::try_load_older_messages_for_active_session;
 use super::tail_loading_memo::tail_loading_assistant_mid_memo;
 use super::timeline::timeline_panel_view;
 use crate::api::upload_files_multipart;
-use crate::app_prefs::AUTO_SCROLL_RESUME_GAP_PX;
 use crate::i18n;
 #[component]
 fn ChatMessagesScrollShell(
-    messages_scroller: NodeRef<leptos::html::Div>,
-    auto_scroll_chat: RwSignal<bool>,
-    messages_scroll_from_effect: RwSignal<bool>,
-    last_messages_scroll_top: RwSignal<i32>,
-    virtual_scroll_top: RwSignal<i32>,
-    virtual_viewport_height: RwSignal<i32>,
-    chat: crate::chat_session_state::ChatSessionSignals,
-    locale: RwSignal<crate::i18n::Locale>,
+    scroll_shell: ChatScrollShellSignals,
     children: Children,
 ) -> impl IntoView {
     view! {
         <div
             class="messages"
             data-testid="chat-messages-scroller"
-            node_ref=messages_scroller
+            node_ref=scroll_shell.messages_scroller
             on:wheel=move |ev: web_sys::WheelEvent| {
-                if ev.delta_y() < 0.0 {
-                    auto_scroll_chat.set(false);
-                }
+                on_messages_wheel_follow_intent(scroll_shell.auto_scroll_chat, ev);
             }
             on:scroll=move |ev: web_sys::Event| {
-                if let Some(t) = ev.target()
-                    && let Ok(el) = t.dyn_into::<web_sys::HtmlElement>()
-                {
-                    let top = el.scroll_top();
-                    let prev_top = last_messages_scroll_top.get_untracked();
-                    last_messages_scroll_top.set(top);
-                    let aid = chat.active_id.get_untracked();
-                    let chunk_count = chat.sessions.with_untracked(|list| {
-                        list.iter()
-                            .find(|s| s.id == aid)
-                            .map(|s| super::message_chunks::chunk_messages(&s.messages).len())
-                            .unwrap_or(0)
-                    });
-                    let stream_follow_virtual = should_virtualize_chunks_for_stream_follow(
-                        chunk_count,
-                        auto_scroll_chat.get_untracked(),
-                    );
-                    if stream_follow_virtual {
-                        let bucket = top / EST_CHUNK_HEIGHT_PX.max(48);
-                        let prev_bucket = virtual_scroll_top.get_untracked() / EST_CHUNK_HEIGHT_PX.max(48);
-                        if bucket != prev_bucket {
-                            sync_virtual_scroll_signals_from_element(
-                                &el,
-                                virtual_scroll_top,
-                                virtual_viewport_height,
-                            );
-                        }
-                    }
-                    let (has_older, loading) = chat.sessions.with_untracked(|list| {
-                        list.iter()
-                            .find(|s| s.id == aid)
-                            .map(|s| (s.history_has_older_flag(), chat.history_loading_older.get_untracked()))
-                            .unwrap_or((false, false))
-                    });
-                    if should_request_load_older(top, has_older, loading) {
-                        try_load_older_messages_for_active_session(
-                            chat,
-                            locale.get_untracked(),
-                            LoadOlderScrollContext {
-                                messages_scroller,
-                                messages_scroll_from_effect,
-                                virtual_scroll_top,
-                                virtual_viewport_height,
-                                scroll_top_before: top,
-                                scroll_height_before: el.scroll_height(),
-                            },
-                        );
-                    }
-                    if messages_scroll_from_effect.get_untracked() {
-                        return;
-                    }
-                    let gap = el.scroll_height() - top - el.client_height();
-                    if gap > AUTO_SCROLL_RESUME_GAP_PX {
-                        auto_scroll_chat.set(false);
-                    } else if !auto_scroll_chat.get_untracked() && top >= prev_top {
-                        auto_scroll_chat.set(true);
-                    }
-                }
+                on_messages_scroll_event(scroll_shell, ev);
             }
         >
             {children()}
@@ -120,16 +50,13 @@ fn ChatMessagesThreadBody(
         locale,
         timeline_panel_expanded,
         chat,
-        messages_scroller,
-        messages_scroll_from_effect,
+        scroll_shell,
         ..
     } = pane;
 
     let sessions = chat.sessions;
     let active_id = chat.active_id;
     let auto_scroll_chat = tool_run_group_signals.auto_scroll_chat;
-    let virtual_scroll_top = pane.virtual_scroll_top;
-    let virtual_viewport_height = pane.virtual_viewport_height;
 
     view! {
         <div class="chat-thread">
@@ -170,15 +97,12 @@ fn ChatMessagesThreadBody(
                         }
                     }
                 >
-                    <ChatMessagesVirtualList signals=ChatMessagesVirtualListSignals {
+                    <ChatMessagesList signals=ChatMessagesListSignals {
                         chat,
                         sessions,
                         active_id,
                         locale,
-                        virtual_scroll_top,
-                        virtual_viewport_height,
-                        messages_scroller,
-                        messages_scroll_from_effect,
+                        scroll_shell,
                         tool_run_group_signals,
                     } />
                 </Show>
@@ -190,11 +114,7 @@ fn ChatMessagesThreadBody(
 #[component]
 fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
     let ChatMessagesPaneSignals {
-        locale,
-        messages_scroller,
-        auto_scroll_chat,
-        messages_scroll_from_effect,
-        last_messages_scroll_top,
+        scroll_shell,
         timeline_panel_expanded: _,
         chat,
         collapsed_long_assistant_ids,
@@ -206,11 +126,12 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
         stream_turn_busy_ui,
         stream_follow_up,
         status_err,
+        locale,
         markdown_render,
         apply_assistant_display_filters,
-        virtual_scroll_top,
-        virtual_viewport_height,
     } = signals;
+
+    let auto_scroll_chat = scroll_shell.auto_scroll_chat;
 
     let tail_loading_assistant_mid = tail_loading_assistant_mid_memo(chat);
 
@@ -233,16 +154,7 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
     };
 
     view! {
-        <ChatMessagesScrollShell
-            messages_scroller
-            auto_scroll_chat
-            messages_scroll_from_effect
-            last_messages_scroll_top
-            virtual_scroll_top
-            virtual_viewport_height
-            chat
-            locale
-        >
+        <ChatMessagesScrollShell scroll_shell>
             <ChatMessagesThreadBody pane=signals tool_run_group_signals />
         </ChatMessagesScrollShell>
     }
@@ -575,13 +487,7 @@ fn ChatComposerPane(signals: ChatComposerPaneSignals) -> impl IntoView {
 }
 
 pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
-    let home_end_nav = ChatColumnHomeEndNav {
-        messages_scroller: shell.app.chat_composer.messages_scroller,
-        messages_scroll_from_effect: shell.app.chat_composer.messages_scroll_from_effect,
-        auto_scroll_chat: shell.app.chat_composer.auto_scroll_chat,
-        virtual_scroll_top: shell.app.chat_composer.virtual_scroll_top,
-        virtual_viewport_height: shell.app.chat_composer.virtual_viewport_height,
-    };
+    let home_end_nav = ChatColumnHomeEndNav::from_composer(&shell.app.chat_composer);
     let run_send_clarify_sv = StoredValue::new(shell.run_send_message.clone());
     view! {
                 <div

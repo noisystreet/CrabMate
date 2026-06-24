@@ -18,11 +18,10 @@ mod message_group_views;
 mod message_row;
 mod message_row_actions;
 mod message_row_user_layout;
-mod message_virtual_viewport;
-mod messages_scroll_compensate;
-mod messages_virtual_list;
+mod messages_list;
 mod scroll;
 mod scroll_follow;
+mod scroll_shell;
 mod session_hydrate;
 mod session_storage;
 #[cfg(test)]

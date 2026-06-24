@@ -10,8 +10,8 @@ use std::sync::Arc;
 use leptos::prelude::*;
 
 use super::composer_follow_up::ComposerStreamFollowUp;
+use super::scroll_shell::ChatScrollShellSignals;
 use crate::app::app_signals::{AppSignals, StreamControlSignals};
-use crate::app::chat::scroll_follow::ChatScrollFollowAnchors;
 use crate::chat_session_state::{ChatSessionSignals, ChatStreamBusyMemos};
 use crate::clarification_form::PendingClarificationForm;
 use crate::i18n::Locale;
@@ -98,10 +98,6 @@ impl ComposerStreamShell {
 #[derive(Clone, Copy)]
 pub(crate) struct ChatMessagesPaneSignals {
     pub locale: RwSignal<crate::i18n::Locale>,
-    pub messages_scroller: NodeRef<leptos::html::Div>,
-    pub auto_scroll_chat: RwSignal<bool>,
-    pub messages_scroll_from_effect: RwSignal<bool>,
-    pub last_messages_scroll_top: RwSignal<i32>,
     pub timeline_panel_expanded: RwSignal<bool>,
     pub chat: ChatSessionSignals,
     pub collapsed_long_assistant_ids: RwSignal<Vec<String>>,
@@ -115,8 +111,7 @@ pub(crate) struct ChatMessagesPaneSignals {
     pub status_err: RwSignal<Option<String>>,
     pub markdown_render: RwSignal<bool>,
     pub apply_assistant_display_filters: RwSignal<bool>,
-    pub virtual_scroll_top: RwSignal<i32>,
-    pub virtual_viewport_height: RwSignal<i32>,
+    pub scroll_shell: ChatScrollShellSignals,
 }
 
 /// 输入区与发送条所需信号（与 [`ChatMessagesPaneSignals`] 对称，由 [`ChatColumnShell`] 单点组装）。
@@ -164,10 +159,6 @@ impl ChatColumnShell {
         let su = app.shell_ui;
         ChatMessagesPaneSignals {
             locale: su.locale,
-            messages_scroller: cc.messages_scroller,
-            auto_scroll_chat: cc.auto_scroll_chat,
-            messages_scroll_from_effect: cc.messages_scroll_from_effect,
-            last_messages_scroll_top: cc.last_messages_scroll_top,
             timeline_panel_expanded: cc.timeline_panel_expanded,
             chat: app.chat,
             collapsed_long_assistant_ids: cc.collapsed_long_assistant_ids,
@@ -181,8 +172,7 @@ impl ChatColumnShell {
             status_err: self.stream_shell.stream.status_err,
             markdown_render: su.markdown_render,
             apply_assistant_display_filters: su.apply_assistant_display_filters,
-            virtual_scroll_top: cc.virtual_scroll_top,
-            virtual_viewport_height: cc.virtual_viewport_height,
+            scroll_shell: ChatScrollShellSignals::from_composer(&cc),
         }
     }
 
@@ -237,7 +227,7 @@ pub struct WireComposerStreamsStreamSlice {
     pub stream_shell: ComposerStreamShell,
     /// 见 [`ChatStreamBusyMemos::stream_turn_busy_ui`]。
     pub stream_turn_busy_ui: Memo<bool>,
-    pub scroll_follow: ChatScrollFollowAnchors,
+    pub scroll_shell: ChatScrollShellSignals,
     pub pending_images: RwSignal<Vec<String>>,
 }
 

@@ -10,7 +10,7 @@ use super::super::handles::ComposerStreamShell;
 use super::super::scroll_follow::engage_follow_and_scroll_bottom;
 use super::super::stream_follow_up_gates::RegenAttachGate;
 use super::helpers::begin_stream_shell_turn;
-use crate::app::chat::scroll_follow::ChatScrollFollowAnchors;
+use crate::app::chat::scroll_shell::ChatScrollShellSignals;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::session_ops::prepare_retry_failed_assistant_turn;
 
@@ -19,7 +19,7 @@ pub(super) struct StreamFollowUpWiring {
     pub initialized: RwSignal<bool>,
     pub chat: ChatSessionSignals,
     pub attach_chat_stream: AttachChatStreamArc,
-    pub scroll_follow: ChatScrollFollowAnchors,
+    pub scroll_shell: ChatScrollShellSignals,
     pub shell: ComposerStreamShell,
     pub stream_follow_up: RwSignal<ComposerStreamFollowUp>,
     pub stream_turn_busy_ui: Memo<bool>,
@@ -30,7 +30,7 @@ pub(super) fn wire_stream_follow_up_effect(args: StreamFollowUpWiring) {
         initialized,
         chat,
         attach_chat_stream,
-        scroll_follow,
+        scroll_shell,
         shell,
         stream_follow_up,
         stream_turn_busy_ui,
@@ -39,7 +39,7 @@ pub(super) fn wire_stream_follow_up_effect(args: StreamFollowUpWiring) {
     Effect::new({
         let chat = chat;
         let attach = Arc::clone(&attach_chat_stream);
-        let scroll_follow = scroll_follow;
+        let scroll_shell = scroll_shell;
         let shell = shell.clone();
         move |_| {
             let pending = stream_follow_up.get();
@@ -58,7 +58,7 @@ pub(super) fn wire_stream_follow_up_effect(args: StreamFollowUpWiring) {
                     let Some((user_text, user_imgs, asst_id)) = prepared else {
                         return;
                     };
-                    engage_follow_and_scroll_bottom(scroll_follow);
+                    engage_follow_and_scroll_bottom(scroll_shell);
                     begin_stream_shell_turn(&shell);
                     attach(user_text, user_imgs, asst_id, None);
                 }
@@ -74,7 +74,7 @@ pub(super) fn wire_stream_follow_up_effect(args: StreamFollowUpWiring) {
                         return;
                     }
                     stream_follow_up.set(ComposerStreamFollowUp::Idle);
-                    engage_follow_and_scroll_bottom(scroll_follow);
+                    engage_follow_and_scroll_bottom(scroll_shell);
                     begin_stream_shell_turn(&shell);
                     attach(user_text, user_imgs, asst_id, None);
                 }

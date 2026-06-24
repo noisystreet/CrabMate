@@ -27,8 +27,9 @@ use super::handles::{
     ChatComposerWires, ComposerStreamShell, WireComposerStreamsArgs,
     WireComposerStreamsSessionSlice, WireComposerStreamsStreamSlice,
 };
-use super::scroll::{wire_focus_message_after_nav, wire_messages_virtual_viewport_measure};
-use super::scroll_follow::{ChatScrollFollowAnchors, wire_content_follow_scroll};
+use super::scroll::wire_focus_message_after_nav;
+use super::scroll_follow::wire_content_follow_scroll;
+use super::scroll_shell::ChatScrollShellSignals;
 
 /// 注册 `wire_chat_domain_effects` 所需的信号与句柄：[`ChatDomainWiringSignals`] + 流式壳。
 #[derive(Clone)]
@@ -70,19 +71,8 @@ fn wire_chat_domain_auxiliary_sequence(a: &WireChatDomainEffectsArgs) {
         d.composer.composer_mirror_scroll_top,
     );
 
-    wire_messages_virtual_viewport_measure(
-        d.composer.messages_scroller,
-        d.composer.virtual_viewport_height,
-    );
-
-    let scroll_follow = ChatScrollFollowAnchors {
-        messages_scroller: d.composer.messages_scroller,
-        auto_scroll_chat: d.composer.auto_scroll_chat,
-        messages_scroll_from_effect: d.composer.messages_scroll_from_effect,
-        virtual_scroll_top: d.composer.virtual_scroll_top,
-        virtual_viewport_height: d.composer.virtual_viewport_height,
-    };
-    wire_content_follow_scroll(d.chat, scroll_follow);
+    let scroll_shell = ChatScrollShellSignals::from_composer(&d.composer);
+    wire_content_follow_scroll(d.chat, scroll_shell);
 
     wire_chat_find_matches(
         d.chat,
@@ -125,13 +115,7 @@ pub(crate) fn wire_chat_domain_effects(
         stream: WireComposerStreamsStreamSlice {
             stream_shell: args.stream_shell,
             stream_turn_busy_ui: stream_busy_memos.stream_turn_busy_ui,
-            scroll_follow: ChatScrollFollowAnchors {
-                messages_scroller: d.composer.messages_scroller,
-                auto_scroll_chat: d.composer.auto_scroll_chat,
-                messages_scroll_from_effect: d.composer.messages_scroll_from_effect,
-                virtual_scroll_top: d.composer.virtual_scroll_top,
-                virtual_viewport_height: d.composer.virtual_viewport_height,
-            },
+            scroll_shell: ChatScrollShellSignals::from_composer(&d.composer),
             pending_images: d.composer.pending_images,
         },
     });
