@@ -158,6 +158,8 @@ fn clamp_finalize_mid_layer_scalars(b: &ConfigBuilder) -> FinalizeMidLayerScalar
 
 /// 载入 system_prompt 并与 Cursor Rules / Skills 合并；供角色目录解析使用路径字段。
 struct PromptMergeForRoles {
+    /// 通用 L0（`base_system_prompt.md` 等），未叠加编程层 / cursor rules / skills。
+    universal_l0_system_prompt: String,
     system_prompt: String,
     cursor_rules_enabled: bool,
     cursor_rules_dir: String,
@@ -190,6 +192,11 @@ fn merge_system_prompt_layers_for_finalize(
     if system_prompt.trim().is_empty() {
         return Err("配置错误：system_prompt 从文件或内联加载后为空".to_string());
     }
+    let universal_l0_system_prompt = system_prompt.clone();
+    let system_prompt = super::agent_roles::prepend_l0_base_to_role_body(
+        &universal_l0_system_prompt,
+        embedded_coding_workbench_increment(),
+    );
     let cursor_rules_enabled = b.cursor_rules.cursor_rules_enabled.unwrap_or(true);
     let cursor_rules_dir = b
         .cursor_rules
@@ -231,6 +238,7 @@ fn merge_system_prompt_layers_for_finalize(
         skills_max_chars as usize,
     )?;
     Ok(PromptMergeForRoles {
+        universal_l0_system_prompt,
         system_prompt,
         cursor_rules_enabled,
         cursor_rules_dir,

@@ -193,7 +193,7 @@ fn runner_summarize_experience(args: &str, ctx: &ToolContext<'_>) -> String {
 
 ### Step 6: 更新 System Prompt
 
-**文件**: `config/prompts/default_system_prompt.md`
+**文件**: `config/prompts/base_system_prompt.md`（L0）与 `config/prompts/coding_workbench_increment.md`（L0b）
 
 添加 `summarize_experience` 调用引导段落。
 

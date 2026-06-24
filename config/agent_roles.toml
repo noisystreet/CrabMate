@@ -1,5 +1,6 @@
 # 可选多角色：与 `config/default_config.toml` 等一并被 `load_config` 合并（未使用 `--config` 时读取本文件）。
 # 若使用 `crabmate --config path/to/foo.toml`，则改为读取同目录下的 `agent_roles.toml`。
+# 各角色的 `system_prompt_file` 仅需写**角色增量**；`finalize` 会自动叠加通用 L0（`base_system_prompt.md`）及（除 companion / philosopher / literary 外）`coding_workbench_increment.md`。
 # 完整说明见 docs/配置说明.md「多角色（agent_roles）」。
 #
 # 示例（取消注释并定义 id 后生效）：

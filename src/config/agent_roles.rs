@@ -1,4 +1,5 @@
-//! 可选多角色（`config/agent_roles.toml`）：每条角色映射到一条已合并 cursor rules 的 system 正文。
+//! 可选多角色（`config/agent_roles.toml`）：每条角色在通用 L0 基底上叠加增量正文，再合并 cursor rules 与 skills。
+//! 工程 / 审阅 / 科学等角色另叠加 **`coding_workbench_increment`**；陪聊 / 哲学 / 文学角色不叠加该层。
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -153,11 +154,46 @@ fn read_system_prompt_file_resolved(
     ))
 }
 
+/// 与 [`crate::config::embedded_coding_workbench_increment`] 相对：不叠加编程工作台层的命名角色 id。
+fn is_non_coding_agent_role(role_id: &str) -> bool {
+    matches!(role_id, "companion" | "philosopher" | "literary")
+}
+
+fn l0_stack_before_role_delta(
+    universal_l0: &str,
+    coding_workbench_increment: &str,
+    role_id: &str,
+    role_delta: &str,
+) -> String {
+    let with_coding = if is_non_coding_agent_role(role_id) {
+        universal_l0.to_string()
+    } else {
+        prepend_l0_base_to_role_body(universal_l0, coding_workbench_increment)
+    };
+    prepend_l0_base_to_role_body(&with_coding, role_delta)
+}
+
+/// 角色专用 `system_prompt` / `system_prompt_file` 叠加在通用 L0（及可选编程层）之后（再经 L1/L2 合并）。
+pub(super) fn prepend_l0_base_to_role_body(base_l0: &str, role_body: &str) -> String {
+    let base = base_l0.trim();
+    let role = role_body.trim();
+    match (base.is_empty(), role.is_empty()) {
+        (true, true) => String::new(),
+        (true, false) => role.to_string(),
+        (false, true) => base.to_string(),
+        (false, false) => format!("{base}\n\n{role}"),
+    }
+}
+
 /// 由累加后的角色条目生成 `id -> 已合并 cursor rules 的 system`；并校验 `default_role_id`。
 pub(super) struct FinalizeAgentRoleCatalogParams<'a> {
     pub entries: HashMap<String, AgentRoleEntryBuilder>,
     pub default_role_id: Option<String>,
     pub global_effective_system_prompt: &'a str,
+    /// 通用 L0（`system_prompt_file`，默认 `base_system_prompt.md`），尚未合并编程层 / cursor rules / skills。
+    pub universal_l0_system_prompt: &'a str,
+    /// 编程工作台增量（`coding_workbench_increment.md`）；非陪聊/哲学/文学角色与默认全局会话叠加。
+    pub coding_workbench_increment: &'a str,
     pub system_prompt_search_bases: &'a [PathBuf],
     pub run_command_working_dir: &'a Path,
     pub cursor_rules_enabled: bool,
@@ -177,6 +213,8 @@ pub(super) fn finalize_agent_role_catalog(
         entries,
         default_role_id,
         global_effective_system_prompt,
+        universal_l0_system_prompt,
+        coding_workbench_increment,
         system_prompt_search_bases,
         run_command_working_dir,
         cursor_rules_enabled,
@@ -202,8 +240,14 @@ pub(super) fn finalize_agent_role_catalog(
                     "配置错误：角色 \"{id}\" 的 system_prompt_file 加载后为空"
                 ));
             }
+            let combined = l0_stack_before_role_delta(
+                universal_l0_system_prompt,
+                coding_workbench_increment,
+                id.as_str(),
+                raw.trim(),
+            );
             let with_rules = cursor_rules::merge_system_prompt_with_cursor_rules(
-                raw,
+                combined,
                 cursor_rules_enabled,
                 cursor_rules_dir,
                 cursor_rules_include_agents_md,
@@ -222,8 +266,14 @@ pub(super) fn finalize_agent_role_catalog(
             if s.trim().is_empty() {
                 global_effective_system_prompt.to_string()
             } else {
+                let combined = l0_stack_before_role_delta(
+                    universal_l0_system_prompt,
+                    coding_workbench_increment,
+                    id.as_str(),
+                    s.trim(),
+                );
                 let with_rules = cursor_rules::merge_system_prompt_with_cursor_rules(
-                    s.clone(),
+                    combined,
                     cursor_rules_enabled,
                     cursor_rules_dir,
                     cursor_rules_include_agents_md,
@@ -270,5 +320,30 @@ pub(super) fn finalize_agent_role_catalog(
         Ok((None, Arc::new(HashMap::new())))
     } else {
         Ok((default_role_id, Arc::new(out)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::prepend_l0_base_to_role_body;
+
+    #[test]
+    fn prepend_l0_base_joins_with_blank_line() {
+        let out = prepend_l0_base_to_role_body("BASE", "ROLE");
+        assert_eq!(out, "BASE\n\nROLE");
+    }
+
+    #[test]
+    fn l0_stack_omits_coding_for_companion() {
+        let out = super::l0_stack_before_role_delta("UNI", "CODE", "companion", "ROLE");
+        assert_eq!(out, "UNI\n\nROLE");
+        assert!(!out.contains("CODE"));
+    }
+
+    #[test]
+    fn l0_stack_includes_coding_for_engineer() {
+        let out = super::l0_stack_before_role_delta("UNI", "CODE", "engineer", "ROLE");
+        assert!(out.starts_with("UNI\n\nCODE"));
+        assert!(out.ends_with("ROLE"));
     }
 }

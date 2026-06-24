@@ -41,7 +41,8 @@ assets = [
     ["config/sandbox.toml", "etc/crabmate/sandbox.toml", "644"],
     ["config/planning.toml", "etc/crabmate/planning.toml", "644"],
     ["config/memory.toml", "etc/crabmate/memory.toml", "644"],
-    ["config/prompts/default_system_prompt.md", "usr/share/doc/crabmate/config/prompts/default_system_prompt.md", "644"],
+    ["config/prompts/base_system_prompt.md", "usr/share/doc/crabmate/config/prompts/base_system_prompt.md", "644"],
+    ["config/prompts/coding_workbench_increment.md", "usr/share/doc/crabmate/config/prompts/coding_workbench_increment.md", "644"],
     # 文档
     ["README.md", "usr/share/doc/crabmate/README.md", "644"],
     # man page（troff；由 `cargo run --bin crabmate-gen-man` 再生成）

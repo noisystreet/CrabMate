@@ -66,9 +66,18 @@ fn read_system_prompt_file_resolved(
 const EMBEDDED_THINKING_AVOID_ECHO_APPENDIX: &str =
     include_str!("../../config/prompts/thinking_avoid_echo_appendix.md");
 
+/// 编程工作台增量（与 **`config/prompts/coding_workbench_increment.md`** 一致）。
+const EMBEDDED_CODING_WORKBENCH_INCREMENT: &str =
+    include_str!("../../config/prompts/coding_workbench_increment.md");
+
 /// 与 [`resolve_thinking_avoid_echo_appendix`] 使用的内置正文一致；供 `augment_system_prompt` 等在运行时附录字段为空时回退。
 pub(crate) fn embedded_thinking_avoid_echo_appendix() -> &'static str {
     EMBEDDED_THINKING_AVOID_ECHO_APPENDIX.trim()
+}
+
+/// 默认全局会话与工程向角色共用的编程层增量正文。
+pub(crate) fn embedded_coding_workbench_increment() -> &'static str {
+    EMBEDDED_CODING_WORKBENCH_INCREMENT.trim()
 }
 
 fn resolve_thinking_avoid_echo_appendix(
@@ -631,6 +640,8 @@ fn finalize_agent_config(
             entries: std::mem::take(&mut b.agent_role_entries),
             default_role_id: default_agent_role_id,
             global_effective_system_prompt: pm.system_prompt.as_str(),
+            universal_l0_system_prompt: pm.universal_l0_system_prompt.as_str(),
+            coding_workbench_increment: super::finalize::embedded_coding_workbench_increment(),
             system_prompt_search_bases: &system_prompt_search_bases,
             run_command_working_dir: run_command_working_dir.as_path(),
             cursor_rules_enabled: pm.cursor_rules_enabled,
