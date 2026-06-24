@@ -151,9 +151,29 @@
   margin-bottom: 2px;
 }
 
-.nav-rail-mode-actions .btn-new-chat-ds {
-  margin-top: 0;
-  margin-bottom: 10px;
+.nav-rail-mode-toolbar {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  margin: 0 10px 8px;
+}
+
+.nav-rail-mode-toolbar .nav-rail-layout-segment,
+.nav-rail-mode-toolbar .layout-mode-segment {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.btn-nav-new-chat {
+  flex-shrink: 0;
+  width: 2.25rem;
+  min-height: 2rem;
+  padding: 0;
+  font-size: 1.2rem;
+  font-weight: 650;
+  line-height: 1;
+  border-radius: var(--radius-btn);
 }
 
 .layout-mode-segment {
@@ -200,6 +220,22 @@
 .mobile-layout-segment .layout-mode-segment-btn {
   padding: 5px 8px;
   font-size: 11px;
+}
+
+.shell-mobile-new-chat {
+  flex-shrink: 0;
+  min-width: 2rem;
+  padding-inline: 0.45rem;
+  font-size: 1.15rem;
+  font-weight: 650;
+  line-height: 1;
+}
+
+/* 编辑器模式桌面端：侧栏已收起时不显示「展开」把手，主区留给 IDE */
+@media (min-width: 769px) {
+  .app-root.app-shell-ds.app-root--ide-layout.sidebar-rail-collapsed .sidebar-rail-reveal-btn {
+    display: none !important;
+  }
 }
 
 .btn-nav-ghost-ds {
