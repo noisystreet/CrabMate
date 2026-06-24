@@ -6,6 +6,14 @@
   <img src="crabmate.svg" alt="CrabMate Logo" width="240" />
 </p>
 
+<p align="center">
+  <a href="https://github.com/noisystreet/CrabMate/actions/workflows/ci.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/noisystreet/CrabMate/actions/workflows/code-complexity.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/code-complexity.yml/badge.svg" alt="code-complexity" /></a>
+  <a href="https://github.com/noisystreet/CrabMate/actions/workflows/dependency-security.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/dependency-security.yml/badge.svg" alt="Dependency security" /></a>
+  <a href="https://github.com/noisystreet/CrabMate/blob/main/LICENSE"><img src="https://img.shields.io/github/license/noisystreet/CrabMate" alt="License" /></a>
+  <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust" alt="Rust 1.85+" /></a>
+</p>
+
 **CrabMate** is a Rust-based AI agent that speaks **OpenAI-compatible** `chat/completions` to backends such as DeepSeek, MiniMax, Zhipu GLM, Moonshot Kimi, and local Ollama.
 
 It includes **function calling**, workspace command and file tools, plus a **Web UI** and **CLI**.
@@ -133,7 +141,7 @@ cargo tauri build
 
 ### Maintainer QA
 
-- **Cargo features / slim binaries**: defaults **`mcp` + `docker_sandbox` + `fastembed`**; interaction with **`finalize`** and optional deps: root **`Cargo.toml`** **`[features]`** and the **Lint / Test / Build** table in **`AGENTS.md`**.
+- **Cargo features / slim binaries**: defaults **`mcp` + `fastembed`** (`docker_sandbox` is opt-in); interaction with **`finalize`** and optional deps: root **`Cargo.toml`** **`[features]`** and the **Lint / Test / Build** table in **`AGENTS.md`**.
 - **fmt / clippy / test, pre-commit, SSE script, E2E**: **[docs/en/TESTING.md](docs/en/TESTING.md)** (includes **`./scripts/check-sse-protocol.sh`**).
 
 ## Documentation index

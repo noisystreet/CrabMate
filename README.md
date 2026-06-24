@@ -6,6 +6,14 @@
   <img src="crabmate.svg" alt="CrabMate Logo" width="240" />
 </p>
 
+<p align="center">
+  <a href="https://github.com/noisystreet/CrabMate/actions/workflows/ci.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/noisystreet/CrabMate/actions/workflows/code-complexity.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/code-complexity.yml/badge.svg" alt="code-complexity" /></a>
+  <a href="https://github.com/noisystreet/CrabMate/actions/workflows/dependency-security.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/dependency-security.yml/badge.svg" alt="Dependency security" /></a>
+  <a href="https://github.com/noisystreet/CrabMate/blob/main/LICENSE"><img src="https://img.shields.io/github/license/noisystreet/CrabMate" alt="License" /></a>
+  <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust" alt="Rust 1.85+" /></a>
+</p>
+
 **CrabMate** 是基于 Rust 编写的 AI Agent，通过 **OpenAI 兼容** 的 `chat/completions` 对接 DeepSeek、MiniMax、智谱 GLM、Moonshot Kimi、本地 Ollama 等后端大模型。
 
 内置 **Function Calling** 与工作区内的命令、文件等工具，并提供 **Web UI** 与 **CLI**。
@@ -151,7 +159,7 @@ cargo tauri build
 
 ### 开发与质检（维护者）
 
-- **Cargo features / 裁剪二进制**：默认 **`mcp` + `docker_sandbox` + `fastembed`**；关闭某项时与 **`finalize`**、可选依赖的联动见根目录 **`Cargo.toml`** **`[features]`** 与 **`AGENTS.md`**（Lint / Test / Build）摘要。
+- **Cargo features / 裁剪二进制**：默认 **`mcp` + `fastembed`**（`docker_sandbox` 按需开启）；关闭某项时与 **`finalize`**、可选依赖的联动见根目录 **`Cargo.toml`** **`[features]`** 与 **`AGENTS.md`**（Lint / Test / Build）摘要。
 - **fmt / clippy / test、pre-commit、SSE 回归脚本、E2E**：命令汇总见 **[docs/测试指南.md](docs/测试指南.md)**（含 **`./scripts/check-sse-protocol.sh`**）。
 
 ## 文档索引
