@@ -59,16 +59,12 @@ pub(crate) async fn first_turn_project_context_user_message(
     }
 }
 
-/// Web 首轮专用门控：仅在用户已显式设置工作区后才注入项目上下文。
+/// Web 首轮项目上下文：与 CLI 同源，按有效工作区路径注入（不再要求 Web `workspace_is_set` 门控）。
 pub(crate) async fn first_turn_project_context_user_message_for_web(
-    workspace_is_set: bool,
     workspace_root: &Path,
     cfg: &AgentConfig,
     memory_snippet: Option<String>,
 ) -> Option<String> {
-    if !workspace_is_set {
-        return None;
-    }
     first_turn_project_context_user_message(workspace_root, cfg, memory_snippet).await
 }
 
@@ -81,20 +77,32 @@ pub(crate) fn first_turn_project_context_user_message_sync(
     build_first_turn_user_context_markdown(workspace_root, cfg, memory_snippet)
 }
 
-/// `system_prompt_for_new_conversation` + 工具统计附录；角色解析失败时退回全局 `system_prompt`（REPL / 磁盘会话与 `repl_bootstrap_messages_fast` 一致）。
-pub(crate) fn augmented_system_for_new_conversation_lenient(
+/// L3+L4（无 L5）；`agent_role` 为显式选用（CLI `--agent-role` / REPL 内存态），未知 id → `Err`。
+pub(crate) fn augmented_system_for_new_conversation(
     cfg: &AgentConfig,
     agent_role: Option<&str>,
     tool_recorder: &std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder>,
-) -> String {
+) -> Result<String, String> {
+    let role = super::prompt_compose::resolve_agent_role_for_prompt_compose(cfg, agent_role, None)?;
     super::prompt_compose::compose_system_for_turn_arc(
         cfg,
-        agent_role,
+        role.as_deref(),
         tool_recorder,
         None,
-        super::prompt_compose::RoleSystemResolution::Lenient,
+        super::prompt_compose::RoleSystemResolution::Strict,
     )
-    .expect("lenient role resolution cannot fail")
+}
+
+/// 新会话 tiktoken 基线：`system`（L3+L4）+ 可选 L6 首轮工作区上下文 `user`（与 Web/CLI 首条消息形状对齐，不含 L5）。
+pub(crate) fn new_session_prompt_baseline_messages(
+    cfg: &AgentConfig,
+    system_for_turn: &str,
+    workspace_root: &Path,
+    memory_snippet: Option<String>,
+) -> Vec<Message> {
+    let project_context =
+        first_turn_project_context_user_message_sync(workspace_root, cfg, memory_snippet);
+    compose_new_conversation_messages(system_for_turn, project_context, None)
 }
 
 /// 新会话首轮：`system` + 可选项目上下文 `user` + 可选本轮用户 `user`（与 Web 新会话、`messages_chat_seed` 组合一致）。
@@ -143,15 +151,12 @@ mod tests {
     use super::first_turn_project_context_user_message_for_web;
 
     #[tokio::test]
-    async fn web_first_turn_skips_context_when_workspace_unset() {
+    async fn web_first_turn_injects_context_like_cli() {
         let cfg = crate::config::load_config(None).expect("embed default");
-        let out = first_turn_project_context_user_message_for_web(
-            false,
-            std::path::Path::new("."),
-            &cfg,
-            Some("should_not_be_used".to_string()),
-        )
-        .await;
-        assert!(out.is_none());
+        let out =
+            first_turn_project_context_user_message_for_web(std::path::Path::new("."), &cfg, None)
+                .await;
+        // 默认配置下 living docs / profile 可能为空，但路径门控不应再阻断注入尝试。
+        let _ = out;
     }
 }

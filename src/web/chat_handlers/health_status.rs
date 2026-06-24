@@ -192,18 +192,38 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
     let mut agent_role_ids: Vec<String> = cfg.roles_prompts.agent_roles.keys().cloned().collect();
     agent_role_ids.sort();
     let tool_recorder = &state.aux.process_handles.tool_outcome_recorder;
+    let workspace_root = std::path::PathBuf::from(state.effective_workspace_path().await);
+    let memory_snippet = if cfg.context_bootstrap_inject.agent_memory_file_enabled {
+        crate::memory::agent_memory::load_memory_snippet(
+            &workspace_root,
+            cfg.context_bootstrap_inject.agent_memory_file.as_str(),
+            cfg.context_bootstrap_inject.agent_memory_file_max_chars,
+        )
+    } else {
+        None
+    };
     let mut tiktoken_new_session_baseline_by_agent_role = std::collections::BTreeMap::new();
     let push_baseline = |map: &mut std::collections::BTreeMap<String, u32>,
                          key: String,
                          role: Option<&str>| {
-        let system = crate::context_bootstrap::conversation_turn_bootstrap::augmented_system_for_new_conversation_lenient(
+        let system = match crate::context_bootstrap::conversation_turn_bootstrap::augmented_system_for_new_conversation(
             &cfg,
             role,
             tool_recorder,
-        );
+        ) {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let messages =
+            crate::context_bootstrap::conversation_turn_bootstrap::new_session_prompt_baseline_messages(
+                &cfg,
+                &system,
+                workspace_root.as_path(),
+                memory_snippet.clone(),
+            );
         if let Some(snap) =
-            crate::agent::tiktoken_prompt_tokens::prompt_token_count_new_session_system_baseline(
-                &cfg, &system,
+            crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
+                &cfg, &messages,
             )
         {
             map.insert(key, snap.prompt_tokens);

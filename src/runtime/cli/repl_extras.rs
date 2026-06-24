@@ -3,7 +3,7 @@
 use crate::config::AgentConfig;
 use crate::config::SharedAgentConfig;
 use crate::context_bootstrap::conversation_turn_bootstrap::{
-    augmented_system_for_new_conversation_lenient, compose_new_conversation_messages,
+    augmented_system_for_new_conversation, compose_new_conversation_messages,
     first_turn_project_context_user_message_sync,
 };
 use crate::process_handles::ProcessHandles;
@@ -67,8 +67,8 @@ pub(crate) async fn repl_rebuild_bootstrap_messages(
     agent_role: Option<&str>,
     tool_recorder: &std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder>,
 ) -> Vec<Message> {
-    let system_prompt =
-        augmented_system_for_new_conversation_lenient(cfg, agent_role, tool_recorder);
+    let system_prompt = augmented_system_for_new_conversation(cfg, agent_role, tool_recorder)
+        .unwrap_or_else(|e| panic!("repl rebuild bootstrap system: {e}"));
     let system_prompt_fb = system_prompt.clone();
     let cfg = cfg.clone();
     let wd = work_dir.to_path_buf();

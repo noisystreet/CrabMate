@@ -167,7 +167,7 @@ fn refresh_existing_turn_system(
     seed: &mut ConversationTurnSeed,
     agent_role: Option<&str>,
     user_msg: &str,
-    workspace_root: Option<&std::path::Path>,
+    workspace_root: &std::path::Path,
     tool_recorder: &Arc<crate::tool_stats::ToolOutcomeRecorder>,
 ) -> Result<(), String> {
     let persisted = seed.persisted_active_agent_role.clone();
@@ -181,23 +181,23 @@ fn refresh_existing_turn_system(
         persisted.as_deref(),
         agent_role,
         tool_recorder,
-        workspace_root,
+        Some(workspace_root),
         user_msg,
     )?;
-    let role_for_turn = agent_role
-        .and_then(|s| {
-            let t = s.trim();
-            if t.is_empty() { None } else { Some(t) }
-        })
-        .or(persisted.as_deref());
-    let skills_base = workspace_root.map(resolve_skills_base_dir);
+    let role_for_turn =
+        crate::context_bootstrap::prompt_compose::resolve_agent_role_for_prompt_compose(
+            cfg,
+            agent_role,
+            persisted.as_deref(),
+        )?;
+    let skills_base = resolve_skills_base_dir(workspace_root);
     let (system_for_turn, diag) = compose_first_system_for_turn_with_diagnostics(
         cfg,
         tool_recorder,
         FirstSystemComposeOpts {
-            agent_role: role_for_turn,
+            agent_role: role_for_turn.as_deref(),
             user_msg_for_skills: Some(user_msg),
-            skills_base_dir: skills_base,
+            skills_base_dir: Some(skills_base),
             role_resolution: RoleSystemResolution::Strict,
         },
     )?;
@@ -227,7 +227,6 @@ pub(super) async fn build_messages_for_turn(
     agent_role: Option<&str>,
 ) -> Result<ConversationTurnSeed, String> {
     let root_str = state.effective_workspace_path().await;
-    let workspace_is_set = state.workspace_is_set().await;
     let root = std::path::PathBuf::from(root_str);
     let last_user = if image_urls.is_empty() {
         Message::user_only(user_msg.to_string())
@@ -235,7 +234,6 @@ pub(super) async fn build_messages_for_turn(
         message_user_with_images(user_msg, image_urls)
     };
     if let Some(mut seed) = state.load_conversation_seed(conversation_id).await {
-        let workspace_root = workspace_is_set.then_some(root.as_path());
         {
             let cfg = state.http.cfg.read().await;
             refresh_existing_turn_system(
@@ -243,7 +241,7 @@ pub(super) async fn build_messages_for_turn(
                 &mut seed,
                 agent_role,
                 user_msg,
-                workspace_root,
+                root.as_path(),
                 &state.aux.process_handles.tool_outcome_recorder,
             )?;
         }
@@ -251,14 +249,18 @@ pub(super) async fn build_messages_for_turn(
         return Ok(seed);
     }
     let cfg = state.http.cfg.read().await;
-    let skills_base = workspace_is_set.then(|| resolve_skills_base_dir(root.as_path()));
+    let role_for_turn =
+        crate::context_bootstrap::prompt_compose::resolve_agent_role_for_prompt_compose(
+            &cfg, agent_role, None,
+        )?;
+    let skills_base = resolve_skills_base_dir(root.as_path());
     let (system_for_turn, diag) = compose_first_system_for_turn_with_diagnostics(
         &cfg,
         &state.aux.process_handles.tool_outcome_recorder,
         FirstSystemComposeOpts {
-            agent_role,
+            agent_role: role_for_turn.as_deref(),
             user_msg_for_skills: Some(user_msg),
-            skills_base_dir: skills_base,
+            skills_base_dir: Some(skills_base),
             role_resolution: RoleSystemResolution::Strict,
         },
     )?;
@@ -272,24 +274,18 @@ pub(super) async fn build_messages_for_turn(
         diag.skills_total_docs,
         diag.skills_selected_labels
     );
-    let memory_snippet =
-        if workspace_is_set && cfg.context_bootstrap_inject.agent_memory_file_enabled {
-            load_memory_snippet(
-                &root,
-                cfg.context_bootstrap_inject.agent_memory_file.as_str(),
-                cfg.context_bootstrap_inject.agent_memory_file_max_chars,
-            )
-        } else {
-            None
-        };
+    let memory_snippet = if cfg.context_bootstrap_inject.agent_memory_file_enabled {
+        load_memory_snippet(
+            &root,
+            cfg.context_bootstrap_inject.agent_memory_file.as_str(),
+            cfg.context_bootstrap_inject.agent_memory_file_max_chars,
+        )
+    } else {
+        None
+    };
 
-    let combined = first_turn_project_context_user_message_for_web(
-        workspace_is_set,
-        root.as_path(),
-        &cfg,
-        memory_snippet,
-    )
-    .await;
+    let combined =
+        first_turn_project_context_user_message_for_web(root.as_path(), &cfg, memory_snippet).await;
     let messages = compose_new_conversation_messages(&system_for_turn, combined, Some(last_user));
     Ok(ConversationTurnSeed {
         messages,

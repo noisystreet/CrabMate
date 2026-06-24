@@ -4,7 +4,7 @@
 
 use crate::config::AgentConfig;
 use crate::context_bootstrap::conversation_turn_bootstrap::{
-    augmented_system_for_new_conversation_lenient, compose_new_conversation_messages,
+    augmented_system_for_new_conversation, compose_new_conversation_messages,
     first_turn_project_context_user_message_sync,
 };
 use crate::runtime::chat_export::{self, ChatSessionFile, session_to_json_pretty};
@@ -84,7 +84,8 @@ pub fn repl_bootstrap_messages_fast(
     agent_role: Option<&str>,
     tool_recorder: &std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder>,
 ) -> Vec<Message> {
-    let system = augmented_system_for_new_conversation_lenient(cfg, agent_role, tool_recorder);
+    let system = augmented_system_for_new_conversation(cfg, agent_role, tool_recorder)
+        .unwrap_or_else(|e| panic!("repl bootstrap system: {e}"));
     vec![Message::system_only(system)]
 }
 
@@ -145,24 +146,27 @@ pub fn initial_workspace_messages(
     agent_role: Option<&str>,
     tool_recorder: &std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder>,
 ) -> Vec<Message> {
-    let base_system = match cfg.system_prompt_for_new_conversation(agent_role) {
-        Ok(s) => s.to_string(),
-        Err(_) => cfg.roles_prompts.system_prompt.clone(),
+    let system_seed = match augmented_system_for_new_conversation(cfg, agent_role, tool_recorder) {
+        Ok(s) => s,
+        Err(e) => {
+            warn!(
+                target: "crabmate",
+                "initial_workspace_messages: invalid agent_role, using global system: {e}"
+            );
+            augmented_system_for_new_conversation(cfg, None, tool_recorder)
+                .unwrap_or_else(|e2| panic!("global system compose: {e2}"))
+        }
     };
     if !load_from_disk {
-        let system_seed =
-            augmented_system_for_new_conversation_lenient(cfg, agent_role, tool_recorder);
         let ctx = first_turn_project_context_user_message_sync(workspace, cfg, None);
         return compose_new_conversation_messages(&system_seed, ctx, None);
     }
     load_workspace_session(
         workspace,
-        &base_system,
+        &system_seed,
         cfg.session_ui.tui_session_max_messages,
     )
     .unwrap_or_else(|| {
-        let system_seed =
-            augmented_system_for_new_conversation_lenient(cfg, agent_role, tool_recorder);
         let ctx = first_turn_project_context_user_message_sync(workspace, cfg, None);
         compose_new_conversation_messages(&system_seed, ctx, None)
     })

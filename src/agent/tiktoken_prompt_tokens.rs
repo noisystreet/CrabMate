@@ -130,8 +130,16 @@ pub fn count_prompt_tokens_openai_compat_vendor_slice(
     None
 }
 
-/// 新会话仅含一条 `system`（正文与 [`crate::context_bootstrap::conversation_turn_bootstrap::augmented_system_for_new_conversation_lenient`] 一致）时的 prompt token 粗估。
-pub fn prompt_token_count_new_session_system_baseline(
+/// 新会话首条消息（`system` + 可选 L6 工作区上下文 `user`，与 [`crate::context_bootstrap::conversation_turn_bootstrap::new_session_prompt_baseline_messages`] 一致）的 prompt token 粗估。
+pub fn prompt_token_count_new_session_baseline(
+    cfg: &AgentConfig,
+    baseline_messages: &[Message],
+) -> Option<TiktokenPromptTokensSnapshot> {
+    prompt_token_count_vendor_shaped_for_session(cfg, baseline_messages)
+}
+
+/// 新会话仅含一条 `system`（L3+L4）时的 prompt token 粗估（不含 L6；优先用 [`prompt_token_count_new_session_baseline`]）。
+pub fn prompt_token_count_new_session_system_only_baseline(
     cfg: &AgentConfig,
     system_for_turn: &str,
 ) -> Option<TiktokenPromptTokensSnapshot> {
