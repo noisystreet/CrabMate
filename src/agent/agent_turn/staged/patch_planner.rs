@@ -113,20 +113,18 @@ where
             tc.len()
         );
     }
-    msg.tool_calls = None;
-    crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
-        &mut msg,
-        p.ctx
-            .core
-            .cfg
-            .dsml_materialize
-            .materialize_deepseek_dsml_tool_calls,
-    );
+    let dsml_enabled = p
+        .ctx
+        .core
+        .cfg
+        .dsml_materialize
+        .materialize_deepseek_dsml_tool_calls;
+    let rejected =
+        crate::dsml::staged_no_tools_materialized_count(&mut msg, dsml_enabled, "·补丁轮");
 
     p.turn.push_assistant_merging_trailing_empty(msg.clone());
 
-    if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
-        let rejected = msg.tool_calls.as_ref().map(|c| c.len()).unwrap_or(0);
+    if rejected > 0 {
         emit_staged_planner_tool_call_rejected_timeline(p.ctx.io.out, rejected).await;
         warn!(
             target: "crabmate",

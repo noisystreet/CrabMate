@@ -1,6 +1,6 @@
-//! DSML 物化相关单元测试（从主 `tests.rs` 拆出）：`r#"` 内若含 `# …` 等片段，部分静态分析器会误解析后续 `#[test]`，故单独成文件。主文件仅保留 strip / naturalize / dedupe 等用例，避免与物化用例混排抬高 `fn-nloc` 误报。
+//! DSML 物化相关单元测试（从 `text_sanitize` 迁入）。
 
-use super::materialize_deepseek_dsml_tool_calls_in_message;
+use crate::dsml::materialize_deepseek_dsml_tool_calls_in_message;
 use crate::types::{FunctionCall, Message, ToolCall};
 use serde_json::Value;
 
@@ -45,7 +45,6 @@ Line2</|DSML|parameter>
 }
 #[test]
 fn materialize_dsml_fullwidth_brackets_create_file_like_cli() {
-    // 与部分模型在规划轮输出的全角 `｜` DSML 一致（分阶段路径须先物化再执行工具）。
     let dsml = "我们只需要创建 1.md。<｜DSML｜function_calls>\n\
 <｜DSML｜invoke name=\"create_file\">\n\
 <｜DSML｜parameter name=\"path\" string=\"true\">1.md</｜DSML｜parameter>\n\
@@ -252,4 +251,30 @@ fn materialize_dsml_from_reasoning_when_content_empty() {
             .trim()
             .is_empty()
     );
+}
+
+#[test]
+fn materialize_dsml_double_fullwidth_pipe_tags_populate_tool_calls() {
+    let dsml = "将执行。\n<｜｜DSML｜｜tool_calls>\n<｜｜DSML｜｜invoke name=\"run_command\">\n<｜｜DSML｜｜parameter name=\"command\">git log -1</｜｜DSML｜｜parameter>\n</｜｜DSML｜｜invoke>\n</｜｜DSML｜｜tool_calls>";
+    let mut msg = Message {
+        role: "assistant".to_string(),
+        content: Some(dsml.into()),
+        reasoning_content: None,
+        reasoning_details: None,
+        tool_calls: None,
+        name: None,
+        tool_call_id: None,
+    };
+    materialize_deepseek_dsml_tool_calls_in_message(&mut msg, true);
+    let tcs = msg.tool_calls.as_ref().expect("tool_calls");
+    assert_eq!(tcs.len(), 1);
+    assert_eq!(tcs[0].function.name, "run_command");
+    let v: Value = serde_json::from_str(&tcs[0].function.arguments).unwrap();
+    assert_eq!(
+        v.get("command").and_then(|x| x.as_str()),
+        Some("git log -1")
+    );
+    let prose = crate::types::message_content_as_str(&msg.content).unwrap_or("");
+    assert!(prose.contains("将执行"));
+    assert!(!prose.contains("DSML"));
 }

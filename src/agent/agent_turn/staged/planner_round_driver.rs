@@ -33,21 +33,6 @@ use crate::agent::reflection::plan_rewrite;
 
 use super::StagedPlanRunLabels;
 
-/// 首轮规划 assistant：清空原生 tool_calls 后经 DSML 物化，返回「等价 tool_calls 条数」总和（用于判定是否触发一次重写 user）。
-fn staged_first_planner_round_tool_call_total_after_materialize(
-    msg: &mut Message,
-    materialize_deepseek_dsml_tool_calls: bool,
-) -> usize {
-    let raw_count = msg.tool_calls.as_ref().map(|c| c.len()).unwrap_or(0);
-    msg.tool_calls = None;
-    crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
-        msg,
-        materialize_deepseek_dsml_tool_calls,
-    );
-    let dsml_count = msg.tool_calls.as_ref().map(|c| c.len()).unwrap_or(0);
-    raw_count.saturating_add(dsml_count)
-}
-
 fn staged_planner_tool_call_reject_user_body(tool_call_count: usize) -> String {
     format!(
         "{}\n\
@@ -177,21 +162,22 @@ where
                 tc.len()
             );
         }
-        msg.tool_calls = None;
-        crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
+        let dsml_enabled = p
+            .ctx
+            .core
+            .cfg
+            .dsml_materialize
+            .materialize_deepseek_dsml_tool_calls;
+        let rejected = crate::dsml::staged_no_tools_materialized_count(
             &mut msg,
-            p.ctx
-                .core
-                .cfg
-                .dsml_materialize
-                .materialize_deepseek_dsml_tool_calls,
+            dsml_enabled,
+            "·自然语言补全轮",
         );
-        if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
+        if rejected > 0 {
             warn!(
                 target: "crabmate",
                 "分阶段规划·自然语言补全轮：DSML 物化出 tool_calls，已忽略"
             );
-            msg.tool_calls = None;
         }
         p.turn.push_assistant_merging_trailing_empty(msg);
         Ok(())
@@ -222,30 +208,6 @@ pub(super) async fn complete_one_staged_planner_assistant_round(
         crate::redact::assistant_message_preview_for_log(&msg)
     );
     Ok((msg, finish_reason))
-}
-
-/// 与首轮/优化轮一致：忽略原生 tool_calls，物化 DSML 后再清空，仅解析正文规划 JSON。
-pub(super) fn strip_staged_planner_message_tool_calls(
-    msg: &mut Message,
-    round_hint: &'static str,
-    dsml: bool,
-) {
-    if let Some(tc) = msg.tool_calls.as_ref().filter(|c| !c.is_empty()) {
-        debug!(
-            target: "crabmate",
-            "分阶段规划{round_hint}：丢弃 API 返回的 {} 条原生 tool_calls，改从正文解析",
-            tc.len()
-        );
-    }
-    msg.tool_calls = None;
-    crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(msg, dsml);
-    if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
-        warn!(
-            target: "crabmate",
-            "分阶段规划{round_hint}：正文物化出 tool_calls，已忽略，仅尝试从正文解析规划 JSON"
-        );
-        msg.tool_calls = None;
-    }
 }
 
 /// 逻辑多规划员（串行）+ 合并：首轮规划已在历史中；辅助规划员轮**不**写入 assistant，以免上下文膨胀。
@@ -300,7 +262,7 @@ where
             p.turn.pop_last_staged_planner_coach_user_if_present();
             return Ok(());
         }
-        strip_staged_planner_message_tool_calls(&mut sec_msg, "·逻辑多规划员", dsml);
+        crate::dsml::strip_staged_planner_message_tool_calls(&mut sec_msg, "·逻辑多规划员", dsml);
         let validate_only_binding_ids =
             plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.turn.messages());
         let parsed =
@@ -344,7 +306,7 @@ where
         p.turn.pop_last_staged_planner_coach_user_if_present();
         return Ok(());
     }
-    strip_staged_planner_message_tool_calls(&mut merge_msg, "·多规划合并", dsml);
+    crate::dsml::strip_staged_planner_message_tool_calls(&mut merge_msg, "·多规划合并", dsml);
     let merge_content = plan_artifact::assistant_merged_text_for_plan_artifact_parse(&merge_msg);
     let merged_steps = plan_ensemble::try_parse_ensemble_planner_reply(&merge_content);
     match ensemble_merge_outcome_from_parsed_steps(merged_steps) {
@@ -386,7 +348,7 @@ where
     let (mut first_msg, first_finish) =
         complete_planner_no_tools_chat_retrying(p, req, planner_render_to_terminal).await?;
     let (msg, finish_reason) = if first_finish != USER_CANCELLED_FINISH_REASON {
-        let first_total = staged_first_planner_round_tool_call_total_after_materialize(
+        let first_total = crate::dsml::staged_first_planner_tool_call_total_after_materialize(
             &mut first_msg,
             p.ctx
                 .core
