@@ -1,43 +1,34 @@
-//! 消息列：分页「加载更早」+ chunk 虚拟窗口。
+//! 消息列：全量 chunk 渲染与「加载更早」按钮。
 
 use leptos::prelude::*;
 
 use super::message_chunks::{ChatChunk, chat_chunk_stable_key, chunk_messages};
 use super::message_group_views::{ToolRunGroupSignals, tool_run_group_view};
 use super::message_row::{ChatMessageRowSignals, chat_message_row};
-use super::message_virtual_viewport::{
-    should_virtualize_chunks_for_stream_follow, tail_virtual_chunk_range, virtual_spacer_heights,
-};
-use super::messages_scroll_compensate::LoadOlderScrollContext;
+use super::scroll_shell::ChatScrollShellSignals;
 use super::session_hydrate::try_load_older_messages_for_active_session;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n;
 use crate::storage::ChatSession;
 
 #[derive(Clone, Copy)]
-pub(crate) struct ChatMessagesVirtualListSignals {
+pub(crate) struct ChatMessagesListSignals {
     pub chat: ChatSessionSignals,
     pub sessions: RwSignal<Vec<ChatSession>>,
     pub active_id: RwSignal<String>,
     pub locale: RwSignal<crate::i18n::Locale>,
-    pub virtual_scroll_top: RwSignal<i32>,
-    pub virtual_viewport_height: RwSignal<i32>,
-    pub messages_scroller: NodeRef<leptos::html::Div>,
-    pub messages_scroll_from_effect: RwSignal<bool>,
+    pub scroll_shell: ChatScrollShellSignals,
     pub tool_run_group_signals: ToolRunGroupSignals,
 }
 
 #[component]
-pub(crate) fn ChatMessagesVirtualList(signals: ChatMessagesVirtualListSignals) -> impl IntoView {
-    let ChatMessagesVirtualListSignals {
+pub(crate) fn ChatMessagesList(signals: ChatMessagesListSignals) -> impl IntoView {
+    let ChatMessagesListSignals {
         chat,
         sessions,
         active_id,
         locale,
-        virtual_scroll_top,
-        virtual_viewport_height,
-        messages_scroller,
-        messages_scroll_from_effect,
+        scroll_shell,
         tool_run_group_signals,
     } = signals;
     let ToolRunGroupSignals {
@@ -93,17 +84,6 @@ pub(crate) fn ChatMessagesVirtualList(signals: ChatMessagesVirtualListSignals) -
                 chat.history_loading_older.get_untracked(),
             )
         });
-        let count = chunks.len();
-        let follow_virtual =
-            should_virtualize_chunks_for_stream_follow(count, auto_scroll_chat.get_untracked());
-        let (top_pad, bottom_pad, slice) = if follow_virtual {
-            let viewport_h = virtual_viewport_height.get();
-            let range = tail_virtual_chunk_range(count, viewport_h);
-            let (top_pad, bottom_pad) = virtual_spacer_heights(range, count);
-            (top_pad, bottom_pad, chunks[range.start..range.end].to_vec())
-        } else {
-            (0, 0, chunks)
-        };
         view! {
             <Show when=move || has_older || loading_older>
                 <div class="messages-history-load" role="status">
@@ -119,12 +99,7 @@ pub(crate) fn ChatMessagesVirtualList(signals: ChatMessagesVirtualListSignals) -
                                         try_load_older_messages_for_active_session(
                                             chat,
                                             locale.get_untracked(),
-                                            LoadOlderScrollContext::capture(
-                                                messages_scroller,
-                                                messages_scroll_from_effect,
-                                                virtual_scroll_top,
-                                                virtual_viewport_height,
-                                            ),
+                                            scroll_shell,
                                         );
                                     }
                                 >
@@ -139,13 +114,11 @@ pub(crate) fn ChatMessagesVirtualList(signals: ChatMessagesVirtualListSignals) -
                     </Show>
                 </div>
             </Show>
-            <div class="messages-virtual-top" style:height=format!("{top_pad}px")></div>
             <For
-                each=move || slice.clone()
+                each=move || chunks.clone()
                 key=|chunk| chat_chunk_stable_key(chunk)
                 children=move |chunk| render_chunk(chunk)
             />
-            <div class="messages-virtual-bottom" style:height=format!("{bottom_pad}px")></div>
         }
     }
 }

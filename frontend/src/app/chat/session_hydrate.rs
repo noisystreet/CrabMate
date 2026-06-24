@@ -509,11 +509,11 @@ fn clear_conversation_prompt_tokens_if_no_server_conversation(chat: ChatSessionS
     }
 }
 
-/// 滚动到顶附近时拉取更早一页（须已绑定 `server_conversation_id` 且 `history_has_older`）。
+/// 滚动到顶附近时由 UI 按钮拉取更早一页（须已绑定 `server_conversation_id` 且 `history_has_older`）。
 pub(crate) fn try_load_older_messages_for_active_session(
     chat: ChatSessionSignals,
     locale: Locale,
-    scroll_ctx: super::messages_scroll_compensate::LoadOlderScrollContext,
+    scroll_shell: super::scroll_shell::ChatScrollShellSignals,
 ) {
     if chat.history_loading_older.get_untracked() {
         return;
@@ -537,6 +537,7 @@ pub(crate) fn try_load_older_messages_for_active_session(
         return;
     }
     chat.history_loading_older.set(true);
+    let prepend_snap = scroll_shell.capture_prepend_snapshot();
     let chat2 = chat;
     spawn_local(async move {
         let Ok(resp) = crate::api::fetch_conversation_messages(
@@ -565,7 +566,7 @@ pub(crate) fn try_load_older_messages_for_active_session(
             }
             prepend_older_page_into_session(s, msgs, &resp);
         });
-        super::messages_scroll_compensate::compensate_messages_scroll_after_prepend(scroll_ctx);
+        scroll_shell.compensate_after_prepend(prepend_snap);
         chat2.history_loading_older.set(false);
     });
 }

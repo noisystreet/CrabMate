@@ -4,12 +4,13 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 use crate::app::chat::scroll_follow::{
-    ChatScrollFollowAnchors, disengage_follow_and_scroll_top, engage_follow_and_scroll_bottom,
+    disengage_follow_and_scroll_top, engage_follow_and_scroll_bottom,
 };
+use crate::app::chat::scroll_shell::ChatScrollShellSignals;
 use crate::session_ops::messages_scroller_has_non_collapsed_selection;
 
 /// Home/End 所需滚动与自动跟底信号（`Copy`，可安全捕获进闭包）。
-pub(crate) type ChatColumnHomeEndNav = ChatScrollFollowAnchors;
+pub(crate) type ChatColumnHomeEndNav = ChatScrollShellSignals;
 
 fn is_chat_composer_textarea(he: &web_sys::HtmlElement) -> bool {
     he.tag_name().eq_ignore_ascii_case("TEXTAREA") && he.class_list().contains("composer-input")
