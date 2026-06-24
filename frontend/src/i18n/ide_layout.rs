@@ -30,6 +30,13 @@ pub fn ide_toggle_chat_aria(l: Locale) -> &'static str {
     }
 }
 
+pub fn layout_mode_segment_aria(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "主区布局：对话或编辑器",
+        Locale::En => "Main layout: chat or editor",
+    }
+}
+
 pub fn ide_workspace_title(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "工作区",

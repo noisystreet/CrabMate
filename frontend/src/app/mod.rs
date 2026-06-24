@@ -17,6 +17,7 @@ mod ide_layout;
 mod ide_menu_bar;
 mod ide_settings_page;
 mod ide_tabs_bar;
+mod layout_mode_segment;
 mod mobile_shell_header;
 pub mod scroll_guard;
 mod session_list_modal;
@@ -116,6 +117,7 @@ pub fn App() -> impl IntoView {
 
             <div
                 class="shell-main"
+                id="layout-mode-panel-main"
                 class:settings-page-hidden=move || {
                     app_ctx.signals.modal.settings_page.get()
                         || app_ctx.signals.modal.ide_settings_page.get()
