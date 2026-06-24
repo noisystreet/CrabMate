@@ -39,8 +39,10 @@ pub fn ide_workspace_title(l: Locale) -> &'static str {
 
 pub fn ide_open_hint(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "单击文件在新标签页打开；已打开的文件可再次单击切换。",
-        Locale::En => "Click a file to open a tab; click again to switch to an open file.",
+        Locale::ZhHans => "单击文件在新标签页打开；双击将 @相对路径 插入对话输入框并切回对话布局。",
+        Locale::En => {
+            "Click to open a tab; double-click inserts @path into chat and switches to chat layout."
+        }
     }
 }
 

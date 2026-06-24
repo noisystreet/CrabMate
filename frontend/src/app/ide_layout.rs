@@ -4,10 +4,14 @@ use std::sync::Arc;
 
 use leptos::prelude::*;
 
+use crate::app::app_signals::ShellUISignals;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::{self, Locale};
+use crate::ide_disk_sync::spawn_sync_ide_tabs_from_disk;
+use crate::ide_save::{IdeSaveContext, spawn_save_active_tab, spawn_save_all_dirty_tabs};
 use crate::ide_tabs::{
-    IdeTabsHandle, make_ide_open_file_handler, wire_ide_editor_sync_to_active_tab,
+    IdeTabsEditorSignals, IdeTabsHandle, make_ide_open_file_handler,
+    wire_ide_editor_sync_to_active_tab,
 };
 
 use super::ide_editor_pane::IdeEditorPane;
@@ -16,15 +20,14 @@ use super::ide_tabs_bar::{IdeTabsBar, IdeTabsBarInput};
 use super::side_column_workspace_scroll::WorkspaceSideCardScrollInner;
 use super::workspace_panel_state::WorkspacePanelSignals;
 use crate::app::app_signals::IdeEditorSignals;
-use crate::ide_tabs::IdeTabsEditorSignals;
 
 #[component]
 fn IdeLayoutLeftPane(
     locale: RwSignal<Locale>,
     chat: ChatSessionSignals,
     workspace_panel: WorkspacePanelSignals,
-    noop_sv: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
     open_sv: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
+    insert_sv: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
 ) -> impl IntoView {
     view! {
         <div class="ide-layout-left">
@@ -37,7 +40,7 @@ fn IdeLayoutLeftPane(
                     locale=locale
                     chat=chat
                     ws=workspace_panel
-                    insert_workspace_file_ref=noop_sv
+                    insert_workspace_file_ref=insert_sv
                     on_file_single_click=open_sv
                 />
             </div>
@@ -104,6 +107,7 @@ fn IdeLayoutRightPane(input: IdeLayoutRightPaneInput) -> impl IntoView {
 #[derive(Clone)]
 pub struct IdeLayoutShellSignals {
     pub locale: RwSignal<Locale>,
+    pub shell_ui: ShellUISignals,
     pub editor: IdeEditorSignals,
     pub editor_layout_mode: RwSignal<bool>,
     pub ide_settings_page: RwSignal<bool>,
@@ -114,12 +118,14 @@ pub struct IdeLayoutShellSignals {
     pub initialized: RwSignal<bool>,
     /// 与主壳「编辑器布局」一致；不可见时不触发工作区刷新，避免后台无意义请求。
     pub editor_visible: RwSignal<bool>,
+    pub insert_workspace_file_ref: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
 }
 
 #[component]
 pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
     let IdeLayoutShellSignals {
         locale,
+        shell_ui,
         editor,
         editor_layout_mode,
         ide_settings_page,
@@ -129,6 +135,7 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
         refresh_workspace,
         initialized,
         editor_visible,
+        insert_workspace_file_ref,
     } = shell;
 
     let tabs = IdeTabsHandle::new();
@@ -139,26 +146,64 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
 
     wire_ide_editor_sync_to_active_tab(tabs, tabs.active, ide_text);
 
-    let noop: Arc<dyn Fn(String) + Send + Sync> = Arc::new(|_| {});
-    let noop_sv = StoredValue::new(noop);
-
-    let refresh_ws = refresh_workspace.clone();
-    Effect::new(move |_| {
-        if !editor_visible.get() {
-            return;
-        }
-        if initialized.get() {
-            refresh_ws();
-        }
-    });
-
     let tab_editor = IdeTabsEditorSignals {
         ide_path,
         ide_text,
         ide_baseline,
     };
+
     let open_file = make_ide_open_file_handler(locale, tabs, tab_editor);
     let open_sv = StoredValue::new(open_file);
+
+    let insert_for_ide = {
+        let insert_workspace_file_ref = insert_workspace_file_ref;
+        let editor_layout_mode = editor_layout_mode;
+        StoredValue::new(Arc::new(move |rel: String| {
+            editor_layout_mode.set(false);
+            (insert_workspace_file_ref.get_value())(rel);
+        }) as Arc<dyn Fn(String) + Send + Sync>)
+    };
+
+    let save_ctx = move || IdeSaveContext {
+        tabs,
+        ide_path,
+        ide_text,
+        ide_baseline,
+        ide_err: tabs.err,
+    };
+
+    Effect::new(move |_| {
+        if !editor_visible.get() {
+            return;
+        }
+        if initialized.get() {
+            refresh_workspace();
+        }
+    });
+
+    Effect::new(move |_| {
+        if !editor_visible.get() {
+            return;
+        }
+        let _ = shell_ui.ide_save_active_nonce.get();
+        spawn_save_active_tab(save_ctx(), locale);
+    });
+
+    Effect::new(move |_| {
+        if !editor_visible.get() {
+            return;
+        }
+        let _ = shell_ui.ide_save_all_nonce.get();
+        spawn_save_all_dirty_tabs(save_ctx(), locale);
+    });
+
+    Effect::new(move |_| {
+        if !editor_visible.get() {
+            return;
+        }
+        let _ = shell_ui.ide_sync_disk_nonce.get();
+        spawn_sync_ide_tabs_from_disk(tabs, tab_editor, locale);
+    });
 
     view! {
         <div class="ide-layout-root" data-testid="ide-layout-root">
@@ -182,8 +227,8 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
                     locale=locale
                     chat=chat
                     workspace_panel=workspace_panel
-                    noop_sv=noop_sv
                     open_sv=open_sv
+                    insert_sv=insert_for_ide
                 />
                 <IdeLayoutRightPane input=IdeLayoutRightPaneInput {
                     locale,

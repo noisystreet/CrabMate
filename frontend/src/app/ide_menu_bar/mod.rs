@@ -27,6 +27,7 @@ pub fn IdeMenuBar(signals: IdeMenuBarSignals) -> impl IntoView {
         ide_baseline,
         ide_load_busy,
         ide_save_busy,
+        tabs,
         ..
     } = signals;
 
@@ -50,6 +51,20 @@ pub fn IdeMenuBar(signals: IdeMenuBarSignals) -> impl IntoView {
             && ide_text.get() != ide_baseline.get()
     });
 
+    let save_all_enabled = Memo::new(move |_| {
+        if ide_load_busy.get() || ide_save_busy.get() {
+            return false;
+        }
+        let active = tabs.active.get();
+        let dirty_inactive = tabs.tabs.get().iter().enumerate().any(|(i, tab)| {
+            if active == Some(i) {
+                return false;
+            }
+            tab.text != tab.baseline
+        });
+        dirty_inactive || save_enabled.get()
+    });
+
     view! {
         <header class="ide-menu-bar" role="menubar" prop:aria-label=move || i18n::ide_menu_bar_aria(locale.get())>
             <div class="ide-menu-bar-menus">
@@ -58,6 +73,7 @@ pub fn IdeMenuBar(signals: IdeMenuBarSignals) -> impl IntoView {
                     open_menu=open_menu
                     ide_menubar_dropdown_open=ide_menubar_dropdown_open
                     save_enabled=save_enabled
+                    save_all_enabled=save_all_enabled
                 />
                 <IdeMenuEditSection
                     signals=signals

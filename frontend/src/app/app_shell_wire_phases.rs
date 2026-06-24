@@ -19,13 +19,13 @@ use std::sync::Arc;
 use leptos::prelude::*;
 
 use super::app_shell_effects::{
-    SessionDeleteHotkeySignals, ShellEscapeSignals, WireSettingsModalLlmDraftsSignals,
-    wire_approval_expanded_follows_pending, wire_close_shell_chrome_when_ide_layout,
-    wire_collapse_sidebar_rail_when_ide_layout, wire_escape_key_layered_dismiss,
-    wire_session_delete_hotkey, wire_settings_modal_llm_drafts_on_open,
-    wire_sync_bg_decor_to_storage_and_dom, wire_sync_locale_html_lang,
-    wire_sync_session_typography_to_storage_and_dom, wire_sync_tauri_shell_dom,
-    wire_sync_theme_to_storage_and_dom,
+    IdeEditorHotkeySignals, SessionDeleteHotkeySignals, ShellEscapeSignals,
+    WireSettingsModalLlmDraftsSignals, wire_approval_expanded_follows_pending,
+    wire_close_shell_chrome_when_ide_layout, wire_collapse_sidebar_rail_when_ide_layout,
+    wire_escape_key_layered_dismiss, wire_ide_editor_hotkeys, wire_session_delete_hotkey,
+    wire_settings_modal_llm_drafts_on_open, wire_sync_bg_decor_to_storage_and_dom,
+    wire_sync_locale_html_lang, wire_sync_session_typography_to_storage_and_dom,
+    wire_sync_tauri_shell_dom, wire_sync_theme_to_storage_and_dom,
 };
 use super::app_signals::AppSignals;
 use super::chat::ChatComposerWires;
@@ -170,6 +170,10 @@ fn wire_phase3_escape_layered_dismiss(app: &AppSignals) {
         session_modal: app.modal.session_modal,
         settings_modal: app.modal.settings_modal,
         changelist_modal_open: app.modal.changelist_modal_open,
+    });
+    wire_ide_editor_hotkeys(IdeEditorHotkeySignals {
+        shell_ui: app.shell_ui,
+        ide_settings_page: app.modal.ide_settings_page,
     });
 }
 

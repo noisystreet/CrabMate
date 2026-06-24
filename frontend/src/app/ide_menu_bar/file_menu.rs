@@ -1,12 +1,14 @@
 //! 「文件」菜单。
 
 use leptos::prelude::*;
-use leptos::task::spawn_local;
 
 use super::menu_id::IdeMenuId;
 use super::props::IdeMenuBarSignals;
-use crate::api::post_workspace_file_write;
 use crate::i18n;
+use crate::ide_save::{
+    IdeSaveContext, prompt_new_workspace_file_path, spawn_create_and_open_file,
+    spawn_save_active_tab, spawn_save_all_dirty_tabs,
+};
 
 fn toggle_file_menu(
     open_menu: RwSignal<Option<IdeMenuId>>,
@@ -26,23 +28,40 @@ fn close_menus(open_menu: RwSignal<Option<IdeMenuId>>, ide_menubar_dropdown_open
     ide_menubar_dropdown_open.set(false);
 }
 
+fn save_ctx(signals: IdeMenuBarSignals) -> IdeSaveContext {
+    let IdeMenuBarSignals {
+        tabs,
+        ide_path,
+        ide_text,
+        ide_baseline,
+        ide_err,
+        ..
+    } = signals;
+    IdeSaveContext {
+        tabs,
+        ide_path,
+        ide_text,
+        ide_baseline,
+        ide_err,
+    }
+}
+
 #[component]
 pub(super) fn IdeMenuFileSection(
     signals: IdeMenuBarSignals,
     open_menu: RwSignal<Option<IdeMenuId>>,
     ide_menubar_dropdown_open: RwSignal<bool>,
     save_enabled: Memo<bool>,
+    save_all_enabled: Memo<bool>,
 ) -> impl IntoView {
     let IdeMenuBarSignals {
         locale,
         editor_layout_mode,
-        ide_path,
-        ide_text,
-        ide_baseline,
+        ide_path: _,
+        ide_text: _,
+        ide_baseline: _,
         ide_load_busy,
         ide_save_busy,
-        ide_err,
-        tabs,
         ..
     } = signals;
 
@@ -65,36 +84,28 @@ pub(super) fn IdeMenuFileSection(
                         type="button"
                         class="ide-menu-item"
                         role="menuitem"
+                        prop:disabled=move || ide_load_busy.get() || ide_save_busy.get()
+                        on:click=move |_| {
+                            let loc = locale.get_untracked();
+                            if let Some(rel) = prompt_new_workspace_file_path(loc) {
+                                spawn_create_and_open_file(
+                                    save_ctx(signals),
+                                    locale,
+                                    rel,
+                                );
+                            }
+                            close_menus(open_menu, ide_menubar_dropdown_open);
+                        }
+                    >
+                        {move || i18n::ide_menu_new_file(locale.get())}
+                    </button>
+                    <button
+                        type="button"
+                        class="ide-menu-item"
+                        role="menuitem"
                         prop:disabled=move || !save_enabled.get()
                         on:click=move |_| {
-                            let Some(p) = ide_path.get_untracked() else {
-                                return;
-                            };
-                            if ide_load_busy.get_untracked() || ide_save_busy.get_untracked() {
-                                return;
-                            }
-                            ide_save_busy.set(true);
-                            ide_err.set(None);
-                            let body = ide_text.get_untracked();
-                            let loc = locale.get_untracked();
-                            spawn_local(async move {
-                                match post_workspace_file_write(p, body, loc).await {
-                                    Ok(()) => {
-                                        let snap = ide_text.get_untracked();
-                                        ide_baseline.set(snap.clone());
-                                        if let Some(i) = tabs.active.get_untracked() {
-                                            tabs.tabs.update(|list| {
-                                                if let Some(tab) = list.get_mut(i) {
-                                                    tab.text = snap.clone();
-                                                    tab.baseline = snap;
-                                                }
-                                            });
-                                        }
-                                    }
-                                    Err(e) => ide_err.set(Some(e)),
-                                }
-                                ide_save_busy.set(false);
-                            });
+                            spawn_save_active_tab(save_ctx(signals), locale);
                             close_menus(open_menu, ide_menubar_dropdown_open);
                         }
                     >
@@ -105,6 +116,18 @@ pub(super) fn IdeMenuFileSection(
                                 i18n::ide_menu_save(locale.get())
                             }
                         }}
+                    </button>
+                    <button
+                        type="button"
+                        class="ide-menu-item"
+                        role="menuitem"
+                        prop:disabled=move || !save_all_enabled.get()
+                        on:click=move |_| {
+                            spawn_save_all_dirty_tabs(save_ctx(signals), locale);
+                            close_menus(open_menu, ide_menubar_dropdown_open);
+                        }
+                    >
+                        {move || i18n::ide_menu_save_all(locale.get())}
                     </button>
                     <button
                         type="button"
