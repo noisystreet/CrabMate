@@ -22,6 +22,7 @@ use super::handles::{
 };
 use super::stream_follow_up_gates::compose_user_send_allowed;
 use super::stream_user_abort::apply_user_abort_of_inflight_stream;
+use crate::app::chat::scroll_follow::engage_follow_and_scroll_bottom;
 use crate::session_ops::{flush_active_composer_draft, make_message_id};
 use crate::session_sync::SessionSyncState;
 use crate::storage::{ChatSession, DEFAULT_CHAT_SESSION_TITLE, make_session_id};
@@ -38,7 +39,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
     let WireComposerStreamsStreamSlice {
         stream_shell,
         stream_turn_busy_ui,
-        auto_scroll_chat,
+        scroll_follow,
         pending_images,
     } = stream;
 
@@ -53,7 +54,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
     let run_send_message: Arc<dyn Fn() + Send + Sync> = Arc::new({
         let chat = chat;
         let attach = Arc::clone(&attach_chat_stream);
-        let auto_scroll_chat = auto_scroll_chat;
+        let scroll_follow = scroll_follow;
         let shell = stream_shell.clone();
         let locale_sig = locale;
         move || {
@@ -74,7 +75,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
             ) {
                 return;
             }
-            auto_scroll_chat.set(true);
+            engage_follow_and_scroll_bottom(scroll_follow);
             let uid = make_message_id();
             let asst_id = make_message_id();
             let imgs_send = imgs.clone();
@@ -98,7 +99,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
         initialized,
         chat,
         attach_chat_stream: Arc::clone(&attach_chat_stream),
-        auto_scroll_chat,
+        scroll_follow,
         shell: stream_shell.clone(),
         stream_follow_up,
         stream_turn_busy_ui,

@@ -11,6 +11,7 @@ use leptos::prelude::*;
 
 use super::composer_follow_up::ComposerStreamFollowUp;
 use crate::app::app_signals::{AppSignals, StreamControlSignals};
+use crate::app::chat::scroll_follow::ChatScrollFollowAnchors;
 use crate::chat_session_state::{ChatSessionSignals, ChatStreamBusyMemos};
 use crate::clarification_form::PendingClarificationForm;
 use crate::i18n::Locale;
@@ -236,7 +237,7 @@ pub struct WireComposerStreamsStreamSlice {
     pub stream_shell: ComposerStreamShell,
     /// 见 [`ChatStreamBusyMemos::stream_turn_busy_ui`]。
     pub stream_turn_busy_ui: Memo<bool>,
-    pub auto_scroll_chat: RwSignal<bool>,
+    pub scroll_follow: ChatScrollFollowAnchors,
     pub pending_images: RwSignal<Vec<String>>,
 }
 
