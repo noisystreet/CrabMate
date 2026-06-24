@@ -50,7 +50,7 @@ assets = [
 ]
 
 [features]
-default = ["mcp", "docker_sandbox", "fastembed"]
+default = ["mcp", "fastembed"]
 ## Model Context Protocol（`rmcp`）：`mcp list` / `mcp serve`、进程内 MCP 工具代理。
 mcp = ["dep:rmcp"]
 ## `sync_default_tool_sandbox_mode = docker` 时连接 Docker Engine（`bollard`）。
