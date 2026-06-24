@@ -273,13 +273,12 @@ pub(super) fn finalize_agent_role_catalog(
                 cursor_rules_include_agents_md,
                 cursor_rules_max_chars,
             )?;
-            skills::merge_system_prompt_with_skills_selected(
+            skills::merge_system_prompt_with_skills_index(
                 with_rules,
                 skills_enabled,
                 skills_dir,
                 skills_max_chars,
                 run_command_working_dir,
-                "",
                 skills_top_k,
             )?
         } else if let Some(ref s) = b.system_prompt {
@@ -300,13 +299,12 @@ pub(super) fn finalize_agent_role_catalog(
                     cursor_rules_include_agents_md,
                     cursor_rules_max_chars,
                 )?;
-                skills::merge_system_prompt_with_skills_selected(
+                skills::merge_system_prompt_with_skills_index(
                     with_rules,
                     skills_enabled,
                     skills_dir,
                     skills_max_chars,
                     run_command_working_dir,
-                    "",
                     skills_top_k,
                 )?
             }

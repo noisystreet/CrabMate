@@ -250,11 +250,13 @@ fn merge_system_prompt_layers_for_finalize(
         .unwrap_or(32_000)
         .clamp(1024, 1_000_000);
     let skills_top_k = b.skills.skills_top_k.unwrap_or(4).clamp(1, 64) as usize;
-    let system_prompt = skills::merge_system_prompt_with_skills(
+    let system_prompt = skills::merge_system_prompt_with_skills_index(
         system_prompt,
         skills_enabled,
         &skills_dir,
         skills_max_chars as usize,
+        run_command_working_dir,
+        skills_top_k,
     )?;
     Ok(PromptMergeForRoles {
         universal_l0_system_prompt,

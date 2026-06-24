@@ -464,7 +464,7 @@ Env: `CM_SYNC_DEFAULT_TOOL_SANDBOX_MODE`, `CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_I
 
 ## Multi-role (agent_roles)
 
-Besides the global `system_prompt`, you can define **named ids** with their own first-turn `system` text (each merged with **`cursor_rules_*`** like the global prompt).
+Besides the global `system_prompt`, you can define **named ids** with their own first-turn `system` text (each merged with **`cursor_rules_*`** and a lightweight skills index at finalize; full skills bodies are injected per-turn by L5).
 
 - **Sources** (later overlays win for the same id):  
   1. **`[[agent_roles]]`** rows in the main config: **`id`**, plus **`system_prompt`** and/or **`system_prompt_file`**. Empty inline **`system_prompt`** means **inherit** the global merged system. Optional **`prepend_coding_workbench`** (default true): when false, that role skips L0b (still gated by global **`coding_workbench_enabled`**).  

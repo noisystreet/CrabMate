@@ -119,6 +119,43 @@ fn render_skills_appendix(docs: &[SkillDoc], max_chars: usize) -> String {
     truncated
 }
 
+fn render_skills_index_appendix(docs: &[SkillDoc], max_chars: usize, max_entries: usize) -> String {
+    if docs.is_empty() || max_entries == 0 {
+        return String::new();
+    }
+    let listed = docs.len().min(max_entries);
+    let mut body = format!(
+        "【项目技能索引（skills）】\n当前检测到 {} 条技能，以下展示前 {} 条索引；详细正文在按轮（L5）按用户消息动态注入。\n",
+        docs.len(),
+        listed
+    );
+    for d in docs.iter().take(max_entries) {
+        body.push('\n');
+        if let Some(name) = d.name.as_deref().filter(|n| !n.trim().is_empty()) {
+            body.push_str("- ");
+            body.push_str(name.trim());
+            body.push_str(" (`");
+            body.push_str(&d.display_path);
+            body.push_str("`)");
+        } else {
+            body.push_str("- `");
+            body.push_str(&d.display_path);
+            body.push('`');
+        }
+    }
+    body.push_str(
+        "\n\n[提示] 若当前任务依赖具体技能条文，以本轮动态注入内容为准，不得假定索引之外的正文已进入上下文。",
+    );
+    if body.chars().count() <= max_chars {
+        return body;
+    }
+    let mut truncated = super::super::text_util::truncate_str_to_max_chars(&body, max_chars);
+    truncated.push_str(
+        "\n\n[提示] 技能索引已按 skills_max_chars 截断。后续不得假定未出现在本 system 中的技能条目。",
+    );
+    truncated
+}
+
 fn extract_query_terms(user_text: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut cur = String::new();
@@ -224,20 +261,24 @@ pub(crate) fn merge_system_prompt_with_skills_selected(
     Ok(format!("{}\n\n{}", system_prompt.trim_end(), appendix))
 }
 
-pub(super) fn merge_system_prompt_with_skills(
+pub(crate) fn merge_system_prompt_with_skills_index(
     system_prompt: String,
     skills_enabled: bool,
     skills_dir: &str,
     skills_max_chars: usize,
+    base_dir: &Path,
+    max_entries: usize,
 ) -> Result<String, String> {
-    let cwd = std::env::current_dir().map_err(|e| format!("无法获取当前工作目录: {}", e))?;
-    merge_system_prompt_with_skills_selected(
-        system_prompt,
-        skills_enabled,
-        skills_dir,
-        skills_max_chars,
-        &cwd,
-        "",
-        usize::MAX,
-    )
+    if !skills_enabled {
+        return Ok(system_prompt);
+    }
+    let docs = list_skills_from_base(base_dir, skills_dir)?;
+    if docs.is_empty() {
+        return Ok(system_prompt);
+    }
+    let appendix = render_skills_index_appendix(&docs, skills_max_chars, max_entries);
+    if appendix.is_empty() {
+        return Ok(system_prompt);
+    }
+    Ok(format!("{}\n\n{}", system_prompt.trim_end(), appendix))
 }
