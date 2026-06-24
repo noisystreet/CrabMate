@@ -6,7 +6,7 @@
 
 mod context_menus;
 mod debounce;
-mod editor_layout_toggle;
+mod mode_actions;
 mod search_panel;
 mod session_rail;
 
@@ -23,7 +23,7 @@ use debounce::{
     GLOBAL_MESSAGE_SEARCH_DEBOUNCE_MS, SIDEBAR_SESSION_FILTER_DEBOUNCE_MS,
     debounce_signal_to_effect, rail_context_menu_target_is_session_row_or_hit,
 };
-use editor_layout_toggle::NavRailEditorLayoutToggle;
+use mode_actions::NavRailModeActions;
 use search_panel::nav_rail_search_panel;
 use session_rail::{NavRailSessionScrollSignals, nav_rail_session_scroll_inner};
 
@@ -86,21 +86,12 @@ pub fn sidebar_nav_view(signals: SidebarNavSignals) -> impl IntoView {
                     "‹"
                 </button>
             </div>
-            <button
-                type="button"
-                class="btn btn-primary btn-new-chat-ds"
-                data-testid="nav-new-chat"
-                on:click={
-                    let new_session = new_session.clone();
-                    move |_| {
-                        new_session();
-                        mobile_nav_open.set(false);
-                    }
-                }
-            >
-                {move || crate::i18n::nav_new_chat(locale.get())}
-            </button>
-            <NavRailEditorLayoutToggle locale=locale editor_layout_mode=editor_layout_mode />
+            <NavRailModeActions
+                locale=locale
+                editor_layout_mode=editor_layout_mode
+                new_session=new_session.clone()
+                mobile_nav_open=mobile_nav_open
+            />
             {nav_rail_search_panel(
                 locale,
                 sidebar_search_panel_open,

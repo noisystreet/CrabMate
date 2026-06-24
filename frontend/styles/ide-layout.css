@@ -393,13 +393,3 @@ html[data-tauri-shell][data-ide-layout] .ide-menu-bar .tauri-window-controls {
 .ide-editor-textarea:disabled {
   opacity: 0.55;
 }
-
-.nav-rail .btn-new-chat-ds + .btn-new-chat-ds {
-  margin-top: 0.45rem;
-}
-
-.shell-main-header-mobile-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-}
