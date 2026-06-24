@@ -1,7 +1,8 @@
 use super::{
     dedupe_plain_assistant_preamble, naturalize_assistant_plan_prose_tail,
-    naturalize_plan_step_description, strip_deepseek_dsml_for_display,
+    naturalize_plan_step_description,
 };
+use crate::dsml::strip_deepseek_dsml_for_display;
 
 #[test]
 fn naturalize_step_extracts_json_description() {

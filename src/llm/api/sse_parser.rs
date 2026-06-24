@@ -254,6 +254,7 @@ pub(super) struct IngestSseState<'a> {
     pub(super) coop_cancel: Option<&'a AtomicBool>,
     pub(super) thinking_trace_enabled: bool,
     pub(super) tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
+    pub(super) dsml_content_filter: &'a mut crate::dsml::StreamingDsmlContentFilter,
 }
 
 async fn ingest_sse_residual_buffer_if_needed(
@@ -320,6 +321,7 @@ struct IngestSseContentFrame<'a> {
     coop_cancel: Option<&'a AtomicBool>,
     thinking_trace_enabled: bool,
     tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
+    dsml_content_filter: &'a mut crate::dsml::StreamingDsmlContentFilter,
 }
 
 #[inline]
@@ -394,6 +396,40 @@ async fn ingest_sse_reasoning_from_delta(
     Ok(())
 }
 
+async fn flush_dsml_stream_filter_tail(
+    dsml_content_filter: &mut crate::dsml::StreamingDsmlContentFilter,
+    out: Option<&Sender<String>>,
+    cli_terminal_plain: bool,
+    cli_plain_prefix_emitted: &mut bool,
+    cli_plain_reasoning_style_active: &mut bool,
+    coop_cancel: Option<&AtomicBool>,
+    tui_llm_stream_scratch: Option<&TuiLlmStreamScratchArc>,
+) -> std::io::Result<()> {
+    let display = dsml_content_filter.finish();
+    if display.is_empty() {
+        return Ok(());
+    }
+    tui_scratch_push_content(tui_llm_stream_scratch, &display);
+    if cli_terminal_plain {
+        cli_terminal_write_plain_fragment(
+            &display,
+            cli_plain_prefix_emitted,
+            false,
+            cli_plain_reasoning_style_active,
+        )?;
+    }
+    if let Some(tx) = out {
+        let _ = sse_out_send(
+            tx,
+            display,
+            "llm::stream_chat flush dsml filter tail",
+            coop_cancel,
+        )
+        .await;
+    }
+    Ok(())
+}
+
 async fn ingest_sse_content_from_delta(frame: IngestSseContentFrame<'_>) -> std::io::Result<()> {
     let IngestSseContentFrame {
         delta,
@@ -406,6 +442,7 @@ async fn ingest_sse_content_from_delta(frame: IngestSseContentFrame<'_>) -> std:
         coop_cancel,
         thinking_trace_enabled,
         tui_llm_stream_scratch,
+        dsml_content_filter,
     } = frame;
     let Some(s) = delta.content.as_ref() else {
         return Ok(());
@@ -443,10 +480,14 @@ async fn ingest_sse_content_from_delta(frame: IngestSseContentFrame<'_>) -> std:
         .await?;
     }
     content_acc.push_str(s);
-    tui_scratch_push_content(tui_llm_stream_scratch.as_ref(), s);
+    let display = dsml_content_filter.push_chunk(s);
+    if display.is_empty() {
+        return Ok(());
+    }
+    tui_scratch_push_content(tui_llm_stream_scratch.as_ref(), &display);
     if cli_terminal_plain {
         cli_terminal_write_plain_fragment(
-            s,
+            &display,
             cli_plain_prefix_emitted,
             false,
             cli_plain_reasoning_style_active,
@@ -455,7 +496,7 @@ async fn ingest_sse_content_from_delta(frame: IngestSseContentFrame<'_>) -> std:
     if let Some(tx) = out {
         let _ = sse_out_send(
             tx,
-            s.clone(),
+            display,
             "llm::stream_chat ingest delta (content)",
             coop_cancel,
         )
@@ -548,6 +589,7 @@ pub(super) async fn ingest_sse_data_payload(
         coop_cancel,
         thinking_trace_enabled,
         tui_llm_stream_scratch,
+        dsml_content_filter,
     } = state;
     let tui_scratch = tui_llm_stream_scratch.clone();
     let Ok(chunk) = serde_json::from_slice::<StreamChunk>(payload.as_bytes()) else {
@@ -582,6 +624,7 @@ pub(super) async fn ingest_sse_data_payload(
         coop_cancel,
         thinking_trace_enabled,
         tui_llm_stream_scratch: tui_scratch,
+        dsml_content_filter,
     })
     .await?;
     ingest_sse_tool_calls_from_delta(
@@ -612,6 +655,7 @@ pub(super) async fn consume_openai_sse_byte_stream<S, B>(
     out: Option<&Sender<String>>,
     cli_terminal_plain: bool,
     thinking_trace_enabled: bool,
+    dsml_stream_strip_enabled: bool,
     tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
 ) -> Result<SseStreamAccum, Box<dyn std::error::Error + Send + Sync>>
 where
@@ -629,6 +673,8 @@ where
     let mut cli_plain_prefix_emitted = false;
     let mut cli_plain_reasoning_style_active = false;
     let mut minimax_reasoning_snaps: Vec<String> = Vec::new();
+    let mut dsml_content_filter =
+        crate::dsml::StreamingDsmlContentFilter::new(dsml_stream_strip_enabled);
     let mut stream_done = false;
 
     while let Some(chunk) = stream.next().await {
@@ -667,6 +713,7 @@ where
                     coop_cancel: cancel,
                     thinking_trace_enabled,
                     tui_llm_stream_scratch: tui_llm_stream_scratch.clone(),
+                    dsml_content_filter: &mut dsml_content_filter,
                 },
             )
             .await?
@@ -701,11 +748,22 @@ where
             coop_cancel: cancel,
             thinking_trace_enabled,
             tui_llm_stream_scratch: tui_llm_stream_scratch.clone(),
+            dsml_content_filter: &mut dsml_content_filter,
         },
     )
     .await?;
 
     flush_sse_delta_buffer(&mut pending_sse_delta, out, cancel).await;
+    flush_dsml_stream_filter_tail(
+        &mut dsml_content_filter,
+        out,
+        cli_terminal_plain,
+        &mut cli_plain_prefix_emitted,
+        &mut cli_plain_reasoning_style_active,
+        cancel,
+        tui_llm_stream_scratch.as_ref(),
+    )
+    .await?;
 
     Ok(SseStreamAccum {
         reasoning_acc,

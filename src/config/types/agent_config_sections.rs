@@ -148,6 +148,8 @@ pub struct AgentToolStatsConfig {
 #[derive(Debug, Clone)]
 pub struct DsmlMaterializeConfig {
     pub materialize_deepseek_dsml_tool_calls: bool,
+    /// 流式 SSE / CLI / TUI 下发前剥离 DSML 标记；默认与物化同为开启。
+    pub dsml_stream_strip_enabled: bool,
 }
 
 #[derive(Debug, Clone)]

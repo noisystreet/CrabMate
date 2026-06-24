@@ -56,6 +56,8 @@ pub struct StreamChatParams<'a> {
     pub preserve_deepseek_thinking_reasoning_roundtrip: bool,
     /// 为 true 时经 SSE 下发结构化 **`thinking_trace`**（推理增量、终答阶段等），供 Web 调试台。
     pub thinking_trace_enabled: bool,
+    /// 流式正文下发前经 [`crate::dsml::StreamingDsmlContentFilter`] 剥离 DSML。
+    pub dsml_stream_strip_enabled: bool,
     pub tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
 }
 
@@ -127,6 +129,7 @@ impl<'a> CompleteChatRetryingParams<'a> {
             preserve_deepseek_thinking_reasoning_roundtrip:
                 super::vendor::deepseek_json_output_eligible(self.cfg),
             thinking_trace_enabled: self.cfg.agent_thinking_trace.agent_thinking_trace_enabled,
+            dsml_stream_strip_enabled: self.cfg.dsml_materialize.dsml_stream_strip_enabled,
             tui_llm_stream_scratch: self.tui_llm_stream_scratch.clone(),
         }
     }

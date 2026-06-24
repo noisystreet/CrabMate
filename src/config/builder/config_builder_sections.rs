@@ -136,6 +136,7 @@ pub(crate) struct ConfigBuilderAgentToolStats {
 #[derive(Default)]
 pub(crate) struct ConfigBuilderDsmlMaterialize {
     pub(crate) materialize_deepseek_dsml_tool_calls: Option<bool>,
+    pub(crate) dsml_stream_strip_enabled: Option<bool>,
 }
 
 #[derive(Default)]

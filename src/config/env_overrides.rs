@@ -419,6 +419,11 @@ fn env_override_thinking_echo_appendix(b: &mut ConfigBuilder) {
     {
         b.dsml_materialize.materialize_deepseek_dsml_tool_calls = Some(val);
     }
+    if let Ok(v) = std::env::var("CM_DSML_STREAM_STRIP_ENABLED")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.dsml_materialize.dsml_stream_strip_enabled = Some(val);
+    }
     if let Ok(v) = std::env::var("CM_THINKING_AVOID_ECHO_SYSTEM_PROMPT")
         && let Some(val) = parse_bool_like(&v)
     {

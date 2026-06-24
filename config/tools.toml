@@ -131,6 +131,8 @@ tool_result_envelope_v1 = true
 # 为 true 时 SSE `tool_call` 另含脱敏后的 `arguments`（更长上限）；默认 false，防浏览器/共享屏泄露。
 # sse_tool_call_include_arguments = false
 materialize_deepseek_dsml_tool_calls = true
+# 流式 SSE/CLI/TUI 下发前剥离 DSML 标记；省略时与上一项同默认
+dsml_stream_strip_enabled = true
 
 # --- 单轮并行只读工具与 read_file 缓存（与 Web 队列协同；chat_queue 仍在 default_config）---
 # 单轮并行只读工具批 spawn_blocking 最大并发；默认 max(chat_queue_max_concurrent, 3)

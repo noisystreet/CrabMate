@@ -191,6 +191,7 @@ fn finalize_section_agent_tool_stats(tail: &FinalizeTailScalars) -> types::Agent
 fn finalize_section_dsml_materialize(tail: &FinalizeTailScalars) -> types::DsmlMaterializeConfig {
     types::DsmlMaterializeConfig {
         materialize_deepseek_dsml_tool_calls: tail.materialize_deepseek_dsml_tool_calls,
+        dsml_stream_strip_enabled: tail.dsml_stream_strip_enabled,
     }
 }
 
