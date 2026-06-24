@@ -23,8 +23,36 @@ pub fn ide_menu_view(l: Locale) -> &'static str {
 
 pub fn ide_menu_save(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "保存",
-        Locale::En => "Save",
+        Locale::ZhHans => "保存 (Ctrl+S)",
+        Locale::En => "Save (Ctrl+S)",
+    }
+}
+
+pub fn ide_menu_save_all(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "全部保存 (Ctrl+Shift+S)",
+        Locale::En => "Save all (Ctrl+Shift+S)",
+    }
+}
+
+pub fn ide_menu_new_file(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "新建文件…",
+        Locale::En => "New file…",
+    }
+}
+
+pub fn ide_new_file_prompt(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "相对工作区的文件路径（例如 src/main.rs）",
+        Locale::En => "Workspace-relative file path (e.g. src/main.rs)",
+    }
+}
+
+pub fn ide_disk_reload_confirm(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "磁盘上的文件已被外部修改。重载将丢弃当前未保存的编辑，是否继续？",
+        Locale::En => "The file changed on disk. Reload and discard unsaved edits?",
     }
 }
 

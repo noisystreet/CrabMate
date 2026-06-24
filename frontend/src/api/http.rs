@@ -127,6 +127,10 @@ pub async fn fetch_workspace_file(
 struct WorkspaceFileWritePayload {
     path: String,
     content: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    create_only: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    update_only: bool,
 }
 
 /// `POST /workspace/file` 写入响应。
@@ -141,8 +145,24 @@ pub async fn post_workspace_file_write(
     content: String,
     loc: Locale,
 ) -> Result<(), String> {
-    let body = serde_json::to_string(&WorkspaceFileWritePayload { path, content })
-        .map_err(|e| e.to_string())?;
+    post_workspace_file_write_opts(path, content, false, false, loc).await
+}
+
+/// 带 `create_only` / `update_only` 标志的工作区文件写入。
+pub async fn post_workspace_file_write_opts(
+    path: String,
+    content: String,
+    create_only: bool,
+    update_only: bool,
+    loc: Locale,
+) -> Result<(), String> {
+    let body = serde_json::to_string(&WorkspaceFileWritePayload {
+        path,
+        content,
+        create_only,
+        update_only,
+    })
+    .map_err(|e| e.to_string())?;
     let r: WorkspaceFileWriteData =
         fetch_json_with_body("POST", "/workspace/file", &body, loc).await?;
     if let Some(e) = r.error {

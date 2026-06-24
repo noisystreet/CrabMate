@@ -140,7 +140,7 @@ fn confirm_discard(locale: Locale) -> bool {
         .unwrap_or(false)
 }
 
-fn apply_fetch_to_new_tab(
+pub fn apply_fetch_to_new_tab(
     tabs: IdeTabsHandle,
     rel: String,
     content: String,

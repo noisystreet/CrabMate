@@ -127,6 +127,11 @@ pub(in super::super) fn chat_stream_on_ws_builder(
             return;
         }
         (stream_ctx.shell.refresh_workspace)();
+        stream_ctx
+            .shell
+            .ide
+            .ide_sync_disk_nonce
+            .update(|n| *n = n.saturating_add(1));
         if stream_ctx.shell.modal.changelist_modal_open.get_untracked() {
             stream_ctx
                 .shell

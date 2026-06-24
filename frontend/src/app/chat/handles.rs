@@ -56,6 +56,12 @@ pub struct ComposerStreamModalSignals {
     pub changelist_fetch_nonce: RwSignal<u64>,
 }
 
+/// IDE 编辑器布局在流式写盘后的磁盘同步触发（与 [`ShellUISignals::ide_sync_disk_nonce`] 同源）。
+#[derive(Clone, Copy)]
+pub struct ComposerStreamIdeSignals {
+    pub ide_sync_disk_nonce: RwSignal<u64>,
+}
+
 /// `/chat/stream` 与壳层共享的一组信号与句柄：状态栏错误、工具忙、审批、中止、工作区刷新、变更集拉取、澄清表单。
 ///
 /// 字段按 **`stream` / `approval` / `modal`** 与 `AppSignals` 子域对齐，并通过 [`ComposerStreamShell::from_app_signals`] **单点组装**，
@@ -68,6 +74,7 @@ pub struct ComposerStreamShell {
     pub stream: StreamControlSignals,
     pub approval: ComposerStreamApprovalSignals,
     pub modal: ComposerStreamModalSignals,
+    pub ide: ComposerStreamIdeSignals,
     pub refresh_workspace: Arc<dyn Fn() + Send + Sync>,
 }
 
@@ -88,6 +95,9 @@ impl ComposerStreamShell {
             modal: ComposerStreamModalSignals {
                 changelist_modal_open: app.modal.changelist_modal_open,
                 changelist_fetch_nonce: app.modal.changelist_fetch_nonce,
+            },
+            ide: ComposerStreamIdeSignals {
+                ide_sync_disk_nonce: app.shell_ui.ide_sync_disk_nonce,
             },
             refresh_workspace,
         }

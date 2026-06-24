@@ -149,6 +149,7 @@ pub fn App() -> impl IntoView {
                     >
                         <IdeLayoutView shell=IdeLayoutShellSignals {
                             locale: app_ctx.signals.shell_ui.locale,
+                            shell_ui: app_ctx.signals.shell_ui,
                             editor: app_ctx.signals.ide_editor,
                             editor_layout_mode: app_ctx.signals.shell_ui.editor_layout_mode,
                             ide_settings_page: app_ctx.signals.modal.ide_settings_page,
@@ -158,6 +159,7 @@ pub fn App() -> impl IntoView {
                             refresh_workspace: app_ctx.refresh_workspace.clone(),
                             initialized: app_ctx.signals.initialized,
                             editor_visible: app_ctx.signals.shell_ui.editor_layout_mode,
+                            insert_workspace_file_ref: app_ctx.insert_workspace_file_ref,
                         } />
                     </div>
                 </div>
