@@ -15,7 +15,7 @@ ammonia = "4"
 async-trait = "0.1"
 futures-util = { version = "0.3", default-features = false }
 console_error_panic_hook = "0.1"
-gloo-timers = { version = "0.3", features = ["futures"] }
+gloo-timers = { version = "0.4", features = ["futures"] }
 js-sys = "0.3"
 leptos = { version = "0.8.17", features = ["csr"] }
 leptos_dom = "0.8.8"
