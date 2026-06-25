@@ -2,7 +2,7 @@
 //!
 //! 新增厂商时：实现 [`LlmVendorAdapter`]，并在 [`llm_vendor_adapter_for_model`] / [`llm_vendor_adapter`] 中注册路由（优先 **`model` ID**；[`llm_vendor_adapter`] 还可参考 **`api_base`**）。
 
-use crate::config::AgentConfig;
+use crabmate_config::AgentConfig;
 
 /// 对单次 `ChatRequest` 的厂商特有处理（构造阶段调用；HTTP 仍走 OpenAI 兼容 JSON）。
 pub trait LlmVendorAdapter: Send + Sync {
@@ -99,19 +99,19 @@ fn api_base_looks_minimax(base: &str) -> bool {
 /// 火山引擎方舟 / OpenAI 兼容端（域名 **`volces.com`**）：模型名可能含 **`Kimi-*`** 等，但并非 Moonshot **`api.moonshot.cn`** 托管；
 /// 若仍走 [`MoonshotKimiVendor`]，会带去 **`thinking`** / Kimi 专用规则，网关常以 HTTP **400 InvalidParameter** 拒绝。
 #[inline]
-pub(crate) fn api_base_looks_volcano_engine_openai_compat(base: &str) -> bool {
+pub fn api_base_looks_volcano_engine_openai_compat(base: &str) -> bool {
     base.to_ascii_lowercase().contains("volces.com")
 }
 
 /// TOML/环境变量均未设置 **`llm_reasoning_split`** 时的默认值：**MiniMax** 网关为 **`true`**，否则 **`false`**。
 #[inline]
-pub(crate) fn default_llm_reasoning_split_for_gateway(model: &str, api_base: &str) -> bool {
-    is_minimax_family_model_id(model) || api_base_looks_minimax(api_base)
+pub fn default_llm_reasoning_split_for_gateway(model: &str, api_base: &str) -> bool {
+    crabmate_config::default_llm_reasoning_split_for_gateway(model, api_base)
 }
 
 /// 运行时更新 **`model` / `api_base`** 后，将 **`llm_reasoning_split`** 同步为与当前网关一致的推断（与配置 **`finalize`** 中省略 **`llm_reasoning_split`** 时的行为一致）。
 #[inline]
-pub(crate) fn refresh_llm_reasoning_split_for_gateway(cfg: &mut AgentConfig) {
+pub fn refresh_llm_reasoning_split_for_gateway(cfg: &mut AgentConfig) {
     cfg.llm_vendor_flags.llm_reasoning_split =
         default_llm_reasoning_split_for_gateway(&cfg.llm.model, &cfg.llm.api_base);
 }
@@ -119,7 +119,7 @@ pub(crate) fn refresh_llm_reasoning_split_for_gateway(cfg: &mut AgentConfig) {
 /// 出站是否将独立 **`system`** 折叠进 **`user`**：**MiniMax**（按 `model` / `api_base` 与 [`llm_vendor_adapter`] 同源规则识别）为 **`true`**，其余为 **`false`**（不再由 TOML / 环境变量配置）。
 #[inline]
 pub fn fold_system_into_user_for_config(cfg: &AgentConfig) -> bool {
-    is_minimax_family_model_id(&cfg.llm.model) || api_base_looks_minimax(&cfg.llm.api_base)
+    crabmate_config::fold_system_into_user_for_config(cfg)
 }
 
 /// 当前 **`api_base`** 是否视为 DeepSeek 官方 OpenAI 兼容端点（用于启用 [JSON Output](https://api-docs.deepseek.com/zh-cn/guides/json_mode)）。
@@ -138,7 +138,7 @@ pub fn deepseek_json_output_eligible(cfg: &AgentConfig) -> bool {
 /// - **`llm_kimi_thinking_disabled`**（Web **`llm_thinking_mode: off`** 会一并置位）→ **`thinking: disabled`**，不传 **`reasoning_effort`**。
 /// - 二者均未触发 → **省略**上述字段，由 DeepSeek 网关默认（文档：思考默认 **enabled**、普通请求 effort 默认 **high**）。
 #[must_use]
-pub(crate) fn deepseek_reasoning_effort_for_request(cfg: &AgentConfig) -> Option<String> {
+pub fn deepseek_reasoning_effort_for_request(cfg: &AgentConfig) -> Option<String> {
     if !deepseek_json_output_eligible(cfg) {
         return None;
     }
@@ -322,10 +322,10 @@ pub fn llm_vendor_adapter_for_model(model: &str) -> &'static dyn LlmVendorAdapte
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::load_config;
+    use crabmate_config::load_config;
 
     /// 避免单测受工作区 `config.toml` 中 `api_base`（若含 `minimax` 会优先匹配 MiniMax 适配器）影响。
-    fn cfg_neutral_deepseek_base() -> crate::config::AgentConfig {
+    fn cfg_neutral_deepseek_base() -> crabmate_config::AgentConfig {
         let mut cfg = load_config(None).expect("default embedded config");
         cfg.llm.api_base = "https://api.deepseek.com/v1".to_string();
         cfg

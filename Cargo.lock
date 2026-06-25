@@ -1098,7 +1098,9 @@ dependencies = [
  "clap",
  "clap_mangen",
  "cmd_mate",
+ "crabmate-config",
  "crabmate-display-rules",
+ "crabmate-llm",
  "crabmate-sse-protocol",
  "crabmate-tool-card",
  "crabmate-types",
@@ -1160,6 +1162,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabmate-config"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "libc",
+ "log",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-cron-scheduler",
+ "toml 0.8.23",
+]
+
+[[package]]
 name = "crabmate-display-rules"
 version = "0.1.0"
 
@@ -1187,6 +1205,21 @@ dependencies = [
  "tower-http 0.5.2",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "crabmate-llm"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "crabmate-config",
+ "crabmate-types",
+ "futures-util",
+ "log",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

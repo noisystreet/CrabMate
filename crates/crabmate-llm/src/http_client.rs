@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use reqwest::Client;
 
-use crate::config::AgentConfig;
+use crabmate_config::AgentConfig;
 
 /// 将 `reqwest` 传输错误格式化为可读说明（日志与 CLI），不输出密钥；附带超时/连接类提示便于排障。
 ///

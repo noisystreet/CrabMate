@@ -6,6 +6,12 @@ use super::env_overrides::apply_env_overrides;
 use super::finalize::finalize;
 use super::types::AgentConfig;
 
+///  monorepo 内嵌默认 `system_prompt_file` 等相对路径的解析锚点（`crates/crabmate-config` → 仓库根）。
+fn embedded_repo_config_search_bases() -> Vec<std::path::PathBuf> {
+    let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    vec![manifest.join("../../config"), manifest.join("../..")]
+}
+
 /// 加载配置：嵌入的 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml`、`config/sandbox.toml`、`config/planning.toml`、`config/memory.toml` 为底，再被配置文件覆盖，最后被环境变量覆盖。
 /// 若指定 `config_path`，则只从该文件读取覆盖；否则依次尝试 config.toml、.agent_demo.toml。
 /// 若最终 api_base、model 或任一运行参数仍未设置则返回错误。
@@ -15,7 +21,12 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
 
     // 嵌入默认分片与用户 TOML 的合并顺序见 `assembly` 模块文档。
     assembly::apply_embedded_config_shards(&mut b)?;
-    let system_prompt_search_bases = assembly::merge_user_config_layers(config_path, &mut b)?;
+    let mut system_prompt_search_bases = assembly::merge_user_config_layers(config_path, &mut b)?;
+    for base in embedded_repo_config_search_bases() {
+        if base.is_dir() {
+            system_prompt_search_bases.push(base);
+        }
+    }
 
     // 环境变量覆盖（优先级最高）
     apply_env_overrides(&mut b);

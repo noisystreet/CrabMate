@@ -8,6 +8,8 @@ members = [
     "crates/crabmate-sse-protocol",
     "crates/crabmate-im-bridge",
     "crates/crabmate-types",
+    "crates/crabmate-config",
+    "crates/crabmate-llm",
 ]
 resolver = "2"
 
@@ -53,11 +55,11 @@ assets = [
 [features]
 default = ["mcp", "fastembed"]
 ## Model Context Protocol（`rmcp`）：`mcp list` / `mcp serve`、进程内 MCP 工具代理。
-mcp = ["dep:rmcp"]
+mcp = ["dep:rmcp", "crabmate-config/mcp"]
 ## `sync_default_tool_sandbox_mode = docker` 时连接 Docker Engine（`bollard`）。
-docker_sandbox = ["dep:bollard"]
+docker_sandbox = ["dep:bollard", "crabmate-config/docker_sandbox"]
 ## 本地向量嵌入（**fastembed** / ONNX）：长期记忆 `fastembed` 后端、`codebase_semantic_search` 的向量索引与 hybrid/semantic 查询。
-fastembed = ["dep:fastembed"]
+fastembed = ["dep:fastembed", "crabmate-config/fastembed"]
 
 [dependencies]
 cmd_mate = { path = "crates/cmd_mate" }
@@ -65,6 +67,8 @@ crabmate-display-rules = { path = "crates/crabmate-display-rules" }
 crabmate-tool-card = { path = "crates/crabmate-tool-card" }
 crabmate-sse-protocol = { path = "crates/crabmate-sse-protocol" }
 crabmate-types = { path = "crates/crabmate-types" }
+crabmate-config = { path = "crates/crabmate-config" }
+crabmate-llm = { path = "crates/crabmate-llm" }
 reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 serde = { version = "1.0", features = ["derive"] }

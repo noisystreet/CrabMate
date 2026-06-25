@@ -1,7 +1,7 @@
 //! `CM_MCP_*` 与 `CM_CODEBASE_SEMANTIC_*` 环境覆盖（从 `env_overrides.rs` 拆分以降低圈复杂度）。
 
-use crate::config::builder::ConfigBuilder;
-use crate::config::source::parse_bool_like;
+use crate::builder::ConfigBuilder;
+use crate::source::parse_bool_like;
 
 pub(super) fn apply_env_overrides_part_14(b: &mut ConfigBuilder) {
     env_override_mcp_client_fields(b);

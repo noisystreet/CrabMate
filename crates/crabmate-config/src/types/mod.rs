@@ -516,7 +516,7 @@ impl AgentConfig {
 mod llm_context_budget_tests {
     #[test]
     fn effective_context_char_budget_is_min_of_explicit_and_derived() {
-        let mut cfg = crate::config::load_config(None).expect("embed default config");
+        let mut cfg = crate::load_config(None).expect("embed default config");
         cfg.llm_sampling.max_tokens = 2048;
         cfg.llm_sampling.llm_context_tokens = 100_000;
         cfg.context_pipeline.context_char_budget = 1000;

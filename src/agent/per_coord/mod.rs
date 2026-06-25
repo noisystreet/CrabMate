@@ -8,6 +8,9 @@
 pub(crate) mod final_plan_gate;
 mod per_turn_state;
 
+/// 何时要求模型在**最终** assistant 正文中嵌入可解析的 `agent_reply_plan` v1（见 `plan_artifact`）。
+pub use crabmate_config::FinalPlanRequirementMode;
+
 use crate::config::AgentConfig;
 use crate::types::Message;
 
@@ -20,33 +23,6 @@ pub use plan_rewrite::PlanRewriteExhaustedReason;
 
 pub(crate) const PLAN_REWRITE_EXHAUSTED_SSE: &str =
     "结构化规划仍未满足要求（已达最大重写次数），已结束本轮；请调整需求后重试。";
-
-/// 何时要求模型在**最终** assistant 正文中嵌入可解析的 `agent_reply_plan` v1（见 `plan_artifact`）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FinalPlanRequirementMode {
-    /// 从不强制；工作流反思仍会注入指令，但不触发 `after_final_assistant` 的重写循环。
-    Never,
-    /// 默认：仅当本轮工具路径注入了 [`workflow_reflection_controller::INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT`] 时，对随后的终答校验。
-    #[default]
-    WorkflowReflection,
-    /// 每次模型以非 `tool_calls` 结束时均校验（实验性，易增加额外模型轮次）。
-    Always,
-}
-
-impl FinalPlanRequirementMode {
-    pub fn parse(s: &str) -> Result<Self, String> {
-        match s.trim().to_lowercase().as_str() {
-            "never" => Ok(Self::Never),
-            "workflow_reflection" => Ok(Self::WorkflowReflection),
-            "always" => Ok(Self::Always),
-            _ => Err(format!(
-                "未知 final_plan_requirement {:?}，应为 never / workflow_reflection / always",
-                s.trim()
-            )),
-        }
-    }
-}
 
 /// 标识 plan 需求的来源，使工作流反思与终答反思的交互点可审计。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

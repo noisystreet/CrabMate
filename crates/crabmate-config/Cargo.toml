@@ -1,0 +1,26 @@
+[package]
+name = "crabmate-config"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Agent configuration loading and types for CrabMate (SDK foundation)"
+
+[features]
+default = []
+fastembed = []
+docker_sandbox = []
+mcp = []
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+libc = "0.2"
+log = "0.4"
+secrecy = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", default-features = false, features = ["sync"] }
+tokio-cron-scheduler = { version = "0.15", default-features = false }
+toml = "0.8"
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,7 +1,7 @@
 //! `apply_env_overrides_part_9`：Docker 用户余项、Web API、会话库、`agent_memory_file`。
 
-use crate::config::builder::ConfigBuilder;
-use crate::config::source::parse_bool_like;
+use crate::builder::ConfigBuilder;
+use crate::source::parse_bool_like;
 
 pub(super) fn apply_env_overrides_part_9(b: &mut ConfigBuilder) {
     env_override_sync_default_docker_user_tail(b);

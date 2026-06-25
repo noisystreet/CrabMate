@@ -1,7 +1,7 @@
 //! `CM_INTENT_*` 环境变量覆盖（从 `env_overrides.rs` 拆分以降低圈复杂度）。
 
-use crate::config::builder::ConfigBuilder;
-use crate::config::source::parse_bool_like;
+use crate::builder::ConfigBuilder;
+use crate::source::parse_bool_like;
 
 pub(super) fn env_override_intent_thresholds(b: &mut ConfigBuilder) {
     intent_override_turn_start_and_l2(b);

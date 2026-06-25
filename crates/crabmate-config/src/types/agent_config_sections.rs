@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::agent::per_coord::FinalPlanRequirementMode;
+use crate::FinalPlanRequirementMode;
 
 use super::{
     AgentRoleCatalog, LlmHttpAuthMode, LongTermMemoryScopeMode, LongTermMemoryVectorBackend,

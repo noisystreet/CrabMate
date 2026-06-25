@@ -7,21 +7,29 @@ mod builder;
 pub mod cli;
 mod cursor_rules;
 mod env_overrides;
+mod final_plan_requirement_mode;
 mod finalize;
+mod gateway_hints;
 mod hot_reload;
 mod load;
 mod scheduled_agent_task;
-pub(crate) mod skills;
+pub mod skills;
 mod source;
+mod text_util;
 mod types;
 mod user_config_layers;
 mod validate;
 mod workspace_roots;
 
+pub use final_plan_requirement_mode::FinalPlanRequirementMode;
+pub use gateway_hints::{
+    default_llm_reasoning_split_for_gateway, fold_system_into_user_for_config,
+    is_minimax_family_model_id,
+};
 pub use hot_reload::apply_hot_reload_config_subset;
 pub use load::{load_config, load_config_for_cli};
 
-pub(crate) use finalize::embedded_thinking_avoid_echo_appendix;
+pub use finalize::embedded_thinking_avoid_echo_appendix;
 
 #[allow(unused_imports)] // 部分类型仅对外再导出，本文件内不直接使用
 pub use agent_role_spec::AgentRoleSpec;
@@ -194,7 +202,7 @@ mod llm_reasoning_split_default_tests {
     #[test]
     fn finalize_respects_omitted_reasoning_split_for_non_minimax() {
         assert!(
-            !crate::llm::vendor::default_llm_reasoning_split_for_gateway(
+            !crate::gateway_hints::default_llm_reasoning_split_for_gateway(
                 "deepseek-chat",
                 "https://api.deepseek.com/v1",
             )
@@ -220,7 +228,7 @@ model = "MiniMax-M2.7"
                 "MiniMax 网关未写 llm_reasoning_split 时应默认 true"
             );
             assert!(
-                crate::llm::fold_system_into_user_for_config(&cfg),
+                crate::gateway_hints::fold_system_into_user_for_config(&cfg),
                 "MiniMax 应自动折叠 system→user"
             );
         });

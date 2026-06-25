@@ -12,15 +12,16 @@ pub use terminal_render::terminal_render_agent_markdown;
 use log::{debug, info};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::config::LlmHttpAuthMode;
-use crate::redact;
-use crate::types::{
+use crabmate_config::LlmHttpAuthMode;
+use crabmate_llm::chat_params::StreamChatParams;
+use crabmate_sse_protocol::StreamEndReason;
+use crabmate_types::{
     ChatRequest, FunctionCall, Message, MessageContent, ToolCall, USER_CANCELLED_FINISH_REASON,
     message_content_byte_len_for_estimate,
 };
-use crabmate_sse_protocol::StreamEndReason;
 
-use super::call_error::LlmCallError;
+use crate::redact;
+use crabmate_llm::LlmCallError;
 use error_handler::{
     boxed_non_stream_chat_parse_error, ensure_chat_completions_success,
     log_chat_request_json_preview_if_enabled,
@@ -240,7 +241,7 @@ async fn non_stream_chat_response(
 
 async fn streaming_chat_response(
     res: reqwest::Response,
-    params: &super::chat_params::StreamChatParams<'_>,
+    params: &StreamChatParams<'_>,
     render_to_terminal: bool,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
     let cli_terminal_plain =
@@ -311,10 +312,10 @@ async fn streaming_chat_response(
 ///
 /// **DSML 物化**：正文中的 DeepSeek DSML 工具调用**不在**此处解析；由 [`crate::llm::complete_chat_retrying`] 在成功后按配置 **`materialize_deepseek_dsml_tool_calls`** 统一处理。
 pub async fn stream_chat(
-    params: &super::chat_params::StreamChatParams<'_>,
+    params: &StreamChatParams<'_>,
     req: &mut ChatRequest,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
-    let super::chat_params::StreamChatParams {
+    let StreamChatParams {
         client,
         api_key,
         api_base,

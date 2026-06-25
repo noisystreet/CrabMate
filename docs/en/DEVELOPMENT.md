@@ -89,8 +89,10 @@ Runtime **`AgentConfig`** merges TOML shards / environment variables and is vali
 | **`memory/`** | Long-term memory, optional semantic index, etc. |
 | **`runtime/`** | REPL, one-shot `chat`, **`chat_export`**, TUI bridge, benchmark helpers, etc. |
 | **`tool_result/`** | Tool output envelopes, aligned with SSE **`tool_result`**. |
-| **`crabmate-types`** (`crates/crabmate-types`) | OpenAI-compatible **`Message`** / **`Tool`** / **`ChatRequest`**, session transform helpers, server-injected user detection; root **`pub use crabmate_types as types`**. |
-| **`types` (root re-export)** | Same as above; in-repo code still commonly uses **`crate::types::`**. |
+| **`crabmate-types`** (`crates/crabmate-types`) | OpenAI-compatible messages; root **`pub use crabmate_types as types`**. |
+| **`crabmate-config`** (`crates/crabmate-config`) | **`AgentConfig`** loading, `finalize`, hot reload, CLI definitions; root **`pub use crabmate_config as config`**. |
+| **`crabmate-llm`** (`crates/crabmate-llm`) | **`vendor`**, shared **`http_client`**, **`ChatCompletionsBackend`** trait, error types; root **`llm`** re-exports and hosts **`api::stream_chat`** / **`complete_chat_retrying`**. |
+| **`types` (root re-export)** | Same as `crabmate-types`; in-repo code still commonly uses **`crate::types::`**. |
 | **`observability.rs`** | Tracing init and **`TracingChatTurn`**. |
 
 For **sub-paths** (e.g. **`agent_turn/staged`**, **`tools/file`**), browse or search the repo; this guide does **not** maintain a per-file index table (it duplicates **`lib.rs`** `mod` lists and goes stale).

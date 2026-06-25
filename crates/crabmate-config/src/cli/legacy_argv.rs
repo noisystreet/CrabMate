@@ -187,8 +187,8 @@ pub fn normalize_legacy_argv(args: Vec<String>) -> Vec<String> {
 #[cfg(test)]
 mod legacy_argv_tests {
     use super::normalize_legacy_argv;
-    use crate::config::cli::definitions::{Commands, ExtraCliCommand, RootCli};
-    use crate::config::cli::parse::parse_args_from_argv;
+    use crate::cli::definitions::{Commands, ExtraCliCommand, RootCli};
+    use crate::cli::parse::parse_args_from_argv;
     use clap::Parser;
 
     fn norm(args: &[&str]) -> Vec<String> {

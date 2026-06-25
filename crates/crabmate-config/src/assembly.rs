@@ -17,13 +17,13 @@ use super::builder::ConfigBuilder;
 use super::source::{parse_agent_section, parse_tools_config_bundle};
 
 /// 编译时嵌入（与 `mod.rs` 中常量一致，仅在此集中说明顺序）
-const DEFAULT_CONFIG: &str = include_str!("../../config/default_config.toml");
-const SESSION_DEFAULT_CONFIG: &str = include_str!("../../config/session.toml");
-const CONTEXT_INJECT_DEFAULT_CONFIG: &str = include_str!("../../config/context_inject.toml");
-const TOOLS_DEFAULT_CONFIG: &str = include_str!("../../config/tools.toml");
-const SANDBOX_DEFAULT_CONFIG: &str = include_str!("../../config/sandbox.toml");
-const PLANNING_DEFAULT_CONFIG: &str = include_str!("../../config/planning.toml");
-const MEMORY_DEFAULT_CONFIG: &str = include_str!("../../config/memory.toml");
+const DEFAULT_CONFIG: &str = include_str!("../../../config/default_config.toml");
+const SESSION_DEFAULT_CONFIG: &str = include_str!("../../../config/session.toml");
+const CONTEXT_INJECT_DEFAULT_CONFIG: &str = include_str!("../../../config/context_inject.toml");
+const TOOLS_DEFAULT_CONFIG: &str = include_str!("../../../config/tools.toml");
+const SANDBOX_DEFAULT_CONFIG: &str = include_str!("../../../config/sandbox.toml");
+const PLANNING_DEFAULT_CONFIG: &str = include_str!("../../../config/planning.toml");
+const MEMORY_DEFAULT_CONFIG: &str = include_str!("../../../config/memory.toml");
 
 fn apply_embedded_agent_shard(
     b: &mut ConfigBuilder,

@@ -9,19 +9,31 @@
 //! **维护约定**（唯一入口 / 禁止直接 `api::stream_chat`）见 **`docs/开发文档.md`** 章节「`agent_turn` 与 `llm`：唯一入口与禁止事项」。
 
 mod api;
-pub mod backend;
-mod call_error;
-mod chat_params;
-mod complete_error;
-mod openai_models;
-pub mod vendor;
+mod backend_openai;
+mod chat_params_ext;
 
-// 供库外/其它 crate 模块以 `crate::llm::LlmCallError` 使用；本文件内无直接引用。
+pub mod backend {
+    pub use super::backend_openai::{
+        OPENAI_COMPAT_BACKEND, OpenAiCompatBackend, default_chat_completions_backend,
+    };
+    pub use crabmate_llm::backend::ChatCompletionsBackend;
+}
+
+pub use backend::{
+    ChatCompletionsBackend, OPENAI_COMPAT_BACKEND, OpenAiCompatBackend,
+    default_chat_completions_backend,
+};
+pub use chat_params_ext::CompleteChatRetryingParams;
 #[allow(unused_imports)]
-pub use call_error::LlmCallError;
-pub use chat_params::{CompleteChatRetryingParams, LlmRetryingTransportOpts, StreamChatParams};
-pub use complete_error::LlmCompleteError;
-pub use openai_models::fetch_models_report;
+pub use crabmate_llm::{
+    LlmCallError, LlmCompleteError, LlmRetryingTransportOpts, LlmVendorAdapter, StreamChatParams,
+    TuiLlmStreamScratchArc, fetch_models_report, fold_system_into_user_for_config,
+    llm_vendor_adapter, llm_vendor_adapter_for_model, vendor,
+};
+
+const HIERARCHICAL_MANAGER_MIN_COMPLETION_TOKENS: u32 = 6144;
+
+pub(crate) use crabmate_llm::STAGED_PLANNER_MIN_COMPLETION_TOKENS;
 
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
@@ -32,21 +44,6 @@ use crate::config::AgentConfig;
 use crate::types::{
     ChatRequest, ChatRequestCore, ChatRequestVendorExtensions, LlmSeedOverride, Message, Tool,
     is_long_term_memory_injection, resolved_llm_seed,
-};
-
-/// 分层 Manager / 动态分解器 JSON 输出的 `max_tokens` 下限（与配置中的 `max_tokens` 取较大值）。
-const HIERARCHICAL_MANAGER_MIN_COMPLETION_TOKENS: u32 = 6144;
-
-/// 分阶段规划轮（无工具 JSON）的 `max_tokens` 下限；推理字段易占满较小完成额度。
-pub(crate) const STAGED_PLANNER_MIN_COMPLETION_TOKENS: u32 = 3072;
-
-pub use backend::{
-    ChatCompletionsBackend, OPENAI_COMPAT_BACKEND, OpenAiCompatBackend,
-    default_chat_completions_backend,
-};
-pub use vendor::{
-    LlmVendorAdapter, fold_system_into_user_for_config, llm_vendor_adapter,
-    llm_vendor_adapter_for_model,
 };
 
 static LLM_CALL_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -302,8 +299,8 @@ pub async fn complete_chat_retrying(
                 break;
             }
             Err(e) => {
-                let http_status = call_error::llm_call_error_http_status(e.as_ref());
-                let retryable = call_error::llm_call_error_retryable(e.as_ref());
+                let http_status = crabmate_llm::call_error::llm_call_error_http_status(e.as_ref());
+                let retryable = crabmate_llm::call_error::llm_call_error_retryable(e.as_ref());
                 let can_backoff = attempt < max_attempts - 1 && retryable;
                 let backoff_ms = if can_backoff {
                     p.cfg

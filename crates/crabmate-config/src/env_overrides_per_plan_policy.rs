@@ -1,7 +1,7 @@
 //! `CM_REFLECTION_*` / `CM_FINAL_PLAN_*` / `CM_PLANNER_EXECUTOR_MODE` 等 per-plan 策略环境覆盖（从 `env_overrides.rs` 拆分以降低圈复杂度）。
 
-use crate::config::builder::ConfigBuilder;
-use crate::config::source::parse_bool_like;
+use crate::builder::ConfigBuilder;
+use crate::source::parse_bool_like;
 
 pub(super) fn env_override_reflection_and_final_plan(b: &mut ConfigBuilder) {
     env_override_reflection_rounds_and_rewrite(b);

@@ -17,7 +17,9 @@ mod cargo_metadata;
 mod chat_job_queue;
 mod clarification_questionnaire;
 mod cli_run;
-mod config;
+pub use crabmate_config;
+pub use crabmate_config as config;
+pub use crabmate_llm;
 /// Web `/chat*` 与 CLI 首轮 living docs / 项目画像 / 依赖摘要与会话 bootstrap。
 mod context_bootstrap;
 /// Web `conversation_id` 持久化（可选 SQLite）与 `SaveConversationOutcome`。
@@ -27,7 +29,7 @@ mod dsml;
 mod dynamic_tools;
 mod health;
 mod health_dep_compat;
-mod http_client;
+pub use crabmate_llm::http_client;
 mod llm;
 mod mcp;
 /// 长期记忆、备忘片段、代码语义索引（SQLite + fastembed）。

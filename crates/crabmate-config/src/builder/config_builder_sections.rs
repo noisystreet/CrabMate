@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
-use crate::config::agent_roles;
-use crate::config::source::ScheduledAgentTaskRow;
+use crate::agent_roles;
+use crate::source::ScheduledAgentTaskRow;
 
 /// LLM 网关与认证字符串（`finalize` 再解析枚举）。
 #[derive(Default)]
