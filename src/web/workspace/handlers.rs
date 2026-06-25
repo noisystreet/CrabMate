@@ -16,10 +16,11 @@ use crate::web::http_types::validation::{
     validate_workspace_query_encoding_optional, workspace_search_pattern_or_error,
 };
 use crate::web::http_types::workspace::{
-    WorkspaceEntry, WorkspaceFileDeleteResponse, WorkspaceFileQuery, WorkspaceFileReadResponse,
-    WorkspaceFileWriteBody, WorkspaceFileWriteResponse, WorkspacePickResponse,
-    WorkspaceProfileResponse, WorkspaceQuery, WorkspaceResponse, WorkspaceSearchBody,
-    WorkspaceSearchResponse, WorkspaceSetBody,
+    WorkspaceDirCreateBody, WorkspaceDirCreateResponse, WorkspaceDirDeleteQuery,
+    WorkspaceDirDeleteResponse, WorkspaceEntry, WorkspaceFileDeleteResponse, WorkspaceFileQuery,
+    WorkspaceFileReadResponse, WorkspaceFileWriteBody, WorkspaceFileWriteResponse,
+    WorkspacePickResponse, WorkspaceProfileResponse, WorkspaceQuery, WorkspaceResponse,
+    WorkspaceSearchBody, WorkspaceSearchResponse, WorkspaceSetBody,
 };
 #[cfg(unix)]
 use crate::workspace::fs::{
@@ -594,41 +595,32 @@ fn workspace_file_write_sync_unix(
         .map_err(|e| format!("写入文件失败: {e}"))
 }
 
-/// 工作区文件写入：支持创建、写入（创建或覆盖）、仅创建、仅修改
-pub async fn workspace_file_write_handler(
-    State(state): State<Arc<AppState>>,
-    Json(body): Json<WorkspaceFileWriteBody>,
+async fn workspace_dir_create_response(
+    canonical: std::path::PathBuf,
+    parents: bool,
 ) -> Json<WorkspaceFileWriteResponse> {
-    let base_canonical = match effective_workspace_base_canonical(&state).await {
-        Ok(p) => p,
-        Err(e) => {
-            return Json(WorkspaceFileWriteResponse {
-                error: Some(e.user_message()),
-            });
-        }
-    };
-    if let Err(e) = validate_workspace_file_write_request(&body) {
-        return Json(WorkspaceFileWriteResponse { error: Some(e) });
+    match tokio::task::spawn_blocking(move || workspace_dir_create_sync(canonical, parents)).await {
+        Ok(Ok(())) => Json(WorkspaceFileWriteResponse { error: None }),
+        Ok(Err(msg)) => Json(WorkspaceFileWriteResponse { error: Some(msg) }),
+        Err(e) => Json(WorkspaceFileWriteResponse {
+            error: Some(format!("创建目录任务失败: {}", e)),
+        }),
     }
-    let path = body.path.trim();
-    if path.is_empty() {
-        return Json(WorkspaceFileWriteResponse {
-            error: Some("path 不能为空".to_string()),
-        });
+}
+
+async fn workspace_file_write_resolved(
+    base_canonical: std::path::PathBuf,
+    canonical: std::path::PathBuf,
+    body: WorkspaceFileWriteBody,
+) -> Json<WorkspaceFileWriteResponse> {
+    if body.create_directory {
+        return workspace_dir_create_response(canonical, body.parents).await;
     }
-    let canonical = match resolve_web_workspace_write_path(&base_canonical, path) {
-        Ok(p) => p,
-        Err(e) => {
-            return Json(WorkspaceFileWriteResponse {
-                error: Some(e.user_message()),
-            });
-        }
-    };
 
     #[cfg(unix)]
     {
-        let base = base_canonical.clone();
-        let normalized = canonical.clone();
+        let base = base_canonical;
+        let normalized = canonical;
         let content = body.content;
         let create_only = body.create_only;
         let update_only = body.update_only;
@@ -676,6 +668,160 @@ pub async fn workspace_file_write_handler(
     }
 }
 
+/// 工作区文件写入：支持创建、写入（创建或覆盖）、仅创建、仅修改
+pub async fn workspace_file_write_handler(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<WorkspaceFileWriteBody>,
+) -> Json<WorkspaceFileWriteResponse> {
+    let base_canonical = match effective_workspace_base_canonical(&state).await {
+        Ok(p) => p,
+        Err(e) => {
+            return Json(WorkspaceFileWriteResponse {
+                error: Some(e.user_message()),
+            });
+        }
+    };
+    if let Err(e) = validate_workspace_file_write_request(&body) {
+        return Json(WorkspaceFileWriteResponse { error: Some(e) });
+    }
+    let path = body.path.trim();
+    if path.is_empty() {
+        return Json(WorkspaceFileWriteResponse {
+            error: Some("path 不能为空".to_string()),
+        });
+    }
+    let canonical = match resolve_web_workspace_write_path(&base_canonical, path) {
+        Ok(p) => p,
+        Err(e) => {
+            return Json(WorkspaceFileWriteResponse {
+                error: Some(e.user_message()),
+            });
+        }
+    };
+
+    workspace_file_write_resolved(base_canonical, canonical, body).await
+}
+
+/// 在工作区内创建目录（可选 `parents` 创建中间路径）。
+pub async fn workspace_dir_create_handler(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<WorkspaceDirCreateBody>,
+) -> Json<WorkspaceDirCreateResponse> {
+    let base_canonical = match effective_workspace_base_canonical(&state).await {
+        Ok(p) => p,
+        Err(e) => {
+            return Json(WorkspaceDirCreateResponse {
+                error: Some(e.user_message()),
+            });
+        }
+    };
+    let path = body.path.trim();
+    if path.is_empty() {
+        return Json(WorkspaceDirCreateResponse {
+            error: Some("path 不能为空".to_string()),
+        });
+    }
+    let canonical = match resolve_web_workspace_write_path(&base_canonical, path) {
+        Ok(p) => p,
+        Err(e) => {
+            return Json(WorkspaceDirCreateResponse {
+                error: Some(e.user_message()),
+            });
+        }
+    };
+    let parents = body.parents;
+    match tokio::task::spawn_blocking(move || workspace_dir_create_sync(canonical, parents)).await {
+        Ok(Ok(())) => Json(WorkspaceDirCreateResponse { error: None }),
+        Ok(Err(msg)) => Json(WorkspaceDirCreateResponse { error: Some(msg) }),
+        Err(e) => Json(WorkspaceDirCreateResponse {
+            error: Some(format!("创建目录任务失败: {}", e)),
+        }),
+    }
+}
+
+fn workspace_dir_create_sync(canonical: std::path::PathBuf, parents: bool) -> Result<(), String> {
+    if canonical.exists() {
+        if canonical.is_dir() {
+            return Err("目录已存在".to_string());
+        }
+        return Err("路径已存在且为文件".to_string());
+    }
+    let result = if parents {
+        std::fs::create_dir_all(&canonical)
+    } else {
+        std::fs::create_dir(&canonical)
+    };
+    result.map_err(|e| format!("创建目录失败: {e}"))
+}
+
+/// 删除工作区内的目录：`confirm=true` 必填；非空目录须 `recursive=true`。
+pub async fn workspace_dir_delete_handler(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<WorkspaceDirDeleteQuery>,
+) -> Json<WorkspaceDirDeleteResponse> {
+    if !query.confirm {
+        return Json(WorkspaceDirDeleteResponse {
+            error: Some("拒绝执行：需要 confirm=true".to_string()),
+        });
+    }
+    let base_canonical = match effective_workspace_base_canonical(&state).await {
+        Ok(p) => p,
+        Err(e) => {
+            return Json(WorkspaceDirDeleteResponse {
+                error: Some(e.user_message()),
+            });
+        }
+    };
+    let path = query.path.trim();
+    if path.is_empty() {
+        return Json(WorkspaceDirDeleteResponse {
+            error: Some("path 不能为空".to_string()),
+        });
+    }
+    let canonical =
+        match resolve_web_workspace_read_path(&base_canonical, Some(query.path.as_str())) {
+            Ok(p) => p,
+            Err(e) => {
+                return Json(WorkspaceDirDeleteResponse {
+                    error: Some(e.user_message()),
+                });
+            }
+        };
+    if canonical == base_canonical {
+        return Json(WorkspaceDirDeleteResponse {
+            error: Some("不能删除工作区根目录".to_string()),
+        });
+    }
+    let recursive = query.recursive;
+    match tokio::task::spawn_blocking(move || workspace_dir_delete_sync(canonical, recursive)).await
+    {
+        Ok(Ok(())) => Json(WorkspaceDirDeleteResponse { error: None }),
+        Ok(Err(msg)) => Json(WorkspaceDirDeleteResponse { error: Some(msg) }),
+        Err(e) => Json(WorkspaceDirDeleteResponse {
+            error: Some(format!("删除目录任务失败: {}", e)),
+        }),
+    }
+}
+
+fn workspace_dir_delete_sync(canonical: std::path::PathBuf, recursive: bool) -> Result<(), String> {
+    let meta = std::fs::metadata(&canonical).map_err(|e| format!("无法读取目录信息: {e}"))?;
+    if !meta.is_dir() {
+        return Err("路径不是目录".to_string());
+    }
+    let result = if recursive {
+        std::fs::remove_dir_all(&canonical)
+    } else {
+        std::fs::remove_dir(&canonical)
+    };
+    match result {
+        Ok(()) => Ok(()),
+        Err(e) if !recursive && e.kind() == std::io::ErrorKind::DirectoryNotEmpty => {
+            Err("目录非空，需要 recursive=true".to_string())
+        }
+        Err(e) => Err(format!("删除目录失败: {e}")),
+    }
+}
+
 /// 返回当前工作区的项目画像（Markdown）。与 `project_profile_inject_max_chars` 上限一致；为 0 时返回空正文。
 pub async fn workspace_profile_handler(
     State(state): State<Arc<AppState>>,
@@ -712,5 +858,45 @@ pub async fn workspace_profile_handler(
             markdown: String::new(),
             error: Some(format!("生成项目画像任务失败: {}", e)),
         }),
+    }
+}
+
+#[cfg(test)]
+mod workspace_dir_create_tests {
+    use super::workspace_dir_create_sync;
+    use std::path::PathBuf;
+
+    #[test]
+    fn create_dir_at_root_succeeds() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let target = root.path().join("new_dir");
+        workspace_dir_create_sync(target.clone(), false).expect("create");
+        assert!(target.is_dir());
+    }
+
+    #[test]
+    fn create_dir_with_parents_creates_nested() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let target = root.path().join("a/b/c");
+        workspace_dir_create_sync(target.clone(), true).expect("create nested");
+        assert!(target.is_dir());
+    }
+
+    #[test]
+    fn create_dir_without_parents_fails_when_parent_missing() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let target = root.path().join("missing_parent/child");
+        let err = workspace_dir_create_sync(target, false).expect_err("should fail");
+        assert!(err.contains("创建目录失败"), "{err}");
+    }
+
+    #[test]
+    fn create_dir_rejects_existing_file() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let target = root.path().join("blocker");
+        std::fs::write(&target, b"x").expect("write file");
+        let err =
+            workspace_dir_create_sync(PathBuf::from(&target), false).expect_err("file blocks dir");
+        assert!(err.contains("文件"), "{err}");
     }
 }

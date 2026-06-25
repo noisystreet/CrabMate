@@ -15,8 +15,11 @@ use crate::session_workspace_bind::patch_active_session_workspace_root;
 use crate::stream_text_overlay::sessions_snapshot_with_stream_overlay_merged;
 use crate::tauri_shell::tauri_shell_available;
 use crate::user_data_bootstrap::persist_last_workspace_root;
+use crate::workspace_context_menu::{
+    WorkspaceContextMenuActions, WorkspaceContextMenuLayer, WorkspaceTreeChromeSignals,
+};
 use crate::workspace_shell::reload_workspace_panel;
-use crate::workspace_tree::WorkspaceFilesystemTree;
+use crate::workspace_tree::{WorkspaceFilesystemTree, WorkspaceFilesystemTreeInput};
 
 use super::workspace_panel_state::WorkspacePanelSignals;
 
@@ -186,9 +189,10 @@ fn WorkspaceSideCardLoaded(
     ws: WorkspacePanelSignals,
     insert_workspace_file_ref: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
     on_file_single_click: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
+    ctx_actions: StoredValue<WorkspaceContextMenuActions>,
 ) -> impl IntoView {
     view! {
-        <>
+        <div class="workspace-side-card-loaded">
             <div class="workspace-set">
                 <div class="workspace-set-label">{move || i18n::ws_root_label(locale.get())}</div>
                 <div class="workspace-set-input-row">
@@ -214,16 +218,42 @@ fn WorkspaceSideCardLoaded(
                         .unwrap_or_default()
                 }}</div>
             </Show>
-            <WorkspaceFilesystemTree
-                workspace_data=ws.workspace_data
-                subtree_expanded=ws.workspace_subtree_expanded
-                subtree_cache=ws.workspace_subtree_cache
-                subtree_loading=ws.workspace_subtree_loading
-                locale=locale
-                on_file_double_click=insert_workspace_file_ref
-                on_file_single_click=on_file_single_click
-            />
-        </>
+            <div
+                class="workspace-tree-shell"
+                on:contextmenu=move |ev: web_sys::MouseEvent| {
+                    crate::workspace_tree::handle_workspace_tree_panel_context_menu(
+                        ev,
+                        ws.workspace_context_menu,
+                    );
+                }
+            >
+                <WorkspaceFilesystemTree input=WorkspaceFilesystemTreeInput {
+                    workspace_data: ws.workspace_data,
+                    subtree_expanded: ws.workspace_subtree_expanded,
+                    subtree_cache: ws.workspace_subtree_cache,
+                    subtree_loading: ws.workspace_subtree_loading,
+                    chrome: WorkspaceTreeChromeSignals {
+                        context_menu: ws.workspace_context_menu,
+                        pending_create: ws.workspace_pending_create,
+                    },
+                    locale,
+                    workspace_err: ws.workspace_err,
+                    create_actions: ctx_actions,
+                    on_file_double_click: insert_workspace_file_ref,
+                    on_file_single_click,
+                } />
+                <WorkspaceContextMenuLayer
+                    workspace_context_menu=ws.workspace_context_menu
+                    workspace_pending_create=ws.workspace_pending_create
+                    subtree_expanded=ws.workspace_subtree_expanded
+                    subtree_cache=ws.workspace_subtree_cache
+                    subtree_loading=ws.workspace_subtree_loading
+                    locale=locale
+                    workspace_err=ws.workspace_err
+                    actions=ctx_actions.get_value()
+                />
+            </div>
+        </div>
     }
 }
 
@@ -234,6 +264,7 @@ pub(crate) fn WorkspaceSideCardScrollInner(
     ws: WorkspacePanelSignals,
     insert_workspace_file_ref: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
     on_file_single_click: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
+    ctx_actions: StoredValue<WorkspaceContextMenuActions>,
 ) -> impl IntoView {
     view! {
         {move || {
@@ -247,6 +278,7 @@ pub(crate) fn WorkspaceSideCardScrollInner(
                         ws=ws
                         insert_workspace_file_ref=insert_workspace_file_ref
                         on_file_single_click=on_file_single_click
+                        ctx_actions=ctx_actions
                     />
                 }
                 .into_any()

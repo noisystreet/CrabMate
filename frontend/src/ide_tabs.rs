@@ -267,6 +267,49 @@ pub fn close_tab_at(
     }
 }
 
+/// 磁盘项已删除后强制关闭匹配的标签（不提示未保存；用户已在删除确认中授权）。
+pub fn force_close_tabs_for_deleted_entry(
+    tabs: IdeTabsHandle,
+    deleted_rel: &str,
+    is_dir: bool,
+    editor: IdeTabsEditorSignals,
+) {
+    let IdeTabsEditorSignals {
+        ide_path,
+        ide_text,
+        ide_baseline,
+    } = editor;
+    tabs.persist_editor_into_active(ide_text, ide_baseline);
+    let deleted = deleted_rel.trim().trim_end_matches('/');
+    let dir_prefix = is_dir.then(|| format!("{deleted}/"));
+    let should_remove = |path: &str| -> bool {
+        if is_dir {
+            path == deleted || dir_prefix.as_ref().is_some_and(|pfx| path.starts_with(pfx))
+        } else {
+            path == deleted
+        }
+    };
+    let prev_active = tabs.active.get_untracked();
+    let old_list = tabs.tabs.get_untracked();
+    let mut new_list = Vec::with_capacity(old_list.len());
+    let mut new_active = None;
+    for (i, tab) in old_list.iter().enumerate() {
+        if should_remove(tab.path.as_str()) {
+            continue;
+        }
+        if prev_active == Some(i) {
+            new_active = Some(new_list.len());
+        }
+        new_list.push(tab.clone());
+    }
+    tabs.tabs.set(new_list);
+    tabs.active.set(new_active);
+    tabs.load_active_into_editor(ide_path, ide_text, ide_baseline);
+    if new_active.is_none() {
+        tabs.err.set(None);
+    }
+}
+
 pub fn make_ide_open_file_handler(
     locale: RwSignal<Locale>,
     tabs: IdeTabsHandle,

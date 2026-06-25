@@ -1,14 +1,18 @@
 //! 「文件」菜单。
 
+use std::sync::Arc;
+
 use leptos::prelude::*;
 
 use super::menu_id::IdeMenuId;
 use super::props::IdeMenuBarSignals;
-use crate::i18n;
+use crate::i18n::{self, Locale};
 use crate::ide_save::{
     IdeSaveContext, prompt_new_workspace_file_path, spawn_create_and_open_file,
     spawn_save_active_tab, spawn_save_all_dirty_tabs,
 };
+use crate::workspace_context_menu::WorkspaceTreeRefreshHint;
+use crate::workspace_tree::workspace_parent_rel;
 
 fn toggle_file_menu(
     open_menu: RwSignal<Option<IdeMenuId>>,
@@ -44,6 +48,27 @@ fn save_ctx(signals: IdeMenuBarSignals) -> IdeSaveContext {
         ide_baseline,
         ide_err,
     }
+}
+
+fn on_ide_new_file_click(
+    signals: IdeMenuBarSignals,
+    locale: RwSignal<Locale>,
+    open_menu: RwSignal<Option<IdeMenuId>>,
+    ide_menubar_dropdown_open: RwSignal<bool>,
+) {
+    let loc = locale.get_untracked();
+    if let Some(rel) = prompt_new_workspace_file_path(loc) {
+        let parent = workspace_parent_rel(rel.as_str());
+        let refresh = signals.refresh_after_mutation.get_value();
+        let after_create = Arc::new(move || {
+            refresh(WorkspaceTreeRefreshHint {
+                parent_rel: parent.clone(),
+                deleted_rel: None,
+            })
+        });
+        spawn_create_and_open_file(save_ctx(signals), locale, rel, Some(after_create));
+    }
+    close_menus(open_menu, ide_menubar_dropdown_open);
 }
 
 #[component]
@@ -86,15 +111,12 @@ pub(super) fn IdeMenuFileSection(
                         role="menuitem"
                         prop:disabled=move || ide_load_busy.get() || ide_save_busy.get()
                         on:click=move |_| {
-                            let loc = locale.get_untracked();
-                            if let Some(rel) = prompt_new_workspace_file_path(loc) {
-                                spawn_create_and_open_file(
-                                    save_ctx(signals),
-                                    locale,
-                                    rel,
-                                );
-                            }
-                            close_menus(open_menu, ide_menubar_dropdown_open);
+                            on_ide_new_file_click(
+                                signals,
+                                locale,
+                                open_menu,
+                                ide_menubar_dropdown_open,
+                            );
                         }
                     >
                         {move || i18n::ide_menu_new_file(locale.get())}

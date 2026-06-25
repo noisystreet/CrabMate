@@ -10,6 +10,10 @@ use crate::session_ops::SessionContextAnchor;
 #[derive(Clone, Copy)]
 pub struct ShellEscapeSignals {
     pub session_context_menu: RwSignal<Option<SessionContextAnchor>>,
+    pub workspace_context_menu:
+        RwSignal<Option<crate::workspace_context_menu::WorkspaceContextAnchor>>,
+    pub workspace_pending_create:
+        RwSignal<Option<crate::workspace_context_menu::WorkspacePendingCreate>>,
     pub sidebar_rail_ctx_menu: RwSignal<Option<(f64, f64)>>,
     pub chat_find_panel_open: RwSignal<bool>,
     pub sidebar_search_panel_open: RwSignal<bool>,
@@ -44,6 +48,14 @@ pub(crate) fn keyboard_event_target_is_text_entry(ev: &web_sys::KeyboardEvent) -
 fn dismiss_one_escape_layer(shell: ShellEscapeSignals) {
     if shell.session_context_menu.get_untracked().is_some() {
         shell.session_context_menu.set(None);
+        return;
+    }
+    if shell.workspace_context_menu.get_untracked().is_some() {
+        shell.workspace_context_menu.set(None);
+        return;
+    }
+    if shell.workspace_pending_create.get_untracked().is_some() {
+        shell.workspace_pending_create.set(None);
         return;
     }
     if shell.sidebar_rail_ctx_menu.get_untracked().is_some() {

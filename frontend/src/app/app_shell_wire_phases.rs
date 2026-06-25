@@ -151,6 +151,8 @@ fn wire_phase2_persisted_prefs_dom_and_settings_hooks(app: &AppSignals) {
 fn wire_phase3_escape_layered_dismiss(app: &AppSignals) {
     let shell_escape = ShellEscapeSignals {
         session_context_menu: app.sidebar.session_context_menu,
+        workspace_context_menu: app.workspace.workspace_context_menu,
+        workspace_pending_create: app.workspace.workspace_pending_create,
         sidebar_rail_ctx_menu: app.sidebar.sidebar_rail_ctx_menu,
         chat_find_panel_open: app.chat_composer.chat_find_panel_open,
         sidebar_search_panel_open: app.sidebar.sidebar_search_panel_open,

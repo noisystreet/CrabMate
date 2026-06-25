@@ -206,6 +206,15 @@ pub(crate) fn workspace_search_pattern_or_error(
 pub(crate) fn validate_workspace_file_write_request(
     body: &WorkspaceFileWriteBody,
 ) -> Result<(), String> {
+    if body.create_directory {
+        if body.create_only || body.update_only {
+            return Err("create_directory 不能与 create_only 或 update_only 同时使用".to_string());
+        }
+        if !body.content.is_empty() {
+            return Err("create_directory 时 content 须为空".to_string());
+        }
+        return Ok(());
+    }
     validate_workspace_file_write_payload(body.content.as_bytes())
 }
 
@@ -217,6 +226,39 @@ pub(crate) fn validate_workspace_file_write_payload(content: &[u8]) -> Result<()
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod workspace_file_write_directory_tests {
+    use super::super::workspace::WorkspaceFileWriteBody;
+    use super::validate_workspace_file_write_request;
+
+    #[test]
+    fn create_directory_allows_empty_content() {
+        let body = WorkspaceFileWriteBody {
+            path: "dir".into(),
+            content: String::new(),
+            create_only: false,
+            update_only: false,
+            create_directory: true,
+            parents: true,
+        };
+        validate_workspace_file_write_request(&body).expect("valid");
+    }
+
+    #[test]
+    fn create_directory_rejects_non_empty_content() {
+        let body = WorkspaceFileWriteBody {
+            path: "dir".into(),
+            content: "x".into(),
+            create_only: false,
+            update_only: false,
+            create_directory: true,
+            parents: false,
+        };
+        let err = validate_workspace_file_write_request(&body).expect_err("content");
+        assert!(err.contains("content"), "{err}");
+    }
 }
 
 #[cfg(test)]

@@ -131,6 +131,10 @@ struct WorkspaceFileWritePayload {
     create_only: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     update_only: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    create_directory: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    parents: bool,
 }
 
 /// `POST /workspace/file` 写入响应。
@@ -161,10 +165,139 @@ pub async fn post_workspace_file_write_opts(
         content,
         create_only,
         update_only,
+        create_directory: false,
+        parents: false,
     })
     .map_err(|e| e.to_string())?;
     let r: WorkspaceFileWriteData =
         fetch_json_with_body("POST", "/workspace/file", &body, loc).await?;
+    if let Some(e) = r.error {
+        return Err(e);
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct WorkspaceDirOpResponse {
+    error: Option<String>,
+}
+
+#[derive(Serialize)]
+struct WorkspaceDirCreatePayload {
+    path: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    parents: bool,
+}
+
+fn http_error_status_code(err: &str) -> Option<u16> {
+    let open = err.find('(')?;
+    let close = err.find(')')?;
+    err.get(open + 1..close)?.parse().ok()
+}
+
+fn is_workspace_dir_route_unavailable(err: &str) -> bool {
+    matches!(http_error_status_code(err), Some(404 | 405))
+}
+
+fn is_create_directory_field_unsupported(err: &str) -> bool {
+    http_error_status_code(err) == Some(422) && err.contains("create_directory")
+}
+
+/// 旧后端无目录 API 时：写入 `{path}/.gitkeep`（`create_dir_all` 会创建父目录）。
+async fn post_workspace_dir_via_gitkeep(path: String, loc: Locale) -> Result<(), String> {
+    let path = path.trim().trim_end_matches('/');
+    if path.is_empty() {
+        return Err(match loc {
+            Locale::ZhHans => "目录名不能为空".to_string(),
+            Locale::En => "Directory name cannot be empty".to_string(),
+        });
+    }
+    let keep = format!("{path}/.gitkeep");
+    match post_workspace_file_write_opts(keep, String::new(), true, false, loc).await {
+        Ok(()) => Ok(()),
+        Err(e) if e.contains("已存在") || e.to_ascii_lowercase().contains("already exists") => {
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
+}
+
+async fn post_workspace_dir_via_dir_route(
+    path: &str,
+    parents: bool,
+    loc: Locale,
+) -> Result<(), String> {
+    let body = serde_json::to_string(&WorkspaceDirCreatePayload {
+        path: path.to_string(),
+        parents,
+    })
+    .map_err(|e| e.to_string())?;
+    let r: WorkspaceDirOpResponse =
+        fetch_json_with_body("POST", "/workspace/dir", &body, loc).await?;
+    if let Some(e) = r.error {
+        return Err(e);
+    }
+    Ok(())
+}
+
+async fn post_workspace_dir_via_file_route(
+    path: String,
+    parents: bool,
+    loc: Locale,
+) -> Result<(), String> {
+    let body = serde_json::to_string(&WorkspaceFileWritePayload {
+        path,
+        content: String::new(),
+        create_only: false,
+        update_only: false,
+        create_directory: true,
+        parents,
+    })
+    .map_err(|e| e.to_string())?;
+    let r: WorkspaceFileWriteData =
+        fetch_json_with_body("POST", "/workspace/file", &body, loc).await?;
+    if let Some(e) = r.error {
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// `POST /workspace/dir`：在工作区内创建目录（专用路由 → `create_directory` → `.gitkeep` 兼容）。
+pub async fn post_workspace_dir(path: String, parents: bool, loc: Locale) -> Result<(), String> {
+    match post_workspace_dir_via_dir_route(path.as_str(), parents, loc).await {
+        Ok(()) => return Ok(()),
+        Err(e) if is_workspace_dir_route_unavailable(&e) => {}
+        Err(e) => return Err(e),
+    }
+    match post_workspace_dir_via_file_route(path.clone(), parents, loc).await {
+        Ok(()) => return Ok(()),
+        Err(e) if is_create_directory_field_unsupported(&e) => {}
+        Err(e) if is_workspace_dir_route_unavailable(&e) => {}
+        Err(e) => return Err(e),
+    }
+    post_workspace_dir_via_gitkeep(path, loc).await
+}
+
+/// `DELETE /workspace/file?path=…`：删除工作区内的文件（不支持目录）。
+pub async fn delete_workspace_file(path: &str, loc: Locale) -> Result<(), String> {
+    let url = format!("/workspace/file?path={}", urlencoding::encode(path));
+    let r: WorkspaceDirOpResponse = fetch_json("DELETE", &url, None, loc).await?;
+    if let Some(e) = r.error {
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// `DELETE /workspace/dir?path=…&confirm=true&recursive=…`：删除工作区目录。
+pub async fn delete_workspace_dir(path: &str, recursive: bool, loc: Locale) -> Result<(), String> {
+    let mut url = format!(
+        "/workspace/dir?path={}&confirm=true",
+        urlencoding::encode(path)
+    );
+    if recursive {
+        url.push_str("&recursive=true");
+    }
+    let r: WorkspaceDirOpResponse = fetch_json("DELETE", &url, None, loc).await?;
     if let Some(e) = r.error {
         return Err(e);
     }
@@ -303,6 +436,29 @@ async fn fetch_json_with_body<T: for<'de> Deserialize<'de>>(
     do_fetch_json(req, loc).await
 }
 
+fn http_error_detail_from_body(body: &str) -> String {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if let Ok(v) = serde_json::from_str::<Value>(trimmed) {
+        if let Some(msg) = v
+            .get("error")
+            .or_else(|| v.get("message"))
+            .and_then(|x| x.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            return msg.to_string();
+        }
+    }
+    if trimmed.len() <= 240 {
+        trimmed.to_string()
+    } else {
+        format!("{}…", &trimmed[..240])
+    }
+}
+
 async fn do_fetch_json<T: for<'de> Deserialize<'de>>(
     req: Request,
     loc: Locale,
@@ -315,15 +471,20 @@ async fn do_fetch_json<T: for<'de> Deserialize<'de>>(
     let resp: Response = resp_val
         .dyn_into()
         .map_err(|_| crate::i18n::api_err_response_type(loc))?;
-    if !resp.ok() {
-        return Err(crate::i18n::api_err_request_failed(loc).to_string());
-    }
+    let status = resp.status();
     let text = JsFuture::from(resp.text().map_err(|e| format!("text: {:?}", e))?)
         .await
         .map_err(|e| format!("read body: {:?}", e))?;
     let s = text
         .as_string()
         .ok_or_else(|| crate::i18n::api_err_body_type(loc).to_string())?;
+    if !(200..300).contains(&status) {
+        return Err(crate::i18n::api_err_http_status(
+            loc,
+            status,
+            http_error_detail_from_body(&s).as_str(),
+        ));
+    }
     serde_json::from_str(&s).map_err(|e| e.to_string())
 }
 

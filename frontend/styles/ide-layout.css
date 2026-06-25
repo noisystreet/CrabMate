@@ -278,6 +278,8 @@ html[data-tauri-shell][data-ide-layout] .ide-menu-bar .tauri-window-controls {
   min-height: 0;
   overflow: auto;
   padding: 0.35rem 0.5rem 0.75rem;
+  display: flex;
+  flex-direction: column;
 }
 
 .ide-layout-right {

@@ -83,6 +83,12 @@ pub struct WorkspaceFileWriteBody {
     /// 仅修改：若文件不存在则报错
     #[serde(default)]
     pub update_only: bool,
+    /// 为 true 时在 `path` 创建目录（忽略 `content`；与 `POST /workspace/dir` 等价）。
+    #[serde(default)]
+    pub create_directory: bool,
+    /// `create_directory` 为 true 时：为 true 则递归创建父目录（`mkdir -p`）。
+    #[serde(default)]
+    pub parents: bool,
 }
 
 #[derive(Serialize)]
@@ -93,6 +99,39 @@ pub struct WorkspaceFileWriteResponse {
 
 #[derive(Serialize)]
 pub struct WorkspaceFileDeleteResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceDirCreateBody {
+    pub path: String,
+    /// 为 true 时等价 `create_dir_all`（中间缺失的父目录一并创建）。
+    #[serde(default)]
+    pub parents: bool,
+}
+
+#[derive(Serialize)]
+pub struct WorkspaceDirCreateResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceDirDeleteQuery {
+    pub path: String,
+    /// 必须为 true 才会执行删除（与工具 `delete_dir` 一致）。
+    #[serde(default)]
+    pub confirm: bool,
+    /// 为 true 时递归删除非空目录。
+    #[serde(default)]
+    pub recursive: bool,
+}
+
+#[derive(Serialize)]
+pub struct WorkspaceDirDeleteResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }

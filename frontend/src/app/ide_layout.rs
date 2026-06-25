@@ -19,8 +19,10 @@ use super::ide_menu_bar::{IdeMenuBar, IdeMenuBarSignals};
 use super::ide_tabs_bar::{IdeTabsBar, IdeTabsBarInput};
 use super::layout_mode_segment::LayoutModeSegment;
 use super::side_column_workspace_scroll::WorkspaceSideCardScrollInner;
+use super::workspace_panel::make_refresh_workspace_after_mutation;
 use super::workspace_panel_state::WorkspacePanelSignals;
 use crate::app::app_signals::IdeEditorSignals;
+use crate::workspace_context_menu::WorkspaceContextMenuActions;
 
 #[component]
 fn IdeLayoutLeftPane(
@@ -29,6 +31,7 @@ fn IdeLayoutLeftPane(
     chat: ChatSessionSignals,
     workspace_panel: WorkspacePanelSignals,
     open_sv: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
+    ctx_actions: StoredValue<WorkspaceContextMenuActions>,
 ) -> impl IntoView {
     view! {
         <div class="ide-layout-left">
@@ -62,6 +65,7 @@ fn IdeLayoutLeftPane(
                     ws=workspace_panel
                     insert_workspace_file_ref=open_sv
                     on_file_single_click=open_sv
+                    ctx_actions=ctx_actions
                 />
             </div>
         </div>
@@ -175,6 +179,15 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
     let open_file = make_ide_open_file_handler(locale, tabs, tab_editor);
     let open_sv = StoredValue::new(open_file);
 
+    let refresh_after_mutation =
+        make_refresh_workspace_after_mutation(workspace_panel, locale.get_untracked());
+    let refresh_after_mutation_sv = StoredValue::new(Arc::clone(&refresh_after_mutation));
+
+    let ctx_actions = StoredValue::new(WorkspaceContextMenuActions {
+        refresh_after_mutation,
+        ide_tabs: Some((tabs, tab_editor)),
+    });
+
     let save_ctx = move || IdeSaveContext {
         tabs,
         ide_path,
@@ -232,6 +245,7 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
                 ide_err: tabs.err,
                 textarea_ref,
                 tabs,
+                refresh_after_mutation: refresh_after_mutation_sv,
             } />
             <div class="ide-layout-body">
                 <IdeLayoutLeftPane
@@ -240,6 +254,7 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
                     chat=chat
                     workspace_panel=workspace_panel
                     open_sv=open_sv
+                    ctx_actions=ctx_actions
                 />
                 <IdeLayoutRightPane input=IdeLayoutRightPaneInput {
                     locale,
