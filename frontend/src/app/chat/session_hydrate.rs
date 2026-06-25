@@ -31,6 +31,10 @@ use crate::i18n::{self, Locale};
 use crate::session_ops::title_from_user_prompt;
 use crate::storage::{ChatSession, StoredMessage};
 
+use super::session_hydrate_preserved::{
+    local_messages_preserved_after_hydrate, merge_preserved_timeline_rows_in_local_order,
+};
+
 /// 本地真实 user 气泡（非展示层隐藏的编排注入文案）。
 fn is_plain_user_bubble(m: &StoredMessage) -> bool {
     m.role == "user"
@@ -104,41 +108,6 @@ fn conversation_server_id_if_hydratable_for_wire(s: &ChatSession) -> Option<Stri
         return None;
     }
     s.trimmed_server_conversation_id().map(str::to_string)
-}
-
-/// 服务端快照中不存在的本地消息：流式中的工具卡与 TimelineLog，须保留并与快照合并。
-///
-/// 回合已结束（无 loading 占位）时，工具卡以服务端 `role=tool` 水合为准，避免与 SSE 占位 id 重复叠加。
-fn local_messages_preserved_after_hydrate(
-    server_msgs: &[StoredMessage],
-    local_msgs: &[StoredMessage],
-) -> Vec<StoredMessage> {
-    let preserve_streaming_tools = messages_contain_loading(local_msgs);
-    let server_msg_ids: HashSet<_> = server_msgs.iter().map(|m| m.id.as_str()).collect();
-    local_msgs
-        .iter()
-        .filter(|m| {
-            if m.is_tool && !server_msg_ids.contains(m.id.as_str()) {
-                return preserve_streaming_tools;
-            }
-            if let Some(ref state) = m.state {
-                if state.is_local_timeline_snapshot_row() && !server_msg_ids.contains(m.id.as_str())
-                {
-                    return crate::timeline_scan::should_preserve_local_timeline_on_hydrate(
-                        m,
-                        server_msgs,
-                    );
-                }
-                if state.looks_like_hierarchical_subgoal()
-                    && !server_msg_ids.contains(m.id.as_str())
-                {
-                    return true;
-                }
-            }
-            false
-        })
-        .cloned()
-        .collect()
 }
 
 /// 将服务端快照合并进当前会话时的守卫结果（原 `merge_*` 各 `return false` 路径的显式命名）。
@@ -232,17 +201,20 @@ fn merge_tail_page_into_session_messages(
         if tail_start >= local_start {
             let keep = (tail_start - local_start) as usize;
             let keep = keep.min(session.messages.len());
+            let local_tail = &session.messages[keep..];
             let mut out: Vec<StoredMessage> = session.messages[..keep].to_vec();
-            let merged_tail =
-                merge_hydrated_messages_with_local_plain_users(hydrated, &session.messages[keep..]);
-            out.extend(merged_tail);
-            out.extend(preserved);
+            let merged_tail = merge_hydrated_messages_with_local_plain_users(hydrated, local_tail);
+            out.extend(merge_preserved_timeline_rows_in_local_order(
+                merged_tail,
+                &preserved,
+                local_tail,
+            ));
             return out;
         }
     }
-    let mut out = merge_hydrated_messages_with_local_plain_users(hydrated, &session.messages);
-    out.extend(preserved);
-    out
+    let local_tail = session.messages.as_slice();
+    let merged_tail = merge_hydrated_messages_with_local_plain_users(hydrated, local_tail);
+    merge_preserved_timeline_rows_in_local_order(merged_tail, &preserved, local_tail)
 }
 
 fn prepend_older_page_into_session(
@@ -689,133 +661,109 @@ mod merge_hydrated_plain_user_tests {
 }
 
 #[cfg(test)]
-mod local_messages_preserved_after_hydrate_tests {
-    use super::local_messages_preserved_after_hydrate;
-    use crate::storage::{StoredMessage, StoredMessageState};
-    use crate::timeline_scan::timeline_state_tool;
-
-    fn tool_msg(id: &str) -> StoredMessage {
-        StoredMessage {
-            id: id.into(),
-            role: "system".into(),
-            text: "list_tree".into(),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: Some(timeline_state_tool(id, true)),
-            is_tool: true,
-            tool_call_id: None,
-            tool_name: Some("list_tree".into()),
-            created_at: 1,
-        }
-    }
-
-    fn loading_assistant() -> StoredMessage {
-        StoredMessage {
-            id: "a1".into(),
-            role: "assistant".into(),
-            text: String::new(),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: Some(StoredMessageState::Loading),
-            is_tool: false,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: 0,
-        }
-    }
+mod merge_tail_page_order_tests {
+    use super::merge_tail_page_into_session_messages;
+    use crate::conversation_hydrate::ConversationMessagesResponse;
+    use crate::storage::{ChatSession, StoredMessage};
+    use crate::timeline_scan::timeline_state_intent_analysis_snapshot;
 
     #[test]
-    fn preserves_streaming_tool_rows_while_loading() {
-        let server = vec![tool_msg("h_0_0")];
-        let local = vec![loading_assistant(), tool_msg("sse-1")];
-        let kept = local_messages_preserved_after_hydrate(&server, &local);
-        assert_eq!(kept.len(), 1);
-        assert_eq!(kept[0].id, "sse-1");
-    }
-
-    #[test]
-    fn preserves_intent_analysis_timeline_on_hydrate() {
-        use crate::timeline_scan::timeline_state_intent_analysis_snapshot;
-
-        let server = vec![StoredMessage {
-            id: "a-srv".into(),
-            role: "assistant".into(),
-            text: "answer".into(),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: None,
-            is_tool: false,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: 1,
-        }];
-        let local = vec![StoredMessage {
-            id: "tl-intent".into(),
-            role: "assistant".into(),
-            text: "意图分析：执行类\n\n".into(),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: Some(timeline_state_intent_analysis_snapshot()),
-            is_tool: false,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: 2,
-        }];
-        let kept = local_messages_preserved_after_hydrate(&server, &local);
-        assert_eq!(kept.len(), 1);
-        assert_eq!(kept[0].id, "tl-intent");
-    }
-
-    #[test]
-    fn preserves_generic_local_timeline_snapshot_rows() {
-        let server: Vec<StoredMessage> = vec![];
-        let local = vec![StoredMessage {
-            id: "tl-local".into(),
-            role: "system".into(),
-            text: "timeline".into(),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: Some(StoredMessageState::TimelineUiJson(
-                r#"{"k":"cm_tl","id":"tl-local"}"#.into(),
-            )),
-            is_tool: false,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: 1,
-        }];
-        let kept = local_messages_preserved_after_hydrate(&server, &local);
-        assert_eq!(kept.len(), 1);
-        assert_eq!(kept[0].id, "tl-local");
-    }
-
-    #[test]
-    fn drops_local_tool_rows_after_turn_complete() {
-        let server = vec![tool_msg("h_0_0")];
-        let local = vec![tool_msg("sse-1"), tool_msg("h_99_1")];
-        let kept = local_messages_preserved_after_hydrate(&server, &local);
-        assert!(kept.is_empty());
-    }
-
-    #[test]
-    fn preserves_local_hierarchical_subgoal_rows() {
-        let server: Vec<StoredMessage> = vec![];
-        let local = vec![StoredMessage {
-            id: "sg-local".into(),
-            role: "assistant".into(),
-            text: "子目标执行中".into(),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: Some(StoredMessageState::HierarchicalSubgoal(
-                "hierarchical-subgoal:goal-1".into(),
-            )),
-            is_tool: false,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: 1,
-        }];
-        let kept = local_messages_preserved_after_hydrate(&server, &local);
-        assert_eq!(kept.len(), 1);
-        assert_eq!(kept[0].id, "sg-local");
+    fn merge_tail_page_keeps_intent_before_server_answer() {
+        let session = ChatSession {
+            id: "sid".into(),
+            title: "t".into(),
+            draft: String::new(),
+            messages: vec![
+                StoredMessage {
+                    id: "u1".into(),
+                    role: "user".into(),
+                    text: "question".into(),
+                    reasoning_text: String::new(),
+                    image_urls: vec![],
+                    state: None,
+                    is_tool: false,
+                    tool_call_id: None,
+                    tool_name: None,
+                    created_at: 0,
+                },
+                StoredMessage {
+                    id: "tl-intent".into(),
+                    role: "assistant".into(),
+                    text: "意图分析：执行类\n\n".into(),
+                    reasoning_text: String::new(),
+                    image_urls: vec![],
+                    state: Some(timeline_state_intent_analysis_snapshot()),
+                    is_tool: false,
+                    tool_call_id: None,
+                    tool_name: None,
+                    created_at: 1,
+                },
+                StoredMessage {
+                    id: "a-local".into(),
+                    role: "assistant".into(),
+                    text: "stream draft".into(),
+                    reasoning_text: String::new(),
+                    image_urls: vec![],
+                    state: None,
+                    is_tool: false,
+                    tool_call_id: None,
+                    tool_name: None,
+                    created_at: 2,
+                },
+            ],
+            updated_at: 0,
+            pinned: false,
+            starred: false,
+            server_conversation_id: Some("cid".into()),
+            server_revision: None,
+            workspace_root: None,
+            history_total: None,
+            history_window_start: Some(0),
+            history_has_older: None,
+        };
+        let hydrated = vec![
+            StoredMessage {
+                id: "u1".into(),
+                role: "user".into(),
+                text: "question".into(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: None,
+                is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
+                created_at: 0,
+            },
+            StoredMessage {
+                id: "a-srv".into(),
+                role: "assistant".into(),
+                text: "final answer".into(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: None,
+                is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
+                created_at: 2,
+            },
+        ];
+        let resp = ConversationMessagesResponse {
+            conversation_id: "cid".into(),
+            messages: vec![],
+            revision: 1,
+            total_count: 2,
+            window_start_index: 0,
+            has_older: false,
+            active_agent_role: None,
+            tiktoken_prompt_tokens: None,
+        };
+        let merged = merge_tail_page_into_session_messages(&session, hydrated, &resp);
+        let ids: Vec<_> = merged.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["u1", "tl-intent", "a-srv"],
+            "intent should precede canonical answer"
+        );
     }
 }
 
