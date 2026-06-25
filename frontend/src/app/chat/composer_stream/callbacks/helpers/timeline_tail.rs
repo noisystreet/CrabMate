@@ -2,10 +2,14 @@
 
 use std::cell::RefCell;
 
+use leptos::prelude::GetUntracked;
+
 use crate::i18n;
 use crate::session_ops::{make_message_id, message_created_ms};
 use crate::storage::{StoredMessage, StoredMessageState};
-use crate::stream_text_overlay::stream_overlay_take_into_stored_message;
+use crate::stream_text_overlay::{
+    stream_overlay_merged_text_reasoning_owned, stream_overlay_take_into_stored_message,
+};
 
 use crate::app::chat::composer_stream::context::ChatStreamCallbackCtx;
 
@@ -63,17 +67,49 @@ pub(crate) fn push_assistant_timeline_bubble(
     ensure_streaming_assistant_tail_last(stream_ctx);
 }
 
-pub(crate) fn has_same_assistant_timeline_bubble(
+pub(crate) fn assistant_message_has_visible_text(
     stream_ctx: &ChatStreamCallbackCtx,
     text: &str,
 ) -> bool {
+    let needle = text.trim();
+    if needle.is_empty() {
+        return false;
+    }
     stream_ctx
         .read_bound_session(|s| {
             s.messages
                 .iter()
-                .rev()
-                .find(|m| m.role == "assistant" && !m.is_tool && m.state.is_none())
-                .is_some_and(|m| m.text.trim() == text.trim())
+                .any(|m| m.role == "assistant" && !m.is_tool && m.text.trim() == needle)
+        })
+        .unwrap_or(false)
+}
+
+pub(crate) fn streaming_assistant_tail_has_text(
+    stream_ctx: &ChatStreamCallbackCtx,
+    text: &str,
+) -> bool {
+    let needle = text.trim();
+    if needle.is_empty() {
+        return false;
+    }
+    let mid = stream_ctx.scratch.clone_assistant_id();
+    let sid = stream_ctx.bound_stream_session_id.clone();
+    let overlay = stream_ctx.chat.stream_text_overlay.get_untracked();
+    stream_ctx
+        .read_bound_session(|s| {
+            s.messages.iter().any(|m| {
+                if m.id != mid || m.role != "assistant" || m.is_tool {
+                    return false;
+                }
+                if !m.state.as_ref().is_some_and(|st| st.is_loading()) {
+                    return false;
+                }
+                let visible =
+                    stream_overlay_merged_text_reasoning_owned(m, overlay.as_ref(), sid.as_str())
+                        .map(|(t, _)| t)
+                        .unwrap_or_else(|| m.text.clone());
+                visible.trim() == needle
+            })
         })
         .unwrap_or(false)
 }

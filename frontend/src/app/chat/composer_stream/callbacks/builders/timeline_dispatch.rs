@@ -5,7 +5,10 @@ use std::rc::Rc;
 use crate::app::stream_shell_busy::StreamShellBusyOp;
 use crate::message_format::staged_timeline_system_message_body;
 use crate::sse_dispatch::TimelineLogInfo;
-use crate::timeline_scan::timeline_state_local_snapshot;
+use crate::timeline_scan::{
+    timeline_state_final_response_snapshot, timeline_state_intent_analysis_snapshot,
+    timeline_state_local_snapshot,
+};
 
 use super::super::super::context::ChatStreamCallbackCtx;
 use super::super::super::per_stream_accum::PerStreamAccum;
@@ -23,11 +26,15 @@ fn timeline_log_dispatch_final_response(
         .apply_busy_op(StreamShellBusyOp::ReleaseStreamingStatusAfterTimelineFinal);
     let final_text = build_final_response_text(&info.title, info.detail.as_deref());
     if !final_text.is_empty() {
-        remove_loading_assistant_placeholder(stream_ctx);
-        if !has_same_assistant_timeline_bubble(stream_ctx, &final_text) {
-            let state = Some(timeline_state_local_snapshot());
-            push_assistant_timeline_bubble(stream_ctx, final_text.clone(), state);
-            accum.add_answer_delta_chars(final_text.chars().count());
+        if streaming_assistant_tail_has_text(stream_ctx, &final_text) {
+            finalize_current_loading_streaming_assistant_row(stream_ctx);
+        } else {
+            remove_loading_assistant_placeholder(stream_ctx);
+            if !assistant_message_has_visible_text(stream_ctx, &final_text) {
+                let state = Some(timeline_state_final_response_snapshot());
+                push_assistant_timeline_bubble(stream_ctx, final_text.clone(), state);
+                accum.add_answer_delta_chars(final_text.chars().count());
+            }
         }
     } else {
         // 补偿收尾可能带空 final_response；若不撤 loading，on_done 会误报「未收到正文片段」。
@@ -44,7 +51,7 @@ fn timeline_log_dispatch_intent_analysis(
     if intent_text.is_empty() {
         return;
     }
-    let state = Some(timeline_state_local_snapshot());
+    let state = Some(timeline_state_intent_analysis_snapshot());
     push_assistant_timeline_bubble(stream_ctx, intent_text.clone(), state);
     accum.add_answer_delta_chars(intent_text.chars().count());
 }

@@ -111,6 +111,9 @@ fn stored_messages_to_export(
 ) -> Vec<ExportMessage> {
     let mut out = Vec::new();
     for m in messages {
+        if crate::timeline_scan::is_ephemeral_timeline_assistant_for_export(m, messages) {
+            continue;
+        }
         if m.role == "system" && m.is_tool {
             out.push(ExportMessage {
                 role: "tool".to_string(),
@@ -471,6 +474,81 @@ mod tests {
         assert_eq!(file.messages[1].role, "tool");
         assert_eq!(file.messages[1].name.as_deref(), Some("tool"));
         assert_eq!(file.messages[2].role, "assistant");
+    }
+
+    #[test]
+    fn export_skips_legacy_duplicate_local_snapshot_assistant() {
+        let session = ChatSession {
+            id: "s1".to_string(),
+            title: "t".to_string(),
+            draft: String::new(),
+            messages: vec![
+                msg("1", "user", "hi", false),
+                msg("2", "assistant", "canonical answer", false),
+                StoredMessage {
+                    id: "dup".to_string(),
+                    role: "assistant".to_string(),
+                    text: "canonical answer".to_string(),
+                    reasoning_text: String::new(),
+                    image_urls: vec![],
+                    state: Some(crate::timeline_scan::timeline_state_local_snapshot()),
+                    is_tool: false,
+                    tool_call_id: None,
+                    tool_name: None,
+                    created_at: 2,
+                },
+            ],
+            updated_at: 0,
+            pinned: false,
+            starred: false,
+            server_conversation_id: None,
+            server_revision: None,
+            workspace_root: None,
+            history_total: None,
+            history_window_start: None,
+            history_has_older: None,
+        };
+        let md = session_to_markdown(&session, Locale::ZhHans, true);
+        assert_eq!(md.matches("canonical answer").count(), 1);
+    }
+
+    #[test]
+    fn export_keeps_intent_analysis_assistant() {
+        use crate::timeline_scan::timeline_state_intent_analysis_snapshot;
+
+        let session = ChatSession {
+            id: "s1".to_string(),
+            title: "t".to_string(),
+            draft: String::new(),
+            messages: vec![
+                msg("1", "user", "hi", false),
+                StoredMessage {
+                    id: "intent".to_string(),
+                    role: "assistant".to_string(),
+                    text: "意图分析：执行类\n\n".to_string(),
+                    reasoning_text: String::new(),
+                    image_urls: vec![],
+                    state: Some(timeline_state_intent_analysis_snapshot()),
+                    is_tool: false,
+                    tool_call_id: None,
+                    tool_name: None,
+                    created_at: 1,
+                },
+                msg("4", "assistant", "ok", false),
+            ],
+            updated_at: 0,
+            pinned: false,
+            starred: false,
+            server_conversation_id: None,
+            server_revision: None,
+            workspace_root: None,
+            history_total: None,
+            history_window_start: None,
+            history_has_older: None,
+        };
+        let md = session_to_markdown(&session, Locale::ZhHans, true);
+        assert!(md.contains("意图分析"));
+        assert!(md.contains("ok"));
     }
 
     #[test]

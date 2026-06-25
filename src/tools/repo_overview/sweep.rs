@@ -9,19 +9,41 @@ use super::parse::RepoSweepParams;
 use crate::tools::ToolContext;
 use crate::tools::file::{canonical_workspace_root, glob_files, list_tree, read_file};
 use crate::tools::output_util::truncate_output_bytes;
+use crate::workspace::path::{
+    absolutize_relative_under_root, ensure_existing_ancestor_within_root,
+};
 
-fn rel_path_safe(workspace_root: &Path, rel: &str) -> Option<PathBuf> {
+enum RelPathCheck {
+    Ok(PathBuf),
+    Invalid,
+    OutOfBounds,
+}
+
+fn classify_rel_path(workspace_root: &Path, rel: &str) -> RelPathCheck {
     let rel = rel.trim();
     if rel.is_empty() || Path::new(rel).is_absolute() || rel.contains("..") {
-        return None;
+        return RelPathCheck::Invalid;
     }
-    let joined = workspace_root.join(rel);
-    let ws = canonical_workspace_root(workspace_root).ok()?;
-    let canon = joined.canonicalize().ok()?;
-    if !canon.starts_with(&ws) {
-        return None;
+    let ws = match canonical_workspace_root(workspace_root) {
+        Ok(p) => p,
+        Err(_) => return RelPathCheck::Invalid,
+    };
+    let normalized = match absolutize_relative_under_root(&ws, rel) {
+        Ok(p) => p,
+        Err(e) if e.is_policy_denied() => return RelPathCheck::OutOfBounds,
+        Err(_) => return RelPathCheck::Invalid,
+    };
+    if ensure_existing_ancestor_within_root(&ws, &normalized).is_err() {
+        return RelPathCheck::OutOfBounds;
     }
-    Some(canon)
+    RelPathCheck::Ok(normalized)
+}
+
+fn rel_path_safe(workspace_root: &Path, rel: &str) -> Option<PathBuf> {
+    match classify_rel_path(workspace_root, rel) {
+        RelPathCheck::Ok(p) => Some(p),
+        _ => None,
+    }
 }
 
 fn tool_ctx_stub<'a>(workspace_root: &'a Path, max_output_len: usize) -> ToolContext<'a> {
@@ -78,7 +100,13 @@ fn sweep_append_doc_previews(
     *section += 1;
     for rel in &params.doc_paths {
         let Some(canon) = rel_path_safe(workspace_root, rel) else {
-            out.push_str(&format!("- `{}`：跳过（路径非法或越界）\n", rel));
+            let msg = match classify_rel_path(workspace_root, rel) {
+                RelPathCheck::OutOfBounds => format!("- `{}`：跳过（路径越界）\n", rel),
+                RelPathCheck::Invalid | RelPathCheck::Ok(_) => {
+                    format!("- `{}`：跳过（路径非法）\n", rel)
+                }
+            };
+            out.push_str(&msg);
             continue;
         };
         if !canon.is_file() {
@@ -115,7 +143,13 @@ fn sweep_append_source_trees(
     *section += 1;
     for root in &params.source_roots {
         let Some(canon) = rel_path_safe(workspace_root, root) else {
-            out.push_str(&format!("### `{}`\n路径非法或越界，跳过\n\n", root));
+            let msg = match classify_rel_path(workspace_root, root) {
+                RelPathCheck::OutOfBounds => format!("### `{}`\n路径越界，跳过\n\n", root),
+                RelPathCheck::Invalid | RelPathCheck::Ok(_) => {
+                    format!("### `{}`\n路径非法，跳过\n\n", root)
+                }
+            };
+            out.push_str(&msg);
             continue;
         };
         if !canon.is_dir() {
@@ -291,5 +325,28 @@ mod tests {
         let out2 = repo_overview_sweep(r#"{"include_project_profile":false}"#, &root2, 50_000);
         let _ = fs::remove_dir_all(&root2);
         assert!(!out2.contains("CrabMate 项目画像"));
+    }
+
+    #[test]
+    fn sweep_reports_missing_paths_without_out_of_bounds_label() {
+        let root = std::env::temp_dir().join(format!(
+            "crabmate_repo_overview_missing_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("mkdir");
+        fs::write(root.join("README.md"), "# T\n").expect("write");
+
+        let out = repo_overview_sweep(
+            r#"{"doc_paths":["AGENTS.md"],"source_roots":["src"],"include_project_profile":false}"#,
+            &root,
+            50_000,
+        );
+        let _ = fs::remove_dir_all(&root);
+
+        assert!(out.contains("AGENTS.md") && out.contains("不存在"));
+        assert!(out.contains("src") && out.contains("目录不存在"));
+        assert!(!out.contains("路径非法或越界"));
+        assert!(!out.contains("路径越界"));
     }
 }

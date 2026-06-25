@@ -6,7 +6,7 @@ mod tests {
         build_empty_reply_with_diagnostic, build_final_response_text,
         build_hierarchical_plan_main_bubble_text, build_hierarchical_subgoal_main_bubble_text,
         build_intent_analysis_main_bubble_text, build_stream_error_with_suggestion,
-        has_same_assistant_timeline_bubble, merge_subgoal_text_preserving_target,
+        merge_subgoal_text_preserving_target,
     };
     use crate::i18n::{self, Locale};
 
@@ -126,8 +126,7 @@ mod tests {
         let dummy = "hello world";
         assert_eq!(dummy.trim(), "hello world");
         // 间接保障：去重比较使用 trim，不会因尾部换行误判不同。
-        // 该逻辑在 `has_same_assistant_timeline_bubble` 中实现。
-        let _ = has_same_assistant_timeline_bubble;
+        // 该逻辑在 `assistant_message_has_visible_text` 中实现。
     }
 
     #[test]
