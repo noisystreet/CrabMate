@@ -8,12 +8,9 @@
 //! - **勿**订阅 `sessions` 或会被水合写回的信号，否则会在合并后再次触发并叠加重复行。
 //! - 异步段经 [`conversation_hydration_cycle::run`]；同步段用 [`try_hydration_wire_snapshot`]。
 //!
-//! ## 本地行保留（[`local_messages_preserved_after_hydrate`]）
+//! ## 本地行保留（[`session_hydrate_preserved::merge_hydrated_tail_replaying_local_order`]）
 //!
-//! - 流式中（存在 loading 占位）：保留服务端快照里没有 id 的 **SSE 工具行**。
-//! - 保留仍有效的 Timeline 快照行（经 [`crate::timeline_scan::should_preserve_local_timeline_on_hydrate`] 过滤：
-//!   `final_response` 补偿、与服务端/正式助手重复的 `local_snapshot` 等 ephemeral 旁注不保留；意图分析保留）。
-//! - 回合结束后以服务端的 `role=tool` / `display_*` 水合为准，丢弃仅 SSE 占位 id 的工具行。
+//! - 以 **local 顺序** 回放尾部；服务端快照提供已落盘行，本地 timeline / 子目标等独占行原位保留。
 
 use std::collections::HashSet;
 
@@ -31,9 +28,7 @@ use crate::i18n::{self, Locale};
 use crate::session_ops::title_from_user_prompt;
 use crate::storage::{ChatSession, StoredMessage};
 
-use super::session_hydrate_preserved::{
-    local_messages_preserved_after_hydrate, merge_preserved_timeline_rows_in_local_order,
-};
+use super::session_hydrate_preserved::merge_hydrated_tail_replaying_local_order;
 
 /// 本地真实 user 气泡（非展示层隐藏的编排注入文案）。
 fn is_plain_user_bubble(m: &StoredMessage) -> bool {
@@ -195,7 +190,6 @@ fn merge_tail_page_into_session_messages(
     hydrated: Vec<StoredMessage>,
     resp: &ConversationMessagesResponse,
 ) -> Vec<StoredMessage> {
-    let preserved = local_messages_preserved_after_hydrate(&hydrated, &session.messages);
     let tail_start = resp.window_start_index;
     if let Some(local_start) = session.history_window_start {
         if tail_start >= local_start {
@@ -204,9 +198,8 @@ fn merge_tail_page_into_session_messages(
             let local_tail = &session.messages[keep..];
             let mut out: Vec<StoredMessage> = session.messages[..keep].to_vec();
             let merged_tail = merge_hydrated_messages_with_local_plain_users(hydrated, local_tail);
-            out.extend(merge_preserved_timeline_rows_in_local_order(
+            out.extend(merge_hydrated_tail_replaying_local_order(
                 merged_tail,
-                &preserved,
                 local_tail,
             ));
             return out;
@@ -214,7 +207,7 @@ fn merge_tail_page_into_session_messages(
     }
     let local_tail = session.messages.as_slice();
     let merged_tail = merge_hydrated_messages_with_local_plain_users(hydrated, local_tail);
-    merge_preserved_timeline_rows_in_local_order(merged_tail, &preserved, local_tail)
+    merge_hydrated_tail_replaying_local_order(merged_tail, local_tail)
 }
 
 fn prepend_older_page_into_session(
