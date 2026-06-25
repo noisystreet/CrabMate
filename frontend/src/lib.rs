@@ -15,6 +15,7 @@ mod chat_actions;
 mod chat_session_state;
 mod clarification_form;
 mod client_llm_presets;
+mod confirm_dialog;
 mod conversation_hydrate;
 mod conversation_hydrate_timeline;
 mod conversation_messages_page;
@@ -50,6 +51,8 @@ mod tauri_shell;
 mod timeline_scan;
 mod user_data_bootstrap;
 mod user_prefs_sync;
+mod workspace_context_menu;
+mod workspace_fs_ops;
 mod workspace_shell;
 mod workspace_tree;
 

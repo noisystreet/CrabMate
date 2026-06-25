@@ -13,6 +13,7 @@ use leptos_dom::helpers::window_event_listener;
 use crate::api::{WorkspaceData, fetch_workspace};
 use crate::app_prefs::{SidePanelView, clamp_side_width_for_viewport};
 use crate::i18n::Locale;
+use crate::workspace_context_menu::WorkspaceTreeRefreshHint;
 
 /// 并发 `GET /workspace` 的世代号：新刷新递增，仅「仍为最新」的异步结果写回 UI，避免首屏多路刷新互相覆盖造成路径闪烁。
 static WORKSPACE_PANEL_FETCH_GEN: AtomicU32 = AtomicU32::new(0);
@@ -375,6 +376,105 @@ pub async fn reload_workspace_panel(
         }
     }
     workspace_loading.set(false);
+}
+
+/// 新建/删除后刷新：保留展开状态，更新根目录与已展开子目录列表（不整页骨架屏）。
+#[allow(clippy::too_many_arguments)]
+pub async fn refresh_workspace_panel_after_mutation(
+    workspace_err: RwSignal<Option<String>>,
+    workspace_path_draft: RwSignal<String>,
+    workspace_data: RwSignal<Option<WorkspaceData>>,
+    workspace_subtree_expanded: RwSignal<HashSet<String>>,
+    workspace_subtree_cache: RwSignal<HashMap<String, WorkspaceData>>,
+    workspace_subtree_loading: RwSignal<HashSet<String>>,
+    locale: Locale,
+    hint: &WorkspaceTreeRefreshHint,
+) {
+    let prev = WORKSPACE_PANEL_FETCH_GEN.fetch_add(1, Ordering::AcqRel);
+    let my_gen = prev.wrapping_add(1);
+
+    if let Some(deleted_rel) = hint.deleted_rel.as_deref() {
+        let mut expanded = workspace_subtree_expanded.get_untracked();
+        let mut cache = workspace_subtree_cache.get_untracked();
+        crate::workspace_tree::workspace_prune_subtree_state(
+            &mut expanded,
+            &mut cache,
+            deleted_rel,
+        );
+        workspace_subtree_expanded.set(expanded);
+        workspace_subtree_cache.set(cache);
+    }
+
+    workspace_subtree_expanded.update(|expanded| {
+        crate::workspace_tree::workspace_expand_ancestor_dirs(expanded, hint.parent_rel.as_str());
+    });
+
+    match fetch_workspace(None, locale).await {
+        Ok(d) => {
+            if WORKSPACE_PANEL_FETCH_GEN.load(Ordering::Acquire) != my_gen {
+                return;
+            }
+            workspace_err.set(None);
+            workspace_path_draft.set(d.path.clone());
+            workspace_data.set(Some(d));
+        }
+        Err(e) => {
+            if WORKSPACE_PANEL_FETCH_GEN.load(Ordering::Acquire) != my_gen {
+                return;
+            }
+            workspace_err.set(Some(e));
+            return;
+        }
+    }
+
+    let expanded: Vec<String> = workspace_subtree_expanded
+        .get_untracked()
+        .into_iter()
+        .filter(|p| !p.is_empty())
+        .collect();
+
+    for rel in expanded {
+        if WORKSPACE_PANEL_FETCH_GEN.load(Ordering::Acquire) != my_gen {
+            return;
+        }
+        subtree_loading_path(rel.clone(), workspace_subtree_loading);
+        let res = fetch_workspace(Some(rel.as_str()), locale).await;
+        subtree_loading_path_done(rel.as_str(), workspace_subtree_loading);
+        if WORKSPACE_PANEL_FETCH_GEN.load(Ordering::Acquire) != my_gen {
+            return;
+        }
+        match res {
+            Ok(d) => {
+                workspace_subtree_cache.update(|m| {
+                    m.insert(rel, d);
+                });
+            }
+            Err(e) => {
+                workspace_subtree_cache.update(|m| {
+                    m.insert(
+                        rel,
+                        WorkspaceData {
+                            path: String::new(),
+                            entries: Vec::new(),
+                            error: Some(e),
+                        },
+                    );
+                });
+            }
+        }
+    }
+}
+
+fn subtree_loading_path(rel: String, workspace_subtree_loading: RwSignal<HashSet<String>>) {
+    workspace_subtree_loading.update(|s| {
+        s.insert(rel);
+    });
+}
+
+fn subtree_loading_path_done(rel: &str, workspace_subtree_loading: RwSignal<HashSet<String>>) {
+    workspace_subtree_loading.update(|s| {
+        s.remove(rel);
+    });
 }
 
 pub fn begin_side_column_resize(

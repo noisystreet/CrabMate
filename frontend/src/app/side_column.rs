@@ -10,8 +10,10 @@ use std::sync::Arc;
 use super::app_shell_ctx::SideColumnViewSignals;
 use super::side_column_toolbar::{SideColumnResizeAndShellToolbar, SideColumnResizeToolbarSignals};
 use super::side_column_workspace_scroll::WorkspaceSideCardScrollInner;
+use super::workspace_panel::make_refresh_workspace_after_mutation;
 use super::workspace_panel_state::WorkspacePanelSignals;
 use crate::chat_session_state::ChatSessionSignals;
+use crate::workspace_context_menu::WorkspaceContextMenuActions;
 
 #[component]
 fn SideColumnTasksLoadedPane(
@@ -205,6 +207,11 @@ fn SideColumnWorkspaceCard(
 ) -> impl IntoView {
     let ws_file_single_noop =
         StoredValue::new(Arc::new(|_: String| {}) as Arc<dyn Fn(String) + Send + Sync>);
+    let refresh_after_mutation = make_refresh_workspace_after_mutation(ws, locale.get_untracked());
+    let ctx_actions = StoredValue::new(WorkspaceContextMenuActions {
+        refresh_after_mutation,
+        ide_tabs: None,
+    });
     view! {
         <div class="side-pane" style:flex="1" style:min-width="0">
             <div class="side-card">
@@ -236,6 +243,7 @@ fn SideColumnWorkspaceCard(
                             ws=ws
                             insert_workspace_file_ref=insert_workspace_file_ref
                             on_file_single_click=ws_file_single_noop
+                            ctx_actions=ctx_actions
                         />
                     </div>
                     <div class="workspace-list-refresh workspace-list-refresh-row">

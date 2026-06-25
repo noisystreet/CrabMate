@@ -9,7 +9,8 @@ use leptos::task::spawn_local;
 
 use crate::app_prefs::SidePanelView;
 use crate::i18n::Locale;
-use crate::workspace_shell::reload_workspace_panel;
+use crate::workspace_context_menu::WorkspaceTreeRefreshHint;
+use crate::workspace_shell::{refresh_workspace_panel_after_mutation, reload_workspace_panel};
 
 use super::workspace_panel_state::WorkspacePanelSignals;
 
@@ -29,6 +30,28 @@ pub(super) fn make_refresh_workspace(
                 ws.workspace_subtree_cache,
                 ws.workspace_subtree_loading,
                 locale,
+            )
+            .await;
+        });
+    })
+}
+
+/// 文件树新建/删除后刷新（保留展开状态、不重载骨架屏）。
+pub(super) fn make_refresh_workspace_after_mutation(
+    ws: WorkspacePanelSignals,
+    locale: Locale,
+) -> Arc<dyn Fn(WorkspaceTreeRefreshHint) + Send + Sync> {
+    Arc::new(move |hint: WorkspaceTreeRefreshHint| {
+        spawn_local(async move {
+            refresh_workspace_panel_after_mutation(
+                ws.workspace_err,
+                ws.workspace_path_draft,
+                ws.workspace_data,
+                ws.workspace_subtree_expanded,
+                ws.workspace_subtree_cache,
+                ws.workspace_subtree_loading,
+                locale,
+                &hint,
             )
             .await;
         });

@@ -137,6 +137,8 @@ impl AppSignals {
             workspace_set_err: self.workspace.workspace_set_err,
             workspace_set_busy: self.workspace.workspace_set_busy,
             workspace_pick_busy: self.workspace.workspace_pick_busy,
+            workspace_context_menu: self.workspace.workspace_context_menu,
+            workspace_pending_create: self.workspace.workspace_pending_create,
         }
     }
 }

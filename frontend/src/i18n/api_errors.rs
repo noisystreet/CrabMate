@@ -16,6 +16,42 @@ pub fn api_err_request_failed(l: Locale) -> &'static str {
     }
 }
 
+/// HTTP 非 2xx 时的回显：`detail` 为空且为 404 时提示重启 `serve`。
+pub fn api_err_http_status(l: Locale, status: u16, detail: &str) -> String {
+    let base = api_err_request_failed(l);
+    let detail = detail.trim();
+    if detail.is_empty() {
+        if status == 404 {
+            return match l {
+                Locale::ZhHans => {
+                    format!("{base} (404)：接口不存在，请重新编译并重启 crabmate serve 后刷新页面")
+                }
+                Locale::En => {
+                    format!(
+                        "{base} (404): API route not found; rebuild and restart crabmate serve, then reload"
+                    )
+                }
+            };
+        }
+        if status == 405 {
+            return match l {
+                Locale::ZhHans => {
+                    format!(
+                        "{base} (405)：HTTP 方法不被允许，请重新编译并重启 crabmate serve 后刷新页面"
+                    )
+                }
+                Locale::En => {
+                    format!(
+                        "{base} (405): method not allowed; rebuild and restart crabmate serve, then reload"
+                    )
+                }
+            };
+        }
+        return format!("{base} ({status})");
+    }
+    format!("{base} ({status}): {detail}")
+}
+
 pub fn api_err_no_response_body(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "无响应体",

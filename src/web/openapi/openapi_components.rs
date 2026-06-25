@@ -369,7 +369,9 @@ fn openapi_components_schemas_workspace_tasks_config() -> Value {
                     "path": { "type": "string" },
                     "content": { "type": "string" },
                     "create_only": { "type": "boolean" },
-                    "update_only": { "type": "boolean" }
+                    "update_only": { "type": "boolean" },
+                    "create_directory": { "type": "boolean", "description": "为 true 时在 path 创建目录（content 须为空）" },
+                    "parents": { "type": "boolean", "description": "create_directory 时递归创建父目录" }
                 }
             },
             "WorkspaceFileWriteResponse": {
@@ -379,6 +381,26 @@ fn openapi_components_schemas_workspace_tasks_config() -> Value {
                 }
             },
             "WorkspaceFileDeleteResponse": {
+                "type": "object",
+                "properties": {
+                    "error": { "type": "string", "nullable": true }
+                }
+            },
+            "WorkspaceDirCreateBody": {
+                "type": "object",
+                "required": ["path"],
+                "properties": {
+                    "path": { "type": "string" },
+                    "parents": { "type": "boolean" }
+                }
+            },
+            "WorkspaceDirCreateResponse": {
+                "type": "object",
+                "properties": {
+                    "error": { "type": "string", "nullable": true }
+                }
+            },
+            "WorkspaceDirDeleteResponse": {
                 "type": "object",
                 "properties": {
                     "error": { "type": "string", "nullable": true }

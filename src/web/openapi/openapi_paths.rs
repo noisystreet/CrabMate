@@ -507,6 +507,66 @@ fn openapi_paths_fragment_workspace_file_meta() -> Value {
                 }
             }
         },
+        "/workspace/dir": {
+            "post": {
+                "tags": ["workspace"],
+                "summary": "在工作区内创建目录",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/WorkspaceDirCreateBody" }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "创建结果",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/WorkspaceDirCreateResponse" }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": ["workspace"],
+                "summary": "删除工作区目录（须 confirm=true；非空目录须 recursive=true）",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "parameters": [
+                    {
+                        "name": "path",
+                        "in": "query",
+                        "required": true,
+                        "schema": { "type": "string" }
+                    },
+                    {
+                        "name": "confirm",
+                        "in": "query",
+                        "required": true,
+                        "schema": { "type": "boolean" }
+                    },
+                    {
+                        "name": "recursive",
+                        "in": "query",
+                        "required": false,
+                        "schema": { "type": "boolean" }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除结果",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/WorkspaceDirDeleteResponse" }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/workspace/profile": {
             "get": {
                 "tags": ["workspace"],

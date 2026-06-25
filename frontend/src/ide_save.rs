@@ -1,5 +1,7 @@
 //! IDE 编辑器：保存当前标签、全部脏标签与工作区新建文件。
 
+use std::sync::Arc;
+
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
@@ -154,8 +156,13 @@ pub fn prompt_new_workspace_file_path(locale: Locale) -> Option<String> {
     Some(path)
 }
 
-/// 在工作区创建空文件并打开为新标签。
-pub fn spawn_create_and_open_file(ctx: IdeSaveContext, locale: RwSignal<Locale>, rel: String) {
+/// 在工作区创建空文件并打开为新标签；成功后可选调用 `after_create`（例如刷新侧栏树）。
+pub fn spawn_create_and_open_file(
+    ctx: IdeSaveContext,
+    locale: RwSignal<Locale>,
+    rel: String,
+    after_create: Option<Arc<dyn Fn() + Send + Sync>>,
+) {
     if ctx.tabs.load_busy.get_untracked() || ctx.tabs.save_busy.get_untracked() {
         return;
     }
@@ -187,6 +194,9 @@ pub fn spawn_create_and_open_file(ctx: IdeSaveContext, locale: RwSignal<Locale>,
                     ctx.ide_text,
                     ctx.ide_baseline,
                 );
+                if let Some(f) = after_create {
+                    f();
+                }
             }
             Err(e) => ctx.ide_err.set(Some(e)),
         }
