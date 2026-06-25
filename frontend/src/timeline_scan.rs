@@ -206,6 +206,123 @@ pub fn timeline_state_local_snapshot() -> StoredMessageState {
     )
 }
 
+/// 意图分析旁注：流式期间展示，水合后保留，并随会话导出。
+pub fn timeline_state_intent_analysis_snapshot() -> StoredMessageState {
+    StoredMessageState::TimelineUiJson(
+        json!({
+            "k": TIMELINE_UI_STATE_KEY,
+            "t": "intent_analysis",
+        })
+        .to_string(),
+    )
+}
+
+/// `final_response` 时间线补偿旁注：正文已在流式助手或服务端快照中时不再保留。
+pub fn timeline_state_final_response_snapshot() -> StoredMessageState {
+    StoredMessageState::TimelineUiJson(
+        json!({
+            "k": TIMELINE_UI_STATE_KEY,
+            "t": "final_response_snapshot",
+        })
+        .to_string(),
+    )
+}
+
+fn parse_timeline_ui_snapshot_type(raw: &str) -> Option<String> {
+    let v: TimelineUiState = serde_json::from_str(raw).ok()?;
+    if v.k != TIMELINE_UI_STATE_KEY {
+        return None;
+    }
+    Some(v.t)
+}
+
+/// 从 [`StoredMessageState`] 读取时间线快照 `t`（如 `intent_analysis`）。
+pub fn timeline_ui_snapshot_type(state: &StoredMessageState) -> Option<String> {
+    state
+        .as_timeline_parse_candidate()
+        .and_then(parse_timeline_ui_snapshot_type)
+}
+
+fn server_assistant_has_trimmed_text(server_msgs: &[StoredMessage], text: &str) -> bool {
+    let needle = text.trim();
+    if needle.is_empty() {
+        return false;
+    }
+    server_msgs
+        .iter()
+        .any(|m| m.role == "assistant" && !m.is_tool && m.text.trim() == needle)
+}
+
+/// 本地 timeline 旁注是否与同会话内「正式」助手行正文重复（兼容旧 `local_snapshot`）。
+pub fn is_timeline_snapshot_duplicate_of_canonical_assistant(
+    m: &StoredMessage,
+    session_messages: &[StoredMessage],
+) -> bool {
+    if m.role != "assistant" || m.is_tool {
+        return false;
+    }
+    let Some(state) = m.state.as_ref() else {
+        return false;
+    };
+    if !state.is_local_timeline_snapshot_row() {
+        return false;
+    }
+    let needle = m.text.trim();
+    if needle.is_empty() {
+        return false;
+    }
+    session_messages.iter().any(|other| {
+        other.id != m.id
+            && other.role == "assistant"
+            && !other.is_tool
+            && !other
+                .state
+                .as_ref()
+                .is_some_and(|s| s.is_local_timeline_snapshot_row())
+            && other.text.trim() == needle
+    })
+}
+
+/// 水合合并时：`final_response` 补偿旁注若与服务端助手正文重复则丢弃。
+pub fn should_preserve_local_timeline_on_hydrate(
+    m: &StoredMessage,
+    server_msgs: &[StoredMessage],
+) -> bool {
+    let Some(state) = m.state.as_ref() else {
+        return false;
+    };
+    if !state.is_local_timeline_snapshot_row() {
+        return false;
+    }
+    match timeline_ui_snapshot_type(state).as_deref() {
+        Some("final_response_snapshot") => !server_assistant_has_trimmed_text(server_msgs, &m.text),
+        Some("intent_analysis") => true,
+        Some("local_snapshot") | None => {
+            !server_assistant_has_trimmed_text(server_msgs, &m.text)
+                && !is_timeline_snapshot_duplicate_of_canonical_assistant(m, server_msgs)
+        }
+        _ => true,
+    }
+}
+
+/// 会话导出时跳过仅用于流式 UI 的助手旁注（`final_response` 补偿、重复旧快照等）。
+pub fn is_ephemeral_timeline_assistant_for_export(
+    m: &StoredMessage,
+    session_messages: &[StoredMessage],
+) -> bool {
+    if m.role != "assistant" || m.is_tool {
+        return false;
+    }
+    if m.state
+        .as_ref()
+        .and_then(timeline_ui_snapshot_type)
+        .is_some_and(|t| t == "final_response_snapshot")
+    {
+        return true;
+    }
+    is_timeline_snapshot_duplicate_of_canonical_assistant(m, session_messages)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,5 +366,86 @@ mod tests {
         };
         let e = timeline_entry_for_message(&m).expect("entry");
         assert!(timeline_entry_is_failed(&e.kind));
+    }
+
+    #[test]
+    fn intent_analysis_preserved_for_export_and_hydrate() {
+        let m = StoredMessage {
+            id: "i1".into(),
+            role: "assistant".into(),
+            text: "意图分析：执行类\n\n".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(timeline_state_intent_analysis_snapshot()),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        assert!(!is_ephemeral_timeline_assistant_for_export(&m, &[]));
+        assert!(should_preserve_local_timeline_on_hydrate(&m, &[]));
+    }
+
+    #[test]
+    fn legacy_local_snapshot_dropped_when_server_has_same_assistant_text() {
+        let snap = StoredMessage {
+            id: "legacy-fr".into(),
+            role: "assistant".into(),
+            text: "same answer".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(timeline_state_local_snapshot()),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        let server = vec![StoredMessage {
+            id: "srv".into(),
+            role: "assistant".into(),
+            text: "same answer".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 1,
+        }];
+        assert!(!should_preserve_local_timeline_on_hydrate(&snap, &server));
+        assert!(is_ephemeral_timeline_assistant_for_export(
+            &snap,
+            &[snap.clone(), server[0].clone()]
+        ));
+    }
+
+    #[test]
+    fn final_response_snapshot_dropped_when_server_has_same_text() {
+        let snap = StoredMessage {
+            id: "fr1".into(),
+            role: "assistant".into(),
+            text: "hello world".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(timeline_state_final_response_snapshot()),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        let server = vec![StoredMessage {
+            id: "srv".into(),
+            role: "assistant".into(),
+            text: "hello world".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 1,
+        }];
+        assert!(is_ephemeral_timeline_assistant_for_export(&snap, &server));
+        assert!(!should_preserve_local_timeline_on_hydrate(&snap, &server));
     }
 }

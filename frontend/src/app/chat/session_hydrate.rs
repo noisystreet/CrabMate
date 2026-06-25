@@ -11,7 +11,8 @@
 //! ## 本地行保留（[`local_messages_preserved_after_hydrate`]）
 //!
 //! - 流式中（存在 loading 占位）：保留服务端快照里没有 id 的 **SSE 工具行**。
-//! - 保留 `is_local_timeline_snapshot_row` 的 Timeline 快照行。
+//! - 保留仍有效的 Timeline 快照行（经 [`crate::timeline_scan::should_preserve_local_timeline_on_hydrate`] 过滤：
+//!   `final_response` 补偿、与服务端/正式助手重复的 `local_snapshot` 等 ephemeral 旁注不保留；意图分析保留）。
 //! - 回合结束后以服务端的 `role=tool` / `display_*` 水合为准，丢弃仅 SSE 占位 id 的工具行。
 
 use std::collections::HashSet;
@@ -123,7 +124,10 @@ fn local_messages_preserved_after_hydrate(
             if let Some(ref state) = m.state {
                 if state.is_local_timeline_snapshot_row() && !server_msg_ids.contains(m.id.as_str())
                 {
-                    return true;
+                    return crate::timeline_scan::should_preserve_local_timeline_on_hydrate(
+                        m,
+                        server_msgs,
+                    );
                 }
                 if state.looks_like_hierarchical_subgoal()
                     && !server_msg_ids.contains(m.id.as_str())
@@ -730,7 +734,40 @@ mod local_messages_preserved_after_hydrate_tests {
     }
 
     #[test]
-    fn preserves_local_timeline_snapshot_rows() {
+    fn preserves_intent_analysis_timeline_on_hydrate() {
+        use crate::timeline_scan::timeline_state_intent_analysis_snapshot;
+
+        let server = vec![StoredMessage {
+            id: "a-srv".into(),
+            role: "assistant".into(),
+            text: "answer".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 1,
+        }];
+        let local = vec![StoredMessage {
+            id: "tl-intent".into(),
+            role: "assistant".into(),
+            text: "意图分析：执行类\n\n".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(timeline_state_intent_analysis_snapshot()),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 2,
+        }];
+        let kept = local_messages_preserved_after_hydrate(&server, &local);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].id, "tl-intent");
+    }
+
+    #[test]
+    fn preserves_generic_local_timeline_snapshot_rows() {
         let server: Vec<StoredMessage> = vec![];
         let local = vec![StoredMessage {
             id: "tl-local".into(),
