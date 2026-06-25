@@ -315,12 +315,32 @@ pub(super) fn summary_gh_pr_create(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<GhPrCreateSummaryArgs>(v)
 }
 
+pub(super) fn summary_gh_pr_merge(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<GhPrMergeSummaryArgs>(v)
+}
+
+pub(super) fn summary_gh_pr_review(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<GhPrReviewSummaryArgs>(v)
+}
+
+pub(super) fn summary_gh_pr_comment(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<GhPrCommentSummaryArgs>(v)
+}
+
+pub(super) fn summary_gh_pr_body_draft(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<GhPrBodyDraftSummaryArgs>(v)
+}
+
 pub(super) fn summary_gh_issue_list(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<GhIssueListSummaryArgs>(v)
 }
 
 pub(super) fn summary_gh_issue_view(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<GhIssueViewSummaryArgs>(v)
+}
+
+pub(super) fn summary_gh_issue_create(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<GhIssueCreateSummaryArgs>(v)
 }
 
 pub(super) fn summary_gh_run_list(v: &serde_json::Value) -> Option<String> {
@@ -335,12 +355,24 @@ pub(super) fn summary_gh_run_view(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<GhRunViewSummaryArgs>(v)
 }
 
+pub(super) fn summary_gh_run_rerun(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<GhRunRerunSummaryArgs>(v)
+}
+
+pub(super) fn summary_gh_run_failure_summary(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<GhRunFailureSummarySummaryArgs>(v)
+}
+
 pub(super) fn summary_gh_release_list(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<GhReleaseListSummaryArgs>(v)
 }
 
 pub(super) fn summary_gh_release_view(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<GhReleaseViewSummaryArgs>(v)
+}
+
+pub(super) fn summary_gh_release_create(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<GhReleaseCreateSummaryArgs>(v)
 }
 
 pub(super) fn summary_gh_search(v: &serde_json::Value) -> Option<String> {

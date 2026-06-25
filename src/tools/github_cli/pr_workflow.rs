@@ -1,9 +1,12 @@
 use std::path::Path;
 
 use super::common::{
-    clamp_limit, gh_allowed, join_json_fields, run_gh_vec, validate_extra_args, validate_pr_body,
-    validate_pr_ref_token, validate_pr_title, validate_repo,
+    attach_json_if_exit_zero, clamp_limit, extract_stdout_from_formatted, gh_allowed,
+    join_json_fields, run_gh_vec, validate_extra_args, validate_pr_body, validate_pr_ref_token,
+    validate_pr_title, validate_repo,
 };
+use super::pr_body::build_pr_body_draft;
+use super::run_ci::append_checks_summary;
 
 /// `gh run list`
 pub fn gh_run_list(
@@ -129,6 +132,10 @@ pub fn gh_pr_checks(
         }
         argv.push(n.to_string());
     }
+    if v.get("structured").and_then(|x| x.as_bool()) == Some(true) {
+        argv.push("--json".into());
+        argv.push("name,bucket,state,link,workflow,description,startedAt,completedAt,event".into());
+    }
     if let Some(arr) = v.get("extra_args").and_then(|x| x.as_array()) {
         let extra: Vec<String> = arr
             .iter()
@@ -139,7 +146,15 @@ pub fn gh_pr_checks(
         }
         argv.extend(extra);
     }
-    run_gh_vec(argv, max_output_len, allowed_commands, working_dir)
+    let out = run_gh_vec(argv, max_output_len, allowed_commands, working_dir);
+    if v.get("structured").and_then(|x| x.as_bool()) == Some(true) {
+        let stdout = extract_stdout_from_formatted(&out).to_string();
+        return append_checks_summary(
+            attach_json_if_exit_zero(out, stdout.as_str()),
+            stdout.as_str(),
+        );
+    }
+    out
 }
 
 /// `gh pr create`（在远端创建 PR；**写操作**）。`title` + `body` 经工作区内临时文件以 `--body-file` 传入，避免 shell 转义问题。
@@ -163,8 +178,19 @@ pub fn gh_pr_create(
     if let Err(e) = validate_pr_title(title) {
         return e;
     }
-    let body = v.get("body").and_then(|x| x.as_str()).unwrap_or("");
-    if let Err(e) = validate_pr_body(body) {
+    let auto_body = v.get("auto_body").and_then(|x| x.as_bool()).unwrap_or(true);
+    let body_str = match v.get("body").and_then(|x| x.as_str()) {
+        Some(s) if !s.trim().is_empty() => s.to_string(),
+        _ if auto_body => {
+            let base = v.get("base").and_then(|x| x.as_str());
+            match build_pr_body_draft(working_dir, base, 30, true, true) {
+                Ok(d) => d,
+                Err(e) => return e,
+            }
+        }
+        _ => String::new(),
+    };
+    if let Err(e) = validate_pr_body(&body_str) {
         return e;
     }
     if let Err(e) = gh_pr_create_validate_repo_base_head(&v) {
@@ -176,7 +202,7 @@ pub fn gh_pr_create(
         Err(e) => return format!("错误：无法在工作区内创建临时目录：{e}"),
     };
     let body_path = dir.path().join("crabmate_pr_body.md");
-    if let Err(e) = std::fs::write(&body_path, body.as_bytes()) {
+    if let Err(e) = std::fs::write(&body_path, body_str.as_bytes()) {
         return format!("错误：写入 PR 正文临时文件失败：{e}");
     }
     let body_path_str = match body_path.to_str() {

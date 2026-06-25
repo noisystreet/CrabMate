@@ -100,6 +100,72 @@ impl ToolSummaryLine for GhPrCreateSummaryArgs {
 }
 
 #[derive(Debug, Deserialize)]
+pub(super) struct GhPrMergeSummaryArgs {
+    #[serde(default)]
+    number: Option<u64>,
+    #[serde(default)]
+    merge_method: Option<String>,
+}
+
+impl ToolSummaryLine for GhPrMergeSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        let method = self.merge_method.as_deref().unwrap_or("merge");
+        match self.number {
+            Some(n) if n > 0 => Some(format!("gh pr merge #{n} ({method})")),
+            _ => Some(format!("gh pr merge ({method})")),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct GhPrReviewSummaryArgs {
+    event: String,
+    #[serde(default)]
+    number: Option<u64>,
+}
+
+impl ToolSummaryLine for GhPrReviewSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        let ev = self.event.trim();
+        if ev.is_empty() {
+            return None;
+        }
+        match self.number {
+            Some(n) if n > 0 => Some(format!("gh pr review #{n} {ev}")),
+            _ => Some(format!("gh pr review {ev}")),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct GhPrCommentSummaryArgs {
+    #[serde(default)]
+    number: Option<u64>,
+}
+
+impl ToolSummaryLine for GhPrCommentSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        match self.number {
+            Some(n) if n > 0 => Some(format!("gh pr comment #{n}")),
+            _ => Some("gh pr comment".to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct GhPrBodyDraftSummaryArgs {
+    #[serde(default)]
+    base: Option<String>,
+}
+
+impl ToolSummaryLine for GhPrBodyDraftSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        let base = self.base.as_deref().unwrap_or("main");
+        Some(format!("gh pr body draft (base={base})"))
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub(super) struct GhIssueListSummaryArgs {
     #[serde(default)]
     repo: Option<String>,
@@ -135,6 +201,31 @@ impl ToolSummaryLine for GhIssueViewSummaryArgs {
             "gh issue view #{}{}",
             self.number,
             gh_repo_suffix(self.repo)
+        ))
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct GhIssueCreateSummaryArgs {
+    title: String,
+    #[serde(default)]
+    repo: Option<String>,
+}
+
+impl ToolSummaryLine for GhIssueCreateSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        let t = self.title.trim();
+        if t.is_empty() {
+            return None;
+        }
+        let mut head: String = t.chars().take(40).collect();
+        if t.chars().count() > 40 {
+            head.push('…');
+        }
+        Some(format!(
+            "gh issue create{}: {}",
+            gh_repo_suffix(self.repo),
+            head
         ))
     }
 }
@@ -197,6 +288,42 @@ impl ToolSummaryLine for GhRunViewSummaryArgs {
 }
 
 #[derive(Debug, Deserialize)]
+pub(super) struct GhRunRerunSummaryArgs {
+    run_id: String,
+    #[serde(default)]
+    failed: bool,
+}
+
+impl ToolSummaryLine for GhRunRerunSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        let id = self.run_id.trim();
+        if id.is_empty() {
+            return None;
+        }
+        Some(format!(
+            "gh run rerun {}{}",
+            id,
+            if self.failed { " --failed" } else { "" }
+        ))
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct GhRunFailureSummarySummaryArgs {
+    run_id: String,
+}
+
+impl ToolSummaryLine for GhRunFailureSummarySummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        let id = self.run_id.trim();
+        if id.is_empty() {
+            return None;
+        }
+        Some(format!("gh run failure summary {id}"))
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub(super) struct GhReleaseListSummaryArgs {
     #[serde(default)]
     repo: Option<String>,
@@ -236,6 +363,28 @@ impl ToolSummaryLine for GhReleaseViewSummaryArgs {
             "gh release view {}{}",
             t,
             gh_repo_suffix(self.repo)
+        ))
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct GhReleaseCreateSummaryArgs {
+    tag: String,
+    #[serde(default)]
+    draft: Option<bool>,
+}
+
+impl ToolSummaryLine for GhReleaseCreateSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        let tag = self.tag.trim();
+        if tag.is_empty() {
+            return None;
+        }
+        let draft = self.draft == Some(true);
+        Some(format!(
+            "gh release create {}{}",
+            tag,
+            if draft { " (draft)" } else { "" }
         ))
     }
 }

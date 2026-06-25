@@ -306,3 +306,66 @@ pub(crate) fn validate_job_name(name: &str) -> Result<(), String> {
 pub(crate) fn clamp_search_limit(n: Option<u32>) -> u32 {
     n.unwrap_or(DEFAULT_LIST_LIMIT).clamp(1, MAX_SEARCH_LIMIT)
 }
+
+pub(crate) fn write_workspace_temp_markdown(
+    working_dir: &Path,
+    filename: &str,
+    content: &[u8],
+    err_label: &str,
+) -> Result<(tempfile::TempDir, String), String> {
+    let dir = tempfile::tempdir_in(working_dir)
+        .map_err(|e| format!("错误：无法在工作区内创建临时目录：{e}"))?;
+    let path = dir.path().join(filename);
+    std::fs::write(&path, content)
+        .map_err(|e| format!("错误：写入 {err_label} 临时文件失败：{e}"))?;
+    let path_str = path
+        .to_str()
+        .ok_or_else(|| format!("错误：{err_label} 临时文件路径非 UTF-8"))?
+        .to_string();
+    Ok((dir, path_str))
+}
+
+pub(crate) fn push_repo_arg(v: &JsonValue, argv: &mut Vec<String>) -> Result<(), String> {
+    if let Some(r) = v.get("repo").and_then(|x| x.as_str()) {
+        validate_repo(r)?;
+        argv.push("-R".into());
+        argv.push(r.trim().to_string());
+    }
+    Ok(())
+}
+
+pub(crate) fn push_extra_args_from_json(
+    v: &JsonValue,
+    argv: &mut Vec<String>,
+) -> Result<(), String> {
+    if let Some(arr) = v.get("extra_args").and_then(|x| x.as_array()) {
+        let extra: Vec<String> = arr
+            .iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect();
+        validate_extra_args(&extra)?;
+        argv.extend(extra);
+    }
+    Ok(())
+}
+
+pub(crate) fn push_bool_flag(v: &JsonValue, key: &str, flag: &str, argv: &mut Vec<String>) {
+    if v.get(key).and_then(|x| x.as_bool()) == Some(true) {
+        argv.push(flag.into());
+    }
+}
+
+pub(crate) fn push_trimmed_string_flag(
+    v: &JsonValue,
+    key: &str,
+    flag: &str,
+    argv: &mut Vec<String>,
+) {
+    if let Some(s) = v.get(key).and_then(|x| x.as_str()) {
+        let t = s.trim();
+        if !t.is_empty() {
+            argv.push(flag.into());
+            argv.push(t.to_string());
+        }
+    }
+}

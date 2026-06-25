@@ -258,6 +258,7 @@ pub struct GhPrViewArgs {
 pub struct GhPrChecksArgs {
     pub repo: Option<String>,
     pub number: Option<u32>,
+    pub structured: Option<bool>,
     pub extra_args: Option<Vec<String>>,
 }
 
@@ -271,7 +272,66 @@ pub struct GhPrCreateArgs {
     pub head: Option<String>,
     pub draft: Option<bool>,
     pub web: Option<bool>,
+    /// 当 `body` 为空时，从 PR 模板 + `git log` 生成正文草稿。
+    pub auto_body: Option<bool>,
     pub extra_args: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum GhPrMergeMethod {
+    Merge,
+    Squash,
+    Rebase,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct GhPrMergeArgs {
+    pub number: Option<u32>,
+    pub repo: Option<String>,
+    pub merge_method: Option<GhPrMergeMethod>,
+    pub auto: Option<bool>,
+    pub delete_branch: Option<bool>,
+    pub admin: Option<bool>,
+    pub extra_args: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum GhPrReviewEvent {
+    Approve,
+    RequestChanges,
+    Comment,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GhPrReviewArgs {
+    pub number: Option<u32>,
+    pub repo: Option<String>,
+    pub event: GhPrReviewEvent,
+    pub body: Option<String>,
+    pub extra_args: Option<Vec<String>>,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct GhPrCommentArgs {
+    pub number: Option<u32>,
+    pub repo: Option<String>,
+    pub body: String,
+    pub extra_args: Option<Vec<String>>,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct GhPrBodyDraftArgs {
+    pub base: Option<String>,
+    #[schemars(range(min = 1, max = 200))]
+    pub max_commits: Option<u32>,
+    pub include_template: Option<bool>,
+    pub include_commit_log: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
@@ -299,6 +359,18 @@ pub struct GhIssueViewArgs {
     pub number: u32,
     pub repo: Option<String>,
     pub fields: Option<Vec<String>>,
+    pub web: Option<bool>,
+    pub extra_args: Option<Vec<String>>,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct GhIssueCreateArgs {
+    pub title: String,
+    pub body: Option<String>,
+    pub repo: Option<String>,
+    pub labels: Option<Vec<String>>,
+    pub assignee: Option<String>,
     pub web: Option<bool>,
     pub extra_args: Option<Vec<String>>,
 }
@@ -334,6 +406,26 @@ pub struct GhRunViewArgs {
     pub extra_args: Option<Vec<String>>,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GhRunRerunArgs {
+    pub run_id: String,
+    pub repo: Option<String>,
+    pub failed: Option<bool>,
+    pub extra_args: Option<Vec<String>>,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct GhRunFailureSummaryArgs {
+    pub run_id: String,
+    pub repo: Option<String>,
+    #[schemars(range(min = 10, max = 500))]
+    pub tail_lines: Option<u32>,
+    #[schemars(range(min = 1, max = 20))]
+    pub max_failed_jobs: Option<u32>,
+}
+
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct GhReleaseListArgs {
@@ -351,6 +443,24 @@ pub struct GhReleaseViewArgs {
     pub repo: Option<String>,
     pub fields: Option<Vec<String>>,
     pub web: Option<bool>,
+    pub extra_args: Option<Vec<String>>,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct GhReleaseCreateArgs {
+    pub tag: String,
+    pub title: Option<String>,
+    pub notes: Option<String>,
+    pub repo: Option<String>,
+    pub target: Option<String>,
+    pub draft: Option<bool>,
+    pub prerelease: Option<bool>,
+    pub web: Option<bool>,
+    /// 当 `notes` 为空时，自最近 tag 至 HEAD 的 commit 列表生成 notes 草稿。
+    pub auto_notes: Option<bool>,
+    #[schemars(range(min = 1, max = 500))]
+    pub max_commits: Option<u32>,
     pub extra_args: Option<Vec<String>>,
 }
 
