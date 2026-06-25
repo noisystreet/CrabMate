@@ -227,7 +227,7 @@ fn is_system_role_hidden_from_web_transcript(m: &Message) -> bool {
 /// 省略：普通 **`system`**（含系统提示词）、长期记忆 / 工作区变更集 / 首轮工作区画像等 **`user.name`** 注入；保留 **`crabmate_timeline`** 等时间线 **`system`**。
 #[inline]
 pub fn is_message_visible_in_chat_transcript(m: &Message) -> bool {
-    !crate::types::server_injected_user::is_server_injected_user_message(m)
+    !crate::server_injected_user::is_server_injected_user_message(m)
         && !is_system_role_hidden_from_web_transcript(m)
 }
 
@@ -289,7 +289,7 @@ pub fn is_first_turn_workspace_context_injection(m: &Message) -> bool {
 /// `POST /chat/branch` 等按序截断时计入的「真实用户发言」：排除各类 `user.name` 注入条。
 #[inline]
 pub fn user_message_counts_for_branch_truncation(m: &Message) -> bool {
-    m.role == "user" && !crate::types::server_injected_user::is_server_injected_user_message(m)
+    m.role == "user" && !crate::server_injected_user::is_server_injected_user_message(m)
 }
 
 /// `message.content` 为纯文本时的借用；多模态 [`MessageContent::Parts`] 返回 `None`。
@@ -520,8 +520,7 @@ impl Message {
     /// 分阶段路径：按正文特征选择 [`CRABMATE_STAGED_*`] `name`。
     pub fn user_staged_orchestration_injection(content: impl Into<String>) -> Self {
         let body = content.into();
-        let name =
-            crate::types::server_injected_user::staged_injection_user_name_for_content(&body);
+        let name = crate::server_injected_user::staged_injection_user_name_for_content(&body);
         Self::user_server_injection(name, body)
     }
 
@@ -545,7 +544,7 @@ impl Message {
 ///
 /// **`preserve_deepseek_thinking_reasoning_roundtrip`**：与 [DeepSeek 思考模式](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode) 中「工具调用」一致——**仅**含非空 **`tool_calls`** 的助手须在后续请求回传 **`reasoning_content`**。
 #[inline]
-pub(crate) fn message_clone_stripping_reasoning_for_api(
+pub fn message_clone_stripping_reasoning_for_api(
     m: &Message,
     preserve_reasoning_on_assistant_tool_calls: bool,
     preserve_deepseek_thinking_reasoning_roundtrip: bool,

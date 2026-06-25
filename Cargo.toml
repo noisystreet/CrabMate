@@ -7,6 +7,7 @@ members = [
     "crates/crabmate-tool-card",
     "crates/crabmate-sse-protocol",
     "crates/crabmate-im-bridge",
+    "crates/crabmate-types",
 ]
 resolver = "2"
 
@@ -63,6 +64,7 @@ cmd_mate = { path = "crates/cmd_mate" }
 crabmate-display-rules = { path = "crates/crabmate-display-rules" }
 crabmate-tool-card = { path = "crates/crabmate-tool-card" }
 crabmate-sse-protocol = { path = "crates/crabmate-sse-protocol" }
+crabmate-types = { path = "crates/crabmate-types" }
 reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 serde = { version = "1.0", features = ["derive"] }

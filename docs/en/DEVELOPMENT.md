@@ -30,7 +30,7 @@ Single **Tokio** process: **Axum** serves HTTP; **`runtime/`** powers the CLI; s
 2. **Orchestration**: chat queue (**`chat_job_queue`**), Agent turns (**`agent/`**: **`agent_turn`**, context and message pipeline, **`per_coord`**, optional layered **hierarchy**, **workflow**).
 3. **Model**: shared **`http_client`**, **`llm`** (**`complete_chat_retrying`** → default **`OpenAiCompatBackend`** → **`api::stream_chat`**), vendor adapters **vendor**.
 4. **Tools**: table-driven **tools**, dispatch by name **tool_registry**, optional Docker sandbox **tool_sandbox**, structured results **tool_result**.
-5. **Contracts**: **types** (OpenAI-shaped messages), **sse** (control plane and version **`crabmate-sse-protocol`**), **config**.
+5. **Contracts**: **`crabmate-types`** (OpenAI-shaped messages; root re-exports as **`types`**), **sse** (control plane and version **`crabmate-sse-protocol`**), **config**.
 
 ```mermaid
 flowchart TB
@@ -89,7 +89,8 @@ Runtime **`AgentConfig`** merges TOML shards / environment variables and is vali
 | **`memory/`** | Long-term memory, optional semantic index, etc. |
 | **`runtime/`** | REPL, one-shot `chat`, **`chat_export`**, TUI bridge, benchmark helpers, etc. |
 | **`tool_result/`** | Tool output envelopes, aligned with SSE **`tool_result`**. |
-| **`types/`** | OpenAI-compatible messages and request types. |
+| **`crabmate-types`** (`crates/crabmate-types`) | OpenAI-compatible **`Message`** / **`Tool`** / **`ChatRequest`**, session transform helpers, server-injected user detection; root **`pub use crabmate_types as types`**. |
+| **`types` (root re-export)** | Same as above; in-repo code still commonly uses **`crate::types::`**. |
 | **`observability.rs`** | Tracing init and **`TracingChatTurn`**. |
 
 For **sub-paths** (e.g. **`agent_turn/staged`**, **`tools/file`**), browse or search the repo; this guide does **not** maintain a per-file index table (it duplicates **`lib.rs`** `mod` lists and goes stale).

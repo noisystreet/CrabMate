@@ -77,7 +77,7 @@ pub fn message_lineage(m: &super::Message) -> MessageLineage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{
+    use crate::{
         CRABMATE_LONG_TERM_MEMORY_NAME, CRABMATE_WORKSPACE_CHANGELIST_NAME, Message, MessageContent,
     };
 
