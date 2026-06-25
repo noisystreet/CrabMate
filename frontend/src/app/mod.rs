@@ -169,7 +169,9 @@ pub fn App() -> impl IntoView {
                     </div>
                 </div>
 
-                {status_bar_footer_view(status_bar_footer_signals.clone())}
+                <Show when=move || !app_ctx.signals.shell_ui.editor_layout_mode.get()>
+                    {status_bar_footer_view(status_bar_footer_signals.clone())}
+                </Show>
             </div>
 
             {session_list_modal_view(session_list_modal_signals)}

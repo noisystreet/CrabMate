@@ -17,6 +17,7 @@ use crate::ide_tabs::{
 use super::ide_editor_pane::IdeEditorPane;
 use super::ide_menu_bar::{IdeMenuBar, IdeMenuBarSignals};
 use super::ide_tabs_bar::{IdeTabsBar, IdeTabsBarInput};
+use super::layout_mode_segment::LayoutModeSegment;
 use super::side_column_workspace_scroll::WorkspaceSideCardScrollInner;
 use super::workspace_panel_state::WorkspacePanelSignals;
 use crate::app::app_signals::IdeEditorSignals;
@@ -24,13 +25,32 @@ use crate::app::app_signals::IdeEditorSignals;
 #[component]
 fn IdeLayoutLeftPane(
     locale: RwSignal<Locale>,
+    editor_layout_mode: RwSignal<bool>,
     chat: ChatSessionSignals,
     workspace_panel: WorkspacePanelSignals,
     open_sv: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
-    insert_sv: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
 ) -> impl IntoView {
     view! {
         <div class="ide-layout-left">
+            <div class="ide-layout-left-chrome">
+                <div class="nav-rail-brand">
+                    <div class="nav-rail-brand-main">
+                        <span class="brand-mark" aria-hidden="true"></span>
+                        <div class="nav-rail-brand-text">
+                            <h1>"CrabMate"</h1>
+                        </div>
+                    </div>
+                </div>
+                <div class="nav-rail-mode-actions">
+                    <div class="nav-rail-mode-toolbar">
+                        <LayoutModeSegment
+                            locale=locale
+                            editor_layout_mode=editor_layout_mode
+                            extra_class="nav-rail-layout-segment"
+                        />
+                    </div>
+                </div>
+            </div>
             <div class="ide-layout-left-head">
                 <div class="ide-pane-title">{move || i18n::ide_workspace_title(locale.get())}</div>
                 <p class="ide-open-hint">{move || i18n::ide_open_hint(locale.get())}</p>
@@ -40,7 +60,7 @@ fn IdeLayoutLeftPane(
                     locale=locale
                     chat=chat
                     ws=workspace_panel
-                    insert_workspace_file_ref=insert_sv
+                    insert_workspace_file_ref=open_sv
                     on_file_single_click=open_sv
                 />
             </div>
@@ -135,7 +155,7 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
         refresh_workspace,
         initialized,
         editor_visible,
-        insert_workspace_file_ref,
+        insert_workspace_file_ref: _insert_workspace_file_ref,
     } = shell;
 
     let tabs = IdeTabsHandle::new();
@@ -154,15 +174,6 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
 
     let open_file = make_ide_open_file_handler(locale, tabs, tab_editor);
     let open_sv = StoredValue::new(open_file);
-
-    let insert_for_ide = {
-        let insert_workspace_file_ref = insert_workspace_file_ref;
-        let editor_layout_mode = editor_layout_mode;
-        StoredValue::new(Arc::new(move |rel: String| {
-            editor_layout_mode.set(false);
-            (insert_workspace_file_ref.get_value())(rel);
-        }) as Arc<dyn Fn(String) + Send + Sync>)
-    };
 
     let save_ctx = move || IdeSaveContext {
         tabs,
@@ -225,10 +236,10 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
             <div class="ide-layout-body">
                 <IdeLayoutLeftPane
                     locale=locale
+                    editor_layout_mode=editor_layout_mode
                     chat=chat
                     workspace_panel=workspace_panel
                     open_sv=open_sv
-                    insert_sv=insert_for_ide
                 />
                 <IdeLayoutRightPane input=IdeLayoutRightPaneInput {
                     locale,

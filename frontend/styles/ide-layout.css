@@ -1,27 +1,42 @@
 /* IDE 布局：主区内工作区 + 编辑器 */
 
-/* 与 `SideColumnViewSignals` 内 `Rc` 等非 Send 类型兼容：两态同挂载，用 CSS 切换可见性（勿用 `Show` 包裹含侧栏的子视图）。 */
-.main-row-chat-layer {
+/* 与 `SideColumnViewSignals` 内 `Rc` 等非 Send 类型兼容：两态同挂载，叠层 + 轻量淡入淡出（勿用 `Show` 包裹含侧栏的子视图）。 */
+.shell-main .main-row {
+  position: relative;
+}
+
+.main-row-chat-layer,
+.main-row-ide-layer {
+  position: absolute;
+  inset: 0;
   display: flex;
-  flex: 1;
+  flex: none;
   min-height: 0;
   min-width: 0;
   align-items: stretch;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  z-index: 1;
+  transition: opacity var(--dur-layout-mode) var(--ease-out-soft);
 }
 
-.main-row-chat-layer--hidden {
-  display: none !important;
-}
-
-.main-row-ide-layer {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-}
-
+.main-row-chat-layer--hidden,
 .main-row-ide-layer--hidden {
-  display: none !important;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: 0;
+  transition:
+    opacity var(--dur-layout-mode) var(--ease-out-soft),
+    visibility 0s linear var(--dur-layout-mode);
+}
+
+.main-row-chat-layer:not(.main-row-chat-layer--hidden),
+.main-row-ide-layer:not(.main-row-ide-layer--hidden) {
+  transition:
+    opacity var(--dur-layout-mode) var(--ease-out-soft),
+    visibility 0s linear 0s;
 }
 
 .shell-main--ide-layout .main-row {
@@ -49,15 +64,22 @@ html[data-tauri-shell][data-ide-layout] .ide-menu-bar .tauri-window-controls {
   border-left: 1px solid var(--shell-border, rgba(0, 0, 0, 0.08));
 }
 
-/* 窄屏 IDE：会话抽屉默认收起（由菜单「返回对话」退出 IDE） */
+/* 窄屏 IDE：左栏（品牌 + 工作区）与编辑器纵向堆叠 */
 @media (max-width: 768px) {
-  .app-root.app-shell-ds.app-root--ide-layout.sidebar-rail-collapsed .nav-rail {
-    width: 0 !important;
+  .app-root.app-shell-ds.app-root--ide-layout .shell-main-header-mobile {
+    display: none !important;
+  }
+
+  .ide-layout-body {
+    flex-direction: column;
+  }
+
+  .ide-layout-left {
+    width: 100%;
     min-width: 0;
-    opacity: 0;
-    pointer-events: none;
-    border-right-color: transparent;
-    overflow: hidden;
+    max-width: none;
+    max-height: min(42vh, 360px);
+    flex-shrink: 0;
   }
 }
 
@@ -199,13 +221,39 @@ html[data-tauri-shell][data-ide-layout] .ide-menu-bar .tauri-window-controls {
 }
 
 .ide-layout-left {
-  width: min(360px, 38vw);
-  min-width: 220px;
-  max-width: 440px;
+  width: var(--nav-rail-w);
+  min-width: var(--nav-rail-w);
+  max-width: var(--nav-rail-w);
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--shell-border, rgba(0, 0, 0, 0.08));
-  background: var(--surface-1, rgba(0, 0, 0, 0.02));
+  background: var(--nav-rail-bg, var(--surface-1, rgba(0, 0, 0, 0.02)));
+  min-height: 0;
+}
+
+.ide-layout-left-chrome {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--nav-rail-bg);
+}
+
+.ide-layout-left-chrome .nav-rail-brand {
+  padding-bottom: 6px;
+}
+
+.ide-layout-left-chrome .nav-rail-mode-actions {
+  margin-bottom: 8px;
+}
+
+.ide-layout-left-chrome .nav-rail-mode-toolbar {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.ide-layout-left-chrome .nav-rail-mode-toolbar .layout-mode-toggle-btn {
+  width: 100%;
+  flex: none;
 }
 
 .ide-layout-left-head {
