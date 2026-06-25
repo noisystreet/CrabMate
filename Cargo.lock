@@ -1101,6 +1101,7 @@ dependencies = [
  "crabmate-display-rules",
  "crabmate-sse-protocol",
  "crabmate-tool-card",
+ "crabmate-types",
  "crossterm 0.29.0",
  "csv",
  "dialoguer",
@@ -1201,6 +1202,15 @@ dependencies = [
 name = "crabmate-tool-card"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
+]
+
+[[package]]
+name = "crabmate-types"
+version = "0.1.0"
+dependencies = [
+ "crabmate-display-rules",
+ "serde",
  "serde_json",
 ]
 

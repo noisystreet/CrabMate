@@ -17,6 +17,7 @@ This document captures a **design analysis** (not an implementation commitment) 
 - Workspace-level extraction already exists for:
   - `frontend` (Web UI)
   - `crates/crabmate-sse-protocol` (SSE control-plane contract)
+  - `crates/crabmate-types` (OpenAI-compatible messages and chat API types; re-exported from the root crate as `types`)
 - Public API is still application-shaped: some `pub use` exports and `run_agent_turn` entrypoints exist, but there is no clearly versioned “framework surface”.
 
 ## 3. Gap analysis

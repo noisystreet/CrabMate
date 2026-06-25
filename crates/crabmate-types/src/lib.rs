@@ -86,7 +86,7 @@ mod server_injected_user_store_tests {
         }));
         assert!(
             v.iter()
-                .any(crate::types::is_first_turn_workspace_context_injection)
+                .any(crate::is_first_turn_workspace_context_injection)
         );
     }
 }
@@ -654,8 +654,8 @@ mod sanitize_tool_call_arguments_tests {
 
 #[cfg(test)]
 mod message_lineage_pub_smoke {
-    use crate::types::Message;
-    use crate::types::message_lineage::{MessageLineage, message_lineage};
+    use crate::Message;
+    use crate::message_lineage::{MessageLineage, message_lineage};
 
     #[test]
     fn pub_exports_resolve_for_embedding_hosts() {

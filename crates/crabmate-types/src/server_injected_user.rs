@@ -1,6 +1,6 @@
 //! 服务端注入的 **`role: user`** 消息：注册表、识别与落盘剥离（非用户真实发言）。
 
-use crate::types::message::{
+use crate::message::{
     CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME, CRABMATE_LONG_TERM_MEMORY_NAME,
     CRABMATE_PLAN_REWRITE_NAME, CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME,
     CRABMATE_STAGED_NL_FOLLOWUP_NAME, CRABMATE_STAGED_PATCH_FEEDBACK_NAME,
@@ -46,7 +46,7 @@ pub fn strip_orchestration_injected_users_for_conversation_store(messages: &mut 
 fn should_strip_user_before_conversation_store(m: &Message) -> bool {
     m.role == "user"
         && is_server_injected_user_message(m)
-        && !crate::types::is_first_turn_workspace_context_injection(m)
+        && !crate::is_first_turn_workspace_context_injection(m)
 }
 
 /// 分阶段 / 补丁 / ensemble 等临时 coach user（取消或失败时弹出）。
