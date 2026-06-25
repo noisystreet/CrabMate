@@ -7,9 +7,9 @@ use std::time::Instant;
 use reqwest::Client;
 use serde::Deserialize;
 
-use crate::config::LlmHttpAuthMode;
 use crate::http_client;
-use crate::types::OPENAI_MODELS_REL_PATH;
+use crabmate_config::LlmHttpAuthMode;
+use crabmate_types::OPENAI_MODELS_REL_PATH;
 
 #[derive(Debug, Deserialize)]
 struct ModelsEnvelope {

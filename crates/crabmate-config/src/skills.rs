@@ -1,14 +1,14 @@
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
-pub(crate) struct SkillDoc {
+pub struct SkillDoc {
     pub display_path: String,
     pub content: String,
     pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct SkillsSelectionMeta {
+pub struct SkillsSelectionMeta {
     pub total_docs: usize,
     pub selected_labels: Vec<String>,
 }
@@ -53,10 +53,7 @@ fn resolve_skills_dir(base_dir: &Path, skills_dir: &str) -> Result<PathBuf, Stri
     Ok(dir_path)
 }
 
-pub(crate) fn list_skills_from_base(
-    base_dir: &Path,
-    skills_dir: &str,
-) -> Result<Vec<SkillDoc>, String> {
+pub fn list_skills_from_base(base_dir: &Path, skills_dir: &str) -> Result<Vec<SkillDoc>, String> {
     let dir_path = resolve_skills_dir(base_dir, skills_dir)?;
     if dir_path.exists() && !dir_path.is_dir() {
         return Err(format!(
@@ -118,7 +115,7 @@ fn render_skills_appendix(docs: &[SkillDoc], max_chars: usize) -> String {
     if body.chars().count() <= max_chars {
         return body;
     }
-    let mut truncated = super::super::text_util::truncate_str_to_max_chars(&body, max_chars);
+    let mut truncated = crate::text_util::truncate_str_to_max_chars(&body, max_chars);
     truncated.push_str(
         "\n\n[提示] 技能内容已按 skills_max_chars 截断。后续不得假定未出现在本 system 中的技能条文。",
     );
@@ -155,7 +152,7 @@ fn render_skills_index_appendix(docs: &[SkillDoc], max_chars: usize, max_entries
     if body.chars().count() <= max_chars {
         return body;
     }
-    let mut truncated = super::super::text_util::truncate_str_to_max_chars(&body, max_chars);
+    let mut truncated = crate::text_util::truncate_str_to_max_chars(&body, max_chars);
     truncated.push_str(
         "\n\n[提示] 技能索引已按 skills_max_chars 截断。后续不得假定未出现在本 system 中的技能条目。",
     );
@@ -240,7 +237,7 @@ pub(crate) fn select_skills_top_k(
     }
 }
 
-pub(crate) fn merge_system_prompt_with_skills_selected_with_meta(
+pub fn merge_system_prompt_with_skills_selected_with_meta(
     system_prompt: String,
     skills_enabled: bool,
     skills_dir: &str,

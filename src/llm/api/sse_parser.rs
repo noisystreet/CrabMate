@@ -5,12 +5,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use futures_util::StreamExt;
 use tokio::sync::mpsc::Sender;
 
-use crate::runtime::tui::TuiLlmStreamScratchArc;
 use crate::sse::{SsePayload, ThinkingTraceBody, encode_message};
-use crate::types::{StreamChoice, StreamChunk, StreamDelta};
+use crabmate_llm::stream_scratch::TuiLlmStreamScratchArc;
+use crabmate_types::{StreamChoice, StreamChunk, StreamDelta};
 
-use super::super::call_error::LlmCallError;
 use super::terminal_render::cli_terminal_write_plain_fragment;
+use crabmate_llm::call_error::LlmCallError;
 
 const THINKING_TRACE_CHUNK_MAX: usize = 4096;
 

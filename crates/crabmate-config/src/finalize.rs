@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::agent::per_coord::FinalPlanRequirementMode;
+use crate::FinalPlanRequirementMode;
 
 use super::agent_roles;
 use super::builder::ConfigBuilder;
@@ -64,14 +64,14 @@ fn read_system_prompt_file_resolved(
 
 /// 内置默认附录（与仓库 **`config/prompts/thinking_avoid_echo_appendix.md`** 一致；未配置路径或读盘失败时采用）。
 const EMBEDDED_THINKING_AVOID_ECHO_APPENDIX: &str =
-    include_str!("../../config/prompts/thinking_avoid_echo_appendix.md");
+    include_str!("../../../config/prompts/thinking_avoid_echo_appendix.md");
 
 /// 编程工作台增量（与 **`config/prompts/coding_workbench_increment.md`** 一致）。
 const EMBEDDED_CODING_WORKBENCH_INCREMENT: &str =
-    include_str!("../../config/prompts/coding_workbench_increment.md");
+    include_str!("../../../config/prompts/coding_workbench_increment.md");
 
 /// 与 [`resolve_thinking_avoid_echo_appendix`] 使用的内置正文一致；供 `augment_system_prompt` 等在运行时附录字段为空时回退。
-pub(crate) fn embedded_thinking_avoid_echo_appendix() -> &'static str {
+pub fn embedded_thinking_avoid_echo_appendix() -> &'static str {
     EMBEDDED_THINKING_AVOID_ECHO_APPENDIX.trim()
 }
 
@@ -319,7 +319,7 @@ fn derive_intent_fields(b: &ConfigBuilder) -> Result<IntentDerived, String> {
         None => types::LlmHttpAuthMode::default(),
     };
     let llm_reasoning_split = b.llm_vendor.llm_reasoning_split.unwrap_or_else(|| {
-        crate::llm::vendor::default_llm_reasoning_split_for_gateway(&b.llm.model, &b.llm.api_base)
+        crate::gateway_hints::default_llm_reasoning_split_for_gateway(&b.llm.model, &b.llm.api_base)
     });
     let intent_execute_low_threshold = b
         .intent_routing

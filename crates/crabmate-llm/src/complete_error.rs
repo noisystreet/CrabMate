@@ -3,7 +3,7 @@
 use std::error::Error;
 use std::fmt;
 
-use crate::types::LLM_CANCELLED_ERROR;
+use crabmate_types::LLM_CANCELLED_ERROR;
 
 use super::call_error::LlmCallError;
 

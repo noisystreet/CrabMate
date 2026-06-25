@@ -6,9 +6,9 @@ use crate::redact::{
     self, CHAT_REQUEST_JSON_LOG_INFO_CHARS, CHAT_REQUEST_JSON_LOG_MAX_CHARS,
     HTTP_BODY_PREVIEW_LOG_CHARS,
 };
-use crate::types::ChatRequest;
+use crabmate_types::ChatRequest;
 
-use super::super::call_error::LlmCallError;
+use crabmate_llm::call_error::LlmCallError;
 
 /// 在未开启 `RUST_LOG=…debug` 时，仍可用 **`CM_LOG_CHAT_REQUEST_JSON=1`** 在 **info** 级别打印请求体预览（与 `--log` 默认 `info` 配套）。
 fn should_log_chat_request_json_preview() -> bool {

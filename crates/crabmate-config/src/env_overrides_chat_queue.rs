@@ -1,7 +1,7 @@
 //! 聊天队列、只读并行缓存、会话变更集等 `CM_*` 覆盖。
 
-use crate::config::builder::ConfigBuilder;
-use crate::config::source::parse_bool_like;
+use crate::builder::ConfigBuilder;
+use crate::source::parse_bool_like;
 
 pub(super) fn env_override_chat_queue_parallel_and_caches(b: &mut ConfigBuilder) {
     chat_queue_override_sizes(b);

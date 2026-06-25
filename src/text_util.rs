@@ -11,6 +11,7 @@ pub(crate) fn truncate_chars_with_ellipsis(s: &str, max: usize) -> String {
 }
 
 /// 取前 `max` 个字符，不加省略号（用于规则附录等需硬上限的场景）。
+#[allow(dead_code)]
 pub(crate) fn truncate_str_to_max_chars(s: &str, max: usize) -> String {
     s.chars().take(max).collect()
 }
