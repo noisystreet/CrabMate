@@ -23,6 +23,7 @@ mod scroll;
 mod scroll_follow;
 mod scroll_shell;
 mod session_hydrate;
+mod session_hydrate_preserved;
 mod session_storage;
 #[cfg(test)]
 mod staged_plan_todo;
