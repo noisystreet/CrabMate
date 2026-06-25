@@ -1,4 +1,4 @@
-//! 侧栏：布局分段 + 紧凑「新建对话」图标按钮（仅对话模式）。
+//! 侧栏：布局切换 + 紧凑「新建对话」图标按钮（编辑器模式品牌与返回对话见 IDE 左栏）。
 
 use std::rc::Rc;
 
@@ -35,13 +35,6 @@ pub(super) fn NavRailModeActions(
                     data-testid="nav-new-chat"
                     prop:title=move || i18n::nav_new_chat(locale.get())
                     prop:aria-label=move || i18n::nav_new_chat_aria(locale.get())
-                    prop:style:display=move || {
-                        if editor_layout_mode.get() {
-                            "none"
-                        } else {
-                            ""
-                        }
-                    }
                     on:click=on_new_chat
                 >
                     <span aria-hidden="true">"+"</span>

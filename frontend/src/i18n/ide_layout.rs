@@ -30,10 +30,21 @@ pub fn ide_toggle_chat_aria(l: Locale) -> &'static str {
     }
 }
 
-pub fn layout_mode_segment_aria(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "主区布局：对话或编辑器",
-        Locale::En => "Main layout: chat or editor",
+/// 布局切换按钮文案：显示**将要进入**的模式（对话中显示「编辑器」，编辑器中显示「对话」）。
+pub fn ide_layout_toggle_label(l: Locale, editor_layout_mode: bool) -> &'static str {
+    if editor_layout_mode {
+        ide_toggle_chat(l)
+    } else {
+        ide_toggle_editor(l)
+    }
+}
+
+/// 布局切换按钮 `aria-label`（与 [`ide_layout_toggle_label`] 对应）。
+pub fn ide_layout_toggle_aria(l: Locale, editor_layout_mode: bool) -> &'static str {
+    if editor_layout_mode {
+        ide_toggle_chat_aria(l)
+    } else {
+        ide_toggle_editor_aria(l)
     }
 }
 
@@ -46,10 +57,8 @@ pub fn ide_workspace_title(l: Locale) -> &'static str {
 
 pub fn ide_open_hint(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "单击文件在新标签页打开；双击将 @相对路径 插入对话输入框并切回对话布局。",
-        Locale::En => {
-            "Click to open a tab; double-click inserts @path into chat and switches to chat layout."
-        }
+        Locale::ZhHans => "单击或双击文件在新标签页打开。",
+        Locale::En => "Click or double-click a file to open it in a new tab.",
     }
 }
 

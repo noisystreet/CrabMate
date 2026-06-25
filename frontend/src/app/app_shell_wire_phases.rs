@@ -21,9 +21,9 @@ use leptos::prelude::*;
 use super::app_shell_effects::{
     IdeEditorHotkeySignals, SessionDeleteHotkeySignals, ShellEscapeSignals,
     WireSettingsModalLlmDraftsSignals, wire_approval_expanded_follows_pending,
-    wire_close_shell_chrome_when_ide_layout, wire_collapse_sidebar_rail_when_ide_layout,
-    wire_escape_key_layered_dismiss, wire_ide_editor_hotkeys, wire_session_delete_hotkey,
-    wire_settings_modal_llm_drafts_on_open, wire_sync_bg_decor_to_storage_and_dom,
+    wire_close_shell_chrome_when_ide_layout, wire_escape_key_layered_dismiss,
+    wire_ide_editor_hotkeys, wire_session_delete_hotkey, wire_settings_modal_llm_drafts_on_open,
+    wire_sidebar_rail_when_ide_layout, wire_sync_bg_decor_to_storage_and_dom,
     wire_sync_locale_html_lang, wire_sync_session_typography_to_storage_and_dom,
     wire_sync_tauri_shell_dom, wire_sync_theme_to_storage_and_dom,
 };
@@ -117,7 +117,7 @@ fn wire_phase1_chat_session_lifecycle(app: &AppSignals) {
 /// 阶段 2：偏好写入 `/user-data/prefs`、与 `document` 同步、设置弹窗 LLM 草稿打开时填充。
 fn wire_phase2_persisted_prefs_dom_and_settings_hooks(app: &AppSignals) {
     crate::user_prefs_sync::wire_persist_user_prefs_to_server(app.clone());
-    wire_collapse_sidebar_rail_when_ide_layout(
+    wire_sidebar_rail_when_ide_layout(
         app.shell_ui.editor_layout_mode,
         app.sidebar.sidebar_rail_collapsed,
     );

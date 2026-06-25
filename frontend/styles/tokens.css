@@ -27,6 +27,7 @@
   /* 消息入场、侧栏抽屉、右列宽释放、流式首段显字（见 motion.css） */
   --dur-msg-enter: 0.2s;
   --dur-layout-col: 0.2s;
+  --dur-layout-mode: 0.14s;
   --dur-side-drag-release: 0.18s;
   --dur-stream-prose: 0.16s;
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);

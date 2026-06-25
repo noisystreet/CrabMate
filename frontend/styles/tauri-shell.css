@@ -60,6 +60,15 @@ html[data-tauri-shell]:not([data-ide-layout]) .tauri-chat-titlebar .tauri-window
 }
 
 /* 会话模式：可拖拽区域（按钮区域 no-drag，不拦截点击） */
+html[data-tauri-shell][data-ide-layout] .ide-layout-left-chrome .nav-rail-brand {
+  -webkit-app-region: drag;
+}
+
+html[data-tauri-shell][data-ide-layout] .ide-layout-left-chrome .nav-rail-brand-main,
+html[data-tauri-shell][data-ide-layout] .ide-layout-left-chrome .nav-rail-mode-actions {
+  -webkit-app-region: no-drag;
+}
+
 html[data-tauri-shell]:not([data-ide-layout]) .nav-rail-brand {
   -webkit-app-region: drag;
 }

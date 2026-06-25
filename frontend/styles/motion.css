@@ -79,6 +79,11 @@
     animation: none;
   }
 
+  .main-row-chat-layer,
+  .main-row-ide-layer {
+    transition: none;
+  }
+
   .typing-dots--model span {
     animation: none;
     opacity: 0.6;

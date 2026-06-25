@@ -159,10 +159,26 @@
 }
 
 .nav-rail-mode-toolbar .nav-rail-layout-segment,
-.nav-rail-mode-toolbar .layout-mode-segment {
+.nav-rail-mode-toolbar .layout-mode-toggle-btn {
   flex: 1;
   min-width: 0;
   margin: 0;
+}
+
+/* 编辑器模式：会话侧栏由 CSS 瞬时隐藏（不改动收起偏好，避免 0.26s 宽度过渡） */
+.app-root.app-shell-ds.app-root--ide-layout .nav-rail {
+  width: 0 !important;
+  min-width: 0;
+  opacity: 0;
+  pointer-events: none;
+  border-right-color: transparent;
+  overflow: hidden;
+  transition: none !important;
+}
+
+/* 窄屏对话顶栏：编辑器模式由 IDE 左栏承担布局切换 */
+.app-root.app-shell-ds.app-root--ide-layout .shell-main-header-mobile-actions .layout-mode-toggle-btn {
+  display: none !important;
 }
 
 .btn-nav-new-chat {
@@ -176,49 +192,36 @@
   border-radius: var(--radius-btn);
 }
 
-.layout-mode-segment {
-  display: flex;
+.layout-mode-toggle-btn {
+  display: block;
+  width: 100%;
   margin: 0 10px 8px;
-  padding: 2px;
-  border-radius: var(--radius-btn);
-  background: color-mix(in srgb, var(--surface-hover) 88%, transparent);
-  border: 1px solid var(--border-subtle);
-}
-
-.layout-mode-segment-btn {
-  flex: 1;
-  min-width: 0;
   padding: 7px 10px;
   font-size: 12px;
   font-weight: 600;
-  border: none;
-  background: transparent;
-  border-radius: calc(var(--radius-btn) - 2px);
-  color: var(--muted);
+  border-radius: var(--radius-btn);
+  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-hover) 88%, transparent);
+  color: var(--text);
   cursor: pointer;
   transition:
     background 0.12s ease,
     color 0.12s ease,
-    box-shadow 0.12s ease;
+    box-shadow 0.12s ease,
+    border-color 0.12s ease;
 }
 
-.layout-mode-segment-btn:hover:not(:disabled) {
-  color: var(--text);
-}
-
-.layout-mode-segment-btn[aria-selected="true"] {
+.layout-mode-toggle-btn:hover:not(:disabled) {
   background: var(--surface);
-  color: var(--text);
+  border-color: color-mix(in srgb, var(--border-subtle) 70%, var(--text));
   box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 .mobile-layout-segment {
   margin: 0;
   flex-shrink: 0;
-}
-
-.mobile-layout-segment .layout-mode-segment-btn {
-  padding: 5px 8px;
+  width: auto;
+  padding: 5px 10px;
   font-size: 11px;
 }
 

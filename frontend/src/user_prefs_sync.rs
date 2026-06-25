@@ -31,6 +31,14 @@ fn side_panel_slug(v: SidePanelView) -> &'static str {
     }
 }
 
+/// IDE 模式下侧栏由 CSS 隐藏，勿把 `collapsed=true` 写入 prefs（旧版进入 IDE 时会误设为 true）。
+fn effective_sidebar_rail_collapsed_for_persist(app: &AppSignals) -> bool {
+    if app.shell_ui.editor_layout_mode.get_untracked() {
+        return false;
+    }
+    app.sidebar.sidebar_rail_collapsed.get_untracked()
+}
+
 pub fn build_prefs_dto(app: &AppSignals) -> UserPrefsDto {
     UserPrefsDto {
         locale: Some(
@@ -47,7 +55,7 @@ pub fn build_prefs_dto(app: &AppSignals) -> UserPrefsDto {
         side_width: Some(app.shell_ui.side_width.get_untracked()),
         editor_layout_mode: Some(app.shell_ui.editor_layout_mode.get_untracked()),
         timeline_panel_expanded: Some(app.chat_composer.timeline_panel_expanded.get_untracked()),
-        sidebar_rail_collapsed: Some(app.sidebar.sidebar_rail_collapsed.get_untracked()),
+        sidebar_rail_collapsed: Some(effective_sidebar_rail_collapsed_for_persist(app)),
         session_ui_font: Some(app.shell_ui.session_ui_font.get_untracked()),
         session_chat_font: Some(app.shell_ui.session_chat_font.get_untracked()),
         ide_editor_font: Some(app.ide_editor.font_slug.get_untracked()),
@@ -98,7 +106,10 @@ fn apply_shell_prefs_dto(app: &AppSignals, dto: &UserPrefsDto) {
         app.chat_composer.timeline_panel_expanded.set(t);
     }
     if let Some(c) = dto.sidebar_rail_collapsed {
-        app.sidebar.sidebar_rail_collapsed.set(c);
+        let in_editor = dto.editor_layout_mode.unwrap_or(false);
+        app.sidebar
+            .sidebar_rail_collapsed
+            .set(if in_editor && c { false } else { c });
     }
     if let Some(ref f) = dto.session_ui_font {
         app.shell_ui.session_ui_font.set(
