@@ -68,7 +68,7 @@ This document describes built-in tools, common function-calling JSON examples, a
   - `web_search`: **Web search** ([Brave](https://brave.com/search/api/) or [Tavily](https://tavily.com/)); set `web_search_api_key` and `web_search_provider` (`brave` / `tavily`). Without a key the tool returns an explanatory error. Prefer `search_in_files` for exact string/regex; use `codebase_semantic_search` for **hybrid FTS + vector** retrieval (default `retrieve_mode: hybrid`; needs `rebuild_index`; see below and **`docs/en/CONFIGURATION.md`**).
   - `http_fetch`: **GET** (default) or **HEAD**. GET returns status, Content-Type, **redirect chain**, body (timeouts/size caps); **HEAD** skips body. Body decoding: **`Content-Type` charset**, HTML **`<meta charset>`** / **http-equiv=Content-Type**, `<?xml encoding=…?>`, else **`chardetng`** sniffing; `application/json` prefers UTF-8; binary types (`image/*`, etc.) still use lossy UTF-8 preview. Optional **`text_format: html_text`**: turn **HTML documents** into plain text with **`scraper` (html5ever)** (skip `script`/`style`/`noscript`, prefer `main` / `article` / `[role=main]`, else `body`); non-HTML / JSON / binary responses keep the decoded source and note why in the decode line. Requests use **`User-Agent: crabmate/<version>`** (same as the LLM API client). URLs matching `http_fetch_allowed_prefixes` (**same origin + path prefix boundary**) run immediately; otherwise Web (`/chat/stream` + `approval_session_id`) or **CLI** can approve **deny / once / always** (GET/HEAD share normalized whitelist key; CLI: `tool_approval::cli_terminal`).
   - `http_request`: **POST / PUT / PATCH / DELETE** (optional `json_body`). Same prefix rules; unmatched URLs use the same approval path (**permanent key** `http_request:<METHOD>:<URL>` vs `http_fetch:`). **`workflow_execute` nodes** still require whitelist match (no approval on sync path). Returns status, Content-Type, redirects, body (same decoding and optional **`text_format: html_text`** as `http_fetch`; dry-run first; never put real secrets in bodies).
-  - **GitHub CLI wrappers** (local **`gh`**, **`allowed_commands` must include `gh`**): `gh_pr_*` (incl. **`gh_pr_diff`**, **`gh_pr_checks`** for CI status, **`gh_pr_create`** to open a PR—**writes to GitHub**; body passed via workspace temp **`--body-file`**), `gh_issue_*`, `gh_run_*` (incl. **`gh_run_view`** with optional **`log`/`job`**, logs are truncated by output limits), **`gh_release_list` / `gh_release_view`**, **`gh_search`** (**`scope` ∈ {issues, prs, repos}**; **`query`** size/charset limited; no **`repo`** when `scope=repos`), **`gh_api`**. On **exit code 0**, if **stdout is a single JSON value**, output appends **pretty JSON** (not tied to passing `fields`). **`gh_api`** mutating methods and **`gh_pr_create`** are non-read-only. Raw `run_command` remains for other `gh` subcommands.
+  - **GitHub CLI wrappers** (local **`gh`**, **`allowed_commands` must include `gh`**): **PR** — `gh_pr_list` / `gh_pr_view` / **`gh_pr_checks`** (optional **`structured: true`** failure summary) / **`gh_pr_create`** (**writes**; default **`auto_body`** from template + git log when `body` omitted) / **`gh_pr_merge`** / **`gh_pr_review`** / **`gh_pr_comment`** / **`gh_pr_body_draft`** (read-only) / **`gh_pr_diff`**; **Issue** — `gh_issue_list` / `gh_issue_view` / **`gh_issue_create`**; **Actions** — `gh_run_list` / **`gh_run_view`** (full logs truncate) / **`gh_run_failure_summary`** (failed jobs + log tails) / **`gh_run_rerun`**; **Release** — `gh_release_list` / `gh_release_view` / **`gh_release_create`** (optional **`auto_notes`**); **`gh_search`**, **`gh_api`**. Pretty JSON appended on exit 0 when stdout is JSON. Remote writes (incl. mutating **`gh_api`**) are non-read-only. Raw `run_command` for other `gh` subcommands.
   - `run_command`: **Compound shell** (`&&`, `||`, `|`, `;`, …): use **`command` `bash` or `sh`** with **`args` `["-c","whole script"]`** (defaults allow both); **do not** put operators into **`args`** as if they were ordinary arguments. Whitelisted read/query Linux commands (`ls`, `pwd`, `whoami`, `date`, `cat`, `file`, `head`, `tail`, `wc`, `cmake`, `ctest`, `mkdir`, `ninja`, `gcc`, `g++`, `clang`, `clang++`, `c++filt`, `autoreconf`, `autoconf`, `automake`, `aclocal`, `make`, GNU Binutils read-only tools `objdump`, `nm`, `readelf`, `strings`, `size`, default also `ar`, …) with timeout and output truncation. **GitHub CLI**: allowlist includes **`gh`** (install locally and authenticate, e.g. `gh auth login`); same arg rules as `git`—no `..` and no `/`-prefixed args—use `owner/repo` or relative paths, not absolute filesystem paths in arguments. Missing CLI → **`dep_gh`** degraded on **`GET /health`**; **`crabmate doctor`** reports `gh` availability in the toolchain section. **CMake/ctest** are allowlisted; args must not contain `..` or start with `/`; prefer relative build dirs (avoid absolute `-D`). Missing tools may show `dep_cmake` / `dep_ctest` degraded on `/health`. **mkdir**: creates dirs (complements **`create_dir`**). **c++filt**: demangle C++ symbols. **Binutils**: missing → corresponding `dep_*` degraded. **Autotools**: trusted workspaces only. **Test output cache** (`test_result_cache_enabled`): when **`command` is `cargo` and `args` start with `test`** and **omit** `--nocapture` / `--test-threads`, shares in-process LRU with `cargo_test`; hits prefix output with **`[CrabMate test output cache hit]`**.
   - `terminal_session`: **Linux PTY only** (`forkpty` in the workspace). First **`action":"exec"`** without **`session_id`** requires **`command`** (optional **`args`**), same allowlist/approval rules as **`run_command`**; for compound commands prefer **`bash`/`sh` + `-c`** on that **`exec`** (do not split `&&` across **`args`**); if an interactive shell is already up, **`input`** can carry a full line. Streaming output via SSE **`tool_output_chunk`**, finalized in **`tool_result`**. **`list` / `close` / `resize` / `send_signal`**. Unavailable when **`sync_default_tool_sandbox_mode = docker`**; up to **8** concurrent sessions; timeouts/output caps follow **`command_exec`**.
   - `run_executable`: Run a **relative-path** executable under the workspace (e.g. `./main`, build artifacts). Use this for workspace binaries—not `run_command`.
@@ -126,21 +126,39 @@ This document describes built-in tools, common function-calling JSON examples, a
   ```json
   {"repo":"octocat/Hello-World","number":1,"fields":["title","body","state","author","commits"]}
   ```
-- `gh_pr_checks` (CI status for the PR linked to the current branch, or a given number):
+- `gh_pr_checks` (CI status; **`structured: true`** adds JSON + failure/pending summary):
   ```json
-  {}
+  {"structured":true}
   ```
   ```json
-  {"repo":"octocat/Hello-World","number":42}
+  {"repo":"octocat/Hello-World","number":42,"structured":true}
   ```
-- `gh_pr_create` (**opens a PR on GitHub**; branch must be pushed; body via workspace temp `--body-file`):
+- `gh_pr_body_draft` (read-only PR body from template + commits since `base`):
   ```json
-  {"title":"fix: handle null / fix null deref","body":"## Summary\n- …\n\n## Test plan\n`cargo test`"}
+  {"base":"main","max_commits":20}
+  ```
+- `gh_pr_create` (**opens a PR**; omit `body` for default **`auto_body`**):
+  ```json
+  {"title":"fix: handle null / fix null deref"}
   ```
   ```json
-  {"repo":"octocat/Hello-World","title":"feat: API","body":"See commits","base":"main","head":"my-feature","draft":true}
+  {"repo":"octocat/Hello-World","title":"feat: API","body":"## Summary\n- …","base":"main","head":"my-feature","draft":true}
+  ```
+- `gh_pr_merge` / `gh_pr_review` / `gh_pr_comment` (**write to GitHub**):
+  ```json
+  {"number":42,"merge_method":"squash","delete_branch":true}
+  ```
+  ```json
+  {"number":42,"event":"approve"}
+  ```
+  ```json
+  {"number":42,"body":"LGTM."}
   ```
 - `gh_issue_list` / `gh_issue_view`: same shape as above (`state` is `open` / `closed` / `all`).
+- `gh_issue_create` (**writes**):
+  ```json
+  {"title":"bug: login fails","body":"Steps…","labels":["bug"]}
+  ```
 - `gh_run_list`:
   ```json
   {"repo":"octocat/Hello-World","limit":5,"fields":["databaseId","status","conclusion","headBranch"]}
@@ -149,12 +167,20 @@ This document describes built-in tools, common function-calling JSON examples, a
   ```json
   {"repo":"octocat/Hello-World","number":1}
   ```
-- `gh_run_view` (JSON summary vs logs):
+- `gh_run_view` (JSON summary vs logs; prefer **`gh_run_failure_summary`** for failures):
   ```json
   {"repo":"octocat/Hello-World","run_id":"12345678901","fields":["status","conclusion"]}
   ```
   ```json
   {"repo":"octocat/Hello-World","run_id":"12345678901","log":true,"job":"build"}
+  ```
+- `gh_run_failure_summary` (read-only; failed jobs + log tails):
+  ```json
+  {"run_id":"12345678901","tail_lines":80,"max_failed_jobs":3}
+  ```
+- `gh_run_rerun` (**writes**; `failed: true` reruns failed jobs only):
+  ```json
+  {"run_id":"12345678901","failed":true}
   ```
 - `gh_release_list` / `gh_release_view`:
   ```json
@@ -162,6 +188,10 @@ This document describes built-in tools, common function-calling JSON examples, a
   ```
   ```json
   {"repo":"octocat/Hello-World","tag":"v1.0.0","fields":["body"]}
+  ```
+- `gh_release_create` (**writes**; **`auto_notes: true`** drafts notes since last tag):
+  ```json
+  {"tag":"v1.2.0","title":"v1.2.0","auto_notes":true}
   ```
 - `gh_search`:
   ```json

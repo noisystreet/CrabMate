@@ -236,7 +236,9 @@ pub fn tool_context_for_with_read_cache_and_memory<'a>(
 }
 
 mod runners;
+mod runners_gh;
 pub(crate) use runners::*;
+pub(crate) use runners_gh::*;
 
 fn tool_specs() -> &'static [ToolSpec] {
     tool_specs_registry::tool_specs()

@@ -115,6 +115,12 @@ fn builtin_write_effect_tools() -> &'static HashSet<String> {
             "http_request",
             "gh_api",
             "gh_pr_create",
+            "gh_pr_merge",
+            "gh_pr_review",
+            "gh_pr_comment",
+            "gh_issue_create",
+            "gh_run_rerun",
+            "gh_release_create",
         ]
         .into_iter()
         .map(|s| s.to_string())
