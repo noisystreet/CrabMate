@@ -29,7 +29,7 @@
 //!
 //! - **`transforms`**：条数/字符裁剪、tool 压缩、孤立 tool 剔除等逐步变换。
 //! - **`sync_pipeline`**：阶段枚举、报告与 `apply_session_sync_pipeline*` 编排。
-//! - **`vendor`**：`conversation_messages_to_vendor_body` 等出站路径。
+//! - **`vendor`**（再导出）：[`conversation_messages_to_vendor_body`] 等出站路径（实现于 **`crabmate_llm::vendor_messages`**）。
 
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -38,11 +38,13 @@ use crate::config::AgentConfig;
 
 mod sync_pipeline;
 mod transforms;
-mod vendor;
 
 #[cfg(test)]
 mod tests;
 
+pub use crabmate_llm::vendor_messages::{
+    conversation_messages_to_vendor_body, normalize_stripped_messages_for_vendor_body,
+};
 pub use sync_pipeline::{
     MessagePipelineReport, MessagePipelineStage, PipelineStepSnapshot, apply_session_sync_pipeline,
     apply_session_sync_pipeline_with_config,
@@ -50,9 +52,6 @@ pub use sync_pipeline::{
 pub use transforms::{
     compress_tool_message_contents, drop_orphan_tool_messages, estimate_message_chars,
     estimate_non_system_chars, trim_messages_by_char_budget, trim_messages_by_count,
-};
-pub use vendor::{
-    conversation_messages_to_vendor_body, normalize_stripped_messages_for_vendor_body,
 };
 
 /// 进程内累计：每次 `prepare_messages_for_model` 内同步管道实际发生裁剪/剔除时递增（供 `GET /status` 排障）。
