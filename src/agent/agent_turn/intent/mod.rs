@@ -4,14 +4,12 @@
 //! `intent_user` / `intent_at_turn_start` 名称 re-export，避免大范围改动调用方。
 
 pub(crate) mod at_turn_start;
-pub(crate) mod context;
+pub(crate) mod l2_classifier_host;
 pub(crate) mod staged_planning_gate;
 pub(crate) mod user;
 
 pub(crate) use at_turn_start as intent_at_turn_start;
-pub(crate) use context::build_intent_routing_context;
+pub(crate) use crabmate_agent::agent_turn::StagedPlanningGateOutcome;
 pub(crate) use crabmate_agent::agent_turn::intent::{advisory_bypass, readonly_overview_bypass};
-pub(crate) use staged_planning_gate::{
-    StagedPlanningGateOutcome, assess_staged_planning_gate_full_pipeline,
-};
+pub(crate) use staged_planning_gate::assess_staged_planning_gate_full_pipeline;
 pub(crate) use user as intent_user;

@@ -2,19 +2,19 @@
 //! L0 + L1 + 可选 L2；非「直接执行」时写入助手终答并结束本回合。
 //! `meta.greeting`、`qa.meta*`、`qa.explain`、`qa.readonly*`（只读 + hint）、`ClarifyThenExecute`、`ConfirmThenExecute` 等改入**主模型**；占位 canned 不终答（可配合 `intent_turn_gate_hint` 与 `system_intent_gate_hint`）。
 
-use crate::agent::intent_l2_classifier::classify_intent_l2_with_llm;
-use crate::agent::intent_pipeline::{
-    IntentAction, assess_and_route_with_l2, prepare_intent_routing,
-};
+use crate::agent::intent_pipeline::IntentAction;
 use crate::agent::intent_router::{
     ExecuteIntentThresholds, intent_reply_delegates_to_main_model, qa_readonly_style_primary,
 };
 use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crate::sse;
+use crabmate_agent::agent_turn::{
+    IntentRoutingPipelineParams, assess_intent_routing_full_pipeline,
+};
 
 use super::super::params::RunLoopParams;
-use super::build_intent_routing_context;
 use super::intent_user;
+use super::l2_classifier_host::CrabmateIntentL2ClassifierHost;
 
 /// 只读门控：主模型作答 + 工具已收窄为只读。
 const GATE_HINT_READONLY_ZH: &str = "【意图门控】当前回合应只读理解仓库（可列出/读取文件），不要改文件、不要跑测试或长耗时构建，除非用户明确要求。勿将用户宽泛诉求静默收窄为单点深层修复；若拟切换任务粒度须先征得用户同意。";
@@ -98,7 +98,6 @@ pub(crate) async fn run_intent_for_hierarchical(
 }
 
 fn format_intent_title(assessment: &crate::agent::intent_pipeline::IntentDecision) -> String {
-    use crate::agent::intent_pipeline::IntentAction;
     let kind = match assessment.kind {
         crate::agent::intent_router::IntentKind::Greeting => "问候类",
         crate::agent::intent_router::IntentKind::Execute => "执行类",
@@ -220,46 +219,28 @@ async fn run_intent_l0_l1_l2_gate(
     thresholds: ExecuteIntentThresholds,
     sse_log_tag: &'static str,
 ) -> Result<IntentGateResult, super::super::errors::RunAgentTurnError> {
-    let intent_ctx = build_intent_routing_context(
-        p.turn.messages(),
-        p.ctx.core.cfg.as_ref(),
-        in_clarification_flow,
-        thresholds,
-    );
-    let (routing_for_l1, _, _) = prepare_intent_routing(task, &intent_ctx);
-    let l2_candidate = if p.ctx.core.cfg.intent_routing.intent_l2_enabled {
-        classify_intent_l2_with_llm(
-            &routing_for_l1,
-            task,
-            p.ctx.core.cfg.as_ref(),
-            p.ctx.core.llm_backend,
-            p.ctx.core.client,
-            p.ctx.core.api_key,
-        )
-        .await
-    } else {
-        None
+    let host = CrabmateIntentL2ClassifierHost {
+        cfg: p.ctx.core.cfg.as_ref(),
+        llm_backend: p.ctx.core.llm_backend,
+        client: p.ctx.core.client,
+        api_key: p.ctx.core.api_key,
     };
-    let (assessment, merge_meta) = assess_and_route_with_l2(task, &intent_ctx, l2_candidate);
-    log::info!(
-        target: "crabmate",
-        "[INTENT_PIPELINE] {} l1_kind={:?} l1_confidence={:.2} l2_present={} l2_applied={} l2_confidence={:?} override={:?} final_kind={:?} primary={} conf={:.2} abstain={} need_clarif={} action={:?} merged_continuation={}",
-        sse_log_tag,
-        merge_meta.l1_kind,
-        merge_meta.l1_confidence,
-        merge_meta.l2_present,
-        merge_meta.l2_applied,
-        merge_meta.l2_confidence,
-        merge_meta.override_reason,
-        assessment.kind,
-        assessment.primary_intent,
-        assessment.confidence,
-        assessment.abstain,
-        assessment.need_clarification,
-        &assessment.action,
-        merge_meta.used_merged_continuation,
-    );
-    emit_intent_timeline_gate_only(p.ctx.io.out, sse_log_tag, &assessment, &merge_meta).await;
+    let outcome = assess_intent_routing_full_pipeline(
+        &host,
+        &IntentRoutingPipelineParams {
+            task,
+            messages: p.turn.messages(),
+            cfg: p.ctx.core.cfg.as_ref(),
+            in_clarification_flow,
+            thresholds,
+            l2_enabled: p.ctx.core.cfg.intent_routing.intent_l2_enabled,
+            sse_log_tag,
+        },
+    )
+    .await;
+    let assessment = outcome.decision;
+    emit_intent_timeline_gate_only(p.ctx.io.out, sse_log_tag, &assessment, &outcome.merge_meta)
+        .await;
 
     if matches!(assessment.action, IntentAction::Execute) {
         return Ok(IntentGateResult::ProceedExecute { assessment });

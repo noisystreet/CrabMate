@@ -10,6 +10,7 @@ crabmate-config = { path = "../crabmate-config" }
 crabmate-internal = { path = "../crabmate-internal" }
 crabmate-llm = { path = "../crabmate-llm" }
 crabmate-types = { path = "../crabmate-types" }
+async-trait = "0.1"
 log = "0.4"
 regex = "1"
 serde = { version = "1", features = ["derive"] }
