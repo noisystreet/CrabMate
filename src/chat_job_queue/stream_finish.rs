@@ -88,9 +88,7 @@ pub(crate) async fn emit_stream_ended_once(
     reason: StreamEndReason,
     stream_ended_sent: &mut bool,
     log_context: &'static str,
-    tiktoken_prompt_tokens: Option<
-        crate::agent::tiktoken_prompt_tokens::TiktokenPromptTokensSnapshot,
-    >,
+    tiktoken_prompt_tokens: Option<crate::types::TiktokenPromptTokensSnapshot>,
 ) {
     if *stream_ended_sent {
         return;

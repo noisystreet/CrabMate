@@ -1,6 +1,7 @@
 //! 与大模型（OpenAI 兼容 **`/chat/completions`**）交互的核心封装（厂商适配、HTTP 客户端、错误类型、可插拔后端 trait）。
 //!
-//! 带重试的 [`complete_chat_retrying`]、单次 HTTP [`stream_chat`] 仍由根包 **`crabmate::llm`** 再导出（依赖 SSE 控制面、DSML 与 turn replay）。
+//! 带重试的 [`complete_chat_retrying`] 经 [`LlmRetryHooks`] 注入 turn replay / DSML 等宿主侧效应；
+//! 单次 HTTP [`stream_chat`] 仍由根包 **`crabmate::llm::api`** 再导出（依赖 SSE 控制面与终端渲染）。
 
 pub mod backend;
 pub mod call_error;
@@ -9,6 +10,8 @@ mod complete_error;
 pub mod http_client;
 mod openai_models;
 pub mod requests;
+mod retry;
+pub mod retry_hooks;
 pub mod stream_scratch;
 pub mod vendor;
 pub mod vendor_messages;
@@ -27,6 +30,8 @@ pub use requests::{
     no_tools_chat_request_from_messages, tool_chat_request, vendor_temperature_for_config,
     vendor_temperature_for_model,
 };
+pub use retry::{CompleteChatRetryingParams, complete_chat_retrying};
+pub use retry_hooks::LlmRetryHooks;
 pub use stream_scratch::{TuiLlmStreamScratch, TuiLlmStreamScratchArc};
 pub use vendor::{
     LlmVendorAdapter, fold_system_into_user_for_config, llm_vendor_adapter,

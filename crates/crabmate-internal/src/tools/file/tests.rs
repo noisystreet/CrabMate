@@ -1,0 +1,710 @@
+use super::*;
+
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static TEST_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+fn make_test_dir() -> PathBuf {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let seq = TEST_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!(
+        "crabmate_file_tool_test_{}_{}_{}",
+        std::process::id(),
+        ts,
+        seq
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+#[test]
+fn test_read_file_with_line_range() {
+    let dir = make_test_dir();
+    let file = dir.join("a.txt");
+    std::fs::write(&file, "a\nb\nc\nd\n").unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = read_file(
+        r#"{"path":"a.txt","start_line":2,"end_line":3}"#,
+        &dir,
+        &ctx,
+    );
+    let out = strip_read_file_output_header_for_tests(&out);
+    assert!(out.contains("2|b"), "应包含第 2 行: {}", out);
+    assert!(out.contains("3|c"), "应包含第 3 行: {}", out);
+    assert!(!out.contains("1|a"), "不应包含第 1 行: {}", out);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_read_file_rejects_directory_with_directory_hint() {
+    let dir = make_test_dir();
+    std::fs::create_dir_all(dir.join("subdir")).unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let err = read_file_try(r#"{"path":"subdir"}"#, &dir, &ctx).expect_err("expected dir error");
+    assert_eq!(err.code, "read_file_not_file");
+    assert!(
+        err.message.contains("目录") && err.message.contains("read_dir"),
+        "unexpected message: {}",
+        err.message
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_read_file_missing_file_includes_layout_hint() {
+    let dir = make_test_dir();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = read_file(
+        r#"{"path":"definitely/missing/path.rs","start_line":1,"max_lines":5}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(
+        out.contains("glob_files") && out.contains("mod.rs"),
+        "expected Rust layout hint in error body: {}",
+        out
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_read_file_swaps_inverted_start_end() {
+    let dir = make_test_dir();
+    let file = dir.join("big.txt");
+    let mut content = String::new();
+    for i in 1..=500 {
+        content.push_str(&format!("L{i}\n"));
+    }
+    std::fs::write(&file, &content).unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = read_file(
+        r#"{"path":"big.txt","start_line":419,"end_line":150}"#,
+        &dir,
+        &ctx,
+    );
+    let out = strip_read_file_output_header_for_tests(&out);
+    assert!(
+        !out.contains("错误：end_line"),
+        "inverted range should swap, not error: {}",
+        out
+    );
+    assert!(
+        out.contains("150|L150"),
+        "should start at line 150: {}",
+        out
+    );
+    assert!(out.contains("419|L419"), "should include line 419: {}", out);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_read_file_respects_max_lines_without_end_line() {
+    let dir = make_test_dir();
+    let file = dir.join("big.txt");
+    let mut s = String::new();
+    for i in 1..=1200 {
+        s.push_str(&format!("line{i}\n"));
+    }
+    std::fs::write(&file, &s).unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = read_file(r#"{"path":"big.txt","max_lines":100}"#, &dir, &ctx);
+    let out = strip_read_file_output_header_for_tests(&out);
+    assert!(out.contains("仍有后续内容"), "应提示分段: {}", out);
+    assert!(out.contains("下一段可将 start_line 设为 101"), "{}", out);
+    assert!(out.contains("100|line100"), "{}", out);
+    assert!(!out.contains("101|line101"), "不应超过 max_lines: {}", out);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_read_file_anchor_line_symmetric_window() {
+    let dir = make_test_dir();
+    let file = dir.join("hit.rs");
+    let mut content = String::new();
+    for i in 1..=400 {
+        content.push_str(&format!("LINE{i}\n"));
+    }
+    std::fs::write(&file, &content).unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = read_file(
+        r#"{"path":"hit.rs","anchor_line":200,"context_lines":10,"max_lines":500}"#,
+        &dir,
+        &ctx,
+    );
+    let out = strip_read_file_output_header_for_tests(&out);
+    assert!(out.contains("190|LINE190"), "应包含锚点上文: {}", out);
+    assert!(out.contains("200|LINE200"), "应包含锚点行: {}", out);
+    assert!(out.contains("210|LINE210"), "应包含锚点下文: {}", out);
+    assert!(
+        !out.contains("189|LINE189"),
+        "对称窗口不应包含过远上文: {}",
+        out
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_read_file_anchor_line_rejects_start_line_combo() {
+    let dir = make_test_dir();
+    std::fs::write(dir.join("x.txt"), "a\n").unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let err = read_file_try(
+        r#"{"path":"x.txt","anchor_line":1,"start_line":1}"#,
+        &dir,
+        &ctx,
+    )
+    .expect_err("expected conflict");
+    assert_eq!(err.code, "invalid_args");
+    assert!(
+        err.message.contains("anchor_line") && err.message.contains("start_line"),
+        "{}",
+        err.message
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_read_binary_meta_prefix_hash() {
+    let dir = make_test_dir();
+    let file = dir.join("bin.dat");
+    std::fs::write(&file, [1u8, 2, 3, 4, 5]).unwrap();
+    let out = read_binary_meta(r#"{"path":"bin.dat","prefix_hash_bytes":64}"#, &dir);
+    assert!(out.contains("size_bytes: 5"), "{}", out);
+    assert!(out.contains("sha256_prefix:"), "{}", out);
+    assert!(out.contains("sha256_prefix_bytes: 5"), "{}", out);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_read_binary_meta_skip_hash() {
+    let dir = make_test_dir();
+    let file = dir.join("x.bin");
+    std::fs::write(&file, b"x").unwrap();
+    let out = read_binary_meta(r#"{"path":"x.bin","prefix_hash_bytes":0}"#, &dir);
+    assert!(out.contains("size_bytes: 1"), "{}", out);
+    assert!(out.contains("已跳过"), "{}", out);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_hash_file_sha256_empty() {
+    let dir = make_test_dir();
+    let file = dir.join("empty.dat");
+    std::fs::write(&file, []).unwrap();
+    let out = hash_file(r#"{"path":"empty.dat","algorithm":"sha256"}"#, &dir);
+    assert!(out.contains("digest_hex:"), "{}", out);
+    assert!(out.contains("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_hash_file_blake3_prefix() {
+    let dir = make_test_dir();
+    let file = dir.join("p.bin");
+    std::fs::write(&file, b"hello world").unwrap();
+    let full = hash_file(r#"{"path":"p.bin","algorithm":"blake3"}"#, &dir);
+    let prefix = hash_file(
+        r#"{"path":"p.bin","algorithm":"blake3","max_bytes":5}"#,
+        &dir,
+    );
+    assert!(full.contains("digest_hex:"), "{}", full);
+    assert!(prefix.contains("hashed_bytes: 5"), "{}", prefix);
+    assert_ne!(
+        line_digest(&full),
+        line_digest(&prefix),
+        "整文件与前缀哈希应不同"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+fn line_digest(out: &str) -> String {
+    out.lines()
+        .find(|l| l.starts_with("digest_hex:"))
+        .unwrap_or("")
+        .to_string()
+}
+
+#[test]
+fn test_modify_file_replace_lines() {
+    let dir = make_test_dir();
+    let file = dir.join("m.txt");
+    std::fs::write(&file, "L1\nL2\nL3\nL4\n").unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = modify_file(
+        r#"{"path":"m.txt","mode":"replace_lines","start_line":2,"end_line":3,"content":"X"}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("已按行替换"), "{}", out);
+    let body = std::fs::read_to_string(&file).unwrap();
+    assert_eq!(body, "L1\nX\nL4\n");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_modify_file_full_emits_shrink_warning() {
+    let dir = make_test_dir();
+    let file = dir.join("big.txt");
+    let old = "a".repeat(500);
+    std::fs::write(&file, &old).unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = modify_file(
+        r#"{"path":"big.txt","mode":"full","content":"xx","confirm_full_overwrite":true}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("已整文件覆盖"), "{}", out);
+    assert!(
+        out.contains("警告"),
+        "expected shrink warning in output: {}",
+        out
+    );
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "xx");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_modify_file_full_no_shrink_warning_when_size_similar() {
+    let dir = make_test_dir();
+    let file = dir.join("mid.txt");
+    let old = "a".repeat(500);
+    std::fs::write(&file, &old).unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let new_body = "b".repeat(200);
+    let args = serde_json::json!({
+        "path": "mid.txt",
+        "mode": "full",
+        "content": new_body
+    });
+    let out = modify_file(&args.to_string(), &dir, &ctx);
+    assert!(out.contains("已整文件覆盖"), "{}", out);
+    assert!(!out.contains("警告"), "unexpected shrink warning: {}", out);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_modify_file_full_shrink_rejected_without_confirm() {
+    let dir = make_test_dir();
+    let file = dir.join("big.txt");
+    let old = "a".repeat(500);
+    std::fs::write(&file, &old).unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = modify_file(
+        r#"{"path":"big.txt","mode":"full","content":"xx"}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("未写盘"), "{}", out);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), old);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_modify_file_overwrite_mode_writes_like_full() {
+    let dir = make_test_dir();
+    let file = dir.join("x.txt");
+    std::fs::write(&file, "old").unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = modify_file(
+        r#"{"path":"x.txt","mode":"overwrite","content":"new"}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("已整文件覆盖"), "{}", out);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "new");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_modify_file_full_dry_run_leaves_disk_unchanged() {
+    let dir = make_test_dir();
+    let file = dir.join("d.txt");
+    std::fs::write(&file, "keep").unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = modify_file(
+        r#"{"path":"d.txt","mode":"full","content":"gone","dry_run":true}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("dry_run"), "{}", out);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "keep");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_modify_file_replace_lines_dry_run_unchanged() {
+    let dir = make_test_dir();
+    let file = dir.join("m.txt");
+    std::fs::write(&file, "L1\nL2\nL3\n").unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = modify_file(
+        r#"{"path":"m.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"Z","dry_run":true}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("dry_run"), "{}", out);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "L1\nL2\nL3\n");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_modify_file_full_clear_nonempty_requires_confirm() {
+    let dir = make_test_dir();
+    let file = dir.join("e.txt");
+    std::fs::write(&file, "x").unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let blocked = modify_file(r#"{"path":"e.txt","mode":"full","content":""}"#, &dir, &ctx);
+    assert!(blocked.contains("未写盘"), "{}", blocked);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "x");
+    let ok = modify_file(
+        r#"{"path":"e.txt","mode":"full","content":"","confirm_full_overwrite":true}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(ok.contains("已整文件覆盖"), "{}", ok);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_read_file_reject_invalid_range() {
+    let dir = make_test_dir();
+    let file = dir.join("a.txt");
+    std::fs::write(&file, "x\n").unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = read_file(r#"{"path":"a.txt","start_line":3}"#, &dir, &ctx);
+    let out = strip_read_file_output_header_for_tests(&out);
+    assert!(out.contains("超出文件行数"), "应报越界错误: {}", out);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_extract_rust_fn_block() {
+    let dir = make_test_dir();
+    let file = dir.join("a.rs");
+    let content = r##"
+pub fn foo(x: i32) -> i32 {
+// braces in line comment: { }
+let s1 = "{";
+let s2 = "}";
+let s3 = r#"{"a":1}"#; // braces inside raw string
+let s4 = r#"}"#;        // raw string with '}' earlier than function end
+/* block comment with { and } should be ignored: { } */
+let c = '}';
+
+let _ = some_macro!({
+    // comment with { } inside macro invocation should not break extraction
+    println!("macro {{ }} {}", x);
+    if x > 0 { x + 1 } else { x - 1 }
+});
+
+// The real return is still from the outer if/else, so braces above must not affect boundaries.
+if x > 0 {
+    x + 1 // { in comment { }
+} else {
+    x - 1
+}
+}
+
+pub fn bar() { println!("hi"); }
+"##;
+    std::fs::write(&file, content).unwrap();
+
+    let out = extract_in_file(
+        r#"{"path":"a.rs","pattern":"pub\\s+fn\\s+foo","mode":"rust_fn_block","max_matches":1,"max_block_lines":200,"max_block_chars":2000}"#,
+        &dir,
+    );
+    assert!(out.contains("pub fn foo"));
+    assert!(out.contains("else"));
+    assert!(out.contains("x - 1"));
+    assert!(out.contains("let s4 = r#\"}\"#;"));
+    assert!(out.trim_end().ends_with('}'));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_read_file_gb18030_and_utf8_strict_error() {
+    use encoding_rs::GB18030;
+
+    let dir = make_test_dir();
+    let file = dir.join("gb.txt");
+    let (cow, _, err) = GB18030.encode("第一行\n第二行\n");
+    assert!(!err, "encode");
+    std::fs::write(&file, cow.as_ref()).unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = read_file(
+        r#"{"path":"gb.txt","encoding":"gb18030","start_line":1,"end_line":2}"#,
+        &dir,
+        &ctx,
+    );
+    let out = strip_read_file_output_header_for_tests(&out);
+    assert!(out.contains("第一行"), "应解码中文: {}", out);
+    assert!(out.contains("文本编码:"), "应标注编码: {}", out);
+    let bad = read_file(
+        r#"{"path":"gb.txt","start_line":1,"max_lines":5}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(
+        bad.contains("UTF-8") || bad.contains("非法") || bad.contains("解码"),
+        "默认 utf-8 应拒绝非法序列: {}",
+        bad
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_read_file_reject_outside_workspace() {
+    let dir = make_test_dir();
+    let outside_name = format!("crabmate_outside_read_{}.txt", std::process::id());
+    let outside = std::env::temp_dir().join(&outside_name);
+    std::fs::write(&outside, "outside\n").unwrap();
+    let arg = serde_json::json!({ "path": format!("../{}", outside_name) }).to_string();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = read_file(&arg, &dir, &ctx);
+    assert!(
+        out.contains("路径不能超出工作目录"),
+        "应拒绝越界读取: {}",
+        out
+    );
+    let _ = std::fs::remove_file(&outside);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(unix)]
+#[test]
+fn test_create_file_reject_symlink_escape() {
+    use std::os::unix::fs::symlink;
+
+    let dir = make_test_dir();
+    let outside = std::env::temp_dir().join(format!(
+        "crabmate_outside_symlink_{}_{}",
+        std::process::id(),
+        TEST_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(&outside).unwrap();
+    let link = dir.join("link_out");
+    symlink(&outside, &link).unwrap();
+
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = create_file(r#"{"path":"link_out/pwned.txt","content":"x"}"#, &dir, &ctx);
+    assert!(
+        out.contains("路径不能超出工作目录"),
+        "应拒绝 symlink 绕过写入: {}",
+        out
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&outside);
+}
+
+#[test]
+fn test_glob_files_recursive_rs() {
+    let dir = make_test_dir();
+    std::fs::create_dir_all(dir.join("src/nested")).unwrap();
+    std::fs::write(dir.join("src/a.rs"), "").unwrap();
+    std::fs::write(dir.join("src/nested/b.rs"), "").unwrap();
+    std::fs::write(dir.join("readme.txt"), "").unwrap();
+    let out = glob_files(r#"{"pattern":"**/*.rs"}"#, &dir);
+    assert!(out.contains("src/a.rs"), "{}", out);
+    assert!(out.contains("src/nested/b.rs"), "{}", out);
+    assert!(!out.contains("readme.txt"), "{}", out);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_read_dir_output_starts_with_header() {
+    let dir = make_test_dir();
+    std::fs::write(dir.join("f.txt"), "x").unwrap();
+    let out = read_dir(r#"{"path":".","max_entries":10}"#, &dir);
+    let first = out.lines().next().expect("header line");
+    let v: serde_json::Value = serde_json::from_str(first).expect("json");
+    assert_eq!(v["kind"], "crabmate_tool_output");
+    assert_eq!(v["tool"], "read_dir");
+    assert!(out.contains("file: f.txt"), "{}", out);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_list_tree_respects_max_depth() {
+    let dir = make_test_dir();
+    std::fs::create_dir_all(dir.join("a/b")).unwrap();
+    std::fs::write(dir.join("a/x.txt"), "").unwrap();
+    std::fs::write(dir.join("a/b/y.txt"), "").unwrap();
+    let out = list_tree(r#"{"max_depth":1}"#, &dir);
+    let first = out.lines().next().expect("header");
+    let v: serde_json::Value = serde_json::from_str(first).expect("json");
+    assert_eq!(v["kind"], "crabmate_tool_output");
+    assert_eq!(v["tool"], "list_tree");
+    assert!(out.contains("a/") && out.contains("dir:"), "{}", out);
+    assert!(out.contains("a/x.txt"), "{}", out);
+    assert!(!out.contains("y.txt"), "不应列出 a/b 内文件: {}", out);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_copy_file_basic() {
+    let dir = make_test_dir();
+    std::fs::write(dir.join("a.txt"), "hello").unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = copy_file(r#"{"from":"a.txt","to":"sub/b.txt"}"#, &dir, &ctx);
+    assert!(out.contains("已复制"), "{}", out);
+    assert_eq!(
+        std::fs::read_to_string(dir.join("sub/b.txt")).unwrap(),
+        "hello"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_copy_file_reject_existing_without_overwrite() {
+    let dir = make_test_dir();
+    std::fs::write(dir.join("a.txt"), "a").unwrap();
+    std::fs::write(dir.join("b.txt"), "b").unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = copy_file(r#"{"from":"a.txt","to":"b.txt"}"#, &dir, &ctx);
+    assert!(out.contains("overwrite"), "{}", out);
+    assert_eq!(std::fs::read_to_string(dir.join("b.txt")).unwrap(), "b");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_copy_file_overwrite() {
+    let dir = make_test_dir();
+    std::fs::write(dir.join("a.txt"), "new").unwrap();
+    std::fs::write(dir.join("b.txt"), "old").unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = copy_file(
+        r#"{"from":"a.txt","to":"b.txt","overwrite":true}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("已复制"), "{}", out);
+    assert_eq!(std::fs::read_to_string(dir.join("b.txt")).unwrap(), "new");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_move_file_basic() {
+    let dir = make_test_dir();
+    std::fs::write(dir.join("a.txt"), "mv").unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = move_file(r#"{"from":"a.txt","to":"c.txt"}"#, &dir, &ctx);
+    assert!(out.contains("已移动"), "{}", out);
+    assert!(!dir.join("a.txt").exists());
+    assert_eq!(std::fs::read_to_string(dir.join("c.txt")).unwrap(), "mv");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_move_file_reject_existing_without_overwrite() {
+    let dir = make_test_dir();
+    std::fs::write(dir.join("a.txt"), "a").unwrap();
+    std::fs::write(dir.join("b.txt"), "b").unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = move_file(r#"{"from":"a.txt","to":"b.txt"}"#, &dir, &ctx);
+    assert!(out.contains("overwrite"), "{}", out);
+    assert!(dir.join("a.txt").exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn normalize_absolute_path_in_workspace() {
+    use super::path::{normalize_subpath_for_workspace, resolve_for_read, resolve_for_write};
+
+    let dir = make_test_dir();
+    let f = dir.join("a").join("b.txt");
+    std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+    std::fs::write(&f, "x").unwrap();
+    let abs = f.to_str().unwrap();
+    assert_eq!(
+        normalize_subpath_for_workspace(&dir, abs).unwrap(),
+        "a/b.txt"
+    );
+    resolve_for_read(&dir, abs).expect("resolve read with abs under workspace");
+    // 目标尚不存在，但父目录存在
+    let newf = dir.join("c").join("d.txt");
+    std::fs::create_dir_all(newf.parent().unwrap()).unwrap();
+    let abs_new = newf.to_str().unwrap();
+    assert_eq!(
+        normalize_subpath_for_workspace(&dir, abs_new).unwrap(),
+        "c/d.txt"
+    );
+    let w = resolve_for_write(&dir, abs_new).expect("resolve write with abs under workspace");
+    assert_eq!(w, newf);
+    // 已存在路径若落在工作区外，应拒
+    let err = normalize_subpath_for_workspace(&dir, "/usr/bin/env");
+    assert!(err.is_err());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn create_file_accepts_abs_path_string_under_workspace() {
+    let dir = make_test_dir();
+    let target = dir.join("abs").join("f.txt");
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let path_arg = serde_json::to_string(target.to_str().unwrap()).unwrap();
+    let out = create_file(
+        &format!(r#"{{"path":{},"content":"z"}}"#, path_arg),
+        &dir,
+        &ctx,
+    );
+    assert!(!out.starts_with("错误："), "{}", out);
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "z");
+    let _ = std::fs::remove_dir_all(&dir);
+}

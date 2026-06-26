@@ -3,7 +3,7 @@
 //! **领域层**（规划产物、意图路由、墙钟预算等）见独立 crate **`crabmate-agent`**，经本模块再导出以保持 `crate::agent::` 路径稳定。
 
 /// 分阶段与分层共用的验收规则内核（规范化 spec + 证据 → 判定）。
-pub mod acceptance;
+pub use crabmate_agent::acceptance;
 pub mod agent_turn;
 pub mod context_window;
 pub mod hierarchy;
@@ -12,7 +12,7 @@ pub mod intent_pipeline;
 #[cfg(test)]
 mod intent_regression_golden;
 /// 对话 `Message` 变换管道：会话同步步骤编排与供应商出站 `messages` 构造（见模块内说明）。
-pub mod message_pipeline;
+pub use crabmate_agent::message_pipeline;
 pub mod per_coord;
 mod per_plan_semantic_check;
 mod plan_ensemble;

@@ -56,6 +56,7 @@ mod chat_api;
 mod message;
 mod message_lineage;
 pub mod server_injected_user;
+mod tiktoken_snapshot;
 
 pub use chat_api::*;
 pub use message::*;
@@ -63,6 +64,7 @@ pub use server_injected_user::{
     is_ephemeral_staged_coach_user_message, is_server_injected_user_message,
     strip_orchestration_injected_users_for_conversation_store,
 };
+pub use tiktoken_snapshot::TiktokenPromptTokensSnapshot;
 // 供宿主/调试引用 [`message_lineage`]；库内尚未全覆盖调用点，`cargo check` 下会呈现未使用。
 #[allow(unused_imports)]
 pub use message_lineage::{ContextInjectionKind, MessageLineage, message_lineage};

@@ -4,10 +4,12 @@
 //!
 //! 依赖链：`crabmate-types` → `crabmate-config` → **`crabmate-agent`** → `crabmate`（根包编排）。
 
+pub mod acceptance;
 pub mod evolution;
 pub mod intent_l0;
 pub mod intent_router;
 mod log_preview;
+pub mod message_pipeline;
 pub mod plan_artifact;
 /// 面向用户可见正文的轻量清洗（规划摘要等）。
 pub mod text_sanitize;

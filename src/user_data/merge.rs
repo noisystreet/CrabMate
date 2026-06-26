@@ -2,8 +2,10 @@
 
 use crate::web::http_types::chat::ClientLlmBody;
 
-use super::store::{load_llm_overrides, read_secret_client_llm, read_secret_executor_llm};
-use super::types::LlmOverridesFile;
+use crate::user_data::{
+    LlmEndpointOverride, LlmOverridesFile, load_llm_overrides, read_secret_client_llm,
+    read_secret_executor_llm,
+};
 
 fn fill_optional(dst: &mut Option<String>, src: Option<&String>) {
     if dst.as_ref().is_some_and(|s| !s.trim().is_empty()) {
@@ -16,7 +18,7 @@ fn fill_optional(dst: &mut Option<String>, src: Option<&String>) {
 
 fn merge_endpoint(
     body: &mut ClientLlmBody,
-    disk: &super::types::LlmEndpointOverride,
+    disk: &LlmEndpointOverride,
     secret_key: Option<String>,
 ) {
     fill_optional(&mut body.api_base, disk.api_base.as_ref());
