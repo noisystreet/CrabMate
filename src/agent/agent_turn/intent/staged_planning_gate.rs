@@ -4,72 +4,23 @@
 //! 同步 **`assess_staged_planning_gate`**（仅 L1）保留供不需要异步/`RunLoopParams` 的单测与快速探测。
 
 use crate::agent::intent_l2_classifier::classify_intent_l2_with_llm;
-use crate::agent::intent_pipeline::{
+use crate::agent::intent_router::ExecuteIntentThresholds;
+use crabmate_agent::intent_pipeline::{
     IntentAction, IntentDecision, assess_and_route_with_l2, prepare_intent_routing,
 };
-use crate::agent::intent_router::{ExecuteIntentThresholds, IntentKind};
 
-#[cfg(test)]
-use crate::agent::intent_pipeline::assess_and_route;
 #[cfg(test)]
 use crate::config::AgentConfig;
 #[cfg(test)]
 use crate::types::Message;
+#[cfg(test)]
+use crabmate_agent::intent_pipeline::assess_and_route;
 
-use super::advisory_bypass;
 use super::at_turn_start::emit_intent_timeline_gate_only;
 use super::build_intent_routing_context;
 use super::intent_user;
-use super::readonly_overview_bypass;
-
-/// 非分层路径下，是否允许进入分阶段 / 逻辑双代理编排（仅 `IntentAction::Execute` 为 true）。
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum StagedPlanningGateOutcome {
-    /// 意图管线判定为「执行任务」，可分流到 staged / logical dual。
-    Allow {
-        task_preview: String,
-        intent_kind: IntentKind,
-        primary_intent: String,
-        confidence: f32,
-        decision: IntentDecision,
-    },
-    /// 无可路由的有效 user 任务句，或管线未给出 Execute，或在开启 **`staged_plan_intent_gate_advisory_bypass`** 时命中「架构/重构咨询」启发式而跳过滚动分阶段规划。
-    Deny {
-        reason: StagedPlanningDenyReason,
-        task_preview: Option<String>,
-        intent_decision: Option<IntentDecision>,
-    },
-}
-
-/// 拒绝进入分阶段编排的原因（用于日志与单测；不含机密）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum StagedPlanningDenyReason {
-    /// `extract_effective_user_task` 为空（无 user 或全文空白）。
-    EmptyEffectiveTask,
-    /// 管线已跑通，但 `action != Execute`（直接回复 / 澄清 / 确认等）。
-    IntentPipelineNotExecute,
-    /// 管线判定为 **Execute**，且 **`staged_plan_intent_gate_advisory_bypass`** 为真时正文命中「架构/重构咨询」启发式：不进入滚动分阶段规划，改走单 Agent 外循环（避免无工具规划轮把咨询拆成大量读文件步）。
-    AdvisoryExecuteBypassStaged,
-    /// 只读概览/探查类 Execute（如 `execute.read_inspect` 或「分析当前项目」）：不进入分阶段规划，避免规划 Markdown 终答后再降级外循环重复作答。
-    ReadonlyOverviewBypassStaged,
-}
-
-impl StagedPlanningDenyReason {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::EmptyEffectiveTask => "empty_effective_task",
-            Self::IntentPipelineNotExecute => "intent_pipeline_not_execute",
-            Self::AdvisoryExecuteBypassStaged => "advisory_execute_bypass_staged",
-            Self::ReadonlyOverviewBypassStaged => "readonly_overview_bypass_staged",
-        }
-    }
-}
-
-impl StagedPlanningGateOutcome {
-    pub(crate) fn allows_staged_planning(&self) -> bool {
-        matches!(self, Self::Allow { .. })
-    }
-}
+use crabmate_agent::agent_turn::intent::{advisory_bypass, readonly_overview_bypass};
+pub(crate) use crabmate_agent::agent_turn::{StagedPlanningDenyReason, StagedPlanningGateOutcome};
 
 fn intent_action_discriminant(action: &IntentAction) -> &'static str {
     match action {

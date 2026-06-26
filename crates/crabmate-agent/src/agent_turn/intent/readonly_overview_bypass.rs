@@ -1,8 +1,8 @@
 //! 只读「项目/仓库概览」类 **Execute** 任务：绕过分阶段无工具规划轮，改走单 Agent 外循环（可调用只读工具），
 //! 避免规划轮已写出长文 Markdown 却因缺 `agent_reply_plan` JSON 再降级外循环导致重复终答。
 
-use crate::agent::intent_pipeline::{IntentAction, IntentDecision};
-use crate::agent::intent_router::{qa_explain_style_primary, qa_readonly_style_primary};
+use crate::intent_pipeline::{IntentAction, IntentDecision};
+use crate::intent_router::{qa_explain_style_primary, qa_readonly_style_primary};
 
 use super::advisory_bypass;
 
@@ -23,7 +23,7 @@ const OVERVIEW_SCOPE_MARKERS: &[&str] = &[
 
 /// `primary_intent` 为只读探查/概览类（与 L2 对齐）。
 #[inline]
-pub(crate) fn readonly_overview_style_primary(primary_intent: &str) -> bool {
+pub fn readonly_overview_style_primary(primary_intent: &str) -> bool {
     primary_intent == "execute.read_inspect"
         || primary_intent.starts_with("execute.read_inspect.")
         || qa_readonly_style_primary(primary_intent)
@@ -31,7 +31,7 @@ pub(crate) fn readonly_overview_style_primary(primary_intent: &str) -> bool {
 }
 
 /// 用户句是否像「分析/介绍当前项目或仓库」且未命中落地强度词。
-pub(crate) fn readonly_overview_task_heuristic(task: &str) -> bool {
+pub fn readonly_overview_task_heuristic(task: &str) -> bool {
     let lower = task.trim().to_lowercase();
     if lower.is_empty() {
         return false;
@@ -45,7 +45,7 @@ pub(crate) fn readonly_overview_task_heuristic(task: &str) -> bool {
 }
 
 /// 非分层门控：此类 Execute 不进入滚动分阶段规划。
-pub(crate) fn should_bypass_staged_for_readonly_overview_execute(
+pub fn should_bypass_staged_for_readonly_overview_execute(
     task: &str,
     decision: &IntentDecision,
 ) -> bool {
@@ -65,8 +65,8 @@ pub(crate) fn should_bypass_staged_for_readonly_overview_execute(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::intent_pipeline::{IntentAction, IntentDecision};
-    use crate::agent::intent_router::IntentKind;
+    use crate::intent_pipeline::{IntentAction, IntentDecision};
+    use crate::intent_router::IntentKind;
 
     fn execute_decision(primary: &str) -> IntentDecision {
         IntentDecision {

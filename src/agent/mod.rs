@@ -8,7 +8,7 @@ pub mod agent_turn;
 pub mod context_window;
 pub mod hierarchy;
 pub mod intent_l2_classifier;
-pub mod intent_pipeline;
+pub use crabmate_agent::intent_pipeline;
 #[cfg(test)]
 mod intent_regression_golden;
 /// 对话 `Message` 变换管道：会话同步步骤编排与供应商出站 `messages` 构造（见模块内说明）。
