@@ -1,34 +1,29 @@
-//! OpenAI 兼容 **`chat/completions`** 的单次 HTTP 调用：SSE/JSON 解析、终端 Markdown 与 LaTeX→Unicode。
-//!
-//! 子模块：[`error_handler`]（HTTP/JSON 错误与请求体日志）、[`sse_parser`]（SSE 行协议与 delta 累积）、[`terminal_render`]（CLI 输出）。
-//! 带 **tools** 的 `ChatRequest` 构造、**退避重试**与 Agent 侧调用入口见上级 [`super`]（`llm`）。
+//! OpenAI 兼容 **`chat/completions`** 的单次 HTTP 调用：SSE/JSON 解析与可选终端输出（经 [`StreamChatHost`] 注入）。
 
 mod error_handler;
 mod sse_parser;
-mod terminal_render;
-
-pub use terminal_render::terminal_render_agent_markdown;
 
 use log::{debug, info};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crabmate_config::LlmHttpAuthMode;
-use crabmate_llm::chat_params::StreamChatParams;
 use crabmate_sse_protocol::StreamEndReason;
 use crabmate_types::{
-    ChatRequest, FunctionCall, Message, MessageContent, ToolCall, USER_CANCELLED_FINISH_REASON,
-    message_content_byte_len_for_estimate,
+    ChatRequest, FunctionCall, LLM_CANCELLED_ERROR, Message, MessageContent,
+    OPENAI_CHAT_COMPLETIONS_REL_PATH, ToolCall, USER_CANCELLED_FINISH_REASON,
+    merge_reasoning_details_into_reasoning_content, message_content_as_str,
+    message_content_byte_len_for_estimate, sanitize_tool_call_arguments_for_openai_compat,
 };
 
-use crate::redact;
-use crabmate_llm::LlmCallError;
+use crate::call_error::LlmCallError;
+use crate::chat_params::StreamChatParams;
+use crate::stream_host::StreamChatHost;
 use error_handler::{
     boxed_non_stream_chat_parse_error, ensure_chat_completions_success,
     log_chat_request_json_preview_if_enabled,
 };
-use sse_parser::{SseStreamAccum, consume_openai_sse_byte_stream, sse_out_send};
-use terminal_render::{
-    finalize_stream_plain_terminal_suffix, render_non_stream_assistant_terminal,
+use sse_parser::{
+    ConsumeSseStreamOpts, SseStreamAccum, consume_openai_sse_byte_stream, sse_out_send,
 };
 
 fn tool_calls_from_sse_accum(
@@ -45,9 +40,7 @@ fn tool_calls_from_sse_accum(
                 typ,
                 function: FunctionCall {
                     name,
-                    arguments: crate::types::sanitize_tool_call_arguments_for_openai_compat(
-                        &arguments,
-                    ),
+                    arguments: sanitize_tool_call_arguments_for_openai_compat(&arguments),
                 },
             })
             .collect(),
@@ -80,20 +73,6 @@ fn message_from_sse_accum(acc: SseStreamAccum) -> Message {
     }
 }
 
-fn append_stream_diagnostic_event(stream_ended: &str, msg: &Message) {
-    let answer_text = crate::types::message_content_as_str(&msg.content).unwrap_or("");
-    crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
-        "stream_diagnostic",
-        "final_stream_status",
-        Some(&serde_json::json!({
-            "phase": "stream_diagnostic",
-            "stream_ended": stream_ended,
-            "answer_phase": !answer_text.is_empty(),
-            "delta_chars": answer_text.chars().count(),
-        })),
-    );
-}
-
 fn stream_end_reason_from_finish_and_message(
     finish_reason: &str,
     msg: &Message,
@@ -101,7 +80,7 @@ fn stream_end_reason_from_finish_and_message(
     if finish_reason == USER_CANCELLED_FINISH_REASON {
         return StreamEndReason::Cancelled;
     }
-    let has_content = crate::types::message_content_as_str(&msg.content)
+    let has_content = message_content_as_str(&msg.content)
         .map(str::trim)
         .is_some_and(|s| !s.is_empty());
     let has_reasoning = msg
@@ -117,15 +96,17 @@ fn stream_end_reason_from_finish_and_message(
 }
 
 async fn non_stream_emit_sse_for_assistant(
+    host: &dyn StreamChatHost,
     msg: &Message,
     tx: &tokio::sync::mpsc::Sender<String>,
     plain_terminal_stream: bool,
     cancel: Option<&AtomicBool>,
 ) {
     if plain_terminal_stream {
-        let sse_plain = crate::runtime::message_display::assistant_streaming_plain_concat(msg);
+        let sse_plain = host.assistant_streaming_plain_concat(msg);
         if !sse_plain.is_empty() {
             let _ = sse_out_send(
+                host,
                 tx,
                 sse_plain,
                 "llm::stream_chat non-stream assistant plain",
@@ -135,9 +116,10 @@ async fn non_stream_emit_sse_for_assistant(
         }
     } else {
         let r = msg.reasoning_content.as_deref().unwrap_or("");
-        let c = crate::types::message_content_as_str(&msg.content).unwrap_or("");
+        let c = message_content_as_str(&msg.content).unwrap_or("");
         if !r.is_empty() {
             let _ = sse_out_send(
+                host,
                 tx,
                 r.to_string(),
                 "llm::stream_chat non-stream assistant reasoning",
@@ -147,15 +129,15 @@ async fn non_stream_emit_sse_for_assistant(
         }
         if !c.is_empty() {
             let _ = sse_out_send(
+                host,
                 tx,
-                crate::sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
-                    assistant_answer_phase: true,
-                }),
+                host.encode_assistant_answer_phase_sse(),
                 "llm::stream_chat non-stream assistant_answer_phase",
                 cancel,
             )
             .await;
             let _ = sse_out_send(
+                host,
                 tx,
                 c.to_string(),
                 "llm::stream_chat non-stream assistant content",
@@ -167,16 +149,16 @@ async fn non_stream_emit_sse_for_assistant(
 }
 
 async fn non_stream_emit_parsing_tool_calls_if_needed(
+    host: &dyn StreamChatHost,
     msg: &Message,
     tx: &tokio::sync::mpsc::Sender<String>,
     cancel: Option<&AtomicBool>,
 ) {
     if msg.tool_calls.as_ref().is_some_and(|t| !t.is_empty()) {
         let _ = sse_out_send(
+            host,
             tx,
-            crate::sse::encode_message(crate::sse::SsePayload::ParsingToolCalls {
-                parsing_tool_calls: true,
-            }),
+            host.encode_parsing_tool_calls_sse(),
             "llm::stream_chat non-stream parsing_tool_calls",
             cancel,
         )
@@ -185,6 +167,7 @@ async fn non_stream_emit_parsing_tool_calls_if_needed(
 }
 
 async fn non_stream_chat_response(
+    host: &dyn StreamChatHost,
     res: reqwest::Response,
     out: Option<&tokio::sync::mpsc::Sender<String>>,
     render_to_terminal: bool,
@@ -192,34 +175,31 @@ async fn non_stream_chat_response(
     cancel: Option<&AtomicBool>,
     cli_terminal_plain: bool,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
-    let _cli_wait_spinner =
-        crate::runtime::cli_wait_spinner::CliWaitSpinnerGuard::try_start_for_cli_plain_stream(
-            cli_terminal_plain,
-        );
+    let _cli_wait_spinner = host.try_start_cli_wait_spinner(cli_terminal_plain);
     if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
-        return Err(crate::types::LLM_CANCELLED_ERROR.into());
+        return Err(LLM_CANCELLED_ERROR.into());
     }
     let body = res.text().await.map_err(LlmCallError::boxed_from_reqwest)?;
-    let parsed: crate::types::ChatResponse =
-        serde_json::from_str(&body).map_err(|e| boxed_non_stream_chat_parse_error(&body, &e))?;
+    let parsed: crabmate_types::ChatResponse = serde_json::from_str(&body)
+        .map_err(|e| boxed_non_stream_chat_parse_error(host, &body, &e))?;
     let choice = parsed.choices.into_iter().next().ok_or_else(
         || -> Box<dyn std::error::Error + Send + Sync> { "非流式响应 choices 为空".into() },
     )?;
-    let crate::types::Choice {
+    let crabmate_types::Choice {
         message: mut msg,
         finish_reason,
     } = choice;
 
-    crate::types::merge_reasoning_details_into_reasoning_content(&mut msg);
+    merge_reasoning_details_into_reasoning_content(&mut msg);
 
     if let Some(tx) = out {
-        non_stream_emit_sse_for_assistant(&msg, tx, plain_terminal_stream, cancel).await;
+        non_stream_emit_sse_for_assistant(host, &msg, tx, plain_terminal_stream, cancel).await;
     }
     if render_to_terminal {
-        render_non_stream_assistant_terminal(&msg, plain_terminal_stream, out.is_none())?;
+        host.render_non_stream_assistant_terminal(&msg, plain_terminal_stream, out.is_none())?;
     }
     if let Some(tx) = out {
-        non_stream_emit_parsing_tool_calls_if_needed(&msg, tx, cancel).await;
+        non_stream_emit_parsing_tool_calls_if_needed(host, &msg, tx, cancel).await;
     }
     debug!(
         target: "crabmate",
@@ -227,55 +207,54 @@ async fn non_stream_chat_response(
         finish_reason,
         message_content_byte_len_for_estimate(&msg.content),
         msg.tool_calls.as_ref().map(|t| t.len()).unwrap_or(0),
-        redact::assistant_message_preview_for_log(&msg)
+        host.assistant_message_preview_for_log(&msg)
     );
     let terminal_end_reason = stream_end_reason_from_finish_and_message(&finish_reason, &msg);
-    append_stream_diagnostic_event(terminal_end_reason.as_str(), &msg);
+    host.append_stream_diagnostic_event(terminal_end_reason.as_str(), &msg);
     if render_to_terminal && out.is_none() {
-        let _ = crate::runtime::terminal_cli_transcript::print_stream_end_reason_terminal(
-            terminal_end_reason,
-        );
+        host.print_stream_end_reason_terminal(terminal_end_reason);
     }
     Ok((msg, finish_reason))
 }
 
 async fn streaming_chat_response(
+    host: &dyn StreamChatHost,
     res: reqwest::Response,
     params: &StreamChatParams<'_>,
     render_to_terminal: bool,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
     let cli_terminal_plain =
         render_to_terminal && params.out.is_none() && params.plain_terminal_stream;
-    let _cli_wait_spinner =
-        crate::runtime::cli_wait_spinner::CliWaitSpinnerGuard::try_start_for_cli_plain_stream(
-            cli_terminal_plain,
-        );
+    let _cli_wait_spinner = host.try_start_cli_wait_spinner(cli_terminal_plain);
     let stream = res.bytes_stream();
     let acc = consume_openai_sse_byte_stream(
+        host,
         stream,
-        params.cancel,
-        params.out,
-        cli_terminal_plain,
-        params.thinking_trace_enabled,
-        params.dsml_stream_strip_enabled,
-        params.tui_llm_stream_scratch.clone(),
+        ConsumeSseStreamOpts {
+            cancel: params.cancel,
+            out: params.out,
+            cli_terminal_plain,
+            thinking_trace_enabled: params.thinking_trace_enabled,
+            dsml_stream_strip_enabled: params.dsml_stream_strip_enabled,
+            tui_llm_stream_scratch: params.tui_llm_stream_scratch.clone(),
+        },
     )
     .await?;
 
     if render_to_terminal {
-        let md = crate::runtime::message_display::assistant_raw_markdown_body_from_parts(
+        let md = host.assistant_raw_markdown_body_from_parts(
             acc.reasoning_acc.as_str(),
             acc.content_acc.as_str(),
         );
         if cli_terminal_plain {
-            finalize_stream_plain_terminal_suffix(
+            host.finalize_stream_plain_terminal_suffix(
                 acc.cli_plain_reasoning_style_active,
                 acc.cli_plain_prefix_emitted,
                 acc.content_acc.as_str(),
                 acc.reasoning_acc.as_str(),
             )?;
         } else if !md.is_empty() {
-            terminal_render_agent_markdown(&md)?;
+            host.terminal_render_agent_markdown(&md)?;
         }
     }
 
@@ -291,31 +270,23 @@ async fn streaming_chat_response(
         finish,
         message_content_byte_len_for_estimate(&msg.content),
         msg.tool_calls.as_ref().map(|t| t.len()).unwrap_or(0),
-        redact::assistant_message_preview_for_log(&msg)
+        host.assistant_message_preview_for_log(&msg)
     );
     let terminal_end_reason = stream_end_reason_from_finish_and_message(&finish, &msg);
-    append_stream_diagnostic_event(terminal_end_reason.as_str(), &msg);
+    host.append_stream_diagnostic_event(terminal_end_reason.as_str(), &msg);
     if render_to_terminal && params.out.is_none() {
-        let _ = crate::runtime::terminal_cli_transcript::print_stream_end_reason_terminal(
-            terminal_end_reason,
-        );
+        host.print_stream_end_reason_terminal(terminal_end_reason);
     }
     Ok((msg, finish))
 }
 
 /// 请求 chat/completions：`no_stream == false` 时为 SSE 流式；`true` 时为单次 JSON（`stream: false`）。
-/// `plain_terminal_stream` 为 `true` 且 `render_to_terminal && out.is_none()`：流式将 reasoning/content **逐 delta 纯文本**写 stdout（**`reasoning_content`** 与 **`content`** 分色；**`NO_COLOR`/非 TTY** 关闭着色），末尾不再 `markdown_to_ansi`；`--no-stream` 时整段按字段分色一次写出。否则若 `render_to_terminal` 且仍有正文、且未走上述路径，则在整段到达后走 [`terminal_render_agent_markdown`]。
-/// 若提供 `out`，流式为每个 content delta；非流式则在有正文时整段发送一次（供 SSE 等）。
-///
-/// **非流式响应**：按 OpenAI 兼容形 `ChatResponse`（`choices[0].message` + `finish_reason`）反序列化；
-/// DeepSeek 等兼容实现可用；字段形态不同的网关需在调用侧适配或扩展解析。
-///
-/// **DSML 物化**：正文中的 DeepSeek DSML 工具调用**不在**此处解析；由 [`crate::llm::complete_chat_retrying`] 在成功后按配置 **`materialize_deepseek_dsml_tool_calls`** 统一处理。
 pub async fn stream_chat(
     params: &StreamChatParams<'_>,
     req: &mut ChatRequest,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
     let StreamChatParams {
+        host,
         client,
         api_key,
         api_base,
@@ -334,7 +305,7 @@ pub async fn stream_chat(
     let url = format!(
         "{}/{}",
         api_base.trim_end_matches('/'),
-        crate::types::OPENAI_CHAT_COMPLETIONS_REL_PATH
+        OPENAI_CHAT_COMPLETIONS_REL_PATH
     );
     info!(
         target: "crabmate",
@@ -345,13 +316,13 @@ pub async fn stream_chat(
     );
 
     let taken = std::mem::take(&mut req.messages);
-    req.messages = crabmate_llm::vendor_messages::conversation_messages_to_vendor_body(
+    req.messages = crate::vendor_messages::conversation_messages_to_vendor_body(
         &taken,
         fold_system_into_user,
         preserve_reasoning_on_assistant_tool_calls,
         preserve_deepseek_thinking_reasoning_roundtrip,
     );
-    log_chat_request_json_preview_if_enabled(req);
+    log_chat_request_json_preview_if_enabled(host, req);
     req.stream = Some(!no_stream);
 
     let mut rb = client.post(&url).json(&req);
@@ -359,7 +330,7 @@ pub async fn stream_chat(
         rb = rb.header("Authorization", format!("Bearer {}", api_key));
     }
     let res = rb.send().await.map_err(LlmCallError::boxed_from_reqwest)?;
-    let res = ensure_chat_completions_success(res)
+    let res = ensure_chat_completions_success(host, res)
         .await
         .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;
 
@@ -367,6 +338,7 @@ pub async fn stream_chat(
 
     if no_stream {
         non_stream_chat_response(
+            host,
             res,
             out,
             render_to_terminal,
@@ -376,6 +348,6 @@ pub async fn stream_chat(
         )
         .await
     } else {
-        streaming_chat_response(res, params, render_to_terminal).await
+        streaming_chat_response(host, res, params, render_to_terminal).await
     }
 }
