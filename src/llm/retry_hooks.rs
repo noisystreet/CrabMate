@@ -1,7 +1,7 @@
 //! 宿主侧 [`crabmate_llm::LlmRetryHooks`] 实现。
 
 use crabmate_config::AgentConfig;
-use crabmate_llm::LlmRetryHooks;
+use crabmate_llm::{LlmRetryDecisionPoint, LlmRetryHooks};
 use crabmate_types::{Message, message_content_as_str};
 
 pub struct CrabmateLlmRetryHooks<'a> {
@@ -19,24 +19,15 @@ impl LlmRetryHooks for CrabmateLlmRetryHooks<'_> {
         crate::turn_replay_dump::append_turn_replay_event_json_if_configured(event, model, detail);
     }
 
-    fn append_decision_point(
-        &self,
-        phase: &str,
-        decision_id: &str,
-        outcome: &str,
-        rationale: &str,
-        detail: serde_json::Value,
-        anchor_kind: &str,
-        anchor: Option<serde_json::Value>,
-    ) {
+    fn append_decision_point(&self, decision: &LlmRetryDecisionPoint) {
         crate::turn_replay_dump::append_decision_point_event_if_configured(
-            phase,
-            decision_id,
-            outcome,
-            rationale,
-            detail,
-            anchor_kind,
-            anchor,
+            &decision.phase,
+            &decision.decision_id,
+            &decision.outcome,
+            &decision.rationale,
+            decision.detail.clone(),
+            &decision.anchor_kind,
+            decision.anchor.clone(),
         );
     }
 
