@@ -161,7 +161,7 @@ tar = "0.4"
 flate2 = "1.0"
 bzip2 = "0.4"
 xz2 = "0.1"
-jsonschema = { version = "0.28", default-features = false }
+jsonschema = { version = "0.46", default-features = false }
 tokio-cron-scheduler = { version = "0.15", default-features = false }
 # 内置工具 parameters：可选由类型 `JsonSchema` 生成，与 `jsonschema` 运行时校验对齐（MIT / Apache-2.0 双许可）
 schemars = { version = "0.8", features = ["derive"] }
