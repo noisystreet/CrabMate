@@ -7,37 +7,24 @@
 #![recursion_limit = "512"]
 
 pub mod agent;
-mod agent_errors;
-/// Web/CLI 多角色工作台：中途切换 system、按角色裁剪工具列表。
-mod agent_role_turn;
-/// Web/CLI 共用的 `run_agent_turn` 前置逻辑（工具合并、MCP、缓存句柄）。
-mod agent_turn_prep;
-/// 工作区内 `cargo metadata` 子进程参数单一真源（工具与首轮注入等共用）。
-mod cargo_metadata;
+pub use crabmate_internal::{
+    agent_errors, agent_role_turn, agent_turn_prep, cargo_metadata, clarification_questionnaire,
+    context_bootstrap, dsml, dynamic_tools, health, health_dep_compat, mcp, memory, observability,
+    process_handles, read_file_turn_cache, readonly_tool_ttl_cache, redact, request_chrome_trace,
+    sse, text_encoding, text_util, tool_approval, tool_call_explain, tool_registry, tool_result,
+    tool_sandbox, tool_stats, tools, user_message_file_refs, web_static_dir, workspace,
+};
 mod chat_job_queue;
-mod clarification_questionnaire;
 mod cli_run;
 pub use crabmate_config;
 pub use crabmate_config as config;
 pub use crabmate_llm;
-/// Web `/chat*` 与 CLI 首轮 living docs / 项目画像 / 依赖摘要与会话 bootstrap。
-mod context_bootstrap;
 /// Web `conversation_id` 持久化（可选 SQLite）与 `SaveConversationOutcome`。
 mod conversation_store;
-/// DeepSeek DSML 解析、物化与分阶段无工具轮策略。
-mod dsml;
-mod dynamic_tools;
-mod health;
-mod health_dep_compat;
 pub use crabmate_llm::http_client;
 mod llm;
-mod mcp;
-/// 长期记忆、备忘片段、代码语义索引（SQLite + fastembed）。
-mod memory;
 /// 元对话门控补充（如「我刚才问了什么」类追问）。
 mod meta_dialogue;
-mod observability;
-mod process_handles;
 pub use process_handles::ProcessHandles;
 
 /// 仅 **`cargo test`**：清空 **`run_command`** 全局限流状态与 **`test_result_cache`** LRU，减轻测试顺序依赖。
@@ -47,32 +34,14 @@ pub fn reset_process_tool_globals_for_tests() {
     crate::turn_replay_dump::reset_turn_replay_globals_for_tests();
 }
 
-mod read_file_turn_cache;
-mod readonly_tool_ttl_cache;
-mod redact;
-mod request_chrome_trace;
 mod run_agent_turn;
 mod runtime;
-mod sse;
-mod text_encoding;
-pub use crabmate_agent::text_sanitize;
-mod text_util;
-mod tool_approval;
-mod tool_call_explain;
-mod tool_registry;
-mod tool_result;
-pub mod tool_sandbox;
-mod tool_stats;
-mod tools;
 mod turn_replay_dump;
+pub use crabmate_agent::text_sanitize;
 pub use crabmate_types;
 pub use crabmate_types as types;
 mod user_data;
-mod user_message_file_refs;
 mod web;
-mod web_static_dir;
-/// 工作区路径、根内打开（Unix `openat2`）与会话变更集。
-mod workspace;
 
 pub use config::cli::{
     ChatCliArgs, ExtraCliCommand, ParsedCliArgs, SaveSessionFormat, ToolReplayCli,

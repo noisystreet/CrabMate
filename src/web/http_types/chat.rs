@@ -246,8 +246,7 @@ pub(crate) struct ConversationMessagesResponseBody {
     pub(crate) active_agent_role: Option<String>,
     /// 与供应商出站 `messages` 对齐的 tiktoken prompt token 粗估；失败或未启用时省略。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) tiktoken_prompt_tokens:
-        Option<crate::agent::tiktoken_prompt_tokens::TiktokenPromptTokensSnapshot>,
+    pub(crate) tiktoken_prompt_tokens: Option<crate::types::TiktokenPromptTokensSnapshot>,
     pub(crate) messages: Vec<crate::runtime::message_snapshot_display::WebClientSnapshotMessage>,
     /// 过滤后可见消息总数；全量模式与 `messages.len()` 一致。
     #[serde(default)]
