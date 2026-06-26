@@ -3,12 +3,17 @@
 pub mod hierarchical_intent_route;
 pub mod intent;
 pub mod messages;
+pub mod staged_planning_gate;
 pub mod staged_planning_gate_types;
 pub mod turn_orchestration;
 
 pub use hierarchical_intent_route::{
     HierarchicalDiscourseFallbackReason, HierarchicalPostIntentRoute,
     resolve_hierarchical_post_intent_route,
+};
+pub use staged_planning_gate::{
+    assess_staged_planning_gate_l1, staged_plan_eligibility_for_intent,
+    staged_planning_gate_outcome_from_decision,
 };
 pub use staged_planning_gate_types::{StagedPlanningDenyReason, StagedPlanningGateOutcome};
 pub use turn_orchestration::{
