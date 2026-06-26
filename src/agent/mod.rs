@@ -1,26 +1,20 @@
 //! Agent 回合、上下文裁剪/摘要、PER、工作流与终答规划解析（与 `lib` 中 HTTP 路由、`tools` 实现解耦）。
+//!
+//! **领域层**（规划产物、意图路由、墙钟预算等）见独立 crate **`crabmate-agent`**，经本模块再导出以保持 `crate::agent::` 路径稳定。
 
 /// 分阶段与分层共用的验收规则内核（规范化 spec + 证据 → 判定）。
 pub mod acceptance;
 pub mod agent_turn;
 pub mod context_window;
-/// Agent 自我进化模块：决策历史记录、策略分析、system prompt 动态注入。
-pub mod evolution;
-/// 分层多 Agent 协作架构：Router + Manager + Operator
 pub mod hierarchy;
-pub mod intent_l0;
 pub mod intent_l2_classifier;
 pub mod intent_pipeline;
 #[cfg(test)]
 mod intent_regression_golden;
-pub mod intent_router;
 /// 对话 `Message` 变换管道：会话同步步骤编排与供应商出站 `messages` 构造（见模块内说明）。
 pub mod message_pipeline;
 pub mod per_coord;
 mod per_plan_semantic_check;
-pub mod plan_artifact;
-#[cfg(test)]
-mod plan_artifact_golden;
 mod plan_ensemble;
 mod plan_optimizer;
 /// 终答后规划重写控制器（从 `per_coord` 迁出）：策略模式、语义校验开关、重写次数管理。
@@ -32,14 +26,15 @@ pub(crate) mod step_executor_policy;
 pub mod step_verifier;
 /// OpenAI 兼容会话的 **tiktoken** prompt token 粗估（与 `message_pipeline::conversation_messages_to_vendor_body` 对齐）。
 pub mod tiktoken_prompt_tokens;
-/// 单轮墙钟预算判定与文案（`agent_turn` / `staged` / `hierarchy` 共用）。
-pub mod turn_budget;
 pub mod workflow;
 #[cfg(test)]
 mod workflow_compile_golden;
-pub mod workflow_reflection_controller;
 #[cfg(test)]
 mod workflow_reflection_golden;
 /// `workflow_execute` 与 PER 协调的接合点（从 `tool_registry` 拆出以降低 `tool_registry → agent` 耦合）。
 pub mod workflow_tool_dispatch;
-pub mod workspace_snapshot;
+
+pub use crabmate_agent::{
+    evolution, intent_l0, intent_router, plan_artifact, text_sanitize, turn_budget,
+    workflow_reflection_controller, workspace_snapshot,
+};

@@ -26,7 +26,7 @@ pub fn parse_agent_reply_plan_v1(content: &str) -> Result<AgentReplyPlanV1, Plan
 
 /// 与 [`parse_agent_reply_plan_v1`] 类似，但在「多步 + 每步 `workflow_node_id`」例外上
 /// 要求显式存在 validate-only 绑定上下文（`validate_only_binding_ids` 非空）。
-pub(crate) fn parse_agent_reply_plan_v1_with_validate_only_binding_ids(
+pub fn parse_agent_reply_plan_v1_with_validate_only_binding_ids(
     content: &str,
     validate_only_binding_ids: Option<&[String]>,
 ) -> Result<AgentReplyPlanV1, PlanArtifactError> {
@@ -49,10 +49,10 @@ pub(crate) fn parse_agent_reply_plan_v1_with_validate_only_binding_ids(
 }
 
 /// 合并 `reasoning_details`→`reasoning_content` 后与正文拼接，供 [`parse_agent_reply_plan_v1`] 使用（网关常把 `agent_reply_plan` 放在思维链字段）。
-pub(crate) fn assistant_merged_text_for_plan_artifact_parse(msg: &crate::types::Message) -> String {
+pub fn assistant_merged_text_for_plan_artifact_parse(msg: &crabmate_types::Message) -> String {
     let mut m = msg.clone();
-    crate::types::merge_reasoning_details_into_reasoning_content(&mut m);
-    let c = crate::types::message_content_as_str(&m.content).unwrap_or("");
+    crabmate_types::merge_reasoning_details_into_reasoning_content(&mut m);
+    let c = crabmate_types::message_content_as_str(&m.content).unwrap_or("");
     let r = m.reasoning_content.as_deref().unwrap_or("");
     let c = c.trim();
     let r = r.trim();
@@ -66,15 +66,15 @@ pub(crate) fn assistant_merged_text_for_plan_artifact_parse(msg: &crate::types::
 
 /// 从助手消息（正文 + 思维链）解析 `agent_reply_plan` v1。
 pub fn parse_agent_reply_plan_v1_from_assistant_message(
-    msg: &crate::types::Message,
+    msg: &crabmate_types::Message,
 ) -> Result<AgentReplyPlanV1, PlanArtifactError> {
     let merged = assistant_merged_text_for_plan_artifact_parse(msg);
     parse_agent_reply_plan_v1(&merged)
 }
 
 /// 从助手消息（正文 + 思维链）解析 `agent_reply_plan` v1（带 validate-only 绑定上下文）。
-pub(crate) fn parse_agent_reply_plan_v1_from_assistant_message_with_validate_only_binding_ids(
-    msg: &crate::types::Message,
+pub fn parse_agent_reply_plan_v1_from_assistant_message_with_validate_only_binding_ids(
+    msg: &crabmate_types::Message,
     validate_only_binding_ids: Option<&[String]>,
 ) -> Result<AgentReplyPlanV1, PlanArtifactError> {
     let merged = assistant_merged_text_for_plan_artifact_parse(msg);

@@ -9,7 +9,7 @@ use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::agent::plan_artifact::{
+use crate::plan_artifact::{
     AgentReplyPlanV1, PlanArtifactError, parse_agent_reply_plan_v1_with_validate_only_binding_ids,
     validate_agent_reply_plan_v1_with_validate_only_binding_ids,
     validate_plan_binds_workflow_validate_nodes, validate_plan_covers_all_workflow_node_ids,
@@ -87,7 +87,7 @@ fn assert_error_match(
 #[test]
 fn golden_plan_artifact_regression_matches_parser() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let path = root.join("fixtures/plan_artifact_regression.jsonl");
+    let path = root.join("../../fixtures/plan_artifact_regression.jsonl");
     let raw = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
 
     for (line_no, line) in raw.lines().enumerate() {

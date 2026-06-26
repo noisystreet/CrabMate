@@ -3,7 +3,7 @@ use super::parse;
 use super::types::AgentReplyPlanV1;
 
 /// 首个 \`\`\` 代码围栏之前的正文（模型常在此写任务概括），与 JSON 块合读作「目标」。
-pub(crate) fn prose_before_first_fence(content: &str) -> String {
+pub fn prose_before_first_fence(content: &str) -> String {
     if !content.contains("```") {
         return String::new();
     }
@@ -59,10 +59,7 @@ pub fn format_plan_steps_markdown_for_staged_queue(
 }
 
 /// 模型常把「以下是任务拆解」写在首步 `description`，围栏前只有开场白；隐藏 JSON 时该句会随步骤列表一并从主气泡消失。若围栏前 goal 未同时含「以下」与「拆解」，则从首步描述里取**一行**简短引导拼到 goal 前。
-pub(crate) fn augment_agent_reply_plan_goal_for_display(
-    goal: &str,
-    plan: &AgentReplyPlanV1,
-) -> String {
+pub fn augment_agent_reply_plan_goal_for_display(goal: &str, plan: &AgentReplyPlanV1) -> String {
     let goal = goal.trim();
     let lead = breakdown_lead_line_from_first_step_description(plan);
     let Some(lead) = lead else {

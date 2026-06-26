@@ -161,29 +161,28 @@ pub fn l0_snapshot_merged(merged_routing: &str, has_recent_tool_failure: bool) -
 
 /// 自当前 user 条**之前**、自尾向前，若存在 `ok: false` 的 `crabmate_tool` 则视为需跟进。最多扫 `max_tail` 条 `Message`。
 pub fn messages_have_recent_tool_failure(
-    messages: &[crate::types::Message],
+    messages: &[crabmate_types::Message],
     max_tail: usize,
 ) -> bool {
-    use crate::tool_result::normalize_tool_message_content;
     for m in messages.iter().rev().take(max_tail) {
         if m.role != "tool" {
             continue;
         }
-        let Some(t) = crate::types::message_content_as_str(&m.content) else {
+        let Some(t) = crabmate_types::message_content_as_str(&m.content) else {
             continue;
         };
-        if let Some(env) = normalize_tool_message_content(t) {
-            if !env.ok {
-                return true;
-            }
-        } else {
-            // 无信封时的保守启发式（不依赖具体供应商）
-            let low = t.to_lowercase();
-            if low.contains("\"ok\":false")
-                || (low.contains("ok") && (low.contains("error_code") || low.contains("失败")))
-            {
-                return true;
-            }
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(t.trim())
+            && let Some(env) = v.get("crabmate_tool")
+            && env.get("ok").and_then(|x| x.as_bool()) == Some(false)
+        {
+            return true;
+        }
+        // 无信封时的保守启发式（不依赖具体供应商）
+        let low = t.to_lowercase();
+        if low.contains("\"ok\":false")
+            || (low.contains("ok") && (low.contains("error_code") || low.contains("失败")))
+        {
+            return true;
         }
     }
     false

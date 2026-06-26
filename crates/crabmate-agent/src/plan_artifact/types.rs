@@ -10,7 +10,7 @@ static PLAN_STEP_ID_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
         .expect("PLAN_STEP_ID_PATTERN: 编译期正则须合法")
 });
 
-pub(crate) fn plan_step_id_syntax_ok(s: &str) -> bool {
+pub fn plan_step_id_syntax_ok(s: &str) -> bool {
     let t = s.trim();
     !t.is_empty() && t.len() <= 128 && PLAN_STEP_ID_PATTERN.is_match(t)
 }
@@ -79,11 +79,28 @@ pub struct PlanStepAcceptance {
 impl PlanStepAcceptance {
     /// 是否含至少一条可执行的验收规则（空对象 `{}` 为 false）。
     pub fn is_effective(&self) -> bool {
-        !crate::agent::acceptance::AcceptanceSpec::from(self).is_empty()
+        self.expect_exit_code.is_some()
+            || self
+                .expect_stdout_contains
+                .as_ref()
+                .is_some_and(|s| !s.trim().is_empty())
+            || self
+                .expect_stderr_contains
+                .as_ref()
+                .is_some_and(|s| !s.trim().is_empty())
+            || self
+                .expect_file_exists
+                .as_ref()
+                .is_some_and(|s| !s.trim().is_empty())
+            || self
+                .expect_json_path_equals
+                .as_ref()
+                .is_some_and(|r| !r.path.trim().is_empty())
+            || self.expect_http_status.is_some()
     }
 
     /// 补丁规划 **user** 用：列出非空验收字段作为「参考 r」，子串/路径截断以免撑爆上下文。
-    pub(crate) fn compact_reference_for_planner_feedback(&self) -> Option<String> {
+    pub fn compact_reference_for_planner_feedback(&self) -> Option<String> {
         const SUB_PREVIEW: usize = 48;
         const PATH_PREVIEW: usize = 64;
         let mut parts: Vec<String> = Vec::new();
@@ -95,7 +112,7 @@ impl PlanStepAcceptance {
         {
             parts.push(format!(
                 "expect_stdout_contains={}",
-                crate::redact::preview_chars(s, SUB_PREVIEW)
+                crate::preview_chars(s, SUB_PREVIEW)
             ));
         }
         if let Some(ref s) = self.expect_stderr_contains
@@ -103,7 +120,7 @@ impl PlanStepAcceptance {
         {
             parts.push(format!(
                 "expect_stderr_contains={}",
-                crate::redact::preview_chars(s, SUB_PREVIEW)
+                crate::preview_chars(s, SUB_PREVIEW)
             ));
         }
         if let Some(ref p) = self.expect_file_exists
@@ -111,7 +128,7 @@ impl PlanStepAcceptance {
         {
             parts.push(format!(
                 "expect_file_exists={}",
-                crate::redact::preview_chars(p.trim(), PATH_PREVIEW)
+                crate::preview_chars(p.trim(), PATH_PREVIEW)
             ));
         }
         if let Some(ref rule) = self.expect_json_path_equals
@@ -120,7 +137,7 @@ impl PlanStepAcceptance {
             let p = rule.path.trim();
             parts.push(format!(
                 "expect_json_path_equals.path={}",
-                crate::redact::preview_chars(p, PATH_PREVIEW)
+                crate::preview_chars(p, PATH_PREVIEW)
             ));
         }
         if let Some(h) = self.expect_http_status {
@@ -216,15 +233,15 @@ pub enum PlanArtifactError {
 }
 
 /// [`staged_plan_invalid_run_agent_turn_error`] 返回串的固定前缀；供测试、`chat_job_queue` 历史分支识别（**勿**与用户输入拼接）。当前主路径在规划 JSON 无效时已降级为常规循环，一般不再产生该串。
-pub(crate) const STAGED_PLAN_INVALID_RUN_AGENT_TURN_ERROR_PREFIX: &str = "staged_plan_invalid:";
+pub const STAGED_PLAN_INVALID_RUN_AGENT_TURN_ERROR_PREFIX: &str = "staged_plan_invalid:";
 
 /// 供日志单行输出：`WrongType` 仅记长度与短预览，不记完整 `type` 字符串。
-pub(crate) fn plan_artifact_error_log_summary(e: &PlanArtifactError) -> String {
+pub fn plan_artifact_error_log_summary(e: &PlanArtifactError) -> String {
     match e {
         PlanArtifactError::NotFound => "not_found".to_string(),
         PlanArtifactError::WrongType(t) => {
             let n = t.chars().count();
-            let prev = crate::redact::preview_chars(t, 24);
+            let prev = crate::preview_chars(t, 24);
             format!("wrong_type type_len={n} type_preview={prev}")
         }
         PlanArtifactError::WrongVersion(v) => format!("wrong_version version={v}"),
@@ -254,7 +271,7 @@ pub(crate) fn plan_artifact_error_log_summary(e: &PlanArtifactError) -> String {
 
 /// 分阶段规划轮解析失败时的错误串（含结构化摘要）；主路径已改为降级，本函数供单测与兼容识别保留。
 #[allow(dead_code)]
-pub(crate) fn staged_plan_invalid_run_agent_turn_error(e: PlanArtifactError) -> String {
+pub fn staged_plan_invalid_run_agent_turn_error(e: PlanArtifactError) -> String {
     format!(
         "{} {}",
         STAGED_PLAN_INVALID_RUN_AGENT_TURN_ERROR_PREFIX,
@@ -262,7 +279,7 @@ pub(crate) fn staged_plan_invalid_run_agent_turn_error(e: PlanArtifactError) -> 
     )
 }
 
-pub(crate) fn is_staged_plan_invalid_run_agent_turn_error(msg: &str) -> bool {
+pub fn is_staged_plan_invalid_run_agent_turn_error(msg: &str) -> bool {
     msg.starts_with(STAGED_PLAN_INVALID_RUN_AGENT_TURN_ERROR_PREFIX)
 }
 
@@ -291,14 +308,14 @@ pub const PLAN_V1_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1
 /// 分阶段执行中：当前步工具未全部成功时，将模型返回的**补丁规划**与未完成步之后缀合并。
 /// `failed_step_index` 为**零基**（对应 `plan.steps` 下标）；补丁的 `steps` 替换自该步起的后缀。
 /// 将合法 v1 规划序列化为单行 JSON（供分阶段规划轮/补丁助手消息写入历史）。
-pub(crate) fn agent_reply_plan_v1_to_json_string(
+pub fn agent_reply_plan_v1_to_json_string(
     plan: &AgentReplyPlanV1,
 ) -> Result<String, serde_json::Error> {
     serde_json::to_string(plan)
 }
 
 /// `strict_baseline_steps`：`patch_planner` 合并结果在 `[0, failed_step_index)` 上与冻结蓝图逐步 `id` 一致。
-pub(crate) fn validate_staged_patch_merged_strict_baseline_ids(
+pub fn validate_staged_patch_merged_strict_baseline_ids(
     baseline_steps: &[PlanStepV1],
     merged: &[PlanStepV1],
     failed_step_index: usize,
@@ -324,7 +341,7 @@ pub(crate) fn validate_staged_patch_merged_strict_baseline_ids(
     Ok(())
 }
 
-pub(crate) fn merge_staged_plan_steps_after_step_failure(
+pub fn merge_staged_plan_steps_after_step_failure(
     base: &[PlanStepV1],
     patch: &AgentReplyPlanV1,
     failed_step_index: usize,

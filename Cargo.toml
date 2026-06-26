@@ -10,6 +10,7 @@ members = [
     "crates/crabmate-types",
     "crates/crabmate-config",
     "crates/crabmate-llm",
+    "crates/crabmate-agent",
 ]
 resolver = "2"
 
@@ -69,6 +70,7 @@ crabmate-sse-protocol = { path = "crates/crabmate-sse-protocol" }
 crabmate-types = { path = "crates/crabmate-types" }
 crabmate-config = { path = "crates/crabmate-config" }
 crabmate-llm = { path = "crates/crabmate-llm" }
+crabmate-agent = { path = "crates/crabmate-agent" }
 reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 serde = { version = "1.0", features = ["derive"] }
