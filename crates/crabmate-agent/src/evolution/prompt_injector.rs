@@ -1,10 +1,10 @@
 //! System Prompt 动态注入器：将策略建议转为模型可理解的指令。
 
 use super::strategy_analyzer::StrategyHint;
-use crate::types::{Message, message_content_get_or_insert_empty_text};
+use crabmate_types::{Message, message_content_get_or_insert_empty_text};
 
 #[cfg(test)]
-use crate::types::{MessageContent, message_content_as_str};
+use crabmate_types::{MessageContent, message_content_as_str};
 
 /// System Prompt 注入器
 pub struct PromptInjector {

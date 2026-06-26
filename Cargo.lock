@@ -1098,6 +1098,7 @@ dependencies = [
  "clap",
  "clap_mangen",
  "cmd_mate",
+ "crabmate-agent",
  "crabmate-config",
  "crabmate-display-rules",
  "crabmate-llm",
@@ -1159,6 +1160,19 @@ dependencies = [
  "xz2",
  "yaml_serde",
  "zip",
+]
+
+[[package]]
+name = "crabmate-agent"
+version = "0.1.0"
+dependencies = [
+ "crabmate-config",
+ "crabmate-types",
+ "log",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

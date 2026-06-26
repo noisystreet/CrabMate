@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use super::types::{AgentReplyPlanV1, PlanArtifactError, plan_step_id_syntax_ok};
 
 /// 校验规划中出现的 `workflow_node_id` 均为 `workflow_node_ids` 的子集（通常来自最近一次 `workflow_execute` 工具结果的 `nodes[].id`）。
-pub(crate) fn validate_plan_workflow_node_ids_subset(
+pub fn validate_plan_workflow_node_ids_subset(
     plan: &AgentReplyPlanV1,
     workflow_node_ids: &[String],
 ) -> Result<(), PlanArtifactError> {
@@ -24,7 +24,7 @@ pub(crate) fn validate_plan_workflow_node_ids_subset(
 }
 
 /// 若规划中**至少一步**含 `workflow_node_id`，则 `steps` 中出现的 `workflow_node_id` 须**覆盖** `workflow_node_ids` 全部节点（每 id 至少一步引用）。
-pub(crate) fn validate_plan_covers_all_workflow_node_ids(
+pub fn validate_plan_covers_all_workflow_node_ids(
     plan: &AgentReplyPlanV1,
     workflow_node_ids: &[String],
 ) -> Result<(), PlanArtifactError> {
@@ -58,7 +58,7 @@ pub(crate) fn validate_plan_covers_all_workflow_node_ids(
 /// 在 **`workflow_validate_only`** 路径上强制规划与 **`nodes[].id` 绑定**：`steps.len() == nodes.len()`、每步均有 `workflow_node_id`、二者多重集合一致（顺序可不同）。
 ///
 /// `validate_only_node_ids` 通常来自历史中最近一次 `report_type == workflow_validate_result` 的 `nodes[].id`；为空切片时不校验（无节点则不做绑定）。
-pub(crate) fn validate_plan_binds_workflow_validate_nodes(
+pub fn validate_plan_binds_workflow_validate_nodes(
     plan: &AgentReplyPlanV1,
     validate_only_node_ids: &[String],
 ) -> Result<(), PlanArtifactError> {
@@ -197,7 +197,7 @@ fn validate_single_plan_step_v1(
     Ok(())
 }
 
-pub(crate) fn validate_agent_reply_plan_v1_with_validate_only_binding_ids(
+pub fn validate_agent_reply_plan_v1_with_validate_only_binding_ids(
     p: &AgentReplyPlanV1,
     validate_only_binding_ids: Option<&[String]>,
 ) -> Result<(), PlanArtifactError> {

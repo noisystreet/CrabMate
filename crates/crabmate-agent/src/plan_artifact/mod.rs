@@ -9,26 +9,22 @@ mod validate;
 pub use types::{
     AgentReplyPlanV1, JsonPathEqualsRule, PLAN_V1_EXAMPLE_JSON, PLAN_V1_SCHEMA_RULES,
     PlanArtifactError, PlanStepAcceptance, PlanStepControlFlow, PlanStepExecutorKind, PlanStepV1,
-};
-pub(crate) use types::{
     STAGED_PLAN_INVALID_RUN_AGENT_TURN_ERROR_PREFIX, agent_reply_plan_v1_to_json_string,
     is_staged_plan_invalid_run_agent_turn_error, merge_staged_plan_steps_after_step_failure,
     plan_artifact_error_log_summary, validate_staged_patch_merged_strict_baseline_ids,
 };
 
-/// 仅测试与其它 `#[cfg(test)]` 模块引用；避免在非 test 的 lib 目标上产生未使用重导出告警。
-#[cfg(test)]
-pub(crate) use types::staged_plan_invalid_run_agent_turn_error;
+pub use types::staged_plan_invalid_run_agent_turn_error;
 
-pub(crate) use display::{augment_agent_reply_plan_goal_for_display, prose_before_first_fence};
+pub use display::{augment_agent_reply_plan_goal_for_display, prose_before_first_fence};
 pub use display::{
     format_agent_reply_plan_for_display, format_plan_steps_markdown,
     format_plan_steps_markdown_for_staged_queue, strip_agent_reply_plan_fence_blocks_for_display,
 };
 
-pub(crate) use fence::fenced_body_after_optional_jsonish_lang_label;
+pub use fence::fenced_body_after_optional_jsonish_lang_label;
 
-pub(crate) use parse::{
+pub use parse::{
     assistant_merged_text_for_plan_artifact_parse,
     parse_agent_reply_plan_v1_from_assistant_message_with_validate_only_binding_ids,
     parse_agent_reply_plan_v1_with_validate_only_binding_ids,
@@ -38,13 +34,13 @@ pub use parse::{
     parse_agent_reply_plan_v1_from_assistant_message,
 };
 
-pub(crate) use validate::{
+pub use validate::{
     validate_plan_binds_workflow_validate_nodes, validate_plan_covers_all_workflow_node_ids,
     validate_plan_workflow_node_ids_subset,
 };
 
 #[cfg(test)]
-pub(crate) use validate::validate_agent_reply_plan_v1_with_validate_only_binding_ids;
+pub use validate::validate_agent_reply_plan_v1_with_validate_only_binding_ids;
 
 #[cfg(test)]
 mod tests {
@@ -616,9 +612,9 @@ mod tests {
     #[test]
     fn parse_agent_reply_plan_v1_from_assistant_message_merges_reasoning_field() {
         let j = r#"{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}"#;
-        let msg = crate::types::Message {
+        let msg = crabmate_types::Message {
             role: "assistant".into(),
-            content: Some(crate::types::MessageContent::Text(String::new())),
+            content: Some(crabmate_types::MessageContent::Text(String::new())),
             reasoning_content: Some(j.into()),
             reasoning_details: None,
             tool_calls: None,

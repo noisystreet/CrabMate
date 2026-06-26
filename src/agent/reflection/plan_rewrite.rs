@@ -1,9 +1,9 @@
 //! 从 `messages` 扫描工作流工具结果、组装规划重写 user 正文、终答侧向校验摘要、用尽原因分类。
 //! **不**调用 `complete_chat_retrying`（侧向 LLM 仍在 [`crate::agent::per_plan_semantic_check`]）。
 
-use crate::config::AgentConfig;
 use crate::tool_registry;
-use crate::types::Message;
+use crabmate_config::AgentConfig;
+use crabmate_types::Message;
 use serde_json::Value;
 
 use super::super::plan_artifact;
@@ -134,7 +134,7 @@ pub(crate) fn classify_exhausted_reason(
     apply_layer_semantics: bool,
     strict_workflow_node_coverage: bool,
 ) -> PlanRewriteExhaustedReason {
-    let content = crate::types::message_content_as_str(&msg.content).unwrap_or("");
+    let content = crabmate_types::message_content_as_str(&msg.content).unwrap_or("");
     let validate_only_binding_ids = if apply_layer_semantics {
         last_workflow_validate_binding_plan_node_ids(messages)
     } else {
@@ -180,7 +180,7 @@ fn try_node_ids_from_workflow_execute_tool_message(
     if name != "workflow_execute" {
         return None;
     }
-    let body = crate::types::message_content_as_str(&m.content)?;
+    let body = crabmate_types::message_content_as_str(&m.content)?;
     let payload = crate::tool_result::tool_message_payload_for_inner_parse(body);
     let v: Value = serde_json::from_str(payload.as_ref()).ok()?;
     let rt = v.get("report_type").and_then(|x| x.as_str());
@@ -234,7 +234,7 @@ pub(crate) fn last_workflow_validate_layer_count(messages: &[Message]) -> Option
         if name != "workflow_execute" {
             continue;
         }
-        let body = crate::types::message_content_as_str(&m.content)?;
+        let body = crabmate_types::message_content_as_str(&m.content)?;
         let payload = crate::tool_result::tool_message_payload_for_inner_parse(body);
         let v: Value = serde_json::from_str(payload.as_ref()).ok()?;
         if v.get("report_type").and_then(|x| x.as_str()) != Some("workflow_validate_result") {
@@ -276,7 +276,7 @@ pub(crate) fn last_workflow_validate_binding_plan_node_ids(
         if name != "workflow_execute" {
             continue;
         }
-        let Some(body) = crate::types::message_content_as_str(&m.content) else {
+        let Some(body) = crabmate_types::message_content_as_str(&m.content) else {
             continue;
         };
         let payload = crate::tool_result::tool_message_payload_for_inner_parse(body);
@@ -349,7 +349,7 @@ fn semantic_check_tool_name_body_for_message(
         .iter()
         .find(|c| c.id == tid)?;
     let name = tc.function.name.as_str();
-    let body = crate::types::message_content_as_str(&m.content).unwrap_or("");
+    let body = crabmate_types::message_content_as_str(&m.content).unwrap_or("");
     Some((name, body))
 }
 

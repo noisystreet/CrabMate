@@ -2,7 +2,11 @@ use regex::Regex;
 use serde_json::Value;
 use std::sync::LazyLock;
 
-use crate::dsml::strip_deepseek_dsml_for_display;
+/// 展示用 DSML 剥离：独立 crate 内为轻量占位（完整实现仍在根包 `dsml::strip`；Web 气泡经 `message_display` 走根包 `text_sanitize`）。
+#[inline]
+fn strip_deepseek_dsml_for_display(s: &str) -> String {
+    s.to_string()
+}
 
 fn strip_markdown_fenced_blocks(s: &str) -> String {
     let parts: Vec<&str> = s.split("```").collect();
@@ -243,7 +247,7 @@ pub fn naturalize_assistant_plan_prose_tail(s: &str) -> String {
 }
 
 /// 尚无 Markdown 围栏、且非整段 JSON 的助手正文：去掉围栏前同句复读（打出 ``` 之前的流式阶段走此路径，原先不经 [`naturalize_assistant_plan_prose_tail`]）。
-pub(crate) fn dedupe_plain_assistant_preamble(s: &str) -> String {
+pub fn dedupe_plain_assistant_preamble(s: &str) -> String {
     let t = dedupe_adjacent_non_empty_trimmed_lines(s.trim());
     collapse_duplicate_prose_fused_twice(&t)
 }

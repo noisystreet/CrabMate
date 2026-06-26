@@ -55,7 +55,7 @@ mod run_agent_turn;
 mod runtime;
 mod sse;
 mod text_encoding;
-mod text_sanitize;
+pub use crabmate_agent::text_sanitize;
 mod text_util;
 mod tool_approval;
 mod tool_call_explain;
