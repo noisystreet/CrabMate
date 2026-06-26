@@ -61,6 +61,7 @@ impl<'a> CompleteChatRetryingParams<'a> {
 
     pub(crate) fn stream_params(&self) -> StreamChatParams<'_> {
         StreamChatParams {
+            host: &crate::llm::stream_host_impl::CRABMATE_STREAM_CHAT_HOST,
             client: self.http,
             api_key: self.api_key,
             api_base: &self.cfg.llm.api_base,

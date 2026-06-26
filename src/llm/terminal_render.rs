@@ -32,7 +32,7 @@ fn count_display_lines(content: &str, term_width: usize) -> usize {
 }
 
 /// CLI（`render_to_terminal && out.is_none()`）：首个非空 delta 前打 `Agent:` 前缀；**`reasoning_content`** 与 **`content`** 分色（见 [`crate::runtime::terminal_labels`]）；从思考切到终答前多写一个换行（含 **`NO_COLOR`** 时仅换行、不着色）。
-pub(super) fn cli_terminal_write_plain_fragment(
+pub(crate) fn cli_terminal_write_plain_fragment(
     fragment: &str,
     prefix_emitted: &mut bool,
     is_reasoning: bool,
@@ -143,7 +143,7 @@ fn render_non_stream_assistant_markdown_path(msg: &Message) -> io::Result<()> {
 }
 
 /// 非流式：在已合并 `reasoning_details` 的 `msg` 上输出 CLI（纯文本分色或 Markdown）。
-pub(super) fn render_non_stream_assistant_terminal(
+pub(crate) fn render_non_stream_assistant_terminal(
     msg: &Message,
     plain_terminal_stream: bool,
     out_is_none: bool,
@@ -156,7 +156,7 @@ pub(super) fn render_non_stream_assistant_terminal(
 }
 
 /// 流式纯文本：ingest 已写完正文，此处复位样式并补末尾换行。
-pub(super) fn finalize_stream_plain_terminal_suffix(
+pub(crate) fn finalize_stream_plain_terminal_suffix(
     cli_plain_reasoning_style_active: bool,
     cli_plain_prefix_emitted: bool,
     content_acc: &str,

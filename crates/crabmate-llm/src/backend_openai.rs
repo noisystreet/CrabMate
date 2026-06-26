@@ -1,12 +1,12 @@
-//! 默认 OpenAI 兼容 HTTP 后端（根包 `api::stream_chat` 实现）。
+//! 默认 OpenAI 兼容 HTTP 后端。
 
 use async_trait::async_trait;
 
-use crabmate_llm::backend::ChatCompletionsBackend;
-use crabmate_llm::chat_params::StreamChatParams;
 use crabmate_types::{ChatRequest, Message};
 
-use super::api;
+use crate::api;
+use crate::backend::ChatCompletionsBackend;
+use crate::chat_params::StreamChatParams;
 
 /// 默认后端：`POST {api_base}/chat/completions`，Bearer 鉴权，行为见 [`api::stream_chat`]。
 #[derive(Debug, Copy, Clone, Default)]

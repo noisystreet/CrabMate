@@ -5,14 +5,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use futures_util::StreamExt;
 use tokio::sync::mpsc::Sender;
 
-use crate::sse::{SsePayload, ThinkingTraceBody, encode_message};
-use crabmate_llm::stream_scratch::TuiLlmStreamScratchArc;
 use crabmate_types::{StreamChoice, StreamChunk, StreamDelta};
 
-use super::terminal_render::cli_terminal_write_plain_fragment;
-use crabmate_llm::call_error::LlmCallError;
-
-const THINKING_TRACE_CHUNK_MAX: usize = 4096;
+use crate::call_error::LlmCallError;
+use crate::stream_host::{DsmlStreamFilter, StreamChatHost, TerminalPlainFragmentCtx};
+use crate::stream_scratch::TuiLlmStreamScratchArc;
 
 #[inline]
 fn tui_scratch_push_reasoning(scratch: Option<&TuiLlmStreamScratchArc>, fragment: &str) {
@@ -39,20 +36,12 @@ fn tui_scratch_push_content(scratch: Option<&TuiLlmStreamScratchArc>, fragment: 
 }
 
 #[inline]
-fn clip_thinking_trace_text(s: &str, max: usize) -> String {
-    let mut t = s.to_string();
-    if t.len() > max {
-        t.truncate(max);
-        t.push('…');
-    }
-    t
-}
-
-#[inline]
 async fn emit_thinking_trace_if(
+    host: &dyn StreamChatHost,
     enabled: bool,
     out: Option<&Sender<String>>,
-    body: ThinkingTraceBody,
+    chunk: &str,
+    answer_phase: bool,
     coop_cancel: Option<&AtomicBool>,
 ) -> std::io::Result<()> {
     if !enabled {
@@ -61,9 +50,15 @@ async fn emit_thinking_trace_if(
     let Some(tx) = out else {
         return Ok(());
     };
+    let line = if answer_phase {
+        host.encode_thinking_trace_answer_phase_sse()
+    } else {
+        host.encode_thinking_trace_reasoning_delta_sse(chunk)
+    };
     let _ = sse_out_send(
+        host,
         tx,
-        encode_message(SsePayload::ThinkingTrace { trace: body }),
+        line,
         "llm::stream_chat thinking_trace",
         coop_cancel,
     )
@@ -72,9 +67,6 @@ async fn emit_thinking_trace_if(
 }
 
 /// 将单次 `delta.reasoning_content` 转为应追加到 [`IngestSseState::reasoning_acc`] 的片段。
-///
-/// - **真增量**（如常见 `reasoning_content` 流）：`s` 通常不是已累积 `acc` 的前缀延长，返回整段 `s`。
-/// - **累积快照**（部分网关每帧重发当前全文）：`s` 以 `acc` 为前缀时只返回新增后缀，避免整段重复拼接。
 #[inline]
 fn reasoning_content_delta_fragment<'a>(acc: &str, s: &'a str) -> &'a str {
     if s.starts_with(acc) && s.len() >= acc.len() {
@@ -84,23 +76,19 @@ fn reasoning_content_delta_fragment<'a>(acc: &str, s: &'a str) -> &'a str {
     }
 }
 
-/// Web 流式：`out` 存在且提供 **`coop_cancel`** 时，发送失败会置位取消标志，与 `chat_job_queue` 的 `closed()` 监视一致。
 #[inline]
 pub(super) async fn sse_out_send(
+    host: &dyn StreamChatHost,
     tx: &Sender<String>,
     line: String,
     context: &'static str,
     coop_cancel: Option<&AtomicBool>,
 ) -> bool {
-    match coop_cancel {
-        Some(c) => {
-            crate::sse::send_string_logged_cooperative_cancel(tx, line, context, Some(c)).await
-        }
-        None => crate::sse::send_string_logged(tx, line, context).await,
-    }
+    host.sse_out_send(tx, line, context, coop_cancel).await
 }
 
 struct AccumulateReasoningStreamDeltaCtx<'a> {
+    host: &'a dyn StreamChatHost,
     reasoning_acc: &'a mut String,
     out: Option<&'a Sender<String>>,
     cli_terminal_plain: bool,
@@ -121,16 +109,18 @@ async fn accumulate_reasoning_stream_delta(
     ctx.reasoning_acc.push_str(fragment);
     tui_scratch_push_reasoning(ctx.tui_llm_stream_scratch, fragment);
     if ctx.cli_terminal_plain {
-        cli_terminal_write_plain_fragment(
+        ctx.host.cli_terminal_write_plain_fragment(
             fragment,
-            ctx.cli_plain_prefix_emitted,
+            TerminalPlainFragmentCtx {
+                prefix_emitted: ctx.cli_plain_prefix_emitted,
+                reasoning_style_active: ctx.cli_plain_reasoning_style_active,
+            },
             true,
-            ctx.cli_plain_reasoning_style_active,
         )?;
     }
     if let Some(tx) = ctx.out {
-        // Web/SSE：立即下发，保证聊天区逐 token/逐段更新；CLI `out.is_none()` 时不走此分支。
         let _ = sse_out_send(
+            ctx.host,
             tx,
             fragment.to_string(),
             "llm::stream_chat ingest delta (reasoning)",
@@ -138,16 +128,11 @@ async fn accumulate_reasoning_stream_delta(
         )
         .await;
         emit_thinking_trace_if(
+            ctx.host,
             ctx.thinking_trace_enabled,
             Some(tx),
-            ThinkingTraceBody {
-                op: "reasoning_delta".into(),
-                node_id: Some("stream_reasoning".into()),
-                parent_id: None,
-                title: None,
-                chunk: Some(clip_thinking_trace_text(fragment, THINKING_TRACE_CHUNK_MAX)),
-                context_snapshot: None,
-            },
+            fragment,
+            false,
             ctx.coop_cancel,
         )
         .await?;
@@ -155,8 +140,8 @@ async fn accumulate_reasoning_stream_delta(
     Ok(())
 }
 
-/// MiniMax `reasoning_split` 流式：`reasoning_details[].text` 多为相对上一块的**累积**全文。
 struct MinimaxReasoningDetailsCtx<'a> {
+    host: &'a dyn StreamChatHost,
     snaps: &'a mut Vec<String>,
     reasoning_acc: &'a mut String,
     out: Option<&'a Sender<String>>,
@@ -173,6 +158,7 @@ async fn accumulate_minimax_reasoning_details_deltas(
     ctx: MinimaxReasoningDetailsCtx<'_>,
 ) -> std::io::Result<()> {
     let MinimaxReasoningDetailsCtx {
+        host,
         snaps,
         reasoning_acc,
         out,
@@ -202,6 +188,7 @@ async fn accumulate_minimax_reasoning_details_deltas(
         accumulate_reasoning_stream_delta(
             fragment,
             &mut AccumulateReasoningStreamDeltaCtx {
+                host,
                 reasoning_acc,
                 out,
                 cli_terminal_plain,
@@ -220,6 +207,7 @@ async fn accumulate_minimax_reasoning_details_deltas(
 }
 
 pub(super) async fn flush_sse_delta_buffer(
+    host: &dyn StreamChatHost,
     pending: &mut String,
     tx: Option<&Sender<String>>,
     coop_cancel: Option<&AtomicBool>,
@@ -229,6 +217,7 @@ pub(super) async fn flush_sse_delta_buffer(
     {
         let line = std::mem::take(pending);
         let _ = sse_out_send(
+            host,
             t,
             line,
             "llm::stream_chat flush_sse_delta_buffer",
@@ -238,8 +227,8 @@ pub(super) async fn flush_sse_delta_buffer(
     }
 }
 
-/// 解析 SSE 中一行 `data:` 后的 JSON 负载，累积正文与 tool_calls，并经 `out` 下发流式增量。
 pub(super) struct IngestSseState<'a> {
+    pub(super) host: &'a dyn StreamChatHost,
     pub(super) out: Option<&'a Sender<String>>,
     pub(super) pending_sse_delta: &'a mut String,
     pub(super) reasoning_acc: &'a mut String,
@@ -254,7 +243,7 @@ pub(super) struct IngestSseState<'a> {
     pub(super) coop_cancel: Option<&'a AtomicBool>,
     pub(super) thinking_trace_enabled: bool,
     pub(super) tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
-    pub(super) dsml_content_filter: &'a mut crate::dsml::StreamingDsmlContentFilter,
+    pub(super) dsml_content_filter: &'a mut dyn DsmlStreamFilter,
 }
 
 async fn ingest_sse_residual_buffer_if_needed(
@@ -280,7 +269,6 @@ async fn ingest_sse_residual_buffer_if_needed(
     Ok(())
 }
 
-/// 处理已 trim 的一行 SSE；返回 `true` 表示该行宣告 `[DONE]`。
 async fn ingest_openai_sse_trimmed_line(
     line: &str,
     state: IngestSseState<'_>,
@@ -298,6 +286,7 @@ async fn ingest_openai_sse_trimmed_line(
 }
 
 struct IngestSseReasoningFrame<'a> {
+    host: &'a dyn StreamChatHost,
     delta: &'a StreamDelta,
     reasoning_acc: &'a mut String,
     minimax_reasoning_snaps: &'a mut Vec<String>,
@@ -311,6 +300,7 @@ struct IngestSseReasoningFrame<'a> {
 }
 
 struct IngestSseContentFrame<'a> {
+    host: &'a dyn StreamChatHost,
     delta: &'a StreamDelta,
     content_acc: &'a mut String,
     pending_sse_delta: &'a mut String,
@@ -321,7 +311,7 @@ struct IngestSseContentFrame<'a> {
     coop_cancel: Option<&'a AtomicBool>,
     thinking_trace_enabled: bool,
     tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
-    dsml_content_filter: &'a mut crate::dsml::StreamingDsmlContentFilter,
+    dsml_content_filter: &'a mut dyn DsmlStreamFilter,
 }
 
 #[inline]
@@ -335,6 +325,7 @@ async fn ingest_sse_reasoning_from_delta(
     frame: IngestSseReasoningFrame<'_>,
 ) -> std::io::Result<()> {
     let IngestSseReasoningFrame {
+        host,
         delta,
         reasoning_acc,
         minimax_reasoning_snaps,
@@ -350,8 +341,6 @@ async fn ingest_sse_reasoning_from_delta(
         .reasoning_details
         .as_ref()
         .is_some_and(|d| !d.is_empty());
-    // 同一帧若同时带 `reasoning_details`（如 MiniMax `reasoning_split`）与 `reasoning_content`，
-    // 二者往往同源；只走 `reasoning_details` 路径，避免思维链在 UI/会话里重复一份。
     if let Some(ref s) = delta.reasoning_content
         && !s.is_empty()
         && !has_reasoning_details
@@ -361,6 +350,7 @@ async fn ingest_sse_reasoning_from_delta(
             accumulate_reasoning_stream_delta(
                 fragment,
                 &mut AccumulateReasoningStreamDeltaCtx {
+                    host,
                     reasoning_acc,
                     out,
                     cli_terminal_plain,
@@ -380,6 +370,7 @@ async fn ingest_sse_reasoning_from_delta(
         accumulate_minimax_reasoning_details_deltas(
             details,
             MinimaxReasoningDetailsCtx {
+                host,
                 snaps: minimax_reasoning_snaps,
                 reasoning_acc,
                 out,
@@ -396,30 +387,46 @@ async fn ingest_sse_reasoning_from_delta(
     Ok(())
 }
 
-async fn flush_dsml_stream_filter_tail(
-    dsml_content_filter: &mut crate::dsml::StreamingDsmlContentFilter,
-    out: Option<&Sender<String>>,
+struct FlushDsmlTailCtx<'a> {
+    host: &'a dyn StreamChatHost,
+    dsml_content_filter: &'a mut dyn DsmlStreamFilter,
+    out: Option<&'a Sender<String>>,
     cli_terminal_plain: bool,
-    cli_plain_prefix_emitted: &mut bool,
-    cli_plain_reasoning_style_active: &mut bool,
-    coop_cancel: Option<&AtomicBool>,
-    tui_llm_stream_scratch: Option<&TuiLlmStreamScratchArc>,
-) -> std::io::Result<()> {
+    cli_plain_prefix_emitted: &'a mut bool,
+    cli_plain_reasoning_style_active: &'a mut bool,
+    coop_cancel: Option<&'a AtomicBool>,
+    tui_llm_stream_scratch: Option<&'a TuiLlmStreamScratchArc>,
+}
+
+async fn flush_dsml_stream_filter_tail(ctx: FlushDsmlTailCtx<'_>) -> std::io::Result<()> {
+    let FlushDsmlTailCtx {
+        host,
+        dsml_content_filter,
+        out,
+        cli_terminal_plain,
+        cli_plain_prefix_emitted,
+        cli_plain_reasoning_style_active,
+        coop_cancel,
+        tui_llm_stream_scratch,
+    } = ctx;
     let display = dsml_content_filter.finish();
     if display.is_empty() {
         return Ok(());
     }
     tui_scratch_push_content(tui_llm_stream_scratch, &display);
     if cli_terminal_plain {
-        cli_terminal_write_plain_fragment(
+        host.cli_terminal_write_plain_fragment(
             &display,
-            cli_plain_prefix_emitted,
+            TerminalPlainFragmentCtx {
+                prefix_emitted: cli_plain_prefix_emitted,
+                reasoning_style_active: cli_plain_reasoning_style_active,
+            },
             false,
-            cli_plain_reasoning_style_active,
         )?;
     }
     if let Some(tx) = out {
         let _ = sse_out_send(
+            host,
             tx,
             display,
             "llm::stream_chat flush dsml filter tail",
@@ -432,6 +439,7 @@ async fn flush_dsml_stream_filter_tail(
 
 async fn ingest_sse_content_from_delta(frame: IngestSseContentFrame<'_>) -> std::io::Result<()> {
     let IngestSseContentFrame {
+        host,
         delta,
         content_acc,
         pending_sse_delta,
@@ -454,27 +462,21 @@ async fn ingest_sse_content_from_delta(frame: IngestSseContentFrame<'_>) -> std:
         && let Some(tx) = out
         && !cli_terminal_plain
     {
-        flush_sse_delta_buffer(pending_sse_delta, Some(tx), coop_cancel).await;
+        flush_sse_delta_buffer(host, pending_sse_delta, Some(tx), coop_cancel).await;
         let _ = sse_out_send(
+            host,
             tx,
-            crate::sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
-                assistant_answer_phase: true,
-            }),
+            host.encode_assistant_answer_phase_sse(),
             "llm::stream_chat assistant_answer_phase",
             coop_cancel,
         )
         .await;
         emit_thinking_trace_if(
+            host,
             thinking_trace_enabled,
             Some(tx),
-            ThinkingTraceBody {
-                op: "answer_phase".into(),
-                node_id: Some("stream_answer".into()),
-                parent_id: Some("stream_reasoning".into()),
-                title: Some("assistant_answer_phase".into()),
-                chunk: None,
-                context_snapshot: None,
-            },
+            "",
+            true,
             coop_cancel,
         )
         .await?;
@@ -486,15 +488,18 @@ async fn ingest_sse_content_from_delta(frame: IngestSseContentFrame<'_>) -> std:
     }
     tui_scratch_push_content(tui_llm_stream_scratch.as_ref(), &display);
     if cli_terminal_plain {
-        cli_terminal_write_plain_fragment(
+        host.cli_terminal_write_plain_fragment(
             &display,
-            cli_plain_prefix_emitted,
+            TerminalPlainFragmentCtx {
+                prefix_emitted: cli_plain_prefix_emitted,
+                reasoning_style_active: cli_plain_reasoning_style_active,
+            },
             false,
-            cli_plain_reasoning_style_active,
         )?;
     }
     if let Some(tx) = out {
         let _ = sse_out_send(
+            host,
             tx,
             display,
             "llm::stream_chat ingest delta (content)",
@@ -506,7 +511,7 @@ async fn ingest_sse_content_from_delta(frame: IngestSseContentFrame<'_>) -> std:
 }
 
 fn ingest_sse_merge_tool_call_deltas(
-    tcs: Vec<crate::types::StreamToolCallDelta>,
+    tcs: Vec<crabmate_types::StreamToolCallDelta>,
     tool_calls_acc: &mut Vec<(String, String, String, String)>,
 ) {
     for tc in tcs {
@@ -538,6 +543,7 @@ fn ingest_sse_merge_tool_call_deltas(
 }
 
 async fn ingest_sse_tool_calls_from_delta(
+    host: &dyn StreamChatHost,
     delta: StreamDelta,
     tool_calls_acc: &mut Vec<(String, String, String, String)>,
     parsing_tool_calls_notified: &mut bool,
@@ -551,12 +557,11 @@ async fn ingest_sse_tool_calls_from_delta(
     if !*parsing_tool_calls_notified && !tcs.is_empty() {
         *parsing_tool_calls_notified = true;
         if let Some(tx) = out {
-            flush_sse_delta_buffer(pending_sse_delta, Some(tx), coop_cancel).await;
+            flush_sse_delta_buffer(host, pending_sse_delta, Some(tx), coop_cancel).await;
             let _ = sse_out_send(
+                host,
                 tx,
-                crate::sse::encode_message(crate::sse::SsePayload::ParsingToolCalls {
-                    parsing_tool_calls: true,
-                }),
+                host.encode_parsing_tool_calls_sse(),
                 "llm::stream_chat parsing_tool_calls notify",
                 coop_cancel,
             )
@@ -575,6 +580,7 @@ pub(super) async fn ingest_sse_data_payload(
         return Ok(());
     }
     let IngestSseState {
+        host,
         out,
         pending_sse_delta,
         reasoning_acc,
@@ -601,6 +607,7 @@ pub(super) async fn ingest_sse_data_payload(
     ingest_sse_apply_finish_reason(finish_reason, &choice);
     let delta = choice.delta;
     ingest_sse_reasoning_from_delta(IngestSseReasoningFrame {
+        host,
         delta: &delta,
         reasoning_acc,
         minimax_reasoning_snaps,
@@ -614,6 +621,7 @@ pub(super) async fn ingest_sse_data_payload(
     })
     .await?;
     ingest_sse_content_from_delta(IngestSseContentFrame {
+        host,
         delta: &delta,
         content_acc,
         pending_sse_delta,
@@ -628,6 +636,7 @@ pub(super) async fn ingest_sse_data_payload(
     })
     .await?;
     ingest_sse_tool_calls_from_delta(
+        host,
         delta,
         tool_calls_acc,
         parsing_tool_calls_notified,
@@ -639,7 +648,6 @@ pub(super) async fn ingest_sse_data_payload(
     Ok(())
 }
 
-/// 流式 SSE 消费结束后的累积状态（供拼装 [`crate::types::Message`]）。
 pub(super) struct SseStreamAccum {
     pub(super) reasoning_acc: String,
     pub(super) content_acc: String,
@@ -649,19 +657,32 @@ pub(super) struct SseStreamAccum {
     pub(super) cli_plain_reasoning_style_active: bool,
 }
 
+pub(super) struct ConsumeSseStreamOpts<'a> {
+    pub cancel: Option<&'a AtomicBool>,
+    pub out: Option<&'a Sender<String>>,
+    pub cli_terminal_plain: bool,
+    pub thinking_trace_enabled: bool,
+    pub dsml_stream_strip_enabled: bool,
+    pub tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
+}
+
 pub(super) async fn consume_openai_sse_byte_stream<S, B>(
+    host: &dyn StreamChatHost,
     mut stream: S,
-    cancel: Option<&AtomicBool>,
-    out: Option<&Sender<String>>,
-    cli_terminal_plain: bool,
-    thinking_trace_enabled: bool,
-    dsml_stream_strip_enabled: bool,
-    tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
+    opts: ConsumeSseStreamOpts<'_>,
 ) -> Result<SseStreamAccum, Box<dyn std::error::Error + Send + Sync>>
 where
     S: futures_util::Stream<Item = Result<B, reqwest::Error>> + Unpin,
     B: AsRef<[u8]>,
 {
+    let ConsumeSseStreamOpts {
+        cancel,
+        out,
+        cli_terminal_plain,
+        thinking_trace_enabled,
+        dsml_stream_strip_enabled,
+        tui_llm_stream_scratch,
+    } = opts;
     let mut buf = Vec::new();
     let mut reasoning_acc = String::new();
     let mut content_acc = String::new();
@@ -673,8 +694,7 @@ where
     let mut cli_plain_prefix_emitted = false;
     let mut cli_plain_reasoning_style_active = false;
     let mut minimax_reasoning_snaps: Vec<String> = Vec::new();
-    let mut dsml_content_filter =
-        crate::dsml::StreamingDsmlContentFilter::new(dsml_stream_strip_enabled);
+    let mut dsml_content_filter = host.new_dsml_stream_filter(dsml_stream_strip_enabled);
     let mut stream_done = false;
 
     while let Some(chunk) = stream.next().await {
@@ -699,6 +719,7 @@ where
             if ingest_openai_sse_trimmed_line(
                 line,
                 IngestSseState {
+                    host,
                     out,
                     pending_sse_delta: &mut pending_sse_delta,
                     reasoning_acc: &mut reasoning_acc,
@@ -713,7 +734,7 @@ where
                     coop_cancel: cancel,
                     thinking_trace_enabled,
                     tui_llm_stream_scratch: tui_llm_stream_scratch.clone(),
-                    dsml_content_filter: &mut dsml_content_filter,
+                    dsml_content_filter: dsml_content_filter.as_mut(),
                 },
             )
             .await?
@@ -734,6 +755,7 @@ where
         stream_done,
         buf.as_slice(),
         IngestSseState {
+            host,
             out,
             pending_sse_delta: &mut pending_sse_delta,
             reasoning_acc: &mut reasoning_acc,
@@ -748,21 +770,22 @@ where
             coop_cancel: cancel,
             thinking_trace_enabled,
             tui_llm_stream_scratch: tui_llm_stream_scratch.clone(),
-            dsml_content_filter: &mut dsml_content_filter,
+            dsml_content_filter: dsml_content_filter.as_mut(),
         },
     )
     .await?;
 
-    flush_sse_delta_buffer(&mut pending_sse_delta, out, cancel).await;
-    flush_dsml_stream_filter_tail(
-        &mut dsml_content_filter,
+    flush_sse_delta_buffer(host, &mut pending_sse_delta, out, cancel).await;
+    flush_dsml_stream_filter_tail(FlushDsmlTailCtx {
+        host,
+        dsml_content_filter: dsml_content_filter.as_mut(),
         out,
         cli_terminal_plain,
-        &mut cli_plain_prefix_emitted,
-        &mut cli_plain_reasoning_style_active,
-        cancel,
-        tui_llm_stream_scratch.as_ref(),
-    )
+        cli_plain_prefix_emitted: &mut cli_plain_prefix_emitted,
+        cli_plain_reasoning_style_active: &mut cli_plain_reasoning_style_active,
+        coop_cancel: cancel,
+        tui_llm_stream_scratch: tui_llm_stream_scratch.as_ref(),
+    })
     .await?;
 
     Ok(SseStreamAccum {

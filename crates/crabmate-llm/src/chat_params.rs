@@ -7,6 +7,7 @@ use tokio::sync::mpsc::Sender;
 
 use crabmate_config::LlmHttpAuthMode;
 
+use crate::stream_host::StreamChatHost;
 use crate::stream_scratch::TuiLlmStreamScratchArc;
 
 /// **SSE / 终端 / 流式 / 取消** 开关（各调用点差异主要在此）。
@@ -35,9 +36,10 @@ impl<'a> LlmRetryingTransportOpts<'a> {
     }
 }
 
-/// 与根包 `api::stream_chat` 一致的传输与展示开关（不含可变请求体）。
+/// 单次 `chat/completions` 传输与展示开关（不含可变请求体）。
 #[derive(Clone)]
 pub struct StreamChatParams<'a> {
+    pub host: &'a dyn StreamChatHost,
     pub client: &'a Client,
     pub api_key: &'a str,
     pub api_base: &'a str,
