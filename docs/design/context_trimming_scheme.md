@@ -49,7 +49,7 @@
 
 ### 3.2 供应商出站（Vendor body）
 
-- **入口**：**`conversation_messages_to_vendor_body`** / **`normalize_stripped_messages_for_vendor_body`** 等（见 **`message_pipeline/vendor.rs`**）。  
+- **入口**：**`conversation_messages_to_vendor_body`** / **`normalize_stripped_messages_for_vendor_body`** 等（见 **`crabmate_llm::vendor_messages`**；根包经 **`message_pipeline`** 再导出）。  
 - **作用对象**：从会话切片构造 **`ChatRequest.messages`**，**不写回**会话 `Vec`。  
 - **典型处理**：跳过 UI 分隔线 / 长期记忆注入展示条、按网关处理 **`reasoning_content`**、OpenAI 兼容 **normalize**、可选 **system→user** 折叠。
 

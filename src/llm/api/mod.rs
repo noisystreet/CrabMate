@@ -345,7 +345,7 @@ pub async fn stream_chat(
     );
 
     let taken = std::mem::take(&mut req.messages);
-    req.messages = crate::agent::message_pipeline::conversation_messages_to_vendor_body(
+    req.messages = crabmate_llm::vendor_messages::conversation_messages_to_vendor_body(
         &taken,
         fold_system_into_user,
         preserve_reasoning_on_assistant_tool_calls,

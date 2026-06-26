@@ -1,9 +1,23 @@
 //! 供应商出站路径：构造 `ChatRequest.messages` 前的 normalize 与 `tool_calls.arguments` 规整。
 
-use crate::types::Message;
+use crabmate_types::Message;
+
+fn single_line_preview(s: &str, max_chars: usize) -> String {
+    let folded = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    if max_chars == 0 {
+        return String::new();
+    }
+    let mut iter = folded.chars();
+    let prefix: String = iter.by_ref().take(max_chars).collect();
+    if iter.next().is_some() {
+        format!("{prefix}…(truncated)")
+    } else {
+        prefix
+    }
+}
 
 fn sanitize_assistant_tool_call_arguments_for_vendor_in_place(msgs: &mut [Message]) {
-    use crate::types::sanitize_tool_call_arguments_for_openai_compat;
+    use crabmate_types::sanitize_tool_call_arguments_for_openai_compat;
 
     for m in msgs.iter_mut() {
         if !m.role.trim().eq_ignore_ascii_case("assistant") {
@@ -30,7 +44,7 @@ fn sanitize_assistant_tool_call_arguments_for_vendor_in_place(msgs: &mut [Messag
                     target: "crabmate",
                     "tool_calls.function.arguments 无法解析为 JSON（已替换为 {{}} 以满足上游校验；常见原因：流式截断、字符串内未转义换行、模型输出非 JSON）。tool_call_id={} preview={}",
                     tc.id,
-                    crate::redact::single_line_preview(orig, 120)
+                    single_line_preview(orig, 120)
                 );
             } else {
                 log::debug!(
@@ -44,7 +58,7 @@ fn sanitize_assistant_tool_call_arguments_for_vendor_in_place(msgs: &mut [Messag
     }
 }
 
-/// 从会话切片构造发往 OpenAI 兼容 API 的 `messages`：**跳过** UI 分隔线与长期记忆注入、按 `preserve_reasoning_on_assistant_tool_calls` 剥离或保留 `reasoning_content`、再 normalize（合并相邻 assistant 等）；`fold_system_into_user` 为真时再 [`crate::types::fold_system_messages_into_following_user`]。
+/// 从会话切片构造发往 OpenAI 兼容 API 的 `messages`：**跳过** UI 分隔线与长期记忆注入、按 `preserve_reasoning_on_assistant_tool_calls` 剥离或保留 `reasoning_content`、再 normalize（合并相邻 assistant 等）；`fold_system_into_user` 为真时再 [`crabmate_types::fold_system_messages_into_following_user`]。
 #[inline]
 pub fn conversation_messages_to_vendor_body(
     messages: &[Message],
@@ -52,15 +66,15 @@ pub fn conversation_messages_to_vendor_body(
     preserve_reasoning_on_assistant_tool_calls: bool,
     preserve_deepseek_thinking_reasoning_roundtrip: bool,
 ) -> Vec<Message> {
-    let mut v = crate::types::normalize_messages_for_openai_compatible_request(
-        crate::types::messages_for_api_stripping_reasoning_skip_ui_separators(
+    let mut v = crabmate_types::normalize_messages_for_openai_compatible_request(
+        crabmate_types::messages_for_api_stripping_reasoning_skip_ui_separators(
             messages,
             preserve_reasoning_on_assistant_tool_calls,
             preserve_deepseek_thinking_reasoning_roundtrip,
         ),
     );
     if fold_system_into_user {
-        v = crate::types::fold_system_messages_into_following_user(v);
+        v = crabmate_types::fold_system_messages_into_following_user(v);
     }
     sanitize_assistant_tool_call_arguments_for_vendor_in_place(&mut v);
     v
@@ -72,9 +86,9 @@ pub fn normalize_stripped_messages_for_vendor_body(
     messages: Vec<Message>,
     fold_system_into_user: bool,
 ) -> Vec<Message> {
-    let mut v = crate::types::normalize_messages_for_openai_compatible_request(messages);
+    let mut v = crabmate_types::normalize_messages_for_openai_compatible_request(messages);
     if fold_system_into_user {
-        v = crate::types::fold_system_messages_into_following_user(v);
+        v = crabmate_types::fold_system_messages_into_following_user(v);
     }
     sanitize_assistant_tool_call_arguments_for_vendor_in_place(&mut v);
     v

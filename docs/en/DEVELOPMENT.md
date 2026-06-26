@@ -91,7 +91,7 @@ Runtime **`AgentConfig`** merges TOML shards / environment variables and is vali
 | **`tool_result/`** | Tool output envelopes, aligned with SSE **`tool_result`**. |
 | **`crabmate-types`** (`crates/crabmate-types`) | OpenAI-compatible messages; root **`pub use crabmate_types as types`**. |
 | **`crabmate-config`** (`crates/crabmate-config`) | **`AgentConfig`** loading, `finalize`, hot reload, CLI definitions; root **`pub use crabmate_config as config`**. |
-| **`crabmate-llm`** (`crates/crabmate-llm`) | **`vendor`**, shared **`http_client`**, **`ChatCompletionsBackend`** trait, error types; root **`llm`** re-exports and hosts **`api::stream_chat`** / **`complete_chat_retrying`**. |
+| **`crabmate-llm`** (`crates/crabmate-llm`) | **`vendor`**, outbound **`vendor_messages`**, **`requests`** (`ChatRequest` builders), shared **`http_client`**, **`ChatCompletionsBackend`** trait, error types; root **`llm`** re-exports and hosts **`api::stream_chat`** / **`complete_chat_retrying`**. |
 | **`types` (root re-export)** | Same as `crabmate-types`; in-repo code still commonly uses **`crate::types::`**. |
 | **`observability.rs`** | Tracing init and **`TracingChatTurn`**. |
 
