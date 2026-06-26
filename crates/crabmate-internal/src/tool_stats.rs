@@ -41,6 +41,12 @@ pub struct ToolOutcomeRecorder {
     execution_log: Mutex<VecDeque<ToolExecutionLogEntry>>,
 }
 
+impl Default for ToolOutcomeRecorder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ToolOutcomeRecorder {
     pub fn new() -> Self {
         Self {

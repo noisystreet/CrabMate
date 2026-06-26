@@ -31,7 +31,7 @@ pub use requests::{
     vendor_temperature_for_model,
 };
 pub use retry::{CompleteChatRetryingParams, complete_chat_retrying};
-pub use retry_hooks::LlmRetryHooks;
+pub use retry_hooks::{LlmRetryDecisionPoint, LlmRetryHooks};
 pub use stream_scratch::{TuiLlmStreamScratch, TuiLlmStreamScratchArc};
 pub use vendor::{
     LlmVendorAdapter, fold_system_into_user_for_config, llm_vendor_adapter,

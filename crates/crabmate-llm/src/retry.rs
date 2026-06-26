@@ -11,7 +11,7 @@ use crate::backend::ChatCompletionsBackend;
 use crate::call_error::{llm_call_error_http_status, llm_call_error_retryable};
 use crate::chat_params::StreamChatParams;
 use crate::complete_error::LlmCompleteError;
-use crate::retry_hooks::LlmRetryHooks;
+use crate::retry_hooks::{LlmRetryDecisionPoint, LlmRetryHooks};
 
 static LLM_CALL_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
@@ -142,18 +142,22 @@ pub async fn complete_chat_retrying(
                         "phase": "llm",
                     })),
                 );
-                hooks.append_decision_point(
-                    "llm",
-                    "llm_retry_policy",
-                    if can_backoff { "retry" } else { "stop" },
-                    if can_backoff {
-                        "请求失败且可重试，按指数退避继续重试"
-                    } else if retryable {
-                        "达到最大重试次数，停止重试"
+                hooks.append_decision_point(&LlmRetryDecisionPoint {
+                    phase: "llm".to_string(),
+                    decision_id: "llm_retry_policy".to_string(),
+                    outcome: if can_backoff {
+                        "retry".to_string()
                     } else {
-                        "错误不可重试，立即停止"
+                        "stop".to_string()
                     },
-                    serde_json::json!({
+                    rationale: if can_backoff {
+                        "请求失败且可重试，按指数退避继续重试".to_string()
+                    } else if retryable {
+                        "达到最大重试次数，停止重试".to_string()
+                    } else {
+                        "错误不可重试，立即停止".to_string()
+                    },
+                    detail: serde_json::json!({
                         "llm_call_id": llm_call_id,
                         "attempt": attempt + 1,
                         "max_attempts": max_attempts,
@@ -161,11 +165,11 @@ pub async fn complete_chat_retrying(
                         "http_status": http_status,
                         "backoff_ms": backoff_ms,
                     }),
-                    "current_llm_call",
-                    Some(serde_json::json!({
+                    anchor_kind: "current_llm_call".to_string(),
+                    anchor: Some(serde_json::json!({
                         "llm_call_id": llm_call_id,
                     })),
-                );
+                });
                 if can_backoff {
                     let delay_secs = p
                         .cfg

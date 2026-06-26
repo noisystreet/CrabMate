@@ -22,6 +22,12 @@ pub struct RequestTurnTrace {
     events: Mutex<Vec<Value>>,
 }
 
+impl Default for RequestTurnTrace {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RequestTurnTrace {
     pub fn new() -> Self {
         Self {
