@@ -3,8 +3,8 @@
 //! 目标：提供统一 `IntentDecision` 契约，并先复用现有 `intent_router` 规则逻辑，
 //! 为后续接入 L2 分类器（LLM / embedding / 专用分类模型）预留稳定入口。
 
-use crate::agent::intent_l0::{self, IntentL0Snapshot};
-use crate::agent::intent_router::{
+use crate::intent_l0::{self, IntentL0Snapshot};
+use crate::intent_router::{
     ExecuteIntentThresholds, IntentAssessment, IntentKind, IntentRoute,
     is_explicit_execute_confirmation, route_user_task_with_thresholds,
 };
@@ -187,7 +187,7 @@ fn refresh_decision_action_after_l2_override(
     l1_kind: IntentKind,
     l1_route: &IntentRoute,
 ) {
-    use crate::agent::intent_router::{
+    use crate::intent_router::{
         ambiguous_ask_message, greeting_reply_message, qa_direct_reply_for_primary,
     };
     match decision.kind {
@@ -255,9 +255,7 @@ fn maybe_boost_execute_from_l0(
             route: if conf >= thresholds.high {
                 IntentRoute::Execute
             } else {
-                IntentRoute::ConfirmThenExecute(
-                    crate::agent::intent_router::EXECUTE_CONFIRM.to_string(),
-                )
+                IntentRoute::ConfirmThenExecute(crate::intent_router::EXECUTE_CONFIRM.to_string())
             },
         };
         return;
@@ -292,7 +290,7 @@ fn map_assessment_to_decision(task: &str, assessment: IntentAssessment) -> Inten
                 if reply.starts_with("收到，我先不执行") {
                     reply.clone()
                 } else {
-                    crate::agent::intent_router::qa_direct_reply_for_primary(&primary_intent)
+                    crate::intent_router::qa_direct_reply_for_primary(&primary_intent)
                 }
             } else {
                 reply.clone()
@@ -602,7 +600,7 @@ fn classify_with_l2_stub(_task: &str, _ctx: &IntentContext) -> Option<L2IntentCa
 #[cfg(test)]
 mod tests {
     use super::{IntentContext, L2IntentCandidate, assess_and_route_with_l2};
-    use crate::agent::intent_router::IntentKind;
+    use crate::intent_router::IntentKind;
 
     /// 细粒度断言见 `fixtures/intent_regression.jsonl`（`cargo test golden_intent_regression`）。
 

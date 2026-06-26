@@ -1,12 +1,14 @@
 //! CrabMate Agent **领域层**：规划产物解析、意图路由、反思控制器等（与 HTTP / 工具执行编排解耦）。
 //!
-//! 完整回合编排（`agent_turn`、`hierarchy`、`workflow` 执行、PER 协调）仍在根包 **`crabmate::agent`**，以便注入 `tool_registry`、SSE 与 `complete_chat_retrying`。
+//! 完整回合编排（`agent_turn` 执行面、`hierarchy`、`workflow` 执行、PER 协调）仍在根包 **`crabmate::agent`**，以便注入 `tool_registry`、SSE 与 `complete_chat_retrying`。
 //!
 //! 依赖链：`crabmate-types` → `crabmate-config` → **`crabmate-agent`** → `crabmate`（根包编排）。
 
 pub mod acceptance;
+pub mod agent_turn;
 pub mod evolution;
 pub mod intent_l0;
+pub mod intent_pipeline;
 pub mod intent_router;
 mod log_preview;
 pub mod message_pipeline;

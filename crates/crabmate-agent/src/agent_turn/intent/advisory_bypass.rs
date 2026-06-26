@@ -2,8 +2,8 @@
 //!
 //! 内置中英文关键词表可经 **[`crate::config::StagedPlanningConfig`]** 中三个 `*_extra_*` 列表**追加**（运行时一律小写匹配）。
 
-use crate::agent::intent_pipeline::{IntentAction, IntentDecision};
-use crate::config::StagedPlanningConfig;
+use crate::intent_pipeline::{IntentAction, IntentDecision};
+use crabmate_config::StagedPlanningConfig;
 
 const DEFAULT_IMPL_STRENGTH: &[&str] = &[
     "请修改",
@@ -78,18 +78,18 @@ fn contains_any(lower: &str, defaults: &[&str], extras: &[String]) -> bool {
 }
 
 /// 是否命中「落地强度」词（改代码/跑构建/提交等）；供 [`super::readonly_overview_bypass`] 复用。
-pub(crate) fn task_has_impl_strength_markers(lower: &str, extra_blockers: &[String]) -> bool {
+pub fn task_has_impl_strength_markers(lower: &str, extra_blockers: &[String]) -> bool {
     contains_any(lower, DEFAULT_IMPL_STRENGTH, extra_blockers)
 }
 
 /// 是否命中咨询/说明类词。
-pub(crate) fn task_has_consult_markers(lower: &str, extra_markers: &[String]) -> bool {
+pub fn task_has_consult_markers(lower: &str, extra_markers: &[String]) -> bool {
     contains_any(lower, DEFAULT_CONSULT, extra_markers)
 }
 
 /// 在 **`IntentAction::Execute`** 且开启 **`staged_plan_intent_gate_advisory_bypass`** 时：
 /// 若命中「架构/咨询」启发式且未命中「落地强度」词，则**绕过分阶段**（由门控返回 [`super::StagedPlanningDenyReason::AdvisoryExecuteBypassStaged`]）。
-pub(crate) fn should_bypass_staged_for_advisory_execute_task(
+pub fn should_bypass_staged_for_advisory_execute_task(
     task: &str,
     decision: &IntentDecision,
     staged: &StagedPlanningConfig,
@@ -128,9 +128,9 @@ pub(crate) fn should_bypass_staged_for_advisory_execute_task(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::intent_pipeline::IntentDecision;
-    use crate::agent::intent_router::IntentKind;
-    use crate::config::{StagedPlanBaselineMode, StagedPlanFeedbackMode};
+    use crate::intent_pipeline::IntentDecision;
+    use crate::intent_router::IntentKind;
+    use crabmate_config::{StagedPlanBaselineMode, StagedPlanFeedbackMode};
 
     fn execute_decision() -> IntentDecision {
         IntentDecision {
