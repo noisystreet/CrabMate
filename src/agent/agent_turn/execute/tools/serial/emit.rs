@@ -2,9 +2,8 @@ use std::time::Duration;
 
 use log::{info, warn};
 
-use crate::agent::agent_turn::sub_agent_policy::{
-    executor_kind_tool_denied_body, tool_allowed_for_step_executor_kind,
-};
+use crabmate_agent::agent_turn::{ToolPolicyEarlyDenyParams, tool_policy_early_deny_message};
+
 use crate::agent::per_coord::PerCoordinator;
 use crate::tool_registry;
 use crate::tool_result::parse_legacy_output;
@@ -81,34 +80,13 @@ fn readonly_tool_ttl_cache_should_invalidate_workspace(
 pub(super) async fn serial_emit_early_tool_policy_denials(
     p: SerialEarlyToolPolicyDenyParams<'_>,
 ) -> bool {
-    if let Some(k) = p.step_executor_constraint
-        && !tool_allowed_for_step_executor_kind(p.cfg.as_ref(), p.name, k)
-    {
-        let denied = executor_kind_tool_denied_body(p.cfg.as_ref(), p.tools_defs_full, p.name, k);
-        warn!(target: super::super::LOG_TARGET, "{}", denied);
-        emit_serial_tool_result(SerialEmitToolResultParams {
-            messages: p.messages,
-            per_coord: p.per_coord,
-            cfg: p.cfg,
-            tool_outcome_recorder: p.tool_outcome_recorder,
-            out: p.out,
-            sse_control_mirror: p.sse_control_mirror.clone(),
-            clarification_questionnaire_hook: p.clarification_questionnaire_hook.clone(),
-            echo_terminal_transcript: p.echo_terminal_transcript,
-            terminal_tool_display_max_chars: p.terminal_tool_display_max_chars,
-            tool_result_envelope_v1: p.tool_result_envelope_v1,
-            name: p.name,
-            args: p.args,
-            id: p.id,
-            result: denied,
-            reflection_inject: None,
-        })
-        .await;
-        return true;
-    }
-
-    if !crate::agent_role_turn::tool_allowed_for_turn(p.name, p.turn_allow) {
-        let denied = crate::agent_role_turn::turn_tool_denied_message(p.name);
+    if let Some(denied) = tool_policy_early_deny_message(&ToolPolicyEarlyDenyParams {
+        cfg: p.cfg.as_ref(),
+        name: p.name,
+        step_executor_constraint: p.step_executor_constraint,
+        tools_defs: p.tools_defs_full,
+        turn_allow: p.turn_allow,
+    }) {
         warn!(target: super::super::LOG_TARGET, "{}", denied);
         emit_serial_tool_result(SerialEmitToolResultParams {
             messages: p.messages,
