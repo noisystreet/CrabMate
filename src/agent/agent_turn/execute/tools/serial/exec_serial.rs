@@ -5,9 +5,10 @@ use std::time::Instant;
 
 use log::info;
 
-use crate::agent::workflow_tool_dispatch;
-use crate::tool_registry::{self, HandlerId, ToolRuntime};
+use crate::agent::agent_turn::execute::tool_execution_host::CrabmateToolExecutionHost;
+use crate::tool_registry::{self, ToolRuntime};
 use crate::types::ToolCall;
+use crabmate_agent::agent_turn::ToolExecutionHost;
 
 use super::super::{
     ExecuteToolsBatchOutcome, ExecuteToolsCommonCtx, abort_tool_batch_if_sse_closed,
@@ -217,20 +218,14 @@ async fn serial_execute_one_tool_call(
             ctx: st.web_tool_ctx,
         }
     };
-    let (result, reflection_inject) =
-        if st.handler_lookup.id_for(name.as_str()) == HandlerId::Workflow {
-            workflow_tool_dispatch::dispatch_workflow_execute_tool(
-                runtime,
-                st.per_coord,
-                st.cfg,
-                st.effective_working_dir,
-                st.workspace_is_set,
-                args.as_str(),
-                st.request_chrome_trace.clone(),
-            )
-            .await
-        } else {
-            tool_registry::dispatch_tool(tool_registry::DispatchToolParams {
+    let (result, reflection_inject) = {
+        let mut host = CrabmateToolExecutionHost {
+            per_coord: st.per_coord,
+            request_chrome_trace: st.request_chrome_trace.clone(),
+        };
+        host.dispatch_tool_call(
+            name.as_str(),
+            tool_registry::DispatchToolParams {
                 runtime,
                 cfg: st.cfg,
                 effective_working_dir: st.effective_working_dir,
@@ -248,9 +243,10 @@ async fn serial_execute_one_tool_call(
                 long_term_memory_scope_id: st.long_term_memory_scope_id.clone(),
                 handler_lookup: &st.handler_lookup,
                 sync_default_sandbox_backend: &st.sync_default_sandbox_backend,
-            })
-            .await
-        };
+            },
+        )
+        .await
+    };
 
     info!(
         target: super::super::LOG_TARGET,

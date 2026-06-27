@@ -19,6 +19,10 @@ use crate::tool_registry;
 use crate::tool_result::ToolEnvelopeContext;
 use crate::types::{Message, Tool, ToolCall};
 use crate::workspace::changelist::WorkspaceChangelist;
+use crabmate_agent::agent_turn::{
+    ToolBatchExecutionMode, ToolBatchModeParams, replay_force_serial_from_env,
+    resolve_tool_batch_execution_mode,
+};
 
 mod emit;
 mod parallel_readonly;
@@ -94,12 +98,9 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub sse_control_mirror: Option<crate::sse::SseControlMirror>,
 }
 
-pub(crate) enum ExecuteToolsBatchOutcome {
-    /// 本批工具跑完，继续外层循环
-    Finished,
-    /// SSE 在工具执行中断开
-    AbortedSse,
-}
+pub(crate) use crabmate_agent::agent_turn::{
+    ExecuteToolsBatchOutcome, dedup_readonly_tool_calls_count,
+};
 
 /// 单工具：SSE / 终端回显 + 追加 `tool` 与可选反思 `user`（与串行路径一致）的入参。
 pub(super) struct EmitToolResultParams<'a> {
@@ -142,15 +143,6 @@ async fn abort_tool_batch_if_sse_closed(
     )
     .await;
     true
-}
-
-/// 统计并行只读批次中去重后的唯一 `(name, args)` 数。
-pub(crate) fn dedup_readonly_tool_calls_count(tool_calls: &[ToolCall]) -> usize {
-    let mut seen: HashSet<(&str, &str)> = HashSet::with_capacity(tool_calls.len());
-    for tc in tool_calls {
-        seen.insert((tc.function.name.as_str(), tc.function.arguments.as_str()));
-    }
-    seen.len()
 }
 
 /// E：执行一批 tool 调用（Web/CLI 共用骨架），写入 tool / 反思 user，并发送 SSE 片段。
@@ -207,92 +199,94 @@ fn notify_cli_tool_running_hook(
 async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsBatchOutcome {
     let tool_running_hook = ctx.tool_running_hook.clone();
     let out = ctx.out;
-    let force_serial = std::env::var("CM_REPLAY_FORCE_SERIAL")
-        .ok()
-        .map(|v| v.trim().to_ascii_lowercase())
-        .is_some_and(|v| matches!(v.as_str(), "1" | "true" | "yes" | "on"));
+    let force_serial = replay_force_serial_from_env();
 
     emit_sse_tool_running(out, true, "execute_tools::batch tool_running true").await;
     notify_cli_tool_running_hook(out, tool_running_hook.as_ref(), true);
 
-    let workspace_changed = if !force_serial
-        && ctx.workspace_is_set
-        && crate::agent_role_turn::tool_calls_allow_parallel_for_role(
-            &ctx.handler_lookup,
-            ctx.cfg.as_ref(),
-            ctx.tool_calls,
-            ctx.turn_allow,
-        ) {
-        crate::turn_replay_dump::append_decision_point_event_if_configured(
-            "tool_execution",
-            "tool_batch_execution_mode",
-            "parallel_readonly_batch",
-            "当前批次满足只读并行条件，采用并行只读批执行以提升吞吐",
-            serde_json::json!({
-                "force_serial": force_serial,
-                "workspace_is_set": ctx.workspace_is_set,
-                "tool_call_count": ctx.tool_calls.len(),
-            }),
-            "current_tool_batch",
-            None,
-        );
-        let outcome = execute_tools_parallel(ctx).await;
-        if matches!(outcome, ExecuteToolsBatchOutcome::AbortedSse) {
-            emit_sse_tool_running(
-                out,
-                false,
-                "execute_tools::batch aborted_after_parallel tool_running false",
-            )
-            .await;
-            notify_cli_tool_running_hook(out, tool_running_hook.as_ref(), false);
-            return outcome;
+    let batch_mode = resolve_tool_batch_execution_mode(&ToolBatchModeParams {
+        force_serial,
+        workspace_is_set: ctx.workspace_is_set,
+        handler_lookup: &ctx.handler_lookup,
+        cfg: ctx.cfg.as_ref(),
+        tool_calls: ctx.tool_calls,
+        turn_allow: ctx.turn_allow,
+    });
+
+    let workspace_changed = match batch_mode {
+        ToolBatchExecutionMode::ParallelReadonlyBatch => {
+            crate::turn_replay_dump::append_decision_point_event_if_configured(
+                "tool_execution",
+                "tool_batch_execution_mode",
+                "parallel_readonly_batch",
+                "当前批次满足只读并行条件，采用并行只读批执行以提升吞吐",
+                serde_json::json!({
+                    "force_serial": force_serial,
+                    "workspace_is_set": ctx.workspace_is_set,
+                    "tool_call_count": ctx.tool_calls.len(),
+                }),
+                "current_tool_batch",
+                None,
+            );
+            let outcome = execute_tools_parallel(ctx).await;
+            if matches!(outcome, ExecuteToolsBatchOutcome::AbortedSse) {
+                emit_sse_tool_running(
+                    out,
+                    false,
+                    "execute_tools::batch aborted_after_parallel tool_running false",
+                )
+                .await;
+                notify_cli_tool_running_hook(out, tool_running_hook.as_ref(), false);
+                return outcome;
+            }
+            false
         }
-        false
-    } else {
-        crate::turn_replay_dump::append_decision_point_event_if_configured(
-            "tool_execution",
-            "tool_batch_execution_mode",
-            "serial",
+        ToolBatchExecutionMode::Serial => {
+            crate::turn_replay_dump::append_decision_point_event_if_configured(
+                "tool_execution",
+                "tool_batch_execution_mode",
+                "serial",
+                if force_serial {
+                    "环境变量强制串行执行，关闭并行只读批"
+                } else {
+                    "当前批次不满足并行条件，回退串行执行"
+                },
+                serde_json::json!({
+                    "force_serial": force_serial,
+                    "workspace_is_set": ctx.workspace_is_set,
+                    "tool_call_count": ctx.tool_calls.len(),
+                }),
+                "current_tool_batch",
+                None,
+            );
             if force_serial {
-                "环境变量强制串行执行，关闭并行只读批"
-            } else {
-                "当前批次不满足并行条件，回退串行执行"
-            },
-            serde_json::json!({
-                "force_serial": force_serial,
-                "workspace_is_set": ctx.workspace_is_set,
-                "tool_call_count": ctx.tool_calls.len(),
-            }),
-            "current_tool_batch",
-            None,
-        );
-        if force_serial {
-            log::info!(
-                target: LOG_TARGET,
-                "CM_REPLAY_FORCE_SERIAL enabled: force serial tool execution"
-            );
-            crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
-                "tool_batch_mode",
-                "force_serial",
-                Some(&serde_json::json!({
-                    "source": "CM_REPLAY_FORCE_SERIAL",
-                    "parallel_disabled": true
-                })),
-            );
+                log::info!(
+                    target: LOG_TARGET,
+                    "CM_REPLAY_FORCE_SERIAL enabled: force serial tool execution"
+                );
+                crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
+                    "tool_batch_mode",
+                    "force_serial",
+                    Some(&serde_json::json!({
+                        "source": "CM_REPLAY_FORCE_SERIAL",
+                        "parallel_disabled": true
+                    })),
+                );
+            }
+            let mut workspace_changed = false;
+            let outcome = execute_tools_serial(ctx, &mut workspace_changed).await;
+            if matches!(outcome, ExecuteToolsBatchOutcome::AbortedSse) {
+                emit_sse_tool_running(
+                    out,
+                    false,
+                    "execute_tools::batch aborted_after_serial tool_running false",
+                )
+                .await;
+                notify_cli_tool_running_hook(out, tool_running_hook.as_ref(), false);
+                return outcome;
+            }
+            workspace_changed
         }
-        let mut workspace_changed = false;
-        let outcome = execute_tools_serial(ctx, &mut workspace_changed).await;
-        if matches!(outcome, ExecuteToolsBatchOutcome::AbortedSse) {
-            emit_sse_tool_running(
-                out,
-                false,
-                "execute_tools::batch aborted_after_serial tool_running false",
-            )
-            .await;
-            notify_cli_tool_running_hook(out, tool_running_hook.as_ref(), false);
-            return outcome;
-        }
-        workspace_changed
     };
 
     if let Some(tx) = out

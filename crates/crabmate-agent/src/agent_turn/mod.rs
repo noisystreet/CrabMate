@@ -6,6 +6,7 @@ pub mod intent_routing;
 pub mod messages;
 pub mod staged_planning_gate;
 pub mod staged_planning_gate_types;
+pub mod tool_execution;
 pub mod turn_orchestration;
 
 pub use hierarchical_intent_route::{
@@ -22,6 +23,12 @@ pub use staged_planning_gate::{
     staged_planning_gate_outcome_from_decision,
 };
 pub use staged_planning_gate_types::{StagedPlanningDenyReason, StagedPlanningGateOutcome};
+pub use tool_execution::{
+    ExecuteToolsBatchOutcome, ParallelPrefetchFailureKey, ParallelPrefetchFailures,
+    ToolBatchExecutionMode, ToolBatchModeParams, ToolExecutionHost,
+    dedup_readonly_tool_calls_count, replay_force_serial_from_env,
+    resolve_tool_batch_execution_mode,
+};
 pub use turn_orchestration::{
     NonHierarchicalEntryResolution, NonHierarchicalMainRoute, NonHierarchicalStagedKind,
     SingleAgentOuterLoopBecause, TurnOrchestrationMode, resolve_non_hierarchical_main_route,
