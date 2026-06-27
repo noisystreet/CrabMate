@@ -6,10 +6,12 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use tracing::Instrument;
 
-use crate::agent::agent_turn::sub_agent_policy::{
-    executor_kind_tool_denied_body, tool_allowed_for_step_executor_kind,
+use crabmate_agent::agent_turn::{
+    ParallelPrefetchParams, ToolExecutionHost, ToolPolicyEarlyDenyParams,
+    tool_policy_early_deny_message,
 };
-use crate::agent_role_turn::{tool_allowed_for_turn, turn_tool_denied_message};
+
+use crate::agent::agent_turn::execute::tool_execution_host::CrabmateParallelToolDispatch;
 use crate::config::AgentConfig;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::tool_registry::{
@@ -95,28 +97,15 @@ async fn parallel_prefetch_approval_failures(
     cli_tool_ctx: Option<&CliToolRuntime>,
     handler_lookup: &HandlerLookupTable,
 ) -> HashMap<(String, String), String> {
-    let mut prefetch_failures = HashMap::new();
-    if tool_calls.iter().any(|t| t.function.name == "http_fetch") {
-        prefetch_failures.extend(
-            tool_registry::prefetch_http_fetch_parallel_approvals(
-                tool_calls,
-                cfg,
-                web_tool_ctx,
-                cli_tool_ctx,
-            )
-            .await,
-        );
-    }
-    prefetch_failures.extend(
-        tool_registry::prefetch_parallel_syncdefault_approvals(
-            tool_calls,
-            web_tool_ctx,
-            cli_tool_ctx,
-            handler_lookup,
-        )
-        .await,
-    );
-    prefetch_failures
+    let host = CrabmateParallelToolDispatch;
+    host.prefetch_parallel_approval_failures(ParallelPrefetchParams {
+        tool_calls,
+        cfg,
+        web_tool_ctx,
+        cli_tool_ctx,
+        handler_lookup,
+    })
+    .await
 }
 
 async fn parallel_collect_unique_results(
@@ -176,19 +165,13 @@ async fn parallel_collect_unique_results(
             if let Some(err) = prefetch_err {
                 return (name, args, err);
             }
-            if let Some(k) = constraint
-                && !tool_allowed_for_step_executor_kind(cfg.as_ref(), name.as_str(), k)
-            {
-                let denied = executor_kind_tool_denied_body(
-                    cfg.as_ref(),
-                    tools_defs_hint.as_slice(),
-                    name.as_str(),
-                    k,
-                );
-                return (name, args, denied);
-            }
-            if !tool_allowed_for_turn(name.as_str(), turn_allow) {
-                let denied = turn_tool_denied_message(name.as_str());
+            if let Some(denied) = tool_policy_early_deny_message(&ToolPolicyEarlyDenyParams {
+                cfg: cfg.as_ref(),
+                name: name.as_str(),
+                step_executor_constraint: constraint,
+                tools_defs: tools_defs_hint.as_slice(),
+                turn_allow,
+            }) {
                 return (name, args, denied);
             }
             let wall_secs =
@@ -253,25 +236,29 @@ async fn parallel_collect_unique_results(
                                 ctx: web_tool_ctx,
                             }
                         };
-                        tool_registry::dispatch_tool(tool_registry::DispatchToolParams {
-                            runtime,
-                            cfg: &cfg,
-                            effective_working_dir: wd.as_path(),
-                            workspace_is_set: true,
-                            name: &name,
-                            args: &args,
-                            sse_out_tx: None,
-                            sse_control_mirror: None,
-                            tc: &tc_owned,
-                            read_file_turn_cache: rfc.clone(),
-                            workspace_changelist: wcl.clone(),
-                            mcp_turn: None,
-                            turn_allow,
-                            long_term_memory: ltm.clone(),
-                            long_term_memory_scope_id: ltm_scope.clone(),
-                            handler_lookup: &hl,
-                            sync_default_sandbox_backend: &sb,
-                        })
+                        let mut host = CrabmateParallelToolDispatch;
+                        host.dispatch_tool_call(
+                            name.as_str(),
+                            tool_registry::DispatchToolParams {
+                                runtime,
+                                cfg: &cfg,
+                                effective_working_dir: wd.as_path(),
+                                workspace_is_set: true,
+                                name: &name,
+                                args: &args,
+                                sse_out_tx: None,
+                                sse_control_mirror: None,
+                                tc: &tc_owned,
+                                read_file_turn_cache: rfc.clone(),
+                                workspace_changelist: wcl.clone(),
+                                mcp_turn: None,
+                                turn_allow,
+                                long_term_memory: ltm.clone(),
+                                long_term_memory_scope_id: ltm_scope.clone(),
+                                handler_lookup: &hl,
+                                sync_default_sandbox_backend: &sb,
+                            },
+                        )
                         .await
                         .0
                     }

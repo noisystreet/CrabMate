@@ -13,6 +13,7 @@ pub mod intent_router;
 mod log_preview;
 pub mod message_pipeline;
 pub mod plan_artifact;
+pub mod step_executor_policy;
 /// 面向用户可见正文的轻量清洗（规划摘要等）。
 pub mod text_sanitize;
 /// 单轮墙钟预算判定与文案。

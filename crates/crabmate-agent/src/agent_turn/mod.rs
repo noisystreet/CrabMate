@@ -25,9 +25,9 @@ pub use staged_planning_gate::{
 pub use staged_planning_gate_types::{StagedPlanningDenyReason, StagedPlanningGateOutcome};
 pub use tool_execution::{
     ExecuteToolsBatchOutcome, ParallelPrefetchFailureKey, ParallelPrefetchFailures,
-    ToolBatchExecutionMode, ToolBatchModeParams, ToolExecutionHost,
-    dedup_readonly_tool_calls_count, replay_force_serial_from_env,
-    resolve_tool_batch_execution_mode,
+    ParallelPrefetchParams, ToolBatchExecutionMode, ToolBatchModeParams, ToolExecutionHost,
+    ToolPolicyEarlyDenyParams, dedup_readonly_tool_calls_count, replay_force_serial_from_env,
+    resolve_tool_batch_execution_mode, tool_policy_early_deny_message,
 };
 pub use turn_orchestration::{
     NonHierarchicalEntryResolution, NonHierarchicalMainRoute, NonHierarchicalStagedKind,

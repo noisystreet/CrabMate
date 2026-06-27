@@ -1,12 +1,22 @@
 //! 工具批执行领域类型与模式判定；实际 `dispatch_tool` / workflow 经 [`ToolExecutionHost`] 注入。
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use crabmate_config::AgentConfig;
-use crabmate_internal::agent_role_turn::tool_calls_allow_parallel_for_role;
-use crabmate_internal::tool_registry::{DispatchToolParams, HandlerLookupTable};
-use crabmate_types::ToolCall;
+use crabmate_internal::agent_role_turn::{
+    tool_allowed_for_turn, tool_calls_allow_parallel_for_role, turn_tool_denied_message,
+};
+use crabmate_internal::tool_registry::{
+    CliToolRuntime, DispatchToolParams, HandlerLookupTable, WebToolRuntime,
+};
+use crabmate_types::{Tool, ToolCall};
+
+use crate::plan_artifact::PlanStepExecutorKind;
+use crate::step_executor_policy::{
+    executor_kind_tool_denied_body, tool_allowed_for_step_executor_kind,
+};
 
 /// 一批 tool 调用结束后的外层循环语义（与根包 `execute_tools` 对齐）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,6 +52,9 @@ pub fn replay_force_serial_from_env() -> bool {
         .is_some_and(|v| matches!(v.as_str(), "1" | "true" | "yes" | "on"))
 }
 
+/// 并行只读批预取审批失败映射的键（与根包 `parallel_readonly` 对齐）。
+pub type ParallelPrefetchFailureKey = (String, String);
+
 /// 解析本批应采用并行只读还是串行。
 pub fn resolve_tool_batch_execution_mode(
     params: &ToolBatchModeParams<'_>,
@@ -70,6 +83,45 @@ pub fn dedup_readonly_tool_calls_count(tool_calls: &[ToolCall]) -> usize {
     seen.len()
 }
 
+/// 并行只读批预取审批失败（`name+args` → 错误正文）；由宿主在批前填充。
+pub type ParallelPrefetchFailures = HashMap<ParallelPrefetchFailureKey, String>;
+
+/// [`ToolExecutionHost::prefetch_parallel_approval_failures`] 入参。
+pub struct ParallelPrefetchParams<'a> {
+    pub tool_calls: &'a [ToolCall],
+    pub cfg: &'a Arc<AgentConfig>,
+    pub web_tool_ctx: Option<&'a WebToolRuntime>,
+    pub cli_tool_ctx: Option<&'a CliToolRuntime>,
+    pub handler_lookup: &'a HandlerLookupTable,
+}
+
+/// 子代理角色 / 多角色白名单的同步 early-deny 正文；`None` 表示可继续 dispatch。
+pub struct ToolPolicyEarlyDenyParams<'a> {
+    pub cfg: &'a AgentConfig,
+    pub name: &'a str,
+    pub step_executor_constraint: Option<PlanStepExecutorKind>,
+    pub tools_defs: &'a [Tool],
+    pub turn_allow: Option<&'a HashSet<String>>,
+}
+
+/// 串行 / 并行路径共用的策略 early-deny（不含 TTL / run_command 预检）。
+pub fn tool_policy_early_deny_message(p: &ToolPolicyEarlyDenyParams<'_>) -> Option<String> {
+    if let Some(k) = p.step_executor_constraint
+        && !tool_allowed_for_step_executor_kind(p.cfg, p.name, k)
+    {
+        return Some(executor_kind_tool_denied_body(
+            p.cfg,
+            p.tools_defs,
+            p.name,
+            k,
+        ));
+    }
+    if !tool_allowed_for_turn(p.name, p.turn_allow) {
+        return Some(turn_tool_denied_message(p.name));
+    }
+    None
+}
+
 /// 根包实现的工具分发（`tool_registry::dispatch_tool` 与 `workflow_execute` 等）。
 #[async_trait]
 pub trait ToolExecutionHost: Send + Sync {
@@ -78,13 +130,12 @@ pub trait ToolExecutionHost: Send + Sync {
         name: &str,
         p: DispatchToolParams<'_>,
     ) -> (String, Option<serde_json::Value>);
+
+    async fn prefetch_parallel_approval_failures(
+        &self,
+        params: ParallelPrefetchParams<'_>,
+    ) -> ParallelPrefetchFailures;
 }
-
-/// 并行只读批预取审批失败映射的键（与根包 `parallel_readonly` 对齐）。
-pub type ParallelPrefetchFailureKey = (String, String);
-
-/// 并行只读批预取审批失败（`name+args` → 错误正文）；由宿主在批前填充。
-pub type ParallelPrefetchFailures = HashMap<ParallelPrefetchFailureKey, String>;
 
 #[cfg(test)]
 mod tests {
