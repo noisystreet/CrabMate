@@ -8,8 +8,11 @@ use std::sync::Arc;
 use serde_json::Value;
 use tokio::sync::Mutex as TokioMutex;
 
+use crabmate_agent::agent_turn::ToolExecutionHost;
+
+use crate::agent::agent_turn::CrabmateRegistryToolDispatch;
 use crate::config::AgentConfig;
-use crate::tool_registry::{self, ToolRuntime};
+use crate::tool_registry::{DispatchToolParams, ToolRuntime};
 use crate::types::{CommandApprovalDecision, ToolCall};
 
 /// 工具执行器上下文
@@ -122,7 +125,7 @@ impl ToolExecutor {
 
         log::info!(target: "crabmate", "[HIERARCHICAL] Executing tool: {} with args={}", name, truncate_args(args));
 
-        // 使用 tool_registry::dispatch_tool 以支持审批流程
+        // 经 CrabmateRegistryToolDispatch（ToolExecutionHost）分发，与 execute_tools 串行/并行对齐
         let output = self.dispatch_tool_internal(tool_call).await;
 
         // 判断工具执行是否成功
@@ -254,26 +257,32 @@ impl ToolExecutor {
             }
         };
 
-        let (output, _) = tool_registry::dispatch_tool(tool_registry::DispatchToolParams {
-            runtime,
-            cfg: &self.ctx.cfg,
-            effective_working_dir: &self.ctx.working_dir,
-            workspace_is_set: true,
-            name,
-            args,
-            sse_out_tx: self.ctx.web_tool_runtime.as_ref().map(|w| &w.out_tx),
-            sse_control_mirror: None,
-            tc: tool_call,
-            read_file_turn_cache: None,
-            workspace_changelist: None,
-            mcp_turn: None,
-            turn_allow: None,
-            long_term_memory: None,
-            long_term_memory_scope_id: None,
-            handler_lookup: &self.ctx.handler_lookup,
-            sync_default_sandbox_backend: &self.ctx.sync_default_sandbox_backend,
-        })
-        .await;
+        let (output, _) = {
+            let mut host = CrabmateRegistryToolDispatch;
+            host.dispatch_tool_call(
+                name,
+                DispatchToolParams {
+                    runtime,
+                    cfg: &self.ctx.cfg,
+                    effective_working_dir: &self.ctx.working_dir,
+                    workspace_is_set: true,
+                    name,
+                    args,
+                    sse_out_tx: self.ctx.web_tool_runtime.as_ref().map(|w| &w.out_tx),
+                    sse_control_mirror: None,
+                    tc: tool_call,
+                    read_file_turn_cache: None,
+                    workspace_changelist: None,
+                    mcp_turn: None,
+                    turn_allow: None,
+                    long_term_memory: None,
+                    long_term_memory_scope_id: None,
+                    handler_lookup: &self.ctx.handler_lookup,
+                    sync_default_sandbox_backend: &self.ctx.sync_default_sandbox_backend,
+                },
+            )
+            .await
+        };
 
         if let Some(suppress_key) = duplicate_suppress_key(name, args) {
             let parsed = crate::tool_result::parse_legacy_output(name, &output);

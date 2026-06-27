@@ -200,4 +200,20 @@ mod tests {
         });
         assert_eq!(mode, ToolBatchExecutionMode::Serial);
     }
+
+    #[test]
+    fn early_deny_turn_allow_blocks_tool() {
+        let cfg = test_cfg();
+        let mut allow = HashSet::new();
+        allow.insert("read_file".to_string());
+        let msg = tool_policy_early_deny_message(&ToolPolicyEarlyDenyParams {
+            cfg: &cfg,
+            name: "run_command",
+            step_executor_constraint: None,
+            tools_defs: &[],
+            turn_allow: Some(&allow),
+        });
+        assert!(msg.is_some());
+        assert!(msg.unwrap().contains("run_command"));
+    }
 }
