@@ -11,7 +11,7 @@ use crabmate_agent::agent_turn::{
     tool_policy_early_deny_message,
 };
 
-use crate::agent::agent_turn::execute::tool_execution_host::CrabmateParallelToolDispatch;
+use crate::agent::agent_turn::{CrabmateParallelToolDispatch, ParallelHttpFetchParams};
 use crate::config::AgentConfig;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::tool_registry::{
@@ -198,28 +198,18 @@ async fn parallel_collect_unique_results(
                 let t_tool = Instant::now();
                 let result = match kind {
                     ParallelToolKind::HttpFetch => {
-                        let span_http = tracing::Span::current();
-                        tokio::task::spawn_blocking(move || {
-                            let _g = span_http.enter();
-                            let (mem_rt, mem_scope) =
-                                crate::memory::long_term_memory::tool_context_memory_extras(
-                                    cfg.as_ref(),
-                                    ltm.clone(),
-                                    ltm_scope.as_deref(),
-                                );
-                            let ctx = crate::tools::tool_context_for_with_read_cache_and_memory(
-                                cfg.as_ref(),
-                                cfg.command_exec.allowed_commands.as_ref(),
-                                wd.as_path(),
-                                rfc.as_ref().map(|a| a.as_ref()),
-                                wcl.as_ref(),
-                                mem_rt,
-                                mem_scope,
-                            );
-                            crate::tools::http_fetch::run_direct(&args, &ctx)
-                        })
+                        CrabmateParallelToolDispatch::dispatch_parallel_http_fetch(
+                            ParallelHttpFetchParams {
+                                cfg: &cfg,
+                                args: &args,
+                                effective_working_dir: wd.as_path(),
+                                read_file_turn_cache: rfc.clone(),
+                                workspace_changelist: wcl.clone(),
+                                long_term_memory: ltm.clone(),
+                                long_term_memory_scope_id: ltm_scope.clone(),
+                            },
+                        )
                         .await
-                        .unwrap_or_else(|e| format!("工具执行 panic：{}", e))
                     }
                     ParallelToolKind::GetWeather
                     | ParallelToolKind::WebSearch

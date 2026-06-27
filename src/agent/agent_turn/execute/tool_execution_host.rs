@@ -111,3 +111,60 @@ impl ToolExecutionHost for CrabmateParallelToolDispatch {
         prefetch_parallel_approval_failures_impl(params).await
     }
 }
+
+/// 并行只读批内 `http_fetch`（`spawn_blocking` + `run_direct`）入参。
+pub struct ParallelHttpFetchParams<'a> {
+    pub cfg: &'a Arc<crate::config::AgentConfig>,
+    pub args: &'a str,
+    pub effective_working_dir: &'a std::path::Path,
+    pub read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
+    pub workspace_changelist: Option<Arc<crate::workspace::changelist::WorkspaceChangelist>>,
+    pub long_term_memory: Option<Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
+    pub long_term_memory_scope_id: Option<String>,
+}
+
+impl CrabmateParallelToolDispatch {
+    /// 并行只读批：`http_fetch` 经阻塞池直调（审批已在批前 prefetch）。
+    pub async fn dispatch_parallel_http_fetch(params: ParallelHttpFetchParams<'_>) -> String {
+        let ParallelHttpFetchParams {
+            cfg,
+            args,
+            effective_working_dir,
+            read_file_turn_cache,
+            workspace_changelist,
+            long_term_memory,
+            long_term_memory_scope_id,
+        } = params;
+        let cfg = Arc::clone(cfg);
+        let args = args.to_string();
+        let wd = effective_working_dir.to_path_buf();
+        let rfc = read_file_turn_cache;
+        let wcl = workspace_changelist;
+        let ltm = long_term_memory;
+        let ltm_scope = long_term_memory_scope_id;
+        let span_http = tracing::Span::current();
+        tokio::task::spawn_blocking(move || {
+            let _g = span_http.enter();
+            let (mem_rt, mem_scope) = crate::memory::long_term_memory::tool_context_memory_extras(
+                cfg.as_ref(),
+                ltm,
+                ltm_scope.as_deref(),
+            );
+            let ctx = crate::tools::tool_context_for_with_read_cache_and_memory(
+                cfg.as_ref(),
+                cfg.command_exec.allowed_commands.as_ref(),
+                wd.as_path(),
+                rfc.as_ref().map(|a| a.as_ref()),
+                wcl.as_ref(),
+                mem_rt,
+                mem_scope,
+            );
+            crate::tools::http_fetch::run_direct(&args, &ctx)
+        })
+        .await
+        .unwrap_or_else(|e| format!("工具执行 panic：{}", e))
+    }
+}
+
+/// 仅 `tool_registry::dispatch_tool`（无 `workflow_execute`）；供分层 Operator 等路径复用。
+pub use CrabmateParallelToolDispatch as CrabmateRegistryToolDispatch;
