@@ -361,7 +361,8 @@ impl ReplLineEditor {
                     .map_err(|e| io::Error::other(e.to_string()))?
             };
             match sig {
-                Signal::Success(text) => {
+                // reedline 0.48+: `ExecuteHostCommand` returns `HostCommand` (e.g. empty-buffer `$` toggle).
+                Signal::Success(text) | Signal::HostCommand(text) => {
                     let t = text.trim_end_matches(['\r', '\n']);
                     if let Some(opt) = parse_repl_dollar_shell_line(t) {
                         match opt {
@@ -387,7 +388,8 @@ impl ReplLineEditor {
                     return Ok(ReplReadLine::Chat(text));
                 }
                 Signal::CtrlD => return Ok(ReplReadLine::Eof),
-                Signal::CtrlC => continue,
+                Signal::CtrlC | Signal::ExternalBreak(_) => continue,
+                _ => continue,
             }
         }
     }
