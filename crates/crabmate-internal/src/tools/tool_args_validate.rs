@@ -397,10 +397,10 @@ fn format_instance_errors(validator: &Validator, instance: &Value) -> String {
     let Some(e1) = iter.next() else {
         return "参数与 JSON Schema 不一致。".to_string();
     };
-    let mut s = if e1.instance_path.as_str().is_empty() {
+    let mut s = if e1.instance_path().as_str().is_empty() {
         e1.to_string()
     } else {
-        format!("在路径 {}: {}", e1.instance_path, e1)
+        format!("在路径 {}: {}", e1.instance_path(), e1)
     };
     for (i, e) in iter.enumerate() {
         if i >= 2 {
