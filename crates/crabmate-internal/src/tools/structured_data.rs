@@ -192,7 +192,10 @@ fn summarize_top_level(v: &JsonValue, max_keys: usize) -> String {
 fn preview_value(v: &JsonValue) -> String {
     let s = serde_json::to_string(v).unwrap_or_else(|_| "<无法序列化>".to_string());
     if s.len() > PREVIEW_MAX_CHARS {
-        format!("{}…", &s[..PREVIEW_MAX_CHARS])
+        format!(
+            "{}…",
+            super::output_util::truncate_to_char_boundary(&s, PREVIEW_MAX_CHARS)
+        )
     } else {
         s
     }

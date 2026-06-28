@@ -11,6 +11,17 @@ use crate::i18n::Locale;
 
 use super::browser::{auth_headers, window};
 
+fn truncate_to_char_boundary(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes.min(s.len());
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct WorkspaceEntry {
     pub name: String,
@@ -499,7 +510,7 @@ fn http_error_detail_from_body(body: &str) -> String {
     if trimmed.len() <= 240 {
         trimmed.to_string()
     } else {
-        format!("{}…", &trimmed[..240])
+        format!("{}…", truncate_to_char_boundary(trimmed, 240))
     }
 }
 
@@ -753,4 +764,18 @@ pub async fn submit_chat_approval(
         return Err(crate::i18n::api_err_approval_failed(loc, resp.status()));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::http_error_detail_from_body;
+
+    #[test]
+    fn http_error_detail_truncates_utf8_safely() {
+        let body = format!("{}你", "a".repeat(239));
+        let detail = http_error_detail_from_body(&body);
+
+        assert!(detail.ends_with('…'));
+        assert!(detail.is_char_boundary(detail.len()));
+    }
 }

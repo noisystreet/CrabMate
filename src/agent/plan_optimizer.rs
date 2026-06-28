@@ -92,7 +92,10 @@ pub(crate) fn format_baseline_plan_v1_compact_md(plan: &AgentReplyPlanV1) -> Str
         s.push_str(&format!("{}. `{}` — {}\n", i + 1, st.id.trim(), desc_short));
     }
     if s.len() > STAGED_BASELINE_PLAN_MD_MAX_CHARS {
-        s.truncate(STAGED_BASELINE_PLAN_MD_MAX_CHARS);
+        s = crate::tools::output_util::truncate_to_char_boundary(
+            &s,
+            STAGED_BASELINE_PLAN_MD_MAX_CHARS,
+        );
         s.push_str("\n…（截断）\n");
     }
     s

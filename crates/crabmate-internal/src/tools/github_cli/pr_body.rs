@@ -173,10 +173,11 @@ pub fn gh_pr_body_draft(args_json: &str, working_dir: &Path, max_output_len: usi
     ) {
         Ok(body) => {
             if body.len() > max_output_len {
+                let keep = max_output_len.saturating_sub(80);
+                let truncated = super::super::output_util::truncate_to_char_boundary(&body, keep);
                 format!(
                     "{}\n\n... (输出已按 {} 字节截断)",
-                    &body[..max_output_len.saturating_sub(80)],
-                    max_output_len
+                    truncated, max_output_len
                 )
             } else {
                 body

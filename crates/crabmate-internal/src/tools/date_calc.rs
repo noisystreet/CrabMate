@@ -72,7 +72,10 @@ fn run_offset(args: &super::tool_param_types::DateCalcArgs) -> String {
     } else {
         (1i64, offset_str)
     };
-    let (num_str, unit) = rest.split_at(rest.len().saturating_sub(1));
+    let Some((unit_start, _)) = rest.char_indices().last() else {
+        return format!("错误：无法解析偏移量 {:?}", offset_str);
+    };
+    let (num_str, unit) = rest.split_at(unit_start);
     let num: i64 = match num_str.parse::<i64>() {
         Ok(n) => n * sign,
         Err(_) => return format!("错误：无法解析偏移量数值 {:?}", offset_str),

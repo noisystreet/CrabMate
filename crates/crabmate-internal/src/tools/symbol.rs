@@ -273,7 +273,7 @@ fn search_file(
     let mut f = fs::File::open(path).map_err(|e| e.to_string())?;
     f.read_to_string(&mut buf).map_err(|e| e.to_string())?;
     if buf.len() > MAX_FILE_SIZE_BYTES {
-        buf.truncate(MAX_FILE_SIZE_BYTES);
+        buf = super::output_util::truncate_to_char_boundary(&buf, MAX_FILE_SIZE_BYTES);
     }
 
     for (idx, line) in buf.lines().enumerate() {

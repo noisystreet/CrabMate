@@ -232,10 +232,11 @@ fn trim_trailing_slash(mut s: String) -> String {
 fn utf8_preview(bytes: &[u8], max: usize) -> String {
     let s = String::from_utf8_lossy(bytes);
     let t = s.trim();
-    if t.len() <= max {
+    if t.chars().count() <= max {
         t.to_string()
     } else {
-        format!("{}…", &t[..max])
+        let prefix: String = t.chars().take(max).collect();
+        format!("{prefix}…")
     }
 }
 

@@ -300,7 +300,15 @@ fn parse_lcov(content: &str, max_output_len: usize) -> String {
             100.0
         };
         let short = if file.len() > 48 {
-            format!("...{}", &file[file.len() - 45..])
+            let suffix: String = file
+                .chars()
+                .rev()
+                .take(45)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+            format!("...{}", suffix)
         } else {
             file.clone()
         };
@@ -379,7 +387,15 @@ fn parse_tarpaulin_json(content: &str, max_output_len: usize) -> String {
             100.0
         };
         let short = if file.len() > 48 {
-            format!("...{}", &file[file.len() - 45..])
+            let suffix: String = file
+                .chars()
+                .rev()
+                .take(45)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+            format!("...{}", suffix)
         } else {
             file.clone()
         };

@@ -351,7 +351,7 @@ fn playbook_prepare(
     let truncated = if text.len() > max_chars {
         format!(
             "{}…\n\n（输入已截断至约 {} 字符；可增大 max_chars 或缩短粘贴）",
-            &text[..max_chars],
+            crate::redact::preview_chars(&text, max_chars).trim_end_matches("…(truncated)"),
             max_chars
         )
     } else {

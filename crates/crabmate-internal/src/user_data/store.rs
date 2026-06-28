@@ -299,8 +299,16 @@ pub fn write_secret_web_api_bearer(token: &str) -> Result<(), String> {
 fn slot_status(path: &Path) -> SecretSlotStatus {
     match read_secret_line(path) {
         Some(s) => {
-            let suffix = if s.len() >= 4 {
-                Some(s[s.len().saturating_sub(4)..].to_string())
+            let suffix = if s.chars().count() >= 4 {
+                let tail = s
+                    .chars()
+                    .rev()
+                    .take(4)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+                Some(tail)
             } else {
                 Some("****".to_string())
             };

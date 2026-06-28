@@ -713,7 +713,8 @@ fn truncate_simple(s: &str, max_output_len: usize) -> String {
     if s.len() <= max_output_len {
         s.to_string()
     } else {
-        format!("{}\n\n... (输出已截断)", &s[..max_output_len])
+        let truncated = super::output_util::truncate_to_char_boundary(s, max_output_len);
+        format!("{}\n\n... (输出已截断)", truncated)
     }
 }
 
@@ -827,7 +828,8 @@ fn cargo_fmt_check(workspace_root: &Path, max_output_len: usize) -> String {
             };
             let mut s = body;
             if s.len() > max_output_len {
-                s = format!("{}\n\n... (输出已截断)", &s[..max_output_len]);
+                let truncated = super::output_util::truncate_to_char_boundary(&s, max_output_len);
+                s = format!("{}\n\n... (输出已截断)", truncated);
             }
             format!("cargo fmt --check (exit={}):\n{}", status, s)
         }
