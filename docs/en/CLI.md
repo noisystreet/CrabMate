@@ -16,7 +16,7 @@ Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as 
 
 | Subcommand | Description |
 |------------|-------------|
-| `serve [PORT]` | Web UI + HTTP API, default **8080**; with **`bearer`**, may **start without `API_KEY`**; set the key in the sidebar **Settings** (`client_llm`) before chatting. |
+| `serve [PORT]` | Web UI + HTTP API, default **8080**; with **`bearer`**, may **start without `API_KEY`**; set the key in the sidebar **Settings** (`client_llm`) before chatting. **Desktop Tauri** spawns **`serve --host 127.0.0.1 --port 0 --desktop-ready-json`** (see **`desktop-tauri/DEVELOPMENT.md`**). |
 | `repl` | Interactive chat; **default when no subcommand**. With **`bearer`** and no env **`API_KEY`**, use **`/api-key set <secret>`** before sending messages. |
 | `tui` | Full-screen terminal UI (**experimental**); phase B/C: layout + minimal chat loop sharing **`repl_dispatch_chat_round`** with **`repl`**. **Requires an interactive TTY for stdin and stdout**. Assistant output is **not rendered to stdout** (alternate-screen safe); respects global **`--no-stream`** for SSE vs JSON. **`Enter`** sends the line; **`/api-key`** / **`/apikey`** supported (feedback in the transcript); slash commands match **`repl`**; with **`conversation_store_sqlite_path`** set, **`/conv`** / **`/branch`** manage SQLite sessions like Web. **`q`/`Q` with empty input** or **Ctrl+C** exits. Loads **`AgentConfig`** like **`repl`**. See **`runtime/tui`**. |
 | `chat` | One-shot / scripted chat: `--query` / `--stdin` / `--user-prompt-file`, `--system-prompt-file`, `--messages-json-file`, `--message-file` (JSONL), `--yes` / `--approve-commands`, `--output json`, `--no-stream`. With **`bearer`** and no **`API_KEY`**, the first turn fails unless you export **`API_KEY`** or use **`repl`** / **`serve`** as above. |
@@ -52,6 +52,8 @@ Without a subcommand, legacy flags `--serve`, `--query`, `--benchmark`, `--dry-r
 | `--config <path>` | Config file (prefer before subcommand) |
 | `--serve [port]` | Same as `serve` |
 | `--host <ADDR>` | With `serve` |
+| `--port 0` | With `serve`: OS-assigned free port; startup log and **`web_ready`** **`port`/`url`** use **`local_addr()`** after bind |
+| `--desktop-ready-json` | With `serve`: after listen succeeds, print one **`web_ready`** JSON line to **stdout** (for **Tauri**); use with **`--port 0`** to avoid attaching to a stale process on a fixed port |
 | `--query` / `--stdin` | Same as `chat` |
 | `--workspace <path>` | Override initial workspace |
 | `--agent-role <id>` | First-turn `system` for new `repl` / `chat` session (must exist in config; mutually exclusive with `chat --system-prompt-file`) |
@@ -95,6 +97,7 @@ cargo run -- serve 3000
 cargo run -- serve --port 3000               # same as above
 cargo run -- --workspace /path/to/project serve 8080
 cargo run -- serve --host 0.0.0.0            # mind auth & safety
+cargo run -- serve --host 127.0.0.1 --port 0 --desktop-ready-json   # desktop shell handshake (same as Tauri)
 cargo run -- chat --query "What's the weather in Beijing?"
 cargo run -- chat --output json --query "…"
 echo "1+1?" | cargo run -- chat --stdin
@@ -202,6 +205,10 @@ Static assets are served from `frontend/dist`.
 | GET | `/workspace/profile` | Project profile Markdown |
 | GET | `/workspace/changelog` | Session workspace changelist Markdown (optional `conversation_id` query; same body as **`session_workspace_changelist`** model injection, read-only) |
 | GET | `/workspace/file` | Read file in workspace (`path` required; optional **`encoding`**, same as `read_file`, default UTF-8 strict; 1 MiB cap) |
+| POST | `/workspace/file` | Write file (JSON `path`, `content`; optional **`create_only`** / **`update_only`**) |
+| DELETE | `/workspace/file` | Delete file (`path` required; not directories) |
+| POST | `/workspace/dir` | Create dir (JSON **`path`**, optional **`parents`**); or delete dir (JSON **`delete=true`**, **`confirm=true`**, optional **`recursive=true`**, same as **`DELETE`**; frontend falls back to **`POST`** on 404/405) |
+| DELETE | `/workspace/dir` | Delete directory (`path` query required; **`confirm=true`** required; non-empty dirs need **`recursive=true`**) |
 | GET | `/health` | Health |
 
 SSE control-plane fields: **`docs/SSE协议.md`**.

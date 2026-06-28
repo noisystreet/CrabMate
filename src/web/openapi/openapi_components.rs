@@ -391,7 +391,10 @@ fn openapi_components_schemas_workspace_tasks_config() -> Value {
                 "required": ["path"],
                 "properties": {
                     "path": { "type": "string" },
-                    "parents": { "type": "boolean" }
+                    "parents": { "type": "boolean" },
+                    "delete": { "type": "boolean", "description": "为 true 时删除目录（须 confirm=true；非空目录须 recursive=true）" },
+                    "confirm": { "type": "boolean" },
+                    "recursive": { "type": "boolean" }
                 }
             },
             "WorkspaceDirCreateResponse": {

@@ -109,11 +109,11 @@ fn active_session_tail_scroll_fingerprint(list: &[ChatSession], aid: &str) -> u6
 pub(crate) fn wire_content_follow_scroll(chat: ChatSessionSignals, shell: ChatScrollShellSignals) {
     let sessions = chat.sessions;
     let active_id = chat.active_id;
-    let stream_text_overlay = chat.stream_text_overlay;
+    let stream_overlay_revision = chat.stream_overlay_revision;
     Effect::new(move |_| {
         let aid = active_id.get();
         let _fingerprint = sessions.with(|list| active_session_tail_scroll_fingerprint(list, &aid));
-        let _overlay = stream_text_overlay.get();
+        let _overlay_rev = stream_overlay_revision.get();
 
         if !shell.auto_scroll_chat.get() {
             return;

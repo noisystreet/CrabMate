@@ -119,7 +119,12 @@ pub(super) fn install_assistant_markdown_answer_effect(
         let answer_paint = answer_paint.clone();
         move |_| {
             let snap = snapshot_memo.get();
-            let _ = collapsed_long_assistant_ids.get();
+            let is_loading = snap.as_ref().is_some_and(|s| s.is_loading);
+            if is_loading {
+                let _ = collapsed_long_assistant_ids.get_untracked();
+            } else {
+                let _ = collapsed_long_assistant_ids.get();
+            }
             let _ = markdown_render.get();
 
             let throttle_gen = {

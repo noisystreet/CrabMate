@@ -1,50 +1,44 @@
-# desktop-tauri（MVP 骨架）
+# desktop-tauri
 
-该目录用于承载基于 Tauri 的桌面 GUI。
+基于 Tauri 2 的 CrabMate 桌面壳：**WebView** 加载本仓库 **`serve`** 提供的 Web UI，业务逻辑不重复实现。
 
-当前阶段目标：
+## 启动流程（与代码一致）
 
-- 建立最小 Tauri 工程骨架
-- 拉起 `crabmate serve`、解析 ready JSON 并动态加载 Web UI
+1. `src-tauri/src/main.rs` 按优先级解析后端二进制（**`CM_DESKTOP_BACKEND_BIN`** → sidecar → **`PATH`**）。
+2. 子进程命令：**`crabmate serve --host 127.0.0.1 --port 0 --desktop-ready-json`**（若存在 **`/etc/crabmate/config.toml`** 则追加 **`--config`**）。
+3. 读取 stdout 中 **`{"event":"web_ready",…}`**，取 **`url`** 打开主窗口。
+4. 应用退出时 kill 子进程。
 
-## 下一步集成计划
+**勿**在开发机上长期占用固定端口（如 3000）跑独立 **`serve`** 后再开 Tauri；旧实现曾用 TCP 探测固定端口，会误连旧进程并出现 API **405**（例如工作区删目录）。详见 **`DEVELOPMENT.md`** § 2.3。
 
-当前已实现：
+## 本地开发
 
-1. `src-tauri/src/main.rs` 启动后端子进程：
-   - `crabmate serve --host 127.0.0.1 --port 0 --desktop-ready-json`
-2. 读取 stdout 中 `{"event":"web_ready", ...}` 并解析 URL
-3. 创建主窗口并加载该 URL
-4. 应用退出时回收后端子进程
+### 前置
 
-## 运行方式（开发）
+- Rust stable、Tauri 2 系统依赖
+- **`cargo install tauri-cli --version "^2"`**（一次性）
 
-默认会执行 `crabmate` 命令启动后端。若命令不在 PATH，可设置：
-
-`CM_DESKTOP_BACKEND_BIN=/path/to/crabmate`
-
-推荐的本地开发启动步骤：
-
-1. 在仓库根目录编译后端二进制：
+### 推荐步骤（仓库根目录）
 
 ```bash
-cd /path/to/agent_demo
 cargo build
+cd frontend && trunk build && cd ..
+
+cd desktop-tauri/src-tauri
+CM_DESKTOP_BACKEND_BIN=/绝对路径/到/crabmate_agent/target/debug/crabmate cargo tauri dev
 ```
 
-2. 在 Tauri 目录启动桌面界面（显式指定后端可执行文件路径）：
+- **`frontend/dist`** 须已构建；**`serve`** 从仓库根解析该目录。
+- 开发时**务必**用 **`CM_DESKTOP_BACKEND_BIN`** 指向刚编译的 **`target/debug/crabmate`**，避免 PATH / 旧 sidecar 版本不一致。
 
-```bash
-cd /path/to/agent_demo/desktop-tauri/src-tauri
-CM_DESKTOP_BACKEND_BIN=/path/to/agent_demo/target/debug/crabmate cargo tauri dev
-```
+## 打包
 
-若本机尚未安装 Tauri CLI，可先执行：
+见仓库根 **`README.md`**「桌面 Tauri」与 **`DEVELOPMENT.md`** § 6（**`prepare-sidecar.sh`**、**`cargo tauri build`**）。
 
-```bash
-cargo install tauri-cli --version "^2"
-```
+## 更多
 
-## 备注
+- 故障排查、代理、Wayland IME：**`DEVELOPMENT.md`**
+- 架构与 **`web_ready` 字段：** **`docs/design/tauri_gui_mvp_design.md`**
+- 用户数据 HTTP 契约（Tauri 与 Web 共用）：**`docs/design/user_data_dir.md`**
 
-当前仓库主 Web 前端仍在 `frontend/`，桌面端复用该 UI，不重复实现业务页面。
+主 Web 前端仍在 **`frontend/`**，桌面端只提供壳层与进程管理。

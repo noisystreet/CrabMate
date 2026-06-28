@@ -148,6 +148,14 @@ Notes:
 - Debug UI: `cd e2e && npm run test:ui`.
 - Script: `./scripts/e2e.sh` (builds `frontend/dist` if missing; uses release `crabmate` when present).
 
+The real-model smoke test is manual opt-in and skipped by default. It does not install a `/chat/stream` route stub; it uses the current `serve` config and environment (`API_KEY` / `CM_*`, or local `llm_http_auth_mode=none`) and only asserts that streaming completes and busy state is released:
+
+```bash
+cd frontend && trunk build
+cd ../e2e
+REAL_LLM_E2E=1 API_KEY=YOUR_API_KEY npx playwright test real-llm-smoke.spec.ts --retries=0
+```
+
 On Linux, if `cargo` fails on **wayland** native deps, see the E2E note in [`DEVELOPMENT.md`](DEVELOPMENT.md) (**`libwayland-dev`**).
 
 ## Dependency security and licenses (CI parity)

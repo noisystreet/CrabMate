@@ -2,6 +2,7 @@
 # 分类须与 crates/crabmate-sse-protocol/control_classify.rs（`classify_sse_control_outcome`）及
 # frontend/src/sse_dispatch/dispatch.rs（`try_dispatch_sse_control_payload`）同序。
 
+protocol v only	{"v":1}	handled
 error+code 流错误	{"v":1,"error":"x","code":"E"}	stop
 error+code+reason_code 仍为 stop	{"v":1,"error":"x","code":"E","reason_code":"plan_missing"}	stop
 error 无 code 当正文	{"error":"division by zero"}	plain

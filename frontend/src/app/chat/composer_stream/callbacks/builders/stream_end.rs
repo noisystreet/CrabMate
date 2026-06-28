@@ -62,6 +62,7 @@ pub(in super::super) fn chat_stream_on_done_builder(
                 loc,
             );
         });
+        stream_ctx.chat.clear_stream_text_overlay();
         stream_ctx
             .shell
             .stream

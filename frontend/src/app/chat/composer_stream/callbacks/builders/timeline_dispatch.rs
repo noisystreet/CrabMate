@@ -44,7 +44,7 @@ fn timeline_log_dispatch_final_response(
 
 fn timeline_log_dispatch_intent_analysis(
     stream_ctx: &ChatStreamCallbackCtx,
-    accum: &PerStreamAccum,
+    _accum: &PerStreamAccum,
     info: &TimelineLogInfo,
 ) {
     let intent_text = build_intent_analysis_main_bubble_text(&info.title, info.detail.as_deref());
@@ -53,7 +53,6 @@ fn timeline_log_dispatch_intent_analysis(
     }
     let state = Some(timeline_state_intent_analysis_snapshot());
     push_assistant_timeline_bubble(stream_ctx, intent_text.clone(), state);
-    accum.add_answer_delta_chars(intent_text.chars().count());
 }
 
 fn timeline_log_dispatch_hierarchical_plan(

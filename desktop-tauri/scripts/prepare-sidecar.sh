@@ -33,6 +33,14 @@ if [[ ! -f "${source_bin}" ]]; then
   exit 1
 fi
 
+if ! "${source_bin}" serve --help 2>&1 | grep -q 'desktop-ready-json'; then
+  echo "backend binary lacks 'serve --desktop-ready-json' (too old for current desktop shell)" >&2
+  echo "  source: ${source_bin}" >&2
+  echo "rebuild from repo root: cargo build --release" >&2
+  echo "then re-run this script or cargo tauri build" >&2
+  exit 1
+fi
+
 output_dir="${desktop_root}/binaries"
 mkdir -p "${output_dir}"
 

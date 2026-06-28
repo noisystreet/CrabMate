@@ -13,6 +13,45 @@ use crate::sse_dispatch::{
 
 use super::ChatStreamCallbacks;
 
+/// SSE 单帧分类：用于区分「任意有效负载」与「正文 delta」的空闲检测。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SseFrameKind {
+    Ignored,
+    Control,
+    TextDelta,
+    StreamEnded,
+}
+
+impl SseFrameKind {
+    #[must_use]
+    pub(super) fn counts_as_meaningful(self) -> bool {
+        !matches!(self, Self::Ignored)
+    }
+
+    #[must_use]
+    pub(super) fn counts_as_text_delta(self) -> bool {
+        matches!(self, Self::TextDelta)
+    }
+}
+
+/// `process_sse_buffer` / `flush_sse_tail` 累计进度。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct SseBufferProgress {
+    pub meaningful: usize,
+    pub text_deltas: usize,
+}
+
+impl SseBufferProgress {
+    fn absorb_frame(&mut self, kind: SseFrameKind) {
+        if kind.counts_as_meaningful() {
+            self.meaningful = self.meaningful.saturating_add(1);
+        }
+        if kind.counts_as_text_delta() {
+            self.text_deltas = self.text_deltas.saturating_add(1);
+        }
+    }
+}
+
 fn stream_ended_tiktoken_from_data(
     data: &str,
 ) -> Option<crate::conversation_hydrate::TiktokenPromptTokensSnapshot> {
@@ -24,22 +63,37 @@ fn stream_ended_tiktoken_from_data(
     })
 }
 
+#[allow(dead_code)]
 pub(super) fn process_sse_buffer(
     buffer: &mut String,
     last_event_id: &mut u64,
     saw_stream_ended: &mut bool,
     cbs: &ChatStreamCallbacks,
     loc: Locale,
-) -> Result<usize, String> {
-    let mut meaningful = 0usize;
-    while let Some(pos) = buffer.find("\n\n") {
-        let block = buffer[..pos].to_string();
-        *buffer = buffer[pos + 2..].to_string();
-        if handle_sse_block(&block, last_event_id, saw_stream_ended, cbs, loc)? {
-            meaningful = meaningful.saturating_add(1);
-        }
+) -> Result<SseBufferProgress, String> {
+    let mut progress = SseBufferProgress::default();
+    while let Some(step) =
+        process_sse_buffer_step(buffer, last_event_id, saw_stream_ended, cbs, loc)?
+    {
+        progress.absorb_frame(step);
     }
-    Ok(meaningful)
+    Ok(progress)
+}
+
+/// 至多解析并分发一帧 SSE（`\\n\\n` 分隔）；无完整帧时返回 `None`。
+pub(super) fn process_sse_buffer_step(
+    buffer: &mut String,
+    last_event_id: &mut u64,
+    saw_stream_ended: &mut bool,
+    cbs: &ChatStreamCallbacks,
+    loc: Locale,
+) -> Result<Option<SseFrameKind>, String> {
+    let Some(pos) = buffer.find("\n\n") else {
+        return Ok(None);
+    };
+    let block = buffer[..pos].to_string();
+    *buffer = buffer[pos + 2..].to_string();
+    handle_sse_block(&block, last_event_id, saw_stream_ended, cbs, loc).map(Some)
 }
 
 pub(super) fn flush_sse_tail(
@@ -48,43 +102,41 @@ pub(super) fn flush_sse_tail(
     saw_stream_ended: &mut bool,
     cbs: &ChatStreamCallbacks,
     loc: Locale,
-) -> Result<usize, String> {
+) -> Result<SseBufferProgress, String> {
     // 勿对尾部缓冲 `trim`：流式正文可能单独落在仅含空格/`data: ` 尾部的帧里，trim 会吞掉词间空格。
-    let meaningful = if buffer.is_empty() {
-        0usize
-    } else if handle_sse_block(buffer.as_str(), last_event_id, saw_stream_ended, cbs, loc)? {
-        1
-    } else {
-        0
-    };
+    let mut progress = SseBufferProgress::default();
+    if !buffer.is_empty() {
+        let kind = handle_sse_block(buffer.as_str(), last_event_id, saw_stream_ended, cbs, loc)?;
+        progress.absorb_frame(kind);
+    }
     buffer.clear();
-    Ok(meaningful)
+    Ok(progress)
 }
 
-/// `Ok(true)`：本帧带有非空、非 `[DONE]` 的 `data:` 负载，并已走完 `stream_ended` 或控制面/正文分发。
+/// 单帧 SSE 块解析与分发。
 pub(super) fn handle_sse_block(
     block: &str,
     last_event_id: &mut u64,
     saw_stream_ended: &mut bool,
     cbs: &ChatStreamCallbacks,
     loc: Locale,
-) -> Result<bool, String> {
+) -> Result<SseFrameKind, String> {
     if let Some(id) = parse_sse_event_id(block) {
         *last_event_id = id;
         (cbs.on_last_sse_event_id)(id);
     }
     let Some(data) = join_sse_data_lines(block) else {
-        return Ok(false);
+        return Ok(SseFrameKind::Ignored);
     };
     // 勿对 `data` 全文 `trim`：模型/代理可能把词间空格单独打成一段 SSE，trim 会导致单词粘在一起。
     if data.is_empty() || is_sse_done_sentinel(&data) {
-        return Ok(false);
+        return Ok(SseFrameKind::Ignored);
     }
     if let Some(reason) = extract_stream_ended_reason(&data) {
         *saw_stream_ended = true;
         let tiktoken = stream_ended_tiktoken_from_data(&data);
         (cbs.on_stream_ended)(reason, tiktoken);
-        return Ok(true);
+        return Ok(SseFrameKind::StreamEnded);
     }
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(&data)
         && let Some(ended) = v.get("stream_ended")
@@ -101,7 +153,7 @@ pub(super) fn handle_sse_block(
             .get("tiktoken_prompt_tokens")
             .and_then(crate::conversation_prompt_tokens_apply::parse_tiktoken_prompt_tokens_value);
         (cbs.on_stream_ended)(reason, tiktoken);
-        return Ok(true);
+        return Ok(SseFrameKind::StreamEnded);
     }
 
     let mut stop = false;
@@ -163,12 +215,12 @@ pub(super) fn handle_sse_block(
         },
     };
     match try_dispatch_sse_control_payload(&data, &mut cbs2) {
-        crate::sse_dispatch::SseDispatch::Stop => Ok(true),
+        crate::sse_dispatch::SseDispatch::Stop => Ok(SseFrameKind::Control),
         crate::sse_dispatch::SseDispatch::Handled => {
             if stop {
                 Err(crate::i18n::api_err_stream_stopped(loc).to_string())
             } else {
-                Ok(true)
+                Ok(SseFrameKind::Control)
             }
         }
         crate::sse_dispatch::SseDispatch::Plain => {
@@ -176,7 +228,7 @@ pub(super) fn handle_sse_block(
                 return Err(crate::i18n::api_err_stream_stopped(loc).to_string());
             }
             (cbs.on_delta)(data);
-            Ok(true)
+            Ok(SseFrameKind::TextDelta)
         }
     }
 }
@@ -311,7 +363,7 @@ mod tests {
             Locale::ZhHans,
         )
         .unwrap();
-        assert_eq!(n, 0);
+        assert_eq!(n.meaningful, 0);
         assert!(buf.is_empty());
     }
 
@@ -330,7 +382,7 @@ mod tests {
             Locale::ZhHans,
         )
         .unwrap();
-        assert_eq!(n, 0);
+        assert_eq!(n.meaningful, 0);
         assert_eq!(buf, "data: hello");
     }
 
@@ -354,7 +406,7 @@ mod tests {
             Locale::ZhHans,
         )
         .unwrap();
-        assert_eq!(n, 1);
+        assert_eq!(n.meaningful, 1);
         assert!(buf.is_empty());
         assert_eq!(got.borrow().as_str(), "hello");
     }
@@ -379,7 +431,7 @@ mod tests {
             Locale::ZhHans,
         )
         .unwrap();
-        assert_eq!(n, 2);
+        assert_eq!(n.meaningful, 2);
         assert!(buf.is_empty());
         assert_eq!(got.borrow().as_str(), "ab");
     }
@@ -404,7 +456,7 @@ mod tests {
             Locale::ZhHans,
         )
         .unwrap();
-        assert_eq!(n, 1);
+        assert_eq!(n.meaningful, 1);
         assert_eq!(buf, "data: wor");
         assert_eq!(got.borrow().as_str(), "hello");
     }
@@ -424,7 +476,7 @@ mod tests {
             Locale::ZhHans,
         )
         .unwrap();
-        assert_eq!(n, 0);
+        assert_eq!(n.meaningful, 0);
         assert!(buf.is_empty());
     }
 
@@ -448,7 +500,7 @@ mod tests {
             Locale::ZhHans,
         )
         .unwrap();
-        assert_eq!(n, 1);
+        assert_eq!(n.meaningful, 1);
         assert!(buf.is_empty());
         assert_eq!(got.borrow().as_str(), "tail");
     }
@@ -473,8 +525,28 @@ mod tests {
             Locale::ZhHans,
         )
         .unwrap();
-        assert_eq!(n, 1);
+        assert_eq!(n.meaningful, 1);
         assert!(buf.is_empty());
         assert_eq!(got.borrow().as_str(), " ");
+    }
+
+    #[test]
+    fn timeline_log_counts_meaningful_not_text_delta() {
+        let cbs = callbacks_with_end_capture(Rc::new(RefCell::new(None)));
+        let mut buf = String::from(
+            "data: {\"timeline_log\":{\"kind\":\"intent_analysis\",\"title\":\"意图分析：问答类\"}}\n\n",
+        );
+        let mut last_event_id = 0u64;
+        let mut saw_stream_ended = false;
+        let n = process_sse_buffer(
+            &mut buf,
+            &mut last_event_id,
+            &mut saw_stream_ended,
+            &cbs,
+            Locale::ZhHans,
+        )
+        .unwrap();
+        assert_eq!(n.meaningful, 1);
+        assert_eq!(n.text_deltas, 0);
     }
 }

@@ -47,6 +47,8 @@ pub(crate) fn prepare_stream_attach(
         asst_id.as_str(),
         locale_sig.get_untracked(),
     );
+    chat.clear_stream_text_overlay();
+    chat.set_stream_overlay_display_mid(asst_id.as_str());
     chat.bind_stream_to_session(bound_session_id.clone(), attach_generation);
     let ac = web_sys::AbortController::new().expect("AbortController");
     let abort_signal = ac.signal();

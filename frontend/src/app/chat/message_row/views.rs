@@ -59,6 +59,7 @@ pub(super) struct ChatMessageRowBodyCoreParams {
     pub sessions: RwSignal<Vec<ChatSession>>,
     pub active_id: RwSignal<String>,
     pub stream_text_overlay: RwSignal<Option<StreamTextOverlay>>,
+    pub stream_overlay_display_mid: RwSignal<Option<String>>,
     pub collapsed_long_assistant_ids: RwSignal<Vec<String>>,
     pub locale: RwSignal<Locale>,
     pub markdown_render: RwSignal<bool>,
@@ -79,6 +80,7 @@ pub(super) fn chat_message_row_body_core(p: ChatMessageRowBodyCoreParams) -> Any
         sessions,
         active_id,
         stream_text_overlay,
+        stream_overlay_display_mid,
         collapsed_long_assistant_ids,
         locale,
         markdown_render,
@@ -102,6 +104,7 @@ pub(super) fn chat_message_row_body_core(p: ChatMessageRowBodyCoreParams) -> Any
             markdown_render,
             apply_assistant_display_filters,
             stream_text_overlay,
+            stream_overlay_display_mid,
         })
         .into_any();
     }

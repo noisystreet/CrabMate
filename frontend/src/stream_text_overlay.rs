@@ -35,6 +35,7 @@ pub fn stream_overlay_append(
     message_id: &str,
     chunk: &str,
     to_reasoning: bool,
+    revision: Option<RwSignal<u64>>,
 ) {
     overlay.update(|opt| {
         let mut next = match opt.take() {
@@ -53,6 +54,9 @@ pub fn stream_overlay_append(
         }
         *opt = Some(next);
     });
+    if let Some(rev) = revision {
+        rev.update(|n| *n = n.wrapping_add(1));
+    }
 }
 
 /// 将缓冲合并进 `msg`（仅当 `session_id` / `message_id` 一致），并清空 overlay。
@@ -76,8 +80,10 @@ pub fn stream_overlay_take_into_stored_message(
     });
 }
 
-/// 若 `overlay` 命中本条 **loading** 助手消息，返回合并后的 `text` / `reasoning_text`（各一次分配 + `push_str`），
-/// 避免为展示克隆整条 [`StoredMessage`]。
+/// 若 `overlay` 命中本条助手消息（`session_id` + `message_id` 对齐），返回合并后的 `text` / `reasoning_text`。
+///
+/// 不限于 `loading`：`final_response` / 工具前轮换等会提前去掉 `Loading`，但同 attach 内 delta 仍写入 overlay，
+/// 若此处要求 `is_loading()`，会出现「流式生成一段后 UI 不再更新」的假卡死。
 #[must_use]
 pub fn stream_overlay_merged_text_reasoning_owned(
     msg: &StoredMessage,
@@ -88,7 +94,7 @@ pub fn stream_overlay_merged_text_reasoning_owned(
     if o.session_id != parent_session_id || o.message_id != msg.id {
         return None;
     }
-    if !msg.state.as_ref().is_some_and(|s| s.is_loading()) {
+    if msg.role != "assistant" || msg.is_tool {
         return None;
     }
     let mut text = String::with_capacity(msg.text.len() + o.answer.len());
@@ -143,7 +149,7 @@ pub fn sessions_snapshot_with_stream_overlay_merged(
     let Some(m) = s.messages.iter_mut().find(|msg| msg.id == o.message_id) else {
         return out;
     };
-    if m.state.as_ref().is_some_and(|st| st.is_loading()) {
+    if m.role == "assistant" && !m.is_tool {
         m.text.push_str(&o.answer);
         m.reasoning_text.push_str(&o.reasoning);
     }
@@ -158,8 +164,8 @@ mod tests {
     #[test]
     fn append_then_take_merges_into_message() {
         let overlay = RwSignal::new(None::<StreamTextOverlay>);
-        stream_overlay_append(overlay, "s1", "m1", "hello", false);
-        stream_overlay_append(overlay, "s1", "m1", " world", false);
+        stream_overlay_append(overlay, "s1", "m1", "hello", false, None);
+        stream_overlay_append(overlay, "s1", "m1", " world", false, None);
         let mut msg = StoredMessage {
             id: "m1".into(),
             role: "assistant".into(),
@@ -201,6 +207,71 @@ mod tests {
             .expect("overlay should apply");
         assert_eq!(t, "base tail");
         assert_eq!(r, "r0 r1");
+    }
+
+    #[test]
+    fn merged_overlay_applies_after_loading_cleared() {
+        let msg = StoredMessage {
+            id: "m1".into(),
+            role: "assistant".into(),
+            text: "stored ".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        let o = StreamTextOverlay {
+            session_id: "s1".into(),
+            message_id: "m1".into(),
+            answer: "tail".into(),
+            reasoning: String::new(),
+        };
+        let (t, r) = stream_overlay_merged_text_reasoning_owned(&msg, Some(&o), "s1")
+            .expect("overlay should merge after loading cleared");
+        assert_eq!(t, "stored tail");
+        assert!(r.is_empty());
+    }
+
+    #[test]
+    fn persist_snapshot_merges_overlay_without_loading() {
+        let session = ChatSession {
+            id: "s1".into(),
+            title: "t".into(),
+            draft: String::new(),
+            messages: vec![StoredMessage {
+                id: "m1".into(),
+                role: "assistant".into(),
+                text: "base".into(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: None,
+                is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
+                created_at: 0,
+            }],
+            updated_at: 0,
+            pinned: false,
+            starred: false,
+            server_conversation_id: None,
+            server_revision: None,
+            workspace_root: None,
+            history_total: None,
+            history_window_start: None,
+            history_has_older: None,
+        };
+        let o = StreamTextOverlay {
+            session_id: "s1".into(),
+            message_id: "m1".into(),
+            answer: "+delta".into(),
+            reasoning: String::new(),
+        };
+        let merged =
+            sessions_snapshot_with_stream_overlay_merged(std::slice::from_ref(&session), Some(&o));
+        assert_eq!(merged[0].messages[0].text, "base+delta");
     }
 
     #[test]

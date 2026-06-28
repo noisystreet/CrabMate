@@ -18,6 +18,22 @@ const DSML_OPEN_MARKERS: &[&str] = &[
     "</|DSML|",
 ];
 
+fn floor_char_boundary(s: &str, idx: usize) -> usize {
+    let mut i = idx.min(s.len());
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+fn ceil_char_boundary(s: &str, idx: usize) -> usize {
+    let mut i = idx.min(s.len());
+    while i < s.len() && !s.is_char_boundary(i) {
+        i += 1;
+    }
+    i
+}
+
 /// 流式抑制 DeepSeek DSML 标记；回合结束物化仍使用未过滤的累积正文。
 pub struct StreamingDsmlContentFilter {
     enabled: bool,
@@ -57,7 +73,8 @@ impl StreamingDsmlContentFilter {
         } else {
             incomplete_dsml_holdback_suffix_len(&self.raw_acc)
         };
-        let safe_end = self.raw_acc.len().saturating_sub(holdback);
+        let safe_end =
+            floor_char_boundary(&self.raw_acc, self.raw_acc.len().saturating_sub(holdback));
         let stripped = strip_deepseek_dsml_for_display(&self.raw_acc[..safe_end]);
         self.delta_from_stripped(&stripped)
     }
@@ -66,7 +83,8 @@ impl StreamingDsmlContentFilter {
         if stripped.len() <= self.emitted_stripped_len {
             return String::new();
         }
-        let delta = stripped[self.emitted_stripped_len..].to_string();
+        let start = ceil_char_boundary(stripped, self.emitted_stripped_len);
+        let delta = stripped[start..].to_string();
         self.emitted_stripped_len = stripped.len();
         delta
     }
@@ -77,7 +95,8 @@ fn incomplete_dsml_holdback_suffix_len(raw: &str) -> usize {
     if check == 0 {
         return 0;
     }
-    let tail = &raw[raw.len() - check..];
+    let tail_start = floor_char_boundary(raw, raw.len().saturating_sub(check));
+    let tail = &raw[tail_start..];
     let mut best = 0usize;
 
     for marker in DSML_OPEN_MARKERS {
@@ -187,5 +206,22 @@ mod tests {
     fn plain_text_unchanged() {
         let chunks = ["hello ", "world"];
         assert_eq!(stream_chunks(&chunks), "hello world");
+    }
+
+    #[test]
+    fn unicode_tail_longer_than_holdback_does_not_panic() {
+        let text = "你好！我具备以下主要技能和能力：\n\n## 通用能力\n\n- **代码分析**：阅读、理解、搜索、重构 Rust / TypeScript / Python / Go / Java 等语言的代码\n";
+        let mut f = StreamingDsmlContentFilter::new(true);
+        assert_eq!(f.push_chunk(text), text);
+        assert_eq!(f.finish(), "");
+    }
+
+    #[test]
+    fn unicode_before_incomplete_dsml_marker_is_preserved() {
+        let chunks = ["你好！<｜DS", "ML｜invoke name=\"x\"></｜DSML｜invoke>完成"];
+        assert_eq!(
+            stream_chunks(&chunks),
+            strip_deepseek_dsml_for_display(&chunks.concat())
+        );
     }
 }

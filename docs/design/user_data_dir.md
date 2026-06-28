@@ -211,7 +211,7 @@ flowchart TB
 | 端 | 方式 | 说明 |
 |----|------|------|
 | **Web** | `GET/PUT /user-data/*` | WASM 无法直接读 `$HOME`；与现有 Bearer 鉴权一致 |
-| **Tauri** | 同 Web（`127.0.0.1:3000` 等） | 业务数据不再依赖 `com.crabmate.desktop/localstorage/` |
+| **Tauri** | 同 Web（`serve` 动态 loopback URL，见 **`web_ready` JSON**） | 业务数据不再依赖 `com.crabmate.desktop/localstorage/` |
 | **CLI** | `user_data` 直读；`doctor` 打印路径 | REPL 可读 `prefs.last_workspace_root` 提示；密钥优先 `API_KEY` env |
 | **TUI** | 直读 `prefs` + 可选 HTTP | 会话链仍以 SQLite / `tui_session.json` 为主 |
 
@@ -290,10 +290,10 @@ flowchart TB
 
 ## 12. 与 Tauri 的关系（补充）
 
-当前 `desktop-tauri` 子进程启动：`crabmate serve --host 127.0.0.1 --port 3000`，**无** `--workspace`；`current_dir` 为仓库根或 `CM_DESKTOP_WORKDIR`。  
-WebView 加载 `http://127.0.0.1:3000` 后，**用户级**状态应由 **`/user-data`** 读写，而非 `~/.local/share/com.crabmate.desktop/localstorage/`。
+当前 `desktop-tauri` 子进程启动：**`crabmate serve --host 127.0.0.1 --port 0 --desktop-ready-json`**（**无** `--workspace`）；`current_dir` 为仓库根或 **`CM_DESKTOP_WORKDIR`**。壳层解析 stdout 中 **`{"event":"web_ready",…}`** 后再加载 WebView URL（**勿**假设固定端口如 3000）。  
+WebView 连上后，**用户级**状态应由 **`/user-data`** 读写，而非 `~/.local/share/com.crabmate.desktop/localstorage/`。
 
-详见 **`docs/design/tauri_gui_mvp_design.md`**（进程壳层）；本文件负责**数据落盘**。
+详见 **`docs/design/tauri_gui_mvp_design.md`**（进程壳层）与 **`desktop-tauri/DEVELOPMENT.md`**（开发与故障排查）；本文件负责**数据落盘**。
 
 ---
 

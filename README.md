@@ -122,10 +122,11 @@ trunk build              # 开发构建；发布用 trunk build --release
 
 ### 桌面 Tauri
 
-目录：**`desktop-tauri/`**。**WebView** 加载由壳进程拉起的本仓库 **`serve`**（随机端口、就绪 JSON 等实现细节见 [**desktop-tauri/README.md**](desktop-tauri/README.md)）。若 **`crabmate`** 不在 **`PATH`**，设置 **`CM_DESKTOP_BACKEND_BIN`** 指向已编译后端。
+目录：**`desktop-tauri/`**。**WebView** 加载由壳进程拉起的 **`serve`**（**`--port 0 --desktop-ready-json`**，解析 stdout 中 **`web_ready`** 再打开 URL；见 [**desktop-tauri/README.md**](desktop-tauri/README.md)）。若 **`crabmate`** 不在 **`PATH`**，设置 **`CM_DESKTOP_BACKEND_BIN`** 指向已编译后端。
 
 ```bash
 cargo build
+cd frontend && trunk build && cd ..
 cargo install tauri-cli --version "^2"   # 仅需一次
 cd desktop-tauri/src-tauri
 CM_DESKTOP_BACKEND_BIN=/绝对路径/到/target/debug/crabmate cargo tauri dev

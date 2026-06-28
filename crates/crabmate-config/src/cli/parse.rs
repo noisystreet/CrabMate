@@ -81,6 +81,7 @@ impl CliParseCtx {
             llm_context_tokens_cli: self.llm_context_tokens_cli,
             chat_cli: ChatCliArgs::default(),
             serve_port: None,
+            serve_desktop_ready_json: false,
             http_bind_host: resolve_http_bind_host(None),
             workspace_cli: self.workspace_cli.clone(),
             no_tools: self.no_tools,
@@ -143,6 +144,7 @@ fn build_parsed_cli_args(
     match cmd {
         Commands::Serve(s) => {
             b.serve_port = s.port.or(s.port_positional).or(Some(8080));
+            b.serve_desktop_ready_json = s.desktop_ready_json;
             b.http_bind_host = resolve_http_bind_host(s.host);
             b.no_web = s.no_web;
         }

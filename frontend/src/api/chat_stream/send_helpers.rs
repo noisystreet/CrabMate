@@ -6,7 +6,9 @@ use crabmate_sse_protocol::StreamEndReason;
 
 use crate::i18n::Locale;
 
-use super::{ChatStreamCallbacks, body_reader, http_request};
+use super::{
+    ChatStreamCallbacks, body_reader, body_reader::ChatStreamBodyConsumeResult, http_request,
+};
 
 pub(super) fn chat_stream_fetch_retry_exhausted(
     stream_resume_job_id: Option<u64>,
@@ -45,16 +47,18 @@ pub(super) async fn consume_chat_stream_body_phase(
     let Some(rb) = resp.body() else {
         return Err(crate::i18n::api_err_no_response_body(loc).to_string());
     };
-    let (stream_finished_normally, saw_stream_ended) =
-        body_reader::consume_chat_stream_response_body(
-            rb,
-            signal,
-            last_event_id,
-            cbs,
-            loc,
-            stream_resume_job_id,
-        )
-        .await?;
+    let ChatStreamBodyConsumeResult {
+        stream_finished_normally,
+        saw_stream_ended,
+    } = body_reader::consume_chat_stream_response_body(
+        rb,
+        signal,
+        last_event_id,
+        cbs,
+        loc,
+        stream_resume_job_id,
+    )
+    .await?;
     Ok(if stream_finished_normally {
         ChatStreamConsumeOutcome::Finished { saw_stream_ended }
     } else {
@@ -95,7 +99,6 @@ pub(super) async fn run_chat_stream_http_round(
     {
         ChatStreamConsumeOutcome::Finished { saw_stream_ended } => {
             if !saw_stream_ended {
-                // 某些后端/网络尾部场景可能未显式下发 `stream_ended`，前端按正常完结补齐。
                 (cbs.on_stream_ended)(StreamEndReason::Completed.to_string(), None);
             }
             (cbs.on_done)();

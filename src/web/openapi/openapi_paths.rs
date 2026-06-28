@@ -510,7 +510,7 @@ fn openapi_paths_fragment_workspace_file_meta() -> Value {
         "/workspace/dir": {
             "post": {
                 "tags": ["workspace"],
-                "summary": "在工作区内创建目录",
+                "summary": "在工作区内创建目录，或通过 JSON delete=true 删除目录（与 DELETE 等价）",
                 "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                 "requestBody": {
                     "required": true,

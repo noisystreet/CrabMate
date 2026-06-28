@@ -189,6 +189,15 @@ struct WorkspaceDirCreatePayload {
     parents: bool,
 }
 
+#[derive(Serialize)]
+struct WorkspaceDirDeletePayload {
+    path: String,
+    delete: bool,
+    confirm: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    recursive: bool,
+}
+
 fn http_error_status_code(err: &str) -> Option<u16> {
     let open = err.find('(')?;
     let close = err.find(')')?;
@@ -289,7 +298,22 @@ pub async fn delete_workspace_file(path: &str, loc: Locale) -> Result<(), String
 }
 
 /// `DELETE /workspace/dir?path=…&confirm=true&recursive=…`：删除工作区目录。
+/// 旧后端无 `DELETE` 时回退为 `POST /workspace/dir`（JSON `delete=true`）。
 pub async fn delete_workspace_dir(path: &str, recursive: bool, loc: Locale) -> Result<(), String> {
+    match delete_workspace_dir_via_delete(path, recursive, loc).await {
+        Ok(()) => Ok(()),
+        Err(e) if is_workspace_dir_route_unavailable(&e) => {
+            delete_workspace_dir_via_post(path, recursive, loc).await
+        }
+        Err(e) => Err(e),
+    }
+}
+
+async fn delete_workspace_dir_via_delete(
+    path: &str,
+    recursive: bool,
+    loc: Locale,
+) -> Result<(), String> {
     let mut url = format!(
         "/workspace/dir?path={}&confirm=true",
         urlencoding::encode(path)
@@ -298,6 +322,26 @@ pub async fn delete_workspace_dir(path: &str, recursive: bool, loc: Locale) -> R
         url.push_str("&recursive=true");
     }
     let r: WorkspaceDirOpResponse = fetch_json("DELETE", &url, None, loc).await?;
+    if let Some(e) = r.error {
+        return Err(e);
+    }
+    Ok(())
+}
+
+async fn delete_workspace_dir_via_post(
+    path: &str,
+    recursive: bool,
+    loc: Locale,
+) -> Result<(), String> {
+    let body = serde_json::to_string(&WorkspaceDirDeletePayload {
+        path: path.to_string(),
+        delete: true,
+        confirm: true,
+        recursive,
+    })
+    .map_err(|e| e.to_string())?;
+    let r: WorkspaceDirOpResponse =
+        fetch_json_with_body("POST", "/workspace/dir", &body, loc).await?;
     if let Some(e) = r.error {
         return Err(e);
     }

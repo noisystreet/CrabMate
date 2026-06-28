@@ -33,12 +33,14 @@ pub(super) fn append_stream_assistant_chunk(
     to_reasoning: bool,
 ) {
     let lane = stream_ctx.chat.stream_session_lane();
+    stream_ctx.chat.set_stream_overlay_display_mid(message_id);
     stream_overlay_append(
         lane.text_overlay,
         stream_ctx.bound_stream_session_id.as_str(),
         message_id,
         chunk,
         to_reasoning,
+        Some(stream_ctx.chat.stream_overlay_revision),
     );
 }
 

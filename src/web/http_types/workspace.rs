@@ -110,6 +110,15 @@ pub struct WorkspaceDirCreateBody {
     /// 为 true 时等价 `create_dir_all`（中间缺失的父目录一并创建）。
     #[serde(default)]
     pub parents: bool,
+    /// 为 true 时删除目录（须 `confirm=true`；非空目录须 `recursive=true`；与 `DELETE /workspace/dir` 等价）。
+    #[serde(default)]
+    pub delete: bool,
+    /// 删除时须为 true（与 `DELETE` 查询参数一致）。
+    #[serde(default)]
+    pub confirm: bool,
+    /// 删除非空目录时须为 true。
+    #[serde(default)]
+    pub recursive: bool,
 }
 
 #[derive(Serialize)]
