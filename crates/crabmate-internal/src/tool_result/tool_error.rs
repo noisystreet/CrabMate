@@ -80,9 +80,12 @@ pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
     match code {
         "invalid_args" | "missing_command" => ToolFailureCategory::InvalidInput,
         "unknown_tool" => ToolFailureCategory::Unknown,
-        "command_not_allowed" | "command_denied" | "approval_denied" | "approval_required" => {
-            ToolFailureCategory::PolicyDenied
-        }
+        "command_not_allowed"
+        | "command_denied"
+        | "approval_denied"
+        | "approval_required"
+        | "repeated_tool_failure_short_circuit"
+        | "repeated_tool_family_failure_short_circuit" => ToolFailureCategory::PolicyDenied,
         "workflow_semaphore_closed"
         | "workflow_node_missing_result"
         | "workflow_tool_join_error" => ToolFailureCategory::External,

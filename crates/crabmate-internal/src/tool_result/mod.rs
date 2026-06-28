@@ -149,6 +149,12 @@ pub fn tool_error_retryable_heuristic(error_code: Option<&str>) -> bool {
 }
 
 fn classify_error_code(first_line: &str, tool_name: &str) -> String {
+    if first_line.contains("检测到同命令重复失败") {
+        return "repeated_tool_failure_short_circuit".to_string();
+    }
+    if first_line.contains("检测到同类失败已发生") {
+        return "repeated_tool_family_failure_short_circuit".to_string();
+    }
     if first_line.contains("参数解析错误") {
         return "invalid_args".to_string();
     }
@@ -459,6 +465,29 @@ mod tests {
         assert!(!r.ok);
         assert_eq!(r.exit_code, None);
         assert_eq!(r.error_code.as_deref(), Some("workspace_not_set"));
+    }
+
+    #[test]
+    fn classify_repeated_tool_short_circuit_errors() {
+        let r = ToolResult::from_legacy_output(
+            "run_command",
+            "错误：检测到同命令重复失败，已短路本次调用（error=run_command_failed）。".to_string(),
+        );
+        assert!(!r.ok);
+        assert_eq!(
+            r.error_code.as_deref(),
+            Some("repeated_tool_failure_short_circuit")
+        );
+
+        let r = ToolResult::from_legacy_output(
+            "run_command",
+            "错误：检测到同类失败已发生（family=cargo_manifest_missing），已短路本次调用。"
+                .to_string(),
+        );
+        assert_eq!(
+            r.error_code.as_deref(),
+            Some("repeated_tool_family_failure_short_circuit")
+        );
     }
 
     #[test]

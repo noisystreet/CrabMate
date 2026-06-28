@@ -174,6 +174,8 @@ Machine-readable failure classification (separate from stream `code`). Common va
 | `unknown_tool` | Unknown tool name |
 | `approval_required` | Awaiting approval |
 | `approval_denied` | Approval denied |
+| `repeated_tool_failure_short_circuit` | Same tool-call signature already failed; orchestration short-circuited this retry |
+| `repeated_tool_family_failure_short_circuit` | Same failure family already occurred; orchestration short-circuited this similar call |
 | `workflow_semaphore_closed` | Workflow concurrency closed |
 | `workflow_node_missing_result` | Missing node result |
 | `workflow_tool_join_error` | Workflow tool task join failed |
