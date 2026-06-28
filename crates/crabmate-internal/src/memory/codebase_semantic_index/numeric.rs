@@ -127,7 +127,7 @@ pub fn hash_chunk(rel_path: &str, body: &str) -> String {
     h.update(rel_path.as_bytes());
     h.update(b"\0");
     h.update(body.as_bytes());
-    format!("{:x}", h.finalize())
+    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
 pub fn cosine_sim(a: &[f32], b: &[f32]) -> f32 {

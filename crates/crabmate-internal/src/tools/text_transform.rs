@@ -51,7 +51,8 @@ fn hash_short_hex(text: &str, algo: &str) -> String {
         _ => {
             use sha2::Digest;
             let d = sha2::Sha256::digest(text.as_bytes());
-            format!("{:x}", d)[..16].to_string()
+            let hex: String = d.iter().map(|b| format!("{b:02x}")).collect();
+            hex[..16].to_string()
         }
     }
 }
