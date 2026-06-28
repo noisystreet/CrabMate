@@ -6,7 +6,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
-use chardetng::EncodingDetector;
+use chardetng::{EncodingDetector, Iso2022JpDetection, Utf8Detection};
 use encoding_rs::{BIG5, DecoderResult, Encoding, GB18030, GBK, UTF_8, UTF_16BE, UTF_16LE};
 
 /// 读取文件头用于 BOM/自动嗅探的最大字节数。
@@ -203,9 +203,9 @@ pub fn resolve_text_encoding(
                     },
                 ));
             }
-            let mut det = EncodingDetector::new();
+            let mut det = EncodingDetector::new(Iso2022JpDetection::Allow);
             det.feed(head, true);
-            let enc = det.guess(None, true);
+            let enc = det.guess(None, Utf8Detection::Allow);
             let label = static_label(enc);
             Ok((
                 ResolvedTextEncoding::Decoder {

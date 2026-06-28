@@ -1,7 +1,7 @@
 use std::ops::Deref;
 use std::sync::LazyLock;
 
-use chardetng::EncodingDetector;
+use chardetng::{EncodingDetector, Iso2022JpDetection, Utf8Detection};
 use ego_tree::NodeRef;
 use encoding_rs::Encoding;
 use regex::Regex;
@@ -187,9 +187,9 @@ fn html_declared_encoding_prefix(bytes: &[u8]) -> Option<&'static Encoding> {
 fn sniff_encoding_chardetng(bytes: &[u8]) -> &'static Encoding {
     let take = bytes.len().min(CHARDET_SNIFF_MAX);
     let slice = if take == 0 { bytes } else { &bytes[..take] };
-    let mut det = EncodingDetector::new();
+    let mut det = EncodingDetector::new(Iso2022JpDetection::Allow);
     det.feed(slice, true);
-    det.guess(None, true)
+    det.guess(None, Utf8Detection::Allow)
 }
 
 fn is_likely_binary_content_type(content_type: &str) -> bool {
