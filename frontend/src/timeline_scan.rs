@@ -76,14 +76,31 @@ fn is_bare_tool_path_arg_residue(text: &str) -> bool {
     if t.is_empty() || t.lines().count() != 1 || t.contains(char::is_whitespace) {
         return false;
     }
+    if t.contains("```") || t.contains('：') || t.contains(':') {
+        return false;
+    }
     let lower = t.to_lowercase();
-    let archive_or_path_arg = lower.ends_with(".tar.gz")
+    lower.ends_with(".tar.gz")
         || lower.ends_with(".tgz")
         || lower.ends_with(".tar")
         || lower.ends_with(".zip")
         || lower.ends_with(".gz")
-        || lower.contains('/');
-    archive_or_path_arg && !t.contains("```") && !t.contains('：') && !t.contains(':')
+        || is_bare_single_line_path_residue(t)
+}
+
+/// 单行、无扩展名或疑似截断的文件路径（如 `.../INSTALLe`）——多为 DSML/工具参数残留。
+fn is_bare_single_line_path_residue(text: &str) -> bool {
+    if !text.contains('/') {
+        return false;
+    }
+    let basename = text.rsplit('/').next().unwrap_or(text);
+    if basename.eq_ignore_ascii_case("Makefile") || basename.eq_ignore_ascii_case("README") {
+        return false;
+    }
+    if basename.contains('.') {
+        return false;
+    }
+    basename.len() <= 12
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -663,6 +680,40 @@ mod tests {
             created_at: 0,
         };
         assert!(is_ephemeral_timeline_assistant_for_export(&m, &[]));
+    }
+
+    #[test]
+    fn truncated_install_path_residue_dropped_for_export() {
+        let m = StoredMessage {
+            id: "install-trunc".into(),
+            role: "assistant".into(),
+            text: "hpcg-HPCG-release-3-1-0/INSTALLe".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        assert!(is_ephemeral_timeline_assistant_for_export(&m, &[]));
+    }
+
+    #[test]
+    fn makefile_path_residue_not_dropped_for_export() {
+        let m = StoredMessage {
+            id: "makefile-path".into(),
+            role: "assistant".into(),
+            text: "hpcg-HPCG-release-3-1-0/Makefile".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        assert!(!is_ephemeral_timeline_assistant_for_export(&m, &[]));
     }
 
     #[test]
