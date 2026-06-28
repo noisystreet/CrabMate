@@ -34,6 +34,21 @@ struct ProgramBuildRunEvidence {
     ran_program: bool,
 }
 
+#[derive(Debug, Default)]
+struct GenericTaskIntent {
+    build_or_test: bool,
+    write_change: bool,
+    readonly_analysis: bool,
+}
+
+#[derive(Debug, Default)]
+struct GenericToolEvidence {
+    any_success: bool,
+    build_or_test_success: bool,
+    write_success: bool,
+    readonly_success: bool,
+}
+
 fn artifact_evidence_flags(r: &TaskResult) -> (bool, bool) {
     let mut wrote_source = false;
     let mut compiled = false;
@@ -259,6 +274,264 @@ fn check_program_build_run_messages(
     }
 }
 
+fn tool_message_has_success_evidence(raw: &str) -> bool {
+    if let Some(env) = crate::tool_result::normalize_tool_message_content(raw) {
+        return env.ok || env.exit_code == Some(0);
+    }
+    let parsed = crate::tool_result::parse_legacy_output("generic_tool", raw);
+    if parsed.ok || parsed.exit_code == Some(0) {
+        return true;
+    }
+    let lower = raw.to_lowercase();
+    lower.contains("file exists")
+        || lower.contains("已创建文件")
+        || lower.contains("已解压")
+        || lower.contains("成功")
+        || lower.contains("completed")
+        || lower.contains("succeeded")
+}
+
+fn generic_task_intent_from_task(task: &str) -> GenericTaskIntent {
+    let t = task.to_lowercase();
+    let build_or_test = [
+        "编译",
+        "构建",
+        "测试",
+        "运行测试",
+        "build",
+        "compile",
+        "make",
+        "cmake",
+        "test",
+        "pytest",
+        "cargo test",
+        "cargo check",
+        "clippy",
+    ]
+    .iter()
+    .any(|k| t.contains(k));
+    let write_change = [
+        "编写",
+        "实现",
+        "修改",
+        "创建",
+        "新增",
+        "删除",
+        "修复",
+        "write",
+        "implement",
+        "modify",
+        "create",
+        "add",
+        "delete",
+        "fix",
+    ]
+    .iter()
+    .any(|k| t.contains(k));
+    let readonly_analysis = [
+        "分析", "查看", "看看", "列出", "梳理", "介绍", "read", "inspect", "analyze", "list",
+        "show", "explain",
+    ]
+    .iter()
+    .any(|k| t.contains(k));
+    GenericTaskIntent {
+        build_or_test,
+        write_change,
+        readonly_analysis,
+    }
+}
+
+fn generic_tool_is_write_success(tool_name: &str, lower: &str) -> bool {
+    matches!(
+        tool_name,
+        "create_file" | "write_file" | "edit_file" | "apply_patch" | "modify_file"
+    ) || ["已创建文件", "created file", "apply_patch"]
+        .iter()
+        .any(|marker| lower.contains(marker))
+}
+
+fn generic_tool_is_build_or_test_success(tool_name: &str, lower: &str) -> bool {
+    tool_name == "run_command"
+        && [
+            "cmake",
+            "make",
+            "cargo test",
+            "cargo check",
+            "pytest",
+            "built target",
+            "test result: ok",
+            "tests passed",
+        ]
+        .iter()
+        .any(|marker| lower.contains(marker))
+}
+
+fn generic_tool_is_readonly_success(tool_name: &str, lower: &str) -> bool {
+    matches!(
+        tool_name,
+        "read_file"
+            | "read_dir"
+            | "list_tree"
+            | "glob"
+            | "search"
+            | "extract_in_file"
+            | "repo_overview_sweep"
+    ) || ["read file:", "read dir:", "list tree:"]
+        .iter()
+        .any(|marker| lower.contains(marker))
+}
+
+fn update_generic_tool_evidence_from_tool_text(
+    evidence: &mut GenericToolEvidence,
+    tool_name: &str,
+    text: &str,
+    ok: bool,
+) {
+    if !ok {
+        return;
+    }
+    evidence.any_success = true;
+    let lower = text.to_lowercase();
+    if generic_tool_is_write_success(tool_name, &lower) {
+        evidence.write_success = true;
+    }
+    if generic_tool_is_build_or_test_success(tool_name, &lower) {
+        evidence.build_or_test_success = true;
+    }
+    if generic_tool_is_readonly_success(tool_name, &lower) {
+        evidence.readonly_success = true;
+    }
+}
+
+fn update_generic_tool_evidence_from_raw(evidence: &mut GenericToolEvidence, raw: &str) {
+    if let Some(env) = crate::tool_result::normalize_tool_message_content(raw) {
+        let text = normalized_tool_text(&env);
+        let ok = env.ok || env.exit_code == Some(0);
+        update_generic_tool_evidence_from_tool_text(evidence, env.name.as_str(), &text, ok);
+        return;
+    }
+    let parsed = crate::tool_result::parse_legacy_output("generic_tool", raw);
+    let ok = parsed.ok || parsed.exit_code == Some(0) || tool_message_has_success_evidence(raw);
+    update_generic_tool_evidence_from_tool_text(evidence, "generic_tool", raw, ok);
+}
+
+fn recent_generic_tool_evidence(messages: &[Message]) -> GenericToolEvidence {
+    let mut evidence = GenericToolEvidence::default();
+    for m in messages.iter().rev().take(24) {
+        let Some(raw) = message_content_as_str(&m.content) else {
+            continue;
+        };
+        if m.role == "tool" || m.tool_call_id.is_some() || m.name.is_some() {
+            update_generic_tool_evidence_from_raw(&mut evidence, raw);
+        }
+    }
+    evidence
+}
+
+fn assistant_completion_claim(text: &str) -> bool {
+    let t = text.trim();
+    if t.is_empty() {
+        return false;
+    }
+    let lower = t.to_lowercase();
+    let has_completion_marker = [
+        "完成",
+        "成功",
+        "就绪",
+        "通过",
+        "结果如下",
+        "总结如下",
+        "done",
+        "completed",
+        "succeeded",
+        "success",
+        "ready",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker));
+    if !has_completion_marker {
+        return false;
+    }
+    let has_hard_blocker = [
+        "未完成",
+        "没有完成",
+        "失败",
+        "无法完成",
+        "未成功",
+        "error",
+        "failed",
+        "not completed",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker));
+    !has_hard_blocker
+}
+
+fn assistant_substantive_answer(text: &str) -> bool {
+    let t = text.trim();
+    if t.chars().count() < 40 {
+        return false;
+    }
+    let lower = t.to_lowercase();
+    let has_answer_shape = [
+        "当前",
+        "结果",
+        "包含",
+        "目录",
+        "文件",
+        "说明",
+        "总结",
+        "建议",
+        "analysis",
+        "summary",
+        "contains",
+        "directory",
+        "files",
+    ]
+    .iter()
+    .any(|k| lower.contains(k));
+    let just_question = t.ends_with('？') || t.ends_with('?');
+    has_answer_shape && !just_question
+}
+
+fn last_assistant_completion_claim(messages: &[Message]) -> bool {
+    messages.iter().rev().take(12).any(|m| {
+        if m.role != "assistant" || m.tool_calls.as_ref().is_some_and(|t| !t.is_empty()) {
+            return false;
+        }
+        message_content_as_str(&m.content).is_some_and(assistant_completion_claim)
+    })
+}
+
+fn last_assistant_substantive_answer(messages: &[Message]) -> bool {
+    messages.iter().rev().take(12).any(|m| {
+        if m.role != "assistant" || m.tool_calls.as_ref().is_some_and(|t| !t.is_empty()) {
+            return false;
+        }
+        message_content_as_str(&m.content).is_some_and(assistant_substantive_answer)
+    })
+}
+
+fn check_generic_successful_tool_then_completion(
+    task: &str,
+    messages: &[Message],
+) -> GoalCompletionEvidenceCheck {
+    let intent = generic_task_intent_from_task(task);
+    let evidence = recent_generic_tool_evidence(messages);
+    let completion = last_assistant_completion_claim(messages);
+    let satisfied = (intent.build_or_test && evidence.build_or_test_success && completion)
+        || (intent.write_change && evidence.write_success && completion)
+        || (intent.readonly_analysis
+            && evidence.readonly_success
+            && (completion || last_assistant_substantive_answer(messages)))
+        || (evidence.any_success && completion);
+    if satisfied {
+        GoalCompletionEvidenceCheck::Satisfied
+    } else {
+        GoalCompletionEvidenceCheck::NotApplicable
+    }
+}
+
 /// 对分阶段滚动执行的当前消息历史做目标完成证据核对。
 ///
 /// 编排层只消费三态结果；具体领域规则（当前先覆盖程序写入/编译/运行）在本模块内扩展。
@@ -271,7 +544,7 @@ pub(crate) fn check_goal_completion_evidence_from_messages(
             return (detector.check_messages)(task, messages);
         }
     }
-    GoalCompletionEvidenceCheck::NotApplicable
+    check_generic_successful_tool_then_completion(task, messages)
 }
 
 /// 对「写 C++ + 编译 + 运行」类任务做轻量证据核对；缺项时返回说明字符串。
@@ -452,6 +725,69 @@ mod tests {
             ),
             GoalCompletionEvidenceCheck::Missing(_)
         ));
+    }
+
+    #[test]
+    fn generic_successful_tool_then_completion_satisfies_build_only_task() {
+        let messages = vec![
+            tool_env(
+                "run_command",
+                "make arch=Linux_Serial -C hpcg-HPCG-release-3-1-0",
+                "命令：make arch=Linux_Serial -C hpcg-HPCG-release-3-1-0\n退出码：0\n标准输出：\n/usr/bin/g++ src/main.o -o bin/xhpcg",
+            ),
+            msg(
+                "assistant",
+                "HPCG 编译完成。产物：hpcg-HPCG-release-3-1-0/bin/xhpcg。",
+            ),
+        ];
+        assert_eq!(
+            check_goal_completion_evidence_from_messages("编译hpcg", &messages),
+            GoalCompletionEvidenceCheck::Satisfied
+        );
+    }
+
+    #[test]
+    fn generic_completion_claim_without_tool_success_is_not_applicable() {
+        let messages = vec![msg("assistant", "任务已完成。")];
+        assert_eq!(
+            check_goal_completion_evidence_from_messages("编译项目", &messages),
+            GoalCompletionEvidenceCheck::NotApplicable
+        );
+    }
+
+    #[test]
+    fn generic_readonly_analysis_with_tool_and_answer_satisfies() {
+        let messages = vec![
+            tool_env(
+                "read_file",
+                "read file: README.md",
+                "读取文件\n退出码：0\n标准输出：\n# Project\n",
+            ),
+            msg(
+                "assistant",
+                "当前项目包含 README 和源码目录。总结如下：主要入口在 src，建议后续查看构建配置。",
+            ),
+        ];
+        assert_eq!(
+            check_goal_completion_evidence_from_messages("分析当前项目", &messages),
+            GoalCompletionEvidenceCheck::Satisfied
+        );
+    }
+
+    #[test]
+    fn generic_started_message_does_not_satisfy() {
+        let messages = vec![
+            tool_env(
+                "read_file",
+                "read file: README.md",
+                "读取文件\n退出码：0\n标准输出：\n# Project\n",
+            ),
+            msg("assistant", "我已开始分析当前项目。"),
+        ];
+        assert_eq!(
+            check_goal_completion_evidence_from_messages("分析当前项目", &messages),
+            GoalCompletionEvidenceCheck::NotApplicable
+        );
     }
 
     #[test]

@@ -15,6 +15,7 @@ use super::errors::{AgentTurnSubPhase, RunAgentTurnError};
 use super::outer_loop::run_agent_outer_loop;
 use super::params::RunLoopParams;
 
+mod completed_replanning_suppression;
 mod ensemble_fsm;
 mod ensemble_schedule_fsm;
 mod full_pipeline_fsm;
@@ -40,6 +41,7 @@ mod planner_tool_call_reject_regression_tests;
 
 use sse as staged_sse;
 
+use completed_replanning_suppression::should_suppress_completed_replanning;
 use ensemble_fsm::{EnsembleMergeOutcome, ensemble_merge_outcome_from_parsed_steps};
 use full_pipeline_fsm::{
     StagedFullPipelinePhase, debug_staged_full_pipeline_enter,
@@ -190,6 +192,7 @@ struct ContinuePreparedPlanAfterFirstRoundParams<'a, 'b, F> {
     labels: StagedPlanRunLabels,
     planner_render_to_terminal: bool,
     echo_terminal_staged: bool,
+    entered_from_step_execution_round: bool,
     plan: plan_artifact::AgentReplyPlanV1,
     msg: Message,
     make_step_user_message: F,
@@ -207,10 +210,22 @@ where
         labels,
         planner_render_to_terminal,
         echo_terminal_staged,
+        entered_from_step_execution_round,
         plan,
         msg,
         make_step_user_message,
     } = params;
+    if should_suppress_completed_replanning(
+        p,
+        entered_from_step_execution_round,
+        plan.steps.as_slice(),
+    ) {
+        debug!(
+            target: "crabmate",
+            "分阶段重规划：原始目标已有完成证据，且新计划仅包含重复验证/总结型步骤，直接结束"
+        );
+        return Ok(StagedPlanRunOutcome::Finished);
+    }
     let omit_no_task_planner_from_history = omit_no_task_planner_from_history(
         p.ctx.io.out.is_some(),
         crate::web::web_ui_env::web_raw_assistant_output_env(),
@@ -663,6 +678,7 @@ where
                 labels,
                 planner_render_to_terminal,
                 echo_terminal_staged,
+                entered_from_step_execution_round,
                 plan,
                 msg,
                 make_step_user_message,
