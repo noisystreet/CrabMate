@@ -104,10 +104,11 @@ Then from the repo root: **`crabmate serve`** (or **`cargo run -- serve`**). Det
 
 ### Desktop Tauri
 
-Tree: **`desktop-tauri/`**. The **WebView** loads **`serve`** launched by the shell (ephemeral port, ready JSON—see [**desktop-tauri/README.md**](desktop-tauri/README.md)). If **`crabmate`** is not on **`PATH`**, set **`CM_DESKTOP_BACKEND_BIN`** to the built binary.
+Tree: **`desktop-tauri/`**. The **WebView** loads **`serve`** spawned as **`--host 127.0.0.1 --port 0 --desktop-ready-json`**; the shell parses the **`web_ready`** JSON on stdout (see [**desktop-tauri/README.md**](desktop-tauri/README.md)). If **`crabmate`** is not on **`PATH`**, set **`CM_DESKTOP_BACKEND_BIN`** to the built binary.
 
 ```bash
 cargo build
+cd frontend && trunk build && cd ..
 cargo install tauri-cli --version "^2"   # once
 cd desktop-tauri/src-tauri
 CM_DESKTOP_BACKEND_BIN=/absolute/path/to/target/debug/crabmate cargo tauri dev

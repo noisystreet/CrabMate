@@ -217,6 +217,10 @@ pub fn try_dispatch_sse_control_payload(data: &str, sink: &mut SseControlSink<'_
         return d;
     }
 
+    if classify_sse_control_outcome(&v) == "handled" {
+        return SseDispatch::Handled;
+    }
+
     SseDispatch::Plain
 }
 

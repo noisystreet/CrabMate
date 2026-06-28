@@ -66,7 +66,7 @@ all-dev: backend frontend
 # --- 后端 ---
 
 backend:
-	$(CARGO) build -p crabmate
+	$(CARGO) build -p crabmate $(CARGO_PROFILE)
 
 backend-release:
 	$(MAKE) backend RELEASE=1

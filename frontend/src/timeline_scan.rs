@@ -296,7 +296,7 @@ pub fn should_preserve_local_timeline_on_hydrate(
     }
     match timeline_ui_snapshot_type(state).as_deref() {
         Some("final_response_snapshot") => !server_assistant_has_trimmed_text(server_msgs, &m.text),
-        Some("intent_analysis") => true,
+        Some("intent_analysis") => !server_assistant_has_trimmed_text(server_msgs, &m.text),
         Some("local_snapshot") | None => {
             !server_assistant_has_trimmed_text(server_msgs, &m.text)
                 && !is_timeline_snapshot_duplicate_of_canonical_assistant(m, server_msgs)
@@ -384,6 +384,36 @@ mod tests {
         };
         assert!(!is_ephemeral_timeline_assistant_for_export(&m, &[]));
         assert!(should_preserve_local_timeline_on_hydrate(&m, &[]));
+    }
+
+    #[test]
+    fn intent_analysis_not_preserved_when_server_has_same_text() {
+        let intent_text = "意图分析：问答类（直接回复）\n\n";
+        let local = StoredMessage {
+            id: "local-intent".into(),
+            role: "assistant".into(),
+            text: intent_text.into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(timeline_state_intent_analysis_snapshot()),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 1,
+        };
+        let server = vec![StoredMessage {
+            id: "srv-intent".into(),
+            role: "assistant".into(),
+            text: intent_text.into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 1,
+        }];
+        assert!(!should_preserve_local_timeline_on_hydrate(&local, &server));
     }
 
     #[test]

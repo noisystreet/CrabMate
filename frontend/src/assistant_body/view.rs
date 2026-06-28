@@ -25,6 +25,7 @@ pub struct AssistantMarkdownCollapsibleWire {
     pub markdown_render: RwSignal<bool>,
     pub apply_assistant_display_filters: RwSignal<bool>,
     pub stream_text_overlay: RwSignal<Option<StreamTextOverlay>>,
+    pub stream_overlay_display_mid: RwSignal<Option<String>>,
 }
 
 /// 助手非工具消息：Markdown → 净化 HTML；思维链独立区域 + 终答区。
@@ -38,6 +39,7 @@ pub fn assistant_markdown_collapsible_view(w: AssistantMarkdownCollapsibleWire) 
         markdown_render,
         apply_assistant_display_filters,
         stream_text_overlay,
+        stream_overlay_display_mid,
     } = w;
     let answer_body_ref = NodeRef::<Div>::new();
     let mid_for_btn = message_id.clone();
@@ -49,6 +51,7 @@ pub fn assistant_markdown_collapsible_view(w: AssistantMarkdownCollapsibleWire) 
         active_id,
         message_id.clone(),
         stream_text_overlay,
+        stream_overlay_display_mid,
         locale,
         apply_assistant_display_filters,
     );

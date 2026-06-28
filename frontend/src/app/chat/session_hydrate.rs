@@ -8,9 +8,9 @@
 //! - **勿**订阅 `sessions` 或会被水合写回的信号，否则会在合并后再次触发并叠加重复行。
 //! - 异步段经 [`conversation_hydration_cycle::run`]；同步段用 [`try_hydration_wire_snapshot`]。
 //!
-//! ## 本地行保留（[`session_hydrate_preserved::merge_hydrated_tail_replaying_local_order`]）
+//! ## 尾部合并（[`super::session_merge::merge_session_tail`]）
 //!
-//! - 以 **local 顺序** 回放尾部；服务端快照提供已落盘行，本地 timeline / 子目标等独占行原位保留。
+//! - 唯一入口：plain user 补回 + 按 local 顺序回放；算法与 golden 见 `session_merge.rs`。
 
 use std::collections::HashSet;
 
@@ -28,65 +28,7 @@ use crate::i18n::{self, Locale};
 use crate::session_ops::title_from_user_prompt;
 use crate::storage::{ChatSession, StoredMessage};
 
-use super::session_hydrate_preserved::merge_hydrated_tail_replaying_local_order;
-
-/// 本地真实 user 气泡（非展示层隐藏的编排注入文案）。
-fn is_plain_user_bubble(m: &StoredMessage) -> bool {
-    m.role == "user"
-        && !m.is_tool
-        && !crabmate_display_rules::user_message_should_hide_for_chat_display(m.text.as_str())
-}
-
-/// 服务端快照未包含、或误含注入类 user 时，保留本地真实 user 气泡（防水合覆盖）。
-fn local_plain_user_bubbles_preserved(
-    server_msgs: &[StoredMessage],
-    local_msgs: &[StoredMessage],
-) -> Vec<StoredMessage> {
-    local_msgs
-        .iter()
-        .filter(|m| {
-            if !is_plain_user_bubble(m) {
-                return false;
-            }
-            let t = m.text.trim();
-            if t.is_empty() {
-                return false;
-            }
-            !server_msgs
-                .iter()
-                .any(|s| s.role == "user" && s.text.trim() == t)
-        })
-        .cloned()
-        .collect()
-}
-
-/// 合并水合快照：去掉服务端注入类 user（历史脏数据），并插回本地真实 user。
-fn merge_hydrated_messages_with_local_plain_users(
-    hydrated: Vec<StoredMessage>,
-    local_msgs: &[StoredMessage],
-) -> Vec<StoredMessage> {
-    let preserved = local_plain_user_bubbles_preserved(&hydrated, local_msgs);
-    if preserved.is_empty() {
-        return hydrated;
-    }
-    let mut out: Vec<StoredMessage> = hydrated
-        .into_iter()
-        .filter(|m| {
-            !(m.role == "user"
-                && crabmate_display_rules::user_message_should_hide_for_chat_display(
-                    m.text.as_str(),
-                ))
-        })
-        .collect();
-    if let Some(pos) = out.iter().position(|m| m.role == "user") {
-        for (i, u) in preserved.iter().enumerate() {
-            out.insert(pos + i, u.clone());
-        }
-    } else {
-        out.extend(preserved);
-    }
-    out
-}
+use super::session_merge::merge_session_tail;
 
 fn count_user_role_bubbles(messages: &[StoredMessage]) -> usize {
     messages.iter().filter(|m| m.role == "user").count()
@@ -197,17 +139,11 @@ fn merge_tail_page_into_session_messages(
             let keep = keep.min(session.messages.len());
             let local_tail = &session.messages[keep..];
             let mut out: Vec<StoredMessage> = session.messages[..keep].to_vec();
-            let merged_tail = merge_hydrated_messages_with_local_plain_users(hydrated, local_tail);
-            out.extend(merge_hydrated_tail_replaying_local_order(
-                merged_tail,
-                local_tail,
-            ));
+            out.extend(merge_session_tail(hydrated, local_tail));
             return out;
         }
     }
-    let local_tail = session.messages.as_slice();
-    let merged_tail = merge_hydrated_messages_with_local_plain_users(hydrated, local_tail);
-    merge_hydrated_tail_replaying_local_order(merged_tail, local_tail)
+    merge_session_tail(hydrated, session.messages.as_slice())
 }
 
 fn prepend_older_page_into_session(
@@ -335,6 +271,9 @@ fn try_hydration_wire_snapshot(
     chat: ChatSessionSignals,
     locale: Locale,
 ) -> Option<HydrationWireSnapshot> {
+    if chat.defers_conversation_hydration_untracked() {
+        return None;
+    }
     let aid = chat.active_id.get();
     if aid.is_empty() {
         return None;
@@ -392,6 +331,9 @@ pub(crate) mod conversation_hydration_cycle {
         if chat.session_hydrate_nonce.get_untracked() != nonce_at_start {
             return;
         }
+        if chat.defers_conversation_hydration_untracked() {
+            return;
+        }
 
         let msgs = stored_messages_from_conversation_api(&resp.messages);
         if msgs.is_empty() && !resp.messages.is_empty() {
@@ -402,6 +344,9 @@ pub(crate) mod conversation_hydration_cycle {
         chat.update_sessions_hydration(|list| {
             let active = chat.active_id.get_untracked();
             let cur_nonce = chat.session_hydrate_nonce.get_untracked();
+            if chat.defers_conversation_hydration_untracked() {
+                return;
+            }
             let Some(s) = list.iter_mut().find(|x| x.id == aid) else {
                 return;
             };
@@ -592,68 +537,6 @@ pub fn wire_session_hydration(
 }
 
 #[cfg(test)]
-mod merge_hydrated_plain_user_tests {
-    use super::merge_hydrated_messages_with_local_plain_users;
-    use crate::storage::StoredMessage;
-
-    fn user_msg(id: &str, text: &str) -> StoredMessage {
-        StoredMessage {
-            id: id.into(),
-            role: "user".into(),
-            text: text.into(),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: None,
-            is_tool: false,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: 0,
-        }
-    }
-
-    #[test]
-    fn restores_local_plain_user_when_server_has_injection_user() {
-        const REAL: &str = "用户真实诉求";
-        let reject = format!(
-            "{} 请仅输出 JSON",
-            crabmate_display_rules::STAGED_PLANNER_TOOL_CALL_REJECT_PREFIX
-        );
-        let server = vec![
-            user_msg("srv-inj", &reject),
-            StoredMessage {
-                id: "a1".into(),
-                role: "assistant".into(),
-                text: "ok".into(),
-                reasoning_text: String::new(),
-                image_urls: vec![],
-                state: None,
-                is_tool: false,
-                tool_call_id: None,
-                tool_name: None,
-                created_at: 1,
-            },
-        ];
-        let local = vec![user_msg("local-u", REAL)];
-        let merged = merge_hydrated_messages_with_local_plain_users(server, &local);
-        assert!(
-            merged
-                .iter()
-                .any(|m| m.role == "user" && m.text.contains(REAL)),
-            "应保留本地真实 user"
-        );
-        assert!(
-            !merged.iter().any(|m| {
-                m.role == "user"
-                    && crabmate_display_rules::is_planner_tool_call_reject_injected_user_content(
-                        m.text.as_str(),
-                    )
-            }),
-            "应去掉服务端注入 user"
-        );
-    }
-}
-
-#[cfg(test)]
 mod merge_tail_page_order_tests {
     use super::merge_tail_page_into_session_messages;
     use crate::conversation_hydrate::ConversationMessagesResponse;
@@ -757,6 +640,102 @@ mod merge_tail_page_order_tests {
             vec!["u1", "tl-intent", "a-srv"],
             "intent should precede canonical answer"
         );
+    }
+
+    #[test]
+    fn merge_tail_page_keeps_user_before_intent_when_server_omits_user() {
+        let session = ChatSession {
+            id: "sid".into(),
+            title: "t".into(),
+            draft: String::new(),
+            messages: vec![
+                StoredMessage {
+                    id: "u-local".into(),
+                    role: "user".into(),
+                    text: "你好".into(),
+                    reasoning_text: String::new(),
+                    image_urls: vec![],
+                    state: None,
+                    is_tool: false,
+                    tool_call_id: None,
+                    tool_name: None,
+                    created_at: 0,
+                },
+                StoredMessage {
+                    id: "tl-intent".into(),
+                    role: "assistant".into(),
+                    text: "意图分析：问候类\n\n".into(),
+                    reasoning_text: String::new(),
+                    image_urls: vec![],
+                    state: Some(timeline_state_intent_analysis_snapshot()),
+                    is_tool: false,
+                    tool_call_id: None,
+                    tool_name: None,
+                    created_at: 1,
+                },
+                StoredMessage {
+                    id: "a-local".into(),
+                    role: "assistant".into(),
+                    text: "你好！".into(),
+                    reasoning_text: String::new(),
+                    image_urls: vec![],
+                    state: None,
+                    is_tool: false,
+                    tool_call_id: None,
+                    tool_name: None,
+                    created_at: 2,
+                },
+            ],
+            updated_at: 0,
+            pinned: false,
+            starred: false,
+            server_conversation_id: Some("cid".into()),
+            server_revision: None,
+            workspace_root: None,
+            history_total: None,
+            history_window_start: Some(0),
+            history_has_older: None,
+        };
+        let hydrated = vec![
+            StoredMessage {
+                id: "tl-intent-srv".into(),
+                role: "assistant".into(),
+                text: "意图分析：问候类\n\n".into(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: Some(timeline_state_intent_analysis_snapshot()),
+                is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
+                created_at: 1,
+            },
+            StoredMessage {
+                id: "a-srv".into(),
+                role: "assistant".into(),
+                text: "你好！我是 CrabMate 的 AI 助手。".into(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: None,
+                is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
+                created_at: 2,
+            },
+        ];
+        let resp = ConversationMessagesResponse {
+            conversation_id: "cid".into(),
+            messages: vec![],
+            revision: 1,
+            total_count: 2,
+            window_start_index: 0,
+            has_older: false,
+            active_agent_role: None,
+            tiktoken_prompt_tokens: None,
+        };
+        let merged = merge_tail_page_into_session_messages(&session, hydrated, &resp);
+        let roles: Vec<_> = merged.iter().map(|m| m.role.as_str()).collect();
+        assert_eq!(roles, vec!["user", "assistant", "assistant"]);
+        assert_eq!(merged[0].text, "你好");
     }
 }
 

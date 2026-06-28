@@ -49,14 +49,23 @@ export CM_DESKTOP_BACKEND_BIN=/absolute/path/to/crabmate
 
 ### 1.5 常用开发命令
 
-在 `desktop-tauri/src-tauri` 目录下执行：
+在 **`desktop-tauri/src-tauri`** 目录：
 
 ```bash
 cargo check
+CM_DESKTOP_BACKEND_BIN=/absolute/path/to/crabmate cargo tauri dev
 ```
 
-> 说明：如果只做 Rust 侧快速校验，`cargo check` 即可。  
-> 运行/打包命令可在后续完善阶段补齐（例如 `cargo tauri dev` / `cargo tauri build`）。
+完整链路（仓库根目录）：
+
+```bash
+cargo build
+cd frontend && trunk build && cd ..
+cd desktop-tauri/src-tauri
+CM_DESKTOP_BACKEND_BIN=/absolute/path/to/target/debug/crabmate cargo tauri dev
+```
+
+发布构建：**`cargo tauri build`**（**`beforeBuildCommand`** 会执行 **`prepare-sidecar.sh`**）。
 
 ## 2. 常见故障
 
@@ -102,7 +111,34 @@ crabmate serve --host 127.0.0.1 --port 0 --desktop-ready-json
 
 - `{"event":"web_ready", ...}`
 
-### 2.3 图标/配置错误导致 Tauri 宏报错
+若 stderr/日志为 **`unexpected argument '--desktop-ready-json' found`**：deb 或 sidecar 里的 **`crabmate` 过旧**，与当前桌面壳不匹配。**无**旧版回退；须按 §6 重编后端并重打 **`cargo tauri build`** 后再 **`dpkg -i`**。
+
+### 2.3 Web API 405（如「删除文件夹」）或接口版本不一致
+
+典型文案：**请求失败 (405)：HTTP 方法不被允许**。
+
+原因：
+
+- WebView 连到了**旧版** `crabmate serve`（常见：曾用固定 **3000** 端口 + TCP 探测，本机已有旧进程在监听）。
+- 仅重编前端或仅重编 Tauri，但 **`CM_DESKTOP_BACKEND_BIN` / sidecar** 仍指向旧二进制。
+- **`frontend/dist`** 未重建，UI 已调新 API 但静态资源过旧（较少见）。
+
+排查与修复：
+
+1. **完全退出** Tauri（确保子进程被 kill），勿只关窗口。
+2. 确认无残留 **`serve`**：`ss -ltnp | rg crabmate` 或 `pgrep -a crabmate`。
+3. 仓库根依次：**`cargo build`** → **`cd frontend && trunk build`**。
+4. 用 **`CM_DESKTOP_BACKEND_BIN`** 指向 **`target/debug/crabmate`** 再 **`cargo tauri dev`**。
+5. 启动日志中必须有 **`web_ready`** JSON；手动验证：
+   ```bash
+   curl -s -X DELETE "http://127.0.0.1:<port>/workspace/dir?path=test&confirm=true&recursive=true" -w "\n%{http_code}\n"
+   ```
+   新后端应返回 **200**（JSON **`error`** 可为业务错误，非 405）。
+6. 前端对 **`DELETE /workspace/dir`** 在 404/405 时会回退 **`POST /workspace/dir`**（**`delete=true`**）；仍失败则几乎可断定后端过旧。
+
+**预防**：改 **`serve` 路由 / Tauri 启动逻辑时，同一 PR 更新本文、`README.md`、`docs/命令行与路由.md` 与（若涉及）**`docs/design/tauri_gui_mvp_design.md`**。
+
+### 2.4 图标/配置错误导致 Tauri 宏报错
 
 典型表现：
 
@@ -113,7 +149,7 @@ crabmate serve --host 127.0.0.1 --port 0 --desktop-ready-json
 - `desktop-tauri/src-tauri/tauri.conf.json` 中路径是否存在
 - `desktop-tauri/src-tauri/icons/icon.png` 是否为合法 RGBA PNG
 
-### 2.4 工作区嵌套导致 Cargo workspace 报错
+### 2.5 工作区嵌套导致 Cargo workspace 报错
 
 如果出现 “current package believes it's in a workspace when it's not”，可保持：
 
@@ -121,7 +157,7 @@ crabmate serve --host 127.0.0.1 --port 0 --desktop-ready-json
 
 用于将该子工程作为独立 workspace 处理。
 
-### 2.5 Wayland 下 fcitx5 等 IME 在 WebView 内异常
+### 2.6 Wayland 下 fcitx5 等 IME 在 WebView 内异常
 
 在 **Wayland** 会话里，GTK/WebKitGTK（Tauri 嵌入页）对输入法支持仍可能不完整，表现为候选窗不显示或无法内联输入。若在终端中设置 **`GDK_BACKEND=x11`** 后正常，说明走 **X11（XWayland）后端** 可规避。
 
@@ -179,22 +215,29 @@ export http_proxy=http://localhost:8118 && export https_proxy=http://localhost:8
 
 当前桌面端已具备：
 
-- 启动后端进程
-- 解析 `web_ready`
-- 打开 WebView
-- 退出时回收后端进程
+- 启动后端子进程（**`--port 0 --desktop-ready-json`**）
+- 解析 **`web_ready`** 并加载动态 URL
+- 打开 WebView、退出时回收后端进程
+- 启动失败时的阻塞错误对话框
 
 尚待完善：
 
-- 桌面启动失败的可视化提示
 - 日志目录与诊断页
 - 单实例保护
 - sidecar 自动更新
+- **`web_ready` 与 `/health` 版本号交叉校验**（可选）
 
-## 5. 发布检查清单（sidecar 路径一致性）
+## 5. 发布检查清单（sidecar 与前端一致）
 
 发布前建议最少检查以下项目：
 
+- **后端与前端、桌面壳同次构建**
+  - **`cargo build --release`**（或 dev 用 **`cargo build`**）
+  - **`cd frontend && trunk build --release`**（或 dev 用 **`trunk build`**）
+  - **`bash desktop-tauri/scripts/prepare-sidecar.sh`** 会校验 sidecar 支持 **`serve --desktop-ready-json`**，不支持则**直接失败**（无旧版回退）
+  - 复制的 sidecar 须与上一步 **`crabmate`** 为同一构建产物
+- **桌面 `.deb` 须整体重装**
+  - 仅 **`dpkg -i`** 新 deb、但 deb 内 sidecar 仍是旧 **`crabmate`** 时，启动会报 **`unexpected argument '--desktop-ready-json'`**；须按 §6 顺序重打包含新 sidecar 的包
 - **后端二进制命名**
   - Linux/macOS: `crabmate`
   - Windows: `crabmate.exe`

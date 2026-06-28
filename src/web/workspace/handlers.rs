@@ -702,11 +702,17 @@ pub async fn workspace_file_write_handler(
     workspace_file_write_resolved(base_canonical, canonical, body).await
 }
 
-/// 在工作区内创建目录（可选 `parents` 创建中间路径）。
+/// 在工作区内创建目录（可选 `parents` 创建中间路径）；`delete=true` 时删除目录。
 pub async fn workspace_dir_create_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<WorkspaceDirCreateBody>,
 ) -> Json<WorkspaceDirCreateResponse> {
+    if body.delete {
+        let WorkspaceDirDeleteResponse { error } =
+            workspace_dir_delete_resolved(&state, body.path.as_str(), body.confirm, body.recursive)
+                .await;
+        return Json(WorkspaceDirCreateResponse { error });
+    }
     let base_canonical = match effective_workspace_base_canonical(&state).await {
         Ok(p) => p,
         Err(e) => {
@@ -759,47 +765,57 @@ pub async fn workspace_dir_delete_handler(
     State(state): State<Arc<AppState>>,
     Query(query): Query<WorkspaceDirDeleteQuery>,
 ) -> Json<WorkspaceDirDeleteResponse> {
-    if !query.confirm {
-        return Json(WorkspaceDirDeleteResponse {
+    Json(
+        workspace_dir_delete_resolved(&state, query.path.as_str(), query.confirm, query.recursive)
+            .await,
+    )
+}
+
+async fn workspace_dir_delete_resolved(
+    state: &Arc<AppState>,
+    path: &str,
+    confirm: bool,
+    recursive: bool,
+) -> WorkspaceDirDeleteResponse {
+    if !confirm {
+        return WorkspaceDirDeleteResponse {
             error: Some("拒绝执行：需要 confirm=true".to_string()),
-        });
+        };
     }
-    let base_canonical = match effective_workspace_base_canonical(&state).await {
+    let base_canonical = match effective_workspace_base_canonical(state).await {
         Ok(p) => p,
         Err(e) => {
-            return Json(WorkspaceDirDeleteResponse {
+            return WorkspaceDirDeleteResponse {
                 error: Some(e.user_message()),
-            });
+            };
         }
     };
-    let path = query.path.trim();
+    let path = path.trim();
     if path.is_empty() {
-        return Json(WorkspaceDirDeleteResponse {
+        return WorkspaceDirDeleteResponse {
             error: Some("path 不能为空".to_string()),
-        });
-    }
-    let canonical =
-        match resolve_web_workspace_read_path(&base_canonical, Some(query.path.as_str())) {
-            Ok(p) => p,
-            Err(e) => {
-                return Json(WorkspaceDirDeleteResponse {
-                    error: Some(e.user_message()),
-                });
-            }
         };
-    if canonical == base_canonical {
-        return Json(WorkspaceDirDeleteResponse {
-            error: Some("不能删除工作区根目录".to_string()),
-        });
     }
-    let recursive = query.recursive;
+    let canonical = match resolve_web_workspace_read_path(&base_canonical, Some(path)) {
+        Ok(p) => p,
+        Err(e) => {
+            return WorkspaceDirDeleteResponse {
+                error: Some(e.user_message()),
+            };
+        }
+    };
+    if canonical == base_canonical {
+        return WorkspaceDirDeleteResponse {
+            error: Some("不能删除工作区根目录".to_string()),
+        };
+    }
     match tokio::task::spawn_blocking(move || workspace_dir_delete_sync(canonical, recursive)).await
     {
-        Ok(Ok(())) => Json(WorkspaceDirDeleteResponse { error: None }),
-        Ok(Err(msg)) => Json(WorkspaceDirDeleteResponse { error: Some(msg) }),
-        Err(e) => Json(WorkspaceDirDeleteResponse {
+        Ok(Ok(())) => WorkspaceDirDeleteResponse { error: None },
+        Ok(Err(msg)) => WorkspaceDirDeleteResponse { error: Some(msg) },
+        Err(e) => WorkspaceDirDeleteResponse {
             error: Some(format!("删除目录任务失败: {}", e)),
-        }),
+        },
     }
 }
 

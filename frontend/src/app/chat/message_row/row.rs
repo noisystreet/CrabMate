@@ -173,6 +173,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
         sessions,
         active_id,
         stream_text_overlay: chat.stream_text_overlay,
+        stream_overlay_display_mid: chat.stream_overlay_display_mid,
         collapsed_long_assistant_ids,
         locale,
         markdown_render,

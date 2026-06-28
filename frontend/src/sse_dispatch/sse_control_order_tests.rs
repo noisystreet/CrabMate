@@ -16,6 +16,11 @@ fn single_space_sse_payload_is_plain_not_handled() {
     assert_eq!(dispatch_triage_string(" "), "plain");
 }
 
+#[test]
+fn standalone_protocol_version_frame_is_handled_not_plain() {
+    assert_eq!(dispatch_triage_string(r#"{"v":1}"#), "handled");
+}
+
 fn dispatch_triage_string(data: &str) -> &'static str {
     let mut on_err = |_msg: String| {};
     let mut sink = SseControlSink {

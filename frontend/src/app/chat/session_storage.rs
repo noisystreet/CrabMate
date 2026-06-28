@@ -95,6 +95,7 @@ pub fn wire_persist_chat_sessions(
     let sessions = chat.sessions;
     let active_id = chat.active_id;
     let stream_text_overlay = chat.stream_text_overlay;
+    let stream_overlay_revision = chat.stream_overlay_revision;
     let debounce_tick = StoredValue::new(Arc::new(AtomicU64::new(0)));
     Effect::new(move |_| {
         if !initialized.get() {
@@ -102,7 +103,7 @@ pub fn wire_persist_chat_sessions(
         }
         let _ = sessions.get();
         let _ = active_id.get();
-        let _ = stream_text_overlay.get();
+        let _ = stream_overlay_revision.get();
         let ctr = debounce_tick.get_value();
         let prev = ctr.fetch_add(1, Ordering::Relaxed);
         let tick = prev.wrapping_add(1);

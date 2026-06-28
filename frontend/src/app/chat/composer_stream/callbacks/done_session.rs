@@ -8,6 +8,15 @@ use super::super::per_stream_accum::PerStreamTurnSummary;
 use super::done_bubble::{DoneBubbleAction, DoneBubbleDecisionInputs, decide_done_bubble_action};
 use super::helpers::build_empty_reply_with_diagnostic;
 
+fn is_assistant_loading_placeholder(m: &StoredMessage) -> bool {
+    m.role == "assistant" && !m.is_tool && m.state.as_ref().is_some_and(|st| st.is_loading())
+}
+
+/// 流式整轮结束后仍残留的助手 `Loading` 占位（轮换/id 漂移等）会使 `stream_turn_busy_ui` 长期为真。
+pub(super) fn clear_residual_assistant_loading_placeholders(messages: &mut Vec<StoredMessage>) {
+    messages.retain(|m| !is_assistant_loading_placeholder(m));
+}
+
 /// 在会话消息列表上对 `assistant_message_id` 指向的 **loading** 尾泡应用 `on_done` 决策。
 pub(super) fn apply_stream_done_to_loading_assistant(
     messages: &mut Vec<StoredMessage>,
@@ -23,13 +32,11 @@ pub(super) fn apply_stream_done_to_loading_assistant(
                 .is_some_and(|st| st.looks_like_hierarchical_subgoal())
     });
     let Some(idx) = messages.iter().position(|m| m.id == assistant_message_id) else {
+        clear_residual_assistant_loading_placeholders(messages);
         return;
     };
-    if !messages[idx]
-        .state
-        .as_ref()
-        .is_some_and(|st| st.is_loading())
-    {
+    if !is_assistant_loading_placeholder(&messages[idx]) {
+        clear_residual_assistant_loading_placeholders(messages);
         return;
     }
     messages[idx].state = None;
@@ -71,5 +78,63 @@ pub(super) fn apply_stream_done_to_loading_assistant(
                 end_reason,
             );
         }
+    }
+    clear_residual_assistant_loading_placeholders(messages);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::StoredMessageState;
+
+    fn loading_asst(id: &str) -> StoredMessage {
+        StoredMessage {
+            id: id.into(),
+            role: "assistant".into(),
+            text: String::new(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(StoredMessageState::Loading),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        }
+    }
+
+    #[test]
+    fn clears_orphan_loading_when_primary_id_missing() {
+        let mut msgs = vec![loading_asst("orphan")];
+        apply_stream_done_to_loading_assistant(
+            &mut msgs,
+            "missing",
+            &PerStreamTurnSummary {
+                answer_delta_chars: 0,
+                stream_end_reason: None,
+                saw_final_response_timeline: false,
+                current_subgoal_marker: None,
+            },
+            false,
+            crate::i18n::Locale::ZhHans,
+        );
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn clears_extra_loading_after_primary_done() {
+        let mut msgs = vec![loading_asst("orphan"), loading_asst("primary")];
+        apply_stream_done_to_loading_assistant(
+            &mut msgs,
+            "primary",
+            &PerStreamTurnSummary {
+                answer_delta_chars: 0,
+                stream_end_reason: Some("completed".into()),
+                saw_final_response_timeline: false,
+                current_subgoal_marker: None,
+            },
+            true,
+            crate::i18n::Locale::ZhHans,
+        );
+        assert!(msgs.is_empty());
     }
 }

@@ -32,60 +32,55 @@ MVP 验收标准：
 
 ## 3. 代码落地范围
 
-### 3.1 后端（本阶段）
+### 3.1 后端（已实现）
 
-在 CLI `serve` 子命令新增桌面握手开关：
+CLI `serve` 子命令桌面握手：
 
-- 新参数：`--desktop-ready-json`
-- 行为：当服务监听成功后，额外打印一行 JSON：
+- 参数：**`--desktop-ready-json`**
+- 行为：当 **`TcpListener::bind`** 成功后，向 stdout 额外打印一行 JSON（基于 **`local_addr()`**）：
 
 ```json
-{"event":"web_ready","host":"127.0.0.1","port":8080,"url":"http://127.0.0.1:8080/","auth_enabled":false}
+{"event":"web_ready","host":"127.0.0.1","port":37007,"url":"http://127.0.0.1:37007/","auth_enabled":false}
 ```
 
 说明：
 
-- 该输出仅在显式开启 `--desktop-ready-json` 时出现
-- 为避免端口占用误判，应在 `TcpListener::bind` 成功后基于 `local_addr()` 生成
-- 支持 `--port 0` 随机端口场景
+- 该输出**仅**在显式开启 **`--desktop-ready-json`** 时出现
+- 支持 **`--port 0`** 随机端口；**`port`/`url`** 字段为实际绑定地址
+- 实现：`src/cli_run.rs`（`run_serve_branch`）、`crates/crabmate-config`（`ServeCmd`）
 
-### 3.2 桌面端（本阶段）
+### 3.2 桌面端（已实现）
 
-新增 `desktop-tauri/` 最小骨架，用于承载后续实现：
+`desktop-tauri/` 工程：
 
-- `desktop-tauri/src-tauri/Cargo.toml`
-- `desktop-tauri/src-tauri/tauri.conf.json`
-- `desktop-tauri/src-tauri/src/main.rs`
-- `desktop-tauri/src-tauri/build.rs`
-- `desktop-tauri/README.md`
+- `desktop-tauri/src-tauri/src/main.rs` — 启动 **`serve --host 127.0.0.1 --port 0 --desktop-ready-json`**，解析 **`web_ready`**，加载 WebView，退出时 kill 子进程
+- `desktop-tauri/scripts/prepare-sidecar.sh` — 打包前复制 **`crabmate`** sidecar
+- **`desktop-tauri/README.md`**、**`desktop-tauri/DEVELOPMENT.md`** — 开发与故障排查
 
-本阶段先提供“可扩展骨架”，下一阶段接入真实后端子进程与 URL 动态加载。
+**勿**再使用「固定 **3000** + TCP 探测」作为就绪条件（会误连本机其它旧 **`serve`** 进程，导致 API 405/404）。
 
 ## 4. 实施步骤（MVP）
 
-1. 后端新增 `--desktop-ready-json` 参数与 ready 输出
-2. 增加基础文档与启动示例
-3. 建立 Tauri 工程骨架（先不耦合具体启动脚本）
-4. 下一阶段完成：
-   - 启动 `crabmate serve --host 127.0.0.1 --port 0 --desktop-ready-json`
-   - 解析 ready JSON
-   - 加载动态 URL
-   - 退出时回收子进程
+1. ~~后端新增 `--desktop-ready-json` 参数与 ready 输出~~（已完成）
+2. ~~Tauri 启动 `crabmate serve --host 127.0.0.1 --port 0 --desktop-ready-json`~~（已完成）
+3. ~~解析 ready JSON、加载动态 URL、退出时回收子进程~~（已完成）
+4. 文档与 **`frontend/dist`** / sidecar 发版流程与代码同 PR 维护（见 **`desktop-tauri/DEVELOPMENT.md`** § 发布检查清单）
 
 ### 开发启动命令（当前实现）
 
-1. 在仓库根目录编译后端：
+1. 在仓库根目录编译后端并构建前端（Tauri WebView 由 **`serve`** 提供 **`frontend/dist`**）：
 
 ```bash
-cd /path/to/agent_demo
+cd /path/to/crabmate_agent
 cargo build
+cd frontend && trunk build && cd ..
 ```
 
-2. 启动 Tauri 开发界面：
+2. 启动 Tauri 开发界面（显式指定后端可执行文件路径）：
 
 ```bash
-cd /path/to/agent_demo/desktop-tauri/src-tauri
-CM_DESKTOP_BACKEND_BIN=/path/to/agent_demo/target/debug/crabmate cargo tauri dev
+cd /path/to/crabmate_agent/desktop-tauri/src-tauri
+CM_DESKTOP_BACKEND_BIN=/path/to/crabmate_agent/target/debug/crabmate cargo tauri dev
 ```
 
 3. 若未安装 Tauri CLI，先安装：
@@ -93,6 +88,8 @@ CM_DESKTOP_BACKEND_BIN=/path/to/agent_demo/target/debug/crabmate cargo tauri dev
 ```bash
 cargo install tauri-cli --version "^2"
 ```
+
+启动日志中应出现 **`{"event":"web_ready",…}`**；WebView URL 须与该 JSON 的 **`url`** 一致。
 
 ## 5. 安全基线
 

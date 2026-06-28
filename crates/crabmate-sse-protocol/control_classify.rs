@@ -104,6 +104,9 @@ fn sse_control_handled_tool_lifecycle(obj: &serde_json::Map<String, Value>) -> b
 }
 
 fn sse_control_handled_notices_and_meta(obj: &serde_json::Map<String, Value>) -> bool {
+    if obj.len() == 1 && key_present_non_null(obj, "v") {
+        return true;
+    }
     if obj.get("staged_plan_notice").is_some_and(|x| x.is_string())
         || obj.get("staged_plan_notice_clear") == Some(&Value::Bool(true))
     {

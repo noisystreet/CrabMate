@@ -7,7 +7,8 @@ use wasm_bindgen_futures::JsFuture;
 use crate::i18n::Locale;
 
 use super::ChatStreamCallbacks;
-use super::sse_frame::{flush_sse_tail, process_sse_buffer};
+use super::sse_frame::SseBufferProgress;
+use super::sse_frame::{flush_sse_tail, process_sse_buffer_step};
 
 /// 块边界可能截断 UTF-8：只把从开头起「完整码点」前缀解码进 `text`，余字节留在 `raw`。
 fn append_chunk_to_text_buffer(raw: &mut Vec<u8>, chunk: &[u8], text: &mut String) {
@@ -38,13 +39,18 @@ fn append_chunk_to_text_buffer(raw: &mut Vec<u8>, chunk: &[u8], text: &mut Strin
 const POST_STREAM_ENDED_READ_TIMEOUT_MS: u32 = 25_000;
 
 /// 尚未收到 `stream_ended` 时，单次 `read()` 若长期无字节（断流、掉帧、代理挂起），会永远阻塞；设上限以便回落 busy。
-/// 长思考无 SSE 的网关较少见；若仍误判可调大或做配置。
-const PRE_STREAM_ENDED_READ_STALL_TIMEOUT_MS: u32 = 300_000;
+const PRE_STREAM_ENDED_READ_STALL_TIMEOUT_MS: u32 = 180_000;
 
 /// 两次「含 `data:` 的有效负载」之间的最大间隔（毫秒）。代理可能周期性下发不含 `data:` 的注释帧，
 /// 使 `read()` 频繁返回，从而永远不触发 [`PRE_STREAM_ENDED_READ_STALL_TIMEOUT_MS`]；此上限仍可结束悬挂流。
 /// 断线重连路径亦依赖此项（该路径不设单次 read 超时）。
-const SSE_MEANINGFUL_PAYLOAD_IDLE_TIMEOUT_MS: f64 = 180_000.0;
+const SSE_ANY_PAYLOAD_IDLE_TIMEOUT_MS: f64 = 180_000.0;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChatStreamBodyConsumeResult {
+    pub stream_finished_normally: bool,
+    pub saw_stream_ended: bool,
+}
 
 enum ReadableChunkPoll {
     Chunk(wasm_bindgen::JsValue),
@@ -109,6 +115,31 @@ async fn poll_readable_stream_chunk(
     }
 }
 
+async fn process_available_sse_frames(
+    buffer: &mut String,
+    last_event_id: &mut u64,
+    saw_stream_ended: &mut bool,
+    cbs: &ChatStreamCallbacks,
+    loc: Locale,
+) -> Result<SseBufferProgress, String> {
+    let mut total = SseBufferProgress::default();
+    while let Some(kind) =
+        process_sse_buffer_step(buffer, last_event_id, saw_stream_ended, cbs, loc)?
+    {
+        let progress = SseBufferProgress {
+            meaningful: usize::from(kind.counts_as_meaningful()),
+            text_deltas: usize::from(kind.counts_as_text_delta()),
+        };
+        total.meaningful = total.meaningful.saturating_add(progress.meaningful);
+        total.text_deltas = total.text_deltas.saturating_add(progress.text_deltas);
+        // 每帧后让出主线程：控制面（timeline 等）也会 sessions.update，避免 Tauri/WebView 饿死读流。
+        if progress.meaningful > 0 {
+            TimeoutFuture::new(0).await;
+        }
+    }
+    Ok(total)
+}
+
 /// 消费 `/chat/stream` 响应体：UTF-8 重组、SSE 分帧与尾部 flush（与断线重连时的读失败语义一致）。
 pub(super) async fn consume_chat_stream_response_body(
     rb: web_sys::ReadableStream,
@@ -117,7 +148,7 @@ pub(super) async fn consume_chat_stream_response_body(
     cbs: &ChatStreamCallbacks,
     loc: Locale,
     stream_resume_job_id: Option<u64>,
-) -> Result<(bool, bool), String> {
+) -> Result<ChatStreamBodyConsumeResult, String> {
     let reader: web_sys::ReadableStreamDefaultReader = rb
         .get_reader()
         .dyn_into()
@@ -130,11 +161,14 @@ pub(super) async fn consume_chat_stream_response_body(
     let mut last_meaningful_payload_ms = js_sys::Date::now();
     loop {
         if signal.aborted() {
-            return Ok((true, saw_stream_ended));
+            return Ok(ChatStreamBodyConsumeResult {
+                stream_finished_normally: true,
+                saw_stream_ended,
+            });
         }
         if !saw_stream_ended {
             let now = js_sys::Date::now();
-            if now - last_meaningful_payload_ms > SSE_MEANINGFUL_PAYLOAD_IDLE_TIMEOUT_MS {
+            if now - last_meaningful_payload_ms > SSE_ANY_PAYLOAD_IDLE_TIMEOUT_MS {
                 reader.release_lock();
                 stream_finished_normally = true;
                 break;
@@ -165,9 +199,15 @@ pub(super) async fn consume_chat_stream_response_body(
         if let Some(u8) = value.dyn_ref::<js_sys::Uint8Array>() {
             append_chunk_to_text_buffer(&mut raw, &u8.to_vec(), &mut buffer);
         }
-        let meaningful =
-            process_sse_buffer(&mut buffer, last_event_id, &mut saw_stream_ended, cbs, loc)?;
-        if meaningful > 0 {
+        let progress = process_available_sse_frames(
+            &mut buffer,
+            last_event_id,
+            &mut saw_stream_ended,
+            cbs,
+            loc,
+        )
+        .await?;
+        if progress.meaningful > 0 {
             last_meaningful_payload_ms = js_sys::Date::now();
         }
         // 不在此处因 `stream_ended` 提前 break：提前结束 ReadableStream 消费可能导致部分环境下
@@ -177,12 +217,15 @@ pub(super) async fn consume_chat_stream_response_body(
         buffer.push_str(&String::from_utf8_lossy(&raw));
         raw.clear();
     }
-    let _tail_meaningful =
+    let _tail_progress =
         flush_sse_tail(&mut buffer, last_event_id, &mut saw_stream_ended, cbs, loc)?;
     if saw_stream_ended {
         stream_finished_normally = true;
     }
-    Ok((stream_finished_normally, saw_stream_ended))
+    Ok(ChatStreamBodyConsumeResult {
+        stream_finished_normally,
+        saw_stream_ended,
+    })
 }
 
 #[cfg(test)]

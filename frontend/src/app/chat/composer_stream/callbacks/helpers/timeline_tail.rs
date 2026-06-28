@@ -101,9 +101,6 @@ pub(crate) fn streaming_assistant_tail_has_text(
                 if m.id != mid || m.role != "assistant" || m.is_tool {
                     return false;
                 }
-                if !m.state.as_ref().is_some_and(|st| st.is_loading()) {
-                    return false;
-                }
                 let visible =
                     stream_overlay_merged_text_reasoning_owned(m, overlay.as_ref(), sid.as_str())
                         .map(|(t, _)| t)
@@ -280,7 +277,8 @@ pub(crate) fn finalize_loading_assistant_before_tool_and_tail_with_new_loading(
     if let Some(id) = new_tail_id.into_inner() {
         stream_ctx
             .scratch
-            .adopt_new_assistant_tail_after_rotation(id);
+            .adopt_new_assistant_tail_after_rotation(id.clone());
+        stream_ctx.chat.set_stream_overlay_display_mid(id.as_str());
     }
 }
 
@@ -312,7 +310,8 @@ pub(crate) fn rotate_streaming_assistant_for_followup_model_round(
     if let Some(id) = new_tail_id.into_inner() {
         stream_ctx
             .scratch
-            .adopt_new_assistant_tail_after_rotation(id);
+            .adopt_new_assistant_tail_after_rotation(id.clone());
+        stream_ctx.chat.set_stream_overlay_display_mid(id.as_str());
     }
     ensure_streaming_assistant_tail_last(stream_ctx);
 }
@@ -360,4 +359,15 @@ pub(crate) fn remove_loading_assistant_placeholder(stream_ctx: &ChatStreamCallba
             s.messages.remove(idx);
         }
     });
+    // `final_response` 等可能在正文 delta 尚未结束时就撤掉 loading；补挂新尾泡以免后续片段无处展示。
+    let tail_still_present = stream_ctx
+        .read_bound_session(|s| {
+            s.messages
+                .iter()
+                .any(|m| m.id == mid_owned.as_str() && m.role == "assistant" && !m.is_tool)
+        })
+        .unwrap_or(false);
+    if !tail_still_present {
+        rotate_streaming_assistant_for_followup_model_round(stream_ctx);
+    }
 }

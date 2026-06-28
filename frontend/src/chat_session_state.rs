@@ -247,10 +247,46 @@ pub struct ChatSessionSignals {
     pub reasoning_preserved: RwSignal<HashMap<String, String>>,
     /// 当前尾条 `loading` 助手消息的流式正文/思维链增量；**不**写入 [`Self::sessions`]，减少历史行重算。
     pub stream_text_overlay: RwSignal<Option<StreamTextOverlay>>,
+    /// 当前应订阅 [`Self::stream_text_overlay`] 热路径的助手 `message_id`（仅该行 Markdown 组件订阅，避免 Tauri/WebView 主线程假卡死）。
+    pub stream_overlay_display_mid: RwSignal<Option<String>>,
+    /// overlay 内容变更计数（滚动跟底 / 持久化防抖等轻量订阅，勿直接 `.get()` 整包 [`Self::stream_text_overlay`]）。
+    pub stream_overlay_revision: RwSignal<u64>,
     /// 最近一次成功水合的 tiktoken prompt 计数（与 [`ConversationPromptTokenHydrate::conversation_id`] 对齐，防串会话）。
     pub conversation_prompt_tokens: RwSignal<Option<ConversationPromptTokenHydrate>>,
     /// 正在拉取更早一页历史（`GET /conversation/messages?before_index=`）。
     pub history_loading_older: RwSignal<bool>,
+}
+
+impl ChatSessionSignals {
+    /// 清空流式 overlay 与展示订阅目标（`on_done` / 用户中止 / 新 attach 前）。
+    #[inline]
+    pub fn clear_stream_text_overlay(self) {
+        self.stream_text_overlay.set(None);
+        self.stream_overlay_display_mid.set(None);
+    }
+
+    /// 同步 overlay 展示订阅目标（尾泡轮换 / 工具后续写时须与 [`StreamTextOverlay::message_id`] 一致）。
+    #[inline]
+    pub fn set_stream_overlay_display_mid(self, message_id: &str) {
+        if message_id.is_empty() {
+            self.stream_overlay_display_mid.set(None);
+        } else {
+            self.stream_overlay_display_mid
+                .set(Some(message_id.to_string()));
+        }
+    }
+
+    /// 流式或 overlay 未收尾时不应拉取服务端快照（避免水合与 SSE 写回竞态）。
+    #[must_use]
+    pub fn defers_conversation_hydration_untracked(self) -> bool {
+        if self.stream_text_overlay.get_untracked().is_some() {
+            return true;
+        }
+        self.stream_transport
+            .get_untracked()
+            .bound_session_id()
+            .is_some()
+    }
 }
 
 impl ChatSessionSignals {

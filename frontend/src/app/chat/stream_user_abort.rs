@@ -9,7 +9,7 @@
 //!
 //! 会话目标与 SSE 写入一致：使用 [`crate::chat_session_state::ChatSessionSignals::effective_stream_message_session_id`]。
 
-use leptos::prelude::{GetUntracked, Set};
+use leptos::prelude::GetUntracked;
 
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n;
@@ -123,7 +123,7 @@ fn finalize_loading_placeholders_after_user_abort_on_session(
         }
         apply_abort_finalization_to_messages(&mut s.messages, loc);
     });
-    chat.stream_text_overlay.set(None);
+    chat.clear_stream_text_overlay();
 }
 
 fn apply_abort_finalization_to_messages(messages: &mut [StoredMessage], loc: Locale) {
