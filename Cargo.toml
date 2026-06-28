@@ -147,7 +147,7 @@ reedline = { version = "0.48", default-features = false }
 dialoguer = { version = "0.12", default-features = false }
 encoding_rs = "0.8"
 chardetng = "1.0"
-clap_mangen = { version = "0.2", default-features = false }
+clap_mangen = { version = "0.3", default-features = false }
 # 关闭 bollard 默认 feature，仅启用本仓库用到的：`http`（hyper 客户端）、`pipe`（Unix 套接字 / Windows named pipe）。
 # 未启用 `ssl`：不支持 `DOCKER_HOST=https://` 与 `DOCKER_TLS_VERIFY`（本地 `unix://` / 明文 `tcp://` 不受影响）。需 TLS 时改为 `features = ["http", "pipe", "ssl"]`。
 bollard = { version = "0.18", optional = true, default-features = false, features = [
