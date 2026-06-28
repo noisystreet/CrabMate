@@ -22,6 +22,9 @@ use super::params::{OuterLoopPlanCallModelRole, RunLoopParams};
 use super::plan::{PerPlanCallModelParams, per_plan_call_model_retrying};
 use super::reflect::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
 use super::sub_agent_policy::filter_tool_defs_for_executor_kind;
+use super::task_level_evidence::{
+    GoalCompletionEvidenceCheck, check_goal_completion_evidence_from_messages,
+};
 
 const MAX_OUTER_LOOP_ITERATIONS_SAFETY: u32 = 500;
 
@@ -274,6 +277,82 @@ async fn outer_loop_execute_tools_round(
     Ok(())
 }
 
+fn completed_goal_with_redundant_tool_calls(p: &mut RunLoopParams<'_>, msg: &Message) -> bool {
+    let Some(tool_calls) = msg.tool_calls.as_ref().filter(|calls| !calls.is_empty()) else {
+        return false;
+    };
+    if !tool_calls_are_redundant_after_completion(tool_calls) {
+        return false;
+    }
+    let Some(task) = p
+        .turn
+        .staged_immutable_user_goal_snapshot()
+        .map(str::to_string)
+    else {
+        return false;
+    };
+    matches!(
+        check_goal_completion_evidence_from_messages(&task, p.turn.messages()),
+        GoalCompletionEvidenceCheck::Satisfied
+    )
+}
+
+fn tool_calls_are_redundant_after_completion(tool_calls: &[crate::types::ToolCall]) -> bool {
+    tool_calls
+        .iter()
+        .all(tool_call_is_redundant_after_completion)
+}
+
+fn tool_call_is_redundant_after_completion(tc: &crate::types::ToolCall) -> bool {
+    let name = tc.function.name.as_str();
+    if matches!(
+        name,
+        "read_file" | "read_dir" | "list_dir" | "list_tree" | "glob" | "search" | "extract_in_file"
+    ) {
+        return true;
+    }
+    name == "run_command" && run_command_is_redundant_verification(&tc.function.arguments)
+}
+
+fn run_command_is_redundant_verification(args_json: &str) -> bool {
+    let Some(invocation) = run_command_invocation_text(args_json) else {
+        return false;
+    };
+    let lower = invocation.to_lowercase();
+    const VERIFY_MARKERS: &[&str] = &[
+        "ls ", "ls -", "stat ", "test -", "file ", "--help", "timeout ", "strace ", " 2>&1",
+    ];
+    VERIFY_MARKERS.iter().any(|marker| lower.contains(marker))
+}
+
+fn run_command_invocation_text(args_json: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(args_json).ok()?;
+    let command = v.get("command")?.as_str()?.trim();
+    let mut parts = vec![command.to_string()];
+    if let Some(args) = v.get("args").and_then(|x| x.as_array()) {
+        parts.extend(args.iter().filter_map(|x| x.as_str()).map(str::to_string));
+    }
+    Some(parts.join(" "))
+}
+
+fn replace_trailing_tool_call_assistant_with_completed_notice(
+    p: &mut RunLoopParams<'_>,
+    msg: &Message,
+) {
+    let popped = p.turn.pop_message();
+    if !popped
+        .as_ref()
+        .is_some_and(|m| m.role == "assistant" && m.tool_calls == msg.tool_calls)
+        && let Some(m) = popped
+    {
+        p.turn.push_assistant_merging_trailing_empty(m);
+    }
+    p.turn
+        .push_assistant_merging_trailing_empty(Message::assistant_only(
+            "目标已经有完成证据，已省略后续重复验证工具调用。".to_string(),
+        ));
+}
+
 /// 单 Agent 外循环内一次迭代的**粗粒度**阶段（与 `AgentTurnSubPhase` 正交，仅用于 `tracing` 排障）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OuterLoopIterationPhase {
@@ -431,6 +510,15 @@ async fn run_outer_loop_single_iteration(
         ReflectBranchCtl::ProceedToTools => {}
     }
 
+    if completed_goal_with_redundant_tool_calls(p, &msg) {
+        info!(
+            target: "crabmate::agent_turn",
+            "目标已完成，跳过完成后的冗余验证工具调用"
+        );
+        replace_trailing_tool_call_assistant_with_completed_notice(p, &msg);
+        return Ok(OuterLoopIterationExit::StopOuterLoop);
+    }
+
     tracing::debug!(
         target: "crabmate::agent_turn",
         outer_loop_fsm = "single_agent_outer",
@@ -470,7 +558,11 @@ pub(crate) async fn run_agent_outer_loop(
 
 #[cfg(test)]
 mod tests {
-    use super::OuterLoopIterationExit;
+    use super::{
+        OuterLoopIterationExit, run_command_is_redundant_verification,
+        tool_calls_are_redundant_after_completion,
+    };
+    use crate::types::{FunctionCall, ToolCall};
 
     #[test]
     fn outer_loop_iteration_exit_trace_str_stable() {
@@ -482,5 +574,50 @@ mod tests {
             OuterLoopIterationExit::StopOuterLoop.as_trace_str(),
             "stop_outer_loop"
         );
+    }
+
+    fn tc(name: &str, arguments: &str) -> ToolCall {
+        ToolCall {
+            id: "call_1".into(),
+            typ: "function".into(),
+            function: FunctionCall {
+                name: name.into(),
+                arguments: arguments.into(),
+            },
+        }
+    }
+
+    #[test]
+    fn completed_gate_marks_readonly_probe_tools_redundant() {
+        let calls = vec![
+            tc("read_file", r#"{"path":"README.md"}"#),
+            tc(
+                "run_command",
+                r#"{"command":"ls","args":["-lh","target/bin/app"]}"#,
+            ),
+        ];
+        assert!(tool_calls_are_redundant_after_completion(&calls));
+    }
+
+    #[test]
+    fn completed_gate_marks_run_probe_commands_redundant() {
+        assert!(run_command_is_redundant_verification(
+            r#"{"command":"bash","args":["-c","cd app && ./bin/app --help"]}"#
+        ));
+        assert!(run_command_is_redundant_verification(
+            r#"{"command":"bash","args":["-c","timeout 30 ./bin/app 2>&1"]}"#
+        ));
+        assert!(run_command_is_redundant_verification(
+            r#"{"command":"stat","args":["target/bin/app"]}"#
+        ));
+    }
+
+    #[test]
+    fn completed_gate_does_not_mark_new_build_command_redundant() {
+        let calls = vec![tc(
+            "run_command",
+            r#"{"command":"make","args":["arch=Linux_Serial","-C","hpcg"]}"#,
+        )];
+        assert!(!tool_calls_are_redundant_after_completion(&calls));
     }
 }
