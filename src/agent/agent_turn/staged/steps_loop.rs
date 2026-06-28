@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
 use log::debug;
-use tokio::sync::mpsc;
 
 use crate::agent::plan_artifact::{self, AgentReplyPlanV1, PlanStepV1};
 use crate::tool_result::tool_message_content_ok_for_model;
@@ -15,6 +14,10 @@ use super::super::execute_tools::sse_sender_closed;
 use super::super::outer_loop::run_agent_outer_loop;
 use super::super::params::RunLoopParams;
 
+use super::empty_execution::{
+    staged_step_empty_execution_is_reason, staged_step_empty_execution_patch_detail,
+    staged_step_empty_execution_verify_failure,
+};
 use super::orchestrator as staged_orchestrator;
 use super::patch_planner::{
     StagedPlanPatchPlannerCtx, StagedPlanStepFailureFeedbackMeta,
@@ -32,51 +35,19 @@ use super::staged_step_fsm::{
 use super::step_after_outer::{
     CfJumpMeta, CfJumpMut, staged_step_maybe_return_on_control_flow_jump,
 };
+use super::step_failure_exit::{
+    StagedPlanStepFailedExit, StagedStepOuterFailureExitParams,
+    finish_staged_plan_step_failed_and_plan_failed_sse,
+    staged_step_fail_after_outer_execution_exhausted,
+};
 use super::step_iteration_fsm::{
     STAGED_STEP_OUTER_LOOP_FAIL_DETAIL, StagedStepAfterOuterLoop, StagedStepIterationCtl,
     StagedStepToolPhaseRoute, staged_step_after_outer_loop, staged_step_exec_fail_patch_detail,
-    staged_step_failure_retry_exhausted_message, staged_step_tool_failure_patch_detail,
-    staged_step_tool_phase_route, staged_step_verify_fail_patch_detail,
-    staged_step_wall_clock_exceeded,
+    staged_step_tool_failure_patch_detail, staged_step_tool_phase_route,
+    staged_step_verify_fail_patch_detail, staged_step_wall_clock_exceeded,
 };
 use super::step_loop_fsm::staged_injected_step_user_body;
 use super::{StagedPlanRunLabels, StagedPlanRunOutcome};
-
-/// 执行步失败早退：`step_finished(failed)` + `plan_finished(failed)`，避免漏发 `staged_plan_finished`。
-struct StagedPlanStepFailedExit<'a> {
-    out: Option<&'a mpsc::Sender<String>>,
-    plan_id: &'a str,
-    step_id_trim: &'a str,
-    step_index: usize,
-    n: usize,
-    completed_steps_before_this: usize,
-}
-
-async fn finish_staged_plan_step_failed_and_plan_failed_sse(
-    f: StagedPlanStepFailedExit<'_>,
-    executor_kind: Option<crate::agent::plan_artifact::PlanStepExecutorKind>,
-    verify_fail_reason: Option<&str>,
-) {
-    finish_staged_plan_step_sse(
-        f.out,
-        f.plan_id,
-        f.step_id_trim,
-        f.step_index,
-        f.n,
-        "failed",
-        executor_kind,
-        verify_fail_reason,
-    )
-    .await;
-    send_staged_plan_finished(
-        f.out,
-        f.plan_id,
-        f.n,
-        f.completed_steps_before_this,
-        "failed",
-    )
-    .await;
-}
 
 /// 自本步 user 注入起至下一条 user（或历史末尾）之间的 `role: tool` 是否均为成功（与信封 `ok` / 传统解析一致）。
 fn staged_step_tool_messages_all_ok(messages: &[Message], step_user_index: usize) -> bool {
@@ -201,17 +172,25 @@ where
 
     let mut step_verify_failed_reason: Option<String> = None;
     if run_step.is_ok() {
-        #[allow(clippy::collapsible_if)]
-        if let Some(acceptance) = step.acceptance.as_ref().filter(|a| a.is_effective()) {
-            let verify_result = crate::agent::step_verifier::verify_step_execution(
-                acceptance,
-                patch_ctx.p.turn.messages(),
-                step_user_idx,
-                patch_ctx.p.ctx.core.effective_working_dir,
-            );
+        step_verify_failed_reason = staged_step_empty_execution_verify_failure(
+            patch_ctx.p.turn.messages(),
+            step_user_idx,
+            &step,
+            patch_ctx.p.ctx.core.effective_working_dir,
+        );
+        if step_verify_failed_reason.is_none() {
+            #[allow(clippy::collapsible_if)]
+            if let Some(acceptance) = step.acceptance.as_ref().filter(|a| a.is_effective()) {
+                let verify_result = crate::agent::step_verifier::verify_step_execution(
+                    acceptance,
+                    patch_ctx.p.turn.messages(),
+                    step_user_idx,
+                    patch_ctx.p.ctx.core.effective_working_dir,
+                );
 
-            if let crate::agent::step_verifier::VerifyResult::Fail { reason } = verify_result {
-                step_verify_failed_reason = Some(reason);
+                if let crate::agent::step_verifier::VerifyResult::Fail { reason } = verify_result {
+                    step_verify_failed_reason = Some(reason);
+                }
             }
         }
     }
@@ -301,7 +280,11 @@ where
     for (attempt_idx, _) in (0..patch_budget).enumerate() {
         let attempt_1based = attempt_idx.saturating_add(1);
         let detail_owned = if let Some(vr) = step_verify_failed_reason {
-            staged_step_verify_fail_patch_detail(vr, step.acceptance.as_ref())
+            if staged_step_empty_execution_is_reason(vr) {
+                staged_step_empty_execution_patch_detail(vr, step.acceptance.as_ref())
+            } else {
+                staged_step_verify_fail_patch_detail(vr, step.acceptance.as_ref())
+            }
         } else {
             outer_loop_error_text
                 .as_deref()
@@ -504,36 +487,21 @@ where
             {
                 return Ok(ctl);
             }
-            finish_staged_plan_step_failed_and_plan_failed_sse(
-                StagedPlanStepFailedExit {
+            return staged_step_fail_after_outer_execution_exhausted(
+                StagedStepOuterFailureExitParams {
                     out,
                     plan_id,
-                    step_id_trim: step.id.trim(),
+                    step: &step,
                     step_index,
+                    step_user_idx,
                     n,
-                    completed_steps_before_this: completed_steps,
+                    completed_steps,
+                    run_step: &run_step,
+                    step_verify_failed_reason: &step_verify_failed_reason,
+                    patch_ctx,
                 },
-                step.executor_kind,
-                step_verify_failed_reason.as_deref(),
             )
             .await;
-
-            let reason = {
-                let mut s = staged_step_failure_retry_exhausted_message(
-                    &run_step,
-                    &step_verify_failed_reason,
-                );
-                s.push_str(
-                    &patch_ctx
-                        .per_coord
-                        .staged_plan_patch_vs_plan_rewrite_counters_footer(),
-                );
-                s
-            };
-            return Err(RunAgentTurnError::StepRetryExhausted {
-                phase: AgentTurnSubPhase::Executor,
-                message: reason,
-            });
         }
         StagedStepAfterOuterLoop::ProceedToToolCheck => {}
     }

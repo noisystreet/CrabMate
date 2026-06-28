@@ -11,7 +11,9 @@ pub use types::{
     PlanArtifactError, PlanStepAcceptance, PlanStepControlFlow, PlanStepExecutorKind, PlanStepV1,
     STAGED_PLAN_INVALID_RUN_AGENT_TURN_ERROR_PREFIX, agent_reply_plan_v1_to_json_string,
     is_staged_plan_invalid_run_agent_turn_error, merge_staged_plan_steps_after_step_failure,
-    plan_artifact_error_log_summary, validate_staged_patch_merged_strict_baseline_ids,
+    plan_acceptance_path_looks_like_build_artifact, plan_artifact_error_log_summary,
+    plan_step_acceptance_implies_build_progress, plan_step_description_implies_build_execution,
+    validate_staged_patch_merged_strict_baseline_ids,
 };
 
 pub use types::staged_plan_invalid_run_agent_turn_error;
@@ -497,6 +499,46 @@ mod tests {
             p.steps[0].executor_kind,
             Some(PlanStepExecutorKind::ReviewReadonly)
         );
+    }
+
+    #[test]
+    fn review_readonly_strips_build_artifact_file_acceptance() {
+        let json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"unpack","executor_kind":"review_readonly","acceptance":{"expect_file_exists":"hpcg/bin/xhpcg"}}]}"#;
+        let p = parse_agent_reply_plan_v1(json).expect("parse");
+        assert!(p.steps[0].acceptance.is_none());
+    }
+
+    #[test]
+    fn review_readonly_keeps_doc_file_acceptance() {
+        let json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"read","executor_kind":"review_readonly","acceptance":{"expect_file_exists":"proj/README.md"}}]}"#;
+        let p = parse_agent_reply_plan_v1(json).expect("parse");
+        assert_eq!(
+            p.steps[0]
+                .acceptance
+                .as_ref()
+                .and_then(|a| a.expect_file_exists.as_deref()),
+            Some("proj/README.md")
+        );
+    }
+
+    #[test]
+    fn test_runner_keeps_binary_file_acceptance() {
+        let json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"build","executor_kind":"test_runner","acceptance":{"expect_file_exists":"hpcg/bin/xhpcg"}}]}"#;
+        let p = parse_agent_reply_plan_v1(json).expect("parse");
+        assert_eq!(
+            p.steps[0]
+                .acceptance
+                .as_ref()
+                .and_then(|a| a.expect_file_exists.as_deref()),
+            Some("hpcg/bin/xhpcg")
+        );
+    }
+
+    #[test]
+    fn null_executor_unpack_step_strips_binary_acceptance() {
+        let json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"解压源码包","acceptance":{"expect_file_exists":"proj/bin/app"}}]}"#;
+        let p = parse_agent_reply_plan_v1(json).expect("parse");
+        assert!(p.steps[0].acceptance.is_none());
     }
 
     #[test]

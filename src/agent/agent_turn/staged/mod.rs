@@ -16,6 +16,7 @@ use super::outer_loop::run_agent_outer_loop;
 use super::params::RunLoopParams;
 
 mod completed_replanning_suppression;
+mod empty_execution;
 mod ensemble_fsm;
 mod ensemble_schedule_fsm;
 mod full_pipeline_fsm;
@@ -31,6 +32,7 @@ mod rolling_horizon_facade;
 mod sse;
 mod staged_step_fsm;
 mod step_after_outer;
+mod step_failure_exit;
 mod step_iteration_fsm;
 mod step_loop_fsm;
 mod steps_loop;

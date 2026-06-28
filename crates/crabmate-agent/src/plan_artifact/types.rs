@@ -191,11 +191,145 @@ pub struct PlanStepV1 {
     pub transitions: Option<Vec<PlanStepControlFlow>>,
 }
 
-/// 将无实质字段的 `acceptance`（如 `{}`）规范为 `None`，避免误触发步级验收。
+/// 将无实质字段的 `acceptance`（如 `{}`）规范为 `None`，并按 `executor_kind` / 步描述剥离不匹配的验收字段。
 pub fn normalize_plan_step_acceptance_in_place(step: &mut PlanStepV1) {
+    align_plan_step_acceptance_with_executor_kind(step);
+}
+
+/// 验收是否要求构建/运行类证据（退出码、命令输出或可执行产物路径）。
+pub fn plan_step_acceptance_implies_build_progress(a: &PlanStepAcceptance) -> bool {
+    if a.expect_exit_code.is_some()
+        || a.expect_stdout_contains
+            .as_ref()
+            .is_some_and(|s| !s.trim().is_empty())
+        || a.expect_stderr_contains
+            .as_ref()
+            .is_some_and(|s| !s.trim().is_empty())
+    {
+        return true;
+    }
+    a.expect_file_exists
+        .as_ref()
+        .is_some_and(|p| plan_acceptance_path_looks_like_build_artifact(p.as_str()))
+}
+
+/// 步描述是否像「编译/构建/测试执行」阶段（而非仅解压/阅读/分析）。
+pub fn plan_step_description_implies_build_execution(desc: &str) -> bool {
+    let lower = desc.to_lowercase();
+    [
+        "编译",
+        "构建",
+        "build",
+        "compile",
+        "make ",
+        "cmake",
+        "link",
+        "test_runner",
+        "运行测试",
+        "跑测试",
+        "cargo test",
+        "cargo build",
+        "pytest",
+        "go test",
+        "ninja",
+        "meson",
+    ]
+    .iter()
+    .any(|k| lower.contains(k))
+}
+
+fn plan_step_description_implies_readonly_setup_phase(desc: &str) -> bool {
+    let lower = desc.to_lowercase();
+    [
+        "解压",
+        "unpack",
+        "extract",
+        "查看",
+        "阅读",
+        "读取",
+        "分析",
+        "inspect",
+        "read ",
+        "list ",
+        "列目录",
+        "了解",
+        "配置说明",
+        "构建说明",
+        "环境",
+        "探查",
+    ]
+    .iter()
+    .any(|k| lower.contains(k))
+}
+
+fn strip_build_only_acceptance_fields(acc: &mut PlanStepAcceptance) {
+    acc.expect_exit_code = None;
+    acc.expect_stdout_contains = None;
+    acc.expect_stderr_contains = None;
+    acc.expect_json_path_equals = None;
+    acc.expect_http_status = None;
+    if acc
+        .expect_file_exists
+        .as_ref()
+        .is_some_and(|p| plan_acceptance_path_looks_like_build_artifact(p.as_str()))
+    {
+        acc.expect_file_exists = None;
+    }
+}
+
+/// 按 `executor_kind` 与步描述对齐验收：只读/解压步不得验收可执行产物或退出码。
+pub fn align_plan_step_acceptance_with_executor_kind(step: &mut PlanStepV1) {
     if step.acceptance.as_ref().is_some_and(|a| !a.is_effective()) {
         step.acceptance = None;
     }
+    let Some(acc) = step.acceptance.as_mut() else {
+        return;
+    };
+    let build_execution = plan_step_description_implies_build_execution(step.description.as_str());
+    if step.executor_kind == Some(PlanStepExecutorKind::ReviewReadonly) {
+        strip_build_only_acceptance_fields(acc);
+    } else if !build_execution
+        && step.executor_kind != Some(PlanStepExecutorKind::TestRunner)
+        && (step.executor_kind.is_none()
+            || plan_step_description_implies_readonly_setup_phase(step.description.as_str()))
+        && plan_step_acceptance_implies_build_progress(acc)
+    {
+        debug!(
+            target: "crabmate::plan_artifact",
+            "strip build acceptance on non-build step step_id={}",
+            step.id.as_str(),
+        );
+        strip_build_only_acceptance_fields(acc);
+    }
+    if step.acceptance.as_ref().is_some_and(|a| !a.is_effective()) {
+        step.acceptance = None;
+    }
+}
+
+pub fn plan_acceptance_path_looks_like_build_artifact(path: &str) -> bool {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let lower = trimmed.to_lowercase();
+    if lower.contains("/bin/") || lower.contains("/build/") || lower.contains("/target/") {
+        return true;
+    }
+    let basename = trimmed.rsplit('/').next().unwrap_or(trimmed);
+    if basename.eq_ignore_ascii_case("makefile") {
+        return false;
+    }
+    if basename.contains('.') {
+        const NON_BUILD_SUFFIXES: &[&str] = &[
+            ".md", ".txt", ".rst", ".json", ".toml", ".yaml", ".yml", ".cmake", ".in", ".dat",
+            ".cpp", ".c", ".h", ".hpp", ".rs", ".py", ".sh",
+        ];
+        if NON_BUILD_SUFFIXES.iter().any(|ext| lower.ends_with(ext)) {
+            return false;
+        }
+        return lower.ends_with(".exe") || lower.ends_with(".out") || lower.ends_with(".o");
+    }
+    true
 }
 
 /// 对规划中每一步执行 [`normalize_plan_step_acceptance_in_place`]。
