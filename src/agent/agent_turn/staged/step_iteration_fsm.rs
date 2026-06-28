@@ -143,6 +143,7 @@ pub(crate) fn staged_step_tool_failure_patch_detail(
     }
 
     let mut lines: Vec<String> = Vec::new();
+    let mut saw_repeat_short_circuit = false;
     let mut i = step_user_index.saturating_add(1);
     while i < messages.len() {
         let m = &messages[i];
@@ -153,9 +154,10 @@ pub(crate) fn staged_step_tool_failure_patch_detail(
             let name = m.name.as_deref().unwrap_or("");
             let content = crate::types::message_content_as_str(&m.content).unwrap_or("");
             if !crate::tool_result::tool_message_content_ok_for_model(content, name) {
-                let parsed = crate::tool_result::parse_legacy_output(name, content);
-                let ec = parsed
-                    .error_code
+                let tool_error_code = tool_failure_error_code(name, content);
+                saw_repeat_short_circuit |=
+                    tool_error_code_is_repeat_short_circuit(tool_error_code.as_deref());
+                let ec = tool_error_code
                     .as_deref()
                     .filter(|s| !s.is_empty())
                     .map(|s| format!("error_code={s}"))
@@ -191,9 +193,32 @@ pub(crate) fn staged_step_tool_failure_patch_detail(
 
     format!(
         "{obs_block}\
+         {}\
          若 `error_code=` 可对应 `invalid_args` / `timeout` / `not_found` 等，请在补丁中调整工具入参、白名单或前置只读步。\n\
-         {STAGED_STEP_TOOL_MSG_FAIL_DETAIL}"
+         {STAGED_STEP_TOOL_MSG_FAIL_DETAIL}",
+        repeat_short_circuit_patch_rule(saw_repeat_short_circuit)
     )
+}
+
+fn tool_failure_error_code(tool_name: &str, content: &str) -> Option<String> {
+    crate::tool_result::normalize_tool_message_content(content)
+        .and_then(|env| env.error_code)
+        .or_else(|| crate::tool_result::parse_legacy_output(tool_name, content).error_code)
+}
+
+fn tool_error_code_is_repeat_short_circuit(error_code: Option<&str>) -> bool {
+    matches!(
+        error_code,
+        Some("repeated_tool_failure_short_circuit" | "repeated_tool_family_failure_short_circuit")
+    )
+}
+
+fn repeat_short_circuit_patch_rule(saw_repeat_short_circuit: bool) -> &'static str {
+    if saw_repeat_short_circuit {
+        "- **硬约束**：本步已触发重复失败短路；补丁计划不得再次生成相同 `run_command` 或同类命令。必须改为读取配置/解释失败原因/换用不同构建配置或直接向用户报告阻塞原因。\n"
+    } else {
+        ""
+    }
 }
 
 /// 执行子循环 `Err` 时写入补丁规划 **user** 的详情（截断，避免撑爆上下文）。
@@ -355,6 +380,37 @@ mod tests {
         let d = staged_step_tool_failure_patch_detail(&messages, 0, Some(&acc));
         assert!(d.contains("expect_exit_code=0"));
         assert!(d.contains("run_command"));
+    }
+
+    #[test]
+    fn tool_fail_patch_detail_forbids_repeat_short_circuit_retry() {
+        use crate::types::{Message, MessageContent};
+
+        let raw =
+            "错误：检测到同命令重复失败，已短路本次调用（error=run_command_failed）。请切换策略。";
+        let parsed = crate::tool_result::parse_legacy_output("run_command", raw);
+        let envelope = crate::tool_result::encode_tool_message_envelope_v1(
+            "run_command",
+            "make".into(),
+            &parsed,
+            raw,
+            None,
+        );
+        let tool_fail = Message {
+            role: "tool".to_string(),
+            content: Some(MessageContent::Text(envelope)),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: Some("run_command".to_string()),
+            tool_call_id: None,
+        };
+        let messages = vec![Message::user_only("step"), tool_fail];
+        let d = staged_step_tool_failure_patch_detail(&messages, 0, None);
+
+        assert!(d.contains("硬约束"));
+        assert!(d.contains("error_code=repeated_tool_failure_short_circuit"));
+        assert!(d.contains("不得再次生成相同 `run_command`"));
     }
 
     #[test]

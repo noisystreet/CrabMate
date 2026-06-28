@@ -71,6 +71,21 @@ fn is_bare_shell_command_residue(text: &str) -> bool {
             || lower.contains('='))
 }
 
+fn is_bare_tool_path_arg_residue(text: &str) -> bool {
+    let t = text.trim();
+    if t.is_empty() || t.lines().count() != 1 || t.contains(char::is_whitespace) {
+        return false;
+    }
+    let lower = t.to_lowercase();
+    let archive_or_path_arg = lower.ends_with(".tar.gz")
+        || lower.ends_with(".tgz")
+        || lower.ends_with(".tar")
+        || lower.ends_with(".zip")
+        || lower.ends_with(".gz")
+        || lower.contains('/');
+    archive_or_path_arg && !t.contains("```") && !t.contains('：') && !t.contains(':')
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TimelineKind {
     StagedStart {
@@ -395,6 +410,9 @@ pub fn is_ephemeral_timeline_assistant_for_export(
     if is_bare_shell_command_residue(&m.text) {
         return true;
     }
+    if is_bare_tool_path_arg_residue(&m.text) {
+        return true;
+    }
     is_timeline_snapshot_duplicate_of_canonical_assistant(m, session_messages)
 }
 
@@ -619,6 +637,23 @@ mod tests {
             id: "cmd".into(),
             role: "assistant".into(),
             text: "tar -xzf hpcg-HPCG-release-3-1-0.tar.gz".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        assert!(is_ephemeral_timeline_assistant_for_export(&m, &[]));
+    }
+
+    #[test]
+    fn bare_archive_path_argument_residue_dropped_for_export() {
+        let m = StoredMessage {
+            id: "path-arg".into(),
+            role: "assistant".into(),
+            text: "hpcg-HPCG-release-3-1-0.tar.gz".into(),
             reasoning_text: String::new(),
             image_urls: vec![],
             state: None,

@@ -245,6 +245,15 @@ async fn run_intent_l0_l1_l2_gate(
     emit_intent_timeline_gate_only(p.ctx.io.out, sse_log_tag, &assessment, &outcome.merge_meta)
         .await;
 
+    if let Some(constraints) = infer_turn_execution_constraints(task)
+        && constraints.requires_review_readonly()
+    {
+        p.turn.turn_planner_hints.step_executor_constraint =
+            Some(PlanStepExecutorKind::ReviewReadonly);
+        p.turn.turn_planner_hints.intent_turn_gate_hint = Some(constraints.intent_gate_hint_zh());
+        return Ok(IntentGateResult::ProceedExecute { assessment });
+    }
+
     if matches!(assessment.action, IntentAction::Execute) {
         return Ok(IntentGateResult::ProceedExecute { assessment });
     }
@@ -292,5 +301,142 @@ async fn run_intent_l0_l1_l2_gate(
             unreachable!("clarify/confirm branch returns above")
         }
         IntentAction::Execute => unreachable!("execute branch returns above"),
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct TurnExecutionConstraints {
+    no_write: bool,
+    no_command_execution: bool,
+    analysis_only: bool,
+    ask_before_mutation: bool,
+}
+
+impl TurnExecutionConstraints {
+    fn requires_review_readonly(self) -> bool {
+        self.analysis_only && (self.no_write || self.no_command_execution)
+    }
+
+    fn intent_gate_hint_zh(self) -> String {
+        let mut limits = Vec::new();
+        if self.no_write {
+            limits.push("不得修改文件、不得继续 patch");
+        }
+        if self.no_command_execution {
+            limits.push("不得运行构建/测试/执行类命令");
+        }
+        if self.analysis_only {
+            limits.push("以只读诊断、原因分析和操作说明为主");
+        }
+        if self.ask_before_mutation {
+            limits.push("如需再次执行或修改，必须先说明原因并取得用户确认");
+        }
+        format!(
+            "【意图门控】用户本轮给出了执行约束：{}。当前回合按只读诊断处理：可以读取/列目录/解释失败原因，但不要越过上述约束。",
+            limits.join("；")
+        )
+    }
+}
+
+fn infer_turn_execution_constraints(task: &str) -> Option<TurnExecutionConstraints> {
+    let t = task.trim().to_lowercase();
+    if t.is_empty() {
+        return None;
+    }
+    let no_write = [
+        "取消修复",
+        "不用修复",
+        "不要修复",
+        "别修复",
+        "不要修改",
+        "别修改",
+        "先别改",
+        "先不要改",
+        "不改代码",
+        "without modifying",
+        "do not modify",
+        "don't modify",
+        "no patch",
+    ]
+    .iter()
+    .any(|marker| t.contains(marker));
+    let no_command_execution = [
+        "不要运行",
+        "别运行",
+        "不要执行",
+        "别执行",
+        "不要编译",
+        "别编译",
+        "不要跑",
+        "别跑",
+        "do not run",
+        "don't run",
+        "without running",
+    ]
+    .iter()
+    .any(|marker| t.contains(marker));
+    let analysis_only = [
+        "分析",
+        "诊断",
+        "说明",
+        "怎么编译",
+        "如何编译",
+        "怎么做",
+        "只读",
+        "只分析",
+        "analyze",
+        "diagnose",
+        "explain",
+        "how to",
+        "readonly",
+        "read-only",
+    ]
+    .iter()
+    .any(|marker| t.contains(marker));
+    let ask_before_mutation = no_write || t.contains("先问我") || t.contains("先确认");
+    let constraints = TurnExecutionConstraints {
+        no_write,
+        no_command_execution: no_command_execution || (no_write && analysis_only),
+        analysis_only,
+        ask_before_mutation,
+    };
+    (constraints != TurnExecutionConstraints::default()).then_some(constraints)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::infer_turn_execution_constraints;
+
+    #[test]
+    fn infers_readonly_constraints_from_cancel_fix_analyze_request() {
+        let c = infer_turn_execution_constraints(
+            "应该不用修改就可以编译，先取消修复，然后分析一下怎么编译",
+        )
+        .expect("constraints");
+        assert!(c.no_write);
+        assert!(c.no_command_execution);
+        assert!(c.analysis_only);
+        assert!(c.requires_review_readonly());
+
+        let c =
+            infer_turn_execution_constraints("不要修改文件，只分析失败原因").expect("constraints");
+        assert!(c.requires_review_readonly());
+    }
+
+    #[test]
+    fn infers_command_execution_constraint() {
+        let c = infer_turn_execution_constraints("先不要运行测试，只分析一下失败原因")
+            .expect("constraints");
+        assert!(c.no_command_execution);
+        assert!(c.analysis_only);
+        assert!(c.requires_review_readonly());
+    }
+
+    #[test]
+    fn does_not_mark_plain_build_request_readonly() {
+        assert!(infer_turn_execution_constraints("编译 hpcg").is_none());
+        let c = infer_turn_execution_constraints("分析当前项目").expect("analysis constraint");
+        assert!(c.analysis_only);
+        assert!(!c.requires_review_readonly());
     }
 }

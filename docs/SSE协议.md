@@ -174,6 +174,8 @@
 | `unknown_tool` | 未知工具名 |
 | `approval_required` | 待审批 |
 | `approval_denied` | 审批拒绝 |
+| `repeated_tool_failure_short_circuit` | 同一工具调用签名已失败，本次被编排层短路 |
+| `repeated_tool_family_failure_short_circuit` | 同一失败族已发生，本次同类工具调用被编排层短路 |
 | `workflow_semaphore_closed` | 工作流并发关闭 |
 | `workflow_node_missing_result` | 工作流节点缺结果 |
 | `workflow_tool_join_error` | 工作流工具任务 join 失败 |
