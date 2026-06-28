@@ -129,7 +129,7 @@ crossterm = "0.29"
 libc = "0.2"
 uom = { version = "0.36", features = ["si"] }
 path-absolutize = "3"
-diffy = "0.4"
+diffy = "0.5"
 walkdir = "2"
 ignore = "0.4"
 tempfile = "3"

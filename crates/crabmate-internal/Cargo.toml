@@ -25,7 +25,7 @@ chardetng = "1.0"
 chrono = "0.4"
 csv = "1.3"
 dialoguer = { version = "0.12", default-features = false }
-diffy = "0.4"
+diffy = "0.5"
 ego-tree = "0.11"
 encoding_rs = "0.8"
 fastembed = { version = "5.13", optional = true }
