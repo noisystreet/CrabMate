@@ -227,6 +227,31 @@ fn materialize_dsml_json_array_parameter_for_run_command_args() {
     assert_eq!(args.len(), 1);
     assert_eq!(args[0].as_str(), Some("1.md"));
 }
+
+#[test]
+fn materialize_dsml_clears_trailing_tool_argument_array_residue() {
+    let dsml = r#"<|DSML|function_calls>
+<|DSML|invoke name="run_command">
+<|DSML|parameter name="command" string="true">bash</|DSML|parameter>
+<|DSML|parameter name="args">["-c","tar xzf hpcg-HPCG-release-3-1-0.tar.gz"]</|DSML|parameter>
+</|DSML|invoke>
+</|DSML|function_calls>
+["-c","tar xzf hpcg-HPCG-release-3-1-0.tar.gz"]"#;
+    let mut msg = Message {
+        role: "assistant".to_string(),
+        content: Some(dsml.into()),
+        reasoning_content: None,
+        reasoning_details: None,
+        tool_calls: None,
+        name: None,
+        tool_call_id: None,
+    };
+    materialize_deepseek_dsml_tool_calls_in_message(&mut msg, true);
+    let tcs = msg.tool_calls.as_ref().expect("tool_calls");
+    assert_eq!(tcs.len(), 1);
+    assert_eq!(tcs[0].function.name, "run_command");
+    assert!(crabmate_types::message_content_as_str(&msg.content).is_none());
+}
 #[test]
 fn materialize_dsml_from_reasoning_when_content_empty() {
     let dsml = r#"<|DSML|invoke name="read_file">

@@ -3,6 +3,7 @@
 use log::debug;
 
 use crabmate_types::{FunctionCall, Message, MessageContent, ToolCall};
+use serde_json::Value;
 
 use super::parser::{parse_combined_assistant_text, text_looks_like_dsml};
 use super::strip::strip_deepseek_dsml_for_display;
@@ -11,6 +12,31 @@ use super::types::DsmlMaterializePolicy;
 /// 流式聚合等场景下 API 可能留下 **`function.name` 全空** 的占位 `tool_calls`。
 fn has_usable_native_tool_calls(tcs: &[ToolCall]) -> bool {
     tcs.iter().any(|tc| !tc.function.name.trim().is_empty())
+}
+
+fn json_value_looks_like_tool_args(v: &Value) -> bool {
+    match v {
+        Value::Array(a) => {
+            !a.is_empty()
+                && a.iter()
+                    .all(|x| x.is_string() || x.is_number() || x.is_boolean())
+        }
+        Value::Object(o) => o.keys().any(|k| {
+            matches!(
+                k.as_str(),
+                "command" | "args" | "path" | "content" | "cmd" | "pattern" | "file" | "files"
+            )
+        }),
+        _ => false,
+    }
+}
+
+fn looks_like_tool_argument_residue(s: &str) -> bool {
+    let t = s.trim();
+    if t.is_empty() {
+        return true;
+    }
+    serde_json::from_str::<Value>(t).is_ok_and(|v| json_value_looks_like_tool_args(&v))
 }
 
 /// 单一适配入口：解析策略 + 写回助手消息。
@@ -83,7 +109,7 @@ pub fn strip_dsml_from_assistant_message_fields(msg: &mut Message) {
         };
         let stripped = strip_deepseek_dsml_for_display(t);
         let u = stripped.trim();
-        if u.is_empty() {
+        if looks_like_tool_argument_residue(u) {
             *s = None;
         } else {
             *s = Some(u.to_string());
@@ -92,7 +118,7 @@ pub fn strip_dsml_from_assistant_message_fields(msg: &mut Message) {
     if let Some(MessageContent::Text(ref mut s)) = msg.content {
         let stripped = strip_deepseek_dsml_for_display(s);
         let u = stripped.trim();
-        if u.is_empty() {
+        if looks_like_tool_argument_residue(u) {
             msg.content = None;
         } else {
             *s = u.to_string();

@@ -15,6 +15,62 @@ fn is_planner_tool_call_rejected_timeline_text(text: &str) -> bool {
             || text.contains("规划轮工具调用已拒绝"))
 }
 
+fn json_value_looks_like_tool_args(v: &serde_json::Value) -> bool {
+    match v {
+        serde_json::Value::Array(a) => {
+            let mut saw_arg_like = false;
+            for x in a {
+                let Some(s) = x.as_str() else {
+                    return false;
+                };
+                let t = s.trim();
+                saw_arg_like |= t.starts_with('-')
+                    || t.contains('=')
+                    || t.contains('/')
+                    || t.ends_with(".gz")
+                    || t.ends_with(".tar");
+            }
+            !a.is_empty() && saw_arg_like
+        }
+        serde_json::Value::Object(o) => o.keys().any(|k| {
+            matches!(
+                k.as_str(),
+                "command" | "args" | "path" | "content" | "cmd" | "pattern" | "file" | "files"
+            )
+        }),
+        _ => false,
+    }
+}
+
+fn is_tool_argument_residue_assistant_text(text: &str) -> bool {
+    let t = text.trim();
+    if t.is_empty() {
+        return false;
+    }
+    serde_json::from_str::<serde_json::Value>(t).is_ok_and(|v| json_value_looks_like_tool_args(&v))
+}
+
+fn is_bare_shell_command_residue(text: &str) -> bool {
+    let t = text.trim();
+    if t.is_empty() || t.lines().count() != 1 {
+        return false;
+    }
+    let lower = t.to_lowercase();
+    let command_like = [
+        "tar ", "make ", "cmake ", "bash ", "sh ", "ls ", "cat ", "python ", "python3 ", "./",
+        "cargo ",
+    ]
+    .iter()
+    .any(|prefix| lower.starts_with(prefix));
+    command_like
+        && (lower.contains(" -")
+            || lower.contains(" --")
+            || lower.contains('/')
+            || lower.contains(".tar")
+            || lower.contains(".gz")
+            || lower.contains('='))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TimelineKind {
     StagedStart {
@@ -333,6 +389,12 @@ pub fn is_ephemeral_timeline_assistant_for_export(
     if crate::message_format::stored_message_is_staged_planner_round(m) {
         return true;
     }
+    if is_tool_argument_residue_assistant_text(&m.text) {
+        return true;
+    }
+    if is_bare_shell_command_residue(&m.text) {
+        return true;
+    }
     is_timeline_snapshot_duplicate_of_canonical_assistant(m, session_messages)
 }
 
@@ -532,5 +594,56 @@ mod tests {
             created_at: 0,
         };
         assert!(is_ephemeral_timeline_assistant_for_export(&m, &[]));
+    }
+
+    #[test]
+    fn tool_argument_array_residue_dropped_for_export() {
+        let m = StoredMessage {
+            id: "args".into(),
+            role: "assistant".into(),
+            text: r#"["-c","tar xzf hpcg-HPCG-release-3-1-0.tar.gz"]"#.into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        assert!(is_ephemeral_timeline_assistant_for_export(&m, &[]));
+    }
+
+    #[test]
+    fn bare_shell_command_residue_dropped_for_export() {
+        let m = StoredMessage {
+            id: "cmd".into(),
+            role: "assistant".into(),
+            text: "tar -xzf hpcg-HPCG-release-3-1-0.tar.gz".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        assert!(is_ephemeral_timeline_assistant_for_export(&m, &[]));
+    }
+
+    #[test]
+    fn explanatory_shell_command_answer_is_kept_for_export() {
+        let m = StoredMessage {
+            id: "cmd-explain".into(),
+            role: "assistant".into(),
+            text: "可以执行：\n\n```bash\ntar -xzf archive.tar.gz\n```".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        assert!(!is_ephemeral_timeline_assistant_for_export(&m, &[]));
     }
 }
