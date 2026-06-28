@@ -43,12 +43,12 @@ mod tests {
 
     #[test]
     fn intent_analysis_text_adds_trailing_gap() {
-        let detail = "主意图：execute.run_test_build\n综合置信度：0.61\n需要澄清：false\nL2 结果：未启用/未触发\n覆盖原因：无";
+        let detail = "主意图：execute.run_test_build\n综合置信度：0.61\n需要澄清：false\n决策来源：L2（置信度 0.61）\n来源原因：l2_primary_below_observation_threshold";
         let t =
             build_intent_analysis_main_bubble_text("意图分析：执行类（直接执行）", Some(detail));
         assert_eq!(
             t,
-            "意图分析：执行类（直接执行）\n综合置信度：0.61\n主意图：execute.run_test_build\n需要澄清：false\nL2 结果：未启用/未触发\n\n"
+            "意图分析：执行类（直接执行）\n综合置信度：0.61\n主意图：execute.run_test_build\n需要澄清：false\n决策来源：L2（置信度 0.61）\n\n"
         );
     }
 

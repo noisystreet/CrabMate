@@ -3,7 +3,7 @@
 //! 从 [`super::run_agent_turn_common`] 抽离，使 `mod.rs` 仅保留入口日志、分隔线与 `PerCoordinator` 构造等接线。
 //!
 //! **分阶段意图门控**：[`super::intent::assess_staged_planning_gate_full_pipeline`] 产出结构化 [`super::intent::StagedPlanningGateOutcome`]，
-//! 与 `intent_pipeline::IntentDecision` 对齐，并与 **`intent_at_turn_start`** 共用 **L0+L1+可选 L2**。**[`execute_non_hierarchical_main_route`]** 将
+//! 与 `intent_pipeline::IntentDecision` 对齐，并与 **`intent_at_turn_start`** 共用 **L2 优先管线**。**[`execute_non_hierarchical_main_route`]** 将
 //! [`super::turn_orchestration::NonHierarchicalEntryResolution`] 聚合门控与配置，给出显式 [`super::turn_orchestration::NonHierarchicalMainRoute`]。
 
 use crate::agent::per_coord::PerCoordinator;

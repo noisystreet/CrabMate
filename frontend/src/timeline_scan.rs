@@ -8,6 +8,13 @@ use crate::storage::{StoredMessage, StoredMessageState};
 
 pub use crate::storage::TIMELINE_UI_STATE_KEY;
 
+fn is_planner_tool_call_rejected_timeline_text(text: &str) -> bool {
+    text.starts_with(STAGED_TIMELINE_SYSTEM_PREFIX)
+        && (text.contains("planner_tool_call_rejected")
+            || text.contains("PLANNER_TOOL_CALL_REJECTED")
+            || text.contains("规划轮工具调用已拒绝"))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TimelineKind {
     StagedStart {
@@ -320,6 +327,12 @@ pub fn is_ephemeral_timeline_assistant_for_export(
     {
         return true;
     }
+    if is_planner_tool_call_rejected_timeline_text(&m.text) {
+        return true;
+    }
+    if crate::message_format::stored_message_is_staged_planner_round(m) {
+        return true;
+    }
     is_timeline_snapshot_duplicate_of_canonical_assistant(m, session_messages)
 }
 
@@ -477,5 +490,47 @@ mod tests {
         }];
         assert!(is_ephemeral_timeline_assistant_for_export(&snap, &server));
         assert!(!should_preserve_local_timeline_on_hydrate(&snap, &server));
+    }
+
+    #[test]
+    fn planner_tool_call_rejected_timeline_dropped_for_export() {
+        let m = StoredMessage {
+            id: "reject".into(),
+            role: "assistant".into(),
+            text: format!(
+                "{}规划轮工具调用已拒绝\ncode=PLANNER_TOOL_CALL_REJECTED",
+                STAGED_TIMELINE_SYSTEM_PREFIX
+            ),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(timeline_state_local_snapshot()),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        assert!(is_ephemeral_timeline_assistant_for_export(&m, &[]));
+    }
+
+    #[test]
+    fn staged_planner_round_dropped_for_export() {
+        let m = StoredMessage {
+            id: "plan".into(),
+            role: "assistant".into(),
+            text: r#"1. `rerun-demo`: 重新运行 demo
+
+```json
+{"type":"agent_reply_plan","version":1,"steps":[{"id":"rerun-demo","description":"重新运行 demo"}],"no_task":false}
+```"#
+                .into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        assert!(is_ephemeral_timeline_assistant_for_export(&m, &[]));
     }
 }

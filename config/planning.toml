@@ -35,10 +35,10 @@ staged_plan_intent_gate_advisory_bypass = false
 # 首轮定稿 agent_reply_plan 是否作为后续滚动/补丁规划的蓝图锚点：immutable_goal_only（默认）| goal_plus_baseline_plan | strict_baseline_steps；CM_STAGED_PLAN_BASELINE_MODE
 staged_plan_baseline_mode = "immutable_goal_only"
 
-# 分层模式意图管线（L0 + L1 规则 + L2 无工具 LLM，默认开启；见 CONFIGURATION/DEVELOPMENT）
+# 分层模式意图管线（默认 L2 无工具 LLM；旧 L0/L1 规则层仅作 L2 不可用时兜底；见 CONFIGURATION/DEVELOPMENT）
 # intent_l2_enabled = true
-# intent_l2_min_confidence = 0.7
-# intent_l0_routing_boost_enabled = true
+# intent_l2_min_confidence = 0.7   # 观测阈值；不再控制是否回退 L1
+# intent_l0_routing_boost_enabled = true   # 仅影响弃用 L1 兜底路径
 # 非分层（planner_executor_mode != hierarchical）可单独覆盖执行阈值；省略时回退 intent_execute_*。
 # intent_non_hier_execute_low_threshold = 0.2
 # intent_non_hier_execute_high_threshold = 0.45

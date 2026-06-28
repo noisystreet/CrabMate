@@ -1,4 +1,5 @@
-//! L0+L1+可选 L2 意图管线（纯合并 + 观测日志）；L2 LLM 调用经 [`IntentL2ClassifierHost`] 注入。
+//! 默认 L2 意图管线（纯决策 + 观测日志）；L2 LLM 调用经 [`IntentL2ClassifierHost`] 注入。
+//! 旧 L0/L1 规则层暂保留为 L2 不可用时的弃用兜底。
 
 use async_trait::async_trait;
 use crabmate_config::AgentConfig;
@@ -6,11 +7,11 @@ use crabmate_types::Message;
 
 use crate::agent_turn::intent::context::build_intent_routing_context;
 use crate::intent_pipeline::{
-    IntentDecision, IntentMergeMeta, L2IntentCandidate, assess_and_route_with_l2,
+    IntentDecision, IntentMergeMeta, L2IntentAttempt, assess_and_route_with_l2_attempt,
 };
 use crate::intent_router::ExecuteIntentThresholds;
 
-/// L1/L2 合并后的意图判定与观测元数据。
+/// L2 优先意图判定与观测元数据。
 #[derive(Debug, Clone)]
 pub struct IntentRoutingOutcome {
     pub decision: IntentDecision,
@@ -28,27 +29,27 @@ pub struct IntentRoutingPipelineParams<'a> {
     pub sse_log_tag: &'a str,
 }
 
-/// 根包实现的 L2 语义分类（无工具 LLM）；失败时返回 `None`（fail-open）。
+/// 根包实现的 L2 语义分类（无工具 LLM）；失败时在 attempt 中写入原因，由弃用规则层兜底。
 #[async_trait]
 pub trait IntentL2ClassifierHost: Send + Sync {
-    async fn classify_l2_candidate(
+    async fn classify_l2_attempt(
         &self,
         routing_for_l1: &str,
         current_task: &str,
-    ) -> Option<L2IntentCandidate>;
+    ) -> L2IntentAttempt;
 }
 
-/// 在已有 L2 候选（或 `None`）时跑完整 L0+L1(+L2) 合并。
+/// 在已有 L2 候选（或 `None`）时跑 L2 优先决策；`None` 时使用弃用 L0/L1 兜底。
 pub fn assess_intent_routing_with_optional_l2(
     task: &str,
     messages: &[Message],
     cfg: &AgentConfig,
     in_clarification_flow: bool,
     thresholds: ExecuteIntentThresholds,
-    l2_candidate: Option<L2IntentCandidate>,
+    l2_attempt: L2IntentAttempt,
 ) -> IntentRoutingOutcome {
     let intent_ctx = build_intent_routing_context(messages, cfg, in_clarification_flow, thresholds);
-    let (decision, merge_meta) = assess_and_route_with_l2(task, &intent_ctx, l2_candidate);
+    let (decision, merge_meta) = assess_and_route_with_l2_attempt(task, &intent_ctx, l2_attempt);
     IntentRoutingOutcome {
         decision,
         merge_meta,
@@ -63,12 +64,13 @@ pub fn log_intent_pipeline_assessment(sse_log_tag: &str, outcome: &IntentRouting
     } = outcome;
     log::info!(
         target: "crabmate",
-        "[INTENT_PIPELINE] {sse_log_tag} l1_kind={:?} l1_confidence={:.2} l2_present={} l2_applied={} l2_confidence={:?} override={:?} final_kind={:?} primary={} conf={:.2} abstain={} need_clarif={} action={:?} merged_continuation={}",
+        "[INTENT_PIPELINE] {sse_log_tag} deprecated_l1_kind={:?} deprecated_l1_confidence={:.2} l2_present={} l2_applied={} l2_confidence={:?} l2_unavailable_reason={:?} source={:?} final_kind={:?} primary={} conf={:.2} abstain={} need_clarif={} action={:?} merged_continuation={}",
         merge_meta.l1_kind,
         merge_meta.l1_confidence,
         merge_meta.l2_present,
         merge_meta.l2_applied,
         merge_meta.l2_confidence,
+        merge_meta.l2_unavailable_reason,
         merge_meta.override_reason,
         decision.kind,
         decision.primary_intent,
@@ -80,7 +82,7 @@ pub fn log_intent_pipeline_assessment(sse_log_tag: &str, outcome: &IntentRouting
     );
 }
 
-/// 完整 L0+L1+可选 L2 管线：L2 经宿主注入，合并与日志在 crate 内完成。
+/// L2 优先管线：L2 经宿主注入；不可用时回退弃用 L0/L1 规则层。
 pub async fn assess_intent_routing_full_pipeline<H: IntentL2ClassifierHost>(
     host: &H,
     params: &IntentRoutingPipelineParams<'_>,
@@ -97,10 +99,10 @@ pub async fn assess_intent_routing_full_pipeline<H: IntentL2ClassifierHost>(
     let intent_ctx =
         build_intent_routing_context(messages, cfg, *in_clarification_flow, *thresholds);
     let (routing_for_l1, _, _) = crate::intent_pipeline::prepare_intent_routing(task, &intent_ctx);
-    let l2_candidate = if *l2_enabled {
-        host.classify_l2_candidate(&routing_for_l1, task).await
+    let l2_attempt = if *l2_enabled {
+        host.classify_l2_attempt(&routing_for_l1, task).await
     } else {
-        None
+        L2IntentAttempt::unavailable("disabled_by_config")
     };
     let outcome = assess_intent_routing_with_optional_l2(
         task,
@@ -108,7 +110,7 @@ pub async fn assess_intent_routing_full_pipeline<H: IntentL2ClassifierHost>(
         cfg,
         *in_clarification_flow,
         *thresholds,
-        l2_candidate,
+        l2_attempt,
     );
     log_intent_pipeline_assessment(sse_log_tag, &outcome);
     outcome

@@ -296,15 +296,15 @@ pub(super) struct AgentSection {
     pub(super) intent_non_hier_execute_high_threshold: Option<f64>,
     /// 是否启用基于 intent 标签的执行模式偏置（默认 true）。
     pub(super) intent_mode_bias_enabled: Option<bool>,
-    /// 是否启用 L2 语义意图分类（默认 false）。
+    /// 是否启用 L2 语义意图分类（默认 true）。
     pub(super) intent_l2_enabled: Option<bool>,
-    /// L2 语义分类覆盖 L1 的最小置信度（0.0..=1.0，默认 0.7）。
+    /// L2 语义分类观测阈值（0.0..=1.0，默认 0.7）；不再控制是否回退规则层。
     pub(super) intent_l2_min_confidence: Option<f64>,
     /// L2 语义分类请求 `max_tokens`（默认 384）。
     pub(super) intent_l2_max_tokens: Option<u64>,
-    /// 非分层路径是否在主循环前跑 L0/L1/可选 L2 门控（缺省为 false，与 `finalize` 一致）。
+    /// 非分层路径是否在主循环前跑 L2 优先门控（缺省为 false，与 `finalize` 一致）。
     pub(super) intent_at_turn_start_enabled: Option<bool>,
-    /// 是否根据 L0 对 L1 做保守提级（缺省为 true，与 `finalize` 一致）。
+    /// 是否根据 L0 对弃用 L1 兜底做保守提级（缺省为 true，与 `finalize` 一致）。
     pub(super) intent_l0_routing_boost_enabled: Option<bool>,
 }
 

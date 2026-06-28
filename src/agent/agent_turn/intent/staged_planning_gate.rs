@@ -1,5 +1,5 @@
 //! 非分层模式下 **`resolve_non_hierarchical_main_route`** 之前的分阶段意图门控：
-//! 与 [`super::at_turn_start::run_intent_l0_l1_l2_gate`] **共用**同一套 L0+L1+可选 L2 管线（见 **`assess_staged_planning_gate_full_pipeline`**）。
+//! 与 [`super::at_turn_start::run_intent_l0_l1_l2_gate`] **共用**同一套 L2 优先管线（见 **`assess_staged_planning_gate_full_pipeline`**）。
 //!
 //! 同步 **L1** 门控与资格判定实现于 **`crabmate-agent::agent_turn::staged_planning_gate`**。
 
@@ -14,7 +14,7 @@ use super::at_turn_start::emit_intent_timeline_gate_only;
 use super::intent_user;
 use super::l2_classifier_host::CrabmateIntentL2ClassifierHost;
 
-/// 评估本回合是否允许进入分阶段 / 逻辑双代理路径（完整 **L0+L1+可选 L2**，与非分层开局门控对齐）。
+/// 评估本回合是否允许进入分阶段 / 逻辑双代理路径（默认 L2，弃用规则层兜底，与非分层开局门控对齐）。
 pub(crate) async fn assess_staged_planning_gate_full_pipeline(
     p: &mut crate::agent::agent_turn::params::RunLoopParams<'_>,
     sse_log_tag: &'static str,

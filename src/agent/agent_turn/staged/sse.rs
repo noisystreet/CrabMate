@@ -38,6 +38,7 @@ pub(crate) fn staged_plan_phase_instruction_default() -> String {
          `steps[].description` 宜具体可验收；用户明确要求多项交付物时勿擅自合并。\n\
          信息不足时宁可 `no_task` 或请求澄清，勿编造路径或接口细节。\n\
          **单步滚动 + 验收**：每轮 JSON 通常仅 **1** 条 `steps`。「先读后写再测」靠**多轮规划**切换 `executor_kind`（`review_readonly` → `patch_write` → `test_runner`），勿在一轮内堆多步（`workflow_validate_only` 绑定等多步例外见下方 schema）。当本步为 **`test_runner`**（如 `cargo_check` / `cargo_test` / 同类）时，除非用户明示无需硬验收，**须在 `acceptance` 中至少给出 `expect_exit_code`，并推荐再加与命令输出一致的短字符串 `expect_stdout_contains` 或 `expect_stderr_contains`**（须为真实 CLI 日志里**会出现**的子串，勿填抽象描述），否则步末难以触发有意义的确定性验收与补丁重规划。\n\
+         **步后收敛**：若历史工具输出已经证明用户原始目标完成（例如源码已写入、构建成功、可执行程序已运行且退出码为 0），不要再生成 `verify` / `confirm` / `run-and-confirm` / `verify-run-output` 等等价验证步骤，也不要为了让系统重新识别证据而重复执行同类命令；应返回 `no_task: true`、`steps: []` 或给出简短最终总结。\n\
          正文中须用 Markdown 代码围栏（语言标记为 json）给出合法 JSON，且满足：\n\
          {}\n\
          涉及「先审读→再改→再测」时，为相应步设置 `executor_kind`（`review_readonly` → `patch_write` → `test_runner`）。",

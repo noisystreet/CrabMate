@@ -50,7 +50,7 @@ impl HierarchicalPostIntentRoute {
     }
 }
 
-/// 将 L0/L1/L2 合并后的 **`IntentDecision`** 解析为分层内下一主路径（**仅**在 `ProceedExecute` 分支调用）。
+/// 将 L2 优先管线产出的 **`IntentDecision`** 解析为分层内下一主路径（**仅**在 `ProceedExecute` 分支调用）。
 pub fn resolve_hierarchical_post_intent_route(
     assessment: &IntentDecision,
 ) -> HierarchicalPostIntentRoute {

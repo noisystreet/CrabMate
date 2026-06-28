@@ -115,6 +115,7 @@ fn timeline_log_dispatch_body(
         "hierarchical_subgoal" | "hierarchical_subgoal_started" => {
             timeline_log_dispatch_hierarchical_subgoal(stream_ctx, accum, &info);
         }
+        "planner_tool_call_rejected" => {}
         "tool_step_started" | "tool_step_finished" => {}
         _ => timeline_log_dispatch_default_body(stream_ctx, &info),
     }

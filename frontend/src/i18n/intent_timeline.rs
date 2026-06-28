@@ -18,8 +18,11 @@ pub fn classify_intent_detail_line(line: &str) -> Option<IntentDetailLineKind> {
     } else if t.starts_with("需要澄清：") || t.starts_with("Needs clarification:") {
         Some(IntentDetailLineKind::NeedClarification)
     } else if t.starts_with("L2 结果：")
+        || t.starts_with("决策来源：")
         || t.starts_with("L2 result:")
         || t.starts_with("L2 Result:")
+        || t.starts_with("Decision source:")
+        || t.starts_with("Decision Source:")
     {
         Some(IntentDetailLineKind::L2Result)
     } else {
@@ -43,6 +46,10 @@ mod tests {
         );
         assert_eq!(
             classify_intent_detail_line("L2 result: ok"),
+            Some(IntentDetailLineKind::L2Result)
+        );
+        assert_eq!(
+            classify_intent_detail_line("Decision source: L2"),
             Some(IntentDetailLineKind::L2Result)
         );
         assert_eq!(
