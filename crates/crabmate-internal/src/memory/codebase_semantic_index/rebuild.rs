@@ -62,7 +62,7 @@ fn file_fingerprint(path: &Path, max_file_bytes: usize) -> Option<(u64, i64, Str
     let text = String::from_utf8(buf).ok()?;
     let mut h = Sha256::new();
     h.update(text.as_bytes());
-    let hex = format!("{:x}", h.finalize());
+    let hex: String = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
     Some((size, mtime_ns, text, hex))
 }
 
