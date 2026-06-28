@@ -43,12 +43,28 @@ struct CrabmateCliWaitSpinnerGuard(#[allow(dead_code)] CliWaitSpinnerGuard);
 impl CliWaitSpinnerGuardHost for CrabmateCliWaitSpinnerGuard {}
 
 fn clip_thinking_trace_text(s: &str) -> String {
-    let mut t = s.to_string();
-    if t.len() > THINKING_TRACE_CHUNK_MAX {
-        t.truncate(THINKING_TRACE_CHUNK_MAX);
-        t.push('…');
+    if s.len() <= THINKING_TRACE_CHUNK_MAX {
+        return s.to_string();
     }
-    t
+    let mut end = THINKING_TRACE_CHUNK_MAX;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", &s[..end])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{THINKING_TRACE_CHUNK_MAX, clip_thinking_trace_text};
+
+    #[test]
+    fn thinking_trace_clip_respects_utf8_boundary() {
+        let s = format!("{}你", "a".repeat(THINKING_TRACE_CHUNK_MAX - 1));
+        let clipped = clip_thinking_trace_text(&s);
+
+        assert!(clipped.ends_with('…'));
+        assert!(clipped.is_char_boundary(clipped.len()));
+    }
 }
 
 /// 进程内默认 [`StreamChatHost`]（Web / CLI / TUI 共用）。

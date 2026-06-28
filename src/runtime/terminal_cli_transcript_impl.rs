@@ -178,9 +178,16 @@ pub(crate) fn print_cli_playbook_healing_hint(
     if body.is_empty() {
         return Ok(());
     }
-    let take = body.len().min(PLAYBOOK_HINT_SNIPPET_MAX);
-    let snippet = &body[..take];
-    let json_snippet = serde_json::to_string(snippet).unwrap_or_else(|_| "\"\"".to_string());
+    let snippet = if body.len() <= PLAYBOOK_HINT_SNIPPET_MAX {
+        std::borrow::Cow::Borrowed(body)
+    } else {
+        std::borrow::Cow::Owned(crate::tools::output_util::truncate_to_char_boundary(
+            body,
+            PLAYBOOK_HINT_SNIPPET_MAX,
+        ))
+    };
+    let json_snippet =
+        serde_json::to_string(snippet.as_ref()).unwrap_or_else(|_| "\"\"".to_string());
 
     let mut w = io::stdout();
     let color = cli_repl_stdout_use_color();

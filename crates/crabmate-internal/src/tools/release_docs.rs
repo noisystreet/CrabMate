@@ -13,11 +13,9 @@ fn truncate_str(s: &str, max_bytes: usize) -> String {
     if s.len() <= max_bytes {
         return s.to_string();
     }
-    format!(
-        "{}\n\n... (输出已按 {} 字节截断)",
-        &s[..max_bytes.saturating_sub(80)],
-        max_bytes
-    )
+    let keep = max_bytes.saturating_sub(80);
+    let truncated = output_util::truncate_to_char_boundary(s, keep);
+    format!("{}\n\n... (输出已按 {} 字节截断)", truncated, max_bytes)
 }
 
 /// 仅允许常见 Git 引用字符，降低注入风险（传给 `git log` 等子进程）。

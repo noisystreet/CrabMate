@@ -215,10 +215,11 @@ fn truncate_report(report: String, max_output_len: usize) -> String {
     if report.len() <= max_output_len {
         return report;
     }
+    let keep = max_output_len.saturating_sub(80);
+    let truncated = super::super::output_util::truncate_to_char_boundary(&report, keep);
     format!(
         "{}\n\n... (输出已按 {} 字节截断)",
-        &report[..max_output_len.saturating_sub(80)],
-        max_output_len
+        truncated, max_output_len
     )
 }
 

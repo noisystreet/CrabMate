@@ -154,7 +154,7 @@ pub fn rust_file_outline(args_json: &str, workspace_root: &Path) -> String {
         return format!("读取文件失败：{}", e);
     }
     if buf.len() > MAX_FILE_SIZE_BYTES {
-        buf.truncate(MAX_FILE_SIZE_BYTES);
+        buf = super::output_util::truncate_to_char_boundary(&buf, MAX_FILE_SIZE_BYTES);
     }
 
     let items = collect_outline(&buf, include_use, max_items);
@@ -294,7 +294,7 @@ fn search_refs_in_file(
     let mut f = fs::File::open(path).map_err(|e| e.to_string())?;
     f.read_to_string(&mut buf).map_err(|e| e.to_string())?;
     if buf.len() > MAX_FILE_SIZE_BYTES {
-        buf.truncate(MAX_FILE_SIZE_BYTES);
+        buf = super::output_util::truncate_to_char_boundary(&buf, MAX_FILE_SIZE_BYTES);
     }
     for (idx, line) in buf.lines().enumerate() {
         if !ref_re.is_match(line) {

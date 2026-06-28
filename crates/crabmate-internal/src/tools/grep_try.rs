@@ -143,7 +143,7 @@ fn search_in_file(
         return;
     }
     if buf.len() > MAX_FILE_SIZE_BYTES {
-        buf.truncate(MAX_FILE_SIZE_BYTES);
+        buf = super::output_util::truncate_to_char_boundary(&buf, MAX_FILE_SIZE_BYTES);
     }
     let lines: Vec<&str> = buf.lines().collect();
     let has_context = ctx_before > 0 || ctx_after > 0;

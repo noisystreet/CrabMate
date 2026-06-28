@@ -122,7 +122,10 @@ fn scan_file(path: &Path, root: &Path, markers: &[String], results: &mut Vec<Str
         for marker in markers {
             if upper.contains(marker.as_str()) {
                 let preview = if line.len() > MAX_LINE_PREVIEW {
-                    format!("{}...", &line[..MAX_LINE_PREVIEW])
+                    format!(
+                        "{}...",
+                        super::output_util::truncate_to_char_boundary(line, MAX_LINE_PREVIEW)
+                    )
                 } else {
                     line.to_string()
                 };

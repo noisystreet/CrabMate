@@ -386,7 +386,7 @@ fn sketch_collect_edges(
             && f.read_to_string(&mut buf).is_ok()
         {
             if buf.len() > MAX_FILE_BYTES {
-                buf.truncate(MAX_FILE_BYTES);
+                buf = super::output_util::truncate_to_char_boundary(&buf, MAX_FILE_BYTES);
             }
             scan_file_for_edges(&rel, &buf, symbol_res, &mut edges, params.max_edges);
         }

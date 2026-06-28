@@ -110,9 +110,10 @@ fn resolve_placeholder(
 }
 
 fn truncate_for_injection(s: &str, max_chars: usize) -> String {
-    if s.len() <= max_chars {
-        s.to_string()
+    let prefix: String = s.chars().take(max_chars).collect();
+    if prefix.chars().count() == s.chars().count() {
+        prefix
     } else {
-        format!("{}... (截断)", &s[..max_chars])
+        format!("{}... (截断)", prefix)
     }
 }

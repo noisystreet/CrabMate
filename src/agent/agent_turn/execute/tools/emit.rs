@@ -33,7 +33,7 @@ fn context_snapshot_for_trace(messages: &[Message]) -> String {
         .collect();
     let mut s = format!("messages={n} [{}]", parts.join(", "));
     if s.len() > MAX {
-        s.truncate(MAX);
+        s = crate::tools::output_util::truncate_to_char_boundary(&s, MAX);
         s.push('…');
     }
     s

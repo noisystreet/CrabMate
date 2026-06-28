@@ -6,7 +6,8 @@ pub(super) fn truncate_str(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()
     } else {
-        format!("{}\n\n... (已截断，共 {} 字节)", &s[..max], s.len())
+        let truncated = crate::tools::output_util::truncate_to_char_boundary(s, max);
+        format!("{}\n\n... (已截断，共 {} 字节)", truncated, s.len())
     }
 }
 
@@ -353,5 +354,19 @@ fn uri_to_brief_path(uri: &str) -> String {
         rest.to_string()
     } else {
         uri.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::truncate_str;
+
+    #[test]
+    fn truncate_str_respects_utf8_boundary() {
+        let s = format!("{}你", "a".repeat(9));
+        let out = truncate_str(&s, 10);
+
+        assert!(out.contains("已截断"));
+        assert!(out.is_char_boundary(out.len()));
     }
 }

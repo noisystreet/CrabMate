@@ -49,7 +49,7 @@ pub fn rust_symbol_hints_for_chunk(chunk: &str) -> String {
         let mut s = names.join(", ");
         const MAX: usize = 400;
         if s.len() > MAX {
-            s.truncate(MAX);
+            s = crate::tools::output_util::truncate_to_char_boundary(&s, MAX);
             s.push('…');
         }
         format!("symbols: {}", s)
@@ -89,6 +89,9 @@ pub fn chunk_text_lines(s: &str, max_chunk: usize) -> Vec<(usize, usize, String)
             } else {
                 1 + line.len()
             };
+            if chunk.is_empty() && add_len > max_chunk {
+                break;
+            }
             if !chunk.is_empty() && chunk.len() + add_len > max_chunk {
                 break;
             }
@@ -103,16 +106,7 @@ pub fn chunk_text_lines(s: &str, max_chunk: usize) -> Vec<(usize, usize, String)
         }
         if end_i == i {
             // single line longer than max_chunk: hard split by chars
-            let line = lines[i];
-            let mut start = 0usize;
-            while start < line.len() {
-                let end = (start + max_chunk).min(line.len());
-                let part = &line[start..end];
-                let sl = i + 1;
-                let el = i + 1;
-                out.push((sl, el, part.to_string()));
-                start = end;
-            }
+            push_long_line_chunks(&mut out, lines[i], i + 1, max_chunk);
             i += 1;
             continue;
         }
@@ -120,6 +114,36 @@ pub fn chunk_text_lines(s: &str, max_chunk: usize) -> Vec<(usize, usize, String)
         i = end_i;
     }
     out
+}
+
+fn push_long_line_chunks(
+    out: &mut Vec<(usize, usize, String)>,
+    line: &str,
+    line_no: usize,
+    max_chunk: usize,
+) {
+    let mut start = 0usize;
+    while start < line.len() {
+        let end = next_safe_chunk_end(line, start, max_chunk);
+        out.push((line_no, line_no, line[start..end].to_string()));
+        start = end;
+    }
+}
+
+fn next_safe_chunk_end(line: &str, start: usize, max_chunk: usize) -> usize {
+    let mut end = (start + max_chunk).min(line.len());
+    while end > start && !line.is_char_boundary(end) {
+        end -= 1;
+    }
+    if end == start {
+        line[start..]
+            .chars()
+            .next()
+            .map(|c| start + c.len_utf8())
+            .unwrap_or(line.len())
+    } else {
+        end
+    }
 }
 
 pub fn hash_chunk(rel_path: &str, body: &str) -> String {
@@ -244,4 +268,22 @@ pub fn norm_scores_bm25(scores: &[(i64, f64)]) -> HashMap<i64, f32> {
         }
     }
     m
+}
+
+#[cfg(test)]
+mod tests {
+    use super::chunk_text_lines;
+
+    #[test]
+    fn chunk_text_lines_splits_long_utf8_line_safely() {
+        let chunks = chunk_text_lines("a你b", 2);
+
+        assert_eq!(
+            chunks
+                .iter()
+                .map(|(_, _, body)| body.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a", "你", "b"]
+        );
+    }
 }
