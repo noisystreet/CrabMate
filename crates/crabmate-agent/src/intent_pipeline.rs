@@ -1,7 +1,6 @@
-//! 一期意图识别管线骨架。
+//! 意图识别管线。
 //!
-//! 目标：提供统一 `IntentDecision` 契约，并先复用现有 `intent_router` 规则逻辑，
-//! 为后续接入 L2 分类器（LLM / embedding / 专用分类模型）预留稳定入口。
+//! L2 语义分类是默认决策来源；旧 L0/L1 规则层暂保留为 L2 不可用时的弃用兜底。
 
 use crate::intent_l0::{self, IntentL0Snapshot};
 use crate::intent_router::{
@@ -47,16 +46,42 @@ pub struct L2IntentCandidate {
     pub abstain: bool,
 }
 
-/// L1/L2 合并元数据（用于观测与回归）。
+/// L2 分类尝试结果；`candidate=None` 时 `unavailable_reason` 说明为何回退弃用规则层。
+#[derive(Debug, Clone, PartialEq)]
+pub struct L2IntentAttempt {
+    pub candidate: Option<L2IntentCandidate>,
+    pub unavailable_reason: Option<String>,
+}
+
+impl L2IntentAttempt {
+    pub fn from_candidate(candidate: Option<L2IntentCandidate>) -> Self {
+        Self {
+            candidate,
+            unavailable_reason: None,
+        }
+    }
+
+    pub fn unavailable(reason: impl Into<String>) -> Self {
+        Self {
+            candidate: None,
+            unavailable_reason: Some(reason.into()),
+        }
+    }
+}
+
+/// 意图决策元数据（用于观测与回归）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct IntentMergeMeta {
+    /// 弃用规则层的判定，仅用于 L2 不可用时兜底与观测。
     pub l1_kind: IntentKind,
+    /// 弃用规则层的置信度，仅用于 L2 不可用时兜底与观测。
     pub l1_confidence: f32,
     pub l2_present: bool,
     pub l2_applied: bool,
     pub l2_confidence: Option<f32>,
+    pub l2_unavailable_reason: Option<String>,
     pub override_reason: Option<String>,
-    /// 澄清流程下是否将前序 user 与当前短句拼成**路由**文本供 L1/L2 使用。
+    /// 澄清流程下是否将前序 user 与当前短句拼成**路由**文本供 L2 与弃用 L1 兜底使用。
     pub used_merged_continuation: bool,
     /// 对合并/当前路由文本的 L0 可观测特征（含 `has_recent_tool_failure` 等）。
     pub l0: IntentL0Snapshot,
@@ -90,7 +115,7 @@ pub struct IntentDecision {
     pub action: IntentAction,
 }
 
-/// 意图管线入口：L0 多轮路由合并与特征快照、L1、可选 L2（stub 无 L2）与 L3 动作映射。
+/// 意图管线入口：L2 stub 无结果时使用弃用 L0/L1 规则兜底。
 pub fn assess_and_route(task: &str, ctx: &IntentContext) -> IntentDecision {
     let (routing, used_merge, l0) = prepare_intent_routing(task, ctx);
     assess_and_route_with_l2_inner(
@@ -99,12 +124,12 @@ pub fn assess_and_route(task: &str, ctx: &IntentContext) -> IntentDecision {
         &l0,
         used_merge,
         ctx,
-        classify_with_l2_stub(task, ctx),
+        L2IntentAttempt::from_candidate(classify_with_l2_stub(task, ctx)),
     )
     .0
 }
 
-/// 对当前 `task` 与 `ctx` 做 L0 续接合并与 L0 快照，供 L1/L2 与观测共用（含 `has_recent_tool_failure`）。
+/// 对当前 `task` 与 `ctx` 做续接合并与 L0 快照，供 L2、弃用 L1 兜底与观测共用（含 `has_recent_tool_failure`）。
 pub fn prepare_intent_routing(
     current_task: &str,
     ctx: &IntentContext,
@@ -118,24 +143,37 @@ pub fn prepare_intent_routing(
     (routing, used_merge, l0)
 }
 
-/// 合并 L1/L2 结果并返回观测元数据。
+/// 评估意图并返回观测元数据；有 L2 结果时直接采纳，规则层只做弃用兜底。
 pub fn assess_and_route_with_l2(
     current_task: &str,
     ctx: &IntentContext,
     l2_candidate: Option<L2IntentCandidate>,
 ) -> (IntentDecision, IntentMergeMeta) {
-    let (routing, used_merge, l0) = prepare_intent_routing(current_task, ctx);
-    assess_and_route_with_l2_inner(&routing, current_task, &l0, used_merge, ctx, l2_candidate)
+    assess_and_route_with_l2_attempt(
+        current_task,
+        ctx,
+        L2IntentAttempt::from_candidate(l2_candidate),
+    )
 }
 
-/// `routing` 为 L1 输入；`primary_task` 为细粒度 heuristics，通常取当前用户句原文。
+/// 评估意图并携带 L2 不可用原因；有 L2 结果时直接采纳，规则层只做弃用兜底。
+pub fn assess_and_route_with_l2_attempt(
+    current_task: &str,
+    ctx: &IntentContext,
+    l2_attempt: L2IntentAttempt,
+) -> (IntentDecision, IntentMergeMeta) {
+    let (routing, used_merge, l0) = prepare_intent_routing(current_task, ctx);
+    assess_and_route_with_l2_inner(&routing, current_task, &l0, used_merge, ctx, l2_attempt)
+}
+
+/// `routing` 为 L2 合并上下文及弃用 L1 兜底输入；`primary_task` 为当前用户句原文。
 fn assess_and_route_with_l2_inner(
     routing: &str,
     primary_task: &str,
     l0: &IntentL0Snapshot,
     used_merged_continuation: bool,
     ctx: &IntentContext,
-    l2_candidate: Option<L2IntentCandidate>,
+    l2_attempt: L2IntentAttempt,
 ) -> (IntentDecision, IntentMergeMeta) {
     let mut l1_assessment = route_user_task_with_thresholds(routing, ctx.thresholds);
     if ctx.l0_routing_boost_enabled {
@@ -151,87 +189,70 @@ fn assess_and_route_with_l2_inner(
     }
     let l1_kind = l1_assessment.kind;
     let l1_confidence = l1_assessment.confidence;
-    let l1_route = l1_assessment.route.clone();
     let mut decision = map_assessment_to_decision(primary_task, l1_assessment);
+    let l2_confidence = l2_attempt.candidate.as_ref().map(|x| x.confidence);
     let mut meta = IntentMergeMeta {
         l1_kind,
         l1_confidence,
-        l2_present: l2_candidate.is_some(),
+        l2_present: l2_attempt.candidate.is_some(),
         l2_applied: false,
-        l2_confidence: l2_candidate.as_ref().map(|x| x.confidence),
+        l2_confidence,
+        l2_unavailable_reason: l2_attempt.unavailable_reason.clone(),
         override_reason: None,
         used_merged_continuation,
         l0: *l0,
     };
-    if let Some(l2) = l2_candidate {
-        if l2.confidence >= ctx.l2_min_confidence {
-            decision.kind = l2.kind;
-            decision.primary_intent = l2.primary_intent;
-            decision.secondary_intents = l2.secondary_intents;
-            decision.confidence = l2.confidence;
-            decision.need_clarification = l2.need_clarification;
-            decision.abstain = l2.abstain;
-            meta.l2_applied = true;
-            meta.override_reason = Some("l2_confidence_above_threshold".to_string());
-            refresh_decision_action_after_l2_override(&mut decision, l1_kind, &l1_route);
+    if let Some(l2) = l2_attempt.candidate {
+        let l2_confidence = l2.confidence;
+        decision = map_l2_candidate_to_decision(l2);
+        meta.l2_applied = true;
+        meta.override_reason = Some(if l2_confidence >= ctx.l2_min_confidence {
+            "l2_primary".to_string()
         } else {
-            meta.override_reason = Some("l2_confidence_below_threshold".to_string());
-        }
+            "l2_primary_below_observation_threshold".to_string()
+        });
+    } else {
+        meta.override_reason = Some(match meta.l2_unavailable_reason.as_deref() {
+            Some("disabled_by_config") => "deprecated_l1_fallback_l2_disabled".to_string(),
+            Some(_) => "deprecated_l1_fallback_l2_unavailable".to_string(),
+            None => "deprecated_l1_fallback_no_l2".to_string(),
+        });
     }
     (decision, meta)
 }
 
-/// L2 覆盖 `kind` 后，与 `DirectReply` 模板、执行阈值路由对齐（避免仍沿用 L1 的回复文案或动作）。
-fn refresh_decision_action_after_l2_override(
-    decision: &mut IntentDecision,
-    l1_kind: IntentKind,
-    l1_route: &IntentRoute,
-) {
+fn map_l2_candidate_to_decision(l2: L2IntentCandidate) -> IntentDecision {
     use crate::intent_router::{
         ambiguous_ask_message, greeting_reply_message, qa_direct_reply_for_primary,
     };
-    match decision.kind {
-        IntentKind::Qa => {
-            decision.action =
-                IntentAction::DirectReply(qa_direct_reply_for_primary(&decision.primary_intent));
-        }
-        IntentKind::Greeting => {
-            decision.action = IntentAction::DirectReply(greeting_reply_message().to_string());
-            decision.need_clarification = false;
-            decision.abstain = false;
-        }
+    let L2IntentCandidate {
+        kind,
+        primary_intent,
+        secondary_intents,
+        confidence,
+        need_clarification,
+        abstain,
+    } = l2;
+    let action = match kind {
+        IntentKind::Greeting => IntentAction::DirectReply(greeting_reply_message().to_string()),
+        IntentKind::Qa => IntentAction::DirectReply(qa_direct_reply_for_primary(&primary_intent)),
         IntentKind::Ambiguous => {
-            decision.action = IntentAction::ClarifyThenExecute(ambiguous_ask_message().to_string());
+            IntentAction::ClarifyThenExecute(ambiguous_ask_message().to_string())
         }
-        IntentKind::Execute => {
-            if l1_kind == IntentKind::Execute {
-                match l1_route {
-                    IntentRoute::Execute => {
-                        decision.action = IntentAction::Execute;
-                        decision.need_clarification = false;
-                        decision.abstain = false;
-                    }
-                    IntentRoute::ConfirmThenExecute(s) => {
-                        decision.action = IntentAction::ConfirmThenExecute(s.clone());
-                        decision.need_clarification = true;
-                        decision.abstain = false;
-                    }
-                    IntentRoute::AskThenExecute(s) => {
-                        decision.action = IntentAction::ClarifyThenExecute(s.clone());
-                        decision.need_clarification = true;
-                    }
-                    IntentRoute::DirectReply(_) => {
-                        decision.action = IntentAction::Execute;
-                        decision.need_clarification = false;
-                        decision.abstain = false;
-                    }
-                }
-            } else {
-                decision.action = IntentAction::Execute;
-                decision.need_clarification = false;
-                decision.abstain = false;
-            }
+        IntentKind::Execute if need_clarification || abstain => {
+            IntentAction::ClarifyThenExecute(ambiguous_ask_message().to_string())
         }
+        IntentKind::Execute => IntentAction::Execute,
+    };
+    IntentDecision {
+        kind,
+        primary_intent,
+        secondary_intents,
+        confidence,
+        abstain: abstain || kind == IntentKind::Ambiguous,
+        need_clarification: need_clarification
+            || matches!(action, IntentAction::ClarifyThenExecute(_)),
+        action,
     }
 }
 
@@ -599,7 +620,10 @@ fn classify_with_l2_stub(_task: &str, _ctx: &IntentContext) -> Option<L2IntentCa
 
 #[cfg(test)]
 mod tests {
-    use super::{IntentContext, L2IntentCandidate, assess_and_route_with_l2};
+    use super::{
+        IntentContext, L2IntentAttempt, L2IntentCandidate, assess_and_route_with_l2,
+        assess_and_route_with_l2_attempt,
+    };
     use crate::intent_router::IntentKind;
 
     /// 细粒度断言见 `fixtures/intent_regression.jsonl`（`cargo test golden_intent_regression`）。
@@ -623,9 +647,9 @@ mod tests {
         assert!(meta.l2_applied);
     }
 
-    /// L2 置信度低于 `ctx.l2_min_confidence` 时不得覆盖 L1（与 `classify_intent_l2_with_llm` fail-open 对齐）。
+    /// L2 是默认决策来源；`l2_min_confidence` 仅保留为观测阈值，不再把决策回退给 L1。
     #[test]
-    fn l2_below_threshold_does_not_override_l1() {
+    fn l2_below_threshold_still_drives_decision() {
         let ctx = IntentContext {
             l2_min_confidence: 0.75,
             ..Default::default()
@@ -639,11 +663,31 @@ mod tests {
             abstain: false,
         };
         let (decision, meta) = assess_and_route_with_l2("当前目录下有哪些源文件", &ctx, Some(l2));
-        assert!(!meta.l2_applied);
+        assert!(meta.l2_applied);
         assert_eq!(
             meta.override_reason.as_deref(),
-            Some("l2_confidence_below_threshold")
+            Some("l2_primary_below_observation_threshold")
         );
-        assert_ne!(decision.primary_intent, "execute.code_change");
+        assert_eq!(decision.primary_intent, "execute.code_change");
+        assert!(matches!(decision.action, super::IntentAction::Execute));
+    }
+
+    #[test]
+    fn l2_unavailable_reason_is_preserved_for_fallback() {
+        let (_decision, meta) = assess_and_route_with_l2_attempt(
+            "帮我编写一个简单c++程序，然后使用cmake编译执行",
+            &IntentContext::default(),
+            L2IntentAttempt::unavailable("api_key_missing"),
+        );
+        assert!(!meta.l2_present);
+        assert!(!meta.l2_applied);
+        assert_eq!(
+            meta.l2_unavailable_reason.as_deref(),
+            Some("api_key_missing")
+        );
+        assert_eq!(
+            meta.override_reason.as_deref(),
+            Some("deprecated_l1_fallback_l2_unavailable")
+        );
     }
 }

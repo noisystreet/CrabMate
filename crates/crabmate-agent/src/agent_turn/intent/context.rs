@@ -12,7 +12,7 @@ use super::user;
 const RECENT_USER_FOR_MERGE: usize = 4;
 const MSG_TAIL_FOR_TOOL: usize = 32;
 
-/// 从会话切片与阈值构造 **`IntentContext`**（**不**调用 L1/L2，仅上下文装配）。
+/// 从会话切片与阈值构造 **`IntentContext`**（**不**调用 L2 或弃用规则层，仅上下文装配）。
 pub fn build_intent_routing_context(
     messages: &[Message],
     cfg: &AgentConfig,

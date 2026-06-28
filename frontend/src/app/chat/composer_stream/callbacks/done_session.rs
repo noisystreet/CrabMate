@@ -12,6 +12,32 @@ fn is_assistant_loading_placeholder(m: &StoredMessage) -> bool {
     m.role == "assistant" && !m.is_tool && m.state.as_ref().is_some_and(|st| st.is_loading())
 }
 
+fn push_missing_assistant_diagnostic(
+    messages: &mut Vec<StoredMessage>,
+    turn: &PerStreamTurnSummary,
+    in_answer_body_lane: bool,
+    locale: Locale,
+) {
+    let text = build_empty_reply_with_diagnostic(
+        locale,
+        in_answer_body_lane,
+        turn.answer_delta_chars,
+        turn.stream_end_reason.as_deref(),
+    );
+    messages.push(StoredMessage {
+        id: format!("asst_diag_{}", messages.len()),
+        role: "assistant".to_string(),
+        text,
+        reasoning_text: String::new(),
+        image_urls: Vec::new(),
+        state: None,
+        is_tool: false,
+        tool_call_id: None,
+        tool_name: None,
+        created_at: 0,
+    });
+}
+
 /// 流式整轮结束后仍残留的助手 `Loading` 占位（轮换/id 漂移等）会使 `stream_turn_busy_ui` 长期为真。
 pub(super) fn clear_residual_assistant_loading_placeholders(messages: &mut Vec<StoredMessage>) {
     messages.retain(|m| !is_assistant_loading_placeholder(m));
@@ -33,6 +59,9 @@ pub(super) fn apply_stream_done_to_loading_assistant(
     });
     let Some(idx) = messages.iter().position(|m| m.id == assistant_message_id) else {
         clear_residual_assistant_loading_placeholders(messages);
+        if turn.answer_delta_chars == 0 && !turn.saw_final_response_timeline {
+            push_missing_assistant_diagnostic(messages, turn, in_answer_body_lane, locale);
+        }
         return;
     };
     if !is_assistant_loading_placeholder(&messages[idx]) {
@@ -117,7 +146,8 @@ mod tests {
             false,
             crate::i18n::Locale::ZhHans,
         );
-        assert!(msgs.is_empty());
+        assert_eq!(msgs.len(), 1);
+        assert!(msgs[0].text.contains("未进入正文阶段"));
     }
 
     #[test]

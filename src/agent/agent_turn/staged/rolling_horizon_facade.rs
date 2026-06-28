@@ -14,6 +14,9 @@ use crate::types::{
 
 use super::super::errors::{AgentTurnSubPhase, RunAgentTurnError};
 use super::super::params::RunLoopParams;
+use super::super::task_level_evidence::{
+    GoalCompletionEvidenceCheck, check_goal_completion_evidence_from_messages,
+};
 use super::turn_fsm::{
     StagedTurnAdvance, StagedTurnPhase, StagedTurnSubCallOutcome,
     entered_flag_for_next_planner_call, staged_rolling_horizon_apply_advance,
@@ -52,6 +55,63 @@ impl StagedRollingHorizonKind {
     }
 }
 
+fn staged_goal_completion_satisfied_after_step(
+    p: &mut RunLoopParams<'_>,
+    phase: StagedTurnPhase,
+) -> bool {
+    if !matches!(phase, StagedTurnPhase::AfterStepExecutionRound) {
+        return false;
+    }
+    let Some(task) = p
+        .turn
+        .staged_immutable_user_goal_snapshot()
+        .map(str::to_string)
+    else {
+        return false;
+    };
+    matches!(
+        check_goal_completion_evidence_from_messages(&task, p.turn.messages()),
+        GoalCompletionEvidenceCheck::Satisfied
+    )
+}
+
+fn staged_rolling_horizon_preflight_exit(
+    kind: StagedRollingHorizonKind,
+    p: &mut RunLoopParams<'_>,
+    phase: StagedTurnPhase,
+    staged_rounds: usize,
+    max_rounds: usize,
+) -> Option<Result<(), RunAgentTurnError>> {
+    if staged_rounds > max_rounds {
+        tracing::warn!(
+            target: "crabmate::staged",
+            staged_fsm = "rolling_horizon",
+            rolling_horizon_kind = ?kind,
+            staged_round = staged_rounds,
+            staged_turn_phase = ?phase,
+            sub_phase = "planner",
+            "staged rolling horizon exceeded max rounds"
+        );
+        return Some(Err(RunAgentTurnError::Other {
+            phase: AgentTurnSubPhase::Planner,
+            message: kind.max_rounds_error_message(max_rounds),
+        }));
+    }
+    if staged_goal_completion_satisfied_after_step(p, phase) {
+        tracing::info!(
+            target: "crabmate::staged",
+            staged_fsm = "rolling_horizon",
+            rolling_horizon_kind = ?kind,
+            staged_round = staged_rounds,
+            staged_turn_phase = ?phase,
+            sub_phase = "planner",
+            "staged rolling horizon finished: task-level evidence already satisfies original request"
+        );
+        return Some(Ok(()));
+    }
+    None
+}
+
 /// 单 agent / 逻辑双 agent 共用的 **滚动视界** 外层循环：`turn_fsm` 相位 + 子调用结果 → `StagedTurnAdvance`。
 ///
 /// 见 `docs/design/per_state_machine_consolidation.md` §3.2（分阶段回合编排）；真实转移表在 [`advance_staged_turn_after_sub_call`]。
@@ -78,20 +138,14 @@ where
 
     loop {
         staged_rounds = staged_rounds.saturating_add(1);
-        if staged_rounds > STAGED_SINGLE_STEP_MAX_ROUNDS {
-            tracing::warn!(
-                target: "crabmate::staged",
-                staged_fsm = "rolling_horizon",
-                rolling_horizon_kind = ?kind,
-                staged_round = staged_rounds,
-                staged_turn_phase = ?phase,
-                sub_phase = "planner",
-                "staged rolling horizon exceeded max rounds"
-            );
-            return Err(RunAgentTurnError::Other {
-                phase: AgentTurnSubPhase::Planner,
-                message: kind.max_rounds_error_message(STAGED_SINGLE_STEP_MAX_ROUNDS),
-            });
+        if let Some(done) = staged_rolling_horizon_preflight_exit(
+            kind,
+            p,
+            phase,
+            staged_rounds,
+            STAGED_SINGLE_STEP_MAX_ROUNDS,
+        ) {
+            return done;
         }
 
         tracing::debug!(
