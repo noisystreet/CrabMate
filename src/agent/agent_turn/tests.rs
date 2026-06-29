@@ -618,3 +618,128 @@ mod staged_workflow_binding_context_tests {
         );
     }
 }
+
+mod multi_turn_orchestration_fixture_tests {
+    use crate::agent::agent_turn::completion_suppression::{
+        plan_steps_are_redundant_after_completion, tool_calls_are_redundant_after_completion,
+    };
+    use crate::agent::agent_turn::params::{RunLoopTurnState, TurnPlannerHints};
+    use crate::agent::agent_turn::task_level_evidence::{
+        GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
+    };
+    use crate::agent::plan_optimizer::staged_plan_trigger_user_content;
+    use crate::types::{FunctionCall, LlmSeedOverride, Message, ToolCall};
+
+    fn msg(role: &str, text: &str) -> Message {
+        Message {
+            role: role.to_string(),
+            content: Some(text.into()),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        }
+    }
+
+    fn tool_env(name: &str, output: &str) -> Message {
+        let parsed = crate::tool_result::parse_legacy_output(name, output);
+        msg(
+            "tool",
+            &crate::tool_result::encode_tool_message_envelope_v1(
+                name,
+                name.to_string(),
+                &parsed,
+                output,
+                None,
+            ),
+        )
+    }
+
+    #[test]
+    fn multi_turn_readonly_then_compile_keeps_active_goal_and_suppression_off() {
+        let messages = vec![
+            msg("user", "分析当前目录"),
+            tool_env("list_tree", "list tree: ."),
+            msg(
+                "assistant",
+                "当前目录包含三个压缩包与归档文件，分析结果如下。",
+            ),
+            msg("user", "编译 hpcg"),
+            msg("assistant", "好的，开始编译。"),
+        ];
+        assert_eq!(
+            staged_plan_trigger_user_content(&messages),
+            Some("编译 hpcg")
+        );
+        assert_eq!(
+            check_active_user_goal_completion_evidence(&messages),
+            GoalCompletionEvidenceCheck::NotApplicable
+        );
+        assert!(plan_steps_are_redundant_after_completion(&[
+            crate::agent::plan_artifact::PlanStepV1 {
+                id: "verify".into(),
+                description: "检查产物是否存在".into(),
+                workflow_node_id: None,
+                executor_kind: None,
+                step_kind: Some("verify".into()),
+                acceptance: None,
+                max_step_retries: None,
+                transitions: None,
+            }
+        ]));
+    }
+
+    #[test]
+    fn orchestration_correction_user_does_not_replace_active_goal() {
+        let messages = vec![
+            msg("user", "编译 hpcg"),
+            msg("user", "【编排纠偏】请实际执行 make"),
+        ];
+        assert_eq!(
+            staged_plan_trigger_user_content(&messages),
+            Some("编译 hpcg")
+        );
+    }
+
+    #[test]
+    fn immutable_snapshot_aligns_with_latest_real_user() {
+        use crate::agent::agent_turn::errors::AgentTurnSubPhase;
+
+        let mut storage = vec![
+            Message::user_only("分析当前目录"),
+            Message::assistant_only("完成"),
+            Message::user_only("编译 hpcg"),
+        ];
+        let mut turn = RunLoopTurnState {
+            messages_buf: &mut storage,
+            messages_revision: 0,
+            sub_phase: AgentTurnSubPhase::Planner,
+            turn_planner_hints: TurnPlannerHints::default(),
+            temperature_override: None,
+            model_override: None,
+            use_executor_model: false,
+            executor_model_override: None,
+            executor_api_base: None,
+            executor_api_key: None,
+            seed_override: LlmSeedOverride::FromConfig,
+        };
+        assert_eq!(
+            turn.staged_immutable_user_goal_snapshot(),
+            Some("编译 hpcg")
+        );
+    }
+
+    #[test]
+    fn redundant_probe_tools_detected_for_completed_outer_loop() {
+        let tool_calls = vec![ToolCall {
+            id: "tc1".into(),
+            typ: "function".into(),
+            function: FunctionCall {
+                name: "list_tree".into(),
+                arguments: "{}".into(),
+            },
+        }];
+        assert!(tool_calls_are_redundant_after_completion(&tool_calls));
+    }
+}

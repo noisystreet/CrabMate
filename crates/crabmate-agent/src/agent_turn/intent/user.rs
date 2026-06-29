@@ -18,11 +18,11 @@ pub fn recently_waiting_execute_confirmation(messages: &[Message]) -> bool {
     })
 }
 
-/// 取当前 user 条**之前**的最近 `max` 条 user 正文（**新在前**）。
+/// 取当前 user 条**之前**的最近 `max` 条真实 user 正文（**新在前**；跳过编排注入）。
 pub fn collect_recent_user_messages(messages: &[Message], max: usize) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for m in messages.iter().rev() {
-        if m.role != "user" {
+        if !crabmate_types::is_real_user_task_message(m, false) {
             continue;
         }
         if out.len() > max {
@@ -61,7 +61,7 @@ pub fn extract_effective_user_task(messages: &[Message], in_clarification_flow: 
 
     let mut seen_latest_user = false;
     for m in messages.iter().rev() {
-        if m.role != "user" {
+        if !crabmate_types::is_real_user_task_message(m, false) {
             continue;
         }
         let Some(content) = message_content_as_str(&m.content) else {
@@ -81,4 +81,31 @@ pub fn extract_effective_user_task(messages: &[Message], in_clarification_flow: 
         }
     }
     latest
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crabmate_types::Message;
+
+    #[test]
+    fn collect_recent_user_messages_skips_orchestration_injection() {
+        let messages = vec![
+            Message::user_only("先分析目录结构"),
+            Message::assistant_only("好的"),
+            Message::user_only("编译 hpcg"),
+            Message::user_only("【编排纠偏】请实际执行 make"),
+        ];
+        let recent = collect_recent_user_messages(&messages, 4);
+        assert_eq!(recent, vec!["先分析目录结构"]);
+    }
+
+    #[test]
+    fn extract_effective_user_task_ignores_trailing_orchestration_user() {
+        let messages = vec![
+            Message::user_only("编译 hpcg"),
+            Message::user_only("【编排纠偏】继续构建"),
+        ];
+        assert_eq!(extract_effective_user_task(&messages, false), "编译 hpcg");
+    }
 }

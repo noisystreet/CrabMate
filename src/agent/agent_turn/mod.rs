@@ -17,6 +17,7 @@ use tracing::info;
 use crate::agent::per_coord::{PerCoordinator, PerCoordinatorInit};
 use crate::config::PlannerExecutorMode;
 
+mod completion_suppression;
 mod errors;
 mod execute;
 pub(crate) use execute::tools as execute_tools;
