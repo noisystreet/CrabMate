@@ -1,6 +1,6 @@
 use crate::agent::agent_turn::params::RunLoopParams;
 use crate::agent::agent_turn::task_level_evidence::{
-    GoalCompletionEvidenceCheck, check_goal_completion_evidence_from_messages,
+    GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
 };
 use crate::agent::plan_artifact::{PlanStepAcceptance, PlanStepV1};
 
@@ -12,15 +12,8 @@ pub(super) fn should_suppress_completed_replanning(
     if !entered_from_step_execution_round || steps.is_empty() {
         return false;
     }
-    let Some(task) = p
-        .turn
-        .staged_immutable_user_goal_snapshot()
-        .map(str::to_string)
-    else {
-        return false;
-    };
     let satisfied = matches!(
-        check_goal_completion_evidence_from_messages(&task, p.turn.messages()),
+        check_active_user_goal_completion_evidence(p.turn.messages()),
         GoalCompletionEvidenceCheck::Satisfied
     );
     satisfied && plan_steps_are_redundant_after_completion(steps)
@@ -164,5 +157,38 @@ mod tests {
         )];
 
         assert!(!plan_steps_are_redundant_after_completion(&steps));
+    }
+
+    #[test]
+    fn multi_turn_compile_not_suppressed_by_earlier_readonly_evidence() {
+        use super::GoalCompletionEvidenceCheck;
+        use crate::agent::agent_turn::task_level_evidence::check_active_user_goal_completion_evidence;
+        use crate::types::Message;
+
+        fn msg(role: &str, text: &str) -> Message {
+            Message {
+                role: role.to_string(),
+                content: Some(text.into()),
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: None,
+                name: None,
+                tool_call_id: None,
+            }
+        }
+
+        let messages = vec![
+            msg("user", "分析当前目录"),
+            msg("assistant", "当前目录包含三个压缩包，分析完成。"),
+            msg("user", "编译hpcg"),
+            msg("assistant", "好的，开始编译。"),
+        ];
+        let steps = vec![step("verify-build", Some("verify"), "检查编译产物是否存在")];
+
+        assert!(plan_steps_are_redundant_after_completion(&steps));
+        assert!(!matches!(
+            check_active_user_goal_completion_evidence(&messages),
+            GoalCompletionEvidenceCheck::Satisfied
+        ));
     }
 }

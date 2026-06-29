@@ -15,7 +15,7 @@ use crate::types::{
 use super::super::errors::{AgentTurnSubPhase, RunAgentTurnError};
 use super::super::params::RunLoopParams;
 use super::super::task_level_evidence::{
-    GoalCompletionEvidenceCheck, check_goal_completion_evidence_from_messages,
+    GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
 };
 use super::turn_fsm::{
     StagedTurnAdvance, StagedTurnPhase, StagedTurnSubCallOutcome,
@@ -62,15 +62,8 @@ fn staged_goal_completion_satisfied_after_step(
     if !matches!(phase, StagedTurnPhase::AfterStepExecutionRound) {
         return false;
     }
-    let Some(task) = p
-        .turn
-        .staged_immutable_user_goal_snapshot()
-        .map(str::to_string)
-    else {
-        return false;
-    };
     matches!(
-        check_goal_completion_evidence_from_messages(&task, p.turn.messages()),
+        check_active_user_goal_completion_evidence(p.turn.messages()),
         GoalCompletionEvidenceCheck::Satisfied
     )
 }
