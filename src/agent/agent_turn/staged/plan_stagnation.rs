@@ -8,8 +8,11 @@ use crate::types::{Message, message_content_as_str};
 
 use super::empty_execution::staged_step_window_has_tool;
 
+use crabmate_display_rules::STAGED_REPEATED_PLAN_ORCHESTRATION_PREFIX;
+
 /// 注入给规划轮的 user 正文前缀（用于统计已自动纠偏次数）。
-pub(super) const STAGED_REPEATED_PLAN_COACH_PREFIX: &str = "### 分阶段·重复规划拦截";
+pub(super) const STAGED_REPEATED_PLAN_COACH_PREFIX: &str =
+    STAGED_REPEATED_PLAN_ORCHESTRATION_PREFIX;
 
 /// 同一指纹规划在步后重入时，允许自动注入反馈并**重新规划**的次数上界（不含首次执行）。
 const MAX_STAGED_IDENTICAL_PLAN_AUTO_REPLANS: usize = 2;

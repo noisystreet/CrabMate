@@ -68,6 +68,7 @@ pub fn is_ephemeral_staged_coach_user_message(m: &Message) -> bool {
         crabmate_display_rules::is_ensemble_injected_user_content(c)
             || c.contains(crabmate_display_rules::STAGED_PLAN_OPTIMIZER_COACH_MARK)
             || crabmate_display_rules::is_staged_nl_followup_bridge_user_content(c)
+            || crabmate_display_rules::is_orchestration_correction_user_content(c)
     })
 }
 
@@ -80,6 +81,15 @@ pub fn staged_injection_user_name_for_content(content: &str) -> &'static str {
     }
     if crabmate_display_rules::is_staged_nl_followup_bridge_user_content(content) {
         return CRABMATE_STAGED_NL_FOLLOWUP_NAME;
+    }
+    if crabmate_display_rules::is_staged_fsm_control_flow_orchestration_user_content(content) {
+        return CRABMATE_STAGED_PLAN_COACH_NAME;
+    }
+    if crabmate_display_rules::is_staged_repeated_plan_orchestration_user_content(content) {
+        return CRABMATE_STAGED_PLAN_COACH_NAME;
+    }
+    if crabmate_display_rules::is_outer_loop_orchestration_user_content(content) {
+        return CRABMATE_STAGED_PLAN_COACH_NAME;
     }
     if t.starts_with("### 分阶段规划 · 步级反馈") {
         return CRABMATE_STAGED_PATCH_FEEDBACK_NAME;

@@ -118,7 +118,7 @@ pub(crate) struct RunLoopCtx<'a> {
 /// - **意图时间线去重**：`intent_at_turn_start` 与 `staged_plan_intent_gate` 衔接时跳过重复 `intent_analysis`。
 /// - **门控临时 system**：澄清/确认/只读路径在首轮 P 前注入（见 [`crate::types::Message::system_intent_gate_hint`]）。
 /// - **分步子代理**：当前步 `executor_kind` 收窄可见工具（常规外环为 `None`）。
-/// - **滚动分阶段不变层**：[`Self::staged_immutable_user_goal`] 为本轮用户原文快照（懒填充），供每次无工具规划与分步执行注入。
+/// - **滚动分阶段不变层**：[`Self::staged_immutable_user_goal`] 为本轮最新真实 user 快照（懒填充，与 trigger 对齐），供每次无工具规划与分步执行注入。
 #[derive(Debug, Clone, Default)]
 pub(crate) struct TurnPlannerHints {
     pub(crate) suppress_duplicate_intent_timeline_once: bool,
@@ -173,14 +173,12 @@ impl TurnPlannerHints {
         self.intent_turn_gate_hint.take()
     }
 
-    /// 分阶段滚动规划：懒填充本轮「不变层」用户原文（缓冲区内**时间序第一条**合格 user），仅首次写入。
+    /// 分阶段滚动规划：懒填充本轮「不变层」用户原文（**最新真实 user**，与 trigger 对齐），仅首次写入。
     pub(crate) fn ensure_staged_immutable_user_goal_from_messages(&mut self, messages: &[Message]) {
         if self.staged_immutable_user_goal.is_some() {
             return;
         }
-        if let Some(g) =
-            crate::agent::plan_optimizer::staged_plan_turn_anchor_user_content(messages)
-        {
+        if let Some(g) = crate::agent::plan_optimizer::staged_plan_trigger_user_content(messages) {
             self.staged_immutable_user_goal = Some(g.to_string());
         }
     }
@@ -542,5 +540,34 @@ mod turn_planner_hints_tests {
         turn.pop_last_staged_planner_coach_user_if_present();
         assert_eq!(turn.messages().len(), 1);
         assert_eq!(turn.messages_buffer_revision(), 1);
+    }
+
+    #[test]
+    fn staged_immutable_user_goal_uses_latest_real_user_in_multi_turn() {
+        use crate::agent::agent_turn::errors::AgentTurnSubPhase;
+        use crate::types::{LlmSeedOverride, Message};
+
+        let mut storage = vec![
+            Message::user_only("分析当前目录"),
+            Message::assistant_only("完成"),
+            Message::user_only("编译 hpcg"),
+        ];
+        let mut turn = super::RunLoopTurnState {
+            messages_buf: &mut storage,
+            messages_revision: 0,
+            sub_phase: AgentTurnSubPhase::Planner,
+            turn_planner_hints: TurnPlannerHints::default(),
+            temperature_override: None,
+            model_override: None,
+            use_executor_model: false,
+            executor_model_override: None,
+            executor_api_base: None,
+            executor_api_key: None,
+            seed_override: LlmSeedOverride::FromConfig,
+        };
+        assert_eq!(
+            turn.staged_immutable_user_goal_snapshot(),
+            Some("编译 hpcg")
+        );
     }
 }

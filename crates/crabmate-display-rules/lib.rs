@@ -20,6 +20,18 @@ pub const STAGED_PLAN_ENSEMBLE_MERGE_COACH_MARK: &str = "### 分阶段规划 · 
 pub const STAGED_PLANNER_TOOL_CALL_REJECT_PREFIX: &str =
     "### 规划轮约束提醒（code=PLANNER_TOOL_CALL_REJECTED）";
 
+/// L2 外循环构建空转纠偏 user 首行（与 `outer_loop_build_idle` 对齐）。
+pub const OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX: &str = "【编排纠偏】";
+
+/// 分阶段滚动视界：步后重复规划拦截 coach user 首行。
+pub const STAGED_REPEATED_PLAN_ORCHESTRATION_PREFIX: &str = "### 分阶段·重复规划拦截";
+
+/// 分阶段步 transitions 控制流跳转注入 user 首行。
+pub const STAGED_FSM_CONTROL_FLOW_PREFIX: &str = "### 状态机流转";
+
+/// 分阶段步重试耗尽后的全局重规划 coach user 首行。
+pub const STAGED_GLOBAL_REPLAN_ORCHESTRATION_PREFIX: &str = "### 全局重规划要求";
+
 /// 分步注入 user 的正文特征（不含 `SHOW_STAGED_STEP_USER_BOILERPLATE_IN_CHAT` 开关）。
 #[must_use]
 pub fn is_staged_step_injection_user_pattern(s: &str) -> bool {
@@ -65,6 +77,37 @@ pub fn is_plan_rewrite_injected_user_content(s: &str) -> bool {
         || s.contains("侧向校验认为你的 **agent_reply_plan**")
 }
 
+#[must_use]
+pub fn is_outer_loop_orchestration_user_content(s: &str) -> bool {
+    s.trim_start()
+        .starts_with(OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX)
+}
+
+#[must_use]
+pub fn is_staged_repeated_plan_orchestration_user_content(s: &str) -> bool {
+    s.trim_start()
+        .starts_with(STAGED_REPEATED_PLAN_ORCHESTRATION_PREFIX)
+}
+
+#[must_use]
+pub fn is_staged_fsm_control_flow_orchestration_user_content(s: &str) -> bool {
+    s.trim_start().starts_with(STAGED_FSM_CONTROL_FLOW_PREFIX)
+}
+
+#[must_use]
+pub fn is_staged_global_replan_orchestration_user_content(s: &str) -> bool {
+    s.trim_start()
+        .starts_with(STAGED_GLOBAL_REPLAN_ORCHESTRATION_PREFIX)
+}
+
+#[must_use]
+pub fn is_orchestration_correction_user_content(s: &str) -> bool {
+    is_outer_loop_orchestration_user_content(s)
+        || is_staged_repeated_plan_orchestration_user_content(s)
+        || is_staged_fsm_control_flow_orchestration_user_content(s)
+        || is_staged_global_replan_orchestration_user_content(s)
+}
+
 /// Web / TUI 默认：分步注入、NL 桥接、coach user 均在聊天区隐藏。
 #[must_use]
 pub fn user_message_should_hide_for_chat_display(s: &str) -> bool {
@@ -76,6 +119,7 @@ pub fn user_message_should_hide_for_chat_display(s: &str) -> bool {
         || is_plan_rewrite_injected_user_content(s)
         || is_ensemble_injected_user_content(s)
         || s.contains(STAGED_PLAN_OPTIMIZER_COACH_MARK)
+        || is_orchestration_correction_user_content(s)
 }
 
 /// 无 `user.name` 时用于 [`crate::types`] 识别服务端注入 user（展示层 + 落盘过滤）。

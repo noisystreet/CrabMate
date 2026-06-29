@@ -297,13 +297,12 @@ pub(crate) fn generic_task_intent_implies_build_or_test(task: &str) -> bool {
 }
 
 fn messages_slice_since_last_user(messages: &[Message]) -> Option<&[Message]> {
-    let idx = messages.iter().rposition(|m| m.role == "user")?;
-    Some(&messages[idx..])
+    crate::types::messages_slice_since_last_real_user(messages, false)
 }
 
 /// L2 外循环与分阶段滚动视界：以**最新一条用户消息**为目标，且仅在自该 user 起的消息窗口内核对完成证据。
 ///
-/// 勿用分阶段「不变层」首条 user（[`crate::agent::plan_optimizer::staged_plan_turn_anchor_user_content`]），
+/// 勿用会话首条 user 或分阶段「不变层」历史锚点（[`crate::types::first_real_user_task_content`]），
 /// 否则多轮对话会把上一任务（如「分析目录」）误判为当前目标（如「编译 hpcg」）已完成。
 pub(crate) fn check_active_user_goal_completion_evidence(
     messages: &[Message],
@@ -774,6 +773,23 @@ mod tests {
         let messages = vec![
             msg("user", "分析当前目录"),
             tool_env("list_tree", "list tree", "list tree: ."),
+            msg(
+                "assistant",
+                "当前目录包含三个压缩包与归档文件，分析结果如下。",
+            ),
+        ];
+        assert_eq!(
+            check_active_user_goal_completion_evidence(&messages),
+            GoalCompletionEvidenceCheck::Satisfied
+        );
+    }
+
+    #[test]
+    fn orchestration_injection_does_not_shrink_evidence_window() {
+        let messages = vec![
+            msg("user", "分析当前目录"),
+            tool_env("list_tree", "list tree", "list tree: ."),
+            msg("user", "【编排纠偏】请实际执行工具，勿空口承诺"),
             msg(
                 "assistant",
                 "当前目录包含三个压缩包与归档文件，分析结果如下。",

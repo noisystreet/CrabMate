@@ -701,7 +701,10 @@ where
                                 "staged plan stagnation: injecting coach user and re-running planner (step_count={})",
                                 plan.steps.len(),
                             );
-                            p.turn.push_message(Message::user_only(user_body));
+                            p.turn
+                                .push_message(Message::user_staged_orchestration_injection(
+                                    user_body,
+                                ));
                             req = prepare_staged_planner_no_tools_request(
                                 p,
                                 per_coord,
