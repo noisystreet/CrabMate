@@ -301,7 +301,7 @@ fn messages_slice_since_last_user(messages: &[Message]) -> Option<&[Message]> {
     Some(&messages[idx..])
 }
 
-/// L2 外循环：以**最新一条用户消息**为目标，且仅在自该 user 起的消息窗口内核对完成证据。
+/// L2 外循环与分阶段滚动视界：以**最新一条用户消息**为目标，且仅在自该 user 起的消息窗口内核对完成证据。
 ///
 /// 勿用分阶段「不变层」首条 user（[`crate::agent::plan_optimizer::staged_plan_turn_anchor_user_content`]），
 /// 否则多轮对话会把上一任务（如「分析目录」）误判为当前目标（如「编译 hpcg」）已完成。
