@@ -14,8 +14,10 @@ use super::super::{
     ExecuteToolsBatchOutcome, ExecuteToolsCommonCtx, abort_tool_batch_if_sse_closed,
 };
 use super::after_dispatch::{
-    serial_bookkeep_run_command_failure, serial_log_web_audit_write_tool_if_needed,
-    serial_maybe_invalidate_codebase_semantic_index, serial_tool_iteration_sse_preface,
+    serial_bookkeep_run_command_failure,
+    serial_clear_run_command_failures_after_workspace_mutation,
+    serial_log_web_audit_write_tool_if_needed, serial_maybe_invalidate_codebase_semantic_index,
+    serial_tool_iteration_sse_preface,
 };
 use super::emit::{
     emit_serial_tool_result, serial_bookkeep_readonly_tool_ttl_cache_after_tool,
@@ -270,6 +272,15 @@ async fn serial_execute_one_tool_call(
         st.per_coord,
         name.as_str(),
         args.as_str(),
+        result.as_str(),
+    );
+
+    serial_clear_run_command_failures_after_workspace_mutation(
+        st.per_coord,
+        st.cfg.as_ref(),
+        is_readonly,
+        *st.workspace_changed,
+        name.as_str(),
         result.as_str(),
     );
 

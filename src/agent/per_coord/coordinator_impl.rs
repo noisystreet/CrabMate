@@ -153,6 +153,28 @@ impl PerCoordinator {
             .clear_tool_failure_families_for_tool(tool_name);
     }
 
+    pub(crate) fn clear_all_run_command_failure_state(&mut self) {
+        self.repeated_tool_failures
+            .clear_all_tool_failure_state_for_tool("run_command");
+    }
+
+    pub(crate) fn record_outer_loop_build_idle_round(&mut self) -> u32 {
+        self.counters.record_outer_loop_build_idle_round()
+    }
+
+    pub(crate) fn reset_outer_loop_build_idle_streak(&mut self) {
+        self.counters.reset_outer_loop_build_idle_streak();
+    }
+
+    pub(crate) fn record_outer_loop_build_idle_feedback_injected(&mut self) {
+        self.counters
+            .record_outer_loop_build_idle_feedback_injected();
+    }
+
+    pub(crate) fn outer_loop_build_idle_feedback_injected(&self) -> u32 {
+        self.counters.outer_loop_build_idle_feedback_injected()
+    }
+
     /// `context_window` 在裁剪/摘要等**就地**改写 `messages` 后调用，避免 `layer_count` 缓存指向已删除的 `workflow_validate` 工具结果。
     pub fn invalidate_workflow_validate_layer_cache_after_context_mutation(&mut self) {
         self.workflow_validate_cache

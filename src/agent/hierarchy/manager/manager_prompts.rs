@@ -428,7 +428,7 @@ impl ManagerAgent {
 
 **必须分解的完整步骤**：
 1. **确认源码存在** - 检查压缩包或源码目录
-2. **解压源码**（如果是压缩包）- 使用 archive_unpack
+2. **解压源码**（如果是压缩包）- 使用 `archive_unpack`，**优先 `output_dir=\".\"`**；先 `archive_list` 看顶层目录名，勿自创嵌套目录（如 `hpcg-3.1`）；仅当需去掉单层根目录时设 `strip_components=1`
 3. **查找和阅读文档** - 查找 README、INSTALL、BUILDING、docs/ 等文档，了解构建要求和步骤
 4. **检查构建系统** - 查看 Makefile/CMakeLists.txt/configure 等
 5. **检查编译工具** - 确认 gcc/g++/make/cmake 等存在

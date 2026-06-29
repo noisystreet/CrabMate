@@ -25,6 +25,7 @@ mod hierarchy;
 mod intent;
 mod messages;
 mod outer_loop;
+mod outer_loop_build_idle;
 mod params;
 mod plan;
 mod reflect;

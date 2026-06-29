@@ -48,7 +48,7 @@ pub(crate) fn staged_step_window_has_build_progress_tool(
         .any(|(name, content)| tool_message_indicates_build_progress(name, content))
 }
 
-fn tool_message_indicates_build_progress(tool_name: &str, content: &str) -> bool {
+pub(crate) fn tool_message_indicates_build_progress(tool_name: &str, content: &str) -> bool {
     if matches!(
         tool_name,
         "run_executable"
