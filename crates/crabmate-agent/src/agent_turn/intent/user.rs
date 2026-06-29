@@ -43,13 +43,9 @@ pub fn collect_recent_user_messages(messages: &[Message], max: usize) -> Vec<Str
 }
 
 fn extract_user_task(messages: &[Message]) -> String {
-    messages
-        .iter()
-        .rev()
-        .find(|m| m.role == "user")
-        .and_then(|m| message_content_as_str(&m.content))
-        .map(|s| s.trim().to_string())
+    crabmate_types::last_real_user_task_content(messages, false)
         .unwrap_or_default()
+        .to_string()
 }
 
 /// 多轮下「请确认 / 请补充」后用户续接的**有效**任务句。

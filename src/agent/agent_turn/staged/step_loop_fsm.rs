@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 
 use crate::agent::plan_artifact::{PlanStepControlFlow, PlanStepV1};
+use crabmate_display_rules::STAGED_FSM_CONTROL_FLOW_PREFIX;
 
 /// 与 `mod.rs` 原 `compute_transition_trigger` 等价：匹配一条 transition、遵守 `max_loops`、更新计数器。
 pub(crate) fn staged_step_transition_trigger(
@@ -70,10 +71,12 @@ pub(crate) fn try_apply_staged_plan_control_flow_jump(
     plan_steps.truncate(i.saturating_add(1));
     plan_steps.extend(new_suffix);
     let fb = format!(
-        "### 状态机流转：触发控制流跳转\n\
-         根据规划设定的 transitions 规则，由于 [{}]，系统已追加回退或跳转到步骤 `{}` 的执行指令。\n\
+        "{prefix}：触发控制流跳转\n\
+         根据规划设定的 transitions 规则，由于 [{reason}]，系统已追加回退或跳转到步骤 `{target_id}` 的执行指令。\n\
          请注意调整接下来的工具调用。",
-        reason, target_id
+        prefix = STAGED_FSM_CONTROL_FLOW_PREFIX,
+        reason = reason,
+        target_id = target_id
     );
     let sse_status = if run_failed_or_verify_failed {
         "failed"

@@ -205,7 +205,8 @@ async fn map_reflect_outcome_to_branch_ctl(
                             target: "crabmate::agent_turn",
                             "L2 外循环构建空转纠偏：注入 user 并继续 outer_loop_build_idle_streak={streak}"
                         );
-                        p.turn.push_message(Message::user_only(feedback));
+                        p.turn
+                            .push_message(Message::user_staged_orchestration_injection(feedback));
                         per_coord.record_outer_loop_build_idle_feedback_injected();
                         if let Some(f) = p.ctx.attach.per_flight.as_ref() {
                             f.sync_from_per_coord(per_coord);

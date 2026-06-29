@@ -128,7 +128,7 @@ pub(crate) fn advance_staged_turn_after_sub_call(
             );
             StagedTurnAdvance::Continue {
                 phase: StagedTurnPhase::PreStepExecutionRound,
-                push_feedback_user: Some(Message::user_only(fb)),
+                push_feedback_user: Some(Message::user_staged_orchestration_injection(fb)),
             }
         }
         StagedTurnSubCallOutcome::Err(e) => StagedTurnAdvance::Propagate(e),

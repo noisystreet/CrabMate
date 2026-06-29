@@ -5,10 +5,7 @@ use std::collections::BTreeSet;
 use crate::agent::plan_artifact::{self, AgentReplyPlanV1, PlanStepV1};
 use crate::config::AgentConfig;
 use crate::config::StagedPlanBaselineMode;
-use crate::types::{
-    Message, Tool, is_first_turn_workspace_context_injection,
-    is_message_excluded_from_llm_context_except_memory, is_server_injected_user_message,
-};
+use crate::types::{Message, Tool};
 
 /// 步骤优化轮注入的 user 正文标记（取消/失败时弹出临时 user）。
 pub(crate) const STAGED_PLAN_OPTIMIZER_COACH_MARK: &str = "### 分阶段规划 · 步骤优化（服务端注入）";
@@ -29,37 +26,9 @@ pub(crate) fn parallel_batchable_tool_names_csv_from_defs(
     names.into_iter().collect::<Vec<_>>().join(", ")
 }
 
-#[inline]
-fn user_task_line_visible(m: &Message, skip_workspace_bootstrap: bool) -> Option<&str> {
-    if m.role != "user" {
-        return None;
-    }
-    if is_message_excluded_from_llm_context_except_memory(m)
-        || is_server_injected_user_message(m)
-        || (skip_workspace_bootstrap && is_first_turn_workspace_context_injection(m))
-    {
-        return None;
-    }
-    let t = crate::types::message_content_as_str(&m.content)?.trim();
-    (!t.is_empty()).then_some(t)
-}
-
-/// 从会话缓冲**从旧到新**扫描，取第一条计入模型的真实 user 正文（通常为本轮用户初始诉求）。
-///
-/// 与 [`staged_plan_trigger_user_content`] 相对：后者取**最新**一条 user；滚动重规划后缓冲末尾常为分步注入或教练句，
-/// 不宜作为「不变层」锚点。跳过首轮工作区画像等 `user.name` 注入。
-pub(crate) fn staged_plan_turn_anchor_user_content(messages: &[Message]) -> Option<&str> {
-    messages
-        .iter()
-        .find_map(|m| user_task_line_visible(m, true))
-}
-
 /// 在规划轮 assistant 尚未入史时，从 `messages` 末尾回溯，取**触发本轮分阶段规划**的用户正文（跳过注入类 user）。
 pub(crate) fn staged_plan_trigger_user_content(messages: &[Message]) -> Option<&str> {
-    messages
-        .iter()
-        .rev()
-        .find_map(|m| user_task_line_visible(m, false))
+    crate::types::last_real_user_task_content(messages, false)
 }
 
 /// 无工具规划轮 system 末尾追加：不变层用户原文 + 少量硬约束。
@@ -294,7 +263,18 @@ mod tests {
     }
 
     #[test]
-    fn anchor_user_prefers_chronological_first_not_latest() {
+    fn trigger_user_is_latest_real_user_in_multi_turn() {
+        use crate::types::Message;
+        let msgs = vec![
+            Message::user_only("分析当前目录"),
+            Message::assistant_only("完成"),
+            Message::user_only("编译 hpcg"),
+        ];
+        assert_eq!(staged_plan_trigger_user_content(&msgs), Some("编译 hpcg"));
+    }
+
+    #[test]
+    fn session_first_real_user_differs_from_latest_trigger() {
         use crate::types::Message;
         let msgs = vec![
             Message::user_only("总目标：修 A"),
@@ -302,7 +282,7 @@ mod tests {
             Message::user_only("### 分步 1/2\n子步"),
         ];
         assert_eq!(
-            staged_plan_turn_anchor_user_content(&msgs),
+            crate::types::first_real_user_task_content(&msgs, true),
             Some("总目标：修 A")
         );
         assert_eq!(
@@ -327,7 +307,7 @@ mod tests {
             Message::user_only("真实问题"),
         ];
         assert_eq!(
-            staged_plan_turn_anchor_user_content(&msgs),
+            crate::types::first_real_user_task_content(&msgs, true),
             Some("真实问题")
         );
     }

@@ -1,7 +1,7 @@
 //! L2 单 Agent 外循环：编译/构建类任务在「只说不做」时的轻量门控（与分阶段 `empty_execution` 互补）。
 
 use crate::agent::plan_artifact::plan_step_description_implies_build_execution;
-use crate::types::{Message, message_content_as_str};
+use crate::types::{Message, last_real_user_message_index, message_content_as_str};
 
 use super::staged::empty_execution::tool_message_indicates_build_progress;
 
@@ -16,7 +16,7 @@ pub(crate) fn outer_loop_task_implies_build_execution(task: &str) -> bool {
 }
 
 fn last_user_message_index(messages: &[Message]) -> Option<usize> {
-    messages.iter().rposition(|m| m.role == "user")
+    last_real_user_message_index(messages, false)
 }
 
 pub(crate) fn outer_loop_window_has_build_progress_since_last_user(messages: &[Message]) -> bool {
@@ -61,9 +61,10 @@ pub(crate) fn outer_loop_assistant_is_build_idle_without_tools(msg: &Message) ->
 
 pub(crate) fn outer_loop_build_idle_feedback_body(streak: u32) -> String {
     format!(
-        "【编排纠偏】用户目标涉及编译/构建，但已连续 {streak} 轮助手回复未产生任何构建类工具结果（如 `run_command` 的 make/cmake/cargo build 等）。\
+        "{prefix}用户目标涉及编译/构建，但已连续 {streak} 轮助手回复未产生任何构建类工具结果（如 `run_command` 的 make/cmake/cargo build 等）。\
          **禁止**再用自然语言承诺「将要编译/读取 Makefile」；本轮必须通过 `tool_calls` 实际执行构建或读取构建说明（`read_file` / `read_dir`），\
-         且若需解压源码包请优先 `archive_unpack` 到 `output_dir=\".\"`（勿自创嵌套目录名）。"
+         且若需解压源码包请优先 `archive_unpack` 到 `output_dir=\".\"`（勿自创嵌套目录名）。",
+        prefix = crabmate_display_rules::OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX
     )
 }
 
