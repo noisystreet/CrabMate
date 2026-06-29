@@ -444,6 +444,30 @@ mod tests {
         assert!(result.is_pass());
     }
 
+    #[test]
+    fn stdout_contains_matches_archive_unpack_tool_output() {
+        let acceptance = PlanStepAcceptance {
+            expect_exit_code: None,
+            expect_stdout_contains: Some("已解压".to_string()),
+            expect_stderr_contains: None,
+            expect_file_exists: None,
+            expect_json_path_equals: None,
+            expect_http_status: None,
+        };
+
+        let result = verify_tool_execution_inner(
+            &acceptance,
+            "archive_unpack",
+            "已解压 187 个文件到: .",
+            "",
+            "",
+            None,
+            std::path::Path::new("/tmp"),
+        );
+
+        assert!(result.is_pass());
+    }
+
     /// 分阶段：验收只读「本步 / 自 step_user 至下一 user 之间」最后一条 `tool`；若误用**全局**最后一条，会在后续 `user` 之后仍错判为最后 tool。
     #[test]
     fn verify_step_uses_last_tool_in_step_window_not_last_tool_globally() {

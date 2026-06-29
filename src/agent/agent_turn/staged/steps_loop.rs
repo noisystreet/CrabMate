@@ -49,6 +49,10 @@ use super::step_iteration_fsm::{
 use super::step_loop_fsm::staged_injected_step_user_body;
 use super::{StagedPlanRunLabels, StagedPlanRunOutcome};
 
+fn staged_patch_merged_plan_unchanged(before: &[PlanStepV1], merged: &[PlanStepV1]) -> bool {
+    plan_artifact::plan_steps_fingerprint(before) == plan_artifact::plan_steps_fingerprint(merged)
+}
+
 /// 自本步 user 注入起至下一条 user（或历史末尾）之间的 `role: tool` 是否均为成功（与信封 `ok` / 传统解析一致）。
 fn staged_step_tool_messages_all_ok(messages: &[Message], step_user_index: usize) -> bool {
     let mut i = step_user_index.saturating_add(1);
@@ -311,6 +315,13 @@ where
             run_staged_plan_patch_planner_round(patch_ctx, feedback, plan_steps.as_slice(), i)
                 .await?
         {
+            if staged_patch_merged_plan_unchanged(plan_steps.as_slice(), merged.as_slice()) {
+                debug!(
+                    target: "crabmate::staged",
+                    "分阶段补丁：规划器返回与当前完全相同的 steps，停止补丁重试"
+                );
+                break;
+            }
             *plan_steps = merged;
             n = plan_steps.len();
             push_patch_replan_assistant_json_and_notice(
@@ -396,6 +407,13 @@ where
             run_staged_plan_patch_planner_round(patch_ctx, feedback, plan_steps.as_slice(), i)
                 .await?
         {
+            if staged_patch_merged_plan_unchanged(plan_steps.as_slice(), merged.as_slice()) {
+                debug!(
+                    target: "crabmate::staged",
+                    "分阶段补丁：规划器返回与当前完全相同的 steps，停止补丁重试"
+                );
+                break;
+            }
             *plan_steps = merged;
             n = plan_steps.len();
             push_patch_replan_assistant_json_and_notice(

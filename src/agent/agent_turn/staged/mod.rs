@@ -22,6 +22,7 @@ mod ensemble_schedule_fsm;
 mod full_pipeline_fsm;
 mod orchestrator;
 mod patch_planner;
+mod plan_stagnation;
 mod planner_parse_fsm;
 mod planner_round_driver;
 mod planner_round_fsm;
@@ -40,6 +41,8 @@ mod turn_fsm;
 
 #[cfg(test)]
 mod planner_tool_call_reject_regression_tests;
+#[cfg(test)]
+mod staged_plan_prepare_fixture_tests;
 
 use sse as staged_sse;
 
@@ -50,6 +53,9 @@ use full_pipeline_fsm::{
     debug_staged_full_pipeline_transition,
 };
 use patch_planner::StagedPlanPatchPlannerCtx;
+use plan_stagnation::{
+    StagedPlanStagnationAction, evaluate_staged_plan_stagnation_after_step_round,
+};
 use planner_parse_fsm::omit_no_task_planner_from_history;
 use planner_round_driver::{
     complete_first_planner_round_maybe_retry_tool_reject,
@@ -577,7 +583,7 @@ where
 pub(crate) async fn run_staged_plan_with_prepared_request<F>(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
-    req: crate::types::ChatRequest,
+    mut req: crate::types::ChatRequest,
     render_to_terminal: bool,
     echo_terminal_staged: bool,
     entered_from_step_execution_round: bool,
@@ -594,98 +600,133 @@ where
                 .cfg
                 .staged_planning
                 .staged_plan_cli_show_planner_stream);
-    let (mut msg, finish_reason) = complete_first_planner_round_maybe_retry_tool_reject(
-        p,
-        per_coord,
-        &req,
-        planner_render_to_terminal,
-        labels,
-        &make_step_user_message,
-    )
-    .await?;
+    loop {
+        let (mut msg, finish_reason) = complete_first_planner_round_maybe_retry_tool_reject(
+            p,
+            per_coord,
+            &req,
+            planner_render_to_terminal,
+            labels,
+            &make_step_user_message,
+        )
+        .await?;
 
-    debug_first_planner_finish(labels, finish_reason.as_str(), &msg);
+        debug_first_planner_finish(labels, finish_reason.as_str(), &msg);
 
-    if finish_reason == USER_CANCELLED_FINISH_REASON {
-        return Ok(StagedPlanRunOutcome::Finished);
-    }
+        if finish_reason == USER_CANCELLED_FINISH_REASON {
+            return Ok(StagedPlanRunOutcome::Finished);
+        }
 
-    strip_non_tool_planner_assistant_after_first_round(&mut msg, p).await;
+        strip_non_tool_planner_assistant_after_first_round(&mut msg, p).await;
 
-    let merged_for_log =
-        crate::agent::plan_artifact::assistant_merged_text_for_plan_artifact_parse(&msg);
-    let validate_only_binding_ids =
-        plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.turn.messages());
-    let parse_result =
+        let merged_for_log =
+            crate::agent::plan_artifact::assistant_merged_text_for_plan_artifact_parse(&msg);
+        let validate_only_binding_ids =
+            plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.turn.messages());
+        let parse_result =
         crate::agent::plan_artifact::parse_agent_reply_plan_v1_from_assistant_message_with_validate_only_binding_ids(
             &msg,
             validate_only_binding_ids.as_deref(),
         );
-    let parse_err_detail = parse_result
-        .as_ref()
-        .err()
-        .map(crate::agent::plan_artifact::plan_artifact_error_log_summary);
-    let degrade_like_not_found = matches!(
-        parse_result.as_ref().err(),
-        Some(crate::agent::plan_artifact::PlanArtifactError::NotFound)
-    );
+        let parse_err_detail = parse_result
+            .as_ref()
+            .err()
+            .map(crate::agent::plan_artifact::plan_artifact_error_log_summary);
+        let degrade_like_not_found = matches!(
+            parse_result.as_ref().err(),
+            Some(crate::agent::plan_artifact::PlanArtifactError::NotFound)
+        );
 
-    let user_task = p
-        .turn
-        .staged_immutable_user_goal_snapshot()
-        .map(str::to_string);
-    let route = resolve_prepared_planner_route(
-        parse_result,
-        entered_from_step_execution_round,
-        &msg,
-        merged_for_log,
-        parse_err_detail,
-        degrade_like_not_found,
-        user_task.as_deref(),
-    );
-    tracing::debug!(
-        target: "crabmate::staged",
-        staged_fsm = "prepared_request",
-        prepared_route = route.as_static_str(),
-        entered_from_step_execution_round,
-        sub_phase = "planner",
-        "staged prepared_request first-round parse route"
-    );
+        let user_task = p
+            .turn
+            .staged_immutable_user_goal_snapshot()
+            .map(str::to_string);
+        let route = resolve_prepared_planner_route(
+            parse_result,
+            entered_from_step_execution_round,
+            &msg,
+            merged_for_log,
+            parse_err_detail,
+            degrade_like_not_found,
+            user_task.as_deref(),
+        );
+        tracing::debug!(
+            target: "crabmate::staged",
+            staged_fsm = "prepared_request",
+            prepared_route = route.as_static_str(),
+            entered_from_step_execution_round,
+            sub_phase = "planner",
+            "staged prepared_request first-round parse route"
+        );
 
-    match route {
-        PreparedPlannerRoute::QuietFinish => {
-            debug!(
-                target: "crabmate",
-                "分阶段重规划：检测到分步执行后重入且本轮未产出结构化计划，视为收敛完成，直接结束（避免重复总结）"
-            );
-            Ok(StagedPlanRunOutcome::Finished)
-        }
-        PreparedPlannerRoute::FinishWithDirectPlannerAnswer => {
-            p.turn.push_assistant_merging_trailing_empty(msg.clone());
-            debug!(
-                target: "crabmate",
-                "分阶段规划：只读概览类实质终答已落盘，跳过外循环（避免重复回答）"
-            );
-            Ok(StagedPlanRunOutcome::Finished)
-        }
-        PreparedPlannerRoute::DegradeToOuterLoop => {
-            p.turn.push_assistant_merging_trailing_empty(msg.clone());
-            run_agent_outer_loop(p, per_coord).await?;
-            Ok(StagedPlanRunOutcome::Finished)
-        }
-        PreparedPlannerRoute::ContinueWithPlan { plan } => {
-            continue_prepared_plan_after_first_round(ContinuePreparedPlanAfterFirstRoundParams {
-                p,
-                per_coord,
-                labels,
-                planner_render_to_terminal,
-                echo_terminal_staged,
-                entered_from_step_execution_round,
-                plan,
-                msg,
-                make_step_user_message,
-            })
-            .await
+        match route {
+            PreparedPlannerRoute::QuietFinish => {
+                debug!(
+                    target: "crabmate",
+                    "分阶段重规划：检测到分步执行后重入且本轮未产出结构化计划，视为收敛完成，直接结束（避免重复总结）"
+                );
+                return Ok(StagedPlanRunOutcome::Finished);
+            }
+            PreparedPlannerRoute::FinishWithDirectPlannerAnswer => {
+                p.turn.push_assistant_merging_trailing_empty(msg.clone());
+                debug!(
+                    target: "crabmate",
+                    "分阶段规划：只读概览类实质终答已落盘，跳过外循环（避免重复回答）"
+                );
+                return Ok(StagedPlanRunOutcome::Finished);
+            }
+            PreparedPlannerRoute::DegradeToOuterLoop => {
+                p.turn.push_assistant_merging_trailing_empty(msg.clone());
+                run_agent_outer_loop(p, per_coord).await?;
+                return Ok(StagedPlanRunOutcome::Finished);
+            }
+            PreparedPlannerRoute::ContinueWithPlan { plan } => {
+                if let Some(action) = evaluate_staged_plan_stagnation_after_step_round(
+                    p.turn.messages(),
+                    &plan,
+                    entered_from_step_execution_round,
+                ) {
+                    match action {
+                        StagedPlanStagnationAction::StopAfterRepeatedPlan => {
+                            warn!(
+                                target: "crabmate::staged",
+                                "staged plan stagnation: identical plan after step round exceeded auto-replan cap; finishing (step_count={})",
+                                plan.steps.len(),
+                            );
+                            return Ok(StagedPlanRunOutcome::Finished);
+                        }
+                        StagedPlanStagnationAction::ReplanWithFeedback(user_body) => {
+                            warn!(
+                                target: "crabmate::staged",
+                                "staged plan stagnation: injecting coach user and re-running planner (step_count={})",
+                                plan.steps.len(),
+                            );
+                            p.turn.push_message(Message::user_only(user_body));
+                            req = prepare_staged_planner_no_tools_request(
+                                p,
+                                per_coord,
+                                labels.build_planner_messages,
+                            )
+                            .await?;
+                            continue;
+                        }
+                    }
+                }
+                return continue_prepared_plan_after_first_round(
+                    ContinuePreparedPlanAfterFirstRoundParams {
+                        p,
+                        per_coord,
+                        labels,
+                        planner_render_to_terminal,
+                        echo_terminal_staged,
+                        entered_from_step_execution_round,
+                        plan,
+                        msg,
+                        make_step_user_message,
+                    },
+                )
+                .await;
+            }
         }
     }
 }
@@ -721,178 +762,5 @@ mod staged_not_found_convergence_tests {
             staged_planner_parse_route(&PlanArtifactError::NotFound, true, "x", None),
             StagedPlannerParseRoute::QuietFinishOnPlanNotFound
         ),);
-    }
-}
-
-/// `prepare_messages_for_model` 与规划轮请求拼装组合的回归护栏（不经真实 HTTP）。
-#[cfg(test)]
-mod staged_plan_prepare_fixture_tests {
-    use std::sync::Arc;
-
-    use crate::agent::context_window::{PrepareMessagesForModelHooks, prepare_messages_for_model};
-    use crate::agent::per_coord::{PerCoordinator, PerCoordinatorInit};
-    use crate::llm::OPENAI_COMPAT_BACKEND;
-    use crate::types::{LlmSeedOverride, Message, message_content_as_str};
-
-    use super::super::errors::AgentTurnSubPhase;
-    use super::super::params::{
-        RunLoopAttach, RunLoopCore, RunLoopCtx, RunLoopIo, RunLoopObs, RunLoopParams,
-        RunLoopTurnState,
-    };
-    use super::staged_sse::staged_plan_phase_instruction_default;
-    use super::{build_single_agent_planner_messages, prepare_staged_planner_no_tools_request};
-
-    #[tokio::test]
-    async fn prepare_then_build_planner_messages_ends_with_plan_system() {
-        let cfg = Arc::new(crate::config::load_config(None).expect("embed default"));
-        let client = reqwest::Client::new();
-        let mut messages = vec![
-            Message::user_only("请在本仓库执行一次 cargo check 并汇报结果"),
-            Message::assistant_only(
-                r#"```json
-{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"运行 cargo check"}]}
-```"#,
-            ),
-        ];
-        let mut per = PerCoordinator::new(PerCoordinatorInit::from_agent_config(cfg.as_ref()));
-        prepare_messages_for_model(
-            &OPENAI_COMPAT_BACKEND,
-            &client,
-            "",
-            cfg.as_ref(),
-            &mut messages,
-            None,
-            PrepareMessagesForModelHooks {
-                per_coord_layer_cache: Some(&mut per),
-                run_loop_messages_revision: None,
-            },
-        )
-        .await
-        .expect("prepare_messages_for_model");
-
-        let plan_sys = staged_plan_phase_instruction_default();
-        let preserve_kimi = crate::llm::llm_vendor_adapter(cfg.as_ref())
-            .preserve_assistant_tool_call_reasoning(cfg.as_ref());
-        let preserve_deepseek = crate::llm::vendor::deepseek_json_output_eligible(cfg.as_ref());
-        let built = build_single_agent_planner_messages(
-            messages.as_slice(),
-            plan_sys.clone(),
-            preserve_kimi,
-            preserve_deepseek,
-        );
-        let last = built.last().expect("non-empty planner messages");
-        assert_eq!(last.role, "system");
-        let body = message_content_as_str(&last.content).unwrap_or("");
-        assert!(
-            body.contains("agent_reply_plan"),
-            "规划 system 应包含 schema 约定片段"
-        );
-        assert!(
-            body.len() >= plan_sys.len().saturating_sub(40),
-            "system 正文应接近完整规划轮指令"
-        );
-    }
-
-    #[tokio::test]
-    async fn prepare_staged_planner_no_tools_request_fixture_roundtrip() {
-        let cfg = Arc::new(crate::config::load_config(None).expect("embed default"));
-        let client = reqwest::Client::new();
-        let mut messages = vec![Message::user_only("fixture：分阶段规划请求拼装")];
-        let mut per = PerCoordinator::new(PerCoordinatorInit::from_agent_config(cfg.as_ref()));
-
-        let mut p = RunLoopParams {
-            ctx: RunLoopCtx {
-                core: RunLoopCore {
-                    llm_backend: &OPENAI_COMPAT_BACKEND,
-                    client: &client,
-                    api_key: "",
-                    cfg: &cfg,
-                    tools_defs: &[],
-                    effective_working_dir: std::path::Path::new("."),
-                    workspace_is_set: false,
-                },
-                io: RunLoopIo {
-                    out: None,
-                    no_stream: true,
-                    cancel: None,
-                    render_to_terminal: false,
-                    plain_terminal_stream: false,
-                    tui_llm_stream_scratch: None,
-                    tool_running_hook: None,
-                    clarification_questionnaire_hook: None,
-                    sse_control_mirror: None,
-                },
-                attach: RunLoopAttach {
-                    web_tool_ctx: None,
-                    cli_tool_ctx: None,
-                    per_flight: None,
-                    long_term_memory: None,
-                    long_term_memory_scope_id: None,
-                    mcp_turn: None,
-                    read_file_turn_cache: None,
-                    workspace_changelist: None,
-                    staged_plan_optimizer_round: cfg.staged_planning.staged_plan_optimizer_round,
-                    staged_plan_optimizer_requires_parallel_tools: cfg
-                        .staged_planning
-                        .staged_plan_optimizer_requires_parallel_tools,
-                    staged_plan_ensemble_count: cfg.staged_planning.staged_plan_ensemble_count,
-                    staged_plan_skip_ensemble_on_casual_prompt: cfg
-                        .staged_planning
-                        .staged_plan_skip_ensemble_on_casual_prompt,
-                    turn_allowed_tool_names: None,
-                },
-                obs: RunLoopObs {
-                    request_chrome_trace: None,
-                    tracing_chat_turn: None,
-                    request_audit: None,
-                    process_handles:
-                        crate::process_handles::ProcessHandles::default_arc_process_handles(),
-                },
-            },
-            turn: RunLoopTurnState {
-                messages_buf: &mut messages,
-                messages_revision: 0,
-                sub_phase: AgentTurnSubPhase::Planner,
-                turn_planner_hints: crate::agent::agent_turn::TurnPlannerHints::default(),
-                temperature_override: None,
-                model_override: None,
-                use_executor_model: false,
-                executor_model_override: None,
-                executor_api_base: None,
-                executor_api_key: None,
-                seed_override: LlmSeedOverride::FromConfig,
-            },
-        };
-
-        let req = prepare_staged_planner_no_tools_request(
-            &mut p,
-            &mut per,
-            build_single_agent_planner_messages,
-        )
-        .await
-        .expect("prepare_staged_planner_no_tools_request");
-
-        assert!(
-            req.messages.iter().any(|m| {
-                message_content_as_str(&m.content)
-                    .is_some_and(|c| c.contains("fixture：分阶段规划请求拼装"))
-            }),
-            "用户正文应在上下文变换后仍出现在 ChatRequest.messages"
-        );
-        assert!(
-            req.messages.iter().any(|m| {
-                m.role == "system"
-                    && message_content_as_str(&m.content).is_some_and(|c| c.contains("分阶段规划"))
-            }),
-            "末尾规划 system 应进入 ChatRequest"
-        );
-        assert!(
-            req.messages.iter().any(|m| {
-                m.role == "system"
-                    && message_content_as_str(&m.content)
-                        .is_some_and(|c| c.contains("不变层（系统持有"))
-            }),
-            "规划 system 应附带滚动不变层附录"
-        );
     }
 }

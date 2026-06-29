@@ -13,7 +13,7 @@ pub use types::{
     is_staged_plan_invalid_run_agent_turn_error, merge_staged_plan_steps_after_step_failure,
     plan_acceptance_path_looks_like_build_artifact, plan_artifact_error_log_summary,
     plan_step_acceptance_implies_build_progress, plan_step_description_implies_build_execution,
-    validate_staged_patch_merged_strict_baseline_ids,
+    plan_steps_fingerprint, validate_staged_patch_merged_strict_baseline_ids,
 };
 
 pub use types::staged_plan_invalid_run_agent_turn_error;
@@ -539,6 +539,18 @@ mod tests {
         let json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"解压源码包","acceptance":{"expect_file_exists":"proj/bin/app"}}]}"#;
         let p = parse_agent_reply_plan_v1(json).expect("parse");
         assert!(p.steps[0].acceptance.is_none());
+    }
+
+    #[test]
+    fn unpack_step_strips_stdout_acceptance_keeps_file_exists() {
+        let json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"unpack-hpcg","description":"解压 hpcg 压缩包","acceptance":{"expect_stdout_contains":"hpcg-HPCG","expect_file_exists":"hpcg-HPCG-release-3-1-0"}}]}"#;
+        let p = parse_agent_reply_plan_v1(json).expect("parse");
+        let acc = p.steps[0].acceptance.as_ref().expect("acceptance");
+        assert!(acc.expect_stdout_contains.is_none());
+        assert_eq!(
+            acc.expect_file_exists.as_deref(),
+            Some("hpcg-HPCG-release-3-1-0")
+        );
     }
 
     #[test]
