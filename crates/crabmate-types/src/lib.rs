@@ -57,6 +57,7 @@ mod message;
 mod message_lineage;
 mod real_user_message;
 pub mod server_injected_user;
+mod staged_step_window;
 mod tiktoken_snapshot;
 
 pub use chat_api::*;
@@ -68,6 +69,10 @@ pub use real_user_message::{
 pub use server_injected_user::{
     is_ephemeral_staged_coach_user_message, is_server_injected_user_message,
     strip_orchestration_injected_users_for_conversation_store,
+};
+pub use staged_step_window::{
+    is_staged_step_injection_user_message, is_staged_step_window_boundary_user,
+    last_staged_step_injection_index, staged_step_window_end_exclusive,
 };
 pub use tiktoken_snapshot::TiktokenPromptTokensSnapshot;
 // 供宿主/调试引用 [`message_lineage`]；库内尚未全覆盖调用点，`cargo check` 下会呈现未使用。

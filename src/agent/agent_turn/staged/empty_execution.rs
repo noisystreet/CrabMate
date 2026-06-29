@@ -5,7 +5,7 @@ use crate::agent::plan_artifact::{
     PlanStepAcceptance, PlanStepExecutorKind, PlanStepV1,
     plan_step_acceptance_implies_build_progress, plan_step_description_implies_build_execution,
 };
-use crate::types::{Message, message_content_as_str};
+use crate::types::{Message, message_content_as_str, staged_step_window_end_exclusive};
 
 /// 步级验收失败原因前缀；补丁规划据此选用更硬的反馈文案。
 pub(crate) const STAGED_STEP_EMPTY_EXECUTION_PREFIX: &str = "staged_step_empty_execution:";
@@ -21,13 +21,11 @@ fn staged_step_window_tool_entries<'a>(
     messages: &'a [Message],
     step_user_index: usize,
 ) -> impl Iterator<Item = (&'a str, &'a str)> + 'a {
+    let end = staged_step_window_end_exclusive(messages, step_user_index);
     let mut i = step_user_index.saturating_add(1);
     std::iter::from_fn(move || {
-        while i < messages.len() {
+        while i < end {
             let m = &messages[i];
-            if m.role == "user" {
-                return None;
-            }
             if m.role == "tool" {
                 let name = m.name.as_deref().unwrap_or("");
                 let content = message_content_as_str(&m.content).unwrap_or("");
@@ -271,6 +269,17 @@ mod tests {
             user("step 1"),
             asst("working"),
             tool("list_dir", "ok"),
+        ];
+        assert!(staged_step_window_has_tool(&msgs, 1));
+    }
+
+    #[test]
+    fn window_spans_tools_after_orchestration_injection() {
+        let msgs = vec![
+            user("编译项目"),
+            Message::user_staged_step_injection("### 分步 1/1\n- id: s1\n- 描述: build\n"),
+            Message::user_staged_orchestration_injection("【编排纠偏】请继续构建"),
+            tool("run_command", "make ok"),
         ];
         assert!(staged_step_window_has_tool(&msgs, 1));
     }

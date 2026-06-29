@@ -144,12 +144,10 @@ pub(crate) fn staged_step_tool_failure_patch_detail(
 
     let mut lines: Vec<String> = Vec::new();
     let mut saw_repeat_short_circuit = false;
+    let end = crate::types::staged_step_window_end_exclusive(messages, step_user_index);
     let mut i = step_user_index.saturating_add(1);
-    while i < messages.len() {
+    while i < end {
         let m = &messages[i];
-        if m.role == "user" {
-            break;
-        }
         if m.role == "tool" {
             let name = m.name.as_deref().unwrap_or("");
             let content = crate::types::message_content_as_str(&m.content).unwrap_or("");

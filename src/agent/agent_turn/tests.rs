@@ -95,6 +95,26 @@ mod push_assistant_merge_tests {
         assert_eq!(message_content_as_str(&out[3].content), Some("plan sys"));
         assert!(!out.iter().any(|m| m.role == "tool"));
     }
+
+    #[test]
+    fn planner_messages_logical_dual_keeps_tools_in_last_step_window() {
+        let src = vec![
+            Message::user_only("编译"),
+            Message::user_staged_step_injection("### 分步 1/1\n- id: s1\n- 描述: build"),
+            assistant_body("running"),
+            Message {
+                role: "tool".to_string(),
+                content: Some(MessageContent::Text("make ok".to_string())),
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: None,
+                name: Some("run_command".to_string()),
+                tool_call_id: Some("tc1".to_string()),
+            },
+        ];
+        let out = build_logical_dual_planner_messages(&src, "plan sys".to_string(), false, false);
+        assert!(out.iter().any(|m| m.role == "tool"));
+    }
 }
 
 mod dedup_tool_calls_tests {

@@ -545,12 +545,16 @@ fn check_generic_successful_tool_then_completion(
     let intent = generic_task_intent_from_task(task);
     let evidence = recent_generic_tool_evidence(messages);
     let completion = last_assistant_completion_claim(messages);
-    let satisfied = (intent.build_or_test && evidence.build_or_test_success && completion)
-        || (intent.write_change && evidence.write_success && completion)
-        || (intent.readonly_analysis
-            && evidence.readonly_success
-            && (completion || last_assistant_substantive_answer(messages)))
-        || (!intent.build_or_test && !intent.write_change && evidence.any_success && completion);
+    let substantive = last_assistant_substantive_answer(messages);
+    let has_impl_intent = intent.build_or_test || intent.write_change;
+    let satisfied = if has_impl_intent {
+        (!intent.build_or_test || (evidence.build_or_test_success && completion))
+            && (!intent.write_change || (evidence.write_success && completion))
+    } else if intent.readonly_analysis {
+        evidence.readonly_success && (completion || substantive)
+    } else {
+        evidence.any_success && completion
+    };
     if satisfied {
         GoalCompletionEvidenceCheck::Satisfied
     } else {
@@ -841,6 +845,25 @@ mod tests {
         let messages = vec![msg("assistant", "任务已完成。")];
         assert_eq!(
             check_goal_completion_evidence_from_messages("编译项目", &messages),
+            GoalCompletionEvidenceCheck::NotApplicable
+        );
+    }
+
+    #[test]
+    fn mixed_build_and_analysis_requires_build_evidence_not_readonly_shortcut() {
+        let messages = vec![
+            tool_env(
+                "list_tree",
+                "list tree",
+                "list tree: .\n源码与 CMakeLists.txt",
+            ),
+            msg(
+                "assistant",
+                "目录结构分析如下：包含源码目录与构建配置，总结完成。",
+            ),
+        ];
+        assert_eq!(
+            check_goal_completion_evidence_from_messages("编译 hpcg 并分析目录结构", &messages),
             GoalCompletionEvidenceCheck::NotApplicable
         );
     }
