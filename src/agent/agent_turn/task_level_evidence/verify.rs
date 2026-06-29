@@ -296,6 +296,28 @@ pub(crate) fn generic_task_intent_implies_build_or_test(task: &str) -> bool {
     generic_task_intent_from_task(task).build_or_test
 }
 
+fn messages_slice_since_last_user(messages: &[Message]) -> Option<&[Message]> {
+    let idx = messages.iter().rposition(|m| m.role == "user")?;
+    Some(&messages[idx..])
+}
+
+/// L2 外循环：以**最新一条用户消息**为目标，且仅在自该 user 起的消息窗口内核对完成证据。
+///
+/// 勿用分阶段「不变层」首条 user（[`crate::agent::plan_optimizer::staged_plan_turn_anchor_user_content`]），
+/// 否则多轮对话会把上一任务（如「分析目录」）误判为当前目标（如「编译 hpcg」）已完成。
+pub(crate) fn check_active_user_goal_completion_evidence(
+    messages: &[Message],
+) -> GoalCompletionEvidenceCheck {
+    let Some(task) = crate::agent::plan_optimizer::staged_plan_trigger_user_content(messages)
+    else {
+        return GoalCompletionEvidenceCheck::NotApplicable;
+    };
+    let Some(window) = messages_slice_since_last_user(messages) else {
+        return GoalCompletionEvidenceCheck::NotApplicable;
+    };
+    check_goal_completion_evidence_from_messages(task, window)
+}
+
 fn generic_task_intent_from_task(task: &str) -> GenericTaskIntent {
     let t = task.to_lowercase();
     let build_or_test = [
@@ -730,6 +752,37 @@ mod tests {
             ),
             GoalCompletionEvidenceCheck::Missing(_)
         ));
+    }
+
+    #[test]
+    fn multi_turn_compile_not_satisfied_by_earlier_readonly_turn() {
+        let messages = vec![
+            msg("user", "分析当前目录"),
+            tool_env("list_tree", "list tree", "list tree: .\n三个压缩包"),
+            msg("assistant", "当前目录包含三个压缩包，已分析完成。"),
+            msg("user", "编译hpcg"),
+            msg("assistant", "好的，先解压看看结构。"),
+        ];
+        assert_eq!(
+            check_active_user_goal_completion_evidence(&messages),
+            GoalCompletionEvidenceCheck::NotApplicable
+        );
+    }
+
+    #[test]
+    fn multi_turn_readonly_satisfied_only_for_active_window() {
+        let messages = vec![
+            msg("user", "分析当前目录"),
+            tool_env("list_tree", "list tree", "list tree: ."),
+            msg(
+                "assistant",
+                "当前目录包含三个压缩包与归档文件，分析结果如下。",
+            ),
+        ];
+        assert_eq!(
+            check_active_user_goal_completion_evidence(&messages),
+            GoalCompletionEvidenceCheck::Satisfied
+        );
     }
 
     #[test]

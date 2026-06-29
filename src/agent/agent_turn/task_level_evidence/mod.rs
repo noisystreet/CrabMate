@@ -9,6 +9,7 @@ mod verify;
 pub(crate) use common::is_program_build_run_request;
 pub(crate) use render::render_task_level_evidence;
 pub(crate) use verify::{
-    GoalCompletionEvidenceCheck, check_goal_completion_evidence_from_messages,
-    generic_task_intent_implies_build_or_test, verify_task_level_execution_evidence,
+    GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
+    check_goal_completion_evidence_from_messages, generic_task_intent_implies_build_or_test,
+    verify_task_level_execution_evidence,
 };

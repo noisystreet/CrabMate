@@ -27,7 +27,7 @@ use super::plan::{PerPlanCallModelParams, per_plan_call_model_retrying};
 use super::reflect::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
 use super::sub_agent_policy::filter_tool_defs_for_executor_kind;
 use super::task_level_evidence::{
-    GoalCompletionEvidenceCheck, check_goal_completion_evidence_from_messages,
+    GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
     generic_task_intent_implies_build_or_test,
 };
 
@@ -186,18 +186,17 @@ async fn map_reflect_outcome_to_branch_ctl(
 ) -> ReflectBranchCtl {
     match outcome {
         ReflectOnAssistantOutcome::StopTurn => {
-            if let Some(task) = p
-                .turn
-                .staged_immutable_user_goal_snapshot()
-                .map(str::to_string)
+            let messages = p.turn.messages();
+            if let Some(task) =
+                crate::agent::plan_optimizer::staged_plan_trigger_user_content(messages)
             {
                 if outer_loop_window_has_build_progress_since_last_user(p.turn.messages()) {
                     per_coord.reset_outer_loop_build_idle_streak();
                 } else if outer_loop_assistant_is_build_idle_without_tools(msg) {
                     let streak = per_coord.record_outer_loop_build_idle_round();
                     if let Some(feedback) = outer_loop_build_idle_feedback_if_needed(
-                        task.as_str(),
-                        p.turn.messages(),
+                        task,
+                        messages,
                         msg,
                         streak,
                         per_coord.outer_loop_build_idle_feedback_injected(),
@@ -329,20 +328,18 @@ fn completed_goal_with_redundant_tool_calls(p: &mut RunLoopParams<'_>, msg: &Mes
     if !tool_calls_are_redundant_after_completion(tool_calls) {
         return false;
     }
-    let Some(task) = p
-        .turn
-        .staged_immutable_user_goal_snapshot()
-        .map(str::to_string)
+    let messages = p.turn.messages();
+    let Some(task) = crate::agent::plan_optimizer::staged_plan_trigger_user_content(messages)
     else {
         return false;
     };
-    if generic_task_intent_implies_build_or_test(task.as_str())
-        && !outer_loop_window_has_build_progress_since_last_user(p.turn.messages())
+    if generic_task_intent_implies_build_or_test(task)
+        && !outer_loop_window_has_build_progress_since_last_user(messages)
     {
         return false;
     }
     matches!(
-        check_goal_completion_evidence_from_messages(&task, p.turn.messages()),
+        check_active_user_goal_completion_evidence(messages),
         GoalCompletionEvidenceCheck::Satisfied
     )
 }
@@ -385,22 +382,22 @@ fn run_command_invocation_text(args_json: &str) -> Option<String> {
     Some(parts.join(" "))
 }
 
-fn replace_trailing_tool_call_assistant_with_completed_notice(
-    p: &mut RunLoopParams<'_>,
-    msg: &Message,
-) {
+fn drop_redundant_tool_calls_after_active_goal_completed(p: &mut RunLoopParams<'_>, msg: &Message) {
     let popped = p.turn.pop_message();
-    if !popped
+    let kept = popped
         .as_ref()
-        .is_some_and(|m| m.role == "assistant" && m.tool_calls == msg.tool_calls)
-        && let Some(m) = popped
-    {
+        .filter(|m| m.role == "assistant" && m.tool_calls == msg.tool_calls);
+    if let Some(m) = kept {
+        let has_body =
+            crate::types::message_content_as_str(&m.content).is_some_and(|s| !s.trim().is_empty());
+        if has_body {
+            let mut without_tools = m.clone();
+            without_tools.tool_calls = None;
+            p.turn.push_assistant_merging_trailing_empty(without_tools);
+        }
+    } else if let Some(m) = popped {
         p.turn.push_assistant_merging_trailing_empty(m);
     }
-    p.turn
-        .push_assistant_merging_trailing_empty(Message::assistant_only(
-            "目标已经有完成证据，已省略后续重复验证工具调用。".to_string(),
-        ));
 }
 
 /// 单 Agent 外循环内一次迭代的**粗粒度**阶段（与 `AgentTurnSubPhase` 正交，仅用于 `tracing` 排障）。
@@ -563,9 +560,9 @@ async fn run_outer_loop_single_iteration(
     if completed_goal_with_redundant_tool_calls(p, &msg) {
         info!(
             target: "crabmate::agent_turn",
-            "目标已完成，跳过完成后的冗余验证工具调用"
+            "当前用户目标已有完成证据，静默跳过冗余探针类 tool_calls"
         );
-        replace_trailing_tool_call_assistant_with_completed_notice(p, &msg);
+        drop_redundant_tool_calls_after_active_goal_completed(p, &msg);
         return Ok(OuterLoopIterationExit::StopOuterLoop);
     }
 
