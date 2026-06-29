@@ -1,6 +1,6 @@
 //! 确定性验证闸门（StepVerifier）：根据 `PlanStepV1` 中的 `acceptance` 对执行结果进行硬断言。
 //!
-//! **分阶段**路径下，验收针对当前分步的 **`acceptance`**（步界：分步 `user` 之后至下一条 `user` 或末尾）。
+//! **分阶段**路径下，验收针对当前分步的 **`acceptance`**（步界：分步 `user` 之后至下一真实 user / 下一条分步注入；步内编排注入 user 不截断）。
 //! 空规范直接 **Pass**；仅 **`expect_file_exists`** 时查工作区、**不要求**本步 `role: tool`；其余规则取本步**最后一条** `role: tool`。
 //!
 //! 核心判定逻辑见 [`crate::agent::acceptance`]。
@@ -16,11 +16,11 @@
 use crate::agent::acceptance::{AcceptanceEvidence, AcceptanceSpec, VerifyOutcome};
 use crate::agent::plan_artifact::PlanStepAcceptance;
 use crate::tool_result::ToolError;
-use crate::types::Message;
+use crate::types::{Message, staged_step_window_end_exclusive};
 
 pub type VerifyResult = VerifyOutcome;
 
-/// 自 `step_user_index` 指向的分步 `user` 起，到下一 `user` 或 `messages` 末尾为止，取其中**最后**一条 `role: tool`（分阶段步界内的「验收用」工具条）。
+/// 自 `step_user_index` 指向的分步 `user` 起，到步界或 `messages` 末尾为止，取其中**最后**一条 `role: tool`（分阶段步界内的「验收用」工具条）。
 fn last_tool_message_in_staged_step<'a>(
     messages: &'a [Message],
     step_user_index: usize,
@@ -28,13 +28,11 @@ fn last_tool_message_in_staged_step<'a>(
     if step_user_index >= messages.len() {
         return None;
     }
+    let end = staged_step_window_end_exclusive(messages, step_user_index);
     let mut i = step_user_index.saturating_add(1);
     let mut last_tool: Option<&'a Message> = None;
-    while i < messages.len() {
+    while i < end {
         let m = &messages[i];
-        if m.role == "user" {
-            break;
-        }
         if m.role == "tool" {
             last_tool = Some(m);
         }

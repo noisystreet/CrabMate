@@ -8,8 +8,8 @@
 use crate::agent::agent_turn::turn_orchestration::NonHierarchicalStagedKind;
 use crate::agent::per_coord::PerCoordinator;
 use crate::types::{
-    Message, is_message_excluded_from_llm_context_except_memory,
-    message_clone_stripping_reasoning_for_api,
+    Message, is_message_excluded_from_llm_context_except_memory, last_staged_step_injection_index,
+    message_clone_stripping_reasoning_for_api, staged_step_window_end_exclusive,
 };
 
 use super::super::errors::{AgentTurnSubPhase, RunAgentTurnError};
@@ -361,21 +361,31 @@ pub(crate) fn build_logical_dual_planner_messages(
     preserve_reasoning_on_assistant_tool_calls: bool,
     preserve_deepseek_thinking_reasoning_roundtrip: bool,
 ) -> Vec<Message> {
+    let last_step_idx = last_staged_step_injection_index(messages);
+    let last_step_end = last_step_idx.map(|i| staged_step_window_end_exclusive(messages, i));
+
     let mut out: Vec<Message> = messages
         .iter()
-        .filter(|m| !is_message_excluded_from_llm_context_except_memory(m))
-        // 逻辑双 agent：规划器只看用户/助手自然语言上下文，不看 tool 结果正文，
-        // 避免工具细节污染任务拆解。
-        .filter(|m| m.role != "tool")
-        .filter(|m| {
-            if m.role != "assistant" {
-                return true;
+        .enumerate()
+        .filter(|(idx, m)| {
+            if is_message_excluded_from_llm_context_except_memory(m) {
+                return false;
             }
-            crate::types::message_content_as_str(&m.content)
-                .map(|s| !s.trim().is_empty())
-                .unwrap_or(false)
+            // 逻辑双 agent：全局剥离 tool，但保留**最近一分步窗口**内观测，供步后重规划。
+            if m.role == "tool" {
+                if let (Some(step_idx), Some(end)) = (last_step_idx, last_step_end) {
+                    return *idx > step_idx && *idx < end;
+                }
+                return false;
+            }
+            if m.role == "assistant" {
+                return crate::types::message_content_as_str(&m.content)
+                    .map(|s| !s.trim().is_empty())
+                    .unwrap_or(false);
+            }
+            true
         })
-        .map(|m| {
+        .map(|(_, m)| {
             message_clone_stripping_reasoning_for_api(
                 m,
                 preserve_reasoning_on_assistant_tool_calls,

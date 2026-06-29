@@ -7,7 +7,7 @@ use log::debug;
 
 use crate::agent::plan_artifact::{self, AgentReplyPlanV1, PlanStepV1};
 use crate::tool_result::tool_message_content_ok_for_model;
-use crate::types::Message;
+use crate::types::{Message, staged_step_window_end_exclusive};
 
 use super::super::errors::{AgentTurnSubPhase, RunAgentTurnError};
 use super::super::execute_tools::sse_sender_closed;
@@ -53,14 +53,12 @@ fn staged_patch_merged_plan_unchanged(before: &[PlanStepV1], merged: &[PlanStepV
     plan_artifact::plan_steps_fingerprint(before) == plan_artifact::plan_steps_fingerprint(merged)
 }
 
-/// 自本步 user 注入起至下一条 user（或历史末尾）之间的 `role: tool` 是否均为成功（与信封 `ok` / 传统解析一致）。
+/// 自本步 user 注入起至步界（或历史末尾）之间的 `role: tool` 是否均为成功（与信封 `ok` / 传统解析一致）。
 fn staged_step_tool_messages_all_ok(messages: &[Message], step_user_index: usize) -> bool {
+    let end = staged_step_window_end_exclusive(messages, step_user_index);
     let mut i = step_user_index.saturating_add(1);
-    while i < messages.len() {
+    while i < end {
         let m = &messages[i];
-        if m.role == "user" {
-            break;
-        }
         if m.role == "tool" {
             let content = crate::types::message_content_as_str(&m.content).unwrap_or("");
             if !tool_message_content_ok_for_model(content, "") {
