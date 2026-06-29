@@ -1,8 +1,10 @@
+use crate::agent::agent_turn::completion_suppression::plan_steps_are_redundant_after_completion;
 use crate::agent::agent_turn::params::RunLoopParams;
 use crate::agent::agent_turn::task_level_evidence::{
     GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
 };
-use crate::agent::plan_artifact::{PlanStepAcceptance, PlanStepV1};
+use crate::agent::plan_artifact::PlanStepV1;
+use tracing::info;
 
 pub(super) fn should_suppress_completed_replanning(
     p: &mut RunLoopParams<'_>,
@@ -16,113 +18,32 @@ pub(super) fn should_suppress_completed_replanning(
         check_active_user_goal_completion_evidence(p.turn.messages()),
         GoalCompletionEvidenceCheck::Satisfied
     );
-    satisfied && plan_steps_are_redundant_after_completion(steps)
-}
-
-fn plan_steps_are_redundant_after_completion(steps: &[PlanStepV1]) -> bool {
-    steps.iter().all(plan_step_is_redundant_after_completion)
-}
-
-fn plan_step_is_redundant_after_completion(step: &PlanStepV1) -> bool {
-    let text = redundant_plan_step_text(step);
-    if contains_followup_write_or_fix_marker(&text) {
+    if !satisfied || !plan_steps_are_redundant_after_completion(steps) {
         return false;
     }
-    step.acceptance
-        .as_ref()
-        .is_some_and(PlanStepAcceptance::is_effective)
-        || contains_redundant_plan_step_marker(&text)
-}
-
-fn redundant_plan_step_text(step: &PlanStepV1) -> String {
-    format!(
-        "{}\n{}\n{}",
-        step.id,
-        step.step_kind.as_deref().unwrap_or_default(),
-        step.description
-    )
-    .to_lowercase()
-}
-
-fn contains_followup_write_or_fix_marker(text: &str) -> bool {
-    [
-        "implement",
-        "implementation",
-        "patch",
-        "write",
-        "modify",
-        "edit",
-        "change",
-        "fix",
-        "repair",
-        "refactor",
-        "create",
-        "add",
-        "delete",
-        "remove",
-        "实现",
-        "编写",
-        "修改",
-        "修复",
-        "新增",
-        "创建",
-        "删除",
-        "重构",
-        "调整",
-    ]
-    .iter()
-    .any(|marker| text.contains(marker))
-}
-
-fn contains_redundant_plan_step_marker(text: &str) -> bool {
-    [
-        "verify",
-        "verification",
-        "validate",
-        "validation",
-        "check",
-        "confirm",
-        "ensure",
-        "exist",
-        "exists",
-        "rerun",
-        "re-run",
-        "run again",
-        "list",
-        "inspect",
-        "read",
-        "review",
-        "summarize",
-        "summary",
-        "final",
-        "report",
-        "test",
-        "验收",
-        "验证",
-        "校验",
-        "确认",
-        "检查",
-        "确保",
-        "存在",
-        "重跑",
-        "重新运行",
-        "再运行",
-        "列出",
-        "查看",
-        "读取",
-        "复查",
-        "总结",
-        "汇报",
-        "最终",
-    ]
-    .iter()
-    .any(|marker| text.contains(marker))
+    let goal_preview =
+        crate::agent::plan_optimizer::staged_plan_trigger_user_content(p.turn.messages())
+            .unwrap_or("")
+            .chars()
+            .take(80)
+            .collect::<String>();
+    info!(
+        target: "crabmate::staged",
+        goal_preview = %goal_preview,
+        step_count = steps.len(),
+        "当前用户目标已有完成证据，抑制步后重复规划"
+    );
+    true
 }
 
 #[cfg(test)]
 mod tests {
-    use super::plan_steps_are_redundant_after_completion;
+    use crate::agent::agent_turn::completion_suppression::plan_steps_are_redundant_after_completion;
+    use crate::agent::agent_turn::task_level_evidence::{
+        GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
+    };
     use crate::agent::plan_artifact::PlanStepV1;
+    use crate::types::Message;
 
     fn step(id: &str, kind: Option<&str>, description: &str) -> PlanStepV1 {
         PlanStepV1 {
@@ -161,10 +82,6 @@ mod tests {
 
     #[test]
     fn multi_turn_compile_not_suppressed_by_earlier_readonly_evidence() {
-        use super::GoalCompletionEvidenceCheck;
-        use crate::agent::agent_turn::task_level_evidence::check_active_user_goal_completion_evidence;
-        use crate::types::Message;
-
         fn msg(role: &str, text: &str) -> Message {
             Message {
                 role: role.to_string(),

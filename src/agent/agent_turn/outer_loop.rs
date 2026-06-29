@@ -12,6 +12,9 @@ use crate::agent::per_coord::PerCoordinator;
 use crate::sse::{SsePayload, encode_message};
 use crate::types::{Message, USER_CANCELLED_FINISH_REASON, is_intent_gate_ephemeral_system};
 
+use super::completion_suppression::{
+    redundant_tool_names_for_log, tool_calls_are_redundant_after_completion,
+};
 use super::errors::{
     AgentTurnSubPhase, RunAgentTurnError, TurnAbortReason, sse_plan_rewrite_exhausted_body,
 };
@@ -345,44 +348,6 @@ fn completed_goal_with_redundant_tool_calls(p: &mut RunLoopParams<'_>, msg: &Mes
     )
 }
 
-fn tool_calls_are_redundant_after_completion(tool_calls: &[crate::types::ToolCall]) -> bool {
-    tool_calls
-        .iter()
-        .all(tool_call_is_redundant_after_completion)
-}
-
-fn tool_call_is_redundant_after_completion(tc: &crate::types::ToolCall) -> bool {
-    let name = tc.function.name.as_str();
-    if matches!(
-        name,
-        "read_file" | "read_dir" | "list_dir" | "list_tree" | "glob" | "search" | "extract_in_file"
-    ) {
-        return true;
-    }
-    name == "run_command" && run_command_is_redundant_verification(&tc.function.arguments)
-}
-
-fn run_command_is_redundant_verification(args_json: &str) -> bool {
-    let Some(invocation) = run_command_invocation_text(args_json) else {
-        return false;
-    };
-    let lower = invocation.to_lowercase();
-    const VERIFY_MARKERS: &[&str] = &[
-        "ls ", "ls -", "stat ", "test -", "file ", "--help", "timeout ", "strace ", " 2>&1",
-    ];
-    VERIFY_MARKERS.iter().any(|marker| lower.contains(marker))
-}
-
-fn run_command_invocation_text(args_json: &str) -> Option<String> {
-    let v: serde_json::Value = serde_json::from_str(args_json).ok()?;
-    let command = v.get("command")?.as_str()?.trim();
-    let mut parts = vec![command.to_string()];
-    if let Some(args) = v.get("args").and_then(|x| x.as_array()) {
-        parts.extend(args.iter().filter_map(|x| x.as_str()).map(str::to_string));
-    }
-    Some(parts.join(" "))
-}
-
 fn drop_redundant_tool_calls_after_active_goal_completed(p: &mut RunLoopParams<'_>, msg: &Message) {
     let popped = p.turn.pop_message();
     let kept = popped
@@ -559,8 +524,21 @@ async fn run_outer_loop_single_iteration(
     }
 
     if completed_goal_with_redundant_tool_calls(p, &msg) {
-        info!(
+        let messages = p.turn.messages();
+        let goal_preview = crate::agent::plan_optimizer::staged_plan_trigger_user_content(messages)
+            .unwrap_or("")
+            .chars()
+            .take(80)
+            .collect::<String>();
+        let redundant_tools = msg
+            .tool_calls
+            .as_ref()
+            .map(|calls| redundant_tool_names_for_log(calls.as_slice()))
+            .unwrap_or_default();
+        tracing::info!(
             target: "crabmate::agent_turn",
+            goal_preview = %goal_preview,
+            ?redundant_tools,
             "当前用户目标已有完成证据，静默跳过冗余探针类 tool_calls"
         );
         drop_redundant_tool_calls_after_active_goal_completed(p, &msg);
@@ -609,9 +587,9 @@ pub(crate) async fn run_agent_outer_loop(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        OuterLoopIterationExit, run_command_is_redundant_verification,
-        tool_calls_are_redundant_after_completion,
+    use super::OuterLoopIterationExit;
+    use crate::agent::agent_turn::completion_suppression::{
+        tool_call_is_redundant_after_completion, tool_calls_are_redundant_after_completion,
     };
     use crate::types::{FunctionCall, ToolCall};
 
@@ -652,15 +630,18 @@ mod tests {
 
     #[test]
     fn completed_gate_marks_run_probe_commands_redundant() {
-        assert!(run_command_is_redundant_verification(
-            r#"{"command":"bash","args":["-c","cd app && ./bin/app --help"]}"#
-        ));
-        assert!(run_command_is_redundant_verification(
-            r#"{"command":"bash","args":["-c","timeout 30 ./bin/app 2>&1"]}"#
-        ));
-        assert!(run_command_is_redundant_verification(
-            r#"{"command":"stat","args":["target/bin/app"]}"#
-        ));
+        assert!(tool_call_is_redundant_after_completion(&tc(
+            "run_command",
+            r#"{"command":"bash","args":["-c","cd app && ./bin/app --help"]}"#,
+        )));
+        assert!(tool_call_is_redundant_after_completion(&tc(
+            "run_command",
+            r#"{"command":"bash","args":["-c","timeout 30 ./bin/app 2>&1"]}"#,
+        )));
+        assert!(tool_call_is_redundant_after_completion(&tc(
+            "run_command",
+            r#"{"command":"stat","args":["target/bin/app"]}"#,
+        )));
     }
 
     #[test]
