@@ -57,27 +57,7 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
-      - id: sse-control-golden
-        name: SSE control golden (Rust mirror)
-        entry: bash -c 'staged=$(git diff --cached --name-only | grep -E "^(fixtures/sse_control_golden.jsonl|crates/crabmate-sse-protocol/control_classify.rs|frontend/src/sse_dispatch/)" | wc -l); if [ "$staged" -gt 0 ]; then cargo test golden_sse_control --workspace; else exit 0; fi'
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-commit]
-      - id: intent-regression-golden
-        name: intent regression golden
-        entry: bash -c 'staged=$(git diff --cached --name-only | grep -E "^(fixtures/intent_regression.jsonl|src/agent/intent_regression_golden.rs|crates/crabmate-agent/src/intent_pipeline.rs|crates/crabmate-agent/src/agent_turn/|src/agent/intent_router.rs|src/agent/intent_l0.rs|src/agent/intent_l2_classifier.rs|src/agent/agent_turn/intent/at_turn_start.rs|src/agent/agent_turn/mod.rs|src/agent/hierarchy/runner.rs)$" | wc -l); if [ "$staged" -gt 0 ]; then cargo test golden_intent_regression -p crabmate; else exit 0; fi'
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-commit]
-      - id: cargo-test-lib
-        name: cargo test (workspace lib)
-        entry: bash -c 'staged=$(git diff --cached --name-only -- "*.rs" | wc -l); if [ "$staged" -gt 0 ]; then cargo test --workspace --lib; else exit 0; fi'
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-commit]
+      # cargo test（含 golden_sse_control / golden_intent_regression）仅在 CI 跑，见 .github/workflows/ci.yml 与 code-complexity.yml
       - id: taplo-format
         name: taplo format (check)
         entry: >-

@@ -1,5 +1,5 @@
 # 主 CI：编译检查、Clippy（-D warnings）与工作区测试，防止错误合入 main。
-# 与 pre-commit 的 cargo clippy / frontend-wasm-check / cargo-test 对齐；复杂度与安全见其它 workflow。
+# 与 pre-commit 的 cargo clippy / frontend-wasm-check 对齐；cargo test 仅在本 workflow（及 code-complexity 金样）跑。
 name: CI
 
 on:
