@@ -55,11 +55,16 @@ mod llm_seed_tests {
 mod chat_api;
 mod message;
 mod message_lineage;
+mod real_user_message;
 pub mod server_injected_user;
 mod tiktoken_snapshot;
 
 pub use chat_api::*;
 pub use message::*;
+pub use real_user_message::{
+    first_real_user_task_content, is_real_user_task_message, last_real_user_message_index,
+    last_real_user_task_content, messages_slice_since_last_real_user,
+};
 pub use server_injected_user::{
     is_ephemeral_staged_coach_user_message, is_server_injected_user_message,
     strip_orchestration_injected_users_for_conversation_store,

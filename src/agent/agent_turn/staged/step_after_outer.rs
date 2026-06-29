@@ -57,7 +57,7 @@ where
         .patch_ctx
         .p
         .turn
-        .push_message(Message::user_only(fb));
+        .push_message(Message::user_staged_orchestration_injection(fb));
     let replan = AgentReplyPlanV1 {
         plan_type: "agent_reply_plan".to_string(),
         version: 1,
