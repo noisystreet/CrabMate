@@ -93,6 +93,24 @@ fn combined_haystack(ev: &AcceptanceEvidence<'_>) -> String {
     format!("{} {}", ev.stdout, ev.stderr)
 }
 
+/// `run_command` 的 stdout/stderr 由解析器填入；其它工具（如 `archive_unpack`）正文在 `tool_output`。
+fn haystack_for_stream_contains<'a>(
+    ev: &'a AcceptanceEvidence<'_>,
+    stream: &'a str,
+    tool_output_fallback: &'a str,
+) -> &'a str {
+    if !stream.is_empty() {
+        return stream;
+    }
+    if ev.tool_name == "run_command" {
+        return stream;
+    }
+    if !tool_output_fallback.is_empty() {
+        return tool_output_fallback;
+    }
+    stream
+}
+
 fn verify_exit_code_branch(
     spec: &AcceptanceSpec,
     ev: &AcceptanceEvidence<'_>,
@@ -135,20 +153,24 @@ fn verify_streams_contains(
     spec: &AcceptanceSpec,
     ev: &AcceptanceEvidence<'_>,
 ) -> Option<VerifyOutcome> {
-    if let Some(ref expect_str) = spec.expect_stdout_contains
-        && !ev.stdout.contains(expect_str)
-    {
-        return Some(VerifyOutcome::Fail {
-            reason: format!("stdout_missing: expected to contain '{}'", expect_str),
-        });
+    let tool_body =
+        extract_json_output(ev.tool_output).unwrap_or_else(|| ev.tool_output.to_string());
+    if let Some(ref expect_str) = spec.expect_stdout_contains {
+        let haystack = haystack_for_stream_contains(ev, ev.stdout, tool_body.as_str());
+        if !haystack.contains(expect_str) {
+            return Some(VerifyOutcome::Fail {
+                reason: format!("stdout_missing: expected to contain '{}'", expect_str),
+            });
+        }
     }
 
-    if let Some(ref expect_str) = spec.expect_stderr_contains
-        && !ev.stderr.contains(expect_str)
-    {
-        return Some(VerifyOutcome::Fail {
-            reason: format!("stderr_missing: expected to contain '{}'", expect_str),
-        });
+    if let Some(ref expect_str) = spec.expect_stderr_contains {
+        let haystack = haystack_for_stream_contains(ev, ev.stderr, tool_body.as_str());
+        if !haystack.contains(expect_str) {
+            return Some(VerifyOutcome::Fail {
+                reason: format!("stderr_missing: expected to contain '{}'", expect_str),
+            });
+        }
     }
     None
 }
@@ -352,6 +374,26 @@ mod tests {
             fallback_exit_code: None,
             workspace_root: std::path::Path::new("/tmp"),
             file_resolve: FileResolveKind::WorkspaceJoin,
+            combined_text_override: None,
+        };
+        assert!(verify_against_spec(&spec, &ev).is_pass());
+    }
+
+    #[test]
+    fn archive_unpack_stdout_contains_matches_tool_output_body() {
+        let spec = AcceptanceSpec {
+            expect_stdout_contains: Some("已解压".to_string()),
+            ..Default::default()
+        };
+        let ev = AcceptanceEvidence {
+            tool_name: "archive_unpack",
+            tool_output: "已解压 187 个文件到: .",
+            stdout: "",
+            stderr: "",
+            tool_error: None,
+            fallback_exit_code: None,
+            workspace_root: std::path::Path::new("/tmp"),
+            file_resolve: FileResolveKind::AbsolutizeRelative,
             combined_text_override: None,
         };
         assert!(verify_against_spec(&spec, &ev).is_pass());
