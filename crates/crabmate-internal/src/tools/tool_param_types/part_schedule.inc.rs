@@ -149,6 +149,10 @@ pub struct ArchiveListArgs {
     pub archive: String,
     #[serde(default)]
     pub verbose: bool,
+    /// 最多列出的条目数；超大归档默认 250，避免灌满上下文。
+    #[serde(default)]
+    #[schemars(range(min = 1, max = 5000))]
+    pub max_entries: Option<u32>,
 }
 
 // ── 代码导航（`symbol` / `code_nav` / `call_graph_sketch`）──────

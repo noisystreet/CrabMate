@@ -18,12 +18,17 @@ use super::errors::{
 use super::execute_tools::{
     ExecuteToolsBatchOutcome, WebExecuteCtx, per_execute_tools_web, sse_sender_closed,
 };
+use super::outer_loop_build_idle::{
+    outer_loop_assistant_is_build_idle_without_tools, outer_loop_build_idle_feedback_if_needed,
+    outer_loop_window_has_build_progress_since_last_user,
+};
 use super::params::{OuterLoopPlanCallModelRole, RunLoopParams};
 use super::plan::{PerPlanCallModelParams, per_plan_call_model_retrying};
 use super::reflect::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
 use super::sub_agent_policy::filter_tool_defs_for_executor_kind;
 use super::task_level_evidence::{
     GoalCompletionEvidenceCheck, check_goal_completion_evidence_from_messages,
+    generic_task_intent_implies_build_or_test,
 };
 
 const MAX_OUTER_LOOP_ITERATIONS_SAFETY: u32 = 500;
@@ -169,8 +174,47 @@ async fn outer_loop_reflect_branch(
     finish_reason: &str,
     msg: &Message,
 ) -> ReflectBranchCtl {
-    match per_reflect_after_assistant(p, per_coord, finish_reason, msg).await {
+    let outcome = per_reflect_after_assistant(p, per_coord, finish_reason, msg).await;
+    map_reflect_outcome_to_branch_ctl(p, per_coord, msg, outcome).await
+}
+
+async fn map_reflect_outcome_to_branch_ctl(
+    p: &mut RunLoopParams<'_>,
+    per_coord: &mut PerCoordinator,
+    msg: &Message,
+    outcome: ReflectOnAssistantOutcome,
+) -> ReflectBranchCtl {
+    match outcome {
         ReflectOnAssistantOutcome::StopTurn => {
+            if let Some(task) = p
+                .turn
+                .staged_immutable_user_goal_snapshot()
+                .map(str::to_string)
+            {
+                if outer_loop_window_has_build_progress_since_last_user(p.turn.messages()) {
+                    per_coord.reset_outer_loop_build_idle_streak();
+                } else if outer_loop_assistant_is_build_idle_without_tools(msg) {
+                    let streak = per_coord.record_outer_loop_build_idle_round();
+                    if let Some(feedback) = outer_loop_build_idle_feedback_if_needed(
+                        task.as_str(),
+                        p.turn.messages(),
+                        msg,
+                        streak,
+                        per_coord.outer_loop_build_idle_feedback_injected(),
+                    ) {
+                        info!(
+                            target: "crabmate::agent_turn",
+                            "L2 外循环构建空转纠偏：注入 user 并继续 outer_loop_build_idle_streak={streak}"
+                        );
+                        p.turn.push_message(Message::user_only(feedback));
+                        per_coord.record_outer_loop_build_idle_feedback_injected();
+                        if let Some(f) = p.ctx.attach.per_flight.as_ref() {
+                            f.sync_from_per_coord(per_coord);
+                        }
+                        return ReflectBranchCtl::ContinueOuter;
+                    }
+                }
+            }
             if let Some(f) = p.ctx.attach.per_flight.as_ref() {
                 f.sync_from_per_coord(per_coord);
             }
@@ -184,6 +228,7 @@ async fn outer_loop_reflect_branch(
             ReflectBranchCtl::ContinueOuter
         }
         ReflectOnAssistantOutcome::ProceedToExecuteTools => {
+            per_coord.reset_outer_loop_build_idle_streak();
             if let Some(f) = p.ctx.attach.per_flight.as_ref() {
                 f.sync_from_per_coord(per_coord);
             }
@@ -291,6 +336,11 @@ fn completed_goal_with_redundant_tool_calls(p: &mut RunLoopParams<'_>, msg: &Mes
     else {
         return false;
     };
+    if generic_task_intent_implies_build_or_test(task.as_str())
+        && !outer_loop_window_has_build_progress_since_last_user(p.turn.messages())
+    {
+        return false;
+    }
     matches!(
         check_goal_completion_evidence_from_messages(&task, p.turn.messages()),
         GoalCompletionEvidenceCheck::Satisfied
@@ -528,6 +578,9 @@ async fn run_outer_loop_single_iteration(
     );
 
     outer_loop_execute_tools_round(p, per_coord, &msg, render_to_terminal).await?;
+    if outer_loop_window_has_build_progress_since_last_user(p.turn.messages()) {
+        per_coord.reset_outer_loop_build_idle_streak();
+    }
     Ok(OuterLoopIterationExit::ContinueNextIteration)
 }
 

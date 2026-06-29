@@ -4,9 +4,11 @@ use std::sync::Arc;
 use log::info;
 
 use crate::agent::per_coord::PerCoordinator;
+use crate::tool_registry;
 use crate::tool_result::parse_legacy_output;
 
 use super::super::run_command_guard::classify_run_command_failure_family_from_result;
+use super::super::run_command_guard::parse_run_command_payload;
 use super::super::{emit_timeline_log_sse, emit_tool_call_summary_sse};
 
 use super::SerialToolIterationSsePreface;
@@ -24,6 +26,9 @@ pub(super) fn serial_bookkeep_run_command_failure(
     if parsed.ok {
         per_coord.clear_tool_failure_signature(name, args);
         per_coord.clear_tool_failure_families_for_tool(name);
+        if run_command_invocation_is_make_clean(args) {
+            per_coord.clear_all_run_command_failure_state();
+        }
     } else {
         let marker = parsed.error_code.unwrap_or_else(|| {
             parsed
@@ -36,6 +41,47 @@ pub(super) fn serial_bookkeep_run_command_failure(
             per_coord.mark_tool_failure_family(name, family, marker);
         }
     }
+}
+
+fn run_command_invocation_is_make_clean(args_json: &str) -> bool {
+    let Some((command, command_args)) = parse_run_command_payload(args_json) else {
+        return false;
+    };
+    if command != "make" {
+        return false;
+    }
+    command_args.iter().any(|a| a == "clean")
+}
+
+/// 工作区写操作成功后清除 `run_command` 失败短路，便于 patch 后重试 make/cmake。
+pub(super) fn serial_clear_run_command_failures_after_workspace_mutation(
+    per_coord: &mut PerCoordinator,
+    cfg: &crate::config::AgentConfig,
+    is_readonly: bool,
+    workspace_changed: bool,
+    name: &str,
+    result: &str,
+) {
+    if is_readonly && !workspace_changed {
+        return;
+    }
+    let parsed = parse_legacy_output(name, result);
+    if !parsed.ok && !tool_message_has_success_evidence(result) {
+        return;
+    }
+    if tool_registry::is_readonly_tool(cfg, name) && !workspace_changed {
+        return;
+    }
+    per_coord.clear_all_run_command_failure_state();
+}
+
+fn tool_message_has_success_evidence(raw: &str) -> bool {
+    let lower = raw.to_lowercase();
+    lower.contains("已替换")
+        || lower.contains("已写入")
+        || lower.contains("已创建文件")
+        || lower.contains("apply_patch")
+        || lower.contains("success")
 }
 
 pub(super) fn serial_maybe_invalidate_codebase_semantic_index(

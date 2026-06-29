@@ -291,6 +291,11 @@ fn tool_message_has_success_evidence(raw: &str) -> bool {
         || lower.contains("succeeded")
 }
 
+/// 用户任务是否像编译/构建/测试类（供外循环门控与完成证据抑制共用）。
+pub(crate) fn generic_task_intent_implies_build_or_test(task: &str) -> bool {
+    generic_task_intent_from_task(task).build_or_test
+}
+
 fn generic_task_intent_from_task(task: &str) -> GenericTaskIntent {
     let t = task.to_lowercase();
     let build_or_test = [
@@ -524,7 +529,7 @@ fn check_generic_successful_tool_then_completion(
         || (intent.readonly_analysis
             && evidence.readonly_success
             && (completion || last_assistant_substantive_answer(messages)))
-        || (evidence.any_success && completion);
+        || (!intent.build_or_test && !intent.write_change && evidence.any_success && completion);
     if satisfied {
         GoalCompletionEvidenceCheck::Satisfied
     } else {
@@ -725,6 +730,22 @@ mod tests {
             ),
             GoalCompletionEvidenceCheck::Missing(_)
         ));
+    }
+
+    #[test]
+    fn unpack_only_then_completion_claim_does_not_satisfy_build_task() {
+        let messages = vec![
+            tool_env(
+                "archive_unpack",
+                "unpack hpcg",
+                "已解压 187 个文件到: .\n顶层条目: hpcg-HPCG-release-3-1-0",
+            ),
+            msg("assistant", "解压完成，编译成功。"),
+        ];
+        assert_eq!(
+            check_goal_completion_evidence_from_messages("编译hpcg", &messages),
+            GoalCompletionEvidenceCheck::NotApplicable
+        );
     }
 
     #[test]
