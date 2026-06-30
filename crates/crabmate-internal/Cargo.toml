@@ -45,7 +45,7 @@ rmcp = { version = "1.4", optional = true, default-features = false, features = 
     "transport-child-process",
     "transport-io",
 ] }
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 schemars = { version = "0.8", features = ["derive"] }
 scraper = "0.27.0"
 secrecy = "0.10"
