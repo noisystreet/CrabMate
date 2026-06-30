@@ -1,5 +1,7 @@
 import { expect, type APIRequestContext } from '@playwright/test';
 
+import { ensureChatLayoutPrefs } from './prefs';
+
 export type E2eSessionRow = {
   id: string;
   title: string;
@@ -17,6 +19,7 @@ export async function putWorkspaceSessions(
   sessions: E2eSessionRow[],
   activeSessionId: string,
 ): Promise<void> {
+  await ensureChatLayoutPrefs(request);
   const put = await request.put('/user-data/workspaces/current/sessions', {
     data: { sessions, active_session_id: activeSessionId },
   });
@@ -60,6 +63,7 @@ export async function putFreshLocalSession(
   sessionId: string,
   title = 'E2E smoke',
 ): Promise<void> {
+  await ensureChatLayoutPrefs(request);
   await putWorkspaceSessions(
     request,
     [

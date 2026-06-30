@@ -7,6 +7,7 @@ import {
   putWorkspaceSessions,
   typeComposerDraft,
   UI_TIMEOUT,
+  visibleChatLayer,
 } from './helpers';
 
 test.describe('keyboard shortcuts', () => {
@@ -28,7 +29,7 @@ test.describe('keyboard shortcuts', () => {
     await streamDone;
 
     await expect(
-      page.getByTestId('chat-message-row').filter({ hasText: 'Hello from E2E stub' }),
+      visibleChatLayer(page).getByTestId('chat-message-row').filter({ hasText: 'Hello from E2E stub' }),
     ).toBeVisible();
   });
 
@@ -61,15 +62,15 @@ test.describe('keyboard shortcuts', () => {
     );
 
     await page.goto('/');
-    await expect(page.getByText('e2e-scroll-line-0')).toBeVisible();
+    await expect(visibleChatLayer(page).getByText('e2e-scroll-line-0')).toBeVisible();
 
-    const scroller = page.getByTestId('chat-messages-scroller');
-    await scroller.evaluate((el) => {
-      el.scrollTop = 0;
-    });
-    expect(await scroller.evaluate((el) => el.scrollTop)).toBe(0);
-
+    const scroller = visibleChatLayer(page).getByTestId('chat-messages-scroller');
     await page.getByTestId('chat-composer-input').focus();
+    await page.getByTestId('chat-composer-input').press('Home');
+    await expect
+      .poll(async () => scroller.evaluate((el) => el.scrollTop), { timeout: UI_TIMEOUT })
+      .toBe(0);
+
     await page.getByTestId('chat-composer-input').press('End');
 
     await expect
@@ -109,13 +110,14 @@ test.describe('keyboard shortcuts', () => {
 
     await installChatStreamStub(page);
     await page.goto('/');
-    await expect(page.getByText('e2e-send-scroll-line-0')).toBeVisible();
+    await expect(visibleChatLayer(page).getByText('e2e-send-scroll-line-0')).toBeVisible();
 
-    const scroller = page.getByTestId('chat-messages-scroller');
-    await scroller.evaluate((el) => {
-      el.scrollTop = 0;
-    });
-    expect(await scroller.evaluate((el) => el.scrollTop)).toBe(0);
+    const scroller = visibleChatLayer(page).getByTestId('chat-messages-scroller');
+    await page.getByTestId('chat-composer-input').focus();
+    await page.getByTestId('chat-composer-input').press('Home');
+    await expect
+      .poll(async () => scroller.evaluate((el) => el.scrollTop), { timeout: UI_TIMEOUT })
+      .toBe(0);
 
     const streamDone = page.waitForResponse(
       (res) => res.url().includes('/chat/stream') && res.request().method() === 'POST',
@@ -126,7 +128,7 @@ test.describe('keyboard shortcuts', () => {
     await streamDone;
 
     await expect(
-      page.getByTestId('chat-message-row').filter({ hasText: 'Hello from E2E stub' }),
+      visibleChatLayer(page).getByTestId('chat-message-row').filter({ hasText: 'Hello from E2E stub' }),
     ).toBeVisible();
 
     await expect

@@ -5,6 +5,11 @@ import { PAGINATE_PAGE_LIMIT } from './seed-conversation';
 
 export const UI_TIMEOUT = 45_000;
 
+/** 当前可见的对话层（与 IDE 层同挂载时避免匹配到 `visibility:hidden` 的副本）。 */
+export function visibleChatLayer(page: import('@playwright/test').Page) {
+  return page.locator('.main-row-chat-layer:not(.main-row-chat-layer--hidden)');
+}
+
 /** 等待尾部页水合完成（`limit` + `has_older`，避免误匹配其它 GET）。 */
 export function waitForConversationMessages(
   page: Page,
