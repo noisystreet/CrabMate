@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { putFreshLocalSession } from './helpers';
+import { ensureChatLayoutPrefs, putFreshLocalSession } from './helpers';
 
 const STUB_FILE = 'e2e-ide-stub.txt';
 let fileContent = 'hello ide';
@@ -9,6 +9,10 @@ test.describe('IDE layout', () => {
   test.beforeEach(async ({ request }) => {
     await putFreshLocalSession(request, 's_e2e_ide');
     fileContent = 'hello ide';
+  });
+
+  test.afterEach(async ({ request }) => {
+    await ensureChatLayoutPrefs(request);
   });
 
   test('switch to editor, open file, edit, save, return to chat', async ({ page }) => {
@@ -76,11 +80,14 @@ test.describe('IDE layout', () => {
     });
     await ideTree.getByText(STUB_FILE).click();
 
-    const editor = page.getByTestId('ide-editor-textarea');
-    await expect(editor).toBeEnabled({ timeout: 10_000 });
-    await expect(editor).toHaveValue('hello ide');
+    const editorHost = ide.getByTestId('ide-editor-cm');
+    const cmContent = editorHost.locator('.cm-content');
+    await expect(cmContent).toBeVisible({ timeout: 10_000 });
+    await expect(cmContent).toContainText('hello ide');
 
-    await editor.fill('hello ide e2e');
+    await cmContent.click();
+    await page.keyboard.press('Control+a');
+    await page.keyboard.type('hello ide e2e');
     await page.keyboard.press('Control+S');
 
     await expect.poll(async () => fileContent).toBe('hello ide e2e');
