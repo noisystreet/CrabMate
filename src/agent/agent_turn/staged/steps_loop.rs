@@ -182,9 +182,11 @@ where
         );
         if step_verify_failed_reason.is_none() {
             #[allow(clippy::collapsible_if)]
-            if let Some(acceptance) = step.acceptance.as_ref().filter(|a| a.is_effective()) {
+            if let Some(acceptance) =
+                crate::agent::acceptance::effective_plan_step_acceptance(&step)
+            {
                 let verify_result = crate::agent::step_verifier::verify_step_execution(
-                    acceptance,
+                    &acceptance,
                     patch_ctx.p.turn.messages(),
                     step_user_idx,
                     patch_ctx.p.ctx.core.effective_working_dir,
@@ -279,13 +281,14 @@ where
     let audit_footer = patch_ctx
         .per_coord
         .staged_plan_patch_vs_plan_rewrite_counters_footer();
+    let effective_acceptance = crate::agent::acceptance::effective_plan_step_acceptance(step);
     for (attempt_idx, _) in (0..patch_budget).enumerate() {
         let attempt_1based = attempt_idx.saturating_add(1);
         let detail_owned = if let Some(vr) = step_verify_failed_reason {
             if staged_step_empty_execution_is_reason(vr) {
-                staged_step_empty_execution_patch_detail(vr, step.acceptance.as_ref())
+                staged_step_empty_execution_patch_detail(vr, effective_acceptance.as_ref())
             } else {
-                staged_step_verify_fail_patch_detail(vr, step.acceptance.as_ref())
+                staged_step_verify_fail_patch_detail(vr, effective_acceptance.as_ref())
             }
         } else {
             outer_loop_error_text
@@ -383,12 +386,13 @@ where
     let audit_footer = patch_ctx
         .per_coord
         .staged_plan_patch_vs_plan_rewrite_counters_footer();
+    let effective_acceptance = crate::agent::acceptance::effective_plan_step_acceptance(step);
     for (attempt_idx, _) in (0..tool_patch_budget).enumerate() {
         let attempt_1based = attempt_idx.saturating_add(1);
         let detail_owned = staged_step_tool_failure_patch_detail(
             patch_ctx.p.turn.messages(),
             step_user_index,
-            step.acceptance.as_ref(),
+            effective_acceptance.as_ref(),
         );
         let meta = StagedPlanStepFailureFeedbackMeta {
             plan_id,

@@ -3,11 +3,17 @@
 //! - **规则**：[`AcceptanceSpec`]（由 `PlanStepAcceptance` / `GoalAcceptance` 转换而来）。
 //! - **证据**：[`AcceptanceEvidence`]（工具输出、解析后的 stdout/stderr、工作区路径策略等）。
 //! - **判定**：[`verify_against_spec`] 产出 [`VerifyOutcome`]（与 `step_verifier::VerifyResult` 对齐）。
+//! - **缺省规则**：[`executor_defaults`] 在模型未填 `acceptance` 时按 `executor_kind` / 构建类描述补齐（分阶段与分层共用）。
 
 mod check;
+mod executor_defaults;
 mod json_path_resolve;
 
 pub use check::verify_against_spec;
+pub use executor_defaults::{
+    DEFAULT_COMMAND_EXIT_CODE, apply_executor_kind_acceptance_defaults,
+    default_exit_code_for_build_execution_description, effective_plan_step_acceptance,
+};
 pub use json_path_resolve::resolve_json_path_value;
 
 /// 与历史 `step_verifier::VerifyResult` 一致，便于分阶段路径零改动引用。

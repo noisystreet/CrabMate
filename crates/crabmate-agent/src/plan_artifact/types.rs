@@ -51,7 +51,7 @@ impl PlanStepExecutorKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
 pub struct PlanStepAcceptance {
     /// 期望的退出码（如 `cargo test` → 0）。
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -1,9 +1,12 @@
 //! 分阶段步内「空执行 / 无构建进展」检测：执行子循环返回 `Ok` 但本分步未产生与验收匹配的实质工具结果。
 
-use crate::agent::acceptance::AcceptanceSpec;
+use crate::agent::acceptance::{AcceptanceSpec, effective_plan_step_acceptance};
 use crate::agent::plan_artifact::{
     PlanStepAcceptance, PlanStepExecutorKind, PlanStepV1,
     plan_step_acceptance_implies_build_progress, plan_step_description_implies_build_execution,
+};
+use crate::agent::step_executor_policy::{
+    tool_name_implies_patch_write_progress, tool_name_implies_readonly_probe,
 };
 use crate::types::{Message, message_content_as_str, staged_step_window_end_exclusive};
 
@@ -115,6 +118,38 @@ fn staged_step_no_build_progress_reason() -> String {
     )
 }
 
+fn staged_step_executor_kind_progress_reason(kind: PlanStepExecutorKind) -> String {
+    match kind {
+        PlanStepExecutorKind::ReviewReadonly => format!(
+            "{STAGED_STEP_EMPTY_EXECUTION_PREFIX} 本步为 `review_readonly`，但本分步内未出现阅读/探查类只读工具\
+             （如 `read_file`、`list_dir`、`grep`）；不得仅用 `run_command --version` 或自然语言代替。"
+        ),
+        PlanStepExecutorKind::PatchWrite => format!(
+            "{STAGED_STEP_EMPTY_EXECUTION_PREFIX} 本步为 `patch_write`，但本分步内未出现补丁/写文件类工具\
+             （如 `apply_patch`、`create_file`）；不得仅用只读工具或自然语言代替。"
+        ),
+        PlanStepExecutorKind::TestRunner => staged_step_no_build_progress_reason(),
+    }
+}
+
+fn staged_step_window_satisfies_executor_kind(
+    messages: &[Message],
+    step_user_index: usize,
+    executor_kind: Option<PlanStepExecutorKind>,
+) -> bool {
+    match executor_kind {
+        Some(PlanStepExecutorKind::ReviewReadonly) => {
+            staged_step_window_tool_entries(messages, step_user_index)
+                .any(|(name, _)| tool_name_implies_readonly_probe(name))
+        }
+        Some(PlanStepExecutorKind::PatchWrite) => {
+            staged_step_window_tool_entries(messages, step_user_index)
+                .any(|(name, _)| tool_name_implies_patch_write_progress(name))
+        }
+        Some(PlanStepExecutorKind::TestRunner) | None => true,
+    }
+}
+
 pub(crate) fn staged_step_empty_execution_is_reason(reason: &str) -> bool {
     reason.starts_with(STAGED_STEP_EMPTY_EXECUTION_PREFIX)
 }
@@ -128,15 +163,11 @@ pub(crate) fn staged_step_empty_execution_verify_failure(
 ) -> Option<String> {
     let has_tools = staged_step_window_has_tool(messages, step_user_index);
     if !has_tools {
-        if let Some(acceptance) = step
-            .acceptance
-            .as_ref()
-            .filter(|a| PlanStepAcceptance::is_effective(a))
-        {
-            let spec = AcceptanceSpec::from(acceptance);
+        if let Some(acceptance) = effective_plan_step_acceptance(step) {
+            let spec = AcceptanceSpec::from(&acceptance);
             if !spec.requires_tool_evidence()
                 && crate::agent::step_verifier::verify_step_execution(
-                    acceptance,
+                    &acceptance,
                     messages,
                     step_user_index,
                     workspace_root,
@@ -147,6 +178,12 @@ pub(crate) fn staged_step_empty_execution_verify_failure(
             }
         }
         return Some(staged_step_empty_execution_reason());
+    }
+
+    if let Some(kind) = step.executor_kind
+        && !staged_step_window_satisfies_executor_kind(messages, step_user_index, Some(kind))
+    {
+        return Some(staged_step_executor_kind_progress_reason(kind));
     }
 
     if plan_step_expects_build_progress(step)
@@ -346,6 +383,67 @@ mod tests {
         let msgs = vec![user("编译项目"), user("step"), tool("list_dir", "ok")];
         let hint = staged_step_patch_exhausted_build_hint(&msgs, 1, Some("编译项目"));
         assert!(hint.is_some());
+    }
+
+    #[test]
+    fn review_readonly_requires_read_probe_not_version_only() {
+        let msgs = vec![
+            user("goal"),
+            user("step 1"),
+            tool("run_command", "命令：gcc --version\n退出码：0"),
+        ];
+        let step = PlanStepV1 {
+            id: "r".into(),
+            description: "read build docs".into(),
+            workflow_node_id: None,
+            executor_kind: Some(PlanStepExecutorKind::ReviewReadonly),
+            step_kind: None,
+            acceptance: None,
+            max_step_retries: None,
+            transitions: None,
+        };
+        let fail =
+            staged_step_empty_execution_verify_failure(&msgs, 1, &step, std::path::Path::new("."));
+        assert!(fail.is_some());
+        assert!(fail.unwrap().contains("review_readonly"));
+    }
+
+    #[test]
+    fn review_readonly_passes_with_read_file() {
+        let msgs = vec![user("goal"), user("step 1"), tool("read_file", "ok")];
+        let step = PlanStepV1 {
+            id: "r".into(),
+            description: "read".into(),
+            workflow_node_id: None,
+            executor_kind: Some(PlanStepExecutorKind::ReviewReadonly),
+            step_kind: None,
+            acceptance: None,
+            max_step_retries: None,
+            transitions: None,
+        };
+        assert!(
+            staged_step_empty_execution_verify_failure(&msgs, 1, &step, std::path::Path::new("."))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn patch_write_requires_write_tool() {
+        let msgs = vec![user("goal"), user("step 1"), tool("read_file", "ok")];
+        let step = PlanStepV1 {
+            id: "w".into(),
+            description: "apply fix".into(),
+            workflow_node_id: None,
+            executor_kind: Some(PlanStepExecutorKind::PatchWrite),
+            step_kind: None,
+            acceptance: None,
+            max_step_retries: None,
+            transitions: None,
+        };
+        let fail =
+            staged_step_empty_execution_verify_failure(&msgs, 1, &step, std::path::Path::new("."));
+        assert!(fail.is_some());
+        assert!(fail.unwrap().contains("patch_write"));
     }
 
     #[test]
