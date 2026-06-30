@@ -16,6 +16,7 @@ pub mod events;
 pub mod execution;
 pub mod execution_error;
 mod execution_helpers;
+pub mod goal_acceptance;
 pub mod goal_verifier;
 pub mod manager;
 pub mod manager_json_repair;
@@ -40,6 +41,7 @@ pub use build_state::{BuildState, CompileCommand, Diagnostic, DiagnosticSeverity
 pub use dynamic_decomposer::{ComplexityAssessment, DynamicDecomposeError, DynamicDecomposer};
 pub use execution::{HierarchicalExecutionResult, HierarchicalExecutor};
 pub use execution_error::ExecutionError;
+pub use goal_acceptance::effective_goal_acceptance;
 pub use goal_verifier::{GoalVerifier, VerificationResult};
 pub use manager::{FailureDecision, ManagerAgent, ManagerConfig, ManagerError};
 pub use operator::{
