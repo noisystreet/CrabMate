@@ -25,20 +25,24 @@ impl OperatorAgent {
     pub async fn execute(&self, goal: &SubGoal) -> Result<TaskResult, OperatorError> {
         let start_time = Instant::now();
 
-        log::info!(
+        log::warn!(
             target: "crabmate",
-            "[HIERARCHICAL] Operator (simple): goal_id={} desc={}",
+            "[HIERARCHICAL] Operator (stub): goal_id={} desc={} — missing executor context (with_context not applied)",
             goal.goal_id,
             super::text::truncate_goal(&goal.description)
         );
 
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-
         Ok(TaskResult {
             task_id: goal.goal_id.clone(),
-            status: TaskStatus::Completed,
-            output: Some(format!("Completed: {} (simple mode)", goal.description)),
-            error: None,
+            status: TaskStatus::Failed {
+                reason: "Operator 未配置完整执行上下文（缺少 LLM/工具/工作目录），子目标未实际执行"
+                    .to_string(),
+            },
+            output: None,
+            error: Some(
+                "Operator 未配置完整执行上下文（缺少 LLM/工具/工作目录），子目标未实际执行"
+                    .to_string(),
+            ),
             artifacts: Vec::new(),
             duration_ms: start_time.elapsed().as_millis() as u64,
             tools_invoked: Vec::new(),
@@ -57,12 +61,16 @@ impl OperatorAgent {
             &mut state.messages,
             cfg,
         );
+        let transport = LlmRetryingTransportOpts {
+            cancel: self.config.runtime.cancel.as_deref(),
+            ..LlmRetryingTransportOpts::headless_no_stream()
+        };
         let params = CompleteChatRetryingParams::new(
             llm_backend,
             client,
             api_key,
             cfg,
-            LlmRetryingTransportOpts::headless_no_stream(),
+            transport,
             None,
             None,
         );

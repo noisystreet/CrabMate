@@ -77,7 +77,7 @@ impl Default for OperatorPolicy {
 }
 
 /// SSE、产物存储与构建可变状态（按子目标实例化；与 [`OperatorPolicy`] 正交）。
-#[derive(Default, Clone)]
+#[derive(Clone, Default)]
 pub struct OperatorRuntimeHandles {
     /// SSE 发送器（用于发送工具调用/结果事件）
     pub sse_out: Option<Sender<String>>,
@@ -85,6 +85,8 @@ pub struct OperatorRuntimeHandles {
     pub artifact_store: Option<ArtifactStore>,
     /// 构建状态（编译任务使用）
     pub build_state: Option<std::sync::Arc<std::sync::Mutex<BuildState>>>,
+    /// 与主 Agent 回合共用的协作取消标志。
+    pub cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 }
 
 /// Operator Agent 完整配置：策略 + 本轮运行时句柄。

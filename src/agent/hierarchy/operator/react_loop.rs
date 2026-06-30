@@ -199,6 +199,30 @@ impl super::types::OperatorAgent {
 
         // ReAct 循环
         loop {
+            if let Some(reason) = super::super::turn_abort::hierarchical_abort_reason(
+                self.config.runtime.sse_out.as_ref(),
+                self.config.runtime.cancel.as_deref(),
+            ) {
+                let msg = reason.user_message();
+                tracing::info!(
+                    target: "crabmate::hierarchy",
+                    goal_id = %goal.goal_id,
+                    abort_reason = ?reason,
+                    "Operator ReAct: hierarchical turn aborted"
+                );
+                return Ok(TaskResult {
+                    task_id: goal.goal_id.clone(),
+                    status: TaskStatus::Failed {
+                        reason: msg.clone(),
+                    },
+                    output: Some(self.build_output_summary(&state)),
+                    error: Some(msg),
+                    artifacts: Vec::new(),
+                    duration_ms: start_time.elapsed().as_millis() as u64,
+                    tools_invoked: state.tool_names_chron.clone(),
+                });
+            }
+
             state.iteration += 1;
             if convergence_goal {
                 if state.last_reported_phase != Some(state.phase) {

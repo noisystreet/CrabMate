@@ -53,6 +53,8 @@ pub(crate) struct RunLoopIo<'a> {
     pub out: Option<&'a mpsc::Sender<String>>,
     pub no_stream: bool,
     pub cancel: Option<&'a AtomicBool>,
+    /// 与 [`cancel`] 同源；供分层并行 `spawn` 共享。
+    pub cancel_arc: Option<Arc<AtomicBool>>,
     pub render_to_terminal: bool,
     /// 见 [`crate::llm::api::stream_chat`] 的 `plain_terminal_stream`；仅 CLI 入口为 `true`。
     pub plain_terminal_stream: bool,
@@ -364,7 +366,7 @@ impl RunLoopParams<'_> {
         HierarchyRunnerParams {
             task,
             cfg: self.ctx.core.cfg.as_ref(),
-            llm_backend: self.ctx.core.llm_backend,
+            llm_backend: crate::llm::shared_static_chat_backend(self.ctx.core.llm_backend),
             client: Arc::new(self.ctx.core.client.clone()),
             api_key: self.ctx.core.api_key.to_string(),
             working_dir: self.ctx.core.effective_working_dir.to_path_buf(),
@@ -377,6 +379,7 @@ impl RunLoopParams<'_> {
             intent_mode_bias_enabled: self.ctx.core.cfg.intent_routing.intent_mode_bias_enabled,
             process_handles: Arc::clone(&self.ctx.obs.process_handles),
             sse_control_mirror: self.ctx.io.sse_control_mirror.clone(),
+            cancel: self.ctx.io.cancel_arc.clone(),
         }
     }
 

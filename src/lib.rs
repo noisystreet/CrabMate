@@ -507,7 +507,7 @@ pub use config::{
 };
 pub use llm::{
     ChatCompletionsBackend, CompleteChatRetryingParams, OPENAI_COMPAT_BACKEND, OpenAiCompatBackend,
-    StreamChatParams, default_chat_completions_backend,
+    StreamChatParams, default_chat_completions_backend, shared_static_chat_backend,
 };
 pub use tool_registry::{
     ToolDispatchMeta, ToolExecutionClass, all_dispatch_metadata, execution_class_for_tool,

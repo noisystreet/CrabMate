@@ -19,7 +19,7 @@ use log::{info, warn};
 
 mod execution_parallel;
 
-impl<'a> super::HierarchicalExecutor<'a> {
+impl super::HierarchicalExecutor {
     /// 执行子目标列表（保持原有接口兼容）
     pub async fn execute(
         &self,
@@ -43,6 +43,12 @@ impl<'a> super::HierarchicalExecutor<'a> {
         let mut results = Vec::new();
 
         for goal in goals {
+            if let Some(reason) = super::super::turn_abort::hierarchical_abort_reason(
+                self.sse_out.as_ref(),
+                self.cancel.as_deref(),
+            ) {
+                return Err(ExecutionError::TurnAborted(reason));
+            }
             let result = self
                 .execute_single(goal, &acc, &current_level_ids, artifact_store, build_state)
                 .await?;
@@ -119,26 +125,6 @@ impl<'a> super::HierarchicalExecutor<'a> {
         // 创建产物解析器，用于注入构建产物路径
         let _resolver = ArtifactResolver::new(artifact_store, Some(build_state));
 
-        let op_config = OperatorConfig {
-            policy: crate::agent::hierarchy::operator::OperatorPolicy {
-                max_iterations: 15,
-                allowed_tools: allowed_tools.clone(),
-                tools_defs: tools_defs_for_llm.clone(),
-                enable_compile_error_recovery: true,
-                compile_error_max_retries: 3,
-                enable_dynamic_decomposition: true,
-                dynamic_decomposition_threshold: 40,
-            },
-            runtime: crate::agent::hierarchy::operator::OperatorRuntimeHandles {
-                sse_out: self.sse_out.clone(),
-                artifact_store: Some(artifact_store.clone()),
-                build_state: Some(Arc::new(StdMutex::new(build_state.clone()))),
-            },
-        };
-        log::info!(target: "crabmate", "[HIERARCHICAL] execute_single: sse_out is {:?}, tools_defs count={}", self.sse_out.is_some(), tools_defs_for_llm.len());
-
-        let operator = OperatorAgent::new(op_config);
-
         // 根据是否有完整上下文选择执行方法
         let result = if let (
             Some(llm_backend),
@@ -147,12 +133,36 @@ impl<'a> super::HierarchicalExecutor<'a> {
             Some(api_key),
             Some(work_dir),
         ) = (
-            self.llm_backend,
+            self.llm_backend.as_ref(),
             self.cfg.as_ref(),
             self.client.as_ref(),
             self.api_key.as_ref(),
             self.working_dir.as_ref(),
         ) {
+            let op_config = OperatorConfig {
+                policy: crate::agent::hierarchy::operator::OperatorPolicy {
+                    max_iterations: 15,
+                    allowed_tools: allowed_tools.clone(),
+                    tools_defs: tools_defs_for_llm.clone(),
+                    enable_compile_error_recovery: true,
+                    compile_error_max_retries: 3,
+                    enable_dynamic_decomposition: true,
+                    dynamic_decomposition_threshold: 40,
+                },
+                runtime: crate::agent::hierarchy::operator::OperatorRuntimeHandles {
+                    sse_out: self.sse_out.clone(),
+                    artifact_store: Some(artifact_store.clone()),
+                    build_state: Some(Arc::new(StdMutex::new(build_state.clone()))),
+                    cancel: self.cancel.clone(),
+                },
+            };
+            log::info!(
+                target: "crabmate",
+                "[HIERARCHICAL] execute_single: sse_out is {:?}, tools_defs count={}",
+                self.sse_out.is_some(),
+                tools_defs_for_llm.len()
+            );
+            let operator = OperatorAgent::new(op_config);
             // 有完整上下文，使用带工具的执行
             let hl = self
                 .handler_lookup
@@ -184,7 +194,7 @@ impl<'a> super::HierarchicalExecutor<'a> {
                 .execute_with_tools(
                     goal,
                     cfg,
-                    llm_backend,
+                    llm_backend.as_ref(),
                     client,
                     api_key,
                     &tool_executor,
@@ -192,8 +202,14 @@ impl<'a> super::HierarchicalExecutor<'a> {
                 )
                 .await
         } else {
-            // 降级使用简化版本
-            operator.execute(goal).await
+            warn!(
+                target: "crabmate",
+                "[HIERARCHICAL] execute_single_impl: missing full context for goal_id={}, refusing stub success",
+                goal.goal_id
+            );
+            OperatorAgent::new(OperatorConfig::default())
+                .execute(goal)
+                .await
         };
 
         let result = result.map_err(ExecutionError::OperatorError)?;
@@ -241,7 +257,7 @@ impl<'a> super::HierarchicalExecutor<'a> {
         let artifacts = previous_artifacts.to_vec();
 
         let cfg = self.cfg.clone()?;
-        let llm_backend = self.llm_backend?;
+        let llm_backend = self.llm_backend.as_ref()?.as_ref();
         let client = self.client.as_ref()?.clone();
         let api_key = self.api_key.as_ref()?.clone();
         let working_dir = self.working_dir.as_ref()?.clone();
@@ -304,7 +320,7 @@ impl<'a> super::HierarchicalExecutor<'a> {
 
         // 提取必要数据
         let cfg = self.cfg.clone()?;
-        let llm_backend = self.llm_backend?;
+        let llm_backend = self.llm_backend.as_ref()?.as_ref();
         let client = self.client.as_ref()?.clone();
         let api_key = self.api_key.as_ref()?.clone();
         let working_dir = self.working_dir.as_ref()?.clone();

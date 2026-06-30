@@ -91,6 +91,7 @@ fn make_run_loop_params<'a>(
                 out: None,
                 no_stream: true,
                 cancel: None,
+                cancel_arc: None,
                 render_to_terminal: false,
                 plain_terminal_stream: false,
                 tui_llm_stream_scratch: None,

@@ -10,6 +10,7 @@ use crate::agent::per_coord::{PerCoordinator, PerCoordinatorInit};
 use crate::sse;
 
 use super::errors::RunAgentTurnError;
+use super::errors::{AgentTurnSubPhase, TurnAbortReason};
 use super::intent_at_turn_start;
 use super::intent_user;
 use super::outer_loop::run_agent_outer_loop;
@@ -18,8 +19,8 @@ use super::task_level_evidence::{
     is_program_build_run_request, render_task_level_evidence, verify_task_level_execution_evidence,
 };
 use super::turn_orchestration::TurnOrchestrationMode;
-use crate::agent::agent_turn::errors::AgentTurnSubPhase;
 use crate::agent::hierarchy::execution_error::ExecutionError;
+use crate::agent::hierarchy::turn_abort::HierarchicalTurnAbortReason;
 use crate::agent::intent_pipeline::IntentAction;
 use tracing::{info, warn};
 
@@ -196,6 +197,23 @@ pub(crate) async fn run_hierarchical_agent(
     // 运行分层 Agent：失败时也输出总结性终答，避免主气泡无收尾
     let result = match hierarchy::runner::run_hierarchical(params).await {
         Ok(r) => r,
+        Err(ExecutionError::TurnAborted(reason)) => {
+            let abort_reason = match reason {
+                HierarchicalTurnAbortReason::UserCancelled => TurnAbortReason::UserCancelled,
+                HierarchicalTurnAbortReason::SseDisconnected => TurnAbortReason::SseDisconnected,
+            };
+            info!(
+                target: "crabmate::agent_turn",
+                turn_orchestration_mode = TurnOrchestrationMode::Hierarchical.as_str(),
+                hierarchical_phase = HierarchicalRunPhase::ExecutionAbortedSummary.as_str(),
+                abort_reason = ?abort_reason,
+                "run_hierarchical_agent turn aborted"
+            );
+            return Err(RunAgentTurnError::TurnAborted {
+                phase: AgentTurnSubPhase::Executor,
+                reason: abort_reason,
+            });
+        }
         Err(e) => {
             info!(
                 target: "crabmate::agent_turn",

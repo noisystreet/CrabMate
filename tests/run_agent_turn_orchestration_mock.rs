@@ -21,7 +21,7 @@ use crabmate::{
     AgentConfig, AgentTurnLlmOverrides, AgentTurnTransport, ChatCompletionsBackend, ChatRequest,
     FunctionCall, LlmSeedOverride, Message, PlannerExecutorMode, ProcessHandles,
     RunAgentTurnParams, RunAgentTurnSharedInputs, StreamChatParams, ToolCall, build_tools,
-    load_config, message_content_as_str, run_agent_turn,
+    load_config, message_content_as_str, run_agent_turn, shared_static_chat_backend,
 };
 
 /// 按序返回预设 assistant 消息；用于编排回归，**非**生产后端。
@@ -211,7 +211,7 @@ async fn run_hierarchical_router_manager_operator_mock_llm_sequence() {
     let params = HierarchyRunnerParams {
         task,
         cfg: cfg.as_ref(),
-        llm_backend: backend as &dyn ChatCompletionsBackend,
+        llm_backend: shared_static_chat_backend(backend),
         client: client.clone(),
         api_key: String::new(),
         working_dir: work_dir.to_path_buf(),
@@ -219,6 +219,7 @@ async fn run_hierarchical_router_manager_operator_mock_llm_sequence() {
         tools_defs: tools.as_slice(),
         tool_approval_out: None,
         tool_approval_rx: None,
+        cancel: None,
         primary_intent: Some("execute.read_inspect".to_string()),
         secondary_intents: Vec::new(),
         intent_mode_bias_enabled: false,

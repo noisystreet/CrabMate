@@ -76,7 +76,7 @@ fn max_retries_exceeded_task_result(goal_id: &str, max_retries: usize) -> TaskRe
     }
 }
 
-impl<'a> super::HierarchicalExecutor<'a> {
+impl super::HierarchicalExecutor {
     /// 执行单个子目标（带验证和重试循环）
     ///
     /// 执行流程：执行 → 验证 → （失败时）反思/重试

@@ -6,6 +6,7 @@
 pub mod api;
 pub mod backend;
 pub mod backend_openai;
+pub mod backend_shared;
 pub mod call_error;
 pub mod chat_params;
 mod complete_error;
@@ -24,6 +25,7 @@ pub use backend::ChatCompletionsBackend;
 pub use backend_openai::{
     OPENAI_COMPAT_BACKEND, OpenAiCompatBackend, default_chat_completions_backend,
 };
+pub use backend_shared::{shared_chat_backend, shared_static_chat_backend};
 pub use call_error::LlmCallError;
 pub use chat_params::{LlmRetryingTransportOpts, StreamChatParams};
 pub use complete_error::LlmCompleteError;

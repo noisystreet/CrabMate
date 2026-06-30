@@ -15,11 +15,12 @@ pub mod backend {
     pub use crabmate_llm::backend_openai::{
         OPENAI_COMPAT_BACKEND, OpenAiCompatBackend, default_chat_completions_backend,
     };
+    pub use crabmate_llm::backend_shared::shared_static_chat_backend;
 }
 
 pub use backend::{
     ChatCompletionsBackend, OPENAI_COMPAT_BACKEND, OpenAiCompatBackend,
-    default_chat_completions_backend,
+    default_chat_completions_backend, shared_static_chat_backend,
 };
 pub use chat_params_ext::CompleteChatRetryingParams;
 #[allow(unused_imports)]
