@@ -15,7 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 crabmate-sse-protocol = { path = "../crabmate-sse-protocol" }
-axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio", "macros"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "macros"] }
 aes = "0.8"
 base64 = "0.22"
 cbc = "0.1"
