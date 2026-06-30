@@ -165,10 +165,20 @@ pub fn highlight_rust_to_html(source: &str) -> String {
                     && i + 1 < chars.len()
                     && (chars[i + 1].is_ascii_alphabetic() || chars[i + 1] == '_')
                 {
+                    // 区分 char literal `'a'` 与 lifetime `'a` / `'static`：
+                    // ident 结束后紧跟 `'` → char literal；否则视为 lifetime。
+                    let ident_end_pos = ident_end(&chars, i + 1);
+                    if ident_end_pos < chars.len() && chars[ident_end_pos] == '\'' {
+                        flush(&mut out, "hl-plain", &mut buf);
+                        buf.push('\'');
+                        i += 1;
+                        state = State::CharLiteral;
+                        continue;
+                    }
                     flush(&mut out, "hl-plain", &mut buf);
-                    buf.push('\'');
-                    i += 1;
-                    state = State::CharLiteral;
+                    let piece: String = chars[i..ident_end_pos].iter().collect();
+                    push_span(&mut out, "hl-attr", &piece);
+                    i = ident_end_pos;
                     continue;
                 }
                 if c.is_ascii_digit()
@@ -185,8 +195,14 @@ pub fn highlight_rust_to_html(source: &str) -> String {
                     flush(&mut out, "hl-plain", &mut buf);
                     let end = ident_end(&chars, i);
                     let piece: String = chars[i..end].iter().collect();
+                    // 宏调用：ident 后紧跟 `!` 且非 `!=`
+                    let is_macro_call = end < chars.len()
+                        && chars[end] == '!'
+                        && !(end + 1 < chars.len() && chars[end + 1] == '=');
                     let class = if KEYWORDS.contains(&piece.as_str()) {
                         "hl-kw"
+                    } else if is_macro_call {
+                        "hl-mac"
                     } else if BUILTIN_TYPES.contains(&piece.as_str())
                         || piece.chars().next().is_some_and(|c| c.is_uppercase())
                     {
@@ -195,7 +211,7 @@ pub fn highlight_rust_to_html(source: &str) -> String {
                         "hl-plain"
                     };
                     push_span(&mut out, class, &piece);
-                    if end < chars.len() && chars[end] == '!' {
+                    if is_macro_call {
                         push_span(&mut out, "hl-mac", "!");
                         i = end + 1;
                     } else {
@@ -309,5 +325,28 @@ mod tests {
         assert!(html.contains("&lt;"));
         assert!(html.contains("&gt;"));
         assert!(!html.contains("<script>"));
+    }
+
+    #[test]
+    fn highlights_lifetime() {
+        let html = highlight_rust_to_html("fn foo<'a>(x: &'a u8) -> &'a str { x }");
+        // lifetime `'a` 应高亮为 hl-attr，而非 hl-str（char literal）
+        assert!(html.contains("hl-attr"));
+        assert!(html.contains("'a"));
+        // 普通字符 'x' 仍是字符串
+        let html2 = highlight_rust_to_html("let c = 'x';");
+        assert!(html2.contains("hl-str"));
+    }
+
+    #[test]
+    fn highlights_macro_call_name() {
+        let html = highlight_rust_to_html("println!(\"hi\");");
+        // 宏名 println 应整段高亮为 hl-mac
+        assert!(html.contains("hl-mac"));
+        assert!(html.contains("println"));
+        // `a != b` 中 a 不应被误判为宏名
+        let html2 = highlight_rust_to_html("let a = b != c;");
+        assert!(html2.contains("hl-kw"));
+        assert!(!html2.contains("hl-mac"));
     }
 }
