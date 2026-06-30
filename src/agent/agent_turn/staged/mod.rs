@@ -37,8 +37,12 @@ mod step_failure_exit;
 mod step_iteration_fsm;
 mod step_loop_fsm;
 mod steps_loop;
+mod steps_loop_route_fsm;
 mod turn_fsm;
 mod turn_orchestrator_fsm;
+
+#[cfg(test)]
+mod fsm_orchestrator_golden;
 
 #[cfg(test)]
 mod planner_tool_call_reject_regression_tests;
