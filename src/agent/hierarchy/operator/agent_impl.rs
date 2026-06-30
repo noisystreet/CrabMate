@@ -1,7 +1,7 @@
 //! `OperatorAgent` 实现：简化执行路径、LLM 调用、产物上下文、注入与工具结果分析。
 //!
-//! **分层 ReAct 上下文**：每次调用模型前对 [`ReactState::messages`] 执行与主循环相同的
-//! **`prepare_messages_before_model_call_sync`**（`tool` 压缩、条数/字符裁剪等），避免 ReAct
+//! **分层 ReAct 上下文**：每次调用模型前对 [`ReactState::messages`] 执行同步裁剪与可选 LLM 摘要
+//! （[`crate::agent::context_window::prepare_messages_for_hierarchical_operator`]），避免 ReAct
 //! 轮次堆积撑爆上下文（见 **`docs/design/context_trimming_scheme.md`**）。
 
 use std::time::Instant;
@@ -57,10 +57,36 @@ impl OperatorAgent {
         api_key: &str,
         state: &mut ReactState,
     ) -> Result<Message, OperatorError> {
-        crate::agent::context_window::prepare_messages_before_model_call_sync(
-            &mut state.messages,
+        if let Some(ref budget) = self.config.runtime.turn_budget {
+            if budget.wall_clock_exceeded(&cfg.turn_budget) {
+                return Err(OperatorError::ExecutionError(
+                    crate::agent::turn_budget::turn_wall_clock_limit_user_message(
+                        cfg.turn_budget.max_turn_duration_seconds,
+                    ),
+                ));
+            }
+            let max_llm =
+                crate::agent::turn_budget::effective_max_llm_calls_per_turn(&cfg.turn_budget);
+            if budget.llm_calls_exceeded(max_llm) {
+                return Err(OperatorError::ExecutionError(
+                    crate::agent::turn_budget::turn_llm_calls_limit_user_message(max_llm),
+                ));
+            }
+        }
+        crate::agent::context_window::prepare_messages_for_hierarchical_operator(
+            llm_backend,
+            client,
+            api_key,
             cfg,
-        );
+            &mut state.messages,
+            self.config.runtime.cancel.as_deref(),
+            self.config.runtime.turn_budget.as_ref(),
+        )
+        .await
+        .map_err(|e| OperatorError::ExecutionError(e.to_string()))?;
+        if let Some(ref budget) = self.config.runtime.turn_budget {
+            budget.record_llm_call();
+        }
         let transport = LlmRetryingTransportOpts {
             cancel: self.config.runtime.cancel.as_deref(),
             ..LlmRetryingTransportOpts::headless_no_stream()

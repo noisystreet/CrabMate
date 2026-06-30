@@ -392,6 +392,8 @@ fn finalize_section_turn_budget() -> types::TurnBudgetConfig {
     types::TurnBudgetConfig {
         max_turn_duration_seconds: 600,
         max_turn_tokens: 100_000,
+        max_llm_calls_per_turn: 0,
+        max_outer_loop_iterations: 0,
         full_plan_rewrite_max_attempts: 2,
     }
 }

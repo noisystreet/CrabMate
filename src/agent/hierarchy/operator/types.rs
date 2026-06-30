@@ -87,6 +87,8 @@ pub struct OperatorRuntimeHandles {
     pub build_state: Option<std::sync::Arc<std::sync::Mutex<BuildState>>>,
     /// 与主 Agent 回合共用的协作取消标志。
     pub cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    /// 单轮墙钟与 LLM 调用计数（与外循环共用）。
+    pub turn_budget: Option<std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
 }
 
 /// Operator Agent 完整配置：策略 + 本轮运行时句柄。

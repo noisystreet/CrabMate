@@ -38,6 +38,7 @@ async fn prepare_then_build_planner_messages_ends_with_plan_system() {
         PrepareMessagesForModelHooks {
             per_coord_layer_cache: Some(&mut per),
             run_loop_messages_revision: None,
+            turn_budget: None,
         },
     )
     .await
@@ -135,6 +136,7 @@ async fn prepare_staged_planner_no_tools_request_fixture_roundtrip() {
             executor_api_base: None,
             executor_api_key: None,
             seed_override: LlmSeedOverride::FromConfig,
+            turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared(),
         },
     };
 

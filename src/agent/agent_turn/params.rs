@@ -20,6 +20,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use crate::agent::turn_budget::TurnBudgetCounter;
+
 use crate::workspace::changelist::WorkspaceChangelist;
 
 use tokio::sync::mpsc;
@@ -216,6 +218,8 @@ pub(crate) struct RunLoopTurnState<'a> {
     /// 当 use_executor_model 为 true 时，优先使用此 api_key。
     pub executor_api_key: Option<String>,
     pub seed_override: LlmSeedOverride,
+    /// 单轮墙钟与 LLM 调用计数（外循环与分层 Operator 共用）。
+    pub turn_budget: Arc<TurnBudgetCounter>,
 }
 
 impl<'a> RunLoopTurnState<'a> {
@@ -380,6 +384,7 @@ impl RunLoopParams<'_> {
             process_handles: Arc::clone(&self.ctx.obs.process_handles),
             sse_control_mirror: self.ctx.io.sse_control_mirror.clone(),
             cancel: self.ctx.io.cancel_arc.clone(),
+            turn_budget: Arc::clone(&self.turn.turn_budget),
         }
     }
 
@@ -435,6 +440,7 @@ impl RunLoopParams<'_> {
             crate::agent::context_window::PrepareMessagesForModelHooks {
                 per_coord_layer_cache,
                 run_loop_messages_revision: Some(&mut self.turn.messages_revision),
+                turn_budget: Some(&self.turn.turn_budget),
             },
         )
         .await
@@ -507,6 +513,7 @@ mod turn_planner_hints_tests {
             executor_api_base: None,
             executor_api_key: None,
             seed_override: LlmSeedOverride::FromConfig,
+            turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared(),
         };
         assert_eq!(turn.messages_buffer_revision(), 0);
         turn.push_message(Message::assistant_only("a"));
@@ -539,6 +546,7 @@ mod turn_planner_hints_tests {
             executor_api_base: None,
             executor_api_key: None,
             seed_override: LlmSeedOverride::FromConfig,
+            turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared(),
         };
         turn.pop_last_staged_planner_coach_user_if_present();
         assert_eq!(turn.messages().len(), 1);
@@ -567,6 +575,7 @@ mod turn_planner_hints_tests {
             executor_api_base: None,
             executor_api_key: None,
             seed_override: LlmSeedOverride::FromConfig,
+            turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared(),
         };
         assert_eq!(
             turn.staged_immutable_user_goal_snapshot(),

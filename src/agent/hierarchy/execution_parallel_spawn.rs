@@ -40,6 +40,7 @@ pub(super) struct ParallelSubgoalTask {
     pub tool_approval_rx: Option<Arc<TokioMutex<Receiver<CommandApprovalDecision>>>>,
     pub probe_cache: Arc<TokioMutex<ProbeCache>>,
     pub cancel: Option<Arc<AtomicBool>>,
+    pub turn_budget: Option<Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
     pub prior: Arc<Vec<TaskResult>>,
     pub pre_snapshot: Arc<ArtifactStore>,
     pub current_ids: Arc<HashSet<String>>,
@@ -66,6 +67,7 @@ pub(in crate::agent::hierarchy::execution::execution_impl) async fn run_one_para
         tool_approval_rx,
         probe_cache,
         cancel,
+        turn_budget,
         prior,
         pre_snapshot,
         current_ids,
@@ -135,6 +137,7 @@ pub(in crate::agent::hierarchy::execution::execution_impl) async fn run_one_para
             artifact_store: Some(store.clone()),
             build_state: Some(Arc::new(StdMutex::new(build_state.clone()))),
             cancel,
+            turn_budget,
         },
     };
 

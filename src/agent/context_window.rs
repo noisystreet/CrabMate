@@ -110,6 +110,30 @@ pub fn prepare_messages_for_hierarchical_llm_sync(messages: &mut Vec<Message>, c
     prepare_messages_before_model_call_sync(messages, cfg);
 }
 
+/// 分层 **Operator** ReAct：同步裁剪 + 可选 LLM 摘要（与主路径 [`prepare_messages_for_model`] 摘要段对齐；
+/// **不含** changelist 注入与 PER 层缓存失效）。
+pub async fn prepare_messages_for_hierarchical_operator(
+    llm_backend: &dyn ChatCompletionsBackend,
+    client: &Client,
+    api_key: &str,
+    cfg: &AgentConfig,
+    messages: &mut Vec<Message>,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+    turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    prepare_messages_before_model_call_sync(messages, cfg);
+    maybe_summarize_with_llm(
+        llm_backend,
+        client,
+        api_key,
+        cfg,
+        messages,
+        cancel,
+        turn_budget,
+    )
+    .await
+}
+
 /// 当非 system 文本超过 `context_summary_trigger_chars` 时，调用模型生成摘要并替换「中间」为单条 user。
 pub async fn maybe_summarize_with_llm(
     llm_backend: &dyn ChatCompletionsBackend,
@@ -117,6 +141,8 @@ pub async fn maybe_summarize_with_llm(
     api_key: &str,
     cfg: &AgentConfig,
     messages: &mut Vec<Message>,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+    turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let trigger = cfg.effective_context_summary_trigger_chars();
     if trigger == 0 {
@@ -144,6 +170,18 @@ pub async fn maybe_summarize_with_llm(
         return Ok(());
     };
 
+    if let Some(budget) = turn_budget {
+        let max_llm = crate::agent::turn_budget::effective_max_llm_calls_per_turn(&cfg.turn_budget);
+        if budget.llm_calls_exceeded(max_llm) {
+            warn!(
+                target: "crabmate",
+                "上下文摘要跳过：已达单轮 LLM 调用上限 ({max_llm})"
+            );
+            return Ok(());
+        }
+        budget.record_llm_call();
+    }
+
     let sum_messages = vec![
         Message::system_only(SUMMARY_SYSTEM.to_string()),
         Message::user_only(format!(
@@ -170,7 +208,10 @@ pub async fn maybe_summarize_with_llm(
         client,
         api_key,
         cfg,
-        LlmRetryingTransportOpts::headless_no_stream(),
+        LlmRetryingTransportOpts {
+            cancel,
+            ..LlmRetryingTransportOpts::headless_no_stream()
+        },
         None,
         None,
     );
@@ -219,6 +260,7 @@ pub async fn maybe_summarize_with_llm(
 pub struct PrepareMessagesForModelHooks<'a> {
     pub per_coord_layer_cache: Option<&'a mut PerCoordinator>,
     pub run_loop_messages_revision: Option<&'a mut u64>,
+    pub turn_budget: Option<&'a std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
 }
 
 /// 同步策略 + 可选异步摘要（在摘要前后都会再跑一遍同步压缩）。
@@ -232,7 +274,16 @@ pub async fn prepare_messages_for_model(
     hooks: PrepareMessagesForModelHooks<'_>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     prepare_messages_before_model_call_sync(messages, cfg);
-    maybe_summarize_with_llm(llm_backend, client, api_key, cfg, messages).await?;
+    maybe_summarize_with_llm(
+        llm_backend,
+        client,
+        api_key,
+        cfg,
+        messages,
+        None,
+        hooks.turn_budget,
+    )
+    .await?;
     crate::workspace::changelist::sync_changelist_user_message(
         messages,
         workspace_changelist,

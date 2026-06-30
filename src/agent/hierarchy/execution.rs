@@ -49,6 +49,8 @@ pub struct HierarchicalExecutor {
     sse_out: Option<Sender<String>>,
     /// 用户取消标志（与主 Agent `RunLoopIo::cancel` 同源）。
     cancel: Option<Arc<AtomicBool>>,
+    /// 单轮墙钟与 LLM 调用计数（与主 Agent 外循环共用）。
+    turn_budget: Option<Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
     /// 工具定义列表（用于 Operator 的 LLM 函数调用）
     tools_defs: Vec<Tool>,
     /// Manager Agent（用于失败时重新规划）
@@ -79,6 +81,7 @@ impl HierarchicalExecutor {
             working_dir: None,
             sse_out: None,
             cancel: None,
+            turn_budget: None,
             tools_defs: Vec::new(),
             manager: None,
             original_task: None,
@@ -228,6 +231,15 @@ impl HierarchicalExecutor {
     /// 与主 Agent 回合共用的协作取消标志。
     pub fn with_cancel(mut self, cancel: Option<Arc<AtomicBool>>) -> Self {
         self.cancel = cancel;
+        self
+    }
+
+    /// 与主 Agent 回合共用的单轮预算计数器。
+    pub fn with_turn_budget(
+        mut self,
+        turn_budget: Arc<crate::agent::turn_budget::TurnBudgetCounter>,
+    ) -> Self {
+        self.turn_budget = Some(turn_budget);
         self
     }
 
