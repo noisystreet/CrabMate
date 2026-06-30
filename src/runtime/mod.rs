@@ -6,6 +6,7 @@ pub mod cli;
 pub mod cli_doctor;
 pub mod cli_exit;
 pub(crate) mod cli_mcp;
+#[cfg(any(feature = "repl", feature = "tui"))]
 pub(crate) mod cli_repl_ui;
 pub(crate) mod cli_wait_spinner;
 pub mod cli_workflow;
@@ -15,11 +16,17 @@ pub(crate) mod message_display;
 pub(crate) mod message_display_parts;
 pub(crate) mod message_snapshot_display;
 pub(crate) mod plan_section;
+#[cfg(feature = "repl")]
 pub(crate) mod repl_reedline;
+#[cfg(feature = "repl")]
 pub(crate) mod repl_slash_complete;
+#[cfg(any(feature = "repl", feature = "tui"))]
 pub(crate) mod terminal_cli_transcript;
+#[cfg(any(feature = "repl", feature = "tui"))]
 pub(crate) mod terminal_labels;
 pub mod tool_replay;
+#[cfg(feature = "tui")]
 pub mod tui;
+#[cfg(feature = "tui")]
 pub(crate) mod tui_terminal_bridge;
 pub mod workspace_session;

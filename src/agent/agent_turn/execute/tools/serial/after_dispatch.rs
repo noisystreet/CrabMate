@@ -136,7 +136,7 @@ pub(super) fn serial_maybe_invalidate_codebase_semantic_index(
 pub(super) fn serial_log_web_audit_write_tool_if_needed(
     cfg: &crate::config::AgentConfig,
     is_readonly: bool,
-    request_audit: Option<&std::sync::Arc<crate::web::audit::WebRequestAudit>>,
+    request_audit: Option<&std::sync::Arc<crate::WebRequestAudit>>,
     tracing_chat_turn: Option<&std::sync::Arc<crate::observability::TracingChatTurn>>,
     long_term_memory_scope_id: Option<&str>,
     name: &str,

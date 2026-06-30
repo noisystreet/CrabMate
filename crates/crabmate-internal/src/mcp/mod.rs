@@ -1,6 +1,6 @@
 //! [Model Context Protocol](https://modelcontextprotocol.io/) 入口。
 //!
-//! - **`mcp` feature（默认开启）**：stdio 客户端/服务端、进程内工具合并。
+//! - **`mcp` feature**：stdio 客户端/服务端、进程内工具合并（默认构建经根 crate `default` 启用）。
 //! - **关闭时**（`--no-default-features` 且不加 `mcp`）：不链接 **`rmcp`**；`mcp list` / `mcp serve` 不可用，配置中的 MCP 工具名会被忽略。
 
 pub mod resolve;

@@ -38,6 +38,9 @@ jobs:
       - name: cargo check (workspace, all targets)
         run: cargo check --workspace --all-targets --all-features
 
+      - name: cargo check (crabmate slim features, no mcp/fastembed)
+        run: cargo check -p crabmate --no-default-features --features web,repl,tui
+
       - name: cargo check (frontend wasm32)
         run: cargo check --manifest-path frontend/Cargo.toml --target wasm32-unknown-unknown --all-targets
 

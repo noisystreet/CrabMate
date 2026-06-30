@@ -383,6 +383,6 @@ pub(crate) struct WebUiConfigResponse {
 pub(crate) async fn web_ui_config_handler() -> Json<WebUiConfigResponse> {
     Json(WebUiConfigResponse {
         markdown_render: !web_disable_markdown_env(),
-        apply_assistant_display_filters: !crate::web::web_ui_env::web_raw_assistant_output_env(),
+        apply_assistant_display_filters: !crate::env_flags::web_raw_assistant_output_env(),
     })
 }

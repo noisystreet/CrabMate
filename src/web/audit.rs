@@ -1,60 +1,15 @@
 //! Web HTTP 请求上下文：写副作用工具审计（与共享 Bearer 配套；**不**记录密钥明文）。
 
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 
 use axum::http::{HeaderMap, header};
-use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
 
 use crate::config::{AgentConfig, ExposeSecret};
+use crate::request_audit::web_api_bearer_fingerprint;
 use crate::web::chat_handlers::WEB_API_X_API_KEY_HEADER;
 
-/// 单次 HTTP 对话任务携带的审计上下文（队列 → `run_agent_turn`）。
-#[derive(Debug, Clone)]
-pub struct WebRequestAudit {
-    /// 直连 TCP 对端（通常为反向代理地址）。
-    pub peer_ip: IpAddr,
-    /// 解析后的客户端 IP 字符串（优先 `X-Forwarded-For` 首跳，见配置）。
-    pub client_ip: String,
-    /// `Authorization` / `X-API-Key` 与配置 **`web_api_bearer_token`** 的 SHA-256 指纹（hex，前 12 字符）；密钥为空或未携带时为 `None`。
-    pub bearer_fp: Option<String>,
-    /// `http`（浏览器/API 客户端）或 `scheduled`（`[[scheduled_agent_task]]`）。
-    pub source: &'static str,
-}
-
-impl WebRequestAudit {
-    pub(crate) fn scheduled_placeholder() -> Self {
-        Self {
-            peer_ip: IpAddr::from([0, 0, 0, 0]),
-            client_ip: "scheduled".to_string(),
-            bearer_fp: None,
-            source: "scheduled",
-        }
-    }
-}
-
-fn sha256_hex_prefix(secret: &[u8], prefix_hex_chars: usize) -> String {
-    let digest = Sha256::digest(secret);
-    let mut s = String::with_capacity(prefix_hex_chars.min(64));
-    for b in digest.iter().take(prefix_hex_chars.div_ceil(2)) {
-        use core::fmt::Write as _;
-        let _ = write!(&mut s, "{b:02x}");
-        if s.len() >= prefix_hex_chars {
-            break;
-        }
-    }
-    s.truncate(prefix_hex_chars.min(s.len()));
-    s
-}
-
-/// 与配置中的共享 Web API 密钥对应的稳定指纹（不含明文）。
-pub(crate) fn web_api_bearer_fingerprint(cfg: &AgentConfig) -> Option<String> {
-    let raw = cfg.web_api.web_api_bearer_token.expose_secret();
-    let b = raw.trim().as_bytes();
-    if b.is_empty() {
-        return None;
-    }
-    Some(sha256_hex_prefix(b, 12))
-}
+pub(crate) use crate::request_audit::WebRequestAudit;
 
 fn first_forwarded_client_ip(raw: &str) -> Option<String> {
     raw.split(',')
@@ -110,7 +65,6 @@ fn secret_matches_web_api(
     auth: Option<&axum::http::HeaderValue>,
     x_api_key: Option<&axum::http::HeaderValue>,
 ) -> bool {
-    use subtle::ConstantTimeEq;
     let secret = cfg
         .web_api
         .web_api_bearer_token
@@ -172,18 +126,6 @@ mod tests {
         assert_eq!(
             first_forwarded_client_ip(" 192.0.2.1 , 10.0.0.1 ").as_deref(),
             Some("192.0.2.1")
-        );
-    }
-
-    #[test]
-    fn web_api_bearer_fingerprint_stable_hex12() {
-        let cfg = test_cfg("integration-test-secret");
-        let fp = web_api_bearer_fingerprint(&cfg).expect("non-empty secret yields fingerprint");
-        assert_eq!(fp.len(), 12);
-        assert!(fp.chars().all(|c| c.is_ascii_hexdigit()));
-        assert_eq!(
-            web_api_bearer_fingerprint(&cfg).as_deref(),
-            Some(fp.as_str())
         );
     }
 

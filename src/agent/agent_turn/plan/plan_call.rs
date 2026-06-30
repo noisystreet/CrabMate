@@ -9,8 +9,8 @@ use crate::llm::{
     CompleteChatRetryingParams, LlmCompleteError, LlmRetryingTransportOpts, complete_chat_retrying,
     tool_chat_request,
 };
-use crate::runtime::tui::TuiLlmStreamScratchArc;
 use crate::types::{LlmSeedOverride, Message};
+use crabmate_llm::TuiLlmStreamScratchArc;
 
 /// P：构造请求并调用模型（`no_stream` 为 true 时走 `stream: false`），**不**修改 `messages`。
 pub(crate) struct PerPlanCallModelParams<'a> {

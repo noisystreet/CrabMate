@@ -10,7 +10,6 @@ use crate::config::ScheduledAgentTask;
 use crate::types::LlmSeedOverride;
 
 use super::app_state::AppState;
-use super::audit;
 use super::chat_handlers::{normalize_agent_role, prepare_json_chat_enqueue};
 
 /// 启动 cron：按当前配置注册任务并 `tokio::spawn` 跑调度器主循环。
@@ -165,7 +164,7 @@ async fn run_scheduled_json_turn(state: Arc<AppState>, task: ScheduledAgentTask)
                 executor_llm_override: None,
                 execution_mode_override: None,
                 readonly_tool_ttl_cache_secs: None,
-                request_audit: audit::WebRequestAudit::scheduled_placeholder(),
+                request_audit: crate::WebRequestAudit::scheduled_placeholder(),
             },
             reply_tx,
         })

@@ -398,7 +398,7 @@ impl super::types::OperatorAgent {
             state
                 .observations
                 .push(format!("Final: {}", super::text::truncate_output(&text)));
-            let mut output = if crate::web::web_ui_env::web_raw_assistant_output_env() {
+            let mut output = if crate::env_flags::web_raw_assistant_output_env() {
                 text.clone()
             } else {
                 super::text::strip_thinking_tags(&text)

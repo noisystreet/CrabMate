@@ -274,7 +274,7 @@ pub(crate) struct ReplDispatchChatRoundParams<'a> {
     pub(crate) style: &'a CliReplStyle,
     pub(crate) no_stream: bool,
     pub(crate) suppress_stdout_render: bool,
-    pub(crate) tui_llm_stream_scratch: Option<crate::runtime::tui::TuiLlmStreamScratchArc>,
+    pub(crate) tui_llm_stream_scratch: Option<crabmate_llm::TuiLlmStreamScratchArc>,
     /// TUI：工具批开始/结束回调（底栏「工具执行中…」）；REPL 为 `None`。
     pub(crate) tool_running_hook: Option<std::sync::Arc<dyn Fn(bool) + Send + Sync>>,
     /// TUI 等：用户消息已写入 `messages` 后立即刷新展示（不等整轮 `run_agent_turn` 结束）。
