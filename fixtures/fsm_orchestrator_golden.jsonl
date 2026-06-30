@@ -1,0 +1,24 @@
+# PER 编排 FSM 金样：每行一条 JSON，供 `agent_turn/fsm_orchestrator_golden.rs` 加载。
+# 运行：`cargo test golden_fsm_orchestrator -p crabmate`
+{"id":"prepared_degrade","case":"orchestrator_prepared_route","route":"degrade_to_outer_loop","expect_phase":"degraded_to_outer_loop"}
+{"id":"prepared_quiet","case":"orchestrator_prepared_route","route":"quiet_finish","expect_phase":"done"}
+{"id":"prepared_direct","case":"orchestrator_prepared_route","route":"finish_with_direct_planner_answer","expect_phase":"done"}
+{"id":"prepared_continue","case":"orchestrator_prepared_route","route":"continue_with_plan","expect_phase":"plan_ready"}
+{"id":"turn_pre","case":"orchestrator_turn_phase","phase":"pre_step_execution_round","expect_phase":"pre_plan"}
+{"id":"turn_after","case":"orchestrator_turn_phase","phase":"after_step_execution_round","expect_phase":"pre_plan"}
+{"id":"full_before_ensemble","case":"orchestrator_full_pipeline","phase":"before_ensemble","expect_phase":"plan_ready"}
+{"id":"full_after_nl","case":"orchestrator_full_pipeline","phase":"after_nl_followup","expect_phase":"plan_ready"}
+{"id":"steps_finished","case":"orchestrator_steps_loop_trace","trace":"send_plan_finished","expect_phase":"done"}
+{"id":"steps_running","case":"orchestrator_steps_loop_trace","trace":"step_running","expect_phase":"step_running"}
+{"id":"steps_patch","case":"orchestrator_steps_loop_trace","trace":"patch_replanner","expect_phase":"step_running"}
+{"id":"outer_reflect_break","case":"outer_loop_reflect_ctl","ctl":"break_outer","expect":"break_outer"}
+{"id":"outer_reflect_continue","case":"outer_loop_reflect_ctl","ctl":"continue_outer","expect":"continue_outer"}
+{"id":"outer_reflect_tools","case":"outer_loop_reflect_ctl","ctl":"proceed_to_tools","expect":"proceed_to_tools"}
+{"id":"outer_exit_stop","case":"outer_loop_iteration_exit","exit":"stop_outer_loop","expect":"stop_outer_loop"}
+{"id":"outer_exit_continue","case":"outer_loop_iteration_exit","exit":"continue_next_iteration","expect":"continue_next_iteration"}
+{"id":"step_post_exec_fail","case":"steps_loop_post_outer","run_ok":false,"verify_fail":false,"cancelled":false,"tools_ok":true,"patch_planner":false,"expect":"exec_or_verify_failed"}
+{"id":"step_post_verify_fail","case":"steps_loop_post_outer","run_ok":true,"verify_fail":true,"cancelled":false,"tools_ok":true,"patch_planner":false,"expect":"exec_or_verify_failed"}
+{"id":"step_post_cancel","case":"steps_loop_post_outer","run_ok":true,"verify_fail":false,"cancelled":true,"tools_ok":true,"patch_planner":false,"expect":"cancelled"}
+{"id":"step_post_tool_patch","case":"steps_loop_post_outer","run_ok":true,"verify_fail":false,"cancelled":false,"tools_ok":false,"patch_planner":true,"expect":"tool_failure_patch"}
+{"id":"step_post_emit_despite_tools","case":"steps_loop_post_outer","run_ok":true,"verify_fail":false,"cancelled":false,"tools_ok":false,"patch_planner":false,"expect":"emit_success"}
+{"id":"step_post_success","case":"steps_loop_post_outer","run_ok":true,"verify_fail":false,"cancelled":false,"tools_ok":true,"patch_planner":false,"expect":"emit_success"}

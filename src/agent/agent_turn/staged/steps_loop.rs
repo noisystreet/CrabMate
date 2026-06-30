@@ -41,12 +41,14 @@ use super::step_failure_exit::{
     staged_step_fail_after_outer_execution_exhausted,
 };
 use super::step_iteration_fsm::{
-    STAGED_STEP_OUTER_LOOP_FAIL_DETAIL, StagedStepAfterOuterLoop, StagedStepIterationCtl,
-    StagedStepToolPhaseRoute, staged_step_after_outer_loop, staged_step_exec_fail_patch_detail,
-    staged_step_tool_failure_patch_detail, staged_step_tool_phase_route,
-    staged_step_verify_fail_patch_detail, staged_step_wall_clock_exceeded,
+    STAGED_STEP_OUTER_LOOP_FAIL_DETAIL, StagedStepIterationCtl, staged_step_exec_fail_patch_detail,
+    staged_step_tool_failure_patch_detail, staged_step_verify_fail_patch_detail,
+    staged_step_wall_clock_exceeded,
 };
 use super::step_loop_fsm::staged_injected_step_user_body;
+use super::steps_loop_route_fsm::{
+    StagedStepPostOuterRoute, resolve_staged_step_post_outer_route_from_results,
+};
 use super::turn_orchestrator_fsm::{
     StagedTurnOrchestratorPhase, orchestrator_phase_for_round_orchestrator,
     orchestrator_phase_for_steps_loop_trace,
@@ -515,8 +517,41 @@ where
         return Ok(ctl);
     }
 
-    match staged_step_after_outer_loop(&run_step, &step_verify_failed_reason) {
-        StagedStepAfterOuterLoop::ExecutionOrVerifyFailed { .. } => {
+    let cancelled = sse_sender_closed(out)
+        || patch_ctx
+            .p
+            .ctx
+            .io
+            .cancel
+            .is_some_and(|c| c.load(Ordering::SeqCst));
+    let tools_ok = staged_step_tool_messages_all_ok(patch_ctx.p.turn.messages(), step_user_idx);
+    let patch_planner_on = staged_step_patch_planner_enabled(
+        patch_ctx
+            .p
+            .ctx
+            .core
+            .cfg
+            .staged_planning
+            .staged_plan_feedback_mode,
+    );
+    let post_outer_route = resolve_staged_step_post_outer_route_from_results(
+        &run_step,
+        &step_verify_failed_reason,
+        cancelled,
+        tools_ok,
+        patch_planner_on,
+    );
+    tracing::debug!(
+        target: "crabmate::staged",
+        staged_fsm = "steps_loop",
+        steps_loop_phase = "post_outer_route",
+        steps_loop_post_outer_route = post_outer_route.as_str(),
+        sub_phase = "executor",
+        "staged step after outer_loop: route resolved"
+    );
+
+    match post_outer_route {
+        StagedStepPostOuterRoute::ExecOrVerifyFailed => {
             if let Some(ctl) = staged_step_try_recover_outer_execution_failure(
                 StagedOuterExecFailureRecoverParams {
                     plan_id,
@@ -551,43 +586,21 @@ where
             )
             .await;
         }
-        StagedStepAfterOuterLoop::ProceedToToolCheck => {}
-    }
-
-    if sse_sender_closed(out)
-        || patch_ctx
-            .p
-            .ctx
-            .io
-            .cancel
-            .is_some_and(|c| c.load(Ordering::SeqCst))
-    {
-        finish_staged_plan_step_sse(
-            out,
-            plan_id,
-            step.id.trim(),
-            step_index,
-            n,
-            "cancelled",
-            step.executor_kind,
-            None,
-        )
-        .await;
-        return Ok(StagedStepIterationCtl::CancelledAfterOuterOk);
-    }
-
-    let tools_ok = staged_step_tool_messages_all_ok(patch_ctx.p.turn.messages(), step_user_idx);
-    let patch_planner_on = staged_step_patch_planner_enabled(
-        patch_ctx
-            .p
-            .ctx
-            .core
-            .cfg
-            .staged_planning
-            .staged_plan_feedback_mode,
-    );
-    match staged_step_tool_phase_route(tools_ok, patch_planner_on) {
-        StagedStepToolPhaseRoute::AttemptToolFailurePatches => {
+        StagedStepPostOuterRoute::Cancelled => {
+            finish_staged_plan_step_sse(
+                out,
+                plan_id,
+                step.id.trim(),
+                step_index,
+                n,
+                "cancelled",
+                step.executor_kind,
+                None,
+            )
+            .await;
+            return Ok(StagedStepIterationCtl::CancelledAfterOuterOk);
+        }
+        StagedStepPostOuterRoute::ToolFailurePatch => {
             if let Some(ctl) =
                 staged_step_try_recover_tool_failure_patches(StagedToolFailurePatchRecoverParams {
                     plan_id,
@@ -627,7 +640,7 @@ where
                 ),
             });
         }
-        StagedStepToolPhaseRoute::EmitStepSuccess => {}
+        StagedStepPostOuterRoute::EmitSuccess => {}
     }
 
     staged_step_emit_ok_step_and_queue_notice(StagedStepOkNoticeParams {
