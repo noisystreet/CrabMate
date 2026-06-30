@@ -23,6 +23,7 @@ use super::layout_mode_segment::LayoutModeSegment;
 use super::side_column_workspace_scroll::WorkspaceSideCardScrollInner;
 use super::workspace_panel::make_refresh_workspace_after_mutation;
 use super::workspace_panel_state::WorkspacePanelSignals;
+use crate::ide_codemirror::IdeEditorHost;
 use crate::workspace_context_menu::WorkspaceContextMenuActions;
 
 #[component]
@@ -85,7 +86,7 @@ struct IdeLayoutRightPaneInput {
     ide_baseline: RwSignal<String>,
     ide_load_busy: RwSignal<bool>,
     ide_err: RwSignal<Option<String>>,
-    textarea_ref: NodeRef<leptos::html::Textarea>,
+    editor_host: IdeEditorHost,
 }
 
 #[component]
@@ -101,13 +102,13 @@ fn IdeLayoutRightPane(input: IdeLayoutRightPaneInput) -> impl IntoView {
         ide_baseline,
         ide_load_busy,
         ide_err,
-        textarea_ref,
+        editor_host,
     } = input;
     let find_input = IdeFindBarInput {
         locale,
         chrome,
         ide_text,
-        textarea_ref,
+        editor_host,
     };
     view! {
         <div class="ide-layout-right">
@@ -132,10 +133,10 @@ fn IdeLayoutRightPane(input: IdeLayoutRightPaneInput) -> impl IntoView {
             <IdeEditorPane
                 locale=locale
                 editor=editor
+                host=editor_host
                 ide_path=ide_path
                 ide_text=ide_text
                 ide_load_busy=ide_load_busy
-                textarea_ref=textarea_ref
             />
         </div>
     }
@@ -181,7 +182,7 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
     let ide_path = RwSignal::new(None::<String>);
     let ide_text = RwSignal::new(String::new());
     let ide_baseline = RwSignal::new(String::new());
-    let textarea_ref = NodeRef::<leptos::html::Textarea>::new();
+    let editor_host = IdeEditorHost::new();
     let confirm = chrome.confirm_signals();
 
     wire_ide_editor_sync_to_active_tab(tabs, tabs.active, ide_text);
@@ -267,7 +268,7 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
                 ide_baseline,
                 ide_load_busy: tabs.load_busy,
                 ide_save_busy: tabs.save_busy,
-                textarea_ref,
+                editor_host,
                 tabs,
                 save_ctx,
             } />
@@ -291,7 +292,7 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
                     ide_baseline,
                     ide_load_busy: tabs.load_busy,
                     ide_err: tabs.err,
-                    textarea_ref,
+                    editor_host,
                 } />
             </div>
             <IdeNewFileModal input=IdeNewFileModalInput {

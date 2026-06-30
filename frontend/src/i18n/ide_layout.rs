@@ -97,6 +97,13 @@ pub fn ide_dirty_confirm(l: Locale) -> &'static str {
     }
 }
 
+pub fn ide_cm_missing(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "编辑器组件未加载，请重新构建前端（trunk build）。",
+        Locale::En => "Editor bundle failed to load. Rebuild the frontend (trunk build).",
+    }
+}
+
 pub fn ide_tab_ctx_close(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "关闭",

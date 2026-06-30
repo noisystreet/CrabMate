@@ -5,16 +5,15 @@ use leptos_dom::helpers::event_target_value;
 
 use crate::app::app_signals::IdeChromeSignals;
 use crate::i18n::{self, Locale};
-use crate::ide_find::{
-    apply_textarea_selection, find_match_ranges, goto_line_in_textarea, textarea_from_ref,
-};
+use crate::ide_codemirror::IdeEditorHost;
+use crate::ide_find::{apply_editor_selection, find_match_ranges, goto_line_in_editor};
 
 #[derive(Clone, Copy)]
 pub struct IdeFindBarInput {
     pub locale: RwSignal<Locale>,
     pub chrome: IdeChromeSignals,
     pub ide_text: RwSignal<String>,
-    pub textarea_ref: NodeRef<leptos::html::Textarea>,
+    pub editor_host: IdeEditorHost,
 }
 
 fn apply_find_match(input: IdeFindBarInput, match_index: usize) {
@@ -27,9 +26,8 @@ fn apply_find_match(input: IdeFindBarInput, match_index: usize) {
     }
     let idx = match_index % ranges.len();
     input.chrome.find_match_index.set(idx);
-    let (start, end) = ranges[idx];
-    if let Some(ta) = textarea_from_ref(&input.textarea_ref) {
-        apply_textarea_selection(&ta, start, end);
+    if let Some((start, end)) = ranges.get(idx) {
+        apply_editor_selection(&input.editor_host, *start, *end);
     }
 }
 
@@ -162,14 +160,12 @@ pub fn IdeFindBar(input: IdeFindBarInput) -> impl IntoView {
     }
 }
 
-fn submit_goto_line(chrome: IdeChromeSignals, textarea_ref: &NodeRef<leptos::html::Textarea>) {
+fn submit_goto_line(chrome: IdeChromeSignals, host: IdeEditorHost) {
     let raw = chrome.goto_line.get_untracked();
     let Ok(line) = raw.trim().parse::<usize>() else {
         return;
     };
-    if let Some(ta) = textarea_from_ref(textarea_ref) {
-        goto_line_in_textarea(&ta, line);
-    }
+    goto_line_in_editor(&host, line);
     chrome.goto_panel_open.set(false);
 }
 
@@ -178,7 +174,7 @@ pub fn IdeGotoLineBar(input: IdeFindBarInput) -> impl IntoView {
     let IdeFindBarInput {
         locale,
         chrome,
-        textarea_ref,
+        editor_host,
         ..
     } = input;
 
@@ -205,7 +201,7 @@ pub fn IdeGotoLineBar(input: IdeFindBarInput) -> impl IntoView {
                     on:keydown=move |ev: web_sys::KeyboardEvent| {
                         if ev.key() == "Enter" {
                             ev.prevent_default();
-                            submit_goto_line(chrome, &textarea_ref);
+                            submit_goto_line(chrome, editor_host);
                         }
                     }
                 />
