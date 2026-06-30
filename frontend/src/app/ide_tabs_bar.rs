@@ -6,8 +6,17 @@ use leptos::task::spawn_local;
 use crate::i18n::{self, Locale};
 use crate::ide_confirm::IdeConfirmSignals;
 use crate::ide_tabs::{
-    IdeTabsEditorSignals, IdeTabsHandle, close_tab_at, ide_tab_basename, try_switch_tab,
+    IdeTabsEditorSignals, IdeTabsHandle, close_all_tabs, close_other_tabs_at, close_tab_at,
+    ide_tab_basename, toggle_tab_pinned, try_switch_tab,
 };
+
+/// 标签栏右键菜单锚点（`position: fixed` 使用视口坐标）。
+#[derive(Clone, Debug, PartialEq)]
+pub struct IdeTabContextAnchor {
+    pub x: f64,
+    pub y: f64,
+    pub tab_index: usize,
+}
 
 #[derive(Clone, Copy)]
 pub struct IdeTabsBarInput {
@@ -15,6 +24,122 @@ pub struct IdeTabsBarInput {
     pub tabs: IdeTabsHandle,
     pub confirm: IdeConfirmSignals,
     pub editor: IdeTabsEditorSignals,
+}
+
+#[component]
+fn IdeTabContextMenuLayer(
+    locale: RwSignal<Locale>,
+    tabs: IdeTabsHandle,
+    confirm: IdeConfirmSignals,
+    editor: IdeTabsEditorSignals,
+    ctx_menu: RwSignal<Option<IdeTabContextAnchor>>,
+) -> impl IntoView {
+    view! {
+        <Show when=move || ctx_menu.get().is_some()>
+            <div class="session-ctx-layer">
+                <div
+                    class="session-ctx-backdrop"
+                    aria-hidden="true"
+                    on:click=move |_| ctx_menu.set(None)
+                ></div>
+                <div
+                    class="session-ctx-menu"
+                    role="menu"
+                    on:click=|ev: leptos::ev::MouseEvent| ev.stop_propagation()
+                    style=move || {
+                        ctx_menu
+                            .get()
+                            .map(|a| format!("left:{}px;top:{}px;", a.x, a.y))
+                            .unwrap_or_default()
+                    }
+                >
+                    <button
+                        type="button"
+                        class="session-ctx-item"
+                        role="menuitem"
+                        on:click=move |_| {
+                            let Some(a) = ctx_menu.get() else {
+                                return;
+                            };
+                            let index = a.tab_index;
+                            ctx_menu.set(None);
+                            spawn_local(async move {
+                                close_tab_at(tabs, index, locale, editor, confirm).await;
+                            });
+                        }
+                    >
+                        {move || i18n::ide_tab_ctx_close(locale.get())}
+                    </button>
+                    <button
+                        type="button"
+                        class="session-ctx-item"
+                        role="menuitem"
+                        on:click=move |_| {
+                            let Some(a) = ctx_menu.get() else {
+                                return;
+                            };
+                            let index = a.tab_index;
+                            ctx_menu.set(None);
+                            spawn_local(async move {
+                                close_other_tabs_at(tabs, index, locale, editor, confirm).await;
+                            });
+                        }
+                    >
+                        {move || i18n::ide_tab_ctx_close_others(locale.get())}
+                    </button>
+                    <button
+                        type="button"
+                        class="session-ctx-item"
+                        role="menuitem"
+                        on:click=move |_| {
+                            ctx_menu.set(None);
+                            spawn_local(async move {
+                                close_all_tabs(tabs, locale, editor, confirm).await;
+                            });
+                        }
+                    >
+                        {move || i18n::ide_tab_ctx_close_all(locale.get())}
+                    </button>
+                    <button
+                        type="button"
+                        class="session-ctx-item"
+                        role="menuitem"
+                        on:click=move |_| {
+                            let Some(a) = ctx_menu.get() else {
+                                return;
+                            };
+                            let index = a.tab_index;
+                            let IdeTabsEditorSignals {
+                                ide_path,
+                                ide_text,
+                                ide_baseline,
+                            } = editor;
+                            ctx_menu.set(None);
+                            toggle_tab_pinned(tabs, index, ide_path, ide_text, ide_baseline);
+                        }
+                    >
+                        {move || {
+                            let _ = tabs.tabs.get();
+                            let loc = locale.get();
+                            let Some(a) = ctx_menu.get() else {
+                                return i18n::ide_tab_ctx_pin(loc).to_string();
+                            };
+                            let pinned = tabs
+                                .tabs
+                                .get_untracked()
+                                .get(a.tab_index)
+                                .is_some_and(|t| t.pinned);
+                            if pinned {
+                                i18n::ide_tab_ctx_unpin(loc).to_string()
+                            } else {
+                                i18n::ide_tab_ctx_pin(loc).to_string()
+                            }
+                        }}
+                    </button>
+                </div>
+            </div>
+        </Show>
+    }
 }
 
 #[component]
@@ -30,9 +155,17 @@ pub fn IdeTabsBar(input: IdeTabsBarInput) -> impl IntoView {
         ide_text,
         ide_baseline,
     } = editor;
+    let ctx_menu = RwSignal::new(None::<IdeTabContextAnchor>);
 
     view! {
         <Show when=move || !tabs.tabs.get().is_empty()>
+            <IdeTabContextMenuLayer
+                locale
+                tabs
+                confirm
+                editor
+                ctx_menu
+            />
             <div
                 class="ide-tabs-bar"
                 role="tablist"
@@ -46,10 +179,11 @@ pub fn IdeTabsBar(input: IdeTabsBarInput) -> impl IntoView {
                             .enumerate()
                             .collect::<Vec<_>>()
                     }
-                    key=|(idx, tab)| format!("{}:{}", idx, tab.path)
+                    key=|(idx, tab)| format!("{}:{}:{}", idx, tab.path, tab.pinned)
                     children=move |(index, tab)| {
                         let path = tab.path.clone();
                         let label = ide_tab_basename(&path);
+                        let is_pinned = tab.pinned;
                         let is_active = move || tabs.active.get() == Some(index);
                         let is_dirty = move || {
                             tabs.tab_display_dirty(index, ide_text, ide_baseline)
@@ -58,7 +192,16 @@ pub fn IdeTabsBar(input: IdeTabsBarInput) -> impl IntoView {
                             <div
                                 class="ide-tab"
                                 class:ide-tab-active=is_active
+                                class:ide-tab-pinned=move || is_pinned
                                 role="presentation"
+                                on:contextmenu=move |ev: web_sys::MouseEvent| {
+                                    ev.prevent_default();
+                                    ctx_menu.set(Some(IdeTabContextAnchor {
+                                        x: ev.client_x() as f64,
+                                        y: ev.client_y() as f64,
+                                        tab_index: index,
+                                    }));
+                                }
                             >
                                 <button
                                     type="button"
@@ -78,6 +221,15 @@ pub fn IdeTabsBar(input: IdeTabsBarInput) -> impl IntoView {
                                         });
                                     }
                                 >
+                                    <Show when=move || is_pinned>
+                                        <span
+                                            class="ide-tab-pin"
+                                            aria-hidden="true"
+                                            prop:title=move || {
+                                                i18n::ide_tab_pinned_aria(locale.get()).to_string()
+                                            }
+                                        ></span>
+                                    </Show>
                                     <Show when=is_dirty>
                                         <span class="ide-tab-dirty" aria-hidden="true">"●"</span>
                                     </Show>

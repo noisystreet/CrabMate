@@ -15,6 +15,7 @@ pub struct IdeTab {
     pub path: String,
     pub text: String,
     pub baseline: String,
+    pub pinned: bool,
 }
 
 /// 活动标签与编辑器缓冲区的共享信号。
@@ -138,6 +139,159 @@ async fn confirm_discard(locale: Locale, confirm: IdeConfirmSignals) -> bool {
     ide_confirm_user(confirm, i18n::ide_dirty_confirm(locale).to_string()).await
 }
 
+fn tab_is_dirty(
+    tabs: IdeTabsHandle,
+    index: usize,
+    ide_text: RwSignal<String>,
+    ide_baseline: RwSignal<String>,
+) -> bool {
+    tabs.tab_display_dirty(index, ide_text, ide_baseline)
+}
+
+fn reorder_tabs_pinned_first(list: &mut Vec<IdeTab>) -> Vec<(usize, usize)> {
+    let mut pinned = Vec::new();
+    let mut unpinned = Vec::new();
+    for (i, tab) in list.iter().enumerate() {
+        if tab.pinned {
+            pinned.push(i);
+        } else {
+            unpinned.push(i);
+        }
+    }
+    let order: Vec<usize> = pinned.into_iter().chain(unpinned).collect();
+    let old = std::mem::take(list);
+    for &i in &order {
+        list.push(old[i].clone());
+    }
+    order
+        .into_iter()
+        .enumerate()
+        .map(|(new_i, old_i)| (old_i, new_i))
+        .collect()
+}
+
+fn remap_active_after_reorder(
+    remap: &[(usize, usize)],
+    prev_active: Option<usize>,
+) -> Option<usize> {
+    prev_active.and_then(|old| remap.iter().find(|(o, _)| *o == old).map(|(_, n)| *n))
+}
+
+pub fn toggle_tab_pinned(
+    tabs: IdeTabsHandle,
+    index: usize,
+    ide_path: RwSignal<Option<String>>,
+    ide_text: RwSignal<String>,
+    ide_baseline: RwSignal<String>,
+) {
+    if index >= tabs.tabs.get_untracked().len() {
+        return;
+    }
+    tabs.persist_editor_into_active(ide_text, ide_baseline);
+    let prev_active = tabs.active.get_untracked();
+    let mut remap = Vec::new();
+    tabs.tabs.update(|list| {
+        if let Some(tab) = list.get_mut(index) {
+            tab.pinned = !tab.pinned;
+        }
+        remap = reorder_tabs_pinned_first(list);
+    });
+    tabs.active
+        .set(remap_active_after_reorder(&remap, prev_active));
+    tabs.load_active_into_editor(ide_path, ide_text, ide_baseline);
+}
+
+async fn confirm_discard_if_any_dirty(
+    tabs: IdeTabsHandle,
+    indices: &[usize],
+    locale: Locale,
+    editor: IdeTabsEditorSignals,
+    confirm: IdeConfirmSignals,
+) -> bool {
+    let IdeTabsEditorSignals {
+        ide_text,
+        ide_baseline,
+        ..
+    } = editor;
+    let any_dirty = indices
+        .iter()
+        .any(|&i| tab_is_dirty(tabs, i, ide_text, ide_baseline));
+    if !any_dirty {
+        return true;
+    }
+    confirm_discard(locale, confirm).await
+}
+
+/// 批量关闭标签；`should_keep` 为 `true` 的条目保留。
+pub async fn close_tabs_where(
+    tabs: IdeTabsHandle,
+    locale: RwSignal<Locale>,
+    editor: IdeTabsEditorSignals,
+    confirm: IdeConfirmSignals,
+    should_keep: impl Fn(usize, &IdeTab) -> bool,
+) {
+    let IdeTabsEditorSignals {
+        ide_path,
+        ide_text,
+        ide_baseline,
+    } = editor;
+    tabs.persist_editor_into_active(ide_text, ide_baseline);
+    let old_list = tabs.tabs.get_untracked();
+    let to_close: Vec<usize> = old_list
+        .iter()
+        .enumerate()
+        .filter(|(i, t)| !should_keep(*i, t))
+        .map(|(i, _)| i)
+        .collect();
+    if to_close.is_empty() {
+        return;
+    }
+    if !confirm_discard_if_any_dirty(tabs, &to_close, locale.get_untracked(), editor, confirm).await
+    {
+        return;
+    }
+
+    let prev_active = tabs.active.get_untracked();
+    let mut new_list = Vec::with_capacity(old_list.len().saturating_sub(to_close.len()));
+    let mut new_active = None;
+    for (i, tab) in old_list.into_iter().enumerate() {
+        if should_keep(i, &tab) {
+            if prev_active == Some(i) {
+                new_active = Some(new_list.len());
+            }
+            new_list.push(tab);
+        }
+    }
+    tabs.tabs.set(new_list);
+    tabs.active.set(new_active);
+    tabs.load_active_into_editor(ide_path, ide_text, ide_baseline);
+    if new_active.is_none() {
+        tabs.err.set(None);
+    }
+}
+
+pub async fn close_other_tabs_at(
+    tabs: IdeTabsHandle,
+    index: usize,
+    locale: RwSignal<Locale>,
+    editor: IdeTabsEditorSignals,
+    confirm: IdeConfirmSignals,
+) {
+    close_tabs_where(tabs, locale, editor, confirm, |i, tab| {
+        i == index || tab.pinned
+    })
+    .await;
+}
+
+pub async fn close_all_tabs(
+    tabs: IdeTabsHandle,
+    locale: RwSignal<Locale>,
+    editor: IdeTabsEditorSignals,
+    confirm: IdeConfirmSignals,
+) {
+    close_tabs_where(tabs, locale, editor, confirm, |_, _| false).await;
+}
+
 pub fn apply_fetch_to_new_tab(
     tabs: IdeTabsHandle,
     rel: String,
@@ -151,6 +305,7 @@ pub fn apply_fetch_to_new_tab(
             path: rel.clone(),
             text: content.clone(),
             baseline: content.clone(),
+            pinned: false,
         });
     });
     let idx = tabs.tabs.get_untracked().len().saturating_sub(1);
