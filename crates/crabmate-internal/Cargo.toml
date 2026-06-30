@@ -88,7 +88,7 @@ uom = { version = "0.36", features = ["si"] }
 urlencoding = "2.1"
 walkdir = "2"
 xz2 = "0.1"
-zip = "2.2"
+zip = "8.6"
 bollard = { version = "0.21", optional = true, default-features = false, features = [
     "http",
     "pipe",
