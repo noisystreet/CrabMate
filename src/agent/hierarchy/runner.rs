@@ -5,6 +5,7 @@
 //! SmartRouter 与可选意图偏置之后的**聚合状态**见 [`HierarchyRoutingResolution`]；流水线步骤标签见 [`HierarchyRunnerPhase`]（与 `tracing` 字段 `hierarchy_runner_phase` 对齐）。
 
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use tokio::sync::{
     Mutex,
     mpsc::{Receiver, Sender},
@@ -111,8 +112,8 @@ pub struct HierarchyRunnerParams<'a> {
     pub task: &'a str,
     /// Agent 配置
     pub cfg: &'a AgentConfig,
-    /// LLM 后端
-    pub llm_backend: &'a dyn ChatCompletionsBackend,
+    /// LLM 后端（`Arc` 以便并行子任务与注入 mock 共享）
+    pub llm_backend: Arc<dyn ChatCompletionsBackend>,
     /// HTTP 客户端
     pub client: std::sync::Arc<reqwest::Client>,
     /// API 密钥
@@ -127,6 +128,8 @@ pub struct HierarchyRunnerParams<'a> {
     pub tool_approval_out: Option<Sender<String>>,
     /// 工具审批接收器（用于接收用户审批决定）
     pub tool_approval_rx: Option<Arc<Mutex<Receiver<CommandApprovalDecision>>>>,
+    /// 与主 Agent 轮次共用的协作取消标志。
+    pub cancel: Option<Arc<AtomicBool>>,
     /// 一期意图识别：主意图标签（如 execute.run_test_build）
     pub primary_intent: Option<String>,
     /// 一期意图识别：次意图标签列表
@@ -152,7 +155,7 @@ pub struct HierarchyRunnerResult {
 struct SimpleFallbackParams<'a> {
     task: &'a str,
     cfg: &'a AgentConfig,
-    llm_backend: &'a dyn ChatCompletionsBackend,
+    llm_backend: Arc<dyn ChatCompletionsBackend>,
     client: std::sync::Arc<reqwest::Client>,
     api_key: String,
     working_dir: std::path::PathBuf,
@@ -160,6 +163,7 @@ struct SimpleFallbackParams<'a> {
     tools_defs: &'a [crate::types::Tool],
     tool_approval_out: Option<Sender<String>>,
     tool_approval_rx: Option<Arc<Mutex<Receiver<CommandApprovalDecision>>>>,
+    cancel: Option<Arc<AtomicBool>>,
     process_handles: std::sync::Arc<crate::process_handles::ProcessHandles>,
     sse_control_mirror: Option<crate::sse::SseControlMirror>,
 }
@@ -168,7 +172,7 @@ struct SimpleFallbackParams<'a> {
 struct FullDecomposedHierarchyCtx<'a> {
     task: &'a str,
     cfg: &'a AgentConfig,
-    llm_backend: &'a dyn ChatCompletionsBackend,
+    llm_backend: Arc<dyn ChatCompletionsBackend>,
     client: std::sync::Arc<reqwest::Client>,
     api_key: String,
     working_dir: std::path::PathBuf,
@@ -176,6 +180,7 @@ struct FullDecomposedHierarchyCtx<'a> {
     tools_slice: &'a [crate::types::Tool],
     tool_approval_out: Option<Sender<String>>,
     tool_approval_rx: Option<Arc<Mutex<Receiver<CommandApprovalDecision>>>>,
+    cancel: Option<Arc<AtomicBool>>,
     router_output: RouterOutput,
     process_handles: std::sync::Arc<crate::process_handles::ProcessHandles>,
     sse_control_mirror: Option<crate::sse::SseControlMirror>,
@@ -197,6 +202,7 @@ pub async fn run_hierarchical(
         tools_defs,
         tool_approval_out,
         tool_approval_rx,
+        cancel,
         primary_intent,
         secondary_intents,
         intent_mode_bias_enabled,
@@ -226,7 +232,7 @@ pub async fn run_hierarchical(
         .route_smart(
             task,
             cfg,
-            llm_backend,
+            llm_backend.as_ref(),
             client.as_ref(),
             &api_key,
             use_llm_routing,
@@ -287,7 +293,7 @@ pub async fn run_hierarchical(
             return run_simple_fallback(SimpleFallbackParams {
                 task,
                 cfg,
-                llm_backend,
+                llm_backend: Arc::clone(&llm_backend),
                 client,
                 api_key,
                 working_dir,
@@ -295,6 +301,7 @@ pub async fn run_hierarchical(
                 tools_defs: tools_slice,
                 tool_approval_out,
                 tool_approval_rx,
+                cancel: cancel.clone(),
                 process_handles: std::sync::Arc::clone(&process_handles),
                 sse_control_mirror: sse_control_mirror.clone(),
             })
@@ -314,6 +321,7 @@ pub async fn run_hierarchical(
         tools_slice,
         tool_approval_out,
         tool_approval_rx,
+        cancel,
         router_output,
         process_handles: std::sync::Arc::clone(&process_handles),
         sse_control_mirror,
@@ -336,6 +344,7 @@ async fn run_full_decomposed_hierarchy(
         tools_slice,
         tool_approval_out,
         tool_approval_rx,
+        cancel,
         router_output,
         process_handles,
         sse_control_mirror,
@@ -375,7 +384,7 @@ async fn run_full_decomposed_hierarchy(
         .decompose_with_llm(
             task,
             cfg,
-            llm_backend,
+            llm_backend.as_ref(),
             client.as_ref(),
             &api_key,
             &working_dir,
@@ -457,7 +466,7 @@ async fn run_full_decomposed_hierarchy(
 
     let mut executor = HierarchicalExecutor::new(router_output.max_iterations, 3)
         .with_context(
-            llm_backend,
+            Arc::clone(&llm_backend),
             cfg.clone(),
             client.clone(),
             api_key.clone(),
@@ -469,7 +478,8 @@ async fn run_full_decomposed_hierarchy(
         )
         .with_tools_defs(tools_slice.to_vec())
         .with_manager(manager.clone())
-        .with_original_task(task.to_string());
+        .with_original_task(task.to_string())
+        .with_cancel(cancel);
     if let Some(sse_tx) = sse_out {
         executor = executor.with_sse(sse_tx);
     }
@@ -549,6 +559,7 @@ async fn run_simple_fallback(
         tools_defs,
         tool_approval_out,
         tool_approval_rx,
+        cancel,
         process_handles,
         sse_control_mirror,
     } = params;
@@ -569,7 +580,7 @@ async fn run_simple_fallback(
         .decompose_with_llm(
             task,
             cfg,
-            llm_backend,
+            llm_backend.as_ref(),
             client.as_ref(),
             &api_key,
             &working_dir,
@@ -635,12 +646,19 @@ async fn run_simple_fallback(
     }
 
     let mut executor = HierarchicalExecutor::new(10, 3)
-        .with_context(llm_backend, cfg.clone(), client, api_key, working_dir)
+        .with_context(
+            Arc::clone(&llm_backend),
+            cfg.clone(),
+            client,
+            api_key,
+            working_dir,
+        )
         .with_process_tool_handles(
             process_handles.handler_lookup.clone(),
             Arc::clone(&process_handles.sync_default_sandbox_backend),
         )
-        .with_tools_defs(tools_defs.to_vec());
+        .with_tools_defs(tools_defs.to_vec())
+        .with_cancel(cancel);
     if let Some(sse_tx) = sse_out {
         executor = executor.with_sse(sse_tx);
     }

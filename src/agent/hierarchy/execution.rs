@@ -1,6 +1,7 @@
 //! 分层执行器：按依赖层级执行子目标
 
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use tokio::sync::mpsc::Sender;
 
@@ -28,14 +29,14 @@ pub struct HierarchicalExecutionResult {
 }
 
 /// 分层执行器
-pub struct HierarchicalExecutor<'a> {
+pub struct HierarchicalExecutor {
     max_parallel: usize,
     max_failures: usize,
     /// 最大重新规划次数（预留）
     #[allow(dead_code)]
     max_replans: usize,
-    /// LLM 后端（用于 Operator 的 ReAct 循环）
-    llm_backend: Option<&'a dyn ChatCompletionsBackend>,
+    /// LLM 后端（用于 Operator 的 ReAct 循环；[`Arc`] 以便并行 `spawn` 共享注入后端）。
+    llm_backend: Option<Arc<dyn ChatCompletionsBackend>>,
     /// Agent 配置
     cfg: Option<AgentConfig>,
     /// HTTP 客户端
@@ -46,6 +47,8 @@ pub struct HierarchicalExecutor<'a> {
     working_dir: Option<std::path::PathBuf>,
     /// SSE 发送器
     sse_out: Option<Sender<String>>,
+    /// 用户取消标志（与主 Agent `RunLoopIo::cancel` 同源）。
+    cancel: Option<Arc<AtomicBool>>,
     /// 工具定义列表（用于 Operator 的 LLM 函数调用）
     tools_defs: Vec<Tool>,
     /// Manager Agent（用于失败时重新规划）
@@ -63,7 +66,7 @@ pub struct HierarchicalExecutor<'a> {
     sync_default_sandbox_backend: Option<Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>>,
 }
 
-impl HierarchicalExecutor<'_> {
+impl HierarchicalExecutor {
     pub fn new(max_parallel: usize, max_failures: usize) -> Self {
         Self {
             max_parallel,
@@ -75,6 +78,7 @@ impl HierarchicalExecutor<'_> {
             api_key: None,
             working_dir: None,
             sse_out: None,
+            cancel: None,
             tools_defs: Vec::new(),
             manager: None,
             original_task: None,
@@ -87,7 +91,7 @@ impl HierarchicalExecutor<'_> {
     }
 }
 
-impl<'a> HierarchicalExecutor<'a> {
+impl HierarchicalExecutor {
     async fn emit_subgoal_started_timeline(
         &self,
         goal_id: &str,
@@ -204,7 +208,7 @@ impl<'a> HierarchicalExecutor<'a> {
     /// 设置执行上下文
     pub fn with_context(
         mut self,
-        llm_backend: &'a dyn ChatCompletionsBackend,
+        llm_backend: Arc<dyn ChatCompletionsBackend>,
         cfg: AgentConfig,
         client: std::sync::Arc<reqwest::Client>,
         api_key: String,
@@ -218,6 +222,12 @@ impl<'a> HierarchicalExecutor<'a> {
         self.handler_lookup = Some(crate::tool_registry::HandlerLookupTable::default_dispatch());
         self.sync_default_sandbox_backend =
             Some(crate::tool_sandbox::default_sync_default_sandbox_backend());
+        self
+    }
+
+    /// 与主 Agent 回合共用的协作取消标志。
+    pub fn with_cancel(mut self, cancel: Option<Arc<AtomicBool>>) -> Self {
+        self.cancel = cancel;
         self
     }
 

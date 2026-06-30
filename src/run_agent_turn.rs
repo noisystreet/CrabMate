@@ -139,6 +139,7 @@ pub async fn run_agent_turn<'a>(
                 out,
                 no_stream,
                 cancel: cancel.as_deref(),
+                cancel_arc: cancel.clone(),
                 render_to_terminal,
                 plain_terminal_stream,
                 tui_llm_stream_scratch,

@@ -44,7 +44,7 @@ fn collect_goal_expected_outputs_map(sub_goals: &[SubGoal]) -> HashMap<String, V
         .collect()
 }
 
-impl<'a> super::HierarchicalExecutor<'a> {
+impl super::HierarchicalExecutor {
     /// 执行并返回详细结果
     pub async fn execute_with_result(
         &self,
@@ -96,6 +96,12 @@ impl<'a> super::HierarchicalExecutor<'a> {
         let mut answer_phase_emitted = false;
 
         for (level_idx, level) in levels.iter().enumerate() {
+            if let Some(reason) = super::super::turn_abort::hierarchical_abort_reason(
+                self.sse_out.as_ref(),
+                self.cancel.as_deref(),
+            ) {
+                return Err(ExecutionError::TurnAborted(reason));
+            }
             self.hierarchical_run_one_level(
                 level_idx,
                 level,

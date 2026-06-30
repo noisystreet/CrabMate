@@ -88,6 +88,7 @@ async fn prepare_staged_planner_no_tools_request_fixture_roundtrip() {
                 out: None,
                 no_stream: true,
                 cancel: None,
+                cancel_arc: None,
                 render_to_terminal: false,
                 plain_terminal_stream: false,
                 tui_llm_stream_scratch: None,

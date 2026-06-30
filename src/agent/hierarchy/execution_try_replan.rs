@@ -21,8 +21,8 @@ struct ReplanInputs<'a> {
     api_key: &'a str,
 }
 
-impl<'a> super::HierarchicalExecutor<'a> {
-    fn gather_replan_inputs(&'a self) -> Result<ReplanInputs<'a>, ExecutionError> {
+impl super::HierarchicalExecutor {
+    fn gather_replan_inputs(&self) -> Result<ReplanInputs<'_>, ExecutionError> {
         Ok(ReplanInputs {
             manager: require_replan_field(
                 self.manager.as_ref(),
@@ -37,10 +37,15 @@ impl<'a> super::HierarchicalExecutor<'a> {
                 "No working_dir available for replanning",
             )?,
             cfg: require_replan_field(self.cfg.as_ref(), "No cfg available for replanning")?,
-            llm_backend: require_replan_field(
-                self.llm_backend,
-                "No llm_backend available for replanning",
-            )?,
+            llm_backend: self
+                .llm_backend
+                .as_ref()
+                .ok_or_else(|| {
+                    ExecutionError::MaxFailuresReached(
+                        "No llm_backend available for replanning".to_string(),
+                    )
+                })?
+                .as_ref(),
             client: require_replan_field(
                 self.client.as_ref(),
                 "No client available for replanning",

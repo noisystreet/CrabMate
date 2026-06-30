@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
+use std::sync::atomic::AtomicBool;
 
 use tokio::sync::Mutex as TokioMutex;
 use tokio::sync::mpsc::Receiver;
@@ -19,7 +20,7 @@ use crate::agent::hierarchy::{
     tool_executor::{ProbeCache, ToolExecutor, ToolExecutorContext},
 };
 use crate::config::AgentConfig;
-use crate::llm::backend::OPENAI_COMPAT_BACKEND;
+use crate::llm::backend::ChatCompletionsBackend;
 use crate::sse;
 use crate::types::{CommandApprovalDecision, Tool};
 
@@ -27,6 +28,7 @@ use crate::types::{CommandApprovalDecision, Tool};
 pub(super) struct ParallelSubgoalTask {
     pub goal: SubGoal,
     pub cfg: Arc<AgentConfig>,
+    pub llm_backend: Arc<dyn ChatCompletionsBackend>,
     pub client: Arc<reqwest::Client>,
     pub api_key: String,
     pub working_dir: Option<PathBuf>,
@@ -37,6 +39,7 @@ pub(super) struct ParallelSubgoalTask {
     pub tool_approval_out: Option<tokio::sync::mpsc::Sender<String>>,
     pub tool_approval_rx: Option<Arc<TokioMutex<Receiver<CommandApprovalDecision>>>>,
     pub probe_cache: Arc<TokioMutex<ProbeCache>>,
+    pub cancel: Option<Arc<AtomicBool>>,
     pub prior: Arc<Vec<TaskResult>>,
     pub pre_snapshot: Arc<ArtifactStore>,
     pub current_ids: Arc<HashSet<String>>,
@@ -51,6 +54,7 @@ pub(in crate::agent::hierarchy::execution::execution_impl) async fn run_one_para
     let ParallelSubgoalTask {
         goal,
         cfg,
+        llm_backend,
         client,
         api_key,
         working_dir,
@@ -61,6 +65,7 @@ pub(in crate::agent::hierarchy::execution::execution_impl) async fn run_one_para
         tool_approval_out,
         tool_approval_rx,
         probe_cache,
+        cancel,
         prior,
         pre_snapshot,
         current_ids,
@@ -70,6 +75,16 @@ pub(in crate::agent::hierarchy::execution::execution_impl) async fn run_one_para
     let goal_id = goal.goal_id.clone();
     let goal_description = goal.description.clone();
     let goal_required_tools = goal.required_tools.clone();
+
+    if let Some(reason) = crate::agent::hierarchy::turn_abort::hierarchical_abort_reason_arc(
+        sse_out_timeline.as_ref(),
+        cancel.as_ref(),
+    ) {
+        return (
+            goal_id,
+            Err(OperatorError::ExecutionError(reason.user_message())),
+        );
+    }
 
     // 独立子 store，先合并**执行本层前**的共享产物，再运行。
     // 同层并行时：各子目标**彼此**的当轮产物**不可见**（DAG 同层应无互依；若需先后请用边或改顺序策略）。
@@ -119,6 +134,7 @@ pub(in crate::agent::hierarchy::execution::execution_impl) async fn run_one_para
             sse_out: sse_out_operator,
             artifact_store: Some(store.clone()),
             build_state: Some(Arc::new(StdMutex::new(build_state.clone()))),
+            cancel,
         },
     };
 
@@ -171,14 +187,11 @@ pub(in crate::agent::hierarchy::execution::execution_impl) async fn run_one_para
         );
     }
     let extra = subgoal_context::build_injected_subgoal_user_extra(&goal, &fdeps, prior.as_slice());
-    // 并行路径经 `tokio::spawn` 须 `Send + 'static`，无法携带 `HierarchicalExecutor::with_context` 注入的
-    // 非 `'static` `llm_backend`；此处仍用进程内默认 HTTP 后端。自定义后端请走顺序策略或后续改为
-    // `Arc<dyn ChatCompletionsBackend + Send + Sync>` 接线。
     let result = operator
         .execute_with_tools(
             &goal,
             cfg.as_ref(),
-            &OPENAI_COMPAT_BACKEND,
+            llm_backend.as_ref(),
             client.as_ref(),
             api_key.as_str(),
             &tool_executor,

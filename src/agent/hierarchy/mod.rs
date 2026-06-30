@@ -28,6 +28,7 @@ pub mod subgoal_context;
 mod subgoal_required_tools;
 pub mod task;
 pub mod tool_executor;
+pub(crate) mod turn_abort;
 
 pub use subgoal_context::{
     PriorSummaryLimits, build_injected_subgoal_user_extra,

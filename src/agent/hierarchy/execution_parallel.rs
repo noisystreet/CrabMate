@@ -5,16 +5,19 @@ use crate::agent::hierarchy::{
     artifact_store::ArtifactStore,
     build_state::BuildState,
     execution_error::ExecutionError,
-    task::{SubGoal, TaskResult, TaskStatus},
+    task::{SubGoal, TaskResult},
 };
-use log::{error, info, warn};
+use log::warn;
 use std::collections::HashSet;
 
 /// 单个并行子目标任务体（与 `execution_parallel.rs` 同级文件）。
 #[path = "execution_parallel_spawn.rs"]
 mod execution_parallel_spawn;
 
-impl<'a> HierarchicalExecutor<'a> {
+#[path = "execution_parallel_collect.rs"]
+mod execution_parallel_collect;
+
+impl HierarchicalExecutor {
     /// 并行执行
     ///
     /// 使用 tokio::spawn 实现真正的并发执行，通过信号量控制并发度
@@ -35,8 +38,9 @@ impl<'a> HierarchicalExecutor<'a> {
         use tokio::task::JoinSet;
 
         // 如果没有配置，回退到顺序执行
-        let (Some(cfg), Some(client), Some(api_key)) = (
+        let (Some(cfg), Some(llm_backend), Some(client), Some(api_key)) = (
             self.cfg.as_ref(),
+            self.llm_backend.as_ref(),
             self.client.as_ref(),
             self.api_key.as_ref(),
         ) else {
@@ -49,11 +53,19 @@ impl<'a> HierarchicalExecutor<'a> {
                 .await;
         };
 
+        if let Some(reason) = crate::agent::hierarchy::turn_abort::hierarchical_abort_reason(
+            self.sse_out.as_ref(),
+            self.cancel.as_deref(),
+        ) {
+            return Err(ExecutionError::TurnAborted(reason));
+        }
+
         let semaphore = Arc::new(Semaphore::new(self.max_parallel));
         let mut join_set = JoinSet::new();
 
         // 准备共享数据（使用 Arc 包装）
         let cfg = Arc::new(cfg.clone());
+        let llm_backend = Arc::clone(llm_backend);
         let client = client.clone();
         let api_key = api_key.clone();
         let working_dir = self.working_dir.clone();
@@ -61,6 +73,7 @@ impl<'a> HierarchicalExecutor<'a> {
         let sse_out = self.sse_out.clone(); // 克隆 SSE 发送器以支持并行执行
         let tool_approval_out = self.tool_approval_out.clone(); // 克隆审批发送器
         let tool_approval_rx = self.tool_approval_rx.clone(); // 克隆审批接收器
+        let cancel = self.cancel.clone();
         let hl = self
             .handler_lookup
             .clone()
@@ -97,6 +110,8 @@ impl<'a> HierarchicalExecutor<'a> {
             let current_ids = current_ids.clone();
             let hl_c = hl.clone();
             let sb_c = sb.clone();
+            let llm_backend = Arc::clone(&llm_backend);
+            let cancel = cancel.clone();
 
             let tools_defs_arc = Arc::new(tools_defs.clone());
             join_set.spawn(async move {
@@ -105,6 +120,7 @@ impl<'a> HierarchicalExecutor<'a> {
                     execution_parallel_spawn::ParallelSubgoalTask {
                         goal,
                         cfg,
+                        llm_backend,
                         client,
                         api_key,
                         working_dir,
@@ -115,6 +131,7 @@ impl<'a> HierarchicalExecutor<'a> {
                         tool_approval_out,
                         tool_approval_rx,
                         probe_cache,
+                        cancel,
                         prior,
                         pre_snapshot,
                         current_ids,
@@ -127,112 +144,15 @@ impl<'a> HierarchicalExecutor<'a> {
         }
 
         // 使用 JoinSet 收集所有结果（支持部分失败继续）
-        let mut results = Vec::new();
-        let mut failed_count = 0;
-        let mut panicked_count = 0;
+        let (results, failed_count, panicked_count) =
+            execution_parallel_collect::drain_parallel_join_set(
+                &mut join_set,
+                artifact_store,
+                self.sse_out.as_ref(),
+                self.cancel.as_ref(),
+            )
+            .await?;
 
-        while let Some(join_result) = join_set.join_next().await {
-            match join_result {
-                Ok((goal_id, Ok(result))) => {
-                    // 将成功的结果产物合并到主 artifact_store
-                    if matches!(result.status, TaskStatus::Completed) {
-                        artifact_store.store_result(&result);
-                        info!(
-                            target: "crabmate",
-                            "[HIERARCHICAL] Parallel: Goal {} completed successfully",
-                            goal_id
-                        );
-                    } else if matches!(result.status, TaskStatus::NeedsDecomposition { .. }) {
-                        // NeedsDecomposition 不是失败，而是需要重新规划
-                        info!(
-                            target: "crabmate",
-                            "[HIERARCHICAL] Parallel: Goal {} needs decomposition",
-                            goal_id
-                        );
-                    } else {
-                        warn!(
-                            target: "crabmate",
-                            "[HIERARCHICAL] Parallel: Goal {} failed: {:?}",
-                            goal_id, result.status
-                        );
-                    }
-                    results.push(result);
-                }
-                Ok((goal_id, Err(e))) => {
-                    // 任务执行出错，但继续收集其他结果
-                    failed_count += 1;
-                    error!(
-                        target: "crabmate",
-                        "[HIERARCHICAL] Parallel: Goal {} execution error: {}",
-                        goal_id, e
-                    );
-                    // 创建一个失败的 TaskResult 而不是直接返回错误
-                    results.push(TaskResult {
-                        task_id: goal_id.clone(),
-                        status: TaskStatus::Failed {
-                            reason: format!("Execution error: {}", e),
-                        },
-                        output: None,
-                        error: Some(format!("Execution error: {}", e)),
-                        artifacts: Vec::new(),
-                        duration_ms: 0,
-                        tools_invoked: Vec::new(),
-                    });
-                }
-                Err(e) => {
-                    // 任务 panic，但继续收集其他结果
-                    panicked_count += 1;
-                    error!(
-                        target: "crabmate",
-                        "[HIERARCHICAL] Parallel: Task panicked: {}",
-                        e
-                    );
-                    // 从 panic 信息中提取 goal_id（如果可能）
-                    let goal_id = format!("unknown_panicked_{}", panicked_count);
-                    results.push(TaskResult {
-                        task_id: goal_id,
-                        status: TaskStatus::Failed {
-                            reason: format!("Task panicked: {}", e),
-                        },
-                        output: None,
-                        error: Some(format!("Task panicked: {}", e)),
-                        artifacts: Vec::new(),
-                        duration_ms: 0,
-                        tools_invoked: Vec::new(),
-                    });
-                }
-            }
-        }
-
-        // 记录执行统计
-        let completed_count = results
-            .iter()
-            .filter(|r| matches!(r.status, TaskStatus::Completed))
-            .count();
-        let needs_decomp_count = results
-            .iter()
-            .filter(|r| matches!(r.status, TaskStatus::NeedsDecomposition { .. }))
-            .count();
-        info!(
-            target: "crabmate",
-            "[HIERARCHICAL] Parallel execution summary: {} total, {} completed, {} needs_decomposition, {} failed, {} panicked",
-            results.len(),
-            completed_count,
-            needs_decomp_count,
-            failed_count,
-            panicked_count
-        );
-
-        // 如果所有任务都失败了（排除 NeedsDecomposition），返回错误
-        if completed_count == 0 && needs_decomp_count == 0 && !results.is_empty() {
-            return Err(ExecutionError::MaxFailuresReached(format!(
-                "All {} parallel tasks failed ({} execution errors, {} panics)",
-                results.len(),
-                failed_count,
-                panicked_count
-            )));
-        }
-
-        Ok(results)
+        execution_parallel_collect::finalize_parallel_results(results, failed_count, panicked_count)
     }
 }
