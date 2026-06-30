@@ -38,6 +38,7 @@ mod step_iteration_fsm;
 mod step_loop_fsm;
 mod steps_loop;
 mod turn_fsm;
+mod turn_orchestrator_fsm;
 
 #[cfg(test)]
 mod planner_tool_call_reject_regression_tests;
@@ -487,6 +488,12 @@ where
 
     let mut fp_phase = StagedFullPipelinePhase::BeforeEnsemble;
     debug_staged_full_pipeline_enter(fp_phase);
+    tracing::debug!(
+        target: "crabmate::staged",
+        staged_turn_orchestrator_phase =
+            turn_orchestrator_fsm::orchestrator_phase_for_full_pipeline(fp_phase).as_str(),
+        "staged full pipeline enter (top-level orchestrator phase)"
+    );
 
     if ensemble_merge_should_invoke(ensemble_route) {
         let skip_ensemble_for_casual = ensemble_merge_skip_for_casual_prompt(ensemble_route);
@@ -654,6 +661,8 @@ where
             target: "crabmate::staged",
             staged_fsm = "prepared_request",
             prepared_route = route.as_static_str(),
+            staged_turn_orchestrator_phase =
+                turn_orchestrator_fsm::orchestrator_phase_for_prepared_route(&route).as_str(),
             entered_from_step_execution_round,
             sub_phase = "planner",
             "staged prepared_request first-round parse route"

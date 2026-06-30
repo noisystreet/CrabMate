@@ -5,7 +5,7 @@
 //!
 //! 被 crate 根 [`crate::run_agent_turn`]（Web/CLI）与 Axum handler 共用。
 //!
-//! 子模块：`intent`、`plan`（P）、`reflect`（R）、`execute`（E，实现见 **`execute/tools`**）、`messages`、`staged_sse`（实现见 **`staged/sse`**）、`params`、`outer_loop`、`staged`（**`staged/rolling_horizon_facade`**：滚动视界外层循环；含 **`staged/orchestrator`**、**`staged/patch_planner`**、**`staged/planner_parse_fsm`**、**`staged/post_parse_pipeline_fsm`**、**`staged/staged_step_fsm`**、**`staged/step_iteration_fsm`**、**`staged/step_loop_fsm`**、**`staged/ensemble_fsm`** 等）。
+//! 子模块：`intent`、`plan`（P）、`reflect`（R）、`execute`（E，实现见 **`execute/tools`**）、`messages`、`staged_sse`（实现见 **`staged/sse`**）、`params`、**`outer_loop_fsm`** + **`outer_loop`**、**`staged`**（滚动视界、**`turn_orchestrator_fsm`** 顶层相位；见 `docs/design/per_state_machine_consolidation.md`）。
 //!
 //! **与 `llm` 的边界**：本目录内对模型的调用须经 **`llm::complete_chat_retrying`**（见 **`docs/开发文档.md`**「`agent_turn` 与 `llm`：唯一入口与禁止事项」）；**禁止**直接调用 **`llm::api::stream_chat`**。
 //!
@@ -27,6 +27,7 @@ mod intent;
 mod messages;
 mod outer_loop;
 mod outer_loop_build_idle;
+mod outer_loop_fsm;
 mod params;
 mod plan;
 mod reflect;
