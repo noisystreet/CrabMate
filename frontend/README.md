@@ -6,6 +6,7 @@
 
 - Rust **`wasm32-unknown-unknown`**：`rustup target add wasm32-unknown-unknown`
 - [Trunk](https://trunkrs.dev/)：`cargo install trunk`（本仓库 CI/开发机已用 0.21.x）
+- **IDE 编辑器（CodeMirror 6）**：`frontend/package.json`；首次或升级依赖后执行 `cd frontend && npm ci && npm run build:editor`（产出 `vendor/ide-codemirror.js`，已纳入 `index.html`）。`trunk build` 前须保证该文件存在（仓库已提交 vendor 副本；改 `scripts/ide-codemirror-entry.mjs` 后需重跑构建）。
 
 构建时若环境变量 **`NO_COLOR=1`**，部分 Trunk 版本会报错，可先 `unset NO_COLOR` 再执行 `trunk build`。
 

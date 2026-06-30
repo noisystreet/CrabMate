@@ -76,7 +76,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: frontend/dist
-          key: frontend-dist-${{ runner.os }}-${{ hashFiles('frontend/src/**', 'frontend/index.html', 'frontend/Cargo.toml', 'frontend/Cargo.lock') }}
+          key: frontend-dist-${{ runner.os }}-${{ hashFiles('frontend/src/**', 'frontend/index.html', 'frontend/Cargo.toml', 'frontend/Cargo.lock', 'frontend/package-lock.json', 'frontend/scripts/**', 'frontend/vendor/**', 'frontend/styles/**') }}
           restore-keys: |
             frontend-dist-${{ runner.os }}-
 
@@ -84,10 +84,19 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: e2e/package-lock.json
+          cache-dependency-path: |
+            frontend/package-lock.json
+            e2e/package-lock.json
 
       - name: Install trunk
         run: cargo install trunk --locked
+
+      - name: Build IDE editor bundle (CodeMirror)
+        if: steps.frontend-dist.outputs.cache-hit != 'true'
+        run: |
+          cd frontend
+          npm ci
+          npm run build:editor
 
       - name: Build frontend (Leptos dist)
         if: steps.frontend-dist.outputs.cache-hit != 'true'

@@ -1,0 +1,99 @@
+/* CodeMirror 6 IDE 编辑器（主题 token 与 CrabMate 变量对齐） */
+
+.ide-cm-host {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ide-cm-host .cm-editor {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  background: var(--surface-editor, transparent);
+  color: var(--text);
+}
+
+.ide-cm-host .cm-scroller {
+  overflow: auto;
+}
+
+.ide-cm-host .cm-gutters {
+  background: var(--surface-1, rgba(0, 0, 0, 0.02));
+  color: var(--muted, rgba(0, 0, 0, 0.45));
+  border-right: 1px solid var(--shell-border, rgba(0, 0, 0, 0.08));
+}
+
+.ide-cm-host .cm-activeLineGutter {
+  background: var(--surface-hover, rgba(0, 0, 0, 0.04));
+}
+
+.ide-cm-host .cm-activeLine {
+  background: var(--surface-hover, rgba(0, 0, 0, 0.03));
+}
+
+.ide-cm-host--disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.ide-editor-cm-missing {
+  margin: 0.65rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--accent-warn, #c27a00);
+}
+
+/* Lezer 高亮 token → 沿用 IDE 变量 */
+.ide-cm-host .tok-keyword {
+  color: var(--ide-hl-keyword, #7c3aed);
+  font-weight: 500;
+}
+
+.ide-cm-host .tok-string,
+.ide-cm-host .tok-string2 {
+  color: var(--ide-hl-string, #0d9488);
+}
+
+.ide-cm-host .tok-comment {
+  color: var(--ide-hl-comment, var(--muted));
+  font-style: italic;
+}
+
+.ide-cm-host .tok-number {
+  color: var(--ide-hl-number, #b45309);
+}
+
+.ide-cm-host .tok-typeName,
+.ide-cm-host .tok-className {
+  color: var(--ide-hl-type, #2563eb);
+}
+
+.ide-cm-host .tok-propertyName,
+.ide-cm-host .tok-attributeName {
+  color: var(--ide-hl-attribute, #c026d3);
+}
+
+.ide-cm-host .tok-variableName {
+  color: var(--text);
+}
+
+[data-theme="dark"] .ide-cm-host .tok-keyword {
+  color: var(--ide-hl-keyword, #c4b5fd);
+}
+
+[data-theme="dark"] .ide-cm-host .tok-string,
+[data-theme="dark"] .ide-cm-host .tok-string2 {
+  color: var(--ide-hl-string, #5eead4);
+}
+
+[data-theme="dark"] .ide-cm-host .tok-number {
+  color: var(--ide-hl-number, #fdba74);
+}
+
+[data-theme="dark"] .ide-cm-host .tok-typeName,
+[data-theme="dark"] .ide-cm-host .tok-className {
+  color: var(--ide-hl-type, #93c5fd);
+}

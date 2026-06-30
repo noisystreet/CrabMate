@@ -404,6 +404,7 @@ html[data-tauri-shell][data-ide-layout] .ide-menu-bar .tauri-window-controls {
   flex: 1;
   min-height: 12rem;
   display: flex;
+  flex-direction: column;
   min-width: 0;
   overflow: hidden;
 }

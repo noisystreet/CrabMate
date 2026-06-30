@@ -35,7 +35,7 @@ pub(super) fn IdeMenuEditSection(
         chrome,
         ide_path,
         ide_load_busy,
-        textarea_ref,
+        editor_host,
         ..
     } = signals;
 
@@ -88,12 +88,7 @@ pub(super) fn IdeMenuEditSection(
                         role="menuitem"
                         prop:disabled=move || ide_path.get().is_none() || ide_load_busy.get()
                         on:click=move |_| {
-                            if let Some(ta) = textarea_ref.get() {
-                                let len = ta.value().len() as u32;
-                                let _ = ta.focus();
-                                let _ = ta.set_selection_start(Some(0));
-                                let _ = ta.set_selection_end(Some(len));
-                            }
+                            editor_host.select_all();
                             close_menus(open_menu, ide_menubar_dropdown_open);
                         }
                     >

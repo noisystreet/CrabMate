@@ -1,16 +1,4 @@
-//! IDE 按路径选择语法高亮。
-
-use crate::ide_c_cpp_highlight::{highlight_c_to_html, highlight_cpp_to_html};
-use crate::ide_json_highlight::highlight_json_to_html;
-use crate::ide_markdown_highlight::highlight_markdown_to_html;
-use crate::ide_python_highlight::highlight_python_to_html;
-use crate::ide_rust_highlight::highlight_rust_to_html;
-use crate::ide_script_highlight::{
-    highlight_go_to_html, highlight_js_to_html, highlight_ts_to_html,
-};
-use crate::ide_shell_highlight::highlight_shell_to_html;
-use crate::ide_toml_highlight::highlight_toml_to_html;
-use crate::ide_yaml_highlight::highlight_yaml_to_html;
+//! IDE 按路径选择语法语言（供 CodeMirror 语言包映射）。
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IdeSyntaxLang {
@@ -119,34 +107,9 @@ fn ide_syntax_lang_for_lower_path(lower: &str) -> Option<IdeSyntaxLang> {
         .or_else(|| lower.ends_with("go.mod").then_some(IdeSyntaxLang::Go))
 }
 
-#[must_use]
-pub fn ide_path_has_syntax_highlight(path: Option<&str>) -> bool {
-    ide_syntax_lang_for_path(path).is_some()
-}
-
-#[must_use]
-pub fn highlight_source_for_path(path: Option<&str>, source: &str) -> String {
-    match ide_syntax_lang_for_path(path) {
-        Some(IdeSyntaxLang::Rust) => highlight_rust_to_html(source),
-        Some(IdeSyntaxLang::Toml) => highlight_toml_to_html(source),
-        Some(IdeSyntaxLang::Yaml) => highlight_yaml_to_html(source),
-        Some(IdeSyntaxLang::C) => highlight_c_to_html(source),
-        Some(IdeSyntaxLang::Cpp) => highlight_cpp_to_html(source),
-        Some(IdeSyntaxLang::Python) => highlight_python_to_html(source),
-        Some(IdeSyntaxLang::JavaScript) => highlight_js_to_html(source),
-        Some(IdeSyntaxLang::TypeScript) => highlight_ts_to_html(source),
-        Some(IdeSyntaxLang::Json) => highlight_json_to_html(source),
-        Some(IdeSyntaxLang::Markdown) => highlight_markdown_to_html(source),
-        Some(IdeSyntaxLang::Shell) => highlight_shell_to_html(source),
-        Some(IdeSyntaxLang::Go) => highlight_go_to_html(source),
-        None => String::new(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ide_c_cpp_highlight::{CppDialect, highlight_c_cpp_to_html};
 
     #[test]
     fn detects_languages_by_extension() {
@@ -199,26 +162,5 @@ mod tests {
             Some(IdeSyntaxLang::Go)
         );
         assert_eq!(ide_syntax_lang_for_path(Some("notes.txt")), None);
-    }
-
-    #[test]
-    fn dispatches_to_correct_highlighter() {
-        assert!(highlight_source_for_path(Some("a.rs"), "fn main() {}").contains("hl-kw"));
-        assert!(highlight_source_for_path(Some("a.c"), "int main() {}").contains("hl-kw"));
-        assert!(highlight_source_for_path(Some("a.cpp"), "class Foo {};").contains("hl-kw"));
-        assert!(highlight_source_for_path(Some("a.py"), "def f():\n    pass\n").contains("hl-kw"));
-        assert!(highlight_source_for_path(Some("a.ts"), "const x = 1;").contains("hl-kw"));
-        assert!(highlight_source_for_path(Some("a.json"), r#"{"a":1}"#).contains("hl-str"));
-        assert!(highlight_source_for_path(Some("a.md"), "# hi").contains("hl-kw"));
-        assert!(highlight_source_for_path(Some("a.sh"), "# hi").contains("hl-com"));
-        assert!(highlight_source_for_path(Some("a.go"), "package main").contains("hl-kw"));
-        assert!(!highlight_source_for_path(Some("a.md"), "# hi").is_empty());
-        assert!(highlight_source_for_path(Some("a.txt"), "# hi").is_empty());
-    }
-
-    #[test]
-    fn c_cpp_dialect_smoke() {
-        assert!(highlight_c_cpp_to_html("int x;", CppDialect::C).contains("hl-kw"));
-        assert!(highlight_c_cpp_to_html("class X {};", CppDialect::Cpp).contains("hl-kw"));
     }
 }

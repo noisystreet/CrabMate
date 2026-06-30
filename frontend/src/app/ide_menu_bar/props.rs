@@ -2,6 +2,8 @@
 
 use leptos::prelude::*;
 
+use crate::ide_codemirror::IdeEditorHost;
+
 use crate::app::app_signals::{IdeChromeSignals, IdeEditorSignals};
 use crate::i18n::Locale;
 use crate::ide_save::IdeSaveContext;
@@ -20,7 +22,7 @@ pub struct IdeMenuBarSignals {
     pub ide_baseline: RwSignal<String>,
     pub ide_load_busy: RwSignal<bool>,
     pub ide_save_busy: RwSignal<bool>,
-    pub textarea_ref: NodeRef<leptos::html::Textarea>,
+    pub editor_host: IdeEditorHost,
     pub tabs: IdeTabsHandle,
     pub save_ctx: IdeSaveContext,
 }
