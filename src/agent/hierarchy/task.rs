@@ -190,7 +190,7 @@ impl GoalAcceptance {
     pub(crate) fn to_acceptance_spec(&self) -> crate::agent::acceptance::AcceptanceSpec {
         crate::agent::acceptance::AcceptanceSpec {
             expect_exit_code: self.expect_exit_code,
-            exit_code_policy: crate::agent::acceptance::ExitCodePolicy::LenientIfUnparsed,
+            exit_code_policy: crate::agent::acceptance::ExitCodePolicy::DefaultZeroIfMissing,
             expect_stdout_contains: self.expect_stdout_contains.clone(),
             expect_stderr_contains: self.expect_stderr_contains.clone(),
             expect_combined_output_contains: self.expect_output_contains.clone(),
@@ -335,7 +335,7 @@ impl ExecutionStrategy {
 
 #[cfg(test)]
 mod tests {
-    use super::BuildArtifactKind;
+    use super::{BuildArtifactKind, GoalAcceptance};
 
     #[test]
     fn build_artifact_kind_accepts_legacy_file_alias() {
@@ -356,5 +356,18 @@ mod tests {
         let parsed: BuildArtifactKind =
             serde_json::from_str("\"BuildConfig\"").expect("legacy BuildConfig alias should parse");
         assert_eq!(parsed, BuildArtifactKind::SourceFile);
+    }
+
+    #[test]
+    fn goal_acceptance_uses_default_zero_exit_code_policy() {
+        let spec = GoalAcceptance {
+            expect_exit_code: Some(0),
+            ..Default::default()
+        }
+        .to_acceptance_spec();
+        assert_eq!(
+            spec.exit_code_policy,
+            crate::agent::acceptance::ExitCodePolicy::DefaultZeroIfMissing
+        );
     }
 }

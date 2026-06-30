@@ -5,6 +5,7 @@ use std::sync::atomic::Ordering;
 
 use log::debug;
 
+use crate::agent::per_coord::PerCoordinator;
 use crate::agent::plan_artifact::PlanStepV1;
 use crate::tool_result::tool_message_content_ok_for_model;
 use crate::types::{Message, staged_step_window_end_exclusive};
@@ -164,12 +165,26 @@ where
         }
     }
 
+    staged_step_clear_run_command_cache_on_verify_failure(
+        patch_ctx.per_coord,
+        &step_verify_failed_reason,
+    );
+
     StagedStepOuterHalfResult {
         step,
         step_index,
         step_user_idx,
         run_step,
         step_verify_failed_reason,
+    }
+}
+
+fn staged_step_clear_run_command_cache_on_verify_failure(
+    per_coord: &mut PerCoordinator,
+    step_verify_failed_reason: &Option<String>,
+) {
+    if step_verify_failed_reason.is_some() {
+        per_coord.clear_all_run_command_failure_state();
     }
 }
 

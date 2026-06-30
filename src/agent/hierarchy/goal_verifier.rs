@@ -3,7 +3,10 @@
 //! 根据 SubGoal 中定义的 acceptance 条件对执行结果进行验证。
 //! 与分阶段步骤共用 [`crate::agent::acceptance`] 内核（文件 / 合并输出 / 退出码等）。
 
+use std::sync::Arc;
+
 use crate::agent::acceptance::{VerifyOutcome, parse_exit_code_from_combined_output};
+use crate::tools::{RunCommandError, run_checked};
 
 use super::goal_acceptance::{effective_goal_acceptance, verify_goal_acceptance_spec};
 use super::task::{ArtifactKind, SubGoal, TaskResult, TaskStatus};
@@ -46,12 +49,31 @@ fn localize_hierarchy_verify_reason(reason: String) -> String {
 /// 子目标验证器
 pub struct GoalVerifier {
     workspace_root: std::path::PathBuf,
+    allowed_commands: Arc<[String]>,
+    command_max_output_len: usize,
 }
 
 impl GoalVerifier {
-    /// 创建新的验证器
+    /// 创建新的验证器（无白名单；`expect_command_success` 将全部拒绝）。
     pub fn new(workspace_root: std::path::PathBuf) -> Self {
-        Self { workspace_root }
+        Self::with_allowed_commands(workspace_root, Arc::from([] as [String; 0]))
+    }
+
+    /// 与 Operator `run_command` 共用 `allowed_commands` 白名单。
+    pub fn with_allowed_commands(
+        workspace_root: std::path::PathBuf,
+        allowed_commands: Arc<[String]>,
+    ) -> Self {
+        Self {
+            workspace_root,
+            allowed_commands,
+            command_max_output_len: 64 * 1024,
+        }
+    }
+
+    pub fn with_command_max_output_len(mut self, len: usize) -> Self {
+        self.command_max_output_len = len;
+        self
     }
 
     /// 验证子目标是否达成
@@ -221,42 +243,52 @@ impl GoalVerifier {
         VerificationResult::Pass
     }
 
-    /// 运行验证命令
+    /// 运行验证命令（经 `run_command` 同级别白名单与路径规则）。
     fn run_verify_command(&self, cmd: &str) -> Result<bool, String> {
-        use std::process::Command;
+        let args_json = verify_command_line_to_args_json(cmd)?;
 
         log::info!(
             target: "crabmate",
-            "[GOAL_VERIFIER] Running verify command: {}",
+            "[GOAL_VERIFIER] Running verify command via run_command allowlist: {}",
             cmd
         );
 
-        // 解析命令和参数
-        let parts: Vec<&str> = cmd.split_whitespace().collect();
-        if parts.is_empty() {
-            return Err("空命令".to_string());
+        match run_checked(
+            &args_json,
+            self.command_max_output_len,
+            self.allowed_commands.as_ref(),
+            &self.workspace_root,
+            None,
+        ) {
+            Ok(output) => {
+                let parsed = crate::tool_result::parse_legacy_output("run_command", &output);
+                Ok(parsed.ok)
+            }
+            Err(RunCommandError::DisallowedCommand { attempted, .. }) => {
+                Err(format!("验证命令不在 allowed_commands 白名单: {attempted}"))
+            }
+            Err(e) => {
+                log::warn!(
+                    target: "crabmate",
+                    "[GOAL_VERIFIER] Verify command failed: {}",
+                    e.user_message()
+                );
+                Ok(false)
+            }
         }
-
-        let command = parts[0];
-        let args = &parts[1..];
-
-        let output = Command::new(command)
-            .args(args)
-            .current_dir(&self.workspace_root)
-            .output()
-            .map_err(|e| format!("执行命令失败: {}", e))?;
-
-        let success = output.status.success();
-        let exit_code = output.status.code().unwrap_or(-1);
-
-        log::info!(
-            target: "crabmate",
-            "[GOAL_VERIFIER] Verify command exit code: {}",
-            exit_code
-        );
-
-        Ok(success)
     }
+}
+
+fn verify_command_line_to_args_json(cmd: &str) -> Result<String, String> {
+    let parts: Vec<&str> = cmd.split_whitespace().collect();
+    if parts.is_empty() {
+        return Err("空命令".to_string());
+    }
+    Ok(serde_json::json!({
+        "command": parts[0],
+        "args": parts.iter().skip(1).collect::<Vec<_>>()
+    })
+    .to_string())
 }
 
 /// 子目标是否要求「真正运行已构建的可执行体」（与仅「检查产物是否生成」区分，仅用于分层模式验收）。

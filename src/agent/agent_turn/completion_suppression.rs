@@ -1,6 +1,6 @@
 //! 目标已有完成证据后，抑制冗余探针类 **tool_calls** 与分阶段 **plan steps** 的共享判定。
 
-use crate::agent::plan_artifact::{PlanStepAcceptance, PlanStepV1};
+use crate::agent::plan_artifact::{PlanStepAcceptance, PlanStepExecutorKind, PlanStepV1};
 use crate::types::{Message, ToolCall};
 
 use super::run_command_dedupe::{
@@ -153,15 +153,27 @@ pub(crate) fn plan_steps_are_redundant_after_completion(steps: &[PlanStepV1]) ->
     steps.iter().all(plan_step_is_redundant_after_completion)
 }
 
+/// 须由分阶段步执行器实际跑工具/验收，不可被任务级早停或重复规划抑制跳过。
+pub(crate) fn plan_step_requires_formal_execution(step: &PlanStepV1) -> bool {
+    step.acceptance
+        .as_ref()
+        .is_some_and(PlanStepAcceptance::is_effective)
+        || matches!(step.executor_kind, Some(PlanStepExecutorKind::TestRunner))
+}
+
+pub(crate) fn plan_steps_require_formal_execution(steps: &[PlanStepV1]) -> bool {
+    steps.iter().any(plan_step_requires_formal_execution)
+}
+
 pub(crate) fn plan_step_is_redundant_after_completion(step: &PlanStepV1) -> bool {
+    if plan_step_requires_formal_execution(step) {
+        return false;
+    }
     let text = redundant_plan_step_text(step);
     if text_contains_any_marker(&text, FOLLOWUP_WRITE_OR_FIX_MARKERS) {
         return false;
     }
-    step.acceptance
-        .as_ref()
-        .is_some_and(PlanStepAcceptance::is_effective)
-        || text_contains_any_marker(&text, REDUNDANT_PROBE_TEXT_MARKERS)
+    text_contains_any_marker(&text, REDUNDANT_PROBE_TEXT_MARKERS)
 }
 
 fn redundant_plan_step_text(step: &PlanStepV1) -> String {
@@ -247,6 +259,24 @@ mod tests {
             Some("implement"),
             "修复失败测试并修改实现",
         )];
+        assert!(!plan_steps_are_redundant_after_completion(&steps));
+    }
+
+    #[test]
+    fn plan_step_with_effective_acceptance_is_not_redundant() {
+        let steps = vec![PlanStepV1 {
+            id: "run-tests".into(),
+            description: "运行 cargo test 验收".into(),
+            workflow_node_id: None,
+            executor_kind: Some(crate::agent::plan_artifact::PlanStepExecutorKind::TestRunner),
+            step_kind: None,
+            acceptance: Some(PlanStepAcceptance {
+                expect_exit_code: Some(0),
+                ..Default::default()
+            }),
+            max_step_retries: None,
+            transitions: None,
+        }];
         assert!(!plan_steps_are_redundant_after_completion(&steps));
     }
 

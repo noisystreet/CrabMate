@@ -103,10 +103,21 @@ impl super::HierarchicalExecutor {
         super::super::subgoal_context::normalize_subgoal_io_contracts(&mut current_goal);
         let max_retries = current_goal.max_retries.unwrap_or(3);
 
-        let verifier = self
-            .working_dir
+        let allowed_commands = self
+            .cfg
             .as_ref()
-            .map(|dir| GoalVerifier::new(dir.clone()));
+            .map(|c| std::sync::Arc::clone(&c.command_exec.allowed_commands))
+            .unwrap_or_else(|| std::sync::Arc::from([] as [String; 0]));
+        let command_max_output_len = self
+            .cfg
+            .as_ref()
+            .map(|c| c.command_exec.command_max_output_len)
+            .unwrap_or(64 * 1024);
+
+        let verifier = self.working_dir.as_ref().map(|dir| {
+            GoalVerifier::with_allowed_commands(dir.clone(), allowed_commands)
+                .with_command_max_output_len(command_max_output_len)
+        });
 
         for attempt in 0..max_retries {
             let result = self

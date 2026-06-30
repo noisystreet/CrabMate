@@ -12,3 +12,5 @@
 {"id":"verify_exit_mismatch","case":"verify","spec":{"expect_exit_code":0},"evidence":{"fallback_exit_code":1},"expect":"fail","reason_contains":"exit_code_mismatch"}
 {"id":"verify_stdout_ok","case":"verify","spec":{"expect_stdout_contains":"ok"},"evidence":{"stdout":"all ok"},"expect":"pass"}
 {"id":"verify_stdout_miss","case":"verify","spec":{"expect_stdout_contains":"missing"},"evidence":{"stdout":"all ok"},"expect":"fail","reason_contains":"stdout_missing"}
+{"id":"cross_track_default_zero_unparsed_ok","case":"verify","spec":{"expect_exit_code":0,"exit_code_policy":"default_zero"},"evidence":{"tool_output":"plain output no exit"},"expect":"pass"}
+{"id":"cross_track_default_zero_expect_one_fails","case":"verify","spec":{"expect_exit_code":1,"exit_code_policy":"default_zero"},"evidence":{"tool_output":"plain output no exit"},"expect":"fail","reason_contains":"exit_code_mismatch"}
