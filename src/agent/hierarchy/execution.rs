@@ -288,6 +288,19 @@ impl HierarchicalExecutor {
         self.tool_approval_rx = Some(approval_rx);
         self
     }
+
+    /// 单轮预算压力是否已触发降级（跳过分层非关键验收与 Manager 反思 LLM）。
+    pub(super) fn budget_degradation_active(&self) -> bool {
+        let Some(cfg) = self.cfg.as_ref() else {
+            return false;
+        };
+        if !cfg.turn_budget.budget_degradation_enabled {
+            return false;
+        }
+        self.turn_budget
+            .as_ref()
+            .is_some_and(|b| b.is_degradation_active())
+    }
 }
 
 /// 子目标顺序/并行执行、验证重试与 `BuildState` 更新（原 `execution_body.inc.rs`，现为独立模块以便导航）。

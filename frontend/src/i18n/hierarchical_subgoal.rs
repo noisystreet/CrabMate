@@ -55,6 +55,7 @@ pub fn hierarchical_subgoal_phase_key(phase: Option<&str>) -> Option<&'static st
         "修复" | "fix" => Some("fix"),
         "验证" | "verify" => Some("verify"),
         "升级" | "escalate" => Some("escalate"),
+        "react" | "re-act" => Some("run"),
         "开始执行" | "start" | "running" => Some("run"),
         _ => None,
     }

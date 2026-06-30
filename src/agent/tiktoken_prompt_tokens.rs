@@ -157,6 +157,20 @@ pub fn prompt_token_count_vendor_shaped_for_session(
     count_prompt_tokens_openai_compat_vendor_slice(&cfg.llm.model, &vendor)
 }
 
+/// 单次 LLM 往返的 prompt + completion Token 粗估（供 [`crate::agent::turn_budget::TurnBudgetCounter`] 累计）。
+pub fn estimate_chat_exchange_tokens(
+    cfg: &AgentConfig,
+    request_messages: &[Message],
+    response: &Message,
+) -> Option<usize> {
+    let prompt = prompt_token_count_vendor_shaped_for_session(cfg, request_messages)?;
+    let completion = count_prompt_tokens_openai_compat_vendor_slice(
+        &cfg.llm.model,
+        std::slice::from_ref(response),
+    )?;
+    Some(prompt.prompt_tokens as usize + completion.prompt_tokens as usize)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

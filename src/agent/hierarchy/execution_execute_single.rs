@@ -263,7 +263,17 @@ impl super::HierarchicalExecutor {
         max_retries: usize,
         artifact_store: &mut ArtifactStore,
     ) -> Result<VerificationStep, ExecutionError> {
-        let verify_result = verifier.verify(current_goal, result);
+        let degraded = self.budget_degradation_active();
+        let verify_result = if degraded {
+            warn!(
+                target: "crabmate",
+                "[HIERARCHICAL] Executor: Goal {} using degraded verification (turn budget pressure)",
+                current_goal.goal_id
+            );
+            verifier.verify_degraded(current_goal, result)
+        } else {
+            verifier.verify(current_goal, result)
+        };
         self.emit_verification_sse(&current_goal.goal_id, &verify_result)
             .await;
 
@@ -271,8 +281,9 @@ impl super::HierarchicalExecutor {
             VerificationResult::Pass => {
                 info!(
                     target: "crabmate",
-                    "[HIERARCHICAL] Executor: Goal {} verification passed",
-                    current_goal.goal_id
+                    "[HIERARCHICAL] Executor: Goal {} verification passed{}",
+                    current_goal.goal_id,
+                    if degraded { " (degraded)" } else { "" }
                 );
                 Ok(VerificationStep::Return(result.clone()))
             }
@@ -287,6 +298,7 @@ impl super::HierarchicalExecutor {
                 );
 
                 if attempt < max_retries - 1
+                    && !degraded
                     && let Some(ref manager) = self.manager
                 {
                     let artifacts: Vec<_> = artifact_store.all().into_iter().cloned().collect();

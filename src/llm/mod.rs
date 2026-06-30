@@ -69,6 +69,17 @@ pub async fn complete_chat_retrying(
         && let Some(budget) = p.turn_budget
     {
         budget.record_llm_call();
+        if let Ok((ref msg, _)) = result
+            && let Some(tokens) =
+                crate::agent::tiktoken_prompt_tokens::estimate_chat_exchange_tokens(
+                    p.cfg,
+                    &request.messages,
+                    msg,
+                )
+        {
+            budget.record_estimated_tokens(tokens);
+        }
+        budget.maybe_activate_degradation(&p.cfg.turn_budget);
     }
     result
 }

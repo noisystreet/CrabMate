@@ -9,7 +9,7 @@ use crate::types::{Message, MessageContent};
 use super::super::artifact_resolver::ArtifactResolver;
 use super::super::task::{SubGoal, TaskResult, TaskStatus};
 use super::super::tool_executor::{ToolExecutionResult, ToolExecutor};
-use super::state::{ConvergenceProgress, ReactState, SubgoalPhase, ToolExecutionOutcome};
+use super::state::{ReactState, SubgoalPhase, ToolExecutionOutcome};
 use super::types::{CompileErrorType, OperatorError};
 
 #[allow(dead_code, clippy::too_many_arguments)]
@@ -138,64 +138,13 @@ impl super::types::OperatorAgent {
             extra_context.map(|s| s.to_string())
         };
 
-        let mut state = ReactState {
-            iteration: 0,
-            messages: Vec::new(),
-            observations: Vec::new(),
-            task_completed: false,
-            completion_reason: None,
-            current_working_dir: None,
-            consecutive_failures: 0,
-            last_failed_tool: None,
-            last_error_type: None,
-            recent_commands: Vec::new(),
-            duplicate_command_count: 0,
-            lightweight_command_cache: std::collections::HashMap::new(),
-            tools_used: std::collections::HashSet::new(),
-            tool_names_chron: Vec::new(),
-            dynamic_decomposition_count: 0,
-            phase: SubgoalPhase::Diagnose,
-            progress: ConvergenceProgress::default(),
-            last_reported_phase: None,
-            attempted_compile_configs: Vec::new(),
-        };
-        let convergence_goal = super::compile::is_convergence_compile_fix_goal(goal);
-
-        // 构建初始系统提示（传入当前工作目录）
-        let system_prompt = super::prompt::build_system_prompt(
+        let mut state = super::react_loop_helpers::init_react_state_for_goal(
             &self.config.policy,
             goal,
-            state.current_working_dir.as_deref(),
+            enhanced_context,
         );
-        state.messages.push(Message {
-            role: "system".to_string(),
-            content: Some(MessageContent::Text(system_prompt)),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        });
-
-        // 添加用户任务（使用增强后的描述）
-        let task_description = if let Some(ctx) = enhanced_context {
-            format!("{}\n\n{}", goal.description, ctx)
-        } else {
-            goal.description.clone()
-        };
-        let user_task = format!(
-            "任务：{}\n\n请执行任务并通过工具调用完成任务。",
-            task_description
-        );
-        state.messages.push(Message {
-            role: "user".to_string(),
-            content: Some(MessageContent::Text(user_task)),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        });
+        let convergence_goal = super::compile::is_convergence_compile_fix_goal(goal);
+        let max_iterations = self.config.policy.max_iterations;
 
         // ReAct 循环
         loop {
@@ -224,94 +173,64 @@ impl super::types::OperatorAgent {
             }
 
             state.iteration += 1;
+
+            self.emit_react_progress_timeline(
+                super::react_loop_helpers::ReactProgressTimelineCtx::from_react_state(
+                    &goal.goal_id,
+                    &state,
+                    max_iterations,
+                    convergence_goal,
+                    Some(&cfg.turn_budget),
+                ),
+            )
+            .await;
+
             if convergence_goal {
-                if state.last_reported_phase != Some(state.phase) {
-                    self.emit_convergence_timeline(
-                        &goal.goal_id,
-                        state.phase,
-                        state.iteration,
-                        state.progress.last_error_count,
-                        state.progress.rounds_without_progress,
-                        state.progress.last_first_error_signature.as_deref(),
-                    )
-                    .await;
-                    state.last_reported_phase = Some(state.phase);
-                }
+                state.last_reported_phase = Some(state.phase);
                 state.observations.push(format!(
                     "Phase {:?} (iteration {})",
                     state.phase, state.iteration
                 ));
             }
 
-            if state.iteration > self.config.policy.max_iterations {
-                return Ok(TaskResult {
-                    task_id: goal.goal_id.clone(),
-                    status: TaskStatus::Failed {
-                        reason: "Max iterations reached".to_string(),
-                    },
-                    output: Some(self.build_output_summary(&state)),
-                    error: Some("Max iterations reached".to_string()),
-                    artifacts: Vec::new(),
-                    duration_ms: start_time.elapsed().as_millis() as u64,
-                    tools_invoked: state.tool_names_chron.clone(),
-                });
+            if state.iteration > max_iterations {
+                return Ok(self.react_loop_max_iterations_result(
+                    &goal.goal_id,
+                    &state,
+                    start_time,
+                ));
             }
 
-            if let Some(ref budget) = self.config.runtime.turn_budget {
-                if budget.wall_clock_exceeded(&cfg.turn_budget) {
-                    let msg = crate::agent::turn_budget::turn_wall_clock_limit_user_message(
-                        cfg.turn_budget.max_turn_duration_seconds,
-                    );
-                    tracing::warn!(
-                        target: "crabmate::hierarchy",
-                        limiter = "turn_wall_clock",
-                        max_turn_duration_seconds = cfg.turn_budget.max_turn_duration_seconds,
-                        goal_id = %goal.goal_id,
-                        "Operator ReAct: turn wall clock exceeded (shared turn budget)"
-                    );
-                    return Ok(TaskResult {
-                        task_id: goal.goal_id.clone(),
-                        status: TaskStatus::Failed {
-                            reason: msg.clone(),
-                        },
-                        output: Some(self.build_output_summary(&state)),
-                        error: Some(msg),
-                        artifacts: Vec::new(),
-                        duration_ms: start_time.elapsed().as_millis() as u64,
-                        tools_invoked: state.tool_names_chron.clone(),
-                    });
-                }
-            } else if crate::agent::turn_budget::turn_wall_clock_exceeded(
-                cfg.turn_budget.max_turn_duration_seconds,
-                start_time.elapsed().as_secs(),
-            ) {
-                let msg = crate::agent::turn_budget::turn_wall_clock_limit_user_message(
-                    cfg.turn_budget.max_turn_duration_seconds,
-                );
-                tracing::warn!(
-                    target: "crabmate::hierarchy",
-                    limiter = "turn_wall_clock",
-                    max_turn_duration_seconds = cfg.turn_budget.max_turn_duration_seconds,
-                    goal_id = %goal.goal_id,
-                    "Operator ReAct: turn wall clock exceeded (shared with agent_turn outer_loop)"
-                );
-                return Ok(TaskResult {
-                    task_id: goal.goal_id.clone(),
-                    status: TaskStatus::Failed {
-                        reason: msg.clone(),
-                    },
-                    output: Some(self.build_output_summary(&state)),
-                    error: Some(msg),
-                    artifacts: Vec::new(),
-                    duration_ms: start_time.elapsed().as_millis() as u64,
-                    tools_invoked: state.tool_names_chron.clone(),
-                });
+            if let Some(result) =
+                self.react_loop_budget_exhausted_result(&goal.goal_id, &state, cfg, start_time)
+            {
+                return Ok(result);
             }
 
             // 调用 LLM（内部对 messages 跑会话同步管道：压缩 tool / 按配置裁剪条数与字符）
-            let response = self
+            let response = match self
                 .call_llm(cfg, llm_backend, client, api_key, &mut state)
-                .await?;
+                .await
+            {
+                Ok(msg) => msg,
+                Err(OperatorError::ExecutionError(ref msg))
+                    if crate::agent::turn_budget::is_turn_budget_limit_user_message(msg) =>
+                {
+                    tracing::warn!(
+                        target: "crabmate::hierarchy",
+                        limiter = "turn_budget",
+                        goal_id = %goal.goal_id,
+                        "Operator ReAct: turn budget exhausted during LLM call"
+                    );
+                    return Ok(self.task_result_on_turn_budget_exhausted(
+                        &goal.goal_id,
+                        &state,
+                        msg.clone(),
+                        start_time,
+                    ));
+                }
+                Err(e) => return Err(e),
+            };
 
             if let Some(result) = self
                 .process_react_round(
@@ -728,13 +647,14 @@ impl super::types::OperatorAgent {
             });
         }
         if state.last_reported_phase != Some(state.phase) {
-            self.emit_convergence_timeline(
-                &goal.goal_id,
-                state.phase,
-                state.iteration,
-                state.progress.last_error_count,
-                state.progress.rounds_without_progress,
-                state.progress.last_first_error_signature.as_deref(),
+            self.emit_react_progress_timeline(
+                super::react_loop_helpers::ReactProgressTimelineCtx::from_react_state(
+                    &goal.goal_id,
+                    state,
+                    self.config.policy.max_iterations,
+                    true,
+                    None,
+                ),
             )
             .await;
             state.last_reported_phase = Some(state.phase);

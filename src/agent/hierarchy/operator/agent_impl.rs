@@ -206,46 +206,118 @@ impl OperatorAgent {
         )
     }
 
-    pub(super) async fn emit_convergence_timeline(
+    /// 墙钟 / LLM 次数 / Token 预算耗尽：有进展则 `Completed` 并附部分摘要，否则 `Failed`。
+    pub(super) fn task_result_on_turn_budget_exhausted(
         &self,
         goal_id: &str,
-        phase: SubgoalPhase,
-        iteration: usize,
-        error_count: Option<usize>,
-        stagnant_rounds: usize,
-        first_error: Option<&str>,
+        state: &ReactState,
+        msg: String,
+        start_time: Instant,
+    ) -> super::super::task::TaskResult {
+        use super::super::task::{TaskResult, TaskStatus};
+        let has_progress = state.iteration > 1
+            || !state.tool_names_chron.is_empty()
+            || state.task_completed
+            || !state.observations.is_empty();
+        let summary = self.build_output_summary(state);
+        let duration_ms = start_time.elapsed().as_millis() as u64;
+        let tools = state.tool_names_chron.clone();
+        if has_progress {
+            let output = format!(
+                "{}\n{}",
+                summary,
+                crate::agent::turn_budget::turn_budget_partial_completion_suffix()
+            );
+            super::super::task::TaskResult {
+                task_id: goal_id.to_string(),
+                status: TaskStatus::Completed,
+                output: Some(output),
+                error: Some(msg),
+                artifacts: Vec::new(),
+                duration_ms,
+                tools_invoked: tools,
+            }
+        } else {
+            TaskResult {
+                task_id: goal_id.to_string(),
+                status: TaskStatus::Failed {
+                    reason: msg.clone(),
+                },
+                output: Some(summary),
+                error: Some(msg),
+                artifacts: Vec::new(),
+                duration_ms,
+                tools_invoked: tools,
+            }
+        }
+    }
+
+    /// ReAct 循环进度（全子目标类型）：轮次、工具调用次数与可选预算用量；Web 侧 `upsert` 同 goal 气泡。
+    pub(super) async fn emit_react_progress_timeline(
+        &self,
+        ctx: super::react_loop_helpers::ReactProgressTimelineCtx<'_>,
     ) {
-        let Some(ref sse_out) = self.config.runtime.sse_out else {
+        let Some(sse_out) = self.config.runtime.sse_out.as_ref() else {
             return;
         };
-        let phase_label = match phase {
-            SubgoalPhase::Diagnose => "诊断",
-            SubgoalPhase::ApplyFix => "修复",
-            SubgoalPhase::Verify => "验证",
-            SubgoalPhase::Escalate => "升级",
+        let phase_label = match ctx.phase {
+            Some(SubgoalPhase::Diagnose) => "诊断",
+            Some(SubgoalPhase::ApplyFix) => "修复",
+            Some(SubgoalPhase::Verify) => "验证",
+            Some(SubgoalPhase::Escalate) => "升级",
+            None => "ReAct",
         };
         let mut detail = format!(
-            "- 阶段：{}\n- 轮次：{}\n- 无进展轮次：{}",
-            phase_label, iteration, stagnant_rounds
+            "- 阶段：{}\n- 轮次：{}/{}",
+            phase_label, ctx.iteration, ctx.max_iterations
         );
-        if let Some(n) = error_count {
+        if let Some(n) = ctx.tool_calls {
+            detail.push_str(&format!("\n- 工具调用：{}", n));
+        }
+        if let Some(n) = ctx.stagnant_rounds {
+            detail.push_str(&format!("\n- 无进展轮次：{}", n));
+        }
+        if let Some(n) = ctx.error_count {
             detail.push_str(&format!("\n- 错误数：{}", n));
         }
-        if let Some(sig) = first_error
+        if let Some(sig) = ctx.first_error
             && !sig.trim().is_empty()
         {
             detail.push_str(&format!("\n- 首错：{}", super::text::truncate_output(sig)));
         }
+        if let (Some(budget), Some(cfg)) = (
+            self.config.runtime.turn_budget.as_ref(),
+            ctx.turn_budget_cfg,
+        ) {
+            let max_llm = crate::agent::turn_budget::effective_max_llm_calls_per_turn(cfg);
+            detail.push_str(&format!(
+                "\n- 预算：LLM {}/{} · Token ~{}/{}",
+                budget.llm_calls(),
+                max_llm,
+                budget.estimated_tokens(),
+                if cfg.max_turn_tokens > 0 {
+                    cfg.max_turn_tokens.to_string()
+                } else {
+                    "∞".to_string()
+                }
+            ));
+            if budget.is_degradation_active() {
+                detail.push_str("\n- 降级：已启用（非关键验收已跳过）");
+            }
+        }
         let payload = crate::sse::encode_message(crate::sse::SsePayload::TimelineLog {
             log: crate::sse::protocol::TimelineLogBody {
                 kind: "hierarchical_subgoal".to_string(),
-                title: format!("子目标 `{}`", goal_id),
+                title: format!("子目标 `{}`", ctx.goal_id),
                 detail: Some(detail),
             },
         });
-        let _ =
-            crate::sse::send_string_logged(sse_out, payload, "hierarchical::convergence_timeline")
-                .await;
+        let _ = crate::sse::send_string_logged(
+            sse_out,
+            payload,
+            "hierarchical::react_progress_timeline",
+        )
+        .await;
     }
 
     pub fn inject_paths_into_value(
