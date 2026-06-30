@@ -1,7 +1,11 @@
 //! 目标已有完成证据后，抑制冗余探针类 **tool_calls** 与分阶段 **plan steps** 的共享判定。
 
 use crate::agent::plan_artifact::{PlanStepAcceptance, PlanStepV1};
-use crate::types::ToolCall;
+use crate::types::{Message, ToolCall};
+
+use super::run_command_dedupe::{
+    normalize_run_command_key, successful_run_command_keys_from_messages,
+};
 
 const READONLY_PROBE_TOOL_NAMES: &[&str] = &[
     "read_file",
@@ -92,6 +96,31 @@ pub(crate) fn tool_calls_are_redundant_after_completion(tool_calls: &[ToolCall])
     tool_calls
         .iter()
         .all(tool_call_is_redundant_after_completion)
+}
+
+/// 活跃目标已有完成证据时：探针类 + **已成功过的相同** `run_command` 签名视为冗余。
+pub(crate) fn tool_calls_are_redundant_when_goal_satisfied(
+    tool_calls: &[ToolCall],
+    messages: &[Message],
+) -> bool {
+    if tool_calls_are_redundant_after_completion(tool_calls) {
+        return true;
+    }
+    let prior_success = successful_run_command_keys_from_messages(messages);
+    tool_calls
+        .iter()
+        .all(|tc| tool_call_is_redundant_build_run_repeat(tc, &prior_success))
+}
+
+fn tool_call_is_redundant_build_run_repeat(
+    tc: &ToolCall,
+    prior_success: &std::collections::HashSet<String>,
+) -> bool {
+    if tc.function.name != "run_command" {
+        return false;
+    }
+    normalize_run_command_key(tc.function.arguments.as_str())
+        .is_some_and(|key| prior_success.contains(&key))
 }
 
 pub(crate) fn tool_call_is_redundant_after_completion(tc: &ToolCall) -> bool {
@@ -219,5 +248,55 @@ mod tests {
             "修复失败测试并修改实现",
         )];
         assert!(!plan_steps_are_redundant_after_completion(&steps));
+    }
+
+    #[test]
+    fn satisfied_goal_marks_exact_run_command_repeat_redundant() {
+        use crate::types::Message;
+        let messages = vec![Message {
+            role: "tool".into(),
+            content: Some(
+                "$ cmake --build build\n退出码：0\n标准输出：\n[100%] Built target hello".into(),
+            ),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: Some("tc1".into()),
+        }];
+        let calls = vec![run_command_tool(
+            r#"{"command":"cmake","args":["--build","build"]}"#,
+        )];
+        assert!(tool_calls_are_redundant_when_goal_satisfied(
+            &calls, &messages
+        ));
+    }
+
+    #[test]
+    fn satisfied_goal_does_not_mark_different_run_command_redundant() {
+        use crate::types::Message;
+        let messages = vec![Message {
+            role: "tool".into(),
+            content: Some(
+                "$ cmake --build build\n退出码：0\n标准输出：\n[100%] Built target hello".into(),
+            ),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: Some("tc1".into()),
+        }];
+        let calls = vec![run_command_tool(r#"{"command":"./build/hello","args":[]}"#)];
+        assert!(!tool_calls_are_redundant_when_goal_satisfied(
+            &calls, &messages
+        ));
+    }
+
+    #[test]
+    fn unsatisfied_gate_still_allows_first_build_command() {
+        let calls = vec![run_command_tool(
+            r#"{"command":"make","args":["arch=Linux_Serial","-C","hpcg"]}"#,
+        )];
+        assert!(!tool_calls_are_redundant_after_completion(&calls));
     }
 }

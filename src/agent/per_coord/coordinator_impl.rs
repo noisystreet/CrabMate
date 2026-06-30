@@ -96,6 +96,7 @@ impl PerCoordinator {
             counters: super::per_turn_state::PerTurnCounters::new(),
             workflow_validate_cache: super::per_turn_state::WorkflowValidateLayerCache::new(),
             repeated_tool_failures: super::per_turn_state::RepeatedToolFailureMemo::new(),
+            successful_run_commands: super::per_turn_state::SuccessfulRunCommandDedupeMemo::new(),
         }
     }
 
@@ -156,6 +157,16 @@ impl PerCoordinator {
     pub(crate) fn clear_all_run_command_failure_state(&mut self) {
         self.repeated_tool_failures
             .clear_all_tool_failure_state_for_tool("run_command");
+        self.successful_run_commands.clear_all();
+    }
+
+    pub(crate) fn cached_successful_run_command_output(&self, suppress_key: &str) -> Option<&str> {
+        self.successful_run_commands.cached_output(suppress_key)
+    }
+
+    pub(crate) fn record_successful_run_command(&mut self, suppress_key: String, output: String) {
+        self.successful_run_commands
+            .record_success(suppress_key, output);
     }
 
     pub(crate) fn record_outer_loop_build_idle_round(&mut self) -> u32 {

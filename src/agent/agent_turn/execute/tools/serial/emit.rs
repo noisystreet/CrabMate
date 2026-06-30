@@ -4,6 +4,9 @@ use log::{info, warn};
 
 use crabmate_agent::agent_turn::{ToolPolicyEarlyDenyParams, tool_policy_early_deny_message};
 
+use crate::agent::agent_turn::run_command_dedupe::{
+    RUN_COMMAND_DUPLICATE_SUPPRESSED_MSG, run_command_duplicate_suppress_key,
+};
 use crate::agent::per_coord::PerCoordinator;
 use crate::tool_registry;
 use crate::tool_result::parse_legacy_output;
@@ -224,6 +227,62 @@ struct SerialRunCommandDupShortCircuitEmitCtx<'a> {
     id: &'a str,
 }
 
+type SerialRunCommandSuccessDedupeParams<'a> = SerialRunCommandDupShortCircuitEmitCtx<'a>;
+
+async fn serial_emit_run_command_success_dedupe(
+    p: SerialRunCommandSuccessDedupeParams<'_>,
+) -> bool {
+    let SerialRunCommandSuccessDedupeParams {
+        messages,
+        per_coord,
+        cfg,
+        tool_outcome_recorder,
+        out,
+        sse_control_mirror,
+        clarification_questionnaire_hook,
+        echo_terminal_transcript,
+        terminal_tool_display_max_chars,
+        tool_result_envelope_v1,
+        name,
+        args,
+        id,
+    } = p;
+    let Some(suppress_key) = run_command_duplicate_suppress_key(args) else {
+        return false;
+    };
+    let Some(cached) = per_coord
+        .cached_successful_run_command_output(&suppress_key)
+        .map(str::to_string)
+    else {
+        return false;
+    };
+    info!(
+        target: super::super::LOG_TARGET,
+        "run_command 成功去重命中 suppress_key={} args_preview={}",
+        suppress_key,
+        crate::redact::tool_arguments_preview_for_log(args)
+    );
+    emit_serial_tool_result(SerialEmitToolResultParams {
+        messages,
+        per_coord,
+        cfg,
+        tool_outcome_recorder,
+        out,
+        sse_control_mirror: sse_control_mirror.clone(),
+        clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
+        echo_terminal_transcript,
+        terminal_tool_display_max_chars,
+        tool_result_envelope_v1,
+        name,
+        args,
+        id,
+        result: format!("{RUN_COMMAND_DUPLICATE_SUPPRESSED_MSG}\n{cached}"),
+        reflection_inject: None,
+    })
+    .await;
+    true
+}
+
 /// `run_command` 重复失败短路（签名一致 / 同类 family），从 [`serial_emit_early_without_dispatch`] 拆出以降低 lizard nloc。
 async fn serial_emit_run_command_failure_short_circuits(
     p: SerialRunCommandDupShortCircuitEmitCtx<'_>,
@@ -410,6 +469,27 @@ pub(super) async fn serial_emit_early_without_dispatch(
 
     let is_readonly = tool_registry::is_readonly_tool(cfg.as_ref(), name);
     let cache_key = (name.to_string(), args.to_string());
+
+    if name == "run_command"
+        && serial_emit_run_command_success_dedupe(SerialRunCommandSuccessDedupeParams {
+            messages,
+            per_coord,
+            cfg,
+            tool_outcome_recorder,
+            out,
+            sse_control_mirror: sse_control_mirror.clone(),
+            clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
+            echo_terminal_transcript,
+            terminal_tool_display_max_chars,
+            tool_result_envelope_v1,
+            name,
+            args,
+            id,
+        })
+        .await
+    {
+        return true;
+    }
 
     if name == "run_command"
         && serial_emit_run_command_failure_short_circuits(SerialRunCommandDupShortCircuitEmitCtx {

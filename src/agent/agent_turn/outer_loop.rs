@@ -12,7 +12,7 @@ use crate::agent::per_coord::PerCoordinator;
 use crate::types::{Message, USER_CANCELLED_FINISH_REASON, is_intent_gate_ephemeral_system};
 
 use super::completion_suppression::{
-    redundant_tool_names_for_log, tool_calls_are_redundant_after_completion,
+    redundant_tool_names_for_log, tool_calls_are_redundant_when_goal_satisfied,
 };
 use super::errors::{AgentTurnSubPhase, RunAgentTurnError, TurnAbortReason};
 use super::execute_tools::{
@@ -234,10 +234,10 @@ fn completed_goal_with_redundant_tool_calls(p: &mut RunLoopParams<'_>, msg: &Mes
     let Some(tool_calls) = msg.tool_calls.as_ref().filter(|calls| !calls.is_empty()) else {
         return false;
     };
-    if !tool_calls_are_redundant_after_completion(tool_calls) {
+    let messages = p.turn.messages();
+    if !tool_calls_are_redundant_when_goal_satisfied(tool_calls, messages) {
         return false;
     }
-    let messages = p.turn.messages();
     let Some(task) = crate::agent::plan_optimizer::staged_plan_trigger_user_content(messages)
     else {
         return false;
@@ -399,7 +399,7 @@ async fn run_outer_loop_single_iteration(
             target: "crabmate::agent_turn",
             goal_preview = %goal_preview,
             ?redundant_tools,
-            "当前用户目标已有完成证据，静默跳过冗余探针类 tool_calls"
+            "当前用户目标已有完成证据，静默跳过冗余探针/重复 run_command"
         );
         drop_redundant_tool_calls_after_active_goal_completed(p, &msg);
         return Ok(OuterLoopIterationExit::StopOuterLoop);
@@ -416,6 +416,16 @@ async fn run_outer_loop_single_iteration(
     outer_loop_execute_tools_round(p, per_coord, &msg, render_to_terminal).await?;
     if outer_loop_window_has_build_progress_since_last_user(p.turn.messages()) {
         per_coord.reset_outer_loop_build_idle_streak();
+    }
+    if matches!(
+        check_active_user_goal_completion_evidence(p.turn.messages()),
+        GoalCompletionEvidenceCheck::Satisfied
+    ) {
+        tracing::info!(
+            target: "crabmate::agent_turn",
+            "当前用户目标已有完成证据，外循环收敛停轮"
+        );
+        return Ok(OuterLoopIterationExit::StopOuterLoop);
     }
     Ok(OuterLoopIterationExit::ContinueNextIteration)
 }

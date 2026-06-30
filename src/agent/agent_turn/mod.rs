@@ -24,6 +24,7 @@ use self::orchestration_entry::{
 mod completion_suppression;
 mod errors;
 mod execute;
+pub(crate) mod run_command_dedupe;
 pub(crate) use execute::tools as execute_tools;
 mod hierarchical_intent_route;
 mod hierarchy;

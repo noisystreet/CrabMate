@@ -4,6 +4,7 @@
 //! - **[`PerTurnCounters`]**：终答 `plan_rewrite` 与分阶段补丁规划「已成功合并轮次」两套**独立**计数（见模块级注释不变量）。
 //! - **[`WorkflowValidateLayerCache`]**：`last_workflow_validate_layer_count` 随 `messages.len()` 的缓存；上下文裁剪后必须失效。
 //! - **[`RepeatedToolFailureMemo`]**：同轮工具失败签名 / 族短路（只读查询 + 记录清除）。
+//! - **[`SuccessfulRunCommandDedupeMemo`]**：同轮已成功构建/运行命令的结果缓存（防重复 spawn）。
 
 use crate::types::Message;
 use std::collections::HashMap;
@@ -190,6 +191,32 @@ impl RepeatedToolFailureMemo {
         self.repeated_failed_tool_signatures
             .retain(|(name, _), _| name != tool_name);
         self.clear_tool_failure_families_for_tool(tool_name);
+    }
+}
+
+/// 同一回合内已成功执行过的构建/运行类 `run_command` 缓存。
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SuccessfulRunCommandDedupeMemo {
+    outputs: HashMap<String, String>,
+}
+
+impl SuccessfulRunCommandDedupeMemo {
+    pub(crate) fn new() -> Self {
+        Self {
+            outputs: HashMap::new(),
+        }
+    }
+
+    pub(crate) fn cached_output(&self, suppress_key: &str) -> Option<&str> {
+        self.outputs.get(suppress_key).map(|s| s.as_str())
+    }
+
+    pub(crate) fn record_success(&mut self, suppress_key: String, output: String) {
+        self.outputs.insert(suppress_key, output);
+    }
+
+    pub(crate) fn clear_all(&mut self) {
+        self.outputs.clear();
     }
 }
 
