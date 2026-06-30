@@ -3,11 +3,10 @@
 //! 根据 SubGoal 中定义的 acceptance 条件对执行结果进行验证。
 //! 与分阶段步骤共用 [`crate::agent::acceptance`] 内核（文件 / 合并输出 / 退出码等）。
 
-use crate::agent::acceptance::{
-    AcceptanceEvidence, VerifyOutcome, default_exit_code_for_build_execution_description,
-};
+use crate::agent::acceptance::{VerifyOutcome, parse_exit_code_from_combined_output};
 
-use super::task::{ArtifactKind, GoalAcceptance, SubGoal, TaskResult, TaskStatus};
+use super::goal_acceptance::{effective_goal_acceptance, verify_goal_acceptance_spec};
+use super::task::{ArtifactKind, SubGoal, TaskResult, TaskStatus};
 
 /// 验证结果
 #[derive(Debug, Clone)]
@@ -113,16 +112,8 @@ impl GoalVerifier {
             return VerificationResult::Fail { reason };
         }
 
-        // 如果没有定义验收条件，尝试与分阶段 `test_runner` 对齐的构建/测试缺省退出码。
-        let effective_acceptance = goal.acceptance.clone().or_else(|| {
-            default_exit_code_for_build_execution_description(goal.description.as_str()).map(
-                |code| GoalAcceptance {
-                    expect_exit_code: Some(code),
-                    ..Default::default()
-                },
-            )
-        });
-        let acceptance = match effective_acceptance {
+        // 有效验收条件（与分阶段 `effective_plan_step_acceptance` 共用缺省启发式）。
+        let acceptance = match effective_goal_acceptance(goal) {
             Some(a) => a,
             None => {
                 log::info!(
@@ -140,39 +131,12 @@ impl GoalVerifier {
             goal.goal_id
         );
 
-        let spec = acceptance.to_acceptance_spec();
-        if !spec.is_empty() {
-            let output = result.output.as_deref().unwrap_or("");
-            let error = result.error.as_deref().unwrap_or("");
-            let combined = format!("{output} {error}");
-            let exit_parsed = GoalVerifier::extract_exit_code(&combined);
-            let tool_for_http = result
-                .tools_invoked
-                .last()
-                .map(|s| s.as_str())
-                .filter(|n| {
-                    let l = n.to_lowercase();
-                    l.contains("http") || l.contains("fetch")
-                })
-                .unwrap_or("");
-            let ev = AcceptanceEvidence {
-                tool_name: tool_for_http,
-                tool_output: combined.as_str(),
-                stdout: output,
-                stderr: error,
-                tool_error: None,
-                fallback_exit_code: exit_parsed,
-                workspace_root: self.workspace_root.as_path(),
-                file_resolve: spec.file_resolve,
-                combined_text_override: Some(combined.as_str()),
-            };
-            match crate::agent::acceptance::verify_against_spec(&spec, &ev) {
-                VerifyOutcome::Pass => {}
-                VerifyOutcome::Fail { reason } => {
-                    return VerificationResult::Fail {
-                        reason: localize_hierarchy_verify_reason(reason),
-                    };
-                }
+        match verify_goal_acceptance_spec(&acceptance, result, self.workspace_root.as_path()) {
+            VerifyOutcome::Pass => {}
+            VerifyOutcome::Fail { reason } => {
+                return VerificationResult::Fail {
+                    reason: localize_hierarchy_verify_reason(reason),
+                };
             }
         }
 
@@ -200,29 +164,6 @@ impl GoalVerifier {
         );
 
         VerificationResult::Pass
-    }
-
-    /// 从输出中提取退出码（分层子目标摘要文本）
-    fn extract_exit_code(output: &str) -> Option<i32> {
-        // 匹配 "退出码：0" 或 "(exit=0)" 或 "exit code: 0"
-        let patterns = ["退出码：", "exit=", "exit code: ", "exit code:", "(exit="];
-
-        for pattern in &patterns {
-            if let Some(pos) = output.find(pattern) {
-                let start = pos + pattern.len();
-                let rest = &output[start..];
-                // 提取数字
-                let num_str: String = rest
-                    .chars()
-                    .take_while(|c| c.is_ascii_digit() || *c == '-')
-                    .collect();
-                if let Ok(code) = num_str.parse::<i32>() {
-                    return Some(code);
-                }
-            }
-        }
-
-        None
     }
 
     /// 运行验证命令
@@ -370,7 +311,7 @@ fn run_exec_verification_diag(result: &TaskResult) -> String {
     };
     let out = truncate_verify_preview(result.output.as_deref().unwrap_or(""), 200);
     let err = truncate_verify_preview(result.error.as_deref().unwrap_or(""), 200);
-    let exit = GoalVerifier::extract_exit_code(&format!("{}\n{}", out, err))
+    let exit = parse_exit_code_from_combined_output(&format!("{}\n{}", out, err))
         .map(|c| c.to_string())
         .unwrap_or_else(|| "unknown".to_string());
     format!(
@@ -549,11 +490,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_extract_exit_code() {
-        assert_eq!(GoalVerifier::extract_exit_code("退出码：0"), Some(0));
-        assert_eq!(GoalVerifier::extract_exit_code("(exit=1)"), Some(1));
-        assert_eq!(GoalVerifier::extract_exit_code("exit code: 127"), Some(127));
-        assert_eq!(GoalVerifier::extract_exit_code("some output"), None);
+    fn test_parse_exit_code_delegates_to_shared_kernel() {
+        use crate::agent::acceptance::parse_exit_code_from_combined_output;
+        assert_eq!(parse_exit_code_from_combined_output("退出码：0"), Some(0));
+        assert_eq!(parse_exit_code_from_combined_output("(exit=1)"), Some(1));
+        assert_eq!(
+            parse_exit_code_from_combined_output("exit code: 127"),
+            Some(127)
+        );
+        assert!(parse_exit_code_from_combined_output("some output").is_none());
     }
 
     #[test]

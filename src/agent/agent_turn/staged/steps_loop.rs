@@ -14,10 +14,7 @@ use super::super::execute_tools::sse_sender_closed;
 use super::super::outer_loop::run_agent_outer_loop;
 use super::super::params::RunLoopParams;
 
-use super::empty_execution::{
-    staged_step_empty_execution_is_reason, staged_step_empty_execution_patch_detail,
-    staged_step_empty_execution_verify_failure,
-};
+use super::empty_execution::staged_step_empty_execution_verify_failure;
 use super::orchestrator as staged_orchestrator;
 use super::patch_planner::{
     StagedPlanPatchPlannerCtx, StagedPlanStepFailureFeedbackMeta,
@@ -41,11 +38,13 @@ use super::step_failure_exit::{
     staged_step_fail_after_outer_execution_exhausted,
 };
 use super::step_iteration_fsm::{
-    STAGED_STEP_OUTER_LOOP_FAIL_DETAIL, StagedStepIterationCtl, staged_step_exec_fail_patch_detail,
-    staged_step_tool_failure_patch_detail, staged_step_verify_fail_patch_detail,
-    staged_step_wall_clock_exceeded,
+    STAGED_STEP_OUTER_LOOP_FAIL_DETAIL, StagedStepIterationCtl,
+    staged_step_tool_failure_patch_detail, staged_step_wall_clock_exceeded,
 };
 use super::step_loop_fsm::staged_injected_step_user_body;
+use super::step_patch_route_fsm::{
+    resolve_staged_step_patch_failure_kind, staged_step_patch_failure_feedback,
+};
 use super::steps_loop_route_fsm::{
     StagedStepPostOuterRoute, resolve_staged_step_post_outer_route_from_results,
 };
@@ -288,6 +287,10 @@ where
         .per_coord
         .staged_plan_patch_vs_plan_rewrite_counters_footer();
     let effective_acceptance = crate::agent::acceptance::effective_plan_step_acceptance(step);
+    let patch_kind = resolve_staged_step_patch_failure_kind(
+        step_verify_failed_reason,
+        outer_loop_error_text.is_some(),
+    );
     for (attempt_idx, _) in (0..patch_budget).enumerate() {
         let attempt_1based = attempt_idx.saturating_add(1);
         tracing::debug!(
@@ -302,23 +305,21 @@ where
             sub_phase = "planner",
             "staged step failure patch planner attempt"
         );
-        let detail_owned = if let Some(vr) = step_verify_failed_reason {
-            if staged_step_empty_execution_is_reason(vr) {
-                staged_step_empty_execution_patch_detail(vr, effective_acceptance.as_ref())
-            } else {
-                staged_step_verify_fail_patch_detail(vr, effective_acceptance.as_ref())
-            }
-        } else {
-            outer_loop_error_text
-                .as_deref()
-                .map(staged_step_exec_fail_patch_detail)
-                .unwrap_or_else(|| STAGED_STEP_OUTER_LOOP_FAIL_DETAIL.to_string())
-        };
-        let reason_zh = if step_verify_failed_reason.is_some() {
-            "本步确定性验证失败 (Step Verification Failed)"
-        } else {
-            "执行子循环返回错误"
-        };
+        let (detail_owned, reason_zh) = patch_kind
+            .as_ref()
+            .map(|kind| {
+                staged_step_patch_failure_feedback(
+                    kind,
+                    outer_loop_error_text.as_deref(),
+                    effective_acceptance.as_ref(),
+                )
+            })
+            .unwrap_or_else(|| {
+                (
+                    STAGED_STEP_OUTER_LOOP_FAIL_DETAIL.to_string(),
+                    "执行子循环返回错误",
+                )
+            });
         let meta = StagedPlanStepFailureFeedbackMeta {
             plan_id,
             step_zero_based: i,
