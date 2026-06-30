@@ -38,13 +38,21 @@ fn react_messages_session_sync_truncates_like_main_loop() {
 }
 
 #[tokio::test]
-async fn test_execute() {
+async fn test_execute_stub_without_context_returns_failed() {
     let config = OperatorConfig::default();
     let operator = OperatorAgent::new(config);
     let goal = SubGoal::new("test", "测试目标").with_tools(vec!["read_file".to_string()]);
 
     let result = operator.execute(&goal).await.unwrap();
-    assert!(matches!(result.status, TaskStatus::Completed));
+    assert!(matches!(result.status, TaskStatus::Failed { .. }));
+    assert!(
+        result
+            .error
+            .as_deref()
+            .is_some_and(|e| e.contains("未配置完整执行上下文")),
+        "expected stub failure message, got {:?}",
+        result.error
+    );
 }
 
 #[test]
