@@ -8,6 +8,9 @@ use std::sync::Arc;
 use serde_json::Value;
 use tokio::sync::Mutex as TokioMutex;
 
+use crate::agent::agent_turn::run_command_dedupe::{
+    RUN_COMMAND_DUPLICATE_SUPPRESSED_MSG, run_command_duplicate_suppress_key,
+};
 use crabmate_agent::agent_turn::ToolExecutionHost;
 
 use crate::agent::agent_turn::CrabmateRegistryToolDispatch;
@@ -201,7 +204,8 @@ impl ToolExecutor {
     async fn dispatch_tool_internal(&self, tool_call: &ToolCall) -> String {
         let name = tool_call.function.name.as_str();
         let args = tool_call.function.arguments.as_str();
-        if let Some(suppress_key) = duplicate_suppress_key(name, args)
+        if name == "run_command"
+            && let Some(suppress_key) = run_command_duplicate_suppress_key(args)
             && self.ctx.dedupe_cache.lock().await.contains(&suppress_key)
         {
             log::info!(
@@ -221,7 +225,7 @@ impl ToolExecutor {
                     "suppress_key": suppress_key,
                 })),
             );
-            return "命令重复执行已抑制：命中本轮去重缓存".to_string();
+            return RUN_COMMAND_DUPLICATE_SUPPRESSED_MSG.to_string();
         }
         if let Some(cache_key) = probe_cache_key(name, args)
             && let Some(cache) = self.ctx.probe_cache.as_ref()
@@ -284,7 +288,9 @@ impl ToolExecutor {
             .await
         };
 
-        if let Some(suppress_key) = duplicate_suppress_key(name, args) {
+        if name == "run_command"
+            && let Some(suppress_key) = run_command_duplicate_suppress_key(args)
+        {
             let parsed = crate::tool_result::parse_legacy_output(name, &output);
             if parsed.ok {
                 self.ctx.dedupe_cache.lock().await.insert(suppress_key);
@@ -316,26 +322,6 @@ impl ToolExecutor {
     fn check_execution_success(tool_name: &str, output: &str) -> bool {
         exec_check::check_execution_success(tool_name, output)
     }
-}
-
-fn duplicate_suppress_key(tool_name: &str, args: &str) -> Option<String> {
-    if tool_name != "run_command" {
-        return None;
-    }
-    let Ok(v) = serde_json::from_str::<Value>(args) else {
-        return None;
-    };
-    let obj = v.as_object()?;
-    let command = obj.get("command")?.as_str()?.trim();
-    let argv = obj.get("args")?.as_array()?;
-    let args_vec: Vec<String> = argv
-        .iter()
-        .filter_map(|x| x.as_str().map(|s| s.trim().to_string()))
-        .collect();
-    let suppressible = ((args_vec == ["-S", ".", "-B", "build"])
-        || (args_vec == ["--build", "build"]))
-        && command == "cmake";
-    suppressible.then(|| format!("run_command|{command}|{}", args_vec.join("\u{1f}")))
 }
 
 fn probe_cache_key(tool_name: &str, args: &str) -> Option<String> {

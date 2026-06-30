@@ -26,6 +26,14 @@ pub(super) fn serial_bookkeep_run_command_failure(
     if parsed.ok {
         per_coord.clear_tool_failure_signature(name, args);
         per_coord.clear_tool_failure_families_for_tool(name);
+        if name == "run_command"
+            && let Some(suppress_key) =
+                crate::agent::agent_turn::run_command_dedupe::run_command_duplicate_suppress_key(
+                    args,
+                )
+        {
+            per_coord.record_successful_run_command(suppress_key, result.to_string());
+        }
         if run_command_invocation_is_make_clean(args) {
             per_coord.clear_all_run_command_failure_state();
         }

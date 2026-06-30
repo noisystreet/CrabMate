@@ -117,6 +117,7 @@ pub struct PerCoordinator {
     pub(crate) counters: per_turn_state::PerTurnCounters,
     pub(crate) workflow_validate_cache: per_turn_state::WorkflowValidateLayerCache,
     pub(crate) repeated_tool_failures: per_turn_state::RepeatedToolFailureMemo,
+    pub(crate) successful_run_commands: per_turn_state::SuccessfulRunCommandDedupeMemo,
 }
 
 mod coordinator_impl;
