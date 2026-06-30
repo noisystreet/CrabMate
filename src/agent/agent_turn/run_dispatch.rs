@@ -44,6 +44,7 @@ pub(crate) async fn execute_non_hierarchical_main_route(
 /// `planner_executor_mode == Hierarchical`：意图门控在 [`hierarchy::run_hierarchical_agent`] 内完成。
 pub(crate) async fn dispatch_hierarchical_turn(
     p: &mut RunLoopParams<'_>,
+    per_coord: &mut PerCoordinator,
 ) -> Result<(), RunAgentTurnError> {
     tracing::info!(
         target: "crabmate::agent_turn",
@@ -51,7 +52,7 @@ pub(crate) async fn dispatch_hierarchical_turn(
         "dispatch_hierarchical_turn"
     );
     log::info!(target: "crabmate", "run_agent_turn: using Hierarchical mode");
-    hierarchy::run_hierarchical_agent(p).await
+    hierarchy::run_hierarchical_agent(p, per_coord).await
 }
 
 /// 非分层：开局意图门控 → 按配置选择逻辑双代理 / 分阶段规划 / 单 Agent 外循环。

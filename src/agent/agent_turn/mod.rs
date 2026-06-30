@@ -101,7 +101,7 @@ pub(crate) async fn run_agent_turn_common(
 
     if hierarchical {
         // 意图门控在 `hierarchy::run_hierarchical_agent` 内通过 `run_intent_for_hierarchical` 执行（与 L0/合并文本一致），勿在此重复。
-        run_dispatch::dispatch_hierarchical_turn(p).await
+        run_dispatch::dispatch_hierarchical_turn(p, &mut per_coord).await
     } else {
         run_dispatch::dispatch_non_hierarchical_turn(p, &mut per_coord).await
     }

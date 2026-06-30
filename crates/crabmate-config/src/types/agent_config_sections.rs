@@ -327,6 +327,10 @@ pub struct ToolRegistryPolicyConfig {
 pub struct TurnBudgetConfig {
     pub max_turn_duration_seconds: u64,
     pub max_turn_tokens: usize,
+    /// 单轮 LLM 调用次数上限；`0` 表示使用编排层默认（当前 500）。
+    pub max_llm_calls_per_turn: u32,
+    /// 单 Agent 外循环迭代上限；`0` 表示使用编排层默认（当前 500）。
+    pub max_outer_loop_iterations: u32,
     pub full_plan_rewrite_max_attempts: usize,
 }
 

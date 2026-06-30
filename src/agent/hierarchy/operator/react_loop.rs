@@ -257,7 +257,31 @@ impl super::types::OperatorAgent {
                 });
             }
 
-            if crate::agent::turn_budget::turn_wall_clock_exceeded(
+            if let Some(ref budget) = self.config.runtime.turn_budget {
+                if budget.wall_clock_exceeded(&cfg.turn_budget) {
+                    let msg = crate::agent::turn_budget::turn_wall_clock_limit_user_message(
+                        cfg.turn_budget.max_turn_duration_seconds,
+                    );
+                    tracing::warn!(
+                        target: "crabmate::hierarchy",
+                        limiter = "turn_wall_clock",
+                        max_turn_duration_seconds = cfg.turn_budget.max_turn_duration_seconds,
+                        goal_id = %goal.goal_id,
+                        "Operator ReAct: turn wall clock exceeded (shared turn budget)"
+                    );
+                    return Ok(TaskResult {
+                        task_id: goal.goal_id.clone(),
+                        status: TaskStatus::Failed {
+                            reason: msg.clone(),
+                        },
+                        output: Some(self.build_output_summary(&state)),
+                        error: Some(msg),
+                        artifacts: Vec::new(),
+                        duration_ms: start_time.elapsed().as_millis() as u64,
+                        tools_invoked: state.tool_names_chron.clone(),
+                    });
+                }
+            } else if crate::agent::turn_budget::turn_wall_clock_exceeded(
                 cfg.turn_budget.max_turn_duration_seconds,
                 start_time.elapsed().as_secs(),
             ) {

@@ -138,6 +138,7 @@ fn make_run_loop_params<'a>(
             executor_api_base: None,
             executor_api_key: None,
             seed_override: LlmSeedOverride::FromConfig,
+            turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared(),
         },
     }
 }
@@ -179,6 +180,7 @@ async fn reject_user_ephemeral_after_first_planner_tool_calls_retry() {
         PrepareMessagesForModelHooks {
             per_coord_layer_cache: Some(&mut per),
             run_loop_messages_revision: None,
+            turn_budget: None,
         },
     )
     .await

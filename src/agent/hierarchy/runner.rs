@@ -140,6 +140,8 @@ pub struct HierarchyRunnerParams<'a> {
     pub process_handles: std::sync::Arc<crate::process_handles::ProcessHandles>,
     /// CLI/TUI：镜像 SSE 控制面（分层 Runner 顶部 ThinkingTrace / TimelineLog）。
     pub sse_control_mirror: Option<crate::sse::SseControlMirror>,
+    /// 单轮墙钟与 LLM 调用计数（与主 Agent 外循环共用）。
+    pub turn_budget: std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>,
 }
 
 /// 分层 Agent 运行结果
@@ -164,6 +166,7 @@ struct SimpleFallbackParams<'a> {
     tool_approval_out: Option<Sender<String>>,
     tool_approval_rx: Option<Arc<Mutex<Receiver<CommandApprovalDecision>>>>,
     cancel: Option<Arc<AtomicBool>>,
+    turn_budget: std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>,
     process_handles: std::sync::Arc<crate::process_handles::ProcessHandles>,
     sse_control_mirror: Option<crate::sse::SseControlMirror>,
 }
@@ -181,6 +184,7 @@ struct FullDecomposedHierarchyCtx<'a> {
     tool_approval_out: Option<Sender<String>>,
     tool_approval_rx: Option<Arc<Mutex<Receiver<CommandApprovalDecision>>>>,
     cancel: Option<Arc<AtomicBool>>,
+    turn_budget: std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>,
     router_output: RouterOutput,
     process_handles: std::sync::Arc<crate::process_handles::ProcessHandles>,
     sse_control_mirror: Option<crate::sse::SseControlMirror>,
@@ -208,6 +212,7 @@ pub async fn run_hierarchical(
         intent_mode_bias_enabled,
         process_handles,
         sse_control_mirror,
+        turn_budget,
     } = params;
 
     let tools_eff: std::borrow::Cow<'_, [crate::types::Tool]> = if primary_intent
@@ -302,6 +307,7 @@ pub async fn run_hierarchical(
                 tool_approval_out,
                 tool_approval_rx,
                 cancel: cancel.clone(),
+                turn_budget: std::sync::Arc::clone(&turn_budget),
                 process_handles: std::sync::Arc::clone(&process_handles),
                 sse_control_mirror: sse_control_mirror.clone(),
             })
@@ -322,6 +328,7 @@ pub async fn run_hierarchical(
         tool_approval_out,
         tool_approval_rx,
         cancel,
+        turn_budget,
         router_output,
         process_handles: std::sync::Arc::clone(&process_handles),
         sse_control_mirror,
@@ -345,6 +352,7 @@ async fn run_full_decomposed_hierarchy(
         tool_approval_out,
         tool_approval_rx,
         cancel,
+        turn_budget,
         router_output,
         process_handles,
         sse_control_mirror,
@@ -479,7 +487,8 @@ async fn run_full_decomposed_hierarchy(
         .with_tools_defs(tools_slice.to_vec())
         .with_manager(manager.clone())
         .with_original_task(task.to_string())
-        .with_cancel(cancel);
+        .with_cancel(cancel)
+        .with_turn_budget(turn_budget);
     if let Some(sse_tx) = sse_out {
         executor = executor.with_sse(sse_tx);
     }
@@ -560,6 +569,7 @@ async fn run_simple_fallback(
         tool_approval_out,
         tool_approval_rx,
         cancel,
+        turn_budget,
         process_handles,
         sse_control_mirror,
     } = params;
@@ -658,7 +668,8 @@ async fn run_simple_fallback(
             Arc::clone(&process_handles.sync_default_sandbox_backend),
         )
         .with_tools_defs(tools_defs.to_vec())
-        .with_cancel(cancel);
+        .with_cancel(cancel)
+        .with_turn_budget(turn_budget);
     if let Some(sse_tx) = sse_out {
         executor = executor.with_sse(sse_tx);
     }

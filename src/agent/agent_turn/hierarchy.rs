@@ -6,7 +6,7 @@ use super::hierarchical_intent_route::{
     HierarchicalPostIntentRoute, resolve_hierarchical_post_intent_route,
 };
 use crate::agent::hierarchy::{self, HierarchyRunnerResult};
-use crate::agent::per_coord::{PerCoordinator, PerCoordinatorInit};
+use crate::agent::per_coord::PerCoordinator;
 use crate::sse;
 
 use super::errors::RunAgentTurnError;
@@ -87,6 +87,7 @@ async fn emit_hierarchical_final_assistant(p: &mut RunLoopParams<'_>, final_resp
 /// 运行分层多 Agent
 pub(crate) async fn run_hierarchical_agent(
     p: &mut RunLoopParams<'_>,
+    per_coord: &mut PerCoordinator,
 ) -> Result<(), RunAgentTurnError> {
     let in_clarification_flow =
         intent_user::recently_waiting_execute_confirmation(p.turn.messages());
@@ -167,10 +168,7 @@ pub(crate) async fn run_hierarchical_agent(
                 action = action_tag,
                 "run_hierarchical_agent discourse fallback to outer_loop"
             );
-            let mut per_coord = PerCoordinator::new(PerCoordinatorInit::from_agent_config(
-                p.ctx.core.cfg.as_ref(),
-            ));
-            return run_agent_outer_loop(p, &mut per_coord).await;
+            return run_agent_outer_loop(p, per_coord).await;
         }
         HierarchicalPostIntentRoute::RouterManagerRunner => {}
     }

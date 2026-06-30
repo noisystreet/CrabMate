@@ -185,6 +185,7 @@ pub async fn run_agent_turn<'a>(
             executor_api_base,
             executor_api_key,
             seed_override,
+            turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared(),
         },
     };
 

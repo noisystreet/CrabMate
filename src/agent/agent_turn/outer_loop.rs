@@ -30,7 +30,54 @@ use super::task_level_evidence::{
     generic_task_intent_implies_build_or_test,
 };
 
-const MAX_OUTER_LOOP_ITERATIONS_SAFETY: u32 = 500;
+fn check_shared_turn_budget(p: &RunLoopParams<'_>) -> Result<(), RunAgentTurnError> {
+    let tb = &p.ctx.core.cfg.turn_budget;
+    let c = &p.turn.turn_budget;
+    if c.wall_clock_exceeded(tb) {
+        return Err(RunAgentTurnError::TimeLimitExhausted {
+            phase: AgentTurnSubPhase::Planner,
+            message: crate::agent::turn_budget::turn_wall_clock_limit_user_message(
+                tb.max_turn_duration_seconds,
+            ),
+        });
+    }
+    let max_llm = crate::agent::turn_budget::effective_max_llm_calls_per_turn(tb);
+    if c.llm_calls_exceeded(max_llm) {
+        return Err(RunAgentTurnError::Other {
+            phase: AgentTurnSubPhase::Planner,
+            message: crate::agent::turn_budget::turn_llm_calls_limit_user_message(max_llm),
+        });
+    }
+    Ok(())
+}
+
+fn outer_loop_iteration_guard(p: &RunLoopParams<'_>) -> Result<(), RunAgentTurnError> {
+    let max_iter =
+        crate::agent::turn_budget::effective_max_outer_loop_iterations(&p.ctx.core.cfg.turn_budget);
+    if p.turn.turn_budget.outer_loop_iterations_exceeded(max_iter) {
+        return Err(RunAgentTurnError::Other {
+            phase: AgentTurnSubPhase::Planner,
+            message: crate::agent::turn_budget::turn_outer_loop_iterations_limit_user_message(
+                max_iter,
+            ),
+        });
+    }
+    check_shared_turn_budget(p)?;
+    if sse_sender_closed(p.ctx.io.out) {
+        info!(target: "crabmate", "SSE sender closed, aborting run_agent_turn loop early");
+        return Err(RunAgentTurnError::TurnAborted {
+            phase: AgentTurnSubPhase::Planner,
+            reason: TurnAbortReason::SseDisconnected,
+        });
+    }
+    if p.ctx.io.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+        return Err(RunAgentTurnError::TurnAborted {
+            phase: AgentTurnSubPhase::Planner,
+            reason: TurnAbortReason::UserCancelled,
+        });
+    }
+    Ok(())
+}
 
 /// 步级子代理约束时可能需 `Vec` 持有过滤后的工具定义；否则用全量 `tools_defs` 切片。
 struct PlannerRoundTools<'a> {
@@ -71,47 +118,6 @@ fn build_planner_round_tools<'a>(p: &RunLoopParams<'a>) -> PlannerRoundTools<'a>
         owned_filtered,
         full_defs: p.ctx.core.tools_defs,
     }
-}
-
-fn outer_loop_iteration_guard(
-    iteration_count: u32,
-    p: &RunLoopParams<'_>,
-    start_time: std::time::Instant,
-) -> Result<(), RunAgentTurnError> {
-    if iteration_count > MAX_OUTER_LOOP_ITERATIONS_SAFETY {
-        return Err(RunAgentTurnError::Other {
-            phase: AgentTurnSubPhase::Planner,
-            message: format!(
-                "达到外层循环安全上限（{} 轮），已中止以避免重复工具调用死循环",
-                MAX_OUTER_LOOP_ITERATIONS_SAFETY
-            ),
-        });
-    }
-    if crate::agent::turn_budget::turn_wall_clock_exceeded(
-        p.ctx.core.cfg.turn_budget.max_turn_duration_seconds,
-        start_time.elapsed().as_secs(),
-    ) {
-        return Err(RunAgentTurnError::TimeLimitExhausted {
-            phase: AgentTurnSubPhase::Planner,
-            message: crate::agent::turn_budget::turn_wall_clock_limit_user_message(
-                p.ctx.core.cfg.turn_budget.max_turn_duration_seconds,
-            ),
-        });
-    }
-    if sse_sender_closed(p.ctx.io.out) {
-        info!(target: "crabmate", "SSE sender closed, aborting run_agent_turn loop early");
-        return Err(RunAgentTurnError::TurnAborted {
-            phase: AgentTurnSubPhase::Planner,
-            reason: TurnAbortReason::SseDisconnected,
-        });
-    }
-    if p.ctx.io.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
-        return Err(RunAgentTurnError::TurnAborted {
-            phase: AgentTurnSubPhase::Planner,
-            reason: TurnAbortReason::UserCancelled,
-        });
-    }
-    Ok(())
 }
 
 async fn outer_loop_prepare_planner_context(
@@ -270,10 +276,9 @@ fn drop_redundant_tool_calls_after_active_goal_completed(p: &mut RunLoopParams<'
 async fn run_outer_loop_single_iteration(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
-    iteration_count: u32,
-    start_time: std::time::Instant,
 ) -> Result<OuterLoopIterationExit, RunAgentTurnError> {
-    outer_loop_iteration_guard(iteration_count, p, start_time)?;
+    outer_loop_iteration_guard(p)?;
+    let iteration_count = p.turn.turn_budget.outer_loop_iterations();
     let plan_model_role = OuterLoopPlanCallModelRole::from_outer_loop_iteration(iteration_count);
     p.apply_outer_loop_plan_call_model_role(plan_model_role);
     let (exec_api_base, exec_api_key) = p.plan_call_executor_endpoint_cloned();
@@ -304,6 +309,15 @@ async fn run_outer_loop_single_iteration(
     );
 
     let planner_tools = build_planner_round_tools(p);
+    let max_llm =
+        crate::agent::turn_budget::effective_max_llm_calls_per_turn(&p.ctx.core.cfg.turn_budget);
+    if p.turn.turn_budget.llm_calls_exceeded(max_llm) {
+        return Err(RunAgentTurnError::Other {
+            phase: AgentTurnSubPhase::Planner,
+            message: crate::agent::turn_budget::turn_llm_calls_limit_user_message(max_llm),
+        });
+    }
+    p.turn.turn_budget.record_llm_call();
     let (msg, finish_reason) = per_plan_call_model_retrying(PerPlanCallModelParams {
         llm_backend: p.ctx.core.llm_backend,
         client: p.ctx.core.client,
@@ -419,12 +433,10 @@ pub(crate) async fn run_agent_outer_loop(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
 ) -> Result<(), RunAgentTurnError> {
-    let start_time = std::time::Instant::now();
-    let mut iteration_count: u32 = 0;
     loop {
-        iteration_count = iteration_count.saturating_add(1);
-        let exit =
-            run_outer_loop_single_iteration(p, per_coord, iteration_count, start_time).await?;
+        p.turn.turn_budget.record_outer_loop_iteration();
+        let exit = run_outer_loop_single_iteration(p, per_coord).await?;
+        let iteration_count = p.turn.turn_budget.outer_loop_iterations();
         tracing::debug!(
             target: "crabmate::agent_turn",
             outer_loop_fsm = "single_agent_outer",

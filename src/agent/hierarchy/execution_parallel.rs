@@ -112,6 +112,7 @@ impl HierarchicalExecutor {
             let sb_c = sb.clone();
             let llm_backend = Arc::clone(&llm_backend);
             let cancel = cancel.clone();
+            let turn_budget = self.turn_budget.clone();
 
             let tools_defs_arc = Arc::new(tools_defs.clone());
             join_set.spawn(async move {
@@ -132,6 +133,7 @@ impl HierarchicalExecutor {
                         tool_approval_rx,
                         probe_cache,
                         cancel,
+                        turn_budget,
                         prior,
                         pre_snapshot,
                         current_ids,

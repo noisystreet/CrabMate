@@ -255,6 +255,7 @@ mod hierarchy_runner_params_tests {
                 executor_api_base: None,
                 executor_api_key: None,
                 seed_override: LlmSeedOverride::FromConfig,
+                turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared(),
             },
         };
         let h = p.hierarchy_runner_params(
@@ -352,6 +353,7 @@ mod hierarchy_runner_params_tests {
                 executor_api_base: None,
                 executor_api_key: None,
                 seed_override: LlmSeedOverride::FromConfig,
+                turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared(),
             },
         };
         let h = p.hierarchy_runner_params("t", None, vec![]);
@@ -463,6 +465,7 @@ mod per_reflect_tests {
                 executor_api_base: None,
                 executor_api_key: None,
                 seed_override: LlmSeedOverride::FromConfig,
+                turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared(),
             },
         };
         let out = per_reflect_after_assistant(&mut p, &mut c, "stop", &msg).await;
@@ -746,6 +749,7 @@ mod multi_turn_orchestration_fixture_tests {
             executor_api_base: None,
             executor_api_key: None,
             seed_override: LlmSeedOverride::FromConfig,
+            turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared(),
         };
         assert_eq!(
             turn.staged_immutable_user_goal_snapshot(),

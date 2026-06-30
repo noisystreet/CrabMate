@@ -154,6 +154,7 @@ impl super::HierarchicalExecutor {
                     artifact_store: Some(artifact_store.clone()),
                     build_state: Some(Arc::new(StdMutex::new(build_state.clone()))),
                     cancel: self.cancel.clone(),
+                    turn_budget: self.turn_budget.clone(),
                 },
             };
             log::info!(
