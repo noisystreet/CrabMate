@@ -50,7 +50,7 @@ pub(crate) struct RunAgentTurnForCliParams<'a> {
     /// 全屏 TUI：不向 stdout 刷助手输出（仍可按 `no_stream` SSE 拉取）。
     pub suppress_stdout_render: bool,
     /// 与 TUI 共用：流式增量缓冲；普通 `chat` / `repl` 为 `None`。
-    pub tui_llm_stream_scratch: Option<crate::runtime::tui::TuiLlmStreamScratchArc>,
+    pub tui_llm_stream_scratch: Option<crabmate_llm::TuiLlmStreamScratchArc>,
     /// 无 SSE 时工具批状态回调（TUI 底栏）；通常为 `None`。
     pub tool_running_hook: Option<Arc<dyn Fn(bool) + Send + Sync>>,
     /// TUI：工具 `present_clarification_questionnaire` 成功时通知 UI；`repl` / `chat` 为 `None`。

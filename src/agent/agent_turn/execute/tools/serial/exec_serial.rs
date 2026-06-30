@@ -67,7 +67,7 @@ struct SerialToolLoopState<'a> {
         Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
     long_term_memory_scope_id: Option<String>,
     tracing_chat_turn: Option<std::sync::Arc<crate::observability::TracingChatTurn>>,
-    request_audit: Option<std::sync::Arc<crate::web::audit::WebRequestAudit>>,
+    request_audit: Option<std::sync::Arc<crate::WebRequestAudit>>,
     tool_outcome_recorder: std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder>,
     handler_lookup: crate::tool_registry::HandlerLookupTable,
     sync_default_sandbox_backend:

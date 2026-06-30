@@ -243,7 +243,7 @@ where
     }
     let omit_no_task_planner_from_history = omit_no_task_planner_from_history(
         p.ctx.io.out.is_some(),
-        crate::web::web_ui_env::web_raw_assistant_output_env(),
+        crate::env_flags::web_raw_assistant_output_env(),
         plan.no_task,
     );
     if !omit_no_task_planner_from_history {

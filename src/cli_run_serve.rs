@@ -1,5 +1,7 @@
 //! `serve` 子命令：会话后端与长期记忆运行时组装（从 [`crate::cli_run`] 拆出以降低圈复杂度）。
 
+#![cfg(feature = "web")]
+
 use std::sync::Arc;
 
 use log::info;

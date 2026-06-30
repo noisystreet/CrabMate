@@ -86,7 +86,7 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub long_term_memory_scope_id: Option<String>,
     pub tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
     /// Web 审计；与写工具日志配套。
-    pub request_audit: Option<Arc<crate::web::audit::WebRequestAudit>>,
+    pub request_audit: Option<Arc<crate::WebRequestAudit>>,
     /// 与 [`crate::RunAgentTurnParams::process_handles`] 同源。
     pub tool_outcome_recorder: Arc<crate::tool_stats::ToolOutcomeRecorder>,
     /// 与 `process_handles.handler_lookup` 同源（随 `RunLoopCtx` 注入，避免在批处理中再借 `process_handles`）。
@@ -172,7 +172,7 @@ struct ExecuteToolsCommonCtx<'a> {
     long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     long_term_memory_scope_id: Option<String>,
     tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
-    request_audit: Option<Arc<crate::web::audit::WebRequestAudit>>,
+    request_audit: Option<Arc<crate::WebRequestAudit>>,
     tool_outcome_recorder: Arc<crate::tool_stats::ToolOutcomeRecorder>,
     handler_lookup: crate::tool_registry::HandlerLookupTable,
     sync_default_sandbox_backend: Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,

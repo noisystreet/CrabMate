@@ -96,21 +96,32 @@ pub(super) async fn run_cli_main_routes(
     } = session;
 
     if let Some(port) = serve_port {
-        super::run_serve_branch(super::ServeBranchArgs {
-            cfg_holder: &cfg_holder,
-            config_path: &config_path,
-            client,
-            tools,
-            api_key,
-            workspace_cli: &workspace_cli,
-            port,
-            desktop_ready_json: serve_desktop_ready_json,
-            http_bind_host: http_bind_host.as_str(),
-            no_web,
-            process_handles: Arc::clone(&process_handles),
-        })
-        .await?;
-        return Ok(());
+        #[cfg(feature = "web")]
+        {
+            super::run_serve_branch(super::ServeBranchArgs {
+                cfg_holder: &cfg_holder,
+                config_path: &config_path,
+                client,
+                tools,
+                api_key,
+                workspace_cli: &workspace_cli,
+                port,
+                desktop_ready_json: serve_desktop_ready_json,
+                http_bind_host: http_bind_host.as_str(),
+                no_web,
+                process_handles: Arc::clone(&process_handles),
+            })
+            .await?;
+            return Ok(());
+        }
+        #[cfg(not(feature = "web"))]
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "本 crabmate 二进制未启用 `web` Cargo feature，不支持 `serve`。请使用默认构建或 `cargo build --features web`。",
+            )
+            .into());
+        }
     }
 
     if super::run_benchmark_batch_if_requested(
@@ -144,21 +155,32 @@ pub(super) async fn run_cli_main_routes(
     }
 
     if tui {
-        runtime::tui::run_tui_session(
-            runtime::cli::CliMainInvocationCommon {
-                cfg_holder: &cfg_holder,
-                config_path: config_path.as_deref(),
-                client: &client,
-                api_key: &api_key,
-                tools: &tools,
-                workspace_cli: &workspace_cli,
-                agent_role: agent_role_cli.as_deref(),
-                process_handles: Arc::clone(&process_handles),
-            },
-            no_stream,
-        )
-        .await?;
-        return Ok(());
+        #[cfg(feature = "tui")]
+        {
+            runtime::tui::run_tui_session(
+                runtime::cli::CliMainInvocationCommon {
+                    cfg_holder: &cfg_holder,
+                    config_path: config_path.as_deref(),
+                    client: &client,
+                    api_key: &api_key,
+                    tools: &tools,
+                    workspace_cli: &workspace_cli,
+                    agent_role: agent_role_cli.as_deref(),
+                    process_handles: Arc::clone(&process_handles),
+                },
+                no_stream,
+            )
+            .await?;
+            return Ok(());
+        }
+        #[cfg(not(feature = "tui"))]
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "本 crabmate 二进制未启用 `tui` Cargo feature，不支持全屏 TUI。请使用默认构建或 `cargo build --features tui`。",
+            )
+            .into());
+        }
     }
 
     runtime::cli::run_repl(

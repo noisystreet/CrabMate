@@ -5,16 +5,17 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use crate::AppState;
 use crate::config::{AgentConfig, LlmHttpAuthMode, SharedAgentConfig};
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
+use crate::per_turn_flight::PerTurnFlight;
+use crate::request_audit::WebRequestAudit;
 use crate::sse::SseStreamHub;
 use crate::types::{CommandApprovalDecision, LlmSeedOverride, Message, Tool};
-use crate::web::audit::WebRequestAudit;
 use log::debug;
 use tokio::sync::{Semaphore, mpsc, oneshot};
 
@@ -154,38 +155,6 @@ pub(super) fn resolve_executor_llm_for_job(
         Some((Arc::new(c), key))
     } else {
         None
-    }
-}
-
-/// 单条 `/chat` / `/chat/stream` 任务在跑 `run_agent_turn` 时，PER 相关状态的只读镜像（进程内、按 `job_id` 区分）。
-///
-/// **局限**：与浏览器「会话」无稳定绑定；同一客户端连续请求会得到不同 `job_id`。完整「本会话是否在规划重写」需会话级协议（如 `conversation_id`）再关联。
-#[derive(Debug, Default)]
-pub struct PerTurnFlight {
-    /// 已追加「请重写终答规划」的 user 消息，正在等待下一轮模型输出。
-    pub awaiting_plan_rewrite_model: AtomicBool,
-    pub plan_rewrite_attempts: AtomicUsize,
-    /// 本 `run_agent_turn` 内已成功合并的分阶段补丁规划轮次数（与 `plan_rewrite_attempts` 独立）。
-    pub staged_plan_patch_planner_rounds_completed: AtomicUsize,
-    /// 配置镜像：`staged_plan_patch_max_attempts`（供 `/status` 与排障对照）。
-    pub staged_plan_patch_max_attempts_config: AtomicUsize,
-    pub require_plan_in_final_content: AtomicBool,
-}
-
-impl PerTurnFlight {
-    pub fn sync_from_per_coord(&self, p: &crate::agent::per_coord::PerCoordinator) {
-        self.plan_rewrite_attempts
-            .store(p.plan_rewrite_attempts_snapshot(), Ordering::Relaxed);
-        self.staged_plan_patch_planner_rounds_completed.store(
-            p.staged_plan_patch_planner_rounds_snapshot(),
-            Ordering::Relaxed,
-        );
-        self.staged_plan_patch_max_attempts_config.store(
-            p.staged_plan_patch_max_attempts_config_snapshot(),
-            Ordering::Relaxed,
-        );
-        self.require_plan_in_final_content
-            .store(p.require_plan_in_final_flag_snapshot(), Ordering::Relaxed);
     }
 }
 

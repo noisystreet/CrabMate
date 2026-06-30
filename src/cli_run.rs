@@ -1,5 +1,6 @@
 //! `cargo run` / 库入口 [`crate::run`] 的 CLI 编排（从 `lib.rs` 拆出以降低单函数圈复杂度）。
 
+#[cfg(feature = "web")]
 #[path = "cli_run_serve.rs"]
 mod cli_run_serve;
 
@@ -15,7 +16,9 @@ use std::time::Duration;
 
 use log::info;
 
+#[cfg(feature = "web")]
 use crate::AppState;
+#[cfg(feature = "web")]
 use crate::chat_job_queue;
 use crate::config;
 use crate::config::cli::{
@@ -25,6 +28,7 @@ use crate::config::cli::{
 use crate::http_client;
 use crate::observability;
 use crate::runtime;
+#[cfg(feature = "web")]
 use crate::web;
 use crate::web_static_dir;
 
@@ -317,6 +321,7 @@ async fn run_models_or_probe(
     Ok(())
 }
 
+#[cfg(feature = "web")]
 pub(super) struct ServeBranchArgs<'a> {
     cfg_holder: &'a config::SharedAgentConfig,
     config_path: &'a Option<String>,
@@ -331,11 +336,13 @@ pub(super) struct ServeBranchArgs<'a> {
     process_handles: Arc<crate::process_handles::ProcessHandles>,
 }
 
+#[cfg(feature = "web")]
 struct ServeRuntimeBuilt {
     uploads_dir: std::path::PathBuf,
     state: Arc<AppState>,
 }
 
+#[cfg(feature = "web")]
 async fn build_serve_runtime_state(
     cfg_holder: &config::SharedAgentConfig,
     config_path: &Option<String>,
@@ -415,6 +422,7 @@ async fn build_serve_runtime_state(
     })
 }
 
+#[cfg(feature = "web")]
 fn parse_bind_ip(http_bind_host: &str) -> Result<std::net::IpAddr, std::io::Error> {
     http_bind_host.parse().map_err(|_| {
         std::io::Error::new(
@@ -427,6 +435,7 @@ fn parse_bind_ip(http_bind_host: &str) -> Result<std::net::IpAddr, std::io::Erro
     })
 }
 
+#[cfg(feature = "web")]
 async fn validate_bind_auth(
     cfg_holder: &config::SharedAgentConfig,
     bind_ip: std::net::IpAddr,
@@ -442,6 +451,7 @@ async fn validate_bind_auth(
     Ok(auth_enabled)
 }
 
+#[cfg(feature = "web")]
 pub(super) async fn run_serve_branch(
     args: ServeBranchArgs<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -541,6 +551,32 @@ pub(super) async fn run_serve_branch(
     )
     .await?;
     Ok(())
+}
+
+#[cfg(not(feature = "web"))]
+pub(super) async fn run_serve_branch(
+    _args: ServeBranchArgs<'_>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "本 crabmate 二进制未启用 `web` Cargo feature，不支持 `serve`。请使用默认构建或 `cargo build --features web`。",
+    )
+    .into())
+}
+
+#[cfg(not(feature = "web"))]
+pub(super) struct ServeBranchArgs<'a> {
+    pub cfg_holder: &'a config::SharedAgentConfig,
+    pub config_path: &'a Option<String>,
+    pub client: reqwest::Client,
+    pub tools: Vec<crate::types::Tool>,
+    pub api_key: String,
+    pub workspace_cli: &'a Option<String>,
+    pub port: u16,
+    pub desktop_ready_json: bool,
+    pub http_bind_host: &'a str,
+    pub no_web: bool,
+    pub process_handles: Arc<crate::process_handles::ProcessHandles>,
 }
 
 /// `--benchmark` / `--batch`：跑批量评测后返回 `true`（调用方应结束进程）。

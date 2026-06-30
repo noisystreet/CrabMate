@@ -31,13 +31,15 @@ use super::messages::{
     insert_separator_after_last_user_for_turn, pop_last_staged_planner_coach_user_if_present,
     push_assistant_merging_trailing_empty_placeholder,
 };
+use crate::PerTurnFlight;
+use crate::WebRequestAudit;
 use crate::agent::hierarchy::HierarchyRunnerParams;
 use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crate::config::AgentConfig;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
-use crate::runtime::tui::TuiLlmStreamScratchArc;
 use crate::tool_registry;
 use crate::types::{LlmSeedOverride, Message};
+use crabmate_llm::TuiLlmStreamScratchArc;
 
 /// LLM 接入、配置快照与工作目录（整场不变）。
 pub(crate) struct RunLoopCore<'a> {
@@ -76,7 +78,7 @@ pub(crate) struct RunLoopAttach<'a> {
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     /// 与 [`WebExecuteCtx::cli_tool_ctx`] 相同；Web 队列传 `None`。
     pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
-    pub per_flight: Option<Arc<crate::chat_job_queue::PerTurnFlight>>,
+    pub per_flight: Option<Arc<PerTurnFlight>>,
     pub long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     /// `conversation_id` 或 CLI 固定 `cli`；`None` 时不按会话隔离（跳过记忆）。
     pub long_term_memory_scope_id: Option<String>,
@@ -104,7 +106,7 @@ pub(crate) struct RunLoopObs {
     /// Web `/chat*`：结构化日志根 span（`job_id` / `conversation_id` / 外层轮次 / 当前工具）；CLI 等为 `None`。
     pub tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
     /// Web：HTTP 审计；非 Web 为 `None`。
-    pub request_audit: Option<Arc<crate::web::audit::WebRequestAudit>>,
+    pub request_audit: Option<Arc<WebRequestAudit>>,
     /// 进程句柄：工具统计记录器等（与 [`crate::RunAgentTurnParams::process_handles`] 同源）。
     pub process_handles: Arc<crate::process_handles::ProcessHandles>,
 }

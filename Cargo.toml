@@ -55,13 +55,35 @@ assets = [
 ]
 
 [features]
-default = ["mcp", "fastembed"]
+default = ["mcp", "fastembed", "web", "repl", "tui"]
+## Axum HTTP、`serve`、会话 SQLite、`/chat` 队列等。
+web = [
+    "dep:axum",
+    "dep:tower",
+    "dep:tower-http",
+    "dep:rusqlite",
+    "dep:tokio-cron-scheduler",
+]
+## 交互式 REPL（**reedline**）。
+repl = ["dep:reedline", "dep:unicode-width"]
+## 全屏 TUI（**ratatui** / **crossterm**）；隐含 **repl**（共用行编辑与斜杠命令）。
+tui = ["repl", "dep:ratatui", "dep:crossterm"]
+## `cargo run --bin crabmate-gen-man` 生成 troff 手册页。
+gen-man = ["dep:clap_mangen"]
 ## Model Context Protocol（`rmcp`）：`mcp list` / `mcp serve`、进程内 MCP 工具代理。
-mcp = ["dep:rmcp", "crabmate-config/mcp", "crabmate-internal/mcp"]
+mcp = ["crabmate-agent/mcp", "crabmate-config/mcp", "crabmate-internal/mcp"]
 ## `sync_default_tool_sandbox_mode = docker` 时连接 Docker Engine（`bollard`）。
-docker_sandbox = ["dep:bollard", "crabmate-config/docker_sandbox", "crabmate-internal/docker_sandbox"]
+docker_sandbox = [
+    "crabmate-agent/docker_sandbox",
+    "crabmate-config/docker_sandbox",
+    "crabmate-internal/docker_sandbox",
+]
 ## 本地向量嵌入（**fastembed** / ONNX）：长期记忆 `fastembed` 后端、`codebase_semantic_search` 的向量索引与 hybrid/semantic 查询。
-fastembed = ["dep:fastembed", "crabmate-config/fastembed", "crabmate-internal/fastembed"]
+fastembed = [
+    "crabmate-agent/fastembed",
+    "crabmate-config/fastembed",
+    "crabmate-internal/fastembed",
+]
 
 [dependencies]
 cmd_mate = { path = "crates/cmd_mate" }
@@ -69,16 +91,15 @@ crabmate-display-rules = { path = "crates/crabmate-display-rules" }
 crabmate-tool-card = { path = "crates/crabmate-tool-card" }
 crabmate-sse-protocol = { path = "crates/crabmate-sse-protocol" }
 crabmate-types = { path = "crates/crabmate-types" }
-crabmate-config = { path = "crates/crabmate-config" }
+crabmate-config = { path = "crates/crabmate-config", default-features = false }
 crabmate-llm = { path = "crates/crabmate-llm" }
-crabmate-agent = { path = "crates/crabmate-agent" }
-crabmate-internal = { path = "crates/crabmate-internal" }
+crabmate-agent = { path = "crates/crabmate-agent", default-features = false }
+crabmate-internal = { path = "crates/crabmate-internal", default-features = false }
 reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 secrecy = "0.10"
-# `serde_yaml` 已归档；`yaml_serde` 为兼容替代，crate 名仍用 `serde_yaml` 以免改全仓 import。
 serde_yaml = { package = "yaml_serde", version = "0.10" }
 # 避免 `full`：仅启用代码路径实际用到的子特性，缩短 `cargo build` / `cargo check` 解析与编译图。
 tokio = { version = "1", default-features = false, features = [
@@ -93,20 +114,9 @@ tokio = { version = "1", default-features = false, features = [
     "io-util",
 ] }
 chrono = "0.4"
-toml = "0.8"
-rusqlite = { version = "0.32", features = ["bundled"] }
-markdown-to-ansi = "0.2"
-unicodeit = "0.2"
 regex = "1"
-glob = "0.3"
 sha2 = "0.11"
 subtle = "2.6"
-blake3 = "1.5"
-base64 = "0.22"
-urlencoding = "2.1"
-similar = "2.7"
-csv = "1.3"
-unicode-width = "0.1"
 log = "0.4"
 tracing = "0.1"
 tracing-log = "0.2"
@@ -119,54 +129,26 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
     "std",
     "time",
 ] }
-axum = { version = "0.7", features = ["json", "multipart"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 async-trait = "0.1"
-tower = "0.4"
-tower-http = { version = "0.5", features = ["fs", "set-header"] }
 clap = { version = "4", features = ["derive"] }
-crossterm = "0.29"
 libc = "0.2"
-uom = { version = "0.36", features = ["si"] }
-path-absolutize = "3"
-diffy = "0.5"
-walkdir = "2"
-ignore = "0.4"
-tempfile = "3"
 thiserror = "2"
-tokei = { version = "14", default-features = false }
-fastembed = { version = "5.13", optional = true }
-rmcp = { version = "1.4", optional = true, default-features = false, features = [
-    "client",
-    "server",
-    "transport-child-process",
-    "transport-io",
-] }
-indicatif = "0.18"
-reedline = { version = "0.48", default-features = false }
-dialoguer = { version = "0.12", default-features = false }
-encoding_rs = "0.8"
-chardetng = "1.0"
-clap_mangen = { version = "0.3", default-features = false }
-# 关闭 bollard 默认 feature，仅启用本仓库用到的：`http`（hyper 客户端）、`pipe`（Unix 套接字 / Windows named pipe）。
-# 未启用 `ssl`：不支持 `DOCKER_HOST=https://` 与 `DOCKER_TLS_VERIFY`（本地 `unix://` / 明文 `tcp://` 不受影响）。需 TLS 时改为 `features = ["http", "pipe", "ssl"]`。
-bollard = { version = "0.18", optional = true, default-features = false, features = [
-    "http",
-    "pipe",
-] }
-scraper = "0.27.0"
-ego-tree = "0.11"
-zip = "2.2"
-tar = "0.4"
-flate2 = "1.0"
-bzip2 = "0.4"
-xz2 = "0.1"
 jsonschema = { version = "0.46", default-features = false }
-tokio-cron-scheduler = { version = "0.15", default-features = false }
-# 内置工具 parameters：可选由类型 `JsonSchema` 生成，与 `jsonschema` 运行时校验对齐（MIT / Apache-2.0 双许可）
-schemars = { version = "0.8", features = ["derive"] }
-ratatui = { version = "0.29", default-features = false, features = ["crossterm"] }
 tiktoken-rs = { version = "0.12", default-features = false }
+markdown-to-ansi = "0.2"
+unicodeit = "0.2"
+axum = { version = "0.7", optional = true, features = ["json", "multipart"] }
+tower = { version = "0.4", optional = true }
+tower-http = { version = "0.5", optional = true, features = ["fs", "set-header"] }
+rusqlite = { version = "0.32", optional = true, features = ["bundled"] }
+tokio-cron-scheduler = { version = "0.15", optional = true, default-features = false }
+reedline = { version = "0.48", optional = true, default-features = false }
+indicatif = "0.18"
+unicode-width = { version = "0.1", optional = true }
+ratatui = { version = "0.29", optional = true, default-features = false, features = ["crossterm"] }
+crossterm = { version = "0.29", optional = true }
+clap_mangen = { version = "0.3", optional = true, default-features = false }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", default-features = false, features = ["fs", "dir", "signal", "term", "process"] }
@@ -174,6 +156,7 @@ nix = { version = "0.31", default-features = false, features = ["fs", "dir", "si
 [[bin]]
 name = "crabmate-gen-man"
 path = "src/bin/crabmate_gen_man.rs"
+required-features = ["gen-man"]
 
 [dev-dependencies]
 serde_json = "1"

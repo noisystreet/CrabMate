@@ -14,18 +14,23 @@ pub use crabmate_internal::{
     sse, text_encoding, text_util, tool_approval, tool_call_explain, tool_registry, tool_result,
     tool_sandbox, tool_stats, tools, user_message_file_refs, web_static_dir, workspace,
 };
+#[cfg(feature = "web")]
 mod chat_job_queue;
 mod cli_run;
+mod env_flags;
 pub use crabmate_config;
 pub use crabmate_config as config;
 pub use crabmate_llm;
 /// Web `conversation_id` 持久化（可选 SQLite）与 `SaveConversationOutcome`。
+#[cfg(feature = "web")]
 mod conversation_store;
 pub use crabmate_llm::http_client;
 mod llm;
 /// 元对话门控补充（如「我刚才问了什么」类追问）。
 mod meta_dialogue;
+mod per_turn_flight;
 pub use process_handles::ProcessHandles;
+mod request_audit;
 
 /// 仅 **`cargo test`**：清空 **`run_command`** 全局限流状态与 **`test_result_cache`** LRU，减轻测试顺序依赖。
 #[cfg(test)]
@@ -41,7 +46,11 @@ pub use crabmate_agent::text_sanitize;
 pub use crabmate_types;
 pub use crabmate_types as types;
 mod user_data;
+#[cfg(feature = "web")]
 mod web;
+
+pub use per_turn_flight::PerTurnFlight;
+pub use request_audit::WebRequestAudit;
 
 pub use config::cli::{
     ChatCliArgs, ExtraCliCommand, ParsedCliArgs, SaveSessionFormat, ToolReplayCli,
@@ -59,13 +68,13 @@ pub struct AgentTurnTransport<'a> {
     pub render_to_terminal: bool,
     pub no_stream: bool,
     pub cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
-    pub per_flight: Option<std::sync::Arc<chat_job_queue::PerTurnFlight>>,
+    pub per_flight: Option<std::sync::Arc<PerTurnFlight>>,
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     /// 终端 CLI：`run_command` 非白名单时在 stdin 交互确认；Web 传 `None`。
     pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
     pub plain_terminal_stream: bool,
-    /// 全屏 TUI：流式助手增量写入（见 [`runtime::tui::TuiLlmStreamScratch`]）；其它入口 `None`。
-    pub tui_llm_stream_scratch: Option<runtime::tui::TuiLlmStreamScratchArc>,
+    /// 全屏 TUI：流式助手增量写入（见 [`crabmate_llm::TuiLlmStreamScratch`]）；其它入口 `None`。
+    pub tui_llm_stream_scratch: Option<crabmate_llm::TuiLlmStreamScratchArc>,
     /// 无 SSE（`out` 为 `None`）时可选：工具批开始/结束时各调用一次（`true` / `false`），与 Web `SsePayload::ToolRunning` 对齐（如 TUI 底栏）。
     pub tool_running_hook: Option<std::sync::Arc<dyn Fn(bool) + Send + Sync>>,
     /// 澄清问卷回调（与 [`crate::agent::agent_turn::RunLoopIo::clarification_questionnaire_hook`] 同源）；Web/SSE 通常为 `None`。
@@ -122,19 +131,20 @@ pub struct RunAgentTurnParams<'a> {
     /// Web `/chat*`：与 **`x-stream-job-id`** / SSE **`sse_capabilities.job_id`** 对齐的结构化日志根 span；CLI 等为 `None`。
     pub tracing_chat_turn: Option<Arc<observability::TracingChatTurn>>,
     /// Web：HTTP 审计（客户端 IP、共享 Bearer 指纹）；CLI/定时任务等为 `None`。
-    pub request_audit: Option<Arc<crate::web::audit::WebRequestAudit>>,
+    pub request_audit: Option<Arc<WebRequestAudit>>,
     /// 进程内显式句柄：工作区变更集注册表、工具统计等（`bench` 等无 `AppState` 时用 [`crate::process_handles::ProcessHandles::default_arc_process_handles`]）。
     pub process_handles: Arc<crate::process_handles::ProcessHandles>,
 }
 
 /// 构造 [`RunAgentTurnParams::web_chat_stream`] 所需的参数包（避免长形参列表）。
+#[cfg(feature = "web")]
 pub struct WebChatStreamBuildArgs<'a> {
     pub shared: RunAgentTurnSharedInputs<'a>,
     pub messages: &'a mut Vec<types::Message>,
     pub effective_working_dir: &'a std::path::Path,
     pub workspace_is_set: bool,
     pub cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    pub per_flight: std::sync::Arc<chat_job_queue::PerTurnFlight>,
+    pub per_flight: std::sync::Arc<PerTurnFlight>,
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     pub temperature_override: Option<f32>,
     pub model_override: Option<String>,
@@ -149,17 +159,18 @@ pub struct WebChatStreamBuildArgs<'a> {
     pub conversation_id: &'a str,
     pub out: &'a mpsc::Sender<String>,
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
-    pub request_audit: Arc<crate::web::audit::WebRequestAudit>,
+    pub request_audit: Arc<WebRequestAudit>,
     pub process_handles: Arc<crate::process_handles::ProcessHandles>,
 }
 
 /// 构造 [`RunAgentTurnParams::web_chat_json`] 所需的参数包。
+#[cfg(feature = "web")]
 pub struct WebChatJsonBuildArgs<'a> {
     pub shared: RunAgentTurnSharedInputs<'a>,
     pub messages: &'a mut Vec<types::Message>,
     pub effective_working_dir: &'a std::path::Path,
     pub workspace_is_set: bool,
-    pub per_flight: std::sync::Arc<chat_job_queue::PerTurnFlight>,
+    pub per_flight: std::sync::Arc<PerTurnFlight>,
     pub temperature_override: Option<f32>,
     pub model_override: Option<String>,
     pub use_executor_model: bool,
@@ -172,7 +183,7 @@ pub struct WebChatJsonBuildArgs<'a> {
     pub job_id: u64,
     pub conversation_id: &'a str,
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
-    pub request_audit: Arc<crate::web::audit::WebRequestAudit>,
+    pub request_audit: Arc<WebRequestAudit>,
     pub process_handles: Arc<crate::process_handles::ProcessHandles>,
 }
 pub struct CliTerminalChatBuildArgs<'a> {
@@ -183,7 +194,7 @@ pub struct CliTerminalChatBuildArgs<'a> {
     /// 为 `true` 时不向 stdout 渲染助手流式/非流式输出（全屏 TUI alternate screen）。
     pub suppress_stdout_render: bool,
     /// 与 **`suppress_stdout_render`** 配套：流式正文写入供 TUI 中区刷新。
-    pub tui_llm_stream_scratch: Option<runtime::tui::TuiLlmStreamScratchArc>,
+    pub tui_llm_stream_scratch: Option<crabmate_llm::TuiLlmStreamScratchArc>,
     /// 与 [`AgentTurnTransport::tool_running_hook`] 一致；REPL 等为 `None`。
     pub tool_running_hook: Option<Arc<dyn Fn(bool) + Send + Sync>>,
     /// `present_clarification_questionnaire` 成功时通知 TUI 展示问卷；其它入口 `None`。
@@ -200,6 +211,7 @@ pub struct CliTerminalChatBuildArgs<'a> {
 }
 
 /// `web_chat_stream` / `web_chat_json` 共用的字段装配（单参数传入以满足形参棘轮）。
+#[cfg(feature = "web")]
 struct WebChatJobCommonParts<'a> {
     shared: RunAgentTurnSharedInputs<'a>,
     messages: &'a mut Vec<types::Message>,
@@ -212,11 +224,12 @@ struct WebChatJobCommonParts<'a> {
     conversation_id: &'a str,
     turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
     tracing_chat_turn: Arc<observability::TracingChatTurn>,
-    request_audit: Arc<crate::web::audit::WebRequestAudit>,
+    request_audit: Arc<WebRequestAudit>,
     process_handles: Arc<crate::process_handles::ProcessHandles>,
 }
 
 impl<'a> RunAgentTurnParams<'a> {
+    #[cfg(feature = "web")]
     fn from_web_job_common(parts: WebChatJobCommonParts<'a>) -> Self {
         let WebChatJobCommonParts {
             shared,
@@ -250,6 +263,7 @@ impl<'a> RunAgentTurnParams<'a> {
     }
 
     /// Web `/chat/stream`：SSE 输出、可选工具审批、可取消。
+    #[cfg(feature = "web")]
     pub fn web_chat_stream(args: WebChatStreamBuildArgs<'a>) -> Self {
         let WebChatStreamBuildArgs {
             shared,
@@ -313,6 +327,7 @@ impl<'a> RunAgentTurnParams<'a> {
     }
 
     /// Web `POST /chat`（JSON）：无 SSE，终端渲染管线用于分步通知等。
+    #[cfg(feature = "web")]
     pub fn web_chat_json(args: WebChatJsonBuildArgs<'a>) -> Self {
         let WebChatJsonBuildArgs {
             shared,
@@ -485,8 +500,11 @@ impl<'a> RunAgentTurnParams<'a> {
     }
 }
 
+#[cfg(feature = "web")]
 pub(crate) use conversation_store::SaveConversationOutcome;
+#[cfg(feature = "web")]
 pub(crate) use web::AppState;
+#[cfg(feature = "web")]
 pub(crate) use web::conversation_conflict_sse_line;
 
 /// CLI 入口逻辑（与历史二进制 `main` 等价）：解析参数、加载配置、启动 Web / REPL 等。

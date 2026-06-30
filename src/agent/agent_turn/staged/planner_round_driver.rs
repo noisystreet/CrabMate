@@ -82,7 +82,7 @@ pub(super) async fn complete_planner_no_tools_chat_retrying(
 ) -> Result<(Message, String), LlmCompleteError> {
     let suppress_full = staged_planner_sse_fully_suppressed(p.ctx.core.cfg.as_ref());
     let use_gate = p.ctx.io.out.is_some()
-        && !crate::web::web_ui_env::web_raw_assistant_output_env()
+        && !crate::env_flags::web_raw_assistant_output_env()
         && !suppress_full;
 
     let gate_opt = match (use_gate, p.ctx.io.out.as_ref()) {

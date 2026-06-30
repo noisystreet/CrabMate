@@ -5,9 +5,15 @@ edition = "2024"
 license = "Apache-2.0"
 description = "CrabMate agent domain layer (plan artifacts, intent routing, acceptance, reflection)"
 
+[features]
+default = []
+mcp = ["crabmate-internal/mcp"]
+fastembed = ["crabmate-internal/fastembed"]
+docker_sandbox = ["crabmate-internal/docker_sandbox"]
+
 [dependencies]
-crabmate-config = { path = "../crabmate-config" }
-crabmate-internal = { path = "../crabmate-internal" }
+crabmate-config = { path = "../crabmate-config", default-features = false }
+crabmate-internal = { path = "../crabmate-internal", default-features = false }
 crabmate-llm = { path = "../crabmate-llm" }
 crabmate-types = { path = "../crabmate-types" }
 async-trait = "0.1"
