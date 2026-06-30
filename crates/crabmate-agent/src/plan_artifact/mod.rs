@@ -561,6 +561,14 @@ mod tests {
     }
 
     #[test]
+    fn parse_injects_test_runner_default_exit_code() {
+        let json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"t","description":"cargo test","executor_kind":"test_runner"}]}"#;
+        let p = parse_agent_reply_plan_v1(json).expect("parse");
+        let acc = p.steps[0].acceptance.as_ref().expect("defaults injected");
+        assert_eq!(acc.expect_exit_code, Some(0));
+    }
+
+    #[test]
     fn plan_step_acceptance_is_effective_false_for_empty_object_fields() {
         let a = PlanStepAcceptance {
             expect_exit_code: None,

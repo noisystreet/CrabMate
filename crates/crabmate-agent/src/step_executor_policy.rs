@@ -69,6 +69,42 @@ fn test_runner_allowed_name(cfg: &AgentConfig, name: &str) -> bool {
         .is_some_and(|s| s.contains(name))
 }
 
+/// 分阶段 `review_readonly` 步末空执行检测：须出现阅读/探查类只读工具（排除仅 `run_command --version` 探针）。
+pub fn tool_name_implies_readonly_probe(name: &str) -> bool {
+    if is_mcp_proxy_tool(name) {
+        return false;
+    }
+    matches!(
+        name,
+        "read_file"
+            | "read_dir"
+            | "list_dir"
+            | "grep"
+            | "search_in_files"
+            | "file_exists"
+            | "stat"
+            | "git_diff"
+            | "git_show"
+            | "git_log"
+            | "git_status"
+            | "git_blame"
+            | "find_references"
+            | "call_graph_sketch"
+            | "archive_list"
+            | "http_fetch"
+            | "diagnostic_summary"
+            | "lizard_complexity"
+            | "shellcheck_check"
+            | "cppcheck_analyze"
+            | "semgrep_scan"
+    )
+}
+
+/// 分阶段 `patch_write` 步末空执行检测：须出现补丁/写文件类工具。
+pub fn tool_name_implies_patch_write_progress(name: &str) -> bool {
+    default_patch_write_tool_names().contains(name)
+}
+
 /// 该 `executor_kind` / 节点角色下是否允许调用该工具（**不**改变 `run_command` / MCP 等既有审批语义；仅做名单过滤）。
 pub fn tool_allowed_for_step_executor_kind(
     cfg: &AgentConfig,

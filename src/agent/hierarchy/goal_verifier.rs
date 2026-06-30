@@ -3,9 +3,11 @@
 //! 根据 SubGoal 中定义的 acceptance 条件对执行结果进行验证。
 //! 与分阶段步骤共用 [`crate::agent::acceptance`] 内核（文件 / 合并输出 / 退出码等）。
 
-use crate::agent::acceptance::{AcceptanceEvidence, VerifyOutcome};
+use crate::agent::acceptance::{
+    AcceptanceEvidence, VerifyOutcome, default_exit_code_for_build_execution_description,
+};
 
-use super::task::{ArtifactKind, SubGoal, TaskResult, TaskStatus};
+use super::task::{ArtifactKind, GoalAcceptance, SubGoal, TaskResult, TaskStatus};
 
 /// 验证结果
 #[derive(Debug, Clone)]
@@ -111,8 +113,16 @@ impl GoalVerifier {
             return VerificationResult::Fail { reason };
         }
 
-        // 如果没有定义验收条件，直接通过
-        let acceptance = match &goal.acceptance {
+        // 如果没有定义验收条件，尝试与分阶段 `test_runner` 对齐的构建/测试缺省退出码。
+        let effective_acceptance = goal.acceptance.clone().or_else(|| {
+            default_exit_code_for_build_execution_description(goal.description.as_str()).map(
+                |code| GoalAcceptance {
+                    expect_exit_code: Some(code),
+                    ..Default::default()
+                },
+            )
+        });
+        let acceptance = match effective_acceptance {
             Some(a) => a,
             None => {
                 log::info!(
@@ -707,5 +717,22 @@ mod tests {
             "运行 ./build/demo_app 并验证输出包含 EXPECTED_MARKER",
         );
         assert!(is_run_executable_subgoal(&goal));
+    }
+
+    #[test]
+    fn build_subgoal_gets_default_exit_code_when_acceptance_missing() {
+        let verifier = GoalVerifier::new(std::env::temp_dir());
+        let goal = SubGoal::new("g", "在本工作区运行 cargo build 并确认通过");
+        let result = TaskResult {
+            task_id: "g".to_string(),
+            status: TaskStatus::Completed,
+            output: Some("退出码：1\n编译失败".to_string()),
+            error: None,
+            artifacts: vec![],
+            duration_ms: 0,
+            tools_invoked: vec!["run_command".to_string()],
+        };
+        let verify_result = verifier.verify(&goal, &result);
+        assert!(verify_result.is_fail());
     }
 }
