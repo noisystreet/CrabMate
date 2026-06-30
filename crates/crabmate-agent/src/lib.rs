@@ -22,6 +22,8 @@ pub mod workflow_reflection_controller;
 pub mod workspace_snapshot;
 
 #[cfg(test)]
+mod acceptance_regression_golden;
+#[cfg(test)]
 mod plan_artifact_golden;
 
 pub(crate) use log_preview::preview_chars;

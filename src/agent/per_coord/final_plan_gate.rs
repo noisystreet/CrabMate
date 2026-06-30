@@ -11,6 +11,7 @@ use crate::agent::reflection::plan_rewrite;
 use crate::config::AgentConfig;
 use crate::types::Message;
 
+use super::final_plan_gate_reason::FinalPlanGateDecisionReason;
 use super::{AfterFinalAssistant, FinalPlanRequirementMode, PlanRequirementSource};
 
 // --- Types（终答门控 FSM；见 `docs/design/per_state_machine_consolidation.md`） ---
@@ -51,6 +52,7 @@ pub(crate) enum FinalPlanGateRoute {
 /// [`step_check_structured_plan`] 的完整输出（含可选的重写计数递增）。
 pub(crate) struct FinalPlanGateStepOutcome {
     pub route: FinalPlanGateRoute,
+    pub decision_reason: FinalPlanGateDecisionReason,
     pub after: AfterFinalAssistant,
     pub next_plan_rewrite_count: Option<usize>,
 }
@@ -133,6 +135,7 @@ pub(crate) fn run_final_plan_gate(
             );
             FinalPlanGateStepOutcome {
                 route: FinalPlanGateRoute::StopNoRequirement,
+                decision_reason: FinalPlanGateDecisionReason::PolicyNoRequirement,
                 after: AfterFinalAssistant::StopTurn,
                 next_plan_rewrite_count: None,
             }
@@ -150,6 +153,8 @@ pub(crate) fn run_final_plan_gate(
             );
             FinalPlanGateStepOutcome {
                 route: FinalPlanGateRoute::SemanticConsistencyAcceptedStop,
+                decision_reason:
+                    FinalPlanGateDecisionReason::UnexpectedPendingSemanticOnFinalArrived,
                 after: AfterFinalAssistant::StopTurn,
                 next_plan_rewrite_count: None,
             }
@@ -186,6 +191,7 @@ pub(crate) fn run_final_plan_gate_semantic_completed(
         );
         return FinalPlanGateStepOutcome {
             route: FinalPlanGateRoute::SemanticConsistencyAcceptedStop,
+            decision_reason: FinalPlanGateDecisionReason::SemanticConsistencyAccepted,
             after: AfterFinalAssistant::StopTurn,
             next_plan_rewrite_count: None,
         };
@@ -202,6 +208,7 @@ pub(crate) fn run_final_plan_gate_semantic_completed(
         );
         return FinalPlanGateStepOutcome {
             route: FinalPlanGateRoute::SemanticMismatchRewriteExhausted,
+            decision_reason: FinalPlanGateDecisionReason::SemanticInconsistencyRewriteExhausted,
             after: AfterFinalAssistant::StopTurnPlanRewriteExhausted {
                 reason: PlanRewriteExhaustedReason::PlanSemanticInconsistent,
             },
@@ -225,6 +232,7 @@ pub(crate) fn run_final_plan_gate_semantic_completed(
     );
     FinalPlanGateStepOutcome {
         route: FinalPlanGateRoute::SemanticMismatchRequestRewrite,
+        decision_reason: FinalPlanGateDecisionReason::SemanticInconsistencyRewrite,
         after: AfterFinalAssistant::RequestPlanRewrite(rewrite_msg),
         next_plan_rewrite_count: Some(next_attempt),
     }
@@ -381,6 +389,7 @@ fn outcome_after_semantics_failure(args: FinalPlanGateArgs<'_>) -> FinalPlanGate
         );
         return FinalPlanGateStepOutcome {
             route: FinalPlanGateRoute::SemanticsFailedRewriteExhausted,
+            decision_reason: FinalPlanGateDecisionReason::PlanRewriteExhausted,
             after: AfterFinalAssistant::StopTurnPlanRewriteExhausted { reason },
             next_plan_rewrite_count: None,
         };
@@ -443,6 +452,7 @@ fn outcome_after_semantics_failure(args: FinalPlanGateArgs<'_>) -> FinalPlanGate
     );
     FinalPlanGateStepOutcome {
         route: FinalPlanGateRoute::SemanticsFailedRequestRewrite,
+        decision_reason: FinalPlanGateDecisionReason::StaticSemanticsFailed,
         after: AfterFinalAssistant::RequestPlanRewrite(Message::user_plan_rewrite_injection(
             rewrite_text,
         )),
@@ -479,12 +489,14 @@ pub(crate) fn step_check_structured_plan(args: FinalPlanGateArgs<'_>) -> FinalPl
         ) {
             StaticSemanticsOutcome::PassStopTurn => FinalPlanGateStepOutcome {
                 route: FinalPlanGateRoute::AcceptStructuredPlanOk,
+                decision_reason: FinalPlanGateDecisionReason::StructuredPlanAccepted,
                 after: AfterFinalAssistant::StopTurn,
                 next_plan_rewrite_count: None,
             },
             StaticSemanticsOutcome::PassPendingSemanticLlm { plan, tool_digest } => {
                 FinalPlanGateStepOutcome {
                     route: FinalPlanGateRoute::PendingSemanticConsistencyLlm,
+                    decision_reason: FinalPlanGateDecisionReason::PendingSemanticConsistencyLlm,
                     after: AfterFinalAssistant::StopTurnPendingPlanConsistencyLlm {
                         plan,
                         tool_digest,
@@ -495,7 +507,14 @@ pub(crate) fn step_check_structured_plan(args: FinalPlanGateArgs<'_>) -> FinalPl
             StaticSemanticsOutcome::Fail => outcome_after_semantics_failure(args),
         }
     } else {
-        outcome_after_semantics_failure(args)
+        let mut outcome = outcome_after_semantics_failure(args);
+        if matches!(
+            outcome.route,
+            FinalPlanGateRoute::SemanticsFailedRequestRewrite
+        ) {
+            outcome.decision_reason = FinalPlanGateDecisionReason::PlanParseFailed;
+        }
+        outcome
     }
 }
 
@@ -557,6 +576,7 @@ pub(crate) fn after_final_assistant(
     tracing::debug!(
         target: "crabmate::per",
         gate_route = ?outcome.route,
+        gate_decision_reason = outcome.decision_reason.as_str(),
         gate_phase = ?phase,
         sub_phase = "reflect",
         "final_plan_gate transition"
@@ -630,6 +650,10 @@ mod tests {
             2,
         ));
         assert_eq!(o.route, FinalPlanGateRoute::AcceptStructuredPlanOk);
+        assert_eq!(
+            o.decision_reason,
+            FinalPlanGateDecisionReason::StructuredPlanAccepted
+        );
         assert!(matches!(o.after, AfterFinalAssistant::StopTurn));
     }
 
@@ -656,6 +680,10 @@ mod tests {
             2,
         ));
         assert_eq!(o.route, FinalPlanGateRoute::SemanticsFailedRequestRewrite);
+        assert_eq!(
+            o.decision_reason,
+            FinalPlanGateDecisionReason::PlanParseFailed
+        );
         assert!(matches!(
             o.after,
             AfterFinalAssistant::RequestPlanRewrite(_)
@@ -731,6 +759,10 @@ mod tests {
             ),
         );
         assert_eq!(o.route, FinalPlanGateRoute::StopNoRequirement);
+        assert_eq!(
+            o.decision_reason,
+            FinalPlanGateDecisionReason::PolicyNoRequirement
+        );
         assert!(matches!(o.after, AfterFinalAssistant::StopTurn));
     }
 
@@ -794,6 +826,10 @@ mod tests {
             plan_rewrite_max_attempts: 2,
         });
         assert_eq!(o.route, FinalPlanGateRoute::PendingSemanticConsistencyLlm);
+        assert_eq!(
+            o.decision_reason,
+            FinalPlanGateDecisionReason::PendingSemanticConsistencyLlm
+        );
         assert!(matches!(
             o.after,
             AfterFinalAssistant::StopTurnPendingPlanConsistencyLlm { .. }

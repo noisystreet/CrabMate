@@ -1,7 +1,8 @@
 use log::{debug, warn};
 
+use crate::agent::agent_turn::errors::{AgentTurnSubPhase, RunAgentTurnError};
 use crate::agent::per_coord::PerCoordinator;
-use crate::agent::plan_artifact::{self, PlanStepV1};
+use crate::agent::plan_artifact::{self, AgentReplyPlanV1, PlanStepV1};
 use crate::agent::reflection::plan_rewrite;
 use crate::types::{Message, USER_CANCELLED_FINISH_REASON};
 
@@ -9,8 +10,8 @@ use super::super::params::RunLoopParams;
 use super::planner_round_driver::{
     complete_planner_no_tools_chat_retrying, emit_staged_planner_tool_call_rejected_timeline,
 };
+use super::sse::{send_staged_plan_notice, staged_plan_queue_summary_text};
 use super::{StagedPlanRunLabels, prepare_staged_planner_no_tools_request};
-use crate::agent::agent_turn::errors::RunAgentTurnError;
 
 /// 分阶段规划补丁轮入参（控制 clippy `too_many_arguments`）。
 pub(super) struct StagedPlanPatchPlannerCtx<'p, 'a, F> {
@@ -192,4 +193,43 @@ where
             Ok(None)
         }
     }
+}
+
+/// 补丁合并结果与当前队列指纹一致时停止重试。
+pub(crate) fn staged_patch_merged_plan_unchanged(
+    before: &[PlanStepV1],
+    merged: &[PlanStepV1],
+) -> bool {
+    plan_artifact::plan_steps_fingerprint(before) == plan_artifact::plan_steps_fingerprint(merged)
+}
+
+/// 补丁规划返回新 `steps` 后：写入 assistant JSON 并刷新队列 notice。
+pub(crate) async fn push_patch_replan_assistant_json_and_notice(
+    p: &mut RunLoopParams<'_>,
+    plan_steps: &[PlanStepV1],
+    echo_terminal_staged: bool,
+    completed_steps_for_notice: usize,
+) -> Result<(), RunAgentTurnError> {
+    let replan = AgentReplyPlanV1 {
+        plan_type: "agent_reply_plan".to_string(),
+        version: 1,
+        steps: plan_steps.to_vec(),
+        no_task: false,
+    };
+    let json = plan_artifact::agent_reply_plan_v1_to_json_string(&replan).map_err(|e| {
+        RunAgentTurnError::Other {
+            phase: AgentTurnSubPhase::Executor,
+            message: e.to_string(),
+        }
+    })?;
+    p.turn
+        .push_assistant_merging_trailing_empty(Message::assistant_only(json));
+    send_staged_plan_notice(
+        p.ctx.io.out,
+        echo_terminal_staged,
+        true,
+        staged_plan_queue_summary_text(&replan, completed_steps_for_notice),
+    )
+    .await;
+    Ok(())
 }

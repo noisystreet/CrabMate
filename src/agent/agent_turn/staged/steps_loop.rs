@@ -5,29 +5,28 @@ use std::sync::atomic::Ordering;
 
 use log::debug;
 
-use crate::agent::plan_artifact::{self, AgentReplyPlanV1, PlanStepV1};
+use crate::agent::plan_artifact::PlanStepV1;
 use crate::tool_result::tool_message_content_ok_for_model;
 use crate::types::{Message, staged_step_window_end_exclusive};
 
 use super::super::errors::{AgentTurnSubPhase, RunAgentTurnError};
 use super::super::execute_tools::sse_sender_closed;
 use super::super::outer_loop::run_agent_outer_loop;
-use super::super::params::RunLoopParams;
 
 use super::empty_execution::staged_step_empty_execution_verify_failure;
 use super::orchestrator as staged_orchestrator;
-use super::patch_planner::{
-    StagedPlanPatchPlannerCtx, StagedPlanStepFailureFeedbackMeta,
-    run_staged_plan_patch_planner_round, staged_plan_step_failure_feedback_user_body,
-};
+use super::patch_planner::StagedPlanPatchPlannerCtx;
 use super::sse::{
     StagedStepOkNoticeParams, emit_chat_ui_separator_sse, finish_staged_plan_step_sse,
-    send_staged_plan_finished, send_staged_plan_notice, send_staged_plan_step_started,
-    staged_plan_queue_summary_text, staged_step_emit_ok_step_and_queue_notice,
+    send_staged_plan_finished, send_staged_plan_step_started,
+    staged_step_emit_ok_step_and_queue_notice,
 };
 use super::staged_step_fsm::{
     staged_patch_budget_after_step_failure, staged_patch_budget_tool_messages_not_ok,
     staged_step_patch_planner_enabled,
+};
+use super::staged_step_patch_recover::{
+    StagedStepPatchRecoverBundles, StagedStepPatchRecoverSpec, staged_step_try_patch_recover,
 };
 use super::step_after_outer::{
     CfJumpMeta, CfJumpMut, staged_step_maybe_return_on_control_flow_jump,
@@ -37,26 +36,18 @@ use super::step_failure_exit::{
     finish_staged_plan_step_failed_and_plan_failed_sse,
     staged_step_fail_after_outer_execution_exhausted,
 };
-use super::step_iteration_fsm::{
-    STAGED_STEP_OUTER_LOOP_FAIL_DETAIL, StagedStepIterationCtl,
-    staged_step_tool_failure_patch_detail, staged_step_wall_clock_exceeded,
-};
+use super::step_iteration_fsm::{StagedStepIterationCtl, staged_step_wall_clock_exceeded};
 use super::step_loop_fsm::staged_injected_step_user_body;
 use super::step_patch_route_fsm::{
-    resolve_staged_step_patch_failure_kind, staged_step_patch_failure_feedback,
+    StagedStepPatchFailureKind, resolve_staged_step_patch_failure_kind,
 };
 use super::steps_loop_route_fsm::{
     StagedStepPostOuterRoute, resolve_staged_step_post_outer_route_from_results,
 };
 use super::turn_orchestrator_fsm::{
-    StagedTurnOrchestratorPhase, orchestrator_phase_for_round_orchestrator,
-    orchestrator_phase_for_steps_loop_trace,
+    orchestrator_phase_for_round_orchestrator, orchestrator_phase_for_steps_loop_trace,
 };
 use super::{StagedPlanRunLabels, StagedPlanRunOutcome};
-
-fn staged_patch_merged_plan_unchanged(before: &[PlanStepV1], merged: &[PlanStepV1]) -> bool {
-    plan_artifact::plan_steps_fingerprint(before) == plan_artifact::plan_steps_fingerprint(merged)
-}
 
 /// 自本步 user 注入起至步界（或历史末尾）之间的 `role: tool` 是否均为成功（与信封 `ok` / 传统解析一致）。
 fn staged_step_tool_messages_all_ok(messages: &[Message], step_user_index: usize) -> bool {
@@ -73,37 +64,6 @@ fn staged_step_tool_messages_all_ok(messages: &[Message], step_user_index: usize
         i += 1;
     }
     true
-}
-
-/// 补丁规划返回新 `steps` 后：写入 assistant JSON（围栏）并刷新队列 notice（两处失败路径共用）。
-async fn push_patch_replan_assistant_json_and_notice(
-    p: &mut RunLoopParams<'_>,
-    plan_steps: &[PlanStepV1],
-    echo_terminal_staged: bool,
-    completed_steps_for_notice: usize,
-) -> Result<(), RunAgentTurnError> {
-    let replan = AgentReplyPlanV1 {
-        plan_type: "agent_reply_plan".to_string(),
-        version: 1,
-        steps: plan_steps.to_vec(),
-        no_task: false,
-    };
-    let json = plan_artifact::agent_reply_plan_v1_to_json_string(&replan).map_err(|e| {
-        RunAgentTurnError::Other {
-            phase: AgentTurnSubPhase::Executor,
-            message: e.to_string(),
-        }
-    })?;
-    p.turn
-        .push_assistant_merging_trailing_empty(Message::assistant_only(json));
-    send_staged_plan_notice(
-        p.ctx.io.out,
-        echo_terminal_staged,
-        true,
-        staged_plan_queue_summary_text(&replan, completed_steps_for_notice),
-    )
-    .await;
-    Ok(())
 }
 
 /// outer_loop 与验收之后、transition / 补丁 / 工具检查 / 成功收尾 之前的数据（**AfterOuterLoop** 阶段入参）。
@@ -227,7 +187,6 @@ struct StagedStepRunAfterOuterHalfParams<'a, 'b, 'c, F> {
     patch_ctx: &'a mut StagedPlanPatchPlannerCtx<'b, 'c, F>,
 }
 
-/// 外层循环失败后的补丁规划恢复：成功则 `Ok(Some(RetryCurrentStep))`，否则 `Ok(None)`（由调用方走失败 SSE + `StepRetryExhausted`）。
 /// 外层循环失败后的补丁恢复（降低 `staged_step_run_after_outer_half` 圈复杂度）。
 struct StagedOuterExecFailureRecoverParams<'a, 'b, 'c, F> {
     plan_id: &'a str,
@@ -238,6 +197,7 @@ struct StagedOuterExecFailureRecoverParams<'a, 'b, 'c, F> {
     echo_terminal_staged: bool,
     patch_ctx: &'a mut StagedPlanPatchPlannerCtx<'b, 'c, F>,
     step: &'a PlanStepV1,
+    step_user_index: usize,
     step_verify_failed_reason: &'a Option<String>,
     /// `run_agent_outer_loop` 返回 `Err` 时的 `to_string()`，供补丁规划 user 闭环反馈。
     outer_loop_error_text: Option<String>,
@@ -252,12 +212,13 @@ where
     let StagedOuterExecFailureRecoverParams {
         plan_id,
         i,
-        mut n,
+        n,
         completed_steps,
         plan_steps,
         echo_terminal_staged,
         patch_ctx,
         step,
+        step_user_index,
         step_verify_failed_reason,
         outer_loop_error_text,
     } = p;
@@ -272,7 +233,11 @@ where
     ) {
         return Ok(None);
     }
-    let mut recovered = false;
+    let failure_kind = resolve_staged_step_patch_failure_kind(
+        step_verify_failed_reason,
+        outer_loop_error_text.is_some(),
+    )
+    .unwrap_or(StagedStepPatchFailureKind::OuterLoopError);
     let patch_budget = staged_patch_budget_after_step_failure(
         step.max_step_retries,
         patch_ctx
@@ -283,86 +248,29 @@ where
             .staged_planning
             .staged_plan_patch_max_attempts,
     );
-    let audit_footer = patch_ctx
-        .per_coord
-        .staged_plan_patch_vs_plan_rewrite_counters_footer();
-    let effective_acceptance = crate::agent::acceptance::effective_plan_step_acceptance(step);
-    let patch_kind = resolve_staged_step_patch_failure_kind(
-        step_verify_failed_reason,
-        outer_loop_error_text.is_some(),
-    );
-    for (attempt_idx, _) in (0..patch_budget).enumerate() {
-        let attempt_1based = attempt_idx.saturating_add(1);
-        tracing::debug!(
-            target: "crabmate::staged",
-            staged_fsm = "steps_loop",
-            steps_loop_phase = "patch_replanner_attempt",
-            staged_turn_orchestrator_phase = StagedTurnOrchestratorPhase::PatchReplanner.as_str(),
+    staged_step_try_patch_recover(
+        StagedStepPatchRecoverBundles {
             plan_id,
-            step_index = i,
-            patch_attempt = attempt_1based,
+            i,
+            n,
+            completed_steps,
+            plan_steps,
+            echo_terminal_staged,
+            patch_ctx,
+            step,
+            step_user_index,
+        },
+        StagedStepPatchRecoverSpec {
+            failure_kind,
+            steps_loop_phase: "patch_replanner_attempt",
             patch_budget,
-            sub_phase = "planner",
-            "staged step failure patch planner attempt"
-        );
-        let (detail_owned, reason_zh) = patch_kind
-            .as_ref()
-            .map(|kind| {
-                staged_step_patch_failure_feedback(
-                    kind,
-                    outer_loop_error_text.as_deref(),
-                    effective_acceptance.as_ref(),
-                )
-            })
-            .unwrap_or_else(|| {
-                (
-                    STAGED_STEP_OUTER_LOOP_FAIL_DETAIL.to_string(),
-                    "执行子循环返回错误",
-                )
-            });
-        let meta = StagedPlanStepFailureFeedbackMeta {
-            plan_id,
-            step_zero_based: i,
-            n_steps_total: n,
-            plan_patch_attempt_one_based: attempt_1based,
-            plan_patch_budget: patch_budget,
-            reason_zh,
-            detail: detail_owned.as_str(),
-            audit_counters_footer: &audit_footer,
-        };
-        let feedback = staged_plan_step_failure_feedback_user_body(&meta, step);
-        if let Some(merged) =
-            run_staged_plan_patch_planner_round(patch_ctx, feedback, plan_steps.as_slice(), i)
-                .await?
-        {
-            if staged_patch_merged_plan_unchanged(plan_steps.as_slice(), merged.as_slice()) {
-                debug!(
-                    target: "crabmate::staged",
-                    "分阶段补丁：规划器返回与当前完全相同的 steps，停止补丁重试"
-                );
-                break;
-            }
-            *plan_steps = merged;
-            n = plan_steps.len();
-            push_patch_replan_assistant_json_and_notice(
-                patch_ctx.p,
-                plan_steps.as_slice(),
-                echo_terminal_staged,
-                completed_steps,
-            )
-            .await?;
-            recovered = true;
-            break;
-        }
-    }
-    if recovered {
-        return Ok(Some(StagedStepIterationCtl::RetryCurrentStep { n }));
-    }
-    Ok(None)
+            outer_loop_error_text: outer_loop_error_text.as_deref(),
+        },
+    )
+    .await
 }
 
 /// 工具消息未全部成功时的补丁恢复：`Ok(Some(RetryCurrentStep))` 或 `Ok(None)`（由调用方走工具失败耗尽）。
-/// 工具消息失败后的补丁恢复。
 struct StagedToolFailurePatchRecoverParams<'a, 'b, 'c, F> {
     plan_id: &'a str,
     i: usize,
@@ -384,7 +292,7 @@ where
     let StagedToolFailurePatchRecoverParams {
         plan_id,
         i,
-        mut n,
+        n,
         completed_steps,
         plan_steps,
         echo_terminal_staged,
@@ -392,7 +300,6 @@ where
         step_user_index,
         step,
     } = p;
-    let mut recovered = false;
     let tool_patch_budget = staged_patch_budget_tool_messages_not_ok(
         patch_ctx
             .p
@@ -402,68 +309,26 @@ where
             .staged_planning
             .staged_plan_patch_max_attempts,
     );
-    let audit_footer = patch_ctx
-        .per_coord
-        .staged_plan_patch_vs_plan_rewrite_counters_footer();
-    let effective_acceptance = crate::agent::acceptance::effective_plan_step_acceptance(step);
-    for (attempt_idx, _) in (0..tool_patch_budget).enumerate() {
-        let attempt_1based = attempt_idx.saturating_add(1);
-        tracing::debug!(
-            target: "crabmate::staged",
-            staged_fsm = "steps_loop",
-            steps_loop_phase = "patch_replanner_tool_failure",
-            staged_turn_orchestrator_phase = StagedTurnOrchestratorPhase::PatchReplanner.as_str(),
+    staged_step_try_patch_recover(
+        StagedStepPatchRecoverBundles {
             plan_id,
-            step_index = i,
-            patch_attempt = attempt_1based,
-            patch_budget = tool_patch_budget,
-            sub_phase = "planner",
-            "staged step tool failure patch planner attempt"
-        );
-        let detail_owned = staged_step_tool_failure_patch_detail(
-            patch_ctx.p.turn.messages(),
+            i,
+            n,
+            completed_steps,
+            plan_steps,
+            echo_terminal_staged,
+            patch_ctx,
+            step,
             step_user_index,
-            effective_acceptance.as_ref(),
-        );
-        let meta = StagedPlanStepFailureFeedbackMeta {
-            plan_id,
-            step_zero_based: i,
-            n_steps_total: n,
-            plan_patch_attempt_one_based: attempt_1based,
-            plan_patch_budget: tool_patch_budget,
-            reason_zh: "本步内工具调用未全部成功",
-            detail: detail_owned.as_str(),
-            audit_counters_footer: &audit_footer,
-        };
-        let feedback = staged_plan_step_failure_feedback_user_body(&meta, step);
-        if let Some(merged) =
-            run_staged_plan_patch_planner_round(patch_ctx, feedback, plan_steps.as_slice(), i)
-                .await?
-        {
-            if staged_patch_merged_plan_unchanged(plan_steps.as_slice(), merged.as_slice()) {
-                debug!(
-                    target: "crabmate::staged",
-                    "分阶段补丁：规划器返回与当前完全相同的 steps，停止补丁重试"
-                );
-                break;
-            }
-            *plan_steps = merged;
-            n = plan_steps.len();
-            push_patch_replan_assistant_json_and_notice(
-                patch_ctx.p,
-                plan_steps.as_slice(),
-                echo_terminal_staged,
-                completed_steps,
-            )
-            .await?;
-            recovered = true;
-            break;
-        }
-    }
-    if recovered {
-        return Ok(Some(StagedStepIterationCtl::RetryCurrentStep { n }));
-    }
-    Ok(None)
+        },
+        StagedStepPatchRecoverSpec {
+            failure_kind: StagedStepPatchFailureKind::ToolMessagesNotOk,
+            steps_loop_phase: "patch_replanner_tool_failure",
+            patch_budget: tool_patch_budget,
+            outer_loop_error_text: None,
+        },
+    )
+    .await
 }
 
 async fn staged_step_run_after_outer_half<F>(
@@ -563,6 +428,7 @@ where
                     echo_terminal_staged,
                     patch_ctx,
                     step: &step,
+                    step_user_index: step_user_idx,
                     step_verify_failed_reason: &step_verify_failed_reason,
                     outer_loop_error_text: run_step.as_ref().err().map(|e| e.to_string()),
                 },

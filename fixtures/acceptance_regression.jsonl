@@ -1,0 +1,14 @@
+# 验收规则回归金样：每行一条 JSON，供 `crabmate-agent/acceptance_regression_golden.rs` 加载。
+# 运行：`cargo test golden_acceptance_regression -p crabmate-agent`
+{"id":"tr_default_exit","case":"effective_acceptance","executor_kind":"test_runner","description":"cargo test","acceptance":null,"expect_some":true,"expect_exit_code":0}
+{"id":"tr_explicit_exit","case":"effective_acceptance","executor_kind":"test_runner","description":"run","acceptance":{"expect_exit_code":42},"expect_some":true,"expect_exit_code":42}
+{"id":"review_no_acceptance","case":"effective_acceptance","executor_kind":"review_readonly","description":"read docs","acceptance":null,"expect_some":false}
+{"id":"build_desc_default","case":"build_desc_exit","description":"在本工作区运行 cargo build","expect_exit_code":0}
+{"id":"non_build_desc","case":"build_desc_exit","description":"阅读 README","expect_exit_code":null}
+{"id":"exit_parse_cn","case":"exit_code_parse","output":"退出码：0","expect":0}
+{"id":"exit_parse_paren","case":"exit_code_parse","output":"(exit=1)","expect":1}
+{"id":"exit_parse_none","case":"exit_code_parse","output":"plain output","expect":null}
+{"id":"verify_exit_ok","case":"verify","spec":{"expect_exit_code":0},"evidence":{"fallback_exit_code":0},"expect":"pass"}
+{"id":"verify_exit_mismatch","case":"verify","spec":{"expect_exit_code":0},"evidence":{"fallback_exit_code":1},"expect":"fail","reason_contains":"exit_code_mismatch"}
+{"id":"verify_stdout_ok","case":"verify","spec":{"expect_stdout_contains":"ok"},"evidence":{"stdout":"all ok"},"expect":"pass"}
+{"id":"verify_stdout_miss","case":"verify","spec":{"expect_stdout_contains":"missing"},"evidence":{"stdout":"all ok"},"expect":"fail","reason_contains":"stdout_missing"}
