@@ -115,6 +115,7 @@ impl ManagerAgent {
         api_key: &str,
         working_dir: &std::path::Path,
         tools_defs: &[crate::types::Tool],
+        turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
     ) -> Result<ManagerOutput, ManagerError> {
         log::info!(target: "crabmate", "[HIERARCHICAL] Manager: decomposing task={}", truncate_task(task));
 
@@ -176,7 +177,8 @@ impl ManagerAgent {
                 LlmRetryingTransportOpts::headless_no_stream(),
                 None,
                 None,
-            ),
+            )
+            .with_turn_budget(turn_budget),
             &request,
         )
         .await
@@ -190,10 +192,13 @@ impl ManagerAgent {
                     .parse_output_with_one_json_repair(
                         &content,
                         Some(finish_reason.as_str()),
-                        cfg,
-                        llm_backend,
-                        client,
-                        api_key,
+                        ManagerLlmContext {
+                            cfg,
+                            llm_backend,
+                            client,
+                            api_key,
+                            turn_budget,
+                        },
                     )
                     .await?;
 
@@ -274,7 +279,8 @@ impl ManagerAgent {
                 LlmRetryingTransportOpts::headless_no_stream(),
                 None,
                 None,
-            ),
+            )
+            .with_turn_budget(llm.turn_budget),
             &request,
         )
         .await
@@ -284,15 +290,8 @@ impl ManagerAgent {
                     .unwrap_or("")
                     .trim()
                     .to_string();
-                self.parse_output_with_one_json_repair(
-                    &content,
-                    Some(finish_reason.as_str()),
-                    llm.cfg,
-                    llm.llm_backend,
-                    llm.client,
-                    llm.api_key,
-                )
-                .await
+                self.parse_output_with_one_json_repair(&content, Some(finish_reason.as_str()), llm)
+                    .await
             }
             Err(e) => {
                 log::warn!(target: "crabmate", "Manager replan LLM call failed: {}, falling back to original plan", e);
@@ -356,7 +355,8 @@ impl ManagerAgent {
             LlmRetryingTransportOpts::headless_no_stream(),
             None,
             None,
-        );
+        )
+        .with_turn_budget(llm.turn_budget);
 
         match complete_chat_retrying(&params, &request).await {
             Ok((response, _finish_reason)) => {

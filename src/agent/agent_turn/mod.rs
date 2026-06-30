@@ -15,7 +15,11 @@ use log::debug;
 use tracing::info;
 
 use crate::agent::per_coord::{PerCoordinator, PerCoordinatorInit};
-use crate::config::PlannerExecutorMode;
+
+use self::orchestration_entry::{
+    TurnOrchestrationTransition, TurnTopLevelDispatch, log_orchestration_transition,
+    resolve_turn_top_level_dispatch,
+};
 
 mod completion_suppression;
 mod errors;
@@ -25,6 +29,7 @@ mod hierarchical_intent_route;
 mod hierarchy;
 mod intent;
 mod messages;
+mod orchestration_entry;
 mod outer_loop;
 mod outer_loop_build_idle;
 mod outer_loop_fsm;
@@ -84,14 +89,18 @@ pub(crate) async fn run_agent_turn_common(
     );
     p.turn.insert_separator_after_last_user_for_turn();
 
-    let hierarchical =
-        p.ctx.core.cfg.per_plan_policy.planner_executor_mode == PlannerExecutorMode::Hierarchical;
+    let top_dispatch = resolve_turn_top_level_dispatch(p.ctx.core.cfg.as_ref());
+    log_orchestration_transition(
+        TurnOrchestrationTransition::EnterCommon,
+        None,
+        &[("top_level_dispatch", top_dispatch.as_str())],
+    );
     info!(
         target: "crabmate::agent_turn",
         planner_executor_mode = p.ctx.core.cfg.per_plan_policy.planner_executor_mode.as_str(),
         staged_plan_execution = p.ctx.core.cfg.staged_planning.staged_plan_execution,
         intent_at_turn_start_enabled = p.ctx.core.cfg.intent_routing.intent_at_turn_start_enabled,
-        hierarchical,
+        top_level_dispatch = top_dispatch.as_str(),
         "run_agent_turn_common enter"
     );
 
@@ -99,10 +108,22 @@ pub(crate) async fn run_agent_turn_common(
         p.ctx.core.cfg.as_ref(),
     ));
 
-    if hierarchical {
-        // 意图门控在 `hierarchy::run_hierarchical_agent` 内通过 `run_intent_for_hierarchical` 执行（与 L0/合并文本一致），勿在此重复。
-        run_dispatch::dispatch_hierarchical_turn(p, &mut per_coord).await
-    } else {
-        run_dispatch::dispatch_non_hierarchical_turn(p, &mut per_coord).await
+    match top_dispatch {
+        TurnTopLevelDispatch::Hierarchical => {
+            log_orchestration_transition(
+                TurnOrchestrationTransition::DispatchHierarchical,
+                Some(crate::agent::agent_turn::turn_orchestration::TurnOrchestrationMode::Hierarchical.as_str()),
+                &[],
+            );
+            run_dispatch::dispatch_hierarchical_turn(p, &mut per_coord).await
+        }
+        TurnTopLevelDispatch::NonHierarchical => {
+            log_orchestration_transition(
+                TurnOrchestrationTransition::DispatchNonHierarchical,
+                None,
+                &[],
+            );
+            run_dispatch::dispatch_non_hierarchical_turn(p, &mut per_coord).await
+        }
     }
 }

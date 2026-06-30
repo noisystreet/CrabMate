@@ -40,7 +40,8 @@ impl<'p> AgentLlmCall<'p> {
                 .llm
                 .planner_model
                 .as_deref()),
-        );
+        )
+        .with_turn_budget(Some(&self.p.turn.turn_budget));
         complete_chat_retrying(&cc, req).await
     }
 }

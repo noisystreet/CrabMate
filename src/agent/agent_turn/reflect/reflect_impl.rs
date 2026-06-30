@@ -100,6 +100,7 @@ async fn reflect_pending_semantic_consistency_llm(
                 .cfg
                 .per_plan_policy
                 .final_plan_semantic_check_max_tokens,
+            turn_budget: Some(&p.turn.turn_budget),
         },
         plan_json.as_str(),
         tool_digest.as_deref(),

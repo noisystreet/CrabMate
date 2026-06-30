@@ -76,6 +76,7 @@ impl super::HierarchicalExecutor {
                     llm_backend: g.llm_backend,
                     client: g.client,
                     api_key: g.api_key,
+                    turn_budget: self.turn_budget.as_ref(),
                 },
                 g.working_dir,
                 &self.tools_defs,

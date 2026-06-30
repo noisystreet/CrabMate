@@ -227,6 +227,7 @@ async fn run_intent_l0_l1_l2_gate(
         llm_backend: p.ctx.core.llm_backend,
         client: p.ctx.core.client,
         api_key: p.ctx.core.api_key,
+        turn_budget: Some(&p.turn.turn_budget),
     };
     let outcome = assess_intent_routing_full_pipeline(
         &host,

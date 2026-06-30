@@ -14,6 +14,7 @@ pub struct CrabmateIntentL2ClassifierHost<'a> {
     pub llm_backend: &'a dyn ChatCompletionsBackend,
     pub client: &'a Client,
     pub api_key: &'a str,
+    pub turn_budget: Option<&'a std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
 }
 
 #[async_trait]
@@ -30,6 +31,7 @@ impl IntentL2ClassifierHost for CrabmateIntentL2ClassifierHost<'_> {
             self.llm_backend,
             self.client,
             self.api_key,
+            self.turn_budget,
         )
         .await
         {

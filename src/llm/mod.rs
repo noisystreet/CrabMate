@@ -49,6 +49,11 @@ pub async fn complete_chat_retrying(
     p: &CompleteChatRetryingParams<'_>,
     request: &ChatRequest,
 ) -> Result<(Message, String), LlmCompleteError> {
+    if let Some(budget) = p.turn_budget
+        && let Err(msg) = budget.deny_llm_call_if_exhausted(&p.cfg.turn_budget)
+    {
+        return Err(LlmCompleteError::Other(msg.into()));
+    }
     let _llm_trace = p
         .request_chrome_trace
         .as_ref()
@@ -59,5 +64,11 @@ pub async fn complete_chat_retrying(
         stream: p.stream_params(),
         cfg: p.cfg,
     };
-    crabmate_llm::complete_chat_retrying(&core, &hooks, request).await
+    let result = crabmate_llm::complete_chat_retrying(&core, &hooks, request).await;
+    if result.is_ok()
+        && let Some(budget) = p.turn_budget
+    {
+        budget.record_llm_call();
+    }
+    result
 }

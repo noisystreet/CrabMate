@@ -2,8 +2,9 @@
 //!
 //! 当 `planner_executor_mode = Hierarchical` 时使用此模块执行任务分解和子目标执行。
 
-use super::hierarchical_intent_route::{
-    HierarchicalPostIntentRoute, resolve_hierarchical_post_intent_route,
+use super::hierarchical_intent_route::HierarchicalPostIntentRoute;
+use super::orchestration_entry::{
+    HierarchicalTurnEntryResolution, TurnOrchestrationTransition, log_orchestration_transition,
 };
 use crate::agent::hierarchy::{self, HierarchyRunnerResult};
 use crate::agent::per_coord::PerCoordinator;
@@ -127,7 +128,22 @@ pub(crate) async fn run_hierarchical_agent(
         intent_at_turn_start::IntentGateResult::ProceedExecute { assessment } => assessment,
     };
 
-    let post_intent = resolve_hierarchical_post_intent_route(&assessment);
+    let entry = HierarchicalTurnEntryResolution::resolve(&assessment);
+    let post_intent = entry.post_intent_route;
+    log_orchestration_transition(
+        TurnOrchestrationTransition::HierarchicalPostIntentResolved,
+        Some(entry.orchestration_mode.as_str()),
+        &[
+            ("hierarchical_post_intent_route", post_intent.as_str()),
+            (
+                "hierarchical_discourse_fallback_reason",
+                match post_intent {
+                    HierarchicalPostIntentRoute::DiscourseFallbackOuter(r) => r.as_str(),
+                    HierarchicalPostIntentRoute::RouterManagerRunner => "",
+                },
+            ),
+        ],
+    );
     match post_intent {
         HierarchicalPostIntentRoute::DiscourseFallbackOuter(reason) => {
             crate::turn_replay_dump::append_decision_point_event_if_configured(

@@ -101,6 +101,21 @@ impl TurnBudgetCounter {
     pub fn outer_loop_iterations_exceeded(&self, max_outer_loop_iterations: u32) -> bool {
         max_outer_loop_iterations > 0 && self.outer_loop_iterations() >= max_outer_loop_iterations
     }
+
+    /// 若已超墙钟或 LLM 次数上限则返回面向用户的短消息（供 [`complete_chat_retrying`] 等统一门禁）。
+    #[inline]
+    pub fn deny_llm_call_if_exhausted(&self, cfg: &TurnBudgetConfig) -> Result<(), String> {
+        if self.wall_clock_exceeded(cfg) {
+            return Err(turn_wall_clock_limit_user_message(
+                cfg.max_turn_duration_seconds,
+            ));
+        }
+        let max_llm = effective_max_llm_calls_per_turn(cfg);
+        if self.llm_calls_exceeded(max_llm) {
+            return Err(turn_llm_calls_limit_user_message(max_llm));
+        }
+        Ok(())
+    }
 }
 
 /// 解析有效 LLM 调用上限（配置为 0 时回退默认常量）。
@@ -144,5 +159,16 @@ mod tests {
         assert_eq!(c.record_llm_call(), 1);
         assert_eq!(c.record_llm_call(), 2);
         assert_eq!(c.record_outer_loop_iteration(), 1);
+    }
+
+    #[test]
+    fn deny_llm_when_calls_at_cap() {
+        let c = TurnBudgetCounter::new_shared();
+        let mut cfg = crabmate_config::load_config(None).expect("embed default config");
+        cfg.turn_budget.max_llm_calls_per_turn = 2;
+        assert!(c.deny_llm_call_if_exhausted(&cfg.turn_budget).is_ok());
+        c.record_llm_call();
+        c.record_llm_call();
+        assert!(c.deny_llm_call_if_exhausted(&cfg.turn_budget).is_err());
     }
 }

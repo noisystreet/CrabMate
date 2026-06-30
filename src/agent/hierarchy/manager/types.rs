@@ -12,6 +12,7 @@ pub struct ManagerLlmContext<'a> {
     pub llm_backend: &'a dyn ChatCompletionsBackend,
     pub client: &'a reqwest::Client,
     pub api_key: &'a str,
+    pub turn_budget: Option<&'a std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
 }
 
 /// Manager Agent 配置

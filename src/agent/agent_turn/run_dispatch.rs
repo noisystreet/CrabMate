@@ -12,12 +12,13 @@ use super::errors::RunAgentTurnError;
 use super::hierarchy;
 use super::intent::{StagedPlanningGateOutcome, assess_staged_planning_gate_full_pipeline};
 use super::intent_at_turn_start;
+use super::orchestration_entry::{
+    TurnOrchestrationTransition, log_orchestration_transition, resolve_non_hierarchical_entry,
+};
 use super::outer_loop::run_agent_outer_loop;
 use super::params::RunLoopParams;
 use super::staged::run_non_hierarchical_staged_route;
-use super::turn_orchestration::{
-    NonHierarchicalEntryResolution, NonHierarchicalMainRoute, TurnOrchestrationMode,
-};
+use super::turn_orchestration::{NonHierarchicalMainRoute, TurnOrchestrationMode};
 
 /// 执行非分层主路径（与 [`resolve_non_hierarchical_main_route`] 产物一一对应）。
 pub(crate) async fn execute_non_hierarchical_main_route(
@@ -79,9 +80,23 @@ pub(crate) async fn dispatch_non_hierarchical_turn(
             "staged_plan_intent_gate deny detail"
         );
     }
-    let entry = NonHierarchicalEntryResolution::resolve(p.ctx.core.cfg.as_ref(), &staged_gate);
+    let entry = resolve_non_hierarchical_entry(p.ctx.core.cfg.as_ref(), &staged_gate);
     let main_route = entry.main_route;
     let mode = entry.orchestration_mode;
+    log_orchestration_transition(
+        TurnOrchestrationTransition::NonHierarchicalEntryResolved,
+        Some(mode.as_str()),
+        &[
+            ("non_hierarchical_main_route", main_route.as_str()),
+            (
+                "single_agent_outer_loop_because",
+                entry
+                    .single_agent_outer_loop_because
+                    .map(|b| b.as_str())
+                    .unwrap_or(""),
+            ),
+        ],
+    );
     tracing::info!(
         target: "crabmate::agent_turn",
         turn_orchestration_mode = mode.as_str(),

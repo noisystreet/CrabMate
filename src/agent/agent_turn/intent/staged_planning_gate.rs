@@ -39,6 +39,7 @@ pub(crate) async fn assess_staged_planning_gate_full_pipeline(
         llm_backend: p.ctx.core.llm_backend,
         client: p.ctx.core.client,
         api_key: p.ctx.core.api_key,
+        turn_budget: Some(&p.turn.turn_budget),
     };
     let outcome = assess_intent_routing_full_pipeline(
         &host,

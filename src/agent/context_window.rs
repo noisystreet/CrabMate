@@ -170,16 +170,14 @@ pub async fn maybe_summarize_with_llm(
         return Ok(());
     };
 
-    if let Some(budget) = turn_budget {
-        let max_llm = crate::agent::turn_budget::effective_max_llm_calls_per_turn(&cfg.turn_budget);
-        if budget.llm_calls_exceeded(max_llm) {
-            warn!(
-                target: "crabmate",
-                "上下文摘要跳过：已达单轮 LLM 调用上限 ({max_llm})"
-            );
-            return Ok(());
-        }
-        budget.record_llm_call();
+    if let Some(budget) = turn_budget
+        && budget.deny_llm_call_if_exhausted(&cfg.turn_budget).is_err()
+    {
+        warn!(
+            target: "crabmate",
+            "上下文摘要跳过：已达单轮 LLM 调用或墙钟上限"
+        );
+        return Ok(());
     }
 
     let sum_messages = vec![
@@ -214,7 +212,8 @@ pub async fn maybe_summarize_with_llm(
         },
         None,
         None,
-    );
+    )
+    .with_turn_budget(turn_budget);
     match complete_chat_retrying(&cc, &req).await {
         Ok((msg, _)) => {
             let summary_text = message_content_into_text_lossy(msg.content);
