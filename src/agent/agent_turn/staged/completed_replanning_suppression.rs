@@ -1,4 +1,6 @@
-use crate::agent::agent_turn::completion_suppression::plan_steps_are_redundant_after_completion;
+use crate::agent::agent_turn::completion_suppression::{
+    plan_steps_are_redundant_after_completion, plan_steps_require_formal_execution,
+};
 use crate::agent::agent_turn::params::RunLoopParams;
 use crate::agent::agent_turn::task_level_evidence::{
     GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
@@ -12,6 +14,9 @@ pub(super) fn should_suppress_completed_replanning(
     steps: &[PlanStepV1],
 ) -> bool {
     if !entered_from_step_execution_round || steps.is_empty() {
+        return false;
+    }
+    if plan_steps_require_formal_execution(steps) {
         return false;
     }
     let satisfied = matches!(
@@ -59,25 +64,13 @@ mod tests {
     }
 
     #[test]
-    fn suppresses_verification_and_summary_plan_after_completion() {
+    fn suppresses_probe_only_plan_after_completion() {
         let steps = vec![
             step("rerun-demo", Some("verify"), "重新运行 demo 确认输出"),
             step("verify-product-exists", None, "检查产物是否存在"),
             step("final-summary", Some("summary"), "汇报最终结果"),
         ];
-
         assert!(plan_steps_are_redundant_after_completion(&steps));
-    }
-
-    #[test]
-    fn does_not_suppress_followup_write_or_fix_plan() {
-        let steps = vec![step(
-            "fix-tests",
-            Some("implement"),
-            "修复失败测试并修改实现",
-        )];
-
-        assert!(!plan_steps_are_redundant_after_completion(&steps));
     }
 
     #[test]

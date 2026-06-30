@@ -41,13 +41,13 @@ pub enum FileResolveKind {
     WorkspaceJoin,
 }
 
-/// `expect_exit_code` 在缺少结构化退出码时的策略（分阶段默认按 0；分层历史上「抠不到则放过」）。
+/// `expect_exit_code` 在缺少结构化退出码时的策略（分阶段与分层共用 **`DefaultZeroIfMissing`**）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ExitCodePolicy {
-    /// 与 `step_verifier` 一致：`tool_error` / fallback 均无则视为 **0**。
+    /// 与 `step_verifier` / `GoalVerifier` 一致：`tool_error` / fallback 均无则视为 **0**。
     #[default]
     DefaultZeroIfMissing,
-    /// 与分层 `GoalVerifier::verify_exit_code` 一致：解析不到则**不**因退出码失败。
+    /// 解析不到则**不**因退出码失败（仅金样/遗留对照；生产路径应使用 `DefaultZeroIfMissing`）。
     LenientIfUnparsed,
 }
 

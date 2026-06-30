@@ -10,6 +10,7 @@ mod ci_tools;
 mod code_metrics;
 mod code_nav;
 mod command;
+pub use command::{RunCommandError, run_checked};
 mod command_line_prepare;
 pub use command_line_prepare::split_command_prefix_if_embedded;
 mod container_tools;

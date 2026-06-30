@@ -3,10 +3,12 @@
 //! 拆为 `common` / `verify` / `render` 子模块，避免单文件内 `r#""#` 导致 lizard 将后续函数误并为一条度量。
 
 mod common;
+mod early_exit;
 mod render;
 mod verify;
 
 pub(crate) use common::is_program_build_run_request;
+pub(crate) use early_exit::task_level_satisfied_allows_staged_early_exit;
 pub(crate) use render::render_task_level_evidence;
 pub(crate) use verify::{
     GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,

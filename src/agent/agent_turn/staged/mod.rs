@@ -705,10 +705,14 @@ where
                         StagedPlanStagnationAction::StopAfterRepeatedPlan => {
                             warn!(
                                 target: "crabmate::staged",
-                                "staged plan stagnation: identical plan after step round exceeded auto-replan cap; finishing (step_count={})",
+                                "staged plan stagnation: identical plan after step round exceeded auto-replan cap (step_count={})",
                                 plan.steps.len(),
                             );
-                            return Ok(StagedPlanRunOutcome::Finished);
+                            return Err(RunAgentTurnError::ReplanExhausted {
+                                phase: AgentTurnSubPhase::Planner,
+                                message: "分阶段规划停滞：步后多轮仍重复相同计划，已停止（请检查验收条件或简化任务）"
+                                    .to_string(),
+                            });
                         }
                         StagedPlanStagnationAction::ReplanWithFeedback(user_body) => {
                             warn!(

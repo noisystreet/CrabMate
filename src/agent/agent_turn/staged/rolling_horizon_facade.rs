@@ -14,9 +14,7 @@ use crate::types::{
 
 use super::super::errors::{AgentTurnSubPhase, RunAgentTurnError};
 use super::super::params::RunLoopParams;
-use super::super::task_level_evidence::{
-    GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
-};
+use super::super::task_level_evidence::task_level_satisfied_allows_staged_early_exit;
 use super::turn_fsm::{
     StagedTurnAdvance, StagedTurnPhase, StagedTurnSubCallOutcome,
     entered_flag_for_next_planner_call, staged_rolling_horizon_apply_advance,
@@ -62,10 +60,7 @@ fn staged_goal_completion_satisfied_after_step(
     if !matches!(phase, StagedTurnPhase::AfterStepExecutionRound) {
         return false;
     }
-    matches!(
-        check_active_user_goal_completion_evidence(p.turn.messages()),
-        GoalCompletionEvidenceCheck::Satisfied
-    )
+    task_level_satisfied_allows_staged_early_exit(p.turn.messages())
 }
 
 fn staged_rolling_horizon_preflight_exit(
