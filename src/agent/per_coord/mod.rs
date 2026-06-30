@@ -6,6 +6,7 @@
 //! 终答规划门控（`after_final_assistant` 决策树）见 [`final_plan_gate`]。
 
 pub(crate) mod final_plan_gate;
+mod final_plan_gate_reason;
 mod per_turn_state;
 
 /// 何时要求模型在**最终** assistant 正文中嵌入可解析的 `agent_reply_plan` v1（见 `plan_artifact`）。

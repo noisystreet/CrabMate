@@ -2,6 +2,9 @@
 
 use super::full_pipeline_fsm::StagedFullPipelinePhase;
 use super::prepared_parse_fsm::PreparedPlannerRoute;
+use super::step_patch_route_fsm::{
+    StagedStepPatchFailureKind, resolve_staged_step_patch_failure_kind,
+};
 use super::steps_loop_route_fsm::resolve_staged_step_post_outer_route_from_results;
 use super::turn_fsm::StagedTurnPhase;
 use super::turn_orchestrator_fsm::{
@@ -151,6 +154,33 @@ fn assert_steps_loop_post_outer(ctx: &str, body: &serde_json::Value) {
     assert_eq!(got.as_str(), expect, "{ctx}: post outer route");
 }
 
+fn assert_step_patch_failure_kind(ctx: &str, body: &serde_json::Value) {
+    let expect = body_str(body, "expect", ctx);
+    if let Some(kind_label) = body.get("kind").and_then(|v| v.as_str()) {
+        assert_eq!(
+            kind_label,
+            StagedStepPatchFailureKind::ToolMessagesNotOk.as_str(),
+            "{ctx}"
+        );
+        return;
+    }
+    let verify_reason = body
+        .get("verify_reason")
+        .map(|v| {
+            if v.is_null() {
+                None
+            } else {
+                Some(v.as_str().expect("verify_reason str").to_string())
+            }
+        })
+        .unwrap_or(None);
+    let has_outer_error = body["has_outer_error"].as_bool().unwrap_or(false);
+    let got = resolve_staged_step_patch_failure_kind(&verify_reason, has_outer_error)
+        .map(|k| k.as_str().to_string())
+        .unwrap_or_else(|| "none".to_string());
+    assert_eq!(got, expect, "{ctx}: patch failure kind");
+}
+
 fn assert_golden_fsm_line(ctx: &str, row: &GoldenLine) {
     match row.case.as_str() {
         "orchestrator_prepared_route" => assert_orchestrator_prepared_route(ctx, &row.body),
@@ -162,6 +192,7 @@ fn assert_golden_fsm_line(ctx: &str, row: &GoldenLine) {
         "outer_loop_reflect_ctl" => assert_outer_loop_reflect_ctl(ctx, &row.body),
         "outer_loop_iteration_exit" => assert_outer_loop_iteration_exit(ctx, &row.body),
         "steps_loop_post_outer" => assert_steps_loop_post_outer(ctx, &row.body),
+        "step_patch_failure_kind" => assert_step_patch_failure_kind(ctx, &row.body),
         other => panic!("{ctx}: unknown case {other}"),
     }
 }

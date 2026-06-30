@@ -32,6 +32,7 @@ mod prepared_post_parse_fsm;
 mod rolling_horizon_facade;
 mod sse;
 mod staged_step_fsm;
+mod staged_step_patch_recover;
 mod step_after_outer;
 mod step_failure_exit;
 mod step_iteration_fsm;
