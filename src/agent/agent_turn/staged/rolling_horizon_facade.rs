@@ -147,6 +147,8 @@ where
             rolling_horizon_kind = ?kind,
             staged_round = staged_rounds,
             staged_turn_phase = ?phase,
+            staged_turn_orchestrator_phase =
+                super::turn_orchestrator_fsm::orchestrator_phase_for_turn_phase(phase).as_str(),
             rewrite_attempts = rewrite_attempts,
             sub_phase = "planner",
             "staged rolling horizon iteration enter"

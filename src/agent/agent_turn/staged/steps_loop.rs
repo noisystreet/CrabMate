@@ -47,6 +47,10 @@ use super::step_iteration_fsm::{
     staged_step_verify_fail_patch_detail, staged_step_wall_clock_exceeded,
 };
 use super::step_loop_fsm::staged_injected_step_user_body;
+use super::turn_orchestrator_fsm::{
+    StagedTurnOrchestratorPhase, orchestrator_phase_for_round_orchestrator,
+    orchestrator_phase_for_steps_loop_trace,
+};
 use super::{StagedPlanRunLabels, StagedPlanRunOutcome};
 
 fn staged_patch_merged_plan_unchanged(before: &[PlanStepV1], merged: &[PlanStepV1]) -> bool {
@@ -284,6 +288,18 @@ where
     let effective_acceptance = crate::agent::acceptance::effective_plan_step_acceptance(step);
     for (attempt_idx, _) in (0..patch_budget).enumerate() {
         let attempt_1based = attempt_idx.saturating_add(1);
+        tracing::debug!(
+            target: "crabmate::staged",
+            staged_fsm = "steps_loop",
+            steps_loop_phase = "patch_replanner_attempt",
+            staged_turn_orchestrator_phase = StagedTurnOrchestratorPhase::PatchReplanner.as_str(),
+            plan_id,
+            step_index = i,
+            patch_attempt = attempt_1based,
+            patch_budget,
+            sub_phase = "planner",
+            "staged step failure patch planner attempt"
+        );
         let detail_owned = if let Some(vr) = step_verify_failed_reason {
             if staged_step_empty_execution_is_reason(vr) {
                 staged_step_empty_execution_patch_detail(vr, effective_acceptance.as_ref())
@@ -389,6 +405,18 @@ where
     let effective_acceptance = crate::agent::acceptance::effective_plan_step_acceptance(step);
     for (attempt_idx, _) in (0..tool_patch_budget).enumerate() {
         let attempt_1based = attempt_idx.saturating_add(1);
+        tracing::debug!(
+            target: "crabmate::staged",
+            staged_fsm = "steps_loop",
+            steps_loop_phase = "patch_replanner_tool_failure",
+            staged_turn_orchestrator_phase = StagedTurnOrchestratorPhase::PatchReplanner.as_str(),
+            plan_id,
+            step_index = i,
+            patch_attempt = attempt_1based,
+            patch_budget = tool_patch_budget,
+            sub_phase = "planner",
+            "staged step tool failure patch planner attempt"
+        );
         let detail_owned = staged_step_tool_failure_patch_detail(
             patch_ctx.p.turn.messages(),
             step_user_index,
@@ -705,6 +733,8 @@ where
         target: "crabmate::staged",
         staged_fsm = "steps_loop",
         steps_loop_phase = "steps_executing_enter",
+        staged_turn_orchestrator_phase = orchestrator_phase_for_round_orchestrator(orch_phase)
+            .as_str(),
         staged_round_orchestrator_phase = ?orch_phase,
         plan_id = plan_id.as_str(),
         step_count = n,
@@ -722,6 +752,8 @@ where
             target: "crabmate::staged",
             staged_fsm = "steps_loop",
             steps_loop_phase = "step_running",
+            staged_turn_orchestrator_phase =
+                orchestrator_phase_for_steps_loop_trace("step_running").as_str(),
             plan_id = plan_id.as_str(),
             step_index = i,
             step_count = n,
