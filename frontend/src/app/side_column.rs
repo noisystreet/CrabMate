@@ -211,6 +211,7 @@ fn SideColumnWorkspaceCard(
     let ctx_actions = StoredValue::new(WorkspaceContextMenuActions {
         refresh_after_mutation,
         ide_tabs: None,
+        ide_confirm: None,
     });
     view! {
         <div class="side-pane" style:flex="1" style:min-width="0">

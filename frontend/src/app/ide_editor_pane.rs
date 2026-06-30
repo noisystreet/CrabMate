@@ -106,6 +106,7 @@ pub fn IdeEditorPane(
                     <textarea
                         node_ref=textarea_ref
                         class="ide-editor-textarea"
+                        data-testid="ide-editor-textarea"
                         prop:spellcheck="false"
                         prop:placeholder=move || {
                             if ide_path.get().is_none() {

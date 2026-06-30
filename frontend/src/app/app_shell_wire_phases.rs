@@ -155,6 +155,7 @@ fn wire_phase3_escape_layered_dismiss(app: &AppSignals) {
         workspace_pending_create: app.workspace.workspace_pending_create,
         sidebar_rail_ctx_menu: app.sidebar.sidebar_rail_ctx_menu,
         chat_find_panel_open: app.chat_composer.chat_find_panel_open,
+        ide_chrome: app.ide_chrome,
         sidebar_search_panel_open: app.sidebar.sidebar_search_panel_open,
         view_menu_open: app.shell_ui.view_menu_open,
         ide_menubar_dropdown_open: app.shell_ui.ide_menubar_dropdown_open,
@@ -175,6 +176,7 @@ fn wire_phase3_escape_layered_dismiss(app: &AppSignals) {
     });
     wire_ide_editor_hotkeys(IdeEditorHotkeySignals {
         shell_ui: app.shell_ui,
+        chrome: app.ide_chrome,
         ide_settings_page: app.modal.ide_settings_page,
     });
 }

@@ -7,6 +7,7 @@ use leptos::task::spawn_local;
 
 use crate::confirm_dialog::confirm_user_message;
 use crate::i18n::Locale;
+use crate::ide_confirm::IdeConfirmSignals;
 use crate::ide_tabs::{IdeTabsEditorSignals, IdeTabsHandle};
 
 /// 工作区树右键菜单锚点（`position: fixed` 使用视口坐标）。
@@ -51,6 +52,7 @@ pub struct WorkspaceTreeRefreshHint {
 pub struct WorkspaceContextMenuActions {
     pub refresh_after_mutation: std::sync::Arc<dyn Fn(WorkspaceTreeRefreshHint) + Send + Sync>,
     pub ide_tabs: Option<(IdeTabsHandle, IdeTabsEditorSignals)>,
+    pub ide_confirm: Option<IdeConfirmSignals>,
 }
 
 pub fn name_segment_valid(name: &str) -> bool {

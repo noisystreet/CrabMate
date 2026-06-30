@@ -12,9 +12,12 @@ pub(crate) mod app_signals;
 mod approval_modal;
 mod changelist_modal;
 mod chat;
+mod ide_confirm_dialog;
 mod ide_editor_pane;
+mod ide_find_bar;
 mod ide_layout;
 mod ide_menu_bar;
+mod ide_new_file_modal;
 mod ide_settings_page;
 mod ide_tabs_bar;
 mod layout_mode_segment;
@@ -59,6 +62,7 @@ use approval_modal::ApprovalModal;
 use changelist_modal::changelist_modal_view;
 use chat::ChatFindBar;
 use chat::chat_column_view;
+use ide_confirm_dialog::IdeConfirmDialog;
 use ide_layout::{IdeLayoutShellSignals, IdeLayoutView};
 use ide_settings_page::IdeSettingsPageView;
 use mobile_shell_header::mobile_shell_header_view;
@@ -155,6 +159,7 @@ pub fn App() -> impl IntoView {
                         <IdeLayoutView shell=IdeLayoutShellSignals {
                             locale: app_ctx.signals.shell_ui.locale,
                             shell_ui: app_ctx.signals.shell_ui,
+                            chrome: app_ctx.signals.ide_chrome,
                             editor: app_ctx.signals.ide_editor,
                             editor_layout_mode: app_ctx.signals.shell_ui.editor_layout_mode,
                             ide_settings_page: app_ctx.signals.modal.ide_settings_page,
@@ -184,6 +189,10 @@ pub fn App() -> impl IntoView {
 
             <SettingsPageView input=settings_page_view_input />
             <IdeSettingsPageView input=ide_settings_page_view_input />
+            <IdeConfirmDialog
+                locale=app_ctx.signals.shell_ui.locale
+                chrome=app_ctx.signals.ide_chrome
+            />
         </div>
     }
 }

@@ -7,6 +7,7 @@ use leptos::task::spawn_local;
 
 use crate::api::{WorkspaceFileReadData, fetch_workspace_file};
 use crate::i18n::{self, Locale};
+use crate::ide_confirm::{IdeConfirmSignals, ide_confirm_user};
 
 /// 单个已打开文件的缓冲。
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -133,11 +134,8 @@ pub fn ide_tab_basename(path: &str) -> String {
     path.rsplit(['/', '\\']).next().unwrap_or(path).to_string()
 }
 
-fn confirm_discard(locale: Locale) -> bool {
-    let msg = i18n::ide_dirty_confirm(locale);
-    web_sys::window()
-        .and_then(|w| w.confirm_with_message(msg).ok())
-        .unwrap_or(false)
+async fn confirm_discard(locale: Locale, confirm: IdeConfirmSignals) -> bool {
+    ide_confirm_user(confirm, i18n::ide_dirty_confirm(locale).to_string()).await
 }
 
 pub fn apply_fetch_to_new_tab(
@@ -186,11 +184,12 @@ pub fn wire_ide_editor_sync_to_active_tab(
     });
 }
 
-pub fn try_switch_tab(
+pub async fn try_switch_tab(
     tabs: IdeTabsHandle,
     index: usize,
     locale: RwSignal<Locale>,
     editor: IdeTabsEditorSignals,
+    confirm: IdeConfirmSignals,
 ) -> bool {
     let IdeTabsEditorSignals {
         ide_path,
@@ -201,7 +200,7 @@ pub fn try_switch_tab(
         return true;
     }
     if tabs.active_editor_is_dirty(ide_text, ide_baseline)
-        && !confirm_discard(locale.get_untracked())
+        && !confirm_discard(locale.get_untracked(), confirm).await
     {
         return false;
     }
@@ -209,11 +208,12 @@ pub fn try_switch_tab(
     true
 }
 
-pub fn close_tab_at(
+pub async fn close_tab_at(
     tabs: IdeTabsHandle,
     index: usize,
     locale: RwSignal<Locale>,
     editor: IdeTabsEditorSignals,
+    confirm: IdeConfirmSignals,
 ) {
     let IdeTabsEditorSignals {
         ide_path,
@@ -222,13 +222,13 @@ pub fn close_tab_at(
     } = editor;
     let closing_active = tabs.active.get_untracked() == Some(index);
     if closing_active && tabs.active_editor_is_dirty(ide_text, ide_baseline) {
-        if !confirm_discard(locale.get_untracked()) {
+        if !confirm_discard(locale.get_untracked(), confirm).await {
             return;
         }
     } else if !closing_active {
         if let Some(tab) = tabs.tabs.get_untracked().get(index)
             && tab.text != tab.baseline
-            && !confirm_discard(locale.get_untracked())
+            && !confirm_discard(locale.get_untracked(), confirm).await
         {
             return;
         }
@@ -314,6 +314,7 @@ pub fn make_ide_open_file_handler(
     locale: RwSignal<Locale>,
     tabs: IdeTabsHandle,
     editor: IdeTabsEditorSignals,
+    confirm: IdeConfirmSignals,
 ) -> Arc<dyn Fn(String) + Send + Sync> {
     let IdeTabsEditorSignals {
         ide_path,
@@ -324,21 +325,21 @@ pub fn make_ide_open_file_handler(
         if tabs.load_busy.get_untracked() || tabs.save_busy.get_untracked() {
             return;
         }
-        if let Some(idx) = tabs.index_of_path(&rel) {
-            let _ = try_switch_tab(tabs, idx, locale, editor);
-            return;
-        }
-        if tabs.active_editor_is_dirty(ide_text, ide_baseline)
-            && !confirm_discard(locale.get_untracked())
-        {
-            return;
-        }
-        tabs.persist_editor_into_active(ide_text, ide_baseline);
-        tabs.load_busy.set(true);
-        tabs.err.set(None);
-        let loc = locale.get_untracked();
-        let rel_c = rel.clone();
         spawn_local(async move {
+            if let Some(idx) = tabs.index_of_path(&rel) {
+                let _ = try_switch_tab(tabs, idx, locale, editor, confirm).await;
+                return;
+            }
+            if tabs.active_editor_is_dirty(ide_text, ide_baseline)
+                && !confirm_discard(locale.get_untracked(), confirm).await
+            {
+                return;
+            }
+            tabs.persist_editor_into_active(ide_text, ide_baseline);
+            tabs.load_busy.set(true);
+            tabs.err.set(None);
+            let loc = locale.get_untracked();
+            let rel_c = rel.clone();
             match fetch_workspace_file(rel_c.as_str(), None, loc).await {
                 Ok(d) => apply_fetch_result(tabs, d, rel_c, ide_path, ide_text, ide_baseline),
                 Err(e) => apply_fetch_error(tabs, e, ide_path),
@@ -346,6 +347,21 @@ pub fn make_ide_open_file_handler(
             tabs.load_busy.set(false);
         });
     })
+}
+
+/// 关闭当前活动标签（快捷键等）；无活动标签时 no-op。
+pub fn spawn_close_active_tab(
+    tabs: IdeTabsHandle,
+    locale: RwSignal<Locale>,
+    editor: IdeTabsEditorSignals,
+    confirm: IdeConfirmSignals,
+) {
+    let Some(index) = tabs.active.get_untracked() else {
+        return;
+    };
+    spawn_local(async move {
+        close_tab_at(tabs, index, locale, editor, confirm).await;
+    });
 }
 
 fn apply_fetch_result(

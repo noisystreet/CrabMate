@@ -1,8 +1,10 @@
 //! IDE 编辑器多标签页标签栏。
 
 use leptos::prelude::*;
+use leptos::task::spawn_local;
 
 use crate::i18n::{self, Locale};
+use crate::ide_confirm::IdeConfirmSignals;
 use crate::ide_tabs::{
     IdeTabsEditorSignals, IdeTabsHandle, close_tab_at, ide_tab_basename, try_switch_tab,
 };
@@ -11,6 +13,7 @@ use crate::ide_tabs::{
 pub struct IdeTabsBarInput {
     pub locale: RwSignal<Locale>,
     pub tabs: IdeTabsHandle,
+    pub confirm: IdeConfirmSignals,
     pub editor: IdeTabsEditorSignals,
 }
 
@@ -19,6 +22,7 @@ pub fn IdeTabsBar(input: IdeTabsBarInput) -> impl IntoView {
     let IdeTabsBarInput {
         locale,
         tabs,
+        confirm,
         editor,
     } = input;
     let IdeTabsEditorSignals {
@@ -64,8 +68,14 @@ pub fn IdeTabsBar(input: IdeTabsBarInput) -> impl IntoView {
                                     prop:aria-selected=move || is_active().to_string()
                                     prop:aria-controls="ide-editor-panel"
                                     prop:title=path.clone()
+                                    data-testid=format!("ide-tab-{}", index)
                                     on:click=move |_| {
-                                        try_switch_tab(tabs, index, locale, editor);
+                                        spawn_local(async move {
+                                            let _ = try_switch_tab(
+                                                tabs, index, locale, editor, confirm,
+                                            )
+                                            .await;
+                                        });
                                     }
                                 >
                                     <Show when=is_dirty>
@@ -82,7 +92,10 @@ pub fn IdeTabsBar(input: IdeTabsBarInput) -> impl IntoView {
                                     }
                                     on:click=move |ev| {
                                         ev.stop_propagation();
-                                        close_tab_at(tabs, index, locale, editor);
+                                        spawn_local(async move {
+                                            close_tab_at(tabs, index, locale, editor, confirm)
+                                                .await;
+                                        });
                                     }
                                 >
                                     <span aria-hidden="true">"×"</span>
