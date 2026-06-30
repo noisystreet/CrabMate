@@ -7,6 +7,7 @@ use leptos::task::spawn_local;
 
 use crate::api::{post_workspace_file_write, post_workspace_file_write_opts};
 use crate::i18n::{self, Locale};
+use crate::ide_confirm::{IdeConfirmSignals, ide_confirm_user};
 use crate::ide_tabs::IdeTabsHandle;
 
 /// 保存/新建时共用的编辑器与标签信号。
@@ -141,7 +142,9 @@ pub fn spawn_save_all_dirty_tabs(ctx: IdeSaveContext, locale: RwSignal<Locale>) 
 }
 
 /// 浏览器 `prompt` 收集新建相对路径；空白或取消返回 `None`。
+/// 已由 IDE 新建文件模态框替代；保留供测试或回退。
 #[must_use]
+#[allow(dead_code)]
 pub fn prompt_new_workspace_file_path(locale: Locale) -> Option<String> {
     let raw = web_sys::window()
         .and_then(|w| {
@@ -162,28 +165,26 @@ pub fn spawn_create_and_open_file(
     locale: RwSignal<Locale>,
     rel: String,
     after_create: Option<Arc<dyn Fn() + Send + Sync>>,
+    confirm: IdeConfirmSignals,
 ) {
     if ctx.tabs.load_busy.get_untracked() || ctx.tabs.save_busy.get_untracked() {
         return;
     }
-    if ctx
-        .tabs
-        .active_editor_is_dirty(ctx.ide_text, ctx.ide_baseline)
-    {
-        let msg = i18n::ide_dirty_confirm(locale.get_untracked());
-        let discard = web_sys::window()
-            .and_then(|w| w.confirm_with_message(msg).ok())
-            .unwrap_or(false);
-        if !discard {
-            return;
-        }
-    }
-    ctx.tabs
-        .persist_editor_into_active(ctx.ide_text, ctx.ide_baseline);
-    ctx.tabs.load_busy.set(true);
-    ctx.ide_err.set(None);
-    let loc = locale.get_untracked();
     spawn_local(async move {
+        if ctx
+            .tabs
+            .active_editor_is_dirty(ctx.ide_text, ctx.ide_baseline)
+        {
+            let loc = locale.get_untracked();
+            if !ide_confirm_user(confirm, i18n::ide_dirty_confirm(loc).to_string()).await {
+                return;
+            }
+        }
+        ctx.tabs
+            .persist_editor_into_active(ctx.ide_text, ctx.ide_baseline);
+        ctx.tabs.load_busy.set(true);
+        ctx.ide_err.set(None);
+        let loc = locale.get_untracked();
         match post_workspace_file_write_opts(rel.clone(), String::new(), true, false, loc).await {
             Ok(()) => {
                 crate::ide_tabs::apply_fetch_to_new_tab(

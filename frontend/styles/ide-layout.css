@@ -443,3 +443,46 @@ html[data-tauri-shell][data-ide-layout] .ide-menu-bar .tauri-window-controls {
 .ide-editor-textarea:disabled {
   opacity: 0.55;
 }
+
+.ide-find-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  padding: 0.35rem 0.65rem;
+  border-bottom: 1px solid var(--shell-border, rgba(0, 0, 0, 0.08));
+  background: var(--surface-1, rgba(0, 0, 0, 0.02));
+}
+
+.ide-find-label {
+  font-size: 0.8rem;
+  color: var(--muted, rgba(0, 0, 0, 0.55));
+}
+
+.ide-find-input {
+  flex: 1;
+  min-width: 8rem;
+  padding: 0.25rem 0.45rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm, 4px);
+  font-size: 0.85rem;
+  background: var(--surface-editor, transparent);
+  color: inherit;
+}
+
+.ide-find-meta {
+  font-size: 0.75rem;
+  color: var(--muted, rgba(0, 0, 0, 0.5));
+  min-width: 3rem;
+  text-align: center;
+}
+
+.ide-find-nav,
+.ide-find-close {
+  flex-shrink: 0;
+}
+
+.ide-confirm-modal .modal-hint {
+  margin: 0;
+  white-space: pre-wrap;
+}

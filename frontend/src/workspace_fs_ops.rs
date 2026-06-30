@@ -140,6 +140,9 @@ pub fn commit_inline_create(
                     locale,
                     rel,
                     Some(after_create),
+                    actions
+                        .ide_confirm
+                        .expect("IDE inline create requires confirm"),
                 );
             } else {
                 spawn_create_workspace_file(rel, locale, workspace_err, actions);

@@ -1,18 +1,11 @@
 //! 「文件」菜单。
 
-use std::sync::Arc;
-
 use leptos::prelude::*;
 
 use super::menu_id::IdeMenuId;
 use super::props::IdeMenuBarSignals;
-use crate::i18n::{self, Locale};
-use crate::ide_save::{
-    IdeSaveContext, prompt_new_workspace_file_path, spawn_create_and_open_file,
-    spawn_save_active_tab, spawn_save_all_dirty_tabs,
-};
-use crate::workspace_context_menu::WorkspaceTreeRefreshHint;
-use crate::workspace_tree::workspace_parent_rel;
+use crate::i18n::{self};
+use crate::ide_save::{spawn_save_active_tab, spawn_save_all_dirty_tabs};
 
 fn toggle_file_menu(
     open_menu: RwSignal<Option<IdeMenuId>>,
@@ -32,42 +25,13 @@ fn close_menus(open_menu: RwSignal<Option<IdeMenuId>>, ide_menubar_dropdown_open
     ide_menubar_dropdown_open.set(false);
 }
 
-fn save_ctx(signals: IdeMenuBarSignals) -> IdeSaveContext {
-    let IdeMenuBarSignals {
-        tabs,
-        ide_path,
-        ide_text,
-        ide_baseline,
-        ide_err,
-        ..
-    } = signals;
-    IdeSaveContext {
-        tabs,
-        ide_path,
-        ide_text,
-        ide_baseline,
-        ide_err,
-    }
-}
-
 fn on_ide_new_file_click(
-    signals: IdeMenuBarSignals,
-    locale: RwSignal<Locale>,
+    chrome: crate::app::app_signals::IdeChromeSignals,
     open_menu: RwSignal<Option<IdeMenuId>>,
     ide_menubar_dropdown_open: RwSignal<bool>,
 ) {
-    let loc = locale.get_untracked();
-    if let Some(rel) = prompt_new_workspace_file_path(loc) {
-        let parent = workspace_parent_rel(rel.as_str());
-        let refresh = signals.refresh_after_mutation.get_value();
-        let after_create = Arc::new(move || {
-            refresh(WorkspaceTreeRefreshHint {
-                parent_rel: parent.clone(),
-                deleted_rel: None,
-            })
-        });
-        spawn_create_and_open_file(save_ctx(signals), locale, rel, Some(after_create));
-    }
+    chrome.new_file_path_draft.set(String::new());
+    chrome.new_file_modal_open.set(true);
     close_menus(open_menu, ide_menubar_dropdown_open);
 }
 
@@ -81,12 +45,11 @@ pub(super) fn IdeMenuFileSection(
 ) -> impl IntoView {
     let IdeMenuBarSignals {
         locale,
+        chrome,
         editor_layout_mode,
-        ide_path: _,
-        ide_text: _,
-        ide_baseline: _,
         ide_load_busy,
         ide_save_busy,
+        save_ctx,
         ..
     } = signals;
 
@@ -109,14 +72,10 @@ pub(super) fn IdeMenuFileSection(
                         type="button"
                         class="ide-menu-item"
                         role="menuitem"
+                        data-testid="ide-menu-new-file"
                         prop:disabled=move || ide_load_busy.get() || ide_save_busy.get()
                         on:click=move |_| {
-                            on_ide_new_file_click(
-                                signals,
-                                locale,
-                                open_menu,
-                                ide_menubar_dropdown_open,
-                            );
+                            on_ide_new_file_click(chrome, open_menu, ide_menubar_dropdown_open);
                         }
                     >
                         {move || i18n::ide_menu_new_file(locale.get())}
@@ -125,9 +84,10 @@ pub(super) fn IdeMenuFileSection(
                         type="button"
                         class="ide-menu-item"
                         role="menuitem"
+                        data-testid="ide-menu-save"
                         prop:disabled=move || !save_enabled.get()
                         on:click=move |_| {
-                            spawn_save_active_tab(save_ctx(signals), locale);
+                            spawn_save_active_tab(save_ctx, locale);
                             close_menus(open_menu, ide_menubar_dropdown_open);
                         }
                     >
@@ -145,7 +105,7 @@ pub(super) fn IdeMenuFileSection(
                         role="menuitem"
                         prop:disabled=move || !save_all_enabled.get()
                         on:click=move |_| {
-                            spawn_save_all_dirty_tabs(save_ctx(signals), locale);
+                            spawn_save_all_dirty_tabs(save_ctx, locale);
                             close_menus(open_menu, ide_menubar_dropdown_open);
                         }
                     >
@@ -155,6 +115,7 @@ pub(super) fn IdeMenuFileSection(
                         type="button"
                         class="ide-menu-item"
                         role="menuitem"
+                        data-testid="ide-menu-back-to-chat"
                         on:click=move |_| {
                             editor_layout_mode.set(false);
                             close_menus(open_menu, ide_menubar_dropdown_open);

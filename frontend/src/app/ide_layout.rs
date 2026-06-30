@@ -4,24 +4,25 @@ use std::sync::Arc;
 
 use leptos::prelude::*;
 
-use crate::app::app_signals::ShellUISignals;
+use crate::app::app_signals::{IdeChromeSignals, IdeEditorSignals, ShellUISignals};
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::{self, Locale};
 use crate::ide_disk_sync::spawn_sync_ide_tabs_from_disk;
 use crate::ide_save::{IdeSaveContext, spawn_save_active_tab, spawn_save_all_dirty_tabs};
 use crate::ide_tabs::{
-    IdeTabsEditorSignals, IdeTabsHandle, make_ide_open_file_handler,
+    IdeTabsEditorSignals, IdeTabsHandle, make_ide_open_file_handler, spawn_close_active_tab,
     wire_ide_editor_sync_to_active_tab,
 };
 
 use super::ide_editor_pane::IdeEditorPane;
+use super::ide_find_bar::{IdeFindBar, IdeFindBarInput, IdeGotoLineBar};
 use super::ide_menu_bar::{IdeMenuBar, IdeMenuBarSignals};
+use super::ide_new_file_modal::{IdeNewFileModal, IdeNewFileModalInput};
 use super::ide_tabs_bar::{IdeTabsBar, IdeTabsBarInput};
 use super::layout_mode_segment::LayoutModeSegment;
 use super::side_column_workspace_scroll::WorkspaceSideCardScrollInner;
 use super::workspace_panel::make_refresh_workspace_after_mutation;
 use super::workspace_panel_state::WorkspacePanelSignals;
-use crate::app::app_signals::IdeEditorSignals;
 use crate::workspace_context_menu::WorkspaceContextMenuActions;
 
 #[component]
@@ -75,8 +76,10 @@ fn IdeLayoutLeftPane(
 #[derive(Clone, Copy)]
 struct IdeLayoutRightPaneInput {
     locale: RwSignal<Locale>,
+    chrome: IdeChromeSignals,
     editor: IdeEditorSignals,
     tabs: IdeTabsHandle,
+    confirm: crate::ide_confirm::IdeConfirmSignals,
     ide_path: RwSignal<Option<String>>,
     ide_text: RwSignal<String>,
     ide_baseline: RwSignal<String>,
@@ -89,8 +92,10 @@ struct IdeLayoutRightPaneInput {
 fn IdeLayoutRightPane(input: IdeLayoutRightPaneInput) -> impl IntoView {
     let IdeLayoutRightPaneInput {
         locale,
+        chrome,
         editor,
         tabs,
+        confirm,
         ide_path,
         ide_text,
         ide_baseline,
@@ -98,8 +103,16 @@ fn IdeLayoutRightPane(input: IdeLayoutRightPaneInput) -> impl IntoView {
         ide_err,
         textarea_ref,
     } = input;
+    let find_input = IdeFindBarInput {
+        locale,
+        chrome,
+        ide_text,
+        textarea_ref,
+    };
     view! {
         <div class="ide-layout-right">
+            <IdeFindBar input=find_input />
+            <IdeGotoLineBar input=find_input />
             <Show when=move || ide_err.get().is_some()>
                 <div class="msg-error ide-editor-err">{move || ide_err.get().unwrap_or_default()}</div>
             </Show>
@@ -109,6 +122,7 @@ fn IdeLayoutRightPane(input: IdeLayoutRightPaneInput) -> impl IntoView {
             <IdeTabsBar input=IdeTabsBarInput {
                 locale,
                 tabs,
+                confirm,
                 editor: IdeTabsEditorSignals {
                     ide_path,
                     ide_text,
@@ -132,6 +146,7 @@ fn IdeLayoutRightPane(input: IdeLayoutRightPaneInput) -> impl IntoView {
 pub struct IdeLayoutShellSignals {
     pub locale: RwSignal<Locale>,
     pub shell_ui: ShellUISignals,
+    pub chrome: IdeChromeSignals,
     pub editor: IdeEditorSignals,
     pub editor_layout_mode: RwSignal<bool>,
     pub ide_settings_page: RwSignal<bool>,
@@ -140,7 +155,6 @@ pub struct IdeLayoutShellSignals {
     pub workspace_panel: WorkspacePanelSignals,
     pub refresh_workspace: Arc<dyn Fn() + Send + Sync>,
     pub initialized: RwSignal<bool>,
-    /// 与主壳「编辑器布局」一致；不可见时不触发工作区刷新，避免后台无意义请求。
     pub editor_visible: RwSignal<bool>,
     pub insert_workspace_file_ref: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
 }
@@ -150,6 +164,7 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
     let IdeLayoutShellSignals {
         locale,
         shell_ui,
+        chrome,
         editor,
         editor_layout_mode,
         ide_settings_page,
@@ -167,6 +182,7 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
     let ide_text = RwSignal::new(String::new());
     let ide_baseline = RwSignal::new(String::new());
     let textarea_ref = NodeRef::<leptos::html::Textarea>::new();
+    let confirm = chrome.confirm_signals();
 
     wire_ide_editor_sync_to_active_tab(tabs, tabs.active, ide_text);
 
@@ -176,19 +192,19 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
         ide_baseline,
     };
 
-    let open_file = make_ide_open_file_handler(locale, tabs, tab_editor);
+    let open_file = make_ide_open_file_handler(locale, tabs, tab_editor, confirm);
     let open_sv = StoredValue::new(open_file);
 
     let refresh_after_mutation =
         make_refresh_workspace_after_mutation(workspace_panel, locale.get_untracked());
-    let refresh_after_mutation_sv = StoredValue::new(Arc::clone(&refresh_after_mutation));
 
     let ctx_actions = StoredValue::new(WorkspaceContextMenuActions {
         refresh_after_mutation,
         ide_tabs: Some((tabs, tab_editor)),
+        ide_confirm: Some(confirm),
     });
 
-    let save_ctx = move || IdeSaveContext {
+    let save_ctx = IdeSaveContext {
         tabs,
         ide_path,
         ide_text,
@@ -210,7 +226,7 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
             return;
         }
         let _ = shell_ui.ide_save_active_nonce.get();
-        spawn_save_active_tab(save_ctx(), locale);
+        spawn_save_active_tab(save_ctx, locale);
     });
 
     Effect::new(move |_| {
@@ -218,7 +234,7 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
             return;
         }
         let _ = shell_ui.ide_save_all_nonce.get();
-        spawn_save_all_dirty_tabs(save_ctx(), locale);
+        spawn_save_all_dirty_tabs(save_ctx, locale);
     });
 
     Effect::new(move |_| {
@@ -226,13 +242,22 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
             return;
         }
         let _ = shell_ui.ide_sync_disk_nonce.get();
-        spawn_sync_ide_tabs_from_disk(tabs, tab_editor, locale);
+        spawn_sync_ide_tabs_from_disk(tabs, tab_editor, locale, confirm);
+    });
+
+    Effect::new(move |_| {
+        if !editor_visible.get() {
+            return;
+        }
+        let _ = chrome.close_active_tab_nonce.get();
+        spawn_close_active_tab(tabs, locale, tab_editor, confirm);
     });
 
     view! {
         <div class="ide-layout-root" data-testid="ide-layout-root">
             <IdeMenuBar signals=IdeMenuBarSignals {
                 locale,
+                chrome,
                 editor,
                 editor_layout_mode,
                 ide_settings_page,
@@ -242,10 +267,9 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
                 ide_baseline,
                 ide_load_busy: tabs.load_busy,
                 ide_save_busy: tabs.save_busy,
-                ide_err: tabs.err,
                 textarea_ref,
                 tabs,
-                refresh_after_mutation: refresh_after_mutation_sv,
+                save_ctx,
             } />
             <div class="ide-layout-body">
                 <IdeLayoutLeftPane
@@ -258,8 +282,10 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
                 />
                 <IdeLayoutRightPane input=IdeLayoutRightPaneInput {
                     locale,
+                    chrome,
                     editor,
                     tabs,
+                    confirm,
                     ide_path,
                     ide_text,
                     ide_baseline,
@@ -268,6 +294,12 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
                     textarea_ref,
                 } />
             </div>
+            <IdeNewFileModal input=IdeNewFileModalInput {
+                locale,
+                chrome,
+                save_ctx,
+                workspace_panel,
+            } />
         </div>
     }
 }

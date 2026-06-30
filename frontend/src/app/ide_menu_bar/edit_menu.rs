@@ -32,6 +32,7 @@ pub(super) fn IdeMenuEditSection(
 ) -> impl IntoView {
     let IdeMenuBarSignals {
         locale,
+        chrome,
         ide_path,
         ide_load_busy,
         textarea_ref,
@@ -53,6 +54,34 @@ pub(super) fn IdeMenuEditSection(
             </button>
             <Show when=move || open_menu.get() == Some(IdeMenuId::Edit)>
                 <div class="ide-menu-dropdown" role="menu">
+                    <button
+                        type="button"
+                        class="ide-menu-item"
+                        role="menuitem"
+                        data-testid="ide-menu-find"
+                        prop:disabled=move || ide_path.get().is_none() || ide_load_busy.get()
+                        on:click=move |_| {
+                            chrome.goto_panel_open.set(false);
+                            chrome.find_panel_open.set(true);
+                            close_menus(open_menu, ide_menubar_dropdown_open);
+                        }
+                    >
+                        {move || i18n::ide_menu_find(locale.get())}
+                    </button>
+                    <button
+                        type="button"
+                        class="ide-menu-item"
+                        role="menuitem"
+                        data-testid="ide-menu-goto-line"
+                        prop:disabled=move || ide_path.get().is_none() || ide_load_busy.get()
+                        on:click=move |_| {
+                            chrome.find_panel_open.set(false);
+                            chrome.goto_panel_open.set(true);
+                            close_menus(open_menu, ide_menubar_dropdown_open);
+                        }
+                    >
+                        {move || i18n::ide_menu_goto_line(locale.get())}
+                    </button>
                     <button
                         type="button"
                         class="ide-menu-item"

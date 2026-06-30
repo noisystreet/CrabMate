@@ -8,6 +8,7 @@
 
 mod approval;
 mod chat_composer;
+mod ide_chrome;
 mod ide_editor;
 mod llm_settings;
 mod modal;
@@ -24,6 +25,7 @@ use leptos::prelude::*;
 
 pub use approval::ApprovalSignals;
 pub use chat_composer::ChatComposerSignals;
+pub use ide_chrome::IdeChromeSignals;
 pub use ide_editor::IdeEditorSignals;
 pub use llm_settings::LLMSettingsSignals;
 pub use modal::ModalSignals;
@@ -53,6 +55,7 @@ pub struct AppSignals {
     pub sidebar: SidebarSignals,
     pub modal: ModalSignals,
     pub ide_editor: IdeEditorSignals,
+    pub ide_chrome: IdeChromeSignals,
     pub llm_settings: LLMSettingsSignals,
     pub resize: ResizeSignals,
     pub workspace: WorkspaceSignals,
@@ -75,6 +78,7 @@ impl AppSignals {
         let sidebar = SidebarSignals::new();
         let modal = ModalSignals::new();
         let ide_editor = IdeEditorSignals::new();
+        let ide_chrome = IdeChromeSignals::new();
         let llm_settings = LLMSettingsSignals::new();
         let resize = ResizeSignals::new();
         let workspace = WorkspaceSignals::new();
@@ -108,6 +112,7 @@ impl AppSignals {
             sidebar,
             modal,
             ide_editor,
+            ide_chrome,
             llm_settings,
             resize,
             workspace,

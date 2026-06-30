@@ -5,22 +5,15 @@ use leptos::task::spawn_local;
 
 use crate::api::fetch_workspace_file;
 use crate::i18n::{self, Locale};
+use crate::ide_confirm::{IdeConfirmSignals, ide_confirm_user};
 use crate::ide_tabs::{IdeTabsEditorSignals, IdeTabsHandle};
-
-fn confirm_reload_disk(locale: Locale) -> bool {
-    web_sys::window()
-        .and_then(|w| {
-            w.confirm_with_message(i18n::ide_disk_reload_confirm(locale))
-                .ok()
-        })
-        .unwrap_or(false)
-}
 
 /// 拉取磁盘内容并与各标签 `baseline` 比对；干净标签自动重载，脏标签经确认后重载。
 pub fn spawn_sync_ide_tabs_from_disk(
     tabs: IdeTabsHandle,
     editor: IdeTabsEditorSignals,
     locale: RwSignal<Locale>,
+    confirm: IdeConfirmSignals,
 ) {
     if tabs.load_busy.get_untracked() || tabs.save_busy.get_untracked() {
         return;
@@ -40,8 +33,8 @@ pub fn spawn_sync_ide_tabs_from_disk(
         return;
     }
 
-    let loc = locale.get_untracked();
     spawn_local(async move {
+        let loc = locale.get_untracked();
         let mut reloads: Vec<(usize, String, bool)> = Vec::new();
         for (idx, path, text, baseline) in snapshot {
             let Ok(data) = fetch_workspace_file(path.as_str(), None, loc).await else {
@@ -54,7 +47,9 @@ pub fn spawn_sync_ide_tabs_from_disk(
                 continue;
             }
             let dirty = text != baseline;
-            if dirty && !confirm_reload_disk(loc) {
+            if dirty
+                && !ide_confirm_user(confirm, i18n::ide_disk_reload_confirm(loc).to_string()).await
+            {
                 continue;
             }
             reloads.push((idx, data.content, dirty));
