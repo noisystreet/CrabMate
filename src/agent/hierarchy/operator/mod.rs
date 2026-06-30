@@ -8,6 +8,7 @@ mod inject;
 mod operator_tool_analysis;
 mod prompt;
 mod react_loop;
+mod react_loop_helpers;
 mod state;
 mod text;
 mod types;

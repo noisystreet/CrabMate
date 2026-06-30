@@ -389,13 +389,41 @@ fn finalize_section_tool_registry_policy(mid: &FinalizeAfterRoles) -> types::Too
 }
 
 fn finalize_section_turn_budget() -> types::TurnBudgetConfig {
-    types::TurnBudgetConfig {
+    let mut cfg = types::TurnBudgetConfig {
         max_turn_duration_seconds: 600,
         max_turn_tokens: 100_000,
         max_llm_calls_per_turn: 0,
         max_outer_loop_iterations: 0,
         full_plan_rewrite_max_attempts: 2,
+        budget_degradation_enabled: false,
+        budget_degradation_threshold_percent: 80,
+    };
+    if let Ok(v) = std::env::var("CM_MAX_TURN_DURATION_SECONDS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        cfg.max_turn_duration_seconds = n;
     }
+    if let Ok(v) = std::env::var("CM_MAX_TURN_TOKENS")
+        && let Ok(n) = v.trim().parse::<usize>()
+    {
+        cfg.max_turn_tokens = n;
+    }
+    if let Ok(v) = std::env::var("CM_MAX_LLM_CALLS_PER_TURN")
+        && let Ok(n) = v.trim().parse::<u32>()
+    {
+        cfg.max_llm_calls_per_turn = n;
+    }
+    if let Ok(v) = std::env::var("CM_TURN_BUDGET_DEGRADATION_ENABLED")
+        && let Some(b) = crate::source::parse_bool_like(&v)
+    {
+        cfg.budget_degradation_enabled = b;
+    }
+    if let Ok(v) = std::env::var("CM_TURN_BUDGET_DEGRADATION_THRESHOLD_PERCENT")
+        && let Ok(n) = v.trim().parse::<u8>()
+    {
+        cfg.budget_degradation_threshold_percent = n.clamp(50, 99);
+    }
+    cfg
 }
 
 fn finalize_section_hierarchy_routing() -> types::HierarchyRoutingConfig {

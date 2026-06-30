@@ -166,6 +166,61 @@ impl GoalVerifier {
         VerificationResult::Pass
     }
 
+    /// 预算降级模式：保留执行状态与关键硬门槛，跳过 acceptance 细项与 `expect_command_success` 二次命令。
+    pub fn verify_degraded(&self, goal: &SubGoal, result: &TaskResult) -> VerificationResult {
+        match &result.status {
+            TaskStatus::Completed => {}
+            TaskStatus::Failed { reason } => {
+                return VerificationResult::Fail {
+                    reason: format!("子目标执行失败: {}", reason),
+                };
+            }
+            TaskStatus::Skipped { reason } => {
+                return VerificationResult::Fail {
+                    reason: format!("子目标被跳过: {}", reason),
+                };
+            }
+            _ => {
+                return VerificationResult::Fail {
+                    reason: "子目标未处于完成状态".to_string(),
+                };
+            }
+        }
+
+        if is_program_build_and_run_goal(goal)
+            && let Err(reason) = verify_program_build_and_run_evidence(result)
+        {
+            return VerificationResult::Fail { reason };
+        }
+
+        let expected_output_hints: Vec<String> = goal
+            .acceptance
+            .as_ref()
+            .map(|a| {
+                a.expect_output_contains
+                    .iter()
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        if is_run_executable_subgoal(goal)
+            && let Err(reason) =
+                verify_run_executable_subgoal_tool_evidence(result, &expected_output_hints)
+        {
+            return VerificationResult::Fail { reason };
+        }
+
+        log::info!(
+            target: "crabmate",
+            "[GOAL_VERIFIER] Goal {} verification passed (budget degradation: skipped extended acceptance)",
+            goal.goal_id
+        );
+        VerificationResult::Pass
+    }
+
     /// 运行验证命令
     fn run_verify_command(&self, cmd: &str) -> Result<bool, String> {
         use std::process::Command;
@@ -679,5 +734,26 @@ mod tests {
         };
         let verify_result = verifier.verify(&goal, &result);
         assert!(verify_result.is_fail());
+    }
+
+    #[test]
+    fn verify_degraded_skips_extended_acceptance_but_keeps_status_gate() {
+        let verifier = GoalVerifier::new(std::env::temp_dir());
+        let mut goal = SubGoal::new("g", "check output");
+        goal.acceptance = Some(GoalAcceptance {
+            expect_stdout_contains: Some("must-not-match".to_string()),
+            ..Default::default()
+        });
+        let result = TaskResult {
+            task_id: "g".to_string(),
+            status: TaskStatus::Completed,
+            output: Some("other".to_string()),
+            error: None,
+            artifacts: vec![],
+            duration_ms: 0,
+            tools_invoked: vec![],
+        };
+        assert!(verifier.verify(&goal, &result).is_fail());
+        assert!(verifier.verify_degraded(&goal, &result).is_pass());
     }
 }
