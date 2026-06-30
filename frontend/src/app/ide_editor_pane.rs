@@ -1,4 +1,4 @@
-//! IDE 文本编辑区：行号栏、Rust/TOML/YAML 语法高亮镜像层。
+//! IDE 文本编辑区：行号栏、多语言语法高亮镜像层（Rust / TOML / YAML / C / C++ / Python）。
 
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
