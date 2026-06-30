@@ -96,3 +96,45 @@ pub fn ide_dirty_confirm(l: Locale) -> &'static str {
         Locale::En => "Discard unsaved changes and continue?",
     }
 }
+
+pub fn ide_tab_ctx_close(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "关闭",
+        Locale::En => "Close",
+    }
+}
+
+pub fn ide_tab_ctx_close_others(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "关闭其他",
+        Locale::En => "Close Others",
+    }
+}
+
+pub fn ide_tab_ctx_close_all(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "全部关闭",
+        Locale::En => "Close All",
+    }
+}
+
+pub fn ide_tab_ctx_pin(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "固定",
+        Locale::En => "Pin",
+    }
+}
+
+pub fn ide_tab_ctx_unpin(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "取消固定",
+        Locale::En => "Unpin",
+    }
+}
+
+pub fn ide_tab_pinned_aria(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "已固定",
+        Locale::En => "Pinned",
+    }
+}
