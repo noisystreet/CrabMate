@@ -4,6 +4,7 @@ pub mod hierarchical_intent_route;
 pub mod intent;
 pub mod intent_routing;
 pub mod messages;
+pub mod orchestration_entry;
 pub mod staged_planning_gate;
 pub mod staged_planning_gate_types;
 pub mod tool_execution;
@@ -17,6 +18,10 @@ pub use intent_routing::{
     IntentL2ClassifierHost, IntentRoutingOutcome, IntentRoutingPipelineParams,
     assess_intent_routing_full_pipeline, assess_intent_routing_with_optional_l2,
     log_intent_pipeline_assessment,
+};
+pub use orchestration_entry::{
+    HierarchicalTurnEntryResolution, TurnOrchestrationTransition, TurnTopLevelDispatch,
+    log_orchestration_transition, resolve_non_hierarchical_entry, resolve_turn_top_level_dispatch,
 };
 pub use staged_planning_gate::{
     assess_staged_planning_gate_l1, staged_plan_eligibility_for_intent,

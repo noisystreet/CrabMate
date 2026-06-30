@@ -1,13 +1,11 @@
 //! 分解 JSON 解析与一次 JSON 修复补调用。
 
-use crate::config::AgentConfig;
-use crate::llm::backend::ChatCompletionsBackend;
 use crate::llm::{CompleteChatRetryingParams, LlmRetryingTransportOpts};
 use crate::types::LlmSeedOverride;
 
 use super::super::task::{ExecutionStrategy, SubGoal};
 use super::manager_tail::{ManagerOutput, truncate_for_log, truncate_task};
-use super::types::{ManagerAgent, ManagerError};
+use super::types::{ManagerAgent, ManagerError, ManagerLlmContext};
 
 impl ManagerAgent {
     pub(super) fn parse_output(
@@ -117,10 +115,7 @@ impl ManagerAgent {
         &self,
         content: &str,
         finish_reason: Option<&str>,
-        cfg: &AgentConfig,
-        llm_backend: &dyn ChatCompletionsBackend,
-        client: &reqwest::Client,
-        api_key: &str,
+        llm: ManagerLlmContext<'_>,
     ) -> Result<ManagerOutput, ManagerError> {
         const MANAGER_JSON_REPAIR_LLM: bool = true;
         match self.parse_output(content, finish_reason) {
@@ -138,17 +133,18 @@ impl ManagerAgent {
                     &parse_err.to_string(),
                 );
                 let params = CompleteChatRetryingParams::new(
-                    llm_backend,
-                    client,
-                    api_key,
-                    cfg,
+                    llm.llm_backend,
+                    llm.client,
+                    llm.api_key,
+                    llm.cfg,
                     LlmRetryingTransportOpts::headless_no_stream(),
                     None,
                     None,
-                );
+                )
+                .with_turn_budget(llm.turn_budget);
                 let fixed = super::super::manager_json_repair::one_shot_json_repair_llm_response(
                     &params,
-                    cfg,
+                    llm.cfg,
                     Some(Self::MANAGER_JSON_REPAIR_TEMPERATURE),
                     LlmSeedOverride::FromConfig,
                     Self::force_manager_structured_json_mode,

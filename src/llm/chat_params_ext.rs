@@ -9,6 +9,8 @@ use crabmate_llm::stream_scratch::TuiLlmStreamScratchArc;
 use crabmate_llm::{fold_system_into_user_for_config, llm_vendor_adapter, vendor};
 use reqwest::Client;
 
+use crate::agent::turn_budget::TurnBudgetCounter;
+
 /// [`super::complete_chat_retrying`] 入参（不含每次克隆前的 `ChatRequest`）。
 pub struct CompleteChatRetryingParams<'a> {
     pub llm_backend: &'a dyn ChatCompletionsBackend,
@@ -23,6 +25,8 @@ pub struct CompleteChatRetryingParams<'a> {
     pub tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
     pub request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     pub model_override: Option<&'a str>,
+    /// 单轮共享预算；设置时由 [`super::complete_chat_retrying`] 统一门禁与计数。
+    pub turn_budget: Option<&'a Arc<TurnBudgetCounter>>,
 }
 
 impl<'a> CompleteChatRetryingParams<'a> {
@@ -56,7 +60,15 @@ impl<'a> CompleteChatRetryingParams<'a> {
             tui_llm_stream_scratch,
             request_chrome_trace,
             model_override,
+            turn_budget: None,
         }
+    }
+
+    /// 携带与主 Agent 回合共用的 [`TurnBudgetCounter`]。
+    #[inline]
+    pub fn with_turn_budget(mut self, turn_budget: Option<&'a Arc<TurnBudgetCounter>>) -> Self {
+        self.turn_budget = turn_budget;
+        self
     }
 
     pub(crate) fn stream_params(&self) -> StreamChatParams<'_> {

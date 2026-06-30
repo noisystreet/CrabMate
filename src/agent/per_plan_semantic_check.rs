@@ -175,6 +175,7 @@ pub(crate) struct PlanSemanticLlmCtx<'a> {
     pub model_override: Option<String>,
     pub seed_override: LlmSeedOverride,
     pub max_tokens: u32,
+    pub turn_budget: Option<&'a std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
 }
 
 /// 对 `plan_json` 与 `tool_digest` 做一次无工具侧向调用；`tool_digest` 为空时跳过并视为通过。
@@ -237,7 +238,8 @@ pub(crate) async fn evaluate_plan_consistency_with_recent_tools_llm(
         },
         ctx.request_chrome_trace,
         model_override,
-    );
+    )
+    .with_turn_budget(ctx.turn_budget);
 
     let (reply, finish) = match complete_chat_retrying(&cc, &req).await {
         Ok(x) => x,

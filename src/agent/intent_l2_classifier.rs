@@ -23,6 +23,7 @@ pub async fn classify_intent_l2_with_llm(
     llm_backend: &dyn ChatCompletionsBackend,
     client: &reqwest::Client,
     api_key: &str,
+    turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
 ) -> Result<L2IntentCandidate, String> {
     if cfg.llm.llm_http_auth_mode == LlmHttpAuthMode::Bearer && api_key.trim().is_empty() {
         return Err("api_key_missing".to_string());
@@ -54,7 +55,8 @@ pub async fn classify_intent_l2_with_llm(
         LlmRetryingTransportOpts::headless_no_stream(),
         None,
         None,
-    );
+    )
+    .with_turn_budget(turn_budget);
     let (resp, _) = complete_chat_retrying(&params, &request)
         .await
         .map_err(format_l2_complete_error)?;

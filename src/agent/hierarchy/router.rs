@@ -187,6 +187,7 @@ impl SmartRouter {
         llm_backend: &dyn ChatCompletionsBackend,
         client: &reqwest::Client,
         api_key: &str,
+        turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
     ) -> Result<RouterOutput, RouterError> {
         let start_time = Instant::now();
         let prompt = self.build_routing_prompt(task);
@@ -220,7 +221,8 @@ impl SmartRouter {
             LlmRetryingTransportOpts::headless_no_stream(),
             None,
             None,
-        );
+        )
+        .with_turn_budget(turn_budget);
 
         match complete_chat_retrying(&params, &request).await {
             Ok((response, _)) => {
@@ -260,6 +262,7 @@ impl SmartRouter {
         client: &reqwest::Client,
         api_key: &str,
         use_llm: bool,
+        turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
     ) -> RouterOutput {
         // 1. 首先检查历史缓存
         if let Some(record) = self.find_similar_task(task) {
@@ -278,7 +281,7 @@ impl SmartRouter {
         // 2. 如果启用 LLM 且任务较复杂，使用 LLM 路由
         if use_llm && self.should_use_llm_routing(task) {
             match self
-                .route_with_llm(task, cfg, llm_backend, client, api_key)
+                .route_with_llm(task, cfg, llm_backend, client, api_key, turn_budget)
                 .await
             {
                 Ok(output) => return output,
@@ -593,7 +596,7 @@ impl Router {
     ) -> Result<RouterOutput, RouterError> {
         let router = SmartRouter::new();
         router
-            .route_with_llm(task, cfg, llm_backend, client, api_key)
+            .route_with_llm(task, cfg, llm_backend, client, api_key, None)
             .await
     }
 

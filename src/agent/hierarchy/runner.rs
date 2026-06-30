@@ -241,6 +241,7 @@ pub async fn run_hierarchical(
             client.as_ref(),
             &api_key,
             use_llm_routing,
+            Some(&turn_budget),
         )
         .await;
 
@@ -397,6 +398,7 @@ async fn run_full_decomposed_hierarchy(
             &api_key,
             &working_dir,
             tools_slice,
+            Some(&turn_budget),
         )
         .await
         .map_err(|e| ExecutionError::MaxFailuresReached(e.to_string()))?;
@@ -595,6 +597,7 @@ async fn run_simple_fallback(
             &api_key,
             &working_dir,
             tools_defs,
+            Some(&turn_budget),
         )
         .await
         .map_err(|e| ExecutionError::MaxFailuresReached(e.to_string()))?;

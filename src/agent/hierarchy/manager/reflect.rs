@@ -23,6 +23,7 @@ pub struct ReflectAndReplanContext<'a> {
     pub llm_backend: &'a dyn ChatCompletionsBackend,
     pub client: &'a reqwest::Client,
     pub api_key: &'a str,
+    pub turn_budget: Option<&'a std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
     pub working_dir: &'a std::path::Path,
     pub tools_defs: &'a [crate::types::Tool],
     pub artifacts: &'a [Artifact],
@@ -44,6 +45,7 @@ impl ManagerAgent {
             llm_backend,
             client,
             api_key,
+            turn_budget,
             working_dir,
             tools_defs,
             artifacts,
@@ -86,7 +88,8 @@ impl ManagerAgent {
             transport_opts,
             None,
             None,
-        );
+        )
+        .with_turn_budget(turn_budget);
         let response = complete_chat_retrying(&params, &request)
             .await
             .map_err(|e| ManagerError::LlmError(e.to_string()))?;

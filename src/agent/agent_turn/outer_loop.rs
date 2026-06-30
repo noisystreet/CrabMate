@@ -31,21 +31,20 @@ use super::task_level_evidence::{
 };
 
 fn check_shared_turn_budget(p: &RunLoopParams<'_>) -> Result<(), RunAgentTurnError> {
-    let tb = &p.ctx.core.cfg.turn_budget;
-    let c = &p.turn.turn_budget;
-    if c.wall_clock_exceeded(tb) {
-        return Err(RunAgentTurnError::TimeLimitExhausted {
-            phase: AgentTurnSubPhase::Planner,
-            message: crate::agent::turn_budget::turn_wall_clock_limit_user_message(
-                tb.max_turn_duration_seconds,
-            ),
-        });
-    }
-    let max_llm = crate::agent::turn_budget::effective_max_llm_calls_per_turn(tb);
-    if c.llm_calls_exceeded(max_llm) {
+    if let Err(msg) = p
+        .turn
+        .turn_budget
+        .deny_llm_call_if_exhausted(&p.ctx.core.cfg.turn_budget)
+    {
+        if msg.contains("墙钟") {
+            return Err(RunAgentTurnError::TimeLimitExhausted {
+                phase: AgentTurnSubPhase::Planner,
+                message: msg,
+            });
+        }
         return Err(RunAgentTurnError::Other {
             phase: AgentTurnSubPhase::Planner,
-            message: crate::agent::turn_budget::turn_llm_calls_limit_user_message(max_llm),
+            message: msg,
         });
     }
     Ok(())
@@ -309,15 +308,6 @@ async fn run_outer_loop_single_iteration(
     );
 
     let planner_tools = build_planner_round_tools(p);
-    let max_llm =
-        crate::agent::turn_budget::effective_max_llm_calls_per_turn(&p.ctx.core.cfg.turn_budget);
-    if p.turn.turn_budget.llm_calls_exceeded(max_llm) {
-        return Err(RunAgentTurnError::Other {
-            phase: AgentTurnSubPhase::Planner,
-            message: crate::agent::turn_budget::turn_llm_calls_limit_user_message(max_llm),
-        });
-    }
-    p.turn.turn_budget.record_llm_call();
     let (msg, finish_reason) = per_plan_call_model_retrying(PerPlanCallModelParams {
         llm_backend: p.ctx.core.llm_backend,
         client: p.ctx.core.client,
@@ -337,6 +327,7 @@ async fn run_outer_loop_single_iteration(
         model_override: p.effective_model(),
         executor_api_base: exec_api_base.as_deref(),
         executor_api_key: exec_api_key.as_deref(),
+        turn_budget: Some(&p.turn.turn_budget),
     })
     .await
     .map_err(|e| {

@@ -57,21 +57,10 @@ impl OperatorAgent {
         api_key: &str,
         state: &mut ReactState,
     ) -> Result<Message, OperatorError> {
-        if let Some(ref budget) = self.config.runtime.turn_budget {
-            if budget.wall_clock_exceeded(&cfg.turn_budget) {
-                return Err(OperatorError::ExecutionError(
-                    crate::agent::turn_budget::turn_wall_clock_limit_user_message(
-                        cfg.turn_budget.max_turn_duration_seconds,
-                    ),
-                ));
-            }
-            let max_llm =
-                crate::agent::turn_budget::effective_max_llm_calls_per_turn(&cfg.turn_budget);
-            if budget.llm_calls_exceeded(max_llm) {
-                return Err(OperatorError::ExecutionError(
-                    crate::agent::turn_budget::turn_llm_calls_limit_user_message(max_llm),
-                ));
-            }
+        if let Some(ref budget) = self.config.runtime.turn_budget
+            && let Err(msg) = budget.deny_llm_call_if_exhausted(&cfg.turn_budget)
+        {
+            return Err(OperatorError::ExecutionError(msg));
         }
         crate::agent::context_window::prepare_messages_for_hierarchical_operator(
             llm_backend,
@@ -84,9 +73,6 @@ impl OperatorAgent {
         )
         .await
         .map_err(|e| OperatorError::ExecutionError(e.to_string()))?;
-        if let Some(ref budget) = self.config.runtime.turn_budget {
-            budget.record_llm_call();
-        }
         let transport = LlmRetryingTransportOpts {
             cancel: self.config.runtime.cancel.as_deref(),
             ..LlmRetryingTransportOpts::headless_no_stream()
@@ -99,7 +85,8 @@ impl OperatorAgent {
             transport,
             None,
             None,
-        );
+        )
+        .with_turn_budget(self.config.runtime.turn_budget.as_ref());
 
         let request = if self.config.policy.tools_defs.is_empty() {
             crate::llm::no_tools_chat_request(
