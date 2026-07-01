@@ -17,12 +17,14 @@ use crate::agent::reflection::plan_rewrite;
 /// - **`staged_plan_patch_planner_rounds_completed`**：分阶段 **`patch_planner`** 路径下，已成功解析并合并 `steps` 的无工具轮次数（与 **`staged_plan_patch_max_attempts`** 约束的「单步失败分支内尝试」不同）。
 /// - **`outer_loop_build_idle_streak`**：L2 外循环连续「承诺构建但无 tool_calls」轮次（见 **`outer_loop_build_idle`**）。
 /// - **`outer_loop_build_idle_feedback_injected`**：已注入的构建空转纠偏 user 条数上限计数。
+/// - **`outer_loop_missing_final_answer_feedback_injected`**：已注入的终答缺失纠偏 user 条数上限计数。
 #[derive(Debug, Clone)]
 pub(crate) struct PerTurnCounters {
     pub(crate) plan_rewrite_attempts: usize,
     pub(crate) staged_plan_patch_planner_rounds_completed: usize,
     pub(crate) outer_loop_build_idle_streak: u32,
     pub(crate) outer_loop_build_idle_feedback_injected: u32,
+    pub(crate) outer_loop_missing_final_answer_feedback_injected: u32,
 }
 
 impl PerTurnCounters {
@@ -32,6 +34,7 @@ impl PerTurnCounters {
             staged_plan_patch_planner_rounds_completed: 0,
             outer_loop_build_idle_streak: 0,
             outer_loop_build_idle_feedback_injected: 0,
+            outer_loop_missing_final_answer_feedback_injected: 0,
         }
     }
 
@@ -58,6 +61,16 @@ impl PerTurnCounters {
 
     pub(crate) fn outer_loop_build_idle_feedback_injected(&self) -> u32 {
         self.outer_loop_build_idle_feedback_injected
+    }
+
+    pub(crate) fn record_outer_loop_missing_final_answer_feedback_injected(&mut self) {
+        self.outer_loop_missing_final_answer_feedback_injected = self
+            .outer_loop_missing_final_answer_feedback_injected
+            .saturating_add(1);
+    }
+
+    pub(crate) fn outer_loop_missing_final_answer_feedback_injected(&self) -> u32 {
+        self.outer_loop_missing_final_answer_feedback_injected
     }
 }
 

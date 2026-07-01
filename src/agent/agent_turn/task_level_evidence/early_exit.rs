@@ -1,4 +1,4 @@
-//! 分阶段滚动视界：任务级 Satisfied 是否允许提前结束外层循环。
+//! 任务级 Satisfied 是否允许外循环/staged 提前停轮（构建/测试类须走完规划步）。
 
 use crate::types::Message;
 
@@ -7,10 +7,10 @@ use super::verify::{
     generic_task_intent_implies_build_or_test,
 };
 
-/// 分阶段滚动视界：任务级证据已 Satisfied 时是否允许**提前结束**外层循环。
+/// 任务级证据已 Satisfied 时是否允许**提前停轮**（规划步滚动视界与子 Agent 外循环共用）。
 ///
 /// 构建/测试类任务须走完规划步（含 `test_runner` / 有效 `acceptance`），不得仅凭启发式早停。
-pub(crate) fn task_level_satisfied_allows_staged_early_exit(messages: &[Message]) -> bool {
+pub(crate) fn task_level_satisfied_allows_early_stop(messages: &[Message]) -> bool {
     if !matches!(
         check_active_user_goal_completion_evidence(messages),
         GoalCompletionEvidenceCheck::Satisfied
@@ -66,7 +66,21 @@ mod tests {
             ),
             msg("assistant", "HPCG 编译完成成功。"),
         ];
-        assert!(!task_level_satisfied_allows_staged_early_exit(&messages));
+        assert!(!task_level_satisfied_allows_early_stop(&messages));
+    }
+
+    #[test]
+    fn build_task_heuristic_satisfied_blocks_outer_loop_style_early_exit() {
+        let messages = vec![
+            msg("user", "cmake 构建 hello"),
+            tool_env(
+                "run_command",
+                "cmake --build build",
+                "命令：cmake --build build\n退出码：0\n标准输出：\n[100%] Built target hello",
+            ),
+            msg("assistant", "构建已成功完成。"),
+        ];
+        assert!(!task_level_satisfied_allows_early_stop(&messages));
     }
 
     #[test]
@@ -79,6 +93,6 @@ mod tests {
                 "当前目录包含三个压缩包，分析结果如下，总结完成。",
             ),
         ];
-        assert!(task_level_satisfied_allows_staged_early_exit(&messages));
+        assert!(task_level_satisfied_allows_early_stop(&messages));
     }
 }

@@ -85,8 +85,7 @@ use steps_loop::run_staged_plan_steps_loop;
 #[allow(unused_imports)]
 pub(crate) use rolling_horizon_facade::{
     build_logical_dual_planner_messages, build_single_agent_planner_messages,
-    run_logical_dual_agent_then_execute_steps, run_non_hierarchical_staged_route,
-    run_staged_plan_then_execute_steps,
+    run_logical_dual_agent_then_execute_steps, run_staged_plan_then_execute_steps,
 };
 
 /// 单次无工具规划子调用结束时的粗粒度结果（滚动视界外层循环消费）。

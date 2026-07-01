@@ -13,6 +13,7 @@ use super::outer_loop_build_idle::{
     outer_loop_assistant_is_build_idle_without_tools, outer_loop_build_idle_feedback_if_needed,
     outer_loop_window_has_build_progress_since_last_user,
 };
+use super::outer_loop_final_answer::outer_loop_missing_final_answer_feedback_if_needed;
 use super::outer_loop_fsm::ReflectBranchCtl;
 use super::params::RunLoopParams;
 use super::reflect::ReflectOnAssistantOutcome;
@@ -53,6 +54,23 @@ pub(super) async fn map_reflect_outcome_to_branch_ctl(
                         }
                         return ReflectBranchCtl::ContinueOuter;
                     }
+                }
+                if let Some(feedback) = outer_loop_missing_final_answer_feedback_if_needed(
+                    messages,
+                    msg,
+                    per_coord.outer_loop_missing_final_answer_feedback_injected(),
+                ) {
+                    info!(
+                        target: "crabmate::agent_turn",
+                        "L2 外循环终答缺失纠偏：注入 user 并继续"
+                    );
+                    p.turn
+                        .push_message(Message::user_staged_orchestration_injection(feedback));
+                    per_coord.record_outer_loop_missing_final_answer_feedback_injected();
+                    if let Some(f) = p.ctx.attach.per_flight.as_ref() {
+                        f.sync_from_per_coord(per_coord);
+                    }
+                    return ReflectBranchCtl::ContinueOuter;
                 }
             }
             if let Some(f) = p.ctx.attach.per_flight.as_ref() {
