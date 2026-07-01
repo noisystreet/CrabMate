@@ -480,7 +480,7 @@ fn write_embedding_batches(
                 &format!(
                     "INSERT INTO {TABLE} (workspace_root, rel_path, start_line, end_line, chunk_text, content_hash, embedding) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
                 ),
-                params![ws_key, rel, sl, el, body, h, blob],
+                params![ws_key, rel, *sl as i64, *el as i64, body, h, blob],
             )
             .map_err(|e| format!("写入索引失败: {}", e))?;
             chunks_total += 1;
