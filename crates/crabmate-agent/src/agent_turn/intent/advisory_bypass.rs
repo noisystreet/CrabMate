@@ -146,7 +146,6 @@ mod tests {
 
     fn staged_cfg(bypass: bool) -> StagedPlanningConfig {
         StagedPlanningConfig {
-            staged_plan_execution: false,
             staged_plan_phase_instruction: String::new(),
             staged_plan_allow_no_task: true,
             staged_plan_feedback_mode: StagedPlanFeedbackMode::FailFast,

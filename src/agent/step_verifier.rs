@@ -1,7 +1,7 @@
 //! 确定性验证闸门（StepVerifier）：根据 `PlanStepV1` 中的 `acceptance` 对执行结果进行硬断言。
 //!
 //! **分阶段**路径下，验收针对当前分步的 **`acceptance`**（步界：分步 `user` 之后至下一真实 user / 下一条分步注入；步内编排注入 user 不截断）。
-//! 空规范直接 **Pass**；仅 **`expect_file_exists`** 时查工作区、**不要求**本步 `role: tool`；其余规则取本步**最后一条** `role: tool`。
+//! 空规范直接 **Pass**；仅 **`expect_file_exists`** 时查工作区、**不要求**本步 `role: tool`；其余规则在本步窗口内**自后向前**逐条 `role: tool` 尝试，**任一**满足即 **Pass**。
 //!
 //! 核心判定逻辑见 [`crate::agent::acceptance`]。
 //!
@@ -20,25 +20,50 @@ use crate::types::{Message, staged_step_window_end_exclusive};
 
 pub type VerifyResult = VerifyOutcome;
 
-/// 自 `step_user_index` 指向的分步 `user` 起，到步界或 `messages` 末尾为止，取其中**最后**一条 `role: tool`（分阶段步界内的「验收用」工具条）。
-fn last_tool_message_in_staged_step<'a>(
-    messages: &'a [Message],
-    step_user_index: usize,
-) -> Option<&'a Message> {
+/// 自 `step_user_index` 指向的分步 `user` 起，到步界或 `messages` 末尾为止，收集其中全部 `role: tool`（保持时间序）。
+fn tool_messages_in_staged_step(messages: &[Message], step_user_index: usize) -> Vec<&Message> {
     if step_user_index >= messages.len() {
-        return None;
+        return Vec::new();
     }
     let end = staged_step_window_end_exclusive(messages, step_user_index);
+    let mut tools = Vec::new();
     let mut i = step_user_index.saturating_add(1);
-    let mut last_tool: Option<&'a Message> = None;
     while i < end {
         let m = &messages[i];
         if m.role == "tool" {
-            last_tool = Some(m);
+            tools.push(m);
         }
         i += 1;
     }
-    last_tool
+    tools
+}
+
+fn verify_tool_message_against_acceptance(
+    acceptance: &PlanStepAcceptance,
+    tool_msg: &Message,
+    workspace_root: &std::path::Path,
+) -> VerifyResult {
+    let tool_name = tool_msg.name.as_deref().unwrap_or("");
+    let tool_output = crate::types::message_content_as_str(&tool_msg.content).unwrap_or("");
+    let parsed = crate::tool_result::parse_legacy_output(tool_name, tool_output);
+
+    let tool_error_opt = parsed.exit_code.map(|code| crate::tool_result::ToolError {
+        code: code.to_string(),
+        category: crate::tool_result::ToolFailureCategory::External,
+        message: "Verification fake error".to_string(),
+        legacy_parsed: parsed.clone(),
+        retryable: false,
+    });
+
+    verify_tool_execution_inner(
+        acceptance,
+        tool_name,
+        tool_output,
+        parsed.stdout.as_str(),
+        parsed.stderr.as_str(),
+        tool_error_opt.as_ref(),
+        workspace_root,
+    )
 }
 
 /// 对**分阶段单步**内的工具结果进行验证（`step_user_index` 为本步分步 `user` 在 `messages` 中的下标）。
@@ -68,37 +93,25 @@ pub fn verify_step_execution(
         return crate::agent::acceptance::verify_against_spec(&spec, &ev);
     }
 
-    let last_tool_msg = last_tool_message_in_staged_step(messages, step_user_index);
-    let (tool_name, tool_output) = if let Some(tool_msg) = last_tool_msg {
-        let name = tool_msg.name.as_deref().unwrap_or("");
-        let output = crate::types::message_content_as_str(&tool_msg.content).unwrap_or("");
-        (name, output)
-    } else {
+    let tools = tool_messages_in_staged_step(messages, step_user_index);
+    if tools.is_empty() {
         return VerifyOutcome::Fail {
             reason: "Step verification failed: no tool result in this staged step (after step user, before next user message)"
                 .to_string(),
         };
-    };
+    }
 
-    let parsed = crate::tool_result::parse_legacy_output(tool_name, tool_output);
-
-    let tool_error_opt = parsed.exit_code.map(|code| crate::tool_result::ToolError {
-        code: code.to_string(),
-        category: crate::tool_result::ToolFailureCategory::External,
-        message: "Verification fake error".to_string(),
-        legacy_parsed: parsed.clone(),
-        retryable: false,
-    });
-
-    verify_tool_execution_inner(
-        acceptance,
-        tool_name,
-        tool_output,
-        parsed.stdout.as_str(),
-        parsed.stderr.as_str(),
-        tool_error_opt.as_ref(),
-        workspace_root,
-    )
+    let mut last_fail: Option<VerifyOutcome> = None;
+    for tool_msg in tools.iter().rev() {
+        match verify_tool_message_against_acceptance(acceptance, tool_msg, workspace_root) {
+            VerifyOutcome::Pass => return VerifyOutcome::Pass,
+            fail @ VerifyOutcome::Fail { .. } => last_fail = Some(fail),
+        }
+    }
+    last_fail.unwrap_or(VerifyOutcome::Fail {
+        reason: "Step verification failed: no tool result in this staged step satisfied acceptance"
+            .to_string(),
+    })
 }
 
 /// 对单个步骤的工具执行结果进行验证（供测试与内部复用）。
@@ -466,7 +479,46 @@ mod tests {
         assert!(result.is_pass());
     }
 
-    /// 分阶段：验收只读「本步 / 自 step_user 至下一 user 之间」最后一条 `tool`；若误用**全局**最后一条，会在后续 `user` 之后仍错判为最后 tool。
+    /// 分阶段：步窗口内自后向前聚合 tool；前序 build 成功、末条 probe 失败时仍 Pass。
+    #[test]
+    fn verify_step_passes_when_earlier_tool_satisfies_acceptance_not_last_probe() {
+        use crate::types::Message;
+        use crate::types::MessageContent;
+
+        let t_step = |exit: i32, stdout: &str| {
+            let body = if stdout.is_empty() {
+                format!("退出码：{exit}\n")
+            } else {
+                format!("退出码：{exit}\n标准输出：\n{stdout}\n")
+            };
+            Message {
+                role: "tool".to_string(),
+                content: Some(MessageContent::Text(body)),
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: None,
+                name: Some("run_command".to_string()),
+                tool_call_id: None,
+            }
+        };
+        let messages = vec![
+            Message::user_only("### 分步 1/1"),
+            t_step(0, "[100%] Built target hello"),
+            t_step(1, "probe-only"),
+        ];
+        let acceptance = PlanStepAcceptance {
+            expect_exit_code: Some(0),
+            expect_stdout_contains: Some("Built target hello".to_string()),
+            expect_stderr_contains: None,
+            expect_file_exists: None,
+            expect_json_path_equals: None,
+            expect_http_status: None,
+        };
+        let r = verify_step_execution(&acceptance, &messages, 0, std::path::Path::new("/tmp"));
+        assert!(r.is_pass());
+    }
+
+    /// 分阶段：验收只读「本步 / 自 step_user 至下一 user 之间」的 tool 窗口；若误用**全局**最后一条，会在后续 `user` 之后仍错判为最后 tool。
     #[test]
     fn verify_step_uses_last_tool_in_step_window_not_last_tool_globally() {
         use crate::types::Message;

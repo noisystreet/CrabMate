@@ -11,9 +11,7 @@ use log::{debug, info};
 use crate::agent::per_coord::PerCoordinator;
 use crate::types::{Message, USER_CANCELLED_FINISH_REASON, is_intent_gate_ephemeral_system};
 
-use super::completion_suppression::{
-    redundant_tool_names_for_log, tool_calls_are_redundant_when_goal_satisfied,
-};
+use super::completion_suppression::redundant_tool_names_for_log;
 use super::errors::{AgentTurnSubPhase, RunAgentTurnError, TurnAbortReason};
 use super::execute_tools::{
     ExecuteToolsBatchOutcome, WebExecuteCtx, per_execute_tools_web, sse_sender_closed,
@@ -25,7 +23,9 @@ use super::params::{OuterLoopPlanCallModelRole, RunLoopParams};
 use super::plan::{PerPlanCallModelParams, per_plan_call_model_retrying};
 use super::reflect::per_reflect_after_assistant;
 use super::sub_agent_policy::filter_tool_defs_for_executor_kind;
-use super::task_level_evidence::task_level_satisfied_allows_early_stop;
+use super::turn_completion::{
+    task_level_satisfied_allows_early_stop, turn_redundant_tools_after_completion_allowed,
+};
 
 fn check_shared_turn_budget(p: &RunLoopParams<'_>) -> Result<(), RunAgentTurnError> {
     if let Err(msg) = p
@@ -231,11 +231,7 @@ fn completed_goal_with_redundant_tool_calls(p: &mut RunLoopParams<'_>, msg: &Mes
     let Some(tool_calls) = msg.tool_calls.as_ref().filter(|calls| !calls.is_empty()) else {
         return false;
     };
-    let messages = p.turn.messages();
-    if !tool_calls_are_redundant_when_goal_satisfied(tool_calls, messages) {
-        return false;
-    }
-    task_level_satisfied_allows_early_stop(messages)
+    turn_redundant_tools_after_completion_allowed(tool_calls, p.turn.messages())
 }
 
 fn drop_redundant_tool_calls_after_active_goal_completed(p: &mut RunLoopParams<'_>, msg: &Message) {

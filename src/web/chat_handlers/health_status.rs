@@ -72,8 +72,8 @@ struct StatusResponse {
     final_plan_semantic_check_max_tokens: u32,
     /// 规划器/执行器模式：single_agent | logical_dual_agent。
     planner_executor_mode: &'static str,
-    /// 为 true 时每条用户消息先无工具规划轮再按步执行（见 `agent::agent_turn`）。
-    staged_plan_execution: bool,
+    /// 为 true 时每条用户消息先无工具规划轮再按步执行（见 `agent::agent_turn`；由 `staged_plan_intent_gate` 门控）。
+    staged_plan_intent_gate_advisory_bypass: bool,
     /// CLI 是否在分阶段/逻辑双 agent 的**无工具规划轮**向 stdout 打印模型原文（默认 true）。
     staged_plan_cli_show_planner_stream: bool,
     /// 首轮规划后是否再跑无工具「步骤优化」轮（默认 true）。
@@ -266,7 +266,9 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
             .per_plan_policy
             .final_plan_semantic_check_max_tokens,
         planner_executor_mode: cfg.per_plan_policy.planner_executor_mode.as_str(),
-        staged_plan_execution: cfg.staged_planning.staged_plan_execution,
+        staged_plan_intent_gate_advisory_bypass: cfg
+            .staged_planning
+            .staged_plan_intent_gate_advisory_bypass,
         staged_plan_cli_show_planner_stream: cfg
             .staged_planning
             .staged_plan_cli_show_planner_stream,

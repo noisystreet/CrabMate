@@ -189,9 +189,8 @@ mod tests {
     }
 
     #[test]
-    fn gate_allow_always_planned_step_even_if_staged_plan_execution_false() {
-        let mut cfg = cfg_with(PlannerExecutorMode::SingleAgent);
-        cfg.staged_planning.staged_plan_execution = false;
+    fn gate_allow_always_planned_step_when_intent_gate_allows() {
+        let cfg = cfg_with(PlannerExecutorMode::SingleAgent);
         assert_eq!(
             resolve_non_hierarchical_turn_phase(&cfg, true),
             NonHierarchicalTurnPhase::PlannedStep(PlannedStepKind::SingleAgent)

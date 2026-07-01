@@ -1,18 +1,24 @@
-//! 任务级 Satisfied 是否允许外循环/staged 提前停轮（构建/测试类须走完规划步）。
+//! 回合级「目标完成 / 早停 / 冗余工具抑制」共用判定（外循环、滚动视界、completion_suppression）。
 
-use crate::types::Message;
+use crate::types::{Message, ToolCall};
 
-use super::verify::{
+use super::completion_suppression::tool_calls_are_redundant_when_goal_satisfied;
+use super::task_level_evidence::{
     GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
     generic_task_intent_implies_build_or_test,
 };
 
+/// 当前活跃用户目标的任务级完成证据（启发式）。
+pub(crate) fn turn_goal_completion_evidence(messages: &[Message]) -> GoalCompletionEvidenceCheck {
+    check_active_user_goal_completion_evidence(messages)
+}
+
 /// 任务级证据已 Satisfied 时是否允许**提前停轮**（规划步滚动视界与子 Agent 外循环共用）。
 ///
 /// 构建/测试类任务须走完规划步（含 `test_runner` / 有效 `acceptance`），不得仅凭启发式早停。
-pub(crate) fn task_level_satisfied_allows_early_stop(messages: &[Message]) -> bool {
+pub(crate) fn turn_early_stop_allowed(messages: &[Message]) -> bool {
     if !matches!(
-        check_active_user_goal_completion_evidence(messages),
+        turn_goal_completion_evidence(messages),
         GoalCompletionEvidenceCheck::Satisfied
     ) {
         return false;
@@ -22,6 +28,22 @@ pub(crate) fn task_level_satisfied_allows_early_stop(messages: &[Message]) -> bo
         return false;
     };
     !generic_task_intent_implies_build_or_test(task)
+}
+
+/// 与 [`turn_early_stop_allowed`] 同义；保留旧名供逐步迁移引用。
+pub(crate) fn task_level_satisfied_allows_early_stop(messages: &[Message]) -> bool {
+    turn_early_stop_allowed(messages)
+}
+
+/// 活跃目标已有完成证据且允许早停时，是否应静默丢弃本轮探针类 / 重复 `run_command` 工具调用。
+pub(crate) fn turn_redundant_tools_after_completion_allowed(
+    tool_calls: &[ToolCall],
+    messages: &[Message],
+) -> bool {
+    if !tool_calls_are_redundant_when_goal_satisfied(tool_calls, messages) {
+        return false;
+    }
+    turn_early_stop_allowed(messages)
 }
 
 #[cfg(test)]
@@ -66,7 +88,7 @@ mod tests {
             ),
             msg("assistant", "HPCG 编译完成成功。"),
         ];
-        assert!(!task_level_satisfied_allows_early_stop(&messages));
+        assert!(!turn_early_stop_allowed(&messages));
     }
 
     #[test]
@@ -80,7 +102,7 @@ mod tests {
             ),
             msg("assistant", "构建已成功完成。"),
         ];
-        assert!(!task_level_satisfied_allows_early_stop(&messages));
+        assert!(!turn_early_stop_allowed(&messages));
     }
 
     #[test]
@@ -93,6 +115,6 @@ mod tests {
                 "当前目录包含三个压缩包，分析结果如下，总结完成。",
             ),
         ];
-        assert!(task_level_satisfied_allows_early_stop(&messages));
+        assert!(turn_early_stop_allowed(&messages));
     }
 }

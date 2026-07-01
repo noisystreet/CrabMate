@@ -44,6 +44,7 @@ mod run_dispatch;
 mod staged;
 mod sub_agent_policy;
 mod task_level_evidence;
+mod turn_completion;
 mod turn_orchestration;
 
 // 供 crate 内其它模块与文档链接；本文件自身不直接使用这些符号。
@@ -82,11 +83,10 @@ pub(crate) async fn run_agent_turn_common(
     }
     debug!(
         target: "crabmate",
-        "run_agent_turn 开始 message_count={} messages_revision={} last_user_preview={} staged_plan={} planner_executor_mode={} work_dir={}",
+        "run_agent_turn 开始 message_count={} messages_revision={} last_user_preview={} planner_executor_mode={} work_dir={}",
         p.turn.messages().len(),
         p.turn.messages_buffer_revision(),
         crate::redact::last_user_message_preview_for_log(p.turn.messages()),
-        p.ctx.core.cfg.staged_planning.staged_plan_execution,
         p.ctx.core.cfg.per_plan_policy.planner_executor_mode.as_str(),
         p.ctx.core.effective_working_dir.display()
     );
@@ -101,7 +101,12 @@ pub(crate) async fn run_agent_turn_common(
     info!(
         target: "crabmate::agent_turn",
         planner_executor_mode = p.ctx.core.cfg.per_plan_policy.planner_executor_mode.as_str(),
-        staged_plan_execution = p.ctx.core.cfg.staged_planning.staged_plan_execution,
+        staged_plan_intent_gate_advisory_bypass = p
+            .ctx
+            .core
+            .cfg
+            .staged_planning
+            .staged_plan_intent_gate_advisory_bypass,
         intent_at_turn_start_enabled = p.ctx.core.cfg.intent_routing.intent_at_turn_start_enabled,
         top_level_dispatch = top_dispatch.as_str(),
         "run_agent_turn_common enter"

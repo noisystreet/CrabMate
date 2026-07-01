@@ -206,7 +206,6 @@ pub struct SessionWorkspaceChangelistConfig {
 
 #[derive(Debug, Clone)]
 pub struct StagedPlanningConfig {
-    pub staged_plan_execution: bool,
     pub staged_plan_phase_instruction: String,
     pub staged_plan_allow_no_task: bool,
     pub staged_plan_feedback_mode: StagedPlanFeedbackMode,

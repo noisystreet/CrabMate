@@ -193,7 +193,7 @@ pub(super) struct AgentSection {
     pub(super) test_result_cache_max_entries: Option<u64>,
     pub(super) session_workspace_changelist_enabled: Option<bool>,
     pub(super) session_workspace_changelist_max_chars: Option<u64>,
-    pub(super) staged_plan_execution: Option<bool>,
+
     pub(super) staged_plan_phase_instruction: Option<String>,
     /// 兼容旧键；已无运行时语义（见 `AgentConfig::staged_plan_allow_no_task`）。
     pub(super) staged_plan_allow_no_task: Option<bool>,

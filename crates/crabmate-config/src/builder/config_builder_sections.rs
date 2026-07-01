@@ -192,7 +192,6 @@ pub(crate) struct ConfigBuilderSessionWorkspaceChangelist {
 
 #[derive(Default)]
 pub(crate) struct ConfigBuilderStagedPlanning {
-    pub(crate) staged_plan_execution: Option<bool>,
     pub(crate) staged_plan_phase_instruction: Option<String>,
     pub(crate) staged_plan_allow_no_task: Option<bool>,
     pub(crate) staged_plan_feedback_mode_str: Option<String>,

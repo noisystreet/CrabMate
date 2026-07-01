@@ -47,7 +47,6 @@ struct FinalizeTailScalars {
     test_result_cache_max_entries: usize,
     session_workspace_changelist_enabled: bool,
     session_workspace_changelist_max_chars: usize,
-    staged_plan_execution: bool,
     staged_plan_phase_instruction: String,
     staged_plan_allow_no_task: bool,
     staged_plan_feedback_mode: StagedPlanFeedbackMode,
@@ -329,7 +328,6 @@ fn derive_tail_context_queues_session_scalars(
 
 #[allow(clippy::struct_excessive_bools)]
 struct TailStagedSandboxWebScalars {
-    staged_plan_execution: bool,
     staged_plan_phase_instruction: String,
     staged_plan_allow_no_task: bool,
     staged_plan_feedback_mode: StagedPlanFeedbackMode,
@@ -360,7 +358,6 @@ struct TailStagedSandboxWebScalars {
 fn derive_tail_staged_sandbox_web_scalars(
     b: &ConfigBuilder,
 ) -> Result<TailStagedSandboxWebScalars, String> {
-    let staged_plan_execution = b.staged_planning.staged_plan_execution.unwrap_or(true);
     let staged_plan_phase_instruction = b.staged_planning.staged_plan_phase_instruction.clone().unwrap_or_default();
     let staged_plan_allow_no_task = b.staged_planning.staged_plan_allow_no_task.unwrap_or(true);
     let staged_plan_feedback_mode = match b.staged_planning.staged_plan_feedback_mode_str.as_deref() {
@@ -449,7 +446,6 @@ fn derive_tail_staged_sandbox_web_scalars(
     let allow_insecure_no_auth_for_non_loopback =
         b.web_api.allow_insecure_no_auth_for_non_loopback.unwrap_or(false);
     Ok(TailStagedSandboxWebScalars {
-        staged_plan_execution,
         staged_plan_phase_instruction,
         staged_plan_allow_no_task,
         staged_plan_feedback_mode,
@@ -781,7 +777,6 @@ fn assemble_finalize_tail_scalars(
         test_result_cache_max_entries,
         session_workspace_changelist_enabled,
         session_workspace_changelist_max_chars,
-        staged_plan_execution: ssw.staged_plan_execution,
         staged_plan_phase_instruction: ssw.staged_plan_phase_instruction.clone(),
         staged_plan_allow_no_task: ssw.staged_plan_allow_no_task,
         staged_plan_feedback_mode: ssw.staged_plan_feedback_mode,

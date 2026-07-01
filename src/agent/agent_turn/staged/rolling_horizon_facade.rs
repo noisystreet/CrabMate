@@ -13,7 +13,7 @@ use crate::types::{
 
 use super::super::errors::{AgentTurnSubPhase, RunAgentTurnError};
 use super::super::params::RunLoopParams;
-use super::super::task_level_evidence::task_level_satisfied_allows_early_stop;
+use super::super::turn_completion::task_level_satisfied_allows_early_stop;
 use super::turn_fsm::{
     StagedTurnAdvance, StagedTurnPhase, StagedTurnSubCallOutcome,
     entered_flag_for_next_planner_call, staged_rolling_horizon_apply_advance,

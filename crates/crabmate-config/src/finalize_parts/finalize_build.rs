@@ -255,7 +255,6 @@ fn finalize_section_session_workspace_changelist(
 
 fn finalize_section_staged_planning(tail: &FinalizeTailScalars) -> types::StagedPlanningConfig {
     types::StagedPlanningConfig {
-        staged_plan_execution: tail.staged_plan_execution,
         staged_plan_phase_instruction: tail.staged_plan_phase_instruction.clone(),
         staged_plan_allow_no_task: tail.staged_plan_allow_no_task,
         staged_plan_feedback_mode: tail.staged_plan_feedback_mode,
