@@ -26,6 +26,28 @@ pub fn is_arg_safe(cmd_name: &str, arg: &str) -> bool {
     !a.contains("..") && !a.starts_with('/')
 }
 
+/// 将 `command: "./"` + 单个相对路径 `args`（模型按 shell 习惯误拆）合并为 `command: "./path"`。
+///
+/// 仅当 `command` 恰为 `./`、且唯一参数为不含 `..`/绝对路径的相对路径时生效；多参数或其它命令名不动。
+pub fn merge_dot_slash_with_single_relative_path(cmd_raw: &mut String, cmd_args: &mut Vec<String>) {
+    if cmd_raw.trim() != "./" {
+        return;
+    }
+    if cmd_args.len() != 1 {
+        return;
+    }
+    let arg = cmd_args[0].trim();
+    if arg.is_empty() || arg.contains("..") || arg.starts_with('/') {
+        return;
+    }
+    *cmd_raw = if arg.starts_with("./") {
+        arg.to_string()
+    } else {
+        format!("./{arg}")
+    };
+    cmd_args.clear();
+}
+
 /// 将 `command` 写成 `prog arg1 arg2` 整段而 `args` 为空（或需前缀拼接）的常见误用，规范为
 /// `prog` + `["arg1","arg2", …原 args…]`，以便 [`std::process::Command::new`] 能解析到真实可执行文件。
 ///
@@ -109,4 +131,45 @@ pub fn peel_workspace_cd_prefix(
         split_command_prefix_if_embedded(cmd_raw, cmd_args);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::merge_dot_slash_with_single_relative_path;
+
+    #[test]
+    fn merge_dot_slash_single_relative_path() {
+        let mut cmd = "./".to_string();
+        let mut args = vec!["hello/build/hello".to_string()];
+        merge_dot_slash_with_single_relative_path(&mut cmd, &mut args);
+        assert_eq!(cmd, "./hello/build/hello");
+        assert!(args.is_empty());
+    }
+
+    #[test]
+    fn merge_dot_slash_preserves_arg_with_dot_slash_prefix() {
+        let mut cmd = "./".to_string();
+        let mut args = vec!["./bin/app".to_string()];
+        merge_dot_slash_with_single_relative_path(&mut cmd, &mut args);
+        assert_eq!(cmd, "./bin/app");
+        assert!(args.is_empty());
+    }
+
+    #[test]
+    fn merge_dot_slash_skips_multiple_args() {
+        let mut cmd = "./".to_string();
+        let mut args = vec!["a".to_string(), "b".to_string()];
+        merge_dot_slash_with_single_relative_path(&mut cmd, &mut args);
+        assert_eq!(cmd, "./");
+        assert_eq!(args.len(), 2);
+    }
+
+    #[test]
+    fn merge_dot_slash_skips_unsafe_arg() {
+        let mut cmd = "./".to_string();
+        let mut args = vec!["../outside".to_string()];
+        merge_dot_slash_with_single_relative_path(&mut cmd, &mut args);
+        assert_eq!(cmd, "./");
+        assert_eq!(args, vec!["../outside".to_string()]);
+    }
 }

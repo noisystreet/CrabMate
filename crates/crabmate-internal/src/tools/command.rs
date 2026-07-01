@@ -16,7 +16,8 @@ use super::test_result_cache::{
 use crate::tool_result::{ParsedLegacyOutput, ToolError, ToolFailureCategory};
 
 use super::command_line_prepare::{
-    CdPeelError, is_arg_safe, peel_workspace_cd_prefix, split_command_prefix_if_embedded,
+    CdPeelError, is_arg_safe, merge_dot_slash_with_single_relative_path, peel_workspace_cd_prefix,
+    split_command_prefix_if_embedded,
 };
 
 /// `run_command` 在参数校验、限流、启动进程前的失败原因（可判别；成功路径仍返回带退出码的 `String` 正文）。
@@ -291,6 +292,7 @@ fn prepare_run_command_invocation(
         .map(|a| normalize_workspace_absolute_arg(&a, working_dir))
         .collect();
 
+    merge_dot_slash_with_single_relative_path(&mut cmd_raw, &mut cmd_args);
     split_command_prefix_if_embedded(&mut cmd_raw, &mut cmd_args);
 
     let mut effective_working_dir = working_dir.to_path_buf();
@@ -781,6 +783,30 @@ mod tests {
         assert_eq!(
             p.cmd_args,
             vec!["run".to_string(), "--all-files".to_string()]
+        );
+    }
+
+    #[test]
+    fn prepare_merges_dot_slash_command_with_single_relative_executable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let bin_dir = dir.path().join("hello/build");
+        std::fs::create_dir_all(&bin_dir).expect("mkdir");
+        let bin = bin_dir.join("hello");
+        std::fs::write(&bin, b"\x7fELF").expect("write");
+        let mut perms = std::fs::metadata(&bin).expect("meta").permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&bin, perms).expect("chmod");
+
+        let v: serde_json::Value =
+            serde_json::from_str(r#"{"command":"./","args":["hello/build/hello"]}"#).expect("json");
+        let p = prepare_run_command_invocation(&v, dir.path(), &[]).expect("prep");
+        assert_eq!(p.cmd_raw, "./hello/build/hello");
+        assert!(p.cmd_args.is_empty());
+        assert!(
+            p.exec_path.is_some(),
+            "merged path should resolve as workspace executable"
         );
     }
 
