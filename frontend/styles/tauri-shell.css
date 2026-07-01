@@ -107,3 +107,16 @@ html[data-tauri-shell]:not([data-ide-layout]) .shell-main-header-mobile button {
 html[data-tauri-shell]:not([data-ide-layout]) .shell-main-header-title {
   display: none;
 }
+
+/* 底栏角色上拉菜单：勿被窗口拖拽区吞点击；原生 select 在底栏易被 WebView 裁剪 */
+html[data-tauri-shell] .status-chip-role,
+html[data-tauri-shell] .status-agent-role-wrap,
+html[data-tauri-shell] .status-agent-role-trigger,
+html[data-tauri-shell] .status-agent-role-menu,
+html[data-tauri-shell] .status-agent-role-backdrop {
+  -webkit-app-region: no-drag;
+}
+
+html[data-tauri-shell] .status-chips:has(.status-agent-role-trigger-open) {
+  overflow-y: visible;
+}

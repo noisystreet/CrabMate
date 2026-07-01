@@ -145,11 +145,13 @@ fn apply_ide_and_llm_prefs_dto(app: &AppSignals, dto: &UserPrefsDto) {
     }
     if let Some(ref r) = dto.cm_role {
         let t = r.trim();
-        app.llm_settings.selected_agent_role.set(if t.is_empty() {
-            None
-        } else {
-            Some(t.to_string())
-        });
+        if !app.llm_settings.agent_role_user_override.get_untracked() {
+            app.llm_settings.selected_agent_role.set(if t.is_empty() {
+                None
+            } else {
+                Some(t.to_string())
+            });
+        }
     }
     if let Some(d) = dto.disable_readonly_tool_ttl_cache {
         crate::api::client_llm_storage::set_readonly_tool_ttl_cache_follow_server_in_memory(!d);
