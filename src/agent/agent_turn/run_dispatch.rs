@@ -1,10 +1,9 @@
-//! 回合执行模式分发：分层 vs 非分层；非分层下 **`execute_non_hierarchical_main_route`** 顶层二分：**`Staged(kind)`**（滚动视界）vs **`SingleAgentOuterLoop`**。
+//! 回合执行模式分发：分层 vs 非分层；非分层经 **`run_non_hierarchical_turn`** 统一 driver。
 //!
 //! 从 [`super::run_agent_turn_common`] 抽离，使 `mod.rs` 仅保留入口日志、分隔线与 `PerCoordinator` 构造等接线。
 //!
 //! **分阶段意图门控**：[`super::intent::assess_staged_planning_gate_full_pipeline`] 产出结构化 [`super::intent::StagedPlanningGateOutcome`]，
-//! 与 `intent_pipeline::IntentDecision` 对齐，并与 **`intent_at_turn_start`** 共用 **L2 优先管线**。**[`execute_non_hierarchical_main_route`]** 将
-//! [`super::turn_orchestration::NonHierarchicalEntryResolution`] 聚合门控与配置，给出显式 [`super::turn_orchestration::NonHierarchicalMainRoute`]。
+//! 与 `intent_pipeline::IntentDecision` 对齐，并与 **`intent_at_turn_start`** 共用 **L2 优先管线**。
 
 use crate::agent::per_coord::PerCoordinator;
 
@@ -12,35 +11,12 @@ use super::errors::RunAgentTurnError;
 use super::hierarchy;
 use super::intent::{StagedPlanningGateOutcome, assess_staged_planning_gate_full_pipeline};
 use super::intent_at_turn_start;
+use super::non_hierarchical_turn::run_non_hierarchical_turn;
 use super::orchestration_entry::{
-    TurnOrchestrationTransition, log_orchestration_transition, resolve_non_hierarchical_entry,
+    TurnOrchestrationTransition, log_orchestration_transition, resolve_non_hierarchical_turn,
 };
-use super::outer_loop::run_agent_outer_loop;
 use super::params::RunLoopParams;
-use super::staged::run_non_hierarchical_staged_route;
-use super::turn_orchestration::{NonHierarchicalMainRoute, TurnOrchestrationMode};
-
-/// 执行非分层主路径（与 [`resolve_non_hierarchical_main_route`] 产物一一对应）。
-pub(crate) async fn execute_non_hierarchical_main_route(
-    main_route: NonHierarchicalMainRoute,
-    p: &mut RunLoopParams<'_>,
-    per_coord: &mut PerCoordinator,
-) -> Result<(), RunAgentTurnError> {
-    match main_route {
-        NonHierarchicalMainRoute::Staged(kind) => {
-            log::info!(
-                target: "crabmate",
-                "run_agent_turn: using staged rolling horizon ({})",
-                kind.as_str()
-            );
-            run_non_hierarchical_staged_route(kind, p, per_coord).await
-        }
-        NonHierarchicalMainRoute::SingleAgentOuterLoop => {
-            log::info!(target: "crabmate", "run_agent_turn: using single_agent mode");
-            run_agent_outer_loop(p, per_coord).await
-        }
-    }
-}
+use super::turn_orchestration::TurnOrchestrationMode;
 
 /// `planner_executor_mode == Hierarchical`：意图门控在 [`hierarchy::run_hierarchical_agent`] 内完成。
 pub(crate) async fn dispatch_hierarchical_turn(
@@ -56,7 +32,7 @@ pub(crate) async fn dispatch_hierarchical_turn(
     hierarchy::run_hierarchical_agent(p, per_coord).await
 }
 
-/// 非分层：开局意图门控 → 按配置选择逻辑双代理 / 分阶段规划 / 单 Agent 外循环。
+/// 非分层：开局意图门控 → 解析 [`NonHierarchicalTurnPhase`] → 统一 driver。
 pub(crate) async fn dispatch_non_hierarchical_turn(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
@@ -80,34 +56,28 @@ pub(crate) async fn dispatch_non_hierarchical_turn(
             "staged_plan_intent_gate deny detail"
         );
     }
-    let entry = resolve_non_hierarchical_entry(p.ctx.core.cfg.as_ref(), &staged_gate);
-    let main_route = entry.main_route;
+    let entry = resolve_non_hierarchical_turn(p.ctx.core.cfg.as_ref(), &staged_gate);
+    let turn_phase = entry.turn_phase;
     let mode = entry.orchestration_mode;
     log_orchestration_transition(
         TurnOrchestrationTransition::NonHierarchicalEntryResolved,
         Some(mode.as_str()),
         &[
-            ("non_hierarchical_main_route", main_route.as_str()),
+            ("non_hierarchical_turn_phase", turn_phase.as_str()),
             (
-                "single_agent_outer_loop_because",
-                entry
-                    .single_agent_outer_loop_because
-                    .map(|b| b.as_str())
-                    .unwrap_or(""),
+                "freeform_because",
+                entry.freeform_because.map(|b| b.as_str()).unwrap_or(""),
             ),
         ],
     );
     tracing::info!(
         target: "crabmate::agent_turn",
         turn_orchestration_mode = mode.as_str(),
-        non_hierarchical_main_route = main_route.as_str(),
+        non_hierarchical_turn_phase = turn_phase.as_str(),
         staged_plan_intent_gate_allow = allow_staged,
-        single_agent_outer_loop_because = entry
-            .single_agent_outer_loop_because
-            .map(|b| b.as_str()),
+        freeform_because = entry.freeform_because.map(|b| b.as_str()),
         planner_executor_mode = p.ctx.core.cfg.per_plan_policy.planner_executor_mode.as_str(),
-        staged_plan_execution = p.ctx.core.cfg.staged_planning.staged_plan_execution,
-        "dispatch_non_hierarchical_turn main_path"
+        "dispatch_non_hierarchical_turn"
     );
-    execute_non_hierarchical_main_route(main_route, p, per_coord).await
+    run_non_hierarchical_turn(turn_phase, p, per_coord).await
 }

@@ -186,6 +186,16 @@ impl PerCoordinator {
         self.counters.outer_loop_build_idle_feedback_injected()
     }
 
+    pub(crate) fn record_outer_loop_missing_final_answer_feedback_injected(&mut self) {
+        self.counters
+            .record_outer_loop_missing_final_answer_feedback_injected();
+    }
+
+    pub(crate) fn outer_loop_missing_final_answer_feedback_injected(&self) -> u32 {
+        self.counters
+            .outer_loop_missing_final_answer_feedback_injected()
+    }
+
     /// `context_window` 在裁剪/摘要等**就地**改写 `messages` 后调用，避免 `layer_count` 缓存指向已删除的 `workflow_validate` 工具结果。
     pub fn invalidate_workflow_validate_layer_cache_after_context_mutation(&mut self) {
         self.workflow_validate_cache

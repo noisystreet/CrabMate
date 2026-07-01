@@ -60,23 +60,23 @@ impl ChatCompletionsBackend for SequencedMockBackend {
     }
 }
 
-fn cfg_single_agent_outer_loop() -> Arc<AgentConfig> {
+fn cfg_freeform_turn() -> Arc<AgentConfig> {
     let mut cfg = load_config(None).expect("embedded default config must load");
     cfg.per_plan_policy.planner_executor_mode = PlannerExecutorMode::SingleAgent;
-    cfg.staged_planning.staged_plan_execution = false;
     cfg.intent_routing.intent_at_turn_start_enabled = false;
+    cfg.intent_routing.intent_l2_enabled = false;
     Arc::new(cfg)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn run_agent_turn_outer_loop_tool_round_then_final_assistant() {
-    let cfg = cfg_single_agent_outer_loop();
+    let cfg = cfg_freeform_turn();
     let client = reqwest::Client::new();
     let tools = build_tools();
     let mut messages = vec![
         Message::system_only("test system".to_string()),
         Message::user_only(
-            "请调用 get_current_time 工具查询当前时间，然后用一句话总结。".to_string(),
+            "请分析当前项目的目录结构，并调用 get_current_time 工具查询当前时间，然后用一句话总结。".to_string(),
         ),
     ];
     let tool_round = Message {
@@ -95,7 +95,9 @@ async fn run_agent_turn_outer_loop_tool_round_then_final_assistant() {
         name: None,
         tool_call_id: None,
     };
-    let final_msg = Message::assistant_only("已查询：当前时间可用（mock 编排测）。".to_string());
+    let final_msg = Message::assistant_only(
+        "已查询：当前时间可用（mock 编排测），以下为完整终答摘要。".to_string(),
+    );
     let backend: &'static SequencedMockBackend = Box::leak(Box::new(SequencedMockBackend::new(
         vec![tool_round, final_msg.clone()],
         "stop",
@@ -151,7 +153,7 @@ async fn run_agent_turn_outer_loop_tool_round_then_final_assistant() {
     assert_eq!(
         backend.call_seq.load(Ordering::SeqCst),
         2,
-        "expected planner → planner after tool"
+        "expected freeform outer loop: planner(tool) → planner(final)"
     );
     let last = messages.last().expect("at least one message after turn");
     assert_eq!(last.role, "assistant");
@@ -167,7 +169,6 @@ async fn run_agent_turn_outer_loop_tool_round_then_final_assistant() {
 fn cfg_hierarchical_for_mock_runner() -> Arc<AgentConfig> {
     let mut cfg = load_config(None).expect("embedded default config must load");
     cfg.per_plan_policy.planner_executor_mode = PlannerExecutorMode::Hierarchical;
-    cfg.staged_planning.staged_plan_execution = false;
     cfg.intent_routing.intent_at_turn_start_enabled = false;
     cfg.intent_routing.intent_l2_enabled = false;
     cfg.hierarchy_routing.enable_llm_routing = Some(true);

@@ -10,7 +10,7 @@ use super::hierarchical_intent_route::{
     HierarchicalPostIntentRoute, resolve_hierarchical_post_intent_route,
 };
 use super::staged_planning_gate_types::StagedPlanningGateOutcome;
-use super::turn_orchestration::{NonHierarchicalEntryResolution, TurnOrchestrationMode};
+use super::turn_orchestration::{NonHierarchicalTurnResolution, TurnOrchestrationMode};
 
 /// `run_agent_turn_common` 顶层二分：分层 vs 非分层（仅读配置，无 IO）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,7 +72,7 @@ impl HierarchicalTurnEntryResolution {
         let post_intent_route = resolve_hierarchical_post_intent_route(assessment);
         let orchestration_mode = match post_intent_route {
             HierarchicalPostIntentRoute::DiscourseFallbackOuter(_) => {
-                TurnOrchestrationMode::SingleAgentOuterLoop
+                TurnOrchestrationMode::Freeform
             }
             HierarchicalPostIntentRoute::RouterManagerRunner => TurnOrchestrationMode::Hierarchical,
         };
@@ -83,13 +83,13 @@ impl HierarchicalTurnEntryResolution {
     }
 }
 
-/// 非分层：`staged_plan_intent_gate` 结果 + 配置 → 主路径（与 [`NonHierarchicalEntryResolution::resolve`] 对齐）。
+/// 非分层：`staged_plan_intent_gate` 结果 + 配置 → 回合阶段（与 [`NonHierarchicalTurnResolution::resolve`] 对齐）。
 #[inline]
-pub fn resolve_non_hierarchical_entry(
+pub fn resolve_non_hierarchical_turn(
     cfg: &AgentConfig,
     staged_gate: &StagedPlanningGateOutcome,
-) -> NonHierarchicalEntryResolution {
-    NonHierarchicalEntryResolution::resolve(cfg, staged_gate)
+) -> NonHierarchicalTurnResolution {
+    NonHierarchicalTurnResolution::resolve(cfg, staged_gate)
 }
 
 /// 统一 info 日志字段，减少 `mod.rs` / `run_dispatch` / `hierarchy` 散落叙述。
@@ -124,7 +124,7 @@ pub fn log_orchestration_transition(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent_turn::turn_orchestration::NonHierarchicalMainRoute;
+    use crate::agent_turn::turn_orchestration::NonHierarchicalTurnPhase;
     use crate::intent_pipeline::{IntentAction, IntentDecision};
     use crate::intent_router::IntentKind;
 
@@ -170,10 +170,7 @@ mod tests {
             r.post_intent_route,
             HierarchicalPostIntentRoute::DiscourseFallbackOuter(_)
         ));
-        assert_eq!(
-            r.orchestration_mode,
-            TurnOrchestrationMode::SingleAgentOuterLoop
-        );
+        assert_eq!(r.orchestration_mode, TurnOrchestrationMode::Freeform);
     }
 
     #[test]
@@ -192,14 +189,14 @@ mod tests {
     }
 
     #[test]
-    fn non_hierarchical_entry_delegates_to_turn_orchestration() {
+    fn non_hierarchical_turn_delegates_to_turn_orchestration() {
         let cfg = cfg_with(PlannerExecutorMode::SingleAgent);
         let gate = StagedPlanningGateOutcome::Deny {
             reason: super::super::staged_planning_gate_types::StagedPlanningDenyReason::EmptyEffectiveTask,
             task_preview: None,
             intent_decision: None,
         };
-        let r = resolve_non_hierarchical_entry(&cfg, &gate);
-        assert_eq!(r.main_route, NonHierarchicalMainRoute::SingleAgentOuterLoop);
+        let r = resolve_non_hierarchical_turn(&cfg, &gate);
+        assert_eq!(r.turn_phase, NonHierarchicalTurnPhase::Freeform);
     }
 }

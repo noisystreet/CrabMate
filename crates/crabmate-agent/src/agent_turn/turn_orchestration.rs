@@ -1,6 +1,7 @@
 //! 单轮 **`run_agent_turn`** 顶层编排形态（**非**全局 FSM）：供结构化 `tracing` 与排障对齐 `run_dispatch` 分支。
 //!
-//! 见 `docs/开发文档.md`「P/R/E」与 **`run_dispatch`** 说明。
+//! 非分层路径由统一 driver（**`non_hierarchical_turn`**）消费 [`NonHierarchicalTurnPhase`]：
+//! **`Freeform`**（仅外循环）或 **`PlannedStep`**（无工具规划 + 滚动视界步循环）。
 
 use crabmate_config::{AgentConfig, PlannerExecutorMode};
 
@@ -8,121 +9,113 @@ use crate::agent_turn::staged_planning_gate_types::{
     StagedPlanningDenyReason, StagedPlanningGateOutcome,
 };
 
-/// 非分层滚动视界 vs 整轮外循环：`Staged` 内区分逻辑双代理 / 单 Agent 规划上下文（与 `rolling_horizon_facade` 对齐）。
+/// 规划步滚动视界变体（逻辑双代理 vs 单 Agent 规划消息构造）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NonHierarchicalStagedKind {
+pub enum PlannedStepKind {
     /// `planner_executor_mode == LogicalDualAgent` 且门控放行。
     LogicalDual,
-    /// `staged_plan_execution` 且门控放行（单 Agent 规划消息构造）。
-    SingleAgentStaged,
+    /// 门控放行时的默认规划步路径（单 Agent `agent_reply_plan`）。
+    SingleAgent,
 }
 
-impl NonHierarchicalStagedKind {
+impl PlannedStepKind {
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::LogicalDual => "logical_dual_agent_staged",
-            Self::SingleAgentStaged => "staged_plan_execution",
+            Self::LogicalDual => "planned_step_logical_dual",
+            Self::SingleAgent => "planned_step_single_agent",
         }
     }
 }
 
-/// 非分层、且 **`intent_at_turn_start` 已通过** 且已知 **`staged_plan_intent_gate`** 是否放行时，
-/// 主执行路径的**显式枚举**（与 `run_dispatch::execute_non_hierarchical_main_route` 顶层二分对齐）。
+/// 非分层回合阶段：自由式外循环，或带结构化规划步的滚动视界。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NonHierarchicalMainRoute {
-    /// 无工具规划壳 + 滚动视界步循环（逻辑双代理或单 Agent 分阶段）。
-    Staged(NonHierarchicalStagedKind),
-    /// 默认：整轮仅 `run_agent_outer_loop`。
-    SingleAgentOuterLoop,
+pub enum NonHierarchicalTurnPhase {
+    /// 分阶段门控未放行：整轮仅 `run_agent_outer_loop`。
+    Freeform,
+    /// 门控放行：无工具规划 → 步内外循环 → 步后 replan。
+    PlannedStep(PlannedStepKind),
 }
 
-impl NonHierarchicalMainRoute {
+impl NonHierarchicalTurnPhase {
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Staged(k) => k.as_str(),
-            Self::SingleAgentOuterLoop => "single_agent_outer_loop",
+            Self::Freeform => "freeform",
+            Self::PlannedStep(k) => k.as_str(),
         }
     }
 }
 
-/// 解析非分层主路径（纯函数）。
-pub fn resolve_non_hierarchical_main_route(
+/// 解析非分层回合阶段（纯函数；**不**再读取 `staged_plan_execution` 作顶层分叉）。
+pub fn resolve_non_hierarchical_turn_phase(
     cfg: &AgentConfig,
     staged_intent_gate_allow: bool,
-) -> NonHierarchicalMainRoute {
-    if cfg.per_plan_policy.planner_executor_mode == PlannerExecutorMode::LogicalDualAgent
-        && staged_intent_gate_allow
-    {
-        NonHierarchicalMainRoute::Staged(NonHierarchicalStagedKind::LogicalDual)
-    } else if cfg.staged_planning.staged_plan_execution && staged_intent_gate_allow {
-        NonHierarchicalMainRoute::Staged(NonHierarchicalStagedKind::SingleAgentStaged)
-    } else {
-        NonHierarchicalMainRoute::SingleAgentOuterLoop
+) -> NonHierarchicalTurnPhase {
+    if !staged_intent_gate_allow {
+        return NonHierarchicalTurnPhase::Freeform;
     }
+    if cfg.per_plan_policy.planner_executor_mode == PlannerExecutorMode::LogicalDualAgent {
+        return NonHierarchicalTurnPhase::PlannedStep(PlannedStepKind::LogicalDual);
+    }
+    NonHierarchicalTurnPhase::PlannedStep(PlannedStepKind::SingleAgent)
 }
 
-/// 非分层、**`intent_at_turn_start` 已继续** 时：聚合 **`staged_plan_intent_gate`**、配置与
-/// [`NonHierarchicalMainRoute`]，并给出「若落单 Agent 外循环则为何」的显式原因（供 `tracing` / 回放）。
+/// 非分层、**`intent_at_turn_start` 已继续** 时：聚合门控、配置与 [`NonHierarchicalTurnPhase`]。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NonHierarchicalEntryResolution {
-    pub main_route: NonHierarchicalMainRoute,
+pub struct NonHierarchicalTurnResolution {
+    pub turn_phase: NonHierarchicalTurnPhase,
     pub orchestration_mode: TurnOrchestrationMode,
-    /// 仅当 [`NonHierarchicalMainRoute::SingleAgentOuterLoop`] 时有值。
-    pub single_agent_outer_loop_because: Option<SingleAgentOuterLoopBecause>,
+    /// 仅当 [`NonHierarchicalTurnPhase::Freeform`] 时有值。
+    pub freeform_because: Option<FreeformBecause>,
 }
 
-/// 非分层下最终走 **`run_agent_outer_loop`** 的根因（门控拒绝 vs 配置未命中更高优先级路径）。
+/// 非分层下走 **`Freeform`** 的根因（门控拒绝）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SingleAgentOuterLoopBecause {
-    /// [`StagedPlanningGateOutcome::Deny`]：分阶段/逻辑双代理门控未放行。
+pub enum FreeformBecause {
     StagedIntentGateDenied(StagedPlanningDenyReason),
-    /// 门控已 **`Allow`**，但当前 `planner_executor_mode` / `staged_plan_execution` 组合未命中逻辑双代理或分阶段主路径，落在默认单 Agent 外循环。
-    ConfigFallbackSingleAgentOuterLoop,
 }
 
-impl SingleAgentOuterLoopBecause {
+impl FreeformBecause {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::StagedIntentGateDenied(r) => r.as_str(),
-            Self::ConfigFallbackSingleAgentOuterLoop => "config_fallback_single_agent_outer_loop",
         }
     }
 }
 
-impl NonHierarchicalEntryResolution {
+impl NonHierarchicalTurnResolution {
     pub fn resolve(cfg: &AgentConfig, staged_gate: &StagedPlanningGateOutcome) -> Self {
         let allow_staged = staged_gate.allows_staged_planning();
-        let main_route = resolve_non_hierarchical_main_route(cfg, allow_staged);
-        let orchestration_mode = TurnOrchestrationMode::from(main_route);
-        let single_agent_outer_loop_because = match main_route {
-            NonHierarchicalMainRoute::SingleAgentOuterLoop => Some(match staged_gate {
+        let turn_phase = resolve_non_hierarchical_turn_phase(cfg, allow_staged);
+        let orchestration_mode = TurnOrchestrationMode::from(turn_phase);
+        let freeform_because = match turn_phase {
+            NonHierarchicalTurnPhase::Freeform => Some(match staged_gate {
                 StagedPlanningGateOutcome::Deny { reason, .. } => {
-                    SingleAgentOuterLoopBecause::StagedIntentGateDenied(*reason)
+                    FreeformBecause::StagedIntentGateDenied(*reason)
                 }
                 StagedPlanningGateOutcome::Allow { .. } => {
-                    SingleAgentOuterLoopBecause::ConfigFallbackSingleAgentOuterLoop
+                    unreachable!("Freeform requires staged gate deny")
                 }
             }),
-            _ => None,
+            NonHierarchicalTurnPhase::PlannedStep(_) => None,
         };
         Self {
-            main_route,
+            turn_phase,
             orchestration_mode,
-            single_agent_outer_loop_because,
+            freeform_because,
         }
     }
 }
 
-impl From<NonHierarchicalMainRoute> for TurnOrchestrationMode {
-    fn from(r: NonHierarchicalMainRoute) -> Self {
-        match r {
-            NonHierarchicalMainRoute::Staged(NonHierarchicalStagedKind::LogicalDual) => {
-                Self::LogicalDualAgentStaged
+impl From<NonHierarchicalTurnPhase> for TurnOrchestrationMode {
+    fn from(phase: NonHierarchicalTurnPhase) -> Self {
+        match phase {
+            NonHierarchicalTurnPhase::Freeform => Self::Freeform,
+            NonHierarchicalTurnPhase::PlannedStep(PlannedStepKind::LogicalDual) => {
+                Self::PlannedStepLogicalDual
             }
-            NonHierarchicalMainRoute::Staged(NonHierarchicalStagedKind::SingleAgentStaged) => {
-                Self::StagedPlanExecution
+            NonHierarchicalTurnPhase::PlannedStep(PlannedStepKind::SingleAgent) => {
+                Self::PlannedStepSingleAgent
             }
-            NonHierarchicalMainRoute::SingleAgentOuterLoop => Self::SingleAgentOuterLoop,
         }
     }
 }
@@ -134,12 +127,12 @@ pub enum TurnOrchestrationMode {
     Hierarchical,
     /// 非分层且 `intent_at_turn_start` 已写入终答并结束本回合。
     IntentAtTurnStartFinished,
-    /// 非分层、`staged_plan_intent_gate` 放行且 `planner_executor_mode == LogicalDualAgent`。
-    LogicalDualAgentStaged,
-    /// 非分层、意图门控放行且 `staged_plan_execution`。
-    StagedPlanExecution,
-    /// 非分层默认：`run_agent_outer_loop`（单 Agent P→R→E）。
-    SingleAgentOuterLoop,
+    /// 非分层、门控放行、`LogicalDualAgent` 规划步滚动视界。
+    PlannedStepLogicalDual,
+    /// 非分层、门控放行、单 Agent 规划步滚动视界。
+    PlannedStepSingleAgent,
+    /// 非分层、门控未放行：整轮 `run_agent_outer_loop`。
+    Freeform,
 }
 
 impl TurnOrchestrationMode {
@@ -147,9 +140,9 @@ impl TurnOrchestrationMode {
         match self {
             Self::Hierarchical => "hierarchical",
             Self::IntentAtTurnStartFinished => "intent_at_turn_start_finished",
-            Self::LogicalDualAgentStaged => "logical_dual_agent_staged",
-            Self::StagedPlanExecution => "staged_plan_execution",
-            Self::SingleAgentOuterLoop => "single_agent_outer_loop",
+            Self::PlannedStepLogicalDual => "planned_step_logical_dual",
+            Self::PlannedStepSingleAgent => "planned_step_single_agent",
+            Self::Freeform => "freeform",
         }
     }
 }
@@ -158,74 +151,74 @@ impl TurnOrchestrationMode {
 mod tests {
     use super::*;
 
-    fn cfg_with(mode: PlannerExecutorMode, staged_plan_execution: bool) -> AgentConfig {
+    fn cfg_with(mode: PlannerExecutorMode) -> AgentConfig {
         let mut c = crabmate_config::load_config(None).expect("embed default config");
         c.per_plan_policy.planner_executor_mode = mode;
-        c.staged_planning.staged_plan_execution = staged_plan_execution;
         c
     }
 
     #[test]
-    fn logical_dual_wins_when_gate_allows() {
-        let cfg = cfg_with(PlannerExecutorMode::LogicalDualAgent, true);
+    fn logical_dual_planned_step_when_gate_allows() {
+        let cfg = cfg_with(PlannerExecutorMode::LogicalDualAgent);
         assert_eq!(
-            resolve_non_hierarchical_main_route(&cfg, true),
-            NonHierarchicalMainRoute::Staged(NonHierarchicalStagedKind::LogicalDual)
+            resolve_non_hierarchical_turn_phase(&cfg, true),
+            NonHierarchicalTurnPhase::PlannedStep(PlannedStepKind::LogicalDual)
         );
         assert_eq!(
-            TurnOrchestrationMode::from(resolve_non_hierarchical_main_route(&cfg, true)),
-            TurnOrchestrationMode::LogicalDualAgentStaged
-        );
-    }
-
-    #[test]
-    fn staged_when_dual_disabled_but_staged_on() {
-        let cfg = cfg_with(PlannerExecutorMode::SingleAgent, true);
-        assert_eq!(
-            resolve_non_hierarchical_main_route(&cfg, true),
-            NonHierarchicalMainRoute::Staged(NonHierarchicalStagedKind::SingleAgentStaged)
+            TurnOrchestrationMode::from(resolve_non_hierarchical_turn_phase(&cfg, true)),
+            TurnOrchestrationMode::PlannedStepLogicalDual
         );
     }
 
     #[test]
-    fn single_outer_when_gate_denies() {
-        let cfg = cfg_with(PlannerExecutorMode::LogicalDualAgent, true);
+    fn single_agent_planned_step_when_gate_allows() {
+        let cfg = cfg_with(PlannerExecutorMode::SingleAgent);
         assert_eq!(
-            resolve_non_hierarchical_main_route(&cfg, false),
-            NonHierarchicalMainRoute::SingleAgentOuterLoop
+            resolve_non_hierarchical_turn_phase(&cfg, true),
+            NonHierarchicalTurnPhase::PlannedStep(PlannedStepKind::SingleAgent)
         );
     }
 
     #[test]
-    fn single_outer_when_staged_off_even_if_gate_allows() {
-        let cfg = cfg_with(PlannerExecutorMode::SingleAgent, false);
+    fn freeform_when_gate_denies() {
+        let cfg = cfg_with(PlannerExecutorMode::LogicalDualAgent);
         assert_eq!(
-            resolve_non_hierarchical_main_route(&cfg, true),
-            NonHierarchicalMainRoute::SingleAgentOuterLoop
+            resolve_non_hierarchical_turn_phase(&cfg, false),
+            NonHierarchicalTurnPhase::Freeform
         );
     }
 
     #[test]
-    fn entry_resolution_denied_gate_carries_staged_reason() {
-        let cfg = cfg_with(PlannerExecutorMode::LogicalDualAgent, true);
+    fn gate_allow_always_planned_step_even_if_staged_plan_execution_false() {
+        let mut cfg = cfg_with(PlannerExecutorMode::SingleAgent);
+        cfg.staged_planning.staged_plan_execution = false;
+        assert_eq!(
+            resolve_non_hierarchical_turn_phase(&cfg, true),
+            NonHierarchicalTurnPhase::PlannedStep(PlannedStepKind::SingleAgent)
+        );
+    }
+
+    #[test]
+    fn turn_resolution_denied_gate_carries_reason() {
+        let cfg = cfg_with(PlannerExecutorMode::LogicalDualAgent);
         let gate = StagedPlanningGateOutcome::Deny {
             reason: StagedPlanningDenyReason::EmptyEffectiveTask,
             task_preview: None,
             intent_decision: None,
         };
-        let r = NonHierarchicalEntryResolution::resolve(&cfg, &gate);
-        assert_eq!(r.main_route, NonHierarchicalMainRoute::SingleAgentOuterLoop);
+        let r = NonHierarchicalTurnResolution::resolve(&cfg, &gate);
+        assert_eq!(r.turn_phase, NonHierarchicalTurnPhase::Freeform);
         assert_eq!(
-            r.single_agent_outer_loop_because,
-            Some(SingleAgentOuterLoopBecause::StagedIntentGateDenied(
+            r.freeform_because,
+            Some(FreeformBecause::StagedIntentGateDenied(
                 StagedPlanningDenyReason::EmptyEffectiveTask
             ))
         );
     }
 
     #[test]
-    fn entry_resolution_allow_but_single_route_is_config_fallback() {
-        let cfg = cfg_with(PlannerExecutorMode::SingleAgent, false);
+    fn turn_resolution_allow_yields_planned_step_without_freeform_because() {
+        let cfg = cfg_with(PlannerExecutorMode::SingleAgent);
         use crate::intent_pipeline::{IntentAction, IntentDecision};
         use crate::intent_router::IntentKind;
         let gate = StagedPlanningGateOutcome::Allow {
@@ -243,17 +236,17 @@ mod tests {
                 action: IntentAction::Execute,
             },
         };
-        let r = NonHierarchicalEntryResolution::resolve(&cfg, &gate);
-        assert_eq!(r.main_route, NonHierarchicalMainRoute::SingleAgentOuterLoop);
+        let r = NonHierarchicalTurnResolution::resolve(&cfg, &gate);
         assert_eq!(
-            r.single_agent_outer_loop_because,
-            Some(SingleAgentOuterLoopBecause::ConfigFallbackSingleAgentOuterLoop)
+            r.turn_phase,
+            NonHierarchicalTurnPhase::PlannedStep(PlannedStepKind::SingleAgent)
         );
+        assert!(r.freeform_because.is_none());
     }
 
     #[test]
-    fn entry_resolution_logical_dual_no_single_because_field() {
-        let cfg = cfg_with(PlannerExecutorMode::LogicalDualAgent, true);
+    fn turn_resolution_logical_dual_no_freeform_because() {
+        let cfg = cfg_with(PlannerExecutorMode::LogicalDualAgent);
         use crate::intent_pipeline::{IntentAction, IntentDecision};
         use crate::intent_router::IntentKind;
         let gate = StagedPlanningGateOutcome::Allow {
@@ -271,17 +264,17 @@ mod tests {
                 action: IntentAction::Execute,
             },
         };
-        let r = NonHierarchicalEntryResolution::resolve(&cfg, &gate);
+        let r = NonHierarchicalTurnResolution::resolve(&cfg, &gate);
         assert_eq!(
-            r.main_route,
-            NonHierarchicalMainRoute::Staged(NonHierarchicalStagedKind::LogicalDual)
+            r.turn_phase,
+            NonHierarchicalTurnPhase::PlannedStep(PlannedStepKind::LogicalDual)
         );
-        assert!(r.single_agent_outer_loop_because.is_none());
+        assert!(r.freeform_because.is_none());
     }
 
     #[test]
-    fn entry_resolution_advisory_bypass_carries_reason() {
-        let cfg = cfg_with(PlannerExecutorMode::SingleAgent, true);
+    fn turn_resolution_advisory_bypass_yields_freeform() {
+        let cfg = cfg_with(PlannerExecutorMode::SingleAgent);
         use crate::intent_pipeline::{IntentAction, IntentDecision};
         use crate::intent_router::IntentKind;
         let gate = StagedPlanningGateOutcome::Deny {
@@ -297,11 +290,11 @@ mod tests {
                 action: IntentAction::Execute,
             }),
         };
-        let r = NonHierarchicalEntryResolution::resolve(&cfg, &gate);
-        assert_eq!(r.main_route, NonHierarchicalMainRoute::SingleAgentOuterLoop);
+        let r = NonHierarchicalTurnResolution::resolve(&cfg, &gate);
+        assert_eq!(r.turn_phase, NonHierarchicalTurnPhase::Freeform);
         assert_eq!(
-            r.single_agent_outer_loop_because,
-            Some(SingleAgentOuterLoopBecause::StagedIntentGateDenied(
+            r.freeform_because,
+            Some(FreeformBecause::StagedIntentGateDenied(
                 StagedPlanningDenyReason::AdvisoryExecuteBypassStaged
             ))
         );

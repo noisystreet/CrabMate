@@ -149,7 +149,7 @@ pub(crate) async fn run_hierarchical_agent(
             crate::turn_replay_dump::append_decision_point_event_if_configured(
                 "intent",
                 "agent_execution_mode",
-                "single_agent_outer_loop",
+                "freeform",
                 "意图判定为话语型/澄清确认流，跳过分层 Manager，转主模型单 Agent 外循环",
                 serde_json::json!({
                     "intent_kind": format!("{:?}", assessment.kind),

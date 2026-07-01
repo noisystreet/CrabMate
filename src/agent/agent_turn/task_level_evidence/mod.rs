@@ -8,9 +8,9 @@ mod render;
 mod verify;
 
 pub(crate) use common::is_program_build_run_request;
-pub(crate) use early_exit::task_level_satisfied_allows_staged_early_exit;
+pub(crate) use early_exit::task_level_satisfied_allows_early_stop;
 pub(crate) use render::render_task_level_evidence;
 pub(crate) use verify::{
     GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
-    generic_task_intent_implies_build_or_test, verify_task_level_execution_evidence,
+    verify_task_level_execution_evidence,
 };

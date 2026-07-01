@@ -21,7 +21,7 @@ pub use intent_routing::{
 };
 pub use orchestration_entry::{
     HierarchicalTurnEntryResolution, TurnOrchestrationTransition, TurnTopLevelDispatch,
-    log_orchestration_transition, resolve_non_hierarchical_entry, resolve_turn_top_level_dispatch,
+    log_orchestration_transition, resolve_non_hierarchical_turn, resolve_turn_top_level_dispatch,
 };
 pub use staged_planning_gate::{
     assess_staged_planning_gate_l1, staged_plan_eligibility_for_intent,
@@ -35,6 +35,6 @@ pub use tool_execution::{
     resolve_tool_batch_execution_mode, tool_policy_early_deny_message,
 };
 pub use turn_orchestration::{
-    NonHierarchicalEntryResolution, NonHierarchicalMainRoute, NonHierarchicalStagedKind,
-    SingleAgentOuterLoopBecause, TurnOrchestrationMode, resolve_non_hierarchical_main_route,
+    FreeformBecause, NonHierarchicalTurnPhase, NonHierarchicalTurnResolution, PlannedStepKind,
+    TurnOrchestrationMode, resolve_non_hierarchical_turn_phase,
 };

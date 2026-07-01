@@ -25,10 +25,7 @@ use super::params::{OuterLoopPlanCallModelRole, RunLoopParams};
 use super::plan::{PerPlanCallModelParams, per_plan_call_model_retrying};
 use super::reflect::per_reflect_after_assistant;
 use super::sub_agent_policy::filter_tool_defs_for_executor_kind;
-use super::task_level_evidence::{
-    GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
-    generic_task_intent_implies_build_or_test,
-};
+use super::task_level_evidence::task_level_satisfied_allows_early_stop;
 
 fn check_shared_turn_budget(p: &RunLoopParams<'_>) -> Result<(), RunAgentTurnError> {
     if let Err(msg) = p
@@ -238,19 +235,7 @@ fn completed_goal_with_redundant_tool_calls(p: &mut RunLoopParams<'_>, msg: &Mes
     if !tool_calls_are_redundant_when_goal_satisfied(tool_calls, messages) {
         return false;
     }
-    let Some(task) = crate::agent::plan_optimizer::staged_plan_trigger_user_content(messages)
-    else {
-        return false;
-    };
-    if generic_task_intent_implies_build_or_test(task)
-        && !outer_loop_window_has_build_progress_since_last_user(messages)
-    {
-        return false;
-    }
-    matches!(
-        check_active_user_goal_completion_evidence(messages),
-        GoalCompletionEvidenceCheck::Satisfied
-    )
+    task_level_satisfied_allows_early_stop(messages)
 }
 
 fn drop_redundant_tool_calls_after_active_goal_completed(p: &mut RunLoopParams<'_>, msg: &Message) {
@@ -417,13 +402,10 @@ async fn run_outer_loop_single_iteration(
     if outer_loop_window_has_build_progress_since_last_user(p.turn.messages()) {
         per_coord.reset_outer_loop_build_idle_streak();
     }
-    if matches!(
-        check_active_user_goal_completion_evidence(p.turn.messages()),
-        GoalCompletionEvidenceCheck::Satisfied
-    ) {
+    if task_level_satisfied_allows_early_stop(p.turn.messages()) {
         tracing::info!(
             target: "crabmate::agent_turn",
-            "当前用户目标已有完成证据，外循环收敛停轮"
+            "当前用户目标已有完成证据且允许早停，外循环收敛停轮"
         );
         return Ok(OuterLoopIterationExit::StopOuterLoop);
     }

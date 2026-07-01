@@ -1,4 +1,4 @@
-//! 非分层模式下 **`resolve_non_hierarchical_main_route`** 之前的分阶段意图门控：
+//! 非分层模式下 **`resolve_non_hierarchical_turn_phase`** 之前的分阶段意图门控：
 //! 与 [`super::at_turn_start::run_intent_l0_l1_l2_gate`] **共用**同一套 L2 优先管线（见 **`assess_staged_planning_gate_full_pipeline`**）。
 //!
 //! 同步 **L1** 门控与资格判定实现于 **`crabmate-agent::agent_turn::staged_planning_gate`**。

@@ -5,7 +5,6 @@
 //! 首轮无工具规划解析后的 ensemble / 优化轮 / 步循环仍在 [`super::run_staged_plan_with_prepared_request`]。
 //! 设计对照：`docs/design/per_state_machine_consolidation.md` §3.2。
 
-use crate::agent::agent_turn::turn_orchestration::NonHierarchicalStagedKind;
 use crate::agent::per_coord::PerCoordinator;
 use crate::types::{
     Message, is_message_excluded_from_llm_context_except_memory, last_staged_step_injection_index,
@@ -14,7 +13,7 @@ use crate::types::{
 
 use super::super::errors::{AgentTurnSubPhase, RunAgentTurnError};
 use super::super::params::RunLoopParams;
-use super::super::task_level_evidence::task_level_satisfied_allows_staged_early_exit;
+use super::super::task_level_evidence::task_level_satisfied_allows_early_stop;
 use super::turn_fsm::{
     StagedTurnAdvance, StagedTurnPhase, StagedTurnSubCallOutcome,
     entered_flag_for_next_planner_call, staged_rolling_horizon_apply_advance,
@@ -60,7 +59,7 @@ fn staged_goal_completion_satisfied_after_step(
     if !matches!(phase, StagedTurnPhase::AfterStepExecutionRound) {
         return false;
     }
-    task_level_satisfied_allows_staged_early_exit(p.turn.messages())
+    task_level_satisfied_allows_early_stop(p.turn.messages())
 }
 
 fn staged_rolling_horizon_preflight_exit(
@@ -313,22 +312,6 @@ pub(crate) async fn run_logical_dual_agent_then_execute_steps(
         Message::user_staged_orchestration_injection,
     )
     .await
-}
-
-/// [`super::super::run_dispatch::execute_non_hierarchical_main_route`] 的分阶段分支入口（合并逻辑双代理 / 单 Agent 分阶段两条顶层路由）。
-pub(crate) async fn run_non_hierarchical_staged_route(
-    kind: NonHierarchicalStagedKind,
-    p: &mut RunLoopParams<'_>,
-    per_coord: &mut PerCoordinator,
-) -> Result<(), RunAgentTurnError> {
-    match kind {
-        NonHierarchicalStagedKind::LogicalDual => {
-            run_logical_dual_agent_then_execute_steps(p, per_coord).await
-        }
-        NonHierarchicalStagedKind::SingleAgentStaged => {
-            run_staged_plan_then_execute_steps(p, per_coord).await
-        }
-    }
 }
 
 pub(crate) fn build_single_agent_planner_messages(
