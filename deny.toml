@@ -25,6 +25,8 @@ allow = [
     "Unlicense",
     "0BSD",
     "BSL-1.0",
+    # zip 8.x → bzip2 0.6 → libbz2-rs-sys（bzip2/libbzip2 1.0.6，宽松许可）
+    "bzip2-1.0.6",
     "Unicode-3.0",
     "MPL-2.0",
     "NCSA",
