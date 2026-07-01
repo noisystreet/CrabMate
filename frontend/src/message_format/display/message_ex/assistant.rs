@@ -6,7 +6,9 @@ use crate::i18n::Locale;
 use crate::message_format::staged_timeline::STAGED_TIMELINE_SYSTEM_PREFIX;
 use crate::storage::{StoredMessage, StoredMessageState};
 
-use super::super::plan_fence::assistant_text_for_display;
+use super::super::plan_fence::{
+    assistant_text_for_display, field_looks_like_agent_reply_plan_blob,
+};
 use super::super::thinking_strip::{
     assistant_thinking_body_and_answer_raw, filter_assistant_thinking_markers_for_display,
 };
@@ -95,26 +97,32 @@ fn assistant_body_with_filters(
     let r = r_body.trim();
     let a = answer.trim();
     let t_trim = t_body.trim();
-    let text_looks_like_plan_json =
-        t_trim.contains("\"agent_reply_plan\"") || t_trim.contains("\"type\":\"agent_reply_plan\"");
-    let answer_is_plan_digest_only =
-        text_looks_like_plan_json && (a.is_empty() || a == crate::i18n::plan_generated(loc));
-    let out = if r.is_empty() {
-        answer
-    } else if a.is_empty() || answer_is_plan_digest_only {
-        // Web SSE：`assistant_answer_phase` 之前的增量写入 `reasoning_text`，之后写入 `text`。
-        // 分阶段无工具规划轮（尤其 `no_task`）可能从未进入终答相，导致「规划前言 + ```json` 围栏」
-        // 全在 `reasoning_text` 而 `text` 为空（或仅剥出「已生成分阶段规划。」占位）；若此处仅回显 `r`，
-        // 会跳过对围栏内 `agent_reply_plan` 的剥离。
-        let merged = format!("{}\n\n{}", r_body.trim_end(), t_body.trim_start());
+    let text_looks_like_plan_json = field_looks_like_agent_reply_plan_blob(t_trim);
+    let reasoning_looks_like_plan_json = field_looks_like_agent_reply_plan_blob(r);
+
+    // 任一侧含规划 JSON 时合并后再剥离，避免 reasoning 与 text 分轨写入时拼接泄漏原始 JSON
+    // （如水合后 `display_content` 已可读化而 `reasoning_content` 仍为原文）。
+    if reasoning_looks_like_plan_json || text_looks_like_plan_json {
+        let merged = if r.is_empty() {
+            t_body.trim().to_string()
+        } else if t_trim.is_empty() {
+            r_body.trim().to_string()
+        } else {
+            format!("{}\n\n{}", r_body.trim_end(), t_body.trim_start())
+        };
         let merged_out =
             assistant_text_for_display(&merged, is_streaming_last_assistant, loc, true);
         let mv = merged_out.trim();
-        if mv.is_empty() || mv != r {
-            merged_out
-        } else {
-            r.to_string()
+        if mv.is_empty() && !a.is_empty() {
+            return maybe_trim_hierarchical_subgoal_redundant_lines(state, answer, true);
         }
+        return maybe_trim_hierarchical_subgoal_redundant_lines(state, merged_out, true);
+    }
+
+    let out = if r.is_empty() {
+        answer
+    } else if a.is_empty() {
+        r.to_string()
     } else {
         format!("{r}\n\n{answer}")
     };

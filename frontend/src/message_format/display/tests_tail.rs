@@ -200,3 +200,152 @@ fn dsml_strip_noop_without_dsml() {
     let s = "普通中文与 English\n第二行";
     assert_eq!(strip_deepseek_dsml_for_display(s), s);
 }
+
+#[test]
+fn pretty_bare_plan_json_in_text_only() {
+    use super::message_text_for_display_ex;
+    let text = r#"{ "type": "agent_reply_plan", "version": 1, "steps": [ { "id": "modify-main-py-cpu-info", "description": "修改 main.py", "executor_kind": "patch_write", "acceptance": { "expect_exit_code": 0, "expect_stdout_contains": "CPU" } } ] }"#;
+    let m = StoredMessage {
+        id: "x".into(),
+        role: "assistant".into(),
+        text: text.into(),
+        reasoning_text: String::new(),
+        image_urls: vec![],
+        state: None,
+        is_tool: false,
+        tool_call_id: None,
+        tool_name: None,
+        created_at: 0,
+    };
+    let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
+    assert!(
+        !out.contains("agent_reply_plan"),
+        "raw plan json should be hidden: {out}"
+    );
+    assert!(
+        out.contains("modify-main-py-cpu-info"),
+        "step id should remain: {out}"
+    );
+}
+
+#[test]
+fn duplicate_raw_plan_json_in_reasoning_and_text() {
+    use super::message_text_for_display_ex;
+    let json = r#"{ "type": "agent_reply_plan", "version": 1, "steps": [ { "id": "x", "description": "d" } ] }"#;
+    let m = StoredMessage {
+        id: "x".into(),
+        role: "assistant".into(),
+        text: json.into(),
+        reasoning_text: json.into(),
+        image_urls: vec![],
+        state: None,
+        is_tool: false,
+        tool_call_id: None,
+        tool_name: None,
+        created_at: 0,
+    };
+    let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
+    assert!(
+        !out.contains("agent_reply_plan"),
+        "duplicate plan json should not leak: {out}"
+    );
+}
+
+#[test]
+fn plan_json_in_reasoning_with_prose_in_text() {
+    use super::message_text_for_display_ex;
+    let reasoning = r#"{ "type": "agent_reply_plan", "version": 1, "steps": [ { "id": "a", "description": "步一" } ] }"#;
+    let m = StoredMessage {
+        id: "x".into(),
+        role: "assistant".into(),
+        text: "补充说明".into(),
+        reasoning_text: reasoning.into(),
+        image_urls: vec![],
+        state: None,
+        is_tool: false,
+        tool_call_id: None,
+        tool_name: None,
+        created_at: 0,
+    };
+    let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
+    assert!(
+        !out.contains("agent_reply_plan"),
+        "plan json in reasoning should not leak: {out}"
+    );
+    assert!(
+        out.contains("补充说明"),
+        "non-plan tail should remain: {out}"
+    );
+}
+
+#[test]
+fn plan_json_in_reasoning_formatted_steps_in_text() {
+    use super::message_text_for_display_ex;
+    let reasoning = r#"{ "type": "agent_reply_plan", "version": 1, "steps": [ { "id": "x", "description": "d" } ] }"#;
+    let text = "1. `x`: d\n";
+    let m = StoredMessage {
+        id: "x".into(),
+        role: "assistant".into(),
+        text: text.into(),
+        reasoning_text: reasoning.into(),
+        image_urls: vec![],
+        state: None,
+        is_tool: false,
+        tool_call_id: None,
+        tool_name: None,
+        created_at: 0,
+    };
+    let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
+    assert!(
+        !out.contains("agent_reply_plan"),
+        "hydration-like split should not leak raw json: {out}"
+    );
+}
+
+#[test]
+fn plan_json_reasoning_only_while_loading() {
+    use super::message_text_for_display_ex;
+    use crate::storage::StoredMessageState;
+    let reasoning = r#"{ "type": "agent_reply_plan", "version": 1, "steps": [ { "id": "x", "description": "d" } ] }"#;
+    let m = StoredMessage {
+        id: "x".into(),
+        role: "assistant".into(),
+        text: String::new(),
+        reasoning_text: reasoning.into(),
+        image_urls: vec![],
+        state: Some(StoredMessageState::Loading),
+        is_tool: false,
+        tool_call_id: None,
+        tool_name: None,
+        created_at: 0,
+    };
+    let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
+    assert!(
+        !out.contains("agent_reply_plan"),
+        "streaming planner json should be readable: {out}"
+    );
+}
+
+#[test]
+fn incomplete_plan_json_not_streaming_is_hidden() {
+    use super::message_text_for_display_ex;
+    let text =
+        r#"{ "type": "agent_reply_plan", "version": 1, "steps": [ { "id": "x", "description": "d""#;
+    let m = StoredMessage {
+        id: "x".into(),
+        role: "assistant".into(),
+        text: text.into(),
+        reasoning_text: String::new(),
+        image_urls: vec![],
+        state: None,
+        is_tool: false,
+        tool_call_id: None,
+        tool_name: None,
+        created_at: 0,
+    };
+    let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
+    assert!(
+        !out.contains("agent_reply_plan"),
+        "incomplete plan json should not leak when not streaming: {out}"
+    );
+}

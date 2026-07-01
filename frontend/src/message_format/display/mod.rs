@@ -78,6 +78,50 @@ mod tests {
     }
 
     #[test]
+    fn merged_plan_json_prefix_and_prose_tail() {
+        let merged = concat!(
+            r#"{ "type": "agent_reply_plan", "version": 1, "steps": [ { "id": "a", "description": "步一" } ] }"#,
+            "\n\n补充说明",
+        );
+        let out = assistant_text_for_display(merged, false, Locale::ZhHans, true);
+        assert!(
+            !out.contains("agent_reply_plan"),
+            "merged strip failed: {out}"
+        );
+        assert!(out.contains("补充说明"), "tail should remain: {out}");
+    }
+
+    #[test]
+    fn field_detects_pretty_plan_json_in_reasoning() {
+        use super::plan_fence::field_looks_like_agent_reply_plan_blob;
+        let s = r#"{ "type": "agent_reply_plan", "version": 1, "steps": [ { "id": "a", "description": "步一" } ] }"#;
+        assert!(field_looks_like_agent_reply_plan_blob(s));
+    }
+
+    #[test]
+    fn reasoning_plan_json_with_prose_in_text_merged_display() {
+        let reasoning = r#"{ "type": "agent_reply_plan", "version": 1, "steps": [ { "id": "a", "description": "步一" } ] }"#;
+        let m = StoredMessage {
+            id: "x".into(),
+            role: "assistant".into(),
+            text: "补充说明".into(),
+            reasoning_text: reasoning.into(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
+        assert!(
+            !out.contains("agent_reply_plan"),
+            "should strip plan json: {out}"
+        );
+        assert!(out.contains("补充说明"), "tail prose should remain: {out}");
+    }
+
+    #[test]
     fn keep_answer_after_unfenced_plan_json_prefix() {
         let raw = r#"{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}最终结论：继续执行。"#;
         let out = assistant_text_for_display(raw, false, Locale::ZhHans, true);
