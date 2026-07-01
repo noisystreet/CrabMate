@@ -170,6 +170,7 @@ pub struct ChatDomainWiringSignals {
     pub locale: RwSignal<Locale>,
     pub apply_assistant_display_filters: RwSignal<bool>,
     pub selected_agent_role: RwSignal<Option<String>>,
+    pub agent_role_user_override: RwSignal<bool>,
 }
 
 impl ChatDomainWiringSignals {
@@ -184,6 +185,7 @@ impl ChatDomainWiringSignals {
             locale: app.shell_ui.locale,
             apply_assistant_display_filters: app.shell_ui.apply_assistant_display_filters,
             selected_agent_role: app.llm_settings.selected_agent_role,
+            agent_role_user_override: app.llm_settings.agent_role_user_override,
         }
     }
 }

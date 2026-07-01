@@ -21,6 +21,7 @@ pub(crate) struct WireChatSessionLifecycleEffectsArgs {
     pub apply_assistant_display_filters: RwSignal<bool>,
     pub chat_session: ChatSessionSignals,
     pub selected_agent_role: RwSignal<Option<String>>,
+    pub agent_role_user_override: RwSignal<bool>,
     pub status_tasks: StatusTasksSignals,
     pub app: crate::app::app_signals::AppSignals,
 }
@@ -37,6 +38,7 @@ impl WireChatSessionLifecycleEffectsArgs {
             apply_assistant_display_filters: app.shell_ui.apply_assistant_display_filters,
             chat_session: app.chat,
             selected_agent_role: app.llm_settings.selected_agent_role,
+            agent_role_user_override: app.llm_settings.agent_role_user_override,
             status_tasks: app.to_status_tasks(),
             app: app.clone(),
         }
@@ -53,6 +55,7 @@ pub(crate) fn wire_chat_session_lifecycle_effects(args: WireChatSessionLifecycle
         apply_assistant_display_filters,
         chat_session,
         selected_agent_role,
+        agent_role_user_override,
         status_tasks,
         app,
     } = args;
@@ -72,8 +75,14 @@ pub(crate) fn wire_chat_session_lifecycle_effects(args: WireChatSessionLifecycle
         chat_session,
         locale,
         selected_agent_role,
+        agent_role_user_override,
         status_tasks,
     );
+
+    Effect::new(move |_| {
+        let _ = chat_session.active_id.get();
+        agent_role_user_override.set(false);
+    });
 
     wire_persist_chat_sessions(initialized, chat_session, locale);
 }

@@ -41,6 +41,7 @@ pub(super) struct ComposerStreamHandles {
     pub chat: ChatSessionSignals,
     pub locale: RwSignal<Locale>,
     pub selected_agent_role: RwSignal<Option<String>>,
+    pub agent_role_user_override: RwSignal<bool>,
     pub shell: ComposerStreamShell,
 }
 
@@ -54,6 +55,7 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> AttachChatStr
         chat,
         locale: locale_sig,
         selected_agent_role,
+        agent_role_user_override,
         shell,
     } = h;
 
@@ -62,6 +64,7 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> AttachChatStr
         let chat = chat;
         let locale_sig = locale_sig;
         let selected_agent_role = selected_agent_role;
+        let agent_role_user_override = agent_role_user_override;
         move |user_text: String,
               image_urls: Vec<String>,
               asst_id: String,
@@ -69,6 +72,7 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> AttachChatStr
             let conv = chat.session_sync.with(|s| s.stream_conversation_id());
             let prepared = prepare_stream_attach(chat, &shell_outer, locale_sig, asst_id.clone());
             let agent_role = selected_agent_role.get();
+            agent_role_user_override.set(false);
             let cbs = callbacks::build_chat_stream_callbacks(Rc::clone(&prepared.stream_ctx));
 
             let gen_snapshot = prepared.attach_generation;

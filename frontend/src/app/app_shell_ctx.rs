@@ -141,6 +141,7 @@ pub struct StatusBarFooterSignals {
     pub status_busy: RwSignal<bool>,
     pub client_llm_storage_tick: RwSignal<u64>,
     pub selected_agent_role: RwSignal<Option<String>>,
+    pub agent_role_user_override: RwSignal<bool>,
     pub refresh_status: Arc<dyn Fn() + Send + Sync>,
 }
 
@@ -267,6 +268,7 @@ impl AppShellCtx {
             status_busy: self.signals.stream.status_busy,
             client_llm_storage_tick: self.signals.llm_settings.client_llm_storage_tick,
             selected_agent_role: self.signals.llm_settings.selected_agent_role,
+            agent_role_user_override: self.signals.llm_settings.agent_role_user_override,
             refresh_status: Arc::clone(&self.refresh_status),
         }
     }

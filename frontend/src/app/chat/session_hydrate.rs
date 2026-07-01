@@ -77,6 +77,7 @@ struct MergeHydrationIntoActiveSessionArgs<'a> {
     current_nonce: u64,
     active_id: &'a str,
     selected_agent_role: RwSignal<Option<String>>,
+    agent_role_user_override: RwSignal<bool>,
     default_agent_role_id: Option<&'a str>,
 }
 
@@ -175,6 +176,7 @@ fn merge_hydration_into_active_session(
         current_nonce,
         active_id,
         selected_agent_role,
+        agent_role_user_override,
         default_agent_role_id,
     } = args;
     if let Err(out) = try_hydration_merge_precheck(
@@ -192,11 +194,12 @@ fn merge_hydration_into_active_session(
     session.messages = new_messages;
     apply_history_meta_from_response(session, resp);
     session.server_revision = Some(resp.revision);
-    if let Some(role) = resp
-        .active_agent_role
-        .as_deref()
-        .map(str::trim)
-        .filter(|r| !r.is_empty())
+    if !agent_role_user_override.get_untracked()
+        && let Some(role) = resp
+            .active_agent_role
+            .as_deref()
+            .map(str::trim)
+            .filter(|r| !r.is_empty())
     {
         selected_agent_role.set(status_bar_selected_agent_role_from_persisted(
             Some(role),
@@ -310,6 +313,7 @@ pub(crate) mod conversation_hydration_cycle {
         snap: HydrationWireSnapshot,
         chat: ChatSessionSignals,
         selected_agent_role: RwSignal<Option<String>>,
+        agent_role_user_override: RwSignal<bool>,
         default_agent_role_id: Option<String>,
     ) {
         let HydrationWireSnapshot {
@@ -361,6 +365,7 @@ pub(crate) mod conversation_hydration_cycle {
                     current_nonce: cur_nonce,
                     active_id: &active,
                     selected_agent_role,
+                    agent_role_user_override,
                     default_agent_role_id: default_agent_role_id.as_deref(),
                 });
             applied_hydration |= merge_outcome.is_applied();
@@ -396,10 +401,18 @@ async fn run_conversation_hydration_cycle(
     snap: HydrationWireSnapshot,
     chat: ChatSessionSignals,
     selected_agent_role: RwSignal<Option<String>>,
+    agent_role_user_override: RwSignal<bool>,
     default_agent_role_id: Option<String>,
 ) {
     let _stream_lane = chat.stream_lane_overlay_phase_untracked();
-    conversation_hydration_cycle::run(snap, chat, selected_agent_role, default_agent_role_id).await;
+    conversation_hydration_cycle::run(
+        snap,
+        chat,
+        selected_agent_role,
+        agent_role_user_override,
+        default_agent_role_id,
+    )
+    .await;
 }
 
 fn clear_conversation_prompt_tokens_if_no_server_conversation(chat: ChatSessionSignals) {
@@ -502,12 +515,14 @@ pub fn wire_session_hydration(
     chat: ChatSessionSignals,
     locale: RwSignal<Locale>,
     selected_agent_role: RwSignal<Option<String>>,
+    agent_role_user_override: RwSignal<bool>,
     status_tasks: StatusTasksSignals,
 ) {
     Effect::new({
         let chat = chat;
         let locale_sig = locale;
         let selected_agent_role = selected_agent_role;
+        let agent_role_user_override = agent_role_user_override;
         let status_tasks = status_tasks;
         move |_| {
             if !AppBootstrapPhase::derive(initialized.get(), web_ui_config_loaded.get())
@@ -530,6 +545,7 @@ pub fn wire_session_hydration(
                 snap,
                 chat,
                 selected_agent_role,
+                agent_role_user_override,
                 default_agent_role_id,
             ));
         }

@@ -35,6 +35,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
         locale,
         draft,
         selected_agent_role,
+        agent_role_user_override,
     } = session;
     let WireComposerStreamsStreamSlice {
         stream_shell,
@@ -48,6 +49,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
         chat,
         locale,
         selected_agent_role,
+        agent_role_user_override,
         shell: stream_shell_for_attach,
     });
 

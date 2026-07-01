@@ -111,6 +111,7 @@ pub(crate) fn wire_chat_domain_effects(
             locale: d.locale,
             draft: d.composer.draft,
             selected_agent_role: d.selected_agent_role,
+            agent_role_user_override: d.agent_role_user_override,
         },
         stream: WireComposerStreamsStreamSlice {
             stream_shell: args.stream_shell,

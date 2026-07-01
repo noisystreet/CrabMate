@@ -51,6 +51,7 @@ struct StatusBarChipsSignals {
     st: StatusTasksSignals,
     client_llm_storage_tick: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
+    agent_role_user_override: RwSignal<bool>,
     locale: RwSignal<Locale>,
 }
 
@@ -246,6 +247,7 @@ fn StatusBarChipsLoaded(
     st: StatusTasksSignals,
     client_llm_storage_tick: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
+    agent_role_user_override: RwSignal<bool>,
     locale: RwSignal<Locale>,
 ) -> impl IntoView {
     let chat = expect_chat_shell_ctx().chat;
@@ -301,6 +303,7 @@ fn StatusBarChipsLoaded(
                         } else {
                             selected_agent_role.set(Some(t.to_string()));
                         }
+                        agent_role_user_override.set(true);
                         chat.clear_stream_resume_handles();
                     }
                 >
@@ -349,6 +352,7 @@ fn StatusBarChipsRow(
         st,
         client_llm_storage_tick,
         selected_agent_role,
+        agent_role_user_override,
         locale,
     } = chips;
     view! {
@@ -374,6 +378,7 @@ fn StatusBarChipsRow(
                             st=st
                             client_llm_storage_tick=client_llm_storage_tick
                             selected_agent_role=selected_agent_role
+                            agent_role_user_override=agent_role_user_override
                             locale=locale
                         />
                     }
@@ -432,6 +437,7 @@ fn StatusBarFooterBody(
     status_busy: RwSignal<bool>,
     client_llm_storage_tick: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
+    agent_role_user_override: RwSignal<bool>,
     refresh_status: Arc<dyn Fn() + Send + Sync>,
 ) -> impl IntoView {
     let locale = expect_chat_shell_ctx().locale;
@@ -439,6 +445,7 @@ fn StatusBarFooterBody(
         st,
         client_llm_storage_tick,
         selected_agent_role,
+        agent_role_user_override,
         locale,
     };
     view! {
@@ -472,6 +479,7 @@ pub fn status_bar_footer_view(signals: StatusBarFooterSignals) -> impl IntoView 
         status_busy,
         client_llm_storage_tick,
         selected_agent_role,
+        agent_role_user_override,
         refresh_status,
     } = signals;
     view! {
@@ -483,6 +491,7 @@ pub fn status_bar_footer_view(signals: StatusBarFooterSignals) -> impl IntoView 
                 status_busy=status_busy
                 client_llm_storage_tick=client_llm_storage_tick
                 selected_agent_role=selected_agent_role
+                agent_role_user_override=agent_role_user_override
                 refresh_status=refresh_status.clone()
             />
         </Show>
