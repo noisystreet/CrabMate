@@ -286,4 +286,24 @@ mod tests {
             out[0].reasoning_text
         );
     }
+
+    /// 与 `GET /conversation/messages` 快照一致：助手同时下发 `display_content` 与 `display_reasoning_content`。
+    #[test]
+    fn assistant_hydrate_both_display_fields_prefers_display_reasoning_over_raw() {
+        let plan_json = r#"{ "type": "agent_reply_plan", "version": 1, "steps": [ { "id": "x", "description": "d" } ] }"#;
+        let msgs = vec![json!({
+            "role": "assistant",
+            "content": plan_json,
+            "reasoning_content": plan_json,
+            "display_content": "1. `x`: d",
+            "display_reasoning_content": plan_json,
+        })];
+        let out = stored_messages_from_conversation_api_with_base(&msgs, 0);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].text, "1. `x`: d");
+        assert_eq!(
+            out[0].reasoning_text, plan_json,
+            "must hydrate display_reasoning_content, not fall back to raw reasoning_content"
+        );
+    }
 }
