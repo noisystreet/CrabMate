@@ -11,7 +11,6 @@ use log::{debug, info};
 use crate::agent::per_coord::PerCoordinator;
 use crate::types::{Message, USER_CANCELLED_FINISH_REASON, is_intent_gate_ephemeral_system};
 
-use super::completion_suppression::redundant_tool_names_for_log;
 use super::errors::{AgentTurnSubPhase, RunAgentTurnError, TurnAbortReason};
 use super::execute_tools::{
     ExecuteToolsBatchOutcome, WebExecuteCtx, per_execute_tools_web, sse_sender_closed,
@@ -24,7 +23,8 @@ use super::plan::{PerPlanCallModelParams, per_plan_call_model_retrying};
 use super::reflect::per_reflect_after_assistant;
 use super::sub_agent_policy::filter_tool_defs_for_executor_kind;
 use super::turn_completion::{
-    task_level_satisfied_allows_early_stop, turn_redundant_tools_after_completion_allowed,
+    redundant_tool_names_for_log, task_level_satisfied_allows_early_stop,
+    turn_redundant_tools_after_completion_allowed,
 };
 
 fn check_shared_turn_budget(p: &RunLoopParams<'_>) -> Result<(), RunAgentTurnError> {
@@ -434,7 +434,7 @@ pub(crate) async fn run_agent_outer_loop(
 #[cfg(test)]
 mod tests {
     use super::OuterLoopIterationExit;
-    use crate::agent::agent_turn::completion_suppression::{
+    use crate::agent::agent_turn::turn_completion::{
         tool_call_is_redundant_after_completion, tool_calls_are_redundant_after_completion,
     };
     use crate::types::{FunctionCall, ToolCall};

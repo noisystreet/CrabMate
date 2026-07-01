@@ -33,10 +33,10 @@ pub(super) fn should_suppress_completed_replanning(
 
 #[cfg(test)]
 mod tests {
-    use crate::agent::agent_turn::completion_suppression::plan_steps_are_redundant_after_completion;
     use crate::agent::agent_turn::task_level_evidence::{
         GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
     };
+    use crate::agent::agent_turn::turn_completion::plan_steps_are_redundant_after_completion;
     use crate::agent::plan_artifact::PlanStepV1;
     use crate::types::Message;
 

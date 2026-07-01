@@ -13,7 +13,9 @@ use crate::types::{
 
 use super::super::errors::{AgentTurnSubPhase, RunAgentTurnError};
 use super::super::params::RunLoopParams;
-use super::super::turn_completion::turn_staged_rolling_horizon_early_stop_allowed;
+use super::super::turn_completion::{
+    TurnCompletionDecision, evaluate_turn_staged_rolling_horizon_early_stop,
+};
 use super::turn_fsm::{
     StagedTurnAdvance, StagedTurnPhase, StagedTurnSubCallOutcome,
     entered_flag_for_next_planner_call, staged_rolling_horizon_apply_advance,
@@ -52,21 +54,21 @@ impl StagedRollingHorizonKind {
     }
 }
 
-fn staged_goal_completion_satisfied_after_step(
+fn staged_goal_completion_decision_after_step(
     p: &mut RunLoopParams<'_>,
     phase: StagedTurnPhase,
-) -> bool {
+) -> Option<TurnCompletionDecision> {
     if !matches!(phase, StagedTurnPhase::AfterStepExecutionRound) {
-        return false;
+        return None;
     }
-    turn_staged_rolling_horizon_early_stop_allowed(
+    Some(evaluate_turn_staged_rolling_horizon_early_stop(
         p.turn.messages(),
         p.turn
             .turn_planner_hints
             .staged_last_completed_step_effective_acceptance
             .as_ref(),
         p.ctx.core.effective_working_dir,
-    )
+    ))
 }
 
 fn staged_rolling_horizon_preflight_exit(
@@ -91,7 +93,9 @@ fn staged_rolling_horizon_preflight_exit(
             message: kind.max_rounds_error_message(max_rounds),
         }));
     }
-    if staged_goal_completion_satisfied_after_step(p, phase) {
+    if let Some(decision) = staged_goal_completion_decision_after_step(p, phase)
+        && decision.is_allow()
+    {
         tracing::info!(
             target: "crabmate::staged",
             staged_fsm = "rolling_horizon",
@@ -99,6 +103,9 @@ fn staged_rolling_horizon_preflight_exit(
             staged_round = staged_rounds,
             staged_turn_phase = ?phase,
             sub_phase = "planner",
+            turn_completion_decision = decision.as_trace_str(),
+            turn_completion_deny_reason = decision.deny_reason(),
+            rolling_horizon_via = ?decision.rolling_horizon_via(),
             "staged rolling horizon finished: task-level evidence already satisfies original request"
         );
         return Some(Ok(()));

@@ -1,19 +1,27 @@
 //! 回合级「目标完成 / 早停 / 冗余工具抑制 / 终答纠偏 / 步后抑规划」共用判定。
 
-use crate::agent::plan_artifact::{PlanStepAcceptance, PlanStepV1};
-use crate::types::{
-    Message, ToolCall, last_real_user_message_index, last_staged_step_injection_index,
-    message_content_as_str,
+#[path = "turn_completion_decision.rs"]
+mod turn_completion_decision;
+#[cfg(test)]
+#[path = "turn_completion_golden.rs"]
+mod turn_completion_golden;
+
+pub(crate) use turn_completion_decision::{
+    TurnCompletionDecision, evaluate_turn_early_stop, evaluate_turn_redundant_tools,
+    evaluate_turn_staged_rolling_horizon_early_stop, evaluate_turn_suppress_replanning,
+    log_turn_completion_decision,
 };
 
-use super::completion_suppression::{
-    plan_steps_are_redundant_after_completion, plan_steps_require_formal_execution,
-    tool_calls_are_redundant_when_goal_satisfied,
+pub(crate) use super::completion_suppression::redundant_tool_names_for_log;
+
+#[cfg(test)]
+pub(crate) use super::completion_suppression::{
+    plan_steps_are_redundant_after_completion, tool_call_is_redundant_after_completion,
+    tool_calls_are_redundant_after_completion,
 };
-use super::task_level_evidence::{
-    GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
-    generic_task_intent_implies_build_or_test,
-};
+
+use crate::agent::plan_artifact::PlanStepV1;
+use crate::types::{Message, ToolCall, last_real_user_message_index, message_content_as_str};
 
 /// 最多注入次数，避免与外层迭代上限死磕。
 pub(crate) const OUTER_LOOP_MISSING_FINAL_ANSWER_FEEDBACK_MAX: u32 = 2;
@@ -21,26 +29,9 @@ pub(crate) const OUTER_LOOP_MISSING_FINAL_ANSWER_FEEDBACK_MAX: u32 = 2;
 /// 低于该字符数（Unicode scalar）视为「无可见终答」。
 pub(crate) const OUTER_LOOP_MISSING_FINAL_ANSWER_MIN_CHARS: usize = 24;
 
-/// 当前活跃用户目标的任务级完成证据（启发式）。
-pub(crate) fn turn_goal_completion_evidence(messages: &[Message]) -> GoalCompletionEvidenceCheck {
-    check_active_user_goal_completion_evidence(messages)
-}
-
 /// 任务级证据已 Satisfied 时是否允许**提前停轮**（规划步滚动视界与子 Agent 外循环共用）。
-///
-/// 构建/测试类任务须走完规划步（含 `test_runner` / 有效 `acceptance`），不得仅凭启发式早停。
 pub(crate) fn turn_early_stop_allowed(messages: &[Message]) -> bool {
-    if !matches!(
-        turn_goal_completion_evidence(messages),
-        GoalCompletionEvidenceCheck::Satisfied
-    ) {
-        return false;
-    }
-    let Some(task) = crate::agent::plan_optimizer::staged_plan_trigger_user_content(messages)
-    else {
-        return false;
-    };
-    !generic_task_intent_implies_build_or_test(task)
+    evaluate_turn_early_stop(messages).is_allow()
 }
 
 /// 与 [`turn_early_stop_allowed`] 同义；保留旧名供逐步迁移引用。
@@ -53,10 +44,7 @@ pub(crate) fn turn_redundant_tools_after_completion_allowed(
     tool_calls: &[ToolCall],
     messages: &[Message],
 ) -> bool {
-    if !tool_calls_are_redundant_when_goal_satisfied(tool_calls, messages) {
-        return false;
-    }
-    turn_early_stop_allowed(messages)
+    evaluate_turn_redundant_tools(tool_calls, messages).is_allow()
 }
 
 /// 步后重规划：目标已 Satisfied 且新 `steps` 仅为探针/总结时是否应抑制下一轮无工具规划。
@@ -65,43 +53,7 @@ pub(crate) fn turn_suppress_completed_replanning(
     entered_from_step_execution_round: bool,
     steps: &[PlanStepV1],
 ) -> bool {
-    if !entered_from_step_execution_round || steps.is_empty() {
-        return false;
-    }
-    if plan_steps_require_formal_execution(steps) {
-        return false;
-    }
-    if !turn_early_stop_allowed(messages) {
-        return false;
-    }
-    plan_steps_are_redundant_after_completion(steps)
-}
-
-/// 滚动视界：步执行轮结束后是否可因「目标已完成」提前结束（不再进入下一轮无工具规划）。
-///
-/// - 只读类：[`turn_early_stop_allowed`]
-/// - 构建/测试类：须本步 [`PlanStepAcceptance`] 在步窗口内验收 **Pass**（见 hints 中上一完成步的 effective acceptance）
-pub(crate) fn turn_staged_rolling_horizon_early_stop_allowed(
-    messages: &[Message],
-    last_completed_step_effective_acceptance: Option<&PlanStepAcceptance>,
-    workspace_root: &std::path::Path,
-) -> bool {
-    if turn_early_stop_allowed(messages) {
-        return true;
-    }
-    let Some(acceptance) = last_completed_step_effective_acceptance else {
-        return false;
-    };
-    let Some(step_idx) = last_staged_step_injection_index(messages) else {
-        return false;
-    };
-    crate::agent::step_verifier::verify_step_execution(
-        acceptance,
-        messages,
-        step_idx,
-        workspace_root,
-    )
-    .is_pass()
+    evaluate_turn_suppress_replanning(messages, entered_from_step_execution_round, steps).is_allow()
 }
 
 fn outer_loop_window_has_any_successful_tool(messages: &[Message]) -> bool {
@@ -145,20 +97,34 @@ pub(crate) fn outer_loop_missing_final_answer_feedback_if_needed(
     assistant: &Message,
     feedback_injected_count: u32,
 ) -> Option<String> {
-    if feedback_injected_count >= OUTER_LOOP_MISSING_FINAL_ANSWER_FEEDBACK_MAX {
-        return None;
+    let decision = if feedback_injected_count >= OUTER_LOOP_MISSING_FINAL_ANSWER_FEEDBACK_MAX {
+        TurnCompletionDecision::DenyMissingFinalAnswerFeedback {
+            reason: "feedback_budget_exhausted",
+        }
+    } else if !outer_loop_assistant_lacks_visible_final_answer(assistant) {
+        TurnCompletionDecision::DenyMissingFinalAnswerFeedback {
+            reason: "assistant_has_visible_answer",
+        }
+    } else if !outer_loop_window_has_any_successful_tool(messages) {
+        TurnCompletionDecision::DenyMissingFinalAnswerFeedback {
+            reason: "no_successful_tool_in_window",
+        }
+    } else {
+        TurnCompletionDecision::AllowMissingFinalAnswerFeedback
+    };
+    log_turn_completion_decision(decision, "missing_final_answer_feedback");
+    if decision.is_allow() {
+        Some(outer_loop_missing_final_answer_feedback_body())
+    } else {
+        None
     }
-    if !outer_loop_assistant_lacks_visible_final_answer(assistant) {
-        return None;
-    }
-    if !outer_loop_window_has_any_successful_tool(messages) {
-        return None;
-    }
-    Some(outer_loop_missing_final_answer_feedback_body())
 }
 
 #[cfg(test)]
 mod tests {
+    use super::turn_completion_decision::{
+        RollingHorizonStopVia, evaluate_turn_staged_rolling_horizon_early_stop,
+    };
     use super::*;
     use crate::agent::plan_artifact::PlanStepV1;
     use crate::types::Message;
@@ -214,20 +180,10 @@ mod tests {
             msg("assistant", "HPCG 编译完成成功。"),
         ];
         assert!(!turn_early_stop_allowed(&messages));
-    }
-
-    #[test]
-    fn build_task_heuristic_satisfied_blocks_outer_loop_style_early_exit() {
-        let messages = vec![
-            msg("user", "cmake 构建 hello"),
-            tool_env(
-                "run_command",
-                "cmake --build build",
-                "命令：cmake --build build\n退出码：0\n标准输出：\n[100%] Built target hello",
-            ),
-            msg("assistant", "构建已成功完成。"),
-        ];
-        assert!(!turn_early_stop_allowed(&messages));
+        assert_eq!(
+            evaluate_turn_early_stop(&messages).deny_reason(),
+            Some("build_or_test_intent")
+        );
     }
 
     #[test]
@@ -241,21 +197,6 @@ mod tests {
             ),
         ];
         assert!(turn_early_stop_allowed(&messages));
-    }
-
-    #[test]
-    fn build_task_does_not_suppress_replanning_without_early_stop_gate() {
-        let messages = vec![
-            msg("user", "编译 hpcg"),
-            tool_env(
-                "run_command",
-                "make",
-                "命令：make\n退出码：0\n标准输出：\nBuilt",
-            ),
-            msg("assistant", "HPCG 编译完成成功。"),
-        ];
-        let steps = vec![step("verify", Some("verify"), "检查产物")];
-        assert!(!turn_suppress_completed_replanning(&messages, true, &steps));
     }
 
     #[test]
@@ -282,7 +223,6 @@ mod tests {
         ];
         let fb = outer_loop_missing_final_answer_feedback_if_needed(&msgs, &msgs[2], 0);
         assert!(fb.is_some());
-        assert!(fb.unwrap().contains("编排纠偏"));
     }
 
     #[test]
@@ -315,24 +255,15 @@ mod tests {
             expect_json_path_equals: None,
             expect_http_status: None,
         };
-        assert!(!turn_early_stop_allowed(&messages));
-        assert!(turn_staged_rolling_horizon_early_stop_allowed(
+        let decision = evaluate_turn_staged_rolling_horizon_early_stop(
             &messages,
             Some(&acceptance),
             std::path::Path::new("/tmp"),
-        ));
-    }
-
-    #[test]
-    fn staged_step_window_tool_helper_matches_step_verifier_window() {
-        use crate::types::tool_messages_in_staged_step_window;
-
-        let messages = vec![
-            Message::user_staged_step_injection("### 分步 1/1"),
-            tool_env("run_command", "a", "退出码：0\n标准输出：\na\n"),
-            Message::user_only("next"),
-            tool_env("run_command", "b", "退出码：0\n标准输出：\nb\n"),
-        ];
-        assert_eq!(tool_messages_in_staged_step_window(&messages, 0).len(), 1);
+        );
+        assert!(decision.is_allow());
+        assert_eq!(
+            decision.rolling_horizon_via(),
+            Some(RollingHorizonStopVia::StepAcceptancePass)
+        );
     }
 }

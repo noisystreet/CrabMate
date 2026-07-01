@@ -198,6 +198,11 @@ impl TurnPlannerHints {
         self.suppress_duplicate_intent_timeline_once = false;
         v
     }
+
+    /// 新 agent 回合开始时清空步后 completion 缓存。
+    pub(crate) fn reset_staged_completion_hints_for_new_agent_turn(&mut self) {
+        self.staged_last_completed_step_effective_acceptance = None;
+    }
 }
 
 /// 会话与编排可变侧：**消息缓冲**、失败时的 **`sub_phase`**、模型覆盖与本步 `executor_kind` 等。
@@ -289,6 +294,8 @@ impl<'a> RunLoopTurnState<'a> {
 
     /// 本轮 user 后插入 UI 分隔线（若未插入则不变更代数）。
     pub(crate) fn insert_separator_after_last_user_for_turn(&mut self) {
+        self.turn_planner_hints
+            .reset_staged_completion_hints_for_new_agent_turn();
         let n = self.messages_buf.len();
         insert_separator_after_last_user_for_turn(self.messages_buf);
         if self.messages_buf.len() != n {
@@ -529,6 +536,29 @@ mod turn_planner_hints_tests {
         assert_eq!(turn.messages_buffer_revision(), 2);
         turn.retain_messages(|m| m.role != "tool");
         assert_eq!(turn.messages_buffer_revision(), 2);
+    }
+
+    #[test]
+    fn reset_staged_completion_hints_clears_last_step_acceptance() {
+        use crate::agent::plan_artifact::PlanStepAcceptance;
+
+        let mut hints = TurnPlannerHints {
+            staged_last_completed_step_effective_acceptance: Some(PlanStepAcceptance {
+                expect_exit_code: Some(0),
+                expect_stdout_contains: None,
+                expect_stderr_contains: None,
+                expect_file_exists: None,
+                expect_json_path_equals: None,
+                expect_http_status: None,
+            }),
+            ..Default::default()
+        };
+        hints.reset_staged_completion_hints_for_new_agent_turn();
+        assert!(
+            hints
+                .staged_last_completed_step_effective_acceptance
+                .is_none()
+        );
     }
 
     #[test]
