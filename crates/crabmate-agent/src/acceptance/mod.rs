@@ -9,6 +9,7 @@ mod check;
 mod executor_defaults;
 mod exit_code_parse;
 mod json_path_resolve;
+mod tool_evidence;
 
 pub use check::verify_against_spec;
 pub use executor_defaults::{
@@ -17,6 +18,7 @@ pub use executor_defaults::{
 };
 pub use exit_code_parse::parse_exit_code_from_combined_output;
 pub use json_path_resolve::resolve_json_path_value;
+pub use tool_evidence::verify_plan_step_acceptance_for_tool_message;
 
 /// 与历史 `step_verifier::VerifyResult` 一致，便于分阶段路径零改动引用。
 #[derive(Debug, Clone, PartialEq, Eq)]

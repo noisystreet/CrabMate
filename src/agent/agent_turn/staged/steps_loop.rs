@@ -13,6 +13,7 @@ use crate::types::{Message, staged_step_window_end_exclusive};
 use super::super::errors::{AgentTurnSubPhase, RunAgentTurnError};
 use super::super::execute_tools::sse_sender_closed;
 use super::super::outer_loop::run_agent_outer_loop;
+use super::super::params::RunLoopParams;
 
 use super::empty_execution::staged_step_empty_execution_verify_failure;
 use super::orchestrator as staged_orchestrator;
@@ -170,6 +171,13 @@ where
         &step_verify_failed_reason,
     );
 
+    staged_step_record_completed_acceptance_for_rolling_horizon(
+        patch_ctx.p,
+        &step,
+        &run_step,
+        &step_verify_failed_reason,
+    );
+
     StagedStepOuterHalfResult {
         step,
         step_index,
@@ -177,6 +185,21 @@ where
         run_step,
         step_verify_failed_reason,
     }
+}
+
+fn staged_step_record_completed_acceptance_for_rolling_horizon(
+    p: &mut RunLoopParams<'_>,
+    step: &PlanStepV1,
+    run_step: &Result<(), RunAgentTurnError>,
+    step_verify_failed_reason: &Option<String>,
+) {
+    if run_step.is_err() || step_verify_failed_reason.is_some() {
+        return;
+    }
+    p.turn
+        .turn_planner_hints
+        .staged_last_completed_step_effective_acceptance =
+        crate::agent::acceptance::effective_plan_step_acceptance(step);
 }
 
 fn staged_step_clear_run_command_cache_on_verify_failure(

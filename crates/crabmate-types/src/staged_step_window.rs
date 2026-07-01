@@ -50,6 +50,27 @@ pub fn staged_step_window_end_exclusive(messages: &[Message], step_user_index: u
     i
 }
 
+/// 分步窗口 `[step_user_index, end)` 内全部 `role: tool` 消息（时间序）。
+#[must_use]
+pub fn tool_messages_in_staged_step_window(
+    messages: &[Message],
+    step_user_index: usize,
+) -> Vec<&Message> {
+    if step_user_index >= messages.len() {
+        return Vec::new();
+    }
+    let end = staged_step_window_end_exclusive(messages, step_user_index);
+    let mut tools = Vec::new();
+    let mut i = step_user_index.saturating_add(1);
+    while i < end {
+        if messages[i].role == "tool" {
+            tools.push(&messages[i]);
+        }
+        i += 1;
+    }
+    tools
+}
+
 /// 缓冲内最后一条分步注入 `user` 的下标（步后重规划等共用）。
 #[must_use]
 pub fn last_staged_step_injection_index(messages: &[Message]) -> Option<usize> {
@@ -122,5 +143,33 @@ mod tests {
             Message::user_only("follow up"),
         ];
         assert_eq!(staged_step_window_end_exclusive(&msgs, 0), 2);
+    }
+
+    #[test]
+    fn tool_messages_in_window_excludes_next_step() {
+        let msgs = vec![
+            step_user("a"),
+            Message {
+                role: "tool".into(),
+                content: Some("t1".into()),
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: None,
+                name: Some("run_command".into()),
+                tool_call_id: Some("tc1".into()),
+            },
+            step_user("b"),
+            Message {
+                role: "tool".into(),
+                content: Some("t2".into()),
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: None,
+                name: Some("run_command".into()),
+                tool_call_id: Some("tc2".into()),
+            },
+        ];
+        assert_eq!(tool_messages_in_staged_step_window(&msgs, 0).len(), 1);
+        assert_eq!(tool_messages_in_staged_step_window(&msgs, 2).len(), 1);
     }
 }
