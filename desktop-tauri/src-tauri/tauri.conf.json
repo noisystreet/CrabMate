@@ -34,6 +34,7 @@
         "files": {
           "usr/share/applications/crabmate.desktop": "bundle/deb/crabmate.desktop",
           "etc/crabmate/config.toml": "bundle/deb/config.toml",
+          "etc/crabmate/agent_roles.toml": "../../config/agent_roles.toml",
           "etc/crabmate/default_config.toml": "../../config/default_config.toml",
           "etc/crabmate/session.toml": "../../config/session.toml",
           "etc/crabmate/context_inject.toml": "../../config/context_inject.toml",
@@ -44,9 +45,22 @@
           "etc/crabmate/prompts/base_system_prompt.md": "../../config/prompts/base_system_prompt.md",
           "etc/crabmate/prompts/coding_workbench_increment.md": "../../config/prompts/coding_workbench_increment.md",
           "etc/crabmate/prompts/thinking_avoid_echo_appendix.md": "../../config/prompts/thinking_avoid_echo_appendix.md",
+          "etc/crabmate/config/prompts/companion_system_prompt.md": "../../config/prompts/companion_system_prompt.md",
+          "etc/crabmate/config/prompts/scientist_system_prompt.md": "../../config/prompts/scientist_system_prompt.md",
+          "etc/crabmate/config/prompts/engineer_system_prompt.md": "../../config/prompts/engineer_system_prompt.md",
+          "etc/crabmate/config/prompts/philosopher_system_prompt.md": "../../config/prompts/philosopher_system_prompt.md",
+          "etc/crabmate/config/prompts/literary_system_prompt.md": "../../config/prompts/literary_system_prompt.md",
+          "etc/crabmate/config/prompts/code_reviewer_system_prompt.md": "../../config/prompts/code_reviewer_system_prompt.md",
           "usr/share/doc/crabmate/config/prompts/base_system_prompt.md": "../../config/prompts/base_system_prompt.md",
           "usr/share/doc/crabmate/config/prompts/coding_workbench_increment.md": "../../config/prompts/coding_workbench_increment.md",
-          "usr/share/doc/crabmate/config/prompts/thinking_avoid_echo_appendix.md": "../../config/prompts/thinking_avoid_echo_appendix.md"
+          "usr/share/doc/crabmate/config/prompts/thinking_avoid_echo_appendix.md": "../../config/prompts/thinking_avoid_echo_appendix.md",
+          "usr/share/doc/crabmate/config/agent_roles.toml": "../../config/agent_roles.toml",
+          "usr/share/doc/crabmate/config/prompts/companion_system_prompt.md": "../../config/prompts/companion_system_prompt.md",
+          "usr/share/doc/crabmate/config/prompts/scientist_system_prompt.md": "../../config/prompts/scientist_system_prompt.md",
+          "usr/share/doc/crabmate/config/prompts/engineer_system_prompt.md": "../../config/prompts/engineer_system_prompt.md",
+          "usr/share/doc/crabmate/config/prompts/philosopher_system_prompt.md": "../../config/prompts/philosopher_system_prompt.md",
+          "usr/share/doc/crabmate/config/prompts/literary_system_prompt.md": "../../config/prompts/literary_system_prompt.md",
+          "usr/share/doc/crabmate/config/prompts/code_reviewer_system_prompt.md": "../../config/prompts/code_reviewer_system_prompt.md"
         }
       }
     }

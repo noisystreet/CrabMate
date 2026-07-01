@@ -164,8 +164,10 @@ crabmate serve --host 127.0.0.1 --port 0 --desktop-ready-json
 打包的 **deb** 在 `bundle > linux > deb > files` 中**覆盖** `usr/share/applications/crabmate.desktop`（见 `src-tauri/bundle/deb/crabmate.desktop`），在 `Exec=` 中注入 `GDK_BACKEND=x11`。该步骤在 Tauri 生成默认桌面文件**之后**执行，不依赖 Handlebars 模板是否生效。若修改 `productName` 或二进制名，请同步该文件名与条目的 `Name` / `Exec` / `Icon`。同一段映射里还会把后端默认配置打入安装包：
 
 - `/etc/crabmate/config.toml`
+- `/etc/crabmate/agent_roles.toml`（多角色；与 `config.toml` 同目录，见 `docs/配置说明.md`）
 - `/etc/crabmate/*.toml`
-- `/etc/crabmate/prompts/*.md`
+- `/etc/crabmate/prompts/*.md`（全局 system 等）
+- `/etc/crabmate/config/prompts/*.md`（各命名角色的 `system_prompt_file` 增量）
 - `/usr/share/doc/crabmate/config/prompts/*.md`
 
 这样桌面包与根仓库 `cargo deb` 在默认配置资产上保持一致，便于排障与离线查阅。
