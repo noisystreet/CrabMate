@@ -200,6 +200,7 @@ fn wire_phase4b_status_tasks_domain(app: &AppSignals) -> StatusTasksSpawn {
     let refresh_status = make_refresh_status(
         app.to_status_tasks(),
         app.llm_settings.selected_agent_role,
+        app.llm_settings.agent_role_user_override,
         app.shell_ui.locale.get_untracked(),
     );
     let refresh_tasks =

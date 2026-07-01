@@ -45,6 +45,7 @@ mod side_column;
 mod side_column_toolbar;
 mod side_column_workspace_scroll;
 mod sidebar_nav;
+mod status_agent_role_menu;
 mod status_bar;
 mod status_fetch_state;
 mod status_tasks_state;

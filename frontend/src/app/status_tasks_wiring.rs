@@ -16,6 +16,7 @@ use super::status_tasks_state::StatusTasksSignals;
 pub fn make_refresh_status(
     st: StatusTasksSignals,
     selected_agent_role: RwSignal<Option<String>>,
+    agent_role_user_override: RwSignal<bool>,
     locale: Locale,
 ) -> Arc<dyn Fn() + Send + Sync> {
     Arc::new(move || {
@@ -29,15 +30,17 @@ pub fn make_refresh_status(
             match fetch_status(locale).await {
                 Ok(d) => {
                     st.status_fetch_err.set(None);
-                    let default_id = d.default_agent_role_id.as_deref();
-                    if let Some(cur) = selected_agent_role.get_untracked() {
-                        let next = status_bar_selected_agent_role_from_persisted(
-                            Some(cur.as_str()),
-                            default_id,
-                        )
-                        .filter(|id| d.agent_role_ids.iter().any(|known| known == id));
-                        if selected_agent_role.get_untracked().as_ref() != next.as_ref() {
-                            selected_agent_role.set(next);
+                    if !agent_role_user_override.get_untracked() {
+                        let default_id = d.default_agent_role_id.as_deref();
+                        if let Some(cur) = selected_agent_role.get_untracked() {
+                            let next = status_bar_selected_agent_role_from_persisted(
+                                Some(cur.as_str()),
+                                default_id,
+                            )
+                            .filter(|id| d.agent_role_ids.iter().any(|known| known == id));
+                            if selected_agent_role.get_untracked().as_ref() != next.as_ref() {
+                                selected_agent_role.set(next);
+                            }
                         }
                     }
                     st.status_data.set(Some(d));

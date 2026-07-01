@@ -79,9 +79,14 @@ pub(crate) fn wire_chat_session_lifecycle_effects(args: WireChatSessionLifecycle
         status_tasks,
     );
 
+    let last_active_id = StoredValue::new(None::<String>);
     Effect::new(move |_| {
-        let _ = chat_session.active_id.get();
-        agent_role_user_override.set(false);
+        let id = chat_session.active_id.get();
+        let prev = last_active_id.get_value();
+        if prev.as_deref().is_some_and(|p| p != id.as_str()) {
+            agent_role_user_override.set(false);
+        }
+        last_active_id.set_value(Some(id));
     });
 
     wire_persist_chat_sessions(initialized, chat_session, locale);

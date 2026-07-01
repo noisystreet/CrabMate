@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use leptos::prelude::*;
-use leptos_dom::helpers::event_target_value;
 
 use crate::api::load_client_llm_text_fields_from_storage;
 use crate::app_prefs::{
@@ -11,12 +10,13 @@ use crate::app_prefs::{
     status_bar_effective_model, status_bar_new_session_baseline_prompt_tokens,
 };
 use crate::chat_session_state::{ChatSessionSignals, ChatStreamBusyMemos};
+use crate::i18n::{self, Locale};
 
 use super::app_shell_ctx::StatusBarFooterSignals;
 use super::shell_runtime_context::expect_chat_shell_ctx;
+use super::status_agent_role_menu::{AgentRoleMenuProps, StatusAgentRoleMenu};
 use super::status_fetch_state::status_bar_should_show_skeleton;
 use super::status_tasks_state::StatusTasksSignals;
-use crate::i18n::{self, Locale};
 
 #[component]
 fn StatusFetchErrorPanel(
@@ -251,6 +251,7 @@ fn StatusBarChipsLoaded(
     locale: RwSignal<Locale>,
 ) -> impl IntoView {
     let chat = expect_chat_shell_ctx().chat;
+    let role_menu_open = RwSignal::new(false);
     view! {
         <>
             <span class="status-chip">
@@ -281,57 +282,22 @@ fn StatusBarChipsLoaded(
                     status_bar_effective_api_base(sd.as_ref(), stored_base.as_str())
                 }}</span>
             </span>
-            <label
+            <span
                 class="status-chip status-chip-role"
                 prop:title=move || i18n::status_role_title_attr(locale.get())
             >
                 <span class="status-chip-label">
                     {move || i18n::status_role_label(locale.get())}
                 </span>
-                <select
-                    class="status-agent-select"
-                    prop:value=move || {
-                        selected_agent_role
-                            .get()
-                            .unwrap_or_else(|| "__default__".to_string())
-                    }
-                    on:change=move |ev| {
-                        let v = event_target_value(&ev);
-                        let t = v.trim();
-                        if t.is_empty() || t == "__default__" {
-                            selected_agent_role.set(None);
-                        } else {
-                            selected_agent_role.set(Some(t.to_string()));
-                        }
-                        agent_role_user_override.set(true);
-                        chat.clear_stream_resume_handles();
-                    }
-                >
-                    <option value="__default__">{move || {
-                        let loc = locale.get();
-                        match st
-                            .status_data
-                            .get()
-                            .and_then(|d| d.default_agent_role_id.clone())
-                        {
-                            Some(id) => i18n::status_default_option(loc, Some(id.as_str())),
-                            None => i18n::status_default_option(loc, None),
-                        }
-                    }}</option>
-                    {move || {
-                        st.status_data
-                            .get()
-                            .map(|d| d.agent_role_ids)
-                            .unwrap_or_default()
-                            .into_iter()
-                            .map(|id| {
-                                let label = id.clone();
-                                view! { <option value=id>{label}</option> }
-                            })
-                            .collect_view()
-                    }}
-                </select>
-            </label>
+                <StatusAgentRoleMenu props=AgentRoleMenuProps {
+                    st,
+                    locale,
+                    chat,
+                    selected_agent_role,
+                    agent_role_user_override,
+                    menu_open: role_menu_open,
+                } />
+            </span>
             <StatusBarContextChip
                 st=st
                 chat=chat
