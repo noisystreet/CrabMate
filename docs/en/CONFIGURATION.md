@@ -71,7 +71,6 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | `CM_FINAL_PLAN_REQUIREMENT` | `never` / `workflow_reflection` / `always`. |
 | `CM_PLAN_REWRITE_MAX_ATTEMPTS` | Max plan rewrite rounds. |
 | `CM_PLANNER_EXECUTOR_MODE` | `single_agent` / `logical_dual_agent`. |
-| `CM_STAGED_PLAN_EXECUTION` | Enable staged planning. |
 | `CM_STAGED_PLAN_PHASE_INSTRUCTION` | Planner phase instruction text. |
 | `CM_STAGED_PLAN_ALLOW_NO_TASK` | Legacy; **no effect** (`no_task` rules come from embedded schema in the default planner system). |
 | `CM_STAGED_PLAN_FEEDBACK_MODE` | `fail_fast` / `patch_planner` (embedded default in **`config/planning.toml`**). |
@@ -88,7 +87,7 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | **`intent_execute_low_threshold` / `intent_execute_high_threshold`** | Turn-start **`intent_at_turn_start`**: confidence bands for “confirm then execute” vs “execute directly”, etc. | **None** — does not consume rewrite budget |
 | **`intent_non_hier_execute_*`** | Same stack, but overrides the two thresholds when **`planner_executor_mode != hierarchical`**; falls back to **`intent_execute_*`** if unset | **None** |
 | **`intent_at_turn_start` (gate ①)** | First in non-hierarchical dispatch; may end the turn early (clarify / confirm / QA, …) or set hints | **None** |
-| **`staged_plan_intent_gate` (gate ②)** | After gate ① passes, when this turn would use **`staged_plan_execution`**; same L0+L1+optional L2; denial skips rolling staged planner and uses the single-agent outer loop | **None** |
+| **`staged_plan_intent_gate` (gate ②)** | After gate ① passes; same L0+L1+optional L2; denial skips rolling staged planner and uses the single-agent outer loop (**`Freeform`**) | **None** |
 | **`plan_rewrite_max_attempts`** | After an **`agent_reply_plan` v1** (or equivalent final-plan artifact) exists: invalid plan, semantic side-check feedback, … | Independent of intent thresholds; exhaustion → SSE **`plan_rewrite_exhausted`** (**`docs/en/SSE_PROTOCOL.md`**) |
 
 **Clarify / confirm and tool narrowing**: **`ClarifyThenExecute`** / **`ConfirmThenExecute`** set **`step_executor_constraint = ReviewReadonly`** before the main loop (same idea as **`qa.readonly`** narrowing).
@@ -375,11 +374,11 @@ Max “please rewrite” user injections when the plan is invalid; when exhauste
 
 ## Logical dual agent (`planner_executor_mode = logical_dual_agent`)
 
-No-tools planning round first, then executor loop; planner context strips `role: tool` bodies. Takes precedence over **`staged_plan_execution`** when both apply.
+No-tools planning round first, then executor loop; planner context strips `role: tool` bodies. When the intent gate allows, this shares the same planning-round shape as **`PlannedStep`** rolling horizon.
 
-## Staged planning (`staged_plan_execution`)
+## Staged planning (`staged_plan_intent_gate` → `PlannedStep`)
 
-With **`planner_executor_mode = single_agent`**, each user message runs a no-tools plan round then **`steps`**. **`no_task` + empty `steps`** skips execution. Invalid plan JSON falls back to normal tool loop (more API calls than off).
+Non-hierarchical turns enter rolling staged planning only when **`staged_plan_intent_gate`** allows. The **`staged_plan_execution`** / **`CM_STAGED_PLAN_EXECUTION`** toggle has been removed. With **`planner_executor_mode = single_agent`**, each user message runs a no-tools plan round then **`steps`**. **`no_task` + empty `steps`** skips execution. Invalid plan JSON falls back to normal tool loop (more API calls than off).
 
 **`staged_plan_intent_gate`**: Same L0+L1+optional L2 stack as **`intent_at_turn_start`**. Besides denying staged entry when the pipeline action is not **`IntentAction::Execute`**, when **`staged_plan_intent_gate_advisory_bypass`** is **`true`** (**`false`** is the default) the gate may also deny staged planning when the action is **`Execute`** but the effective user text matches an **advisory architecture/refactor** heuristic (built-in keyword groups in **`src/agent/agent_turn/intent/advisory_bypass.rs`**; append-only lists on **`[agent]`**: **`staged_plan_advisory_bypass_extra_impl_blockers`**, **`staged_plan_advisory_bypass_extra_arch_markers`**, **`staged_plan_advisory_bypass_extra_consult_markers`** — normalized at finalize, no **`CM_*`** vars). In that case the turn falls back to the **single-agent outer loop**; logs use deny reason **`advisory_execute_bypass_staged`**. Default no-tools planner prose is **`staged_plan_phase_instruction_default`** in sources (override with **`staged_plan_phase_instruction`**).
 

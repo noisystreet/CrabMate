@@ -47,15 +47,17 @@ pub(super) fn write_banner_highlights_staged_and_planner<W: Write + QueueableCom
     w: &mut W,
     cfg: &AgentConfig,
 ) -> io::Result<()> {
-    let staged = if cfg.staged_planning.staged_plan_execution {
-        format!(
-            "开启（{}）",
-            cfg.staged_planning.staged_plan_feedback_mode.as_str()
-        )
+    let bypass = if cfg.staged_planning.staged_plan_intent_gate_advisory_bypass {
+        "开启（Execute 咨询/架构可绕分阶段）"
     } else {
-        "关闭".to_string()
+        "关闭（门控放行一律 PlannedStep）"
     };
-    style.write_banner_item(w, "staged_plan_execution", &staged)?;
+    style.write_banner_item(w, "staged_plan_intent_gate_advisory_bypass", bypass)?;
+    style.write_banner_item(
+        w,
+        "staged_plan_feedback_mode",
+        cfg.staged_planning.staged_plan_feedback_mode.as_str(),
+    )?;
     if cfg.per_plan_policy.planner_executor_mode != PlannerExecutorMode::SingleAgent {
         style.write_banner_item(
             w,

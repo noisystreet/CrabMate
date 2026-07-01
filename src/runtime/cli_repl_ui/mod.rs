@@ -594,15 +594,17 @@ impl CliReplStyle {
         out: &mut io::Stdout,
         cfg: &AgentConfig,
     ) -> io::Result<()> {
-        let staged = if cfg.staged_planning.staged_plan_execution {
-            format!(
-                "开启（{}）",
-                cfg.staged_planning.staged_plan_feedback_mode.as_str()
-            )
+        let bypass = if cfg.staged_planning.staged_plan_intent_gate_advisory_bypass {
+            "开启（Execute 咨询/架构可绕分阶段）"
         } else {
-            "关闭".to_string()
+            "关闭（门控放行一律 PlannedStep）"
         };
-        self.write_banner_item(out, "staged_plan_execution", &staged)?;
+        self.write_banner_item(out, "staged_plan_intent_gate_advisory_bypass", bypass)?;
+        self.write_banner_item(
+            out,
+            "staged_plan_feedback_mode",
+            cfg.staged_planning.staged_plan_feedback_mode.as_str(),
+        )?;
         let staged_cli = if cfg.staged_planning.staged_plan_cli_show_planner_stream {
             "开启（CLI 规划轮打印模型 stdout）"
         } else {

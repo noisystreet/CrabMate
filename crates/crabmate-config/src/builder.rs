@@ -315,7 +315,6 @@ impl ConfigBuilder {
             .session_workspace_changelist_max_chars
             .or(swc.session_workspace_changelist_max_chars);
         let sp = &mut self.staged_planning;
-        sp.staged_plan_execution = agent.staged_plan_execution.or(sp.staged_plan_execution);
         sp.staged_plan_allow_no_task = agent
             .staged_plan_allow_no_task
             .or(sp.staged_plan_allow_no_task);

@@ -115,12 +115,10 @@ pub(super) fn resolve_web_llm_for_job(
             WebExecutionModeOverride::RollingPlanning => {
                 c.per_plan_policy.planner_executor_mode =
                     crate::config::PlannerExecutorMode::SingleAgent;
-                c.staged_planning.staged_plan_execution = true;
             }
             WebExecutionModeOverride::Hierarchical => {
                 c.per_plan_policy.planner_executor_mode =
                     crate::config::PlannerExecutorMode::Hierarchical;
-                c.staged_planning.staged_plan_execution = false;
             }
         }
         cfg = Arc::new(c);

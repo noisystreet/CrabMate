@@ -476,7 +476,7 @@ fn env_override_context_budget_and_summary(b: &mut ConfigBuilder) {
 fn apply_env_overrides_part_7(b: &mut ConfigBuilder) {
     env_override_context_transcript_and_health_probe(b);
     env_overrides_chat_queue::env_override_chat_queue_parallel_and_caches(b);
-    env_override_staged_plan_execution_flags(b);
+    env_override_staged_plan_allow_no_task_flag(b);
 }
 
 fn env_override_context_transcript_and_health_probe(b: &mut ConfigBuilder) {
@@ -497,12 +497,7 @@ fn env_override_context_transcript_and_health_probe(b: &mut ConfigBuilder) {
     }
 }
 
-fn env_override_staged_plan_execution_flags(b: &mut ConfigBuilder) {
-    if let Ok(v) = std::env::var("CM_STAGED_PLAN_EXECUTION")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.staged_planning.staged_plan_execution = Some(val);
-    }
+fn env_override_staged_plan_allow_no_task_flag(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_STAGED_PLAN_ALLOW_NO_TASK")
         && let Some(val) = parse_bool_like(&v)
     {
