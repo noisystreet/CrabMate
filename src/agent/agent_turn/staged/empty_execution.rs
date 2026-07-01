@@ -8,44 +8,35 @@ use crate::agent::plan_artifact::{
 use crate::agent::step_executor_policy::{
     tool_name_implies_patch_write_progress, tool_name_implies_readonly_probe,
 };
-use crate::types::{Message, message_content_as_str, staged_step_window_end_exclusive};
+use crate::types::{Message, message_content_as_str, tool_messages_in_staged_step_window};
 
 /// 步级验收失败原因前缀；补丁规划据此选用更硬的反馈文案。
 pub(crate) const STAGED_STEP_EMPTY_EXECUTION_PREFIX: &str = "staged_step_empty_execution:";
 
-/// 自 `step_user_index` 指向的分步 `user` 起，至下一条 `user` 或末尾，是否出现过 `role: tool`。
-pub(crate) fn staged_step_window_has_tool(messages: &[Message], step_user_index: usize) -> bool {
-    staged_step_window_tool_entries(messages, step_user_index)
-        .next()
-        .is_some()
+fn staged_step_window_tool_name_content_pairs(
+    messages: &[Message],
+    step_user_index: usize,
+) -> impl Iterator<Item = (&str, &str)> {
+    tool_messages_in_staged_step_window(messages, step_user_index)
+        .into_iter()
+        .map(|m| {
+            (
+                m.name.as_deref().unwrap_or(""),
+                message_content_as_str(&m.content).unwrap_or(""),
+            )
+        })
 }
 
-fn staged_step_window_tool_entries<'a>(
-    messages: &'a [Message],
-    step_user_index: usize,
-) -> impl Iterator<Item = (&'a str, &'a str)> + 'a {
-    let end = staged_step_window_end_exclusive(messages, step_user_index);
-    let mut i = step_user_index.saturating_add(1);
-    std::iter::from_fn(move || {
-        while i < end {
-            let m = &messages[i];
-            if m.role == "tool" {
-                let name = m.name.as_deref().unwrap_or("");
-                let content = message_content_as_str(&m.content).unwrap_or("");
-                i += 1;
-                return Some((name, content));
-            }
-            i += 1;
-        }
-        None
-    })
+/// 自 `step_user_index` 指向的分步 `user` 起，至下一条 `user` 或末尾，是否出现过 `role: tool`。
+pub(crate) fn staged_step_window_has_tool(messages: &[Message], step_user_index: usize) -> bool {
+    !tool_messages_in_staged_step_window(messages, step_user_index).is_empty()
 }
 
 pub(crate) fn staged_step_window_has_build_progress_tool(
     messages: &[Message],
     step_user_index: usize,
 ) -> bool {
-    staged_step_window_tool_entries(messages, step_user_index)
+    staged_step_window_tool_name_content_pairs(messages, step_user_index)
         .any(|(name, content)| tool_message_indicates_build_progress(name, content))
 }
 
@@ -139,11 +130,11 @@ fn staged_step_window_satisfies_executor_kind(
 ) -> bool {
     match executor_kind {
         Some(PlanStepExecutorKind::ReviewReadonly) => {
-            staged_step_window_tool_entries(messages, step_user_index)
+            staged_step_window_tool_name_content_pairs(messages, step_user_index)
                 .any(|(name, _)| tool_name_implies_readonly_probe(name))
         }
         Some(PlanStepExecutorKind::PatchWrite) => {
-            staged_step_window_tool_entries(messages, step_user_index)
+            staged_step_window_tool_name_content_pairs(messages, step_user_index)
                 .any(|(name, _)| tool_name_implies_patch_write_progress(name))
         }
         Some(PlanStepExecutorKind::TestRunner) | None => true,

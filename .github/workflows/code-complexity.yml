@@ -1,4 +1,4 @@
-# 圈复杂度（lizard CCN）、函数形参上限（fn-param：≤ 9）、函数 nloc + 源文件行数上限（fn-nloc：nloc ≤ 200、单文件 ≤ 920），与 scripts/*.sh / pre-commit 对齐；另含 fixtures 金样测试（`golden_intent_regression`、`golden_fsm_orchestrator`、`golden_acceptance_regression`）。
+# 圈复杂度（lizard CCN）、函数形参上限（fn-param：≤ 9）、函数 nloc + 源文件行数上限（fn-nloc：nloc ≤ 200、单文件 ≤ 920），与 scripts/*.sh / pre-commit 对齐；另含 fixtures 金样测试（`golden_intent_regression`、`golden_fsm_orchestrator`、`golden_turn_completion`、`golden_acceptance_regression`）。
 name: code-complexity
 
 on:
@@ -59,6 +59,21 @@ jobs:
 
       - name: Golden FSM orchestrator (fixtures/fsm_orchestrator_golden.jsonl)
         run: cargo test golden_fsm_orchestrator --no-fail-fast
+
+  turn-completion-golden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps (OpenSSL / libssh2 / Wayland for default features build)
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev libssh2-1-dev libwayland-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Golden turn completion (fixtures/turn_completion_golden.jsonl)
+        run: cargo test golden_turn_completion --no-fail-fast
 
   acceptance-golden:
     runs-on: ubuntu-latest

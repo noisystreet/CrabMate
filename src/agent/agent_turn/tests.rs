@@ -646,12 +646,12 @@ mod staged_workflow_binding_context_tests {
 }
 
 mod multi_turn_orchestration_fixture_tests {
-    use crate::agent::agent_turn::completion_suppression::{
-        plan_steps_are_redundant_after_completion, tool_calls_are_redundant_after_completion,
-    };
     use crate::agent::agent_turn::params::{RunLoopTurnState, TurnPlannerHints};
     use crate::agent::agent_turn::task_level_evidence::{
         GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
+    };
+    use crate::agent::agent_turn::turn_completion::{
+        plan_steps_are_redundant_after_completion, tool_calls_are_redundant_after_completion,
     };
     use crate::agent::plan_optimizer::staged_plan_trigger_user_content;
     use crate::types::{FunctionCall, LlmSeedOverride, Message, ToolCall};
