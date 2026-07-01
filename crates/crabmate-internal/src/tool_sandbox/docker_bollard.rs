@@ -4,11 +4,11 @@
 //! - **非 Unix**：[`Docker::connect_with_defaults`]（`DOCKER_HOST`）。
 
 use bollard::Docker;
-use bollard::container::{
-    AttachContainerOptions, Config, CreateContainerOptions, LogOutput, RemoveContainerOptions,
-    StartContainerOptions,
+use bollard::container::LogOutput;
+use bollard::models::{ContainerCreateBody, HostConfig};
+use bollard::query_parameters::{
+    AttachContainerOptions, CreateContainerOptions, RemoveContainerOptions, StartContainerOptions,
 };
-use bollard::models::HostConfig;
 use futures_util::StreamExt;
 use tokio::io::AsyncWriteExt;
 
@@ -56,13 +56,13 @@ fn bollard_network_mode(req: &SandboxRunRequest) -> String {
         .unwrap_or_else(|| "none".to_string())
 }
 
-fn bollard_container_config(req: &SandboxRunRequest, network_mode: String) -> Config<String> {
+fn bollard_container_config(req: &SandboxRunRequest, network_mode: String) -> ContainerCreateBody {
     let host_config = HostConfig {
         binds: Some(req.binds.clone()),
         network_mode: Some(network_mode),
         ..Default::default()
     };
-    Config {
+    ContainerCreateBody {
         image: Some(req.image.clone()),
         cmd: Some(req.cmd.clone()),
         env: Some(req.env.clone()),
@@ -84,15 +84,15 @@ async fn bollard_run_attached_and_wait_stdout(
     stdin_payload: &[u8],
 ) -> Result<Vec<u8>, String> {
     docker
-        .start_container(container_id, None::<StartContainerOptions<String>>)
+        .start_container(container_id, None::<StartContainerOptions>)
         .await
         .map_err(|e| format!("docker start_container：{}", e))?;
 
-    let attach_opts = AttachContainerOptions::<String> {
-        stdin: Some(true),
-        stdout: Some(true),
-        stderr: Some(true),
-        stream: Some(true),
+    let attach_opts = AttachContainerOptions {
+        stdin: true,
+        stdout: true,
+        stderr: true,
+        stream: true,
         ..Default::default()
     };
 
@@ -125,7 +125,7 @@ async fn bollard_run_attached_and_wait_stdout(
         }
     }
 
-    let mut wait_stream = docker.wait_container::<String>(container_id, None);
+    let mut wait_stream = docker.wait_container(container_id, None);
     let wait_item = wait_stream
         .next()
         .await
@@ -148,8 +148,8 @@ async fn run_isolated_bollard(req: SandboxRunRequest) -> Result<Vec<u8>, String>
     let config = bollard_container_config(&req, network_mode);
 
     let create = CreateContainerOptions {
-        name: name.clone(),
-        platform: None,
+        name: Some(name.clone()),
+        platform: String::new(),
     };
 
     let res = docker
