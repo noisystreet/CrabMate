@@ -1,29 +1,19 @@
-use crate::agent::agent_turn::completion_suppression::{
-    plan_steps_are_redundant_after_completion, plan_steps_require_formal_execution,
-};
 use crate::agent::agent_turn::params::RunLoopParams;
-use crate::agent::agent_turn::task_level_evidence::{
-    GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
-};
 use crate::agent::plan_artifact::PlanStepV1;
 use tracing::info;
+
+use super::super::turn_completion::turn_suppress_completed_replanning;
 
 pub(super) fn should_suppress_completed_replanning(
     p: &mut RunLoopParams<'_>,
     entered_from_step_execution_round: bool,
     steps: &[PlanStepV1],
 ) -> bool {
-    if !entered_from_step_execution_round || steps.is_empty() {
-        return false;
-    }
-    if plan_steps_require_formal_execution(steps) {
-        return false;
-    }
-    let satisfied = matches!(
-        check_active_user_goal_completion_evidence(p.turn.messages()),
-        GoalCompletionEvidenceCheck::Satisfied
-    );
-    if !satisfied || !plan_steps_are_redundant_after_completion(steps) {
+    if !turn_suppress_completed_replanning(
+        p.turn.messages(),
+        entered_from_step_execution_round,
+        steps,
+    ) {
         return false;
     }
     let goal_preview =

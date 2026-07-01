@@ -73,6 +73,7 @@ pub use server_injected_user::{
 pub use staged_step_window::{
     is_staged_step_injection_user_message, is_staged_step_window_boundary_user,
     last_staged_step_injection_index, staged_step_window_end_exclusive,
+    tool_messages_in_staged_step_window,
 };
 pub use tiktoken_snapshot::TiktokenPromptTokensSnapshot;
 // 供宿主/调试引用 [`message_lineage`]；库内尚未全覆盖调用点，`cargo check` 下会呈现未使用。

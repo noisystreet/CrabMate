@@ -13,57 +13,21 @@
 //! - `expect_json_path_equals`：JSON path 验证
 //! - `expect_http_status`：HTTP 状态码验证（仅对 http_request/fetch 类工具）
 
-use crate::agent::acceptance::{AcceptanceEvidence, AcceptanceSpec, VerifyOutcome};
+use crate::agent::acceptance::{
+    AcceptanceEvidence, AcceptanceSpec, VerifyOutcome, verify_plan_step_acceptance_for_tool_message,
+};
 use crate::agent::plan_artifact::PlanStepAcceptance;
 use crate::tool_result::ToolError;
-use crate::types::{Message, staged_step_window_end_exclusive};
+use crate::types::{Message, tool_messages_in_staged_step_window};
 
 pub type VerifyResult = VerifyOutcome;
-
-/// 自 `step_user_index` 指向的分步 `user` 起，到步界或 `messages` 末尾为止，收集其中全部 `role: tool`（保持时间序）。
-fn tool_messages_in_staged_step(messages: &[Message], step_user_index: usize) -> Vec<&Message> {
-    if step_user_index >= messages.len() {
-        return Vec::new();
-    }
-    let end = staged_step_window_end_exclusive(messages, step_user_index);
-    let mut tools = Vec::new();
-    let mut i = step_user_index.saturating_add(1);
-    while i < end {
-        let m = &messages[i];
-        if m.role == "tool" {
-            tools.push(m);
-        }
-        i += 1;
-    }
-    tools
-}
 
 fn verify_tool_message_against_acceptance(
     acceptance: &PlanStepAcceptance,
     tool_msg: &Message,
     workspace_root: &std::path::Path,
 ) -> VerifyResult {
-    let tool_name = tool_msg.name.as_deref().unwrap_or("");
-    let tool_output = crate::types::message_content_as_str(&tool_msg.content).unwrap_or("");
-    let parsed = crate::tool_result::parse_legacy_output(tool_name, tool_output);
-
-    let tool_error_opt = parsed.exit_code.map(|code| crate::tool_result::ToolError {
-        code: code.to_string(),
-        category: crate::tool_result::ToolFailureCategory::External,
-        message: "Verification fake error".to_string(),
-        legacy_parsed: parsed.clone(),
-        retryable: false,
-    });
-
-    verify_tool_execution_inner(
-        acceptance,
-        tool_name,
-        tool_output,
-        parsed.stdout.as_str(),
-        parsed.stderr.as_str(),
-        tool_error_opt.as_ref(),
-        workspace_root,
-    )
+    verify_plan_step_acceptance_for_tool_message(acceptance, tool_msg, workspace_root)
 }
 
 /// 对**分阶段单步**内的工具结果进行验证（`step_user_index` 为本步分步 `user` 在 `messages` 中的下标）。
@@ -93,7 +57,7 @@ pub fn verify_step_execution(
         return crate::agent::acceptance::verify_against_spec(&spec, &ev);
     }
 
-    let tools = tool_messages_in_staged_step(messages, step_user_index);
+    let tools = tool_messages_in_staged_step_window(messages, step_user_index);
     if tools.is_empty() {
         return VerifyOutcome::Fail {
             reason: "Step verification failed: no tool result in this staged step (after step user, before next user message)"
@@ -115,6 +79,7 @@ pub fn verify_step_execution(
 }
 
 /// 对单个步骤的工具执行结果进行验证（供测试与内部复用）。
+#[allow(dead_code)] // 生产路径经 `verify_plan_step_acceptance_for_tool_message`；单测仍直接调用
 pub(crate) fn verify_tool_execution_inner(
     acceptance: &PlanStepAcceptance,
     tool_name: &str,

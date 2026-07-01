@@ -13,7 +13,7 @@ use crate::types::{
 
 use super::super::errors::{AgentTurnSubPhase, RunAgentTurnError};
 use super::super::params::RunLoopParams;
-use super::super::turn_completion::task_level_satisfied_allows_early_stop;
+use super::super::turn_completion::turn_staged_rolling_horizon_early_stop_allowed;
 use super::turn_fsm::{
     StagedTurnAdvance, StagedTurnPhase, StagedTurnSubCallOutcome,
     entered_flag_for_next_planner_call, staged_rolling_horizon_apply_advance,
@@ -59,7 +59,14 @@ fn staged_goal_completion_satisfied_after_step(
     if !matches!(phase, StagedTurnPhase::AfterStepExecutionRound) {
         return false;
     }
-    task_level_satisfied_allows_early_stop(p.turn.messages())
+    turn_staged_rolling_horizon_early_stop_allowed(
+        p.turn.messages(),
+        p.turn
+            .turn_planner_hints
+            .staged_last_completed_step_effective_acceptance
+            .as_ref(),
+        p.ctx.core.effective_working_dir,
+    )
 }
 
 fn staged_rolling_horizon_preflight_exit(

@@ -13,10 +13,10 @@ use super::outer_loop_build_idle::{
     outer_loop_assistant_is_build_idle_without_tools, outer_loop_build_idle_feedback_if_needed,
     outer_loop_window_has_build_progress_since_last_user,
 };
-use super::outer_loop_final_answer::outer_loop_missing_final_answer_feedback_if_needed;
 use super::outer_loop_fsm::ReflectBranchCtl;
 use super::params::RunLoopParams;
 use super::reflect::ReflectOnAssistantOutcome;
+use super::turn_completion::outer_loop_missing_final_answer_feedback_if_needed;
 
 /// `per_reflect_after_assistant` 结果 → 外循环控制（含 build-idle 纠偏、plan_rewrite SSE 等）。
 pub(super) async fn map_reflect_outcome_to_branch_ctl(

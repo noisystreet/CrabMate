@@ -134,6 +134,9 @@ pub(crate) struct TurnPlannerHints {
     pub(crate) staged_immutable_user_goal: Option<String>,
     /// 首轮进入分步循环前定稿的 `agent_reply_plan` v1（仅 [`crate::config::StagedPlanBaselineMode`] 非 `immutable_goal_only` 时写入一次）。
     pub(crate) staged_baseline_plan: Option<crate::agent::plan_artifact::AgentReplyPlanV1>,
+    /// 上一完成分步的 effective `acceptance`（步验收 Pass 后写入；供滚动视界早停）。
+    pub(crate) staged_last_completed_step_effective_acceptance:
+        Option<crate::agent::plan_artifact::PlanStepAcceptance>,
 }
 
 /// 单 Agent [`super::outer_loop::run_agent_outer_loop`] 内每次 **P** 调用对应的模型端点角色。
