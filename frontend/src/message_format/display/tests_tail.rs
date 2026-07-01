@@ -302,6 +302,34 @@ fn plan_json_in_reasoning_formatted_steps_in_text() {
     );
 }
 
+/// `display_content` + `display_reasoning_content` 水合后的助手气泡形态（见 `conversation_hydrate`）。
+#[test]
+fn snapshot_both_display_fields_hydrated_shape_hides_plan_json() {
+    use super::message_text_for_display_ex;
+    let plan_json = r#"{ "type": "agent_reply_plan", "version": 1, "steps": [ { "id": "x", "description": "d" } ] }"#;
+    let m = StoredMessage {
+        id: "x".into(),
+        role: "assistant".into(),
+        text: "1. `x`: d".into(),
+        reasoning_text: plan_json.into(),
+        image_urls: vec![],
+        state: None,
+        is_tool: false,
+        tool_call_id: None,
+        tool_name: None,
+        created_at: 0,
+    };
+    let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
+    assert!(
+        !out.contains("agent_reply_plan"),
+        "hydrated snapshot must not leak raw plan json in bubble: {out}"
+    );
+    assert!(
+        out.contains("x") && out.contains('d'),
+        "formatted step should remain readable: {out}"
+    );
+}
+
 #[test]
 fn plan_json_reasoning_only_while_loading() {
     use super::message_text_for_display_ex;
