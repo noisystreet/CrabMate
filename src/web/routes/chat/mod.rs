@@ -20,7 +20,7 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/chat", post(chat_handler))
         .route("/chat/async", post(chat_async_handler))
-        .route("/chat/jobs/:job_id", get(chat_job_status_handler))
+        .route("/chat/jobs/{job_id}", get(chat_job_status_handler))
         .route("/chat/stream", post(chat_stream_handler))
         .route("/chat/approval", post(chat_approval_handler))
         .route("/chat/branch", post(chat_branch_handler))
