@@ -137,6 +137,17 @@ fn first_fence_inner_looks_like_json_object(s: &str) -> bool {
     b.is_empty() || b.starts_with('{')
 }
 
+/// 单字段（`text` / `reasoning_text` 或 overlay 片段）是否像 `agent_reply_plan` v1 或其在途不完整 JSON。
+pub(crate) fn field_looks_like_agent_reply_plan_blob(s: &str) -> bool {
+    let t = s.trim();
+    if t.is_empty() {
+        return false;
+    }
+    t.contains("\"agent_reply_plan\"")
+        || t.contains("\"type\":\"agent_reply_plan\"")
+        || looks_like_incomplete_agent_reply_plan_whole_json(t)
+}
+
 fn looks_like_incomplete_agent_reply_plan_whole_json(t: &str) -> bool {
     let t = t.trim();
     if !t.starts_with('{') {
@@ -307,6 +318,32 @@ fn strip_agent_reply_plan_fence_blocks_for_display(content: &str, loc: Locale) -
     out
 }
 
+fn strip_leading_agent_reply_plan_json_tail(s: &str) -> Option<String> {
+    let t = s.trim_start();
+    if !t.starts_with('{') || !t.contains("\"agent_reply_plan\"") {
+        return None;
+    }
+    let mut de = serde_json::Deserializer::from_str(t).into_iter::<Value>();
+    let v = de.next()?.ok()?;
+    if v.as_object()
+        .and_then(|o| o.get("type"))
+        .and_then(|x| x.as_str())
+        != Some("agent_reply_plan")
+    {
+        return None;
+    }
+    let offset = de.byte_offset();
+    if offset >= t.len() {
+        return None;
+    }
+    let tail = t[offset..].trim();
+    if tail.is_empty() {
+        None
+    } else {
+        Some(tail.to_string())
+    }
+}
+
 pub(crate) fn assistant_text_for_display(
     raw: &str,
     is_streaming_last_assistant: bool,
@@ -329,6 +366,10 @@ fn assistant_text_for_display_inner(
     let content = strip_trailing_standalone_agent_reply_plan_blob(&content).unwrap_or(content);
     let trimmed = content.trim();
 
+    if let Some(tail) = strip_leading_agent_reply_plan_json_tail(&content) {
+        return filter_assistant_thinking_markers_for_display(&tail, is_streaming_last_assistant);
+    }
+
     if is_streaming_last_assistant && should_buffer_agent_reply_plan_stream(trimmed) {
         // 须与 `assistant_text_for_display` 外套的 `filter_assistant_thinking_markers_for_display` 一致。
         return filter_assistant_thinking_markers_for_display(
@@ -346,26 +387,6 @@ fn assistant_text_for_display_inner(
         );
     }
 
-    // 无围栏但以前缀 JSON 输出规划：去掉前缀规划对象，保留后续终答正文。
-    let t = content.trim_start();
-    if t.starts_with('{') && t.contains("\"agent_reply_plan\"") {
-        let mut de = serde_json::Deserializer::from_str(t).into_iter::<Value>();
-        if let Some(Ok(v)) = de.next()
-            && v.as_object()
-                .and_then(|o| o.get("type"))
-                .and_then(|x| x.as_str())
-                == Some("agent_reply_plan")
-        {
-            let offset = de.byte_offset();
-            if offset < t.len() {
-                let tail = t[offset..].trim();
-                if !tail.is_empty() {
-                    return tail.to_string();
-                }
-            }
-        }
-    }
-
     // 再做一次全量围栏剥离兜底：无论 `agent_reply_plan` / `plan_summary` 围栏出现在第几个代码块，都不回显原始 JSON。
     let stripped_fences = strip_agent_reply_plan_fence_blocks_for_display(&content, loc);
     let stripped_trim = stripped_fences.trim();
@@ -376,6 +397,12 @@ fn assistant_text_for_display_inner(
             return crate::i18n::plan_generated(loc).to_string();
         }
         return stripped_trim.to_string();
+    }
+
+    if looks_like_incomplete_agent_reply_plan_whole_json(trimmed)
+        && serde_json::from_str::<Value>(trimmed).is_err()
+    {
+        return String::new();
     }
 
     content

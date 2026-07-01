@@ -195,7 +195,10 @@ pub fn stored_messages_from_conversation_api_with_base(
         t = t.saturating_add(1);
         let is_user = role == "user";
         let display_text = display_content.unwrap_or(text.as_str()).to_string();
-        let display_reasoning_text = if !reasoning.trim().is_empty() {
+        // 助手 `display_content` 已在服务端合并 reasoning+正文并做展示层处理；勿再叠加 raw `reasoning_content`。
+        let display_reasoning_text = if role == "assistant" && display_content.is_some() {
+            display_reasoning.unwrap_or("").to_string()
+        } else if !reasoning.trim().is_empty() {
             reasoning.clone()
         } else {
             display_reasoning.unwrap_or("").to_string()
@@ -263,5 +266,24 @@ mod tests {
         assert!(out[0].is_tool);
         assert_eq!(out[0].text, "git_status · ok");
         assert_eq!(out[0].reasoning_text, "tool: git_status\nok");
+    }
+
+    #[test]
+    fn assistant_hydrate_ignores_raw_reasoning_when_display_content_present() {
+        let plan_json = r#"{ "type": "agent_reply_plan", "version": 1, "steps": [ { "id": "x", "description": "d" } ] }"#;
+        let msgs = vec![json!({
+            "role": "assistant",
+            "content": plan_json,
+            "reasoning_content": plan_json,
+            "display_content": "1. `x`: d",
+        })];
+        let out = stored_messages_from_conversation_api_with_base(&msgs, 0);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].text, "1. `x`: d");
+        assert!(
+            out[0].reasoning_text.is_empty(),
+            "raw reasoning_content must not hydrate when display_content is set: {:?}",
+            out[0].reasoning_text
+        );
     }
 }
