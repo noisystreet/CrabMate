@@ -55,7 +55,7 @@ assets = [
 ]
 
 [features]
-default = ["mcp", "web", "repl", "tui"]
+default = ["web", "repl", "tui"]
 ## Axum HTTP、`serve`、会话 SQLite、`/chat` 队列等。
 web = [
     "dep:axum",

@@ -142,7 +142,7 @@ cargo tauri build
 
 ### Maintainer QA
 
-- **Cargo features / slim binaries**: defaults **`mcp` + `web` + `repl` + `tui`**; **`fastembed`** (local ONNX embeddings) and **`docker_sandbox`** are opt-in. Enable semantic search / vector long-term memory with e.g. `cargo build --features fastembed`. Slim build: `cargo build --no-default-features --features web,repl,tui`. See root **`Cargo.toml`** **`[features]`** and **`AGENTS.md`**.
+- **Cargo features / slim binaries**: defaults **`web` + `repl` + `tui`**; **`mcp`**, **`fastembed`**, and **`docker_sandbox`** are opt-in. Examples: `cargo build --features mcp`, `cargo build --features fastembed`, or `cargo build --all-features`. See root **`Cargo.toml`** **`[features]`** and **`AGENTS.md`**.
 - **fmt / clippy / test, pre-commit, SSE script, E2E**: **[docs/en/TESTING.md](docs/en/TESTING.md)** (includes **`./scripts/check-sse-protocol.sh`**).
 
 ## Documentation index

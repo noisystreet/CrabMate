@@ -123,7 +123,7 @@ The shell spawns **`crabmate serve --desktop-ready-json`**. Besides **`CM_DESKTO
 | Variable | Description |
 | --- | --- |
 | `CM_ALLOWED_COMMANDS` | Comma-separated allowlist for **`run_command`** and the first **`terminal_session` `exec`**. Embedded defaults also include **`bash`** / **`sh`** (for **`bash -c` / `sh -c`** compound one-liners), **`docker`**, **`podman`**, **`mvn`**, **`gradle`**, …; full list **`config/tools.toml`**. |
-| `CM_MCP_ENABLED` | Enable MCP. |
+| `CM_MCP_ENABLED` | Enable MCP. Requires **`cargo build --features mcp`**; without that feature, `mcp list` and in-process MCP tool proxy are unavailable. |
 | `CM_MCP_COMMAND` | MCP stdio launch command. |
 | `CM_MCP_TOOL_TIMEOUT_SECS` | MCP tool timeout; one stdio session per fingerprint; **`crabmate mcp list`** needs no `API_KEY`; **`mcp list --probe`** spawns subprocess. |
 | `CM_CODEBASE_SEMANTIC_SEARCH_ENABLED` | Register **`codebase_semantic_search`** (`false` removes from tool list). |
