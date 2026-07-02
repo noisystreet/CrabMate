@@ -11,13 +11,17 @@ pub fn IdeEditorPane(
     locale: RwSignal<Locale>,
     editor: IdeEditorSignals,
     host: IdeEditorHost,
+    editor_visible: RwSignal<bool>,
     ide_path: RwSignal<Option<String>>,
     ide_text: RwSignal<String>,
     ide_load_busy: RwSignal<bool>,
 ) -> impl IntoView {
+    let cm_init_failed = RwSignal::new(false);
+
     wire_ide_codemirror(
         host,
         IdeCmWireSignals {
+            editor_visible,
             ide_path,
             ide_text,
             ide_load_busy,
@@ -26,6 +30,7 @@ pub fn IdeEditorPane(
             tab_size: editor.tab_size,
             font_slug: editor.font_slug,
             font_size_px: editor.font_size_px,
+            cm_init_failed,
         },
     );
 
@@ -38,6 +43,15 @@ pub fn IdeEditorPane(
             <Show when=move || !IdeEditorHost::cm_available()>
                 <p class="ide-editor-cm-missing" role="alert">
                     {move || i18n::ide_cm_missing(locale.get())}
+                </p>
+            </Show>
+            <Show when=move || {
+                editor_visible.get()
+                    && IdeEditorHost::cm_available()
+                    && cm_init_failed.get()
+            }>
+                <p class="ide-editor-cm-missing" role="alert">
+                    {move || i18n::ide_cm_init_failed(locale.get())}
                 </p>
             </Show>
             <div

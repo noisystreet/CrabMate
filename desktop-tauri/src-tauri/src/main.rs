@@ -37,21 +37,54 @@ fn backend_binary_name() -> &'static str {
     }
 }
 
+const INSTALLED_FRONTEND_DIST: &str = "/usr/share/crabmate/frontend/dist";
+
+fn installed_frontend_dist_path() -> Option<PathBuf> {
+    let path = PathBuf::from(INSTALLED_FRONTEND_DIST);
+    path.join("index.html").is_file().then_some(path)
+}
+
+fn user_home_workdir() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+}
+
+fn dev_repo_root() -> Option<PathBuf> {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = manifest_dir.parent()?.parent()?;
+    if repo_root.join("frontend/Trunk.toml").is_file() || repo_root.join("Cargo.toml").is_file() {
+        Some(repo_root.to_path_buf())
+    } else {
+        None
+    }
+}
+
 fn resolve_backend_workdir() -> PathBuf {
     if let Ok(dir) = std::env::var("CM_DESKTOP_WORKDIR") {
         if !dir.trim().is_empty() {
-            return PathBuf::from(dir);
+            return PathBuf::from(dir.trim());
         }
     }
 
-    // 开发场景下 CARGO_MANIFEST_DIR 为 desktop-tauri/src-tauri，仓库根在上两级。
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let repo_root = manifest_dir
-        .parent()
-        .and_then(|p| p.parent())
-        .map(PathBuf::from)
-        .unwrap_or(manifest_dir);
-    repo_root
+    // 开发：仓库根（可写，且可解析 frontend/dist）。`.deb`：用户家目录（会话 SQLite 等须可写）。
+    dev_repo_root().unwrap_or_else(user_home_workdir)
+}
+
+fn apply_backend_install_env(command: &mut Command) {
+    if let Some(repo) = dev_repo_root() {
+        // 源码树开发：显式指向仓库 dist，并覆盖 shell 里可能残留的 deb 路径。
+        let dist = repo.join("frontend/dist");
+        if dist.join("index.html").is_file() {
+            command.env("CM_WEB_STATIC_DIR", &dist);
+        } else {
+            command.env_remove("CM_WEB_STATIC_DIR");
+        }
+        return;
+    }
+    if let Some(dist) = installed_frontend_dist_path() {
+        command.env("CM_WEB_STATIC_DIR", dist);
+    }
 }
 
 fn sidecar_backend_candidates() -> Vec<PathBuf> {
@@ -114,6 +147,7 @@ fn try_spawn_backend(backend_workdir: &std::path::Path) -> Result<Child, String>
         attempted.push(format!("env: {explicit}"));
         let mut command = Command::new(explicit.trim());
         configure_backend_serve_command(&mut command, &backend_config_path);
+        apply_backend_install_env(&mut command);
         command
             .current_dir(backend_workdir)
             .stdout(Stdio::piped())
@@ -130,6 +164,7 @@ fn try_spawn_backend(backend_workdir: &std::path::Path) -> Result<Child, String>
         attempted.push(format!("sidecar: {}", candidate.display()));
         let mut command = Command::new(&candidate);
         configure_backend_serve_command(&mut command, &backend_config_path);
+        apply_backend_install_env(&mut command);
         command
             .current_dir(backend_workdir)
             .stdout(Stdio::piped())
@@ -146,6 +181,7 @@ fn try_spawn_backend(backend_workdir: &std::path::Path) -> Result<Child, String>
     attempted.push(format!("PATH: {path_bin}"));
     let mut command = Command::new(path_bin);
     configure_backend_serve_command(&mut command, &backend_config_path);
+    apply_backend_install_env(&mut command);
     command
         .current_dir(backend_workdir)
         .stdout(Stdio::piped())
