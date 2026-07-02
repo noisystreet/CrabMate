@@ -37,6 +37,28 @@ pub(crate) struct PlanSemanticLlmOutcome {
     /// 仅在 `consistent == false` 时有意义；经规范化，至少含一个后备码。
     pub violation_codes: Vec<String>,
     pub rationale: Option<String>,
+    /// 侧向 LLM 调用被用户取消（须由编排层映射为 `TurnAborted`，不可 fail-open 为一致）。
+    pub user_cancelled: bool,
+}
+
+impl PlanSemanticLlmOutcome {
+    pub(crate) fn consistent_ok() -> Self {
+        Self {
+            consistent: true,
+            violation_codes: Vec::new(),
+            rationale: None,
+            user_cancelled: false,
+        }
+    }
+
+    pub(crate) fn user_cancelled() -> Self {
+        Self {
+            consistent: false,
+            violation_codes: Vec::new(),
+            rationale: None,
+            user_cancelled: true,
+        }
+    }
 }
 
 const MAX_VIOLATION_CODES: usize = 8;
@@ -104,6 +126,7 @@ fn outcome_from_json_value(v: &serde_json::Value) -> Option<PlanSemanticLlmOutco
         consistent,
         violation_codes: codes,
         rationale,
+        user_cancelled: false,
     })
 }
 
@@ -117,11 +140,7 @@ fn extract_json_object_slice(s: &str) -> Option<&str> {
 pub(crate) fn parse_plan_semantic_side_reply(text: &str) -> PlanSemanticLlmOutcome {
     let trimmed = text.trim();
     if trimmed.is_empty() {
-        return PlanSemanticLlmOutcome {
-            consistent: true,
-            violation_codes: Vec::new(),
-            rationale: None,
-        };
+        return PlanSemanticLlmOutcome::consistent_ok();
     }
 
     if let Some(slice) = extract_json_object_slice(trimmed)
@@ -143,21 +162,14 @@ pub(crate) fn parse_plan_semantic_side_reply(text: &str) -> PlanSemanticLlmOutco
             consistent: false,
             violation_codes: vec!["semantic_mismatch_legacy".to_string()],
             rationale: None,
+            user_cancelled: false,
         };
     }
     if upper.contains("CONSISTENT") {
-        return PlanSemanticLlmOutcome {
-            consistent: true,
-            violation_codes: Vec::new(),
-            rationale: None,
-        };
+        return PlanSemanticLlmOutcome::consistent_ok();
     }
 
-    PlanSemanticLlmOutcome {
-        consistent: true,
-        violation_codes: Vec::new(),
-        rationale: None,
-    }
+    PlanSemanticLlmOutcome::consistent_ok()
 }
 
 /// 侧向 `complete_chat_retrying` 的入参（避免单函数参数过多）。
@@ -186,19 +198,11 @@ pub(crate) async fn evaluate_plan_consistency_with_recent_tools_llm(
     tool_digest: Option<&str>,
 ) -> PlanSemanticLlmOutcome {
     let Some(digest) = tool_digest.map(str::trim).filter(|s| !s.is_empty()) else {
-        return PlanSemanticLlmOutcome {
-            consistent: true,
-            violation_codes: Vec::new(),
-            rationale: None,
-        };
+        return PlanSemanticLlmOutcome::consistent_ok();
     };
     let plan_trim = plan_json.trim();
     if plan_trim.is_empty() {
-        return PlanSemanticLlmOutcome {
-            consistent: true,
-            violation_codes: Vec::new(),
-            rationale: None,
-        };
+        return PlanSemanticLlmOutcome::consistent_ok();
     }
 
     let user_body = format!(
@@ -249,19 +253,11 @@ pub(crate) async fn evaluate_plan_consistency_with_recent_tools_llm(
                 "final_plan_semantic_check llm_call_failed error={} (fail-open)",
                 e
             );
-            return PlanSemanticLlmOutcome {
-                consistent: true,
-                violation_codes: Vec::new(),
-                rationale: None,
-            };
+            return PlanSemanticLlmOutcome::consistent_ok();
         }
     };
     if finish == crate::types::USER_CANCELLED_FINISH_REASON {
-        return PlanSemanticLlmOutcome {
-            consistent: true,
-            violation_codes: Vec::new(),
-            rationale: None,
-        };
+        return PlanSemanticLlmOutcome::user_cancelled();
     }
     let text = crate::types::message_content_as_str(&reply.content)
         .unwrap_or("")
@@ -288,6 +284,13 @@ pub(crate) fn agent_reply_plan_json_compact(plan: &plan_artifact::AgentReplyPlan
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn user_cancelled_outcome_flag() {
+        let o = PlanSemanticLlmOutcome::user_cancelled();
+        assert!(o.user_cancelled);
+        assert!(!o.consistent);
+    }
 
     #[test]
     fn parse_json_consistent_minimal() {

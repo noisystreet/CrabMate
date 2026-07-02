@@ -17,6 +17,8 @@ pub(crate) enum ReflectOnAssistantOutcome {
     ProceedToExecuteTools,
     /// 规划重写次数用尽（已尝试发 SSE 错误码 `plan_rewrite_exhausted` + `reason_code`）
     PlanRewriteExhausted { reason: PlanRewriteExhaustedReason },
+    /// 侧向语义一致性 LLM 或主路径检测到用户取消
+    UserCancelled,
 }
 
 /// 将 [`AfterFinalAssistant`] 映射为外环 [`ReflectOnAssistantOutcome`]（**不**修改 `PerCoordinator` 计数；
@@ -35,9 +37,16 @@ fn reflect_finish_from_after_final_assistant(
         AfterFinalAssistant::StopTurnPlanRewriteExhausted { reason } => {
             ReflectOnAssistantOutcome::PlanRewriteExhausted { reason }
         }
-        AfterFinalAssistant::StopTurnPendingPlanConsistencyLlm { .. } => unreachable!(
-            "StopTurnPendingPlanConsistencyLlm must be handled in reflect_pending_semantic_consistency_llm"
-        ),
+        AfterFinalAssistant::StopTurnPendingPlanConsistencyLlm { plan, tool_digest } => {
+            log::error!(
+                target: "crabmate::agent_turn",
+                "StopTurnPendingPlanConsistencyLlm reached reflect_finish_from_after_final_assistant; \
+                 scheduling semantic check inline"
+            );
+            // 不应同步到达此分支；防御性回落为停轮，避免 panic。
+            let _ = (plan, tool_digest);
+            ReflectOnAssistantOutcome::StopTurn
+        }
     }
 }
 
@@ -107,6 +116,10 @@ async fn reflect_pending_semantic_consistency_llm(
     )
     .await;
 
+    if outcome.user_cancelled {
+        return ReflectOnAssistantOutcome::UserCancelled;
+    }
+
     let sem_outcome = final_plan_gate::run_final_plan_gate_semantic_completed(
         &outcome,
         per_coord.plan_rewrite_attempts_snapshot(),
@@ -122,9 +135,14 @@ async fn reflect_pending_semantic_consistency_llm(
 
     final_plan_gate::apply_plan_rewrite_count_from_gate(per_coord, &sem_outcome);
     match sem_outcome.after {
-        AfterFinalAssistant::StopTurnPendingPlanConsistencyLlm { .. } => unreachable!(
-            "run_final_plan_gate_semantic_completed must not return StopTurnPendingPlanConsistencyLlm"
-        ),
+        AfterFinalAssistant::StopTurnPendingPlanConsistencyLlm { .. } => {
+            log::error!(
+                target: "crabmate::agent_turn",
+                "run_final_plan_gate_semantic_completed returned StopTurnPendingPlanConsistencyLlm; \
+                 stopping turn defensively"
+            );
+            ReflectOnAssistantOutcome::StopTurn
+        }
         other => reflect_finish_from_after_final_assistant(p, other),
     }
 }

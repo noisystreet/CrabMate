@@ -54,8 +54,9 @@ impl ChatCompletionsBackend for SequencedMockBackend {
         let msg = self
             .responses
             .get(idx)
+            .or_else(|| self.responses.last())
             .cloned()
-            .ok_or_else(|| format!("SequencedMockBackend: unexpected LLM call index {idx}"))?;
+            .ok_or_else(|| "SequencedMockBackend: empty response sequence".to_string())?;
         Ok((msg, self.finish_reason.to_string()))
     }
 }
@@ -439,5 +440,191 @@ async fn run_agent_turn_hierarchical_discourse_fallback_uses_per_outer_loop() {
         body.contains(final_body),
         "expected PER-track final assistant from mock, got preview={:?}",
         body.chars().take(120).collect::<String>()
+    );
+}
+
+fn cfg_staged_execute_turn() -> Arc<AgentConfig> {
+    let mut cfg = load_config(None).expect("embedded default config must load");
+    cfg.per_plan_policy.planner_executor_mode = PlannerExecutorMode::SingleAgent;
+    cfg.intent_routing.intent_at_turn_start_enabled = false;
+    cfg.intent_routing.intent_l2_enabled = false;
+    cfg.staged_planning.staged_plan_optimizer_round = false;
+    cfg.staged_planning.staged_plan_ensemble_count = 1;
+    cfg.staged_planning.staged_plan_two_phase_nl_display = false;
+    Arc::new(cfg)
+}
+
+/// 分阶段单步：规划 JSON → 步内外循环工具轮 → 步内终答（mock LLM 序列）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn run_agent_turn_staged_single_step_mock_llm_sequence() {
+    let cfg = cfg_staged_execute_turn();
+    let client = reqwest::Client::new();
+    let tools = build_tools();
+    let plan_json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"调用 get_current_time 查询时间"}]}"#;
+    let tool_round = Message {
+        role: "assistant".to_string(),
+        content: None,
+        reasoning_content: None,
+        reasoning_details: None,
+        tool_calls: Some(vec![ToolCall {
+            id: "call_staged_1".to_string(),
+            typ: "function".to_string(),
+            function: FunctionCall {
+                name: "get_current_time".to_string(),
+                arguments: "{}".to_string(),
+            },
+        }]),
+        name: None,
+        tool_call_id: None,
+    };
+    let step_final = Message::assistant_only("分阶段步骤 mock 终答".to_string());
+    let staged_tail_plan = Message::assistant_only(
+        r#"{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}"#.to_string(),
+    );
+    let backend: &'static SequencedMockBackend = Box::leak(Box::new(SequencedMockBackend::new(
+        vec![
+            Message::assistant_only(plan_json.to_string()),
+            tool_round,
+            step_final.clone(),
+            step_final.clone(),
+            staged_tail_plan,
+        ],
+        "stop",
+    )));
+
+    let mut messages = vec![
+        Message::system_only("test system".to_string()),
+        Message::user_only("请修复 src/lib.rs 的编译错误并运行 cargo test".to_string()),
+    ];
+    let work_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let params = RunAgentTurnParams {
+        shared: RunAgentTurnSharedInputs {
+            client: &client,
+            api_key: "",
+            cfg: &cfg,
+            tools: tools.as_slice(),
+        },
+        messages: &mut messages,
+        effective_working_dir: work_dir,
+        workspace_is_set: true,
+        transport: AgentTurnTransport {
+            out: None,
+            render_to_terminal: false,
+            no_stream: true,
+            cancel: None,
+            per_flight: None,
+            web_tool_ctx: None,
+            cli_tool_ctx: None,
+            plain_terminal_stream: false,
+            tui_llm_stream_scratch: None,
+            tool_running_hook: None,
+            clarification_questionnaire_hook: None,
+            sse_control_mirror: None,
+            llm_backend: Some(backend as &dyn ChatCompletionsBackend),
+        },
+        llm: AgentTurnLlmOverrides {
+            temperature_override: None,
+            model_override: None,
+            use_executor_model: false,
+            executor_model_override: None,
+            executor_api_base: None,
+            executor_api_key: None,
+            seed_override: LlmSeedOverride::default(),
+        },
+        long_term_memory: None,
+        long_term_memory_scope_id: None,
+        read_file_turn_cache: None,
+        turn_allowed_tool_names: None,
+        tracing_chat_turn: None,
+        request_audit: None,
+        process_handles: ProcessHandles::default_arc_process_handles(),
+    };
+
+    run_agent_turn(params)
+        .await
+        .expect("staged mock turn must succeed");
+    assert!(
+        backend.call_seq.load(Ordering::SeqCst) >= 2,
+        "staged path should invoke planner at least twice (plan + step outer loop)"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn run_agent_turn_plan_rewrite_exhausted_on_missing_plan() {
+    use crabmate::agent::per_coord::FinalPlanRequirementMode;
+
+    let mut cfg = (*cfg_freeform_turn()).clone();
+    cfg.per_plan_policy.final_plan_requirement = FinalPlanRequirementMode::Always;
+    // 运行时 `PerCoordinator` 将 0 钳制为 1；用 1 测「首答缺规划 → 一次重写 → 仍缺规划则耗尽」。
+    cfg.per_plan_policy.plan_rewrite_max_attempts = 1;
+    let cfg = Arc::new(cfg);
+    let client = reqwest::Client::new();
+    let tools = build_tools();
+    let final_without_plan =
+        Message::assistant_only("这是没有 agent_reply_plan 的终答。".to_string());
+    let backend: &'static SequencedMockBackend = Box::leak(Box::new(SequencedMockBackend::new(
+        vec![final_without_plan.clone(), final_without_plan.clone()],
+        "stop",
+    )));
+
+    let mut messages = vec![
+        Message::system_only("test system".to_string()),
+        Message::user_only("你好，请用一句话介绍你自己。".to_string()),
+    ];
+    let work_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let params = RunAgentTurnParams {
+        shared: RunAgentTurnSharedInputs {
+            client: &client,
+            api_key: "",
+            cfg: &cfg,
+            tools: tools.as_slice(),
+        },
+        messages: &mut messages,
+        effective_working_dir: work_dir,
+        workspace_is_set: true,
+        transport: AgentTurnTransport {
+            out: None,
+            render_to_terminal: false,
+            no_stream: true,
+            cancel: None,
+            per_flight: None,
+            web_tool_ctx: None,
+            cli_tool_ctx: None,
+            plain_terminal_stream: false,
+            tui_llm_stream_scratch: None,
+            tool_running_hook: None,
+            clarification_questionnaire_hook: None,
+            sse_control_mirror: None,
+            llm_backend: Some(backend as &dyn ChatCompletionsBackend),
+        },
+        llm: AgentTurnLlmOverrides {
+            temperature_override: None,
+            model_override: None,
+            use_executor_model: false,
+            executor_model_override: None,
+            executor_api_base: None,
+            executor_api_key: None,
+            seed_override: LlmSeedOverride::default(),
+        },
+        long_term_memory: None,
+        long_term_memory_scope_id: None,
+        read_file_turn_cache: None,
+        turn_allowed_tool_names: None,
+        tracing_chat_turn: None,
+        request_audit: None,
+        process_handles: ProcessHandles::default_arc_process_handles(),
+    };
+
+    run_agent_turn(params)
+        .await
+        .expect("turn should stop after plan_rewrite exhausted without hard error");
+    assert_eq!(
+        backend.call_seq.load(Ordering::SeqCst),
+        2,
+        "plan_rewrite_max_attempts=1: initial planner + one rewrite before exhausted stop"
+    );
+    assert!(
+        messages.iter().any(|m| m.role == "assistant"),
+        "assistant message should remain in history"
     );
 }
