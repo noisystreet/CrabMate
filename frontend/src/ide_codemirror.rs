@@ -5,12 +5,48 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::prelude::*;
+use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::HtmlElement;
 
 use crate::ide_editor_prefs::ide_editor_font_family_css;
 use crate::ide_syntax_highlight::ide_syntax_lang_for_path;
 
 const CM_MOUNT_MAX_RETRIES: u32 = 12;
+
+#[wasm_bindgen(inline_js = r#"
+export function loadIdeCodemirrorScript() {
+  if (globalThis.CrabMateIdeEditor) {
+    return Promise.resolve();
+  }
+  const existing = document.querySelector('script[data-crabmate-cm="1"]');
+  if (existing) {
+    return new Promise((resolve, reject) => {
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(new Error("ide-codemirror.js load failed")), { once: true });
+    });
+  }
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "/vendor/ide-codemirror.js";
+    s.async = true;
+    s.dataset.crabmateCm = "1";
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("ide-codemirror.js load failed"));
+    document.head.appendChild(s);
+  });
+}
+"#)]
+extern "C" {
+    #[wasm_bindgen(js_name = loadIdeCodemirrorScript)]
+    fn load_ide_codemirror_script() -> js_sys::Promise;
+}
+
+async fn ensure_ide_codemirror_script() -> bool {
+    if IdeEditorHost::cm_available() {
+        return true;
+    }
+    JsFuture::from(load_ide_codemirror_script()).await.is_ok() && IdeEditorHost::cm_available()
+}
 
 fn cm_global() -> JsValue {
     js_sys::Reflect::get(&js_sys::global(), &JsValue::from_str("CrabMateIdeEditor"))
@@ -365,6 +401,75 @@ fn mount_cm_instance(
     ok
 }
 
+fn schedule_lazy_cm_script_load(
+    generation: u32,
+    cm_mount_generation: RwSignal<u32>,
+    cm_mount_retry: RwSignal<u32>,
+    cm_init_failed: RwSignal<bool>,
+) {
+    cm_mount_generation.set(generation);
+    spawn_local(async move {
+        if !ensure_ide_codemirror_script().await {
+            cm_init_failed.set(true);
+            return;
+        }
+        if cm_mount_generation.get_untracked() != generation {
+            return;
+        }
+        cm_mount_retry.update(|n| *n = n.saturating_add(1));
+    });
+}
+
+struct CmMountScheduleCtx {
+    host: IdeEditorHost,
+    signals: IdeCmWireSignals,
+    suppress_sync: RwSignal<bool>,
+    editor_visible: RwSignal<bool>,
+    generation: u32,
+    cm_mount_generation: RwSignal<u32>,
+    cm_mount_retry: RwSignal<u32>,
+    cm_init_failed: RwSignal<bool>,
+    attempt: u32,
+}
+
+fn schedule_cm_mount_after_layout(parent: HtmlElement, ctx: CmMountScheduleCtx) {
+    let CmMountScheduleCtx {
+        host,
+        signals,
+        suppress_sync,
+        editor_visible,
+        generation,
+        cm_mount_generation,
+        cm_mount_retry,
+        cm_init_failed,
+        attempt,
+    } = ctx;
+    after_layout_settled(move || {
+        if cm_mount_generation.get_untracked() != generation {
+            return;
+        }
+        if !editor_visible.get_untracked() || host.handle.get_untracked().is_some() {
+            return;
+        }
+        if !IdeEditorHost::cm_available() {
+            return;
+        }
+
+        cm_init_failed.set(false);
+        if mount_cm_instance(host, &parent, signals, suppress_sync) {
+            cm_mount_retry.set(0);
+            cm_init_failed.set(false);
+            return;
+        }
+
+        if attempt + 1 < CM_MOUNT_MAX_RETRIES {
+            cm_mount_retry.set(attempt + 1);
+        } else {
+            cm_init_failed.set(true);
+        }
+    });
+}
+
 /// 挂载 / 更新 IDE 编辑器：容器就绪后创建 CM，并随偏好与路径重配置。
 pub fn wire_ide_codemirror(host: IdeEditorHost, signals: IdeCmWireSignals) {
     let IdeCmWireSignals {
@@ -435,6 +540,13 @@ pub fn wire_ide_codemirror(host: IdeEditorHost, signals: IdeCmWireSignals) {
             return;
         }
         if !IdeEditorHost::cm_available() {
+            let generation = cm_mount_generation.get_untracked().wrapping_add(1);
+            schedule_lazy_cm_script_load(
+                generation,
+                cm_mount_generation,
+                cm_mount_retry,
+                cm_init_failed,
+            );
             return;
         }
 
@@ -442,32 +554,20 @@ pub fn wire_ide_codemirror(host: IdeEditorHost, signals: IdeCmWireSignals) {
         let generation = cm_mount_generation.get_untracked().wrapping_add(1);
         cm_mount_generation.set(generation);
         let attempt = cm_mount_retry.get_untracked();
-        let wire = signals;
-
-        after_layout_settled(move || {
-            if cm_mount_generation.get_untracked() != generation {
-                return;
-            }
-            if !editor_visible.get_untracked() || host.handle.get_untracked().is_some() {
-                return;
-            }
-            if !IdeEditorHost::cm_available() {
-                return;
-            }
-
-            cm_init_failed.set(false);
-            if mount_cm_instance(host, &parent, wire, suppress_sync) {
-                cm_mount_retry.set(0);
-                cm_init_failed.set(false);
-                return;
-            }
-
-            if attempt + 1 < CM_MOUNT_MAX_RETRIES {
-                cm_mount_retry.set(attempt + 1);
-            } else {
-                cm_init_failed.set(true);
-            }
-        });
+        schedule_cm_mount_after_layout(
+            parent,
+            CmMountScheduleCtx {
+                host,
+                signals,
+                suppress_sync,
+                editor_visible,
+                generation,
+                cm_mount_generation,
+                cm_mount_retry,
+                cm_init_failed,
+                attempt,
+            },
+        );
     });
 
     on_cleanup(move || {

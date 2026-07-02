@@ -221,6 +221,15 @@ export http_proxy=http://localhost:8118 && export https_proxy=http://localhost:8
 - 解析 **`web_ready`** 并加载动态 URL
 - 打开 WebView、退出时回收后端进程
 - 启动失败时的阻塞错误对话框
+- **启动 splash**：先显示 `splash.html`，后台拉起 sidecar，就绪后打开主窗口
+- sidecar 默认 **`RUST_LOG=warn`**（可用环境变量覆盖）
+
+性能相关（发布路径）：
+
+- 后端 **release**：`lto = thin` + `strip`（根 `Cargo.toml` `[profile.release]`）
+- 前端 **`trunk build --release`** + `wasm-opt`；`make frontend-release` 会先拉取本地字体、合并 CSS
+- **CodeMirror** 仅在进入 IDE 模式时动态加载 `/vendor/ide-codemirror.js`
+- **`serve`** 对静态资源启用 **gzip**（`tower-http` `CompressionLayer`）
 
 尚待完善：
 
