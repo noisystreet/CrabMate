@@ -93,7 +93,7 @@ pub use full::{run_mcp_list, run_mcp_serve};
 #[cfg(not(feature = "mcp"))]
 pub async fn run_mcp_list(_cfg: &AgentConfig, _probe: bool, _repl_context: bool) {
     println!(
-        "本 crabmate 二进制未启用 `mcp` Cargo feature，不支持 MCP 列表/探测。请使用默认构建或 `cargo build --features mcp`。"
+        "本 crabmate 二进制未启用 `mcp` Cargo feature，不支持 MCP 列表/探测。请使用 `cargo build --features mcp` 重新编译。"
     );
 }
 

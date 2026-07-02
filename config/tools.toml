@@ -184,6 +184,7 @@ codebase_semantic_fts_top_n = 400
 codebase_semantic_hybrid_semantic_pool = 256
 
 # --- MCP（stdio 客户端，可选）---
+# MCP（需编译时启用 Cargo feature `mcp`：`cargo build --features mcp`）
 # mcp_enabled = false
 # mcp_command = ""
 # mcp_tool_timeout_secs = 60
