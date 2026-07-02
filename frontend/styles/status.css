@@ -24,6 +24,10 @@
   padding-bottom: 1px;
 }
 
+.status-chips--role-menu-open {
+  overflow-y: visible;
+}
+
 .status-chip {
   display: inline-flex;
   align-items: center;
@@ -83,6 +87,15 @@
   cursor: default;
 }
 
+/* Portal 到 body：脱离 .shell-main overflow 裁切 */
+.status-agent-role-backdrop--portal {
+  z-index: 200;
+}
+
+.status-agent-role-menu--portal {
+  z-index: 201;
+}
+
 .status-agent-role-trigger {
   display: inline-flex;
   align-items: center;
@@ -126,6 +139,12 @@
   border: 1px solid var(--border-subtle);
   background: var(--surface);
   box-shadow: var(--shadow-md);
+}
+
+/* 打开时用 inline style 锚定视口（见 status_agent_role_menu.rs） */
+.status-agent-role-menu--fixed {
+  position: fixed;
+  top: auto;
 }
 
 .status-agent-role-menu-item {

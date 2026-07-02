@@ -117,6 +117,7 @@ html[data-tauri-shell] .status-agent-role-backdrop {
   -webkit-app-region: no-drag;
 }
 
-html[data-tauri-shell] .status-chips:has(.status-agent-role-trigger-open) {
+html[data-tauri-shell] .status-chips:has(.status-agent-role-trigger-open),
+html[data-tauri-shell] .status-chips.status-chips--role-menu-open {
   overflow-y: visible;
 }

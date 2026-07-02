@@ -249,9 +249,9 @@ fn StatusBarChipsLoaded(
     selected_agent_role: RwSignal<Option<String>>,
     agent_role_user_override: RwSignal<bool>,
     locale: RwSignal<Locale>,
+    role_menu_open: RwSignal<bool>,
 ) -> impl IntoView {
     let chat = expect_chat_shell_ctx().chat;
-    let role_menu_open = RwSignal::new(false);
     view! {
         <>
             <span class="status-chip">
@@ -321,8 +321,12 @@ fn StatusBarChipsRow(
         agent_role_user_override,
         locale,
     } = chips;
+    let role_menu_open = RwSignal::new(false);
     view! {
-        <div class="status-chips">
+        <div
+            class="status-chips"
+            class:status-chips--role-menu-open=move || role_menu_open.get()
+        >
             {move || {
                 let phase = st.status_fetch_phase.get();
                 let has_data = st.status_data.get().is_some();
@@ -346,6 +350,7 @@ fn StatusBarChipsRow(
                             selected_agent_role=selected_agent_role
                             agent_role_user_override=agent_role_user_override
                             locale=locale
+                            role_menu_open=role_menu_open
                         />
                     }
                     .into_any()

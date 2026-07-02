@@ -32,4 +32,15 @@ test.describe('status bar', () => {
     await page.goto('/');
     await expect(page.getByTestId('status-bar')).toBeVisible();
   });
+
+  test('agent role trigger opens upward menu', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByTestId('status-bar')).toBeVisible();
+    const trigger = page.getByTestId('status-agent-role-trigger');
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+    const menu = page.locator('.status-agent-role-menu');
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole('menuitem').first()).toBeVisible();
+  });
 });
