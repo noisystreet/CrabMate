@@ -4,6 +4,7 @@ use leptos::prelude::*;
 
 use super::menu_id::IdeMenuId;
 use super::props::IdeMenuBarSignals;
+use crate::app::ide_layout_switch::exit_editor_layout;
 use crate::i18n::{self};
 use crate::ide_save::{spawn_save_active_tab, spawn_save_all_dirty_tabs};
 
@@ -46,7 +47,7 @@ pub(super) fn IdeMenuFileSection(
     let IdeMenuBarSignals {
         locale,
         chrome,
-        editor_layout_mode,
+        layout_toggle,
         ide_load_busy,
         ide_save_busy,
         save_ctx,
@@ -117,7 +118,7 @@ pub(super) fn IdeMenuFileSection(
                         role="menuitem"
                         data-testid="ide-menu-back-to-chat"
                         on:click=move |_| {
-                            editor_layout_mode.set(false);
+                            exit_editor_layout(layout_toggle);
                             close_menus(open_menu, ide_menubar_dropdown_open);
                         }
                     >

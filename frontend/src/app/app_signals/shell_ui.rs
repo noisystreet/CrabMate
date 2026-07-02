@@ -2,6 +2,7 @@
 
 use leptos::prelude::*;
 
+use crate::app::ide_menu_bar::IdeMenuBarBridge;
 use crate::app::shell_prefs_storage;
 use crate::app_prefs::SidePanelView;
 use crate::i18n::Locale;
@@ -14,6 +15,8 @@ pub struct ShellUISignals {
     pub view_menu_open: RwSignal<bool>,
     /// IDE 菜单栏任一下拉打开时为 `true`（供全局 Escape 关闭）。
     pub ide_menubar_dropdown_open: RwSignal<bool>,
+    /// IDE 布局挂载后由 [`IdeLayoutView`](crate::app::ide_layout::IdeLayoutView) 写入，供统一顶栏渲染菜单。
+    pub ide_menu_bar_bridge: RwSignal<Option<IdeMenuBarBridge>>,
     pub status_bar_visible: RwSignal<bool>,
     pub side_panel_view: RwSignal<SidePanelView>,
     pub side_width: RwSignal<f64>,
@@ -43,6 +46,7 @@ impl ShellUISignals {
             locale: RwSignal::new(s.locale),
             view_menu_open: RwSignal::new(false),
             ide_menubar_dropdown_open: RwSignal::new(false),
+            ide_menu_bar_bridge: RwSignal::new(None),
             status_bar_visible: RwSignal::new(s.status_bar_visible),
             side_panel_view: RwSignal::new(s.side_panel_view),
             side_width: RwSignal::new(s.side_width),

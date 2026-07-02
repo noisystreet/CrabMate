@@ -45,31 +45,8 @@
   display: flex;
 }
 
-/* Tauri 无系统装饰时：菜单区可拖拽，窗口按钮与菜单项不可拖 */
-html[data-tauri-shell][data-ide-layout] .ide-menu-bar-menus,
-html[data-tauri-shell][data-ide-layout] .ide-menu-bar-status {
-  -webkit-app-region: drag;
-}
-
-html[data-tauri-shell][data-ide-layout] .ide-menu-bar button,
-html[data-tauri-shell][data-ide-layout] .ide-menu-bar .ide-menu-trigger,
-html[data-tauri-shell][data-ide-layout] .ide-menu-dropdown,
-html[data-tauri-shell][data-ide-layout] .ide-menu-item,
-html[data-tauri-shell][data-ide-layout] .ide-menu-bar .tauri-window-controls {
-  -webkit-app-region: no-drag;
-}
-
-html[data-tauri-shell][data-ide-layout] .ide-menu-bar .tauri-window-controls {
-  margin-left: 0.35rem;
-  border-left: 1px solid var(--shell-border, rgba(0, 0, 0, 0.08));
-}
-
 /* 窄屏 IDE：左栏（品牌 + 工作区）与编辑器纵向堆叠 */
 @media (max-width: 768px) {
-  .app-root.app-shell-ds.app-root--ide-layout .shell-main-header-mobile {
-    display: none !important;
-  }
-
   .ide-layout-body {
     flex-direction: column;
   }
@@ -93,23 +70,11 @@ html[data-tauri-shell][data-ide-layout] .ide-menu-bar .tauri-window-controls {
 }
 
 .ide-menu-bar {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-shrink: 0;
-  min-height: 2rem;
-  padding: 0 0.35rem;
-  border-bottom: 1px solid var(--shell-border, rgba(0, 0, 0, 0.08));
-  background: var(--surface-0, transparent);
-  position: relative;
-  z-index: 5;
+  /* 布局与外观见 `.shell-topbar` */
 }
 
 .ide-menu-bar-menus {
-  display: flex;
-  align-items: stretch;
-  gap: 0.1rem;
-  flex-shrink: 0;
+  /* 见 `.shell-topbar-start` */
 }
 
 .ide-menu-wrap {
@@ -117,19 +82,12 @@ html[data-tauri-shell][data-ide-layout] .ide-menu-bar .tauri-window-controls {
 }
 
 .ide-menu-trigger {
-  font: inherit;
-  font-size: 0.8rem;
-  padding: 0.35rem 0.55rem;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
+  /* 见 `.shell-topbar .ide-menu-trigger` */
 }
 
 .ide-menu-trigger:hover,
 .ide-menu-trigger-open {
-  background: var(--surface-hover, rgba(0, 0, 0, 0.06));
+  /* 见 `.shell-topbar .ide-menu-trigger` */
 }
 
 .ide-menu-dropdown {
@@ -240,20 +198,6 @@ html[data-tauri-shell][data-ide-layout] .ide-menu-bar .tauri-window-controls {
 
 .ide-layout-left-chrome .nav-rail-brand {
   padding-bottom: 6px;
-}
-
-.ide-layout-left-chrome .nav-rail-mode-actions {
-  margin-bottom: 8px;
-}
-
-.ide-layout-left-chrome .nav-rail-mode-toolbar {
-  flex-direction: column;
-  align-items: stretch;
-}
-
-.ide-layout-left-chrome .nav-rail-mode-toolbar .layout-mode-toggle-btn {
-  width: 100%;
-  flex: none;
 }
 
 .ide-layout-left-head {

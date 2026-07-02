@@ -1,5 +1,5 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum IdeMenuId {
+pub(crate) enum IdeMenuId {
     File,
     Edit,
     View,

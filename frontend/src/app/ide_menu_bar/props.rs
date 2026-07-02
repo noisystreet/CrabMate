@@ -5,16 +5,28 @@ use leptos::prelude::*;
 use crate::ide_codemirror::IdeEditorHost;
 
 use crate::app::app_signals::{IdeChromeSignals, IdeEditorSignals};
+use crate::app::ide_layout_switch::IdeLayoutToggleSignals;
 use crate::i18n::Locale;
 use crate::ide_save::IdeSaveContext;
 use crate::ide_tabs::IdeTabsHandle;
+
+use super::menu_id::IdeMenuId;
+
+/// IDE 顶栏菜单状态（由 [`super::IdeLayoutView`](crate::app::ide_layout::IdeLayoutView) 注册，供统一顶栏读取）。
+#[derive(Clone, Copy)]
+pub struct IdeMenuBarBridge {
+    pub signals: IdeMenuBarSignals,
+    pub open_menu: RwSignal<Option<IdeMenuId>>,
+    pub save_enabled: Memo<bool>,
+    pub save_all_enabled: Memo<bool>,
+}
 
 #[derive(Clone, Copy)]
 pub struct IdeMenuBarSignals {
     pub locale: RwSignal<Locale>,
     pub chrome: IdeChromeSignals,
     pub editor: IdeEditorSignals,
-    pub editor_layout_mode: RwSignal<bool>,
+    pub layout_toggle: IdeLayoutToggleSignals,
     pub ide_settings_page: RwSignal<bool>,
     pub ide_menubar_dropdown_open: RwSignal<bool>,
     pub ide_path: RwSignal<Option<String>>,

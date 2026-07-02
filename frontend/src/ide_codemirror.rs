@@ -10,6 +10,8 @@ use web_sys::HtmlElement;
 use crate::ide_editor_prefs::ide_editor_font_family_css;
 use crate::ide_syntax_highlight::ide_syntax_lang_for_path;
 
+const CM_MOUNT_MAX_RETRIES: u32 = 12;
+
 fn cm_global() -> JsValue {
     js_sys::Reflect::get(&js_sys::global(), &JsValue::from_str("CrabMateIdeEditor"))
         .unwrap_or(JsValue::NULL)
@@ -292,6 +294,77 @@ pub fn cm_create(
     id.as_f64().map(|n| IdeCmHandle(n as i32))
 }
 
+fn after_animation_frame(f: impl FnOnce() + 'static) {
+    let Some(win) = web_sys::window() else {
+        f();
+        return;
+    };
+    let cb = Closure::once(Box::new(f));
+    let _ = win.request_animation_frame(cb.as_ref().unchecked_ref());
+    cb.forget();
+}
+
+/// 布局/visibility 切换后再挂载 CM（Tauri / WebKit 在 hidden→visible 同帧创建易失败）。
+fn after_layout_settled(f: impl FnOnce() + 'static) {
+    after_animation_frame(move || after_animation_frame(f));
+}
+
+fn mount_cm_instance(
+    host: IdeEditorHost,
+    parent: &HtmlElement,
+    signals: IdeCmWireSignals,
+    suppress_sync: RwSignal<bool>,
+) -> bool {
+    let IdeCmWireSignals {
+        ide_path,
+        ide_text,
+        ide_load_busy,
+        line_numbers,
+        word_wrap,
+        tab_size,
+        font_slug,
+        font_size_px,
+        ..
+    } = signals;
+
+    host.destroy_if_any();
+    parent.set_inner_html("");
+
+    let ide_text_cb = ide_text;
+    let suppress = suppress_sync;
+    let on_change = Closure::wrap(Box::new(move |id: JsValue, text: JsValue| {
+        let _ = id;
+        let Some(s) = text.as_string() else {
+            return;
+        };
+        suppress.set(true);
+        ide_text_cb.set(s);
+        suppress.set(false);
+    }) as Box<dyn FnMut(JsValue, JsValue)>);
+
+    let path = ide_path.get_untracked();
+    let read_only = path.is_none() || ide_load_busy.get_untracked();
+    let opts = IdeCmCreateOptions {
+        path: path.as_deref(),
+        doc: &ide_text.get_untracked(),
+        read_only,
+        line_numbers: line_numbers.get_untracked(),
+        word_wrap: word_wrap.get_untracked(),
+        tab_size: tab_size.get_untracked(),
+        font_slug: &font_slug.get_untracked(),
+        font_size_px: font_size_px.get_untracked(),
+    };
+    let ok = if let Some(handle) = cm_create(parent, &opts, on_change.as_ref().unchecked_ref()) {
+        host.handle.set(Some(handle));
+        host.request_measure();
+        true
+    } else {
+        false
+    };
+    on_change.forget();
+    ok
+}
+
 /// 挂载 / 更新 IDE 编辑器：容器就绪后创建 CM，并随偏好与路径重配置。
 pub fn wire_ide_codemirror(host: IdeEditorHost, signals: IdeCmWireSignals) {
     let IdeCmWireSignals {
@@ -307,6 +380,8 @@ pub fn wire_ide_codemirror(host: IdeEditorHost, signals: IdeCmWireSignals) {
         cm_init_failed,
     } = signals;
     let suppress_sync = RwSignal::new(false);
+    let cm_mount_retry = RwSignal::new(0u32);
+    let cm_mount_generation = RwSignal::new(0u32);
 
     // 外部（切标签等）写入 ide_text → 同步到 CM
     Effect::new(move |_| {
@@ -346,6 +421,7 @@ pub fn wire_ide_codemirror(host: IdeEditorHost, signals: IdeCmWireSignals) {
     // 容器挂载：仅在 IDE 层可见时**首次**创建 CM；切回对话模式**保留**实例（撤销栈等），再次显示时 requestMeasure。
     Effect::new(move |_| {
         let visible = editor_visible.get();
+        let _retry = cm_mount_retry.get();
         let Some(el) = host.container.get() else {
             return;
         };
@@ -353,49 +429,45 @@ pub fn wire_ide_codemirror(host: IdeEditorHost, signals: IdeCmWireSignals) {
             return;
         }
 
-        let parent: HtmlElement = el.unchecked_into();
         if host.handle.get_untracked().is_some() {
             host.request_measure();
+            cm_init_failed.set(false);
             return;
         }
         if !IdeEditorHost::cm_available() {
             return;
         }
 
-        cm_init_failed.set(false);
-        host.destroy_if_any();
-        parent.set_inner_html("");
-        let ide_text_cb = ide_text;
-        let suppress = suppress_sync;
-        let on_change = Closure::wrap(Box::new(move |id: JsValue, text: JsValue| {
-            let _ = id;
-            let Some(s) = text.as_string() else {
-                return;
-            };
-            suppress.set(true);
-            ide_text_cb.set(s);
-            suppress.set(false);
-        }) as Box<dyn FnMut(JsValue, JsValue)>);
+        let parent: HtmlElement = el.unchecked_into();
+        let generation = cm_mount_generation.get_untracked().wrapping_add(1);
+        cm_mount_generation.set(generation);
+        let attempt = cm_mount_retry.get_untracked();
+        let wire = signals;
 
-        let path = ide_path.get_untracked();
-        let read_only = path.is_none() || ide_load_busy.get_untracked();
-        let opts = IdeCmCreateOptions {
-            path: path.as_deref(),
-            doc: &ide_text.get_untracked(),
-            read_only,
-            line_numbers: line_numbers.get_untracked(),
-            word_wrap: word_wrap.get_untracked(),
-            tab_size: tab_size.get_untracked(),
-            font_slug: &font_slug.get_untracked(),
-            font_size_px: font_size_px.get_untracked(),
-        };
-        if let Some(handle) = cm_create(&parent, &opts, on_change.as_ref().unchecked_ref()) {
-            host.handle.set(Some(handle));
-            host.request_measure();
-        } else {
-            cm_init_failed.set(true);
-        }
-        on_change.forget();
+        after_layout_settled(move || {
+            if cm_mount_generation.get_untracked() != generation {
+                return;
+            }
+            if !editor_visible.get_untracked() || host.handle.get_untracked().is_some() {
+                return;
+            }
+            if !IdeEditorHost::cm_available() {
+                return;
+            }
+
+            cm_init_failed.set(false);
+            if mount_cm_instance(host, &parent, wire, suppress_sync) {
+                cm_mount_retry.set(0);
+                cm_init_failed.set(false);
+                return;
+            }
+
+            if attempt + 1 < CM_MOUNT_MAX_RETRIES {
+                cm_mount_retry.set(attempt + 1);
+            } else {
+                cm_init_failed.set(true);
+            }
+        });
     });
 
     on_cleanup(move || {

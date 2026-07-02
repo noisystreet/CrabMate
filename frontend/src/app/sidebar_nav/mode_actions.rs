@@ -1,16 +1,14 @@
-//! 侧栏：布局切换 + 紧凑「新建对话」图标按钮（编辑器模式品牌与返回对话见 IDE 左栏）。
+//! 侧栏：紧凑「新建对话」图标按钮（对话 / 编辑器切换见统一壳顶栏）。
 
 use std::rc::Rc;
 
 use leptos::prelude::*;
 
-use crate::app::layout_mode_segment::LayoutModeSegment;
 use crate::i18n::{self, Locale};
 
 #[component]
 pub(super) fn NavRailModeActions(
     locale: RwSignal<Locale>,
-    editor_layout_mode: RwSignal<bool>,
     new_session: Rc<dyn Fn()>,
     mobile_nav_open: RwSignal<bool>,
 ) -> impl IntoView {
@@ -24,11 +22,6 @@ pub(super) fn NavRailModeActions(
     view! {
         <div class="nav-rail-mode-actions">
             <div class="nav-rail-mode-toolbar">
-                <LayoutModeSegment
-                    locale=locale
-                    editor_layout_mode=editor_layout_mode
-                    extra_class="nav-rail-layout-segment"
-                />
                 <button
                     type="button"
                     class="btn btn-primary btn-icon btn-nav-new-chat"

@@ -87,7 +87,7 @@ async function switchToIdeFromChat(page: Page): Promise<ReturnType<Page['locator
 
 async function switchToChatFromIde(page: Page): Promise<void> {
   const ide = page.getByTestId('ide-layout-root');
-  await ide.getByTestId('layout-mode-toggle').click();
+  await page.getByTestId('layout-mode-toggle').click();
   await expect(ide).toBeHidden();
   await ensureNoIdeConfirmBlocking(page);
 }

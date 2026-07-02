@@ -40,7 +40,6 @@ pub fn sidebar_nav_view(signals: SidebarNavSignals) -> impl IntoView {
         chat_find_panel_open,
         session_context_menu,
         sidebar_rail_collapsed,
-        editor_layout_mode: _editor_layout_mode,
     } = signals;
     let shell_chat = expect_chat_shell_ctx();
     let chat = shell_chat.chat;
@@ -88,7 +87,6 @@ pub fn sidebar_nav_view(signals: SidebarNavSignals) -> impl IntoView {
             </div>
             <NavRailModeActions
                 locale=locale
-                editor_layout_mode=_editor_layout_mode
                 new_session=new_session.clone()
                 mobile_nav_open=mobile_nav_open
             />

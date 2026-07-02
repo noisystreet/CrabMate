@@ -26,6 +26,7 @@ use crate::app_prefs::SidePanelView;
 
 use super::app_signals::AppSignals;
 use super::chat::ChatColumnShell;
+use super::ide_layout_switch::IdeLayoutToggleSignals;
 use super::ide_settings_page::IdeSettingsPageViewInput;
 use super::settings_page::{SettingsPageFormSignals, SettingsPageViewInput};
 use super::status_tasks_state::StatusTasksSignals;
@@ -34,13 +35,14 @@ use super::workspace_panel_state::WorkspacePanelSignals;
 use super::approval_modal::ApprovalModalSignals;
 use super::changelist_modal::ChangelistModalBodyState;
 
-/// 窄屏顶栏所需句柄（阶段 B：避免向 `mobile_shell_header_view` 传递整份 [`AppShellCtx`]）。
-#[derive(Clone)]
+/// 壳顶栏所需句柄（阶段 B：避免向 `mobile_shell_header_view` 传递整份 [`AppShellCtx`]）。
+#[derive(Clone, Copy)]
 pub struct MobileShellHeaderSignals {
     pub mobile_nav_open: RwSignal<bool>,
     pub locale: RwSignal<Locale>,
-    pub new_session: Rc<dyn Fn()>,
     pub editor_layout_mode: RwSignal<bool>,
+    pub ide_menu_bar_bridge: RwSignal<Option<super::ide_menu_bar::IdeMenuBarBridge>>,
+    pub layout_toggle: IdeLayoutToggleSignals,
 }
 
 /// 变更集预览模态所需句柄（阶段 B：避免向 `changelist_modal_view` 传递整份 [`AppShellCtx`]）。
@@ -169,7 +171,6 @@ pub struct SidebarNavSignals {
     pub chat_find_panel_open: RwSignal<bool>,
     pub session_context_menu: RwSignal<Option<SessionContextAnchor>>,
     pub sidebar_rail_collapsed: RwSignal<bool>,
-    pub editor_layout_mode: RwSignal<bool>,
 }
 
 /// 右列侧栏所需句柄（阶段 B：避免向 `side_column_view` 传递整份 [`AppShellCtx`]）。
@@ -227,7 +228,6 @@ impl AppShellCtx {
             chat_find_panel_open: self.signals.chat_composer.chat_find_panel_open,
             session_context_menu: self.signals.sidebar.session_context_menu,
             sidebar_rail_collapsed: self.signals.sidebar.sidebar_rail_collapsed,
-            editor_layout_mode: self.signals.shell_ui.editor_layout_mode,
         }
     }
 
@@ -291,8 +291,9 @@ impl AppShellCtx {
         MobileShellHeaderSignals {
             mobile_nav_open: self.signals.sidebar.mobile_nav_open,
             locale: self.signals.shell_ui.locale,
-            new_session: self.new_session.clone(),
             editor_layout_mode: self.signals.shell_ui.editor_layout_mode,
+            ide_menu_bar_bridge: self.signals.shell_ui.ide_menu_bar_bridge,
+            layout_toggle: IdeLayoutToggleSignals::from_app_signals(&self.signals),
         }
     }
 

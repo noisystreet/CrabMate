@@ -2,23 +2,13 @@
 
 use leptos::prelude::*;
 
-/// 进入 IDE 时仅记住对话侧栏展开/收起，**不**改写信号（侧栏由 CSS 隐藏，避免动画与误持久化 `collapsed=true`）。
-/// 退出 IDE 时恢复进入前的状态，避免首次回到对话时会话栏仍被折叠。
-pub fn wire_sidebar_rail_when_ide_layout(
-    editor_layout_mode: RwSignal<bool>,
-    sidebar_rail_collapsed: RwSignal<bool>,
-) {
-    let collapsed_before_ide = RwSignal::new(None::<bool>);
+use crate::app::ide_layout_switch::{IdeLayoutToggleSignals, remember_sidebar_before_ide};
+
+/// 进入 IDE 时记住对话侧栏展开/收起；退出时由 [`crate::app::ide_layout_switch::exit_editor_layout`] 同步恢复。
+pub fn wire_sidebar_rail_when_ide_layout(toggle: IdeLayoutToggleSignals) {
     Effect::new(move |_| {
-        if editor_layout_mode.get() {
-            if collapsed_before_ide.get_untracked().is_none() {
-                collapsed_before_ide.set(Some(sidebar_rail_collapsed.get_untracked()));
-            }
-            return;
-        }
-        if let Some(was) = collapsed_before_ide.get_untracked() {
-            sidebar_rail_collapsed.set(was);
-            collapsed_before_ide.set(None);
+        if toggle.editor_layout_mode.get() {
+            remember_sidebar_before_ide(toggle);
         }
     });
 }
