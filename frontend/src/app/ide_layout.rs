@@ -16,10 +16,10 @@ use crate::ide_tabs::{
 
 use super::ide_editor_pane::IdeEditorPane;
 use super::ide_find_bar::{IdeFindBar, IdeFindBarInput, IdeGotoLineBar};
-use super::ide_menu_bar::{IdeMenuBar, IdeMenuBarSignals};
+use super::ide_layout_switch::IdeLayoutToggleSignals;
+use super::ide_menu_bar::{IdeMenuBarSignals, wire_ide_menu_bar_bridge};
 use super::ide_new_file_modal::{IdeNewFileModal, IdeNewFileModalInput};
 use super::ide_tabs_bar::{IdeTabsBar, IdeTabsBarInput};
-use super::layout_mode_segment::LayoutModeSegment;
 use super::side_column_workspace_scroll::WorkspaceSideCardScrollInner;
 use super::workspace_panel::make_refresh_workspace_after_mutation;
 use super::workspace_panel_state::WorkspacePanelSignals;
@@ -29,7 +29,6 @@ use crate::workspace_context_menu::WorkspaceContextMenuActions;
 #[component]
 fn IdeLayoutLeftPane(
     locale: RwSignal<Locale>,
-    editor_layout_mode: RwSignal<bool>,
     chat: ChatSessionSignals,
     workspace_panel: WorkspacePanelSignals,
     open_sv: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
@@ -44,15 +43,6 @@ fn IdeLayoutLeftPane(
                         <div class="nav-rail-brand-text">
                             <h1>"CrabMate"</h1>
                         </div>
-                    </div>
-                </div>
-                <div class="nav-rail-mode-actions">
-                    <div class="nav-rail-mode-toolbar">
-                        <LayoutModeSegment
-                            locale=locale
-                            editor_layout_mode=editor_layout_mode
-                            extra_class="nav-rail-layout-segment"
-                        />
                     </div>
                 </div>
             </div>
@@ -152,7 +142,7 @@ pub struct IdeLayoutShellSignals {
     pub shell_ui: ShellUISignals,
     pub chrome: IdeChromeSignals,
     pub editor: IdeEditorSignals,
-    pub editor_layout_mode: RwSignal<bool>,
+    pub layout_toggle: IdeLayoutToggleSignals,
     pub ide_settings_page: RwSignal<bool>,
     pub ide_menubar_dropdown_open: RwSignal<bool>,
     pub chat: ChatSessionSignals,
@@ -170,7 +160,7 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
         shell_ui,
         chrome,
         editor,
-        editor_layout_mode,
+        layout_toggle,
         ide_settings_page,
         ide_menubar_dropdown_open,
         chat,
@@ -257,28 +247,29 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
         spawn_close_active_tab(tabs, locale, tab_editor, confirm);
     });
 
+    let menu_signals = IdeMenuBarSignals {
+        locale,
+        chrome,
+        editor,
+        layout_toggle,
+        ide_settings_page,
+        ide_menubar_dropdown_open,
+        ide_path,
+        ide_text,
+        ide_baseline,
+        ide_load_busy: tabs.load_busy,
+        ide_save_busy: tabs.save_busy,
+        editor_host,
+        tabs,
+        save_ctx,
+    };
+    wire_ide_menu_bar_bridge(shell_ui.ide_menu_bar_bridge, editor_visible, menu_signals);
+
     view! {
         <div class="ide-layout-root" data-testid="ide-layout-root">
-            <IdeMenuBar signals=IdeMenuBarSignals {
-                locale,
-                chrome,
-                editor,
-                editor_layout_mode,
-                ide_settings_page,
-                ide_menubar_dropdown_open,
-                ide_path,
-                ide_text,
-                ide_baseline,
-                ide_load_busy: tabs.load_busy,
-                ide_save_busy: tabs.save_busy,
-                editor_host,
-                tabs,
-                save_ctx,
-            } />
             <div class="ide-layout-body">
                 <IdeLayoutLeftPane
                     locale=locale
-                    editor_layout_mode=editor_layout_mode
                     chat=chat
                     workspace_panel=workspace_panel
                     open_sv=open_sv

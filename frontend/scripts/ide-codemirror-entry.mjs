@@ -145,30 +145,52 @@ function buildExtensions(options, onChange) {
 
 /**
  * @param {HTMLElement} parent
+ */
+function clearEditorParent(parent) {
+  if (typeof parent.replaceChildren === "function") {
+    parent.replaceChildren();
+    return;
+  }
+  while (parent.firstChild) {
+    parent.removeChild(parent.firstChild);
+  }
+}
+
+/**
+ * @param {HTMLElement} parent
  * @param {object} options
  * @param {(id: number, text: string) => void} onChange
- * @returns {number}
+ * @returns {number | null}
  */
 function create(parent, options, onChange) {
-  parent.replaceChildren();
-  const id = nextId++;
-  const opts = { ...options, id };
-  const built = buildExtensions(opts, onChange);
-  const state = EditorState.create({
-    doc: options.doc || "",
-    extensions: built.extensions,
-  });
-  const view = new EditorView({ state, parent });
-  editors.set(id, {
-    view,
-    lang: built.langComp,
-    readOnly: built.readOnlyComp,
-    lineNums: built.lineNumsComp,
-    wrap: built.wrapComp,
-    theme: built.themeComp,
-    tabSize: built.tabSizeComp,
-  });
-  return id;
+  if (!parent || typeof onChange !== "function") {
+    console.error("CrabMateIdeEditor.create: invalid parent or onChange");
+    return null;
+  }
+  try {
+    clearEditorParent(parent);
+    const id = nextId++;
+    const opts = { ...options, id };
+    const built = buildExtensions(opts, onChange);
+    const state = EditorState.create({
+      doc: options.doc || "",
+      extensions: built.extensions,
+    });
+    const view = new EditorView({ state, parent });
+    editors.set(id, {
+      view,
+      lang: built.langComp,
+      readOnly: built.readOnlyComp,
+      lineNums: built.lineNumsComp,
+      wrap: built.wrapComp,
+      theme: built.themeComp,
+      tabSize: built.tabSizeComp,
+    });
+    return id;
+  } catch (err) {
+    console.error("CrabMateIdeEditor.create failed", err);
+    return null;
+  }
 }
 
 /**

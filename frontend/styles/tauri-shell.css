@@ -1,5 +1,14 @@
 /* CrabMate Desktop（Tauri）：无边框窗口与自定义标题栏控件 */
 
+html[data-tauri-shell] {
+  --shell-topbar-h: 2.75rem;
+}
+
+html[data-tauri-shell] .app-root.app-shell-ds.app-root--tauri-topbar {
+  box-sizing: border-box;
+  padding-top: var(--shell-topbar-h);
+}
+
 .tauri-window-controls {
   display: flex;
   align-items: stretch;
@@ -11,7 +20,7 @@
   align-items: center;
   justify-content: center;
   width: 2.75rem;
-  min-height: 2rem;
+  min-height: var(--shell-topbar-h, 2.5rem);
   padding: 0;
   border: none;
   background: transparent;
@@ -39,48 +48,52 @@
   font-size: 1rem;
 }
 
-/* 会话模式：仅右上角窗口按钮（勿铺满顶栏，避免挡住侧栏「设置」等） */
-html[data-tauri-shell]:not([data-ide-layout]) .tauri-chat-titlebar {
-  position: fixed;
-  top: 0;
-  right: 0;
-  z-index: 90;
-  display: flex;
-  align-items: stretch;
-  pointer-events: none;
+/* 顶栏共用：Tauri 无边框窗口拖拽 */
+html[data-tauri-shell] .shell-topbar {
+  -webkit-app-region: drag;
+  padding-right: 0;
 }
 
-html[data-tauri-shell]:not([data-ide-layout]) .tauri-chat-titlebar .tauri-window-controls {
-  pointer-events: auto;
+html[data-tauri-shell] .shell-topbar button,
+html[data-tauri-shell] .shell-topbar .shell-topbar-end,
+html[data-tauri-shell] .shell-topbar .shell-topbar-start,
+html[data-tauri-shell] .shell-topbar .tauri-window-controls,
+html[data-tauri-shell] .shell-topbar .ide-menu-dropdown,
+html[data-tauri-shell] .shell-topbar .ide-menu-item {
   -webkit-app-region: no-drag;
-  background: color-mix(in srgb, var(--surface) 55%, transparent);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--border-subtle);
-  border-left: 1px solid var(--shell-border, rgba(0, 0, 0, 0.08));
 }
 
-/* 会话模式：可拖拽区域（按钮区域 no-drag，不拦截点击） */
+/* 全宽顶栏：会话与 IDE 模式共用同一 DOM */
+html[data-tauri-shell] .shell-main-header-mobile.shell-topbar {
+  display: flex !important;
+}
+
+@media (min-width: 769px) {
+  html[data-tauri-shell]:not([data-ide-layout]) .shell-topbar-nav > .btn.btn-icon:first-child {
+    display: none;
+  }
+
+  .app-root.app-shell-ds:not(.app-root--ide-layout) .shell-topbar-nav > .btn.btn-icon:first-child {
+    display: none;
+  }
+}
+
+/* 会话模式：侧栏品牌区不再承担窗口拖拽（全宽顶栏已覆盖） */
+html[data-tauri-shell]:not([data-ide-layout]) .nav-rail-brand {
+  -webkit-app-region: no-drag;
+}
+
 html[data-tauri-shell][data-ide-layout] .ide-layout-left-chrome .nav-rail-brand {
   -webkit-app-region: drag;
 }
 
-html[data-tauri-shell][data-ide-layout] .ide-layout-left-chrome .nav-rail-brand-main,
-html[data-tauri-shell][data-ide-layout] .ide-layout-left-chrome .nav-rail-mode-actions {
-  -webkit-app-region: no-drag;
-}
-
-html[data-tauri-shell]:not([data-ide-layout]) .nav-rail-brand {
-  -webkit-app-region: drag;
-}
-
-html[data-tauri-shell]:not([data-ide-layout]) .nav-rail-brand .nav-rail-brand-main,
-html[data-tauri-shell]:not([data-ide-layout]) .nav-rail-brand button {
+html[data-tauri-shell][data-ide-layout] .ide-layout-left-chrome .nav-rail-brand-main {
   -webkit-app-region: no-drag;
 }
 
 html[data-tauri-shell]:not([data-ide-layout]) .side-column .shell-main-toolbar {
   -webkit-app-region: drag;
-  padding-right: calc(3 * 2.75rem + 4px);
+  padding-right: 10px;
 }
 
 html[data-tauri-shell]:not([data-ide-layout]) .side-column .shell-main-toolbar button,
@@ -88,27 +101,16 @@ html[data-tauri-shell]:not([data-ide-layout]) .side-column .shell-main-toolbar .
   -webkit-app-region: no-drag;
 }
 
-/* 侧栏收起时：浮动工具条避开右上角窗口按钮 */
+/* 侧栏收起时：浮动工具条避开全宽顶栏 */
 html[data-tauri-shell]:not([data-ide-layout]) .side-column.side-column-rail-only .shell-main-toolbar {
-  top: calc(2rem + max(10px, env(safe-area-inset-top, 0px)));
+  top: calc(var(--shell-topbar-h) + max(10px, env(safe-area-inset-top, 0px)));
 }
 
-/* 为右上角窗口按钮留出空间，避免与窄屏顶栏操作区重叠 */
-html[data-tauri-shell]:not([data-ide-layout]) .shell-main-header-mobile {
-  padding-right: calc(3 * 2.75rem);
-  -webkit-app-region: drag;
+html[data-tauri-shell] .sidebar-rail-reveal-btn {
+  top: calc(var(--shell-topbar-h) + (100vh - var(--shell-topbar-h)) / 2);
 }
 
-html[data-tauri-shell]:not([data-ide-layout]) .shell-main-header-mobile button {
-  -webkit-app-region: no-drag;
-}
-
-/* 会话模式 Tauri：隐藏顶栏标题文字（保留菜单与新对话等控件） */
-html[data-tauri-shell]:not([data-ide-layout]) .shell-main-header-title {
-  display: none;
-}
-
-/* 底栏角色上拉菜单：勿被窗口拖拽区吞点击；原生 select 在底栏易被 WebView 裁剪 */
+/* 底栏角色上拉菜单：勿被窗口拖拽区吞点击 */
 html[data-tauri-shell] .status-chip-role,
 html[data-tauri-shell] .status-agent-role-wrap,
 html[data-tauri-shell] .status-agent-role-trigger,

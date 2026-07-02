@@ -63,6 +63,11 @@
       border-color 0.2s ease;
   }
 
+  /* 退出 IDE 回到对话：侧栏宽度瞬时到位，避免 0→全宽「弹出」 */
+  .app-root.app-shell-ds.sidebar-rail-snap .nav-rail {
+    transition: none !important;
+  }
+
   .app-root.app-shell-ds.sidebar-rail-collapsed .nav-rail {
     width: 0 !important;
     min-width: 0;
@@ -176,11 +181,6 @@
   transition: none !important;
 }
 
-/* 窄屏对话顶栏：编辑器模式由 IDE 左栏承担布局切换 */
-.app-root.app-shell-ds.app-root--ide-layout .shell-main-header-mobile-actions .layout-mode-toggle-btn {
-  display: none !important;
-}
-
 .btn-nav-new-chat {
   flex-shrink: 0;
   width: 2.25rem;
@@ -215,23 +215,6 @@
   background: var(--surface);
   border-color: color-mix(in srgb, var(--border-subtle) 70%, var(--text));
   box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 8%, transparent);
-}
-
-.mobile-layout-segment {
-  margin: 0;
-  flex-shrink: 0;
-  width: auto;
-  padding: 5px 10px;
-  font-size: 11px;
-}
-
-.shell-mobile-new-chat {
-  flex-shrink: 0;
-  min-width: 2rem;
-  padding-inline: 0.45rem;
-  font-size: 1.15rem;
-  font-weight: 650;
-  line-height: 1;
 }
 
 /* 编辑器模式桌面端：侧栏已收起时不显示「展开」把手，主区留给 IDE */
@@ -484,15 +467,11 @@
 }
 
 .shell-main-header-mobile {
-  display: none;
-  align-items: center;
-  gap: 10px;
-  height: 48px;
-  padding: 0 10px 0 8px;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--border-subtle);
-  background: color-mix(in srgb, var(--surface) 55%, transparent);
-  backdrop-filter: blur(10px);
+  /* 显示规则见 `shell-topbar.css`（`.shell-main-header-mobile.shell-topbar`） */
+}
+
+.shell-main-header-title {
+  /* 与 `.shell-topbar-title` 同构；保留类名供旧选择器/E2E */
 }
 
 /* 「视图」下拉：工作区 / 任务 / 隐藏侧栏 */
@@ -653,11 +632,7 @@
 }
 
 .shell-main-header-title {
-  flex: 1;
-  min-width: 0;
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  /* 视觉由 `.shell-topbar-title` 承担 */
 }
 
 .nav-rail-backdrop {
@@ -1008,13 +983,15 @@
     animation: fade-in 0.2s ease;
   }
 
-  .shell-main-header-mobile {
+  .shell-main-header-mobile.shell-topbar {
     display: flex;
+    --shell-topbar-h: 52px;
+    padding-right: 10px;
   }
 
   /* 浮动工具栏避开移动端顶栏（☰ / 标题 / 新对话） */
   .side-column.side-column-rail-only .shell-main-toolbar {
-    top: calc(48px + max(8px, env(safe-area-inset-top, 0px)));
+    top: calc(var(--shell-topbar-h) + max(8px, env(safe-area-inset-top, 0px)));
   }
 
   .app-root.app-shell-ds {

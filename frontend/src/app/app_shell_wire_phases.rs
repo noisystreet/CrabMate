@@ -36,6 +36,7 @@ use super::chat::{
         WireChatSessionLifecycleEffectsArgs, wire_chat_session_lifecycle_effects,
     },
 };
+use super::ide_layout_switch::IdeLayoutToggleSignals;
 use super::status_tasks_wiring::{
     make_refresh_status, make_refresh_tasks, make_toggle_task, wire_status_tasks_domain_effects,
 };
@@ -117,10 +118,7 @@ fn wire_phase1_chat_session_lifecycle(app: &AppSignals) {
 /// 阶段 2：偏好写入 `/user-data/prefs`、与 `document` 同步、设置弹窗 LLM 草稿打开时填充。
 fn wire_phase2_persisted_prefs_dom_and_settings_hooks(app: &AppSignals) {
     crate::user_prefs_sync::wire_persist_user_prefs_to_server(app.clone());
-    wire_sidebar_rail_when_ide_layout(
-        app.shell_ui.editor_layout_mode,
-        app.sidebar.sidebar_rail_collapsed,
-    );
+    wire_sidebar_rail_when_ide_layout(IdeLayoutToggleSignals::from_app_signals(app));
     wire_close_shell_chrome_when_ide_layout(
         app.shell_ui.editor_layout_mode,
         app.sidebar.mobile_nav_open,

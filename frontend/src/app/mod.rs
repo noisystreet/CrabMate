@@ -16,6 +16,7 @@ mod ide_confirm_dialog;
 mod ide_editor_pane;
 mod ide_find_bar;
 mod ide_layout;
+mod ide_layout_switch;
 mod ide_menu_bar;
 mod ide_new_file_modal;
 mod ide_settings_page;
@@ -52,12 +53,13 @@ mod status_tasks_state;
 mod status_tasks_wiring;
 mod stream_run_phase;
 mod stream_shell_busy;
-mod tauri_chat_titlebar;
 mod tauri_window_controls;
 mod wire_workspace_domain;
 mod workspace_panel;
 pub(crate) mod workspace_panel_state;
 
+use crate::i18n::{self, Locale};
+use crate::tauri_shell::tauri_shell_available;
 use app_shell_init::init_app_shell;
 use approval_modal::ApprovalModal;
 use changelist_modal::changelist_modal_view;
@@ -65,6 +67,7 @@ use chat::ChatFindBar;
 use chat::chat_column_view;
 use ide_confirm_dialog::IdeConfirmDialog;
 use ide_layout::{IdeLayoutShellSignals, IdeLayoutView};
+use ide_layout_switch::IdeLayoutToggleSignals;
 use ide_settings_page::IdeSettingsPageView;
 use mobile_shell_header::mobile_shell_header_view;
 use session_list_modal::session_list_modal_view;
@@ -74,11 +77,28 @@ use shell_runtime_context::ChatShellLeptosContext;
 use side_column::side_column_view;
 use sidebar_nav::sidebar_nav_view;
 use status_bar::status_bar_footer_view;
-use tauri_chat_titlebar::TauriChatTitlebar;
-
-use crate::i18n;
 
 use leptos::prelude::*;
+
+#[component]
+fn SidebarRailRevealBtn(
+    sidebar_rail_collapsed: RwSignal<bool>,
+    editor_layout_mode: RwSignal<bool>,
+    locale: RwSignal<Locale>,
+) -> impl IntoView {
+    view! {
+        <Show when=move || sidebar_rail_collapsed.get() && !editor_layout_mode.get()>
+            <button
+                type="button"
+                class="btn btn-secondary sidebar-rail-reveal-btn"
+                prop:aria-label=move || i18n::nav_sidebar_expand_aria(locale.get())
+                on:click=move |_| sidebar_rail_collapsed.set(false)
+            >
+                "›"
+            </button>
+        </Show>
+    }
+}
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -101,27 +121,17 @@ pub fn App() -> impl IntoView {
         <div
             class="app-root app-shell-ds"
             class:sidebar-rail-collapsed=move || app_ctx.signals.sidebar.sidebar_rail_collapsed.get()
+            class:sidebar-rail-snap=move || app_ctx.signals.sidebar.sidebar_rail_snap.get()
             class:app-root--ide-layout=move || app_ctx.signals.shell_ui.editor_layout_mode.get()
+            class:app-root--tauri-topbar=move || tauri_shell_available()
         >
-            <TauriChatTitlebar
-                locale=app_ctx.signals.shell_ui.locale
-                editor_layout_mode=app_ctx.signals.shell_ui.editor_layout_mode
-            />
             {sidebar_nav_view(sidebar_nav_signals)}
 
-            <Show when=move || {
-                app_ctx.signals.sidebar.sidebar_rail_collapsed.get()
-                    && !app_ctx.signals.shell_ui.editor_layout_mode.get()
-            }>
-                <button
-                    type="button"
-                    class="btn btn-secondary sidebar-rail-reveal-btn"
-                    prop:aria-label=move || i18n::nav_sidebar_expand_aria(app_ctx.signals.shell_ui.locale.get())
-                    on:click=move |_| app_ctx.signals.sidebar.sidebar_rail_collapsed.set(false)
-                >
-                    "›"
-                </button>
-            </Show>
+            <SidebarRailRevealBtn
+                sidebar_rail_collapsed=app_ctx.signals.sidebar.sidebar_rail_collapsed
+                editor_layout_mode=app_ctx.signals.shell_ui.editor_layout_mode
+                locale=app_ctx.signals.shell_ui.locale
+            />
 
             <div
                 class="shell-main"
@@ -162,7 +172,7 @@ pub fn App() -> impl IntoView {
                             shell_ui: app_ctx.signals.shell_ui,
                             chrome: app_ctx.signals.ide_chrome,
                             editor: app_ctx.signals.ide_editor,
-                            editor_layout_mode: app_ctx.signals.shell_ui.editor_layout_mode,
+                            layout_toggle: IdeLayoutToggleSignals::from_app_signals(&app_ctx.signals),
                             ide_settings_page: app_ctx.signals.modal.ide_settings_page,
                             ide_menubar_dropdown_open: app_ctx.signals.shell_ui.ide_menubar_dropdown_open,
                             chat: app_ctx.signals.chat,

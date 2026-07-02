@@ -11,10 +11,11 @@ use crate::tauri_shell::{
 #[component]
 pub fn TauriWindowControls(locale: RwSignal<Locale>) -> impl IntoView {
     view! {
-        <Show when=tauri_shell_available>
+        <Show when=move || tauri_shell_available()>
             <div
                 class="tauri-window-controls"
                 role="group"
+                data-testid="tauri-window-controls"
                 prop:aria-label=move || i18n::ide_tauri_window_controls_aria(locale.get())
             >
                 <button
