@@ -236,7 +236,7 @@ export http_proxy=http://localhost:8118 && export https_proxy=http://localhost:8
 - **后端与前端、桌面壳同次构建**
   - **`cargo build --release`**（或 dev 用 **`cargo build`**）
   - **`cd frontend && trunk build --release`**（或 dev 用 **`trunk build`**）
-  - **`bash desktop-tauri/scripts/prepare-sidecar.sh`** 会校验 sidecar 支持 **`serve --desktop-ready-json`**，不支持则**直接失败**（无旧版回退）
+  - **`bash desktop-tauri/scripts/prepare-sidecar.sh`** 会校验 sidecar 支持 **`serve --desktop-ready-json`**，不支持则**直接失败**（无旧版回退）；并将 **`frontend/dist`** 同步到 **`desktop-tauri/dist`**（deb 安装到 **`/usr/share/crabmate/frontend/dist/`**，供 IDE 编辑器 **`vendor/ide-codemirror.js`** 等）
   - 复制的 sidecar 须与上一步 **`crabmate`** 为同一构建产物
 - **桌面 `.deb` 须整体重装**
   - 仅 **`dpkg -i`** 新 deb、但 deb 内 sidecar 仍是旧 **`crabmate`** 时，启动会报 **`unexpected argument '--desktop-ready-json'`**；须按 §6 顺序重打包含新 sidecar 的包
@@ -251,6 +251,9 @@ export http_proxy=http://localhost:8118 && export https_proxy=http://localhost:8
   - 实际解包后确认可执行文件存在且有执行权限（Linux/macOS）
 - **冷启动验证**
   - 在“未设置 env、PATH 不含 crabmate”的干净机器上，仍能从 sidecar 启动成功
+  - 安装 deb 后 **`/usr/share/crabmate/frontend/dist/index.html`** 与 **`vendor/ide-codemirror.js`** 存在；IDE 模式打开文件编辑区非空
+- sidecar 工作目录为可写 **`$HOME`**（会话库 **`.crabmate/conversations.db`**）；静态 UI 经 **`CM_WEB_STATIC_DIR`** 指向 **`/usr/share/crabmate/frontend/dist`**，**勿**把 **`CM_DESKTOP_WORKDIR`** 设为 **`/usr/share/crabmate`**
+- **`cargo tauri dev`**（源码树可识别时）将 **`CM_WEB_STATIC_DIR`** 设为仓库 **`frontend/dist`**（已 **`trunk build`** 时），或清除该变量以免继承 shell/deb 的 **`/usr/share/…`** 路径
 - **错误提示验证**
   - 故意移除 sidecar 后，能看到明确的启动失败弹窗与路径排查信息
 
@@ -267,6 +270,7 @@ export http_proxy=http://localhost:8118 && export https_proxy=http://localhost:8
 1. 优先读取 `CM_DESKTOP_BACKEND_BIN`
 2. 未设置时回退到 `<repo>/target/release/crabmate`
 3. 复制为 `desktop-tauri/binaries/crabmate-<host-target-triple>`
+4. 同步 **`frontend/dist` → `desktop-tauri/dist`**（`tauri.conf.json` **`deb.files`** 安装到 **`/usr/share/crabmate/frontend/dist/`**）
 
 建议打包命令：
 

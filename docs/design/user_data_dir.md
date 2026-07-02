@@ -290,7 +290,7 @@ flowchart TB
 
 ## 12. 与 Tauri 的关系（补充）
 
-当前 `desktop-tauri` 子进程启动：**`crabmate serve --host 127.0.0.1 --port 0 --desktop-ready-json`**（**无** `--workspace`）；`current_dir` 为仓库根或 **`CM_DESKTOP_WORKDIR`**。壳层解析 stdout 中 **`{"event":"web_ready",…}`** 后再加载 WebView URL（**勿**假设固定端口如 3000）。  
+当前 `desktop-tauri` 子进程启动：**`crabmate serve --host 127.0.0.1 --port 0 --desktop-ready-json`**（**无** `--workspace`）；`current_dir` 为开发时仓库根、**`.deb`** 下默认可写 **`$HOME`**（或 **`CM_DESKTOP_WORKDIR`** 覆盖）；安装布局下 sidecar 自动设 **`CM_WEB_STATIC_DIR=/usr/share/crabmate/frontend/dist`** 提供 UI 静态资源（**勿**把 `current_dir` 指到只读的 **`/usr/share/crabmate`**，否则 **`.crabmate/conversations.db`** 无法创建）。壳层解析 stdout 中 **`{"event":"web_ready",…}`** 后再加载 WebView URL（**勿**假设固定端口如 3000）。  
 WebView 连上后，**用户级**状态应由 **`/user-data`** 读写，而非 `~/.local/share/com.crabmate.desktop/localstorage/`。
 
 详见 **`docs/design/tauri_gui_mvp_design.md`**（进程壳层）与 **`desktop-tauri/DEVELOPMENT.md`**（开发与故障排查）；本文件负责**数据落盘**。

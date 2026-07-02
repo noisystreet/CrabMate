@@ -51,6 +51,12 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | `CM_WEB_AUDIT_LOG_WRITE_TOOLS` | Overrides **`web_audit_log_write_tools`**; default **on**—structured audit for write-side-effect tools (**`target=crabmate::audit_write_tool`**). |
 | `CM_WEB_AUDIT_TRUST_X_FORWARDED_FOR` | Overrides **`web_audit_trust_x_forwarded_for`**; default **off**—whether audit **`client_ip`** trusts the first **`X-Forwarded-For`** hop. |
 | `CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK` | Allow unauthenticated non-loopback bind (**high risk**). |
+| `CM_WEB_STATIC_DIR` | Override **`serve`** static root (must contain **`index.html`**, **`vendor/ide-codemirror.js`**, etc.). **No** TOML key; read when the sidecar/**`serve`** process starts—restart after change. Default resolution: **`crates/crabmate-internal/src/web_static_dir.rs`** (dev: usually repo **`frontend/dist`**; desktop **`.deb`**: **`/usr/share/crabmate/frontend/dist`**, auto-injected by Tauri when **not** running from a source tree). **`cargo tauri dev`** sets this to repo **`frontend/dist`** when built, else clears inherited **`/usr/share/…`**. If the env still points at the install path but **`serve` cwd** is a built source tree, resolution **prefers local dist** (dev machine with deb installed). |
+| `CM_DESKTOP_WORKDIR` | **Desktop Tauri sidecar only**: overrides **`crabmate serve`** **`current_dir`**. **No** TOML key. Default: repo root in source-tree dev; writable **`$HOME`** for **`.deb`** (relative **`.crabmate/conversations.db`** resolves under this cwd). **Do not** point at read-only **`/usr/share/crabmate`**; static UI is **`CM_WEB_STATIC_DIR`**. See **`desktop-tauri/DEVELOPMENT.md`**, **`docs/design/user_data_dir.md`**. |
+
+### Desktop Tauri (sidecar)
+
+The shell spawns **`crabmate serve --desktop-ready-json`**. Besides **`CM_DESKTOP_WORKDIR`** / **`CM_WEB_STATIC_DIR`**, use **`CM_DESKTOP_BACKEND_BIN`** in dev (see **`desktop-tauri/README.md`**). Before packaging: **`cd frontend && trunk build --release`** and **`bash desktop-tauri/scripts/prepare-sidecar.sh`**.
 
 ### Workspace & Cursor-style rules
 

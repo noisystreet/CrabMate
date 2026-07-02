@@ -28,7 +28,7 @@ cd desktop-tauri/src-tauri
 CM_DESKTOP_BACKEND_BIN=/绝对路径/到/crabmate_agent/target/debug/crabmate cargo tauri dev
 ```
 
-- **`frontend/dist`** 须已构建；**`serve`** 从仓库根解析该目录。
+- **`frontend/dist`** 须已构建；**`serve`** 从仓库根解析该目录（桌面 **`.deb`** 安装后从 **`/usr/share/crabmate/frontend/dist`**，见 **`prepare-sidecar.sh`**）。
 - 开发时**务必**用 **`CM_DESKTOP_BACKEND_BIN`** 指向刚编译的 **`target/debug/crabmate`**，避免 PATH / 旧 sidecar 版本不一致。
 
 ## 打包

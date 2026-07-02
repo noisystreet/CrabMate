@@ -2,7 +2,7 @@
  * CodeMirror 6 IDE 编辑器桥接（由 esbuild 打包为 `vendor/ide-codemirror.js`）。
  * Rust 侧通过 `globalThis.CrabMateIdeEditor` 调用。
  */
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentLess, insertTab } from "@codemirror/commands";
 import { cpp } from "@codemirror/lang-cpp";
 import { javascript } from "@codemirror/lang-javascript";
 import { json } from "@codemirror/lang-json";
@@ -105,7 +105,8 @@ function buildExtensions(options, onChange) {
       ...defaultKeymap,
       ...historyKeymap,
       ...searchKeymap,
-      indentWithTab,
+      // insertTab：无选区时在光标处插入 tab 宽度空格；有选区时缩进行（indentWithTab 总在行首缩进）
+      { key: "Tab", run: insertTab, shift: indentLess },
     ]),
     EditorView.updateListener.of((update) => {
       if (update.docChanged && onChange) {
@@ -149,6 +150,7 @@ function buildExtensions(options, onChange) {
  * @returns {number}
  */
 function create(parent, options, onChange) {
+  parent.replaceChildren();
   const id = nextId++;
   const opts = { ...options, id };
   const built = buildExtensions(opts, onChange);
@@ -260,6 +262,16 @@ function focus(id) {
 }
 
 /**
+ * 容器从隐藏变为可见或布局变化后，强制 CM 重新测量尺寸（WebKit / Tauri 常见空白）。
+ * @param {number} id
+ */
+function requestMeasure(id) {
+  const rec = editors.get(id);
+  if (!rec) return;
+  rec.view.requestMeasure();
+}
+
+/**
  * @param {number} id
  */
 function selectAll(id) {
@@ -330,6 +342,7 @@ export {
   getDoc,
   gotoLine,
   reconfigure,
+  requestMeasure,
   selectAll,
   setDoc,
   setSelectionChars,
