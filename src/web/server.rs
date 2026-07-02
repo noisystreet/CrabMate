@@ -6,6 +6,7 @@ use axum::http::{HeaderValue, header};
 use axum::middleware;
 use axum::routing::get;
 use tower::ServiceBuilder;
+use tower_http::compression::CompressionLayer;
 use tower_http::services::ServeDir;
 use tower_http::set_header::SetResponseHeaderLayer;
 
@@ -46,6 +47,7 @@ pub(crate) fn build_app(
     app = app.nest_service(
         "/uploads",
         ServiceBuilder::new()
+            .layer(CompressionLayer::new())
             .layer(SetResponseHeaderLayer::if_not_present(
                 header::CACHE_CONTROL,
                 HeaderValue::from_static("public, max-age=31536000, immutable"),
@@ -62,7 +64,11 @@ pub(crate) fn build_app(
     );
     if !no_web {
         // axum 0.8+：禁止 `nest_service("/", …)`，未匹配 API/静态前缀的请求走 fallback（Leptos `dist`）。
-        app = app.fallback_service(ServeDir::new(static_dir));
+        app = app.fallback_service(
+            ServiceBuilder::new()
+                .layer(CompressionLayer::new())
+                .service(ServeDir::new(static_dir)),
+        );
     }
     app.with_state(state)
 }

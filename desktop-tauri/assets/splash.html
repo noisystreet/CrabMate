@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CrabMate</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: #f8fafc;
+        color: #0f172a;
+      }
+      .box {
+        text-align: center;
+        padding: 24px;
+      }
+      .spinner {
+        width: 28px;
+        height: 28px;
+        margin: 0 auto 12px;
+        border: 3px solid #cbd5e1;
+        border-top-color: #2563eb;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .title {
+        font-size: 1.05rem;
+        font-weight: 600;
+        margin: 0 0 4px;
+      }
+      .hint {
+        margin: 0;
+        font-size: 0.875rem;
+        color: #64748b;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <div class="spinner" aria-hidden="true"></div>
+      <p class="title">CrabMate</p>
+      <p class="hint">正在启动后端服务…</p>
+    </div>
+  </body>
+</html>
