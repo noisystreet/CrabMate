@@ -65,5 +65,4 @@ if [[ ! -f "${dist_src}/vendor/ide-codemirror.js" ]]; then
 fi
 rm -rf "${dist_dest}"
 cp -a "${dist_src}" "${dist_dest}"
-cp "${desktop_root}/assets/splash.html" "${dist_dest}/splash.html"
 echo "synced frontend dist -> ${dist_dest}"
