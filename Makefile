@@ -78,8 +78,6 @@ frontend:
 		echo "错误: 未找到 trunk。见 https://trunkrs.dev/ 或 cargo install trunk" >&2; \
 		exit 1; \
 	}
-	bash "$(ROOT)/scripts/fetch-frontend-fonts.sh"
-	bash "$(ROOT)/scripts/bundle-frontend-css.sh"
 	rustup target add wasm32-unknown-unknown 2>/dev/null || true
 	cd "$(FRONTEND_DIR)" && trunk build $(TRUNK_BUILD_FLAGS)
 

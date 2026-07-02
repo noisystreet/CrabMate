@@ -76,7 +76,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: frontend/dist
-          key: frontend-dist-${{ runner.os }}-${{ hashFiles('frontend/src/**', 'frontend/index.html', 'frontend/Cargo.toml', 'frontend/Cargo.lock', 'frontend/package-lock.json', 'frontend/scripts/**', 'frontend/vendor/**', 'frontend/styles/**', 'frontend/fonts/**', 'scripts/fetch-frontend-fonts.sh', 'scripts/bundle-frontend-css.sh') }}
+          key: frontend-dist-${{ runner.os }}-${{ hashFiles('frontend/src/**', 'frontend/index.html', 'frontend/Cargo.toml', 'frontend/Cargo.lock', 'frontend/package-lock.json', 'frontend/scripts/**', 'frontend/vendor/**', 'frontend/styles/**') }}
           restore-keys: |
             frontend-dist-${{ runner.os }}-
 
@@ -97,12 +97,6 @@ jobs:
           cd frontend
           npm ci
           npm run build:editor
-
-      - name: Prepare frontend fonts and CSS bundle
-        if: steps.frontend-dist.outputs.cache-hit != 'true'
-        run: |
-          bash scripts/fetch-frontend-fonts.sh
-          bash scripts/bundle-frontend-css.sh
 
       - name: Build frontend (Leptos dist)
         if: steps.frontend-dist.outputs.cache-hit != 'true'

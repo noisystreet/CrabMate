@@ -4,16 +4,40 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>CrabMate</title>
-    <!-- 本地字体 + 合并 CSS（scripts/bundle-frontend-css.sh）；桌面 WebView 避免 Google Fonts CDN 与多文件往返 -->
-    <link data-trunk rel="copy-dir" href="fonts" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&family=Roboto:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <!-- Trunk 不会把 @import 打进单文件，也不会复制未声明的 CSS；须逐条声明，否则 dist 缺样式 -->
+    <!-- components.css 中 brand-mark 背景图为 url("../brand-mark.svg")→打包后与 CSS 同目录上一级即站点根 /brand-mark.svg -->
     <link data-trunk rel="copy-file" href="brand-mark.svg" />
-    <link data-trunk rel="css" href="styles/app.bundle.css" />
+    <link data-trunk rel="css" href="styles/tokens.css" />
+    <link data-trunk rel="css" href="themes/light.css" />
+    <link data-trunk rel="css" href="themes/material.css" />
+    <link data-trunk rel="css" href="themes/high-contrast.css" />
+    <link data-trunk rel="css" href="styles/base.css" />
+    <link data-trunk rel="css" href="styles/components.css" />
+    <link data-trunk rel="css" href="styles/layout-chat.css" />
+    <link data-trunk rel="css" href="styles/shell-topbar.css" />
+    <link data-trunk rel="css" href="styles/ide-layout.css" />
     <link data-trunk rel="copy-file" href="vendor/ide-codemirror.js" data-target-path="vendor" />
+    <link data-trunk rel="css" href="styles/ide-codemirror.css" />
+    <link data-trunk rel="css" href="styles/ide-highlight.css" />
+    <link data-trunk rel="css" href="styles/shell-ds.css" />
+    <link data-trunk rel="css" href="styles/tauri-shell.css" />
+    <link data-trunk rel="css" href="styles/sidebar.css" />
+    <link data-trunk rel="css" href="styles/status.css" />
+    <link data-trunk rel="css" href="styles/approval.css" />
+    <link data-trunk rel="css" href="styles/modal.css" />
+    <link data-trunk rel="css" href="styles/motion.css" />
   </head>
   <body>
+    <script src="/vendor/ide-codemirror.js"></script>
     <!--
-      CodeMirror 仅在进入 IDE 模式时由 ide_codemirror.rs 动态加载 /vendor/ide-codemirror.js。
-      Trunk：`trunk build`（默认 dev）不跑 wasm-opt；`trunk build --release` 使用 wasm-opt。
+      Trunk：`trunk build`（默认 dev）不跑 wasm-opt，迭代快；`trunk build --release` 使用默认 wasm-opt，体积与冷启动更优。
+      若要在 release 下也跳过 wasm-opt，可加 `data-wasm-opt="0"`；若要偏体积累可加 `data-wasm-opt="z"` 等（见 Trunk 文档）。
     -->
     <link data-trunk rel="rust" />
   </body>

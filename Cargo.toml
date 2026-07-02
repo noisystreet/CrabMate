@@ -140,7 +140,7 @@ markdown-to-ansi = "0.2"
 unicodeit = "0.2"
 axum = { version = "0.8", optional = true, features = ["json", "multipart"] }
 tower = { version = "0.4", optional = true }
-tower-http = { version = "0.5", optional = true, features = ["fs", "set-header", "compression-gzip"] }
+tower-http = { version = "0.5", optional = true, features = ["fs", "set-header"] }
 rusqlite = { version = "0.40", optional = true, features = ["bundled"] }
 tokio-cron-scheduler = { version = "0.15", optional = true, default-features = false }
 reedline = { version = "0.48", optional = true, default-features = false }
@@ -157,11 +157,6 @@ nix = { version = "0.31", default-features = false, features = ["fs", "dir", "si
 name = "crabmate-gen-man"
 path = "src/bin/crabmate_gen_man.rs"
 required-features = ["gen-man"]
-
-[profile.release]
-lto = "thin"
-strip = true
-codegen-units = 1
 
 [dev-dependencies]
 serde_json = "1"
