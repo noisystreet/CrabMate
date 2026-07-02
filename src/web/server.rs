@@ -61,7 +61,8 @@ pub(crate) fn build_app(
             .service(ServeDir::new(uploads_dir_for_static)),
     );
     if !no_web {
-        app = app.nest_service("/", ServeDir::new(static_dir));
+        // axum 0.8+：禁止 `nest_service("/", …)`，未匹配 API/静态前缀的请求走 fallback（Leptos `dist`）。
+        app = app.fallback_service(ServeDir::new(static_dir));
     }
     app.with_state(state)
 }
