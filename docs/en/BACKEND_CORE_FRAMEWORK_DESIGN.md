@@ -33,7 +33,7 @@ This document captures a **design analysis** (not an implementation commitment) 
 
 **Already landed (dependency trimming):**
 - Root features: **`mcp`**, **`docker_sandbox`**, **`fastembed`**
-- Default remains full product: `default = ["mcp", "docker_sandbox", "fastembed"]`
+- Default: `default = ["mcp", "web", "repl", "tui"]` (no `fastembed` / `docker_sandbox`; enable with `--features fastembed` or `--all-features`)
 - Example trims: `cargo build --no-default-features` or a selected subset
 - Without `fastembed`, config finalize coerces vector backend to disabled and semantic search falls back appropriately
 

@@ -169,7 +169,7 @@ The shell spawns **`crabmate serve --desktop-ready-json`**. Besides **`CM_DESKTO
 | --- | --- |
 | `CM_LONG_TERM_MEMORY_ENABLED` | Enable long-term memory. |
 | `CM_LONG_TERM_MEMORY_SCOPE_MODE` | Scope mode. |
-| `CM_LONG_TERM_MEMORY_VECTOR_BACKEND` | Default `fastembed` or `disabled`. |
+| `CM_LONG_TERM_MEMORY_VECTOR_BACKEND` | TOML default `fastembed` or `disabled`. Requires **`cargo build --features fastembed`** for runtime embeddings; without that feature, **`finalize`** downgrades `fastembed` to `disabled` (SQLite long-term memory still works). |
 | `CM_LONG_TERM_MEMORY_STORE_SQLITE_PATH` | SQLite for vectors/metadata. |
 | `CM_LONG_TERM_MEMORY_TOP_K` | Retrieval Top-K. |
 | `CM_LONG_TERM_MEMORY_MAX_CHARS_PER_CHUNK` | Max chars per chunk. |

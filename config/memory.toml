@@ -5,6 +5,7 @@
 
 long_term_memory_enabled = true
 long_term_memory_scope_mode = "conversation"
+# 向量后端：需编译时启用 Cargo feature `fastembed`（`cargo build --features fastembed`）；默认构建未链接时 finalize 降为 disabled。
 long_term_memory_vector_backend = "fastembed"
 long_term_memory_max_entries = 256
 long_term_memory_inject_max_chars = 8000
