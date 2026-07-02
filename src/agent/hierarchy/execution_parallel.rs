@@ -74,13 +74,7 @@ impl HierarchicalExecutor {
         let tool_approval_out = self.tool_approval_out.clone(); // 克隆审批发送器
         let tool_approval_rx = self.tool_approval_rx.clone(); // 克隆审批接收器
         let cancel = self.cancel.clone();
-        let hl = self
-            .handler_lookup
-            .clone()
-            .expect("hierarchical executor missing handler_lookup (with_context not applied)");
-        let sb = self.sync_default_sandbox_backend.clone().expect(
-            "hierarchical executor missing sync_default_sandbox_backend (with_context not applied)",
-        );
+        let (hl, sb) = self.require_tool_dispatch_handles()?;
         let probe_cache = self.probe_cache.clone();
         let prior = Arc::new(prior_subgoal_results.to_vec());
         let pre_snapshot: Arc<ArtifactStore> = Arc::new(artifact_store.clone());

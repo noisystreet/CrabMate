@@ -1,7 +1,7 @@
 //! 分层执行器：按依赖层级执行子目标
 
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use tokio::sync::mpsc::Sender;
 
@@ -32,9 +32,9 @@ pub struct HierarchicalExecutionResult {
 pub struct HierarchicalExecutor {
     max_parallel: usize,
     max_failures: usize,
-    /// 最大重新规划次数（预留）
-    #[allow(dead_code)]
+    /// 全局 Manager 反思/重规划次数上限（`reflect_and_replan`）。
     max_replans: usize,
+    replan_count: Arc<AtomicUsize>,
     /// LLM 后端（用于 Operator 的 ReAct 循环；[`Arc`] 以便并行 `spawn` 共享注入后端）。
     llm_backend: Option<Arc<dyn ChatCompletionsBackend>>,
     /// Agent 配置
@@ -74,6 +74,7 @@ impl HierarchicalExecutor {
             max_parallel,
             max_failures,
             max_replans: 2,
+            replan_count: Arc::new(AtomicUsize::new(0)),
             llm_backend: None,
             cfg: None,
             client: None,
@@ -243,6 +244,48 @@ impl HierarchicalExecutor {
         self
     }
 
+    /// 设置全局 Manager 重规划次数上限（默认 2）。
+    pub fn with_max_replans(mut self, max_replans: usize) -> Self {
+        self.max_replans = max_replans;
+        self
+    }
+
+    pub(super) fn try_begin_replan(&self) -> bool {
+        let prev = self.replan_count.fetch_add(1, Ordering::Relaxed);
+        if prev >= self.max_replans {
+            log::warn!(
+                target: "crabmate",
+                "[HIERARCHICAL] max_replans ({}) reached; skipping Manager replan",
+                self.max_replans
+            );
+            return false;
+        }
+        true
+    }
+
+    pub(super) fn require_tool_dispatch_handles(
+        &self,
+    ) -> Result<
+        (
+            crate::tool_registry::HandlerLookupTable,
+            Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
+        ),
+        ExecutionError,
+    > {
+        let hl = self.handler_lookup.clone().ok_or_else(|| {
+            ExecutionError::MissingContext(
+                "hierarchical executor missing handler_lookup (with_context not applied)".into(),
+            )
+        })?;
+        let sb = self.sync_default_sandbox_backend.clone().ok_or_else(|| {
+            ExecutionError::MissingContext(
+                "hierarchical executor missing sync_default_sandbox_backend (with_context not applied)"
+                    .into(),
+            )
+        })?;
+        Ok((hl, sb))
+    }
+
     /// 覆盖默认的工具分发表与 Docker 沙盒后端（与 [`crate::process_handles::ProcessHandles`] 同源）。
     pub fn with_process_tool_handles(
         mut self,
@@ -322,3 +365,25 @@ mod execution_build_state_apply;
 /// `try_replan` 预留实现。
 #[path = "execution_try_replan.rs"]
 mod execution_try_replan;
+
+#[cfg(test)]
+mod executor_policy_tests {
+    use super::*;
+
+    #[test]
+    fn require_tool_dispatch_handles_errors_without_panic() {
+        let ex = HierarchicalExecutor::new(1, 1);
+        assert!(matches!(
+            ex.require_tool_dispatch_handles(),
+            Err(ExecutionError::MissingContext(_))
+        ));
+    }
+
+    #[test]
+    fn try_begin_replan_respects_max_replans() {
+        let ex = HierarchicalExecutor::new(1, 1).with_max_replans(2);
+        assert!(ex.try_begin_replan());
+        assert!(ex.try_begin_replan());
+        assert!(!ex.try_begin_replan());
+    }
+}

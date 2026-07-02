@@ -2,7 +2,7 @@
 
 use std::sync::atomic::Ordering;
 
-use log::info;
+use log::{debug, info};
 
 use crate::agent::per_coord::PerCoordinator;
 use crate::sse::{SsePayload, encode_message};
@@ -107,6 +107,13 @@ pub(super) async fn map_reflect_outcome_to_branch_ctl(
                 )
                 .await;
             }
+            ReflectBranchCtl::BreakOuter
+        }
+        ReflectOnAssistantOutcome::UserCancelled => {
+            debug!(
+                target: "crabmate::agent_turn",
+                "map_reflect_outcome_to_branch_ctl: UserCancelled should be handled in outer_loop_reflect_branch"
+            );
             ReflectBranchCtl::BreakOuter
         }
     }

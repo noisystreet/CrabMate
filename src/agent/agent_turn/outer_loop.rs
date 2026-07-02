@@ -20,6 +20,7 @@ use super::outer_loop_fsm::{OuterLoopIterationExit, OuterLoopIterationPhase, Ref
 use super::outer_loop_reflect::map_reflect_outcome_to_branch_ctl;
 use super::params::{OuterLoopPlanCallModelRole, RunLoopParams};
 use super::plan::{PerPlanCallModelParams, per_plan_call_model_retrying};
+use super::reflect::ReflectOnAssistantOutcome;
 use super::reflect::per_reflect_after_assistant;
 use super::sub_agent_policy::filter_tool_defs_for_executor_kind;
 use super::turn_completion::{
@@ -154,9 +155,15 @@ async fn outer_loop_reflect_branch(
     per_coord: &mut PerCoordinator,
     finish_reason: &str,
     msg: &Message,
-) -> ReflectBranchCtl {
+) -> Result<ReflectBranchCtl, RunAgentTurnError> {
     let outcome = per_reflect_after_assistant(p, per_coord, finish_reason, msg).await;
-    map_reflect_outcome_to_branch_ctl(p, per_coord, msg, outcome).await
+    if matches!(outcome, ReflectOnAssistantOutcome::UserCancelled) {
+        return Err(RunAgentTurnError::TurnAborted {
+            phase: crate::agent::agent_turn::AgentTurnSubPhase::Reflect,
+            reason: crate::agent::agent_turn::errors::TurnAbortReason::UserCancelled,
+        });
+    }
+    Ok(map_reflect_outcome_to_branch_ctl(p, per_coord, msg, outcome).await)
 }
 
 async fn outer_loop_execute_tools_round(
@@ -344,7 +351,7 @@ async fn run_outer_loop_single_iteration(
         return Ok(OuterLoopIterationExit::StopOuterLoop);
     }
 
-    let reflect_ctl = outer_loop_reflect_branch(p, per_coord, finish_reason.as_str(), &msg).await;
+    let reflect_ctl = outer_loop_reflect_branch(p, per_coord, finish_reason.as_str(), &msg).await?;
     tracing::debug!(
         target: "crabmate::agent_turn",
         outer_loop_fsm = "single_agent_outer",

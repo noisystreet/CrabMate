@@ -165,13 +165,7 @@ impl super::HierarchicalExecutor {
             );
             let operator = OperatorAgent::new(op_config);
             // 有完整上下文，使用带工具的执行
-            let hl = self
-                .handler_lookup
-                .clone()
-                .expect("hierarchical executor missing handler_lookup (with_context not applied)");
-            let sb = self.sync_default_sandbox_backend.clone().expect(
-                    "hierarchical executor missing sync_default_sandbox_backend (with_context not applied)",
-                );
+            let (hl, sb) = self.require_tool_dispatch_handles()?;
             let mut tool_executor_ctx = super::super::tool_executor::ToolExecutorContext::new(
                 Arc::new(cfg.clone()),
                 work_dir.clone(),
@@ -202,6 +196,7 @@ impl super::HierarchicalExecutor {
                     extra.as_deref(),
                 )
                 .await
+                .map_err(ExecutionError::OperatorError)
         } else {
             warn!(
                 target: "crabmate",
@@ -211,9 +206,10 @@ impl super::HierarchicalExecutor {
             OperatorAgent::new(OperatorConfig::default())
                 .execute(goal)
                 .await
+                .map_err(ExecutionError::OperatorError)
         };
 
-        let result = result.map_err(ExecutionError::OperatorError)?;
+        let result = result?;
 
         // 发射 SSE 事件：子目标完成
         if let Some(ref sse_out) = self.sse_out {
@@ -301,6 +297,10 @@ impl super::HierarchicalExecutor {
         execution_result: &TaskResult,
         artifacts: &[super::super::task::Artifact],
     ) -> Option<SubGoal> {
+        if !self.try_begin_replan() {
+            return None;
+        }
+
         info!(
             target: "crabmate",
             "[HIERARCHICAL] Reflecting on verification failure for goal {}: {}",

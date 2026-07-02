@@ -8,6 +8,8 @@ use super::turn_abort::HierarchicalTurnAbortReason;
 pub enum ExecutionError {
     DagError(String),
     MaxFailuresReached(String),
+    /// 执行器未注入必需上下文（如未调用 `with_context`）。
+    MissingContext(String),
     OperatorError(operator::OperatorError),
     /// 用户取消或 SSE 断开（与主 Agent 外循环早停语义对齐）。
     TurnAborted(HierarchicalTurnAbortReason),
@@ -18,6 +20,7 @@ impl std::fmt::Display for ExecutionError {
         match self {
             ExecutionError::DagError(s) => write!(f, "DAG error: {}", s),
             ExecutionError::MaxFailuresReached(s) => write!(f, "Max failures: {}", s),
+            ExecutionError::MissingContext(s) => write!(f, "Missing executor context: {}", s),
             ExecutionError::OperatorError(e) => write!(f, "Operator error: {}", e),
             ExecutionError::TurnAborted(r) => write!(f, "{}", r.user_message()),
         }
