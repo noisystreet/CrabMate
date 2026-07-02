@@ -2,3 +2,8 @@
 typ = "typ"
 clen = "clen"
 hel = "hel"
+
+[files]
+extend-exclude = [
+  "frontend/vendor/**",
+]

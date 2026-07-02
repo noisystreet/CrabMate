@@ -32,6 +32,7 @@
     "linux": {
       "deb": {
         "files": {
+          "usr/share/crabmate/frontend/dist/": "../dist/",
           "usr/share/applications/crabmate.desktop": "bundle/deb/crabmate.desktop",
           "etc/crabmate/config.toml": "bundle/deb/config.toml",
           "etc/crabmate/agent_roles.toml": "../../config/agent_roles.toml",

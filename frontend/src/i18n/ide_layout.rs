@@ -104,6 +104,13 @@ pub fn ide_cm_missing(l: Locale) -> &'static str {
     }
 }
 
+pub fn ide_cm_init_failed(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "编辑器初始化失败，请刷新页面或重新安装桌面版。",
+        Locale::En => "Editor failed to initialize. Refresh the page or reinstall the desktop app.",
+    }
+}
+
 pub fn ide_tab_ctx_close(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "关闭",

@@ -156,7 +156,7 @@ cd desktop-tauri/src-tauri
 cargo tauri build
 ```
 
-说明：**`prepare-sidecar.sh`** 会把 **`target/release/crabmate`**（或环境变量 **`CM_DESKTOP_BACKEND_BIN`**）复制到 **`desktop-tauri/binaries/`**，供应用作为 **sidecar** 启动后端。桌面 `.deb` 还会安装 `/etc/crabmate/config.toml`、**`/etc/crabmate/agent_roles.toml`**（多角色）与配套 **`/etc/crabmate/prompts/*.md`**、**`/etc/crabmate/config/prompts/*.md`**；应用启动后端时若检测到 `/etc/crabmate/config.toml` 会自动追加 `--config /etc/crabmate/config.toml`。构建完成后安装包一般在 **`desktop-tauri/src-tauri/target/release/bundle/deb/`**（具体文件名随 **`productName`** / 版本变化）。跨平台 **`bundle.targets`**、代理与 **`GDK_BACKEND`** 等见 [**desktop-tauri/DEVELOPMENT.md**](desktop-tauri/DEVELOPMENT.md)。
+说明：**`prepare-sidecar.sh`** 会把 **`target/release/crabmate`**（或环境变量 **`CM_DESKTOP_BACKEND_BIN`**）复制到 **`desktop-tauri/binaries/`**，供应用作为 **sidecar** 启动后端；并将 **`frontend/dist`** 同步到 **`desktop-tauri/dist`**，打进 deb 的 **`/usr/share/crabmate/frontend/dist/`**（sidecar **`serve`** 提供 Web UI 与 IDE 编辑器静态资源，**无需**安装机上的源码树）。桌面 `.deb` 还会安装 `/etc/crabmate/config.toml`、**`/etc/crabmate/agent_roles.toml`**（多角色）与配套 **`/etc/crabmate/prompts/*.md`**、**`/etc/crabmate/config/prompts/*.md`**；应用启动后端时若检测到 `/etc/crabmate/config.toml` 会自动追加 `--config /etc/crabmate/config.toml`。构建完成后安装包一般在 **`desktop-tauri/src-tauri/target/release/bundle/deb/`**（具体文件名随 **`productName`** / 版本变化）。跨平台 **`bundle.targets`**、代理与 **`GDK_BACKEND`** 等见 [**desktop-tauri/DEVELOPMENT.md**](desktop-tauri/DEVELOPMENT.md)。
 
 ### 开发与质检（维护者）
 
@@ -205,6 +205,8 @@ cargo tauri build
 | **`API_KEY`** | 云网关 Bearer token（**`llm_http_auth_mode=bearer`**）；`serve` / `repl` / `chat` 可先启动再在界面或 **`/api-key`** 设置。 |
 | **`CM_API_BASE`** / **`CM_MODEL`** | 覆盖配置中的网关与模型。 |
 | **`CM_WEB_API_BEARER_TOKEN`** | Web API 保护（与 **`web_api_require_bearer`** 配合）；详见 [docs/配置说明.md](docs/配置说明.md)。 |
+| **`CM_WEB_STATIC_DIR`** | 覆盖 **`serve`** 静态资源根（默认开发时为仓库 **`frontend/dist`**，桌面 **`.deb`** 为 **`/usr/share/crabmate/frontend/dist`**）。 |
+| **`CM_DESKTOP_WORKDIR`** | 可选：覆盖桌面 sidecar **`serve`** 进程工作目录（默认可写 **`$HOME`**；**`.deb`** 静态 UI 由 sidecar 自动设 **`CM_WEB_STATIC_DIR=/usr/share/crabmate/frontend/dist`**，**勿**将工作目录指到 **`/usr/share/crabmate`**） |
 
 其它 **`CM_*`**（含 **`CM_TUI_CONVERSATION_ID`**、skills、分阶段规划等）见 [docs/配置说明.md](docs/配置说明.md)。
 

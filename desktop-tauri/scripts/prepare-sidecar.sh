@@ -49,3 +49,20 @@ cp "${source_bin}" "${dest_bin}"
 chmod +x "${dest_bin}"
 
 echo "prepared tauri sidecar: ${dest_bin}"
+
+# Tauri deb 将 ../dist/ 安装到 /usr/share/crabmate/frontend/dist/；sidecar serve 依赖该目录。
+dist_src="${repo_root}/frontend/dist"
+dist_dest="${desktop_root}/dist"
+if [[ ! -f "${dist_src}/index.html" ]]; then
+  echo "error: missing ${dist_src}/index.html" >&2
+  echo "build frontend first: cd frontend && trunk build --release" >&2
+  exit 1
+fi
+if [[ ! -f "${dist_src}/vendor/ide-codemirror.js" ]]; then
+  echo "error: missing ${dist_src}/vendor/ide-codemirror.js (IDE editor bundle)" >&2
+  echo "rebuild frontend: cd frontend && trunk build --release" >&2
+  exit 1
+fi
+rm -rf "${dist_dest}"
+cp -a "${dist_src}" "${dist_dest}"
+echo "synced frontend dist -> ${dist_dest}"

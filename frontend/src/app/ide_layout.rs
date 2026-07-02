@@ -81,6 +81,7 @@ struct IdeLayoutRightPaneInput {
     editor: IdeEditorSignals,
     tabs: IdeTabsHandle,
     confirm: crate::ide_confirm::IdeConfirmSignals,
+    editor_visible: RwSignal<bool>,
     ide_path: RwSignal<Option<String>>,
     ide_text: RwSignal<String>,
     ide_baseline: RwSignal<String>,
@@ -97,6 +98,7 @@ fn IdeLayoutRightPane(input: IdeLayoutRightPaneInput) -> impl IntoView {
         editor,
         tabs,
         confirm,
+        editor_visible,
         ide_path,
         ide_text,
         ide_baseline,
@@ -134,6 +136,7 @@ fn IdeLayoutRightPane(input: IdeLayoutRightPaneInput) -> impl IntoView {
                 locale=locale
                 editor=editor
                 host=editor_host
+                editor_visible=editor_visible
                 ide_path=ide_path
                 ide_text=ide_text
                 ide_load_busy=ide_load_busy
@@ -287,6 +290,7 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
                     editor,
                     tabs,
                     confirm,
+                    editor_visible,
                     ide_path,
                     ide_text,
                     ide_baseline,

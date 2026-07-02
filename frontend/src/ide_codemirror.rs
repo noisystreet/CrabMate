@@ -52,6 +52,8 @@ pub struct IdeCmCreateOptions<'a> {
 /// 编辑器偏好与缓冲信号（`wire_ide_codemirror` 入参）。
 #[derive(Clone, Copy)]
 pub struct IdeCmWireSignals {
+    /// IDE 布局层是否可见（对话/IDE 叠层切换）；CM 须在可见后再挂载。
+    pub editor_visible: RwSignal<bool>,
     pub ide_path: RwSignal<Option<String>>,
     pub ide_text: RwSignal<String>,
     pub ide_load_busy: RwSignal<bool>,
@@ -60,6 +62,7 @@ pub struct IdeCmWireSignals {
     pub tab_size: RwSignal<u8>,
     pub font_slug: RwSignal<String>,
     pub font_size_px: RwSignal<f64>,
+    pub cm_init_failed: RwSignal<bool>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct IdeCmHandle(pub i32);
@@ -157,6 +160,12 @@ impl IdeEditorHost {
             return;
         };
         call_cm2("reconfigure", &JsValue::from_f64(f64::from(id)), patch);
+    }
+
+    pub fn request_measure(&self) {
+        if let Some(IdeCmHandle(id)) = self.handle.get_untracked() {
+            call_cm1("requestMeasure", &JsValue::from_f64(f64::from(id)));
+        }
     }
 }
 
@@ -286,6 +295,7 @@ pub fn cm_create(
 /// 挂载 / 更新 IDE 编辑器：容器就绪后创建 CM，并随偏好与路径重配置。
 pub fn wire_ide_codemirror(host: IdeEditorHost, signals: IdeCmWireSignals) {
     let IdeCmWireSignals {
+        editor_visible,
         ide_path,
         ide_text,
         ide_load_busy,
@@ -294,6 +304,7 @@ pub fn wire_ide_codemirror(host: IdeEditorHost, signals: IdeCmWireSignals) {
         tab_size,
         font_slug,
         font_size_px,
+        cm_init_failed,
     } = signals;
     let suppress_sync = RwSignal::new(false);
 
@@ -332,20 +343,28 @@ pub fn wire_ide_codemirror(host: IdeEditorHost, signals: IdeCmWireSignals) {
         host.reconfigure(&patch);
     });
 
-    // 容器挂载：创建 / 销毁 CM
+    // 容器挂载：仅在 IDE 层可见时**首次**创建 CM；切回对话模式**保留**实例（撤销栈等），再次显示时 requestMeasure。
     Effect::new(move |_| {
+        let visible = editor_visible.get();
         let Some(el) = host.container.get() else {
             return;
         };
+        if !visible {
+            return;
+        }
+
         let parent: HtmlElement = el.unchecked_into();
         if host.handle.get_untracked().is_some() {
+            host.request_measure();
             return;
         }
         if !IdeEditorHost::cm_available() {
             return;
         }
 
+        cm_init_failed.set(false);
         host.destroy_if_any();
+        parent.set_inner_html("");
         let ide_text_cb = ide_text;
         let suppress = suppress_sync;
         let on_change = Closure::wrap(Box::new(move |id: JsValue, text: JsValue| {
@@ -356,7 +375,7 @@ pub fn wire_ide_codemirror(host: IdeEditorHost, signals: IdeCmWireSignals) {
             suppress.set(true);
             ide_text_cb.set(s);
             suppress.set(false);
-        }) as Box<dyn Fn(JsValue, JsValue)>);
+        }) as Box<dyn FnMut(JsValue, JsValue)>);
 
         let path = ide_path.get_untracked();
         let read_only = path.is_none() || ide_load_busy.get_untracked();
@@ -372,6 +391,9 @@ pub fn wire_ide_codemirror(host: IdeEditorHost, signals: IdeCmWireSignals) {
         };
         if let Some(handle) = cm_create(&parent, &opts, on_change.as_ref().unchecked_ref()) {
             host.handle.set(Some(handle));
+            host.request_measure();
+        } else {
+            cm_init_failed.set(true);
         }
         on_change.forget();
     });
