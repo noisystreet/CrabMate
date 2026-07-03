@@ -4,6 +4,8 @@
 {"id":"phase_wf_no_src","case":"resolve_phase","policy":"workflow_reflection","source":"none","expect_phase":"no_requirement"}
 {"id":"phase_wf_with_src","case":"resolve_phase","policy":"workflow_reflection","source":"workflow_reflection","expect_phase":"check_structured_plan"}
 {"id":"phase_always","case":"resolve_phase","policy":"always","source":"none","expect_phase":"check_structured_plan"}
+{"id":"ctx_wf_active","case":"gate_context","policy":"workflow_reflection","source":"workflow_reflection","expect_require_plan":true,"expect_reason":"workflow_reflection_active"}
+{"id":"ctx_wf_idle","case":"gate_context","policy":"workflow_reflection","source":"none","expect_require_plan":false,"expect_reason":"no_active_requirement"}
 {"id":"gate_no_req","case":"run_gate","phase":"no_requirement","expect_route":"stop_no_requirement","expect_reason":"policy_no_requirement","expect_after":"stop_turn"}
 {"id":"step_valid_plan","case":"step_check","assistant":"valid_plan","policy":"workflow_reflection","source":"workflow_reflection","attempts":0,"max_attempts":2,"expect_route":"accept_structured_plan_ok","expect_reason":"structured_plan_accepted","expect_after":"stop_turn"}
 {"id":"step_parse_fail_rewrite","case":"step_check","assistant":"no_plan","policy":"workflow_reflection","source":"workflow_reflection","attempts":0,"max_attempts":2,"expect_route":"semantics_failed_request_rewrite","expect_reason":"plan_parse_failed","expect_after":"request_plan_rewrite","expect_next_rewrite":1}

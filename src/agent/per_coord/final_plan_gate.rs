@@ -11,6 +11,7 @@ use crate::agent::reflection::plan_rewrite;
 use crate::config::AgentConfig;
 use crate::types::Message;
 
+use super::final_plan_gate_context::{FinalPlanGateContext, build_final_plan_gate_context};
 use super::final_plan_gate_reason::FinalPlanGateDecisionReason;
 use super::{AfterFinalAssistant, FinalPlanRequirementMode, PlanRequirementSource};
 
@@ -72,8 +73,7 @@ pub(crate) struct FinalPlanGateArgs<'a> {
     pub messages: &'a [Message],
     pub cfg: &'a AgentConfig,
     pub workspace_is_set: bool,
-    pub final_plan_policy: FinalPlanRequirementMode,
-    pub plan_requirement_source: PlanRequirementSource,
+    pub gate_context: FinalPlanGateContext,
     pub final_plan_require_strict_workflow_node_coverage: bool,
     pub final_plan_semantic_check_enabled: bool,
     pub final_plan_semantic_check_max_non_readonly_tools: usize,
@@ -86,35 +86,19 @@ pub(crate) struct FinalPlanGateArgs<'a> {
 
 impl FinalPlanGateArgs<'_> {
     fn apply_layer_semantics(&self) -> bool {
-        match self.final_plan_policy {
-            FinalPlanRequirementMode::Never => false,
-            FinalPlanRequirementMode::WorkflowReflection => {
-                self.plan_requirement_source == PlanRequirementSource::WorkflowReflection
-            }
-            FinalPlanRequirementMode::Always => true,
-        }
+        self.gate_context.apply_layer_semantics()
     }
 }
 
 // --- FSM 门面（单事件一步：终答 assistant 到达后的单次判定） ---
 
-/// 由策略与来源解析进入门控时的相位（与 `require_plan` 布尔一致）。
+/// 由策略与来源解析进入门控时的相位（与 `require_plan` 布尔一致；金样 **`resolve_phase`** 用）。
+#[allow(dead_code)]
 pub(crate) fn resolve_final_plan_gate_phase(
     policy: FinalPlanRequirementMode,
     source: PlanRequirementSource,
 ) -> FinalPlanGatePhase {
-    let require_plan = match policy {
-        FinalPlanRequirementMode::Never => false,
-        FinalPlanRequirementMode::WorkflowReflection => {
-            source == PlanRequirementSource::WorkflowReflection
-        }
-        FinalPlanRequirementMode::Always => true,
-    };
-    if require_plan {
-        FinalPlanGatePhase::CheckStructuredPlan
-    } else {
-        FinalPlanGatePhase::NoRequirement
-    }
+    build_final_plan_gate_context(policy, source).phase
 }
 
 /// `(相位, 事件) → 一步结果`。`NoRequirement` 通常由调用方提前返回 `StopTurn`；若误传入此相位，仍返回安全默认以免遗漏分支。
@@ -333,13 +317,8 @@ fn evaluate_static_semantics(
         args.workspace_is_set,
         args.final_plan_semantic_check_max_non_readonly_tools,
     );
-    let want_llm = args.final_plan_semantic_check_enabled
-        && matches!(
-            args.final_plan_policy,
-            FinalPlanRequirementMode::WorkflowReflection
-        )
-        && args.plan_requirement_source == PlanRequirementSource::WorkflowReflection
-        && digest.is_some();
+    let want_llm =
+        args.final_plan_semantic_check_enabled && args.apply_layer_semantics() && digest.is_some();
     if want_llm {
         tracing::info!(
             target: "crabmate::per",
@@ -526,14 +505,17 @@ pub(crate) fn after_final_assistant(
     cfg: &AgentConfig,
     workspace_is_set: bool,
 ) -> AfterFinalAssistant {
-    let phase = resolve_final_plan_gate_phase(per.final_plan_policy, per.plan_requirement_source);
-    let require_plan = matches!(phase, FinalPlanGatePhase::CheckStructuredPlan);
+    let gate_context =
+        build_final_plan_gate_context(per.final_plan_policy, per.plan_requirement_source);
+    let phase = gate_context.phase;
+    let require_plan = gate_context.require_plan;
     let reflection_stage_round = per.reflection.stage_round();
 
     tracing::info!(
         target: "crabmate::per",
         final_plan_policy = ?per.final_plan_policy,
         require_plan = require_plan,
+        require_plan_reason = gate_context.require_plan_reason.as_str(),
         plan_requirement_source = ?per.plan_requirement_source,
         reflection_stage_round = reflection_stage_round,
         plan_rewrite_attempts = per.counters.plan_rewrite_attempts,
@@ -560,8 +542,7 @@ pub(crate) fn after_final_assistant(
             messages,
             cfg,
             workspace_is_set,
-            final_plan_policy: per.final_plan_policy,
-            plan_requirement_source: per.plan_requirement_source,
+            gate_context,
             final_plan_require_strict_workflow_node_coverage: per
                 .final_plan_require_strict_workflow_node_coverage,
             final_plan_semantic_check_enabled: per.final_plan_semantic_check_enabled,
@@ -610,8 +591,7 @@ mod tests {
             messages,
             cfg,
             workspace_is_set: false,
-            final_plan_policy: policy,
-            plan_requirement_source: source,
+            gate_context: build_final_plan_gate_context(policy, source),
             final_plan_require_strict_workflow_node_coverage: false,
             final_plan_semantic_check_enabled: false,
             final_plan_semantic_check_max_non_readonly_tools: 0,
@@ -815,8 +795,10 @@ mod tests {
             messages: &hist,
             cfg: &cfg,
             workspace_is_set: false,
-            final_plan_policy: FinalPlanRequirementMode::WorkflowReflection,
-            plan_requirement_source: PlanRequirementSource::WorkflowReflection,
+            gate_context: build_final_plan_gate_context(
+                FinalPlanRequirementMode::WorkflowReflection,
+                PlanRequirementSource::WorkflowReflection,
+            ),
             final_plan_require_strict_workflow_node_coverage: false,
             final_plan_semantic_check_enabled: true,
             final_plan_semantic_check_max_non_readonly_tools: 4,

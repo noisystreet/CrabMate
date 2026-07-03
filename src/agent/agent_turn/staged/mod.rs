@@ -15,6 +15,7 @@ use super::errors::{AgentTurnSubPhase, RunAgentTurnError};
 use super::outer_loop::run_agent_outer_loop;
 use super::params::RunLoopParams;
 
+mod completed_replanning_reduce;
 mod completed_replanning_suppression;
 pub(crate) mod empty_execution;
 mod ensemble_fsm;
@@ -31,6 +32,7 @@ mod post_parse_pipeline_fsm;
 mod prepared_parse_fsm;
 mod prepared_post_parse_fsm;
 mod prepared_route_reduce;
+mod prepared_stagnation_reduce;
 mod rolling_horizon_advance_reduce;
 mod rolling_horizon_facade;
 mod rolling_horizon_preflight_reduce;
@@ -46,6 +48,7 @@ mod step_loop_fsm;
 mod step_patch_recover_reduce;
 mod step_patch_route_fsm;
 mod steps_loop;
+mod steps_loop_reduce;
 mod steps_loop_route_fsm;
 mod turn_driver;
 mod turn_fsm;
@@ -63,7 +66,10 @@ mod staged_plan_prepare_fixture_tests;
 
 use sse as staged_sse;
 
-use completed_replanning_suppression::should_suppress_completed_replanning;
+use completed_replanning_reduce::{
+    CompletedReplanningReduceAction, reduce_completed_replanning_suppression,
+};
+use completed_replanning_suppression::log_completed_replanning_suppressed;
 use ensemble_fsm::{EnsembleMergeOutcome, ensemble_merge_outcome_from_parsed_steps};
 use full_pipeline_fsm::{
     StagedFullPipelinePhase, debug_staged_full_pipeline_enter,
@@ -74,9 +80,6 @@ use full_pipeline_reduce::{
     full_pipeline_phase_after_segment, reduce_full_pipeline_segment,
 };
 use patch_planner::StagedPlanPatchPlannerCtx;
-use plan_stagnation::{
-    StagedPlanStagnationAction, evaluate_staged_plan_stagnation_after_step_round,
-};
 use planner_parse_fsm::omit_no_task_planner_from_history;
 use planner_round_driver::{
     complete_first_planner_round_maybe_retry_tool_reject,
@@ -93,6 +96,9 @@ use prepared_post_parse_fsm::{
     prepared_full_pipeline_schedule, prepared_post_parse_schedule,
 };
 use prepared_route_reduce::{PreparedRouteReduceAction, reduce_prepared_planner_route};
+use prepared_stagnation_reduce::{
+    PreparedStagnationReduceAction, reduce_prepared_stagnation_after_parse,
+};
 use staged_parse_terminal::StagedParseTerminalRoute;
 use staged_sse::{next_staged_plan_id, staged_plan_phase_instruction_default};
 use steps_loop::run_staged_plan_steps_loop;
@@ -248,11 +254,21 @@ where
         make_step_user_message,
         mut turn_driver,
     } = params;
-    if should_suppress_completed_replanning(
-        p,
+    let replanning_reduce = reduce_completed_replanning_suppression(
+        p.turn.messages(),
         entered_from_step_execution_round,
         plan.steps.as_slice(),
+    );
+    tracing::debug!(
+        target: "crabmate::staged",
+        completed_replanning_reduce = replanning_reduce.as_str(),
+        "staged prepared continue: completed replanning reduce"
+    );
+    if matches!(
+        replanning_reduce,
+        CompletedReplanningReduceAction::FinishQuiet
     ) {
+        log_completed_replanning_suppressed(p, plan.steps.as_slice());
         debug!(
             target: "crabmate",
             "分阶段重规划：原始目标已有完成证据，且新计划仅包含重复验证/总结型步骤，直接结束"
@@ -789,43 +805,46 @@ where
                 let PreparedPlannerRoute::ContinueWithPlan { plan } = route else {
                     unreachable!("continue_post_parse requires ContinueWithPlan route");
                 };
-                if let Some(action) = evaluate_staged_plan_stagnation_after_step_round(
+                let stagnation_reduce = reduce_prepared_stagnation_after_parse(
                     p.turn.messages(),
                     &plan,
                     entered_from_step_execution_round,
-                ) {
-                    match action {
-                        StagedPlanStagnationAction::StopAfterRepeatedPlan => {
-                            warn!(
-                                target: "crabmate::staged",
-                                "staged plan stagnation: identical plan after step round exceeded auto-replan cap (step_count={})",
-                                plan.steps.len(),
-                            );
-                            return Err(RunAgentTurnError::ReplanExhausted {
-                                phase: AgentTurnSubPhase::Planner,
-                                message: "分阶段规划停滞：步后多轮仍重复相同计划，已停止（请检查验收条件或简化任务）"
-                                    .to_string(),
-                            });
-                        }
-                        StagedPlanStagnationAction::ReplanWithFeedback(user_body) => {
-                            warn!(
-                                target: "crabmate::staged",
-                                "staged plan stagnation: injecting coach user and re-running planner (step_count={})",
-                                plan.steps.len(),
-                            );
-                            p.turn
-                                .push_message(Message::user_staged_orchestration_injection(
-                                    user_body,
-                                ));
-                            req = prepare_staged_planner_no_tools_request(
-                                p,
-                                per_coord,
-                                labels.build_planner_messages,
-                            )
-                            .await?;
-                            continue;
-                        }
+                );
+                tracing::debug!(
+                    target: "crabmate::staged",
+                    prepared_stagnation_reduce = stagnation_reduce.as_str(),
+                    "staged prepared continue: stagnation reduce"
+                );
+                match stagnation_reduce {
+                    PreparedStagnationReduceAction::StopExhausted => {
+                        warn!(
+                            target: "crabmate::staged",
+                            "staged plan stagnation: identical plan after step round exceeded auto-replan cap (step_count={})",
+                            plan.steps.len(),
+                        );
+                        return Err(RunAgentTurnError::ReplanExhausted {
+                            phase: AgentTurnSubPhase::Planner,
+                            message: "分阶段规划停滞：步后多轮仍重复相同计划，已停止（请检查验收条件或简化任务）"
+                                .to_string(),
+                        });
                     }
+                    PreparedStagnationReduceAction::ReplanWithFeedback(user_body) => {
+                        warn!(
+                            target: "crabmate::staged",
+                            "staged plan stagnation: injecting coach user and re-running planner (step_count={})",
+                            plan.steps.len(),
+                        );
+                        p.turn
+                            .push_message(Message::user_staged_orchestration_injection(user_body));
+                        req = prepare_staged_planner_no_tools_request(
+                            p,
+                            per_coord,
+                            labels.build_planner_messages,
+                        )
+                        .await?;
+                        continue;
+                    }
+                    PreparedStagnationReduceAction::ContinuePostParse => {}
                 }
                 return continue_prepared_plan_after_first_round(
                     ContinuePreparedPlanAfterFirstRoundParams {

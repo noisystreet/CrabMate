@@ -6,7 +6,11 @@
 //!   `runner::run_hierarchical`，与生产入口一致；
 //! - **话语型回落**：用户输入命中 **`hierarchical_intent_route::DiscourseFallbackOuter`** 时转
 //!   **`run_agent_outer_loop`**，与 **PER / `PerCoordinator`** 轨交汇（见 **`docs/规划执行验证架构.md`** §2.5.2）；
-//! - 或直接 [`crabmate::agent::hierarchy::runner::run_hierarchical`]（同上三段 LLM，顺序单子目标）。
+//!
+//! **PER 外循环 `OuterLoopDriver`** 路径 mock：
+//! - reflect **`BreakOuter`** 单轮停；
+//! - 工具后早停 / **`ContinueNextIteration`** 再规划终答；
+//! - 冗余探针判定见 **`golden_turn_completion`**（`redundant_tools`）与 **`outer_loop_iteration_reduce`** 金样。
 
 use std::path::Path;
 use std::sync::Arc;
@@ -792,5 +796,110 @@ async fn run_agent_turn_plan_rewrite_exhausted_on_missing_plan() {
     assert!(
         messages.iter().any(|m| m.role == "assistant"),
         "assistant message should remain in history"
+    );
+}
+
+/// 外循环 reflect → **`BreakOuter`**：首轮终答无 `tool_calls`，仅一次 mock LLM（`OuterLoopDriver` 早停）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn run_agent_turn_outer_loop_reflect_break_single_planner_mock() {
+    let cfg = cfg_freeform_turn();
+    let final_body = "outer_loop reflect break mock：这是足够长的终答摘要，满足可见终答阈值。";
+    let backend: &'static SequencedMockBackend = Box::leak(Box::new(SequencedMockBackend::new(
+        vec![Message::assistant_only(final_body.to_string())],
+        "stop",
+    )));
+    let mut messages = vec![
+        Message::system_only("test system".to_string()),
+        Message::user_only("请用一句话介绍你自己。".to_string()),
+    ];
+    run_mock_agent_turn(cfg, &mut messages, backend).await;
+    assert_eq!(
+        backend.call_seq.load(Ordering::SeqCst),
+        1,
+        "reflect BreakOuter: single planner call then stop"
+    );
+}
+
+/// 外循环工具后早停：预置完成证据后单轮终答（`decide_post_tools_exit` → **`StopOuterLoop`**）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn run_agent_turn_outer_loop_post_tools_early_stop_mock() {
+    let cfg = cfg_freeform_turn();
+    let final_msg = Message::assistant_only(
+        "outer_loop post-tools early stop mock：任务已有完成证据，终答摘要。".to_string(),
+    );
+    let backend: &'static SequencedMockBackend =
+        Box::leak(Box::new(SequencedMockBackend::new(vec![final_msg], "stop")));
+    let mut messages = vec![
+        Message::system_only("test system".to_string()),
+        Message::user_only(
+            "请分析当前项目的目录结构，并调用 get_current_time 工具查询当前时间，然后用一句话总结。".to_string(),
+        ),
+        Message {
+            role: "tool".to_string(),
+            content: Some(
+                "当前时间：2026-01-01 00:00:00\n退出码：0\n标准输出：\nok".to_string().into(),
+            ),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: Some("get_current_time".to_string()),
+            tool_call_id: Some("call_mock_0".to_string()),
+        },
+        Message::assistant_only(
+            "目录结构已分析完成；时间已查询，以下为完整终答摘要（mock 早停路径）。".to_string(),
+        ),
+    ];
+    run_mock_agent_turn(cfg, &mut messages, backend).await;
+    assert_eq!(
+        backend.call_seq.load(Ordering::SeqCst),
+        1,
+        "post-tools early stop: single planner after pre-seeded completion evidence"
+    );
+}
+
+/// 外循环工具后 **`ContinueNextIteration`**：两轮工具各一次，第三轮终答停轮（3 次 mock LLM）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn run_agent_turn_outer_loop_post_tools_continue_then_stop_mock() {
+    let cfg = cfg_freeform_turn();
+    let tool_round = Message {
+        role: "assistant".to_string(),
+        content: None,
+        reasoning_content: None,
+        reasoning_details: None,
+        tool_calls: Some(vec![ToolCall {
+            id: "call_mock_1".to_string(),
+            typ: "function".to_string(),
+            function: FunctionCall {
+                name: "get_current_time".to_string(),
+                arguments: "{}".to_string(),
+            },
+        }]),
+        name: None,
+        tool_call_id: None,
+    };
+    let final_msg = Message::assistant_only(
+        "outer_loop post-tools continue mock：已两次查询时间并完成总结。".to_string(),
+    );
+    let backend: &'static SequencedMockBackend = Box::leak(Box::new(SequencedMockBackend::new(
+        vec![tool_round.clone(), tool_round, final_msg],
+        "stop",
+    )));
+    let mut messages = vec![
+        Message::system_only("test system".to_string()),
+        Message::user_only(
+            "请分析当前项目的目录结构，并调用 get_current_time 工具查询当前时间，然后用一句话总结。".to_string(),
+        ),
+    ];
+    run_mock_agent_turn(cfg, &mut messages, backend).await;
+    let tool_msg_count = messages.iter().filter(|m| m.role == "tool").count();
+    assert_eq!(
+        backend.call_seq.load(Ordering::SeqCst),
+        3,
+        "post-tools continue: tool → tool → final; tool_msgs={tool_msg_count}"
+    );
+    assert!(
+        tool_msg_count >= 1,
+        "at least one tool round should execute; roles: {:?}",
+        messages.iter().map(|m| m.role.as_str()).collect::<Vec<_>>()
     );
 }
