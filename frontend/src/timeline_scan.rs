@@ -15,6 +15,28 @@ fn is_planner_tool_call_rejected_timeline_text(text: &str) -> bool {
             || text.contains("规划轮工具调用已拒绝"))
 }
 
+/// 编排路由决议（`timeline_log` `kind=orchestration_route`）仅供 tracing / replay，不进聊天气泡。
+fn is_orchestration_route_timeline_text(text: &str) -> bool {
+    let body = text
+        .strip_prefix(STAGED_TIMELINE_SYSTEM_PREFIX)
+        .unwrap_or(text);
+    body.trim_start().starts_with("编排路由：")
+}
+
+/// 已落盘的编排路由旁注：导出与聊天列均跳过。
+pub fn is_orchestration_route_timeline_message(m: &StoredMessage) -> bool {
+    !m.is_tool && is_orchestration_route_timeline_text(&m.text)
+}
+
+/// 工具轮次前的 commentary 旁注（`commentary_before_tools`）：不进主气泡/导出。
+pub fn is_commentary_before_tools_assistant(m: &StoredMessage) -> bool {
+    m.role == "assistant"
+        && !m.is_tool
+        && m.state
+            .as_ref()
+            .is_some_and(|s| matches!(s, crate::storage::StoredMessageState::CommentaryBeforeTools))
+}
+
 fn json_value_looks_like_tool_args(v: &serde_json::Value) -> bool {
     match v {
         serde_json::Value::Array(a) => {
@@ -418,6 +440,12 @@ pub fn is_ephemeral_timeline_assistant_for_export(
     if is_planner_tool_call_rejected_timeline_text(&m.text) {
         return true;
     }
+    if is_orchestration_route_timeline_message(m) {
+        return true;
+    }
+    if is_commentary_before_tools_assistant(m) {
+        return true;
+    }
     if crate::message_format::stored_message_is_staged_planner_round(m) {
         return true;
     }
@@ -606,6 +634,46 @@ mod tests {
             tool_name: None,
             created_at: 0,
         };
+        assert!(is_ephemeral_timeline_assistant_for_export(&m, &[]));
+    }
+
+    #[test]
+    fn orchestration_route_timeline_dropped_for_export_and_display() {
+        use crate::message_format::staged_timeline_system_message_body;
+
+        let m = StoredMessage {
+            id: "route".into(),
+            role: "assistant".into(),
+            text: staged_timeline_system_message_body(
+                "编排路由：freeform\n{\"version\":1,\"orchestration_mode\":\"freeform\"}",
+            ),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(timeline_state_local_snapshot()),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        assert!(is_orchestration_route_timeline_message(&m));
+        assert!(is_ephemeral_timeline_assistant_for_export(&m, &[]));
+    }
+
+    #[test]
+    fn commentary_before_tools_dropped_for_export() {
+        let m = StoredMessage {
+            id: "c1".into(),
+            role: "assistant".into(),
+            text: String::new(),
+            reasoning_text: "先写总结\n".into(),
+            image_urls: vec![],
+            state: Some(crate::storage::StoredMessageState::CommentaryBeforeTools),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        assert!(is_commentary_before_tools_assistant(&m));
         assert!(is_ephemeral_timeline_assistant_for_export(&m, &[]));
     }
 

@@ -76,6 +76,11 @@ impl StreamSseScratch {
     }
 
     #[inline]
+    pub(super) fn enter_commentary_before_tools_lane(&self) {
+        self.state.enter_commentary_before_tools_lane();
+    }
+
+    #[inline]
     pub(super) fn post_tool_stream_tail_active(&self) -> bool {
         self.state.post_tool_stream_tail_active()
     }

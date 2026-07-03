@@ -156,6 +156,20 @@ pub(crate) fn build_chat_stream_callbacks(
     let on_assistant_answer_phase =
         make_on_assistant_answer_phase_with_stream_phase(Rc::clone(&stream_ctx));
 
+    let on_parsing_tool_calls: Rc<dyn Fn(bool)> = {
+        let stream_ctx = Rc::clone(&stream_ctx);
+        let accum = Rc::clone(&accum);
+        Rc::new(move |parsing: bool| {
+            if !parsing || stream_ctx.is_stale() {
+                return;
+            }
+            suppress_assistant_answer_as_commentary_before_tools(
+                stream_ctx.as_ref(),
+                accum.as_ref(),
+            );
+        })
+    };
+
     let on_staged_step_started: Rc<dyn Fn(StagedPlanStepStartInfo)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |info: StagedPlanStepStartInfo| {
@@ -248,6 +262,7 @@ pub(crate) fn build_chat_stream_callbacks(
         on_stream_job_id,
         on_last_sse_event_id,
         on_assistant_answer_phase,
+        on_parsing_tool_calls,
         on_staged_plan_step_started: on_staged_step_started,
         on_staged_plan_step_finished: on_staged_step_finished,
         on_clarification_questionnaire: on_clarification,

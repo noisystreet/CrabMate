@@ -16,6 +16,7 @@ use crate::timeline_scan::timeline_state_tool;
 use super::super::super::context::ChatStreamCallbackCtx;
 use super::super::super::per_stream_accum::PerStreamAccum;
 use super::super::super::stream_control_reducer::StreamControlEvent;
+use super::super::helpers::suppress_assistant_answer_as_commentary_before_tools;
 use super::super::helpers::*;
 
 pub(in super::super) fn make_on_tool_output_chunk(
@@ -144,6 +145,10 @@ pub(in super::super) fn chat_stream_on_tool_call_builder(
             if stream_ctx.is_stale() {
                 return;
             }
+            suppress_assistant_answer_as_commentary_before_tools(
+                stream_ctx.as_ref(),
+                accum.as_ref(),
+            );
             stream_ctx
                 .scratch
                 .apply_stream_control_event(StreamControlEvent::ToolCallDeclared);
