@@ -293,6 +293,7 @@ impl super::HierarchicalExecutor {
         &self,
         manager: &super::super::manager::ManagerAgent,
         failed_goal: &SubGoal,
+        reflect_reason: super::super::reflect_replan_reason::ManagerReflectReplanReason,
         verification_failure: &str,
         execution_result: &TaskResult,
         artifacts: &[super::super::task::Artifact],
@@ -301,6 +302,13 @@ impl super::HierarchicalExecutor {
             return None;
         }
 
+        tracing::info!(
+            target: "crabmate::hierarchy",
+            manager_reflect_replan_reason = reflect_reason.as_str(),
+            goal_id = %failed_goal.goal_id,
+            verification_failure = %verification_failure,
+            "HierarchicalExecutor reflect_and_replan"
+        );
         info!(
             target: "crabmate",
             "[HIERARCHICAL] Reflecting on verification failure for goal {}: {}",
@@ -332,6 +340,7 @@ impl super::HierarchicalExecutor {
             .reflect_and_replan(ReflectAndReplanContext {
                 failed_goal,
                 verification_failure,
+                reflect_reason,
                 execution_result,
                 cfg: &cfg,
                 llm_backend,

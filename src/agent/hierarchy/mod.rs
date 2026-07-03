@@ -21,6 +21,7 @@ pub mod goal_verifier;
 pub mod manager;
 pub mod manager_json_repair;
 pub mod operator;
+pub mod reflect_replan_reason;
 pub mod router;
 pub mod runner;
 pub mod session_state;
@@ -48,6 +49,7 @@ pub use manager::{FailureDecision, ManagerAgent, ManagerConfig, ManagerError};
 pub use operator::{
     OperatorAgent, OperatorConfig, OperatorError, OperatorPolicy, OperatorRuntimeHandles,
 };
+pub use reflect_replan_reason::ManagerReflectReplanReason;
 pub use router::{
     AgentMode, Router, RouterError, RouterOutput, RoutingStrategy, SmartRouter, TaskComplexity,
 };
