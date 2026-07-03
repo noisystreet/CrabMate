@@ -663,10 +663,6 @@ pub(super) async fn run_staged_plan_steps_loop<F>(
 where
     F: Fn(String) -> Message,
 {
-    if let Some(driver) = turn_driver.as_deref_mut() {
-        driver.record_steps_loop_trace("steps_executing_enter");
-    }
-    let mut n = plan_steps.len();
     let orch_phase = staged_orchestrator::enter_steps_executing(
         patch_ctx.p.ctx.io.out,
         plan_id.as_str(),
@@ -674,6 +670,10 @@ where
         plan_steps.as_slice(),
     )
     .await;
+    if let Some(driver) = turn_driver.as_deref_mut() {
+        driver.record_steps_executing_enter(orch_phase);
+    }
+    let mut n = plan_steps.len();
     tracing::info!(
         target: "crabmate::staged",
         staged_fsm = "steps_loop",

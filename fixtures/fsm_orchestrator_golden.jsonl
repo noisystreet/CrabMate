@@ -10,7 +10,14 @@
 {"id":"full_after_nl","case":"orchestrator_full_pipeline","phase":"after_nl_followup","expect_phase":"plan_ready"}
 {"id":"steps_finished","case":"orchestrator_steps_loop_trace","trace":"send_plan_finished","expect_phase":"done"}
 {"id":"steps_running","case":"orchestrator_steps_loop_trace","trace":"step_running","expect_phase":"step_running"}
-{"id":"steps_patch","case":"orchestrator_steps_loop_trace","trace":"patch_replanner","expect_phase":"step_running"}
+{"id":"steps_patch","case":"orchestrator_steps_loop_trace","trace":"patch_replanner","expect_phase":"patch_replanner"}
+{"id":"steps_patch_attempt","case":"orchestrator_steps_loop_trace","trace":"patch_replanner_attempt","expect_phase":"patch_replanner"}
+{"id":"post_parse_outer","case":"orchestrator_post_parse_schedule","schedule":"no_task_then_outer","expect_phase":"degraded_to_outer_loop"}
+{"id":"post_parse_full","case":"orchestrator_post_parse_schedule","schedule":"full_pipeline_then_steps","expect_phase":"plan_ready"}
+{"id":"prepared_reduce_quiet","case":"prepared_route_reduce","route":"quiet_finish","expect":"finish_quiet"}
+{"id":"prepared_reduce_direct","case":"prepared_route_reduce","route":"finish_with_direct_planner_answer","expect":"finish_with_assistant_only"}
+{"id":"prepared_reduce_degrade","case":"prepared_route_reduce","route":"degrade_to_outer_loop","expect":"degrade_to_outer_loop"}
+{"id":"prepared_reduce_continue","case":"prepared_route_reduce","route":"continue_with_plan","expect":"continue_post_parse"}
 {"id":"outer_reflect_break","case":"outer_loop_reflect_ctl","ctl":"break_outer","expect":"break_outer"}
 {"id":"outer_reflect_continue","case":"outer_loop_reflect_ctl","ctl":"continue_outer","expect":"continue_outer"}
 {"id":"outer_reflect_tools","case":"outer_loop_reflect_ctl","ctl":"proceed_to_tools","expect":"proceed_to_tools"}

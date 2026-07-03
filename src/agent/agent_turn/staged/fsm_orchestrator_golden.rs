@@ -2,6 +2,8 @@
 
 use super::full_pipeline_fsm::StagedFullPipelinePhase;
 use super::prepared_parse_fsm::PreparedPlannerRoute;
+use super::prepared_post_parse_fsm::PreparedPostParseSchedule;
+use super::prepared_route_reduce::reduce_prepared_planner_route;
 use super::step_iteration_reduce::reduce_staged_step_post_outer_route;
 use super::step_patch_route_fsm::{
     StagedStepPatchFailureKind, resolve_staged_step_patch_failure_kind,
@@ -11,8 +13,9 @@ use super::steps_loop_route_fsm::{
 };
 use super::turn_fsm::StagedTurnPhase;
 use super::turn_orchestrator_fsm::{
-    orchestrator_phase_for_full_pipeline, orchestrator_phase_for_prepared_route,
-    orchestrator_phase_for_steps_loop_trace, orchestrator_phase_for_turn_phase,
+    orchestrator_phase_for_full_pipeline, orchestrator_phase_for_post_parse_schedule,
+    orchestrator_phase_for_prepared_route, orchestrator_phase_for_steps_loop_trace,
+    orchestrator_phase_for_turn_phase,
 };
 use crate::agent::agent_turn::errors::{AgentTurnSubPhase, RunAgentTurnError};
 use crate::agent::agent_turn::outer_loop_fsm::{OuterLoopIterationExit, ReflectBranchCtl};
@@ -178,6 +181,34 @@ fn assert_step_iteration_reduce(ctx: &str, body: &serde_json::Value) {
     );
 }
 
+fn post_parse_schedule_from_label(label: &str) -> PreparedPostParseSchedule {
+    match label {
+        "no_task_then_outer" => PreparedPostParseSchedule::NoTaskThenOuter,
+        "full_pipeline_then_steps" => PreparedPostParseSchedule::FullPipelineThenSteps,
+        other => panic!("unknown post parse schedule label: {other}"),
+    }
+}
+
+fn assert_orchestrator_post_parse_schedule(ctx: &str, body: &serde_json::Value) {
+    let schedule = post_parse_schedule_from_label(body_str(body, "schedule", ctx));
+    let expect = body_str(body, "expect_phase", ctx);
+    assert_eq!(
+        orchestrator_phase_for_post_parse_schedule(schedule).as_str(),
+        expect,
+        "{ctx}: post parse schedule"
+    );
+}
+
+fn assert_prepared_route_reduce(ctx: &str, body: &serde_json::Value) {
+    let route = prepared_route_from_label(body_str(body, "route", ctx));
+    let expect = body_str(body, "expect", ctx);
+    assert_eq!(
+        reduce_prepared_planner_route(&route).as_str(),
+        expect,
+        "{ctx}: prepared route reduce"
+    );
+}
+
 fn assert_step_patch_failure_kind(ctx: &str, body: &serde_json::Value) {
     let expect = body_str(body, "expect", ctx);
     if let Some(kind_label) = body.get("kind").and_then(|v| v.as_str()) {
@@ -217,6 +248,10 @@ fn assert_golden_fsm_line(ctx: &str, row: &GoldenLine) {
         "outer_loop_iteration_exit" => assert_outer_loop_iteration_exit(ctx, &row.body),
         "steps_loop_post_outer" => assert_steps_loop_post_outer(ctx, &row.body),
         "step_iteration_reduce" => assert_step_iteration_reduce(ctx, &row.body),
+        "prepared_route_reduce" => assert_prepared_route_reduce(ctx, &row.body),
+        "orchestrator_post_parse_schedule" => {
+            assert_orchestrator_post_parse_schedule(ctx, &row.body);
+        }
         "step_patch_failure_kind" => assert_step_patch_failure_kind(ctx, &row.body),
         other => panic!("{ctx}: unknown case {other}"),
     }

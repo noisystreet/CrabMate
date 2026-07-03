@@ -29,6 +29,7 @@ mod planner_round_fsm;
 mod post_parse_pipeline_fsm;
 mod prepared_parse_fsm;
 mod prepared_post_parse_fsm;
+mod prepared_route_reduce;
 mod rolling_horizon_facade;
 mod sse;
 mod staged_parse_terminal;
@@ -83,6 +84,7 @@ use prepared_post_parse_fsm::{
     PreparedFullPipelineInputs, PreparedFullPipelineSchedule, PreparedPostParseSchedule,
     prepared_full_pipeline_schedule, prepared_post_parse_schedule,
 };
+use prepared_route_reduce::{PreparedRouteReduceAction, reduce_prepared_planner_route};
 use staged_parse_terminal::StagedParseTerminalRoute;
 use staged_sse::{next_staged_plan_id, staged_plan_phase_instruction_default};
 use steps_loop::run_staged_plan_steps_loop;
@@ -236,7 +238,7 @@ where
         plan,
         msg,
         make_step_user_message,
-        turn_driver,
+        mut turn_driver,
     } = params;
     if should_suppress_completed_replanning(
         p,
@@ -259,6 +261,9 @@ where
     }
 
     let post_schedule = prepared_post_parse_schedule(plan.no_task);
+    if let Some(driver) = turn_driver.as_deref_mut() {
+        driver.record_post_parse_schedule(post_schedule);
+    }
     tracing::debug!(
         target: "crabmate::staged",
         staged_fsm = "prepared_request",
@@ -498,12 +503,15 @@ where
         mut plan,
         pipeline_schedule,
         parallel_csv,
-        turn_driver,
+        mut turn_driver,
     } = params;
     let ensemble_route = pipeline_schedule.ensemble_route;
     log_staged_plan_ensemble_route(ensemble_route, p.ctx.attach.staged_plan_ensemble_count);
 
     let mut fp_phase = StagedFullPipelinePhase::BeforeEnsemble;
+    if let Some(driver) = turn_driver.as_deref_mut() {
+        driver.record_full_pipeline_phase(fp_phase);
+    }
     debug_staged_full_pipeline_enter(fp_phase);
     tracing::debug!(
         target: "crabmate::staged",
@@ -530,6 +538,9 @@ where
         .expect("full_pipeline: before_ensemble -> after_ensemble");
     debug_staged_full_pipeline_transition(fp_phase, Some(next_fp));
     fp_phase = next_fp;
+    if let Some(driver) = turn_driver.as_deref_mut() {
+        driver.record_full_pipeline_phase(fp_phase);
+    }
 
     let optimizer_route = pipeline_schedule.optimizer_route;
     log_staged_plan_optimizer_route(optimizer_route, plan.steps.len());
@@ -555,6 +566,9 @@ where
         .expect("full_pipeline: after_ensemble -> after_optimizer");
     debug_staged_full_pipeline_transition(fp_phase, Some(next_fp));
     fp_phase = next_fp;
+    if let Some(driver) = turn_driver.as_deref_mut() {
+        driver.record_full_pipeline_phase(fp_phase);
+    }
 
     if pipeline_schedule.nl_followup_before_steps {
         run_staged_plan_nl_followup_round(p, per_coord, make_step_user_message).await?;
@@ -564,6 +578,9 @@ where
         .expect("full_pipeline: after_optimizer -> after_nl_followup");
     debug_staged_full_pipeline_transition(fp_phase, Some(next_fp));
     fp_phase = next_fp;
+    if let Some(driver) = turn_driver.as_deref_mut() {
+        driver.record_full_pipeline_phase(fp_phase);
+    }
 
     debug_staged_full_pipeline_transition(fp_phase, None);
 
@@ -694,15 +711,22 @@ where
             ));
         }
 
-        match route {
-            PreparedPlannerRoute::QuietFinish => {
+        let reduce_action = reduce_prepared_planner_route(&route);
+        tracing::debug!(
+            target: "crabmate::staged",
+            prepared_route_reduce = reduce_action.as_str(),
+            "staged prepared_request first-round parse reduce"
+        );
+
+        match reduce_action {
+            PreparedRouteReduceAction::FinishQuiet => {
                 debug!(
                     target: "crabmate",
                     "分阶段重规划：检测到分步执行后重入且本轮未产出结构化计划，视为收敛完成，直接结束（避免重复总结）"
                 );
                 return Ok(StagedPlanRunOutcome::Finished);
             }
-            PreparedPlannerRoute::FinishWithDirectPlannerAnswer => {
+            PreparedRouteReduceAction::FinishWithAssistantOnly => {
                 p.turn.push_assistant_merging_trailing_empty(msg.clone());
                 debug!(
                     target: "crabmate",
@@ -710,12 +734,15 @@ where
                 );
                 return Ok(StagedPlanRunOutcome::Finished);
             }
-            PreparedPlannerRoute::DegradeToOuterLoop => {
+            PreparedRouteReduceAction::DegradeToOuterLoop => {
                 p.turn.push_assistant_merging_trailing_empty(msg.clone());
                 run_agent_outer_loop(p, per_coord).await?;
                 return Ok(StagedPlanRunOutcome::Finished);
             }
-            PreparedPlannerRoute::ContinueWithPlan { plan } => {
+            PreparedRouteReduceAction::ContinuePostParse => {
+                let PreparedPlannerRoute::ContinueWithPlan { plan } = route else {
+                    unreachable!("continue_post_parse requires ContinueWithPlan route");
+                };
                 if let Some(action) = evaluate_staged_plan_stagnation_after_step_round(
                     p.turn.messages(),
                     &plan,
