@@ -1,12 +1,9 @@
-//! `TurnRouteDecision` v1 金样：`fixtures/turn_route_decision_golden.jsonl`。
+//! `TurnRouteDecision` v1 金样：`fixtures/turn_route_decision_golden.jsonl`（经 [`assess_turn_routing`]）。
 
 use crabmate_agent::agent_turn::{
-    HierarchicalTurnEntryResolution, IntentGateSnapshot, StagedGateSnapshot,
-    StagedPlanningDenyReason, StagedPlanningGateOutcome, TurnRouteDecisionV1,
-    build_hierarchical_turn_route_decision, build_non_hierarchical_intent_finished_early_decision,
-    build_non_hierarchical_turn_route_decision, intent_gate_snapshot_from_decision,
-    resolve_hierarchical_post_intent_route, resolve_non_hierarchical_turn,
-    staged_gate_snapshot_from_outcome,
+    AssessTurnRoutingParams, IntentGateSnapshot, StagedGateSnapshot, StagedPlanningDenyReason,
+    StagedPlanningGateOutcome, TurnRouteDecisionV1, TurnRouteDriver, TurnTopLevelDispatch,
+    assess_turn_routing, resolve_hierarchical_post_intent_route,
 };
 use crabmate_agent::intent_pipeline::{IntentAction, IntentDecision};
 use crabmate_agent::intent_router::IntentKind;
@@ -42,6 +39,8 @@ struct GoldenExpect {
     hierarchical_post_intent_route: Option<String>,
     #[serde(default)]
     staged_gate: Option<String>,
+    #[serde(default)]
+    driver: Option<String>,
 }
 
 fn cfg_with(mode: &str) -> crabmate_config::AgentConfig {
@@ -186,29 +185,25 @@ fn golden_turn_route_decision() {
         let cfg = cfg_with(&row.cfg_mode);
         let intent_gate = parse_intent_gate(&row.intent_gate);
 
-        let decision = if row.expect_early {
-            build_non_hierarchical_intent_finished_early_decision(&cfg, intent_gate)
-        } else if row.expect_hierarchical {
-            let assessment = decision_from_intent_gate(&intent_gate);
-            let entry = resolve_hierarchical_post_intent_route(&assessment);
-            let orchestration_mode =
-                HierarchicalTurnEntryResolution::resolve(&assessment).orchestration_mode;
-            build_hierarchical_turn_route_decision(
-                &cfg,
-                intent_gate_snapshot_from_decision(&assessment),
-                orchestration_mode,
-                entry,
-            )
+        let top_level = if row.expect_hierarchical {
+            TurnTopLevelDispatch::Hierarchical
         } else {
-            let staged = parse_staged_gate(row.staged_gate.as_ref().expect("staged_gate"));
-            let entry = resolve_non_hierarchical_turn(&cfg, &staged);
-            build_non_hierarchical_turn_route_decision(
-                &cfg,
-                intent_gate,
-                staged_gate_snapshot_from_outcome(&staged),
-                &entry,
-            )
+            TurnTopLevelDispatch::NonHierarchical
         };
+        let hierarchical_decision = row
+            .expect_hierarchical
+            .then(|| decision_from_intent_gate(&intent_gate));
+        let staged_gate = row.staged_gate.as_ref().map(parse_staged_gate);
+        let staged_ref = staged_gate.as_ref();
+
+        let assessed = assess_turn_routing(AssessTurnRoutingParams {
+            cfg: &cfg,
+            top_level,
+            intent_gate: intent_gate.clone(),
+            staged_gate: staged_ref,
+            hierarchical_decision: hierarchical_decision.as_ref(),
+        });
+        let decision = &assessed.decision;
 
         assert_eq!(decision.version, 1, "{ctx}");
         assert_eq!(decision.top_level, row.expect.top_level, "{ctx}");
@@ -220,7 +215,7 @@ fn golden_turn_route_decision() {
             assert_eq!(decision.turn_phase, *phase, "{ctx}");
         }
         assert_freeform_because(
-            &decision,
+            decision,
             &row.expect.freeform_because.clone().unwrap_or(Value::Null),
             &ctx,
         );
@@ -240,6 +235,83 @@ fn golden_turn_route_decision() {
                 "{ctx}"
             );
         }
+        if row.expect_early {
+            assert_eq!(assessed.driver, TurnRouteDriver::IntentEarlyExit, "{ctx}");
+        } else if row.expect_hierarchical {
+            let expected_route = resolve_hierarchical_post_intent_route(
+                hierarchical_decision.as_ref().expect("hier decision"),
+            );
+            assert_eq!(
+                assessed.driver,
+                TurnRouteDriver::Hierarchical(expected_route),
+                "{ctx}"
+            );
+        } else if let Some(driver) = &row.expect.driver {
+            match driver.as_str() {
+                "non_hierarchical_freeform" => assert!(
+                    matches!(assessed.driver, TurnRouteDriver::NonHierarchical(_)),
+                    "{ctx}"
+                ),
+                other => panic!("{ctx}: unknown driver expect {other}"),
+            }
+        }
         assert!(decision.to_json().expect("json").contains("\"version\":1"));
     }
+}
+
+#[test]
+fn assess_turn_routing_cartesian_non_hierarchical_execute_gate_matrix() {
+    let cfg = cfg_with("single_agent");
+    let intent = IntentGateSnapshot::ProceedExecute {
+        kind: "execute".into(),
+        primary_intent: "execute.run_test_build".into(),
+        action: "execute".into(),
+        confidence: 0.95,
+        need_clarification: false,
+    };
+    for (reason, expect_mode) in [
+        (
+            StagedPlanningDenyReason::AdvisoryExecuteBypassStaged,
+            "freeform",
+        ),
+        (
+            StagedPlanningDenyReason::ReadonlyOverviewBypassStaged,
+            "freeform",
+        ),
+        (StagedPlanningDenyReason::EmptyEffectiveTask, "freeform"),
+    ] {
+        let gate = StagedPlanningGateOutcome::Deny {
+            reason,
+            task_preview: None,
+            intent_decision: None,
+        };
+        let assessed = assess_turn_routing(AssessTurnRoutingParams {
+            cfg: &cfg,
+            top_level: TurnTopLevelDispatch::NonHierarchical,
+            intent_gate: intent.clone(),
+            staged_gate: Some(&gate),
+            hierarchical_decision: None,
+        });
+        assert_eq!(assessed.decision.orchestration_mode, expect_mode);
+        assert!(matches!(
+            assessed.driver,
+            TurnRouteDriver::NonHierarchical(_)
+        ));
+    }
+    let allow = parse_staged_gate(&serde_json::json!({
+        "outcome": "allow",
+        "primary_intent": "execute.run_test_build",
+        "confidence": 0.95
+    }));
+    let assessed = assess_turn_routing(AssessTurnRoutingParams {
+        cfg: &cfg,
+        top_level: TurnTopLevelDispatch::NonHierarchical,
+        intent_gate: intent,
+        staged_gate: Some(&allow),
+        hierarchical_decision: None,
+    });
+    assert_eq!(
+        assessed.decision.orchestration_mode,
+        "planned_step_single_agent"
+    );
 }
