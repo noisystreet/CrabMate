@@ -2,6 +2,10 @@
 //!
 //! 同步变换的**步骤实现与编排**见 [`super::message_pipeline`]（[`apply_session_sync_pipeline`]）；本文件保留 **async 摘要**与对外的 `prepare_messages_for_model` 入口。
 
+use crate::agent::context_budget_pressure::{
+    effective_summary_trigger_for_turn, resolve_context_budget_pressure,
+    scale_message_pipeline_char_budget,
+};
 use crate::agent::per_coord::PerCoordinator;
 use crate::config::AgentConfig;
 use crate::llm::{
@@ -69,15 +73,41 @@ fn build_transcript_middle(messages: &[Message], tail: usize, cap: usize) -> Opt
 /// - **Debug**（`RUST_LOG` 含 **`crabmate=debug`** 或 **`debug`**）：汇总一行 `message_pipeline session_sync: …`。
 /// - **Trace**（**`crabmate::message_pipeline=trace`**）：每步一行 `session_sync_step stage=…`（可不开启全局 debug）。
 pub fn prepare_messages_before_model_call_sync(messages: &mut Vec<Message>, cfg: &AgentConfig) {
+    prepare_messages_before_model_call_sync_with_budget(messages, cfg, None);
+}
+
+fn message_pipeline_config_for_turn(
+    cfg: &AgentConfig,
+    turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
+) -> crate::agent::message_pipeline::MessagePipelineConfig {
+    let mut pipe = crate::agent::message_pipeline::MessagePipelineConfig::from(cfg);
+    let pressure = resolve_context_budget_pressure(cfg, turn_budget.map(|a| a.as_ref()));
+    if pressure.char_budget_scale_percent < 100 {
+        pipe.context_char_budget = scale_message_pipeline_char_budget(
+            pipe.context_char_budget,
+            pressure.char_budget_scale_percent,
+        );
+    }
+    pipe
+}
+
+/// 与 [`prepare_messages_before_model_call_sync`] 相同，但当 [`TurnBudgetCounter`] 用量 ≥70%/≥90% 时收紧 char 预算裁剪。
+pub fn prepare_messages_before_model_call_sync_with_budget(
+    messages: &mut Vec<Message>,
+    cfg: &AgentConfig,
+    turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
+) {
+    let pipe_cfg = message_pipeline_config_for_turn(cfg, turn_budget);
     let need_report = log::log_enabled!(log::Level::Debug)
         || log::log_enabled!(target: "crabmate::message_pipeline", log::Level::Trace);
     if need_report {
         let mut report = crate::agent::message_pipeline::MessagePipelineReport::default();
-        crate::agent::message_pipeline::apply_session_sync_pipeline(
+        crate::agent::message_pipeline::apply_session_sync_pipeline_with_config(
             messages,
-            cfg,
+            pipe_cfg,
             Some(&mut report),
         );
+        let pressure = resolve_context_budget_pressure(cfg, turn_budget.map(|a| a.as_ref()));
         let tiktoken_note =
             crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
                 cfg, messages,
@@ -91,12 +121,15 @@ pub fn prepare_messages_before_model_call_sync(messages: &mut Vec<Message>, cfg:
             .unwrap_or_default();
         log::debug!(
             target: "crabmate",
-            "message_pipeline session_sync: {}{}",
+            "message_pipeline session_sync: {}{} budget_pressure_char_scale={}",
             report.format_for_log(),
-            tiktoken_note
+            tiktoken_note,
+            pressure.char_budget_scale_percent
         );
     } else {
-        crate::agent::message_pipeline::apply_session_sync_pipeline(messages, cfg, None);
+        crate::agent::message_pipeline::apply_session_sync_pipeline_with_config(
+            messages, pipe_cfg, None,
+        );
     }
 }
 
@@ -110,8 +143,8 @@ pub fn prepare_messages_for_hierarchical_llm_sync(messages: &mut Vec<Message>, c
     prepare_messages_before_model_call_sync(messages, cfg);
 }
 
-/// 分层 **Operator** ReAct：同步裁剪 + 可选 LLM 摘要（与主路径 [`prepare_messages_for_model`] 摘要段对齐；
-/// **不含** changelist 注入与 PER 层缓存失效）。
+/// 分层 **Operator** ReAct：与主路径 [`prepare_messages_for_model`] 共用同步裁剪 + 可选 LLM 摘要；
+/// **不含** changelist 注入与 PER 层缓存失效。
 pub async fn prepare_messages_for_hierarchical_operator(
     llm_backend: &dyn ChatCompletionsBackend,
     client: &Client,
@@ -121,7 +154,29 @@ pub async fn prepare_messages_for_hierarchical_operator(
     cancel: Option<&std::sync::atomic::AtomicBool>,
     turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    prepare_messages_before_model_call_sync(messages, cfg);
+    prepare_session_messages_shared(
+        llm_backend,
+        client,
+        api_key,
+        cfg,
+        messages,
+        cancel,
+        turn_budget,
+    )
+    .await
+}
+
+/// 主 Agent 外循环与分层 Operator 共用的「同步裁剪 + 可选 LLM 摘要」核心路径。
+pub(crate) async fn prepare_session_messages_shared(
+    llm_backend: &dyn ChatCompletionsBackend,
+    client: &Client,
+    api_key: &str,
+    cfg: &AgentConfig,
+    messages: &mut Vec<Message>,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+    turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    prepare_messages_before_model_call_sync_with_budget(messages, cfg, turn_budget);
     maybe_summarize_with_llm(
         llm_backend,
         client,
@@ -144,7 +199,7 @@ pub async fn maybe_summarize_with_llm(
     cancel: Option<&std::sync::atomic::AtomicBool>,
     turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let trigger = cfg.effective_context_summary_trigger_chars();
+    let trigger = effective_summary_trigger_for_turn(cfg, turn_budget.map(|a| a.as_ref()));
     if trigger == 0 {
         return Ok(());
     }
@@ -272,8 +327,7 @@ pub async fn prepare_messages_for_model(
     workspace_changelist: Option<&crate::workspace::changelist::WorkspaceChangelist>,
     hooks: PrepareMessagesForModelHooks<'_>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    prepare_messages_before_model_call_sync(messages, cfg);
-    maybe_summarize_with_llm(
+    prepare_session_messages_shared(
         llm_backend,
         client,
         api_key,
@@ -331,5 +385,31 @@ mod tests {
         prepare_messages_before_model_call_sync(&mut a, &cfg);
         prepare_messages_for_hierarchical_llm_sync(&mut b, &cfg);
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn budget_pressure_tightens_sync_pipeline_char_budget() {
+        let mut cfg = crate::config::load_config(None).expect("embed default");
+        cfg.context_pipeline.context_char_budget = 20_000;
+        cfg.session_ui.max_message_history = 100;
+        cfg.tool_transcript.tool_message_max_chars = 1_000_000;
+        cfg.turn_budget.max_turn_tokens = 100;
+
+        let budget = crate::agent::turn_budget::TurnBudgetCounter::new_shared();
+        budget.record_estimated_tokens(75);
+
+        let mut loose = vec![Message::system_only("s")];
+        let mut tight = loose.clone();
+        for i in 0..30 {
+            let m = Message::user_only(format!("u{i}: {}", "x".repeat(800)));
+            loose.push(m.clone());
+            tight.push(m);
+        }
+        prepare_messages_before_model_call_sync(&mut loose, &cfg);
+        prepare_messages_before_model_call_sync_with_budget(&mut tight, &cfg, Some(&budget));
+        assert!(
+            tight.len() <= loose.len(),
+            "budget pressure should trim at least as aggressively"
+        );
     }
 }

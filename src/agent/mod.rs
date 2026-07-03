@@ -5,6 +5,7 @@
 /// 分阶段与分层共用的验收规则内核（规范化 spec + 证据 → 判定）。
 pub use crabmate_agent::acceptance;
 pub mod agent_turn;
+mod context_budget_pressure;
 pub mod context_window;
 pub mod hierarchy;
 pub mod intent_l2_classifier;
