@@ -246,6 +246,37 @@ pub(crate) async fn finish_staged_plan_step_sse(
     .await;
 }
 
+/// 步级确定性验收结果（`timeline_log`，供 Web/TUI 时间线展示；与 `staged_plan_step_finished.verify_fail_reason` 互补）。
+pub(crate) async fn emit_staged_step_verify_timeline(
+    out: Option<&mpsc::Sender<String>>,
+    step_id: &str,
+    step_index: usize,
+    total_steps: usize,
+    passed: bool,
+    detail: Option<&str>,
+) {
+    let Some(tx) = out else {
+        return;
+    };
+    let title = if passed {
+        format!("步验收通过 · {step_index}/{total_steps} · {step_id}")
+    } else {
+        format!("步验收未通过 · {step_index}/{total_steps} · {step_id}")
+    };
+    let _ = crate::sse::send_string_logged(
+        tx,
+        encode_message(SsePayload::TimelineLog {
+            log: crate::sse::protocol::TimelineLogBody {
+                kind: "staged_step_verify".to_string(),
+                title,
+                detail: detail.map(str::to_string),
+            },
+        }),
+        "staged_sse::staged_step_verify",
+    )
+    .await;
+}
+
 pub(crate) async fn send_staged_plan_finished(
     out: Option<&mpsc::Sender<String>>,
     plan_id: &str,

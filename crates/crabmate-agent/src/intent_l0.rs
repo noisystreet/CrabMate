@@ -22,24 +22,26 @@ pub struct IntentL0Snapshot {
     pub has_command_cargo: bool,
 }
 
-/// 在「续接短句 + 前序在澄清/确认」时，将最近用户句与当前句拼成**路由用**文本，降低指代失败。
+/// 在「续接短句 + 前序在澄清/确认」或「失败后续跑短句 + 近期 tool 失败」时，将最近用户句与当前句拼成**路由用**文本。
 /// 返回 `(路由文本, 是否发生了续接合并)`；不修改原始 `current_task`。
 pub fn effective_intent_routing_text(
     current_task: &str,
     in_clarification_flow: bool,
     recent_user_messages: &[String],
+    has_recent_tool_failure: bool,
 ) -> (String, bool) {
     let t = current_task.trim();
     if t.is_empty() {
         return (String::new(), false);
     }
-    if !in_clarification_flow {
-        return (t.to_string(), false);
-    }
     if t.chars().count() > SHORT_UTTERANCE_MAX_CHARS {
         return (t.to_string(), false);
     }
     if has_substantive_execute_leverage(t) {
+        return (t.to_string(), false);
+    }
+    let resume_after_failure = has_recent_tool_failure && is_resume_after_failure_utterance(t);
+    if !in_clarification_flow && !resume_after_failure {
         return (t.to_string(), false);
     }
     if recent_user_messages.is_empty() {
@@ -55,7 +57,12 @@ pub fn effective_intent_routing_text(
     if prior.is_empty() {
         return (t.to_string(), false);
     }
-    let mut merged = format!("[前序用户]\n{prior}\n[当前续接]\n{t}");
+    let label = if resume_after_failure {
+        "[前序用户·失败续跑]"
+    } else {
+        "[前序用户]"
+    };
+    let mut merged = format!("{label}\n{prior}\n[当前续接]\n{t}");
     if merged.chars().count() > MERGED_MAX_CHARS {
         let tail: String = merged
             .chars()
@@ -65,6 +72,15 @@ pub fn effective_intent_routing_text(
         merged = tail.chars().rev().collect();
     }
     (merged, true)
+}
+
+/// 用户在上轮工具失败后发送的短续跑句（不含单独「继续执行」类确认词，见 [`crate::intent_router::is_explicit_execute_confirmation`]）。
+pub fn is_resume_after_failure_utterance(s: &str) -> bool {
+    let t = s.trim().to_lowercase();
+    matches!(
+        t.as_str(),
+        "继续" | "接着" | "再来" | "重试" | "接着来" | "continue" | "retry" | "go on"
+    )
 }
 
 /// 有路径、扩展名、明确改动动词等，视为无需与前句拼接。
@@ -196,6 +212,7 @@ mod tests {
             "好的，就这样做",
             true,
             &["在 src/foo.rs 里加日志".to_string()],
+            false,
         );
         assert!(merged);
         assert!(s.contains("src/foo"));
@@ -204,7 +221,8 @@ mod tests {
 
     #[test]
     fn no_merge_without_clarification_flag() {
-        let (s, merged) = super::effective_intent_routing_text("短", false, &["上文".to_string()]);
+        let (s, merged) =
+            super::effective_intent_routing_text("短", false, &["上文".to_string()], false);
         assert!(!merged);
         assert_eq!(s, "短");
     }
@@ -220,5 +238,18 @@ mod tests {
         let s = super::l0_snapshot_merged("继续改", true);
         assert!(s.has_recent_tool_failure);
         assert!(s.has_error_signal);
+    }
+
+    #[test]
+    fn resume_after_failure_merges_prior_user() {
+        let (s, merged) = super::effective_intent_routing_text(
+            "继续",
+            false,
+            &["编写 c++ 并用 cmake 编译".to_string()],
+            true,
+        );
+        assert!(merged);
+        assert!(s.contains("cmake"));
+        assert!(s.contains("继续"));
     }
 }

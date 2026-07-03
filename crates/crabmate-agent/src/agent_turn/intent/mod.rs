@@ -3,6 +3,7 @@
 pub mod advisory_bypass;
 pub mod context;
 pub mod readonly_overview_bypass;
+pub mod simple_execute_fast_path;
 pub mod user;
 
 pub use context::build_intent_routing_context;

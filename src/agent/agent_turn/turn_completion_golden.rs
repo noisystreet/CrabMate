@@ -145,6 +145,7 @@ fn assert_expect_allow(ctx: &str, decision: TurnCompletionDecision, via: Option<
             decision.rolling_horizon_via().map(|x| match x {
                 RollingHorizonStopVia::HeuristicEarlyStop => "heuristic_early_stop",
                 RollingHorizonStopVia::StepAcceptancePass => "step_acceptance_pass",
+                RollingHorizonStopVia::GoalEvidenceSatisfied => "goal_evidence_satisfied",
             }),
             Some(v),
             "{ctx}: rolling via"

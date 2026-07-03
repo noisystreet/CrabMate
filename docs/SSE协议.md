@@ -65,6 +65,8 @@
 | `stream_ended` | 流结束；`job_id`、`reason`（`completed` / `cancelled` / `conflict` / `fallback` / `no_output` / `gone`）；可选 **`tiktoken_prompt_tokens`**（回合结束时的 prompt 粗估，通常早于或伴随 `conversation_saved`） | Web：**先独立提取并吞掉**（不依赖其它控制面分支命中）；更新底栏用量并停止自动重连 |
 | `timeline_log` | 时间线旁注（如审批结果）；**不**进入模型上下文 | `onTimelineLog` |
 
+**`timeline_log.kind` 常用值**：`intent_analysis`（意图门控）、`final_response`（终答标记）、`staged_step_verify`（分阶段步级确定性验收 pass/fail，与 `staged_plan_step_finished.verify_fail_reason` 互补）。
+
 ### `tool_result` 常用字段
 
 | 字段 | 类型 | 说明 |

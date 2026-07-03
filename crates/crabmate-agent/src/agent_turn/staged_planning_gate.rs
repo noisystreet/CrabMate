@@ -6,7 +6,9 @@ use crabmate_types::Message;
 
 use crate::agent_turn::intent::context::build_intent_routing_context;
 use crate::agent_turn::intent::user;
-use crate::agent_turn::intent::{advisory_bypass, readonly_overview_bypass};
+use crate::agent_turn::intent::{
+    advisory_bypass, readonly_overview_bypass, simple_execute_fast_path,
+};
 use crate::agent_turn::{StagedPlanningDenyReason, StagedPlanningGateOutcome};
 use crate::intent_pipeline::{IntentAction, IntentDecision, assess_and_route};
 use crate::intent_router::ExecuteIntentThresholds;
@@ -35,6 +37,9 @@ pub fn staged_plan_eligibility_for_intent(
     }
     if advisory_bypass::should_bypass_staged_for_advisory_execute_task(task, decision, staged) {
         return Err(StagedPlanningDenyReason::AdvisoryExecuteBypassStaged);
+    }
+    if simple_execute_fast_path::should_bypass_staged_for_simple_build_execute(task, decision) {
+        return Err(StagedPlanningDenyReason::SimpleExecuteFastPath);
     }
     Ok(())
 }

@@ -26,6 +26,7 @@
 {"id":"negative_execute_explain_only","task":"不要执行，只解释这个错误","expect":{"kind":"Qa","primary_intent":"qa.explain","action":"DirectReply"}}
 {"id":"explicit_execute_no_prior_clarification","task":"直接开始执行","expect":{"kind":"Execute","primary_intent":"execute.code_change","action":"ConfirmThenExecute","need_clarification":true,"abstain":false}}
 {"id":"explicit_execute_after_clarification_flow","task":"直接开始执行","ctx":{"in_clarification_flow":true},"expect":{"kind":"Execute","primary_intent":"execute.code_change","action":"Execute"}}
+{"id":"resume_after_tool_failure_continue","task":"继续","ctx":{"has_recent_tool_failure":true,"recent_user_messages":["编写 c++ 程序并用 cmake 编译"]},"expect":{"kind":"Execute","primary_intent":"execute.code_change","action":"Execute"}}
 {"id":"medium_confidence_code_change_confirm","task":"帮我改下这个","expect":{"kind":"Execute","primary_intent":"execute.code_change","action":"ConfirmThenExecute","need_clarification":true,"abstain":false}}
 {"id":"high_confidence_tauri_markdown_error","task":"帮我修复 tauri 导出 markdown 报错","expect":{"kind":"Execute","primary_intent":"execute.debug_diagnose","action":"Execute"}}
 {"id":"clarification_short_followup_after_readonly_style_prior","task":"再试一次","ctx":{"in_clarification_flow":true,"recent_user_messages":["请看 src/main.rs 编译失败输出"]},"expect":{"kind":"Execute","primary_intent":"execute.code_change","action":"Execute"}}
