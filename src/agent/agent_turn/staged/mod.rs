@@ -42,6 +42,7 @@ mod step_failure_exit;
 mod step_iteration_fsm;
 mod step_iteration_reduce;
 mod step_loop_fsm;
+mod step_patch_recover_reduce;
 mod step_patch_route_fsm;
 mod steps_loop;
 mod steps_loop_route_fsm;

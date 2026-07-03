@@ -49,3 +49,6 @@
 {"id":"fp_optimizer_run","case":"full_pipeline_segment_reduce","segment":"optimizer","ensemble_route":"run","optimizer_route":"run","nl_followup":false,"expect":"run_llm"}
 {"id":"fp_nl_skip","case":"full_pipeline_segment_reduce","segment":"nl_followup","ensemble_route":"run","optimizer_route":"run","nl_followup":false,"expect":"skip_segment"}
 {"id":"fp_nl_run","case":"full_pipeline_segment_reduce","segment":"nl_followup","ensemble_route":"run","optimizer_route":"run","nl_followup":true,"expect":"run_llm"}
+{"id":"patch_recover_skip_fail_fast","case":"step_patch_recover_reduce","branch":"outer_exec_or_verify","feedback_mode":"fail_fast","patch_max":2,"verify_reason":"exit_code_mismatch","has_outer_error":false,"expect":"skip"}
+{"id":"patch_recover_run_verify","case":"step_patch_recover_reduce","branch":"outer_exec_or_verify","feedback_mode":"patch_planner","patch_max":2,"verify_reason":"exit_code_mismatch","has_outer_error":false,"expect":"run_patch"}
+{"id":"patch_recover_tool","case":"step_patch_recover_reduce","branch":"tool_failure","feedback_mode":"patch_planner","patch_max":3,"expect":"run_patch"}
