@@ -1,0 +1,12 @@
+# 编排 FSM 相位 → SSE 控制面金样：每行一条 JSON。
+# 与 `fixtures/fsm_orchestrator_golden.jsonl` 的 `expect_phase` / `id` 交叉引用；
+# `control` 须与 `crates/crabmate-sse-protocol/control_classify.rs` 一致。
+# 运行：`cargo test golden_orchestration_sse -p crabmate`
+{"id":"plan_ready_started","fsm_phase":"plan_ready","fsm_golden_id":"prepared_continue","sse_key":"staged_plan_started","control":"handled","payload":{"v":1,"staged_plan_started":{"plan_id":"plan-1","total_steps":2}}}
+{"id":"step_running_step_started","fsm_phase":"step_running","fsm_golden_id":"steps_running","sse_key":"staged_plan_step_started","control":"handled","payload":{"v":1,"staged_plan_step_started":{"plan_id":"plan-1","step_id":"s1","step_index":1,"total_steps":2,"description":"读 README","executor_kind":"review_readonly"}}}
+{"id":"step_running_step_finished","fsm_phase":"step_running","fsm_golden_id":"steps_running","sse_key":"staged_plan_step_finished","control":"handled","payload":{"v":1,"staged_plan_step_finished":{"plan_id":"plan-1","step_id":"s1","step_index":1,"total_steps":2,"status":"ok","executor_kind":"review_readonly"}}}
+{"id":"done_plan_finished","fsm_phase":"done","fsm_golden_id":"steps_finished","sse_key":"staged_plan_finished","control":"handled","payload":{"v":1,"staged_plan_finished":{"plan_id":"plan-1","total_steps":2,"completed_steps":2,"status":"ok"}}}
+{"id":"plan_ready_notice","fsm_phase":"plan_ready","fsm_golden_id":"prepared_continue","sse_key":"staged_plan_notice","control":"handled","payload":{"v":1,"staged_plan_notice":"步骤 1/2：读 README"}}
+{"id":"reflect_plan_rewrite_exhausted","fsm_phase":"degraded_to_outer_loop","fsm_golden_id":"prepared_degrade","sse_key":"error","control":"stop","payload":{"v":1,"error":"规划重写次数已用尽","code":"plan_rewrite_exhausted","reason_code":"plan_missing"}}
+{"id":"stream_end_completed","fsm_phase":"done","fsm_golden_id":"steps_finished","sse_key":"stream_ended","control":"handled","payload":{"v":1,"stream_ended":{"job_id":42,"reason":"completed"}}}
+{"id":"intent_timeline_log","fsm_phase":"pre_plan","fsm_golden_id":"turn_pre","sse_key":"timeline_log","control":"handled","payload":{"v":1,"timeline_log":{"kind":"intent_analysis","title":"意图分析","detail":"execute"}}}

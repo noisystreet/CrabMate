@@ -390,7 +390,7 @@ fn finalize_section_tool_registry_policy(mid: &FinalizeAfterRoles) -> types::Too
 fn finalize_section_turn_budget() -> types::TurnBudgetConfig {
     let mut cfg = types::TurnBudgetConfig {
         max_turn_duration_seconds: 600,
-        max_turn_tokens: 100_000,
+        max_turn_tokens: 0,
         max_llm_calls_per_turn: 0,
         max_outer_loop_iterations: 0,
         full_plan_rewrite_max_attempts: 2,

@@ -90,7 +90,16 @@
 
 - **额外成本与失败语义**：摘要是一次独立 LLM 调用，失败策略需在实现中保持可预期（勿静默丢历史）。  
 - **幻觉风险**：摘要可能遗漏或歪曲约束；通过尾部保留条数、触发阈值与提示词约束缓解。  
-- **与同步管道的关系**：摘要通常在同步裁剪**之后**执行（见 **`prepare_messages_for_model`** 调用链），具体顺序以源码为准。
+- **与同步管道的关系**：摘要通常在同步裁剪**之后**执行（见 **`prepare_messages_for_model`** / **`prepare_session_messages_shared`** 调用链），具体顺序以源码为准。
+
+### 5.1 与单轮预算（`TurnBudgetCounter`）联动
+
+**`src/agent/context_budget_pressure.rs`** 供主 Agent 外循环与分层 Operator 共用：当 **`TurnBudgetCounter::budget_usage_percent`** ≥ **70%** / **90%** 时：
+
+- 将会话同步管道的 **`context_char_budget`** 缩放至 **70%** / **50%**（下限 4096 字符）；
+- 将 LLM 摘要触发阈值上限压至 **12288** / **6144** 字符（在 **`effective_context_summary_trigger_chars`** 基线上取 `min`）。
+
+入口：**`prepare_messages_before_model_call_sync_with_budget`**、**`prepare_session_messages_shared`**（主路径与 **`prepare_messages_for_hierarchical_operator`** 均经此核心路径）。
 
 ---
 
