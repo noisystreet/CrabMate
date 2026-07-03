@@ -11,6 +11,8 @@ pub const TIMELINE_UI_STATE_KEY: &str = "cm_tl";
 pub enum StoredMessageState {
     Loading,
     Error,
+    /// 同一模型轮次在 `tool_calls` 之前流出的正文旁注（不进主气泡/导出）。
+    CommentaryBeforeTools,
     /// `hierarchical-subgoal:…` 完整标记。
     HierarchicalSubgoal(String),
     /// 侧栏时间线：`k` 为 [`TIMELINE_UI_STATE_KEY`] 的 JSON。
@@ -24,6 +26,7 @@ impl StoredMessageState {
         match s.as_str() {
             "loading" => return Self::Loading,
             "error" => return Self::Error,
+            "commentary_before_tools" => return Self::CommentaryBeforeTools,
             _ => {}
         }
         if s.starts_with("hierarchical-subgoal:") {
@@ -41,6 +44,7 @@ impl StoredMessageState {
         match self {
             Self::Loading => "loading".to_string(),
             Self::Error => "error".to_string(),
+            Self::CommentaryBeforeTools => "commentary_before_tools".to_string(),
             Self::HierarchicalSubgoal(s) | Self::TimelineUiJson(s) | Self::Opaque(s) => s.clone(),
         }
     }

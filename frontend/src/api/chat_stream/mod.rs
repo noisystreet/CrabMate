@@ -44,6 +44,8 @@ pub struct ChatStreamCallbacks {
     pub on_last_sse_event_id: std::rc::Rc<dyn Fn(u64)>,
     /// 控制面 `assistant_answer_phase`：后续 `on_delta` 为终答（此前为思维链）。
     pub on_assistant_answer_phase: std::rc::Rc<dyn Fn()>,
+    /// 模型流式输出中出现 `tool_calls` 块（早于 execute_tools 的 `tool_call` SSE）。
+    pub on_parsing_tool_calls: std::rc::Rc<dyn Fn(bool)>,
     pub on_staged_plan_step_started:
         std::rc::Rc<dyn Fn(crate::sse_dispatch::StagedPlanStepStartInfo)>,
     pub on_staged_plan_step_finished:
@@ -74,6 +76,7 @@ impl Clone for ChatStreamCallbacks {
             on_stream_job_id: std::rc::Rc::clone(&self.on_stream_job_id),
             on_last_sse_event_id: std::rc::Rc::clone(&self.on_last_sse_event_id),
             on_assistant_answer_phase: std::rc::Rc::clone(&self.on_assistant_answer_phase),
+            on_parsing_tool_calls: std::rc::Rc::clone(&self.on_parsing_tool_calls),
             on_staged_plan_step_started: std::rc::Rc::clone(&self.on_staged_plan_step_started),
             on_staged_plan_step_finished: std::rc::Rc::clone(&self.on_staged_plan_step_finished),
             on_clarification_questionnaire: std::rc::Rc::clone(

@@ -102,6 +102,12 @@ impl StreamTurnScratchState {
         let mut g = self.inner.borrow_mut();
         g.assistant_message_id = id;
         g.post_tool_stream_tail = true;
+        g.lane.reset_for_new_assistant_tail();
+    }
+
+    #[inline]
+    pub(super) fn enter_commentary_before_tools_lane(&self) {
+        self.inner.borrow_mut().lane.enter_commentary_before_tools();
     }
 
     #[inline]
@@ -155,6 +161,20 @@ mod tests {
         );
         s.clear_followup_pending();
         assert_eq!(s.current_output_lane(), StreamModelOutputLane::Answering);
+    }
+
+    #[test]
+    fn commentary_lane_after_tools_parsing_and_tail_reset() {
+        let s = StreamTurnScratchState::new("a1".into());
+        s.on_assistant_answer_phase();
+        s.enter_commentary_before_tools_lane();
+        assert_eq!(
+            s.current_output_lane(),
+            StreamModelOutputLane::AnsweringCommentaryBeforeTools
+        );
+        assert!(!s.current_output_lane().in_answer_body_lane());
+        s.adopt_new_assistant_tail_after_rotation("a2".into());
+        assert_eq!(s.current_output_lane(), StreamModelOutputLane::Reasoning);
     }
 
     #[test]

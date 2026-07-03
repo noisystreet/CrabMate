@@ -15,12 +15,14 @@ pub(crate) enum StreamModelOutputLane {
     Answering,
     /// 正文相内再次收到 `assistant_answer_phase`：须在下次 `delta` 或 `on_done` 时轮换气泡。
     AnsweringPendingFollowupBubble,
+    /// 已确认本轮含 `tool_calls`：后续 `delta` 写入 reasoning，不当终答展示。
+    AnsweringCommentaryBeforeTools,
 }
 
 impl StreamModelOutputLane {
     #[must_use]
     pub(super) const fn in_answer_body_lane(self) -> bool {
-        !matches!(self, Self::Reasoning)
+        matches!(self, Self::Answering | Self::AnsweringPendingFollowupBubble)
     }
 
     /// [`crate::api::ChatStreamCallbacks::on_assistant_answer_phase`]：首次进入正文相，或标记待轮换。
@@ -30,7 +32,15 @@ impl StreamModelOutputLane {
             Self::Answering | Self::AnsweringPendingFollowupBubble => {
                 Self::AnsweringPendingFollowupBubble
             }
+            Self::AnsweringCommentaryBeforeTools => Self::AnsweringCommentaryBeforeTools,
         };
+    }
+
+    /// `parsing_tool_calls` / 即将执行工具：已流出正文降级为旁注，后续 delta 不再写入终答车道。
+    pub(super) fn enter_commentary_before_tools(&mut self) {
+        if self.in_answer_body_lane() {
+            *self = Self::AnsweringCommentaryBeforeTools;
+        }
     }
 
     /// 若处于「待轮换」状态，返回 `true` 并回落到 [`StreamModelOutputLane::Answering`]。
@@ -41,6 +51,11 @@ impl StreamModelOutputLane {
         } else {
             false
         }
+    }
+
+    #[inline]
+    pub(super) fn reset_for_new_assistant_tail(&mut self) {
+        *self = Self::Reasoning;
     }
 
     /// 用户取消等路径：丢弃「待轮换」，保留是否已在正文相。

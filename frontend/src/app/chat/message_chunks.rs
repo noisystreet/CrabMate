@@ -5,6 +5,9 @@
 
 use crate::message_format::is_staged_timeline_bubble;
 use crate::storage::StoredMessage;
+use crate::timeline_scan::{
+    is_commentary_before_tools_assistant, is_orchestration_route_timeline_message,
+};
 
 #[derive(Clone)]
 pub(crate) enum ChatChunk {
@@ -64,45 +67,65 @@ fn staged_cluster_end_exclusive(msgs: &[StoredMessage], start: usize) -> usize {
     j
 }
 
+/// 内部调试旁注：不进聊天列渲染。
+#[inline]
+fn skip_internal_timeline_assistant(m: &StoredMessage) -> bool {
+    is_orchestration_route_timeline_message(m) || is_commentary_before_tools_assistant(m)
+}
+
+fn chunk_tool_run(msgs: &[StoredMessage], start: usize, end: usize, out: &mut Vec<ChatChunk>) {
+    let slice: Vec<_> = (start..end).map(|j| (j, msgs[j].clone())).collect();
+    push_tool_run_chunk(out, slice);
+}
+
+fn chunk_staged_cluster(
+    msgs: &[StoredMessage],
+    cluster_start: usize,
+    cluster_end: usize,
+    out: &mut Vec<ChatChunk>,
+) {
+    let mut k = cluster_start;
+    while k < cluster_end {
+        if is_staged_timeline_bubble(&msgs[k]) {
+            let s_start = k;
+            while k < cluster_end && is_staged_timeline_bubble(&msgs[k]) {
+                k += 1;
+            }
+            for (off, msg) in msgs[s_start..k].iter().cloned().enumerate() {
+                out.push(ChatChunk::Single {
+                    idx: s_start + off,
+                    msg,
+                });
+            }
+        } else if msgs[k].is_tool {
+            let t_start = k;
+            while k < cluster_end && msgs[k].is_tool {
+                k += 1;
+            }
+            chunk_tool_run(msgs, t_start, k, out);
+        } else {
+            k += 1;
+        }
+    }
+}
+
 pub(crate) fn chunk_messages(msgs: &[StoredMessage]) -> Vec<ChatChunk> {
     let mut out = Vec::new();
     let mut i = 0usize;
     while i < msgs.len() {
+        if skip_internal_timeline_assistant(&msgs[i]) {
+            i += 1;
+            continue;
+        }
         if msgs[i].is_tool {
             let start = i;
             while i < msgs.len() && msgs[i].is_tool {
                 i += 1;
             }
-            let slice: Vec<_> = (start..i).map(|j| (j, msgs[j].clone())).collect();
-            push_tool_run_chunk(&mut out, slice);
+            chunk_tool_run(msgs, start, i, &mut out);
         } else if is_staged_timeline_bubble(&msgs[i]) {
-            // 分阶段簇内按时间顺序交替输出：
-            // staged 段 -> tool 段 -> staged 段 ...
             let j = staged_cluster_end_exclusive(msgs, i);
-            let mut k = i;
-            while k < j {
-                if is_staged_timeline_bubble(&msgs[k]) {
-                    let s_start = k;
-                    while k < j && is_staged_timeline_bubble(&msgs[k]) {
-                        k += 1;
-                    }
-                    for (off, msg) in msgs[s_start..k].iter().cloned().enumerate() {
-                        out.push(ChatChunk::Single {
-                            idx: s_start + off,
-                            msg,
-                        });
-                    }
-                } else if msgs[k].is_tool {
-                    let t_start = k;
-                    while k < j && msgs[k].is_tool {
-                        k += 1;
-                    }
-                    let slice: Vec<_> = (t_start..k).map(|idx| (idx, msgs[idx].clone())).collect();
-                    push_tool_run_chunk(&mut out, slice);
-                } else {
-                    k += 1;
-                }
-            }
+            chunk_staged_cluster(msgs, i, j, &mut out);
             i = j;
         } else {
             out.push(ChatChunk::Single {
@@ -142,6 +165,54 @@ mod tests {
             &staged_timeline_system_message_body(body_line),
             false,
         )
+    }
+
+    #[test]
+    fn commentary_before_tools_skipped_in_chunks() {
+        let msgs = vec![
+            empty_msg("u", "user", "hi", false),
+            StoredMessage {
+                id: "c1".into(),
+                role: "assistant".into(),
+                text: String::new(),
+                reasoning_text: "旁注".into(),
+                image_urls: vec![],
+                state: Some(crate::storage::StoredMessageState::CommentaryBeforeTools),
+                is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
+                created_at: 0,
+            },
+            empty_msg("a", "assistant", "真正终答", false),
+        ];
+        let chunks = chunk_messages(&msgs);
+        assert_eq!(chunks.len(), 2);
+    }
+
+    #[test]
+    fn orchestration_route_timeline_skipped_in_chunks() {
+        use crate::message_format::staged_timeline_system_message_body;
+
+        let msgs = vec![
+            empty_msg("u", "user", "hi", false),
+            StoredMessage {
+                id: "route".into(),
+                role: "assistant".into(),
+                text: staged_timeline_system_message_body("编排路由：freeform\n{}"),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: None,
+                is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
+                created_at: 0,
+            },
+            empty_msg("a", "assistant", "reply", false),
+        ];
+        let chunks = chunk_messages(&msgs);
+        assert_eq!(chunks.len(), 2);
+        assert!(matches!(&chunks[0], ChatChunk::Single { idx: 0, .. }));
+        assert!(matches!(&chunks[1], ChatChunk::Single { idx: 2, .. }));
     }
 
     #[test]

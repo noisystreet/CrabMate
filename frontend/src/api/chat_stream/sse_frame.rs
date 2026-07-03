@@ -171,7 +171,7 @@ pub(super) fn handle_sse_block(
         (cbs.on_tool_call)(n, s, p, a, g, tid);
     };
     let mut on_tool_status = |b: bool| (cbs.on_tool_status)(b);
-    let mut on_parse = |_b: bool| {};
+    let mut on_parse = |b: bool| (cbs.on_parsing_tool_calls)(b);
     let mut on_tool_chunk = |info: ToolOutputChunkInfo| (cbs.on_tool_output_chunk)(info);
     let mut on_tool_res = |info: ToolResultInfo| (cbs.on_tool_result)(info);
     let mut on_appr = |req: CommandApprovalRequest| (cbs.on_approval)(req);
@@ -259,6 +259,7 @@ mod tests {
             on_stream_job_id: Rc::new(|_jid| {}),
             on_last_sse_event_id: Rc::new(|_seq| {}),
             on_assistant_answer_phase: Rc::new(|| {}),
+            on_parsing_tool_calls: Rc::new(|_b| {}),
             on_staged_plan_step_started: Rc::new(|_info| {}),
             on_staged_plan_step_finished: Rc::new(|_info| {}),
             on_clarification_questionnaire: Rc::new(|_info| {}),
@@ -327,6 +328,7 @@ mod tests {
             on_stream_job_id: Rc::new(|_jid| {}),
             on_last_sse_event_id: Rc::new(|_seq| {}),
             on_assistant_answer_phase: Rc::new(|| {}),
+            on_parsing_tool_calls: Rc::new(|_b| {}),
             on_staged_plan_step_started: Rc::new(|_info| {}),
             on_staged_plan_step_finished: Rc::new(|_info| {}),
             on_clarification_questionnaire: Rc::new(|_info| {}),
