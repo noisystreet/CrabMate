@@ -221,6 +221,7 @@ impl super::HierarchicalExecutor {
                 .reflect_and_replan(
                     manager,
                     current_goal,
+                    super::super::reflect_replan_reason::ManagerReflectReplanReason::NeedsDecomposition,
                     &format!("任务过于复杂，建议分解为 {} 个子目标", suggested_subgoals),
                     result,
                     &artifacts,
@@ -314,7 +315,14 @@ impl super::HierarchicalExecutor {
                 {
                     let artifacts: Vec<_> = artifact_store.all().into_iter().cloned().collect();
                     let reflection_result = self
-                        .reflect_and_replan(manager, current_goal, &reason, result, &artifacts)
+                        .reflect_and_replan(
+                            manager,
+                            current_goal,
+                            super::super::reflect_replan_reason::ManagerReflectReplanReason::GoalVerificationFailed,
+                            &reason,
+                            result,
+                            &artifacts,
+                        )
                         .await;
 
                     return Ok(match reflection_result {

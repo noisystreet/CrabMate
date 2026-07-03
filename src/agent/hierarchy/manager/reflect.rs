@@ -18,6 +18,7 @@ use super::types::{ManagerAgent, ManagerError};
 pub struct ReflectAndReplanContext<'a> {
     pub failed_goal: &'a SubGoal,
     pub verification_failure: &'a str,
+    pub reflect_reason: super::super::reflect_replan_reason::ManagerReflectReplanReason,
     pub execution_result: &'a TaskResult,
     pub cfg: &'a AgentConfig,
     pub llm_backend: &'a dyn ChatCompletionsBackend,
@@ -40,6 +41,7 @@ impl ManagerAgent {
         let ReflectAndReplanContext {
             failed_goal,
             verification_failure,
+            reflect_reason,
             execution_result,
             cfg,
             llm_backend,
@@ -50,6 +52,12 @@ impl ManagerAgent {
             tools_defs,
             artifacts,
         } = ctx;
+        tracing::info!(
+            target: "crabmate::hierarchy",
+            manager_reflect_replan_reason = reflect_reason.as_str(),
+            goal_id = %failed_goal.goal_id,
+            "Manager reflect_and_replan"
+        );
         log::info!(
             target: "crabmate",
             "[HIERARCHICAL] Manager: reflecting on verification failure for goal={}",
