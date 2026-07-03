@@ -4,6 +4,9 @@ use super::full_pipeline_fsm::StagedFullPipelinePhase;
 use super::prepared_parse_fsm::PreparedPlannerRoute;
 use super::prepared_post_parse_fsm::PreparedPostParseSchedule;
 use super::prepared_route_reduce::reduce_prepared_planner_route;
+use super::rolling_horizon_preflight_reduce::{
+    RollingHorizonPreflightInput, reduce_rolling_horizon_preflight,
+};
 use super::step_iteration_reduce::reduce_staged_step_post_outer_route;
 use super::step_patch_route_fsm::{
     StagedStepPatchFailureKind, resolve_staged_step_patch_failure_kind,
@@ -14,8 +17,9 @@ use super::steps_loop_route_fsm::{
 use super::turn_fsm::StagedTurnPhase;
 use super::turn_orchestrator_fsm::{
     orchestrator_phase_for_full_pipeline, orchestrator_phase_for_post_parse_schedule,
-    orchestrator_phase_for_prepared_route, orchestrator_phase_for_steps_loop_trace,
-    orchestrator_phase_for_turn_phase,
+    orchestrator_phase_for_prepared_route, orchestrator_phase_for_prepared_route_reduce,
+    orchestrator_phase_for_rolling_horizon_preflight, orchestrator_phase_for_step_iteration_reduce,
+    orchestrator_phase_for_steps_loop_trace, orchestrator_phase_for_turn_phase,
 };
 use crate::agent::agent_turn::errors::{AgentTurnSubPhase, RunAgentTurnError};
 use crate::agent::agent_turn::outer_loop_fsm::{OuterLoopIterationExit, ReflectBranchCtl};
@@ -209,6 +213,68 @@ fn assert_prepared_route_reduce(ctx: &str, body: &serde_json::Value) {
     );
 }
 
+fn assert_orchestrator_prepared_route_reduce(ctx: &str, body: &serde_json::Value) {
+    let route = prepared_route_from_label(body_str(body, "route", ctx));
+    let action = reduce_prepared_planner_route(&route);
+    let expect = body_str(body, "expect_phase", ctx);
+    assert_eq!(
+        orchestrator_phase_for_prepared_route_reduce(action).as_str(),
+        expect,
+        "{ctx}: prepared route reduce → orchestrator phase"
+    );
+}
+
+fn assert_orchestrator_step_iteration_reduce(ctx: &str, body: &serde_json::Value) {
+    let route_label = body_str(body, "route", ctx);
+    let route = match route_label {
+        "exec_or_verify_failed" => StagedStepPostOuterRoute::ExecOrVerifyFailed,
+        "cancelled" => StagedStepPostOuterRoute::Cancelled,
+        "tool_failure_patch" => StagedStepPostOuterRoute::ToolFailurePatch,
+        "emit_success" => StagedStepPostOuterRoute::EmitSuccess,
+        other => panic!("{ctx}: unknown step iteration reduce route {other}"),
+    };
+    let action = reduce_staged_step_post_outer_route(route);
+    let expect = body_str(body, "expect_phase", ctx);
+    assert_eq!(
+        orchestrator_phase_for_step_iteration_reduce(action).as_str(),
+        expect,
+        "{ctx}: step iteration reduce → orchestrator phase"
+    );
+}
+
+fn rolling_horizon_preflight_from_body(
+    body: &serde_json::Value,
+    ctx: &str,
+) -> RollingHorizonPreflightInput {
+    RollingHorizonPreflightInput {
+        staged_rounds: body["staged_rounds"].as_u64().expect("staged_rounds") as usize,
+        max_rounds: body["max_rounds"].as_u64().expect("max_rounds") as usize,
+        phase: turn_phase_from_label(body_str(body, "phase", ctx)),
+        early_stop_allow: body["early_stop_allow"].as_bool().unwrap_or(false),
+    }
+}
+
+fn assert_rolling_horizon_preflight_reduce(ctx: &str, body: &serde_json::Value) {
+    let input = rolling_horizon_preflight_from_body(body, ctx);
+    let expect = body_str(body, "expect", ctx);
+    assert_eq!(
+        reduce_rolling_horizon_preflight(input).as_str(),
+        expect,
+        "{ctx}: rolling horizon preflight reduce"
+    );
+}
+
+fn assert_orchestrator_rolling_horizon_preflight(ctx: &str, body: &serde_json::Value) {
+    let input = rolling_horizon_preflight_from_body(body, ctx);
+    let action = reduce_rolling_horizon_preflight(input);
+    let expect = body_str(body, "expect_phase", ctx);
+    assert_eq!(
+        orchestrator_phase_for_rolling_horizon_preflight(action).as_str(),
+        expect,
+        "{ctx}: rolling horizon preflight → orchestrator phase"
+    );
+}
+
 fn assert_step_patch_failure_kind(ctx: &str, body: &serde_json::Value) {
     let expect = body_str(body, "expect", ctx);
     if let Some(kind_label) = body.get("kind").and_then(|v| v.as_str()) {
@@ -253,6 +319,18 @@ fn assert_golden_fsm_line(ctx: &str, row: &GoldenLine) {
             assert_orchestrator_post_parse_schedule(ctx, &row.body);
         }
         "step_patch_failure_kind" => assert_step_patch_failure_kind(ctx, &row.body),
+        "orchestrator_prepared_route_reduce" => {
+            assert_orchestrator_prepared_route_reduce(ctx, &row.body);
+        }
+        "orchestrator_step_iteration_reduce" => {
+            assert_orchestrator_step_iteration_reduce(ctx, &row.body);
+        }
+        "rolling_horizon_preflight_reduce" => {
+            assert_rolling_horizon_preflight_reduce(ctx, &row.body);
+        }
+        "orchestrator_rolling_horizon_preflight" => {
+            assert_orchestrator_rolling_horizon_preflight(ctx, &row.body);
+        }
         other => panic!("{ctx}: unknown case {other}"),
     }
 }

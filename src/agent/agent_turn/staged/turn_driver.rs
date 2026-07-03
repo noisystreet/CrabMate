@@ -10,13 +10,17 @@ use super::StagedPlanRunOutcome;
 use super::full_pipeline_fsm::StagedFullPipelinePhase;
 use super::orchestrator::StagedRoundOrchestratorPhase;
 use super::prepared_post_parse_fsm::PreparedPostParseSchedule;
+use super::prepared_route_reduce::PreparedRouteReduceAction;
+use super::rolling_horizon_preflight_reduce::RollingHorizonPreflightAction;
 use super::staged_parse_terminal::StagedParseTerminalRoute;
+use super::step_iteration_reduce::StepIterationReduceAction;
 use super::turn_fsm::StagedTurnPhase;
 use super::turn_orchestrator_fsm::{
     StagedTurnOrchestratorPhase, orchestrator_phase_for_full_pipeline,
     orchestrator_phase_for_post_parse_schedule, orchestrator_phase_for_prepared_route,
-    orchestrator_phase_for_round_orchestrator, orchestrator_phase_for_steps_loop_trace,
-    orchestrator_phase_for_turn_phase,
+    orchestrator_phase_for_prepared_route_reduce, orchestrator_phase_for_rolling_horizon_preflight,
+    orchestrator_phase_for_round_orchestrator, orchestrator_phase_for_step_iteration_reduce,
+    orchestrator_phase_for_steps_loop_trace, orchestrator_phase_for_turn_phase,
 };
 
 /// 滚动视界外层持有的运行时顶层相位（与 **`tracing`** `staged_turn_orchestrator_phase` 对齐）。
@@ -38,6 +42,24 @@ impl StagedTurnDriver {
 
     pub(crate) fn record_parse_terminal(&mut self, terminal: &StagedParseTerminalRoute) {
         self.phase = orchestrator_phase_for_prepared_route(&terminal.to_prepared_planner_route());
+    }
+
+    pub(crate) fn record_prepared_route_reduce(&mut self, action: PreparedRouteReduceAction) {
+        self.phase = orchestrator_phase_for_prepared_route_reduce(action);
+    }
+
+    pub(crate) fn record_step_iteration_reduce(&mut self, action: StepIterationReduceAction) {
+        self.phase = orchestrator_phase_for_step_iteration_reduce(action);
+    }
+
+    pub(crate) fn record_rolling_horizon_preflight(
+        &mut self,
+        action: RollingHorizonPreflightAction,
+    ) {
+        if matches!(action, RollingHorizonPreflightAction::ContinueIteration) {
+            return;
+        }
+        self.phase = orchestrator_phase_for_rolling_horizon_preflight(action);
     }
 
     pub(crate) fn record_post_parse_schedule(&mut self, schedule: PreparedPostParseSchedule) {
@@ -128,5 +150,12 @@ mod tests {
         };
         d.record_parse_terminal(&StagedParseTerminalRoute::ContinueWithPlan { plan });
         assert_eq!(d.phase_str(), "plan_ready");
+    }
+
+    #[test]
+    fn driver_records_prepared_route_reduce() {
+        let mut d = StagedTurnDriver::new();
+        d.record_prepared_route_reduce(PreparedRouteReduceAction::DegradeToOuterLoop);
+        assert_eq!(d.phase_str(), "degraded_to_outer_loop");
     }
 }

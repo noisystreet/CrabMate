@@ -22,7 +22,12 @@ use super::turn_fsm::{
 };
 use super::{
     StagedPlanRunLabels, prepare_staged_planner_no_tools_request,
-    run_staged_plan_with_prepared_request, turn_driver::StagedTurnDriver,
+    rolling_horizon_preflight_reduce::{
+        RollingHorizonPreflightAction, RollingHorizonPreflightInput,
+        reduce_rolling_horizon_preflight,
+    },
+    run_staged_plan_with_prepared_request,
+    turn_driver::StagedTurnDriver,
 };
 
 /// 滚动视界外层循环变体（与 [`advance_staged_turn_after_sub_call`]、`StagedTurnPhase` 对齐）。
@@ -77,40 +82,63 @@ fn staged_rolling_horizon_preflight_exit(
     phase: StagedTurnPhase,
     staged_rounds: usize,
     max_rounds: usize,
+    turn_driver: &mut StagedTurnDriver,
 ) -> Option<Result<(), RunAgentTurnError>> {
-    if staged_rounds > max_rounds {
-        tracing::warn!(
-            target: "crabmate::staged",
-            staged_fsm = "rolling_horizon",
-            rolling_horizon_kind = ?kind,
-            staged_round = staged_rounds,
-            staged_turn_phase = ?phase,
-            sub_phase = "planner",
-            "staged rolling horizon exceeded max rounds"
-        );
-        return Some(Err(RunAgentTurnError::Other {
-            phase: AgentTurnSubPhase::Planner,
-            message: kind.max_rounds_error_message(max_rounds),
-        }));
+    let early_stop_allow =
+        staged_goal_completion_decision_after_step(p, phase).is_some_and(|d| d.is_allow());
+    let preflight = RollingHorizonPreflightInput {
+        staged_rounds,
+        max_rounds,
+        phase,
+        early_stop_allow,
+    };
+    let preflight_action = reduce_rolling_horizon_preflight(preflight);
+    tracing::debug!(
+        target: "crabmate::staged",
+        staged_fsm = "rolling_horizon",
+        rolling_horizon_preflight = preflight_action.as_str(),
+        staged_round = staged_rounds,
+        staged_turn_phase = ?phase,
+        sub_phase = "planner",
+        "staged rolling horizon preflight reduce"
+    );
+    turn_driver.record_rolling_horizon_preflight(preflight_action);
+
+    match preflight_action {
+        RollingHorizonPreflightAction::ContinueIteration => None,
+        RollingHorizonPreflightAction::StopMaxRounds => {
+            tracing::warn!(
+                target: "crabmate::staged",
+                staged_fsm = "rolling_horizon",
+                rolling_horizon_kind = ?kind,
+                staged_round = staged_rounds,
+                staged_turn_phase = ?phase,
+                sub_phase = "planner",
+                "staged rolling horizon exceeded max rounds"
+            );
+            Some(Err(RunAgentTurnError::Other {
+                phase: AgentTurnSubPhase::Planner,
+                message: kind.max_rounds_error_message(max_rounds),
+            }))
+        }
+        RollingHorizonPreflightAction::StopEarlyFinish => {
+            let decision = staged_goal_completion_decision_after_step(p, phase)
+                .expect("early_stop_allow implies decision");
+            tracing::info!(
+                target: "crabmate::staged",
+                staged_fsm = "rolling_horizon",
+                rolling_horizon_kind = ?kind,
+                staged_round = staged_rounds,
+                staged_turn_phase = ?phase,
+                sub_phase = "planner",
+                turn_completion_decision = decision.as_trace_str(),
+                turn_completion_deny_reason = decision.deny_reason(),
+                rolling_horizon_via = ?decision.rolling_horizon_via(),
+                "staged rolling horizon finished: task-level evidence already satisfies original request"
+            );
+            Some(Ok(()))
+        }
     }
-    if let Some(decision) = staged_goal_completion_decision_after_step(p, phase)
-        && decision.is_allow()
-    {
-        tracing::info!(
-            target: "crabmate::staged",
-            staged_fsm = "rolling_horizon",
-            rolling_horizon_kind = ?kind,
-            staged_round = staged_rounds,
-            staged_turn_phase = ?phase,
-            sub_phase = "planner",
-            turn_completion_decision = decision.as_trace_str(),
-            turn_completion_deny_reason = decision.deny_reason(),
-            rolling_horizon_via = ?decision.rolling_horizon_via(),
-            "staged rolling horizon finished: task-level evidence already satisfies original request"
-        );
-        return Some(Ok(()));
-    }
-    None
 }
 
 /// 单 agent / 逻辑双 agent 共用的 **滚动视界** 外层循环：`turn_fsm` 相位 + 子调用结果 → `StagedTurnAdvance`。
@@ -146,6 +174,7 @@ where
             phase,
             staged_rounds,
             STAGED_SINGLE_STEP_MAX_ROUNDS,
+            &mut turn_driver,
         ) {
             return done;
         }

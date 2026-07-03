@@ -34,3 +34,12 @@
 {"id":"patch_kind_verify","case":"step_patch_failure_kind","verify_reason":"exit_code_mismatch","has_outer_error":false,"expect":"step_verify_fail"}
 {"id":"patch_kind_outer","case":"step_patch_failure_kind","verify_reason":null,"has_outer_error":true,"expect":"outer_loop_error"}
 {"id":"patch_kind_tool","case":"step_patch_failure_kind","kind":"tool_messages_not_ok","expect":"tool_messages_not_ok"}
+{"id":"orch_reduce_continue","case":"orchestrator_prepared_route_reduce","route":"continue_with_plan","expect_phase":"plan_ready"}
+{"id":"orch_reduce_degrade","case":"orchestrator_prepared_route_reduce","route":"degrade_to_outer_loop","expect_phase":"degraded_to_outer_loop"}
+{"id":"orch_step_patch","case":"orchestrator_step_iteration_reduce","route":"tool_failure_patch","expect_phase":"patch_replanner"}
+{"id":"orch_step_emit","case":"orchestrator_step_iteration_reduce","route":"emit_success","expect_phase":"step_running"}
+{"id":"rh_preflight_continue","case":"rolling_horizon_preflight_reduce","staged_rounds":2,"max_rounds":64,"phase":"pre_step_execution_round","early_stop_allow":false,"expect":"continue_iteration"}
+{"id":"rh_preflight_max","case":"rolling_horizon_preflight_reduce","staged_rounds":65,"max_rounds":64,"phase":"after_step_execution_round","early_stop_allow":false,"expect":"stop_max_rounds"}
+{"id":"rh_preflight_early","case":"rolling_horizon_preflight_reduce","staged_rounds":3,"max_rounds":64,"phase":"after_step_execution_round","early_stop_allow":true,"expect":"stop_early_finish"}
+{"id":"orch_rh_continue","case":"orchestrator_rolling_horizon_preflight","staged_rounds":2,"max_rounds":64,"phase":"pre_step_execution_round","early_stop_allow":false,"expect_phase":"pre_plan"}
+{"id":"orch_rh_early","case":"orchestrator_rolling_horizon_preflight","staged_rounds":3,"max_rounds":64,"phase":"after_step_execution_round","early_stop_allow":true,"expect_phase":"done"}

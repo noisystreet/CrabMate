@@ -247,6 +247,7 @@ struct StagedStepRunAfterOuterHalfParams<'a, 'b, 'c, F> {
     transition_counters: &'a mut HashMap<String, u32>,
     echo_terminal_staged: bool,
     patch_ctx: &'a mut StagedPlanPatchPlannerCtx<'b, 'c, F>,
+    turn_driver: Option<&'a mut StagedTurnDriver>,
 }
 
 /// 外层循环失败后的补丁恢复（降低 `staged_step_run_after_outer_half` 圈复杂度）。
@@ -410,6 +411,7 @@ where
         transition_counters,
         echo_terminal_staged,
         patch_ctx,
+        turn_driver,
     } = p;
     let StagedStepOuterHalfResult {
         step,
@@ -479,6 +481,9 @@ where
         sub_phase = "executor",
         "staged step after outer_loop: route resolved"
     );
+    if let Some(driver) = turn_driver {
+        driver.record_step_iteration_reduce(reduce_action);
+    }
 
     match reduce_action {
         StepIterationReduceAction::ExecOrVerifyFailed => {
@@ -601,6 +606,7 @@ struct RunOneStagedPlanStepIterationParams<'a, 'b, 'c, F> {
     labels: &'a StagedPlanRunLabels,
     patch_ctx: &'a mut StagedPlanPatchPlannerCtx<'b, 'c, F>,
     make_step_user_message: &'a F,
+    turn_driver: Option<&'a mut StagedTurnDriver>,
 }
 
 async fn run_one_staged_plan_step_iteration<F>(
@@ -621,6 +627,7 @@ where
         labels,
         patch_ctx,
         make_step_user_message,
+        turn_driver,
     } = p;
     let outer = staged_step_run_outer_half(StagedStepRunOuterHalfParams {
         plan_id,
@@ -645,6 +652,7 @@ where
         transition_counters,
         echo_terminal_staged,
         patch_ctx,
+        turn_driver,
     })
     .await
 }
@@ -755,6 +763,7 @@ where
             labels,
             patch_ctx: &mut patch_ctx,
             make_step_user_message,
+            turn_driver: turn_driver.as_deref_mut(),
         })
         .await?
         {
