@@ -137,6 +137,8 @@ pub(crate) struct TurnPlannerHints {
     /// 上一完成分步的 effective `acceptance`（步验收 Pass 后写入；供滚动视界早停）。
     pub(crate) staged_last_completed_step_effective_acceptance:
         Option<crate::agent::plan_artifact::PlanStepAcceptance>,
+    /// 本回合 **`intent_at_turn_start`** 门控快照（供 [`TurnRouteDecisionV1`] 组装）。
+    pub(crate) intent_gate_snapshot: Option<crabmate_agent::agent_turn::IntentGateSnapshot>,
 }
 
 /// 单 Agent [`super::outer_loop::run_agent_outer_loop`] 内每次 **P** 调用对应的模型端点角色。

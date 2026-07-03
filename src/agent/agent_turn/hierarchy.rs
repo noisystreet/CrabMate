@@ -9,11 +9,16 @@ use super::orchestration_entry::{
 use crate::agent::hierarchy::{self, HierarchyRunnerResult};
 use crate::agent::per_coord::PerCoordinator;
 use crate::sse;
+use crabmate_agent::agent_turn::{
+    build_hierarchical_intent_finished_early_decision, build_hierarchical_turn_route_decision,
+    intent_gate_snapshot_from_decision,
+};
 
 use super::errors::RunAgentTurnError;
 use super::errors::{AgentTurnSubPhase, TurnAbortReason};
 use super::intent_at_turn_start;
 use super::intent_user;
+use super::orchestration_route::record_and_emit_turn_route_decision;
 use super::outer_loop::run_agent_outer_loop;
 use super::params::RunLoopParams;
 use super::task_level_evidence::{
@@ -117,6 +122,29 @@ pub(crate) async fn run_hierarchical_agent(
     let intent_gate = intent_at_turn_start::run_intent_for_hierarchical(p, &task).await?;
     let assessment = match intent_gate {
         intent_at_turn_start::IntentGateResult::Finished => {
+            let snapshot = p
+                .turn
+                .turn_planner_hints
+                .intent_gate_snapshot
+                .clone()
+                .unwrap_or_else(|| {
+                    intent_gate_snapshot_from_decision(
+                        &crate::agent::intent_pipeline::IntentDecision {
+                            kind: crate::agent::intent_router::IntentKind::Ambiguous,
+                            primary_intent: "unknown".into(),
+                            secondary_intents: Vec::new(),
+                            confidence: 0.0,
+                            abstain: false,
+                            need_clarification: true,
+                            action: IntentAction::DirectReply(String::new()),
+                        },
+                    )
+                });
+            let route = build_hierarchical_intent_finished_early_decision(
+                p.ctx.core.cfg.as_ref(),
+                snapshot,
+            );
+            record_and_emit_turn_route_decision(p, &route).await;
             info!(
                 target: "crabmate::agent_turn",
                 turn_orchestration_mode = TurnOrchestrationMode::Hierarchical.as_str(),
@@ -130,6 +158,13 @@ pub(crate) async fn run_hierarchical_agent(
 
     let entry = HierarchicalTurnEntryResolution::resolve(&assessment);
     let post_intent = entry.post_intent_route;
+    let route = build_hierarchical_turn_route_decision(
+        p.ctx.core.cfg.as_ref(),
+        intent_gate_snapshot_from_decision(&assessment),
+        entry.orchestration_mode,
+        post_intent,
+    );
+    record_and_emit_turn_route_decision(p, &route).await;
     log_orchestration_transition(
         TurnOrchestrationTransition::HierarchicalPostIntentResolved,
         Some(entry.orchestration_mode.as_str()),

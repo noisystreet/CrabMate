@@ -9,7 +9,8 @@ use crate::agent::intent_router::{
 use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crate::sse;
 use crabmate_agent::agent_turn::{
-    IntentRoutingPipelineParams, assess_intent_routing_full_pipeline,
+    IntentGateSnapshot, IntentRoutingPipelineParams, assess_intent_routing_full_pipeline,
+    intent_gate_snapshot_finished_early, intent_gate_snapshot_from_decision,
 };
 
 use super::super::params::RunLoopParams;
@@ -38,12 +39,14 @@ pub(crate) async fn run_intent_at_turn_start_if_configured(
     p: &mut RunLoopParams<'_>,
 ) -> Result<bool, super::super::errors::RunAgentTurnError> {
     if !p.ctx.core.cfg.intent_routing.intent_at_turn_start_enabled {
+        p.turn.turn_planner_hints.intent_gate_snapshot = Some(IntentGateSnapshot::Disabled);
         return Ok(true);
     }
     let in_clarification_flow =
         intent_user::recently_waiting_execute_confirmation(p.turn.messages());
     let task = intent_user::extract_effective_user_task(p.turn.messages(), in_clarification_flow);
     if task.trim().is_empty() {
+        p.turn.turn_planner_hints.intent_gate_snapshot = Some(IntentGateSnapshot::EmptyTask);
         return Ok(true);
     }
     let out = run_intent_l0_l1_l2_gate(
@@ -252,10 +255,14 @@ async fn run_intent_l0_l1_l2_gate(
         p.turn.turn_planner_hints.step_executor_constraint =
             Some(PlanStepExecutorKind::ReviewReadonly);
         p.turn.turn_planner_hints.intent_turn_gate_hint = Some(constraints.intent_gate_hint_zh());
+        p.turn.turn_planner_hints.intent_gate_snapshot =
+            Some(intent_gate_snapshot_from_decision(&assessment));
         return Ok(IntentGateResult::ProceedExecute { assessment });
     }
 
     if matches!(assessment.action, IntentAction::Execute) {
+        p.turn.turn_planner_hints.intent_gate_snapshot =
+            Some(intent_gate_snapshot_from_decision(&assessment));
         return Ok(IntentGateResult::ProceedExecute { assessment });
     }
 
@@ -266,12 +273,16 @@ async fn run_intent_l0_l1_l2_gate(
         p.turn.turn_planner_hints.step_executor_constraint =
             Some(PlanStepExecutorKind::ReviewReadonly);
         p.turn.turn_planner_hints.intent_turn_gate_hint = Some(GATE_HINT_READONLY_ZH.to_string());
+        p.turn.turn_planner_hints.intent_gate_snapshot =
+            Some(intent_gate_snapshot_from_decision(&assessment));
         return Ok(IntentGateResult::ProceedExecute { assessment });
     }
 
     if matches!(&assessment.action, IntentAction::DirectReply(_))
         && intent_reply_delegates_to_main_model(assessment.kind, &assessment.primary_intent)
     {
+        p.turn.turn_planner_hints.intent_gate_snapshot =
+            Some(intent_gate_snapshot_from_decision(&assessment));
         return Ok(IntentGateResult::ProceedExecute { assessment });
     }
 
@@ -281,6 +292,8 @@ async fn run_intent_l0_l1_l2_gate(
                 Some(GATE_HINT_CLARIFY_ZH.to_string());
             p.turn.turn_planner_hints.step_executor_constraint =
                 Some(PlanStepExecutorKind::ReviewReadonly);
+            p.turn.turn_planner_hints.intent_gate_snapshot =
+                Some(intent_gate_snapshot_from_decision(&assessment));
             return Ok(IntentGateResult::ProceedExecute { assessment });
         }
         IntentAction::ConfirmThenExecute(_) => {
@@ -288,6 +301,8 @@ async fn run_intent_l0_l1_l2_gate(
                 Some(GATE_HINT_CONFIRM_ZH.to_string());
             p.turn.turn_planner_hints.step_executor_constraint =
                 Some(PlanStepExecutorKind::ReviewReadonly);
+            p.turn.turn_planner_hints.intent_gate_snapshot =
+                Some(intent_gate_snapshot_from_decision(&assessment));
             return Ok(IntentGateResult::ProceedExecute { assessment });
         }
         _ => {}
@@ -295,6 +310,8 @@ async fn run_intent_l0_l1_l2_gate(
 
     match assessment.action {
         IntentAction::DirectReply(ref s) => {
+            p.turn.turn_planner_hints.intent_gate_snapshot =
+                Some(intent_gate_snapshot_finished_early(&assessment));
             let _ = apply_non_execute_and_finish(p, s).await?;
             Ok(IntentGateResult::Finished)
         }
