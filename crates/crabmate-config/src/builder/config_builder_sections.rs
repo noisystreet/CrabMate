@@ -93,6 +93,7 @@ pub(crate) struct ConfigBuilderPerPlanPolicy {
     pub(crate) final_plan_semantic_check_max_non_readonly_tools: Option<u64>,
     pub(crate) final_plan_semantic_check_max_tokens: Option<u64>,
     pub(crate) planner_executor_mode_str: Option<String>,
+    pub(crate) orchestration_profile_str: Option<String>,
 }
 
 #[derive(Default)]

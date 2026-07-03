@@ -95,6 +95,8 @@ pub struct PerPlanPolicyConfig {
     pub final_plan_semantic_check_max_non_readonly_tools: usize,
     pub final_plan_semantic_check_max_tokens: u32,
     pub planner_executor_mode: PlannerExecutorMode,
+    /// 编排档位：`freeform` / `staged` / `auto`（映射分阶段门控，不增第四套实现）。
+    pub orchestration_profile: crate::OrchestrationProfile,
 }
 
 #[derive(Debug, Clone)]

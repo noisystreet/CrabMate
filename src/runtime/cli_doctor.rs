@@ -115,6 +115,21 @@ fn print_doctor_config_block(cfg: &AgentConfig) {
             "false"
         }
     );
+    println!(
+        "  orchestration_profile: {}",
+        cfg.per_plan_policy.orchestration_profile.as_str()
+    );
+    println!(
+        "  planner_executor_mode: {}",
+        cfg.per_plan_policy.planner_executor_mode.as_str()
+    );
+    println!(
+        "  有效编排路径（静态）: {}",
+        crabmate_config::effective_orchestration_path_summary(
+            cfg.per_plan_policy.planner_executor_mode.as_str(),
+            cfg.per_plan_policy.orchestration_profile,
+        )
+    );
 }
 
 fn print_doctor_workspace_block(ws: &Path) {

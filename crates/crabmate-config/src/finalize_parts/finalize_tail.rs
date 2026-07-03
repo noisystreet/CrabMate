@@ -16,6 +16,7 @@ struct FinalizeTailScalars {
     final_plan_semantic_check_max_non_readonly_tools: usize,
     final_plan_semantic_check_max_tokens: u32,
     planner_executor_mode: PlannerExecutorMode,
+    orchestration_profile: OrchestrationProfile,
     tool_message_max_chars: usize,
     tool_result_envelope_v1: bool,
     sse_tool_call_include_arguments: bool,
@@ -109,6 +110,7 @@ struct TailPlanToolThinkingScalars {
     final_plan_semantic_check_max_non_readonly_tools: usize,
     final_plan_semantic_check_max_tokens: u32,
     planner_executor_mode: PlannerExecutorMode,
+    orchestration_profile: OrchestrationProfile,
     tool_message_max_chars: usize,
     tool_result_envelope_v1: bool,
     sse_tool_call_include_arguments: bool,
@@ -149,6 +151,10 @@ fn derive_tail_plan_tool_thinking_scalars(
     let planner_executor_mode = match b.per_plan_policy.planner_executor_mode_str.as_deref() {
         Some(s) => PlannerExecutorMode::parse(s)?,
         None => PlannerExecutorMode::default(),
+    };
+    let orchestration_profile = match b.per_plan_policy.orchestration_profile_str.as_deref() {
+        Some(s) => OrchestrationProfile::parse(s)?,
+        None => OrchestrationProfile::default(),
     };
     let tool_message_max_chars = b
         .tool_transcript.tool_message_max_chars
@@ -196,6 +202,7 @@ fn derive_tail_plan_tool_thinking_scalars(
         final_plan_semantic_check_max_non_readonly_tools,
         final_plan_semantic_check_max_tokens,
         planner_executor_mode,
+        orchestration_profile,
         tool_message_max_chars,
         tool_result_envelope_v1,
         sse_tool_call_include_arguments,
@@ -668,6 +675,7 @@ fn assemble_finalize_tail_scalars(
         final_plan_semantic_check_max_non_readonly_tools,
         final_plan_semantic_check_max_tokens,
         planner_executor_mode,
+        orchestration_profile,
         tool_message_max_chars,
         tool_result_envelope_v1,
         sse_tool_call_include_arguments,
@@ -746,6 +754,7 @@ fn assemble_finalize_tail_scalars(
         final_plan_semantic_check_max_non_readonly_tools,
         final_plan_semantic_check_max_tokens,
         planner_executor_mode,
+        orchestration_profile,
         tool_message_max_chars,
         tool_result_envelope_v1,
         sse_tool_call_include_arguments,
