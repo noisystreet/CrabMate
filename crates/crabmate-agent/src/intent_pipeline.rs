@@ -188,6 +188,16 @@ fn assess_and_route_with_l2_inner(
             route: IntentRoute::Execute,
         };
     }
+    if used_merged_continuation
+        && ctx.has_recent_tool_failure
+        && intent_l0::is_resume_after_failure_utterance(primary_task.trim())
+    {
+        l1_assessment = IntentAssessment {
+            kind: IntentKind::Execute,
+            confidence: 0.94,
+            route: IntentRoute::Execute,
+        };
+    }
     let l1_kind = l1_assessment.kind;
     let l1_confidence = l1_assessment.confidence;
     let mut decision = map_assessment_to_decision(primary_task, l1_assessment);

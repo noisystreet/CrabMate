@@ -15,10 +15,6 @@ use super::super::execute_tools::sse_sender_closed;
 use super::super::outer_loop::run_agent_outer_loop;
 use super::super::params::RunLoopParams;
 
-use super::super::task_level_evidence::{
-    GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
-};
-use super::super::turn_completion::evaluate_turn_staged_rolling_horizon_early_stop;
 use super::empty_execution::staged_step_empty_execution_verify_failure;
 use super::orchestrator as staged_orchestrator;
 use super::patch_planner::StagedPlanPatchPlannerCtx;
@@ -43,13 +39,16 @@ use super::step_failure_exit::{
     staged_step_fail_after_outer_execution_exhausted,
 };
 use super::step_iteration_fsm::{StagedStepIterationCtl, staged_step_wall_clock_exceeded};
+use super::step_iteration_reduce::{
+    StepIterationReduceAction, reduce_staged_step_post_outer_route,
+    step_iteration_ctl_for_emit_success,
+};
 use super::step_loop_fsm::staged_injected_step_user_body;
 use super::step_patch_route_fsm::{
     StagedStepPatchFailureKind, resolve_staged_step_patch_failure_kind,
 };
-use super::steps_loop_route_fsm::{
-    StagedStepPostOuterRoute, resolve_staged_step_post_outer_route_from_results,
-};
+use super::steps_loop_route_fsm::resolve_staged_step_post_outer_route_from_results;
+use super::turn_driver::StagedTurnDriver;
 use super::turn_orchestrator_fsm::{
     orchestrator_phase_for_round_orchestrator, orchestrator_phase_for_steps_loop_trace,
 };
@@ -470,17 +469,19 @@ where
         tools_ok,
         patch_planner_on,
     );
+    let reduce_action = reduce_staged_step_post_outer_route(post_outer_route);
     tracing::debug!(
         target: "crabmate::staged",
         staged_fsm = "steps_loop",
         steps_loop_phase = "post_outer_route",
         steps_loop_post_outer_route = post_outer_route.as_str(),
+        step_iteration_reduce = reduce_action.as_str(),
         sub_phase = "executor",
         "staged step after outer_loop: route resolved"
     );
 
-    match post_outer_route {
-        StagedStepPostOuterRoute::ExecOrVerifyFailed => {
+    match reduce_action {
+        StepIterationReduceAction::ExecOrVerifyFailed => {
             if let Some(ctl) = staged_step_try_recover_outer_execution_failure(
                 StagedOuterExecFailureRecoverParams {
                     plan_id,
@@ -516,7 +517,7 @@ where
             )
             .await;
         }
-        StagedStepPostOuterRoute::Cancelled => {
+        StepIterationReduceAction::Cancelled => {
             finish_staged_plan_step_sse(
                 out,
                 plan_id,
@@ -530,7 +531,7 @@ where
             .await;
             return Ok(StagedStepIterationCtl::CancelledAfterOuterOk);
         }
-        StagedStepPostOuterRoute::ToolFailurePatch => {
+        StepIterationReduceAction::ToolFailurePatch => {
             if let Some(ctl) =
                 staged_step_try_recover_tool_failure_patches(StagedToolFailurePatchRecoverParams {
                     plan_id,
@@ -570,7 +571,7 @@ where
                 ),
             });
         }
-        StagedStepPostOuterRoute::EmitSuccess => {}
+        StepIterationReduceAction::EmitSuccessAdvance => {}
     }
 
     staged_step_emit_ok_step_and_queue_notice(StagedStepOkNoticeParams {
@@ -585,10 +586,7 @@ where
         echo_terminal_staged,
     })
     .await;
-    Ok(StagedStepIterationCtl::AdvanceToNextStep {
-        n,
-        completed_steps: step_index,
-    })
+    Ok(step_iteration_ctl_for_emit_success(n, step_index))
 }
 
 struct RunOneStagedPlanStepIterationParams<'a, 'b, 'c, F> {
@@ -660,10 +658,14 @@ pub(super) async fn run_staged_plan_steps_loop<F>(
     labels: &StagedPlanRunLabels,
     mut patch_ctx: StagedPlanPatchPlannerCtx<'_, '_, F>,
     make_step_user_message: &F,
+    mut turn_driver: Option<&mut StagedTurnDriver>,
 ) -> Result<StagedPlanRunOutcome, RunAgentTurnError>
 where
     F: Fn(String) -> Message,
 {
+    if let Some(driver) = turn_driver.as_deref_mut() {
+        driver.record_steps_loop_trace("steps_executing_enter");
+    }
     let mut n = plan_steps.len();
     let orch_phase = staged_orchestrator::enter_steps_executing(
         patch_ctx.p.ctx.io.out,
@@ -821,51 +823,42 @@ where
             .push_message(Message::chat_ui_separator(true));
         emit_chat_ui_separator_sse(patch_ctx.p.ctx.io.out, true).await;
     }
-    if staged_steps_loop_should_finish_after_success(
+    Ok(finish_steps_loop_with_driver(
+        turn_driver,
         patch_ctx.p,
+        &plan_id,
         staged_loop_cancelled,
         completed_steps,
         n,
-    ) {
-        tracing::info!(
-            target: "crabmate::staged",
-            staged_fsm = "steps_loop",
-            steps_loop_phase = "early_finish_after_success",
-            plan_id = plan_id.as_str(),
-            step_count = n,
-            completed_steps,
-            sub_phase = "executor",
-            "staged plan steps loop: goal satisfied or rolling horizon early stop"
-        );
-        return Ok(StagedPlanRunOutcome::Finished);
-    }
-    Ok(StagedPlanRunOutcome::ContinuePlanning)
+    ))
 }
 
-fn staged_steps_loop_should_finish_after_success(
+fn finish_steps_loop_with_driver(
+    turn_driver: Option<&mut StagedTurnDriver>,
     p: &RunLoopParams<'_>,
-    cancelled: bool,
+    plan_id: &str,
+    staged_loop_cancelled: bool,
     completed_steps: usize,
     n: usize,
-) -> bool {
-    if cancelled || n == 0 || completed_steps < n {
-        return false;
+) -> StagedPlanRunOutcome {
+    if let Some(driver) = turn_driver {
+        driver.record_steps_loop_trace("send_plan_finished");
+        let outcome =
+            driver.decide_steps_loop_outcome(p, staged_loop_cancelled, completed_steps, n);
+        if matches!(outcome, StagedPlanRunOutcome::Finished) {
+            tracing::info!(
+                target: "crabmate::staged",
+                staged_fsm = "steps_loop",
+                steps_loop_phase = "early_finish_after_success",
+                staged_turn_orchestrator_phase = driver.phase_str(),
+                plan_id = plan_id,
+                step_count = n,
+                completed_steps,
+                sub_phase = "executor",
+                "staged plan steps loop: turn_driver early finish"
+            );
+        }
+        return outcome;
     }
-    let messages = p.turn.messages();
-    if evaluate_turn_staged_rolling_horizon_early_stop(
-        messages,
-        p.turn
-            .turn_planner_hints
-            .staged_last_completed_step_effective_acceptance
-            .as_ref(),
-        p.ctx.core.effective_working_dir,
-    )
-    .is_allow()
-    {
-        return true;
-    }
-    matches!(
-        check_active_user_goal_completion_evidence(messages),
-        GoalCompletionEvidenceCheck::Satisfied
-    )
+    StagedPlanRunOutcome::ContinuePlanning
 }
