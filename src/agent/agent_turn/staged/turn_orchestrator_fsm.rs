@@ -7,6 +7,7 @@
 use super::full_pipeline_fsm::StagedFullPipelinePhase;
 use super::orchestrator::StagedRoundOrchestratorPhase;
 use super::prepared_parse_fsm::PreparedPlannerRoute;
+use super::prepared_post_parse_fsm::PreparedPostParseSchedule;
 use super::turn_fsm::StagedTurnPhase;
 
 /// 设计稿 §3.2「分阶段回合 FSM」顶层相位（与 `StagedTurnPhase` 滚动视界、
@@ -37,6 +38,18 @@ impl StagedTurnOrchestratorPhase {
             Self::DegradedToOuterLoop => "degraded_to_outer_loop",
             Self::Done => "done",
         }
+    }
+}
+
+/// 首轮后 post-parse 调度 → 顶层（`no_task` 路径视为降级外循环）。
+pub(crate) fn orchestrator_phase_for_post_parse_schedule(
+    schedule: PreparedPostParseSchedule,
+) -> StagedTurnOrchestratorPhase {
+    match schedule {
+        PreparedPostParseSchedule::NoTaskThenOuter => {
+            StagedTurnOrchestratorPhase::DegradedToOuterLoop
+        }
+        PreparedPostParseSchedule::FullPipelineThenSteps => StagedTurnOrchestratorPhase::PlanReady,
     }
 }
 
@@ -89,6 +102,9 @@ pub(crate) fn orchestrator_phase_for_steps_loop_trace(
         | "step_running"
         | "cancelled_before_step"
         | "cancelled_after_outer_ok" => StagedTurnOrchestratorPhase::StepRunning,
+        "patch_replanner" | "patch_replanner_attempt" | "patch_replanner_tool_failure" => {
+            StagedTurnOrchestratorPhase::PatchReplanner
+        }
         "send_plan_finished" => StagedTurnOrchestratorPhase::Done,
         _ => StagedTurnOrchestratorPhase::StepRunning,
     }
@@ -98,6 +114,28 @@ pub(crate) fn orchestrator_phase_for_steps_loop_trace(
 mod tests {
     use super::*;
     use crate::agent::plan_artifact::AgentReplyPlanV1;
+
+    #[test]
+    fn post_parse_schedule_maps_to_top_level() {
+        assert_eq!(
+            orchestrator_phase_for_post_parse_schedule(PreparedPostParseSchedule::NoTaskThenOuter),
+            StagedTurnOrchestratorPhase::DegradedToOuterLoop
+        );
+        assert_eq!(
+            orchestrator_phase_for_post_parse_schedule(
+                PreparedPostParseSchedule::FullPipelineThenSteps
+            ),
+            StagedTurnOrchestratorPhase::PlanReady
+        );
+    }
+
+    #[test]
+    fn patch_replanner_trace_maps_to_patch_phase() {
+        assert_eq!(
+            orchestrator_phase_for_steps_loop_trace("patch_replanner_attempt"),
+            StagedTurnOrchestratorPhase::PatchReplanner
+        );
+    }
 
     #[test]
     fn prepared_route_maps_to_top_level() {
