@@ -1,0 +1,13 @@
+# 终答 Gate 金样：每行一条 JSON，供 `per_coord/final_plan_gate_golden.rs` 加载。
+# 运行：`cargo test golden_final_plan_gate -p crabmate`
+{"id":"phase_never","case":"resolve_phase","policy":"never","source":"none","expect_phase":"no_requirement"}
+{"id":"phase_wf_no_src","case":"resolve_phase","policy":"workflow_reflection","source":"none","expect_phase":"no_requirement"}
+{"id":"phase_wf_with_src","case":"resolve_phase","policy":"workflow_reflection","source":"workflow_reflection","expect_phase":"check_structured_plan"}
+{"id":"phase_always","case":"resolve_phase","policy":"always","source":"none","expect_phase":"check_structured_plan"}
+{"id":"gate_no_req","case":"run_gate","phase":"no_requirement","expect_route":"stop_no_requirement","expect_reason":"policy_no_requirement","expect_after":"stop_turn"}
+{"id":"step_valid_plan","case":"step_check","assistant":"valid_plan","policy":"workflow_reflection","source":"workflow_reflection","attempts":0,"max_attempts":2,"expect_route":"accept_structured_plan_ok","expect_reason":"structured_plan_accepted","expect_after":"stop_turn"}
+{"id":"step_parse_fail_rewrite","case":"step_check","assistant":"no_plan","policy":"workflow_reflection","source":"workflow_reflection","attempts":0,"max_attempts":2,"expect_route":"semantics_failed_request_rewrite","expect_reason":"plan_parse_failed","expect_after":"request_plan_rewrite","expect_next_rewrite":1}
+{"id":"step_rewrite_exhausted","case":"step_check","assistant":"no_plan","policy":"workflow_reflection","source":"workflow_reflection","attempts":2,"max_attempts":2,"expect_route":"semantics_failed_rewrite_exhausted","expect_reason":"plan_rewrite_exhausted","expect_after":"stop_turn_plan_rewrite_exhausted","exhausted_reason":"plan_missing"}
+{"id":"semantic_consistent","case":"semantic_completed","consistent":true,"attempts":0,"max_attempts":3,"expect_route":"semantic_consistency_accepted_stop","expect_reason":"semantic_consistency_accepted","expect_after":"stop_turn"}
+{"id":"semantic_inconsistent_rewrite","case":"semantic_completed","consistent":false,"attempts":1,"max_attempts":3,"expect_route":"semantic_mismatch_request_rewrite","expect_reason":"semantic_inconsistency_rewrite","expect_after":"request_plan_rewrite","expect_next_rewrite":2}
+{"id":"semantic_inconsistent_exhausted","case":"semantic_completed","consistent":false,"attempts":3,"max_attempts":3,"expect_route":"semantic_mismatch_rewrite_exhausted","expect_reason":"semantic_inconsistency_rewrite_exhausted","expect_after":"stop_turn_plan_rewrite_exhausted","exhausted_reason":"plan_semantic_inconsistent"}

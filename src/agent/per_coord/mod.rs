@@ -123,6 +123,9 @@ pub struct PerCoordinator {
 mod coordinator_impl;
 
 #[cfg(test)]
+mod final_plan_gate_golden;
+
+#[cfg(test)]
 impl PerCoordinator {
     fn increment_plan_rewrite_attempts(&mut self) {
         self.counters.plan_rewrite_attempts += 1;

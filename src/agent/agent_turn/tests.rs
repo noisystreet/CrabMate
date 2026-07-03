@@ -538,7 +538,7 @@ mod staged_intent_gate_tests {
     fn execute_task_should_enter_staged_planning() {
         let cfg = test_cfg();
         let messages = vec![Message::user_only(
-            "请修复 src/lib.rs 的编译错误并运行 cargo test",
+            "请修复 src/lib.rs 的编译错误，梳理多个模块的依赖关系并运行 cargo test",
         )];
         let gate = assess_staged_planning_gate(&messages, &cfg);
         assert!(

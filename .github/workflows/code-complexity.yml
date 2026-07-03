@@ -92,3 +92,18 @@ jobs:
 
       - name: Golden acceptance regression (fixtures/acceptance_regression.jsonl)
         run: cargo test golden_acceptance_regression -p crabmate-agent --no-fail-fast
+
+  final-plan-gate-golden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps (OpenSSL / libssh2 / Wayland for default features build)
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev libssh2-1-dev libwayland-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Golden final plan gate (fixtures/final_plan_gate_golden.jsonl)
+        run: cargo test golden_final_plan_gate --no-fail-fast
