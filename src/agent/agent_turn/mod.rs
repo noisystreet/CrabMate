@@ -32,6 +32,7 @@ mod intent;
 mod messages;
 mod non_hierarchical_turn;
 mod orchestration_entry;
+mod orchestration_route;
 mod outer_loop;
 mod outer_loop_build_idle;
 mod outer_loop_fsm;
@@ -45,6 +46,8 @@ mod sub_agent_policy;
 mod task_level_evidence;
 mod turn_completion;
 mod turn_orchestration;
+#[cfg(test)]
+mod turn_route_decision_golden;
 
 // 供 crate 内其它模块与文档链接；本文件自身不直接使用这些符号。
 pub(crate) use errors::{AgentTurnJobOutcomeKind, AgentTurnSubPhase, RunAgentTurnError};

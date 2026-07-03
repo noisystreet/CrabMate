@@ -5,6 +5,11 @@
 //! **分阶段意图门控**：[`super::intent::assess_staged_planning_gate_full_pipeline`] 产出结构化 [`super::intent::StagedPlanningGateOutcome`]，
 //! 与 `intent_pipeline::IntentDecision` 对齐，并与 **`intent_at_turn_start`** 共用 **L2 优先管线**。
 
+use crabmate_agent::agent_turn::{
+    IntentGateSnapshot, build_non_hierarchical_intent_finished_early_decision,
+    build_non_hierarchical_turn_route_decision, staged_gate_snapshot_from_outcome,
+};
+
 use crate::agent::per_coord::PerCoordinator;
 
 use super::errors::RunAgentTurnError;
@@ -15,6 +20,7 @@ use super::non_hierarchical_turn::run_non_hierarchical_turn;
 use super::orchestration_entry::{
     TurnOrchestrationTransition, log_orchestration_transition, resolve_non_hierarchical_turn,
 };
+use super::orchestration_route::record_and_emit_turn_route_decision;
 use super::params::RunLoopParams;
 use super::turn_orchestration::TurnOrchestrationMode;
 
@@ -32,12 +38,25 @@ pub(crate) async fn dispatch_hierarchical_turn(
     hierarchy::run_hierarchical_agent(p, per_coord).await
 }
 
+fn intent_gate_snapshot_or_unknown(p: &RunLoopParams<'_>) -> IntentGateSnapshot {
+    p.turn
+        .turn_planner_hints
+        .intent_gate_snapshot
+        .clone()
+        .unwrap_or(IntentGateSnapshot::Disabled)
+}
+
 /// 非分层：开局意图门控 → 解析 [`NonHierarchicalTurnPhase`] → 统一 driver。
 pub(crate) async fn dispatch_non_hierarchical_turn(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
 ) -> Result<(), RunAgentTurnError> {
     if !intent_at_turn_start::run_intent_at_turn_start_if_configured(p).await? {
+        let route = build_non_hierarchical_intent_finished_early_decision(
+            p.ctx.core.cfg.as_ref(),
+            intent_gate_snapshot_or_unknown(p),
+        );
+        record_and_emit_turn_route_decision(p, &route).await;
         tracing::info!(
             target: "crabmate::agent_turn",
             turn_orchestration_mode = TurnOrchestrationMode::IntentAtTurnStartFinished.as_str(),
@@ -59,6 +78,13 @@ pub(crate) async fn dispatch_non_hierarchical_turn(
     let entry = resolve_non_hierarchical_turn(p.ctx.core.cfg.as_ref(), &staged_gate);
     let turn_phase = entry.turn_phase;
     let mode = entry.orchestration_mode;
+    let route = build_non_hierarchical_turn_route_decision(
+        p.ctx.core.cfg.as_ref(),
+        intent_gate_snapshot_or_unknown(p),
+        staged_gate_snapshot_from_outcome(&staged_gate),
+        &entry,
+    );
+    record_and_emit_turn_route_decision(p, &route).await;
     log_orchestration_transition(
         TurnOrchestrationTransition::NonHierarchicalEntryResolved,
         Some(mode.as_str()),
