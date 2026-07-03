@@ -443,6 +443,10 @@ async fn run_agent_turn_hierarchical_discourse_fallback_uses_per_outer_loop() {
     );
 }
 
+/// Execute 类任务且**不**命中 [`simple_execute_fast_path`]（含「多个模块」以保留分阶段路径）。
+const STAGED_MOCK_EXECUTE_USER: &str =
+    "请修复 src/lib.rs 的编译错误，梳理多个模块的依赖关系并运行 cargo test";
+
 fn cfg_staged_execute_turn() -> Arc<AgentConfig> {
     let mut cfg = load_config(None).expect("embedded default config must load");
     cfg.per_plan_policy.planner_executor_mode = PlannerExecutorMode::SingleAgent;
@@ -452,6 +456,123 @@ fn cfg_staged_execute_turn() -> Arc<AgentConfig> {
     cfg.staged_planning.staged_plan_ensemble_count = 1;
     cfg.staged_planning.staged_plan_two_phase_nl_display = false;
     Arc::new(cfg)
+}
+
+async fn run_mock_agent_turn(
+    cfg: Arc<AgentConfig>,
+    messages: &mut Vec<Message>,
+    backend: &'static SequencedMockBackend,
+) {
+    let client = reqwest::Client::new();
+    let tools = build_tools();
+    let work_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let params = RunAgentTurnParams {
+        shared: RunAgentTurnSharedInputs {
+            client: &client,
+            api_key: "",
+            cfg: &cfg,
+            tools: tools.as_slice(),
+        },
+        messages,
+        effective_working_dir: work_dir,
+        workspace_is_set: true,
+        transport: AgentTurnTransport {
+            out: None,
+            render_to_terminal: false,
+            no_stream: true,
+            cancel: None,
+            per_flight: None,
+            web_tool_ctx: None,
+            cli_tool_ctx: None,
+            plain_terminal_stream: false,
+            tui_llm_stream_scratch: None,
+            tool_running_hook: None,
+            clarification_questionnaire_hook: None,
+            sse_control_mirror: None,
+            llm_backend: Some(backend as &dyn ChatCompletionsBackend),
+        },
+        llm: AgentTurnLlmOverrides {
+            temperature_override: None,
+            model_override: None,
+            use_executor_model: false,
+            executor_model_override: None,
+            executor_api_base: None,
+            executor_api_key: None,
+            seed_override: LlmSeedOverride::default(),
+        },
+        long_term_memory: None,
+        long_term_memory_scope_id: None,
+        read_file_turn_cache: None,
+        turn_allowed_tool_names: None,
+        tracing_chat_turn: None,
+        request_audit: None,
+        process_handles: ProcessHandles::default_arc_process_handles(),
+    };
+    run_agent_turn(params)
+        .await
+        .expect("mock run_agent_turn must succeed");
+}
+
+/// 分阶段 `no_task=true`：规划轮后降级 **`run_agent_outer_loop`**（PER 轨），仅再消耗一次 mock LLM。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn run_agent_turn_staged_no_task_degrades_to_outer_loop() {
+    let cfg = cfg_staged_execute_turn();
+    let outer_final = "staged no_task mock：外循环终答";
+    let backend: &'static SequencedMockBackend = Box::leak(Box::new(SequencedMockBackend::new(
+        vec![
+            Message::assistant_only(
+                r#"{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}"#.to_string(),
+            ),
+            Message::assistant_only(outer_final.to_string()),
+        ],
+        "stop",
+    )));
+    let mut messages = vec![
+        Message::system_only("test system".to_string()),
+        Message::user_only(STAGED_MOCK_EXECUTE_USER.to_string()),
+    ];
+    run_mock_agent_turn(cfg, &mut messages, backend).await;
+    assert_eq!(
+        backend.call_seq.load(Ordering::SeqCst),
+        2,
+        "no_task: planner then outer_loop final"
+    );
+    let last = messages.last().expect("messages");
+    let body = message_content_as_str(&last.content).unwrap_or("");
+    assert!(
+        body.contains(outer_final),
+        "expected outer loop final, got {body:?}"
+    );
+}
+
+/// 分阶段首轮规划解析失败：降级 **`run_agent_outer_loop`**。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn run_agent_turn_staged_invalid_plan_degrades_to_outer_loop() {
+    let cfg = cfg_staged_execute_turn();
+    let outer_final = "staged degrade mock：解析失败后外循环终答";
+    let backend: &'static SequencedMockBackend = Box::leak(Box::new(SequencedMockBackend::new(
+        vec![
+            Message::assistant_only("无结构化 agent_reply_plan 的 planner 正文".to_string()),
+            Message::assistant_only(outer_final.to_string()),
+        ],
+        "stop",
+    )));
+    let mut messages = vec![
+        Message::system_only("test system".to_string()),
+        Message::user_only(STAGED_MOCK_EXECUTE_USER.to_string()),
+    ];
+    run_mock_agent_turn(cfg, &mut messages, backend).await;
+    assert_eq!(
+        backend.call_seq.load(Ordering::SeqCst),
+        2,
+        "invalid plan: planner degrade then outer_loop final"
+    );
+    let last = messages.last().expect("messages");
+    let body = message_content_as_str(&last.content).unwrap_or("");
+    assert!(
+        body.contains(outer_final),
+        "expected degraded outer final, got {body:?}"
+    );
 }
 
 /// 分阶段单步：规划 JSON → 步内外循环工具轮 → 步内终答（mock LLM 序列）。
@@ -494,7 +615,7 @@ async fn run_agent_turn_staged_single_step_mock_llm_sequence() {
 
     let mut messages = vec![
         Message::system_only("test system".to_string()),
-        Message::user_only("请修复 src/lib.rs 的编译错误并运行 cargo test".to_string()),
+        Message::user_only(STAGED_MOCK_EXECUTE_USER.to_string()),
     ];
     let work_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let params = RunAgentTurnParams {
