@@ -176,6 +176,7 @@
 | 2026-04-30 | 规划子回合门控：`agent_turn/staged/planner_round_fsm.rs`（ensemble / 优化轮是否运行）；与 `turn_fsm` / `orchestrator` 并列 |
 | 2026-04-30 | 回合级：`agent_turn/staged/turn_fsm.rs`（`StagedTurnPhase` / `advance_staged_turn_after_sub_call`）；`prepare_messages_for_model` + `prepare_staged_planner_no_tools_request` fixture 测试见 `staged/mod.rs` |
 | 2026-04-28 | 实现增量：`per_coord/final_plan_gate.rs`、`agent_turn/staged/orchestrator.rs` |
+| 2026-07-03 | **阶段 E（driver reduce 收拢）**：**`rolling_horizon_preflight_reduce`**；**`StagedTurnDriver`** 统一 **`record_*_reduce`**（prepared / step / rolling preflight）；**`turn_orchestrator_fsm`** 增补 reduce→顶层相位映射；金样 +9。 |
 | 2026-07-03 | **阶段 D（首轮解析 reduce + driver 全链路）**：**`prepared_route_reduce`**；**`turn_driver`** 接入 post-parse / full-pipeline / round orchestrator；**`patch_replanner_*`** → **`PatchReplanner`** 顶层相位。 |
 | 2026-07-03 | **阶段 C（分层观测）**：**`hierarchy/reflect_replan_reason`**（**`ManagerReflectReplanReason`** + **`manager_reflect_replan_reason`**）；**`docs/开发文档.md`** **`hierarchical_phase` ↔ `orchestration_mode`** 对照表；§3.2 分层观测说明。 |
 | 2026-07-03 | **阶段 B（分阶段 driver）**：**`staged/turn_driver`** 运行时 **`StagedTurnOrchestratorPhase`**；**`staged_parse_terminal`** 解析终端两层化；**`step_iteration_reduce`** 步后 reduce 表；早停迁入 driver。 |

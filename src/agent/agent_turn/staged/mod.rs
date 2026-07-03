@@ -31,6 +31,7 @@ mod prepared_parse_fsm;
 mod prepared_post_parse_fsm;
 mod prepared_route_reduce;
 mod rolling_horizon_facade;
+mod rolling_horizon_preflight_reduce;
 mod sse;
 mod staged_parse_terminal;
 mod staged_step_fsm;
@@ -717,6 +718,9 @@ where
             prepared_route_reduce = reduce_action.as_str(),
             "staged prepared_request first-round parse reduce"
         );
+        if let Some(driver) = turn_driver.as_deref_mut() {
+            driver.record_prepared_route_reduce(reduce_action);
+        }
 
         match reduce_action {
             PreparedRouteReduceAction::FinishQuiet => {

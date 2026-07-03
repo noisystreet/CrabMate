@@ -8,6 +8,9 @@ use super::full_pipeline_fsm::StagedFullPipelinePhase;
 use super::orchestrator::StagedRoundOrchestratorPhase;
 use super::prepared_parse_fsm::PreparedPlannerRoute;
 use super::prepared_post_parse_fsm::PreparedPostParseSchedule;
+use super::prepared_route_reduce::PreparedRouteReduceAction;
+use super::rolling_horizon_preflight_reduce::RollingHorizonPreflightAction;
+use super::step_iteration_reduce::StepIterationReduceAction;
 use super::turn_fsm::StagedTurnPhase;
 
 /// 设计稿 §3.2「分阶段回合 FSM」顶层相位（与 `StagedTurnPhase` 滚动视界、
@@ -86,6 +89,43 @@ pub(crate) fn orchestrator_phase_for_full_pipeline(
     StagedTurnOrchestratorPhase::PlanReady
 }
 
+/// 首轮规划 parse reduce → 顶层相位。
+pub(crate) fn orchestrator_phase_for_prepared_route_reduce(
+    action: PreparedRouteReduceAction,
+) -> StagedTurnOrchestratorPhase {
+    match action {
+        PreparedRouteReduceAction::FinishQuiet
+        | PreparedRouteReduceAction::FinishWithAssistantOnly => StagedTurnOrchestratorPhase::Done,
+        PreparedRouteReduceAction::DegradeToOuterLoop => {
+            StagedTurnOrchestratorPhase::DegradedToOuterLoop
+        }
+        PreparedRouteReduceAction::ContinuePostParse => StagedTurnOrchestratorPhase::PlanReady,
+    }
+}
+
+/// 步后 outer_loop reduce → 顶层相位。
+pub(crate) fn orchestrator_phase_for_step_iteration_reduce(
+    action: StepIterationReduceAction,
+) -> StagedTurnOrchestratorPhase {
+    match action {
+        StepIterationReduceAction::ToolFailurePatch => StagedTurnOrchestratorPhase::PatchReplanner,
+        StepIterationReduceAction::ExecOrVerifyFailed
+        | StepIterationReduceAction::Cancelled
+        | StepIterationReduceAction::EmitSuccessAdvance => StagedTurnOrchestratorPhase::StepRunning,
+    }
+}
+
+/// 滚动视界 preflight reduce → 顶层相位（Continue 时调用方保留当前相位）。
+pub(crate) fn orchestrator_phase_for_rolling_horizon_preflight(
+    action: RollingHorizonPreflightAction,
+) -> StagedTurnOrchestratorPhase {
+    match action {
+        RollingHorizonPreflightAction::ContinueIteration => StagedTurnOrchestratorPhase::PrePlan,
+        RollingHorizonPreflightAction::StopMaxRounds
+        | RollingHorizonPreflightAction::StopEarlyFinish => StagedTurnOrchestratorPhase::Done,
+    }
+}
+
 /// 定稿 SSE 后进入步队列。
 pub(crate) fn orchestrator_phase_for_round_orchestrator(
     _phase: StagedRoundOrchestratorPhase,
@@ -113,7 +153,64 @@ pub(crate) fn orchestrator_phase_for_steps_loop_trace(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::agent_turn::staged::{
+        prepared_route_reduce::PreparedRouteReduceAction,
+        rolling_horizon_preflight_reduce::RollingHorizonPreflightAction,
+        step_iteration_reduce::StepIterationReduceAction,
+    };
     use crate::agent::plan_artifact::AgentReplyPlanV1;
+
+    #[test]
+    fn prepared_route_reduce_maps_to_top_level() {
+        assert_eq!(
+            orchestrator_phase_for_prepared_route_reduce(PreparedRouteReduceAction::FinishQuiet),
+            StagedTurnOrchestratorPhase::Done
+        );
+        assert_eq!(
+            orchestrator_phase_for_prepared_route_reduce(
+                PreparedRouteReduceAction::DegradeToOuterLoop
+            ),
+            StagedTurnOrchestratorPhase::DegradedToOuterLoop
+        );
+        assert_eq!(
+            orchestrator_phase_for_prepared_route_reduce(
+                PreparedRouteReduceAction::ContinuePostParse
+            ),
+            StagedTurnOrchestratorPhase::PlanReady
+        );
+    }
+
+    #[test]
+    fn step_iteration_reduce_maps_to_top_level() {
+        assert_eq!(
+            orchestrator_phase_for_step_iteration_reduce(
+                StepIterationReduceAction::ToolFailurePatch
+            ),
+            StagedTurnOrchestratorPhase::PatchReplanner
+        );
+        assert_eq!(
+            orchestrator_phase_for_step_iteration_reduce(
+                StepIterationReduceAction::EmitSuccessAdvance
+            ),
+            StagedTurnOrchestratorPhase::StepRunning
+        );
+    }
+
+    #[test]
+    fn rolling_horizon_preflight_maps_to_top_level() {
+        assert_eq!(
+            orchestrator_phase_for_rolling_horizon_preflight(
+                RollingHorizonPreflightAction::StopEarlyFinish
+            ),
+            StagedTurnOrchestratorPhase::Done
+        );
+        assert_eq!(
+            orchestrator_phase_for_rolling_horizon_preflight(
+                RollingHorizonPreflightAction::ContinueIteration
+            ),
+            StagedTurnOrchestratorPhase::PrePlan
+        );
+    }
 
     #[test]
     fn post_parse_schedule_maps_to_top_level() {
