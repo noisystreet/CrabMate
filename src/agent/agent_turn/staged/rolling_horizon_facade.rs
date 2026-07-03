@@ -22,7 +22,7 @@ use super::turn_fsm::{
 };
 use super::{
     StagedPlanRunLabels, prepare_staged_planner_no_tools_request,
-    run_staged_plan_with_prepared_request,
+    run_staged_plan_with_prepared_request, turn_driver::StagedTurnDriver,
 };
 
 /// 滚动视界外层循环变体（与 [`advance_staged_turn_after_sub_call`]、`StagedTurnPhase` 对齐）。
@@ -133,6 +133,7 @@ where
     let max_rewrites = p.ctx.core.cfg.turn_budget.full_plan_rewrite_max_attempts;
     let mut phase = StagedTurnPhase::PreStepExecutionRound;
     let mut staged_rounds = 0usize;
+    let mut turn_driver = StagedTurnDriver::new();
     const STAGED_SINGLE_STEP_MAX_ROUNDS: usize = 64;
     let snapshot =
         crate::agent::workspace_snapshot::WorkspaceSnapshot::take(p.ctx.core.effective_working_dir);
@@ -149,14 +150,14 @@ where
             return done;
         }
 
+        turn_driver.record_turn_phase(phase);
         tracing::debug!(
             target: "crabmate::staged",
             staged_fsm = "rolling_horizon",
             rolling_horizon_kind = ?kind,
             staged_round = staged_rounds,
             staged_turn_phase = ?phase,
-            staged_turn_orchestrator_phase =
-                super::turn_orchestrator_fsm::orchestrator_phase_for_turn_phase(phase).as_str(),
+            staged_turn_orchestrator_phase = turn_driver.phase_str(),
             rewrite_attempts = rewrite_attempts,
             sub_phase = "planner",
             "staged rolling horizon iteration enter"
@@ -175,6 +176,7 @@ where
             entered_from_step_execution_round,
             labels,
             make_step_user_message,
+            Some(&mut turn_driver),
         )
         .await;
 

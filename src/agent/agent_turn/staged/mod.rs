@@ -31,15 +31,18 @@ mod prepared_parse_fsm;
 mod prepared_post_parse_fsm;
 mod rolling_horizon_facade;
 mod sse;
+mod staged_parse_terminal;
 mod staged_step_fsm;
 mod staged_step_patch_recover;
 mod step_after_outer;
 mod step_failure_exit;
 mod step_iteration_fsm;
+mod step_iteration_reduce;
 mod step_loop_fsm;
 mod step_patch_route_fsm;
 mod steps_loop;
 mod steps_loop_route_fsm;
+mod turn_driver;
 mod turn_fsm;
 mod turn_orchestrator_fsm;
 
@@ -80,8 +83,10 @@ use prepared_post_parse_fsm::{
     PreparedFullPipelineInputs, PreparedFullPipelineSchedule, PreparedPostParseSchedule,
     prepared_full_pipeline_schedule, prepared_post_parse_schedule,
 };
+use staged_parse_terminal::StagedParseTerminalRoute;
 use staged_sse::{next_staged_plan_id, staged_plan_phase_instruction_default};
 use steps_loop::run_staged_plan_steps_loop;
+use turn_driver::StagedTurnDriver;
 
 // Re-export for `run_dispatch`, `agent_turn/tests`, and in-module `#[cfg(test)]`.
 #[allow(unused_imports)]
@@ -212,6 +217,7 @@ struct ContinuePreparedPlanAfterFirstRoundParams<'a, 'b, F> {
     plan: plan_artifact::AgentReplyPlanV1,
     msg: Message,
     make_step_user_message: F,
+    turn_driver: Option<&'a mut StagedTurnDriver>,
 }
 
 async fn continue_prepared_plan_after_first_round<F>(
@@ -230,6 +236,7 @@ where
         plan,
         msg,
         make_step_user_message,
+        turn_driver,
     } = params;
     if should_suppress_completed_replanning(
         p,
@@ -311,6 +318,7 @@ where
                 plan,
                 pipeline_schedule,
                 parallel_csv,
+                turn_driver,
             })
             .await
         }
@@ -471,6 +479,7 @@ struct AdvanceFullPipelineAfterParseParams<'a, 'b, F> {
     plan: plan_artifact::AgentReplyPlanV1,
     pipeline_schedule: PreparedFullPipelineSchedule,
     parallel_csv: String,
+    turn_driver: Option<&'a mut StagedTurnDriver>,
 }
 
 async fn advance_full_pipeline_phases_after_parse_inner<F>(
@@ -489,6 +498,7 @@ where
         mut plan,
         pipeline_schedule,
         parallel_csv,
+        turn_driver,
     } = params;
     let ensemble_route = pipeline_schedule.ensemble_route;
     log_staged_plan_ensemble_route(ensemble_route, p.ctx.attach.staged_plan_ensemble_count);
@@ -589,6 +599,7 @@ where
         &labels,
         patch_ctx,
         make_step_user_message,
+        turn_driver,
     )
     .await
 }
@@ -603,6 +614,7 @@ pub(crate) async fn run_staged_plan_with_prepared_request<F>(
     entered_from_step_execution_round: bool,
     labels: StagedPlanRunLabels,
     make_step_user_message: F,
+    mut turn_driver: Option<&mut StagedTurnDriver>,
 ) -> Result<StagedPlanRunOutcome, RunAgentTurnError>
 where
     F: Fn(String) -> Message,
@@ -668,12 +680,19 @@ where
             target: "crabmate::staged",
             staged_fsm = "prepared_request",
             prepared_route = route.as_static_str(),
+            staged_parse_terminal =
+                StagedParseTerminalRoute::from_prepared_planner_route(&route).as_static_str(),
             staged_turn_orchestrator_phase =
                 turn_orchestrator_fsm::orchestrator_phase_for_prepared_route(&route).as_str(),
             entered_from_step_execution_round,
             sub_phase = "planner",
             "staged prepared_request first-round parse route"
         );
+        if let Some(driver) = turn_driver.as_deref_mut() {
+            driver.record_parse_terminal(&StagedParseTerminalRoute::from_prepared_planner_route(
+                &route,
+            ));
+        }
 
         match route {
             PreparedPlannerRoute::QuietFinish => {
@@ -746,6 +765,7 @@ where
                         plan,
                         msg,
                         make_step_user_message,
+                        turn_driver,
                     },
                 )
                 .await;

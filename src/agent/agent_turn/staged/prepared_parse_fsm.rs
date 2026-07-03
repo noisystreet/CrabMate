@@ -14,7 +14,7 @@
 use crate::agent::plan_artifact::{AgentReplyPlanV1, PlanArtifactError};
 use crate::types::Message;
 
-use super::planner_parse_fsm::StagedPlannerParseRoute;
+use super::staged_parse_terminal::StagedParseTerminalRoute;
 
 /// 首轮规划解析完成后，对 **`run_staged_plan_with_prepared_request`** 的三向路由（**不含** assistant `Message`；
 /// 调用方保留单次 LLM 返回的 `msg` 供 `push` / `outer_loop`）。
@@ -123,19 +123,21 @@ pub(crate) fn resolve_parse_with_assistant(
     match parse_result {
         Ok(plan) => PreparedPlannerParseOutcome::ContinueWithPlan { plan },
         Err(parse_err) => {
-            match super::planner_parse_fsm::staged_planner_parse_route(
+            let parse_route = super::planner_parse_fsm::staged_planner_parse_route(
                 &parse_err,
                 entered_from_step_execution_round,
                 merged_answer_text,
                 user_task,
-            ) {
-                StagedPlannerParseRoute::QuietFinishOnPlanNotFound => {
-                    PreparedPlannerParseOutcome::QuietFinish
-                }
-                StagedPlannerParseRoute::FinishOnDirectPlannerAnswer => {
+            );
+            match StagedParseTerminalRoute::from_planner_parse_route(parse_route) {
+                StagedParseTerminalRoute::QuietFinish => PreparedPlannerParseOutcome::QuietFinish,
+                StagedParseTerminalRoute::FinishWithDirectAnswer => {
                     PreparedPlannerParseOutcome::FinishWithDirectPlannerAnswer
                 }
-                StagedPlannerParseRoute::DegradeToOuterLoop => {
+                StagedParseTerminalRoute::DegradeToOuterLoop => {
+                    PreparedPlannerParseOutcome::DegradeToOuterLoop
+                }
+                StagedParseTerminalRoute::ContinueWithPlan { .. } => {
                     PreparedPlannerParseOutcome::DegradeToOuterLoop
                 }
             }

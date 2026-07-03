@@ -22,6 +22,8 @@
 {"id":"step_post_tool_patch","case":"steps_loop_post_outer","run_ok":true,"verify_fail":false,"cancelled":false,"tools_ok":false,"patch_planner":true,"expect":"tool_failure_patch"}
 {"id":"step_post_emit_despite_tools","case":"steps_loop_post_outer","run_ok":true,"verify_fail":false,"cancelled":false,"tools_ok":false,"patch_planner":false,"expect":"emit_success"}
 {"id":"step_post_success","case":"steps_loop_post_outer","run_ok":true,"verify_fail":false,"cancelled":false,"tools_ok":true,"patch_planner":false,"expect":"emit_success"}
+{"id":"step_reduce_emit","case":"step_iteration_reduce","route":"emit_success","expect":"emit_success_advance"}
+{"id":"step_reduce_exec_fail","case":"step_iteration_reduce","route":"exec_or_verify_failed","expect":"exec_or_verify_failed"}
 {"id":"patch_kind_verify","case":"step_patch_failure_kind","verify_reason":"exit_code_mismatch","has_outer_error":false,"expect":"step_verify_fail"}
 {"id":"patch_kind_outer","case":"step_patch_failure_kind","verify_reason":null,"has_outer_error":true,"expect":"outer_loop_error"}
 {"id":"patch_kind_tool","case":"step_patch_failure_kind","kind":"tool_messages_not_ok","expect":"tool_messages_not_ok"}
