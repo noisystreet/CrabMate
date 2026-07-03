@@ -37,6 +37,7 @@ mod outer_loop;
 mod outer_loop_build_idle;
 mod outer_loop_fsm;
 mod outer_loop_reflect;
+mod outer_loop_reflect_reason;
 mod params;
 mod plan;
 mod reflect;

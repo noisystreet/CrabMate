@@ -170,4 +170,5 @@
 | 2026-04-30 | 规划子回合门控：`agent_turn/staged/planner_round_fsm.rs`（ensemble / 优化轮是否运行）；与 `turn_fsm` / `orchestrator` 并列 |
 | 2026-04-30 | 回合级：`agent_turn/staged/turn_fsm.rs`（`StagedTurnPhase` / `advance_staged_turn_after_sub_call`）；`prepare_messages_for_model` + `prepare_staged_planner_no_tools_request` fixture 测试见 `staged/mod.rs` |
 | 2026-04-28 | 实现增量：`per_coord/final_plan_gate.rs`、`agent_turn/staged/orchestrator.rs` |
+| 2026-07-03 | **阶段 A（PER 收拢）**：删除未接线 **`plan_rewrite_controller`**；**`OuterLoopReflectPreGateReason`** 统一外循环 Gate 前纠偏 **`tracing`**；**`docs/开发文档.md`** 补充 R 三轨说明。 |
 | 2026-06-30 | **`staged/turn_orchestrator_fsm`**：**`StagedTurnOrchestratorPhase`**（§3.2 顶层）与子 FSM 映射；**`tracing`** 字段 **`staged_turn_orchestrator_phase`**。**`outer_loop_fsm`**：外循环迭代相位自 **`outer_loop.rs`** 抽出；反思映射迁至 **`outer_loop_reflect`**。**`steps_loop_route_fsm`**：步后 transition 之外的路由表。**`fixtures/fsm_orchestrator_golden.jsonl`** + **`golden_fsm_orchestrator`** 金样。 |

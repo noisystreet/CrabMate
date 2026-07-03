@@ -1,4 +1,6 @@
 //! 外循环反思结果 → **`ReflectBranchCtl`** 映射（副作用与 IO 仍在本模块；类型见 **`outer_loop_fsm`**）。
+//!
+//! **Gate 前 L2 纠偏**（build-idle、终答缺失）在本模块处理；终答规划门控见 **`per_coord::final_plan_gate`**。
 
 use std::sync::atomic::Ordering;
 
@@ -14,6 +16,7 @@ use super::outer_loop_build_idle::{
     outer_loop_window_has_build_progress_since_last_user,
 };
 use super::outer_loop_fsm::ReflectBranchCtl;
+use super::outer_loop_reflect_reason::OuterLoopReflectPreGateReason;
 use super::params::RunLoopParams;
 use super::reflect::ReflectOnAssistantOutcome;
 use super::turn_completion::outer_loop_missing_final_answer_feedback_if_needed;
@@ -44,7 +47,9 @@ pub(super) async fn map_reflect_outcome_to_branch_ctl(
                     ) {
                         info!(
                             target: "crabmate::agent_turn",
-                            "L2 外循环构建空转纠偏：注入 user 并继续 outer_loop_build_idle_streak={streak}"
+                            "outer loop pre-gate: {} streak={}",
+                            OuterLoopReflectPreGateReason::BuildIdleFeedback.as_str(),
+                            streak,
                         );
                         p.turn
                             .push_message(Message::user_staged_orchestration_injection(feedback));
@@ -62,7 +67,8 @@ pub(super) async fn map_reflect_outcome_to_branch_ctl(
                 ) {
                     info!(
                         target: "crabmate::agent_turn",
-                        "L2 外循环终答缺失纠偏：注入 user 并继续"
+                        "outer loop pre-gate: {}",
+                        OuterLoopReflectPreGateReason::MissingFinalAnswerFeedback.as_str(),
                     );
                     p.turn
                         .push_message(Message::user_staged_orchestration_injection(feedback));
