@@ -40,10 +40,11 @@ pub use turn_orchestration::{
     TurnOrchestrationMode, resolve_non_hierarchical_turn_phase,
 };
 pub use turn_route_decision::{
-    IntentGateSnapshot, StagedGateSnapshot, TurnRouteDecisionV1,
+    AssessTurnRoutingParams, AssessedTurnRoute, IntentGateSnapshot, StagedGateSnapshot,
+    TurnRouteDecisionV1, TurnRouteDriver, assess_turn_routing,
     build_hierarchical_intent_finished_early_decision, build_hierarchical_turn_route_decision,
     build_non_hierarchical_intent_finished_early_decision,
-    build_non_hierarchical_turn_route_decision, intent_action_label,
+    build_non_hierarchical_turn_route_decision, intent_action_label, intent_gate_is_early_exit,
     intent_gate_snapshot_finished_early, intent_gate_snapshot_from_decision, intent_kind_label,
     log_turn_route_decision, staged_gate_snapshot_from_outcome,
 };

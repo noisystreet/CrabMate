@@ -3,14 +3,12 @@
 //! 当 `planner_executor_mode = Hierarchical` 时使用此模块执行任务分解和子目标执行。
 
 use super::hierarchical_intent_route::HierarchicalPostIntentRoute;
-use super::orchestration_entry::{
-    HierarchicalTurnEntryResolution, TurnOrchestrationTransition, log_orchestration_transition,
-};
+use super::orchestration_entry::{TurnOrchestrationTransition, log_orchestration_transition};
 use crate::agent::hierarchy::{self, HierarchyRunnerResult};
 use crate::agent::per_coord::PerCoordinator;
 use crate::sse;
 use crabmate_agent::agent_turn::{
-    build_hierarchical_intent_finished_early_decision, build_hierarchical_turn_route_decision,
+    AssessTurnRoutingParams, TurnRouteDriver, TurnTopLevelDispatch, assess_turn_routing,
     intent_gate_snapshot_from_decision,
 };
 
@@ -90,6 +88,92 @@ async fn emit_hierarchical_final_assistant(p: &mut RunLoopParams<'_>, final_resp
     }
 }
 
+/// 分层意图门控 + [`assess_turn_routing`] 成功后的路由与 L2 决议。
+struct HierarchicalRouteReady {
+    post_intent: HierarchicalPostIntentRoute,
+    assessment: crate::agent::intent_pipeline::IntentDecision,
+}
+
+/// 分层意图门控 + [`assess_turn_routing`]；早退时写入 SSE 并返回 `FinishedEarly`。
+async fn run_hierarchical_intent_gate_and_route(
+    p: &mut RunLoopParams<'_>,
+    task: &str,
+) -> Result<Result<HierarchicalRouteReady, ()>, RunAgentTurnError> {
+    let intent_gate = intent_at_turn_start::run_intent_for_hierarchical(p, task).await?;
+    let assessment = match intent_gate {
+        intent_at_turn_start::IntentGateResult::Finished => {
+            let snapshot = p
+                .turn
+                .turn_planner_hints
+                .intent_gate_snapshot
+                .clone()
+                .unwrap_or_else(|| {
+                    intent_gate_snapshot_from_decision(
+                        &crate::agent::intent_pipeline::IntentDecision {
+                            kind: crate::agent::intent_router::IntentKind::Ambiguous,
+                            primary_intent: "unknown".into(),
+                            secondary_intents: Vec::new(),
+                            confidence: 0.0,
+                            abstain: false,
+                            need_clarification: true,
+                            action: IntentAction::DirectReply(String::new()),
+                        },
+                    )
+                });
+            let assessed = assess_turn_routing(AssessTurnRoutingParams {
+                cfg: p.ctx.core.cfg.as_ref(),
+                top_level: TurnTopLevelDispatch::Hierarchical,
+                intent_gate: snapshot,
+                staged_gate: None,
+                hierarchical_decision: None,
+            });
+            record_and_emit_turn_route_decision(p, &assessed.decision).await;
+            info!(
+                target: "crabmate::agent_turn",
+                turn_orchestration_mode = TurnOrchestrationMode::Hierarchical.as_str(),
+                hierarchical_phase = HierarchicalRunPhase::IntentGateFinishedEarly.as_str(),
+                "run_hierarchical_agent intent finished early"
+            );
+            return Ok(Err(()));
+        }
+        intent_at_turn_start::IntentGateResult::ProceedExecute { assessment } => assessment,
+    };
+
+    let assessed = assess_turn_routing(AssessTurnRoutingParams {
+        cfg: p.ctx.core.cfg.as_ref(),
+        top_level: TurnTopLevelDispatch::Hierarchical,
+        intent_gate: intent_gate_snapshot_from_decision(&assessment),
+        staged_gate: None,
+        hierarchical_decision: Some(&assessment),
+    });
+    record_and_emit_turn_route_decision(p, &assessed.decision).await;
+    let post_intent = match assessed.driver {
+        TurnRouteDriver::Hierarchical(route) => route,
+        TurnRouteDriver::IntentEarlyExit => return Ok(Err(())),
+        TurnRouteDriver::NonHierarchical(_) => {
+            unreachable!("hierarchical dispatch cannot yield NonHierarchical driver")
+        }
+    };
+    log_orchestration_transition(
+        TurnOrchestrationTransition::HierarchicalPostIntentResolved,
+        Some(assessed.decision.orchestration_mode.as_str()),
+        &[
+            ("hierarchical_post_intent_route", post_intent.as_str()),
+            (
+                "hierarchical_discourse_fallback_reason",
+                match post_intent {
+                    HierarchicalPostIntentRoute::DiscourseFallbackOuter(r) => r.as_str(),
+                    HierarchicalPostIntentRoute::RouterManagerRunner => "",
+                },
+            ),
+        ],
+    );
+    Ok(Ok(HierarchicalRouteReady {
+        post_intent,
+        assessment,
+    }))
+}
+
 /// 运行分层多 Agent
 pub(crate) async fn run_hierarchical_agent(
     p: &mut RunLoopParams<'_>,
@@ -119,66 +203,12 @@ pub(crate) async fn run_hierarchical_agent(
         task_preview = %truncate_string(&task, 120),
         "run_hierarchical_agent intent_gate"
     );
-    let intent_gate = intent_at_turn_start::run_intent_for_hierarchical(p, &task).await?;
-    let assessment = match intent_gate {
-        intent_at_turn_start::IntentGateResult::Finished => {
-            let snapshot = p
-                .turn
-                .turn_planner_hints
-                .intent_gate_snapshot
-                .clone()
-                .unwrap_or_else(|| {
-                    intent_gate_snapshot_from_decision(
-                        &crate::agent::intent_pipeline::IntentDecision {
-                            kind: crate::agent::intent_router::IntentKind::Ambiguous,
-                            primary_intent: "unknown".into(),
-                            secondary_intents: Vec::new(),
-                            confidence: 0.0,
-                            abstain: false,
-                            need_clarification: true,
-                            action: IntentAction::DirectReply(String::new()),
-                        },
-                    )
-                });
-            let route = build_hierarchical_intent_finished_early_decision(
-                p.ctx.core.cfg.as_ref(),
-                snapshot,
-            );
-            record_and_emit_turn_route_decision(p, &route).await;
-            info!(
-                target: "crabmate::agent_turn",
-                turn_orchestration_mode = TurnOrchestrationMode::Hierarchical.as_str(),
-                hierarchical_phase = HierarchicalRunPhase::IntentGateFinishedEarly.as_str(),
-                "run_hierarchical_agent intent finished early"
-            );
-            return Ok(());
-        }
-        intent_at_turn_start::IntentGateResult::ProceedExecute { assessment } => assessment,
+    let route_ready = match run_hierarchical_intent_gate_and_route(p, &task).await? {
+        Ok(ready) => ready,
+        Err(()) => return Ok(()),
     };
-
-    let entry = HierarchicalTurnEntryResolution::resolve(&assessment);
-    let post_intent = entry.post_intent_route;
-    let route = build_hierarchical_turn_route_decision(
-        p.ctx.core.cfg.as_ref(),
-        intent_gate_snapshot_from_decision(&assessment),
-        entry.orchestration_mode,
-        post_intent,
-    );
-    record_and_emit_turn_route_decision(p, &route).await;
-    log_orchestration_transition(
-        TurnOrchestrationTransition::HierarchicalPostIntentResolved,
-        Some(entry.orchestration_mode.as_str()),
-        &[
-            ("hierarchical_post_intent_route", post_intent.as_str()),
-            (
-                "hierarchical_discourse_fallback_reason",
-                match post_intent {
-                    HierarchicalPostIntentRoute::DiscourseFallbackOuter(r) => r.as_str(),
-                    HierarchicalPostIntentRoute::RouterManagerRunner => "",
-                },
-            ),
-        ],
-    );
+    let post_intent = route_ready.post_intent;
+    let assessment = route_ready.assessment;
     match post_intent {
         HierarchicalPostIntentRoute::DiscourseFallbackOuter(reason) => {
             crate::turn_replay_dump::append_decision_point_event_if_configured(
