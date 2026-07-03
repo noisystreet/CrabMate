@@ -43,3 +43,9 @@
 {"id":"rh_preflight_early","case":"rolling_horizon_preflight_reduce","staged_rounds":3,"max_rounds":64,"phase":"after_step_execution_round","early_stop_allow":true,"expect":"stop_early_finish"}
 {"id":"orch_rh_continue","case":"orchestrator_rolling_horizon_preflight","staged_rounds":2,"max_rounds":64,"phase":"pre_step_execution_round","early_stop_allow":false,"expect_phase":"pre_plan"}
 {"id":"orch_rh_early","case":"orchestrator_rolling_horizon_preflight","staged_rounds":3,"max_rounds":64,"phase":"after_step_execution_round","early_stop_allow":true,"expect_phase":"done"}
+{"id":"fp_ensemble_skip_binding","case":"full_pipeline_segment_reduce","segment":"ensemble","ensemble_route":"skip_validate_only_binding","optimizer_route":"run","nl_followup":true,"expect":"skip_segment"}
+{"id":"fp_ensemble_run","case":"full_pipeline_segment_reduce","segment":"ensemble","ensemble_route":"run","optimizer_route":"run","nl_followup":false,"expect":"run_llm"}
+{"id":"fp_optimizer_skip_lt2","case":"full_pipeline_segment_reduce","segment":"optimizer","ensemble_route":"run","optimizer_route":"skip_steps_lt2","nl_followup":false,"expect":"skip_segment"}
+{"id":"fp_optimizer_run","case":"full_pipeline_segment_reduce","segment":"optimizer","ensemble_route":"run","optimizer_route":"run","nl_followup":false,"expect":"run_llm"}
+{"id":"fp_nl_skip","case":"full_pipeline_segment_reduce","segment":"nl_followup","ensemble_route":"run","optimizer_route":"run","nl_followup":false,"expect":"skip_segment"}
+{"id":"fp_nl_run","case":"full_pipeline_segment_reduce","segment":"nl_followup","ensemble_route":"run","optimizer_route":"run","nl_followup":true,"expect":"run_llm"}

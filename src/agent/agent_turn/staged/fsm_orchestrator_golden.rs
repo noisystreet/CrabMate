@@ -1,8 +1,9 @@
 //! PER 编排 FSM 金样回归：`fixtures/fsm_orchestrator_golden.jsonl`。
 
 use super::full_pipeline_fsm::StagedFullPipelinePhase;
+use super::full_pipeline_reduce::{FullPipelineSegment, reduce_full_pipeline_segment};
 use super::prepared_parse_fsm::PreparedPlannerRoute;
-use super::prepared_post_parse_fsm::PreparedPostParseSchedule;
+use super::prepared_post_parse_fsm::{PreparedFullPipelineSchedule, PreparedPostParseSchedule};
 use super::prepared_route_reduce::reduce_prepared_planner_route;
 use super::rolling_horizon_preflight_reduce::{
     RollingHorizonPreflightInput, reduce_rolling_horizon_preflight,
@@ -23,6 +24,9 @@ use super::turn_orchestrator_fsm::{
 };
 use crate::agent::agent_turn::errors::{AgentTurnSubPhase, RunAgentTurnError};
 use crate::agent::agent_turn::outer_loop_fsm::{OuterLoopIterationExit, ReflectBranchCtl};
+use crate::agent::agent_turn::staged::planner_round_fsm::{
+    StagedPlanEnsembleRoute, StagedPlanOptimizerRoute,
+};
 use crate::agent::plan_artifact::AgentReplyPlanV1;
 use serde::Deserialize;
 use std::fs;
@@ -203,6 +207,51 @@ fn assert_orchestrator_post_parse_schedule(ctx: &str, body: &serde_json::Value) 
     );
 }
 
+fn ensemble_route_from_label(label: &str) -> StagedPlanEnsembleRoute {
+    match label {
+        "skip_not_configured" => StagedPlanEnsembleRoute::SkipNotConfigured,
+        "skip_validate_only_binding" => StagedPlanEnsembleRoute::SkipValidateOnlyBinding,
+        "skip_casual_heuristic" => StagedPlanEnsembleRoute::SkipCasualHeuristic,
+        "run" => StagedPlanEnsembleRoute::Run,
+        other => panic!("unknown ensemble route label: {other}"),
+    }
+}
+
+fn optimizer_route_from_label(label: &str) -> StagedPlanOptimizerRoute {
+    match label {
+        "skip_steps_lt2" => StagedPlanOptimizerRoute::SkipStepsLt2,
+        "skip_optimizer_round_disabled" => StagedPlanOptimizerRoute::SkipOptimizerRoundDisabled,
+        "skip_validate_only_binding" => StagedPlanOptimizerRoute::SkipValidateOnlyBinding,
+        "skip_no_parallel_tools" => StagedPlanOptimizerRoute::SkipNoParallelTools,
+        "run" => StagedPlanOptimizerRoute::Run,
+        other => panic!("unknown optimizer route label: {other}"),
+    }
+}
+
+fn full_pipeline_segment_from_label(label: &str) -> FullPipelineSegment {
+    match label {
+        "ensemble" => FullPipelineSegment::Ensemble,
+        "optimizer" => FullPipelineSegment::Optimizer,
+        "nl_followup" => FullPipelineSegment::NlFollowup,
+        other => panic!("unknown full pipeline segment label: {other}"),
+    }
+}
+
+fn assert_full_pipeline_segment_reduce(ctx: &str, body: &serde_json::Value) {
+    let segment = full_pipeline_segment_from_label(body_str(body, "segment", ctx));
+    let schedule = PreparedFullPipelineSchedule {
+        ensemble_route: ensemble_route_from_label(body_str(body, "ensemble_route", ctx)),
+        optimizer_route: optimizer_route_from_label(body_str(body, "optimizer_route", ctx)),
+        nl_followup_before_steps: body["nl_followup"].as_bool().unwrap_or(false),
+    };
+    let expect = body_str(body, "expect", ctx);
+    assert_eq!(
+        reduce_full_pipeline_segment(segment, &schedule).as_str(),
+        expect,
+        "{ctx}: full pipeline segment reduce"
+    );
+}
+
 fn assert_prepared_route_reduce(ctx: &str, body: &serde_json::Value) {
     let route = prepared_route_from_label(body_str(body, "route", ctx));
     let expect = body_str(body, "expect", ctx);
@@ -331,6 +380,7 @@ fn assert_golden_fsm_line(ctx: &str, row: &GoldenLine) {
         "orchestrator_rolling_horizon_preflight" => {
             assert_orchestrator_rolling_horizon_preflight(ctx, &row.body);
         }
+        "full_pipeline_segment_reduce" => assert_full_pipeline_segment_reduce(ctx, &row.body),
         other => panic!("{ctx}: unknown case {other}"),
     }
 }

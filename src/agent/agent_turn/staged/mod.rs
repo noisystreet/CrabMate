@@ -20,6 +20,7 @@ pub(crate) mod empty_execution;
 mod ensemble_fsm;
 mod ensemble_schedule_fsm;
 mod full_pipeline_fsm;
+mod full_pipeline_reduce;
 mod orchestrator;
 mod patch_planner;
 mod plan_stagnation;
@@ -66,6 +67,10 @@ use full_pipeline_fsm::{
     StagedFullPipelinePhase, debug_staged_full_pipeline_enter,
     debug_staged_full_pipeline_transition,
 };
+use full_pipeline_reduce::{
+    FullPipelineSegment, FullPipelineSegmentReduceAction, full_pipeline_entry_phase,
+    full_pipeline_phase_after_segment, reduce_full_pipeline_segment,
+};
 use patch_planner::StagedPlanPatchPlannerCtx;
 use plan_stagnation::{
     StagedPlanStagnationAction, evaluate_staged_plan_stagnation_after_step_round,
@@ -77,8 +82,8 @@ use planner_round_driver::{
     maybe_run_staged_plan_ensemble_then_merge, run_staged_plan_nl_followup_round,
 };
 use post_parse_pipeline_fsm::{
-    ensemble_merge_should_invoke, ensemble_merge_skip_for_casual_prompt,
-    log_staged_plan_ensemble_route, log_staged_plan_optimizer_route, optimizer_round_should_run,
+    ensemble_merge_skip_for_casual_prompt, log_staged_plan_ensemble_route,
+    log_staged_plan_optimizer_route, optimizer_round_should_run,
 };
 use prepared_parse_fsm::{PreparedPlannerRoute, resolve_prepared_planner_route};
 use prepared_post_parse_fsm::{
@@ -488,6 +493,19 @@ struct AdvanceFullPipelineAfterParseParams<'a, 'b, F> {
     turn_driver: Option<&'a mut StagedTurnDriver>,
 }
 
+fn advance_full_pipeline_record_segment_phase(
+    fp_phase: &mut StagedFullPipelinePhase,
+    segment: FullPipelineSegment,
+    turn_driver: Option<&mut StagedTurnDriver>,
+) {
+    let next = full_pipeline_phase_after_segment(segment);
+    debug_staged_full_pipeline_transition(*fp_phase, Some(next));
+    *fp_phase = next;
+    if let Some(driver) = turn_driver {
+        driver.record_full_pipeline_phase(next);
+    }
+}
+
 async fn advance_full_pipeline_phases_after_parse_inner<F>(
     params: AdvanceFullPipelineAfterParseParams<'_, '_, F>,
 ) -> Result<StagedPlanRunOutcome, RunAgentTurnError>
@@ -509,7 +527,7 @@ where
     let ensemble_route = pipeline_schedule.ensemble_route;
     log_staged_plan_ensemble_route(ensemble_route, p.ctx.attach.staged_plan_ensemble_count);
 
-    let mut fp_phase = StagedFullPipelinePhase::BeforeEnsemble;
+    let mut fp_phase = full_pipeline_entry_phase();
     if let Some(driver) = turn_driver.as_deref_mut() {
         driver.record_full_pipeline_phase(fp_phase);
     }
@@ -521,7 +539,17 @@ where
         "staged full pipeline enter (top-level orchestrator phase)"
     );
 
-    if ensemble_merge_should_invoke(ensemble_route) {
+    let ensemble_reduce =
+        reduce_full_pipeline_segment(FullPipelineSegment::Ensemble, &pipeline_schedule);
+    tracing::debug!(
+        target: "crabmate::staged",
+        staged_fsm = "full_pipeline",
+        full_pipeline_segment = FullPipelineSegment::Ensemble.as_str(),
+        full_pipeline_segment_reduce = ensemble_reduce.as_str(),
+        sub_phase = "planner",
+        "staged full pipeline segment reduce"
+    );
+    if matches!(ensemble_reduce, FullPipelineSegmentReduceAction::RunLlm) {
         let skip_ensemble_for_casual = ensemble_merge_skip_for_casual_prompt(ensemble_route);
         maybe_run_staged_plan_ensemble_then_merge(
             p,
@@ -534,54 +562,66 @@ where
         )
         .await?;
     }
-    let next_fp = fp_phase
-        .advance()
-        .expect("full_pipeline: before_ensemble -> after_ensemble");
-    debug_staged_full_pipeline_transition(fp_phase, Some(next_fp));
-    fp_phase = next_fp;
-    if let Some(driver) = turn_driver.as_deref_mut() {
-        driver.record_full_pipeline_phase(fp_phase);
-    }
+    advance_full_pipeline_record_segment_phase(
+        &mut fp_phase,
+        FullPipelineSegment::Ensemble,
+        turn_driver.as_deref_mut(),
+    );
 
     let optimizer_route = pipeline_schedule.optimizer_route;
     log_staged_plan_optimizer_route(optimizer_route, plan.steps.len());
 
-    match maybe_run_optimizer_round_and_apply_steps_inner(StagedOptimizerRoundParams {
-        p,
-        per_coord,
-        labels,
-        planner_render_to_terminal,
-        make_step_user_message,
-        plan: &mut plan,
-        optimizer_route,
-        parallel_csv: parallel_csv.as_str(),
-    })
-    .await?
-    {
-        ControlFlow::Break(outcome) => return Ok(outcome),
-        ControlFlow::Continue(()) => {}
+    let optimizer_reduce =
+        reduce_full_pipeline_segment(FullPipelineSegment::Optimizer, &pipeline_schedule);
+    tracing::debug!(
+        target: "crabmate::staged",
+        staged_fsm = "full_pipeline",
+        full_pipeline_segment = FullPipelineSegment::Optimizer.as_str(),
+        full_pipeline_segment_reduce = optimizer_reduce.as_str(),
+        sub_phase = "planner",
+        "staged full pipeline segment reduce"
+    );
+    if matches!(optimizer_reduce, FullPipelineSegmentReduceAction::RunLlm) {
+        match maybe_run_optimizer_round_and_apply_steps_inner(StagedOptimizerRoundParams {
+            p,
+            per_coord,
+            labels,
+            planner_render_to_terminal,
+            make_step_user_message,
+            plan: &mut plan,
+            optimizer_route,
+            parallel_csv: parallel_csv.as_str(),
+        })
+        .await?
+        {
+            ControlFlow::Break(outcome) => return Ok(outcome),
+            ControlFlow::Continue(()) => {}
+        }
     }
+    advance_full_pipeline_record_segment_phase(
+        &mut fp_phase,
+        FullPipelineSegment::Optimizer,
+        turn_driver.as_deref_mut(),
+    );
 
-    let next_fp = fp_phase
-        .advance()
-        .expect("full_pipeline: after_ensemble -> after_optimizer");
-    debug_staged_full_pipeline_transition(fp_phase, Some(next_fp));
-    fp_phase = next_fp;
-    if let Some(driver) = turn_driver.as_deref_mut() {
-        driver.record_full_pipeline_phase(fp_phase);
-    }
-
-    if pipeline_schedule.nl_followup_before_steps {
+    let nl_reduce =
+        reduce_full_pipeline_segment(FullPipelineSegment::NlFollowup, &pipeline_schedule);
+    tracing::debug!(
+        target: "crabmate::staged",
+        staged_fsm = "full_pipeline",
+        full_pipeline_segment = FullPipelineSegment::NlFollowup.as_str(),
+        full_pipeline_segment_reduce = nl_reduce.as_str(),
+        sub_phase = "planner",
+        "staged full pipeline segment reduce"
+    );
+    if matches!(nl_reduce, FullPipelineSegmentReduceAction::RunLlm) {
         run_staged_plan_nl_followup_round(p, per_coord, make_step_user_message).await?;
     }
-    let next_fp = fp_phase
-        .advance()
-        .expect("full_pipeline: after_optimizer -> after_nl_followup");
-    debug_staged_full_pipeline_transition(fp_phase, Some(next_fp));
-    fp_phase = next_fp;
-    if let Some(driver) = turn_driver.as_deref_mut() {
-        driver.record_full_pipeline_phase(fp_phase);
-    }
+    advance_full_pipeline_record_segment_phase(
+        &mut fp_phase,
+        FullPipelineSegment::NlFollowup,
+        turn_driver.as_deref_mut(),
+    );
 
     debug_staged_full_pipeline_transition(fp_phase, None);
 
