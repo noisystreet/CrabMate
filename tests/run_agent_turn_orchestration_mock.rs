@@ -670,6 +670,51 @@ async fn run_agent_turn_staged_single_step_mock_llm_sequence() {
     );
 }
 
+/// 分阶段步验收失败 → **`patch_replanner`** → 重试步外循环（mock LLM 序列）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn run_agent_turn_staged_step_verify_fail_patch_replanner_mock() {
+    let mut cfg = (*cfg_staged_execute_turn()).clone();
+    cfg.staged_planning.staged_plan_patch_max_attempts = 1;
+    let cfg = Arc::new(cfg);
+    let plan_json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"调用 get_current_time 查询时间","acceptance":{"expect_stdout_contains":"PATCH_VERIFY_MARKER_XYZ"}}]}"#;
+    let patch_plan_json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"调用 get_current_time 查询时间（补丁后）"}]}"#;
+    let outer_fail_no_tool = Message::assistant_only("本轮未调用任何工具。".to_string());
+    let step_final = Message::assistant_only("分阶段补丁后 mock 终答".to_string());
+    let staged_tail_plan = Message::assistant_only(
+        r#"{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}"#.to_string(),
+    );
+    let backend: &'static SequencedMockBackend = Box::leak(Box::new(SequencedMockBackend::new(
+        vec![
+            Message::assistant_only(plan_json.to_string()),
+            outer_fail_no_tool,
+            Message::assistant_only(patch_plan_json.to_string()),
+            step_final,
+            staged_tail_plan,
+        ],
+        "stop",
+    )));
+    let mut messages = vec![
+        Message::system_only("test system".to_string()),
+        Message::user_only(STAGED_MOCK_EXECUTE_USER.to_string()),
+    ];
+    run_mock_agent_turn(cfg, &mut messages, backend).await;
+    let calls = backend.call_seq.load(Ordering::SeqCst);
+    assert!(
+        calls >= 4,
+        "verify fail patch path: expected >=4 LLM calls (plan+outer+patch+retry), got {calls}"
+    );
+    let patch_feedback = messages.iter().any(|m| {
+        m.role == "user"
+            && message_content_as_str(&m.content)
+                .unwrap_or("")
+                .contains("分阶段规划 · 步级反馈")
+    });
+    assert!(
+        patch_feedback,
+        "expected patch planner feedback user after step verify fail"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn run_agent_turn_plan_rewrite_exhausted_on_missing_plan() {
     use crabmate::agent::per_coord::FinalPlanRequirementMode;

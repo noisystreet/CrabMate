@@ -23,10 +23,7 @@ use super::sse::{
     finish_staged_plan_step_sse, send_staged_plan_finished, send_staged_plan_step_started,
     staged_step_emit_ok_step_and_queue_notice,
 };
-use super::staged_step_fsm::{
-    staged_patch_budget_after_step_failure, staged_patch_budget_tool_messages_not_ok,
-    staged_step_patch_planner_enabled,
-};
+use super::staged_step_fsm::staged_step_patch_planner_enabled;
 use super::staged_step_patch_recover::{
     StagedStepPatchRecoverBundles, StagedStepPatchRecoverSpec, staged_step_try_patch_recover,
 };
@@ -44,8 +41,9 @@ use super::step_iteration_reduce::{
     step_iteration_ctl_for_emit_success,
 };
 use super::step_loop_fsm::staged_injected_step_user_body;
-use super::step_patch_route_fsm::{
-    StagedStepPatchFailureKind, resolve_staged_step_patch_failure_kind,
+use super::step_patch_recover_reduce::{
+    StepPatchRecoverBranch, StepPatchRecoverReduceAction, StepPatchRecoverReduceInput,
+    reduce_step_patch_recover,
 };
 use super::steps_loop_route_fsm::resolve_staged_step_post_outer_route_from_results;
 use super::turn_driver::StagedTurnDriver;
@@ -268,6 +266,7 @@ struct StagedOuterExecFailureRecoverParams<'a, 'b, 'c, F> {
 
 async fn staged_step_try_recover_outer_execution_failure<F>(
     p: StagedOuterExecFailureRecoverParams<'_, '_, '_, F>,
+    mut turn_driver: Option<&mut StagedTurnDriver>,
 ) -> Result<Option<StagedStepIterationCtl>, RunAgentTurnError>
 where
     F: Fn(String) -> Message,
@@ -285,32 +284,29 @@ where
         step_verify_failed_reason,
         outer_loop_error_text,
     } = p;
-    if !staged_step_patch_planner_enabled(
-        patch_ctx
-            .p
-            .ctx
-            .core
-            .cfg
-            .staged_planning
-            .staged_plan_feedback_mode,
-    ) {
-        return Ok(None);
-    }
-    let failure_kind = resolve_staged_step_patch_failure_kind(
-        step_verify_failed_reason,
-        outer_loop_error_text.is_some(),
-    )
-    .unwrap_or(StagedStepPatchFailureKind::OuterLoopError);
-    let patch_budget = staged_patch_budget_after_step_failure(
-        step.max_step_retries,
-        patch_ctx
-            .p
-            .ctx
-            .core
-            .cfg
-            .staged_planning
-            .staged_plan_patch_max_attempts,
+    let staged_cfg = &patch_ctx.p.ctx.core.cfg.staged_planning;
+    let reduce_action = reduce_step_patch_recover(StepPatchRecoverReduceInput {
+        branch: StepPatchRecoverBranch::OuterExecOrVerify,
+        feedback_mode: staged_cfg.staged_plan_feedback_mode,
+        step_max_retries: step.max_step_retries,
+        staged_plan_patch_max_attempts: staged_cfg.staged_plan_patch_max_attempts,
+        step_verify_failed_reason: step_verify_failed_reason.clone(),
+        has_outer_loop_error: outer_loop_error_text.is_some(),
+    });
+    let reduce_log = reduce_action.as_str();
+    tracing::debug!(
+        target: "crabmate::staged",
+        staged_fsm = "steps_loop",
+        step_patch_recover_reduce = reduce_log,
+        sub_phase = "planner",
+        "staged step outer exec patch recover reduce"
     );
+    if let Some(driver) = turn_driver.as_mut() {
+        driver.record_step_patch_recover_reduce(&reduce_action);
+    }
+    let StepPatchRecoverReduceAction::Run(plan) = reduce_action else {
+        return Ok(None);
+    };
     staged_step_try_patch_recover(
         StagedStepPatchRecoverBundles {
             plan_id,
@@ -324,16 +320,16 @@ where
             step_user_index,
         },
         StagedStepPatchRecoverSpec {
-            failure_kind,
-            steps_loop_phase: "patch_replanner_attempt",
-            patch_budget,
+            failure_kind: plan.failure_kind,
+            steps_loop_phase: plan.steps_loop_phase,
+            patch_budget: plan.patch_budget,
             outer_loop_error_text: outer_loop_error_text.as_deref(),
         },
     )
     .await
 }
 
-/// 工具消息未全部成功时的补丁恢复：`Ok(Some(RetryCurrentStep))` 或 `Ok(None)`（由调用方走工具失败耗尽）。
+/// 工具消息未全部成功时的补丁恢复
 struct StagedToolFailurePatchRecoverParams<'a, 'b, 'c, F> {
     plan_id: &'a str,
     i: usize,
@@ -348,6 +344,7 @@ struct StagedToolFailurePatchRecoverParams<'a, 'b, 'c, F> {
 
 async fn staged_step_try_recover_tool_failure_patches<F>(
     p: StagedToolFailurePatchRecoverParams<'_, '_, '_, F>,
+    mut turn_driver: Option<&mut StagedTurnDriver>,
 ) -> Result<Option<StagedStepIterationCtl>, RunAgentTurnError>
 where
     F: Fn(String) -> Message,
@@ -363,15 +360,29 @@ where
         step_user_index,
         step,
     } = p;
-    let tool_patch_budget = staged_patch_budget_tool_messages_not_ok(
-        patch_ctx
-            .p
-            .ctx
-            .core
-            .cfg
-            .staged_planning
-            .staged_plan_patch_max_attempts,
+    let staged_cfg = &patch_ctx.p.ctx.core.cfg.staged_planning;
+    let reduce_action = reduce_step_patch_recover(StepPatchRecoverReduceInput {
+        branch: StepPatchRecoverBranch::ToolFailure,
+        feedback_mode: staged_cfg.staged_plan_feedback_mode,
+        step_max_retries: step.max_step_retries,
+        staged_plan_patch_max_attempts: staged_cfg.staged_plan_patch_max_attempts,
+        step_verify_failed_reason: None,
+        has_outer_loop_error: false,
+    });
+    let reduce_log = reduce_action.as_str();
+    tracing::debug!(
+        target: "crabmate::staged",
+        staged_fsm = "steps_loop",
+        step_patch_recover_reduce = reduce_log,
+        sub_phase = "planner",
+        "staged step tool failure patch recover reduce"
     );
+    if let Some(driver) = turn_driver.as_mut() {
+        driver.record_step_patch_recover_reduce(&reduce_action);
+    }
+    let StepPatchRecoverReduceAction::Run(plan) = reduce_action else {
+        return Ok(None);
+    };
     staged_step_try_patch_recover(
         StagedStepPatchRecoverBundles {
             plan_id,
@@ -385,9 +396,9 @@ where
             step_user_index,
         },
         StagedStepPatchRecoverSpec {
-            failure_kind: StagedStepPatchFailureKind::ToolMessagesNotOk,
-            steps_loop_phase: "patch_replanner_tool_failure",
-            patch_budget: tool_patch_budget,
+            failure_kind: plan.failure_kind,
+            steps_loop_phase: plan.steps_loop_phase,
+            patch_budget: plan.patch_budget,
             outer_loop_error_text: None,
         },
     )
@@ -411,7 +422,7 @@ where
         transition_counters,
         echo_terminal_staged,
         patch_ctx,
-        turn_driver,
+        mut turn_driver,
     } = p;
     let StagedStepOuterHalfResult {
         step,
@@ -481,7 +492,7 @@ where
         sub_phase = "executor",
         "staged step after outer_loop: route resolved"
     );
-    if let Some(driver) = turn_driver {
+    if let Some(driver) = turn_driver.as_mut() {
         driver.record_step_iteration_reduce(reduce_action);
     }
 
@@ -501,6 +512,7 @@ where
                     step_verify_failed_reason: &step_verify_failed_reason,
                     outer_loop_error_text: run_step.as_ref().err().map(|e| e.to_string()),
                 },
+                turn_driver,
             )
             .await?
             {
@@ -537,8 +549,8 @@ where
             return Ok(StagedStepIterationCtl::CancelledAfterOuterOk);
         }
         StepIterationReduceAction::ToolFailurePatch => {
-            if let Some(ctl) =
-                staged_step_try_recover_tool_failure_patches(StagedToolFailurePatchRecoverParams {
+            if let Some(ctl) = staged_step_try_recover_tool_failure_patches(
+                StagedToolFailurePatchRecoverParams {
                     plan_id,
                     i,
                     n,
@@ -548,8 +560,10 @@ where
                     patch_ctx,
                     step_user_index: step_user_idx,
                     step: &step,
-                })
-                .await?
+                },
+                turn_driver,
+            )
+            .await?
             {
                 return Ok(ctl);
             }

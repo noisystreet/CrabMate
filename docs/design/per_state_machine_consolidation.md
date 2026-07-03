@@ -176,6 +176,7 @@
 | 2026-04-30 | 规划子回合门控：`agent_turn/staged/planner_round_fsm.rs`（ensemble / 优化轮是否运行）；与 `turn_fsm` / `orchestrator` 并列 |
 | 2026-04-30 | 回合级：`agent_turn/staged/turn_fsm.rs`（`StagedTurnPhase` / `advance_staged_turn_after_sub_call`）；`prepare_messages_for_model` + `prepare_staged_planner_no_tools_request` fixture 测试见 `staged/mod.rs` |
 | 2026-04-28 | 实现增量：`per_coord/final_plan_gate.rs`、`agent_turn/staged/orchestrator.rs` |
+| 2026-07-03 | **阶段 G（patch 恢复 reduce + mock + CI）**：**`step_patch_recover_reduce`**；**`run_agent_turn_staged_step_verify_fail_patch_replanner_mock`**；**`workflow_reflection`** 金样进 CI；金样 +3。 |
 | 2026-07-03 | **阶段 F（full-pipeline 段 reduce）**：**`full_pipeline_reduce`**（ensemble/optimizer/NL 段 Run/Skip）；**`mod.rs`** 段后相位推进收拢；金样 +6。 |
 | 2026-07-03 | **阶段 E（driver reduce 收拢）**：**`rolling_horizon_preflight_reduce`**；**`StagedTurnDriver`** 统一 **`record_*_reduce`**（prepared / step / rolling preflight）；**`turn_orchestrator_fsm`** 增补 reduce→顶层相位映射；金样 +9。 |
 | 2026-07-03 | **阶段 D（首轮解析 reduce + driver 全链路）**：**`prepared_route_reduce`**；**`turn_driver`** 接入 post-parse / full-pipeline / round orchestrator；**`patch_replanner_*`** → **`PatchReplanner`** 顶层相位。 |

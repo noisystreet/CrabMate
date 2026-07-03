@@ -9,6 +9,10 @@ use super::rolling_horizon_preflight_reduce::{
     RollingHorizonPreflightInput, reduce_rolling_horizon_preflight,
 };
 use super::step_iteration_reduce::reduce_staged_step_post_outer_route;
+use super::step_patch_recover_reduce::{
+    StepPatchRecoverBranch, StepPatchRecoverReduceAction, StepPatchRecoverReduceInput,
+    reduce_step_patch_recover,
+};
 use super::step_patch_route_fsm::{
     StagedStepPatchFailureKind, resolve_staged_step_patch_failure_kind,
 };
@@ -28,6 +32,7 @@ use crate::agent::agent_turn::staged::planner_round_fsm::{
     StagedPlanEnsembleRoute, StagedPlanOptimizerRoute,
 };
 use crate::agent::plan_artifact::AgentReplyPlanV1;
+use crate::config::StagedPlanFeedbackMode;
 use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -252,6 +257,45 @@ fn assert_full_pipeline_segment_reduce(ctx: &str, body: &serde_json::Value) {
     );
 }
 
+fn assert_step_patch_recover_reduce(ctx: &str, body: &serde_json::Value) {
+    let branch = match body_str(body, "branch", ctx) {
+        "outer_exec_or_verify" => StepPatchRecoverBranch::OuterExecOrVerify,
+        "tool_failure" => StepPatchRecoverBranch::ToolFailure,
+        other => panic!("{ctx}: unknown patch recover branch {other}"),
+    };
+    let feedback_mode = match body_str(body, "feedback_mode", ctx) {
+        "fail_fast" => StagedPlanFeedbackMode::FailFast,
+        "patch_planner" => StagedPlanFeedbackMode::PatchPlanner,
+        other => panic!("{ctx}: unknown feedback_mode {other}"),
+    };
+    let patch_max = body["patch_max"].as_u64().unwrap_or(0) as usize;
+    let verify_reason = body.get("verify_reason").and_then(|v| {
+        if v.is_null() {
+            None
+        } else {
+            Some(v.as_str().expect("verify_reason str").to_string())
+        }
+    });
+    let has_outer_error = body["has_outer_error"].as_bool().unwrap_or(false);
+    let action = reduce_step_patch_recover(StepPatchRecoverReduceInput {
+        branch,
+        feedback_mode,
+        step_max_retries: None,
+        staged_plan_patch_max_attempts: patch_max,
+        step_verify_failed_reason: verify_reason,
+        has_outer_loop_error: has_outer_error,
+    });
+    let expect = body_str(body, "expect", ctx);
+    match expect {
+        "skip" => assert_eq!(action, StepPatchRecoverReduceAction::Skip, "{ctx}"),
+        "run_patch" => assert!(
+            matches!(action, StepPatchRecoverReduceAction::Run(_)),
+            "{ctx}: expected run_patch got {action:?}"
+        ),
+        other => panic!("{ctx}: unknown expect {other}"),
+    }
+}
+
 fn assert_prepared_route_reduce(ctx: &str, body: &serde_json::Value) {
     let route = prepared_route_from_label(body_str(body, "route", ctx));
     let expect = body_str(body, "expect", ctx);
@@ -381,6 +425,7 @@ fn assert_golden_fsm_line(ctx: &str, row: &GoldenLine) {
             assert_orchestrator_rolling_horizon_preflight(ctx, &row.body);
         }
         "full_pipeline_segment_reduce" => assert_full_pipeline_segment_reduce(ctx, &row.body),
+        "step_patch_recover_reduce" => assert_step_patch_recover_reduce(ctx, &row.body),
         other => panic!("{ctx}: unknown case {other}"),
     }
 }
