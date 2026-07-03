@@ -106,6 +106,10 @@ impl ConfigBuilder {
             agent.planner_executor_mode.clone(),
         );
         override_opt_string_non_empty(
+            &mut self.per_plan_policy.orchestration_profile_str,
+            agent.orchestration_profile.clone(),
+        );
+        override_opt_string_non_empty(
             &mut self.cursor_rules.cursor_rules_dir,
             agent.cursor_rules_dir.clone(),
         );

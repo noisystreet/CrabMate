@@ -33,6 +33,8 @@ pub enum StagedPlanningDenyReason {
     AdvisoryExecuteBypassStaged,
     /// 只读概览/探查类 Execute：不进入分阶段规划。
     ReadonlyOverviewBypassStaged,
+    /// 编排档位 `freeform` 强制外循环。
+    OrchestrationProfileFreeform,
 }
 
 impl StagedPlanningDenyReason {
@@ -42,6 +44,7 @@ impl StagedPlanningDenyReason {
             Self::IntentPipelineNotExecute => "intent_pipeline_not_execute",
             Self::AdvisoryExecuteBypassStaged => "advisory_execute_bypass_staged",
             Self::ReadonlyOverviewBypassStaged => "readonly_overview_bypass_staged",
+            Self::OrchestrationProfileFreeform => "orchestration_profile_freeform",
         }
     }
 }

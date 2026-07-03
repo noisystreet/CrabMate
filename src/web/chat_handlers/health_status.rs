@@ -70,8 +70,12 @@ struct StatusResponse {
     final_plan_semantic_check_enabled: bool,
     final_plan_semantic_check_max_non_readonly_tools: usize,
     final_plan_semantic_check_max_tokens: u32,
-    /// 规划器/执行器模式：single_agent | logical_dual_agent。
+    /// 规划器/执行器模式：single_agent | logical_dual_agent | hierarchical。
     planner_executor_mode: &'static str,
+    /// 编排档位：freeform | staged | auto。
+    orchestration_profile: &'static str,
+    /// 本进程有效编排路径摘要（不含用户任务级门控）。
+    effective_orchestration_path: String,
     /// 为 true 时每条用户消息先无工具规划轮再按步执行（见 `agent::agent_turn`；由 `staged_plan_intent_gate` 门控）。
     staged_plan_intent_gate_advisory_bypass: bool,
     /// CLI 是否在分阶段/逻辑双 agent 的**无工具规划轮**向 stdout 打印模型原文（默认 true）。
@@ -163,6 +167,63 @@ struct StatusResponse {
     default_agent_role_id: Option<String>,
 }
 
+fn tiktoken_new_session_baselines_by_role(
+    cfg: &crate::AgentConfig,
+    tool_recorder: &std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder>,
+    workspace_root: &std::path::Path,
+    agent_role_ids: &[String],
+) -> std::collections::BTreeMap<String, u32> {
+    let memory_snippet = if cfg.context_bootstrap_inject.agent_memory_file_enabled {
+        crate::memory::agent_memory::load_memory_snippet(
+            workspace_root,
+            cfg.context_bootstrap_inject.agent_memory_file.as_str(),
+            cfg.context_bootstrap_inject.agent_memory_file_max_chars,
+        )
+    } else {
+        None
+    };
+    let mut tiktoken_new_session_baseline_by_agent_role = std::collections::BTreeMap::new();
+    let push_baseline = |map: &mut std::collections::BTreeMap<String, u32>,
+                         key: String,
+                         role: Option<&str>| {
+        let system = match crate::context_bootstrap::conversation_turn_bootstrap::augmented_system_for_new_conversation(
+            cfg,
+            role,
+            tool_recorder,
+        ) {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let messages =
+            crate::context_bootstrap::conversation_turn_bootstrap::new_session_prompt_baseline_messages(
+                cfg,
+                &system,
+                workspace_root,
+                memory_snippet.clone(),
+            );
+        if let Some(snap) =
+            crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
+                cfg, &messages,
+            )
+        {
+            map.insert(key, snap.prompt_tokens);
+        }
+    };
+    push_baseline(
+        &mut tiktoken_new_session_baseline_by_agent_role,
+        String::new(),
+        None,
+    );
+    for id in agent_role_ids {
+        push_baseline(
+            &mut tiktoken_new_session_baseline_by_agent_role,
+            id.clone(),
+            Some(id.as_str()),
+        );
+    }
+    tiktoken_new_session_baseline_by_agent_role
+}
+
 pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let cfg = state.http.cfg.read().await;
     let mp = MESSAGE_PIPELINE_COUNTERS.snapshot();
@@ -193,54 +254,16 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
     agent_role_ids.sort();
     let tool_recorder = &state.aux.process_handles.tool_outcome_recorder;
     let workspace_root = std::path::PathBuf::from(state.effective_workspace_path().await);
-    let memory_snippet = if cfg.context_bootstrap_inject.agent_memory_file_enabled {
-        crate::memory::agent_memory::load_memory_snippet(
-            &workspace_root,
-            cfg.context_bootstrap_inject.agent_memory_file.as_str(),
-            cfg.context_bootstrap_inject.agent_memory_file_max_chars,
-        )
-    } else {
-        None
-    };
-    let mut tiktoken_new_session_baseline_by_agent_role = std::collections::BTreeMap::new();
-    let push_baseline = |map: &mut std::collections::BTreeMap<String, u32>,
-                         key: String,
-                         role: Option<&str>| {
-        let system = match crate::context_bootstrap::conversation_turn_bootstrap::augmented_system_for_new_conversation(
-            &cfg,
-            role,
-            tool_recorder,
-        ) {
-            Ok(s) => s,
-            Err(_) => return,
-        };
-        let messages =
-            crate::context_bootstrap::conversation_turn_bootstrap::new_session_prompt_baseline_messages(
-                &cfg,
-                &system,
-                workspace_root.as_path(),
-                memory_snippet.clone(),
-            );
-        if let Some(snap) =
-            crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
-                &cfg, &messages,
-            )
-        {
-            map.insert(key, snap.prompt_tokens);
-        }
-    };
-    push_baseline(
-        &mut tiktoken_new_session_baseline_by_agent_role,
-        String::new(),
-        None,
+    let tiktoken_new_session_baseline_by_agent_role = tiktoken_new_session_baselines_by_role(
+        &cfg,
+        tool_recorder,
+        workspace_root.as_path(),
+        &agent_role_ids,
     );
-    for id in &agent_role_ids {
-        push_baseline(
-            &mut tiktoken_new_session_baseline_by_agent_role,
-            id.clone(),
-            Some(id.as_str()),
-        );
-    }
+    let effective_orchestration_path = crabmate_config::effective_orchestration_path_summary(
+        cfg.per_plan_policy.planner_executor_mode.as_str(),
+        cfg.per_plan_policy.orchestration_profile,
+    );
     Json(StatusResponse {
         status: "ok",
         model: cfg.llm.model.clone(),
@@ -266,6 +289,8 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
             .per_plan_policy
             .final_plan_semantic_check_max_tokens,
         planner_executor_mode: cfg.per_plan_policy.planner_executor_mode.as_str(),
+        orchestration_profile: cfg.per_plan_policy.orchestration_profile.as_str(),
+        effective_orchestration_path,
         staged_plan_intent_gate_advisory_bypass: cfg
             .staged_planning
             .staged_plan_intent_gate_advisory_bypass,

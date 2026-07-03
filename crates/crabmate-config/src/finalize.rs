@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::FinalPlanRequirementMode;
+use crate::OrchestrationProfile;
 
 use super::agent_roles;
 use super::builder::ConfigBuilder;

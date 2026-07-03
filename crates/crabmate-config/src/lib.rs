@@ -12,6 +12,7 @@ mod finalize;
 mod gateway_hints;
 mod hot_reload;
 mod load;
+mod orchestration_profile;
 mod scheduled_agent_task;
 pub mod skills;
 mod source;
@@ -28,6 +29,7 @@ pub use gateway_hints::{
 };
 pub use hot_reload::apply_hot_reload_config_subset;
 pub use load::{load_config, load_config_for_cli};
+pub use orchestration_profile::{OrchestrationProfile, effective_orchestration_path_summary};
 
 pub use finalize::embedded_thinking_avoid_echo_appendix;
 

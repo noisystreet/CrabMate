@@ -137,8 +137,10 @@ pub(super) struct AgentSection {
     pub(super) final_plan_semantic_check_enabled: Option<bool>,
     pub(super) final_plan_semantic_check_max_non_readonly_tools: Option<u64>,
     pub(super) final_plan_semantic_check_max_tokens: Option<u64>,
-    /// `single_agent` / `logical_dual_agent`
+    /// `single_agent` / `logical_dual_agent` / `hierarchical`
     pub(super) planner_executor_mode: Option<String>,
+    /// `freeform` / `staged` / `auto`
+    pub(super) orchestration_profile: Option<String>,
     pub(super) system_prompt: Option<String>,
     pub(super) system_prompt_file: Option<String>,
     /// 未指定 Web/CLI `agent_role` 时使用的默认角色 id（须存在于角色表）

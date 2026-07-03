@@ -1,13 +1,13 @@
 //! 单轮编排路由决议快照（v1 JSON）：门控链结束后一次性记录，供 tracing / SSE / 金样回归。
 
-use crabmate_config::{AgentConfig, FinalPlanRequirementMode};
+use crabmate_config::{AgentConfig, FinalPlanRequirementMode, OrchestrationProfile};
 
 use crate::intent_pipeline::{IntentAction, IntentDecision};
 use crate::intent_router::IntentKind;
 
 use super::hierarchical_intent_route::HierarchicalPostIntentRoute;
 use super::orchestration_entry::TurnTopLevelDispatch;
-use super::staged_planning_gate_types::StagedPlanningGateOutcome;
+use super::staged_planning_gate_types::{StagedPlanningDenyReason, StagedPlanningGateOutcome};
 use super::turn_orchestration::{
     NonHierarchicalTurnPhase, NonHierarchicalTurnResolution, TurnOrchestrationMode,
 };
@@ -163,7 +163,12 @@ pub fn build_non_hierarchical_turn_route_decision(
             .as_str()
             .to_string(),
         plan_requirement_policy: plan_requirement_policy_label(cfg),
-        orchestration_profile: None,
+        orchestration_profile: Some(
+            cfg.per_plan_policy
+                .orchestration_profile
+                .as_str()
+                .to_string(),
+        ),
     }
 }
 
@@ -189,7 +194,12 @@ pub fn build_hierarchical_intent_finished_early_decision(
             .as_str()
             .to_string(),
         plan_requirement_policy: plan_requirement_policy_label(cfg),
-        orchestration_profile: None,
+        orchestration_profile: Some(
+            cfg.per_plan_policy
+                .orchestration_profile
+                .as_str()
+                .to_string(),
+        ),
     }
 }
 
@@ -215,7 +225,12 @@ pub fn build_non_hierarchical_intent_finished_early_decision(
             .as_str()
             .to_string(),
         plan_requirement_policy: plan_requirement_policy_label(cfg),
-        orchestration_profile: None,
+        orchestration_profile: Some(
+            cfg.per_plan_policy
+                .orchestration_profile
+                .as_str()
+                .to_string(),
+        ),
     }
 }
 
@@ -241,7 +256,116 @@ pub fn build_hierarchical_turn_route_decision(
             .as_str()
             .to_string(),
         plan_requirement_policy: plan_requirement_policy_label(cfg),
-        orchestration_profile: None,
+        orchestration_profile: Some(
+            cfg.per_plan_policy
+                .orchestration_profile
+                .as_str()
+                .to_string(),
+        ),
+    }
+}
+
+fn intent_decision_from_gate_snapshot(intent_gate: &IntentGateSnapshot) -> Option<IntentDecision> {
+    match intent_gate {
+        IntentGateSnapshot::ProceedExecute {
+            kind,
+            primary_intent,
+            action,
+            confidence,
+            need_clarification,
+            ..
+        } => Some(IntentDecision {
+            kind: match kind.as_str() {
+                "execute" => IntentKind::Execute,
+                "greeting" => IntentKind::Greeting,
+                "qa" => IntentKind::Qa,
+                _ => IntentKind::Ambiguous,
+            },
+            primary_intent: primary_intent.clone(),
+            secondary_intents: Vec::new(),
+            confidence: *confidence,
+            abstain: false,
+            need_clarification: *need_clarification,
+            action: match action.as_str() {
+                "execute" => IntentAction::Execute,
+                "direct_reply" => IntentAction::DirectReply(String::new()),
+                "clarify_then_execute" => IntentAction::ClarifyThenExecute(String::new()),
+                "confirm_then_execute" => IntentAction::ConfirmThenExecute(String::new()),
+                _ => IntentAction::Execute,
+            },
+        }),
+        _ => None,
+    }
+}
+
+/// 按 [`OrchestrationProfile`] 覆盖分阶段门控结果（仅非分层；不增第四套实现）。
+pub fn apply_orchestration_profile_to_staged_gate(
+    profile: OrchestrationProfile,
+    intent_gate: &IntentGateSnapshot,
+    gate: &StagedPlanningGateOutcome,
+) -> StagedPlanningGateOutcome {
+    match profile {
+        OrchestrationProfile::Auto => gate.clone(),
+        OrchestrationProfile::Freeform => {
+            if gate.allows_staged_planning() {
+                StagedPlanningGateOutcome::Deny {
+                    reason: StagedPlanningDenyReason::OrchestrationProfileFreeform,
+                    task_preview: match gate {
+                        StagedPlanningGateOutcome::Allow { task_preview, .. } => {
+                            Some(task_preview.clone())
+                        }
+                        StagedPlanningGateOutcome::Deny { task_preview, .. } => {
+                            task_preview.clone()
+                        }
+                    },
+                    intent_decision: match gate {
+                        StagedPlanningGateOutcome::Allow { decision, .. } => Some(decision.clone()),
+                        StagedPlanningGateOutcome::Deny {
+                            intent_decision, ..
+                        } => intent_decision
+                            .clone()
+                            .or_else(|| intent_decision_from_gate_snapshot(intent_gate)),
+                    },
+                }
+            } else {
+                gate.clone()
+            }
+        }
+        OrchestrationProfile::Staged => match gate {
+            StagedPlanningGateOutcome::Deny {
+                reason:
+                    StagedPlanningDenyReason::AdvisoryExecuteBypassStaged
+                    | StagedPlanningDenyReason::ReadonlyOverviewBypassStaged,
+                intent_decision: Some(decision),
+                task_preview,
+            } if matches!(decision.action, IntentAction::Execute) => {
+                StagedPlanningGateOutcome::Allow {
+                    task_preview: task_preview
+                        .clone()
+                        .unwrap_or_else(|| decision.primary_intent.clone()),
+                    intent_kind: decision.kind,
+                    primary_intent: decision.primary_intent.clone(),
+                    confidence: decision.confidence,
+                    decision: decision.clone(),
+                }
+            }
+            StagedPlanningGateOutcome::Deny {
+                reason:
+                    StagedPlanningDenyReason::AdvisoryExecuteBypassStaged
+                    | StagedPlanningDenyReason::ReadonlyOverviewBypassStaged,
+                ..
+            } => intent_decision_from_gate_snapshot(intent_gate)
+                .filter(|d| matches!(d.action, IntentAction::Execute))
+                .map(|decision| StagedPlanningGateOutcome::Allow {
+                    task_preview: decision.primary_intent.clone(),
+                    intent_kind: decision.kind,
+                    primary_intent: decision.primary_intent.clone(),
+                    confidence: decision.confidence,
+                    decision,
+                })
+                .unwrap_or_else(|| gate.clone()),
+            _ => gate.clone(),
+        },
     }
 }
 
@@ -323,15 +447,20 @@ pub fn assess_turn_routing(params: AssessTurnRoutingParams<'_>) -> AssessedTurnR
             }
         }
         TurnTopLevelDispatch::NonHierarchical => {
-            let staged_gate = params
+            let staged_gate_raw = params
                 .staged_gate
                 .expect("non_hierarchical requires StagedPlanningGateOutcome");
+            let staged_gate = apply_orchestration_profile_to_staged_gate(
+                params.cfg.per_plan_policy.orchestration_profile,
+                &params.intent_gate,
+                staged_gate_raw,
+            );
             let entry =
-                super::orchestration_entry::resolve_non_hierarchical_turn(params.cfg, staged_gate);
+                super::orchestration_entry::resolve_non_hierarchical_turn(params.cfg, &staged_gate);
             let decision = build_non_hierarchical_turn_route_decision(
                 params.cfg,
                 params.intent_gate.clone(),
-                staged_gate_snapshot_from_outcome(staged_gate),
+                staged_gate_snapshot_from_outcome(&staged_gate),
                 &entry,
             );
             AssessedTurnRoute {
@@ -456,5 +585,37 @@ mod tests {
             decision.staged_gate,
             StagedGateSnapshot::NotEvaluated
         ));
+    }
+
+    #[test]
+    fn orchestration_profile_freeform_overrides_staged_allow() {
+        let mut cfg = cfg_with(PlannerExecutorMode::SingleAgent);
+        cfg.per_plan_policy.orchestration_profile = OrchestrationProfile::Freeform;
+        let gate = execute_gate_allow();
+        let intent = IntentGateSnapshot::ProceedExecute {
+            kind: "execute".into(),
+            primary_intent: "execute.run_test_build".into(),
+            action: "execute".into(),
+            confidence: 0.95,
+            need_clarification: false,
+        };
+        let adjusted = apply_orchestration_profile_to_staged_gate(
+            OrchestrationProfile::Freeform,
+            &intent,
+            &gate,
+        );
+        assert!(!adjusted.allows_staged_planning());
+        let assessed = assess_turn_routing(AssessTurnRoutingParams {
+            cfg: &cfg,
+            top_level: TurnTopLevelDispatch::NonHierarchical,
+            intent_gate: intent,
+            staged_gate: Some(&gate),
+            hierarchical_decision: None,
+        });
+        assert_eq!(assessed.decision.orchestration_mode, "freeform");
+        assert_eq!(
+            assessed.decision.freeform_because.as_deref(),
+            Some("orchestration_profile_freeform")
+        );
     }
 }
