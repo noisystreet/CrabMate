@@ -22,6 +22,7 @@ pub mod mcp;
 pub mod memory;
 pub mod observability;
 pub mod process_handles;
+pub mod project_metrics;
 pub mod read_file_turn_cache;
 pub mod readonly_tool_ttl_cache;
 pub mod redact;

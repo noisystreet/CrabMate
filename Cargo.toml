@@ -72,6 +72,11 @@ tui = ["repl", "dep:ratatui", "dep:crossterm"]
 gen-man = ["dep:clap_mangen"]
 ## Model Context Protocol（`rmcp`）：`mcp list` / `mcp serve`、进程内 MCP 工具代理。
 mcp = ["crabmate-agent/mcp", "crabmate-config/mcp", "crabmate-internal/mcp"]
+## `code_stats` / 项目画像 tokei 统计（未启用时用内置扩展名 walk）。
+project_metrics = [
+    "crabmate-agent/project_metrics",
+    "crabmate-internal/project_metrics",
+]
 ## `sync_default_tool_sandbox_mode = docker` 时连接 Docker Engine（`bollard`）。
 docker_sandbox = [
     "crabmate-agent/docker_sandbox",
@@ -119,16 +124,6 @@ sha2 = "0.11"
 subtle = "2.6"
 log = "0.4"
 tracing = "0.1"
-tracing-log = "0.2"
-tracing-subscriber = { version = "0.3", default-features = false, features = [
-    "ansi",
-    "env-filter",
-    "fmt",
-    "json",
-    "local-time",
-    "std",
-    "time",
-] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 async-trait = "0.1"
 clap = { version = "4", features = ["derive"] }
