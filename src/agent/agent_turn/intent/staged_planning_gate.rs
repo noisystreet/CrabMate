@@ -5,7 +5,7 @@
 
 use crate::agent::intent_router::ExecuteIntentThresholds;
 use crabmate_agent::agent_turn::{
-    IntentRoutingPipelineParams, assess_intent_routing_full_pipeline,
+    IntentRoutingOutcome, IntentRoutingPipelineParams, assess_intent_routing_full_pipeline,
     staged_planning_gate_outcome_from_decision,
 };
 pub(crate) use crabmate_agent::agent_turn::{StagedPlanningDenyReason, StagedPlanningGateOutcome};
@@ -34,39 +34,55 @@ pub(crate) async fn assess_staged_planning_gate_full_pipeline(
         };
     }
 
-    let host = CrabmateIntentL2ClassifierHost {
-        cfg: p.ctx.core.cfg.as_ref(),
-        llm_backend: p.ctx.core.llm_backend,
-        client: p.ctx.core.client,
-        api_key: p.ctx.core.api_key,
-        turn_budget: Some(&p.turn.turn_budget),
-    };
-    let outcome = assess_intent_routing_full_pipeline(
-        &host,
-        &IntentRoutingPipelineParams {
-            task: task.as_str(),
-            messages: p.turn.messages(),
+    let outcome = if let Some(cache) = p
+        .turn
+        .turn_planner_hints
+        .intent_routing_cache_for_task(&task)
+    {
+        log::info!(
+            target: "crabmate",
+            "{sse_log_tag} intent_routing_cache_hit task_preview={}",
+            crate::redact::preview_chars(task.as_str(), 80)
+        );
+        IntentRoutingOutcome {
+            decision: cache.decision.clone(),
+            merge_meta: cache.merge_meta.clone(),
+        }
+    } else {
+        let host = CrabmateIntentL2ClassifierHost {
             cfg: p.ctx.core.cfg.as_ref(),
-            in_clarification_flow,
-            thresholds: ExecuteIntentThresholds {
-                low: p
-                    .ctx
-                    .core
-                    .cfg
-                    .intent_routing
-                    .intent_non_hier_execute_low_threshold,
-                high: p
-                    .ctx
-                    .core
-                    .cfg
-                    .intent_routing
-                    .intent_non_hier_execute_high_threshold,
+            llm_backend: p.ctx.core.llm_backend,
+            client: p.ctx.core.client,
+            api_key: p.ctx.core.api_key,
+            turn_budget: Some(&p.turn.turn_budget),
+        };
+        assess_intent_routing_full_pipeline(
+            &host,
+            &IntentRoutingPipelineParams {
+                task: task.as_str(),
+                messages: p.turn.messages(),
+                cfg: p.ctx.core.cfg.as_ref(),
+                in_clarification_flow,
+                thresholds: ExecuteIntentThresholds {
+                    low: p
+                        .ctx
+                        .core
+                        .cfg
+                        .intent_routing
+                        .intent_non_hier_execute_low_threshold,
+                    high: p
+                        .ctx
+                        .core
+                        .cfg
+                        .intent_routing
+                        .intent_non_hier_execute_high_threshold,
+                },
+                l2_enabled: p.ctx.core.cfg.intent_routing.intent_l2_enabled,
+                sse_log_tag,
             },
-            l2_enabled: p.ctx.core.cfg.intent_routing.intent_l2_enabled,
-            sse_log_tag,
-        },
-    )
-    .await;
+        )
+        .await
+    };
 
     let suppress_timeline = p.turn.take_suppress_duplicate_intent_timeline_once();
     if !suppress_timeline {

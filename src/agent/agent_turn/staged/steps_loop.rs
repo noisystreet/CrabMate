@@ -15,12 +15,16 @@ use super::super::execute_tools::sse_sender_closed;
 use super::super::outer_loop::run_agent_outer_loop;
 use super::super::params::RunLoopParams;
 
+use super::super::task_level_evidence::{
+    GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
+};
+use super::super::turn_completion::evaluate_turn_staged_rolling_horizon_early_stop;
 use super::empty_execution::staged_step_empty_execution_verify_failure;
 use super::orchestrator as staged_orchestrator;
 use super::patch_planner::StagedPlanPatchPlannerCtx;
 use super::sse::{
-    StagedStepOkNoticeParams, emit_chat_ui_separator_sse, finish_staged_plan_step_sse,
-    send_staged_plan_finished, send_staged_plan_step_started,
+    StagedStepOkNoticeParams, emit_chat_ui_separator_sse, emit_staged_step_verify_timeline,
+    finish_staged_plan_step_sse, send_staged_plan_finished, send_staged_plan_step_started,
     staged_step_emit_ok_step_and_queue_notice,
 };
 use super::staged_step_fsm::{
@@ -177,6 +181,27 @@ where
         &run_step,
         &step_verify_failed_reason,
     );
+
+    let step_passed = run_step.is_ok() && step_verify_failed_reason.is_none();
+    let verify_detail_owned: Option<String> = if step_passed {
+        None
+    } else {
+        step_verify_failed_reason.clone().or_else(|| {
+            run_step
+                .as_ref()
+                .err()
+                .map(|e| format!("outer_loop: {}", e))
+        })
+    };
+    emit_staged_step_verify_timeline(
+        patch_ctx.p.ctx.io.out,
+        step.id.trim(),
+        step_index,
+        n,
+        step_passed,
+        verify_detail_owned.as_deref(),
+    )
+    .await;
 
     StagedStepOuterHalfResult {
         step,
@@ -796,5 +821,51 @@ where
             .push_message(Message::chat_ui_separator(true));
         emit_chat_ui_separator_sse(patch_ctx.p.ctx.io.out, true).await;
     }
+    if staged_steps_loop_should_finish_after_success(
+        patch_ctx.p,
+        staged_loop_cancelled,
+        completed_steps,
+        n,
+    ) {
+        tracing::info!(
+            target: "crabmate::staged",
+            staged_fsm = "steps_loop",
+            steps_loop_phase = "early_finish_after_success",
+            plan_id = plan_id.as_str(),
+            step_count = n,
+            completed_steps,
+            sub_phase = "executor",
+            "staged plan steps loop: goal satisfied or rolling horizon early stop"
+        );
+        return Ok(StagedPlanRunOutcome::Finished);
+    }
     Ok(StagedPlanRunOutcome::ContinuePlanning)
+}
+
+fn staged_steps_loop_should_finish_after_success(
+    p: &RunLoopParams<'_>,
+    cancelled: bool,
+    completed_steps: usize,
+    n: usize,
+) -> bool {
+    if cancelled || n == 0 || completed_steps < n {
+        return false;
+    }
+    let messages = p.turn.messages();
+    if evaluate_turn_staged_rolling_horizon_early_stop(
+        messages,
+        p.turn
+            .turn_planner_hints
+            .staged_last_completed_step_effective_acceptance
+            .as_ref(),
+        p.ctx.core.effective_working_dir,
+    )
+    .is_allow()
+    {
+        return true;
+    }
+    matches!(
+        check_active_user_goal_completion_evidence(messages),
+        GoalCompletionEvidenceCheck::Satisfied
+    )
 }

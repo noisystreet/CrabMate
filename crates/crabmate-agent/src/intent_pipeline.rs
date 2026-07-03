@@ -138,6 +138,7 @@ pub fn prepare_intent_routing(
         current_task,
         ctx.in_clarification_flow,
         &ctx.recent_user_messages,
+        ctx.has_recent_tool_failure,
     );
     let l0 = intent_l0::l0_snapshot_merged(&routing, ctx.has_recent_tool_failure);
     (routing, used_merge, l0)

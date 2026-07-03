@@ -139,6 +139,16 @@ pub(crate) struct TurnPlannerHints {
         Option<crate::agent::plan_artifact::PlanStepAcceptance>,
     /// 本回合 **`intent_at_turn_start`** 门控快照（供 [`TurnRouteDecisionV1`] 组装）。
     pub(crate) intent_gate_snapshot: Option<crabmate_agent::agent_turn::IntentGateSnapshot>,
+    /// 本回合 **`intent_at_turn_start`** 已跑的 L2 管线结果；供 `staged_plan_intent_gate` 复用，避免重复 LLM。
+    pub(crate) intent_routing_cache: Option<IntentRoutingCacheEntry>,
+}
+
+/// `intent_at_turn_start` 与 `staged_plan_intent_gate` 共享的 L2 判定缓存（按 effective task 键）。
+#[derive(Debug, Clone)]
+pub(crate) struct IntentRoutingCacheEntry {
+    pub(crate) task: String,
+    pub(crate) decision: crate::agent::intent_pipeline::IntentDecision,
+    pub(crate) merge_meta: crate::agent::intent_pipeline::IntentMergeMeta,
 }
 
 /// 单 Agent [`super::outer_loop::run_agent_outer_loop`] 内每次 **P** 调用对应的模型端点角色。
@@ -199,6 +209,16 @@ impl TurnPlannerHints {
         let v = self.suppress_duplicate_intent_timeline_once;
         self.suppress_duplicate_intent_timeline_once = false;
         v
+    }
+
+    /// 若缓存键与 `task` 一致则返回 L2 管线结果（不消费缓存，供 staged 门控只读复用）。
+    pub(crate) fn intent_routing_cache_for_task(
+        &self,
+        task: &str,
+    ) -> Option<&IntentRoutingCacheEntry> {
+        self.intent_routing_cache
+            .as_ref()
+            .filter(|c| c.task == task)
     }
 
     /// 新 agent 回合开始时清空步后 completion 缓存。

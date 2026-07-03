@@ -245,6 +245,12 @@ async fn run_intent_l0_l1_l2_gate(
         },
     )
     .await;
+    p.turn.turn_planner_hints.intent_routing_cache =
+        Some(super::super::params::IntentRoutingCacheEntry {
+            task: task.to_string(),
+            decision: outcome.decision.clone(),
+            merge_meta: outcome.merge_meta.clone(),
+        });
     let assessment = outcome.decision;
     emit_intent_timeline_gate_only(p.ctx.io.out, sse_log_tag, &assessment, &outcome.merge_meta)
         .await;

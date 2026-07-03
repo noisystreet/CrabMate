@@ -35,6 +35,8 @@ pub enum StagedPlanningDenyReason {
     ReadonlyOverviewBypassStaged,
     /// 编排档位 `freeform` 强制外循环。
     OrchestrationProfileFreeform,
+    /// 简单编译/构建 Execute：跳过滚动分阶段，走外循环。
+    SimpleExecuteFastPath,
 }
 
 impl StagedPlanningDenyReason {
@@ -45,6 +47,7 @@ impl StagedPlanningDenyReason {
             Self::AdvisoryExecuteBypassStaged => "advisory_execute_bypass_staged",
             Self::ReadonlyOverviewBypassStaged => "readonly_overview_bypass_staged",
             Self::OrchestrationProfileFreeform => "orchestration_profile_freeform",
+            Self::SimpleExecuteFastPath => "simple_execute_fast_path",
         }
     }
 }

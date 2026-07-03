@@ -31,6 +31,7 @@ pub(crate) enum TurnCompletionDecision {
 pub(crate) enum RollingHorizonStopVia {
     HeuristicEarlyStop,
     StepAcceptancePass,
+    GoalEvidenceSatisfied,
 }
 
 impl TurnCompletionDecision {
@@ -209,6 +210,13 @@ pub(crate) fn evaluate_turn_staged_rolling_horizon_early_stop(
     {
         TurnCompletionDecision::AllowRollingHorizonStop {
             via: RollingHorizonStopVia::StepAcceptancePass,
+        }
+    } else if matches!(
+        check_active_user_goal_completion_evidence(messages),
+        GoalCompletionEvidenceCheck::Satisfied
+    ) {
+        TurnCompletionDecision::AllowRollingHorizonStop {
+            via: RollingHorizonStopVia::GoalEvidenceSatisfied,
         }
     } else {
         TurnCompletionDecision::DenyRollingHorizonStop {
