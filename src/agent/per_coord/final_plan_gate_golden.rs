@@ -10,6 +10,7 @@ use super::final_plan_gate::{
     resolve_final_plan_gate_phase, run_final_plan_gate, run_final_plan_gate_semantic_completed,
     step_check_structured_plan,
 };
+use super::final_plan_gate_context::{FinalPlanRequirePlanReason, build_final_plan_gate_context};
 use super::{AfterFinalAssistant, FinalPlanRequirementMode, PlanRequirementSource};
 
 use serde::Deserialize;
@@ -147,8 +148,7 @@ fn gate_args<'a>(
         messages: &[],
         cfg,
         workspace_is_set: false,
-        final_plan_policy: policy,
-        plan_requirement_source: source,
+        gate_context: build_final_plan_gate_context(policy, source),
         final_plan_require_strict_workflow_node_coverage: false,
         final_plan_semantic_check_enabled: false,
         final_plan_semantic_check_max_non_readonly_tools: 0,
@@ -304,9 +304,31 @@ fn assert_semantic_completed(ctx: &str, body: &serde_json::Value) {
     }
 }
 
+fn assert_gate_context(ctx: &str, body: &serde_json::Value) {
+    let policy = policy_from_label(body_str(body, "policy", ctx));
+    let source = source_from_label(body_str(body, "source", ctx));
+    let gate_ctx = build_final_plan_gate_context(policy, source);
+    let expect_require = body["expect_require_plan"].as_bool().unwrap();
+    let expect_reason = body_str(body, "expect_reason", ctx);
+    assert_eq!(gate_ctx.require_plan, expect_require, "{ctx}: require_plan");
+    assert_eq!(
+        match gate_ctx.require_plan_reason {
+            FinalPlanRequirePlanReason::PolicyNever => "policy_never",
+            FinalPlanRequirePlanReason::PolicyAlways => "policy_always",
+            FinalPlanRequirePlanReason::WorkflowReflectionActive => {
+                "workflow_reflection_active"
+            }
+            FinalPlanRequirePlanReason::NoActiveRequirement => "no_active_requirement",
+        },
+        expect_reason,
+        "{ctx}: require_plan_reason"
+    );
+}
+
 fn assert_golden_line(ctx: &str, row: &GoldenLine) {
     match row.case.as_str() {
         "resolve_phase" => assert_resolve_phase(ctx, &row.body),
+        "gate_context" => assert_gate_context(ctx, &row.body),
         "run_gate" => assert_run_gate(ctx, &row.body),
         "step_check" => assert_step_check(ctx, &row.body),
         "semantic_completed" => assert_semantic_completed(ctx, &row.body),

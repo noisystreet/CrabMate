@@ -62,3 +62,7 @@
 {"id":"outer_reflect_reduce_tools","case":"outer_loop_reflect_reduce","ctl":"proceed_to_tools","expect":"proceed_to_tools","expect_exit":null}
 {"id":"outer_post_tools_stop","case":"outer_loop_post_tools_reduce","early_stop":true,"expect":"stop_outer_loop"}
 {"id":"outer_post_tools_cont","case":"outer_loop_post_tools_reduce","early_stop":false,"expect":"continue_next_iteration"}
+{"id":"steps_preflight_cancel","case":"steps_loop_preflight_reduce","sse_closed":false,"user_cancelled":true,"expect":"break_cancelled"}
+{"id":"steps_iter_advance","case":"steps_loop_iteration_reduce","ctl":"advance","n":2,"completed":1,"expect":"advance_to_next_step"}
+{"id":"prepared_stagnation_none","case":"prepared_stagnation_reduce","entered":false,"step_count":1,"expect":"continue_post_parse"}
+{"id":"completed_replan_continue","case":"completed_replanning_reduce","entered":false,"step_count":1,"expect":"continue_post_parse"}

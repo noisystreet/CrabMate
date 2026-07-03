@@ -45,6 +45,11 @@ use super::step_patch_recover_reduce::{
     StepPatchRecoverBranch, StepPatchRecoverReduceAction, StepPatchRecoverReduceInput,
     reduce_step_patch_recover,
 };
+use super::steps_loop_reduce::{
+    StepsLoopIterationReduceAction, StepsLoopPreflightReduceAction,
+    reduce_steps_loop_iteration_ctl, reduce_steps_loop_preflight, should_push_steps_loop_separator,
+    steps_loop_finish_status, steps_loop_outcome_without_driver,
+};
 use super::steps_loop_route_fsm::resolve_staged_step_post_outer_route_from_results;
 use super::turn_driver::StagedTurnDriver;
 use super::turn_orchestrator_fsm::{
@@ -742,49 +747,54 @@ where
             });
         }
 
-        if sse_sender_closed(patch_ctx.p.ctx.io.out)
-            || patch_ctx
+        match reduce_steps_loop_preflight(
+            sse_sender_closed(patch_ctx.p.ctx.io.out),
+            patch_ctx
                 .p
                 .ctx
                 .io
                 .cancel
-                .is_some_and(|c| c.load(Ordering::SeqCst))
-        {
-            staged_loop_cancelled = true;
-            tracing::info!(
-                target: "crabmate::staged",
-                staged_fsm = "steps_loop",
-                steps_loop_phase = "cancelled_before_step",
-                plan_id = plan_id.as_str(),
-                step_index = i,
-                step_count = n,
-                completed_steps,
-                sub_phase = "executor",
-                "staged plan steps loop: SSE closed or user cancel"
-            );
-            break;
+                .is_some_and(|c| c.load(Ordering::SeqCst)),
+        ) {
+            StepsLoopPreflightReduceAction::Continue => {}
+            StepsLoopPreflightReduceAction::BreakCancelled => {
+                staged_loop_cancelled = true;
+                tracing::info!(
+                    target: "crabmate::staged",
+                    staged_fsm = "steps_loop",
+                    steps_loop_phase = "cancelled_before_step",
+                    plan_id = plan_id.as_str(),
+                    step_index = i,
+                    step_count = n,
+                    completed_steps,
+                    sub_phase = "executor",
+                    "staged plan steps loop: SSE closed or user cancel"
+                );
+                break;
+            }
         }
 
-        match run_one_staged_plan_step_iteration(RunOneStagedPlanStepIterationParams {
-            plan_id: plan_id.as_str(),
-            i,
-            n,
-            completed_steps,
-            plan_steps: &mut plan_steps,
-            original_steps: original_steps.as_slice(),
-            transition_counters: &mut transition_counters,
-            echo_terminal_staged,
-            labels,
-            patch_ctx: &mut patch_ctx,
-            make_step_user_message,
-            turn_driver: turn_driver.as_deref_mut(),
-        })
-        .await?
-        {
-            StagedStepIterationCtl::RetryCurrentStep { n: new_n } => {
+        match reduce_steps_loop_iteration_ctl(
+            run_one_staged_plan_step_iteration(RunOneStagedPlanStepIterationParams {
+                plan_id: plan_id.as_str(),
+                i,
+                n,
+                completed_steps,
+                plan_steps: &mut plan_steps,
+                original_steps: original_steps.as_slice(),
+                transition_counters: &mut transition_counters,
+                echo_terminal_staged,
+                labels,
+                patch_ctx: &mut patch_ctx,
+                make_step_user_message,
+                turn_driver: turn_driver.as_deref_mut(),
+            })
+            .await?,
+        ) {
+            StepsLoopIterationReduceAction::RetryCurrentStep { n: new_n } => {
                 n = new_n;
             }
-            StagedStepIterationCtl::AdvanceToNextStep {
+            StepsLoopIterationReduceAction::AdvanceToNextStep {
                 n: new_n,
                 completed_steps: new_completed,
             } => {
@@ -792,7 +802,7 @@ where
                 completed_steps = new_completed;
                 i += 1;
             }
-            StagedStepIterationCtl::CancelledAfterOuterOk => {
+            StepsLoopIterationReduceAction::BreakCancelled => {
                 staged_loop_cancelled = true;
                 tracing::info!(
                     target: "crabmate::staged",
@@ -809,6 +819,7 @@ where
             }
         }
     }
+    let finish_status = steps_loop_finish_status(staged_loop_cancelled);
     tracing::info!(
         target: "crabmate::staged",
         staged_fsm = "steps_loop",
@@ -816,11 +827,7 @@ where
         plan_id = plan_id.as_str(),
         step_count = n,
         completed_steps,
-        finish_status = if staged_loop_cancelled {
-            "cancelled"
-        } else {
-            "ok"
-        },
+        finish_status,
         sub_phase = "executor",
         "staged plan steps loop: emitting staged_plan_finished"
     );
@@ -830,16 +837,12 @@ where
         &plan_id,
         n,
         completed_steps,
-        if staged_loop_cancelled {
-            "cancelled"
-        } else {
-            "ok"
-        },
+        finish_status,
     )
     .await;
     // 仅当循环内未添加过分隔符时再追加：n==0 未进入循环；或取消时 completed_steps==0。
     // 否则末步成功后已在循环内添加，再加会重复两行。
-    if n == 0 || (staged_loop_cancelled && completed_steps == 0) {
+    if should_push_steps_loop_separator(n, staged_loop_cancelled, completed_steps) {
         patch_ctx
             .p
             .turn
@@ -883,5 +886,5 @@ fn finish_steps_loop_with_driver(
         }
         return outcome;
     }
-    StagedPlanRunOutcome::ContinuePlanning
+    steps_loop_outcome_without_driver()
 }

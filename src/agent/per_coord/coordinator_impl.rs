@@ -2,6 +2,7 @@ use crate::config::AgentConfig;
 use crate::types::Message;
 use serde_json::Value;
 
+use super::final_plan_gate_context::build_final_plan_gate_context;
 use super::workflow_reflection_controller::{self, WorkflowReflectionController};
 use super::{
     AfterFinalAssistant, FinalPlanRequirementMode, PLAN_REWRITE_EXHAUSTED_SSE, PerCoordinator,
@@ -72,7 +73,8 @@ impl PerCoordinator {
 
     /// 下一回模型若以非 `tool_calls` 结束，是否必须嵌入可解析的 `agent_reply_plan`（工作流反思路径下由工具结果置位）。
     pub fn require_plan_in_final_flag_snapshot(&self) -> bool {
-        self.plan_requirement_source != PlanRequirementSource::None
+        build_final_plan_gate_context(self.final_plan_policy, self.plan_requirement_source)
+            .require_plan
     }
 
     pub fn new(init: PerCoordinatorInit) -> Self {

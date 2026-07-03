@@ -1,14 +1,17 @@
 //! PER 编排 FSM 金样回归：`fixtures/fsm_orchestrator_golden.jsonl`。
 
+use super::completed_replanning_reduce::reduce_completed_replanning_suppression;
 use super::full_pipeline_fsm::StagedFullPipelinePhase;
 use super::full_pipeline_reduce::{FullPipelineSegment, reduce_full_pipeline_segment};
 use super::prepared_parse_fsm::PreparedPlannerRoute;
 use super::prepared_post_parse_fsm::{PreparedFullPipelineSchedule, PreparedPostParseSchedule};
 use super::prepared_route_reduce::reduce_prepared_planner_route;
+use super::prepared_stagnation_reduce::reduce_prepared_stagnation_after_parse;
 use super::rolling_horizon_advance_reduce::reduce_rolling_horizon_advance;
 use super::rolling_horizon_preflight_reduce::{
     RollingHorizonPreflightInput, reduce_rolling_horizon_preflight,
 };
+use super::step_iteration_fsm::StagedStepIterationCtl;
 use super::step_iteration_reduce::reduce_staged_step_post_outer_route;
 use super::step_patch_recover_reduce::{
     StepPatchRecoverBranch, StepPatchRecoverReduceAction, StepPatchRecoverReduceInput,
@@ -17,6 +20,7 @@ use super::step_patch_recover_reduce::{
 use super::step_patch_route_fsm::{
     StagedStepPatchFailureKind, resolve_staged_step_patch_failure_kind,
 };
+use super::steps_loop_reduce::{reduce_steps_loop_iteration_ctl, reduce_steps_loop_preflight};
 use super::steps_loop_route_fsm::{
     StagedStepPostOuterRoute, resolve_staged_step_post_outer_route_from_results,
 };
@@ -217,6 +221,117 @@ fn assert_outer_loop_post_tools_reduce(ctx: &str, body: &serde_json::Value) {
         exit.as_trace_str(),
         expect,
         "{ctx}: outer loop post tools reduce"
+    );
+}
+
+fn assert_steps_loop_preflight_reduce(ctx: &str, body: &serde_json::Value) {
+    let sse_closed = body["sse_closed"].as_bool().unwrap_or(false);
+    let user_cancelled = body["user_cancelled"].as_bool().unwrap_or(false);
+    let expect = body_str(body, "expect", ctx);
+    let action = reduce_steps_loop_preflight(sse_closed, user_cancelled);
+    assert_eq!(
+        match action {
+            super::steps_loop_reduce::StepsLoopPreflightReduceAction::Continue => {
+                "continue"
+            }
+            super::steps_loop_reduce::StepsLoopPreflightReduceAction::BreakCancelled => {
+                "break_cancelled"
+            }
+        },
+        expect,
+        "{ctx}: steps loop preflight"
+    );
+}
+
+fn assert_steps_loop_iteration_reduce(ctx: &str, body: &serde_json::Value) {
+    let ctl_label = body_str(body, "ctl", ctx);
+    let expect = body_str(body, "expect", ctx);
+    let ctl = match ctl_label {
+        "advance" => StagedStepIterationCtl::AdvanceToNextStep {
+            n: body["n"].as_u64().unwrap_or(1) as usize,
+            completed_steps: body["completed"].as_u64().unwrap_or(1) as usize,
+        },
+        "retry" => StagedStepIterationCtl::RetryCurrentStep {
+            n: body["n"].as_u64().unwrap_or(1) as usize,
+        },
+        "cancelled" => StagedStepIterationCtl::CancelledAfterOuterOk,
+        other => panic!("{ctx}: unknown ctl {other}"),
+    };
+    let action = reduce_steps_loop_iteration_ctl(ctl);
+    assert_eq!(
+        match action {
+            super::steps_loop_reduce::StepsLoopIterationReduceAction::RetryCurrentStep {
+                ..
+            } => {
+                "retry_current_step"
+            }
+            super::steps_loop_reduce::StepsLoopIterationReduceAction::AdvanceToNextStep {
+                ..
+            } => {
+                "advance_to_next_step"
+            }
+            super::steps_loop_reduce::StepsLoopIterationReduceAction::BreakCancelled => {
+                "break_cancelled"
+            }
+        },
+        expect,
+        "{ctx}: steps loop iteration"
+    );
+}
+
+fn assert_prepared_stagnation_reduce(ctx: &str, body: &serde_json::Value) {
+    let entered = body["entered"].as_bool().unwrap_or(false);
+    let step_count = body["step_count"].as_u64().unwrap_or(1) as usize;
+    let expect = body_str(body, "expect", ctx);
+    let plan = AgentReplyPlanV1 {
+        plan_type: "agent_reply_plan".into(),
+        version: 1,
+        steps: (0..step_count)
+            .map(|i| crate::agent::plan_artifact::PlanStepV1 {
+                id: format!("s{i}"),
+                description: "d".into(),
+                workflow_node_id: None,
+                executor_kind: None,
+                step_kind: None,
+                acceptance: None,
+                max_step_retries: None,
+                transitions: None,
+            })
+            .collect(),
+        no_task: false,
+    };
+    let action = reduce_prepared_stagnation_after_parse(&[], &plan, entered);
+    assert_eq!(action.as_str(), expect, "{ctx}: prepared stagnation");
+}
+
+fn assert_completed_replanning_reduce(ctx: &str, body: &serde_json::Value) {
+    let entered = body["entered"].as_bool().unwrap_or(false);
+    let step_count = body["step_count"].as_u64().unwrap_or(1) as usize;
+    let expect = body_str(body, "expect", ctx);
+    let steps: Vec<_> = (0..step_count)
+        .map(|i| crate::agent::plan_artifact::PlanStepV1 {
+            id: format!("s{i}"),
+            description: "verify".into(),
+            workflow_node_id: None,
+            executor_kind: None,
+            step_kind: Some("verify".into()),
+            acceptance: None,
+            max_step_retries: None,
+            transitions: None,
+        })
+        .collect();
+    let action = reduce_completed_replanning_suppression(&[], entered, &steps);
+    assert_eq!(
+        match action {
+            super::completed_replanning_reduce::CompletedReplanningReduceAction::ContinuePostParse => {
+                "continue_post_parse"
+            }
+            super::completed_replanning_reduce::CompletedReplanningReduceAction::FinishQuiet => {
+                "finish_quiet"
+            }
+        },
+        expect,
+        "{ctx}: completed replanning"
     );
 }
 
@@ -481,6 +596,10 @@ fn assert_golden_fsm_line(ctx: &str, row: &GoldenLine) {
         "outer_loop_post_tools_reduce" => assert_outer_loop_post_tools_reduce(ctx, &row.body),
         "outer_loop_iteration_exit" => assert_outer_loop_iteration_exit(ctx, &row.body),
         "steps_loop_post_outer" => assert_steps_loop_post_outer(ctx, &row.body),
+        "steps_loop_preflight_reduce" => assert_steps_loop_preflight_reduce(ctx, &row.body),
+        "steps_loop_iteration_reduce" => assert_steps_loop_iteration_reduce(ctx, &row.body),
+        "prepared_stagnation_reduce" => assert_prepared_stagnation_reduce(ctx, &row.body),
+        "completed_replanning_reduce" => assert_completed_replanning_reduce(ctx, &row.body),
         "step_iteration_reduce" => assert_step_iteration_reduce(ctx, &row.body),
         "prepared_route_reduce" => assert_prepared_route_reduce(ctx, &row.body),
         "orchestrator_post_parse_schedule" => {

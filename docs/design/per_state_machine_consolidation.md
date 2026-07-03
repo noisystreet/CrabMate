@@ -1,6 +1,6 @@
 # PER 编排：用显式状态机收拢分支（设计）
 
-**状态**：**部分落地**（终答 Gate、外循环/分阶段子 FSM、**`StagedTurnOrchestratorPhase`** 顶层词汇与 `tracing` 已接入；全局单表驱动仍属后续）。**受众**：维护 `agent_turn`、`per_coord`、分阶段规划与分层 Agent 的开发者。  
+**状态**：**子 FSM + reduce/driver 体系已落地（阶段 A–H 及步队列/终答 Context 收拢）**；全局单表驱动与 `staged/mod.rs` 剩余 IO 瘦身仍属后续。**受众**：维护 `agent_turn`、`per_coord`、分阶段规划与分层 Agent 的开发者。  
 **语言**：中文。  
 **关联文档**：
 
@@ -176,6 +176,7 @@
 | 2026-04-30 | 规划子回合门控：`agent_turn/staged/planner_round_fsm.rs`（ensemble / 优化轮是否运行）；与 `turn_fsm` / `orchestrator` 并列 |
 | 2026-04-30 | 回合级：`agent_turn/staged/turn_fsm.rs`（`StagedTurnPhase` / `advance_staged_turn_after_sub_call`）；`prepare_messages_for_model` + `prepare_staged_planner_no_tools_request` fixture 测试见 `staged/mod.rs` |
 | 2026-04-28 | 实现增量：`per_coord/final_plan_gate.rs`、`agent_turn/staged/orchestrator.rs` |
+| 2026-07-03 | **阶段 I（步队列 reduce + Gate Context + 外循环 mock）**：**`steps_loop_reduce`**、**`prepared_stagnation_reduce`**、**`completed_replanning_reduce`**；**`final_plan_gate_context`**；外循环 **`OuterLoopDriver`** 三条集成 mock；文档状态更新。 |
 | 2026-07-03 | **阶段 H（滚动 advance reduce + 外循环 driver）**：**`rolling_horizon_advance_reduce`**；**`outer_loop_driver`** + **`outer_loop_iteration_reduce`**；金样 +8。 |
 | 2026-07-03 | **阶段 G（patch 恢复 reduce + mock + CI）**：**`step_patch_recover_reduce`**；**`run_agent_turn_staged_step_verify_fail_patch_replanner_mock`**；**`workflow_reflection`** 金样进 CI；金样 +3。 |
 | 2026-07-03 | **阶段 F（full-pipeline 段 reduce）**：**`full_pipeline_reduce`**（ensemble/optimizer/NL 段 Run/Skip）；**`mod.rs`** 段后相位推进收拢；金样 +6。 |

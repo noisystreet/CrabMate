@@ -2,20 +2,7 @@ use crate::agent::agent_turn::params::RunLoopParams;
 use crate::agent::plan_artifact::PlanStepV1;
 use tracing::info;
 
-use super::super::turn_completion::turn_suppress_completed_replanning;
-
-pub(super) fn should_suppress_completed_replanning(
-    p: &mut RunLoopParams<'_>,
-    entered_from_step_execution_round: bool,
-    steps: &[PlanStepV1],
-) -> bool {
-    if !turn_suppress_completed_replanning(
-        p.turn.messages(),
-        entered_from_step_execution_round,
-        steps,
-    ) {
-        return false;
-    }
+pub(super) fn log_completed_replanning_suppressed(p: &RunLoopParams<'_>, steps: &[PlanStepV1]) {
     let goal_preview =
         crate::agent::plan_optimizer::staged_plan_trigger_user_content(p.turn.messages())
             .unwrap_or("")
@@ -28,7 +15,6 @@ pub(super) fn should_suppress_completed_replanning(
         step_count = steps.len(),
         "当前用户目标已有完成证据，抑制步后重复规划"
     );
-    true
 }
 
 #[cfg(test)]
