@@ -52,3 +52,13 @@
 {"id":"patch_recover_skip_fail_fast","case":"step_patch_recover_reduce","branch":"outer_exec_or_verify","feedback_mode":"fail_fast","patch_max":2,"verify_reason":"exit_code_mismatch","has_outer_error":false,"expect":"skip"}
 {"id":"patch_recover_run_verify","case":"step_patch_recover_reduce","branch":"outer_exec_or_verify","feedback_mode":"patch_planner","patch_max":2,"verify_reason":"exit_code_mismatch","has_outer_error":false,"expect":"run_patch"}
 {"id":"patch_recover_tool","case":"step_patch_recover_reduce","branch":"tool_failure","feedback_mode":"patch_planner","patch_max":3,"expect":"run_patch"}
+{"id":"rh_adv_continue","case":"rolling_horizon_advance_reduce","advance":"continue","phase":"pre_step_execution_round","has_feedback":false,"expect":"continue_loop"}
+{"id":"rh_adv_continue_fb","case":"rolling_horizon_advance_reduce","advance":"continue","phase":"after_step_execution_round","has_feedback":true,"expect":"continue_loop"}
+{"id":"rh_adv_finish","case":"rolling_horizon_advance_reduce","advance":"finished","expect":"finish"}
+{"id":"rh_adv_replan","case":"rolling_horizon_advance_reduce","advance":"replan_exhausted","expect":"replan_exhausted"}
+{"id":"rh_adv_propagate","case":"rolling_horizon_advance_reduce","advance":"propagate","expect":"propagate"}
+{"id":"outer_reflect_reduce_break","case":"outer_loop_reflect_reduce","ctl":"break_outer","expect":"stop_outer_loop","expect_exit":"stop_outer_loop"}
+{"id":"outer_reflect_reduce_continue","case":"outer_loop_reflect_reduce","ctl":"continue_outer","expect":"continue_next_iteration","expect_exit":"continue_next_iteration"}
+{"id":"outer_reflect_reduce_tools","case":"outer_loop_reflect_reduce","ctl":"proceed_to_tools","expect":"proceed_to_tools","expect_exit":null}
+{"id":"outer_post_tools_stop","case":"outer_loop_post_tools_reduce","early_stop":true,"expect":"stop_outer_loop"}
+{"id":"outer_post_tools_cont","case":"outer_loop_post_tools_reduce","early_stop":false,"expect":"continue_next_iteration"}

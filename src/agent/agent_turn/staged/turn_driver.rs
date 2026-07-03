@@ -11,6 +11,7 @@ use super::full_pipeline_fsm::StagedFullPipelinePhase;
 use super::orchestrator::StagedRoundOrchestratorPhase;
 use super::prepared_post_parse_fsm::PreparedPostParseSchedule;
 use super::prepared_route_reduce::PreparedRouteReduceAction;
+use super::rolling_horizon_advance_reduce::RollingHorizonAdvanceReduceAction;
 use super::rolling_horizon_preflight_reduce::RollingHorizonPreflightAction;
 use super::staged_parse_terminal::StagedParseTerminalRoute;
 use super::step_iteration_reduce::StepIterationReduceAction;
@@ -61,6 +62,22 @@ impl StagedTurnDriver {
             return;
         }
         self.phase = orchestrator_phase_for_rolling_horizon_preflight(action);
+    }
+
+    pub(crate) fn record_rolling_horizon_advance_reduce(
+        &mut self,
+        action: RollingHorizonAdvanceReduceAction,
+    ) {
+        match action {
+            RollingHorizonAdvanceReduceAction::ContinueLoop { next_phase, .. } => {
+                self.phase = orchestrator_phase_for_turn_phase(next_phase);
+            }
+            RollingHorizonAdvanceReduceAction::Finish => {
+                self.phase = StagedTurnOrchestratorPhase::Done;
+            }
+            RollingHorizonAdvanceReduceAction::ReplanExhausted
+            | RollingHorizonAdvanceReduceAction::Propagate => {}
+        }
     }
 
     pub(crate) fn record_step_patch_recover_reduce(

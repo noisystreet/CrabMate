@@ -47,7 +47,7 @@ impl OuterLoopIterationExit {
 }
 
 /// `per_reflect_after_assistant` 结果映射为外循环控制（见 [`super::outer_loop`]）。
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ReflectBranchCtl {
     /// 结束外层循环（正常停轮或规划重写耗尽已处理 SSE）。
     BreakOuter,

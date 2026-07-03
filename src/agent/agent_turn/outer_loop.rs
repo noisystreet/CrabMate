@@ -16,7 +16,9 @@ use super::execute_tools::{
     ExecuteToolsBatchOutcome, WebExecuteCtx, per_execute_tools_web, sse_sender_closed,
 };
 use super::outer_loop_build_idle::outer_loop_window_has_build_progress_since_last_user;
+use super::outer_loop_driver::OuterLoopDriver;
 use super::outer_loop_fsm::{OuterLoopIterationExit, OuterLoopIterationPhase, ReflectBranchCtl};
+use super::outer_loop_iteration_reduce::outer_loop_iteration_exit_from_reflect_reduce;
 use super::outer_loop_reflect::map_reflect_outcome_to_branch_ctl;
 use super::params::{OuterLoopPlanCallModelRole, RunLoopParams};
 use super::plan::{PerPlanCallModelParams, per_plan_call_model_retrying};
@@ -263,6 +265,7 @@ fn drop_redundant_tool_calls_after_active_goal_completed(p: &mut RunLoopParams<'
 async fn run_outer_loop_single_iteration(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
+    driver: &mut OuterLoopDriver,
 ) -> Result<OuterLoopIterationExit, RunAgentTurnError> {
     outer_loop_iteration_guard(p)?;
     let iteration_count = p.turn.turn_budget.outer_loop_iterations();
@@ -270,10 +273,11 @@ async fn run_outer_loop_single_iteration(
     p.apply_outer_loop_plan_call_model_role(plan_model_role);
     let (exec_api_base, exec_api_key) = p.plan_call_executor_endpoint_cloned();
 
+    driver.record_phase(OuterLoopIterationPhase::IterationEnter);
     tracing::debug!(
         target: "crabmate::agent_turn",
         outer_loop_fsm = "single_agent_outer",
-        outer_loop_step = OuterLoopIterationPhase::IterationEnter.as_str(),
+        outer_loop_step = driver.phase_str(),
         iteration = iteration_count,
         use_executor_model = p.turn.use_executor_model,
         outer_loop_plan_model_role = plan_model_role.as_trace_str(),
@@ -287,10 +291,11 @@ async fn run_outer_loop_single_iteration(
     let render_to_terminal = p.ctx.io.render_to_terminal;
     outer_loop_prepare_planner_context(p, per_coord).await?;
 
+    driver.record_phase(OuterLoopIterationPhase::PrepareContextDone);
     tracing::debug!(
         target: "crabmate::agent_turn",
         outer_loop_fsm = "single_agent_outer",
-        outer_loop_step = OuterLoopIterationPhase::PrepareContextDone.as_str(),
+        outer_loop_step = driver.phase_str(),
         iteration = iteration_count,
         "outer_loop planner context prepared"
     );
@@ -338,37 +343,37 @@ async fn run_outer_loop_single_iteration(
     );
     p.turn.push_assistant_merging_trailing_empty(msg.clone());
 
+    driver.record_phase(OuterLoopIterationPhase::AfterPlannerModel);
     tracing::debug!(
         target: "crabmate::agent_turn",
         outer_loop_fsm = "single_agent_outer",
-        outer_loop_step = OuterLoopIterationPhase::AfterPlannerModel.as_str(),
+        outer_loop_step = driver.phase_str(),
         iteration = iteration_count,
         finish_reason = finish_reason.as_str(),
         "outer_loop assistant pushed"
     );
 
     if finish_reason == USER_CANCELLED_FINISH_REASON {
-        return Ok(OuterLoopIterationExit::StopOuterLoop);
+        let exit = OuterLoopIterationExit::StopOuterLoop;
+        driver.record_iteration_exit(exit);
+        return Ok(exit);
     }
 
     let reflect_ctl = outer_loop_reflect_branch(p, per_coord, finish_reason.as_str(), &msg).await?;
+    let reflect_reduce = driver.record_reflect_branch(reflect_ctl);
+    driver.record_phase(OuterLoopIterationPhase::ReflectDecided);
     tracing::debug!(
         target: "crabmate::agent_turn",
         outer_loop_fsm = "single_agent_outer",
-        outer_loop_step = OuterLoopIterationPhase::ReflectDecided.as_str(),
+        outer_loop_step = driver.phase_str(),
         iteration = iteration_count,
-        reflect_branch = reflect_ctl.as_trace_str(),
+        reflect_branch = reflect_reduce.as_str(),
         "outer_loop reflect branch"
     );
 
-    match reflect_ctl {
-        ReflectBranchCtl::BreakOuter => {
-            return Ok(OuterLoopIterationExit::StopOuterLoop);
-        }
-        ReflectBranchCtl::ContinueOuter => {
-            return Ok(OuterLoopIterationExit::ContinueNextIteration);
-        }
-        ReflectBranchCtl::ProceedToTools => {}
+    if let Some(exit) = outer_loop_iteration_exit_from_reflect_reduce(reflect_reduce) {
+        driver.record_iteration_exit(exit);
+        return Ok(exit);
     }
 
     if completed_goal_with_redundant_tool_calls(p, &msg) {
@@ -390,13 +395,16 @@ async fn run_outer_loop_single_iteration(
             "当前用户目标已有完成证据，静默跳过冗余探针/重复 run_command"
         );
         drop_redundant_tool_calls_after_active_goal_completed(p, &msg);
-        return Ok(OuterLoopIterationExit::StopOuterLoop);
+        let exit = OuterLoopIterationExit::StopOuterLoop;
+        driver.record_iteration_exit(exit);
+        return Ok(exit);
     }
 
+    driver.record_phase(OuterLoopIterationPhase::ToolsExecute);
     tracing::debug!(
         target: "crabmate::agent_turn",
         outer_loop_fsm = "single_agent_outer",
-        outer_loop_step = OuterLoopIterationPhase::ToolsExecute.as_str(),
+        outer_loop_step = driver.phase_str(),
         iteration = iteration_count,
         "outer_loop tools execute"
     );
@@ -405,28 +413,36 @@ async fn run_outer_loop_single_iteration(
     if outer_loop_window_has_build_progress_since_last_user(p.turn.messages()) {
         per_coord.reset_outer_loop_build_idle_streak();
     }
-    if task_level_satisfied_allows_early_stop(p.turn.messages()) {
+    let task_level_early_stop = task_level_satisfied_allows_early_stop(p.turn.messages());
+    if task_level_early_stop {
         tracing::info!(
             target: "crabmate::agent_turn",
             "当前用户目标已有完成证据且允许早停，外循环收敛停轮"
         );
-        return Ok(OuterLoopIterationExit::StopOuterLoop);
     }
-    Ok(OuterLoopIterationExit::ContinueNextIteration)
+    let exit = driver.decide_post_tools_exit(task_level_early_stop);
+    driver.record_iteration_exit(exit);
+    Ok(exit)
 }
 
 pub(crate) async fn run_agent_outer_loop(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
 ) -> Result<(), RunAgentTurnError> {
+    let mut driver = OuterLoopDriver::new();
     loop {
         p.turn.turn_budget.record_outer_loop_iteration();
-        let exit = run_outer_loop_single_iteration(p, per_coord).await?;
+        let exit = run_outer_loop_single_iteration(p, per_coord, &mut driver).await?;
         let iteration_count = p.turn.turn_budget.outer_loop_iterations();
         tracing::debug!(
             target: "crabmate::agent_turn",
             outer_loop_fsm = "single_agent_outer",
             outer_loop_iteration_exit = exit.as_trace_str(),
+            outer_loop_last_reflect = driver
+                .last_reflect
+                .as_ref()
+                .map(|c| c.as_trace_str())
+                .unwrap_or("none"),
             iteration = iteration_count,
             "outer_loop iteration exit decision"
         );
