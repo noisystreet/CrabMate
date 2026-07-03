@@ -91,12 +91,19 @@ fn default_env_filter(quiet_cli_default: bool, log_file: Option<&Path>) -> Strin
     } else {
         "info"
     };
-    format!("{base},tokei=error")
+    format!(
+        "{base}{}",
+        if cfg!(feature = "project_metrics") {
+            ",tokei=error"
+        } else {
+            ""
+        }
+    )
 }
 
 /// 初始化 **`tracing` subscriber** + **`tracing-log`**（桥接既有 `log::` 调用）。
 ///
-/// 与历史 `init_logging` 行为对齐：**`RUST_LOG`** 优先；未设置时按 `quiet_cli_default` / `--log` 给默认过滤器；默认均带 **`tokei=error`**。
+/// 与历史 `init_logging` 行为对齐：**`RUST_LOG`** 优先；未设置时按 `quiet_cli_default` / `--log` 给默认过滤器；启用 **`project_metrics`** 时默认另带 **`tokei=error`**。
 ///
 /// 设 **`CM_LOG_JSON=1`**（或 **`true`** / **`yes`** / **`on`**）时，日志行为 **JSON 行**（便于 `jq` / 日志平台）；否则为紧凑人类可读格式（含 span 字段上下文）。
 ///

@@ -160,7 +160,7 @@ cargo tauri build
 
 ### 开发与质检（维护者）
 
-- **Cargo features / 裁剪二进制**：默认 **`web` + `repl` + `tui`**（**`mcp`**、**`fastembed`**、`docker_sandbox` / `gen-man` 按需开启）。MCP：`cargo build --features mcp`；语义检索与向量长期记忆：`cargo build --features fastembed`（可组合，如 `--features 'web,mcp,fastembed'`）。完整能力：`cargo build --all-features`。详见根目录 **`Cargo.toml`** **`[features]`**。
+- **Cargo features / 裁剪二进制**：默认 **`web` + `repl` + `tui`**（**`mcp`**、**`fastembed`**、**`project_metrics`**（tokei 代码统计 / 项目画像）、`docker_sandbox` / `gen-man` 按需开启）。MCP：`cargo build --features mcp`；语义检索与向量长期记忆：`cargo build --features fastembed`；tokei 统计：`cargo build --features project_metrics`（未启用时 `code_stats` / 项目画像走内置扩展名 walk）。可组合，如 `--features 'web,mcp,fastembed,project_metrics'`。完整能力：`cargo build --all-features`。详见根目录 **`Cargo.toml`** **`[features]`**。
 - **fmt / clippy / test、pre-commit、SSE 回归脚本、E2E**：命令汇总见 **[docs/测试指南.md](docs/测试指南.md)**（含 **`./scripts/check-sse-protocol.sh`**）。
 
 ## 文档索引

@@ -1,7 +1,7 @@
 [
 ToolSpec {
             name: "code_stats",
-            description: "统计工作区代码行数（按语言分类）。优先使用 tokei，回退 cloc，均未安装时使用内置统计（按扩展名识别语言、估算注释/空行/代码行）。可选 path 指定子目录，format=table/json。",
+            description: "统计工作区代码行数（按语言分类）。启用 **`project_metrics`** 构建时使用 tokei；否则按扩展名内置 walk 粗估（不含注释/空行拆分）。可选 path 指定子目录，format=table/json。",
             category: ToolCategory::Development,
             parameters: tool_params::params_code_stats,
             runner: runner_code_stats,

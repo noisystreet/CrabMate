@@ -1,4 +1,4 @@
-//! 代码度量与分析工具：行数统计（tokei 库）、依赖图、覆盖率报告解析
+//! 代码度量与分析工具：行数统计（可选 tokei / 内置 walk）、依赖图、覆盖率报告解析
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -7,9 +7,9 @@ use super::output_util;
 use super::tool_param_types::{
     CodeStatsArgs, CodeStatsFormat, CoverageReportArgs, CoverageReportFormat,
 };
+use crate::project_metrics;
 
 pub(super) const MAX_OUTPUT_LINES: usize = 600;
-const EXCLUDED_DIRS: &[&str] = &["target", "node_modules", "vendor", "dist", "build", ".git"];
 
 // ── code_stats：代码行数统计 ────────────────────────────────
 
@@ -41,36 +41,29 @@ pub fn code_stats(args_json: &str, workspace_root: &Path, max_output_len: usize)
         CodeStatsFormat::Json => "json",
     };
 
-    let paths = &[target.to_string_lossy().to_string()];
-    let excluded: Vec<&str> = EXCLUDED_DIRS.to_vec();
-    let config = tokei::Config::default();
-    let mut languages = tokei::Languages::new();
-    languages.get_statistics(paths, &excluded, &config);
-
-    let mut sorted: Vec<_> = languages
-        .iter()
-        .filter(|(_, lang)| lang.code > 0 || lang.comments > 0 || lang.blanks > 0)
-        .collect();
-    sorted.sort_by_key(|b| std::cmp::Reverse(b.1.code));
-
-    if sorted.is_empty() {
+    let stats = project_metrics::gather_workspace_code_stats(
+        &target,
+        project_metrics::DEFAULT_EXCLUDED_DIRS,
+    );
+    if stats.languages.is_empty() {
         return format!("路径 {} 下未找到可识别的源码文件", path);
     }
 
-    let total_files: usize = sorted.iter().map(|(_, l)| l.reports.len()).sum();
-    let total_code: usize = sorted.iter().map(|(_, l)| l.code).sum();
-    let total_comments: usize = sorted.iter().map(|(_, l)| l.comments).sum();
-    let total_blanks: usize = sorted.iter().map(|(_, l)| l.blanks).sum();
-    let total_lines = total_code + total_comments + total_blanks;
+    let total_files = stats.total_files();
+    let total_code = stats.total_code();
+    let total_comments = stats.total_comments();
+    let total_blanks = stats.total_blanks();
+    let total_lines = stats.total_lines();
 
     if format == "json" {
-        let entries: Vec<serde_json::Value> = sorted
+        let entries: Vec<serde_json::Value> = stats
+            .languages
             .iter()
-            .map(|(lang_type, lang)| {
+            .map(|lang| {
                 serde_json::json!({
-                    "language": format!("{}", lang_type),
-                    "files": lang.reports.len(),
-                    "lines": lang.code + lang.comments + lang.blanks,
+                    "language": lang.language,
+                    "files": lang.files,
+                    "lines": lang.total_lines(),
                     "blank": lang.blanks,
                     "comment": lang.comments,
                     "code": lang.code
@@ -91,21 +84,25 @@ pub fn code_stats(args_json: &str, workspace_root: &Path, max_output_len: usize)
         };
     }
 
+    let source_label = if cfg!(feature = "project_metrics") {
+        "tokei 库"
+    } else {
+        "内置扩展名统计"
+    };
     let mut out = String::new();
-    out.push_str(&format!("代码统计（tokei 库）：{}\n", path));
+    out.push_str(&format!("代码统计（{}）：{}\n", source_label, path));
     out.push_str(&format!(
         "{:<20} {:>6} {:>10} {:>8} {:>8} {:>8}\n",
         "Language", "Files", "Lines", "Blank", "Comment", "Code"
     ));
     out.push_str(&"-".repeat(64));
     out.push('\n');
-    for (lang_type, lang) in &sorted {
-        let lines = lang.code + lang.comments + lang.blanks;
+    for lang in &stats.languages {
         out.push_str(&format!(
             "{:<20} {:>6} {:>10} {:>8} {:>8} {:>8}\n",
-            format!("{}", lang_type),
-            lang.reports.len(),
-            lines,
+            lang.language,
+            lang.files,
+            lang.total_lines(),
             lang.blanks,
             lang.comments,
             lang.code

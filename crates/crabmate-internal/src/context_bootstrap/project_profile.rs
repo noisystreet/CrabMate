@@ -1,17 +1,13 @@
-//! 工作区「项目画像」：只读扫描清单文件、目录结构与 tokei 语言占比，供 Web 侧栏与首轮对话注入。
+//! 工作区「项目画像」：只读扫描清单文件、目录结构与代码行数占比，供 Web 侧栏与首轮对话注入。
 //! 不执行任意用户命令；可选 `cargo metadata --no-deps` 仅用于依赖数量（失败则省略）。
 
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
-use tokei::LanguageType;
-
 use crate::cargo_metadata::cargo_metadata_command;
+use crate::project_metrics;
 use crabmate_config::AgentConfig;
-
-/// 与 `tools/code_metrics.rs` 中 `code_stats` 排除目录一致，避免统计噪声。
-const EXCLUDED_DIRS: &[&str] = &["target", "node_modules", "vendor", "dist", "build", ".git"];
 
 const PROFILE_MARKDOWN_VERSION: u32 = 1;
 
@@ -143,62 +139,40 @@ fn section_top_dirs(root: &Path) -> Option<String> {
 }
 
 fn section_code_stats(root: &Path) -> Option<String> {
-    let config = tokei::Config::default();
-    let mut languages = tokei::Languages::new();
-    let path_str = root.to_string_lossy().to_string();
-    let paths = &[path_str];
-    let excluded: Vec<&str> = EXCLUDED_DIRS.to_vec();
-    languages.get_statistics(paths, &excluded, &config);
-
-    let mut sorted: Vec<_> = languages
-        .iter()
-        .filter(|(_, lang)| lang.code > 0 || lang.comments > 0 || lang.blanks > 0)
-        .collect();
-    if sorted.is_empty() {
-        return Some("### 语言与规模（tokei）\n- （未识别到源码文件）\n".to_string());
+    let stats =
+        project_metrics::gather_workspace_code_stats(root, project_metrics::DEFAULT_EXCLUDED_DIRS);
+    if stats.languages.is_empty() {
+        return Some(format!(
+            "### 语言与规模（{}）\n- （未识别到源码文件）\n",
+            project_metrics::profile_stats_heading_suffix()
+        ));
     }
-    sorted.sort_by_key(|b| std::cmp::Reverse(b.1.code));
 
-    let total_code: usize = sorted.iter().map(|(_, l)| l.code).sum();
-    let total_files: usize = sorted.iter().map(|(_, l)| l.reports.len()).sum();
+    let total_code = stats.total_code();
+    let total_files = stats.total_files();
 
-    let mut out = String::from("### 语言与规模（tokei，已排除 target/node_modules 等）\n");
+    let mut out = format!(
+        "### 语言与规模（{}）\n",
+        project_metrics::profile_stats_heading_suffix()
+    );
     out.push_str(&format!(
         "- 估算代码行数：**{}**（{} 个文件）\n",
         total_code, total_files
     ));
     let mut labels: Vec<String> = Vec::new();
-    for (lang_type, lang) in sorted.iter().take(8) {
+    for lang in stats.languages.iter().take(8) {
         let pct = lang
             .code
             .saturating_mul(100)
-            .checked_div(total_code)
+            .checked_div(total_code.max(1))
             .unwrap_or(0);
-        labels.push(format!("{} {}%", language_label(**lang_type), pct));
+        labels.push(format!("{} {}%", lang.language, pct));
     }
     out.push_str(&format!(
         "- 主要语言占比（按代码行）：{}\n",
         labels.join("，")
     ));
     Some(out)
-}
-
-fn language_label(t: LanguageType) -> String {
-    match t {
-        LanguageType::Rust => "Rust".to_string(),
-        LanguageType::TypeScript => "TypeScript".to_string(),
-        LanguageType::JavaScript => "JavaScript".to_string(),
-        LanguageType::Python => "Python".to_string(),
-        LanguageType::Go => "Go".to_string(),
-        LanguageType::Cpp => "C++".to_string(),
-        LanguageType::C => "C".to_string(),
-        LanguageType::Css => "CSS".to_string(),
-        LanguageType::Html => "HTML".to_string(),
-        LanguageType::Json => "JSON".to_string(),
-        LanguageType::Markdown => "Markdown".to_string(),
-        LanguageType::Toml => "TOML".to_string(),
-        _ => format!("{t}"),
-    }
 }
 
 fn section_cargo_metadata(root: &Path) -> Option<String> {
@@ -485,8 +459,11 @@ edition = "2021"
 
         let md = build_project_profile_markdown(&root, 20_000);
         assert!(md.contains("demo_prof"));
-        assert!(md.contains("tokei"));
         assert!(md.contains("Rust"));
+        #[cfg(feature = "project_metrics")]
+        assert!(md.contains("tokei"));
+        #[cfg(not(feature = "project_metrics"))]
+        assert!(md.contains("内置扩展名统计"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
