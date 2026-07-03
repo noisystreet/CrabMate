@@ -22,6 +22,7 @@ use super::turn_fsm::{
 };
 use super::{
     StagedPlanRunLabels, prepare_staged_planner_no_tools_request,
+    rolling_horizon_advance_reduce::reduce_rolling_horizon_advance,
     rolling_horizon_preflight_reduce::{
         RollingHorizonPreflightAction, RollingHorizonPreflightInput,
         reduce_rolling_horizon_preflight,
@@ -217,6 +218,9 @@ where
             staged_rolling_horizon_apply_advance(phase, rewrite_attempts, max_rewrites, event);
         rewrite_attempts = step.next_rewrite_attempts;
 
+        let advance_reduce = reduce_rolling_horizon_advance(&step.advance);
+        turn_driver.record_rolling_horizon_advance_reduce(advance_reduce);
+
         tracing::debug!(
             target: "crabmate::staged",
             staged_fsm = "rolling_horizon",
@@ -224,32 +228,51 @@ where
             staged_round = staged_rounds,
             prior_staged_turn_phase = ?phase,
             advance_kind = step.advance_kind,
+            rolling_horizon_advance_reduce = advance_reduce.as_str(),
             propagate_public_code = step.propagate_public_code,
             rewrite_attempts = rewrite_attempts,
             sub_phase = "planner",
             "staged rolling horizon advance"
         );
 
-        match step.advance {
-            StagedTurnAdvance::Continue {
-                phase: next_phase,
+        match advance_reduce {
+            super::rolling_horizon_advance_reduce::RollingHorizonAdvanceReduceAction::ContinueLoop {
+                next_phase,
+                restore_workspace_snapshot,
                 push_feedback_user,
             } => {
                 phase = next_phase;
-                match push_feedback_user {
-                    Some(u) => {
+                if push_feedback_user {
+                    if restore_workspace_snapshot {
                         rolling_horizon_try_restore_snapshot(kind, &snapshot);
-                        p.turn.push_message(u);
                     }
-                    None => rolling_horizon_debug_after_step_round(kind, staged_rounds, phase),
+                    if let StagedTurnAdvance::Continue {
+                        push_feedback_user: Some(u),
+                        ..
+                    } = &step.advance
+                    {
+                        p.turn.push_message(u.clone());
+                    }
+                } else {
+                    rolling_horizon_debug_after_step_round(kind, staged_rounds, phase);
                 }
                 continue;
             }
-            StagedTurnAdvance::Finished => return Ok(()),
-            StagedTurnAdvance::ReplanExhausted { phase: ph, message } => {
-                return Err(RunAgentTurnError::ReplanExhausted { phase: ph, message });
+            super::rolling_horizon_advance_reduce::RollingHorizonAdvanceReduceAction::Finish => {
+                return Ok(());
             }
-            StagedTurnAdvance::Propagate(e) => return Err(e),
+            super::rolling_horizon_advance_reduce::RollingHorizonAdvanceReduceAction::ReplanExhausted => {
+                if let StagedTurnAdvance::ReplanExhausted { phase: ph, message } = step.advance {
+                    return Err(RunAgentTurnError::ReplanExhausted { phase: ph, message });
+                }
+                unreachable!("advance reduce replan_exhausted without advance payload");
+            }
+            super::rolling_horizon_advance_reduce::RollingHorizonAdvanceReduceAction::Propagate => {
+                if let StagedTurnAdvance::Propagate(e) = step.advance {
+                    return Err(e);
+                }
+                unreachable!("advance reduce propagate without advance payload");
+            }
         }
     }
 }

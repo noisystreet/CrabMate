@@ -31,6 +31,7 @@ mod post_parse_pipeline_fsm;
 mod prepared_parse_fsm;
 mod prepared_post_parse_fsm;
 mod prepared_route_reduce;
+mod rolling_horizon_advance_reduce;
 mod rolling_horizon_facade;
 mod rolling_horizon_preflight_reduce;
 mod sse;

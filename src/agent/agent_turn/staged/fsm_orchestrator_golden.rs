@@ -5,6 +5,7 @@ use super::full_pipeline_reduce::{FullPipelineSegment, reduce_full_pipeline_segm
 use super::prepared_parse_fsm::PreparedPlannerRoute;
 use super::prepared_post_parse_fsm::{PreparedFullPipelineSchedule, PreparedPostParseSchedule};
 use super::prepared_route_reduce::reduce_prepared_planner_route;
+use super::rolling_horizon_advance_reduce::reduce_rolling_horizon_advance;
 use super::rolling_horizon_preflight_reduce::{
     RollingHorizonPreflightInput, reduce_rolling_horizon_preflight,
 };
@@ -19,7 +20,7 @@ use super::step_patch_route_fsm::{
 use super::steps_loop_route_fsm::{
     StagedStepPostOuterRoute, resolve_staged_step_post_outer_route_from_results,
 };
-use super::turn_fsm::StagedTurnPhase;
+use super::turn_fsm::{StagedTurnAdvance, StagedTurnPhase};
 use super::turn_orchestrator_fsm::{
     orchestrator_phase_for_full_pipeline, orchestrator_phase_for_post_parse_schedule,
     orchestrator_phase_for_prepared_route, orchestrator_phase_for_prepared_route_reduce,
@@ -28,11 +29,16 @@ use super::turn_orchestrator_fsm::{
 };
 use crate::agent::agent_turn::errors::{AgentTurnSubPhase, RunAgentTurnError};
 use crate::agent::agent_turn::outer_loop_fsm::{OuterLoopIterationExit, ReflectBranchCtl};
+use crate::agent::agent_turn::outer_loop_iteration_reduce::{
+    outer_loop_iteration_exit_from_reflect_reduce, reduce_outer_loop_post_tools_exit,
+    reduce_outer_loop_reflect_branch,
+};
 use crate::agent::agent_turn::staged::planner_round_fsm::{
     StagedPlanEnsembleRoute, StagedPlanOptimizerRoute,
 };
 use crate::agent::plan_artifact::AgentReplyPlanV1;
 use crate::config::StagedPlanFeedbackMode;
+use crate::types::Message;
 use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -145,6 +151,73 @@ fn assert_outer_loop_iteration_exit(ctx: &str, body: &serde_json::Value) {
     let exit = body_str(body, "exit", ctx);
     let expect = body_str(body, "expect", ctx);
     assert_eq!(outer_exit_from_label(exit).as_trace_str(), expect, "{ctx}");
+}
+
+fn advance_from_body(body: &serde_json::Value, ctx: &str) -> StagedTurnAdvance {
+    let label = body_str(body, "advance", ctx);
+    match label {
+        "continue" => {
+            let phase = turn_phase_from_label(body_str(body, "phase", ctx));
+            let has_feedback = body["has_feedback"].as_bool().unwrap_or(false);
+            StagedTurnAdvance::Continue {
+                phase,
+                push_feedback_user: has_feedback.then(|| Message::user_only("fb")),
+            }
+        }
+        "finished" => StagedTurnAdvance::Finished,
+        "replan_exhausted" => StagedTurnAdvance::ReplanExhausted {
+            phase: AgentTurnSubPhase::Planner,
+            message: "exhausted".into(),
+        },
+        "propagate" => StagedTurnAdvance::Propagate(RunAgentTurnError::Other {
+            phase: AgentTurnSubPhase::Planner,
+            message: "x".into(),
+        }),
+        other => panic!("{ctx}: unknown advance label {other}"),
+    }
+}
+
+fn assert_rolling_horizon_advance_reduce(ctx: &str, body: &serde_json::Value) {
+    let advance = advance_from_body(body, ctx);
+    let expect = body_str(body, "expect", ctx);
+    let action = reduce_rolling_horizon_advance(&advance);
+    assert_eq!(
+        action.as_str(),
+        expect,
+        "{ctx}: rolling horizon advance reduce"
+    );
+}
+
+fn assert_outer_loop_reflect_reduce(ctx: &str, body: &serde_json::Value) {
+    let ctl = reflect_ctl_from_label(body_str(body, "ctl", ctx));
+    let expect = body_str(body, "expect", ctx);
+    let action = reduce_outer_loop_reflect_branch(ctl);
+    assert_eq!(action.as_str(), expect, "{ctx}: outer loop reflect reduce");
+    if let Some(expect_exit) = body.get("expect_exit").and_then(|v| v.as_str()) {
+        let exit = outer_loop_iteration_exit_from_reflect_reduce(action)
+            .expect("{ctx}: expected Some exit");
+        assert_eq!(
+            exit.as_trace_str(),
+            expect_exit,
+            "{ctx}: reflect reduce exit"
+        );
+    } else if body.get("expect_exit").is_some() {
+        assert!(
+            outer_loop_iteration_exit_from_reflect_reduce(action).is_none(),
+            "{ctx}: expected no iteration exit"
+        );
+    }
+}
+
+fn assert_outer_loop_post_tools_reduce(ctx: &str, body: &serde_json::Value) {
+    let early_stop = body["early_stop"].as_bool().unwrap_or(false);
+    let expect = body_str(body, "expect", ctx);
+    let exit = reduce_outer_loop_post_tools_exit(early_stop);
+    assert_eq!(
+        exit.as_trace_str(),
+        expect,
+        "{ctx}: outer loop post tools reduce"
+    );
 }
 
 fn assert_steps_loop_post_outer(ctx: &str, body: &serde_json::Value) {
@@ -404,6 +477,8 @@ fn assert_golden_fsm_line(ctx: &str, row: &GoldenLine) {
             assert_orchestrator_steps_loop_trace(ctx, &row.body);
         }
         "outer_loop_reflect_ctl" => assert_outer_loop_reflect_ctl(ctx, &row.body),
+        "outer_loop_reflect_reduce" => assert_outer_loop_reflect_reduce(ctx, &row.body),
+        "outer_loop_post_tools_reduce" => assert_outer_loop_post_tools_reduce(ctx, &row.body),
         "outer_loop_iteration_exit" => assert_outer_loop_iteration_exit(ctx, &row.body),
         "steps_loop_post_outer" => assert_steps_loop_post_outer(ctx, &row.body),
         "step_iteration_reduce" => assert_step_iteration_reduce(ctx, &row.body),
@@ -420,6 +495,9 @@ fn assert_golden_fsm_line(ctx: &str, row: &GoldenLine) {
         }
         "rolling_horizon_preflight_reduce" => {
             assert_rolling_horizon_preflight_reduce(ctx, &row.body);
+        }
+        "rolling_horizon_advance_reduce" => {
+            assert_rolling_horizon_advance_reduce(ctx, &row.body);
         }
         "orchestrator_rolling_horizon_preflight" => {
             assert_orchestrator_rolling_horizon_preflight(ctx, &row.body);
