@@ -18,7 +18,7 @@ use crate::message_dedupe::assistant_texts_fuzzy_duplicate;
 use crate::message_format::{
     assistant_message_text_for_display_ex_with_body_strings, message_text_for_display_ex,
 };
-use crate::storage::{ChatSession, StoredMessage, StoredMessageState};
+use crate::storage::{ChatSession, StoredMessage};
 
 /// 当前 attach 内、尾条 `loading` 助手消息的流式增量（与 `sessions` 中的该条 id 对齐）。
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
@@ -80,6 +80,32 @@ pub fn stream_overlay_clear_answer_for_message(
     }
 }
 
+fn merge_stream_answer_for_display(msg: &StoredMessage, stored: &str, overlay: &str) -> String {
+    // P0：canonical 投影 replace 后，loading 正文以 stored 为唯一真源。
+    if msg.state.as_ref().is_some_and(|st| st.is_loading()) {
+        if !stored.is_empty() {
+            return stored.to_string();
+        }
+        return overlay.to_string();
+    }
+    if overlay.is_empty() {
+        return stored.to_string();
+    }
+    if stored.is_empty() {
+        return overlay.to_string();
+    }
+    if overlay.starts_with(stored) {
+        return overlay.to_string();
+    }
+    if stored.starts_with(overlay) || stored.ends_with(overlay) {
+        return stored.to_string();
+    }
+    if assistant_texts_fuzzy_duplicate(stored, overlay) {
+        return stored.to_string();
+    }
+    format!("{stored}{overlay}")
+}
+
 /// 将 overlay 正文合并进已落盘字段，避免 canonical 投影 + overlay 收尾双写同段文字。
 fn merge_overlay_answer_into_stored(stored: &mut String, overlay: &str) {
     if overlay.is_empty() {
@@ -137,52 +163,6 @@ pub fn stream_overlay_take_into_stored_message(
     });
 }
 
-/// 将 overlay 中尚未落盘的正文并入 reasoning，并清空 answer（工具轮次前的旁注降级）。
-pub fn stream_overlay_demote_answer_to_reasoning(
-    overlay: RwSignal<Option<StreamTextOverlay>>,
-    session_id: &str,
-    message_id: &str,
-) {
-    overlay.update(|opt| {
-        let Some(o) = opt.as_mut() else {
-            return;
-        };
-        if o.session_id != session_id || o.message_id != message_id {
-            return;
-        }
-        let answer = o.answer.trim();
-        if answer.is_empty() {
-            return;
-        }
-        if !o.reasoning.is_empty() {
-            o.reasoning.push('\n');
-        }
-        o.reasoning.push_str(answer);
-        o.answer.clear();
-    });
-}
-
-fn demote_stored_assistant_answer_to_reasoning(msg: &mut StoredMessage) {
-    let answer = msg.text.trim();
-    if answer.is_empty() {
-        return;
-    }
-    if !msg.reasoning_text.is_empty() {
-        msg.reasoning_text.push('\n');
-    }
-    msg.reasoning_text.push_str(answer);
-    msg.text.clear();
-}
-
-/// 同一模型轮次确认含工具：将助手可见正文降级为 reasoning 旁注。
-pub fn demote_assistant_message_answer_to_commentary(msg: &mut StoredMessage) {
-    if msg.role != "assistant" || msg.is_tool {
-        return;
-    }
-    demote_stored_assistant_answer_to_reasoning(msg);
-    msg.state = Some(StoredMessageState::CommentaryBeforeTools);
-}
-
 /// 若 `overlay` 命中本条助手消息（`session_id` + `message_id` 对齐），返回合并后的 `text` / `reasoning_text`。
 ///
 /// 不限于 `loading`：`final_response` / 工具前轮换等会提前去掉 `Loading`，但同 attach 内 delta 仍写入 overlay，
@@ -200,9 +180,7 @@ pub fn stream_overlay_merged_text_reasoning_owned(
     if msg.role != "assistant" || msg.is_tool {
         return None;
     }
-    let mut text = String::with_capacity(msg.text.len() + o.answer.len());
-    text.push_str(&msg.text);
-    text.push_str(&o.answer);
+    let text = merge_stream_answer_for_display(msg, msg.text.as_str(), o.answer.as_str());
     let mut reasoning = String::with_capacity(msg.reasoning_text.len() + o.reasoning.len());
     reasoning.push_str(&msg.reasoning_text);
     reasoning.push_str(&o.reasoning);
@@ -253,8 +231,12 @@ pub fn sessions_snapshot_with_stream_overlay_merged(
         return out;
     };
     if m.role == "assistant" && !m.is_tool {
-        m.text.push_str(&o.answer);
-        m.reasoning_text.push_str(&o.reasoning);
+        if m.state.as_ref().is_some_and(|st| st.is_loading()) && !m.text.trim().is_empty() {
+            m.reasoning_text.push_str(&o.reasoning);
+        } else {
+            merge_overlay_answer_into_stored(&mut m.text, o.answer.as_str());
+            merge_overlay_reasoning_into_stored(&mut m.reasoning_text, o.reasoning.as_str());
+        }
     }
     out
 }
@@ -265,13 +247,11 @@ mod tests {
     use crate::storage::{ChatSession, StoredMessage, StoredMessageState};
 
     #[test]
-    fn demote_assistant_message_moves_text_to_reasoning() {
-        use crate::storage::StoredMessageState;
-
-        let mut msg = StoredMessage {
-            id: "a1".into(),
+    fn loading_with_stored_canonical_body_ignores_overlay_answer() {
+        let msg = StoredMessage {
+            id: "m1".into(),
             role: "assistant".into(),
-            text: "完成。".into(),
+            text: "块全文。".into(),
             reasoning_text: String::new(),
             image_urls: vec![],
             state: Some(StoredMessageState::Loading),
@@ -280,13 +260,65 @@ mod tests {
             tool_name: None,
             created_at: 0,
         };
-        demote_assistant_message_answer_to_commentary(&mut msg);
-        assert!(msg.text.is_empty());
-        assert_eq!(msg.reasoning_text, "完成。");
-        assert!(matches!(
-            msg.state,
-            Some(StoredMessageState::CommentaryBeforeTools)
-        ));
+        let o = StreamTextOverlay {
+            session_id: "s1".into(),
+            message_id: "m1".into(),
+            answer: "旧增量".into(),
+            reasoning: String::new(),
+        };
+        let (t, _) = stream_overlay_merged_text_reasoning_owned(&msg, Some(&o), "s1")
+            .expect("overlay should apply");
+        assert_eq!(t, "块全文。");
+    }
+
+    #[test]
+    fn merged_text_reasoning_avoids_double_when_stored_is_prefix_of_overlay() {
+        let msg = StoredMessage {
+            id: "m1".into(),
+            role: "assistant".into(),
+            text: "块全文。".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        let o = StreamTextOverlay {
+            session_id: "s1".into(),
+            message_id: "m1".into(),
+            answer: "块全文。增量".into(),
+            reasoning: String::new(),
+        };
+        let (t, _) = stream_overlay_merged_text_reasoning_owned(&msg, Some(&o), "s1")
+            .expect("overlay should apply");
+        assert_eq!(t, "块全文。增量");
+    }
+
+    #[test]
+    fn merged_text_reasoning_prefers_stored_when_overlay_is_suffix() {
+        let msg = StoredMessage {
+            id: "m1".into(),
+            role: "assistant".into(),
+            text: "块全文。".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(StoredMessageState::Loading),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        let o = StreamTextOverlay {
+            session_id: "s1".into(),
+            message_id: "m1".into(),
+            answer: "全文。".into(),
+            reasoning: String::new(),
+        };
+        let (t, _) = stream_overlay_merged_text_reasoning_owned(&msg, Some(&o), "s1")
+            .expect("overlay should apply");
+        assert_eq!(t, "块全文。");
     }
 
     #[test]
@@ -319,7 +351,7 @@ mod tests {
             text: "base ".into(),
             reasoning_text: "r0 ".into(),
             image_urls: vec!["/u/x.png".into()],
-            state: Some(StoredMessageState::Loading),
+            state: None,
             is_tool: false,
             tool_call_id: None,
             tool_name: None,

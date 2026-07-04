@@ -74,7 +74,7 @@ fn extract_post_tool_tail_prefers_premature_finalized_row() {
 }
 
 #[test]
-fn deferred_tool_boundary_migrates_summary_to_new_tail() {
+fn post_tool_tool_boundary_creates_empty_loading_tail() {
     let mut msgs = vec![
         empty_msg("t0", "system", "tool", true),
         StoredMessage {
@@ -90,36 +90,38 @@ fn deferred_tool_boundary_migrates_summary_to_new_tail() {
             created_at: 0,
         },
     ];
-    let peeled = extract_post_tool_tail_before_tool(&mut msgs, "a_load").expect("peeled");
+    let _peeled = extract_post_tool_tail_before_tool(&mut msgs, "a_load").expect("peeled");
     insert_tool_row(
         &mut msgs,
         empty_msg("t1", "system", "next tool", true),
         None,
     );
-    let mut new_tail = StoredMessage {
-        id: "a_new".into(),
-        role: "assistant".into(),
-        text: String::new(),
-        reasoning_text: String::new(),
-        image_urls: vec![],
-        state: Some(StoredMessageState::Loading),
-        is_tool: false,
-        tool_call_id: None,
-        tool_name: None,
-        created_at: 0,
-    };
-    merge_summary_into_loading_row(&mut new_tail, &peeled);
-    msgs.push(new_tail);
+    msgs.insert(
+        2,
+        StoredMessage {
+            id: "a_new".into(),
+            role: "assistant".into(),
+            text: String::new(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(StoredMessageState::Loading),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        },
+    );
     pin_loading_tail_in_messages(&mut msgs, "a_new");
     assert_eq!(msgs.len(), 3);
-    assert_eq!(msgs[0].id, "t0");
-    assert_eq!(msgs[1].id, "t1");
     assert_eq!(msgs[2].id, "a_new");
-    assert_eq!(msgs[2].text, "完成。");
+    assert!(
+        msgs[2].text.is_empty(),
+        "P0: canonical sync fills tail, not peel merge"
+    );
 }
 
 #[test]
-fn sync_final_answer_writes_streaming_tail() {
+fn sync_loading_tail_block_writes_streaming_tail() {
     let mut msgs = vec![StoredMessage {
         id: "a_load".into(),
         role: "assistant".into(),
@@ -132,7 +134,7 @@ fn sync_final_answer_writes_streaming_tail() {
         tool_name: None,
         created_at: 0,
     }];
-    sync_final_answer_in_messages(&mut msgs, "a_load", "完成。");
+    sync_loading_tail_block_in_messages(&mut msgs, "a_load", "完成。");
     assert_eq!(msgs[0].text, "完成。");
 }
 
@@ -340,7 +342,7 @@ fn remove_redundant_loading_tail_at_drops_duplicate_shell() {
 }
 
 #[test]
-fn late_tool_order_tool_then_restored_summary() {
+fn late_tool_order_tool_then_empty_loading_tail() {
     let mut msgs = vec![
         empty_msg("t0", "system", "create file", true),
         StoredMessage {
@@ -356,9 +358,9 @@ fn late_tool_order_tool_then_restored_summary() {
             created_at: 0,
         },
     ];
-    let peeled = peel_premature_summary_from_messages(&mut msgs, "a_done").expect("peeled");
+    let _peeled = peel_premature_summary_from_messages(&mut msgs, "a_done").expect("peeled");
     msgs.push(empty_msg("t1", "system", "cmake", true));
-    let mut loading = StoredMessage {
+    msgs.push(StoredMessage {
         id: "a_load".into(),
         role: "assistant".into(),
         text: String::new(),
@@ -369,11 +371,9 @@ fn late_tool_order_tool_then_restored_summary() {
         tool_call_id: None,
         tool_name: None,
         created_at: 0,
-    };
-    merge_summary_into_loading_row(&mut loading, &peeled);
-    msgs.push(loading);
+    });
     assert_eq!(msgs[0].id, "t0");
     assert_eq!(msgs[1].id, "t1");
     assert_eq!(msgs[2].id, "a_load");
-    assert_eq!(msgs[2].text, "完成。");
+    assert!(msgs[2].text.is_empty());
 }

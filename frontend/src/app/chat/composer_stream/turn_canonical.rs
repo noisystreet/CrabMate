@@ -27,6 +27,35 @@ impl TurnCanonicalState {
         &self.turn
     }
 
+    pub(super) fn tool_phase_open(&self) -> bool {
+        self.turn.tool_phase_open
+    }
+
+    /// 工具批进行中：当前流式 commentary 块（open 段或待下一工具的 pending 段），非累积终答。
+    pub(super) fn streaming_commentary_block_text(&self) -> Option<String> {
+        if let Some(open) = self
+            .turn
+            .segments
+            .iter()
+            .rev()
+            .find(|s| s.open && s.kind == SegmentKind::Commentary && !s.text.is_empty())
+        {
+            return Some(open.text.clone());
+        }
+        self.turn
+            .segments
+            .iter()
+            .rev()
+            .find(|s| {
+                !s.open
+                    && s.kind == SegmentKind::Commentary
+                    && s.before_tool_call_id.is_some()
+                    && s.segment_id.starts_with("pending-before-")
+                    && !s.text.is_empty()
+            })
+            .map(|s| s.text.clone())
+    }
+
     fn apply(&mut self, event: TurnEvent) {
         reduce_event(&mut self.turn, event);
     }
@@ -187,6 +216,21 @@ impl TurnCanonicalState {
         true
     }
 
+    /// 首个 `tool_call` 前：把尾泡 / 误写入的 `final_answer` 收进 pending 旁注段并清空终答桶。
+    pub(super) fn absorb_pre_tool_narration_for_first_tool(&mut self, from_bubble: &str) {
+        if !from_bubble.trim().is_empty() {
+            self.ingest_pre_tool_commentary(from_bubble);
+        }
+        if let Some(fa) = self.turn.final_answer.take() {
+            if !fa.trim().is_empty()
+                && (from_bubble.trim().is_empty()
+                    || !assistant_texts_fuzzy_duplicate(from_bubble, fa.as_str()))
+            {
+                self.ingest_pre_tool_commentary(fa.as_str());
+            }
+        }
+    }
+
     /// 读取某 `tool_call_id` 对应工具前旁注（reducer 步 + 未 flush 段）；单测与排障用。
     #[cfg(test)]
     pub(super) fn commentary_before_tool(&self, tool_call_id: &str) -> Option<String> {
@@ -253,6 +297,19 @@ mod tests {
     }
 
     #[test]
+    fn absorb_pre_tool_clears_migrated_final_answer() {
+        let mut turn = TurnCanonicalState::new();
+        assert!(turn.try_apply_answer_delta("误写入终答桶。"));
+        turn.absorb_pre_tool_narration_for_first_tool("尾泡旁注。");
+        assert!(turn.turn_ref().final_answer.is_none());
+        turn.on_tool_call("tc_a", "tool_a", "tool a");
+        assert_eq!(
+            turn.commentary_before_tool("tc_a").as_deref(),
+            Some("尾泡旁注。误写入终答桶。")
+        );
+    }
+
+    #[test]
     fn ingest_pre_tool_commentary_migrates_demoted_bubble() {
         let mut turn = TurnCanonicalState::new();
         turn.ingest_pre_tool_commentary("整段 narration。");
@@ -297,6 +354,16 @@ mod tests {
         let mut turn = TurnCanonicalState::new();
         turn.on_tool_call("tc_a", "tool_a", "tool a");
         assert!(!turn.try_apply_answer_delta("不应写入。"));
+        turn.on_segment_start(TurnSegmentStartInfo {
+            segment_id: "seg-before-tc_b".into(),
+            kind: "commentary".into(),
+            before_tool_call_id: Some("tc_b".into()),
+        });
+        assert!(turn.try_apply_commentary_delta("工具前旁注。"));
+        assert_eq!(
+            turn.streaming_commentary_block_text().as_deref(),
+            Some("工具前旁注。")
+        );
         turn.on_tool_phase_end();
         assert!(turn.try_apply_answer_delta("完成。"));
         assert_eq!(

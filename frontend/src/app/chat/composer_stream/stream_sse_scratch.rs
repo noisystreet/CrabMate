@@ -134,13 +134,20 @@ impl StreamSseScratch {
     }
 
     #[inline]
+    pub(super) fn tool_phase_open(&self) -> bool {
+        self.turn.borrow().tool_phase_open()
+    }
+
+    #[inline]
     pub(super) fn try_ingest_final_response_text(&self, text: &str) -> bool {
         self.turn.borrow_mut().try_ingest_final_response_text(text)
     }
 
     #[inline]
-    pub(super) fn ingest_pre_tool_commentary(&self, text: &str) {
-        self.turn.borrow_mut().ingest_pre_tool_commentary(text);
+    pub(super) fn absorb_pre_tool_narration_for_first_tool(&self, from_bubble: &str) {
+        self.turn
+            .borrow_mut()
+            .absorb_pre_tool_narration_for_first_tool(from_bubble);
     }
 
     /// 按 [`crabmate_turn_layout::project_turn`] 行序 upsert 工具前旁注。
