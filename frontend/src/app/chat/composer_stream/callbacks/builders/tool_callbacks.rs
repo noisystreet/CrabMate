@@ -205,7 +205,9 @@ pub(in super::super) fn chat_stream_on_tool_call_builder(
                 stream_ctx
                     .scratch
                     .on_turn_tool_call(tcid.as_str(), name.trim(), core.as_str());
-                stream_ctx.scratch.sync_turn_projection(stream_ctx.as_ref());
+                stream_ctx
+                    .scratch
+                    .sync_turn_projection(stream_ctx.as_ref(), true);
             }
             if tcid.is_none() {
                 stream_ctx.scratch.enqueue_pending_tool_message_id(id);

@@ -1,6 +1,6 @@
 # Turn 布局：单轮工具回合的消息顺序设计
 
-**状态**：Web 流式 **Phase 0–4** 已落地（见 §12）；**Phase 5（单一读路径）** 已落地（§12.8）；**Phase 6（消息块 → 气泡）** 已落地（§12.9）；**Phase 7 P0（写入收敛）** 已落地（§12.10）；**Phase 7 P1（补丁层退役）** 已落地（§12.11）；TUI/CLI 仅消费 SSE 控制面镜像，尚未做完整 canonical 投影。  
+**状态**：Web 流式 **Phase 0–4** 已落地（见 §12）；**Phase 5（单一读路径）** 已落地（§12.8）；**Phase 6（消息块 → 气泡）** 已落地（§12.9）；**Phase 7 P0（写入收敛）** 已落地（§12.10）；**Phase 7 P1（补丁层退役）** 已落地（§12.11）；**Phase 7 P2（工具边界即时投影）** 已落地（§12.12）；TUI/CLI 仅消费 SSE 控制面镜像，尚未做完整 canonical 投影。  
 **目标读者**：维护者；变更 **`turn_segment_*`**、**`frontend/src/app/chat/composer_stream/`** 或 **`crates/crabmate-turn-layout`** 前须读本文，并同步 **`docs/SSE协议.md`**、**`fixtures/turn_project_golden.jsonl`**、**`fixtures/sse_control_golden.jsonl`**。
 
 ---
@@ -318,7 +318,7 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 - `message_chunks::chunk_messages` — 仅 chunk 折叠，可见下标来自 `ChatColumn`
 - `session_export::stored_messages_to_export` — 仅格式转换，可见下标来自 `Export`
 
-**E2E**：`e2e/tests/phase5-visible-messages.spec.ts`（snapshot / ephemeral 隐藏；预置 duplicate 行断言**均可见**——读侧不再 fuzzy dedupe）。
+**E2E**：`e2e/tests/phase5-visible-messages.spec.ts`（snapshot / ephemeral 隐藏）；`e2e/tests/sse-turn-layout-interleaved.spec.ts`（post-tool 旁注交错、segment_end 早于 tool_call、导出顺序）。
 
 ### 12.9 消息块 → 气泡（Phase 6）
 
@@ -332,16 +332,25 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 | `turn_segment_start` | 段一开即 sync，占位/更新当前块 |
 | `apply_answer_body_delta` fallback | canonical 拒答时 **禁止** `append_assistant_chunk` 累积尾泡（I6 补全） |
 
-### 12.10 写入收敛（Phase 7 P0）
+### 12.10 写入收敛（Phase 7 P0 / P0′）
 
-**目标**：assistant 正文**唯一写路径** = `TurnReducer` + `sync_turn_projection` replace；禁止 canonical miss 时 overlay append 正文。
+**目标**：assistant 正文真值 = `TurnReducer`（canonical）；**禁止** canonical miss 时按 chunk `append_assistant_chunk` 正文。
+
+**P0′（preview / commit 分离，2026-07）**：
+
+| 阶段 | 写入 | 展示 |
+|------|------|------|
+| open 段 / 流式终答 delta | `sync_stream_preview` → **`stream_overlay_replace_answer_for_message`**（**不** `sessions.update`） | `loading` 且 `stored.text` 空 → 读 overlay |
+| 段/工具边界 | `sync_turn_projection` → flush 旁注 **完整行**到 stored；`pin`；清 overlay answer | stored 行 + 空 loading 壳 |
+| 流结束 / finalize | `stream_overlay_take_into_stored_message` → stored；去 `loading` | stored |
 
 | 机制 | 说明 |
 |------|------|
-| `delta_apply` | `try_apply_answer/commentary` miss → **no-op**（勿 `append_assistant_chunk` 正文）；思维链仍 overlay append |
-| `stream_text_overlay` 展示 | `loading` 且 `stored.text` 非空 → **只读 stored**（overlay 正文不参与 UI） |
-| `demote_answer_before_tools` | `absorb_pre_tool_narration_for_first_tool` 收尾泡 + 误写 `final_answer` → pending 段；勿 overlay/stored 双 demote |
-| post-tool 工具边界 | 新 loading 尾泡**空壳**；`sync_turn_projection` 填当前块（勿 peel merge 旧全文） |
+| `delta_apply` | canonical miss → **no-op**（勿 chunk append 正文）；命中 → `sync_stream_preview` |
+| `stream_text_overlay` 展示 | `loading` 且 `stored.text` **非空** → 只读 stored（边界已落盘）；**空** → 读 overlay preview |
+| `sync_turn_projection` | **仅** flush 旁注行 + relocate；**不**把 open 段 preview 写入 loading `stored.text` |
+| `demote_answer_before_tools` | peel + canonical ingest；清 overlay |
+| post-tool 工具边界 | 新 loading **空壳**；preview 仅 overlay |
 
 ### 12.11 补丁层退役（Phase 7 P1）
 
@@ -355,6 +364,21 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 | `visible_messages` assistant fuzzy dedupe | 读侧去重；legacy 会话若存 duplicate 行则均展示 |
 
 **仍保留**：`final_response_snapshot` 重复隐藏、ephemeral/orchestration scope 过滤；`message_dedupe` 模块供 snapshot 判定与单元测试。
+
+### 12.12 工具边界即时投影（Phase 7 P2）
+
+**目标**：多工具 post-tool 长链中，旁注 **每个 `tool_call` 边界**即落为独立 assistant 行（I1），不再堆在 loading 尾泡或批末。
+
+| 机制 | 说明 |
+|------|------|
+| peel → canonical | `on_tool_call_declared` peel 尾泡正文 → `ingest_commentary_for_tool_from_peel`（canonical 已有则 skip） |
+| 段关闭 | `reduce_tool_call` / `TurnCanonicalState::on_tool_call` 在 `ToolCall` 前 `SegmentEnd` open 段 |
+| sync 合并 | `commentary_for_tool` 合并 step + 未 flush 段；按 **`turn.steps` 顺序** upsert |
+| 锚点重排 | `pin_commentary_rows_before_anchored_tools`：带 `tool_call_id` 的 stray 旁注移回对应工具正前方 |
+| loading 尾泡 | `streaming_commentary_block_text` **仅** open 段；已关闭 pending 不再 duplicate 显示 |
+| 金样 | `hpcg_post_first_tool_interleaved`（`fixtures/turn_project_golden.jsonl`） |
+| 流式 anti-flicker | open/pending 段期间 **仅** 更新 loading 尾泡；旁注行在段/工具边界 `relocate_stray` sync 落盘；稳定 id `commentary-before-{tool_call_id}` |
+| **完整气泡队列** | `BubbleOutputQueue` + P0′：delta → overlay preview；边界 flush 旁注 **stored 行**；`emitted` 仅 flush 成功时标记；旁注未落盘前 **不清** overlay |
 
 ### 12.5 `TurnLayout` 与 `TurnReducer` 职责再划分
 
@@ -372,5 +396,5 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 | 场景 | 期望 |
 |------|------|
 | C++/CMake（read → create ×2 → cmake ×2 → run） | 每段旁注在 **对应** 工具前；无空「工具：create_file」占位 |
-| 目录分析 → 用户追问「编译 hpcg」 | 第二轮 **无** 整段聚合块；工具间可有短旁注；终答 **一段** |
+| 目录分析 → 用户追问「编译 hpcg」 | 第二轮 **无** 整段聚合块；**每工具前**有短旁注（`tool_call_id` 锚点）；终答 **一段**；旁注不得堆在工具批末尾 |
 | 晚到 delta（金样 `late_commentary_delta_after_tool_call`） | 旁注仍在 create 前 |

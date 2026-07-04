@@ -1,4 +1,26 @@
-use crate::model::Turn;
+use crate::model::{SegmentKind, Turn};
+
+/// 合并 `step.before_commentary` 与同锚点未 flush 段，供 Web sync 即时投影。
+#[must_use]
+pub fn commentary_for_tool(turn: &Turn, tool_call_id: &str) -> Option<String> {
+    let mut text = turn
+        .step_by_call_id(tool_call_id)
+        .and_then(|s| s.before_commentary.clone())
+        .unwrap_or_default();
+    for seg in &turn.segments {
+        if seg.kind == SegmentKind::Commentary
+            && seg.before_tool_call_id.as_deref() == Some(tool_call_id)
+            && !seg.text.is_empty()
+        {
+            text.push_str(&seg.text);
+        }
+    }
+    if text.trim().is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ProjectedRow {
@@ -59,6 +81,39 @@ mod tests {
     use crate::event::TurnEvent;
     use crate::model::SegmentKind;
     use crate::reduce::TurnReducer;
+
+    #[test]
+    fn commentary_for_tool_merges_step_and_pending_segment() {
+        let mut turn = Turn::default();
+        let r = TurnReducer;
+        r.apply(
+            &mut turn,
+            TurnEvent::SegmentStart {
+                segment_id: "seg-before-tc_read".into(),
+                kind: SegmentKind::Commentary,
+                before_tool_call_id: Some("tc_read".into()),
+            },
+        );
+        r.apply(
+            &mut turn,
+            TurnEvent::SegmentDelta {
+                segment_id: "seg-before-tc_read".into(),
+                delta: "读取说明。".into(),
+            },
+        );
+        r.apply(
+            &mut turn,
+            TurnEvent::ToolCall {
+                tool_call_id: "tc_read".into(),
+                name: "read_file".into(),
+                summary: "read file".into(),
+            },
+        );
+        assert_eq!(
+            super::commentary_for_tool(&turn, "tc_read").as_deref(),
+            Some("读取说明。")
+        );
+    }
 
     #[test]
     fn project_cpp_scenario_commentary_before_create() {

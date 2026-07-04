@@ -10,6 +10,9 @@
 //!
 //! 在收尾路径（`on_done` / `on_error` / 工具前后轮换 / 用户中止等）经 [`stream_overlay_take_into_stored_message`]
 //! 合并回 `StoredMessage` 并清空缓冲；[`sessions_snapshot_with_stream_overlay_merged`] 供持久化防抖落盘时与内存一致。
+//!
+//! **P0′**：open 段 assistant 正文 preview 经 [`stream_overlay_replace_answer_for_message`] 写入 overlay（canonical replace），
+//! 边界 flush 旁注行到 stored；finalize / `on_done` 再 merge 终答入 stored。
 
 use leptos::prelude::*;
 
@@ -60,6 +63,32 @@ pub fn stream_overlay_append(
     }
 }
 
+/// canonical 投影 replace：整段替换 overlay 正文（open 段 preview；**不** `sessions.update`）。
+pub fn stream_overlay_replace_answer_for_message(
+    overlay: RwSignal<Option<StreamTextOverlay>>,
+    session_id: &str,
+    message_id: &str,
+    text: &str,
+    revision: Option<RwSignal<u64>>,
+) {
+    overlay.update(|opt| {
+        let mut next = match opt.take() {
+            Some(o) if o.session_id == session_id && o.message_id == message_id => o,
+            Some(_) | None => StreamTextOverlay {
+                session_id: session_id.to_string(),
+                message_id: message_id.to_string(),
+                answer: String::new(),
+                reasoning: String::new(),
+            },
+        };
+        next.answer = text.to_string();
+        *opt = Some(next);
+    });
+    if let Some(rev) = revision {
+        rev.update(|n| *n = n.wrapping_add(1));
+    }
+}
+
 /// 投影已写入 `StoredMessage` 后，丢弃同 message 上冗余的 overlay 正文，避免 UI 双显。
 pub fn stream_overlay_clear_answer_for_message(
     overlay: RwSignal<Option<StreamTextOverlay>>,
@@ -81,7 +110,7 @@ pub fn stream_overlay_clear_answer_for_message(
 }
 
 fn merge_stream_answer_for_display(msg: &StoredMessage, stored: &str, overlay: &str) -> String {
-    // P0：canonical 投影 replace 后，loading 正文以 stored 为唯一真源。
+    // P0′：open 段 preview 在 overlay；loading 且 stored 非空 = 边界已落盘正文（忽略 overlay answer）。
     if msg.state.as_ref().is_some_and(|st| st.is_loading()) {
         if !stored.is_empty() {
             return stored.to_string();
@@ -269,6 +298,40 @@ mod tests {
         let (t, _) = stream_overlay_merged_text_reasoning_owned(&msg, Some(&o), "s1")
             .expect("overlay should apply");
         assert_eq!(t, "块全文。");
+    }
+
+    #[test]
+    fn loading_empty_stored_uses_overlay_preview() {
+        let msg = StoredMessage {
+            id: "m1".into(),
+            role: "assistant".into(),
+            text: String::new(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(StoredMessageState::Loading),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        let o = StreamTextOverlay {
+            session_id: "s1".into(),
+            message_id: "m1".into(),
+            answer: "流式 preview".into(),
+            reasoning: String::new(),
+        };
+        let (t, _) = stream_overlay_merged_text_reasoning_owned(&msg, Some(&o), "s1")
+            .expect("overlay should apply");
+        assert_eq!(t, "流式 preview");
+    }
+
+    #[test]
+    fn replace_answer_sets_whole_preview_text() {
+        let overlay = RwSignal::new(None::<StreamTextOverlay>);
+        stream_overlay_replace_answer_for_message(overlay, "s1", "m1", "ab", None);
+        stream_overlay_replace_answer_for_message(overlay, "s1", "m1", "abc", None);
+        let o = overlay.get().expect("overlay set");
+        assert_eq!(o.answer, "abc");
     }
 
     #[test]

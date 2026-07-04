@@ -34,7 +34,7 @@ fn timeline_log_dispatch_final_response(
                 .scratch
                 .try_ingest_final_response_text(final_text.as_str())
         {
-            stream_ctx.scratch.sync_turn_projection(stream_ctx);
+            stream_ctx.scratch.sync_stream_preview(stream_ctx);
             accum.add_answer_delta_chars(final_text.chars().count());
         }
         if !TurnLayout::should_defer_finalize_on_final_response(stream_ctx) {

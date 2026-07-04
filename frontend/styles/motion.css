@@ -11,9 +11,9 @@
   }
 }
 
-/* 仅「最后一条且仍处流式 loading」时入场：避免去掉 msg-loading 后 :last-child 仍匹配、动画被引擎重算导致整条反复位移闪烁 */
+/* 流式 loading 尾泡：禁用整行入场动画，避免每个 delta 触发的 reconciliation 反复位移闪烁 */
 .messages-inner > .msg-with-select:last-child:has(.msg-loading) {
-  animation: msg-row-enter var(--dur-msg-enter) var(--ease-out-soft) both;
+  animation: none;
 }
 
 /* 流式期间不再对整段 prose 做 opacity 过渡，避免与频繁 innerHTML 叠加产生「呼吸闪」 */
