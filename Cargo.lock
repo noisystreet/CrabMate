@@ -1313,6 +1313,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabmate-turn-layout"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "crabmate-types"
 version = "0.1.0"
 dependencies = [
@@ -1331,6 +1339,7 @@ dependencies = [
  "crabmate-display-rules",
  "crabmate-sse-protocol",
  "crabmate-tool-card",
+ "crabmate-turn-layout",
  "futures-util",
  "gloo-timers",
  "js-sys",

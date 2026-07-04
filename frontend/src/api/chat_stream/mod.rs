@@ -57,6 +57,12 @@ pub struct ChatStreamCallbacks {
     pub on_timeline_log: std::rc::Rc<dyn Fn(crate::sse_dispatch::TimelineLogInfo)>,
     /// SSE `tool_call`：工具调用事件，包含名称、摘要、参数预览和完整参数。
     pub on_tool_call: OnToolCallFn,
+    /// SSE `turn_segment_start`：工具前旁注段锚点。
+    pub on_turn_segment_start: std::rc::Rc<dyn Fn(crate::sse_dispatch::TurnSegmentStartInfo)>,
+    /// SSE `turn_segment_end`：关闭旁注段。
+    pub on_turn_segment_end: std::rc::Rc<dyn Fn(String)>,
+    /// SSE `turn_tool_phase_end`：工具批结束。
+    pub on_turn_tool_phase_end: std::rc::Rc<dyn Fn()>,
 }
 
 impl Clone for ChatStreamCallbacks {
@@ -85,6 +91,9 @@ impl Clone for ChatStreamCallbacks {
             on_thinking_trace: std::rc::Rc::clone(&self.on_thinking_trace),
             on_timeline_log: std::rc::Rc::clone(&self.on_timeline_log),
             on_tool_call: std::rc::Rc::clone(&self.on_tool_call),
+            on_turn_segment_start: std::rc::Rc::clone(&self.on_turn_segment_start),
+            on_turn_segment_end: std::rc::Rc::clone(&self.on_turn_segment_end),
+            on_turn_tool_phase_end: std::rc::Rc::clone(&self.on_turn_tool_phase_end),
         }
     }
 }

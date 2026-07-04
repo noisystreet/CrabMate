@@ -196,6 +196,24 @@ impl StreamChatHost for CrabmateStreamChatHost {
         })
     }
 
+    fn encode_turn_segment_start_sse(&self, tool_call_id: &str) -> String {
+        encode_message(SsePayload::TurnSegmentStart {
+            start: crate::sse::TurnSegmentStartBody {
+                segment_id: format!("seg-before-{tool_call_id}"),
+                kind: "commentary".to_string(),
+                before_tool_call_id: Some(tool_call_id.to_string()),
+            },
+        })
+    }
+
+    fn encode_turn_segment_end_sse(&self, segment_id: &str) -> String {
+        encode_message(SsePayload::TurnSegmentEnd {
+            end: crate::sse::TurnSegmentEndBody {
+                segment_id: segment_id.to_string(),
+            },
+        })
+    }
+
     fn encode_thinking_trace_reasoning_delta_sse(&self, chunk: &str) -> String {
         encode_message(SsePayload::ThinkingTrace {
             trace: ThinkingTraceBody {

@@ -89,6 +89,52 @@ pub struct SseThinkingTrace {
     pub context_snapshot: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SseTurnSegmentStart {
+    pub segment_id: String,
+    pub kind: String,
+    pub before_tool_call_id: Option<String>,
+}
+
+pub fn extract_turn_segment_start(
+    obj: &serde_json::Map<String, Value>,
+) -> Option<SseTurnSegmentStart> {
+    let t = obj.get("turn_segment_start")?.as_object()?;
+    let segment_id = t
+        .get("segment_id")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())?
+        .to_string();
+    let kind = t
+        .get("kind")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("commentary")
+        .to_string();
+    let before_tool_call_id = t
+        .get("before_tool_call_id")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from);
+    Some(SseTurnSegmentStart {
+        segment_id,
+        kind,
+        before_tool_call_id,
+    })
+}
+
+pub fn extract_turn_segment_end(obj: &serde_json::Map<String, Value>) -> Option<String> {
+    let t = obj.get("turn_segment_end")?.as_object()?;
+    t.get("segment_id")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+}
+
 pub fn extract_tool_call(obj: &serde_json::Map<String, Value>) -> Option<SseToolCall> {
     let tc = obj.get("tool_call")?.as_object()?;
     let summary = tc.get("summary").and_then(|x| x.as_str()).unwrap_or("");

@@ -5,7 +5,8 @@ use std::rc::Rc;
 use super::super::context::ChatStreamCallbackCtx;
 use super::super::per_stream_accum::PerStreamAccum;
 use super::super::stream_control_reducer::StreamControlEvent;
-use super::helpers::rotate_streaming_assistant_for_followup_model_round;
+use super::super::stream_turn_state::StreamModelOutputLane;
+use super::turn_layout::TurnLayout;
 
 /// 将单块流式文本写入当前尾泡：必要时先轮换占位，再按车道写入正文或 `reasoning_text`。
 pub(super) fn apply_chat_stream_text_delta(
@@ -14,11 +15,23 @@ pub(super) fn apply_chat_stream_text_delta(
     chunk: &str,
 ) {
     if stream_ctx.scratch.take_followup_rotation_pending() {
-        rotate_streaming_assistant_for_followup_model_round(stream_ctx);
+        TurnLayout::rotate_followup_model_round(stream_ctx);
         accum.clear_answer_delta_chars();
     }
-    let mid = stream_ctx.scratch.borrow_assistant_id();
     let lane = stream_ctx.scratch.current_output_lane();
+    let route_via_turn_commentary = stream_ctx.scratch.post_tool_stream_tail_active()
+        || matches!(
+            lane,
+            StreamModelOutputLane::Reasoning
+                | StreamModelOutputLane::AnsweringCommentaryBeforeTools
+        );
+    if route_via_turn_commentary {
+        if stream_ctx.scratch.try_apply_commentary_delta(chunk) {
+            stream_ctx.scratch.sync_turn_projection(stream_ctx);
+        }
+        return;
+    }
+    let mid = stream_ctx.scratch.borrow_assistant_id();
     if lane.in_answer_body_lane() {
         accum.add_answer_delta_chars(chunk.chars().count());
         stream_ctx.append_assistant_chunk(mid.as_str(), chunk, false);

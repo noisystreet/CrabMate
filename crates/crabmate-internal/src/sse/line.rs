@@ -147,6 +147,11 @@ pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
             super::protocol::SsePayload::AssistantAnswerPhase { .. } => {
                 return AgentLineKind::Ignore;
             }
+            super::protocol::SsePayload::TurnSegmentStart { .. }
+            | super::protocol::SsePayload::TurnSegmentEnd { .. }
+            | super::protocol::SsePayload::TurnToolPhaseEnd { .. } => {
+                return AgentLineKind::Ignore;
+            }
             super::protocol::SsePayload::ConversationSaved { .. }
             | super::protocol::SsePayload::TimelineLog { .. }
             | super::protocol::SsePayload::ThinkingTrace { .. }

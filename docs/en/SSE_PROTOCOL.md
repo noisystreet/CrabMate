@@ -45,6 +45,9 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `error` + **`code`** | Stream failure | `onError`, **stop** reading |
 | `plan_required` | Reserved | `onPlanRequired`, continue |
 | `assistant_answer_phase`: `true` | Following plain-text deltas are assistant **answer** `content` (previously reasoning); emitted before the first content chunk even when there is no reasoning chain | Web: **handled**; route `onDelta` to reasoning vs answer buffer, not as raw prose |
+| `turn_segment_start` | Turn segment start; body: **`segment_id`**, **`kind`** (`commentary` \| `answer`), optional **`before_tool_call_id`** (display this segment **before** that tool; late deltas still anchor here) | Web: **handled**; `onTurnSegmentStart` updates canonical turn projection |
+| `turn_segment_end` | Closes a segment opened by `turn_segment_start`; body: **`segment_id`** | Web: **handled**; `onTurnSegmentEnd` |
+| `turn_tool_phase_end`: `true` | Tool batch finished; following text deltas are post-tool final answer (with `assistant_answer_phase`) | Web: **handled**; `onTurnToolPhaseEnd` |
 | `staged_plan_started` | Staged plan start | `onStagedPlanStarted` |
 | `staged_plan_step_started` | Step start; body has `plan_id`, `step_id`, `step_index`, `total_steps`, `description`, optional `executor_kind` (`review_readonly` / `patch_write` / `test_runner`) | `onStagedPlanStepStarted` |
 | `staged_plan_step_finished` | Step end; `status`: `ok` / `cancelled` / `failed`; optional `executor_kind` (mirrors `staged_plan_step_started`) | `onStagedPlanStepFinished` |

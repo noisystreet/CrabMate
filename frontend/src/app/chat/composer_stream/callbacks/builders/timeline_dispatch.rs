@@ -13,6 +13,7 @@ use crate::timeline_scan::{
 use super::super::super::context::ChatStreamCallbackCtx;
 use super::super::super::per_stream_accum::PerStreamAccum;
 use super::super::helpers::*;
+use super::super::turn_layout::TurnLayout;
 
 fn timeline_log_dispatch_final_response(
     stream_ctx: &ChatStreamCallbackCtx,
@@ -27,9 +28,9 @@ fn timeline_log_dispatch_final_response(
     let final_text = build_final_response_text(&info.title, info.detail.as_deref());
     if !final_text.is_empty() {
         if streaming_assistant_tail_has_text(stream_ctx, &final_text) {
-            finalize_current_loading_streaming_assistant_row(stream_ctx);
+            TurnLayout::finalize_loading_segment(stream_ctx);
         } else {
-            remove_loading_assistant_placeholder(stream_ctx);
+            TurnLayout::remove_loading_placeholder_or_rotate(stream_ctx);
             if !assistant_message_has_visible_text(stream_ctx, &final_text) {
                 let state = Some(timeline_state_final_response_snapshot());
                 push_assistant_timeline_bubble(stream_ctx, final_text.clone(), state);
@@ -38,7 +39,7 @@ fn timeline_log_dispatch_final_response(
         }
     } else {
         // 补偿收尾可能带空 final_response；若不撤 loading，on_done 会误报「未收到正文片段」。
-        remove_loading_assistant_placeholder(stream_ctx);
+        TurnLayout::remove_loading_placeholder_or_rotate(stream_ctx);
     }
 }
 

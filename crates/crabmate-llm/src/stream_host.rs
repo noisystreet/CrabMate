@@ -54,6 +54,12 @@ pub trait StreamChatHost: Send + Sync {
 
     fn encode_parsing_tool_calls_sse(&self) -> String;
 
+    /// `turn_segment_start`：`seg-before-{tool_call_id}`，工具前旁注锚点。
+    fn encode_turn_segment_start_sse(&self, tool_call_id: &str) -> String;
+
+    /// `turn_segment_end`：关闭指定 `segment_id`。
+    fn encode_turn_segment_end_sse(&self, segment_id: &str) -> String;
+
     fn encode_thinking_trace_reasoning_delta_sse(&self, chunk: &str) -> String;
 
     fn encode_thinking_trace_answer_phase_sse(&self) -> String;

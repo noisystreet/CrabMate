@@ -185,6 +185,11 @@ pub(super) fn handle_sse_block(
     let mut on_clar =
         |info: ClarificationQuestionnaireInfo| (cbs.on_clarification_questionnaire)(info);
     let mut on_phase = || (cbs.on_assistant_answer_phase)();
+    let mut on_turn_seg_start = |info: crate::sse_dispatch::TurnSegmentStartInfo| {
+        (cbs.on_turn_segment_start)(info);
+    };
+    let mut on_turn_seg_end = |segment_id: String| (cbs.on_turn_segment_end)(segment_id);
+    let mut on_turn_phase_end = || (cbs.on_turn_tool_phase_end)();
     let mut on_thinking_trace = |info: ThinkingTraceInfo| (cbs.on_thinking_trace)(info);
     let mut on_timeline_log = |info: TimelineLogInfo| (cbs.on_timeline_log)(info);
 
@@ -204,6 +209,9 @@ pub(super) fn handle_sse_block(
             on_assistant_answer_phase: Some(&mut on_phase),
             on_staged_plan_step_started: Some(&mut on_staged_start),
             on_staged_plan_step_finished: Some(&mut on_staged_end),
+            on_turn_segment_start: Some(&mut on_turn_seg_start),
+            on_turn_segment_end: Some(&mut on_turn_seg_end),
+            on_turn_tool_phase_end: Some(&mut on_turn_phase_end),
         },
         clarify_trace: SseClarifyTraceHooks {
             on_clarification_questionnaire: Some(&mut on_clar),
@@ -266,6 +274,9 @@ mod tests {
             on_thinking_trace: Rc::new(|_info| {}),
             on_timeline_log: Rc::new(|_info| {}),
             on_tool_call: Rc::new(|_n, _s, _p, _a, _g, _tid| {}),
+            on_turn_segment_start: Rc::new(|_info| {}),
+            on_turn_segment_end: Rc::new(|_id| {}),
+            on_turn_tool_phase_end: Rc::new(|| {}),
         }
     }
 
@@ -335,6 +346,9 @@ mod tests {
             on_thinking_trace: Rc::new(|_info| {}),
             on_timeline_log: Rc::new(|_info| {}),
             on_tool_call: Rc::new(|_n, _s, _p, _a, _g, _tid| {}),
+            on_turn_segment_start: Rc::new(|_info| {}),
+            on_turn_segment_end: Rc::new(|_id| {}),
+            on_turn_tool_phase_end: Rc::new(|| {}),
         };
         let mut last_event_id = 0u64;
         let mut saw_stream_ended = false;

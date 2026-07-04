@@ -98,6 +98,9 @@ fn format_sse_payload_one_line(p: &SsePayload) -> Option<String> {
         )),
         SsePayload::ThinkingTrace { .. } => Some("· 思维迹".to_string()),
         SsePayload::AssistantAnswerPhase { .. } => None,
+        SsePayload::TurnSegmentStart { .. }
+        | SsePayload::TurnSegmentEnd { .. }
+        | SsePayload::TurnToolPhaseEnd { .. } => None,
         SsePayload::ChatUiSeparator { .. } => None,
         SsePayload::WorkspaceChanged { .. } => None,
         SsePayload::PlanRequired { .. } => None,

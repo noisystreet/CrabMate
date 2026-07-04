@@ -25,5 +25,5 @@ pub use protocol::{
     ConversationSavedBody, SseCapabilitiesBody, SseErrorBody, SsePayload, StagedPlanFinishedBody,
     StagedPlanStartedBody, StagedPlanStepFinishedBody, StagedPlanStepStartedBody, StreamEndedBody,
     ThinkingTraceBody, TimelineLogBody, ToolCallSummary, ToolOutputChunkBody, ToolResultBody,
-    encode_message,
+    TurnSegmentEndBody, TurnSegmentStartBody, encode_message,
 };

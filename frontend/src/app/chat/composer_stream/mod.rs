@@ -21,6 +21,7 @@ mod stream_control_reducer;
 mod stream_sse_scratch;
 mod stream_turn_scratch_state;
 mod stream_turn_state;
+mod turn_canonical;
 
 use std::rc::Rc;
 use std::sync::Arc;

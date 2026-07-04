@@ -6,14 +6,15 @@ use crabmate_sse_protocol::{
     SSE_PROTOCOL_VERSION, classify_sse_control_outcome, extract_clarification_questionnaire,
     extract_error_stop, extract_staged_plan_step_finished, extract_staged_plan_step_started,
     extract_thinking_trace, extract_timeline_log, extract_tool_call, extract_tool_output_chunk,
-    extract_tool_result, key_present_non_null,
+    extract_tool_result, extract_turn_segment_end, extract_turn_segment_start,
+    key_present_non_null,
 };
 use serde_json::Value;
 
 use super::types::{
     ClarificationFormField, ClarificationQuestionnaireInfo, CommandApprovalRequest, SseControlSink,
     SseDispatch, StagedPlanStepEndInfo, StagedPlanStepStartInfo, ThinkingTraceInfo,
-    TimelineLogInfo, ToolOutputChunkInfo, ToolResultInfo,
+    TimelineLogInfo, ToolOutputChunkInfo, ToolResultInfo, TurnSegmentStartInfo,
 };
 
 fn handle_error_stop(
@@ -224,24 +225,39 @@ pub fn try_dispatch_sse_control_payload(data: &str, sink: &mut SseControlSink<'_
     SseDispatch::Plain
 }
 
-fn dispatch_staged_plan_control(
+fn dispatch_turn_layout_control(
     obj: &serde_json::Map<String, Value>,
     sink: &mut SseControlSink<'_>,
 ) -> Option<SseDispatch> {
-    if obj.get("plan_required") == Some(&Value::Bool(true)) {
+    if let Some(seg) = extract_turn_segment_start(obj)
+        && let Some(f) = sink.staged_plan.on_turn_segment_start.as_mut()
+    {
+        f(TurnSegmentStartInfo {
+            segment_id: seg.segment_id,
+            kind: seg.kind,
+            before_tool_call_id: seg.before_tool_call_id,
+        });
         return Some(SseDispatch::Handled);
     }
+    if let Some(segment_id) = extract_turn_segment_end(obj)
+        && let Some(f) = sink.staged_plan.on_turn_segment_end.as_mut()
+    {
+        f(segment_id);
+        return Some(SseDispatch::Handled);
+    }
+    if obj.get("turn_tool_phase_end") == Some(&Value::Bool(true))
+        && let Some(f) = sink.staged_plan.on_turn_tool_phase_end.as_mut()
+    {
+        f();
+        return Some(SseDispatch::Handled);
+    }
+    None
+}
 
-    if let Some(Value::Bool(b)) = obj.get("assistant_answer_phase") {
-        if *b && let Some(f) = sink.staged_plan.on_assistant_answer_phase.as_mut() {
-            f();
-        }
-        return Some(SseDispatch::Handled);
-    }
-
-    if key_present_non_null(obj, "staged_plan_started") {
-        return Some(SseDispatch::Handled);
-    }
+fn dispatch_staged_plan_step_control(
+    obj: &serde_json::Map<String, Value>,
+    sink: &mut SseControlSink<'_>,
+) -> Option<SseDispatch> {
     if key_present_non_null(obj, "staged_plan_step_started") {
         if let Some(info) = extract_staged_plan_step_started(obj)
             && let Some(f) = sink.staged_plan.on_staged_plan_step_started.as_mut()
@@ -267,6 +283,34 @@ fn dispatch_staged_plan_control(
             });
         }
         return Some(SseDispatch::Handled);
+    }
+    None
+}
+
+fn dispatch_staged_plan_control(
+    obj: &serde_json::Map<String, Value>,
+    sink: &mut SseControlSink<'_>,
+) -> Option<SseDispatch> {
+    if obj.get("plan_required") == Some(&Value::Bool(true)) {
+        return Some(SseDispatch::Handled);
+    }
+
+    if let Some(Value::Bool(b)) = obj.get("assistant_answer_phase") {
+        if *b && let Some(f) = sink.staged_plan.on_assistant_answer_phase.as_mut() {
+            f();
+        }
+        return Some(SseDispatch::Handled);
+    }
+
+    if let Some(d) = dispatch_turn_layout_control(obj, sink) {
+        return Some(d);
+    }
+
+    if key_present_non_null(obj, "staged_plan_started") {
+        return Some(SseDispatch::Handled);
+    }
+    if let Some(d) = dispatch_staged_plan_step_control(obj, sink) {
+        return Some(d);
     }
     if key_present_non_null(obj, "staged_plan_finished") {
         return Some(SseDispatch::Handled);
