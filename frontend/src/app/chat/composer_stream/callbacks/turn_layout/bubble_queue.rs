@@ -79,8 +79,11 @@ impl BubbleOutputQueue {
             }
             if idx != insert_idx {
                 let row = messages.remove(idx);
-                let insert_idx = insert_idx.min(messages.len());
-                messages.insert(insert_idx, row);
+                let mut at = insert_idx;
+                if idx < at {
+                    at -= 1;
+                }
+                messages.insert(at.min(messages.len()), row);
             }
             return;
         }
@@ -324,6 +327,64 @@ mod tests {
             msgs.iter()
                 .any(|m| m.id == FINAL_ANSWER_ROW_ID && m.text == "完成。")
         );
+    }
+
+    #[test]
+    fn flush_batch_repositions_before_anchor_after_early_flush() {
+        let mut turn = TurnCanonicalState::new();
+        turn.on_tool_call("tc_archive", "archive_list", "list");
+        turn.on_segment_start(crate::sse_dispatch::TurnSegmentStartInfo {
+            segment_id: "seg-before-tc_unpack".into(),
+            kind: "commentary".into(),
+            before_tool_call_id: Some("tc_unpack".into()),
+        });
+        assert!(turn.try_apply_commentary_delta("好的，先解压。"));
+        turn.on_tool_call("tc_unpack", "unpack", "unpack");
+
+        let queue = BubbleOutputQueue;
+        let mut msgs = vec![
+            crate::storage::StoredMessage {
+                id: "tc_archive".into(),
+                role: "system".into(),
+                text: "archive".into(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: None,
+                is_tool: true,
+                tool_call_id: Some("tc_archive".into()),
+                tool_name: None,
+                created_at: 0,
+            },
+            crate::storage::StoredMessage {
+                id: BATCH_NARRATION_ROW_ID.into(),
+                role: "assistant".into(),
+                text: "好的，先解压。".into(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: None,
+                is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
+                created_at: 0,
+            },
+            crate::storage::StoredMessage {
+                id: "tc_unpack".into(),
+                role: "system".into(),
+                text: "unpack".into(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: None,
+                is_tool: true,
+                tool_call_id: Some("tc_unpack".into()),
+                tool_name: None,
+                created_at: 0,
+            },
+        ];
+        queue.flush_batch_narration_row(&mut msgs, &turn);
+        assert_eq!(msgs.len(), 3);
+        assert_eq!(msgs[0].id, "tc_archive");
+        assert_eq!(msgs[1].id, BATCH_NARRATION_ROW_ID);
+        assert_eq!(msgs[2].id, "tc_unpack");
     }
 
     #[test]

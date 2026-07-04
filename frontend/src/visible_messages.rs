@@ -190,6 +190,30 @@ mod tests {
     }
 
     #[test]
+    fn e2e_put_json_deserializes_snapshot_and_hides_duplicate() {
+        let snap: StoredMessage = serde_json::from_str(
+            r#"{"id":"snap","role":"assistant","text":"当前目录下有三个压缩包。","reasoning_text":"","state":"{\"k\":\"cm_tl\",\"t\":\"final_response_snapshot\"}"}"#,
+        )
+        .expect("snap json");
+        assert!(
+            snap.state
+                .as_ref()
+                .and_then(|s| s.as_timeline_parse_candidate())
+                .is_some(),
+            "snap state must parse as timeline JSON"
+        );
+        let messages = vec![
+            msg("u1", "user", "分析当前目录", false),
+            msg("a1", "assistant", "当前目录下有三个压缩包。", false),
+            snap,
+        ];
+        let chat = visible_message_indices(&messages, VisibleMessageScope::ChatColumn);
+        assert_eq!(chat.len(), 2, "snap duplicate must hide from chat");
+        let export = visible_message_indices(&messages, VisibleMessageScope::Export);
+        assert_eq!(export.len(), 2, "snap must hide from export");
+    }
+
+    #[test]
     fn chat_hides_duplicate_final_response_snapshot() {
         let body = "终答正文。";
         let messages = vec![

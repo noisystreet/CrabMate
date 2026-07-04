@@ -160,6 +160,7 @@ pub struct TimelineEntry {
 struct TimelineUiState {
     k: String,
     t: String,
+    #[serde(default)]
     msg: String,
     #[serde(default)]
     i: Option<u64>,
@@ -587,6 +588,16 @@ mod tests {
             &snap,
             &[snap.clone(), server[0].clone()]
         ));
+    }
+
+    #[test]
+    fn parses_final_response_snapshot_without_msg_field() {
+        let state =
+            StoredMessageState::from_wire(r#"{"k":"cm_tl","t":"final_response_snapshot"}"#.into());
+        assert_eq!(
+            timeline_ui_snapshot_type(&state).as_deref(),
+            Some("final_response_snapshot")
+        );
     }
 
     #[test]

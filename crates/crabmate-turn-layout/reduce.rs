@@ -347,6 +347,15 @@ pub fn repartition_web_block_layout_stream(turn: &mut Turn) {
     let batch = crate::batch_narration_text(turn).unwrap_or_default();
     let batch_was_empty = batch.trim().is_empty();
     let final_part = turn.final_answer.take().unwrap_or_default();
+    // Segment 布局：batch 与 final 已分列时不做 morph B 巨泡拆分（避免误拆 `try_split_leading_final_sentence`）。
+    if !batch_was_empty && !final_part.trim().is_empty() {
+        let b = batch.trim();
+        let f = final_part.trim();
+        if !f.starts_with(b) && !b.contains(f) && !f.contains(b) {
+            turn.final_answer = Some(final_part);
+            return;
+        }
+    }
     let final_only = !final_part.trim().is_empty() && batch_was_empty;
     let mut combined = batch;
     if !final_part.trim().is_empty() {
@@ -556,6 +565,73 @@ mod tests {
         let (batch, fin) = try_split_leading_final_sentence(combined).expect("split");
         assert!(batch.contains("先解压"));
         assert_eq!(fin, "HPCG 编译完成。");
+    }
+
+    #[test]
+    fn repartition_skips_disjoint_segment_batch_and_final() {
+        let mut turn = Turn::default();
+        let r = TurnReducer;
+        r.apply(
+            &mut turn,
+            TurnEvent::ToolCall {
+                tool_call_id: "tc_archive".into(),
+                name: "archive_list".into(),
+                summary: "list".into(),
+            },
+        );
+        r.apply(
+            &mut turn,
+            TurnEvent::SegmentStart {
+                segment_id: "seg-before-tc_unpack".into(),
+                kind: SegmentKind::Commentary,
+                before_tool_call_id: Some("tc_unpack".into()),
+            },
+        );
+        r.apply(
+            &mut turn,
+            TurnEvent::SegmentDelta {
+                segment_id: "seg-before-tc_unpack".into(),
+                delta: "好的，先解压。".into(),
+            },
+        );
+        r.apply(
+            &mut turn,
+            TurnEvent::SegmentEnd {
+                segment_id: "seg-before-tc_unpack".into(),
+            },
+        );
+        r.apply(
+            &mut turn,
+            TurnEvent::ToolCall {
+                tool_call_id: "tc_unpack".into(),
+                name: "unpack".into(),
+                summary: "unpack".into(),
+            },
+        );
+        r.apply(
+            &mut turn,
+            TurnEvent::SegmentStart {
+                segment_id: "seg-before-tc_read".into(),
+                kind: SegmentKind::Commentary,
+                before_tool_call_id: Some("tc_read".into()),
+            },
+        );
+        r.apply(
+            &mut turn,
+            TurnEvent::SegmentDelta {
+                segment_id: "seg-before-tc_read".into(),
+                delta: "读取 INSTALL。".into(),
+            },
+        );
+        r.apply(&mut turn, TurnEvent::ToolPhaseEnd);
+        turn.final_answer = Some("HPCG 编译流程结束。".into());
+        let batch_before = crate::batch_narration_text(&turn).expect("batch");
+        repartition_web_block_layout_stream(&mut turn);
+        assert_eq!(
+            crate::batch_narration_text(&turn).as_deref(),
+            Some(batch_before.as_str())
+        );
+        assert_eq!(turn.final_answer.as_deref(), Some("HPCG 编译流程结束。"));
     }
 
     #[test]
