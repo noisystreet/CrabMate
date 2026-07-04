@@ -12,6 +12,7 @@ use crate::message_format::{
     STAGED_TIMELINE_SYSTEM_PREFIX, message_text_for_display_ex, stored_tool_message_detail_text,
 };
 use crate::storage::{ChatSession, StoredMessage};
+use crate::visible_messages::{VisibleMessageScope, visible_message_indices};
 
 #[wasm_bindgen(inline_js = r#"
 export function invokeTauriSaveTextFile(defaultName, body) {
@@ -109,11 +110,10 @@ fn stored_messages_to_export(
     loc: Locale,
     apply_assistant_display_filters: bool,
 ) -> Vec<ExportMessage> {
+    let indices = visible_message_indices(messages, VisibleMessageScope::Export);
     let mut out = Vec::new();
-    for m in messages {
-        if crate::timeline_scan::is_ephemeral_timeline_assistant_for_export(m, messages) {
-            continue;
-        }
+    for &idx in &indices {
+        let m = &messages[idx];
         if m.role == "system" && m.is_tool {
             out.push(ExportMessage {
                 role: "tool".to_string(),
@@ -577,5 +577,32 @@ mod tests {
             md.contains("file: a.txt"),
             "expected raw listing lines from tool_card_text: {md}"
         );
+    }
+
+    #[test]
+    fn export_dedupes_fuzzy_duplicate_assistant_since_last_user() {
+        let listing = "当前目录下有三个压缩包：\n\n1. **A** — x\n\n2. **B** — y";
+        let compact = "当前目录下有三个压缩包：\n1. **A** — x\n2. **B** — y";
+        let session = ChatSession {
+            id: "s1".to_string(),
+            title: "t".to_string(),
+            draft: String::new(),
+            messages: vec![
+                msg("u", "user", "分析", false),
+                msg("a1", "assistant", listing, false),
+                msg("a2", "assistant", compact, false),
+            ],
+            updated_at: 0,
+            pinned: false,
+            starred: false,
+            server_conversation_id: None,
+            server_revision: None,
+            workspace_root: None,
+            history_total: None,
+            history_window_start: None,
+            history_has_older: None,
+        };
+        let md = session_to_markdown(&session, Locale::ZhHans, true);
+        assert_eq!(md.matches("## 助手").count(), 1, "md={md}");
     }
 }

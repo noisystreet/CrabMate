@@ -127,6 +127,17 @@ impl StreamSseScratch {
         self.turn.borrow_mut().try_apply_commentary_delta(delta)
     }
 
+    /// post-tool 终答 plain delta → canonical `final_answer`。
+    #[inline]
+    pub(super) fn try_apply_answer_delta(&self, delta: &str) -> bool {
+        self.turn.borrow_mut().try_apply_answer_delta(delta)
+    }
+
+    #[inline]
+    pub(super) fn try_ingest_final_response_text(&self, text: &str) -> bool {
+        self.turn.borrow_mut().try_ingest_final_response_text(text)
+    }
+
     #[inline]
     pub(super) fn ingest_pre_tool_commentary(&self, text: &str) {
         self.turn.borrow_mut().ingest_pre_tool_commentary(text);

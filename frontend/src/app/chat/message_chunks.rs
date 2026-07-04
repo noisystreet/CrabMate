@@ -1,13 +1,10 @@
 //! 将 `StoredMessage` 切片折叠为连续工具组，供聊天列迭代渲染。
 //!
-//! 分阶段时间线旁注（`### CrabMate·staged_timeline`）与工具输出按时间顺序穿插展示：
-//! **每条**旁注单独一条消息气泡（与分层子目标一致）；仅**连续工具**折叠为工具组。
+//! 可见性筛选与 fuzzy dedupe 见 [`crate::visible_messages`]（单一读路径）；本模块只负责 **chunk 折叠**。
 
 use crate::message_format::is_staged_timeline_bubble;
 use crate::storage::StoredMessage;
-use crate::timeline_scan::{
-    is_commentary_before_tools_assistant, is_orchestration_route_timeline_message,
-};
+use crate::visible_messages::VisibleMessageScope;
 
 #[derive(Clone)]
 pub(crate) enum ChatChunk {
@@ -67,12 +64,6 @@ fn staged_cluster_end_exclusive(msgs: &[StoredMessage], start: usize) -> usize {
     j
 }
 
-/// 内部调试旁注：不进聊天列渲染。
-#[inline]
-fn skip_internal_timeline_assistant(m: &StoredMessage) -> bool {
-    is_orchestration_route_timeline_message(m) || is_commentary_before_tools_assistant(m)
-}
-
 fn chunk_tool_run(msgs: &[StoredMessage], start: usize, end: usize, out: &mut Vec<ChatChunk>) {
     let slice: Vec<_> = (start..end).map(|j| (j, msgs[j].clone())).collect();
     push_tool_run_chunk(out, slice);
@@ -110,30 +101,34 @@ fn chunk_staged_cluster(
 }
 
 pub(crate) fn chunk_messages(msgs: &[StoredMessage]) -> Vec<ChatChunk> {
+    let visible =
+        crate::visible_messages::visible_message_indices(msgs, VisibleMessageScope::ChatColumn);
     let mut out = Vec::new();
-    let mut i = 0usize;
-    while i < msgs.len() {
-        if skip_internal_timeline_assistant(&msgs[i]) {
-            i += 1;
-            continue;
-        }
+    let mut vi = 0usize;
+    while vi < visible.len() {
+        let i = visible[vi];
         if msgs[i].is_tool {
             let start = i;
-            while i < msgs.len() && msgs[i].is_tool {
-                i += 1;
+            let mut end = i + 1;
+            while vi + 1 < visible.len() && msgs[visible[vi + 1]].is_tool {
+                vi += 1;
+                end = visible[vi] + 1;
             }
-            chunk_tool_run(msgs, start, i, &mut out);
+            chunk_tool_run(msgs, start, end, &mut out);
         } else if is_staged_timeline_bubble(&msgs[i]) {
             let j = staged_cluster_end_exclusive(msgs, i);
             chunk_staged_cluster(msgs, i, j, &mut out);
-            i = j;
+            while vi < visible.len() && visible[vi] < j {
+                vi += 1;
+            }
+            continue;
         } else {
             out.push(ChatChunk::Single {
                 idx: i,
                 msg: msgs[i].clone(),
             });
-            i += 1;
         }
+        vi += 1;
     }
     out
 }
@@ -253,5 +248,18 @@ mod tests {
         assert_eq!(chunks.len(), 2);
         assert!(matches!(&chunks[0], ChatChunk::Single { idx: 0, .. }));
         assert!(matches!(&chunks[1], ChatChunk::Single { idx: 1, .. }));
+    }
+
+    #[test]
+    fn fuzzy_duplicate_assistant_collapsed_in_chunks() {
+        let listing = "当前目录下有三个压缩包：\n\n1. **A** — x";
+        let compact = "当前目录下有三个压缩包：\n1. **A** — x";
+        let msgs = vec![
+            empty_msg("u", "user", "分析", false),
+            empty_msg("a1", "assistant", listing, false),
+            empty_msg("a2", "assistant", compact, false),
+        ];
+        let chunks = chunk_messages(&msgs);
+        assert_eq!(chunks.len(), 2);
     }
 }

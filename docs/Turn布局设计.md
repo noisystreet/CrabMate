@@ -1,6 +1,6 @@
 # Turn 布局：单轮工具回合的消息顺序设计
 
-**状态**：Web 流式 **Phase 0–3** 已落地（见 §12）；TUI/CLI 仅消费 SSE 控制面镜像，尚未做完整 canonical 投影。  
+**状态**：Web 流式 **Phase 0–4** 已落地（见 §12）；**Phase 5（单一读路径）** 已落地（§12.8）；TUI/CLI 仅消费 SSE 控制面镜像，尚未做完整 canonical 投影。  
 **目标读者**：维护者；变更 **`turn_segment_*`**、**`frontend/src/app/chat/composer_stream/`** 或 **`crates/crabmate-turn-layout`** 前须读本文，并同步 **`docs/SSE协议.md`**、**`fixtures/turn_project_golden.jsonl`**、**`fixtures/sse_control_golden.jsonl`**。
 
 ---
@@ -282,8 +282,45 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 | **2（已落地）** | 形态 B 投影 | `sync_turn_projection` 按 **`project_turn`** 行序 upsert | `turn_layout.rs`、`project.rs` |
 | **3（已落地）** | 形态 C I4 | `dedupe_redundant_loading_tail` 于 `on_done` | `turn_layout.rs`、`stream_end.rs` |
 | **3（已落地）** | 金样 | `pre_tool_bulk_deltas_pending_stream`、`multi_tool_interleaved_segments` | `fixtures/turn_project_golden.jsonl` |
+| **4（已落地）** | **收敛写入 I6–I8** | plain delta / `final_response` 仅经 canonical 投影写正文；`final_response` 不 push 新泡；overlay 与投影互斥 | `delta_apply.rs`、`timeline_dispatch.rs`、`turn_layout.rs`、`stream_text_overlay.rs` |
+| **5（已落地）** | **单一读路径** | 聊天列与导出共用 `visible_message_indices`；fuzzy dedupe / ephemeral skip 不再分叉 | `visible_messages.rs`、`message_chunks.rs`、`session_export.rs` |
 
 **不建议** 用纯文本启发式（按「现在」「接下来」分句）拆分已聚合长泡；优先 **SSE 段边界前移** + **布局状态机**。
+
+### 12.7 收敛写入（Phase 4）
+
+**目标**：`StoredMessage` 助手正文 **仅** 由 `TurnReducer` + `project_turn` + `sync_turn_projection` 写入；`TurnLayout` **只改形状**（工具行/loading 位置/peel/pin）；`StreamTextOverlay` **不**与投影并行持有同段正文。
+
+| Invariant | 规则 |
+|-----------|------|
+| **I6 旁注/终答单写** | plain `on_delta`：commentary 车道 → `try_apply_commentary_delta` + sync；post-tool / 无工具正文相 → `try_apply_answer_delta` + sync；**禁止** sync 成功后再 `append_assistant_chunk` 写 answer |
+| **I7 final_response 不增行** | `timeline_log` `kind=final_response` → `try_ingest_final_response_text` + sync + finalize loading；**不** `push_assistant_timeline_bubble` / `final_response_snapshot` 新行 |
+| **I8 overlay 从属** | 每次 `sync_turn_projection` 后对该 loading id 执行 `stream_overlay_clear_answer_for_message`；`on_done` merge 幂等 |
+
+**多工具 `tool_call` 追加写入**：`demote_answer_before_tools` **仅**在首个 `tool_call` 前（`!post_tool_stream_tail_active`）把尾泡迁入 pending 旁注；post-tool 阶段勿再把终答正文 `ingest_pre_tool_commentary`。同次 `on_tool_call_declared` 不再二次 ingest（`demote` 已做）。
+
+**仍走 overlay（非 assistant 正文真源）**：纯 reasoning 车道（非 commentary canonical 路径）的思维链增量。
+
+**仍独立 push 的时间线**：`intent_analysis`、分层规划等 **非终答** 旁注（与 I7 区分）。
+
+### 12.8 单一读路径（Phase 5）
+
+**目标**：UI 聊天列与 JSON/Markdown 导出 **不再** 各自维护 skip + fuzzy dedupe；读侧统一经 `frontend/src/visible_messages.rs`。
+
+| API | 说明 |
+|-----|------|
+| `VisibleMessageScope::ChatColumn` | 隐藏编排路由、pre-tool 旁注、`final_response_snapshot` 重复行；**保留** loading 尾泡 |
+| `VisibleMessageScope::Export` | 隐藏 ephemeral 助手行（含 snapshot、编排、pre-tool 等，见 `is_ephemeral_timeline_assistant_for_export`）与空 loading 壳 |
+| `visible_message_indices(messages, scope)` | 先按 scope 过滤，再自最后 `user` 起对 assistant 做 fuzzy dedupe |
+
+**消费方**：
+
+- `message_chunks::chunk_messages` — 仅 chunk 折叠，可见下标来自 `ChatColumn`
+- `session_export::stored_messages_to_export` — 仅格式转换，可见下标来自 `Export`
+
+**E2E**：`e2e/tests/phase5-visible-messages.spec.ts`（预置 duplicate / snapshot / ephemeral 行，断言聊天列 assistant 条数与 JSON/MD 导出一致）。
+
+**后续（Phase 6+）**：写入稳定后逐步退役 `relocate` / `repair` / `on_done` 全表 dedupe 等补丁层。
 
 ### 12.5 `TurnLayout` 与 `TurnReducer` 职责再划分
 
@@ -291,7 +328,8 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 |------|------|------|
 | 晚到 / 按锚点归并旁注文本 | **Reducer** | 与到达顺序无关的 canonical 真值 |
 | 尾泡 peel/restore/pin、工具 push 位置 | **TurnLayout** | 列表 imperative 操作；Phase 1 修正「首次 tool_call peel 门控」 |
-| plain delta 路由决策 | **`delta_apply`** | Phase 1：canonical 车道 miss 时不写尾泡 |
+| plain delta 路由决策 | **`delta_apply`** | Phase 1：canonical 车道 miss 时不写尾泡；Phase 4：**I6** 收敛写入 |
+| `final_response` 时间线 | **`timeline_dispatch`** | Phase 4：**I7** 仅 ingest + sync + finalize |
 | 段 open/close 生命周期 | **后端 emit + reducer** | Phase 2：避免多 open 段导致 `.find(first open)` 永远写最早段 |
 | 终答去重 | **TurnLayout + done_session** | Phase 3 |
 

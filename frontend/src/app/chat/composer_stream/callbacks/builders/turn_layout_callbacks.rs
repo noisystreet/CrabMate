@@ -37,5 +37,6 @@ pub(in super::super) fn make_on_turn_tool_phase_end(
             return;
         }
         stream_ctx.scratch.on_turn_tool_phase_end();
+        stream_ctx.scratch.sync_turn_projection(stream_ctx.as_ref());
     })
 }

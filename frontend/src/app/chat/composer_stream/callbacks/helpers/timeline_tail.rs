@@ -9,6 +9,7 @@ use crate::stream_text_overlay::stream_overlay_merged_text_reasoning_owned;
 
 use super::super::turn_layout::{TurnLayout, insert_assistant_before_loading_tail};
 use crate::app::chat::composer_stream::context::ChatStreamCallbackCtx;
+use crate::message_dedupe::assistant_texts_fuzzy_duplicate;
 
 pub(crate) fn push_assistant_timeline_bubble(
     stream_ctx: &ChatStreamCallbackCtx,
@@ -43,9 +44,12 @@ pub(crate) fn assistant_message_has_visible_text(
     }
     stream_ctx
         .read_bound_session(|s| {
-            s.messages
-                .iter()
-                .any(|m| m.role == "assistant" && !m.is_tool && m.text.trim() == needle)
+            s.messages.iter().any(|m| {
+                m.role == "assistant"
+                    && !m.is_tool
+                    && (m.text.trim() == needle
+                        || assistant_texts_fuzzy_duplicate(m.text.as_str(), needle))
+            })
         })
         .unwrap_or(false)
 }
@@ -72,6 +76,7 @@ pub(crate) fn streaming_assistant_tail_has_text(
                         .map(|(t, _)| t)
                         .unwrap_or_else(|| m.text.clone());
                 visible.trim() == needle
+                    || assistant_texts_fuzzy_duplicate(visible.as_str(), needle)
             })
         })
         .unwrap_or(false)
