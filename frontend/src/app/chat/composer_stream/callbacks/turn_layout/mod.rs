@@ -691,7 +691,11 @@ impl TurnLayout {
         queue: &mut BubbleOutputQueue,
     ) {
         let mid = stream_ctx.scratch.clone_assistant_id();
+        let pin_active = stream_ctx.scratch.post_tool_stream_tail_active();
         stream_ctx.update_bound_session(|s| {
+            if pin_active {
+                pin_loading_tail_in_messages(&mut s.messages, mid.as_str());
+            }
             queue.sync_web_projection(&mut s.messages, turn, Some(mid.as_str()));
         });
         let clear_overlay = stream_ctx

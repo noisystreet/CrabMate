@@ -140,6 +140,30 @@ impl BubbleOutputQueue {
         messages[idx].text.clear();
     }
 
+    fn batch_projection_pending_in_messages(
+        messages: &[crate::storage::StoredMessage],
+        turn: &TurnCanonicalState,
+    ) -> bool {
+        let Some(batch) = Self::batch_row_from_projection(turn) else {
+            return false;
+        };
+        if batch.text.trim().is_empty() {
+            return false;
+        }
+        !messages.iter().any(|m| m.id == BATCH_NARRATION_ROW_ID)
+    }
+
+    fn insert_index_for_final_row(
+        messages: &[crate::storage::StoredMessage],
+        loading_tail_id: Option<&str>,
+    ) -> usize {
+        let mut insert_idx = Self::insert_index_before_loading_tail(messages, loading_tail_id);
+        if let Some(batch_idx) = messages.iter().position(|m| m.id == BATCH_NARRATION_ROW_ID) {
+            insert_idx = insert_idx.max(batch_idx + 1);
+        }
+        insert_idx
+    }
+
     /// 按 [`project_turn_web`] upsert `turn-batch-narration` 行。
     pub(super) fn flush_batch_narration_row(
         &self,
@@ -175,6 +199,9 @@ impl BubbleOutputQueue {
         if turn.tool_phase_open() {
             return;
         }
+        if Self::batch_projection_pending_in_messages(messages, turn) {
+            return;
+        }
         let Some(text) = turn
             .turn_ref()
             .final_answer
@@ -184,7 +211,7 @@ impl BubbleOutputQueue {
         else {
             return;
         };
-        let insert_idx = Self::insert_index_before_loading_tail(messages, loading_tail_id);
+        let insert_idx = Self::insert_index_for_final_row(messages, loading_tail_id);
         Self::upsert_assistant_row(messages, FINAL_ANSWER_ROW_ID, text, insert_idx);
     }
 
@@ -385,6 +412,69 @@ mod tests {
         assert_eq!(msgs[0].id, "tc_archive");
         assert_eq!(msgs[1].id, BATCH_NARRATION_ROW_ID);
         assert_eq!(msgs[2].id, "tc_unpack");
+    }
+
+    #[test]
+    fn flush_final_deferred_until_batch_row_present() {
+        let mut turn = TurnCanonicalState::new();
+        turn.on_tool_call("tc_a", "tool_a", "tool a");
+        turn.on_segment_start(crate::sse_dispatch::TurnSegmentStartInfo {
+            segment_id: "seg-before-tc_a".into(),
+            kind: "commentary".into(),
+            before_tool_call_id: Some("tc_a".into()),
+        });
+        assert!(turn.try_apply_commentary_delta("批说明。"));
+        turn.on_segment_end("seg-before-tc_a".into());
+        turn.on_tool_phase_end();
+        assert!(turn.try_apply_answer_delta("终答。"));
+
+        let queue = BubbleOutputQueue;
+        let mut msgs = vec![crate::storage::StoredMessage {
+            id: "load".into(),
+            role: "assistant".into(),
+            text: String::new(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(crate::storage::StoredMessageState::Loading),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        }];
+        queue.flush_final_answer_row(&mut msgs, &turn, Some("load"));
+        assert!(
+            !msgs.iter().any(|m| m.id == FINAL_ANSWER_ROW_ID),
+            "final must not appear before batch row"
+        );
+
+        msgs.insert(
+            0,
+            crate::storage::StoredMessage {
+                id: "tc_a".into(),
+                role: "system".into(),
+                text: "tool".into(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: None,
+                is_tool: true,
+                tool_call_id: Some("tc_a".into()),
+                tool_name: None,
+                created_at: 0,
+            },
+        );
+        queue.sync_web_projection(&mut msgs, &turn, Some("load"));
+        let batch_idx = msgs
+            .iter()
+            .position(|m| m.id == BATCH_NARRATION_ROW_ID)
+            .expect("batch");
+        let final_idx = msgs
+            .iter()
+            .position(|m| m.id == FINAL_ANSWER_ROW_ID)
+            .expect("final");
+        assert!(
+            batch_idx < final_idx,
+            "batch must precede final in stored order"
+        );
     }
 
     #[test]

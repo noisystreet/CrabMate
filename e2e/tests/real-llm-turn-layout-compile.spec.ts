@@ -10,7 +10,7 @@ import {
   exportSessionArtifacts,
   gotoCrabMateHome,
   putFreshLocalSession,
-  sendAndWaitForStream,
+  sendAndWaitForStreamWithLayoutMonitor,
   setupRealLlmWorkspace,
 } from './helpers';
 
@@ -33,7 +33,14 @@ test.describe('real LLM turn layout — compile hpcg only', () => {
     test.setTimeout(REAL_LLM_TIMEOUT + 60_000);
 
     await gotoCrabMateHome(page);
-    await sendAndWaitForStream(page, '编译 hpcg');
+    artifacts.streamLayoutReport =
+      (await sendAndWaitForStreamWithLayoutMonitor(page, '编译 hpcg')) ?? undefined;
+    if (artifacts.streamLayoutReport && artifacts.streamLayoutReport.violations.length > 0) {
+      console.warn(
+        '[real-llm] stream layout violations:',
+        JSON.stringify(artifacts.streamLayoutReport.violations),
+      );
+    }
 
     const { md, json } = await exportSessionArtifacts(page, REAL_LLM_SESSION_COMPILE);
     artifacts.exportMd = md;

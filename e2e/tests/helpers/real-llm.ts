@@ -2,6 +2,10 @@
  * 真实 LLM E2E：流式等待、Turn 布局导出断言、失败 artifact 落盘。
  * 见 `docs/真实LLM-E2E.md`。
  */
+import {
+  excerptTimelineSamples,
+  type StreamLayoutMonitorReport,
+} from './stream-layout-monitor';
 import { expect, type APIRequestContext, type Page, type TestInfo } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -58,6 +62,7 @@ export type RealLlmArtifactBundle = {
   exportMd?: string;
   exportJson?: unknown;
   compileReport?: TurnLayoutCompileReport;
+  streamLayoutReport?: import('./stream-layout-monitor').StreamLayoutMonitorReport;
   errorMessage?: string;
 };
 
@@ -300,6 +305,19 @@ export async function writeRealLlmArtifacts(
     workspace_hints: workspaceHints ?? probeWorkspaceHints(REAL_LLM_WORKSPACE),
     session_id: bundle.sessionId,
     turn_layout: bundle.compileReport ?? null,
+    stream_layout: bundle.streamLayoutReport
+      ? {
+          sample_count: bundle.streamLayoutReport.sample_count,
+          violation_count: bundle.streamLayoutReport.violations.length,
+          violations: bundle.streamLayoutReport.violations,
+          stable_traces: bundle.streamLayoutReport.stable_traces,
+          committed_message_ids: bundle.streamLayoutReport.committed_message_ids,
+          samples_excerpt: excerptTimelineSamples(
+            bundle.streamLayoutReport.samples,
+            bundle.streamLayoutReport.violations,
+          ),
+        }
+      : null,
   };
 
   fs.writeFileSync(path.join(runDir, 'meta.json'), JSON.stringify(payload, null, 2));
@@ -307,6 +325,25 @@ export async function writeRealLlmArtifacts(
     fs.writeFileSync(
       path.join(runDir, 'turn-layout-report.json'),
       JSON.stringify(bundle.compileReport, null, 2),
+    );
+  }
+  if (bundle.streamLayoutReport) {
+    fs.writeFileSync(
+      path.join(runDir, 'stream-layout-report.json'),
+      JSON.stringify(
+        {
+          sample_count: bundle.streamLayoutReport.sample_count,
+          violations: bundle.streamLayoutReport.violations,
+          stable_traces: bundle.streamLayoutReport.stable_traces,
+          committed_message_ids: bundle.streamLayoutReport.committed_message_ids,
+          samples_excerpt: excerptTimelineSamples(
+            bundle.streamLayoutReport.samples,
+            bundle.streamLayoutReport.violations,
+          ),
+        },
+        null,
+        2,
+      ),
     );
   }
   if (bundle.exportMd) {
@@ -329,6 +366,7 @@ export type RealLlmArtifactState = {
   exportMd?: string;
   exportJson?: unknown;
   compileReport?: TurnLayoutCompileReport;
+  streamLayoutReport?: StreamLayoutMonitorReport;
   workspaceHints?: WorkspaceHints;
   errorMessage?: string;
 };
@@ -343,6 +381,7 @@ export function createRealLlmArtifactHooks(sessionId: string) {
         exportMd: state.exportMd,
         exportJson: state.exportJson,
         compileReport: state.compileReport,
+        streamLayoutReport: state.streamLayoutReport,
         errorMessage: state.errorMessage,
       }, state.workspaceHints);
     },
