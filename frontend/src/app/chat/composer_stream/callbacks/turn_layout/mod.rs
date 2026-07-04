@@ -22,10 +22,7 @@ use crate::stream_text_overlay::{
     stream_overlay_clear_answer_for_message, stream_overlay_take_into_stored_message,
 };
 
-use crabmate_turn_layout::{Turn, project_turn};
-
-use crate::message_dedupe::assistant_texts_fuzzy_duplicate;
-use crate::message_dedupe::dedupe_assistant_messages_since_last_user;
+use crabmate_turn_layout::project_turn;
 
 use super::super::context::ChatStreamCallbackCtx;
 use super::super::per_stream_accum::PerStreamAccum;
@@ -455,6 +452,53 @@ impl TurnLayout {
             Self::rotate_followup_model_round(stream_ctx);
         }
     }
+
+    /// 按 [`project_turn`] 投影 upsert 工具前旁注与终答行。
+    pub(crate) fn sync_turn_projection(
+        stream_ctx: &ChatStreamCallbackCtx,
+        turn: &TurnCanonicalState,
+    ) {
+        let mid = stream_ctx.scratch.clone_assistant_id();
+        stream_ctx.update_bound_session(|s| {
+            for row in project_turn(turn.turn_ref()) {
+                match row.kind.as_str() {
+                    "assistant_commentary" => {
+                        let Some(tcid) = row.tool_call_id.as_deref().filter(|s| !s.is_empty())
+                        else {
+                            continue;
+                        };
+                        sync_commentary_before_tool_in_messages(
+                            &mut s.messages,
+                            tcid,
+                            row.text.as_str(),
+                        );
+                    }
+                    "assistant_answer" => {
+                        if turn.tool_phase_open() {
+                            continue;
+                        }
+                        sync_loading_tail_block_in_messages(
+                            &mut s.messages,
+                            mid.as_str(),
+                            row.text.as_str(),
+                        );
+                    }
+                    _ => {}
+                }
+            }
+            if turn.tool_phase_open() {
+                let block = turn.streaming_commentary_block_text().unwrap_or_default();
+                sync_loading_tail_block_in_messages(&mut s.messages, mid.as_str(), block.as_str());
+            }
+        });
+        stream_overlay_clear_answer_for_message(
+            stream_ctx.chat.stream_text_overlay,
+            stream_ctx.bound_stream_session_id.as_str(),
+            mid.as_str(),
+            Some(stream_ctx.chat.stream_overlay_revision),
+        );
+        Self::pin_loading_tail(stream_ctx);
+    }
 }
 
 fn find_tool_index(messages: &[StoredMessage], tool_call_id: &str) -> Option<usize> {
@@ -523,180 +567,6 @@ fn sync_loading_tail_block_in_messages(
     {
         messages[idx].text = text.to_string();
     }
-}
-
-#[allow(clippy::ptr_arg)]
-fn repair_commentary_rows_before_tools(messages: &mut Vec<StoredMessage>, turn: &Turn) {
-    for step in &turn.steps {
-        let Some(ref text) = step.before_commentary else {
-            continue;
-        };
-        if text.trim().is_empty() {
-            continue;
-        }
-        let Some(tool_idx) = find_tool_index(messages, step.tool_call_id.as_str()) else {
-            continue;
-        };
-        if find_commentary_before_tool_index(messages, step.tool_call_id.as_str(), tool_idx)
-            .is_some()
-        {
-            continue;
-        }
-        sync_commentary_before_tool_in_messages(messages, step.tool_call_id.as_str(), text);
-    }
-}
-
-/// 删除 canonical 已投影到工具前的旁注在列表其它位置的残留（常见于 peel/尾泡 finalize 后）。
-fn relocate_misplaced_commentary_rows(messages: &mut Vec<StoredMessage>, turn: &Turn) {
-    for step in &turn.steps {
-        let Some(ref text) = step.before_commentary else {
-            continue;
-        };
-        if text.trim().is_empty() {
-            continue;
-        }
-        let tcid = step.tool_call_id.as_str();
-        let Some(tool_idx) = find_tool_index(messages, tcid) else {
-            continue;
-        };
-        let mut i = 0;
-        while i < messages.len() {
-            let m = &messages[i];
-            let remove = m.role == "assistant"
-                && !m.is_tool
-                && !(i + 1 == tool_idx && m.tool_call_id.as_deref() == Some(tcid))
-                && i >= tool_idx
-                && assistant_texts_fuzzy_duplicate(m.text.as_str(), text.as_str());
-            if remove {
-                messages.remove(i);
-            } else {
-                i += 1;
-            }
-        }
-        let Some(tool_idx) = find_tool_index(messages, tcid) else {
-            continue;
-        };
-        if let Some(cidx) = find_commentary_before_tool_index(messages, tcid, tool_idx) {
-            messages[cidx].text = text.clone();
-            messages[cidx].tool_call_id = Some(step.tool_call_id.clone());
-        } else {
-            sync_commentary_before_tool_in_messages(messages, tcid, text.as_str());
-        }
-    }
-}
-
-impl TurnLayout {
-    /// 按 [`project_turn`] 投影 upsert 工具前旁注与终答行。
-    pub(crate) fn sync_turn_projection(
-        stream_ctx: &ChatStreamCallbackCtx,
-        turn: &TurnCanonicalState,
-    ) {
-        let mid = stream_ctx.scratch.clone_assistant_id();
-        stream_ctx.update_bound_session(|s| {
-            for row in project_turn(turn.turn_ref()) {
-                match row.kind.as_str() {
-                    "assistant_commentary" => {
-                        let Some(tcid) = row.tool_call_id.as_deref().filter(|s| !s.is_empty())
-                        else {
-                            continue;
-                        };
-                        sync_commentary_before_tool_in_messages(
-                            &mut s.messages,
-                            tcid,
-                            row.text.as_str(),
-                        );
-                    }
-                    "assistant_answer" => {
-                        if turn.tool_phase_open() {
-                            continue;
-                        }
-                        sync_loading_tail_block_in_messages(
-                            &mut s.messages,
-                            mid.as_str(),
-                            row.text.as_str(),
-                        );
-                    }
-                    _ => {}
-                }
-            }
-            if turn.tool_phase_open() {
-                let block = turn.streaming_commentary_block_text().unwrap_or_default();
-                sync_loading_tail_block_in_messages(&mut s.messages, mid.as_str(), block.as_str());
-            }
-            repair_commentary_rows_before_tools(&mut s.messages, turn.turn_ref());
-            relocate_misplaced_commentary_rows(&mut s.messages, turn.turn_ref());
-        });
-        stream_overlay_clear_answer_for_message(
-            stream_ctx.chat.stream_text_overlay,
-            stream_ctx.bound_stream_session_id.as_str(),
-            mid.as_str(),
-            Some(stream_ctx.chat.stream_overlay_revision),
-        );
-        Self::pin_loading_tail(stream_ctx);
-    }
-
-    /// 流结束前：自最后 user 起删除 fuzzy 重复的 assistant 行。
-    pub(crate) fn dedupe_assistant_duplicates_in_messages(messages: &mut Vec<StoredMessage>) {
-        dedupe_assistant_messages_since_last_user(messages);
-    }
-
-    /// 流结束前：若 loading 尾泡正文已完整出现在先前 assistant 行中，删空尾泡避免重复终答。
-    pub(crate) fn dedupe_redundant_loading_tail(stream_ctx: &ChatStreamCallbackCtx) {
-        let mid = stream_ctx.scratch.clone_assistant_id();
-        let sid = stream_ctx.bound_stream_session_id.clone();
-        stream_ctx.update_bound_session(|s| {
-            let Some(load_idx) = s.messages.iter().position(|m| m.id == mid.as_str()) else {
-                return;
-            };
-            if !s.messages[load_idx]
-                .state
-                .as_ref()
-                .is_some_and(|st| st.is_loading())
-            {
-                return;
-            }
-            stream_overlay_take_into_stored_message(
-                stream_ctx.chat.stream_text_overlay,
-                sid.as_str(),
-                mid.as_str(),
-                &mut s.messages[load_idx],
-            );
-            let tail_trim = s.messages[load_idx].text.trim().to_string();
-            let _ = remove_redundant_loading_tail_at(&mut s.messages, load_idx, tail_trim.as_str());
-        });
-    }
-}
-
-/// 若 loading 尾泡正文与最近一条可见 assistant 重复，移除该尾泡（canonical 投影已写入先行行）。
-pub(crate) fn remove_redundant_loading_tail_at(
-    messages: &mut Vec<StoredMessage>,
-    load_idx: usize,
-    tail_trim: &str,
-) -> bool {
-    if tail_trim.is_empty() {
-        return false;
-    }
-    for m in messages[..load_idx].iter().rev() {
-        if m.role != "assistant" || m.is_tool {
-            continue;
-        }
-        if m.state.as_ref().is_some_and(|st| st.is_loading()) {
-            continue;
-        }
-        let prior = m.text.trim();
-        if prior.is_empty() {
-            continue;
-        }
-        if prior == tail_trim
-            || prior.ends_with(tail_trim)
-            || assistant_texts_fuzzy_duplicate(prior, tail_trim)
-        {
-            messages.remove(load_idx);
-            return true;
-        }
-        break;
-    }
-    false
 }
 
 /// 供 [`super::callbacks::helpers::timeline_tail`] 子目标 upsert 使用。

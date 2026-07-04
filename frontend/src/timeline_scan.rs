@@ -341,6 +341,7 @@ pub fn timeline_state_final_response_snapshot() -> StoredMessageState {
         json!({
             "k": TIMELINE_UI_STATE_KEY,
             "t": "final_response_snapshot",
+            "msg": "",
         })
         .to_string(),
     )

@@ -1,6 +1,6 @@
 # Turn 布局：单轮工具回合的消息顺序设计
 
-**状态**：Web 流式 **Phase 0–4** 已落地（见 §12）；**Phase 5（单一读路径）** 已落地（§12.8）；**Phase 6（消息块 → 气泡）** 已落地（§12.9）；**Phase 7 P0（写入收敛）** 已落地（§12.10）；TUI/CLI 仅消费 SSE 控制面镜像，尚未做完整 canonical 投影。  
+**状态**：Web 流式 **Phase 0–4** 已落地（见 §12）；**Phase 5（单一读路径）** 已落地（§12.8）；**Phase 6（消息块 → 气泡）** 已落地（§12.9）；**Phase 7 P0（写入收敛）** 已落地（§12.10）；**Phase 7 P1（补丁层退役）** 已落地（§12.11）；TUI/CLI 仅消费 SSE 控制面镜像，尚未做完整 canonical 投影。  
 **目标读者**：维护者；变更 **`turn_segment_*`**、**`frontend/src/app/chat/composer_stream/`** 或 **`crates/crabmate-turn-layout`** 前须读本文，并同步 **`docs/SSE协议.md`**、**`fixtures/turn_project_golden.jsonl`**、**`fixtures/sse_control_golden.jsonl`**。
 
 ---
@@ -280,10 +280,10 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 | **1（已落地）** | 形态 B 首次 peel | `ingest_pre_tool_commentary` + `pending-stream-commentary` 段 | `turn_canonical.rs`、`reduce.rs` |
 | **2（已落地）** | 段边界时机 I5 | LLM 流内解析 `tool_call.id` 时 emit `turn_segment_start/end`；reducer `SegmentStart` 关闭其它 open 段 | `crates/crabmate-llm/.../sse_parser.rs`、`stream_host.rs`、`reduce.rs` |
 | **2（已落地）** | 形态 B 投影 | `sync_turn_projection` 按 **`project_turn`** 行序 upsert | `turn_layout.rs`、`project.rs` |
-| **3（已落地）** | 形态 C I4 | `dedupe_redundant_loading_tail` 于 `on_done` | `turn_layout.rs`、`stream_end.rs` |
+| **3（已落地，P1 退役）** | 形态 C I4 | ~~`dedupe_redundant_loading_tail` 于 `on_done`~~ → P1 删除 | 曾：`turn_layout.rs`、`stream_end.rs` |
 | **3（已落地）** | 金样 | `pre_tool_bulk_deltas_pending_stream`、`multi_tool_interleaved_segments` | `fixtures/turn_project_golden.jsonl` |
 | **4（已落地）** | **收敛写入 I6–I8** | plain delta / `final_response` 仅经 canonical 投影写正文；`final_response` 不 push 新泡；overlay 与投影互斥 | `delta_apply.rs`、`timeline_dispatch.rs`、`turn_layout.rs`、`stream_text_overlay.rs` |
-| **5（已落地）** | **单一读路径** | 聊天列与导出共用 `visible_message_indices`；fuzzy dedupe / ephemeral skip 不再分叉 | `visible_messages.rs`、`message_chunks.rs`、`session_export.rs` |
+| **5（已落地）** | **单一读路径** | 聊天列与导出共用 `visible_message_indices`；scope 过滤统一（P1 起无 assistant fuzzy dedupe） | `visible_messages.rs`、`message_chunks.rs`、`session_export.rs` |
 
 **不建议** 用纯文本启发式（按「现在」「接下来」分句）拆分已聚合长泡；优先 **SSE 段边界前移** + **布局状态机**。
 
@@ -311,14 +311,14 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 |-----|------|
 | `VisibleMessageScope::ChatColumn` | 隐藏编排路由、pre-tool 旁注、`final_response_snapshot` 重复行；**保留** loading 尾泡 |
 | `VisibleMessageScope::Export` | 隐藏 ephemeral 助手行（含 snapshot、编排、pre-tool 等，见 `is_ephemeral_timeline_assistant_for_export`）与空 loading 壳 |
-| `visible_message_indices(messages, scope)` | 先按 scope 过滤，再自最后 `user` 起对 assistant 做 fuzzy dedupe |
+| `visible_message_indices(messages, scope)` | 按 scope 过滤隐藏规则；**不**对 assistant 正文 fuzzy dedupe（Phase 7 P1） |
 
 **消费方**：
 
 - `message_chunks::chunk_messages` — 仅 chunk 折叠，可见下标来自 `ChatColumn`
 - `session_export::stored_messages_to_export` — 仅格式转换，可见下标来自 `Export`
 
-**E2E**：`e2e/tests/phase5-visible-messages.spec.ts`（预置 duplicate / snapshot / ephemeral 行，断言聊天列 assistant 条数与 JSON/MD 导出一致）。
+**E2E**：`e2e/tests/phase5-visible-messages.spec.ts`（snapshot / ephemeral 隐藏；预置 duplicate 行断言**均可见**——读侧不再 fuzzy dedupe）。
 
 ### 12.9 消息块 → 气泡（Phase 6）
 
@@ -332,8 +332,6 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 | `turn_segment_start` | 段一开即 sync，占位/更新当前块 |
 | `apply_answer_body_delta` fallback | canonical 拒答时 **禁止** `append_assistant_chunk` 累积尾泡（I6 补全） |
 
-**后续（Phase 7 P1+）**：写入稳定后逐步退役 `relocate` / `repair` / `on_done` 全表 dedupe 等补丁层。
-
 ### 12.10 写入收敛（Phase 7 P0）
 
 **目标**：assistant 正文**唯一写路径** = `TurnReducer` + `sync_turn_projection` replace；禁止 canonical miss 时 overlay append 正文。
@@ -345,6 +343,19 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 | `demote_answer_before_tools` | `absorb_pre_tool_narration_for_first_tool` 收尾泡 + 误写 `final_answer` → pending 段；勿 overlay/stored 双 demote |
 | post-tool 工具边界 | 新 loading 尾泡**空壳**；`sync_turn_projection` 填当前块（勿 peel merge 旧全文） |
 
+### 12.11 补丁层退役（Phase 7 P1）
+
+**目标**：写入收敛（P0）后删除读/写两侧的 fuzzy 补丁；旁注位置仅由 `project_turn` + `sync_commentary_before_tool` 保证。
+
+| 已删除 | 原用途 |
+|--------|--------|
+| `repair_commentary_rows_before_tools` / `relocate_misplaced_commentary_rows` | sync 后补行 / 删 stray 旁注 |
+| `dedupe_redundant_loading_tail` / `remove_redundant_loading_tail_at` | on_done 删与前行重复的 loading 壳 |
+| `dedupe_assistant_duplicates_in_messages`（on_done） | 流结束全表 assistant fuzzy dedupe |
+| `visible_messages` assistant fuzzy dedupe | 读侧去重；legacy 会话若存 duplicate 行则均展示 |
+
+**仍保留**：`final_response_snapshot` 重复隐藏、ephemeral/orchestration scope 过滤；`message_dedupe` 模块供 snapshot 判定与单元测试。
+
 ### 12.5 `TurnLayout` 与 `TurnReducer` 职责再划分
 
 | 职责 | 归属 | 说明 |
@@ -354,7 +365,7 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 | plain delta 路由决策 | **`delta_apply`** | Phase 1：canonical 车道 miss 时不写尾泡；Phase 4：**I6** 收敛写入 |
 | `final_response` 时间线 | **`timeline_dispatch`** | Phase 4：**I7** 仅 ingest + sync + finalize |
 | 段 open/close 生命周期 | **后端 emit + reducer** | Phase 2：避免多 open 段导致 `.find(first open)` 永远写最早段 |
-| 终答去重 | **TurnLayout + done_session** | Phase 3 |
+| 终答去重 | **写入收敛（P0–P1）** | 不再 on_done / 读侧 fuzzy dedupe；依赖 canonical replace |
 
 ### 12.6 手测回归场景（细化后必跑）
 

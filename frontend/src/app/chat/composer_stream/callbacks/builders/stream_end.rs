@@ -42,7 +42,6 @@ pub(in super::super) fn chat_stream_on_done_builder(
         let turn = accum.summarize_for_stream_done();
         let loc = stream_ctx.locale.get_untracked();
         let mid = stream_ctx.scratch.clone_assistant_id();
-        TurnLayout::dedupe_redundant_loading_tail(stream_ctx.as_ref());
         stream_ctx.update_bound_session(|s| {
             let sid = stream_ctx.bound_stream_session_id.as_str();
             if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) {
@@ -63,7 +62,6 @@ pub(in super::super) fn chat_stream_on_done_builder(
                     .in_answer_body_lane(),
                 loc,
             );
-            TurnLayout::dedupe_assistant_duplicates_in_messages(&mut s.messages);
         });
         stream_ctx.chat.clear_stream_text_overlay();
         stream_ctx

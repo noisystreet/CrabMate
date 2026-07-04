@@ -251,7 +251,7 @@ mod tests {
     }
 
     #[test]
-    fn fuzzy_duplicate_assistant_collapsed_in_chunks() {
+    fn fuzzy_duplicate_assistant_rows_all_visible_in_chunks() {
         let listing = "当前目录下有三个压缩包：\n\n1. **A** — x";
         let compact = "当前目录下有三个压缩包：\n1. **A** — x";
         let msgs = vec![
@@ -260,6 +260,6 @@ mod tests {
             empty_msg("a2", "assistant", compact, false),
         ];
         let chunks = chunk_messages(&msgs);
-        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks.len(), 3);
     }
 }
