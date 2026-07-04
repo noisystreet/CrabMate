@@ -568,7 +568,7 @@ mod staged_intent_gate_tests {
     }
 
     #[test]
-    fn advisory_refactor_consultation_bypasses_staged_when_advisory_bypass_enabled() {
+    fn advisory_refactor_consultation_still_allows_staged_when_advisory_bypass_enabled() {
         let mut cfg = test_cfg();
         // 默认 L1 对该句常为 ConfirmThenExecute（不进入分阶段）；下调高阈值以稳定得到 Execute，从而专门验证「咨询启发式」分支。
         cfg.intent_routing.intent_non_hier_execute_high_threshold = 0.35;
@@ -578,22 +578,18 @@ mod staged_intent_gate_tests {
         )];
         let gate = assess_staged_planning_gate(&messages, &cfg);
         assert!(
-            !gate.allows_staged_planning(),
-            "开启咨询绕过时，架构/重构咨询在 Execute 路径下不应进入滚动分阶段规划"
+            gate.allows_staged_planning(),
+            "咨询绕过已移除：开启 advisory_bypass 时，Execute 路径下仍应进入滚动分阶段规划"
         );
         match gate {
-            StagedPlanningGateOutcome::Deny {
-                reason: StagedPlanningDenyReason::AdvisoryExecuteBypassStaged,
-                task_preview: Some(_),
-                intent_decision: Some(d),
+            StagedPlanningGateOutcome::Allow {
+                task_preview: _,
+                intent_kind: _,
+                primary_intent: _,
+                confidence: _,
+                decision: _,
             } => {
-                assert!(
-                    matches!(
-                        d.action,
-                        crate::agent::intent_pipeline::IntentAction::Execute
-                    ),
-                    "门控拒绝分阶段但仍保留 Execute 决策，便于单 Agent 外循环继续"
-                );
+                // 咨询绕过已从分阶段资格判定中移除，所有 Execute 任务均进入分阶段规划
             }
             other => panic!("unexpected gate outcome: {:?}", other),
         }
