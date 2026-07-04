@@ -23,6 +23,7 @@ fn apply_answer_body_delta(
         if stream_ctx.scratch.tool_phase_open()
             && stream_ctx.scratch.try_apply_commentary_delta(chunk)
         {
+            stream_ctx.scratch.sync_turn_projection(stream_ctx);
             stream_ctx.scratch.sync_stream_preview(stream_ctx);
         }
         accum.add_answer_delta_chars(chunk.chars().count());
@@ -30,6 +31,7 @@ fn apply_answer_body_delta(
     }
     // P0：canonical miss 时尝试 commentary 段，仍 miss 则 no-op（勿 append 尾泡）。
     if stream_ctx.scratch.try_apply_commentary_delta(chunk) {
+        stream_ctx.scratch.sync_turn_projection(stream_ctx);
         stream_ctx.scratch.sync_stream_preview(stream_ctx);
     }
     accum.add_answer_delta_chars(chunk.chars().count());
@@ -38,6 +40,7 @@ fn apply_answer_body_delta(
 /// 工具前旁注：canonical commentary 段 + 投影；miss 时不写尾泡（Phase 1 I2）。
 fn apply_commentary_lane_delta(stream_ctx: &ChatStreamCallbackCtx, chunk: &str) {
     if stream_ctx.scratch.try_apply_commentary_delta(chunk) {
+        stream_ctx.scratch.sync_turn_projection(stream_ctx);
         stream_ctx.scratch.sync_stream_preview(stream_ctx);
     }
 }

@@ -20,15 +20,17 @@ import {
   visibleTimelineBlockTexts,
 } from './helpers';
 
-test.describe('SSE turn layout (post-tool interleaved commentary)', () => {
-  // 共享 CM_CRABMATE_USER_DATA_DIR 与同一会话 id；串行避免 PUT sessions 竞态。
+/** 块布局：工具批前说明合并为一条 assistant 块，其后为工具组，最后终答。 */
+const BATCH_NARRATION = `${COMMENTARY_UNPACK}${COMMENTARY_READ}${COMMENTARY_MAKE}`;
+
+test.describe('SSE turn layout (block narration before tools)', () => {
   test.describe.configure({ mode: 'serial' });
 
   test.beforeEach(async ({ request }) => {
     await putFreshLocalSession(request, TURN_LAYOUT_SESSION_ID, 'E2E turn layout');
   });
 
-  test('multi-tool commentary appears before each tool in chat', async ({ page }) => {
+  test('batch narration appears before tool group in chat', async ({ page }) => {
     await installTurnLayoutStreamStub(page);
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'CrabMate' })).toBeVisible();
@@ -41,22 +43,21 @@ test.describe('SSE turn layout (post-tool interleaved commentary)', () => {
     await expect(page.getByText(FINAL_ANSWER)).toBeVisible({ timeout: UI_TIMEOUT });
 
     const blocks = await visibleTimelineBlockTexts(page);
-    const unpackCommentary = indexOfRowContaining(blocks, COMMENTARY_UNPACK);
-    const unpackTool = indexOfRowContaining(blocks, TOOL_UNPACK_UI);
-    const readCommentary = indexOfRowContaining(blocks, COMMENTARY_READ);
-    const readTool = indexOfRowContaining(blocks, TOOL_READ_UI);
-    const makeCommentary = indexOfRowContaining(blocks, COMMENTARY_MAKE);
-    const makeTool = indexOfRowContaining(blocks, TOOL_MAKE_UI);
+    const narrationIdx = indexOfRowContaining(blocks, COMMENTARY_UNPACK);
+    const firstToolIdx = Math.min(
+      indexOfRowContaining(blocks, TOOL_UNPACK_UI),
+      indexOfRowContaining(blocks, TOOL_READ_UI),
+      indexOfRowContaining(blocks, TOOL_MAKE_UI),
+    );
 
-    expect(unpackCommentary).toBeGreaterThanOrEqual(0);
-    expect(unpackTool).toBeGreaterThan(unpackCommentary);
-    expect(readCommentary).toBeGreaterThanOrEqual(0);
-    expect(readTool).toBeGreaterThan(readCommentary);
-    expect(makeCommentary).toBeGreaterThanOrEqual(0);
-    expect(makeTool).toBeGreaterThan(makeCommentary);
+    expect(narrationIdx).toBeGreaterThanOrEqual(0);
+    expect(firstToolIdx).toBeGreaterThan(narrationIdx);
+    expect(blocks[narrationIdx]).toContain(BATCH_NARRATION);
   });
 
-  test('segment_end before tool_call keeps commentary visible through stream end', async ({ page }) => {
+  test('segment_end before tool_call keeps narration visible through stream end', async ({
+    page,
+  }) => {
     await installTurnLayoutStreamStub(page, { segmentEndBeforeUnpackTool: true });
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'CrabMate' })).toBeVisible();
@@ -68,7 +69,7 @@ test.describe('SSE turn layout (post-tool interleaved commentary)', () => {
     await expect(page.getByText(COMMENTARY_READ)).toBeVisible({ timeout: UI_TIMEOUT });
   });
 
-  test('markdown export interleaves commentary before tools', async ({ page }) => {
+  test('markdown export places batch narration before tools', async ({ page }) => {
     await installTurnLayoutStreamStub(page);
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'CrabMate' })).toBeVisible();
@@ -77,19 +78,15 @@ test.describe('SSE turn layout (post-tool interleaved commentary)', () => {
     await expect(page.getByText(FINAL_ANSWER)).toBeVisible({ timeout: UI_TIMEOUT });
 
     const md = await exportSessionMarkdownFromModal(page, TURN_LAYOUT_SESSION_ID);
-    const idxUnpackCommentary = md.indexOf(COMMENTARY_UNPACK);
+    const idxNarration = md.indexOf(COMMENTARY_UNPACK);
     const idxUnpackTool = md.indexOf(TOOL_UNPACK_UI);
-    const idxReadCommentary = md.indexOf(COMMENTARY_READ);
     const idxReadTool = md.indexOf(TOOL_READ_UI);
-    const idxMakeCommentary = md.indexOf(COMMENTARY_MAKE);
     const idxMakeTool = md.indexOf(TOOL_MAKE_EXPORT);
 
-    expect(idxUnpackCommentary).toBeGreaterThanOrEqual(0);
-    expect(idxUnpackTool).toBeGreaterThan(idxUnpackCommentary);
-    expect(idxReadCommentary).toBeGreaterThan(idxUnpackTool);
-    expect(idxReadTool).toBeGreaterThan(idxReadCommentary);
-    expect(idxMakeCommentary).toBeGreaterThan(idxReadTool);
-    expect(idxMakeTool).toBeGreaterThan(idxMakeCommentary);
+    expect(idxNarration).toBeGreaterThanOrEqual(0);
+    expect(idxUnpackTool).toBeGreaterThan(idxNarration);
+    expect(idxReadTool).toBeGreaterThan(idxNarration);
+    expect(idxMakeTool).toBeGreaterThan(idxNarration);
     expect(md).toContain(FINAL_ANSWER);
   });
 });

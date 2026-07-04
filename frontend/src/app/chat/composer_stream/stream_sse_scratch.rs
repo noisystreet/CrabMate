@@ -32,7 +32,7 @@ impl StreamSseScratch {
             state: Rc::new(StreamTurnScratchState::new(initial_asst_id)),
             control: Rc::new(RefCell::new(StreamControlReducerState::new())),
             turn: make_turn_canonical_cell(),
-            bubble_queue: Rc::new(RefCell::new(BubbleOutputQueue::default())),
+            bubble_queue: Rc::new(RefCell::new(BubbleOutputQueue)),
         }
     }
 
@@ -154,38 +154,22 @@ impl StreamSseScratch {
     }
 
     #[inline]
-    pub(super) fn ingest_commentary_for_tool_from_peel(&self, tool_call_id: &str, text: &str) {
-        self.turn
-            .borrow_mut()
-            .ingest_commentary_for_tool_from_peel(tool_call_id, text);
-    }
-
-    #[inline]
     pub(super) fn ingest_pending_stream_commentary(&self, text: &str) {
         self.turn
             .borrow_mut()
             .ingest_pending_stream_commentary(text);
     }
 
-    /// delta 热路径：仅更新 loading 尾泡 preview，完整旁注行经 [`Self::sync_turn_projection`] 落盘。
+    /// delta 热路径：仅更新 loading 尾泡 preview，说明块经 [`Self::sync_turn_projection`] 落盘。
     pub(super) fn sync_stream_preview(&self, stream_ctx: &super::context::ChatStreamCallbackCtx) {
         let turn = self.turn.borrow();
         super::callbacks::TurnLayout::sync_stream_preview(stream_ctx, &turn);
     }
 
-    /// 段/工具边界：flush 队列中完整旁注行；`relocate_stray` 仅在工具/段边界调用。
-    pub(super) fn sync_turn_projection(
-        &self,
-        stream_ctx: &super::context::ChatStreamCallbackCtx,
-        relocate_stray: bool,
-    ) {
+    /// 段/工具边界：flush 工具批说明块到 stored。
+    pub(super) fn sync_turn_projection(&self, stream_ctx: &super::context::ChatStreamCallbackCtx) {
         let turn = self.turn.borrow();
         let mut queue = self.bubble_queue.borrow_mut();
-        super::callbacks::TurnLayout::sync_turn_projection(
-            stream_ctx,
-            &turn,
-            &mut queue,
-            relocate_stray,
-        );
+        super::callbacks::TurnLayout::sync_turn_projection(stream_ctx, &turn, &mut queue);
     }
 }

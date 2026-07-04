@@ -32,16 +32,6 @@ impl TurnCanonicalState {
         self.turn.tool_phase_open
     }
 
-    /// 工具批进行中：当前 **open** commentary 段流式块（非已关闭 pending）。
-    pub(super) fn streaming_commentary_block_text(&self) -> Option<String> {
-        self.turn
-            .segments
-            .iter()
-            .rev()
-            .find(|s| s.open && s.kind == SegmentKind::Commentary && !s.text.is_empty())
-            .map(|s| s.text.clone())
-    }
-
     fn apply(&mut self, event: TurnEvent) {
         reduce_event(&mut self.turn, event);
     }
@@ -102,28 +92,6 @@ impl TurnCanonicalState {
         });
     }
 
-    /// post-tool 尾泡 peel 后：将仅存在于 UI 尾泡的正文迁入 canonical（锚于即将声明的 `tool_call_id`）。
-    pub(super) fn ingest_commentary_for_tool(&mut self, tool_call_id: &str, text: &str) {
-        if text.trim().is_empty() {
-            return;
-        }
-        self.apply(TurnEvent::SegmentDelta {
-            segment_id: format!("seg-before-{tool_call_id}"),
-            delta: text.to_string(),
-        });
-    }
-
-    /// peel 正文仅在 canonical 尚无该工具旁注时迁入，避免与 reducer 已接住的 delta 重复。
-    pub(super) fn ingest_commentary_for_tool_from_peel(&mut self, tool_call_id: &str, text: &str) {
-        if text.trim().is_empty() {
-            return;
-        }
-        if commentary_for_tool(&self.turn, tool_call_id).is_some_and(|t| !t.trim().is_empty()) {
-            return;
-        }
-        self.ingest_commentary_for_tool(tool_call_id, text);
-    }
-
     /// 无 `tool_call_id` 时 peel 正文进入 pending 旁注段。
     pub(super) fn ingest_pending_stream_commentary(&mut self, text: &str) {
         if text.trim().is_empty() {
@@ -139,25 +107,6 @@ impl TurnCanonicalState {
             return;
         }
         self.ingest_pre_tool_commentary(text);
-    }
-
-    /// 当前 open commentary 段的 `before_tool_call_id`（pending 流式段为 `None`）。
-    pub(super) fn open_commentary_stream_anchor_tool_call_id(&self) -> Option<String> {
-        self.turn
-            .segments
-            .iter()
-            .rev()
-            .find(|s| s.open && s.kind == SegmentKind::Commentary && !s.text.is_empty())
-            .and_then(|s| s.before_tool_call_id.clone())
-    }
-
-    /// 该工具仍有 open commentary 段在流式写入：此时只更新 loading 尾泡，勿落盘旁注行（减 UI 闪烁）。
-    pub(super) fn has_open_commentary_segment_for_tool(&self, tool_call_id: &str) -> bool {
-        self.turn.segments.iter().any(|s| {
-            s.open
-                && s.kind == SegmentKind::Commentary
-                && s.before_tool_call_id.as_deref() == Some(tool_call_id)
-        })
     }
 
     /// 首个 `tool_call` 前 pending 段仍 open：旁注仅走 loading 尾泡。
@@ -270,6 +219,12 @@ impl TurnCanonicalState {
         true
     }
 
+    /// 块布局批说明全文（[`crabmate_turn_layout::batch_narration_text`]）— 测试用；生产路径见 `project_turn_web`。
+    #[cfg(test)]
+    pub(super) fn batch_narration_text(&self) -> Option<String> {
+        crabmate_turn_layout::batch_narration_text(&self.turn)
+    }
+
     /// 首个 `tool_call` 前：把尾泡 / 误写入的 `final_answer` 收进 pending 旁注段并清空终答桶。
     pub(super) fn absorb_pre_tool_narration_for_first_tool(&mut self, from_bubble: &str) {
         if !from_bubble.trim().is_empty() {
@@ -364,6 +319,32 @@ mod tests {
     }
 
     #[test]
+    fn batch_narration_text_merges_pending_and_step_commentary() {
+        let mut turn = TurnCanonicalState::new();
+        turn.ingest_pending_stream_commentary("pending。");
+        turn.on_segment_start(TurnSegmentStartInfo {
+            segment_id: "seg-before-tc_a".into(),
+            kind: "commentary".into(),
+            before_tool_call_id: Some("tc_a".into()),
+        });
+        assert!(turn.try_apply_commentary_delta("步骤 A。"));
+        turn.on_segment_end("seg-before-tc_a".into());
+        turn.on_tool_call("tc_a", "tool_a", "tool a");
+        turn.on_segment_start(TurnSegmentStartInfo {
+            segment_id: "seg-before-tc_b".into(),
+            kind: "commentary".into(),
+            before_tool_call_id: Some("tc_b".into()),
+        });
+        assert!(turn.try_apply_commentary_delta("步骤 B。"));
+        turn.on_segment_end("seg-before-tc_b".into());
+        turn.on_tool_call("tc_b", "tool_b", "tool b");
+        assert_eq!(
+            turn.batch_narration_text().as_deref(),
+            Some("pending。步骤 A。步骤 B。")
+        );
+    }
+
+    #[test]
     fn ingest_pre_tool_commentary_migrates_demoted_bubble() {
         let mut turn = TurnCanonicalState::new();
         turn.ingest_pre_tool_commentary("整段 narration。");
@@ -404,29 +385,6 @@ mod tests {
     }
 
     #[test]
-    fn ingest_commentary_for_tool_from_peel_skips_when_canonical_nonempty() {
-        let mut turn = TurnCanonicalState::new();
-        assert!(turn.try_apply_commentary_delta("已在 reducer。"));
-        turn.on_tool_call("tc_a", "tool_a", "tool a");
-        turn.ingest_commentary_for_tool_from_peel("tc_a", "尾泡重复。");
-        assert_eq!(
-            turn.commentary_before_tool("tc_a").as_deref(),
-            Some("已在 reducer。")
-        );
-    }
-
-    #[test]
-    fn ingest_commentary_for_tool_from_peel_fills_missing_canonical() {
-        let mut turn = TurnCanonicalState::new();
-        turn.ingest_commentary_for_tool_from_peel("tc_a", "仅尾泡有。");
-        turn.on_tool_call("tc_a", "tool_a", "tool a");
-        assert_eq!(
-            turn.commentary_before_tool("tc_a").as_deref(),
-            Some("仅尾泡有。")
-        );
-    }
-
-    #[test]
     fn answer_delta_blocked_while_tool_phase_open() {
         let mut turn = TurnCanonicalState::new();
         turn.on_tool_call("tc_a", "tool_a", "tool a");
@@ -438,7 +396,7 @@ mod tests {
         });
         assert!(turn.try_apply_commentary_delta("工具前旁注。"));
         assert_eq!(
-            turn.streaming_commentary_block_text().as_deref(),
+            crabmate_turn_layout::streaming_commentary_block_text(turn.turn_ref()).as_deref(),
             Some("工具前旁注。")
         );
         turn.on_tool_phase_end();

@@ -1,6 +1,6 @@
 //! 单轮 `/chat/stream` 内 **`messages` 布局** 的唯一入口（方向 A：显式 TurnLayout 状态机）。
 //!
-//! 目标顺序：`[工具前旁注/时间线*] → [工具*] → [post-tool 总结 loading 尾泡]`
+//! 目标顺序（块布局）：`[时间线*] → [工具批说明 assistant 一块] → [工具*] → [post-tool 终答 loading 尾泡]`
 //!
 //! | 事件 | 入口 |
 //! |------|------|
@@ -15,6 +15,8 @@
 //! 原先分散在 `timeline_tail` 的 `peel` / `finalize` / `ensure_tail` / `restore` 均收拢为本模块私有步骤。
 
 mod bubble_queue;
+#[cfg(test)]
+mod turn_web_contract;
 
 use std::cell::RefCell;
 
@@ -26,8 +28,6 @@ use crate::stream_text_overlay::{
     stream_overlay_clear_answer_for_message, stream_overlay_replace_answer_for_message,
     stream_overlay_take_into_stored_message,
 };
-
-use crabmate_turn_layout::commentary_for_tool;
 
 use super::super::context::ChatStreamCallbackCtx;
 use super::super::per_stream_accum::PerStreamAccum;
@@ -271,15 +271,9 @@ impl TurnLayout {
             }
             let peeled = extract_post_tool_tail_before_tool(&mut s.messages, mid.as_str());
             if let Some(ref summary) = peeled {
-                if let Some(tcid) = tool_msg.tool_call_id.as_deref().filter(|t| !t.is_empty()) {
-                    stream_ctx
-                        .scratch
-                        .ingest_commentary_for_tool_from_peel(tcid, summary.text.as_str());
-                } else {
-                    stream_ctx
-                        .scratch
-                        .ingest_pending_stream_commentary(summary.text.as_str());
-                }
+                stream_ctx
+                    .scratch
+                    .ingest_pending_stream_commentary(summary.text.as_str());
             }
             insert_tool_row(&mut s.messages, tool_msg, subgoal_marker);
             if let Some(load_idx) = s.messages.iter().position(|m| m.id == mid) {
@@ -305,15 +299,6 @@ impl TurnLayout {
     ) {
         let mid = stream_ctx.scratch.clone_assistant_id();
         let sid = stream_ctx.bound_stream_session_id.clone();
-        let tcid_for_peel = stream_ctx
-            .read_bound_session(|s| {
-                s.messages
-                    .iter()
-                    .find(|m| m.id == tool_message_id)
-                    .and_then(|m| m.tool_call_id.clone())
-                    .filter(|t| !t.trim().is_empty())
-            })
-            .flatten();
         let new_tail_id = RefCell::new(None::<String>);
         stream_ctx.update_bound_session(|s| {
             if let Some(idx) = s.messages.iter().position(|m| m.id == mid) {
@@ -326,15 +311,9 @@ impl TurnLayout {
             }
             let peeled = extract_post_tool_tail_before_tool(&mut s.messages, mid.as_str());
             if let Some(ref summary) = peeled {
-                if let Some(ref tcid) = tcid_for_peel {
-                    stream_ctx
-                        .scratch
-                        .ingest_commentary_for_tool_from_peel(tcid.as_str(), summary.text.as_str());
-                } else {
-                    stream_ctx
-                        .scratch
-                        .ingest_pending_stream_commentary(summary.text.as_str());
-                }
+                stream_ctx
+                    .scratch
+                    .ingest_pending_stream_commentary(summary.text.as_str());
             }
             if s.messages.iter().all(|m| m.id != mid) {
                 return;
@@ -355,10 +334,9 @@ impl TurnLayout {
         } else {
             Self::pin_loading_tail(stream_ctx);
         }
-        stream_ctx.scratch.sync_turn_projection(stream_ctx, true);
+        stream_ctx.scratch.sync_turn_projection(stream_ctx);
+        stream_ctx.scratch.sync_stream_preview(stream_ctx);
     }
-
-    /// 新 commentary 段开始：清空 loading 尾泡上的流式正文，避免上一块残留。
     pub(crate) fn reset_loading_tail_streaming_text(stream_ctx: &ChatStreamCallbackCtx) {
         let mid = stream_ctx.scratch.clone_assistant_id();
         let sid = stream_ctx.bound_stream_session_id.clone();
@@ -524,19 +502,15 @@ impl TurnLayout {
         stream_ctx.chat.set_stream_overlay_display_mid(mid.as_str());
     }
 
-    /// 段/工具边界：flush 完整旁注到 stored；旁注未落盘前保留 overlay preview。
+    /// 段/工具边界：flush 工具批说明块到 stored；未落盘前保留 overlay preview。
     pub(crate) fn sync_turn_projection(
         stream_ctx: &ChatStreamCallbackCtx,
         turn: &TurnCanonicalState,
         queue: &mut BubbleOutputQueue,
-        relocate_stray: bool,
     ) {
         let mid = stream_ctx.scratch.clone_assistant_id();
         stream_ctx.update_bound_session(|s| {
-            queue.flush_complete_commentary_rows(&mut s.messages, turn);
-            if relocate_stray {
-                pin_commentary_rows_before_anchored_tools(&mut s.messages);
-            }
+            queue.flush_batch_narration_row(&mut s.messages, turn);
         });
         let clear_overlay = stream_ctx
             .read_bound_session(|s| should_clear_preview_overlay_answer(turn, &s.messages))
@@ -553,180 +527,12 @@ impl TurnLayout {
     }
 }
 
-fn find_tool_index_latest(messages: &[StoredMessage], tool_call_id: &str) -> Option<usize> {
-    messages
-        .iter()
-        .rposition(|m| m.is_tool && m.tool_call_id.as_deref() == Some(tool_call_id))
-}
-
-fn find_tool_index(messages: &[StoredMessage], tool_call_id: &str) -> Option<usize> {
-    find_tool_index_latest(messages, tool_call_id)
-}
-
-fn commentary_row_id(tool_call_id: &str) -> String {
-    format!("commentary-before-{tool_call_id}")
-}
-
-fn find_commentary_before_tool_index(
-    messages: &[StoredMessage],
-    tool_call_id: &str,
-    tool_idx: usize,
-) -> Option<usize> {
-    if tool_idx == 0 {
-        return None;
-    }
-    let prev = &messages[tool_idx - 1];
-    if prev.role == "assistant"
-        && !prev.is_tool
-        && prev.tool_call_id.as_deref() == Some(tool_call_id)
-    {
-        Some(tool_idx - 1)
-    } else {
-        None
-    }
-}
-
-fn sync_commentary_before_tool_in_messages(
-    messages: &mut Vec<StoredMessage>,
-    tool_call_id: &str,
-    text: &str,
-) -> bool {
-    if text.trim().is_empty() {
-        return false;
-    }
-    let stable_id = commentary_row_id(tool_call_id);
-    if let Some(cidx) = messages.iter().position(|m| m.id == stable_id) {
-        if messages[cidx].text != text {
-            messages[cidx].text = text.to_string();
-        }
-        if messages[cidx].tool_call_id.as_deref() != Some(tool_call_id) {
-            messages[cidx].tool_call_id = Some(tool_call_id.to_string());
-        }
-        return true;
-    }
-    let Some(tool_idx) = find_tool_index(messages, tool_call_id) else {
-        return false;
-    };
-    if let Some(cidx) = find_commentary_before_tool_index(messages, tool_call_id, tool_idx) {
-        if messages[cidx].text != text {
-            messages[cidx].text = text.to_string();
-        }
-        messages[cidx].id = stable_id;
-        if messages[cidx].tool_call_id.as_deref() != Some(tool_call_id) {
-            messages[cidx].tool_call_id = Some(tool_call_id.to_string());
-        }
-        return true;
-    }
-    let msg = StoredMessage {
-        id: stable_id,
-        role: "assistant".to_string(),
-        text: text.to_string(),
-        reasoning_text: String::new(),
-        image_urls: vec![],
-        state: None,
-        is_tool: false,
-        tool_call_id: Some(tool_call_id.to_string()),
-        tool_name: None,
-        created_at: message_created_ms(),
-    };
-    messages.insert(tool_idx, msg);
-    true
-}
-
-/// 该工具前旁注是否已作为独立 assistant 行存在于 `messages` 中。
-fn is_commentary_materialized_for_tool(messages: &[StoredMessage], tool_call_id: &str) -> bool {
-    let stable_id = commentary_row_id(tool_call_id);
-    if messages.iter().any(|m| m.id == stable_id) {
-        return true;
-    }
-    let Some(tool_idx) = find_tool_index(messages, tool_call_id) else {
-        return false;
-    };
-    find_commentary_before_tool_index(messages, tool_call_id, tool_idx).is_some()
-}
-
-/// canonical 中已有 closed 旁注、却尚未落为 stored 行（常见于 `segment_end` 早于 `tool_call`）。
-pub(super) fn has_unmaterialized_commentary_rows(
-    turn: &TurnCanonicalState,
-    messages: &[StoredMessage],
-) -> bool {
-    use crabmate_turn_layout::SegmentKind;
-
-    let mut anchors = std::collections::HashSet::new();
-    for step in &turn.turn_ref().steps {
-        anchors.insert(step.tool_call_id.clone());
-    }
-    for seg in &turn.turn_ref().segments {
-        if seg.kind == SegmentKind::Commentary
-            && !seg.open
-            && let Some(tcid) = seg.before_tool_call_id.as_ref()
-            && !tcid.is_empty()
-        {
-            anchors.insert(tcid.clone());
-        }
-    }
-    for tcid in anchors {
-        if turn.has_open_commentary_segment_for_tool(tcid.as_str()) {
-            continue;
-        }
-        let Some(text) = commentary_for_tool(turn.turn_ref(), tcid.as_str()) else {
-            continue;
-        };
-        if text.trim().is_empty() {
-            continue;
-        }
-        if !is_commentary_materialized_for_tool(messages, tcid.as_str()) {
-            return true;
-        }
-    }
-    false
-}
-
-/// 旁注已落盘或无需 preview 时，可安全清空 loading 尾泡 overlay answer。
+/// 说明块已落盘或无需 preview 时，可安全清空 loading 尾泡 overlay answer。
 pub(super) fn should_clear_preview_overlay_answer(
     turn: &TurnCanonicalState,
     messages: &[StoredMessage],
 ) -> bool {
-    if has_unmaterialized_commentary_rows(turn, messages) {
-        return false;
-    }
     BubbleOutputQueue::loading_preview_for_messages(turn, messages).is_empty()
-}
-
-/// 将带 `tool_call_id` 锚点、却漂在列表末尾（loading 尾泡前）的旁注行移回对应工具正前方。
-fn pin_commentary_rows_before_anchored_tools(messages: &mut Vec<StoredMessage>) {
-    let mut scan = 0usize;
-    while scan < messages.len() {
-        if messages[scan].role != "assistant"
-            || messages[scan].is_tool
-            || messages[scan]
-                .state
-                .as_ref()
-                .is_some_and(|st| st.is_loading())
-        {
-            scan += 1;
-            continue;
-        }
-        let Some(tcid) = messages[scan]
-            .tool_call_id
-            .clone()
-            .filter(|s| !s.is_empty())
-        else {
-            scan += 1;
-            continue;
-        };
-        let Some(tool_idx) = find_tool_index_latest(messages, tcid.as_str()) else {
-            scan += 1;
-            continue;
-        };
-        if tool_idx > 0 && messages[tool_idx - 1].id == messages[scan].id {
-            scan += 1;
-            continue;
-        }
-        let row = messages.remove(scan);
-        let tool_idx = find_tool_index_latest(messages, tcid.as_str()).unwrap_or(tool_idx);
-        messages.insert(tool_idx, row);
-    }
 }
 
 #[cfg_attr(not(test), expect(dead_code))]
