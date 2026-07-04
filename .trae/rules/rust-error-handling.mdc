@@ -1,0 +1,27 @@
+---
+description: Rust 避免裸 unwrap/expect；优先 ? 与错误上下文；unsafe 须受限并注释
+globs: src/**/*.rs
+alwaysApply: false
+---
+
+# 错误处理与 `unsafe`
+
+## `Result` / `Option`
+
+- **禁止**在生产路径上对 `Result` / `Option` 使用无说明的 **`unwrap()`** / **`expect("…")`**（含链式末尾 `.unwrap()`）。
+- **优先**使用 **`?`** 向上传播，并在本仓库惯用方式下补充上下文（例如 `map_err` 附说明、或项目若引入 `anyhow::Context`/`thiserror` 则按其模式）。
+- **允许 `expect` 的场景**（须在消息中写清**不变量或失败含义**）：
+  - **`src/main.rs`**（或唯一入口）中：仅启动阶段、且失败即应退出进程的配置/日志初始化等。
+  - **编译期或进程内一次性初始化**：例如 `LazyLock`/`OnceLock` 首次 `set`，且逻辑保证只调用一次、参数合法。
+- **`#[cfg(test)]`** 模块、`tests/`、`benches/` 内为加快编写，允许 `unwrap`/`expect`，但断言失败信息应可读。
+
+## `unsafe`
+
+- **默认不写 `unsafe`**。若必须使用：
+  - **最小化** unsafe 块范围；
+  - 块**正上方**用注释说明：**为何安全**（不变量、前置条件、与哪个 FFI/库契约绑定）；
+  - 不在多处复制同一 unsafe 逻辑而不封装。
+
+## 与 `panic!`
+
+- **`panic!`** 仅用于**不可达分支**（`unreachable!`）或明确「程序错误不应发生」且会立刻暴露问题的断言；不用于可预期的 IO/解析失败（应返回 `Result`）。
