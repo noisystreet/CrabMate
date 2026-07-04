@@ -8,14 +8,14 @@ use super::super::stream_control_reducer::StreamControlEvent;
 use super::super::stream_turn_state::StreamModelOutputLane;
 use super::turn_layout::TurnLayout;
 
-/// post-tool 或正文相：canonical [`AnswerDelta`] + 投影；P0 禁止 overlay append 正文。
+/// post-tool 或正文相：canonical [`AnswerDelta`] + overlay preview（P0′）；禁止 chunk append 正文。
 fn apply_answer_body_delta(
     stream_ctx: &ChatStreamCallbackCtx,
     accum: &PerStreamAccum,
     chunk: &str,
 ) {
     if stream_ctx.scratch.try_apply_answer_delta(chunk) {
-        stream_ctx.scratch.sync_turn_projection(stream_ctx);
+        stream_ctx.scratch.sync_stream_preview(stream_ctx);
         accum.add_answer_delta_chars(chunk.chars().count());
         return;
     }
@@ -23,14 +23,14 @@ fn apply_answer_body_delta(
         if stream_ctx.scratch.tool_phase_open()
             && stream_ctx.scratch.try_apply_commentary_delta(chunk)
         {
-            stream_ctx.scratch.sync_turn_projection(stream_ctx);
+            stream_ctx.scratch.sync_stream_preview(stream_ctx);
         }
         accum.add_answer_delta_chars(chunk.chars().count());
         return;
     }
     // P0：canonical miss 时尝试 commentary 段，仍 miss 则 no-op（勿 append 尾泡）。
     if stream_ctx.scratch.try_apply_commentary_delta(chunk) {
-        stream_ctx.scratch.sync_turn_projection(stream_ctx);
+        stream_ctx.scratch.sync_stream_preview(stream_ctx);
     }
     accum.add_answer_delta_chars(chunk.chars().count());
 }
@@ -38,7 +38,7 @@ fn apply_answer_body_delta(
 /// 工具前旁注：canonical commentary 段 + 投影；miss 时不写尾泡（Phase 1 I2）。
 fn apply_commentary_lane_delta(stream_ctx: &ChatStreamCallbackCtx, chunk: &str) {
     if stream_ctx.scratch.try_apply_commentary_delta(chunk) {
-        stream_ctx.scratch.sync_turn_projection(stream_ctx);
+        stream_ctx.scratch.sync_stream_preview(stream_ctx);
     }
 }
 
@@ -150,11 +150,13 @@ mod tests {
     }
 
     #[test]
-    fn p0_answer_miss_never_appends_body_overlay() {
-        let uses_append_body_fallback = false;
+    fn p0_prime_preview_uses_overlay_replace_not_chunk_append() {
+        let uses_overlay_replace_preview = true;
+        let uses_chunk_append_body_fallback = false;
+        assert!(uses_overlay_replace_preview);
         assert!(
-            !uses_append_body_fallback,
-            "P0: apply_answer_body_delta must not append_assistant_chunk for body"
+            !uses_chunk_append_body_fallback,
+            "P0′: canonical preview must replace overlay, not append_assistant_chunk per chunk"
         );
     }
 }

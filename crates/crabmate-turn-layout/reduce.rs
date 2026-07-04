@@ -139,8 +139,19 @@ fn reduce_segment_start(
     });
 }
 
+fn close_open_segment_if_present(turn: &mut Turn, segment_id: &str) {
+    if turn
+        .segments
+        .iter()
+        .any(|s| s.segment_id == segment_id && s.open)
+    {
+        reduce_segment_end(turn, segment_id.to_string());
+    }
+}
+
 fn reduce_tool_call(turn: &mut Turn, tool_call_id: String, name: String, summary: String) {
     turn.tool_phase_open = true;
+    close_open_segment_if_present(turn, PENDING_STREAM_COMMENTARY_SEGMENT_ID);
     flush_segments_onto_steps(turn);
     let pending_stream = take_pending_stream_commentary(turn);
     let mut before_commentary = pending_stream.filter(|t| !t.trim().is_empty());
@@ -261,6 +272,40 @@ mod tests {
         );
         let step = turn.step_by_call_id_mut("tc_create").unwrap();
         assert_eq!(step.before_commentary.as_deref(), Some("工作区是空的。"));
+    }
+
+    #[test]
+    fn tool_call_closes_pending_stream_not_tool_segment() {
+        let mut turn = Turn::default();
+        let r = TurnReducer;
+        r.apply(
+            &mut turn,
+            TurnEvent::SegmentStart {
+                segment_id: "seg-before-tc_a".into(),
+                kind: SegmentKind::Commentary,
+                before_tool_call_id: Some("tc_a".into()),
+            },
+        );
+        r.apply(
+            &mut turn,
+            TurnEvent::SegmentDelta {
+                segment_id: "seg-before-tc_a".into(),
+                delta: "步骤 A。".into(),
+            },
+        );
+        r.apply(
+            &mut turn,
+            TurnEvent::ToolCall {
+                tool_call_id: "tc_a".into(),
+                name: "tool_a".into(),
+                summary: "tool a".into(),
+            },
+        );
+        assert_eq!(
+            turn.step_by_call_id("tc_a")
+                .and_then(|s| s.before_commentary.as_deref()),
+            Some("步骤 A。")
+        );
     }
 
     #[test]

@@ -12,7 +12,7 @@ mod reduce;
 
 pub use event::TurnEvent;
 pub use model::{PENDING_STREAM_COMMENTARY_SEGMENT_ID, SegmentKind, Turn, TurnSegment};
-pub use project::{ProjectedRow, project_turn};
+pub use project::{ProjectedRow, commentary_for_tool, project_turn};
 pub use reduce::{TurnReducer, reduce_event};
 
 #[cfg(test)]

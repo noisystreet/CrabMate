@@ -17,7 +17,9 @@ pub(in super::super) fn make_on_turn_segment_start(
         }
         stream_ctx.scratch.on_turn_segment_start(info);
         TurnLayout::reset_loading_tail_streaming_text(stream_ctx.as_ref());
-        stream_ctx.scratch.sync_turn_projection(stream_ctx.as_ref());
+        stream_ctx
+            .scratch
+            .sync_turn_projection(stream_ctx.as_ref(), true);
     })
 }
 
@@ -29,7 +31,9 @@ pub(in super::super) fn make_on_turn_segment_end(
             return;
         }
         stream_ctx.scratch.on_turn_segment_end(segment_id);
-        stream_ctx.scratch.sync_turn_projection(stream_ctx.as_ref());
+        stream_ctx
+            .scratch
+            .sync_turn_projection(stream_ctx.as_ref(), true);
     })
 }
 
@@ -41,6 +45,8 @@ pub(in super::super) fn make_on_turn_tool_phase_end(
             return;
         }
         stream_ctx.scratch.on_turn_tool_phase_end();
-        stream_ctx.scratch.sync_turn_projection(stream_ctx.as_ref());
+        stream_ctx
+            .scratch
+            .sync_turn_projection(stream_ctx.as_ref(), true);
     })
 }

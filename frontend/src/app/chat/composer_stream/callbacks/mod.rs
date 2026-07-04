@@ -23,6 +23,7 @@ mod stream_session_access;
 mod turn_layout;
 
 pub(super) use assemble::build_chat_stream_callbacks;
+pub(crate) use turn_layout::BubbleOutputQueue;
 pub(super) use turn_layout::TurnLayout;
 
 #[cfg(test)]
