@@ -33,6 +33,10 @@ pub enum RunCommandError {
     ArgsNotArray,
     #[error("错误：参数不允许包含 \"..\" 或绝对路径（以 / 开头）")]
     UnsafeArg,
+    /// 参数含 Shell 变量引用（`$(…)`、`${…}`、`` `…` ``），这些不会被 `run_command` 展开。
+    /// 请使用具体值代替（如 `4` 代替 `$(nproc)`）。
+    #[error("错误：参数含 Shell 变量引用 `{pattern}`，不会被展开。请使用具体值代替")]
+    ShellVariableDetected { pattern: String },
     /// `cd` 在无 shell 下不可直接 `exec`；仅支持前缀 `cd <相对目录> && <命令…>`（可多次串联），见 `command_line_prepare::peel_workspace_cd_prefix`.
     #[error("错误：`cd` 前缀无效：{detail}（当前工作目录：{work_dir}）")]
     CdPrefixInvalid { detail: String, work_dir: String },
@@ -86,6 +90,19 @@ impl RunCommandError {
             RunCommandError::ArgsNotArray
             | RunCommandError::UnsafeArg
             | RunCommandError::CdPrefixInvalid { .. } => ToolError::invalid_args(msg),
+            RunCommandError::ShellVariableDetected { .. } => ToolError {
+                category: ToolFailureCategory::InvalidInput,
+                code: "shell_variable_detected".to_string(),
+                message: msg,
+                retryable: true,
+                legacy_parsed: ParsedLegacyOutput {
+                    ok: false,
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    error_code: Some("shell_variable_detected".to_string()),
+                },
+            },
             RunCommandError::RateLimited { .. } => ToolError::rate_limited(msg),
             RunCommandError::CommandNotFound { .. } => ToolError {
                 category: ToolFailureCategory::External,
@@ -143,6 +160,7 @@ impl RunCommandError {
             RunCommandError::CommandNotFound { .. } => "command_not_found",
             RunCommandError::PermissionDenied { .. } => "permission_denied",
             RunCommandError::SpawnOther { .. } => "spawn_other",
+            RunCommandError::ShellVariableDetected { .. } => "shell_variable_detected",
         }
     }
 
@@ -304,6 +322,8 @@ fn prepare_run_command_invocation(
     )?;
 
     let cmd_name = cmd_raw.to_lowercase();
+
+    check_shell_variable_references(&cmd_raw, &cmd_args)?;
 
     let is_workspace_executable = cmd_raw.starts_with("./") || cmd_raw.contains('/');
     let exec_path = if is_workspace_executable {
@@ -575,6 +595,45 @@ fn check_rate_limit() -> Result<(), RunCommandError> {
         });
     }
     state.count += 1;
+    Ok(())
+}
+
+/// 检测字符串中是否包含 Shell 变量引用（`$(…)`、`${…}`、`` `…` ``）。
+/// 返回第一个匹配的模式字符串。
+fn detect_shell_variable(s: &str) -> Option<&str> {
+    let bytes = s.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    while i < len {
+        match bytes[i] {
+            b'$' if i + 1 < len => {
+                if bytes[i + 1] == b'(' {
+                    return Some("$(...)");
+                }
+                if bytes[i + 1] == b'{' {
+                    return Some("${...}");
+                }
+                i += 2;
+            }
+            b'`' => {
+                return Some("`...`");
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+    None
+}
+
+fn check_shell_variable_references(cmd: &str, args: &[String]) -> Result<(), RunCommandError> {
+    for a in std::iter::once(cmd).chain(args.iter().map(String::as_str)) {
+        if let Some(pattern) = detect_shell_variable(a) {
+            return Err(RunCommandError::ShellVariableDetected {
+                pattern: pattern.to_string(),
+            });
+        }
+    }
     Ok(())
 }
 

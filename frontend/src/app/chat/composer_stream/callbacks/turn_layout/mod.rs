@@ -358,6 +358,21 @@ impl TurnLayout {
         finalize_turn_projection_before_stream_done_inner(stream_ctx);
     }
 
+    /// 将 `turn-final-answer` 投影行脱钩为普通 assistant 行，
+    /// 防止下一轮 `sync_turn_projection` 覆盖时挤掉已显示的旧文本。
+    fn detach_final_answer_projection(stream_ctx: &ChatStreamCallbackCtx) {
+        stream_ctx.update_bound_session(|s| {
+            if let Some(idx) = s
+                .messages
+                .iter()
+                .position(|m| m.id == bubble_queue::FINAL_ANSWER_ROW_ID)
+            {
+                // 生成一个新的 id 使该行脱离投影别名
+                s.messages[idx].id = make_message_id();
+            }
+        });
+    }
+
     /// 工具边界：overlay / loading stored → canonical（Phase 9；不写 stored 助手正文行）。
     pub(crate) fn drain_loading_commentary_to_canonical(stream_ctx: &ChatStreamCallbackCtx) {
         drain_loading_commentary_to_canonical(stream_ctx);
@@ -543,6 +558,9 @@ impl TurnLayout {
     /// 无工具的多轮 model round：finalize → 新 loading 尾泡 → pin。
     pub(crate) fn rotate_followup_model_round(stream_ctx: &ChatStreamCallbackCtx) {
         Self::finalize_loading_segment(stream_ctx);
+        // 将旧的 turn-final-answer 投影行改为普通 assistant 行，
+        // 避免后续 sync_turn_projection 覆盖新轮文本时挤掉旧气泡内容。
+        Self::detach_final_answer_projection(stream_ctx);
         let now = message_created_ms();
         let new_tail_id = RefCell::new(None::<String>);
         stream_ctx.update_bound_session(|s| {

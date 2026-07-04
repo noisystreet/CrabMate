@@ -5,8 +5,8 @@ pub const STAGED_PLAN_SECTION_HEADER: &str = "**规划** · ";
 
 /// 分步执行注入的 `user` 消息中、紧跟在 `### 分步 i/n` 标题行后的那句模型约定说明（与 `agent_turn` 注入正文一致）。
 /// 聊天区整体展示可由 `message_display::SHOW_STAGED_STEP_USER_BOILERPLATE_IN_CHAT` 隐藏整段注入正文；`Message.content` 与日志仍保留全文。
-pub const STAGED_STEP_USER_BOILERPLATE: &str =
-    "请只专注完成下列规划步骤，本步完成后以非 tool_calls 的终答结束；不要提前执行后续步骤。";
+pub const STAGED_STEP_USER_BOILERPLATE: &str = "请只专注完成下列规划步骤，本步完成后以非 tool_calls 的终答结束；不要提前执行后续步骤。\
+     \n在调用工具之间，用 1-2 句说明当前进展，不要把所有解说堆积到最后。";
 
 /// 两轮 NL 展示（`staged_plan_two_phase_nl_display`）桥接 **user** 正文首行；与分步注入一致，**展示层整段隐藏**（`message_display` / 前端 `message_format`），仅模型与持久化可见。
 pub use crabmate_display_rules::STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX;

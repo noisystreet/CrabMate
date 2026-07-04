@@ -15,6 +15,14 @@ pub(in super::super) fn make_on_turn_segment_start(
         if stream_ctx.is_stale() {
             return;
         }
+        // kind == "answer" 表示新一轮 LLM 调用开始（outer loop 非首轮），
+        // 此时应结束当前 loading 气泡并创建新气泡。
+        if info.kind == "answer" {
+            TurnLayout::rotate_followup_model_round(stream_ctx.as_ref());
+            stream_ctx
+                .scratch
+                .reset_canonical_final_answer_for_new_round();
+        }
         stream_ctx.scratch.on_turn_segment_start(info);
         stream_ctx.scratch.sync_turn_projection(stream_ctx.as_ref());
         TurnLayout::reset_loading_tail_streaming_text(stream_ctx.as_ref());

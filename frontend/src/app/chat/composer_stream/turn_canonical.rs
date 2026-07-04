@@ -24,6 +24,11 @@ impl TurnCanonicalState {
         }
     }
 
+    /// 新模型轮次开始：清空终答桶，准备接收新一轮 delta。
+    pub(super) fn reset_final_answer_for_new_round(&mut self) {
+        self.turn.final_answer = None;
+    }
+
     pub(super) fn turn_ref(&self) -> &Turn {
         &self.turn
     }
