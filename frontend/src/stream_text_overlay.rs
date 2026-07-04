@@ -14,6 +14,7 @@
 use leptos::prelude::*;
 
 use crate::i18n::Locale;
+use crate::message_dedupe::assistant_texts_fuzzy_duplicate;
 use crate::message_format::{
     assistant_message_text_for_display_ex_with_body_strings, message_text_for_display_ex,
 };
@@ -59,6 +60,62 @@ pub fn stream_overlay_append(
     }
 }
 
+/// 投影已写入 `StoredMessage` 后，丢弃同 message 上冗余的 overlay 正文，避免 UI 双显。
+pub fn stream_overlay_clear_answer_for_message(
+    overlay: RwSignal<Option<StreamTextOverlay>>,
+    session_id: &str,
+    message_id: &str,
+    revision: Option<RwSignal<u64>>,
+) {
+    overlay.update(|opt| {
+        let Some(o) = opt.as_mut() else {
+            return;
+        };
+        if o.session_id == session_id && o.message_id == message_id {
+            o.answer.clear();
+        }
+    });
+    if let Some(rev) = revision {
+        rev.update(|n| *n = n.wrapping_add(1));
+    }
+}
+
+/// 将 overlay 正文合并进已落盘字段，避免 canonical 投影 + overlay 收尾双写同段文字。
+fn merge_overlay_answer_into_stored(stored: &mut String, overlay: &str) {
+    if overlay.is_empty() {
+        return;
+    }
+    if stored.is_empty() {
+        stored.push_str(overlay);
+        return;
+    }
+    if assistant_texts_fuzzy_duplicate(stored, overlay) {
+        return;
+    }
+    if overlay.starts_with(stored.as_str()) {
+        *stored = overlay.to_string();
+        return;
+    }
+    if stored.ends_with(overlay) {
+        return;
+    }
+    stored.push_str(overlay);
+}
+
+fn merge_overlay_reasoning_into_stored(stored: &mut String, overlay: &str) {
+    if overlay.is_empty() {
+        return;
+    }
+    if stored.is_empty() {
+        stored.push_str(overlay);
+        return;
+    }
+    if stored.ends_with(overlay) {
+        return;
+    }
+    stored.push_str(overlay);
+}
+
 /// 将缓冲合并进 `msg`（仅当 `session_id` / `message_id` 一致），并清空 overlay。
 pub fn stream_overlay_take_into_stored_message(
     overlay: RwSignal<Option<StreamTextOverlay>>,
@@ -72,8 +129,8 @@ pub fn stream_overlay_take_into_stored_message(
             return;
         };
         if o.session_id == session_id && o.message_id == message_id {
-            msg.text.push_str(&o.answer);
-            msg.reasoning_text.push_str(&o.reasoning);
+            merge_overlay_answer_into_stored(&mut msg.text, o.answer.as_str());
+            merge_overlay_reasoning_into_stored(&mut msg.reasoning_text, o.reasoning.as_str());
         } else {
             *opt = Some(o);
         }

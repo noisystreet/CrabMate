@@ -19,7 +19,11 @@ fn done_remove_completed_with_visible_delta(
     parsed: Option<StreamEndReason>,
     inp: &DoneBubbleDecisionInputs<'_>,
 ) -> bool {
-    parsed == Some(StreamEndReason::Completed) && inp.in_answer_body_lane && inp.diag_chars > 0
+    matches!(
+        parsed,
+        Some(StreamEndReason::Completed) | Some(StreamEndReason::Fallback)
+    ) && inp.in_answer_body_lane
+        && inp.diag_chars > 0
 }
 
 fn done_remove_completed_plain_empty(
@@ -136,6 +140,32 @@ mod tests {
             saw_final_response_timeline: false,
         });
         assert_eq!(a, DoneBubbleAction::RemoveBubble);
+    }
+
+    #[test]
+    fn fallback_with_answer_lane_and_diag_removes() {
+        let a = decide_done_bubble_action(DoneBubbleDecisionInputs {
+            body_and_reasoning_empty: true,
+            end_reason_raw: Some("fallback"),
+            in_answer_body_lane: true,
+            diag_chars: 192,
+            has_hierarchical_or_tool: true,
+            saw_final_response_timeline: false,
+        });
+        assert_eq!(a, DoneBubbleAction::RemoveBubble);
+    }
+
+    #[test]
+    fn fallback_with_answer_lane_and_diag_keeps_when_deferred_tail_still_loading() {
+        let a = decide_done_bubble_action(DoneBubbleDecisionInputs {
+            body_and_reasoning_empty: false,
+            end_reason_raw: Some("fallback"),
+            in_answer_body_lane: true,
+            diag_chars: 192,
+            has_hierarchical_or_tool: true,
+            saw_final_response_timeline: true,
+        });
+        assert_eq!(a, DoneBubbleAction::Keep);
     }
 
     #[test]

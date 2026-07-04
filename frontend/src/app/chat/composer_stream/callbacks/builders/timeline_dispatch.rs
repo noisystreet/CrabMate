@@ -6,8 +6,7 @@ use crate::app::stream_shell_busy::StreamShellBusyOp;
 use crate::message_format::staged_timeline_system_message_body;
 use crate::sse_dispatch::TimelineLogInfo;
 use crate::timeline_scan::{
-    timeline_state_final_response_snapshot, timeline_state_intent_analysis_snapshot,
-    timeline_state_local_snapshot,
+    timeline_state_intent_analysis_snapshot, timeline_state_local_snapshot,
 };
 
 use super::super::super::context::ChatStreamCallbackCtx;
@@ -15,6 +14,7 @@ use super::super::super::per_stream_accum::PerStreamAccum;
 use super::super::helpers::*;
 use super::super::turn_layout::TurnLayout;
 
+/// 收敛写入：`final_response` 只更新 canonical 并投影到现有 loading 尾泡，**不** push 新 assistant 行。
 fn timeline_log_dispatch_final_response(
     stream_ctx: &ChatStreamCallbackCtx,
     accum: &PerStreamAccum,
@@ -27,15 +27,18 @@ fn timeline_log_dispatch_final_response(
         .apply_busy_op(StreamShellBusyOp::ReleaseStreamingStatusAfterTimelineFinal);
     let final_text = build_final_response_text(&info.title, info.detail.as_deref());
     if !final_text.is_empty() {
-        if streaming_assistant_tail_has_text(stream_ctx, &final_text) {
+        let already_visible = assistant_message_has_visible_text(stream_ctx, &final_text)
+            || streaming_assistant_tail_has_text(stream_ctx, &final_text);
+        if !already_visible
+            && stream_ctx
+                .scratch
+                .try_ingest_final_response_text(final_text.as_str())
+        {
+            stream_ctx.scratch.sync_turn_projection(stream_ctx);
+            accum.add_answer_delta_chars(final_text.chars().count());
+        }
+        if !TurnLayout::should_defer_finalize_on_final_response(stream_ctx) {
             TurnLayout::finalize_loading_segment(stream_ctx);
-        } else {
-            TurnLayout::remove_loading_placeholder_or_rotate(stream_ctx);
-            if !assistant_message_has_visible_text(stream_ctx, &final_text) {
-                let state = Some(timeline_state_final_response_snapshot());
-                push_assistant_timeline_bubble(stream_ctx, final_text.clone(), state);
-                accum.add_answer_delta_chars(final_text.chars().count());
-            }
         }
     } else {
         // 补偿收尾可能带空 final_response；若不撤 loading，on_done 会误报「未收到正文片段」。
@@ -132,4 +135,19 @@ pub(in super::super) fn make_on_timeline_log(
         }
         timeline_log_dispatch_body(&stream_ctx, accum.as_ref(), info);
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::app::chat::composer_stream::callbacks::TurnLayout;
+
+    #[test]
+    fn final_response_tail_match_defers_finalize_in_post_tool_phase() {
+        assert!(!TurnLayout::should_finalize_loading_when_tail_matches_final_response(true));
+    }
+
+    #[test]
+    fn final_response_tail_match_finalizes_when_not_post_tool() {
+        assert!(TurnLayout::should_finalize_loading_when_tail_matches_final_response(false));
+    }
 }

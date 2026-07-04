@@ -334,7 +334,8 @@ pub fn timeline_state_intent_analysis_snapshot() -> StoredMessageState {
     )
 }
 
-/// `final_response` 时间线补偿旁注：正文已在流式助手或服务端快照中时不再保留。
+/// `final_response` 时间线补偿旁注：Phase 4 起不再 push 新行；保留供导出/水合单测与旧会话 state 解析。
+#[allow(dead_code)]
 pub fn timeline_state_final_response_snapshot() -> StoredMessageState {
     StoredMessageState::TimelineUiJson(
         json!({

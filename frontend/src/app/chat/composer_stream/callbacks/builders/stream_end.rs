@@ -63,6 +63,7 @@ pub(in super::super) fn chat_stream_on_done_builder(
                     .in_answer_body_lane(),
                 loc,
             );
+            TurnLayout::dedupe_assistant_duplicates_in_messages(&mut s.messages);
         });
         stream_ctx.chat.clear_stream_text_overlay();
         stream_ctx

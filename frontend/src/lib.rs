@@ -51,6 +51,7 @@ mod ide_toml_highlight;
 #[allow(dead_code)]
 mod ide_yaml_highlight;
 mod markdown;
+mod message_dedupe;
 mod message_format;
 mod message_render;
 mod session_export;
@@ -70,6 +71,7 @@ mod tauri_shell;
 mod timeline_scan;
 mod user_data_bootstrap;
 mod user_prefs_sync;
+mod visible_messages;
 mod workspace_context_menu;
 mod workspace_fs_ops;
 mod workspace_shell;

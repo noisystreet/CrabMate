@@ -9,6 +9,7 @@ use crabmate_turn_layout::{
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::message_dedupe::assistant_texts_fuzzy_duplicate;
 use crate::sse_dispatch::TurnSegmentStartInfo;
 
 pub(super) struct TurnCanonicalState {
@@ -151,6 +152,41 @@ impl TurnCanonicalState {
         true
     }
 
+    /// post-tool 终答 plain delta → [`TurnEvent::AnswerDelta`]（工具批结束后才生效）。
+    pub(super) fn try_apply_answer_delta(&mut self, delta: &str) -> bool {
+        if delta.is_empty() {
+            return false;
+        }
+        if self.turn.tool_phase_open {
+            return false;
+        }
+        self.apply(TurnEvent::AnswerDelta {
+            delta: delta.to_string(),
+        });
+        true
+    }
+
+    /// `final_response` 时间线：写入 canonical 终答（不新增 assistant 行）；已 fuzzy 等价则 no-op。
+    pub(super) fn try_ingest_final_response_text(&mut self, text: &str) -> bool {
+        if text.trim().is_empty() || self.turn.tool_phase_open {
+            return false;
+        }
+        if let Some(ref existing) = self.turn.final_answer {
+            if assistant_texts_fuzzy_duplicate(existing, text) {
+                return true;
+            }
+            if text.len() > existing.len() {
+                self.turn.final_answer = Some(text.to_string());
+                return true;
+            }
+            return true;
+        }
+        self.apply(TurnEvent::AnswerDelta {
+            delta: text.to_string(),
+        });
+        true
+    }
+
     /// 读取某 `tool_call_id` 对应工具前旁注（reducer 步 + 未 flush 段）；单测与排障用。
     #[cfg(test)]
     pub(super) fn commentary_before_tool(&self, tool_call_id: &str) -> Option<String> {
@@ -184,6 +220,7 @@ pub(super) fn make_turn_canonical_cell() -> Rc<RefCell<TurnCanonicalState>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::message_dedupe::normalize_assistant_text_for_dedupe;
     use crate::sse_dispatch::TurnSegmentStartInfo;
 
     #[test]
@@ -223,6 +260,70 @@ mod tests {
         assert_eq!(
             turn.commentary_before_tool("tc_a").as_deref(),
             Some("整段 narration。")
+        );
+    }
+
+    #[test]
+    fn double_ingest_pre_tool_duplicates_commentary_text() {
+        let mut turn = TurnCanonicalState::new();
+        turn.ingest_pre_tool_commentary("好的，先解压。");
+        turn.ingest_pre_tool_commentary("好的，先解压。");
+        turn.on_tool_call("tc_a", "tool_a", "tool a");
+        assert_eq!(
+            turn.commentary_before_tool("tc_a").as_deref(),
+            Some("好的，先解压。好的，先解压。")
+        );
+    }
+
+    #[test]
+    fn second_tool_commentary_must_not_receive_prior_final_answer() {
+        let mut turn = TurnCanonicalState::new();
+        turn.ingest_pre_tool_commentary("先解压。");
+        turn.on_tool_call("tc1", "tool_a", "tool a");
+        turn.on_tool_phase_end();
+        turn.try_apply_answer_delta("段一。");
+        turn.try_apply_answer_delta("段二。");
+        // post-tool 终答不得再 `ingest_pre_tool_commentary`（见 `demote_answer_before_tools` 门控）。
+        turn.on_tool_call("tc2", "tool_b", "tool b");
+        assert!(turn.commentary_before_tool("tc2").is_none());
+        assert_eq!(
+            turn.turn_ref().final_answer.as_deref(),
+            Some("段一。段二。")
+        );
+    }
+
+    #[test]
+    fn answer_delta_blocked_while_tool_phase_open() {
+        let mut turn = TurnCanonicalState::new();
+        turn.on_tool_call("tc_a", "tool_a", "tool a");
+        assert!(!turn.try_apply_answer_delta("不应写入。"));
+        turn.on_tool_phase_end();
+        assert!(turn.try_apply_answer_delta("完成。"));
+        assert_eq!(
+            normalize_assistant_text_for_dedupe(turn.turn_ref().final_answer.as_deref().unwrap()),
+            normalize_assistant_text_for_dedupe("完成。")
+        );
+    }
+
+    #[test]
+    fn ingest_final_response_extends_shorter_stream_with_timeline_detail() {
+        let mut turn = TurnCanonicalState::new();
+        assert!(turn.try_apply_answer_delta("当前目录下有三个压缩包。"));
+        assert!(turn.try_ingest_final_response_text("当前目录下有三个压缩包：\n\n1. **A** — x"));
+        assert_eq!(
+            turn.turn_ref().final_answer.as_deref(),
+            Some("当前目录下有三个压缩包：\n\n1. **A** — x")
+        );
+    }
+
+    #[test]
+    fn ingest_final_response_replaces_shorter_stream_with_timeline_full_text() {
+        let mut turn = TurnCanonicalState::new();
+        assert!(turn.try_apply_answer_delta("短。"));
+        assert!(turn.try_ingest_final_response_text("短。完整终答段落。"));
+        assert_eq!(
+            turn.turn_ref().final_answer.as_deref(),
+            Some("短。完整终答段落。")
         );
     }
 }

@@ -133,6 +133,7 @@ impl StreamTurnScratchState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::chat::composer_stream::callbacks::TurnLayout;
 
     #[test]
     fn lane_phase_then_take_pending_matches_stream_turn_state() {
@@ -181,9 +182,19 @@ mod tests {
     fn adopt_tail_sets_id_and_post_tool_flag() {
         let s = StreamTurnScratchState::new("old".into());
         assert!(!s.post_tool_stream_tail_active());
+        assert!(
+            TurnLayout::should_finalize_loading_when_tail_matches_final_response(
+                s.post_tool_stream_tail_active()
+            )
+        );
         s.adopt_new_assistant_tail_after_rotation("new".into());
         assert_eq!(s.clone_assistant_id(), "new");
         assert!(s.post_tool_stream_tail_active());
+        assert!(
+            !TurnLayout::should_finalize_loading_when_tail_matches_final_response(
+                s.post_tool_stream_tail_active()
+            )
+        );
     }
 
     #[test]
