@@ -1,7 +1,7 @@
-//! 单一读路径：聊天列与 Markdown/JSON 导出共用的可见消息筛选与 fuzzy 去重。
+//! 单一读路径：聊天列与 Markdown/JSON 导出共用的可见消息筛选。
 //!
-//! **写**仍经 `TurnReducer` + `sync_turn_projection`（见 `docs/Turn布局设计.md` §12.7）；
-//! **读**统一经本模块，避免 UI / 导出各维护一套 skip + dedupe 规则。
+//! **写**经 `TurnReducer` + `sync_turn_projection`（见 `docs/Turn布局设计.md` §12.7）；
+//! **读**统一经本模块做 scope 过滤；Phase 7 P1 起 **不再** 对 assistant 正文做 fuzzy dedupe（去重由写入收敛保证）。
 
 use crate::message_dedupe::assistant_texts_fuzzy_duplicate;
 use crate::storage::StoredMessage;
@@ -47,7 +47,7 @@ fn is_duplicate_final_response_snapshot(
     })
 }
 
-/// 该条是否应从用户可见列表中隐藏（尚未做 assistant fuzzy dedupe）。
+/// 该条是否应从用户可见列表中隐藏。
 pub fn is_message_hidden_from_view(
     m: &StoredMessage,
     messages: &[StoredMessage],
@@ -82,45 +82,13 @@ pub fn is_message_hidden_from_view(
     }
 }
 
-fn dedupe_assistant_indices_since_last_user(messages: &[StoredMessage], indices: &mut Vec<usize>) {
-    let Some(last_user_pos) = indices.iter().rposition(|&i| messages[i].role == "user") else {
-        return;
-    };
-    let mut kept_bodies: Vec<String> = Vec::new();
-    let prefix = indices[..=last_user_pos].to_vec();
-    let mut tail: Vec<usize> = Vec::new();
-    for &idx in indices.iter().skip(last_user_pos + 1) {
-        let m = &messages[idx];
-        if m.role != "assistant" || m.is_tool {
-            tail.push(idx);
-            continue;
-        }
-        if m.state.as_ref().is_some_and(|st| st.is_loading()) {
-            tail.push(idx);
-            continue;
-        }
-        let body = m.text.clone();
-        if kept_bodies
-            .iter()
-            .any(|prior| assistant_texts_fuzzy_duplicate(prior, body.as_str()))
-        {
-            continue;
-        }
-        kept_bodies.push(body);
-        tail.push(idx);
-    }
-    indices.clear();
-    indices.extend(prefix);
-    indices.extend(tail);
-}
-
-/// 返回 `messages` 中应对用户展示的原始下标（顺序不变；自最后 user 起 fuzzy dedupe assistant）。
+/// 返回 `messages` 中应对用户展示的原始下标（顺序不变；仅 scope 过滤，无 fuzzy dedupe）。
 #[must_use]
 pub fn visible_message_indices(
     messages: &[StoredMessage],
     scope: VisibleMessageScope,
 ) -> Vec<usize> {
-    let mut indices: Vec<usize> = messages
+    messages
         .iter()
         .enumerate()
         .filter_map(|(idx, m)| {
@@ -130,15 +98,14 @@ pub fn visible_message_indices(
                 Some(idx)
             }
         })
-        .collect();
-    dedupe_assistant_indices_since_last_user(messages, &mut indices);
-    indices
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::storage::StoredMessageState;
+    use crate::timeline_scan::timeline_state_final_response_snapshot;
 
     fn msg(id: &str, role: &str, text: &str, is_tool: bool) -> StoredMessage {
         StoredMessage {
@@ -156,7 +123,7 @@ mod tests {
     }
 
     #[test]
-    fn chat_and_export_share_assistant_fuzzy_dedupe() {
+    fn chat_and_export_show_all_assistant_rows_without_fuzzy_dedupe() {
         let listing = "当前目录下有三个压缩包：\n\n1. **A** — x";
         let compact = "当前目录下有三个压缩包：\n1. **A** — x";
         let messages = vec![
@@ -167,8 +134,7 @@ mod tests {
         let chat = visible_message_indices(&messages, VisibleMessageScope::ChatColumn);
         let export = visible_message_indices(&messages, VisibleMessageScope::Export);
         assert_eq!(chat, export);
-        assert_eq!(chat.len(), 2);
-        assert_eq!(messages[chat[1]].id, "a1");
+        assert_eq!(chat.len(), 3);
     }
 
     #[test]
@@ -210,9 +176,7 @@ mod tests {
                 text: body.to_string(),
                 reasoning_text: String::new(),
                 image_urls: vec![],
-                state: Some(StoredMessageState::TimelineUiJson(
-                    r#"{"k":"cm_tl","t":"final_response_snapshot"}"#.into(),
-                )),
+                state: Some(timeline_state_final_response_snapshot()),
                 is_tool: false,
                 tool_call_id: None,
                 tool_name: None,
@@ -237,9 +201,7 @@ mod tests {
                 text: body.to_string(),
                 reasoning_text: String::new(),
                 image_urls: vec![],
-                state: Some(StoredMessageState::TimelineUiJson(
-                    r#"{"k":"cm_tl","t":"final_response_snapshot"}"#.into(),
-                )),
+                state: Some(timeline_state_final_response_snapshot()),
                 is_tool: false,
                 tool_call_id: None,
                 tool_name: None,

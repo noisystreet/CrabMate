@@ -23,7 +23,10 @@ test.describe('Phase 5 single read path (visible_messages)', () => {
   // 共享 CM_CRABMATE_USER_DATA_DIR；串行避免 PUT sessions / prefs 竞态。
   test.describe.configure({ mode: 'serial' });
 
-  test('fuzzy duplicate assistant: chat and export show one answer', async ({ page, request }) => {
+  test('stored duplicate assistant rows: chat and export show both (no read dedupe)', async ({
+    page,
+    request,
+  }) => {
     const sessionId = 's_e2e_phase5_fuzzy';
     await putPhase5Session(
       request,
@@ -36,17 +39,14 @@ test.describe('Phase 5 single read path (visible_messages)', () => {
     );
 
     await gotoPhase5Session(page);
-    await expect(visibleAssistantRows(page)).toHaveCount(1);
-    await expect(page.getByText('当前目录下有三个压缩包')).toBeVisible();
-    await expect(page.getByText(PHASE5_COMPACT_ANSWER)).not.toBeVisible();
+    await expect(visibleAssistantRows(page)).toHaveCount(2);
+    await expect(page.getByText('当前目录下有三个压缩包')).toHaveCount(2);
 
     const json = await exportSessionJsonFromModal(page, sessionId);
-    expect(assistantMessagesInExport(json)).toHaveLength(1);
-    expect(assistantMessagesInExport(json)[0]?.content).toContain('当前目录下有三个压缩包');
+    expect(assistantMessagesInExport(json)).toHaveLength(2);
 
     const md = await exportSessionMarkdownFromModal(page, sessionId);
-    expect(countMarkdownAssistantSections(md)).toBe(1);
-    expect(md.match(/当前目录下有三个压缩包/g)?.length).toBe(1);
+    expect(countMarkdownAssistantSections(md)).toBe(2);
   });
 
   test('duplicate final_response_snapshot: hidden in chat and export', async ({ page, request }) => {

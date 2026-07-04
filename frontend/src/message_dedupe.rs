@@ -1,4 +1,4 @@
-//! 助手正文 fuzzy 去重（normalize 空白后比较），供流式 `on_done` 与 Markdown 导出共用。
+//! 助手正文 fuzzy 比较（normalize 空白后比较）；Phase 7 P1 起写/读路径不再全表 dedupe，本模块供 snapshot 判定与单测保留。
 
 use crate::storage::StoredMessage;
 use crate::timeline_scan::timeline_ui_snapshot_type;
@@ -32,6 +32,7 @@ fn is_dedupe_candidate_assistant(m: &StoredMessage) -> bool {
     m.role == "assistant" && !m.is_tool && !m.state.as_ref().is_some_and(|st| st.is_loading())
 }
 
+#[allow(dead_code)]
 fn is_ephemeral_final_response_snapshot(m: &StoredMessage) -> bool {
     m.state
         .as_ref()
@@ -40,6 +41,9 @@ fn is_ephemeral_final_response_snapshot(m: &StoredMessage) -> bool {
 }
 
 /// 自最后一条 `user` 起，删除 fuzzy 重复的 assistant 行（保留首次出现）。
+///
+/// Phase 7 P1：已从 `on_done` / 读路径退役；保留供本模块单测回归。
+#[allow(dead_code)]
 pub fn dedupe_assistant_messages_since_last_user(messages: &mut Vec<StoredMessage>) {
     let Some(last_user) = messages.iter().rposition(|m| m.role == "user") else {
         return;

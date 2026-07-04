@@ -580,7 +580,7 @@ mod tests {
     }
 
     #[test]
-    fn export_dedupes_fuzzy_duplicate_assistant_since_last_user() {
+    fn export_includes_both_fuzzy_duplicate_assistant_rows() {
         let listing = "当前目录下有三个压缩包：\n\n1. **A** — x\n\n2. **B** — y";
         let compact = "当前目录下有三个压缩包：\n1. **A** — x\n2. **B** — y";
         let session = ChatSession {
@@ -603,6 +603,6 @@ mod tests {
             history_has_older: None,
         };
         let md = session_to_markdown(&session, Locale::ZhHans, true);
-        assert_eq!(md.matches("## 助手").count(), 1, "md={md}");
+        assert_eq!(md.matches("## 助手").count(), 2, "md={md}");
     }
 }
