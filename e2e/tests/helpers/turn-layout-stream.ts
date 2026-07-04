@@ -1,5 +1,5 @@
 /**
- * Turn 布局 Phase 7：多工具 post-tool 旁注交错 SSE 桩（对齐 `fixtures/turn_project_golden.jsonl` · `hpcg_post_first_tool_interleaved`）。
+ * Turn 布局 Phase 8：多工具 post-tool 块布局 SSE 桩（契约见 `fixtures/turn_project_web_golden.jsonl`）。
  */
 import type { Page } from '@playwright/test';
 

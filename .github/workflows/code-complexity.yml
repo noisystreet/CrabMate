@@ -57,6 +57,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Golden turn project web (fixtures/turn_project_web_golden.jsonl)
+        run: cargo test -p crabmate-turn-layout golden_turn_project_web --no-fail-fast
+
+      - name: Golden turn web stored sync (frontend)
+        run: cargo test --manifest-path frontend/Cargo.toml --lib golden_turn_web_stored_sync --no-fail-fast
+
       - name: Golden FSM orchestrator (fixtures/fsm_orchestrator_golden.jsonl)
         run: cargo test golden_fsm_orchestrator --no-fail-fast
 
