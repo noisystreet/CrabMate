@@ -318,7 +318,7 @@ fn pipeline_report_skips_char_budget_stages_when_budget_zero() {
     );
     assert_eq!(
         stages.last(),
-        Some(&MessagePipelineStage::AfterMergeAssistantsInPlace)
+        Some(&MessagePipelineStage::AfterDropOrphanTool)
     );
 }
 

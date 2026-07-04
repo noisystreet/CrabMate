@@ -71,7 +71,7 @@ pub const CHAT_EXPORT_SCHEMA_ID: &str = "crabmate.chat_session";
 /// 须与 `src/runtime/chat_export.rs` 中 `CHAT_EXPORT_SCHEMA_VERSION` 一致。
 pub const CHAT_EXPORT_SCHEMA_VERSION: &str = "1.0.0";
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ExportMessage {
     pub role: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -176,9 +176,38 @@ fn message_text_for_export(
     body
 }
 
-fn markdown_sections_for_export(messages: &[ExportMessage], loc: Locale) -> String {
-    let mut md = String::new();
+/// 按对话流重排消息：将工具消息插入到对应的助手消息之后。
+fn reorder_messages_for_conversation_flow(messages: Vec<ExportMessage>) -> Vec<ExportMessage> {
+    let mut result: Vec<ExportMessage> = Vec::with_capacity(messages.len());
+    let mut tool_calls_pending: Vec<ExportMessage> = Vec::new();
+
     for m in messages {
+        match m.role.as_str() {
+            "assistant" => {
+                result.append(&mut tool_calls_pending);
+                result.push(m);
+            }
+            "tool" => {
+                tool_calls_pending.push(m);
+            }
+            "user" => {
+                result.append(&mut tool_calls_pending);
+                result.push(m);
+            }
+            _ => {
+                result.append(&mut tool_calls_pending);
+                result.push(m);
+            }
+        }
+    }
+    result.append(&mut tool_calls_pending);
+    result
+}
+
+fn markdown_sections_for_export(messages: &[ExportMessage], loc: Locale) -> String {
+    let reordered = reorder_messages_for_conversation_flow(messages.to_vec());
+    let mut md = String::new();
+    for m in &reordered {
         let role = m.role.as_str();
         if role == "system" {
             continue;

@@ -6,9 +6,6 @@ use crabmate_types::Message;
 
 use crate::agent_turn::intent::context::build_intent_routing_context;
 use crate::agent_turn::intent::user;
-use crate::agent_turn::intent::{
-    advisory_bypass, readonly_overview_bypass, simple_execute_fast_path,
-};
 use crate::agent_turn::{StagedPlanningDenyReason, StagedPlanningGateOutcome};
 use crate::intent_pipeline::{IntentAction, IntentDecision, assess_and_route};
 use crate::intent_router::ExecuteIntentThresholds;
@@ -22,24 +19,17 @@ fn intent_action_discriminant(action: &IntentAction) -> &'static str {
     }
 }
 
-/// 在 **`IntentAction::Execute`** 且（若启用）未命中咨询启发式时返回 `Ok`；否则返回对应 **Deny** 原因（含非 Execute）。
+/// 在 **`IntentAction::Execute`** 且通过简单构建门控时返回 `Ok`；否则返回对应 **Deny** 原因（含非 Execute）。
+///
+/// 只读概览、架构咨询绕过已移除——所有 Execute 类任务均经过分阶段规划，
+/// 以确保工具调用与解说正确穿插。
 pub fn staged_plan_eligibility_for_intent(
-    task: &str,
+    _task: &str,
     decision: &IntentDecision,
-    staged: &StagedPlanningConfig,
+    _staged: &StagedPlanningConfig,
 ) -> Result<(), StagedPlanningDenyReason> {
     if !matches!(decision.action, IntentAction::Execute) {
         return Err(StagedPlanningDenyReason::IntentPipelineNotExecute);
-    }
-    if readonly_overview_bypass::should_bypass_staged_for_readonly_overview_execute(task, decision)
-    {
-        return Err(StagedPlanningDenyReason::ReadonlyOverviewBypassStaged);
-    }
-    if advisory_bypass::should_bypass_staged_for_advisory_execute_task(task, decision, staged) {
-        return Err(StagedPlanningDenyReason::AdvisoryExecuteBypassStaged);
-    }
-    if simple_execute_fast_path::should_bypass_staged_for_simple_build_execute(task, decision) {
-        return Err(StagedPlanningDenyReason::SimpleExecuteFastPath);
     }
     Ok(())
 }

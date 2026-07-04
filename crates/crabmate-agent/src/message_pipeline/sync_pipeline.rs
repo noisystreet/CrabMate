@@ -171,13 +171,6 @@ pub fn apply_session_sync_pipeline_with_config(
         MessagePipelineStage::AfterDropOrphanTool,
         messages,
     );
-
-    crabmate_types::merge_consecutive_assistants_in_place(messages);
-    record_and_trace(
-        &mut report,
-        MessagePipelineStage::AfterMergeAssistantsInPlace,
-        messages,
-    );
 }
 
 /// 与 [`apply_session_sync_pipeline_with_config`] 相同，从完整 [`AgentConfig`] 取子集。

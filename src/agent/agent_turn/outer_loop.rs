@@ -9,6 +9,9 @@ use std::sync::atomic::Ordering;
 use log::{debug, info};
 
 use crate::agent::per_coord::PerCoordinator;
+use crate::sse::{
+    SsePayload, TurnSegmentEndBody, TurnSegmentStartBody, send_sse_control_payload_optional,
+};
 use crate::types::{Message, USER_CANCELLED_FINISH_REASON, is_intent_gate_ephemeral_system};
 
 use super::errors::{AgentTurnSubPhase, RunAgentTurnError, TurnAbortReason};
@@ -301,6 +304,44 @@ async fn run_outer_loop_single_iteration(
     );
 
     let planner_tools = build_planner_round_tools(p);
+
+    // 非首轮 LLM 调用：通知前端本轮是新的 answer segment，促使其拆分新气泡
+    if iteration_count > 1 {
+        send_sse_control_payload_optional(
+            p.ctx.io.out,
+            None,
+            SsePayload::TurnSegmentEnd {
+                end: TurnSegmentEndBody {
+                    segment_id: format!("seg-model-round-{}", iteration_count - 1),
+                },
+            },
+            "outer_loop::prev_answer_segment_end",
+        )
+        .await;
+        send_sse_control_payload_optional(
+            p.ctx.io.out,
+            None,
+            SsePayload::TurnSegmentStart {
+                start: TurnSegmentStartBody {
+                    segment_id: format!("seg-model-round-{iteration_count}"),
+                    kind: "answer".to_string(),
+                    before_tool_call_id: None,
+                },
+            },
+            "outer_loop::new_answer_segment_start",
+        )
+        .await;
+        send_sse_control_payload_optional(
+            p.ctx.io.out,
+            None,
+            SsePayload::AssistantAnswerPhase {
+                assistant_answer_phase: true,
+            },
+            "outer_loop::assistant_answer_phase",
+        )
+        .await;
+    }
+
     let (msg, finish_reason) = per_plan_call_model_retrying(PerPlanCallModelParams {
         llm_backend: p.ctx.core.llm_backend,
         client: p.ctx.core.client,

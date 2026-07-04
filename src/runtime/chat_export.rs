@@ -62,10 +62,52 @@ pub fn session_to_json_pretty(file: &ChatSessionFile) -> Result<String, serde_js
     serde_json::to_string_pretty(file)
 }
 
+/// 按对话流重排消息：将工具消息插入到对应的助手消息之后。
+///
+/// Agent 主循环的消息追加顺序是：
+/// 1. 助手消息（带 tool_calls）追加到 messages
+/// 2. 所有工具结果依次追加（tool, tool, tool...）
+/// 3. 下一条助手消息追加
+///
+/// 这导致 messages 数组中工具消息聚集在前面，助手消息聚集在后面。
+/// 本函数按对话流重排：将每个工具消息移动到其对应助手消息之后。
+fn reorder_messages_for_conversation_flow(messages: Vec<Message>) -> Vec<Message> {
+    let mut result: Vec<Message> = Vec::with_capacity(messages.len());
+    let mut tool_calls_pending: Vec<Message> = Vec::new();
+
+    for m in messages {
+        match m.role.as_str() {
+            "assistant" => {
+                // 先输出之前积累的工具消息
+                result.append(&mut tool_calls_pending);
+                result.push(m);
+            }
+            "tool" => {
+                // 工具消息暂存，等待下一个助手消息
+                tool_calls_pending.push(m);
+            }
+            "user" => {
+                // user 消息前也输出积累的工具消息
+                result.append(&mut tool_calls_pending);
+                result.push(m);
+            }
+            _ => {
+                // system 等其他角色直接输出
+                result.append(&mut tool_calls_pending);
+                result.push(m);
+            }
+        }
+    }
+    // 输出剩余的工具消息
+    result.append(&mut tool_calls_pending);
+    result
+}
+
 /// 与 TUI F9 / Web 导出一致：跳过 `system` 角色；`tool` 与 `assistant`/`user` 分段输出。
 pub fn messages_to_markdown(messages: &[Message]) -> String {
+    let reordered = reorder_messages_for_conversation_flow(messages.to_vec());
     let mut md = String::from("# CrabMate 聊天记录\n\n");
-    for m in messages {
+    for m in &reordered {
         if m.role == "system" {
             continue;
         }
@@ -157,6 +199,51 @@ mod tests {
     }
 
     #[test]
+    fn markdown_reorders_tool_after_assistant() {
+        // 模拟 Agent 主循环的消息顺序：
+        // assistant (带 tool_calls) -> tool -> tool -> assistant
+        let messages = vec![
+            msg("assistant", "意图分析：执行类"),
+            msg("tool", "解压缩结果"),
+            msg("tool", "list_tree 结果"),
+            msg("assistant", "已解压。看看目录结构..."),
+        ];
+        let md = messages_to_markdown(&messages);
+        // 工具消息应该在第一个助手之后
+        let assistant_pos = md.find("## 助手").unwrap();
+        let tool_pos = md.find("## 工具").unwrap();
+        let second_assistant_pos =
+            md[assistant_pos + 10..].find("## 助手").unwrap() + assistant_pos + 10;
+        assert!(
+            assistant_pos < tool_pos && tool_pos < second_assistant_pos,
+            "工具消息应该在两个助手消息之间"
+        );
+    }
+
+    #[test]
+    fn markdown_reorders_multiple_tools_with_assistant() {
+        // 模拟多轮工具调用的场景
+        let messages = vec![
+            msg("assistant", "第一轮：分析任务"),
+            msg("tool", "解压缩"),
+            msg("tool", "list_tree"),
+            msg("tool", "read_file"),
+            msg("assistant", "第二轮：执行编译"),
+            msg("tool", "run_command"),
+            msg("tool", "file_exists"),
+            msg("assistant", "编译完成"),
+        ];
+        let md = messages_to_markdown(&messages);
+        // 验证消息顺序：assistant -> tool -> assistant -> tool -> assistant
+        let parts: Vec<&str> = md.split("## 助手").collect();
+        assert_eq!(parts.len(), 4, "应该有 3 个助手消息分隔");
+        // 第一个助手后应该有工具消息
+        assert!(parts[1].contains("## 工具"), "第一个助手后应该有工具消息");
+        // 第二个助手后应该有工具消息
+        assert!(parts[2].contains("## 工具"), "第二个助手后应该有工具消息");
+    }
+
+    #[test]
     fn session_file_roundtrip() {
         let file = ChatSessionFile::new(vec![msg("user", "x")]);
         let s = session_to_json_pretty(&file).unwrap();
@@ -168,6 +255,121 @@ mod tests {
         assert_eq!(back.version, CHAT_SESSION_FILE_VERSION);
         assert_eq!(back.messages.len(), 1);
         assert_eq!(back.messages[0].role, "user");
+    }
+
+    /// Golden：模拟「编译 hpcg」多轮 outer loop 的 agent 消息序列，
+    /// 验证导出 Markdown 有细粒度气泡（≥5 个 `## 助手`）、工具节交错分布、无巨泡。
+    #[test]
+    fn golden_compile_hpcg_fine_grained_bubbles() {
+        let messages = vec![
+            msg("user", "编译hpcg"),
+            // intent analysis
+            msg(
+                "assistant",
+                "意图分析：执行类（直接执行）\n综合置信度：0.95\n主意图：execute.run_test_build",
+            ),
+            // round 1
+            msg("assistant", "先了解工作区中的 HPCG 源码包情况。"),
+            msg(
+                "tool",
+                "unpack hpcg-HPCG-release-3-1-0.tar.gz\n已解压 184 个文件",
+            ),
+            msg("tool", "mkdir -p hpcg-HPCG-release-3-1-0/build\n退出码：0"),
+            // round 2
+            msg("assistant", "解压成功。现在查看目录结构。"),
+            msg(
+                "tool",
+                "read dir: hpcg-HPCG-release-3-1-0\n显示 setup/ 目录等",
+            ),
+            msg("tool", "read file: INSTALL\n显示构建说明"),
+            // round 3
+            msg(
+                "assistant",
+                "用的是传统 Makefile 构建系统，有 configure 和 Makefile。",
+            ),
+            msg(
+                "tool",
+                "read dir: hpcg-HPCG-release-3-1-0/setup\n显示 Make.Linux_Serial 等模板",
+            ),
+            // round 4 - configure
+            msg("assistant", "用 Make.Linux_Serial 模板来配置。"),
+            msg("tool", "bash configure Linux_Serial\n退出码：0"),
+            // round 5 - build
+            msg("assistant", "配置成功。现在编译。"),
+            msg("tool", "make -j4\n编译完成，exit=0"),
+            msg("tool", "ls -lh bin/xhpcg\n-rwxrwxr-x 194K bin/xhpcg"),
+            // final summary
+            msg(
+                "assistant",
+                "编译成功！\n\n产物：bin/xhpcg (194K)\n\n使用 Make.Linux_Serial 模板，g++ -O3 编译。",
+            ),
+        ];
+        let md = messages_to_markdown(&messages);
+
+        // 1. 验证有多个助手节（≥5 才是细粒度）
+        let assistant_count = md.matches("## 助手\n").count();
+        assert!(
+            assistant_count >= 5,
+            "应有 ≥5 个 ## 助手 气泡，实际 {assistant_count} 个\nmd={md}"
+        );
+
+        // 2. 验证工具节存在
+        assert!(md.contains("## 工具"), "应包含 ## 工具 节");
+
+        // 3. 验证每个助手节不超过巨泡阈值（500 字符），
+        //    断言单个气泡不是合并巨泡
+        let mut sections: Vec<&str> = vec![];
+        let mut start = 0usize;
+        while let Some(pos) = md[start..].find("## 助手\n") {
+            let abs = start + pos;
+            sections.push(&md[abs..]);
+            start = abs + "## 助手\n".len();
+        }
+        for sec in &sections {
+            let body = sec.strip_prefix("## 助手\n\n").unwrap_or("");
+            let end = body.find("\n## ").unwrap_or(body.len());
+            let bubble_text = &body[..end];
+            assert!(
+                bubble_text.chars().count() <= 500,
+                "单个助手气泡不应超过 500 字符（疑似合并），实际 {} 字符:\n{}",
+                bubble_text.chars().count(),
+                &bubble_text[..bubble_text.len().min(200)]
+            );
+        }
+
+        // 4. 验证顺序：助手 → 工具 交错分布（非工具堆在一端）
+        let mut headings: Vec<&str> = vec![];
+        for line in md.lines() {
+            if line == "## 助手" || line == "## 工具" || line == "## 用户" {
+                headings.push(line);
+            }
+        }
+        // 确认不是所有工具都堆在助手之前或之后
+        let first_tool = headings.iter().position(|h| *h == "## 工具");
+        let last_tool = headings.iter().rposition(|h| *h == "## 工具");
+        assert!(first_tool.is_some(), "应有工具节");
+        let fi = first_tool.unwrap();
+        let li = last_tool.unwrap();
+        let has_assistant_between_tools = headings[fi..=li].contains(&"## 助手");
+        assert!(
+            has_assistant_between_tools,
+            "工具节之间应有助手节交错分布: {:?}",
+            headings
+        );
+
+        // 5. 验证首条 assistant 为意图分析
+        let first_assistant = sections.first().unwrap();
+        assert!(
+            first_assistant.contains("意图分析") || first_assistant.contains("执行类"),
+            "首条助手应为意图分析"
+        );
+
+        // 6. 验证末条 assistant 包含「编译成功」
+        let last_assistant = sections.last().unwrap();
+        assert!(
+            last_assistant.contains("编译成功"),
+            "末条助手应包含编译成功摘要"
+        );
     }
 
     #[test]

@@ -2,7 +2,7 @@
 //!
 //! ## 两阶段
 //!
-//! 1. **会话同步（`apply_session_sync_pipeline`）**：在每次调用模型前对**进程内** `Vec<Message>` 就地处理——工具正文压缩（`crabmate_tool` 信封内 **`output`** 超长时首尾采样 + 元数据，见 [`crabmate_internal::tool_result::maybe_compress_tool_message_content`]）、条数/字符裁剪、孤立 `tool` 剔除、合并相邻 `assistant`（保留会话尾部空占位语义，见 [`crabmate_types::normalize_messages_for_openai_compatible_request`] 文档）。实现原在 [`super::context_window`]，现经本模块编排。
+//! 1. **会话同步（`apply_session_sync_pipeline`）**：在每次调用模型前对**进程内** `Vec<Message>` 就地处理——工具正文压缩、条数/字符裁剪、孤立 `tool` 剔除。相邻 `assistant` 合并已移至供应商出站阶段（见 `conversation_messages_to_vendor_body`），不在会话同步管道内执行。
 //! 2. **供应商出站（`conversation_messages_to_vendor_body` 等）**：从会话切片构造 **`ChatRequest.messages`**：跳过 UI 分隔线与长期记忆注入、按网关策略去掉 `reasoning_content`（Moonshot **kimi-k2.5** 在 thinking 启用时对含 **`tool_calls`** 的 assistant **保留**思维链，见 [`crate::llm::vendor::LlmVendorAdapter::preserve_assistant_tool_call_reasoning`]）、再经 OpenAI 兼容 normalize（合并相邻 assistant、清理尾部非法 assistant）；若调用方传入的 **`fold_system_into_user`** 为真（由 [`crate::llm::fold_system_into_user_for_config`] 按 MiniMax 等网关判定），再将 **`system`** 折叠进后续 **`user`**。**不**写入会话 `Vec`。
 //!
 //! ## 会话同步顺序契约（勿打乱）
@@ -14,7 +14,6 @@
 //! 3. **`trim_messages_by_count`**（`max_message_history`）
 //! 4. 若 **`context_char_budget > 0`**：`trim_messages_by_char_budget` → 再次 **`compress_tool_message_contents`**
 //! 5. **`drop_orphan_tool_messages`**
-//! 6. **`merge_consecutive_assistants_in_place`**
 //!
 //! 新增步骤须同步更新 [`sync_pipeline::MessagePipelineStage`]、本列表、以及 `docs/开发文档.md` 中上下文策略描述。
 //!

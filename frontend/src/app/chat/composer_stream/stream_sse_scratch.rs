@@ -212,4 +212,9 @@ impl StreamSseScratch {
         let mut queue = self.bubble_queue.borrow_mut();
         super::callbacks::TurnLayout::sync_turn_projection(stream_ctx, &turn, &mut queue);
     }
+
+    /// 新模型轮次：清空 canonical 终答桶，避免旧文本覆盖新气泡 overlay。
+    pub(super) fn reset_canonical_final_answer_for_new_round(&self) {
+        self.turn.borrow_mut().reset_final_answer_for_new_round();
+    }
 }

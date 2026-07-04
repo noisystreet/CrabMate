@@ -71,14 +71,13 @@
 2. **`compress_tool_message_contents`**（**`tool_message_max_chars`**）  
 3. **`trim_messages_by_count`**（**`max_message_history`**）  
 4. 若 **`context_char_budget > 0` 或按 `llm_context_tokens` 推导的预算 `> 0`**（**`AgentConfig::effective_context_char_budget_for_pipeline`** 取显式与推导的**更小非零**）：**`trim_messages_by_char_budget`** → 再次 **`compress_tool_message_contents`**  
-5. **`drop_orphan_tool_messages`**  
-6. **`merge_consecutive_assistants_in_place`**
+5. **`drop_orphan_tool_messages`**
 
 **设计意图简述**：
 
 - **先压 tool 再按条数删**：避免「轮次少了但单条 tool 仍极大」。  
 - **字符预算后再压一遍 tool**：删旧消息后剩余 tool 仍可能触线。  
-- **最后处理 orphan 与 merge**：在删条之后统一修正结构。
+- **相邻 assistant 合并已移至供应商出站阶段**（[`conversation_messages_to_vendor_body`]），不在会话同步管道内执行，避免污染持久化消息粒度。
 
 ---
 
