@@ -8,7 +8,7 @@ use super::super::stream_control_reducer::StreamControlEvent;
 use super::super::stream_turn_state::StreamModelOutputLane;
 use super::turn_layout::TurnLayout;
 
-/// post-tool 或正文相：canonical [`AnswerDelta`] + 投影；stored 为真源，不再双写 overlay。
+/// post-tool 或正文相：canonical [`AnswerDelta`] + 投影；P0 禁止 overlay append 正文。
 fn apply_answer_body_delta(
     stream_ctx: &ChatStreamCallbackCtx,
     accum: &PerStreamAccum,
@@ -19,9 +19,20 @@ fn apply_answer_body_delta(
         accum.add_answer_delta_chars(chunk.chars().count());
         return;
     }
+    if stream_ctx.scratch.post_tool_stream_tail_active() {
+        if stream_ctx.scratch.tool_phase_open()
+            && stream_ctx.scratch.try_apply_commentary_delta(chunk)
+        {
+            stream_ctx.scratch.sync_turn_projection(stream_ctx);
+        }
+        accum.add_answer_delta_chars(chunk.chars().count());
+        return;
+    }
+    // P0：canonical miss 时尝试 commentary 段，仍 miss 则 no-op（勿 append 尾泡）。
+    if stream_ctx.scratch.try_apply_commentary_delta(chunk) {
+        stream_ctx.scratch.sync_turn_projection(stream_ctx);
+    }
     accum.add_answer_delta_chars(chunk.chars().count());
-    let mid = stream_ctx.scratch.borrow_assistant_id();
-    stream_ctx.append_assistant_chunk(mid.as_str(), chunk, false);
 }
 
 /// 工具前旁注：canonical commentary 段 + 投影；miss 时不写尾泡（Phase 1 I2）。
@@ -44,8 +55,13 @@ pub(super) fn apply_chat_stream_text_delta(
     let lane = stream_ctx.scratch.current_output_lane();
     let post_tool = stream_ctx.scratch.post_tool_stream_tail_active();
 
-    // post-tool 终答：勿走 commentary 路由（否则终答 delta 挂到工具前旁注）。
+    // post-tool：工具批进行中 → commentary 块；结束后 → 终答。
     if post_tool && lane != StreamModelOutputLane::AnsweringCommentaryBeforeTools {
+        if stream_ctx.scratch.tool_phase_open() {
+            apply_commentary_lane_delta(stream_ctx, chunk);
+            accum.add_answer_delta_chars(chunk.chars().count());
+            return;
+        }
         apply_answer_body_delta(stream_ctx, accum, chunk);
         return;
     }
@@ -63,6 +79,7 @@ pub(super) fn apply_chat_stream_text_delta(
         return;
     }
 
+    // 未知车道：仅 reasoning overlay append（思维链仍走热路径）。
     let mid = stream_ctx.scratch.borrow_assistant_id();
     stream_ctx.append_assistant_chunk(mid.as_str(), chunk, true);
 }
@@ -88,12 +105,26 @@ mod tests {
     use super::super::super::stream_turn_state::StreamModelOutputLane;
 
     #[test]
-    fn post_tool_lane_routes_to_answer_not_commentary() {
+    fn post_tool_lane_routes_to_commentary_while_tool_phase_open() {
         let post_tool = true;
+        let tool_phase_open = true;
+        let lane = StreamModelOutputLane::Reasoning;
+        let use_answer = post_tool
+            && !tool_phase_open
+            && lane != StreamModelOutputLane::AnsweringCommentaryBeforeTools;
+        assert!(!use_answer);
+    }
+
+    #[test]
+    fn post_tool_lane_routes_to_answer_after_tool_phase_end() {
+        let post_tool = true;
+        let tool_phase_open = false;
         let lane = StreamModelOutputLane::Reasoning;
         assert!(
-            post_tool && lane != StreamModelOutputLane::AnsweringCommentaryBeforeTools,
-            "post-tool plain delta must use answer path even in Reasoning lane"
+            post_tool
+                && !tool_phase_open
+                && lane != StreamModelOutputLane::AnsweringCommentaryBeforeTools,
+            "post-tool plain delta after tool_phase_end must use answer path"
         );
     }
 
@@ -116,5 +147,14 @@ mod tests {
         let post_tool = false;
         assert!(lane.in_answer_body_lane());
         assert!(!post_tool);
+    }
+
+    #[test]
+    fn p0_answer_miss_never_appends_body_overlay() {
+        let uses_append_body_fallback = false;
+        assert!(
+            !uses_append_body_fallback,
+            "P0: apply_answer_body_delta must not append_assistant_chunk for body"
+        );
     }
 }

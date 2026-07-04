@@ -19,8 +19,7 @@ use std::cell::RefCell;
 use crate::session_ops::{make_message_id, message_created_ms};
 use crate::storage::{StoredMessage, StoredMessageState};
 use crate::stream_text_overlay::{
-    demote_assistant_message_answer_to_commentary, stream_overlay_clear_answer_for_message,
-    stream_overlay_demote_answer_to_reasoning, stream_overlay_take_into_stored_message,
+    stream_overlay_clear_answer_for_message, stream_overlay_take_into_stored_message,
 };
 
 use crabmate_turn_layout::{Turn, project_turn};
@@ -122,21 +121,6 @@ fn insert_tool_row(
     }
 }
 
-fn merge_summary_into_loading_row(m: &mut StoredMessage, peeled: &PeeledSummary) {
-    if !peeled.text.is_empty() {
-        if !m.text.is_empty() {
-            m.text.push('\n');
-        }
-        m.text.push_str(&peeled.text);
-    }
-    if !peeled.reasoning_text.is_empty() {
-        if !m.reasoning_text.is_empty() {
-            m.reasoning_text.push('\n');
-        }
-        m.reasoning_text.push_str(&peeled.reasoning_text);
-    }
-}
-
 /// 结束 loading 行：空则删，否则去 `loading` state（原则 B：不留空壳）。
 fn finalize_loading_row_at(messages: &mut Vec<StoredMessage>, idx: usize) {
     if idx >= messages.len() {
@@ -172,11 +156,10 @@ fn pin_loading_tail_in_messages(messages: &mut Vec<StoredMessage>, loading_id: &
 fn insert_post_tool_loading_after_tool(
     messages: &mut Vec<StoredMessage>,
     tool_message_id: &str,
-    peeled: Option<PeeledSummary>,
 ) -> Option<String> {
     let tidx = messages.iter().position(|m| m.id == tool_message_id)?;
     let new_asst_id = make_message_id();
-    let mut row = StoredMessage {
+    let row = StoredMessage {
         id: new_asst_id.clone(),
         role: "assistant".to_string(),
         text: String::new(),
@@ -188,9 +171,6 @@ fn insert_post_tool_loading_after_tool(
         tool_name: None,
         created_at: message_created_ms(),
     };
-    if let Some(summary) = peeled {
-        merge_summary_into_loading_row(&mut row, &summary);
-    }
     messages.insert(tidx + 1, row);
     pin_loading_tail_in_messages(messages, new_asst_id.as_str());
     Some(new_asst_id)
@@ -229,11 +209,6 @@ impl TurnLayout {
         stream_ctx.scratch.enter_commentary_before_tools_lane();
         let sid = stream_ctx.bound_stream_session_id.clone();
         let mid = stream_ctx.scratch.clone_assistant_id();
-        stream_overlay_demote_answer_to_reasoning(
-            stream_ctx.chat.stream_text_overlay,
-            sid.as_str(),
-            mid.as_str(),
-        );
         stream_ctx.update_bound_session(|session| {
             let Some(idx) = session.messages.iter().position(|m| m.id == mid) else {
                 return;
@@ -244,29 +219,26 @@ impl TurnLayout {
                 mid.as_str(),
                 &mut session.messages[idx],
             );
-            let row = &session.messages[idx];
-            let migrated = if !row.text.trim().is_empty() {
-                row.text.clone()
-            } else if !row.reasoning_text.trim().is_empty() {
-                row.reasoning_text.clone()
+            let migrated = if !session.messages[idx].text.trim().is_empty() {
+                session.messages[idx].text.clone()
             } else {
-                String::new()
+                session.messages[idx].reasoning_text.clone()
             };
-            if !migrated.trim().is_empty() {
-                stream_ctx
-                    .scratch
-                    .ingest_pre_tool_commentary(migrated.as_str());
-            }
-            demote_assistant_message_answer_to_commentary(&mut session.messages[idx]);
+            stream_ctx
+                .scratch
+                .absorb_pre_tool_narration_for_first_tool(migrated.as_str());
+            stream_overlay_clear_answer_for_message(
+                stream_ctx.chat.stream_text_overlay,
+                sid.as_str(),
+                mid.as_str(),
+                Some(stream_ctx.chat.stream_overlay_revision),
+            );
             session.messages[idx].text.clear();
             session.messages[idx].reasoning_text.clear();
-            // 原则 B：正文已迁入 canonical，空 loading 占位当场删，避免闪空泡。
-            if session.messages[idx].text.trim().is_empty()
-                && session.messages[idx].reasoning_text.trim().is_empty()
-                && session.messages[idx]
-                    .state
-                    .as_ref()
-                    .is_some_and(|st| st.is_loading())
+            if session.messages[idx]
+                .state
+                .as_ref()
+                .is_some_and(|st| st.is_loading())
             {
                 session.messages.remove(idx);
             }
@@ -283,7 +255,6 @@ impl TurnLayout {
         let tool_id = tool_msg.id.clone();
         let mid = stream_ctx.scratch.clone_assistant_id();
         let sid = stream_ctx.bound_stream_session_id.clone();
-        let already_post_tool = stream_ctx.scratch.post_tool_stream_tail_active();
         let new_tail_id = RefCell::new(None::<String>);
         stream_ctx.update_bound_session(|s| {
             if let Some(idx) = s.messages.iter().position(|m| m.id == mid) {
@@ -294,22 +265,13 @@ impl TurnLayout {
                     &mut s.messages[idx],
                 );
             }
-            let peeled = extract_post_tool_tail_before_tool(&mut s.messages, mid.as_str());
-            let peeled_for_post_tool = if already_post_tool {
-                peeled
-            } else {
-                // `demote_answer_before_tools`（同次 `tool_call` 刚执行）已迁入 canonical；勿再 ingest。
-                None
-            };
+            let _peeled = extract_post_tool_tail_before_tool(&mut s.messages, mid.as_str());
             insert_tool_row(&mut s.messages, tool_msg, subgoal_marker);
             if let Some(load_idx) = s.messages.iter().position(|m| m.id == mid) {
                 finalize_loading_row_at(&mut s.messages, load_idx);
             }
-            if let Some(id) = insert_post_tool_loading_after_tool(
-                &mut s.messages,
-                tool_id.as_str(),
-                peeled_for_post_tool,
-            ) {
+            if let Some(id) = insert_post_tool_loading_after_tool(&mut s.messages, tool_id.as_str())
+            {
                 *new_tail_id.borrow_mut() = Some(id);
             }
         });
@@ -338,15 +300,14 @@ impl TurnLayout {
                     &mut s.messages[idx],
                 );
             }
-            let peeled = extract_post_tool_tail_before_tool(&mut s.messages, mid.as_str());
-            let Some(peeled) = peeled else {
+            let _peeled = extract_post_tool_tail_before_tool(&mut s.messages, mid.as_str());
+            if s.messages.iter().all(|m| m.id != mid) {
                 return;
-            };
+            }
             if let Some(load_idx) = s.messages.iter().position(|m| m.id == mid) {
                 finalize_loading_row_at(&mut s.messages, load_idx);
             }
-            if let Some(id) =
-                insert_post_tool_loading_after_tool(&mut s.messages, tool_message_id, Some(peeled))
+            if let Some(id) = insert_post_tool_loading_after_tool(&mut s.messages, tool_message_id)
             {
                 *new_tail_id.borrow_mut() = Some(id);
             }
@@ -359,6 +320,23 @@ impl TurnLayout {
         } else {
             Self::pin_loading_tail(stream_ctx);
         }
+    }
+
+    /// 新 commentary 段开始：清空 loading 尾泡上的流式正文，避免上一块残留。
+    pub(crate) fn reset_loading_tail_streaming_text(stream_ctx: &ChatStreamCallbackCtx) {
+        let mid = stream_ctx.scratch.clone_assistant_id();
+        let sid = stream_ctx.bound_stream_session_id.clone();
+        stream_ctx.update_bound_session(|s| {
+            if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) {
+                s.messages[idx].text.clear();
+            }
+        });
+        stream_overlay_clear_answer_for_message(
+            stream_ctx.chat.stream_text_overlay,
+            sid.as_str(),
+            mid.as_str(),
+            Some(stream_ctx.chat.stream_overlay_revision),
+        );
     }
 
     /// 任意后续 `push`（时间线等）之后，保证 post-tool `loading` 尾泡仍在列表最末。
@@ -534,14 +512,11 @@ fn sync_commentary_before_tool_in_messages(
     messages.insert(tool_idx, msg);
 }
 
-fn sync_final_answer_in_messages(
+fn sync_loading_tail_block_in_messages(
     messages: &mut [StoredMessage],
     streaming_assistant_id: &str,
     text: &str,
 ) {
-    if text.trim().is_empty() {
-        return;
-    }
     if let Some(idx) = messages
         .iter()
         .position(|m| m.id == streaming_assistant_id && m.role == "assistant" && !m.is_tool)
@@ -632,7 +607,10 @@ impl TurnLayout {
                         );
                     }
                     "assistant_answer" => {
-                        sync_final_answer_in_messages(
+                        if turn.tool_phase_open() {
+                            continue;
+                        }
+                        sync_loading_tail_block_in_messages(
                             &mut s.messages,
                             mid.as_str(),
                             row.text.as_str(),
@@ -640,6 +618,10 @@ impl TurnLayout {
                     }
                     _ => {}
                 }
+            }
+            if turn.tool_phase_open() {
+                let block = turn.streaming_commentary_block_text().unwrap_or_default();
+                sync_loading_tail_block_in_messages(&mut s.messages, mid.as_str(), block.as_str());
             }
             repair_commentary_rows_before_tools(&mut s.messages, turn.turn_ref());
             relocate_misplaced_commentary_rows(&mut s.messages, turn.turn_ref());

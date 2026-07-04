@@ -4,6 +4,8 @@ use std::rc::Rc;
 
 use crate::sse_dispatch::TurnSegmentStartInfo;
 
+use super::super::turn_layout::TurnLayout;
+
 use super::super::super::context::ChatStreamCallbackCtx;
 
 pub(in super::super) fn make_on_turn_segment_start(
@@ -14,6 +16,8 @@ pub(in super::super) fn make_on_turn_segment_start(
             return;
         }
         stream_ctx.scratch.on_turn_segment_start(info);
+        TurnLayout::reset_loading_tail_streaming_text(stream_ctx.as_ref());
+        stream_ctx.scratch.sync_turn_projection(stream_ctx.as_ref());
     })
 }
 

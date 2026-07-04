@@ -1,6 +1,6 @@
 # Turn 布局：单轮工具回合的消息顺序设计
 
-**状态**：Web 流式 **Phase 0–4** 已落地（见 §12）；**Phase 5（单一读路径）** 已落地（§12.8）；TUI/CLI 仅消费 SSE 控制面镜像，尚未做完整 canonical 投影。  
+**状态**：Web 流式 **Phase 0–4** 已落地（见 §12）；**Phase 5（单一读路径）** 已落地（§12.8）；**Phase 6（消息块 → 气泡）** 已落地（§12.9）；**Phase 7 P0（写入收敛）** 已落地（§12.10）；TUI/CLI 仅消费 SSE 控制面镜像，尚未做完整 canonical 投影。  
 **目标读者**：维护者；变更 **`turn_segment_*`**、**`frontend/src/app/chat/composer_stream/`** 或 **`crates/crabmate-turn-layout`** 前须读本文，并同步 **`docs/SSE协议.md`**、**`fixtures/turn_project_golden.jsonl`**、**`fixtures/sse_control_golden.jsonl`**。
 
 ---
@@ -320,7 +320,30 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 **E2E**：`e2e/tests/phase5-visible-messages.spec.ts`（预置 duplicate / snapshot / ephemeral 行，断言聊天列 assistant 条数与 JSON/MD 导出一致）。
 
-**后续（Phase 6+）**：写入稳定后逐步退役 `relocate` / `repair` / `on_done` 全表 dedupe 等补丁层。
+### 12.9 消息块 → 气泡（Phase 6）
+
+**目标**：多工具轮次中，每段工具前旁注与终答各占 **一块** assistant 行；UI 按 `messages` 顺序渲染，loading 尾泡 **仅** 承载当前 open commentary 段流式增量，不再把 post-tool narration 累积进单一终答泡。
+
+| 机制 | 说明 |
+|------|------|
+| `project_turn` | 已 flush 的 `before_commentary` → `assistant_commentary` 行；`final_answer` → `assistant_answer`（仅 `!tool_phase_open` 时 sync） |
+| post-tool + `tool_phase_open` | plain delta → `CommentaryDelta`（`delta_apply`），**不**进 `final_answer` |
+| `sync_turn_projection` | 工具批进行中：跳过 `assistant_answer`；尾泡 = `streaming_commentary_block_text()` |
+| `turn_segment_start` | 段一开即 sync，占位/更新当前块 |
+| `apply_answer_body_delta` fallback | canonical 拒答时 **禁止** `append_assistant_chunk` 累积尾泡（I6 补全） |
+
+**后续（Phase 7 P1+）**：写入稳定后逐步退役 `relocate` / `repair` / `on_done` 全表 dedupe 等补丁层。
+
+### 12.10 写入收敛（Phase 7 P0）
+
+**目标**：assistant 正文**唯一写路径** = `TurnReducer` + `sync_turn_projection` replace；禁止 canonical miss 时 overlay append 正文。
+
+| 机制 | 说明 |
+|------|------|
+| `delta_apply` | `try_apply_answer/commentary` miss → **no-op**（勿 `append_assistant_chunk` 正文）；思维链仍 overlay append |
+| `stream_text_overlay` 展示 | `loading` 且 `stored.text` 非空 → **只读 stored**（overlay 正文不参与 UI） |
+| `demote_answer_before_tools` | `absorb_pre_tool_narration_for_first_tool` 收尾泡 + 误写 `final_answer` → pending 段；勿 overlay/stored 双 demote |
+| post-tool 工具边界 | 新 loading 尾泡**空壳**；`sync_turn_projection` 填当前块（勿 peel merge 旧全文） |
 
 ### 12.5 `TurnLayout` 与 `TurnReducer` 职责再划分
 
