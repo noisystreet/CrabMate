@@ -17,7 +17,7 @@ use super::super::super::stream_control_reducer::StreamControlEvent;
 use super::super::done_session::apply_stream_done_to_loading_assistant;
 use super::super::error_session::apply_stream_error_on_messages;
 use super::super::helpers::build_stream_error_with_suggestion;
-use super::super::turn_layout::{FINAL_ANSWER_ROW_ID, TurnLayout};
+use super::super::turn_layout::{BATCH_NARRATION_ROW_ID, FINAL_ANSWER_ROW_ID, TurnLayout};
 
 pub(in super::super) fn chat_stream_on_done_builder(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
@@ -44,14 +44,16 @@ pub(in super::super) fn chat_stream_on_done_builder(
         let turn = accum.summarize_for_stream_done();
         let loc = stream_ctx.locale.get_untracked();
         let mid = stream_ctx.scratch.clone_assistant_id();
-        stream_ctx.scratch.sync_turn_projection(stream_ctx.as_ref());
+        stream_ctx
+            .scratch
+            .finalize_turn_projection_before_stream_done(stream_ctx.as_ref());
         stream_ctx.update_bound_session(|s| {
             let sid = stream_ctx.bound_stream_session_id.as_str();
-            let final_answer_flushed = s
-                .messages
-                .iter()
-                .any(|m| m.id == FINAL_ANSWER_ROW_ID && !m.text.trim().is_empty());
-            if final_answer_flushed {
+            let projection_flushed = s.messages.iter().any(|m| {
+                (m.id == FINAL_ANSWER_ROW_ID || m.id == BATCH_NARRATION_ROW_ID)
+                    && !m.text.trim().is_empty()
+            });
+            if projection_flushed {
                 stream_overlay_clear_answer_for_message(
                     stream_ctx.chat.stream_text_overlay,
                     sid,
@@ -70,6 +72,10 @@ pub(in super::super) fn chat_stream_on_done_builder(
                 );
             }
             TurnLayout::dedupe_loading_tail_against_final_answer_row(&mut s.messages, mid.as_str());
+            TurnLayout::dedupe_loading_tail_against_batch_narration_row(
+                &mut s.messages,
+                mid.as_str(),
+            );
             apply_stream_done_to_loading_assistant(
                 &mut s.messages,
                 mid.as_str(),

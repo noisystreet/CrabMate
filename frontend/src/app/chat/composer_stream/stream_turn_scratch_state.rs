@@ -29,6 +29,8 @@ struct StreamTurnScratchInner {
     lane: StreamModelOutputLane,
     assistant_message_id: String,
     post_tool_stream_tail: bool,
+    /// 工具批结束后：false 时 plain delta 进 batch 说明；`final_response` / 分隔符 / `on_done` 拆分为 true。
+    post_tool_final_answer_open: bool,
     pending_tool_message_ids: VecDeque<String>,
 }
 
@@ -38,6 +40,7 @@ impl StreamTurnScratchInner {
             lane: StreamModelOutputLane::default(),
             assistant_message_id: initial_asst_id,
             post_tool_stream_tail: false,
+            post_tool_final_answer_open: false,
             pending_tool_message_ids: VecDeque::new(),
         }
     }
@@ -61,7 +64,26 @@ impl StreamTurnScratchState {
 
     #[inline]
     pub(super) fn on_assistant_answer_phase(&self) {
-        self.inner.borrow_mut().lane.apply_assistant_answer_phase();
+        let mut g = self.inner.borrow_mut();
+        if g.post_tool_stream_tail && !g.post_tool_final_answer_open {
+            return;
+        }
+        g.lane.apply_assistant_answer_phase();
+    }
+
+    #[inline]
+    pub(super) fn close_post_tool_final_answer_gate(&self) {
+        self.inner.borrow_mut().post_tool_final_answer_open = false;
+    }
+
+    #[inline]
+    pub(super) fn open_post_tool_final_answer_gate(&self) {
+        self.inner.borrow_mut().post_tool_final_answer_open = true;
+    }
+
+    #[inline]
+    pub(super) fn post_tool_final_answer_open(&self) -> bool {
+        self.inner.borrow().post_tool_final_answer_open
     }
 
     #[inline]
@@ -102,6 +124,7 @@ impl StreamTurnScratchState {
         let mut g = self.inner.borrow_mut();
         g.assistant_message_id = id;
         g.post_tool_stream_tail = true;
+        g.post_tool_final_answer_open = false;
         g.lane.reset_for_new_assistant_tail();
     }
 

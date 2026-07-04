@@ -8,6 +8,7 @@ import {
   exportSessionMarkdownFromModal,
   FINAL_ANSWER,
   indexOfRowContaining,
+  installTurnLayoutMorphBStreamStub,
   installTurnLayoutStreamStub,
   putFreshLocalSession,
   sendStubMessage,
@@ -88,5 +89,30 @@ test.describe('SSE turn layout (block narration before tools)', () => {
     expect(idxReadTool).toBeGreaterThan(idxNarration);
     expect(idxMakeTool).toBeGreaterThan(idxNarration);
     expect(md).toContain(FINAL_ANSWER);
+  });
+
+  test('morph B plain deltas: markdown export batch before tools (real LLM shape)', async ({
+    page,
+  }) => {
+    await installTurnLayoutMorphBStreamStub(page);
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'CrabMate' })).toBeVisible();
+
+    await sendStubMessage(page, TURN_LAYOUT_USER_PROMPT);
+    await expect(page.getByText('HPCG 编译完成。')).toBeVisible({ timeout: UI_TIMEOUT });
+
+    const md = await exportSessionMarkdownFromModal(page, TURN_LAYOUT_SESSION_ID);
+    const assistantSections = md.split('## 助手').length - 1;
+    expect(assistantSections).toBeGreaterThanOrEqual(2);
+
+    const idxNarration = md.indexOf('好的，先解压 HPCG 看看结构。');
+    const idxFinal = md.indexOf('HPCG 编译完成。');
+
+    expect(idxNarration).toBeGreaterThanOrEqual(0);
+    expect(idxFinal).toBeGreaterThan(idxNarration);
+    // 形态 B 首工具无旁注时，投影可让首个工具行在 batch 前；导出须 batch + final 分节而非巨泡。
+    const batchSectionEnd = md.indexOf('## 助手', idxNarration + 1);
+    expect(batchSectionEnd).toBeGreaterThan(idxNarration);
+    expect(batchSectionEnd).toBeLessThan(idxFinal);
   });
 });

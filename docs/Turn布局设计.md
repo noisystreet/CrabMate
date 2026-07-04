@@ -441,8 +441,11 @@ messages:         同上（batch 行 id 固定为 turn-batch-narration）
 | **I9 唯一落盘** | `sync_web_projection` = batch + final upsert + 清空 loading 壳 `text` |
 | **I10 边界 commit** | 每个 `tool_call` 前 `drain_loading_commentary_to_canonical`（overlay/stored → canonical **仅**） |
 | **I11 overlay 从属** | preview 仅 open 段 / 未落盘终答增量；已 flush 行与 overlay 互斥 |
-| **I12 on_done** | 若 `turn-final-answer` 已落盘 → **不** merge overlay 进 loading 尾泡 |
+| **I12 on_done** | 若 `turn-final-answer` 或 `turn-batch-narration` 已落盘 → **不** merge overlay 进 loading 尾泡 |
+| **I13 open 段关段** | `ToolPhaseEnd` / `on_done` 前 `close_open_commentary_segments`：open 旁注并入 batch，禁止经 loading merge 成巨泡 |
 
 **顺序（`tool_call`）**：`demote` → `drain` → `on_turn_tool_call`（canonical）→ `on_tool_call_declared`（布局）→ `sync_turn_projection`。
 
-**测试**：`real_morph_b_bulk_deltas_stored_block_layout` · `sync_web_projection_clears_loading_stored_body`
+**`on_done`**：`drain_stream_tail_into_canonical_for_done` → `tool_phase_end`（若仍 open）/ `close_open_commentary` → `sync_turn_projection` → 再 tail 决策。
+
+**测试**：`real_morph_b_bulk_deltas_stored_block_layout` · `open_commentary_through_tool_phase_end_syncs_batch_before_tools` · `real_hpcg_morph_b_export_section_order` · `morph_b_late_narration_after_first_tool_batch_before_tool` · 金样 `morph_b_hpcg_real_plain_deltas` / `morph_b_late_narration_after_first_tool`（`fixtures/turn_project_web_golden.jsonl`）· E2E `morph B plain deltas`（`e2e/tests/sse-turn-layout-interleaved.spec.ts`）· `sync_web_projection_clears_loading_stored_body`

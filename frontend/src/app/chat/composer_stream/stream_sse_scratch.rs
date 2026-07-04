@@ -115,6 +115,7 @@ impl StreamSseScratch {
     #[inline]
     pub(super) fn on_turn_tool_phase_end(&self) {
         self.turn.borrow_mut().on_tool_phase_end();
+        self.state.close_post_tool_final_answer_gate();
     }
 
     #[inline]
@@ -134,6 +135,10 @@ impl StreamSseScratch {
     #[inline]
     pub(super) fn try_apply_answer_delta(&self, delta: &str) -> bool {
         self.turn.borrow_mut().try_apply_answer_delta(delta)
+    }
+
+    pub(super) fn batch_narration_char_len(&self) -> usize {
+        self.turn.borrow().batch_narration_char_len()
     }
 
     #[inline]
@@ -158,6 +163,41 @@ impl StreamSseScratch {
         self.turn
             .borrow_mut()
             .ingest_batch_commentary_from_peel(text);
+    }
+
+    #[inline]
+    pub(super) fn close_post_tool_final_answer_gate(&self) {
+        self.state.close_post_tool_final_answer_gate();
+    }
+
+    #[inline]
+    pub(super) fn post_tool_final_answer_open(&self) -> bool {
+        self.state.post_tool_final_answer_open()
+    }
+
+    #[inline]
+    pub(super) fn open_post_tool_final_answer_gate(&self) {
+        self.state.open_post_tool_final_answer_gate();
+    }
+
+    pub(super) fn repartition_turn_for_web_layout(&self) {
+        self.turn.borrow_mut().repartition_web_block_layout_stream();
+        self.state.open_post_tool_final_answer_gate();
+    }
+
+    /// 流结束：关 open 段、尾泡正文入 canonical 并投影落盘。
+    pub(super) fn finalize_turn_projection_before_stream_done(
+        &self,
+        stream_ctx: &super::context::ChatStreamCallbackCtx,
+    ) {
+        super::callbacks::TurnLayout::finalize_turn_projection_before_stream_done(stream_ctx);
+    }
+
+    #[inline]
+    pub(super) fn close_open_commentary_for_projection(&self) {
+        self.turn
+            .borrow_mut()
+            .close_open_commentary_for_projection();
     }
 
     /// delta 热路径：仅更新 loading 尾泡 preview，说明块经 [`Self::sync_turn_projection`] 落盘。

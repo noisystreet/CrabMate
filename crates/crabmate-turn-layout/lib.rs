@@ -18,7 +18,10 @@ pub use project::{
     batch_narration_text, commentary_for_tool, project_turn, project_turn_web,
     streaming_commentary_block_text,
 };
-pub use reduce::{TurnReducer, reduce_event};
+pub use reduce::{
+    TurnReducer, close_open_commentary_segments, reduce_event, repartition_web_block_layout_stream,
+    try_split_combined_post_tool_answer,
+};
 
 #[cfg(test)]
 mod golden {

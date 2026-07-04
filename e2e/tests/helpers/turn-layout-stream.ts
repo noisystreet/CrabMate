@@ -134,6 +134,44 @@ export function buildTurnLayoutInterleavedStreamBody(
   return lines.join('');
 }
 
+/** 形态 B：无 `turn_segment_*`，仅 plain delta + tool_call（对齐真实 LLM / `morph_b_hpcg_real_plain_deltas` 金样）。 */
+export function buildTurnLayoutMorphBStreamBody(): string {
+  const { lines, nextId: startId } = ssePreamble(1);
+  let id = startId;
+
+  lines.push(sseEvent(id++, sseJson(sseToolCall('tc_unpack', 'unpack', 'unpack hpcg'))));
+  lines.push(sseEvent(id++, sseJson(sseToolResult('tc_unpack', 'unpack'))));
+  lines.push(sseEvent(id++, '好的，先解压 HPCG 看看结构。'));
+
+  lines.push(sseEvent(id++, sseJson(sseToolCall('tc_list', 'list_tree', 'list tree'))));
+  lines.push(sseEvent(id++, sseJson(sseToolResult('tc_list', 'list_tree'))));
+  lines.push(sseEvent(id++, 'HPCG 源码已解压。'));
+
+  lines.push(sseEvent(id++, sseJson(sseToolCall('tc_read', 'read_file', 'read INSTALL'))));
+  lines.push(sseEvent(id++, sseJson(sseToolResult('tc_read', 'read_file'))));
+  lines.push(sseEvent(id++, '读取 INSTALL 与 Makefile。'));
+
+  lines.push(sseEvent(id++, sseJson(sseToolCall('tc_make', 'run_command', 'make arch=Linux_Serial'))));
+  lines.push(sseEvent(id++, sseJson(sseToolResult('tc_make', 'run_command'))));
+  lines.push(sseEvent(id++, '开始编译。'));
+
+  lines.push(sseEvent(id++, sseJson({ turn_tool_phase_end: true })));
+  lines.push(sseEvent(id++, 'HPCG 编译完成。'));
+  lines.push(sseEvent(id++, sseJson({ stream_ended: { reason: 'completed' } })));
+
+  return lines.join('');
+}
+
+export async function installTurnLayoutMorphBStreamStub(
+  page: Page,
+  opts: TurnLayoutStreamOptions = {},
+): Promise<void> {
+  await installChatStreamStub(page, {
+    conversationId: opts.conversationId ?? 'e2e-turn-layout-morph-b-conv',
+    body: buildTurnLayoutMorphBStreamBody(),
+  });
+}
+
 export async function installTurnLayoutStreamStub(
   page: Page,
   opts: TurnLayoutStreamOptions = {},
