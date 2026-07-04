@@ -1,37 +1,40 @@
 # Real DeepSeek E2E (manual opt-in)
 
-Playwright specs run only when **`REAL_LLM_E2E=1`**. Default CI / `npm test` uses SSE stubs and **does not** call a live model.
+Playwright specs run only when **`REAL_LLM_E2E=1`**. Default CI uses SSE stubs.
 
-Full step-by-step (Chinese, canonical): [`../真实LLM-E2E.md`](../真实LLM-E2E.md).
+Canonical guide (Chinese): [`../真实LLM-E2E.md`](../真实LLM-E2E.md).
 
 ## Specs
 
 | File | Purpose |
 |------|---------|
-| `e2e/tests/real-llm-smoke.spec.ts` | Single turn “你有哪些技能”; streaming + busy state |
-| `e2e/tests/real-llm-turn-layout.spec.ts` | Two turns + MD export; batch/final layout (not mega bubble) |
+| `real-llm-smoke.spec.ts` | Single turn connectivity |
+| `real-llm-turn-layout-analyze.spec.ts` | Single turn “分析当前目录” |
+| `real-llm-turn-layout-compile.spec.ts` | Single turn “编译 hpcg” + layout export |
+| `real-llm-turn-layout.spec.ts` | Two turns (full integration) |
 
-## Quick start (Turn layout, Tauri-aligned)
+Shared helpers: `e2e/tests/helpers/real-llm.ts`.
+
+## Quick start
 
 ```bash
 unset NO_COLOR && cd frontend && trunk build
 
-# Terminal 1
 export CM_CRABMATE_USER_DATA_DIR="$HOME/.local/share/crabmate"
 cargo run -- --workspace /home/gzz/test serve --port 18888 --host 127.0.0.1
 
-# Terminal 2
-cd e2e
-export REAL_LLM_E2E=1 E2E_PORT=18888 CM_CRABMATE_USER_DATA_DIR="$HOME/.local/share/crabmate"
-npx playwright test tests/real-llm-turn-layout.spec.ts --workers=1 --retries=0
+export CM_CRABMATE_USER_DATA_DIR="$HOME/.local/share/crabmate"
+./scripts/real-llm-e2e.sh compile
 ```
 
-Use the same **`CM_CRABMATE_USER_DATA_DIR`** as the desktop app (`llm_overrides.json` + `secrets/client_llm`). Optional workspace override: **`REAL_LLM_WORKSPACE`**.
+From `e2e/`: `npm run test:real-llm:compile` (same script).
 
-Smoke-only with Playwright `webServer`:
+## Failure artifacts
 
-```bash
-REAL_LLM_E2E=1 API_KEY=YOUR_API_KEY npx playwright test tests/real-llm-smoke.spec.ts --retries=0
-```
+On failure (or when **`REAL_LLM_CAPTURE=1`**): `e2e/artifacts/real-llm/<timestamp>_<test>/` with `meta.json`, `turn-layout-report.json`, `export.md`, `export.json`. Gitignored.
 
-Not run in CI. Do not commit real API keys.
+## Environment
+
+`REAL_LLM_E2E=1`, `E2E_PORT`, `CM_CRABMATE_USER_DATA_DIR`, `REAL_LLM_WORKSPACE`, `REAL_LLM_CAPTURE`, `REAL_LLM_GREP`.
+
+Not run in default CI. Do not commit API keys or raw artifacts with secrets.

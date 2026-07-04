@@ -3,7 +3,12 @@
   "private": true,
   "scripts": {
     "test": "playwright test",
-    "test:ui": "playwright test --ui"
+    "test:ui": "playwright test --ui",
+    "test:real-llm": "../scripts/real-llm-e2e.sh all",
+    "test:real-llm:smoke": "../scripts/real-llm-e2e.sh smoke",
+    "test:real-llm:analyze": "../scripts/real-llm-e2e.sh analyze",
+    "test:real-llm:compile": "../scripts/real-llm-e2e.sh compile",
+    "test:real-llm:layout": "../scripts/real-llm-e2e.sh layout"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1"

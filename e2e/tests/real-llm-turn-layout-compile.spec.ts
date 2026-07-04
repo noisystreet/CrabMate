@@ -2,12 +2,10 @@ import { expect, test } from '@playwright/test';
 
 import {
   REAL_LLM_ENABLED,
-  REAL_LLM_SESSION_ANALYZE,
-  REAL_LLM_SESSION_FULL,
+  REAL_LLM_SESSION_COMPILE,
   REAL_LLM_TIMEOUT,
   REAL_LLM_WORKSPACE,
   assertCompileTurnLayoutExport,
-  countMarkdownAssistantSections,
   createRealLlmArtifactHooks,
   exportSessionArtifacts,
   gotoCrabMateHome,
@@ -17,13 +15,13 @@ import {
 } from './helpers';
 
 const { state: artifacts, afterEach: artifactAfterEach } =
-  createRealLlmArtifactHooks(REAL_LLM_SESSION_FULL);
+  createRealLlmArtifactHooks(REAL_LLM_SESSION_COMPILE);
 
-test.describe('real LLM turn layout (DeepSeek multi-turn + export)', () => {
+test.describe('real LLM turn layout — compile hpcg only', () => {
   test.skip(!REAL_LLM_ENABLED, 'set REAL_LLM_E2E=1 to run against the configured model backend');
 
   test.beforeEach(async ({ request }) => {
-    await putFreshLocalSession(request, REAL_LLM_SESSION_FULL, 'E2E real turn layout');
+    await putFreshLocalSession(request, REAL_LLM_SESSION_COMPILE, 'E2E real compile');
     artifacts.workspaceHints = await setupRealLlmWorkspace(request, REAL_LLM_WORKSPACE);
   });
 
@@ -31,19 +29,16 @@ test.describe('real LLM turn layout (DeepSeek multi-turn + export)', () => {
     await artifactAfterEach(request, testInfo);
   });
 
-  test('two turns: analyze dir then build hpcg — export has batch + final, not mega bubble', async ({
-    page,
-  }) => {
-    test.setTimeout(REAL_LLM_TIMEOUT * 2 + 60_000);
+  test('single turn: 编译 hpcg — export batch + final, not mega bubble', async ({ page }) => {
+    test.setTimeout(REAL_LLM_TIMEOUT + 60_000);
 
     await gotoCrabMateHome(page);
-    await sendAndWaitForStream(page, '分析当前目录');
     await sendAndWaitForStream(page, '编译 hpcg');
 
-    const { md, json } = await exportSessionArtifacts(page, REAL_LLM_SESSION_FULL);
+    const { md, json } = await exportSessionArtifacts(page, REAL_LLM_SESSION_COMPILE);
     artifacts.exportMd = md;
     artifacts.exportJson = json;
     artifacts.compileReport = assertCompileTurnLayoutExport(md);
-    expect(countMarkdownAssistantSections(md)).toBeGreaterThanOrEqual(2);
+    expect(artifacts.compileReport.tool_section_found).toBe(true);
   });
 });
