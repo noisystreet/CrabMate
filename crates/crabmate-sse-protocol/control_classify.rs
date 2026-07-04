@@ -287,13 +287,22 @@ mod tests {
             &[
                 r#"if obj.get("plan_required") == Some(&Value::Bool(true))"#,
                 r#"if let Some(Value::Bool(b)) = obj.get("assistant_answer_phase")"#,
+                r#"dispatch_turn_layout_control"#,
+                r#"if key_present_non_null(obj, "staged_plan_started")"#,
+                r#"dispatch_staged_plan_step_control"#,
+                r#"if key_present_non_null(obj, "staged_plan_finished")"#,
+            ],
+        );
+
+        let turn_layout = rust_fn_body(&full_src, &path, "fn dispatch_turn_layout_control");
+        assert_checkpoints_in_order(
+            &path,
+            turn_layout,
+            "dispatch_turn_layout_control",
+            &[
                 r#"extract_turn_segment_start"#,
                 r#"extract_turn_segment_end"#,
                 r#"turn_tool_phase_end"#,
-                r#"if key_present_non_null(obj, "staged_plan_started")"#,
-                r#"if key_present_non_null(obj, "staged_plan_step_started")"#,
-                r#"if key_present_non_null(obj, "staged_plan_step_finished")"#,
-                r#"if key_present_non_null(obj, "staged_plan_finished")"#,
             ],
         );
 

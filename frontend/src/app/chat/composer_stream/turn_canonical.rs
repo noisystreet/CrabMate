@@ -84,6 +84,16 @@ impl TurnCanonicalState {
         self.apply(TurnEvent::ToolPhaseEnd);
     }
 
+    /// `tool_phase_end` 已发生但仍有 open 段时的兜底（流结束投影前）。
+    pub(super) fn close_open_commentary_for_projection(&mut self) {
+        crabmate_turn_layout::close_open_commentary_segments(&mut self.turn);
+    }
+
+    /// 形态 B 巨泡：`final_answer` 与 batch 合并时拆回块布局。
+    pub(super) fn repartition_web_block_layout_stream(&mut self) {
+        crabmate_turn_layout::repartition_web_block_layout_stream(&mut self.turn);
+    }
+
     pub(super) fn on_tool_call(&mut self, tool_call_id: &str, name: &str, summary: &str) {
         self.apply(TurnEvent::ToolCall {
             tool_call_id: tool_call_id.to_string(),
@@ -220,6 +230,13 @@ impl TurnCanonicalState {
             delta: text.to_string(),
         });
         true
+    }
+
+    /// 块布局批说明字符数（形态 B 短终答门控）。
+    pub(super) fn batch_narration_char_len(&self) -> usize {
+        crabmate_turn_layout::batch_narration_text(&self.turn)
+            .map(|t| t.chars().count())
+            .unwrap_or(0)
     }
 
     /// 块布局批说明全文（[`crabmate_turn_layout::batch_narration_text`]）— 测试用；生产路径见 `project_turn_web`。

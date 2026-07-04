@@ -225,4 +225,112 @@ mod tests {
             "expected separate batch + final assistant rows"
         );
     }
+
+    /// open 旁注段撑到 `tool_phase_end` 仍无 `segment_end`：须关段落盘 batch，勿留 overlay 巨泡。
+    #[test]
+    fn open_commentary_through_tool_phase_end_syncs_batch_before_tools() {
+        let mut turn = TurnCanonicalState::new();
+        assert!(turn.try_apply_commentary_delta("先看 HPCG 安装说明。"));
+        turn.on_tool_call("tc_unpack", "unpack", "unpack");
+        assert!(turn.try_apply_commentary_delta("读取 INSTALL 与 Makefile。"));
+        turn.on_tool_call("tc_read", "read_file", "read INSTALL");
+        turn.on_tool_phase_end();
+        assert!(
+            crabmate_turn_layout::streaming_commentary_block_text(turn.turn_ref()).is_none(),
+            "open preview must be closed after tool_phase_end"
+        );
+
+        let batch = crabmate_turn_layout::batch_narration_row(turn.turn_ref()).expect("batch");
+        assert!(
+            batch.text.contains("先看 HPCG") && batch.text.contains("读取 INSTALL"),
+            "batch={}",
+            batch.text
+        );
+
+        let mut messages = tool_messages_from_projection(&turn);
+        let queue = BubbleOutputQueue;
+        queue.sync_web_projection(&mut messages, &turn, None);
+
+        let batch_idx = batch_row_index(&messages).expect("batch row");
+        let first_tool = messages.iter().position(|m| m.is_tool).expect("tool row");
+        assert!(
+            batch_idx < first_tool,
+            "batch must precede tools: batch={batch_idx} tool={first_tool}"
+        );
+        assert!(
+            messages
+                .iter()
+                .find(|m| m.id == BATCH_NARRATION_ROW_ID)
+                .is_some_and(|m| m.text.len() > 20),
+            "batch row must hold merged narration, not empty shell"
+        );
+    }
+
+    /// 真实 LLM 形态 B（`chat_export_20260704_160510` 编译 hpcg 轮）：plain delta + 多工具 + 无 `turn_segment_*`。
+    #[test]
+    fn real_hpcg_morph_b_export_section_order() {
+        let mut turn = TurnCanonicalState::new();
+        turn.on_tool_call("tc_unpack", "unpack", "unpack hpcg");
+        assert!(turn.try_apply_commentary_delta("好的，先解压 HPCG 看看结构。"));
+        turn.on_tool_call("tc_list", "list_tree", "list tree");
+        assert!(turn.try_apply_commentary_delta("HPCG 源码已解压。"));
+        turn.on_tool_call("tc_read", "read_file", "read INSTALL");
+        assert!(turn.try_apply_commentary_delta("读取 INSTALL 与 Makefile。"));
+        turn.on_tool_call("tc_make", "run_command", "make arch=Linux_Serial");
+        assert!(turn.try_apply_commentary_delta("开始编译。"));
+        turn.on_tool_phase_end();
+        assert!(turn.try_apply_answer_delta("HPCG 编译完成。"));
+
+        let mut messages = tool_messages_from_projection(&turn);
+        BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None);
+
+        let batch_idx = batch_row_index(&messages).expect("batch row");
+        let final_idx = messages
+            .iter()
+            .position(|m| m.id == FINAL_ANSWER_ROW_ID)
+            .expect("final row");
+        let first_tool = messages.iter().position(|m| m.is_tool).expect("tool row");
+        let last_tool = messages.iter().rposition(|m| m.is_tool).expect("last tool");
+        assert!(batch_idx < first_tool, "batch before tools");
+        assert!(final_idx > last_tool, "final after tools");
+
+        let assistant_rows: Vec<_> = messages
+            .iter()
+            .filter(|m| m.role == "assistant" && !m.is_tool)
+            .collect();
+        assert_eq!(
+            assistant_rows.len(),
+            2,
+            "export must be batch + final, not mega bubble: {:?}",
+            assistant_rows
+                .iter()
+                .map(|m| (m.id.as_str(), m.text.len()))
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            messages[batch_idx].text.contains("先解压 HPCG")
+                && messages[batch_idx].text.contains("开始编译"),
+            "batch={}",
+            messages[batch_idx].text
+        );
+        assert_eq!(messages[final_idx].text, "HPCG 编译完成。");
+    }
+
+    /// 单工具 + 晚于 `tool_call` 的旁注（分析目录轮）：batch 仍须在工具前。
+    #[test]
+    fn morph_b_late_narration_after_first_tool_batch_before_tool() {
+        let mut turn = TurnCanonicalState::new();
+        turn.on_tool_call("tc_list", "list_tree", "list tree");
+        assert!(turn.try_apply_commentary_delta("好的，我来看看当前工作区的情况。"));
+        turn.on_tool_phase_end();
+        assert!(turn.try_apply_answer_delta("当前工作区是一个空目录。"));
+
+        let mut messages = tool_messages_from_projection(&turn);
+        BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None);
+
+        let batch_idx = batch_row_index(&messages).expect("batch");
+        let tool_idx = messages.iter().position(|m| m.is_tool).expect("tool");
+        assert!(batch_idx < tool_idx);
+        assert_eq!(messages[batch_idx].text, "好的，我来看看当前工作区的情况。");
+    }
 }

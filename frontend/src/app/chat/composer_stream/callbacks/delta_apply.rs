@@ -38,6 +38,57 @@ fn apply_answer_body_delta(
     accum.add_answer_delta_chars(chunk.chars().count());
 }
 
+/// post-tool 形态 B：工具批结束后、终答门开前 plain delta → batch 说明；门开后 → 终答。
+fn morph_b_chunk_is_standalone_final(chunk: &str, batch_len: usize) -> bool {
+    let t = chunk.trim();
+    batch_len >= 8
+        && t.len() >= 4
+        && t.len() <= 200
+        && !t.contains('\n')
+        && t.chars().filter(|c| *c == '。').count() <= 2
+}
+
+fn apply_post_tool_plain_delta(
+    stream_ctx: &ChatStreamCallbackCtx,
+    accum: &PerStreamAccum,
+    chunk: &str,
+) {
+    if !stream_ctx.scratch.post_tool_final_answer_open() {
+        if morph_b_chunk_is_standalone_final(chunk, stream_ctx.scratch.batch_narration_char_len()) {
+            stream_ctx.scratch.open_post_tool_final_answer_gate();
+            apply_answer_body_delta(stream_ctx, accum, chunk);
+            stream_ctx.scratch.sync_turn_projection(stream_ctx);
+            stream_ctx.scratch.sync_stream_preview(stream_ctx);
+            accum.add_answer_delta_chars(chunk.chars().count());
+            return;
+        }
+        if let Some((batch_part, final_part)) =
+            crabmate_turn_layout::try_split_combined_post_tool_answer(chunk)
+        {
+            if !batch_part.is_empty() {
+                let _ = stream_ctx
+                    .scratch
+                    .try_apply_commentary_delta(batch_part.as_str());
+            }
+            stream_ctx.scratch.open_post_tool_final_answer_gate();
+            if !final_part.is_empty() {
+                apply_answer_body_delta(stream_ctx, accum, final_part.as_str());
+            }
+            stream_ctx.scratch.sync_turn_projection(stream_ctx);
+            stream_ctx.scratch.sync_stream_preview(stream_ctx);
+            accum.add_answer_delta_chars(chunk.chars().count());
+            return;
+        }
+        if stream_ctx.scratch.try_apply_commentary_delta(chunk) {
+            stream_ctx.scratch.sync_turn_projection(stream_ctx);
+            stream_ctx.scratch.sync_stream_preview(stream_ctx);
+        }
+        accum.add_answer_delta_chars(chunk.chars().count());
+        return;
+    }
+    apply_answer_body_delta(stream_ctx, accum, chunk);
+}
+
 /// 工具前旁注：canonical commentary 段 + 投影；miss 时不写尾泡（Phase 1 I2）。
 fn apply_commentary_lane_delta(stream_ctx: &ChatStreamCallbackCtx, chunk: &str) {
     if stream_ctx.scratch.try_apply_commentary_delta(chunk) {
@@ -59,14 +110,14 @@ pub(super) fn apply_chat_stream_text_delta(
     let lane = stream_ctx.scratch.current_output_lane();
     let post_tool = stream_ctx.scratch.post_tool_stream_tail_active();
 
-    // post-tool：工具批进行中 → commentary 块；结束后 → 终答。
+    // post-tool：工具批进行中 → commentary 块；结束后 → batch / 终答（形态 B 门控）。
     if post_tool && lane != StreamModelOutputLane::AnsweringCommentaryBeforeTools {
         if stream_ctx.scratch.tool_phase_open() {
             apply_commentary_lane_delta(stream_ctx, chunk);
             accum.add_answer_delta_chars(chunk.chars().count());
             return;
         }
-        apply_answer_body_delta(stream_ctx, accum, chunk);
+        apply_post_tool_plain_delta(stream_ctx, accum, chunk);
         return;
     }
 
@@ -120,16 +171,12 @@ mod tests {
     }
 
     #[test]
-    fn post_tool_lane_routes_to_answer_after_tool_phase_end() {
+    fn post_tool_after_tool_phase_end_uses_morph_b_gate_not_immediate_answer() {
         let post_tool = true;
         let tool_phase_open = false;
-        let lane = StreamModelOutputLane::Reasoning;
-        assert!(
-            post_tool
-                && !tool_phase_open
-                && lane != StreamModelOutputLane::AnsweringCommentaryBeforeTools,
-            "post-tool plain delta after tool_phase_end must use answer path"
-        );
+        let final_gate_open = false;
+        let routes_to_batch = post_tool && !tool_phase_open && !final_gate_open;
+        assert!(routes_to_batch);
     }
 
     #[test]

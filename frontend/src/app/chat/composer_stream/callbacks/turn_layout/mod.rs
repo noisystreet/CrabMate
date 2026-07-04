@@ -34,7 +34,7 @@ use super::super::context::ChatStreamCallbackCtx;
 use super::super::per_stream_accum::PerStreamAccum;
 use super::super::turn_canonical::TurnCanonicalState;
 
-pub(crate) use bubble_queue::{BubbleOutputQueue, FINAL_ANSWER_ROW_ID};
+pub(crate) use bubble_queue::{BATCH_NARRATION_ROW_ID, BubbleOutputQueue, FINAL_ANSWER_ROW_ID};
 
 /// post-tool 尾泡被提前 finalize 时暂存的总结正文。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -117,6 +117,75 @@ pub(crate) fn drain_loading_commentary_to_canonical(stream_ctx: &ChatStreamCallb
         mid.as_str(),
         Some(stream_ctx.chat.stream_overlay_revision),
     );
+}
+
+fn commit_loading_tail_text_to_canonical(stream_ctx: &ChatStreamCallbackCtx, text: &str) {
+    if text.trim().is_empty() {
+        return;
+    }
+    if stream_ctx.scratch.tool_phase_open() {
+        stream_ctx.scratch.ingest_batch_commentary_from_peel(text);
+    } else if stream_ctx.scratch.post_tool_stream_tail_active() {
+        if !stream_ctx.scratch.post_tool_final_answer_open() {
+            stream_ctx.scratch.ingest_batch_commentary_from_peel(text);
+            return;
+        }
+        if !stream_ctx.scratch.try_apply_answer_delta(text) {
+            let _ = stream_ctx.scratch.try_ingest_final_response_text(text);
+        }
+    } else {
+        stream_ctx
+            .scratch
+            .absorb_pre_tool_narration_for_first_tool(text);
+    }
+}
+
+/// `on_done` 前：将 loading 尾泡 overlay / stored 正文迁入 canonical（含 post-tool 终答）。
+pub(crate) fn drain_stream_tail_into_canonical_for_done(stream_ctx: &ChatStreamCallbackCtx) {
+    let mid = stream_ctx.scratch.clone_assistant_id();
+    let sid = stream_ctx.bound_stream_session_id.clone();
+    if let Some(overlay) = overlay_answer_for_loading_tail(stream_ctx, mid.as_str()) {
+        commit_loading_tail_text_to_canonical(stream_ctx, overlay.as_str());
+    }
+    stream_overlay_clear_answer_for_message(
+        stream_ctx.chat.stream_text_overlay,
+        sid.as_str(),
+        mid.as_str(),
+        Some(stream_ctx.chat.stream_overlay_revision),
+    );
+    let drained = RefCell::new(None::<String>);
+    stream_ctx.update_bound_session(|s| {
+        let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) else {
+            return;
+        };
+        stream_overlay_take_into_stored_message(
+            stream_ctx.chat.stream_text_overlay,
+            sid.as_str(),
+            mid.as_str(),
+            &mut s.messages[idx],
+        );
+        let text = s.messages[idx].text.trim();
+        if !text.is_empty() {
+            *drained.borrow_mut() = Some(s.messages[idx].text.clone());
+        }
+        s.messages[idx].text.clear();
+    });
+    if let Some(text) = drained.into_inner() {
+        commit_loading_tail_text_to_canonical(stream_ctx, text.as_str());
+    }
+}
+
+/// 流结束：先关 open 段 → drain 尾泡 → 形态 B 拆分 → 投影落盘。
+fn finalize_turn_projection_before_stream_done_inner(stream_ctx: &ChatStreamCallbackCtx) {
+    if stream_ctx.scratch.tool_phase_open() {
+        stream_ctx.scratch.on_turn_tool_phase_end();
+    } else {
+        stream_ctx.scratch.close_open_commentary_for_projection();
+        stream_ctx.scratch.close_post_tool_final_answer_gate();
+    }
+    drain_stream_tail_into_canonical_for_done(stream_ctx);
+    stream_ctx.scratch.repartition_turn_for_web_layout();
+    stream_ctx.scratch.sync_turn_projection(stream_ctx);
 }
 
 fn discard_premature_assistant_tail(
@@ -284,6 +353,11 @@ fn insert_post_tool_loading_after_tool(
 pub(crate) struct TurnLayout;
 
 impl TurnLayout {
+    /// 流结束：`on_done` 前关 open 段、尾泡正文入 canonical 并投影落盘。
+    pub(crate) fn finalize_turn_projection_before_stream_done(stream_ctx: &ChatStreamCallbackCtx) {
+        finalize_turn_projection_before_stream_done_inner(stream_ctx);
+    }
+
     /// 工具边界：overlay / loading stored → canonical（Phase 9；不写 stored 助手正文行）。
     pub(crate) fn drain_loading_commentary_to_canonical(stream_ctx: &ChatStreamCallbackCtx) {
         drain_loading_commentary_to_canonical(stream_ctx);
@@ -583,6 +657,31 @@ impl TurnLayout {
         if assistant_texts_fuzzy_duplicate(load.text.as_str(), final_text) {
             messages.remove(load_idx);
         }
+    }
+
+    /// 流结束：batch 已落盘时去掉仍含正文的 loading 尾泡（真实 LLM 形态 B 巨泡兜底）。
+    pub(crate) fn dedupe_loading_tail_against_batch_narration_row(
+        messages: &mut Vec<StoredMessage>,
+        loading_id: &str,
+    ) {
+        let Some(batch_idx) = messages
+            .iter()
+            .position(|m| m.id == bubble_queue::BATCH_NARRATION_ROW_ID)
+        else {
+            return;
+        };
+        if messages[batch_idx].text.trim().is_empty() {
+            return;
+        }
+        let Some(load_idx) = messages.iter().position(|m| m.id == loading_id) else {
+            return;
+        };
+        let load = &messages[load_idx];
+        if load.text.trim().is_empty() && load.reasoning_text.trim().is_empty() {
+            messages.remove(load_idx);
+            return;
+        }
+        messages.remove(load_idx);
     }
 
     /// 段/工具边界：flush 工具批说明块到 stored；未落盘前保留 overlay preview。
