@@ -17,7 +17,7 @@ pub fn should_bypass_staged_for_simple_build_execute(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::intent_pipeline::IntentDecision;
+    use crate::intent_pipeline::{IntentAction, IntentDecision};
     use crate::intent_router::IntentKind;
 
     fn exec_decision(primary: &str) -> IntentDecision {
