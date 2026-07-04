@@ -1,10 +1,10 @@
 # AGENTS.md
 
-## Cursor Cloud specific instructions
+## Cursor / Trae specific instructions
 
 ### Project overview
 
-CrabMate is a Rust-based AI Agent that calls **OpenAI-compatible** `chat/completions` backends (e.g. **DeepSeek**, **MiniMax**, **Zhipu GLM**, **Moonshot Kimi**, **Ollama**). It provides Web UI (Axum + Leptos) and CLI (interactive terminal / `chat` single-shot / `serve`; experimental full-screen **`tui`** (minimal chat loop; loads config like **`repl`**)). See `README.md` for quick start and feature overview; `docs/配置说明.md` for env vars and TOML; `docs/命令行与路由.md` for subcommands and routes; `docs/工具说明.md` for built-in tools; `docs/开发文档.md` for architecture overview (main modules and data flow). If you change module layout or layering, update `docs/开发文档.md` per `.cursor/rules/architecture-docs-sync.mdc`.
+CrabMate is a Rust-based AI Agent that calls **OpenAI-compatible** `chat/completions` backends (e.g. **DeepSeek**, **MiniMax**, **Zhipu GLM**, **Moonshot Kimi**, **Ollama**). It provides Web UI (Axum + Leptos) and CLI (interactive terminal / `chat` single-shot / `serve`; experimental full-screen **`tui`** (minimal chat loop; loads config like **`repl`**)). See `README.md` for quick start and feature overview; `docs/配置说明.md` for env vars and TOML; `docs/命令行与路由.md` for subcommands and routes; `docs/工具说明.md` for built-in tools; `docs/开发文档.md` for architecture overview (main modules and data flow). If you change module layout or layering, update `docs/开发文档.md` per `.trae/rules/architecture-docs-sync.mdc` (or `.cursor/rules/` for Cursor IDE).
 
 ### GitHub Flow workflow
 
