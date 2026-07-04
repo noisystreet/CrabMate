@@ -2,7 +2,6 @@ import { expect, test } from '@playwright/test';
 
 import {
   REAL_LLM_ENABLED,
-  REAL_LLM_SESSION_ANALYZE,
   REAL_LLM_SESSION_FULL,
   REAL_LLM_TIMEOUT,
   REAL_LLM_WORKSPACE,
@@ -12,7 +11,7 @@ import {
   exportSessionArtifacts,
   gotoCrabMateHome,
   putFreshLocalSession,
-  sendAndWaitForStream,
+  sendAndWaitForStreamWithLayoutMonitor,
   setupRealLlmWorkspace,
 } from './helpers';
 
@@ -37,8 +36,9 @@ test.describe('real LLM turn layout (DeepSeek multi-turn + export)', () => {
     test.setTimeout(REAL_LLM_TIMEOUT * 2 + 60_000);
 
     await gotoCrabMateHome(page);
-    await sendAndWaitForStream(page, '分析当前目录');
-    await sendAndWaitForStream(page, '编译 hpcg');
+    await sendAndWaitForStreamWithLayoutMonitor(page, '分析当前目录', { enabled: false });
+    artifacts.streamLayoutReport =
+      (await sendAndWaitForStreamWithLayoutMonitor(page, '编译 hpcg')) ?? undefined;
 
     const { md, json } = await exportSessionArtifacts(page, REAL_LLM_SESSION_FULL);
     artifacts.exportMd = md;

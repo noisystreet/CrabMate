@@ -27,6 +27,8 @@ Usage: $(basename "$0") [smoke|analyze|compile|layout|all]
 Environment:
   E2E_PORT, CM_CRABMATE_USER_DATA_DIR, REAL_LLM_WORKSPACE,
   REAL_LLM_CAPTURE=1  — 通过时也写入 e2e/artifacts/real-llm/
+  REAL_LLM_STRICT_STREAM_LAYOUT=1 — 流式 DOM violations 非空则失败
+  REAL_LLM_STREAM_MONITOR=0   — 关闭 compile 轮 DOM 采样
   REAL_LLM_GREP       — 传给 playwright -g
 
 Prerequisite: frontend/dist (cd frontend && trunk build) and serve on E2E_PORT

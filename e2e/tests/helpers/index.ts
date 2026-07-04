@@ -1,3 +1,4 @@
+export * from './stream-layout-monitor';
 export * from './real-llm';
 export * from './assertions';
 export * from './composer';
