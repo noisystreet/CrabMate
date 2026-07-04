@@ -15,7 +15,6 @@ use super::super::execute_tools::sse_sender_closed;
 use super::super::outer_loop::run_agent_outer_loop;
 use super::super::params::RunLoopParams;
 
-use super::empty_execution::staged_step_empty_execution_verify_failure;
 use super::orchestrator as staged_orchestrator;
 use super::patch_planner::StagedPlanPatchPlannerCtx;
 use super::sse::{
@@ -146,29 +145,18 @@ where
     patch_ctx.p.turn.turn_planner_hints.step_executor_constraint = prev_executor_constraint;
 
     let mut step_verify_failed_reason: Option<String> = None;
-    if run_step.is_ok() {
-        step_verify_failed_reason = staged_step_empty_execution_verify_failure(
+    if run_step.is_ok()
+        && let Some(acceptance) = crate::agent::acceptance::effective_plan_step_acceptance(&step)
+    {
+        let verify_result = crate::agent::step_verifier::verify_step_execution(
+            &acceptance,
             patch_ctx.p.turn.messages(),
             step_user_idx,
-            &step,
             patch_ctx.p.ctx.core.effective_working_dir,
         );
-        if step_verify_failed_reason.is_none() {
-            #[allow(clippy::collapsible_if)]
-            if let Some(acceptance) =
-                crate::agent::acceptance::effective_plan_step_acceptance(&step)
-            {
-                let verify_result = crate::agent::step_verifier::verify_step_execution(
-                    &acceptance,
-                    patch_ctx.p.turn.messages(),
-                    step_user_idx,
-                    patch_ctx.p.ctx.core.effective_working_dir,
-                );
 
-                if let crate::agent::step_verifier::VerifyResult::Fail { reason } = verify_result {
-                    step_verify_failed_reason = Some(reason);
-                }
-            }
+        if let crate::agent::step_verifier::VerifyResult::Fail { reason } = verify_result {
+            step_verify_failed_reason = Some(reason);
         }
     }
 

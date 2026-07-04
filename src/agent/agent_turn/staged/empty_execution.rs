@@ -1,4 +1,8 @@
 //! 分阶段步内「空执行 / 无构建进展」检测：执行子循环返回 `Ok` 但本分步未产生与验收匹配的实质工具结果。
+//!
+//! 生产路径已不再调用（步验收改走 step_verifier），函数保留供测试模块引用。
+
+#![allow(dead_code)]
 
 use crate::agent::acceptance::{AcceptanceSpec, effective_plan_step_acceptance};
 use crate::agent::plan_artifact::{
