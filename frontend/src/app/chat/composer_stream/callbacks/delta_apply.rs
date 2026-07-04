@@ -15,6 +15,7 @@ fn apply_answer_body_delta(
     chunk: &str,
 ) {
     if stream_ctx.scratch.try_apply_answer_delta(chunk) {
+        stream_ctx.scratch.sync_turn_projection(stream_ctx);
         stream_ctx.scratch.sync_stream_preview(stream_ctx);
         accum.add_answer_delta_chars(chunk.chars().count());
         return;

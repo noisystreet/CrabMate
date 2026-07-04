@@ -4,8 +4,8 @@
 //! 带 `tool_call_id` 锚点的可见 assistant 行（置于对应工具之前）。
 
 use crabmate_turn_layout::{
-    PENDING_STREAM_COMMENTARY_SEGMENT_ID, SegmentKind, Turn, TurnEvent, commentary_for_tool,
-    reduce_event,
+    PENDING_STREAM_COMMENTARY_SEGMENT_ID, SegmentKind, Turn, TurnEvent, batch_narration_text,
+    commentary_for_tool, reduce_event, streaming_commentary_block_text,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -92,29 +92,32 @@ impl TurnCanonicalState {
         });
     }
 
-    /// 无 `tool_call_id` 时 peel 正文进入 pending 旁注段。
-    pub(super) fn ingest_pending_stream_commentary(&mut self, text: &str) {
-        if text.trim().is_empty() {
+    /// overlay / peel 正文 append 到批说明（块布局）；不因已有 step 旁注而丢弃。
+    pub(super) fn ingest_batch_commentary_from_peel(&mut self, text: &str) {
+        let t = text.trim();
+        if t.is_empty() {
             return;
         }
-        if self.turn.segments.iter().any(|s| {
-            s.segment_id == PENDING_STREAM_COMMENTARY_SEGMENT_ID && !s.text.trim().is_empty()
-        }) || self.turn.steps.iter().any(|s| {
-            s.before_commentary
-                .as_ref()
-                .is_some_and(|t| !t.trim().is_empty())
-        }) {
+        let closed = batch_narration_text(&self.turn).unwrap_or_default();
+        let open = streaming_commentary_block_text(&self.turn).unwrap_or_default();
+        let mut combined = String::with_capacity(closed.len() + open.len());
+        combined.push_str(&closed);
+        combined.push_str(&open);
+        let combined_trim = combined.trim();
+        if combined_trim.ends_with(t)
+            || assistant_texts_fuzzy_duplicate(combined_trim, t)
+            || t == combined_trim
+        {
             return;
         }
-        self.ingest_pre_tool_commentary(text);
-    }
-
-    /// 首个 `tool_call` 前 pending 段仍 open：旁注仅走 loading 尾泡。
-    pub(super) fn pending_stream_commentary_open(&self) -> bool {
-        self.turn
-            .segments
-            .iter()
-            .any(|s| s.open && s.segment_id == PENDING_STREAM_COMMENTARY_SEGMENT_ID)
+        if t.starts_with(combined_trim) && t.len() > combined_trim.len() {
+            let suffix = &t[combined_trim.len()..];
+            if !suffix.trim().is_empty() {
+                let _ = self.try_apply_commentary_delta(suffix);
+            }
+            return;
+        }
+        let _ = self.try_apply_commentary_delta(text);
     }
 
     /// 将 plain `on_delta` 写入 commentary 段：优先 open 段；否则 pending / 锚点 step。
@@ -319,9 +322,22 @@ mod tests {
     }
 
     #[test]
+    fn ingest_batch_commentary_appends_after_first_tool_step() {
+        let mut turn = TurnCanonicalState::new();
+        turn.ingest_pre_tool_commentary("先解压。");
+        turn.on_tool_call("tc1", "unpack", "unpack");
+        turn.ingest_batch_commentary_from_peel("再看 INSTALL。");
+        turn.on_tool_call("tc2", "read_file", "read file");
+        assert_eq!(
+            turn.batch_narration_text().as_deref(),
+            Some("先解压。再看 INSTALL。")
+        );
+    }
+
+    #[test]
     fn batch_narration_text_merges_pending_and_step_commentary() {
         let mut turn = TurnCanonicalState::new();
-        turn.ingest_pending_stream_commentary("pending。");
+        turn.ingest_batch_commentary_from_peel("pending。");
         turn.on_segment_start(TurnSegmentStartInfo {
             segment_id: "seg-before-tc_a".into(),
             kind: "commentary".into(),

@@ -429,3 +429,20 @@ messages:         同上（batch 行 id 固定为 turn-batch-narration）
 ```
 
 **仍保留**：`demote_answer_before_tools`、post-tool loading peel/pin、`TurnReducer` 金样（`fixtures/turn_project_golden.jsonl` 仍可按 step 锚点断言 canonical，与 UI 投影可分叉）。
+
+---
+
+## 14. 写入收敛（Phase 9）
+
+**目标**：assistant 批说明 / 终答 **仅** 经 `TurnReducer` → `project_turn_web` → [`BubbleOutputQueue::sync_web_projection`] upsert 到 `StoredMessage`；`TurnLayout` **只** 改形状（工具行、loading 空壳、pin），**不** 向 loading `stored.text` 写旁注/终答正文。
+
+| Invariant | 规则 |
+|-----------|------|
+| **I9 唯一落盘** | `sync_web_projection` = batch + final upsert + 清空 loading 壳 `text` |
+| **I10 边界 commit** | 每个 `tool_call` 前 `drain_loading_commentary_to_canonical`（overlay/stored → canonical **仅**） |
+| **I11 overlay 从属** | preview 仅 open 段 / 未落盘终答增量；已 flush 行与 overlay 互斥 |
+| **I12 on_done** | 若 `turn-final-answer` 已落盘 → **不** merge overlay 进 loading 尾泡 |
+
+**顺序（`tool_call`）**：`demote` → `drain` → `on_turn_tool_call`（canonical）→ `on_tool_call_declared`（布局）→ `sync_turn_projection`。
+
+**测试**：`real_morph_b_bulk_deltas_stored_block_layout` · `sync_web_projection_clears_loading_stored_body`

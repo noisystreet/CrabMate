@@ -12,7 +12,9 @@ mod tests {
     use crate::sse_dispatch::TurnSegmentStartInfo;
     use crate::storage::StoredMessage;
 
-    use super::super::bubble_queue::{BATCH_NARRATION_ROW_ID, BubbleOutputQueue};
+    use super::super::bubble_queue::{
+        BATCH_NARRATION_ROW_ID, BubbleOutputQueue, FINAL_ANSWER_ROW_ID,
+    };
 
     #[derive(Debug, Deserialize)]
     struct WebGoldenCase {
@@ -135,7 +137,7 @@ mod tests {
             );
 
             let mut messages = tool_messages_from_projection(&turn);
-            BubbleOutputQueue.flush_batch_narration_row(&mut messages, &turn);
+            BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None);
 
             let batch = crabmate_turn_layout::batch_narration_row(turn.turn_ref())
                 .expect("case must define batch row when tools exist");
@@ -174,5 +176,53 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// 真实路径形态 B：无 `turn_segment_*`、仅 plain delta + tool_call；stored 须拆成 batch + tools + final。
+    #[test]
+    fn real_morph_b_bulk_deltas_stored_block_layout() {
+        let mut turn = TurnCanonicalState::new();
+        assert!(turn.try_apply_commentary_delta("好的，先看 HPCG 安装说明。"));
+        turn.on_tool_call("tc_unpack", "unpack", "unpack");
+        assert!(turn.try_apply_commentary_delta("读取 INSTALL 与 Makefile。"));
+        turn.on_tool_call("tc_read", "read_file", "read INSTALL");
+        turn.on_tool_call("tc_make", "run_command", "make");
+        turn.on_tool_phase_end();
+        assert!(turn.try_apply_answer_delta("HPCG 编译完成。"));
+
+        let batch = crabmate_turn_layout::batch_narration_row(turn.turn_ref()).expect("batch");
+        assert!(
+            batch.text.contains("好的，先看 HPCG") && batch.text.contains("读取 INSTALL"),
+            "batch={}",
+            batch.text
+        );
+
+        let mut messages = tool_messages_from_projection(&turn);
+        let queue = BubbleOutputQueue;
+        queue.sync_web_projection(&mut messages, &turn, None);
+
+        let batch_idx = batch_row_index(&messages).expect("batch row");
+        let final_idx = messages
+            .iter()
+            .position(|m| m.id == FINAL_ANSWER_ROW_ID)
+            .expect("final row");
+        let first_tool = messages.iter().position(|m| m.is_tool).expect("tool row");
+        assert!(
+            batch_idx < first_tool,
+            "batch must precede tools: idx batch={batch_idx} tool={first_tool}"
+        );
+        assert!(
+            final_idx > batch_idx,
+            "final must follow batch: batch={batch_idx} final={final_idx}"
+        );
+        assert_eq!(messages[final_idx].text, "HPCG 编译完成。");
+        assert!(
+            messages
+                .iter()
+                .filter(|m| m.role == "assistant" && !m.is_tool)
+                .count()
+                >= 2,
+            "expected separate batch + final assistant rows"
+        );
     }
 }

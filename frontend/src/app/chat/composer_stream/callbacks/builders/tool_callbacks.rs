@@ -152,6 +152,7 @@ pub(in super::super) fn chat_stream_on_tool_call_builder(
                 return;
             }
             TurnLayout::demote_answer_before_tools(stream_ctx.as_ref(), accum.as_ref());
+            TurnLayout::drain_loading_commentary_to_canonical(stream_ctx.as_ref());
             stream_ctx
                 .scratch
                 .apply_stream_control_event(StreamControlEvent::ToolCallDeclared);
@@ -196,19 +197,23 @@ pub(in super::super) fn chat_stream_on_tool_call_builder(
                 tool_name: non_empty_trimmed_tool_name(&name),
                 created_at: message_created_ms(),
             };
-            TurnLayout::on_tool_call_declared(
-                stream_ctx.as_ref(),
-                tool_msg,
-                subgoal_marker.as_deref(),
-            );
             if let Some(ref tcid) = tcid {
                 stream_ctx
                     .scratch
                     .on_turn_tool_call(tcid.as_str(), name.trim(), core.as_str());
+                TurnLayout::on_tool_call_declared(
+                    stream_ctx.as_ref(),
+                    tool_msg,
+                    subgoal_marker.as_deref(),
+                );
                 stream_ctx.scratch.sync_turn_projection(stream_ctx.as_ref());
                 stream_ctx.scratch.sync_stream_preview(stream_ctx.as_ref());
-            }
-            if tcid.is_none() {
+            } else {
+                TurnLayout::on_tool_call_declared(
+                    stream_ctx.as_ref(),
+                    tool_msg,
+                    subgoal_marker.as_deref(),
+                );
                 stream_ctx.scratch.enqueue_pending_tool_message_id(id);
             }
         },
