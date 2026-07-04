@@ -680,7 +680,7 @@ async fn run_agent_turn_staged_step_verify_fail_patch_replanner_mock() {
     let mut cfg = (*cfg_staged_execute_turn()).clone();
     cfg.staged_planning.staged_plan_patch_max_attempts = 1;
     let cfg = Arc::new(cfg);
-    let plan_json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"调用 get_current_time 查询时间","acceptance":{"expect_stdout_contains":"PATCH_VERIFY_MARKER_XYZ"}}]}"#;
+    let plan_json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"调用 get_current_time 查询时间","executor_kind":"patch_write","acceptance":{"expect_stdout_contains":"PATCH_VERIFY_MARKER_XYZ"}}]}"#;
     let patch_plan_json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"调用 get_current_time 查询时间（补丁后）"}]}"#;
     let outer_fail_no_tool = Message::assistant_only("本轮未调用任何工具。".to_string());
     let step_final = Message::assistant_only("分阶段补丁后 mock 终答".to_string());
