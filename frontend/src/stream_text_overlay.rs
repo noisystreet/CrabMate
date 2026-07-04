@@ -89,6 +89,21 @@ pub fn stream_overlay_replace_answer_for_message(
     }
 }
 
+/// 读取当前 attach 内某 loading 助手行的 overlay 正文（不 take、不 merge）。
+#[must_use]
+pub fn stream_overlay_answer_for_message(
+    overlay: Option<&StreamTextOverlay>,
+    session_id: &str,
+    message_id: &str,
+) -> Option<String> {
+    let o = overlay?;
+    if o.session_id == session_id && o.message_id == message_id && !o.answer.trim().is_empty() {
+        Some(o.answer.clone())
+    } else {
+        None
+    }
+}
+
 /// 投影已写入 `StoredMessage` 后，丢弃同 message 上冗余的 overlay 正文，避免 UI 双显。
 pub fn stream_overlay_clear_answer_for_message(
     overlay: RwSignal<Option<StreamTextOverlay>>,

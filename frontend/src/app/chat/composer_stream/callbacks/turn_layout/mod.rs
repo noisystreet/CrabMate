@@ -1,6 +1,7 @@
 //! 单轮 `/chat/stream` 内 **`messages` 布局** 的唯一入口（方向 A：显式 TurnLayout 状态机）。
 //!
-//! 目标顺序（块布局）：`[时间线*] → [工具批说明 assistant 一块] → [工具*] → [post-tool 终答 loading 尾泡]`
+//! 目标顺序（Phase 9 块布局）：`[时间线*] → [turn-batch-narration] → [工具*] → [turn-final-answer] → [loading 空壳]`
+//! assistant 批说明 / 终答正文 **仅** 经 [`BubbleOutputQueue::sync_web_projection`] 落盘。
 //!
 //! | 事件 | 入口 |
 //! |------|------|
@@ -25,21 +26,118 @@ use leptos::prelude::GetUntracked;
 use crate::session_ops::{make_message_id, message_created_ms};
 use crate::storage::{StoredMessage, StoredMessageState};
 use crate::stream_text_overlay::{
-    stream_overlay_clear_answer_for_message, stream_overlay_replace_answer_for_message,
-    stream_overlay_take_into_stored_message,
+    stream_overlay_answer_for_message, stream_overlay_clear_answer_for_message,
+    stream_overlay_replace_answer_for_message, stream_overlay_take_into_stored_message,
 };
 
 use super::super::context::ChatStreamCallbackCtx;
 use super::super::per_stream_accum::PerStreamAccum;
 use super::super::turn_canonical::TurnCanonicalState;
 
-pub(crate) use bubble_queue::BubbleOutputQueue;
+pub(crate) use bubble_queue::{BubbleOutputQueue, FINAL_ANSWER_ROW_ID};
 
 /// post-tool 尾泡被提前 finalize 时暂存的总结正文。
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PeeledSummary {
     text: String,
     reasoning_text: String,
+}
+
+fn overlay_answer_for_loading_tail(
+    stream_ctx: &ChatStreamCallbackCtx,
+    loading_id: &str,
+) -> Option<String> {
+    stream_overlay_answer_for_message(
+        stream_ctx.chat.stream_text_overlay.get_untracked().as_ref(),
+        stream_ctx.bound_stream_session_id.as_str(),
+        loading_id,
+    )
+}
+
+/// 工具边界：将 loading 尾泡 overlay 旁注提交进 canonical（P0′ 空壳 stored 时 peel 摘不到字）。
+fn commit_overlay_commentary_to_canonical(stream_ctx: &ChatStreamCallbackCtx) {
+    if !stream_ctx.scratch.tool_phase_open() && stream_ctx.scratch.post_tool_stream_tail_active() {
+        // post-tool 终答 preview 在 overlay；勿误入批说明。
+        return;
+    }
+    let mid = stream_ctx.scratch.clone_assistant_id();
+    let Some(answer) = overlay_answer_for_loading_tail(stream_ctx, mid.as_str()) else {
+        return;
+    };
+    if stream_ctx.scratch.tool_phase_open() {
+        stream_ctx
+            .scratch
+            .ingest_batch_commentary_from_peel(answer.as_str());
+    } else {
+        stream_ctx
+            .scratch
+            .absorb_pre_tool_narration_for_first_tool(answer.as_str());
+    }
+}
+
+/// 工具边界 / demote：overlay 与 loading stored 正文 **仅** 迁入 canonical，不写 `StoredMessage` 助手行。
+pub(crate) fn drain_loading_commentary_to_canonical(stream_ctx: &ChatStreamCallbackCtx) {
+    if !stream_ctx.scratch.tool_phase_open() && stream_ctx.scratch.post_tool_stream_tail_active() {
+        return;
+    }
+    commit_overlay_commentary_to_canonical(stream_ctx);
+    let mid = stream_ctx.scratch.clone_assistant_id();
+    let sid = stream_ctx.bound_stream_session_id.clone();
+    let drained = RefCell::new(None::<String>);
+    stream_ctx.update_bound_session(|s| {
+        let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) else {
+            return;
+        };
+        stream_overlay_take_into_stored_message(
+            stream_ctx.chat.stream_text_overlay,
+            sid.as_str(),
+            mid.as_str(),
+            &mut s.messages[idx],
+        );
+        let text = s.messages[idx].text.trim();
+        if !text.is_empty() {
+            *drained.borrow_mut() = Some(s.messages[idx].text.clone());
+        }
+        s.messages[idx].text.clear();
+    });
+    if let Some(text) = drained.into_inner() {
+        if stream_ctx.scratch.tool_phase_open() {
+            stream_ctx
+                .scratch
+                .ingest_batch_commentary_from_peel(text.as_str());
+        } else {
+            stream_ctx
+                .scratch
+                .absorb_pre_tool_narration_for_first_tool(text.as_str());
+        }
+    }
+    stream_overlay_clear_answer_for_message(
+        stream_ctx.chat.stream_text_overlay,
+        sid.as_str(),
+        mid.as_str(),
+        Some(stream_ctx.chat.stream_overlay_revision),
+    );
+}
+
+fn discard_premature_assistant_tail(
+    messages: &mut Vec<StoredMessage>,
+    streaming_assistant_id: &str,
+) {
+    if peel_premature_summary_from_messages(messages, streaming_assistant_id).is_some() {
+        return;
+    }
+    let Some(idx) = messages.iter().position(|m| m.id == streaming_assistant_id) else {
+        return;
+    };
+    let m = &messages[idx];
+    if m.role != "assistant" || m.is_tool || !m.state.as_ref().is_some_and(|st| st.is_loading()) {
+        return;
+    }
+    if m.text.trim().is_empty() && m.reasoning_text.trim().is_empty() {
+        return;
+    }
+    messages[idx].text.clear();
+    messages[idx].reasoning_text.clear();
 }
 
 fn is_premature_finalized_post_tool_tail(m: &StoredMessage) -> bool {
@@ -80,6 +178,8 @@ fn peel_premature_summary_from_messages(
 }
 
 /// 下一工具边界前摘下 post-tool 尾泡正文：过早 finalize 行，或延迟 finalize 下仍 loading 的正文尾泡。
+/// Phase 7 遗留：单测仍覆盖 peel 语义；生产路径 Phase 9 用 [`discard_premature_assistant_tail`]。
+#[cfg(test)]
 fn extract_post_tool_tail_before_tool(
     messages: &mut Vec<StoredMessage>,
     streaming_assistant_id: &str,
@@ -184,6 +284,11 @@ fn insert_post_tool_loading_after_tool(
 pub(crate) struct TurnLayout;
 
 impl TurnLayout {
+    /// 工具边界：overlay / loading stored → canonical（Phase 9；不写 stored 助手正文行）。
+    pub(crate) fn drain_loading_commentary_to_canonical(stream_ctx: &ChatStreamCallbackCtx) {
+        drain_loading_commentary_to_canonical(stream_ctx);
+    }
+
     /// 尾泡正文已与 `final_response` 一致时是否应立即 finalize（post-tool 阶段为 false，延迟 finalize）。
     pub(crate) fn should_finalize_loading_when_tail_matches_final_response(
         post_tool_stream_tail_active: bool,
@@ -211,34 +316,12 @@ impl TurnLayout {
             return;
         }
         stream_ctx.scratch.enter_commentary_before_tools_lane();
-        let sid = stream_ctx.bound_stream_session_id.clone();
-        let mid = stream_ctx.scratch.clone_assistant_id();
+        drain_loading_commentary_to_canonical(stream_ctx);
         stream_ctx.update_bound_session(|session| {
+            let mid = stream_ctx.scratch.clone_assistant_id();
             let Some(idx) = session.messages.iter().position(|m| m.id == mid) else {
                 return;
             };
-            stream_overlay_take_into_stored_message(
-                stream_ctx.chat.stream_text_overlay,
-                sid.as_str(),
-                mid.as_str(),
-                &mut session.messages[idx],
-            );
-            let migrated = if !session.messages[idx].text.trim().is_empty() {
-                session.messages[idx].text.clone()
-            } else {
-                session.messages[idx].reasoning_text.clone()
-            };
-            stream_ctx
-                .scratch
-                .absorb_pre_tool_narration_for_first_tool(migrated.as_str());
-            stream_overlay_clear_answer_for_message(
-                stream_ctx.chat.stream_text_overlay,
-                sid.as_str(),
-                mid.as_str(),
-                Some(stream_ctx.chat.stream_overlay_revision),
-            );
-            session.messages[idx].text.clear();
-            session.messages[idx].reasoning_text.clear();
             if session.messages[idx]
                 .state
                 .as_ref()
@@ -250,7 +333,7 @@ impl TurnLayout {
         accum.clear_answer_delta_chars();
     }
 
-    /// `on_tool_call`：peel 过早总结 → 插入工具占位 → 开 post-tool loading 尾泡 → 恢复总结 → pin。
+    /// `on_tool_call`：插入工具占位 → 空 loading 尾泡（Phase 9：正文仅经 `sync_web_projection` 落盘）。
     pub(crate) fn on_tool_call_declared(
         stream_ctx: &ChatStreamCallbackCtx,
         tool_msg: StoredMessage,
@@ -258,23 +341,9 @@ impl TurnLayout {
     ) {
         let tool_id = tool_msg.id.clone();
         let mid = stream_ctx.scratch.clone_assistant_id();
-        let sid = stream_ctx.bound_stream_session_id.clone();
         let new_tail_id = RefCell::new(None::<String>);
         stream_ctx.update_bound_session(|s| {
-            if let Some(idx) = s.messages.iter().position(|m| m.id == mid) {
-                stream_overlay_take_into_stored_message(
-                    stream_ctx.chat.stream_text_overlay,
-                    sid.as_str(),
-                    mid.as_str(),
-                    &mut s.messages[idx],
-                );
-            }
-            let peeled = extract_post_tool_tail_before_tool(&mut s.messages, mid.as_str());
-            if let Some(ref summary) = peeled {
-                stream_ctx
-                    .scratch
-                    .ingest_pending_stream_commentary(summary.text.as_str());
-            }
+            discard_premature_assistant_tail(&mut s.messages, mid.as_str());
             insert_tool_row(&mut s.messages, tool_msg, subgoal_marker);
             if let Some(load_idx) = s.messages.iter().position(|m| m.id == mid) {
                 finalize_loading_row_at(&mut s.messages, load_idx);
@@ -297,24 +366,11 @@ impl TurnLayout {
         stream_ctx: &ChatStreamCallbackCtx,
         tool_message_id: &str,
     ) {
+        drain_loading_commentary_to_canonical(stream_ctx);
         let mid = stream_ctx.scratch.clone_assistant_id();
-        let sid = stream_ctx.bound_stream_session_id.clone();
         let new_tail_id = RefCell::new(None::<String>);
         stream_ctx.update_bound_session(|s| {
-            if let Some(idx) = s.messages.iter().position(|m| m.id == mid) {
-                stream_overlay_take_into_stored_message(
-                    stream_ctx.chat.stream_text_overlay,
-                    sid.as_str(),
-                    mid.as_str(),
-                    &mut s.messages[idx],
-                );
-            }
-            let peeled = extract_post_tool_tail_before_tool(&mut s.messages, mid.as_str());
-            if let Some(ref summary) = peeled {
-                stream_ctx
-                    .scratch
-                    .ingest_pending_stream_commentary(summary.text.as_str());
-            }
+            discard_premature_assistant_tail(&mut s.messages, mid.as_str());
             if s.messages.iter().all(|m| m.id != mid) {
                 return;
             }
@@ -502,6 +558,33 @@ impl TurnLayout {
         stream_ctx.chat.set_stream_overlay_display_mid(mid.as_str());
     }
 
+    /// 流结束：若 `turn-final-answer` 已落盘且 loading 尾泡与其重复，去掉尾泡避免导出双段。
+    pub(crate) fn dedupe_loading_tail_against_final_answer_row(
+        messages: &mut Vec<StoredMessage>,
+        loading_id: &str,
+    ) {
+        use crate::message_dedupe::assistant_texts_fuzzy_duplicate;
+
+        let Some(final_idx) = messages
+            .iter()
+            .position(|m| m.id == bubble_queue::FINAL_ANSWER_ROW_ID)
+        else {
+            return;
+        };
+        let Some(load_idx) = messages.iter().position(|m| m.id == loading_id) else {
+            return;
+        };
+        let final_text = messages[final_idx].text.as_str();
+        let load = &messages[load_idx];
+        if load.text.trim().is_empty() && load.reasoning_text.trim().is_empty() {
+            messages.remove(load_idx);
+            return;
+        }
+        if assistant_texts_fuzzy_duplicate(load.text.as_str(), final_text) {
+            messages.remove(load_idx);
+        }
+    }
+
     /// 段/工具边界：flush 工具批说明块到 stored；未落盘前保留 overlay preview。
     pub(crate) fn sync_turn_projection(
         stream_ctx: &ChatStreamCallbackCtx,
@@ -510,7 +593,7 @@ impl TurnLayout {
     ) {
         let mid = stream_ctx.scratch.clone_assistant_id();
         stream_ctx.update_bound_session(|s| {
-            queue.flush_batch_narration_row(&mut s.messages, turn);
+            queue.sync_web_projection(&mut s.messages, turn, Some(mid.as_str()));
         });
         let clear_overlay = stream_ctx
             .read_bound_session(|s| should_clear_preview_overlay_answer(turn, &s.messages))

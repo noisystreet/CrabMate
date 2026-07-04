@@ -154,10 +154,10 @@ impl StreamSseScratch {
     }
 
     #[inline]
-    pub(super) fn ingest_pending_stream_commentary(&self, text: &str) {
+    pub(super) fn ingest_batch_commentary_from_peel(&self, text: &str) {
         self.turn
             .borrow_mut()
-            .ingest_pending_stream_commentary(text);
+            .ingest_batch_commentary_from_peel(text);
     }
 
     /// delta 热路径：仅更新 loading 尾泡 preview，说明块经 [`Self::sync_turn_projection`] 落盘。
