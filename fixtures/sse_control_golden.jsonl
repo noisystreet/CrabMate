@@ -28,6 +28,9 @@ tool_output_chunk 缺 tool_call_id 当正文	{"v":1,"tool_output_chunk":{"seq":1
 tool_result	{"v":1,"tool_result":{"name":"run_command","result_version":1,"summary":"ls","output":"退出码：0","ok":true,"retryable":false,"tool_call_id":"tc1","execution_mode":"serial","stdout":"","stderr":""}}	handled
 tool_result 仅有 structured_preview（无 output）	{"v":1,"tool_result":{"name":"read_file","result_version":1,"structured_preview":{"kind":"crabmate_tool_output","tool":"read_file","version":1,"path":"a.rs"}}}	handled
 command_approval_request	{"v":1,"command_approval_request":{"command":"git","args":"status","allowlist_key":"git"}}	handled
+turn_segment_start	{"v":1,"turn_segment_start":{"segment_id":"seg-before-tc1","kind":"commentary","before_tool_call_id":"tc1"}}	handled
+turn_segment_end	{"v":1,"turn_segment_end":{"segment_id":"seg-before-tc1"}}	handled
+turn_tool_phase_end	{"v":1,"turn_tool_phase_end":true}	handled
 staged_plan_notice 字符串	{"v":1,"staged_plan_notice":"line1\nline2"}	handled
 staged_plan_notice_clear	{"v":1,"staged_plan_notice_clear":true}	handled
 chat_ui_separator	{"v":1,"chat_ui_separator":true}	handled

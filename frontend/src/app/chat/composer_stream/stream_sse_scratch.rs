@@ -12,12 +12,15 @@ use super::per_stream_accum::PerStreamAccum;
 use super::stream_control_reducer::{StreamControlEvent, StreamControlReducerState};
 use super::stream_turn_scratch_state::StreamTurnScratchState;
 use super::stream_turn_state::StreamModelOutputLane;
+use super::turn_canonical::{TurnCanonicalState, make_turn_canonical_cell};
+use crate::sse_dispatch::TurnSegmentStartInfo;
 
 /// 单轮流 SSE 回调共享的 lane + 累计 + 尾泡可变状态（`Clone` 仅为传递 `Rc` 句柄）。
 #[derive(Clone)]
 pub(super) struct StreamSseScratch {
     state: Rc<StreamTurnScratchState>,
     control: Rc<RefCell<StreamControlReducerState>>,
+    turn: Rc<RefCell<TurnCanonicalState>>,
 }
 
 impl StreamSseScratch {
@@ -26,6 +29,7 @@ impl StreamSseScratch {
         Self {
             state: Rc::new(StreamTurnScratchState::new(initial_asst_id)),
             control: Rc::new(RefCell::new(StreamControlReducerState::new())),
+            turn: make_turn_canonical_cell(),
         }
     }
 
@@ -93,5 +97,45 @@ impl StreamSseScratch {
     #[inline]
     pub(super) fn enqueue_pending_tool_message_id(&self, id: String) {
         self.state.enqueue_pending_tool_message_id(id);
+    }
+
+    #[inline]
+    pub(super) fn on_turn_segment_start(&self, info: TurnSegmentStartInfo) {
+        self.turn.borrow_mut().on_segment_start(info);
+    }
+
+    #[inline]
+    pub(super) fn on_turn_segment_end(&self, segment_id: String) {
+        self.turn.borrow_mut().on_segment_end(segment_id);
+    }
+
+    #[inline]
+    pub(super) fn on_turn_tool_phase_end(&self) {
+        self.turn.borrow_mut().on_tool_phase_end();
+    }
+
+    #[inline]
+    pub(super) fn on_turn_tool_call(&self, tool_call_id: &str, name: &str, summary: &str) {
+        self.turn
+            .borrow_mut()
+            .on_tool_call(tool_call_id, name, summary);
+    }
+
+    /// 若 delta 写入 commentary 段（含晚于 `tool_call` 的 plain 增量）则返回 `true`。
+    #[inline]
+    pub(super) fn try_apply_commentary_delta(&self, delta: &str) -> bool {
+        self.turn.borrow_mut().try_apply_commentary_delta(delta)
+    }
+
+    #[inline]
+    pub(super) fn ingest_pre_tool_commentary(&self, text: &str) {
+        self.turn.borrow_mut().ingest_pre_tool_commentary(text);
+    }
+
+    /// 按 [`crabmate_turn_layout::project_turn`] 行序 upsert 工具前旁注。
+    #[inline]
+    pub(super) fn sync_turn_projection(&self, stream_ctx: &super::context::ChatStreamCallbackCtx) {
+        let turn = self.turn.borrow();
+        super::callbacks::TurnLayout::sync_turn_projection(stream_ctx, &turn);
     }
 }

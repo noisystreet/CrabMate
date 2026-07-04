@@ -6,7 +6,7 @@ use crate::clarification_questionnaire::clarification_questionnaire_body_if_tool
 use crate::config::AgentConfig;
 use crate::sse::{
     SsePayload, ThinkingTraceBody, ToolCallSummary, ToolOutputChunkBody, ToolResultBody,
-    encode_message, send_sse_control_payload_optional,
+    TurnSegmentStartBody, encode_message, send_sse_control_payload_optional,
 };
 use crate::tool_result::{self, NormalizedToolEnvelope, ToolEnvelopeContext, parse_legacy_output};
 use crate::tools;
@@ -366,6 +366,49 @@ pub(super) async fn emit_tool_result_sse_and_append(
     .await;
 }
 
+pub(super) async fn emit_turn_segment_start_before_tool_sse(
+    out: Option<&mpsc::Sender<String>>,
+    sse_control_mirror: Option<&crate::sse::SseControlMirror>,
+    tool_call_id: &str,
+) {
+    if out.is_none() && sse_control_mirror.is_none() {
+        return;
+    }
+    let payload = SsePayload::TurnSegmentStart {
+        start: TurnSegmentStartBody {
+            segment_id: format!("seg-before-{tool_call_id}"),
+            kind: "commentary".to_string(),
+            before_tool_call_id: Some(tool_call_id.to_string()),
+        },
+    };
+    let _ = send_sse_control_payload_optional(
+        out,
+        sse_control_mirror,
+        payload,
+        "execute_tools::turn_segment_start",
+    )
+    .await;
+}
+
+pub(super) async fn emit_turn_tool_phase_end_sse(
+    out: Option<&mpsc::Sender<String>>,
+    sse_control_mirror: Option<&crate::sse::SseControlMirror>,
+) {
+    if out.is_none() && sse_control_mirror.is_none() {
+        return;
+    }
+    let payload = SsePayload::TurnToolPhaseEnd {
+        turn_tool_phase_end: true,
+    };
+    let _ = send_sse_control_payload_optional(
+        out,
+        sse_control_mirror,
+        payload,
+        "execute_tools::turn_tool_phase_end",
+    )
+    .await;
+}
+
 pub(super) async fn emit_tool_call_summary_sse(
     out: Option<&mpsc::Sender<String>>,
     sse_control_mirror: Option<&crate::sse::SseControlMirror>,
@@ -412,6 +455,8 @@ pub(super) async fn emit_tool_call_summary_sse(
     if out.is_none() && sse_control_mirror.is_none() {
         return;
     }
+
+    emit_turn_segment_start_before_tool_sse(out, sse_control_mirror, tool_call_id).await;
 
     let payload = SsePayload::ToolCall {
         tool_call: ToolCallSummary {

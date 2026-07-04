@@ -1,46 +1,14 @@
-//! 时间线插入、流式尾泡轮换与助手行收尾。
-
-use std::cell::RefCell;
+//! 时间线旁注文案与子目标 upsert；**布局转移**见 [`super::super::turn_layout::TurnLayout`]。
 
 use leptos::prelude::GetUntracked;
 
 use crate::i18n;
 use crate::session_ops::{make_message_id, message_created_ms};
 use crate::storage::{StoredMessage, StoredMessageState};
-use crate::stream_text_overlay::{
-    stream_overlay_merged_text_reasoning_owned, stream_overlay_take_into_stored_message,
-};
+use crate::stream_text_overlay::stream_overlay_merged_text_reasoning_owned;
 
+use super::super::turn_layout::{TurnLayout, insert_assistant_before_loading_tail};
 use crate::app::chat::composer_stream::context::ChatStreamCallbackCtx;
-
-/// 将旁注插在**当前流式 `loading` 助手气泡之前**；若无占位则追加到末尾。
-pub(crate) fn insert_msg_before_streaming_assistant_tail(
-    messages: &mut Vec<StoredMessage>,
-    streaming_assistant_id: &str,
-    msg: StoredMessage,
-) {
-    if let Some(idx) = messages.iter().position(|m| {
-        m.id == streaming_assistant_id
-            && m.role == "assistant"
-            && m.state.as_ref().is_some_and(|s| s.is_loading())
-    }) {
-        messages.insert(idx, msg);
-    } else {
-        messages.push(msg);
-    }
-}
-
-/// 管理器时间线（意图分析、规划摘要等）在服务端往往早于正文 `delta`，
-/// 须插在**当前流式 `loading` 助手气泡之前**，否则会跑到已流出的计划文字下面。
-pub(crate) fn insert_before_streaming_assistant_or_append(
-    stream_ctx: &ChatStreamCallbackCtx,
-    msg: StoredMessage,
-) {
-    let mid = stream_ctx.scratch.clone_assistant_id();
-    stream_ctx.update_bound_session(|s| {
-        insert_msg_before_streaming_assistant_tail(&mut s.messages, &mid, msg);
-    });
-}
 
 pub(crate) fn push_assistant_timeline_bubble(
     stream_ctx: &ChatStreamCallbackCtx,
@@ -50,7 +18,6 @@ pub(crate) fn push_assistant_timeline_bubble(
     if text.trim().is_empty() {
         return;
     }
-    let now = message_created_ms();
     let msg = StoredMessage {
         id: make_message_id(),
         role: "assistant".to_string(),
@@ -61,10 +28,9 @@ pub(crate) fn push_assistant_timeline_bubble(
         is_tool: false,
         tool_call_id: None,
         tool_name: None,
-        created_at: now,
+        created_at: message_created_ms(),
     };
-    insert_before_streaming_assistant_or_append(stream_ctx, msg);
-    ensure_streaming_assistant_tail_last(stream_ctx);
+    TurnLayout::push_assistant_timeline(stream_ctx, msg);
 }
 
 pub(crate) fn assistant_message_has_visible_text(
@@ -200,174 +166,7 @@ pub(crate) fn upsert_hierarchical_subgoal_bubble(
             created_at: now,
         };
         let mid = stream_ctx.scratch.clone_assistant_id();
-        insert_msg_before_streaming_assistant_tail(&mut s.messages, &mid, msg);
+        insert_assistant_before_loading_tail(&mut s.messages, mid.as_str(), msg);
     });
-    ensure_streaming_assistant_tail_last(stream_ctx);
-}
-
-/// 结束当前 `assistant_message_id` 指向的流式 `loading` 助手行：空正文则删除，否则去掉 `loading` state。
-///
-/// 供工具前收尾与无工具多轮轮换共用，避免两处复制分叉。
-///
-/// **注意**：`reasoning_text` 非空时视为有内容，保留气泡并清除 loading state，
-/// 避免 `assistant_answer_phase` 之前的思维链在工具调用时被误删。
-pub(crate) fn finalize_current_loading_streaming_assistant_row(stream_ctx: &ChatStreamCallbackCtx) {
-    let sid = stream_ctx.bound_stream_session_id.clone();
-    stream_ctx.update_bound_session(|s| {
-        let mid_owned = stream_ctx.scratch.clone_assistant_id();
-        if let Some(idx) = s.messages.iter().position(|m| m.id == mid_owned.as_str()) {
-            stream_overlay_take_into_stored_message(
-                stream_ctx.chat.stream_text_overlay,
-                sid.as_str(),
-                mid_owned.as_str(),
-                &mut s.messages[idx],
-            );
-        }
-        let mid = stream_ctx.scratch.borrow_assistant_id();
-        if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) {
-            let m = &mut s.messages[idx];
-            if m.role == "assistant" && m.state.as_ref().is_some_and(|st| st.is_loading()) {
-                if m.text.trim().is_empty() && m.reasoning_text.trim().is_empty() {
-                    s.messages.remove(idx);
-                } else {
-                    m.state = None;
-                }
-            }
-        }
-    });
-}
-
-/// 工具卡片插入前：结束当前流式段（开场白等保留在工具与时间线**之上**），
-/// 并在本条工具消息之后挂新的 `loading` 占位，供工具结束后的续写。
-pub(crate) fn finalize_loading_assistant_before_tool_and_tail_with_new_loading(
-    stream_ctx: &ChatStreamCallbackCtx,
-    tool_message_id: &str,
-) {
-    let tool_present = stream_ctx
-        .read_bound_session(|s| s.messages.iter().any(|m| m.id == tool_message_id))
-        .unwrap_or(false);
-    if !tool_present {
-        return;
-    }
-    finalize_current_loading_streaming_assistant_row(stream_ctx);
-    let now = message_created_ms();
-    let new_tail_id = RefCell::new(None::<String>);
-    stream_ctx.update_bound_session(|s| {
-        let Some(tidx) = s.messages.iter().position(|m| m.id == tool_message_id) else {
-            return;
-        };
-        let new_asst_id = make_message_id();
-        s.messages.insert(
-            tidx + 1,
-            StoredMessage {
-                id: new_asst_id.clone(),
-                role: "assistant".to_string(),
-                text: String::new(),
-                reasoning_text: String::new(),
-                image_urls: vec![],
-                state: Some(StoredMessageState::Loading),
-                is_tool: false,
-                tool_call_id: None,
-                tool_name: None,
-                created_at: now,
-            },
-        );
-        *new_tail_id.borrow_mut() = Some(new_asst_id);
-    });
-    if let Some(id) = new_tail_id.into_inner() {
-        stream_ctx
-            .scratch
-            .adopt_new_assistant_tail_after_rotation(id.clone());
-        stream_ctx.chat.set_stream_overlay_display_mid(id.as_str());
-    }
-}
-
-/// 同一轮 `run_agent_turn` 内可能多次调用模型（如外层 `continue 'outer` 规划改写），每次首段正文前都会再发
-/// `assistant_answer_phase`。若仍写入同一 `assistant_message_id`，多段可见输出会挤在一个气泡里「不断刷新」。
-/// 工具轮之间已有 [`finalize_loading_assistant_before_tool_and_tail_with_new_loading`]；此处补齐**无工具**的多轮。
-pub(crate) fn rotate_streaming_assistant_for_followup_model_round(
-    stream_ctx: &ChatStreamCallbackCtx,
-) {
-    finalize_current_loading_streaming_assistant_row(stream_ctx);
-    let now = message_created_ms();
-    let new_tail_id = RefCell::new(None::<String>);
-    stream_ctx.update_bound_session(|s| {
-        let new_asst_id = make_message_id();
-        s.messages.push(StoredMessage {
-            id: new_asst_id.clone(),
-            role: "assistant".to_string(),
-            text: String::new(),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: Some(StoredMessageState::Loading),
-            is_tool: false,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: now,
-        });
-        *new_tail_id.borrow_mut() = Some(new_asst_id);
-    });
-    if let Some(id) = new_tail_id.into_inner() {
-        stream_ctx
-            .scratch
-            .adopt_new_assistant_tail_after_rotation(id.clone());
-        stream_ctx.chat.set_stream_overlay_display_mid(id.as_str());
-    }
-    ensure_streaming_assistant_tail_last(stream_ctx);
-}
-
-/// 工具后续写段：分步/时间线等仍会 `push` 到列表末尾，需把当前 `loading` 占位再次移到最下方。
-pub(crate) fn ensure_streaming_assistant_tail_last(stream_ctx: &ChatStreamCallbackCtx) {
-    if !stream_ctx.scratch.post_tool_stream_tail_active() {
-        return;
-    }
-    let mid = stream_ctx.scratch.clone_assistant_id();
-    stream_ctx.update_bound_session(|s| {
-        let Some(idx) = s.messages.iter().position(|m| m.id == mid) else {
-            return;
-        };
-        if s.messages[idx].role != "assistant"
-            || !s.messages[idx]
-                .state
-                .as_ref()
-                .is_some_and(|st| st.is_loading())
-        {
-            return;
-        }
-        let m = s.messages.remove(idx);
-        s.messages.push(m);
-    });
-}
-
-pub(crate) fn remove_loading_assistant_placeholder(stream_ctx: &ChatStreamCallbackCtx) {
-    let sid = stream_ctx.bound_stream_session_id.clone();
-    let mid_owned = stream_ctx.scratch.clone_assistant_id();
-    stream_ctx.update_bound_session(|s| {
-        if let Some(idx) = s.messages.iter().position(|m| m.id == mid_owned.as_str())
-            && s.messages[idx].role == "assistant"
-            && s.messages[idx]
-                .state
-                .as_ref()
-                .is_some_and(|st| st.is_loading())
-        {
-            stream_overlay_take_into_stored_message(
-                stream_ctx.chat.stream_text_overlay,
-                sid.as_str(),
-                mid_owned.as_str(),
-                &mut s.messages[idx],
-            );
-            s.messages.remove(idx);
-        }
-    });
-    // `final_response` 等可能在正文 delta 尚未结束时就撤掉 loading；补挂新尾泡以免后续片段无处展示。
-    let tail_still_present = stream_ctx
-        .read_bound_session(|s| {
-            s.messages
-                .iter()
-                .any(|m| m.id == mid_owned.as_str() && m.role == "assistant" && !m.is_tool)
-        })
-        .unwrap_or(false);
-    if !tail_still_present {
-        rotate_streaming_assistant_for_followup_model_round(stream_ctx);
-    }
+    TurnLayout::pin_loading_tail(stream_ctx);
 }

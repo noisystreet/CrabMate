@@ -64,6 +64,21 @@ pub enum SsePayload {
         #[serde(rename = "assistant_answer_phase")]
         assistant_answer_phase: bool,
     },
+    /// 回合段开始：锚定「某 `tool_call_id` 之前」的旁注（晚到 delta 仍挂此锚点）。
+    TurnSegmentStart {
+        #[serde(rename = "turn_segment_start")]
+        start: TurnSegmentStartBody,
+    },
+    /// 回合段结束：关闭 `turn_segment_start` 所开段。
+    TurnSegmentEnd {
+        #[serde(rename = "turn_segment_end")]
+        end: TurnSegmentEndBody,
+    },
+    /// 工具批结束：后续正文增量为 post-tool 终答（与 `assistant_answer_phase` 配合）。
+    TurnToolPhaseEnd {
+        #[serde(rename = "turn_tool_phase_end")]
+        turn_tool_phase_end: bool,
+    },
     /// 预留：例如 PER 要求前端提示「须补充结构化规划」
     PlanRequired {
         plan_required: bool,
@@ -250,6 +265,21 @@ pub struct ToolResultBody {
     /// 当前由 **`read_file`** / **`read_dir`** / **`list_tree`** 等只读文件工具填充；其它工具省略。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub structured_preview: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TurnSegmentStartBody {
+    pub segment_id: String,
+    /// `commentary`（工具前旁注）或 `answer`（终答段）。
+    pub kind: String,
+    /// 若非空：本段展示在该 `tool_call_id` **之前**。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before_tool_call_id: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TurnSegmentEndBody {
+    pub segment_id: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

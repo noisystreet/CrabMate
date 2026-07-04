@@ -2,6 +2,7 @@
 
 mod error_handler;
 mod sse_parser;
+mod sse_turn_segment_emit;
 
 use log::{debug, info};
 use std::sync::atomic::{AtomicBool, Ordering};

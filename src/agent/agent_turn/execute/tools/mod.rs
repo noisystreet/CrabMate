@@ -30,7 +30,7 @@ mod run_command_guard;
 mod serial;
 use emit::{
     emit_sse_tool_running, emit_timeline_log_sse, emit_tool_call_summary_sse,
-    emit_tool_result_sse_and_append,
+    emit_tool_result_sse_and_append, emit_turn_tool_phase_end_sse,
 };
 use parallel_readonly::execute_tools_parallel;
 use serial::execute_tools_serial;
@@ -199,6 +199,7 @@ fn notify_cli_tool_running_hook(
 async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsBatchOutcome {
     let tool_running_hook = ctx.tool_running_hook.clone();
     let out = ctx.out;
+    let sse_control_mirror = ctx.sse_control_mirror.clone();
     let force_serial = replay_force_serial_from_env();
 
     emit_sse_tool_running(out, true, "execute_tools::batch tool_running true").await;
@@ -301,6 +302,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
         )
         .await;
     }
+    emit_turn_tool_phase_end_sse(out, sse_control_mirror.as_ref()).await;
     emit_sse_tool_running(out, false, "execute_tools::batch tool_running false").await;
     notify_cli_tool_running_hook(out, tool_running_hook.as_ref(), false);
 

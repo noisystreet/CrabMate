@@ -1,5 +1,6 @@
 //! OpenAI 兼容 SSE：`data:` 行扫描、JSON delta 解析、工具调用累积与可选 `mpsc` 增量下发。
 
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use futures_util::StreamExt;
@@ -10,6 +11,10 @@ use crabmate_types::{StreamChoice, StreamChunk, StreamDelta};
 use crate::call_error::LlmCallError;
 use crate::stream_host::{DsmlStreamFilter, StreamChatHost, TerminalPlainFragmentCtx};
 use crate::stream_scratch::TuiLlmStreamScratchArc;
+
+use super::sse_turn_segment_emit::{
+    IngestSseToolCallsFrame, emit_turn_segment_end_if_open, ingest_sse_tool_calls_from_delta,
+};
 
 #[inline]
 fn tui_scratch_push_reasoning(scratch: Option<&TuiLlmStreamScratchArc>, fragment: &str) {
@@ -236,6 +241,8 @@ pub(super) struct IngestSseState<'a> {
     pub(super) finish_reason: &'a mut String,
     pub(super) tool_calls_acc: &'a mut Vec<(String, String, String, String)>,
     pub(super) parsing_tool_calls_notified: &'a mut bool,
+    pub(super) turn_segment_open: &'a mut Option<String>,
+    pub(super) turn_segment_emitted_ids: &'a mut HashSet<String>,
     pub(super) cli_terminal_plain: bool,
     pub(super) cli_plain_prefix_emitted: &'a mut bool,
     pub(super) cli_plain_reasoning_style_active: &'a mut bool,
@@ -510,68 +517,6 @@ async fn ingest_sse_content_from_delta(frame: IngestSseContentFrame<'_>) -> std:
     Ok(())
 }
 
-fn ingest_sse_merge_tool_call_deltas(
-    tcs: Vec<crabmate_types::StreamToolCallDelta>,
-    tool_calls_acc: &mut Vec<(String, String, String, String)>,
-) {
-    for tc in tcs {
-        let idx = tc.index;
-        while tool_calls_acc.len() <= idx {
-            tool_calls_acc.push((
-                String::new(),
-                "function".to_string(),
-                String::new(),
-                String::new(),
-            ));
-        }
-        let acc = &mut tool_calls_acc[idx];
-        if let Some(id) = tc.id {
-            acc.0 = id;
-        }
-        if let Some(t) = tc.typ {
-            acc.1 = t;
-        }
-        if let Some(f) = tc.function {
-            if let Some(n) = f.name {
-                acc.2 = n;
-            }
-            if let Some(a) = f.arguments {
-                acc.3.push_str(&a);
-            }
-        }
-    }
-}
-
-async fn ingest_sse_tool_calls_from_delta(
-    host: &dyn StreamChatHost,
-    delta: StreamDelta,
-    tool_calls_acc: &mut Vec<(String, String, String, String)>,
-    parsing_tool_calls_notified: &mut bool,
-    pending_sse_delta: &mut String,
-    out: Option<&Sender<String>>,
-    coop_cancel: Option<&AtomicBool>,
-) -> std::io::Result<()> {
-    let Some(tcs) = delta.tool_calls else {
-        return Ok(());
-    };
-    if !*parsing_tool_calls_notified && !tcs.is_empty() {
-        *parsing_tool_calls_notified = true;
-        if let Some(tx) = out {
-            flush_sse_delta_buffer(host, pending_sse_delta, Some(tx), coop_cancel).await;
-            let _ = sse_out_send(
-                host,
-                tx,
-                host.encode_parsing_tool_calls_sse(),
-                "llm::stream_chat parsing_tool_calls notify",
-                coop_cancel,
-            )
-            .await;
-        }
-    }
-    ingest_sse_merge_tool_call_deltas(tcs, tool_calls_acc);
-    Ok(())
-}
-
 pub(super) async fn ingest_sse_data_payload(
     payload: &str,
     state: IngestSseState<'_>,
@@ -588,6 +533,8 @@ pub(super) async fn ingest_sse_data_payload(
         finish_reason,
         tool_calls_acc,
         parsing_tool_calls_notified,
+        turn_segment_open,
+        turn_segment_emitted_ids,
         cli_terminal_plain,
         cli_plain_prefix_emitted,
         cli_plain_reasoning_style_active,
@@ -635,15 +582,17 @@ pub(super) async fn ingest_sse_data_payload(
         dsml_content_filter,
     })
     .await?;
-    ingest_sse_tool_calls_from_delta(
+    ingest_sse_tool_calls_from_delta(IngestSseToolCallsFrame {
         host,
         delta,
         tool_calls_acc,
         parsing_tool_calls_notified,
+        turn_segment_open,
+        turn_segment_emitted_ids,
         pending_sse_delta,
         out,
         coop_cancel,
-    )
+    })
     .await?;
     Ok(())
 }
@@ -690,6 +639,8 @@ where
     let mut tool_calls_acc: Vec<(String, String, String, String)> = Vec::new();
     let mut finish_reason = String::new();
     let mut parsing_tool_calls_notified = false;
+    let mut turn_segment_open: Option<String> = None;
+    let mut turn_segment_emitted_ids: HashSet<String> = HashSet::new();
 
     let mut cli_plain_prefix_emitted = false;
     let mut cli_plain_reasoning_style_active = false;
@@ -727,6 +678,8 @@ where
                     finish_reason: &mut finish_reason,
                     tool_calls_acc: &mut tool_calls_acc,
                     parsing_tool_calls_notified: &mut parsing_tool_calls_notified,
+                    turn_segment_open: &mut turn_segment_open,
+                    turn_segment_emitted_ids: &mut turn_segment_emitted_ids,
                     cli_terminal_plain,
                     cli_plain_prefix_emitted: &mut cli_plain_prefix_emitted,
                     cli_plain_reasoning_style_active: &mut cli_plain_reasoning_style_active,
@@ -763,6 +716,8 @@ where
             finish_reason: &mut finish_reason,
             tool_calls_acc: &mut tool_calls_acc,
             parsing_tool_calls_notified: &mut parsing_tool_calls_notified,
+            turn_segment_open: &mut turn_segment_open,
+            turn_segment_emitted_ids: &mut turn_segment_emitted_ids,
             cli_terminal_plain,
             cli_plain_prefix_emitted: &mut cli_plain_prefix_emitted,
             cli_plain_reasoning_style_active: &mut cli_plain_reasoning_style_active,
@@ -774,6 +729,8 @@ where
         },
     )
     .await?;
+
+    emit_turn_segment_end_if_open(host, out, cancel, &mut turn_segment_open).await?;
 
     flush_sse_delta_buffer(host, &mut pending_sse_delta, out, cancel).await;
     flush_dsml_stream_filter_tail(FlushDsmlTailCtx {

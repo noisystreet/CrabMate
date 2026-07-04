@@ -21,7 +21,7 @@ use crate::timeline_scan::{timeline_state_staged_end, timeline_state_staged_star
 use super::super::context::ChatStreamCallbackCtx;
 use super::builders::*;
 use super::delta_apply::chat_stream_on_delta_builder;
-use super::helpers::*;
+use super::turn_layout::TurnLayout;
 
 fn push_timeline_system_bubble_with_tail(
     stream_ctx: &ChatStreamCallbackCtx,
@@ -47,7 +47,7 @@ fn push_timeline_system_bubble_with_tail(
             created_at: now,
         });
     });
-    ensure_streaming_assistant_tail_last(stream_ctx);
+    TurnLayout::after_auxiliary_system_push(stream_ctx);
 }
 
 /// 由 [`super::super::make_attach_chat_stream`](super::super::make_attach_chat_stream) 调用；集中所有 `on_*` 闭包，降低父模块维护面。
@@ -163,10 +163,7 @@ pub(crate) fn build_chat_stream_callbacks(
             if !parsing || stream_ctx.is_stale() {
                 return;
             }
-            suppress_assistant_answer_as_commentary_before_tools(
-                stream_ctx.as_ref(),
-                accum.as_ref(),
-            );
+            TurnLayout::demote_answer_before_tools(stream_ctx.as_ref(), accum.as_ref());
         })
     };
 
@@ -204,6 +201,10 @@ pub(crate) fn build_chat_stream_callbacks(
     };
 
     let on_timeline_log = make_on_timeline_log(Rc::clone(&stream_ctx), Rc::clone(&accum));
+
+    let on_turn_segment_start = make_on_turn_segment_start(Rc::clone(&stream_ctx));
+    let on_turn_segment_end = make_on_turn_segment_end(Rc::clone(&stream_ctx));
+    let on_turn_tool_phase_end = make_on_turn_tool_phase_end(Rc::clone(&stream_ctx));
 
     let on_staged_step_finished: Rc<dyn Fn(StagedPlanStepEndInfo)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
@@ -268,5 +269,8 @@ pub(crate) fn build_chat_stream_callbacks(
         on_clarification_questionnaire: on_clarification,
         on_thinking_trace,
         on_timeline_log,
+        on_turn_segment_start,
+        on_turn_segment_end,
+        on_turn_tool_phase_end,
     }
 }

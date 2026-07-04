@@ -27,11 +27,20 @@ fn sse_control_error_stop(obj: &serde_json::Map<String, Value>) -> bool {
     false
 }
 
+fn sse_control_handled_turn_layout(obj: &serde_json::Map<String, Value>) -> bool {
+    key_present_non_null(obj, "turn_segment_start")
+        || key_present_non_null(obj, "turn_segment_end")
+        || obj.get("turn_tool_phase_end") == Some(&Value::Bool(true))
+}
+
 fn sse_control_handled_planning(obj: &serde_json::Map<String, Value>) -> bool {
     if obj.get("plan_required") == Some(&Value::Bool(true)) {
         return true;
     }
     if let Some(Value::Bool(_)) = obj.get("assistant_answer_phase") {
+        return true;
+    }
+    if sse_control_handled_turn_layout(obj) {
         return true;
     }
     key_present_non_null(obj, "staged_plan_started")
@@ -278,6 +287,9 @@ mod tests {
             &[
                 r#"if obj.get("plan_required") == Some(&Value::Bool(true))"#,
                 r#"if let Some(Value::Bool(b)) = obj.get("assistant_answer_phase")"#,
+                r#"extract_turn_segment_start"#,
+                r#"extract_turn_segment_end"#,
+                r#"turn_tool_phase_end"#,
                 r#"if key_present_non_null(obj, "staged_plan_started")"#,
                 r#"if key_present_non_null(obj, "staged_plan_step_started")"#,
                 r#"if key_present_non_null(obj, "staged_plan_step_finished")"#,

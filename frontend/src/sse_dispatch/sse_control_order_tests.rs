@@ -39,6 +39,9 @@ fn dispatch_triage_string(data: &str) -> &'static str {
             on_assistant_answer_phase: None,
             on_staged_plan_step_started: None,
             on_staged_plan_step_finished: None,
+            on_turn_segment_start: None,
+            on_turn_segment_end: None,
+            on_turn_tool_phase_end: None,
         },
         clarify_trace: SseClarifyTraceHooks {
             on_clarification_questionnaire: None,

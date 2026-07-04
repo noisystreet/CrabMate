@@ -40,6 +40,17 @@ pub struct SseStagedPlanHooks<'a> {
     pub on_assistant_answer_phase: Option<&'a mut dyn FnMut()>,
     pub on_staged_plan_step_started: Option<&'a mut dyn FnMut(StagedPlanStepStartInfo)>,
     pub on_staged_plan_step_finished: Option<&'a mut dyn FnMut(StagedPlanStepEndInfo)>,
+    pub on_turn_segment_start: Option<&'a mut dyn FnMut(TurnSegmentStartInfo)>,
+    pub on_turn_segment_end: Option<&'a mut dyn FnMut(String)>,
+    pub on_turn_tool_phase_end: Option<&'a mut dyn FnMut()>,
+}
+
+/// `turn_segment_start` 控制面负载（Web 布局锚点）。
+#[derive(Debug, Clone)]
+pub struct TurnSegmentStartInfo {
+    pub segment_id: String,
+    pub kind: String,
+    pub before_tool_call_id: Option<String>,
 }
 
 /// 澄清问卷与思维迹调试事件。
