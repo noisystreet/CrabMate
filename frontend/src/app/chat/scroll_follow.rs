@@ -4,6 +4,7 @@
 //! - **入口 A**（用户滚动意图）：[`super::scroll_shell`] 的 `on:wheel` / `on:scroll`。
 //! - **入口 B**（主动跟底）：发送 / End 键 → [`engage_follow_and_scroll_bottom`]。
 
+use gloo_timers::callback::Timeout;
 use leptos::prelude::*;
 use leptos_dom::helpers::request_animation_frame;
 
@@ -32,9 +33,9 @@ fn scroll_element_to_top(shell: ChatScrollShellSignals) {
     }
 }
 
-/// 滚底：等待一到两帧 DOM 渲染/沉降后再定位。
+/// 滚底：`setTimeout` 确保在 Leptos DOM 批量更新之后执行；rAF 沉降下一帧。
 fn scroll_to_bottom(shell: ChatScrollShellSignals) {
-    request_animation_frame(move || {
+    Timeout::new(0, move || {
         shell.messages_scroll_from_effect.set(true);
         scroll_element_to_bottom_if_allowed(shell);
         shell.messages_scroll_from_effect.set(false);
@@ -43,11 +44,12 @@ fn scroll_to_bottom(shell: ChatScrollShellSignals) {
             scroll_element_to_bottom_if_allowed(shell);
             shell.messages_scroll_from_effect.set(false);
         });
-    });
+    })
+    .forget();
 }
 
 fn scroll_to_top(shell: ChatScrollShellSignals) {
-    request_animation_frame(move || {
+    Timeout::new(0, move || {
         shell.messages_scroll_from_effect.set(true);
         scroll_element_to_top(shell);
         shell.messages_scroll_from_effect.set(false);
@@ -56,10 +58,11 @@ fn scroll_to_top(shell: ChatScrollShellSignals) {
             scroll_element_to_top(shell);
             shell.messages_scroll_from_effect.set(false);
         });
-    });
+    })
+    .forget();
 }
 
-/// **入口 B**：开启跟底并滚到底（发送、流式再生、End 键等）。
+/// **入口 B**：开启跟底并滚到底。
 pub(crate) fn engage_follow_and_scroll_bottom(shell: ChatScrollShellSignals) {
     shell.auto_scroll_chat.set(true);
     scroll_to_bottom(shell);
@@ -71,7 +74,6 @@ pub(crate) fn disengage_follow_and_scroll_top(shell: ChatScrollShellSignals) {
     scroll_to_top(shell);
 }
 
-/// 跟底指纹：只看活跃会话尾部若干条，避免流式时对整页消息 `fold` 全文长度。
 fn active_session_tail_scroll_fingerprint(list: &[ChatSession], aid: &str) -> u64 {
     let Some(session) = list.iter().find(|s| s.id == aid) else {
         return 0;
