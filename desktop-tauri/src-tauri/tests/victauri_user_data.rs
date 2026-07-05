@@ -95,13 +95,13 @@ e2e_test!(put_mcp_assigns_slug_and_get_roundtrip, |client| async move {
         &mut client,
         "fetch('/user-data/mcp-servers').then(r=>r.json()).then(d=>JSON.stringify(d))"
     ).await;
-    assert_eq!(get["global_enabled"].as_bool().unwrap_or(false), true);
+    assert!(get["global_enabled"].as_bool().unwrap_or(false));
     let servers = get["servers"].as_array().unwrap();
     assert_eq!(servers.len(), 1);
     assert_eq!(servers[0]["id"].as_str().unwrap_or(""), "mcp_e2e_ud");
     assert_eq!(servers[0]["slug"].as_str().unwrap_or(""), "e2e_test_server");
-    assert_eq!(servers[0]["enabled"].as_bool().unwrap_or(true), false);
-    assert_eq!(servers[0]["has_command"].as_bool().unwrap_or(false), true);
+    assert!(!servers[0]["enabled"].as_bool().unwrap_or(true));
+    assert!(servers[0]["has_command"].as_bool().unwrap_or(false));
     // command 不应暴露
     assert!(servers[0].get("command").is_none());
 });
@@ -121,18 +121,18 @@ e2e_test!(get_mcp_status_lists_servers, |client| async move {
         &mut client,
         "fetch('/user-data/mcp-servers').then(r=>r.json()).then(d=>JSON.stringify(d))"
     ).await;
-    assert_eq!(file_get["global_enabled"].as_bool().unwrap_or(true), false);
+    assert!(!file_get["global_enabled"].as_bool().unwrap_or(true));
 
     // 验证 status GET
     let status = api_fetch(
         &mut client,
         "fetch('/user-data/mcp-servers/status').then(r=>r.json()).then(d=>JSON.stringify(d))"
     ).await;
-    assert_eq!(status["global_enabled"].as_bool().unwrap_or(true), false);
+    assert!(!status["global_enabled"].as_bool().unwrap_or(true));
     assert_eq!(status["tool_timeout_secs"].as_i64().unwrap_or(0), 45);
     let rows = status["servers"].as_array().unwrap();
     let row = rows.iter().find(|r| r["id"].as_str() == Some("mcp_e2e_status")).unwrap();
     assert_eq!(row["slug"].as_str().unwrap_or(""), "status_probe");
-    assert_eq!(row["enabled"].as_bool().unwrap_or(false), true);
-    assert_eq!(row["connected"].as_bool().unwrap_or(true), false);
+    assert!(row["enabled"].as_bool().unwrap_or(false));
+    assert!(!row["connected"].as_bool().unwrap_or(true));
 });

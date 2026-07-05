@@ -82,7 +82,7 @@ e2e_test!(full_window_when_limit_omitted, |client| async move {
     assert_eq!(body["conversation_id"].as_str().unwrap_or(""), PAGINATE_CONV_ID);
     assert_eq!(body["total_count"].as_u64().unwrap_or(0) as usize, PAGINATE_TOTAL);
     assert_eq!(body["window_start_index"].as_u64().unwrap_or(999) as usize, 0);
-    assert_eq!(body["has_older"].as_bool().unwrap_or(true), false);
+    assert!(!body["has_older"].as_bool().unwrap_or(true));
     let msgs = body["messages"].as_array().unwrap();
     assert_eq!(msgs.len(), PAGINATE_TOTAL);
     assert_eq!(msgs[0]["content"].as_str().unwrap_or(""), "e2e-msg-0");
@@ -104,7 +104,7 @@ e2e_test!(tail_page_limit_80, |client| async move {
         body["window_start_index"].as_u64().unwrap_or(0) as usize,
         PAGINATE_TOTAL - PAGINATE_PAGE_LIMIT
     );
-    assert_eq!(body["has_older"].as_bool().unwrap_or(false), true);
+    assert!(body["has_older"].as_bool().unwrap_or(false));
     let msgs = body["messages"].as_array().unwrap();
     assert_eq!(msgs.len(), PAGINATE_PAGE_LIMIT);
     assert_eq!(
@@ -129,7 +129,7 @@ e2e_test!(older_page_before_index, |client| async move {
     ).await;
     assert_eq!(body["total_count"].as_u64().unwrap_or(0) as usize, PAGINATE_TOTAL);
     assert_eq!(body["window_start_index"].as_u64().unwrap_or(999) as usize, 0);
-    assert_eq!(body["has_older"].as_bool().unwrap_or(true), false);
+    assert!(!body["has_older"].as_bool().unwrap_or(true));
     let msgs = body["messages"].as_array().unwrap();
     assert_eq!(msgs.len(), PAGINATE_TOTAL - PAGINATE_PAGE_LIMIT);
     assert_eq!(msgs[0]["content"].as_str().unwrap_or(""), "e2e-msg-0");

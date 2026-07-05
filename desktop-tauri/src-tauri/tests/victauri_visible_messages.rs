@@ -21,13 +21,11 @@ async fn seed_messages_and_goto(
     messages_json: &str,
 ) {
     let _ = client
-        .eval_js(&format!(
-            "fetch('/user-data/prefs',{{
+        .eval_js("fetch('/user-data/prefs',{
                 method:'PUT',
-                headers:{{'Content-Type':'application/json'}},
-                body:JSON.stringify({{locale:'zh',theme:'light',side_panel_view:'hidden',side_width:280,editor_layout_mode:false}})
-            }})"
-        ))
+                headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({locale:'zh',theme:'light',side_panel_view:'hidden',side_width:280,editor_layout_mode:false})
+            })")
         .await;
 
     let _ = client

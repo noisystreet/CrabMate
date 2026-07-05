@@ -32,13 +32,11 @@ async fn seed_sessions_with_messages(
         .join(",");
 
     let _ = client
-        .eval_js(&format!(
-            r#"fetch('/user-data/prefs', {{
+        .eval_js(r#"fetch('/user-data/prefs', {
                 method: 'PUT',
-                headers: {{'Content-Type': 'application/json'}},
-                body: JSON.stringify({{locale:'zh',theme:'light',side_panel_view:'hidden',side_width:280,editor_layout_mode:false}})
-            }})"#
-        ))
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({locale:'zh',theme:'light',side_panel_view:'hidden',side_width:280,editor_layout_mode:false})
+            })"#)
         .await;
 
     let _ = client

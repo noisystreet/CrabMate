@@ -61,12 +61,11 @@ fn dev_repo_root() -> Option<PathBuf> {
 }
 
 fn resolve_backend_workdir() -> PathBuf {
-    if let Ok(dir) = std::env::var("CM_DESKTOP_WORKDIR") {
-        if !dir.trim().is_empty() {
+    if let Ok(dir) = std::env::var("CM_DESKTOP_WORKDIR")
+        && !dir.trim().is_empty()
+    {
             return PathBuf::from(dir.trim());
         }
-    }
-
     dev_repo_root().unwrap_or_else(user_home_workdir)
 }
 
