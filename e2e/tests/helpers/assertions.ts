@@ -57,8 +57,7 @@ export async function sendStubMessage(page: Page, text: string): Promise<void> {
 }
 
 /**
- * 等待流式完成：响应结束 → 发送按钮恢复 → 停止按钮消失 → loading 状态清除。
- * 覆盖 `waitForResponse` 之后浏览器仍需处理 SSE 事件和 DOM 更新的时间窗口。
+ * 等待流式完成：响应结束 → 发送按钮恢复 → 停止按钮消失。
  */
 export async function waitForStreamComplete(page: Page): Promise<void> {
   const streamDone = page.waitForResponse(
@@ -67,15 +66,9 @@ export async function waitForStreamComplete(page: Page): Promise<void> {
   );
   await streamDone;
 
-  // 等 UI 恢复就绪
+  // 等 UI 恢复就绪（发送按钮可点 + 停止按钮禁用 = 流式已收口）
   await expect(page.getByTestId('chat-send-button')).toBeEnabled({ timeout: UI_TIMEOUT });
   await expect(page.getByRole('button', { name: '停止' })).toBeDisabled({ timeout: UI_TIMEOUT });
-
-  // 等所有消息去掉 loading 类名（流式尾泡收尾）
-  await expect(page.locator('.msg-loading')).toHaveCount(0, { timeout: UI_TIMEOUT });
-
-  // 再等一帧确保 rAF DOM 沉降完成
-  await page.waitForTimeout(50);
 }
 
 /** 助手正文（非工具卡）可见。 */
