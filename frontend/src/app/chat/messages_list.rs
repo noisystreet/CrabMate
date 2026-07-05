@@ -1,9 +1,12 @@
 //! 消息列：全量 chunk 渲染与「加载更早」按钮。
 
+use std::collections::HashMap;
+
 use leptos::prelude::*;
 
 use super::message_chunks::{ChatChunk, chat_chunk_stable_key, chunk_messages};
 use super::message_group_views::{ToolRunGroupSignals, tool_run_group_view};
+use super::message_row::helpers::message_row_loading_and_error;
 use super::message_row::{ChatMessageRowSignals, chat_message_row};
 use super::scroll_shell::ChatScrollShellSignals;
 use super::session_hydrate::try_load_older_messages_for_active_session;
@@ -47,6 +50,29 @@ pub(crate) fn ChatMessagesList(signals: ChatMessagesListSignals) -> impl IntoVie
         ..
     } = tool_run_group_signals;
 
+    let row_state_map: Memo<HashMap<String, (bool, bool)>> = Memo::new(move |_| {
+        let id = active_id.get();
+        sessions.with(|list| {
+            let mut map = HashMap::new();
+            if let Some(s) = list.iter().find(|s| s.id == id) {
+                for msg in &s.messages {
+                    let state = message_row_loading_and_error(
+                        msg.is_tool,
+                        msg.role.as_str(),
+                        msg.state.as_ref(),
+                    );
+                    map.insert(msg.id.clone(), state);
+                }
+            }
+            map
+        })
+    });
+
+    let tool_run_group_signals_with_map = ToolRunGroupSignals {
+        row_state_map,
+        ..tool_run_group_signals
+    };
+
     let render_chunk = move |chunk: ChatChunk| match chunk {
         ChatChunk::Single { idx, msg } => chat_message_row(ChatMessageRowSignals {
             msg_idx: idx,
@@ -65,10 +91,11 @@ pub(crate) fn ChatMessagesList(signals: ChatMessagesListSignals) -> impl IntoVie
             markdown_render,
             apply_assistant_display_filters,
             tool_detail_expanded_ids,
+            row_state_map,
         })
         .into_any(),
         ChatChunk::ToolGroup { head_id, items } => {
-            tool_run_group_view(head_id, items, tool_run_group_signals).into_any()
+            tool_run_group_view(head_id, items, tool_run_group_signals_with_map).into_any()
         }
     };
 

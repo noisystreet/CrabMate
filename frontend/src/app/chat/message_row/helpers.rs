@@ -198,7 +198,7 @@ pub(super) fn message_row_shell_class(m: &StoredMessage) -> &'static str {
     }
 }
 
-pub(super) fn message_row_loading_and_error(
+pub(crate) fn message_row_loading_and_error(
     is_tool: bool,
     role: &str,
     state: Option<&StoredMessageState>,

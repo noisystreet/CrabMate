@@ -18,18 +18,11 @@ pub(crate) enum ChatChunk {
     },
 }
 
-/// 供 [`leptos::prelude::For`] 使用的稳定键：单条用消息 id；工具组在追加工具消息时变化以刷新组内 DOM。
+/// 供 [`leptos::prelude::For`] 使用的稳定键：单条用消息 id；工具组用首条 id 保持稳定。
 pub(crate) fn chat_chunk_stable_key(chunk: &ChatChunk) -> String {
     match chunk {
         ChatChunk::Single { msg, .. } => format!("s:{}", msg.id),
-        ChatChunk::ToolGroup { items, .. } => {
-            let mut k = String::from("tg:");
-            for (_, m) in items {
-                k.push_str(&m.id);
-                k.push('/');
-            }
-            k
-        }
+        ChatChunk::ToolGroup { head_id, .. } => format!("tg:{head_id}"),
     }
 }
 

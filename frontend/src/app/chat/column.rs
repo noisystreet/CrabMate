@@ -1,5 +1,6 @@
 //! 中部聊天列：消息列表、输入框、查找入口。
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use leptos::prelude::{StoredValue, *};
@@ -151,6 +152,7 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
         locale,
         markdown_render,
         apply_assistant_display_filters,
+        row_state_map: Memo::new(move |_| HashMap::new()),
     };
 
     view! {

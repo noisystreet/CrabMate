@@ -1,5 +1,6 @@
 //! [`super::row::chat_message_row`] 的子视图与纯辅助逻辑，控制圈复杂度与物理行数。
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use leptos::prelude::*;
@@ -12,30 +13,19 @@ use crate::stream_text_overlay::{
     StreamTextOverlay, message_text_for_display_including_stream_overlay,
 };
 
-use super::helpers::{
-    hierarchical_subgoal_banner_is_active, message_row_loading_and_error,
-    message_row_prefixed_class, stored_message_by_id,
-};
+use super::helpers::{hierarchical_subgoal_banner_is_active, message_row_prefixed_class};
 use super::views::chat_message_row_subgoal_exec_banner_view;
 
 pub(super) fn arc_retry_visible_for_message(
-    sessions: RwSignal<Vec<ChatSession>>,
-    active_id: RwSignal<String>,
+    row_state_map: Memo<HashMap<String, (bool, bool)>>,
     mid: String,
 ) -> Arc<dyn Fn() -> bool + Send + Sync> {
     Arc::new(move || {
-        sessions.with(|list| {
-            stored_message_by_id(list, active_id.get_untracked().as_str(), mid.as_str())
-                .map(|msg| {
-                    message_row_loading_and_error(
-                        msg.is_tool,
-                        msg.role.as_str(),
-                        msg.state.as_ref(),
-                    )
-                    .1
-                })
-                .unwrap_or(false)
-        })
+        row_state_map
+            .get()
+            .get(&mid)
+            .map(|(_, err)| *err)
+            .unwrap_or(false)
     })
 }
 
@@ -74,8 +64,7 @@ fn append_find_highlight_classes(
 pub(super) struct BubbleClassLiveCtx {
     pub cls: &'static str,
     pub is_tool_bubble: bool,
-    pub sessions: RwSignal<Vec<ChatSession>>,
-    pub active_id: RwSignal<String>,
+    pub row_state_map: Memo<HashMap<String, (bool, bool)>>,
     pub mid_for_row: String,
     pub chat_find_query: RwSignal<String>,
     pub chat_find_match_ids: RwSignal<Vec<String>>,
@@ -83,17 +72,12 @@ pub(super) struct BubbleClassLiveCtx {
 }
 
 pub(super) fn bubble_css_classes_live(ctx: &BubbleClassLiveCtx) -> String {
-    let (loading, err) = ctx.sessions.with(|list| {
-        stored_message_by_id(
-            list,
-            ctx.active_id.get_untracked().as_str(),
-            ctx.mid_for_row.as_str(),
-        )
-        .map(|msg| {
-            message_row_loading_and_error(msg.is_tool, msg.role.as_str(), msg.state.as_ref())
-        })
-        .unwrap_or((false, false))
-    });
+    let (loading, err) = ctx
+        .row_state_map
+        .get()
+        .get(&ctx.mid_for_row)
+        .copied()
+        .unwrap_or((false, false));
     let mut c = message_row_prefixed_class(ctx.cls, err, loading);
     if !ctx.is_tool_bubble {
         c.push_str(" msg-has-inline-copy");

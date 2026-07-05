@@ -1,7 +1,7 @@
 //! 连续工具输出组视图（[`super::message_row::chat_message_row`]）：默认展开全部，可收起为仅最后一条；
 //! 组内顺序与 [`super::message_chunks::chunk_messages`] 传入的 `items` 一致（即会话里消息到达/排列顺序，通常旧在上、新在下），标题栏在组内底部。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use leptos::prelude::*;
 
@@ -30,6 +30,7 @@ pub(crate) struct ToolRunGroupSignals {
     pub locale: RwSignal<Locale>,
     pub markdown_render: RwSignal<bool>,
     pub apply_assistant_display_filters: RwSignal<bool>,
+    pub row_state_map: Memo<HashMap<String, (bool, bool)>>,
 }
 
 fn chat_row_for_tool_group(
@@ -54,6 +55,7 @@ fn chat_row_for_tool_group(
         markdown_render: g.markdown_render,
         apply_assistant_display_filters: g.apply_assistant_display_filters,
         tool_detail_expanded_ids: g.tool_detail_expanded_ids,
+        row_state_map: g.row_state_map,
     })
 }
 
