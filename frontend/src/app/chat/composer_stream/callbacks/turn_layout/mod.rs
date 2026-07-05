@@ -294,7 +294,7 @@ fn insert_tool_row(
     }
 }
 
-/// 结束 loading 行：空则删，否则去 `loading` state（原则 B：不留空壳）。
+/// 结束 loading 行：空则删，否则去 state 并清空文本（正文由投影行接管）。
 fn finalize_loading_row_at(messages: &mut Vec<StoredMessage>, idx: usize) {
     if idx >= messages.len() {
         return;
@@ -307,6 +307,8 @@ fn finalize_loading_row_at(messages: &mut Vec<StoredMessage>, idx: usize) {
         messages.remove(idx);
     } else {
         messages[idx].state = None;
+        messages[idx].text.clear();
+        messages[idx].reasoning_text.clear();
     }
 }
 

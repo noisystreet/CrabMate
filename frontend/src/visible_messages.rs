@@ -17,10 +17,6 @@ pub enum VisibleMessageScope {
     Export,
 }
 
-fn is_loading_assistant_shell(m: &StoredMessage) -> bool {
-    m.role == "assistant" && !m.is_tool && m.state.as_ref().is_some_and(|st| st.is_loading())
-}
-
 fn is_duplicate_final_response_snapshot(
     m: &StoredMessage,
     messages: &[StoredMessage],
@@ -65,11 +61,7 @@ pub fn is_message_hidden_from_view(
             if is_duplicate_final_response_snapshot(m, messages, idx) {
                 return true;
             }
-            // 隐藏空的 loading 壳：首条 delta 到达后文本非空，气泡自然出现。
-            if is_loading_assistant_shell(m)
-                && m.text.trim().is_empty()
-                && m.reasoning_text.trim().is_empty()
-            {
+            if is_empty_assistant_body(m) {
                 return true;
             }
             false
@@ -78,15 +70,19 @@ pub fn is_message_hidden_from_view(
             if is_ephemeral_timeline_assistant_for_export(m, messages) {
                 return true;
             }
-            if is_loading_assistant_shell(m)
-                && m.text.trim().is_empty()
-                && m.reasoning_text.trim().is_empty()
-            {
+            if is_empty_assistant_body(m) {
                 return true;
             }
             false
         }
     }
+}
+
+fn is_empty_assistant_body(m: &StoredMessage) -> bool {
+    !m.is_tool
+        && m.role == "assistant"
+        && m.text.trim().is_empty()
+        && m.reasoning_text.trim().is_empty()
 }
 
 /// 返回 `messages` 中应对用户展示的原始下标（顺序不变；仅 scope 过滤，无 fuzzy dedupe）。

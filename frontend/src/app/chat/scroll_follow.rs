@@ -1,11 +1,14 @@
 //! 聊天跟底：**一条规则** + **两个入口**。
 //!
-//! - **规则**：`auto_scroll_chat` 为 true 时，消息内容变化则程序化滚底。
+//! - **规则**：`auto_scroll_chat` 为 true 时，消息变化则程序化滚底（~100ms 节流）。
 //! - **入口 A**（用户滚动意图）：[`super::scroll_shell`] 的 `on:wheel` / `on:scroll`。
 //! - **入口 B**（主动跟底）：发送 / End 键 → [`engage_follow_and_scroll_bottom`]。
 //!
 //! **注意**：使用 `setTimeout` 链代替 `requestAnimationFrame`，
 //! 因为 rAF 在 Tauri/WebKitGTK 中可能不被调度（窗口非聚焦、合成器暂停）。
+
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use gloo_timers::callback::Timeout;
 use leptos::prelude::*;
@@ -99,7 +102,7 @@ fn active_session_tail_scroll_fingerprint(list: &[ChatSession], aid: &str) -> u6
     fp
 }
 
-/// **规则**接线：消息变化且跟底开启时滚底。
+/// **规则**接线：消息变化且跟底开启时滚底（~100ms 节流，避免每 delta 多次 layout）。
 pub(crate) fn wire_content_follow_scroll(chat: ChatSessionSignals, shell: ChatScrollShellSignals) {
     let version = Memo::new(move |_| {
         let aid = chat.active_id.get();
@@ -109,10 +112,37 @@ pub(crate) fn wire_content_follow_scroll(chat: ChatSessionSignals, shell: ChatSc
         let rev = chat.stream_overlay_revision.get();
         (fp, rev)
     });
+    // 节流句柄：前一次滚底未完成时不重复触发
+    let pending = Rc::new(RefCell::new(false));
     Effect::new(move |_| {
         let _ = version.get();
-        if shell.auto_scroll_chat.get() {
-            scroll_to_bottom(shell);
+        if !shell.auto_scroll_chat.get() {
+            return;
         }
+        if *pending.borrow() {
+            return;
+        }
+        *pending.borrow_mut() = true;
+        // setTimeout 等 DOM 批处理完成；+50ms 二次确认
+        Timeout::new(0, {
+            let pending = Rc::clone(&pending);
+            move || {
+                if !shell.auto_scroll_chat.get_untracked() {
+                    *pending.borrow_mut() = false;
+                    return;
+                }
+                shell.messages_scroll_from_effect.set(true);
+                scroll_element_to_bottom_if_allowed(shell);
+                shell.messages_scroll_from_effect.set(false);
+                Timeout::new(50, move || {
+                    shell.messages_scroll_from_effect.set(true);
+                    scroll_element_to_bottom_if_allowed(shell);
+                    shell.messages_scroll_from_effect.set(false);
+                    *pending.borrow_mut() = false;
+                })
+                .forget();
+            }
+        })
+        .forget();
     });
 }

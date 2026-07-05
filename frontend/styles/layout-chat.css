@@ -1680,9 +1680,6 @@
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
-  /* 视口外整行可跳过布局/绘制（Chromium/WebKit 等）；auto 占位 + 引擎缓存实际高度减轻滚动条跳动 */
-  content-visibility: auto;
-  contain-intrinsic-size: auto 96px;
 }
 
 @media print {
