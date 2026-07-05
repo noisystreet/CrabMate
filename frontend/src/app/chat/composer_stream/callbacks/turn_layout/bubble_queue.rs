@@ -111,7 +111,7 @@ impl BubbleOutputQueue {
         messages.insert(insert_idx.min(messages.len()), row);
     }
 
-    /// Phase 9：**唯一** Web assistant 正文落盘入口（batch + final + 清空 loading 壳正文）。
+    /// Phase 9：**唯一** Web assistant 正文落盘入口（batch + final）。
     pub(super) fn sync_web_projection(
         &self,
         messages: &mut Vec<crate::storage::StoredMessage>,
@@ -120,24 +120,6 @@ impl BubbleOutputQueue {
     ) {
         self.flush_batch_narration_row(messages, turn);
         self.flush_final_answer_row(messages, turn, loading_tail_id);
-        Self::clear_loading_tail_stored_answer_body(messages, loading_tail_id);
-    }
-
-    /// loading 壳 **不得** 持有与投影行重复的 assistant 正文（真源 = batch/final 行 + overlay preview）。
-    fn clear_loading_tail_stored_answer_body(
-        messages: &mut [crate::storage::StoredMessage],
-        loading_tail_id: Option<&str>,
-    ) {
-        let Some(id) = loading_tail_id.filter(|t| !t.is_empty()) else {
-            return;
-        };
-        let Some(idx) = messages.iter().position(|m| m.id == id) else {
-            return;
-        };
-        if messages[idx].role != "assistant" || messages[idx].is_tool {
-            return;
-        }
-        messages[idx].text.clear();
     }
 
     fn batch_projection_pending_in_messages(
@@ -316,7 +298,7 @@ mod tests {
     }
 
     #[test]
-    fn sync_web_projection_clears_loading_stored_body() {
+    fn sync_web_projection_keeps_loading_body() {
         let mut turn = TurnCanonicalState::new();
         assert!(turn.try_apply_answer_delta("完成。"));
         turn.on_tool_phase_end();
@@ -348,8 +330,9 @@ mod tests {
             },
         ];
         queue.sync_web_projection(&mut msgs, &turn, Some("load"));
+        // loading tail 保留正文（不再清空，避免聊天列气泡闪烁）
         let load = msgs.iter().find(|m| m.id == "load").expect("loading shell");
-        assert_eq!(load.text, "");
+        assert_eq!(load.text, "不应落盘的尾泡正文");
         assert!(
             msgs.iter()
                 .any(|m| m.id == FINAL_ANSWER_ROW_ID && m.text == "完成。")
