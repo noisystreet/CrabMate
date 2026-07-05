@@ -2425,6 +2425,144 @@
           "type": "string",
           "const": "opener:deny-reveal-item-in-dir",
           "markdownDescription": "Denies the reveal_item_in_dir command without any pre-configured scope."
+        },
+        {
+          "description": "Default permissions for the Victauri plugin — allows all introspection commands.\n#### This default permission set includes:\n\n- `allow-victauri-eval-js`\n- `allow-victauri-eval-callback`\n- `allow-victauri-get-window-state`\n- `allow-victauri-list-windows`\n- `allow-victauri-get-ipc-log`\n- `allow-victauri-get-registry`\n- `allow-victauri-get-memory-stats`\n- `allow-victauri-dom-snapshot`\n- `allow-victauri-verify-state`\n- `allow-victauri-detect-ghost-commands`\n- `allow-victauri-check-ipc-integrity`",
+          "type": "string",
+          "const": "victauri:default",
+          "markdownDescription": "Default permissions for the Victauri plugin — allows all introspection commands.\n#### This default permission set includes:\n\n- `allow-victauri-eval-js`\n- `allow-victauri-eval-callback`\n- `allow-victauri-get-window-state`\n- `allow-victauri-list-windows`\n- `allow-victauri-get-ipc-log`\n- `allow-victauri-get-registry`\n- `allow-victauri-get-memory-stats`\n- `allow-victauri-dom-snapshot`\n- `allow-victauri-verify-state`\n- `allow-victauri-detect-ghost-commands`\n- `allow-victauri-check-ipc-integrity`"
+        },
+        {
+          "description": "Enables the victauri_check_ipc_integrity command without any pre-configured scope.",
+          "type": "string",
+          "const": "victauri:allow-victauri-check-ipc-integrity",
+          "markdownDescription": "Enables the victauri_check_ipc_integrity command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the victauri_detect_ghost_commands command without any pre-configured scope.",
+          "type": "string",
+          "const": "victauri:allow-victauri-detect-ghost-commands",
+          "markdownDescription": "Enables the victauri_detect_ghost_commands command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the victauri_dom_snapshot command without any pre-configured scope.",
+          "type": "string",
+          "const": "victauri:allow-victauri-dom-snapshot",
+          "markdownDescription": "Enables the victauri_dom_snapshot command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the victauri_eval_callback command without any pre-configured scope.",
+          "type": "string",
+          "const": "victauri:allow-victauri-eval-callback",
+          "markdownDescription": "Enables the victauri_eval_callback command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the victauri_eval_js command without any pre-configured scope.",
+          "type": "string",
+          "const": "victauri:allow-victauri-eval-js",
+          "markdownDescription": "Enables the victauri_eval_js command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the victauri_get_ipc_log command without any pre-configured scope.",
+          "type": "string",
+          "const": "victauri:allow-victauri-get-ipc-log",
+          "markdownDescription": "Enables the victauri_get_ipc_log command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the victauri_get_memory_stats command without any pre-configured scope.",
+          "type": "string",
+          "const": "victauri:allow-victauri-get-memory-stats",
+          "markdownDescription": "Enables the victauri_get_memory_stats command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the victauri_get_registry command without any pre-configured scope.",
+          "type": "string",
+          "const": "victauri:allow-victauri-get-registry",
+          "markdownDescription": "Enables the victauri_get_registry command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the victauri_get_window_state command without any pre-configured scope.",
+          "type": "string",
+          "const": "victauri:allow-victauri-get-window-state",
+          "markdownDescription": "Enables the victauri_get_window_state command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the victauri_list_windows command without any pre-configured scope.",
+          "type": "string",
+          "const": "victauri:allow-victauri-list-windows",
+          "markdownDescription": "Enables the victauri_list_windows command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the victauri_verify_state command without any pre-configured scope.",
+          "type": "string",
+          "const": "victauri:allow-victauri-verify-state",
+          "markdownDescription": "Enables the victauri_verify_state command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the victauri_check_ipc_integrity command without any pre-configured scope.",
+          "type": "string",
+          "const": "victauri:deny-victauri-check-ipc-integrity",
+          "markdownDescription": "Denies the victauri_check_ipc_integrity command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the victauri_detect_ghost_commands command without any pre-configured scope.",
+          "type": "string",
+          "const": "victauri:deny-victauri-detect-ghost-commands",
+          "markdownDescription": "Denies the victauri_detect_ghost_commands command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the victauri_dom_snapshot command without any pre-configured scope.",
+          "type": "string",
+          "const": "victauri:deny-victauri-dom-snapshot",
+          "markdownDescription": "Denies the victauri_dom_snapshot command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the victauri_eval_callback command without any pre-configured scope.",
+          "type": "string",
+          "const": "victauri:deny-victauri-eval-callback",
+          "markdownDescription": "Denies the victauri_eval_callback command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the victauri_eval_js command without any pre-configured scope.",
+          "type": "string",
+          "const": "victauri:deny-victauri-eval-js",
+          "markdownDescription": "Denies the victauri_eval_js command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the victauri_get_ipc_log command without any pre-configured scope.",
+          "type": "string",
+          "const": "victauri:deny-victauri-get-ipc-log",
+          "markdownDescription": "Denies the victauri_get_ipc_log command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the victauri_get_memory_stats command without any pre-configured scope.",
+          "type": "string",
+          "const": "victauri:deny-victauri-get-memory-stats",
+          "markdownDescription": "Denies the victauri_get_memory_stats command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the victauri_get_registry command without any pre-configured scope.",
+          "type": "string",
+          "const": "victauri:deny-victauri-get-registry",
+          "markdownDescription": "Denies the victauri_get_registry command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the victauri_get_window_state command without any pre-configured scope.",
+          "type": "string",
+          "const": "victauri:deny-victauri-get-window-state",
+          "markdownDescription": "Denies the victauri_get_window_state command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the victauri_list_windows command without any pre-configured scope.",
+          "type": "string",
+          "const": "victauri:deny-victauri-list-windows",
+          "markdownDescription": "Denies the victauri_list_windows command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the victauri_verify_state command without any pre-configured scope.",
+          "type": "string",
+          "const": "victauri:deny-victauri-verify-state",
+          "markdownDescription": "Denies the victauri_verify_state command without any pre-configured scope."
         }
       ]
     },
