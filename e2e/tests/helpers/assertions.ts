@@ -3,8 +3,8 @@ import { expect, type Page } from '@playwright/test';
 import { fillComposerDraft } from './composer';
 import { PAGINATE_PAGE_LIMIT } from './seed-conversation';
 
-/** 大多数 stub 流式 UI 断言超时（ms）。滚动/静态元素可更短；real LLM 宜复用 REAL_LLM_STREAM_TIMEOUT。 */
-export const UI_TIMEOUT = 10_000;
+/** 大多数 stub 流式 UI 断言超时（ms）。与 playwright.config.ts 的 actionTimeout 20s 对齐。 */
+export const UI_TIMEOUT = 20_000;
 
 /** 滚动到位断言超时（ms）。setTimeout + rAF 双帧沉降约需 2-3 帧，足够此窗口。 */
 export const SCROLL_TIMEOUT = 5_000;
