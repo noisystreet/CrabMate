@@ -67,13 +67,11 @@ fn resolve_backend_workdir() -> PathBuf {
         }
     }
 
-    // 开发：仓库根（可写，且可解析 frontend/dist）。`.deb`：用户家目录（会话 SQLite 等须可写）。
     dev_repo_root().unwrap_or_else(user_home_workdir)
 }
 
 fn apply_backend_install_env(command: &mut Command) {
     if let Some(repo) = dev_repo_root() {
-        // 源码树开发：显式指向仓库 dist，并覆盖 shell 里可能残留的 deb 路径。
         let dist = repo.join("frontend/dist");
         if dist.join("index.html").is_file() {
             command.env("CM_WEB_STATIC_DIR", &dist);
@@ -414,7 +412,6 @@ async fn confirm_delete_session_via_dialog(
 
 fn main() {
     let backend_state = Arc::new(Mutex::new(None::<Child>));
-    let backend_state_for_setup = Arc::clone(&backend_state);
     let backend_state_for_exit = Arc::clone(&backend_state);
 
     tauri::Builder::default()
@@ -431,67 +428,59 @@ fn main() {
             main_window_close
         ])
         .setup(move |app| {
-            let (child, ready_url) = match spawn_backend_and_wait_ready() {
-                Ok(v) => v,
-                Err(e) => {
-                    let msg = format!("desktop backend bootstrap failed: {e}");
-                    app.dialog()
-                        .message(msg.clone())
-                        .title("CrabMate Desktop 启动失败")
-                        .kind(MessageDialogKind::Error)
-                        .blocking_show();
-                    return Err(msg.into());
-                }
-            };
-
-            {
-                let mut guard = backend_state_for_setup
-                    .lock()
-                    .expect("backend mutex poisoned");
-                *guard = Some(child);
-            }
-            app.manage(BackendHandle {
-                child: Arc::clone(&backend_state_for_setup),
-            });
-
-            let parsed_url: Url = ready_url
-                .parse()
-                .map_err(|e| format!("invalid backend ready url `{ready_url}`: {e}"))?;
-            let app_origin = parsed_url.origin();
             let app_handle = app.handle().clone();
 
-            let main_window = match WebviewWindowBuilder::new(
-                app,
-                "main",
-                WebviewUrl::External(parsed_url.clone()),
-            )
-                .title("CrabMate Desktop")
-                .inner_size(1280.0, 840.0)
-                .resizable(true)
+            // 启动画面先显示，后台启后端
+            let _splash = WebviewWindowBuilder::new(app, "splash", WebviewUrl::App("splash.html".into()))
+                .title("CrabMate")
+                .inner_size(400.0, 300.0)
+                .resizable(false)
                 .decorations(false)
-                .theme(Some(Theme::Light))
-                .on_navigation(move |url| {
-                    if should_open_link_externally(&app_origin, url) {
-                        let _ = app_handle.opener().open_url(url.as_str(), None::<&str>);
-                        return false;
-                    }
-                    true
-                })
+                .center()
                 .build()
-            {
-                Ok(window) => window,
-                Err(e) => {
-                    let msg = format!("failed to create main window: {e}");
-                    app.dialog()
-                        .message(msg.clone())
-                        .title("CrabMate Desktop 启动失败")
-                        .kind(MessageDialogKind::Error)
-                        .blocking_show();
-                    return Err(msg.into());
-                }
-            };
+                .map_err(|e| format!("failed to create splash window: {e}"))?;
 
-            let _main_window = main_window;
+            std::thread::spawn(move || {
+                let outcome = spawn_backend_and_wait_ready();
+                let handle = app_handle.clone();
+                // Tauri v2: 通过 evaluate_script 或事件在主线程处理
+                match outcome {
+                    Ok((child, ready_url)) => {
+                        // 关闭启动画面
+                        if let Some(splash_win) = handle.get_webview_window("splash") {
+                            let _ = splash_win.close();
+                        }
+                        // 尝试创建主窗口
+                        match create_main_window_from_url(
+                            &handle,
+                            ready_url,
+                            child,
+                            Arc::clone(&backend_state),
+                        ) {
+                            Ok(()) => {}
+                            Err(e) => {
+                                handle
+                                    .dialog()
+                                    .message(e.clone())
+                                    .title("CrabMate Desktop 启动失败")
+                                    .kind(MessageDialogKind::Error)
+                                    .blocking_show();
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        if let Some(splash_win) = handle.get_webview_window("splash") {
+                            let _ = splash_win.close();
+                        }
+                        handle
+                            .dialog()
+                            .message(e.clone())
+                            .title("CrabMate Desktop 启动失败")
+                            .kind(MessageDialogKind::Error)
+                            .blocking_show();
+                    }
+                }
+            });
 
             Ok(())
         })
@@ -505,4 +494,51 @@ fn main() {
                 handle.kill();
             }
         });
+}
+
+fn create_main_window_from_url(
+    app_handle: &tauri::AppHandle,
+    ready_url: String,
+    child: std::process::Child,
+    backend_state: Arc<Mutex<Option<std::process::Child>>>,
+) -> Result<(), String> {
+    {
+        let mut guard = backend_state
+            .lock()
+            .expect("backend mutex poisoned");
+        *guard = Some(child);
+    }
+    app_handle.manage(BackendHandle {
+        child: backend_state,
+    });
+
+    let parsed_url: Url = ready_url
+        .parse()
+        .map_err(|e| format!("invalid backend ready url `{ready_url}`: {e}"))?;
+    let app_origin = parsed_url.origin();
+    let app_handle_clone = app_handle.clone();
+
+    WebviewWindowBuilder::new(
+        app_handle,
+        "main",
+        WebviewUrl::External(parsed_url.clone()),
+    )
+    .title("CrabMate Desktop")
+    .inner_size(1280.0, 840.0)
+    .resizable(true)
+    .decorations(false)
+    .theme(Some(Theme::Light))
+    .on_navigation(move |url| {
+        if should_open_link_externally(&app_origin, url) {
+            let _ = app_handle_clone
+                .opener()
+                .open_url(url.as_str(), None::<&str>);
+            return false;
+        }
+        true
+    })
+    .build()
+    .map_err(|e| format!("failed to create main window: {e}"))?;
+
+    Ok(())
 }

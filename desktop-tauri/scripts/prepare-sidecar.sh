@@ -66,3 +66,10 @@ fi
 rm -rf "${dist_dest}"
 cp -a "${dist_src}" "${dist_dest}"
 echo "synced frontend dist -> ${dist_dest}"
+
+# 启动画面：补充到 dist（Trunk build 不会产出）
+splash_src="${desktop_root}/splash.html"
+if [[ -f "${splash_src}" ]]; then
+  cp "${splash_src}" "${dist_dest}/splash.html"
+  echo "copied splash.html -> ${dist_dest}"
+fi

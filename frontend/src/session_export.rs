@@ -184,8 +184,8 @@ fn reorder_messages_for_conversation_flow(messages: Vec<ExportMessage>) -> Vec<E
     for m in messages {
         match m.role.as_str() {
             "assistant" => {
-                result.append(&mut tool_calls_pending);
                 result.push(m);
+                result.append(&mut tool_calls_pending);
             }
             "tool" => {
                 tool_calls_pending.push(m);

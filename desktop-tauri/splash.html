@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CrabMate</title>
+<style>
+  body {
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #1a1a2e;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+  .splash {
+    text-align: center;
+    color: #e0e0e0;
+  }
+  .splash h1 {
+    font-size: 2rem;
+    margin: 0 0 0.5rem;
+    color: #fff;
+    letter-spacing: 0.02em;
+  }
+  .splash .tagline {
+    font-size: 0.95rem;
+    color: #888;
+    margin: 0 0 2rem;
+  }
+  .loader {
+    display: inline-block;
+    width: 32px;
+    height: 32px;
+    border: 3px solid rgba(255,255,255,0.15);
+    border-top-color: #6c8cff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+</style>
+</head>
+<body>
+<div class="splash">
+  <h1>CrabMate</h1>
+  <p class="tagline">AI-powered coding assistant</p>
+  <div class="loader"></div>
+</div>
+</body>
+</html>
