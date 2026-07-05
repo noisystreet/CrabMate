@@ -65,6 +65,13 @@ pub fn is_message_hidden_from_view(
             if is_duplicate_final_response_snapshot(m, messages, idx) {
                 return true;
             }
+            // 隐藏空的 loading 壳：首条 delta 到达后文本非空，气泡自然出现。
+            if is_loading_assistant_shell(m)
+                && m.text.trim().is_empty()
+                && m.reasoning_text.trim().is_empty()
+            {
+                return true;
+            }
             false
         }
         VisibleMessageScope::Export => {
@@ -138,7 +145,7 @@ mod tests {
     }
 
     #[test]
-    fn chat_keeps_loading_export_skips_empty_shell() {
+    fn chat_and_export_skip_empty_loading_shell() {
         let messages = vec![
             msg("u", "user", "q", false),
             StoredMessage {
@@ -154,9 +161,10 @@ mod tests {
                 created_at: 0,
             },
         ];
+        // ChatColumn 和 Export 都隐藏空的 loading 壳
         assert_eq!(
             visible_message_indices(&messages, VisibleMessageScope::ChatColumn).len(),
-            2
+            1
         );
         assert_eq!(
             visible_message_indices(&messages, VisibleMessageScope::Export).len(),

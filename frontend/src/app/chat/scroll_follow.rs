@@ -3,10 +3,12 @@
 //! - **规则**：`auto_scroll_chat` 为 true 时，消息内容变化则程序化滚底。
 //! - **入口 A**（用户滚动意图）：[`super::scroll_shell`] 的 `on:wheel` / `on:scroll`。
 //! - **入口 B**（主动跟底）：发送 / End 键 → [`engage_follow_and_scroll_bottom`]。
+//!
+//! **注意**：使用 `setTimeout` 链代替 `requestAnimationFrame`，
+//! 因为 rAF 在 Tauri/WebKitGTK 中可能不被调度（窗口非聚焦、合成器暂停）。
 
 use gloo_timers::callback::Timeout;
 use leptos::prelude::*;
-use leptos_dom::helpers::request_animation_frame;
 
 use crate::app::chat::scroll_shell::ChatScrollShellSignals;
 use crate::chat_session_state::ChatSessionSignals;
@@ -33,17 +35,20 @@ fn scroll_element_to_top(shell: ChatScrollShellSignals) {
     }
 }
 
-/// 滚底：`setTimeout` 确保在 Leptos DOM 批量更新之后执行；rAF 沉降下一帧。
+/// 滚底：`setTimeout(0)` 等 Leptos DOM 批处理完成 → `setTimeout(50)` 二次确认布局。
+/// 用 `setTimeout` 链代替 rAF，因为 rAF 在 Tauri/WebKitGTK 中可能不被调度。
 fn scroll_to_bottom(shell: ChatScrollShellSignals) {
     Timeout::new(0, move || {
         shell.messages_scroll_from_effect.set(true);
         scroll_element_to_bottom_if_allowed(shell);
         shell.messages_scroll_from_effect.set(false);
-        request_animation_frame(move || {
+        // 二次确认：等浏览器完成布局（rAF 在 WebKitGTK 可能不触发）
+        Timeout::new(50, move || {
             shell.messages_scroll_from_effect.set(true);
             scroll_element_to_bottom_if_allowed(shell);
             shell.messages_scroll_from_effect.set(false);
-        });
+        })
+        .forget();
     })
     .forget();
 }
@@ -53,11 +58,12 @@ fn scroll_to_top(shell: ChatScrollShellSignals) {
         shell.messages_scroll_from_effect.set(true);
         scroll_element_to_top(shell);
         shell.messages_scroll_from_effect.set(false);
-        request_animation_frame(move || {
+        Timeout::new(50, move || {
             shell.messages_scroll_from_effect.set(true);
             scroll_element_to_top(shell);
             shell.messages_scroll_from_effect.set(false);
-        });
+        })
+        .forget();
     })
     .forget();
 }

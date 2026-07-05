@@ -111,8 +111,8 @@ pub fn status_tool_stopped_user(l: Locale) -> &'static str {
 
 pub fn status_model_running(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "模型生成中…",
-        Locale::En => "Model generating…",
+        Locale::ZhHans => "生成中",
+        Locale::En => "Generating",
     }
 }
 

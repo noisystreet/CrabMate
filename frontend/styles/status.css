@@ -287,23 +287,43 @@
   background: var(--warn);
 }
 
-/* 模型生成中 / 工具执行中：状态点轻微脉冲 */
-@keyframes status-dot-pulse {
+/* 生成中 / 工具执行中：呼吸灯效果（平滑明暗 + 辉光） */
+@keyframes status-dot-breathe {
   0%,
   100% {
     opacity: 1;
     transform: scale(1);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--info) 40%, transparent);
   }
-
   50% {
-    opacity: 0.62;
-    transform: scale(1.18);
+    opacity: 0.38;
+    transform: scale(1.25);
+    box-shadow: 0 0 6px 2px color-mix(in srgb, var(--info) 30%, transparent);
   }
 }
 
-.status-run-running .status-run-dot,
+.status-run-running .status-run-dot {
+  animation: status-dot-breathe 2s ease-in-out infinite;
+  transform-origin: center;
+}
+
+/* 工具执行中：warn 色呼吸 */
+@keyframes status-dot-breathe-tool {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--warn) 40%, transparent);
+  }
+  50% {
+    opacity: 0.38;
+    transform: scale(1.25);
+    box-shadow: 0 0 6px 2px color-mix(in srgb, var(--warn) 30%, transparent);
+  }
+}
+
 .status-run-tool .status-run-dot {
-  animation: status-dot-pulse 1.55s ease-in-out infinite;
+  animation: status-dot-breathe-tool 2s ease-in-out infinite;
   transform-origin: center;
 }
 
