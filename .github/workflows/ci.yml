@@ -58,10 +58,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       # tauri-build 校验 externalBin 存在性；CI 中 only check/test，创建 dummy sidecar
-      - name: Create dummy sidecar for tauri-build
+      - name: Create dummy files for tauri-build
         run: |
-          mkdir -p desktop-tauri/binaries
+          mkdir -p desktop-tauri/binaries desktop-tauri/dist
           touch desktop-tauri/binaries/crabmate-x86_64-unknown-linux-gnu
+          echo '<html></html>' > desktop-tauri/dist/index.html
 
       - name: cargo check (desktop-tauri, all targets)
         run: cargo check --tests
