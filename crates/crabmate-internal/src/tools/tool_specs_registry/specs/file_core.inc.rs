@@ -81,7 +81,7 @@ ToolSpec {
         },
         ToolSpec {
             name: "hash_file",
-            description: "对工作区内**常规文件**做只读哈希（流式读取，不占满内存）：**sha256**（默认）、**sha512**、**blake3**。可选 `max_bytes` 仅哈希前缀（用于大文件抽样或对齐外部工具）；路径解析与 `read_file` 相同。",
+            description: "对工作区内**常规文件**做只读哈希（流式读取，不占满内存）：**sha256**（默认）、**sha512**。可选 `max_bytes` 仅哈希前缀（用于大文件抽样或对齐外部工具）；路径解析与 `read_file` 相同。",
             category: ToolCategory::Development,
             parameters: tool_params::params_hash_file,
             runner: runner_hash_file,

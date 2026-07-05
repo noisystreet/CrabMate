@@ -25,7 +25,7 @@ ToolSpec {
         },
         ToolSpec {
             name: "text_transform",
-            description: "纯内存字符串变换（不落盘）：Base64 编解码、URL 百分号编解码、短哈希（sha256/blake3 各取 16 位十六进制前缀）、lines_join（按行拆开后以 delimiter 连接，默认空格）、lines_split（按 delimiter 切分，段数上限 50000）。输入 text 单次上限 256KiB，输出上限 512KiB。",
+            description: "纯内存字符串变换（不落盘）：Base64 编解码、URL 百分号编解码、短哈希（sha256 取 16 位十六进制前缀）、lines_join（按行拆开后以 delimiter 连接，默认空格）、lines_split（按 delimiter 切分，段数上限 50000）。输入 text 单次上限 256KiB，输出上限 512KiB。",
             category: ToolCategory::Basic,
             parameters: tool_params::params_text_transform,
             runner: runner_text_transform,

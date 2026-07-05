@@ -20,7 +20,7 @@ crabmate-sse-protocol = { path = "../crabmate-sse-protocol" }
 crabmate-types = { path = "../crabmate-types" }
 async-trait = "0.1"
 base64 = "0.22"
-blake3 = "1.5"
+
 bzip2 = "0.6"
 chardetng = "1.0"
 chrono = "0.4"

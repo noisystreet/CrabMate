@@ -150,7 +150,7 @@ pub fn read_binary_meta(args_json: &str, working_dir: &Path) -> String {
 
 /// 计算工作区内**常规文件**的加密哈希（只读，流式读取，不把整文件载入内存）。
 ///
-/// 参数：`path`（必填）；`algorithm`：`sha256`（默认）、`blake3`、`sha512`；`max_bytes` 可选，若设置则只哈希文件前若干字节（上限 4GiB），省略则整文件。
+/// 参数：`path`（必填）；`algorithm`：`sha256`（默认）、`sha512`；`max_bytes` 可选，若设置则只哈希文件前若干字节（上限 4GiB），省略则整文件。
 pub fn hash_file(args_json: &str, working_dir: &Path) -> String {
     let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
@@ -197,12 +197,8 @@ pub fn hash_file(args_json: &str, working_dir: &Path) -> String {
     let hash_result = match algo.as_str() {
         "sha256" | "sha-256" => hash_file_stream_sha256(&target, limit),
         "sha512" | "sha-512" => hash_file_stream_sha512(&target, limit),
-        "blake3" => hash_file_stream_blake3(&target, limit),
         _ => {
-            return format!(
-                "错误：algorithm 仅支持 sha256、sha512、blake3（收到 {:?}）",
-                algo
-            );
+            return format!("错误：algorithm 仅支持 sha256、sha512（收到 {:?}）", algo);
         }
     };
 
@@ -262,25 +258,6 @@ fn hash_file_stream_sha512(path: &Path, max_read: u64) -> Result<String, String>
         remaining -= n as u64;
     }
     Ok(bytes_to_hex(&hasher.finalize()))
-}
-
-fn hash_file_stream_blake3(path: &Path, max_read: u64) -> Result<String, String> {
-    let mut file = File::open(path).map_err(|e| format!("打开文件失败: {}", e))?;
-    let mut hasher = blake3::Hasher::new();
-    let mut buf = vec![0u8; HASH_FILE_BUF_SIZE];
-    let mut remaining = max_read;
-    while remaining > 0 {
-        let chunk = (remaining as usize).min(buf.len());
-        let n = file
-            .read(&mut buf[..chunk])
-            .map_err(|e| format!("读取文件失败: {}", e))?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-        remaining -= n as u64;
-    }
-    Ok(hasher.finalize().to_hex().to_string())
 }
 
 fn bytes_to_hex(bytes: &[u8]) -> String {
