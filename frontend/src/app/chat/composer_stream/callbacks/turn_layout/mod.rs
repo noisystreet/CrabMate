@@ -428,26 +428,13 @@ impl TurnLayout {
         tool_msg: StoredMessage,
         subgoal_marker: Option<&str>,
     ) {
-        let tool_id = tool_msg.id.clone();
         let mid = stream_ctx.scratch.clone_assistant_id();
-        let new_tail_id = RefCell::new(None::<String>);
         stream_ctx.update_bound_session(|s| {
             discard_premature_assistant_tail(&mut s.messages, mid.as_str());
             insert_tool_row(&mut s.messages, tool_msg, subgoal_marker);
-            if let Some(load_idx) = s.messages.iter().position(|m| m.id == mid) {
-                finalize_loading_row_at(&mut s.messages, load_idx);
-            }
-            if let Some(id) = insert_post_tool_loading_after_tool(&mut s.messages, tool_id.as_str())
-            {
-                *new_tail_id.borrow_mut() = Some(id);
-            }
+            // 不截断助手文本：工具插入后 loading tail 保持在最后，继续累积后续正文。
+            pin_loading_tail_in_messages(&mut s.messages, mid.as_str());
         });
-        if let Some(id) = new_tail_id.into_inner() {
-            stream_ctx
-                .scratch
-                .adopt_new_assistant_tail_after_rotation(id.clone());
-            stream_ctx.chat.set_stream_overlay_display_mid(id.as_str());
-        }
     }
 
     /// `tool_result` 在未命中占位时新建工具行后的布局收口。

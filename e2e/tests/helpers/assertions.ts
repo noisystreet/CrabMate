@@ -3,7 +3,11 @@ import { expect, type Page } from '@playwright/test';
 import { fillComposerDraft } from './composer';
 import { PAGINATE_PAGE_LIMIT } from './seed-conversation';
 
-export const UI_TIMEOUT = 45_000;
+/** 大多数 stub 流式 UI 断言超时（ms）。滚动/静态元素可更短；real LLM 宜复用 REAL_LLM_STREAM_TIMEOUT。 */
+export const UI_TIMEOUT = 10_000;
+
+/** 滚动到位断言超时（ms）。setTimeout + rAF 双帧沉降约需 2-3 帧，足够此窗口。 */
+export const SCROLL_TIMEOUT = 5_000;
 
 /** 当前可见的对话层（与 IDE 层同挂载时避免匹配到 `visibility:hidden` 的副本）。 */
 export function visibleChatLayer(page: import('@playwright/test').Page) {
@@ -50,6 +54,28 @@ export async function sendStubMessage(page: Page, text: string): Promise<void> {
   await fillComposerDraft(page, text);
   await page.getByTestId('chat-send-button').click();
   await streamDone;
+}
+
+/**
+ * 等待流式完成：响应结束 → 发送按钮恢复 → 停止按钮消失 → loading 状态清除。
+ * 覆盖 `waitForResponse` 之后浏览器仍需处理 SSE 事件和 DOM 更新的时间窗口。
+ */
+export async function waitForStreamComplete(page: Page): Promise<void> {
+  const streamDone = page.waitForResponse(
+    (res) => res.url().includes('/chat/stream') && res.request().method() === 'POST',
+    { timeout: UI_TIMEOUT },
+  );
+  await streamDone;
+
+  // 等 UI 恢复就绪
+  await expect(page.getByTestId('chat-send-button')).toBeEnabled({ timeout: UI_TIMEOUT });
+  await expect(page.getByRole('button', { name: '停止' })).toBeDisabled({ timeout: UI_TIMEOUT });
+
+  // 等所有消息去掉 loading 类名（流式尾泡收尾）
+  await expect(page.locator('.msg-loading')).toHaveCount(0, { timeout: UI_TIMEOUT });
+
+  // 再等一帧确保 rAF DOM 沉降完成
+  await page.waitForTimeout(50);
 }
 
 /** 助手正文（非工具卡）可见。 */
