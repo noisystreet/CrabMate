@@ -142,7 +142,7 @@ tokio-cron-scheduler = { version = "0.15", optional = true, default-features = f
 reedline = { version = "0.48", optional = true, default-features = false }
 indicatif = "0.18"
 unicode-width = { version = "0.2", optional = true }
-ratatui = { version = "0.29", optional = true, default-features = false, features = ["crossterm"] }
+ratatui = { version = "0.30", optional = true, default-features = false, features = ["crossterm_0_29", "layout-cache"] }
 crossterm = { version = "0.29", optional = true }
 clap_mangen = { version = "0.3", optional = true, default-features = false }
 
