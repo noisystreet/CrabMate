@@ -12,10 +12,15 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+victauri-plugin = "0.8"
 url = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["sync"] }
+
+[dev-dependencies]
+victauri-test = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 
 [features]
 default = []

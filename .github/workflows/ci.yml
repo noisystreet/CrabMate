@@ -53,6 +53,22 @@ jobs:
       - name: cargo test (workspace)
         run: cargo test --workspace --all-features --no-fail-fast
 
+      # desktop-tauri 是独立 workspace（含 Victauri E2E 测试）
+      - name: Install Tauri system deps (libgtk-3 / libwebkit2gtk / libappindicator)
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: cargo check (desktop-tauri, all targets)
+        run: cargo check --tests
+        working-directory: desktop-tauri/src-tauri
+
+      - name: cargo clippy (desktop-tauri, -D warnings)
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: desktop-tauri/src-tauri
+
+      - name: cargo test (desktop-tauri, Victauri auto-skip)
+        run: cargo test --no-fail-fast
+        working-directory: desktop-tauri/src-tauri
+
   e2e:
     name: e2e (Playwright)
     runs-on: ubuntu-latest
