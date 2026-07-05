@@ -5,6 +5,7 @@
 //! - **入口 B**（主动跟底）：发送 / End 键 → [`engage_follow_and_scroll_bottom`]。
 
 use leptos::prelude::*;
+use leptos_dom::helpers::request_animation_frame;
 
 use crate::app::chat::scroll_shell::ChatScrollShellSignals;
 use crate::chat_session_state::ChatSessionSignals;
@@ -25,18 +26,37 @@ fn scroll_element_to_bottom_if_allowed(shell: ChatScrollShellSignals) -> bool {
     true
 }
 
+fn scroll_element_to_top(shell: ChatScrollShellSignals) {
+    if let Some(el) = shell.messages_scroller.get() {
+        el.set_scroll_top(0);
+    }
+}
+
+/// 滚底：等待一到两帧 DOM 渲染/沉降后再定位。
 fn scroll_to_bottom(shell: ChatScrollShellSignals) {
-    shell.messages_scroll_from_effect.set(true);
-    scroll_element_to_bottom_if_allowed(shell);
-    shell.messages_scroll_from_effect.set(false);
+    request_animation_frame(move || {
+        shell.messages_scroll_from_effect.set(true);
+        scroll_element_to_bottom_if_allowed(shell);
+        shell.messages_scroll_from_effect.set(false);
+        request_animation_frame(move || {
+            shell.messages_scroll_from_effect.set(true);
+            scroll_element_to_bottom_if_allowed(shell);
+            shell.messages_scroll_from_effect.set(false);
+        });
+    });
 }
 
 fn scroll_to_top(shell: ChatScrollShellSignals) {
-    shell.messages_scroll_from_effect.set(true);
-    if let Some(el) = shell.messages_scroller.get_untracked() {
-        el.set_scroll_top(0);
-    }
-    shell.messages_scroll_from_effect.set(false);
+    request_animation_frame(move || {
+        shell.messages_scroll_from_effect.set(true);
+        scroll_element_to_top(shell);
+        shell.messages_scroll_from_effect.set(false);
+        request_animation_frame(move || {
+            shell.messages_scroll_from_effect.set(true);
+            scroll_element_to_top(shell);
+            shell.messages_scroll_from_effect.set(false);
+        });
+    });
 }
 
 /// **入口 B**：开启跟底并滚到底（发送、流式再生、End 键等）。
@@ -71,7 +91,7 @@ fn active_session_tail_scroll_fingerprint(list: &[ChatSession], aid: &str) -> u6
     fp
 }
 
-/// **规则**接线：消息变化且跟底开启时同步滚底。
+/// **规则**接线：消息变化且跟底开启时滚底。
 pub(crate) fn wire_content_follow_scroll(chat: ChatSessionSignals, shell: ChatScrollShellSignals) {
     let version = Memo::new(move |_| {
         let aid = chat.active_id.get();
