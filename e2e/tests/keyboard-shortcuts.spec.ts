@@ -5,9 +5,11 @@ import {
   openSessionListModal,
   putFreshLocalSession,
   putWorkspaceSessions,
+  SCROLL_TIMEOUT,
   typeComposerDraft,
   UI_TIMEOUT,
   visibleChatLayer,
+  waitForStreamComplete,
 } from './helpers';
 
 test.describe('keyboard shortcuts', () => {
@@ -20,13 +22,9 @@ test.describe('keyboard shortcuts', () => {
     await page.goto('/');
     await expect(page.getByTestId('chat-composer-input')).toBeVisible();
 
-    const streamDone = page.waitForResponse(
-      (res) => res.url().includes('/chat/stream') && res.request().method() === 'POST',
-      { timeout: UI_TIMEOUT },
-    );
     await typeComposerDraft(page, 'e2e enter send');
     await page.getByTestId('chat-composer-input').press('Enter');
-    await streamDone;
+    await waitForStreamComplete(page);
 
     await expect(
       visibleChatLayer(page).getByTestId('chat-message-row').filter({ hasText: 'Hello from E2E stub' }),
@@ -68,7 +66,7 @@ test.describe('keyboard shortcuts', () => {
     await page.getByTestId('chat-composer-input').focus();
     await page.getByTestId('chat-composer-input').press('Home');
     await expect
-      .poll(async () => scroller.evaluate((el) => el.scrollTop), { timeout: UI_TIMEOUT })
+      .poll(async () => scroller.evaluate((el) => el.scrollTop), { timeout: SCROLL_TIMEOUT })
       .toBe(0);
 
     await page.getByTestId('chat-composer-input').press('End');
@@ -80,7 +78,7 @@ test.describe('keyboard shortcuts', () => {
           max: el.scrollHeight - el.clientHeight,
         }));
         return st.max > 0 && st.top >= st.max - 4;
-      }, { timeout: UI_TIMEOUT })
+      }, { timeout: SCROLL_TIMEOUT })
       .toBe(true);
   });
 
@@ -116,16 +114,12 @@ test.describe('keyboard shortcuts', () => {
     await page.getByTestId('chat-composer-input').focus();
     await page.getByTestId('chat-composer-input').press('Home');
     await expect
-      .poll(async () => scroller.evaluate((el) => el.scrollTop), { timeout: UI_TIMEOUT })
+      .poll(async () => scroller.evaluate((el) => el.scrollTop), { timeout: SCROLL_TIMEOUT })
       .toBe(0);
 
-    const streamDone = page.waitForResponse(
-      (res) => res.url().includes('/chat/stream') && res.request().method() === 'POST',
-      { timeout: UI_TIMEOUT },
-    );
     await typeComposerDraft(page, 'e2e send scroll follow');
     await page.getByTestId('chat-composer-input').press('Enter');
-    await streamDone;
+    await waitForStreamComplete(page);
 
     await expect(
       visibleChatLayer(page).getByTestId('chat-message-row').filter({ hasText: 'Hello from E2E stub' }),
@@ -138,7 +132,7 @@ test.describe('keyboard shortcuts', () => {
           max: el.scrollHeight - el.clientHeight,
         }));
         return st.max > 0 && st.top >= st.max - 4;
-      }, { timeout: UI_TIMEOUT })
+      }, { timeout: SCROLL_TIMEOUT })
       .toBe(true);
   });
 });
