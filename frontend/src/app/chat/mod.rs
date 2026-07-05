@@ -25,12 +25,9 @@ mod scroll_shell;
 mod session_hydrate;
 mod session_merge;
 mod session_storage;
-#[cfg(test)]
-mod staged_plan_todo;
 mod stream_follow_up_gates;
 mod stream_user_abort;
 mod tail_loading_memo;
-mod timeline;
 pub(crate) mod wire_chat_domain;
 pub(crate) mod wire_chat_session_lifecycle;
 
@@ -40,4 +37,3 @@ pub(crate) use handles::ChatComposerWires;
 
 pub(crate) use column::chat_column_view;
 pub(crate) use find_bar::ChatFindBar;
-pub(crate) use timeline::load_timeline_panel_expanded_default;

@@ -54,7 +54,6 @@ pub fn build_prefs_dto(app: &AppSignals) -> UserPrefsDto {
         ),
         side_width: Some(app.shell_ui.side_width.get_untracked()),
         editor_layout_mode: Some(app.shell_ui.editor_layout_mode.get_untracked()),
-        timeline_panel_expanded: Some(app.chat_composer.timeline_panel_expanded.get_untracked()),
         sidebar_rail_collapsed: Some(effective_sidebar_rail_collapsed_for_persist(app)),
         session_ui_font: Some(app.shell_ui.session_ui_font.get_untracked()),
         session_chat_font: Some(app.shell_ui.session_chat_font.get_untracked()),
@@ -101,9 +100,6 @@ fn apply_shell_prefs_dto(app: &AppSignals, dto: &UserPrefsDto) {
     }
     if let Some(m) = dto.editor_layout_mode {
         app.shell_ui.editor_layout_mode.set(m);
-    }
-    if let Some(t) = dto.timeline_panel_expanded {
-        app.chat_composer.timeline_panel_expanded.set(t);
     }
     if let Some(c) = dto.sidebar_rail_collapsed {
         let in_editor = dto.editor_layout_mode.unwrap_or(false);
@@ -194,7 +190,6 @@ pub fn wire_persist_user_prefs_to_server(app: AppSignals) {
         let _ = app.shell_ui.side_panel_view.get();
         let _ = app.shell_ui.side_width.get();
         let _ = app.shell_ui.editor_layout_mode.get();
-        let _ = app.chat_composer.timeline_panel_expanded.get();
         let _ = app.sidebar.sidebar_rail_collapsed.get();
         let _ = app.shell_ui.session_ui_font.get();
         let _ = app.shell_ui.session_chat_font.get();

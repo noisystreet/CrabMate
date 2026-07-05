@@ -22,7 +22,6 @@ pub struct ChatComposerSignals {
     pub messages_scroll_from_effect: RwSignal<bool>,
     pub last_messages_scroll_top: RwSignal<i32>,
     pub messages_scroller: NodeRef<Div>,
-    pub timeline_panel_expanded: RwSignal<bool>,
     pub chat_find_query: RwSignal<String>,
     pub chat_find_match_ids: RwSignal<Vec<String>>,
     pub chat_find_cursor: RwSignal<usize>,
@@ -45,9 +44,6 @@ impl ChatComposerSignals {
             messages_scroll_from_effect: RwSignal::new(false),
             last_messages_scroll_top: RwSignal::new(0),
             messages_scroller: NodeRef::new(),
-            timeline_panel_expanded: RwSignal::new(
-                crate::app::chat::load_timeline_panel_expanded_default(),
-            ),
             chat_find_query: RwSignal::new(String::new()),
             chat_find_match_ids: RwSignal::new(Vec::new()),
             chat_find_cursor: RwSignal::new(0),
