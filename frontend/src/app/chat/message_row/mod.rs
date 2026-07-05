@@ -2,13 +2,13 @@
 //!
 //! 与 `POST /chat/branch`、本地截断再生相关的副作用见 [`super::message_row_actions`]。
 
-mod helpers;
+pub(crate) mod helpers;
 mod non_assistant_body;
 mod row;
 mod row_extras;
 mod views;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use super::composer_follow_up::ComposerStreamFollowUp;
 use crate::chat_session_state::ChatSessionSignals;
@@ -38,6 +38,8 @@ pub(crate) struct ChatMessageRowSignals {
     pub apply_assistant_display_filters: RwSignal<bool>,
     /// 工具气泡详情抽屉展开状态（按消息 id，跨 `For` 重挂保留）。
     pub tool_detail_expanded_ids: RwSignal<HashSet<String>>,
+    /// 预计算的每行 (loading, error) 状态映射，避免单行 `sessions.with` 全表扫描。
+    pub row_state_map: Memo<HashMap<String, (bool, bool)>>,
 }
 
 pub(crate) use row::chat_message_row;

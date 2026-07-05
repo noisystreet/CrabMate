@@ -140,6 +140,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
         markdown_render,
         apply_assistant_display_filters,
         tool_detail_expanded_ids,
+        row_state_map,
     } = s;
     let sessions = chat.sessions;
     let active_id = chat.active_id;
@@ -187,8 +188,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
         jump_uid,
         auto_scroll_chat,
     });
-    let retry_visible_rc =
-        arc_retry_visible_for_message(sessions, active_id, mid_highlight.clone());
+    let retry_visible_rc = arc_retry_visible_for_message(row_state_map, mid_highlight.clone());
     let actions_bar_visible_rc =
         arc_actions_bar_visible(is_tool_bubble, is_user_plain, retry_visible_rc.clone());
     let show_planner_round_badge = stored_message_is_staged_planner_round(&m);
@@ -223,8 +223,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
                         let ctx = BubbleClassLiveCtx {
                             cls,
                             is_tool_bubble,
-                            sessions,
-                            active_id,
+                            row_state_map,
                             mid_for_row: mid_highlight.clone(),
                             chat_find_query,
                             chat_find_match_ids,
