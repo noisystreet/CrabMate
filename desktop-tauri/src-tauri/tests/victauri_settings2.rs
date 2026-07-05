@@ -8,7 +8,7 @@ use victauri_test::e2e_test;
 use victauri_test::locator::Locator;
 
 async fn seed_settings_session(client: &mut victauri_test::VictauriClient, sid: &str) {
-    let _ = client.eval_js(&format!("fetch('/user-data/prefs',{{method:'PUT',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{locale:'zh',theme:'light',side_panel_view:'hidden',side_width:280,editor_layout_mode:false}})}})")).await;
+    let _ = client.eval_js("fetch('/user-data/prefs',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({locale:'zh',theme:'light',side_panel_view:'hidden',side_width:280,editor_layout_mode:false})})").await;
     let _ = client.eval_js(&format!("fetch('/user-data/workspaces/current/sessions',{{method:'PUT',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{sessions:[{{id:'{sid}',title:'E2E',draft:'',messages:[],updated_at:1,pinned:false,starred:false}}],active_session_id:'{sid}'}})}})")).await;
     let _ = client.eval_js("location.reload()").await;
     client.wait_for("network_idle", Some(""), Some(10000), Some(500)).await.ok();

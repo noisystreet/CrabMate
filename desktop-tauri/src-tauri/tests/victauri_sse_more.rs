@@ -15,7 +15,7 @@ async fn inject_stream_stub(client: &mut victauri_test::VictauriClient, sse_body
 }
 
 async fn seed_and_send(client: &mut victauri_test::VictauriClient, sid: &str, msg: &str) {
-    let _ = client.eval_js(&format!("fetch('/user-data/prefs',{{method:'PUT',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{locale:'zh',theme:'light',side_panel_view:'hidden',side_width:280,editor_layout_mode:false}})}})")).await;
+    let _ = client.eval_js("fetch('/user-data/prefs',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({locale:'zh',theme:'light',side_panel_view:'hidden',side_width:280,editor_layout_mode:false})})").await;
     let _ = client.eval_js(&format!("fetch('/user-data/workspaces/current/sessions',{{method:'PUT',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{sessions:[{{id:'{sid}',title:'E2E',draft:'',messages:[],updated_at:1,pinned:false,starred:false}}],active_session_id:'{sid}'}})}})")).await;
     let _ = client.eval_js("location.reload()").await;
     client.wait_for("network_idle", Some(""), Some(10000), Some(500)).await.ok();
@@ -50,7 +50,7 @@ e2e_test!(command_approval_opens_modal_with_preview, |client| async move {
 // sse-approval-actions: deny
 // ---------------------------------------------------------------------------
 e2e_test!(deny_closes_modal_no_failed_banner, |client| async move {
-    inject_stream_stub(&mut client, concat!("id: 1\ndata: {\"sse_capabilities\":{\"supported_sse_v\":1}}\n\nid: 2\ndata: {\"v\":1}\n\nid: 3\ndata: e2e approve.\n\nid: 4\ndata: {\"command_approval_request\":{\"command\":\"true\",\"args\":\"\",\"allowlist_key\":\"true\"}}\n\nid: 5\ndata: {\"stream_ended\":{\"reason\":\"completed\"}}\n\n")).await;
+    inject_stream_stub(&mut client, "id: 1\ndata: {\"sse_capabilities\":{\"supported_sse_v\":1}}\n\nid: 2\ndata: {\"v\":1}\n\nid: 3\ndata: e2e approve.\n\nid: 4\ndata: {\"command_approval_request\":{\"command\":\"true\",\"args\":\"\",\"allowlist_key\":\"true\"}}\n\nid: 5\ndata: {\"stream_ended\":{\"reason\":\"completed\"}}\n\n").await;
     let _ = client.eval_js("window.fetch=(u,o)=>{if(typeof u==='string'&&u.includes('/chat/approval'))return Promise.resolve(new Response('',{status:204}));return window.__origFetch(u,o);};").await;
     seed_and_send(&mut client, "s_e2e_deny", "e2e deny").await;
     Locator::test_id("approval-deny").click(&mut client).await.unwrap();
@@ -61,7 +61,7 @@ e2e_test!(deny_closes_modal_no_failed_banner, |client| async move {
 // sse-approval-actions: allow once
 // ---------------------------------------------------------------------------
 e2e_test!(allow_once_closes_modal, |client| async move {
-    inject_stream_stub(&mut client, concat!("id: 1\ndata: {\"sse_capabilities\":{\"supported_sse_v\":1}}\n\nid: 2\ndata: {\"v\":1}\n\nid: 3\ndata: e2e allow.\n\nid: 4\ndata: {\"command_approval_request\":{\"command\":\"true\",\"args\":\"\",\"allowlist_key\":\"true\"}}\n\nid: 5\ndata: {\"stream_ended\":{\"reason\":\"completed\"}}\n\n")).await;
+    inject_stream_stub(&mut client, "id: 1\ndata: {\"sse_capabilities\":{\"supported_sse_v\":1}}\n\nid: 2\ndata: {\"v\":1}\n\nid: 3\ndata: e2e allow.\n\nid: 4\ndata: {\"command_approval_request\":{\"command\":\"true\",\"args\":\"\",\"allowlist_key\":\"true\"}}\n\nid: 5\ndata: {\"stream_ended\":{\"reason\":\"completed\"}}\n\n").await;
     let _ = client.eval_js("window.fetch=(u,o)=>{if(typeof u==='string'&&u.includes('/chat/approval'))return Promise.resolve(new Response('',{status:204}));return window.__origFetch(u,o);};").await;
     seed_and_send(&mut client, "s_e2e_allow", "e2e allow").await;
     Locator::test_id("approval-allow-once").click(&mut client).await.unwrap();

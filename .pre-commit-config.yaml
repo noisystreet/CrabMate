@@ -57,6 +57,13 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
+      - id: desktop-clippy
+        name: desktop-tauri clippy (-D warnings)
+        entry: bash -c 'cd desktop-tauri/src-tauri && cargo clippy --all-targets -- -D warnings'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
       # cargo test（含 golden_sse_control / golden_intent_regression）仅在 CI 跑，见 .github/workflows/ci.yml 与 code-complexity.yml
       - id: taplo-format
         name: taplo format (check)

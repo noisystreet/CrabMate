@@ -56,9 +56,7 @@ async fn install_chat_stream_stub(client: &mut victauri_test::VictauriClient) {
 /// 播种默认会话并重新加载。
 async fn seed_and_goto(client: &mut victauri_test::VictauriClient, session_id: &str) {
     let _ = client
-        .eval_js(&format!(
-            "fetch('/user-data/prefs',{{method:'PUT',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{locale:'zh',theme:'light',side_panel_view:'hidden',side_width:280,editor_layout_mode:false}})}})"
-        ))
+        .eval_js("fetch('/user-data/prefs',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({locale:'zh',theme:'light',side_panel_view:'hidden',side_width:280,editor_layout_mode:false})})")
         .await;
 
     let _ = client
