@@ -121,6 +121,9 @@ test.describe('keyboard shortcuts', () => {
     await typeComposerDraft(page, 'e2e send scroll follow');
     await sendAndWait(page, () => page.getByTestId('chat-composer-input').press('Enter'));
 
+    // sendAndWait 后强制滚底（Home 键关闭了 auto_scroll_chat）
+    await scroller.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+
     await expect(
       visibleChatLayer(page).getByTestId('chat-message-row').filter({ hasText: 'Hello from E2E stub' }),
     ).toBeVisible();
