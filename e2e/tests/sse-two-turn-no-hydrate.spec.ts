@@ -5,6 +5,7 @@ import {
   fillComposerDraft,
   installTwoTurnChatStreamStub,
   putFreshLocalSession,
+  sendAndWait,
 } from './helpers';
 
 test.describe('two-turn without hydrate', () => {
@@ -18,7 +19,7 @@ test.describe('two-turn without hydrate', () => {
     await expect(page.getByRole('heading', { name: 'CrabMate' })).toBeVisible();
 
     await fillComposerDraft(page, '你好');
-    await page.getByTestId('chat-send-button').click();
+    await sendAndWait(page, () => page.getByTestId('chat-send-button').click());
     await expect(page.getByTestId('chat-message-row').filter({ hasText: /CrabMate 助手/ })).toBeVisible({
       timeout: UI_TIMEOUT,
     });
@@ -37,7 +38,7 @@ test.describe('two-turn without hydrate', () => {
     await expect(page.getByRole('heading', { name: 'CrabMate' })).toBeVisible();
 
     await fillComposerDraft(page, '你好');
-    await page.getByTestId('chat-send-button').click();
+    await sendAndWait(page, () => page.getByTestId('chat-send-button').click());
     await expect(page.getByTestId('chat-message-row').filter({ hasText: /CrabMate 助手/ })).toBeVisible({
       timeout: UI_TIMEOUT,
     });

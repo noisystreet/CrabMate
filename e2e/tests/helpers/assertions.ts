@@ -57,16 +57,17 @@ export async function sendStubMessage(page: Page, text: string): Promise<void> {
 }
 
 /**
- * 等待流式完成：响应结束 → 发送按钮恢复 → 停止按钮消失。
+ * 完成发送并等待流式响应结束、UI 恢复就绪。
+ * `trigger` 需在 `waitForResponse` 注册**之后**才执行，避免丢失快速 stub 响应。
  */
-export async function waitForStreamComplete(page: Page): Promise<void> {
+export async function sendAndWait(page: Page, trigger: () => Promise<void>): Promise<void> {
   const streamDone = page.waitForResponse(
     (res) => res.url().includes('/chat/stream') && res.request().method() === 'POST',
     { timeout: UI_TIMEOUT },
   );
+  await trigger();
   await streamDone;
 
-  // 等 UI 恢复就绪（发送按钮可点 + 停止按钮禁用 = 流式已收口）
   await expect(page.getByTestId('chat-send-button')).toBeEnabled({ timeout: UI_TIMEOUT });
   await expect(page.getByRole('button', { name: '停止' })).toBeDisabled({ timeout: UI_TIMEOUT });
 }
