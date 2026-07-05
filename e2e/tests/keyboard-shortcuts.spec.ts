@@ -106,8 +106,10 @@ test.describe('keyboard shortcuts', () => {
     );
 
     await installChatStreamStub(page);
+
     await page.goto('/');
-    await expect(visibleChatLayer(page).getByText('e2e-send-scroll-line-0')).toBeVisible();
+    await expect(page.getByTestId('chat-composer-input')).toBeVisible();
+    await expect(visibleChatLayer(page).getByText('e2e-send-scroll-line-0')).toBeVisible({ timeout: UI_TIMEOUT });
 
     const scroller = visibleChatLayer(page).getByTestId('chat-messages-scroller');
     await page.getByTestId('chat-composer-input').focus();

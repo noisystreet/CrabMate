@@ -77,10 +77,6 @@ pub fn is_message_hidden_from_view(
             {
                 return true;
             }
-            // 投影消息：UI 布局辅助，导出时排除（内容已在原始 assistant 中）。
-            if m.id == "turn-batch-narration" || m.id == "turn-final-answer" {
-                return true;
-            }
             false
         }
     }
