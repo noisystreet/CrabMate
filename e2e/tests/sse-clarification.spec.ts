@@ -9,7 +9,6 @@ import {
   putFreshLocalSession,
   sendStubMessage,
   UI_TIMEOUT,
-  waitForStreamComplete,
 } from './helpers';
 
 test.describe('SSE clarification questionnaire', () => {
@@ -36,8 +35,12 @@ test.describe('SSE clarification questionnaire', () => {
     await expect(panel).toContainText('Scope?');
 
     await fillClarificationAnswer(page, 0, 'backend only');
+    const secondStream = page.waitForResponse(
+      (res) => res.url().includes('/chat/stream') && res.request().method() === 'POST',
+      { timeout: UI_TIMEOUT },
+    );
     await page.getByTestId('composer-clarification-submit').click();
-    await waitForStreamComplete(page);
+    await secondStream;
 
     await expect(panel).not.toBeVisible();
     await expectAssistantText(page, 'E2E after clarify.');
