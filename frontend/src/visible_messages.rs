@@ -65,6 +65,10 @@ pub fn is_message_hidden_from_view(
             if is_duplicate_final_response_snapshot(m, messages, idx) {
                 return true;
             }
+            // 投影行仅用于时间线面板布局，聊天列中由 loading tail 承接正文。
+            if m.id == "turn-batch-narration" || m.id == "turn-final-answer" {
+                return true;
+            }
             false
         }
         VisibleMessageScope::Export => {
