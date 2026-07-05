@@ -129,6 +129,12 @@ workspace-release:
 test:
 	$(CARGO) test --workspace
 
+victauri-e2e:
+	./scripts/victauri-e2e.sh all
+
+victauri-e2e-real:
+	REAL_LLM_E2E=1 ./scripts/victauri-e2e.sh real_llm
+
 check:
 	$(CARGO) check --workspace --all-targets
 	cd "$(FRONTEND_DIR)" && $(CARGO) check --target wasm32-unknown-unknown
