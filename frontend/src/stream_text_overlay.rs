@@ -14,7 +14,10 @@
 //! **P0′**：open 段 assistant 正文 preview 经 [`stream_overlay_replace_answer_for_message`] 写入 overlay（canonical replace），
 //! 边界 flush 旁注行到 stored；finalize / `on_done` 再 merge 终答入 stored。
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use leptos::prelude::*;
+use leptos_dom::helpers::request_animation_frame;
 
 use crate::i18n::Locale;
 use crate::message_dedupe::assistant_texts_fuzzy_duplicate;
@@ -31,6 +34,9 @@ pub struct StreamTextOverlay {
     pub answer: String,
     pub reasoning: String,
 }
+
+/// revision 去抖动：同一帧内多次 delta 合并为一次 bump，减少 scroll Effect 无效触发。
+static REVISION_FLUSH_PENDING: AtomicBool = AtomicBool::new(false);
 
 /// SSE 热路径：仅 bump `stream_text_overlay`，**不** `sessions.update`。
 pub fn stream_overlay_append(
@@ -59,7 +65,12 @@ pub fn stream_overlay_append(
         *opt = Some(next);
     });
     if let Some(rev) = revision {
-        rev.update(|n| *n = n.wrapping_add(1));
+        if !REVISION_FLUSH_PENDING.swap(true, Ordering::AcqRel) {
+            request_animation_frame(move || {
+                rev.update(|n| *n = n.wrapping_add(1));
+                REVISION_FLUSH_PENDING.store(false, Ordering::Release);
+            });
+        }
     }
 }
 
