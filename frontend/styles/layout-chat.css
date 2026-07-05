@@ -462,7 +462,6 @@
   position: relative;
   overflow-x: hidden;
   overflow-y: visible;
-  transition: min-height 0.2s ease;
 }
 
 .msg-has-inline-copy {
@@ -1567,7 +1566,7 @@
   flex-direction: column;
   align-items: stretch;
   gap: 8px;
-  overflow-anchor: none;
+  will-change: height;
 }
 
 .msg-loading .msg-body {
@@ -1803,8 +1802,9 @@
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
-  /* 视口外整行跳过绘制（Chromium/WebKit）；不设 contain-intrinsic-size，避免流式增长时估算高度与实际高度偏差导致滚动条跳动 */
+  /* 视口外整行可跳过布局/绘制（Chromium/WebKit 等）；auto 占位 + 引擎缓存实际高度减轻滚动条跳动 */
   content-visibility: auto;
+  contain-intrinsic-size: auto 96px;
 }
 
 @media print {

@@ -23,7 +23,6 @@ mod ide_settings_page;
 mod ide_tabs_bar;
 mod layout_mode_segment;
 mod mobile_shell_header;
-pub mod scroll_guard;
 mod session_list_modal;
 mod settings_commit;
 mod settings_form_state;
