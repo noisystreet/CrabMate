@@ -2,6 +2,6 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "主窗口：核心 API、Victauri 调试、对话框与系统浏览器打开链接",
-  "windows": ["main"],
+  "windows": ["main", "splash", "default"],
   "permissions": ["core:default", "dialog:default", "opener:default", "victauri:default"]
 }
