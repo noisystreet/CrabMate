@@ -6,10 +6,10 @@ import {
   putFreshLocalSession,
   putWorkspaceSessions,
   SCROLL_TIMEOUT,
+  sendAndWait,
   typeComposerDraft,
   UI_TIMEOUT,
   visibleChatLayer,
-  waitForStreamComplete,
 } from './helpers';
 
 test.describe('keyboard shortcuts', () => {
@@ -23,8 +23,7 @@ test.describe('keyboard shortcuts', () => {
     await expect(page.getByTestId('chat-composer-input')).toBeVisible();
 
     await typeComposerDraft(page, 'e2e enter send');
-    await page.getByTestId('chat-composer-input').press('Enter');
-    await waitForStreamComplete(page);
+    await sendAndWait(page, () => page.getByTestId('chat-composer-input').press('Enter'));
 
     await expect(
       visibleChatLayer(page).getByTestId('chat-message-row').filter({ hasText: 'Hello from E2E stub' }),
@@ -118,8 +117,7 @@ test.describe('keyboard shortcuts', () => {
       .toBe(0);
 
     await typeComposerDraft(page, 'e2e send scroll follow');
-    await page.getByTestId('chat-composer-input').press('Enter');
-    await waitForStreamComplete(page);
+    await sendAndWait(page, () => page.getByTestId('chat-composer-input').press('Enter'));
 
     await expect(
       visibleChatLayer(page).getByTestId('chat-message-row').filter({ hasText: 'Hello from E2E stub' }),
