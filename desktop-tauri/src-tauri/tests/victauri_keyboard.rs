@@ -132,6 +132,35 @@ e2e_test!(end_key_scrolls_messages_toward_bottom, |client| async move {
 });
 
 // ---------------------------------------------------------------------------
+// 测试 3（Phase 3）：Enter 发送消息出现助手回复（fetch 拦截器存根 SSE 流）
+// ---------------------------------------------------------------------------
+e2e_test!(enter_sends_message_with_stream_stub, |client| async move {
+    // Phase 3: 注入 SSE 流存根
+    let sse = concat!(
+        "id: 1\ndata: {\"sse_capabilities\":{\"supported_sse_v\":1}}\n\n",
+        "id: 2\ndata: {\"v\":1}\n\n",
+        "id: 3\ndata: Hello from E2E stub.\n\n",
+        "id: 4\ndata: {\"stream_ended\":{\"reason\":\"completed\"}}\n\n",
+    );
+    let _ = client.eval_js(&format!(
+        "(()=>{{const body=`{sse}`;window.__kOrigFetch=window.fetch;\
+         window.fetch=(u,o)=>{{if(typeof u==='string'&&u.includes('/chat/stream')&&o&&o.method==='POST')\
+         return Promise.resolve(new Response(body,{{status:200,headers:{{'content-type':'text/event-stream'}}}}));\
+         return window.__kOrigFetch(u,o);}};}})()"
+    )).await;
+
+    seed_sessions_with_messages(&mut client, "s_e2e_keys_enter", 2, "enter-test").await;
+
+    let _ = client.eval_js(
+        "(()=>{const el=document.querySelector('[data-testid=\"chat-composer-input\"]');if(!el)return;el.focus();const s=Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value').set;s.call(el,'e2e enter send');el.dispatchEvent(new Event('input',{bubbles:true}));})()"
+    ).await;
+
+    client.press_key("Enter").await.unwrap();
+
+    client.wait_for("text", Some("Hello from E2E stub"), Some(15000), Some(200)).await.unwrap();
+});
+
+// ---------------------------------------------------------------------------
 // 测试 2：Home 键滚顶
 // ---------------------------------------------------------------------------
 e2e_test!(home_key_scrolls_to_top, |client| async move {
