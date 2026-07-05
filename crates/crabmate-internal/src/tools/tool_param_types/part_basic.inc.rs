@@ -82,7 +82,6 @@ pub enum TextTransformOp {
 pub enum TextTransformHashAlgo {
     #[default]
     Sha256,
-    Blake3,
 }
 
 /// [`super::text_transform::run`] 入参。

@@ -41,20 +41,11 @@ fn validate_text(text: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn hash_short_hex(text: &str, algo: &str) -> String {
-    match algo {
-        "blake3" => {
-            let h = blake3::hash(text.as_bytes());
-            let hex = h.to_hex();
-            hex.as_str()[..16].to_string()
-        }
-        _ => {
-            use sha2::Digest;
-            let d = sha2::Sha256::digest(text.as_bytes());
-            let hex: String = d.iter().map(|b| format!("{b:02x}")).collect();
-            hex[..16].to_string()
-        }
-    }
+fn hash_short_hex(text: &str) -> String {
+    use sha2::Digest;
+    let d = sha2::Sha256::digest(text.as_bytes());
+    let hex: String = d.iter().map(|b| format!("{b:02x}")).collect();
+    hex[..16].to_string()
 }
 
 /// 执行 `text_transform` 工具。
@@ -99,11 +90,7 @@ pub fn run(args_json: &str) -> String {
             Err(e) => return format!("URL 解码失败：{}", e),
         },
         super::tool_param_types::TextTransformOp::HashShort => {
-            let algo = match args.hash_algo.unwrap_or_default() {
-                super::tool_param_types::TextTransformHashAlgo::Sha256 => "sha256",
-                super::tool_param_types::TextTransformHashAlgo::Blake3 => "blake3",
-            };
-            format!("{}:{}", algo, hash_short_hex(text, algo))
+            format!("sha256:{}", hash_short_hex(text))
         }
         super::tool_param_types::TextTransformOp::LinesJoin => {
             let delim = match args.delimiter.as_deref() {

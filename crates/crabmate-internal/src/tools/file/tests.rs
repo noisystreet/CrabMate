@@ -216,13 +216,13 @@ fn test_hash_file_sha256_empty() {
 }
 
 #[test]
-fn test_hash_file_blake3_prefix() {
+fn test_hash_file_sha256_prefix() {
     let dir = make_test_dir();
     let file = dir.join("p.bin");
     std::fs::write(&file, b"hello world").unwrap();
-    let full = hash_file(r#"{"path":"p.bin","algorithm":"blake3"}"#, &dir);
+    let full = hash_file(r#"{"path":"p.bin","algorithm":"sha256"}"#, &dir);
     let prefix = hash_file(
-        r#"{"path":"p.bin","algorithm":"blake3","max_bytes":5}"#,
+        r#"{"path":"p.bin","algorithm":"sha256","max_bytes":5}"#,
         &dir,
     );
     assert!(full.contains("digest_hex:"), "{}", full);

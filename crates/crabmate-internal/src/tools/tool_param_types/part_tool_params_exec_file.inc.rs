@@ -145,8 +145,6 @@ pub enum HashFileAlgorithm {
     Sha256,
     #[serde(rename = "sha512", alias = "sha-512")]
     Sha512,
-    #[serde(rename = "blake3")]
-    Blake3,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]

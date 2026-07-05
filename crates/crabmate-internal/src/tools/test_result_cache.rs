@@ -6,9 +6,9 @@ use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use blake3::Hasher;
 use ignore::WalkBuilder;
 use serde_json::json;
+use sha2::{Digest, Sha256};
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum TestCacheKind {
@@ -23,7 +23,7 @@ pub struct TestCacheKey {
     pub kind: TestCacheKind,
     /// 规范化后的调用参数摘要（JSON 字符串，稳定字段顺序由调用方保证）。
     pub args_fingerprint: String,
-    /// 工作区源码 / 清单指纹（blake3 hex）。
+    /// 工作区源码 / 清单指纹（SHA-256 hex）。
     pub inputs_fingerprint: String,
 }
 
@@ -101,10 +101,10 @@ fn cache_singleton(max_entries: usize) -> std::sync::MutexGuard<'static, Option<
     g
 }
 
-/// 遍历工作区（尊重 `.gitignore`），对 `.rs` / `.toml` / `Cargo.lock` 记录相对路径 + mtime 纳秒 + 长度，计算 blake3。
+/// 遍历工作区（尊重 `.gitignore`），对 `.rs` / `.toml` / `Cargo.lock` 记录相对路径 + mtime 纳秒 + 长度，计算 SHA-256。
 pub fn fingerprint_rust_workspace_sources(root: &Path) -> Option<String> {
     let root = root.canonicalize().ok()?;
-    let mut hasher = Hasher::new();
+    let mut hasher = Sha256::new();
     let mut rows: Vec<(String, u128, u64)> = Vec::new();
 
     let walker = WalkBuilder::new(&root)
@@ -141,11 +141,12 @@ pub fn fingerprint_rust_workspace_sources(root: &Path) -> Option<String> {
     rows.sort_by(|a, b| a.0.cmp(&b.0));
     for (rel, mt, len) in rows {
         hasher.update(rel.as_bytes());
-        hasher.update(&0xffu8.to_le_bytes()); // separator
-        hasher.update(&mt.to_le_bytes());
-        hasher.update(&len.to_le_bytes());
+        hasher.update(0xffu8.to_le_bytes()); // separator
+        hasher.update(mt.to_le_bytes());
+        hasher.update(len.to_le_bytes());
     }
-    Some(hasher.finalize().to_hex().to_string())
+    let hash = hasher.finalize();
+    Some(hash.iter().map(|b| format!("{b:02x}")).collect::<String>())
 }
 
 /// `npm test` 指纹：`subdir/package.json` 与可选 lockfile 的 mtime+size。
@@ -155,14 +156,14 @@ pub fn fingerprint_npm_package_dir(workspace: &Path, subdir: &str) -> Option<Str
     if !pj.is_file() {
         return None;
     }
-    let mut hasher = Hasher::new();
+    let mut hasher = Sha256::new();
     for name in ["package.json", "package-lock.json", "npm-shrinkwrap.json"] {
         let p = dir.join(name);
         if !p.is_file() {
             continue;
         }
         hasher.update(name.as_bytes());
-        hasher.update(&0xffu8.to_le_bytes());
+        hasher.update(0xffu8.to_le_bytes());
         let meta = std::fs::metadata(&p).ok()?;
         let mt = meta
             .modified()
@@ -170,10 +171,11 @@ pub fn fingerprint_npm_package_dir(workspace: &Path, subdir: &str) -> Option<Str
             .duration_since(std::time::UNIX_EPOCH)
             .ok()?
             .as_nanos();
-        hasher.update(&mt.to_le_bytes());
-        hasher.update(&meta.len().to_le_bytes());
+        hasher.update(mt.to_le_bytes());
+        hasher.update(meta.len().to_le_bytes());
     }
-    Some(hasher.finalize().to_hex().to_string())
+    let hash = hasher.finalize();
+    Some(hash.iter().map(|b| format!("{b:02x}")).collect::<String>())
 }
 
 const CACHE_BANNER: &str =
