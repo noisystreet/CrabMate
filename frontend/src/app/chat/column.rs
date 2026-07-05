@@ -17,7 +17,6 @@ use super::scroll_shell::{
     ChatScrollShellSignals, on_messages_scroll_event, on_messages_wheel_follow_intent,
 };
 use super::tail_loading_memo::tail_loading_assistant_mid_memo;
-use super::timeline::timeline_panel_view;
 use crate::api::upload_files_multipart;
 use crate::i18n;
 #[component]
@@ -49,7 +48,6 @@ fn ChatMessagesThreadBody(
 ) -> impl IntoView {
     let ChatMessagesPaneSignals {
         locale,
-        timeline_panel_expanded,
         chat,
         scroll_shell,
         ..
@@ -57,17 +55,9 @@ fn ChatMessagesThreadBody(
 
     let sessions = chat.sessions;
     let active_id = chat.active_id;
-    let auto_scroll_chat = tool_run_group_signals.auto_scroll_chat;
 
     view! {
         <div class="chat-thread">
-            {timeline_panel_view(
-                locale,
-                sessions,
-                active_id,
-                timeline_panel_expanded,
-                auto_scroll_chat,
-            )}
             <div class="messages-inner">
                 <Show
                     when=move || {
@@ -116,7 +106,6 @@ fn ChatMessagesThreadBody(
 fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
     let ChatMessagesPaneSignals {
         scroll_shell,
-        timeline_panel_expanded: _,
         chat,
         collapsed_long_assistant_ids,
         collapsed_tool_run_heads,

@@ -14,8 +14,6 @@ mod strip_ansi;
 mod tool_card;
 mod tool_envelope;
 
-#[cfg(test)]
-pub(crate) use display::agent_reply_plan_step_descriptions_from_assistant;
 pub(crate) use display::{
     assistant_message_text_for_display_ex_with_body_strings, assistant_text_for_display,
     assistant_thinking_body_and_answer_raw, filter_assistant_thinking_markers_for_display,

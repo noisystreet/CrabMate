@@ -26,8 +26,6 @@ pub struct UserPrefsDto {
     #[serde(default)]
     pub editor_layout_mode: Option<bool>,
     #[serde(default)]
-    pub timeline_panel_expanded: Option<bool>,
-    #[serde(default)]
     pub sidebar_rail_collapsed: Option<bool>,
     #[serde(default)]
     pub session_ui_font: Option<String>,

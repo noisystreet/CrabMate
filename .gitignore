@@ -92,3 +92,4 @@ tmp/
 *.tgz
 *.tar.gz
 *.zip
+chat_export_*.md

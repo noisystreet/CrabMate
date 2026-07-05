@@ -108,7 +108,6 @@ impl ComposerStreamShell {
 #[derive(Clone, Copy)]
 pub(crate) struct ChatMessagesPaneSignals {
     pub locale: RwSignal<crate::i18n::Locale>,
-    pub timeline_panel_expanded: RwSignal<bool>,
     pub chat: ChatSessionSignals,
     pub collapsed_long_assistant_ids: RwSignal<Vec<String>>,
     pub collapsed_tool_run_heads: RwSignal<HashSet<String>>,
@@ -169,7 +168,6 @@ impl ChatColumnShell {
         let su = app.shell_ui;
         ChatMessagesPaneSignals {
             locale: su.locale,
-            timeline_panel_expanded: cc.timeline_panel_expanded,
             chat: app.chat,
             collapsed_long_assistant_ids: cc.collapsed_long_assistant_ids,
             collapsed_tool_run_heads: cc.collapsed_tool_run_heads,
