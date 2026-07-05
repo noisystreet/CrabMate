@@ -21,7 +21,8 @@ use crate::storage::ChatSession;
 static FOLLOW_PULSE_TO_BOTTOM_PENDING: AtomicBool = AtomicBool::new(false);
 
 /// 流式增量布局对齐：与 End 键共享的三次脉冲间隔（ms）。
-const PULSE_DELAYS_MS: [u32; 3] = [0, 0, 16];
+/// 16ms 首帧让浏览器完成布局；80ms/160ms 覆盖 72ms 节流 innerHTML 写入窗口，避免与 DOM 增长竞态。
+const PULSE_DELAYS_MS: [u32; 3] = [16, 80, 160];
 
 fn scroll_element_to_bottom_if_allowed(shell: ChatScrollShellSignals) -> bool {
     if !shell.auto_scroll_chat.get_untracked() {
