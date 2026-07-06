@@ -237,6 +237,7 @@ mod tests {
             self.info.clone()
         }
 
+        #[allow(clippy::manual_async_fn)]
         fn handle_request(
             &self,
             _request: rmcp::model::ServerRequest,
@@ -246,6 +247,7 @@ mod tests {
             async { Ok(rmcp::model::ClientResult::empty(())) }
         }
 
+        #[allow(clippy::manual_async_fn)]
         fn handle_notification(
             &self,
             _notification: ServerNotification,
