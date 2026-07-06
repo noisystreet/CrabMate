@@ -7,7 +7,7 @@ use aes::Aes256;
 use base64::Engine;
 use cbc::Decryptor;
 use cipher::block_padding::Pkcs7;
-use cipher::{BlockDecryptMut, KeyIvInit};
+use cipher::{BlockModeDecrypt, KeyIvInit};
 use sha2::{Digest, Sha256};
 
 type Aes256CbcDec = Decryptor<Aes256>;
@@ -66,7 +66,7 @@ pub fn decrypt_encrypt_field(
     let dec = Aes256CbcDec::new_from_slices(&key, iv)
         .map_err(|e| FeishuDecryptError::Unpad(format!("AES key/iv length: {e}")))?;
     let plain_bytes = dec
-        .decrypt_padded_mut::<Pkcs7>(&mut buf)
+        .decrypt_padded::<Pkcs7>(&mut buf)
         .map_err(|e| FeishuDecryptError::Unpad(format!("{e:?}")))?;
     let plain = std::str::from_utf8(plain_bytes)
         .map_err(|_| FeishuDecryptError::Unpad("decrypted payload is not UTF-8".into()))?;
