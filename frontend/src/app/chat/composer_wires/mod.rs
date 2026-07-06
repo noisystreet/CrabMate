@@ -77,7 +77,6 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
             ) {
                 return;
             }
-            engage_follow_and_scroll_bottom(scroll_shell);
             let uid = make_message_id();
             let asst_id = make_message_id();
             let imgs_send = imgs.clone();
@@ -88,6 +87,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
                 uid,
                 asst_id.clone(),
             );
+            engage_follow_and_scroll_bottom(scroll_shell);
             draft.set(String::new());
             pending_images.set(Vec::new());
             begin_stream_shell_turn(&shell);

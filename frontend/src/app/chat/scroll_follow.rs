@@ -4,14 +4,17 @@
 //! - **入口 A**（用户滚动意图）：[`super::scroll_shell`] 的 `on:wheel` / `on:scroll`。
 //! - **入口 B**（主动跟底）：发送 / End 键 → [`engage_follow_and_scroll_bottom`]。
 //!
-//! **注意**：使用 `setTimeout` 链代替 `requestAnimationFrame`，
-//! 因为 rAF 在 Tauri/WebKitGTK 中可能不被调度（窗口非聚焦、合成器暂停）。
+//! **注意**：`scroll_to_bottom`（发送/End 键）使用 `rAF` 确保布局完成后再读 `scrollHeight`，
+//! 并以 `setTimeout(100)` 作为 Tauri 失焦时的兜底。
+//! `wire_content_follow_scroll`（流式消息变化）仍使用纯 `setTimeout` 链，
+//! 因为 rAF 在 Tauri/WebKitGTK 失焦/合成器暂停时可能不被调度。
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use gloo_timers::callback::Timeout;
 use leptos::prelude::*;
+use leptos_dom::helpers::request_animation_frame;
 
 use crate::app::chat::scroll_shell::ChatScrollShellSignals;
 use crate::chat_session_state::ChatSessionSignals;
@@ -38,20 +41,22 @@ fn scroll_element_to_top(shell: ChatScrollShellSignals) {
     }
 }
 
-/// 滚底：`setTimeout(0)` 等 Leptos DOM 批处理完成 → `setTimeout(50)` 二次确认布局。
-/// 用 `setTimeout` 链代替 rAF，因为 rAF 在 Tauri/WebKitGTK 中可能不被调度。
+/// 滚底：`setTimeout(0)` 等 Leptos DOM 批处理完成 → `rAF` 等布局完成再读 `scrollHeight`。
+/// 发送/End 键时窗口聚焦，rAF 能可靠调度；`setTimeout(100)` 作为 Tauri 失焦时的兜底。
 fn scroll_to_bottom(shell: ChatScrollShellSignals) {
     Timeout::new(0, move || {
-        shell.messages_scroll_from_effect.set(true);
-        scroll_element_to_bottom_if_allowed(shell);
-        shell.messages_scroll_from_effect.set(false);
-        // 二次确认：等浏览器完成布局（rAF 在 WebKitGTK 可能不触发）
-        Timeout::new(50, move || {
+        request_animation_frame(move || {
             shell.messages_scroll_from_effect.set(true);
             scroll_element_to_bottom_if_allowed(shell);
             shell.messages_scroll_from_effect.set(false);
-        })
-        .forget();
+            // 兜底：rAF 在 Tauri 失焦时可能不触发，setTimeout 保证最终滚底
+            Timeout::new(100, move || {
+                shell.messages_scroll_from_effect.set(true);
+                scroll_element_to_bottom_if_allowed(shell);
+                shell.messages_scroll_from_effect.set(false);
+            })
+            .forget();
+        });
     })
     .forget();
 }
@@ -145,4 +150,145 @@ pub(crate) fn wire_content_follow_scroll(chat: ChatSessionSignals, shell: ChatSc
         })
         .forget();
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::active_session_tail_scroll_fingerprint;
+    use crate::storage::{ChatSession, StoredMessage, StoredMessageState};
+
+    fn make_msg(id: &str, text: &str) -> StoredMessage {
+        StoredMessage {
+            id: id.to_string(),
+            role: "user".to_string(),
+            text: text.to_string(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        }
+    }
+
+    fn make_session(id: &str, messages: Vec<StoredMessage>) -> ChatSession {
+        ChatSession {
+            id: id.to_string(),
+            title: String::new(),
+            draft: String::new(),
+            messages,
+            updated_at: 0,
+            pinned: false,
+            starred: false,
+            server_conversation_id: None,
+            server_revision: None,
+            workspace_root: None,
+            history_total: None,
+            history_window_start: None,
+            history_has_older: None,
+        }
+    }
+
+    #[test]
+    fn empty_session_list_returns_zero() {
+        assert_eq!(active_session_tail_scroll_fingerprint(&[], "s1"), 0);
+    }
+
+    #[test]
+    fn session_not_found_returns_zero() {
+        let sessions = vec![make_session("s1", vec![])];
+        assert_eq!(active_session_tail_scroll_fingerprint(&sessions, "s2"), 0);
+    }
+
+    #[test]
+    fn empty_messages_returns_zero() {
+        let sessions = vec![make_session("s1", vec![])];
+        assert_eq!(active_session_tail_scroll_fingerprint(&sessions, "s1"), 0);
+    }
+
+    #[test]
+    fn single_message_returns_non_zero() {
+        let sessions = vec![make_session("s1", vec![make_msg("m1", "hello")])];
+        let fp = active_session_tail_scroll_fingerprint(&sessions, "s1");
+        assert!(fp > 0);
+    }
+
+    #[test]
+    fn same_content_produces_same_fingerprint() {
+        let sessions = vec![make_session(
+            "s1",
+            vec![make_msg("m1", "hello"), make_msg("m2", "world")],
+        )];
+        let fp1 = active_session_tail_scroll_fingerprint(&sessions, "s1");
+        let fp2 = active_session_tail_scroll_fingerprint(&sessions, "s1");
+        assert_eq!(fp1, fp2);
+    }
+
+    #[test]
+    fn different_text_length_produces_different_fingerprint() {
+        let s1 = vec![make_session("s1", vec![make_msg("m1", "hi")])];
+        let s2 = vec![make_session("s1", vec![make_msg("m1", "hello")])];
+        let fp1 = active_session_tail_scroll_fingerprint(&s1, "s1");
+        let fp2 = active_session_tail_scroll_fingerprint(&s2, "s1");
+        assert_ne!(fp1, fp2);
+    }
+
+    #[test]
+    fn adding_message_changes_fingerprint() {
+        let mut sessions = vec![make_session("s1", vec![make_msg("m1", "hello")])];
+        let fp1 = active_session_tail_scroll_fingerprint(&sessions, "s1");
+        sessions[0].messages.push(make_msg("m2", "world"));
+        let fp2 = active_session_tail_scroll_fingerprint(&sessions, "s1");
+        assert_ne!(fp1, fp2);
+    }
+
+    #[test]
+    fn only_last_six_messages_affect_fingerprint() {
+        let mut msgs: Vec<StoredMessage> = (0..10)
+            .map(|i| make_msg(&format!("m{i}"), &format!("text{i}")))
+            .collect();
+        let sessions_tail = vec![make_session("s1", msgs.clone())];
+        let fp_tail = active_session_tail_scroll_fingerprint(&sessions_tail, "s1");
+
+        // Change the first message (outside last 6) — fingerprint should stay the same
+        msgs[0] = make_msg("m0", "changed");
+        let sessions_changed = vec![make_session("s1", msgs)];
+        let fp_changed = active_session_tail_scroll_fingerprint(&sessions_changed, "s1");
+        assert_eq!(fp_tail, fp_changed);
+    }
+
+    #[test]
+    fn changing_last_message_changes_fingerprint() {
+        let msgs: Vec<StoredMessage> = (0..10)
+            .map(|i| make_msg(&format!("m{i}"), &format!("text{i}")))
+            .collect();
+        let mut sessions = vec![make_session("s1", msgs)];
+        let fp1 = active_session_tail_scroll_fingerprint(&sessions, "s1");
+        sessions[0].messages[9].text = "changed".to_string();
+        let fp2 = active_session_tail_scroll_fingerprint(&sessions, "s1");
+        assert_ne!(fp1, fp2);
+    }
+
+    #[test]
+    fn different_state_produces_different_fingerprint() {
+        let mut msg1 = make_msg("m1", "hello");
+        msg1.state = Some(StoredMessageState::Loading);
+        let mut msg2 = make_msg("m1", "hello");
+        msg2.state = Some(StoredMessageState::Error);
+        let fp1 = active_session_tail_scroll_fingerprint(&[make_session("s1", vec![msg1])], "s1");
+        let fp2 = active_session_tail_scroll_fingerprint(&[make_session("s1", vec![msg2])], "s1");
+        assert_ne!(fp1, fp2);
+    }
+
+    #[test]
+    fn state_to_none_changes_fingerprint() {
+        let mut msg = make_msg("m1", "hello");
+        msg.state = Some(StoredMessageState::Loading);
+        let fp1 =
+            active_session_tail_scroll_fingerprint(&[make_session("s1", vec![msg.clone()])], "s1");
+        msg.state = None;
+        let fp2 = active_session_tail_scroll_fingerprint(&[make_session("s1", vec![msg])], "s1");
+        assert_ne!(fp1, fp2);
+    }
 }
