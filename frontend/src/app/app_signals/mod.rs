@@ -98,6 +98,7 @@ impl AppSignals {
             stream_text_overlay: RwSignal::new(None),
             stream_overlay_display_mid: RwSignal::new(None),
             stream_overlay_revision: RwSignal::new(0),
+            tool_output_chunks: RwSignal::new(HashMap::new()),
             conversation_prompt_tokens: RwSignal::new(None),
             history_loading_older: RwSignal::new(false),
         };

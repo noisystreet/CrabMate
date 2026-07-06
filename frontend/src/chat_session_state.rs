@@ -251,6 +251,8 @@ pub struct ChatSessionSignals {
     pub stream_overlay_display_mid: RwSignal<Option<String>>,
     /// overlay 内容变更计数（滚动跟底 / 持久化防抖等轻量订阅，勿直接 `.get()` 整包 [`Self::stream_text_overlay`]）。
     pub stream_overlay_revision: RwSignal<u64>,
+    /// 工具输出流式累积（tool_call_id → 文本），避免每 chunk 写 sessions。
+    pub tool_output_chunks: RwSignal<HashMap<String, String>>,
     /// 最近一次成功水合的 tiktoken prompt 计数（与 [`ConversationPromptTokenHydrate::conversation_id`] 对齐，防串会话）。
     pub conversation_prompt_tokens: RwSignal<Option<ConversationPromptTokenHydrate>>,
     /// 正在拉取更早一页历史（`GET /conversation/messages?before_index=`）。

@@ -8,7 +8,7 @@ use super::super::turn_layout::TurnLayout;
 use crate::api::OnToolCallFn;
 use crate::app::stream_shell_busy::StreamShellBusyOp;
 use crate::i18n;
-use crate::message_format::{strip_ansi_codes, tool_stored_text_from_result_info};
+use crate::message_format::tool_stored_text_from_result_info;
 use crate::session_ops::{make_message_id, message_created_ms};
 use crate::sse_dispatch::{ToolOutputChunkInfo, ToolResultInfo};
 use crate::storage::{StoredMessage, StoredMessageState};
@@ -33,17 +33,17 @@ pub(in super::super) fn make_on_tool_output_chunk(
         if tid.is_empty() {
             return;
         }
-        stream_ctx.update_bound_session(|s| {
-            let idx_opt = index_of_tool_message_by_call_id_latest(&s.messages, tid);
-            if let Some(idx) = idx_opt {
-                if info.name.as_deref() == Some("terminal_session") {
-                    s.messages[idx]
-                        .reasoning_text
-                        .push_str(&strip_ansi_codes(&info.chunk));
-                } else {
-                    s.messages[idx].reasoning_text.push_str(&info.chunk);
-                }
-            }
+        // 热路径：只写 tool_output_chunks overlay，不写 sessions。
+        stream_ctx.chat.tool_output_chunks.update(|m| {
+            m.entry(tid.to_string())
+                .and_modify(|t| t.push_str(&info.chunk))
+                .or_insert_with(|| {
+                    if info.name.as_deref() == Some("terminal_session") {
+                        crate::message_format::strip_ansi_codes(&info.chunk)
+                    } else {
+                        info.chunk.clone()
+                    }
+                });
         });
     })
 }
@@ -129,6 +129,16 @@ pub(in super::super) fn make_on_tool_result(
                 inserted_new_tool = true;
             }
         });
+        // 工具结果已写入 sessions，清除 overlay 中累积的工具输出。
+        if let Some(tid) = info
+            .tool_call_id
+            .as_deref()
+            .filter(|t| !t.trim().is_empty())
+        {
+            stream_ctx.chat.tool_output_chunks.update(|m| {
+                m.remove(tid);
+            });
+        }
         if inserted_new_tool {
             TurnLayout::on_tool_result_inserted(&stream_ctx, id.as_str());
         } else {

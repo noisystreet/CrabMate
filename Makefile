@@ -82,6 +82,9 @@ frontend:
 	cd "$(FRONTEND_DIR)" && trunk build $(TRUNK_BUILD_FLAGS)
 
 frontend-release:
+	@command -v wasm-opt >/dev/null 2>&1 || { \
+		echo "警告: 未找到 wasm-opt。trunk build --release 会产出空 .wasm 文件。建议: cargo install wasm-opt" >&2; \
+	}
 	$(MAKE) frontend RELEASE=1
 
 # --- 桌面（Tauri）---

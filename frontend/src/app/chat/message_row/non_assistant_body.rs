@@ -1,6 +1,6 @@
 //! 非助手气泡正文（工具摘要、跳转用户消息、纯文本高亮）。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use leptos::prelude::*;
 
@@ -55,6 +55,7 @@ struct ToolCompactBodyArgs {
     locale: RwSignal<Locale>,
     chat_find_query: RwSignal<String>,
     apply_assistant_display_filters: RwSignal<bool>,
+    tool_output_chunks: RwSignal<HashMap<String, String>>,
 }
 
 fn tool_compact_body_view(p: ToolCompactBodyArgs) -> AnyView {
@@ -67,6 +68,7 @@ fn tool_compact_body_view(p: ToolCompactBodyArgs) -> AnyView {
         locale,
         chat_find_query,
         apply_assistant_display_filters,
+        tool_output_chunks,
     } = p;
     let tool_emoji = tool_bubble_emoji(&m_for_body);
     let mid_store = StoredValue::new(tool_mid);
@@ -78,7 +80,7 @@ fn tool_compact_body_view(p: ToolCompactBodyArgs) -> AnyView {
                 let term = tool_name_for_drawer_btn.as_deref() == Some("terminal_session");
                 let loc = locale.get();
                 let live_ok = reasoning_live.as_ref().is_some_and(|(sess, aid, mid)| {
-                    tool_drawer_has_visible_body(*sess, *aid, mid.as_str(), loc, term)
+                    tool_drawer_has_visible_body(*sess, *aid, mid.as_str(), loc, term, tool_output_chunks)
                 });
                 let snap_ok = detail_snapshot.as_deref().is_some_and(|snap| {
                     let compact = crate::message_format::stored_tool_message_compact_text(
@@ -227,6 +229,7 @@ pub(super) struct NonAssistantMessageBodyParams {
     pub apply_assistant_display_filters: RwSignal<bool>,
     pub jump_uid: Option<String>,
     pub auto_scroll_chat: RwSignal<bool>,
+    pub tool_output_chunks: RwSignal<HashMap<String, String>>,
 }
 
 pub(super) fn build_non_assistant_message_body(p: NonAssistantMessageBodyParams) -> AnyView {
@@ -242,6 +245,7 @@ pub(super) fn build_non_assistant_message_body(p: NonAssistantMessageBodyParams)
         apply_assistant_display_filters,
         jump_uid,
         auto_scroll_chat,
+        tool_output_chunks,
     } = p;
     if is_tool_bubble {
         return tool_compact_body_view(ToolCompactBodyArgs {
@@ -253,6 +257,7 @@ pub(super) fn build_non_assistant_message_body(p: NonAssistantMessageBodyParams)
             locale,
             chat_find_query,
             apply_assistant_display_filters,
+            tool_output_chunks,
         });
     }
     if let Some(uid) = jump_uid {
