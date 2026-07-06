@@ -1,4 +1,4 @@
-//! CrabMate 作为 **MCP server**（stdio）：将内置 `tools::run_tool` 暴露给外部 MCP 客户端。
+//! CrabMate 作为 **MCP server**（stdio / TCP）：将内置 `tools::run_tool` 暴露给外部 MCP 客户端。
 //!
 //! **安全**：无传输层鉴权；与 `run_command` / 工作区策略一致，调用方获得与本地 `crabmate` 相同的执行面。仅应对**可信**父进程 / 本机集成开放。
 
@@ -160,18 +160,139 @@ pub async fn run_stdio_mcp_server(
     }
 }
 
+/// 在 **TCP 端口** 上运行 MCP server，接受单个连接后退出。
+pub async fn run_tcp_mcp_server(
+    cfg: AgentConfig,
+    workspace: PathBuf,
+    no_tools: bool,
+    port: u16,
+) -> Result<(), String> {
+    let addr = format!("127.0.0.1:{port}");
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .map_err(|e| format!("绑定 TCP {} 失败: {e}", addr))?;
+
+    eprintln!(
+        "crabmate mcp serve：TCP MCP server 已启动（127.0.0.1:{port}，工作目录 {}，工具数 {}）。\
+         无鉴权：仅连接可信客户端。",
+        workspace.display(),
+        if no_tools {
+            0
+        } else {
+            build_mcp_tool_list(&cfg, false).len()
+        }
+    );
+
+    loop {
+        let (stream, peer) = listener
+            .accept()
+            .await
+            .map_err(|e| format!("接受连接失败: {e}"))?;
+        eprintln!("MCP 客户端已连接: {peer}");
+
+        let service = CrabmateMcpServer::new(cfg.clone(), workspace.clone(), no_tools);
+
+        // TcpStream 实现了 AsyncRead + AsyncWrite，可直接用作 transport
+        let running = serve_server(service, stream)
+            .await
+            .map_err(|e| format!("MCP server 初始化失败: {e}"))?;
+
+        match running.waiting().await {
+            Ok(_) => eprintln!("MCP 客户端已断开: {peer}"),
+            Err(e) => {
+                eprintln!("MCP 连接异常: {e}");
+            }
+        }
+        // 继续监听下一个连接
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rmcp::model::{
+        ClientCapabilities, ClientInfo as ClientInfoMode, Implementation as ClientImpl,
+        ServerNotification,
+    };
+    use rmcp::service::{RoleClient, Service as McpService, serve_client};
 
-    #[test]
-    fn openai_to_mcp_non_empty_for_default_build() {
+    /// Minimal MCP 客户端服务（仅用于测试 TCP 传输）。
+    struct TestClientService {
+        info: ClientInfoMode,
+    }
+
+    impl Default for TestClientService {
+        fn default() -> Self {
+            Self {
+                info: ClientInfoMode::new(
+                    ClientCapabilities::default(),
+                    ClientImpl::new("crabmate-test", "0.1"),
+                ),
+            }
+        }
+    }
+
+    impl McpService<RoleClient> for TestClientService {
+        fn get_info(&self) -> ClientInfoMode {
+            self.info.clone()
+        }
+
+        fn handle_request(
+            &self,
+            _request: rmcp::model::ServerRequest,
+            _context: rmcp::service::RequestContext<RoleClient>,
+        ) -> impl std::future::Future<Output = Result<rmcp::model::ClientResult, McpError>> + Send
+        {
+            async { Ok(rmcp::model::ClientResult::empty(())) }
+        }
+
+        fn handle_notification(
+            &self,
+            _notification: ServerNotification,
+            _context: rmcp::service::NotificationContext<RoleClient>,
+        ) -> impl std::future::Future<Output = Result<(), McpError>> + Send {
+            async { Ok(()) }
+        }
+    }
+
+    #[tokio::test]
+    async fn tcp_server_accepts_and_lists_tools() {
         let cfg = crate::config::load_config(None).expect("default config load");
-        let list = build_mcp_tool_list(&cfg, false);
-        assert!(
-            !list.is_empty(),
-            "默认工具集应能映射为至少一条 MCP tools/list 项"
-        );
-        assert!(list.iter().all(|t| !t.name.is_empty()));
+        let workspace = std::env::temp_dir();
+
+        // 随机端口绑定
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let port = listener.local_addr().unwrap().port();
+
+        // 后台启动 TCP server（保持 _running 存活直到测试结束）
+        let server_handle: tokio::task::JoinHandle<Result<(), String>> = tokio::spawn(async move {
+            let (stream, peer) = listener.accept().await.map_err(|e| format!("{e}"))?;
+            eprintln!("test server accepted: {peer}");
+            let service = CrabmateMcpServer::new(cfg, workspace, false);
+            let _running = serve_server(service, stream)
+                .await
+                .map_err(|e| format!("{e}"))?;
+            // 保持连接存活直到 test 结束（abort）
+            std::future::pending::<()>().await;
+            Ok(())
+        });
+
+        // 客户端通过 TCP 连接
+        let client_stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .expect("connect");
+        let client_svc = TestClientService::default();
+        let running = serve_client(client_svc, client_stream)
+            .await
+            .expect("MCP client handshake");
+
+        let tools = running.peer().list_all_tools().await.expect("tools/list");
+        assert!(!tools.is_empty(), "should list tools via TCP");
+        assert!(tools.iter().all(|t| !t.name.is_empty()));
+
+        // 清理
+        server_handle.abort();
     }
 }

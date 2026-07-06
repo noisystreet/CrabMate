@@ -228,6 +228,7 @@ fn build_parsed_cli_args(
                 McpSubCmd::Serve(s) => (
                     ExtraCliCommand::McpServe {
                         no_tools: s.no_tools,
+                        port: s.port,
                     },
                     ctx.no_tools,
                 ),
