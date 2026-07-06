@@ -36,8 +36,9 @@
   <body>
     <script src="/vendor/ide-codemirror.js"></script>
     <!--
-      Trunk：`trunk build`（默认 dev）不跑 wasm-opt，迭代快；`trunk build --release` 使用默认 wasm-opt，体积与冷启动更优。
-      若要在 release 下也跳过 wasm-opt，可加 `data-wasm-opt="0"`；若要偏体积累可加 `data-wasm-opt="z"` 等（见 Trunk 文档）。
+      Trunk：`trunk build`（默认 dev）不跑 wasm-opt，迭代快；`trunk build --release` 使用默认 wasm-opt。
+      frontend/Cargo.toml 中 release profile 已设 opt-level="z" + lto=true + codegen-units=1，进一步压缩 WASM 体积。
+      若要跳过 wasm-opt 可加 `data-wasm-opt="0"`（见 Trunk 文档）。
     -->
     <link data-trunk rel="rust" />
   </body>
