@@ -162,3 +162,7 @@ tempfile = "3"
 [profile.release]
 lto = true
 codegen-units = 1
+
+# WASM 前端（crabmate-web）优先优化体积
+[profile.release.package.crabmate-web]
+opt-level = "z"

@@ -1697,6 +1697,10 @@
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
+  /* 离屏消息跳过 layout/paint，浏览器自动在进入视口前 ~250px 时渲染；
+     contain-intrinsic-size 在离屏时保留估算高度，避免滚动条跳动。 */
+  content-visibility: auto;
+  contain-intrinsic-size: 80px;
 }
 
 /* stretch：纵轴 flex 下让 .msg 在横向上拉满栈宽；flex-start 会使子项宽度=内容宽（流式初期塌条） */
