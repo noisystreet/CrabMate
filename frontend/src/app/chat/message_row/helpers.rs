@@ -1,5 +1,7 @@
 //! 消息行样式与分层子目标（hierarchical subgoal）相关的纯辅助逻辑。
 
+use std::collections::HashMap;
+
 use leptos::prelude::{Get, RwSignal, With};
 
 use crate::i18n::{self, Locale};
@@ -19,34 +21,66 @@ pub(super) fn stored_message_by_id<'a>(
         .and_then(|s| s.messages.iter().find(|m| m.id == message_id))
 }
 
-/// 工具详情展示用全文（含水合后的 `crabmate_tool` 信封解析）。
+/// 合并 overlay 中的工具输出文本到来自 sessions 的基文本。
+fn merge_tool_output_overlay(
+    base: String,
+    sessions: RwSignal<Vec<ChatSession>>,
+    active_id: RwSignal<String>,
+    message_id: &str,
+    tool_output_chunks: RwSignal<HashMap<String, String>>,
+) -> String {
+    let tid = sessions.with(|list| {
+        let aid = active_id.get();
+        stored_message_by_id(list, aid.as_str(), message_id)
+            .and_then(|m| m.tool_call_id.as_deref().map(str::to_string))
+    });
+    let Some(tid) = tid else {
+        return base;
+    };
+    let overlay = tool_output_chunks
+        .with(|m| m.get(&tid).cloned())
+        .unwrap_or_default();
+    if overlay.is_empty() {
+        return base;
+    }
+    if base.is_empty() {
+        return overlay;
+    }
+    format!("{base}\n{overlay}")
+}
+
+/// 工具详情展示用全文（含水合后的 `crabmate_tool` 信封解析 + overlay 流式累积）。
 pub(super) fn live_tool_message_detail_text(
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
     message_id: &str,
     loc: Locale,
+    tool_output_chunks: RwSignal<HashMap<String, String>>,
 ) -> String {
-    sessions.with(|list| {
+    let base = sessions.with(|list| {
         let aid = active_id.get();
         stored_message_by_id(list, aid.as_str(), message_id)
             .map(|m| stored_tool_message_detail_text(m, loc))
             .unwrap_or_default()
-    })
+    });
+    merge_tool_output_overlay(base, sessions, active_id, message_id, tool_output_chunks)
 }
 
-/// 工具气泡紧凑行（含水合后的 `crabmate_tool` 信封解析）。
+/// 工具气泡紧凑行（含水合后的 `crabmate_tool` 信封解析 + overlay 流式累积）。
 pub(super) fn live_tool_message_compact_text(
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
     message_id: &str,
     loc: Locale,
+    tool_output_chunks: RwSignal<HashMap<String, String>>,
 ) -> String {
-    sessions.with(|list| {
+    let base = sessions.with(|list| {
         let aid = active_id.get();
         stored_message_by_id(list, aid.as_str(), message_id)
             .map(|m| stored_tool_message_compact_text(m, loc))
             .unwrap_or_default()
-    })
+    });
+    merge_tool_output_overlay(base, sessions, active_id, message_id, tool_output_chunks)
 }
 
 /// 工具气泡紧凑行（`m.text`）与详情全文（`reasoning_text`）常以前缀重复；展开区只展示「多出来的部分」。
@@ -79,9 +113,12 @@ pub(super) fn tool_drawer_has_visible_body(
     message_id: &str,
     loc: Locale,
     terminal_strip_ansi: bool,
+    tool_output_chunks: RwSignal<HashMap<String, String>>,
 ) -> bool {
-    let compact = live_tool_message_compact_text(sessions, active_id, message_id, loc);
-    let full = live_tool_message_detail_text(sessions, active_id, message_id, loc);
+    let compact =
+        live_tool_message_compact_text(sessions, active_id, message_id, loc, tool_output_chunks);
+    let full =
+        live_tool_message_detail_text(sessions, active_id, message_id, loc, tool_output_chunks);
     !tool_detail_drawer_body(&compact, &full, terminal_strip_ansi)
         .trim()
         .is_empty()

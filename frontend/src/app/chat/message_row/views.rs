@@ -1,6 +1,6 @@
 //! 消息行内部子视图：元信息、正文、子目标横幅、工具气泡与操作条。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use leptos::prelude::*;
@@ -72,6 +72,7 @@ pub(super) struct ChatMessageRowBodyCoreParams {
     pub tool_mid: String,
     pub jump_uid: Option<String>,
     pub auto_scroll_chat: RwSignal<bool>,
+    pub tool_output_chunks: RwSignal<HashMap<String, String>>,
 }
 
 pub(super) fn chat_message_row_body_core(p: ChatMessageRowBodyCoreParams) -> AnyView {
@@ -93,6 +94,7 @@ pub(super) fn chat_message_row_body_core(p: ChatMessageRowBodyCoreParams) -> Any
         tool_mid,
         jump_uid,
         auto_scroll_chat,
+        tool_output_chunks,
     } = p;
     if m.role == "assistant" && !m.is_tool {
         return assistant_markdown_collapsible_view(AssistantMarkdownCollapsibleWire {
@@ -120,6 +122,7 @@ pub(super) fn chat_message_row_body_core(p: ChatMessageRowBodyCoreParams) -> Any
         apply_assistant_display_filters,
         jump_uid,
         auto_scroll_chat,
+        tool_output_chunks,
     });
     if m.role == "user" && !m.is_tool && !m.image_urls.is_empty() {
         let imgs: Vec<String> = m.image_urls.clone();

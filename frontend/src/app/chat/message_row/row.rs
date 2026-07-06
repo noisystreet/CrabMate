@@ -1,6 +1,6 @@
 //! 单条聊天消息行的根视图 [`chat_message_row`]。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use leptos::prelude::*;
 
@@ -64,6 +64,7 @@ struct ToolReasoningDrawerWire {
     is_terminal_tool: bool,
     drawer_panel_class: &'static str,
     drawer_pre_class: &'static str,
+    tool_output_chunks: RwSignal<HashMap<String, String>>,
 }
 
 fn tool_reasoning_drawer_below_card(w: ToolReasoningDrawerWire) -> impl IntoView {
@@ -77,6 +78,7 @@ fn tool_reasoning_drawer_below_card(w: ToolReasoningDrawerWire) -> impl IntoView
         is_terminal_tool,
         drawer_panel_class,
         drawer_pre_class,
+        tool_output_chunks,
     } = w;
     view! {
         <Show
@@ -94,6 +96,7 @@ fn tool_reasoning_drawer_below_card(w: ToolReasoningDrawerWire) -> impl IntoView
                     mid_drawer_sv.get_value().as_str(),
                     locale.get(),
                     is_terminal_tool,
+                    tool_output_chunks,
                 )
             }
         >
@@ -107,12 +110,14 @@ fn tool_reasoning_drawer_below_card(w: ToolReasoningDrawerWire) -> impl IntoView
                             active_id,
                             mid.as_str(),
                             loc,
+                            tool_output_chunks,
                         );
                         let compact = live_tool_message_compact_text(
                             sessions,
                             active_id,
                             mid.as_str(),
                             loc,
+                            tool_output_chunks,
                         );
                         tool_detail_drawer_body(compact.as_str(), &raw, is_terminal_tool)
                     }}
@@ -187,6 +192,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
         tool_mid: mid_highlight.clone(),
         jump_uid,
         auto_scroll_chat,
+        tool_output_chunks: chat.tool_output_chunks,
     });
     let retry_visible_rc = arc_retry_visible_for_message(row_state_map, mid_highlight.clone());
     let actions_bar_visible_rc =
@@ -279,6 +285,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
                     is_terminal_tool,
                     drawer_panel_class,
                     drawer_pre_class,
+                    tool_output_chunks: chat.tool_output_chunks,
                 })}
                 {build_message_actions_bar(MessageActionsBarParams {
                     actions_bar_visible: actions_bar_visible_rc,

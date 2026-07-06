@@ -38,6 +38,8 @@
     <!--
       Trunk：`trunk build`（默认 dev）不跑 wasm-opt，迭代快；`trunk build --release` 使用默认 wasm-opt。
       frontend/Cargo.toml 中 release profile 已设 opt-level="z" + lto=true + codegen-units=1，进一步压缩 WASM 体积。
+      当前 release WASM：~9.7MB（raw）→ wasm-opt → ~3.4MB（gzip 后约 1.5MB）。
+      wasm-opt 须在 PATH 中（`cargo install wasm-opt`），否则 trunk build --release 产出空文件。
       若要跳过 wasm-opt 可加 `data-wasm-opt="0"`（见 Trunk 文档）。
     -->
     <link data-trunk rel="rust" />
