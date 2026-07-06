@@ -9,13 +9,16 @@ use super::super::stream_turn_state::StreamModelOutputLane;
 use super::turn_layout::TurnLayout;
 
 /// post-tool 或正文相：canonical [`AnswerDelta`] + overlay preview（P0′）；禁止 chunk append 正文。
+///
+/// **热路径优化**：每 token 仅经 `sync_stream_preview` 写 overlay 信号，**不**写 `sessions`。
+/// `sessions` 只在段/工具边界（`on_turn_segment_end` / `on_turn_tool_phase_end`）或终态
+/// （`on_done` / `on_error`）由调用方 flush，避免每 token 的 O(全量消息) 信号级联。
 fn apply_answer_body_delta(
     stream_ctx: &ChatStreamCallbackCtx,
     accum: &PerStreamAccum,
     chunk: &str,
 ) {
     if stream_ctx.scratch.try_apply_answer_delta(chunk) {
-        stream_ctx.scratch.sync_turn_projection(stream_ctx);
         stream_ctx.scratch.sync_stream_preview(stream_ctx);
         accum.add_answer_delta_chars(chunk.chars().count());
         return;
@@ -24,7 +27,6 @@ fn apply_answer_body_delta(
         if stream_ctx.scratch.tool_phase_open()
             && stream_ctx.scratch.try_apply_commentary_delta(chunk)
         {
-            stream_ctx.scratch.sync_turn_projection(stream_ctx);
             stream_ctx.scratch.sync_stream_preview(stream_ctx);
         }
         accum.add_answer_delta_chars(chunk.chars().count());
@@ -32,13 +34,15 @@ fn apply_answer_body_delta(
     }
     // P0：canonical miss 时尝试 commentary 段，仍 miss 则 no-op（勿 append 尾泡）。
     if stream_ctx.scratch.try_apply_commentary_delta(chunk) {
-        stream_ctx.scratch.sync_turn_projection(stream_ctx);
         stream_ctx.scratch.sync_stream_preview(stream_ctx);
     }
     accum.add_answer_delta_chars(chunk.chars().count());
 }
 
 /// post-tool 形态 B：工具批结束后、终答门开前 plain delta → batch 说明；门开后 → 终答。
+///
+/// **热路径优化**：门转换处的 `sync_turn_projection` 保留（需将门状态落盘到 `sessions`）；
+/// 纯 commentary delta 仅走 overlay（同行 20–40 行 `apply_answer_body_delta`）。
 fn morph_b_chunk_is_standalone_final(chunk: &str, batch_len: usize) -> bool {
     let t = chunk.trim();
     batch_len >= 8
@@ -80,7 +84,6 @@ fn apply_post_tool_plain_delta(
             return;
         }
         if stream_ctx.scratch.try_apply_commentary_delta(chunk) {
-            stream_ctx.scratch.sync_turn_projection(stream_ctx);
             stream_ctx.scratch.sync_stream_preview(stream_ctx);
         }
         accum.add_answer_delta_chars(chunk.chars().count());
@@ -89,10 +92,9 @@ fn apply_post_tool_plain_delta(
     apply_answer_body_delta(stream_ctx, accum, chunk);
 }
 
-/// 工具前旁注：canonical commentary 段 + 投影；miss 时不写尾泡（Phase 1 I2）。
+/// 工具前旁注：canonical commentary 段（仅 overlay，同正文热路径）；miss 时不写尾泡（Phase 1 I2）。
 fn apply_commentary_lane_delta(stream_ctx: &ChatStreamCallbackCtx, chunk: &str) {
     if stream_ctx.scratch.try_apply_commentary_delta(chunk) {
-        stream_ctx.scratch.sync_turn_projection(stream_ctx);
         stream_ctx.scratch.sync_stream_preview(stream_ctx);
     }
 }
