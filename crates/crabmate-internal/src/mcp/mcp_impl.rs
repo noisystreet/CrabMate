@@ -1,7 +1,7 @@
-//! [Model Context Protocol](https://modelcontextprotocol.io/)：**客户端**（stdio 子进程）与可选 **服务端**（`mcp serve`，stdio）。
+//! [Model Context Protocol](https://modelcontextprotocol.io/)：**客户端**（stdio 子进程）与可选 **服务端**（`mcp serve`，stdio / TCP）。
 //!
 //! - **客户端**：同一进程内按服务器 id + command **复用**连接，将远端 `tools/list` 合并进 OpenAI 兼容工具表，经 `tools/call` 执行。
-//! - **服务端**（[`server`]）：将 CrabMate 内置 `tools::run_tool` 暴露给外部 MCP 客户端；**无传输层鉴权**，与 `run_command` / 工作区策略一致。
+//! - **服务端**（[`server`]）：支持 stdio 与 TCP 两种传输模式，将 CrabMate 内置 `tools::run_tool` 暴露给外部 MCP 客户端；**无传输层鉴权**，与 `run_command` / 工作区策略一致。
 //!
 //! **安全**：`command` 由 user-data 显式指定，等效于允许启动任意子进程；仅应在信任的配置源下启用。输出与错误信息经截断，避免过大响应撑爆上下文。
 

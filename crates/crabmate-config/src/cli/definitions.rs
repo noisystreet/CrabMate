@@ -201,6 +201,9 @@ pub struct McpServeCmd {
     /// 不向客户端列出任何工具（仍接受 `tools/call`，将返回未知工具）
     #[arg(long)]
     pub no_tools: bool,
+    /// TCP 端口（默认 0 表示 stdio 模式）。设置后监听 TCP 连接而非 stdio。
+    #[arg(long, default_value_t = 0)]
+    pub port: u16,
 }
 
 /// 工作流作者层：YAML / Markdown → `workflow.nodes` 编译与校验（**不要**求 API_KEY）
@@ -409,9 +412,10 @@ pub enum ExtraCliCommand {
     McpList {
         probe: bool,
     },
-    /// `mcp serve`（`--no-tools` 见子命令）
+    /// `mcp serve`（`--no-tools` / `--port` 见子命令）
     McpServe {
         no_tools: bool,
+        port: u16,
     },
 }
 

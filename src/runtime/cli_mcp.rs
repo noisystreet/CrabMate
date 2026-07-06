@@ -75,15 +75,20 @@ mod full {
         }
     }
 
-    /// `crabmate mcp serve`：在 stdin/stdout 上运行 MCP server（**不要**求 `API_KEY`）。
+    /// `crabmate mcp serve`：在 stdin/stdout（默认）或 TCP 端口上运行 MCP server（**不要**求 `API_KEY`）。
     pub async fn run_mcp_serve(
         cfg: &AgentConfig,
         workspace_cli: &Option<String>,
         no_tools: bool,
+        port: u16,
     ) -> Result<(), String> {
         let workspace: PathBuf =
             cli_effective_work_dir(workspace_cli, &cfg.command_exec.run_command_working_dir);
-        crate::mcp::server::run_stdio_mcp_server(cfg.clone(), workspace, no_tools).await
+        if port > 0 {
+            crate::mcp::server::run_tcp_mcp_server(cfg.clone(), workspace, no_tools, port).await
+        } else {
+            crate::mcp::server::run_stdio_mcp_server(cfg.clone(), workspace, no_tools).await
+        }
     }
 }
 
@@ -103,6 +108,7 @@ pub async fn run_mcp_serve(
     _cfg: &AgentConfig,
     _workspace_cli: &Option<String>,
     _no_tools: bool,
+    _port: u16,
 ) -> Result<(), String> {
     Err("本 crabmate 二进制未启用 `mcp` Cargo feature，不支持 `mcp serve`".to_string())
 }

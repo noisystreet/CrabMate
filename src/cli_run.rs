@@ -207,9 +207,9 @@ async fn try_dispatch_early_extra_cli(
             crate::runtime::cli_mcp::run_mcp_list(&cfg, probe, false).await;
             Ok(Some(true))
         }
-        ExtraCliCommand::McpServe { no_tools } => {
+        ExtraCliCommand::McpServe { no_tools, port } => {
             let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
-            crate::runtime::cli_mcp::run_mcp_serve(&cfg, d.workspace_cli, no_tools)
+            crate::runtime::cli_mcp::run_mcp_serve(&cfg, d.workspace_cli, no_tools, port)
                 .await
                 .map_err(std::io::Error::other)?;
             Ok(Some(true))
