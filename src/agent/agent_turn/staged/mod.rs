@@ -803,7 +803,15 @@ where
             }
             PreparedRouteReduceAction::ContinuePostParse => {
                 let PreparedPlannerRoute::ContinueWithPlan { plan } = route else {
-                    unreachable!("continue_post_parse requires ContinueWithPlan route");
+                    tracing::error!(
+                        target: "crabmate::staged",
+                        prepared_route = ?route,
+                        "continue_post_parse requires ContinueWithPlan route; aborting turn"
+                    );
+                    return Err(RunAgentTurnError::Other {
+                        phase: crate::agent::agent_turn::errors::AgentTurnSubPhase::Planner,
+                        message: "continue_post_parse without ContinueWithPlan route".to_string(),
+                    });
                 };
                 let stagnation_reduce = reduce_prepared_stagnation_after_parse(
                     p.turn.messages(),

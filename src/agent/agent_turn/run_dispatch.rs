@@ -90,7 +90,14 @@ pub(crate) async fn dispatch_non_hierarchical_turn(
             return Ok(());
         }
         TurnRouteDriver::Hierarchical(_) => {
-            unreachable!("non_hierarchical dispatch cannot yield Hierarchical driver")
+            tracing::error!(
+                target: "crabmate::agent_turn",
+                "non_hierarchical dispatch unexpectedly yielded Hierarchical driver; aborting turn"
+            );
+            return Err(RunAgentTurnError::Other {
+                phase: super::errors::AgentTurnSubPhase::Planner,
+                message: "non_hierarchical dispatch yielded Hierarchical driver".to_string(),
+            });
         }
     };
     let mode = assessed.decision.orchestration_mode.as_str();

@@ -51,9 +51,14 @@ pub(crate) fn full_pipeline_phase_after_segment(
         FullPipelineSegment::Optimizer => StagedFullPipelinePhase::AfterEnsemble,
         FullPipelineSegment::NlFollowup => StagedFullPipelinePhase::AfterOptimizer,
     };
-    prior
-        .advance()
-        .unwrap_or_else(|| panic!("full_pipeline: invalid segment advance for {segment:?}"))
+    prior.advance().unwrap_or_else(|| {
+        tracing::error!(
+            target: "crabmate::staged",
+            segment = segment.as_str(),
+            "full_pipeline: invalid segment advance; falling back to AfterNlFollowup"
+        );
+        StagedFullPipelinePhase::AfterNlFollowup
+    })
 }
 
 pub(crate) fn reduce_full_pipeline_segment(
