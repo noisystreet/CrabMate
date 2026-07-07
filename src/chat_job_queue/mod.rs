@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -299,6 +299,7 @@ struct Inner {
     recent: Arc<Mutex<VecDeque<ChatJobRecord>>>,
     /// 正在执行的队列任务的 PER 飞行快照（任务结束即移除）。
     active_per_flights: Arc<Mutex<HashMap<u64, Arc<PerTurnFlight>>>>,
+    shutdown_triggered: Arc<AtomicBool>,
 }
 
 /// `POST /chat` 与 `/chat/stream` 共用的进程内队列句柄（`Clone` 为轻量 `Arc`）。
@@ -329,6 +330,7 @@ impl ChatJobQueue {
                 metrics,
                 recent,
                 active_per_flights: Arc::new(Mutex::new(HashMap::new())),
+                shutdown_triggered: Arc::new(AtomicBool::new(false)),
             }),
         }
     }
@@ -417,6 +419,19 @@ impl ChatJobQueue {
         v
     }
 
+    /// 触发队列关闭：禁止新任务入队，等待 dispatcher 处理完剩余任务后退出。
+    pub fn shutdown(&self) {
+        self.inner.shutdown_triggered.store(true, Ordering::Release);
+        // 关闭 submit_tx，dispatcher_loop 处理完当前任务后会退出
+        // mpsc::Sender 被 drop 后，Receiver::recv() 返回 None
+    }
+
+    /// 队列是否已关闭。
+    #[allow(dead_code)]
+    pub fn is_shutdown(&self) -> bool {
+        self.inner.shutdown_triggered.load(Ordering::Acquire)
+    }
+
     pub fn try_submit_stream(&self, p: StreamSubmitParams) -> Result<(), ChatQueueFull> {
         let StreamSubmitParams {
             envelope,
@@ -458,7 +473,13 @@ async fn dispatcher_loop(
         // 先拿到并发令牌再 spawn，避免高积压时出现大量“已 spawn 但在等 permit”的任务。
         let permit = match sem.clone().acquire_owned().await {
             Ok(p) => p,
-            Err(_) => return,
+            Err(_) => {
+                log::warn!(
+                    target: "crabmate",
+                    "队列调度器：信号量已关闭，仍有待处理任务被丢弃。请确保进程正常关闭。"
+                );
+                return;
+            }
         };
         let metrics = metrics.clone();
         let recent = recent.clone();
@@ -533,4 +554,5 @@ async fn dispatcher_loop(
             }
         });
     }
+    log::info!(target: "crabmate", "队列调度器：所有任务处理完毕，dispatcher 退出。");
 }

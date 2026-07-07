@@ -490,7 +490,7 @@ pub(super) async fn run_serve_branch(
     let web_api_bearer_layer_enabled =
         cli_run_serve::serve_web_api_bearer_layer_enabled(cfg_holder).await;
     let app = web::server::build_app(
-        state,
+        state.clone(),
         no_web,
         static_dir,
         uploads_dir.clone(),
@@ -545,12 +545,39 @@ pub(super) async fn run_serve_branch(
             }
         }
     });
+
+    // 优雅关闭：监听 SIGTERM / SIGINT，构建 axum graceful shutdown 信号
+    let shutdown_signal = build_serve_shutdown_signal(state.clone());
+
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
+    .with_graceful_shutdown(shutdown_signal)
     .await?;
     Ok(())
+}
+
+/// 构建 axum graceful shutdown 信号：监听 SIGTERM/SIGINT → 关闭 ChatJobQueue → 等待 in-flight 完成（最多 30 秒）。
+#[cfg(feature = "web")]
+fn build_serve_shutdown_signal(
+    state: Arc<crate::AppState>,
+) -> impl std::future::Future<Output = ()> + Send {
+    let shutdown = crate::shutdown::GracefulShutdown::new();
+    shutdown.clone().spawn_signal_handler();
+
+    let graceful = shutdown.clone();
+    let state = state.clone();
+    async move {
+        graceful.wait_for_shutdown().await;
+        state.chat.chat_queue.shutdown();
+        log::info!(target: "crabmate", "等待队列运行中任务完成...");
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        let remaining = state.chat.chat_queue.running_count();
+        if remaining > 0 {
+            log::warn!(target: "crabmate", "优雅关闭超时，仍有 {} 个任务正在运行", remaining);
+        }
+    }
 }
 
 #[cfg(not(feature = "web"))]
