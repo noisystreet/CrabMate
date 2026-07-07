@@ -265,13 +265,27 @@ where
                 if let StagedTurnAdvance::ReplanExhausted { phase: ph, message } = step.advance {
                     return Err(RunAgentTurnError::ReplanExhausted { phase: ph, message });
                 }
-                unreachable!("advance reduce replan_exhausted without advance payload");
+                tracing::error!(
+                    target: "crabmate::staged",
+                    "advance reduce replan_exhausted without advance payload; returning generic error"
+                );
+                return Err(RunAgentTurnError::Other {
+                    phase: crate::agent::agent_turn::errors::AgentTurnSubPhase::Planner,
+                    message: "replan exhausted without advance payload".to_string(),
+                });
             }
             super::rolling_horizon_advance_reduce::RollingHorizonAdvanceReduceAction::Propagate => {
                 if let StagedTurnAdvance::Propagate(e) = step.advance {
                     return Err(e);
                 }
-                unreachable!("advance reduce propagate without advance payload");
+                tracing::error!(
+                    target: "crabmate::staged",
+                    "advance reduce propagate without advance payload; returning generic error"
+                );
+                return Err(RunAgentTurnError::Other {
+                    phase: crate::agent::agent_turn::errors::AgentTurnSubPhase::Planner,
+                    message: "propagate without advance payload".to_string(),
+                });
             }
         }
     }
