@@ -24,6 +24,7 @@ mod full_pipeline_fsm;
 mod full_pipeline_reduce;
 mod orchestrator;
 mod patch_planner;
+mod phase_label;
 mod plan_stagnation;
 mod planner_parse_fsm;
 mod planner_round_driver;

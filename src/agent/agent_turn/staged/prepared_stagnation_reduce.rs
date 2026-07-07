@@ -14,15 +14,11 @@ pub(super) enum PreparedStagnationReduceAction {
     ReplanWithFeedback(String),
 }
 
-impl PreparedStagnationReduceAction {
-    pub(super) fn as_str(&self) -> &'static str {
-        match self {
-            Self::ContinuePostParse => "continue_post_parse",
-            Self::StopExhausted => "stop_exhausted",
-            Self::ReplanWithFeedback(_) => "replan_with_feedback",
-        }
-    }
-}
+crate::impl_as_str!(PreparedStagnationReduceAction, {
+    Self::ContinuePostParse => "continue_post_parse",
+    Self::StopExhausted => "stop_exhausted",
+    Self::ReplanWithFeedback(_) => "replan_with_feedback",
+});
 
 pub(super) fn reduce_prepared_stagnation_after_parse(
     messages: &[Message],

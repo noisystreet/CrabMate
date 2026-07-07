@@ -31,18 +31,14 @@ pub(crate) enum StagedTurnOrchestratorPhase {
     Done,
 }
 
-impl StagedTurnOrchestratorPhase {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::PrePlan => "pre_plan",
-            Self::PlanReady => "plan_ready",
-            Self::StepRunning => "step_running",
-            Self::PatchReplanner => "patch_replanner",
-            Self::DegradedToOuterLoop => "degraded_to_outer_loop",
-            Self::Done => "done",
-        }
-    }
-}
+crate::impl_as_str!(StagedTurnOrchestratorPhase, {
+    Self::PrePlan => "pre_plan",
+    Self::PlanReady => "plan_ready",
+    Self::StepRunning => "step_running",
+    Self::PatchReplanner => "patch_replanner",
+    Self::DegradedToOuterLoop => "degraded_to_outer_loop",
+    Self::Done => "done",
+});
 
 /// 首轮后 post-parse 调度 → 顶层（`no_task` 路径视为降级外循环）。
 pub(crate) fn orchestrator_phase_for_post_parse_schedule(

@@ -21,16 +21,12 @@ pub(crate) enum StagedStepPostOuterRoute {
     EmitSuccess,
 }
 
-impl StagedStepPostOuterRoute {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::ExecOrVerifyFailed => "exec_or_verify_failed",
-            Self::Cancelled => "cancelled",
-            Self::ToolFailurePatch => "tool_failure_patch",
-            Self::EmitSuccess => "emit_success",
-        }
-    }
-}
+crate::impl_as_str!(StagedStepPostOuterRoute, {
+    Self::ExecOrVerifyFailed => "exec_or_verify_failed",
+    Self::Cancelled => "cancelled",
+    Self::ToolFailurePatch => "tool_failure_patch",
+    Self::EmitSuccess => "emit_success",
+});
 
 /// 由已分类的 **`StagedStepAfterOuterLoop`** 与取消/工具检查输入解析路由。
 pub(crate) fn resolve_staged_step_post_outer_route(

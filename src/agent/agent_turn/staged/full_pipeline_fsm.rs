@@ -17,16 +17,14 @@ pub(crate) enum StagedFullPipelinePhase {
     AfterNlFollowup,
 }
 
-impl StagedFullPipelinePhase {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::BeforeEnsemble => "before_ensemble",
-            Self::AfterEnsemble => "after_ensemble",
-            Self::AfterOptimizer => "after_optimizer",
-            Self::AfterNlFollowup => "after_nl_followup",
-        }
-    }
+crate::impl_as_str!(StagedFullPipelinePhase, {
+    Self::BeforeEnsemble => "before_ensemble",
+    Self::AfterEnsemble => "after_ensemble",
+    Self::AfterOptimizer => "after_optimizer",
+    Self::AfterNlFollowup => "after_nl_followup",
+});
 
+impl StagedFullPipelinePhase {
     /// 线性推进；`AfterNlFollowup` 之后由驱动层进入分步循环（本枚举不表示步内状态）。
     pub(crate) fn advance(self) -> Option<Self> {
         match self {
