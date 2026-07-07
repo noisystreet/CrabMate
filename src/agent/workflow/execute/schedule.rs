@@ -3,6 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use futures_util::FutureExt;
 use futures_util::StreamExt;
 use futures_util::stream::FuturesUnordered;
 use tokio::sync::Semaphore;
@@ -23,6 +24,59 @@ pub(crate) struct DagExecutionProgress {
     pub(crate) first_failure: Option<NodeRunResult>,
 }
 
+/// `inflight` 为空时的处理：正常结束 / fail_fast 退出 / 活锁检测。
+/// 返回值：`true` 表示应 break 退出主循环，`false` 表示 continue。
+#[allow(clippy::too_many_arguments)]
+fn dag_handle_empty_inflight(
+    spec: &WorkflowSpec,
+    active_nodes: &[WorkflowNodeSpec],
+    completed: &mut HashMap<String, NodeRunResult>,
+    started: &mut HashSet<String>,
+    for_each_pending: &[super::super::model::ForEachPendingSpec],
+    first_failure: &Option<NodeRunResult>,
+    tool_exec_ctx: &WorkflowToolExecCtx,
+    stall_count: &mut u32,
+    max_stall: u32,
+) -> bool {
+    // 正常调度完成
+    if dag_schedule_finished(active_nodes, completed, for_each_pending) {
+        return true; // break
+    }
+    // fail_fast 首失败
+    if spec.fail_fast && first_failure.is_some() {
+        dag_mark_remaining_nodes_fail_fast_skipped(active_nodes, completed, started, tool_exec_ctx);
+        return true; // break
+    }
+    // 活锁检测（P0-3）
+    *stall_count += 1;
+    if *stall_count > max_stall {
+        let err_msg = format!(
+            "workflow 调度活锁：连续 {} 次迭代无节点可调度（可能是运行时循环依赖），已强制终止",
+            stall_count,
+        );
+        log::error!(target: "crabmate", "{}", err_msg);
+        for node in active_nodes.iter() {
+            if !completed.contains_key(&node.id) {
+                started.insert(node.id.clone());
+                completed.insert(
+                    node.id.clone(),
+                    NodeRunResult {
+                        id: node.id.clone(),
+                        status: NodeRunStatus::Failed,
+                        output: err_msg.clone().into(),
+                        workspace_changed: false,
+                        exit_code: None,
+                        error_code: Some("workflow_livelock".to_string()),
+                        attempt: 0,
+                    },
+                );
+            }
+        }
+        return true; // break
+    }
+    false // continue
+}
+
 /// 并行调度就绪节点并等待全部 inflight 完成。
 pub(super) async fn dag_run_parallel_schedule_loop(
     spec: &WorkflowSpec,
@@ -40,7 +94,12 @@ pub(super) async fn dag_run_parallel_schedule_loop(
     let semaphore = Arc::new(Semaphore::new(max_parallelism));
     let mut inflight: FuturesUnordered<_> = FuturesUnordered::new();
 
+    // P0-3: 运行时活锁检测
+    let max_stall = (max_parallelism.max(4) * 2) as u32;
+    let mut stall_count: u32 = 0;
+
     loop {
+        // 展开 for_each 节点
         let expanded =
             expand_pending_for_each(&mut for_each_pending, &mut active_nodes, &completed);
         for id in expanded.iter() {
@@ -59,6 +118,7 @@ pub(super) async fn dag_run_parallel_schedule_loop(
             });
         }
 
+        // 调度就绪节点（fail_fast 时跳过）
         if !(spec.fail_fast && first_failure.is_some()) {
             for node in active_nodes.iter() {
                 if started.contains(&node.id) || completed.contains_key(&node.id) {
@@ -104,6 +164,8 @@ pub(super) async fn dag_run_parallel_schedule_loop(
                 let completed_snapshot = completed.clone();
                 let inject_max_chars = spec.output_inject_max_chars;
                 let node_id = node_cloned.id.clone();
+                // P0-4: 使用 catch_unwind 隔离节点执行 panic，不会杀死整个 workflow。
+                // permit 在此 future 作用域内，future 被 drop 时自动归还信号量。
                 inflight.push(async move {
                     let _permit = match permit_sem.acquire_owned().await {
                         Ok(p) => p,
@@ -119,21 +181,48 @@ pub(super) async fn dag_run_parallel_schedule_loop(
                             };
                         }
                     };
-                    run_node(
+                    let node_fut = run_node(
                         node_cloned,
                         approval_mode_cloned,
                         exec_ctx,
                         completed_snapshot,
                         inject_max_chars,
                         "main",
-                    )
-                    .await
+                    );
+                    match std::panic::AssertUnwindSafe(node_fut).catch_unwind().await {
+                        Ok(res) => res,
+                        Err(panic_payload) => {
+                            let msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                                format!("workflow 节点 panic：{}", s)
+                            } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                                format!("workflow 节点 panic：{}", s)
+                            } else {
+                                "workflow 节点 panic（原因未知）".to_string()
+                            };
+                            log::error!(
+                                target: "crabmate",
+                                "workflow 节点 panic node_id={} msg={}",
+                                node_id,
+                                msg,
+                            );
+                            NodeRunResult {
+                                id: node_id,
+                                status: NodeRunStatus::Failed,
+                                output: msg.into(),
+                                workspace_changed: false,
+                                exit_code: None,
+                                error_code: Some("workflow_node_panic".to_string()),
+                                attempt: 1,
+                            }
+                        }
+                    }
                 });
             }
         }
 
+        // 处理 inflight 为空的情况（正常结束 / fail_fast / 活锁）
         if inflight.is_empty() {
-            match dag_empty_inflight_action(
+            if dag_handle_empty_inflight(
                 spec,
                 &active_nodes,
                 &mut completed,
@@ -141,11 +230,16 @@ pub(super) async fn dag_run_parallel_schedule_loop(
                 &for_each_pending,
                 &first_failure,
                 &tool_exec_ctx,
+                &mut stall_count,
+                max_stall,
             ) {
-                DagInflightEmptyAction::Break => break,
-                DagInflightEmptyAction::Continue => continue,
+                break;
             }
+            continue;
         }
+
+        // 有 inflight 节点，重置 stall 计数器
+        stall_count = 0;
 
         let Some(res) = inflight.next().await else {
             continue;
@@ -164,30 +258,6 @@ pub(super) async fn dag_run_parallel_schedule_loop(
         completion_order,
         first_failure,
     }
-}
-
-enum DagInflightEmptyAction {
-    Break,
-    Continue,
-}
-
-fn dag_empty_inflight_action(
-    spec: &WorkflowSpec,
-    active_nodes: &[WorkflowNodeSpec],
-    completed: &mut HashMap<String, NodeRunResult>,
-    started: &mut HashSet<String>,
-    for_each_pending: &[super::super::model::ForEachPendingSpec],
-    first_failure: &Option<NodeRunResult>,
-    tool_exec_ctx: &WorkflowToolExecCtx,
-) -> DagInflightEmptyAction {
-    if dag_schedule_finished(active_nodes, completed, for_each_pending) {
-        return DagInflightEmptyAction::Break;
-    }
-    if spec.fail_fast && first_failure.is_some() {
-        dag_mark_remaining_nodes_fail_fast_skipped(active_nodes, completed, started, tool_exec_ctx);
-        return DagInflightEmptyAction::Break;
-    }
-    DagInflightEmptyAction::Continue
 }
 
 fn dag_record_node_completion(
@@ -227,7 +297,7 @@ fn dag_schedule_finished(
     completed: &HashMap<String, NodeRunResult>,
     for_each_pending: &[super::super::model::ForEachPendingSpec],
 ) -> bool {
-    !for_each_pending.is_empty() || nodes.iter().all(|n| completed.contains_key(&n.id))
+    nodes.iter().all(|n| completed.contains_key(&n.id)) && for_each_pending.is_empty()
 }
 
 /// `fail_fast` 且已有首失败后：将尚未完成的节点标为跳过，避免调度器在 `inflight` 为空时 tight-loop。

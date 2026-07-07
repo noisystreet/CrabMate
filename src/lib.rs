@@ -31,6 +31,7 @@ mod meta_dialogue;
 mod per_turn_flight;
 pub use process_handles::ProcessHandles;
 mod request_audit;
+mod shutdown;
 
 /// 仅 **`cargo test`**：清空 **`run_command`** 全局限流状态与 **`test_result_cache`** LRU，减轻测试顺序依赖。
 #[cfg(test)]

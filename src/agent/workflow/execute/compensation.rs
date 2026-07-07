@@ -2,6 +2,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use futures_util::FutureExt;
+
 use super::super::model::{WorkflowNodeSpec, WorkflowSpec};
 use super::super::types::{NodeRunResult, NodeRunStatus};
 use super::node::{command_max_output_len_from, run_node};
@@ -9,6 +11,52 @@ use super::report::truncate_for_summary;
 use super::schedule::DagExecutionProgress;
 use super::trace::{WorkflowTracePush, workflow_trace_push};
 use super::{WorkflowApprovalMode, WorkflowToolExecCtx};
+
+/// 带 catch_unwind 安全包装的补偿节点执行（P0-4），将其从 `execute_compensations` 中提取以降低圈复杂度。
+async fn run_compensation_node_safe(
+    comp_id: &str,
+    node: WorkflowNodeSpec,
+    approval_mode: WorkflowApprovalMode,
+    tool_exec_ctx: WorkflowToolExecCtx,
+    completed_snapshot: HashMap<String, NodeRunResult>,
+    inject_max_chars: usize,
+) -> NodeRunResult {
+    let node_fut = run_node(
+        node,
+        approval_mode,
+        tool_exec_ctx,
+        completed_snapshot,
+        inject_max_chars,
+        "compensation",
+    );
+    match std::panic::AssertUnwindSafe(node_fut).catch_unwind().await {
+        Ok(r) => r,
+        Err(panic_payload) => {
+            let msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                format!("补偿节点 panic：{}", s)
+            } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                format!("补偿节点 panic：{}", s)
+            } else {
+                "补偿节点 panic（原因未知）".to_string()
+            };
+            log::error!(
+                target: "crabmate",
+                "workflow 补偿节点 panic comp_id={} msg={}",
+                comp_id,
+                msg,
+            );
+            NodeRunResult {
+                id: comp_id.to_string(),
+                status: NodeRunStatus::Failed,
+                output: msg.into(),
+                workspace_changed: false,
+                exit_code: None,
+                error_code: Some("workflow_node_panic".to_string()),
+                attempt: 1,
+            }
+        }
+    }
+}
 
 /// 失败时可选补偿阶段，返回 `(human_summary, 补偿是否改动了工作区, compensation_summary, compensation_executed)`。
 pub(super) async fn workflow_compensation_and_human_summary(
@@ -92,7 +140,7 @@ async fn execute_compensations(
     let mut compensation_ids: Vec<String> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
 
-    // 按“成功完成节点”的逆序收集 compensate_with
+    // 按"成功完成节点"的逆序收集 compensate_with
     for id in completion_order.iter().rev() {
         if !completed.contains_key(id) {
             continue;
@@ -130,13 +178,14 @@ async fn execute_compensations(
 
         // 补偿节点执行采用串行策略，避免进一步复杂的并发回滚竞态。
         let completed_snapshot = completed.clone();
-        let res = run_node(
+        // P0-4: 使用 catch_unwind 隔离补偿阶段 panic，防止单节点崩溃导致整个补偿阶段丢失
+        let res = run_compensation_node_safe(
+            &comp_id,
             n,
             approval_mode.clone(),
             tool_exec_ctx.clone(),
             completed_snapshot,
             spec.output_inject_max_chars,
-            "compensation",
         )
         .await;
         if res.status == NodeRunStatus::Passed {

@@ -89,6 +89,15 @@ async fn execute_node_tool_phase(
         match tokio::time::timeout(std::time::Duration::from_secs(ts), output_res).await {
             Ok(s) => s,
             Err(_) => {
+                // P0-2: spawn_blocking 中的 run_tool_result 在超时后无法被真正取消，
+                // 它仍在后台的 tokio 阻塞线程池中运行直到完成。
+                log::warn!(
+                    target: "crabmate",
+                    "workflow 节点超时（{} 秒）：tool={} node_id={} —— 后台任务仍在运行（spawn_blocking 无法取消），请手动检查是否有孤儿进程。",
+                    ts,
+                    tool_name,
+                    node_id,
+                );
                 return NodeRunResult {
                     id: node_id.to_string(),
                     status: NodeRunStatus::Failed,
