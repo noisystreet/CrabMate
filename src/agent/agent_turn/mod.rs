@@ -21,6 +21,7 @@ use self::orchestration_entry::{
     resolve_turn_top_level_dispatch,
 };
 
+mod check_abort;
 mod completion_suppression;
 mod errors;
 mod execute;

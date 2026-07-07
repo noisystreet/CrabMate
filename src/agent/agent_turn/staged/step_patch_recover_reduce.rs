@@ -32,14 +32,10 @@ pub(crate) enum StepPatchRecoverReduceAction {
     Run(StepPatchRecoverPlan),
 }
 
-impl StepPatchRecoverReduceAction {
-    pub(crate) fn as_str(&self) -> &'static str {
-        match self {
-            Self::Skip => "skip",
-            Self::Run(_) => "run_patch",
-        }
-    }
-}
+crate::impl_as_str!(StepPatchRecoverReduceAction, {
+    Self::Skip => "skip",
+    Self::Run(_) => "run_patch",
+});
 
 pub(crate) struct StepPatchRecoverReduceInput {
     pub branch: StepPatchRecoverBranch,

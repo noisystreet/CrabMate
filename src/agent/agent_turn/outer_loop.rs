@@ -6,7 +6,9 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use log::{debug, info};
+use log::debug;
+
+use crate::check_abort;
 
 use crate::agent::per_coord::PerCoordinator;
 use crate::sse::{
@@ -15,9 +17,7 @@ use crate::sse::{
 use crate::types::{Message, USER_CANCELLED_FINISH_REASON, is_intent_gate_ephemeral_system};
 
 use super::errors::{AgentTurnSubPhase, RunAgentTurnError, TurnAbortReason};
-use super::execute_tools::{
-    ExecuteToolsBatchOutcome, WebExecuteCtx, per_execute_tools_web, sse_sender_closed,
-};
+use super::execute_tools::{ExecuteToolsBatchOutcome, WebExecuteCtx, per_execute_tools_web};
 use super::outer_loop_build_idle::outer_loop_window_has_build_progress_since_last_user;
 use super::outer_loop_driver::OuterLoopDriver;
 use super::outer_loop_fsm::{OuterLoopIterationExit, OuterLoopIterationPhase, ReflectBranchCtl};
@@ -65,19 +65,7 @@ fn outer_loop_iteration_guard(p: &RunLoopParams<'_>) -> Result<(), RunAgentTurnE
         });
     }
     check_shared_turn_budget(p)?;
-    if sse_sender_closed(p.ctx.io.out) {
-        info!(target: "crabmate", "SSE sender closed, aborting run_agent_turn loop early");
-        return Err(RunAgentTurnError::TurnAborted {
-            phase: AgentTurnSubPhase::Planner,
-            reason: TurnAbortReason::SseDisconnected,
-        });
-    }
-    if p.ctx.io.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
-        return Err(RunAgentTurnError::TurnAborted {
-            phase: AgentTurnSubPhase::Planner,
-            reason: TurnAbortReason::UserCancelled,
-        });
-    }
+    check_abort!(p.ctx.io, AgentTurnSubPhase::Planner);
     Ok(())
 }
 

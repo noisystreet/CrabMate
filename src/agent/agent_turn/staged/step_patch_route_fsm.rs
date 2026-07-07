@@ -25,15 +25,11 @@ pub(crate) enum StagedStepPatchFailureKind {
     ToolMessagesNotOk,
 }
 
-impl StagedStepPatchFailureKind {
-    pub(crate) fn as_str(&self) -> &'static str {
-        match self {
-            Self::OuterLoopError => "outer_loop_error",
-            Self::StepVerifyFail { .. } => "step_verify_fail",
-            Self::ToolMessagesNotOk => "tool_messages_not_ok",
-        }
-    }
-}
+crate::impl_as_str!(StagedStepPatchFailureKind, {
+    Self::OuterLoopError => "outer_loop_error",
+    Self::StepVerifyFail { .. } => "step_verify_fail",
+    Self::ToolMessagesNotOk => "tool_messages_not_ok",
+});
 
 /// 补丁反馈文案所需的只读上下文（与失败种类组合使用）。
 #[derive(Debug, Clone, Copy)]
