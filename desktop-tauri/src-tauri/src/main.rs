@@ -413,10 +413,15 @@ fn main() {
     let backend_state = Arc::new(Mutex::new(None::<Child>));
     let backend_state_for_exit = Arc::clone(&backend_state);
 
-    tauri::Builder::default()
+    #[allow(unused_mut)]
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init())
-        .plugin(victauri_plugin::VictauriBuilder::new().auth_disabled().build().unwrap())
+        .plugin(tauri_plugin_opener::init());
+    #[cfg(feature = "victauri")]
+    {
+        builder = builder.plugin(victauri_plugin::VictauriBuilder::new().auth_disabled().build().unwrap());
+    }
+    builder
         .invoke_handler(tauri::generate_handler![
             save_text_file_via_dialog,
             pick_workspace_folder_via_dialog,
