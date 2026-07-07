@@ -10,6 +10,7 @@ use super::super::build_state::BuildState;
 use super::super::events;
 use super::super::execution_helpers::Dag;
 use super::super::manager::{ManagerOutput, handle_failure};
+use super::super::reflect_replan_reason::ManagerReflectReplanReason;
 use super::super::task::{ExecutionStrategy, SubGoal, TaskResult, TaskStatus};
 use super::{ExecutionError, HierarchicalExecutionResult};
 
@@ -142,6 +143,103 @@ impl super::HierarchicalExecutor {
         .await;
     }
 
+    /// 并行执行后检查是否存在 `NeedsDecomposition` 结果，对受影响的目标执行 replan + 顺序重试。
+    async fn handle_parallel_needs_decomposition(
+        &self,
+        level_results: &mut [TaskResult],
+        level_goals: &[&SubGoal],
+        all_results: &[TaskResult],
+        artifact_store: &mut ArtifactStore,
+        build_state: &mut BuildState,
+        answer_phase_emitted: &mut bool,
+    ) -> Result<(), ExecutionError> {
+        let current_level_ids: std::collections::HashSet<String> =
+            level_goals.iter().map(|g| g.goal_id.clone()).collect();
+
+        for result in level_results.iter_mut() {
+            let TaskStatus::NeedsDecomposition { reason, .. } = &result.status else {
+                continue;
+            };
+            let Some(goal) = level_goals.iter().find(|g| g.goal_id == result.task_id) else {
+                continue;
+            };
+
+            log::warn!(
+                target: "crabmate",
+                "[HIERARCHICAL] Parallel goal {} needs decomposition, performing sequential replan: {}",
+                goal.goal_id,
+                reason,
+            );
+
+            if let Some(ref manager) = self.manager {
+                let artifacts: Vec<_> = artifact_store.all().into_iter().cloned().collect();
+                let updated_goal = self
+                    .reflect_and_replan(
+                        manager,
+                        goal,
+                        ManagerReflectReplanReason::NeedsDecomposition,
+                        reason,
+                        result,
+                        &artifacts,
+                    )
+                    .await;
+
+                if let Some(updated_goal) = updated_goal {
+                    log::info!(
+                        target: "crabmate",
+                        "[HIERARCHICAL] Replanned goal {} for decomposition, re-executing sequentially",
+                        goal.goal_id,
+                    );
+                    let new_result = self
+                        .execute_single(
+                            &updated_goal,
+                            all_results,
+                            &current_level_ids,
+                            artifact_store,
+                            build_state,
+                        )
+                        .await?;
+                    *result = new_result;
+                    if matches!(result.status, TaskStatus::Completed) {
+                        artifact_store.store_result(result);
+                        self.update_build_state_from_result(build_state, result);
+                    }
+                    if let Some((title, detail)) = Self::progress_line_for_task_result(result) {
+                        self.emit_assistant_progress_delta_sse(
+                            answer_phase_emitted,
+                            title,
+                            Some(detail),
+                        )
+                        .await;
+                    }
+                    continue;
+                }
+            }
+
+            // replan 失败或没有 manager：标记为 Failed
+            log::warn!(
+                target: "crabmate",
+                "[HIERARCHICAL] Cannot replan goal {} (no manager or replan exhausted), marking as Failed",
+                goal.goal_id,
+            );
+            *result = TaskResult {
+                task_id: goal.goal_id.clone(),
+                status: TaskStatus::Failed {
+                    reason: format!("子目标过于复杂，无法重新规划：{}", reason),
+                },
+                output: None,
+                error: Some(format!(
+                    "NeedsDecomposition could not be resolved in parallel mode: {}",
+                    reason,
+                )),
+                artifacts: Vec::new(),
+                duration_ms: 0,
+                tools_invoked: Vec::new(),
+            };
+        }
+        Ok(())
+    }
+
     async fn hierarchical_run_one_level(
         &self,
         level_idx: usize,
@@ -170,7 +268,7 @@ impl super::HierarchicalExecutor {
             .filter_map(|id| sub_goals.iter().find(|g| &g.goal_id == id))
             .collect();
 
-        let level_results = match strategy {
+        let mut level_results = match strategy {
             ExecutionStrategy::Sequential => {
                 self.execute_sequential(&level_goals, all_results, artifact_store, build_state)
                     .await
@@ -180,6 +278,22 @@ impl super::HierarchicalExecutor {
                     .await
             }
         }?;
+
+        // 并行模式下处理 NeedsDecomposition：触发 replan 并顺序重试
+        if matches!(
+            strategy,
+            ExecutionStrategy::Parallel | ExecutionStrategy::Hybrid
+        ) {
+            self.handle_parallel_needs_decomposition(
+                &mut level_results,
+                &level_goals,
+                all_results,
+                artifact_store,
+                build_state,
+                answer_phase_emitted,
+            )
+            .await?;
+        }
 
         for result in &level_results {
             if matches!(result.status, TaskStatus::Completed) {

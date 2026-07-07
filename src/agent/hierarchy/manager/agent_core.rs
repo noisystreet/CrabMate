@@ -290,8 +290,29 @@ impl ManagerAgent {
                     .unwrap_or("")
                     .trim()
                     .to_string();
-                self.parse_output_with_one_json_repair(&content, Some(finish_reason.as_str()), llm)
-                    .await
+                let output = self
+                    .parse_output_with_one_json_repair(
+                        &content,
+                        Some(finish_reason.as_str()),
+                        ManagerLlmContext {
+                            cfg: llm.cfg,
+                            llm_backend: llm.llm_backend,
+                            client: llm.client,
+                            api_key: llm.api_key,
+                            turn_budget: llm.turn_budget,
+                        },
+                    )
+                    .await?;
+                if output.sub_goals.is_empty() {
+                    log::warn!(
+                        target: "crabmate",
+                        "[HIERARCHICAL] Manager: replan returned empty sub_goals, using fallback to original_task={}",
+                        original_task,
+                    );
+                    Ok(self.decompose_fallback(original_task))
+                } else {
+                    Ok(output)
+                }
             }
             Err(e) => {
                 log::warn!(target: "crabmate", "Manager replan LLM call failed: {}, falling back to original plan", e);
