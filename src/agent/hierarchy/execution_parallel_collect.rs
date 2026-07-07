@@ -35,7 +35,13 @@ pub(super) fn finalize_parallel_results(
         failed_count,
         panicked_count
     );
-    if completed_count == 0 && needs_decomp_count == 0 && !results.is_empty() {
+    if completed_count == 0
+        && needs_decomp_count == 0
+        && !results.is_empty()
+        && results
+            .iter()
+            .all(|r| matches!(r.status, TaskStatus::Failed { .. }))
+    {
         return Err(ExecutionError::MaxFailuresReached(format!(
             "All {} parallel tasks failed ({} execution errors, {} panics)",
             results.len(),
