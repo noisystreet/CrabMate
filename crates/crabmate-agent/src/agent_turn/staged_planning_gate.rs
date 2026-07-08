@@ -4,6 +4,9 @@ use crabmate_config::{AgentConfig, StagedPlanningConfig};
 use crabmate_internal::redact;
 use crabmate_types::Message;
 
+use crate::agent_turn::decision_engine::evaluate_intent_only;
+use crate::agent_turn::decision_engine::types::FactorContext;
+use crate::agent_turn::decision_engine::types::OrchestrationRoute;
 use crate::agent_turn::intent::context::build_intent_routing_context;
 use crate::agent_turn::intent::user;
 use crate::agent_turn::{StagedPlanningDenyReason, StagedPlanningGateOutcome};
@@ -21,17 +24,24 @@ fn intent_action_discriminant(action: &IntentAction) -> &'static str {
 
 /// 在 **`IntentAction::Execute`** 且通过简单构建门控时返回 `Ok`；否则返回对应 **Deny** 原因（含非 Execute）。
 ///
-/// 只读概览、架构咨询绕过已移除——所有 Execute 类任务均经过分阶段规划，
-/// 以确保工具调用与解说正确穿插。
+/// 内部委托 `DecisionEngine`（Phase 1 仅含 `IntentFactor`，行为与原有逻辑完全一致）。
 pub fn staged_plan_eligibility_for_intent(
-    _task: &str,
+    task: &str,
     decision: &IntentDecision,
     _staged: &StagedPlanningConfig,
 ) -> Result<(), StagedPlanningDenyReason> {
-    if !matches!(decision.action, IntentAction::Execute) {
-        return Err(StagedPlanningDenyReason::IntentPipelineNotExecute);
+    let ctx = FactorContext {
+        decision,
+        task,
+        messages: &[],
+        cfg: None,
+        workspace_file_count: None,
+    };
+    let result = evaluate_intent_only(&ctx);
+    match result.route {
+        OrchestrationRoute::Staged => Ok(()),
+        OrchestrationRoute::Freeform => Err(StagedPlanningDenyReason::IntentPipelineNotExecute),
     }
-    Ok(())
 }
 
 fn log_staged_gate_outcome(

@@ -1,5 +1,6 @@
 //! Agent 回合编排中的**纯领域**片段（消息合并、意图后路由、非分层主路径解析）。
 
+pub mod decision_engine;
 pub mod hierarchical_intent_route;
 pub mod intent;
 pub mod intent_routing;
