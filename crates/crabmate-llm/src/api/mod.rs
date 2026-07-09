@@ -70,6 +70,26 @@ fn log_cache_usage(usage: Option<&Usage>, model: &str) {
     crate::cache_stats::LLM_CACHE_AGGREGATE.record(u);
 }
 
+/// 在序列化后的请求 JSON 中对 system 消息注入 `cache_control: {"type": "ephemeral"}`。
+/// 不修改 `Message` 类型，通过 JSON 后处理实现最小侵入。
+fn inject_cache_control_json(mut body: serde_json::Value) -> serde_json::Value {
+    let Some(messages) = body.get_mut("messages").and_then(|m| m.as_array_mut()) else {
+        return body;
+    };
+    for msg in messages.iter_mut() {
+        if msg.get("role").and_then(|r| r.as_str()) != Some("system") {
+            continue;
+        }
+        if let Some(obj) = msg.as_object_mut() {
+            obj.insert(
+                "cache_control".to_string(),
+                serde_json::json!({"type": "ephemeral"}),
+            );
+        }
+    }
+    body
+}
+
 fn message_from_sse_accum(acc: SseStreamAccum) -> Message {
     let SseStreamAccum {
         reasoning_acc,
@@ -355,7 +375,14 @@ pub async fn stream_chat(
     log_chat_request_json_preview_if_enabled(host, req);
     req.stream = Some(!no_stream);
 
-    let mut rb = client.post(&url).json(&req);
+    // 序列化为 JSON，条件注入 cache_control（DeepSeek 等供应商支持）
+    let mut body = serde_json::to_value(&req)
+        .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;
+    if api_base.to_ascii_lowercase().contains("deepseek") {
+        body = inject_cache_control_json(body);
+    }
+
+    let mut rb = client.post(&url).json(&body);
     if auth_mode == LlmHttpAuthMode::Bearer {
         rb = rb.header("Authorization", format!("Bearer {}", api_key));
     }

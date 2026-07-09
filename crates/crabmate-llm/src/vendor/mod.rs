@@ -14,6 +14,12 @@ pub trait LlmVendorAdapter: Send + Sync {
 
     /// 构造 `messages` 时：含 **`tool_calls`** 的 assistant 是否须保留 **`reasoning_content`**（如 Kimi k2.5 默认 thinking 时接口要求）。
     fn preserve_assistant_tool_call_reasoning(&self, cfg: &AgentConfig) -> bool;
+
+    /// 供应商是否支持显式 `cache_control`（如 DeepSeek 的 `{"type": "ephemeral"}`）。
+    /// 启用后，`ChatRequest` 序列化时会在 system 消息上注入 `cache_control` 标记。
+    fn supports_explicit_cache_control(&self) -> bool {
+        false
+    }
 }
 
 // --------------------------------------------------------------------------- model id helpers (Kimi)
@@ -247,6 +253,10 @@ impl LlmVendorAdapter for DeepSeekVendor {
 
     fn preserve_assistant_tool_call_reasoning(&self, _cfg: &AgentConfig) -> bool {
         false
+    }
+
+    fn supports_explicit_cache_control(&self) -> bool {
+        true
     }
 }
 
