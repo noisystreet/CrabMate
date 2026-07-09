@@ -6,7 +6,8 @@ use crabmate_types::Message;
 
 use crate::agent_turn::decision_engine::DecisionEngineMode;
 use crate::agent_turn::decision_engine::evaluate_intent_only;
-use crate::agent_turn::decision_engine::evaluate_scored;
+use crate::agent_turn::decision_engine::evaluate_scored_with_config;
+use crate::agent_turn::decision_engine::scorer::FactorWeights;
 use crate::agent_turn::decision_engine::types::FactorContext;
 use crate::agent_turn::decision_engine::types::OrchestrationRoute;
 use crate::agent_turn::intent::context::build_intent_routing_context;
@@ -36,6 +37,8 @@ pub fn staged_plan_eligibility_for_intent(
     task: &str,
     decision: &IntentDecision,
     mode: DecisionEngineMode,
+    threshold: f32,
+    weights: &FactorWeights,
 ) -> Result<(), StagedPlanningDenyReason> {
     let ctx = FactorContext {
         decision,
@@ -46,7 +49,9 @@ pub fn staged_plan_eligibility_for_intent(
     };
     let result = match mode {
         DecisionEngineMode::Auto => evaluate_intent_only(&ctx),
-        DecisionEngineMode::Scored => evaluate_scored(&ctx),
+        DecisionEngineMode::Scored => {
+            evaluate_scored_with_config(&ctx, Some(threshold), Some(weights))
+        }
     };
     match result.route {
         OrchestrationRoute::Staged => Ok(()),
@@ -86,7 +91,16 @@ fn gate_outcome_from_decision(
     sse_tag: &str,
 ) -> StagedPlanningGateOutcome {
     let mode = decision_engine_mode_from_config(cfg);
-    let eligibility = staged_plan_eligibility_for_intent(task.as_str(), &decision, mode);
+    let threshold = cfg.per_plan_policy.decision_staged_threshold;
+    let weights = FactorWeights {
+        intent: cfg.per_plan_policy.decision_weight_intent,
+        complexity: cfg.per_plan_policy.decision_weight_complexity,
+        workspace: cfg.per_plan_policy.decision_weight_workspace,
+        history: cfg.per_plan_policy.decision_weight_history,
+        cost: cfg.per_plan_policy.decision_weight_cost,
+    };
+    let eligibility =
+        staged_plan_eligibility_for_intent(task.as_str(), &decision, mode, threshold, &weights);
     log_staged_gate_outcome(task.as_str(), &decision, sse_tag, eligibility);
     match eligibility {
         Ok(()) => StagedPlanningGateOutcome::Allow {
@@ -169,8 +183,14 @@ mod tests {
     fn non_execute_action_denies() {
         let mut d = execute_decision();
         d.action = IntentAction::DirectReply("hi".into());
-        let err =
-            staged_plan_eligibility_for_intent("task", &d, DecisionEngineMode::Auto).unwrap_err();
+        let err = staged_plan_eligibility_for_intent(
+            "task",
+            &d,
+            DecisionEngineMode::Auto,
+            0.4,
+            &FactorWeights::default(),
+        )
+        .unwrap_err();
         assert_eq!(err, StagedPlanningDenyReason::IntentPipelineNotExecute);
     }
 }

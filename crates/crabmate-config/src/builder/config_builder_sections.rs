@@ -95,6 +95,12 @@ pub(crate) struct ConfigBuilderPerPlanPolicy {
     pub(crate) planner_executor_mode_str: Option<String>,
     pub(crate) orchestration_profile_str: Option<String>,
     pub(crate) orchestration_decision_mode_str: Option<String>,
+    pub(crate) decision_staged_threshold: Option<f64>,
+    pub(crate) decision_weight_intent: Option<f64>,
+    pub(crate) decision_weight_complexity: Option<f64>,
+    pub(crate) decision_weight_workspace: Option<f64>,
+    pub(crate) decision_weight_history: Option<f64>,
+    pub(crate) decision_weight_cost: Option<f64>,
 }
 
 #[derive(Default)]

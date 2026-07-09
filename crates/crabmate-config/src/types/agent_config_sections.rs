@@ -99,6 +99,14 @@ pub struct PerPlanPolicyConfig {
     pub orchestration_profile: crate::OrchestrationProfile,
     /// 决策引擎模式：`auto` / `scored`（默认 `auto`）。
     pub orchestration_decision_mode: String,
+    /// 分阶段门控阈值（totoal_score ≥ 此值走 Staged）。
+    pub decision_staged_threshold: f32,
+    /// 各因子权重（总和建议 1.0）。
+    pub decision_weight_intent: f32,
+    pub decision_weight_complexity: f32,
+    pub decision_weight_workspace: f32,
+    pub decision_weight_history: f32,
+    pub decision_weight_cost: f32,
 }
 
 #[derive(Debug, Clone)]

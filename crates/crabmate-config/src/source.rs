@@ -143,6 +143,14 @@ pub(super) struct AgentSection {
     pub(super) orchestration_profile: Option<String>,
     /// `auto` / `scored`
     pub(super) orchestration_decision_mode: Option<String>,
+    /// 分阶段门控阈值（totoal_score ≥ 此值走 Staged）。
+    pub(super) decision_staged_threshold: Option<f64>,
+    /// 各因子权重（总和建议 1.0）。
+    pub(super) decision_weight_intent: Option<f64>,
+    pub(super) decision_weight_complexity: Option<f64>,
+    pub(super) decision_weight_workspace: Option<f64>,
+    pub(super) decision_weight_history: Option<f64>,
+    pub(super) decision_weight_cost: Option<f64>,
     pub(super) system_prompt: Option<String>,
     pub(super) system_prompt_file: Option<String>,
     /// 未指定 Web/CLI `agent_role` 时使用的默认角色 id（须存在于角色表）

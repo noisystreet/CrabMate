@@ -249,6 +249,18 @@ fn assess_and_route_with_l2_inner(
             None => "deprecated_l1_fallback_no_l2".to_string(),
         });
     }
+    log::info!(
+        target: "crabmate_intent",
+        "intent_classification primary={:?} action={:?} l1_conf={:.3} l2_conf={:?} l2_applied={} override={} l0_kind={:?} subtasks={}",
+        decision.primary_intent,
+        decision.action,
+        l1_confidence,
+        l2_confidence,
+        meta.l2_applied,
+        meta.override_reason.as_deref().unwrap_or("none"),
+        l0,
+        decision.multi_intent.as_ref().map_or(0, |mi| mi.item_count),
+    );
     (decision, meta)
 }
 

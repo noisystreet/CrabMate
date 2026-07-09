@@ -135,6 +135,12 @@ fn finalize_section_per_plan_policy(
         planner_executor_mode: tail.planner_executor_mode,
         orchestration_profile: tail.orchestration_profile,
         orchestration_decision_mode: tail.orchestration_decision_mode.clone(),
+        decision_staged_threshold: tail.decision_staged_threshold,
+        decision_weight_intent: tail.decision_weight_intent,
+        decision_weight_complexity: tail.decision_weight_complexity,
+        decision_weight_workspace: tail.decision_weight_workspace,
+        decision_weight_history: tail.decision_weight_history,
+        decision_weight_cost: tail.decision_weight_cost,
     }
 }
 

@@ -1,6 +1,8 @@
 use super::traits::{FactorId, FactorScore};
 use super::types::{OrchestrationDecision, OrchestrationRoute};
 
+use log::info;
+
 /// 默认因子权重（总和为 1.0）。
 #[derive(Debug, Clone)]
 pub struct FactorWeights {
@@ -50,13 +52,22 @@ pub fn score_and_route(
         .collect();
 
     let total_score: f32 = breakdown.iter().map(|s| s.contribution).sum();
-    let confidence = total_score; // 可后续解耦
+    let confidence = total_score;
 
     let route = if total_score >= threshold {
         OrchestrationRoute::Staged
     } else {
         OrchestrationRoute::Freeform
     };
+
+    info!(
+        target: "crabmate_decision",
+        "scoring route={:?} total={:.3} threshold={:.3} breakdown={}",
+        route,
+        total_score,
+        threshold,
+        breakdown.iter().map(|s| format!("{}={:.3}", s.factor.as_str(), s.contribution)).collect::<Vec<_>>().join(" "),
+    );
 
     OrchestrationDecision {
         route,

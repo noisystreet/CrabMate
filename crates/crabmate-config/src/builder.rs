@@ -113,6 +113,19 @@ impl ConfigBuilder {
             &mut self.per_plan_policy.orchestration_decision_mode_str,
             agent.orchestration_decision_mode.clone(),
         );
+        let pp = &mut self.per_plan_policy;
+        pp.decision_staged_threshold = agent
+            .decision_staged_threshold
+            .or(pp.decision_staged_threshold);
+        pp.decision_weight_intent = agent.decision_weight_intent.or(pp.decision_weight_intent);
+        pp.decision_weight_complexity = agent
+            .decision_weight_complexity
+            .or(pp.decision_weight_complexity);
+        pp.decision_weight_workspace = agent
+            .decision_weight_workspace
+            .or(pp.decision_weight_workspace);
+        pp.decision_weight_history = agent.decision_weight_history.or(pp.decision_weight_history);
+        pp.decision_weight_cost = agent.decision_weight_cost.or(pp.decision_weight_cost);
         override_opt_string_non_empty(
             &mut self.cursor_rules.cursor_rules_dir,
             agent.cursor_rules_dir.clone(),
