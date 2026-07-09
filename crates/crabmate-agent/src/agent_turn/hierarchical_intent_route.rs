@@ -94,6 +94,7 @@ mod tests {
             abstain: false,
             need_clarification: false,
             action,
+            multi_intent: None,
         }
     }
 

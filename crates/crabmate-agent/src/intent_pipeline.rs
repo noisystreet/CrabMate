@@ -44,6 +44,10 @@ pub struct L2IntentCandidate {
     pub confidence: f32,
     pub need_clarification: bool,
     pub abstain: bool,
+    /// L2 输出的子任务描述列表（Phase 2.5 多意图）。
+    pub subtasks: Vec<String>,
+    /// L2 输出的子任务关系（Phase 2.5 多意图）。
+    pub relation: Option<IntentRelation>,
 }
 
 /// L2 分类尝试结果；`candidate=None` 时 `unavailable_reason` 说明为何回退弃用规则层。
@@ -96,6 +100,20 @@ pub enum IntentAction {
     ConfirmThenExecute(String),
 }
 
+/// 多意图信息（仅 L2 填充，L0/L1 不做改造）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MultiIntentInfo {
+    pub item_count: usize,
+    pub relation: IntentRelation,
+}
+
+/// 多意图之间的关系类型。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntentRelation {
+    Parallel,
+    Sequential,
+}
+
 /// 统一意图决策结构（供 agent_turn/hierarchy 等上层消费）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct IntentDecision {
@@ -113,6 +131,8 @@ pub struct IntentDecision {
     pub need_clarification: bool,
     /// 动作决策。
     pub action: IntentAction,
+    /// 多意图解析结果（仅 L2 填充，L0/L1 不做改造）。
+    pub multi_intent: Option<MultiIntentInfo>,
 }
 
 /// 意图管线入口：L2 stub 无结果时使用弃用 L0/L1 规则兜底。
@@ -243,6 +263,8 @@ fn map_l2_candidate_to_decision(l2: L2IntentCandidate) -> IntentDecision {
         confidence,
         need_clarification,
         abstain,
+        subtasks,
+        relation,
     } = l2;
     let action = match kind {
         IntentKind::Greeting => IntentAction::DirectReply(greeting_reply_message().to_string()),
@@ -255,6 +277,7 @@ fn map_l2_candidate_to_decision(l2: L2IntentCandidate) -> IntentDecision {
         }
         IntentKind::Execute => IntentAction::Execute,
     };
+    let multi_intent = build_multi_intent_info(&subtasks, relation);
     IntentDecision {
         kind,
         primary_intent,
@@ -264,7 +287,21 @@ fn map_l2_candidate_to_decision(l2: L2IntentCandidate) -> IntentDecision {
         need_clarification: need_clarification
             || matches!(action, IntentAction::ClarifyThenExecute(_)),
         action,
+        multi_intent,
     }
+}
+
+fn build_multi_intent_info(
+    subtasks: &[String],
+    relation: Option<IntentRelation>,
+) -> Option<MultiIntentInfo> {
+    if subtasks.len() <= 1 {
+        return None;
+    }
+    Some(MultiIntentInfo {
+        item_count: subtasks.len(),
+        relation: relation.unwrap_or(IntentRelation::Parallel),
+    })
 }
 
 /// L0 为「路径/错误/构建/近期 tool 失败」等时，将偏 Ambiguous 的**合并路由**提级为可执行，减少无意义追问。
@@ -316,6 +353,7 @@ fn map_assessment_to_decision(task: &str, assessment: IntentAssessment) -> Inten
             abstain: false,
             need_clarification: false,
             action: IntentAction::Execute,
+            multi_intent: None,
         },
         IntentRoute::DirectReply(reply) => {
             let body = if assessment.kind == IntentKind::Qa {
@@ -335,6 +373,7 @@ fn map_assessment_to_decision(task: &str, assessment: IntentAssessment) -> Inten
                 abstain: false,
                 need_clarification: false,
                 action: IntentAction::DirectReply(body),
+                multi_intent: None,
             }
         }
         IntentRoute::AskThenExecute(reply) => IntentDecision {
@@ -345,6 +384,7 @@ fn map_assessment_to_decision(task: &str, assessment: IntentAssessment) -> Inten
             abstain: assessment.kind == IntentKind::Ambiguous,
             need_clarification: true,
             action: IntentAction::ClarifyThenExecute(reply.clone()),
+            multi_intent: None,
         },
         IntentRoute::ConfirmThenExecute(reply) => IntentDecision {
             kind: assessment.kind,
@@ -354,6 +394,7 @@ fn map_assessment_to_decision(task: &str, assessment: IntentAssessment) -> Inten
             abstain: false,
             need_clarification: true,
             action: IntentAction::ConfirmThenExecute(reply.clone()),
+            multi_intent: None,
         },
     }
 }
@@ -632,8 +673,8 @@ fn classify_with_l2_stub(_task: &str, _ctx: &IntentContext) -> Option<L2IntentCa
 #[cfg(test)]
 mod tests {
     use super::{
-        IntentContext, L2IntentAttempt, L2IntentCandidate, assess_and_route_with_l2,
-        assess_and_route_with_l2_attempt,
+        IntentContext, IntentRelation, L2IntentAttempt, L2IntentCandidate,
+        assess_and_route_with_l2, assess_and_route_with_l2_attempt,
     };
     use crate::intent_router::IntentKind;
 
@@ -648,6 +689,8 @@ mod tests {
             confidence: 0.91,
             need_clarification: false,
             abstain: false,
+            subtasks: vec![],
+            relation: None,
         };
         let (decision, meta) = assess_and_route_with_l2(
             "当前目录下有哪些源文件",
@@ -672,6 +715,8 @@ mod tests {
             confidence: 0.74,
             need_clarification: false,
             abstain: false,
+            subtasks: vec![],
+            relation: None,
         };
         let (decision, meta) = assess_and_route_with_l2("当前目录下有哪些源文件", &ctx, Some(l2));
         assert!(meta.l2_applied);
@@ -700,5 +745,84 @@ mod tests {
             meta.override_reason.as_deref(),
             Some("deprecated_l1_fallback_l2_unavailable")
         );
+    }
+
+    #[test]
+    fn l2_multi_intent_parallel_fills_decision() {
+        let l2 = L2IntentCandidate {
+            kind: IntentKind::Execute,
+            primary_intent: "execute.code_change".to_string(),
+            secondary_intents: vec![],
+            confidence: 0.9,
+            need_clarification: false,
+            abstain: false,
+            subtasks: vec!["重构 auth 模块".to_string(), "添加单元测试".to_string()],
+            relation: Some(IntentRelation::Parallel),
+        };
+        let (decision, meta) = assess_and_route_with_l2(
+            "重构 auth 模块并添加单元测试",
+            &IntentContext::default(),
+            Some(l2),
+        );
+        assert!(meta.l2_applied);
+        let mi = decision.multi_intent.expect("should have multi_intent");
+        assert_eq!(mi.item_count, 2);
+        assert_eq!(mi.relation, IntentRelation::Parallel);
+    }
+
+    #[test]
+    fn l2_multi_intent_sequential_fills_decision() {
+        let l2 = L2IntentCandidate {
+            kind: IntentKind::Execute,
+            primary_intent: "execute.code_change".to_string(),
+            secondary_intents: vec![],
+            confidence: 0.9,
+            need_clarification: false,
+            abstain: false,
+            subtasks: vec!["修复登录 bug".to_string(), "优化数据库查询".to_string()],
+            relation: Some(IntentRelation::Sequential),
+        };
+        let (decision, _meta) = assess_and_route_with_l2(
+            "先修复登录 bug，然后优化数据库查询",
+            &IntentContext::default(),
+            Some(l2),
+        );
+        let mi = decision.multi_intent.expect("should have multi_intent");
+        assert_eq!(mi.item_count, 2);
+        assert_eq!(mi.relation, IntentRelation::Sequential);
+    }
+
+    #[test]
+    fn l2_single_task_no_multi_intent() {
+        let l2 = L2IntentCandidate {
+            kind: IntentKind::Execute,
+            primary_intent: "execute.code_change".to_string(),
+            secondary_intents: vec![],
+            confidence: 0.9,
+            need_clarification: false,
+            abstain: false,
+            subtasks: vec!["重构 auth 模块".to_string()],
+            relation: None,
+        };
+        let (decision, _meta) =
+            assess_and_route_with_l2("重构 auth 模块", &IntentContext::default(), Some(l2));
+        assert!(decision.multi_intent.is_none());
+    }
+
+    #[test]
+    fn l2_empty_subtasks_no_multi_intent() {
+        let l2 = L2IntentCandidate {
+            kind: IntentKind::Execute,
+            primary_intent: "execute.code_change".to_string(),
+            secondary_intents: vec![],
+            confidence: 0.9,
+            need_clarification: false,
+            abstain: false,
+            subtasks: vec![],
+            relation: None,
+        };
+        let (decision, _meta) =
+            assess_and_route_with_l2("重构 auth 模块", &IntentContext::default(), Some(l2));
+        assert!(decision.multi_intent.is_none());
     }
 }

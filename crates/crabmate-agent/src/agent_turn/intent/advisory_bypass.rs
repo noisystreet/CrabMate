@@ -141,6 +141,7 @@ mod tests {
             abstain: false,
             need_clarification: false,
             action: IntentAction::Execute,
+            multi_intent: None,
         }
     }
 

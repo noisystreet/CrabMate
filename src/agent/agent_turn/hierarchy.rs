@@ -117,6 +117,7 @@ async fn run_hierarchical_intent_gate_and_route(
                             abstain: false,
                             need_clarification: true,
                             action: IntentAction::DirectReply(String::new()),
+                            multi_intent: None,
                         },
                     )
                 });
@@ -650,6 +651,7 @@ mod tests {
             secondary_intents: Vec::new(),
             abstain: false,
             need_clarification: false,
+            multi_intent: None,
         };
         let title = format_intent_title(&assessment);
         assert!(title.contains("kind=Execute"));
