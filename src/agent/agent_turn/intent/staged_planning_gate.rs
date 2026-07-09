@@ -95,12 +95,7 @@ pub(crate) async fn assess_staged_planning_gate_full_pipeline(
         .await;
     }
 
-    staged_planning_gate_outcome_from_decision(
-        task,
-        outcome.decision,
-        &p.ctx.core.cfg.staged_planning,
-        sse_log_tag,
-    )
+    staged_planning_gate_outcome_from_decision(task, outcome.decision, p.ctx.core.cfg, sse_log_tag)
 }
 
 /// 同步门控（仅 **L1**，无 L2）；用于单测与无需 LLM 的探测。

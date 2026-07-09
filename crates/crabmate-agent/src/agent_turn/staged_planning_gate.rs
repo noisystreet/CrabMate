@@ -1,6 +1,6 @@
 //! 非分层分阶段意图门控的**纯逻辑**（L1 同步评估 + Execute 资格判定；完整 L0+L1+L2 异步路径仍在根包）。
 
-use crabmate_config::{AgentConfig, StagedPlanningConfig};
+use crabmate_config::AgentConfig;
 use crabmate_internal::redact;
 use crabmate_types::Message;
 
@@ -14,6 +14,11 @@ use crate::agent_turn::intent::user;
 use crate::agent_turn::{StagedPlanningDenyReason, StagedPlanningGateOutcome};
 use crate::intent_pipeline::{IntentAction, IntentDecision, assess_and_route};
 use crate::intent_router::ExecuteIntentThresholds;
+
+fn decision_engine_mode_from_config(cfg: &AgentConfig) -> DecisionEngineMode {
+    DecisionEngineMode::parse(&cfg.per_plan_policy.orchestration_decision_mode)
+        .unwrap_or(DecisionEngineMode::Auto)
+}
 
 fn intent_action_discriminant(action: &IntentAction) -> &'static str {
     match action {
@@ -77,10 +82,10 @@ fn log_staged_gate_outcome(
 fn gate_outcome_from_decision(
     task: String,
     decision: IntentDecision,
-    _staged: &StagedPlanningConfig,
+    cfg: &AgentConfig,
     sse_tag: &str,
-    mode: DecisionEngineMode,
 ) -> StagedPlanningGateOutcome {
+    let mode = decision_engine_mode_from_config(cfg);
     let eligibility = staged_plan_eligibility_for_intent(task.as_str(), &decision, mode);
     log_staged_gate_outcome(task.as_str(), &decision, sse_tag, eligibility);
     match eligibility {
@@ -128,29 +133,17 @@ pub fn assess_staged_planning_gate_l1(
         },
     );
     let decision = assess_and_route(task.as_str(), &intent_ctx);
-    gate_outcome_from_decision(
-        task,
-        decision,
-        &cfg.staged_planning,
-        "staged_plan_intent_gate_sync",
-        DecisionEngineMode::Auto,
-    )
+    gate_outcome_from_decision(task, decision, cfg, "staged_plan_intent_gate_sync")
 }
 
 /// 在已有 **`IntentDecision`** 时评估分阶段资格（供根包完整 L0+L1+L2 管线复用）。
 pub fn staged_planning_gate_outcome_from_decision(
     task: String,
     decision: IntentDecision,
-    staged: &StagedPlanningConfig,
+    cfg: &AgentConfig,
     sse_log_tag: &str,
 ) -> StagedPlanningGateOutcome {
-    gate_outcome_from_decision(
-        task,
-        decision,
-        staged,
-        sse_log_tag,
-        DecisionEngineMode::Auto,
-    )
+    gate_outcome_from_decision(task, decision, cfg, sse_log_tag)
 }
 
 #[cfg(test)]

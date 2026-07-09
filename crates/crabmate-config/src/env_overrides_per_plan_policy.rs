@@ -66,4 +66,10 @@ fn env_override_planner_executor_mode_str(b: &mut ConfigBuilder) {
             b.per_plan_policy.orchestration_profile_str = Some(s);
         }
     }
+    if let Ok(s) = std::env::var("CM_ORCHESTRATION_DECISION_MODE") {
+        let s = s.trim().to_string();
+        if !s.is_empty() {
+            b.per_plan_policy.orchestration_decision_mode_str = Some(s);
+        }
+    }
 }
