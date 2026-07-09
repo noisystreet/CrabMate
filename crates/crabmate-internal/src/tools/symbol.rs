@@ -225,15 +225,11 @@ fn walk_and_match(
     }
     if root.is_file() {
         *visited_files += 1;
-        match search_file(root, re, results, max_results) {
-            Ok(found) => {
-                if found {
-                    // already enforced by max_results check in search_file
-                }
-                return Ok(());
-            }
-            Err(e) => return Err(e),
+        let found = search_file(root, re, results, max_results)?;
+        if found {
+            // already enforced by max_results check in search_file
         }
+        return Ok(());
     }
     for entry in fs::read_dir(root).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
