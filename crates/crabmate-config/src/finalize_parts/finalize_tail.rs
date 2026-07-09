@@ -17,6 +17,7 @@ struct FinalizeTailScalars {
     final_plan_semantic_check_max_tokens: u32,
     planner_executor_mode: PlannerExecutorMode,
     orchestration_profile: OrchestrationProfile,
+    orchestration_decision_mode: String,
     tool_message_max_chars: usize,
     tool_result_envelope_v1: bool,
     sse_tool_call_include_arguments: bool,
@@ -111,6 +112,7 @@ struct TailPlanToolThinkingScalars {
     final_plan_semantic_check_max_tokens: u32,
     planner_executor_mode: PlannerExecutorMode,
     orchestration_profile: OrchestrationProfile,
+    orchestration_decision_mode: String,
     tool_message_max_chars: usize,
     tool_result_envelope_v1: bool,
     sse_tool_call_include_arguments: bool,
@@ -155,6 +157,10 @@ fn derive_tail_plan_tool_thinking_scalars(
     let orchestration_profile = match b.per_plan_policy.orchestration_profile_str.as_deref() {
         Some(s) => OrchestrationProfile::parse(s)?,
         None => OrchestrationProfile::default(),
+    };
+    let orchestration_decision_mode = match b.per_plan_policy.orchestration_decision_mode_str.as_deref() {
+        Some(s) => s.to_string(),
+        None => "auto".to_string(),
     };
     let tool_message_max_chars = b
         .tool_transcript.tool_message_max_chars
@@ -203,6 +209,7 @@ fn derive_tail_plan_tool_thinking_scalars(
         final_plan_semantic_check_max_tokens,
         planner_executor_mode,
         orchestration_profile,
+        orchestration_decision_mode,
         tool_message_max_chars,
         tool_result_envelope_v1,
         sse_tool_call_include_arguments,
@@ -676,6 +683,7 @@ fn assemble_finalize_tail_scalars(
         final_plan_semantic_check_max_tokens,
         planner_executor_mode,
         orchestration_profile,
+        orchestration_decision_mode,
         tool_message_max_chars,
         tool_result_envelope_v1,
         sse_tool_call_include_arguments,
@@ -755,6 +763,7 @@ fn assemble_finalize_tail_scalars(
         final_plan_semantic_check_max_tokens,
         planner_executor_mode,
         orchestration_profile,
+        orchestration_decision_mode,
         tool_message_max_chars,
         tool_result_envelope_v1,
         sse_tool_call_include_arguments,

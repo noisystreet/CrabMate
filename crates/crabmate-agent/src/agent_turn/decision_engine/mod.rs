@@ -22,6 +22,23 @@ pub enum DecisionEngineMode {
     Scored,
 }
 
+impl DecisionEngineMode {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "auto" => Some(Self::Auto),
+            "scored" => Some(Self::Scored),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Scored => "scored",
+        }
+    }
+}
+
 /// 编排决策引擎。
 ///
 /// 维护因子注册表，对外提供 `evaluate()` 入口。
@@ -93,6 +110,8 @@ pub fn evaluate_intent_only(ctx: &FactorContext) -> OrchestrationDecision {
 }
 
 /// Phase 2 入口：创建含 `IntentFactor` + `ComplexityFactor` 的引擎并评估。
+///
+/// `threshold` 和 `weights` 为可选覆盖（`None` 时使用默认值）。
 pub fn evaluate_scored(ctx: &FactorContext) -> OrchestrationDecision {
     let engine = DecisionEngine::build(
         DecisionEngineMode::Scored,

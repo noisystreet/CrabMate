@@ -97,6 +97,8 @@ pub struct PerPlanPolicyConfig {
     pub planner_executor_mode: PlannerExecutorMode,
     /// 编排档位：`freeform` / `staged` / `auto`（映射分阶段门控，不增第四套实现）。
     pub orchestration_profile: crate::OrchestrationProfile,
+    /// 决策引擎模式：`auto` / `scored`（默认 `auto`）。
+    pub orchestration_decision_mode: String,
 }
 
 #[derive(Debug, Clone)]

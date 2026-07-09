@@ -134,6 +134,7 @@ fn finalize_section_per_plan_policy(
         final_plan_semantic_check_max_tokens: tail.final_plan_semantic_check_max_tokens,
         planner_executor_mode: tail.planner_executor_mode,
         orchestration_profile: tail.orchestration_profile,
+        orchestration_decision_mode: tail.orchestration_decision_mode.clone(),
     }
 }
 
