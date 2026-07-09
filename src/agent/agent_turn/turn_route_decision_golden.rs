@@ -95,6 +95,7 @@ fn parse_staged_gate(v: &Value) -> StagedPlanningGateOutcome {
                     abstain: false,
                     need_clarification: false,
                     action: IntentAction::Execute,
+                    multi_intent: None,
                 },
             }
         }
@@ -148,6 +149,7 @@ fn decision_from_intent_gate(snapshot: &IntentGateSnapshot) -> IntentDecision {
                 "confirm_then_execute" => IntentAction::ConfirmThenExecute(String::new()),
                 other => panic!("unknown action {other}"),
             },
+            multi_intent: None,
         },
         _ => panic!("need ProceedExecute for hierarchical resolution"),
     }

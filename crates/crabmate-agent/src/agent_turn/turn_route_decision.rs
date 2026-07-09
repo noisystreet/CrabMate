@@ -293,6 +293,7 @@ fn intent_decision_from_gate_snapshot(intent_gate: &IntentGateSnapshot) -> Optio
                 "confirm_then_execute" => IntentAction::ConfirmThenExecute(String::new()),
                 _ => IntentAction::Execute,
             },
+            multi_intent: None,
         }),
         _ => None,
     }
@@ -513,6 +514,7 @@ mod tests {
                 abstain: false,
                 need_clarification: false,
                 action: IntentAction::Execute,
+                multi_intent: None,
             },
         }
     }

@@ -4,7 +4,9 @@ use crabmate_config::{AgentConfig, StagedPlanningConfig};
 use crabmate_internal::redact;
 use crabmate_types::Message;
 
+use crate::agent_turn::decision_engine::DecisionEngineMode;
 use crate::agent_turn::decision_engine::evaluate_intent_only;
+use crate::agent_turn::decision_engine::evaluate_scored;
 use crate::agent_turn::decision_engine::types::FactorContext;
 use crate::agent_turn::decision_engine::types::OrchestrationRoute;
 use crate::agent_turn::intent::context::build_intent_routing_context;
@@ -28,7 +30,7 @@ fn intent_action_discriminant(action: &IntentAction) -> &'static str {
 pub fn staged_plan_eligibility_for_intent(
     task: &str,
     decision: &IntentDecision,
-    _staged: &StagedPlanningConfig,
+    mode: DecisionEngineMode,
 ) -> Result<(), StagedPlanningDenyReason> {
     let ctx = FactorContext {
         decision,
@@ -37,7 +39,10 @@ pub fn staged_plan_eligibility_for_intent(
         cfg: None,
         workspace_file_count: None,
     };
-    let result = evaluate_intent_only(&ctx);
+    let result = match mode {
+        DecisionEngineMode::Auto => evaluate_intent_only(&ctx),
+        DecisionEngineMode::Scored => evaluate_scored(&ctx),
+    };
     match result.route {
         OrchestrationRoute::Staged => Ok(()),
         OrchestrationRoute::Freeform => Err(StagedPlanningDenyReason::IntentPipelineNotExecute),
@@ -72,10 +77,11 @@ fn log_staged_gate_outcome(
 fn gate_outcome_from_decision(
     task: String,
     decision: IntentDecision,
-    staged: &StagedPlanningConfig,
+    _staged: &StagedPlanningConfig,
     sse_tag: &str,
+    mode: DecisionEngineMode,
 ) -> StagedPlanningGateOutcome {
-    let eligibility = staged_plan_eligibility_for_intent(task.as_str(), &decision, staged);
+    let eligibility = staged_plan_eligibility_for_intent(task.as_str(), &decision, mode);
     log_staged_gate_outcome(task.as_str(), &decision, sse_tag, eligibility);
     match eligibility {
         Ok(()) => StagedPlanningGateOutcome::Allow {
@@ -127,6 +133,7 @@ pub fn assess_staged_planning_gate_l1(
         decision,
         &cfg.staged_planning,
         "staged_plan_intent_gate_sync",
+        DecisionEngineMode::Auto,
     )
 }
 
@@ -137,7 +144,13 @@ pub fn staged_planning_gate_outcome_from_decision(
     staged: &StagedPlanningConfig,
     sse_log_tag: &str,
 ) -> StagedPlanningGateOutcome {
-    gate_outcome_from_decision(task, decision, staged, sse_log_tag)
+    gate_outcome_from_decision(
+        task,
+        decision,
+        staged,
+        sse_log_tag,
+        DecisionEngineMode::Auto,
+    )
 }
 
 #[cfg(test)]
@@ -155,6 +168,7 @@ mod tests {
             abstain: false,
             need_clarification: false,
             action: IntentAction::Execute,
+            multi_intent: None,
         }
     }
 
@@ -162,12 +176,8 @@ mod tests {
     fn non_execute_action_denies() {
         let mut d = execute_decision();
         d.action = IntentAction::DirectReply("hi".into());
-        let err = staged_plan_eligibility_for_intent(
-            "task",
-            &d,
-            &crabmate_config::load_config(None).unwrap().staged_planning,
-        )
-        .unwrap_err();
+        let err =
+            staged_plan_eligibility_for_intent("task", &d, DecisionEngineMode::Auto).unwrap_err();
         assert_eq!(err, StagedPlanningDenyReason::IntentPipelineNotExecute);
     }
 }

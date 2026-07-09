@@ -233,6 +233,7 @@ mod tests {
                 abstain: false,
                 need_clarification: false,
                 action: IntentAction::Execute,
+                multi_intent: None,
             },
         };
         let r = NonHierarchicalTurnResolution::resolve(&cfg, &gate);
@@ -261,6 +262,7 @@ mod tests {
                 abstain: false,
                 need_clarification: false,
                 action: IntentAction::Execute,
+                multi_intent: None,
             },
         };
         let r = NonHierarchicalTurnResolution::resolve(&cfg, &gate);
@@ -287,6 +289,7 @@ mod tests {
                 abstain: false,
                 need_clarification: false,
                 action: IntentAction::Execute,
+                multi_intent: None,
             }),
         };
         let r = NonHierarchicalTurnResolution::resolve(&cfg, &gate);

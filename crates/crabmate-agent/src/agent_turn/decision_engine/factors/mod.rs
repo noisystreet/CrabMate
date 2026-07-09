@@ -1,3 +1,4 @@
+pub mod complexity_factor;
 pub mod intent_factor;
 
 use super::traits::{DecisionFactor, FactorId, FactorScore};
