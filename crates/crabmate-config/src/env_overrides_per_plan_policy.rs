@@ -53,23 +53,58 @@ fn env_override_final_plan_flags(b: &mut ConfigBuilder) {
     }
 }
 
+fn override_str(var_name: &str, field: &mut Option<String>) {
+    if let Ok(s) = std::env::var(var_name) {
+        let s = s.trim().to_string();
+        if !s.is_empty() {
+            *field = Some(s);
+        }
+    }
+}
+
+fn override_f64(var_name: &str, field: &mut Option<f64>) {
+    if let Ok(v) = std::env::var(var_name)
+        && let Ok(n) = v.trim().parse::<f64>()
+    {
+        *field = Some(n);
+    }
+}
+
 fn env_override_planner_executor_mode_str(b: &mut ConfigBuilder) {
-    if let Ok(s) = std::env::var("CM_PLANNER_EXECUTOR_MODE") {
-        let s = s.trim().to_string();
-        if !s.is_empty() {
-            b.per_plan_policy.planner_executor_mode_str = Some(s);
-        }
-    }
-    if let Ok(s) = std::env::var("CM_ORCHESTRATION_PROFILE") {
-        let s = s.trim().to_string();
-        if !s.is_empty() {
-            b.per_plan_policy.orchestration_profile_str = Some(s);
-        }
-    }
-    if let Ok(s) = std::env::var("CM_ORCHESTRATION_DECISION_MODE") {
-        let s = s.trim().to_string();
-        if !s.is_empty() {
-            b.per_plan_policy.orchestration_decision_mode_str = Some(s);
-        }
-    }
+    override_str(
+        "CM_PLANNER_EXECUTOR_MODE",
+        &mut b.per_plan_policy.planner_executor_mode_str,
+    );
+    override_str(
+        "CM_ORCHESTRATION_PROFILE",
+        &mut b.per_plan_policy.orchestration_profile_str,
+    );
+    override_str(
+        "CM_ORCHESTRATION_DECISION_MODE",
+        &mut b.per_plan_policy.orchestration_decision_mode_str,
+    );
+    override_f64(
+        "CM_DECISION_STAGED_THRESHOLD",
+        &mut b.per_plan_policy.decision_staged_threshold,
+    );
+    override_f64(
+        "CM_DECISION_WEIGHT_INTENT",
+        &mut b.per_plan_policy.decision_weight_intent,
+    );
+    override_f64(
+        "CM_DECISION_WEIGHT_COMPLEXITY",
+        &mut b.per_plan_policy.decision_weight_complexity,
+    );
+    override_f64(
+        "CM_DECISION_WEIGHT_WORKSPACE",
+        &mut b.per_plan_policy.decision_weight_workspace,
+    );
+    override_f64(
+        "CM_DECISION_WEIGHT_HISTORY",
+        &mut b.per_plan_policy.decision_weight_history,
+    );
+    override_f64(
+        "CM_DECISION_WEIGHT_COST",
+        &mut b.per_plan_policy.decision_weight_cost,
+    );
 }

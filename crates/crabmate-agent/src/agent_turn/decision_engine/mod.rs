@@ -109,16 +109,23 @@ pub fn evaluate_intent_only(ctx: &FactorContext) -> OrchestrationDecision {
     engine.evaluate(ctx)
 }
 
-/// Phase 2 入口：创建含 `IntentFactor` + `ComplexityFactor` 的引擎并评估。
+/// Phase 2 入口：创建含所有因子的引擎并评估。
 ///
-/// `threshold` 和 `weights` 为可选覆盖（`None` 时使用默认值）。
-pub fn evaluate_scored(ctx: &FactorContext) -> OrchestrationDecision {
-    let engine = DecisionEngine::build(
-        DecisionEngineMode::Scored,
-        FactorWeights::default(),
-        DEFAULT_STAGED_THRESHOLD,
-    );
+/// 从 `PerPlanPolicyConfig` 读取权重和阈值（若 `None` 则使用默认值）。
+pub fn evaluate_scored_with_config(
+    ctx: &FactorContext,
+    threshold: Option<f32>,
+    weights: Option<&FactorWeights>,
+) -> OrchestrationDecision {
+    let w = weights.cloned().unwrap_or_default();
+    let t = threshold.unwrap_or(DEFAULT_STAGED_THRESHOLD);
+    let engine = DecisionEngine::build(DecisionEngineMode::Scored, w, t);
     engine.evaluate(ctx)
+}
+
+/// 使用默认配置的 Scored 评估（向后兼容）。
+pub fn evaluate_scored(ctx: &FactorContext) -> OrchestrationDecision {
+    evaluate_scored_with_config(ctx, None, None)
 }
 
 #[cfg(test)]
