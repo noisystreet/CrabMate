@@ -1,6 +1,35 @@
 //! 供应商出站路径：构造 `ChatRequest.messages` 前的 normalize 与 `tool_calls.arguments` 规整。
 
+use std::hash::{Hash, Hasher};
+
 use crabmate_types::Message;
+
+fn system_prompt_stability_info(messages: &[Message]) -> (u64, usize) {
+    let sys_content: String = messages
+        .iter()
+        .filter(|m| m.role == "system")
+        .filter_map(|m| m.content.as_ref())
+        .filter_map(|c| match c {
+            crabmate_types::MessageContent::Text(s) => Some(s.as_str()),
+            _ => None,
+        })
+        .collect();
+    let len = sys_content.len();
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    sys_content.hash(&mut hasher);
+    (hasher.finish(), len)
+}
+
+/// 记录 system prompt 稳定性信息（hash + 字符数），辅助判断前缀缓存稳定性。
+pub fn log_system_prompt_stability(messages: &[Message]) {
+    let (hash, len) = system_prompt_stability_info(messages);
+    log::info!(
+        target: "crabmate_llm",
+        "system_prompt_stability hash={:x} chars={}",
+        hash,
+        len
+    );
+}
 
 fn single_line_preview(s: &str, max_chars: usize) -> String {
     let folded = s.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -66,6 +95,7 @@ pub fn conversation_messages_to_vendor_body(
     preserve_reasoning_on_assistant_tool_calls: bool,
     preserve_deepseek_thinking_reasoning_roundtrip: bool,
 ) -> Vec<Message> {
+    log_system_prompt_stability(messages);
     let mut v = crabmate_types::normalize_messages_for_openai_compatible_request(
         crabmate_types::messages_for_api_stripping_reasoning_skip_ui_separators(
             messages,
