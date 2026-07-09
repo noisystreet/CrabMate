@@ -77,7 +77,7 @@ pub fn log_intent_pipeline_assessment(sse_log_tag: &str, outcome: &IntentRouting
         decision.confidence,
         decision.abstain,
         decision.need_clarification,
-        &decision.action,
+        decision.action,
         merge_meta.used_merged_continuation,
     );
 }
