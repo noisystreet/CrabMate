@@ -5,7 +5,9 @@ pub mod types;
 
 use factors::FactorRegistry;
 use factors::complexity_factor::ComplexityFactor;
+use factors::cost_factor::CostFactor;
 use factors::intent_factor::IntentFactor;
+use factors::workspace_factor::WorkspaceFactor;
 use scorer::{DEFAULT_STAGED_THRESHOLD, FactorWeights, score_and_route};
 use traits::FactorScore;
 use types::{FactorContext, OrchestrationDecision};
@@ -38,6 +40,8 @@ impl DecisionEngine {
         registry.register(Box::new(IntentFactor));
         if matches!(mode, DecisionEngineMode::Scored) {
             registry.register(Box::new(ComplexityFactor));
+            registry.register(Box::new(WorkspaceFactor));
+            registry.register(Box::new(CostFactor));
         }
         Self {
             registry,
@@ -166,7 +170,7 @@ mod tests {
     }
 
     #[test]
-    fn scored_mode_registers_two_factors() {
+    fn scored_mode_registers_four_factors() {
         let engine = DecisionEngine::build(
             DecisionEngineMode::Scored,
             FactorWeights::default(),
@@ -175,7 +179,7 @@ mod tests {
         let decision = make_decision(IntentAction::Execute);
         let ctx = make_ctx(&decision);
         let result = engine.evaluate(&ctx);
-        assert_eq!(result.score_breakdown.len(), 2);
+        assert_eq!(result.score_breakdown.len(), 4);
     }
 
     #[test]

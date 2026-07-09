@@ -1,5 +1,7 @@
 pub mod complexity_factor;
+pub mod cost_factor;
 pub mod intent_factor;
+pub mod workspace_factor;
 
 use super::traits::{DecisionFactor, FactorId, FactorScore};
 use super::types::FactorContext;
