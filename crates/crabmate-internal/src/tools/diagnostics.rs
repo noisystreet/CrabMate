@@ -126,7 +126,9 @@ fn is_safe_extra_env_name(name: &str) -> bool {
 }
 
 /// 参数 JSON（均可选）：`include_toolchain`（默认 true）、`include_workspace_paths`（默认 true）、`include_env`（默认 true）、`extra_env_vars`（额外大写变量名数组，仅允许 `[A-Z0-9_]+`）
-pub fn diagnostic_summary(args_json: &str, working_dir: &Path) -> String {
+///
+/// `extra_lines` 用于上层调用者注入额外诊断信息（如 LLM 缓存统计）。
+pub fn diagnostic_summary(args_json: &str, working_dir: &Path, extra_lines: &[String]) -> String {
     let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
         Err(e) => return e,
@@ -284,6 +286,10 @@ pub fn diagnostic_summary(args_json: &str, working_dir: &Path) -> String {
     }
 
     out.push_str("提示: 与 AGENTS.md 中「API_KEY 未设置时 chat 失败」等说明对照。\n");
+    for line in extra_lines {
+        out.push_str(line);
+        out.push('\n');
+    }
     out.trim_end().to_string()
 }
 

@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use futures_util::StreamExt;
 use tokio::sync::mpsc::Sender;
 
-use crabmate_types::{StreamChoice, StreamChunk, StreamDelta};
+use crabmate_types::{StreamChoice, StreamDelta};
 
 use crate::call_error::LlmCallError;
 use crate::stream_host::{DsmlStreamFilter, StreamChatHost, TerminalPlainFragmentCtx};
@@ -251,6 +251,8 @@ pub(super) struct IngestSseState<'a> {
     pub(super) thinking_trace_enabled: bool,
     pub(super) tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
     pub(super) dsml_content_filter: &'a mut dyn DsmlStreamFilter,
+    /// SSE 末尾帧提取的 usage。
+    pub(super) usage: &'a mut Option<crabmate_types::Usage>,
 }
 
 async fn ingest_sse_residual_buffer_if_needed(
@@ -543,57 +545,65 @@ pub(super) async fn ingest_sse_data_payload(
         thinking_trace_enabled,
         tui_llm_stream_scratch,
         dsml_content_filter,
+        usage,
     } = state;
     let tui_scratch = tui_llm_stream_scratch.clone();
-    let Ok(chunk) = serde_json::from_slice::<StreamChunk>(payload.as_bytes()) else {
+    let Ok(chunk) = serde_json::from_slice::<crabmate_types::StreamChunk>(payload.as_bytes())
+    else {
         return Ok(());
     };
-    let Some(choice) = chunk.choices.and_then(|c| c.into_iter().next()) else {
-        return Ok(());
-    };
-    ingest_sse_apply_finish_reason(finish_reason, &choice);
-    let delta = choice.delta;
-    ingest_sse_reasoning_from_delta(IngestSseReasoningFrame {
-        host,
-        delta: &delta,
-        reasoning_acc,
-        minimax_reasoning_snaps,
-        out,
-        cli_terminal_plain,
-        cli_plain_prefix_emitted,
-        cli_plain_reasoning_style_active,
-        coop_cancel,
-        thinking_trace_enabled,
-        tui_llm_stream_scratch: tui_scratch.clone(),
-    })
-    .await?;
-    ingest_sse_content_from_delta(IngestSseContentFrame {
-        host,
-        delta: &delta,
-        content_acc,
-        pending_sse_delta,
-        out,
-        cli_terminal_plain,
-        cli_plain_prefix_emitted,
-        cli_plain_reasoning_style_active,
-        coop_cancel,
-        thinking_trace_enabled,
-        tui_llm_stream_scratch: tui_scratch,
-        dsml_content_filter,
-    })
-    .await?;
-    ingest_sse_tool_calls_from_delta(IngestSseToolCallsFrame {
-        host,
-        delta,
-        tool_calls_acc,
-        parsing_tool_calls_notified,
-        turn_segment_open,
-        turn_segment_emitted_ids,
-        pending_sse_delta,
-        out,
-        coop_cancel,
-    })
-    .await?;
+    // 提取 choices（可能有）
+    if let Some(choices) = chunk.choices
+        && let Some(choice) = choices.into_iter().next()
+    {
+        ingest_sse_apply_finish_reason(finish_reason, &choice);
+        let delta = choice.delta;
+        ingest_sse_reasoning_from_delta(IngestSseReasoningFrame {
+            host,
+            delta: &delta,
+            reasoning_acc,
+            minimax_reasoning_snaps,
+            out,
+            cli_terminal_plain,
+            cli_plain_prefix_emitted,
+            cli_plain_reasoning_style_active,
+            coop_cancel,
+            thinking_trace_enabled,
+            tui_llm_stream_scratch: tui_scratch.clone(),
+        })
+        .await?;
+        ingest_sse_content_from_delta(IngestSseContentFrame {
+            host,
+            delta: &delta,
+            content_acc,
+            pending_sse_delta,
+            out,
+            cli_terminal_plain,
+            cli_plain_prefix_emitted,
+            cli_plain_reasoning_style_active,
+            coop_cancel,
+            thinking_trace_enabled,
+            tui_llm_stream_scratch: tui_scratch,
+            dsml_content_filter,
+        })
+        .await?;
+        ingest_sse_tool_calls_from_delta(IngestSseToolCallsFrame {
+            host,
+            delta,
+            tool_calls_acc,
+            parsing_tool_calls_notified,
+            turn_segment_open,
+            turn_segment_emitted_ids,
+            pending_sse_delta,
+            out,
+            coop_cancel,
+        })
+        .await?;
+    }
+    // 独立提取 usage（可能出现在无 choices 的末尾帧，也可能与 choices 同在）
+    if let Some(u) = chunk.usage {
+        *usage = Some(u);
+    }
     Ok(())
 }
 
@@ -604,6 +614,8 @@ pub(super) struct SseStreamAccum {
     pub(super) finish_reason: String,
     pub(super) cli_plain_prefix_emitted: bool,
     pub(super) cli_plain_reasoning_style_active: bool,
+    /// SSE 末尾帧携带的 usage（含缓存统计）。
+    pub(super) usage: Option<crabmate_types::Usage>,
 }
 
 pub(super) struct ConsumeSseStreamOpts<'a> {
@@ -647,6 +659,7 @@ where
     let mut minimax_reasoning_snaps: Vec<String> = Vec::new();
     let mut dsml_content_filter = host.new_dsml_stream_filter(dsml_stream_strip_enabled);
     let mut stream_done = false;
+    let mut usage = None;
 
     while let Some(chunk) = stream.next().await {
         if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
@@ -688,6 +701,7 @@ where
                     thinking_trace_enabled,
                     tui_llm_stream_scratch: tui_llm_stream_scratch.clone(),
                     dsml_content_filter: dsml_content_filter.as_mut(),
+                    usage: &mut usage,
                 },
             )
             .await?
@@ -726,6 +740,7 @@ where
             thinking_trace_enabled,
             tui_llm_stream_scratch: tui_llm_stream_scratch.clone(),
             dsml_content_filter: dsml_content_filter.as_mut(),
+            usage: &mut usage,
         },
     )
     .await?;
@@ -752,6 +767,7 @@ where
         finish_reason,
         cli_plain_prefix_emitted,
         cli_plain_reasoning_style_active,
+        usage,
     })
 }
 

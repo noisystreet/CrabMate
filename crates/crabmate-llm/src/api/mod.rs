@@ -11,7 +11,7 @@ use crabmate_config::LlmHttpAuthMode;
 use crabmate_sse_protocol::StreamEndReason;
 use crabmate_types::{
     ChatRequest, FunctionCall, LLM_CANCELLED_ERROR, Message, MessageContent,
-    OPENAI_CHAT_COMPLETIONS_REL_PATH, ToolCall, USER_CANCELLED_FINISH_REASON,
+    OPENAI_CHAT_COMPLETIONS_REL_PATH, ToolCall, USER_CANCELLED_FINISH_REASON, Usage,
     merge_reasoning_details_into_reasoning_content, message_content_as_str,
     message_content_byte_len_for_estimate, sanitize_tool_call_arguments_for_openai_compat,
 };
@@ -46,6 +46,28 @@ fn tool_calls_from_sse_accum(
             })
             .collect(),
     )
+}
+
+/// 记录缓存命中统计并累积到进程级单例。
+fn log_cache_usage(usage: Option<&Usage>, model: &str) {
+    let Some(u) = usage else { return };
+    let hit = u.prompt_cache_hit_tokens.unwrap_or(0);
+    let miss = u.prompt_cache_miss_tokens.unwrap_or(0);
+    let total = hit + miss;
+    let ratio = if total > 0 {
+        hit as f64 / total as f64
+    } else {
+        0.0
+    };
+    log::info!(
+        target: "crabmate_llm",
+        "prompt_cache model={} hit={} miss={} ratio={:.1}%",
+        model,
+        hit,
+        miss,
+        ratio * 100.0
+    );
+    crate::cache_stats::LLM_CACHE_AGGREGATE.record(u);
 }
 
 fn message_from_sse_accum(acc: SseStreamAccum) -> Message {
@@ -167,6 +189,7 @@ async fn non_stream_emit_parsing_tool_calls_if_needed(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn non_stream_chat_response(
     host: &dyn StreamChatHost,
     res: reqwest::Response,
@@ -175,6 +198,7 @@ async fn non_stream_chat_response(
     plain_terminal_stream: bool,
     cancel: Option<&AtomicBool>,
     cli_terminal_plain: bool,
+    model: &str,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
     let _cli_wait_spinner = host.try_start_cli_wait_spinner(cli_terminal_plain);
     if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
@@ -183,6 +207,7 @@ async fn non_stream_chat_response(
     let body = res.text().await.map_err(LlmCallError::boxed_from_reqwest)?;
     let parsed: crabmate_types::ChatResponse = serde_json::from_str(&body)
         .map_err(|e| boxed_non_stream_chat_parse_error(host, &body, &e))?;
+    let usage = parsed.usage;
     let choice = parsed.choices.into_iter().next().ok_or_else(
         || -> Box<dyn std::error::Error + Send + Sync> { "非流式响应 choices 为空".into() },
     )?;
@@ -215,6 +240,7 @@ async fn non_stream_chat_response(
     if render_to_terminal && out.is_none() {
         host.print_stream_end_reason_terminal(terminal_end_reason);
     }
+    log_cache_usage(usage.as_ref(), model);
     Ok((msg, finish_reason))
 }
 
@@ -223,6 +249,7 @@ async fn streaming_chat_response(
     res: reqwest::Response,
     params: &StreamChatParams<'_>,
     render_to_terminal: bool,
+    model: &str,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
     let cli_terminal_plain =
         render_to_terminal && params.out.is_none() && params.plain_terminal_stream;
@@ -264,6 +291,7 @@ async fn streaming_chat_response(
     } else {
         acc.finish_reason.clone()
     };
+    let usage = acc.usage;
     let msg = message_from_sse_accum(acc);
     debug!(
         target: "crabmate",
@@ -278,6 +306,7 @@ async fn streaming_chat_response(
     if render_to_terminal && params.out.is_none() {
         host.print_stream_end_reason_terminal(terminal_end_reason);
     }
+    log_cache_usage(usage.as_ref(), model);
     Ok((msg, finish))
 }
 
@@ -337,6 +366,7 @@ pub async fn stream_chat(
 
     let cli_terminal_plain = render_to_terminal && out.is_none() && plain_terminal_stream;
 
+    let model = req.model.clone();
     if no_stream {
         non_stream_chat_response(
             host,
@@ -346,9 +376,10 @@ pub async fn stream_chat(
             plain_terminal_stream,
             cancel,
             cli_terminal_plain,
+            &model,
         )
         .await
     } else {
-        streaming_chat_response(host, res, params, render_to_terminal).await
+        streaming_chat_response(host, res, params, render_to_terminal, &model).await
     }
 }

@@ -7,6 +7,7 @@ pub mod api;
 pub mod backend;
 pub mod backend_openai;
 pub mod backend_shared;
+pub mod cache_stats;
 pub mod call_error;
 pub mod chat_params;
 mod complete_error;
