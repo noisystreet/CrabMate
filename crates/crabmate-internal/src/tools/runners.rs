@@ -318,7 +318,7 @@ pub fn runner_backtrace_analyze(args: &str, _ctx: &ToolContext<'_>) -> String {
 }
 
 pub fn runner_diagnostic_summary(args: &str, ctx: &ToolContext<'_>) -> String {
-    diagnostics::diagnostic_summary(args, ctx.working_dir)
+    diagnostics::diagnostic_summary(args, ctx.working_dir, &[])
 }
 
 pub fn runner_present_clarification_questionnaire(args: &str, _ctx: &ToolContext<'_>) -> String {

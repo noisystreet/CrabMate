@@ -79,9 +79,23 @@ impl std::ops::DerefMut for ChatRequest {
 
 // ---------- 非流式响应（`stream: false` 时 chat/completions 返回体） ----------
 
+/// `usage` 对象中的缓存统计（DeepSeek 等供应商返回）。
+#[derive(Debug, Clone, Copy, Default, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
+pub struct Usage {
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    /// 本次请求输入中缓存命中的 token 数。
+    pub prompt_cache_hit_tokens: Option<u64>,
+    /// 本次请求输入中缓存未命中的 token 数。
+    pub prompt_cache_miss_tokens: Option<u64>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ChatResponse {
     pub choices: Vec<Choice>,
+    #[serde(default)]
+    pub usage: Option<Usage>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -137,6 +151,9 @@ pub struct StreamChoice {
 #[derive(Debug, Deserialize)]
 pub struct StreamChunk {
     pub choices: Option<Vec<StreamChoice>>,
+    /// SSE 末尾帧可能携带 usage（choices 为空时）。
+    #[serde(default)]
+    pub usage: Option<Usage>,
 }
 
 // TUI 中用于“人工审批”的决策结果：拒绝/允许一次/永久允许。
