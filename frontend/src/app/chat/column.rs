@@ -483,6 +483,7 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
     view! {
                 <div
                     class="chat-column"
+                    data-testid="chat-column"
                     on:keydown:capture=home_end_nav.keydown_handler()
                 >
                     <ChatMessagesPane signals=shell.messages_pane_signals() />

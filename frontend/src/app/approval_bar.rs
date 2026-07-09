@@ -26,7 +26,7 @@ pub fn ApprovalBar(
                     ""
                 };
                 view! {
-                    <div class="approval-bar">
+                    <div class="approval-bar" data-testid="approval-bar">
                         <button
                             type="button"
                             class="approval-bar-toggle"

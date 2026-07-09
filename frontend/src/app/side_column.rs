@@ -315,7 +315,7 @@ pub fn side_column_view(signals: SideColumnViewSignals) -> impl IntoView {
     };
     view! {
         <SideColumnResizeAndShellToolbar toolbar=resize_toolbar>
-            <div class="side-body">
+            <div class="side-body" data-testid="side-panel">
                 <Show when=move || matches!(side_panel_view.get(), SidePanelView::Workspace)>
                     <SideColumnWorkspaceCard
                         locale=locale
