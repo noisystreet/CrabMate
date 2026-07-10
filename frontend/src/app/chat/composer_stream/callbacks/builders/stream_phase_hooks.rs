@@ -44,12 +44,7 @@ pub(in super::super) fn make_on_stream_ended_with_stream_phase(
             {
                 apply_conversation_prompt_tokens_from_sse(stream_ctx.chat, &cid, snap);
             }
-            // `stream_ended` 表示服务端已结束本轮流式任务：无论 `reason` 是否能解析为已知枚举，
-            // 都应回落 busy，避免状态栏长期停在「模型生成中」。（未知 reason 仍写入 stream_end_reason 供 diagnostics。）
-            stream_ctx
-                .shell
-                .stream
-                .apply_release_turn_and_stream_run(stream_ctx.attach_generation);
+            // `stream_ended`：lifecycle 经 `StreamEnded` 进入 Draining；整轮收口（`ShellReleased`、abort 槽）由 `on_done` / `on_error` / HTTP finally 负责。
             clear_abort_slot(&stream_ctx.shell);
         },
     )

@@ -119,29 +119,11 @@ pub fn session_has_loading_tool_message(chat: ChatSessionSignals) -> bool {
     })
 }
 
-/// 当前流式目标会话是否存在仍处于 `Loading` 的助手或工具占位（订阅 `sessions`）。
-#[must_use]
-pub fn session_has_stream_loading_placeholders(chat: ChatSessionSignals) -> bool {
-    let sid = chat.effective_stream_message_session_id();
-    chat.sessions.with(|sessions| {
-        sessions.iter().find(|s| s.id == sid).is_some_and(|s| {
-            s.messages.iter().any(|m| {
-                let row = matches!(
-                    (m.role.as_str(), m.is_tool),
-                    ("assistant", false) | (_, true)
-                );
-                m.state.as_ref().is_some_and(|st| st.is_loading()) && row
-            })
-        })
-    })
-}
-
 /// 在 `sid` 会话中是否存在**与即将发起的 `/chat/stream` attach**相冲突的 Loading：
 /// 任意工具 Loading，或 **非** `except_plain_assistant_id` 的普通助手 Loading。
 ///
 /// 用于「截断后再生」路径：`truncate_at_user_message_and_prepare_regenerate` 会先插入一条 **Loading**
-/// 尾条助手；若此处仍用 [`session_has_stream_loading_placeholders`] 与 `status_busy` 做 OR，
-/// 会把自身当成「整轮忙」而**永远**无法触发 `attach`。
+/// 尾条助手；须排除该 id，否则会把自身当成冲突而永远无法 `attach`。
 #[must_use]
 pub(crate) fn session_has_conflicting_stream_loading_in_messages(
     sessions: &[ChatSession],
@@ -178,26 +160,9 @@ pub fn session_has_conflicting_stream_loading_placeholders(
     })
 }
 
-/// 当前流式目标会话是否存在仍处于 `Loading` 的助手或工具占位（**不**订阅 `sessions`）。
-#[must_use]
-pub(crate) fn session_has_stream_loading_placeholders_untracked(chat: ChatSessionSignals) -> bool {
-    let sid = chat.effective_stream_message_session_id_untracked();
-    chat.sessions.with_untracked(|sessions| {
-        sessions.iter().find(|s| s.id == sid).is_some_and(|s| {
-            s.messages.iter().any(|m| {
-                let row = matches!(
-                    (m.role.as_str(), m.is_tool),
-                    ("assistant", false) | (_, true)
-                );
-                m.state.as_ref().is_some_and(|st| st.is_loading()) && row
-            })
-        })
-    })
-}
-
 /// Web 流式：`tool_timeline_busy_ui` 见 [`make_chat_stream_busy_memos`]（[`crate::app::chat::turn_lifecycle`] + Loading 工具占位）。
 ///
-/// **`stream_turn_busy_ui`** 与「停止」门闩同源，由 [`crate::app::chat::turn_lifecycle`] 驱动（阶段 C）。
+/// **`stream_turn_busy_ui`** 与「停止」门闩同源，由 [`crate::app::chat::turn_lifecycle`] 驱动。
 #[derive(Clone, Copy)]
 pub struct ChatStreamBusyMemos {
     pub stream_turn_busy_ui: Memo<bool>,
@@ -208,8 +173,9 @@ pub struct ChatStreamBusyMemos {
 
 /// 在 [`crate::app::chat::wire_chat_domain::wire_chat_domain_effects`] 内**单次**构造，经 [`crate::app::chat::handles::ChatColumnShell`] 下发到底栏 / 合成器 / 消息行。
 ///
-/// **`stream_turn_busy_ui`**：[`TurnLifecycle`] 粗 busy ∨ 助手 Loading 占位 ∨ **`AbortController` 槽位**；
+/// **`stream_turn_busy_ui`**：[`TurnLifecycle`] 粗 busy ∨ **`AbortController` 槽位**；
 /// 与 [`crate::app::chat::stream_user_abort::stream_ui_inflight_untracked`] 使用同一套谓词。
+/// Loading 占位须在 `on_done` / 中止 / 错误路径于 `messages` 上收口（见 `composer_stream/callbacks/done_session`）。
 #[must_use]
 pub fn make_chat_stream_busy_memos(
     chat: ChatSessionSignals,
@@ -228,11 +194,7 @@ pub fn make_chat_stream_busy_memos(
     let ap = Arc::clone(&abort_present);
     let stream_turn_busy_ui = Memo::new(move |_| {
         let _ = stream_abort_epoch.get();
-        turn_lifecycle_stream_turn_busy(
-            turn_lifecycle.get(),
-            session_has_stream_loading_placeholders(chat),
-            ap(),
-        )
+        turn_lifecycle_stream_turn_busy(turn_lifecycle.get(), ap())
     });
     ChatStreamBusyMemos {
         stream_turn_busy_ui,
@@ -341,17 +303,6 @@ impl ChatSessionSignals {
             .filter(|s| !s.is_empty())
             .map(String::from)
             .unwrap_or_else(|| self.active_id.get())
-    }
-
-    /// 与 [`Self::effective_stream_message_session_id`] 相同规则，用于「停止」等不得订阅 UI 的快照路径。
-    #[must_use]
-    pub fn effective_stream_message_session_id_untracked(self) -> String {
-        self.stream_transport
-            .get_untracked()
-            .bound_session_id()
-            .filter(|s| !s.is_empty())
-            .map(String::from)
-            .unwrap_or_else(|| self.active_id.get_untracked())
     }
 
     /// 当前全局 attach 代际（**不**订阅 UI）；与 [`crate::app::chat::composer_stream::context::ChatStreamCallbackCtx::attach_generation`] 比对。

@@ -62,7 +62,7 @@ pub struct ComposerStreamIdeSignals {
     pub ide_sync_disk_nonce: RwSignal<u64>,
 }
 
-/// `/chat/stream` 与壳层共享的一组信号与句柄：状态栏错误、工具忙、审批、中止、工作区刷新、变更集拉取、澄清表单。
+/// `/chat/stream` 与壳层共享的一组信号与句柄：状态栏错误、[`TurnLifecycle`](crate::app::turn_lifecycle)、审批、中止、工作区刷新、变更集拉取、澄清表单。
 ///
 /// 字段按 **`stream` / `approval` / `modal`** 与 `AppSignals` 子域对齐，并通过 [`ComposerStreamShell::from_app_signals`] **单点组装**，
 /// 避免在壳初始化处手写逐字段拷贝导致漏接。
@@ -146,12 +146,12 @@ pub(crate) struct ChatComposerPaneSignals {
 /// **不再**逐字段复制 [`AppSignals::chat_composer`] / [`AppSignals::shell_ui`]：视图从 [`Self::app`] 读取，
 /// 仅保留流式子壳与 `wire_chat_composer_streams` 产出的闭包 / 信号，避免与根壳层双重映射。
 ///
-/// 与 [`ComposerStreamShell`] 共享 **`status_busy` / `status_err` / `pending_clarification`** 等句柄。
+/// 与 [`ComposerStreamShell`] 共享 **`status_err` / [`TurnLifecycle`](crate::app::turn_lifecycle) / 审批澄清** 等句柄（经 [`Self::stream_shell`]）。
 #[derive(Clone)]
 pub struct ChatColumnShell {
     pub app: AppSignals,
     pub stream_shell: ComposerStreamShell,
-    /// 流式回合「UI 忙」派生（[`ChatStreamBusyMemos`]）；与 SSE 原始 busy 信号同源接线，避免视图层重复拼规则。
+    /// 流式回合「UI 忙」派生（[`ChatStreamBusyMemos`]）；由 [`crate::app::chat::turn_lifecycle`] 与 abort 槽规则单次构造，避免视图层重复拼规则。
     pub stream_busy_memos: ChatStreamBusyMemos,
     pub run_send_message: Arc<dyn Fn() + Send + Sync>,
     pub trigger_stop: Arc<dyn Fn() + Send + Sync>,
