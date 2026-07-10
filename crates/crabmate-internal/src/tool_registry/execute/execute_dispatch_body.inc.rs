@@ -130,20 +130,19 @@ async fn dispatch_sync_default_tool(
     }
 
     if sync_default_runs_inline(cfg.as_ref(), name) {
-        let (mem_rt, mem_scope) =
-            crate::memory::long_term_memory::tool_context_memory_extras(
-                cfg.as_ref(),
-                long_term_memory.clone(),
-                long_term_memory_scope_id.as_deref(),
-            );
+        let hosts = crate::memory_tool_hosts::DispatchMemoryHosts::from_dispatch_inputs(
+            cfg.as_ref(),
+            long_term_memory.clone(),
+            long_term_memory_scope_id.as_deref(),
+        );
         let ctx = tools::tool_context_for_with_read_cache_and_memory(
             cfg.as_ref(),
             cfg.command_exec.allowed_commands.as_ref(),
             effective_working_dir,
             read_file_turn_cache.as_ref().map(|a| a.as_ref()),
             workspace_changelist.as_ref(),
-            mem_rt,
-            mem_scope,
+            Some(hosts.codebase_ref()),
+            hosts.long_term_ref(),
         );
         return (tools::run_tool(name, args, &ctx), None);
     }
@@ -157,7 +156,7 @@ async fn dispatch_sync_default_tool(
     let ltm_scope2 = long_term_memory_scope_id.clone();
     let wall_secs = parallel_tool_wall_timeout_secs(cfg.as_ref(), name);
     let handle = tokio::task::spawn_blocking(move || {
-        let (mem_rt, mem_scope) = crate::memory::long_term_memory::tool_context_memory_extras(
+        let hosts = crate::memory_tool_hosts::DispatchMemoryHosts::from_dispatch_inputs(
             cfg2.as_ref(),
             ltm2,
             ltm_scope2.as_deref(),
@@ -168,8 +167,8 @@ async fn dispatch_sync_default_tool(
             work_dir.as_path(),
             rfc.as_ref().map(|a| a.as_ref()),
             wcl.as_ref(),
-            mem_rt,
-            mem_scope,
+            Some(hosts.codebase_ref()),
+            hosts.long_term_ref(),
         );
         tools::run_tool(&tool_name, &tool_args, &ctx)
     });

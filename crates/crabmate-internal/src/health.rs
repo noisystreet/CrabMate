@@ -324,10 +324,13 @@ pub async fn build_health_report(
             "lizard" => "dep_lizard",
             _ => continue,
         };
-        checks.insert(
-            key.to_string(),
-            crate::health_dep_compat::health_item_from_cmd_result(k, v),
-        );
+        checks.insert(key.to_string(), {
+            let raw = crate::health_dep_compat::health_item_from_cmd_result(k, v);
+            HealthCheckItem {
+                ok: raw.ok,
+                detail: raw.detail,
+            }
+        });
     }
 
     HealthReport {

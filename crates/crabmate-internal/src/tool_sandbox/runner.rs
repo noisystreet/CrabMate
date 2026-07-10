@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use crate::memory::codebase_semantic_index::CodebaseSemanticToolParams;
+use crate::memory_tool_hosts::CodebaseSemanticHost;
 use crate::tools::http_fetch;
 use crate::tools::{ToolContext, run_tool};
 use crabmate_config::{AgentConfig, ExposeSecret, WebSearchProvider};
@@ -114,9 +115,12 @@ pub fn tool_runner_internal_main() -> Result<(), String> {
     let key = Box::leak(snap.web_search_api_key.into_boxed_str());
     let provider =
         WebSearchProvider::parse(&snap.web_search_provider).map_err(|e| e.to_string())?;
+    let code_host = Box::leak(Box::new(CodebaseSemanticHost::from_params(
+        snap.codebase_semantic,
+    )));
     let ctx = ToolContext {
         cfg: None,
-        codebase_semantic: Some(snap.codebase_semantic),
+        codebase_semantic_host: Some(code_host),
         command_max_output_len: snap.command_max_output_len,
         weather_timeout_secs: snap.weather_timeout_secs,
         allowed_commands: allowed,
@@ -133,8 +137,7 @@ pub fn tool_runner_internal_main() -> Result<(), String> {
         workspace_changelist: None,
         test_result_cache_enabled: snap.test_result_cache_enabled,
         test_result_cache_max_entries: snap.test_result_cache_max_entries,
-        long_term_memory: None,
-        long_term_memory_scope_id: None,
+        long_term_memory_host: None,
     };
     let k = inv.kind.trim();
     let out = match k {

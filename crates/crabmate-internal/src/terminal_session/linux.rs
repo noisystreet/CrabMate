@@ -20,7 +20,7 @@ use serde::Deserialize;
 use tokio::sync::mpsc::Sender;
 
 use crate::sse::{SsePayload, ToolOutputChunkBody, send_sse_control_payload_optional};
-use crate::tools::command::{self, PreparedRunCommand};
+use crate::tools::{PreparedRunCommand, prepare_run_command_for_pty_spawn};
 use crabmate_config::AgentConfig;
 
 const MAX_SESSIONS: usize = 8;
@@ -659,11 +659,10 @@ async fn terminal_exec_spawn_new(
     };
     let args_vec = a.args.clone().unwrap_or_default();
     let rc_json = run_command_json_from_exec_fields(&cmd, &args_vec);
-    let prepared =
-        match command::prepare_run_command_for_pty_spawn(&rc_json, workspace, allowed_commands) {
-            Ok(p) => p,
-            Err(e) => return e.extended_user_message(),
-        };
+    let prepared = match prepare_run_command_for_pty_spawn(&rc_json, workspace, allowed_commands) {
+        Ok(p) => p,
+        Err(e) => return e.extended_user_message(),
+    };
 
     let (child, sid) = match terminal_spawn_fork_session(workspace, &prepared, cols, rows) {
         Ok(v) => v,

@@ -145,7 +145,7 @@ impl CrabmateParallelToolDispatch {
         let span_http = tracing::Span::current();
         tokio::task::spawn_blocking(move || {
             let _g = span_http.enter();
-            let (mem_rt, mem_scope) = crate::memory::long_term_memory::tool_context_memory_extras(
+            let hosts = crate::memory_tool_hosts::DispatchMemoryHosts::from_dispatch_inputs(
                 cfg.as_ref(),
                 ltm,
                 ltm_scope.as_deref(),
@@ -156,8 +156,8 @@ impl CrabmateParallelToolDispatch {
                 wd.as_path(),
                 rfc.as_ref().map(|a| a.as_ref()),
                 wcl.as_ref(),
-                mem_rt,
-                mem_scope,
+                Some(hosts.codebase_ref()),
+                hosts.long_term_ref(),
             );
             crate::tools::http_fetch::run_direct(&args, &ctx)
         })

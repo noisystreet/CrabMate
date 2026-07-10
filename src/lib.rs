@@ -9,9 +9,10 @@
 pub mod agent;
 pub use crabmate_internal::{
     agent_errors, agent_role_turn, agent_turn_prep, cargo_metadata, clarification_questionnaire,
-    context_bootstrap, dsml, dynamic_tools, health, health_dep_compat, mcp, memory, observability,
-    process_handles, read_file_turn_cache, readonly_tool_ttl_cache, redact, request_chrome_trace,
-    sse, text_encoding, text_util, tool_approval, tool_call_explain, tool_registry, tool_result,
+    clarification_questionnaire_body_if_tool_ok, context_bootstrap, dsml, dynamic_tools, health,
+    health_dep_compat, mcp, memory, memory_tool_hosts, observability, process_handles,
+    read_file_turn_cache, readonly_tool_ttl_cache, redact, request_chrome_trace, sse,
+    text_encoding, text_util, tool_approval, tool_call_explain, tool_registry, tool_result,
     tool_sandbox, tool_stats, tools, user_message_file_refs, web_static_dir, workspace,
 };
 #[cfg(feature = "web")]

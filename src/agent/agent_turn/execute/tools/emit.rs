@@ -2,7 +2,7 @@ use log::info;
 use tokio::sync::mpsc;
 
 use crate::agent::per_coord::PerCoordinator;
-use crate::clarification_questionnaire::clarification_questionnaire_body_if_tool_ok;
+use crate::clarification_questionnaire_body_if_tool_ok;
 use crate::config::AgentConfig;
 use crate::sse::{
     SsePayload, ThinkingTraceBody, ToolCallSummary, ToolOutputChunkBody, ToolResultBody,

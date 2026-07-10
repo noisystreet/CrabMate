@@ -270,7 +270,7 @@ mod tests {
 
         let ctx = ToolContext {
             cfg: None,
-            codebase_semantic: None,
+            codebase_semantic_host: None,
             command_max_output_len: 30_000,
             weather_timeout_secs: 0,
             allowed_commands: &[],
@@ -287,8 +287,7 @@ mod tests {
             workspace_changelist: None,
             test_result_cache_enabled: false,
             test_result_cache_max_entries: 8,
-            long_term_memory: None,
-            long_term_memory_scope_id: None,
+            long_term_memory_host: None,
         };
 
         let body = crate_contract_map(

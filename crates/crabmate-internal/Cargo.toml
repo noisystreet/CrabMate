@@ -7,10 +7,10 @@ description = "CrabMate internal services (tools, SSE, workspace, MCP, memory)"
 
 [features]
 default = []
-project_metrics = ["dep:tokei"]
+project_metrics = ["crabmate-tools/project_metrics", "dep:tokei"]
 mcp = ["dep:rmcp", "crabmate-config/mcp"]
 docker_sandbox = ["dep:bollard", "crabmate-config/docker_sandbox"]
-fastembed = ["crabmate-memory/fastembed", "crabmate-config/fastembed"]
+fastembed = ["crabmate-memory/fastembed", "crabmate-config/fastembed", "crabmate-tools/fastembed"]
 
 [dependencies]
 cmd_mate = { path = "../cmd_mate" }

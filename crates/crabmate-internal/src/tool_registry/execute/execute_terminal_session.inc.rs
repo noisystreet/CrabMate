@@ -92,7 +92,7 @@ async fn execute_terminal_session_impl(
     };
 
     let wall_secs = parallel_tool_wall_timeout_secs(cfg.as_ref(), "terminal_session");
-    let fut = tools::terminal_session::execute_terminal_session(
+    let fut = crate::terminal_session::execute_terminal_session(
         cfg,
         effective_working_dir,
         args,

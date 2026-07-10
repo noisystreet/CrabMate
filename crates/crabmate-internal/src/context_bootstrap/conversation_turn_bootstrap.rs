@@ -7,7 +7,7 @@ use std::path::Path;
 
 use log::debug;
 
-use crate::context_bootstrap::project_profile::build_first_turn_user_context_markdown;
+use crate::context_bootstrap::first_turn_inject::build_first_turn_user_context_markdown;
 use crabmate_config::{AgentConfig, SharedAgentConfig};
 use crabmate_types::Message;
 
