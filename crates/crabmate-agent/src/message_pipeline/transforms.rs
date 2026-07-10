@@ -49,7 +49,7 @@ pub fn compress_tool_message_contents(messages: &mut [Message], max_chars: usize
         };
         if let crabmate_types::MessageContent::Text(s) = c
             && let Some(compressed) =
-                crabmate_internal::tool_result::maybe_compress_tool_message_content(s, max_chars)
+                crabmate_tools::tool_result::maybe_compress_tool_message_content(s, max_chars)
         {
             *s = compressed;
             n += 1;

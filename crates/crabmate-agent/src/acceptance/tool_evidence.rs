@@ -1,6 +1,6 @@
 //! 从 `role: tool` 消息对 `PlanStepAcceptance` 执行验收（证据生命周期限于本函数）。
 
-use crabmate_internal::tool_result;
+use crabmate_tools::tool_result;
 use crabmate_types::{Message, message_content_as_str};
 
 use crate::plan_artifact::PlanStepAcceptance;

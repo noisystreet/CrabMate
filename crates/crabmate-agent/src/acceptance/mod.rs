@@ -36,7 +36,7 @@ impl VerifyOutcome {
 /// 工作区相对路径如何解析为绝对路径（分阶段与分层历史行为不同）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FileResolveKind {
-    /// `crabmate_internal::workspace::path::absolutize_relative_under_root`（分阶段 `PlanStepAcceptance`）。
+    /// `crabmate_tools::workspace::path::absolutize_relative_under_root`（分阶段 `PlanStepAcceptance`）。
     #[default]
     AbsolutizeRelative,
     /// `workspace_root.join(path)`（分层 `GoalAcceptance`）。
@@ -128,7 +128,7 @@ pub struct AcceptanceEvidence<'a> {
     pub tool_output: &'a str,
     pub stdout: &'a str,
     pub stderr: &'a str,
-    pub tool_error: Option<&'a crabmate_internal::tool_result::ToolError>,
+    pub tool_error: Option<&'a crabmate_tools::tool_result::ToolError>,
     /// 无 `tool_error` 时（如分层）从合并文本解析的退出码。
     pub fallback_exit_code: Option<i32>,
     pub workspace_root: &'a std::path::Path,

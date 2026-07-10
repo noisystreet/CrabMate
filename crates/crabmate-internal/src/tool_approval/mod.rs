@@ -12,14 +12,18 @@ use std::sync::Arc;
 use log::debug;
 use tokio::sync::{Mutex, mpsc};
 
+pub use crabmate_tools::tool_runtime::TuiApprovalRequest;
 use crabmate_types::CommandApprovalDecision;
 
-/// 全屏 TUI：工具审批由 UI 线程接管 stdin（暂停 ratatui），异步侧在 [`Self::respond_tx`] 上阻塞等待结果。
-#[derive(Debug)]
-pub struct TuiApprovalRequest {
-    pub title: String,
-    pub detail: String,
-    pub respond_tx: std::sync::mpsc::Sender<CommandApprovalDecision>,
+/// 从 [`crate::tool_registry::WebToolRuntime`] 构造 Web 审批通道（类型定义在 `crabmate-tools`）。
+pub fn web_tool_runtime_approval_sink(
+    rt: &crabmate_tools::tool_runtime::WebToolRuntime,
+) -> WebApprovalSink<'_> {
+    WebApprovalSink {
+        out_tx: &rt.out_tx,
+        approval_rx_shared: &rt.approval_rx_shared,
+        approval_request_guard: &rt.approval_request_guard,
+    }
 }
 
 /// 需人工确认的能力域（与 `tool_registry` 中带审批的工具对齐；后续可接配置策略）。

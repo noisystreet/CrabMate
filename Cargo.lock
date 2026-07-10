@@ -1113,8 +1113,8 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "crabmate-config",
- "crabmate-internal",
  "crabmate-llm",
+ "crabmate-tools",
  "crabmate-types",
  "log",
  "regex",

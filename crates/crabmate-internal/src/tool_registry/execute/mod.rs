@@ -140,7 +140,7 @@ async fn approve_external_read_dir_if_needed(
         cli: cli_ctx.map(|c| &c.persistent_allowlist_shared),
     };
     match tool_approval::interactive_gate_after_whitelist_miss(
-        web_ctx.map(|w| w.approval_sink()),
+        web_ctx.map(tool_approval::web_tool_runtime_approval_sink),
         cli_ctx.map(|c| CliApprovalInput {
             auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command,
             tui_blocking_approval_tx: c.tui_blocking_approval_tx.clone(),

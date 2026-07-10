@@ -1,29 +1,23 @@
-//! 工具批执行领域类型与模式判定；实际 `dispatch_tool` / workflow 经 [`ToolExecutionHost`] 注入。
+//! 工具批执行领域类型与模式判定；实际 `dispatch_tool` / workflow 经根包 [`ToolExecutionHost`] 注入。
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
-use async_trait::async_trait;
 use crabmate_config::AgentConfig;
-use crabmate_internal::agent_role_turn::{
-    tool_allowed_for_turn, tool_calls_allow_parallel_for_role, turn_tool_denied_message,
-};
-use crabmate_internal::tool_registry::{
-    CliToolRuntime, DispatchToolParams, HandlerLookupTable, WebToolRuntime,
-};
-use crabmate_types::{Tool, ToolCall};
+use crabmate_tools::tool_dispatch::HandlerLookupTable;
+use crabmate_types::ToolCall;
 
 use crate::plan_artifact::PlanStepExecutorKind;
 use crate::step_executor_policy::{
     executor_kind_tool_denied_body, tool_allowed_for_step_executor_kind,
 };
+use crate::turn_tool_policy::{
+    tool_allowed_for_turn, tool_calls_allow_parallel_for_role, turn_tool_denied_message,
+};
 
 /// 一批 tool 调用结束后的外层循环语义（与根包 `execute_tools` 对齐）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecuteToolsBatchOutcome {
-    /// 本批工具跑完，继续外层循环
     Finished,
-    /// SSE 在工具执行中断开
     AbortedSse,
 }
 
@@ -86,21 +80,12 @@ pub fn dedup_readonly_tool_calls_count(tool_calls: &[ToolCall]) -> usize {
 /// 并行只读批预取审批失败（`name+args` → 错误正文）；由宿主在批前填充。
 pub type ParallelPrefetchFailures = HashMap<ParallelPrefetchFailureKey, String>;
 
-/// [`ToolExecutionHost::prefetch_parallel_approval_failures`] 入参。
-pub struct ParallelPrefetchParams<'a> {
-    pub tool_calls: &'a [ToolCall],
-    pub cfg: &'a Arc<AgentConfig>,
-    pub web_tool_ctx: Option<&'a WebToolRuntime>,
-    pub cli_tool_ctx: Option<&'a CliToolRuntime>,
-    pub handler_lookup: &'a HandlerLookupTable,
-}
-
 /// 子代理角色 / 多角色白名单的同步 early-deny 正文；`None` 表示可继续 dispatch。
 pub struct ToolPolicyEarlyDenyParams<'a> {
     pub cfg: &'a AgentConfig,
     pub name: &'a str,
     pub step_executor_constraint: Option<PlanStepExecutorKind>,
-    pub tools_defs: &'a [Tool],
+    pub tools_defs: &'a [crabmate_types::Tool],
     pub turn_allow: Option<&'a HashSet<String>>,
 }
 
@@ -120,21 +105,6 @@ pub fn tool_policy_early_deny_message(p: &ToolPolicyEarlyDenyParams<'_>) -> Opti
         return Some(turn_tool_denied_message(p.name));
     }
     None
-}
-
-/// 根包实现的工具分发（`tool_registry::dispatch_tool` 与 `workflow_execute` 等）。
-#[async_trait]
-pub trait ToolExecutionHost: Send + Sync {
-    async fn dispatch_tool_call(
-        &mut self,
-        name: &str,
-        p: DispatchToolParams<'_>,
-    ) -> (String, Option<serde_json::Value>);
-
-    async fn prefetch_parallel_approval_failures(
-        &self,
-        params: ParallelPrefetchParams<'_>,
-    ) -> ParallelPrefetchFailures;
 }
 
 #[cfg(test)]
@@ -177,22 +147,6 @@ mod tests {
         let mode = resolve_tool_batch_execution_mode(&ToolBatchModeParams {
             force_serial: true,
             workspace_is_set: true,
-            handler_lookup: &lookup,
-            cfg: &cfg,
-            tool_calls: &calls,
-            turn_allow: None,
-        });
-        assert_eq!(mode, ToolBatchExecutionMode::Serial);
-    }
-
-    #[test]
-    fn workspace_unset_forces_serial() {
-        let cfg = test_cfg();
-        let lookup = HandlerLookupTable::default_dispatch();
-        let calls = vec![tc("read_file", r#"{"path":"a"}"#, "1")];
-        let mode = resolve_tool_batch_execution_mode(&ToolBatchModeParams {
-            force_serial: false,
-            workspace_is_set: false,
             handler_lookup: &lookup,
             cfg: &cfg,
             tool_calls: &calls,

@@ -12,8 +12,7 @@ use serde_json::Value;
 use crate::tools::split_command_prefix_if_embedded;
 use crabmate_types::{FunctionDef, Tool};
 
-const DYNAMIC_TOOL_PREFIX: &str = "dyn__";
-const DYNAMIC_TOOLS_DIR: &str = "plugins";
+pub use crabmate_tools::tool_naming::{DYNAMIC_TOOL_PREFIX, is_dynamic_tool_name};
 
 #[derive(Debug, Clone, Deserialize)]
 struct DynamicToolFile {
@@ -39,9 +38,7 @@ fn plugins_dir(working_dir: &Path) -> PathBuf {
     working_dir.join(DYNAMIC_TOOLS_DIR)
 }
 
-pub fn is_dynamic_tool_name(name: &str) -> bool {
-    name.starts_with(DYNAMIC_TOOL_PREFIX)
-}
+const DYNAMIC_TOOLS_DIR: &str = "plugins";
 
 fn truncate_chars(s: &str, max_chars: usize) -> String {
     if s.chars().count() <= max_chars {

@@ -16,10 +16,7 @@ use crate::user_data::McpRemoteToolSummary;
 pub struct McpClientSession;
 
 /// OpenAI 兼容工具名前缀（`mcp__{slug}__{remote_name}`）。
-#[inline]
-pub fn is_mcp_proxy_tool(name: &str) -> bool {
-    name.starts_with("mcp__")
-}
+pub use crabmate_tools::tool_naming::is_mcp_proxy_tool;
 
 pub fn parse_mcp_openai_tool_name(openai_name: &str) -> Option<(String, String)> {
     if !openai_name.starts_with("mcp__") {

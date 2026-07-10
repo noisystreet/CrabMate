@@ -8,10 +8,10 @@ use std::sync::Arc;
 use serde_json::Value;
 use tokio::sync::Mutex as TokioMutex;
 
+use crate::agent::agent_turn::execute::ToolExecutionHost;
 use crate::agent::agent_turn::run_command_dedupe::{
     RUN_COMMAND_DUPLICATE_SUPPRESSED_MSG, run_command_duplicate_suppress_key,
 };
-use crabmate_agent::agent_turn::ToolExecutionHost;
 
 use crate::agent::agent_turn::CrabmateRegistryToolDispatch;
 use crate::config::AgentConfig;

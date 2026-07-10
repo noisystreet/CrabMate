@@ -6,10 +6,8 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use tracing::Instrument;
 
-use crabmate_agent::agent_turn::{
-    ParallelPrefetchParams, ToolExecutionHost, ToolPolicyEarlyDenyParams,
-    tool_policy_early_deny_message,
-};
+use crate::agent::agent_turn::execute::{ParallelPrefetchParams, ToolExecutionHost};
+use crabmate_agent::agent_turn::{ToolPolicyEarlyDenyParams, tool_policy_early_deny_message};
 
 use crate::agent::agent_turn::{CrabmateParallelToolDispatch, ParallelHttpFetchParams};
 use crate::config::AgentConfig;

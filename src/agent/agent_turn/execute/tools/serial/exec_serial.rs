@@ -5,10 +5,10 @@ use std::time::Instant;
 
 use log::info;
 
+use crate::agent::agent_turn::execute::ToolExecutionHost;
 use crate::agent::agent_turn::execute::tool_execution_host::CrabmateToolExecutionHost;
 use crate::tool_registry::{self, ToolRuntime};
 use crate::types::ToolCall;
-use crabmate_agent::agent_turn::ToolExecutionHost;
 
 use super::super::{
     ExecuteToolsBatchOutcome, ExecuteToolsCommonCtx, abort_tool_batch_if_sse_closed,

@@ -1,7 +1,7 @@
 //! 非分层分阶段意图门控的**纯逻辑**（L1 同步评估 + Execute 资格判定；完整 L0+L1+L2 异步路径仍在根包）。
 
 use crabmate_config::AgentConfig;
-use crabmate_internal::redact;
+use crabmate_tools::redact;
 use crabmate_types::Message;
 
 use crate::agent_turn::decision_engine::DecisionEngineMode;

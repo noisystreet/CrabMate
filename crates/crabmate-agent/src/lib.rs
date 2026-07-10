@@ -2,7 +2,7 @@
 //!
 //! 完整回合编排（`agent_turn` 执行面、`hierarchy`、`workflow` 执行、PER 协调）仍在根包 **`crabmate::agent`**，以便注入 `tool_registry`、SSE 与 `complete_chat_retrying`。
 //!
-//! 依赖链：`crabmate-types` → `crabmate-config` → **`crabmate-agent`** → `crabmate`（根包编排）。
+//! 依赖链：`crabmate-types` → `crabmate-config` → `crabmate-tools` → **`crabmate-agent`** → `crabmate`（根包编排）。
 
 pub mod acceptance;
 pub mod agent_turn;
@@ -18,6 +18,7 @@ pub mod step_executor_policy;
 pub mod text_sanitize;
 /// 单轮墙钟预算判定与文案。
 pub mod turn_budget;
+pub mod turn_tool_policy;
 pub mod workflow_reflection_controller;
 pub mod workspace_snapshot;
 
