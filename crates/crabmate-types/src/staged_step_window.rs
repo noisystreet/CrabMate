@@ -71,6 +71,48 @@ pub fn tool_messages_in_staged_step_window(
     tools
 }
 
+/// **步 episode** 终点（不含）：自 `episode_start_index` 起至缓冲末尾，或下一条**真实 user**（不含编排/分步注入）。
+///
+/// 用于补丁重试 / 新分步注入后仍认可**同一步下标**上先前已产生的 `role: tool`（见 `tool_messages_in_staged_step_episode`）。
+#[must_use]
+pub fn staged_step_episode_end_exclusive(
+    messages: &[Message],
+    episode_start_index: usize,
+) -> usize {
+    if episode_start_index >= messages.len() {
+        return messages.len();
+    }
+    let mut i = episode_start_index.saturating_add(1);
+    while i < messages.len() {
+        if is_real_user_task_message(&messages[i], false) {
+            break;
+        }
+        i += 1;
+    }
+    i
+}
+
+/// 步 episode `[episode_start_index, end)` 内全部 `role: tool`（跨多次分步注入与补丁重试）。
+#[must_use]
+pub fn tool_messages_in_staged_step_episode(
+    messages: &[Message],
+    episode_start_index: usize,
+) -> Vec<&Message> {
+    if episode_start_index >= messages.len() {
+        return Vec::new();
+    }
+    let end = staged_step_episode_end_exclusive(messages, episode_start_index);
+    let mut tools = Vec::new();
+    let mut i = episode_start_index.saturating_add(1);
+    while i < end {
+        if messages[i].role == "tool" {
+            tools.push(&messages[i]);
+        }
+        i += 1;
+    }
+    tools
+}
+
 /// 缓冲内最后一条分步注入 `user` 的下标（步后重规划等共用）。
 #[must_use]
 pub fn last_staged_step_injection_index(messages: &[Message]) -> Option<usize> {
@@ -171,5 +213,55 @@ mod tests {
         ];
         assert_eq!(tool_messages_in_staged_step_window(&msgs, 0).len(), 1);
         assert_eq!(tool_messages_in_staged_step_window(&msgs, 2).len(), 1);
+    }
+
+    #[test]
+    fn episode_includes_tools_across_retry_injection() {
+        let msgs = vec![
+            Message::user_only("task"),
+            step_user("restructure"),
+            Message {
+                role: "tool".into(),
+                content: Some("退出码：0\n标准输出：\n100% tests passed\n".into()),
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: None,
+                name: Some("run_command".into()),
+                tool_call_id: Some("tc1".into()),
+            },
+            Message::user_staged_orchestration_injection("### 分阶段规划 · 步级反馈\n补丁"),
+            step_user("run-and-verify-v2"),
+            Message::assistant_only("summary only"),
+        ];
+        assert_eq!(tool_messages_in_staged_step_window(&msgs, 1).len(), 1);
+        assert!(tool_messages_in_staged_step_window(&msgs, 4).is_empty());
+        assert_eq!(tool_messages_in_staged_step_episode(&msgs, 1).len(), 1);
+    }
+
+    #[test]
+    fn episode_stops_at_real_user_not_patch_injection() {
+        let msgs = vec![
+            step_user("a"),
+            Message {
+                role: "tool".into(),
+                content: Some("t1".into()),
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: None,
+                name: None,
+                tool_call_id: Some("tc1".into()),
+            },
+            Message::user_only("new human turn"),
+            Message {
+                role: "tool".into(),
+                content: Some("t2".into()),
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: None,
+                name: None,
+                tool_call_id: Some("tc2".into()),
+            },
+        ];
+        assert_eq!(tool_messages_in_staged_step_episode(&msgs, 0).len(), 1);
     }
 }

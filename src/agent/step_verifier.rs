@@ -1,6 +1,7 @@
 //! 确定性验证闸门（StepVerifier）：根据 `PlanStepV1` 中的 `acceptance` 对执行结果进行硬断言。
 //!
 //! **分阶段**路径下，验收针对当前分步的 **`acceptance`**（步界：分步 `user` 之后至下一真实 user / 下一条分步注入；步内编排注入 user 不截断）。
+//! 可选 **`step_episode_start_index`**：同一步下标在补丁重试 / 新分步注入后，回退扫描自**首次**分步注入至下一条真实 user 的全部 `role: tool`。
 //! 空规范直接 **Pass**；仅 **`expect_file_exists`** 时查工作区、**不要求**本步 `role: tool`；其余规则在本步窗口内**自后向前**逐条 `role: tool` 尝试，**任一**满足即 **Pass**。
 //!
 //! 核心判定逻辑见 [`crate::agent::acceptance`]。
@@ -18,7 +19,9 @@ use crate::agent::acceptance::{
 };
 use crate::agent::plan_artifact::PlanStepAcceptance;
 use crate::tool_result::ToolError;
-use crate::types::{Message, tool_messages_in_staged_step_window};
+use crate::types::{
+    Message, tool_messages_in_staged_step_episode, tool_messages_in_staged_step_window,
+};
 
 pub type VerifyResult = VerifyOutcome;
 
@@ -30,11 +33,53 @@ fn verify_tool_message_against_acceptance(
     verify_plan_step_acceptance_for_tool_message(acceptance, tool_msg, workspace_root)
 }
 
+fn verify_tools_against_acceptance(
+    acceptance: &PlanStepAcceptance,
+    tools: &[&Message],
+    workspace_root: &std::path::Path,
+    empty_reason: &str,
+    unsatisfied_reason: &str,
+) -> VerifyResult {
+    if tools.is_empty() {
+        return VerifyOutcome::Fail {
+            reason: empty_reason.to_string(),
+        };
+    }
+    let mut last_fail: Option<VerifyOutcome> = None;
+    for tool_msg in tools.iter().rev() {
+        match verify_tool_message_against_acceptance(acceptance, tool_msg, workspace_root) {
+            VerifyOutcome::Pass => return VerifyOutcome::Pass,
+            fail @ VerifyOutcome::Fail { .. } => last_fail = Some(fail),
+        }
+    }
+    last_fail.unwrap_or(VerifyOutcome::Fail {
+        reason: unsatisfied_reason.to_string(),
+    })
+}
+
+const NO_TOOL_IN_STEP: &str = "Step verification failed: no tool result in this staged step (after step user, before next user message)";
+const NO_TOOL_SATISFIED: &str =
+    "Step verification failed: no tool result in this staged step satisfied acceptance";
+const NO_TOOL_IN_EPISODE: &str = "Step verification failed: no tool result in this step episode (since first step injection for this step index)";
+const NO_TOOL_EPISODE_SATISFIED: &str =
+    "Step verification failed: no tool result in this step episode satisfied acceptance";
+
 /// 对**分阶段单步**内的工具结果进行验证（`step_user_index` 为本步分步 `user` 在 `messages` 中的下标）。
 pub fn verify_step_execution(
     acceptance: &PlanStepAcceptance,
     messages: &[Message],
     step_user_index: usize,
+    workspace_root: &std::path::Path,
+) -> VerifyResult {
+    verify_step_execution_with_episode(acceptance, messages, step_user_index, None, workspace_root)
+}
+
+/// 带 **步 episode** 回退的验收：当前分步窗口无 tool / 无匹配时，再扫自 `step_episode_start_index` 起的同集 tool。
+pub fn verify_step_execution_with_episode(
+    acceptance: &PlanStepAcceptance,
+    messages: &[Message],
+    step_user_index: usize,
+    step_episode_start_index: Option<usize>,
     workspace_root: &std::path::Path,
 ) -> VerifyResult {
     let spec = AcceptanceSpec::from(acceptance);
@@ -57,25 +102,40 @@ pub fn verify_step_execution(
         return crate::agent::acceptance::verify_against_spec(&spec, &ev);
     }
 
-    let tools = tool_messages_in_staged_step_window(messages, step_user_index);
-    if tools.is_empty() {
-        return VerifyOutcome::Fail {
-            reason: "Step verification failed: no tool result in this staged step (after step user, before next user message)"
-                .to_string(),
-        };
-    }
-
-    let mut last_fail: Option<VerifyOutcome> = None;
-    for tool_msg in tools.iter().rev() {
-        match verify_tool_message_against_acceptance(acceptance, tool_msg, workspace_root) {
-            VerifyOutcome::Pass => return VerifyOutcome::Pass,
-            fail @ VerifyOutcome::Fail { .. } => last_fail = Some(fail),
+    let primary = tool_messages_in_staged_step_window(messages, step_user_index);
+    match verify_tools_against_acceptance(
+        acceptance,
+        &primary,
+        workspace_root,
+        NO_TOOL_IN_STEP,
+        NO_TOOL_SATISFIED,
+    ) {
+        pass @ VerifyOutcome::Pass => pass,
+        primary_fail @ VerifyOutcome::Fail { .. } => {
+            if let Some(episode_start) = step_episode_start_index.filter(|&s| s <= step_user_index)
+            {
+                let episode = tool_messages_in_staged_step_episode(messages, episode_start);
+                match verify_tools_against_acceptance(
+                    acceptance,
+                    &episode,
+                    workspace_root,
+                    NO_TOOL_IN_EPISODE,
+                    NO_TOOL_EPISODE_SATISFIED,
+                ) {
+                    pass @ VerifyOutcome::Pass => pass,
+                    episode_fail @ VerifyOutcome::Fail { .. } => {
+                        if primary.is_empty() && !episode.is_empty() {
+                            episode_fail
+                        } else {
+                            primary_fail
+                        }
+                    }
+                }
+            } else {
+                primary_fail
+            }
         }
     }
-    last_fail.unwrap_or(VerifyOutcome::Fail {
-        reason: "Step verification failed: no tool result in this staged step satisfied acceptance"
-            .to_string(),
-    })
 }
 
 /// 对单个步骤的工具执行结果进行验证（供测试与内部复用）。
@@ -584,6 +644,58 @@ mod tests {
         if let VerifyOutcome::Fail { reason } = r {
             assert!(reason.contains("no tool result"));
         }
+    }
+
+    /// 补丁重试：新分步注入后当前窗口无 tool，episode 内先前 ctest/hello 仍满足 `expect_exit_code: 0`。
+    #[test]
+    fn verify_step_episode_fallback_after_patch_reinjection() {
+        use crate::types::Message;
+        use crate::types::MessageContent;
+
+        let t_ok = Message {
+            role: "tool".to_string(),
+            content: Some(MessageContent::Text(
+                "退出码：0\n标准输出：\nHello from CrabMate!\n".into(),
+            )),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: Some("run_command".to_string()),
+            tool_call_id: None,
+        };
+        let messages = vec![
+            Message::user_only("task"),
+            Message::user_staged_step_injection("### 分步 1/1\n- id: restructure\n- 描述: x"),
+            t_ok.clone(),
+            Message::user_staged_orchestration_injection("### 分阶段规划 · 步级反馈\n补丁"),
+            Message::user_staged_step_injection("### 分步 1/1\n- id: run-and-verify-v2\n- 描述: y"),
+            Message::assistant_only("仅总结，未调工具"),
+        ];
+        let acceptance = PlanStepAcceptance {
+            expect_exit_code: Some(0),
+            expect_stdout_contains: None,
+            expect_stderr_contains: None,
+            expect_file_exists: None,
+            expect_json_path_equals: None,
+            expect_http_status: None,
+        };
+        let latest_injection = 4usize;
+        let episode_start = 1usize;
+        let r = verify_step_execution(
+            &acceptance,
+            &messages,
+            latest_injection,
+            std::path::Path::new("/tmp"),
+        );
+        assert!(!r.is_pass());
+        let r = verify_step_execution_with_episode(
+            &acceptance,
+            &messages,
+            latest_injection,
+            Some(episode_start),
+            std::path::Path::new("/tmp"),
+        );
+        assert!(r.is_pass());
     }
 
     #[test]
