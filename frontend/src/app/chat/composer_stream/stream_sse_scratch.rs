@@ -14,6 +14,8 @@ use super::stream_control_reducer::{StreamControlEvent, StreamControlReducerStat
 use super::stream_turn_scratch_state::StreamTurnScratchState;
 use super::stream_turn_state::StreamModelOutputLane;
 use super::turn_canonical::{TurnCanonicalState, make_turn_canonical_cell};
+use crate::app::app_signals::StreamControlSignals;
+use crate::app::chat::turn_lifecycle::TurnLifecycleEvent;
 use crate::sse_dispatch::TurnSegmentStartInfo;
 
 /// 单轮流 SSE 回调共享的 lane + 累计 + 尾泡可变状态（`Clone` 仅为传递 `Rc` 句柄）。
@@ -36,10 +38,15 @@ impl StreamSseScratch {
         }
     }
 
-    /// 同步 [`super::stream_control_reducer`] 阶段（须在 `stream_ctx.is_stale()` 为假时调用）。
+    /// 同步 [`super::stream_control_reducer`] 与 [`crate::app::chat::turn_lifecycle`]（须在 `stream_ctx.is_stale()` 为假时调用）。
     #[inline]
-    pub(super) fn apply_stream_control_event(&self, ev: StreamControlEvent) {
+    pub(super) fn apply_stream_control_event(
+        &self,
+        stream: &StreamControlSignals,
+        ev: StreamControlEvent,
+    ) {
         self.control.borrow_mut().apply(ev);
+        stream.dispatch_turn_lifecycle(TurnLifecycleEvent::SseControl(ev));
     }
 
     #[inline]

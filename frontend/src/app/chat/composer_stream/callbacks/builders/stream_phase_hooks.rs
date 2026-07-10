@@ -18,9 +18,10 @@ pub(in super::super) fn make_on_tool_status_with_stream_phase(
         if stream_ctx.is_stale() {
             return;
         }
-        stream_ctx
-            .scratch
-            .apply_stream_control_event(StreamControlEvent::ToolRunning(b));
+        stream_ctx.scratch.apply_stream_control_event(
+            &stream_ctx.shell.stream,
+            StreamControlEvent::ToolRunning(b),
+        );
         stream_ctx
             .shell
             .stream
@@ -37,9 +38,10 @@ pub(in super::super) fn make_on_stream_ended_with_stream_phase(
             if stream_ctx.is_stale() {
                 return;
             }
-            stream_ctx
-                .scratch
-                .apply_stream_control_event(StreamControlEvent::StreamEnded);
+            stream_ctx.scratch.apply_stream_control_event(
+                &stream_ctx.shell.stream,
+                StreamControlEvent::StreamEnded,
+            );
             accum.set_stream_end_reason(reason.clone());
             stream_ctx.chat.clear_stream_resume_handles();
             if let (Some(snap), Some(cid)) =
@@ -65,9 +67,10 @@ pub(in super::super) fn make_on_assistant_answer_phase_with_stream_phase(
         if stream_ctx.is_stale() {
             return;
         }
-        stream_ctx
-            .scratch
-            .apply_stream_control_event(StreamControlEvent::AssistantAnswerPhase);
+        stream_ctx.scratch.apply_stream_control_event(
+            &stream_ctx.shell.stream,
+            StreamControlEvent::AssistantAnswerPhase,
+        );
         // 重复 answer_phase 将车道切入 PendingFollowup；轮换由 `on_delta` / `on_done` 消费。
         stream_ctx.scratch.on_assistant_answer_phase();
     })

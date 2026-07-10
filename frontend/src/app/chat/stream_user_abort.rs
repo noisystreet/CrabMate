@@ -94,6 +94,11 @@ pub(crate) fn apply_user_abort_of_inflight_stream(
     let sid = chat.effective_stream_message_session_id();
     finalize_loading_placeholders_after_user_abort_on_session(chat, &sid, loc);
     let attach_gen = chat.stream_attach_generation_untracked();
+    shell.stream.dispatch_turn_lifecycle(
+        crate::app::chat::turn_lifecycle::TurnLifecycleEvent::UserAbortRequested {
+            attach_generation: attach_gen,
+        },
+    );
     shell.stream.apply_release_turn_and_stream_run(attach_gen);
     clear_abort_slot(shell);
     true

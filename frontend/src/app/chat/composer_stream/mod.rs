@@ -11,13 +11,15 @@
 //! - [`stream_attach_lifecycle`]：单次 attach 在 `spawn_local` 前的同步步骤（[`prepare_stream_attach`]、[`stream_attach_lifecycle::StreamAttachPrepared`]）。
 //! - 壳层 **`status_busy` / `tool_busy`** 迁移见 **[`crate::app::stream_shell_busy`]**（[`crate::app::stream_shell_busy::StreamShellBusyOp`] + [`crate::app::app_signals::StreamControlSignals::apply_busy_op`] / [`crate::app::app_signals::StreamControlSignals::apply_release_turn_and_stream_run`]），SSE/HTTP/中止路径统一调用。
 //! - 整轮 HTTP+SSE **运行相**见 **[`crate::app::stream_run_phase`]**（[`crate::app::app_signals::StreamControlSignals::begin_stream_run`] / [`crate::app::app_signals::StreamControlSignals::end_stream_run_if_current`]），与 `attach_generation` 门闩对齐。
+//! - 粗粒度回合生命周期（阶段 B 观测）见 **[`crate::app::chat::turn_lifecycle`]**。
 
 mod callbacks;
 mod context;
 mod per_stream_accum;
 mod shell_abort;
 mod stream_attach_lifecycle;
-mod stream_control_reducer;
+pub(crate) mod stream_control_reducer;
+pub(crate) use stream_control_reducer::StreamControlEvent;
 mod stream_sse_scratch;
 mod stream_turn_scratch_state;
 mod stream_turn_state;
@@ -30,6 +32,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use crate::api::{SendChatStreamParams, send_chat_stream};
+use crate::app::chat::turn_lifecycle::TurnLifecycleEvent;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::Locale;
 
@@ -81,6 +84,11 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> AttachChatStr
             let on_error_spawn = cbs.on_error.clone();
             let appr = prepared.approval_session_id.clone();
             spawn_local(async move {
+                shell_for_stream_err.stream.dispatch_turn_lifecycle(
+                    TurnLifecycleEvent::HttpStreamOpened {
+                        attach_generation: gen_snapshot,
+                    },
+                );
                 let stream_result = send_chat_stream(SendChatStreamParams {
                     message: user_text,
                     image_urls,

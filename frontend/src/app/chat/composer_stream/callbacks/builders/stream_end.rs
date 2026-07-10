@@ -27,9 +27,10 @@ pub(in super::super) fn chat_stream_on_done_builder(
         if user_cancelled_flag(&stream_ctx.shell) {
             stream_ctx.scratch.clear_followup_pending();
             clear_abort_slot(&stream_ctx.shell);
-            stream_ctx
-                .scratch
-                .apply_stream_control_event(StreamControlEvent::StreamUserAbort);
+            stream_ctx.scratch.apply_stream_control_event(
+                &stream_ctx.shell.stream,
+                StreamControlEvent::StreamUserAbort,
+            );
             return;
         }
         if stream_ctx.is_stale() {
@@ -95,7 +96,7 @@ pub(in super::super) fn chat_stream_on_done_builder(
         clear_abort_slot(&stream_ctx.shell);
         stream_ctx
             .scratch
-            .apply_stream_control_event(StreamControlEvent::StreamDone);
+            .apply_stream_control_event(&stream_ctx.shell.stream, StreamControlEvent::StreamDone);
         bump_session_hydrate_nonce(stream_ctx.chat);
     })
 }
@@ -106,9 +107,10 @@ pub(in super::super) fn chat_stream_on_error_builder(
     Rc::new(move |msg: String| {
         if user_cancelled_flag(&stream_ctx.shell) {
             clear_abort_slot(&stream_ctx.shell);
-            stream_ctx
-                .scratch
-                .apply_stream_control_event(StreamControlEvent::StreamUserAbort);
+            stream_ctx.scratch.apply_stream_control_event(
+                &stream_ctx.shell.stream,
+                StreamControlEvent::StreamUserAbort,
+            );
             return;
         }
         if stream_ctx.is_stale() {
@@ -140,7 +142,7 @@ pub(in super::super) fn chat_stream_on_error_builder(
         clear_abort_slot(&stream_ctx.shell);
         stream_ctx
             .scratch
-            .apply_stream_control_event(StreamControlEvent::StreamError);
+            .apply_stream_control_event(&stream_ctx.shell.stream, StreamControlEvent::StreamError);
         bump_session_hydrate_nonce(stream_ctx.chat);
     })
 }
