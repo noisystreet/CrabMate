@@ -1,28 +1,24 @@
 //! PER 编排 FSM 金样回归：`fixtures/fsm_orchestrator_golden.jsonl`。
 
 use super::completed_replanning_reduce::reduce_completed_replanning_suppression;
-use super::full_pipeline_fsm::StagedFullPipelinePhase;
-use super::full_pipeline_reduce::{FullPipelineSegment, reduce_full_pipeline_segment};
-use super::prepared_parse_fsm::PreparedPlannerRoute;
-use super::prepared_post_parse_fsm::{PreparedFullPipelineSchedule, PreparedPostParseSchedule};
-use super::prepared_route_reduce::reduce_prepared_planner_route;
+use super::plan_pipeline_schedule::{
+    FullPipelineSegment, PreparedFullPipelineSchedule, PreparedPostParseSchedule,
+    StagedFullPipelinePhase, StagedPlanEnsembleRoute, StagedPlanOptimizerRoute,
+    reduce_full_pipeline_segment,
+};
+use super::prepared_parse_fsm::{PreparedPlannerRoute, reduce_prepared_planner_route};
 use super::prepared_stagnation_reduce::reduce_prepared_stagnation_after_parse;
 use super::rolling_horizon_advance_reduce::reduce_rolling_horizon_advance;
 use super::rolling_horizon_preflight_reduce::{
     RollingHorizonPreflightInput, reduce_rolling_horizon_preflight,
 };
-use super::step_iteration_fsm::StagedStepIterationCtl;
-use super::step_iteration_reduce::reduce_staged_step_post_outer_route;
-use super::step_patch_recover_reduce::{
+use super::step_loop::{
+    StagedStepIterationCtl, StagedStepPatchFailureKind, StagedStepPostOuterRoute,
     StepPatchRecoverBranch, StepPatchRecoverReduceAction, StepPatchRecoverReduceInput,
-    reduce_step_patch_recover,
-};
-use super::step_patch_route_fsm::{
-    StagedStepPatchFailureKind, resolve_staged_step_patch_failure_kind,
-};
-use super::steps_loop_reduce::{reduce_steps_loop_iteration_ctl, reduce_steps_loop_preflight};
-use super::steps_loop_route_fsm::{
-    StagedStepPostOuterRoute, resolve_staged_step_post_outer_route_from_results,
+    StepsLoopIterationReduceAction, StepsLoopPreflightReduceAction,
+    reduce_staged_step_post_outer_route, reduce_step_patch_recover,
+    reduce_steps_loop_iteration_ctl, reduce_steps_loop_preflight,
+    resolve_staged_step_patch_failure_kind, resolve_staged_step_post_outer_route_from_results,
 };
 use super::turn_fsm::{StagedTurnAdvance, StagedTurnPhase};
 use super::turn_orchestrator_fsm::{
@@ -36,9 +32,6 @@ use crate::agent::agent_turn::outer_loop_fsm::{OuterLoopIterationExit, ReflectBr
 use crate::agent::agent_turn::outer_loop_iteration_reduce::{
     outer_loop_iteration_exit_from_reflect_reduce, reduce_outer_loop_post_tools_exit,
     reduce_outer_loop_reflect_branch,
-};
-use crate::agent::agent_turn::staged::planner_round_fsm::{
-    StagedPlanEnsembleRoute, StagedPlanOptimizerRoute,
 };
 use crate::agent::plan_artifact::AgentReplyPlanV1;
 use crate::config::StagedPlanFeedbackMode;
@@ -231,10 +224,10 @@ fn assert_steps_loop_preflight_reduce(ctx: &str, body: &serde_json::Value) {
     let action = reduce_steps_loop_preflight(sse_closed, user_cancelled);
     assert_eq!(
         match action {
-            super::steps_loop_reduce::StepsLoopPreflightReduceAction::Continue => {
+            StepsLoopPreflightReduceAction::Continue => {
                 "continue"
             }
-            super::steps_loop_reduce::StepsLoopPreflightReduceAction::BreakCancelled => {
+            StepsLoopPreflightReduceAction::BreakCancelled => {
                 "break_cancelled"
             }
         },
@@ -260,17 +253,13 @@ fn assert_steps_loop_iteration_reduce(ctx: &str, body: &serde_json::Value) {
     let action = reduce_steps_loop_iteration_ctl(ctl);
     assert_eq!(
         match action {
-            super::steps_loop_reduce::StepsLoopIterationReduceAction::RetryCurrentStep {
-                ..
-            } => {
+            StepsLoopIterationReduceAction::RetryCurrentStep { .. } => {
                 "retry_current_step"
             }
-            super::steps_loop_reduce::StepsLoopIterationReduceAction::AdvanceToNextStep {
-                ..
-            } => {
+            StepsLoopIterationReduceAction::AdvanceToNextStep { .. } => {
                 "advance_to_next_step"
             }
-            super::steps_loop_reduce::StepsLoopIterationReduceAction::BreakCancelled => {
+            StepsLoopIterationReduceAction::BreakCancelled => {
                 "break_cancelled"
             }
         },

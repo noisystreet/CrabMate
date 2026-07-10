@@ -1,16 +1,16 @@
 //! 分阶段回合**顶层**编排相位（`docs/design/per_state_machine_consolidation.md` §3.2）。
 //!
-//! 子 FSM（`turn_fsm`、`full_pipeline_fsm`、`prepared_parse_fsm`、`step_iteration_fsm` 等）仍各自维护细粒度转移；
+//! 子 FSM（`turn_fsm`、`plan_pipeline_schedule`、`prepared_parse_fsm`、`step_loop` 等）仍各自维护细粒度转移；
 //! 本模块提供**统一词汇表**与 `tracing` 字段 **`staged_turn_orchestrator_phase`**，便于排障时对照设计稿，
 //! 而不强行把全部子状态合并为单一运行时变量。
 
-use super::full_pipeline_fsm::StagedFullPipelinePhase;
 use super::orchestrator::StagedRoundOrchestratorPhase;
-use super::prepared_parse_fsm::PreparedPlannerRoute;
-use super::prepared_post_parse_fsm::PreparedPostParseSchedule;
-use super::prepared_route_reduce::PreparedRouteReduceAction;
+use super::plan_pipeline_schedule::{PreparedPostParseSchedule, StagedFullPipelinePhase};
+use super::prepared_parse_fsm::{PreparedPlannerRoute, PreparedRouteReduceAction};
+use super::rolling_horizon_advance_reduce::RollingHorizonAdvanceReduceAction;
 use super::rolling_horizon_preflight_reduce::RollingHorizonPreflightAction;
-use super::step_iteration_reduce::StepIterationReduceAction;
+use super::staged_parse_terminal::StagedParseTerminalRoute;
+use super::step_loop::{StepIterationReduceAction, StepPatchRecoverReduceAction};
 use super::turn_fsm::StagedTurnPhase;
 
 /// 设计稿 §3.2「分阶段回合 FSM」顶层相位（与 `StagedTurnPhase` 滚动视界、
@@ -39,6 +39,97 @@ crate::impl_as_str!(StagedTurnOrchestratorPhase, {
     Self::DegradedToOuterLoop => "degraded_to_outer_loop",
     Self::Done => "done",
 });
+
+/// 顶层编排 **事件**（`StagedTurnDriver` 单表入口；与 `orchestrator_phase_for_*` 对齐）。
+#[derive(Debug, Clone)]
+pub(crate) enum StagedTurnOrchestratorEvent<'a> {
+    TurnPhase(StagedTurnPhase),
+    ParseTerminal(&'a StagedParseTerminalRoute),
+    PreparedRouteReduce(PreparedRouteReduceAction),
+    StepIterationReduce(StepIterationReduceAction),
+    RollingHorizonPreflight(RollingHorizonPreflightAction),
+    RollingHorizonAdvance(RollingHorizonAdvanceReduceAction),
+    StepPatchRecoverReduce(&'a StepPatchRecoverReduceAction),
+    PostParseSchedule(PreparedPostParseSchedule),
+    FullPipelinePhase(StagedFullPipelinePhase),
+    RoundOrchestrator(StagedRoundOrchestratorPhase),
+    StepsLoopTrace(&'a str),
+    StepsLoopEarlyFinishSuccess,
+}
+
+/// 单表转移结果：`Unchanged` 表示保留当前 `StagedTurnDriver.phase`。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StagedTurnOrchestratorStepOutcome {
+    Set(StagedTurnOrchestratorPhase),
+    Unchanged,
+}
+
+/// **(事件) → 下一顶层相位** 权威表；`record_*` 与金样 `orchestrator_phase_for_*` 均经此函数。
+pub(crate) fn staged_turn_orchestrator_step(
+    event: StagedTurnOrchestratorEvent<'_>,
+) -> StagedTurnOrchestratorStepOutcome {
+    match event {
+        StagedTurnOrchestratorEvent::TurnPhase(phase) => {
+            StagedTurnOrchestratorStepOutcome::Set(orchestrator_phase_for_turn_phase(phase))
+        }
+        StagedTurnOrchestratorEvent::ParseTerminal(terminal) => {
+            StagedTurnOrchestratorStepOutcome::Set(orchestrator_phase_for_prepared_route(
+                &terminal.to_prepared_planner_route(),
+            ))
+        }
+        StagedTurnOrchestratorEvent::PreparedRouteReduce(action) => {
+            StagedTurnOrchestratorStepOutcome::Set(orchestrator_phase_for_prepared_route_reduce(
+                action,
+            ))
+        }
+        StagedTurnOrchestratorEvent::StepIterationReduce(action) => {
+            StagedTurnOrchestratorStepOutcome::Set(orchestrator_phase_for_step_iteration_reduce(
+                action,
+            ))
+        }
+        StagedTurnOrchestratorEvent::RollingHorizonPreflight(
+            RollingHorizonPreflightAction::ContinueIteration,
+        ) => StagedTurnOrchestratorStepOutcome::Unchanged,
+        StagedTurnOrchestratorEvent::RollingHorizonPreflight(action) => {
+            StagedTurnOrchestratorStepOutcome::Set(
+                orchestrator_phase_for_rolling_horizon_preflight(action),
+            )
+        }
+        StagedTurnOrchestratorEvent::RollingHorizonAdvance(
+            RollingHorizonAdvanceReduceAction::ContinueLoop { next_phase, .. },
+        ) => StagedTurnOrchestratorStepOutcome::Set(orchestrator_phase_for_turn_phase(next_phase)),
+        StagedTurnOrchestratorEvent::RollingHorizonAdvance(
+            RollingHorizonAdvanceReduceAction::Finish,
+        ) => StagedTurnOrchestratorStepOutcome::Set(StagedTurnOrchestratorPhase::Done),
+        StagedTurnOrchestratorEvent::RollingHorizonAdvance(
+            RollingHorizonAdvanceReduceAction::ReplanExhausted
+            | RollingHorizonAdvanceReduceAction::Propagate,
+        ) => StagedTurnOrchestratorStepOutcome::Unchanged,
+        StagedTurnOrchestratorEvent::StepPatchRecoverReduce(StepPatchRecoverReduceAction::Run(
+            _,
+        )) => StagedTurnOrchestratorStepOutcome::Set(StagedTurnOrchestratorPhase::PatchReplanner),
+        StagedTurnOrchestratorEvent::StepPatchRecoverReduce(_) => {
+            StagedTurnOrchestratorStepOutcome::Unchanged
+        }
+        StagedTurnOrchestratorEvent::PostParseSchedule(schedule) => {
+            StagedTurnOrchestratorStepOutcome::Set(orchestrator_phase_for_post_parse_schedule(
+                schedule,
+            ))
+        }
+        StagedTurnOrchestratorEvent::FullPipelinePhase(phase) => {
+            StagedTurnOrchestratorStepOutcome::Set(orchestrator_phase_for_full_pipeline(phase))
+        }
+        StagedTurnOrchestratorEvent::RoundOrchestrator(phase) => {
+            StagedTurnOrchestratorStepOutcome::Set(orchestrator_phase_for_round_orchestrator(phase))
+        }
+        StagedTurnOrchestratorEvent::StepsLoopTrace(label) => {
+            StagedTurnOrchestratorStepOutcome::Set(orchestrator_phase_for_steps_loop_trace(label))
+        }
+        StagedTurnOrchestratorEvent::StepsLoopEarlyFinishSuccess => {
+            StagedTurnOrchestratorStepOutcome::Set(StagedTurnOrchestratorPhase::Done)
+        }
+    }
+}
 
 /// 首轮后 post-parse 调度 → 顶层（`no_task` 路径视为降级外循环）。
 pub(crate) fn orchestrator_phase_for_post_parse_schedule(
@@ -150,9 +241,9 @@ pub(crate) fn orchestrator_phase_for_steps_loop_trace(
 mod tests {
     use super::*;
     use crate::agent::agent_turn::staged::{
-        prepared_route_reduce::PreparedRouteReduceAction,
+        prepared_parse_fsm::PreparedRouteReduceAction,
         rolling_horizon_preflight_reduce::RollingHorizonPreflightAction,
-        step_iteration_reduce::StepIterationReduceAction,
+        step_loop::StepIterationReduceAction,
     };
     use crate::agent::plan_artifact::AgentReplyPlanV1;
 
@@ -273,6 +364,32 @@ mod tests {
         assert_eq!(
             orchestrator_phase_for_steps_loop_trace("step_running"),
             StagedTurnOrchestratorPhase::StepRunning
+        );
+    }
+
+    #[test]
+    fn single_table_preflight_continue_is_unchanged() {
+        assert_eq!(
+            staged_turn_orchestrator_step(StagedTurnOrchestratorEvent::RollingHorizonPreflight(
+                RollingHorizonPreflightAction::ContinueIteration
+            )),
+            StagedTurnOrchestratorStepOutcome::Unchanged
+        );
+    }
+
+    #[test]
+    fn single_table_matches_legacy_wrappers() {
+        assert_eq!(
+            staged_turn_orchestrator_step(StagedTurnOrchestratorEvent::PreparedRouteReduce(
+                PreparedRouteReduceAction::ContinuePostParse
+            )),
+            StagedTurnOrchestratorStepOutcome::Set(StagedTurnOrchestratorPhase::PlanReady)
+        );
+        assert_eq!(
+            staged_turn_orchestrator_step(StagedTurnOrchestratorEvent::StepIterationReduce(
+                StepIterationReduceAction::ToolFailurePatch
+            )),
+            StagedTurnOrchestratorStepOutcome::Set(StagedTurnOrchestratorPhase::PatchReplanner)
         );
     }
 }

@@ -5,7 +5,7 @@
 //!
 //! 被 crate 根 [`crate::run_agent_turn`]（Web/CLI）与 Axum handler 共用。
 //!
-//! 子模块：`intent`、`plan`（P）、`reflect`（R）、`execute`（E，实现见 **`execute/tools`**）、`messages`、`staged_sse`（实现见 **`staged/sse`**）、`params`、**`outer_loop_fsm`** + **`outer_loop_reflect`** + **`outer_loop`**、**`staged`**（滚动视界、**`turn_orchestrator_fsm`** / **`steps_loop_route_fsm`** 顶层与步后路由；见 `docs/design/per_state_machine_consolidation.md`）。
+//! 子模块：`intent`、`plan`（P）、`reflect`（R）、`execute`（E，实现见 **`execute/tools`**）、`messages`、`staged_sse`（实现见 **`staged/sse`**）、`params`、**`outer_loop_fsm`** + **`outer_loop_reflect`** + **`outer_loop`**、**`staged`**（滚动视界、**`turn_orchestrator_fsm`** / **`step_loop`** 顶层与步后路由；见 `docs/design/per_state_machine_consolidation.md`）。
 //!
 //! **与 `llm` 的边界**：本目录内对模型的调用须经 **`llm::complete_chat_retrying`**（见 **`docs/开发文档.md`**「`agent_turn` 与 `llm`：唯一入口与禁止事项」）；**禁止**直接调用 **`llm::api::stream_chat`**。
 //!

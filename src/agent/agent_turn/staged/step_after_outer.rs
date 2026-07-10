@@ -12,8 +12,7 @@ use super::sse::{
     emit_chat_ui_separator_sse, finish_staged_plan_step_sse, send_staged_plan_notice,
     staged_plan_queue_summary_text,
 };
-use super::step_iteration_fsm::StagedStepIterationCtl;
-use super::step_loop_fsm::try_apply_staged_plan_control_flow_jump;
+use super::step_loop::{StagedStepIterationCtl, try_apply_staged_plan_control_flow_jump};
 
 /// 可变字段聚合（与 [`CfJumpMeta`] 分拆以降低函数形参个数并避免与 `patch_ctx` 的借用冲突）。
 pub(super) struct CfJumpMut<'a, 'b, 'c, F> {

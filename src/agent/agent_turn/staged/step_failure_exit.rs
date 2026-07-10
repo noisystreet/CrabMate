@@ -9,9 +9,7 @@ use super::super::errors::{AgentTurnSubPhase, RunAgentTurnError};
 use super::empty_execution::staged_step_retry_exhausted_message_body;
 use super::patch_planner::StagedPlanPatchPlannerCtx;
 use super::sse::{finish_staged_plan_step_sse, send_staged_plan_finished};
-use super::step_iteration_fsm::{
-    StagedStepIterationCtl, staged_step_failure_retry_exhausted_message,
-};
+use super::step_loop::{StagedStepIterationCtl, staged_step_failure_retry_exhausted_message};
 
 /// 执行步失败早退：`step_finished(failed)` + `plan_finished(failed)`，避免漏发 `staged_plan_finished`。
 pub(super) struct StagedPlanStepFailedExit<'a> {
