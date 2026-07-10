@@ -1100,7 +1100,7 @@ dependencies = [
  "tokio-cron-scheduler",
  "tokio-stream",
  "tower",
- "tower-http 0.6.8",
+ "tower-http",
  "tracing",
  "unicode-width",
  "unicodeit",
@@ -1164,7 +1164,7 @@ dependencies = [
  "subtle",
  "thiserror 2.0.18",
  "tokio",
- "tower-http 0.5.2",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
 ]
@@ -1182,14 +1182,15 @@ dependencies = [
  "cmd_mate",
  "crabmate-config",
  "crabmate-llm",
+ "crabmate-memory",
  "crabmate-sse-protocol",
+ "crabmate-tools",
  "crabmate-types",
  "csv",
  "dialoguer",
  "diffy",
  "ego-tree",
  "encoding_rs",
- "fastembed",
  "flate2",
  "futures-util",
  "glob",
@@ -1246,6 +1247,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabmate-memory"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "crabmate-config",
+ "crabmate-llm",
+ "crabmate-sse-protocol",
+ "crabmate-tools",
+ "crabmate-types",
+ "fastembed",
+ "futures-util",
+ "glob",
+ "ignore",
+ "log",
+ "proptest",
+ "regex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "crabmate-sse-protocol"
 version = "0.1.0"
 dependencies = [
@@ -1259,6 +1289,56 @@ name = "crabmate-tool-card"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+]
+
+[[package]]
+name = "crabmate-tools"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "bzip2",
+ "chardetng",
+ "chrono",
+ "cmd_mate",
+ "crabmate-config",
+ "crabmate-llm",
+ "crabmate-sse-protocol",
+ "crabmate-types",
+ "csv",
+ "diffy",
+ "ego-tree",
+ "encoding_rs",
+ "flate2",
+ "futures-util",
+ "glob",
+ "ignore",
+ "jsonschema",
+ "libc",
+ "log",
+ "nix",
+ "path-absolutize",
+ "proptest",
+ "regex",
+ "reqwest",
+ "scraper",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "similar",
+ "tar",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-stream",
+ "toml 0.8.23",
+ "tracing",
+ "urlencoding",
+ "walkdir",
+ "xz2",
+ "yaml_serde",
+ "zip",
 ]
 
 [[package]]
@@ -5097,7 +5177,7 @@ dependencies = [
  "tokio-rustls",
  "tokio-util",
  "tower",
- "tower-http 0.6.8",
+ "tower-http",
  "tower-service",
  "url",
  "wasm-bindgen",
@@ -6508,23 +6588,6 @@ dependencies = [
  "pin-project-lite",
  "sync_wrapper",
  "tokio",
- "tower-layer",
- "tower-service",
- "tracing",
-]
-
-[[package]]
-name = "tower-http"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e9cd434a998747dd2c4276bc96ee2e0c7a2eadf3cae88e52be55a05fa9053f5"
-dependencies = [
- "bitflags",
- "bytes",
- "http",
- "http-body",
- "http-body-util",
- "pin-project-lite",
  "tower-layer",
  "tower-service",
  "tracing",

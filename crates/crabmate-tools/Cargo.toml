@@ -1,33 +1,25 @@
 [package]
-name = "crabmate-internal"
+name = "crabmate-tools"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
-description = "CrabMate internal services (tools, SSE, workspace, MCP, memory)"
+description = "CrabMate tool implementations (file ops, git, search, web fetch, etc.)"
 
 [features]
 default = []
-project_metrics = ["dep:tokei"]
-mcp = ["dep:rmcp", "crabmate-config/mcp"]
-docker_sandbox = ["dep:bollard", "crabmate-config/docker_sandbox"]
-fastembed = ["crabmate-memory/fastembed", "crabmate-config/fastembed"]
 
 [dependencies]
-cmd_mate = { path = "../cmd_mate" }
 crabmate-config = { path = "../crabmate-config" }
 crabmate-llm = { path = "../crabmate-llm" }
-crabmate-memory = { path = "../crabmate-memory" }
 crabmate-sse-protocol = { path = "../crabmate-sse-protocol" }
-crabmate-tools = { path = "../crabmate-tools" }
 crabmate-types = { path = "../crabmate-types" }
+cmd_mate = { path = "../cmd_mate" }
 async-trait = "0.1"
 base64 = "0.22"
-
 bzip2 = "0.6"
 chardetng = "1.0"
 chrono = "0.4"
 csv = "1.3"
-dialoguer = { version = "0.12", default-features = false }
 diffy = "0.5"
 ego-tree = "0.11"
 encoding_rs = "0.8"
@@ -41,14 +33,6 @@ log = "0.4"
 path-absolutize = "3"
 regex = "1"
 reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
-rmcp = { version = "1.4", optional = true, default-features = false, features = [
-    "client",
-    "server",
-    "transport-child-process",
-    "transport-io",
-] }
-rusqlite = { version = "0.40", features = ["bundled"] }
-schemars = { version = "0.8", features = ["derive"] }
 scraper = "0.27.0"
 secrecy = "0.10"
 serde = { version = "1", features = ["derive"] }
@@ -60,15 +44,6 @@ tar = "0.4"
 tempfile = "3"
 thiserror = "2"
 tracing = "0.1"
-tracing-log = "0.2"
-tracing-subscriber = { version = "0.3", default-features = false, features = [
-    "ansi",
-    "env-filter",
-    "fmt",
-    "json",
-    "local-time",
-    "time",
-] }
 tokio = { version = "1", default-features = false, features = [
     "macros",
     "rt",
@@ -81,17 +56,11 @@ tokio = { version = "1", default-features = false, features = [
     "io-util",
 ] }
 tokio-stream = { version = "0.1", features = ["sync"] }
-tokei = { version = "14", optional = true, default-features = false }
 toml = "0.8"
-uom = { version = "0.36", features = ["si"] }
 urlencoding = "2.1"
 walkdir = "2"
 xz2 = "0.1"
 zip = "8.6"
-bollard = { version = "0.21", optional = true, default-features = false, features = [
-    "http",
-    "pipe",
-] }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", default-features = false, features = ["fs", "dir", "signal", "term", "process"] }

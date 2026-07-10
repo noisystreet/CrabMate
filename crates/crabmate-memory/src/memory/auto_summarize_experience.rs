@@ -1,6 +1,6 @@
 //! 回合结束后启发式检测「由失败到成功」的构建/验证类工具调用，自动写入长期记忆（`source_role=auto_summarize_experience`）。
 
-use crate::tool_result::tool_message_content_ok_for_model;
+use crabmate_tools::tool_result::tool_message_content_ok_for_model;
 use crabmate_types::{Message, message_content_as_str};
 
 /// 检测本回合是否值得自动沉淀；返回经验正文与标签。

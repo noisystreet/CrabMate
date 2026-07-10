@@ -12,6 +12,8 @@ members = [
     "crates/crabmate-config",
     "crates/crabmate-llm",
     "crates/crabmate-agent",
+    "crates/crabmate-tools",
+    "crates/crabmate-memory",
     "crates/crabmate-internal",
 ]
 resolver = "2"
@@ -56,7 +58,7 @@ assets = [
 ]
 
 [features]
-default = ["web", "repl", "tui"]
+default = ["web", "repl", "tui", "mcp"]
 ## Axum HTTP、`serve`、会话 SQLite、`/chat` 队列等。
 web = [
     "dep:axum",

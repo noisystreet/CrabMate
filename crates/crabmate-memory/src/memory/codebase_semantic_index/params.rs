@@ -10,7 +10,7 @@ fn default_semantic_query_max_chunks() -> usize {
     50_000
 }
 
-/// 供 [`crate::tools::ToolContext`] 注入的语义检索参数（避免在工具层持有整份 [`AgentConfig`]）。
+/// 供 `ToolContext` 注入的语义检索参数（避免在工具层持有整份 `AgentConfig`）。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CodebaseSemanticToolParams {
     pub enabled: bool,
