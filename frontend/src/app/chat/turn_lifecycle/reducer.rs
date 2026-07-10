@@ -159,14 +159,13 @@ pub(crate) fn turn_lifecycle_tool_ui_busy(state: TurnLifecycleState) -> bool {
     )
 }
 
-/// 合成器 / 停止按钮与 legacy `stream_turn_busy_ui` 对齐（lifecycle + Loading 占位 + abort 槽）。
+/// 合成器 / 停止按钮门闩：lifecycle 粗 busy ∨ **`AbortController` 槽位**（attach 代际内 HTTP 可中止窗口）。
 #[must_use]
 pub(crate) fn turn_lifecycle_stream_turn_busy(
     state: TurnLifecycleState,
-    has_loading_placeholders: bool,
     abort_present: bool,
 ) -> bool {
-    turn_lifecycle_coarse_busy(state) || has_loading_placeholders || abort_present
+    turn_lifecycle_coarse_busy(state) || abort_present
 }
 
 pub(crate) fn apply_turn_lifecycle(state: &mut TurnLifecycleState, ev: TurnLifecycleEvent) {

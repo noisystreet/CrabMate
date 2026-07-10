@@ -115,12 +115,20 @@ fn model_and_tool_ui_busy_from_subphase() {
 }
 
 #[test]
-fn stream_turn_busy_includes_loading_and_abort() {
+fn stream_turn_busy_covers_abort_slot_only_when_idle() {
     use super::reducer::{TurnLifecycleState, turn_lifecycle_stream_turn_busy};
     let idle = TurnLifecycleState::default();
-    assert!(turn_lifecycle_stream_turn_busy(idle, true, false));
-    assert!(turn_lifecycle_stream_turn_busy(idle, false, true));
-    assert!(!turn_lifecycle_stream_turn_busy(idle, false, false));
+    assert!(turn_lifecycle_stream_turn_busy(idle, true));
+    assert!(!turn_lifecycle_stream_turn_busy(idle, false));
+
+    let mut attaching = TurnLifecycleState::default();
+    apply_turn_lifecycle(
+        &mut attaching,
+        TurnLifecycleEvent::AttachPrepared {
+            attach_generation: 1,
+        },
+    );
+    assert!(turn_lifecycle_stream_turn_busy(attaching, false));
 }
 
 #[test]
@@ -167,6 +175,30 @@ fn timeline_final_drops_model_keeps_tool() {
     );
     assert!(!turn_lifecycle_model_ui_busy(tool));
     assert!(turn_lifecycle_tool_ui_busy(tool));
+}
+
+#[test]
+fn stream_ended_enters_draining_until_shell_release() {
+    let mut s = TurnLifecycleState::default();
+    apply_turn_lifecycle(
+        &mut s,
+        TurnLifecycleEvent::AttachPrepared {
+            attach_generation: 7,
+        },
+    );
+    apply_turn_lifecycle(
+        &mut s,
+        TurnLifecycleEvent::SseControl(StreamControlEvent::StreamEnded),
+    );
+    assert!(matches!(s.phase, TurnPhase::Draining { .. }));
+    assert!(turn_lifecycle_coarse_busy(s));
+    apply_turn_lifecycle(
+        &mut s,
+        TurnLifecycleEvent::ShellReleased {
+            attach_generation: 7,
+        },
+    );
+    assert!(!turn_lifecycle_coarse_busy(s));
 }
 
 #[test]

@@ -38,7 +38,7 @@ fn push_missing_assistant_diagnostic(
     });
 }
 
-/// 流式整轮结束后仍残留的助手 `Loading` 占位（轮换/id 漂移等）会使 `stream_turn_busy_ui` 长期为真。
+/// 流式整轮结束后仍残留的助手 `Loading` 占位（轮换/id 漂移等）须在此清除，避免 UI 与 lifecycle 长期不一致。
 pub(super) fn clear_residual_assistant_loading_placeholders(messages: &mut Vec<StoredMessage>) {
     messages.retain(|m| !is_assistant_loading_placeholder(m));
 }

@@ -1,11 +1,11 @@
-//! 用户主动中止进行中的 **`/chat/stream`**：将 **`AbortController`**、壳层 **`status_busy` / `tool_busy`**
-//! 与会话内 **assistant / 工具** 的 **`Loading`** 占位收口到 **[`apply_user_abort_of_inflight_stream`]**，
+//! 用户主动中止进行中的 **`/chat/stream`**：将 **`AbortController`**、
+//! [`TurnLifecycle`](crate::app::turn_lifecycle) 与会话内 **assistant / 工具** 的 **`Loading`** 占位收口到 **[`apply_user_abort_of_inflight_stream`]**，
 //! 避免接线层散落「只清信号、不改消息」的隐式分裂。
 //!
 //! **与其它收尾路径的关系**（与 [`crate::chat_session_state::make_chat_stream_busy_memos`] 同源）：
-//! - **正常结束**：`tool_busy` 与工具时间线占位通常已由 SSE（如 `tool_result`）消化；`on_done` 再回落壳层 busy。
-//! - **用户中止**：本模块 [`apply_user_abort_of_inflight_stream`] 同时收口助手/工具 **`Loading`** 行并回落壳层双忙（`StreamShellBusyOp::ReleaseTurnShellBusy`）。
-//! - **SSE/HTTP 错误**：`on_error` 对会话 `messages` 的写回应经 `callbacks::error_session::apply_stream_error_on_messages`（助手尾泡 + **`Loading`** 工具行），不能只清 `tool_busy`，否则时间线卡与谓词长期不一致。
+//! - **正常结束**：工具时间线占位通常已由 SSE（如 `tool_result`）消化；`on_done` 再 [`ShellReleased`](crate::app::turn_lifecycle::TurnLifecycleEvent::ShellReleased) 并清 abort 槽。
+//! - **用户中止**：本模块 [`apply_user_abort_of_inflight_stream`] 同时收口助手/工具 **`Loading`** 行并 dispatch lifecycle 收尾。
+//! - **SSE/HTTP 错误**：`on_error` 对会话 `messages` 的写回应经 `callbacks::error_session::apply_stream_error_on_messages`（助手尾泡 + **`Loading`** 工具行），不能只清 lifecycle，否则时间线卡与谓词长期不一致。
 //!
 //! 会话目标与 SSE 写入一致：使用 [`crate::chat_session_state::ChatSessionSignals::effective_stream_message_session_id`]。
 
@@ -65,9 +65,9 @@ pub(crate) fn stream_ui_inflight_untracked(
     chat: ChatSessionSignals,
     shell: &ComposerStreamShell,
 ) -> bool {
+    let _ = chat;
     turn_lifecycle_stream_turn_busy(
         shell.stream.turn_lifecycle.get_untracked(),
-        crate::chat_session_state::session_has_stream_loading_placeholders_untracked(chat),
         shell.stream.abort_cell.lock().unwrap().is_some(),
     )
 }
@@ -75,7 +75,7 @@ pub(crate) fn stream_ui_inflight_untracked(
 /// 用户从 Web 主列点击「停止」时的**唯一**收口（`cancel_stream` 闭包仅调用此处）。
 ///
 /// 1. 若 [`stream_ui_inflight_untracked`] 为假：无操作，返回 `false`。
-/// 2. 否则：尽力 `abort` 在途 HTTP（见 [`user_cancel_in_flight_stream`]），并在 [`ChatSessionSignals::effective_stream_message_session_id`] 上收口 `Loading` 占位，回落 **`status_busy` / `tool_busy`**，最后 [`clear_abort_slot`]。
+/// 2. 否则：尽力 `abort` 在途 HTTP（见 [`user_cancel_in_flight_stream`]），并在 [`ChatSessionSignals::effective_stream_message_session_id`] 上收口 `Loading` 占位，dispatch lifecycle 收尾，最后 [`clear_abort_slot`]。
 ///
 /// 「整轮在途」谓词与 **`stream_turn_busy_ui`** 一致。
 #[must_use]
@@ -146,7 +146,7 @@ fn apply_abort_finalization_to_messages(messages: &mut [StoredMessage], loc: Loc
 ///
 /// **调用方**：用户中止经 [`apply_abort_finalization_to_messages`] 间接调用；流式错误路径由
 /// `callbacks::error_session::apply_stream_error_on_messages` 在写回尾助手错误时**一并**调用本函数。
-/// 若只把 [`ComposerStreamShell`](super::handles::ComposerStreamShell) 上的 `tool_busy` 置假而不改消息，
+/// 若只 dispatch lifecycle 收尾而不改消息，
 /// `Loading` 工具泡仍会使 [`crate::chat_session_state::session_has_loading_tool_message`] 长期为真，状态栏/停止按钮语义卡住。
 pub(crate) fn finalize_loading_tool_placeholders_to_stopped(
     messages: &mut [StoredMessage],
