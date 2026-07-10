@@ -1,10 +1,10 @@
-//! 根包 [`crabmate_agent::ToolExecutionHost`] 实现（`tool_registry` + `workflow_execute`）。
+//! 根包 [`ToolExecutionHost`] 实现（`tool_registry` + `workflow_execute`）。
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crabmate_agent::agent_turn::{
+use crate::agent::agent_turn::execute::tool_execution_trait::{
     ParallelPrefetchFailures, ParallelPrefetchParams, ToolExecutionHost,
 };
 use crabmate_internal::tool_registry::{self, DispatchToolParams, HandlerId, dispatch_tool};

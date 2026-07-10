@@ -74,21 +74,18 @@ tui = ["repl", "dep:ratatui", "dep:crossterm"]
 ## `cargo run --bin crabmate-gen-man` 生成 troff 手册页。
 gen-man = ["dep:clap_mangen"]
 ## Model Context Protocol（`rmcp`）：`mcp list` / `mcp serve`、进程内 MCP 工具代理。
-mcp = ["crabmate-agent/mcp", "crabmate-config/mcp", "crabmate-internal/mcp"]
+mcp = ["crabmate-config/mcp", "crabmate-internal/mcp"]
 ## `code_stats` / 项目画像 tokei 统计（未启用时用内置扩展名 walk）。
 project_metrics = [
-    "crabmate-agent/project_metrics",
     "crabmate-internal/project_metrics",
 ]
 ## `sync_default_tool_sandbox_mode = docker` 时连接 Docker Engine（`bollard`）。
 docker_sandbox = [
-    "crabmate-agent/docker_sandbox",
     "crabmate-config/docker_sandbox",
     "crabmate-internal/docker_sandbox",
 ]
 ## 本地向量嵌入（**fastembed** / ONNX）：长期记忆 `fastembed` 后端、`codebase_semantic_search` 的向量索引与 hybrid/semantic 查询。
 fastembed = [
-    "crabmate-agent/fastembed",
     "crabmate-config/fastembed",
     "crabmate-internal/fastembed",
 ]

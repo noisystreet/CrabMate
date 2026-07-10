@@ -74,7 +74,7 @@ fn extract_http_status(tool_name: &str, output: &str) -> Option<u16> {
 fn resolve_file(workspace_root: &std::path::Path, path: &str, kind: FileResolveKind) -> bool {
     match kind {
         FileResolveKind::AbsolutizeRelative => {
-            match crabmate_internal::workspace::path::absolutize_relative_under_root(
+            match crabmate_tools::workspace::path::absolutize_relative_under_root(
                 workspace_root,
                 path,
             ) {
@@ -217,7 +217,7 @@ fn verify_expected_files(
         if !resolve_file(ev.workspace_root, file_path, ev.file_resolve) {
             let reason = match ev.file_resolve {
                 FileResolveKind::AbsolutizeRelative => {
-                    match crabmate_internal::workspace::path::absolutize_relative_under_root(
+                    match crabmate_tools::workspace::path::absolutize_relative_under_root(
                         ev.workspace_root,
                         file_path,
                     ) {

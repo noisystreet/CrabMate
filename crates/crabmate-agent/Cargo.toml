@@ -7,15 +7,11 @@ description = "CrabMate agent domain layer (plan artifacts, intent routing, acce
 
 [features]
 default = []
-project_metrics = ["crabmate-internal/project_metrics"]
-mcp = ["crabmate-internal/mcp"]
-fastembed = ["crabmate-internal/fastembed"]
-docker_sandbox = ["crabmate-internal/docker_sandbox"]
 
 [dependencies]
 crabmate-config = { path = "../crabmate-config", default-features = false }
-crabmate-internal = { path = "../crabmate-internal", default-features = false }
 crabmate-llm = { path = "../crabmate-llm" }
+crabmate-tools = { path = "../crabmate-tools" }
 crabmate-types = { path = "../crabmate-types" }
 async-trait = "0.1"
 log = "0.4"

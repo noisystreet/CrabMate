@@ -24,15 +24,21 @@ use self::orchestration_entry::{
 mod check_abort;
 mod completion_suppression;
 mod errors;
-mod execute;
+pub(crate) mod execute;
 pub(crate) mod run_command_dedupe;
 pub(crate) use execute::tools as execute_tools;
-mod hierarchical_intent_route;
+pub(crate) mod hierarchical_intent_route {
+    pub(crate) use crabmate_agent::agent_turn::hierarchical_intent_route::*;
+}
 mod hierarchy;
 mod intent;
-mod messages;
+pub(crate) mod messages {
+    pub(crate) use crabmate_agent::agent_turn::messages::*;
+}
 mod non_hierarchical_turn;
-mod orchestration_entry;
+pub(crate) mod orchestration_entry {
+    pub(crate) use crabmate_agent::agent_turn::orchestration_entry::*;
+}
 mod orchestration_route;
 mod outer_loop;
 mod outer_loop_build_idle;
@@ -49,7 +55,9 @@ mod staged;
 mod sub_agent_policy;
 mod task_level_evidence;
 mod turn_completion;
-mod turn_orchestration;
+pub(crate) mod turn_orchestration {
+    pub(crate) use crabmate_agent::agent_turn::turn_orchestration::*;
+}
 #[cfg(test)]
 mod turn_route_decision_golden;
 

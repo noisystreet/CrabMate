@@ -1,13 +1,11 @@
 //! `PlanStepExecutorKind`（分阶段 `executor_kind`）与 **DAG 节点 `node_tool_role`** 共用的工具允许表。
-//!
-//! 与 **`docs/工作流编排架构.md`** 分层一致：**轮内 DAG**（`workflow_execute`）只做同轮并行/依赖；**会话级分阶段**（`staged`）做滚动步与 `tools` 列表收窄；二者在「只读 / 写 / 测试」语义上共用本模块，避免 handler 再拼第三套 if。
 
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
 use crabmate_config::AgentConfig;
-use crabmate_internal::mcp::is_mcp_proxy_tool;
-use crabmate_internal::tool_registry;
+use crabmate_tools::registry_policy::is_readonly_tool;
+use crabmate_tools::tool_naming::is_mcp_proxy_tool;
 use crabmate_types::Tool;
 
 use crate::plan_artifact::PlanStepExecutorKind;
@@ -69,7 +67,7 @@ fn test_runner_allowed_name(cfg: &AgentConfig, name: &str) -> bool {
         .is_some_and(|s| s.contains(name))
 }
 
-/// 分阶段 `review_readonly` 步末空执行检测：须出现阅读/探查类只读工具（排除仅 `run_command --version` 探针）。
+/// 分阶段 `review_readonly` 步末空执行检测：须出现阅读/探查类只读工具。
 pub fn tool_name_implies_readonly_probe(name: &str) -> bool {
     if is_mcp_proxy_tool(name) {
         return false;
@@ -105,7 +103,7 @@ pub fn tool_name_implies_patch_write_progress(name: &str) -> bool {
     default_patch_write_tool_names().contains(name)
 }
 
-/// 该 `executor_kind` / 节点角色下是否允许调用该工具（**不**改变 `run_command` / MCP 等既有审批语义；仅做名单过滤）。
+/// 该 `executor_kind` / 节点角色下是否允许调用该工具。
 pub fn tool_allowed_for_step_executor_kind(
     cfg: &AgentConfig,
     name: &str,
@@ -121,19 +119,19 @@ pub fn tool_allowed_for_step_executor_kind(
             {
                 return false;
             }
-            tool_registry::is_readonly_tool(cfg, name) && !is_mcp_proxy_tool(name)
+            is_readonly_tool(cfg, name) && !is_mcp_proxy_tool(name)
         }
         PlanStepExecutorKind::PatchWrite => {
             if is_mcp_proxy_tool(name) {
                 return false;
             }
-            tool_registry::is_readonly_tool(cfg, name) || patch_write_allowed_name(cfg, name)
+            is_readonly_tool(cfg, name) || patch_write_allowed_name(cfg, name)
         }
         PlanStepExecutorKind::TestRunner => {
             if is_mcp_proxy_tool(name) {
                 return false;
             }
-            tool_registry::is_readonly_tool(cfg, name) || test_runner_allowed_name(cfg, name)
+            is_readonly_tool(cfg, name) || test_runner_allowed_name(cfg, name)
         }
     }
 }

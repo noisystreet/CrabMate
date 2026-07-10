@@ -33,27 +33,21 @@ use crate::user_data::McpRemoteToolSummary;
 use super::resolve::{ResolvedMcpConfig, ResolvedMcpServer};
 use super::turn_handle::{McpTurnHandle, McpTurnSessions};
 
-const MCP_TOOL_PREFIX: &str = "mcp__";
-
-/// OpenAI 兼容工具名前缀（`mcp__{slug}__{remote_name}`）。
-#[inline]
-pub fn is_mcp_proxy_tool(name: &str) -> bool {
-    name.starts_with(MCP_TOOL_PREFIX)
-}
+pub use crabmate_tools::tool_naming::{MCP_PROXY_PREFIX, is_mcp_proxy_tool};
 
 /// 单轮持有的 MCP 客户端（`rmcp` 在 Drop 时会清理子进程）。
 pub type McpClientSession = RunningService<RoleClient, ClientInfo>;
 
 pub fn mcp_tool_openai_name(server_slug: &str, tool_name: &str) -> String {
-    format!("{MCP_TOOL_PREFIX}{server_slug}__{tool_name}")
+    format!("{MCP_PROXY_PREFIX}{server_slug}__{tool_name}")
 }
 
 /// 解析 `mcp__{slug}__{remote}`；`slug` 与 `remote` 均非空时返回。
 pub fn parse_mcp_openai_tool_name(openai_name: &str) -> Option<(String, String)> {
-    if !openai_name.starts_with(MCP_TOOL_PREFIX) {
+    if !openai_name.starts_with(MCP_PROXY_PREFIX) {
         return None;
     }
-    let rest = openai_name.strip_prefix(MCP_TOOL_PREFIX)?;
+    let rest = openai_name.strip_prefix(MCP_PROXY_PREFIX)?;
     let (slug, remote) = rest.split_once("__")?;
     if slug.is_empty() || remote.is_empty() {
         return None;

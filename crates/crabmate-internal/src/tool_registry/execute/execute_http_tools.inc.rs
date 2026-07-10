@@ -48,7 +48,7 @@ async fn execute_http_fetch_impl(
             cli: cli_ctx.map(|c| &c.persistent_allowlist_shared),
         };
         match crate::tool_approval::interactive_gate_after_whitelist_miss(
-            web_ctx.map(|w| w.approval_sink()),
+            web_ctx.map(crate::tool_approval::web_tool_runtime_approval_sink),
             cli_ctx.map(|c| crate::tool_approval::CliApprovalInput {
                 auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command,
                 tui_blocking_approval_tx: c.tui_blocking_approval_tx.clone(),
@@ -162,7 +162,7 @@ async fn execute_http_request_impl(
             cli: cli_ctx.map(|c| &c.persistent_allowlist_shared),
         };
         match crate::tool_approval::interactive_gate_after_whitelist_miss(
-            web_ctx.map(|w| w.approval_sink()),
+            web_ctx.map(crate::tool_approval::web_tool_runtime_approval_sink),
             cli_ctx.map(|c| crate::tool_approval::CliApprovalInput {
                 auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command,
                 tui_blocking_approval_tx: c.tui_blocking_approval_tx.clone(),
