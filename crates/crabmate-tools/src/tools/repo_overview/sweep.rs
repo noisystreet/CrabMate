@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use crate::context_bootstrap::project_profile;
+use crate::project_profile;
 
 use super::parse::RepoSweepParams;
 use crate::tools::ToolContext;
@@ -49,7 +49,7 @@ fn rel_path_safe(workspace_root: &Path, rel: &str) -> Option<PathBuf> {
 fn tool_ctx_stub<'a>(workspace_root: &'a Path, max_output_len: usize) -> ToolContext<'a> {
     ToolContext {
         cfg: None,
-        codebase_semantic: None,
+        codebase_semantic_host: None,
         command_max_output_len: max_output_len,
         weather_timeout_secs: 0,
         allowed_commands: &[],
@@ -66,8 +66,7 @@ fn tool_ctx_stub<'a>(workspace_root: &'a Path, max_output_len: usize) -> ToolCon
         workspace_changelist: None,
         test_result_cache_enabled: false,
         test_result_cache_max_entries: 8,
-        long_term_memory: None,
-        long_term_memory_scope_id: None,
+        long_term_memory_host: None,
     }
 }
 

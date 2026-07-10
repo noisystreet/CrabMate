@@ -10,7 +10,9 @@ mod ci_tools;
 mod code_metrics;
 mod code_nav;
 mod command;
-pub use command::{RunCommandError, run_checked};
+pub use command::{
+    PreparedRunCommand, RunCommandError, prepare_run_command_for_pty_spawn, run_checked,
+};
 mod command_line_prepare;
 pub use command_line_prepare::split_command_prefix_if_embedded;
 mod container_tools;
@@ -41,7 +43,6 @@ pub mod http_fetch;
 mod json_format;
 mod jvm_tools;
 mod lint;
-mod long_term_memory_tools;
 mod markdown_links;
 mod nodejs_tools;
 pub mod output_util;
@@ -88,6 +89,7 @@ pub mod dev_tag;
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::memory_tool_host::{CodebaseSemanticToolHost, LongTermMemoryToolHost};
 use crate::tool_result::{ToolError, ToolResult};
 use crate::workspace::changelist::WorkspaceChangelist;
 use crate::workspace::path::{validate_effective_workspace_base, validate_workspace_set_path};
@@ -106,9 +108,8 @@ pub enum ToolCategory {
 pub struct ToolContext<'a> {
     /// 主 Agent / `tool_context_for*` 路径填充；工作流节点等自建上下文可为 `None`（部分工具将报错）。
     pub cfg: Option<&'a AgentConfig>,
-    /// 代码语义检索参数；主 Agent 路径由 `tool_context_for*` 从 [`AgentConfig`] 填充，其它路径为 `None` 时该工具不可用。
-    pub codebase_semantic:
-        Option<crate::memory::codebase_semantic_index::CodebaseSemanticToolParams>,
+    /// 代码语义检索；主 Agent 路径由 `crabmate-internal` 注入。
+    pub codebase_semantic_host: Option<&'a dyn CodebaseSemanticToolHost>,
     pub command_max_output_len: usize,
     pub weather_timeout_secs: u64,
     pub allowed_commands: &'a [String],
@@ -129,10 +130,8 @@ pub struct ToolContext<'a> {
     /// `cargo_test` / `npm run test` / 部分 `run_command cargo test` 的进程内输出缓存。
     pub test_result_cache_enabled: bool,
     pub test_result_cache_max_entries: usize,
-    /// 长期记忆运行时与会话作用域（供 `long_term_*` 工具）；缺省为 `None`。
-    pub long_term_memory:
-        Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
-    pub long_term_memory_scope_id: Option<String>,
+    /// 长期记忆工具；主 Agent 路径由 `crabmate-internal` 注入。
+    pub long_term_memory_host: Option<&'a dyn LongTermMemoryToolHost>,
 }
 
 /// 由 [`AgentConfig`] 与当前工作目录、命令白名单构造工具上下文（供 `run_tool` 使用）。
@@ -189,11 +188,7 @@ pub fn tool_context_for<'a>(
 ) -> ToolContext<'a> {
     ToolContext {
         cfg: Some(cfg),
-        codebase_semantic: Some(
-            crate::memory::codebase_semantic_index::CodebaseSemanticToolParams::from_agent_config(
-                cfg,
-            ),
-        ),
+        codebase_semantic_host: None,
         command_max_output_len: cfg.command_exec.command_max_output_len,
         weather_timeout_secs: cfg.weather_tool.weather_timeout_secs,
         allowed_commands,
@@ -210,28 +205,25 @@ pub fn tool_context_for<'a>(
         workspace_changelist: None,
         test_result_cache_enabled: cfg.chat_queues_cache.test_result_cache_enabled,
         test_result_cache_max_entries: cfg.chat_queues_cache.test_result_cache_max_entries,
-        long_term_memory: None,
-        long_term_memory_scope_id: None,
+        long_term_memory_host: None,
     }
 }
 
-/// 在 [`tool_context_for`] 基础上挂载单轮 `read_file` 缓存、会话变更集与可选长期记忆（供 `dispatch_tool` / `execute_tools`）。
+/// 在 [`tool_context_for`] 基础上挂载单轮 `read_file` 缓存、会话变更集与可选记忆宿主。
 pub fn tool_context_for_with_read_cache_and_memory<'a>(
     cfg: &'a AgentConfig,
     allowed_commands: &'a [String],
     working_dir: &'a std::path::Path,
     read_file_turn_cache: Option<&'a crate::read_file_turn_cache::ReadFileTurnCache>,
     workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
-    long_term_memory: Option<
-        std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>,
-    >,
-    long_term_memory_scope_id: Option<String>,
+    codebase_semantic_host: Option<&'a dyn CodebaseSemanticToolHost>,
+    long_term_memory_host: Option<&'a dyn LongTermMemoryToolHost>,
 ) -> ToolContext<'a> {
     ToolContext {
         read_file_turn_cache,
         workspace_changelist,
-        long_term_memory,
-        long_term_memory_scope_id,
+        codebase_semantic_host,
+        long_term_memory_host,
         ..tool_context_for(cfg, allowed_commands, working_dir)
     }
 }

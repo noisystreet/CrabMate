@@ -325,20 +325,30 @@ pub fn runner_present_clarification_questionnaire(args: &str, _ctx: &ToolContext
     crate::clarification_questionnaire::run_present_clarification_questionnaire(args)
 }
 
+fn dispatch_long_term_tool(name: &str, args: &str, ctx: &ToolContext<'_>) -> String {
+    let Some(cfg) = ctx.cfg else {
+        return "错误：工具上下文缺少 AgentConfig".to_string();
+    };
+    let Some(host) = ctx.long_term_memory_host else {
+        return "错误：当前会话未挂载长期记忆运行时（或未启用持久化）".to_string();
+    };
+    host.dispatch(name, args, cfg)
+}
+
 pub fn runner_long_term_remember(args: &str, ctx: &ToolContext<'_>) -> String {
-    long_term_memory_tools::long_term_remember(args, ctx)
+    dispatch_long_term_tool("long_term_remember", args, ctx)
 }
 
 pub fn runner_summarize_experience(args: &str, ctx: &ToolContext<'_>) -> String {
-    long_term_memory_tools::summarize_experience(args, ctx)
+    dispatch_long_term_tool("summarize_experience", args, ctx)
 }
 
 pub fn runner_long_term_forget(args: &str, ctx: &ToolContext<'_>) -> String {
-    long_term_memory_tools::long_term_forget(args, ctx)
+    dispatch_long_term_tool("long_term_forget", args, ctx)
 }
 
 pub fn runner_long_term_memory_list(args: &str, ctx: &ToolContext<'_>) -> String {
-    long_term_memory_tools::long_term_memory_list(args, ctx)
+    dispatch_long_term_tool("long_term_memory_list", args, ctx)
 }
 
 pub fn runner_error_output_playbook(args: &str, ctx: &ToolContext<'_>) -> String {
@@ -516,16 +526,11 @@ pub fn runner_search_in_files(args: &str, ctx: &ToolContext<'_>) -> String {
 }
 
 pub fn runner_codebase_semantic_search(args: &str, ctx: &ToolContext<'_>) -> String {
-    let Some(p) = ctx.codebase_semantic.as_ref() else {
+    let Some(host) = ctx.codebase_semantic_host else {
         return "错误：当前执行环境未注入代码语义检索配置，无法使用 codebase_semantic_search（如部分工作流节点路径）"
             .to_string();
     };
-    crate::memory::codebase_semantic_index::run_tool(
-        args,
-        ctx.working_dir,
-        p,
-        ctx.command_max_output_len,
-    )
+    host.run_search(args, ctx.working_dir, ctx.command_max_output_len)
 }
 
 pub fn runner_markdown_check_links(args: &str, ctx: &ToolContext<'_>) -> String {

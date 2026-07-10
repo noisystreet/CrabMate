@@ -116,27 +116,34 @@ pub fn dep_compat_kind_for_health_key(dep_key: &str) -> Option<DepCompatKind> {
     }
 }
 
-/// 将 `check_cmd` 成功输出与兼容性结论合并为 [`crate::health::HealthCheckItem`]。
+/// 单项健康检查结果（与 [`crabmate-internal::health::HealthCheckItem`] 字段一致）。
+#[derive(Debug, Clone)]
+pub struct HealthCheckItem {
+    pub ok: bool,
+    pub detail: Option<String>,
+}
+
+/// 将 `check_cmd` 成功输出与兼容性结论合并为 [`HealthCheckItem`]。
 pub fn health_item_from_cmd_result(
     internal_key: &str,
     cmd_result: Result<String, String>,
-) -> crate::health::HealthCheckItem {
+) -> HealthCheckItem {
     match cmd_result {
         Ok(detail) => {
             if let Some(kind) = dep_compat_kind_for_health_key(internal_key)
                 && let Some(reason) = validate_dep_version(kind, &detail)
             {
-                return crate::health::HealthCheckItem {
+                return HealthCheckItem {
                     ok: false,
                     detail: Some(format!("{detail}（{reason}）")),
                 };
             }
-            crate::health::HealthCheckItem {
+            HealthCheckItem {
                 ok: true,
                 detail: Some(detail),
             }
         }
-        Err(err) => crate::health::HealthCheckItem {
+        Err(err) => HealthCheckItem {
             ok: false,
             detail: Some(err),
         },

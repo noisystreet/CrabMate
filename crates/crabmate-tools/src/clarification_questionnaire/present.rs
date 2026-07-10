@@ -1,7 +1,5 @@
 use serde::Deserialize;
 
-use crate::sse::{ClarificationQuestionField, ClarificationQuestionnaireBody};
-
 use super::{
     MAX_HINT_CHARS, MAX_INTRO_CHARS, MAX_LABEL_CHARS, MAX_QUESTION_ID_LEN, MAX_QUESTIONS,
     MIN_QUESTIONS,
@@ -27,7 +25,23 @@ struct PresentQuestion {
     kind: Option<String>,
 }
 
-fn parse_present_clarification_body(
+#[derive(Debug, Clone)]
+pub struct ClarificationQuestionField {
+    pub id: String,
+    pub label: String,
+    pub hint: Option<String>,
+    pub required: Option<bool>,
+    pub kind: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ClarificationQuestionnaireBody {
+    pub questionnaire_id: String,
+    pub intro: String,
+    pub questions: Vec<ClarificationQuestionField>,
+}
+
+pub fn parse_present_clarification_body(
     args_json: &str,
 ) -> Result<ClarificationQuestionnaireBody, String> {
     let args: PresentArgs =
@@ -131,19 +145,4 @@ pub fn run_present_clarification_questionnaire(args_json: &str) -> String {
         }
         Err(e) => format!("退出码：1\n{e}\n"),
     }
-}
-
-/// 工具成功且为澄清问卷时解析出控制面体（与 SSE / TUI 回调共用）。
-pub fn clarification_questionnaire_body_if_tool_ok(
-    tool_name: &str,
-    args_json: &str,
-    tool_output: &str,
-) -> Option<crate::sse::ClarificationQuestionnaireBody> {
-    if tool_name != "present_clarification_questionnaire" {
-        return None;
-    }
-    if !tool_output.trim_start().starts_with("退出码：0") {
-        return None;
-    }
-    parse_present_clarification_body(args_json).ok()
 }

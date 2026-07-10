@@ -33,7 +33,7 @@ fn markdown_links_failed(block: &str) -> bool {
 fn tool_context_for_sweep(workspace_root: &Path, max_output_len: usize) -> ToolContext<'_> {
     ToolContext {
         cfg: None,
-        codebase_semantic: None,
+        codebase_semantic_host: None,
         command_max_output_len: max_output_len,
         weather_timeout_secs: 0,
         allowed_commands: &[],
@@ -50,8 +50,7 @@ fn tool_context_for_sweep(workspace_root: &Path, max_output_len: usize) -> ToolC
         workspace_changelist: None,
         test_result_cache_enabled: false,
         test_result_cache_max_entries: 8,
-        long_term_memory: None,
-        long_term_memory_scope_id: None,
+        long_term_memory_host: None,
     }
 }
 
