@@ -24,8 +24,9 @@ impl RegenAttachGate {
         chat: ChatSessionSignals,
         exclude_asst_id: &str,
     ) -> Self {
-        let status_busy = shell.stream.status_busy.get();
-        let tool_busy = shell.stream.tool_busy.get();
+        let lc = shell.stream.turn_lifecycle.get();
+        let status_busy = crate::app::turn_lifecycle::turn_lifecycle_model_ui_busy(lc);
+        let tool_busy = crate::app::turn_lifecycle::turn_lifecycle_tool_ui_busy(lc);
         let abort_present = shell
             .stream
             .abort_cell

@@ -195,40 +195,49 @@ pub(crate) fn session_has_stream_loading_placeholders_untracked(chat: ChatSessio
     })
 }
 
-/// Web 流式：`tool_busy` ∨ 时间线 Loading 工具占位（状态栏「工具执行中」与此对齐）。
+/// Web 流式：`tool_timeline_busy_ui` 见 [`make_chat_stream_busy_memos`]（[`crate::app::chat::turn_lifecycle`] + Loading 工具占位）。
 ///
-/// **`stream_turn_busy_ui`** 另见 [`make_chat_stream_busy_memos`]：与「停止」门闩同源，不再手写第二套 OR。
+/// **`stream_turn_busy_ui`** 与「停止」门闩同源，由 [`crate::app::chat::turn_lifecycle`] 驱动（阶段 C）。
 #[derive(Clone, Copy)]
 pub struct ChatStreamBusyMemos {
     pub stream_turn_busy_ui: Memo<bool>,
     pub tool_timeline_busy_ui: Memo<bool>,
+    /// 底栏「模型生成中」指示（Attaching / Draining / 非工具 Streaming）。
+    pub model_status_busy: Memo<bool>,
 }
 
 /// 在 [`crate::app::chat::wire_chat_domain::wire_chat_domain_effects`] 内**单次**构造，经 [`crate::app::chat::handles::ChatColumnShell`] 下发到底栏 / 合成器 / 消息行。
 ///
-/// **`stream_turn_busy_ui`**：`status_busy` ∨ 工具时间线忙 ∨ 助手 Loading 占位 ∨ **`AbortController` 槽位已占用**，
-/// 与 [`crate::app::chat::stream_user_abort::stream_ui_inflight_untracked`] 使用同一套 OR，避免「停止」门闩与忙状态分裂。
+/// **`stream_turn_busy_ui`**：[`TurnLifecycle`] 粗 busy ∨ 助手 Loading 占位 ∨ **`AbortController` 槽位**；
+/// 与 [`crate::app::chat::stream_user_abort::stream_ui_inflight_untracked`] 使用同一套谓词。
 #[must_use]
 pub fn make_chat_stream_busy_memos(
     chat: ChatSessionSignals,
-    status_busy: RwSignal<bool>,
-    tool_busy: RwSignal<bool>,
+    turn_lifecycle: RwSignal<crate::app::turn_lifecycle::TurnLifecycleState>,
     stream_abort_epoch: RwSignal<u32>,
     abort_present: Arc<dyn Fn() -> bool + Send + Sync>,
 ) -> ChatStreamBusyMemos {
-    let tool_timeline_busy_ui =
-        Memo::new(move |_| tool_busy.get() || session_has_loading_tool_message(chat));
+    use crate::app::turn_lifecycle::{
+        turn_lifecycle_model_ui_busy, turn_lifecycle_stream_turn_busy, turn_lifecycle_tool_ui_busy,
+    };
+
+    let tool_timeline_busy_ui = Memo::new(move |_| {
+        turn_lifecycle_tool_ui_busy(turn_lifecycle.get()) || session_has_loading_tool_message(chat)
+    });
+    let model_status_busy = Memo::new(move |_| turn_lifecycle_model_ui_busy(turn_lifecycle.get()));
     let ap = Arc::clone(&abort_present);
     let stream_turn_busy_ui = Memo::new(move |_| {
         let _ = stream_abort_epoch.get();
-        status_busy.get()
-            || tool_busy.get()
-            || session_has_stream_loading_placeholders(chat)
-            || ap()
+        turn_lifecycle_stream_turn_busy(
+            turn_lifecycle.get(),
+            session_has_stream_loading_placeholders(chat),
+            ap(),
+        )
     });
     ChatStreamBusyMemos {
         stream_turn_busy_ui,
         tool_timeline_busy_ui,
+        model_status_busy,
     }
 }
 
