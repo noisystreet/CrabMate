@@ -18,39 +18,24 @@ use super::params::RunLoopParams;
 mod completed_replanning_reduce;
 mod completed_replanning_suppression;
 pub(crate) mod empty_execution;
-mod ensemble_fsm;
-mod ensemble_schedule_fsm;
-mod full_pipeline_fsm;
-mod full_pipeline_reduce;
 mod orchestrator;
 mod patch_planner;
 mod phase_label;
+mod plan_pipeline_schedule;
 mod plan_stagnation;
-mod planner_parse_fsm;
 mod planner_round_driver;
-mod planner_round_fsm;
-mod post_parse_pipeline_fsm;
 mod prepared_parse_fsm;
-mod prepared_post_parse_fsm;
-mod prepared_route_reduce;
 mod prepared_stagnation_reduce;
 mod rolling_horizon_advance_reduce;
 mod rolling_horizon_facade;
 mod rolling_horizon_preflight_reduce;
 mod sse;
 mod staged_parse_terminal;
-mod staged_step_fsm;
 mod staged_step_patch_recover;
 mod step_after_outer;
 mod step_failure_exit;
-mod step_iteration_fsm;
-mod step_iteration_reduce;
-mod step_loop_fsm;
-mod step_patch_recover_reduce;
-mod step_patch_route_fsm;
+mod step_loop;
 mod steps_loop;
-mod steps_loop_reduce;
-mod steps_loop_route_fsm;
 mod turn_driver;
 mod turn_fsm;
 mod turn_orchestrator_fsm;
@@ -71,32 +56,29 @@ use completed_replanning_reduce::{
     CompletedReplanningReduceAction, reduce_completed_replanning_suppression,
 };
 use completed_replanning_suppression::log_completed_replanning_suppressed;
-use ensemble_fsm::{EnsembleMergeOutcome, ensemble_merge_outcome_from_parsed_steps};
-use full_pipeline_fsm::{
-    StagedFullPipelinePhase, debug_staged_full_pipeline_enter,
-    debug_staged_full_pipeline_transition,
-};
-use full_pipeline_reduce::{
-    FullPipelineSegment, FullPipelineSegmentReduceAction, full_pipeline_entry_phase,
-    full_pipeline_phase_after_segment, reduce_full_pipeline_segment,
-};
 use patch_planner::StagedPlanPatchPlannerCtx;
-use planner_parse_fsm::omit_no_task_planner_from_history;
+use plan_pipeline_schedule::{
+    EnsembleMergeOutcome, FullPipelineSegment, FullPipelineSegmentReduceAction,
+    StagedFullPipelinePhase, StagedPlanOptimizerRoute, debug_staged_full_pipeline_enter,
+    debug_staged_full_pipeline_transition, ensemble_merge_outcome_from_parsed_steps,
+    ensemble_merge_skip_for_casual_prompt, full_pipeline_entry_phase,
+    full_pipeline_phase_after_segment, log_staged_plan_ensemble_route,
+    log_staged_plan_optimizer_route, optimizer_round_should_run, reduce_full_pipeline_segment,
+};
+use plan_pipeline_schedule::{
+    PreparedFullPipelineInputs, PreparedFullPipelineSchedule, PreparedPostParseSchedule,
+    prepared_full_pipeline_schedule, prepared_post_parse_schedule,
+};
 use planner_round_driver::{
     complete_first_planner_round_maybe_retry_tool_reject,
     complete_one_staged_planner_assistant_round, emit_staged_planner_tool_call_rejected_timeline,
     maybe_run_staged_plan_ensemble_then_merge, run_staged_plan_nl_followup_round,
 };
-use post_parse_pipeline_fsm::{
-    ensemble_merge_skip_for_casual_prompt, log_staged_plan_ensemble_route,
-    log_staged_plan_optimizer_route, optimizer_round_should_run,
+use prepared_parse_fsm::omit_no_task_planner_from_history;
+use prepared_parse_fsm::{
+    PreparedPlannerRoute, PreparedRouteReduceAction, reduce_prepared_planner_route,
+    resolve_prepared_planner_route,
 };
-use prepared_parse_fsm::{PreparedPlannerRoute, resolve_prepared_planner_route};
-use prepared_post_parse_fsm::{
-    PreparedFullPipelineInputs, PreparedFullPipelineSchedule, PreparedPostParseSchedule,
-    prepared_full_pipeline_schedule, prepared_post_parse_schedule,
-};
-use prepared_route_reduce::{PreparedRouteReduceAction, reduce_prepared_planner_route};
 use prepared_stagnation_reduce::{
     PreparedStagnationReduceAction, reduce_prepared_stagnation_after_parse,
 };
@@ -426,7 +408,7 @@ struct StagedOptimizerRoundParams<'a, 'b, F> {
     planner_render_to_terminal: bool,
     make_step_user_message: &'a F,
     plan: &'a mut plan_artifact::AgentReplyPlanV1,
-    optimizer_route: planner_round_fsm::StagedPlanOptimizerRoute,
+    optimizer_route: StagedPlanOptimizerRoute,
     parallel_csv: &'a str,
 }
 
@@ -879,32 +861,45 @@ where
 mod staged_not_found_convergence_tests {
     use crate::agent::plan_artifact::PlanArtifactError;
 
-    use super::planner_parse_fsm::{
-        StagedPlannerParseRoute, entered_implies_finish_on_plan_not_found,
-        staged_planner_parse_route,
+    use super::prepared_parse_fsm::{
+        PreparedPlannerParseOutcome, entered_implies_finish_on_plan_not_found,
+        resolve_parse_with_assistant,
     };
+    use crate::types::Message;
 
     #[test]
     fn not_found_does_not_quiet_finish_for_plain_first_round() {
         assert!(
             !entered_implies_finish_on_plan_not_found(false),
-            "普通首轮（未进入步后重规划）遇到 NotFound 不应走 QuietFinishOnPlanNotFound"
+            "普通首轮（未进入步后重规划）遇到 NotFound 不应走 QuietFinish"
         );
         assert!(!matches!(
-            staged_planner_parse_route(&PlanArtifactError::NotFound, false, "x", None),
-            StagedPlannerParseRoute::QuietFinishOnPlanNotFound
-        ),);
+            resolve_parse_with_assistant(
+                Err(PlanArtifactError::NotFound),
+                false,
+                "x",
+                None,
+                Message::user_only("u"),
+            ),
+            PreparedPlannerParseOutcome::QuietFinish
+        ));
     }
 
     #[test]
     fn not_found_finishes_only_after_step_execution_reentry() {
         assert!(
             entered_implies_finish_on_plan_not_found(true),
-            "仅在同 turn 的步后重规划轮，NotFound 才应触发 QuietFinishOnPlanNotFound"
+            "仅在同 turn 的步后重规划轮，NotFound 才应触发 QuietFinish"
         );
         assert!(matches!(
-            staged_planner_parse_route(&PlanArtifactError::NotFound, true, "x", None),
-            StagedPlannerParseRoute::QuietFinishOnPlanNotFound
-        ),);
+            resolve_parse_with_assistant(
+                Err(PlanArtifactError::NotFound),
+                true,
+                "x",
+                None,
+                Message::user_only("u"),
+            ),
+            PreparedPlannerParseOutcome::QuietFinish
+        ));
     }
 }

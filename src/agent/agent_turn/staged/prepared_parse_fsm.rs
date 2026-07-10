@@ -3,10 +3,9 @@
 //! **`entered_from_step_execution_round`** 映射为 **`PreparedPlannerParseOutcome`**（纯函数，无 IO）。
 //!
 //! **`PreparedPlannerRoute`**：首轮解析后对 **`run_staged_plan_with_prepared_request`** 主路径的**终端路由**
-//!（静默结束 / 降级 outer_loop / 进入 post-parse 管线）；与 **`PreparedPlannerParseOutcome`** 的关系见
-//! **[`resolve_prepared_planner_route`]**。
+//!（静默结束 / 降级 outer_loop / 进入 post-parse 管线）；**[`PreparedRouteReduceAction`]** 为同构 IO reduce。
 //!
-//! ensemble / 优化轮 **是否调用** 仍由 **`planner_round_fsm`** + **`post_parse_pipeline_fsm`** 计算；
+//! ensemble / 优化轮 **是否调用** 仍由 **`plan_pipeline_schedule`** 计算；
 //! 本模块仅收拢解析分支，避免 `mod.rs` 深层嵌套 `match`。
 //!
 //! 见 `docs/design/per_state_machine_consolidation.md`（分阶段回合编排）。
@@ -14,7 +13,10 @@
 use crate::agent::plan_artifact::{AgentReplyPlanV1, PlanArtifactError};
 use crate::types::Message;
 
-use super::staged_parse_terminal::StagedParseTerminalRoute;
+use super::super::intent::readonly_overview_bypass;
+
+/// 规划轮 assistant 合并正文（思维链+正文）视为「已直接作答」的最小字符数（Unicode 标量）。
+pub(crate) const PLANNER_DIRECT_ANSWER_MIN_CHARS: usize = 240;
 
 /// 首轮规划解析完成后，对 **`run_staged_plan_with_prepared_request`** 的三向路由（**不含** assistant `Message`；
 /// 调用方保留单次 LLM 返回的 `msg` 供 `push` / `outer_loop`）。
@@ -39,6 +41,49 @@ impl PreparedPlannerRoute {
             Self::ContinueWithPlan { .. } => "continue_with_plan",
         }
     }
+
+    /// `resolve_prepared_planner_route` 之后的纯 reduce 动作（IO 仍在 **`mod.rs`**）。
+    pub(crate) fn reduce_action(&self) -> PreparedRouteReduceAction {
+        match self {
+            Self::QuietFinish => PreparedRouteReduceAction::FinishQuiet,
+            Self::FinishWithDirectPlannerAnswer => {
+                PreparedRouteReduceAction::FinishWithAssistantOnly
+            }
+            Self::DegradeToOuterLoop => PreparedRouteReduceAction::DegradeToOuterLoop,
+            Self::ContinueWithPlan { .. } => PreparedRouteReduceAction::ContinuePostParse,
+        }
+    }
+}
+
+/// `resolve_prepared_planner_route` 之后的纯 reduce 输出（与 [`PreparedPlannerRoute`] 一一对应）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PreparedRouteReduceAction {
+    /// 分步后重入且未产出计划：静默结束。
+    FinishQuiet,
+    /// 只读概览类终答：落盘 assistant 后结束。
+    FinishWithAssistantOnly,
+    /// 解析失败等：落盘 assistant 后走外循环。
+    DegradeToOuterLoop,
+    /// 合法 `agent_reply_plan`：进入 post-parse 管线（no_task / full-pipeline）。
+    ContinuePostParse,
+}
+
+impl PreparedRouteReduceAction {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::FinishQuiet => "finish_quiet",
+            Self::FinishWithAssistantOnly => "finish_with_assistant_only",
+            Self::DegradeToOuterLoop => "degrade_to_outer_loop",
+            Self::ContinuePostParse => "continue_post_parse",
+        }
+    }
+}
+
+#[inline]
+pub(crate) fn reduce_prepared_planner_route(
+    route: &PreparedPlannerRoute,
+) -> PreparedRouteReduceAction {
+    route.reduce_action()
 }
 
 /// 合并 **`resolve_parse_with_assistant`** 与降级路径日志，产出 **`PreparedPlannerRoute`**（无 IO）。
@@ -100,11 +145,11 @@ pub(crate) fn resolve_prepared_planner_route(
 }
 
 /// 解析一步的终端路由（调用方执行 IO：`push` / `outer_loop` / 继续后续 pipeline）。
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PreparedPlannerParseOutcome {
     /// 已得 **`AgentReplyPlanV1`**，进入 **no_task / ensemble / 优化 / 步循环**。
     ContinueWithPlan { plan: AgentReplyPlanV1 },
-    /// **`QuietFinishOnPlanNotFound`**：本分阶段回合静默结束。
+    /// 步后重入且无结构化计划：本分阶段回合静默结束。
     QuietFinish,
     /// 降级到常规 **`run_agent_outer_loop`**；调用方使用外层已持有的 **`msg`** 写入历史。
     DegradeToOuterLoop,
@@ -112,7 +157,7 @@ pub(crate) enum PreparedPlannerParseOutcome {
     FinishWithDirectPlannerAnswer,
 }
 
-/// 表驱动：对等旧实现中 **`parse_result` + `staged_planner_parse_route`** 分支。
+/// 表驱动：将 **`PlanArtifactError`** 映射为解析终端 outcome（原 **`planner_parse_fsm::staged_planner_parse_route`**）。
 pub(crate) fn resolve_parse_with_assistant(
     parse_result: Result<AgentReplyPlanV1, PlanArtifactError>,
     entered_from_step_execution_round: bool,
@@ -122,27 +167,92 @@ pub(crate) fn resolve_parse_with_assistant(
 ) -> PreparedPlannerParseOutcome {
     match parse_result {
         Ok(plan) => PreparedPlannerParseOutcome::ContinueWithPlan { plan },
-        Err(parse_err) => {
-            let parse_route = super::planner_parse_fsm::staged_planner_parse_route(
-                &parse_err,
-                entered_from_step_execution_round,
-                merged_answer_text,
-                user_task,
-            );
-            match StagedParseTerminalRoute::from_planner_parse_route(parse_route) {
-                StagedParseTerminalRoute::QuietFinish => PreparedPlannerParseOutcome::QuietFinish,
-                StagedParseTerminalRoute::FinishWithDirectAnswer => {
-                    PreparedPlannerParseOutcome::FinishWithDirectPlannerAnswer
-                }
-                StagedParseTerminalRoute::DegradeToOuterLoop => {
-                    PreparedPlannerParseOutcome::DegradeToOuterLoop
-                }
-                StagedParseTerminalRoute::ContinueWithPlan { .. } => {
-                    PreparedPlannerParseOutcome::DegradeToOuterLoop
-                }
-            }
+        Err(parse_err) => parse_err_planner_outcome(
+            &parse_err,
+            entered_from_step_execution_round,
+            merged_answer_text,
+            user_task,
+        ),
+    }
+}
+
+fn parse_err_planner_outcome(
+    parse_err: &PlanArtifactError,
+    entered_from_step_execution_round: bool,
+    merged_answer_text: &str,
+    user_task: Option<&str>,
+) -> PreparedPlannerParseOutcome {
+    if matches!(parse_err, PlanArtifactError::NotFound) {
+        if entered_implies_finish_on_plan_not_found(entered_from_step_execution_round) {
+            return PreparedPlannerParseOutcome::QuietFinish;
+        }
+        if should_finish_on_direct_planner_answer(merged_answer_text, user_task) {
+            return PreparedPlannerParseOutcome::FinishWithDirectPlannerAnswer;
         }
     }
+    PreparedPlannerParseOutcome::DegradeToOuterLoop
+}
+
+/// 首轮无 JSON 规划、但规划轮已写出足够长的只读分析类正文时，不再调用外循环。
+#[inline]
+pub(crate) fn should_finish_on_direct_planner_answer(
+    merged_answer_text: &str,
+    user_task: Option<&str>,
+) -> bool {
+    if !planner_answer_text_substantive_enough(merged_answer_text) {
+        return false;
+    }
+    match user_task.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(task) => {
+            readonly_overview_bypass::readonly_overview_task_heuristic(task)
+                || task_looks_like_readonly_overview_short(task)
+        }
+        None => false,
+    }
+}
+
+#[inline]
+pub(crate) fn planner_answer_text_substantive_enough(merged_answer_text: &str) -> bool {
+    merged_answer_text.chars().count() >= PLANNER_DIRECT_ANSWER_MIN_CHARS
+}
+
+/// 极短 user 句（无「分析」等 consult 词）时的补充匹配。
+fn task_looks_like_readonly_overview_short(task: &str) -> bool {
+    let lower = task.trim().to_lowercase();
+    if lower.is_empty() {
+        return false;
+    }
+    if super::super::intent::advisory_bypass::task_has_impl_strength_markers(&lower, &[]) {
+        return false;
+    }
+    matches!(
+        lower.as_str(),
+        "分析当前项目"
+            | "分析项目"
+            | "分析仓库"
+            | "分析代码库"
+            | "介绍当前项目"
+            | "项目概览"
+            | "仓库概览"
+    )
+}
+
+/// Web 且未开启 RAW：对 `no_task` 规划不向会话写入 assistant（由 NL 轮承担可见输出）。
+#[inline]
+pub(crate) fn omit_no_task_planner_from_history(
+    web_out_active: bool,
+    web_raw_assistant_output: bool,
+    plan_no_task: bool,
+) -> bool {
+    web_out_active && !web_raw_assistant_output && plan_no_task
+}
+
+/// 与「步执行后重入的无工具规划轮」标记对齐：`true` 时 `NotFound` 走静默收敛。
+#[inline]
+pub(crate) fn entered_implies_finish_on_plan_not_found(
+    entered_from_step_execution_round: bool,
+) -> bool {
+    entered_from_step_execution_round
 }
 
 #[cfg(test)]
@@ -166,6 +276,10 @@ mod tests {
             }],
             no_task: false,
         }
+    }
+
+    fn long_overview_answer() -> String {
+        "好的，我来分析当前项目。\n\n## 项目总览\n\n".repeat(20)
     }
 
     #[test]
@@ -196,6 +310,79 @@ mod tests {
             Message::user_only("u"),
         );
         assert!(matches!(o, PreparedPlannerParseOutcome::QuietFinish));
+    }
+
+    #[test]
+    fn not_found_finishes_only_when_entered_from_step_round() {
+        assert_eq!(
+            parse_err_planner_outcome(
+                &PlanArtifactError::NotFound,
+                false,
+                "short",
+                Some("分析当前项目"),
+            ),
+            PreparedPlannerParseOutcome::DegradeToOuterLoop
+        );
+        assert_eq!(
+            parse_err_planner_outcome(&PlanArtifactError::NotFound, true, "short", None),
+            PreparedPlannerParseOutcome::QuietFinish
+        );
+    }
+
+    #[test]
+    fn not_found_substantive_readonly_overview_finishes_without_outer() {
+        assert_eq!(
+            parse_err_planner_outcome(
+                &PlanArtifactError::NotFound,
+                false,
+                long_overview_answer().as_str(),
+                Some("分析当前项目"),
+            ),
+            PreparedPlannerParseOutcome::FinishWithDirectPlannerAnswer
+        );
+    }
+
+    #[test]
+    fn not_found_substantive_but_impl_task_still_degrades() {
+        assert_eq!(
+            parse_err_planner_outcome(
+                &PlanArtifactError::NotFound,
+                false,
+                long_overview_answer().as_str(),
+                Some("分析当前项目并请修改 main.rs"),
+            ),
+            PreparedPlannerParseOutcome::DegradeToOuterLoop
+        );
+    }
+
+    #[test]
+    fn non_not_found_always_degrades() {
+        assert_eq!(
+            parse_err_planner_outcome(
+                &PlanArtifactError::WrongType("x".into()),
+                true,
+                long_overview_answer().as_str(),
+                Some("分析当前项目"),
+            ),
+            PreparedPlannerParseOutcome::DegradeToOuterLoop
+        );
+        assert_eq!(
+            parse_err_planner_outcome(
+                &PlanArtifactError::EmptySteps,
+                false,
+                long_overview_answer().as_str(),
+                Some("分析当前项目"),
+            ),
+            PreparedPlannerParseOutcome::DegradeToOuterLoop
+        );
+    }
+
+    #[test]
+    fn omit_no_task_only_on_web_without_raw() {
+        assert!(omit_no_task_planner_from_history(true, false, true));
+        assert!(!omit_no_task_planner_from_history(false, false, true));
+        assert!(!omit_no_task_planner_from_history(true, true, true));
+        assert!(!omit_no_task_planner_from_history(true, false, false));
     }
 
     #[test]
@@ -265,5 +452,31 @@ mod tests {
             PreparedPlannerRoute::FinishWithDirectPlannerAnswer
         ));
         assert_eq!(r.as_static_str(), "finish_with_direct_planner_answer");
+    }
+
+    #[test]
+    fn reduce_matches_prepared_route_variants() {
+        let plan = AgentReplyPlanV1 {
+            plan_type: "agent_reply_plan".into(),
+            version: 1,
+            steps: vec![],
+            no_task: false,
+        };
+        assert_eq!(
+            PreparedPlannerRoute::QuietFinish.reduce_action(),
+            PreparedRouteReduceAction::FinishQuiet
+        );
+        assert_eq!(
+            PreparedPlannerRoute::FinishWithDirectPlannerAnswer.reduce_action(),
+            PreparedRouteReduceAction::FinishWithAssistantOnly
+        );
+        assert_eq!(
+            PreparedPlannerRoute::DegradeToOuterLoop.reduce_action(),
+            PreparedRouteReduceAction::DegradeToOuterLoop
+        );
+        assert_eq!(
+            PreparedPlannerRoute::ContinueWithPlan { plan }.reduce_action(),
+            PreparedRouteReduceAction::ContinuePostParse
+        );
     }
 }

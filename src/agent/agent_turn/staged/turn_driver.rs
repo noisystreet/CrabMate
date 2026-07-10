@@ -1,5 +1,7 @@
 //! 分阶段回合 **运行时 driver**（`StagedTurnOrchestratorPhase` 权威 + 步后早停决策）。
 //! 见 `docs/design/per_state_machine_consolidation.md` §3.2。
+//!
+//! 所有 `record_*` 经 **`staged_turn_orchestrator_step`** 单表更新相位。
 
 use super::super::params::RunLoopParams;
 use super::super::task_level_evidence::{
@@ -7,22 +9,17 @@ use super::super::task_level_evidence::{
 };
 use super::super::turn_completion::evaluate_turn_staged_rolling_horizon_early_stop;
 use super::StagedPlanRunOutcome;
-use super::full_pipeline_fsm::StagedFullPipelinePhase;
 use super::orchestrator::StagedRoundOrchestratorPhase;
-use super::prepared_post_parse_fsm::PreparedPostParseSchedule;
-use super::prepared_route_reduce::PreparedRouteReduceAction;
+use super::plan_pipeline_schedule::{PreparedPostParseSchedule, StagedFullPipelinePhase};
+use super::prepared_parse_fsm::PreparedRouteReduceAction;
 use super::rolling_horizon_advance_reduce::RollingHorizonAdvanceReduceAction;
 use super::rolling_horizon_preflight_reduce::RollingHorizonPreflightAction;
 use super::staged_parse_terminal::StagedParseTerminalRoute;
-use super::step_iteration_reduce::StepIterationReduceAction;
-use super::step_patch_recover_reduce::StepPatchRecoverReduceAction;
+use super::step_loop::{StepIterationReduceAction, StepPatchRecoverReduceAction};
 use super::turn_fsm::StagedTurnPhase;
 use super::turn_orchestrator_fsm::{
-    StagedTurnOrchestratorPhase, orchestrator_phase_for_full_pipeline,
-    orchestrator_phase_for_post_parse_schedule, orchestrator_phase_for_prepared_route,
-    orchestrator_phase_for_prepared_route_reduce, orchestrator_phase_for_rolling_horizon_preflight,
-    orchestrator_phase_for_round_orchestrator, orchestrator_phase_for_step_iteration_reduce,
-    orchestrator_phase_for_steps_loop_trace, orchestrator_phase_for_turn_phase,
+    StagedTurnOrchestratorEvent, StagedTurnOrchestratorPhase, StagedTurnOrchestratorStepOutcome,
+    staged_turn_orchestrator_step,
 };
 
 /// 滚动视界外层持有的运行时顶层相位（与 **`tracing`** `staged_turn_orchestrator_phase` 对齐）。
@@ -38,67 +35,60 @@ impl StagedTurnDriver {
         }
     }
 
+    fn apply_event(&mut self, event: StagedTurnOrchestratorEvent<'_>) {
+        match staged_turn_orchestrator_step(event) {
+            StagedTurnOrchestratorStepOutcome::Set(phase) => self.phase = phase,
+            StagedTurnOrchestratorStepOutcome::Unchanged => {}
+        }
+    }
+
     pub(crate) fn record_turn_phase(&mut self, turn_phase: StagedTurnPhase) {
-        self.phase = orchestrator_phase_for_turn_phase(turn_phase);
+        self.apply_event(StagedTurnOrchestratorEvent::TurnPhase(turn_phase));
     }
 
     pub(crate) fn record_parse_terminal(&mut self, terminal: &StagedParseTerminalRoute) {
-        self.phase = orchestrator_phase_for_prepared_route(&terminal.to_prepared_planner_route());
+        self.apply_event(StagedTurnOrchestratorEvent::ParseTerminal(terminal));
     }
 
     pub(crate) fn record_prepared_route_reduce(&mut self, action: PreparedRouteReduceAction) {
-        self.phase = orchestrator_phase_for_prepared_route_reduce(action);
+        self.apply_event(StagedTurnOrchestratorEvent::PreparedRouteReduce(action));
     }
 
     pub(crate) fn record_step_iteration_reduce(&mut self, action: StepIterationReduceAction) {
-        self.phase = orchestrator_phase_for_step_iteration_reduce(action);
+        self.apply_event(StagedTurnOrchestratorEvent::StepIterationReduce(action));
     }
 
     pub(crate) fn record_rolling_horizon_preflight(
         &mut self,
         action: RollingHorizonPreflightAction,
     ) {
-        if matches!(action, RollingHorizonPreflightAction::ContinueIteration) {
-            return;
-        }
-        self.phase = orchestrator_phase_for_rolling_horizon_preflight(action);
+        self.apply_event(StagedTurnOrchestratorEvent::RollingHorizonPreflight(action));
     }
 
     pub(crate) fn record_rolling_horizon_advance_reduce(
         &mut self,
         action: RollingHorizonAdvanceReduceAction,
     ) {
-        match action {
-            RollingHorizonAdvanceReduceAction::ContinueLoop { next_phase, .. } => {
-                self.phase = orchestrator_phase_for_turn_phase(next_phase);
-            }
-            RollingHorizonAdvanceReduceAction::Finish => {
-                self.phase = StagedTurnOrchestratorPhase::Done;
-            }
-            RollingHorizonAdvanceReduceAction::ReplanExhausted
-            | RollingHorizonAdvanceReduceAction::Propagate => {}
-        }
+        self.apply_event(StagedTurnOrchestratorEvent::RollingHorizonAdvance(action));
     }
 
     pub(crate) fn record_step_patch_recover_reduce(
         &mut self,
         action: &StepPatchRecoverReduceAction,
     ) {
-        if matches!(action, StepPatchRecoverReduceAction::Run(_)) {
-            self.phase = StagedTurnOrchestratorPhase::PatchReplanner;
-        }
+        self.apply_event(StagedTurnOrchestratorEvent::StepPatchRecoverReduce(action));
     }
 
     pub(crate) fn record_post_parse_schedule(&mut self, schedule: PreparedPostParseSchedule) {
-        self.phase = orchestrator_phase_for_post_parse_schedule(schedule);
+        self.apply_event(StagedTurnOrchestratorEvent::PostParseSchedule(schedule));
     }
 
     pub(crate) fn record_full_pipeline_phase(&mut self, fp: StagedFullPipelinePhase) {
-        self.phase = orchestrator_phase_for_full_pipeline(fp);
+        self.apply_event(StagedTurnOrchestratorEvent::FullPipelinePhase(fp));
     }
 
     pub(crate) fn record_round_orchestrator(&mut self, phase: StagedRoundOrchestratorPhase) {
-        self.phase = orchestrator_phase_for_round_orchestrator(phase);
+        self.apply_event(StagedTurnOrchestratorEvent::RoundOrchestrator(phase));
     }
 
     /// 定稿 SSE 后进入步队列：同步 `steps_executing_enter` trace 与 round orchestrator 相位。
@@ -108,7 +98,9 @@ impl StagedTurnDriver {
     }
 
     pub(crate) fn record_steps_loop_trace(&mut self, steps_loop_phase: &str) {
-        self.phase = orchestrator_phase_for_steps_loop_trace(steps_loop_phase);
+        self.apply_event(StagedTurnOrchestratorEvent::StepsLoopTrace(
+            steps_loop_phase,
+        ));
     }
 
     pub(crate) fn phase_str(&self) -> &'static str {
@@ -126,7 +118,7 @@ impl StagedTurnDriver {
         if !Self::should_finish_after_success(p, cancelled, completed_steps, n) {
             return StagedPlanRunOutcome::ContinuePlanning;
         }
-        self.phase = StagedTurnOrchestratorPhase::Done;
+        self.apply_event(StagedTurnOrchestratorEvent::StepsLoopEarlyFinishSuccess);
         StagedPlanRunOutcome::Finished
     }
 
@@ -184,5 +176,13 @@ mod tests {
         let mut d = StagedTurnDriver::new();
         d.record_prepared_route_reduce(PreparedRouteReduceAction::DegradeToOuterLoop);
         assert_eq!(d.phase_str(), "degraded_to_outer_loop");
+    }
+
+    #[test]
+    fn driver_preflight_continue_leaves_phase() {
+        let mut d = StagedTurnDriver::new();
+        d.phase = StagedTurnOrchestratorPhase::StepRunning;
+        d.record_rolling_horizon_preflight(RollingHorizonPreflightAction::ContinueIteration);
+        assert_eq!(d.phase_str(), "step_running");
     }
 }

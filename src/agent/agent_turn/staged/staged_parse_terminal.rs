@@ -1,9 +1,8 @@
-//! 分阶段首轮解析 **终端路由**（两层化：`StagedPlannerParseRoute` → 本枚举 → 驱动/观测）。
+//! 分阶段首轮解析 **终端路由**（`PreparedPlannerRoute` ↔ 驱动/观测）。
 //! 见 `docs/design/per_state_machine_consolidation.md` §3.2 与 **`prepared_parse_fsm::PreparedPlannerRoute`**。
 
 use crate::agent::plan_artifact::AgentReplyPlanV1;
 
-use super::planner_parse_fsm::StagedPlannerParseRoute;
 use super::prepared_parse_fsm::PreparedPlannerRoute;
 
 /// 规划 assistant 解析后的**终端**路由（不含 post-parse 子管线细节）。
@@ -22,14 +21,6 @@ impl StagedParseTerminalRoute {
             Self::DegradeToOuterLoop => "degrade_to_outer_loop",
             Self::FinishWithDirectAnswer => "finish_with_direct_planner_answer",
             Self::ContinueWithPlan { .. } => "continue_with_plan",
-        }
-    }
-
-    pub(crate) fn from_planner_parse_route(route: StagedPlannerParseRoute) -> Self {
-        match route {
-            StagedPlannerParseRoute::QuietFinishOnPlanNotFound => Self::QuietFinish,
-            StagedPlannerParseRoute::FinishOnDirectPlannerAnswer => Self::FinishWithDirectAnswer,
-            StagedPlannerParseRoute::DegradeToOuterLoop => Self::DegradeToOuterLoop,
         }
     }
 
@@ -76,16 +67,5 @@ mod tests {
             PreparedPlannerRoute::ContinueWithPlan { plan: p } => assert_eq!(p, plan),
             _ => panic!("expected continue_with_plan"),
         }
-    }
-
-    #[test]
-    fn planner_parse_maps_to_terminal() {
-        assert_eq!(
-            StagedParseTerminalRoute::from_planner_parse_route(
-                StagedPlannerParseRoute::QuietFinishOnPlanNotFound
-            )
-            .as_static_str(),
-            "quiet_finish"
-        );
     }
 }
