@@ -51,8 +51,6 @@ mod status_bar;
 mod status_fetch_state;
 mod status_tasks_state;
 mod status_tasks_wiring;
-mod stream_run_phase;
-mod stream_shell_busy;
 mod tauri_window_controls;
 mod wire_workspace_domain;
 mod workspace_panel;

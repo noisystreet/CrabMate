@@ -9,9 +9,7 @@
 //! - `shell_abort`：`AbortController` 与用户取消 Mutex 的集中读写。
 //! - [`callbacks`]：装配 `ChatStreamCallbacks`（各 `on_*`），与 `send_chat_stream` 契约对齐；实现拆为 `callbacks/helpers`、`callbacks/builders`、`callbacks/assemble`。
 //! - [`stream_attach_lifecycle`]：单次 attach 在 `spawn_local` 前的同步步骤（[`prepare_stream_attach`]、[`stream_attach_lifecycle::StreamAttachPrepared`]）。
-//! - 壳层 **`status_busy` / `tool_busy`** 迁移见 **[`crate::app::stream_shell_busy`]**（[`crate::app::stream_shell_busy::StreamShellBusyOp`] + [`crate::app::app_signals::StreamControlSignals::apply_busy_op`] / [`crate::app::app_signals::StreamControlSignals::apply_release_turn_and_stream_run`]），SSE/HTTP/中止路径统一调用。
-//! - 整轮 HTTP+SSE **运行相**见 **[`crate::app::stream_run_phase`]**（[`crate::app::app_signals::StreamControlSignals::begin_stream_run`] / [`crate::app::app_signals::StreamControlSignals::end_stream_run_if_current`]），与 `attach_generation` 门闩对齐。
-//! - 粗粒度回合生命周期（阶段 B 观测）见 **[`crate::app::chat::turn_lifecycle`]**。
+//! - 壳层回合 busy 与 attach 代际见 **[`crate::app::chat::turn_lifecycle`]**（[`StreamControlSignals::begin_stream_run`] / [`StreamControlSignals::apply_release_turn_and_stream_run`]）。
 
 mod callbacks;
 mod context;

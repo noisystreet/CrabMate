@@ -6,7 +6,7 @@
 //! 与 [`super::stream_turn_state::StreamModelOutputLane`] 正交：lane 管 reasoning/answer 写入；
 //! 本模块管「工具线是否占用」「是否已见模型输出」「是否已进入 drain/terminal」。
 
-/// 与 UI 壳层 `stream_run_phase` 不同：仅描述 **本轮 SSE attach** 的消费进度。
+/// 与 UI 壳层 [`crate::app::chat::turn_lifecycle`] 不同：仅描述 **本轮 SSE attach** 的消费进度。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum StreamControlPhase {
     /// 尚未收到正文 delta / answer_phase / 工具声明。

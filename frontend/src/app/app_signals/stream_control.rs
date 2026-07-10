@@ -1,20 +1,15 @@
-//! 流式回合忙状态、中止槽与整轮流式相。
+//! 流式回合忙状态、中止槽与 [`TurnLifecycleState`] 归约。
 
 use std::sync::{Arc, Mutex};
 
 use leptos::prelude::*;
 
-use crate::app::stream_run_phase::{StreamRunPhase, transition_end_run_if_current};
 use crate::app::turn_lifecycle::{TurnLifecycleEvent, TurnLifecycleState, apply_turn_lifecycle};
 
 #[derive(Clone)]
 pub struct StreamControlSignals {
-    pub status_busy: RwSignal<bool>,
     pub status_err: RwSignal<Option<String>>,
-    pub tool_busy: RwSignal<bool>,
-    /// 与 `attach_generation` 对齐的整轮流式相（Idle | Running）；见 [`super::stream_run_phase`].
-    pub stream_run_phase: RwSignal<StreamRunPhase>,
-    /// 阶段 B：[`TurnLifecycleState`] 观测（UI 仍用 legacy busy `Memo`）。
+    /// 单轮 `/chat/stream` 粗粒度生命周期；UI 门闩与 attach 代际均读此信号。
     pub turn_lifecycle: RwSignal<TurnLifecycleState>,
     /// `AbortController` 槽位在 `Mutex` 中，Leptos 无法订阅；每次槽位变更时递增，供
     /// [`crate::chat_session_state::make_chat_stream_busy_memos`] 与「整轮 UI 忙」`Memo` 失效并重算。
@@ -26,10 +21,7 @@ pub struct StreamControlSignals {
 impl StreamControlSignals {
     pub fn new() -> Self {
         Self {
-            status_busy: RwSignal::new(false),
             status_err: RwSignal::new(None),
-            tool_busy: RwSignal::new(false),
-            stream_run_phase: RwSignal::new(StreamRunPhase::Idle),
             turn_lifecycle: RwSignal::new(TurnLifecycleState::default()),
             stream_abort_epoch: RwSignal::new(0),
             abort_cell: Arc::new(Mutex::new(None)),
@@ -37,21 +29,18 @@ impl StreamControlSignals {
         }
     }
 
-    /// 阶段 B 双写：壳层 + lifecycle 同步（不改变 legacy UI 门闩）。
     pub(crate) fn dispatch_turn_lifecycle(&self, ev: TurnLifecycleEvent) {
         self.turn_lifecycle
             .update(|st| apply_turn_lifecycle(st, ev));
     }
 
     pub(crate) fn begin_stream_run(&self, attach_generation: u64) {
-        self.stream_run_phase
-            .set(StreamRunPhase::Running { attach_generation });
         self.dispatch_turn_lifecycle(TurnLifecycleEvent::AttachPrepared { attach_generation });
     }
 
-    pub(crate) fn end_stream_run_if_current(&self, attach_generation: u64) {
-        self.stream_run_phase
-            .update(|p| transition_end_run_if_current(p, attach_generation));
+    /// HTTP / SSE / 用户中止等收尾：仅当代际仍匹配时回落 lifecycle 到 Idle。
+    pub(crate) fn apply_release_turn_and_stream_run(&self, attach_generation: u64) {
+        self.dispatch_turn_lifecycle(TurnLifecycleEvent::ShellReleased { attach_generation });
     }
 }
 

@@ -31,8 +31,6 @@ mod tail_loading_memo;
 pub(crate) mod turn_lifecycle;
 pub(crate) mod wire_chat_domain;
 pub(crate) mod wire_chat_session_lifecycle;
-mod wire_turn_lifecycle_observe;
-
 pub use handles::{ChatColumnShell, ComposerStreamShell};
 
 pub(crate) use handles::ChatComposerWires;

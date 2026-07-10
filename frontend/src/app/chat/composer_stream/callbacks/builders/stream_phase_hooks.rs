@@ -2,7 +2,6 @@
 
 use std::rc::Rc;
 
-use crate::app::stream_shell_busy::StreamShellBusyOp;
 use crate::conversation_hydrate::TiktokenPromptTokensSnapshot;
 use crate::conversation_prompt_tokens_apply::apply_conversation_prompt_tokens_from_sse;
 
@@ -22,10 +21,6 @@ pub(in super::super) fn make_on_tool_status_with_stream_phase(
             &stream_ctx.shell.stream,
             StreamControlEvent::ToolRunning(b),
         );
-        stream_ctx
-            .shell
-            .stream
-            .apply_busy_op(StreamShellBusyOp::MirrorToolRunning(b));
     })
 }
 

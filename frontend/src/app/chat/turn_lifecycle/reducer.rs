@@ -2,7 +2,7 @@
 
 use super::super::composer_stream::StreamControlEvent;
 
-/// 粗粒度回合阶段（与 [`crate::app::stream_run_phase::StreamRunPhase`] 对齐，后续可合并）。
+/// 粗粒度回合阶段（Attaching → Streaming → Draining → Terminal/Idle）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub(crate) enum TurnPhase {
     #[default]
@@ -39,11 +39,23 @@ pub(crate) enum TurnOutcome {
 /// 由各 attach / SSE / HTTP / 壳层路径喂入。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TurnLifecycleEvent {
-    AttachPrepared { attach_generation: u64 },
-    HttpStreamOpened { attach_generation: u64 },
+    AttachPrepared {
+        attach_generation: u64,
+    },
+    HttpStreamOpened {
+        attach_generation: u64,
+    },
     SseControl(StreamControlEvent),
-    ShellReleased { attach_generation: u64 },
-    UserAbortRequested { attach_generation: u64 },
+    ShellReleased {
+        attach_generation: u64,
+    },
+    UserAbortRequested {
+        attach_generation: u64,
+    },
+    /// `timeline_log` `final_response`：主答复时间轴结束，释放「模型生成中」；工具可能仍忙。
+    TimelineModelFinal {
+        attach_generation: u64,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -53,6 +65,7 @@ pub(crate) struct TurnLifecycleState {
     tool_running_sse: bool,
     stream_ended_seen: bool,
     saw_model_output: bool,
+    model_timeline_final: bool,
     terminated: bool,
 }
 
@@ -108,7 +121,7 @@ impl TurnLifecycleState {
     }
 }
 
-/// 与 [`crate::app::stream_run_phase::StreamRunPhase::Running`] 对齐的粗 busy（不含 loading 占位 / abort 槽）。
+/// 粗 busy（Attaching / Streaming / Draining；不含 loading 占位 / abort 槽）。
 #[must_use]
 pub(crate) fn turn_lifecycle_coarse_busy(state: TurnLifecycleState) -> bool {
     matches!(
@@ -120,6 +133,9 @@ pub(crate) fn turn_lifecycle_coarse_busy(state: TurnLifecycleState) -> bool {
 /// 状态栏「模型生成中」：Attaching / Draining / 非工具子阶段的 Streaming。
 #[must_use]
 pub(crate) fn turn_lifecycle_model_ui_busy(state: TurnLifecycleState) -> bool {
+    if state.model_timeline_final {
+        return false;
+    }
     matches!(
         state.phase,
         TurnPhase::Attaching { .. }
@@ -153,12 +169,6 @@ pub(crate) fn turn_lifecycle_stream_turn_busy(
     turn_lifecycle_coarse_busy(state) || has_loading_placeholders || abort_present
 }
 
-/// 阶段 B 观测：`Attaching | Streaming | Draining | Terminal` 均视为 inflight（Terminal 极短，下一事件回 Idle）。
-#[must_use]
-pub(crate) fn turn_lifecycle_ui_inflight(state: TurnLifecycleState) -> bool {
-    !matches!(state.phase, TurnPhase::Idle)
-}
-
 pub(crate) fn apply_turn_lifecycle(state: &mut TurnLifecycleState, ev: TurnLifecycleEvent) {
     match ev {
         TurnLifecycleEvent::AttachPrepared { attach_generation } => {
@@ -167,6 +177,7 @@ pub(crate) fn apply_turn_lifecycle(state: &mut TurnLifecycleState, ev: TurnLifec
             state.tool_running_sse = false;
             state.stream_ended_seen = false;
             state.saw_model_output = false;
+            state.model_timeline_final = false;
             state.terminated = false;
         }
         TurnLifecycleEvent::HttpStreamOpened { attach_generation } => {
@@ -194,7 +205,14 @@ pub(crate) fn apply_turn_lifecycle(state: &mut TurnLifecycleState, ev: TurnLifec
             state.tool_running_sse = false;
             state.stream_ended_seen = false;
             state.saw_model_output = false;
+            state.model_timeline_final = false;
             state.terminated = false;
+        }
+        TurnLifecycleEvent::TimelineModelFinal { attach_generation } => {
+            if !generation_matches(state, attach_generation) {
+                return;
+            }
+            state.model_timeline_final = true;
         }
         TurnLifecycleEvent::UserAbortRequested { attach_generation } => {
             if !generation_matches(state, attach_generation) {

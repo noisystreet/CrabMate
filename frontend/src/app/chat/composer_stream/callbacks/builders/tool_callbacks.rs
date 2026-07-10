@@ -6,7 +6,6 @@ use leptos::prelude::*;
 
 use super::super::turn_layout::TurnLayout;
 use crate::api::OnToolCallFn;
-use crate::app::stream_shell_busy::StreamShellBusyOp;
 use crate::i18n;
 use crate::message_format::tool_stored_text_from_result_info;
 use crate::session_ops::{make_message_id, message_created_ms};
@@ -169,10 +168,6 @@ pub(in super::super) fn chat_stream_on_tool_call_builder(
                 StreamControlEvent::ToolCallDeclared,
             );
             let _ = (preview, full);
-            stream_ctx
-                .shell
-                .stream
-                .apply_busy_op(StreamShellBusyOp::MirrorToolRunning(true));
             let loc = stream_ctx.locale.get_untracked();
             let core = if !summary.trim().is_empty() {
                 summary.trim().to_string()
