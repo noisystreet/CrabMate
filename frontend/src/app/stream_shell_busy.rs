@@ -6,6 +6,7 @@
 use leptos::prelude::{GetUntracked, Set};
 
 use super::app_signals::StreamControlSignals;
+use crate::app::chat::turn_lifecycle::TurnLifecycleEvent;
 
 /// 壳层「状态栏忙」信号的一次迁移（状态机边，而非整轮流式 FSM）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,6 +50,7 @@ impl StreamControlSignals {
     pub(crate) fn apply_release_turn_and_stream_run(&self, attach_generation: u64) {
         self.end_stream_run_if_current(attach_generation);
         self.apply_busy_op(StreamShellBusyOp::ReleaseTurnShellBusy);
+        self.dispatch_turn_lifecycle(TurnLifecycleEvent::ShellReleased { attach_generation });
     }
 }
 

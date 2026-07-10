@@ -150,9 +150,10 @@ pub(super) fn chat_stream_on_delta_builder(
         if stream_ctx.is_stale() {
             return;
         }
-        stream_ctx
-            .scratch
-            .apply_stream_control_event(StreamControlEvent::ModelTextDelta);
+        stream_ctx.scratch.apply_stream_control_event(
+            &stream_ctx.shell.stream,
+            StreamControlEvent::ModelTextDelta,
+        );
         apply_chat_stream_text_delta(stream_ctx.as_ref(), accum.as_ref(), &chunk);
     })
 }

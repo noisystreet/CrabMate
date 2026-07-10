@@ -23,7 +23,7 @@ pub(super) enum StreamControlPhase {
 
 /// 由各 `ChatStreamCallbacks` 路径喂入的语义事件（非原始 JSON）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum StreamControlEvent {
+pub(crate) enum StreamControlEvent {
     ModelTextDelta,
     AssistantAnswerPhase,
     ToolCallDeclared,

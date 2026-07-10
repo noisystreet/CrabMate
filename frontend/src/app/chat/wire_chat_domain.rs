@@ -30,6 +30,7 @@ use super::handles::{
 use super::scroll::wire_focus_message_after_nav;
 use super::scroll_follow::wire_content_follow_scroll;
 use super::scroll_shell::ChatScrollShellSignals;
+use super::wire_turn_lifecycle_observe::wire_turn_lifecycle_observe;
 
 /// 注册 `wire_chat_domain_effects` 所需的信号与句柄：[`ChatDomainWiringSignals`] + 流式壳。
 #[derive(Clone)]
@@ -100,6 +101,7 @@ pub(crate) fn wire_chat_domain_effects(
         stream_shell.stream.stream_abort_epoch,
         std::sync::Arc::new(move || abort_cell.lock().unwrap().is_some()),
     );
+    wire_turn_lifecycle_observe(stream_shell.stream.clone());
 
     wire_chat_domain_auxiliary_sequence(&args);
 

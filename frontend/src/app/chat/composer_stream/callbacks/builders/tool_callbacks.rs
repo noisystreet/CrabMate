@@ -26,9 +26,10 @@ pub(in super::super) fn make_on_tool_output_chunk(
         if stream_ctx.is_stale() {
             return;
         }
-        stream_ctx
-            .scratch
-            .apply_stream_control_event(StreamControlEvent::ToolOutputChunk);
+        stream_ctx.scratch.apply_stream_control_event(
+            &stream_ctx.shell.stream,
+            StreamControlEvent::ToolOutputChunk,
+        );
         let tid = info.tool_call_id.trim();
         if tid.is_empty() {
             return;
@@ -57,7 +58,7 @@ pub(in super::super) fn make_on_tool_result(
         }
         stream_ctx
             .scratch
-            .apply_stream_control_event(StreamControlEvent::ToolResult);
+            .apply_stream_control_event(&stream_ctx.shell.stream, StreamControlEvent::ToolResult);
         let loc = stream_ctx.locale.get_untracked();
         let stored = tool_stored_text_from_result_info(&info, loc);
         let t = stored.compact.clone();
@@ -163,9 +164,10 @@ pub(in super::super) fn chat_stream_on_tool_call_builder(
             }
             TurnLayout::demote_answer_before_tools(stream_ctx.as_ref(), accum.as_ref());
             TurnLayout::drain_loading_commentary_to_canonical(stream_ctx.as_ref());
-            stream_ctx
-                .scratch
-                .apply_stream_control_event(StreamControlEvent::ToolCallDeclared);
+            stream_ctx.scratch.apply_stream_control_event(
+                &stream_ctx.shell.stream,
+                StreamControlEvent::ToolCallDeclared,
+            );
             let _ = (preview, full);
             stream_ctx
                 .shell
