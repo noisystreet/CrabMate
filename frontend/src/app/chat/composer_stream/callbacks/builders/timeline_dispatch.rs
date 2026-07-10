@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use crate::app::stream_shell_busy::StreamShellBusyOp;
+use crate::app::turn_lifecycle::TurnLifecycleEvent;
 use crate::message_format::staged_timeline_system_message_body;
 use crate::sse_dispatch::TimelineLogInfo;
 use crate::timeline_scan::{
@@ -24,7 +24,9 @@ fn timeline_log_dispatch_final_response(
     stream_ctx
         .shell
         .stream
-        .apply_busy_op(StreamShellBusyOp::ReleaseStreamingStatusAfterTimelineFinal);
+        .dispatch_turn_lifecycle(TurnLifecycleEvent::TimelineModelFinal {
+            attach_generation: stream_ctx.attach_generation,
+        });
     let final_text = build_final_response_text(&info.title, info.detail.as_deref());
     if !final_text.is_empty() {
         let already_visible = assistant_message_has_visible_text(stream_ctx, &final_text)

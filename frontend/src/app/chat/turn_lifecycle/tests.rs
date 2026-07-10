@@ -1,6 +1,6 @@
 use super::reducer::{
     StreamSubPhase, TurnLifecycleEvent, TurnLifecycleState, TurnPhase, apply_turn_lifecycle,
-    turn_lifecycle_coarse_busy, turn_lifecycle_ui_inflight,
+    turn_lifecycle_coarse_busy,
 };
 use crate::app::chat::composer_stream::StreamControlEvent;
 
@@ -124,6 +124,52 @@ fn stream_turn_busy_includes_loading_and_abort() {
 }
 
 #[test]
+fn timeline_final_drops_model_keeps_tool() {
+    use super::reducer::{turn_lifecycle_model_ui_busy, turn_lifecycle_tool_ui_busy};
+
+    let mut s = TurnLifecycleState::default();
+    apply_turn_lifecycle(
+        &mut s,
+        TurnLifecycleEvent::AttachPrepared {
+            attach_generation: 1,
+        },
+    );
+    apply_turn_lifecycle(
+        &mut s,
+        TurnLifecycleEvent::SseControl(StreamControlEvent::ModelTextDelta),
+    );
+    assert!(turn_lifecycle_model_ui_busy(s));
+    assert!(!turn_lifecycle_tool_ui_busy(s));
+    apply_turn_lifecycle(
+        &mut s,
+        TurnLifecycleEvent::TimelineModelFinal {
+            attach_generation: 1,
+        },
+    );
+    assert!(!turn_lifecycle_model_ui_busy(s));
+
+    let mut tool = TurnLifecycleState::default();
+    apply_turn_lifecycle(
+        &mut tool,
+        TurnLifecycleEvent::AttachPrepared {
+            attach_generation: 2,
+        },
+    );
+    apply_turn_lifecycle(
+        &mut tool,
+        TurnLifecycleEvent::SseControl(StreamControlEvent::ToolCallDeclared),
+    );
+    apply_turn_lifecycle(
+        &mut tool,
+        TurnLifecycleEvent::TimelineModelFinal {
+            attach_generation: 2,
+        },
+    );
+    assert!(!turn_lifecycle_model_ui_busy(tool));
+    assert!(turn_lifecycle_tool_ui_busy(tool));
+}
+
+#[test]
 fn shell_release_only_when_generation_matches() {
     let mut s = TurnLifecycleState::default();
     apply_turn_lifecycle(
@@ -144,5 +190,5 @@ fn shell_release_only_when_generation_matches() {
             attach_generation: 5
         }
     ));
-    assert!(turn_lifecycle_ui_inflight(s));
+    assert!(turn_lifecycle_coarse_busy(s));
 }

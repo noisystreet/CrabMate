@@ -2,7 +2,6 @@
 
 use leptos::prelude::*;
 
-use crate::app::stream_shell_busy::StreamShellBusyOp;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n;
 use crate::i18n::Locale;
@@ -95,9 +94,6 @@ pub(super) fn push_user_and_loading_assistant(
 }
 
 pub(super) fn begin_stream_shell_turn(shell: &ComposerStreamShell) {
-    shell
-        .stream
-        .apply_busy_op(StreamShellBusyOp::EnterStreamingStatus);
     shell.stream.status_err.set(None);
     shell.approval.clear_pending_user_interactions();
 }
