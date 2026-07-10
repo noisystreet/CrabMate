@@ -206,8 +206,9 @@ impl ChatSession {
 /// 进程重启后不再有挂起的 SSE；本地持久化的助手 `loading` 占位若不清理会永久显示「生成中」。
 /// 在从 `localStorage` 恢复会话列表时调用（见 `wire_initial_sessions_from_storage`）。
 pub fn clear_stale_assistant_loading_states(messages: &mut [StoredMessage]) {
+    use crate::message_loading::is_loading_plain_assistant;
     for m in messages.iter_mut() {
-        if m.role == "assistant" && m.state.as_ref().is_some_and(|s| s.is_loading()) {
+        if is_loading_plain_assistant(m) {
             m.state = None;
         }
     }

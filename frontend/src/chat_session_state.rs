@@ -27,6 +27,7 @@ use std::sync::Arc;
 use leptos::prelude::*;
 
 use crate::conversation_hydrate::TiktokenPromptTokensSnapshot;
+use crate::message_loading::{is_stream_attach_loading_conflict, messages_have_loading_tool};
 use crate::session_sync::SessionSyncState;
 use crate::storage::ChatSession;
 use crate::stream_text_overlay::StreamTextOverlay;
@@ -104,18 +105,15 @@ pub struct ChatStreamSessionLane {
     pub text_overlay: RwSignal<Option<StreamTextOverlay>>,
 }
 
-/// 是否存在仍处于 Loading 的工具时间线气泡（与 SSE `tool_running` / `tool_busy` 互补，避免状态栏已「就绪」但卡片仍在转圈）。
+/// 是否存在仍处于 Loading 的工具时间线气泡（与 SSE `tool_running` 互补，避免状态栏已「就绪」但卡片仍在转圈）。
 ///
 /// 会话 id 取 [`Self::effective_stream_message_session_id`]（与进行中 SSE 写入目标一致，无流时回落 UI 当前会话）。
 pub fn session_has_loading_tool_message(chat: ChatSessionSignals) -> bool {
     let sid = chat.effective_stream_message_session_id();
     chat.sessions.with(|sessions| {
-        sessions.iter().any(|s| {
-            s.id == sid
-                && s.messages
-                    .iter()
-                    .any(|m| m.is_tool && m.state.as_ref().is_some_and(|st| st.is_loading()))
-        })
+        sessions
+            .iter()
+            .any(|s| s.id == sid && messages_have_loading_tool(&s.messages))
     })
 }
 
@@ -133,15 +131,9 @@ pub(crate) fn session_has_conflicting_stream_loading_in_messages(
     let Some(s) = sessions.iter().find(|sess| sess.id == sid) else {
         return false;
     };
-    s.messages.iter().any(|m| {
-        if !m.state.as_ref().is_some_and(|st| st.is_loading()) {
-            return false;
-        }
-        if m.is_tool {
-            return true;
-        }
-        m.role == "assistant" && m.id != except_plain_assistant_id
-    })
+    s.messages
+        .iter()
+        .any(|m| is_stream_attach_loading_conflict(m, except_plain_assistant_id))
 }
 
 /// [`session_has_conflicting_stream_loading_in_messages`] 的会话信号封装（订阅 `sessions`）。

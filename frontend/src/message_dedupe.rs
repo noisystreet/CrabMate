@@ -1,5 +1,6 @@
 //! 助手正文 fuzzy 比较（normalize 空白后比较）；Phase 7 P1 起写/读路径不再全表 dedupe，本模块供 snapshot 判定与单测保留。
 
+use crate::message_loading::is_finalized_plain_assistant;
 use crate::storage::StoredMessage;
 use crate::timeline_scan::timeline_ui_snapshot_type;
 
@@ -29,7 +30,7 @@ pub fn assistant_texts_fuzzy_duplicate(a: &str, b: &str) -> bool {
 }
 
 fn is_dedupe_candidate_assistant(m: &StoredMessage) -> bool {
-    m.role == "assistant" && !m.is_tool && !m.state.as_ref().is_some_and(|st| st.is_loading())
+    is_finalized_plain_assistant(m)
 }
 
 #[allow(dead_code)]

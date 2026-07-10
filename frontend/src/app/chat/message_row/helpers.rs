@@ -8,6 +8,7 @@ use crate::i18n::{self, Locale};
 use crate::message_format::{
     stored_tool_message_compact_text, stored_tool_message_detail_text, strip_ansi_codes,
 };
+use crate::message_loading::message_row_shows_loading;
 use crate::storage::{ChatSession, StoredMessage, StoredMessageState};
 
 pub(super) fn stored_message_by_id<'a>(
@@ -240,7 +241,7 @@ pub(crate) fn message_row_loading_and_error(
     role: &str,
     state: Option<&StoredMessageState>,
 ) -> (bool, bool) {
-    let loading = state.is_some_and(|s| s.is_loading()) && (role == "assistant" || is_tool);
+    let loading = message_row_shows_loading(is_tool, role, state);
     let err = state.is_some_and(|s| s.is_error());
     (loading, err)
 }

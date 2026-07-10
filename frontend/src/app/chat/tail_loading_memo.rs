@@ -3,6 +3,7 @@
 use leptos::prelude::*;
 
 use crate::chat_session_state::ChatSessionSignals;
+use crate::message_loading::tail_loading_plain_assistant_id;
 
 /// 当前活动会话里，自末尾起第一条非工具助手消息若仍为 `loading`，返回其 `message_id`。
 #[must_use]
@@ -12,17 +13,9 @@ pub(crate) fn tail_loading_assistant_mid_memo(chat: ChatSessionSignals) -> Memo<
     Memo::new(move |_| {
         let aid = active_id.get();
         sessions.with(|list| {
-            let session = list.iter().find(|s| s.id == aid)?;
-            let tail = session
-                .messages
-                .iter()
-                .rev()
-                .find(|m| !m.is_tool && m.role == "assistant")?;
-            if tail.state.as_ref().is_some_and(|s| s.is_loading()) {
-                Some(tail.id.clone())
-            } else {
-                None
-            }
+            list.iter()
+                .find(|s| s.id == aid)
+                .and_then(|s| tail_loading_plain_assistant_id(&s.messages))
         })
     })
 }

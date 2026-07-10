@@ -23,6 +23,10 @@ use std::cell::RefCell;
 
 use leptos::prelude::GetUntracked;
 
+use crate::message_loading::{
+    is_finalized_plain_assistant, is_loading_plain_assistant, is_loading_streaming_assistant_id,
+    is_plain_assistant_message, stored_message_is_loading,
+};
 use crate::session_ops::{make_message_id, message_created_ms};
 use crate::storage::{StoredMessage, StoredMessageState};
 use crate::stream_text_overlay::{
@@ -199,7 +203,7 @@ fn discard_premature_assistant_tail(
         return;
     };
     let m = &messages[idx];
-    if m.role != "assistant" || m.is_tool || !m.state.as_ref().is_some_and(|st| st.is_loading()) {
+    if !is_loading_streaming_assistant_id(m, streaming_assistant_id) {
         return;
     }
     if m.text.trim().is_empty() && m.reasoning_text.trim().is_empty() {
@@ -210,7 +214,7 @@ fn discard_premature_assistant_tail(
 }
 
 fn is_premature_finalized_post_tool_tail(m: &StoredMessage) -> bool {
-    m.role == "assistant" && !m.is_tool && !m.state.as_ref().is_some_and(|st| st.is_loading())
+    is_finalized_plain_assistant(m)
 }
 
 fn insert_msg_before_loading_tail(
@@ -218,11 +222,10 @@ fn insert_msg_before_loading_tail(
     streaming_assistant_id: &str,
     msg: StoredMessage,
 ) {
-    if let Some(idx) = messages.iter().position(|m| {
-        m.id == streaming_assistant_id
-            && m.role == "assistant"
-            && m.state.as_ref().is_some_and(|s| s.is_loading())
-    }) {
+    if let Some(idx) = messages
+        .iter()
+        .position(|m| is_loading_streaming_assistant_id(m, streaming_assistant_id))
+    {
         messages.insert(idx, msg);
     } else {
         messages.push(msg);
@@ -263,7 +266,7 @@ fn extract_post_tool_tail_before_tool(
     if m.role != "assistant" || m.is_tool {
         return None;
     }
-    if !m.state.as_ref().is_some_and(|st| st.is_loading()) {
+    if !stored_message_is_loading(m) {
         return None;
     }
     if m.text.trim().is_empty() && m.reasoning_text.trim().is_empty() {
@@ -316,12 +319,7 @@ fn pin_loading_tail_in_messages(messages: &mut Vec<StoredMessage>, loading_id: &
     let Some(idx) = messages.iter().position(|m| m.id == loading_id) else {
         return;
     };
-    if messages[idx].role != "assistant"
-        || !messages[idx]
-            .state
-            .as_ref()
-            .is_some_and(|st| st.is_loading())
-    {
+    if messages[idx].role != "assistant" || !stored_message_is_loading(&messages[idx]) {
         return;
     }
     let m = messages.remove(idx);
@@ -413,11 +411,7 @@ impl TurnLayout {
             let Some(idx) = session.messages.iter().position(|m| m.id == mid) else {
                 return;
             };
-            if session.messages[idx]
-                .state
-                .as_ref()
-                .is_some_and(|st| st.is_loading())
-            {
+            if is_loading_streaming_assistant_id(&session.messages[idx], mid.as_str()) {
                 session.messages.remove(idx);
             }
         });
@@ -583,11 +577,7 @@ impl TurnLayout {
         let mid_owned = stream_ctx.scratch.clone_assistant_id();
         stream_ctx.update_bound_session(|s| {
             if let Some(idx) = s.messages.iter().position(|m| m.id == mid_owned.as_str())
-                && s.messages[idx].role == "assistant"
-                && s.messages[idx]
-                    .state
-                    .as_ref()
-                    .is_some_and(|st| st.is_loading())
+                && is_loading_plain_assistant(&s.messages[idx])
             {
                 stream_overlay_take_into_stored_message(
                     stream_ctx.chat.stream_text_overlay,
@@ -602,7 +592,7 @@ impl TurnLayout {
             .read_bound_session(|s| {
                 s.messages
                     .iter()
-                    .any(|m| m.id == mid_owned.as_str() && m.role == "assistant" && !m.is_tool)
+                    .any(|m| m.id == mid_owned.as_str() && is_plain_assistant_message(m))
             })
             .unwrap_or(false);
         if !tail_still_present {
