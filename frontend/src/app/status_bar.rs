@@ -365,7 +365,6 @@ fn StatusBarRunIndicator(
     st: StatusTasksSignals,
     status_err: RwSignal<Option<String>>,
     stream_busy_memos: ChatStreamBusyMemos,
-    status_busy: RwSignal<bool>,
     locale: RwSignal<Locale>,
 ) -> impl IntoView {
     view! {
@@ -374,7 +373,7 @@ fn StatusBarRunIndicator(
                 "error"
             } else if stream_busy_memos.tool_timeline_busy_ui.get() {
                 "tool"
-            } else if status_busy.get() {
+            } else if stream_busy_memos.model_status_busy.get() {
                 "running"
             } else {
                 "ready"
@@ -390,7 +389,7 @@ fn StatusBarRunIndicator(
                     format!("{}{e}", i18n::status_error_prefix(loc))
                 } else if stream_busy_memos.tool_timeline_busy_ui.get() {
                     i18n::status_tool_running(loc).to_string()
-                } else if status_busy.get() {
+                } else if stream_busy_memos.model_status_busy.get() {
                     i18n::status_model_running(loc).to_string()
                 } else {
                     i18n::status_ready(loc).to_string()
@@ -405,7 +404,6 @@ fn StatusBarFooterBody(
     st: StatusTasksSignals,
     status_err: RwSignal<Option<String>>,
     stream_busy_memos: ChatStreamBusyMemos,
-    status_busy: RwSignal<bool>,
     client_llm_storage_tick: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
     agent_role_user_override: RwSignal<bool>,
@@ -434,7 +432,6 @@ fn StatusBarFooterBody(
                 st=st
                 status_err=status_err
                 stream_busy_memos=stream_busy_memos
-                status_busy=status_busy
                 locale=locale
             />
         </footer>
@@ -447,7 +444,6 @@ pub fn status_bar_footer_view(signals: StatusBarFooterSignals) -> impl IntoView 
         status_tasks: st,
         status_err,
         stream_busy_memos,
-        status_busy,
         client_llm_storage_tick,
         selected_agent_role,
         agent_role_user_override,
@@ -459,7 +455,6 @@ pub fn status_bar_footer_view(signals: StatusBarFooterSignals) -> impl IntoView 
                 st=st
                 status_err=status_err
                 stream_busy_memos=stream_busy_memos
-                status_busy=status_busy
                 client_llm_storage_tick=client_llm_storage_tick
                 selected_agent_role=selected_agent_role
                 agent_role_user_override=agent_role_user_override

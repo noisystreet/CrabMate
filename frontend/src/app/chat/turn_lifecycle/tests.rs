@@ -86,6 +86,44 @@ fn stale_generation_http_open_is_noop() {
 }
 
 #[test]
+fn model_and_tool_ui_busy_from_subphase() {
+    use super::reducer::{turn_lifecycle_model_ui_busy, turn_lifecycle_tool_ui_busy};
+
+    let mut attaching = TurnLifecycleState::default();
+    apply_turn_lifecycle(
+        &mut attaching,
+        TurnLifecycleEvent::AttachPrepared {
+            attach_generation: 1,
+        },
+    );
+    assert!(turn_lifecycle_model_ui_busy(attaching));
+    assert!(!turn_lifecycle_tool_ui_busy(attaching));
+
+    let mut tool = TurnLifecycleState::default();
+    apply_turn_lifecycle(
+        &mut tool,
+        TurnLifecycleEvent::AttachPrepared {
+            attach_generation: 1,
+        },
+    );
+    apply_turn_lifecycle(
+        &mut tool,
+        TurnLifecycleEvent::SseControl(StreamControlEvent::ToolCallDeclared),
+    );
+    assert!(!turn_lifecycle_model_ui_busy(tool));
+    assert!(turn_lifecycle_tool_ui_busy(tool));
+}
+
+#[test]
+fn stream_turn_busy_includes_loading_and_abort() {
+    use super::reducer::{TurnLifecycleState, turn_lifecycle_stream_turn_busy};
+    let idle = TurnLifecycleState::default();
+    assert!(turn_lifecycle_stream_turn_busy(idle, true, false));
+    assert!(turn_lifecycle_stream_turn_busy(idle, false, true));
+    assert!(!turn_lifecycle_stream_turn_busy(idle, false, false));
+}
+
+#[test]
 fn shell_release_only_when_generation_matches() {
     let mut s = TurnLifecycleState::default();
     apply_turn_lifecycle(

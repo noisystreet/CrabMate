@@ -9,13 +9,13 @@
 //!
 //! 会话目标与 SSE 写入一致：使用 [`crate::chat_session_state::ChatSessionSignals::effective_stream_message_session_id`]。
 
-use leptos::prelude::GetUntracked;
-
+use crate::app::turn_lifecycle::turn_lifecycle_stream_turn_busy;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n;
 use crate::i18n::Locale;
 use crate::storage::StoredMessage;
 use crate::stream_text_overlay::stream_overlay_take_into_stored_message;
+use leptos::prelude::GetUntracked;
 
 use super::composer_stream::{clear_abort_slot, user_cancel_in_flight_stream};
 use super::handles::ComposerStreamShell;
@@ -59,20 +59,17 @@ pub(crate) fn finalize_superseded_assistant_loading_rows_except(
     });
 }
 
-/// 单轮流式 UI 是否仍视为「在途」：`status_busy` / `tool_busy`、`AbortController` 槽位已占、或有效会话内仍有 **Loading** 助手/工具占位。
-/// 与 [`crate::chat_session_state::make_chat_stream_busy_memos`] 的 **`stream_turn_busy_ui`** 同源 OR（此处用 `get_untracked` 供非响应式路径）。
+/// 单轮流式 UI 是否仍视为「在途」；与 [`crate::chat_session_state::make_chat_stream_busy_memos`] 的 **`stream_turn_busy_ui`** 同源（`get_untracked`）。
 #[must_use]
 pub(crate) fn stream_ui_inflight_untracked(
     chat: ChatSessionSignals,
     shell: &ComposerStreamShell,
 ) -> bool {
-    if shell.stream.status_busy.get_untracked() || shell.stream.tool_busy.get_untracked() {
-        return true;
-    }
-    if shell.stream.abort_cell.lock().unwrap().is_some() {
-        return true;
-    }
-    crate::chat_session_state::session_has_stream_loading_placeholders_untracked(chat)
+    turn_lifecycle_stream_turn_busy(
+        shell.stream.turn_lifecycle.get_untracked(),
+        crate::chat_session_state::session_has_stream_loading_placeholders_untracked(chat),
+        shell.stream.abort_cell.lock().unwrap().is_some(),
+    )
 }
 
 /// 用户从 Web 主列点击「停止」时的**唯一**收口（`cancel_stream` 闭包仅调用此处）。

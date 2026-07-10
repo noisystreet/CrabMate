@@ -4,10 +4,8 @@ use std::sync::{Arc, Mutex};
 
 use leptos::prelude::*;
 
-use crate::app::chat::turn_lifecycle::{
-    TurnLifecycleEvent, TurnLifecycleState, apply_turn_lifecycle,
-};
 use crate::app::stream_run_phase::{StreamRunPhase, transition_end_run_if_current};
+use crate::app::turn_lifecycle::{TurnLifecycleEvent, TurnLifecycleState, apply_turn_lifecycle};
 
 #[derive(Clone)]
 pub struct StreamControlSignals {

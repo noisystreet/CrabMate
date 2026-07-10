@@ -10,5 +10,6 @@ mod tests;
 
 pub(crate) use reducer::{
     TurnLifecycleEvent, TurnLifecycleState, apply_turn_lifecycle, turn_lifecycle_coarse_busy,
+    turn_lifecycle_model_ui_busy, turn_lifecycle_stream_turn_busy, turn_lifecycle_tool_ui_busy,
     turn_lifecycle_ui_inflight,
 };

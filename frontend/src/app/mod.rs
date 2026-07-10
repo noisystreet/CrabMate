@@ -12,6 +12,7 @@ pub(crate) mod app_signals;
 mod approval_modal;
 mod changelist_modal;
 mod chat;
+pub(crate) use chat::turn_lifecycle;
 mod ide_confirm_dialog;
 mod ide_editor_pane;
 mod ide_find_bar;

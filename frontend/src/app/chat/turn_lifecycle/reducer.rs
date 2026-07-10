@@ -117,6 +117,42 @@ pub(crate) fn turn_lifecycle_coarse_busy(state: TurnLifecycleState) -> bool {
     )
 }
 
+/// 状态栏「模型生成中」：Attaching / Draining / 非工具子阶段的 Streaming。
+#[must_use]
+pub(crate) fn turn_lifecycle_model_ui_busy(state: TurnLifecycleState) -> bool {
+    matches!(
+        state.phase,
+        TurnPhase::Attaching { .. }
+            | TurnPhase::Draining { .. }
+            | TurnPhase::Streaming {
+                sub: StreamSubPhase::ModelOutput,
+                ..
+            }
+    )
+}
+
+/// 状态栏「工具执行中」与时间线门闩：Streaming 且处于 ToolUiBusy 子阶段。
+#[must_use]
+pub(crate) fn turn_lifecycle_tool_ui_busy(state: TurnLifecycleState) -> bool {
+    matches!(
+        state.phase,
+        TurnPhase::Streaming {
+            sub: StreamSubPhase::ToolUiBusy,
+            ..
+        }
+    )
+}
+
+/// 合成器 / 停止按钮与 legacy `stream_turn_busy_ui` 对齐（lifecycle + Loading 占位 + abort 槽）。
+#[must_use]
+pub(crate) fn turn_lifecycle_stream_turn_busy(
+    state: TurnLifecycleState,
+    has_loading_placeholders: bool,
+    abort_present: bool,
+) -> bool {
+    turn_lifecycle_coarse_busy(state) || has_loading_placeholders || abort_present
+}
+
 /// 阶段 B 观测：`Attaching | Streaming | Draining | Terminal` 均视为 inflight（Terminal 极短，下一事件回 Idle）。
 #[must_use]
 pub(crate) fn turn_lifecycle_ui_inflight(state: TurnLifecycleState) -> bool {

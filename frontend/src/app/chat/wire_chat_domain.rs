@@ -96,8 +96,7 @@ pub(crate) fn wire_chat_domain_effects(
     let abort_cell = stream_shell.stream.abort_cell.clone();
     let stream_busy_memos = make_chat_stream_busy_memos(
         args.domain.chat,
-        stream_shell.stream.status_busy,
-        stream_shell.stream.tool_busy,
+        stream_shell.stream.turn_lifecycle,
         stream_shell.stream.stream_abort_epoch,
         std::sync::Arc::new(move || abort_cell.lock().unwrap().is_some()),
     );
