@@ -84,6 +84,8 @@ struct StagedStepRunOuterHalfParams<'a, 'b, 'c, F> {
     labels: &'a StagedPlanRunLabels,
     patch_ctx: &'a mut StagedPlanPatchPlannerCtx<'b, 'c, F>,
     make_step_user_message: &'a F,
+    /// 同一步下标首次分步注入下标（补丁重试不更新；供步 episode 验收回退）。
+    step_episode_start_index: usize,
 }
 
 /// **`StagedStepRunningSub::BeforeStepLlm`** → **`InOuterLoop`**：发 `step_started`、注入 user、`run_agent_outer_loop`、可选 acceptance。
@@ -102,6 +104,7 @@ where
         labels,
         patch_ctx,
         make_step_user_message,
+        step_episode_start_index,
     } = p;
     let step = plan_steps[i].clone();
     let step_index = i + 1;
@@ -141,10 +144,11 @@ where
     if run_step.is_ok()
         && let Some(acceptance) = crate::agent::acceptance::effective_plan_step_acceptance(&step)
     {
-        let verify_result = crate::agent::step_verifier::verify_step_execution(
+        let verify_result = crate::agent::step_verifier::verify_step_execution_with_episode(
             &acceptance,
             patch_ctx.p.turn.messages(),
             step_user_idx,
+            Some(step_episode_start_index),
             patch_ctx.p.ctx.core.effective_working_dir,
         );
 
@@ -607,6 +611,7 @@ struct RunOneStagedPlanStepIterationParams<'a, 'b, 'c, F> {
     patch_ctx: &'a mut StagedPlanPatchPlannerCtx<'b, 'c, F>,
     make_step_user_message: &'a F,
     turn_driver: Option<&'a mut StagedTurnDriver>,
+    step_episode_start_index: usize,
 }
 
 async fn run_one_staged_plan_step_iteration<F>(
@@ -628,6 +633,7 @@ where
         patch_ctx,
         make_step_user_message,
         turn_driver,
+        step_episode_start_index,
     } = p;
     let outer = staged_step_run_outer_half(StagedStepRunOuterHalfParams {
         plan_id,
@@ -638,6 +644,7 @@ where
         labels,
         patch_ctx,
         make_step_user_message,
+        step_episode_start_index,
     })
     .await;
 
@@ -699,6 +706,7 @@ where
     let mut completed_steps = 0usize;
     let mut i = 0usize;
     let mut transition_counters: HashMap<String, u32> = HashMap::new();
+    let mut step_episode_start_by_index: HashMap<usize, usize> = HashMap::new();
     let start_time = std::time::Instant::now();
     while i < plan_steps.len() {
         tracing::debug!(
@@ -755,6 +763,10 @@ where
             }
         }
 
+        let step_episode_start_index = *step_episode_start_by_index
+            .entry(i)
+            .or_insert_with(|| patch_ctx.p.turn.messages().len());
+
         match reduce_steps_loop_iteration_ctl(
             run_one_staged_plan_step_iteration(RunOneStagedPlanStepIterationParams {
                 plan_id: plan_id.as_str(),
@@ -769,6 +781,7 @@ where
                 patch_ctx: &mut patch_ctx,
                 make_step_user_message,
                 turn_driver: turn_driver.as_deref_mut(),
+                step_episode_start_index,
             })
             .await?,
         ) {

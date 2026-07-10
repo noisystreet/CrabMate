@@ -72,7 +72,8 @@ pub use server_injected_user::{
 };
 pub use staged_step_window::{
     is_staged_step_injection_user_message, is_staged_step_window_boundary_user,
-    last_staged_step_injection_index, staged_step_window_end_exclusive,
+    last_staged_step_injection_index, staged_step_episode_end_exclusive,
+    staged_step_window_end_exclusive, tool_messages_in_staged_step_episode,
     tool_messages_in_staged_step_window,
 };
 pub use tiktoken_snapshot::TiktokenPromptTokensSnapshot;
