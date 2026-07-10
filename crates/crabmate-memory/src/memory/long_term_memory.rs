@@ -15,8 +15,8 @@ use log::{debug, info, warn};
 use rusqlite::Connection;
 
 use crate::memory::long_term_memory_store::{self, MemoryRow};
-use crate::redact::preview_chars;
 use crabmate_config::{AgentConfig, LongTermMemoryVectorBackend};
+use crabmate_tools::redact::preview_chars;
 use crabmate_types::{
     CRABMATE_LONG_TERM_MEMORY_NAME, Message, is_chat_ui_separator, is_long_term_memory_injection,
     is_workspace_changelist_injection,

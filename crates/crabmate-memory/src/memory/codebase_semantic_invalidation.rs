@@ -1,17 +1,95 @@
 //! 工作区写操作后使代码语义索引失效（删除 SQLite 中对应块或整表），与 `read_file` 缓存清空语义对齐。
 
+use std::collections::HashSet;
 use std::path::Path;
+use std::sync::LazyLock;
 
 use rusqlite::params;
 
 use crate::memory::codebase_semantic_index::{
     CODEBASE_SEMANTIC_FILES_TABLE, index_path_for_workspace, open_codebase_semantic_db,
 };
-use crate::tool_result::parse_legacy_output;
-use crate::tools::canonical_workspace_root;
 use crabmate_config::AgentConfig;
+use crabmate_tools::tool_result::parse_legacy_output;
+use crabmate_tools::workspace::path::canonical_workspace_root;
 
 const CHUNKS_TABLE: &str = "crabmate_codebase_chunks";
+
+/// 内建写副作用工具名表，用于判断工具是否只读。
+fn builtin_write_effect_tools() -> HashSet<&'static str> {
+    HashSet::from([
+        "apply_diff",
+        "create_file",
+        "write_file",
+        "edit_file",
+        "edit_and_apply",
+        "delete_dir",
+        "delete_file",
+        "move_file",
+        "copy_file",
+        "create_symlink",
+        "format_file",
+        "format_check_file",
+        "set_env_var",
+        "set_dot_env_var",
+        "upsert_secret_file",
+        "append_lines",
+        "create_symbolic_link",
+        "write",
+        "mkdir",
+        "git_add",
+        "git_commit",
+        "git_push",
+        "git_revert",
+        "git_stash",
+        "git_reset",
+        "git_clone",
+        "git_fetch",
+        "cargo_fix",
+        "cargo_clean",
+        "python_install_editable",
+        "npm_install",
+        "go_mod_tidy",
+        "docker_build",
+        "long_term_remember",
+        "long_term_forget",
+        "run_command",
+        "terminal_session",
+        "playbook_run_commands",
+        "python_snippet_run",
+        "run_executable",
+        "workflow_execute",
+        "http_request",
+        "gh_api",
+        "gh_pr_create",
+        "gh_pr_merge",
+        "gh_pr_review",
+        "gh_pr_comment",
+        "gh_issue_create",
+        "gh_run_rerun",
+        "gh_release_create",
+    ])
+}
+
+/// 判断工具是否为只读（不修改工作区文件系统），供失效决策使用。
+/// 写操作工具及未知语义工具（MCP 代理、动态工具）返回 false。
+fn is_readonly_tool(cfg: &AgentConfig, name: &str) -> bool {
+    static BUILTIN: LazyLock<HashSet<String>> = LazyLock::new(|| {
+        builtin_write_effect_tools()
+            .into_iter()
+            .map(String::from)
+            .collect()
+    });
+    let writes = match &cfg.tool_registry_policy.tool_registry_write_effect_tools {
+        None => &BUILTIN,
+        Some(arc) => arc.as_ref(),
+    };
+    // MCP 代理工具与动态工具语义不可静态证明，默认按写副作用处理。
+    if name.starts_with("mcp__") || name.starts_with("tool_") {
+        return false;
+    }
+    !writes.contains(name)
+}
 
 /// 相对工作区路径（POSIX，`/`）；`is_dir` 为 true 时删除该路径及其子路径下所有块。
 #[derive(Debug, Clone)]
@@ -113,7 +191,7 @@ pub fn invalidation_for_tool_call(
     name: &str,
     args_json: &str,
 ) -> Option<CodebaseSemanticInvalidation> {
-    if crate::tool_registry::is_readonly_tool(cfg, name) {
+    if is_readonly_tool(cfg, name) {
         return None;
     }
 
