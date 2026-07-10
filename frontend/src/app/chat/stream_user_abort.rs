@@ -13,6 +13,7 @@ use crate::app::turn_lifecycle::turn_lifecycle_stream_turn_busy;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n;
 use crate::i18n::Locale;
+use crate::message_loading::{is_loading_plain_assistant, is_loading_tool_message};
 use crate::storage::StoredMessage;
 use crate::stream_text_overlay::stream_overlay_take_into_stored_message;
 use leptos::prelude::GetUntracked;
@@ -33,10 +34,7 @@ pub(crate) fn finalize_superseded_assistant_loading_rows_except(
             return;
         };
         for m in session.messages.iter_mut() {
-            if m.role != "assistant" || m.is_tool {
-                continue;
-            }
-            if !m.state.as_ref().is_some_and(|st| st.is_loading()) {
+            if !is_loading_plain_assistant(m) {
                 continue;
             }
             if m.id == keep_asst_id {
@@ -110,11 +108,12 @@ fn finalize_loading_placeholders_after_user_abort_on_session(
         let Some(s) = list.iter_mut().find(|s| s.id == session_id) else {
             return;
         };
-        if let Some(m) = s.messages.iter_mut().rev().find(|m| {
-            m.role == "assistant"
-                && !m.is_tool
-                && m.state.as_ref().is_some_and(|st| st.is_loading())
-        }) {
+        if let Some(m) = s
+            .messages
+            .iter_mut()
+            .rev()
+            .find(|m| is_loading_plain_assistant(m))
+        {
             let mid_flush = m.id.clone();
             stream_overlay_take_into_stored_message(
                 chat.stream_text_overlay,
@@ -129,9 +128,11 @@ fn finalize_loading_placeholders_after_user_abort_on_session(
 }
 
 fn apply_abort_finalization_to_messages(messages: &mut [StoredMessage], loc: Locale) {
-    if let Some(m) = messages.iter_mut().rev().find(|m| {
-        m.role == "assistant" && !m.is_tool && m.state.as_ref().is_some_and(|st| st.is_loading())
-    }) {
+    if let Some(m) = messages
+        .iter_mut()
+        .rev()
+        .find(|m| is_loading_plain_assistant(m))
+    {
         m.state = None;
         if m.text.trim().is_empty() {
             m.text = i18n::stream_stopped_inline(loc).to_string();
@@ -155,7 +156,7 @@ pub(crate) fn finalize_loading_tool_placeholders_to_stopped(
     let running_label = i18n::status_tool_running(loc);
     let stopped_tool = i18n::status_tool_stopped_user(loc);
     for m in messages.iter_mut() {
-        if !m.is_tool || !m.state.as_ref().is_some_and(|st| st.is_loading()) {
+        if !is_loading_tool_message(m) {
             continue;
         }
         m.state = None;

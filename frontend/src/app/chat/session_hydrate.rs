@@ -25,6 +25,7 @@ use crate::conversation_hydrate::{
     ConversationMessagesResponse, stored_messages_from_conversation_api,
 };
 use crate::i18n::{self, Locale};
+use crate::message_loading::messages_have_any_loading;
 use crate::session_ops::title_from_user_prompt;
 use crate::storage::{ChatSession, StoredMessage};
 
@@ -34,14 +35,8 @@ fn count_user_role_bubbles(messages: &[StoredMessage]) -> usize {
     messages.iter().filter(|m| m.role == "user").count()
 }
 
-fn messages_contain_loading(messages: &[StoredMessage]) -> bool {
-    messages
-        .iter()
-        .any(|m| m.state.as_ref().is_some_and(|s| s.is_loading()))
-}
-
 fn conversation_server_id_if_hydratable_for_wire(s: &ChatSession) -> Option<String> {
-    if messages_contain_loading(&s.messages) {
+    if messages_have_any_loading(&s.messages) {
         return None;
     }
     s.trimmed_server_conversation_id().map(str::to_string)
@@ -94,7 +89,7 @@ fn try_hydration_merge_precheck(
     if active_id != aid {
         return Err(SessionHydrationMergeOutcome::SkippedActiveSessionMismatch);
     }
-    if messages_contain_loading(&session.messages) {
+    if messages_have_any_loading(&session.messages) {
         return Err(SessionHydrationMergeOutcome::SkippedLoadingPlaceholders);
     }
     let still = session.trimmed_server_conversation_id();
@@ -428,7 +423,7 @@ fn clear_conversation_prompt_tokens_if_no_server_conversation(chat: ChatSessionS
         chat.conversation_prompt_tokens.set(None);
         return;
     };
-    if messages_contain_loading(&sess.messages) {
+    if messages_have_any_loading(&sess.messages) {
         return;
     }
     if sess.trimmed_server_conversation_id().is_none() {

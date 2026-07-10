@@ -53,6 +53,7 @@ mod ide_yaml_highlight;
 mod markdown;
 mod message_dedupe;
 mod message_format;
+mod message_loading;
 mod message_render;
 mod session_export;
 mod session_modal_row;

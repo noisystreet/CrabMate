@@ -2,15 +2,12 @@
 //! 与 **`ChatStreamCallbackCtx::update_bound_session`**（`stream_session_access`）解耦以便单测与降 [`super::builders::chat_stream_on_done_builder`] nloc。
 
 use crate::i18n::Locale;
+use crate::message_loading::is_loading_plain_assistant;
 use crate::storage::StoredMessage;
 
 use super::super::per_stream_accum::PerStreamTurnSummary;
 use super::done_bubble::{DoneBubbleAction, DoneBubbleDecisionInputs, decide_done_bubble_action};
 use super::helpers::build_empty_reply_with_diagnostic;
-
-fn is_assistant_loading_placeholder(m: &StoredMessage) -> bool {
-    m.role == "assistant" && !m.is_tool && m.state.as_ref().is_some_and(|st| st.is_loading())
-}
 
 fn push_missing_assistant_diagnostic(
     messages: &mut Vec<StoredMessage>,
@@ -40,7 +37,7 @@ fn push_missing_assistant_diagnostic(
 
 /// 流式整轮结束后仍残留的助手 `Loading` 占位（轮换/id 漂移等）须在此清除，避免 UI 与 lifecycle 长期不一致。
 pub(super) fn clear_residual_assistant_loading_placeholders(messages: &mut Vec<StoredMessage>) {
-    messages.retain(|m| !is_assistant_loading_placeholder(m));
+    messages.retain(|m| !is_loading_plain_assistant(m));
 }
 
 /// 在会话消息列表上对 `assistant_message_id` 指向的 **loading** 尾泡应用 `on_done` 决策。
@@ -64,7 +61,7 @@ pub(super) fn apply_stream_done_to_loading_assistant(
         }
         return;
     };
-    if !is_assistant_loading_placeholder(&messages[idx]) {
+    if !is_loading_plain_assistant(&messages[idx]) {
         clear_residual_assistant_loading_placeholders(messages);
         return;
     }

@@ -4,6 +4,8 @@ use crabmate_turn_layout::{
     ASSISTANT_BATCH_NARRATION, project_turn_web, streaming_commentary_block_text,
 };
 
+use crate::message_loading::is_loading_plain_assistant;
+
 use super::super::super::turn_canonical::TurnCanonicalState;
 
 /// 单轮工具批前说明块的稳定 id（与 `project_turn_web` · `assistant_batch_narration` 对应）。
@@ -214,11 +216,7 @@ impl BubbleOutputQueue {
             }
         }
         if !turn.tool_phase_open()
-            && let Some(load) = messages.iter().find(|m| {
-                m.role == "assistant"
-                    && !m.is_tool
-                    && m.state.as_ref().is_some_and(|st| st.is_loading())
-            })
+            && let Some(load) = messages.iter().find(|m| is_loading_plain_assistant(m))
             && load.text.trim() == preview.trim()
         {
             return String::new();
