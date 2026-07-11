@@ -1,8 +1,5 @@
 //! Victauri 版 user-data API E2E 测试（Phase 2：纯 API 播种/验证）。
 //!
-//! 等价 Playwright:
-//!   - `e2e/tests/user-data.spec.ts`     — GET/PUT prefs round-trip, PUT/GET sessions
-//!   - `e2e/tests/user-data-mcp.spec.ts` — PUT/GET MCP servers, slug assign, status
 //!
 //! Phase 2 模式：`request.get/put/post()` → `eval_js("fetch(...)")` 通过 webview 同源调用后端。
 //!

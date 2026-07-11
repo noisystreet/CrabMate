@@ -1,10 +1,7 @@
 //! Victauri 版 Phase 5 可见消息筛选 E2E 测试（Phase 2：需播种，无流存根）。
 //!
-//! 等价 Playwright:
-//!   - `e2e/tests/phase5-visible-messages.spec.ts` — 可见消息筛选规则验证
 //!
-//! 注意：导出验证（JSON/Markdown download）依赖 Playwright 的 `page.waitForEvent('download')`，
-//! 暂未迁移，属于 Phase 3。当前覆盖 UI 聊天列可见性断言。
+//! 注意：导出验证（JSON/Markdown 下载）尚未覆盖；当前仅断言 UI 聊天列可见性。
 //!
 //! 前置条件：
 //!   1. Tauri 桌面应用 debug 模式运行

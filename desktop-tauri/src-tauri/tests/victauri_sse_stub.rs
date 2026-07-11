@@ -1,19 +1,10 @@
-//! Victauri 版 Phase 3 E2E 测试演示：`page.route()` HTTP 拦截 → `eval_js` 注入 fetch 拦截器。
+//! Victauri 版 Phase 3 E2E：通过 `eval_js` 注入 `window.fetch` 拦截器存根 SSE。
 //!
-//! 等价 Playwright:
-//!   - `e2e/tests/smoke.spec.ts`               — 发送消息 + 工具卡渲染
-//!   - `e2e/tests/helpers/fix-chat-stream.ts`   — SSE 流存根构建器
+//! ## 核心技术
 //!
-//! ## Phase 3 核心技术
-//!
-//! Playwright 的 `page.route()` 在浏览器网络层拦截 HTTP 请求。Victauri 无法做同层拦截，
-//! 但可以通过 `eval_js` 在 webview 内覆盖 `window.fetch`，实现等价效果：
+//! Victauri 在 webview 内覆盖 `window.fetch`，对 `POST /chat/stream` 返回 fixture SSE 正文：
 //!
 //! ```javascript
-//! // Playwright
-//! await page.route('**/chat/stream', route => route.fulfill({status:200, body:sseBody}));
-//!
-//! // Victauri
 //! client.eval_js("window.__originalFetch = window.fetch;
 //!   window.fetch = (url, opts) => {
 //!     if (url.includes('/chat/stream') && opts.method==='POST')
@@ -31,7 +22,6 @@ use victauri_test::e2e_test;
 use victauri_test::locator::Locator;
 
 /// Phase 3 核心：注入 fetch 拦截器以存根 SSE 流。
-/// 等价于 Playwright 的 `installChatStreamStub(page)`。
 async fn install_chat_stream_stub(client: &mut victauri_test::VictauriClient) {
     // 构造默认 SSE 流：助手 delta + diagnostic_summary 工具卡 + stream_ended
     let sse_body = concat!(

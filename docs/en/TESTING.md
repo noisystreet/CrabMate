@@ -7,15 +7,14 @@ This page lists **automated tests and common checks** for the CrabMate repo (run
 ## Prerequisites
 
 - **Rust**: 1.85+ (edition 2024); see [`README-en.md`](../../README-en.md).
-- **E2E**: Node.js and npm; install Playwright’s Chromium once.
+- **E2E**: Tauri system libraries (e.g. libgtk-3-dev, libwebkit2gtk-4.1-dev); see CI `.github/workflows/ci.yml`.
 - **Web assets**: E2E and `serve` need **`frontend/dist/index.html`** — build with **`cd frontend && trunk build`** (use **`trunk build --release`** for production-sized WASM).
 
 ## GitHub Actions (main CI)
 
 Push / pull request to **`main`** runs [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml):
 
-- **`check-clippy-test`**: **`cargo check`**, **`cargo clippy`** (**`-D warnings`**), **`cargo test --workspace --all-features`**
-- **`e2e`**: **`trunk build`** when **`frontend/dist`** cache misses, then **`cargo build --release -p crabmate`**, then Playwright in **`e2e/`** (**`CM_E2E_FIXTURES=1`**, no real LLM); uploads **`playwright-report`** on failure
+- **`check-clippy-test`**: **`cargo check`**, **`cargo clippy`** (**`-D warnings`**), **`cargo test --workspace --all-features`**; **desktop-tauri** workspace **`cargo check --tests`**, **`cargo clippy`**, **`cargo test`** (Victauri tests auto-skip without **`VICTAURI_E2E=1`**)
 
 Complexity, dependency security, and coverage use separate workflows (**`code-complexity.yml`**, **`dependency-security.yml`**, **`code-coverage.yml`**).
 
@@ -129,43 +128,68 @@ cd frontend && trunk build
 # cd frontend && trunk build --release
 ```
 
-## Browser E2E (Playwright)
+## Desktop E2E (Victauri)
 
-Directory: **`e2e/`**. Stubs **`POST /chat/stream`** and **`/workspace`** — **no real LLM**. Specs cover pagination, **SSE** (control / clarification / staged plan / approval actions), **prefs**, **settings page** (theme / model / API key), **keyboard shortcuts**, **session CRUD**, **status bar**. Helpers in **`e2e/tests/helpers/`**. Run **`./scripts/e2e.sh`** locally. Prefer **`data-testid`**.
+Directory: **`desktop-tauri/src-tauri/tests/`**. Runs inside the **Tauri WebView** via [Victauri](https://github.com/runyourempire/victauri) (`victauri-test`). Seeds data with in-webview **`fetch()`** against `/user-data/*` and **`CM_E2E_FIXTURES=1`** backend routes; stubs **`POST /chat/stream`** with **`eval_js`** fetch interceptors where needed — **no real LLM** (except the opt-in **`victauri_real_llm`** suite). Prefer **`data-testid`**. See also [`docs/测试指南.md`](../测试指南.md) § 桌面端到端.
+
+| Phase | Examples | Notes |
+| --- | --- | --- |
+| 1 | `victauri_session_crud`, `victauri_settings`, `victauri_prefs_theme` | UI + prefs |
+| 2 | `victauri_keyboard`, `victauri_pagination`, `victauri_conversation` | API seed, no stream stub |
+| 3 | `victauri_sse_stub`, `victauri_turn_layout`, `victauri_scroll_send` | SSE / workspace fetch stubs |
+| 4 | `victauri_real_llm` | **`REAL_LLM_E2E=1`**, manual only |
+
+### Local run
+
+**One-shot (recommended)** — **`exec xvfb-run`** relaunches the script so the window never lands on your Wayland/X desktop (default **`VICTAURI_USE_XVFB=1`**):
+
+```bash
+cd frontend && trunk build   # first time only; script also checks dist/
+./scripts/victauri-e2e.sh victauri_scroll_send
+./scripts/victauri-e2e.sh all
+```
+
+**Manual two-terminal** (native display, e.g. desktop session):
 
 ```bash
 cd frontend && trunk build
-cd ../e2e && npm ci
-npx playwright install chromium
-npm test
+cd desktop-tauri/src-tauri
+CM_E2E_FIXTURES=1 CM_DESKTOP_BACKEND_BIN=/path/to/target/debug/crabmate cargo tauri dev
+
+# another terminal
+VICTAURI_E2E=1 CM_E2E_FIXTURES=1 cargo test --no-fail-fast
 ```
 
-Notes:
+### xvfb / headless (Linux)
 
-- **`playwright.config.ts`** starts **`cargo run -- serve --port 18081`** and waits for **`GET /health`**.
-- Override port with **`E2E_PORT`**, e.g. `E2E_PORT=19090 npm test`.
-- Locally (non-CI), an existing server on that port may be **reused** (`reuseExistingServer`).
-- Debug UI: `cd e2e && npm run test:ui`.
-- Script: `./scripts/e2e.sh` (builds `frontend/dist` if missing; uses release `crabmate` when present).
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| **`VICTAURI_USE_XVFB`** | **`1`** | **`1`**: **`exec xvfb-run`** relaunch (no popup); **`0`**: native window; **`auto`**: xvfb when no **`DISPLAY`** or **`CI=true`** |
+| **`VICTAURI_START_TIMEOUT`** | **`90`** | Seconds to wait for **`http://127.0.0.1:7373/health`** |
+| **`VICTAURI_MAIN_WINDOW_WAIT`** | **`15`** | Extra settle time after health before tests |
+| **`VICTAURI_PORT`** | **`7373`** | Victauri MCP port |
 
-**Real-model E2E** (e.g. DeepSeek) is manual opt-in (**`REAL_LLM_E2E=1`**, not in CI). Full steps: [`docs/真实LLM-E2E.md`](../真实LLM-E2E.md) · summary [`REAL_LLM_E2E.md`](REAL_LLM_E2E.md).
+Install **`xvfb`** on Debian/Ubuntu: **`sudo apt install xvfb`**.
+
+Force headless on a machine with **`DISPLAY`**:
+
+```bash
+VICTAURI_USE_XVFB=1 ./scripts/victauri-e2e.sh victauri_scroll_send
+```
+
+Without **`VICTAURI_E2E=1`**, Victauri tests **skip** so **`cargo test`** in the main CI job stays headless-friendly; the dedicated **`victauri-e2e`** job runs full suites via **`./scripts/victauri-e2e.sh all`**.
+
+**Real-model E2E** (e.g. DeepSeek) is manual opt-in (**`REAL_LLM_E2E=1`**, not default CI). Full steps: [`docs/真实LLM-E2E.md`](../真实LLM-E2E.md) · summary [`REAL_LLM_E2E.md`](REAL_LLM_E2E.md).
 
 Quick smoke:
 
 ```bash
-cd frontend && trunk build
-cd ../e2e
-REAL_LLM_E2E=1 API_KEY=YOUR_API_KEY npx playwright test tests/real-llm-smoke.spec.ts --retries=0
+cd desktop-tauri/src-tauri
+VICTAURI_E2E=1 CM_E2E_FIXTURES=1 REAL_LLM_E2E=1 API_KEY=YOUR_API_KEY \
+  cargo test --test victauri_real_llm -- --nocapture
 ```
 
-Turn layout (two turns + MD export):
-
-```bash
-REAL_LLM_E2E=1 E2E_PORT=18888 CM_CRABMATE_USER_DATA_DIR=$HOME/.local/share/crabmate \
-  npx playwright test tests/real-llm-turn-layout.spec.ts --workers=1 --retries=0
-```
-
-On Linux, if `cargo` fails on **wayland** native deps, see the E2E note in [`DEVELOPMENT.md`](DEVELOPMENT.md) (**`libwayland-dev`**).
+On Linux, if Tauri build fails on **wayland** native deps, see [`DEVELOPMENT.md`](DEVELOPMENT.md) (**`libwayland-dev`**).
 
 ## Dependency security and licenses (CI parity)
 

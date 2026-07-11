@@ -1,7 +1,5 @@
 //! Victauri 版 conversation 分页 API + 水合 E2E 测试（Phase 2：需播种，无流存根）。
 //!
-//! 等价 Playwright:
-//!   - `e2e/tests/conversation-messages-pagination.spec.ts` — 分页 API + 水合验证
 //!
 //! Phase 2 播种模式：`seedConversation(request, ...)` → `eval_js("fetch('/e2e/fixtures/conversation', ...)")`
 //!

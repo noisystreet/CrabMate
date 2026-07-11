@@ -1,9 +1,6 @@
 //! Victauri 版发送消息后自动滚底 E2E 测试。
 //!
-//! 验证：用户发送消息后，聊天视图自动滚动到最新消息处。
-//!
-//! 等价 Playwright:
-//!   - 无直接对应（原 Playwright suite 未覆盖此路径）
+//! 验证：用户发送消息后，聊天视图自动滚动到最新消息处；流式生成时 live edge 跟读不丢底。
 //!
 //! 前置条件：
 //!   1. Tauri 桌面应用 debug 模式运行
@@ -12,6 +9,25 @@
 
 use std::time::{Duration, Instant};
 use victauri_test::e2e_test;
+
+/// 与前端 [`crabmate_web::app_prefs::STICKY_BOTTOM_THRESHOLD_PX`] 对齐，留 4px 容差。
+const FOLLOW_GAP_MAX_PX: i32 = 84;
+
+/// 构造多段 plain-text SSE delta，用于流式增高手测/自动化。
+fn build_multichunk_stream_sse(chunk_count: usize) -> String {
+    let mut out = String::from(
+        "id: 1\ndata: {\"sse_capabilities\":{\"supported_sse_v\":1}}\n\n\
+         id: 2\ndata: {\"v\":1}\n\n",
+    );
+    for i in 0..chunk_count {
+        out.push_str(&format!(
+            "id: {}\ndata: STREAM-E2E-LINE-{i:02} padding for scroll follow growth.\n\n",
+            10 + i
+        ));
+    }
+    out.push_str("id: 9000\ndata: {\"stream_ended\":{\"reason\":\"completed\"}}\n\n");
+    out
+}
 
 /// 播种含大量消息的会话（使聊天可滚动）。
 async fn seed_scrollable_session(
@@ -142,6 +158,107 @@ async fn poll_scroll_away_from_bottom(
     }
 }
 
+/// 读取距底像素（`scrollHeight - scrollTop - clientHeight`）。
+async fn read_scroll_gap_px(client: &mut victauri_test::VictauriClient) -> Result<i32, String> {
+    let v = client
+        .eval_js(
+            r#"(() => {
+                const el = document.querySelector('[data-testid="chat-messages-scroller"]');
+                if (!el) return -1;
+                return el.scrollHeight - el.scrollTop - el.clientHeight;
+            })()"#,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    v.as_i64()
+        .map(|n| n as i32)
+        .ok_or_else(|| "scroll gap is not a number".to_string())
+}
+
+/// 在流式输出完成前，持续断言距底不超过跟读阈值。
+async fn poll_streaming_stays_at_live_edge(
+    client: &mut victauri_test::VictauriClient,
+    until_snippet: &str,
+    timeout_secs: u64,
+) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(timeout_secs);
+    loop {
+        let gap = read_scroll_gap_px(client).await?;
+        if gap < 0 {
+            return Err("chat-messages-scroller missing".to_string());
+        }
+        if gap > FOLLOW_GAP_MAX_PX {
+            return Err(format!(
+                "scroll gap {gap}px exceeds follow threshold {FOLLOW_GAP_MAX_PX}px during streaming"
+            ));
+        }
+        let done = client
+            .eval_js(&format!(
+                "document.body?.innerText?.includes('{until_snippet}') ?? false"
+            ))
+            .await
+            .map_err(|e| e.to_string())?
+            .as_bool()
+            .unwrap_or(false);
+        if done {
+            return Ok(());
+        }
+        if Instant::now() > deadline {
+            return Err(format!(
+                "timed out waiting for streaming snippet `{until_snippet}`"
+            ));
+        }
+        tokio::time::sleep(Duration::from_millis(150)).await;
+    }
+}
+
+async fn seed_empty_session(client: &mut victauri_test::VictauriClient, session_id: &str) {
+    let _ = client
+        .eval_js(
+            "fetch('/user-data/prefs',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({locale:'zh',theme:'light',side_panel_view:'hidden',side_width:280,editor_layout_mode:false})})",
+        )
+        .await;
+    let _ = client
+        .eval_js(&format!(
+            "fetch('/user-data/workspaces/current/sessions',{{method:'PUT',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{sessions:[{{id:'{session_id}',title:'E2E empty',draft:'',messages:[],updated_at:1,pinned:false,starred:false}}],active_session_id:'{session_id}'}})}})"
+        ))
+        .await;
+    let _ = client.eval_js("location.reload()").await;
+    client
+        .wait_for("network_idle", Some(""), Some(10000), Some(500))
+        .await
+        .ok();
+}
+
+async fn send_composer_message(client: &mut victauri_test::VictauriClient, text: &str) {
+    let _ = client
+        .eval_js(&format!(
+            "(()=>{{const el=document.querySelector('[data-testid=\"chat-composer-input\"]');\
+             if(!el)return;el.focus();\
+             const s=Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value').set;\
+             s.call(el,'{text}');\
+             el.dispatchEvent(new Event('input',{{bubbles:true}}));}})()"
+        ))
+        .await;
+    client.press_key("Enter").await.unwrap();
+}
+
+async fn dispatch_wheel_up_on_scroller(client: &mut victauri_test::VictauriClient) {
+    let _ = client
+        .eval_js(
+            r#"(() => {
+                const el = document.querySelector('[data-testid="chat-messages-scroller"]');
+                if (!el) return;
+                el.dispatchEvent(new WheelEvent('wheel', {
+                    deltaY: -160,
+                    bubbles: true,
+                    cancelable: true,
+                }));
+            })()"#,
+        )
+        .await;
+}
+
 // ---------------------------------------------------------------------------
 // 测试 1：已有消息的会话中发送新消息 → 自动滚底
 // ---------------------------------------------------------------------------
@@ -257,4 +374,60 @@ e2e_test!(send_first_message_scrolls_to_bottom, |client| async move {
     poll_scroll_at_bottom(&mut client, 10)
         .await
         .expect("should scroll to bottom after sending first message in empty session");
+});
+
+// ---------------------------------------------------------------------------
+// 测试 3：流式多 chunk 增高时保持在 live edge（delta 追底 + 72ms DOM 节流）
+// ---------------------------------------------------------------------------
+e2e_test!(streaming_tail_stays_within_follow_threshold, |client| async move {
+    let sse = build_multichunk_stream_sse(28);
+    inject_stream_stub(&mut client, &sse).await;
+    seed_empty_session(&mut client, "s_e2e_stream_follow").await;
+
+    send_composer_message(&mut client, "stream follow e2e").await;
+
+    client
+        .wait_for("text", Some("STREAM-E2E-LINE-00"), Some(15000), Some(200))
+        .await
+        .unwrap();
+
+    poll_streaming_stays_at_live_edge(&mut client, "STREAM-E2E-LINE-27", 20)
+        .await
+        .expect("should stay within follow gap while streaming grows");
+
+    poll_scroll_at_bottom(&mut client, 10)
+        .await
+        .expect("should remain at bottom after stream completes");
+});
+
+// ---------------------------------------------------------------------------
+// 测试 4：流式中上滚后不再强制跟底
+// ---------------------------------------------------------------------------
+e2e_test!(wheel_up_during_stream_disengages_follow, |client| async move {
+    let sse = build_multichunk_stream_sse(28);
+    inject_stream_stub(&mut client, &sse).await;
+    seed_empty_session(&mut client, "s_e2e_stream_wheel").await;
+
+    send_composer_message(&mut client, "wheel disengage e2e").await;
+
+    client
+        .wait_for("text", Some("STREAM-E2E-LINE-05"), Some(15000), Some(200))
+        .await
+        .unwrap();
+
+    dispatch_wheel_up_on_scroller(&mut client).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    client
+        .wait_for("text", Some("STREAM-E2E-LINE-20"), Some(15000), Some(200))
+        .await
+        .unwrap();
+
+    let gap = read_scroll_gap_px(&mut client)
+        .await
+        .expect("read scroll gap");
+    assert!(
+        gap > FOLLOW_GAP_MAX_PX,
+        "expected scroll away from live edge after wheel-up during stream, gap={gap}px"
+    );
 });

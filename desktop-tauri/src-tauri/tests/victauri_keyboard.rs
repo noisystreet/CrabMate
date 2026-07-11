@@ -1,14 +1,10 @@
 //! Victauri 版 keyboard-shortcuts E2E 测试（Phase 2：需播种，无流存根）。
 //!
-//! 等价 Playwright:
-//!   - `e2e/tests/keyboard-shortcuts.spec.ts` — End/Home 键滚顶/滚底
+//! Phase 2 技术要点：
+//!   1. API 播种：`eval_js("fetch('/user-data/...', {method:'PUT', ...})")`
+//!   2. 滚动断言：`eval_js` 轮询 `scrollTop`
 //!
-//! Phase 2 迁移关键技术：
-//!   1. API 播种：`request.put('/user-data/...')` → `eval_js("fetch('/user-data/...', {method:'PUT', ...})")`
-//!   2. `expect.poll()` → 手动 `eval_js` 轮询循环
-//!   3. `page.evaluate(el => el.scrollTop)` → `eval_js("document.querySelector(...).scrollTop")`
-//!
-//! 注意：Enter 发送测试（依赖 `installChatStreamStub` / `page.route`）属于 Phase 3，暂未迁移。
+//! 注意：Enter 发送 + SSE 存根见 Phase 3（`victauri_sse_stub` 等）。
 //!
 //! 前置条件：
 //!   1. Tauri 桌面应用 debug 模式运行
@@ -80,7 +76,6 @@ e2e_test!(end_key_scrolls_messages_toward_bottom, |client| async move {
 
     client.press_key("Home").await.unwrap();
 
-    // Phase 2 轮询模式：等价 Playwright 的 `expect.poll(() => scroller.evaluate(el => el.scrollTop)).toBe(0)`
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         let top: f64 = client

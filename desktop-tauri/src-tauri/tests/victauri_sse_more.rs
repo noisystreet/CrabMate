@@ -1,9 +1,5 @@
 //! Victauri 版 Phase 3 SSE 追加测试：审批/澄清。
 //!
-//! 等价 Playwright:
-//!   - `e2e/tests/sse-control.spec.ts`         — 审批弹窗
-//!   - `e2e/tests/sse-approval-actions.spec.ts` — 审批 deny/allow
-//!   - `e2e/tests/sse-clarification.spec.ts`    — 澄清问卷
 
 use victauri_test::e2e_test;
 use victauri_test::locator::Locator;

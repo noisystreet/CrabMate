@@ -1,9 +1,5 @@
 //! Victauri 版两轮对话 E2E 测试（Phase 3：多轮 fetch 拦截器 + 计数器）。
 //!
-//! 等价 Playwright:
-//!   - `e2e/tests/sse-two-turn-no-hydrate.spec.ts`  — 快速两轮
-//!   - `e2e/tests/sse-two-turn-freeze.spec.ts`       — 首轮慢速
-//!   - `e2e/tests/sse-two-turn-slow-debug.spec.ts`   — 慢速调试
 //!
 //! 前置条件：同其他 Phase 3 测试
 

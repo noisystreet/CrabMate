@@ -1,10 +1,7 @@
 //! Victauri 版 status-bar E2E 测试（纯 UI 子集）。
 //!
-//! 等价 Playwright:
-//!   - `e2e/tests/status-bar.spec.ts` — status bar 存在 + agent role 菜单
 //!
-//! 注意：`status fetch error` 测试（依赖 `page.route()` HTTP 拦截）暂未迁移，
-//! 属于 Phase 3 范围。
+//! 注意：`status fetch error`（需 fetch 拦截模拟 HTTP 失败）尚未覆盖。
 //!
 //! 前置条件：
 //!   1. Tauri 桌面应用 debug 模式运行

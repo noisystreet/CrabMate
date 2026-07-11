@@ -322,7 +322,7 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 - `message_chunks::chunk_messages` — 仅 chunk 折叠，可见下标来自 `ChatColumn`
 - `session_export::stored_messages_to_export` — 仅格式转换，可见下标来自 `Export`
 
-**E2E**：`e2e/tests/phase5-visible-messages.spec.ts`（snapshot / ephemeral 隐藏）；`e2e/tests/sse-turn-layout-interleaved.spec.ts`（块布局：说明块在工具组前、segment_end 早于 tool_call、导出顺序）。
+**E2E（Victauri）**：`victauri_visible_messages.rs`（snapshot / ephemeral 隐藏）；`victauri_turn_layout.rs`（块布局：说明块在工具组前、segment_end 早于 tool_call）。
 
 ### 12.9 消息块 → 气泡（Phase 6）
 
@@ -448,4 +448,4 @@ messages:         同上（batch 行 id 固定为 turn-batch-narration）
 
 **`on_done`**：`drain_stream_tail_into_canonical_for_done` → `tool_phase_end`（若仍 open）/ `close_open_commentary` → `sync_turn_projection` → 再 tail 决策。
 
-**测试**：`real_morph_b_bulk_deltas_stored_block_layout` · `open_commentary_through_tool_phase_end_syncs_batch_before_tools` · `real_hpcg_morph_b_export_section_order` · `morph_b_late_narration_after_first_tool_batch_before_tool` · 金样 `morph_b_hpcg_real_plain_deltas` / `morph_b_late_narration_after_first_tool`（`fixtures/turn_project_web_golden.jsonl`）· E2E `morph B plain deltas`（`e2e/tests/sse-turn-layout-interleaved.spec.ts`）· `sync_web_projection_clears_loading_stored_body`
+**测试**：`real_morph_b_bulk_deltas_stored_block_layout` · `open_commentary_through_tool_phase_end_syncs_batch_before_tools` · `real_hpcg_morph_b_export_section_order` · `morph_b_late_narration_after_first_tool_batch_before_tool` · 金样 `morph_b_hpcg_real_plain_deltas` / `morph_b_late_narration_after_first_tool`（`fixtures/turn_project_web_golden.jsonl`）· Victauri `victauri_turn_layout.rs` · `sync_web_projection_clears_loading_stored_body`
