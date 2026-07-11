@@ -44,6 +44,7 @@ mod settings_toggle_switch;
 pub(crate) mod shell_prefs_storage;
 mod shell_runtime_context;
 mod side_column;
+mod side_column_github;
 mod side_column_toolbar;
 mod side_column_workspace_scroll;
 mod sidebar_nav;
