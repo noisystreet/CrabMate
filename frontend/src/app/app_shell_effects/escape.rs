@@ -5,6 +5,7 @@ use leptos_dom::helpers::window_event_listener;
 use wasm_bindgen::JsCast;
 
 use crate::app::app_signals::IdeChromeSignals;
+use crate::app::github_embed_page::{GithubEmbedSignals, close_github_embed_page};
 use crate::ide_confirm::dismiss_ide_confirm;
 use crate::session_ops::SessionContextAnchor;
 
@@ -26,6 +27,7 @@ pub struct ShellEscapeSignals {
     pub changelist_modal_open: RwSignal<bool>,
     pub settings_modal: RwSignal<bool>,
     pub ide_settings_page: RwSignal<bool>,
+    pub github_embed: GithubEmbedSignals,
     pub session_modal: RwSignal<bool>,
 }
 
@@ -124,6 +126,10 @@ fn dismiss_modal_escape_layers(shell: ShellEscapeSignals) -> bool {
     }
     if shell.ide_settings_page.get_untracked() {
         shell.ide_settings_page.set(false);
+        return true;
+    }
+    if shell.github_embed.open.get_untracked() {
+        close_github_embed_page(shell.github_embed);
         return true;
     }
     if shell.session_modal.get_untracked() {

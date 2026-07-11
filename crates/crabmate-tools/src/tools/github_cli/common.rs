@@ -119,26 +119,33 @@ pub fn wrap_with_parsed(raw: String, stdout: &str) -> String {
     }
 }
 
-/// 从 `command::run` 风格输出中提取「标准输出：」段落（不含后续「标准错误：」）。
+/// 从 `command::run` 风格输出中解析 `退出码：N`（可出现在 `命令：…` 行之后）。
+pub fn command_formatted_exit_code(formatted: &str) -> Option<i32> {
+    formatted.lines().find_map(|l| {
+        l.strip_prefix("退出码：")
+            .and_then(|s| s.trim().parse::<i32>().ok())
+    })
+}
+
+/// 从 `command::run` 风格输出中提取「标准输出：」段落（不含后续「标准错误：」或模型用 JSON 附录）。
 pub fn extract_stdout_from_formatted(out: &str) -> &str {
     let Some(idx) = out.find("标准输出：\n") else {
         return "";
     };
     let start = idx + "标准输出：\n".len();
-    let end = out[start..]
+    let mut end = out[start..]
         .find("\n标准错误：\n")
         .map(|e| start + e)
         .unwrap_or(out.len());
-    &out[start..end]
+    if let Some(mark) = out[start..end].find("\n\n---\n") {
+        end = start + mark;
+    }
+    out[start..end].trim_end()
 }
 
-/// 首行 `退出码：N` 为 0 且 stdout 可解析为 JSON 时附加格式化块。
+/// 存在 `退出码：0` 且 stdout 可解析为 JSON 时附加格式化块。
 pub fn attach_json_if_exit_zero(formatted: String, stdout_raw: &str) -> String {
-    let first = formatted.lines().next().unwrap_or("");
-    let code = first
-        .strip_prefix("退出码：")
-        .and_then(|s| s.trim().parse::<i32>().ok());
-    if code != Some(0) {
+    if command_formatted_exit_code(&formatted) != Some(0) {
         return formatted;
     }
     wrap_with_parsed(formatted, stdout_raw)
@@ -359,5 +366,29 @@ pub fn push_trimmed_string_flag(v: &JsonValue, key: &str, flag: &str, argv: &mut
             argv.push(flag.into());
             argv.push(t.to_string());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_formatted_exit_code_skips_command_invocation_line() {
+        let raw = "命令：gh pr checks\n退出码：0\n标准输出：\n[]\n";
+        assert_eq!(command_formatted_exit_code(raw), Some(0));
+    }
+
+    #[test]
+    fn extract_stdout_stops_before_parsed_json_appendix() {
+        let raw = "命令：gh pr list\n退出码：0\n标准输出：\n[]\n\n---\n解析后的 JSON（供模型直接使用）：\n[]\n";
+        assert_eq!(extract_stdout_from_formatted(raw), "[]");
+    }
+
+    #[test]
+    fn attach_json_if_exit_zero_appends_after_command_line() {
+        let raw = "命令：gh pr list\n退出码：0\n标准输出：\n[]\n".to_string();
+        let out = attach_json_if_exit_zero(raw, "[]");
+        assert!(out.contains("解析后的 JSON"), "{out}");
     }
 }

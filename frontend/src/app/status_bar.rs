@@ -215,44 +215,6 @@ fn StatusBarContextChip(
 }
 
 #[component]
-fn StatusBarGithubChip(st: StatusTasksSignals, locale: RwSignal<Locale>) -> impl IntoView {
-    view! {
-        <Show when=move || {
-            st.github_checks
-                .get()
-                .and_then(|c| c.pr_number)
-                .is_some()
-        }>
-            <span
-                class="status-chip status-chip-github"
-                prop:title=move || {
-                    st.github_checks
-                        .get()
-                        .and_then(|c| c.pr_title.clone())
-                        .unwrap_or_default()
-                }
-            >
-                <span class="status-chip-label">
-                    {move || i18n::github_status_chip_label(locale.get())}
-                </span>
-                <span class="status-chip-value">{move || {
-                    let c = st.github_checks.get().unwrap_or_default();
-                    let n = c.pr_number.unwrap_or(0);
-                    let title = c.pr_title.as_deref().unwrap_or("");
-                    let chip = i18n::github_status_chip_pr(locale.get(), n, title);
-                    let s = c.summary;
-                    format!(
-                        "{} · {}",
-                        chip,
-                        i18n::github_checks_summary(locale.get(), s.passing, s.failing, s.pending)
-                    )
-                }}</span>
-            </span>
-        </Show>
-    }
-}
-
-#[component]
 fn StatusBarChipsSkeleton(locale: RwSignal<Locale>) -> impl IntoView {
     view! {
         <div
@@ -343,7 +305,6 @@ fn StatusBarChipsLoaded(
                 selected_agent_role=selected_agent_role
                 locale=locale
             />
-            <StatusBarGithubChip st=st locale=locale />
         </>
     }
 }

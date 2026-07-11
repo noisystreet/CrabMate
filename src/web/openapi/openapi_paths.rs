@@ -722,19 +722,6 @@ fn openapi_paths_fragment_github() -> Value {
                 }
             }
         },
-        "/github/prs": {
-            "get": {
-                "tags": ["github"],
-                "summary": "列出 open Pull Requests（只读）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
-                "responses": {
-                    "200": {
-                        "description": "PR 列表",
-                        "content": { "application/json": { "schema": { "type": "object" } } }
-                    }
-                }
-            }
-        },
         "/github/pr/current/checks": {
             "get": {
                 "tags": ["github"],

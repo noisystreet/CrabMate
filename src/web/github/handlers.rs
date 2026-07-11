@@ -1,16 +1,16 @@
-//! GitHub 在线模式 HTTP handler（只读；底层复用 `gh` CLI 封装）。
+//! GitHub 在线模式 HTTP handler（只读：仓库上下文与当前分支 PR checks）。
 
 use std::path::Path;
 use std::sync::Arc;
 
 use axum::Json;
-use axum::extract::{Query, State};
+use axum::extract::State;
 
 use crate::AppState;
-use crate::tools::web_api::{github_pr_current_checks, github_pr_list_open, github_repo_context};
+use crate::tools::web_api::{github_pr_current_checks, github_repo_context};
 use crate::web::http_types::github::{
-    GithubPrCurrentChecksData, GithubPrCurrentChecksResponse, GithubPrsData, GithubPrsQuery,
-    GithubPrsResponse, GithubRepoContextData, GithubRepoContextResponse,
+    GithubPrCurrentChecksData, GithubPrCurrentChecksResponse, GithubRepoContextData,
+    GithubRepoContextResponse,
 };
 use crate::workspace::path::validate_effective_workspace_base;
 
@@ -74,42 +74,6 @@ pub async fn github_repo_context_handler(
         Err(e) => Json(GithubRepoContextResponse {
             data: GithubRepoContextData::default(),
             error: Some(format!("GitHub 上下文查询失败：{e}")),
-        }),
-    }
-}
-
-pub async fn github_prs_handler(
-    State(state): State<Arc<AppState>>,
-    Query(query): Query<GithubPrsQuery>,
-) -> Json<GithubPrsResponse> {
-    let ctx = match github_gh_context(&state).await {
-        Ok(c) => c,
-        Err(e) => {
-            return Json(GithubPrsResponse {
-                data: GithubPrsData::default(),
-                error: Some(e),
-            });
-        }
-    };
-    let limit = query.limit;
-    let GithubGhContext {
-        allowed_commands,
-        max_output_len,
-        work_dir,
-    } = ctx;
-    match tokio::task::spawn_blocking(move || {
-        github_pr_list_open(max_output_len, &allowed_commands, &work_dir, limit)
-    })
-    .await
-    {
-        Ok(Ok(data)) => Json(GithubPrsResponse { data, error: None }),
-        Ok(Err(e)) => Json(GithubPrsResponse {
-            data: GithubPrsData::default(),
-            error: Some(e),
-        }),
-        Err(e) => Json(GithubPrsResponse {
-            data: GithubPrsData::default(),
-            error: Some(format!("PR 列表查询失败：{e}")),
         }),
     }
 }

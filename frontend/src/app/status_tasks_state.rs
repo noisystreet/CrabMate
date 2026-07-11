@@ -5,9 +5,7 @@
 
 use leptos::prelude::*;
 
-use crate::api::{
-    GithubPrCurrentChecksData, GithubPrsData, GithubRepoContextData, StatusData, TasksData,
-};
+use crate::api::{GithubRepoContextData, StatusData, TasksData};
 
 use super::status_fetch_state::StatusFetchPhase;
 
@@ -23,8 +21,4 @@ pub struct StatusTasksSignals {
     pub tasks_err: RwSignal<Option<String>>,
     pub tasks_loading: RwSignal<bool>,
     pub github_repo: RwSignal<Option<GithubRepoContextData>>,
-    pub github_prs: RwSignal<GithubPrsData>,
-    pub github_checks: RwSignal<Option<GithubPrCurrentChecksData>>,
-    pub github_loading: RwSignal<bool>,
-    pub github_err: RwSignal<Option<String>>,
 }

@@ -5,20 +5,12 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use super::common::{extract_stdout_from_formatted, gh_allowed, run_gh_vec};
-use super::pr_issue::gh_pr_list;
+use super::common::{
+    command_formatted_exit_code, extract_stdout_from_formatted, gh_allowed, run_gh_vec,
+};
 use super::pr_workflow::gh_pr_checks;
 
 const REPO_VIEW_FIELDS: &str = "nameWithOwner,url,defaultBranchRef";
-const PR_LIST_FIELDS: &[&str] = &[
-    "number",
-    "title",
-    "state",
-    "url",
-    "headRefName",
-    "baseRefName",
-    "isDraft",
-];
 const PR_VIEW_FIELDS: &[&str] = &[
     "number",
     "title",
@@ -30,11 +22,7 @@ const PR_VIEW_FIELDS: &[&str] = &[
 ];
 
 fn gh_exit_code(formatted: &str) -> Option<i32> {
-    formatted
-        .lines()
-        .next()
-        .and_then(|l| l.strip_prefix("退出码："))
-        .and_then(|s| s.trim().parse().ok())
+    command_formatted_exit_code(formatted)
 }
 
 fn gh_tool_error(formatted: &str) -> String {
@@ -83,7 +71,16 @@ fn current_git_branch(working_dir: &Path) -> Option<String> {
 }
 
 fn is_git_repo(working_dir: &Path) -> bool {
-    working_dir.join(".git").exists()
+    if working_dir.join(".git").exists() {
+        return true;
+    }
+    std::process::Command::new("git")
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .current_dir(working_dir)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .is_some_and(|o| String::from_utf8_lossy(&o.stdout).trim() == "true")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -95,22 +92,6 @@ pub struct GithubRepoContextData {
     pub url: Option<String>,
     pub default_branch: Option<String>,
     pub current_branch: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GithubPrItemData {
-    pub number: u64,
-    pub title: String,
-    pub state: String,
-    pub url: Option<String>,
-    pub head_ref: Option<String>,
-    pub base_ref: Option<String>,
-    pub is_draft: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct GithubPrsData {
-    pub items: Vec<GithubPrItemData>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -149,26 +130,6 @@ fn json_str(v: &JsonValue, key: &str) -> Option<String> {
 fn json_u64(v: &JsonValue, key: &str) -> Option<u64> {
     v.get(key).and_then(|x| x.as_u64())
 }
-
-fn json_bool(v: &JsonValue, key: &str) -> Option<bool> {
-    v.get(key).and_then(|x| x.as_bool())
-}
-
-fn parse_pr_item(v: &JsonValue) -> Option<GithubPrItemData> {
-    let number = json_u64(v, "number")?;
-    let title = json_str(v, "title").unwrap_or_else(|| format!("#{number}"));
-    let state = json_str(v, "state").unwrap_or_else(|| "UNKNOWN".to_string());
-    Some(GithubPrItemData {
-        number,
-        title,
-        state,
-        url: json_str(v, "url"),
-        head_ref: json_str(v, "headRefName"),
-        base_ref: json_str(v, "baseRefName"),
-        is_draft: json_bool(v, "isDraft"),
-    })
-}
-
 fn summarize_checks(items: &[GithubPrCheckItemData]) -> GithubChecksSummaryData {
     let mut summary = GithubChecksSummaryData {
         total: items.len(),
@@ -250,48 +211,25 @@ pub fn github_repo_context(
     Ok(out)
 }
 
-/// 列出 open PR（默认最多 30 条）。
-pub fn github_pr_list_open(
+/// 指定 PR（或当前分支关联 PR）的 checks。
+pub fn github_pr_checks(
     max_output_len: usize,
     allowed_commands: &[String],
     working_dir: &Path,
-    limit: Option<u32>,
-) -> Result<GithubPrsData, String> {
-    gh_allowed(allowed_commands)?;
-    let args = serde_json::json!({
-        "state": "open",
-        "limit": limit.unwrap_or(30),
-        "fields": PR_LIST_FIELDS,
-    });
-    let formatted = gh_pr_list(
-        &args.to_string(),
-        max_output_len,
-        allowed_commands,
-        working_dir,
-    );
-    let v = parse_gh_json_stdout(&formatted)?;
-    let items = v
-        .as_array()
-        .map(|arr| arr.iter().filter_map(parse_pr_item).collect())
-        .unwrap_or_default();
-    Ok(GithubPrsData { items })
-}
-
-/// 当前分支关联 PR 的 checks（省略 PR number 时与 `gh pr checks` 默认一致）。
-pub fn github_pr_current_checks(
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
+    number: Option<u64>,
 ) -> Result<GithubPrCurrentChecksData, String> {
     gh_allowed(allowed_commands)?;
     let mut out = GithubPrCurrentChecksData::default();
 
-    let view_argv = vec![
-        "pr".into(),
-        "view".into(),
-        "--json".into(),
-        PR_VIEW_FIELDS.join(","),
-    ];
+    let mut view_argv = vec!["pr".into(), "view".into()];
+    if let Some(n) = number {
+        if n == 0 || n > 999_999 {
+            return Err("number 须为 1～999999".to_string());
+        }
+        view_argv.push(n.to_string());
+    }
+    view_argv.push("--json".into());
+    view_argv.push(PR_VIEW_FIELDS.join(","));
     let view_formatted = run_gh_vec(view_argv, max_output_len, allowed_commands, working_dir);
     if gh_exit_code(&view_formatted) == Some(0)
         && let Ok(v) = parse_gh_json_stdout(&view_formatted)
@@ -301,7 +239,10 @@ pub fn github_pr_current_checks(
         out.pr_url = json_str(&v, "url");
     }
 
-    let checks_args = serde_json::json!({ "structured": true });
+    let mut checks_args = serde_json::json!({ "structured": true });
+    if let Some(n) = number {
+        checks_args["number"] = serde_json::json!(n);
+    }
     let checks_formatted = gh_pr_checks(
         &checks_args.to_string(),
         max_output_len,
@@ -314,9 +255,41 @@ pub fn github_pr_current_checks(
     Ok(out)
 }
 
+/// 当前分支关联 PR 的 checks（省略 PR number 时与 `gh pr checks` 默认一致）。
+pub fn github_pr_current_checks(
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+) -> Result<GithubPrCurrentChecksData, String> {
+    github_pr_checks(max_output_len, allowed_commands, working_dir, None)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn github_repo_context_treats_subdir_as_git_repo() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../frontend");
+        if !dir.is_dir() {
+            return;
+        }
+        let allowed = vec!["gh".to_string()];
+        let ctx = github_repo_context(65536, &allowed, &dir).expect("ctx");
+        assert!(ctx.is_git_repo, "subdir inside repo should count as git");
+    }
+
+    #[test]
+    fn github_checks_from_git_subdir_parses_structured_json() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../frontend");
+        if !dir.is_dir() {
+            return;
+        }
+        let allowed = vec!["gh".to_string()];
+        let result = github_pr_current_checks(65536, &allowed, &dir).expect("checks");
+        assert!(!result.checks.is_empty(), "expected CI checks from gh");
+    }
 
     #[test]
     fn summarize_checks_counts_buckets() {
@@ -345,22 +318,5 @@ mod tests {
         assert_eq!(s.passing, 1);
         assert_eq!(s.failing, 1);
         assert_eq!(s.pending, 1);
-    }
-
-    #[test]
-    fn parse_pr_item_reads_fields() {
-        let v = serde_json::json!({
-            "number": 42,
-            "title": "feat",
-            "state": "OPEN",
-            "url": "https://example/pr/42",
-            "headRefName": "feat/x",
-            "baseRefName": "main",
-            "isDraft": false
-        });
-        let item = parse_pr_item(&v).expect("item");
-        assert_eq!(item.number, 42);
-        assert_eq!(item.title, "feat");
-        assert_eq!(item.head_ref.as_deref(), Some("feat/x"));
     }
 }

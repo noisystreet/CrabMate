@@ -91,18 +91,21 @@ html[data-tauri-shell][data-ide-layout] .ide-layout-left-chrome .nav-rail-brand-
   -webkit-app-region: no-drag;
 }
 
-html[data-tauri-shell]:not([data-ide-layout]) .side-column .shell-main-toolbar {
+html[data-tauri-shell]:not([data-ide-layout]) .side-column .shell-main-toolbar,
+html[data-tauri-shell]:not([data-ide-layout]) .shell-main-toolbar--rail-float {
   -webkit-app-region: drag;
   padding-right: 10px;
 }
 
 html[data-tauri-shell]:not([data-ide-layout]) .side-column .shell-main-toolbar button,
-html[data-tauri-shell]:not([data-ide-layout]) .side-column .shell-main-toolbar .toolbar-view-wrap {
+html[data-tauri-shell]:not([data-ide-layout]) .side-column .shell-main-toolbar .toolbar-view-wrap,
+html[data-tauri-shell]:not([data-ide-layout]) .shell-main-toolbar--rail-float button,
+html[data-tauri-shell]:not([data-ide-layout]) .shell-main-toolbar--rail-float .toolbar-view-wrap {
   -webkit-app-region: no-drag;
 }
 
 /* 侧栏收起时：浮动工具条避开全宽顶栏 */
-html[data-tauri-shell]:not([data-ide-layout]) .side-column.side-column-rail-only .shell-main-toolbar {
+html[data-tauri-shell]:not([data-ide-layout]) .shell-main-toolbar--rail-float {
   top: calc(var(--shell-topbar-h) + max(10px, env(safe-area-inset-top, 0px)));
 }
 
