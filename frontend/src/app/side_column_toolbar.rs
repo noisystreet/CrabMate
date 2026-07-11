@@ -133,6 +133,18 @@ fn SidePanelViewPickerMenu(props: SidePanelViewPickerProps) -> impl IntoView {
             <button
                 type="button"
                 class="toolbar-view-menu-item"
+                class:active=move || matches!(side_panel_view.get(), SidePanelView::PullRequests)
+                role="menuitem"
+                on:click=move |_| {
+                    side_panel_view.set(SidePanelView::PullRequests);
+                    view_menu_open.set(false);
+                }
+            >
+                {move || i18n::github_side_view_menu(locale.get())}
+            </button>
+            <button
+                type="button"
+                class="toolbar-view-menu-item"
                 class:active=move || matches!(side_panel_view.get(), SidePanelView::DebugConsole)
                 role="menuitem"
                 prop:title=move || i18n::side_debug_console_title(locale.get())

@@ -16,6 +16,7 @@ pub(crate) use chat_handlers::{cleanup_uploads_dir, conversation_conflict_sse_li
 
 pub(crate) use chat_handlers::normalize_client_conversation_id;
 
+pub mod github;
 pub mod openapi;
 pub mod routes;
 pub mod server;

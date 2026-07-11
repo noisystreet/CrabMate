@@ -582,6 +582,8 @@ pub fn reset_process_tool_globals_for_tests() {
     test_result_cache::reset_test_result_cache_for_tests();
 }
 
+pub use github_cli::web_api;
+
 #[cfg(test)]
 #[path = "mod/tests.rs"]
 mod tests;
