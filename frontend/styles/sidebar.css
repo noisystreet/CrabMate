@@ -34,13 +34,12 @@
   display: none;
 }
 
-/* 宽度为 0：不显示侧栏条；子工具栏 fixed 脱出，需可见溢出与较高叠层 */
+/* 宽度为 0：不显示侧栏条；浮动工具栏脱出到 main-row 内，勿用 pointer-events:none（会阻断 WebKit 点击） */
 .side-column.side-column-rail-only {
   overflow: visible;
   z-index: 25;
   border-left: none;
   background: transparent;
-  pointer-events: none;
 }
 
 .side-body {
@@ -602,74 +601,8 @@
   accent-color: var(--accent);
   cursor: pointer;
 }
-  margin: 0 0 12px;
-  font-size: 13px;
-  color: var(--text-muted);
-  line-height: 1.45;
-}
-
-.github-repo-meta {
-  margin-bottom: 12px;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.github-checks-heading {
-  margin: 12px 0 8px;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-}
-
-.github-checks-summary {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-bottom: 8px;
-}
-
-.github-checks-list {
-  list-style: none;
-  margin: 0 0 12px;
-  padding: 0;
-  font-size: 12px;
-}
-
-.github-checks-list li {
-  padding: 4px 0;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.github-check-state {
-  font-family: var(--font-mono, monospace);
-  font-size: 11px;
-}
-
-.github-pr-num {
-  font-weight: 600;
-  color: var(--accent);
-}
-
-.github-pr-head {
-  display: block;
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.status-chip-github .status-chip-value {
-  max-width: 280px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .tasks-list li span {
-  flex: 1;
-  line-height: 1.45;
-}
-
-/* —— 骨架屏（/status、工作区、任务加载） —— */
   flex: 1;
   line-height: 1.45;
 }

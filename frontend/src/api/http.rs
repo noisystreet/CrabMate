@@ -92,66 +92,21 @@ pub struct GithubRepoContextData {
     #[serde(default)]
     pub connected: bool,
     #[serde(default)]
+    #[allow(dead_code)]
     pub is_git_repo: bool,
     #[serde(default)]
+    #[allow(dead_code)]
     pub gh_available: bool,
     pub repo: Option<String>,
     pub url: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
     pub default_branch: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
     pub current_branch: Option<String>,
     #[serde(default)]
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct GithubPrItem {
-    pub number: u64,
-    pub title: String,
-    pub state: String,
-    pub url: Option<String>,
-    pub head_ref: Option<String>,
-    pub base_ref: Option<String>,
-    pub is_draft: Option<bool>,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct GithubPrsData {
-    #[serde(default)]
-    pub items: Vec<GithubPrItem>,
-    #[serde(default)]
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct GithubPrCheckItem {
-    pub name: String,
-    pub state: String,
-    pub bucket: Option<String>,
-    pub link: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct GithubChecksSummary {
-    #[serde(default)]
-    pub total: usize,
-    #[serde(default)]
-    pub passing: usize,
-    #[serde(default)]
-    pub failing: usize,
-    #[serde(default)]
-    pub pending: usize,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct GithubPrCurrentChecksData {
-    pub pr_number: Option<u64>,
-    pub pr_title: Option<String>,
-    pub pr_url: Option<String>,
-    #[serde(default)]
-    pub checks: Vec<GithubPrCheckItem>,
-    #[serde(default)]
-    pub summary: GithubChecksSummary,
-    #[serde(default)]
+    #[allow(dead_code)]
     pub error: Option<String>,
 }
 
@@ -518,16 +473,6 @@ pub async fn fetch_status(loc: Locale) -> Result<StatusData, String> {
 
 pub async fn fetch_github_repo_context(loc: Locale) -> Result<GithubRepoContextData, String> {
     fetch_json("GET", "/github/repo-context", None, loc).await
-}
-
-pub async fn fetch_github_prs(loc: Locale) -> Result<GithubPrsData, String> {
-    fetch_json("GET", "/github/prs", None, loc).await
-}
-
-pub async fn fetch_github_pr_current_checks(
-    loc: Locale,
-) -> Result<GithubPrCurrentChecksData, String> {
-    fetch_json("GET", "/github/pr/current/checks", None, loc).await
 }
 
 pub async fn fetch_web_ui_config(loc: Locale) -> Result<WebUiConfig, String> {

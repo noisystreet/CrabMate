@@ -160,6 +160,11 @@ proptest = "1"
 tempfile = "3"
 
 [profile.release]
+# 默认关闭 LTO，加快 `cargo build --release`；体积敏感发布可改用下方 `release-lto` profile。
+lto = false
+
+[profile.release-lto]
+inherits = "release"
 lto = true
 codegen-units = 1
 

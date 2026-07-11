@@ -483,9 +483,16 @@
 .toolbar-view-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: 39;
   background: transparent;
   cursor: default;
+}
+
+/* 视图下拉 backdrop 为全屏 fixed；顶栏各按钮须高于 backdrop */
+.shell-main-toolbar > .btn,
+.shell-main-toolbar > .toolbar-view-wrap {
+  position: relative;
+  z-index: 41;
 }
 
 .toolbar-view-trigger {
@@ -572,9 +579,10 @@
   z-index: 60;
 }
 
-/* 隐藏侧栏：三键纵向同宽，贴右缘一条（无外层围框） */
-.side-column.side-column-rail-only .shell-main-toolbar {
+/* 隐藏侧栏：工具栏脱出 side-column（见 side_column_toolbar.rs），贴右缘浮动 */
+.shell-main-toolbar--rail-float {
   pointer-events: auto;
+  z-index: 50;
   position: fixed;
   right: max(0px, env(safe-area-inset-right, 0px));
   top: max(10px, env(safe-area-inset-top, 0px));
@@ -601,7 +609,7 @@
   border-bottom: none;
 }
 
-.side-column.side-column-rail-only .shell-main-toolbar .btn {
+.shell-main-toolbar--rail-float .btn {
   width: 100%;
   flex: 0 0 auto;
   justify-content: center;
@@ -614,6 +622,7 @@
 .side-column .shell-main-toolbar {
   display: flex;
   flex-shrink: 0;
+  pointer-events: auto;
   flex-direction: row;
   flex-wrap: wrap;
   justify-content: flex-start;
@@ -990,7 +999,7 @@
   }
 
   /* 浮动工具栏避开移动端顶栏（☰ / 标题 / 新对话） */
-  .side-column.side-column-rail-only .shell-main-toolbar {
+  .shell-main-toolbar--rail-float {
     top: calc(var(--shell-topbar-h) + max(8px, env(safe-area-inset-top, 0px)));
   }
 

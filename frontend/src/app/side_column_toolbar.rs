@@ -4,9 +4,19 @@ use leptos::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::app::github_embed_page::{
+    github_repo_btn_disabled, try_open_github_embed_from_repo, use_github_embed_signals,
+};
 use crate::app_prefs::SidePanelView;
 use crate::i18n::{self, Locale};
 use crate::workspace_shell::begin_side_column_resize;
+
+use super::status_tasks_state::StatusTasksSignals;
+
+/// 侧栏隐藏时工具栏是否以浮动条渲染（须脱出 `side-column-rail-only` 父节点）。
+pub(crate) fn side_toolbar_rail_float(view: SidePanelView) -> bool {
+    matches!(view, SidePanelView::None)
+}
 
 pub(super) type SideResizeHandlesCell = Rc<
     RefCell<
@@ -28,6 +38,7 @@ pub(super) struct SideColumnResizeToolbarSignals {
     pub view_menu_open: RwSignal<bool>,
     pub status_bar_visible: RwSignal<bool>,
     pub settings_page: RwSignal<bool>,
+    pub status_tasks: StatusTasksSignals,
 }
 
 #[derive(Clone, Copy)]
@@ -133,18 +144,6 @@ fn SidePanelViewPickerMenu(props: SidePanelViewPickerProps) -> impl IntoView {
             <button
                 type="button"
                 class="toolbar-view-menu-item"
-                class:active=move || matches!(side_panel_view.get(), SidePanelView::PullRequests)
-                role="menuitem"
-                on:click=move |_| {
-                    side_panel_view.set(SidePanelView::PullRequests);
-                    view_menu_open.set(false);
-                }
-            >
-                {move || i18n::github_side_view_menu(locale.get())}
-            </button>
-            <button
-                type="button"
-                class="toolbar-view-menu-item"
                 class:active=move || matches!(side_panel_view.get(), SidePanelView::DebugConsole)
                 role="menuitem"
                 prop:title=move || i18n::side_debug_console_title(locale.get())
@@ -196,15 +195,71 @@ fn SideColumnResizeDragHandle(
 }
 
 #[component]
+fn SideToolbarGithubRepoBtn(
+    locale: RwSignal<Locale>,
+    view_menu_open: RwSignal<bool>,
+    status_tasks: StatusTasksSignals,
+) -> impl IntoView {
+    let embed = use_github_embed_signals();
+    view! {
+        <button
+            type="button"
+            class="btn btn-secondary btn-sm shell-toolbar-icon-btn shell-toolbar-github-btn"
+            data-testid="side-toolbar-github-repo"
+            prop:disabled=move || github_repo_btn_disabled(status_tasks.github_repo.get().as_ref())
+            on:click=move |_| {
+                view_menu_open.set(false);
+                let _ = try_open_github_embed_from_repo(
+                    status_tasks.github_repo.get_untracked(),
+                    locale.get_untracked(),
+                    embed,
+                );
+            }
+            prop:title=move || i18n::side_github_repo_btn_title(locale.get())
+            prop:aria-label=move || {
+                status_tasks
+                    .github_repo
+                    .get()
+                    .and_then(|r| r.repo)
+                    .map(|name| i18n::side_github_repo_btn_aria(locale.get(), &name))
+                    .unwrap_or_else(|| i18n::side_github_repo_btn_title(locale.get()).to_string())
+            }
+        >
+            <svg
+                class="shell-toolbar-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+            >
+                <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-.1.58-.18 1-.26.18-.04.36-.1.55-.18.06 0 .12-.01.18-.02A4 4 0 0 0 12 2c-1.74 0-3.24.89-4.12 2.24.06.01.12.02.18.02.19.08.37.14.55.18.42.08.72.16 1 .26-.73 1.02-1.08 2.25-1 3.5.01 3.5 3 5.5 6 5.5a4.8 4.8 0 0 0-1 3.5v4" />
+            </svg>
+        </button>
+    }
+}
+
+#[component]
 fn SideColumnShellToolbarIcons(
+    rail_float: bool,
     locale: RwSignal<Locale>,
     side_panel_view: RwSignal<SidePanelView>,
     view_menu_open: RwSignal<bool>,
     status_bar_visible: RwSignal<bool>,
     settings_page: RwSignal<bool>,
+    status_tasks: StatusTasksSignals,
 ) -> impl IntoView {
     view! {
-        <div class="shell-main-toolbar" role="toolbar" prop:aria-label=move || i18n::side_toolbar_aria(locale.get())>
+        <div
+            class="shell-main-toolbar"
+            class:shell-main-toolbar--rail-float=move || rail_float
+            data-testid="side-shell-toolbar"
+            role="toolbar"
+            prop:aria-label=move || i18n::side_toolbar_aria(locale.get())
+        >
+            <SideToolbarGithubRepoBtn locale=locale view_menu_open=view_menu_open status_tasks=status_tasks />
             <div class="toolbar-view-wrap">
                 <Show when=move || view_menu_open.get()>
                     <div
@@ -317,6 +372,7 @@ pub(super) fn SideColumnResizeAndShellToolbar(
         view_menu_open,
         status_bar_visible,
         settings_page,
+        status_tasks,
     } = toolbar;
     view! {
         <SideColumnResizeDragHandle
@@ -327,19 +383,48 @@ pub(super) fn SideColumnResizeAndShellToolbar(
             side_resize_session
             side_resize_handles
         />
-        <SideColumnShellColumn
-            side_resize_dragging
-            side_panel_view
-            side_width
-        >
+        <Show when=move || side_toolbar_rail_float(side_panel_view.get())>
             <SideColumnShellToolbarIcons
+                rail_float=true
                 locale
                 side_panel_view
                 view_menu_open
                 status_bar_visible
                 settings_page
+                status_tasks
             />
+        </Show>
+        <SideColumnShellColumn
+            side_resize_dragging
+            side_panel_view
+            side_width
+        >
+            <Show when=move || !side_toolbar_rail_float(side_panel_view.get())>
+                <SideColumnShellToolbarIcons
+                    rail_float=false
+                    locale
+                    side_panel_view
+                    view_menu_open
+                    status_bar_visible
+                    settings_page
+                    status_tasks
+                />
+            </Show>
             {children()}
         </SideColumnShellColumn>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app_prefs::SidePanelView;
+
+    #[test]
+    fn side_toolbar_rail_float_only_when_panel_hidden() {
+        assert!(side_toolbar_rail_float(SidePanelView::None));
+        assert!(!side_toolbar_rail_float(SidePanelView::Workspace));
+        assert!(!side_toolbar_rail_float(SidePanelView::Tasks));
+        assert!(!side_toolbar_rail_float(SidePanelView::DebugConsole));
     }
 }

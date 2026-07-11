@@ -13,8 +13,8 @@ pub fn side_resize_handle(l: Locale) -> &'static str {
 
 pub fn side_toolbar_aria(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "视图与设置",
-        Locale::En => "View and settings",
+        Locale::ZhHans => "GitHub 仓库、视图与设置",
+        Locale::En => "GitHub repository, view and settings",
     }
 }
 
@@ -50,6 +50,20 @@ pub fn side_panel_tasks(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "任务",
         Locale::En => "Tasks",
+    }
+}
+
+pub fn side_github_repo_btn_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "打开 GitHub 仓库",
+        Locale::En => "Open GitHub repository",
+    }
+}
+
+pub fn side_github_repo_btn_aria(l: Locale, repo: &str) -> String {
+    match l {
+        Locale::ZhHans => format!("在应用内打开 GitHub 仓库 {repo}"),
+        Locale::En => format!("Open GitHub repository {repo} in app"),
     }
 }
 

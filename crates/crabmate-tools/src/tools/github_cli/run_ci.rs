@@ -5,16 +5,12 @@ use std::path::Path;
 use serde_json::Value as JsonValue;
 
 use super::common::{
-    extract_stdout_from_formatted, gh_allowed, push_extra_args_from_json, push_repo_arg,
-    run_gh_vec, validate_job_name, validate_run_id,
+    command_formatted_exit_code, extract_stdout_from_formatted, gh_allowed,
+    push_extra_args_from_json, push_repo_arg, run_gh_vec, validate_job_name, validate_run_id,
 };
 
 fn parse_exit_code(formatted: &str) -> Option<i32> {
-    formatted
-        .lines()
-        .next()
-        .and_then(|l| l.strip_prefix("退出码："))
-        .and_then(|s| s.trim().parse().ok())
+    command_formatted_exit_code(formatted)
 }
 
 fn gh_stdout(formatted: &str) -> String {

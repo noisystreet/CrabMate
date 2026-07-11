@@ -37,8 +37,8 @@ use super::chat::{
     },
 };
 use super::github_wiring::{
-    make_refresh_github, make_refresh_github_status_chip, wire_github_refresh_when_panel_visible,
-    wire_github_status_chip_after_init,
+    make_refresh_github_repo_context, wire_github_refresh_when_workspace_changes,
+    wire_github_repo_after_init,
 };
 use super::ide_layout_switch::IdeLayoutToggleSignals;
 use super::status_tasks_wiring::{
@@ -51,7 +51,6 @@ use crate::chat_session_state::ChatStreamBusyMemos;
 type RefreshWorkspaceFn = Arc<dyn Fn() + Send + Sync>;
 type RefreshStatusFn = Arc<dyn Fn() + Send + Sync>;
 type RefreshTasksFn = Arc<dyn Fn() + Send + Sync>;
-type RefreshGithubFn = Arc<dyn Fn() + Send + Sync>;
 type ToggleTaskFn = Arc<dyn Fn(String) + Send + Sync>;
 type InsertWorkspacePathFn = Arc<dyn Fn(String) + Send + Sync>;
 
@@ -59,7 +58,6 @@ type InsertWorkspacePathFn = Arc<dyn Fn(String) + Send + Sync>;
 struct StatusTasksSpawn {
     refresh_status: RefreshStatusFn,
     refresh_tasks: RefreshTasksFn,
-    refresh_github: RefreshGithubFn,
     toggle_task: ToggleTaskFn,
 }
 
@@ -75,7 +73,6 @@ struct ChatColumnWiringPack {
 struct Phase4WiringTail {
     refresh_status: RefreshStatusFn,
     refresh_tasks: RefreshTasksFn,
-    refresh_github: RefreshGithubFn,
     toggle_task: ToggleTaskFn,
     insert_workspace_file_ref: StoredValue<InsertWorkspacePathFn>,
     chat_stream_shell: ComposerStreamShell,
@@ -88,7 +85,6 @@ pub(super) struct ShellWiringOutput {
     pub refresh_workspace: Arc<dyn Fn() + Send + Sync>,
     pub refresh_status: Arc<dyn Fn() + Send + Sync>,
     pub refresh_tasks: Arc<dyn Fn() + Send + Sync>,
-    pub refresh_github: Arc<dyn Fn() + Send + Sync>,
     pub toggle_task: Arc<dyn Fn(String) + Send + Sync>,
     pub insert_workspace_file_ref: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
     pub chat_stream_shell: ComposerStreamShell,
@@ -110,7 +106,6 @@ pub(super) fn run_shell_wiring_in_order(app: &AppSignals) -> ShellWiringOutput {
         refresh_workspace,
         refresh_status: wiring_tail.refresh_status,
         refresh_tasks: wiring_tail.refresh_tasks,
-        refresh_github: wiring_tail.refresh_github,
         toggle_task: wiring_tail.toggle_task,
         insert_workspace_file_ref: wiring_tail.insert_workspace_file_ref,
         chat_stream_shell: wiring_tail.chat_stream_shell,
@@ -170,6 +165,7 @@ fn wire_phase3_escape_layered_dismiss(app: &AppSignals) {
         changelist_modal_open: app.modal.changelist_modal_open,
         settings_modal: app.modal.settings_modal,
         ide_settings_page: app.modal.ide_settings_page,
+        github_embed: crate::app::github_embed_page::GithubEmbedSignals::from_modal(app.modal),
         session_modal: app.modal.session_modal,
     };
     wire_escape_key_layered_dismiss(shell_escape);
@@ -213,10 +209,10 @@ fn wire_phase4b_status_tasks_domain(app: &AppSignals) -> StatusTasksSpawn {
     let refresh_tasks =
         make_refresh_tasks(app.to_status_tasks(), app.shell_ui.locale.get_untracked());
     let toggle_task = make_toggle_task(app.to_status_tasks(), app.shell_ui.locale.get_untracked());
-    let refresh_github =
-        make_refresh_github(app.to_status_tasks(), app.shell_ui.locale.get_untracked());
-    let refresh_github_status =
-        make_refresh_github_status_chip(app.to_status_tasks(), app.shell_ui.locale.get_untracked());
+    let refresh_github_repo = make_refresh_github_repo_context(
+        app.to_status_tasks(),
+        app.shell_ui.locale.get_untracked(),
+    );
 
     wire_status_tasks_domain_effects(
         app.initialized,
@@ -225,17 +221,16 @@ fn wire_phase4b_status_tasks_domain(app: &AppSignals) -> StatusTasksSpawn {
         app.shell_ui.side_panel_view,
         Arc::clone(&refresh_tasks),
     );
-    wire_github_refresh_when_panel_visible(
-        app.shell_ui.side_panel_view,
+    wire_github_repo_after_init(app.initialized, Arc::clone(&refresh_github_repo));
+    wire_github_refresh_when_workspace_changes(
+        app.workspace.workspace_data,
         app.initialized,
-        Arc::clone(&refresh_github),
+        refresh_github_repo,
     );
-    wire_github_status_chip_after_init(app.initialized, refresh_github_status);
 
     StatusTasksSpawn {
         refresh_status,
         refresh_tasks,
-        refresh_github,
         toggle_task,
     }
 }
@@ -295,7 +290,6 @@ fn wire_phase4_workspace_status_and_chat_domain(
     let StatusTasksSpawn {
         refresh_status,
         refresh_tasks,
-        refresh_github,
         toggle_task,
     } = wire_phase4b_status_tasks_domain(app);
     let ChatColumnWiringPack {
@@ -308,7 +302,6 @@ fn wire_phase4_workspace_status_and_chat_domain(
     Phase4WiringTail {
         refresh_status,
         refresh_tasks,
-        refresh_github,
         toggle_task,
         insert_workspace_file_ref,
         chat_stream_shell,

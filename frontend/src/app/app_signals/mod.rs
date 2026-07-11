@@ -131,10 +131,6 @@ impl AppSignals {
             tasks_err: self.status.tasks_err,
             tasks_loading: self.status.tasks_loading,
             github_repo: self.status.github_repo,
-            github_prs: self.status.github_prs,
-            github_checks: self.status.github_checks,
-            github_loading: self.status.github_loading,
-            github_err: self.status.github_err,
         }
     }
 

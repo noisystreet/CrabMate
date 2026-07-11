@@ -61,7 +61,6 @@ fn SideColumnTasksLoadedPane(
         </div>
     }
 }
-use super::side_column_github::SideColumnGithubCard;
 #[component]
 fn SideColumnTasksCard(
     locale: RwSignal<Locale>,
@@ -293,7 +292,6 @@ pub fn side_column_view(signals: SideColumnViewSignals) -> impl IntoView {
         status_tasks,
         refresh_workspace,
         refresh_tasks,
-        refresh_github,
         toggle_task,
         changelist_modal_open,
         changelist_fetch_nonce,
@@ -303,8 +301,6 @@ pub fn side_column_view(signals: SideColumnViewSignals) -> impl IntoView {
     let tasks_data = status_tasks.tasks_data;
     let tasks_err = status_tasks.tasks_err;
     let tasks_loading = status_tasks.tasks_loading;
-    let github_loading = status_tasks.github_loading;
-    let github_err = status_tasks.github_err;
     let resize_toolbar = SideColumnResizeToolbarSignals {
         locale,
         side_resize_dragging,
@@ -315,6 +311,7 @@ pub fn side_column_view(signals: SideColumnViewSignals) -> impl IntoView {
         view_menu_open,
         status_bar_visible,
         settings_page,
+        status_tasks,
     };
     view! {
         <SideColumnResizeAndShellToolbar toolbar=resize_toolbar>
@@ -338,15 +335,6 @@ pub fn side_column_view(signals: SideColumnViewSignals) -> impl IntoView {
                         tasks_data=tasks_data
                         refresh_tasks=refresh_tasks.clone()
                         toggle_task=toggle_task.clone()
-                    />
-                </Show>
-                <Show when=move || matches!(side_panel_view.get(), SidePanelView::PullRequests)>
-                    <SideColumnGithubCard
-                        locale=locale
-                        github_loading=github_loading
-                        github_err=github_err
-                        status_tasks=status_tasks
-                        refresh_github=refresh_github.clone()
                     />
                 </Show>
                 <Show when=move || matches!(side_panel_view.get(), SidePanelView::DebugConsole)>

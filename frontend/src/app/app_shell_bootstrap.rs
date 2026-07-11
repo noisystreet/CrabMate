@@ -22,7 +22,6 @@ pub fn bootstrap_app_shell() -> AppShellCtx {
         new_session,
         refresh_workspace: Arc::clone(&wiring.refresh_workspace),
         refresh_tasks: Arc::clone(&wiring.refresh_tasks),
-        refresh_github: Arc::clone(&wiring.refresh_github),
         toggle_task: Arc::clone(&wiring.toggle_task),
         refresh_status: Arc::clone(&wiring.refresh_status),
         insert_workspace_file_ref: wiring.insert_workspace_file_ref,
