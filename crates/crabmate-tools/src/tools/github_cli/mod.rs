@@ -13,6 +13,8 @@ mod release_create;
 mod run_ci;
 mod run_release_search;
 
+pub mod web_api;
+
 pub use common::{attach_json_if_exit_zero, gh_allowed, validate_api_path, validate_extra_args};
 
 pub use api::gh_api;

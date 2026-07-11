@@ -707,6 +707,50 @@ fn openapi_paths_fragment_workspace_tasks_and_config() -> Value {
     })
 }
 
+fn openapi_paths_fragment_github() -> Value {
+    json!({
+        "/github/repo-context": {
+            "get": {
+                "tags": ["github"],
+                "summary": "GitHub 仓库上下文（只读；依赖 gh CLI 与本机 git 工作区）",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "responses": {
+                    "200": {
+                        "description": "仓库与分支摘要",
+                        "content": { "application/json": { "schema": { "type": "object" } } }
+                    }
+                }
+            }
+        },
+        "/github/prs": {
+            "get": {
+                "tags": ["github"],
+                "summary": "列出 open Pull Requests（只读）",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "responses": {
+                    "200": {
+                        "description": "PR 列表",
+                        "content": { "application/json": { "schema": { "type": "object" } } }
+                    }
+                }
+            }
+        },
+        "/github/pr/current/checks": {
+            "get": {
+                "tags": ["github"],
+                "summary": "当前分支关联 PR 的 CI checks（只读）",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "responses": {
+                    "200": {
+                        "description": "checks 摘要",
+                        "content": { "application/json": { "schema": { "type": "object" } } }
+                    }
+                }
+            }
+        },
+    })
+}
+
 fn openapi_paths_fragment_workspace_rest() -> Value {
     merge_path_fragments(&[
         openapi_paths_fragment_workspace_file_meta(),
@@ -721,6 +765,7 @@ pub(super) fn openapi_paths_value() -> Value {
         openapi_paths_fragment_chat_async(),
         openapi_paths_fragment_chat_extras(),
         openapi_paths_fragment_workspace_list(),
+        openapi_paths_fragment_github(),
         openapi_paths_fragment_workspace_rest(),
         openapi_paths_user_data::openapi_paths_fragment_user_data(),
     ])

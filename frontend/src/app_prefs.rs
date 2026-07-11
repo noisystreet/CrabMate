@@ -29,6 +29,8 @@ pub enum SidePanelView {
     None,
     Workspace,
     Tasks,
+    /// GitHub Pull Requests / CI（在线模式侧栏）。
+    PullRequests,
     /// 思维与工具调试台（与工作区共用右列宽度与 `side-pane` 布局）。
     DebugConsole,
 }

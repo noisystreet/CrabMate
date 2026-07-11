@@ -17,6 +17,7 @@ fn side_panel_from_slug(s: &str) -> SidePanelView {
     match s.trim() {
         "none" => SidePanelView::None,
         "tasks" => SidePanelView::Tasks,
+        "pull_requests" | "github" => SidePanelView::PullRequests,
         "debug" => SidePanelView::DebugConsole,
         _ => SidePanelView::Workspace,
     }
@@ -27,6 +28,7 @@ fn side_panel_slug(v: SidePanelView) -> &'static str {
         SidePanelView::None => "none",
         SidePanelView::Workspace => "workspace",
         SidePanelView::Tasks => "tasks",
+        SidePanelView::PullRequests => "pull_requests",
         SidePanelView::DebugConsole => "debug",
     }
 }

@@ -2,7 +2,9 @@
 
 use leptos::prelude::*;
 
-use crate::api::{StatusData, TasksData};
+use crate::api::{
+    GithubPrCurrentChecksData, GithubPrsData, GithubRepoContextData, StatusData, TasksData,
+};
 
 use crate::app::status_fetch_state::StatusFetchPhase;
 
@@ -15,6 +17,11 @@ pub struct StatusSignals {
     pub tasks_data: RwSignal<TasksData>,
     pub tasks_err: RwSignal<Option<String>>,
     pub tasks_loading: RwSignal<bool>,
+    pub github_repo: RwSignal<Option<GithubRepoContextData>>,
+    pub github_prs: RwSignal<GithubPrsData>,
+    pub github_checks: RwSignal<Option<GithubPrCurrentChecksData>>,
+    pub github_loading: RwSignal<bool>,
+    pub github_err: RwSignal<Option<String>>,
 }
 
 impl StatusSignals {
@@ -27,6 +34,14 @@ impl StatusSignals {
             tasks_data: RwSignal::new(TasksData { items: vec![] }),
             tasks_err: RwSignal::new(None),
             tasks_loading: RwSignal::new(false),
+            github_repo: RwSignal::new(None),
+            github_prs: RwSignal::new(GithubPrsData {
+                items: vec![],
+                error: None,
+            }),
+            github_checks: RwSignal::new(None),
+            github_loading: RwSignal::new(false),
+            github_err: RwSignal::new(None),
         }
     }
 }
