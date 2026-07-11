@@ -55,6 +55,7 @@ mod message_dedupe;
 mod message_format;
 mod message_loading;
 mod message_render;
+mod scroll_anchor;
 mod session_export;
 mod session_modal_row;
 mod session_ops;

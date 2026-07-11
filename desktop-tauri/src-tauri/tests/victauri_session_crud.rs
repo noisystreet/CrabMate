@@ -1,14 +1,6 @@
-//! Victauri 版 session-crud E2E 测试 —— 等价于 Playwright `e2e/tests/session-crud.spec.ts`。
+//! Victauri 版 session-crud E2E 测试。
 //!
-//! 迁移映射：
-//!   - `page.getByTestId(...)`       → `Locator::test_id(...)`
-//!   - `.click()`                     → `.click(&mut client)`
-//!   - `.toBeVisible()`              → `.expect(&mut client).to_be_visible()`
-//!   - `page.keyboard.press(...)`    → `client.press_key(...)`
-//!   - `page.evaluate(...)`          → `client.eval_js(...)`
-//!   - `request.put(...)` (播种)     → `client.eval_js("fetch(...)")`（webview 同源）
-//!   - `page.once('dialog', ...)`    → `eval_js("window.confirm = ()=>true")`
-//!
+//! 使用 `Locator::test_id`、`client.press_key`、`client.eval_js` 与 webview 内 `fetch()` 播种。
 //! 前置条件：
 //!   1. 以 debug 模式启动 Tauri 桌面应用
 //!   2. 设置 `CM_E2E_FIXTURES=1` 启用 E2E fixture 路由
@@ -17,7 +9,7 @@
 use victauri_test::e2e_test;
 use victauri_test::locator::Locator;
 
-/// 通过 webview 内 fetch() 播种 2 个会话，复用 Playwright 相同的 session-prefs helper 逻辑。
+/// 通过 webview 内 fetch() 播种 2 个会话，复用相同的 session-prefs helper 逻辑。
 async fn seed_two_sessions(client: &mut victauri_test::VictauriClient) {
     // 先设置布局偏好（等价于 ensureChatLayoutPrefs）
     let _ = client

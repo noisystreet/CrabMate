@@ -50,6 +50,11 @@ fn user_home_workdir() -> PathBuf {
         .unwrap_or_else(std::env::temp_dir)
 }
 
+/// `CM_E2E_FIXTURES=1` 时隐藏 splash/main，避免 Wayland 桌面在 xvfb 外仍弹窗。
+fn e2e_hide_app_windows() -> bool {
+    std::env::var("CM_E2E_FIXTURES").is_ok_and(|v| !v.is_empty() && v != "0")
+}
+
 fn dev_repo_root() -> Option<PathBuf> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let repo_root = manifest_dir.parent()?.parent()?;
@@ -435,12 +440,14 @@ fn main() {
         .setup(move |app| {
             let app_handle = app.handle().clone();
 
-            // 启动画面先显示，后台启后端
+            // 启动画面先显示，后台启后端（E2E 下 visible(false) 防弹窗）
+            let show_window = !e2e_hide_app_windows();
             let _splash = WebviewWindowBuilder::new(app, "splash", WebviewUrl::App("splash.html".into()))
                 .title("CrabMate")
                 .inner_size(400.0, 300.0)
                 .resizable(false)
                 .decorations(false)
+                .visible(show_window)
                 .center()
                 .build()
                 .map_err(|e| format!("failed to create splash window: {e}"))?;
@@ -451,19 +458,21 @@ fn main() {
                 // Tauri v2: 通过 evaluate_script 或事件在主线程处理
                 match outcome {
                     Ok((child, ready_url)) => {
-                        // 关闭启动画面
-                        if let Some(splash_win) = handle.get_webview_window("splash") {
-                            let _ = splash_win.close();
-                        }
-                        // 尝试创建主窗口
                         match create_main_window_from_url(
                             &handle,
                             ready_url,
                             child,
                             Arc::clone(&backend_state),
                         ) {
-                            Ok(()) => {}
+                            Ok(()) => {
+                                if let Some(splash_win) = handle.get_webview_window("splash") {
+                                    let _ = splash_win.close();
+                                }
+                            }
                             Err(e) => {
+                                if let Some(splash_win) = handle.get_webview_window("splash") {
+                                    let _ = splash_win.close();
+                                }
                                 handle
                                     .dialog()
                                     .message(e.clone())
@@ -532,6 +541,7 @@ fn create_main_window_from_url(
     .inner_size(1280.0, 840.0)
     .resizable(true)
     .decorations(false)
+    .visible(!e2e_hide_app_windows())
     .theme(Some(Theme::Light))
     .on_navigation(move |url| {
         if should_open_link_externally(&app_origin, url) {

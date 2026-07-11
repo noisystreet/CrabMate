@@ -27,6 +27,8 @@ pub struct ChatComposerSignals {
     pub chat_find_cursor: RwSignal<usize>,
     pub chat_find_panel_open: RwSignal<bool>,
     pub focus_message_id_after_nav: RwSignal<Option<String>>,
+    /// 流式跟底：上一帧 `scrollHeight` 基线（[`crate::scroll_anchor`] delta 追底）。
+    pub stream_scroll_height_baseline: RwSignal<i32>,
 }
 
 impl ChatComposerSignals {
@@ -49,6 +51,7 @@ impl ChatComposerSignals {
             chat_find_cursor: RwSignal::new(0),
             chat_find_panel_open: RwSignal::new(false),
             focus_message_id_after_nav: RwSignal::new(None),
+            stream_scroll_height_baseline: RwSignal::new(0),
         }
     }
 }

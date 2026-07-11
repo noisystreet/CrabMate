@@ -15,6 +15,7 @@ pub(crate) struct ChatScrollShellSignals {
     pub auto_scroll_chat: RwSignal<bool>,
     pub messages_scroll_from_effect: RwSignal<bool>,
     pub last_messages_scroll_top: RwSignal<i32>,
+    pub stream_scroll_height_baseline: RwSignal<i32>,
 }
 
 impl ChatScrollShellSignals {
@@ -25,6 +26,7 @@ impl ChatScrollShellSignals {
             auto_scroll_chat: cc.auto_scroll_chat,
             messages_scroll_from_effect: cc.messages_scroll_from_effect,
             last_messages_scroll_top: cc.last_messages_scroll_top,
+            stream_scroll_height_baseline: cc.stream_scroll_height_baseline,
         }
     }
 

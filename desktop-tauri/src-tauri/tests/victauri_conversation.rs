@@ -1,13 +1,6 @@
 //! Victauri 版 conversation 分页加载 E2E 测试（Phase 2：需播种，无流存根）。
 //!
-//! 等价 Playwright:
-//!   - `e2e/tests/conversation-load-older.spec.ts` — 点击加载更早消息
-//!
-//! Phase 2 播种模式演示：
-//!   - `seedConversation(request, ...)` → `eval_js("fetch('/e2e/fixtures/conversation', {method:'POST', ...})")`
-//!   - `putActiveSessionWithServerConversation(...)` → `eval_js("fetch('/user-data/workspaces/current/sessions', ...)")`
-//!   - `waitForConversationMessages(page, ...)` → `wait_for("text", ...)`
-//!   - `page.waitForResponse()` → Phase 3（暂用 `wait_for("selector_gone")` 替代）
+//! 通过 `fetch('/e2e/fixtures/conversation')` 与 `/user-data/.../sessions` 播种；加载完成用 `wait_for` 断言。
 //!
 //! 前置条件：
 //!   1. Tauri 桌面应用 debug 模式运行
@@ -124,7 +117,7 @@ e2e_test!(click_load_older_fetches_older_and_hides_control, |client| async move 
         .await
         .unwrap();
 
-    // Phase 2 替代 page.waitForResponse：加载完成后 load-older 按钮应消失
+    // 加载完成后 load-older 按钮应消失
     Locator::test_id("chat-load-older")
         .expect(&mut client)
         .to_be_hidden()

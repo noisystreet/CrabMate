@@ -8,7 +8,7 @@ alwaysApply: true
 ## 何时触发
 
 - 修改根目录 **`Cargo.toml`** / **`Cargo.lock`**（新增 crate、升级 major、启用新 feature）。
-- 修改 **`e2e/package.json`** / **`package-lock.json`**（E2E / Playwright；新 npm 包、大版本升级）。
+- 修改 **`desktop-tauri/src-tauri/Cargo.toml`** 中 **`victauri-test`** / **`victauri-plugin`** 等大版本升级时核对许可证。
 
 ## 建议动作
 

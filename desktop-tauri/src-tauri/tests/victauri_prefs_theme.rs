@@ -1,8 +1,5 @@
 //! Victauri 版 prefs-theme + prefs-side-panel E2E 测试。
 //!
-//! 等价 Playwright:
-//!   - `e2e/tests/prefs-theme.spec.ts`    — 深色主题从 user-data/prefs 加载
-//!   - `e2e/tests/prefs-side-panel.spec.ts` — 工作区侧面板按 prefs 自动展开
 //!
 //! 前置条件：
 //!   1. Tauri 桌面应用 debug 模式运行（victauri-plugin 启动 server）

@@ -1,12 +1,7 @@
 //! Victauri 版 settings-page E2E 测试。
 //!
-//! 等价 Playwright:
-//!   - `e2e/tests/helpers/settings.ts` — 设置页打开/导航/关闭 helper
-//!   - `e2e/tests/settings-mcp.spec.ts` — MCP nav sets URL hash（纯 UI）
-//!   - `e2e/tests/settings-appearance.spec.ts` — 主题切换（由 victauri_prefs_theme.rs 覆盖）
 //!
-//! 注意：settings-llm（需 `page.route()` 拦截 secrets PUT）和 settings-mcp save
-//! （需 `page.waitForResponse()`）属于 Phase 2/3，暂未迁移。
+//! 注意：settings-llm（secrets PUT）与 settings-mcp save 的 HTTP 拦截用例见 Phase 3（`victauri_settings2`）。
 //!
 //! 前置条件：
 //!   1. Tauri 桌面应用 debug 模式运行

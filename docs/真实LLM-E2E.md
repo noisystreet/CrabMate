@@ -48,14 +48,3 @@ VICTAURI_E2E=1 CM_E2E_FIXTURES=1 REAL_LLM_E2E=1 cargo test --test victauri_real_
 ```
 
 ---
-
-## 与 Playwright 版对比
-
-| | Playwright | Victauri |
-|---|---|---|
-| 运行环境 | Chromium 浏览器 | Tauri WebView (WebKitGTK) |
-| 密钥传递 | `API_KEY` 环境变量 → serve | 同左（Tauri 后端子进程继承） |
-| SSE 等待 | `page.waitForResponse()` | `eval_js` 轮询发送按钮状态 |
-| 导出验证 | `page.waitForEvent('download')` MD/JSON | 暂不支持（Phase 4 待完善） |
-| artifact 落盘 | `e2e/artifacts/real-llm/` | 暂不支持 |
-| 工作区 | `setupRealLlmWorkspace` POST /workspace | `eval_js` + `fetch('/workspace', ...)` |

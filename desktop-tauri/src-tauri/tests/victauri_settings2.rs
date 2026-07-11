@@ -1,8 +1,5 @@
 //! Victauri 版 Phase 3 设置页 LLM/MCP 追加测试（fetch 拦截器存根）。
 //!
-//! 等价 Playwright:
-//!   - `e2e/tests/settings-llm.spec.ts`  — LLM model/API key 保存
-//!   - `e2e/tests/settings-mcp.spec.ts`  — MCP save/import (剩余 2 tests)
 
 use victauri_test::e2e_test;
 use victauri_test::locator::Locator;

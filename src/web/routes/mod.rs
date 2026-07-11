@@ -8,7 +8,7 @@
 //! | [`tasks`] | `/tasks` | 侧栏任务清单（内存） |
 //! | [`user_data`] | `/user-data/*` | 本机用户数据（prefs、会话桶、LLM 覆盖、secrets） |
 //! | [`system`] | `/health`、`/status` | 探活与运行态摘要 |
-//! | [`e2e_fixtures`] | `/e2e/fixtures/*` | 仅 **`CM_E2E_FIXTURES=1`** 时挂载（Playwright 种子会话） |
+//! | [`e2e_fixtures`] | `/e2e/fixtures/*` | 仅 **`CM_E2E_FIXTURES=1`** 时挂载（Victauri E2E 种子会话） |
 
 pub(crate) mod chat;
 pub(crate) mod config;

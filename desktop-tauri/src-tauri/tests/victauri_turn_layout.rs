@@ -1,7 +1,5 @@
 //! Victauri 版 Turn 布局交错 E2E 测试（Phase 3：工具调用 + commentary 交错 SSE）。
 //!
-//! 等价 Playwright:
-//!   - `e2e/tests/sse-turn-layout-interleaved.spec.ts`
 //!
 //! 前置条件：同其他 Phase 3 测试
 

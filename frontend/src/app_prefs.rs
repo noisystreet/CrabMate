@@ -21,6 +21,8 @@ pub const MAX_SIDE_WIDTH: f64 = 560.0;
 /// 为左侧对话列预留的最小宽度（视口过窄时仍允许侧栏拖到 `MIN_SIDE_WIDTH`，由 flex 挤压主列）。
 pub const MIN_CHAT_RESERVE_PX: f64 = 240.0;
 pub const AUTO_SCROLL_RESUME_GAP_PX: i32 = 24;
+/// 流式跟读：距底 ≤ 该值视为 live edge，用 scrollHeight 增量追底（见 `scroll_anchor`）。
+pub const STICKY_BOTTOM_THRESHOLD_PX: i32 = 80;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SidePanelView {

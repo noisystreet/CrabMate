@@ -1,6 +1,6 @@
-# Real DeepSeek E2E (manual opt-in)
+# Real LLM E2E (manual opt-in, Victauri)
 
-Playwright specs run only when **`REAL_LLM_E2E=1`**. Default CI uses SSE stubs.
+Runs only when **`REAL_LLM_E2E=1`**. Default **`cargo test`** / CI use SSE stubs and skip Victauri unless **`VICTAURI_E2E=1`**.
 
 Canonical guide (Chinese): [`../真实LLM-E2E.md`](../真实LLM-E2E.md).
 
@@ -8,33 +8,27 @@ Canonical guide (Chinese): [`../真实LLM-E2E.md`](../真实LLM-E2E.md).
 
 | File | Purpose |
 |------|---------|
-| `real-llm-smoke.spec.ts` | Single turn connectivity |
-| `real-llm-turn-layout-analyze.spec.ts` | Single turn “分析当前目录” |
-| `real-llm-turn-layout-compile.spec.ts` | Single turn “编译 hpcg” + layout export |
-| `real-llm-turn-layout.spec.ts` | Two turns (full integration) |
-
-Shared helpers: `e2e/tests/helpers/real-llm.ts`.
+| `desktop-tauri/src-tauri/tests/victauri_real_llm.rs` | Real vendor streaming (e.g. skills smoke, compile turn) |
 
 ## Quick start
 
 ```bash
 unset NO_COLOR && cd frontend && trunk build
 
-export CM_CRABMATE_USER_DATA_DIR="$HOME/.local/share/crabmate"
-cargo run -- --workspace /home/gzz/test serve --port 18888 --host 127.0.0.1
+# Terminal 1: Tauri app
+cd desktop-tauri/src-tauri
+CM_E2E_FIXTURES=1 CM_DESKTOP_BACKEND_BIN=/path/to/target/debug/crabmate cargo tauri dev
 
-export CM_CRABMATE_USER_DATA_DIR="$HOME/.local/share/crabmate"
-./scripts/real-llm-e2e.sh compile
+# Terminal 2: real LLM tests
+cd desktop-tauri/src-tauri
+VICTAURI_E2E=1 CM_E2E_FIXTURES=1 REAL_LLM_E2E=1 API_KEY=YOUR_API_KEY \
+  cargo test --test victauri_real_llm -- --nocapture
 ```
 
-From `e2e/`: `npm run test:real-llm:compile` (same script).
-
-## Failure artifacts
-
-On failure (or when **`REAL_LLM_CAPTURE=1`**): `e2e/artifacts/real-llm/<timestamp>_<test>/` with `meta.json`, `turn-layout-report.json`, `export.md`, `export.json`. Gitignored.
+Or: `./scripts/victauri-e2e.sh real_llm` (with **`REAL_LLM_E2E=1`** and **`API_KEY`** set).
 
 ## Environment
 
-`REAL_LLM_E2E=1`, `E2E_PORT`, `CM_CRABMATE_USER_DATA_DIR`, `REAL_LLM_WORKSPACE`, `REAL_LLM_CAPTURE`, `REAL_LLM_GREP`.
+**`REAL_LLM_E2E=1`**, **`VICTAURI_E2E=1`**, **`CM_E2E_FIXTURES=1`**, **`API_KEY`**, optional **`CM_DESKTOP_BACKEND_BIN`**.
 
 Not run in default CI. Do not commit API keys or raw artifacts with secrets.

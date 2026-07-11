@@ -1,8 +1,8 @@
 //! 聊天跟底：**一条规则** + **两个入口**。
 //!
-//! - **规则**：`auto_scroll_chat` 为 true 时，消息变化则程序化滚底（~100ms 节流）。
+//! - **规则**：`auto_scroll_chat` 为 true 且距底在 live edge 内时，流式内容增高用 **ΔscrollHeight** 追底（~100ms 节流）。
 //! - **入口 A**（用户滚动意图）：[`super::scroll_shell`] 的 `on:wheel` / `on:scroll`。
-//! - **入口 B**（主动跟底）：发送 / End 键 → [`engage_follow_and_scroll_bottom`]。
+//! - **入口 B**（主动跟底）：发送 / End 键 → [`engage_follow_and_scroll_bottom`]（全量 `scrollHeight` + 重置 anchor）。
 //!
 //! **注意**：`scroll_to_bottom`（发送/End 键）使用 `rAF` 确保布局完成后再读 `scrollHeight`，
 //! 并以 `setTimeout(100)` 作为 Tauri 失焦时的兜底。
@@ -15,11 +15,18 @@ use std::rc::Rc;
 use gloo_timers::callback::Timeout;
 use leptos::prelude::*;
 use leptos_dom::helpers::request_animation_frame;
+use web_sys::HtmlElement;
 
 use crate::app::chat::scroll_shell::ChatScrollShellSignals;
 use crate::chat_session_state::ChatSessionSignals;
+use crate::scroll_anchor::{ScrollAnchorState, follow_content_growth_by_delta};
 use crate::session_ops::messages_scroller_has_non_collapsed_selection;
 use crate::storage::ChatSession;
+
+fn snap_scroll_element_to_bottom(el: &HtmlElement, baseline: RwSignal<i32>) {
+    el.set_scroll_top(el.scroll_height());
+    baseline.set(el.scroll_height());
+}
 
 fn scroll_element_to_bottom_if_allowed(shell: ChatScrollShellSignals) -> bool {
     if !shell.auto_scroll_chat.get_untracked() {
@@ -31,8 +38,28 @@ fn scroll_element_to_bottom_if_allowed(shell: ChatScrollShellSignals) -> bool {
     if messages_scroller_has_non_collapsed_selection(&el) {
         return false;
     }
-    el.set_scroll_top(el.scroll_height());
+    snap_scroll_element_to_bottom(&el, shell.stream_scroll_height_baseline);
     true
+}
+
+fn follow_stream_scroll_if_allowed(shell: ChatScrollShellSignals) -> bool {
+    if !shell.auto_scroll_chat.get_untracked() {
+        return false;
+    }
+    let Some(el) = shell.messages_scroller.get_untracked() else {
+        return false;
+    };
+    if messages_scroller_has_non_collapsed_selection(&el) {
+        return false;
+    }
+    let mut state = ScrollAnchorState {
+        last_scroll_height: shell.stream_scroll_height_baseline.get_untracked(),
+    };
+    let followed = follow_content_growth_by_delta(&el, &mut state);
+    shell
+        .stream_scroll_height_baseline
+        .set(state.last_scroll_height);
+    followed
 }
 
 fn scroll_element_to_top(shell: ChatScrollShellSignals) {
@@ -107,7 +134,7 @@ fn active_session_tail_scroll_fingerprint(list: &[ChatSession], aid: &str) -> u6
     fp
 }
 
-/// **规则**接线：消息变化且跟底开启时滚底（~100ms 节流，避免每 delta 多次 layout）。
+/// **规则**接线：消息变化且跟底开启时在 live edge 用 delta 追底（~100ms 节流）。
 pub(crate) fn wire_content_follow_scroll(chat: ChatSessionSignals, shell: ChatScrollShellSignals) {
     let version = Memo::new(move |_| {
         let aid = chat.active_id.get();
@@ -137,11 +164,11 @@ pub(crate) fn wire_content_follow_scroll(chat: ChatSessionSignals, shell: ChatSc
                     return;
                 }
                 shell.messages_scroll_from_effect.set(true);
-                scroll_element_to_bottom_if_allowed(shell);
+                follow_stream_scroll_if_allowed(shell);
                 shell.messages_scroll_from_effect.set(false);
                 Timeout::new(50, move || {
                     shell.messages_scroll_from_effect.set(true);
-                    scroll_element_to_bottom_if_allowed(shell);
+                    follow_stream_scroll_if_allowed(shell);
                     shell.messages_scroll_from_effect.set(false);
                     *pending.borrow_mut() = false;
                 })

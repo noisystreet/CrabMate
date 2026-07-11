@@ -1,7 +1,5 @@
 //! Victauri 版 IDE 布局 E2E 测试（Phase 3：fetch 拦截器存根 workspace/file 路由）。
 //!
-//! 等价 Playwright:
-//!   - `e2e/tests/ide-layout.spec.ts` — 对话/IDE 模式切换、编辑保存、undo stack
 //!
 //! 前置条件：
 //!   1. Tauri 桌面应用 debug 模式运行
@@ -13,7 +11,6 @@ use victauri_test::locator::Locator;
 
 const STUB_FILE: &str = "e2e-ide-stub.txt";
 
-/// 注入 workspace/file 路由存根（等价 Playwright 的 stubIdeWorkspaceRoutes）。
 async fn stub_ide_routes(client: &mut victauri_test::VictauriClient) {
     let _ = client.eval_js(&format!(
         "(()=>{{window.__origFetchIde=window.fetch;\
