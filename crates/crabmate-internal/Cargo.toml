@@ -83,7 +83,7 @@ tokio = { version = "1", default-features = false, features = [
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokei = { version = "14", optional = true, default-features = false }
 toml = "0.8"
-uom = { version = "0.36", features = ["si"] }
+uom = { version = "0.38", features = ["si"] }
 urlencoding = "2.1"
 walkdir = "2"
 xz2 = "0.1"
