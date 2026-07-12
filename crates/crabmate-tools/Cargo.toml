@@ -64,7 +64,7 @@ urlencoding = "2.1"
 walkdir = "2"
 xz2 = "0.1"
 zip = "8.6"
-uom = { version = "0.36", features = ["si"] }
+uom = { version = "0.38", features = ["si"] }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", default-features = false, features = ["fs", "dir", "signal", "term", "process"] }
