@@ -130,7 +130,7 @@ async-trait = "0.1"
 clap = { version = "4", features = ["derive"] }
 libc = "0.2"
 thiserror = "2"
-jsonschema = { version = "0.46", default-features = false }
+jsonschema = { version = "0.47", default-features = false }
 tiktoken-rs = { version = "0.12", default-features = false }
 markdown-to-ansi = "0.2"
 unicodeit = "0.2"
