@@ -137,7 +137,7 @@ fn read_embed_host_rect() -> Option<(f64, f64, f64, f64)> {
     ))
 }
 
-fn sync_github_embed_if_ready(signals: GithubEmbedSignals) {
+fn sync_github_embed_if_ready(signals: GithubEmbedSignals, fallback_fired: RwSignal<bool>) {
     if !signals.open.get_untracked() || !tauri_shell::tauri_shell_available() {
         return;
     }
@@ -152,6 +152,11 @@ fn sync_github_embed_if_ready(signals: GithubEmbedSignals) {
         if mount_result == Ok(true) {
             return;
         }
+        // 已 fallback 过就不再重复触发，避免竞态取消独立窗口加载
+        if fallback_fired.get_untracked() {
+            return;
+        }
+        fallback_fired.set(true);
         if mount_result.is_err() {
             let title = signals.title.get_untracked();
             tauri_shell::tauri_open_github_webview(&url, title.as_deref());
@@ -164,7 +169,7 @@ fn sync_github_embed_if_ready(signals: GithubEmbedSignals) {
     });
 }
 
-async fn wait_embed_layout_then_sync(signals: GithubEmbedSignals) {
+async fn wait_embed_layout_then_sync(signals: GithubEmbedSignals, fallback_fired: RwSignal<bool>) {
     if !signals.open.get_untracked() {
         return;
     }
@@ -172,7 +177,7 @@ async fn wait_embed_layout_then_sync(signals: GithubEmbedSignals) {
     if !signals.open.get_untracked() {
         return;
     }
-    sync_github_embed_if_ready(signals);
+    sync_github_embed_if_ready(signals, fallback_fired);
 }
 
 fn wire_github_embed_mount(signals: GithubEmbedSignals) {
@@ -181,6 +186,8 @@ fn wire_github_embed_mount(signals: GithubEmbedSignals) {
     }
     // 阻止 Effect 首次执行时对初始 `false` 值触发 spurious unmount。
     let mounted = RwSignal::new(false);
+    // 防止重试循环重复 fallback 到独立窗口，与正在加载的 WebView 导航冲突。
+    let fallback_fired = RwSignal::new(false);
     Effect::new(move |_| {
         let open = signals.open.get();
         // 支持同窗嵌入的平台上，子 WebView 位于 HTML 内容层下方；
@@ -198,13 +205,13 @@ fn wire_github_embed_mount(signals: GithubEmbedSignals) {
         let schedule_sync = move || {
             let signals = signals_stored.get_value();
             spawn_local(async move {
-                wait_embed_layout_then_sync(signals).await;
+                wait_embed_layout_then_sync(signals, fallback_fired.clone()).await;
                 for delay in [50_u32, 150, 400] {
                     TimeoutFuture::new(delay).await;
                     if !signals.open.get_untracked() {
                         return;
                     }
-                    sync_github_embed_if_ready(signals);
+                    sync_github_embed_if_ready(signals, fallback_fired.clone());
                 }
             });
         };
