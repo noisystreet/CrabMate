@@ -368,10 +368,12 @@ fn is_github_host(url: &Url) -> bool {
 }
 
 /// GitHub 专用 WebView 允许 http(s) 导航（含 OAuth 登录跳转）；其它 scheme 拒绝。
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 fn github_webview_allows_navigation(url: &Url) -> bool {
     matches!(url.scheme(), "http" | "https") || url.as_str() == "about:blank"
 }
 
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 fn github_webview_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = app
         .path()
@@ -382,6 +384,7 @@ fn github_webview_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 fn create_github_webview_window(
     app: &tauri::AppHandle,
     parsed: Url,
@@ -457,31 +460,6 @@ fn create_github_webview_window(
         .map_err(|e| format!("navigate webview window failed: {e}"))?;
 
     Ok(window)
-}
-
-#[tauri::command]
-fn open_webview_url(
-    app: tauri::AppHandle,
-    url: String,
-    title: Option<String>,
-) -> Result<(), String> {
-    let parsed = Url::parse(&url).map_err(|e| format!("invalid url: {e}"))?;
-    if parsed.scheme() != "https" {
-        return Err("仅支持 https URL".to_string());
-    }
-    if !is_github_host(&parsed) {
-        return Err("独立 WebView 窗口当前仅支持 GitHub 域名".to_string());
-    }
-
-    match create_github_webview_window(&app, parsed.clone(), title, None) {
-        Ok(_) => Ok(()),
-        Err(e) => {
-            app.opener()
-                .open_url(parsed.as_str(), None::<&str>)
-                .map_err(|op| format!("{e}; fallback browser failed: {op}"))?;
-            Ok(())
-        }
-    }
 }
 
 #[tauri::command]
@@ -712,7 +690,6 @@ fn main() {
             pick_workspace_folder_via_dialog,
             confirm_delete_session_via_dialog,
             open_external_url,
-            open_webview_url,
             sync_github_embed_webview,
             unmount_github_embed_webview,
             set_main_window_decorations,
