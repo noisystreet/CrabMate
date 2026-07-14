@@ -3,6 +3,7 @@
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
 
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(inline_js = r#"
 export function hasTauriInvoke() {
   const direct = globalThis.__TAURI__ && globalThis.__TAURI__.core && globalThis.__TAURI__.core.invoke;
@@ -99,6 +100,7 @@ export function installChatExternalLinkHandler() {
   );
 }
 "#)]
+#[cfg(target_arch = "wasm32")]
 extern "C" {
     #[wasm_bindgen(js_name = hasTauriInvoke)]
     fn has_tauri_invoke() -> bool;
@@ -128,6 +130,50 @@ extern "C" {
     fn invoke_tauri_unmount_github_embed() -> js_sys::Promise;
     #[wasm_bindgen(js_name = installChatExternalLinkHandler)]
     fn install_chat_external_link_handler();
+}
+
+// Native stubs for non-wasm targets (tests / SSR)
+#[cfg(not(target_arch = "wasm32"))]
+fn has_tauri_invoke() -> bool {
+    false
+}
+#[cfg(not(target_arch = "wasm32"))]
+fn is_linux_platform() -> bool {
+    false
+}
+#[cfg(not(target_arch = "wasm32"))]
+fn install_chat_external_link_handler() {}
+#[cfg(not(target_arch = "wasm32"))]
+fn invoke_tauri_set_main_window_decorations(_: bool) -> js_sys::Promise {
+    js_sys::Promise::resolve(&wasm_bindgen::JsValue::UNDEFINED)
+}
+#[cfg(not(target_arch = "wasm32"))]
+fn invoke_tauri_main_window_minimize() -> js_sys::Promise {
+    js_sys::Promise::resolve(&wasm_bindgen::JsValue::UNDEFINED)
+}
+#[cfg(not(target_arch = "wasm32"))]
+fn invoke_tauri_main_window_toggle_maximize() -> js_sys::Promise {
+    js_sys::Promise::resolve(&wasm_bindgen::JsValue::UNDEFINED)
+}
+#[cfg(not(target_arch = "wasm32"))]
+fn invoke_tauri_main_window_close() -> js_sys::Promise {
+    js_sys::Promise::resolve(&wasm_bindgen::JsValue::UNDEFINED)
+}
+#[cfg(not(target_arch = "wasm32"))]
+fn invoke_tauri_open_external_url(_: &str) -> js_sys::Promise {
+    js_sys::Promise::resolve(&wasm_bindgen::JsValue::UNDEFINED)
+}
+#[cfg(not(target_arch = "wasm32"))]
+fn invoke_tauri_open_webview_url(_: &str, _: Option<String>) -> js_sys::Promise {
+    js_sys::Promise::resolve(&wasm_bindgen::JsValue::UNDEFINED)
+}
+#[cfg(not(target_arch = "wasm32"))]
+fn invoke_tauri_sync_github_embed(_: &str, _: f64, _: f64, _: f64, _: f64) -> js_sys::Promise {
+    js_sys::Promise::resolve(&wasm_bindgen::JsValue::UNDEFINED)
+}
+#[cfg(not(target_arch = "wasm32"))]
+fn invoke_tauri_unmount_github_embed() -> js_sys::Promise {
+    js_sys::Promise::resolve(&wasm_bindgen::JsValue::UNDEFINED)
 }
 
 /// 是否在 Tauri 桌面 WebView 内运行。
