@@ -58,7 +58,7 @@ tokio = { version = "1", default-features = false, features = [
     "io-util",
 ] }
 tokio-stream = { version = "0.1", features = ["sync"] }
-toml = "0.8"
+toml = "1.1"
 tracing = "0.1"
 urlencoding = "2.1"
 walkdir = "2"
