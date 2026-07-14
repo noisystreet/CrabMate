@@ -276,8 +276,14 @@ mod tests {
             return;
         }
         let allowed = vec!["gh".to_string()];
-        let ctx = github_repo_context(65536, &allowed, &dir).expect("ctx");
-        assert!(ctx.is_git_repo, "subdir inside repo should count as git");
+        match github_repo_context(65536, &allowed, &dir) {
+            Ok(ctx) => assert!(ctx.is_git_repo, "subdir inside repo should count as git"),
+            Err(e) if e.contains("not found") || e.contains("No such file") => {
+                // gh CLI not installed; skip
+                eprintln!("skipping: gh CLI unavailable ({e})");
+            }
+            Err(e) => panic!("ctx: {e}"),
+        }
     }
 
     #[test]
@@ -287,8 +293,13 @@ mod tests {
             return;
         }
         let allowed = vec!["gh".to_string()];
-        let result = github_pr_current_checks(65536, &allowed, &dir).expect("checks");
-        assert!(!result.checks.is_empty(), "expected CI checks from gh");
+        match github_pr_current_checks(65536, &allowed, &dir) {
+            Ok(result) => assert!(!result.checks.is_empty(), "expected CI checks from gh"),
+            Err(e) if e.contains("not found") || e.contains("No such file") => {
+                eprintln!("skipping: gh CLI unavailable ({e})");
+            }
+            Err(e) => panic!("checks: {e}"),
+        }
     }
 
     #[test]
