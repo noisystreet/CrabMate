@@ -1,5 +1,6 @@
 //! CrabMate Desktop（Tauri WebView）壳层能力：检测与窗口装饰等。
 
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
 
