@@ -48,10 +48,6 @@ export function invokeTauriOpenExternalUrl(url) {
   return tauriInvoke("open_external_url", { url });
 }
 
-export function invokeTauriOpenWebviewUrl(url, title) {
-  return tauriInvoke("open_webview_url", { url, title: title ?? null });
-}
-
 export function invokeTauriSyncGithubEmbed(url, x, y, width, height) {
   return tauriInvoke("sync_github_embed_webview", { url, x, y, width, height });
 }
@@ -117,8 +113,6 @@ extern "C" {
     fn invoke_tauri_main_window_close() -> js_sys::Promise;
     #[wasm_bindgen(js_name = invokeTauriOpenExternalUrl)]
     fn invoke_tauri_open_external_url(url: &str) -> js_sys::Promise;
-    #[wasm_bindgen(js_name = invokeTauriOpenWebviewUrl)]
-    fn invoke_tauri_open_webview_url(url: &str, title: Option<String>) -> js_sys::Promise;
     #[wasm_bindgen(js_name = invokeTauriSyncGithubEmbed)]
     fn invoke_tauri_sync_github_embed(
         url: &str,
@@ -162,10 +156,6 @@ fn invoke_tauri_main_window_close() -> js_sys::Promise {
 }
 #[cfg(not(target_arch = "wasm32"))]
 fn invoke_tauri_open_external_url(_: &str) -> js_sys::Promise {
-    js_sys::Promise::resolve(&wasm_bindgen::JsValue::UNDEFINED)
-}
-#[cfg(not(target_arch = "wasm32"))]
-fn invoke_tauri_open_webview_url(_: &str, _: Option<String>) -> js_sys::Promise {
     js_sys::Promise::resolve(&wasm_bindgen::JsValue::UNDEFINED)
 }
 #[cfg(not(target_arch = "wasm32"))]
@@ -257,21 +247,7 @@ pub fn tauri_open_external_url(url: &str) {
     });
 }
 
-/// 在独立 WebView 窗口打开 GitHub 页面（Tauri）；浏览器模式下降级为新标签页。
-#[allow(dead_code)]
-pub fn tauri_open_github_webview(url: &str, title: Option<&str>) {
-    if !tauri_shell_available() {
-        tauri_open_external_url(url);
-        return;
-    }
-    let url = url.to_string();
-    let title = title.map(str::to_string);
-    spawn_local(async move {
-        let _ = tauri_invoke_void(invoke_tauri_open_webview_url(&url, title)).await;
-    });
-}
-
-/// 挂载 GitHub WebView；返回 `true` 表示嵌入主窗口，`false` 表示使用独立窗口。
+/// 挂载 GitHub WebView；返回 `true` 表示嵌入主窗口，`false` 表示降级到浏览器。
 pub async fn tauri_mount_github_embed(
     url: &str,
     x: f64,

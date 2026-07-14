@@ -358,12 +358,6 @@ fn should_open_link_externally(app_origin: &url::Origin, target: &Url) -> bool {
     target.origin() != *app_origin
 }
 
-fn webview_window_label(url: &str) -> String {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    url.hash(&mut hasher);
-    format!("github-{:016x}", hasher.finish())
-}
-
 fn is_github_host(url: &Url) -> bool {
     url.host_str().is_some_and(|h| {
         h == "github.com"
@@ -388,17 +382,6 @@ fn github_webview_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-fn github_webview_window_title(url: &Url, title: Option<&str>) -> String {
-    title
-        .filter(|s| !s.trim().is_empty())
-        .map(str::to_string)
-        .unwrap_or_else(|| {
-            url.host_str()
-                .map(|h| format!("GitHub — {h}"))
-                .unwrap_or_else(|| "GitHub".to_string())
-        })
-}
-
 fn create_github_webview_window(
     app: &tauri::AppHandle,
     parsed: Url,
@@ -409,14 +392,25 @@ fn create_github_webview_window(
         return Err("仅支持 http(s) URL".to_string());
     }
 
-    let label = webview_window_label(parsed.as_str());
+    let label = {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        parsed.as_str().hash(&mut hasher);
+        format!("github-{:016x}", hasher.finish())
+    };
     if let Some(existing) = app.get_webview_window(&label) {
         existing.set_focus().map_err(|e| e.to_string())?;
         return Ok(existing);
     }
 
     let data_dir = github_webview_data_dir(app)?;
-    let window_title = github_webview_window_title(&parsed, title.as_deref());
+    let window_title = title
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| {
+            parsed
+                .host_str()
+                .map(|h| format!("GitHub — {h}"))
+                .unwrap_or_else(|| "GitHub".to_string())
+        });
     let app_for_handlers = app.clone();
 
     #[cfg(target_os = "linux")]
@@ -581,21 +575,15 @@ fn sync_github_embed_webview(
         return Ok(true);
     }
 
-    // Linux 的 Tauri/Wry 会把 `Window::add_child` 追加到默认 GtkBox；
-    // 主 WebView 与 GitHub WebView 因而被纵向均分，而不是按 bounds 叠放。
-    // 使用独立 WebViewWindow，避免主窗口上半区留下空白。
+    // Linux：独立 WebViewWindow 受限于 WebKitGTK 兼容性，易出现导航被取消；
+    // 直接通过系统默认浏览器打开，确保可靠。
     #[cfg(target_os = "linux")]
     {
         let _ = (x, y);
-        match create_github_webview_window(&app, parsed.clone(), None, None) {
-            Ok(_) => Ok(false),
-            Err(e) => {
-                app.opener()
-                    .open_url(parsed.as_str(), None::<&str>)
-                    .map_err(|op| format!("{e}; fallback browser failed: {op}"))?;
-                Ok(false)
-            }
-        }
+        app.opener()
+            .open_url(parsed.as_str(), None::<&str>)
+            .map_err(|e| e.to_string())?;
+        Ok(false)
     }
 
     #[cfg(not(target_os = "linux"))]

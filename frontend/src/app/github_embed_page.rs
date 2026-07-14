@@ -47,7 +47,7 @@ pub fn github_repo_btn_disabled(repo: Option<&crate::api::GithubRepoContextData>
 
 pub fn open_github_embed_page(url: &str, title: Option<&str>, signals: GithubEmbedSignals) {
     if tauri_shell::tauri_linux_shell_available() {
-        tauri_shell::tauri_open_github_webview(url, title);
+        tauri_shell::tauri_open_external_url(url);
         return;
     }
     signals.url.set(Some(url.to_string()));
@@ -152,16 +152,13 @@ fn sync_github_embed_if_ready(signals: GithubEmbedSignals, fallback_fired: RwSig
         if mount_result == Ok(true) {
             return;
         }
-        // 已 fallback 过就不再重复触发，避免竞态取消独立窗口加载
+        // 已降级到浏览器就不再重复触发
         if fallback_fired.get_untracked() {
             return;
         }
         fallback_fired.set(true);
-        if mount_result.is_err() {
-            let title = signals.title.get_untracked();
-            tauri_shell::tauri_open_github_webview(&url, title.as_deref());
-        }
-        // Linux 使用独立 WebViewWindow；关闭透明 overlay，恢复主界面。
+        // 嵌入不可用，降级到系统浏览器
+        tauri_shell::tauri_open_external_url(&url);
         if signals.url.get_untracked().as_deref() == Some(url.as_str()) {
             close_github_embed_page(signals);
             set_github_embed_body_transparent(false);
