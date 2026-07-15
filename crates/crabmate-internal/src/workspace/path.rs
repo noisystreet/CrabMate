@@ -261,8 +261,7 @@ pub fn absolutize_relative_under_root(
         return Err(WorkspacePathError::AbsolutePathNotAllowed);
     }
     let normalized = Path::new(sub)
-        .absolutize_from(workspace_root)
-        .map_err(WorkspacePathError::NormalizationFailed)?;
+        .absolutize_from(workspace_root);
     if !normalized.starts_with(workspace_root) {
         return Err(WorkspacePathError::OutsideWorkspaceRoot);
     }
@@ -283,9 +282,7 @@ pub fn absolutize_workspace_subpath(
             .absolutize()
             .map_err(WorkspacePathError::NormalizationFailed)?
     } else {
-        Path::new(sub)
-            .absolutize_from(base_canonical)
-            .map_err(WorkspacePathError::NormalizationFailed)?
+        Path::new(sub).absolutize_from(base_canonical)
     };
     if !normalized.starts_with(base_canonical) {
         return Err(WorkspacePathError::OutsideWorkspaceRoot);
