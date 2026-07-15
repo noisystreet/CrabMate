@@ -689,22 +689,15 @@
   box-sizing: border-box;
 }
 
-/* —— GitHub 嵌入页（同窗口 overlay + Tauri 子 WebView 挂载区）—— */
+/* —— GitHub 嵌入页（浏览器模式 overlay）—— */
 .github-embed-page.settings-page {
-  /* 勿用不透明底，否则会挡住原生子 WebView */
-  background: transparent;
+  background: var(--bg);
   overflow: hidden;
   inset: 0;
   width: 100vw;
   height: 100vh;
   height: 100dvh;
   position: fixed;
-}
-
-/* Tauri 子 WebView 合成为原生层，位于 HTML 内容下方；
-   嵌入页打开时须将 body 背景透明化，否则不透明背景会完全遮挡子 WebView。 */
-html[data-github-embed-open] body {
-  background: transparent;
 }
 
 .github-embed-page-header {
@@ -720,16 +713,6 @@ html[data-github-embed-open] body {
 
 .github-embed-page-body {
   display: none;
-}
-
-.github-embed-host {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  background: transparent;
-  pointer-events: none;
-  z-index: 0;
 }
 
 .github-embed-browser-fallback {

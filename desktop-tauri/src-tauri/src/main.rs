@@ -1,18 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-#[cfg(not(target_os = "linux"))]
-use tauri::webview::WebviewBuilder;
-use tauri::{
-    LogicalPosition, LogicalSize, Manager, Position, Rect, RunEvent, Size, Theme, WebviewUrl,
-    WebviewWindow, WebviewWindowBuilder,
-    webview::{NewWindowFeatures, NewWindowResponse},
-};
+use tauri::{Manager, RunEvent, Theme, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt, FilePath, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_opener::OpenerExt;
 use url::Url;
@@ -358,110 +351,6 @@ fn should_open_link_externally(app_origin: &url::Origin, target: &Url) -> bool {
     target.origin() != *app_origin
 }
 
-fn is_github_host(url: &Url) -> bool {
-    url.host_str().is_some_and(|h| {
-        h == "github.com"
-            || h.ends_with(".github.com")
-            || h.ends_with(".githubusercontent.com")
-            || h.ends_with(".githubassets.com")
-    })
-}
-
-/// GitHub 专用 WebView 允许 http(s) 导航（含 OAuth 登录跳转）；其它 scheme 拒绝。
-#[cfg_attr(target_os = "linux", allow(dead_code))]
-fn github_webview_allows_navigation(url: &Url) -> bool {
-    matches!(url.scheme(), "http" | "https") || url.as_str() == "about:blank"
-}
-
-#[cfg_attr(target_os = "linux", allow(dead_code))]
-fn github_webview_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?
-        .join("github-webview");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    Ok(dir)
-}
-
-#[cfg_attr(target_os = "linux", allow(dead_code))]
-fn create_github_webview_window(
-    app: &tauri::AppHandle,
-    parsed: Url,
-    title: Option<String>,
-    window_features: Option<NewWindowFeatures>,
-) -> Result<WebviewWindow, String> {
-    if !github_webview_allows_navigation(&parsed) {
-        return Err("仅支持 http(s) URL".to_string());
-    }
-
-    let label = {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        parsed.as_str().hash(&mut hasher);
-        format!("github-{:016x}", hasher.finish())
-    };
-    if let Some(existing) = app.get_webview_window(&label) {
-        existing.set_focus().map_err(|e| e.to_string())?;
-        return Ok(existing);
-    }
-
-    let data_dir = github_webview_data_dir(app)?;
-    let window_title = title
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| {
-            parsed
-                .host_str()
-                .map(|h| format!("GitHub — {h}"))
-                .unwrap_or_else(|| "GitHub".to_string())
-        });
-    let app_for_handlers = app.clone();
-
-    #[cfg(target_os = "linux")]
-    let initial_url = Url::parse("about:blank").map_err(|e| format!("invalid blank url: {e}"))?;
-    #[cfg(not(target_os = "linux"))]
-    let initial_url = parsed.clone();
-
-    let mut builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(initial_url))
-        .title(window_title)
-        .inner_size(1120.0, 820.0)
-        .min_inner_size(640.0, 480.0)
-        .resizable(true)
-        .decorations(true)
-        .visible(!e2e_hide_app_windows())
-        .center()
-        .data_directory(data_dir)
-        .on_navigation(github_webview_allows_navigation)
-        .on_new_window({
-            let app = app_for_handlers.clone();
-            move |url, features| {
-                if !github_webview_allows_navigation(&url) {
-                    return NewWindowResponse::Deny;
-                }
-                match create_github_webview_window(&app, url.clone(), None, Some(features)) {
-                    Ok(window) => NewWindowResponse::Create { window },
-                    Err(_) => NewWindowResponse::Deny,
-                }
-            }
-        });
-
-    if let Some(features) = window_features {
-        builder = builder.window_features(features);
-    }
-
-    let window = builder
-        .build()
-        .map_err(|e| format!("create webview window failed: {e}"))?;
-
-    // WebKitGTK 偶发会取消以 External URL 创建的新窗口首轮导航；
-    // 先创建空页再显式导航更稳定，且不影响其它平台的嵌入路径。
-    #[cfg(target_os = "linux")]
-    window
-        .navigate(parsed)
-        .map_err(|e| format!("navigate webview window failed: {e}"))?;
-
-    Ok(window)
-}
-
 #[tauri::command]
 fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
     let parsed = Url::parse(&url).map_err(|e| format!("invalid url: {e}"))?;
@@ -473,146 +362,6 @@ fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
 fn main_webview_window(app: &tauri::AppHandle) -> Result<WebviewWindow, String> {
     app.get_webview_window("main")
         .ok_or_else(|| "main window not found".into())
-}
-
-#[cfg(not(target_os = "linux"))]
-fn main_tauri_window(app: &tauri::AppHandle) -> Result<tauri::Window, String> {
-    app.get_window("main")
-        .ok_or_else(|| "main window not found".into())
-}
-
-const GITHUB_EMBED_WEBVIEW_LABEL: &str = "github-embed";
-
-static GITHUB_EMBED_LAST_URL: Mutex<Option<String>> = Mutex::new(None);
-static GITHUB_EMBED_OP: Mutex<()> = Mutex::new(());
-
-fn unmount_github_embed_webview_inner(app: &tauri::AppHandle) -> Result<(), String> {
-    if let Some(existing) = app.get_webview(GITHUB_EMBED_WEBVIEW_LABEL) {
-        let _ = existing.hide();
-        let _ = existing.set_bounds(Rect {
-            position: Position::Logical(LogicalPosition::new(0.0, 0.0)),
-            size: Size::Logical(LogicalSize::new(0.0, 0.0)),
-        });
-        existing.close().map_err(|e| e.to_string())?;
-    }
-    if let Ok(mut last) = GITHUB_EMBED_LAST_URL.lock() {
-        *last = None;
-    }
-    Ok(())
-}
-
-#[cfg(not(target_os = "linux"))]
-fn github_embed_webview_builder(
-    app: &tauri::AppHandle,
-    parsed: Url,
-) -> Result<WebviewBuilder<tauri::Wry>, String> {
-    let data_dir = github_webview_data_dir(app)?;
-    let app_for_handlers = app.clone();
-    Ok(
-        WebviewBuilder::new(GITHUB_EMBED_WEBVIEW_LABEL, WebviewUrl::External(parsed))
-            .data_directory(data_dir)
-            .on_navigation(github_webview_allows_navigation)
-            .on_new_window(move |url, features| {
-                if !github_webview_allows_navigation(&url) {
-                    return NewWindowResponse::Deny;
-                }
-                match create_github_webview_window(
-                    &app_for_handlers,
-                    url.clone(),
-                    None,
-                    Some(features),
-                ) {
-                    Ok(window) => NewWindowResponse::Create { window },
-                    Err(_) => NewWindowResponse::Deny,
-                }
-            }),
-    )
-}
-
-#[tauri::command]
-fn sync_github_embed_webview(
-    app: tauri::AppHandle,
-    url: String,
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-) -> Result<bool, String> {
-    let _guard = GITHUB_EMBED_OP
-        .lock()
-        .map_err(|e| format!("github embed op lock: {e}"))?;
-
-    let parsed = Url::parse(&url).map_err(|e| format!("invalid url: {e}"))?;
-    if parsed.scheme() != "https" {
-        return Err("仅支持 https URL".to_string());
-    }
-    if !is_github_host(&parsed) {
-        return Err("GitHub 嵌入仅支持 GitHub 域名".to_string());
-    }
-    if width < 1.0 || height < 1.0 {
-        return Ok(true);
-    }
-
-    // Linux：独立 WebViewWindow 受限于 WebKitGTK 兼容性，易出现导航被取消；
-    // 直接通过系统默认浏览器打开，确保可靠。
-    #[cfg(target_os = "linux")]
-    {
-        let _ = (x, y);
-        app.opener()
-            .open_url(parsed.as_str(), None::<&str>)
-            .map_err(|e| e.to_string())?;
-        Ok(false)
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    {
-        let bounds = Rect {
-            position: Position::Logical(LogicalPosition::new(x, y)),
-            size: Size::Logical(LogicalSize::new(width, height)),
-        };
-
-        let same_url = GITHUB_EMBED_LAST_URL
-            .lock()
-            .map_err(|e| e.to_string())?
-            .as_deref()
-            == Some(url.as_str());
-
-        if let Some(existing) = app.get_webview(GITHUB_EMBED_WEBVIEW_LABEL) {
-            if same_url {
-                let _ = existing.set_auto_resize(false);
-                existing.set_bounds(bounds).map_err(|e| e.to_string())?;
-                let _ = existing.show();
-                return Ok(true);
-            }
-            // URL 变更：关闭后重建，避免 navigate() 取消进行中的加载（WebKit「Operation was cancelled」）
-            unmount_github_embed_webview_inner(&app)?;
-        }
-
-        let window = main_tauri_window(&app)?;
-        let builder = github_embed_webview_builder(&app, parsed)?;
-        let webview = window
-            .add_child(
-                builder,
-                LogicalPosition::new(x, y),
-                LogicalSize::new(width, height),
-            )
-            .map_err(|e| e.to_string())?;
-        let _ = webview.set_auto_resize(false);
-        webview.set_bounds(bounds).map_err(|e| e.to_string())?;
-        let _ = webview.show();
-        if let Ok(mut last) = GITHUB_EMBED_LAST_URL.lock() {
-            *last = Some(url);
-        }
-        Ok(true)
-    }
-}
-
-#[tauri::command]
-fn unmount_github_embed_webview(app: tauri::AppHandle) -> Result<(), String> {
-    let _guard = GITHUB_EMBED_OP
-        .lock()
-        .map_err(|e| format!("github embed op lock: {e}"))?;
-    unmount_github_embed_webview_inner(&app)
 }
 
 #[tauri::command]
@@ -690,8 +439,6 @@ fn main() {
             pick_workspace_folder_via_dialog,
             confirm_delete_session_via_dialog,
             open_external_url,
-            sync_github_embed_webview,
-            unmount_github_embed_webview,
             set_main_window_decorations,
             main_window_minimize,
             main_window_toggle_maximize,
