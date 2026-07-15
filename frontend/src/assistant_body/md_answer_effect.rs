@@ -1,12 +1,11 @@
 //! 助手回答区 DOM 绘制：`Effect`、增量流式追加与 Markdown 收尾（从 [`super::view`] 拆出以降低单函数 nloc）。
 //!
 //! - **流式 loading**：`insertAdjacentHTML('beforeend', …)` 仅追加新 token，不触碰已有 DOM
-//! - **流式节流**：两次 DOM 写入至少相隔 [`adaptive_stream_interval`] 动态间隔
+//! - **流式节流**：rAF 逐帧检查节流条件（自适应 interval 40–72ms），无需独立 Timeout；世代门禁防陈旧
 //! - **完成时**：清空容器后 `insertAdjacentHTML('beforeend', …)` 一次追加，避免 `innerHTML` 全量重建
 
 use std::sync::{Arc, Mutex};
 
-use gloo_timers::callback::Timeout;
 use leptos::html::Div;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -52,6 +51,36 @@ impl SectionPaint {
         self.pending_stream_html.clear();
         self.pending_stream_through_len = 0;
         self.stream_throttle_gen = self.stream_throttle_gen.wrapping_add(1);
+    }
+
+    /// 累积流式增量文本并返回新的 generation。
+    /// 超出背压上限时返回 `None`，状态不变。
+    pub(super) fn try_accumulate_stream_text(
+        &mut self,
+        html: &str,
+        through_len: usize,
+    ) -> Option<u64> {
+        if self.pending_stream_html.len() >= MAX_PENDING_STREAM_BYTES {
+            return None;
+        }
+        self.pending_stream_html.push_str(html);
+        self.pending_stream_through_len = through_len;
+        self.stream_flush_generation = self.stream_flush_generation.wrapping_add(1);
+        Some(self.stream_flush_generation)
+    }
+
+    /// 当 `when_scheduled` 与当前 generation 匹配时取出 pending HTML
+    /// 并同步推进 `prev_text_len`；否则返回 `None`。
+    pub(super) fn try_drain_pending(&mut self, when_scheduled: u64) -> Option<String> {
+        if !debounce_should_apply(when_scheduled, self.stream_flush_generation) {
+            return None;
+        }
+        if self.pending_stream_html.is_empty() {
+            return None;
+        }
+        let html = std::mem::take(&mut self.pending_stream_html);
+        self.prev_text_len = self.pending_stream_through_len;
+        Some(html)
     }
 }
 
@@ -141,47 +170,41 @@ fn enqueue_answer_body_paint(
     });
 }
 
-fn flush_pending_stream_dom(
-    paint_arc: &Arc<Mutex<SectionPaint>>,
-    answer_body_ref: &NodeRef<Div>,
-    when_scheduled: u64,
-) {
-    let html = {
-        let mut g = paint_arc.lock().expect("answer paint mutex poisoned");
-        if !debounce_should_apply(when_scheduled, g.stream_flush_generation) {
-            return;
-        }
-        if g.pending_stream_html.is_empty() {
-            return;
-        }
-        let html = std::mem::take(&mut g.pending_stream_html);
-        g.prev_text_len = g.pending_stream_through_len;
-        g.last_stream_dom_write_ms = performance_now_ms();
-        html
-    };
-    enqueue_answer_body_paint(paint_arc, answer_body_ref, html, false, None);
-}
-
 fn schedule_pending_stream_dom_flush(
     paint_arc: &Arc<Mutex<SectionPaint>>,
     answer_body_ref: &NodeRef<Div>,
     when_scheduled: u64,
 ) {
-    let interval = {
-        let g = paint_arc.lock().expect("answer paint mutex poisoned");
-        let elapsed = if g.last_stream_dom_write_ms > 0.0 {
-            performance_now_ms() - g.last_stream_dom_write_ms
-        } else {
-            f64::MAX
-        };
-        adaptive_stream_interval(elapsed)
-    };
     let paint_run = Arc::clone(paint_arc);
     let answer_body_ref = answer_body_ref.clone();
-    Timeout::new(interval, move || {
-        flush_pending_stream_dom(&paint_run, &answer_body_ref, when_scheduled);
-    })
-    .forget();
+    request_animation_frame(move || {
+        let html = {
+            let mut g = paint_run.lock().expect("answer paint mutex poisoned");
+            // 世代门禁：淘汰的调度直接丢弃
+            if !debounce_should_apply(when_scheduled, g.stream_flush_generation) {
+                return;
+            }
+            // 自适应节流：若距上次写入不足 interval，下帧再试
+            let now = performance_now_ms();
+            if g.last_stream_dom_write_ms > 0.0 {
+                let elapsed = now - g.last_stream_dom_write_ms;
+                let min_interval = adaptive_stream_interval(elapsed) as f64;
+                if elapsed < min_interval {
+                    drop(g);
+                    schedule_pending_stream_dom_flush(&paint_run, &answer_body_ref, when_scheduled);
+                    return;
+                }
+            }
+            match g.try_drain_pending(when_scheduled) {
+                Some(html) => {
+                    g.last_stream_dom_write_ms = now;
+                    html
+                }
+                None => return,
+            }
+        };
+        enqueue_answer_body_paint(&paint_run, &answer_body_ref, html, false, None);
+    });
 }
 
 fn queue_stream_text_append(
@@ -192,14 +215,10 @@ fn queue_stream_text_append(
 ) {
     let when_scheduled = {
         let mut g = paint_arc.lock().expect("answer paint mutex poisoned");
-        if g.pending_stream_html.len() >= MAX_PENDING_STREAM_BYTES {
-            // backpressure：pending 已超限，丢弃本次增量，避免主线程一次性解析过大 HTML。
-            return;
+        match g.try_accumulate_stream_text(&html, through_len) {
+            Some(gen_id) => gen_id,
+            None => return, // backpressure
         }
-        g.pending_stream_html.push_str(&html);
-        g.pending_stream_through_len = through_len;
-        g.stream_flush_generation = g.stream_flush_generation.wrapping_add(1);
-        g.stream_flush_generation
     };
     schedule_pending_stream_dom_flush(paint_arc, answer_body_ref, when_scheduled);
 }
@@ -279,7 +298,7 @@ pub(super) fn install_assistant_markdown_answer_effect(
 
 #[cfg(test)]
 mod tests {
-    use super::{STREAM_DOM_MAX_INTERVAL_MS, SectionPaint};
+    use super::{MAX_PENDING_STREAM_BYTES, STREAM_DOM_MAX_INTERVAL_MS, SectionPaint};
 
     #[test]
     fn stream_dom_max_interval_default_72() {
@@ -298,5 +317,59 @@ mod tests {
         assert_eq!(paint.stream_flush_generation, 6);
         assert_eq!(paint.stream_throttle_gen, 3);
         assert!(paint.pending_stream_html.is_empty());
+    }
+
+    #[test]
+    fn accumulate_then_drain() {
+        let mut paint = SectionPaint::default();
+        let gid = paint.try_accumulate_stream_text("<p>hello</p>", 5).unwrap();
+        assert_eq!(paint.pending_stream_html, "<p>hello</p>");
+        assert_eq!(paint.pending_stream_through_len, 5);
+
+        let drained = paint.try_drain_pending(gid).unwrap();
+        assert_eq!(drained, "<p>hello</p>");
+        assert_eq!(paint.prev_text_len, 5);
+        assert!(paint.pending_stream_html.is_empty());
+    }
+
+    #[test]
+    fn accumulate_backpressure_returns_none() {
+        let mut paint = SectionPaint {
+            pending_stream_html: "x".repeat(MAX_PENDING_STREAM_BYTES),
+            ..SectionPaint::default()
+        };
+        assert!(paint.try_accumulate_stream_text("more", 999).is_none());
+        // State unchanged
+        assert_eq!(paint.stream_flush_generation, 0);
+        assert_eq!(paint.pending_stream_through_len, 0);
+    }
+
+    #[test]
+    fn drain_with_stale_generation_returns_none() {
+        let mut paint = SectionPaint::default();
+        let gid = paint.try_accumulate_stream_text("html", 4).unwrap();
+        // Advance generation again so draining with old gid fails
+        let _gid2 = paint.try_accumulate_stream_text("more", 8).unwrap();
+        assert!(paint.try_drain_pending(gid).is_none());
+        // Pending should still be intact
+        assert!(!paint.pending_stream_html.is_empty());
+        assert_eq!(paint.pending_stream_through_len, 8);
+    }
+
+    #[test]
+    fn drain_empty_pending_returns_none() {
+        let mut paint = SectionPaint::default();
+        // generation default is 0, try_drain with 0 and empty pending → None
+        assert!(paint.try_drain_pending(0).is_none());
+    }
+
+    #[test]
+    fn multi_accumulate_merges_correctly() {
+        let mut paint = SectionPaint::default();
+        paint.try_accumulate_stream_text("ab", 2);
+        paint.try_accumulate_stream_text("cd", 4);
+        paint.try_accumulate_stream_text("ef", 6);
+        assert_eq!(paint.pending_stream_html, "abcdef");
+        assert_eq!(paint.pending_stream_through_len, 6);
     }
 }
