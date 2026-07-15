@@ -381,10 +381,17 @@ pub struct ThinkingTraceBody {
 }
 
 /// 序列化为单行 JSON，供 `Event::data(...)` 使用。
+/// 委托到当前默认编码器（`V1Encoder`）。
 pub fn encode_message(payload: SsePayload) -> String {
+    let encoder = super::encoder::default_encoder();
+    encoder.encode(&payload)
+}
+
+/// v1 编码器内部实现（`V1Encoder::encode` 调用此函数）。
+pub(crate) fn encode_message_v1(payload: &SsePayload) -> String {
     serde_json::to_string(&SseMessage {
         v: SSE_PROTOCOL_VERSION,
-        payload,
+        payload: payload.clone(),
     })
     .unwrap_or_else(|e| {
         log::error!(
