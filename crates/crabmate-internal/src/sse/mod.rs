@@ -6,6 +6,8 @@
 //!
 //! 控制面 **`stop`/`handled`/`plain`** 分类见 workspace crate **`crabmate-sse-protocol`**（`classify_sse_control_outcome`），金样 **`fixtures/sse_control_golden.jsonl`**。
 
+mod ag_ui_encode;
+mod ag_ui_event;
 mod control_mirror;
 mod encoder;
 mod final_response_terminal;

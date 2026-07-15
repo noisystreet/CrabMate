@@ -33,8 +33,8 @@ struct GoldenExpect {
     orchestration_mode: String,
     #[serde(default)]
     turn_phase: Option<String>,
-    #[serde(default)]
-    freeform_because: Option<Value>,
+    #[serde(default, alias = "freeform_because")]
+    react_because: Option<Value>,
     #[serde(default)]
     hierarchical_post_intent_route: Option<String>,
     #[serde(default)]
@@ -218,7 +218,7 @@ fn golden_turn_route_decision() {
         }
         assert_freeform_because(
             decision,
-            &row.expect.freeform_because.clone().unwrap_or(Value::Null),
+            &row.expect.react_because.clone().unwrap_or(Value::Null),
             &ctx,
         );
         if let Some(route) = &row.expect.hierarchical_post_intent_route {
