@@ -6,6 +6,7 @@ mod body_reader;
 mod http_request;
 mod send_helpers;
 mod sse_frame;
+mod sse_parser;
 
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;

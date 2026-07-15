@@ -1,0 +1,34 @@
+//! SSE 编码器 trait：将 `SsePayload` 序列化为 SSE `data:` 行 JSON 字符串。
+//!
+//! 当前 v1 为当前协议格式；后续 v2（AG-UI）新增 `V2Encoder` 实现同一 trait。
+//! `encode_message` 便捷函数始终使用当前 encoder，调用点无需改造。
+
+use std::sync::Arc;
+
+use super::protocol::SsePayload;
+
+/// SSE 编码器：将 `SsePayload` 序列化为 SSE `data:` 行 JSON 字符串。
+#[allow(dead_code)]
+pub(crate) trait SseEncoder: Send + Sync {
+    fn encode(&self, payload: &SsePayload) -> String;
+    fn format_version(&self) -> u8;
+}
+
+/// v1 编码器：当前自定义 SSE 协议格式。
+#[allow(dead_code)]
+pub(crate) struct V1Encoder;
+
+impl SseEncoder for V1Encoder {
+    fn encode(&self, payload: &SsePayload) -> String {
+        // 委托到当前 encode_message 实现
+        super::protocol::encode_message_v1(payload)
+    }
+    fn format_version(&self) -> u8 {
+        1
+    }
+}
+
+/// 全局默认编码器（v1）。
+pub(crate) fn default_encoder() -> Arc<dyn SseEncoder> {
+    Arc::new(V1Encoder)
+}

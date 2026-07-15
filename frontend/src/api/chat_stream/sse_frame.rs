@@ -5,13 +5,17 @@ use crabmate_sse_protocol::{
 
 use crate::i18n::Locale;
 use crate::sse_dispatch::{
-    ClarificationQuestionnaireInfo, CommandApprovalRequest, SseClarifyTraceHooks, SseControlSink,
-    SseNoticeTimelineHooks, SseStagedPlanHooks, SseWorkspaceToolHooks, StagedPlanStepEndInfo,
-    StagedPlanStepStartInfo, ThinkingTraceInfo, TimelineLogInfo, ToolOutputChunkInfo,
-    ToolResultInfo, try_dispatch_sse_control_payload,
+    SseClarifyTraceHooks, SseControlSink, SseNoticeTimelineHooks, SseStagedPlanHooks,
+    SseWorkspaceToolHooks,
 };
 
 use super::ChatStreamCallbacks;
+use super::sse_parser::{SseParser, V1Parser};
+
+/// 当前使用的 SSE 解析器（v1）。Phase 2 将改为按 `client_sse_protocol` 选择。
+fn default_parser() -> &'static dyn SseParser {
+    &V1Parser
+}
 
 /// SSE 单帧分类：用于区分「任意有效负载」与「正文 delta」的空闲检测。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -172,26 +176,24 @@ pub(super) fn handle_sse_block(
     };
     let mut on_tool_status = |b: bool| (cbs.on_tool_status)(b);
     let mut on_parse = |b: bool| (cbs.on_parsing_tool_calls)(b);
-    let mut on_tool_chunk = |info: ToolOutputChunkInfo| (cbs.on_tool_output_chunk)(info);
-    let mut on_tool_res = |info: ToolResultInfo| (cbs.on_tool_result)(info);
-    let mut on_appr = |req: CommandApprovalRequest| (cbs.on_approval)(req);
+    let mut on_tool_chunk = |info| (cbs.on_tool_output_chunk)(info);
+    let mut on_tool_res = |info| (cbs.on_tool_result)(info);
+    let mut on_appr = |req| (cbs.on_approval)(req);
     let mut on_conv_rev =
         |rev: u64, tiktoken: Option<crate::conversation_hydrate::TiktokenPromptTokensSnapshot>| {
             (cbs.on_conversation_revision)(rev, tiktoken);
         };
-    let mut on_staged_start =
-        |info: StagedPlanStepStartInfo| (cbs.on_staged_plan_step_started)(info);
-    let mut on_staged_end = |info: StagedPlanStepEndInfo| (cbs.on_staged_plan_step_finished)(info);
-    let mut on_clar =
-        |info: ClarificationQuestionnaireInfo| (cbs.on_clarification_questionnaire)(info);
+    let mut on_staged_start = |info| (cbs.on_staged_plan_step_started)(info);
+    let mut on_staged_end = |info| (cbs.on_staged_plan_step_finished)(info);
+    let mut on_clar = |info| (cbs.on_clarification_questionnaire)(info);
     let mut on_phase = || (cbs.on_assistant_answer_phase)();
     let mut on_turn_seg_start = |info: crate::sse_dispatch::TurnSegmentStartInfo| {
         (cbs.on_turn_segment_start)(info);
     };
     let mut on_turn_seg_end = |segment_id: String| (cbs.on_turn_segment_end)(segment_id);
     let mut on_turn_phase_end = || (cbs.on_turn_tool_phase_end)();
-    let mut on_thinking_trace = |info: ThinkingTraceInfo| (cbs.on_thinking_trace)(info);
-    let mut on_timeline_log = |info: TimelineLogInfo| (cbs.on_timeline_log)(info);
+    let mut on_thinking_trace = |info| (cbs.on_thinking_trace)(info);
+    let mut on_timeline_log = |info| (cbs.on_timeline_log)(info);
 
     let mut cbs2 = SseControlSink {
         user_locale: loc,
@@ -222,7 +224,7 @@ pub(super) fn handle_sse_block(
             on_timeline_log: Some(&mut on_timeline_log),
         },
     };
-    match try_dispatch_sse_control_payload(&data, &mut cbs2) {
+    match default_parser().parse(&data, &mut cbs2) {
         crate::sse_dispatch::SseDispatch::Stop => Ok(SseFrameKind::Control),
         crate::sse_dispatch::SseDispatch::Handled => {
             if stop {
