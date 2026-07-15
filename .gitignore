@@ -67,6 +67,8 @@ env/
 /target/
 # Tauri 子工程构建产物
 desktop-tauri/src-tauri/target/
+# Tauri 构建生成的 ACL Schema（从源码自动生成，无需提交）
+desktop-tauri/src-tauri/gen/
 # Tauri sidecar：由 `desktop-tauri/scripts/prepare-sidecar.sh` 从仓库根 `target/` 复制
 desktop-tauri/binaries/
 # 若使用 cargo vendor 或 path 依赖到 vendor/，忽略其 target
