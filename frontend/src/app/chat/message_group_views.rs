@@ -12,6 +12,9 @@ use crate::i18n::{self, Locale};
 use crate::session_search::normalize_search_query;
 use crate::storage::StoredMessage;
 
+/// 连续工具组内工具消息数超过该值时自动默认折叠（只显示最后一条 + 计数 badge），用户可手动展开。
+const COLLAPSE_TOOL_GROUP_AFTER: usize = 3;
+
 /// 工具组内每条 [`chat_message_row`] 共享的信号（缩短 [`tool_run_group_view`] 形参列表）。
 #[derive(Clone, Copy)]
 pub(crate) struct ToolRunGroupSignals {
@@ -64,6 +67,7 @@ fn tool_run_group_expanded_block(
     g: ToolRunGroupSignals,
     n: usize,
     fold_on_click: String,
+    auto_fold: bool,
 ) -> impl IntoView {
     view! {
         {
@@ -82,7 +86,11 @@ fn tool_run_group_expanded_block(
                 on:click=move |_| {
                     let k = fold_on_click.clone();
                     g.collapsed_tool_run_heads.update(|s| {
-                        s.insert(k);
+                        if auto_fold {
+                            s.remove(&k);  // auto-fold: remove from "expanded" set = collapse
+                        } else {
+                            s.insert(k);  // normal: add to "collapsed" set = collapse
+                        }
                     });
                 }
             >
@@ -98,6 +106,7 @@ fn tool_run_group_collapsed_last_block(
     g: ToolRunGroupSignals,
     n: usize,
     expand_on_click: String,
+    auto_fold: bool,
 ) -> impl IntoView {
     view! {
         {chat_row_for_tool_group(msg_idx, last, g)}
@@ -111,7 +120,11 @@ fn tool_run_group_collapsed_last_block(
                 on:click=move |_| {
                     let h = expand_on_click.clone();
                     g.collapsed_tool_run_heads.update(|s| {
-                        s.remove(&h);
+                        if auto_fold {
+                            s.insert(h);  // auto-fold: add to "expanded" set = expand
+                        } else {
+                            s.remove(&h);  // normal: remove from "collapsed" set = expand
+                        }
                     });
                 }
             >
@@ -139,8 +152,6 @@ pub(crate) fn tool_run_group_view(
     view! {
         <div class="msg-tool-run" data-tool-run=head_attr>
             {move || {
-                let folded_to_last =
-                    g.collapsed_tool_run_heads.with(|s| s.contains(&fold_head));
                 let find_hit = {
                     let q = normalize_search_query(&g.chat_find_query.get());
                     !q.is_empty()
@@ -150,14 +161,21 @@ pub(crate) fn tool_run_group_view(
                                 .any(|mid| group_ids.iter().any(|g_id| g_id == mid))
                         })
                 };
-                let show_all = !folded_to_last || find_hit;
+                let auto_fold = n > COLLAPSE_TOOL_GROUP_AFTER && !find_hit;
+                let show_all = if auto_fold {
+                    // Auto-fold: in_set means user explicitly expanded
+                    g.collapsed_tool_run_heads.with(|s| s.contains(&fold_head))
+                } else {
+                    !g.collapsed_tool_run_heads.with(|s| s.contains(&fold_head))
+                        || find_hit
+                };
                 let entries: Vec<_> = items_sv.get_value();
                 let fold_on_click = fold_head.clone();
                 let expand_on_click = head_for_expand_hint.clone();
                 if show_all {
-                    tool_run_group_expanded_block(&entries, g, n, fold_on_click).into_any()
+                    tool_run_group_expanded_block(&entries, g, n, fold_on_click, auto_fold).into_any()
                 } else if let Some((msg_idx, last)) = entries.last().cloned() {
-                    tool_run_group_collapsed_last_block(msg_idx, last, g, n, expand_on_click).into_any()
+                    tool_run_group_collapsed_last_block(msg_idx, last, g, n, expand_on_click, auto_fold).into_any()
                 } else {
                     view! { <div class="msg-tool-run-empty"></div> }.into_any()
                 }
