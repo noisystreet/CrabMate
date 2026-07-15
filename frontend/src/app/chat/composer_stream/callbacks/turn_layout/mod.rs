@@ -425,6 +425,9 @@ impl TurnLayout {
         subgoal_marker: Option<&str>,
     ) {
         let mid = stream_ctx.scratch.clone_assistant_id();
+        // 若此前已落盘终答行（模型在工具声明前预写了运行结果），将其降级为普通消息，
+        // 避免终答出现在工具结果之后。
+        Self::detach_final_answer_projection(stream_ctx);
         stream_ctx.update_bound_session(|s| {
             discard_premature_assistant_tail(&mut s.messages, mid.as_str());
             insert_tool_row(&mut s.messages, tool_msg, subgoal_marker);
