@@ -73,10 +73,6 @@ pub fn load_client_llm_text_fields_from_storage() -> (String, String, String, St
     })
 }
 
-pub fn load_execution_mode_from_storage() -> String {
-    with_mem(|m| m.execution_mode.clone())
-}
-
 pub fn persist_client_llm_to_storage(
     api_base: &str,
     model: &str,
@@ -220,21 +216,6 @@ pub fn clear_executor_llm_api_key_storage(loc: Locale) -> Result<(), String> {
         let _ = put_secret_executor_llm("", loc).await;
     });
     Ok(())
-}
-
-pub fn persist_execution_mode_to_storage(mode: &str, loc: Locale) -> Result<(), String> {
-    with_mem_mut(|m| m.execution_mode = mode.trim().to_string());
-    sync_llm_to_server_async(loc);
-    Ok(())
-}
-
-pub fn execution_mode_for_chat_body() -> Option<String> {
-    let mode = with_mem(|m| m.execution_mode.clone());
-    match mode.trim() {
-        "rolling_planning" => Some("rolling_planning".to_string()),
-        "hierarchical" => Some("hierarchical".to_string()),
-        _ => None,
-    }
 }
 
 pub fn load_readonly_tool_ttl_cache_follow_server_from_memory() -> bool {

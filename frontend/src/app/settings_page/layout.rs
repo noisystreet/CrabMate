@@ -141,7 +141,6 @@ pub(super) fn SettingsPageContentPanels(
     drafts: SettingsPagePanelDrafts,
     clear_client_key_intent: RwSignal<bool>,
     clear_executor_key_intent: RwSignal<bool>,
-    execution_mode_draft: RwSignal<String>,
     readonly_tool_ttl_cache_follow_server: RwSignal<bool>,
     registry_wire: SettingsPageContentRegistryWire,
 ) -> impl IntoView {
@@ -216,7 +215,6 @@ pub(super) fn SettingsPageContentPanels(
                     llm_temperature_draft,
                     llm_context_tokens_draft,
                     llm_thinking_mode_draft,
-                    execution_mode_draft: Some(execution_mode_draft),
                     llm_api_key_draft,
                     llm_has_saved_key,
                     clear_client_key_intent,

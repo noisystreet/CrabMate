@@ -11,7 +11,7 @@ use crate::i18n::{self, Locale};
 use crate::session_typography_prefs::{SESSION_CHAT_FONT_SLUGS, SESSION_UI_FONT_SLUGS};
 use crate::settings_llm_fields::{
     LlmClientApiKeyField, LlmContextTokensField, LlmModelIdField, LlmSavedPresetApplyTarget,
-    LlmSavedPresetPicker, LlmTemperatureField, LlmThinkingModeField, OptionalLlmExecutionModeField,
+    LlmSavedPresetPicker, LlmTemperatureField, LlmThinkingModeField,
 };
 
 /// 设置页「主 LLM」区块所需信号（缩短 [`SettingsLlmBlock`] 形参列表；勿命名为 `*Props`，与 Leptos 组件宏生成类型冲突）。
@@ -25,7 +25,6 @@ pub(crate) struct SettingsLlmBlockBundle {
     pub llm_temperature_draft: RwSignal<String>,
     pub llm_context_tokens_draft: RwSignal<String>,
     pub llm_thinking_mode_draft: RwSignal<String>,
-    pub execution_mode_draft: Option<RwSignal<String>>,
     pub llm_api_key_draft: RwSignal<String>,
     pub llm_has_saved_key: RwSignal<bool>,
     pub clear_client_key_intent: RwSignal<bool>,
@@ -113,7 +112,6 @@ pub(crate) fn SettingsLlmBlock(bundle: SettingsLlmBlockBundle) -> impl IntoView 
         llm_temperature_draft,
         llm_context_tokens_draft,
         llm_thinking_mode_draft,
-        execution_mode_draft,
         llm_api_key_draft,
         llm_has_saved_key,
         clear_client_key_intent,
@@ -151,7 +149,6 @@ pub(crate) fn SettingsLlmBlock(bundle: SettingsLlmBlockBundle) -> impl IntoView 
                 thinking_mode_draft=llm_thinking_mode_draft
                 select_id=llm_thinking_mode_select_id
             />
-            <OptionalLlmExecutionModeField locale execution_mode_draft=execution_mode_draft />
         </div>
     }
 }

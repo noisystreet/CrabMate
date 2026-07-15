@@ -4,8 +4,8 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OrchestrationProfile {
-    /// 非分层下强制走外循环（跳过分阶段门控放行）。
-    Freeform,
+    /// 非分层下强制走外循环 ReAct（推理-行动-观察）。
+    ReAct,
     /// 非分层下对 Execute 类任务尽量走分阶段（覆盖 advisory/readonly bypass）。
     Staged,
     /// 现有 L2 + `staged_plan_intent_gate` 行为（默认）。
@@ -16,11 +16,11 @@ pub enum OrchestrationProfile {
 impl OrchestrationProfile {
     pub fn parse(s: &str) -> Result<Self, String> {
         match s.trim().to_ascii_lowercase().as_str() {
-            "freeform" => Ok(Self::Freeform),
+            "react" => Ok(Self::ReAct),
             "staged" => Ok(Self::Staged),
             "auto" => Ok(Self::Auto),
             _ => Err(format!(
-                "未知 orchestration_profile {:?}，应为 freeform / staged / auto",
+                "未知 orchestration_profile {:?}，应为 react / staged / auto",
                 s.trim()
             )),
         }
@@ -28,7 +28,7 @@ impl OrchestrationProfile {
 
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Freeform => "freeform",
+            Self::ReAct => "react",
             Self::Staged => "staged",
             Self::Auto => "auto",
         }
@@ -46,8 +46,8 @@ pub fn effective_orchestration_path_summary(
             profile.as_str()
         ),
         "logical_dual_agent" => match profile {
-            OrchestrationProfile::Freeform => {
-                "non_hierarchical: freeform outer loop (profile=freeform overrides staged gate)"
+            OrchestrationProfile::ReAct => {
+                "non_hierarchical: react outer loop (profile=react overrides staged gate)"
                     .to_string()
             }
             OrchestrationProfile::Staged => {
@@ -55,13 +55,13 @@ pub fn effective_orchestration_path_summary(
                     .to_string()
             }
             OrchestrationProfile::Auto => {
-                "non_hierarchical: staged_plan_intent_gate → planned_step logical_dual | freeform"
+                "non_hierarchical: staged_plan_intent_gate → planned_step logical_dual | react"
                     .to_string()
             }
         },
         _ => match profile {
-            OrchestrationProfile::Freeform => {
-                "non_hierarchical: freeform outer loop (profile=freeform overrides staged gate)"
+            OrchestrationProfile::ReAct => {
+                "non_hierarchical: react outer loop (profile=react overrides staged gate)"
                     .to_string()
             }
             OrchestrationProfile::Staged => {
@@ -69,7 +69,7 @@ pub fn effective_orchestration_path_summary(
                     .to_string()
             }
             OrchestrationProfile::Auto => {
-                "non_hierarchical: staged_plan_intent_gate → planned_step single_agent | freeform"
+                "non_hierarchical: staged_plan_intent_gate → planned_step single_agent | react"
                     .to_string()
             }
         },
@@ -87,8 +87,8 @@ mod tests {
             OrchestrationProfile::Auto
         );
         assert_eq!(
-            OrchestrationProfile::parse("freeform").unwrap(),
-            OrchestrationProfile::Freeform
+            OrchestrationProfile::parse("react").unwrap(),
+            OrchestrationProfile::ReAct
         );
     }
 }

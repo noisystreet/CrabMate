@@ -63,18 +63,10 @@ pub struct WebChatLlmOverride {
     pub llm_thinking_mode: Option<WebClientLlmThinkingMode>,
 }
 
-/// Web 会话设置中的执行模式覆盖（仅作用于当前任务）。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum WebExecutionModeOverride {
-    RollingPlanning,
-    Hierarchical,
-}
-
 pub(super) fn resolve_web_llm_for_job(
     deps: &WebChatQueueDeps,
     cfg_snap: Arc<AgentConfig>,
     ov: Option<&WebChatLlmOverride>,
-    execution_mode_override: Option<WebExecutionModeOverride>,
 ) -> (Arc<AgentConfig>, String) {
     let (mut cfg, key) = match ov {
         None => (cfg_snap, deps.api_key.clone()),
@@ -109,18 +101,12 @@ pub(super) fn resolve_web_llm_for_job(
             (Arc::new(c), key)
         }
     };
-    if let Some(mode) = execution_mode_override {
+    // 默认强制走 ReAct（单 Agent 外循环），不再暴露给前端选择。
+    // 服务端 TOML 配置的 planner_executor_mode / orchestration_profile 在非 Web 路径下仍可用。
+    {
         let mut c = (*cfg).clone();
-        match mode {
-            WebExecutionModeOverride::RollingPlanning => {
-                c.per_plan_policy.planner_executor_mode =
-                    crate::config::PlannerExecutorMode::SingleAgent;
-            }
-            WebExecutionModeOverride::Hierarchical => {
-                c.per_plan_policy.planner_executor_mode =
-                    crate::config::PlannerExecutorMode::Hierarchical;
-            }
-        }
+        c.per_plan_policy.planner_executor_mode = crate::config::PlannerExecutorMode::SingleAgent;
+        c.per_plan_policy.orchestration_profile = crate::config::OrchestrationProfile::ReAct;
         cfg = Arc::new(c);
     }
     (cfg, key)
@@ -212,8 +198,6 @@ pub struct WebChatJobEnvelope {
     pub llm_override: Option<WebChatLlmOverride>,
     /// 可选：本任务覆盖执行阶段 `api_base` / `model` / `api_key`。
     pub executor_llm_override: Option<WebChatLlmOverride>,
-    /// 可选：本任务覆盖执行模式（rolling_planning / hierarchical）。
-    pub execution_mode_override: Option<WebExecutionModeOverride>,
     /// 可选：本任务覆盖 **`chat_queues_cache.readonly_tool_ttl_cache_secs`**（`None` 表示跟随服务端快照）。
     pub readonly_tool_ttl_cache_secs: Option<u64>,
     /// HTTP 审计上下文（客户端 IP、Bearer 指纹）；定时任务为占位。

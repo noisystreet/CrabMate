@@ -279,7 +279,6 @@ async fn chat_stream_try_enqueue_job(
                 seed_override: p.seed_override,
                 llm_override: p.llm_override.clone(),
                 executor_llm_override: p.executor_llm_override.clone(),
-                execution_mode_override: p.execution_mode_override,
                 readonly_tool_ttl_cache_secs: p.readonly_tool_ttl_cache_secs,
                 request_audit,
             },

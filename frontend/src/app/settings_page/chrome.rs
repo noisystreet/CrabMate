@@ -79,7 +79,6 @@ pub(super) fn SettingsPageChrome(ctx: SettingsPageChromeCtx) -> impl IntoView {
         executor_llm_api_key_draft,
         executor_llm_has_saved_key,
         executor_llm_settings_feedback,
-        execution_mode_draft,
         client_llm_storage_tick,
         readonly_tool_ttl_cache_follow_server,
         saved_model_presets,
@@ -179,7 +178,6 @@ pub(super) fn SettingsPageChrome(ctx: SettingsPageChromeCtx) -> impl IntoView {
                         }
                         clear_client_key_intent=clear_client_key_intent
                         clear_executor_key_intent=clear_executor_key_intent
-                        execution_mode_draft=execution_mode_draft
                         readonly_tool_ttl_cache_follow_server=readonly_tool_ttl_cache_follow_server
                         registry_wire=SettingsPageContentRegistryWire {
                             sync_saved_presets_baseline: sync_saved_presets_baseline.get_value().clone(),

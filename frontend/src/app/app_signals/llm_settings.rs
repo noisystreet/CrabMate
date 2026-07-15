@@ -22,7 +22,6 @@ pub struct LLMSettingsSignals {
     pub executor_llm_api_key_draft: RwSignal<String>,
     pub executor_llm_has_saved_key: RwSignal<bool>,
     pub executor_llm_settings_feedback: RwSignal<Option<String>>,
-    pub execution_mode_draft: RwSignal<String>,
     pub client_llm_storage_tick: RwSignal<u64>,
     /// **`true`**：聊天请求不附带 **`readonly_tool_ttl_cache_secs`**，跟随服务端；**`false`**：附带 **`0`** 关闭只读 **`run_command`** 短时缓存。
     pub readonly_tool_ttl_cache_follow_server: RwSignal<bool>,
@@ -51,7 +50,6 @@ impl LLMSettingsSignals {
             executor_llm_api_key_draft: RwSignal::new(String::new()),
             executor_llm_has_saved_key: RwSignal::new(false),
             executor_llm_settings_feedback: RwSignal::new(None),
-            execution_mode_draft: RwSignal::new("rolling_planning".to_string()),
             client_llm_storage_tick: RwSignal::new(0),
             readonly_tool_ttl_cache_follow_server: RwSignal::new(
                 crate::api::load_readonly_tool_ttl_cache_follow_server_from_storage(),

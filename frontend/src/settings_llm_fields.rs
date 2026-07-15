@@ -123,45 +123,7 @@ pub(crate) fn LlmTemperatureField(
     }
 }
 
-#[component]
-pub(crate) fn LlmExecutionModeField(
-    locale: RwSignal<Locale>,
-    execution_mode_draft: RwSignal<String>,
-) -> impl IntoView {
-    view! {
-        <div class="settings-field">
-            <label class="settings-field-label" for="settings-execution-mode">
-                {move || i18n::settings_label_execution_mode(locale.get())}
-            </label>
-            <select
-                id="settings-execution-mode"
-                class="settings-select"
-                prop:value=move || execution_mode_draft.get()
-                on:change=move |ev| execution_mode_draft.set(event_target_value(&ev))
-            >
-                <option value="rolling_planning">
-                    {move || i18n::settings_execution_mode_rolling(locale.get())}
-                </option>
-                <option value="hierarchical">
-                    {move || i18n::settings_execution_mode_hierarchical(locale.get())}
-                </option>
-            </select>
-        </div>
-    }
-}
-
 #[allow(clippy::unit_arg)]
-#[component]
-pub(crate) fn OptionalLlmExecutionModeField(
-    locale: RwSignal<Locale>,
-    execution_mode_draft: Option<RwSignal<String>>,
-) -> impl IntoView {
-    match execution_mode_draft {
-        Some(sig) => view! { <LlmExecutionModeField locale execution_mode_draft=sig /> }.into_any(),
-        None => view! { <></> }.into_any(),
-    }
-}
-
 #[component]
 pub(crate) fn LlmThinkingModeField(
     locale: RwSignal<Locale>,

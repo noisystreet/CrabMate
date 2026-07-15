@@ -25,7 +25,6 @@ pub struct SettingsPageFormSignals {
     pub executor_llm_api_key_draft: RwSignal<String>,
     pub executor_llm_has_saved_key: RwSignal<bool>,
     pub executor_llm_settings_feedback: RwSignal<Option<String>>,
-    pub execution_mode_draft: RwSignal<String>,
     pub client_llm_storage_tick: RwSignal<u64>,
     pub readonly_tool_ttl_cache_follow_server: RwSignal<bool>,
     pub saved_model_presets: RwSignal<Vec<crate::api::SavedModelPreset>>,
@@ -58,7 +57,6 @@ impl SettingsPageFormSignals {
             executor_llm_api_key_draft: app.llm_settings.executor_llm_api_key_draft,
             executor_llm_has_saved_key: app.llm_settings.executor_llm_has_saved_key,
             executor_llm_settings_feedback: app.llm_settings.executor_llm_settings_feedback,
-            execution_mode_draft: app.llm_settings.execution_mode_draft,
             client_llm_storage_tick: app.llm_settings.client_llm_storage_tick,
             readonly_tool_ttl_cache_follow_server: app
                 .llm_settings

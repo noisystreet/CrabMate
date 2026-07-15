@@ -25,7 +25,6 @@ pub(crate) struct ChatRequestBody {
     pub(crate) seed_policy: Option<String>,
     pub(crate) client_llm: Option<ClientLlmBody>,
     pub(crate) executor_llm: Option<ExecutorLlmBody>,
-    pub(crate) execution_mode: Option<String>,
     pub(crate) readonly_tool_ttl_cache_secs: Option<u64>,
     pub(crate) stream_resume: Option<StreamResumeBody>,
     pub(crate) client_sse_protocol: Option<u8>,
@@ -124,8 +123,6 @@ struct ChatRequestBodySerde {
     #[serde(default)]
     pub(crate) executor_llm: Option<ExecutorLlmBody>,
     #[serde(default)]
-    pub(crate) execution_mode: Option<String>,
-    #[serde(default)]
     pub(crate) readonly_tool_ttl_cache_secs: Option<u64>,
     #[serde(default)]
     pub(crate) stream_resume: Option<StreamResumeBody>,
@@ -149,7 +146,6 @@ impl From<ChatRequestBodySerde> for ChatRequestBody {
             seed_policy: s.seed_policy,
             client_llm: s.client_llm,
             executor_llm: s.executor_llm,
-            execution_mode: s.execution_mode,
             readonly_tool_ttl_cache_secs: s.readonly_tool_ttl_cache_secs,
             stream_resume: s.stream_resume,
             client_sse_protocol: s.client_sse_protocol,

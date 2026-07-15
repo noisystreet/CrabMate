@@ -1,4 +1,6 @@
-//! `CM_REFLECTION_*` / `CM_FINAL_PLAN_*` / `CM_PLANNER_EXECUTOR_MODE` 等 per-plan 策略环境覆盖（从 `env_overrides.rs` 拆分以降低圈复杂度）。
+//! `CM_REFLECTION_*` / `CM_FINAL_PLAN_*` 等 per-plan 策略环境覆盖（从 `env_overrides.rs` 拆分以降低圈复杂度）。
+//!
+//! 注意：`CM_PLANNER_EXECUTOR_MODE` 与 `CM_ORCHESTRATION_PROFILE` 不再生效——统一强制走 ReAct。
 
 use crate::builder::ConfigBuilder;
 use crate::source::parse_bool_like;
@@ -6,7 +8,6 @@ use crate::source::parse_bool_like;
 pub(super) fn env_override_reflection_and_final_plan(b: &mut ConfigBuilder) {
     env_override_reflection_rounds_and_rewrite(b);
     env_override_final_plan_flags(b);
-    env_override_planner_executor_mode_str(b);
 }
 
 fn env_override_reflection_rounds_and_rewrite(b: &mut ConfigBuilder) {
@@ -51,60 +52,4 @@ fn env_override_final_plan_flags(b: &mut ConfigBuilder) {
     {
         b.per_plan_policy.final_plan_semantic_check_max_tokens = Some(n);
     }
-}
-
-fn override_str(var_name: &str, field: &mut Option<String>) {
-    if let Ok(s) = std::env::var(var_name) {
-        let s = s.trim().to_string();
-        if !s.is_empty() {
-            *field = Some(s);
-        }
-    }
-}
-
-fn override_f64(var_name: &str, field: &mut Option<f64>) {
-    if let Ok(v) = std::env::var(var_name)
-        && let Ok(n) = v.trim().parse::<f64>()
-    {
-        *field = Some(n);
-    }
-}
-
-fn env_override_planner_executor_mode_str(b: &mut ConfigBuilder) {
-    override_str(
-        "CM_PLANNER_EXECUTOR_MODE",
-        &mut b.per_plan_policy.planner_executor_mode_str,
-    );
-    override_str(
-        "CM_ORCHESTRATION_PROFILE",
-        &mut b.per_plan_policy.orchestration_profile_str,
-    );
-    override_str(
-        "CM_ORCHESTRATION_DECISION_MODE",
-        &mut b.per_plan_policy.orchestration_decision_mode_str,
-    );
-    override_f64(
-        "CM_DECISION_STAGED_THRESHOLD",
-        &mut b.per_plan_policy.decision_staged_threshold,
-    );
-    override_f64(
-        "CM_DECISION_WEIGHT_INTENT",
-        &mut b.per_plan_policy.decision_weight_intent,
-    );
-    override_f64(
-        "CM_DECISION_WEIGHT_COMPLEXITY",
-        &mut b.per_plan_policy.decision_weight_complexity,
-    );
-    override_f64(
-        "CM_DECISION_WEIGHT_WORKSPACE",
-        &mut b.per_plan_policy.decision_weight_workspace,
-    );
-    override_f64(
-        "CM_DECISION_WEIGHT_HISTORY",
-        &mut b.per_plan_policy.decision_weight_history,
-    );
-    override_f64(
-        "CM_DECISION_WEIGHT_COST",
-        &mut b.per_plan_policy.decision_weight_cost,
-    );
 }

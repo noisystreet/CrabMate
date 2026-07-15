@@ -36,7 +36,7 @@ pub use tool_execution::{
     resolve_tool_batch_execution_mode, tool_policy_early_deny_message,
 };
 pub use turn_orchestration::{
-    FreeformBecause, NonHierarchicalTurnPhase, NonHierarchicalTurnResolution, PlannedStepKind,
+    NonHierarchicalTurnPhase, NonHierarchicalTurnResolution, PlannedStepKind, ReActBecause,
     TurnOrchestrationMode, resolve_non_hierarchical_turn_phase,
 };
 pub use turn_route_decision::{

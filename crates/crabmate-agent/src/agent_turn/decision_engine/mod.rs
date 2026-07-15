@@ -174,7 +174,7 @@ mod tests {
         let decision = make_decision(IntentAction::DirectReply("hello".to_string()));
         let ctx = make_ctx(&decision);
         let result = evaluate_intent_only(&ctx);
-        assert_eq!(result.route, OrchestrationRoute::Freeform);
+        assert_eq!(result.route, OrchestrationRoute::ReAct);
         assert_eq!(result.total_score, 0.0);
         assert_eq!(result.score_breakdown[0].raw_score, 0.0);
     }
@@ -184,7 +184,7 @@ mod tests {
         let decision = make_decision(IntentAction::ClarifyThenExecute("what?".to_string()));
         let ctx = make_ctx(&decision);
         let result = evaluate_intent_only(&ctx);
-        assert_eq!(result.route, OrchestrationRoute::Freeform);
+        assert_eq!(result.route, OrchestrationRoute::ReAct);
     }
 
     #[test]
@@ -192,7 +192,7 @@ mod tests {
         let decision = make_decision(IntentAction::ConfirmThenExecute("sure?".to_string()));
         let ctx = make_ctx(&decision);
         let result = evaluate_intent_only(&ctx);
-        assert_eq!(result.route, OrchestrationRoute::Freeform);
+        assert_eq!(result.route, OrchestrationRoute::ReAct);
     }
 
     #[test]
@@ -237,8 +237,8 @@ mod tests {
             workspace_file_count: None,
         };
         let result = engine.evaluate(&ctx);
-        // intent=0.35 + complexity≈0.0 = 0.35 < 0.4 → Freeform
-        assert_eq!(result.route, OrchestrationRoute::Freeform);
+        // intent=0.35 + complexity≈0.0 = 0.35 < 0.4 → ReAct
+        assert_eq!(result.route, OrchestrationRoute::ReAct);
     }
 
     #[test]

@@ -39,7 +39,6 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
         seed_override,
         llm_override,
         executor_llm_override,
-        execution_mode_override,
         readonly_tool_ttl_cache_secs,
         request_audit,
     } = envelope;
@@ -63,12 +62,8 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
         let g = queue_deps.cfg.read().await;
         std::sync::Arc::new(g.clone())
     };
-    let (mut cfg_turn, api_key_turn) = resolve_web_llm_for_job(
-        queue_deps.as_ref(),
-        cfg_snap.clone(),
-        llm_override.as_ref(),
-        execution_mode_override,
-    );
+    let (mut cfg_turn, api_key_turn) =
+        resolve_web_llm_for_job(queue_deps.as_ref(), cfg_snap.clone(), llm_override.as_ref());
     if let Some(secs) = readonly_tool_ttl_cache_secs {
         let mut c = (*cfg_turn).clone();
         c.chat_queues_cache.readonly_tool_ttl_cache_secs = secs;

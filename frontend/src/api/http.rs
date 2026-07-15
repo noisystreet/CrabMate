@@ -77,7 +77,9 @@ pub struct StatusData {
     pub executor_model: String,
     #[serde(default)]
     pub executor_api_base: String,
+    /// 服务端当前 `planner_executor_mode` 配置值（前端不再用于决策，仅调试参考）。
     #[serde(default)]
+    #[allow(dead_code)]
     pub planner_executor_mode: String,
     /// 服务端是否配置了非空的 `conversation_store_sqlite_path`。
     #[serde(default)]
