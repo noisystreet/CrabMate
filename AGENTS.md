@@ -18,6 +18,7 @@ CrabMate is a Rust-based AI Agent that calls **OpenAI-compatible** `chat/complet
 - Keep `main` always releasable: avoid direct pushes to `main` for feature work; prefer short-lived branches and small PRs.
 - Before opening or merging PRs, run required local checks (at least `pre-commit run --all-files`) and ensure GitHub Actions CI is green.
 - Commit messages must follow repository rules (Conventional Commits + bilingual subject); do not bypass hooks unless explicitly approved.
+- **`--no-verify` is strictly prohibited.** Never use `git commit --no-verify` or `git push --no-verify` to bypass pre-commit hooks. All commits must pass the full pre-commit check suite. If hooks are slow, use `git commit -m "message"` without `--no-verify` and let hooks run to completion. This rule applies to all code generation and automation tools in this workspace.
 - Prefer **rebase on latest `origin/main`** before push/merge to minimize drift and conflict risk.
 
 ### Environment variable `API_KEY`
