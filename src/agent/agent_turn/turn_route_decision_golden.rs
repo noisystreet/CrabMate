@@ -274,13 +274,13 @@ fn assess_turn_routing_cartesian_non_hierarchical_execute_gate_matrix() {
     for (reason, expect_mode) in [
         (
             StagedPlanningDenyReason::AdvisoryExecuteBypassStaged,
-            "freeform",
+            "react",
         ),
         (
             StagedPlanningDenyReason::ReadonlyOverviewBypassStaged,
-            "freeform",
+            "react",
         ),
-        (StagedPlanningDenyReason::EmptyEffectiveTask, "freeform"),
+        (StagedPlanningDenyReason::EmptyEffectiveTask, "react"),
     ] {
         let gate = StagedPlanningGateOutcome::Deny {
             reason,
@@ -312,8 +312,9 @@ fn assess_turn_routing_cartesian_non_hierarchical_execute_gate_matrix() {
         staged_gate: Some(&allow),
         hierarchical_decision: None,
     });
+    assert_eq!(assessed.decision.orchestration_mode, "react");
     assert_eq!(
-        assessed.decision.orchestration_mode,
-        "planned_step_single_agent"
+        assessed.decision.freeform_because.as_deref(),
+        Some("orchestration_profile_freeform")
     );
 }
