@@ -2,7 +2,7 @@
 //!
 //! - **流式 loading**：`insertAdjacentHTML('beforeend', …)` 仅追加新 token，不触碰已有 DOM
 //! - **流式节流**：两次 DOM 写入至少相隔 [`adaptive_stream_interval`] 动态间隔
-//! - **完成时**：`innerHTML` 一次性全量 Markdown 渲染
+//! - **完成时**：清空容器后 `insertAdjacentHTML('beforeend', …)` 一次追加，避免 `innerHTML` 全量重建
 
 use std::sync::{Arc, Mutex};
 
@@ -88,13 +88,14 @@ fn answer_body_append_html(answer_body_ref: &NodeRef<Div>, html: &str) -> bool {
     false
 }
 
-/// 全量替换：`innerHTML`（用于流式完成后的 Markdown 终态渲染）。
+/// 全量替换：清空容器后用 `insertAdjacentHTML` 追加，避免 `innerHTML` 全量重建触发布局抖动。
 fn answer_body_replace_html(answer_body_ref: &NodeRef<Div>, html: &str) -> bool {
     let Some(node) = answer_body_ref.try_get_untracked().flatten() else {
         return false;
     };
     if let Some(he) = node.dyn_ref::<web_sys::HtmlElement>() {
-        he.set_inner_html(html);
+        he.set_inner_html("");
+        let _ = he.insert_adjacent_html("beforeend", html);
         return true;
     }
     false
