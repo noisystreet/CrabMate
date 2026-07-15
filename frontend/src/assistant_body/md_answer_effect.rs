@@ -1,7 +1,7 @@
 //! 助手回答区 DOM 绘制：`Effect`、增量流式追加与 Markdown 收尾（从 [`super::view`] 拆出以降低单函数 nloc）。
 //!
 //! - **流式 loading**：`insertAdjacentHTML('beforeend', …)` 仅追加新 token，不触碰已有 DOM
-//! - **流式节流**：两次 DOM 写入至少相隔 [`STREAM_DOM_MIN_INTERVAL_MS`]（与 [`super::mod`] 文档一致）
+//! - **流式节流**：两次 DOM 写入至少相隔 [`adaptive_stream_interval`] 动态间隔
 //! - **完成时**：`innerHTML` 一次性全量 Markdown 渲染
 
 use std::sync::{Arc, Mutex};
@@ -17,8 +17,12 @@ use super::helpers::AssistantMsgSnapshot;
 use crate::debounce_schedule::debounce_should_apply;
 use crate::message_render::fragment_to_chat_safe_html;
 
-/// 流式回答区两次 DOM 写入的最小间隔（毫秒）。
-pub(super) const STREAM_DOM_MIN_INTERVAL_MS: u32 = 72;
+/// 流式回答区两次 DOM 写入的最小间隔（毫秒），
+/// 在 [`adaptive_stream_interval`] 中作为兜底值使用。
+const STREAM_DOM_MAX_INTERVAL_MS: u32 = 72;
+
+/// `pending_stream_html` 累积上限（超过此字节数时丢弃新 token，防止网络重连积压后一次性注入大量 HTML 卡住主线程）。
+const MAX_PENDING_STREAM_BYTES: usize = 16 * 1024;
 
 #[derive(Default)]
 pub(super) struct SectionPaint {
@@ -56,6 +60,20 @@ fn performance_now_ms() -> f64 {
         .and_then(|w| w.performance())
         .map(|p| p.now())
         .unwrap_or(0.0)
+}
+
+/// 根据上次 DOM 写入到当前的时间动态计算节流间隔。
+/// - 短间隔（<12ms，120Hz 屏典型帧耗时）→ 40ms（~5 帧）
+/// - 中间隔（<20ms，60Hz 屏典型）→ 55ms（~3.5 帧）
+/// - 长间隔（>20ms，渲染繁忙）→ 72ms 原值
+fn adaptive_stream_interval(elapsed_since_last_write: f64) -> u32 {
+    if elapsed_since_last_write < 12.0 {
+        40
+    } else if elapsed_since_last_write < 20.0 {
+        55
+    } else {
+        STREAM_DOM_MAX_INTERVAL_MS
+    }
 }
 
 /// 增量追加：将 `html` 追加到元素末尾，不破坏已有 DOM 树。
@@ -148,9 +166,18 @@ fn schedule_pending_stream_dom_flush(
     answer_body_ref: &NodeRef<Div>,
     when_scheduled: u64,
 ) {
+    let interval = {
+        let g = paint_arc.lock().expect("answer paint mutex poisoned");
+        let elapsed = if g.last_stream_dom_write_ms > 0.0 {
+            performance_now_ms() - g.last_stream_dom_write_ms
+        } else {
+            f64::MAX
+        };
+        adaptive_stream_interval(elapsed)
+    };
     let paint_run = Arc::clone(paint_arc);
     let answer_body_ref = answer_body_ref.clone();
-    Timeout::new(STREAM_DOM_MIN_INTERVAL_MS, move || {
+    Timeout::new(interval, move || {
         flush_pending_stream_dom(&paint_run, &answer_body_ref, when_scheduled);
     })
     .forget();
@@ -164,6 +191,10 @@ fn queue_stream_text_append(
 ) {
     let when_scheduled = {
         let mut g = paint_arc.lock().expect("answer paint mutex poisoned");
+        if g.pending_stream_html.len() >= MAX_PENDING_STREAM_BYTES {
+            // backpressure：pending 已超限，丢弃本次增量，避免主线程一次性解析过大 HTML。
+            return;
+        }
         g.pending_stream_html.push_str(&html);
         g.pending_stream_through_len = through_len;
         g.stream_flush_generation = g.stream_flush_generation.wrapping_add(1);
@@ -214,7 +245,7 @@ pub(super) fn install_assistant_markdown_answer_effect(
             let paint_arc = answer_paint.get_value();
 
             if is_loading {
-                // ── 流式：合并增量，按 STREAM_DOM_MIN_INTERVAL_MS 尾随写入 DOM ──
+                // ── 流式：合并增量，按动态间隔尾随写入 DOM ──
                 let prev_len = {
                     let g = paint_arc.lock().expect("answer paint mutex poisoned");
                     g.prev_text_len
@@ -239,8 +270,7 @@ pub(super) fn install_assistant_markdown_answer_effect(
             let arc = paint_arc.clone();
             spawn_local(async move {
                 let html = fragment_to_chat_safe_html(&text, md_on);
-                enqueue_answer_body_paint(&arc, &body_ref, html.clone(), true, None);
-                answer_body_replace_html(&body_ref, &html);
+                enqueue_answer_body_paint(&arc, &body_ref, html, true, None);
             });
         }
     });
@@ -248,11 +278,11 @@ pub(super) fn install_assistant_markdown_answer_effect(
 
 #[cfg(test)]
 mod tests {
-    use super::{STREAM_DOM_MIN_INTERVAL_MS, SectionPaint};
+    use super::{STREAM_DOM_MAX_INTERVAL_MS, SectionPaint};
 
     #[test]
-    fn stream_dom_min_interval_matches_module_doc() {
-        assert_eq!(STREAM_DOM_MIN_INTERVAL_MS, 72);
+    fn stream_dom_max_interval_default_72() {
+        assert_eq!(STREAM_DOM_MAX_INTERVAL_MS, 72);
     }
 
     #[test]
