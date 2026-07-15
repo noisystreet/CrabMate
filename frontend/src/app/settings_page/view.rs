@@ -54,7 +54,6 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
         llm_temperature_draft: form.llm_temperature_draft,
         llm_context_tokens_draft: form.llm_context_tokens_draft,
         llm_thinking_mode_draft: form.llm_thinking_mode_draft,
-        execution_mode_draft: form.execution_mode_draft,
         llm_has_saved_key: form.llm_has_saved_key,
         executor_llm_api_base_draft: form.executor_llm_api_base_draft,
         executor_llm_api_base_preset_select: form.executor_llm_api_base_preset_select,

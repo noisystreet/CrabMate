@@ -57,7 +57,7 @@ pub fn score_and_route(
     let route = if total_score >= threshold {
         OrchestrationRoute::Staged
     } else {
-        OrchestrationRoute::Freeform
+        OrchestrationRoute::ReAct
     };
 
     info!(

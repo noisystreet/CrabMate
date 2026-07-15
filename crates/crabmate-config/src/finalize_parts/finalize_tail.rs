@@ -162,14 +162,10 @@ fn derive_tail_plan_tool_thinking_scalars(
         .per_plan_policy.final_plan_semantic_check_max_tokens
         .unwrap_or(256)
         .clamp(32, 1024) as u32;
-    let planner_executor_mode = match b.per_plan_policy.planner_executor_mode_str.as_deref() {
-        Some(s) => PlannerExecutorMode::parse(s)?,
-        None => PlannerExecutorMode::default(),
-    };
-    let orchestration_profile = match b.per_plan_policy.orchestration_profile_str.as_deref() {
-        Some(s) => OrchestrationProfile::parse(s)?,
-        None => OrchestrationProfile::default(),
-    };
+    // 统一强制走 ReAct（单 Agent 外循环），不再暴露给用户选择。
+    // `planner_executor_mode` 与 `orchestration_profile` 的 TOML/环境变量配置不再生效。
+    let planner_executor_mode = PlannerExecutorMode::SingleAgent;
+    let orchestration_profile = crate::OrchestrationProfile::ReAct;
     let orchestration_decision_mode = match b.per_plan_policy.orchestration_decision_mode_str.as_deref() {
         Some(s) => s.to_string(),
         None => "auto".to_string(),

@@ -26,14 +26,14 @@ pub struct OrchestrationDecision {
 /// 编排路由。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrchestrationRoute {
-    Freeform,
+    ReAct,
     Staged,
 }
 
 impl OrchestrationRoute {
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Freeform => "freeform",
+            Self::ReAct => "react",
             Self::Staged => "staged",
         }
     }

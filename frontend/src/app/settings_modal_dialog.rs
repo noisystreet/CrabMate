@@ -150,7 +150,7 @@ fn SettingsModalDialogBody(input: SettingsModalDialogInput) -> impl IntoView {
                 llm_temperature_draft,
                 llm_context_tokens_draft,
                 llm_thinking_mode_draft,
-                execution_mode_draft: None,
+                // execution_mode_draft: None,
                 llm_api_key_draft,
                 llm_has_saved_key,
                 clear_client_key_intent,

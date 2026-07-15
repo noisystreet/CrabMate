@@ -8,8 +8,7 @@ use crate::i18n::Locale;
 use super::super::browser;
 use super::super::client_llm_storage::{
     chat_temperature_override_from_storage, client_llm_json_for_chat_body,
-    execution_mode_for_chat_body, executor_llm_json_for_chat_body,
-    readonly_tool_ttl_cache_secs_for_chat_body,
+    executor_llm_json_for_chat_body, readonly_tool_ttl_cache_secs_for_chat_body,
 };
 use super::ChatStreamCallbacks;
 
@@ -65,9 +64,6 @@ pub(super) fn build_chat_stream_post_body(
     }
     if let Some(temp) = chat_temperature_override_from_storage() {
         body["temperature"] = serde_json::json!(temp);
-    }
-    if let Some(mode) = execution_mode_for_chat_body() {
-        body["execution_mode"] = serde_json::json!(mode);
     }
     if let Some(secs) = readonly_tool_ttl_cache_secs_for_chat_body() {
         body["readonly_tool_ttl_cache_secs"] = serde_json::json!(secs);

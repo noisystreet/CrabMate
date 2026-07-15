@@ -187,27 +187,6 @@ pub fn settings_label_temperature(l: Locale) -> &'static str {
     }
 }
 
-pub fn settings_label_execution_mode(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "执行模式",
-        Locale::En => "Execution mode",
-    }
-}
-
-pub fn settings_execution_mode_rolling(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "滚动规划模式",
-        Locale::En => "Rolling planning",
-    }
-}
-
-pub fn settings_execution_mode_hierarchical(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "分层执行模式",
-        Locale::En => "Hierarchical execution",
-    }
-}
-
 pub fn settings_label_llm_thinking_mode(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "模型思考模式（thinking）",

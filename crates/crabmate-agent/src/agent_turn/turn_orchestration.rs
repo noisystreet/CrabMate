@@ -1,7 +1,7 @@
 //! 单轮 **`run_agent_turn`** 顶层编排形态（**非**全局 FSM）：供结构化 `tracing` 与排障对齐 `run_dispatch` 分支。
 //!
 //! 非分层路径由统一 driver（**`non_hierarchical_turn`**）消费 [`NonHierarchicalTurnPhase`]：
-//! **`Freeform`**（仅外循环）或 **`PlannedStep`**（无工具规划 + 滚动视界步循环）。
+//! **`ReAct`**（仅外循环）或 **`PlannedStep`**（无工具规划 + 滚动视界步循环）。
 
 use crabmate_config::{AgentConfig, PlannerExecutorMode};
 
@@ -27,11 +27,11 @@ impl PlannedStepKind {
     }
 }
 
-/// 非分层回合阶段：自由式外循环，或带结构化规划步的滚动视界。
+/// 非分层回合阶段：外循环（ReAct），或带结构化规划步的滚动视界。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NonHierarchicalTurnPhase {
-    /// 分阶段门控未放行：整轮仅 `run_agent_outer_loop`。
-    Freeform,
+    /// 分阶段门控未放行：整轮仅 `run_agent_outer_loop`（ReAct 循环）。
+    ReAct,
     /// 门控放行：无工具规划 → 步内外循环 → 步后 replan。
     PlannedStep(PlannedStepKind),
 }
@@ -39,7 +39,7 @@ pub enum NonHierarchicalTurnPhase {
 impl NonHierarchicalTurnPhase {
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Freeform => "freeform",
+            Self::ReAct => "react",
             Self::PlannedStep(k) => k.as_str(),
         }
     }
@@ -51,7 +51,7 @@ pub fn resolve_non_hierarchical_turn_phase(
     staged_intent_gate_allow: bool,
 ) -> NonHierarchicalTurnPhase {
     if !staged_intent_gate_allow {
-        return NonHierarchicalTurnPhase::Freeform;
+        return NonHierarchicalTurnPhase::ReAct;
     }
     if cfg.per_plan_policy.planner_executor_mode == PlannerExecutorMode::LogicalDualAgent {
         return NonHierarchicalTurnPhase::PlannedStep(PlannedStepKind::LogicalDual);
@@ -64,17 +64,17 @@ pub fn resolve_non_hierarchical_turn_phase(
 pub struct NonHierarchicalTurnResolution {
     pub turn_phase: NonHierarchicalTurnPhase,
     pub orchestration_mode: TurnOrchestrationMode,
-    /// 仅当 [`NonHierarchicalTurnPhase::Freeform`] 时有值。
-    pub freeform_because: Option<FreeformBecause>,
+    /// 仅当 [`NonHierarchicalTurnPhase::ReAct`] 时有值。
+    pub freeform_because: Option<ReActBecause>,
 }
 
-/// 非分层下走 **`Freeform`** 的根因（门控拒绝）。
+/// 非分层下走 **`ReAct`** 的根因（门控拒绝）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FreeformBecause {
+pub enum ReActBecause {
     StagedIntentGateDenied(StagedPlanningDenyReason),
 }
 
-impl FreeformBecause {
+impl ReActBecause {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::StagedIntentGateDenied(r) => r.as_str(),
@@ -88,12 +88,12 @@ impl NonHierarchicalTurnResolution {
         let turn_phase = resolve_non_hierarchical_turn_phase(cfg, allow_staged);
         let orchestration_mode = TurnOrchestrationMode::from(turn_phase);
         let freeform_because = match turn_phase {
-            NonHierarchicalTurnPhase::Freeform => Some(match staged_gate {
+            NonHierarchicalTurnPhase::ReAct => Some(match staged_gate {
                 StagedPlanningGateOutcome::Deny { reason, .. } => {
-                    FreeformBecause::StagedIntentGateDenied(*reason)
+                    ReActBecause::StagedIntentGateDenied(*reason)
                 }
                 StagedPlanningGateOutcome::Allow { .. } => {
-                    unreachable!("Freeform requires staged gate deny")
+                    unreachable!("ReAct requires staged gate deny")
                 }
             }),
             NonHierarchicalTurnPhase::PlannedStep(_) => None,
@@ -109,7 +109,7 @@ impl NonHierarchicalTurnResolution {
 impl From<NonHierarchicalTurnPhase> for TurnOrchestrationMode {
     fn from(phase: NonHierarchicalTurnPhase) -> Self {
         match phase {
-            NonHierarchicalTurnPhase::Freeform => Self::Freeform,
+            NonHierarchicalTurnPhase::ReAct => Self::ReAct,
             NonHierarchicalTurnPhase::PlannedStep(PlannedStepKind::LogicalDual) => {
                 Self::PlannedStepLogicalDual
             }
@@ -131,8 +131,8 @@ pub enum TurnOrchestrationMode {
     PlannedStepLogicalDual,
     /// 非分层、门控放行、单 Agent 规划步滚动视界。
     PlannedStepSingleAgent,
-    /// 非分层、门控未放行：整轮 `run_agent_outer_loop`。
-    Freeform,
+    /// 非分层、门控未放行：整轮 `run_agent_outer_loop`（ReAct 循环）。
+    ReAct,
 }
 
 impl TurnOrchestrationMode {
@@ -142,7 +142,7 @@ impl TurnOrchestrationMode {
             Self::IntentAtTurnStartFinished => "intent_at_turn_start_finished",
             Self::PlannedStepLogicalDual => "planned_step_logical_dual",
             Self::PlannedStepSingleAgent => "planned_step_single_agent",
-            Self::Freeform => "freeform",
+            Self::ReAct => "react",
         }
     }
 }
@@ -184,7 +184,7 @@ mod tests {
         let cfg = cfg_with(PlannerExecutorMode::LogicalDualAgent);
         assert_eq!(
             resolve_non_hierarchical_turn_phase(&cfg, false),
-            NonHierarchicalTurnPhase::Freeform
+            NonHierarchicalTurnPhase::ReAct
         );
     }
 
@@ -206,10 +206,10 @@ mod tests {
             intent_decision: None,
         };
         let r = NonHierarchicalTurnResolution::resolve(&cfg, &gate);
-        assert_eq!(r.turn_phase, NonHierarchicalTurnPhase::Freeform);
+        assert_eq!(r.turn_phase, NonHierarchicalTurnPhase::ReAct);
         assert_eq!(
             r.freeform_because,
-            Some(FreeformBecause::StagedIntentGateDenied(
+            Some(ReActBecause::StagedIntentGateDenied(
                 StagedPlanningDenyReason::EmptyEffectiveTask
             ))
         );
@@ -293,10 +293,10 @@ mod tests {
             }),
         };
         let r = NonHierarchicalTurnResolution::resolve(&cfg, &gate);
-        assert_eq!(r.turn_phase, NonHierarchicalTurnPhase::Freeform);
+        assert_eq!(r.turn_phase, NonHierarchicalTurnPhase::ReAct);
         assert_eq!(
             r.freeform_because,
-            Some(FreeformBecause::StagedIntentGateDenied(
+            Some(ReActBecause::StagedIntentGateDenied(
                 StagedPlanningDenyReason::AdvisoryExecuteBypassStaged
             ))
         );

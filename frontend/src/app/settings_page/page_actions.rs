@@ -29,14 +29,13 @@ pub(crate) fn discard_to_baselines(ctx: DiscardToBaselinesCtx) {
     drafts.appearance_theme.set(bt);
     drafts.appearance_bg_decor.set(bbd);
 
-    let (bb, bp, bm, btemp, bct, btm, be, bh) = baselines.llm.get_value();
+    let (bb, bp, bm, btemp, bct, btm, bh) = baselines.llm.get_value();
     drafts.llm_api_base_draft.set(bb);
     drafts.llm_api_base_preset_select.set(bp);
     drafts.llm_model_draft.set(bm);
     drafts.llm_temperature_draft.set(btemp);
     drafts.llm_context_tokens_draft.set(bct);
     drafts.llm_thinking_mode_draft.set(btm);
-    drafts.execution_mode_draft.set(be);
     drafts.llm_has_saved_key.set(bh);
     drafts.llm_api_key_draft.set(String::new());
 
@@ -117,7 +116,6 @@ pub(crate) fn try_save_all_settings(ctx: SaveAllSettingsCtx) {
         executor_base: drafts.executor_llm_api_base_draft.get().as_str(),
         executor_model: drafts.executor_llm_model_draft.get().as_str(),
         executor_api_key_draft: drafts.executor_llm_api_key_draft.get().as_str(),
-        execution_mode: drafts.execution_mode_draft.get().as_str(),
         readonly_tool_ttl_cache_follow_server: drafts.readonly_tool_ttl_cache_follow_server.get(),
         clear_client_llm_key: drafts.clear_client_key_intent.get(),
         clear_executor_llm_key: drafts.clear_executor_key_intent.get(),

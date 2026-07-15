@@ -19,7 +19,6 @@ pub(crate) const CHAT_REQUEST_BODY_ALLOWED_KEYS: &[&str] = &[
     "client_llm",
     "client_sse_protocol",
     "conversation_id",
-    "execution_mode",
     "executor_llm",
     "image_urls",
     "message",

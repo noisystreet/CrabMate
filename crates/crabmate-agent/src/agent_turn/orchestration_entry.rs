@@ -71,9 +71,7 @@ impl HierarchicalTurnEntryResolution {
     pub fn resolve(assessment: &IntentDecision) -> Self {
         let post_intent_route = resolve_hierarchical_post_intent_route(assessment);
         let orchestration_mode = match post_intent_route {
-            HierarchicalPostIntentRoute::DiscourseFallbackOuter(_) => {
-                TurnOrchestrationMode::Freeform
-            }
+            HierarchicalPostIntentRoute::DiscourseFallbackOuter(_) => TurnOrchestrationMode::ReAct,
             HierarchicalPostIntentRoute::RouterManagerRunner => TurnOrchestrationMode::Hierarchical,
         };
         Self {
@@ -171,7 +169,7 @@ mod tests {
             r.post_intent_route,
             HierarchicalPostIntentRoute::DiscourseFallbackOuter(_)
         ));
-        assert_eq!(r.orchestration_mode, TurnOrchestrationMode::Freeform);
+        assert_eq!(r.orchestration_mode, TurnOrchestrationMode::ReAct);
     }
 
     #[test]
@@ -198,6 +196,6 @@ mod tests {
             intent_decision: None,
         };
         let r = resolve_non_hierarchical_turn(&cfg, &gate);
-        assert_eq!(r.turn_phase, NonHierarchicalTurnPhase::Freeform);
+        assert_eq!(r.turn_phase, NonHierarchicalTurnPhase::ReAct);
     }
 }

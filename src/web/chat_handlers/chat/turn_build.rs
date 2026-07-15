@@ -9,9 +9,8 @@ use tracing::debug;
 use super::super::super::app_state::{AppState, ConversationTurnSeed};
 use super::super::parse::{
     normalize_agent_role, normalize_chat_image_urls, normalize_client_conversation_id,
-    parse_client_llm_override, parse_execution_mode_override, parse_executor_llm_override,
-    parse_optional_chat_temperature, parse_readonly_tool_ttl_cache_secs,
-    parse_seed_override_from_body,
+    parse_client_llm_override, parse_executor_llm_override, parse_optional_chat_temperature,
+    parse_readonly_tool_ttl_cache_secs, parse_seed_override_from_body,
 };
 use crate::agent_role_turn::maybe_apply_mid_session_agent_role_switch;
 use crate::chat_job_queue;
@@ -87,7 +86,6 @@ pub(super) struct ChatStreamRequestParsed {
     pub(super) seed_override: crate::types::LlmSeedOverride,
     pub(super) llm_override: Option<chat_job_queue::WebChatLlmOverride>,
     pub(super) executor_llm_override: Option<chat_job_queue::WebChatLlmOverride>,
-    pub(super) execution_mode_override: Option<chat_job_queue::WebExecutionModeOverride>,
     pub(super) readonly_tool_ttl_cache_secs: Option<u64>,
 }
 
@@ -141,8 +139,6 @@ fn parse_chat_stream_request_tail(
         crate::user_data::merge_executor_llm_body(body.executor_llm.clone()),
     )
     .map_err(|e| bad_request("INVALID_EXECUTOR_LLM", e))?;
-    let execution_mode_override = parse_execution_mode_override(body.execution_mode.clone())
-        .map_err(|e| bad_request("INVALID_EXECUTION_MODE", e))?;
     let readonly_tool_ttl_cache_secs =
         parse_readonly_tool_ttl_cache_secs(body.readonly_tool_ttl_cache_secs)
             .map_err(|e| bad_request("INVALID_READONLY_TOOL_TTL_CACHE_SECS", e))?;
@@ -157,7 +153,6 @@ fn parse_chat_stream_request_tail(
         seed_override,
         llm_override,
         executor_llm_override,
-        execution_mode_override,
         readonly_tool_ttl_cache_secs,
     })
 }

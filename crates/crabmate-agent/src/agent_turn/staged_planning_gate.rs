@@ -55,7 +55,7 @@ pub fn staged_plan_eligibility_for_intent(
     };
     match result.route {
         OrchestrationRoute::Staged => Ok(()),
-        OrchestrationRoute::Freeform => Err(StagedPlanningDenyReason::IntentPipelineNotExecute),
+        OrchestrationRoute::ReAct => Err(StagedPlanningDenyReason::IntentPipelineNotExecute),
     }
 }
 

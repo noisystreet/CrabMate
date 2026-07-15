@@ -89,7 +89,6 @@ pub(super) async fn stream_job_setup_runtime(
         p.queue_deps,
         cfg_snap.clone(),
         p.envelope.llm_override.as_ref(),
-        p.envelope.execution_mode_override,
     );
     if let Some(secs) = p.envelope.readonly_tool_ttl_cache_secs {
         let mut c = (*cfg_turn).clone();

@@ -162,7 +162,6 @@ async fn run_scheduled_json_turn(state: Arc<AppState>, task: ScheduledAgentTask)
                 seed_override: LlmSeedOverride::FromConfig,
                 llm_override: None,
                 executor_llm_override: None,
-                execution_mode_override: None,
                 readonly_tool_ttl_cache_secs: None,
                 request_audit: crate::WebRequestAudit::scheduled_placeholder(),
             },

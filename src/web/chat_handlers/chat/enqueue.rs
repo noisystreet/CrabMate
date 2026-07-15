@@ -11,9 +11,9 @@ use log::{debug, error, info};
 use super::super::conflict::conversation_conflict_api_error;
 use super::super::parse::{
     ensure_bearer_api_key_for_chat, normalize_agent_role, normalize_chat_image_urls,
-    normalize_client_conversation_id, parse_client_llm_override, parse_execution_mode_override,
-    parse_executor_llm_override, parse_optional_chat_temperature,
-    parse_readonly_tool_ttl_cache_secs, parse_seed_override_from_body,
+    normalize_client_conversation_id, parse_client_llm_override, parse_executor_llm_override,
+    parse_optional_chat_temperature, parse_readonly_tool_ttl_cache_secs,
+    parse_seed_override_from_body,
 };
 use crate::chat_job_queue;
 use crate::clarification_questionnaire::{
@@ -100,7 +100,6 @@ pub(crate) struct ParsedChatRequestForEnqueue {
     pub(crate) seed_override: crate::types::LlmSeedOverride,
     pub(crate) llm_override: Option<chat_job_queue::WebChatLlmOverride>,
     pub(crate) executor_llm_override: Option<chat_job_queue::WebChatLlmOverride>,
-    pub(crate) execution_mode_override: Option<chat_job_queue::WebExecutionModeOverride>,
     pub(crate) readonly_tool_ttl_cache_secs: Option<u64>,
 }
 
@@ -154,8 +153,6 @@ fn parse_chat_request_for_enqueue_tail(
         crate::user_data::merge_executor_llm_body(body.executor_llm.clone()),
     )
     .map_err(|e| bad_request("INVALID_EXECUTOR_LLM", e))?;
-    let execution_mode_override = parse_execution_mode_override(body.execution_mode.clone())
-        .map_err(|e| bad_request("INVALID_EXECUTION_MODE", e))?;
     let readonly_tool_ttl_cache_secs =
         parse_readonly_tool_ttl_cache_secs(body.readonly_tool_ttl_cache_secs)
             .map_err(|e| bad_request("INVALID_READONLY_TOOL_TTL_CACHE_SECS", e))?;
@@ -169,7 +166,6 @@ fn parse_chat_request_for_enqueue_tail(
         seed_override,
         llm_override,
         executor_llm_override,
-        execution_mode_override,
         readonly_tool_ttl_cache_secs,
     })
 }
@@ -228,7 +224,6 @@ pub(crate) async fn enqueue_and_wait_json_chat(
                 seed_override: parsed.seed_override,
                 llm_override: parsed.llm_override.clone(),
                 executor_llm_override: parsed.executor_llm_override.clone(),
-                execution_mode_override: parsed.execution_mode_override,
                 readonly_tool_ttl_cache_secs: parsed.readonly_tool_ttl_cache_secs,
                 request_audit,
             },

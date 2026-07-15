@@ -7,7 +7,7 @@ use crate::api::SavedModelPreset;
 use crate::i18n::Locale;
 
 pub(crate) type AppearanceBaseline = (Locale, String, bool);
-pub(crate) type LlmBaseline = (String, String, String, String, String, String, String, bool);
+pub(crate) type LlmBaseline = (String, String, String, String, String, String, bool);
 pub(crate) type ExecutorBaseline = (String, String, String, bool);
 
 /// 设置弹窗 / 设置页「已提交快照」：`StoredValue` 三元组打包，避免在 dirty / 放弃 / 保存成功路径上重复传三个句柄。
@@ -36,7 +36,6 @@ impl SettingsDirtyBaselines {
                 current.llm_temperature_draft.clone(),
                 current.llm_context_tokens_draft.clone(),
                 current.llm_thinking_mode_draft.clone(),
-                current.execution_mode_draft.clone(),
                 current.llm_has_saved_key,
             )),
             executor: StoredValue::new((
@@ -100,7 +99,6 @@ pub(crate) struct SettingsFormCurrent {
     pub llm_temperature_draft: String,
     pub llm_context_tokens_draft: String,
     pub llm_thinking_mode_draft: String,
-    pub execution_mode_draft: String,
     pub llm_has_saved_key: bool,
     pub executor_llm_api_base_draft: String,
     pub executor_llm_api_base_preset_select: String,
@@ -129,14 +127,13 @@ fn pending_key_drafts_or_clear_intent_dirty(current: &SettingsFormCurrent) -> bo
 }
 
 fn llm_baseline_dirty(current: &SettingsFormCurrent, baseline: &LlmBaseline) -> bool {
-    let (bb, bp, bm, bt, bct, btm, be, bh) = baseline;
+    let (bb, bp, bm, bt, bct, btm, bh) = baseline;
     current.llm_api_base_draft != *bb
         || current.llm_api_base_preset_select != *bp
         || current.llm_model_draft != *bm
         || current.llm_temperature_draft != *bt
         || current.llm_context_tokens_draft != *bct
         || current.llm_thinking_mode_draft != *btm
-        || current.execution_mode_draft != *be
         || current.llm_has_saved_key != *bh
 }
 
@@ -192,7 +189,6 @@ pub(crate) fn refresh_baselines(
             current.llm_temperature_draft.clone(),
             current.llm_context_tokens_draft.clone(),
             current.llm_thinking_mode_draft.clone(),
-            current.execution_mode_draft.clone(),
             current.llm_has_saved_key,
         );
     });
@@ -251,7 +247,6 @@ mod settings_form_ui_phase_tests {
             llm_temperature_draft: String::new(),
             llm_context_tokens_draft: String::new(),
             llm_thinking_mode_draft: "server".into(),
-            execution_mode_draft: "rolling_planning".into(),
             llm_has_saved_key: false,
             executor_llm_api_base_draft: String::new(),
             executor_llm_api_base_preset_select: "server".into(),

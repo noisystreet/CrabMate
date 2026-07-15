@@ -307,7 +307,7 @@ pub fn apply_orchestration_profile_to_staged_gate(
 ) -> StagedPlanningGateOutcome {
     match profile {
         OrchestrationProfile::Auto => gate.clone(),
-        OrchestrationProfile::Freeform => {
+        OrchestrationProfile::ReAct => {
             if gate.allows_staged_planning() {
                 StagedPlanningGateOutcome::Deny {
                     reason: StagedPlanningDenyReason::OrchestrationProfileFreeform,
@@ -564,7 +564,7 @@ mod tests {
             staged_gate_snapshot_from_outcome(&gate),
             &entry,
         );
-        assert_eq!(decision.orchestration_mode, "freeform");
+        assert_eq!(decision.orchestration_mode, "react");
         assert_eq!(
             decision.freeform_because.as_deref(),
             Some("advisory_execute_bypass_staged")
@@ -592,7 +592,7 @@ mod tests {
     #[test]
     fn orchestration_profile_freeform_overrides_staged_allow() {
         let mut cfg = cfg_with(PlannerExecutorMode::SingleAgent);
-        cfg.per_plan_policy.orchestration_profile = OrchestrationProfile::Freeform;
+        cfg.per_plan_policy.orchestration_profile = OrchestrationProfile::ReAct;
         let gate = execute_gate_allow();
         let intent = IntentGateSnapshot::ProceedExecute {
             kind: "execute".into(),
@@ -601,11 +601,8 @@ mod tests {
             confidence: 0.95,
             need_clarification: false,
         };
-        let adjusted = apply_orchestration_profile_to_staged_gate(
-            OrchestrationProfile::Freeform,
-            &intent,
-            &gate,
-        );
+        let adjusted =
+            apply_orchestration_profile_to_staged_gate(OrchestrationProfile::ReAct, &intent, &gate);
         assert!(!adjusted.allows_staged_planning());
         let assessed = assess_turn_routing(AssessTurnRoutingParams {
             cfg: &cfg,
@@ -614,7 +611,7 @@ mod tests {
             staged_gate: Some(&gate),
             hierarchical_decision: None,
         });
-        assert_eq!(assessed.decision.orchestration_mode, "freeform");
+        assert_eq!(assessed.decision.orchestration_mode, "react");
         assert_eq!(
             assessed.decision.freeform_because.as_deref(),
             Some("orchestration_profile_freeform")
