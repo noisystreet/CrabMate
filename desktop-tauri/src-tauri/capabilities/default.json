@@ -1,20 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "主窗口：核心 API、Victauri 调试、对话框、系统浏览器与 GitHub 嵌入/独立 WebView",
-  "windows": ["main", "splash", "default", "github-*"],
-  "permissions": [
-    "core:default",
-    "dialog:default",
-    "opener:default",
-    "core:webview:allow-create-webview",
-    "core:webview:allow-create-webview-window",
-    "core:webview:allow-set-webview-position",
-    "core:webview:allow-set-webview-size",
-    "core:webview:allow-webview-close",
-    "core:webview:allow-webview-position",
-    "core:webview:allow-webview-size",
-    "core:window:allow-create",
-    "core:window:allow-set-focus"
-  ]
+  "description": "主窗口：核心 API、Victauri 调试、对话框与系统浏览器打开链接",
+  "windows": ["main", "splash", "default"],
+  "permissions": ["core:default", "dialog:default", "opener:default"]
 }
