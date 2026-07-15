@@ -25,7 +25,8 @@ use crabmate::{
     AgentConfig, AgentTurnLlmOverrides, AgentTurnTransport, ChatCompletionsBackend, ChatRequest,
     FunctionCall, LlmSeedOverride, Message, PlannerExecutorMode, ProcessHandles,
     RunAgentTurnParams, RunAgentTurnSharedInputs, StreamChatParams, ToolCall, build_tools,
-    load_config, message_content_as_str, run_agent_turn, shared_static_chat_backend,
+    config::OrchestrationProfile, load_config, message_content_as_str, run_agent_turn,
+    shared_static_chat_backend,
 };
 
 /// 按序返回预设 assistant 消息；用于编排回归，**非**生产后端。
@@ -454,6 +455,8 @@ const STAGED_MOCK_EXECUTE_USER: &str =
 fn cfg_staged_execute_turn() -> Arc<AgentConfig> {
     let mut cfg = load_config(None).expect("embedded default config must load");
     cfg.per_plan_policy.planner_executor_mode = PlannerExecutorMode::SingleAgent;
+    // 生产默认 ReAct-only；分阶段 mock 显式启用 staged 以覆盖规划步路径。
+    cfg.per_plan_policy.orchestration_profile = OrchestrationProfile::Staged;
     cfg.intent_routing.intent_at_turn_start_enabled = false;
     cfg.intent_routing.intent_l2_enabled = false;
     cfg.staged_planning.staged_plan_optimizer_round = false;
