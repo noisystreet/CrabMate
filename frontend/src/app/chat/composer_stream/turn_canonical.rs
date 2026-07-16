@@ -221,14 +221,8 @@ impl TurnCanonicalState {
         if text.trim().is_empty() || self.turn.tool_phase_open {
             return false;
         }
-        if let Some(ref existing) = self.turn.final_answer {
-            if assistant_texts_fuzzy_duplicate(existing, text) {
-                return true;
-            }
-            if text.len() > existing.len() {
-                self.turn.final_answer = Some(text.to_string());
-                return true;
-            }
+        if self.turn.final_answer.is_some() {
+            // 已有流式正文，不再用 final_response 替换——保留流式阶段的真实文本
             return true;
         }
         self.apply(TurnEvent::AnswerDelta {
@@ -450,20 +444,19 @@ mod tests {
         let mut turn = TurnCanonicalState::new();
         assert!(turn.try_apply_answer_delta("当前目录下有三个压缩包。"));
         assert!(turn.try_ingest_final_response_text("当前目录下有三个压缩包：\n\n1. **A** — x"));
+        // final_response 不再替换已有流式正文
         assert_eq!(
             turn.turn_ref().final_answer.as_deref(),
-            Some("当前目录下有三个压缩包：\n\n1. **A** — x")
+            Some("当前目录下有三个压缩包。")
         );
     }
 
     #[test]
-    fn ingest_final_response_replaces_shorter_stream_with_timeline_full_text() {
+    fn ingest_final_response_keeps_stream_text_when_already_streamed() {
         let mut turn = TurnCanonicalState::new();
         assert!(turn.try_apply_answer_delta("短。"));
         assert!(turn.try_ingest_final_response_text("短。完整终答段落。"));
-        assert_eq!(
-            turn.turn_ref().final_answer.as_deref(),
-            Some("短。完整终答段落。")
-        );
+        // final_response 不再替换已有流式正文
+        assert_eq!(turn.turn_ref().final_answer.as_deref(), Some("短。"));
     }
 }
