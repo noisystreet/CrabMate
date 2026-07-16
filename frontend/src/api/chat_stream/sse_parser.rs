@@ -24,3 +24,5 @@ impl SseParser for V1Parser {
         1
     }
 }
+
+pub(crate) use super::parser_v2::V2Parser;

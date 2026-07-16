@@ -6,10 +6,12 @@
 //!
 //! 控制面 **`stop`/`handled`/`plain`** 分类见 workspace crate **`crabmate-sse-protocol`**（`classify_sse_control_outcome`），金样 **`fixtures/sse_control_golden.jsonl`**。
 
+mod ag_ui_convert;
 mod ag_ui_encode;
 mod ag_ui_event;
 mod control_mirror;
 mod encoder;
+mod encoder_v2;
 mod final_response_terminal;
 pub mod line;
 mod mpsc_send;
@@ -18,7 +20,8 @@ pub mod stream_hub;
 pub mod web_approval;
 
 pub use control_mirror::send_sse_control_payload_optional;
-pub use encoder::{SseEncoder, V1Encoder, default_encoder};
+pub use encoder::{SseEncoder, V1Encoder, default_encoder, resolve_encoder};
+pub use encoder_v2::V2Encoder;
 pub use final_response_terminal::send_final_response_timeline_then_answer_phase;
 pub use mpsc_send::{send_string_logged, send_string_logged_cooperative_cancel};
 pub use stream_hub::SseStreamHub;

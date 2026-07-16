@@ -10,10 +10,14 @@ pub enum SseDispatch {
     Stop,
     Handled,
     Plain,
+    /// 用于 V2Parser 通知 `RUN_FINISHED` / `RUN_ERROR`：`handle_sse_block` 据此设置
+    /// `saw_stream_ended` 并触发 `on_stream_ended` / `on_done` / `on_error` 等回调。
+    StreamEnded,
 }
 
 /// 工作区与工具相关控制面回调（`tool_call` / `tool_running` / 审批等）。
 #[allow(clippy::type_complexity)]
+#[derive(Default)]
 pub struct SseWorkspaceToolHooks<'a> {
     pub on_workspace_changed: Option<&'a mut dyn FnMut()>,
     pub on_tool_call: Option<
@@ -35,6 +39,7 @@ pub struct SseWorkspaceToolHooks<'a> {
 }
 
 /// `assistant_answer_phase` 与分步规划时间线。
+#[derive(Default)]
 pub struct SseStagedPlanHooks<'a> {
     /// 后续 `on_delta` 为终答正文（此前为思维链）；无链时也会在首段正文前下发。
     pub on_assistant_answer_phase: Option<&'a mut dyn FnMut()>,
@@ -54,18 +59,22 @@ pub struct TurnSegmentStartInfo {
 }
 
 /// 澄清问卷与思维迹调试事件。
+#[derive(Default)]
 pub struct SseClarifyTraceHooks<'a> {
     pub on_clarification_questionnaire: Option<&'a mut dyn FnMut(ClarificationQuestionnaireInfo)>,
     pub on_thinking_trace: Option<&'a mut dyn FnMut(ThinkingTraceInfo)>,
 }
 
 /// 会话落盘 revision、`timeline_log`、协议能力等尾部控制面。
+#[derive(Default)]
 pub struct SseNoticeTimelineHooks<'a> {
     /// `conversation_saved.revision` 与可选 tiktoken；供 `POST /chat/branch` 与底栏上下文用量。
     pub on_conversation_saved_revision:
         Option<&'a mut dyn FnMut(u64, Option<TiktokenPromptTokensSnapshot>)>,
     /// `timeline_log` 事件：审批结果等旁注，写入时间线（不进聊天正文）。
     pub on_timeline_log: Option<&'a mut dyn FnMut(TimelineLogInfo)>,
+    /// AG-UI `RUN_FINISHED` / `RUN_ERROR` 触发流结束时的回调（V2Parser 使用）。
+    pub on_run_finished: Option<&'a mut dyn FnMut()>,
 }
 
 /// SSE 控制面分发入口：按领域分组回调，与 `dispatch::try_dispatch_sse_control_payload` 分支顺序对齐。

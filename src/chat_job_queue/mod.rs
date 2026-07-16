@@ -203,6 +203,11 @@ pub struct WebChatJobEnvelope {
     pub readonly_tool_ttl_cache_secs: Option<u64>,
     /// HTTP 审计上下文（客户端 IP、Bearer 指纹）；定时任务为占位。
     pub request_audit: WebRequestAudit,
+    /// 客户端声明的 SSE 协议版本（`None` 兼容旧客户端 → v1）。
+    ///
+    /// 当前暂未在 worker 中用作 encoder 选择，待 Phase 3（前端 V2Parser）就绪后激活。
+    #[allow(dead_code)]
+    pub client_sse_protocol: Option<u8>,
 }
 
 /// [`ChatJobQueue::try_submit_json`] 的入参（[`WebChatJobEnvelope`] + JSON oneshot）。
