@@ -221,7 +221,7 @@ pub(super) async fn flush_sse_delta_buffer(
     if let Some(t) = tx
         && !pending.is_empty()
     {
-        let line = std::mem::take(pending);
+        let line = host.encode_answer_content_sse(&std::mem::take(pending));
         let _ = sse_out_send(
             host,
             t,
@@ -473,6 +473,18 @@ async fn ingest_sse_content_from_delta(frame: IngestSseContentFrame<'_>) -> std:
         && let Some(tx) = out
         && !cli_terminal_plain
     {
+        // AG-UI: 在首段终答正文前发送 TEXT_MESSAGE_START
+        let msg_start = host.encode_text_message_start_sse();
+        if !msg_start.is_empty() {
+            let _ = sse_out_send(
+                host,
+                tx,
+                msg_start,
+                "llm::stream_chat text_message_start",
+                coop_cancel,
+            )
+            .await;
+        }
         flush_sse_delta_buffer(host, pending_sse_delta, Some(tx), coop_cancel).await;
         let _ = sse_out_send(
             host,

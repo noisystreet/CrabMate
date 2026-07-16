@@ -153,6 +153,19 @@ pub fn encode_reasoning_message_content_sse(delta: &str, encoder: &dyn SseEncode
     encode_ag_ui_event(&event)
 }
 
+/// 编码 AG-UI `TEXT_MESSAGE_START`。返回编码后的 JSON 字符串；V1 下返回空字符串。
+pub fn encode_text_message_start_sse_str(encoder: &dyn SseEncoder) -> String {
+    if encoder.format_version() != 2 {
+        return String::new();
+    }
+    let event = AgUiEvent::TextMessageStart {
+        message_id: "msg-assistant-turn".to_string(),
+        role: "assistant".to_string(),
+        metadata: None,
+    };
+    encode_ag_ui_event(&event)
+}
+
 /// 依次下发 **`final_response`** 时间线与 **`assistant_answer_phase: true`**。
 ///
 /// 与分层总结、`chat_job_queue` 流式兜底等路径对齐；**不**写入 `messages`（由调用方负责）。

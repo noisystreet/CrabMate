@@ -70,6 +70,9 @@ pub trait StreamChatHost: Send + Sync {
     /// 将终答文本增量编码为 SSE 行。V2 下包装为 TEXT_MESSAGE_CONTENT 事件；V1 返回原始文本。
     fn encode_answer_content_sse(&self, chunk: &str) -> String;
 
+    /// 返回 TEXT_MESSAGE_START 的 SSE 行（仅 V2）；V1 返回空字符串。
+    fn encode_text_message_start_sse(&self) -> String;
+
     fn new_dsml_stream_filter(&self, enabled: bool) -> Box<dyn DsmlStreamFilter>;
 
     fn try_start_cli_wait_spinner(
