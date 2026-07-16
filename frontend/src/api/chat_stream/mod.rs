@@ -4,6 +4,7 @@
 
 mod body_reader;
 mod http_request;
+mod parser_v2;
 mod send_helpers;
 mod sse_frame;
 mod sse_parser;

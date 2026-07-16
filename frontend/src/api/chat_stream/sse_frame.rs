@@ -10,11 +10,20 @@ use crate::sse_dispatch::{
 };
 
 use super::ChatStreamCallbacks;
-use super::sse_parser::{SseParser, V1Parser};
+use super::sse_parser::{SseParser, V1Parser, V2Parser};
 
 /// 当前使用的 SSE 解析器（v1）。Phase 2 将改为按 `client_sse_protocol` 选择。
 fn default_parser() -> &'static dyn SseParser {
     &V1Parser
+}
+
+/// 根据协议版本选择解析器（预留；当前仍使用 `default_parser`）。
+#[allow(dead_code)]
+fn parser_for_version(version: u8) -> &'static dyn SseParser {
+    match version {
+        2 => &V2Parser,
+        _ => &V1Parser,
+    }
 }
 
 /// SSE 单帧分类：用于区分「任意有效负载」与「正文 delta」的空闲检测。
@@ -117,6 +126,37 @@ pub(super) fn flush_sse_tail(
     Ok(progress)
 }
 
+/// 检查数据是否为 stream_ended 事件；若是则更新状态并返回 `StreamEnded`。
+fn check_stream_ended(
+    data: &str,
+    saw_stream_ended: &mut bool,
+    cbs: &ChatStreamCallbacks,
+) -> Option<SseFrameKind> {
+    if let Some(reason) = extract_stream_ended_reason(data) {
+        *saw_stream_ended = true;
+        let tiktoken = stream_ended_tiktoken_from_data(data);
+        (cbs.on_stream_ended)(reason, tiktoken);
+        return Some(SseFrameKind::StreamEnded);
+    }
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(data)
+        && let Some(ended) = v.get("stream_ended")
+        && !ended.is_null()
+    {
+        let reason = ended
+            .get("reason")
+            .and_then(|x| x.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| StreamEndReason::Completed.to_string());
+        *saw_stream_ended = true;
+        let tiktoken = ended
+            .get("tiktoken_prompt_tokens")
+            .and_then(crate::conversation_prompt_tokens_apply::parse_tiktoken_prompt_tokens_value);
+        (cbs.on_stream_ended)(reason, tiktoken);
+        return Some(SseFrameKind::StreamEnded);
+    }
+    None
+}
+
 /// 单帧 SSE 块解析与分发。
 pub(super) fn handle_sse_block(
     block: &str,
@@ -136,28 +176,8 @@ pub(super) fn handle_sse_block(
     if data.is_empty() || is_sse_done_sentinel(&data) {
         return Ok(SseFrameKind::Ignored);
     }
-    if let Some(reason) = extract_stream_ended_reason(&data) {
-        *saw_stream_ended = true;
-        let tiktoken = stream_ended_tiktoken_from_data(&data);
-        (cbs.on_stream_ended)(reason, tiktoken);
-        return Ok(SseFrameKind::StreamEnded);
-    }
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&data)
-        && let Some(ended) = v.get("stream_ended")
-        && !ended.is_null()
-    {
-        // `reason` 缺失或非字符串时仍须回落 busy（与 `dispatch_notice_timeline_tail` 吞掉 `stream_ended` 的形态对齐）。
-        let reason = ended
-            .get("reason")
-            .and_then(|x| x.as_str())
-            .map(str::to_string)
-            .unwrap_or_else(|| StreamEndReason::Completed.to_string());
-        *saw_stream_ended = true;
-        let tiktoken = ended
-            .get("tiktoken_prompt_tokens")
-            .and_then(crate::conversation_prompt_tokens_apply::parse_tiktoken_prompt_tokens_value);
-        (cbs.on_stream_ended)(reason, tiktoken);
-        return Ok(SseFrameKind::StreamEnded);
+    if let Some(kind) = check_stream_ended(&data, saw_stream_ended, cbs) {
+        return Ok(kind);
     }
 
     let mut stop = false;
@@ -194,6 +214,10 @@ pub(super) fn handle_sse_block(
     let mut on_turn_phase_end = || (cbs.on_turn_tool_phase_end)();
     let mut on_thinking_trace = |info| (cbs.on_thinking_trace)(info);
     let mut on_timeline_log = |info| (cbs.on_timeline_log)(info);
+    let mut on_run_finished = || {
+        *saw_stream_ended = true;
+        (cbs.on_done)();
+    };
 
     let mut cbs2 = SseControlSink {
         user_locale: loc,
@@ -222,6 +246,7 @@ pub(super) fn handle_sse_block(
         notice_timeline: SseNoticeTimelineHooks {
             on_conversation_saved_revision: Some(&mut on_conv_rev),
             on_timeline_log: Some(&mut on_timeline_log),
+            on_run_finished: Some(&mut on_run_finished),
         },
     };
     match default_parser().parse(&data, &mut cbs2) {
@@ -239,6 +264,13 @@ pub(super) fn handle_sse_block(
             }
             (cbs.on_delta)(data);
             Ok(SseFrameKind::TextDelta)
+        }
+        crate::sse_dispatch::SseDispatch::StreamEnded => {
+            // V2Parser 已通过 `on_run_finished` 设置 `saw_stream_ended` 并调用 `on_done`
+            if stop {
+                return Err(crate::i18n::api_err_stream_stopped(loc).to_string());
+            }
+            Ok(SseFrameKind::StreamEnded)
         }
     }
 }

@@ -160,6 +160,7 @@ async fn run_scheduled_json_turn(state: Arc<AppState>, task: ScheduledAgentTask)
                 workspace_is_set: prepared.workspace_is_set,
                 temperature_override: None,
                 seed_override: LlmSeedOverride::FromConfig,
+                client_sse_protocol: None,
                 llm_override: None,
                 executor_llm_override: None,
                 readonly_tool_ttl_cache_secs: None,

@@ -41,6 +41,7 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
         executor_llm_override,
         readonly_tool_ttl_cache_secs,
         request_audit,
+        client_sse_protocol: _,
     } = envelope;
     info!(
         target: "crabmate",

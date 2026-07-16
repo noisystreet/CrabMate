@@ -5,7 +5,10 @@
 
 use serde::Serialize;
 
-/// AG-UI 标准事件（仅覆盖 CrabMate 需要的子集；待 V2Encoder 接入生产路径）。
+/// AG-UI 标准事件（仅覆盖 CrabMate 需要的子集）。
+///
+/// 部分变体（RunStarted、TextMessage*、ReasoningMessage*、State*）暂未在 V2Encoder
+/// conversion 中构造，将在后续 Phase（消息生命周期、状态同步）接入。
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -105,8 +108,7 @@ pub(crate) enum AgUiEvent {
     },
 }
 
-/// AG-UI 错误体（待 V2Encoder 接入生产路径）。
-#[allow(dead_code)]
+/// AG-UI 错误体。
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct AgUiErrorBody {
     pub message: String,

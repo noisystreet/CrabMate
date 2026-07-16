@@ -289,6 +289,7 @@ pub(crate) async fn chat_async_handler(
                 workspace_is_set,
                 temperature_override: parsed.temperature_override,
                 seed_override: parsed.seed_override,
+                client_sse_protocol: parsed.client_sse_protocol,
                 llm_override: parsed.llm_override.clone(),
                 executor_llm_override: parsed.executor_llm_override.clone(),
                 readonly_tool_ttl_cache_secs: parsed.readonly_tool_ttl_cache_secs,

@@ -50,12 +50,14 @@ fn dispatch_triage_string(data: &str) -> &'static str {
         notice_timeline: SseNoticeTimelineHooks {
             on_conversation_saved_revision: None,
             on_timeline_log: None,
+            on_run_finished: None,
         },
     };
     match try_dispatch_sse_control_payload(data, &mut sink) {
         SseDispatch::Stop => "stop",
         SseDispatch::Handled => "handled",
         SseDispatch::Plain => "plain",
+        SseDispatch::StreamEnded => "stream_ended",
     }
 }
 

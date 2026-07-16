@@ -4,8 +4,7 @@
 
 use super::ag_ui_event::AgUiEvent;
 
-/// 将 AG-UI 事件序列化为单行 JSON 字符串（待 V2Encoder 接入生产路径）。
-#[allow(dead_code)]
+/// 将 AG-UI 事件序列化为单行 JSON 字符串。
 pub(crate) fn encode_ag_ui_event(event: &AgUiEvent) -> String {
     // 使用 #[serde(tag = "type")] 自动生成 type 字段
     serde_json::to_string(event).unwrap_or_else(|e| {

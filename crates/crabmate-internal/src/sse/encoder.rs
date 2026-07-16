@@ -30,3 +30,14 @@ impl SseEncoder for V1Encoder {
 pub fn default_encoder() -> Arc<dyn SseEncoder> {
     Arc::new(V1Encoder)
 }
+
+/// 根据客户端声明的 SSE 协议版本解析编码器。
+///
+/// - `Some(2)` → `V2Encoder`（AG-UI）
+/// - `None` / `Some(1)` / 其它 → `V1Encoder`
+pub fn resolve_encoder(client_sse_protocol: Option<u8>) -> Arc<dyn SseEncoder> {
+    match client_sse_protocol {
+        Some(2) => Arc::new(super::encoder_v2::V2Encoder),
+        _ => Arc::new(V1Encoder),
+    }
+}
