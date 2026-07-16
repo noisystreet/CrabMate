@@ -2,7 +2,8 @@
 
 use tokio::sync::mpsc::Sender;
 
-use super::{SsePayload, TimelineLogBody, encode_message, send_string_logged};
+use super::encoder::SseEncoder;
+use super::{SsePayload, TimelineLogBody, send_string_logged};
 
 /// 依次下发 **`final_response`** 时间线与 **`assistant_answer_phase: true`**。
 ///
@@ -12,8 +13,9 @@ pub async fn send_final_response_timeline_then_answer_phase(
     title: String,
     log_context_timeline: &'static str,
     log_context_phase: &'static str,
+    encoder: &dyn SseEncoder,
 ) {
-    let final_tl = encode_message(SsePayload::TimelineLog {
+    let final_tl = encoder.encode(&SsePayload::TimelineLog {
         log: TimelineLogBody {
             kind: "final_response".to_string(),
             title,
@@ -21,7 +23,7 @@ pub async fn send_final_response_timeline_then_answer_phase(
         },
     });
     let _ = send_string_logged(out, final_tl, log_context_timeline).await;
-    let phase_payload = encode_message(SsePayload::AssistantAnswerPhase {
+    let phase_payload = encoder.encode(&SsePayload::AssistantAnswerPhase {
         assistant_answer_phase: true,
     });
     let _ = send_string_logged(out, phase_payload, log_context_phase).await;
@@ -33,12 +35,14 @@ mod tests {
 
     #[tokio::test]
     async fn sends_timeline_then_answer_phase_in_order() {
+        let encoder = crate::sse::V1Encoder;
         let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(4);
         send_final_response_timeline_then_answer_phase(
             &tx,
             "summary text".to_string(),
             "test::timeline",
             "test::phase",
+            &encoder,
         )
         .await;
         let first = rx.recv().await.expect("timeline frame");

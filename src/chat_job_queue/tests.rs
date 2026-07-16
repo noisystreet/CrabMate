@@ -2,7 +2,7 @@ use crabmate_sse_protocol::StreamEndReason;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, timeout};
 
-use crate::sse::SseStreamHub;
+use crate::sse::{SseStreamHub, V1Encoder};
 use crate::types::Message;
 
 use super::ChatJobQueue;
@@ -30,7 +30,7 @@ async fn fallback_emits_final_response_when_missing() {
     let (tx, mut rx) = mpsc::channel::<String>(8);
     let messages = vec![Message::assistant_only("最终总结内容")];
 
-    emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages).await;
+    emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages, &V1Encoder).await;
 
     let first = timeout(Duration::from_millis(200), rx.recv())
         .await
@@ -66,7 +66,7 @@ async fn fallback_skips_when_final_response_arrives_with_small_delay() {
         let _ = hub_for_task.publish(job_id, delayed_payload);
     });
 
-    emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages).await;
+    emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages, &V1Encoder).await;
 
     let no_frame = timeout(Duration::from_millis(120), rx.recv()).await;
     assert!(no_frame.is_err(), "已有 final_response 时不应再补发");
@@ -80,7 +80,7 @@ async fn fallback_is_idempotent_for_same_job() {
     let (tx, mut rx) = mpsc::channel::<String>(8);
     let messages = vec![Message::assistant_only("最终总结内容")];
 
-    emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages).await;
+    emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages, &V1Encoder).await;
     let first = timeout(Duration::from_millis(200), rx.recv())
         .await
         .expect("recv first frame")
@@ -96,7 +96,7 @@ async fn fallback_is_idempotent_for_same_job() {
     if let Some(payload) = hub.publish(job_id, first) {
         let _ = payload;
     }
-    emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages).await;
+    emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages, &V1Encoder).await;
     let no_more = timeout(Duration::from_millis(120), rx.recv()).await;
     assert!(no_more.is_err(), "同一 job 的 fallback 不应重复发");
 }
@@ -114,7 +114,7 @@ async fn fallback_skips_when_turn_has_no_new_assistant() {
         Message::user_only("本轮提问"),
     ];
 
-    emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages).await;
+    emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages, &V1Encoder).await;
 
     let no_frame = timeout(Duration::from_millis(120), rx.recv()).await;
     assert!(

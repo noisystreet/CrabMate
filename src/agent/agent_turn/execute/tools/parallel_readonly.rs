@@ -19,11 +19,10 @@ use crate::tool_result::ToolEnvelopeContext;
 use crate::types::{Message, ToolCall};
 use crate::workspace::changelist::WorkspaceChangelist;
 
-use super::ExecuteToolsBatchOutcome;
 use super::{
-    ExecuteToolsCommonCtx, PARALLEL_READONLY_TOOL_BATCH_SEQ, abort_tool_batch_if_sse_closed,
-    dedup_readonly_tool_calls_count, emit_timeline_log_sse, emit_tool_call_summary_sse,
-    emit_tool_result_sse_and_append, trace_parallel_tool_child_span,
+    ExecuteToolsBatchOutcome, ExecuteToolsCommonCtx, PARALLEL_READONLY_TOOL_BATCH_SEQ,
+    abort_tool_batch_if_sse_closed, dedup_readonly_tool_calls_count, emit_timeline_log_sse,
+    emit_tool_call_summary_sse, emit_tool_result_sse_and_append, trace_parallel_tool_child_span,
 };
 
 /// 并行执行时工具的分类，用于在构建 fut 前预分类，消除 if/else if/else 字符串比较。
@@ -300,6 +299,7 @@ struct ParallelEmitOrderedParams<'a> {
     tool_outcome_recorder: &'a Arc<crate::tool_stats::ToolOutcomeRecorder>,
     out: Option<&'a tokio::sync::mpsc::Sender<String>>,
     sse_control_mirror: Option<crate::sse::SseControlMirror>,
+    sse_encoder: &'a dyn crate::sse::SseEncoder,
     clarification_questionnaire_hook:
         Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
     echo_terminal_transcript: bool,
@@ -320,6 +320,7 @@ async fn parallel_emit_ordered_tool_results(
         tool_outcome_recorder,
         out,
         sse_control_mirror,
+        sse_encoder,
         clarification_questionnaire_hook,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
@@ -332,6 +333,7 @@ async fn parallel_emit_ordered_tool_results(
         if abort_tool_batch_if_sse_closed(
             out,
             "SSE sender closed during parallel tool batch, aborting remainder",
+            sse_encoder,
         )
         .await
         {
@@ -345,6 +347,7 @@ async fn parallel_emit_ordered_tool_results(
             &tc.function.name,
             &tc.function.arguments,
             messages,
+            sse_encoder,
         )
         .await;
         emit_timeline_log_sse(
@@ -357,6 +360,7 @@ async fn parallel_emit_ordered_tool_results(
                 crate::redact::tool_arguments_preview_for_sse(&tc.function.arguments)
             )),
             "execute_tools::timeline tool_step_started",
+            sse_encoder,
         )
         .await;
         let key = (tc.function.name.clone(), tc.function.arguments.clone());
@@ -389,6 +393,7 @@ async fn parallel_emit_ordered_tool_results(
                 reflection_inject: None,
                 envelope_ctx: Some(env),
             },
+            sse_encoder,
         )
         .await;
     }
@@ -430,6 +435,7 @@ pub(super) async fn execute_tools_parallel(
         readonly_tool_ttl_cache: _,
         clarification_questionnaire_hook,
         sse_control_mirror,
+        sse_encoder,
     } = ctx;
 
     let sse_mirror_parallel = sse_control_mirror.clone();
@@ -496,6 +502,7 @@ pub(super) async fn execute_tools_parallel(
         tool_outcome_recorder: &tool_outcome_recorder,
         out,
         sse_control_mirror: sse_mirror_parallel,
+        sse_encoder: sse_encoder.as_ref(),
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
         tool_result_envelope_v1,

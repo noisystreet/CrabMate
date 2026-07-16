@@ -83,6 +83,7 @@ async fn emit_hierarchical_final_assistant(p: &mut RunLoopParams<'_>, final_resp
             final_response,
             "hierarchical::final_response",
             "hierarchical::answer_phase",
+            p.ctx.io.sse_encoder.as_ref(),
         )
         .await;
     }

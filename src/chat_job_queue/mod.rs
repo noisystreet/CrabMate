@@ -39,6 +39,7 @@ pub(crate) struct WebChatQueueDeps {
     pub chat_queue: ChatJobQueue,
     pub long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     pub sse_stream_hub: Arc<SseStreamHub>,
+    pub sse_encoder: Arc<dyn crate::sse::SseEncoder>,
 }
 
 /// Web `client_llm.llm_thinking_mode` 解析后的本回合 **`thinking`** 策略覆盖（不写服务端磁盘配置）。

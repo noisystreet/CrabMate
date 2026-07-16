@@ -8,15 +8,13 @@ use std::sync::Arc;
 use super::protocol::SsePayload;
 
 /// SSE 编码器：将 `SsePayload` 序列化为 SSE `data:` 行 JSON 字符串。
-#[allow(dead_code)]
-pub(crate) trait SseEncoder: Send + Sync {
+pub trait SseEncoder: Send + Sync {
     fn encode(&self, payload: &SsePayload) -> String;
     fn format_version(&self) -> u8;
 }
 
 /// v1 编码器：当前自定义 SSE 协议格式。
-#[allow(dead_code)]
-pub(crate) struct V1Encoder;
+pub struct V1Encoder;
 
 impl SseEncoder for V1Encoder {
     fn encode(&self, payload: &SsePayload) -> String {
@@ -29,6 +27,6 @@ impl SseEncoder for V1Encoder {
 }
 
 /// 全局默认编码器（v1）。
-pub(crate) fn default_encoder() -> Arc<dyn SseEncoder> {
+pub fn default_encoder() -> Arc<dyn SseEncoder> {
     Arc::new(V1Encoder)
 }

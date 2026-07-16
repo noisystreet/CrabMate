@@ -10,6 +10,8 @@ use crate::agent::agent_turn::execute::tool_execution_host::CrabmateToolExecutio
 use crate::tool_registry::{self, ToolRuntime};
 use crate::types::ToolCall;
 
+use std::sync::Arc;
+
 use super::super::{
     ExecuteToolsBatchOutcome, ExecuteToolsCommonCtx, abort_tool_batch_if_sse_closed,
 };
@@ -76,6 +78,7 @@ struct SerialToolLoopState<'a> {
     clarification_questionnaire_hook:
         Option<std::sync::Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
     sse_control_mirror: Option<crate::sse::SseControlMirror>,
+    sse_encoder: Arc<dyn crate::sse::SseEncoder>,
     workspace_changed: &'a mut bool,
 }
 
@@ -112,6 +115,7 @@ impl<'a> SerialToolLoopState<'a> {
             sync_default_sandbox_backend,
             readonly_tool_ttl_cache,
             sse_control_mirror,
+            sse_encoder,
         } = ctx;
         Self {
             tool_calls,
@@ -143,6 +147,7 @@ impl<'a> SerialToolLoopState<'a> {
             readonly_tool_ttl_cache,
             clarification_questionnaire_hook,
             sse_control_mirror,
+            sse_encoder,
             workspace_changed,
         }
     }
@@ -157,6 +162,7 @@ async fn serial_execute_one_tool_call(
     if abort_tool_batch_if_sse_closed(
         st.out,
         "SSE sender closed during tool execution, aborting remaining tools",
+        st.sse_encoder.as_ref(),
     )
     .await
     {
@@ -177,6 +183,7 @@ async fn serial_execute_one_tool_call(
         name: &name,
         args: &args,
         messages: st.messages,
+        encoder: st.sse_encoder.as_ref(),
     })
     .await;
 
@@ -200,6 +207,7 @@ async fn serial_execute_one_tool_call(
         turn_allow: st.turn_allow,
         readonly_cache,
         readonly_tool_ttl_cache: &st.readonly_tool_ttl_cache,
+        encoder: st.sse_encoder.as_ref(),
     })
     .await
     {
@@ -332,6 +340,7 @@ async fn serial_execute_one_tool_call(
         id: id.as_str(),
         result,
         reflection_inject,
+        encoder: st.sse_encoder.as_ref(),
     })
     .await;
     false

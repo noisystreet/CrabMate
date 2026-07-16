@@ -212,6 +212,7 @@ async fn outer_loop_execute_tools_round(
             ),
             readonly_tool_ttl_cache: Arc::clone(&p.ctx.obs.process_handles.readonly_tool_ttl_cache),
             sse_control_mirror: p.ctx.io.sse_control_mirror.clone(),
+            sse_encoder: p.ctx.io.sse_encoder.clone(),
         },
     )
     .await;
@@ -304,6 +305,7 @@ async fn run_outer_loop_single_iteration(
                 },
             },
             "outer_loop::prev_answer_segment_end",
+            p.ctx.io.sse_encoder.as_ref(),
         )
         .await;
         send_sse_control_payload_optional(
@@ -317,6 +319,7 @@ async fn run_outer_loop_single_iteration(
                 },
             },
             "outer_loop::new_answer_segment_start",
+            p.ctx.io.sse_encoder.as_ref(),
         )
         .await;
         send_sse_control_payload_optional(
@@ -326,6 +329,7 @@ async fn run_outer_loop_single_iteration(
                 assistant_answer_phase: true,
             },
             "outer_loop::assistant_answer_phase",
+            p.ctx.io.sse_encoder.as_ref(),
         )
         .await;
     }

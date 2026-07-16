@@ -19,7 +19,7 @@ use nix::unistd::{Pid, chdir, dup, execvp, read, write};
 use serde::Deserialize;
 use tokio::sync::mpsc::Sender;
 
-use crate::sse::{SsePayload, ToolOutputChunkBody, send_sse_control_payload_optional};
+use crate::sse::{SseEncoder, SsePayload, ToolOutputChunkBody, send_sse_control_payload_optional};
 use crate::tools::{PreparedRunCommand, prepare_run_command_for_pty_spawn};
 use crabmate_config::AgentConfig;
 
@@ -124,6 +124,7 @@ async fn emit_tool_chunk(
     text: &str,
     out: Option<&Sender<String>>,
     mirror: Option<&crate::sse::SseControlMirror>,
+    encoder: &dyn SseEncoder,
 ) {
     if text.is_empty() {
         return;
@@ -143,6 +144,7 @@ async fn emit_tool_chunk(
             tool_output_chunk: body,
         },
         "terminal_session::pty_chunk",
+        encoder,
     )
     .await;
 }
@@ -242,6 +244,7 @@ async fn drain_until_idle(
     tool_call_id: &str,
     out: Option<&Sender<String>>,
     mirror: Option<&crate::sse::SseControlMirror>,
+    encoder: &dyn SseEncoder,
 ) -> (String, bool) {
     let DrainIdleCfg {
         wall,
@@ -272,7 +275,7 @@ async fn drain_until_idle(
                     read_any = true;
                     empty_streak = Duration::ZERO;
                     let chunk = String::from_utf8_lossy(&buf[..n]);
-                    emit_tool_chunk(seq, tool_call_id, chunk.as_ref(), out, mirror).await;
+                    emit_tool_chunk(seq, tool_call_id, chunk.as_ref(), out, mirror, encoder).await;
                     push_truncated(&mut acc, chunk.as_ref(), max_capture);
                 }
                 Ok(Err(e)) => {
@@ -487,6 +490,7 @@ struct TerminalStreamCtx<'a> {
     tool_call_id: &'a str,
     sse_out_tx: Option<&'a Sender<String>>,
     sse_control_mirror: Option<&'a crate::sse::SseControlMirror>,
+    encoder: &'a dyn SseEncoder,
 }
 
 async fn reap_removed_session_child_or_return_captured(sid: &str, captured: String) -> String {
@@ -625,6 +629,7 @@ async fn terminal_exec_resume_existing(
         ctx.tool_call_id,
         ctx.sse_out_tx,
         ctx.sse_control_mirror,
+        ctx.encoder,
     )
     .await;
     let captured = if eof {
@@ -699,6 +704,7 @@ async fn terminal_exec_spawn_new(
         ctx.tool_call_id,
         ctx.sse_out_tx,
         ctx.sse_control_mirror,
+        ctx.encoder,
     )
     .await;
     let captured = if eof_flag {
@@ -730,6 +736,7 @@ struct TerminalActionExecArgs<'a> {
     sse_out_tx: Option<&'a Sender<String>>,
     sse_control_mirror: Option<&'a crate::sse::SseControlMirror>,
     allowed_commands: &'a [String],
+    encoder: Option<&'a dyn SseEncoder>,
 }
 
 async fn terminal_action_exec(args: TerminalActionExecArgs<'_>) -> String {
@@ -743,12 +750,14 @@ async fn terminal_action_exec(args: TerminalActionExecArgs<'_>) -> String {
         sse_out_tx,
         sse_control_mirror,
         allowed_commands,
+        encoder,
     } = args;
     let cols = a.cols.unwrap_or(80);
     let rows = a.rows.unwrap_or(24);
     if cols == 0 || rows == 0 {
         return "错误：cols/rows 须为正整数。".to_string();
     }
+    let encoder_ref: &dyn SseEncoder = encoder.unwrap_or(&crate::sse::V1Encoder);
     let mut ctx = TerminalStreamCtx {
         wall,
         max_capture: max_cap,
@@ -756,6 +765,7 @@ async fn terminal_action_exec(args: TerminalActionExecArgs<'_>) -> String {
         tool_call_id,
         sse_out_tx,
         sse_control_mirror,
+        encoder: encoder_ref,
     };
     if let Some(sid) = session_id_trimmed(a) {
         terminal_exec_resume_existing(sid, a, &mut ctx).await
@@ -765,6 +775,7 @@ async fn terminal_action_exec(args: TerminalActionExecArgs<'_>) -> String {
 }
 
 /// Linux：解析 `terminal_session` JSON，维护 PTY 会话表并发 SSE chunk。
+#[allow(clippy::too_many_arguments)]
 pub async fn execute_terminal_session(
     cfg: &Arc<AgentConfig>,
     workspace: &Path,
@@ -773,6 +784,7 @@ pub async fn execute_terminal_session(
     sse_out_tx: Option<&Sender<String>>,
     sse_control_mirror: Option<&crate::sse::SseControlMirror>,
     allowed_commands: &[String],
+    encoder: Option<&dyn SseEncoder>,
 ) -> String {
     let a: TerminalSessionArgs = match serde_json::from_str(args_json) {
         Ok(v) => v,
@@ -799,6 +811,7 @@ pub async fn execute_terminal_session(
                 sse_out_tx,
                 sse_control_mirror,
                 allowed_commands,
+                encoder,
             })
             .await
         }

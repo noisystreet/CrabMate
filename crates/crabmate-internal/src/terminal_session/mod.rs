@@ -17,6 +17,7 @@ pub async fn execute_terminal_session(
     _sse_out_tx: Option<&tokio::sync::mpsc::Sender<String>>,
     _sse_control_mirror: Option<&crate::sse::SseControlMirror>,
     _allowed_commands: &[String],
+    _encoder: Option<&dyn crate::sse::SseEncoder>,
 ) -> String {
     "错误：terminal_session 仅支持 Linux。".to_string()
 }

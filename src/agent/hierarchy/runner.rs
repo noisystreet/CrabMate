@@ -142,6 +142,8 @@ pub struct HierarchyRunnerParams<'a> {
     pub sse_control_mirror: Option<crate::sse::SseControlMirror>,
     /// 单轮墙钟与 LLM 调用计数（与主 Agent 外循环共用）。
     pub turn_budget: std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>,
+    /// SSE 编码器：当前为 v1，后续可切换为 v2（AG-UI）。
+    pub sse_encoder: Arc<dyn crate::sse::SseEncoder>,
 }
 
 /// 分层 Agent 运行结果
@@ -169,6 +171,7 @@ struct SimpleFallbackParams<'a> {
     turn_budget: std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>,
     process_handles: std::sync::Arc<crate::process_handles::ProcessHandles>,
     sse_control_mirror: Option<crate::sse::SseControlMirror>,
+    sse_encoder: Arc<dyn crate::sse::SseEncoder>,
 }
 
 /// `run_full_decomposed_hierarchy` 的输入（避免长参数列表；字段生命周期与一次 runner 调用绑定）。
@@ -188,6 +191,7 @@ struct FullDecomposedHierarchyCtx<'a> {
     router_output: RouterOutput,
     process_handles: std::sync::Arc<crate::process_handles::ProcessHandles>,
     sse_control_mirror: Option<crate::sse::SseControlMirror>,
+    sse_encoder: Arc<dyn crate::sse::SseEncoder>,
 }
 
 /// 运行分层 Agent（完整流程）
@@ -213,6 +217,7 @@ pub async fn run_hierarchical(
         process_handles,
         sse_control_mirror,
         turn_budget,
+        sse_encoder,
     } = params;
 
     let tools_eff: std::borrow::Cow<'_, [crate::types::Tool]> = if primary_intent
@@ -311,6 +316,7 @@ pub async fn run_hierarchical(
                 turn_budget: std::sync::Arc::clone(&turn_budget),
                 process_handles: std::sync::Arc::clone(&process_handles),
                 sse_control_mirror: sse_control_mirror.clone(),
+                sse_encoder: Arc::clone(&sse_encoder),
             })
             .await;
         }
@@ -333,6 +339,7 @@ pub async fn run_hierarchical(
         router_output,
         process_handles: std::sync::Arc::clone(&process_handles),
         sse_control_mirror,
+        sse_encoder: Arc::clone(&sse_encoder),
     })
     .await
 }
@@ -357,6 +364,7 @@ async fn run_full_decomposed_hierarchy(
         router_output,
         process_handles,
         sse_control_mirror,
+        sse_encoder,
     } = ctx;
 
     info!(
@@ -376,6 +384,7 @@ async fn run_full_decomposed_hierarchy(
             sse_control_mirror.as_ref(),
             sse::SsePayload::ThinkingTrace { trace },
             "hierarchical::manager_started",
+            sse_encoder.as_ref(),
         )
         .await;
         log::info!(target: "crabmate", "[HIERARCHICAL] manager_started send completed");
@@ -447,6 +456,7 @@ async fn run_full_decomposed_hierarchy(
             sse_control_mirror.as_ref(),
             timeline_payload,
             "hierarchical::manager_plan_timeline",
+            sse_encoder.as_ref(),
         )
         .await;
 
@@ -460,6 +470,7 @@ async fn run_full_decomposed_hierarchy(
             sse_control_mirror.as_ref(),
             sse::SsePayload::ThinkingTrace { trace },
             "hierarchical::manager_finished",
+            sse_encoder.as_ref(),
         )
         .await;
     }
@@ -574,6 +585,7 @@ async fn run_simple_fallback(
         turn_budget,
         process_handles,
         sse_control_mirror,
+        sse_encoder,
     } = params;
 
     info!(
@@ -630,6 +642,7 @@ async fn run_simple_fallback(
             sse_control_mirror.as_ref(),
             timeline_payload,
             "hierarchical::manager_plan_timeline",
+            sse_encoder.as_ref(),
         )
         .await;
 
@@ -640,6 +653,7 @@ async fn run_simple_fallback(
             sse_control_mirror.as_ref(),
             sse::SsePayload::ThinkingTrace { trace },
             "hierarchical::manager_started",
+            sse_encoder.as_ref(),
         )
         .await;
 
@@ -653,6 +667,7 @@ async fn run_simple_fallback(
             sse_control_mirror.as_ref(),
             sse::SsePayload::ThinkingTrace { trace },
             "hierarchical::manager_finished",
+            sse_encoder.as_ref(),
         )
         .await;
         // 不在此下发 `assistant_answer_phase`：须等子目标进度或最终汇总，由 execution / handle_execution_result 统一发送，避免「进入终答相却无正文」的错位。

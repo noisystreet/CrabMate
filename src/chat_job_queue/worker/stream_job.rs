@@ -115,6 +115,7 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
             request_agent_role: request_agent_role.as_deref(),
             persisted_active_agent_role: persisted_active_agent_role.as_deref(),
             stream_ended_sent: &mut stream_ended_sent,
+            encoder: queue_deps.sse_encoder.as_ref(),
         })
         .await;
 

@@ -6,7 +6,8 @@ use std::sync::Arc;
 
 use tokio::sync::mpsc::Sender;
 
-use super::protocol::{SsePayload, encode_message};
+use super::encoder::SseEncoder;
+use super::protocol::SsePayload;
 use super::{send_string_logged, send_string_logged_cooperative_cancel};
 
 /// 与 Web SSE 控制面同形的回合事件回调（`SsePayload` 克隆后投递）。
@@ -25,12 +26,13 @@ pub async fn send_sse_control_payload_optional(
     mirror: Option<&SseControlMirror>,
     payload: SsePayload,
     context: &'static str,
+    encoder: &dyn SseEncoder,
 ) -> bool {
     mirror_sse_control_optional(mirror, &payload);
     let Some(tx) = out else {
         return true;
     };
-    send_string_logged(tx, encode_message(payload), context).await
+    send_string_logged(tx, encoder.encode(&payload), context).await
 }
 
 /// 协作取消变体：发送失败时置位 **`cancel`**（与 [`send_string_logged_cooperative_cancel`] 一致）。
@@ -41,12 +43,13 @@ pub async fn send_sse_control_payload_cooperative_cancel_optional(
     payload: SsePayload,
     context: &'static str,
     cancel: Option<&std::sync::atomic::AtomicBool>,
+    encoder: &dyn SseEncoder,
 ) -> bool {
     mirror_sse_control_optional(mirror, &payload);
     let Some(tx) = out else {
         return true;
     };
-    send_string_logged_cooperative_cancel(tx, encode_message(payload), context, cancel).await
+    send_string_logged_cooperative_cancel(tx, encoder.encode(&payload), context, cancel).await
 }
 
 #[cfg(test)]
@@ -75,19 +78,21 @@ mod tests {
 
     #[tokio::test]
     async fn send_sse_control_payload_optional_without_tx_still_ok() {
+        let encoder = crate::sse::V1Encoder;
         let p = SsePayload::ToolRunning {
             tool_running: false,
         };
-        assert!(send_sse_control_payload_optional(None, None, p, "test_ctx").await);
+        assert!(send_sse_control_payload_optional(None, None, p, "test_ctx", &encoder).await);
     }
 
     #[tokio::test]
     async fn send_sse_control_payload_optional_with_tx_delivers() {
+        let encoder = crate::sse::V1Encoder;
         let (tx, mut rx) = mpsc::channel::<String>(4);
         let p = SsePayload::ParsingToolCalls {
             parsing_tool_calls: true,
         };
-        assert!(send_sse_control_payload_optional(Some(&tx), None, p, "test_ctx").await);
+        assert!(send_sse_control_payload_optional(Some(&tx), None, p, "test_ctx", &encoder).await);
         drop(tx);
         let line = rx.recv().await.expect("line");
         assert!(line.contains("parsing_tool_calls"));
@@ -95,6 +100,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_sse_control_cooperative_cancel_sets_flag_when_send_fails() {
+        let encoder = crate::sse::V1Encoder;
         let (tx, rx) = mpsc::channel::<String>(1);
         drop(rx);
         let cancel = std::sync::atomic::AtomicBool::new(false);
@@ -108,6 +114,7 @@ mod tests {
                 p,
                 "test_ctx",
                 Some(&cancel),
+                &encoder,
             )
             .await
         );

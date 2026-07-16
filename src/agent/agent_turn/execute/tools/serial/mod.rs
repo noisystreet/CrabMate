@@ -8,6 +8,7 @@ use crate::agent::per_coord::PerCoordinator;
 use crate::agent::plan_artifact::PlanStepExecutorKind;
 
 use super::{ExecuteToolsBatchOutcome, ExecuteToolsCommonCtx};
+use crate::sse::SseEncoder;
 
 mod after_dispatch;
 mod emit;
@@ -39,6 +40,7 @@ pub(super) struct SerialEmitToolResultParams<'a> {
     pub(super) id: &'a str,
     pub(super) result: String,
     pub(super) reflection_inject: Option<serde_json::Value>,
+    pub(super) encoder: &'a dyn SseEncoder,
 }
 
 pub(super) struct SerialTtlRunCommandEarlyHitParams<'a> {
@@ -59,6 +61,7 @@ pub(super) struct SerialTtlRunCommandEarlyHitParams<'a> {
     pub(super) id: &'a str,
     pub(super) readonly_tool_ttl_cache:
         &'a Arc<crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache>,
+    pub(super) encoder: &'a dyn SseEncoder,
 }
 
 pub(super) struct SerialEarlyToolPolicyDenyParams<'a> {
@@ -79,6 +82,7 @@ pub(super) struct SerialEarlyToolPolicyDenyParams<'a> {
     pub(super) step_executor_constraint: Option<PlanStepExecutorKind>,
     pub(super) tools_defs_full: &'a [crate::types::Tool],
     pub(super) turn_allow: Option<&'a HashSet<String>>,
+    pub(super) encoder: &'a dyn SseEncoder,
 }
 
 pub(super) struct SerialTtlAfterDispatchParams<'a> {
@@ -115,6 +119,7 @@ pub(super) struct SerialEmitEarlyWithoutDispatchParams<'a> {
     pub(super) readonly_cache: &'a mut HashMap<(String, String), String>,
     pub(super) readonly_tool_ttl_cache:
         &'a Arc<crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache>,
+    pub(super) encoder: &'a dyn SseEncoder,
 }
 
 /// 每轮工具迭代开头：记录 tracing、下发 `tool_call` / `timeline`、打调用日志（从 [`execute_tools_serial`] 拆出以降低 nloc）。
@@ -127,4 +132,5 @@ pub(super) struct SerialToolIterationSsePreface<'a> {
     pub(super) name: &'a str,
     pub(super) args: &'a str,
     pub(super) messages: &'a [crate::types::Message],
+    pub(super) encoder: &'a dyn SseEncoder,
 }

@@ -304,6 +304,7 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
                     sse_out_tx,
                     sse_control_mirror,
                     tool_call_id: tc.id.as_str(),
+                    sse_encoder: None,
                 })
                 .await
             }
@@ -322,6 +323,7 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
                     sse_out_tx,
                     sse_control_mirror,
                     tool_call_id: tc.id.as_str(),
+                    sse_encoder: None,
                 })
                 .await
             }

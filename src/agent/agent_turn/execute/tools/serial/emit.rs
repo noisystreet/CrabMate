@@ -61,6 +61,7 @@ pub(super) async fn serial_try_ttl_run_command_cache_hit(
         id: p.id,
         result: body,
         reflection_inject: None,
+        encoder: p.encoder,
     })
     .await;
     true
@@ -107,6 +108,7 @@ pub(super) async fn serial_emit_early_tool_policy_denials(
             id: p.id,
             result: denied,
             reflection_inject: None,
+            encoder: p.encoder,
         })
         .await;
         return true;
@@ -172,6 +174,7 @@ pub(super) async fn emit_serial_tool_result(p: SerialEmitToolResultParams<'_>) {
         id,
         result,
         reflection_inject,
+        encoder,
     } = p;
     let env = crate::tool_result::ToolEnvelopeContext {
         tool_call_id: id,
@@ -197,6 +200,7 @@ pub(super) async fn emit_serial_tool_result(p: SerialEmitToolResultParams<'_>) {
             reflection_inject,
             envelope_ctx: Some(env),
         },
+        encoder,
     )
     .await;
 }
@@ -225,6 +229,7 @@ struct SerialRunCommandDupShortCircuitEmitCtx<'a> {
     name: &'a str,
     args: &'a str,
     id: &'a str,
+    encoder: &'a dyn crate::sse::SseEncoder,
 }
 
 type SerialRunCommandSuccessDedupeParams<'a> = SerialRunCommandDupShortCircuitEmitCtx<'a>;
@@ -246,6 +251,7 @@ async fn serial_emit_run_command_success_dedupe(
         name,
         args,
         id,
+        encoder,
     } = p;
     let Some(suppress_key) = run_command_duplicate_suppress_key(args) else {
         return false;
@@ -278,6 +284,7 @@ async fn serial_emit_run_command_success_dedupe(
         id,
         result: format!("{RUN_COMMAND_DUPLICATE_SUPPRESSED_MSG}\n{cached}"),
         reflection_inject: None,
+        encoder,
     })
     .await;
     true
@@ -301,6 +308,7 @@ async fn serial_emit_run_command_failure_short_circuits(
         name,
         args,
         id,
+        encoder,
     } = p;
     if let Some(prev_error) = per_coord.repeated_tool_failure_error_marker(name, args) {
         let short_circuit = format!(
@@ -328,6 +336,7 @@ async fn serial_emit_run_command_failure_short_circuits(
             id,
             result: short_circuit,
             reflection_inject: None,
+            encoder,
         })
         .await;
         return true;
@@ -365,6 +374,7 @@ async fn serial_emit_run_command_failure_short_circuits(
             id,
             result: short_circuit,
             reflection_inject: None,
+            encoder,
         })
         .await;
         return true;
@@ -396,6 +406,7 @@ pub(super) async fn serial_emit_early_without_dispatch(
         turn_allow,
         readonly_cache,
         readonly_tool_ttl_cache,
+        encoder,
     } = p;
     if let Some(preflight_error) =
         run_command_cargo_workdir_preflight_error(name, args, effective_working_dir)
@@ -417,6 +428,7 @@ pub(super) async fn serial_emit_early_without_dispatch(
             id,
             result: preflight_error,
             reflection_inject: None,
+            encoder,
         })
         .await;
         return true;
@@ -439,6 +451,7 @@ pub(super) async fn serial_emit_early_without_dispatch(
             id,
             result: preflight_error,
             reflection_inject: None,
+            encoder,
         })
         .await;
         return true;
@@ -461,6 +474,7 @@ pub(super) async fn serial_emit_early_without_dispatch(
         step_executor_constraint,
         tools_defs_full,
         turn_allow,
+        encoder,
     })
     .await
     {
@@ -485,6 +499,7 @@ pub(super) async fn serial_emit_early_without_dispatch(
             name,
             args,
             id,
+            encoder,
         })
         .await
     {
@@ -506,6 +521,7 @@ pub(super) async fn serial_emit_early_without_dispatch(
             name,
             args,
             id,
+            encoder,
         })
         .await
     {
@@ -528,6 +544,7 @@ pub(super) async fn serial_emit_early_without_dispatch(
         args,
         id,
         readonly_tool_ttl_cache,
+        encoder,
     })
     .await
     {
@@ -557,6 +574,7 @@ pub(super) async fn serial_emit_early_without_dispatch(
             id,
             result: cached.clone(),
             reflection_inject: None,
+            encoder,
         })
         .await;
         return true;
