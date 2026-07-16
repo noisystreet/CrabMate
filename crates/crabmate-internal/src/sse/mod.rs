@@ -24,9 +24,10 @@ pub use encoder::{SseEncoder, V1Encoder, default_encoder, resolve_encoder};
 pub use encoder_v2::V2Encoder;
 pub use final_response_terminal::{
     encode_reasoning_message_content_sse, encode_text_message_content_sse,
-    send_final_response_timeline_then_answer_phase, send_reasoning_message_content_sse,
-    send_reasoning_message_end_sse, send_reasoning_message_start_sse, send_run_started_sse,
-    send_state_snapshot_sse, send_text_message_end_sse, send_text_message_start_sse,
+    encode_text_message_start_sse_str, send_final_response_timeline_then_answer_phase,
+    send_reasoning_message_content_sse, send_reasoning_message_end_sse,
+    send_reasoning_message_start_sse, send_run_started_sse, send_state_snapshot_sse,
+    send_text_message_end_sse, send_text_message_start_sse,
 };
 pub use mpsc_send::{send_string_logged, send_string_logged_cooperative_cancel};
 pub use stream_hub::SseStreamHub;

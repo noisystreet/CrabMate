@@ -414,7 +414,7 @@ mod tests {
 
     #[test]
     fn roundtrip_clarification_questionnaire() {
-        let s = encode_message(SsePayload::ClarificationQuestionnaire {
+        let s = encode_message_v1(&SsePayload::ClarificationQuestionnaire {
             clarification_questionnaire: ClarificationQuestionnaireBody {
                 questionnaire_id: "q1".into(),
                 intro: "请补充".into(),
@@ -436,7 +436,7 @@ mod tests {
 
     #[test]
     fn roundtrip_parsing_tool_calls() {
-        let s = encode_message(SsePayload::ParsingToolCalls {
+        let s = encode_message_v1(&SsePayload::ParsingToolCalls {
             parsing_tool_calls: true,
         });
         let m: SseMessage = serde_json::from_str(&s).unwrap();
@@ -450,7 +450,7 @@ mod tests {
 
     #[test]
     fn roundtrip_assistant_answer_phase() {
-        let s = encode_message(SsePayload::AssistantAnswerPhase {
+        let s = encode_message_v1(&SsePayload::AssistantAnswerPhase {
             assistant_answer_phase: true,
         });
         assert!(s.contains("\"assistant_answer_phase\":true"));
@@ -465,7 +465,7 @@ mod tests {
 
     #[test]
     fn roundtrip_tool_running() {
-        let s = encode_message(SsePayload::ToolRunning { tool_running: true });
+        let s = encode_message_v1(&SsePayload::ToolRunning { tool_running: true });
         let m: SseMessage = serde_json::from_str(&s).unwrap();
         assert_eq!(m.v, SSE_PROTOCOL_VERSION);
         assert!(matches!(
@@ -476,7 +476,7 @@ mod tests {
 
     #[test]
     fn roundtrip_tool_output_chunk() {
-        let s = encode_message(SsePayload::ToolOutputChunk {
+        let s = encode_message_v1(&SsePayload::ToolOutputChunk {
             tool_output_chunk: ToolOutputChunkBody {
                 tool_call_id: "tc1".into(),
                 name: Some("terminal_session".into()),
@@ -512,20 +512,20 @@ mod tests {
 
     #[test]
     fn error_with_code() {
-        let s = encode_message(SsePayload::Error(SseErrorBody {
+        let s = encode_message_v1(&SsePayload::Error(SseErrorBody {
             error: "x".into(),
             code: Some("E".into()),
             reason_code: None,
             turn_id: None,
             sub_phase: None,
         }));
-        assert!(s.contains("\"v\":1"));
+        assert!(s.contains(&format!("\"v\":{}", SSE_PROTOCOL_VERSION)));
         assert!(s.contains("\"code\":\"E\""));
     }
 
     #[test]
     fn error_with_reason_code() {
-        let s = encode_message(SsePayload::Error(SseErrorBody {
+        let s = encode_message_v1(&SsePayload::Error(SseErrorBody {
             error: "x".into(),
             code: Some("plan_rewrite_exhausted".into()),
             reason_code: Some("plan_missing".into()),
@@ -537,7 +537,7 @@ mod tests {
 
     #[test]
     fn tool_result_with_structured_fields() {
-        let s = encode_message(SsePayload::ToolResult {
+        let s = encode_message_v1(&SsePayload::ToolResult {
             tool_result: ToolResultBody {
                 name: "run_command".into(),
                 goal_id: None,
@@ -578,7 +578,7 @@ mod tests {
 
     #[test]
     fn roundtrip_staged_plan_notice() {
-        let s = encode_message(SsePayload::StagedPlanNotice {
+        let s = encode_message_v1(&SsePayload::StagedPlanNotice {
             text: "**规划** · 共 2 步\n  1. [a] x".into(),
             clear_before: true,
         });
@@ -594,14 +594,14 @@ mod tests {
 
     #[test]
     fn roundtrip_chat_ui_separator() {
-        let s = encode_message(SsePayload::ChatUiSeparator { short: true });
+        let s = encode_message_v1(&SsePayload::ChatUiSeparator { short: true });
         assert!(s.contains("\"chat_ui_separator\":true"));
         let m: SseMessage = serde_json::from_str(&s).unwrap();
         assert!(matches!(
             m.payload,
             SsePayload::ChatUiSeparator { short: true }
         ));
-        let s2 = encode_message(SsePayload::ChatUiSeparator { short: false });
+        let s2 = encode_message_v1(&SsePayload::ChatUiSeparator { short: false });
         let m2: SseMessage = serde_json::from_str(&s2).unwrap();
         assert!(matches!(
             m2.payload,
@@ -611,7 +611,7 @@ mod tests {
 
     #[test]
     fn roundtrip_staged_plan_structured_events() {
-        let started = encode_message(SsePayload::StagedPlanStarted {
+        let started = encode_message_v1(&SsePayload::StagedPlanStarted {
             started: StagedPlanStartedBody {
                 plan_id: "plan-1".into(),
                 total_steps: 3,
@@ -626,7 +626,7 @@ mod tests {
             _ => panic!("expected staged_plan_started payload"),
         }
 
-        let step_started = encode_message(SsePayload::StagedPlanStepStarted {
+        let step_started = encode_message_v1(&SsePayload::StagedPlanStepStarted {
             started: StagedPlanStepStartedBody {
                 plan_id: "plan-1".into(),
                 step_id: "collect-context".into(),
@@ -647,7 +647,7 @@ mod tests {
             _ => panic!("expected staged_plan_step_started payload"),
         }
 
-        let step_finished = encode_message(SsePayload::StagedPlanStepFinished {
+        let step_finished = encode_message_v1(&SsePayload::StagedPlanStepFinished {
             finished: StagedPlanStepFinishedBody {
                 plan_id: "plan-1".into(),
                 step_id: "collect-context".into(),
@@ -668,7 +668,7 @@ mod tests {
             _ => panic!("expected staged_plan_step_finished payload"),
         }
 
-        let finished = encode_message(SsePayload::StagedPlanFinished {
+        let finished = encode_message_v1(&SsePayload::StagedPlanFinished {
             finished: StagedPlanFinishedBody {
                 plan_id: "plan-1".into(),
                 total_steps: 3,
@@ -694,7 +694,7 @@ mod tests {
     proptest! {
         #[test]
         fn prop_tool_running_roundtrip_and_version(tool_running in any::<bool>()) {
-            let encoded = encode_message(SsePayload::ToolRunning { tool_running });
+            let encoded = encode_message_v1(&SsePayload::ToolRunning { tool_running });
             let parsed: SseMessage = serde_json::from_str(&encoded).unwrap();
             prop_assert_eq!(parsed.v, SSE_PROTOCOL_VERSION);
             match parsed.payload {
@@ -718,7 +718,7 @@ mod tests {
                 turn_id,
                 sub_phase,
             });
-            let encoded = encode_message(payload.clone());
+            let encoded = encode_message_v1(&payload);
             let parsed: SseMessage = serde_json::from_str(&encoded).unwrap();
             prop_assert_eq!(parsed.v, SSE_PROTOCOL_VERSION);
             match (payload, parsed.payload) {
@@ -743,7 +743,7 @@ mod tests {
                 4 => StreamEndReason::NoOutput,
                 _ => StreamEndReason::Gone,
             };
-            let encoded = encode_message(SsePayload::StreamEnded {
+            let encoded = encode_message_v1(&SsePayload::StreamEnded {
                 ended: StreamEndedBody {
                     job_id,
                     reason,

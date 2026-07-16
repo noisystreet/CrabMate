@@ -250,6 +250,11 @@ impl StreamChatHost for CrabmateStreamChatHost {
         crate::sse::encode_text_message_content_sse(chunk, encoder.as_ref())
     }
 
+    fn encode_text_message_start_sse(&self) -> String {
+        let encoder = crate::sse::default_encoder();
+        crate::sse::encode_text_message_start_sse_str(encoder.as_ref())
+    }
+
     fn new_dsml_stream_filter(&self, enabled: bool) -> Box<dyn DsmlStreamFilter> {
         Box::new(CrabmateDsmlStreamFilter(
             crate::dsml::StreamingDsmlContentFilter::new(enabled),
