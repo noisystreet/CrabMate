@@ -56,6 +56,7 @@ pub(super) fn apply_stream_done_to_loading_assistant(
     });
     let Some(idx) = messages.iter().position(|m| m.id == assistant_message_id) else {
         clear_residual_assistant_loading_placeholders(messages);
+        clear_residual_empty_assistant_rows(messages);
         if turn.answer_delta_chars == 0 && !turn.saw_final_response_timeline {
             push_missing_assistant_diagnostic(messages, turn, in_answer_body_lane, locale);
         }
@@ -63,6 +64,7 @@ pub(super) fn apply_stream_done_to_loading_assistant(
     };
     if !is_loading_plain_assistant(&messages[idx]) {
         clear_residual_assistant_loading_placeholders(messages);
+        clear_residual_empty_assistant_rows(messages);
         return;
     }
     messages[idx].state = None;
@@ -106,6 +108,23 @@ pub(super) fn apply_stream_done_to_loading_assistant(
         }
     }
     clear_residual_assistant_loading_placeholders(messages);
+    // 安全网：清理残留的空非 loading assistant 行（由 detach/finalize 等路径产生）
+    clear_residual_empty_assistant_rows(messages);
+}
+
+/// 清理空的非 loading assistant 行（state=None，text 和 reasoning_text 均空）。
+/// 这些行由 detach_final_answer_projection / finalize_loading_row_at 等路径残留，
+/// 在读路径被 `is_empty_assistant_body` 过滤，但会污染 stored_messages 数组。
+fn clear_residual_empty_assistant_rows(messages: &mut Vec<StoredMessage>) {
+    messages.retain(|m| {
+        if m.role != "assistant" || m.is_tool {
+            return true;
+        }
+        if m.state.is_some() {
+            return true;
+        }
+        !(m.text.trim().is_empty() && m.reasoning_text.trim().is_empty())
+    });
 }
 
 #[cfg(test)]
@@ -163,5 +182,52 @@ mod tests {
             crate::i18n::Locale::ZhHans,
         );
         assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn clears_empty_finalized_assistant_rows() {
+        let mut msgs = vec![
+            StoredMessage {
+                id: "u".into(),
+                role: "user".into(),
+                text: "q".into(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: None,
+                is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
+                created_at: 0,
+            },
+            // 由 detach/finalize 产生的空 assistant 行
+            StoredMessage {
+                id: "detached_empty".into(),
+                role: "assistant".into(),
+                text: String::new(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: None,
+                is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
+                created_at: 0,
+            },
+            StoredMessage {
+                id: "answer".into(),
+                role: "assistant".into(),
+                text: "终答正文".into(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: None,
+                is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
+                created_at: 0,
+            },
+        ];
+        clear_residual_empty_assistant_rows(&mut msgs);
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0].id, "u");
+        assert_eq!(msgs[1].text, "终答正文");
     }
 }

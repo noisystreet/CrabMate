@@ -144,13 +144,11 @@ fn commit_loading_tail_text_to_canonical(stream_ctx: &ChatStreamCallbackCtx, tex
     }
 }
 
-/// `on_done` 前：将 loading 尾泡 overlay / stored 正文迁入 canonical（含 post-tool 终答）。
+/// `on_done` 前：将 loading 尾泡 stored 正文迁入 canonical（含 post-tool 终答）。
+/// overlay 文本已在流式时通过 on_delta 写入 canonical，不再重复 commit。
 pub(crate) fn drain_stream_tail_into_canonical_for_done(stream_ctx: &ChatStreamCallbackCtx) {
     let mid = stream_ctx.scratch.clone_assistant_id();
     let sid = stream_ctx.bound_stream_session_id.clone();
-    if let Some(overlay) = overlay_answer_for_loading_tail(stream_ctx, mid.as_str()) {
-        commit_loading_tail_text_to_canonical(stream_ctx, overlay.as_str());
-    }
     stream_overlay_clear_answer_for_message(
         stream_ctx.chat.stream_text_overlay,
         sid.as_str(),
@@ -297,7 +295,7 @@ fn insert_tool_row(
     }
 }
 
-/// 结束 loading 行：空则删，否则去 state 并清空文本（正文由投影行接管）。
+/// 结束 loading 行：直接移除（Phase 9 正文由投影行管理，loading 行仅作 preview 占位）。
 fn finalize_loading_row_at(messages: &mut Vec<StoredMessage>, idx: usize) {
     if idx >= messages.len() {
         return;
@@ -306,13 +304,7 @@ fn finalize_loading_row_at(messages: &mut Vec<StoredMessage>, idx: usize) {
     if m.role != "assistant" || !m.state.as_ref().is_some_and(|st| st.is_loading()) {
         return;
     }
-    if m.text.trim().is_empty() && m.reasoning_text.trim().is_empty() {
-        messages.remove(idx);
-    } else {
-        messages[idx].state = None;
-        messages[idx].text.clear();
-        messages[idx].reasoning_text.clear();
-    }
+    messages.remove(idx);
 }
 
 fn pin_loading_tail_in_messages(messages: &mut Vec<StoredMessage>, loading_id: &str) {
@@ -633,28 +625,32 @@ impl TurnLayout {
     }
 
     /// 流结束：若 `turn-final-answer` 已落盘且 loading 尾泡与其重复，去掉尾泡避免导出双段。
+    /// 同时检查已被 detach 转为普通 assistant 的旧 FINAL_ANSWER_ROW，避免重复。
     pub(crate) fn dedupe_loading_tail_against_final_answer_row(
         messages: &mut Vec<StoredMessage>,
         loading_id: &str,
     ) {
         use crate::message_dedupe::assistant_texts_fuzzy_duplicate;
 
-        let Some(final_idx) = messages
-            .iter()
-            .position(|m| m.id == bubble_queue::FINAL_ANSWER_ROW_ID)
-        else {
-            return;
-        };
         let Some(load_idx) = messages.iter().position(|m| m.id == loading_id) else {
             return;
         };
-        let final_text = messages[final_idx].text.as_str();
-        let load = &messages[load_idx];
-        if load.text.trim().is_empty() && load.reasoning_text.trim().is_empty() {
+        let load_text = &messages[load_idx].text;
+        if load_text.trim().is_empty() && messages[load_idx].reasoning_text.trim().is_empty() {
             messages.remove(load_idx);
             return;
         }
-        if assistant_texts_fuzzy_duplicate(load.text.as_str(), final_text) {
+        // 检查 FINAL_ANSWER_ROW 以及已被 detach 的旧投影行（已变为普通 assistant）
+        let duplicate_found = messages.iter().any(|m| {
+            if m.id == loading_id {
+                return false;
+            }
+            if m.role != "assistant" || m.is_tool {
+                return false;
+            }
+            assistant_texts_fuzzy_duplicate(load_text.as_str(), m.text.as_str())
+        });
+        if duplicate_found {
             messages.remove(load_idx);
         }
     }

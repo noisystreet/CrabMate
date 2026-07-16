@@ -209,6 +209,32 @@ fn finalize_loading_row_at_removes_empty_shell() {
 }
 
 #[test]
+fn finalize_loading_row_at_removes_row_with_text() {
+    let mut msgs = vec![
+        empty_msg("u1", "user", "q", false),
+        StoredMessage {
+            id: "a_load".into(),
+            role: "assistant".into(),
+            text: "流式正文预览".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(StoredMessageState::Loading),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        },
+    ];
+    finalize_loading_row_at(&mut msgs, 1);
+    assert_eq!(
+        msgs.len(),
+        1,
+        "loading row with text must be removed (text is in projection rows)"
+    );
+    assert_eq!(msgs[0].id, "u1");
+}
+
+#[test]
 fn pin_loading_tail_in_messages_moves_loading_to_end() {
     let mut msgs = vec![
         empty_msg("t0", "system", "tool", true),

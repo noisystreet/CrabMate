@@ -195,6 +195,17 @@ impl BubbleOutputQueue {
         else {
             return;
         };
+        // 若已有普通 assistant 行内容相同（由 detach_final_answer_projection 产生），
+        // 不再重复创建 FINAL_ANSWER_ROW，避免消息双倍
+        if messages.iter().any(|m| {
+            m.id != FINAL_ANSWER_ROW_ID
+                && m.role == "assistant"
+                && !m.is_tool
+                && m.state.is_none()
+                && m.text.trim() == text.trim()
+        }) {
+            return;
+        }
         let insert_idx = Self::insert_index_for_final_row(messages, loading_tail_id);
         Self::upsert_assistant_row(messages, FINAL_ANSWER_ROW_ID, text, insert_idx);
     }
