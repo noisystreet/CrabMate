@@ -186,11 +186,22 @@ pub(super) async fn serial_tool_iteration_sse_preface(p: SerialToolIterationSseP
         name,
         args,
         messages,
+        encoder,
     } = p;
     if let Some(t) = tracing_chat_turn {
         t.record_tool_call_id_for_log(id);
     }
-    emit_tool_call_summary_sse(out, sse_mirror, cfg.as_ref(), id, name, args, messages).await;
+    emit_tool_call_summary_sse(
+        out,
+        sse_mirror,
+        cfg.as_ref(),
+        id,
+        name,
+        args,
+        messages,
+        encoder,
+    )
+    .await;
     emit_timeline_log_sse(
         out,
         sse_mirror,
@@ -201,6 +212,7 @@ pub(super) async fn serial_tool_iteration_sse_preface(p: SerialToolIterationSseP
             crate::redact::tool_arguments_preview_for_sse(args)
         )),
         "execute_tools::timeline tool_step_started",
+        encoder,
     )
     .await;
     info!(

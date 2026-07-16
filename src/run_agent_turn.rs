@@ -146,6 +146,7 @@ pub async fn run_agent_turn<'a>(
                 tool_running_hook,
                 clarification_questionnaire_hook,
                 sse_control_mirror,
+                sse_encoder: crate::sse::default_encoder(),
             },
             attach: crate::agent::agent_turn::RunLoopAttach {
                 web_tool_ctx,

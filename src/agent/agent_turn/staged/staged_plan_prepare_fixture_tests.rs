@@ -96,6 +96,7 @@ async fn prepare_staged_planner_no_tools_request_fixture_roundtrip() {
                 tool_running_hook: None,
                 clarification_questionnaire_hook: None,
                 sse_control_mirror: None,
+                sse_encoder: crate::sse::default_encoder(),
             },
             attach: RunLoopAttach {
                 web_tool_ctx: None,

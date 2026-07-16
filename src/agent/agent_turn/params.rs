@@ -71,6 +71,8 @@ pub(crate) struct RunLoopIo<'a> {
         Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
     /// 无 SSE 时镜像 [`crate::sse::SsePayload`]（与 Web `/chat/stream` 控制面对齐）；Web 通常为 `None`。
     pub sse_control_mirror: Option<crate::sse::SseControlMirror>,
+    /// SSE 编码器：当前为 v1，后续可切换为 v2（AG-UI）。
+    pub sse_encoder: Arc<dyn crate::sse::SseEncoder>,
 }
 
 /// 工具运行时、缓存、记忆与分阶段冻结开关（执行附件）。
@@ -419,6 +421,7 @@ impl RunLoopParams<'_> {
             sse_control_mirror: self.ctx.io.sse_control_mirror.clone(),
             cancel: self.ctx.io.cancel_arc.clone(),
             turn_budget: Arc::clone(&self.turn.turn_budget),
+            sse_encoder: Arc::clone(&self.ctx.io.sse_encoder),
         }
     }
 

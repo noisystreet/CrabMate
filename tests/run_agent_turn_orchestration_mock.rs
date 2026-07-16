@@ -233,6 +233,7 @@ async fn run_hierarchical_router_manager_operator_mock_llm_sequence() {
         process_handles: ProcessHandles::default_arc_process_handles(),
         sse_control_mirror: None,
         turn_budget: crabmate::agent::turn_budget::TurnBudgetCounter::new_shared(),
+        sse_encoder: crabmate::sse::default_encoder(),
     };
 
     let outcome: HierarchyRunnerResult = run_hierarchical(params)

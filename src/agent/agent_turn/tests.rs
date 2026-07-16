@@ -219,6 +219,7 @@ mod hierarchy_runner_params_tests {
                     tool_running_hook: None,
                     clarification_questionnaire_hook: None,
                     sse_control_mirror: None,
+                    sse_encoder: crate::sse::default_encoder(),
                 },
                 attach: RunLoopAttach {
                     web_tool_ctx: None,
@@ -317,6 +318,7 @@ mod hierarchy_runner_params_tests {
                     tool_running_hook: None,
                     clarification_questionnaire_hook: None,
                     sse_control_mirror: None,
+                    sse_encoder: crate::sse::default_encoder(),
                 },
                 attach: RunLoopAttach {
                     web_tool_ctx: Some(&web),
@@ -429,6 +431,7 @@ mod per_reflect_tests {
                     tool_running_hook: None,
                     clarification_questionnaire_hook: None,
                     sse_control_mirror: None,
+                    sse_encoder: crate::sse::default_encoder(),
                 },
                 attach: RunLoopAttach {
                     web_tool_ctx: None,

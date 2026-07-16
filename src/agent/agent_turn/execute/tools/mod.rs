@@ -14,7 +14,7 @@ use crate::agent::per_coord::PerCoordinator;
 use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crate::config::AgentConfig;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
-use crate::sse::{SsePayload, encode_message};
+use crate::sse::{SseEncoder, SsePayload, encode_message};
 use crate::tool_registry;
 use crate::tool_result::ToolEnvelopeContext;
 use crate::types::{Message, Tool, ToolCall};
@@ -96,6 +96,8 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub readonly_tool_ttl_cache: Arc<crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache>,
     /// 无 HTTP SSE 时镜像控制面（与 Web `SsePayload` 对齐）；Web 为 `None`。
     pub sse_control_mirror: Option<crate::sse::SseControlMirror>,
+    /// SSE 编码器
+    pub sse_encoder: Arc<dyn crate::sse::SseEncoder>,
 }
 
 pub(crate) use crabmate_agent::agent_turn::{
@@ -131,6 +133,7 @@ pub(crate) fn sse_sender_closed(out: Option<&mpsc::Sender<String>>) -> bool {
 async fn abort_tool_batch_if_sse_closed(
     out: Option<&mpsc::Sender<String>>,
     reason: &'static str,
+    encoder: &dyn SseEncoder,
 ) -> bool {
     if !sse_sender_closed(out) {
         return false;
@@ -140,6 +143,7 @@ async fn abort_tool_batch_if_sse_closed(
         out,
         false,
         "execute_tools::abort_tool_batch tool_running false",
+        encoder,
     )
     .await;
     true
@@ -181,6 +185,7 @@ struct ExecuteToolsCommonCtx<'a> {
     clarification_questionnaire_hook:
         Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
     sse_control_mirror: Option<crate::sse::SseControlMirror>,
+    sse_encoder: Arc<dyn crate::sse::SseEncoder>,
 }
 
 fn notify_cli_tool_running_hook(
@@ -200,9 +205,16 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
     let tool_running_hook = ctx.tool_running_hook.clone();
     let out = ctx.out;
     let sse_control_mirror = ctx.sse_control_mirror.clone();
+    let sse_encoder = ctx.sse_encoder.clone();
     let force_serial = replay_force_serial_from_env();
 
-    emit_sse_tool_running(out, true, "execute_tools::batch tool_running true").await;
+    emit_sse_tool_running(
+        out,
+        true,
+        "execute_tools::batch tool_running true",
+        sse_encoder.as_ref(),
+    )
+    .await;
     notify_cli_tool_running_hook(out, tool_running_hook.as_ref(), true);
 
     let batch_mode = resolve_tool_batch_execution_mode(&ToolBatchModeParams {
@@ -235,6 +247,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                     out,
                     false,
                     "execute_tools::batch aborted_after_parallel tool_running false",
+                    sse_encoder.as_ref(),
                 )
                 .await;
                 notify_cli_tool_running_hook(out, tool_running_hook.as_ref(), false);
@@ -281,6 +294,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                     out,
                     false,
                     "execute_tools::batch aborted_after_serial tool_running false",
+                    sse_encoder.as_ref(),
                 )
                 .await;
                 notify_cli_tool_running_hook(out, tool_running_hook.as_ref(), false);
@@ -302,8 +316,14 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
         )
         .await;
     }
-    emit_turn_tool_phase_end_sse(out, sse_control_mirror.as_ref()).await;
-    emit_sse_tool_running(out, false, "execute_tools::batch tool_running false").await;
+    emit_turn_tool_phase_end_sse(out, sse_control_mirror.as_ref(), sse_encoder.as_ref()).await;
+    emit_sse_tool_running(
+        out,
+        false,
+        "execute_tools::batch tool_running false",
+        sse_encoder.as_ref(),
+    )
+    .await;
     notify_cli_tool_running_hook(out, tool_running_hook.as_ref(), false);
 
     ExecuteToolsBatchOutcome::Finished
@@ -342,6 +362,7 @@ pub(crate) async fn per_execute_tools_web(
         sync_default_sandbox_backend,
         readonly_tool_ttl_cache,
         sse_control_mirror,
+        sse_encoder,
     } = ctx;
 
     let _tool_trace = request_chrome_trace
@@ -379,6 +400,7 @@ pub(crate) async fn per_execute_tools_web(
         sync_default_sandbox_backend,
         readonly_tool_ttl_cache,
         sse_control_mirror,
+        sse_encoder,
     })
     .await
 }

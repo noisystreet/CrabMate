@@ -18,6 +18,7 @@ pub mod stream_hub;
 pub mod web_approval;
 
 pub use control_mirror::send_sse_control_payload_optional;
+pub use encoder::{SseEncoder, V1Encoder, default_encoder};
 pub use final_response_terminal::send_final_response_timeline_then_answer_phase;
 pub use mpsc_send::{send_string_logged, send_string_logged_cooperative_cancel};
 pub use stream_hub::SseStreamHub;

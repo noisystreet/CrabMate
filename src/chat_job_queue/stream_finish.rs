@@ -183,6 +183,7 @@ pub(crate) async fn emit_missing_final_response_fallback_if_needed(
     sse_tx: &mpsc::Sender<String>,
     job_id: u64,
     messages: &[Message],
+    encoder: &dyn crate::sse::SseEncoder,
 ) -> bool {
     if stream_job_has_final_response_timeline_eventually(hub, job_id).await {
         return false;
@@ -200,6 +201,7 @@ pub(crate) async fn emit_missing_final_response_fallback_if_needed(
         final_text,
         "chat_job_queue::stream final_response_fallback",
         "chat_job_queue::stream answer_phase_fallback",
+        encoder,
     )
     .await;
     true
@@ -220,6 +222,7 @@ pub(super) struct StreamJobOutcomeCtx<'a> {
     pub(super) request_agent_role: Option<&'a str>,
     pub(super) persisted_active_agent_role: Option<&'a str>,
     pub(super) stream_ended_sent: &'a mut bool,
+    pub(super) encoder: &'a dyn crate::sse::SseEncoder,
 }
 
 pub(crate) async fn stream_job_outcome_after_agent_turn(
@@ -239,6 +242,7 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
         request_agent_role,
         persisted_active_agent_role,
         stream_ended_sent,
+        encoder,
     } = ctx;
     match r {
         Ok(()) if cancelled_by_signal => {
@@ -251,6 +255,7 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                 sse_tx,
                 job_id,
                 messages,
+                encoder,
             )
             .await;
             let has_visible_output = current_turn_has_visible_assistant_output(messages);

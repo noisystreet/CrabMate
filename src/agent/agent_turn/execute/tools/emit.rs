@@ -5,8 +5,8 @@ use crate::agent::per_coord::PerCoordinator;
 use crate::clarification_questionnaire_body_if_tool_ok;
 use crate::config::AgentConfig;
 use crate::sse::{
-    SsePayload, ThinkingTraceBody, ToolCallSummary, ToolOutputChunkBody, ToolResultBody,
-    TurnSegmentStartBody, encode_message, send_sse_control_payload_optional,
+    SseEncoder, SsePayload, ThinkingTraceBody, ToolCallSummary, ToolOutputChunkBody,
+    ToolResultBody, TurnSegmentStartBody, send_sse_control_payload_optional,
 };
 use crate::tool_result::{self, NormalizedToolEnvelope, ToolEnvelopeContext, parse_legacy_output};
 use crate::tools;
@@ -43,6 +43,7 @@ pub(super) async fn emit_thinking_trace_sse(
     out: Option<&mpsc::Sender<String>>,
     cfg: &AgentConfig,
     body: ThinkingTraceBody,
+    encoder: &dyn SseEncoder,
 ) {
     if !cfg.agent_thinking_trace.agent_thinking_trace_enabled {
         return;
@@ -52,7 +53,7 @@ pub(super) async fn emit_thinking_trace_sse(
     };
     let _ = crate::sse::send_string_logged(
         tx,
-        encode_message(SsePayload::ThinkingTrace { trace: body }),
+        encoder.encode(&SsePayload::ThinkingTrace { trace: body }),
         "execute_tools::thinking_trace",
     )
     .await;
@@ -66,6 +67,7 @@ async fn emit_sse_tool_result(
     result: &str,
     tool_summary: Option<String>,
     envelope_ctx: Option<ToolEnvelopeContext<'_>>,
+    encoder: &dyn SseEncoder,
 ) {
     let parsed = parse_legacy_output(name, result);
     let structured_payload = tool_result::structured_payload_for_tool(name, result);
@@ -128,6 +130,7 @@ async fn emit_sse_tool_result(
         sse_control_mirror,
         payload,
         "execute_tools::emit_tool_result_sse",
+        encoder,
     )
     .await;
 }
@@ -137,13 +140,14 @@ pub(super) async fn emit_sse_tool_running(
     out: Option<&mpsc::Sender<String>>,
     tool_running: bool,
     log_label: &'static str,
+    encoder: &dyn SseEncoder,
 ) {
     let Some(tx) = out else {
         return;
     };
     let _ = crate::sse::send_string_logged(
         tx,
-        encode_message(SsePayload::ToolRunning { tool_running }),
+        encoder.encode(&SsePayload::ToolRunning { tool_running }),
         log_label,
     )
     .await;
@@ -157,6 +161,7 @@ pub(super) async fn emit_sse_tool_output_chunk(
     out: Option<&mpsc::Sender<String>>,
     sse_control_mirror: Option<&crate::sse::SseControlMirror>,
     body: ToolOutputChunkBody,
+    encoder: &dyn SseEncoder,
 ) {
     let payload = SsePayload::ToolOutputChunk {
         tool_output_chunk: body,
@@ -166,6 +171,7 @@ pub(super) async fn emit_sse_tool_output_chunk(
         sse_control_mirror,
         payload,
         "execute_tools::tool_output_chunk",
+        encoder,
     )
     .await;
 }
@@ -177,6 +183,7 @@ pub(super) async fn emit_timeline_log_sse(
     title: String,
     detail: Option<String>,
     log_label: &'static str,
+    encoder: &dyn SseEncoder,
 ) {
     crate::turn_replay_dump::append_turn_replay_event_if_configured(
         kind,
@@ -190,13 +197,15 @@ pub(super) async fn emit_timeline_log_sse(
             detail,
         },
     };
-    let _ = send_sse_control_payload_optional(out, sse_control_mirror, payload, log_label).await;
+    let _ = send_sse_control_payload_optional(out, sse_control_mirror, payload, log_label, encoder)
+        .await;
 }
 
 pub(super) async fn emit_tool_result_sse_and_append(
     messages: &mut Vec<Message>,
     per_coord: &mut PerCoordinator,
     p: EmitToolResultParams<'_>,
+    encoder: &dyn SseEncoder,
 ) {
     let tool_t0 = std::time::Instant::now();
     let EmitToolResultParams {
@@ -240,6 +249,7 @@ pub(super) async fn emit_tool_result_sse_and_append(
         result.as_str(),
         tool_summary.clone(),
         envelope_ctx,
+        encoder,
     )
     .await;
 
@@ -252,6 +262,7 @@ pub(super) async fn emit_tool_result_sse_and_append(
             sse_control_mirror.as_ref(),
             payload,
             "clarification_questionnaire",
+            encoder,
         )
         .await;
         if let Some(h) = clarification_questionnaire_hook.as_ref() {
@@ -280,6 +291,7 @@ pub(super) async fn emit_tool_result_sse_and_append(
         name.to_string(),
         detail,
         "execute_tools::timeline tool_step_finished",
+        encoder,
     )
     .await;
     crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
@@ -362,6 +374,7 @@ pub(super) async fn emit_tool_result_sse_and_append(
             chunk: None,
             context_snapshot: Some(context_snapshot_for_trace(messages)),
         },
+        encoder,
     )
     .await;
 }
@@ -370,6 +383,7 @@ pub(super) async fn emit_turn_segment_start_before_tool_sse(
     out: Option<&mpsc::Sender<String>>,
     sse_control_mirror: Option<&crate::sse::SseControlMirror>,
     tool_call_id: &str,
+    encoder: &dyn SseEncoder,
 ) {
     if out.is_none() && sse_control_mirror.is_none() {
         return;
@@ -386,6 +400,7 @@ pub(super) async fn emit_turn_segment_start_before_tool_sse(
         sse_control_mirror,
         payload,
         "execute_tools::turn_segment_start",
+        encoder,
     )
     .await;
 }
@@ -393,6 +408,7 @@ pub(super) async fn emit_turn_segment_start_before_tool_sse(
 pub(super) async fn emit_turn_tool_phase_end_sse(
     out: Option<&mpsc::Sender<String>>,
     sse_control_mirror: Option<&crate::sse::SseControlMirror>,
+    encoder: &dyn SseEncoder,
 ) {
     if out.is_none() && sse_control_mirror.is_none() {
         return;
@@ -405,10 +421,12 @@ pub(super) async fn emit_turn_tool_phase_end_sse(
         sse_control_mirror,
         payload,
         "execute_tools::turn_tool_phase_end",
+        encoder,
     )
     .await;
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn emit_tool_call_summary_sse(
     out: Option<&mpsc::Sender<String>>,
     sse_control_mirror: Option<&crate::sse::SseControlMirror>,
@@ -417,6 +435,7 @@ pub(super) async fn emit_tool_call_summary_sse(
     name: &str,
     args: &str,
     messages: &[Message],
+    encoder: &dyn SseEncoder,
 ) {
     let args_preview = crate::redact::tool_arguments_preview_for_sse(args);
     let args_parsed: Option<serde_json::Value> = serde_json::from_str(args).ok();
@@ -456,7 +475,7 @@ pub(super) async fn emit_tool_call_summary_sse(
         return;
     }
 
-    emit_turn_segment_start_before_tool_sse(out, sse_control_mirror, tool_call_id).await;
+    emit_turn_segment_start_before_tool_sse(out, sse_control_mirror, tool_call_id, encoder).await;
 
     let payload = SsePayload::ToolCall {
         tool_call: ToolCallSummary {
@@ -473,6 +492,7 @@ pub(super) async fn emit_tool_call_summary_sse(
         sse_control_mirror,
         payload,
         "execute_tools::tool_call summary",
+        encoder,
     )
     .await;
     emit_thinking_trace_sse(
@@ -486,6 +506,7 @@ pub(super) async fn emit_tool_call_summary_sse(
             chunk: None,
             context_snapshot: Some(context_snapshot_for_trace(messages)),
         },
+        encoder,
     )
     .await;
 }

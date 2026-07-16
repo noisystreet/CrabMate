@@ -9,6 +9,7 @@ struct TerminalSessionExecInvoke<'a> {
     sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
     sse_control_mirror: Option<&'a crate::sse::SseControlMirror>,
     tool_call_id: &'a str,
+    sse_encoder: Option<&'a dyn crate::sse::SseEncoder>,
 }
 
 async fn execute_terminal_session_impl(
@@ -25,6 +26,7 @@ async fn execute_terminal_session_impl(
         sse_out_tx,
         sse_control_mirror,
         tool_call_id,
+        sse_encoder,
     } = invoke;
     let cfg = env.cfg;
     if !workspace_is_set {
@@ -100,6 +102,7 @@ async fn execute_terminal_session_impl(
         sse_out_tx,
         sse_control_mirror,
         effective_allowed.as_ref(),
+        sse_encoder,
     );
 
     let result =
