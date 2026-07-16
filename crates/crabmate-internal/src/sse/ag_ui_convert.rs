@@ -249,12 +249,12 @@ fn fast_random_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sse::protocol::StreamEndReason;
     use crate::sse::protocol::{
         ClarificationQuestionField, ClarificationQuestionnaireBody, SseCapabilitiesBody,
         SseErrorBody, StagedPlanStartedBody, StreamEndedBody, ThinkingTraceBody, TimelineLogBody,
         ToolCallSummary, ToolOutputChunkBody, ToolResultBody,
     };
-    use crabmate_sse_protocol::StreamEndReason;
 
     #[test]
     fn convert_stream_ended_to_run_finished() {
@@ -535,6 +535,166 @@ mod tests {
                 assert_eq!(id1, id3, "id must be consistent across split events");
             }
             _ => panic!("unexpected event variants"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod golden_tests {
+    use crate::sse::{
+        ConversationSavedBody, SseCapabilitiesBody, SseEncoder, SseErrorBody, SsePayload,
+        StagedPlanFinishedBody, StagedPlanStartedBody, StagedPlanStepFinishedBody,
+        StagedPlanStepStartedBody, StreamEndedBody, TurnSegmentEndBody, TurnSegmentStartBody,
+    };
+
+    /// 验证 V2Encoder 输出所有 SsePayload 变体时 JSON 包含正确的 `type` 字段。
+    #[test]
+    fn v2_encoder_all_variants_have_type_field() {
+        let encoder = crate::sse::V2Encoder;
+        assert_eq!(encoder.format_version(), 2);
+
+        let payloads: Vec<(SsePayload, &str)> = vec![
+            (
+                SsePayload::AssistantAnswerPhase {
+                    assistant_answer_phase: true,
+                },
+                "CUSTOM",
+            ),
+            (
+                SsePayload::WorkspaceChanged {
+                    workspace_changed: true,
+                },
+                "CUSTOM",
+            ),
+            (SsePayload::ToolRunning { tool_running: true }, "CUSTOM"),
+            (
+                SsePayload::ParsingToolCalls {
+                    parsing_tool_calls: true,
+                },
+                "CUSTOM",
+            ),
+            (
+                SsePayload::StagedPlanStarted {
+                    started: StagedPlanStartedBody {
+                        plan_id: "p".into(),
+                        total_steps: 1,
+                    },
+                },
+                "CUSTOM",
+            ),
+            (
+                SsePayload::StagedPlanStepStarted {
+                    started: StagedPlanStepStartedBody {
+                        plan_id: "p".into(),
+                        step_id: "s".into(),
+                        step_index: 1,
+                        total_steps: 1,
+                        description: "d".into(),
+                        executor_kind: None,
+                    },
+                },
+                "CUSTOM",
+            ),
+            (
+                SsePayload::StagedPlanStepFinished {
+                    finished: StagedPlanStepFinishedBody {
+                        plan_id: "p".into(),
+                        step_id: "s".into(),
+                        step_index: 1,
+                        total_steps: 1,
+                        status: "ok".into(),
+                        executor_kind: None,
+                        verify_fail_reason: None,
+                    },
+                },
+                "CUSTOM",
+            ),
+            (
+                SsePayload::StagedPlanFinished {
+                    finished: StagedPlanFinishedBody {
+                        plan_id: "p".into(),
+                        total_steps: 1,
+                        completed_steps: 1,
+                        status: "ok".into(),
+                    },
+                },
+                "CUSTOM",
+            ),
+            (
+                SsePayload::TurnSegmentStart {
+                    start: TurnSegmentStartBody {
+                        segment_id: "s".into(),
+                        kind: "k".into(),
+                        before_tool_call_id: None,
+                    },
+                },
+                "CUSTOM",
+            ),
+            (
+                SsePayload::TurnSegmentEnd {
+                    end: TurnSegmentEndBody {
+                        segment_id: "s".into(),
+                    },
+                },
+                "CUSTOM",
+            ),
+            (
+                SsePayload::TurnToolPhaseEnd {
+                    turn_tool_phase_end: true,
+                },
+                "CUSTOM",
+            ),
+            (
+                SsePayload::ConversationSaved {
+                    saved: ConversationSavedBody {
+                        revision: 1,
+                        tiktoken_prompt_tokens: None,
+                    },
+                },
+                "CUSTOM",
+            ),
+            (
+                SsePayload::SseCapabilities {
+                    caps: SseCapabilitiesBody {
+                        supported_sse_v: 2,
+                        resume_ring_cap: 512,
+                        job_id: 1,
+                    },
+                },
+                "CUSTOM",
+            ),
+            (
+                SsePayload::StreamEnded {
+                    ended: StreamEndedBody {
+                        job_id: 1,
+                        reason: crabmate_sse_protocol::StreamEndReason::Completed,
+                        tiktoken_prompt_tokens: None,
+                    },
+                },
+                "RUN_FINISHED",
+            ),
+            (
+                SsePayload::Error(SseErrorBody {
+                    error: "e".into(),
+                    code: Some("ERR".into()),
+                    reason_code: None,
+                    sub_phase: None,
+                    turn_id: None,
+                }),
+                "RUN_ERROR",
+            ),
+        ];
+
+        for (payload, expected_type) in &payloads {
+            let encoded = encoder.encode(payload);
+            let v: serde_json::Value = serde_json::from_str(&encoded)
+                .unwrap_or_else(|e| panic!("V2Encoder output invalid JSON: {e}\n  raw: {encoded}"));
+            let actual_type = v.get("type").and_then(|t| t.as_str());
+            assert_eq!(
+                actual_type,
+                Some(*expected_type),
+                "V2Encoder type mismatch for payload\n  expected: {expected_type}\n  got: {encoded}",
+            );
         }
     }
 }

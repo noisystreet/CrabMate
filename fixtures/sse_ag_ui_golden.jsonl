@@ -1,0 +1,43 @@
+# AG-UI 金样：每行 `描述<TAB>JSON<TAB>期望分类`（handled|plain|stream_ended）
+# 分类须与 frontend/src/api/chat_stream/parser_v2.rs（V2Parser）一致。
+# stream_ended = V2Parser 返回 SseDispatch::StreamEnded（RUN_FINISHED / RUN_ERROR）
+# handled = V2Parser 返回 SseDispatch::Handled（CUSTOM / TOOL_CALL_* / 标准 no-op）
+# plain = V2Parser 返回 SseDispatch::Plain（未知 type / 非 JSON / 纯文本 delta）
+
+RUN_FINISHED	{"type":"RUN_FINISHED","threadId":"th-1","runId":"run-1"}	stream_ended
+RUN_ERROR	{"type":"RUN_ERROR","threadId":"th-1","runId":"run-1","error":{"message":"fail","code":"ERR"}}	stream_ended
+RUN_STARTED	{"type":"RUN_STARTED","threadId":"th-1","runId":"run-1"}	handled
+TEXT_MESSAGE_START	{"type":"TEXT_MESSAGE_START","messageId":"msg-1","role":"assistant"}	handled
+TEXT_MESSAGE_CONTENT	{"type":"TEXT_MESSAGE_CONTENT","messageId":"msg-1","delta":"hello"}	handled
+TEXT_MESSAGE_END	{"type":"TEXT_MESSAGE_END","messageId":"msg-1"}	handled
+TOOL_CALL_START	{"type":"TOOL_CALL_START","toolCallId":"tc-1","name":"read_file","parentMessageId":"msg-1"}	handled
+TOOL_CALL_ARGS	{"type":"TOOL_CALL_ARGS","toolCallId":"tc-1","args":"path=/etc/hosts"}	handled
+TOOL_CALL_END	{"type":"TOOL_CALL_END","toolCallId":"tc-1"}	handled
+TOOL_CALL_RESULT	{"type":"TOOL_CALL_RESULT","toolCallId":"tc-1","content":"done"}	handled
+TOOL_CALL_RESULT partial	{"type":"TOOL_CALL_RESULT","toolCallId":"tc-1","content":"building...","metadata":{"partial":true,"seq":1}}	handled
+REASONING_MESSAGE_START	{"type":"REASONING_MESSAGE_START","messageId":"r-1"}	handled
+REASONING_MESSAGE_CONTENT	{"type":"REASONING_MESSAGE_CONTENT","messageId":"r-1","delta":"thinking"}	handled
+REASONING_MESSAGE_END	{"type":"REASONING_MESSAGE_END","messageId":"r-1"}	handled
+STATE_SNAPSHOT	{"type":"STATE_SNAPSHOT","state":{"phase":"tool_batch_end"}}	handled
+STATE_DELTA	{"type":"STATE_DELTA","state":{"phase":"tool_batch_end"}}	handled
+CUSTOM tool_running	{"type":"CUSTOM","customType":"tool_running","data":{"running":true}}	handled
+CUSTOM parsing_tool_calls	{"type":"CUSTOM","customType":"parsing_tool_calls","data":{"parsing":true}}	handled
+CUSTOM assistant_answer_phase	{"type":"CUSTOM","customType":"assistant_answer_phase","data":{"phase":"answer"}}	handled
+CUSTOM timeline_log	{"type":"CUSTOM","customType":"timeline_log","data":{"kind":"k","title":"t"}}	handled
+CUSTOM staged_plan_step_started	{"type":"CUSTOM","customType":"staged_plan_step_started","data":{"stepIndex":1,"totalSteps":3,"description":"d","executorKind":"review_readonly"}}	handled
+CUSTOM staged_plan_step_finished	{"type":"CUSTOM","customType":"staged_plan_step_finished","data":{"stepIndex":1,"totalSteps":3,"status":"ok","executorKind":"review_readonly"}}	handled
+CUSTOM thinking_trace	{"type":"CUSTOM","customType":"thinking_trace","data":{"op":"reasoning_delta","chunk":"x"}}	handled
+CUSTOM workspace_changed	{"type":"CUSTOM","customType":"workspace_changed","data":{"changed":true}}	handled
+CUSTOM command_approval	{"type":"CUSTOM","customType":"command_approval","data":{"command":"git","args":"status"}}	handled
+CUSTOM clarification_questionnaire	{"type":"CUSTOM","customType":"clarification_questionnaire","data":{"questionnaireId":"q1","intro":"请补充","questions":[{"id":"a","label":"A?","required":true}]}}	handled
+CUSTOM conversation_saved	{"type":"CUSTOM","customType":"conversation_saved","data":{"revision":42}}	handled
+CUSTOM turn_segment_start	{"type":"CUSTOM","customType":"turn_segment_start","data":{"segmentId":"s1","kind":"commentary","beforeToolCallId":"tc1"}}	handled
+CUSTOM turn_segment_end	{"type":"CUSTOM","customType":"turn_segment_end","data":{"segmentId":"s1"}}	handled
+CUSTOM turn_tool_phase_end	{"type":"CUSTOM","customType":"turn_tool_phase_end","data":{"phase":"tool_end"}}	handled
+CUSTOM staged_plan_notice	{"type":"CUSTOM","customType":"staged_plan_notice","data":{"text":"line1\nline2","clearBefore":false}}	handled
+CUSTOM staged_plan_started	{"type":"CUSTOM","customType":"staged_plan_started","data":{"planId":"p1","totalSteps":3}}	handled
+CUSTOM staged_plan_finished	{"type":"CUSTOM","customType":"staged_plan_finished","data":{"planId":"p1","totalSteps":3,"completedSteps":3,"status":"ok"}}	handled
+CUSTOM chat_ui_separator	{"type":"CUSTOM","customType":"chat_ui_separator","data":{"short":true}}	handled
+CUSTOM sse_capabilities	{"type":"CUSTOM","customType":"sse_capabilities","data":{"supportedSseV":2,"resumeRingCap":512,"jobId":99}}	handled
+未知 type 当 plain	{"type":"UNKNOWN_FUTURE_EVENT","foo":"bar"}	plain
+非 JSON 当 plain	hello world	plain

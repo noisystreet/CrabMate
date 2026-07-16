@@ -158,6 +158,9 @@ async fn stream_ended_emits_before_followup_saved_event() {
         .expect("recv second")
         .expect("second payload");
 
-    assert!(first.contains("\"stream_ended\""));
-    assert!(second.contains("\"conversation_saved\""));
+    assert!(first.contains("\"type\":\"RUN_FINISHED\"") || first.contains("\"stream_ended\""));
+    assert!(
+        second.contains("\"customType\":\"conversation_saved\"")
+            || second.contains("\"conversation_saved\"")
+    );
 }

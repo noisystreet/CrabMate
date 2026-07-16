@@ -75,6 +75,9 @@ pub struct SseNoticeTimelineHooks<'a> {
     pub on_timeline_log: Option<&'a mut dyn FnMut(TimelineLogInfo)>,
     /// AG-UI `RUN_FINISHED` / `RUN_ERROR` 触发流结束时的回调（V2Parser 使用）。
     pub on_run_finished: Option<&'a mut dyn FnMut()>,
+    /// AG-UI `STATE_SNAPSHOT`：后端在工具批结束/终答写盘等边界发送的完整状态快照，
+    /// 前端可用于断线重连恢复 overlay 与时间线。
+    pub on_state_snapshot: Option<&'a mut dyn FnMut(serde_json::Value)>,
 }
 
 /// SSE 控制面分发入口：按领域分组回调，与 `dispatch::try_dispatch_sse_control_payload` 分支顺序对齐。
@@ -82,6 +85,9 @@ pub struct SseControlSink<'a> {
     /// 用户可见错误文案语言（如 SSE 协议版本不匹配提示）。
     pub user_locale: Locale,
     pub on_error: &'a mut dyn FnMut(String),
+    /// AG-UI TEXT_MESSAGE_CONTENT / REASONING_MESSAGE_CONTENT 的正文增量。
+    /// V1 路径不经此回调。
+    pub on_delta: Option<&'a mut dyn FnMut(String)>,
     pub workspace_tool: SseWorkspaceToolHooks<'a>,
     pub staged_plan: SseStagedPlanHooks<'a>,
     pub clarify_trace: SseClarifyTraceHooks<'a>,

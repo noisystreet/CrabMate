@@ -64,6 +64,12 @@ pub trait StreamChatHost: Send + Sync {
 
     fn encode_thinking_trace_answer_phase_sse(&self) -> String;
 
+    /// 将推理文本增量编码为 SSE 行。V2 下包装为 REASONING_MESSAGE_CONTENT 事件；V1 返回原始文本。
+    fn encode_reasoning_content_sse(&self, chunk: &str) -> String;
+
+    /// 将终答文本增量编码为 SSE 行。V2 下包装为 TEXT_MESSAGE_CONTENT 事件；V1 返回原始文本。
+    fn encode_answer_content_sse(&self, chunk: &str) -> String;
+
     fn new_dsml_stream_filter(&self, enabled: bool) -> Box<dyn DsmlStreamFilter>;
 
     fn try_start_cli_wait_spinner(

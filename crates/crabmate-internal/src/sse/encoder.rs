@@ -26,9 +26,9 @@ impl SseEncoder for V1Encoder {
     }
 }
 
-/// 全局默认编码器（v1）。
+/// 全局默认编码器（v2 AG-UI）。
 pub fn default_encoder() -> Arc<dyn SseEncoder> {
-    Arc::new(V1Encoder)
+    Arc::new(super::encoder_v2::V2Encoder)
 }
 
 /// 根据客户端声明的 SSE 协议版本解析编码器。

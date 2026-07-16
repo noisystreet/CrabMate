@@ -200,6 +200,11 @@ async fn apply_non_execute_and_finish(
     p.turn
         .push_message(crate::types::Message::assistant_only(reply.to_string()));
     if let Some(out) = p.ctx.io.out {
+        let encoder = p.ctx.io.sse_encoder.as_ref();
+        // 关闭 reasoning 生命周期，开启 text 生命周期
+        crate::sse::send_reasoning_message_end_sse(out, "reasoning", encoder).await;
+        let message_id = "msg-assistant-intent";
+        crate::sse::send_text_message_start_sse(out, message_id, "assistant", encoder).await;
         let phase = sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
             assistant_answer_phase: true,
         });
@@ -214,6 +219,7 @@ async fn apply_non_execute_and_finish(
             },
         });
         let _ = sse::send_string_logged(out, final_tl, "intent::final_response").await;
+        crate::sse::send_text_message_end_sse(out, message_id, encoder).await;
     }
     Ok(false)
 }

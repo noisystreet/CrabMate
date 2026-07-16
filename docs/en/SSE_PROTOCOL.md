@@ -6,7 +6,7 @@ This document describes **control-plane JSON** sent by the CrabMate server on SS
 
 ## Protocol version `v` and negotiation
 
-- Each control JSON object **should** include top-level **`v`** (`u8`). Current value **`1`**, aligned with **`crabmate_sse_protocol::SSE_PROTOCOL_VERSION`**.
+- Each control JSON object **should** include top-level **`v`** (`u8`). Current value **`2`**, aligned with **`crabmate_sse_protocol::SSE_PROTOCOL_VERSION`**.
 - **Default**: Legacy payloads may omit `v`; deserialization treats missing as **`SSE_PROTOCOL_VERSION`** (`SseMessage` `#[serde(default = "default_sse_v")]`).
 - **Request body (optional)**: JSON for **`POST /chat`** and **`POST /chat/stream`** may include **`client_sse_protocol`** (`u8`). If **omitted**, the server does not reject on that basis. If **`client_sse_protocol` > server `SSE_PROTOCOL_VERSION`** → **HTTP 400**, `ApiError.code` **`SSE_CLIENT_TOO_NEW`**; if **`0`** → **`INVALID_SSE_CLIENT_PROTOCOL`**.
 - **First frame**: After a new stream is attached, the server emits **`sse_capabilities`** with **`supported_sse_v`** equal to server **`SSE_PROTOCOL_VERSION`**. The official Leptos client compares to its compile-time constant; on mismatch it calls `onError` and stops reading; the message includes **`SSE_SERVER_TOO_NEW`** (server newer, client older) or **`SSE_SERVER_TOO_OLD`** (server older; usually already rejected by **`SSE_CLIENT_TOO_NEW`**).
@@ -225,6 +225,82 @@ After parsing one merged `data:` string as JSON, the frontend applies a **fixed 
 - **`fixtures/sse_control_golden.jsonl`**: each line `description<TAB>JSON<TAB>expected-class` (`#` lines are comments).
 - **Rust**: `cargo test golden_sse_control` (runs **`crabmate-sse-protocol`** golden tests plus **frontend** alignment).
 When adding a new top-level key consumed by the Web UI: update `frontend/src/sse_dispatch/dispatch.rs`, **`crates/crabmate-sse-protocol/control_classify.rs`**, and golden lines.
+
+---
+
+## Appendix: AG-UI protocol (v2, in development)
+
+CrabMate is incrementally migrating from its custom SSE control-plane protocol (v1, the main body of this doc) to the [AG-UI protocol](https://docs.ag-ui.com/concepts/events) (v2). The two formats coexist during migration.
+
+### Wire format
+
+AG-UI events are single-line JSON without a `v` wrapper or `SseMessage` envelope:
+
+```json
+{"type":"RUN_FINISHED","threadId":"th-1","runId":"run-1"}
+```
+
+The `"type"` field discriminates event kind (`SCREAMING_SNAKE_CASE`).
+
+### Lifecycle
+
+| Event | Meaning |
+|-------|---------|
+| `RUN_STARTED` | Turn started (first frame) |
+| `RUN_FINISHED` | Turn completed → frontend `on_done` + `saw_stream_ended` |
+| `RUN_ERROR` | Turn failed → frontend `on_error` + `saw_stream_ended` |
+
+### Tool calls
+
+| Event | Meaning |
+|-------|---------|
+| `TOOL_CALL_START` | Tool declared (name + id) |
+| `TOOL_CALL_ARGS` | Tool arguments |
+| `TOOL_CALL_END` | Tool declaration end |
+| `TOOL_CALL_RESULT` | Tool result (`metadata.partial` = `true` → output fragment) |
+
+### Text messages (reserved)
+
+`TEXT_MESSAGE_START` / `CONTENT` / `END`, `REASONING_MESSAGE_START` / `CONTENT` / `END` are standard AG-UI events recognised by the frontend parser but **not currently emitted by the backend**.
+
+### CUSTOM extension events
+
+CrabMate-specific events use `{"type":"CUSTOM","customType":"…","data":{…}}`:
+
+| `customType` | Corresponding v1 event | Frontend callback |
+|-------------|------------------------|-------------------|
+| `tool_running` | `tool_running` | `on_tool_status` |
+| `parsing_tool_calls` | `parsing_tool_calls` | `on_parsing_tool_calls` |
+| `assistant_answer_phase` | `assistant_answer_phase` | `on_assistant_answer_phase` |
+| `turn_segment_start/end` | `turn_segment_start/end` | `on_turn_segment_start/end` |
+| `turn_tool_phase_end` | `turn_tool_phase_end` | `on_turn_tool_phase_end` |
+| `workspace_changed` | `workspace_changed` | `on_workspace_changed` |
+| `command_approval` | `command_approval_request` | `on_approval` |
+| `clarification_questionnaire` | `clarification_questionnaire` | `on_clarification_questionnaire` |
+| `thinking_trace` | `thinking_trace` | `on_thinking_trace` |
+| `timeline_log` | `timeline_log` | `on_timeline_log` |
+| `conversation_saved` | `conversation_saved` | `on_conversation_revision` |
+| `staged_plan_*` | `staged_plan_*` | `on_staged_plan_step_started/finished` |
+| `chat_ui_separator` | `chat_ui_separator` | Ignored |
+| `sse_capabilities` | `sse_capabilities` | Ignored |
+
+### State sync
+
+| Event | Meaning |
+|-------|---------|
+| `STATE_SNAPSHOT` | Full turn state snapshot at tool-batch boundaries (minimal payload currently; extensible) |
+| `STATE_DELTA` | State delta (reserved) |
+
+### Switching mechanism
+
+- `POST /chat/stream` body: optional `client_sse_protocol`: `2` = AG-UI
+- Server selects `V1Encoder` or `V2Encoder` based on this field
+- Frontend selects `V1Parser` or `V2Parser` based on `sse_protocol_version`
+- Default is now v2 (`SSE_PROTOCOL_VERSION=2`); v1 retained for compatibility
+
+### Golden test
+
+AG-UI event classification by V2Parser is validated in `fixtures/sse_ag_ui_golden.jsonl`, driven by the `golden_ag_ui_v2_parser_matches_expected` test in `frontend/src/api/chat_stream/parser_v2.rs`.
 
 ## Contract tests (`crabmate_tool` history envelope)
 

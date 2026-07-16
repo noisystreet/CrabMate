@@ -7,6 +7,7 @@ use crate::sse_dispatch::{
     ClarificationFormField, ClarificationQuestionnaireInfo, CommandApprovalRequest, SseControlSink,
     SseDispatch, StagedPlanStepEndInfo, StagedPlanStepStartInfo, ThinkingTraceInfo,
     TimelineLogInfo, ToolOutputChunkInfo, ToolResultInfo, TurnSegmentStartInfo,
+    try_dispatch_sse_control_payload,
 };
 
 use super::sse_parser::SseParser;
@@ -26,7 +27,8 @@ impl SseParser for V2Parser {
 
 /// 解析单行 AG-UI JSON 事件并分发到 `SseControlSink` 回调。
 fn parse_ag_ui_line(data: &str, sink: &mut SseControlSink<'_>) -> SseDispatch {
-    // 仅第一行可能是 V2 事件；多行时逐行处理（ToolCall 拆分可能产生 `\n` 拼接）。
+    // 先尝试 AG-UI 格式解析：逐行处理 JSON，按 type 字段分发
+    let mut handled_any = false;
     for line in data.lines() {
         let line = line.trim();
         if line.is_empty() {
@@ -37,8 +39,10 @@ fn parse_ag_ui_line(data: &str, sink: &mut SseControlSink<'_>) -> SseDispatch {
             return SseDispatch::Plain;
         };
         let Some(type_str) = val.get("type").and_then(|v| v.as_str()) else {
-            return SseDispatch::Plain;
+            // 无 type 字段：可能是 V1 协议格式，委派给 V1Parser
+            return try_dispatch_sse_control_payload(data, sink);
         };
+        handled_any = true;
         match type_str {
             // ── 生命周期 ──
             "RUN_FINISHED" => {
@@ -59,22 +63,31 @@ fn parse_ag_ui_line(data: &str, sink: &mut SseControlSink<'_>) -> SseDispatch {
             // ── CUSTOM 事件 ──
             "CUSTOM" => dispatch_custom(&val, sink),
 
-            // 尚未实现的 AG-UI 标准事件 → Handled（不当作 Plain 回落）
+            // ── 尚未实现的 AG-UI 标准事件（不当作 Plain 回落）──
             "RUN_STARTED"
             | "TEXT_MESSAGE_START"
-            | "TEXT_MESSAGE_CONTENT"
             | "TEXT_MESSAGE_END"
             | "REASONING_MESSAGE_START"
-            | "REASONING_MESSAGE_CONTENT"
-            | "REASONING_MESSAGE_END"
-            | "STATE_SNAPSHOT"
-            | "STATE_DELTA" => {}
+            | "REASONING_MESSAGE_END" => {}
+
+            // ── 正文增量 ──
+            "TEXT_MESSAGE_CONTENT" => dispatch_text_message_content(&val, sink),
+            "REASONING_MESSAGE_CONTENT" => dispatch_text_message_content(&val, sink),
+
+            // ── 状态同步 ──
+            "STATE_SNAPSHOT" => dispatch_state_snapshot(&val, sink),
+            "STATE_DELTA" => {} // STATE_DELTA 预留，当前不处理
 
             // 未知 type → Plain 回落（可能是纯文本增量）
             _ => return SseDispatch::Plain,
         }
     }
-    SseDispatch::Handled
+    if handled_any {
+        SseDispatch::Handled
+    } else {
+        // 全为空行 → Plain 回落（纯空格增量等）
+        SseDispatch::Plain
+    }
 }
 
 // ── 生命周期 ──
@@ -103,6 +116,16 @@ fn dispatch_run_error(val: &serde_json::Value, sink: &mut SseControlSink<'_>) {
     (sink.on_error)(line);
     if let Some(hook) = sink.notice_timeline.on_run_finished.as_mut() {
         hook();
+    }
+}
+
+// ── 状态同步 ──
+
+fn dispatch_state_snapshot(val: &serde_json::Value, sink: &mut SseControlSink<'_>) {
+    // STATE_SNAPSHOT 携带完整的回合状态 JSON，由应用层注册 `on_state_snapshot` 处理
+    let state = val.get("state").cloned().unwrap_or(serde_json::Value::Null);
+    if let Some(hook) = sink.notice_timeline.on_state_snapshot.as_mut() {
+        hook(state);
     }
 }
 
@@ -206,6 +229,17 @@ fn dispatch_tool_call_result(val: &serde_json::Value, sink: &mut SseControlSink<
         };
         if let Some(hook) = sink.workspace_tool.on_tool_result.as_mut() {
             hook(result_info);
+        }
+    }
+}
+
+// ── 正文增量 ──
+
+fn dispatch_text_message_content(val: &serde_json::Value, sink: &mut SseControlSink<'_>) {
+    let delta = val.get("delta").and_then(|v| v.as_str()).unwrap_or("");
+    if !delta.is_empty() {
+        if let Some(ref mut cb) = sink.on_delta {
+            cb(delta.to_string());
         }
     }
 }
@@ -508,6 +542,7 @@ mod tests {
         SseClarifyTraceHooks, SseNoticeTimelineHooks, SseStagedPlanHooks, SseWorkspaceToolHooks,
     };
     use std::cell::RefCell;
+    use std::path::PathBuf;
     use std::rc::Rc;
 
     fn dummy_sink() -> SseControlSink<'static> {
@@ -516,10 +551,53 @@ mod tests {
         SseControlSink {
             user_locale: Locale::ZhHans,
             on_error: on_err,
+            on_delta: None,
             workspace_tool: SseWorkspaceToolHooks::default(),
             staged_plan: SseStagedPlanHooks::default(),
             clarify_trace: SseClarifyTraceHooks::default(),
             notice_timeline: SseNoticeTimelineHooks::default(),
+        }
+    }
+
+    /// AG-UI 金样验证：V2Parser 对每行 JSON 的分类须与 `fixtures/sse_ag_ui_golden.jsonl` 一致。
+    #[test]
+    fn golden_ag_ui_v2_parser_matches_expected() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let path = root.join("../fixtures/sse_ag_ui_golden.jsonl");
+        let raw = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let parser = V2Parser;
+        for (line_no, line) in raw.lines().enumerate() {
+            let t = line.trim();
+            if t.is_empty() || t.starts_with('#') {
+                continue;
+            }
+            let parts: Vec<&str> = t.splitn(3, '\t').collect();
+            assert!(
+                parts.len() == 3,
+                "{}:{}: expected 3 tab columns, got {}",
+                path.display(),
+                line_no + 1,
+                parts.len(),
+            );
+            let json_line = parts[1].trim();
+            let want = parts[2].trim();
+            let mut sink = dummy_sink();
+            let dispatch = parser.parse(json_line, &mut sink);
+            let got = match dispatch {
+                SseDispatch::Handled => "handled",
+                SseDispatch::Plain => "plain",
+                SseDispatch::StreamEnded => "stream_ended",
+                SseDispatch::Stop => "stop",
+            };
+            assert_eq!(
+                got,
+                want,
+                "{}:{}: V2Parser dispatch mismatch\n  desc: {}\n  json: {json_line}\n  want: {want}\n  got:  {got}",
+                path.display(),
+                line_no + 1,
+                parts[0],
+            );
         }
     }
 
@@ -559,6 +637,7 @@ mod tests {
         let mut sink = SseControlSink {
             user_locale: Locale::ZhHans,
             on_error: &mut |_| {},
+            on_delta: None,
             workspace_tool: SseWorkspaceToolHooks {
                 on_tool_status_change: Some(&mut on_tool),
                 ..SseWorkspaceToolHooks::default()
@@ -607,6 +686,7 @@ mod tests {
         let mut sink = SseControlSink {
             user_locale: Locale::ZhHans,
             on_error: &mut |_| {},
+            on_delta: None,
             workspace_tool: SseWorkspaceToolHooks {
                 on_tool_call: Some(&mut on_tc),
                 ..SseWorkspaceToolHooks::default()

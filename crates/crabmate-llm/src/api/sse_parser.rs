@@ -124,10 +124,11 @@ async fn accumulate_reasoning_stream_delta(
         )?;
     }
     if let Some(tx) = ctx.out {
+        let line = ctx.host.encode_reasoning_content_sse(fragment);
         let _ = sse_out_send(
             ctx.host,
             tx,
-            fragment.to_string(),
+            line,
             "llm::stream_chat ingest delta (reasoning)",
             ctx.coop_cancel,
         )
@@ -434,10 +435,11 @@ async fn flush_dsml_stream_filter_tail(ctx: FlushDsmlTailCtx<'_>) -> std::io::Re
         )?;
     }
     if let Some(tx) = out {
+        let line = host.encode_answer_content_sse(&display);
         let _ = sse_out_send(
             host,
             tx,
-            display,
+            line,
             "llm::stream_chat flush dsml filter tail",
             coop_cancel,
         )
@@ -507,10 +509,11 @@ async fn ingest_sse_content_from_delta(frame: IngestSseContentFrame<'_>) -> std:
         )?;
     }
     if let Some(tx) = out {
+        let line = host.encode_answer_content_sse(&display);
         let _ = sse_out_send(
             host,
             tx,
-            display,
+            line,
             "llm::stream_chat ingest delta (content)",
             coop_cancel,
         )

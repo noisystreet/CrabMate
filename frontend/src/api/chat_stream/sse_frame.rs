@@ -12,9 +12,9 @@ use crate::sse_dispatch::{
 use super::ChatStreamCallbacks;
 use super::sse_parser::{SseParser, V1Parser, V2Parser};
 
-/// 当前使用的 SSE 解析器（v1）。Phase 2 将改为按 `client_sse_protocol` 选择。
+/// 当前使用的 SSE 解析器（v2 AG-UI）。
 fn default_parser() -> &'static dyn SseParser {
-    &V1Parser
+    &V2Parser
 }
 
 /// 根据协议版本选择解析器（预留；当前仍使用 `default_parser`）。
@@ -218,10 +218,16 @@ pub(super) fn handle_sse_block(
         *saw_stream_ended = true;
         (cbs.on_done)();
     };
+    let mut on_state_snapshot = |_state: serde_json::Value| {
+        // STATE_SNAPSHOT 由上层应用层注册回调处理；此处为占位桥接。
+        // 应用层可在 ChatStreamCallbacks 的 on_timeline_log 等路径中注册专用处理。
+    };
+    let mut on_ag_ui_delta = |text: String| (cbs.on_delta)(text);
 
     let mut cbs2 = SseControlSink {
         user_locale: loc,
         on_error: &mut on_err,
+        on_delta: Some(&mut on_ag_ui_delta),
         workspace_tool: SseWorkspaceToolHooks {
             on_workspace_changed: Some(&mut on_ws),
             on_tool_call: Some(&mut on_tool_call),
@@ -247,6 +253,7 @@ pub(super) fn handle_sse_block(
             on_conversation_saved_revision: Some(&mut on_conv_rev),
             on_timeline_log: Some(&mut on_timeline_log),
             on_run_finished: Some(&mut on_run_finished),
+            on_state_snapshot: Some(&mut on_state_snapshot),
         },
     };
     match default_parser().parse(&data, &mut cbs2) {
