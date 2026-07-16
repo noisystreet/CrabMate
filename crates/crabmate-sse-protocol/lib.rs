@@ -23,7 +23,7 @@ pub use sse_frame::{
 pub use stream_end_reason::StreamEndReason;
 
 /// 当前控制面版本：信封顶层 **`v`**，以及首帧 **`sse_capabilities.supported_sse_v`**。
-pub const SSE_PROTOCOL_VERSION: u8 = 1;
+pub const SSE_PROTOCOL_VERSION: u8 = 2;
 
 #[cfg(test)]
 mod tests {

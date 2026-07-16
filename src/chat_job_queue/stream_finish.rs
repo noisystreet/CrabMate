@@ -108,11 +108,26 @@ pub(crate) fn sse_payload_has_final_response_timeline(payload: &str) -> bool {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(payload) else {
         return false;
     };
-    v.get("timeline_log")
+    // V1 格式：{"v":2,"timeline_log":{"kind":"final_response",...}}
+    if v.get("timeline_log")
         .and_then(|x| x.as_object())
         .and_then(|obj| obj.get("kind"))
         .and_then(|x| x.as_str())
         .is_some_and(|k| k == "final_response")
+    {
+        return true;
+    }
+    // V2（AG-UI）格式：{"type":"CUSTOM","customType":"timeline_log","data":{"kind":"final_response",...}}
+    if v.get("type").and_then(|x| x.as_str()) == Some("CUSTOM")
+        && v.get("customType").and_then(|x| x.as_str()) == Some("timeline_log")
+    {
+        return v
+            .get("data")
+            .and_then(|d| d.get("kind"))
+            .and_then(|x| x.as_str())
+            .is_some_and(|k| k == "final_response");
+    }
+    false
 }
 
 fn stream_job_has_final_response_timeline(hub: &SseStreamHub, job_id: u64) -> bool {
@@ -196,6 +211,10 @@ pub(crate) async fn emit_missing_final_response_fallback_if_needed(
         "stream compatibility fallback: missing final_response timeline, emit synthesized terminal frame job_id={}",
         job_id
     );
+    let message_id = "msg-fallback";
+    // 关闭 reasoning 生命周期，开启 text 生命周期
+    crate::sse::send_reasoning_message_end_sse(sse_tx, "reasoning", encoder).await;
+    crate::sse::send_text_message_start_sse(sse_tx, message_id, "assistant", encoder).await;
     crate::sse::send_final_response_timeline_then_answer_phase(
         sse_tx,
         final_text,
@@ -204,6 +223,7 @@ pub(crate) async fn emit_missing_final_response_fallback_if_needed(
         encoder,
     )
     .await;
+    crate::sse::send_text_message_end_sse(sse_tx, message_id, encoder).await;
     true
 }
 
@@ -270,6 +290,21 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                 crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
                     cfg_snap, messages,
                 );
+            // AG-UI v2：发送状态快照，包含完整消息列表
+            if encoder.format_version() == 2 {
+                let snapshot_state = serde_json::json!({
+                    "phase": "stream_ended",
+                    "messages": messages.iter().map(|m| {
+                        serde_json::json!({
+                            "role": m.role,
+                            "content": crate::types::message_content_as_str(&m.content),
+                            "reasoning": m.reasoning_content,
+                            "tool_calls": m.tool_calls,
+                        })
+                    }).collect::<Vec<_>>(),
+                });
+                crate::sse::send_state_snapshot_sse(sse_tx, snapshot_state, encoder).await;
+            }
             // 先发 stream_ended 解除前端 busy，再做可能耗时的落盘/revision 同步，
             // 避免后处理阶段卡住导致 Web 长时间停在“模型生成中”。
             emit_stream_ended_once(

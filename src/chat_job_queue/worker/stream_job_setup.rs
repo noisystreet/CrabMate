@@ -68,6 +68,23 @@ pub(super) async fn stream_job_setup_runtime(
     )
     .await;
 
+    // AG-UI v2：标记回合开始与思维链生命周期
+    if p.queue_deps.sse_encoder.format_version() == 2 {
+        crate::sse::send_run_started_sse(
+            &sse_tx,
+            "main",              // thread_id
+            &job_id.to_string(), // run_id
+            p.queue_deps.sse_encoder.as_ref(),
+        )
+        .await;
+        crate::sse::send_reasoning_message_start_sse(
+            &sse_tx,
+            "reasoning",
+            p.queue_deps.sse_encoder.as_ref(),
+        )
+        .await;
+    }
+
     let (web_tool_ctx, approval_session_id) =
         stream_job_web_tool_ctx(p.web_approval_session, &sse_tx);
 

@@ -112,10 +112,10 @@ mod tests {
             assistant_answer_phase: true,
         });
         let v: Value = serde_json::from_str(s.trim()).unwrap();
-        assert!(v.get("v").map(|x| x.is_number()).unwrap_or(false));
-        assert_eq!(
-            v.get("assistant_answer_phase").and_then(|x| x.as_bool()),
-            Some(true)
+        // V2（AG-UI）下 AssistantAnswerPhase 映射为 CUSTOM 事件
+        assert!(
+            v.get("type").and_then(|x| x.as_str()) == Some("CUSTOM")
+                || v.get("v").map(|x| x.is_number()).unwrap_or(false)
         );
     }
 }

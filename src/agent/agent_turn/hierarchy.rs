@@ -78,14 +78,21 @@ async fn emit_hierarchical_final_assistant(p: &mut RunLoopParams<'_>, final_resp
         final_response.clone(),
     ));
     if let Some(out) = p.ctx.io.out {
+        // AG-UI v2：标记文本消息生命周期
+        let encoder = p.ctx.io.sse_encoder.as_ref();
+        // 关闭 reasoning 生命周期，开启 text 生命周期
+        crate::sse::send_reasoning_message_end_sse(out, "reasoning", encoder).await;
+        let message_id = "msg-assistant-turn".to_string();
+        crate::sse::send_text_message_start_sse(out, &message_id, "assistant", encoder).await;
         crate::sse::send_final_response_timeline_then_answer_phase(
             out,
             final_response,
             "hierarchical::final_response",
             "hierarchical::answer_phase",
-            p.ctx.io.sse_encoder.as_ref(),
+            encoder,
         )
         .await;
+        crate::sse::send_text_message_end_sse(out, &message_id, encoder).await;
     }
 }
 

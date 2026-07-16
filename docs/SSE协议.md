@@ -6,7 +6,7 @@
 
 ## 协议版本 `v` 与协商
 
-- 每条控制面 JSON 为对象，**推荐**包含顶层字段 **`v`**（`u8`）。当前版本为 **`1`**，与 **`crabmate_sse_protocol::SSE_PROTOCOL_VERSION`**（及 `sse::protocol::SSE_PROTOCOL_VERSION`）一致。
+- 每条控制面 JSON 为对象，**推荐**包含顶层字段 **`v`**（`u8`）。当前版本为 **`2`**，与 **`crabmate_sse_protocol::SSE_PROTOCOL_VERSION`**（及 `sse::protocol::SSE_PROTOCOL_VERSION`）一致。
 - **缺省**：历史载荷可省略 `v`，反序列化时按 **`SSE_PROTOCOL_VERSION`** 处理（见 `SseMessage` 的 `#[serde(default = "default_sse_v")]`）。
 - **请求体（可选）**：`POST /chat` 与 **`POST /chat/stream`** 的 JSON 可带 **`client_sse_protocol`**（`u8`）。**省略**时服务端不据此拒绝（兼容旧客户端）。若 **`client_sse_protocol >` 服务端 `SSE_PROTOCOL_VERSION`** → **HTTP 400**，`ApiError.code` 为 **`SSE_CLIENT_TOO_NEW`**；若为 **`0`** → **`INVALID_SSE_CLIENT_PROTOCOL`**。
 - **首帧能力**：新流建立后，服务端尽快下发 **`sse_capabilities`**，其中 **`supported_sse_v`** 等于服务端 **`SSE_PROTOCOL_VERSION`**。官方 Leptos 前端在收到该帧时比对本地常量：若 **`supported_sse_v ≠ SSE_PROTOCOL_VERSION`**，触发 `onError` 并停止读流，文案中含 **`SSE_SERVER_TOO_NEW`**（服务端更**新**、前端更**旧**）或 **`SSE_SERVER_TOO_OLD`**（服务端更**旧**、前端更**新**；通常此前已被 **`SSE_CLIENT_TOO_NEW`** 拒绝，保留用于重连重放等边界）。
@@ -221,6 +221,82 @@
 ## 契约测试（控制面分类）
 
 Web 将一条合并后的 `data:` 字符串解析为 JSON 后，按**固定顺序**判定 `stop` / `handled` / `plain`（见 `frontend/src/sse_dispatch/dispatch.rs`）。**单一事实来源**为 workspace crate **`crates/crabmate-sse-protocol`** 中的 **`classify_sse_control_outcome`**（`control_classify.rs`），与 **同一份金样**对齐；Leptos 另含测试 **`golden_sse_control_leptos_dispatch_matches_shared_classify`**，防止 `try_dispatch` 与分类漂移。
+
+---
+
+## 附录：AG-UI 协议（v2，开发中）
+
+CrabMate 正逐步从自定义 SSE 控制面协议（v1，本文档主体）迁移至 [AG-UI 协议](https://docs.ag-ui.com/concepts/events)（v2）。迁移期间两种格式共存。
+
+### 格式与信封
+
+AG-UI 事件为单行 JSON，无 `v` 字段或 `SseMessage` 信封：
+
+```json
+{"type":"RUN_FINISHED","threadId":"th-1","runId":"run-1"}
+```
+
+通过 `"type"` 字段区分事件类型（`SCREAMING_SNAKE_CASE`）。
+
+### 生命周期
+
+| 事件 | 含义 |
+|------|------|
+| `RUN_STARTED` | 回合开始（首帧） |
+| `RUN_FINISHED` | 回合正常结束 → 前端 `on_done` + `saw_stream_ended` |
+| `RUN_ERROR` | 回合出错 → 前端 `on_error` + `saw_stream_ended` |
+
+### 工具调用
+
+| 事件 | 含义 |
+|------|------|
+| `TOOL_CALL_START` | 工具声明（名称 + id） |
+| `TOOL_CALL_ARGS` | 工具参数 |
+| `TOOL_CALL_END` | 工具声明结束 |
+| `TOOL_CALL_RESULT` | 工具执行结果（`metadata.partial` 为 `true` 时表示输出片段） |
+
+### 文本消息（预留）
+
+`TEXT_MESSAGE_START` / `CONTENT` / `END`、`REASONING_MESSAGE_START` / `CONTENT` / `END` 为 AG-UI 标准事件，前端已注册解析但**当前后端不发送**。
+
+### CUSTOM 扩展事件
+
+CrabMate 专有事件通过 `{"type":"CUSTOM","customType":"…","data":{…}}` 承载：
+
+| `customType` | 对应 v1 事件 | 前端回调 |
+|-------------|-------------|---------|
+| `tool_running` | `tool_running` | `on_tool_status` |
+| `parsing_tool_calls` | `parsing_tool_calls` | `on_parsing_tool_calls` |
+| `assistant_answer_phase` | `assistant_answer_phase` | `on_assistant_answer_phase` |
+| `turn_segment_start/end` | `turn_segment_start/end` | `on_turn_segment_start/end` |
+| `turn_tool_phase_end` | `turn_tool_phase_end` | `on_turn_tool_phase_end` |
+| `workspace_changed` | `workspace_changed` | `on_workspace_changed` |
+| `command_approval` | `command_approval_request` | `on_approval` |
+| `clarification_questionnaire` | `clarification_questionnaire` | `on_clarification_questionnaire` |
+| `thinking_trace` | `thinking_trace` | `on_thinking_trace` |
+| `timeline_log` | `timeline_log` | `on_timeline_log` |
+| `conversation_saved` | `conversation_saved` | `on_conversation_revision` |
+| `staged_plan_*` | `staged_plan_*` | `on_staged_plan_step_started/finished` |
+| `chat_ui_separator` | `chat_ui_separator` | 忽略 |
+| `sse_capabilities` | `sse_capabilities` | 忽略 |
+
+### 状态同步
+
+| 事件 | 含义 |
+|------|------|
+| `STATE_SNAPSHOT` | 工具批结束等边界发送的完整回合状态快照（当前为最小标记，待扩展） |
+| `STATE_DELTA` | 状态增量（预留） |
+
+### 切换机制
+
+- `POST /chat/stream` 请求体可选字段 `client_sse_protocol`：`2` = AG-UI
+- 服务端根据此字段选择 V1Encoder 或 V2Encoder
+- 前端根据 `sse_protocol_version` 选择 `V1Parser` 或 `V2Parser`
+- 当前默认已切换为 v2（`SSE_PROTOCOL_VERSION=2`），v1 保留兼容
+
+### 金样测试
+
+AG-UI 事件的 V2Parser 分类验证见 `fixtures/sse_ag_ui_golden.jsonl`，由 `frontend/src/api/chat_stream/parser_v2.rs` 的 `golden_ag_ui_v2_parser_matches_expected` 测试驱动。
 
 - **`fixtures/sse_control_golden.jsonl`**：每行 `描述<TAB>JSON<TAB>期望分类`（`#` 开头行为注释）。
 - **Rust**：`cargo test golden_sse_control`（会跑 **`crabmate-sse-protocol`** 金样与 **frontend** 对齐测试）。

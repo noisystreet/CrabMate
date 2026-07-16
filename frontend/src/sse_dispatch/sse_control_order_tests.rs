@@ -26,6 +26,7 @@ fn dispatch_triage_string(data: &str) -> &'static str {
     let mut sink = SseControlSink {
         user_locale: Locale::ZhHans,
         on_error: &mut on_err,
+        on_delta: None,
         workspace_tool: SseWorkspaceToolHooks {
             on_workspace_changed: None,
             on_tool_call: None,
@@ -51,6 +52,7 @@ fn dispatch_triage_string(data: &str) -> &'static str {
             on_conversation_saved_revision: None,
             on_timeline_log: None,
             on_run_finished: None,
+            on_state_snapshot: None,
         },
     };
     match try_dispatch_sse_control_payload(data, &mut sink) {
