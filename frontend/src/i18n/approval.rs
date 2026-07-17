@@ -2,14 +2,6 @@ use super::Locale;
 
 // --- 审批条 ---
 
-#[allow(dead_code)]
-pub fn approval_toggle_label(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "需要审批：运行命令",
-        Locale::En => "Approval required: run command",
-    }
-}
-
 pub fn approval_deny(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "拒绝",
@@ -29,11 +21,6 @@ pub fn approval_allow_always(l: Locale) -> &'static str {
         Locale::ZhHans => "始终允许",
         Locale::En => "Always allow",
     }
-}
-
-#[allow(dead_code)]
-pub fn ellipsis_tail() -> &'static str {
-    "…"
 }
 
 // --- 审批弹窗 ---

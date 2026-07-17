@@ -198,7 +198,6 @@ pub(crate) async fn emit_missing_final_response_fallback_if_needed(
     sse_tx: &mpsc::Sender<String>,
     job_id: u64,
     messages: &[Message],
-    encoder: &dyn crate::sse::SseEncoder,
 ) -> bool {
     if stream_job_has_final_response_timeline_eventually(hub, job_id).await {
         return false;
@@ -213,17 +212,16 @@ pub(crate) async fn emit_missing_final_response_fallback_if_needed(
     );
     let message_id = "msg-fallback";
     // 关闭 reasoning 生命周期，开启 text 生命周期
-    crate::sse::send_reasoning_message_end_sse(sse_tx, "reasoning", encoder).await;
-    crate::sse::send_text_message_start_sse(sse_tx, message_id, "assistant", encoder).await;
+    crate::sse::send_reasoning_message_end_sse(sse_tx, "reasoning").await;
+    crate::sse::send_text_message_start_sse(sse_tx, message_id, "assistant").await;
     crate::sse::send_final_response_timeline_then_answer_phase(
         sse_tx,
         final_text,
         "chat_job_queue::stream final_response_fallback",
         "chat_job_queue::stream answer_phase_fallback",
-        encoder,
     )
     .await;
-    crate::sse::send_text_message_end_sse(sse_tx, message_id, encoder).await;
+    crate::sse::send_text_message_end_sse(sse_tx, message_id).await;
     true
 }
 
@@ -242,7 +240,6 @@ pub(super) struct StreamJobOutcomeCtx<'a> {
     pub(super) request_agent_role: Option<&'a str>,
     pub(super) persisted_active_agent_role: Option<&'a str>,
     pub(super) stream_ended_sent: &'a mut bool,
-    pub(super) encoder: &'a dyn crate::sse::SseEncoder,
 }
 
 pub(crate) async fn stream_job_outcome_after_agent_turn(
@@ -262,7 +259,6 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
         request_agent_role,
         persisted_active_agent_role,
         stream_ended_sent,
-        encoder,
     } = ctx;
     match r {
         Ok(()) if cancelled_by_signal => {
@@ -275,7 +271,6 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                 sse_tx,
                 job_id,
                 messages,
-                encoder,
             )
             .await;
             let has_visible_output = current_turn_has_visible_assistant_output(messages);
@@ -290,21 +285,19 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                 crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
                     cfg_snap, messages,
                 );
-            // AG-UI v2：发送状态快照，包含完整消息列表
-            if encoder.format_version() == 2 {
-                let snapshot_state = serde_json::json!({
-                    "phase": "stream_ended",
-                    "messages": messages.iter().map(|m| {
-                        serde_json::json!({
-                            "role": m.role,
-                            "content": crate::types::message_content_as_str(&m.content),
-                            "reasoning": m.reasoning_content,
-                            "tool_calls": m.tool_calls,
-                        })
-                    }).collect::<Vec<_>>(),
-                });
-                crate::sse::send_state_snapshot_sse(sse_tx, snapshot_state, encoder).await;
-            }
+            // 发送状态快照，包含完整消息列表
+            let snapshot_state = serde_json::json!({
+                "phase": "stream_ended",
+                "messages": messages.iter().map(|m| {
+                    serde_json::json!({
+                        "role": m.role,
+                        "content": crate::types::message_content_as_str(&m.content),
+                        "reasoning": m.reasoning_content,
+                        "tool_calls": m.tool_calls,
+                    })
+                }).collect::<Vec<_>>(),
+            });
+            crate::sse::send_state_snapshot_sse(sse_tx, snapshot_state).await;
             // 先发 stream_ended 解除前端 busy，再做可能耗时的落盘/revision 同步，
             // 避免后处理阶段卡住导致 Web 长时间停在“模型生成中”。
             emit_stream_ended_once(

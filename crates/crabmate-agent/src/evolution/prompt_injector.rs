@@ -95,18 +95,6 @@ impl Default for PromptInjector {
     }
 }
 
-/// 构建基础的进化系统提示（无建议时使用）
-#[allow(dead_code)] // 预留与策略注入组合；当前动态段见 [`PromptInjector::generate_injection`]
-pub fn evolution_system_prompt_base() -> &'static str {
-    r#"## Agent 自我进化行为准则
-
-1. **记录决策**：每次使用工具时，简要思考该工具的选择是否最优
-2. **从失败中学习**：如果某个工具执行失败，思考失败原因并尝试替代方案
-3. **效率意识**：避免重复调用相同工具，优先使用更高效的工具组合
-4. **反思重写**：如果需要多次反思重写，思考是否因为计划不够充分
-"#
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

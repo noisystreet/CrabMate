@@ -1,14 +1,18 @@
 //! 聊天相关 UI 写入 **`innerHTML`** 时的「展示用纯文本 → 安全 HTML」统一入口。
 
-use crate::i18n::Locale;
 use crate::markdown;
-use crate::message_format::{
-    assistant_text_for_display, assistant_thinking_body_and_answer_raw,
-    filter_assistant_thinking_markers_for_display,
+
+/// 助手非工具消息：流式/静态展示用的**纯文本**（仅测试用）。
+#[cfg(test)]
+use crate::{
+    i18n::Locale,
+    message_format::{
+        assistant_text_for_display, assistant_thinking_body_and_answer_raw,
+        filter_assistant_thinking_markers_for_display,
+    },
 };
 
-/// 助手非工具消息：流式/静态展示用的**纯文本**（与 `assistant_markdown_collapsible_view` 的 `Effect` 同源）。
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn assistant_body_plain_for_stream(
     reasoning_text: &str,
     text: &str,

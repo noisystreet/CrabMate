@@ -551,7 +551,7 @@ mod golden_tests {
     #[test]
     fn v2_encoder_all_variants_have_type_field() {
         let encoder = crate::sse::V2Encoder;
-        assert_eq!(encoder.format_version(), 2);
+        // 当前仅 AG-UI（v2）
 
         let payloads: Vec<(SsePayload, &str)> = vec![
             (

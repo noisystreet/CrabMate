@@ -42,8 +42,6 @@ mod turn_orchestrator_fsm;
 
 #[cfg(test)]
 mod fsm_orchestrator_golden;
-#[cfg(test)]
-mod orchestration_sse_golden;
 
 #[cfg(test)]
 mod planner_tool_call_reject_regression_tests;

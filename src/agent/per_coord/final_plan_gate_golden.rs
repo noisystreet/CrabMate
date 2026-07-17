@@ -7,8 +7,7 @@ use crate::types::{Message, MessageContent};
 
 use super::final_plan_gate::{
     FinalPlanGateArgs, FinalPlanGateEvent, FinalPlanGatePhase, FinalPlanGateRoute,
-    resolve_final_plan_gate_phase, run_final_plan_gate, run_final_plan_gate_semantic_completed,
-    step_check_structured_plan,
+    run_final_plan_gate, run_final_plan_gate_semantic_completed, step_check_structured_plan,
 };
 use super::final_plan_gate_context::{FinalPlanRequirePlanReason, build_final_plan_gate_context};
 use super::{AfterFinalAssistant, FinalPlanRequirementMode, PlanRequirementSource};
@@ -164,7 +163,7 @@ fn assert_resolve_phase(ctx: &str, body: &serde_json::Value) {
     let source = source_from_label(body_str(body, "source", ctx));
     let expect = body_str(body, "expect_phase", ctx);
     assert_eq!(
-        phase_label(resolve_final_plan_gate_phase(policy, source)),
+        phase_label(build_final_plan_gate_context(policy, source).phase),
         expect,
         "{ctx}: resolve_phase"
     );

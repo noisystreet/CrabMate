@@ -1,22 +1,12 @@
-//! CrabMate **`POST /chat/stream`** 控制面 JSON 的**协议版本**常量与 **`stop`/`handled`/`plain`** 分类。
+//! CrabMate **`POST /chat/stream`** 控制面 JSON 的**协议版本**常量与 SSE 帧层工具函数。
 //!
 //! - **`SSE_PROTOCOL_VERSION`**：与 `docs/SSE协议.md` 中的 **`v`** / `sse_capabilities.supported_sse_v` 一致。
-//! - **[`classify_sse_control_outcome`]**：与 Leptos **`frontend/src/sse_dispatch/dispatch.rs`** 同序；金样 **`fixtures/sse_control_golden.jsonl`**。
 
 mod control_classify;
-mod control_extract;
 mod sse_frame;
 mod stream_end_reason;
 
 pub use control_classify::{classify_sse_control_outcome, key_present_non_null};
-pub use control_extract::{
-    SseClarificationField, SseClarificationQuestionnaire, SseErrorStop, SseStagedPlanStepEnd,
-    SseStagedPlanStepStart, SseThinkingTrace, SseTimelineLog, SseToolCall, SseToolOutputChunk,
-    SseToolResult, SseTurnSegmentStart, extract_clarification_questionnaire, extract_error_stop,
-    extract_staged_plan_step_finished, extract_staged_plan_step_started, extract_thinking_trace,
-    extract_timeline_log, extract_tool_call, extract_tool_output_chunk, extract_tool_result,
-    extract_turn_segment_end, extract_turn_segment_start,
-};
 pub use sse_frame::{
     extract_stream_ended_reason, is_sse_done_sentinel, join_sse_data_lines, parse_sse_event_id,
 };

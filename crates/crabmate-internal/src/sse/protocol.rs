@@ -387,7 +387,8 @@ pub fn encode_message(payload: SsePayload) -> String {
     encoder.encode(&payload)
 }
 
-/// v1 编码器内部实现（`V1Encoder::encode` 调用此函数）。
+/// v1 编码器内部实现（仅测试使用）。
+#[cfg(test)]
 pub(crate) fn encode_message_v1(payload: &SsePayload) -> String {
     serde_json::to_string(&SseMessage {
         v: SSE_PROTOCOL_VERSION,

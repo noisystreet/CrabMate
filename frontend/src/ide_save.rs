@@ -141,24 +141,6 @@ pub fn spawn_save_all_dirty_tabs(ctx: IdeSaveContext, locale: RwSignal<Locale>) 
     });
 }
 
-/// 浏览器 `prompt` 收集新建相对路径；空白或取消返回 `None`。
-/// 已由 IDE 新建文件模态框替代；保留供测试或回退。
-#[must_use]
-#[allow(dead_code)]
-pub fn prompt_new_workspace_file_path(locale: Locale) -> Option<String> {
-    let raw = web_sys::window()
-        .and_then(|w| {
-            w.prompt_with_message_and_default(i18n::ide_new_file_prompt(locale), "")
-                .ok()
-        })
-        .flatten()?;
-    let path = raw.trim().to_string();
-    if path.is_empty() || path.chars().any(|c| c.is_whitespace()) {
-        return None;
-    }
-    Some(path)
-}
-
 /// 在工作区创建空文件并打开为新标签；成功后可选调用 `after_create`（例如刷新侧栏树）。
 pub fn spawn_create_and_open_file(
     ctx: IdeSaveContext,

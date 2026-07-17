@@ -106,7 +106,7 @@ fn openapi_components_schemas_chat_request() -> Value {
                     "client_sse_protocol": {
                         "type": "integer",
                         "format": "int32",
-                        "description": "可选；客户端 SSE 控制面版本，须 ≤ 服务端。大于服务端时 400（SSE_CLIENT_TOO_NEW）。见 docs/SSE协议.md"
+                        "description": "可选；客户端 SSE 控制面版本。须与服务端 SSE_PROTOCOL_VERSION（当前 2）一致，否则 400（SSE_PROTOCOL_MISMATCH）。"
                     },
                     "image_urls": {
                         "type": "array",

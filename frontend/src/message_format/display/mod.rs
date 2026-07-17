@@ -9,7 +9,10 @@ mod thinking_strip;
 pub(crate) use message_ex::{
     assistant_message_text_for_display_ex_with_body_strings, message_text_for_display_ex,
 };
-pub(crate) use plan_fence::{assistant_text_for_display, stored_message_is_staged_planner_round};
+#[cfg(test)]
+pub(crate) use plan_fence::assistant_text_for_display;
+pub(crate) use plan_fence::stored_message_is_staged_planner_round;
+#[cfg(test)]
 pub(crate) use thinking_strip::{
     assistant_thinking_body_and_answer_raw, filter_assistant_thinking_markers_for_display,
 };
