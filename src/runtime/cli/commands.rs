@@ -1,9 +1,9 @@
-//! `save-session` / `tool-replay` 子命令（不要求 `API_KEY`）。
+//! `save-session` / `tool-replay` / `sse-replay` 子命令（不要求 `API_KEY`）。
 
 use crate::config::AgentConfig;
 use crate::config::cli::{
     PluginInitCli, PluginListCli, PluginValidateCli, SaveSessionCli, SaveSessionFormat,
-    ToolReplayCli,
+    SseReplayCli, ToolReplayCli,
 };
 use crate::runtime::cli::{ReplExportKind, cli_effective_work_dir};
 use crate::runtime::cli_exit::{CliExitError, EXIT_TOOL_REPLAY_MISMATCH, EXIT_USAGE};
@@ -460,6 +460,57 @@ pub fn run_plugin_list_command(
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else {
         println!("汇总：ok={ok_count}, failed={fail_count}");
+    }
+    Ok(())
+}
+
+/// `crabmate sse-replay`：从 `sse-replay-events.jsonl` 回放 AG-UI 事件到 TurnLayout 投影（不要求 API_KEY）。
+pub fn run_sse_replay_command(cli: SseReplayCli) -> Result<(), Box<dyn std::error::Error>> {
+    let path = PathBuf::from(cli.file.trim());
+    if !path.is_file() {
+        eprintln!("SSE replay 文件不存在: {}", path.display());
+        return Err(std::io::Error::new(ErrorKind::NotFound, "SSE replay 文件不存在").into());
+    }
+    match cli.format.as_str() {
+        "rows" => {
+            let rows = crabmate_turn_layout::replay::replay_sse_events_to_web_rows(&path)?;
+            if rows.is_empty() {
+                println!("（无投影行）");
+            }
+            for (i, row) in rows.iter().enumerate() {
+                let preview: String = row.text.chars().take(120).collect();
+                println!(
+                    "[{}/{}] kind={} text={}{}",
+                    i + 1,
+                    rows.len(),
+                    row.kind,
+                    preview,
+                    if row.text.chars().count() > 120 {
+                        "…"
+                    } else {
+                        ""
+                    }
+                );
+                if let Some(ref name) = row.tool_name {
+                    println!("       tool_name={name}");
+                }
+                if let Some(ref tcid) = row.tool_call_id {
+                    println!("       tool_call_id={tcid}");
+                }
+            }
+        }
+        "canonical" => {
+            let turn = crabmate_turn_layout::replay::replay_sse_events_to_turn(&path)?;
+            let json = serde_json::to_string_pretty(&turn)?;
+            println!("{json}");
+        }
+        other => {
+            return Err(CliExitError::new(
+                EXIT_USAGE,
+                format!("sse-replay：未知 --format={other}（支持 rows / canonical）"),
+            )
+            .into());
+        }
     }
     Ok(())
 }

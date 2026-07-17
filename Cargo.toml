@@ -95,6 +95,7 @@ cmd_mate = { path = "crates/cmd_mate" }
 crabmate-display-rules = { path = "crates/crabmate-display-rules" }
 crabmate-tool-card = { path = "crates/crabmate-tool-card" }
 crabmate-sse-protocol = { path = "crates/crabmate-sse-protocol" }
+crabmate-turn-layout = { path = "crates/crabmate-turn-layout" }
 crabmate-types = { path = "crates/crabmate-types" }
 crabmate-config = { path = "crates/crabmate-config", default-features = false }
 crabmate-llm = { path = "crates/crabmate-llm" }

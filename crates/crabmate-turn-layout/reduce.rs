@@ -283,6 +283,8 @@ fn try_split_leading_final_sentence(combined: &str) -> Option<(String, String)> 
 }
 
 /// 无「总结：」等标记时：将末尾一句短终答从 batch 中剥离（形态 B 桩 / 短 plain final）。
+/// 仅在有 batch 旁注（`batch_was_empty=false`）时使用；`final_only` 场景下不调用，
+/// 因为无 batch 时 `final_answer` 是模型完整正文，短句启发式太容易误判。
 #[must_use]
 fn try_peel_trailing_final_sentence(combined: &str) -> Option<(String, String)> {
     let trimmed = combined.trim().trim_end_matches('。');
@@ -295,7 +297,18 @@ fn try_peel_trailing_final_sentence(combined: &str) -> Option<(String, String)> 
     if !head.contains('。') || head.len() <= tail.len() {
         return None;
     }
+    // tail 以 em-dash 署名行开头时不拆分
+    // （如 "...复杂。 — 列奥纳多·达·芬奇。" 不应把 "— 列奥纳多·达·芬奇。" 拆为终答）
+    if looks_like_blockquote_attribution(&tail) {
+        return None;
+    }
     Some((head, tail))
+}
+
+/// 判断文本是否像 markdown blockquote 的署名行（如 "— 列奥纳多·达·芬奇。"、"— Albert Einstein。"）。
+fn looks_like_blockquote_attribution(text: &str) -> bool {
+    let t = text.trim();
+    t.starts_with("— ") || t.starts_with("-- ") || (t.starts_with('—') && !t.contains('。'))
 }
 
 fn apply_repartition_split(turn: &mut Turn, batch_text: String, final_text: String) {
@@ -308,6 +321,12 @@ fn try_repartition_combined_text(combined: &str) -> Option<(String, String)> {
     try_split_combined_post_tool_answer(combined)
         .or_else(|| try_split_leading_final_sentence(combined))
         .or_else(|| try_peel_trailing_final_sentence(combined))
+}
+
+/// `final_only` 场景（无 batch 旁注）下的受限拆分：仅使用明确标记（`\n\n**` 等）拆分，
+/// 不使用基于短句位置启发式的 `try_split_leading_final_sentence` / `try_peel_trailing_final_sentence`。
+fn try_repartition_final_only_text(combined: &str) -> Option<(String, String)> {
+    try_split_combined_post_tool_answer(combined)
 }
 
 fn clear_batch_commentary_from_turn(turn: &mut Turn) {
@@ -338,6 +357,24 @@ fn attach_batch_text_to_turn(turn: &mut Turn, text: &str) {
     });
 }
 
+/// 合并 batch 与 final_part 为 combined 文本（处理重叠/包含关系）。
+fn merge_batch_and_final(batch: &str, final_part: &str) -> String {
+    if final_part.trim().is_empty() {
+        return batch.to_string();
+    }
+    let trimmed_batch = batch.trim();
+    if trimmed_batch.is_empty()
+        || final_part.starts_with(trimmed_batch)
+        || final_part.contains(trimmed_batch)
+    {
+        final_part.to_string()
+    } else {
+        let mut combined = batch.to_string();
+        combined.push_str(final_part);
+        combined
+    }
+}
+
 /// Web 块布局：`on_done` / 投影前将 batch + `final_answer` 巨泡拆成独立 batch 与终答。
 pub fn repartition_web_block_layout_stream(turn: &mut Turn) {
     if turn.tool_phase_open {
@@ -357,21 +394,15 @@ pub fn repartition_web_block_layout_stream(turn: &mut Turn) {
         }
     }
     let final_only = !final_part.trim().is_empty() && batch_was_empty;
-    let mut combined = batch;
-    if !final_part.trim().is_empty() {
-        if combined.trim().is_empty()
-            || final_part.starts_with(combined.trim())
-            || final_part.contains(combined.trim())
-        {
-            combined = final_part;
-        } else {
-            combined.push_str(&final_part);
-        }
-    }
+    let combined = merge_batch_and_final(&batch, &final_part);
     if combined.trim().is_empty() {
         return;
     }
-    if let Some((batch_text, final_text)) = try_repartition_combined_text(&combined) {
+    if let Some((batch_text, final_text)) = if final_only {
+        try_repartition_final_only_text(&combined)
+    } else {
+        try_repartition_combined_text(&combined)
+    } {
         apply_repartition_split(turn, batch_text, final_text);
         return;
     }
@@ -702,6 +733,26 @@ mod tests {
         repartition_web_block_layout_stream(&mut turn);
         assert!(turn.final_answer.is_none());
         assert!(crate::batch_narration_text(&turn).is_some_and(|t| t.contains("只有批说明")));
+    }
+
+    #[test]
+    fn peel_trailing_does_not_split_blockquote_attribution() {
+        let combined = "已在 `agent_space/quote.md` 中写入：\n\n> **\"Simplicity is the ultimate sophistication.\"** — Leonardo da Vinci\n>\n> 简洁是终极的复杂。 — 列奥纳多·达·芬奇。";
+        assert_eq!(try_peel_trailing_final_sentence(combined), None);
+    }
+
+    #[test]
+    fn peel_trailing_does_not_split_em_dash_attribution() {
+        let combined = "好的，先看看结构。读取了 INSTALL 文件。 — Albert Einstein。";
+        assert_eq!(try_peel_trailing_final_sentence(combined), None);
+    }
+
+    #[test]
+    fn peel_trailing_still_splits_normal_terminal_sentence() {
+        let combined = "好的，先解压 HPCG 看看结构。HPCG 源码已解压。读取 INSTALL 与 Makefile。开始编译。HPCG 编译完成。";
+        let (batch, fin) = try_peel_trailing_final_sentence(combined).expect("should split");
+        assert!(batch.contains("开始编译"));
+        assert_eq!(fin, "HPCG 编译完成。");
     }
 
     #[test]
