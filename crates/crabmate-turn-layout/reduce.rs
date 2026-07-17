@@ -388,6 +388,12 @@ pub fn repartition_web_block_layout_stream(turn: &mut Turn) {
     if !batch_was_empty && !final_part.trim().is_empty() {
         let b = batch.trim();
         let f = final_part.trim();
+        if b == f {
+            // 完全相同：保留终答，清除批说明（避免导出双段）。
+            clear_batch_commentary_from_turn(turn);
+            turn.final_answer = Some(final_part);
+            return;
+        }
         if !f.starts_with(b) && !b.contains(f) && !f.contains(b) {
             turn.final_answer = Some(final_part);
             return;

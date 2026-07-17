@@ -234,7 +234,15 @@ impl TurnCanonicalState {
         // 不应写入已清空的 `final_answer`——后续 delta 会提供完整文本，
         // append 会导致 "final_response文本 + delta文本" 翻倍。
         if self.awaiting_first_delta_of_new_round {
-            return true; // 消费事件但不写入
+            // 如果流式 delta 已被路由到 commentary（而非 final_answer），
+            // final_answer 仍为空，此时 final_response 应写入以补全终答。
+            self.awaiting_first_delta_of_new_round = false;
+            if self.turn.final_answer.is_none() {
+                self.apply(TurnEvent::AnswerDelta {
+                    delta: text.to_string(),
+                });
+            }
+            return true;
         }
         if self.turn.final_answer.is_some() {
             // 已有流式正文，不再用 final_response 替换——保留流式阶段的真实文本
@@ -476,19 +484,59 @@ mod tests {
     }
 
     #[test]
-    fn final_response_after_rotation_is_consumed_but_not_written() {
+    fn final_response_after_rotation_writes_when_no_delta_arrived() {
         let mut turn = TurnCanonicalState::new();
         // 旧轮次：流式 delta 写入
         assert!(turn.try_apply_answer_delta("旧轮正文。"));
         // 新轮次开始：reset 清空 final_answer 并设 awaiting 标志
         turn.reset_final_answer_for_new_round();
         assert!(turn.turn_ref().final_answer.is_none());
-        // final_response 在 reset 之后、新 delta 之前到达 → 消费但不写入
+        // final_response 在 reset 之后、新 delta 之前到达
+        // 流式 delta 被路由到 commentary 时，final_answer 仍为空，
+        // final_response 应写入以补全终答。
         assert!(turn.try_ingest_final_response_text("旧轮正文。"));
-        assert!(turn.turn_ref().final_answer.is_none());
-        // 新轮次 delta 到达 → 写入，清除 awaiting 标志
+        assert_eq!(turn.turn_ref().final_answer.as_deref(), Some("旧轮正文。"));
+        // 新轮次 delta 到达 → append 到已有 final_answer
         assert!(turn.try_apply_answer_delta("新轮正文。"));
-        assert_eq!(turn.turn_ref().final_answer.as_deref(), Some("新轮正文。"));
+        assert_eq!(
+            turn.turn_ref().final_answer.as_deref(),
+            Some("旧轮正文。新轮正文。")
+        );
+    }
+
+    #[test]
+    fn final_response_after_rotation_does_not_replace_existing_answer() {
+        let mut turn = TurnCanonicalState::new();
+        // 新轮次开始：reset
+        turn.reset_final_answer_for_new_round();
+        // 新轮次 delta 先到达 → 写入 final_answer，清除 awaiting
+        assert!(turn.try_apply_answer_delta("流式正文。"));
+        assert_eq!(turn.turn_ref().final_answer.as_deref(), Some("流式正文。"));
+        // final_response 后到达 → 已有流式正文，不替换
+        assert!(turn.try_ingest_final_response_text("旧轮总结。"));
+        assert_eq!(turn.turn_ref().final_answer.as_deref(), Some("流式正文。"));
+    }
+
+    #[test]
+    fn final_response_writes_when_deltas_routed_to_commentary() {
+        let mut turn = TurnCanonicalState::new();
+        // 模拟 llm-24 场景：新轮次开始
+        turn.reset_final_answer_for_new_round();
+        // 流式 delta 被路由到 commentary（非 final_answer），
+        // 模拟 `try_apply_commentary_delta` 调用
+        let _ =
+            turn.try_apply_commentary_delta("已创建 `README.md`，包含构建步骤、选项说明和示例。");
+        assert!(turn.turn_ref().final_answer.is_none());
+        // final_response 到达 → 应写入 final_answer（因为 deltas 去了 commentary）
+        assert!(
+            turn.try_ingest_final_response_text(
+                "已创建 `README.md`，包含构建步骤、选项说明和示例。"
+            )
+        );
+        assert_eq!(
+            turn.turn_ref().final_answer.as_deref(),
+            Some("已创建 `README.md`，包含构建步骤、选项说明和示例。")
+        );
     }
 
     #[test]
