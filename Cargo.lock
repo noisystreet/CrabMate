@@ -1073,6 +1073,7 @@ dependencies = [
  "crabmate-llm",
  "crabmate-sse-protocol",
  "crabmate-tool-card",
+ "crabmate-turn-layout",
  "crabmate-types",
  "crossterm",
  "futures-util",
@@ -1347,8 +1348,10 @@ dependencies = [
 name = "crabmate-turn-layout"
 version = "0.1.0"
 dependencies = [
+ "log",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

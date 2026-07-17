@@ -10,6 +10,7 @@ mod event;
 mod model;
 mod project;
 mod reduce;
+pub mod replay;
 
 pub use event::TurnEvent;
 pub use model::{PENDING_STREAM_COMMENTARY_SEGMENT_ID, SegmentKind, Turn, TurnSegment};

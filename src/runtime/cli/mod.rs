@@ -14,7 +14,7 @@ mod repl_slash_dispatch;
 pub use chat::{CliMainInvocationCommon, run_chat_invocation};
 pub use commands::{
     run_plugin_init_command, run_plugin_list_command, run_plugin_validate_command,
-    run_save_session_command, run_tool_replay_command,
+    run_save_session_command, run_sse_replay_command, run_tool_replay_command,
 };
 #[cfg(feature = "repl")]
 pub use repl::run_repl;

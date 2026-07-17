@@ -87,6 +87,7 @@ struct EarlyCliDispatch<'a> {
     extra_cli: ExtraCliCommand,
     save_session: Option<SaveSessionCli>,
     tool_replay: Option<crate::config::cli::ToolReplayCli>,
+    sse_replay: Option<crate::config::cli::SseReplayCli>,
     plugin_init: Option<PluginInitCli>,
     plugin_validate: Option<PluginValidateCli>,
     plugin_list: Option<PluginListCli>,
@@ -116,6 +117,14 @@ fn try_early_tool_replay(
     };
     let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
     crate::runtime::cli::run_tool_replay_command(&cfg, d.workspace_cli, tr)?;
+    Ok(true)
+}
+
+fn try_early_sse_replay(d: &EarlyCliDispatch<'_>) -> Result<bool, Box<dyn std::error::Error>> {
+    let Some(sr) = d.sse_replay.clone() else {
+        return Ok(false);
+    };
+    crate::runtime::cli::run_sse_replay_command(sr)?;
     Ok(true)
 }
 
@@ -223,26 +232,32 @@ fn try_dispatch_early_workspace_commands(
     d: &EarlyCliDispatch<'_>,
     tokens: Option<u32>,
 ) -> Result<Option<bool>, Box<dyn std::error::Error>> {
-    if try_early_save_session(d, tokens)? {
-        return Ok(Some(true));
+    type DispatchFn =
+        fn(&EarlyCliDispatch<'_>, Option<u32>) -> Result<bool, Box<dyn std::error::Error>>;
+    type DispatchFnNoTokens = fn(&EarlyCliDispatch<'_>) -> Result<bool, Box<dyn std::error::Error>>;
+    // 接受 tokens 参数的子命令
+    let with_tokens: &[DispatchFn] = &[
+        try_early_save_session,
+        try_early_tool_replay,
+        try_early_plugin_init,
+        try_early_plugin_validate,
+        try_early_plugin_list,
+    ];
+    for f in with_tokens {
+        if f(d, tokens)? {
+            return Ok(Some(true));
+        }
     }
-    if try_early_tool_replay(d, tokens)? {
-        return Ok(Some(true));
-    }
-    if try_early_plugin_init(d, tokens)? {
-        return Ok(Some(true));
-    }
-    if try_early_plugin_validate(d, tokens)? {
-        return Ok(Some(true));
-    }
-    if try_early_plugin_list(d, tokens)? {
-        return Ok(Some(true));
-    }
-    if try_early_workflow_validate(d)? {
-        return Ok(Some(true));
-    }
-    if try_early_workflow_compile(d)? {
-        return Ok(Some(true));
+    // 不含 tokens 的子命令
+    let no_tokens: &[DispatchFnNoTokens] = &[
+        try_early_sse_replay,
+        try_early_workflow_validate,
+        try_early_workflow_compile,
+    ];
+    for f in no_tokens {
+        if f(d)? {
+            return Ok(Some(true));
+        }
     }
     Ok(None)
 }
@@ -680,6 +695,7 @@ pub(super) async fn run_cli_from_parsed(
             extra_cli: args.extra_cli,
             save_session: args.save_session.clone(),
             tool_replay: args.tool_replay.clone(),
+            sse_replay: args.sse_replay.clone(),
             plugin_init: args.plugin_init.clone(),
             plugin_validate: args.plugin_validate.clone(),
             plugin_list: args.plugin_list.clone(),

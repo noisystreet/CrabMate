@@ -445,6 +445,9 @@ pub enum Commands {
     /// 工具调用时间线导出与重放（fixture / 回归；**不要**求 `API_KEY`）
     #[command(name = "tool-replay")]
     ToolReplay(ToolReplayCmd),
+    /// 从 SSE 事件录制文件回放 AG-UI 事件到 TurnLayout 投影（**不要**求 API_KEY）
+    #[command(name = "sse-replay")]
+    SseReplay(SseReplayCmd),
     /// MCP stdio 客户端运维：列出本进程内已缓存会话（**不要**求 API_KEY）
     Mcp(McpCmd),
     /// 动态工具模板与校验（工作区 `plugins/*.json`）
@@ -510,6 +513,8 @@ pub struct ParsedCliArgs {
     pub save_session: Option<SaveSessionCli>,
     /// `Some` 时执行工具重放子命令后退出（不要求 API_KEY）
     pub tool_replay: Option<ToolReplayCli>,
+    /// `Some` 时执行 SSE replay 回放后退出（不要求 API_KEY）
+    pub sse_replay: Option<SseReplayCli>,
     /// `Some` 时执行动态工具模板生成后退出（不要求 API_KEY）
     pub plugin_init: Option<PluginInitCli>,
     /// `Some` 时执行动态工具校验后退出（不要求 API_KEY）
@@ -553,4 +558,27 @@ pub struct PluginListCli {
     pub file: Option<String>,
     pub json: bool,
     pub jsonl: bool,
+}
+
+/// `sse-replay` 子命令：从 `sse-replay-events.jsonl` 回放 AG-UI 事件并投影为 Web 块布局行。
+#[derive(Parser, Debug, Clone)]
+pub struct SseReplayCmd {
+    /// `sse-replay-events.jsonl` 文件路径
+    pub file: String,
+
+    /// 输出格式：rows（默认，投影行列表）或 canonical（canonical Turn 状态）
+    #[arg(long, default_value = "rows")]
+    pub format: String,
+
+    /// 仅输出指定 job_id 的事件（0 表示全部）
+    #[arg(long, default_value_t = 0)]
+    pub job_id: u64,
+}
+
+/// `sse-replay` 解析结果（供 `runtime::cli` 执行；**不要**求 API_KEY）
+#[derive(Debug, Clone)]
+pub struct SseReplayCli {
+    pub file: String,
+    pub format: String,
+    pub job_id: u64,
 }

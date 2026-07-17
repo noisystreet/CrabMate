@@ -3,7 +3,7 @@
 use super::definitions::{
     BenchmarkCliArgs, ChatCliArgs, Commands, ExtraCliCommand, GlobalOpts, McpSubCmd, ParsedCliArgs,
     PluginInitCli, PluginListCli, PluginSubCmd, PluginValidateCli, RootCli, SaveSessionCli,
-    ToolReplayCli, ToolReplaySubCmd, WorkflowFileCli, WorkflowSubCmd,
+    SseReplayCli, ToolReplayCli, ToolReplaySubCmd, WorkflowFileCli, WorkflowSubCmd,
 };
 use super::legacy_argv::normalize_legacy_argv;
 use clap::Parser;
@@ -93,6 +93,7 @@ impl CliParseCtx {
             extra_cli: ExtraCliCommand::None,
             save_session: None,
             tool_replay: None,
+            sse_replay: None,
             plugin_init: None,
             plugin_validate: None,
             plugin_list: None,
@@ -221,6 +222,13 @@ fn build_parsed_cli_args(
                 },
             };
             b.tool_replay = Some(tr_cli);
+        }
+        Commands::SseReplay(sr) => {
+            b.sse_replay = Some(SseReplayCli {
+                file: sr.file,
+                format: sr.format,
+                job_id: sr.job_id,
+            });
         }
         Commands::Mcp(m) => {
             let (extra_cli, no_tools_mcp) = match m.sub {
