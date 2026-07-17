@@ -100,3 +100,8 @@ tmp/
 *.tar.gz
 *.zip
 chat_export_*.md
+# SSE / Turn replay（本机调试产物，勿提交）
+turn-replay-events.jsonl
+sse-replay-events.jsonl
+# proptest 回归测试缓存（本机产物，勿提交）
+proptest-regressions/

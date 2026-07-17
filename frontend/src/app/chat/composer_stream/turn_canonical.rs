@@ -15,25 +15,32 @@ use crate::sse_dispatch::TurnSegmentStartInfo;
 
 pub(super) struct TurnCanonicalState {
     turn: Turn,
-    /// 新轮次已开始（`turn_segment_start kind=answer` 清空了 `final_answer`），
-    /// 但尚未收到该轮次的流式 delta。
-    /// 此期间 `final_response` timeline 事件不应写入 `final_answer`，
-    /// 因为后续 delta 会提供完整文本，append 会导致内容翻倍。
-    awaiting_first_delta_of_new_round: bool,
+    new_round_answer_state: NewRoundAnswerState,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NewRoundAnswerState {
+    Stable,
+    /// `turn_segment_start kind=answer` 刚清空 `final_answer`，尚未收到新轮次正文 delta。
+    /// 此时晚到的上一轮 `final_response` 只能消费，不能写回终答。
+    AwaitingFirstDelta,
+    /// 新轮次已有文本 delta，但被门控路由到了 commentary；后续匹配的
+    /// `final_response` 可补写 `final_answer`，避免导出终答为空。
+    CommentaryDeltaSeen,
 }
 
 impl TurnCanonicalState {
     pub(super) fn new() -> Self {
         Self {
             turn: Turn::default(),
-            awaiting_first_delta_of_new_round: false,
+            new_round_answer_state: NewRoundAnswerState::Stable,
         }
     }
 
     /// 新模型轮次开始：清空终答桶，准备接收新一轮 delta。
     pub(super) fn reset_final_answer_for_new_round(&mut self) {
         self.turn.final_answer = None;
-        self.awaiting_first_delta_of_new_round = true;
+        self.new_round_answer_state = NewRoundAnswerState::AwaitingFirstDelta;
     }
 
     pub(super) fn turn_ref(&self) -> &Turn {
@@ -62,6 +69,31 @@ impl TurnCanonicalState {
             kind: SegmentKind::Commentary,
             before_tool_call_id: None,
         });
+    }
+
+    fn note_commentary_delta_after_reset(&mut self) {
+        if self.new_round_answer_state == NewRoundAnswerState::AwaitingFirstDelta
+            && !self.turn.tool_phase_open
+        {
+            self.new_round_answer_state = NewRoundAnswerState::CommentaryDeltaSeen;
+        }
+    }
+
+    fn commentary_matches_final_response(&self, text: &str) -> bool {
+        let closed = batch_narration_text(&self.turn).unwrap_or_default();
+        let open = streaming_commentary_block_text(&self.turn).unwrap_or_default();
+        let mut commentary = String::with_capacity(closed.len() + open.len());
+        commentary.push_str(&closed);
+        commentary.push_str(&open);
+        let c = commentary.trim();
+        let t = text.trim();
+        !c.is_empty()
+            && (c == t
+                || c.ends_with(t)
+                || t.ends_with(c)
+                || c.contains(t)
+                || t.contains(c)
+                || assistant_texts_fuzzy_duplicate(c, t))
     }
 
     /// `parsing_tool_calls` demote 后：将已显示在 loading 泡内的正文迁入 canonical pending 段。
@@ -147,6 +179,7 @@ impl TurnCanonicalState {
         if delta.is_empty() {
             return false;
         }
+        self.note_commentary_delta_after_reset();
         if let Some(seg_id) = self
             .turn
             .segments
@@ -217,7 +250,7 @@ impl TurnCanonicalState {
         if self.turn.tool_phase_open {
             return false;
         }
-        self.awaiting_first_delta_of_new_round = false;
+        self.new_round_answer_state = NewRoundAnswerState::Stable;
         self.apply(TurnEvent::AnswerDelta {
             delta: delta.to_string(),
         });
@@ -229,20 +262,23 @@ impl TurnCanonicalState {
         if text.trim().is_empty() || self.turn.tool_phase_open {
             return false;
         }
-        // 新轮次已开始但尚未收到流式 delta：
-        // `final_response` 是上一轮 LLM 调用的终答总结，
-        // 不应写入已清空的 `final_answer`——后续 delta 会提供完整文本，
-        // append 会导致 "final_response文本 + delta文本" 翻倍。
-        if self.awaiting_first_delta_of_new_round {
-            // 如果流式 delta 已被路由到 commentary（而非 final_answer），
-            // final_answer 仍为空，此时 final_response 应写入以补全终答。
-            self.awaiting_first_delta_of_new_round = false;
-            if self.turn.final_answer.is_none() {
-                self.apply(TurnEvent::AnswerDelta {
-                    delta: text.to_string(),
-                });
+        // 新轮次刚开始时，`final_response` 可能是上一轮晚到的终答总结。
+        // 只有确认新轮次文本已被路由到 commentary，且内容匹配时，才补写终答。
+        match self.new_round_answer_state {
+            NewRoundAnswerState::AwaitingFirstDelta => {
+                return true;
             }
-            return true;
+            NewRoundAnswerState::CommentaryDeltaSeen => {
+                if self.turn.final_answer.is_none() && self.commentary_matches_final_response(text)
+                {
+                    self.new_round_answer_state = NewRoundAnswerState::Stable;
+                    self.apply(TurnEvent::AnswerDelta {
+                        delta: text.to_string(),
+                    });
+                }
+                return true;
+            }
+            NewRoundAnswerState::Stable => {}
         }
         if self.turn.final_answer.is_some() {
             // 已有流式正文，不再用 final_response 替换——保留流式阶段的真实文本
@@ -484,24 +520,19 @@ mod tests {
     }
 
     #[test]
-    fn final_response_after_rotation_writes_when_no_delta_arrived() {
+    fn late_final_response_after_rotation_is_consumed_but_not_written() {
         let mut turn = TurnCanonicalState::new();
         // 旧轮次：流式 delta 写入
         assert!(turn.try_apply_answer_delta("旧轮正文。"));
         // 新轮次开始：reset 清空 final_answer 并设 awaiting 标志
         turn.reset_final_answer_for_new_round();
         assert!(turn.turn_ref().final_answer.is_none());
-        // final_response 在 reset 之后、新 delta 之前到达
-        // 流式 delta 被路由到 commentary 时，final_answer 仍为空，
-        // final_response 应写入以补全终答。
+        // 上一轮 final_response 在 reset 之后、新 delta 之前晚到 → 消费但不写入。
         assert!(turn.try_ingest_final_response_text("旧轮正文。"));
-        assert_eq!(turn.turn_ref().final_answer.as_deref(), Some("旧轮正文。"));
-        // 新轮次 delta 到达 → append 到已有 final_answer
+        assert!(turn.turn_ref().final_answer.is_none());
+        // 新轮次 delta 到达 → 只写入新轮正文，不拼接旧轮文本。
         assert!(turn.try_apply_answer_delta("新轮正文。"));
-        assert_eq!(
-            turn.turn_ref().final_answer.as_deref(),
-            Some("旧轮正文。新轮正文。")
-        );
+        assert_eq!(turn.turn_ref().final_answer.as_deref(), Some("新轮正文。"));
     }
 
     #[test]
@@ -536,6 +567,22 @@ mod tests {
         assert_eq!(
             turn.turn_ref().final_answer.as_deref(),
             Some("已创建 `README.md`，包含构建步骤、选项说明和示例。")
+        );
+    }
+
+    #[test]
+    fn final_response_after_commentary_route_ignores_unmatched_late_text() {
+        let mut turn = TurnCanonicalState::new();
+        turn.reset_final_answer_for_new_round();
+        let _ = turn.try_apply_commentary_delta("新轮 commentary。");
+
+        assert!(turn.try_ingest_final_response_text("旧轮终答。"));
+        assert!(turn.turn_ref().final_answer.is_none());
+
+        assert!(turn.try_ingest_final_response_text("新轮 commentary。"));
+        assert_eq!(
+            turn.turn_ref().final_answer.as_deref(),
+            Some("新轮 commentary。")
         );
     }
 
