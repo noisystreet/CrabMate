@@ -8,7 +8,7 @@ use tokio::sync::mpsc::Sender;
 
 use super::encoder::SseEncoder;
 use super::protocol::SsePayload;
-use super::{send_string_logged, send_string_logged_cooperative_cancel};
+use super::send_string_logged;
 
 /// 与 Web SSE 控制面同形的回合事件回调（`SsePayload` 克隆后投递）。
 pub type SseControlMirror = Arc<dyn Fn(SsePayload) + Send + Sync>;
@@ -33,23 +33,6 @@ pub async fn send_sse_control_payload_optional(
         return true;
     };
     send_string_logged(tx, encoder.encode(&payload), context).await
-}
-
-/// 协作取消变体：发送失败时置位 **`cancel`**（与 [`send_string_logged_cooperative_cancel`] 一致）。
-#[allow(dead_code)] // 预留与协作取消路径对齐；当前调用点仍多用 [`send_string_logged_cooperative_cancel`]。
-pub async fn send_sse_control_payload_cooperative_cancel_optional(
-    out: Option<&Sender<String>>,
-    mirror: Option<&SseControlMirror>,
-    payload: SsePayload,
-    context: &'static str,
-    cancel: Option<&std::sync::atomic::AtomicBool>,
-    encoder: &dyn SseEncoder,
-) -> bool {
-    mirror_sse_control_optional(mirror, &payload);
-    let Some(tx) = out else {
-        return true;
-    };
-    send_string_logged_cooperative_cancel(tx, encoder.encode(&payload), context, cancel).await
 }
 
 #[cfg(test)]
@@ -78,7 +61,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_sse_control_payload_optional_without_tx_still_ok() {
-        let encoder = crate::sse::V1Encoder;
+        let encoder = crate::sse::V2Encoder;
         let p = SsePayload::ToolRunning {
             tool_running: false,
         };
@@ -87,7 +70,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_sse_control_payload_optional_with_tx_delivers() {
-        let encoder = crate::sse::V1Encoder;
+        let encoder = crate::sse::V2Encoder;
         let (tx, mut rx) = mpsc::channel::<String>(4);
         let p = SsePayload::ParsingToolCalls {
             parsing_tool_calls: true,
@@ -96,28 +79,5 @@ mod tests {
         drop(tx);
         let line = rx.recv().await.expect("line");
         assert!(line.contains("parsing_tool_calls"));
-    }
-
-    #[tokio::test]
-    async fn send_sse_control_cooperative_cancel_sets_flag_when_send_fails() {
-        let encoder = crate::sse::V1Encoder;
-        let (tx, rx) = mpsc::channel::<String>(1);
-        drop(rx);
-        let cancel = std::sync::atomic::AtomicBool::new(false);
-        let p = SsePayload::AssistantAnswerPhase {
-            assistant_answer_phase: true,
-        };
-        assert!(
-            !send_sse_control_payload_cooperative_cancel_optional(
-                Some(&tx),
-                None,
-                p,
-                "test_ctx",
-                Some(&cancel),
-                &encoder,
-            )
-            .await
-        );
-        assert!(cancel.load(std::sync::atomic::Ordering::SeqCst));
     }
 }

@@ -7,7 +7,6 @@ use crate::sse_dispatch::{
     ClarificationFormField, ClarificationQuestionnaireInfo, CommandApprovalRequest, SseControlSink,
     SseDispatch, StagedPlanStepEndInfo, StagedPlanStepStartInfo, ThinkingTraceInfo,
     TimelineLogInfo, ToolOutputChunkInfo, ToolResultInfo, TurnSegmentStartInfo,
-    try_dispatch_sse_control_payload,
 };
 
 use super::sse_parser::SseParser;
@@ -18,10 +17,6 @@ pub(crate) struct V2Parser;
 impl SseParser for V2Parser {
     fn parse(&self, data: &str, sink: &mut SseControlSink<'_>) -> SseDispatch {
         parse_ag_ui_line(data, sink)
-    }
-
-    fn protocol_version(&self) -> u8 {
-        2
     }
 }
 
@@ -39,8 +34,8 @@ fn parse_ag_ui_line(data: &str, sink: &mut SseControlSink<'_>) -> SseDispatch {
             return SseDispatch::Plain;
         };
         let Some(type_str) = val.get("type").and_then(|v| v.as_str()) else {
-            // 无 type 字段：可能是 V1 协议格式，委派给 V1Parser
-            return try_dispatch_sse_control_payload(data, sink);
+            // 无 type 字段 → Plain 回落（AG-UI 协议依赖 type 字段区分类别）
+            return SseDispatch::Plain;
         };
         handled_any = true;
         match type_str {
@@ -537,7 +532,6 @@ fn dispatch_info_custom(custom_type: &str, val: &serde_json::Value, sink: &mut S
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::i18n::Locale;
     use crate::sse_dispatch::{
         SseClarifyTraceHooks, SseNoticeTimelineHooks, SseStagedPlanHooks, SseWorkspaceToolHooks,
     };
@@ -549,7 +543,6 @@ mod tests {
         // 使用 Box::leak 创建静态闭包，避免临时引用生命周期问题
         let on_err: &'static mut dyn FnMut(String) = Box::leak(Box::new(|_| {}));
         SseControlSink {
-            user_locale: Locale::ZhHans,
             on_error: on_err,
             on_delta: None,
             workspace_tool: SseWorkspaceToolHooks::default(),
@@ -588,7 +581,6 @@ mod tests {
                 SseDispatch::Handled => "handled",
                 SseDispatch::Plain => "plain",
                 SseDispatch::StreamEnded => "stream_ended",
-                SseDispatch::Stop => "stop",
             };
             assert_eq!(
                 got,
@@ -635,7 +627,6 @@ mod tests {
         let called2 = Rc::clone(&called);
         let mut on_tool = |b: bool| *called2.borrow_mut() = b;
         let mut sink = SseControlSink {
-            user_locale: Locale::ZhHans,
             on_error: &mut |_| {},
             on_delta: None,
             workspace_tool: SseWorkspaceToolHooks {
@@ -684,7 +675,6 @@ mod tests {
             *called2.borrow_mut() += 1;
         };
         let mut sink = SseControlSink {
-            user_locale: Locale::ZhHans,
             on_error: &mut |_| {},
             on_delta: None,
             workspace_tool: SseWorkspaceToolHooks {

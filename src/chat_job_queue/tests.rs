@@ -2,7 +2,7 @@ use crabmate_sse_protocol::StreamEndReason;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, timeout};
 
-use crate::sse::{SseStreamHub, V1Encoder};
+use crate::sse::SseStreamHub;
 use crate::types::Message;
 
 use super::ChatJobQueue;
@@ -30,8 +30,17 @@ async fn fallback_emits_final_response_when_missing() {
     let (tx, mut rx) = mpsc::channel::<String>(8);
     let messages = vec![Message::assistant_only("最终总结内容")];
 
-    emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages, &V1Encoder).await;
+    emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages).await;
 
+    // 跳过 reasoning_end / text_start，读取 timeline + answer_phase
+    let _reasoning_end = timeout(Duration::from_millis(200), rx.recv())
+        .await
+        .expect("recv reasoning_end")
+        .expect("reasoning_end payload");
+    let _text_start = timeout(Duration::from_millis(200), rx.recv())
+        .await
+        .expect("recv text_start")
+        .expect("text_start payload");
     let first = timeout(Duration::from_millis(200), rx.recv())
         .await
         .expect("recv final_response frame")
@@ -42,7 +51,10 @@ async fn fallback_emits_final_response_when_missing() {
         .await
         .expect("recv answer_phase frame")
         .expect("answer_phase payload");
-    assert!(second.contains("\"assistant_answer_phase\":true"));
+    assert!(
+        second.contains("\"customType\":\"assistant_answer_phase\""),
+        "second frame should be answer_phase CUSTOM: {second}"
+    );
 }
 
 #[tokio::test]
@@ -66,7 +78,7 @@ async fn fallback_skips_when_final_response_arrives_with_small_delay() {
         let _ = hub_for_task.publish(job_id, delayed_payload);
     });
 
-    emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages, &V1Encoder).await;
+    emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages).await;
 
     let no_frame = timeout(Duration::from_millis(120), rx.recv()).await;
     assert!(no_frame.is_err(), "已有 final_response 时不应再补发");
@@ -80,25 +92,35 @@ async fn fallback_is_idempotent_for_same_job() {
     let (tx, mut rx) = mpsc::channel::<String>(8);
     let messages = vec![Message::assistant_only("最终总结内容")];
 
-    emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages, &V1Encoder).await;
+    emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages).await;
+    // 跳过 reasoning_end / text_start
+    let _r = rx.recv().await;
+    let _t = rx.recv().await;
     let first = timeout(Duration::from_millis(200), rx.recv())
         .await
-        .expect("recv first frame")
+        .expect("recv first frame (timeline)")
         .expect("first frame payload");
     let second = timeout(Duration::from_millis(200), rx.recv())
         .await
-        .expect("recv second frame")
+        .expect("recv second frame (answer_phase)")
         .expect("second frame payload");
     assert!(sse_payload_has_final_response_timeline(&first));
-    assert!(second.contains("\"assistant_answer_phase\":true"));
+    assert!(
+        second.contains("\"customType\":\"assistant_answer_phase\""),
+        "second frame should be answer_phase CUSTOM: {second}"
+    );
 
     // 首次 fallback 通过桥接后，hub 已可见 final_response；二次调用应无输出。
-    if let Some(payload) = hub.publish(job_id, first) {
-        let _ = payload;
-    }
-    emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages, &V1Encoder).await;
-    let no_more = timeout(Duration::from_millis(120), rx.recv()).await;
-    assert!(no_more.is_err(), "同一 job 的 fallback 不应重复发");
+    hub.publish(job_id, first);
+    // eventual 内部有 5×20ms 轮询，等待足够久确保 publish 被读到
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    // 二次调用应直接返回 false，不向 tx 写入任何数据
+    let emitted_again =
+        emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages).await;
+    assert!(
+        !emitted_again,
+        "二次 fallback 应返回 false（hub 中已有 final_response）"
+    );
 }
 
 #[tokio::test]
@@ -114,7 +136,7 @@ async fn fallback_skips_when_turn_has_no_new_assistant() {
         Message::user_only("本轮提问"),
     ];
 
-    emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages, &V1Encoder).await;
+    emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages).await;
 
     let no_frame = timeout(Duration::from_millis(120), rx.recv()).await;
     assert!(

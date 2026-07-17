@@ -10,20 +10,11 @@ use crate::sse_dispatch::{
 };
 
 use super::ChatStreamCallbacks;
-use super::sse_parser::{SseParser, V1Parser, V2Parser};
+use super::sse_parser::{SseParser, V2Parser};
 
 /// 当前使用的 SSE 解析器（v2 AG-UI）。
 fn default_parser() -> &'static dyn SseParser {
     &V2Parser
-}
-
-/// 根据协议版本选择解析器（预留；当前仍使用 `default_parser`）。
-#[allow(dead_code)]
-fn parser_for_version(version: u8) -> &'static dyn SseParser {
-    match version {
-        2 => &V2Parser,
-        _ => &V1Parser,
-    }
 }
 
 /// SSE 单帧分类：用于区分「任意有效负载」与「正文 delta」的空闲检测。
@@ -225,7 +216,6 @@ pub(super) fn handle_sse_block(
     let mut on_ag_ui_delta = |text: String| (cbs.on_delta)(text);
 
     let mut cbs2 = SseControlSink {
-        user_locale: loc,
         on_error: &mut on_err,
         on_delta: Some(&mut on_ag_ui_delta),
         workspace_tool: SseWorkspaceToolHooks {
@@ -257,7 +247,6 @@ pub(super) fn handle_sse_block(
         },
     };
     match default_parser().parse(&data, &mut cbs2) {
-        crate::sse_dispatch::SseDispatch::Stop => Ok(SseFrameKind::Control),
         crate::sse_dispatch::SseDispatch::Handled => {
             if stop {
                 Err(crate::i18n::api_err_stream_stopped(loc).to_string())

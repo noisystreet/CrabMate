@@ -140,14 +140,3 @@ pub fn stream_err_hint_generic(l: Locale) -> &'static str {
         Locale::En => "Click Retry; if it persists, share more error context.",
     }
 }
-
-pub fn sse_protocol_version_mismatch(l: Locale, server_v: u8, client_v: u8, hint: &str) -> String {
-    match l {
-        Locale::ZhHans => format!(
-            "SSE 协议版本不匹配：服务端 supported_sse_v={server_v}，本页 {client_v} ({hint})"
-        ),
-        Locale::En => format!(
-            "SSE protocol version mismatch: server supported_sse_v={server_v}, this page {client_v} ({hint})"
-        ),
-    }
-}

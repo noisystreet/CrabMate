@@ -41,23 +41,16 @@ pub(super) fn reject_if_client_sse_protocol_invalid(
     let Some(v) = client_sse_protocol else {
         return Ok(());
     };
-    if v == 0 {
+    if v != crate::sse::protocol::SSE_PROTOCOL_VERSION {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ApiError {
-                code: "INVALID_SSE_CLIENT_PROTOCOL",
-                message: "client_sse_protocol 非法（须为 1～255）".to_string(),
-                reason_code: None,
-            }),
-        ));
-    }
-    if v > crate::sse::protocol::SSE_PROTOCOL_VERSION {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "SSE_CLIENT_TOO_NEW",
-                message: "客户端声明的 SSE 协议版本高于服务端，请升级服务器或更换匹配的前端构建"
-                    .to_string(),
+                code: "SSE_PROTOCOL_MISMATCH",
+                message: format!(
+                    "仅支持 SSE 协议版本 {}（收到 v{}）",
+                    crate::sse::protocol::SSE_PROTOCOL_VERSION,
+                    v,
+                ),
                 reason_code: None,
             }),
         ));

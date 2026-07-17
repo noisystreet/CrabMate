@@ -64,11 +64,6 @@ impl SessionSyncState {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn reset_to_local(&mut self) {
-        *self = Self::local_only();
-    }
-
     /// 新的流式回合收到 `x-conversation-id` 时调用：绑定服务端会话并清空旧 revision。
     pub fn apply_stream_conversation_id(&mut self, id: String) {
         self.persistence = SessionPersistence::ServerBound;

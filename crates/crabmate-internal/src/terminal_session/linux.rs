@@ -757,7 +757,7 @@ async fn terminal_action_exec(args: TerminalActionExecArgs<'_>) -> String {
     if cols == 0 || rows == 0 {
         return "错误：cols/rows 须为正整数。".to_string();
     }
-    let encoder_ref: &dyn SseEncoder = encoder.unwrap_or(&crate::sse::V1Encoder);
+    let encoder_ref: &dyn SseEncoder = encoder.unwrap_or(&crate::sse::V2Encoder);
     let mut ctx = TerminalStreamCtx {
         wall,
         max_capture: max_cap,

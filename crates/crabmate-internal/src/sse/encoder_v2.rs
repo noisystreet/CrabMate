@@ -20,10 +20,6 @@ impl SseEncoder for V2Encoder {
             .collect::<Vec<_>>()
             .join("\n")
     }
-
-    fn format_version(&self) -> u8 {
-        2
-    }
 }
 
 #[cfg(test)]
@@ -47,7 +43,7 @@ mod tests {
         // 应为单行 RUN_FINISHED
         assert!(s.contains(r#""type":"RUN_FINISHED""#), "got: {s}");
         assert!(!s.contains('\n'), "should be single line: {s}");
-        assert_eq!(encoder.format_version(), 2);
+        // 当前仅 AG-UI（v2），`default_encoder` 返回 V2Encoder
     }
 
     #[test]

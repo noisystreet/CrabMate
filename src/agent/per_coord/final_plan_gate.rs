@@ -13,6 +13,7 @@ use crate::types::Message;
 
 use super::final_plan_gate_context::{FinalPlanGateContext, build_final_plan_gate_context};
 use super::final_plan_gate_reason::FinalPlanGateDecisionReason;
+#[cfg_attr(not(test), expect(unused_imports, reason = "仅用于 #[cfg(test)]"))]
 use super::{AfterFinalAssistant, FinalPlanRequirementMode, PlanRequirementSource};
 
 // --- Types（终答门控 FSM；见 `docs/design/per_state_machine_consolidation.md`） ---
@@ -91,15 +92,6 @@ impl FinalPlanGateArgs<'_> {
 }
 
 // --- FSM 门面（单事件一步：终答 assistant 到达后的单次判定） ---
-
-/// 由策略与来源解析进入门控时的相位（与 `require_plan` 布尔一致；金样 **`resolve_phase`** 用）。
-#[allow(dead_code)]
-pub(crate) fn resolve_final_plan_gate_phase(
-    policy: FinalPlanRequirementMode,
-    source: PlanRequirementSource,
-) -> FinalPlanGatePhase {
-    build_final_plan_gate_context(policy, source).phase
-}
 
 /// `(相位, 事件) → 一步结果`。`NoRequirement` 通常由调用方提前返回 `StopTurn`；若误传入此相位，仍返回安全默认以免遗漏分支。
 pub(crate) fn run_final_plan_gate(
@@ -704,13 +696,11 @@ mod tests {
 
     #[test]
     fn resolve_phase_never_is_no_requirement() {
-        assert_eq!(
-            resolve_final_plan_gate_phase(
-                FinalPlanRequirementMode::Never,
-                PlanRequirementSource::WorkflowReflection
-            ),
-            FinalPlanGatePhase::NoRequirement
+        let ctx = build_final_plan_gate_context(
+            FinalPlanRequirementMode::Never,
+            PlanRequirementSource::WorkflowReflection,
         );
+        assert_eq!(ctx.phase, FinalPlanGatePhase::NoRequirement);
     }
 
     #[test]

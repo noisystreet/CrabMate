@@ -19,12 +19,6 @@ impl DsmlMaterializePolicy {
             Self::Off
         }
     }
-
-    #[allow(dead_code)]
-    #[must_use]
-    pub fn is_enabled(self) -> bool {
-        !matches!(self, Self::Off)
-    }
 }
 
 /// 分阶段无工具规划轮：物化后是否保留 `tool_calls`。
@@ -48,11 +42,5 @@ impl StagedDsmlScanResult {
     pub fn total_for_rewrite_trigger(self) -> usize {
         self.raw_native_count
             .saturating_add(self.materialized_count)
-    }
-
-    #[allow(dead_code)]
-    #[must_use]
-    pub fn had_violation(self) -> bool {
-        self.materialized_count > 0
     }
 }

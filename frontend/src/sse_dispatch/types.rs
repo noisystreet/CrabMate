@@ -3,11 +3,9 @@
 use serde_json::Value;
 
 use crate::conversation_hydrate::TiktokenPromptTokensSnapshot;
-use crate::i18n::Locale;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SseDispatch {
-    Stop,
     Handled,
     Plain,
     /// 用于 V2Parser 通知 `RUN_FINISHED` / `RUN_ERROR`：`handle_sse_block` 据此设置
@@ -80,10 +78,8 @@ pub struct SseNoticeTimelineHooks<'a> {
     pub on_state_snapshot: Option<&'a mut dyn FnMut(serde_json::Value)>,
 }
 
-/// SSE 控制面分发入口：按领域分组回调，与 `dispatch::try_dispatch_sse_control_payload` 分支顺序对齐。
+/// SSE 控制面分发入口：按领域分组回调，V2Parser 分发至此。
 pub struct SseControlSink<'a> {
-    /// 用户可见错误文案语言（如 SSE 协议版本不匹配提示）。
-    pub user_locale: Locale,
     pub on_error: &'a mut dyn FnMut(String),
     /// AG-UI TEXT_MESSAGE_CONTENT / REASONING_MESSAGE_CONTENT 的正文增量。
     /// V1 路径不经此回调。

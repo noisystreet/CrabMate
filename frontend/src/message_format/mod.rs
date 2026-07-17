@@ -14,10 +14,15 @@ mod strip_ansi;
 mod tool_card;
 mod tool_envelope;
 
+#[cfg(test)]
+pub(crate) use display::assistant_text_for_display;
 pub(crate) use display::{
-    assistant_message_text_for_display_ex_with_body_strings, assistant_text_for_display,
+    assistant_message_text_for_display_ex_with_body_strings, message_text_for_display_ex,
+    stored_message_is_staged_planner_round,
+};
+#[cfg(test)]
+pub(crate) use display::{
     assistant_thinking_body_and_answer_raw, filter_assistant_thinking_markers_for_display,
-    message_text_for_display_ex, stored_message_is_staged_planner_round,
 };
 pub(crate) use staged_timeline::{
     STAGED_TIMELINE_SYSTEM_PREFIX, is_staged_timeline_bubble, staged_timeline_system_message_body,

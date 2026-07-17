@@ -317,14 +317,10 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
         .await;
     }
     emit_turn_tool_phase_end_sse(out, sse_control_mirror.as_ref(), sse_encoder.as_ref()).await;
-    // AG-UI V2：工具批结束后发送 STATE_SNAPSHOT，供前端断线重连恢复状态
+    // 工具批结束后发送 STATE_SNAPSHOT，供前端断线重连恢复状态
     if let Some(tx) = out {
-        crate::sse::send_state_snapshot_sse(
-            tx,
-            serde_json::json!({"phase": "tool_batch_end"}),
-            sse_encoder.as_ref(),
-        )
-        .await;
+        crate::sse::send_state_snapshot_sse(tx, serde_json::json!({"phase": "tool_batch_end"}))
+            .await;
     }
     emit_sse_tool_running(
         out,
