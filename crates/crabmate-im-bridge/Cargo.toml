@@ -14,21 +14,21 @@ name = "crabmate-im-bridge"
 path = "src/main.rs"
 
 [dependencies]
-crabmate-sse-protocol = { path = "../crabmate-sse-protocol" }
-axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "macros"] }
+crabmate-sse-protocol = { workspace = true }
+axum = { workspace = true, default-features = false, features = ["http1", "json", "tokio", "macros"] }
 aes = "0.9"
-base64 = "0.22"
+base64 = { workspace = true }
 cbc = "0.2"
 cipher = "0.5"
 dashmap = "6"
 hex = "0.4"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
-rusqlite = { version = "0.40", features = ["bundled"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-sha2 = "0.11"
-subtle = "2"
-tokio = { version = "1", default-features = false, features = [
+reqwest = { workspace = true, features = ["json", "rustls-tls", "stream"] }
+rusqlite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+subtle = { workspace = true }
+tokio = { workspace = true, features = [
     "macros",
     "rt-multi-thread",
     "signal",
@@ -36,12 +36,12 @@ tokio = { version = "1", default-features = false, features = [
     "time",
     "net",
 ] }
-tower-http = { version = "0.6", features = ["trace"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", default-features = false, features = [
+tower-http = { workspace = true, features = ["trace"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = [
     "env-filter",
     "fmt",
     "std",
 ] }
-thiserror = "2"
-futures-util = { version = "0.3", default-features = false, features = ["std"] }
+thiserror = { workspace = true }
+futures-util = { workspace = true }

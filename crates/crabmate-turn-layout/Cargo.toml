@@ -9,9 +9,9 @@ description = "Canonical agent turn layout (OpenAI/AG-UI aligned) and chat bubbl
 path = "lib.rs"
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-log = "0.4"
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }
