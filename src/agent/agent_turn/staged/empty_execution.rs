@@ -2,192 +2,19 @@
 //!
 //! 生产路径已不再调用（步验收改走 step_verifier），函数保留供测试模块引用。
 
-#![allow(dead_code)]
-
-use crate::agent::acceptance::{AcceptanceSpec, effective_plan_step_acceptance};
-use crate::agent::plan_artifact::{
-    PlanStepAcceptance, PlanStepExecutorKind, PlanStepV1,
-    plan_step_acceptance_implies_build_progress, plan_step_description_implies_build_execution,
-};
-use crate::agent::step_executor_policy::{
-    tool_name_implies_patch_write_progress, tool_name_implies_readonly_probe,
-};
+use crate::agent::plan_artifact::PlanStepAcceptance;
 use crate::types::{Message, message_content_as_str, tool_messages_in_staged_step_window};
 
 /// 步级验收失败原因前缀；补丁规划据此选用更硬的反馈文案。
 pub(crate) const STAGED_STEP_EMPTY_EXECUTION_PREFIX: &str = "staged_step_empty_execution:";
-
-fn staged_step_window_tool_name_content_pairs(
-    messages: &[Message],
-    step_user_index: usize,
-) -> impl Iterator<Item = (&str, &str)> {
-    tool_messages_in_staged_step_window(messages, step_user_index)
-        .into_iter()
-        .map(|m| {
-            (
-                m.name.as_deref().unwrap_or(""),
-                message_content_as_str(&m.content).unwrap_or(""),
-            )
-        })
-}
 
 /// 自 `step_user_index` 指向的分步 `user` 起，至下一条 `user` 或末尾，是否出现过 `role: tool`。
 pub(crate) fn staged_step_window_has_tool(messages: &[Message], step_user_index: usize) -> bool {
     !tool_messages_in_staged_step_window(messages, step_user_index).is_empty()
 }
 
-pub(crate) fn staged_step_window_has_build_progress_tool(
-    messages: &[Message],
-    step_user_index: usize,
-) -> bool {
-    staged_step_window_tool_name_content_pairs(messages, step_user_index)
-        .any(|(name, content)| tool_message_indicates_build_progress(name, content))
-}
-
-pub(crate) fn tool_message_indicates_build_progress(tool_name: &str, content: &str) -> bool {
-    if matches!(
-        tool_name,
-        "run_executable"
-            | "cargo_test"
-            | "cargo_check"
-            | "cargo_clippy"
-            | "cargo_fmt_check"
-            | "pytest_run"
-            | "go_test"
-            | "cppcheck_analyze"
-            | "shellcheck_check"
-    ) {
-        return true;
-    }
-    if tool_name != "run_command" {
-        return false;
-    }
-    let lower = content.to_lowercase();
-    const BUILD_MARKERS: &[&str] = &[
-        "make ",
-        "make\n",
-        "cmake --build",
-        "cmake -build",
-        "cargo build",
-        "cargo test",
-        "cargo run",
-        "ninja ",
-        "meson compile",
-        "meson test",
-        "go build",
-        "npm run build",
-        "npm test",
-        "ctest ",
-        "bazel build",
-        "buck build",
-    ];
-    BUILD_MARKERS.iter().any(|marker| lower.contains(marker))
-}
-
-fn plan_step_expects_build_progress(step: &PlanStepV1) -> bool {
-    if step.executor_kind == Some(PlanStepExecutorKind::TestRunner) {
-        return true;
-    }
-    if step
-        .acceptance
-        .as_ref()
-        .filter(|a| PlanStepAcceptance::is_effective(a))
-        .is_some_and(plan_step_acceptance_implies_build_progress)
-    {
-        return true;
-    }
-    plan_step_description_implies_build_execution(step.description.as_str())
-}
-
-pub(crate) fn staged_step_empty_execution_reason() -> String {
-    format!(
-        "{STAGED_STEP_EMPTY_EXECUTION_PREFIX} 本步执行子循环已结束，但本分步内未产生任何 `role: tool` 工具结果；\
-         不得仅用自然语言描述「将要读取/编译/执行」，须通过 API 结构化 `tool_calls` 实际调用工具。"
-    )
-}
-
-fn staged_step_no_build_progress_reason() -> String {
-    format!(
-        "{STAGED_STEP_EMPTY_EXECUTION_PREFIX} 本步仅有只读/探针类工具结果（如列目录、读文件、`--version`），\
-         未执行构建/测试类命令，但当前步验收或角色要求构建/运行进展。"
-    )
-}
-
-fn staged_step_executor_kind_progress_reason(kind: PlanStepExecutorKind) -> String {
-    match kind {
-        PlanStepExecutorKind::ReviewReadonly => format!(
-            "{STAGED_STEP_EMPTY_EXECUTION_PREFIX} 本步为 `review_readonly`，但本分步内未出现阅读/探查类只读工具\
-             （如 `read_file`、`list_dir`、`grep`）；不得仅用 `run_command --version` 或自然语言代替。"
-        ),
-        PlanStepExecutorKind::PatchWrite => format!(
-            "{STAGED_STEP_EMPTY_EXECUTION_PREFIX} 本步为 `patch_write`，但本分步内未出现补丁/写文件类工具\
-             （如 `apply_patch`、`create_file`）；不得仅用只读工具或自然语言代替。"
-        ),
-        PlanStepExecutorKind::TestRunner => staged_step_no_build_progress_reason(),
-    }
-}
-
-fn staged_step_window_satisfies_executor_kind(
-    messages: &[Message],
-    step_user_index: usize,
-    executor_kind: Option<PlanStepExecutorKind>,
-) -> bool {
-    match executor_kind {
-        Some(PlanStepExecutorKind::ReviewReadonly) => {
-            staged_step_window_tool_name_content_pairs(messages, step_user_index)
-                .any(|(name, _)| tool_name_implies_readonly_probe(name))
-        }
-        Some(PlanStepExecutorKind::PatchWrite) => {
-            staged_step_window_tool_name_content_pairs(messages, step_user_index)
-                .any(|(name, _)| tool_name_implies_patch_write_progress(name))
-        }
-        Some(PlanStepExecutorKind::TestRunner) | None => true,
-    }
-}
-
 pub(crate) fn staged_step_empty_execution_is_reason(reason: &str) -> bool {
     reason.starts_with(STAGED_STEP_EMPTY_EXECUTION_PREFIX)
-}
-
-/// 在外层 `run_agent_outer_loop` 返回 `Ok` 后判定本步是否因「零工具 / 无构建进展」应记为验收失败。
-pub(crate) fn staged_step_empty_execution_verify_failure(
-    messages: &[Message],
-    step_user_index: usize,
-    step: &PlanStepV1,
-    workspace_root: &std::path::Path,
-) -> Option<String> {
-    let has_tools = staged_step_window_has_tool(messages, step_user_index);
-    if !has_tools {
-        if let Some(acceptance) = effective_plan_step_acceptance(step) {
-            let spec = AcceptanceSpec::from(&acceptance);
-            if !spec.requires_tool_evidence()
-                && crate::agent::step_verifier::verify_step_execution(
-                    &acceptance,
-                    messages,
-                    step_user_index,
-                    workspace_root,
-                )
-                .is_pass()
-            {
-                return None;
-            }
-        }
-        return Some(staged_step_empty_execution_reason());
-    }
-
-    if let Some(kind) = step.executor_kind
-        && !staged_step_window_satisfies_executor_kind(messages, step_user_index, Some(kind))
-    {
-        return Some(staged_step_executor_kind_progress_reason(kind));
-    }
-
-    if plan_step_expects_build_progress(step)
-        && !staged_step_window_has_build_progress_tool(messages, step_user_index)
-    {
-        return Some(staged_step_no_build_progress_reason());
-    }
-
-    None
 }
 
 pub(crate) fn staged_step_empty_execution_patch_detail(
@@ -210,27 +37,6 @@ pub(crate) fn staged_step_empty_execution_patch_detail(
     )
 }
 
-pub(crate) fn staged_step_patch_exhausted_build_hint(
-    messages: &[Message],
-    step_user_index: usize,
-    user_goal: Option<&str>,
-) -> Option<String> {
-    let goal_implies_build = user_goal.is_some_and(|g| {
-        plan_step_description_implies_build_execution(g) || g.to_lowercase().contains("编译")
-    });
-    if !goal_implies_build {
-        return None;
-    }
-    if staged_step_window_has_build_progress_tool(messages, step_user_index) {
-        return None;
-    }
-    Some(
-        "提示：本分步多次补丁重试后仍未出现构建/测试类命令（如 `make`、`cmake --build`、`cargo build` 等）；\
-         请检查规划是否将 `acceptance` 或 `test_runner` 错放在只读/解压步，或执行器是否未调用 `run_command`。"
-            .to_string(),
-    )
-}
-
 pub(crate) fn staged_step_retry_exhausted_message_body(
     base: String,
     messages: &[Message],
@@ -248,203 +54,74 @@ pub(crate) fn staged_step_retry_exhausted_message_body(
     s
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::agent::plan_artifact::plan_acceptance_path_looks_like_build_artifact;
-    use crate::types::Message;
-
-    fn user(text: &str) -> Message {
-        Message::user_only(text)
+/// 本分步多次补丁重试后仍未出现构建进展时的提示，无构建目标时返回 `None`。
+fn staged_step_patch_exhausted_build_hint(
+    messages: &[Message],
+    step_user_index: usize,
+    user_goal: Option<&str>,
+) -> Option<String> {
+    let goal_implies_build = user_goal.is_some_and(|g| {
+        crate::agent::plan_artifact::plan_step_description_implies_build_execution(g)
+            || g.to_lowercase().contains("编译")
+    });
+    if !goal_implies_build {
+        return None;
     }
-
-    fn asst(text: &str) -> Message {
-        Message::assistant_only(text)
+    if tool_messages_in_staged_step_window(messages, step_user_index)
+        .iter()
+        .any(|m| tool_message_indicates_build_progress(m))
+    {
+        return None;
     }
+    Some(
+        "提示：本分步多次补丁重试后仍未出现构建/测试类命令（如 `make`、`cmake --build`、`cargo build` 等）；\
+         请检查规划是否将 `acceptance` 或 `test_runner` 错放在只读/解压步，或执行器是否未调用 `run_command`。"
+            .to_string(),
+    )
+}
 
-    fn tool(name: &str, body: &str) -> Message {
-        Message {
-            role: "tool".into(),
-            content: Some(body.into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: Some(name.into()),
-            tool_call_id: Some("tc1".into()),
-        }
+pub(crate) fn tool_message_indicates_build_progress(m: &Message) -> bool {
+    let Some(name) = m.name.as_deref() else {
+        return false;
+    };
+    if matches!(
+        name,
+        "run_executable"
+            | "cargo_test"
+            | "cargo_check"
+            | "cargo_clippy"
+            | "cargo_fmt_check"
+            | "pytest_run"
+            | "go_test"
+            | "cppcheck_analyze"
+            | "shellcheck_check"
+    ) {
+        return true;
     }
-
-    fn step_with_binary_acceptance() -> PlanStepV1 {
-        PlanStepV1 {
-            id: "s1".into(),
-            description: "unpack sources".into(),
-            workflow_node_id: None,
-            executor_kind: None,
-            step_kind: None,
-            acceptance: Some(PlanStepAcceptance {
-                expect_exit_code: None,
-                expect_stdout_contains: None,
-                expect_stderr_contains: None,
-                expect_file_exists: Some("proj/bin/app".into()),
-                expect_json_path_equals: None,
-                expect_http_status: None,
-            }),
-            max_step_retries: None,
-            transitions: None,
-        }
+    if name != "run_command" {
+        return false;
     }
-
-    #[test]
-    fn window_detects_tool_after_step_user() {
-        let msgs = vec![
-            user("goal"),
-            user("step 1"),
-            asst("working"),
-            tool("list_dir", "ok"),
-        ];
-        assert!(staged_step_window_has_tool(&msgs, 1));
-    }
-
-    #[test]
-    fn window_spans_tools_after_orchestration_injection() {
-        let msgs = vec![
-            user("编译项目"),
-            Message::user_staged_step_injection("### 分步 1/1\n- id: s1\n- 描述: build\n"),
-            Message::user_staged_orchestration_injection("【编排纠偏】请继续构建"),
-            tool("run_command", "make ok"),
-        ];
-        assert!(staged_step_window_has_tool(&msgs, 1));
-    }
-
-    #[test]
-    fn window_false_when_only_assistant_prose() {
-        let msgs = vec![
-            user("goal"),
-            user("step 1"),
-            asst("will read the build docs"),
-        ];
-        assert!(!staged_step_window_has_tool(&msgs, 1));
-    }
-
-    #[test]
-    fn readonly_tools_are_not_build_progress() {
-        let msgs = vec![
-            user("goal"),
-            user("step 1"),
-            tool("read_file", "ok"),
-            tool("run_command", "命令：gcc --version\n退出码：0"),
-        ];
-        assert!(!staged_step_window_has_build_progress_tool(&msgs, 1));
-    }
-
-    #[test]
-    fn make_command_counts_as_build_progress() {
-        let msgs = vec![
-            user("goal"),
-            user("step 1"),
-            tool(
-                "run_command",
-                "命令：make arch=Linux_Serial\n退出码：0\n标准输出：",
-            ),
-        ];
-        assert!(staged_step_window_has_build_progress_tool(&msgs, 1));
-    }
-
-    #[test]
-    fn no_build_progress_when_only_probes_and_binary_acceptance() {
-        let msgs = vec![
-            user("goal"),
-            user("step 1"),
-            tool("archive_unpack", "ok"),
-            tool("run_command", "命令：gcc --version\n退出码：0"),
-        ];
-        let step = step_with_binary_acceptance();
-        let fail =
-            staged_step_empty_execution_verify_failure(&msgs, 1, &step, std::path::Path::new("."));
-        assert!(fail.is_some());
-        assert!(staged_step_empty_execution_is_reason(
-            fail.as_deref().unwrap()
-        ));
-    }
-
-    #[test]
-    fn empty_execution_reason_prefix_stable() {
-        let r = staged_step_empty_execution_reason();
-        assert!(staged_step_empty_execution_is_reason(&r));
-    }
-
-    #[test]
-    fn patch_exhausted_hint_when_build_goal_and_no_make() {
-        let msgs = vec![user("编译项目"), user("step"), tool("list_dir", "ok")];
-        let hint = staged_step_patch_exhausted_build_hint(&msgs, 1, Some("编译项目"));
-        assert!(hint.is_some());
-    }
-
-    #[test]
-    fn review_readonly_requires_read_probe_not_version_only() {
-        let msgs = vec![
-            user("goal"),
-            user("step 1"),
-            tool("run_command", "命令：gcc --version\n退出码：0"),
-        ];
-        let step = PlanStepV1 {
-            id: "r".into(),
-            description: "read build docs".into(),
-            workflow_node_id: None,
-            executor_kind: Some(PlanStepExecutorKind::ReviewReadonly),
-            step_kind: None,
-            acceptance: None,
-            max_step_retries: None,
-            transitions: None,
-        };
-        let fail =
-            staged_step_empty_execution_verify_failure(&msgs, 1, &step, std::path::Path::new("."));
-        assert!(fail.is_some());
-        assert!(fail.unwrap().contains("review_readonly"));
-    }
-
-    #[test]
-    fn review_readonly_passes_with_read_file() {
-        let msgs = vec![user("goal"), user("step 1"), tool("read_file", "ok")];
-        let step = PlanStepV1 {
-            id: "r".into(),
-            description: "read".into(),
-            workflow_node_id: None,
-            executor_kind: Some(PlanStepExecutorKind::ReviewReadonly),
-            step_kind: None,
-            acceptance: None,
-            max_step_retries: None,
-            transitions: None,
-        };
-        assert!(
-            staged_step_empty_execution_verify_failure(&msgs, 1, &step, std::path::Path::new("."))
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn patch_write_requires_write_tool() {
-        let msgs = vec![user("goal"), user("step 1"), tool("read_file", "ok")];
-        let step = PlanStepV1 {
-            id: "w".into(),
-            description: "apply fix".into(),
-            workflow_node_id: None,
-            executor_kind: Some(PlanStepExecutorKind::PatchWrite),
-            step_kind: None,
-            acceptance: None,
-            max_step_retries: None,
-            transitions: None,
-        };
-        let fail =
-            staged_step_empty_execution_verify_failure(&msgs, 1, &step, std::path::Path::new("."));
-        assert!(fail.is_some());
-        assert!(fail.unwrap().contains("patch_write"));
-    }
-
-    #[test]
-    fn plan_acceptance_path_helper_public() {
-        assert!(plan_acceptance_path_looks_like_build_artifact(
-            "proj/bin/app"
-        ));
-    }
+    let Some(content) = message_content_as_str(&m.content) else {
+        return false;
+    };
+    let lower = content.to_lowercase();
+    const BUILD_MARKERS: &[&str] = &[
+        "make ",
+        "make\n",
+        "cmake --build",
+        "cmake -build",
+        "cargo build",
+        "cargo test",
+        "cargo run",
+        "ninja ",
+        "meson compile",
+        "meson test",
+        "go build",
+        "npm run build",
+        "npm test",
+        "ctest ",
+        "bazel build",
+        "buck build",
+    ];
+    BUILD_MARKERS.iter().any(|marker| lower.contains(marker))
 }

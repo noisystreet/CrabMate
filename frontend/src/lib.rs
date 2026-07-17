@@ -22,34 +22,14 @@ mod conversation_messages_page;
 mod conversation_prompt_tokens_apply;
 mod debounce_schedule;
 mod i18n;
-#[allow(dead_code)]
-mod ide_c_cpp_highlight;
 mod ide_codemirror;
 mod ide_confirm;
 mod ide_disk_sync;
 mod ide_editor_prefs;
 mod ide_find;
-#[allow(dead_code)]
-mod ide_highlight_common;
-#[allow(dead_code)]
-mod ide_json_highlight;
-#[allow(dead_code)]
-mod ide_markdown_highlight;
-#[allow(dead_code)]
-mod ide_python_highlight;
-#[allow(dead_code)]
-mod ide_rust_highlight;
 mod ide_save;
-#[allow(dead_code)]
-mod ide_script_highlight;
-#[allow(dead_code)]
-mod ide_shell_highlight;
 mod ide_syntax_highlight;
 mod ide_tabs;
-#[allow(dead_code)]
-mod ide_toml_highlight;
-#[allow(dead_code)]
-mod ide_yaml_highlight;
 mod markdown;
 mod message_dedupe;
 mod message_format;

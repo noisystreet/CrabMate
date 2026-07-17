@@ -1,19 +1,9 @@
 //! 浏览器 `fetch` + `/chat/stream` SSE 解析（单前端实现）。
 //!
 //! 子模块划分：[`browser`] 共享句柄、[`client_llm_storage`] 本机模型键值、[`http`] JSON API、[`chat_stream`] 流式聊天。
-//!
-//! ## 端口边界（阶段 D）
-//!
-//! 所有 HTTP 调用通过 [`api_client::ApiClient`] trait 抽象：
-//! - 生产实现：[`api_client::RealApiClient`]（委托 `http` 模块）
-//! - 测试实现：未来可实现 `MockApiClient` 返回预设响应
-//!
-//! 现有代码仍可直接调用 `http` 中的自由函数（向后兼容）；
-//! 新代码或需要 mock 的场景应优先使用 `ApiClient` trait。
 
 #![allow(clippy::collapsible_if)]
 
-mod api_client;
 mod browser;
 mod chat_stream;
 pub(crate) mod client_llm_cache;
@@ -23,8 +13,6 @@ mod saved_models;
 mod session_store;
 pub mod user_data;
 
-#[allow(unused_imports)]
-pub use api_client::{ApiClient, RealApiClient};
 pub use chat_stream::{ChatStreamCallbacks, OnToolCallFn, SendChatStreamParams, send_chat_stream};
 pub use client_llm_storage::{
     clear_client_llm_api_key_storage, clear_executor_llm_api_key_storage,

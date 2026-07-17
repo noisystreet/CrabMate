@@ -1,6 +1,5 @@
 //! 工作区 `.crabmate/tui_session.json`：加载/保存与导出（实现委托 `runtime::chat_export`）。
 //! CLI REPL：`initial_workspace_messages` 可在独立线程中构建，经 [`try_merge_background_initial_workspace`] 并入对话；[`repl_bootstrap_messages_fast`] 为不阻塞的占位首条 `system`。
-#![allow(dead_code)]
 
 use crate::config::AgentConfig;
 use crate::context_bootstrap::conversation_turn_bootstrap::{
@@ -56,7 +55,7 @@ fn truncate_loaded_messages(mut msgs: Vec<Message>, max_total: usize) -> Vec<Mes
 
 /// 若存在会话文件则加载；首条 `system` 会替换为当前配置的 `system_prompt`。
 /// `max_messages` 为加载后的消息条数上限（含 `system`）；超出则丢弃最旧的用户/助手/工具消息。
-pub fn load_workspace_session(
+fn load_workspace_session(
     workspace: &Path,
     system_prompt: &str,
     max_messages: usize,
