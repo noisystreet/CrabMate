@@ -2,8 +2,6 @@
 #![allow(dead_code)]
 
 use regex::Regex;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::sync::LazyLock;
 
 use crate::agent::plan_artifact::{
@@ -169,15 +167,6 @@ fn find_tool_call_for_display(messages: &[Message], tool_idx: usize) -> Option<(
 }
 
 /// TUI 行缓存指纹：同一条 `tool` 消息在「assistant 已带上 tool_calls」前后，展示可能多出一节 `summarize_tool_call` 摘要。
-pub(crate) fn tool_display_context_fingerprint(messages: &[Message], tool_msg_idx: usize) -> u64 {
-    let mut h = DefaultHasher::new();
-    if let Some((name, args)) = find_tool_call_for_display(messages, tool_msg_idx) {
-        name.hash(&mut h);
-        args.hash(&mut h);
-    }
-    h.finish()
-}
-
 /// **TUI / 导出**：在 [`tool_content_for_display`] 之上，为 `role: tool` 追加与 Web 一致的 `summarize_tool_call` 摘要
 ///（依赖历史中**对条** assistant 的 `tool_calls`）。
 pub(crate) fn tool_content_for_display_for_message(
@@ -443,16 +432,6 @@ fn staged_plan_streaming_chat_body(stripped: &str) -> String {
 }
 
 /// TUI 状态栏：取 `staged_plan_notice` 首条**非占位**非空行（截断）；若无非占位行则空串（调用方回退仅模型名）。
-pub(crate) fn staged_plan_notice_status_hint(text: &str) -> String {
-    text.lines()
-        .map(|l| l.trim_end())
-        .find(|l| !l.trim().is_empty() && !is_staged_plan_placeholder_like_line(l))
-        .unwrap_or("")
-        .chars()
-        .take(52)
-        .collect()
-}
-
 /// 主聊天区隐藏 v1 规划列表时：
 /// - 若围栏前有自然语言开场白，优先展示开场白（避免首句被覆盖）；
 /// - 若只有纯 JSON，回退固定短提示（避免消息消失）。
@@ -514,16 +493,6 @@ pub(crate) fn assistant_markdown_source_for_display(raw: &str) -> String {
 }
 
 /// TUI 流式：仅对**最后一条助手**且仍处生成中时调用；`agent_reply_plan` 相关输出缓冲为占位，收齐后由普通路径一次性剥 JSON 再展示。
-pub(crate) fn assistant_markdown_source_for_display_streaming_last(raw: &str) -> String {
-    let stripped = strip_assistant_echo_label(raw);
-    let stripped = crate::dsml::strip_deepseek_dsml_for_display(&stripped);
-    if should_buffer_agent_reply_plan_stream(&stripped) {
-        return latex_math_to_unicode(&staged_plan_streaming_chat_body(&stripped));
-    }
-    let stripped = preprocess_unfenced_assistant_prose_dedup(&stripped);
-    assistant_markdown_from_stripped(&stripped)
-}
-
 /// 与流式 SSE 下发顺序一致：先 `reasoning_content` 再 `content`，中间无插入字符（与 `llm::api` 累加顺序一致）。
 pub(crate) fn assistant_streaming_plain_concat(m: &Message) -> String {
     let mut s = String::new();
@@ -777,104 +746,6 @@ mod tests {
         );
         let out = assistant_markdown_source_for_display(&raw);
         assert_eq!(out.matches(line).count(), 1, "{}", out);
-    }
-
-    #[test]
-    fn assistant_streaming_last_dedupes_duplicate_prose_before_partial_fence() {
-        let line = "我将帮您编写一个简单的 C++ Hello World 程序，让我先规划任务步骤：";
-        let raw = format!("{line}\n{line}\n```json\n{{\"type\":\"agent_reply_plan\"");
-        let out = assistant_markdown_source_for_display_streaming_last(&raw);
-        assert_eq!(out.matches(line).count(), 1, "{}", out);
-        assert!(
-            !out.contains("正在生成分阶段规划"),
-            "流式阶段不在 UI 展示占位文案：{out:?}"
-        );
-    }
-
-    #[test]
-    fn assistant_streaming_last_buffers_partial_fenced_plan_json() {
-        let raw = "下面拆解如下。\n```json\n{\"type\":\"agent_reply_plan\"";
-        let out = assistant_markdown_source_for_display_streaming_last(raw);
-        assert!(out.contains("下面拆解"));
-        assert!(!out.contains("正在生成分阶段规划"));
-        assert!(!out.contains("\"steps\""));
-    }
-
-    #[test]
-    fn assistant_streaming_last_fence_prose_without_streaming_placeholder() {
-        let raw = "这个任务可以分成以下步骤\n```json\n{\"type\":\"agent_reply_plan\"";
-        let out = assistant_markdown_source_for_display_streaming_last(raw);
-        assert!(out.contains("这个任务可以分成以下步骤"));
-        assert!(!out.contains("正在生成分阶段规划"), "out={out:?}");
-    }
-
-    #[test]
-    fn assistant_streaming_last_dedupes_placeholder_like_opening_line() {
-        let raw = "正在生成分阶段规划...\n```json\n{\"type\":\"agent_reply_plan\"";
-        let out = assistant_markdown_source_for_display_streaming_last(raw);
-        assert!(
-            out.is_empty(),
-            "占位式开场白不展示，且无其它围栏前正文：{out:?}"
-        );
-    }
-
-    #[test]
-    fn assistant_streaming_last_dedupes_punctuation_variant_opening_lines() {
-        let a = "我将先拆解任务步骤：";
-        let b = "我将先拆解任务步骤。";
-        let raw = format!("{a}\n{b}\n```json\n{{\"type\":\"agent_reply_plan\"");
-        let out = assistant_markdown_source_for_display_streaming_last(&raw);
-        assert_eq!(
-            out.matches("我将先拆解任务步骤").count(),
-            1,
-            "开场白仅句末标点不同也应去重：{out:?}"
-        );
-        assert!(!out.contains("正在生成分阶段规划"));
-    }
-
-    #[test]
-    fn assistant_streaming_last_plain_text_still_incremental() {
-        let raw = "先写一句说明，再考虑格式。";
-        let out = assistant_markdown_source_for_display_streaming_last(raw);
-        assert!(out.contains("先写一句"));
-        assert!(!out.contains("正在生成分阶段规划"));
-    }
-
-    /// `deepseek-reasoner` 思维链里常见无语言标签的围栏 + `{`，不得误判为 v1 规划缓冲而整段空白。
-    #[test]
-    fn assistant_streaming_last_bare_fence_json_like_not_buffered_to_empty() {
-        let raw = "```\n{\"note\": \"thinking\"";
-        let out = assistant_markdown_source_for_display_streaming_last(raw);
-        assert!(
-            !out.trim().is_empty(),
-            "裸 ``` 围栏不应触发规划缓冲清空：{out:?}"
-        );
-    }
-
-    /// 尚未输出 ``` 时 `should_buffer` 为 false；此前不经规划专用 naturalize，需在预处理中折叠围栏前同句复读。
-    #[test]
-    fn assistant_streaming_last_dedupes_duplicate_lines_before_any_fence() {
-        let line = "我将帮您编写 C++ Hello World，让我先规划任务步骤：";
-        let raw = format!("{line}\n{line}");
-        let out = assistant_markdown_source_for_display_streaming_last(&raw);
-        assert_eq!(out.matches(line).count(), 1, "{}", out);
-        assert!(!out.contains("正在生成分阶段规划"));
-    }
-
-    #[test]
-    fn assistant_streaming_last_whole_json_incomplete_shows_empty_until_complete() {
-        let raw = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"x""#;
-        let out = assistant_markdown_source_for_display_streaming_last(raw);
-        assert!(out.is_empty(), "纯半截 JSON 流式阶段不占位文案：{out:?}");
-    }
-
-    #[test]
-    fn staged_plan_notice_status_hint_skips_placeholder_lines() {
-        assert_eq!(
-            staged_plan_notice_status_hint("正在生成分阶段规划…\n步骤 1 进行中"),
-            "步骤 1 进行中"
-        );
-        assert_eq!(staged_plan_notice_status_hint("正在生成分阶段规划…"), "");
     }
 
     #[test]

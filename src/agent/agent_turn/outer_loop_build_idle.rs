@@ -27,9 +27,7 @@ pub(crate) fn outer_loop_window_has_build_progress_since_last_user(messages: &[M
         if m.role != "tool" {
             return false;
         }
-        let name = m.name.as_deref().unwrap_or("");
-        let content = message_content_as_str(&m.content).unwrap_or("");
-        tool_message_indicates_build_progress(name, content)
+        tool_message_indicates_build_progress(m)
     })
 }
 

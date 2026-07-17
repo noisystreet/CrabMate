@@ -580,7 +580,7 @@ mod tests {
     fn timeline_log_counts_meaningful_not_text_delta() {
         let cbs = callbacks_with_end_capture(Rc::new(RefCell::new(None)));
         let mut buf = String::from(
-            "data: {\"timeline_log\":{\"kind\":\"intent_analysis\",\"title\":\"意图分析：问答类\"}}\n\n",
+            "data: {\"type\":\"CUSTOM\",\"customType\":\"timeline_log\",\"data\":{\"kind\":\"intent_analysis\",\"title\":\"意图分析：问答类\"}}\n\n",
         );
         let mut last_event_id = 0u64;
         let mut saw_stream_ended = false;
