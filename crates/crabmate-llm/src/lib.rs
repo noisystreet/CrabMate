@@ -11,13 +11,16 @@ pub mod cache_stats;
 pub mod call_error;
 pub mod chat_params;
 mod complete_error;
+pub mod fingerprint;
 pub mod http_client;
 mod openai_models;
+pub mod recording;
 pub mod requests;
 mod retry;
 pub mod retry_hooks;
 pub mod stream_host;
 pub mod stream_scratch;
+pub mod trace_sink;
 pub mod vendor;
 pub mod vendor_messages;
 
@@ -30,10 +33,15 @@ pub use backend_shared::{shared_chat_backend, shared_static_chat_backend};
 pub use call_error::LlmCallError;
 pub use chat_params::{LlmRetryingTransportOpts, StreamChatParams};
 pub use complete_error::LlmCompleteError;
+pub use fingerprint::RequestFingerprint;
 pub use http_client::{
     build_shared_api_client, format_reqwest_transport_err, map_reqwest_transport_err,
 };
 pub use openai_models::fetch_models_report;
+pub use recording::{
+    E2eMode, RecordingBackend, RecordingManifest, ReplayBackend, build_e2e_backend,
+    detect_mode_from_env,
+};
 pub use requests::{
     chat_request_vendor_extensions_for_agent, kimi_k2_5_vendor_requires_tool_call_reasoning,
     no_tools_chat_request, no_tools_chat_request_for_hierarchical_manager,
@@ -46,6 +54,7 @@ pub use stream_host::{
     CliWaitSpinnerGuardHost, DsmlStreamFilter, StreamChatHost, TerminalPlainFragmentCtx,
 };
 pub use stream_scratch::{TuiLlmStreamScratch, TuiLlmStreamScratchArc};
+pub use trace_sink::{FileTraceSink, NullTraceSink, TraceEvent, TraceSink, TraceUsage};
 pub use vendor::{
     LlmVendorAdapter, fold_system_into_user_for_config, llm_vendor_adapter,
     llm_vendor_adapter_for_model,
