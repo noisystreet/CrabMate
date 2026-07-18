@@ -22,8 +22,8 @@ fn resolved_turn_llm_backend<'a>(
 /// `cfg` 建议使用 [`Arc`] 共享（与进程内 Web 服务状态一致），以便工具在 `spawn_blocking` 路径中复用同一份配置而不反复深拷贝。
 /// 若提供 transport.out，则流式 content 会通过 out 发送（供 SSE 等使用）；`transport.no_stream` 为 true 时 API 使用 `stream: false`，
 /// 有正文则通过 `out` 一次性下发整段。
-/// 若 `transport.plain_terminal_stream` 为 `true`（仅 **`runtime::cli`** 应传入）：`transport.render_to_terminal` 且 `transport.out` 为 `None` 时，助手正文以**纯文本**流式（或 `--no-stream` 时整段）写入 stdout，不经 `markdown_to_ansi`。
-/// 若 `transport.plain_terminal_stream` 为 `false` 且 `transport.render_to_terminal` 为 `true`：仍在整段到达后用 `markdown_to_ansi` 渲染（用于服务端 jobs 等 **`out.is_none()`** 场景，避免与 CLI 混淆）。
+/// 若 `transport.plain_terminal_stream` 为 `true`（仅 **`runtime::cli`** 应传入）：`transport.render_to_terminal` 且 `transport.out` 为 `None` 时，助手正文以**纯文本**流式（或 `--no-stream` 时整段）写入 stdout，不经 `termimad`。
+/// 若 `transport.plain_terminal_stream` 为 `false` 且 `transport.render_to_terminal` 为 `true`：仍在整段到达后用 `termimad` 渲染（用于服务端 jobs 等 **`out.is_none()`** 场景，避免与 CLI 混淆）。
 /// 当 `transport.out` 为 `None` 且 `transport.render_to_terminal` 为 `true` 时，分阶段规划通知、分步注入 user 与各工具结果另经 `runtime::terminal_cli_transcript` 写入 stdout；通知与注入正文经 `user_message_for_chat_display`（分步长句可压缩）；`transport.plain_terminal_stream` 为 `true` 时助手正文为上游原始增量/拼接，为 `false` 时经 `assistant_markdown_source_for_display` 管线再渲染。
 /// effective_working_dir 为当前生效的工作目录（可与前端设置的工作区一致）。
 /// `transport.cancel` 为 `Some` 时，各轮请求会在流式读与重试间隔中轮询其标志；置位后尽快结束并返回 `Ok`（或 `Err`：[`agent::agent_turn::RunAgentTurnError`] 中含取消 / 限流 / SSE 早停等，用户可见串与常量 [`crate::types::LLM_CANCELLED_ERROR`] 对齐），供协作取消等场景使用。

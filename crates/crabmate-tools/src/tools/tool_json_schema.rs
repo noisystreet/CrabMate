@@ -58,8 +58,9 @@ mod tests {
             .expect("required array");
         assert!(req.iter().any(|x| x == "port"));
         let port = v.pointer("/properties/port").expect("port schema");
-        assert_eq!(port.get("minimum"), Some(&json!(1.0)));
-        assert_eq!(port.get("maximum"), Some(&json!(65535.0)));
+        // schemars 1.x emits integer bounds (1) where 0.8 emitted floats (1.0); compare as f64.
+        assert_eq!(port.get("minimum").and_then(|x| x.as_f64()), Some(1.0));
+        assert_eq!(port.get("maximum").and_then(|x| x.as_f64()), Some(65535.0));
     }
 
     #[test]
@@ -81,7 +82,7 @@ mod tests {
     #[test]
     fn markdown_check_links_schema_has_output_format_enum() {
         let v = tool_parameters_schema_value::<MarkdownCheckLinksArgs>();
-        let defs = v.get("definitions").expect("schema definitions");
+        let defs = v.get("$defs").expect("schema $defs");
         let def = defs
             .get("MarkdownCheckLinksOutputFormat")
             .expect("MarkdownCheckLinksOutputFormat def");
@@ -120,7 +121,7 @@ mod tests {
     #[test]
     fn code_stats_schema_has_format_enum() {
         let v = tool_parameters_schema_value::<CodeStatsArgs>();
-        let defs = v.get("definitions").expect("definitions");
+        let defs = v.get("$defs").expect("$defs");
         let def = defs.get("CodeStatsFormat").expect("CodeStatsFormat");
         let e = def.get("enum").and_then(|x| x.as_array()).expect("enum");
         assert!(e.iter().any(|x| x == "table"));
@@ -141,7 +142,7 @@ mod tests {
     #[test]
     fn coverage_report_schema_has_format_variants() {
         let v = tool_parameters_schema_value::<CoverageReportArgs>();
-        let defs = v.get("definitions").expect("definitions");
+        let defs = v.get("$defs").expect("$defs");
         let def = defs
             .get("CoverageReportFormat")
             .expect("CoverageReportFormat");
@@ -405,16 +406,20 @@ mod tests {
             "schema should expose properties.mode"
         );
         let mode_def = v
-            .pointer("/definitions/ModifyFileMode")
-            .expect("definitions.ModifyFileMode");
+            .pointer("/$defs/ModifyFileMode")
+            .expect("$defs.ModifyFileMode");
         let mut flat: Vec<&str> = Vec::new();
         if let Some(en) = mode_def.get("enum").and_then(|e| e.as_array()) {
             flat.extend(en.iter().filter_map(|x| x.as_str()));
         }
+        // schemars 1.x emits `const` for documented variants and `enum` for undocumented ones.
         if let Some(branches) = mode_def.get("oneOf").and_then(|o| o.as_array()) {
             for branch in branches {
                 if let Some(en) = branch.get("enum").and_then(|e| e.as_array()) {
                     flat.extend(en.iter().filter_map(|x| x.as_str()));
+                }
+                if let Some(c) = branch.get("const").and_then(|x| x.as_str()) {
+                    flat.push(c);
                 }
             }
         }
