@@ -86,6 +86,9 @@ pub struct AgentTurnTransport<'a> {
     pub sse_control_mirror: Option<crate::sse::SseControlMirror>,
     /// 可选：自定义 [`llm::ChatCompletionsBackend`]；`None` 时使用 OpenAI 兼容 HTTP（与历史行为一致）。
     pub llm_backend: Option<&'a (dyn llm::ChatCompletionsBackend + 'static)>,
+    /// 可选：per-step trace sink（bench/e2e 注入；`None` 时零开销）。
+    /// 持有 [`crabmate_llm::TraceSink`] 以便在 LLM 请求/响应、工具调用前后 emit [`crabmate_llm::TraceEvent`]。
+    pub trace_sink: Option<std::sync::Arc<dyn crabmate_llm::TraceSink>>,
 }
 
 /// 本回合对 `chat/completions` 的采样与模型路由覆盖（相对 [`config::AgentConfig`]）。
@@ -309,6 +312,7 @@ impl<'a> RunAgentTurnParams<'a> {
                 clarification_questionnaire_hook: None,
                 sse_control_mirror: None,
                 llm_backend: None,
+                trace_sink: None,
             },
             llm: AgentTurnLlmOverrides {
                 temperature_override,
@@ -370,6 +374,7 @@ impl<'a> RunAgentTurnParams<'a> {
                 clarification_questionnaire_hook: None,
                 sse_control_mirror: None,
                 llm_backend: None,
+                trace_sink: None,
             },
             llm: AgentTurnLlmOverrides {
                 temperature_override,
@@ -427,6 +432,7 @@ impl<'a> RunAgentTurnParams<'a> {
                 clarification_questionnaire_hook,
                 sse_control_mirror,
                 llm_backend: None,
+                trace_sink: None,
             },
             llm: AgentTurnLlmOverrides {
                 temperature_override: None,
@@ -481,6 +487,7 @@ impl<'a> RunAgentTurnParams<'a> {
                 clarification_questionnaire_hook: None,
                 sse_control_mirror: None,
                 llm_backend: None,
+                trace_sink: None,
             },
             llm: AgentTurnLlmOverrides {
                 temperature_override: None,

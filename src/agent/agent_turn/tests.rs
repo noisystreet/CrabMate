@@ -242,6 +242,7 @@ mod hierarchy_runner_params_tests {
                     request_audit: None,
                     process_handles:
                         crate::process_handles::ProcessHandles::default_arc_process_handles(),
+                    trace_sink: None,
                 },
             },
             turn: RunLoopTurnState {
@@ -341,6 +342,7 @@ mod hierarchy_runner_params_tests {
                     request_audit: None,
                     process_handles:
                         crate::process_handles::ProcessHandles::default_arc_process_handles(),
+                    trace_sink: None,
                 },
             },
             turn: RunLoopTurnState {
@@ -454,6 +456,7 @@ mod per_reflect_tests {
                     request_audit: None,
                     process_handles:
                         crate::process_handles::ProcessHandles::default_arc_process_handles(),
+                    trace_sink: None,
                 },
             },
             turn: RunLoopTurnState {

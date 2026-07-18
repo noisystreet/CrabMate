@@ -125,6 +125,7 @@ fn make_run_loop_params<'a>(
                 request_audit: None,
                 process_handles:
                     crate::process_handles::ProcessHandles::default_arc_process_handles(),
+                trace_sink: None,
             },
         },
         turn: RunLoopTurnState {
