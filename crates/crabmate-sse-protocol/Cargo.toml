@@ -3,11 +3,16 @@ name = "crabmate-sse-protocol"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
-description = "Shared SSE control-plane protocol version for CrabMate (Rust server + Leptos WASM)"
-
-[lib]
-path = "lib.rs"
+description = "Shared SSE control-plane protocol and runtime for CrabMate (Rust server + Leptos WASM)"
 
 [dependencies]
+crabmate-types = { workspace = true }
+log = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+
+[dev-dependencies]
+proptest = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt"] }

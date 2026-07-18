@@ -152,14 +152,17 @@ pub async fn run_web_tool_approval(
     );
     let decision = {
         let _guard = sink.approval_request_guard.lock().await;
-        let line = crate::sse::encode_message(crate::sse::SsePayload::CommandApproval {
-            command_approval_request: crate::sse::CommandApprovalBody {
-                command: spec.sse_command.clone(),
-                args: spec.sse_args.clone(),
-                allowlist_key: spec.allowlist_key.clone(),
+        let line = crabmate_sse_protocol::sse::encode_message(
+            crabmate_sse_protocol::sse::SsePayload::CommandApproval {
+                command_approval_request: crabmate_sse_protocol::sse::CommandApprovalBody {
+                    command: spec.sse_command.clone(),
+                    args: spec.sse_args.clone(),
+                    allowlist_key: spec.allowlist_key.clone(),
+                },
             },
-        });
-        let sent = crate::sse::send_string_logged(sink.out_tx, line, sse_log_label).await;
+        );
+        let sent =
+            crabmate_sse_protocol::sse::send_string_logged(sink.out_tx, line, sse_log_label).await;
         if matches!(channel_mode, WebApprovalChannelMode::Strict) && !sent {
             return Err(ToolApprovalWebError::ChannelUnavailable);
         }
@@ -170,7 +173,7 @@ pub async fn run_web_tool_approval(
             .unwrap_or(CommandApprovalDecision::Deny)
     };
     let detail = web_timeline_detail(spec);
-    crate::sse::web_approval::send_timeline_approval_decision(
+    crabmate_sse_protocol::sse::web_approval::send_timeline_approval_decision(
         sink.out_tx,
         spec.web_timeline_prefix_zh,
         Some(detail),

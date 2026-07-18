@@ -4,7 +4,7 @@ use crabmate_tools::clarification_questionnaire::{
     ClarificationQuestionnaireBody as ToolsBody, parse_present_clarification_body,
 };
 
-use crate::sse::{ClarificationQuestionField, ClarificationQuestionnaireBody};
+use crabmate_sse_protocol::sse::{ClarificationQuestionField, ClarificationQuestionnaireBody};
 
 fn to_sse_body(body: ToolsBody) -> ClarificationQuestionnaireBody {
     ClarificationQuestionnaireBody {

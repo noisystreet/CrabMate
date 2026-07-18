@@ -25,10 +25,10 @@ impl SseEncoder for V2Encoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::StreamEndReason;
     use crate::sse::protocol::{
         SseCapabilitiesBody, SseErrorBody, StreamEndedBody, ToolCallSummary, ToolResultBody,
     };
-    use crabmate_sse_protocol::StreamEndReason;
 
     #[test]
     fn v2_encoder_stream_ended() {

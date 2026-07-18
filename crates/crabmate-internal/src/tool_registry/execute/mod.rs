@@ -48,7 +48,7 @@ pub struct DispatchToolParams<'a> {
     pub name: &'a str,
     pub args: &'a str,
     pub sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
-    pub sse_control_mirror: Option<&'a crate::sse::SseControlMirror>,
+    pub sse_control_mirror: Option<&'a crabmate_sse_protocol::sse::SseControlMirror>,
     pub tc: &'a ToolCall,
     pub read_file_turn_cache:
         Option<std::sync::Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,

@@ -1,8 +1,10 @@
-//! CrabMate **`POST /chat/stream`** 控制面 JSON 的**协议版本**常量与 SSE 帧层工具函数。
+//! CrabMate **`POST /chat/stream`** 控制面 JSON 的**协议版本**常量、SSE 帧层工具函数与运行时。
 //!
 //! - **`SSE_PROTOCOL_VERSION`**：与 `docs/SSE协议.md` 中的 **`v`** / `sse_capabilities.supported_sse_v` 一致。
+//! - **`sse`**：控制面 JSON 协议、SSE 编码器、广播中枢与审批桥（原 `crabmate-internal::sse`，已迁移合并）。
 
 mod control_classify;
+pub mod sse;
 mod sse_frame;
 mod stream_end_reason;
 

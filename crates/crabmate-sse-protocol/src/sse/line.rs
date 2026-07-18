@@ -3,7 +3,7 @@
 //! Web 前端在 **`frontend/src/api/chat_stream/`** 的流式读取路径中做等价解析；此处为 **Rust 侧** 单一实现，供后续终端 UI 等与 Web 语义对齐复用。
 #![allow(dead_code)]
 
-use crabmate_sse_protocol::StreamEndReason;
+use crate::StreamEndReason;
 
 /// 与 `protocol` 模块对齐的 SSE 控制行；无法识别则视为模型流式正文。
 #[derive(Debug)]
