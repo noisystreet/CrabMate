@@ -134,6 +134,7 @@ async fn run_agent_turn_outer_loop_tool_round_then_final_assistant() {
             clarification_questionnaire_hook: None,
             sse_control_mirror: None,
             llm_backend: Some(backend as &dyn ChatCompletionsBackend),
+            trace_sink: None,
         },
         llm: AgentTurnLlmOverrides {
             temperature_override: None,
@@ -321,6 +322,7 @@ async fn run_agent_turn_hierarchical_end_to_end_mock_llm_sequence() {
             clarification_questionnaire_hook: None,
             sse_control_mirror: None,
             llm_backend: Some(backend as &dyn ChatCompletionsBackend),
+            trace_sink: None,
         },
         llm: AgentTurnLlmOverrides {
             temperature_override: None,
@@ -408,6 +410,7 @@ async fn run_agent_turn_hierarchical_discourse_fallback_uses_per_outer_loop() {
             clarification_questionnaire_hook: None,
             sse_control_mirror: None,
             llm_backend: Some(backend as &dyn ChatCompletionsBackend),
+            trace_sink: None,
         },
         llm: AgentTurnLlmOverrides {
             temperature_override: None,
@@ -498,6 +501,7 @@ async fn run_mock_agent_turn(
             clarification_questionnaire_hook: None,
             sse_control_mirror: None,
             llm_backend: Some(backend as &dyn ChatCompletionsBackend),
+            trace_sink: None,
         },
         llm: AgentTurnLlmOverrides {
             temperature_override: None,
@@ -650,6 +654,7 @@ async fn run_agent_turn_staged_single_step_mock_llm_sequence() {
             clarification_questionnaire_hook: None,
             sse_control_mirror: None,
             llm_backend: Some(backend as &dyn ChatCompletionsBackend),
+            trace_sink: None,
         },
         llm: AgentTurnLlmOverrides {
             temperature_override: None,
@@ -770,6 +775,7 @@ async fn run_agent_turn_plan_rewrite_exhausted_on_missing_plan() {
             clarification_questionnaire_hook: None,
             sse_control_mirror: None,
             llm_backend: Some(backend as &dyn ChatCompletionsBackend),
+            trace_sink: None,
         },
         llm: AgentTurnLlmOverrides {
             temperature_override: None,

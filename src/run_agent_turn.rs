@@ -68,6 +68,7 @@ pub async fn run_agent_turn<'a>(
         clarification_questionnaire_hook,
         sse_control_mirror,
         llm_backend,
+        trace_sink,
     } = transport;
     let AgentTurnLlmOverrides {
         temperature_override,
@@ -172,6 +173,7 @@ pub async fn run_agent_turn<'a>(
                 tracing_chat_turn: tracing_chat_turn.clone(),
                 request_audit: request_audit.clone(),
                 process_handles: Arc::clone(&process_handles),
+                trace_sink,
             },
         },
         turn: crate::agent::agent_turn::RunLoopTurnState {
@@ -191,6 +193,17 @@ pub async fn run_agent_turn<'a>(
     };
 
     let res = run_agent_turn_common_with_optional_trace(&mut loop_params, wall_ms).await;
+    // 失败时向 trace_sink emit Error 事件（最小化 emit；完整 LLM/工具事件由后续 PR 接入）
+    if let Err(e) = &res
+        && let Some(sink) = loop_params.ctx.obs.trace_sink.as_ref()
+    {
+        sink.emit(crabmate_llm::TraceEvent::Error {
+            round: 0,
+            kind: "turn_failed".to_string(),
+            message: e.to_string(),
+        })
+        .await;
+    }
     write_agent_turn_replay_dump(crate::turn_replay_dump::TurnReplayDumpParams {
         wall_ms,
         long_term_memory_scope_id: turn_dump_scope_id.as_deref(),
