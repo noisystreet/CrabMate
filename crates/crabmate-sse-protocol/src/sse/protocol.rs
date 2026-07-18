@@ -4,7 +4,7 @@
 //!
 //! **完整契约**（版本、`error`/`code` 与 `tool_result.error_code` 枚举、双端对齐清单）见仓库 **`docs/SSE协议.md`**（与 `frontend/src/sse_dispatch/dispatch.rs` 对齐）。
 
-pub use crabmate_sse_protocol::{SSE_PROTOCOL_VERSION, StreamEndReason};
+pub use crate::{SSE_PROTOCOL_VERSION, StreamEndReason};
 
 /// 服务端为每条 `/chat/stream` SSE 事件分配的 **`id:`**（`Last-Event-ID`）环形缓冲容量（仅内存；进程重启后不可恢复）。
 pub const SSE_RESUME_RING_CAP: usize = 512;
@@ -222,8 +222,11 @@ pub struct ToolOutputChunkBody {
     pub stream: Option<String>,
 }
 
+/// 与 `crabmate_tools::tool_result::CRABMATE_TOOL_ENVELOPE_VERSION_V1` 对齐（避免向 sse-protocol 拉入 crabmate-tools 的重依赖）。
+const CRABMATE_TOOL_ENVELOPE_VERSION_V1: u32 = 1;
+
 fn default_tool_result_payload_version() -> u32 {
-    crate::tool_result::CRABMATE_TOOL_ENVELOPE_VERSION_V1
+    CRABMATE_TOOL_ENVELOPE_VERSION_V1
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -410,7 +413,7 @@ pub(crate) fn encode_message_v1(payload: &SsePayload) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crabmate_sse_protocol::StreamEndReason;
+    use crate::StreamEndReason;
     use proptest::prelude::*;
 
     #[test]

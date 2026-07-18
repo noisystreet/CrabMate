@@ -1,4 +1,6 @@
-//! CrabMate 内部服务层：工具注册与执行、SSE 协议、工作区、MCP、长期记忆等。
+//! CrabMate 内部服务层：工具注册与执行、工作区、MCP、长期记忆等。
+//!
+//! SSE 控制面协议与运行时已迁移至 `crabmate-sse-protocol` crate 的 `sse` 模块。
 
 #![recursion_limit = "512"]
 
@@ -23,7 +25,6 @@ pub mod observability;
 pub mod process_handles;
 pub mod readonly_tool_ttl_cache;
 pub mod request_chrome_trace;
-pub mod sse;
 pub mod terminal_session;
 pub mod text_util;
 pub mod tool_approval;

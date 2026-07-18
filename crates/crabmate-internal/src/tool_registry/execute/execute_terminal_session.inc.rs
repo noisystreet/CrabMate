@@ -7,9 +7,9 @@ struct TerminalSessionExecInvoke<'a> {
     cli_ctx: Option<&'a CliToolRuntime>,
     args: &'a str,
     sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
-    sse_control_mirror: Option<&'a crate::sse::SseControlMirror>,
+    sse_control_mirror: Option<&'a crabmate_sse_protocol::sse::SseControlMirror>,
     tool_call_id: &'a str,
-    sse_encoder: Option<&'a dyn crate::sse::SseEncoder>,
+    sse_encoder: Option<&'a dyn crabmate_sse_protocol::sse::SseEncoder>,
 }
 
 async fn execute_terminal_session_impl(

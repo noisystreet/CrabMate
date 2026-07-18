@@ -19,9 +19,11 @@ use nix::unistd::{Pid, chdir, dup, execvp, read, write};
 use serde::Deserialize;
 use tokio::sync::mpsc::Sender;
 
-use crate::sse::{SseEncoder, SsePayload, ToolOutputChunkBody, send_sse_control_payload_optional};
 use crate::tools::{PreparedRunCommand, prepare_run_command_for_pty_spawn};
 use crabmate_config::AgentConfig;
+use crabmate_sse_protocol::sse::{
+    SseEncoder, SsePayload, ToolOutputChunkBody, send_sse_control_payload_optional,
+};
 
 const MAX_SESSIONS: usize = 8;
 /// 连续无可读数据达到此时长后，认为本轮 PTY 输出暂告一段落。
@@ -123,7 +125,7 @@ async fn emit_tool_chunk(
     tool_call_id: &str,
     text: &str,
     out: Option<&Sender<String>>,
-    mirror: Option<&crate::sse::SseControlMirror>,
+    mirror: Option<&crabmate_sse_protocol::sse::SseControlMirror>,
     encoder: &dyn SseEncoder,
 ) {
     if text.is_empty() {
@@ -243,7 +245,7 @@ async fn drain_until_idle(
     seq: &mut u64,
     tool_call_id: &str,
     out: Option<&Sender<String>>,
-    mirror: Option<&crate::sse::SseControlMirror>,
+    mirror: Option<&crabmate_sse_protocol::sse::SseControlMirror>,
     encoder: &dyn SseEncoder,
 ) -> (String, bool) {
     let DrainIdleCfg {
@@ -489,7 +491,7 @@ struct TerminalStreamCtx<'a> {
     seq: &'a mut u64,
     tool_call_id: &'a str,
     sse_out_tx: Option<&'a Sender<String>>,
-    sse_control_mirror: Option<&'a crate::sse::SseControlMirror>,
+    sse_control_mirror: Option<&'a crabmate_sse_protocol::sse::SseControlMirror>,
     encoder: &'a dyn SseEncoder,
 }
 
@@ -734,7 +736,7 @@ struct TerminalActionExecArgs<'a> {
     seq: &'a mut u64,
     tool_call_id: &'a str,
     sse_out_tx: Option<&'a Sender<String>>,
-    sse_control_mirror: Option<&'a crate::sse::SseControlMirror>,
+    sse_control_mirror: Option<&'a crabmate_sse_protocol::sse::SseControlMirror>,
     allowed_commands: &'a [String],
     encoder: Option<&'a dyn SseEncoder>,
 }
@@ -757,7 +759,7 @@ async fn terminal_action_exec(args: TerminalActionExecArgs<'_>) -> String {
     if cols == 0 || rows == 0 {
         return "错误：cols/rows 须为正整数。".to_string();
     }
-    let encoder_ref: &dyn SseEncoder = encoder.unwrap_or(&crate::sse::V2Encoder);
+    let encoder_ref: &dyn SseEncoder = encoder.unwrap_or(&crabmate_sse_protocol::sse::V2Encoder);
     let mut ctx = TerminalStreamCtx {
         wall,
         max_capture: max_cap,
@@ -782,7 +784,7 @@ pub async fn execute_terminal_session(
     args_json: &str,
     tool_call_id: &str,
     sse_out_tx: Option<&Sender<String>>,
-    sse_control_mirror: Option<&crate::sse::SseControlMirror>,
+    sse_control_mirror: Option<&crabmate_sse_protocol::sse::SseControlMirror>,
     allowed_commands: &[String],
     encoder: Option<&dyn SseEncoder>,
 ) -> String {

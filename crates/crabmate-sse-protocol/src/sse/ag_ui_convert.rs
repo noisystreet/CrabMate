@@ -667,7 +667,7 @@ mod golden_tests {
                 SsePayload::StreamEnded {
                     ended: StreamEndedBody {
                         job_id: 1,
-                        reason: crabmate_sse_protocol::StreamEndReason::Completed,
+                        reason: crate::StreamEndReason::Completed,
                         tiktoken_prompt_tokens: None,
                     },
                 },
