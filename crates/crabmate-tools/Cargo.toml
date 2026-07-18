@@ -33,7 +33,7 @@ libc = { workspace = true }
 log = { workspace = true }
 path-absolutize = { workspace = true }
 regex = { workspace = true }
-reqwest = { workspace = true, features = ["json", "stream", "blocking", "default-tls"] }
+reqwest = { workspace = true, features = ["json", "stream", "blocking", "rustls-tls"] }
 schemars = { workspace = true }
 scraper = { workspace = true }
 secrecy = { workspace = true }

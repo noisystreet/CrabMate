@@ -21,44 +21,21 @@ crabmate-sse-protocol = { workspace = true }
 crabmate-tools = { workspace = true }
 crabmate-types = { workspace = true }
 async-trait = { workspace = true }
-base64 = { workspace = true }
-
-bzip2 = { workspace = true }
-chardetng = "1.0"
-chrono = { workspace = true }
-csv = { workspace = true }
 dialoguer = { workspace = true }
-diffy = { workspace = true }
-ego-tree = { workspace = true }
-encoding_rs = { workspace = true }
-flate2 = { workspace = true }
 futures-util = { workspace = true }
-glob = { workspace = true }
-ignore = { workspace = true }
-jsonschema = { workspace = true }
 libc = { workspace = true }
 log = { workspace = true }
-path-absolutize = { workspace = true }
 regex = { workspace = true }
-reqwest = { workspace = true, features = ["json", "stream", "blocking", "default-tls"] }
+reqwest = { workspace = true, features = ["json", "stream", "blocking", "rustls-tls"] }
 rmcp = { version = "1.4", optional = true, default-features = false, features = [
     "client",
     "server",
     "transport-child-process",
     "transport-io",
 ] }
-rusqlite = { workspace = true }
-schemars = { workspace = true }
-scraper = { workspace = true }
-secrecy = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml = { workspace = true }
 sha2 = { workspace = true }
-similar = { workspace = true }
-tar = { workspace = true }
-tempfile = { workspace = true }
-thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-log = "0.2"
 tracing-subscriber = { workspace = true, features = [
@@ -80,14 +57,7 @@ tokio = { workspace = true, features = [
     "process",
     "io-util",
 ] }
-tokio-stream = { workspace = true }
 tokei = { workspace = true, optional = true }
-toml = { workspace = true }
-uom = { workspace = true }
-urlencoding = { workspace = true }
-walkdir = { workspace = true }
-xz2 = { workspace = true }
-zip = { workspace = true }
 bollard = { version = "0.21", optional = true, default-features = false, features = [
     "http",
     "pipe",

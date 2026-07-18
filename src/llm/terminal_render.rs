@@ -3,7 +3,7 @@
 use std::io::{self, Write};
 
 use log::debug;
-use markdown_to_ansi::{Options, render};
+use termimad::MadSkin;
 
 use crate::redact::{self, MESSAGE_LOG_PREVIEW_CHARS};
 use crate::runtime::message_display::assistant_markdown_source_for_display;
@@ -64,7 +64,7 @@ pub(crate) fn cli_terminal_write_plain_fragment(
     stdout.flush()
 }
 
-/// CLI：加粗着色 `Agent: ` + 助手展示管线（剥标签、规划可读化、LaTeX）+ `markdown_to_ansi`。
+/// CLI：加粗着色 `Agent: ` + 助手展示管线（剥标签、规划可读化、LaTeX）+ `termimad`。
 /// 仅在「非 CLI 终端」或「流式但无任何正文 delta」（如仅有 tool_calls）时使用。
 pub fn terminal_render_agent_markdown(content_acc: &str) -> io::Result<()> {
     debug!(
@@ -77,13 +77,9 @@ pub fn terminal_render_agent_markdown(content_acc: &str) -> io::Result<()> {
     let mut stdout = io::stdout();
     crate::runtime::terminal_labels::write_agent_message_prefix(&mut stdout)?;
     stdout.flush()?;
-    let opts = Options {
-        syntax_highlight: true,
-        width: Some(term_w),
-        code_bg: true,
-    };
+    let skin = MadSkin::default();
     let content = assistant_markdown_source_for_display(content_acc);
-    let rendered = render(&content, &opts);
+    let rendered = skin.text(&content, Some(term_w)).to_string();
     write!(stdout, "{}", rendered)?;
     if !rendered.ends_with('\n') {
         writeln!(stdout)?;
