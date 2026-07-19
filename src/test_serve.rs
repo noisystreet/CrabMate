@@ -44,7 +44,8 @@ pub async fn start_test_serve(
 ) -> TestServeHandle {
     let cfg = crate::config::load_config(None).expect("默认配置加载失败");
     let cfg_holder: SharedAgentConfig = Arc::new(tokio::sync::RwLock::new(cfg));
-    let client = build_shared_api_client(&*cfg_holder.read().await).expect("构建 HTTP 客户端失败");
+    let client = build_shared_api_client(&cfg_holder.read().await.llm_http_retry)
+        .expect("构建 HTTP 客户端失败");
     let tools = crate::build_tools();
     let api_key = std::env::var("API_KEY").unwrap_or_default();
     let uploads_dir = std::env::temp_dir().join("crabmate_e2e_uploads");

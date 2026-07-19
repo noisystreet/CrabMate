@@ -135,13 +135,20 @@ where
                 phase: AgentTurnSubPhase::Planner,
                 message: e.to_string(),
             })?;
+        let cfg_ref = p.ctx.core.cfg.as_ref();
+        let llm_cfg = crabmate_types::llm_config::LlmConfig {
+            llm: cfg_ref.llm.clone(),
+            sampling: cfg_ref.llm_sampling.clone(),
+            vendor_flags: cfg_ref.llm_vendor_flags.clone(),
+            http_retry: cfg_ref.llm_http_retry.clone(),
+        };
         let stripped = messages_for_api_stripping_reasoning_skip_ui_separators(
             p.turn.messages(),
-            kimi_k2_5_vendor_requires_tool_call_reasoning(p.ctx.core.cfg.as_ref()),
-            crate::llm::vendor::deepseek_json_output_eligible(p.ctx.core.cfg.as_ref()),
+            kimi_k2_5_vendor_requires_tool_call_reasoning(&llm_cfg),
+            crate::llm::vendor::deepseek_json_output_eligible(&cfg_ref.llm.api_base),
         );
         let req = no_tools_chat_request_from_messages(
-            p.ctx.core.cfg.as_ref(),
+            &llm_cfg,
             stripped,
             p.turn.temperature_override,
             p.effective_model(),
@@ -371,8 +378,15 @@ where
             retry_messages.push(Message::user_planner_tool_call_reject_injection(
                 staged_planner_tool_call_reject_user_body(first_total),
             ));
+            let cfg_ref = p.ctx.core.cfg.as_ref();
+            let llm_cfg = crabmate_types::llm_config::LlmConfig {
+                llm: cfg_ref.llm.clone(),
+                sampling: cfg_ref.llm_sampling.clone(),
+                vendor_flags: cfg_ref.llm_vendor_flags.clone(),
+                http_retry: cfg_ref.llm_http_retry.clone(),
+            };
             let mut retry_req = crate::llm::no_tools_chat_request_from_messages(
-                p.ctx.core.cfg.as_ref(),
+                &llm_cfg,
                 retry_messages,
                 p.turn.temperature_override,
                 p.effective_model(),

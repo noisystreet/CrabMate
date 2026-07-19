@@ -32,7 +32,7 @@ pub(super) async fn init_cli_session_start(
     }
     let client = {
         let g = cfg_holder.read().await;
-        crate::http_client::build_shared_api_client(&g)?
+        crate::http_client::build_shared_api_client(&g.llm_http_retry)?
     };
     let mut all_tools = crate::tools::build_tools();
     {

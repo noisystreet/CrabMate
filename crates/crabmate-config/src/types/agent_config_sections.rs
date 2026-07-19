@@ -7,20 +7,10 @@ use std::sync::Arc;
 use crate::FinalPlanRequirementMode;
 
 use super::{
-    AgentRoleCatalog, LlmHttpAuthMode, LongTermMemoryScopeMode, LongTermMemoryVectorBackend,
-    PlannerExecutorMode, SandboxDockerContainerUser, ScheduledAgentTask, SecretString,
-    StagedPlanBaselineMode, StagedPlanFeedbackMode, SyncDefaultToolSandboxMode, WebSearchProvider,
+    AgentRoleCatalog, LongTermMemoryScopeMode, LongTermMemoryVectorBackend, PlannerExecutorMode,
+    SandboxDockerContainerUser, ScheduledAgentTask, SecretString, StagedPlanBaselineMode,
+    StagedPlanFeedbackMode, SyncDefaultToolSandboxMode, WebSearchProvider,
 };
-
-/// LLM 网关连接与认证。
-#[derive(Debug, Clone)]
-pub struct LlmConnectionConfig {
-    pub api_base: String,
-    pub model: String,
-    pub planner_model: Option<String>,
-    pub executor_model: Option<String>,
-    pub llm_http_auth_mode: LlmHttpAuthMode,
-}
 
 /// REPL/TUI 与会话列表相关。
 #[derive(Debug, Clone)]
@@ -38,31 +28,6 @@ pub struct CommandExecConfig {
     pub command_max_output_len: usize,
     pub allowed_commands: Arc<[String]>,
     pub run_command_working_dir: String,
-}
-
-/// 采样与上下文窗口计量。
-#[derive(Debug, Clone)]
-pub struct LlmSamplingConfig {
-    pub max_tokens: u32,
-    pub llm_context_tokens: u32,
-    pub temperature: f32,
-    pub llm_seed: Option<i64>,
-}
-
-/// 供应商专属请求开关。
-#[derive(Debug, Clone)]
-pub struct LlmVendorFlagsConfig {
-    pub llm_reasoning_split: bool,
-    pub llm_bigmodel_thinking: bool,
-    pub llm_kimi_thinking_disabled: bool,
-}
-
-/// `chat/completions` HTTP 客户端退避。
-#[derive(Debug, Clone)]
-pub struct LlmHttpRetryConfig {
-    pub api_timeout_secs: u64,
-    pub api_max_retries: u32,
-    pub api_retry_delay_secs: u64,
 }
 
 #[derive(Debug, Clone)]

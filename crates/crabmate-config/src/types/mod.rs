@@ -4,13 +4,17 @@ pub use agent_config_sections::{
     AgentThinkingTraceConfig, AgentToolStatsConfig, ChatQueuesCacheConfig, CodebaseSemanticConfig,
     CommandExecConfig, ContextBootstrapInjectConfig, ContextPipelineConfig,
     ConversationPersistenceConfig, CursorRulesConfigSection, DsmlMaterializeConfig,
-    HierarchyRoutingConfig, HttpFetchConfigSection, IntentRoutingConfig, LlmConnectionConfig,
-    LlmHttpRetryConfig, LlmSamplingConfig, LlmVendorFlagsConfig, LongTermMemoryConfig,
+    HierarchyRoutingConfig, HttpFetchConfigSection, IntentRoutingConfig, LongTermMemoryConfig,
     McpClientConfig, PerPlanPolicyConfig, RolesPromptsConfig, SessionUiConfig,
     SessionWorkspaceChangelistConfig, SkillsConfigSection, StagedPlanningConfig,
     SyncToolSandboxConfig, ThinkingEchoConfig, ToolCallExplainConfig, ToolRegistryPolicyConfig,
     ToolTranscriptConfig, TurnBudgetConfig, WeatherToolConfig, WebApiConfig,
     WebSearchConfigSection, WorkspaceRootsConfig,
+};
+
+pub use crabmate_types::llm_config::{
+    LlmConnectionConfig, LlmHttpAuthMode, LlmHttpRetryConfig, LlmSamplingConfig,
+    LlmVendorFlagsConfig,
 };
 
 /// 敏感字符串（`Debug` / 结构化日志默认脱敏）；取值请用 [`ExposeSecret::expose_secret`]。
@@ -219,38 +223,6 @@ impl StagedPlanBaselineMode {
     }
 }
 
-/// 对 OpenAI 兼容 **`POST …/chat/completions`**（及同基址 **`GET …/models`**）的 HTTP 鉴权方式。
-///
-/// 本地 **Ollama** 等默认无需密钥时可设为 [`Self::None`]，进程可不设 **`API_KEY`** 且不发送 `Authorization`。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum LlmHttpAuthMode {
-    /// `Authorization: Bearer {API_KEY}`（云端 OpenAI 兼容服务默认）。
-    #[default]
-    Bearer,
-    /// 不附加 `Authorization`；**`API_KEY` 环境变量可省略**。
-    None,
-}
-
-impl LlmHttpAuthMode {
-    pub fn parse(s: &str) -> Result<Self, String> {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "bearer" => Ok(Self::Bearer),
-            "none" | "off" | "false" | "no" | "no_auth" => Ok(Self::None),
-            _ => Err(format!(
-                "未知的 llm_http_auth_mode: {:?}（支持 bearer、none）",
-                s.trim()
-            )),
-        }
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Bearer => "bearer",
-            Self::None => "none",
-        }
-    }
-}
-
 #[cfg(test)]
 mod sandbox_docker_user_tests {
     use super::SandboxDockerContainerUser;
@@ -271,27 +243,6 @@ mod sandbox_docker_user_tests {
     fn resolve_literal_uid_gid() {
         let u = SandboxDockerContainerUser::resolve_from_config_str("1001:1002");
         assert_eq!(u.as_docker_user_string(), Some("1001:1002"));
-    }
-}
-
-#[cfg(test)]
-mod llm_http_auth_mode_tests {
-    use super::LlmHttpAuthMode;
-
-    #[test]
-    fn parse_bearer_and_none_aliases() {
-        assert_eq!(
-            LlmHttpAuthMode::parse("bearer").unwrap(),
-            LlmHttpAuthMode::Bearer
-        );
-        assert_eq!(
-            LlmHttpAuthMode::parse("NONE").unwrap(),
-            LlmHttpAuthMode::None
-        );
-        assert_eq!(
-            LlmHttpAuthMode::parse("no_auth").unwrap(),
-            LlmHttpAuthMode::None
-        );
     }
 }
 

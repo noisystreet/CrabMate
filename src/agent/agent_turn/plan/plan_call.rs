@@ -80,8 +80,14 @@ pub(crate) async fn per_plan_call_model_retrying(
             (std::sync::Arc::new(cfg.clone()), api_key.to_string())
         };
 
+    let llm_cfg = crabmate_types::llm_config::LlmConfig {
+        llm: effective_cfg.llm.clone(),
+        sampling: effective_cfg.llm_sampling.clone(),
+        vendor_flags: effective_cfg.llm_vendor_flags.clone(),
+        http_retry: effective_cfg.llm_http_retry.clone(),
+    };
     let req = tool_chat_request(
-        &effective_cfg,
+        &llm_cfg,
         messages,
         tools_defs,
         temperature_override,

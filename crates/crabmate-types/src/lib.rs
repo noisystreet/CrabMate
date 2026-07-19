@@ -1,5 +1,8 @@
 //! API 与对话相关类型
 
+pub mod llm_config;
+pub use llm_config::*;
+
 use serde::Serialize;
 
 /// 拼接在 `api_base` 后的 OpenAI 兼容 chat 路径（无前导斜杠）。

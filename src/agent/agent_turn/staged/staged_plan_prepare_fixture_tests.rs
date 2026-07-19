@@ -45,9 +45,17 @@ async fn prepare_then_build_planner_messages_ends_with_plan_system() {
     .expect("prepare_messages_for_model");
 
     let plan_sys = staged_plan_phase_instruction_default();
-    let preserve_kimi = crate::llm::llm_vendor_adapter(cfg.as_ref())
-        .preserve_assistant_tool_call_reasoning(cfg.as_ref());
-    let preserve_deepseek = crate::llm::vendor::deepseek_json_output_eligible(cfg.as_ref());
+    let cfg_ref: &crabmate_config::AgentConfig = cfg.as_ref();
+    let llm_cfg = crabmate_types::llm_config::LlmConfig {
+        llm: cfg_ref.llm.clone(),
+        sampling: cfg_ref.llm_sampling.clone(),
+        vendor_flags: cfg_ref.llm_vendor_flags.clone(),
+        http_retry: cfg_ref.llm_http_retry.clone(),
+    };
+    let preserve_kimi = crate::llm::llm_vendor_adapter(&llm_cfg.llm.model, &llm_cfg.llm.api_base)
+        .preserve_assistant_tool_call_reasoning(&llm_cfg);
+    let preserve_deepseek =
+        crate::llm::vendor::deepseek_json_output_eligible(&llm_cfg.llm.api_base);
     let built = build_single_agent_planner_messages(
         messages.as_slice(),
         plan_sys.clone(),

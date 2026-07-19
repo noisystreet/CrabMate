@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use reqwest::Client;
 
-use crabmate_config::AgentConfig;
+use crabmate_types::llm_config::LlmHttpRetryConfig;
 
 /// 将 `reqwest` 传输错误格式化为可读说明（日志与 CLI），不输出密钥；附带超时/连接类提示便于排障。
 ///
@@ -42,17 +42,17 @@ pub fn map_reqwest_transport_err(e: reqwest::Error) -> Box<dyn std::error::Error
 }
 
 /// 建立 TLS 等阶段的上限，避免坏网络长时间挂死（与整请求 `timeout` 区分）。
-fn connect_timeout_for(cfg: &AgentConfig) -> Duration {
-    let secs = cfg.llm_http_retry.api_timeout_secs.clamp(5, 45);
+fn connect_timeout_for(retry: &LlmHttpRetryConfig) -> Duration {
+    let secs = retry.api_timeout_secs.clamp(5, 45);
     Duration::from_secs(secs)
 }
 
 /// 构造供全进程复用的异步 HTTP 客户端（连接池 + Keep-Alive 友好设置）。
-pub fn build_shared_api_client(cfg: &AgentConfig) -> Result<Client, reqwest::Error> {
+pub fn build_shared_api_client(retry: &LlmHttpRetryConfig) -> Result<Client, reqwest::Error> {
     Client::builder()
         // 整次请求（含读完全部响应体；流式直到 `[DONE]`）的上限
-        .timeout(Duration::from_secs(cfg.llm_http_retry.api_timeout_secs))
-        .connect_timeout(connect_timeout_for(cfg))
+        .timeout(Duration::from_secs(retry.api_timeout_secs))
+        .connect_timeout(connect_timeout_for(retry))
         // 对单一模型网关多轮对话/工具循环时复用连接
         .pool_max_idle_per_host(8)
         .pool_idle_timeout(Duration::from_secs(120))

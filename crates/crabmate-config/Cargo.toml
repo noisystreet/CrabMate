@@ -15,6 +15,7 @@ web = ["dep:tokio-cron-scheduler"]
 
 [dependencies]
 clap = { workspace = true }
+crabmate-types = { workspace = true }
 libc = { workspace = true }
 log = { workspace = true }
 secrecy = { workspace = true }

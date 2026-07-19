@@ -78,8 +78,14 @@ impl ManagerAgent {
             &mut messages,
             cfg,
         );
+        let llm_cfg = crabmate_types::llm_config::LlmConfig {
+            llm: cfg.llm.clone(),
+            sampling: cfg.llm_sampling.clone(),
+            vendor_flags: cfg.llm_vendor_flags.clone(),
+            http_retry: cfg.llm_http_retry.clone(),
+        };
         let mut request = no_tools_chat_request_for_hierarchical_manager(
-            cfg,
+            &llm_cfg,
             &messages,
             Some(Self::REFLECTION_PRIMARY_TEMPERATURE),
             None,

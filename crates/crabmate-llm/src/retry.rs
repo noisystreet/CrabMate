@@ -3,8 +3,7 @@
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
-use crabmate_config::AgentConfig;
-use crabmate_types::{ChatRequest, Message};
+use crabmate_types::{ChatRequest, LlmConfig, Message};
 use log::{debug, error, info};
 
 use crate::backend::ChatCompletionsBackend;
@@ -19,7 +18,7 @@ static LLM_CALL_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64
 pub struct CompleteChatRetryingParams<'a> {
     pub llm_backend: &'a dyn ChatCompletionsBackend,
     pub stream: StreamChatParams<'a>,
-    pub cfg: &'a AgentConfig,
+    pub cfg: &'a LlmConfig,
 }
 
 /// 调用 `chat/completions`：失败时若错误为 **可重试**，按配置指数退避；不可重试错误立即返回。
@@ -29,7 +28,7 @@ pub async fn complete_chat_retrying(
     request: &ChatRequest,
 ) -> Result<(Message, String), LlmCompleteError> {
     let llm_call_id = format!("llm-{}", LLM_CALL_SEQ.fetch_add(1, Ordering::Relaxed));
-    let max_attempts = p.cfg.llm_http_retry.api_max_retries + 1;
+    let max_attempts = p.cfg.http_retry.api_max_retries + 1;
     hooks.append_turn_replay_json(
         "llm_request_started",
         request.model.as_str(),
@@ -107,7 +106,7 @@ pub async fn complete_chat_retrying(
                 let can_backoff = attempt < max_attempts - 1 && retryable;
                 let backoff_ms = if can_backoff {
                     p.cfg
-                        .llm_http_retry
+                        .http_retry
                         .api_retry_delay_secs
                         .saturating_mul(2_u64.saturating_pow(attempt))
                         .saturating_mul(1000)
@@ -173,7 +172,7 @@ pub async fn complete_chat_retrying(
                 if can_backoff {
                     let delay_secs = p
                         .cfg
-                        .llm_http_retry
+                        .http_retry
                         .api_retry_delay_secs
                         .saturating_mul(2_u64.saturating_pow(attempt));
                     info!(

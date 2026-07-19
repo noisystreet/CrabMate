@@ -218,8 +218,14 @@ pub(crate) async fn evaluate_plan_consistency_with_recent_tools_llm(
         .model_override
         .as_deref()
         .or(ctx.cfg.llm.planner_model.as_deref());
+    let llm_cfg = crabmate_types::llm_config::LlmConfig {
+        llm: ctx.cfg.llm.clone(),
+        sampling: ctx.cfg.llm_sampling.clone(),
+        vendor_flags: ctx.cfg.llm_vendor_flags.clone(),
+        http_retry: ctx.cfg.llm_http_retry.clone(),
+    };
     let mut req = no_tools_chat_request(
-        ctx.cfg,
+        &llm_cfg,
         &side_messages,
         ctx.temperature_override,
         model_override,

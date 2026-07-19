@@ -8,7 +8,6 @@ use crate::agent_role_turn::apply_agent_role_switch_to_messages;
 use crate::config::LlmHttpAuthMode;
 use crate::config::SharedAgentConfig;
 use crate::config::cli::{SaveSessionCli, SaveSessionFormat};
-use crate::llm::vendor::refresh_llm_reasoning_split_for_gateway;
 use crate::runtime::cli::repl_parse::{
     ReplBuiltIn, print_repl_version_line, repl_agent_role_set_is_default_pseudo,
 };
@@ -193,7 +192,10 @@ async fn slash_model_set(
         let label = t.to_string();
         let mut w = cfg_holder.write().await;
         w.llm.model.clone_from(&label);
-        refresh_llm_reasoning_split_for_gateway(&mut w);
+        let model = w.llm.model.clone();
+        let api_base = w.llm.api_base.clone();
+        w.llm_vendor_flags.llm_reasoning_split =
+            crabmate_types::llm_config::default_llm_reasoning_split_for_gateway(&model, &api_base);
         drop(w);
         let _ = style.print_success(&format!(
             "已设 model = {label}（仅本进程；持久化请改配置；/config reload 会从磁盘覆盖；llm_reasoning_split 已按网关默认刷新）"
@@ -239,7 +241,10 @@ async fn slash_api_base_set(
         let label = t.to_string();
         let mut w = cfg_holder.write().await;
         w.llm.api_base.clone_from(&label);
-        refresh_llm_reasoning_split_for_gateway(&mut w);
+        let model = w.llm.model.clone();
+        let api_base = w.llm.api_base.clone();
+        w.llm_vendor_flags.llm_reasoning_split =
+            crabmate_types::llm_config::default_llm_reasoning_split_for_gateway(&model, &api_base);
         drop(w);
         let _ = style.print_success(&format!(
             "已设 api_base = {label}（仅本进程；持久化请改配置；/config reload 会从磁盘覆盖；llm_reasoning_split 已按网关默认刷新）"

@@ -7,7 +7,6 @@ description = "OpenAI-compatible LLM client layer for CrabMate (vendor adapters,
 
 [dependencies]
 async-trait = { workspace = true }
-crabmate-config = { workspace = true }
 crabmate-sse-protocol = { workspace = true }
 crabmate-types = { workspace = true }
 futures-util = { workspace = true }

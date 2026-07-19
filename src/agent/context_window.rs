@@ -249,11 +249,27 @@ pub async fn maybe_summarize_with_llm(
             tools: None,
             tool_choice: None,
             max_tokens: cfg.context_pipeline.context_summary_max_tokens,
-            temperature: vendor_temperature_for_config(cfg, 0.2),
+            temperature: {
+                let llm_cfg = crabmate_types::llm_config::LlmConfig {
+                    llm: cfg.llm.clone(),
+                    sampling: cfg.llm_sampling.clone(),
+                    vendor_flags: cfg.llm_vendor_flags.clone(),
+                    http_retry: cfg.llm_http_retry.clone(),
+                };
+                vendor_temperature_for_config(&llm_cfg, 0.2)
+            },
             seed: None,
             stream: None,
         },
-        vendor: crate::llm::chat_request_vendor_extensions_for_agent(cfg),
+        vendor: {
+            let llm_cfg = crabmate_types::llm_config::LlmConfig {
+                llm: cfg.llm.clone(),
+                sampling: cfg.llm_sampling.clone(),
+                vendor_flags: cfg.llm_vendor_flags.clone(),
+                http_retry: cfg.llm_http_retry.clone(),
+            };
+            crate::llm::chat_request_vendor_extensions_for_agent(&llm_cfg)
+        },
     };
 
     let cc = CompleteChatRetryingParams::new(
