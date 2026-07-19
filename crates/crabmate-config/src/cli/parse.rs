@@ -307,6 +307,7 @@ fn build_parsed_cli_args(
                 mode: e.mode,
                 output_dir: e.output_dir,
                 recordings_dir: e.recordings_dir,
+                scenarios_file: e.scenarios_file,
             });
         }
     }

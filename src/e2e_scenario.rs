@@ -1,6 +1,7 @@
 //! e2e 场景定义、指标收集与统一 runner（CLI 子命令 `crabmate e2e` 与集成测试共用）。
 //!
 //! [`TestScenario`] 描述一个测试场景（用户消息 + 可选工作区文件），
+//! 支持 serde 反序列化，场景可从外部 JSON/YAML 文件加载。
 //! [`TestRunMetrics`] 收集执行指标，[`run_scenario`] 封装完整的执行流程。
 //!
 //! # 使用方式（测试）
@@ -9,22 +10,29 @@
 //! use crabmate::e2e_scenario::{TestScenario, run_scenario};
 //!
 //! let metrics = run_scenario(&TestScenario {
-//!     name: "my_test",
-//!     user_message: "你好",
-//!     workspace_files: &[],
-//!     expected_output_contains: &[],
+//!     name: "my_test".into(),
+//!     user_message: "你好".into(),
+//!     workspace_files: vec![],
+//!     expected_output_contains: vec![],
 //!     expected_tool_used: None,
-//! }).await;
+//! }, &e2e_cfg).await;
 //! assert!(metrics.success, "{} should succeed", metrics.scenario);
 //! ```
 //!
-//! # 使用方式（CLI）
+//! # CLI 外部场景文件
 //!
-//! ```ignore
-//! use crabmate::e2e_scenario::{E2eRunConfig, run_scenario};
+//! `crabmate e2e --scenarios-file scenarios.json` 支持 JSON 格式：
 //!
-//! let cfg = E2eRunConfig::from_env();
-//! let metrics = run_scenario(&scenario).await;
+//! ```json
+//! [
+//!   {
+//!     "name": "custom_test",
+//!     "user_message": "Run the Python script",
+//!     "workspace_files": [["hello.py", "print('hello')"]],
+//!     "expected_output_contains": ["hello"],
+//!     "expected_tool_used": "run_command"
+//!   }
+//! ]
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -72,17 +80,22 @@ impl Default for E2eRunConfig {
 ///
 /// 每个场景描述一个完整的测试任务：用户消息 + 可选工作区文件。
 /// 测试框架会自动创建临时目录、写入文件、执行 agent turn、收集指标。
+///
+/// 支持 serde 反序列化，可从外部 JSON/YAML 文件加载。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TestScenario {
     /// 场景名称（用于录制/artifact 目录路径）。
-    pub name: &'static str,
+    pub name: String,
     /// 发送给 agent 的用户消息。
-    pub user_message: &'static str,
+    pub user_message: String,
     /// 需要在临时工作区预创建的文件（文件名 → 内容）。
-    pub workspace_files: &'static [(&'static str, &'static str)],
+    #[serde(default)]
+    pub workspace_files: Vec<(String, String)>,
     /// 期望最终回复包含的关键词（可选，多项时任意一项匹配即可）。
-    pub expected_output_contains: &'static [&'static str],
+    #[serde(default)]
+    pub expected_output_contains: Vec<String>,
     /// 期望 agent 使用的工具名称（可选）。
-    pub expected_tool_used: Option<&'static str>,
+    pub expected_tool_used: Option<String>,
 }
 
 /// 单次 e2e 测试的结构化运行指标。
@@ -132,7 +145,7 @@ pub struct TestRunMetrics {
 /// 5. 返回 [`TestRunMetrics`]
 pub async fn run_scenario(scenario: &TestScenario, e2e_cfg: &E2eRunConfig) -> TestRunMetrics {
     let start = Instant::now();
-    let scenario_name = scenario.name;
+    let scenario_name = scenario.name.as_str();
     let artifacts_dir = e2e_cfg.artifacts_root.join(scenario_name);
     let _ = std::fs::create_dir_all(&artifacts_dir);
 
@@ -141,7 +154,7 @@ pub async fn run_scenario(scenario: &TestScenario, e2e_cfg: &E2eRunConfig) -> Te
 
     // 2. 构建配置和 messages
     let cfg = cfg_single_agent();
-    let mut messages = build_turn_messages(&cfg, scenario.user_message);
+    let mut messages = build_turn_messages(&cfg, &scenario.user_message);
     let workspace_is_set = !scenario.workspace_files.is_empty();
 
     // 3. 执行 agent turn
@@ -172,11 +185,18 @@ pub async fn run_scenario(scenario: &TestScenario, e2e_cfg: &E2eRunConfig) -> Te
     metrics
 }
 
-/// CLI 入口：运行所有预设场景并生成报告。
+/// CLI 入口：运行预设场景或从外部文件加载的场景，生成报告。
 ///
+/// `scenarios_file` 为 `Some(path)` 时从文件加载场景（JSON/YAML），否则使用预设场景。
 /// 供 `cli_run.rs` 中的 `crabmate e2e` 子命令调用。
-pub async fn run_e2e_cli(e2e_cfg: &E2eRunConfig) -> Result<(), Box<dyn std::error::Error>> {
-    let scenarios = preset_scenarios();
+pub async fn run_e2e_cli(
+    e2e_cfg: &E2eRunConfig,
+    scenarios_file: Option<&Path>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let scenarios = match scenarios_file {
+        Some(path) => load_scenarios_file(path)?,
+        None => preset_scenarios(),
+    };
 
     let total = scenarios.len();
     let mut results: Vec<TestRunMetrics> = Vec::with_capacity(total);
@@ -215,44 +235,61 @@ pub async fn run_e2e_cli(e2e_cfg: &E2eRunConfig) -> Result<(), Box<dyn std::erro
 pub fn preset_scenarios() -> Vec<TestScenario> {
     vec![
         TestScenario {
-            name: "orch_single_agent_smoke",
-            user_message: "你好，用一句话介绍自己。",
-            workspace_files: &[],
-            expected_output_contains: &[],
+            name: "orch_single_agent_smoke".to_string(),
+            user_message: "你好，用一句话介绍自己。".to_string(),
+            workspace_files: vec![],
+            expected_output_contains: vec![],
             expected_tool_used: None,
         },
         TestScenario {
-            name: "orch_single_agent_tool",
-            user_message: "请调用 get_current_time 工具查询当前时间，然后用一句话总结。",
-            workspace_files: &[],
-            expected_output_contains: &[],
-            expected_tool_used: Some("get_current_time"),
+            name: "orch_single_agent_tool".to_string(),
+            user_message: "请调用 get_current_time 工具查询当前时间，然后用一句话总结。"
+                .to_string(),
+            workspace_files: vec![],
+            expected_output_contains: vec![],
+            expected_tool_used: Some("get_current_time".to_string()),
         },
         TestScenario {
-            name: "orch_cpp_cmake",
-            user_message: "请查看工作区中的 C++ 项目，编译并运行它，然后告诉我输出结果。",
-            workspace_files: &[
+            name: "orch_cpp_cmake".to_string(),
+            user_message: "请查看工作区中的 C++ 项目，编译并运行它，然后告诉我输出结果。"
+                .to_string(),
+            workspace_files: vec![
                 (
-                    "main.cpp",
+                    "main.cpp".to_string(),
                     r#"#include <iostream>
 int main() {
     std::cout << "Hello from C++!" << std::endl;
     return 0;
 }
-"#,
+"#
+                    .to_string(),
                 ),
                 (
-                    "CMakeLists.txt",
+                    "CMakeLists.txt".to_string(),
                     r#"cmake_minimum_required(VERSION 3.10)
 project(cpp_e2e_test)
 add_executable(cpp_e2e_test main.cpp)
-"#,
+"#
+                    .to_string(),
                 ),
             ],
-            expected_output_contains: &["Hello from C++", "编译成功"],
-            expected_tool_used: Some("run_command"),
+            expected_output_contains: vec!["Hello from C++".to_string(), "编译成功".to_string()],
+            expected_tool_used: Some("run_command".to_string()),
         },
     ]
+}
+
+/// 从外部 JSON/YAML 文件加载场景列表。
+///
+/// 格式见模块文档。支持 `.json` 和 `.yaml`/`.yml` 扩展名。
+pub fn load_scenarios_file(path: &Path) -> Result<Vec<TestScenario>, Box<dyn std::error::Error>> {
+    let content = std::fs::read_to_string(path)?;
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let scenarios = match ext {
+        "yaml" | "yml" => serde_yaml::from_str(&content)?,
+        _ => serde_json::from_str(&content)?,
+    };
+    Ok(scenarios)
 }
 
 /// 生成 e2e 测试报告（Markdown），包含所有场景的指标对比。
@@ -319,7 +356,7 @@ fn setup_workspace(scenario: &TestScenario) -> (PathBuf, tempfile::TempDir) {
     let tmp = tempfile::tempdir().expect("创建临时目录失败");
     let work_dir = tmp.path().to_path_buf();
 
-    for (file_name, content) in scenario.workspace_files {
+    for (file_name, content) in &scenario.workspace_files {
         let full_path = work_dir.join(file_name);
         if let Some(parent) = full_path.parent() {
             let _ = std::fs::create_dir_all(parent);
@@ -515,13 +552,13 @@ fn extract_metrics(
     };
 
     // 期望工具匹配
-    let expected_tool_matched = match scenario.expected_tool_used {
+    let expected_tool_matched = match scenario.expected_tool_used.as_deref() {
         Some(expected) => tool_names.iter().any(|n| n == expected),
         None => true,
     };
 
     TestRunMetrics {
-        scenario: scenario.name.to_string(),
+        scenario: scenario.name.clone(),
         success,
         duration_ms,
         llm_rounds,
