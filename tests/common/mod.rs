@@ -7,6 +7,7 @@
 
 pub mod error_classify;
 pub mod sse_stream;
+pub mod test_context;
 pub mod test_server;
 
 /// 放置在 `tests/` 目录下的测试用临时目录前缀。
