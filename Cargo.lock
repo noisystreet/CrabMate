@@ -1171,6 +1171,7 @@ dependencies = [
  "crabmate-config",
  "crabmate-dsml",
  "crabmate-llm",
+ "crabmate-mcp",
  "crabmate-memory",
  "crabmate-sse-protocol",
  "crabmate-tools",
@@ -1183,7 +1184,6 @@ dependencies = [
  "proptest",
  "regex",
  "reqwest",
- "rmcp",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -1210,6 +1210,21 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "crabmate-mcp"
+version = "0.1.0"
+dependencies = [
+ "cmd_mate",
+ "crabmate-config",
+ "crabmate-tools",
+ "crabmate-types",
+ "log",
+ "rmcp",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 

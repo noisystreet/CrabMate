@@ -19,7 +19,7 @@ pub use store::{
     write_secret_web_api_bearer,
 };
 pub use types::{
-    LlmEndpointOverride, LlmOverridesFile, McpRemoteToolSummary, McpServerStatusEntry,
-    McpServersFile, McpServersFilePublic, McpServersImportResponse, McpServersStatusResponse,
-    SCHEMA_VERSION, SecretsStatusResponse, UserPrefs, WebSessionsFile, WorkspaceListEntry,
+    LlmEndpointOverride, LlmOverridesFile, McpServerStatusEntry, McpServersFile,
+    McpServersFilePublic, McpServersImportResponse, McpServersStatusResponse, SCHEMA_VERSION,
+    SecretsStatusResponse, UserPrefs, WebSessionsFile, WorkspaceListEntry,
 };

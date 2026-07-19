@@ -7,9 +7,9 @@ use std::time::Duration;
 
 use tokio::sync::Mutex;
 
-use crate::config::AgentConfig;
-use crate::types::Tool;
-use crate::user_data::McpRemoteToolSummary;
+use crabmate_config::AgentConfig;
+use crabmate_types::McpRemoteToolSummary;
+use crabmate_types::Tool;
 
 /// 与完整实现同名的占位类型（无 rmcp 会话）。
 #[derive(Debug)]
@@ -94,7 +94,7 @@ impl McpTurnSessions {
 pub type McpTurnHandle = Arc<McpTurnSessions>;
 
 pub async fn try_open_turn_handle(
-    _resolved: &crate::mcp::resolve::ResolvedMcpConfig,
+    _resolved: &crate::resolve::ResolvedMcpConfig,
 ) -> Option<(McpTurnHandle, Vec<Tool>)> {
     None
 }
@@ -116,7 +116,7 @@ pub struct McpServerRuntimeStatus {
 }
 
 pub async fn mcp_servers_runtime_status(
-    resolved: &crate::mcp::resolve::ResolvedMcpConfig,
+    resolved: &crate::resolve::ResolvedMcpConfig,
 ) -> Vec<McpServerRuntimeStatus> {
     resolved
         .servers
@@ -135,7 +135,7 @@ pub async fn mcp_servers_runtime_status(
 }
 
 pub async fn probe_mcp_server(
-    server: &crate::mcp::resolve::ResolvedMcpServer,
+    server: &crate::resolve::ResolvedMcpServer,
 ) -> McpServerRuntimeStatus {
     McpServerRuntimeStatus {
         id: server.id.clone(),
@@ -154,7 +154,7 @@ pub mod server {
 
     use std::path::PathBuf;
 
-    use crate::config::AgentConfig;
+    use crabmate_config::AgentConfig;
 
     pub async fn run_stdio_mcp_server(
         _cfg: AgentConfig,

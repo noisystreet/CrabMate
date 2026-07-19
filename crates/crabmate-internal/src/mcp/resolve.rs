@@ -1,33 +1,11 @@
 //! 从 user-data（及 legacy TOML 一次性导入）解析本轮 MCP 配置。
+//!
+//! `crabmate-mcp` crate 中只提供了基于 cfg 的基础构造，本模块补全 user-data 加载层。
 
-use crate::config::AgentConfig;
+use crabmate_config::AgentConfig;
+use crabmate_mcp::resolve::{ResolvedMcpConfig, ResolvedMcpServer};
+
 use crate::user_data::load_mcp_servers_with_legacy_import;
-
-/// 单条已启用的 stdio MCP 服务器（运行时视图）。
-#[derive(Debug, Clone)]
-pub struct ResolvedMcpServer {
-    pub id: String,
-    pub name: String,
-    pub slug: String,
-    pub command: String,
-    pub enabled: bool,
-}
-
-/// 本轮 agent 使用的 MCP 配置（user-data 为真源）。
-#[derive(Debug, Clone)]
-pub struct ResolvedMcpConfig {
-    pub global_enabled: bool,
-    pub tool_timeout_secs: u64,
-    pub servers: Vec<ResolvedMcpServer>,
-}
-
-impl ResolvedMcpConfig {
-    pub fn enabled_servers(&self) -> impl Iterator<Item = &ResolvedMcpServer> {
-        self.servers
-            .iter()
-            .filter(|s| s.enabled && !s.command.trim().is_empty())
-    }
-}
 
 /// 读取 user-data MCP 列表；空列表时尝试从 TOML `mcp_*` 一次性导入。
 pub fn resolve_mcp_config(cfg: &AgentConfig) -> ResolvedMcpConfig {
