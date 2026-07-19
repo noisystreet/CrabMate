@@ -5,9 +5,9 @@ use log::debug;
 use crabmate_types::{FunctionCall, Message, MessageContent, ToolCall};
 use serde_json::Value;
 
-use super::parser::{parse_combined_assistant_text, text_looks_like_dsml};
-use super::strip::strip_deepseek_dsml_for_display;
-use super::types::DsmlMaterializePolicy;
+use crate::parser::{parse_combined_assistant_text, text_looks_like_dsml};
+use crate::strip::strip_deepseek_dsml_for_display;
+use crate::types::DsmlMaterializePolicy;
 
 /// 流式聚合等场景下 API 可能留下 **`function.name` 全空** 的占位 `tool_calls`。
 fn has_usable_native_tool_calls(tcs: &[ToolCall]) -> bool {

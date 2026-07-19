@@ -3,8 +3,8 @@
 use regex::Regex;
 use std::sync::LazyLock;
 
-use super::normalizer::normalize_deepseek_dsml_vendor_variants;
-use super::strip_scan::{
+use crate::normalizer::normalize_deepseek_dsml_vendor_variants;
+use crate::strip_scan::{
     collapse_blank_runs, strip_dsml_named_blocks_ascii, strip_dsml_named_blocks_fullwidth,
 };
 
