@@ -10,6 +10,8 @@ default = []
 fastembed = []
 docker_sandbox = []
 mcp = []
+## cron 定时任务（serve 模式）：启用 `[[scheduled_agent_task]]` 的 cron 表达式校验。
+web = ["dep:tokio-cron-scheduler"]
 
 [dependencies]
 clap = { workspace = true }
@@ -19,7 +21,7 @@ secrecy = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { version = "1", default-features = false, features = ["sync"] }
-tokio-cron-scheduler = { workspace = true }
+tokio-cron-scheduler = { workspace = true, optional = true }
 toml = { workspace = true }
 
 [dev-dependencies]
