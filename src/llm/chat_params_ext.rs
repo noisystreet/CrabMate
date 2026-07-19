@@ -72,6 +72,13 @@ impl<'a> CompleteChatRetryingParams<'a> {
     }
 
     pub(crate) fn stream_params(&self) -> StreamChatParams<'_> {
+        // `vendor` 接口不再需要 `AgentConfig`，此处构造临时 `LlmConfig` 供 trait 方法使用。
+        let llm_cfg = crabmate_types::llm_config::LlmConfig {
+            llm: self.cfg.llm.clone(),
+            sampling: self.cfg.llm_sampling.clone(),
+            vendor_flags: self.cfg.llm_vendor_flags.clone(),
+            http_retry: self.cfg.llm_http_retry.clone(),
+        };
         StreamChatParams {
             host: &crate::llm::stream_host_impl::CRABMATE_STREAM_CHAT_HOST,
             client: self.http,
@@ -83,11 +90,17 @@ impl<'a> CompleteChatRetryingParams<'a> {
             no_stream: self.no_stream,
             cancel: self.cancel,
             plain_terminal_stream: self.plain_terminal_stream,
-            fold_system_into_user: fold_system_into_user_for_config(self.cfg),
-            preserve_reasoning_on_assistant_tool_calls: llm_vendor_adapter(self.cfg)
-                .preserve_assistant_tool_call_reasoning(self.cfg),
+            fold_system_into_user: fold_system_into_user_for_config(
+                &self.cfg.llm.model,
+                &self.cfg.llm.api_base,
+            ),
+            preserve_reasoning_on_assistant_tool_calls: llm_vendor_adapter(
+                &self.cfg.llm.model,
+                &self.cfg.llm.api_base,
+            )
+            .preserve_assistant_tool_call_reasoning(&llm_cfg),
             preserve_deepseek_thinking_reasoning_roundtrip: vendor::deepseek_json_output_eligible(
-                self.cfg,
+                &self.cfg.llm.api_base,
             ),
             thinking_trace_enabled: self.cfg.agent_thinking_trace.agent_thinking_trace_enabled,
             dsml_stream_strip_enabled: self.cfg.dsml_materialize.dsml_stream_strip_enabled,

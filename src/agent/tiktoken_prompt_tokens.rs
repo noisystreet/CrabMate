@@ -147,12 +147,18 @@ pub fn prompt_token_count_vendor_shaped_for_session(
     cfg: &AgentConfig,
     session_messages: &[Message],
 ) -> Option<TiktokenPromptTokensSnapshot> {
-    let v = llm_vendor_adapter(cfg);
+    let llm_cfg = crabmate_types::llm_config::LlmConfig {
+        llm: cfg.llm.clone(),
+        sampling: cfg.llm_sampling.clone(),
+        vendor_flags: cfg.llm_vendor_flags.clone(),
+        http_retry: cfg.llm_http_retry.clone(),
+    };
+    let v = llm_vendor_adapter(&cfg.llm.model, &cfg.llm.api_base);
     let vendor = conversation_messages_to_vendor_body(
         session_messages,
-        fold_system_into_user_for_config(cfg),
-        v.preserve_assistant_tool_call_reasoning(cfg),
-        deepseek_json_output_eligible(cfg),
+        fold_system_into_user_for_config(&cfg.llm.model, &cfg.llm.api_base),
+        v.preserve_assistant_tool_call_reasoning(&llm_cfg),
+        deepseek_json_output_eligible(&cfg.llm.api_base),
     );
     count_prompt_tokens_openai_compat_vendor_slice(&cfg.llm.model, &vendor)
 }

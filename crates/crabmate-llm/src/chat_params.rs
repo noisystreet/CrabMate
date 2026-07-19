@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicBool;
 use reqwest::Client;
 use tokio::sync::mpsc::Sender;
 
-use crabmate_config::LlmHttpAuthMode;
+use crabmate_types::llm_config::LlmHttpAuthMode;
 
 use crate::stream_host::StreamChatHost;
 use crate::stream_scratch::TuiLlmStreamScratchArc;

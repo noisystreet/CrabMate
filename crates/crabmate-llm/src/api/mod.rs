@@ -7,8 +7,8 @@ mod sse_turn_segment_emit;
 use log::{debug, info};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crabmate_config::LlmHttpAuthMode;
 use crabmate_sse_protocol::StreamEndReason;
+use crabmate_types::llm_config::LlmHttpAuthMode;
 use crabmate_types::{
     ChatRequest, FunctionCall, LLM_CANCELLED_ERROR, Message, MessageContent,
     OPENAI_CHAT_COMPLETIONS_REL_PATH, ToolCall, USER_CANCELLED_FINISH_REASON, Usage,

@@ -88,9 +88,15 @@ impl OperatorAgent {
         )
         .with_turn_budget(self.config.runtime.turn_budget.as_ref());
 
+        let llm_cfg = crabmate_types::llm_config::LlmConfig {
+            llm: cfg.llm.clone(),
+            sampling: cfg.llm_sampling.clone(),
+            vendor_flags: cfg.llm_vendor_flags.clone(),
+            http_retry: cfg.llm_http_retry.clone(),
+        };
         let request = if self.config.policy.tools_defs.is_empty() {
             crate::llm::no_tools_chat_request(
-                cfg,
+                &llm_cfg,
                 &state.messages,
                 None,
                 None,
@@ -98,7 +104,7 @@ impl OperatorAgent {
             )
         } else {
             crate::llm::tool_chat_request(
-                cfg,
+                &llm_cfg,
                 &state.messages,
                 &self.config.policy.tools_defs,
                 None,

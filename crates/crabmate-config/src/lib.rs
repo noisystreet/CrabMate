@@ -25,7 +25,6 @@ mod workspace_roots;
 pub use final_plan_requirement_mode::FinalPlanRequirementMode;
 pub use gateway_hints::{
     default_llm_reasoning_split_for_gateway, fold_system_into_user_for_config,
-    is_minimax_family_model_id,
 };
 pub use hot_reload::apply_hot_reload_config_subset;
 pub use load::{load_config, load_config_for_cli};
@@ -230,7 +229,10 @@ model = "MiniMax-M2.7"
                 "MiniMax 网关未写 llm_reasoning_split 时应默认 true"
             );
             assert!(
-                crate::gateway_hints::fold_system_into_user_for_config(&cfg),
+                crate::gateway_hints::fold_system_into_user_for_config(
+                    &cfg.llm.model,
+                    &cfg.llm.api_base
+                ),
                 "MiniMax 应自动折叠 system→user"
             );
         });

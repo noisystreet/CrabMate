@@ -8,8 +8,8 @@ use reqwest::Client;
 use serde::Deserialize;
 
 use crate::http_client;
-use crabmate_config::LlmHttpAuthMode;
 use crabmate_types::OPENAI_MODELS_REL_PATH;
+use crabmate_types::llm_config::LlmHttpAuthMode;
 
 #[derive(Debug, Deserialize)]
 struct ModelsEnvelope {

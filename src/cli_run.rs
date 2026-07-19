@@ -373,7 +373,7 @@ async fn run_models_or_probe(
         llm_context_tokens_cli,
     );
     let api_key = require_api_key_for_cli_models_probe(&cfg)?;
-    let client = http_client::build_shared_api_client(&cfg)?;
+    let client = http_client::build_shared_api_client(&cfg.llm_http_retry)?;
     if extra_cli == ExtraCliCommand::Models {
         crate::runtime::cli_doctor::run_models_cli(&client, &cfg, api_key.trim()).await?;
     } else {

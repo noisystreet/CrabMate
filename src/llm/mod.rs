@@ -59,10 +59,16 @@ pub async fn complete_chat_retrying(
         .as_ref()
         .map(|t| t.enter_section("llm.chat_completions"));
     let hooks = retry_hooks::CrabmateLlmRetryHooks { cfg: p.cfg };
+    let llm_cfg = crabmate_types::llm_config::LlmConfig {
+        llm: p.cfg.llm.clone(),
+        sampling: p.cfg.llm_sampling.clone(),
+        vendor_flags: p.cfg.llm_vendor_flags.clone(),
+        http_retry: p.cfg.llm_http_retry.clone(),
+    };
     let core = crabmate_llm::CompleteChatRetryingParams {
         llm_backend: p.llm_backend,
         stream: p.stream_params(),
-        cfg: p.cfg,
+        cfg: &llm_cfg,
     };
     let result = crabmate_llm::complete_chat_retrying(&core, &hooks, request).await;
     if result.is_ok()

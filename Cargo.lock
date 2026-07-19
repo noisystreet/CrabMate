@@ -1110,6 +1110,7 @@ name = "crabmate-config"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "crabmate-types",
  "libc",
  "log",
  "secrecy",

@@ -2,7 +2,7 @@
 //!
 //! 新增厂商时：实现 [`LlmVendorAdapter`]，并在 [`llm_vendor_adapter_for_model`] / [`llm_vendor_adapter`] 中注册路由（优先 **`model` ID**；[`llm_vendor_adapter`] 还可参考 **`api_base`**）。
 
-use crabmate_config::AgentConfig;
+use crabmate_types::llm_config::{LlmConfig, LlmConnectionConfig, LlmVendorFlagsConfig};
 
 /// 对单次 `ChatRequest` 的厂商特有处理（构造阶段调用；HTTP 仍走 OpenAI 兼容 JSON）。
 pub trait LlmVendorAdapter: Send + Sync {
@@ -10,10 +10,10 @@ pub trait LlmVendorAdapter: Send + Sync {
     fn coerce_temperature(&self, model: &str, temperature: f32) -> f32;
 
     /// 可选扩展字段 **`thinking`**（智谱、Moonshot Kimi 等）；`None` 则 JSON 省略。
-    fn thinking_field(&self, cfg: &AgentConfig) -> Option<serde_json::Value>;
+    fn thinking_field(&self, cfg: &LlmConfig) -> Option<serde_json::Value>;
 
     /// 构造 `messages` 时：含 **`tool_calls`** 的 assistant 是否须保留 **`reasoning_content`**（如 Kimi k2.5 默认 thinking 时接口要求）。
-    fn preserve_assistant_tool_call_reasoning(&self, cfg: &AgentConfig) -> bool;
+    fn preserve_assistant_tool_call_reasoning(&self, cfg: &LlmConfig) -> bool;
 
     /// 供应商是否支持显式 `cache_control`（如 DeepSeek 的 `{"type": "ephemeral"}`）。
     /// 启用后，`ChatRequest` 序列化时会在 system 消息上注入 `cache_control` 标记。
@@ -112,28 +112,31 @@ pub fn api_base_looks_volcano_engine_openai_compat(base: &str) -> bool {
 /// TOML/环境变量均未设置 **`llm_reasoning_split`** 时的默认值：**MiniMax** 网关为 **`true`**，否则 **`false`**。
 #[inline]
 pub fn default_llm_reasoning_split_for_gateway(model: &str, api_base: &str) -> bool {
-    crabmate_config::default_llm_reasoning_split_for_gateway(model, api_base)
+    crabmate_types::llm_config::default_llm_reasoning_split_for_gateway(model, api_base)
 }
 
 /// 运行时更新 **`model` / `api_base`** 后，将 **`llm_reasoning_split`** 同步为与当前网关一致的推断（与配置 **`finalize`** 中省略 **`llm_reasoning_split`** 时的行为一致）。
 #[inline]
-pub fn refresh_llm_reasoning_split_for_gateway(cfg: &mut AgentConfig) {
-    cfg.llm_vendor_flags.llm_reasoning_split =
-        default_llm_reasoning_split_for_gateway(&cfg.llm.model, &cfg.llm.api_base);
+pub fn refresh_llm_reasoning_split_for_gateway(
+    vendor_flags: &mut LlmVendorFlagsConfig,
+    llm: &LlmConnectionConfig,
+) {
+    vendor_flags.llm_reasoning_split =
+        default_llm_reasoning_split_for_gateway(&llm.model, &llm.api_base);
 }
 
 /// 出站是否将独立 **`system`** 折叠进 **`user`**：**MiniMax**（按 `model` / `api_base` 与 [`llm_vendor_adapter`] 同源规则识别）为 **`true`**，其余为 **`false`**（不再由 TOML / 环境变量配置）。
 #[inline]
-pub fn fold_system_into_user_for_config(cfg: &AgentConfig) -> bool {
-    crabmate_config::fold_system_into_user_for_config(cfg)
+pub fn fold_system_into_user_for_config(model: &str, api_base: &str) -> bool {
+    crabmate_types::llm_config::fold_system_into_user_for_gateway(model, api_base)
 }
 
 /// 当前 **`api_base`** 是否视为 DeepSeek 官方 OpenAI 兼容端点（用于启用 [JSON Output](https://api-docs.deepseek.com/zh-cn/guides/json_mode)）。
 ///
 /// 仅用 URL 判断、**不**用 `model` ID：避免在 MiniMax 等网关误配 `deepseek-chat` 时下发 `response_format`。
 #[inline]
-pub fn deepseek_json_output_eligible(cfg: &AgentConfig) -> bool {
-    cfg.llm.api_base.to_ascii_lowercase().contains("deepseek")
+pub fn deepseek_json_output_eligible(api_base: &str) -> bool {
+    api_base.to_ascii_lowercase().contains("deepseek")
 }
 
 /// DeepSeek 官方 **`api_base`** 时，是否在出站 JSON 中带显式 **`thinking`** / **`reasoning_effort`**（与 [`deepseek_json_output_eligible`] 同源 URL 判定）。
@@ -144,14 +147,17 @@ pub fn deepseek_json_output_eligible(cfg: &AgentConfig) -> bool {
 /// - **`llm_kimi_thinking_disabled`**（Web **`llm_thinking_mode: off`** 会一并置位）→ **`thinking: disabled`**，不传 **`reasoning_effort`**。
 /// - 二者均未触发 → **省略**上述字段，由 DeepSeek 网关默认（文档：思考默认 **enabled**、普通请求 effort 默认 **high**）。
 #[must_use]
-pub fn deepseek_reasoning_effort_for_request(cfg: &AgentConfig) -> Option<String> {
-    if !deepseek_json_output_eligible(cfg) {
+pub fn deepseek_reasoning_effort_for_request(
+    api_base: &str,
+    vendor_flags: &LlmVendorFlagsConfig,
+) -> Option<String> {
+    if !deepseek_json_output_eligible(api_base) {
         return None;
     }
-    if cfg.llm_vendor_flags.llm_kimi_thinking_disabled {
+    if vendor_flags.llm_kimi_thinking_disabled {
         return None;
     }
-    if cfg.llm_vendor_flags.llm_bigmodel_thinking {
+    if vendor_flags.llm_bigmodel_thinking {
         return Some("high".to_string());
     }
     None
@@ -181,11 +187,11 @@ impl LlmVendorAdapter for GenericOpenAiCompatVendor {
         temperature
     }
 
-    fn thinking_field(&self, _cfg: &AgentConfig) -> Option<serde_json::Value> {
+    fn thinking_field(&self, _cfg: &LlmConfig) -> Option<serde_json::Value> {
         None
     }
 
-    fn preserve_assistant_tool_call_reasoning(&self, _cfg: &AgentConfig) -> bool {
+    fn preserve_assistant_tool_call_reasoning(&self, _cfg: &LlmConfig) -> bool {
         false
     }
 }
@@ -199,14 +205,14 @@ impl LlmVendorAdapter for ZhipuGlmVendor {
         temperature
     }
 
-    fn thinking_field(&self, cfg: &AgentConfig) -> Option<serde_json::Value> {
-        if cfg.llm_vendor_flags.llm_bigmodel_thinking {
+    fn thinking_field(&self, cfg: &LlmConfig) -> Option<serde_json::Value> {
+        if cfg.vendor_flags.llm_bigmodel_thinking {
             return Some(serde_json::json!({ "type": "enabled" }));
         }
         None
     }
 
-    fn preserve_assistant_tool_call_reasoning(&self, _cfg: &AgentConfig) -> bool {
+    fn preserve_assistant_tool_call_reasoning(&self, _cfg: &LlmConfig) -> bool {
         false
     }
 }
@@ -220,11 +226,11 @@ impl LlmVendorAdapter for MiniMaxVendor {
         temperature
     }
 
-    fn thinking_field(&self, _cfg: &AgentConfig) -> Option<serde_json::Value> {
+    fn thinking_field(&self, _cfg: &LlmConfig) -> Option<serde_json::Value> {
         None
     }
 
-    fn preserve_assistant_tool_call_reasoning(&self, _cfg: &AgentConfig) -> bool {
+    fn preserve_assistant_tool_call_reasoning(&self, _cfg: &LlmConfig) -> bool {
         false
     }
 }
@@ -240,18 +246,18 @@ impl LlmVendorAdapter for DeepSeekVendor {
         temperature
     }
 
-    fn thinking_field(&self, cfg: &AgentConfig) -> Option<serde_json::Value> {
+    fn thinking_field(&self, cfg: &LlmConfig) -> Option<serde_json::Value> {
         // 与 Kimi 路径一致：Web **`thinking` off** 置 `llm_kimi_thinking_disabled`，须优先于 enabled。
-        if cfg.llm_vendor_flags.llm_kimi_thinking_disabled {
+        if cfg.vendor_flags.llm_kimi_thinking_disabled {
             return Some(serde_json::json!({ "type": "disabled" }));
         }
-        if cfg.llm_vendor_flags.llm_bigmodel_thinking {
+        if cfg.vendor_flags.llm_bigmodel_thinking {
             return Some(serde_json::json!({ "type": "enabled" }));
         }
         None
     }
 
-    fn preserve_assistant_tool_call_reasoning(&self, _cfg: &AgentConfig) -> bool {
+    fn preserve_assistant_tool_call_reasoning(&self, _cfg: &LlmConfig) -> bool {
         false
     }
 
@@ -269,18 +275,18 @@ impl LlmVendorAdapter for MoonshotKimiVendor {
         kimi_coerce_temperature(model, temperature)
     }
 
-    fn thinking_field(&self, cfg: &AgentConfig) -> Option<serde_json::Value> {
-        if cfg.llm_vendor_flags.llm_kimi_thinking_disabled && is_kimi_k2_5_model(&cfg.llm.model) {
+    fn thinking_field(&self, cfg: &LlmConfig) -> Option<serde_json::Value> {
+        if cfg.vendor_flags.llm_kimi_thinking_disabled && is_kimi_k2_5_model(&cfg.llm.model) {
             return Some(serde_json::json!({ "type": "disabled" }));
         }
-        if cfg.llm_vendor_flags.llm_bigmodel_thinking {
+        if cfg.vendor_flags.llm_bigmodel_thinking {
             return Some(serde_json::json!({ "type": "enabled" }));
         }
         None
     }
 
-    fn preserve_assistant_tool_call_reasoning(&self, cfg: &AgentConfig) -> bool {
-        is_kimi_k2_5_model(&cfg.llm.model) && !cfg.llm_vendor_flags.llm_kimi_thinking_disabled
+    fn preserve_assistant_tool_call_reasoning(&self, cfg: &LlmConfig) -> bool {
+        is_kimi_k2_5_model(&cfg.llm.model) && !cfg.vendor_flags.llm_kimi_thinking_disabled
     }
 }
 
@@ -292,23 +298,21 @@ static MINIMAX: MiniMaxVendor = MiniMaxVendor;
 
 /// 按 **`model`** 与 **`api_base`** 选择适配器（**`model` 族优先**，避免误用 `api_base` 覆盖 Kimi 等明确 ID）。
 #[inline]
-pub fn llm_vendor_adapter(cfg: &AgentConfig) -> &'static dyn LlmVendorAdapter {
+pub fn llm_vendor_adapter(model: &str, api_base: &str) -> &'static dyn LlmVendorAdapter {
     // Volcano Ark：`model` 常为 `Kimi-K2.x` 等，但与 Moonshot 官方网关语义不同；必须先于 Kimi 前缀判定。
-    if api_base_looks_volcano_engine_openai_compat(&cfg.llm.api_base) {
+    if api_base_looks_volcano_engine_openai_compat(api_base) {
         return &GENERIC;
     }
-    if is_moonshot_kimi_family_model_id(&cfg.llm.model) {
+    if is_moonshot_kimi_family_model_id(model) {
         return &KIMI;
     }
-    if is_minimax_family_model_id(&cfg.llm.model) || api_base_looks_minimax(&cfg.llm.api_base) {
+    if is_minimax_family_model_id(model) || api_base_looks_minimax(api_base) {
         return &MINIMAX;
     }
-    if is_zhipu_glm_family_model_id(&cfg.llm.model)
-        || api_base_looks_zhipu_bigmodel(&cfg.llm.api_base)
-    {
+    if is_zhipu_glm_family_model_id(model) || api_base_looks_zhipu_bigmodel(api_base) {
         return &GLM;
     }
-    if deepseek_json_output_eligible(cfg) {
+    if deepseek_json_output_eligible(api_base) {
         return &DEEPSEEK;
     }
     &GENERIC
@@ -333,6 +337,17 @@ pub fn llm_vendor_adapter_for_model(model: &str) -> &'static dyn LlmVendorAdapte
 mod tests {
     use super::*;
     use crabmate_config::load_config;
+    use crabmate_types::llm_config::LlmConfig;
+
+    /// 从 `AgentConfig` 构造 `LlmConfig` 测试用。
+    fn agent_to_llm_cfg(cfg: &crabmate_config::AgentConfig) -> LlmConfig {
+        LlmConfig {
+            llm: cfg.llm.clone(),
+            sampling: cfg.llm_sampling.clone(),
+            vendor_flags: cfg.llm_vendor_flags.clone(),
+            http_retry: cfg.llm_http_retry.clone(),
+        }
+    }
 
     /// 避免单测受工作区 `config.toml` 中 `api_base`（若含 `minimax` 会优先匹配 MiniMax 适配器）影响。
     fn cfg_neutral_deepseek_base() -> crabmate_config::AgentConfig {
@@ -346,12 +361,14 @@ mod tests {
         let mut cfg = cfg_neutral_deepseek_base();
         cfg.llm.model = "glm-5".to_string();
         cfg.llm_vendor_flags.llm_bigmodel_thinking = false;
-        let v = llm_vendor_adapter(&cfg);
-        assert!(v.thinking_field(&cfg).is_none());
+        let llm = agent_to_llm_cfg(&cfg);
+        let v = llm_vendor_adapter(&llm.llm.model, &llm.llm.api_base);
+        assert!(v.thinking_field(&llm).is_none());
 
         cfg.llm_vendor_flags.llm_bigmodel_thinking = true;
-        let v = llm_vendor_adapter(&cfg);
-        let t = v.thinking_field(&cfg).expect("thinking");
+        let llm = agent_to_llm_cfg(&cfg);
+        let v = llm_vendor_adapter(&llm.llm.model, &llm.llm.api_base);
+        let t = v.thinking_field(&llm).expect("thinking");
         assert_eq!(t.get("type").and_then(|x| x.as_str()), Some("enabled"));
     }
 
@@ -361,11 +378,12 @@ mod tests {
         cfg.llm.model = "deepseek-chat".to_string();
         cfg.llm_vendor_flags.llm_bigmodel_thinking = true;
         cfg.llm_vendor_flags.llm_kimi_thinking_disabled = false;
-        let v = llm_vendor_adapter(&cfg);
-        let t = v.thinking_field(&cfg).expect("thinking");
+        let llm = agent_to_llm_cfg(&cfg);
+        let v = llm_vendor_adapter(&llm.llm.model, &llm.llm.api_base);
+        let t = v.thinking_field(&llm).expect("thinking");
         assert_eq!(t.get("type").and_then(|x| x.as_str()), Some("enabled"));
         assert_eq!(
-            super::deepseek_reasoning_effort_for_request(&cfg).as_deref(),
+            deepseek_reasoning_effort_for_request(&llm.llm.api_base, &llm.vendor_flags).as_deref(),
             Some("high")
         );
     }
@@ -376,10 +394,13 @@ mod tests {
         cfg.llm.model = "deepseek-chat".to_string();
         cfg.llm_vendor_flags.llm_bigmodel_thinking = false;
         cfg.llm_vendor_flags.llm_kimi_thinking_disabled = true;
-        let v = llm_vendor_adapter(&cfg);
-        let t = v.thinking_field(&cfg).expect("thinking");
+        let llm = agent_to_llm_cfg(&cfg);
+        let v = llm_vendor_adapter(&llm.llm.model, &llm.llm.api_base);
+        let t = v.thinking_field(&llm).expect("thinking");
         assert_eq!(t.get("type").and_then(|x| x.as_str()), Some("disabled"));
-        assert!(super::deepseek_reasoning_effort_for_request(&cfg).is_none());
+        assert!(
+            deepseek_reasoning_effort_for_request(&llm.llm.api_base, &llm.vendor_flags).is_none()
+        );
     }
 
     #[test]
@@ -388,9 +409,12 @@ mod tests {
         cfg.llm.model = "deepseek-chat".to_string();
         cfg.llm_vendor_flags.llm_bigmodel_thinking = false;
         cfg.llm_vendor_flags.llm_kimi_thinking_disabled = false;
-        let v = llm_vendor_adapter(&cfg);
-        assert!(v.thinking_field(&cfg).is_none());
-        assert!(super::deepseek_reasoning_effort_for_request(&cfg).is_none());
+        let llm = agent_to_llm_cfg(&cfg);
+        let v = llm_vendor_adapter(&llm.llm.model, &llm.llm.api_base);
+        assert!(v.thinking_field(&llm).is_none());
+        assert!(
+            deepseek_reasoning_effort_for_request(&llm.llm.api_base, &llm.vendor_flags).is_none()
+        );
     }
 
     #[test]
@@ -399,10 +423,13 @@ mod tests {
         cfg.llm.model = "deepseek-chat".to_string();
         cfg.llm_vendor_flags.llm_bigmodel_thinking = true;
         cfg.llm_vendor_flags.llm_kimi_thinking_disabled = true;
-        let v = llm_vendor_adapter(&cfg);
-        let t = v.thinking_field(&cfg).expect("thinking");
+        let llm = agent_to_llm_cfg(&cfg);
+        let v = llm_vendor_adapter(&llm.llm.model, &llm.llm.api_base);
+        let t = v.thinking_field(&llm).expect("thinking");
         assert_eq!(t.get("type").and_then(|x| x.as_str()), Some("disabled"));
-        assert!(super::deepseek_reasoning_effort_for_request(&cfg).is_none());
+        assert!(
+            deepseek_reasoning_effort_for_request(&llm.llm.api_base, &llm.vendor_flags).is_none()
+        );
     }
 
     #[test]
@@ -410,8 +437,9 @@ mod tests {
         let mut cfg = cfg_neutral_deepseek_base();
         cfg.llm.model = "MiniMax-M2.7".to_string();
         cfg.llm_vendor_flags.llm_bigmodel_thinking = true;
-        let v = llm_vendor_adapter(&cfg);
-        assert!(v.thinking_field(&cfg).is_none());
+        let llm = agent_to_llm_cfg(&cfg);
+        let v = llm_vendor_adapter(&llm.llm.model, &llm.llm.api_base);
+        assert!(v.thinking_field(&llm).is_none());
     }
 
     #[test]
@@ -420,8 +448,9 @@ mod tests {
         cfg.llm.api_base = "https://open.bigmodel.cn/api/paas/v4".to_string();
         cfg.llm.model = "some-custom-route-id".to_string();
         cfg.llm_vendor_flags.llm_bigmodel_thinking = true;
-        let v = llm_vendor_adapter(&cfg);
-        assert!(v.thinking_field(&cfg).is_some());
+        let llm = agent_to_llm_cfg(&cfg);
+        let v = llm_vendor_adapter(&llm.llm.model, &llm.llm.api_base);
+        assert!(v.thinking_field(&llm).is_some());
     }
 
     #[test]
@@ -430,8 +459,9 @@ mod tests {
         cfg.llm.api_base = "https://api.minimaxi.com/v1".to_string();
         cfg.llm.model = "deepseek-chat".to_string();
         cfg.llm_vendor_flags.llm_bigmodel_thinking = true;
-        let v = llm_vendor_adapter(&cfg);
-        assert!(v.thinking_field(&cfg).is_none());
+        let llm = agent_to_llm_cfg(&cfg);
+        let v = llm_vendor_adapter(&llm.llm.model, &llm.llm.api_base);
+        assert!(v.thinking_field(&llm).is_none());
     }
 
     #[test]
@@ -440,8 +470,9 @@ mod tests {
         cfg.llm.model = "kimi-k2.5".to_string();
         cfg.llm_vendor_flags.llm_bigmodel_thinking = false;
         cfg.llm_vendor_flags.llm_kimi_thinking_disabled = true;
-        let v = llm_vendor_adapter(&cfg);
-        let t = v.thinking_field(&cfg).expect("thinking");
+        let llm = agent_to_llm_cfg(&cfg);
+        let v = llm_vendor_adapter(&llm.llm.model, &llm.llm.api_base);
+        let t = v.thinking_field(&llm).expect("thinking");
         assert_eq!(t.get("type").and_then(|x| x.as_str()), Some("disabled"));
     }
 
@@ -451,8 +482,9 @@ mod tests {
         cfg.llm.model = "kimi-k2.5".to_string();
         cfg.llm_vendor_flags.llm_bigmodel_thinking = true;
         cfg.llm_vendor_flags.llm_kimi_thinking_disabled = true;
-        let v = llm_vendor_adapter(&cfg);
-        let t = v.thinking_field(&cfg).expect("thinking");
+        let llm = agent_to_llm_cfg(&cfg);
+        let v = llm_vendor_adapter(&llm.llm.model, &llm.llm.api_base);
+        let t = v.thinking_field(&llm).expect("thinking");
         assert_eq!(t.get("type").and_then(|x| x.as_str()), Some("disabled"));
     }
 
@@ -499,39 +531,43 @@ mod tests {
 
     #[test]
     fn fold_system_into_user_true_for_minimax_model() {
-        let mut cfg = cfg_neutral_deepseek_base();
-        cfg.llm.model = "MiniMax-M2.7".to_string();
-        assert!(super::fold_system_into_user_for_config(&cfg));
+        assert!(super::fold_system_into_user_for_config(
+            "MiniMax-M2.7",
+            "https://api.deepseek.com/v1"
+        ));
     }
 
     #[test]
     fn fold_system_into_user_true_for_minimax_api_base() {
-        let mut cfg = cfg_neutral_deepseek_base();
-        cfg.llm.api_base = "https://api.minimaxi.com/v1".to_string();
-        assert!(super::fold_system_into_user_for_config(&cfg));
+        assert!(super::fold_system_into_user_for_config(
+            "some-id",
+            "https://api.minimaxi.com/v1"
+        ));
     }
 
     #[test]
     fn fold_system_into_user_false_for_deepseek_default() {
-        let mut cfg = cfg_neutral_deepseek_base();
-        cfg.llm.model = "deepseek-chat".to_string();
-        assert!(!super::fold_system_into_user_for_config(&cfg));
+        assert!(!super::fold_system_into_user_for_config(
+            "deepseek-chat",
+            "https://api.deepseek.com/v1"
+        ));
     }
 
     #[test]
     fn deepseek_json_output_eligible_by_api_base() {
-        let mut cfg = cfg_neutral_deepseek_base();
-        assert!(super::deepseek_json_output_eligible(&cfg));
-        cfg.llm.api_base = "https://example.com/v1".to_string();
-        assert!(!super::deepseek_json_output_eligible(&cfg));
+        assert!(super::deepseek_json_output_eligible(
+            "https://api.deepseek.com/v1"
+        ));
+        assert!(!super::deepseek_json_output_eligible(
+            "https://example.com/v1"
+        ));
     }
 
     #[test]
     fn deepseek_json_output_not_eligible_on_minimax_base_even_if_model_id_deepseek() {
-        let mut cfg = cfg_neutral_deepseek_base();
-        cfg.llm.api_base = "https://api.minimaxi.com/v1".to_string();
-        cfg.llm.model = "deepseek-chat".to_string();
-        assert!(!super::deepseek_json_output_eligible(&cfg));
+        assert!(!super::deepseek_json_output_eligible(
+            "https://api.minimaxi.com/v1"
+        ));
     }
 
     #[test]
@@ -540,9 +576,10 @@ mod tests {
         cfg.llm.api_base = "https://ark.cn-beijing.volces.com/api/coding/v3".to_string();
         cfg.llm.model = "Kimi-K2.6".to_string();
         cfg.llm_vendor_flags.llm_bigmodel_thinking = true;
-        let v = llm_vendor_adapter(&cfg);
+        let llm = agent_to_llm_cfg(&cfg);
+        let v = llm_vendor_adapter(&llm.llm.model, &llm.llm.api_base);
         assert!(
-            v.thinking_field(&cfg).is_none(),
+            v.thinking_field(&llm).is_none(),
             "Volcano must not receive Moonshot Kimi thinking/thinking_field JSON"
         );
     }

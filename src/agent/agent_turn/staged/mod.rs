@@ -181,12 +181,19 @@ pub(super) async fn prepare_staged_planner_no_tools_request(
             &plan_optimizer::staged_baseline_plan_planner_system_appendix(baseline, baseline_mode),
         );
     }
-    let preserve_kimi = crate::llm::llm_vendor_adapter(p.ctx.core.cfg.as_ref())
-        .preserve_assistant_tool_call_reasoning(p.ctx.core.cfg.as_ref());
+    let cfg_ref = p.ctx.core.cfg.as_ref();
+    let llm_cfg = crabmate_types::llm_config::LlmConfig {
+        llm: cfg_ref.llm.clone(),
+        sampling: cfg_ref.llm_sampling.clone(),
+        vendor_flags: cfg_ref.llm_vendor_flags.clone(),
+        http_retry: cfg_ref.llm_http_retry.clone(),
+    };
+    let preserve_kimi = crate::llm::llm_vendor_adapter(&cfg_ref.llm.model, &cfg_ref.llm.api_base)
+        .preserve_assistant_tool_call_reasoning(&llm_cfg);
     let preserve_deepseek =
-        crate::llm::vendor::deepseek_json_output_eligible(p.ctx.core.cfg.as_ref());
+        crate::llm::vendor::deepseek_json_output_eligible(&cfg_ref.llm.api_base);
     let mut req = no_tools_chat_request_from_messages(
-        p.ctx.core.cfg.as_ref(),
+        &llm_cfg,
         build_planner_messages(
             p.turn.messages(),
             plan_system,

@@ -1,6 +1,6 @@
 //! `ChatRequest` 惯用构造（工具轮 / 无工具轮 / 分层 Manager JSON 模式等）。
 
-use crabmate_config::AgentConfig;
+use crabmate_types::llm_config::LlmConfig;
 use crabmate_types::{
     ChatRequest, ChatRequestCore, ChatRequestVendorExtensions, LlmSeedOverride, Message, Tool,
     is_long_term_memory_injection, messages_for_api_stripping_reasoning_skip_ui_separators,
@@ -21,8 +21,9 @@ const HIERARCHICAL_MANAGER_MIN_COMPLETION_TOKENS: u32 = 6144;
 
 /// **kimi-k2.5** 在**未**显式关闭思考时，服务端 **`thinking` 默认启用**；此时含 **`tool_calls`** 的 assistant 历史消息必须带 **`reasoning_content`**，否则返回 `invalid_request_error`（见 Moonshot [Chat API](https://platform.moonshot.cn/docs/api/chat) 与实测报错）。
 #[inline]
-pub fn kimi_k2_5_vendor_requires_tool_call_reasoning(cfg: &AgentConfig) -> bool {
-    llm_vendor_adapter(cfg).preserve_assistant_tool_call_reasoning(cfg)
+pub fn kimi_k2_5_vendor_requires_tool_call_reasoning(cfg: &LlmConfig) -> bool {
+    llm_vendor_adapter(&cfg.llm.model, &cfg.llm.api_base)
+        .preserve_assistant_tool_call_reasoning(cfg)
 }
 
 /// 按模型 ID 将出站 **`temperature`** 钳到当前 [`crate::vendor::LlmVendorAdapter`] 允许值（见 [`llm_vendor_adapter_for_model`]；有完整配置时请用 [`vendor_temperature_for_config`] / [`llm_vendor_adapter`]）。
@@ -34,57 +35,61 @@ pub fn vendor_temperature_for_model(model: &str, temperature: f32) -> f32 {
 
 /// 按 **`AgentConfig`**（**`model` + `api_base`**）钳制温度（摘要等路径与 [`llm_vendor_adapter`] 一致）。
 #[inline]
-pub fn vendor_temperature_for_config(cfg: &AgentConfig, temperature: f32) -> f32 {
+pub fn vendor_temperature_for_config(cfg: &LlmConfig, temperature: f32) -> f32 {
     let effective_model = &cfg.llm.model;
-    llm_vendor_adapter(cfg).coerce_temperature(effective_model, temperature)
+    llm_vendor_adapter(&cfg.llm.model, &cfg.llm.api_base)
+        .coerce_temperature(effective_model, temperature)
 }
 
 /// Agent 主路径与普通 LLM 调用共用的 **`ChatRequestVendorExtensions`**（工具轮 / 无工具轮）。
 #[inline]
-pub fn chat_request_vendor_extensions_for_agent(cfg: &AgentConfig) -> ChatRequestVendorExtensions {
-    let v = llm_vendor_adapter(cfg);
+pub fn chat_request_vendor_extensions_for_agent(cfg: &LlmConfig) -> ChatRequestVendorExtensions {
+    let v = llm_vendor_adapter(&cfg.llm.model, &cfg.llm.api_base);
     // 方舟等网关会将 MiniMax 扩展键 **`reasoning_split`** 视为非法参数（HTTP 400），即便配置或环境变量曾打开。
     let reasoning_split = if api_base_looks_volcano_engine_openai_compat(&cfg.llm.api_base) {
         None
     } else {
-        cfg.llm_vendor_flags.llm_reasoning_split.then_some(true)
+        cfg.vendor_flags.llm_reasoning_split.then_some(true)
     };
     ChatRequestVendorExtensions {
         reasoning_split,
         thinking: v.thinking_field(cfg),
-        reasoning_effort: deepseek_reasoning_effort_for_request(cfg),
+        reasoning_effort: deepseek_reasoning_effort_for_request(
+            &cfg.llm.api_base,
+            &cfg.vendor_flags,
+        ),
         response_format: None,
     }
 }
 
 /// 构造带 tools、**`tool_choice: auto`** 及采样参数的请求体（`stream` 由 HTTP 层按 `no_stream` 覆盖）。
 pub fn tool_chat_request(
-    cfg: &AgentConfig,
+    cfg: &LlmConfig,
     messages: &[Message],
     tools: &[Tool],
     temperature_override: Option<f32>,
     model_override: Option<&str>,
     seed_override: LlmSeedOverride,
 ) -> ChatRequest {
-    let v = llm_vendor_adapter(cfg);
+    let v = llm_vendor_adapter(&cfg.llm.model, &cfg.llm.api_base);
     let effective_model = model_override.unwrap_or(&cfg.llm.model);
     ChatRequest {
         core: ChatRequestCore {
             model: effective_model.to_string(),
             messages: conversation_messages_to_vendor_body(
                 messages,
-                fold_system_into_user_for_config(cfg),
+                fold_system_into_user_for_config(&cfg.llm.model, &cfg.llm.api_base),
                 v.preserve_assistant_tool_call_reasoning(cfg),
-                deepseek_json_output_eligible(cfg),
+                deepseek_json_output_eligible(&cfg.llm.api_base),
             ),
             tools: Some(tools.to_vec()),
             tool_choice: Some("auto".to_string()),
-            max_tokens: cfg.llm_sampling.max_tokens,
+            max_tokens: cfg.sampling.max_tokens,
             temperature: v.coerce_temperature(
                 effective_model,
-                temperature_override.unwrap_or(cfg.llm_sampling.temperature),
+                temperature_override.unwrap_or(cfg.sampling.temperature),
             ),
-            seed: resolved_llm_seed(cfg.llm_sampling.llm_seed, seed_override),
+            seed: resolved_llm_seed(cfg.sampling.llm_seed, seed_override),
             stream: None,
         },
         vendor: chat_request_vendor_extensions_for_agent(cfg),
@@ -96,7 +101,7 @@ pub fn tool_chat_request(
 /// 对 `messages` 先做 [`messages_for_api_stripping_reasoning_skip_ui_separators`] 再 normalize；进程内分阶段路径优先 [`no_tools_chat_request_from_messages`] 以避免二次 strip。
 #[allow(dead_code)] // 公共 API；单测覆盖等价性，主进程分阶段路径用 `no_tools_chat_request_from_messages`
 pub fn no_tools_chat_request(
-    cfg: &AgentConfig,
+    cfg: &LlmConfig,
     messages: &[Message],
     temperature_override: Option<f32>,
     model_override: Option<&str>,
@@ -107,7 +112,7 @@ pub fn no_tools_chat_request(
         messages_for_api_stripping_reasoning_skip_ui_separators(
             messages,
             kimi_k2_5_vendor_requires_tool_call_reasoning(cfg),
-            deepseek_json_output_eligible(cfg),
+            deepseek_json_output_eligible(&cfg.llm.api_base),
         ),
         temperature_override,
         model_override,
@@ -117,7 +122,7 @@ pub fn no_tools_chat_request(
 
 /// 与 [`no_tools_chat_request`] 相同，但接受**已**按规划轮规则拼好的 `messages`（通常已不含 UI 分隔线且已剥离 `reasoning_content`），再剔除 [`is_long_term_memory_injection`]，仅经 normalize，避免对同一会话再做一轮全量 `strip`。
 pub fn no_tools_chat_request_from_messages(
-    cfg: &AgentConfig,
+    cfg: &LlmConfig,
     messages: Vec<Message>,
     temperature_override: Option<f32>,
     model_override: Option<&str>,
@@ -127,23 +132,23 @@ pub fn no_tools_chat_request_from_messages(
         .into_iter()
         .filter(|m| !is_long_term_memory_injection(m))
         .collect();
-    let v = llm_vendor_adapter(cfg);
+    let v = llm_vendor_adapter(&cfg.llm.model, &cfg.llm.api_base);
     let effective_model = model_override.unwrap_or(&cfg.llm.model);
     ChatRequest {
         core: ChatRequestCore {
             model: effective_model.to_string(),
             messages: normalize_stripped_messages_for_vendor_body(
                 messages,
-                fold_system_into_user_for_config(cfg),
+                fold_system_into_user_for_config(&cfg.llm.model, &cfg.llm.api_base),
             ),
             tools: Some(vec![]),
             tool_choice: Some("none".to_string()),
-            max_tokens: cfg.llm_sampling.max_tokens,
+            max_tokens: cfg.sampling.max_tokens,
             temperature: v.coerce_temperature(
                 effective_model,
-                temperature_override.unwrap_or(cfg.llm_sampling.temperature),
+                temperature_override.unwrap_or(cfg.sampling.temperature),
             ),
-            seed: resolved_llm_seed(cfg.llm_sampling.llm_seed, seed_override),
+            seed: resolved_llm_seed(cfg.sampling.llm_seed, seed_override),
             stream: None,
         },
         vendor: chat_request_vendor_extensions_for_agent(cfg),
@@ -157,7 +162,7 @@ pub fn no_tools_chat_request_from_messages(
 ///
 /// **输出长度**：分解 JSON（含多条 `sub_goals` 长 `description`）易超过全局默认 `max_tokens`（嵌入默认现为 4096），仍可能触发 `finish_reason=length` 导致无法解析。本路径对 **`max_tokens` 设下限**（仍尊重用户配置的更大值）。
 pub fn no_tools_chat_request_for_hierarchical_manager(
-    cfg: &AgentConfig,
+    cfg: &LlmConfig,
     messages: &[Message],
     temperature_override: Option<f32>,
     model_override: Option<&str>,
@@ -173,7 +178,7 @@ pub fn no_tools_chat_request_for_hierarchical_manager(
     req.max_tokens = req
         .max_tokens
         .max(HIERARCHICAL_MANAGER_MIN_COMPLETION_TOKENS);
-    if deepseek_json_output_eligible(cfg) {
+    if deepseek_json_output_eligible(&cfg.llm.api_base) {
         req.vendor.response_format = Some(serde_json::json!({ "type": "json_object" }));
         debug!(
             target: "crabmate",
@@ -186,10 +191,20 @@ pub fn no_tools_chat_request_for_hierarchical_manager(
 #[cfg(test)]
 mod tests {
     use crabmate_config::load_config;
+    use crabmate_types::llm_config::LlmConfig;
     use crabmate_types::{
         LlmSeedOverride, Message, OPENAI_CHAT_COMPLETIONS_REL_PATH, OPENAI_MODELS_REL_PATH,
         messages_for_api_stripping_reasoning_skip_ui_separators,
     };
+
+    fn agent_to_llm_cfg(cfg: &crabmate_config::AgentConfig) -> LlmConfig {
+        LlmConfig {
+            llm: cfg.llm.clone(),
+            sampling: cfg.llm_sampling.clone(),
+            vendor_flags: cfg.llm_vendor_flags.clone(),
+            http_retry: cfg.llm_http_retry.clone(),
+        }
+    }
 
     #[test]
     fn completions_path_matches_openai_compat() {
@@ -204,6 +219,7 @@ mod tests {
     #[test]
     fn no_tools_chat_request_matches_from_messages_after_strip_skip_sep() {
         let cfg = load_config(None).expect("default embedded config");
+        let llm_cfg = agent_to_llm_cfg(&cfg);
         let sep = Message::chat_ui_separator(true);
         let assistant = Message {
             role: "assistant".to_string(),
@@ -215,12 +231,17 @@ mod tests {
             tool_call_id: None,
         };
         let messages = vec![Message::user_only("u"), sep, assistant];
-        let a =
-            super::no_tools_chat_request(&cfg, &messages, None, None, LlmSeedOverride::FromConfig);
+        let a = super::no_tools_chat_request(
+            &llm_cfg,
+            &messages,
+            None,
+            None,
+            LlmSeedOverride::FromConfig,
+        );
         let stripped =
             messages_for_api_stripping_reasoning_skip_ui_separators(&messages, false, false);
         let b = super::no_tools_chat_request_from_messages(
-            &cfg,
+            &llm_cfg,
             stripped,
             None,
             None,
@@ -236,8 +257,9 @@ mod tests {
         let mut cfg = load_config(None).expect("default embedded config");
         cfg.llm.model = "kimi-k2.5".to_string();
         cfg.llm_sampling.temperature = 0.3;
+        let llm_cfg = agent_to_llm_cfg(&cfg);
         let req = super::tool_chat_request(
-            &cfg,
+            &llm_cfg,
             &[Message::user_only("hi")],
             &[],
             None,
@@ -246,7 +268,7 @@ mod tests {
         );
         assert_eq!(req.temperature, 1.0);
         let req = super::tool_chat_request(
-            &cfg,
+            &llm_cfg,
             &[Message::user_only("hi")],
             &[],
             Some(0.7),
@@ -260,8 +282,9 @@ mod tests {
     fn hierarchical_manager_json_mode_only_on_deepseek_api_base() {
         let mut cfg = load_config(None).expect("default embedded config");
         cfg.llm.api_base = "https://api.deepseek.com/v1".to_string();
+        let llm_cfg = agent_to_llm_cfg(&cfg);
         let req = super::no_tools_chat_request_for_hierarchical_manager(
-            &cfg,
+            &llm_cfg,
             &[Message::user_only("x")],
             None,
             None,
@@ -277,8 +300,9 @@ mod tests {
         );
 
         cfg.llm.api_base = "http://127.0.0.1:11434/v1".to_string();
+        let llm_cfg2 = agent_to_llm_cfg(&cfg);
         let req_local = super::no_tools_chat_request_for_hierarchical_manager(
-            &cfg,
+            &llm_cfg2,
             &[Message::user_only("x")],
             None,
             None,
@@ -291,8 +315,9 @@ mod tests {
     fn hierarchical_manager_raises_max_tokens_floor_when_global_low() {
         let mut cfg = load_config(None).expect("default embedded config");
         cfg.llm_sampling.max_tokens = 2048;
+        let llm_cfg = agent_to_llm_cfg(&cfg);
         let req = super::no_tools_chat_request_for_hierarchical_manager(
-            &cfg,
+            &llm_cfg,
             &[Message::user_only("x")],
             None,
             None,
@@ -300,8 +325,9 @@ mod tests {
         );
         assert_eq!(req.max_tokens, 6144);
         cfg.llm_sampling.max_tokens = 8192;
+        let llm_cfg2 = agent_to_llm_cfg(&cfg);
         let req_hi = super::no_tools_chat_request_for_hierarchical_manager(
-            &cfg,
+            &llm_cfg2,
             &[Message::user_only("x")],
             None,
             None,
@@ -316,7 +342,8 @@ mod tests {
         cfg.llm.api_base = "https://ark.cn-beijing.volces.com/api/coding/v3".to_string();
         cfg.llm.model = "Kimi-K2.6".to_string();
         cfg.llm_vendor_flags.llm_reasoning_split = true;
-        let ext = super::chat_request_vendor_extensions_for_agent(&cfg);
+        let llm_cfg = agent_to_llm_cfg(&cfg);
+        let ext = super::chat_request_vendor_extensions_for_agent(&llm_cfg);
         assert!(ext.reasoning_split.is_none());
     }
 }
