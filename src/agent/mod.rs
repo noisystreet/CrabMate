@@ -7,7 +7,6 @@ pub use crabmate_agent::acceptance;
 pub mod agent_turn;
 mod context_budget_pressure;
 pub mod context_window;
-pub mod hierarchy;
 pub mod intent_l2_classifier;
 pub use crabmate_agent::intent_pipeline;
 #[cfg(test)]

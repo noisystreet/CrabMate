@@ -5,7 +5,6 @@ use crabmate_config::{AgentConfig, FinalPlanRequirementMode, OrchestrationProfil
 use crate::intent_pipeline::{IntentAction, IntentDecision};
 use crate::intent_router::IntentKind;
 
-use super::hierarchical_intent_route::HierarchicalPostIntentRoute;
 use super::orchestration_entry::TurnTopLevelDispatch;
 use super::staged_planning_gate_types::{StagedPlanningDenyReason, StagedPlanningGateOutcome};
 use super::turn_orchestration::{
@@ -172,37 +171,6 @@ pub fn build_non_hierarchical_turn_route_decision(
     }
 }
 
-/// 分层：**`intent_at_turn_start`** 已写入终答并结束本回合。
-pub fn build_hierarchical_intent_finished_early_decision(
-    cfg: &AgentConfig,
-    intent_gate: IntentGateSnapshot,
-) -> TurnRouteDecisionV1 {
-    TurnRouteDecisionV1 {
-        version: 1,
-        top_level: top_level_label(TurnTopLevelDispatch::Hierarchical),
-        intent_gate,
-        staged_gate: StagedGateSnapshot::NotEvaluated,
-        turn_phase: "intent_gate_finished_early".to_string(),
-        orchestration_mode: TurnOrchestrationMode::IntentAtTurnStartFinished
-            .as_str()
-            .to_string(),
-        freeform_because: None,
-        hierarchical_post_intent_route: None,
-        planner_executor_mode: cfg
-            .per_plan_policy
-            .planner_executor_mode
-            .as_str()
-            .to_string(),
-        plan_requirement_policy: plan_requirement_policy_label(cfg),
-        orchestration_profile: Some(
-            cfg.per_plan_policy
-                .orchestration_profile
-                .as_str()
-                .to_string(),
-        ),
-    }
-}
-
 /// 非分层：**`intent_at_turn_start`** 已写入终答并结束本回合（未评估 staged 门控）。
 pub fn build_non_hierarchical_intent_finished_early_decision(
     cfg: &AgentConfig,
@@ -219,37 +187,6 @@ pub fn build_non_hierarchical_intent_finished_early_decision(
             .to_string(),
         freeform_because: None,
         hierarchical_post_intent_route: None,
-        planner_executor_mode: cfg
-            .per_plan_policy
-            .planner_executor_mode
-            .as_str()
-            .to_string(),
-        plan_requirement_policy: plan_requirement_policy_label(cfg),
-        orchestration_profile: Some(
-            cfg.per_plan_policy
-                .orchestration_profile
-                .as_str()
-                .to_string(),
-        ),
-    }
-}
-
-/// 分层：意图门控 **`ProceedExecute`** 且已解析 [`super::orchestration_entry::HierarchicalTurnEntryResolution`]。
-pub fn build_hierarchical_turn_route_decision(
-    cfg: &AgentConfig,
-    intent_gate: IntentGateSnapshot,
-    orchestration_mode: TurnOrchestrationMode,
-    post_intent_route: HierarchicalPostIntentRoute,
-) -> TurnRouteDecisionV1 {
-    TurnRouteDecisionV1 {
-        version: 1,
-        top_level: top_level_label(TurnTopLevelDispatch::Hierarchical),
-        intent_gate,
-        staged_gate: StagedGateSnapshot::NotEvaluated,
-        turn_phase: orchestration_mode.as_str().to_string(),
-        orchestration_mode: orchestration_mode.as_str().to_string(),
-        freeform_because: None,
-        hierarchical_post_intent_route: Some(post_intent_route.as_str().to_string()),
         planner_executor_mode: cfg
             .per_plan_policy
             .planner_executor_mode
@@ -370,13 +307,11 @@ pub fn apply_orchestration_profile_to_staged_gate(
     }
 }
 
-/// 门控链收敛后的下一执行 driver（纯数据；IO 由 `run_dispatch` / `hierarchy` 执行）。
+/// 门控链收敛后的下一执行 driver（纯数据；IO 由 `run_dispatch` 执行）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TurnRouteDriver {
     /// **`intent_at_turn_start`** 已写入终答，本回合不再进入主执行。
     IntentEarlyExit,
-    /// 分层：`RouterManagerRunner` 或 `DiscourseFallbackOuter`。
-    Hierarchical(HierarchicalPostIntentRoute),
     /// 非分层：外循环或分阶段滚动视界。
     NonHierarchical(NonHierarchicalTurnPhase),
 }
@@ -405,70 +340,37 @@ pub fn intent_gate_is_early_exit(intent_gate: &IntentGateSnapshot) -> bool {
     matches!(intent_gate, IntentGateSnapshot::FinishedEarly { .. })
 }
 
-/// 显式优先级：P1 intent 早退 → P2 分层 → P3/P4 非分层 staged deny/allow。
+/// 非分层路由决议：intent 早退 → staged deny/allow。
 pub fn assess_turn_routing(params: AssessTurnRoutingParams<'_>) -> AssessedTurnRoute {
     if intent_gate_is_early_exit(&params.intent_gate) {
-        let decision = match params.top_level {
-            TurnTopLevelDispatch::Hierarchical => {
-                build_hierarchical_intent_finished_early_decision(
-                    params.cfg,
-                    params.intent_gate.clone(),
-                )
-            }
-            TurnTopLevelDispatch::NonHierarchical => {
-                build_non_hierarchical_intent_finished_early_decision(
-                    params.cfg,
-                    params.intent_gate.clone(),
-                )
-            }
-        };
+        let decision = build_non_hierarchical_intent_finished_early_decision(
+            params.cfg,
+            params.intent_gate.clone(),
+        );
         return AssessedTurnRoute {
             decision,
             driver: TurnRouteDriver::IntentEarlyExit,
         };
     }
 
-    match params.top_level {
-        TurnTopLevelDispatch::Hierarchical => {
-            let assessment = params
-                .hierarchical_decision
-                .expect("hierarchical ProceedExecute requires IntentDecision");
-            let entry =
-                super::orchestration_entry::HierarchicalTurnEntryResolution::resolve(assessment);
-            let post_intent = entry.post_intent_route;
-            let decision = build_hierarchical_turn_route_decision(
-                params.cfg,
-                intent_gate_snapshot_from_decision(assessment),
-                entry.orchestration_mode,
-                post_intent,
-            );
-            AssessedTurnRoute {
-                decision,
-                driver: TurnRouteDriver::Hierarchical(post_intent),
-            }
-        }
-        TurnTopLevelDispatch::NonHierarchical => {
-            let staged_gate_raw = params
-                .staged_gate
-                .expect("non_hierarchical requires StagedPlanningGateOutcome");
-            let staged_gate = apply_orchestration_profile_to_staged_gate(
-                params.cfg.per_plan_policy.orchestration_profile,
-                &params.intent_gate,
-                staged_gate_raw,
-            );
-            let entry =
-                super::orchestration_entry::resolve_non_hierarchical_turn(params.cfg, &staged_gate);
-            let decision = build_non_hierarchical_turn_route_decision(
-                params.cfg,
-                params.intent_gate.clone(),
-                staged_gate_snapshot_from_outcome(&staged_gate),
-                &entry,
-            );
-            AssessedTurnRoute {
-                decision,
-                driver: TurnRouteDriver::NonHierarchical(entry.turn_phase),
-            }
-        }
+    let staged_gate_raw = params
+        .staged_gate
+        .expect("non_hierarchical requires StagedPlanningGateOutcome");
+    let staged_gate = apply_orchestration_profile_to_staged_gate(
+        params.cfg.per_plan_policy.orchestration_profile,
+        &params.intent_gate,
+        staged_gate_raw,
+    );
+    let entry = super::orchestration_entry::resolve_non_hierarchical_turn(params.cfg, &staged_gate);
+    let decision = build_non_hierarchical_turn_route_decision(
+        params.cfg,
+        params.intent_gate.clone(),
+        staged_gate_snapshot_from_outcome(&staged_gate),
+        &entry,
+    );
+    AssessedTurnRoute {
+        decision,
+        driver: TurnRouteDriver::NonHierarchical(entry.turn_phase),
     }
 }
 

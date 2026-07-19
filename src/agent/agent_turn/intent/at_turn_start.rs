@@ -30,6 +30,7 @@ pub(crate) enum IntentGateResult {
     Finished,
     /// L2 判定为直接执行，可继续主循环/分层 Runner（兜底规则层细节已写入 `intent_analysis` 时间线）。
     ProceedExecute {
+        #[allow(dead_code)]
         assessment: crate::agent::intent_pipeline::IntentDecision,
     },
 }
@@ -77,27 +78,6 @@ pub(crate) async fn run_intent_at_turn_start_if_configured(
             .suppress_duplicate_intent_timeline_once = true;
     }
     Ok(proceed)
-}
-
-/// 分层模式在命中有效 user 任务后**总是**走 L2 优先管线（与 `intent_at_turn_start` 无关），
-/// 以便续接、工具失败信号与合并路由文本与 `single_agent` 一致；`ProceedExecute` 供 `HierarchyRunnerParams` 使用。
-pub(crate) async fn run_intent_for_hierarchical(
-    p: &mut RunLoopParams<'_>,
-    task: &str,
-) -> Result<IntentGateResult, super::super::errors::RunAgentTurnError> {
-    let in_clarification_flow =
-        intent_user::recently_waiting_execute_confirmation(p.turn.messages());
-    run_intent_l0_l1_l2_gate(
-        p,
-        task,
-        in_clarification_flow,
-        ExecuteIntentThresholds {
-            low: p.ctx.core.cfg.intent_routing.intent_execute_low_threshold,
-            high: p.ctx.core.cfg.intent_routing.intent_execute_high_threshold,
-        },
-        "hierarchical::intent",
-    )
-    .await
 }
 
 fn format_intent_title(assessment: &crate::agent::intent_pipeline::IntentDecision) -> String {
