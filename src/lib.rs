@@ -20,6 +20,7 @@ pub use crabmate_sse_protocol::sse;
 #[cfg(feature = "web")]
 mod chat_job_queue;
 mod cli_run;
+pub mod e2e_scenario;
 mod env_flags;
 pub use crabmate_config;
 pub use crabmate_config as config;
@@ -60,7 +61,7 @@ pub use per_turn_flight::PerTurnFlight;
 pub use request_audit::WebRequestAudit;
 
 pub use config::cli::{
-    ChatCliArgs, ExtraCliCommand, ParsedCliArgs, SaveSessionFormat, ToolReplayCli,
+    ChatCliArgs, E2eCliArgs, ExtraCliCommand, ParsedCliArgs, SaveSessionFormat, ToolReplayCli,
     normalize_legacy_argv, parse_args, parse_args_from_argv, root_clap_command_for_man_page,
 };
 pub use read_file_turn_cache::{ReadFileTurnCache, ReadFileTurnCacheHandle, new_turn_cache_handle};

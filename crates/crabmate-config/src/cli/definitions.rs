@@ -400,6 +400,30 @@ pub struct ToolReplayRunCmd {
     pub compare_recorded: bool,
 }
 
+/// e2e 真实 LLM 端到端测试子命令。
+#[derive(Parser, Debug, Clone)]
+pub struct E2eCmd {
+    /// e2e 模式：real（默认，调用真实 LLM）、record、replay
+    #[arg(long, value_name = "MODE", default_value = "real")]
+    pub mode: String,
+
+    /// artifact 输出目录（默认 .crabmate/e2e_artifacts）
+    #[arg(long = "output-dir", value_name = "DIR")]
+    pub output_dir: Option<String>,
+
+    /// 录制数据目录（默认 tests/fixtures/llm_recordings）
+    #[arg(long = "recordings-dir", value_name = "DIR")]
+    pub recordings_dir: Option<String>,
+}
+
+/// `e2e` 解析结果（供 `cli_run` 执行）。
+#[derive(Debug, Clone)]
+pub struct E2eCliArgs {
+    pub mode: String,
+    pub output_dir: Option<String>,
+    pub recordings_dir: Option<String>,
+}
+
 /// `parse_args` 扩展槽：非默认 CLI 流程（doctor / models / probe）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ExtraCliCommand {
@@ -454,6 +478,8 @@ pub enum Commands {
     Plugin(PluginCmd),
     /// 工作流作者层 YAML/Markdown 编译与校验（**不要**求 API_KEY）
     Workflow(WorkflowCmd),
+    /// 真实 LLM e2e 端到端测试（需 API_KEY）
+    E2e(E2eCmd),
 }
 
 #[derive(Parser, Debug)]
@@ -531,6 +557,8 @@ pub struct ParsedCliArgs {
     pub llm_context_tokens_cli: Option<u32>,
     /// 是否执行 **`crabmate tui`** 全屏界面（与默认 **`repl`** 互斥）
     pub tui: bool,
+    /// `Some` 时执行 e2e 测试后退出（需 API_KEY）
+    pub e2e: Option<E2eCliArgs>,
 }
 
 /// `plugin init` 解析结果（供 `runtime::cli` 执行）

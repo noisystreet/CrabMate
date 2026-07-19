@@ -5,6 +5,8 @@
 //! - [`error_classify`]：错误自动分类与排障建议
 //! - [`test_context`]：`TestContext` 失败时自动 dump 上下文
 
+#![allow(dead_code)]
+
 pub mod error_classify;
 pub mod sse_stream;
 pub mod test_context;
