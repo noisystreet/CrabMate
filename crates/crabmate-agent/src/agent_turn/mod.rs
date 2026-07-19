@@ -1,7 +1,6 @@
 //! Agent 回合编排中的**纯领域**片段（消息合并、意图后路由、非分层主路径解析）。
 
 pub mod decision_engine;
-pub mod hierarchical_intent_route;
 pub mod intent;
 pub mod intent_routing;
 pub mod messages;
@@ -12,18 +11,14 @@ pub mod tool_execution;
 pub mod turn_orchestration;
 pub mod turn_route_decision;
 
-pub use hierarchical_intent_route::{
-    HierarchicalDiscourseFallbackReason, HierarchicalPostIntentRoute,
-    resolve_hierarchical_post_intent_route,
-};
 pub use intent_routing::{
     IntentL2ClassifierHost, IntentRoutingOutcome, IntentRoutingPipelineParams,
     assess_intent_routing_full_pipeline, assess_intent_routing_with_optional_l2,
     log_intent_pipeline_assessment,
 };
 pub use orchestration_entry::{
-    HierarchicalTurnEntryResolution, TurnOrchestrationTransition, TurnTopLevelDispatch,
-    log_orchestration_transition, resolve_non_hierarchical_turn, resolve_turn_top_level_dispatch,
+    TurnOrchestrationTransition, TurnTopLevelDispatch, log_orchestration_transition,
+    resolve_non_hierarchical_turn, resolve_turn_top_level_dispatch,
 };
 pub use staged_planning_gate::{
     assess_staged_planning_gate_l1, staged_plan_eligibility_for_intent,
@@ -42,8 +37,7 @@ pub use turn_orchestration::{
 pub use turn_route_decision::{
     AssessTurnRoutingParams, AssessedTurnRoute, IntentGateSnapshot, StagedGateSnapshot,
     TurnRouteDecisionV1, TurnRouteDriver, apply_orchestration_profile_to_staged_gate,
-    assess_turn_routing, build_hierarchical_intent_finished_early_decision,
-    build_hierarchical_turn_route_decision, build_non_hierarchical_intent_finished_early_decision,
+    assess_turn_routing, build_non_hierarchical_intent_finished_early_decision,
     build_non_hierarchical_turn_route_decision, intent_action_label, intent_gate_is_early_exit,
     intent_gate_snapshot_finished_early, intent_gate_snapshot_from_decision, intent_kind_label,
     log_turn_route_decision, staged_gate_snapshot_from_outcome,

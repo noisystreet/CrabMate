@@ -1,4 +1,4 @@
-//! 回合执行模式分发：分层 vs 非分层；非分层经 **`run_non_hierarchical_turn`** 统一 driver。
+//! 非分层回合入口：开局意图门控 → **`assess_turn_routing`** → 统一 driver。
 //!
 //! 从 [`super::run_agent_turn_common`] 抽离，使 `mod.rs` 仅保留入口日志、分隔线与 `PerCoordinator` 构造等接线。
 //!
@@ -13,7 +13,6 @@ use crabmate_agent::agent_turn::{
 use crate::agent::per_coord::PerCoordinator;
 
 use super::errors::RunAgentTurnError;
-use super::hierarchy;
 use super::intent::{StagedPlanningGateOutcome, assess_staged_planning_gate_full_pipeline};
 use super::intent_at_turn_start;
 use super::non_hierarchical_turn::run_non_hierarchical_turn;
@@ -21,20 +20,6 @@ use super::orchestration_entry::{TurnOrchestrationTransition, log_orchestration_
 use super::orchestration_route::record_and_emit_turn_route_decision;
 use super::params::RunLoopParams;
 use super::turn_orchestration::TurnOrchestrationMode;
-
-/// `planner_executor_mode == Hierarchical`：意图门控在 [`hierarchy::run_hierarchical_agent`] 内完成。
-pub(crate) async fn dispatch_hierarchical_turn(
-    p: &mut RunLoopParams<'_>,
-    per_coord: &mut PerCoordinator,
-) -> Result<(), RunAgentTurnError> {
-    tracing::info!(
-        target: "crabmate::agent_turn",
-        turn_orchestration_mode = TurnOrchestrationMode::Hierarchical.as_str(),
-        "dispatch_hierarchical_turn"
-    );
-    log::info!(target: "crabmate", "run_agent_turn: using Hierarchical mode");
-    hierarchy::run_hierarchical_agent(p, per_coord).await
-}
 
 fn intent_gate_snapshot_or_unknown(p: &RunLoopParams<'_>) -> IntentGateSnapshot {
     p.turn
@@ -88,16 +73,6 @@ pub(crate) async fn dispatch_non_hierarchical_turn(
         TurnRouteDriver::IntentEarlyExit => {
             record_and_emit_turn_route_decision(p, &assessed.decision).await;
             return Ok(());
-        }
-        TurnRouteDriver::Hierarchical(_) => {
-            tracing::error!(
-                target: "crabmate::agent_turn",
-                "non_hierarchical dispatch unexpectedly yielded Hierarchical driver; aborting turn"
-            );
-            return Err(RunAgentTurnError::Other {
-                phase: super::errors::AgentTurnSubPhase::Planner,
-                message: "non_hierarchical dispatch yielded Hierarchical driver".to_string(),
-            });
         }
     };
     let mode = assessed.decision.orchestration_mode.as_str();

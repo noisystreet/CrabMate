@@ -27,10 +27,6 @@ mod errors;
 pub(crate) mod execute;
 pub(crate) mod run_command_dedupe;
 pub(crate) use execute::tools as execute_tools;
-pub(crate) mod hierarchical_intent_route {
-    pub(crate) use crabmate_agent::agent_turn::hierarchical_intent_route::*;
-}
-mod hierarchy;
 mod intent;
 pub(crate) mod messages {
     pub(crate) use crabmate_agent::agent_turn::messages::*;
@@ -71,7 +67,7 @@ pub(crate) use execute::tool_execution_host::{
 pub(crate) use execute_tools::{
     ExecuteToolsBatchOutcome, WebExecuteCtx, per_execute_tools_web, sse_sender_closed,
 };
-pub(crate) use intent::{intent_at_turn_start, intent_user};
+pub(crate) use intent::intent_at_turn_start;
 #[allow(unused_imports)]
 pub(crate) use messages::push_assistant_merging_trailing_empty_placeholder;
 pub(crate) use params::{
@@ -84,6 +80,7 @@ pub(crate) use plan::{
 };
 #[allow(unused_imports)]
 pub(crate) use reflect::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
+#[allow(unused_imports)]
 pub(crate) use sub_agent_policy::filter_tool_defs_for_executor_kind;
 
 #[cfg(test)]
@@ -131,14 +128,6 @@ pub(crate) async fn run_agent_turn_common(
     ));
 
     match top_dispatch {
-        TurnTopLevelDispatch::Hierarchical => {
-            log_orchestration_transition(
-                TurnOrchestrationTransition::DispatchHierarchical,
-                Some(crate::agent::agent_turn::turn_orchestration::TurnOrchestrationMode::Hierarchical.as_str()),
-                &[],
-            );
-            run_dispatch::dispatch_hierarchical_turn(p, &mut per_coord).await
-        }
         TurnTopLevelDispatch::NonHierarchical => {
             log_orchestration_transition(
                 TurnOrchestrationTransition::DispatchNonHierarchical,

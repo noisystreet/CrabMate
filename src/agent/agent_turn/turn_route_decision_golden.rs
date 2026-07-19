@@ -3,7 +3,7 @@
 use crabmate_agent::agent_turn::{
     AssessTurnRoutingParams, IntentGateSnapshot, StagedGateSnapshot, StagedPlanningDenyReason,
     StagedPlanningGateOutcome, TurnRouteDecisionV1, TurnRouteDriver, TurnTopLevelDispatch,
-    assess_turn_routing, resolve_hierarchical_post_intent_route,
+    assess_turn_routing,
 };
 use crabmate_agent::intent_pipeline::{IntentAction, IntentDecision};
 use crabmate_agent::intent_router::IntentKind;
@@ -22,8 +22,6 @@ struct GoldenLine {
     staged_gate: Option<Value>,
     #[serde(default)]
     expect_early: bool,
-    #[serde(default)]
-    expect_hierarchical: bool,
     expect: GoldenExpect,
 }
 
@@ -35,8 +33,6 @@ struct GoldenExpect {
     turn_phase: Option<String>,
     #[serde(default, alias = "freeform_because")]
     react_because: Option<Value>,
-    #[serde(default)]
-    hierarchical_post_intent_route: Option<String>,
     #[serde(default)]
     staged_gate: Option<String>,
     #[serde(default)]
@@ -121,40 +117,6 @@ fn parse_staged_gate(v: &Value) -> StagedPlanningGateOutcome {
     }
 }
 
-fn decision_from_intent_gate(snapshot: &IntentGateSnapshot) -> IntentDecision {
-    match snapshot {
-        IntentGateSnapshot::ProceedExecute {
-            kind,
-            primary_intent,
-            action,
-            confidence,
-            need_clarification,
-            ..
-        } => IntentDecision {
-            kind: match kind.as_str() {
-                "execute" => IntentKind::Execute,
-                "greeting" => IntentKind::Greeting,
-                "qa" => IntentKind::Qa,
-                _ => IntentKind::Ambiguous,
-            },
-            primary_intent: primary_intent.clone(),
-            secondary_intents: Vec::new(),
-            confidence: *confidence,
-            abstain: false,
-            need_clarification: *need_clarification,
-            action: match action.as_str() {
-                "execute" => IntentAction::Execute,
-                "direct_reply" => IntentAction::DirectReply(String::new()),
-                "clarify_then_execute" => IntentAction::ClarifyThenExecute(String::new()),
-                "confirm_then_execute" => IntentAction::ConfirmThenExecute(String::new()),
-                other => panic!("unknown action {other}"),
-            },
-            multi_intent: None,
-        },
-        _ => panic!("need ProceedExecute for hierarchical resolution"),
-    }
-}
-
 fn assert_freeform_because(decision: &TurnRouteDecisionV1, expect: &Value, ctx: &str) {
     match expect {
         Value::Null => assert!(decision.freeform_because.is_none(), "{ctx}"),
@@ -187,23 +149,15 @@ fn golden_turn_route_decision() {
         let cfg = cfg_with(&row.cfg_mode);
         let intent_gate = parse_intent_gate(&row.intent_gate);
 
-        let top_level = if row.expect_hierarchical {
-            TurnTopLevelDispatch::Hierarchical
-        } else {
-            TurnTopLevelDispatch::NonHierarchical
-        };
-        let hierarchical_decision = row
-            .expect_hierarchical
-            .then(|| decision_from_intent_gate(&intent_gate));
         let staged_gate = row.staged_gate.as_ref().map(parse_staged_gate);
         let staged_ref = staged_gate.as_ref();
 
         let assessed = assess_turn_routing(AssessTurnRoutingParams {
             cfg: &cfg,
-            top_level,
+            top_level: TurnTopLevelDispatch::NonHierarchical,
             intent_gate: intent_gate.clone(),
             staged_gate: staged_ref,
-            hierarchical_decision: hierarchical_decision.as_ref(),
+            hierarchical_decision: None,
         });
         let decision = &assessed.decision;
 
@@ -221,13 +175,6 @@ fn golden_turn_route_decision() {
             &row.expect.react_because.clone().unwrap_or(Value::Null),
             &ctx,
         );
-        if let Some(route) = &row.expect.hierarchical_post_intent_route {
-            assert_eq!(
-                decision.hierarchical_post_intent_route.as_deref(),
-                Some(route.as_str()),
-                "{ctx}"
-            );
-        }
         if let Some(sg) = &row.expect.staged_gate {
             assert!(
                 matches!(
@@ -239,15 +186,6 @@ fn golden_turn_route_decision() {
         }
         if row.expect_early {
             assert_eq!(assessed.driver, TurnRouteDriver::IntentEarlyExit, "{ctx}");
-        } else if row.expect_hierarchical {
-            let expected_route = resolve_hierarchical_post_intent_route(
-                hierarchical_decision.as_ref().expect("hier decision"),
-            );
-            assert_eq!(
-                assessed.driver,
-                TurnRouteDriver::Hierarchical(expected_route),
-                "{ctx}"
-            );
         } else if let Some(driver) = &row.expect.driver {
             match driver.as_str() {
                 "non_hierarchical_freeform" => assert!(

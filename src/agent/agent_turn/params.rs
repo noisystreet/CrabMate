@@ -33,7 +33,6 @@ use super::messages::{
 };
 use crate::PerTurnFlight;
 use crate::WebRequestAudit;
-use crate::agent::hierarchy::HierarchyRunnerParams;
 use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crate::config::AgentConfig;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
@@ -58,6 +57,7 @@ pub(crate) struct RunLoopIo<'a> {
     pub no_stream: bool,
     pub cancel: Option<&'a AtomicBool>,
     /// 与 [`cancel`] 同源；供分层并行 `spawn` 共享。
+    #[allow(dead_code)]
     pub cancel_arc: Option<Arc<AtomicBool>>,
     pub render_to_terminal: bool,
     /// 见 [`crate::llm::api::stream_chat`] 的 `plain_terminal_stream`；仅 CLI 入口为 `true`。
@@ -388,44 +388,6 @@ impl RunLoopParams<'_> {
             )
         } else {
             (None, None)
-        }
-    }
-
-    /// 装配 [`HierarchyRunnerParams`]：与 `hierarchy::run_hierarchical_agent` 内 Web 审批通道（`out_tx` / `approval_rx_shared`）提取逻辑一致，避免分层入口与其它调用点漂移。
-    pub(crate) fn hierarchy_runner_params<'b>(
-        &'b self,
-        task: &'b str,
-        primary_intent: Option<String>,
-        secondary_intents: Vec<String>,
-    ) -> HierarchyRunnerParams<'b> {
-        let (tool_approval_out, tool_approval_rx) =
-            if let Some(web_ctx) = self.ctx.attach.web_tool_ctx {
-                (
-                    Some(web_ctx.out_tx.clone()),
-                    Some(web_ctx.approval_rx_shared.clone()),
-                )
-            } else {
-                (None, None)
-            };
-        HierarchyRunnerParams {
-            task,
-            cfg: self.ctx.core.cfg.as_ref(),
-            llm_backend: crate::llm::shared_static_chat_backend(self.ctx.core.llm_backend),
-            client: Arc::new(self.ctx.core.client.clone()),
-            api_key: self.ctx.core.api_key.to_string(),
-            working_dir: self.ctx.core.effective_working_dir.to_path_buf(),
-            sse_out: self.ctx.io.out.cloned(),
-            tools_defs: self.ctx.core.tools_defs,
-            tool_approval_out,
-            tool_approval_rx,
-            primary_intent,
-            secondary_intents,
-            intent_mode_bias_enabled: self.ctx.core.cfg.intent_routing.intent_mode_bias_enabled,
-            process_handles: Arc::clone(&self.ctx.obs.process_handles),
-            sse_control_mirror: self.ctx.io.sse_control_mirror.clone(),
-            cancel: self.ctx.io.cancel_arc.clone(),
-            turn_budget: Arc::clone(&self.turn.turn_budget),
-            sse_encoder: Arc::clone(&self.ctx.io.sse_encoder),
         }
     }
 
