@@ -42,6 +42,7 @@ fn test_e2e_config() -> E2eRunConfig {
         artifacts_root: PathBuf::from(E2E_ARTIFACTS_ROOT),
         recordings_dir: PathBuf::from("tests/fixtures/llm_recordings"),
         mode,
+        judge_config: Default::default(),
     }
 }
 
