@@ -25,7 +25,7 @@ pub(crate) mod step_executor_policy;
 pub mod step_verifier;
 /// OpenAI 兼容会话的 **tiktoken** prompt token 粗估（与 `message_pipeline::conversation_messages_to_vendor_body` 对齐）。
 pub mod tiktoken_prompt_tokens;
-pub mod workflow;
+pub use crabmate_workflow as workflow;
 #[cfg(test)]
 mod workflow_compile_golden;
 #[cfg(test)]

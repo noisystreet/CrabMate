@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use serde_json::{Map, Value};
 
-use crate::agent::acceptance::resolve_json_path_value;
+use crate::resolve_json_path::resolve_json_path_value;
 
 use super::model::{ForEachPendingSpec, WorkflowNodeSpec};
 use super::types::{NodeRunResult, NodeRunStatus};

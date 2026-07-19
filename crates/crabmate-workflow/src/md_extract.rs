@@ -36,7 +36,7 @@ pub(crate) fn extract_crabmate_workflow_blocks(md: &str) -> Vec<String> {
 }
 
 /// 取首个块；无块则 `Err`。
-pub(crate) fn extract_first_crabmate_workflow_block(md: &str) -> Result<String, String> {
+pub fn extract_first_crabmate_workflow_block(md: &str) -> Result<String, String> {
     let blocks = extract_crabmate_workflow_blocks(md);
     blocks
         .into_iter()

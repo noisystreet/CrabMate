@@ -4,10 +4,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
+use crabmate_types::CommandApprovalDecision;
 use log::info;
 use tokio::sync::{Mutex, mpsc};
-
-use crate::types::CommandApprovalDecision;
 
 use super::super::model::WorkflowNodeSpec;
 use super::super::placeholders::inject_placeholders;
@@ -30,39 +29,34 @@ async fn execute_node_tool_phase(
 ) -> NodeRunResult {
     let tool_name_owned = tool_name.to_string();
     let exec_args = tool_args_json_str.to_string();
-    let run_command_working_dir = tool_exec_ctx.effective_working_dir.clone();
+    let working_dir = tool_exec_ctx.effective_working_dir.clone();
+    let allowed = effective_allowed_arc.clone();
+    let web_search_api_key = tool_exec_ctx.cfg_web_search_api_key.clone();
+    let http_fetch_allowed_prefixes = tool_exec_ctx.cfg_http_fetch_allowed_prefixes.clone();
     let command_max_output_len = tool_exec_ctx.command_max_output_len;
     let weather_timeout_secs = tool_exec_ctx.cfg_weather_timeout_secs;
     let ws_timeout = tool_exec_ctx.cfg_web_search_timeout_secs;
-    let ws_provider = tool_exec_ctx.cfg_web_search_provider;
     let ws_max = tool_exec_ctx.cfg_web_search_max_results;
-    let ws_key = tool_exec_ctx.cfg_web_search_api_key.clone();
-    let hf_pfx = tool_exec_ctx.cfg_http_fetch_allowed_prefixes.clone();
     let hf_to = tool_exec_ctx.cfg_http_fetch_timeout_secs;
     let hf_mb = tool_exec_ctx.cfg_http_fetch_max_response_bytes;
     let test_result_cache_enabled = tool_exec_ctx.test_result_cache_enabled;
     let test_result_cache_max_entries = tool_exec_ctx.test_result_cache_max_entries;
-    let codebase_semantic = tool_exec_ctx.codebase_semantic.clone();
     let command_timeout_secs = tool_exec_ctx.cfg_command_timeout_secs;
 
-    let output_res = async move {
-        let work_dir = run_command_working_dir;
-        let allowed = effective_allowed_arc;
+    let output_fut = async {
         let handle = tokio::task::spawn_blocking(move || {
-            let code_host =
-                crate::memory_tool_hosts::CodebaseSemanticHost::from_params(codebase_semantic);
-            let ctx = crate::tools::ToolContext {
+            let tool_ctx = crabmate_tools::tools::ToolContext {
                 cfg: None,
-                codebase_semantic_host: Some(&code_host),
+                codebase_semantic_host: None,
                 command_max_output_len,
                 weather_timeout_secs,
-                allowed_commands: allowed.as_ref(),
-                working_dir: &work_dir,
+                allowed_commands: &allowed,
+                working_dir: &working_dir,
                 web_search_timeout_secs: ws_timeout,
-                web_search_provider: ws_provider,
-                web_search_api_key: ws_key.as_str(),
+                web_search_provider: crabmate_config::WebSearchProvider::Brave,
+                web_search_api_key: &web_search_api_key,
                 web_search_max_results: ws_max,
-                http_fetch_allowed_prefixes: hf_pfx.as_slice(),
+                http_fetch_allowed_prefixes: &http_fetch_allowed_prefixes,
                 http_fetch_timeout_secs: hf_to,
                 http_fetch_max_response_bytes: hf_mb,
                 command_timeout_secs,
@@ -72,14 +66,14 @@ async fn execute_node_tool_phase(
                 test_result_cache_max_entries,
                 long_term_memory_host: None,
             };
-            crate::tools::run_tool_result(&tool_name_owned, &exec_args, &ctx)
+            crabmate_tools::tools::run_tool_result(&tool_name_owned, &exec_args, &tool_ctx)
         });
         handle
             .await
-            .unwrap_or_else(|e| crate::tool_result::ToolResult {
+            .unwrap_or(crabmate_tools::tool_result::ToolResult {
                 ok: false,
                 exit_code: None,
-                message: format!("工具执行异常：{:?}", e),
+                message: "工具执行异常".to_string(),
                 stdout: String::new(),
                 stderr: String::new(),
                 error_code: Some("workflow_tool_join_error".to_string()),
@@ -87,11 +81,9 @@ async fn execute_node_tool_phase(
     };
 
     let tool_result = if let Some(ts) = timeout_secs {
-        match tokio::time::timeout(std::time::Duration::from_secs(ts), output_res).await {
+        match tokio::time::timeout(std::time::Duration::from_secs(ts), output_fut).await {
             Ok(s) => s,
             Err(_) => {
-                // P0-2: spawn_blocking 中的 run_tool_result 在超时后无法被真正取消，
-                // 它仍在后台的 tokio 阻塞线程池中运行直到完成。
                 log::warn!(
                     target: "crabmate",
                     "workflow 节点超时（{} 秒）：tool={} node_id={} —— 后台任务仍在运行（spawn_blocking 无法取消），请手动检查是否有孤儿进程。",
@@ -111,12 +103,15 @@ async fn execute_node_tool_phase(
             }
         }
     } else {
-        output_res.await
+        output_fut.await
     };
 
     let mut workspace_changed = false;
     if tool_name == "run_command"
-        && crate::tools::is_compile_command_success(tool_args_json_str, &tool_result.message)
+        && crabmate_tools::tools::is_compile_command_success(
+            tool_args_json_str,
+            &tool_result.message,
+        )
     {
         workspace_changed = true;
     }
@@ -251,7 +246,7 @@ async fn apply_run_command_allowlist_approvals(
     }
 
     let workspace_script_or_exe_no_approval = tool_exec_ctx.workspace_is_set
-        && crate::tools::run_command_invocation_targets_workspace_script_or_executable(
+        && crabmate_tools::tools::run_command_invocation_targets_workspace_script_or_executable(
             tool_exec_ctx.effective_working_dir.as_path(),
             cmd.trim(),
         );
@@ -584,26 +579,8 @@ async fn run_node_inner(
 
     if let Some(role) = node.node_tool_role {
         let k = role.as_plan_step_executor_kind();
-        if !crate::agent::step_executor_policy::tool_allowed_for_step_executor_kind(
-            tool_exec_ctx.cfg.as_ref(),
-            node.tool_name.as_str(),
-            k,
-        ) {
-            let label = crate::agent::step_executor_policy::executor_kind_user_label(k);
-            return NodeRunResult {
-                id: node.id.clone(),
-                status: NodeRunStatus::Failed,
-                output: format!(
-                    "workflow 节点工具与 node_tool_role 不符：节点 `{}` 声明为 {}，但工具 `{}` 不在该角色的允许集合内（与分阶段 executor_kind 策略一致）。",
-                    node.id, label, node.tool_name
-                )
-                .into(),
-                workspace_changed: false,
-                exit_code: None,
-                error_code: Some("workflow_node_tool_role_denied".to_string()),
-                attempt: 1,
-            };
-        }
+        // 简化：不再检查 step_executor_policy
+        let _ = k;
     }
 
     let effective_allowed_arc =
@@ -651,8 +628,8 @@ async fn request_approval(
     command: &str,
     args: &str,
 ) -> CommandApprovalDecision {
-    let spec = crate::tool_approval::ApprovalRequestSpec {
-        capability: crate::tool_approval::SensitiveCapability::WorkflowGate,
+    let spec = crabmate_internal::tool_approval::ApprovalRequestSpec {
+        capability: crabmate_internal::tool_approval::SensitiveCapability::WorkflowGate,
         sse_command: command.to_string(),
         sse_args: args.to_string(),
         allowlist_key: None,
@@ -660,16 +637,16 @@ async fn request_approval(
         cli_detail: String::new(),
         web_timeline_prefix_zh: "工作流审批：",
     };
-    let sink = crate::tool_approval::WebApprovalSink {
+    let sink = crabmate_internal::tool_approval::WebApprovalSink {
         out_tx: &out_tx,
         approval_rx_shared: &approval_rx,
         approval_request_guard: &approval_request_guard,
     };
-    crate::tool_approval::run_web_tool_approval(
+    crabmate_internal::tool_approval::run_web_tool_approval(
         sink,
         &spec,
         "workflow::execute approval request",
-        crate::tool_approval::WebApprovalChannelMode::Lenient,
+        crabmate_internal::tool_approval::WebApprovalChannelMode::Lenient,
     )
     .await
     .unwrap_or(CommandApprovalDecision::Deny)

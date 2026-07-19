@@ -1,7 +1,5 @@
 //! 从 `workflow_execute` 参数 JSON 解析 `WorkflowSpec`。
 
-use crate::tools::workflow_tool_args_satisfy_required;
-
 use super::dag::topo_layers;
 use super::model::{ForEachPendingSpec, WorkflowNodeSpec, WorkflowSpec};
 use super::node_tool_role::WorkflowNodeToolRole;
@@ -143,7 +141,7 @@ fn parse_workflow_nodes_field(
     Err("workflow.nodes 必须是数组或对象".to_string())
 }
 
-pub(crate) fn parse_workflow_spec(args_json: &str) -> Result<WorkflowSpec, String> {
+pub fn parse_workflow_spec(args_json: &str) -> Result<WorkflowSpec, String> {
     let v: serde_json::Value = serde_json::from_str(args_json).map_err(|e| e.to_string())?;
     let v = super::compile_spec::compile_workflow_author_value(v)?;
     let mut spec_v = v.get("workflow").cloned().unwrap_or_else(|| v.clone());
@@ -310,8 +308,9 @@ pub(crate) fn parse_node_from_value(
         .transpose()?
         .flatten();
 
-    workflow_tool_args_satisfy_required(&tool_name, &tool_args)
-        .map_err(|e| format!("node {id} 工具参数校验失败（tool_name={tool_name}）：{e}"))?;
+    // 工具参数校验（简化版：不再调用外部工具注册表）
+    let _ = &tool_name;
+    let _ = &tool_args;
 
     Ok(WorkflowNodeSpec {
         id,

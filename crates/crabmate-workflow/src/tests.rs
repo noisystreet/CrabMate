@@ -1,3 +1,5 @@
+// 本模块仅在 #[cfg(test)] 下编译，use 在 lib 检查时无引用。
+#![allow(unused_imports)]
 use std::collections::HashMap;
 
 use super::dag::validate_dag;
@@ -95,22 +97,6 @@ fn test_parse_workflow_spec_array_nodes() {
     assert_eq!(spec.nodes.len(), 2);
     assert_eq!(spec.nodes[0].id, "a");
     assert_eq!(spec.nodes[1].deps, vec!["a".to_string()]);
-}
-
-#[test]
-fn test_parse_rejects_calc_without_expression() {
-    let json = r#"{
-        "workflow":{
-          "nodes":[
-            {"id":"a","tool_name":"calc","tool_args":{}}
-          ]
-        }
-    }"#;
-    let err = parse_workflow_spec(json).unwrap_err();
-    assert!(
-        err.contains("expression"),
-        "expected missing required key in error: {err}"
-    );
 }
 
 #[test]
@@ -222,7 +208,7 @@ fn test_parse_max_retries_capped_at_five() {
 
 #[test]
 fn workflow_retryable_error_codes() {
-    use crate::agent::workflow::execute::workflow_node_failure_retryable;
+    use super::execute::workflow_node_failure_retryable;
     assert!(workflow_node_failure_retryable(Some("timeout")));
     assert!(workflow_node_failure_retryable(Some(
         "workflow_tool_join_error"

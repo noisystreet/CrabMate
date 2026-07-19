@@ -1056,6 +1056,7 @@ dependencies = [
  "crabmate-tool-card",
  "crabmate-turn-layout",
  "crabmate-types",
+ "crabmate-workflow",
  "crossterm",
  "futures-util",
  "indicatif",
@@ -1373,6 +1374,24 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
  "web-sys",
+]
+
+[[package]]
+name = "crabmate-workflow"
+version = "0.1.0"
+dependencies = [
+ "crabmate-config",
+ "crabmate-internal",
+ "crabmate-tools",
+ "crabmate-types",
+ "futures-util",
+ "jsonschema",
+ "log",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "yaml_serde",
 ]
 
 [[package]]

@@ -50,7 +50,7 @@ pub(crate) fn compile_workflow_author_value(mut root: Value) -> Result<Value, St
     )])))
 }
 
-pub(crate) fn compile_workflow_author_yaml(yaml: &str) -> Result<Value, String> {
+pub fn compile_workflow_author_yaml(yaml: &str) -> Result<Value, String> {
     let root: Value =
         serde_yaml::from_str(yaml).map_err(|e| format!("workflow_spec YAML 解析失败: {e}"))?;
     compile_workflow_author_value(root)
