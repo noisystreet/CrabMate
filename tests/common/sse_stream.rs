@@ -68,6 +68,7 @@ impl SseEventStream {
 
     /// 从缓冲区解析一个 SSE 事件（`event: xxx\ndata: yyy\n\n`）。
     /// 返回 `None` 表示缓冲区中尚无完整事件。
+    /// 空帧（纯 `\n\n` 心跳）也返回 `None`，由上层重试。
     fn parse_one(buf: &mut Vec<u8>) -> Option<SseEvent> {
         // 查找双换行分隔符
         let s = std::str::from_utf8(buf).ok()?;
@@ -78,6 +79,12 @@ impl SseEventStream {
 
         // 消耗缓冲区中的已解析帧
         buf.drain(..frame_end);
+
+        let trimmed = frame.trim();
+        // 空帧（心跳）或纯注释行，跳过
+        if trimmed.is_empty() || trimmed == ":" || trimmed.starts_with(':') {
+            return None;
+        }
 
         let mut event = String::new();
         let mut data = String::new();
