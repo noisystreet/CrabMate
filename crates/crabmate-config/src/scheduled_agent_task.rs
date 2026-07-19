@@ -66,6 +66,7 @@ fn validate_scheduled_task_agent_role(
     Ok(())
 }
 
+#[cfg(feature = "web")]
 fn ensure_schedule_cron_parses(schedule: &str, id: &str) -> Result<(), String> {
     // 与库内 croner 解析一致：非法 cron 在启动加 job 时也会失败，此处先失败可提前提示用户。
     let _job =
@@ -74,6 +75,12 @@ fn ensure_schedule_cron_parses(schedule: &str, id: &str) -> Result<(), String> {
                 format!("scheduled_agent_task id={id}：无效 schedule {schedule:?}（{e}）")
             })?;
     drop(_job);
+    Ok(())
+}
+
+#[cfg(not(feature = "web"))]
+fn ensure_schedule_cron_parses(_schedule: &str, _id: &str) -> Result<(), String> {
+    // 无 `web` feature 时不校验 cron 表达式（运行时也不会启动定时任务）。
     Ok(())
 }
 
