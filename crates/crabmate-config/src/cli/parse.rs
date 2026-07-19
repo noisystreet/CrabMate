@@ -1,9 +1,9 @@
 //! `parse_args` / `parse_args_from_argv` 与 `RootCli` → [`ParsedCliArgs`] 映射。
 
 use super::definitions::{
-    BenchmarkCliArgs, ChatCliArgs, Commands, ExtraCliCommand, GlobalOpts, McpSubCmd, ParsedCliArgs,
-    PluginInitCli, PluginListCli, PluginSubCmd, PluginValidateCli, RootCli, SaveSessionCli,
-    SseReplayCli, ToolReplayCli, ToolReplaySubCmd, WorkflowFileCli, WorkflowSubCmd,
+    BenchmarkCliArgs, ChatCliArgs, Commands, E2eCliArgs, ExtraCliCommand, GlobalOpts, McpSubCmd,
+    ParsedCliArgs, PluginInitCli, PluginListCli, PluginSubCmd, PluginValidateCli, RootCli,
+    SaveSessionCli, SseReplayCli, ToolReplayCli, ToolReplaySubCmd, WorkflowFileCli, WorkflowSubCmd,
 };
 use super::legacy_argv::normalize_legacy_argv;
 use clap::Parser;
@@ -101,6 +101,7 @@ impl CliParseCtx {
             workflow_compile: None,
             workflow_run: None,
             tui: false,
+            e2e: None,
         }
     }
 }
@@ -301,6 +302,13 @@ fn build_parsed_cli_args(
                 });
             }
         },
+        Commands::E2e(e) => {
+            b.e2e = Some(E2eCliArgs {
+                mode: e.mode,
+                output_dir: e.output_dir,
+                recordings_dir: e.recordings_dir,
+            });
+        }
     }
 
     Ok(b)

@@ -10,6 +10,7 @@ mod cli_run_session;
 use std::collections::HashMap;
 use std::env;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
@@ -22,7 +23,7 @@ use crate::AppState;
 use crate::chat_job_queue;
 use crate::config;
 use crate::config::cli::{
-    ExtraCliCommand, ParsedCliArgs, PluginInitCli, PluginListCli, PluginValidateCli,
+    E2eCliArgs, ExtraCliCommand, ParsedCliArgs, PluginInitCli, PluginListCli, PluginValidateCli,
     SaveSessionCli, WorkflowFileCli, parse_args,
 };
 use crate::http_client;
@@ -94,6 +95,7 @@ struct EarlyCliDispatch<'a> {
     workflow_validate: Option<WorkflowFileCli>,
     workflow_compile: Option<WorkflowFileCli>,
     workflow_run: Option<WorkflowFileCli>,
+    e2e: Option<E2eCliArgs>,
 }
 
 fn try_early_save_session(
@@ -200,6 +202,41 @@ async fn try_early_workflow_run(
     Ok(true)
 }
 
+async fn try_early_e2e(
+    d: &EarlyCliDispatch<'_>,
+    tokens: Option<u32>,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let Some(e2e) = d.e2e.clone() else {
+        return Ok(false);
+    };
+    let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+    let api_key = read_llm_api_key_from_env_lenient(&cfg);
+
+    let mode = match e2e.mode.as_str() {
+        "record" => crabmate_llm::E2eMode::Record,
+        "replay" => crabmate_llm::E2eMode::Replay,
+        _ => crabmate_llm::E2eMode::Real,
+    };
+
+    let artifacts_root = e2e
+        .output_dir
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(".crabmate/e2e_artifacts"));
+    let recordings_dir = e2e
+        .recordings_dir
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("tests/fixtures/llm_recordings"));
+
+    let run_cfg = crate::e2e_scenario::E2eRunConfig {
+        api_key,
+        artifacts_root,
+        recordings_dir,
+        mode,
+    };
+    crate::e2e_scenario::run_e2e_cli(&run_cfg).await?;
+    Ok(true)
+}
+
 /// `doctor` / `mcp list` / `mcp serve`：由 [`ExtraCliCommand`] 分流。
 async fn try_dispatch_early_extra_cli(
     d: &EarlyCliDispatch<'_>,
@@ -273,6 +310,9 @@ async fn run_early_commands(
         return Ok(true);
     }
     if try_early_workflow_run(&d, llm_context_tokens_cli).await? {
+        return Ok(true);
+    }
+    if try_early_e2e(&d, llm_context_tokens_cli).await? {
         return Ok(true);
     }
     Ok(false)
@@ -702,6 +742,7 @@ pub(super) async fn run_cli_from_parsed(
             workflow_validate: args.workflow_validate.clone(),
             workflow_compile: args.workflow_compile.clone(),
             workflow_run: args.workflow_run.clone(),
+            e2e: args.e2e.clone(),
         },
         args.llm_context_tokens_cli,
     )

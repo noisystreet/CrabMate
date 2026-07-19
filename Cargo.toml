@@ -187,6 +187,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 secrecy = { workspace = true }
 serde_yaml = { workspace = true }
+tempfile = { workspace = true }
 # 避免 `full`：仅启用代码路径实际用到的子特性，缩短 `cargo build` / `cargo check` 解析与编译图。
 tokio = { workspace = true, features = [
     "macros",

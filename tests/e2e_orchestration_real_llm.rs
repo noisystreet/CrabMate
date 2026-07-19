@@ -1,188 +1,249 @@
 //! 编排级真实 LLM e2e 测试（Layer 2）。
 //!
-//! 覆盖 **SingleAgent** 编排模式，通过 [`crabmate::RunAgentTurnParams`] 注入
-//! [`build_e2e_backend`](crabmate::crabmate_llm::build_e2e_backend) 构造的录制/回放后端。
+//! 覆盖 **SingleAgent** 编排模式，使用生产路径构建 system prompt，
+//! 通过 [`crabmate::e2e_scenario`] 的 [`run_scenario`] 统一执行和指标收集。
 //!
-//! 运行模式（环境变量）：
+//! # 场景定义
+//!
+//! 每个场景由 [`TestScenario`] 描述，添加新场景只需在 `e2e_all_scenarios()`
+//! 的 `scenarios` 列表中添加一项。场景定义与 CLI 子命令 `crabmate e2e` 共享。
+//!
+//! # 运行模式
+//!
 //! - **默认（无 `REAL_LLM_E2E`）**：`#[ignore]` 跳过所有用例
 //! - `REAL_LLM_E2E=1`：真实 LLM 后端，不录制
 //! - `REAL_LLM_E2E=1 CM_E2E_RECORD=1`：真实 LLM 后端 + 录制
+//!
+//! # 输出
+//!
+//! 每次执行后 artifact 输出到 `.crabmate/e2e_artifacts/<scenario_name>/`，包含：
+//! - `metrics.json`：结构化指标
+//! - `summary.md`：简短摘要
+//! - `messages_final.md` / `messages_final.json`：完整消息记录
 
-use std::path::Path;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
 
-use crabmate::crabmate_llm::{build_e2e_backend, detect_mode_from_env};
-use crabmate::{
-    AgentConfig, AgentTurnLlmOverrides, AgentTurnTransport, ChatCompletionsBackend,
-    LlmSeedOverride, Message, PlannerExecutorMode, ProcessHandles, RunAgentTurnParams,
-    RunAgentTurnSharedInputs, build_tools, load_config, run_agent_turn,
+mod common;
+
+use crate::common::E2E_ARTIFACTS_ROOT;
+
+use crabmate::e2e_scenario::{
+    E2eRunConfig, TestRunMetrics, TestScenario, generate_report, run_scenario,
 };
 
-fn cfg_single_agent() -> Arc<AgentConfig> {
-    let mut cfg = load_config(None).expect("embedded default config must load");
-    cfg.per_plan_policy.planner_executor_mode = PlannerExecutorMode::SingleAgent;
-    cfg.intent_routing.intent_at_turn_start_enabled = false;
-    cfg.intent_routing.intent_l2_enabled = false;
-    Arc::new(cfg)
-}
-
-/// 构造 e2e 后端并注入 `RunAgentTurnParams`，执行单轮 agent turn。
-///
-/// `test_name` 用于录制目录（`tests/fixtures/llm_recordings/<test_name>/`）。
-async fn run_single_agent_turn(
-    test_name: &str,
-    cfg: &Arc<AgentConfig>,
-    messages: &mut Vec<Message>,
-    workspace_is_set: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mode = detect_mode_from_env();
-    let recordings_dir = Path::new("tests/fixtures/llm_recordings");
-
-    let backend_box = build_e2e_backend(
-        mode,
-        Box::new(crabmate::OpenAiCompatBackend),
-        recordings_dir,
-        test_name,
-    )?;
-    let backend_ref: &'static (dyn ChatCompletionsBackend + 'static) = Box::leak(backend_box);
-
-    let client = reqwest::Client::new();
-    let tools = build_tools();
-    let api_key = std::env::var("API_KEY").unwrap_or_default();
-    let work_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-
-    let params = RunAgentTurnParams {
-        shared: RunAgentTurnSharedInputs {
-            client: &client,
-            api_key: &api_key,
-            cfg,
-            tools: tools.as_slice(),
-        },
-        messages,
-        effective_working_dir: work_dir,
-        workspace_is_set,
-        transport: AgentTurnTransport {
-            out: None,
-            render_to_terminal: false,
-            no_stream: true,
-            cancel: None,
-            per_flight: None,
-            web_tool_ctx: None,
-            cli_tool_ctx: None,
-            plain_terminal_stream: false,
-            tui_llm_stream_scratch: None,
-            tool_running_hook: None,
-            clarification_questionnaire_hook: None,
-            sse_control_mirror: None,
-            llm_backend: Some(backend_ref),
-            trace_sink: None,
-        },
-        llm: AgentTurnLlmOverrides {
-            temperature_override: None,
-            model_override: None,
-            use_executor_model: false,
-            executor_model_override: None,
-            executor_api_base: None,
-            executor_api_key: None,
-            seed_override: LlmSeedOverride::default(),
-        },
-        long_term_memory: None,
-        long_term_memory_scope_id: None,
-        read_file_turn_cache: None,
-        turn_allowed_tool_names: None,
-        tracing_chat_turn: None,
-        request_audit: None,
-        process_handles: ProcessHandles::default_arc_process_handles(),
+/// 构建 e2e runner 配置（从环境变量读取模式，与 CLI 默认路径一致）。
+fn test_e2e_config() -> E2eRunConfig {
+    let mode = match std::env::var("CM_E2E_RECORD") {
+        Ok(v) if v == "1" || v.to_lowercase() == "true" => crabmate_llm::E2eMode::Record,
+        _ => crabmate_llm::E2eMode::Real,
     };
-
-    run_agent_turn(params).await?;
-    Ok(())
+    E2eRunConfig {
+        api_key: resolve_test_api_key(),
+        artifacts_root: PathBuf::from(E2E_ARTIFACTS_ROOT),
+        recordings_dir: PathBuf::from("tests/fixtures/llm_recordings"),
+        mode,
+    }
 }
 
-/// Smoke 测试：SingleAgent 模式 + 简单问候，验证一轮 LLM 调用后能正常结束。
+/// 优先从 `API_KEY` 环境变量读取；未设置时回退到 Tauri/Web 本地配置。
+fn resolve_test_api_key() -> String {
+    let from_env = std::env::var("API_KEY").unwrap_or_default();
+    if !from_env.trim().is_empty() {
+        return from_env.trim().to_string();
+    }
+    let home = std::env::var("HOME").unwrap_or_default();
+    let data_home = std::env::var("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| Path::new(&home).join(".local/share"));
+    let secret_path = data_home
+        .join("crabmate")
+        .join("secrets")
+        .join("client_llm");
+    if let Ok(content) = std::fs::read_to_string(&secret_path) {
+        let t = content.trim().to_string();
+        if !t.is_empty() {
+            return t;
+        }
+    }
+    String::new()
+}
+
+/// 单场景 smoke 测试：简单问候，验证一轮 LLM 调用后能正常结束。
 ///
-/// 默认 `#[ignore]`（不需要 API_KEY）；设置 `REAL_LLM_E2E=1` 时自动启用。
+/// 默认 `#[ignore]`；设置 `REAL_LLM_E2E=1` 时自动启用。
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "设置 REAL_LLM_E2E=1 后执行；需先录制或使用真实 LLM"]
 async fn e2e_single_agent_smoke() {
-    let cfg = cfg_single_agent();
-    let mut messages = vec![
-        Message::system_only("你是一个有帮助的助手。用中文回答。".to_string()),
-        Message::user_only("你好，用一句话介绍自己。".to_string()),
-    ];
-    let workspace_is_set = true;
-
-    let result = run_single_agent_turn(
-        "orch_single_agent_smoke",
-        &cfg,
-        &mut messages,
-        workspace_is_set,
+    let e2e_cfg = test_e2e_config();
+    let metrics = run_scenario(
+        &TestScenario {
+            name: "orch_single_agent_smoke",
+            user_message: "你好，用一句话介绍自己。",
+            workspace_files: &[],
+            expected_output_contains: &[],
+            expected_tool_used: None,
+        },
+        &e2e_cfg,
     )
     .await;
 
-    if let Err(ref e) = result {
-        // 失败时简单输出（完整 artifact 落盘待 PR-5）
-        eprintln!("e2e 编排测试失败: {e}");
-    }
-
-    result.expect("run_agent_turn 应成功结束");
-
-    // 验证末条消息为 assistant
-    let last = messages.last().expect("完成后应有至少一条消息");
-    assert_eq!(
-        last.role, "assistant",
-        "末条消息应为 assistant，实际 role={:?}",
-        last.role
-    );
-    // 验证有文本内容
-    let body = crabmate::message_content_as_str(&last.content)
-        .unwrap_or("")
-        .to_string();
-    assert!(!body.is_empty(), "assistant 回复不应为空");
+    assert!(metrics.success, "smoke 测试应成功");
+    assert!(metrics.last_role == "assistant", "末条应为 assistant");
+    assert!(!metrics.final_output_preview.is_empty(), "回复不应为空");
 }
 
-/// Smoke 测试：SingleAgent + 工具调用（get_current_time），验证工具调用后终答正常。
+/// 单场景工具调用测试：使用 get_current_time 工具。
 ///
 /// 默认 `#[ignore]`；设置 `REAL_LLM_E2E=1` 时自动启用。
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "设置 REAL_LLM_E2E=1 后执行；需先录制或使用真实 LLM"]
 async fn e2e_single_agent_tool_round() {
-    let cfg = cfg_single_agent();
-    let mut messages = vec![
-        Message::system_only(
-            "你是一个有帮助的助手。你可以调用 get_current_time 工具查询当前时间。用中文回答。"
-                .to_string(),
-        ),
-        Message::user_only(
-            "请调用 get_current_time 工具查询当前时间，然后用一句话总结。".to_string(),
-        ),
-    ];
-    let workspace_is_set = true;
-
-    let result = run_single_agent_turn(
-        "orch_single_agent_tool",
-        &cfg,
-        &mut messages,
-        workspace_is_set,
+    let e2e_cfg = test_e2e_config();
+    let metrics = run_scenario(
+        &TestScenario {
+            name: "orch_single_agent_tool",
+            user_message: "请调用 get_current_time 工具查询当前时间，然后用一句话总结。",
+            workspace_files: &[],
+            expected_output_contains: &[],
+            expected_tool_used: Some("get_current_time"),
+        },
+        &e2e_cfg,
     )
     .await;
 
-    if let Err(ref e) = result {
-        eprintln!("e2e 工具调用测试失败: {e}");
+    assert!(metrics.success, "工具调用测试应成功");
+    assert!(metrics.tool_call_count > 0, "应有工具调用");
+    assert!(metrics.expected_tool_matched, "应调用了 get_current_time");
+    assert!(metrics.last_role == "assistant", "末条应为 assistant");
+}
+
+/// 单场景 C++ CMake 项目测试：编译并运行 hello world。
+///
+/// 默认 `#[ignore]`；设置 `REAL_LLM_E2E=1` 时启用。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "设置 REAL_LLM_E2E=1 后执行；需 cmake + C++ 编译器"]
+async fn e2e_single_agent_cpp_cmake_round() {
+    let e2e_cfg = test_e2e_config();
+    let metrics = run_scenario(
+        &TestScenario {
+            name: "orch_cpp_cmake",
+            user_message: "请查看工作区中的 C++ 项目，编译并运行它，然后告诉我输出结果。",
+            workspace_files: &[
+                (
+                    "main.cpp",
+                    r#"#include <iostream>
+int main() {
+    std::cout << "Hello from C++!" << std::endl;
+    return 0;
+}
+"#,
+                ),
+                (
+                    "CMakeLists.txt",
+                    r#"cmake_minimum_required(VERSION 3.10)
+project(cpp_e2e_test)
+add_executable(cpp_e2e_test main.cpp)
+"#,
+                ),
+            ],
+            expected_output_contains: &["Hello from C++", "编译成功"],
+            expected_tool_used: Some("run_command"),
+        },
+        &e2e_cfg,
+    )
+    .await;
+
+    assert!(metrics.success, "C++ CMake 测试应成功");
+    assert!(
+        metrics.expected_output_matched,
+        "输出应包含程序运行结果或编译成功信息"
+    );
+    assert!(metrics.expected_tool_matched, "应使用 run_command 工具");
+}
+
+/// 统一场景迭代测试：运行所有预设场景，生成汇总报告。
+///
+/// 默认 `#[ignore]`；设置 `REAL_LLM_E2E=1` 时自动启用。
+///
+/// # 添加新场景
+///
+/// 只需在 `scenarios` 列表中添加一项 [`TestScenario`]：
+///
+/// ```ignore
+/// TestScenario {
+///     name: "my_new_scenario",
+///     user_message: "做某事",
+///     workspace_files: &[("file.txt", "content")],
+///     expected_output_contains: &["关键词"],
+///     expected_tool_used: Some("some_tool"),
+/// }
+/// ```
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "设置 REAL_LLM_E2E=1 后执行；包含多个 e2e 场景"]
+async fn e2e_all_scenarios() {
+    let e2e_cfg = test_e2e_config();
+
+    let scenarios = vec![
+        TestScenario {
+            name: "orch_single_agent_smoke",
+            user_message: "你好，用一句话介绍自己。",
+            workspace_files: &[],
+            expected_output_contains: &[],
+            expected_tool_used: None,
+        },
+        TestScenario {
+            name: "orch_single_agent_tool",
+            user_message: "请调用 get_current_time 工具查询当前时间，然后用一句话总结。",
+            workspace_files: &[],
+            expected_output_contains: &[],
+            expected_tool_used: Some("get_current_time"),
+        },
+        TestScenario {
+            name: "orch_cpp_cmake",
+            user_message: "请查看工作区中的 C++ 项目，编译并运行它，然后告诉我输出结果。",
+            workspace_files: &[
+                (
+                    "main.cpp",
+                    r#"#include <iostream>
+int main() {
+    std::cout << "Hello from C++!" << std::endl;
+    return 0;
+}
+"#,
+                ),
+                (
+                    "CMakeLists.txt",
+                    r#"cmake_minimum_required(VERSION 3.10)
+project(cpp_e2e_test)
+add_executable(cpp_e2e_test main.cpp)
+"#,
+                ),
+            ],
+            expected_output_contains: &["Hello from C++", "编译成功"],
+            expected_tool_used: Some("run_command"),
+        },
+    ];
+
+    let total = scenarios.len();
+    let mut results: Vec<TestRunMetrics> = Vec::with_capacity(total);
+
+    for scenario in &scenarios {
+        eprintln!(">>> 执行场景: {}", scenario.name);
+        let metrics = run_scenario(scenario, &e2e_cfg).await;
+        results.push(metrics);
     }
 
-    result.expect("run_agent_turn 应成功结束");
+    // 生成报告
+    let report_path = PathBuf::from(E2E_ARTIFACTS_ROOT).join("scenario_report.md");
+    generate_report(&results, &report_path);
 
-    // 验证末条消息为 assistant
-    let last = messages.last().expect("完成后应有至少一条消息");
-    assert_eq!(
-        last.role, "assistant",
-        "末条消息应为 assistant，实际 role={:?}",
-        last.role
-    );
-    // 验证有文本内容（工具调用后的终答）
-    let body = crabmate::message_content_as_str(&last.content)
-        .unwrap_or("")
-        .to_string();
-    assert!(!body.is_empty(), "工具调用后的终答不应为空");
+    let json_path = PathBuf::from(E2E_ARTIFACTS_ROOT).join("scenario_report.json");
+    if let Ok(json) = serde_json::to_string_pretty(&results) {
+        let _ = std::fs::write(&json_path, &json);
+    }
+
+    // 断言：所有场景应成功
+    for r in &results {
+        assert!(r.success, "场景 {} 失败: {:?}", r.scenario, r.error_message);
+    }
 }
