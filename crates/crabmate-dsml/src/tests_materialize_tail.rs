@@ -1,6 +1,6 @@
 //! DSML 物化相关单元测试（从 `text_sanitize` 迁入）。
 
-use crate::dsml::materialize_deepseek_dsml_tool_calls_in_message;
+use crate::materialize_deepseek_dsml_tool_calls_in_message;
 use crabmate_types::{FunctionCall, Message, ToolCall};
 use serde_json::Value;
 

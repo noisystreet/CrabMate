@@ -4,8 +4,8 @@ use regex::Regex;
 use serde_json::Value;
 use std::sync::LazyLock;
 
-use super::normalizer::normalize_for_parse;
-use super::strip_scan::DSML_OPEN_FW;
+use crate::normalizer::normalize_for_parse;
+use crate::strip_scan::DSML_OPEN_FW;
 
 /// 单次从正文中解析出的工具调用（与 [`crabmate_types::ToolCall`] 解耦，便于单测）。
 #[derive(Debug, Clone, PartialEq, Eq)]

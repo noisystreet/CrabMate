@@ -2,8 +2,8 @@
 //!
 //! [`StreamingDsmlContentFilter`] 仅影响**展示路径**；网关原文仍由 `content_acc` 完整累积，供回合结束物化。
 
-use super::normalizer::normalize_deepseek_dsml_vendor_variants;
-use super::strip::strip_deepseek_dsml_for_display;
+use crate::normalizer::normalize_deepseek_dsml_vendor_variants;
+use crate::strip::strip_deepseek_dsml_for_display;
 
 const MAX_INCOMPLETE_DSML_FRAGMENT: usize = 350;
 

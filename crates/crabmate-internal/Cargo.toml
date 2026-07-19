@@ -15,6 +15,7 @@ fastembed = ["crabmate-memory/fastembed", "crabmate-config/fastembed", "crabmate
 [dependencies]
 cmd_mate = { workspace = true }
 crabmate-config = { workspace = true }
+crabmate-dsml = { workspace = true }
 crabmate-llm = { workspace = true }
 crabmate-memory = { workspace = true }
 crabmate-sse-protocol = { workspace = true }

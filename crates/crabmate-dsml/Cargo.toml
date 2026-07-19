@@ -1,0 +1,12 @@
+[package]
+name = "crabmate-dsml"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "DeepSeek DSML parsing, materialization, and display stripping for CrabMate"
+
+[dependencies]
+crabmate-types = { workspace = true }
+log = { workspace = true }
+regex = { workspace = true }
+serde_json = { workspace = true }

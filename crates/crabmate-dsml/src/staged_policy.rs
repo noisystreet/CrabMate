@@ -4,8 +4,8 @@ use log::{debug, warn};
 
 use crabmate_types::Message;
 
-use super::adapter::DsmlToolCallAdapter;
-use super::types::{DsmlMaterializePolicy, StagedDsmlHandling, StagedDsmlScanResult};
+use crate::adapter::DsmlToolCallAdapter;
+use crate::types::{DsmlMaterializePolicy, StagedDsmlHandling, StagedDsmlScanResult};
 
 fn log_discard_native_tool_calls(round_hint: &str, count: usize) {
     debug!(
