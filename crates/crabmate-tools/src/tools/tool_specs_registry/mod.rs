@@ -6,7 +6,10 @@ use super::tool_params;
 use super::tool_summary as ts;
 use super::*;
 
+#[cfg(feature = "archive-tools")]
 static SPECS_ARCHIVE: &[ToolSpec] = &include!("specs/archive.inc.rs");
+#[cfg(not(feature = "archive-tools"))]
+static SPECS_ARCHIVE: &[ToolSpec] = &[];
 static SPECS_BASIC_NETWORK: &[ToolSpec] = &include!("specs/basic_network.inc.rs");
 static SPECS_EXEC_PACKAGE: &[ToolSpec] = &include!("specs/exec_package.inc.rs");
 static SPECS_CARGO_RUST: &[ToolSpec] = &include!("specs/cargo_rust.inc.rs");

@@ -6,7 +6,27 @@ license = "Apache-2.0"
 description = "CrabMate tool implementations (file ops, git, search, web fetch, etc.)"
 
 [features]
-default = []
+default = [
+    "archive-tools",
+    "web-fetch-tools",
+    "schema-tools",
+    "csv-tools",
+    "diff-tools",
+    "unit-tools",
+]
+## 压缩归档：tar/zip/tar.gz/tar.bz2/tar.xz 的打包和解包
+archive-tools = ["dep:bzip2", "dep:flate2", "dep:tar", "dep:xz2", "dep:zip"]
+## HTTP 抓取：编码检测 + HTML 解析
+web-fetch-tools = ["dep:chardetng", "dep:encoding_rs", "dep:scraper", "dep:ego-tree"]
+## JSON Schema 校验
+schema-tools = ["dep:jsonschema"]
+## CSV/TSV 数据格式
+csv-tools = ["dep:csv"]
+## 文本差异对比
+diff-tools = ["dep:similar"]
+## 单位换算
+unit-tools = ["dep:uom"]
+## 项目代码度量（tokei）
 project_metrics = ["dep:tokei"]
 fastembed = []
 
@@ -16,33 +36,32 @@ crabmate-types = { workspace = true }
 cmd_mate = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
-bzip2 = { workspace = true }
-chardetng = "1.0"
+bzip2 = { workspace = true, optional = true }
+chardetng = { version = "1.0", optional = true }
 chrono = { workspace = true }
-csv = { workspace = true }
-dialoguer = { workspace = true }
+csv = { workspace = true, optional = true }
 diffy = { workspace = true }
-ego-tree = { workspace = true }
-encoding_rs = { workspace = true }
-flate2 = { workspace = true }
+ego-tree = { workspace = true, optional = true }
+encoding_rs = { workspace = true, optional = true }
+flate2 = { workspace = true, optional = true }
 futures-util = { workspace = true }
 glob = { workspace = true }
 ignore = { workspace = true }
-jsonschema = { workspace = true }
+jsonschema = { workspace = true, optional = true }
 libc = { workspace = true }
 log = { workspace = true }
 path-absolutize = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true, features = ["json", "stream", "blocking", "rustls-tls"] }
 schemars = { workspace = true }
-scraper = { workspace = true }
+scraper = { workspace = true, optional = true }
 secrecy = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 sha2 = { workspace = true }
-similar = { workspace = true }
-tar = { workspace = true }
+similar = { workspace = true, optional = true }
+tar = { workspace = true, optional = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 tokei = { workspace = true, optional = true }
@@ -62,9 +81,9 @@ toml = { workspace = true }
 tracing = { workspace = true }
 urlencoding = { workspace = true }
 walkdir = { workspace = true }
-xz2 = { workspace = true }
-zip = { workspace = true }
-uom = { workspace = true }
+xz2 = { workspace = true, optional = true }
+zip = { workspace = true, optional = true }
+uom = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["fs", "dir", "signal", "term", "process"] }

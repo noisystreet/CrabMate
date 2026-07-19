@@ -2,6 +2,7 @@
 //!
 //! 每个子模块对应一类工具，便于扩展新工具。
 
+#[cfg(feature = "archive-tools")]
 mod archive;
 mod calc;
 mod call_graph_sketch;
@@ -39,6 +40,7 @@ mod github_cli;
 mod go_tools;
 mod grep;
 mod grep_try;
+#[cfg(feature = "web-fetch-tools")]
 pub mod http_fetch;
 mod json_format;
 mod jvm_tools;
@@ -62,16 +64,20 @@ mod schema_check;
 mod security_tools;
 mod source_analysis_tools;
 mod spell_astgrep_tools;
+#[cfg(feature = "csv-tools")]
 mod structured_data;
 pub mod structured_preview;
 mod symbol;
+#[cfg(feature = "csv-tools")]
 mod table_text;
 pub mod terminal_session;
 mod test_result_cache;
+#[cfg(feature = "diff-tools")]
 mod text_diff;
 mod text_transform;
 mod time;
 mod todo_scan;
+#[cfg(feature = "schema-tools")]
 mod tool_args_validate;
 mod tool_json_schema;
 mod tool_param_types;
@@ -79,6 +85,7 @@ mod tool_params;
 mod tool_specs_registry;
 mod tool_summary;
 mod tool_summary_args;
+#[cfg(feature = "unit-tools")]
 mod unit_convert;
 mod weather;
 mod web_search;
