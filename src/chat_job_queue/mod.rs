@@ -11,6 +11,7 @@ use std::time::Instant;
 
 use crate::AppState;
 use crate::config::{AgentConfig, LlmHttpAuthMode, SharedAgentConfig};
+use crate::llm::ChatCompletionsBackend;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::per_turn_flight::PerTurnFlight;
 use crate::request_audit::WebRequestAudit;
@@ -39,6 +40,10 @@ pub(crate) struct WebChatQueueDeps {
     pub chat_queue: ChatJobQueue,
     pub long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     pub sse_stream_hub: Arc<SseStreamHub>,
+    /// e2e 测试注入的 LLM 后端（`None` 时使用默认 HTTP 后端）。
+    ///
+    /// 仅用于测试；生产路径无需设置。生命周期由 `Box::leak` 保障（`&'static`）。
+    pub llm_backend: Option<&'static (dyn ChatCompletionsBackend + 'static)>,
 }
 
 /// Web `client_llm.llm_thinking_mode` 解析后的本回合 **`thinking`** 策略覆盖（不写服务端磁盘配置）。

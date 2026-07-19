@@ -400,6 +400,7 @@ async fn build_serve_runtime_state(
         chat_queue: chat_queue.clone(),
         long_term_memory: long_term_memory.clone(),
         sse_stream_hub: Arc::clone(&sse_stream_hub),
+        llm_backend: None,
     });
     Ok(ServeRuntimeBuilt {
         uploads_dir: uploads_dir.clone(),
