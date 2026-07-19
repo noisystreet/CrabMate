@@ -414,6 +414,10 @@ pub struct E2eCmd {
     /// 录制数据目录（默认 tests/fixtures/llm_recordings）
     #[arg(long = "recordings-dir", value_name = "DIR")]
     pub recordings_dir: Option<String>,
+
+    /// 外部场景文件（JSON/YAML），不指定则使用预设场景
+    #[arg(long = "scenarios-file", value_name = "FILE")]
+    pub scenarios_file: Option<String>,
 }
 
 /// `e2e` 解析结果（供 `cli_run` 执行）。
@@ -422,6 +426,7 @@ pub struct E2eCliArgs {
     pub mode: String,
     pub output_dir: Option<String>,
     pub recordings_dir: Option<String>,
+    pub scenarios_file: Option<String>,
 }
 
 /// `parse_args` 扩展槽：非默认 CLI 流程（doctor / models / probe）。

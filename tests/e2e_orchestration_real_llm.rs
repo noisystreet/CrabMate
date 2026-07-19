@@ -77,10 +77,10 @@ async fn e2e_single_agent_smoke() {
     let e2e_cfg = test_e2e_config();
     let metrics = run_scenario(
         &TestScenario {
-            name: "orch_single_agent_smoke",
-            user_message: "你好，用一句话介绍自己。",
-            workspace_files: &[],
-            expected_output_contains: &[],
+            name: "orch_single_agent_smoke".to_string(),
+            user_message: "你好，用一句话介绍自己。".to_string(),
+            workspace_files: vec![],
+            expected_output_contains: vec![],
             expected_tool_used: None,
         },
         &e2e_cfg,
@@ -101,11 +101,12 @@ async fn e2e_single_agent_tool_round() {
     let e2e_cfg = test_e2e_config();
     let metrics = run_scenario(
         &TestScenario {
-            name: "orch_single_agent_tool",
-            user_message: "请调用 get_current_time 工具查询当前时间，然后用一句话总结。",
-            workspace_files: &[],
-            expected_output_contains: &[],
-            expected_tool_used: Some("get_current_time"),
+            name: "orch_single_agent_tool".to_string(),
+            user_message: "请调用 get_current_time 工具查询当前时间，然后用一句话总结。"
+                .to_string(),
+            workspace_files: vec![],
+            expected_output_contains: vec![],
+            expected_tool_used: Some("get_current_time".to_string()),
         },
         &e2e_cfg,
     )
@@ -126,28 +127,31 @@ async fn e2e_single_agent_cpp_cmake_round() {
     let e2e_cfg = test_e2e_config();
     let metrics = run_scenario(
         &TestScenario {
-            name: "orch_cpp_cmake",
-            user_message: "请查看工作区中的 C++ 项目，编译并运行它，然后告诉我输出结果。",
-            workspace_files: &[
+            name: "orch_cpp_cmake".to_string(),
+            user_message: "请查看工作区中的 C++ 项目，编译并运行它，然后告诉我输出结果。"
+                .to_string(),
+            workspace_files: vec![
                 (
-                    "main.cpp",
+                    "main.cpp".to_string(),
                     r#"#include <iostream>
 int main() {
     std::cout << "Hello from C++!" << std::endl;
     return 0;
 }
-"#,
+"#
+                    .to_string(),
                 ),
                 (
-                    "CMakeLists.txt",
+                    "CMakeLists.txt".to_string(),
                     r#"cmake_minimum_required(VERSION 3.10)
 project(cpp_e2e_test)
 add_executable(cpp_e2e_test main.cpp)
-"#,
+"#
+                    .to_string(),
                 ),
             ],
-            expected_output_contains: &["Hello from C++", "编译成功"],
-            expected_tool_used: Some("run_command"),
+            expected_output_contains: vec!["Hello from C++".to_string(), "编译成功".to_string()],
+            expected_tool_used: Some("run_command".to_string()),
         },
         &e2e_cfg,
     )
@@ -185,42 +189,46 @@ async fn e2e_all_scenarios() {
 
     let scenarios = vec![
         TestScenario {
-            name: "orch_single_agent_smoke",
-            user_message: "你好，用一句话介绍自己。",
-            workspace_files: &[],
-            expected_output_contains: &[],
+            name: "orch_single_agent_smoke".to_string(),
+            user_message: "你好，用一句话介绍自己。".to_string(),
+            workspace_files: vec![],
+            expected_output_contains: vec![],
             expected_tool_used: None,
         },
         TestScenario {
-            name: "orch_single_agent_tool",
-            user_message: "请调用 get_current_time 工具查询当前时间，然后用一句话总结。",
-            workspace_files: &[],
-            expected_output_contains: &[],
-            expected_tool_used: Some("get_current_time"),
+            name: "orch_single_agent_tool".to_string(),
+            user_message: "请调用 get_current_time 工具查询当前时间，然后用一句话总结。"
+                .to_string(),
+            workspace_files: vec![],
+            expected_output_contains: vec![],
+            expected_tool_used: Some("get_current_time".to_string()),
         },
         TestScenario {
-            name: "orch_cpp_cmake",
-            user_message: "请查看工作区中的 C++ 项目，编译并运行它，然后告诉我输出结果。",
-            workspace_files: &[
+            name: "orch_cpp_cmake".to_string(),
+            user_message: "请查看工作区中的 C++ 项目，编译并运行它，然后告诉我输出结果。"
+                .to_string(),
+            workspace_files: vec![
                 (
-                    "main.cpp",
+                    "main.cpp".to_string(),
                     r#"#include <iostream>
 int main() {
     std::cout << "Hello from C++!" << std::endl;
     return 0;
 }
-"#,
+"#
+                    .to_string(),
                 ),
                 (
-                    "CMakeLists.txt",
+                    "CMakeLists.txt".to_string(),
                     r#"cmake_minimum_required(VERSION 3.10)
 project(cpp_e2e_test)
 add_executable(cpp_e2e_test main.cpp)
-"#,
+"#
+                    .to_string(),
                 ),
             ],
-            expected_output_contains: &["Hello from C++", "编译成功"],
-            expected_tool_used: Some("run_command"),
+            expected_output_contains: vec!["Hello from C++".to_string(), "编译成功".to_string()],
+            expected_tool_used: Some("run_command".to_string()),
         },
     ];
 

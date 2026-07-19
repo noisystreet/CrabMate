@@ -227,13 +227,15 @@ async fn try_early_e2e(
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("tests/fixtures/llm_recordings"));
 
+    let scenarios_file = e2e.scenarios_file.map(PathBuf::from);
+
     let run_cfg = crate::e2e_scenario::E2eRunConfig {
         api_key,
         artifacts_root,
         recordings_dir,
         mode,
     };
-    crate::e2e_scenario::run_e2e_cli(&run_cfg).await?;
+    crate::e2e_scenario::run_e2e_cli(&run_cfg, scenarios_file.as_deref()).await?;
     Ok(true)
 }
 
