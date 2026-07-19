@@ -16,6 +16,7 @@ members = [
     "crates/crabmate-agent",
     "crates/crabmate-tools",
     "crates/crabmate-memory",
+    "crates/crabmate-workflow",
     "crates/crabmate-internal",
 ]
 resolver = "2"
@@ -31,6 +32,7 @@ crabmate-internal = { path = "crates/crabmate-internal", default-features = fals
 crabmate-llm = { path = "crates/crabmate-llm" }
 crabmate-mcp = { path = "crates/crabmate-mcp" }
 crabmate-memory = { path = "crates/crabmate-memory" }
+crabmate-workflow = { path = "crates/crabmate-workflow" }
 crabmate-sse-protocol = { path = "crates/crabmate-sse-protocol" }
 crabmate-tool-card = { path = "crates/crabmate-tool-card" }
 crabmate-tools = { path = "crates/crabmate-tools" }
@@ -184,6 +186,7 @@ crabmate-types = { workspace = true }
 crabmate-config = { workspace = true, default-features = false }
 crabmate-llm = { workspace = true }
 crabmate-agent = { workspace = true, default-features = false }
+crabmate-workflow = { workspace = true }
 crabmate-internal = { workspace = true, default-features = false }
 reqwest = { workspace = true, features = ["json", "stream", "blocking", "rustls-tls"] }
 futures-util = { workspace = true }

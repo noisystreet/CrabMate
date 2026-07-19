@@ -237,10 +237,22 @@ pub(super) fn format_main_summary(
     out
 }
 
+/// 复制自 `crabmate-tools::tools::output_util::truncate_to_char_boundary`。
+fn truncate_to_char_boundary(s: &str, max_bytes: usize) -> String {
+    if s.len() <= max_bytes {
+        return s.to_string();
+    }
+    let mut end = max_bytes.min(s.len());
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    s[..end].to_string()
+}
+
 pub(crate) fn truncate_for_summary(s: &str, max_bytes: usize) -> String {
     if s.len() <= max_bytes {
         return s.to_string();
     }
-    let truncated = crate::tools::output_util::truncate_to_char_boundary(s, max_bytes);
+    let truncated = truncate_to_char_boundary(s, max_bytes);
     format!("{}... (截断)", truncated)
 }

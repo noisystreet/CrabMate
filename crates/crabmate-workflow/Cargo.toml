@@ -1,0 +1,22 @@
+[package]
+name = "crabmate-workflow"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Workflow DAG execution engine for CrabMate"
+
+[dependencies]
+crabmate-config = { workspace = true }
+crabmate-internal = { workspace = true }
+crabmate-tools = { workspace = true }
+crabmate-types = { workspace = true }
+futures-util = { workspace = true }
+jsonschema = { workspace = true }
+log = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+tokio = { version = "1", default-features = false, features = ["sync", "macros", "time", "rt"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }

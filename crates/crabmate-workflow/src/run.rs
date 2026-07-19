@@ -2,16 +2,17 @@
 
 use std::sync::Arc;
 
-use crate::config::{AgentConfig, ExposeSecret};
 use log::{info, warn};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::Ordering;
 
 use super::author_load::resolve_workflow_execute_args;
+use super::config::WorkflowConfig;
 use super::dag::{topo_layers, validate_dag};
 use super::execute::{
-    WorkflowApprovalMode, WorkflowToolExecCtx, execute_workflow_dag, truncate_for_summary,
+    WorkflowApprovalMode, WorkflowSemanticParams, WorkflowToolExecCtx, execute_workflow_dag,
+    truncate_for_summary,
 };
 use super::parse::parse_workflow_spec;
 use super::types::{
@@ -159,12 +160,12 @@ fn workflow_validate_only_finish(args_json: &str, workflow_run_id: u64) -> Resul
 struct WorkflowExecuteDagParams<'a> {
     args_json: &'a str,
     workflow_run_id: u64,
-    cfg: &'a AgentConfig,
+    cfg: &'a WorkflowConfig,
     effective_working_dir: &'a Path,
     workspace_is_set: bool,
     approval_mode: WorkflowApprovalMode,
     command_max_output_len: usize,
-    request_chrome_merge: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
+    request_chrome_merge: Option<Arc<dyn std::any::Any + Send + Sync>>,
 }
 
 async fn workflow_execute_dag_body(p: WorkflowExecuteDagParams<'_>) -> (String, bool) {
@@ -214,23 +215,18 @@ async fn workflow_execute_dag_body(p: WorkflowExecuteDagParams<'_>) -> (String, 
     }
 
     let workdir = effective_working_dir.to_path_buf();
-    let allowed_commands = Arc::clone(&cfg.command_exec.allowed_commands);
-    let weather_timeout_secs = cfg.weather_tool.weather_timeout_secs;
-    let command_timeout_secs = cfg.command_exec.command_timeout_secs;
-    let web_search_timeout_secs = cfg.web_search.web_search_timeout_secs;
-    let web_search_provider = cfg.web_search.web_search_provider;
-    let web_search_api_key = cfg
-        .web_search
-        .web_search_api_key
-        .expose_secret()
-        .to_string();
-    let web_search_max_results = cfg.web_search.web_search_max_results;
-    let http_fetch_timeout_secs = cfg.http_fetch.http_fetch_timeout_secs;
-    let http_fetch_max_response_bytes = cfg.http_fetch.http_fetch_max_response_bytes;
-    let http_fetch_allowed_prefixes = cfg.http_fetch.http_fetch_allowed_prefixes.clone();
+    let allowed_commands: Arc<[String]> = cfg.allowed_commands.clone().into();
+    let weather_timeout_secs = cfg.weather_timeout_secs;
+    let command_timeout_secs = cfg.command_timeout_secs;
+    let web_search_timeout_secs = cfg.web_search_timeout_secs;
+    let web_search_provider = cfg.web_search_provider.clone();
+    let web_search_api_key = cfg.web_search_api_key.clone();
+    let web_search_max_results = cfg.web_search_max_results;
+    let http_fetch_timeout_secs = cfg.http_fetch_timeout_secs;
+    let http_fetch_max_response_bytes = cfg.http_fetch_max_response_bytes;
+    let http_fetch_allowed_prefixes = cfg.http_fetch_allowed_prefixes.clone();
 
     let tool_exec_ctx = WorkflowToolExecCtx {
-        cfg: Arc::new(cfg.clone()),
         cfg_command_timeout_secs: command_timeout_secs,
         cfg_weather_timeout_secs: weather_timeout_secs,
         cfg_web_search_timeout_secs: web_search_timeout_secs,
@@ -244,12 +240,22 @@ async fn workflow_execute_dag_body(p: WorkflowExecuteDagParams<'_>) -> (String, 
         effective_working_dir: workdir,
         workspace_is_set,
         command_max_output_len,
-        test_result_cache_enabled: cfg.chat_queues_cache.test_result_cache_enabled,
-        test_result_cache_max_entries: cfg.chat_queues_cache.test_result_cache_max_entries,
-        codebase_semantic:
-            crate::memory::codebase_semantic_index::CodebaseSemanticToolParams::from_agent_config(
-                cfg,
-            ),
+        test_result_cache_enabled: cfg.test_result_cache_enabled,
+        test_result_cache_max_entries: cfg.test_result_cache_max_entries,
+        codebase_semantic: WorkflowSemanticParams {
+            enabled: cfg.codebase_semantic_enabled,
+            invalidate_on_workspace_change: cfg.codebase_semantic_invalidate_on_workspace_change,
+            index_sqlite_path: cfg.codebase_semantic_index_sqlite_path.clone(),
+            max_file_bytes: cfg.codebase_semantic_max_file_bytes,
+            chunk_max_chars: cfg.codebase_semantic_chunk_max_chars,
+            top_k: cfg.codebase_semantic_top_k,
+            query_max_chunks: cfg.codebase_semantic_query_max_chunks,
+            rebuild_max_files: cfg.codebase_semantic_rebuild_max_files,
+            rebuild_incremental: cfg.codebase_semantic_rebuild_incremental,
+            hybrid_alpha: cfg.codebase_semantic_hybrid_alpha,
+            fts_top_n: cfg.codebase_semantic_fts_top_n,
+            hybrid_semantic_pool: cfg.codebase_semantic_hybrid_semantic_pool,
+        },
         workflow_run_id,
         trace_events: None,
         request_chrome_merge,
@@ -269,12 +275,12 @@ async fn workflow_execute_dag_body(p: WorkflowExecuteDagParams<'_>) -> (String, 
 
 pub async fn run_workflow_execute_tool(
     args_json: &str,
-    cfg: &AgentConfig,
+    cfg: &WorkflowConfig,
     effective_working_dir: &Path,
     workspace_is_set: bool,
     approval_mode: WorkflowApprovalMode,
     command_max_output_len: usize,
-    request_chrome_merge: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
+    request_chrome_merge: Option<Arc<dyn std::any::Any + Send + Sync>>,
 ) -> (String, bool) {
     let workflow_run_id = WORKFLOW_RUN_SEQ.fetch_add(1, Ordering::Relaxed);
     info!(
@@ -296,7 +302,7 @@ pub async fn run_workflow_execute_tool(
                 return (report.to_string(), false);
             }
         };
-    // 支持反思阶段的“done=true”：运行时应跳过 DAG 执行，
+    // 支持反思阶段的"done=true"：运行时应跳过 DAG 执行，
     // 只返回一个明确的结果，避免模型误触发重复执行。
     let v: serde_json::Value = match serde_json::from_str(&resolved_args) {
         Ok(v) => v,

@@ -11,6 +11,8 @@
 //! | [`report`] | 节点报告与 `human_summary` 文本 |
 //! | [`compensation`] | 失败补偿阶段 |
 
+#![allow(dead_code)]
+
 mod compensation;
 mod node;
 mod report;
@@ -23,11 +25,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 
+use crabmate_types::CommandApprovalDecision;
 use log::info;
 use tokio::sync::{Mutex, mpsc};
-
-use crate::config::AgentConfig;
-use crate::types::CommandApprovalDecision;
 
 use super::model::{WorkflowNodeSpec, WorkflowSpec};
 use super::types::{
@@ -49,7 +49,7 @@ pub(crate) use retry::workflow_node_failure_retryable;
 #[derive(Debug, Clone)]
 pub enum WorkflowApprovalMode {
     NoApproval,
-    /// SSE 审批通道（Web `/chat/stream` 等）；字段与 `tool_registry::WebToolRuntime` 对齐。
+    /// SSE 审批通道（Web `/chat/stream` 等）。
     Interactive {
         out_tx: mpsc::Sender<String>,
         approval_rx: Arc<Mutex<mpsc::Receiver<CommandApprovalDecision>>>,
@@ -57,13 +57,31 @@ pub enum WorkflowApprovalMode {
         persistent_allowlist: Arc<Mutex<HashSet<String>>>,
     },
 }
+
+/// 语义检索参数（从 `WorkflowConfig` 构造，不再依赖 `CodebaseSemanticToolParams`）。
 #[derive(Debug, Clone)]
+pub(crate) struct WorkflowSemanticParams {
+    pub(crate) enabled: bool,
+    pub(crate) invalidate_on_workspace_change: bool,
+    pub(crate) index_sqlite_path: String,
+    pub(crate) max_file_bytes: usize,
+    pub(crate) chunk_max_chars: usize,
+    pub(crate) top_k: usize,
+    pub(crate) query_max_chunks: usize,
+    pub(crate) rebuild_max_files: usize,
+    pub(crate) rebuild_incremental: bool,
+    pub(crate) hybrid_alpha: f32,
+    pub(crate) fts_top_n: usize,
+    pub(crate) hybrid_semantic_pool: usize,
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub(crate) struct WorkflowToolExecCtx {
-    pub(crate) cfg: Arc<AgentConfig>,
     pub(crate) cfg_command_timeout_secs: u64,
     pub(crate) cfg_weather_timeout_secs: u64,
     pub(crate) cfg_web_search_timeout_secs: u64,
-    pub(crate) cfg_web_search_provider: crate::config::WebSearchProvider,
+    pub(crate) cfg_web_search_provider: String,
     pub(crate) cfg_web_search_api_key: String,
     pub(crate) cfg_web_search_max_results: u32,
     pub(crate) cfg_http_fetch_timeout_secs: u64,
@@ -76,13 +94,12 @@ pub(crate) struct WorkflowToolExecCtx {
     pub(crate) test_result_cache_enabled: bool,
     pub(crate) test_result_cache_max_entries: usize,
     /// 与主 Agent 同源，供 `codebase_semantic_search` 等工具在节点内使用。
-    pub(crate) codebase_semantic:
-        crate::memory::codebase_semantic_index::CodebaseSemanticToolParams,
+    pub(crate) codebase_semantic: WorkflowSemanticParams,
     pub(crate) workflow_run_id: u64,
     /// 与本次 DAG 执行共享的轨迹缓冲（`execute_workflow_dag` 内创建）。
     pub(crate) trace_events: Option<Arc<StdMutex<Vec<WorkflowTraceEvent>>>>,
     /// 与整请求 `turn-*.json` 合并时传入；单独跑 `workflow_execute` 时为 `None`。
-    pub(crate) request_chrome_merge: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
+    pub(crate) request_chrome_merge: Option<Arc<dyn std::any::Any + Send + Sync>>,
 }
 
 pub(crate) async fn execute_workflow_dag(
@@ -241,6 +258,5 @@ pub(crate) async fn execute_workflow_dag(
         skipped,
         workspace_changed_final
     );
-    // 与历史行为一致：第二返回值仅反映主 DAG 节点是否改动工作区，不含补偿阶段。
     (json, workspace_changed)
 }

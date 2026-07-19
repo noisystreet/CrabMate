@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque};
 
 use super::model::WorkflowNodeSpec;
 
-pub(crate) fn topo_layers(nodes: &[WorkflowNodeSpec]) -> Result<Vec<Vec<String>>, String> {
+pub fn topo_layers(nodes: &[WorkflowNodeSpec]) -> Result<Vec<Vec<String>>, String> {
     // Kahn 算法逐层生成拓扑层级。
     let mut indegree: HashMap<String, usize> =
         nodes.iter().map(|n| (n.id.clone(), 0usize)).collect();

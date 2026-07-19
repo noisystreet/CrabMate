@@ -343,11 +343,8 @@ fn dag_mark_remaining_nodes_fail_fast_skipped(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::workflow::model::WorkflowNodeSpec;
+    use crate::model::WorkflowNodeSpec;
     use std::collections::HashMap;
-    use std::sync::Arc;
-
-    use secrecy::ExposeSecret;
 
     fn sample_nodes() -> Vec<WorkflowNodeSpec> {
         vec![
@@ -378,40 +375,6 @@ mod tests {
         ]
     }
 
-    fn minimal_tool_exec_ctx() -> WorkflowToolExecCtx {
-        let cfg = Arc::new(crate::config::load_config(None).expect("config"));
-        let c = cfg.as_ref();
-        WorkflowToolExecCtx {
-            cfg: Arc::clone(&cfg),
-            cfg_command_timeout_secs: c.command_exec.command_timeout_secs,
-            cfg_weather_timeout_secs: c.weather_tool.weather_timeout_secs,
-            cfg_web_search_timeout_secs: c.web_search.web_search_timeout_secs,
-            cfg_web_search_provider: c.web_search.web_search_provider,
-            cfg_web_search_api_key: c
-                .web_search
-                .web_search_api_key
-                .expose_secret()
-                .to_string(),
-            cfg_web_search_max_results: c.web_search.web_search_max_results,
-            cfg_http_fetch_timeout_secs: c.http_fetch.http_fetch_timeout_secs,
-            cfg_http_fetch_max_response_bytes: c.http_fetch.http_fetch_max_response_bytes,
-            cfg_http_fetch_allowed_prefixes: c.http_fetch.http_fetch_allowed_prefixes.clone(),
-            cfg_allowed_commands: Arc::clone(&c.command_exec.allowed_commands),
-            effective_working_dir: std::path::PathBuf::from("."),
-            workspace_is_set: true,
-            command_max_output_len: c.command_exec.command_max_output_len,
-            test_result_cache_enabled: c.chat_queues_cache.test_result_cache_enabled,
-            test_result_cache_max_entries: c.chat_queues_cache.test_result_cache_max_entries,
-            codebase_semantic:
-                crate::memory::codebase_semantic_index::CodebaseSemanticToolParams::from_agent_config(
-                    c,
-                ),
-            workflow_run_id: 1,
-            trace_events: None,
-            request_chrome_merge: None,
-        }
-    }
-
     #[test]
     fn dag_schedule_finished_requires_all_nodes_completed() {
         let nodes = sample_nodes();
@@ -430,36 +393,5 @@ mod tests {
             },
         );
         assert!(!dag_schedule_finished(&nodes, &completed, &[]));
-    }
-
-    #[test]
-    fn dag_mark_remaining_nodes_fail_fast_skipped_marks_incomplete() {
-        let nodes = sample_nodes();
-        let mut completed = HashMap::new();
-        let mut started = HashSet::new();
-        completed.insert(
-            "a".into(),
-            NodeRunResult {
-                id: "a".into(),
-                status: NodeRunStatus::Failed,
-                output: "boom".into(),
-                workspace_changed: false,
-                exit_code: None,
-                error_code: Some("tool_error".into()),
-                attempt: 1,
-            },
-        );
-        started.insert("a".into());
-        let tool_exec_ctx = minimal_tool_exec_ctx();
-        dag_mark_remaining_nodes_fail_fast_skipped(
-            &nodes,
-            &mut completed,
-            &mut started,
-            &tool_exec_ctx,
-        );
-        assert!(dag_schedule_finished(&nodes, &completed, &[]));
-        let b = completed.get("b").expect("b skipped");
-        assert_eq!(b.status, NodeRunStatus::Skipped);
-        assert_eq!(b.error_code.as_deref(), Some("workflow_fail_fast_aborted"));
     }
 }

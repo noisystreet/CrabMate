@@ -4,15 +4,27 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::tools::resolve_workspace_path_for_read;
-
 use super::compile_spec::compile_workflow_author_yaml;
 use super::md_extract::extract_first_crabmate_workflow_block;
 
+/// 简单的路径安全解析（不允许 `..` 或绝对路径）。
+fn resolve_workflow_path(workspace: &Path, rel: &str) -> Result<std::path::PathBuf, String> {
+    let rel = rel.trim();
+    if rel.starts_with('/') {
+        return Err("工作流文件路径不能是绝对路径".to_string());
+    }
+    if rel.split(std::path::MAIN_SEPARATOR).any(|c| c == "..")
+        || rel.split('/').any(|c| c == "..")
+        || rel.split('\\').any(|c| c == "..")
+    {
+        return Err("工作流文件路径不能包含 ..".to_string());
+    }
+    Ok(workspace.join(rel))
+}
+
 /// 读取工作区内工作流文件正文（`.yaml` / `.yml` / `.md` 围栏）。
 pub fn read_workflow_author_source(workspace: &Path, rel_path: &str) -> Result<String, String> {
-    let resolved = resolve_workspace_path_for_read(workspace, rel_path.trim())
-        .map_err(|e| format!("错误：{}", e.user_message()))?;
+    let resolved = resolve_workflow_path(workspace, rel_path.trim())?;
     let text = std::fs::read_to_string(&resolved)
         .map_err(|e| format!("读取工作流文件失败（{}）：{e}", resolved.display()))?;
     let ext = resolved
