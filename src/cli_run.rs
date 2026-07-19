@@ -234,6 +234,10 @@ async fn try_early_e2e(
         artifacts_root,
         recordings_dir,
         mode,
+        judge_config: crate::e2e_scenario::JudgeConfig {
+            enabled: e2e.judge,
+            ..Default::default()
+        },
     };
     crate::e2e_scenario::run_e2e_cli(&run_cfg, scenarios_file.as_deref()).await?;
     Ok(true)

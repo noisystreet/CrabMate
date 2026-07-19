@@ -53,6 +53,29 @@ use crate::{
     RunAgentTurnSharedInputs, build_tools, run_agent_turn,
 };
 
+/// LLM-as-Judge 评分配置。
+#[derive(Debug, Clone, Default)]
+pub struct JudgeConfig {
+    /// 是否启用评分。
+    pub enabled: bool,
+    /// 评分模型（默认使用配置中的主模型）。
+    pub model: Option<String>,
+    /// 评分 API 地址（默认使用配置中的 api_base）。
+    pub api_base: Option<String>,
+}
+
+/// LLM-as-Judge 评分结果。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct JudgeResult {
+    /// 评分 1-5，5 为最优。
+    pub score: u8,
+    /// 评分理由。
+    pub rationale: String,
+    /// 失败方面。
+    #[serde(default)]
+    pub failed_aspects: Vec<String>,
+}
+
 /// e2e runner 运行时配置。
 pub struct E2eRunConfig {
     /// LLM API 密钥。
@@ -63,6 +86,8 @@ pub struct E2eRunConfig {
     pub recordings_dir: PathBuf,
     /// e2e 模式（`E2eMode::Real` / `Record` / `Replay`）。
     pub mode: E2eMode,
+    /// LLM-as-Judge 评分配置。
+    pub judge_config: JudgeConfig,
 }
 
 impl Default for E2eRunConfig {
@@ -72,6 +97,7 @@ impl Default for E2eRunConfig {
             artifacts_root: PathBuf::from(".crabmate/e2e_artifacts"),
             recordings_dir: PathBuf::from("tests/fixtures/llm_recordings"),
             mode: E2eMode::Real,
+            judge_config: JudgeConfig::default(),
         }
     }
 }
@@ -133,6 +159,12 @@ pub struct TestRunMetrics {
     pub error_message: Option<String>,
     /// 制作 data （ISO 8601）。
     pub timestamp: String,
+    /// LLM-as-Judge 评分（启用时才有）。
+    pub judge_score: Option<u8>,
+    /// 评分理由。
+    pub judge_rationale: Option<String>,
+    /// 失败方面。
+    pub judge_failed_aspects: Option<Vec<String>>,
 }
 
 /// 运行单个 e2e 场景，返回结构化指标。
@@ -177,9 +209,21 @@ pub async fn run_scenario(scenario: &TestScenario, e2e_cfg: &E2eRunConfig) -> Te
     let success = turn_result.is_ok();
     let error_message = turn_result.as_ref().err().map(|e| e.to_string());
 
-    let metrics = extract_metrics(scenario, &messages, success, duration_ms, error_message);
+    let mut metrics = extract_metrics(scenario, &messages, success, duration_ms, error_message);
 
-    // 5. 导出报告
+    // 5. LLM-as-Judge 评分
+    if e2e_cfg.judge_config.enabled
+        && let Some(judge) =
+            judge_scenario(scenario, &messages, &e2e_cfg.api_key, &e2e_cfg.judge_config).await
+    {
+        metrics.judge_score = Some(judge.score);
+        metrics.judge_rationale = Some(judge.rationale);
+        if !judge.failed_aspects.is_empty() {
+            metrics.judge_failed_aspects = Some(judge.failed_aspects);
+        }
+    }
+
+    // 6. 导出报告
     export_artifacts(&metrics, &messages, &artifacts_dir);
 
     metrics
@@ -307,12 +351,12 @@ pub fn generate_report(results: &[TestRunMetrics], report_path: &Path) {
     body.push_str(&format!("- **成功**: {successes}\n"));
     body.push_str(&format!("- **失败**: {}\n\n", total - successes));
 
-    body.push_str("| 场景 | 成功 | 耗时(ms) | LLM轮数 | 工具调用 | 工具报错 | 恢复 | 末条角色 | 期望输出匹配 |\n");
-    body.push_str("|------|------|----------|---------|----------|----------|------|----------|--------------|\n");
+    body.push_str("| 场景 | 成功 | 耗时(ms) | LLM轮数 | 工具调用 | 工具报错 | 恢复 | 末条角色 | 期望输出匹配 | Judge评分 |\n");
+    body.push_str("|------|------|----------|---------|----------|----------|------|----------|--------------|-----------|\n");
 
     for r in results {
         body.push_str(&format!(
-            "| {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
             r.scenario,
             if r.success { "✅" } else { "❌" },
             r.duration_ms,
@@ -326,6 +370,9 @@ pub fn generate_report(results: &[TestRunMetrics], report_path: &Path) {
             } else {
                 "❌"
             },
+            r.judge_score
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "-".to_string()),
         ));
     }
 
@@ -333,11 +380,12 @@ pub fn generate_report(results: &[TestRunMetrics], report_path: &Path) {
 
     for r in results {
         body.push_str(&format!(
-            "#### {}\n- 耗时: {}ms\n- LLM轮数: {}\n- 工具: {:?}\n- 最终回复预览: `{}...`\n- 错误: {:?}\n\n",
+            "#### {}\n- 耗时: {}ms\n- LLM轮数: {}\n- 工具: {:?}\n- Judge: {}\n- 最终回复预览: `{}...`\n- 错误: {:?}\n\n",
             r.scenario,
             r.duration_ms,
             r.llm_rounds,
             r.tool_names,
+            r.judge_score.map(|s| format!("{}/5", s)).unwrap_or_else(|| "未启用".to_string()),
             r.final_output_preview.chars().take(200).collect::<String>(),
             r.error_message,
         ));
@@ -573,6 +621,9 @@ fn extract_metrics(
         expected_tool_matched,
         error_message,
         timestamp: now.format("%Y-%m-%dT%H:%M:%S%z").to_string(),
+        judge_score: None,
+        judge_rationale: None,
+        judge_failed_aspects: None,
     }
 }
 
@@ -604,6 +655,8 @@ fn export_artifacts(metrics: &TestRunMetrics, messages: &[Message], artifacts_di
 - **末条角色**: {last_role}
 - **期望输出匹配**: {output_matched}
 - **期望工具匹配**: {tool_matched}
+- **Judge 评分**: {judge_score}
+- **Judge 理由**: {judge_rationale}
 "#,
         scenario = metrics.scenario,
         success = metrics.success,
@@ -614,6 +667,11 @@ fn export_artifacts(metrics: &TestRunMetrics, messages: &[Message], artifacts_di
         last_role = metrics.last_role,
         output_matched = metrics.expected_output_matched,
         tool_matched = metrics.expected_tool_matched,
+        judge_score = metrics
+            .judge_score
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "未启用".to_string()),
+        judge_rationale = metrics.judge_rationale.as_deref().unwrap_or("未启用"),
     );
     let _ = std::fs::write(artifacts_dir.join("summary.md"), &summary);
 }
@@ -686,4 +744,116 @@ pub fn dump_messages_markdown(messages: &[Message], test_name: &str) -> String {
     }
 
     out
+}
+
+/// 用 LLM 对场景完成质量进行评分（LLM-as-Judge）。
+///
+/// 向配置的 LLM 端点发送单次 chat/completions 请求，要求模型以 JSON 格式
+/// 对 assistant 的回复进行 1-5 评分并给出理由。
+async fn judge_scenario(
+    scenario: &TestScenario,
+    messages: &[Message],
+    api_key: &str,
+    judge_cfg: &JudgeConfig,
+) -> Option<JudgeResult> {
+    if !judge_cfg.enabled || api_key.is_empty() {
+        return None;
+    }
+
+    // 构建评分 prompt
+    let last_assistant = messages
+        .iter()
+        .rev()
+        .find(|m| m.role == "assistant" && m.tool_calls.is_none());
+
+    let final_output = last_assistant
+        .and_then(|m| crate::message_content_as_str(&m.content))
+        .unwrap_or("");
+
+    let tool_trace: Vec<String> = messages
+        .iter()
+        .filter(|m| m.role == "assistant")
+        .filter_map(|m| m.tool_calls.as_ref())
+        .flat_map(|calls| calls.iter())
+        .map(|tc| format!("  - {} (args: {})", tc.function.name, tc.function.arguments))
+        .collect();
+
+    let system_prompt = "You are an evaluator that rates AI assistant responses. \
+        Score 1-5 based on: task completion, correctness, tool usage efficiency. \
+        Respond in JSON only: {\"score\": <1-5>, \"rationale\": \"...\", \"failed_aspects\": [\"...\"]}";
+
+    let user_prompt = format!(
+        r#"## Task
+{}
+
+## Assistant's Final Output
+{}
+
+## Tool Calls Made
+{}
+
+## Expected Output Keywords
+{}
+
+## Expected Tool
+{}
+"#,
+        scenario.user_message,
+        final_output,
+        if tool_trace.is_empty() {
+            "(none)".to_string()
+        } else {
+            tool_trace.join("\n")
+        },
+        if scenario.expected_output_contains.is_empty() {
+            "(none)".to_string()
+        } else {
+            scenario.expected_output_contains.join(", ")
+        },
+        scenario.expected_tool_used.as_deref().unwrap_or("(none)"),
+    );
+
+    let cfg = load_config(None).ok()?;
+    let api_base = judge_cfg.api_base.as_deref().unwrap_or(&cfg.llm.api_base);
+    let model = judge_cfg.model.as_deref().unwrap_or(&cfg.llm.model);
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .ok()?;
+
+    let body = serde_json::json!({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        "temperature": 0.0,
+        "max_tokens": 512,
+    });
+
+    let resp = client
+        .post(format!("{api_base}/chat/completions"))
+        .header("Authorization", format!("Bearer {api_key}"))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .ok()?;
+
+    let resp_json: serde_json::Value = resp.json().await.ok()?;
+    let content = resp_json["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap_or("{}");
+
+    // 尝试从 JSON 中提取评分（模型可能返回 markdown code block）
+    let cleaned = content
+        .trim()
+        .strip_prefix("```json")
+        .or_else(|| content.trim().strip_prefix("```"))
+        .and_then(|s| s.strip_suffix("```"))
+        .unwrap_or(content.trim());
+
+    let judge: JudgeResult = serde_json::from_str(cleaned).ok()?;
+    Some(judge)
 }

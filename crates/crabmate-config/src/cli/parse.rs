@@ -308,6 +308,7 @@ fn build_parsed_cli_args(
                 output_dir: e.output_dir,
                 recordings_dir: e.recordings_dir,
                 scenarios_file: e.scenarios_file,
+                judge: e.judge,
             });
         }
     }
