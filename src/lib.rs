@@ -45,6 +45,9 @@ pub fn reset_process_tool_globals_for_tests() {
 
 mod run_agent_turn;
 mod runtime;
+/// 测试用 Web 服务器启动器（feature="web"）；集成测试通过公开的 [`test_serve::start_test_serve`] 快速启动。
+#[cfg(feature = "web")]
+pub mod test_serve;
 mod turn_replay_dump;
 pub use crabmate_agent::text_sanitize;
 pub use crabmate_types;
