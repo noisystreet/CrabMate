@@ -26,12 +26,12 @@ use serde_json::Value;
 use tokio::process::Command;
 use tokio::sync::Mutex;
 
-use crate::config::AgentConfig;
-use crate::types::{FunctionDef, Tool};
-use crate::user_data::McpRemoteToolSummary;
+use crabmate_config::AgentConfig;
+use crabmate_types::McpRemoteToolSummary;
+use crabmate_types::{FunctionDef, Tool};
 
-use super::resolve::{ResolvedMcpConfig, ResolvedMcpServer};
-use super::turn_handle::{McpTurnHandle, McpTurnSessions};
+use crate::resolve::{ResolvedMcpConfig, ResolvedMcpServer};
+use crate::turn_handle::{McpTurnHandle, McpTurnSessions};
 
 pub use crabmate_tools::tool_naming::{MCP_PROXY_PREFIX, is_mcp_proxy_tool};
 
@@ -301,7 +301,7 @@ async fn open_server_fresh(server: &ResolvedMcpServer) -> Result<McpServerCacheE
         "MCP 启动 id={} slug={} command={}",
         server.id,
         server.slug,
-        crate::redact::mcp_command_line_for_log(cmd),
+        crabmate_tools::redact::mcp_command_line_for_log(cmd),
     );
     let client = connect_stdio_client(cmd).await?;
     let list = client
@@ -404,7 +404,7 @@ pub async fn try_open_turn_handle(
 
 /// 按当前 `AgentConfig` 解析 user-data 并打开 MCP 回合句柄。
 pub async fn try_open_session_and_tools(cfg: &AgentConfig) -> Option<(McpTurnHandle, Vec<Tool>)> {
-    let resolved = crate::mcp::resolve_mcp_config(cfg);
+    let resolved = crate::resolve_mcp_config(cfg);
     try_open_turn_handle(&resolved).await
 }
 

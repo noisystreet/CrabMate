@@ -5,6 +5,7 @@ members = [
     "crates/cmd_mate",
     "crates/crabmate-display-rules",
     "crates/crabmate-dsml",
+    "crates/crabmate-mcp",
     "crates/crabmate-tool-card",
     "crates/crabmate-sse-protocol",
     "crates/crabmate-turn-layout",
@@ -28,6 +29,7 @@ crabmate-display-rules = { path = "crates/crabmate-display-rules" }
 crabmate-dsml = { path = "crates/crabmate-dsml" }
 crabmate-internal = { path = "crates/crabmate-internal", default-features = false }
 crabmate-llm = { path = "crates/crabmate-llm" }
+crabmate-mcp = { path = "crates/crabmate-mcp" }
 crabmate-memory = { path = "crates/crabmate-memory" }
 crabmate-sse-protocol = { path = "crates/crabmate-sse-protocol" }
 crabmate-tool-card = { path = "crates/crabmate-tool-card" }

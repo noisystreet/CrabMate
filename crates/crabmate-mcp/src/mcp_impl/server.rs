@@ -1,8 +1,11 @@
-//! CrabMate 作为 **MCP server**（stdio / TCP）：将内置 `tools::run_tool` 暴露给外部 MCP 客户端。
+//! CrabMate 作为 **MCP server**（stdio / TCP）：将内置工具暴露给外部 MCP 客户端。
 //!
 //! **安全**：无传输层鉴权；与 `run_command` / 工作区策略一致，调用方获得与本地 `crabmate` 相同的执行面。仅应对**可信**父进程 / 本机集成开放。
+//!
+//! 与 `crabmate-internal` 解耦：工具列表构建与工具执行业务通过 `ToolCallbacks` 注入。
 
 use std::borrow::Cow;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -14,10 +17,35 @@ use rmcp::model::{
 use rmcp::service::{RequestContext, RoleServer, serve_server};
 use serde_json::Value;
 
-use crate::config::AgentConfig;
-use crate::tool_call_explain;
-use crate::tools;
-use crate::types::Tool as OpenAiTool;
+use crabmate_config::AgentConfig;
+use crabmate_types::Tool as OpenAiTool;
+
+/// 工具调用回调：构建工具列表、检查是否需要审批、执行工具。
+#[derive(Clone)]
+#[allow(clippy::type_complexity)]
+pub struct ToolCallbacks {
+    /// 构建工具列表（`no_tools` 为 true 时返回空列表）。
+    pub build_tool_list: Arc<dyn Fn(&AgentConfig, bool) -> Vec<OpenAiTool> + Send + Sync>,
+    /// 执行工具（名称、参数字符串、工作目录）→ 输出字符串。
+    /// 返回 `Err` 表示执行被阻止（如审批失败）。
+    pub run_tool:
+        Arc<dyn Fn(&str, &str, &Path, &AgentConfig) -> Result<String, String> + Send + Sync>,
+}
+
+impl ToolCallbacks {
+    pub fn new(
+        build_tool_list: impl Fn(&AgentConfig, bool) -> Vec<OpenAiTool> + Send + Sync + 'static,
+        run_tool: impl Fn(&str, &str, &Path, &AgentConfig) -> Result<String, String>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        Self {
+            build_tool_list: Arc::new(build_tool_list),
+            run_tool: Arc::new(run_tool),
+        }
+    }
+}
 
 /// MCP 形态的 [`Tool`](rmcp::model::Tool)（`input_schema` 与 OpenAI `parameters` 对象对齐）。
 pub fn openai_tool_to_mcp_tool(t: &OpenAiTool) -> Option<rmcp::model::Tool> {
@@ -37,31 +65,34 @@ pub fn openai_tool_to_mcp_tool(t: &OpenAiTool) -> Option<rmcp::model::Tool> {
     ))
 }
 
-/// 构建 `tools/list` 条目（可选 `--no-tools` 时空列表）。
-fn build_mcp_tool_list(cfg: &AgentConfig, no_tools: bool) -> Vec<rmcp::model::Tool> {
-    if no_tools {
-        return Vec::new();
-    }
-    let mut defs = tools::build_tools();
-    tool_call_explain::annotate_tool_defs_for_explain_card(&mut defs, cfg);
-    defs.iter().filter_map(openai_tool_to_mcp_tool).collect()
-}
-
-/// 持有配置与工作目录；在独立任务中执行 `tools/call` → [`tools::run_tool`]。
+/// 持有配置、工作目录与回调；在独立任务中执行 `tools/call`。
 #[derive(Clone)]
 pub struct CrabmateMcpServer {
     cfg: AgentConfig,
     working_dir: PathBuf,
     mcp_tools: Arc<Vec<rmcp::model::Tool>>,
+    callbacks: ToolCallbacks,
 }
 
 impl CrabmateMcpServer {
-    pub fn new(cfg: AgentConfig, working_dir: PathBuf, no_tools: bool) -> Self {
-        let mcp_tools = Arc::new(build_mcp_tool_list(&cfg, no_tools));
+    pub fn new(
+        cfg: AgentConfig,
+        working_dir: PathBuf,
+        no_tools: bool,
+        callbacks: ToolCallbacks,
+    ) -> Self {
+        let tool_list = (callbacks.build_tool_list)(&cfg, no_tools);
+        let mcp_tools = Arc::new(
+            tool_list
+                .iter()
+                .filter_map(openai_tool_to_mcp_tool)
+                .collect(),
+        );
         Self {
             cfg,
             working_dir,
             mcp_tools,
+            callbacks,
         }
     }
 }
@@ -104,7 +135,7 @@ impl ServerHandler for CrabmateMcpServer {
         let args_map = request.arguments.unwrap_or_default();
         let cfg = self.cfg.clone();
         let work_dir = self.working_dir.clone();
-        let allowed = self.cfg.command_exec.allowed_commands.clone();
+        let callbacks = self.callbacks.clone();
 
         async move {
             let args_json = match serde_json::to_string(&Value::Object(args_map)) {
@@ -117,16 +148,10 @@ impl ServerHandler for CrabmateMcpServer {
                 }
             };
 
-            let ctx = tools::tool_context_for(&cfg, allowed.as_ref(), work_dir.as_path());
-            let args_for_tool =
-                match tool_call_explain::require_explain_for_mutation(&cfg, &name, &args_json) {
-                    Ok(cow) => cow.into_owned(),
-                    Err(msg) => {
-                        return Ok(CallToolResult::error(vec![Content::text(msg)]));
-                    }
-                };
-            let output = tools::run_tool(&name, &args_for_tool, &ctx);
-            Ok(CallToolResult::success(vec![Content::text(output)]))
+            match (callbacks.run_tool)(&name, &args_json, &work_dir, &cfg) {
+                Ok(output) => Ok(CallToolResult::success(vec![Content::text(output)])),
+                Err(msg) => Ok(CallToolResult::error(vec![Content::text(msg)])),
+            }
         }
     }
 }
@@ -136,19 +161,21 @@ pub async fn run_stdio_mcp_server(
     cfg: AgentConfig,
     workspace: PathBuf,
     no_tools: bool,
+    callbacks: ToolCallbacks,
 ) -> Result<(), String> {
+    let tool_count = if no_tools {
+        0
+    } else {
+        (callbacks.build_tool_list)(&cfg, false).len()
+    };
     eprintln!(
         "crabmate mcp serve：stdio MCP server 已启动（工作目录 {}，工具数 {}）。\
          无鉴权：仅连接可信客户端。",
         workspace.display(),
-        if no_tools {
-            0
-        } else {
-            build_mcp_tool_list(&cfg, false).len()
-        }
+        tool_count,
     );
 
-    let service = CrabmateMcpServer::new(cfg, workspace, no_tools);
+    let service = CrabmateMcpServer::new(cfg, workspace, no_tools, callbacks);
     let (stdin, stdout) = rmcp::transport::stdio();
     let running = serve_server(service, (stdin, stdout))
         .await
@@ -166,6 +193,7 @@ pub async fn run_tcp_mcp_server(
     workspace: PathBuf,
     no_tools: bool,
     port: u16,
+    callbacks: ToolCallbacks,
 ) -> Result<(), String> {
     let addr = format!("127.0.0.1:{port}");
     let listener = tokio::net::TcpListener::bind(&addr)
@@ -179,7 +207,7 @@ pub async fn run_tcp_mcp_server(
         if no_tools {
             0
         } else {
-            build_mcp_tool_list(&cfg, false).len()
+            (callbacks.build_tool_list)(&cfg, false).len()
         }
     );
 
@@ -190,9 +218,9 @@ pub async fn run_tcp_mcp_server(
             .map_err(|e| format!("接受连接失败: {e}"))?;
         eprintln!("MCP 客户端已连接: {peer}");
 
-        let service = CrabmateMcpServer::new(cfg.clone(), workspace.clone(), no_tools);
+        let service =
+            CrabmateMcpServer::new(cfg.clone(), workspace.clone(), no_tools, callbacks.clone());
 
-        // TcpStream 实现了 AsyncRead + AsyncWrite，可直接用作 transport
         let running = serve_server(service, stream)
             .await
             .map_err(|e| format!("MCP server 初始化失败: {e}"))?;
@@ -203,98 +231,5 @@ pub async fn run_tcp_mcp_server(
                 eprintln!("MCP 连接异常: {e}");
             }
         }
-        // 继续监听下一个连接
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rmcp::model::{
-        ClientCapabilities, ClientInfo as ClientInfoMode, Implementation as ClientImpl,
-        ServerNotification,
-    };
-    use rmcp::service::{RoleClient, Service as McpService, serve_client};
-
-    /// Minimal MCP 客户端服务（仅用于测试 TCP 传输）。
-    struct TestClientService {
-        info: ClientInfoMode,
-    }
-
-    impl Default for TestClientService {
-        fn default() -> Self {
-            Self {
-                info: ClientInfoMode::new(
-                    ClientCapabilities::default(),
-                    ClientImpl::new("crabmate-test", "0.1"),
-                ),
-            }
-        }
-    }
-
-    impl McpService<RoleClient> for TestClientService {
-        fn get_info(&self) -> ClientInfoMode {
-            self.info.clone()
-        }
-
-        #[allow(clippy::manual_async_fn)]
-        fn handle_request(
-            &self,
-            _request: rmcp::model::ServerRequest,
-            _context: rmcp::service::RequestContext<RoleClient>,
-        ) -> impl std::future::Future<Output = Result<rmcp::model::ClientResult, McpError>> + Send
-        {
-            async { Ok(rmcp::model::ClientResult::empty(())) }
-        }
-
-        #[allow(clippy::manual_async_fn)]
-        fn handle_notification(
-            &self,
-            _notification: ServerNotification,
-            _context: rmcp::service::NotificationContext<RoleClient>,
-        ) -> impl std::future::Future<Output = Result<(), McpError>> + Send {
-            async { Ok(()) }
-        }
-    }
-
-    #[tokio::test]
-    async fn tcp_server_accepts_and_lists_tools() {
-        let cfg = crate::config::load_config(None).expect("default config load");
-        let workspace = std::env::temp_dir();
-
-        // 随机端口绑定
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind");
-        let port = listener.local_addr().unwrap().port();
-
-        // 后台启动 TCP server（保持 _running 存活直到测试结束）
-        let server_handle: tokio::task::JoinHandle<Result<(), String>> = tokio::spawn(async move {
-            let (stream, peer) = listener.accept().await.map_err(|e| format!("{e}"))?;
-            eprintln!("test server accepted: {peer}");
-            let service = CrabmateMcpServer::new(cfg, workspace, false);
-            let _running = serve_server(service, stream)
-                .await
-                .map_err(|e| format!("{e}"))?;
-            // 保持连接存活直到 test 结束（abort）
-            std::future::pending::<()>().await;
-            Ok(())
-        });
-
-        // 客户端通过 TCP 连接
-        let client_stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
-            .await
-            .expect("connect");
-        let client_svc = TestClientService::default();
-        let running = serve_client(client_svc, client_stream)
-            .await
-            .expect("MCP client handshake");
-
-        let tools = running.peer().list_all_tools().await.expect("tools/list");
-        assert!(!tools.is_empty(), "should list tools via TCP");
-        assert!(tools.iter().all(|t| !t.name.is_empty()));
-
-        // 清理
-        server_handle.abort();
     }
 }

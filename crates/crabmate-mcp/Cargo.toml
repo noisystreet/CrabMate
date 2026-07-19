@@ -1,0 +1,36 @@
+[package]
+name = "crabmate-mcp"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Model Context Protocol client/server for CrabMate"
+
+[features]
+default = []
+mcp = ["dep:rmcp"]
+
+[dependencies]
+cmd_mate = { workspace = true }
+crabmate-config = { workspace = true }
+crabmate-tools = { workspace = true }
+crabmate-types = { workspace = true }
+log = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { version = "1", default-features = false, features = [
+    "macros",
+    "rt",
+    "sync",
+    "time",
+    "fs",
+    "process",
+    "io-util",
+] }
+
+# MCP protocol (optional, feature-gated)
+rmcp = { version = "1.4", optional = true, default-features = false, features = [
+    "client",
+    "server",
+    "transport-child-process",
+    "transport-io",
+] }

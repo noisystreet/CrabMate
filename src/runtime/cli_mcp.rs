@@ -5,10 +5,40 @@ use crate::config::AgentConfig;
 
 #[cfg(feature = "mcp")]
 mod full {
+    use std::path::Path;
     use std::path::PathBuf;
 
     use crate::config::AgentConfig;
     use crate::runtime::cli::cli_effective_work_dir;
+
+    use crate::mcp::server::ToolCallbacks;
+
+    fn build_mcp_callbacks() -> ToolCallbacks {
+        ToolCallbacks::new(
+            |cfg: &AgentConfig, no_tools: bool| {
+                if no_tools {
+                    return Vec::new();
+                }
+                let mut defs = crate::tools::build_tools();
+                crate::tool_call_explain::annotate_tool_defs_for_explain_card(&mut defs, cfg);
+                defs
+            },
+            |name: &str, args_json: &str, work_dir: &Path, cfg: &AgentConfig| {
+                let ctx = crate::tools::tool_context_for(
+                    cfg,
+                    &cfg.command_exec.allowed_commands,
+                    work_dir,
+                );
+                let args_for_tool = match crate::tool_call_explain::require_explain_for_mutation(
+                    cfg, name, args_json,
+                ) {
+                    Ok(cow) => cow.into_owned(),
+                    Err(msg) => return Err(msg),
+                };
+                Ok(crate::tools::run_tool(name, &args_for_tool, &ctx))
+            },
+        )
+    }
 
     /// 执行 `mcp list`（`probe` 为 true 时按 user-data 尝试建立/刷新进程内 MCP 缓存）。
     ///
@@ -85,9 +115,11 @@ mod full {
         let workspace: PathBuf =
             cli_effective_work_dir(workspace_cli, &cfg.command_exec.run_command_working_dir);
         if port > 0 {
-            crate::mcp::server::run_tcp_mcp_server(cfg.clone(), workspace, no_tools, port).await
+            let cb = build_mcp_callbacks();
+            crate::mcp::server::run_tcp_mcp_server(cfg.clone(), workspace, no_tools, port, cb).await
         } else {
-            crate::mcp::server::run_stdio_mcp_server(cfg.clone(), workspace, no_tools).await
+            let cb = build_mcp_callbacks();
+            crate::mcp::server::run_stdio_mcp_server(cfg.clone(), workspace, no_tools, cb).await
         }
     }
 }

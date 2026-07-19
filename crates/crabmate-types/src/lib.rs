@@ -53,6 +53,7 @@ mod llm_seed_tests {
 }
 
 mod chat_api;
+mod mcp_types;
 mod message;
 mod message_lineage;
 mod real_user_message;
@@ -61,6 +62,7 @@ mod staged_step_window;
 mod tiktoken_snapshot;
 
 pub use chat_api::*;
+pub use mcp_types::*;
 pub use message::*;
 pub use real_user_message::{
     first_real_user_task_content, is_real_user_task_message, last_real_user_message_index,
