@@ -160,6 +160,15 @@ impl BubbleOutputQueue {
         if batch.text.trim().is_empty() {
             return;
         }
+        // 根本去重：batch 文本是终答的前缀或子集时，不再创建重复行。
+        if let Some(ref final_text) = turn.turn_ref().final_answer {
+            let trimmed = batch.text.trim();
+            if !final_text.trim().is_empty()
+                && (final_text.contains(trimmed) || final_text.starts_with(trimmed))
+            {
+                return;
+            }
+        }
         let Some(insert_idx) =
             Self::insert_index_for_batch_row(messages, batch.tool_call_id.as_deref())
         else {

@@ -59,14 +59,14 @@ fn overlay_answer_for_loading_tail(
 }
 
 /// 工具边界：将 loading 尾泡 overlay 旁注提交进 canonical（P0′ 空壳 stored 时 peel 摘不到字）。
-fn commit_overlay_commentary_to_canonical(stream_ctx: &ChatStreamCallbackCtx) {
+fn commit_overlay_commentary_to_canonical(stream_ctx: &ChatStreamCallbackCtx) -> bool {
     if !stream_ctx.scratch.tool_phase_open() && stream_ctx.scratch.post_tool_stream_tail_active() {
         // post-tool 终答 preview 在 overlay；勿误入批说明。
-        return;
+        return false;
     }
     let mid = stream_ctx.scratch.clone_assistant_id();
     let Some(answer) = overlay_answer_for_loading_tail(stream_ctx, mid.as_str()) else {
-        return;
+        return false;
     };
     if stream_ctx.scratch.tool_phase_open() {
         stream_ctx
@@ -77,14 +77,18 @@ fn commit_overlay_commentary_to_canonical(stream_ctx: &ChatStreamCallbackCtx) {
             .scratch
             .absorb_pre_tool_narration_for_first_tool(answer.as_str());
     }
+    true
 }
 
 /// 工具边界 / demote：overlay 与 loading stored 正文 **仅** 迁入 canonical，不写 `StoredMessage` 助手行。
+///
+/// 注意：`commit_overlay_commentary_to_canonical` 已从 overlay 推送过正文，
+/// 后续 stored message 中取出的文本与之相同，**不再重复推送**（否则 batch 加倍）。
 pub(crate) fn drain_loading_commentary_to_canonical(stream_ctx: &ChatStreamCallbackCtx) {
     if !stream_ctx.scratch.tool_phase_open() && stream_ctx.scratch.post_tool_stream_tail_active() {
         return;
     }
-    commit_overlay_commentary_to_canonical(stream_ctx);
+    let overlay_pushed = commit_overlay_commentary_to_canonical(stream_ctx);
     let mid = stream_ctx.scratch.clone_assistant_id();
     let sid = stream_ctx.bound_stream_session_id.clone();
     let drained = RefCell::new(None::<String>);
@@ -104,7 +108,10 @@ pub(crate) fn drain_loading_commentary_to_canonical(stream_ctx: &ChatStreamCallb
         }
         s.messages[idx].text.clear();
     });
-    if let Some(text) = drained.into_inner() {
+    // 仅当 overlay 为空时（`overlay_pushed == false`）才从 stored 推送，避免双路径重复。
+    if let Some(text) = drained.into_inner()
+        && !overlay_pushed
+    {
         if stream_ctx.scratch.tool_phase_open() {
             stream_ctx
                 .scratch
