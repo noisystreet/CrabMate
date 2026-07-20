@@ -262,9 +262,9 @@ impl StreamChatHost for CrabmateStreamChatHost {
         &self,
         cli_terminal_plain: bool,
     ) -> Option<Box<dyn CliWaitSpinnerGuardHost>> {
-        Some(Box::new(CrabmateCliWaitSpinnerGuard(
-            CliWaitSpinnerGuard::try_start_for_cli_plain_stream(cli_terminal_plain),
-        )))
+        CliWaitSpinnerGuard::try_start_for_cli_plain_stream(cli_terminal_plain).map(|guard| {
+            Box::new(CrabmateCliWaitSpinnerGuard(guard)) as Box<dyn CliWaitSpinnerGuardHost>
+        })
     }
 
     fn assistant_streaming_plain_concat(&self, msg: &Message) -> String {

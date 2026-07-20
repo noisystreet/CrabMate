@@ -1053,6 +1053,7 @@ dependencies = [
  "crabmate-display-rules",
  "crabmate-internal",
  "crabmate-llm",
+ "crabmate-runtime",
  "crabmate-sse-protocol",
  "crabmate-tool-card",
  "crabmate-turn-layout",
@@ -1272,6 +1273,19 @@ dependencies = [
  "thiserror 2.0.19",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "crabmate-runtime"
+version = "0.1.0"
+dependencies = [
+ "crabmate-display-rules",
+ "indicatif",
+ "log",
+ "reedline",
+ "regex",
+ "unicode-width 0.2.2",
+ "unicodeit",
 ]
 
 [[package]]
