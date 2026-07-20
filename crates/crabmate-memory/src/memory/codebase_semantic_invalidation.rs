@@ -10,8 +10,9 @@ use crate::memory::codebase_semantic_index::{
     CODEBASE_SEMANTIC_FILES_TABLE, index_path_for_workspace, open_codebase_semantic_db,
 };
 use crabmate_config::AgentConfig;
-use crabmate_tools::tool_result::parse_legacy_output;
-use crabmate_tools::workspace::path::canonical_workspace_root;
+use crabmate_types::path_utils::canonical_workspace_root;
+
+use crate::tool_check;
 
 const CHUNKS_TABLE: &str = "crabmate_codebase_chunks";
 
@@ -353,13 +354,13 @@ fn sqlite_like_escape(s: &str) -> String {
 }
 
 /// `run_tool` 成功语义：`crabmate_tool` 信封的 `ok`，或旧式解析的 `ok`。
-pub fn tool_output_semantic_success(tool_name: &str, output: &str) -> bool {
+pub fn tool_output_semantic_success(_tool_name: &str, output: &str) -> bool {
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(output)
         && let Some(ct) = v.get("crabmate_tool").and_then(|x| x.as_object())
     {
         return ct.get("ok").and_then(|x| x.as_bool()) != Some(false);
     }
-    parse_legacy_output(tool_name, output).ok
+    tool_check::tool_output_is_ok(output)
 }
 
 #[cfg(test)]

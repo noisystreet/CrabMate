@@ -64,6 +64,9 @@ pub mod server_injected_user;
 mod staged_step_window;
 mod tiktoken_snapshot;
 
+pub mod path_utils;
+pub mod text_utils;
+
 pub use chat_api::*;
 pub use mcp_types::*;
 pub use message::*;

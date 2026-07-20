@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crabmate_tools::workspace::path::canonical_workspace_root;
+use crabmate_types::path_utils::canonical_workspace_root;
 
 pub const TABLE: &str = "crabmate_codebase_chunks";
 pub const TABLE_FILES: &str = "crabmate_codebase_files";

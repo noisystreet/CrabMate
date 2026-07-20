@@ -1,6 +1,6 @@
 //! 回合结束后启发式检测「由失败到成功」的构建/验证类工具调用，自动写入长期记忆（`source_role=auto_summarize_experience`）。
 
-use crabmate_tools::tool_result::tool_message_content_ok_for_model;
+use crate::tool_check;
 use crabmate_types::{Message, message_content_as_str};
 
 /// 检测本回合是否值得自动沉淀；返回经验正文与标签。
@@ -73,7 +73,7 @@ fn detect_build_recovery_in_slice(turn: &[Message]) -> Option<BuildRecovery> {
         if tool_name == "run_command" && !run_command_looks_like_build(content) {
             continue;
         }
-        let ok = tool_message_content_ok_for_model(content, tool_name);
+        let ok = tool_check::tool_output_is_ok(content);
         if !ok {
             saw_build_failure = true;
             continue;
