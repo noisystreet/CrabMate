@@ -2,14 +2,13 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::types::{BenchmarkResult, TaskStatus};
+
 /// 单条任务的运行指标。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TaskMetrics {
-    /// 任务实际耗时（秒，含工具执行）
     pub wall_time_secs: f64,
-    /// Agent 循环中的工具调用总次数
     pub tool_calls_count: usize,
-    /// Agent 循环的轮次数（一次 LLM 请求 + 可能的工具执行算一轮）
     pub agent_rounds: usize,
 }
 
@@ -27,7 +26,7 @@ pub struct BatchSummary {
 }
 
 impl BatchSummary {
-    pub fn from_results(results: &[super::types::BenchmarkResult]) -> Self {
+    pub fn from_results(results: &[BenchmarkResult]) -> Self {
         let total = results.len();
         let mut s = Self {
             total_tasks: total,
@@ -35,10 +34,10 @@ impl BatchSummary {
         };
         for r in results {
             match r.status {
-                super::types::TaskStatus::Success => s.success_count += 1,
-                super::types::TaskStatus::Timeout => s.timeout_count += 1,
-                super::types::TaskStatus::Error => s.error_count += 1,
-                super::types::TaskStatus::MaxRounds => s.max_rounds_count += 1,
+                TaskStatus::Success => s.success_count += 1,
+                TaskStatus::Timeout => s.timeout_count += 1,
+                TaskStatus::Error => s.error_count += 1,
+                TaskStatus::MaxRounds => s.max_rounds_count += 1,
             }
             s.total_wall_time_secs += r.metrics.wall_time_secs;
             s.total_tool_calls += r.metrics.tool_calls_count;

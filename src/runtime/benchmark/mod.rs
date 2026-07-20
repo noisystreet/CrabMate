@@ -1,9 +1,8 @@
-//! Benchmark 测评子系统：批量无人值守执行、适配器框架、指标采集与产物提取。
+//! Benchmark 测评子系统（核心类型与适配器已提取到 `crabmate-benchmark`）。
 //!
-//! 支持在主流 Agent benchmark（SWE-bench、GAIA、HumanEval 等）上对 CrabMate 进行能力测评。
+//! 批量运行入口 `run_batch` 因依赖根包 `run_agent_turn`，保留在 `runner` 模块中。
 
-pub mod adapter;
-pub mod artifact;
-pub mod metrics;
+// `types` 被外部模块引用；adapter/artifact/metrics 通过 `crabmate_benchmark` 直接使用。
+pub use crabmate_benchmark::types;
+
 pub mod runner;
-pub mod types;

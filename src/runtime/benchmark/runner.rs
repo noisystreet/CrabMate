@@ -2,13 +2,13 @@
 //!
 //! 读取 JSONL 输入 → per-task 隔离执行 → 逐条写入输出 JSONL → 最终输出汇总。
 
-use super::adapter::{BenchmarkAdapter, create_adapter};
-use super::metrics::{BatchSummary, TaskMetrics};
-use super::types::{
-    BatchRunConfig, BenchmarkResult, BenchmarkTask, TaskStatus, parse_task_jsonl_line,
-};
 use crate::config::{AgentConfig, SharedAgentConfig};
 use crate::types::Tool;
+use crabmate_benchmark::adapter::{BenchmarkAdapter, create_adapter};
+use crabmate_benchmark::metrics::{BatchSummary, TaskMetrics};
+use crabmate_benchmark::types::{
+    BatchRunConfig, BenchmarkResult, BenchmarkTask, TaskStatus, parse_task_jsonl_line,
+};
 use log::{error, info, warn};
 use std::collections::HashSet;
 use std::io::{BufRead, Write};

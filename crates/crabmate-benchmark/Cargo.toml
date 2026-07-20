@@ -1,0 +1,16 @@
+[package]
+name = "crabmate-benchmark"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "CrabMate benchmark subsystem: batch agent evaluation across SWE-bench, GAIA, HumanEval etc."
+
+[dependencies]
+crabmate-config = { workspace = true }
+crabmate-types = { workspace = true }
+log = { workspace = true }
+regex = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }

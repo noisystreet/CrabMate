@@ -20,8 +20,6 @@ pub fn extract_git_patch(work_dir: &Path) -> Result<String, String> {
 }
 
 /// 从 agent 回复中提取 GAIA 格式的最终答案。
-///
-/// 查找 `FINAL ANSWER: ...` 模式，取最后一次出现。
 pub fn extract_final_answer(reply: &str) -> Option<String> {
     static RE: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"(?i)FINAL\s+ANSWER\s*:\s*(.+?)(?:\n|$)").expect("FINAL ANSWER regex invalid")
@@ -33,10 +31,6 @@ pub fn extract_final_answer(reply: &str) -> Option<String> {
 }
 
 /// 从 agent 回复中提取代码补全（HumanEval）。
-///
-/// 策略：
-/// 1. 优先寻找 ``` 代码块中的内容
-/// 2. 否则取整个回复
 pub fn extract_code_completion(reply: &str) -> String {
     static CODE_BLOCK: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"(?s)```(?:python|py)?\s*\n(.*?)```").expect("code block regex invalid")
@@ -46,7 +40,6 @@ pub fn extract_code_completion(reply: &str) -> String {
         return cap[1].to_string();
     }
 
-    // fallback：若回复中有缩进代码行，取全部
     reply.to_string()
 }
 
