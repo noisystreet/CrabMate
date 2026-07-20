@@ -1,8 +1,8 @@
 use super::*;
-use crate::types::{FunctionCall, MessageContent, ToolCall};
+use crabmate_types::{FunctionCall, MessageContent, ToolCall};
 
 fn test_cfg() -> AgentConfig {
-    crate::config::load_config(None).expect("embed default config")
+    crabmate_config::load_config(None).expect("embed default config")
 }
 
 #[test]
@@ -730,13 +730,13 @@ fn append_tool_result_and_reflection_with_inject() {
     assert_eq!(msgs.len(), 2);
     assert_eq!(msgs[0].role, "tool");
     assert_eq!(
-        crate::types::message_content_as_str(&msgs[0].content),
+        crabmate_types::message_content_as_str(&msgs[0].content),
         Some("tool output")
     );
     assert_eq!(msgs[0].tool_call_id.as_deref(), Some("tc-99"));
     assert_eq!(msgs[1].role, "user");
     assert!(
-        crate::types::message_content_as_str(&msgs[1].content)
+        crabmate_types::message_content_as_str(&msgs[1].content)
             .unwrap()
             .contains("test_instruction")
     );
@@ -864,8 +864,8 @@ fn workflow_validate_layer_cache_invalidates_on_context_mutation() {
 #[test]
 fn workflow_validate_layer_from_crabmate_tool_envelope() {
     let inner = r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":3},"nodes":[{"id":"x"},{"id":"y"},{"id":"z"}]}"#;
-    let parsed = crate::tool_result::parse_legacy_output("workflow_execute", inner);
-    let wrapped = crate::tool_result::encode_tool_message_envelope_v1(
+    let parsed = crabmate_tools::tool_result::parse_legacy_output("workflow_execute", inner);
+    let wrapped = crabmate_tools::tool_result::encode_tool_message_envelope_v1(
         "workflow_execute",
         "wf".into(),
         &parsed,

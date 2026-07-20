@@ -1,5 +1,5 @@
-use crate::config::AgentConfig;
-use crate::types::Message;
+use crabmate_config::AgentConfig;
+use crabmate_types::Message;
 use serde_json::Value;
 
 use super::final_plan_gate_context::build_final_plan_gate_context;
@@ -46,13 +46,13 @@ impl PerCoordinator {
     }
 
     /// 分阶段补丁规划轮成功合并 `steps` 后调用，递增与 **`plan_rewrite`** 独立的计数。
-    pub(crate) fn record_staged_plan_patch_planner_round_completed(&mut self) {
+    pub fn record_staged_plan_patch_planner_round_completed(&mut self) {
         self.counters
             .record_staged_plan_patch_planner_round_completed();
     }
 
     /// 分阶段步级补丁耗尽等错误串尾部：标明与 **`plan_rewrite`** 独立的计数（供排障）。
-    pub(crate) fn staged_plan_patch_vs_plan_rewrite_counters_footer(&self) -> String {
+    pub fn staged_plan_patch_vs_plan_rewrite_counters_footer(&self) -> String {
         format!(
             "\n\n[计数] 分阶段补丁规划已成功合并轮次={}（配置 `staged_plan_patch_max_attempts`={}，约束**本步失败分支**内尝试上界）；终答 `plan_rewrite` 已用次数={}/{}（**独立计数**，不计入上式）。",
             self.counters.staged_plan_patch_planner_rounds_completed,
@@ -62,7 +62,7 @@ impl PerCoordinator {
         )
     }
 
-    pub(crate) fn plan_semantic_mismatch_rewrite_message_with_feedback(
+    pub fn plan_semantic_mismatch_rewrite_message_with_feedback(
         violation_codes: &[String],
         rationale: Option<&str>,
     ) -> Message {
@@ -102,7 +102,7 @@ impl PerCoordinator {
         }
     }
 
-    pub(crate) fn repeated_tool_failure_error_marker(
+    pub fn repeated_tool_failure_error_marker(
         &self,
         tool_name: &str,
         tool_args_json: &str,
@@ -111,7 +111,7 @@ impl PerCoordinator {
             .repeated_tool_failure_error_marker(tool_name, tool_args_json)
     }
 
-    pub(crate) fn mark_tool_failure_signature(
+    pub fn mark_tool_failure_signature(
         &mut self,
         tool_name: &str,
         tool_args_json: &str,
@@ -124,7 +124,7 @@ impl PerCoordinator {
         );
     }
 
-    pub(crate) fn repeated_tool_failure_family_marker(
+    pub fn repeated_tool_failure_family_marker(
         &self,
         tool_name: &str,
         failure_family: &str,
@@ -133,7 +133,7 @@ impl PerCoordinator {
             .repeated_tool_failure_family_marker(tool_name, failure_family)
     }
 
-    pub(crate) fn mark_tool_failure_family(
+    pub fn mark_tool_failure_family(
         &mut self,
         tool_name: &str,
         failure_family: &str,
@@ -146,54 +146,54 @@ impl PerCoordinator {
         );
     }
 
-    pub(crate) fn clear_tool_failure_signature(&mut self, tool_name: &str, tool_args_json: &str) {
+    pub fn clear_tool_failure_signature(&mut self, tool_name: &str, tool_args_json: &str) {
         self.repeated_tool_failures
             .clear_tool_failure_signature(tool_name, tool_args_json);
     }
 
-    pub(crate) fn clear_tool_failure_families_for_tool(&mut self, tool_name: &str) {
+    pub fn clear_tool_failure_families_for_tool(&mut self, tool_name: &str) {
         self.repeated_tool_failures
             .clear_tool_failure_families_for_tool(tool_name);
     }
 
-    pub(crate) fn clear_all_run_command_failure_state(&mut self) {
+    pub fn clear_all_run_command_failure_state(&mut self) {
         self.repeated_tool_failures
             .clear_all_tool_failure_state_for_tool("run_command");
         self.successful_run_commands.clear_all();
     }
 
-    pub(crate) fn cached_successful_run_command_output(&self, suppress_key: &str) -> Option<&str> {
+    pub fn cached_successful_run_command_output(&self, suppress_key: &str) -> Option<&str> {
         self.successful_run_commands.cached_output(suppress_key)
     }
 
-    pub(crate) fn record_successful_run_command(&mut self, suppress_key: String, output: String) {
+    pub fn record_successful_run_command(&mut self, suppress_key: String, output: String) {
         self.successful_run_commands
             .record_success(suppress_key, output);
     }
 
-    pub(crate) fn record_outer_loop_build_idle_round(&mut self) -> u32 {
+    pub fn record_outer_loop_build_idle_round(&mut self) -> u32 {
         self.counters.record_outer_loop_build_idle_round()
     }
 
-    pub(crate) fn reset_outer_loop_build_idle_streak(&mut self) {
+    pub fn reset_outer_loop_build_idle_streak(&mut self) {
         self.counters.reset_outer_loop_build_idle_streak();
     }
 
-    pub(crate) fn record_outer_loop_build_idle_feedback_injected(&mut self) {
+    pub fn record_outer_loop_build_idle_feedback_injected(&mut self) {
         self.counters
             .record_outer_loop_build_idle_feedback_injected();
     }
 
-    pub(crate) fn outer_loop_build_idle_feedback_injected(&self) -> u32 {
+    pub fn outer_loop_build_idle_feedback_injected(&self) -> u32 {
         self.counters.outer_loop_build_idle_feedback_injected()
     }
 
-    pub(crate) fn record_outer_loop_missing_final_answer_feedback_injected(&mut self) {
+    pub fn record_outer_loop_missing_final_answer_feedback_injected(&mut self) {
         self.counters
             .record_outer_loop_missing_final_answer_feedback_injected();
     }
 
-    pub(crate) fn outer_loop_missing_final_answer_feedback_injected(&self) -> u32 {
+    pub fn outer_loop_missing_final_answer_feedback_injected(&self) -> u32 {
         self.counters
             .outer_loop_missing_final_answer_feedback_injected()
     }

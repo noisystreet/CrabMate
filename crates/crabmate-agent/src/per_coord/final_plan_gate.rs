@@ -5,11 +5,11 @@
 //! 入口为 [`run_final_plan_gate`]：先根据配置解析相位，再对单次事件做一步转移。
 //! 侧向 LLM 完成后经 [`run_final_plan_gate_semantic_completed`]（对应设计稿中的 **`PendingSemanticLlm`** 相位的一步转移）。
 
-use crate::agent::per_plan_semantic_check::PlanSemanticLlmOutcome;
-use crate::agent::plan_artifact::{self, AgentReplyPlanV1};
-use crate::agent::reflection::plan_rewrite;
-use crate::config::AgentConfig;
-use crate::types::Message;
+use crate::plan_artifact::{self, AgentReplyPlanV1};
+use crate::plan_rewrite;
+use crate::plan_semantic::PlanSemanticLlmOutcome;
+use crabmate_config::AgentConfig;
+use crabmate_types::Message;
 
 use super::final_plan_gate_context::{FinalPlanGateContext, build_final_plan_gate_context};
 use super::final_plan_gate_reason::FinalPlanGateDecisionReason;
@@ -20,7 +20,7 @@ use super::{AfterFinalAssistant, FinalPlanRequirementMode, PlanRequirementSource
 
 /// 进入门控瞬间所处「编排相位」。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FinalPlanGatePhase {
+pub enum FinalPlanGatePhase {
     /// 当前策略下不要求终答嵌入结构化规划。
     NoRequirement,
     /// 已确认需要规划：校验本轮 assistant 正文中的 `agent_reply_plan` v1。
@@ -31,13 +31,13 @@ pub(crate) enum FinalPlanGatePhase {
 
 /// 单次门控处理的事件（当前仅一种：模型给出终答 assistant）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FinalPlanGateEvent {
+pub enum FinalPlanGateEvent {
     FinalAssistantArrived,
 }
 
 /// 本次判定采用的结构性路径（用于日志 / 单测；与 `AfterFinalAssistant` 对齐）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FinalPlanGateRoute {
+pub enum FinalPlanGateRoute {
     StopNoRequirement,
     AcceptStructuredPlanOk,
     PendingSemanticConsistencyLlm,
@@ -52,15 +52,15 @@ pub(crate) enum FinalPlanGateRoute {
 }
 
 /// [`step_check_structured_plan`] 的完整输出（含可选的重写计数递增）。
-pub(crate) struct FinalPlanGateStepOutcome {
+pub struct FinalPlanGateStepOutcome {
     pub route: FinalPlanGateRoute,
-    pub decision_reason: FinalPlanGateDecisionReason,
+    pub(crate) decision_reason: FinalPlanGateDecisionReason,
     pub after: AfterFinalAssistant,
     pub next_plan_rewrite_count: Option<usize>,
 }
 
 /// 将门控一步输出的 `next_plan_rewrite_count` 写入协调器（静态终答与语义 LLM 路径共用）。
-pub(crate) fn apply_plan_rewrite_count_from_gate(
+pub fn apply_plan_rewrite_count_from_gate(
     per: &mut super::PerCoordinator,
     outcome: &FinalPlanGateStepOutcome,
 ) {
@@ -69,12 +69,12 @@ pub(crate) fn apply_plan_rewrite_count_from_gate(
     }
 }
 
-pub(crate) struct FinalPlanGateArgs<'a> {
+pub struct FinalPlanGateArgs<'a> {
     pub msg: &'a Message,
     pub messages: &'a [Message],
     pub cfg: &'a AgentConfig,
     pub workspace_is_set: bool,
-    pub gate_context: FinalPlanGateContext,
+    pub(crate) gate_context: FinalPlanGateContext,
     pub final_plan_require_strict_workflow_node_coverage: bool,
     pub final_plan_semantic_check_enabled: bool,
     pub final_plan_semantic_check_max_non_readonly_tools: usize,
@@ -94,7 +94,7 @@ impl FinalPlanGateArgs<'_> {
 // --- FSM 门面（单事件一步：终答 assistant 到达后的单次判定） ---
 
 /// `(相位, 事件) → 一步结果`。`NoRequirement` 通常由调用方提前返回 `StopTurn`；若误传入此相位，仍返回安全默认以免遗漏分支。
-pub(crate) fn run_final_plan_gate(
+pub fn run_final_plan_gate(
     phase: FinalPlanGatePhase,
     event: FinalPlanGateEvent,
     args: FinalPlanGateArgs<'_>,
@@ -139,12 +139,12 @@ pub(crate) fn run_final_plan_gate(
 }
 
 /// **`PendingSemanticLlm`** 相位：侧向语义 LLM 已完成，映射为终答路由（`reflect_impl` 侧直接消费返回的 `FinalPlanGateStepOutcome`）。
-pub(crate) fn run_final_plan_gate_semantic_completed(
+pub fn run_final_plan_gate_semantic_completed(
     outcome: &PlanSemanticLlmOutcome,
     plan_rewrite_attempts: usize,
     plan_rewrite_max_attempts: usize,
 ) -> FinalPlanGateStepOutcome {
-    use crate::agent::reflection::plan_rewrite::PlanRewriteExhaustedReason;
+    use crate::plan_rewrite::PlanRewriteExhaustedReason;
 
     tracing::debug!(
         target: "crabmate::per",
@@ -305,7 +305,7 @@ fn evaluate_static_semantics(
 
     let digest = plan_rewrite::summarize_messages_for_final_plan_semantic_check(
         args.messages,
-        args.cfg,
+        &|name| crabmate_tools::registry_policy::is_readonly_tool(args.cfg, name),
         args.workspace_is_set,
         args.final_plan_semantic_check_max_non_readonly_tools,
     );
@@ -433,7 +433,7 @@ fn outcome_after_semantics_failure(args: FinalPlanGateArgs<'_>) -> FinalPlanGate
 
 /// 在 **`CheckStructuredPlan`** 相位处理 **`FinalAssistantArrived`**（解析 JSON + 静态语义 + 重写 / 挂起侧向 LLM）。
 /// 调用方须在返回 `RequestPlanRewrite` 后自行将 `plan_rewrite_attempts` 与之一致（本函数**不**修改计数：先判断耗尽再 `+=1`）。
-pub(crate) fn step_check_structured_plan(args: FinalPlanGateArgs<'_>) -> FinalPlanGateStepOutcome {
+pub fn step_check_structured_plan(args: FinalPlanGateArgs<'_>) -> FinalPlanGateStepOutcome {
     tracing::debug!(
         target: "crabmate::per",
         gate_phase = ?FinalPlanGatePhase::CheckStructuredPlan,
@@ -446,7 +446,7 @@ pub(crate) fn step_check_structured_plan(args: FinalPlanGateArgs<'_>) -> FinalPl
     let layer_need = args.layer_need;
     let validate_only_binding_ids = args.validate_only_binding_ids.as_ref();
 
-    let content = crate::types::message_content_as_str(&args.msg.content).unwrap_or("");
+    let content = crabmate_types::message_content_as_str(&args.msg.content).unwrap_or("");
     if let Ok(plan) = plan_artifact::parse_agent_reply_plan_v1_with_validate_only_binding_ids(
         content,
         validate_only_binding_ids.map(|v| v.as_slice()),
@@ -490,7 +490,7 @@ pub(crate) fn step_check_structured_plan(args: FinalPlanGateArgs<'_>) -> FinalPl
 }
 
 /// 对一次终答 assistant 运行完整门控（**始终**经 [`run_final_plan_gate`]；`NoRequirement` 相位下 `layer_need` 等字段不读取）。
-pub(crate) fn after_final_assistant(
+pub fn after_final_assistant(
     per: &mut super::PerCoordinator,
     msg: &Message,
     messages: &[Message],
@@ -561,12 +561,12 @@ pub(crate) fn after_final_assistant(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::per_plan_semantic_check::PlanSemanticLlmOutcome;
-    use crate::agent::reflection::plan_rewrite::PlanRewriteExhaustedReason;
-    use crate::types::{FunctionCall, MessageContent, ToolCall};
+    use crate::plan_rewrite::PlanRewriteExhaustedReason;
+    use crate::plan_semantic::PlanSemanticLlmOutcome;
+    use crabmate_types::{FunctionCall, MessageContent, ToolCall};
 
     fn minimal_cfg() -> AgentConfig {
-        crate::config::load_config(None).expect("embed default config")
+        crabmate_config::load_config(None).expect("embed default config")
     }
 
     fn gate_args<'a>(

@@ -13,6 +13,8 @@ use crate::llm::{
 };
 use crate::types::{LlmSeedOverride, Message};
 
+use crabmate_agent::PlanSemanticLlmOutcome;
+
 fn truncate_unicode(s: &str, max_chars: usize) -> String {
     let n = s.chars().count();
     if n <= max_chars {
@@ -29,37 +31,6 @@ const SIDE_SYSTEM: &str = "你是 CrabMate 的**规划一致性审计员**。只
 - 若**明确矛盾**：{\"consistent\":false,\"violation_codes\":[\"…\"],\"rationale\":\"不超过 80 字的中文理由\"}\n\
 其中 **violation_codes** 为字符串数组：1–8 个元素，每项仅含小写字母、数字、下划线，长度 1–64。建议码：`tool_outcome_contradiction`（与工具成功/失败状态冲突）、`plan_step_tool_mismatch`（步骤与工具输出明显不符）、`claim_not_supported_by_tools`（断言缺乏工具证据）、`semantic_mismatch_other`（其它明确矛盾）。\n\
 **兼容**：若你只能输出纯文本，可在一行内写 INCONSISTENT 或 CONSISTENT（将按旧规则解析，但优先使用 JSON）。";
-
-/// 侧向语义校验的解析结果（供重写 user 消息附带 `violation_codes`）。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PlanSemanticLlmOutcome {
-    pub consistent: bool,
-    /// 仅在 `consistent == false` 时有意义；经规范化，至少含一个后备码。
-    pub violation_codes: Vec<String>,
-    pub rationale: Option<String>,
-    /// 侧向 LLM 调用被用户取消（须由编排层映射为 `TurnAborted`，不可 fail-open 为一致）。
-    pub user_cancelled: bool,
-}
-
-impl PlanSemanticLlmOutcome {
-    pub(crate) fn consistent_ok() -> Self {
-        Self {
-            consistent: true,
-            violation_codes: Vec::new(),
-            rationale: None,
-            user_cancelled: false,
-        }
-    }
-
-    pub(crate) fn user_cancelled() -> Self {
-        Self {
-            consistent: false,
-            violation_codes: Vec::new(),
-            rationale: None,
-            user_cancelled: true,
-        }
-    }
-}
 
 const MAX_VIOLATION_CODES: usize = 8;
 const MAX_CODE_LEN: usize = 64;

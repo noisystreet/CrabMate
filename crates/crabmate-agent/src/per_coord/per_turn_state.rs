@@ -6,10 +6,10 @@
 //! - **[`RepeatedToolFailureMemo`]**：同轮工具失败签名 / 族短路（只读查询 + 记录清除）。
 //! - **[`SuccessfulRunCommandDedupeMemo`]**：同轮已成功构建/运行命令的结果缓存（防重复 spawn）。
 
-use crate::types::Message;
+use crabmate_types::Message;
 use std::collections::HashMap;
 
-use crate::agent::reflection::plan_rewrite;
+use crate::plan_rewrite;
 
 /// 本 `run_agent_turn` 内、与配置上限对照的两套**正交**计数器。
 ///

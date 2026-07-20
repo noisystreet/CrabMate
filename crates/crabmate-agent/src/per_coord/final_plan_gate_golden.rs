@@ -1,9 +1,9 @@
 //! 终答 Gate 金样回归：`fixtures/final_plan_gate_golden.jsonl`。
 
-use crate::agent::per_plan_semantic_check::PlanSemanticLlmOutcome;
-use crate::agent::reflection::plan_rewrite::PlanRewriteExhaustedReason;
-use crate::config::AgentConfig;
-use crate::types::{Message, MessageContent};
+use crate::plan_rewrite::PlanRewriteExhaustedReason;
+use crate::plan_semantic::PlanSemanticLlmOutcome;
+use crabmate_config::AgentConfig;
+use crabmate_types::{Message, MessageContent};
 
 use super::final_plan_gate::{
     FinalPlanGateArgs, FinalPlanGateEvent, FinalPlanGatePhase, FinalPlanGateRoute,
@@ -35,7 +35,7 @@ fn body_str<'a>(body: &'a serde_json::Value, key: &str, ctx: &str) -> &'a str {
 }
 
 fn minimal_cfg() -> AgentConfig {
-    crate::config::load_config(None).expect("embedded default config must load")
+    crabmate_config::load_config(None).expect("embedded default config must load")
 }
 
 fn policy_from_label(label: &str) -> FinalPlanRequirementMode {
