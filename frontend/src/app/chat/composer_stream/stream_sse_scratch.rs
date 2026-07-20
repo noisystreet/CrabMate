@@ -13,7 +13,9 @@ use super::per_stream_accum::PerStreamAccum;
 use super::stream_control_reducer::{StreamControlEvent, StreamControlReducerState};
 use super::stream_turn_scratch_state::StreamTurnScratchState;
 use super::stream_turn_state::StreamModelOutputLane;
-use super::turn_canonical::{TurnCanonicalState, make_turn_canonical_cell};
+use super::turn_canonical::{
+    IngestFinalResponseOutcome, TurnCanonicalState, make_turn_canonical_cell,
+};
 use crate::app::app_signals::StreamControlSignals;
 use crate::app::chat::turn_lifecycle::TurnLifecycleEvent;
 use crate::sse_dispatch::TurnSegmentStartInfo;
@@ -153,9 +155,16 @@ impl StreamSseScratch {
         self.turn.borrow().tool_phase_open()
     }
 
+    /// `final_response` 时间线：阶段 2 起 canonical 不再被该路径写入，由调用方据返回值写 overlay。
     #[inline]
-    pub(super) fn try_ingest_final_response_text(&self, text: &str) -> bool {
-        self.turn.borrow_mut().try_ingest_final_response_text(text)
+    pub(super) fn try_ingest_final_response_text(
+        &self,
+        text: &str,
+        current_overlay_answer: Option<&str>,
+    ) -> IngestFinalResponseOutcome {
+        self.turn
+            .borrow_mut()
+            .try_ingest_final_response_text(text, current_overlay_answer)
     }
 
     #[inline]
