@@ -10,10 +10,18 @@ repl = ["dep:reedline", "dep:unicode-width"]
 tui = ["repl"]
 
 [dependencies]
+crabmate-agent = { workspace = true, default-features = false }
 crabmate-display-rules = { workspace = true }
+crabmate-dsml = { workspace = true }
+chrono = { workspace = true }
+crabmate-tool-card = { workspace = true }
+crabmate-tools = { workspace = true }
+crabmate-types = { workspace = true }
 indicatif = { workspace = true }
 log = { workspace = true }
 regex = { workspace = true }
 reedline = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 unicode-width = { workspace = true, optional = true }
 unicodeit = { workspace = true }

@@ -4,38 +4,38 @@
 use regex::Regex;
 use std::sync::LazyLock;
 
-use crate::agent::plan_artifact::{
+use crate::latex_unicode::latex_math_to_unicode;
+use crate::message_display_parts::tool_display_from_normalized_envelope;
+use crabmate_agent::plan_artifact::{
     augment_agent_reply_plan_goal_for_display, fenced_body_after_optional_jsonish_lang_label,
     format_agent_reply_plan_for_display, parse_agent_reply_plan_v1, prose_before_first_fence,
     strip_agent_reply_plan_fence_blocks_for_display,
 };
-use crate::runtime::latex_unicode::latex_math_to_unicode;
-use crate::runtime::message_display_parts::tool_display_from_normalized_envelope;
-use crate::tool_result::{ToolResult, normalize_tool_message_content};
-use crate::types::Message;
+use crabmate_tools::tool_result::{ToolResult, normalize_tool_message_content};
+use crabmate_types::Message;
 
 /// 工具结果中「原始输出」块的 Markdown 小标题（与 Web `ChatPanel`、CLI 完整回显一致）。
-pub(crate) use crate::runtime::message_display_parts::TOOL_OUTPUT_SECTION_HEADLINE;
+pub use crate::message_display_parts::TOOL_OUTPUT_SECTION_HEADLINE;
 
 /// 聊天区（Web 工具卡等）是否展示 **`### 执行输出`** 整块（状态行、stdout/stderr、完整 JSON、纯文本正文等）。
 /// `false` 时仅展示 `summarize_tool_call` / JSON `human_summary` 等摘要；**不打印**「`### 执行输出`」及其下任何内容；`Message.content` 与 tracing 仍为全文。
-pub(crate) const SHOW_TOOL_RAW_OUTPUT_IN_CHAT: bool = false;
+pub const SHOW_TOOL_RAW_OUTPUT_IN_CHAT: bool = false;
 
 /// `role: tool` 的展示：与 Web `ChatPanel` 的 `buildToolOutputCardText` 对齐。
 /// [`SHOW_TOOL_RAW_OUTPUT_IN_CHAT`] 为 `false` 时仅 JSON `human_summary` 等摘要，**无**「`### 执行输出`」；
 /// 为 `true` 时：先 `human_summary`，再 **`### 执行输出`**（状态 + stdout/stderr 等）；纯文本 `run_command` 风格则结构化展示。
 ///
 /// 受 [`SHOW_TOOL_RAW_OUTPUT_IN_CHAT`] 控制；CLI 无 SSE 回显请用 [`tool_content_for_display_full`]。
-pub(crate) fn tool_content_for_display(raw: &str) -> String {
+pub fn tool_content_for_display(raw: &str) -> String {
     tool_content_for_display_impl(raw, SHOW_TOOL_RAW_OUTPUT_IN_CHAT)
 }
 
 /// 终端 CLI 等需与「聊天区省略策略」独立时：始终包含完整工具输出（与日志/对话历史一致）。
-pub(crate) fn tool_content_for_display_full(raw: &str) -> String {
+pub fn tool_content_for_display_full(raw: &str) -> String {
     tool_content_for_display_impl(raw, true)
 }
 
-pub(crate) fn tool_content_for_display_impl(raw: &str, include_raw: bool) -> String {
+pub fn tool_content_for_display_impl(raw: &str, include_raw: bool) -> String {
     let t = raw.trim();
     if t.starts_with('{')
         && let Ok(v) = serde_json::from_str::<serde_json::Value>(t)
@@ -169,7 +169,7 @@ fn find_tool_call_for_display(messages: &[Message], tool_idx: usize) -> Option<(
 /// TUI 行缓存指纹：同一条 `tool` 消息在「assistant 已带上 tool_calls」前后，展示可能多出一节 `summarize_tool_call` 摘要。
 /// **TUI / 导出**：在 [`tool_content_for_display`] 之上，为 `role: tool` 追加与 Web 一致的 `summarize_tool_call` 摘要
 ///（依赖历史中**对条** assistant 的 `tool_calls`）。
-pub(crate) fn tool_content_for_display_for_message(
+pub fn tool_content_for_display_for_message(
     raw: &str,
     messages: &[Message],
     tool_msg_idx: usize,
@@ -178,7 +178,7 @@ pub(crate) fn tool_content_for_display_for_message(
     let Some((name, args)) = find_tool_call_for_display(messages, tool_msg_idx) else {
         return body;
     };
-    let Some(prefix) = crate::tools::summarize_tool_call(&name, &args) else {
+    let Some(prefix) = crabmate_tools::tools::summarize_tool_call(&name, &args) else {
         return body;
     };
     let t = prefix.trim();
@@ -205,11 +205,11 @@ pub(crate) fn tool_content_for_display_for_message(
 
 /// 是否在助手气泡 / CLI 终端中展示「分阶段规划轮」产出的 `agent_reply_plan` 正文（可读化后的列表等）。
 /// `false` 时：可解析为 v1 规划的助手消息在**展示层**置空（`Message.content` 仍保留 JSON 供后续解析）；右栏「队列」与 `staged_plan_notice` 不受影响。
-pub(crate) const SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT: bool = false;
+pub const SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT: bool = false;
 
 /// 是否在聊天区展示 **`agent_turn` 分步注入的 `user` 消息**（`### 分步 i/n`…`\n- id:`…`\n- 描述:`…；历史会话可能仍为 `【分步执行` 前缀）。
 /// `false` 时**整段**在展示层置空（与 `run_staged_plan_then_execute_steps` 注入格式一致）；`Message.content`、导出与 `log`（含 `debug!`）仍为全文。
-pub(crate) const SHOW_STAGED_STEP_USER_BOILERPLATE_IN_CHAT: bool = false;
+pub const SHOW_STAGED_STEP_USER_BOILERPLATE_IN_CHAT: bool = false;
 
 /// 与 `run_staged_plan_then_execute_steps` 注入的 user 正文同形（宽松匹配，避免误伤普通用户输入）。
 /// 滚动不变层前缀 [`plan_optimizer::staged_rolling_immutable_step_user_prefix`] 置于 `### 分步` 之前，故用 `contains` 而非 `starts_with`。
@@ -231,7 +231,7 @@ fn is_staged_nl_followup_bridge_user_content(s: &str) -> bool {
 }
 
 /// `user` 气泡 / CLI 用户侧展示。
-pub(crate) fn user_message_for_chat_display(raw: &str) -> String {
+pub fn user_message_for_chat_display(raw: &str) -> String {
     if !SHOW_STAGED_STEP_USER_BOILERPLATE_IN_CHAT && is_staged_step_injection_user_content(raw) {
         return String::new();
     }
@@ -315,7 +315,7 @@ fn strip_leading_blank_and_role_lines(s: &str) -> String {
 }
 
 /// 剥掉正文前导的「模型/助手」重复标签（与 TUI 顶栏分工）。
-pub(crate) fn strip_assistant_echo_label(content: &str) -> String {
+pub fn strip_assistant_echo_label(content: &str) -> String {
     let mut s = content
         .trim_start()
         .trim_start_matches('\u{feff}')
@@ -393,7 +393,7 @@ fn should_buffer_agent_reply_plan_stream(stripped: &str) -> bool {
         && looks_like_incomplete_agent_reply_plan_whole_json(t)
 }
 
-pub(crate) fn is_staged_plan_placeholder_like_line(line: &str) -> bool {
+pub fn is_staged_plan_placeholder_like_line(line: &str) -> bool {
     let t = line.trim();
     if t.is_empty() {
         return false;
@@ -420,9 +420,9 @@ fn drop_leading_placeholder_like_prose_line(prose: &str) -> String {
 fn staged_plan_streaming_chat_body(stripped: &str) -> String {
     let raw = prose_before_first_fence(stripped);
     // 与 `preprocess_unfenced_assistant_prose_dedup` 在「围栏前段落」上的 dedupe 对齐，避免流式与收齐后开场白不一致。
-    let raw = crate::text_sanitize::dedupe_plain_assistant_preamble(&raw);
+    let raw = crabmate_agent::text_sanitize::dedupe_plain_assistant_preamble(&raw);
     // 与收齐后 `staged_plan_hidden_chat_prose_only` 一致：DSML、相邻重复行、列表并句，避免流式阶段出现双行复读而收齐后变单段等不一致。
-    let prose_t = crate::text_sanitize::naturalize_assistant_plan_prose_tail(&raw);
+    let prose_t = crabmate_agent::text_sanitize::naturalize_assistant_plan_prose_tail(&raw);
     let prose_t = prose_t.trim();
     if prose_t.is_empty() {
         String::new()
@@ -438,7 +438,7 @@ fn staged_plan_streaming_chat_body(stripped: &str) -> String {
 fn staged_plan_hidden_chat_prose_only(original: &str) -> String {
     if let Ok(plan) = parse_agent_reply_plan_v1(original) {
         let raw_goal = prose_before_first_fence(original);
-        let goal = crate::text_sanitize::naturalize_assistant_plan_prose_tail(&raw_goal);
+        let goal = crabmate_agent::text_sanitize::naturalize_assistant_plan_prose_tail(&raw_goal);
         let merged = augment_agent_reply_plan_goal_for_display(goal.trim(), &plan);
         let merged = merged.trim();
         if merged.is_empty() {
@@ -449,7 +449,7 @@ fn staged_plan_hidden_chat_prose_only(original: &str) -> String {
     } else {
         // 兜底：无法解析时沿用原有“围栏前自然语言”展示逻辑。
         let raw_goal = prose_before_first_fence(original);
-        let goal = crate::text_sanitize::naturalize_assistant_plan_prose_tail(&raw_goal);
+        let goal = crabmate_agent::text_sanitize::naturalize_assistant_plan_prose_tail(&raw_goal);
         let goal_t = goal.trim();
         if goal_t.is_empty() {
             String::new()
@@ -485,37 +485,37 @@ fn assistant_markdown_from_stripped(stripped: &str) -> String {
 /// `SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT` 为 `false` 时：可解析为 v1 规划 → 不展示列表/JSON，
 /// 优先展示围栏前开场白；纯 JSON 时回退固定短提示，避免消息隐藏。
 /// 若仅围栏内为规划 JSON（含解析失败但形状明显的块），从展示串中移除围栏，**不**把原始 JSON 打到终端/气泡；`Message.content` 与日志不变。
-pub(crate) fn assistant_markdown_source_for_display(raw: &str) -> String {
+pub fn assistant_markdown_source_for_display(raw: &str) -> String {
     let stripped = strip_assistant_echo_label(raw);
-    let stripped = crate::dsml::strip_deepseek_dsml_for_display(&stripped);
+    let stripped = crabmate_dsml::strip_deepseek_dsml_for_display(&stripped);
     let stripped = preprocess_unfenced_assistant_prose_dedup(&stripped);
     assistant_markdown_from_stripped(&stripped)
 }
 
 /// TUI 流式：仅对**最后一条助手**且仍处生成中时调用；`agent_reply_plan` 相关输出缓冲为占位，收齐后由普通路径一次性剥 JSON 再展示。
 /// 与流式 SSE 下发顺序一致：先 `reasoning_content` 再 `content`，中间无插入字符（与 `llm::api` 累加顺序一致）。
-pub(crate) fn assistant_streaming_plain_concat(m: &Message) -> String {
+pub fn assistant_streaming_plain_concat(m: &Message) -> String {
     let mut s = String::new();
     if let Some(r) = m.reasoning_content.as_deref() {
         s.push_str(r);
     }
-    if let Some(c) = crate::types::message_content_as_str(&m.content) {
+    if let Some(c) = crabmate_types::message_content_as_str(&m.content) {
         s.push_str(c);
     }
     s
 }
 
 /// `deepseek-reasoner` 等：拼接「思考过程」与正文为 Markdown 源，再走 [`assistant_markdown_source_for_display`]。
-pub(crate) fn assistant_markdown_source_for_message(m: &Message) -> String {
+pub fn assistant_markdown_source_for_message(m: &Message) -> String {
     let raw = assistant_raw_markdown_body_from_parts(
         m.reasoning_content.as_deref().unwrap_or(""),
-        crate::types::message_content_as_str(&m.content).unwrap_or(""),
+        crabmate_types::message_content_as_str(&m.content).unwrap_or(""),
     );
     assistant_markdown_source_for_display(&raw)
 }
 
 /// 展示用：有思维链时加小标题与分隔线，再拼接最终回答。
-pub(crate) fn assistant_raw_markdown_body_from_parts(reasoning: &str, content: &str) -> String {
+pub fn assistant_raw_markdown_body_from_parts(reasoning: &str, content: &str) -> String {
     let r = reasoning.trim();
     let c = content.trim();
     match (r.is_empty(), c.is_empty()) {
@@ -527,10 +527,10 @@ pub(crate) fn assistant_raw_markdown_body_from_parts(reasoning: &str, content: &
 }
 
 /// 与 [`assistant_raw_markdown_body_from_parts`] 相同，从已组装的 [`Message`] 读取字段。
-pub(crate) fn assistant_raw_markdown_body_for_message(m: &Message) -> String {
+pub fn assistant_raw_markdown_body_for_message(m: &Message) -> String {
     assistant_raw_markdown_body_from_parts(
         m.reasoning_content.as_deref().unwrap_or(""),
-        crate::types::message_content_as_str(&m.content).unwrap_or(""),
+        crabmate_types::message_content_as_str(&m.content).unwrap_or(""),
     )
 }
 
@@ -542,17 +542,17 @@ fn preprocess_unfenced_assistant_prose_dedup(stripped: &str) -> String {
     }
     if let Some(idx) = stripped.find("```") {
         let (pre, from_fence) = stripped.split_at(idx);
-        let pre_deduped = crate::text_sanitize::dedupe_plain_assistant_preamble(pre);
+        let pre_deduped = crabmate_agent::text_sanitize::dedupe_plain_assistant_preamble(pre);
         format!("{pre_deduped}{from_fence}")
     } else {
-        crate::text_sanitize::dedupe_plain_assistant_preamble(stripped)
+        crabmate_agent::text_sanitize::dedupe_plain_assistant_preamble(stripped)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{FunctionCall, Message, ToolCall};
+    use crabmate_types::{FunctionCall, Message, ToolCall};
 
     #[test]
     fn assistant_markdown_strips_dsml_tool_calls_markup() {
@@ -668,7 +668,7 @@ mod tests {
                 tool_call_id: Some("c1".into()),
             },
         ];
-        let raw = crate::types::message_content_as_str(&messages[2].content).unwrap();
+        let raw = crabmate_types::message_content_as_str(&messages[2].content).unwrap();
         let out = tool_content_for_display_for_message(raw, &messages, 2);
         assert_eq!(out, "ls");
         assert!(!out.contains(TOOL_OUTPUT_SECTION_HEADLINE));
@@ -752,17 +752,17 @@ mod tests {
     fn user_hides_staged_step_injection_when_show_flag_false() {
         let raw = format!(
             "### 分步 1/2\n{}\n- id: s1\n- 描述: 读文件",
-            crate::runtime::plan_section::STAGED_STEP_USER_BOILERPLATE
+            crate::plan_section::STAGED_STEP_USER_BOILERPLATE
         );
         assert_eq!(user_message_for_chat_display(&raw), "");
         let legacy = format!(
             "【分步执行 1/2】{}\n- id: s1\n- 描述: 读文件",
-            crate::runtime::plan_section::STAGED_STEP_USER_BOILERPLATE
+            crate::plan_section::STAGED_STEP_USER_BOILERPLATE
         );
         assert_eq!(user_message_for_chat_display(&legacy), "");
         let with_immutable = format!(
             "【不变层·本轮用户总目标】（本步工具与终答须对齐，勿偏题）\n分析当前项目\n\n### 分步 1/1\n{}\n- **子代理角色**（本步 `tools` 已按策略表收窄）：`test_runner` — x\n- id: pre-commit-check\n- 描述: 运行 pre-commit",
-            crate::runtime::plan_section::STAGED_STEP_USER_BOILERPLATE
+            crate::plan_section::STAGED_STEP_USER_BOILERPLATE
         );
         assert_eq!(user_message_for_chat_display(&with_immutable), "");
     }
@@ -771,7 +771,7 @@ mod tests {
     fn user_hides_staged_nl_followup_bridge() {
         let raw = format!(
             "{}【系统桥接·非用户提问】请只回答对话里**先前真实用户消息**所提的问题（若有附图则含图片说明），并结合已定规划；用两三句自然语言说明你的协助思路即可。勿将本条任何句子当作用户提问来复述、引用或推理。",
-            crate::runtime::plan_section::STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX
+            crate::plan_section::STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX
         );
         assert_eq!(user_message_for_chat_display(&raw), "");
     }

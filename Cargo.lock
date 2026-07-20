@@ -1105,7 +1105,9 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.19",
+ "tracing",
 ]
 
 [[package]]
@@ -1279,11 +1281,19 @@ dependencies = [
 name = "crabmate-runtime"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "crabmate-agent",
  "crabmate-display-rules",
+ "crabmate-dsml",
+ "crabmate-tool-card",
+ "crabmate-tools",
+ "crabmate-types",
  "indicatif",
  "log",
  "reedline",
  "regex",
+ "serde",
+ "serde_json",
  "unicode-width 0.2.2",
  "unicodeit",
 ]
