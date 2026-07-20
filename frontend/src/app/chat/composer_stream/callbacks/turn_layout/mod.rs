@@ -123,38 +123,14 @@ pub(crate) fn drain_loading_commentary_to_canonical(stream_ctx: &ChatStreamCallb
     );
 }
 
-fn commit_loading_tail_text_to_canonical(stream_ctx: &ChatStreamCallbackCtx, text: &str) {
-    if text.trim().is_empty() {
-        return;
-    }
-    if stream_ctx.scratch.tool_phase_open() {
-        stream_ctx.scratch.ingest_batch_commentary_from_peel(text);
-    } else if stream_ctx.scratch.post_tool_stream_tail_active() {
-        if !stream_ctx.scratch.post_tool_final_answer_open() {
-            stream_ctx.scratch.ingest_batch_commentary_from_peel(text);
-            return;
-        }
-        if !stream_ctx.scratch.try_apply_answer_delta(text) {
-            let _ = stream_ctx.scratch.try_ingest_final_response_text(text);
-        }
-    } else {
-        stream_ctx
-            .scratch
-            .absorb_pre_tool_narration_for_first_tool(text);
-    }
-}
-
-/// `on_done` 前：将 loading 尾泡 stored 正文迁入 canonical（含 post-tool 终答）。
-/// overlay 文本已在流式时通过 on_delta 写入 canonical，不再重复 commit。
-pub(crate) fn drain_stream_tail_into_canonical_for_done(stream_ctx: &ChatStreamCallbackCtx) {
+/// `on_done` 前：将 loading 尾泡 overlay 正文迁入 stored message。
+///
+/// `final_answer` 在流式期间已通过每 delta 的 `try_apply_answer_delta` 累积，
+/// 此处只需确保 overlay 正文合并到 stored（供后续 dedupe/展示），
+/// 不再 commit 回 canonical（否则 `push_str` 会全文追加，导致终答重复）。
+fn drain_stream_tail_into_canonical_for_done(stream_ctx: &ChatStreamCallbackCtx) {
     let mid = stream_ctx.scratch.clone_assistant_id();
     let sid = stream_ctx.bound_stream_session_id.clone();
-    stream_overlay_clear_answer_for_message(
-        stream_ctx.chat.stream_text_overlay,
-        sid.as_str(),
-        mid.as_str(),
-        Some(stream_ctx.chat.stream_overlay_revision),
-    );
     let drained = RefCell::new(None::<String>);
     stream_ctx.update_bound_session(|s| {
         let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) else {
@@ -172,9 +148,8 @@ pub(crate) fn drain_stream_tail_into_canonical_for_done(stream_ctx: &ChatStreamC
         }
         s.messages[idx].text.clear();
     });
-    if let Some(text) = drained.into_inner() {
-        commit_loading_tail_text_to_canonical(stream_ctx, text.as_str());
-    }
+    // `final_answer` 已在流式期间累积，此处只做 overlay→stored 迁移，不做 canonical commit。
+    let _ = drained.into_inner();
 }
 
 /// 流结束：先关 open 段 → drain 尾泡 → 形态 B 拆分 → 投影落盘。
